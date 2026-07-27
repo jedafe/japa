@@ -4,11 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/mentions"
 )
 
 // ---------------------------------------------------------------------------
@@ -62,7 +64,83 @@ func (s *Service) CreateComment(ctx context.Context, tenantID, userID pgtype.UUI
 	return comment, nil
 }
 
-// GetComment returns a single comment by ID.
+// DispatchCommentNotifications fires notifications for a newly created comment
+// (Section 49 — comment:notify_author/parent/mention, consolidated into
+// notification:dispatch_batch per Section 11). Fire-and-forget per Rule 8:
+// errors are logged but never returned to the caller.
+//
+// Notifications dispatched:
+//  1. comment_new — to the content author (if commenter ≠ author, top-level)
+//  2. comment_reply — to the parent comment author (if reply and replier ≠ parent author)
+//  3. comment_mention — to each @mentioned user (extracted from TipTap JSON body)
+func (s *Service) DispatchCommentNotifications(ctx context.Context, tenantID pgtype.UUID, comment gen.Comment, dispatcher NotificationDispatcher) {
+	if dispatcher == nil {
+		return
+	}
+
+	// 1. Notify content author (for top-level comments only).
+	if !comment.ParentID.Valid {
+		content, err := s.read.GetContentByID(ctx, gen.GetContentByIDParams{
+			ID:       comment.ContentID,
+			TenantID: tenantID,
+		})
+		if err != nil {
+			slog.Warn("comments: failed to fetch content for author notification", "content_id", comment.ContentID.String(), "error", err)
+		} else if content.AuthorID.Valid && content.AuthorID != comment.AuthorUserID {
+			if err := dispatcher.DispatchNotification(
+				ctx, tenantID, content.AuthorID,
+				"comment_new", "",
+				comment.AuthorUserID,
+				"comment", comment.ID,
+				"", "", "",
+			); err != nil {
+				slog.Warn("comments: failed to dispatch comment_new notification", "error", err)
+			}
+		}
+	}
+
+	// 2. Notify parent comment author (for replies).
+	if comment.ParentID.Valid {
+		parent, err := s.read.GetComment(ctx, gen.GetCommentParams{
+			ID:       comment.ParentID,
+			TenantID: tenantID,
+		})
+		if err != nil {
+			slog.Warn("comments: failed to fetch parent for reply notification", "parent_id", comment.ParentID.String(), "error", err)
+		} else if parent.AuthorUserID.Valid && parent.AuthorUserID != comment.AuthorUserID {
+			if err := dispatcher.DispatchNotification(
+				ctx, tenantID, parent.AuthorUserID,
+				"comment_reply", "",
+				comment.AuthorUserID,
+				"comment", comment.ID,
+				"", "", "",
+			); err != nil {
+				slog.Warn("comments: failed to dispatch comment_reply notification", "error", err)
+			}
+		}
+	}
+
+	// 3. Notify @mentioned users (extracted from TipTap JSON body).
+	mentionedUsers, err := mentions.ExtractMentions([]byte(comment.Body))
+	if err != nil {
+		// Body may not be valid TipTap JSON (e.g., plain text); skip mentions.
+		return
+	}
+	for _, m := range mentionedUsers {
+		if m.EntityType != "user" || !m.ID.Valid || m.ID == comment.AuthorUserID {
+			continue
+		}
+		if err := dispatcher.DispatchNotification(
+			ctx, tenantID, m.ID,
+			"comment_mention", "",
+			comment.AuthorUserID,
+			"comment", comment.ID,
+			"", "", "",
+		); err != nil {
+			slog.Warn("comments: failed to dispatch comment_mention notification", "user_id", m.ID.String(), "error", err)
+		}
+	}
+}
 func (s *Service) GetComment(ctx context.Context, tenantID, commentID pgtype.UUID) (gen.GetCommentRow, error) {
 	comment, err := s.read.GetComment(ctx, gen.GetCommentParams{
 		ID:       commentID,

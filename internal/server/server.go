@@ -226,6 +226,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	cfService := customfields.NewService(database)
 	embedResolver := customfields.NewEmbedResolver()
 	cfHandlers := customfields.NewHandlers(cfService, embedResolver)
+	cfHandlers.SetRBAC(rbacResolver) // SEC-005: field-level RBAC enforcement
 
 	// Content subsystem (Section 14 — Content Type System). Service created
 	// early because spaces/blog handlers below need it for their
@@ -271,6 +272,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// services used compiled-in constants. Instantiate once and inject where limits
 	// are read.
 	settingsService := config.NewSettings(database, vkClient.Redis())
+	contentService.SetSettings(settingsService)
 
 	// Content Reports & Flagging subsystem (Section 51).
 	reportsService := reports.NewService(database, settingsService, vkClient.Redis())
@@ -280,10 +282,22 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Content HTTP handlers (Service created earlier, above spaceService).
 	contentHandlers := content.NewHandlers(contentService)
 	contentHandlers.SetSpamPipeline(spamPipeline)
+	contentHandlers.SetSettings(settingsService)
 
 	// Renderer subsystem (Section 15 — Block Editor SSR).
-	rendererInstance := renderer.New("scripts/tiptap-ssr.ts", vkClient)
-	rendererHandlers := renderer.NewHandlers(rendererInstance)
+	// The script path is validated against the allowlist root
+	// (JC_RENDERER_SCRIPT_ROOT or ./scripts/tiptap-ssr) inside renderer.New.
+	// A misconfigured path is logged and the renderer is left nil; the
+	// handlers will return 503 on SSR requests instead of panicking.
+	rendererInstance, err := renderer.New("scripts/tiptap-ssr.ts", vkClient)
+	if err != nil {
+		slog.Error("renderer init failed, SSR disabled", "error", err)
+		rendererInstance = nil
+	}
+	var rendererHandlers *renderer.Handlers
+	if rendererInstance != nil {
+		rendererHandlers = renderer.NewHandlers(rendererInstance)
+	}
 
 	// Link preview subsystem (Section 15 — Link Preview Fetch).
 	linkPreviewFetcher := linkpreview.NewFetcher(nil, vkClient)
@@ -305,14 +319,19 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Notification System subsystem (Section 35 — Notification System).
 	notificationService := notifications.NewService(database)
 	notificationHandlers := notifications.NewHandlers(notificationService)
+	// BL-002: wire content mention notification dispatcher (fire-and-forget, Rule 8).
+	contentHandlers.SetMentionNotifier(commentNotificationAdapter{svc: notificationService})
 
 	// Comments subsystem (Section 49 — Unified Comments).
 	commentsService := comments.NewService(database)
 	commentsHandlers := comments.NewHandlers(commentsService)
 	commentsHandlers.SetSpamPipeline(spamPipeline)
+	// BL-001: wire comment notification dispatcher (fire-and-forget, Rule 8).
+	commentsHandlers.SetNotifier(commentNotificationAdapter{svc: notificationService})
 
 	// Interactions subsystem (Sections 41, 52 — Blocks & Mutes).
 	interactionsService := interactions.NewService(database)
+	interactionsService.SetValkey(vkClient.Redis()) // VALKEY-001: mute key cache invalidation
 	interactionsHandlers := interactions.NewHandlers(interactionsService)
 
 	worker.RegisterSettings(settingsService)
@@ -402,11 +421,12 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	paymentService.SetProvider(payments.NewManualTransferProvider())
 
 	paymentHandlers := payments.NewHandlers(paymentService)
+	paymentHandlers.SetSettings(settingsService) // SETTING-001: configurable pricing
 	paymentHandlers.StripeWebhookSecret = cfg.StripeWebhookSecret
 	paymentHandlers.NOWPaymentsIPNKey = cfg.NOWPaymentsIPNSecret
 
 	// Advertising subsystem (Section 25 — Ad Placement).
-	adService := advertising.NewService(database)
+	adService := advertising.NewService(database, settingsService)
 	adHandlers := advertising.NewHandlers(adService)
 	adHandlers.AsynqClient = asynqClient
 
@@ -420,11 +440,13 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 	// User Affiliate Program subsystem (Section 56).
 	affiliateService := affiliate.NewServiceWithEnqueuer(database, taskEnqueuer)
+	affiliateService.SetSettings(settingsService) // SETTING-002/003: configurable commission/limits
 	affiliateHandlers := affiliate.NewHandlers(affiliateService)
 	affiliateHandlers.AsynqClient = asynqClient
 
 	// i18n Translation System.
 	i18nService := i18n.NewService(database)
+	i18nService.SetValkey(vkClient.Redis()) // VALKEY-002: distributed i18n cache
 	i18nHandlers := i18n.NewHandlers(i18nService)
 	i18nHandlers.AsynqClient = asynqClient
 
@@ -771,6 +793,18 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		// echoes the token so the SPA can attach it as X-CSRF-Token. The SPA
 		// calls this once at startup and again after a 403 CSRF rejection.
 		r.Get("/csrf", csrf.TokenHandler(cfg.CookieDomain, cfg.IsProduction()))
+
+		// Impersonation middleware (SEC-002) — injects impersonated identity
+		// into request context when an active impersonation session exists.
+		// Runs after auth + bot detection so the impersonator is authenticated
+		// first, then the impersonated user's identity is swapped in.
+		r.Use(impersonation.ImpersonationMiddleware(impersonationStore))
+
+		// TOTP-for-admin enforcement (SEC-006) — when the
+		// "security.totp_required_for_admin" setting is enabled, admin-level
+		// users (per rbac.HasAdminCapability) without an active TOTP
+		// enrollment are rejected with 403 totp_required on /api/v1/admin/*.
+		r.Use(auth.RequireTOTPForAdmin(settingsService, rbacResolver, totpStore))
 
 		// Auth routes (public - no auth required, tenant-scoped)
 			// Tight rate limit to throttle brute-force attempts.
@@ -1582,7 +1616,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Payment initiation — idempotency middleware prevents duplicate charges
 			// when clients retry a failed POST. See AUDIT-BE-004 / Rule 9.
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "payments.create"),
-				mw.IdempotencyMiddleware(vkClient.Redis())).
+				mw.IdempotencyMiddleware(vkClient.Redis(), settingsService)).
 				Post("/payments/intent", paymentHandlers.InitiatePayment)
 			// Payment webhook routes — tighter rate limit for provider callbacks.
 			r.With(mw.RateLimit(vkClient.Redis(), "webhook")).Post("/payments/webhook/paystack", paymentHandlers.HandlePaystackWebhook)
@@ -1593,15 +1627,15 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/payments/{id}", paymentHandlers.GetPayment)
 			// Refunds — idempotency middleware prevents duplicate refund processing. See AUDIT-BE-004 / Rule 9.
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "payments.refund"),
-				mw.IdempotencyMiddleware(vkClient.Redis())).
+				mw.IdempotencyMiddleware(vkClient.Redis(), settingsService)).
 				Post("/payments/{id}/refund", paymentHandlers.RefundPayment)
 			// Subscriptions — idempotency middleware prevents duplicate subscription creation/cancellation.
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "payments.subscriptions.manage"),
-				mw.IdempotencyMiddleware(vkClient.Redis())).
+				mw.IdempotencyMiddleware(vkClient.Redis(), settingsService)).
 				Post("/subscriptions", paymentHandlers.CreateSubscription)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/subscriptions", paymentHandlers.ListSubscriptions)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/subscription", paymentHandlers.GetActiveSubscription)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.IdempotencyMiddleware(vkClient.Redis())).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.IdempotencyMiddleware(vkClient.Redis(), settingsService)).
 				Post("/me/subscription/cancel", paymentHandlers.CancelMySubscription)
 			// Discount codes — admin-only per catalog (/admin/discount-codes).
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "payments.discount_codes.manage")).
@@ -1631,7 +1665,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Get("/me/wallet/ledger", walletHandlers.GetLedger)
 				// Conversion — idempotency middleware prevents duplicate point-to-credit conversions. See AUDIT-BE-004 / Rule 9.
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wallet.points.convert"),
-					mw.IdempotencyMiddleware(vkClient.Redis())).
+					mw.IdempotencyMiddleware(vkClient.Redis(), settingsService)).
 					Post("/me/wallet/convert", walletHandlers.ConvertPoints)
 				// Settings (admin)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wallet.admin.settings.manage")).
@@ -3002,6 +3036,29 @@ func (a *walletCreditAdapter) SpendCredits(
 		PurposeType: input.PurposeType,
 		PurposeID:   input.PurposeID,
 	})
+}
+
+// commentNotificationAdapter adapts notifications.Service.DispatchNotification
+// (returns DispatchResult) to the comments.NotificationDispatcher and
+// content.MentionNotifier interfaces (both return only error). The
+// DispatchResult is discarded — comment/mention notifications are
+// fire-and-forget per Rule 8.
+type commentNotificationAdapter struct {
+	svc *notifications.Service
+}
+
+func (a commentNotificationAdapter) DispatchNotification(
+	ctx context.Context,
+	tenantID, recipientID pgtype.UUID,
+	nType, subjectTitle string,
+	actorID pgtype.UUID,
+	subjectType string,
+	subjectID pgtype.UUID,
+	subjectURL, actorName, actorAvatar string,
+) error {
+	_, err := a.svc.DispatchNotification(ctx, tenantID, recipientID, nType, subjectTitle,
+		actorID, subjectType, subjectID, subjectURL, actorName, actorAvatar)
+	return err
 }
 
 // StartWorker creates an Asynq worker server from the provided config,

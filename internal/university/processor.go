@@ -1,0 +1,108 @@
+package university
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"log/slog"
+	"time"
+
+	"github.com/jackc/pgx/v5/pgtype"
+)
+
+// Processor implements the worker.UniversityProcessor interface so the five
+// university Asynq tasks can delegate to this package. The worker package
+// owns the task-type constants and the thin asynq handlers; this struct owns
+// the business logic each task runs.
+type Processor struct {
+	service *Service
+}
+
+// NewProcessor creates a university processor bound to the provided service.
+func NewProcessor(service *Service) *Processor {
+	return &Processor{service: service}
+}
+
+// ProcessEnrollment handles university:process_enrollment.
+// Payload: { tenant_id, user_id, track_id, payment_id, source, gross_kobo }
+func (p *Processor) ProcessEnrollment(ctx context.Context, tenantID, userID, trackID, paymentID string, source string, grossKobo int64) error {
+	tID, err := scanUUID(tenantID)
+	if err != nil {
+		return fmt.Errorf("university: process enrollment: %w", err)
+	}
+	uID, err := scanUUID(userID)
+	if err != nil {
+		return fmt.Errorf("university: process enrollment: %w", err)
+	}
+	trID, err := scanUUID(trackID)
+	if err != nil {
+		return fmt.Errorf("university: process enrollment: %w", err)
+	}
+	var payID pgtype.UUID
+	if paymentID != "" {
+		if err := payID.Scan(paymentID); err != nil {
+			return fmt.Errorf("university: process enrollment: invalid payment_id: %w", err)
+		}
+	}
+	return p.service.ProcessEnrollment(ctx, tID, uID, trID, payID, source, grossKobo)
+}
+
+// CalculatePeriodPayouts handles university:calculate_period_payouts.
+// Payload: { tenant_id, period_start, period_end }
+func (p *Processor) CalculatePeriodPayouts(ctx context.Context, tenantID, periodStart, periodEnd string) error {
+	tID, err := scanUUID(tenantID)
+	if err != nil {
+		return fmt.Errorf("university: calculate payouts: %w", err)
+	}
+	start, err := time.Parse(time.DateOnly, periodStart)
+	if err != nil {
+		return fmt.Errorf("university: calculate payouts: invalid period_start: %w", err)
+	}
+	end, err := time.Parse(time.DateOnly, periodEnd)
+	if err != nil {
+		return fmt.Errorf("university: calculate payouts: invalid period_end: %w", err)
+	}
+	return p.service.CalculatePeriodPayouts(ctx, tID, start, end)
+}
+
+// SendInstructorPayout handles university:send_instructor_payout.
+// Payload: { tenant_id, payout_id }
+func (p *Processor) SendInstructorPayout(ctx context.Context, tenantID, payoutID string) error {
+	tID, err := scanUUID(tenantID)
+	if err != nil {
+		return fmt.Errorf("university: send payout: %w", err)
+	}
+	pID, err := scanUUID(payoutID)
+	if err != nil {
+		return fmt.Errorf("university: send payout: %w", err)
+	}
+	return p.service.SendInstructorPayout(ctx, tID, pID)
+}
+
+// NotifyInstructorApproved handles university:notify_instructor_approved.
+// Payload: { tenant_id, instructor_id }
+// V1: log only. The notification service dispatch is wired in a follow-up
+// once the notification template catalog includes the university templates.
+func (p *Processor) NotifyInstructorApproved(_ context.Context, tenantID, instructorID string) error {
+	slog.Info("university:notify_instructor_approved", "tenant_id", tenantID, "instructor_id", instructorID)
+	return nil
+}
+
+// NotifyCourseApproved handles university:notify_course_approved.
+// Payload: { tenant_id, track_id }
+func (p *Processor) NotifyCourseApproved(_ context.Context, tenantID, trackID string) error {
+	slog.Info("university:notify_course_approved", "tenant_id", tenantID, "track_id", trackID)
+	return nil
+}
+
+// scanUUID parses a UUID string into a pgtype.UUID.
+func scanUUID(s string) (pgtype.UUID, error) {
+	var id pgtype.UUID
+	if err := id.Scan(s); err != nil {
+		return pgtype.UUID{}, fmt.Errorf("invalid uuid %q: %w", s, err)
+	}
+	return id, nil
+}
+
+// ensure encoding/json import is used (for future payload parsing).
+var _ = json.Marshal

@@ -2,6 +2,7 @@ package websocket
 
 import (
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -138,6 +139,18 @@ func (h *Handlers) InitiateConversation(w http.ResponseWriter, r *http.Request) 
 
 	result, err := h.dmService.GetOrCreateConversationForInitiator(r.Context(), tenantID, user.UserID, recipientID)
 	if err != nil {
+		// Map DM privacy/block sentinel errors to 403 per Section 48.
+		switch {
+		case errors.Is(err, ErrDMBlocked):
+			writeError(w, http.StatusForbidden, "dm_blocked", "Cannot send DMs to this user")
+			return
+		case errors.Is(err, ErrDMPrivacyNobody):
+			writeError(w, http.StatusForbidden, "dm_privacy_blocked", "Recipient does not accept new DM conversations")
+			return
+		case errors.Is(err, ErrDMNotMutualFollower):
+			writeError(w, http.StatusForbidden, "dm_not_mutual_follower", "Recipient only accepts DMs from mutual followers")
+			return
+		}
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to initiate conversation")
 		return
 	}

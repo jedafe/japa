@@ -208,3 +208,9 @@ SET confirmed = @confirmed,
     reviewed_by = @reviewed_by,
     reviewed_at = CASE WHEN @quarantine_reason IS NULL AND @confirmed THEN now() ELSE reviewed_at END
 WHERE id = @id AND tenant_id = @tenant_id AND deleted_at IS NULL;
+
+-- name: ListMediaForScanning :many
+SELECT id, storage_path FROM media
+WHERE tenant_id = @tenant_id AND status = 'uploaded'
+ORDER BY created_at ASC
+LIMIT 50;

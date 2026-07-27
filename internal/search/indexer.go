@@ -44,14 +44,15 @@ func NewIndexer(client meilisearch.ServiceManager, read *gen.Queries) *Indexer {
 // contentDocument is the shape stored in the posts index. Field names match
 // the Meilisearch searchable/filterable attributes.
 type contentDocument struct {
-	ID          string `json:"id"`
-	TenantID    string `json:"tenant_id"`
-	Title       string `json:"title"`
-	Slug        string `json:"slug"`
-	Excerpt     string `json:"excerpt"`
-	ContentType string `json:"content_type"`
-	URL         string `json:"url"`
-	Status      string `json:"status"`
+	ID                string   `json:"id"`
+	TenantID          string   `json:"tenant_id"`
+	Title             string   `json:"title"`
+	Slug              string   `json:"slug"`
+	Excerpt           string   `json:"excerpt"`
+	ContentType       string   `json:"content_type"`
+	URL               string   `json:"url"`
+	Status            string   `json:"status"`
+	RelevantCountries []string `json:"relevant_countries"`
 }
 
 // IndexContent fetches the content row identified by contentID+tenantID and
@@ -64,23 +65,26 @@ func (ix *Indexer) IndexContent(ctx context.Context, contentID, tenantID [16]byt
 		return nil
 	}
 
+	tID := pgtype.UUID{Bytes: tenantID, Valid: true}
+
 	row, err := ix.read.GetContentByID(ctx, gen.GetContentByIDParams{
 		ID:       pgtype.UUID{Bytes: contentID, Valid: true},
-		TenantID: pgtype.UUID{Bytes: tenantID, Valid: true},
+		TenantID: tID,
 	})
 	if err != nil {
 		return fmt.Errorf("fetching content for index: %w", err)
 	}
 
 	doc := contentDocument{
-		ID:          row.ID.String(),
-		TenantID:    row.TenantID.String(),
-		Title:       row.Title,
-		Slug:        row.Slug,
-		Excerpt:     buildExcerpt(row.Body),
-		ContentType: row.ContentType,
-		URL:         contentURL(row.ContentType, row.Slug),
-		Status:      row.Status,
+		ID:                row.ID.String(),
+		TenantID:          row.TenantID.String(),
+		Title:             row.Title,
+		Slug:              row.Slug,
+		Excerpt:           buildExcerpt(row.Body),
+		ContentType:       row.ContentType,
+		URL:               contentURL(row.ContentType, row.Slug),
+		Status:            row.Status,
+		RelevantCountries: ix.resolveRelevantCountries(ctx, tID, row.GeoSpaceID),
 	}
 
 	docs := []contentDocument{doc}
@@ -91,6 +95,35 @@ func (ix *Indexer) IndexContent(ctx context.Context, contentID, tenantID [16]byt
 	slog.Info("search:index: content indexed", "content_id", doc.ID, "title", doc.Title)
 
 	return nil
+}
+
+// resolveRelevantCountries walks up the space hierarchy from the content's
+// geo_space_id to find the country-level space's geo_code (ISO 3166-1
+// alpha-2). Returns an empty slice (globally relevant) when the content has
+// no geo_space_id or the country cannot be resolved. ADR-064.
+func (ix *Indexer) resolveRelevantCountries(ctx context.Context, tenantID pgtype.UUID, geoSpaceID pgtype.UUID) []string {
+	if !geoSpaceID.Valid {
+		return []string{}
+	}
+
+	const maxDepth = 5
+	currentID := geoSpaceID
+	for depth := 0; depth < maxDepth; depth++ {
+		space, err := ix.read.GetSpaceByID(ctx, gen.GetSpaceByIDParams{
+			ID: currentID, TenantID: tenantID,
+		})
+		if err != nil {
+			return []string{}
+		}
+		if space.Level == "country" && space.GeoCode != nil && *space.GeoCode != "" {
+			return []string{strings.ToUpper(*space.GeoCode)}
+		}
+		if !space.ParentID.Valid {
+			return []string{}
+		}
+		currentID = space.ParentID
+	}
+	return []string{}
 }
 
 // buildExcerpt collapses whitespace in the body and truncates to a
@@ -369,5 +402,95 @@ func (ix *Indexer) DeleteDocument(ctx context.Context, indexName string, id [16]
 
 	slog.Info("search:delete: document removed", "index", indexName, "id", docID)
 
+	return nil
+}
+
+// ---------------------------------------------------------------------------
+// Learning tracks (Japa University marketplace — ADR-063)
+// ---------------------------------------------------------------------------
+
+// learningTrackDocument is the shape stored in the learning_tracks index.
+// relevant_countries is a string array of ISO 3166-1 alpha-2 codes used for
+// geo-aware filtering (ADR-064): a visitor in "NG" can filter to courses
+// relevant to Nigeria.
+type learningTrackDocument struct {
+	ID                 string   `json:"id"`
+	TenantID           string   `json:"tenant_id"`
+	Title              string   `json:"title"`
+	Slug               string   `json:"slug"`
+	Description        string   `json:"description"`
+	Difficulty         string   `json:"difficulty"`
+	Category           string   `json:"category"`
+	Language           string   `json:"language"`
+	InstructorName     string   `json:"instructor_name"`
+	PriceKobo          *int64   `json:"price_kobo"`
+	Currency           string   `json:"currency"`
+	IsFree             bool     `json:"is_free"`
+	TotalEnrolled      int32    `json:"total_enrolled"`
+	AvgRating          float64  `json:"avg_rating"`
+	ReviewCount        int32    `json:"review_count"`
+	RelevantCountries  []string `json:"relevant_countries"`
+	URL                string   `json:"url"`
+}
+
+// IndexLearningTrack fetches a published marketplace track and upserts it
+// into the learning_tracks index. Only tracks with is_published_to_university
+// = true are indexed; unpublished tracks are deleted from the index.
+func (ix *Indexer) IndexLearningTrack(ctx context.Context, trackID, tenantID [16]byte) error {
+	if ix.client == nil {
+		slog.Warn("search:index: no meilisearch client, skipping")
+		return nil
+	}
+
+	tID := pgtype.UUID{Bytes: tenantID, Valid: true}
+	trID := pgtype.UUID{Bytes: trackID, Valid: true}
+
+	row, err := ix.read.GetUniversityTrackByID(ctx, gen.GetUniversityTrackByIDParams{
+		TenantID: tID, ID: trID,
+	})
+	if err != nil {
+		return fmt.Errorf("fetching learning track for index: %w", err)
+	}
+
+	// If the track is not published to the marketplace, remove it from
+	// the index so it doesn't appear in search results.
+	if !row.IsPublishedToUniversity {
+		return ix.DeleteDocument(ctx, IndexLearningTracks, trackID)
+	}
+
+	desc := ""
+	if row.Description != nil {
+		desc = *row.Description
+	}
+	category := ""
+	if row.Category != nil {
+		category = *row.Category
+	}
+
+	doc := learningTrackDocument{
+		ID:            row.ID.String(),
+		TenantID:      row.TenantID.String(),
+		Title:         row.Title,
+		Slug:          row.Slug,
+		Description:   desc,
+		Difficulty:    row.Difficulty,
+		Category:      category,
+		Language:      row.Language,
+		TotalEnrolled: row.TotalEnrolled,
+		IsFree:        row.PriceKobo == nil || *row.PriceKobo == 0,
+		PriceKobo:     row.PriceKobo,
+		Currency:      row.Currency,
+		URL:           fmt.Sprintf("/learn/university/catalog/%s", row.Slug),
+		// relevant_countries is resolved from the track's geo_space_id by
+		// walking the space hierarchy to the country level (ADR-064).
+		RelevantCountries: ix.resolveRelevantCountries(ctx, tID, row.GeoSpaceID),
+	}
+
+	docs := []learningTrackDocument{doc}
+	if _, err := ix.client.Index(IndexLearningTracks).AddDocumentsWithContext(ctx, &docs, nil); err != nil {
+		return fmt.Errorf("upserting learning track document: %w", err)
+	}
+
+	slog.Info("search:index: learning track upserted", "track_id", row.ID.String())
 	return nil
 }

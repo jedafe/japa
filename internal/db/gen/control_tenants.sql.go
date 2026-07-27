@@ -84,6 +84,23 @@ func (q *Queries) DeleteTenant(ctx context.Context, id pgtype.UUID) (DeleteTenan
 	return i, err
 }
 
+const deleteTenantData = `-- name: DeleteTenantData :execrows
+DELETE FROM learning_certificates WHERE tenant_id = $1
+`
+
+// Deletes all tenant-scoped rows from tables WITHOUT ON DELETE CASCADE on
+// tenants(id), in FK dependency order. Called before HardDeleteTenant to
+// avoid FK violations. Tables with CASCADE from tenants (contents, feeds,
+// spaces, notifications, tickets, payments, enrollments, coupons, etc.)
+// are auto-deleted by PostgreSQL and intentionally omitted.
+func (q *Queries) DeleteTenantData(ctx context.Context, tenantID pgtype.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteTenantData, tenantID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const getTenantByID = `-- name: GetTenantByID :one
 SELECT id, name, slug, domain, status, created_at, updated_at, deleted_at
 FROM tenants
@@ -115,6 +132,50 @@ func (q *Queries) GetTenantByID(ctx context.Context, id pgtype.UUID) (GetTenantB
 		&i.DeletedAt,
 	)
 	return i, err
+}
+
+const getTenantStatus = `-- name: GetTenantStatus :one
+SELECT status FROM tenants WHERE id = $1
+`
+
+func (q *Queries) GetTenantStatus(ctx context.Context, id pgtype.UUID) (string, error) {
+	row := q.db.QueryRow(ctx, getTenantStatus, id)
+	var status string
+	err := row.Scan(&status)
+	return status, err
+}
+
+const hardDeleteTenant = `-- name: HardDeleteTenant :exec
+DELETE FROM tenants WHERE id = $1
+`
+
+func (q *Queries) HardDeleteTenant(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, hardDeleteTenant, id)
+	return err
+}
+
+const listActiveTenantIDs = `-- name: ListActiveTenantIDs :many
+SELECT id FROM tenants WHERE status = 'active' ORDER BY id
+`
+
+func (q *Queries) ListActiveTenantIDs(ctx context.Context) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, listActiveTenantIDs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []pgtype.UUID
+	for rows.Next() {
+		var id pgtype.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listTenants = `-- name: ListTenants :many

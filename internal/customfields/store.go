@@ -307,6 +307,70 @@ func (s *Service) ListFieldValuesByEntity(ctx context.Context, entityType string
 	return values, nil
 }
 
+// ListFieldValuesByEntityForUser returns the stored field values for a given
+// entity, filtered to only fields the user is allowed to view per the
+// field-level RBAC (Section 06). When visibleFieldIDs is empty, no values are
+// returned (fail-closed). Super-admins should bypass this method by calling
+// ListFieldValuesByEntity directly.
+func (s *Service) ListFieldValuesByEntityForUser(ctx context.Context, entityType string, entityID pgtype.UUID, visibleFieldIDs []pgtype.UUID) ([]gen.CustomFieldValue, error) {
+	if len(visibleFieldIDs) == 0 {
+		return []gen.CustomFieldValue{}, nil
+	}
+
+	values, err := s.read.ListCustomFieldValuesByEntity(ctx, gen.ListCustomFieldValuesByEntityParams{
+		EntityType: entityType,
+		EntityID:   entityID,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("listing custom field values by entity: %w", err)
+	}
+
+	visibleSet := make(map[pgtype.UUID]struct{}, len(visibleFieldIDs))
+	for _, id := range visibleFieldIDs {
+		visibleSet[id] = struct{}{}
+	}
+
+	filtered := make([]gen.CustomFieldValue, 0, len(values))
+	for _, v := range values {
+		if _, ok := visibleSet[v.FieldID]; ok {
+			filtered = append(filtered, v)
+		}
+	}
+
+	return filtered, nil
+}
+
+// CheckFieldPermissionForUser returns the can_view / can_edit flags for the
+// given user on the given field (Section 06 field-level RBAC). When no
+// permission rows exist for the field, both default to false (fail-closed).
+func (s *Service) CheckFieldPermissionForUser(ctx context.Context, fieldID, userID pgtype.UUID) (canView, canEdit bool, err error) {
+	row, err := s.read.CheckFieldPermissionForUser(ctx, gen.CheckFieldPermissionForUserParams{
+		FieldID: fieldID,
+		UserID:  userID,
+	})
+	if err != nil {
+		return false, false, fmt.Errorf("checking field permission: %w", err)
+	}
+	// sqlc emits interface{} for COALESCE(bool_or(...), false) — assert bool.
+	if v, ok := row.CanView.(bool); ok {
+		canView = v
+	}
+	if v, ok := row.CanEdit.(bool); ok {
+		canEdit = v
+	}
+	return canView, canEdit, nil
+}
+
+// ListVisibleFieldIDsForUser returns the set of field IDs the user is allowed
+// to view per field-level RBAC (Section 06).
+func (s *Service) ListVisibleFieldIDsForUser(ctx context.Context, userID pgtype.UUID) ([]pgtype.UUID, error) {
+	ids, err := s.read.ListVisibleFieldIDsForUser(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("listing visible field ids: %w", err)
+	}
+	return ids, nil
+}
+
 // UpsertFieldValue inserts or updates the stored value for a field on a given
 // entity. The conflict target is (field_id, entity_type, entity_id).
 func (s *Service) UpsertFieldValue(ctx context.Context, params gen.UpsertCustomFieldValueParams) (gen.CustomFieldValue, error) {

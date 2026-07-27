@@ -1,12 +1,23 @@
-// Package i18n — Service layer with in-memory cache for translation lookups.
+// Package i18n — Service layer with in-memory + distributed Valkey cache for
+// translation lookups.
 //
 // The service maintains a per-tenant, per-locale cache that is lazily loaded
 // on first access and refreshed on mutation. The cache stores key→value maps
 // for fast O(1) lookups from the frontend public API endpoint.
+//
+// Two cache layers are used (Section 18 / VALKEY-002):
+//  1. In-memory L1 cache (per-instance, 5min TTL) — fastest lookups
+//  2. Distributed Valkey L2 cache (jc:cache:i18n:{tenant_id}:{locale}, 1h TTL)
+//     — shared across instances, eliminates DB refetch when a different
+//     instance has already loaded the same locale.
+//
+// On mutation, both layers are invalidated. The L2 DEL is best-effort; a
+// failed DEL is non-fatal because the 1h TTL bounds staleness.
 package i18n
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -15,6 +26,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
+	valkeycompat "github.com/valkey-io/valkey-go/valkeycompat"
 )
 
 // cacheEntry holds a locale's translations and when they were last loaded.
@@ -29,6 +41,12 @@ type cacheKey struct {
 	locale   string
 }
 
+// l1CacheTTL is the in-memory L1 cache TTL (5 minutes).
+const l1CacheTTL = 5 * time.Minute
+
+// l2CacheTTL is the distributed Valkey L2 cache TTL (1 hour, per Section 18).
+const l2CacheTTL = 1 * time.Hour
+
 // Service provides translation operations with an in-memory cache layer.
 type Service struct {
 	store *Store
@@ -36,6 +54,8 @@ type Service struct {
 
 	mu    sync.RWMutex
 	cache map[cacheKey]*cacheEntry
+
+	vk valkeycompat.Cmdable // nil disables L2 cache (tests/development)
 }
 
 // NewService creates a Service backed by the given database pool.
@@ -50,18 +70,47 @@ func NewService(database *db.DB) *Service {
 	}
 }
 
+// SetValkey wires the Valkey client for the distributed L2 cache (Section 18 /
+// VALKEY-002). Keys: jc:cache:i18n:{tenant_id}:{locale}.
+func (s *Service) SetValkey(vk valkeycompat.Cmdable) { s.vk = vk }
+
+// l2Key returns the Valkey L2 cache key for a tenant+locale.
+func l2Key(tenantID pgtype.UUID, locale string) string {
+	return fmt.Sprintf("jc:cache:i18n:%s:%s", tenantID.String(), locale)
+}
+
 // ---------------------------------------------------------------------------
 // Public read methods (cached)
 // ---------------------------------------------------------------------------
 
 // GetTranslationsByLocale returns all translations for a locale as a key→value map.
-// Results are served from cache when available; otherwise the cache is populated
-// from the database on first access.
+// Results are served from the L1 in-memory cache when available; otherwise the
+// L2 Valkey cache is checked; otherwise the cache is populated from the
+// database on first access (Section 18 / VALKEY-002).
 func (s *Service) GetTranslationsByLocale(ctx context.Context, tenantID pgtype.UUID, locale string) (map[string]string, error) {
+	// L1: in-memory cache.
 	if m, ok := s.cacheGet(tenantID, locale); ok {
 		return m, nil
 	}
 
+	// L2: distributed Valkey cache.
+	if s.vk != nil {
+		if cached, err := s.vk.Get(ctx, l2Key(tenantID, locale)).Result(); err == nil && cached != "" {
+			var m map[string]string
+			if err := json.Unmarshal([]byte(cached), &m); err == nil && m != nil {
+				// Populate L1 from L2 so subsequent reads skip the network.
+				s.cacheSet(tenantID, locale, m)
+				// Return a copy to prevent mutation of cached data.
+				out := make(map[string]string, len(m))
+				for k, v := range m {
+					out[k] = v
+				}
+				return out, nil
+			}
+		}
+	}
+
+	// Miss: load from DB.
 	rows, err := s.store.ListByLocale(ctx, tenantID, locale)
 	if err != nil {
 		return nil, err
@@ -224,7 +273,7 @@ func (s *Service) RefreshCache(ctx context.Context, tenantID pgtype.UUID) error 
 // Cache internals
 // ---------------------------------------------------------------------------
 
-// cacheGet returns the cached map if present and not older than 5 minutes.
+// cacheGet returns the cached map if present and not older than l1CacheTTL.
 func (s *Service) cacheGet(tenantID pgtype.UUID, locale string) (map[string]string, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -234,7 +283,7 @@ func (s *Service) cacheGet(tenantID pgtype.UUID, locale string) (map[string]stri
 		return nil, false
 	}
 
-	if time.Since(entry.loadedAt) > 5*time.Minute {
+	if time.Since(entry.loadedAt) > l1CacheTTL {
 		return nil, false
 	}
 	// Return a copy to prevent mutation of cached data.
@@ -246,19 +295,46 @@ func (s *Service) cacheGet(tenantID pgtype.UUID, locale string) (map[string]stri
 	return m, true
 }
 
-// cacheSet writes a map into the cache.
+// cacheSet writes a map into the L1 in-memory cache and, if Valkey is wired,
+// into the L2 distributed cache (Section 18 / VALKEY-002). L2 write is
+// best-effort — a failure logs and continues; the L1 cache is still populated.
 func (s *Service) cacheSet(tenantID pgtype.UUID, locale string, data map[string]string) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	s.cache[cacheKey{tenantID: tenantID, locale: locale}] = &cacheEntry{
 		data:     data,
 		loadedAt: time.Now(),
 	}
+	s.mu.Unlock()
+
+	if s.vk == nil {
+		return
+	}
+	// L2: serialize and write to Valkey with the 1h TTL.
+	if encoded, err := json.Marshal(data); err == nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		if err := s.vk.Set(ctx, l2Key(tenantID, locale), encoded, l2CacheTTL).Err(); err != nil {
+			slog.Warn("i18n: failed to write L2 cache",
+				"tenant_id", tenantID.String(), "locale", locale, "error", err)
+		}
+	}
 }
 
-// cacheInvalidate removes a single locale from the cache.
+// cacheInvalidate removes a single locale from both the L1 in-memory cache
+// and the L2 distributed Valkey cache (Section 18 / VALKEY-002). L2 DEL is
+// best-effort — a failure logs and continues; the 1h TTL bounds staleness.
 func (s *Service) cacheInvalidate(tenantID pgtype.UUID, locale string) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	delete(s.cache, cacheKey{tenantID: tenantID, locale: locale})
+	s.mu.Unlock()
+
+	if s.vk == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if err := s.vk.Del(ctx, l2Key(tenantID, locale)).Err(); err != nil {
+		slog.Warn("i18n: failed to invalidate L2 cache",
+			"tenant_id", tenantID.String(), "locale", locale, "error", err)
+	}
 }

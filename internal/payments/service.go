@@ -43,6 +43,11 @@ func (s *Service) CreatePayment(ctx context.Context, tenantID, userID pgtype.UUI
 	currency := input.Currency
 	if currency == "" {
 		currency = "NGN"
+		if s.settings != nil {
+			if v, err := s.settings.GetSetting(ctx, tenantID, "payment.currency"); err == nil && v != "" {
+				currency = v
+			}
+		}
 	}
 
 	// Credit payments are synchronous wallet debits — no external provider call.

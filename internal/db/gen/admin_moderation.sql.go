@@ -81,6 +81,23 @@ func (q *Queries) AssignContentReport(ctx context.Context, arg AssignContentRepo
 	return err
 }
 
+const checkUserBanExists = `-- name: CheckUserBanExists :one
+SELECT EXISTS(
+    SELECT 1 FROM user_moderation_actions
+    WHERE user_id = $1 AND action IN ('ban', 'suspension')
+    AND (expires_at IS NULL OR expires_at > now())
+)
+`
+
+// AUDIT-BE-DB-001: replaces raw SQL existence check in ban enforcement middleware.
+// Returns true when an active (non-expired) ban or suspension exists for the user.
+func (q *Queries) CheckUserBanExists(ctx context.Context, userID pgtype.UUID) (bool, error) {
+	row := q.db.QueryRow(ctx, checkUserBanExists, userID)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
 const createAdminBroadcastRecord = `-- name: CreateAdminBroadcastRecord :exec
 INSERT INTO admin_broadcasts (title, body, sent_by, recipient_count, sent_at)
 VALUES ($1, $2, $3, $4, now())
@@ -212,6 +229,22 @@ func (q *Queries) GetModerationAppeal(ctx context.Context, id pgtype.UUID) (GetM
 		&i.CreatedAt,
 	)
 	return i, err
+}
+
+const getUserBanExpiration = `-- name: GetUserBanExpiration :one
+SELECT expires_at FROM user_moderation_actions
+WHERE user_id = $1 AND action IN ('ban', 'suspension')
+AND (expires_at IS NULL OR expires_at > now())
+ORDER BY created_at DESC LIMIT 1
+`
+
+// AUDIT-BE-DB-002: replaces raw SQL expiration lookup in ban enforcement middleware.
+// Returns the expires_at of the most recent active ban/suspension (may be NULL = permanent).
+func (q *Queries) GetUserBanExpiration(ctx context.Context, userID pgtype.UUID) (pgtype.Timestamptz, error) {
+	row := q.db.QueryRow(ctx, getUserBanExpiration, userID)
+	var expires_at pgtype.Timestamptz
+	err := row.Scan(&expires_at)
+	return expires_at, err
 }
 
 const listActiveUserBans = `-- name: ListActiveUserBans :many

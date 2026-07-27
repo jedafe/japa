@@ -14,8 +14,10 @@
 package content
 
 import (
+	"context"
 	"errors"
 
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
 )
@@ -23,6 +25,13 @@ import (
 // ErrOrgPostForbidden is returned when a caller tries to attribute content to
 // an organization they are not an owner/admin/editor of (ADR-062).
 var ErrOrgPostForbidden = errors.New("not authorized to post as this organization")
+
+// ErrDuplicateContent is returned when an insert or update would produce a
+// row with a content_hash that already exists for the same tenant (Rule 12 /
+// BL-006). The unique index idx_contents_tenant_content_hash is the ultimate
+// guard, but this explicit pre-check yields a clean 409 instead of a raw
+// 23505 violation.
+var ErrDuplicateContent = errors.New("duplicate content: a post with this content already exists")
 
 // isOrgPostRole reports whether an org membership role may post/edit as the org.
 func isOrgPostRole(role string) bool {
@@ -74,9 +83,18 @@ const MaxPageSize = 100
 // separation. Reads go through the reader pool; writes go through the
 // writer pool. This follows the same pattern as the existing db.DB struct.
 type Service struct {
-	db    *db.DB
-	read  *gen.Queries
-	write *gen.Queries
+	db       *db.DB
+	read     *gen.Queries
+	write    *gen.Queries
+	settings settingsReader
+}
+
+// settingsReader is the subset of *config.Settings used by the content
+// service for hot-reloadable operational limits (max tags, max pinned
+// posts, etc.). Defined as an interface so tests can substitute a stub.
+type settingsReader interface {
+	GetIntOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback int) int
+	GetFloatOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback float64) float64
 }
 
 // NewService creates a Service backed by the given database pool.
@@ -86,4 +104,11 @@ func NewService(database *db.DB) *Service {
 		read:  gen.New(database.Reader),
 		write: gen.New(database.Writer),
 	}
+}
+
+// SetSettings wires the hot-reloadable settings reader. Optional — when
+// not called, the service falls back to hardcoded defaults for any
+// setting-governed limit.
+func (s *Service) SetSettings(sr settingsReader) {
+	s.settings = sr
 }

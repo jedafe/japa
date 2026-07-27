@@ -34,6 +34,16 @@ func (s *Service) CreateCampaign(ctx context.Context, tenantID, createdBy pgtype
 		return AdCampaign{}, errors.New("slot_type_name is required")
 	}
 
+	if input.Budget != nil {
+		minBudget := float64(10)
+		if s.settings != nil {
+			minBudget = s.settings.GetFloatOr(ctx, tenantID, "ads.min_campaign_budget", minBudget)
+		}
+		if float64(*input.Budget) < minBudget {
+			return AdCampaign{}, fmt.Errorf("budget must be at least %.0f credits", minBudget)
+		}
+	}
+
 	slotType, err := s.store.Queries().GetAdSlotTypeByName(ctx, gen.GetAdSlotTypeByNameParams{
 		TenantID: tenantID,
 		SlotName: input.SlotTypeName,
@@ -155,8 +165,20 @@ func (s *Service) RenderSlot(ctx context.Context, tenantID, userID pgtype.UUID, 
 	// Apply frequency capping per user/day.
 	filtered := []AdCampaign{}
 
+	globalFreqCap := 0
+	if s.settings != nil {
+		globalFreqCap = s.settings.GetIntOr(ctx, tenantID, "ads.frequency_cap_per_day", 3)
+	}
+
 	for _, c := range campaigns {
-		if c.FrequencyCapPerUser != nil && userID.Valid {
+		cap := 0
+		if c.FrequencyCapPerUser != nil {
+			cap = int(*c.FrequencyCapPerUser)
+		} else if globalFreqCap > 0 {
+			cap = globalFreqCap
+		}
+
+		if cap > 0 && userID.Valid {
 			count, err := s.store.Queries().CountImpressionsForUserToday(ctx, gen.CountImpressionsForUserTodayParams{
 				UserID:     userID,
 				CampaignID: c.ID,
@@ -165,7 +187,7 @@ func (s *Service) RenderSlot(ctx context.Context, tenantID, userID pgtype.UUID, 
 				return nil, fmt.Errorf("checking frequency cap: %w", err)
 			}
 
-			if count >= *c.FrequencyCapPerUser {
+			if count >= int32(cap) {
 				continue
 			}
 		}

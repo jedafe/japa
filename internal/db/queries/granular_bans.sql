@@ -34,6 +34,23 @@ FROM user_operation_bans
 WHERE user_id = $1 AND deleted_at IS NULL
   AND (expires_at IS NULL OR expires_at > now());
 
+-- name: CheckUserOperationBanExists :one
+-- AUDIT-BE-DB-003: replaces raw SQL existence check in operation ban enforcement middleware.
+-- Returns true when an active (non-expired, non-deleted) operation ban exists.
+SELECT EXISTS(
+    SELECT 1 FROM user_operation_bans
+    WHERE user_id = $1 AND operation = $2 AND deleted_at IS NULL
+    AND (expires_at IS NULL OR expires_at > now())
+);
+
+-- name: GetUserOperationBanExpiration :one
+-- AUDIT-BE-DB-004: replaces raw SQL expiration lookup in operation ban enforcement middleware.
+-- Returns the expires_at of the most recent active operation ban (may be NULL = permanent).
+SELECT expires_at FROM user_operation_bans
+WHERE user_id = $1 AND operation = $2 AND deleted_at IS NULL
+AND (expires_at IS NULL OR expires_at > now())
+ORDER BY created_at DESC LIMIT 1;
+
 -- name: CreateUserSuspension :exec
 INSERT INTO user_moderation_actions (user_id, tenant_id, action, reason)
 VALUES ($1, $2, 'suspension', $3);

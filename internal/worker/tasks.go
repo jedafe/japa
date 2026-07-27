@@ -43,6 +43,14 @@ const (
 	TypeWalletProcessActivityEvent    = "wallet:process_activity_event"
 	TypeNewsletterSend                = "newsletter:send"
 
+	// ---- Japa University creator economy (ADR-063) ----.
+	// Critical: paid enrollment must credit the creator ledger immediately.
+	TypeUniversityProcessEnrollment        = "university:process_enrollment"
+	TypeUniversityNotifyInstructorApproved = "university:notify_instructor_approved"
+	TypeUniversityNotifyCourseApproved     = "university:notify_course_approved"
+	TypeUniversitySendInstructorPayout     = "university:send_instructor_payout"
+	TypeUniversityCalculatePeriodPayouts   = "university:calculate_period_payouts"
+
 	// ---- Low tier (background maintenance, lowest concurrency) ----.
 
 	TypeDigestEmail                     = "email:send_digest"
@@ -120,6 +128,13 @@ func RegisterHandlers(mux *asynq.ServeMux) {
 	mux.HandleFunc(TypeVideoProcessing, HandleVideoProcessing)
 	mux.HandleFunc(TypeWalletProcessActivityEvent, HandleWalletProcessActivityEvent)
 	mux.HandleFunc(TypeNewsletterSend, HandleNewsletterSend)
+
+	// Japa University creator economy (ADR-063)
+	mux.HandleFunc(TypeUniversityProcessEnrollment, HandleUniversityProcessEnrollment)
+	mux.HandleFunc(TypeUniversityNotifyInstructorApproved, HandleUniversityNotifyInstructorApproved)
+	mux.HandleFunc(TypeUniversityNotifyCourseApproved, HandleUniversityNotifyCourseApproved)
+	mux.HandleFunc(TypeUniversitySendInstructorPayout, HandleUniversitySendInstructorPayout)
+	mux.HandleFunc(TypeUniversityCalculatePeriodPayouts, HandleUniversityCalculatePeriodPayouts)
 
 	// Low handlers
 	mux.HandleFunc(TypeDigestEmail, HandleDigestEmail)

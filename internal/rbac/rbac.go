@@ -132,6 +132,46 @@ func (r *RBAC) HasPermission(ctx context.Context, userID, tenantID pgtype.UUID, 
 	return uc.Permissions[permKey]
 }
 
+// HasSpacePermission checks if a user has a permission in the context of a
+// specific space. For "spaces.moderate.assigned", the permission is
+// dynamically resolved by checking the space_moderators table at runtime
+// (Section 03 / RBAC-001) — it is NOT a static grant in the RBAC table.
+// For all other permission nodes, this falls back to HasPermission.
+func (r *RBAC) HasSpacePermission(ctx context.Context, userID, tenantID, spaceID pgtype.UUID, permKey string) bool {
+	// Static permissions resolve through the normal path.
+	if permKey != "spaces.moderate.assigned" {
+		return r.HasPermission(ctx, userID, tenantID, permKey)
+	}
+
+	// Wildcard / super-admin short-circuit.
+	uc, err := r.GetUserContext(ctx, userID, tenantID)
+	if err != nil || uc == nil {
+		return false
+	}
+	if uc.Permissions[SystemWildcardPermission] {
+		return true
+	}
+	// If the user has the broader "spaces.moderate" (all spaces) node,
+	// they don't need per-space assignment.
+	if uc.Permissions["spaces.moderate"] {
+		return true
+	}
+
+	// Dynamic resolution: check space_moderators for this user + space.
+	// Per Section 03, the assignment record IS the grant — no static RBAC
+	// entry is needed.
+	if !spaceID.Valid {
+		return false
+	}
+	if _, err := r.read.GetSpaceModerator(ctx, gen.GetSpaceModeratorParams{
+		SpaceID: spaceID,
+		UserID:  userID,
+	}); err != nil {
+		return false // not a moderator (or DB error — fail closed)
+	}
+	return true
+}
+
 // IsSuperAdmin checks if a user belongs to the super_admin group.
 // Super admins bypass all permission checks.
 func (r *RBAC) IsSuperAdmin(ctx context.Context, userID, tenantID pgtype.UUID) bool {
@@ -146,6 +186,63 @@ func (r *RBAC) IsSuperAdmin(ctx context.Context, userID, tenantID pgtype.UUID) b
 	}
 
 	return inGroup
+}
+
+// adminCapabilityNodes lists the permission nodes that mark a user as holding
+// admin-level capabilities. Per Section 46 ("A user with admin.impersonate
+// cannot impersonate another user who holds any admin-level role"), any user
+// holding one of these nodes — or the wildcard "*" — is considered
+// admin-level and cannot be impersonated. The list mirrors the
+// admin-panel section-visibility gates seeded by migration 000147 plus the
+// wallet admin node, which together capture every role that can reach the
+// admin panel or perform privileged admin actions.
+var adminCapabilityNodes = []string{
+	"admin.users.view",
+	"admin.content.view",
+	"admin.moderation.view",
+	"admin.analytics.view",
+	"admin.settings.view",
+	"admin.roles.view",
+	"admin.audit.view",
+	"admin.advertising.view",
+	"admin.payments.view",
+	"admin.ai.view",
+	"admin.feature_flags.view",
+	"wallet.admin",
+	"admin.impersonate",
+}
+
+// HasAdminCapability reports whether a user holds any admin-level permission
+// node (or the wildcard "*"). Used by the impersonation subsystem (Section 46)
+// to enforce the no-admin-on-admin-impersonation safety rule, and available
+// for any other code path that needs to detect privileged users.
+//
+// Ref: japaconnect-engineering/sections/46-impersonation.md
+func (r *RBAC) HasAdminCapability(ctx context.Context, userID, tenantID pgtype.UUID) bool {
+	uc, err := r.GetUserContext(ctx, userID, tenantID)
+	if err != nil || uc == nil {
+		return false
+	}
+
+	// Wildcard grants every node, including admin ones.
+	if uc.Permissions[SystemWildcardPermission] {
+		return true
+	}
+
+	// Super-admin group membership is itself an admin capability.
+	for _, g := range uc.Groups {
+		if g.Slug == SystemGroupSuperAdmin {
+			return true
+		}
+	}
+
+	for _, key := range adminCapabilityNodes {
+		if uc.Permissions[key] {
+			return true
+		}
+	}
+
+	return false
 }
 
 // GetUserContext loads a user's groups and resolved permissions.

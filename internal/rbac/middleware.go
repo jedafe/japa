@@ -4,6 +4,8 @@ import (
 	"context"
 	"net/http"
 
+	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 )
 
@@ -99,4 +101,77 @@ func RequirePermissionWithInvalidation(resolver *RBAC, permKey string) func(http
 func FromContext(ctx context.Context) *RBAC {
 	r, _ := ctx.Value(ResolverKey).(*RBAC)
 	return r
+}
+
+// SpaceIDContextKey is the context key under which a resolved space's UUID
+// is stored by the spaces.SpaceResolver middleware. The rbac package reads
+// this to dynamically resolve space-scoped permissions (RBAC-001).
+var SpaceIDContextKey = spaceContextKey{"space_id"}
+
+type spaceContextKey struct{ name string }
+
+// spaceFromContext extracts a *gen.Space stored by spaces.SpaceResolver under
+// SpaceIDContextKey. Returns a zero (invalid) UUID when no space was set.
+func spaceFromContext(r *http.Request) pgtype.UUID {
+	id, _ := r.Context().Value(SpaceIDContextKey).(pgtype.UUID)
+	return id
+}
+
+// RequireSpacePermission is middleware that checks if the authenticated user
+// has a space-scoped permission. It resolves the space_id from (in order):
+//  1. A space resolved by the spaces.SpaceResolver middleware (stored in
+//     context — used by {slug} routes)
+//  2. The chi URL parameter "space_id"
+//  3. The chi URL parameter "id"
+//
+// It then delegates to HasSpacePermission, which dynamically resolves
+// "spaces.moderate.assigned" via the space_moderators table (Section 03 /
+// RBAC-001).
+//
+// Usage:
+//
+//	r.With(rbac.RequireSpacePermission(rbacResolver, "spaces.moderate.assigned")).
+//	    Delete("/spaces/{space_id}/posts/{id}", handler)
+func RequireSpacePermission(resolver *RBAC, permKey string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			user := auth.FromContext(r.Context())
+			if user == nil {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusUnauthorized)
+				_, _ = w.Write([]byte(`{"error":{"code":"unauthenticated","message":"Authentication required"}}`))
+				return
+			}
+
+			// Super admins bypass all permission checks.
+			if resolver.IsSuperAdmin(r.Context(), user.UserID, user.TenantID) {
+				ctx := context.WithValue(r.Context(), ResolverKey, resolver)
+				next.ServeHTTP(w, r.WithContext(ctx))
+				return
+			}
+
+			// Resolve the space ID: prefer a space already resolved by
+			// SpaceResolver (from {slug}), then fall back to URL params.
+			spaceID := spaceFromContext(r)
+			if !spaceID.Valid {
+				spaceIDStr := chi.URLParam(r, "space_id")
+				if spaceIDStr == "" {
+					spaceIDStr = chi.URLParam(r, "id")
+				}
+				if spaceIDStr != "" {
+					_ = spaceID.Scan(spaceIDStr)
+				}
+			}
+
+			if !resolver.HasSpacePermission(r.Context(), user.UserID, user.TenantID, spaceID, permKey) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusForbidden)
+				_, _ = w.Write([]byte(`{"error":{"code":"forbidden","message":"You do not have permission to perform this action"}}`))
+				return
+			}
+
+			ctx := context.WithValue(r.Context(), ResolverKey, resolver)
+			next.ServeHTTP(w, r.WithContext(ctx))
+		})
+	}
 }

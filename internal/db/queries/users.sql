@@ -285,3 +285,15 @@ WHERE f.tenant_id = $1
   AND ($4::date IS NULL OR f.created_at::date <= $4)
 GROUP BY 1
 ORDER BY 1 DESC;
+
+-- name: ListActiveUsersForDigest :many
+SELECT u.id, u.tenant_id, u.email
+FROM users u
+WHERE u.status = 'active'
+  AND u.email IS NOT NULL AND u.email != ''
+  AND u.email_verified_at IS NOT NULL
+  AND COALESCE(
+    (SELECT value::bool FROM system_settings ss
+     WHERE ss.tenant_id = u.tenant_id AND ss.key = 'email.digest_enabled'),
+    true)
+ORDER BY u.id;

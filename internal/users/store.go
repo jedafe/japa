@@ -33,6 +33,36 @@ func (s *Store) getProfile(ctx context.Context, tenantID, userID pgtype.UUID) (g
 	return row, nil
 }
 
+// SetContentCountryPreference updates the user's content_country_preference.
+// An empty country clears the preference (falls back to GeoIP).
+func (s *Store) SetContentCountryPreference(ctx context.Context, tenantID, userID pgtype.UUID, country string) error {
+	var pref *string
+	if country != "" {
+		c := country
+		pref = &c
+	}
+	return s.write.SetUserContentCountryPreference(ctx, gen.SetUserContentCountryPreferenceParams{
+		TenantID:                 tenantID,
+		UserID:                   userID,
+		ContentCountryPreference: pref,
+	})
+}
+
+// GetContentCountryPreference returns the user's content_country_preference.
+func (s *Store) GetContentCountryPreference(ctx context.Context, tenantID, userID pgtype.UUID) (string, error) {
+	pref, err := s.read.GetUserContentCountryPreference(ctx, gen.GetUserContentCountryPreferenceParams{
+		TenantID: tenantID,
+		UserID:   userID,
+	})
+	if err != nil {
+		return "", err
+	}
+	if pref == nil {
+		return "", nil
+	}
+	return *pref, nil
+}
+
 // getUserByUsername returns the user profile joined with users table data, looked up by username.
 func (s *Store) getUserByUsername(ctx context.Context, tenantID pgtype.UUID, username string) (gen.GetUserByUsernameRow, error) {
 	row, err := s.read.GetUserByUsername(ctx, gen.GetUserByUsernameParams{

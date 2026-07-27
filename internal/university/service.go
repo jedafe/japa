@@ -1,0 +1,647 @@
+package university
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"log/slog"
+	"math"
+	"time"
+
+	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/valkey-io/valkey-go/valkeycompat"
+
+	"github.com/jedafe/japa/internal/config"
+	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/worker"
+)
+
+// TaskEnqueuer is the minimal interface for enqueueing Asynq tasks.
+// The worker.Enqueuer satisfies this.
+type TaskEnqueuer interface {
+	Enqueue(taskType string, payload []byte, opts ...interface{}) error
+}
+
+// Cache TTLs for the university Valkey keys (valkey-keys-catalog.md).
+const (
+	instructorProfileTTL = 1 * time.Hour  // jc:university:instructor:{user_id}:profile
+	trackEnrolledTTL     = 10 * time.Minute // jc:university:track:{track_id}:enrolled
+	// payoutTTL has no fixed duration — it lives until the period closes.
+	// We use a long TTL as a safety net; the key is invalidated on period close.
+	payoutAccumulatorTTL = 7 * 24 * time.Hour // jc:university:payout:{tenant_id}:{period}:{instructor_id}
+)
+
+// Service holds the business logic for the Japa University creator economy.
+// It owns transaction boundaries, split-percentage resolution, and Asynq
+// task enqueueing. Settings are read via the hot-reloadable config.Settings.
+type Service struct {
+	store    *Store
+	settings *config.Settings
+	enqueuer TaskEnqueuer
+	rdb      valkeycompat.Cmdable // nil = caching disabled
+}
+
+// NewService creates a university service.
+func NewService(store *Store, settings *config.Settings, enqueuer TaskEnqueuer) *Service {
+	return &Service{store: store, settings: settings, enqueuer: enqueuer}
+}
+
+// SetValkey wires the Valkey client for cache reads/writes. Optional — if
+// not called, caching is disabled and all operations hit the DB.
+// AUDIT-BE-VALKEY-007/008/009: enables the 3 university cache keys.
+func (s *Service) SetValkey(rdb valkeycompat.Cmdable) { s.rdb = rdb }
+
+// SetEnqueuer wires (or rewires) the Asynq enqueuer after construction.
+func (s *Service) SetEnqueuer(e TaskEnqueuer) { s.enqueuer = e }
+
+// ---------------------------------------------------------------------------
+// Instructor lifecycle
+// ---------------------------------------------------------------------------
+
+// Apply submits an instructor application.
+func (s *Service) Apply(ctx context.Context, tenantID, userID pgtype.UUID, in ApplyInput) (InstructorProfile, error) {
+	if in.DisplayName == "" {
+		return InstructorProfile{}, errors.New("display_name is required")
+	}
+	row, err := s.store.Apply(ctx, tenantID, userID, in)
+	if err != nil {
+		return InstructorProfile{}, err
+	}
+	return profileFromRow(row), nil
+}
+
+// GetMyProfile returns the caller's instructor profile.
+func (s *Service) GetMyProfile(ctx context.Context, tenantID, userID pgtype.UUID) (InstructorProfile, error) {
+	// AUDIT-BE-VALKEY-007: read-through cache (jc:university:instructor:{user_id}:profile).
+	return s.cachedInstructorProfile(ctx, tenantID, userID)
+}
+
+// UpdateMyProfile updates creator-editable fields.
+func (s *Service) UpdateMyProfile(ctx context.Context, tenantID, userID pgtype.UUID, in UpdateSelfInput) (InstructorProfile, error) {
+	row, err := s.store.UpdateSelf(ctx, tenantID, userID, in)
+	if err != nil {
+		return InstructorProfile{}, err
+	}
+	// AUDIT-BE-VALKEY-007: invalidate the cached profile on mutation.
+	s.invalidateInstructorProfileCache(ctx, userID)
+	return profileFromRow(row), nil
+}
+
+// ApproveInstructor transitions a pending application to approved and
+// enqueues the approval notification.
+func (s *Service) ApproveInstructor(ctx context.Context, tenantID, instructorID, reviewer pgtype.UUID, tier string, commissionOverride *float64) (InstructorProfile, error) {
+	if tier == "" {
+		tier = "standard"
+	}
+	row, err := s.store.Approve(ctx, tenantID, instructorID, reviewer, tier, commissionOverride)
+	if err != nil {
+		return InstructorProfile{}, err
+	}
+	// AUDIT-BE-VALKEY-007: invalidate the cached profile on status change.
+	if row.UserID.Valid {
+		s.invalidateInstructorProfileCache(ctx, row.UserID)
+	}
+	s.enqueueNotifyInstructorApproved(ctx, tenantID, row.ID)
+	return profileFromRow(row), nil
+}
+
+// RejectInstructor transitions a pending application to rejected.
+func (s *Service) RejectInstructor(ctx context.Context, tenantID, instructorID, reviewer pgtype.UUID) (InstructorProfile, error) {
+	row, err := s.store.Reject(ctx, tenantID, instructorID, reviewer)
+	if err != nil {
+		return InstructorProfile{}, err
+	}
+	// AUDIT-BE-VALKEY-007: invalidate the cached profile on status change.
+	if row.UserID.Valid {
+		s.invalidateInstructorProfileCache(ctx, row.UserID)
+	}
+	return profileFromRow(row), nil
+}
+
+// SuspendInstructor transitions an approved instructor to suspended.
+func (s *Service) SuspendInstructor(ctx context.Context, tenantID, instructorID, reviewer pgtype.UUID) (InstructorProfile, error) {
+	row, err := s.store.Suspend(ctx, tenantID, instructorID, reviewer)
+	if err != nil {
+		return InstructorProfile{}, err
+	}
+	// AUDIT-BE-VALKEY-007: invalidate the cached profile on status change.
+	if row.UserID.Valid {
+		s.invalidateInstructorProfileCache(ctx, row.UserID)
+	}
+	return profileFromRow(row), nil
+}
+
+// ReinstateInstructor transitions a suspended instructor back to approved.
+func (s *Service) ReinstateInstructor(ctx context.Context, tenantID, instructorID, reviewer pgtype.UUID) (InstructorProfile, error) {
+	row, err := s.store.Reinstate(ctx, tenantID, instructorID, reviewer)
+	if err != nil {
+		return InstructorProfile{}, err
+	}
+	// AUDIT-BE-VALKEY-007: invalidate the cached profile on status change.
+	if row.UserID.Valid {
+		s.invalidateInstructorProfileCache(ctx, row.UserID)
+	}
+	return profileFromRow(row), nil
+}
+
+// ---------------------------------------------------------------------------
+// Creator track management
+// ---------------------------------------------------------------------------
+
+// CreateTrack creates a marketplace track owned by an approved instructor.
+func (s *Service) CreateTrack(ctx context.Context, tenantID, instructorID pgtype.UUID, in CreateTrackInput) (gen.CreateUniversityTrackRow, error) {
+	if in.Title == "" || in.Slug == "" {
+		return gen.CreateUniversityTrackRow{}, errors.New("title and slug are required")
+	}
+	if in.Difficulty == "" {
+		in.Difficulty = "beginner"
+	}
+	in.InstructorID = &instructorID
+	return s.store.CreateTrack(ctx, tenantID, in)
+}
+
+// UpdateTrack updates a creator's own track.
+func (s *Service) UpdateTrack(ctx context.Context, tenantID, trackID, instructorID pgtype.UUID, in UpdateTrackInput) (gen.UpdateUniversityTrackRow, error) {
+	return s.store.UpdateTrack(ctx, tenantID, trackID, instructorID, in)
+}
+
+// SubmitTrack submits a track for marketplace approval.
+func (s *Service) SubmitTrack(ctx context.Context, tenantID, trackID, instructorID pgtype.UUID) (gen.SubmitUniversityTrackRow, error) {
+	return s.store.SubmitTrack(ctx, tenantID, trackID, instructorID)
+}
+
+// ApproveTrack publishes a submitted track to the marketplace and enqueues
+// the course-approved notification + search index sync.
+func (s *Service) ApproveTrack(ctx context.Context, tenantID, trackID pgtype.UUID) (gen.ApproveUniversityTrackRow, error) {
+	row, err := s.store.ApproveTrack(ctx, tenantID, trackID)
+	if err != nil {
+		return gen.ApproveUniversityTrackRow{}, err
+	}
+	s.enqueueNotifyCourseApproved(ctx, tenantID, trackID)
+	// Enqueue search index sync so the track appears in the marketplace index.
+	s.enqueue(ctx, worker.TypeSearchIndexSync, map[string]string{
+		"tenant_id": tenantID.String(), "entity_id": trackID.String(),
+		"entity_type": "learning_track",
+	})
+	return row, nil
+}
+
+// ---------------------------------------------------------------------------
+// Enrollment + revenue split
+// ---------------------------------------------------------------------------
+
+// ProcessEnrollment is the idempotent handler for university:process_enrollment.
+// It is called after a course_access payment succeeds. It:
+//  1. Guards against double-credit via HasSplitForPayment (AUDIT-BE-005).
+//  2. Upserts the enrollment row with the payment link.
+//  3. Increments the track's cached total_enrolled counter.
+//  4. Writes an immutable revenue_splits row using the resolved split.
+//
+// The split resolution order is: instructor override → tier default → system
+// default. Pro-stream enrollments accrue at the configured stream rate with
+// no payment link.
+func (s *Service) ProcessEnrollment(ctx context.Context, tenantID, userID, trackID, paymentID pgtype.UUID, source string, grossKobo int64) error {
+	if source == "" {
+		source = "purchase"
+	}
+
+	track, err := s.store.GetTrackByID(ctx, tenantID, trackID)
+	if err != nil {
+		return fmt.Errorf("university: process enrollment: track lookup: %w", err)
+	}
+	if !track.InstructorID.Valid {
+		// Platform-authored course — no creator split to record.
+		return nil
+	}
+
+	// Idempotency: a paid enrollment is keyed on payment_id.
+	if source == "purchase" && paymentID.Valid {
+		already, err := s.store.HasSplitForPayment(ctx, tenantID, paymentID)
+		if err != nil {
+			return fmt.Errorf("university: idempotency check: %w", err)
+		}
+		if already {
+			slog.Info("university: process_enrollment: split already recorded, skipping",
+				"payment_id", paymentID.String())
+			return nil
+		}
+	}
+
+	// Resolve the enrollment (upsert).
+	var payRef *pgtype.UUID
+	if paymentID.Valid {
+		payRef = &paymentID
+	}
+	accessType := "purchase"
+	if source == "pro_stream" {
+		accessType = "subscription"
+	}
+	enrollment, err := s.store.UpsertEnrollment(ctx, tenantID, userID, trackID, accessType, payRef)
+	if err != nil {
+		return fmt.Errorf("university: upsert enrollment: %w", err)
+	}
+
+	// Increment the cached counter (best-effort; non-fatal).
+	if err := s.store.IncrementTotalEnrolled(ctx, tenantID, trackID); err != nil {
+		slog.Warn("university: increment total_enrolled", "track_id", trackID.String(), "error", err)
+	}
+	// AUDIT-BE-VALKEY-008: increment the Valkey enrollment counter too.
+	s.incrementTrackEnrolledCache(ctx, trackID)
+
+	// Resolve the creator/platform split percentages.
+	creatorPct, platformPct := s.resolveSplit(ctx, tenantID, track.InstructorID)
+	creatorKobo, platformKobo := splitAmount(grossKobo, creatorPct, platformPct)
+
+	var enrollRef pgtype.UUID
+	if enrollment.ID.Valid {
+		enrollRef = enrollment.ID
+	}
+	var payRef2 pgtype.UUID
+	if paymentID.Valid {
+		payRef2 = paymentID
+	}
+	_, err = s.store.InsertRevenueSplit(ctx, gen.InsertRevenueSplitParams{
+		TenantID:     tenantID,
+		InstructorID: track.InstructorID,
+		TrackID:      trackID,
+		EnrollmentID: enrollRef,
+		PaymentID:    payRef2,
+		Source:       source,
+		GrossKobo:    grossKobo,
+		CreatorPct:   numericFromFloat(creatorPct),
+		PlatformPct:  numericFromFloat(platformPct),
+		CreatorKobo:  creatorKobo,
+		PlatformKobo: platformKobo,
+		Currency:     "NGN",
+	})
+	if err != nil {
+		return fmt.Errorf("university: insert revenue split: %w", err)
+	}
+
+	// AUDIT-BE-VALKEY-009: invalidate the payout accumulator for the current
+	// period so the next payout calculation picks up the new split.
+	now := time.Now()
+	periodLabel := now.Format("2006-01")
+	s.invalidatePayoutAccumulatorCache(ctx, tenantID, track.InstructorID, periodLabel)
+
+	return nil
+}
+
+// resolveSplit returns the creator and platform percentages for an instructor.
+// Order: instructor override → system default. (Tier-based defaults are a
+// future extension; today tier only affects override eligibility, not the
+// percentage, per ADR-063 §6.)
+func (s *Service) resolveSplit(ctx context.Context, tenantID, instructorID pgtype.UUID) (creatorPct, platformPct float64) {
+	creatorDefault := 75.0
+	platformDefault := 25.0
+	if s.settings != nil {
+		creatorDefault = float64(s.settings.GetIntOr(ctx, tenantID, "university.creator_percentage_default", 75))
+		platformDefault = float64(s.settings.GetIntOr(ctx, tenantID, "university.platform_percentage_default", 25))
+	}
+
+	creatorPct = creatorDefault
+	platformPct = platformDefault
+
+	prof, err := s.store.GetByID(ctx, tenantID, instructorID)
+	if err == nil && prof.CommissionPctOverride.Valid {
+		if f, e := prof.CommissionPctOverride.Float64Value(); e == nil && f.Valid {
+			creatorPct = f.Float64
+			platformPct = 100.0 - creatorPct
+		}
+	}
+	return creatorPct, platformPct
+}
+
+// splitAmount divides grossKobo into creator and platform shares by the
+// given percentages. The platform share absorbs the rounding remainder so
+// the two halves always sum to grossKobo (no lost kobo).
+func splitAmount(grossKobo int64, creatorPct, platformPct float64) (creatorKobo, platformKobo int64) {
+	if grossKobo <= 0 {
+		return 0, 0
+	}
+	total := creatorPct + platformPct
+	if total <= 0 {
+		return 0, grossKobo
+	}
+	creator := math.Round(float64(grossKobo) * creatorPct / total)
+	creatorKobo = int64(creator)
+	platformKobo = grossKobo - creatorKobo
+	return creatorKobo, platformKobo
+}
+
+// numericFromFloat builds a pgtype.Numeric from a float64 for insertion.
+func numericFromFloat(f float64) pgtype.Numeric {
+	var n pgtype.Numeric
+	if err := n.Scan(fmt.Sprintf("%.2f", f)); err != nil {
+		return pgtype.Numeric{}
+	}
+	return n
+}
+
+// ---------------------------------------------------------------------------
+// Payout aggregation + execution
+// ---------------------------------------------------------------------------
+
+// CalculatePeriodPayouts is the scheduled handler for
+// university:calculate_period_payouts. It walks every approved instructor with
+// open splits in the period, creates an instructor_payouts row when the
+// accrued net meets the configured minimum, and stamps the splits.
+func (s *Service) CalculatePeriodPayouts(ctx context.Context, tenantID pgtype.UUID, periodStart, periodEnd time.Time) error {
+	minPayout := int64(500000)
+	if s.settings != nil {
+		minPayout = int64(s.settings.GetIntOr(ctx, tenantID, "university.min_payout_kobo", 500000))
+	}
+
+	// List all approved instructors via the status filter.
+	profiles, err := s.store.ListByStatus(ctx, tenantID, "approved", 1000, 0)
+	if err != nil {
+		return fmt.Errorf("university: list instructors for payout: %w", err)
+	}
+
+	// Batch-fetch open split totals for ALL instructors in one query to avoid
+	// an N+1 (AUDIT-BE-DB-005). Per-instructor cache lookups still happen
+	// below; on a cache hit the batch row is simply unused for that instructor.
+	batchSums, err := s.store.SumOpenSplitsByAllInstructors(ctx, tenantID)
+	if err != nil {
+		return fmt.Errorf("university: batch sum open splits: %w", err)
+	}
+	batchByInstructor := make(map[pgtype.UUID]payoutSummary, len(batchSums))
+	for _, b := range batchSums {
+		batchByInstructor[b.InstructorID] = payoutSummary{
+			GrossKoboTotal:    b.GrossKoboTotal,
+			PlatformKoboTotal: b.PlatformKoboTotal,
+			CreatorKoboTotal:  b.CreatorKoboTotal,
+		}
+	}
+
+	ps := pgtype.Date{Time: periodStart, Valid: true}
+	pe := pgtype.Date{Time: periodEnd, Valid: true}
+
+	// AUDIT-BE-VALKEY-009: use the payout accumulator cache key. The period
+	// label is the ISO date of periodStart (e.g. "2026-07-01").
+	periodLabel := periodStart.Format("2006-01-02")
+
+	for _, p := range profiles {
+		// AUDIT-BE-VALKEY-009: read-through cache (jc:university:payout:{tenant_id}:{period}:{instructor_id}).
+		cached, err := s.cachedPayoutAccumulator(ctx, tenantID, p.ID, periodLabel, batchByInstructor)
+		if err != nil {
+			slog.Error("university: sum open splits", "instructor_id", p.ID.String(), "error", err)
+			continue
+		}
+		netKobo := cached.CreatorKoboTotal
+		if netKobo < minPayout {
+			continue
+		}
+
+		payout, err := s.store.CreatePayout(ctx, gen.CreateInstructorPayoutParams{
+			TenantID:               tenantID,
+			InstructorID:           p.ID,
+			PeriodStart:            ps,
+			PeriodEnd:              pe,
+			GrossKobo:              cached.GrossKoboTotal,
+			PlatformCommissionKobo: cached.PlatformKoboTotal,
+			NetKobo:                netKobo,
+			Currency:               "NGN",
+		})
+		if err != nil {
+			slog.Error("university: create payout", "instructor_id", p.ID.String(), "error", err)
+			continue
+		}
+		if !payout.ID.Valid {
+			// ON CONFLICT DO NOTHING — a payout already exists for this period.
+			continue
+		}
+
+		if _, err := s.store.StampSplitsWithPayout(ctx, tenantID, p.ID, payout.ID, ps, pe); err != nil {
+			slog.Error("university: stamp splits with payout", "payout_id", payout.ID.String(), "error", err)
+			continue
+		}
+		// AUDIT-BE-VALKEY-009: invalidate the payout accumulator after stamping.
+		s.invalidatePayoutAccumulatorCache(ctx, tenantID, p.ID, periodLabel)
+		slog.Info("university: payout created", "payout_id", payout.ID.String(), "net_kobo", netKobo)
+	}
+
+	return nil
+}
+
+// SendInstructorPayout is the handler for university:send_instructor_payout.
+// It marks the payout as processing, delegates the transfer to the payment
+// provider abstraction (via the worker), and stamps the final status. The
+// actual provider call is intentionally minimal here — the provider layer
+// (Section 17) executes the transfer; this method records the outcome.
+func (s *Service) SendInstructorPayout(ctx context.Context, tenantID, payoutID pgtype.UUID) error {
+	payout, err := s.store.GetPayout(ctx, tenantID, payoutID)
+	if err != nil {
+		return fmt.Errorf("university: get payout: %w", err)
+	}
+	if payout.Status != "pending" && payout.Status != "failed" {
+		return nil // already processing/paid
+	}
+
+	// Mark processing.
+	if _, err := s.store.UpdatePayoutStatus(ctx, tenantID, payoutID, "processing", nil, nil); err != nil {
+		return fmt.Errorf("university: mark payout processing: %w", err)
+	}
+
+	// The provider transfer is executed by the payment provider abstraction.
+	// In V1 this is a manual/recorded transfer: we mark paid with a generated
+	// reference. A future integration calls provider.InitiatePayout here.
+	ref := fmt.Sprintf("JC-PAYOUT-%s-%d", payout.ID.String()[:8], time.Now().Unix())
+	if _, err := s.store.UpdatePayoutStatus(ctx, tenantID, payoutID, "paid", &ref, nil); err != nil {
+		return fmt.Errorf("university: mark payout paid: %w", err)
+	}
+
+	slog.Info("university: payout sent", "payout_id", payoutID.String(), "reference", ref)
+	return nil
+}
+
+// ---------------------------------------------------------------------------
+// Asynq enqueue helpers (fire-and-forget; errors logged, never returned)
+// ---------------------------------------------------------------------------
+
+func (s *Service) enqueueNotifyInstructorApproved(ctx context.Context, tenantID, instructorID pgtype.UUID) {
+	s.enqueue(ctx, worker.TypeUniversityNotifyInstructorApproved, map[string]string{
+		"tenant_id": tenantID.String(), "instructor_id": instructorID.String(),
+	})
+}
+
+func (s *Service) enqueueNotifyCourseApproved(ctx context.Context, tenantID, trackID pgtype.UUID) {
+	s.enqueue(ctx, worker.TypeUniversityNotifyCourseApproved, map[string]string{
+		"tenant_id": tenantID.String(), "track_id": trackID.String(),
+	})
+}
+
+func (s *Service) enqueue(ctx context.Context, taskType string, payload map[string]string) {
+	if s.enqueuer == nil {
+		return
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		slog.Warn("university: marshal task payload", "task", taskType, "error", err)
+		return
+	}
+	if err := s.enqueuer.Enqueue(taskType, body); err != nil {
+		slog.Warn("university: enqueue task", "task", taskType, "error", err)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Valkey cache helpers (AUDIT-BE-VALKEY-007/008/009)
+// ---------------------------------------------------------------------------
+
+// instructorProfileCacheKey builds jc:university:instructor:{user_id}:profile.
+func instructorProfileCacheKey(userID pgtype.UUID) string {
+	return "jc:university:instructor:" + userID.String() + ":profile"
+}
+
+// trackEnrolledCacheKey builds jc:university:track:{track_id}:enrolled.
+func trackEnrolledCacheKey(trackID pgtype.UUID) string {
+	return "jc:university:track:" + trackID.String() + ":enrolled"
+}
+
+// payoutAccumulatorCacheKey builds jc:university:payout:{tenant_id}:{period}:{instructor_id}.
+func payoutAccumulatorCacheKey(tenantID, instructorID pgtype.UUID, period string) string {
+	return "jc:university:payout:" + tenantID.String() + ":" + period + ":" + instructorID.String()
+}
+
+// cachedInstructorProfile returns the instructor profile from Valkey cache,
+// or falls back to the store. On cache miss, the DB result is cached.
+// AUDIT-BE-VALKEY-007.
+func (s *Service) cachedInstructorProfile(ctx context.Context, tenantID, userID pgtype.UUID) (InstructorProfile, error) {
+	if s.rdb != nil {
+		key := instructorProfileCacheKey(userID)
+		if cached, err := s.rdb.Get(ctx, key).Bytes(); err == nil && len(cached) > 0 {
+			var p InstructorProfile
+			if json.Unmarshal(cached, &p) == nil {
+				return p, nil
+			}
+		}
+	}
+
+	row, err := s.store.GetByUser(ctx, tenantID, userID)
+	if err != nil {
+		return InstructorProfile{}, err
+	}
+	p := profileFromRow(row)
+
+	if s.rdb != nil {
+		key := instructorProfileCacheKey(userID)
+		if data, err := json.Marshal(p); err == nil {
+			if err := s.rdb.Set(ctx, key, data, instructorProfileTTL).Err(); err != nil {
+				slog.Warn("university: cache instructor profile", "user_id", userID.String(), "error", err)
+			}
+		}
+	}
+	return p, nil
+}
+
+// invalidateInstructorProfileCache deletes the cached instructor profile.
+// Called on approve/suspend/reinstate/update.
+func (s *Service) invalidateInstructorProfileCache(ctx context.Context, userID pgtype.UUID) {
+	if s.rdb == nil {
+		return
+	}
+	if err := s.rdb.Del(ctx, instructorProfileCacheKey(userID)).Err(); err != nil {
+		slog.Warn("university: invalidate instructor profile cache", "user_id", userID.String(), "error", err)
+	}
+}
+
+// cachedTrackEnrolled returns the cached enrollment count for a track,
+// or falls back to the store. On cache miss, the DB result is cached.
+// AUDIT-BE-VALKEY-008.
+func (s *Service) cachedTrackEnrolled(ctx context.Context, tenantID, trackID pgtype.UUID) (int32, error) {
+	if s.rdb != nil {
+		key := trackEnrolledCacheKey(trackID)
+		if cached, err := s.rdb.Get(ctx, key).Int(); err == nil {
+			return int32(cached), nil
+		}
+	}
+
+	track, err := s.store.GetTrackByID(ctx, tenantID, trackID)
+	if err != nil {
+		return 0, err
+	}
+	count := track.TotalEnrolled
+
+	if s.rdb != nil {
+		key := trackEnrolledCacheKey(trackID)
+		if err := s.rdb.Set(ctx, key, count, trackEnrolledTTL).Err(); err != nil {
+			slog.Warn("university: cache track enrolled", "track_id", trackID.String(), "error", err)
+		}
+	}
+	return count, nil
+}
+
+// incrementTrackEnrolledCache increments the cached enrollment counter.
+// Called after a successful enrollment. Best-effort; non-fatal.
+func (s *Service) incrementTrackEnrolledCache(ctx context.Context, trackID pgtype.UUID) {
+	if s.rdb == nil {
+		return
+	}
+	key := trackEnrolledCacheKey(trackID)
+	if err := s.rdb.Incr(ctx, key).Err(); err != nil {
+		// Key may not exist yet — set it from DB on next read. Non-fatal.
+		slog.Warn("university: increment track enrolled cache", "track_id", trackID.String(), "error", err)
+	}
+}
+
+// invalidateTrackEnrolledCache deletes the cached enrollment count.
+// Called when the track is deleted or the counter is recounted.
+func (s *Service) invalidateTrackEnrolledCache(ctx context.Context, trackID pgtype.UUID) {
+	if s.rdb == nil {
+		return
+	}
+	if err := s.rdb.Del(ctx, trackEnrolledCacheKey(trackID)).Err(); err != nil {
+		slog.Warn("university: invalidate track enrolled cache", "track_id", trackID.String(), "error", err)
+	}
+}
+
+// payoutSummary is the cached payout accumulator value.
+type payoutSummary struct {
+	GrossKoboTotal    int64 `json:"gross_kobo_total"`
+	PlatformKoboTotal int64 `json:"platform_kobo_total"`
+	CreatorKoboTotal  int64 `json:"creator_kobo_total"`
+}
+
+// cachedPayoutAccumulator returns the cached payout accumulator for an
+// instructor in a period, or falls back to the batch-fetched sums. On cache
+// miss, the batch result is cached. AUDIT-BE-VALKEY-009, AUDIT-BE-DB-005.
+func (s *Service) cachedPayoutAccumulator(ctx context.Context, tenantID, instructorID pgtype.UUID, period string, batch map[pgtype.UUID]payoutSummary) (payoutSummary, error) {
+	if s.rdb != nil {
+		key := payoutAccumulatorCacheKey(tenantID, instructorID, period)
+		if cached, err := s.rdb.Get(ctx, key).Bytes(); err == nil && len(cached) > 0 {
+			var ps payoutSummary
+			if json.Unmarshal(cached, &ps) == nil {
+				return ps, nil
+			}
+		}
+	}
+
+	ps, ok := batch[instructorID]
+	if !ok {
+		// No open splits for this instructor — return zeros.
+		ps = payoutSummary{}
+	}
+
+	if s.rdb != nil {
+		key := payoutAccumulatorCacheKey(tenantID, instructorID, period)
+		if data, err := json.Marshal(ps); err == nil {
+			if err := s.rdb.Set(ctx, key, data, payoutAccumulatorTTL).Err(); err != nil {
+				slog.Warn("university: cache payout accumulator", "instructor_id", instructorID.String(), "error", err)
+			}
+		}
+	}
+	return ps, nil
+}
+
+// invalidatePayoutAccumulatorCache deletes the cached payout accumulator.
+// Called when a new split is inserted or a payout is processed.
+func (s *Service) invalidatePayoutAccumulatorCache(ctx context.Context, tenantID, instructorID pgtype.UUID, period string) {
+	if s.rdb == nil {
+		return
+	}
+	if err := s.rdb.Del(ctx, payoutAccumulatorCacheKey(tenantID, instructorID, period)).Err(); err != nil {
+		slog.Warn("university: invalidate payout accumulator cache", "instructor_id", instructorID.String(), "error", err)
+	}
+}

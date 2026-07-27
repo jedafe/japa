@@ -2,6 +2,7 @@ package coupons
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -368,3 +369,103 @@ func ptrTimestamptz(t pgtype.Timestamptz) *string {
 }
 
 var _ = errors.New
+
+// ---------------------------------------------------------------------------
+// Affiliate commission recording (Section 55 — Author Revenue Sharing)
+// ---------------------------------------------------------------------------
+
+// RecordAffiliateCommissionInput is the admin payload for recording an external
+// affiliate commission earned from a content's affiliate link.
+type RecordAffiliateCommissionInput struct {
+	ProviderID         pgtype.UUID
+	ContentID          pgtype.UUID
+	ExternalCommission float64 // major currency units (e.g. NGN 1500.00)
+	EventDescription   *string // optional description of the commission event
+}
+
+// RecordAffiliateCommission records an external affiliate commission for a
+// content's affiliate link, computes the author's revenue share from the
+// provider's author_commission_pct, inserts the commission row, and enqueues
+// the affiliate:credit_author_commission task to credit the author's wallet.
+//
+// The flow (Section 55):
+//  1. Look up the content to get the author_id.
+//  2. Look up the provider to get author_commission_pct.
+//  3. Compute author_share = external_commission * author_commission_pct / 100.
+//  4. INSERT into affiliate_content_commissions.
+//  5. Enqueue affiliate:credit_author_commission (fire-and-forget per Rule 8).
+//
+// AUDIT-BE-TASK-001: this is the missing INSERT site that triggers the
+// affiliate:credit_author_commission task.
+func (s *Service) RecordAffiliateCommission(ctx context.Context, tenantID pgtype.UUID, in RecordAffiliateCommissionInput) (gen.AffiliateContentCommission, error) {
+	// 1. Look up the content to get the author_id.
+	content, err := s.store.read.GetContentByID(ctx, gen.GetContentByIDParams{
+		ID:       in.ContentID,
+		TenantID: tenantID,
+	})
+	if err != nil {
+		return gen.AffiliateContentCommission{}, fmt.Errorf("affiliate: content not found: %w", err)
+	}
+	if !content.AuthorID.Valid {
+		return gen.AffiliateContentCommission{}, errors.New("affiliate: content has no author_id")
+	}
+
+	// 2. Look up the provider to get author_commission_pct.
+	provider, err := s.store.read.GetAffiliateProviderByID(ctx, gen.GetAffiliateProviderByIDParams{
+		ID:       in.ProviderID,
+		TenantID: tenantID,
+	})
+	if err != nil {
+		return gen.AffiliateContentCommission{}, fmt.Errorf("affiliate: provider not found: %w", err)
+	}
+
+	// 3. Compute the author share.
+	pctVal, err := provider.AuthorCommissionPct.Float64Value()
+	if err != nil || !pctVal.Valid {
+		pctVal.Float64 = 0
+	}
+	authorPct := pctVal.Float64
+	authorShare := in.ExternalCommission * authorPct / 100.0
+
+	// 4. Insert the commission row.
+	commission, err := s.store.write.InsertAffiliateContentCommission(ctx, gen.InsertAffiliateContentCommissionParams{
+		TenantID:             tenantID,
+		ContentID:            in.ContentID,
+		ProviderID:           in.ProviderID,
+		AuthorUserID:         content.AuthorID,
+		ExternalCommission:   numericFromFloat(in.ExternalCommission),
+		AuthorShare:          numericFromFloat(authorShare),
+		AuthorCommissionPct:  numericFromFloat(authorPct),
+		EventDescription:     in.EventDescription,
+	})
+	if err != nil {
+		return gen.AffiliateContentCommission{}, fmt.Errorf("affiliate: insert commission: %w", err)
+	}
+
+	// 5. Enqueue the credit task (fire-and-forget per Rule 8).
+	if s.enqueuer != nil {
+		payload, _ := json.Marshal(map[string]string{
+			"commission_id": commission.ID.String(),
+		})
+		if err := s.enqueuer.Enqueue(worker.TypeAffiliateCreditAuthorCommission, payload); err != nil {
+			// Non-fatal — the commission row is recorded. The admin can
+			// re-trigger crediting via the pending commissions list.
+			slog.Error("affiliate: failed to enqueue credit_author_commission",
+				"commission_id", commission.ID.String(), "error", err)
+		} else {
+			slog.Info("affiliate: recorded commission + enqueued credit task",
+				"commission_id", commission.ID.String(),
+				"author_user_id", content.AuthorID.String(),
+				"author_share", authorShare, "author_pct", authorPct)
+		}
+	}
+
+	return commission, nil
+}
+
+// numericFromFloat converts a float64 to pgtype.Numeric.
+func numericFromFloat(f float64) pgtype.Numeric {
+	n := pgtype.Numeric{}
+	_ = n.Scan(fmt.Sprintf("%.2f", f))
+	return n
+}

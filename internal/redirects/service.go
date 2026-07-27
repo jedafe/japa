@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"net/url"
 	"strings"
 	"time"
 
@@ -41,6 +42,50 @@ func NewService(database *db.DB, vkClient valkeycompat.Cmdable) *Service {
 
 func (s *Service) SetEnqueuer(e Enqueuer) {
 	s.enqueuer = e
+}
+
+// validateTargetURL validates a redirect target_url per ADR-056.
+//
+// Allowed forms:
+//   - Absolute http/https URLs (e.g., "https://example.com/path")
+//   - Root-relative paths (e.g., "/new-path")
+//
+// Rejected:
+//   - Protocol-relative URLs ("//evil.com")
+//   - Schemes other than http/https (e.g., "javascript:", "data:", "file:")
+//   - Relative paths without a leading slash ("new-path")
+//   - Malformed URLs
+//
+// This prevents open-redirect attacks where a malicious target_url could
+// redirect users to attacker-controlled domains or trigger dangerous
+// schemes via the redirect endpoint.
+func validateTargetURL(targetURL string) error {
+	if targetURL == "" {
+		return ErrInvalidTargetURL
+	}
+
+	// Root-relative paths are safe (stay on the same origin).
+	if strings.HasPrefix(targetURL, "/") {
+		// Reject protocol-relative URLs ("//evil.com").
+		if strings.HasPrefix(targetURL, "//") {
+			return ErrInvalidTargetURL
+		}
+		return nil
+	}
+
+	parsed, err := url.Parse(targetURL)
+	if err != nil {
+		return ErrInvalidTargetURL
+	}
+
+	// Must be an absolute URL with an http or https scheme.
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return ErrInvalidTargetURL
+	}
+	if parsed.Host == "" {
+		return ErrInvalidTargetURL
+	}
+	return nil
 }
 
 type noopEnqueuer struct{}
@@ -82,6 +127,9 @@ func (s *Service) CreateRedirect(ctx context.Context, tenantID pgtype.UUID, sour
 	if !strings.HasPrefix(sourcePath, "/") {
 		return gen.Redirect{}, fmt.Errorf("source_path must start with /")
 	}
+	if err := validateTargetURL(targetURL); err != nil {
+		return gen.Redirect{}, err
+	}
 	r, err := s.store.createRedirect(ctx, gen.CreateRedirectParams{
 		TenantID: tenantID, SourcePath: sourcePath, TargetUrl: targetURL,
 		HttpStatus: httpStatus, Notes: notes,
@@ -99,6 +147,9 @@ func (s *Service) UpdateRedirect(ctx context.Context, id, tenantID pgtype.UUID, 
 	}
 	if !strings.HasPrefix(sourcePath, "/") {
 		return gen.Redirect{}, fmt.Errorf("source_path must start with /")
+	}
+	if err := validateTargetURL(targetURL); err != nil {
+		return gen.Redirect{}, err
 	}
 	r, err := s.store.updateRedirect(ctx, gen.UpdateRedirectParams{
 		ID: id, TenantID: tenantID, SourcePath: sourcePath, TargetUrl: targetURL,

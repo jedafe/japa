@@ -227,3 +227,27 @@ WHERE id = @id AND is_active = true;
 SELECT COUNT(*) AS count
 FROM coupons
 WHERE tenant_id = @tenant_id;
+
+-- name: UpdateCouponClickCounts :exec
+UPDATE coupons c
+SET total_clicks = (
+    SELECT COUNT(*)::int FROM coupon_events ce
+    WHERE ce.coupon_id = c.id AND ce.event_type = 'click'
+),
+    updated_at = now()
+WHERE EXISTS (
+    SELECT 1 FROM coupon_events ce
+    WHERE ce.coupon_id = c.id AND ce.event_type = 'click'
+);
+
+-- name: UpdateCouponCopyCounts :exec
+UPDATE coupons c
+SET total_copies = (
+    SELECT COUNT(*)::int FROM coupon_events ce
+    WHERE ce.coupon_id = c.id AND ce.event_type = 'copy'
+),
+    updated_at = now()
+WHERE EXISTS (
+    SELECT 1 FROM coupon_events ce
+    WHERE ce.coupon_id = c.id AND ce.event_type = 'copy'
+);

@@ -69,24 +69,38 @@ type UpdateTrackInput struct {
 	SortOrder    int32       `json:"sort_order"`
 }
 
-func trackFromRow(r gen.LearningTrack) Track {
-	var coverMediaID *pgtype.UUID
-	if r.CoverMediaID.Valid {
-		coverMediaID = &r.CoverMediaID
+// trackFromFields builds a Track DTO from the base learning_tracks columns.
+// Migration 000166 added marketplace columns (instructor_id, price_kobo, etc.)
+// which caused sqlc to emit per-query row types instead of reusing the
+// gen.LearningTrack model. All these row types share the same base columns,
+// so callers extract the fields and pass them here.
+func trackFromFields(
+	id, tenantID pgtype.UUID,
+	title, slug string,
+	description *string,
+	difficulty string,
+	coverMediaID pgtype.UUID,
+	isPublished bool,
+	sortOrder int32,
+	createdAt, updatedAt pgtype.Timestamptz,
+) Track {
+	var cmID *pgtype.UUID
+	if coverMediaID.Valid {
+		cmID = &coverMediaID
 	}
 
 	return Track{
-		ID:           r.ID,
-		TenantID:     r.TenantID,
-		Title:        r.Title,
-		Slug:         r.Slug,
-		Description:  r.Description,
-		Difficulty:   r.Difficulty,
-		CoverMediaID: coverMediaID,
-		IsPublished:  r.IsPublished,
-		SortOrder:    r.SortOrder,
-		CreatedAt:    r.CreatedAt.Time,
-		UpdatedAt:    r.UpdatedAt.Time,
+		ID:           id,
+		TenantID:     tenantID,
+		Title:        title,
+		Slug:         slug,
+		Description:  description,
+		Difficulty:   difficulty,
+		CoverMediaID: cmID,
+		IsPublished:  isPublished,
+		SortOrder:    sortOrder,
+		CreatedAt:    createdAt.Time,
+		UpdatedAt:    updatedAt.Time,
 	}
 }
 
@@ -100,7 +114,7 @@ func (s *Store) ListPublishedTracks(ctx context.Context, tenantID pgtype.UUID) (
 	tracks := make([]Track, 0, len(rows))
 
 	for _, r := range rows {
-		tracks = append(tracks, trackFromRow(r))
+		tracks = append(tracks, trackFromFields(r.ID, r.TenantID, r.Title, r.Slug, r.Description, r.Difficulty, r.CoverMediaID, r.IsPublished, r.SortOrder, r.CreatedAt, r.UpdatedAt))
 	}
 
 	return tracks, nil
@@ -116,7 +130,7 @@ func (s *Store) GetTrackBySlug(ctx context.Context, tenantID pgtype.UUID, slug s
 		return nil, fmt.Errorf("get track by slug: %w", err)
 	}
 
-	t := trackFromRow(r)
+	t := trackFromFields(r.ID, r.TenantID, r.Title, r.Slug, r.Description, r.Difficulty, r.CoverMediaID, r.IsPublished, r.SortOrder, r.CreatedAt, r.UpdatedAt)
 	return &t, nil
 }
 
@@ -130,7 +144,7 @@ func (s *Store) GetTrackByID(ctx context.Context, tenantID, id pgtype.UUID) (*Tr
 		return nil, fmt.Errorf("get track by id: %w", err)
 	}
 
-	t := trackFromRow(r)
+	t := trackFromFields(r.ID, r.TenantID, r.Title, r.Slug, r.Description, r.Difficulty, r.CoverMediaID, r.IsPublished, r.SortOrder, r.CreatedAt, r.UpdatedAt)
 	return &t, nil
 }
 
@@ -150,7 +164,7 @@ func (s *Store) CreateTrack(ctx context.Context, tenantID pgtype.UUID, input Cre
 		return nil, fmt.Errorf("create track: %w", err)
 	}
 
-	t := trackFromRow(r)
+	t := trackFromFields(r.ID, r.TenantID, r.Title, r.Slug, r.Description, r.Difficulty, r.CoverMediaID, r.IsPublished, r.SortOrder, r.CreatedAt, r.UpdatedAt)
 	return &t, nil
 }
 
@@ -170,7 +184,7 @@ func (s *Store) UpdateTrack(ctx context.Context, tenantID, id pgtype.UUID, input
 		return nil, fmt.Errorf("update track: %w", err)
 	}
 
-	t := trackFromRow(r)
+	t := trackFromFields(r.ID, r.TenantID, r.Title, r.Slug, r.Description, r.Difficulty, r.CoverMediaID, r.IsPublished, r.SortOrder, r.CreatedAt, r.UpdatedAt)
 	return &t, nil
 }
 
@@ -216,7 +230,7 @@ func (s *Store) ListAllTracks(ctx context.Context, tenantID pgtype.UUID) ([]Trac
 	tracks := make([]Track, 0, len(rows))
 
 	for _, r := range rows {
-		tracks = append(tracks, trackFromRow(r))
+		tracks = append(tracks, trackFromFields(r.ID, r.TenantID, r.Title, r.Slug, r.Description, r.Difficulty, r.CoverMediaID, r.IsPublished, r.SortOrder, r.CreatedAt, r.UpdatedAt))
 	}
 
 	return tracks, nil
@@ -987,4 +1001,109 @@ func (s *Store) GetQuizQuestions(ctx context.Context, tenantID, lessonID pgtype.
 // GetQuizQuestionsWithAnswers retrieves quiz questions with correct answers (for grading).
 func (s *Store) GetQuizQuestionsWithAnswers(ctx context.Context, tenantID, lessonID pgtype.UUID) ([]QuizQuestion, error) {
 	return s.GetQuizQuestions(ctx, tenantID, lessonID)
+}
+
+// ---------------------------------------------------------------------------
+// Learning track reviews (AUDIT-BE-ROUTE-040)
+// Reuse Section 29 reviews with entity_type=learning_track.
+// ---------------------------------------------------------------------------
+
+// TrackReview is the API-facing review record for a learning track.
+type TrackReview struct {
+	ID         string    `json:"id"`
+	TenantID   string    `json:"tenant_id"`
+	EntityType string    `json:"entity_type"`
+	EntityID   string    `json:"entity_id"`
+	ReviewerID string    `json:"reviewer_user_id"`
+	Rating     int16     `json:"rating"`
+	Title      *string   `json:"title,omitempty"`
+	Body       *string   `json:"body,omitempty"`
+	Status     string    `json:"status"`
+	CreatedAt  time.Time `json:"created_at"`
+	UpdatedAt  time.Time `json:"updated_at"`
+}
+
+// TrackReviewAggregate holds the aggregate rating for a track.
+type TrackReviewAggregate struct {
+	TotalReviews int32   `json:"total_reviews"`
+	AverageRating float64 `json:"average_rating"`
+}
+
+// CreateTrackReview inserts a review for a learning track.
+// AUDIT-BE-ROUTE-040: entity_type=learning_track.
+func (s *Store) CreateTrackReview(ctx context.Context, tenantID, trackID, reviewerID pgtype.UUID, rating int16, title, body *string) (TrackReview, error) {
+	row, err := s.write.CreateReview(ctx, gen.CreateReviewParams{
+		TenantID:       tenantID,
+		EntityType:     "learning_track",
+		EntityID:       trackID,
+		ReviewerUserID: reviewerID,
+		Rating:         rating,
+		Title:          title,
+		Body:           body,
+	})
+	if err != nil {
+		return TrackReview{}, err
+	}
+	return trackReviewFromRow(row), nil
+}
+
+// ListTrackReviews lists approved reviews for a learning track.
+func (s *Store) ListTrackReviews(ctx context.Context, tenantID, trackID pgtype.UUID, limit, offset int32) ([]TrackReview, error) {
+	rows, err := s.read.ListReviewsByEntity(ctx, gen.ListReviewsByEntityParams{
+		TenantID:   tenantID,
+		EntityType: "learning_track",
+		EntityID:   trackID,
+		PageLimit:  limit,
+		PageOffset: offset,
+	})
+	if err != nil {
+		return nil, err
+	}
+	reviews := make([]TrackReview, 0, len(rows))
+	for _, r := range rows {
+		reviews = append(reviews, trackReviewFromRow(r))
+	}
+	return reviews, nil
+}
+
+// GetTrackReviewAggregate returns the total review count and average rating
+// for a learning track.
+func (s *Store) GetTrackReviewAggregate(ctx context.Context, tenantID, trackID pgtype.UUID) (TrackReviewAggregate, error) {
+	rows, err := s.read.ListReviewsByEntity(ctx, gen.ListReviewsByEntityParams{
+		TenantID:   tenantID,
+		EntityType: "learning_track",
+		EntityID:   trackID,
+		PageLimit:  10000,
+		PageOffset: 0,
+	})
+	if err != nil {
+		return TrackReviewAggregate{}, err
+	}
+	if len(rows) == 0 {
+		return TrackReviewAggregate{}, nil
+	}
+	var sum float64
+	for _, r := range rows {
+		sum += float64(r.Rating)
+	}
+	return TrackReviewAggregate{
+		TotalReviews:  int32(len(rows)),
+		AverageRating: sum / float64(len(rows)),
+	}, nil
+}
+
+func trackReviewFromRow(r gen.Review) TrackReview {
+	return TrackReview{
+		ID:         r.ID.String(),
+		TenantID:   r.TenantID.String(),
+		EntityType: r.EntityType,
+		EntityID:   r.EntityID.String(),
+		ReviewerID: r.ReviewerUserID.String(),
+		Rating:     r.Rating,
+		Title:      r.Title,
+		Body:       r.Body,
+		Status:     r.Status,
+		CreatedAt:  r.CreatedAt.Time,
+		UpdatedAt:  r.UpdatedAt.Time,
+	}
 }

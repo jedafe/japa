@@ -819,6 +819,76 @@ func (q *Queries) ListPendingDeletionRequests(ctx context.Context, pageLimit int
 	return items, nil
 }
 
+const listRetentionWaitElapsed = `-- name: ListRetentionWaitElapsed :many
+SELECT r.id, r.tenant_id
+FROM account_deletion_requests r
+LEFT JOIN system_settings s ON s.tenant_id = r.tenant_id AND s.key = 'gdpr.retention_days'
+WHERE r.status = 'retention_wait'
+  AND r.created_at + ((COALESCE(s.value->>0, '30'))::int || ' days')::interval <= now()
+ORDER BY r.created_at ASC
+LIMIT 100
+`
+
+type ListRetentionWaitElapsedRow struct {
+	ID       pgtype.UUID `json:"id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+func (q *Queries) ListRetentionWaitElapsed(ctx context.Context) ([]ListRetentionWaitElapsedRow, error) {
+	rows, err := q.db.Query(ctx, listRetentionWaitElapsed)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListRetentionWaitElapsedRow
+	for rows.Next() {
+		var i ListRetentionWaitElapsedRow
+		if err := rows.Scan(&i.ID, &i.TenantID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listStalePendingDeletionRequests = `-- name: ListStalePendingDeletionRequests :many
+SELECT id, tenant_id, user_id
+FROM account_deletion_requests
+WHERE status = 'pending'
+  AND created_at < now() - interval '30 minutes'
+ORDER BY created_at ASC
+LIMIT 50
+`
+
+type ListStalePendingDeletionRequestsRow struct {
+	ID       pgtype.UUID `json:"id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+	UserID   pgtype.UUID `json:"user_id"`
+}
+
+func (q *Queries) ListStalePendingDeletionRequests(ctx context.Context) ([]ListStalePendingDeletionRequestsRow, error) {
+	rows, err := q.db.Query(ctx, listStalePendingDeletionRequests)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListStalePendingDeletionRequestsRow
+	for rows.Next() {
+		var i ListStalePendingDeletionRequestsRow
+		if err := rows.Scan(&i.ID, &i.TenantID, &i.UserID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const nullifyPaymentUserRefs = `-- name: NullifyPaymentUserRefs :exec
 UPDATE payments SET user_id = NULL
 WHERE user_id = $1 AND tenant_id = $2
@@ -848,6 +918,15 @@ type NullifyTicketSubmitterParams struct {
 // Nulls ticket submitter reference.
 func (q *Queries) NullifyTicketSubmitter(ctx context.Context, arg NullifyTicketSubmitterParams) error {
 	_, err := q.db.Exec(ctx, nullifyTicketSubmitter, arg.UserID, arg.TenantID)
+	return err
+}
+
+const pruneAuditLogs = `-- name: PruneAuditLogs :exec
+DELETE FROM audit_logs WHERE created_at < now() - interval '90 days'
+`
+
+func (q *Queries) PruneAuditLogs(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, pruneAuditLogs)
 	return err
 }
 

@@ -161,6 +161,25 @@ func (s *Service) EnqueueAutoPopulate(ctx context.Context, spaceID, tenantID pgt
 	}
 }
 
+// EnqueueSearchIndex enqueues a search:index_entity task to sync the space to
+// the Meilisearch index (BL-004). operation is "index" (create/update) or
+// "delete". Best-effort — logs errors but never fails the caller.
+func (s *Service) EnqueueSearchIndex(ctx context.Context, spaceID, tenantID pgtype.UUID, operation string) {
+	if s.enqueuer == nil {
+		return
+	}
+	payload, _ := json.Marshal(map[string]string{
+		"entity_id":   spaceID.String(),
+		"entity_type": "space",
+		"tenant_id":   tenantID.String(),
+		"operation":   operation,
+	})
+	if err := s.enqueuer.Enqueue(worker.TypeSearchIndexSync, payload); err != nil {
+		slog.Warn("spaces: failed to enqueue search:index_entity",
+			"space_id", spaceID.String(), "operation", operation, "error", err)
+	}
+}
+
 // NewService creates a Service backed by the given database pool.
 func NewService(database *db.DB) *Service {
 	return &Service{

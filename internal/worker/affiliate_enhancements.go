@@ -3,17 +3,38 @@ package worker
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
+	"math"
 	"net/url"
 	"regexp"
 	"strings"
 
 	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5/pgtype"
+
+	"github.com/jedafe/japa/internal/db/gen"
+)
+
+// Wallet ledger constants — inlined from internal/wallet to avoid an import
+// cycle (internal/wallet/tasks.go imports internal/worker). These mirror
+// wallet.LedgerTypeCredits and wallet.OperationEarn; keep in sync.
+const (
+	affiliateLedgerTypeCredits = "credits"
+	affiliateOperationEarn     = "earn"
 )
 
 // ─── Affiliate: Credit Author Commission ────────────────────────────
 
+// HandleAffiliateCreditAuthorCommission credits an author's revenue share from
+// an external affiliate commission to the author's wallet via the immutable
+// credits ledger (Section 28). Idempotent on the commission row ID.
+//
+// AUDIT-BE-FIN-001: the previous implementation mutated a non-existent
+// `users.credits_balance` column with a direct UPDATE, violating the
+// immutable-ledger requirement. It now appends a wallet_ledger entry inside a
+// transaction holding pg_advisory_xact_lock(user_id), matching the
+// SpendCredits/ConvertPointsToCredits pattern.
 func HandleAffiliateCreditAuthorCommission(ctx context.Context, t *asynq.Task) error {
 	var payload struct {
 		CommissionID string `json:"commission_id"`
@@ -24,34 +45,91 @@ func HandleAffiliateCreditAuthorCommission(ctx context.Context, t *asynq.Task) e
 	if dbPool == nil {
 		return nil
 	}
-	var commissionID, authorUserID pgtype.UUID
-	var authorShare float64
-	var credited bool
-	if err := dbPool.Reader.QueryRow(ctx,
-		`SELECT id, author_user_id, author_share, credited
-		 FROM affiliate_content_commissions WHERE id = $1`, payload.CommissionID,
-	).Scan(&commissionID, &authorUserID, &authorShare, &credited); err != nil {
+
+	var commissionID pgtype.UUID
+	if err := commissionID.Scan(payload.CommissionID); err != nil {
+		return fmt.Errorf("affiliate: invalid commission_id %q: %w", payload.CommissionID, err)
+	}
+
+	readQ := gen.New(dbPool.Reader)
+	row, err := readQ.GetAffiliateContentCommissionForCredit(ctx, commissionID)
+	if err != nil {
 		slog.Warn("affiliate: commission not found", "id", payload.CommissionID, "error", err)
 		return nil
 	}
-	if credited {
+	if row.Credited {
 		return nil
 	}
-	if _, err := dbPool.Writer.Exec(ctx,
-		`UPDATE users SET credits_balance = credits_balance + $1 WHERE id = $2`,
-		authorShare, authorUserID); err != nil {
-		slog.Error("affiliate: failed to credit author wallet", "error", err)
-		return err
+
+	// author_share is numeric(12,2) in major currency units; the wallet ledger
+	// amount is BIGINT in kobo (minor units). Convert with rounding.
+	shareFloat, err := row.AuthorShare.Float64Value()
+	if err != nil || !shareFloat.Valid {
+		slog.Warn("affiliate: invalid author_share", "commission_id", payload.CommissionID, "error", err)
+		return nil
 	}
-	if _, err := dbPool.Writer.Exec(ctx,
-		`UPDATE affiliate_content_commissions SET credited = true, credited_at = now() WHERE id = $1`,
-		commissionID); err != nil {
-		slog.Error("affiliate: failed to mark commission credited", "error", err)
-		return err
+	amountKobo := int64(math.Round(shareFloat.Float64 * 100))
+	if amountKobo <= 0 {
+		slog.Warn("affiliate: non-positive author share, skipping credit", "commission_id", payload.CommissionID, "amount", amountKobo)
+		return nil
 	}
+
+	// Credit the author's wallet via the immutable ledger, inside a tx holding
+	// pg_advisory_xact_lock(user_id) to serialize concurrent balance mutations.
+	tx, err := dbPool.Writer.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("affiliate: beginning tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	qtx := gen.New(tx)
+
+	lockKey := "wallet:" + row.TenantID.String() + ":" + row.AuthorUserID.String()
+	if _, err = tx.Exec(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", lockKey); err != nil {
+		return fmt.Errorf("affiliate: acquiring wallet lock: %w", err)
+	}
+
+	currentCredits, err := qtx.GetLatestBalance(ctx, gen.GetLatestBalanceParams{
+		TenantID:   row.TenantID,
+		UserID:     row.AuthorUserID,
+		LedgerType: affiliateLedgerTypeCredits,
+	})
+	if err != nil {
+		currentCredits = 0
+	}
+	newBalance := currentCredits + amountKobo
+
+	idempotencyKey := "affiliate_commission:" + row.ID.String()
+	source := "affiliate_commission"
+	reference := row.ID.String()
+	if _, err = qtx.InsertLedgerEntry(ctx, gen.InsertLedgerEntryParams{
+		TenantID:         row.TenantID,
+		UserID:           row.AuthorUserID,
+		LedgerType:       affiliateLedgerTypeCredits,
+		Operation:        affiliateOperationEarn,
+		Amount:           amountKobo,
+		ResultingBalance: newBalance,
+		Source:           &source,
+		Reference:        &reference,
+		IdempotencyKey:   &idempotencyKey,
+		Reason:           nil,
+	}); err != nil {
+		return fmt.Errorf("affiliate: inserting ledger entry: %w", err)
+	}
+
+	// Mark the commission credited within the same tx (idempotent guard:
+	// only updates rows still flagged credited=false).
+	if _, err = qtx.MarkAffiliateCommissionCredited(ctx, row.ID); err != nil {
+		return fmt.Errorf("affiliate: marking commission credited: %w", err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("affiliate: committing tx: %w", err)
+	}
+
 	slog.Info("affiliate: credited author commission",
 		"commission_id", payload.CommissionID,
-		"author_user_id", authorUserID.String(), "amount", authorShare)
+		"author_user_id", row.AuthorUserID.String(), "amount_kobo", amountKobo)
 	return nil
 }
 
@@ -85,6 +163,11 @@ func HandleContentScanAffiliateLinks(ctx context.Context, t *asynq.Task) error {
 	}
 	if err := tenantID.Scan(payload.TenantID); err != nil {
 		return err
+	}
+	// AUDIT-BE-TASK-001: respect the affiliate.scan_on_publish system setting.
+	// If disabled, exit early without scanning.
+	if val, err := getAffSystemSetting(ctx, tenantID, "affiliate.scan_on_publish"); err == nil && (val == "false" || val == "0") {
+		return nil
 	}
 	policy := "flag"
 	if val, err := getAffSystemSetting(ctx, tenantID, "affiliate.unregistered_link_policy"); err == nil {
