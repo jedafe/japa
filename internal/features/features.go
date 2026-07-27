@@ -61,19 +61,65 @@ func (c *Checker) IsEnabled(ctx context.Context, tenantID pgtype.UUID, key strin
 	return enabled
 }
 
-// queryEnabled queries the database for the feature flag.
+// queryEnabled queries the database for the feature flag. When the flag is
+// enabled and its config carries a rollout_percentage between 0 and 100
+// (exclusive), a deterministic hash of (tenantID, key) decides whether this
+// tenant falls inside the rollout cohort (BL-013 / Section 42). This gives a
+// stable per-tenant-per-flag result: the same tenant always sees the same
+// outcome for a given flag until the percentage or enabled state changes.
 func (c *Checker) queryEnabled(ctx context.Context, tenantID pgtype.UUID, key string) bool {
 	var enabled bool
+	var configBytes []byte
 
 	err := c.db.Reader.QueryRow(ctx, `
-		SELECT enabled FROM feature_flags
+		SELECT enabled, config FROM feature_flags
 		WHERE key = $1 AND tenant_id = $2
-	`, key, tenantID).Scan(&enabled)
+	`, key, tenantID).Scan(&enabled, &configBytes)
 	if err != nil {
 		return DefaultFor(key)
 	}
 
-	return enabled
+	if !enabled {
+		return false
+	}
+
+	// BL-013 / Section 42: gradual rollout. Parse the config blob for a
+	// rollout_percentage. 0 or 100 means "off" or "fully on" — no hash needed.
+	var cfg FlagConfig
+	if len(configBytes) > 0 {
+		if jsonErr := json.Unmarshal(configBytes, &cfg); jsonErr == nil {
+			if cfg.RolloutPercentage > 0 && cfg.RolloutPercentage < 100 {
+				return hashInRollout(tenantID, key, cfg.RolloutPercentage)
+			}
+		}
+	}
+
+	return true
+}
+
+// hashInRollout deterministically decides whether a (tenantID, key) pair falls
+// inside the rollout cohort. It hashes the pair into a 0–99 bucket and returns
+// true when bucket < percentage. The result is stable for a given pair.
+func hashInRollout(tenantID pgtype.UUID, key string, percentage int) bool {
+	h := fnvHash64(tenantID.String() + ":" + key)
+	bucket := int(h % 100)
+	return bucket < percentage
+}
+
+// fnvHash64 is a small FNV-1a 64-bit implementation used for deterministic
+// rollout bucketing (BL-013). Avoids importing hash/fnv to keep the import
+// list lean; the algorithm is public domain and stable.
+func fnvHash64(s string) uint64 {
+	const (
+		offset64 uint64 = 14695981039346656037
+		prime64  uint64 = 1099511628211
+	)
+	h := offset64
+	for i := 0; i < len(s); i++ {
+		h ^= uint64(s[i])
+		h *= prime64
+	}
+	return h
 }
 
 // cacheGet retrieves a cached flag value if still valid.

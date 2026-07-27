@@ -62,26 +62,35 @@ type SettingsReader interface {
 	GetIntOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback int) int
 }
 
-// PasswordPolicyFromSettings returns a password policy configured from system_settings.
-// Falls back to defaults for any unset values.
+// PasswordPolicyFromSettings returns a password policy configured from
+// system_settings. Falls back to defaults for any unset values. All seven
+// policy knobs are now settings-driven (AUDIT-BE2-SETTING-005).
 func PasswordPolicyFromSettings(ctx context.Context, reader SettingsReader, tenantID pgtype.UUID) PasswordPolicy {
-	minLength := 8
-	if val, err := reader.GetSettingInt(ctx, tenantID, "auth.password.min_length"); err == nil && val > 0 {
-		minLength = val
+	policy := DefaultPasswordPolicy()
+
+	if val := reader.GetIntOr(ctx, tenantID, "auth.password.min_length", policy.MinLength); val > 0 {
+		policy.MinLength = val
 	}
-	requireUpper := false
+	if val := reader.GetIntOr(ctx, tenantID, "auth.password.max_length", policy.MaxLength); val > 0 {
+		policy.MaxLength = val
+	}
 	if val, err := reader.GetSettingBool(ctx, tenantID, "auth.password.require_uppercase"); err == nil {
-		requireUpper = val
+		policy.RequireUpper = val
 	}
-	return PasswordPolicy{
-		MinLength:     minLength,
-		MaxLength:     128, // not configurable via settings
-		RequireUpper:  requireUpper,
-		RequireNumber: true,  // not configurable via settings
-		RequireSymbol: false, // not configurable via settings
-		CheckBreach:   true,  // not configurable via settings
-		HistoryCount:  5,     // not configurable via settings
+	if val, err := reader.GetSettingBool(ctx, tenantID, "auth.password.require_number"); err == nil {
+		policy.RequireNumber = val
 	}
+	if val, err := reader.GetSettingBool(ctx, tenantID, "auth.password.require_symbol"); err == nil {
+		policy.RequireSymbol = val
+	}
+	if val, err := reader.GetSettingBool(ctx, tenantID, "auth.password.check_breach"); err == nil {
+		policy.CheckBreach = val
+	}
+	if val := reader.GetIntOr(ctx, tenantID, "auth.password.history_count", policy.HistoryCount); val >= 0 {
+		policy.HistoryCount = val
+	}
+
+	return policy
 }
 
 // ValidatePassword checks a password against the policy.

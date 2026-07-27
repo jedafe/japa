@@ -197,6 +197,45 @@ func (h *Handlers) HandleGenerate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// TASK-004: docs page generation is fire-and-forget. Enqueue a background
+	// task and return 202 Accepted with the task reference instead of blocking
+	// on the AI gateway call synchronously.
+	if input.Category == "docs" {
+		payload, err := json.Marshal(map[string]string{
+			"prompt":    input.Prompt,
+			"user_id":   user.UserID.String(),
+			"tenant_id": tenantID.String(),
+		})
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "marshal_error", "Failed to marshal task payload")
+			return
+		}
+
+		if h.AsynqClient == nil {
+			writeError(w, http.StatusServiceUnavailable, "no_worker", "Background task client unavailable")
+			return
+		}
+
+		info, err := h.AsynqClient.Enqueue(
+			asynq.NewTask(worker.TypeDocsGeneratePage, payload),
+			asynq.Queue(worker.QueueForTask(worker.TypeDocsGeneratePage)),
+		)
+		if err != nil {
+			slog.Error("ai: failed to enqueue docs:generate_page", "error", err)
+			writeError(w, http.StatusBadGateway, "enqueue_error", "Failed to enqueue generation task")
+			return
+		}
+
+		writeJSON(w, http.StatusAccepted, map[string]any{
+			"data": map[string]any{
+				"status":   "accepted",
+				"task_id":  info.ID,
+				"task_type": worker.TypeDocsGeneratePage,
+			},
+		})
+		return
+	}
+
 	payload := map[string]any{
 		"prompt":    input.Prompt,
 		"context":   input.Context,

@@ -10,6 +10,7 @@ import (
 	"bytes"
 	"io"
 	"strings"
+	"sync"
 
 	"golang.org/x/net/html"
 )
@@ -42,13 +43,49 @@ var allowedAttributes = map[string]map[string]bool{
 	},
 }
 
-// approvedIframeHosts is the allowlist of domains permitted in <iframe> src.
+// approvedIframeHosts is the default allowlist of domains permitted in
+// <iframe> src. It can be overridden at runtime via SetAllowedIframeHosts
+// (BL-014: sanitization rules configurable via system_settings).
 var approvedIframeHosts = []string{
 	"youtube.com", "www.youtube.com", "youtu.be",
 	"vimeo.com", "www.vimeo.com",
 	"codepen.io", "www.codepen.io",
 	"jsfiddle.net",
 	"embed.ted.com",
+}
+
+// iframeHostsMu guards the runtime-overridable iframe host allowlist
+// (BL-014). Reads in isApprovedIframe acquire a read lock; SetAllowedIframeHosts
+// acquires a write lock.
+var iframeHostsMu sync.RWMutex
+
+// SetAllowedIframeHosts replaces the iframe embed allowlist at runtime
+// (BL-014 / Section 16: sanitization rules configurable via system_settings).
+// Pass nil/empty to restore the compiled-in defaults. The list is matched
+// case-insensitively as a substring of the iframe src URL, matching the
+// existing isApprovedIframe semantics.
+func SetAllowedIframeHosts(hosts []string) {
+	iframeHostsMu.Lock()
+	defer iframeHostsMu.Unlock()
+	if len(hosts) == 0 {
+		approvedIframeHosts = []string{
+			"youtube.com", "www.youtube.com", "youtu.be",
+			"vimeo.com", "www.vimeo.com",
+			"codepen.io", "www.codepen.io",
+			"jsfiddle.net",
+			"embed.ted.com",
+		}
+		return
+	}
+	approvedIframeHosts = hosts
+}
+
+// currentIframeHosts returns a snapshot of the active iframe host allowlist
+// under the read lock (BL-014).
+func currentIframeHosts() []string {
+	iframeHostsMu.RLock()
+	defer iframeHostsMu.RUnlock()
+	return approvedIframeHosts
 }
 
 // SanitizeHTML processes user-generated HTML through a whitelist-based
@@ -210,12 +247,13 @@ func isSafeURL(url string) bool {
 }
 
 // isApprovedIframe checks whether an <iframe> node's src points to an
-// approved embed platform.
+// approved embed platform. The allowlist is runtime-configurable via
+// SetAllowedIframeHosts (BL-014).
 func isApprovedIframe(n *html.Node) bool {
 	for _, attr := range n.Attr {
 		if strings.ToLower(attr.Key) == "src" {
 			src := strings.ToLower(strings.TrimSpace(attr.Val))
-			for _, host := range approvedIframeHosts {
+			for _, host := range currentIframeHosts() {
 				if strings.Contains(src, host) {
 					return true
 				}

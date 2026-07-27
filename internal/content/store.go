@@ -253,6 +253,24 @@ func (s *Service) UpdateContent(ctx context.Context, id, tenantID, editedBy pgty
 		return gen.UpdateContentRow{}, fmt.Errorf("getting existing content for update: %w", err)
 	}
 
+	// Edit-window enforcement (BL-008 / Section 49): the original author may
+	// only edit within `content.edit_window_minutes` of creation. Moderators
+	// and admins editing someone else's post bypass this check because they
+	// are not the author. A zero/missing created_at is treated as "no limit".
+	if existing.AuthorID.Valid && existing.CreatedAt.Valid &&
+		existing.AuthorID.Bytes == editedBy.Bytes {
+		windowMinutes := defaultEditWindowMinutes
+		if s.settings != nil {
+			windowMinutes = s.settings.GetIntOr(ctx, tenantID, "content.edit_window_minutes", defaultEditWindowMinutes)
+		}
+		if windowMinutes > 0 {
+			deadline := existing.CreatedAt.Time.Add(time.Duration(windowMinutes) * time.Minute)
+			if time.Now().After(deadline) {
+				return gen.UpdateContentRow{}, ErrEditWindowExpired
+			}
+		}
+	}
+
 	newSlug := input.Slug
 	if newSlug == "" {
 		newSlug = existing.Slug
@@ -845,8 +863,10 @@ func (s *Service) CountContentShares(ctx context.Context, tenantID, contentID pg
 // Bookmarks
 // ---------------------------------------------------------------------------
 
-// CreateBookmark saves a bookmark for the given entity. Idempotent — upserts folder.
-func (s *Service) CreateBookmark(ctx context.Context, tenantID, userID pgtype.UUID, entityType string, entityID pgtype.UUID, folder string) (gen.Bookmark, error) {
+// CreateBookmark saves a bookmark for the given entity. Idempotent — upserts
+// folder. folderID is the optional FK to bookmark_folders (BL-011); pass a
+// zero pgtype.UUID for "unfiled".
+func (s *Service) CreateBookmark(ctx context.Context, tenantID, userID pgtype.UUID, entityType string, entityID pgtype.UUID, folder string, folderID pgtype.UUID) (gen.CreateBookmarkRow, error) {
 	if folder == "" {
 		folder = "default"
 	}
@@ -857,12 +877,45 @@ func (s *Service) CreateBookmark(ctx context.Context, tenantID, userID pgtype.UU
 		EntityType: entityType,
 		EntityID:   entityID,
 		Folder:     folder,
+		FolderID:   folderID,
 	})
 	if err != nil {
-		return gen.Bookmark{}, fmt.Errorf("creating bookmark: %w", err)
+		return gen.CreateBookmarkRow{}, fmt.Errorf("creating bookmark: %w", err)
 	}
 
 	return bm, nil
+}
+
+// SetBookmarkFolder moves an existing bookmark into a folder (BL-011).
+// Pass a zero pgtype.UUID to unfile the bookmark.
+func (s *Service) SetBookmarkFolder(ctx context.Context, userID pgtype.UUID, entityType string, entityID pgtype.UUID, folderID pgtype.UUID) error {
+	if err := s.write.SetBookmarkFolder(ctx, gen.SetBookmarkFolderParams{
+		FolderID:   folderID,
+		UserID:     userID,
+		EntityType: entityType,
+		EntityID:   entityID,
+	}); err != nil {
+		return fmt.Errorf("setting bookmark folder: %w", err)
+	}
+	return nil
+}
+
+// ListBookmarksByFolder returns bookmarks filed under a specific folder (BL-011).
+func (s *Service) ListBookmarksByFolder(ctx context.Context, tenantID, userID, folderID pgtype.UUID, limit, offset int32) ([]gen.ListBookmarksByFolderRow, error) {
+	if limit <= 0 || limit > MaxPageSize {
+		limit = DefaultPageSize
+	}
+	bms, err := s.read.ListBookmarksByFolder(ctx, gen.ListBookmarksByFolderParams{
+		UserID:   userID,
+		TenantID: tenantID,
+		FolderID: folderID,
+		PageLimit:  limit,
+		PageOffset: offset,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("listing bookmarks by folder: %w", err)
+	}
+	return bms, nil
 }
 
 // RemoveBookmark deletes a user's bookmark for the given entity.
@@ -893,7 +946,7 @@ func (s *Service) IsBookmarked(ctx context.Context, userID pgtype.UUID, entityTy
 }
 
 // ListBookmarks returns all bookmarks for a user.
-func (s *Service) ListBookmarks(ctx context.Context, tenantID, userID pgtype.UUID, limit, offset int32) ([]gen.Bookmark, error) {
+func (s *Service) ListBookmarks(ctx context.Context, tenantID, userID pgtype.UUID, limit, offset int32) ([]gen.ListBookmarksByUserRow, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}

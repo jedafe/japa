@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/valkey-io/valkey-go/valkeycompat"
 
 	"github.com/jedafe/japa/internal/clientip"
@@ -126,6 +127,9 @@ func RateLimitMiddleware(rdb valkeycompat.Cmdable) func(http.Handler) http.Handl
 }
 
 // getTierLimit returns the per-minute request limit for a rate limit tier.
+// These are the compiled-in fallbacks used when no settings reader is wired
+// (SEC-012). When a settings reader is available, resolveTierLimit reads
+// the `api.rate_limit.{tier}` system_settings keys instead.
 func getTierLimit(tier string) int {
 	switch tier {
 	case "standard":
@@ -134,5 +138,24 @@ func getTierLimit(tier string) int {
 		return 10000
 	default:
 		return 100 // basic
+	}
+}
+
+// resolveTierLimit returns the per-minute request limit for a tier, reading
+// from system_settings when a settings reader is wired (SEC-012 / Rule 3),
+// falling back to the compiled-in getTierLimit defaults otherwise. The
+// settings keys are `api.rate_limit.basic`, `api.rate_limit.standard`,
+// `api.rate_limit.premium` (see system-settings-catalog).
+func resolveTierLimit(ctx context.Context, tier string, tenantID pgtype.UUID, sr rateLimitSettingsReader) int {
+	if sr == nil {
+		return getTierLimit(tier)
+	}
+	switch tier {
+	case "standard":
+		return sr.GetIntOr(ctx, tenantID, "api.rate_limit.standard", 1000)
+	case "premium":
+		return sr.GetIntOr(ctx, tenantID, "api.rate_limit.premium", 10000)
+	default:
+		return sr.GetIntOr(ctx, tenantID, "api.rate_limit.basic", 100)
 	}
 }

@@ -9,24 +9,59 @@ import (
 	"strings"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/publicapi"
 	"github.com/jedafe/japa/internal/tenant"
+	"github.com/jedafe/japa/internal/worker"
 )
+
+// TaskEnqueueClient is the interface for enqueueing background tasks.
+type TaskEnqueueClient interface {
+	Enqueue(task *asynq.Task, opts ...asynq.Option) (*asynq.TaskInfo, error)
+}
 
 // Handlers holds dependencies for documentation HTTP handlers.
 type Handlers struct {
-	Service  *Service
-	siteURL  string
-	siteName string
+	Service     *Service
+	siteURL     string
+	siteName    string
+	AsynqClient TaskEnqueueClient
 }
 
 // NewHandlers creates Handlers with the given Service.
 func NewHandlers(service *Service, siteURL string, siteName string) *Handlers {
 	return &Handlers{Service: service, siteURL: siteURL, siteName: siteName}
+}
+
+// enqueueSearchIndex enqueues an async task to sync a doc page to the
+// Meilisearch doc_pages index (SEARCH-001). operation is "index" or "delete".
+func (h *Handlers) enqueueSearchIndex(pageID, tenantID pgtype.UUID, operation string) {
+	if h.AsynqClient == nil {
+		return
+	}
+
+	payload, err := json.Marshal(map[string]string{
+		"entity_id":   pageID.String(),
+		"entity_type": "doc_page",
+		"tenant_id":   tenantID.String(),
+		"operation":   operation,
+	})
+	if err != nil {
+		slog.Warn("docs: failed to marshal search index payload", "error", err)
+		return
+	}
+
+	if _, err := h.AsynqClient.Enqueue(
+		asynq.NewTask(worker.TypeSearchIndexSync, payload),
+		asynq.Queue(worker.QueueForTask(worker.TypeSearchIndexSync)),
+	); err != nil {
+		slog.Warn("docs: failed to enqueue search index task",
+			"page_id", pageID.String(), "error", err)
+	}
 }
 
 // requireTenant resolves the tenant from the request context.
@@ -239,6 +274,14 @@ func (h *Handlers) CreateDocPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// SEARCH-001: enqueue Meilisearch index sync for the new doc page.
+	if page, err := h.Service.GetDocPageBySlug(r.Context(), tenantID, req.Audience, req.Slug); err == nil {
+		var pageID pgtype.UUID
+		if scanErr := pageID.Scan(page.ID); scanErr == nil {
+			h.enqueueSearchIndex(pageID, tenantID, "index")
+		}
+	}
+
 	writeJSON(w, http.StatusCreated, map[string]string{"status": "created"})
 }
 
@@ -271,6 +314,9 @@ func (h *Handlers) UpdateDocPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// SEARCH-001: enqueue Meilisearch index sync for the updated doc page.
+	h.enqueueSearchIndex(id, tenantID, "index")
+
 	writeJSON(w, http.StatusOK, map[string]string{"status": "updated"})
 }
 
@@ -291,6 +337,9 @@ func (h *Handlers) DeleteDocPage(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
+	// SEARCH-001: enqueue Meilisearch document deletion for the removed doc page.
+	h.enqueueSearchIndex(id, tenantID, "delete")
 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
 }
