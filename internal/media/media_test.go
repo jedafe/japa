@@ -193,7 +193,7 @@ func TestNormalizeMIMEType(t *testing.T) {
 // MediaURL (unit test — no real env vars)
 // ---------------------------------------------------------------------------
 
-func TestMediaURLReturnsEmptyWhenEnvMissing(t *testing.T) {
+func TestMediaURLReturnsLocalServeWhenEnvMissing(t *testing.T) {
 	t.Parallel()
 	// Ensure env vars are not set.
 	_ = os.Unsetenv("JC_IMGPROXY_KEY")
@@ -206,8 +206,9 @@ func TestMediaURLReturnsEmptyWhenEnvMissing(t *testing.T) {
 		Height:       480,
 		Format:       "webp",
 	})
-	if got != "" {
-		t.Errorf("MediaURL with missing env vars = %q, want empty", got)
+	want := "/api/v1/media/serve/media/test/photo.jpg"
+	if got != want {
+		t.Errorf("MediaURL with missing env vars = %q, want %q", got, want)
 	}
 }
 

@@ -15,6 +15,6 @@ CREATE TABLE IF NOT EXISTS trending_snapshots (
     UNIQUE (tenant_id, entity_type, entity_id, "window", geo_code)
 );
 
-CREATE INDEX idx_trending_snapshots_tenant_entity ON trending_snapshots (tenant_id, entity_type, entity_id);
-CREATE INDEX idx_trending_snapshots_trending ON trending_snapshots (tenant_id, entity_type, "window", geo_code, score DESC);
-CREATE INDEX idx_trending_snapshots_expires ON trending_snapshots (expires_at);
+CREATE INDEX IF NOT EXISTS idx_trending_snapshots_tenant_entity ON trending_snapshots (tenant_id, entity_type, entity_id);
+CREATE INDEX IF NOT EXISTS idx_trending_snapshots_trending ON trending_snapshots (tenant_id, entity_type, "window", geo_code, score DESC);
+CREATE INDEX IF NOT EXISTS idx_trending_snapshots_expires ON trending_snapshots (expires_at);

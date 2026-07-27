@@ -8,6 +8,7 @@
 package content
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -21,13 +22,19 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
+	"github.com/jedafe/japa/internal/config"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/mentions"
 	"github.com/jedafe/japa/internal/spam"
 	"github.com/jedafe/japa/internal/tenant"
 	"github.com/jedafe/japa/internal/worker"
 )
 
 const defaultPageSize int32 = 20
+
+// defaultMaxTags is the fallback for content.max_tags when the setting is
+// unset or unparseable. Matches the settings catalog default.
+const defaultMaxTags = 5
 
 // TaskEnqueueClient is the interface for enqueueing background tasks.
 // The Asynq client satisfies this interface. A nil client means tasks
@@ -36,11 +43,28 @@ type TaskEnqueueClient interface {
 	Enqueue(task *asynq.Task, opts ...asynq.Option) (*asynq.TaskInfo, error)
 }
 
+// MentionNotifier dispatches mention notifications via the batch system
+// (Section 35 — mentions:notify consolidated into notification:dispatch_batch
+// per Section 11). Fire-and-forget per Rule 8.
+type MentionNotifier interface {
+	DispatchNotification(
+		ctx context.Context,
+		tenantID, recipientID pgtype.UUID,
+		nType, subjectTitle string,
+		actorID pgtype.UUID,
+		subjectType string,
+		subjectID pgtype.UUID,
+		subjectURL, actorName, actorAvatar string,
+	) error
+}
+
 // Handlers holds dependencies for content HTTP handlers.
 type Handlers struct {
 	Service      *Service
 	AsynqClient  TaskEnqueueClient
 	SpamPipeline *spam.SpamPipeline
+	settings     *config.Settings
+	notifier     MentionNotifier // nil disables mention notifications (test-only)
 }
 
 // NewHandlers creates Handlers with the given Service.
@@ -52,6 +76,16 @@ func NewHandlers(service *Service) *Handlers {
 func (h *Handlers) SetSpamPipeline(p *spam.SpamPipeline) {
 	h.SpamPipeline = p
 }
+
+// SetSettings injects the settings service for reading content.max_tags.
+func (h *Handlers) SetSettings(s *config.Settings) {
+	h.settings = s
+}
+
+// SetMentionNotifier wires the notification dispatcher used to notify
+// @mentioned users after content creation (BL-002 — mentions:notify →
+// notification:dispatch_batch).
+func (h *Handlers) SetMentionNotifier(n MentionNotifier) { h.notifier = n }
 
 // parseUUIDParam extracts a URL parameter and scans it into a pgtype.UUID.
 func parseUUIDParam(r *http.Request, param string) (pgtype.UUID, error) {
@@ -94,8 +128,10 @@ func handleServiceError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
 		writeError(w, http.StatusNotFound, "not_found", "Resource not found")
-	case errors.Is(err, errpkg.ErrDuplicate):
-		writeError(w, http.StatusConflict, "already_exists", "Resource already exists")
+	case errors.Is(err, errpkg.ErrDuplicate), errors.Is(err, ErrDuplicateContent):
+		writeError(w, http.StatusConflict, "duplicate_content", "Content with this body already exists")
+	case errors.Is(err, ErrOrgPostForbidden):
+		writeError(w, http.StatusForbidden, "org_post_forbidden", "Not authorized to post as this organization")
 	default:
 		writeError(w, http.StatusInternalServerError, "internal_error", "Something went wrong")
 	}
@@ -164,6 +200,32 @@ func (h *Handlers) enqueueContentEmbedding(contentID, tenantID pgtype.UUID) {
 	}
 }
 
+// enqueueAffiliateLinkScan enqueues the content:scan_affiliate_links task
+// (Section 55). Fire-and-forget: errors are logged but never propagated.
+// AUDIT-BE-TASK-001: the task was defined and registered but never enqueued.
+func (h *Handlers) enqueueAffiliateLinkScan(contentID, tenantID pgtype.UUID) {
+	if h.AsynqClient == nil {
+		return
+	}
+
+	payload, err := json.Marshal(map[string]string{
+		"content_id": contentID.String(),
+		"tenant_id":  tenantID.String(),
+	})
+	if err != nil {
+		slog.Warn("content: failed to marshal affiliate scan task payload", "error", err)
+		return
+	}
+
+	if _, err := h.AsynqClient.Enqueue(
+		asynq.NewTask(worker.TypeContentScanAffiliateLinks, payload),
+		asynq.Queue(worker.QueueForTask(worker.TypeContentScanAffiliateLinks)),
+	); err != nil {
+		slog.Warn("content: failed to enqueue affiliate scan task",
+			"content_id", contentID.String(), "error", err)
+	}
+}
+
 // enqueueSearchIndex enqueues an async task to sync content to the Meilisearch
 // search index. operation can be "index" (create/update) or "delete".
 func (h *Handlers) enqueueSearchIndex(contentID, tenantID pgtype.UUID, operation string) {
@@ -214,6 +276,71 @@ func (h *Handlers) enqueueModerationScan(entityType string, entityID, tenantID p
 	); err != nil {
 		slog.Warn("content: failed to enqueue moderation scan task",
 			"entity_id", entityID.String(), "error", err)
+	}
+}
+
+// enqueueFeedFanOut enqueues a content:fan_out_to_feeds task for published
+// content (BL-005). The fan-out type is "space" if the post is in a space,
+// "followers" otherwise. The worker's "bubble" branch is triggered
+// automatically by the space fan-out when the space has parent spaces.
+// Fire-and-forget per Rule 8.
+func (h *Handlers) enqueueFeedFanOut(contentID, tenantID, spaceID pgtype.UUID, contentType string) {
+	if h.AsynqClient == nil {
+		return
+	}
+	fanOutType := "followers"
+	if spaceID.Valid {
+		fanOutType = "space"
+	}
+	payload, err := json.Marshal(map[string]string{
+		"content_id":   contentID.String(),
+		"tenant_id":    tenantID.String(),
+		"space_id":     spaceID.String(),
+		"content_type": contentType,
+		"fan_out_type": fanOutType,
+	})
+	if err != nil {
+		slog.Warn("content: failed to marshal fan-out payload", "error", err)
+		return
+	}
+	if _, err := h.AsynqClient.Enqueue(
+		asynq.NewTask(worker.TypeContentFanOutToFeeds, payload),
+		asynq.Queue(worker.QueueForTask(worker.TypeContentFanOutToFeeds)),
+	); err != nil {
+		slog.Warn("content: failed to enqueue fan-out task",
+			"content_id", contentID.String(), "error", err)
+	}
+}
+
+// dispatchMentionNotifications extracts @mentioned users from the content
+// body (TipTap JSON) and fires a content_mention notification to each via
+// the batch system (Section 35 — BL-002). Fire-and-forget per Rule 8:
+// errors are logged but never propagated to the caller.
+//
+// Self-mentions (mentioning the content author) are skipped.
+func (h *Handlers) dispatchMentionNotifications(ctx context.Context, tenantID, authorID, contentID pgtype.UUID, body string) {
+	if h.notifier == nil {
+		return
+	}
+	mentioned, err := mentions.ExtractMentions([]byte(body))
+	if err != nil {
+		// Body may not be valid TipTap JSON (e.g., plain text); skip mentions.
+		return
+	}
+	for _, m := range mentioned {
+		if m.EntityType != "user" || !m.ID.Valid || m.ID == authorID {
+			continue
+		}
+		if err := h.notifier.DispatchNotification(
+			ctx, tenantID, m.ID,
+			"content_mention", "",
+			authorID,
+			"content", contentID,
+			"", "", "",
+		); err != nil {
+			slog.Warn("content: failed to dispatch content_mention notification",
+				"user_id", m.ID.String(), "error", err)
+		}
 	}
 }
 
@@ -438,6 +565,15 @@ func (h *Handlers) CreateContent(w http.ResponseWriter, r *http.Request) {
 
 	// Enqueue moderation scan — fire-and-forget.
 	h.enqueueModerationScan("content", content.ID, tenantID)
+
+	// Dispatch @mention notifications — fire-and-forget (BL-002).
+	h.dispatchMentionNotifications(r.Context(), tenantID, user.UserID, content.ID, content.Body)
+
+	// Enqueue feed fan-out for published content (BL-005). Scheduled posts
+	// are fanned out by the scheduled-publish handler when they go live.
+	if content.Status == StatusPublished {
+		h.enqueueFeedFanOut(content.ID, tenantID, content.SpaceID, content.ContentType)
+	}
 
 	writeJSON(w, http.StatusCreated, map[string]any{"data": content})
 }
@@ -710,6 +846,11 @@ func (h *Handlers) PublishContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// AUDIT-BE-TASK-001: enqueue the affiliate link scan task on publish
+	// (Section 55 — fire-and-forget, low tier). The worker handler reads
+	// the affiliate.scan_on_publish system setting; if false, it exits early.
+	h.enqueueAffiliateLinkScan(id, tenantID)
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": updated})
 }
 
@@ -888,6 +1029,11 @@ func (h *Handlers) PinContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
 	contentID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
@@ -915,7 +1061,7 @@ func (h *Handlers) PinContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	pin, err := h.Service.PinContent(r.Context(), spaceID, contentID, user.UserID, input.Position)
+	pin, err := h.Service.PinContent(r.Context(), tenantID, spaceID, contentID, user.UserID, input.Position)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -1216,6 +1362,11 @@ func (h *Handlers) AddContentTag(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
 	contentID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
@@ -1234,6 +1385,21 @@ func (h *Handlers) AddContentTag(w http.ResponseWriter, r *http.Request) {
 	var tagID pgtype.UUID
 	if err := tagID.Scan(input.TagID); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_tag_id", "Invalid tag_id format")
+		return
+	}
+
+	maxTags := defaultMaxTags
+	if h.settings != nil {
+		maxTags = h.settings.GetIntOr(r.Context(), tenantID, "content.max_tags", defaultMaxTags)
+	}
+
+	existing, err := h.Service.ListContentTags(r.Context(), contentID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	if len(existing) >= maxTags {
+		writeError(w, http.StatusBadRequest, "too_many_tags", "Content has reached the maximum number of tags")
 		return
 	}
 

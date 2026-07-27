@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/jedafe/japa/internal/clientip"
 )
 
 func TestFromContext_NoGeoData(t *testing.T) {
@@ -102,6 +104,10 @@ func TestMiddleware_AddsGeoContext(t *testing.T) {
 func TestRealIP(t *testing.T) {
 	t.Parallel()
 
+	// Since the middleware now uses clientip.FromRequest, forwarding headers
+	// are only honoured when the immediate peer is a trusted proxy
+	// (loopback / RFC1918 by default). Tests use 127.0.0.1 as the peer so
+	// the headers are respected; a non-trusted peer would ignore them.
 	tests := []struct {
 		name   string
 		header string
@@ -109,10 +115,13 @@ func TestRealIP(t *testing.T) {
 		remote string
 		want   string
 	}{
-		{"X-Forwarded-For single", "X-Forwarded-For", "1.2.3.4", "", "1.2.3.4"},
-		{"X-Forwarded-For multiple", "X-Forwarded-For", "1.2.3.4, 5.6.7.8", "", "1.2.3.4"},
-		{"X-Real-IP", "X-Real-IP", "9.8.7.6", "", "9.8.7.6"},
+		{"X-Forwarded-For single", "X-Forwarded-For", "1.2.3.4", "127.0.0.1:12345", "1.2.3.4"},
+		// clientip walks XFF right-to-left, returning the first untrusted IP.
+		// For "1.2.3.4, 5.6.7.8" the right-most (5.6.7.8) is the actual client.
+		{"X-Forwarded-For multiple", "X-Forwarded-For", "1.2.3.4, 5.6.7.8", "127.0.0.1:12345", "5.6.7.8"},
+		{"X-Real-IP", "X-Real-IP", "9.8.7.6", "127.0.0.1:12345", "9.8.7.6"},
 		{"RemoteAddr fallback", "", "", "192.168.1.1:12345", "192.168.1.1"},
+		{"Untrusted peer ignores X-Forwarded-For", "X-Forwarded-For", "1.2.3.4", "8.8.8.8:12345", "8.8.8.8"},
 	}
 
 	for _, tt := range tests {
@@ -128,9 +137,9 @@ func TestRealIP(t *testing.T) {
 				req.RemoteAddr = tt.remote
 			}
 
-			got := realIP(req)
+			got := clientip.FromRequest(req)
 			if got != tt.want {
-				t.Errorf("realIP() = %s, want %s", got, tt.want)
+				t.Errorf("clientip.FromRequest() = %s, want %s", got, tt.want)
 			}
 		})
 	}

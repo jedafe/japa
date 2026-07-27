@@ -11,6 +11,28 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const checkUserOperationBanExists = `-- name: CheckUserOperationBanExists :one
+SELECT EXISTS(
+    SELECT 1 FROM user_operation_bans
+    WHERE user_id = $1 AND operation = $2 AND deleted_at IS NULL
+    AND (expires_at IS NULL OR expires_at > now())
+)
+`
+
+type CheckUserOperationBanExistsParams struct {
+	UserID    pgtype.UUID  `json:"user_id"`
+	Operation BanOperation `json:"operation"`
+}
+
+// AUDIT-BE-DB-003: replaces raw SQL existence check in operation ban enforcement middleware.
+// Returns true when an active (non-expired, non-deleted) operation ban exists.
+func (q *Queries) CheckUserOperationBanExists(ctx context.Context, arg CheckUserOperationBanExistsParams) (bool, error) {
+	row := q.db.QueryRow(ctx, checkUserOperationBanExists, arg.UserID, arg.Operation)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
 const countActiveOperationBans = `-- name: CountActiveOperationBans :one
 SELECT COUNT(*)::int FROM user_operation_bans
 WHERE user_id = $1 AND deleted_at IS NULL
@@ -105,6 +127,27 @@ func (q *Queries) CreateUserTypedWarning(ctx context.Context, arg CreateUserType
 		arg.ViolationType,
 	)
 	return err
+}
+
+const getUserOperationBanExpiration = `-- name: GetUserOperationBanExpiration :one
+SELECT expires_at FROM user_operation_bans
+WHERE user_id = $1 AND operation = $2 AND deleted_at IS NULL
+AND (expires_at IS NULL OR expires_at > now())
+ORDER BY created_at DESC LIMIT 1
+`
+
+type GetUserOperationBanExpirationParams struct {
+	UserID    pgtype.UUID  `json:"user_id"`
+	Operation BanOperation `json:"operation"`
+}
+
+// AUDIT-BE-DB-004: replaces raw SQL expiration lookup in operation ban enforcement middleware.
+// Returns the expires_at of the most recent active operation ban (may be NULL = permanent).
+func (q *Queries) GetUserOperationBanExpiration(ctx context.Context, arg GetUserOperationBanExpirationParams) (pgtype.Timestamptz, error) {
+	row := q.db.QueryRow(ctx, getUserOperationBanExpiration, arg.UserID, arg.Operation)
+	var expires_at pgtype.Timestamptz
+	err := row.Scan(&expires_at)
+	return expires_at, err
 }
 
 const getUserOperationBansForCache = `-- name: GetUserOperationBansForCache :many

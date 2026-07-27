@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"path"
 	"testing"
+	"time"
 
 	"github.com/alicebob/miniredis/v2"
 	"github.com/valkey-io/valkey-go"
@@ -99,7 +100,7 @@ func doRequest(t *testing.T, mw func(http.Handler) http.Handler, h http.Handler,
 func TestIdempotency_PassesThroughOnGET(t *testing.T) {
 	t.Parallel()
 	_, rdb := startTestRedis(t)
-	mw := IdempotencyMiddleware(rdb)
+	mw := IdempotencyMiddleware(rdb, nil)
 
 	rr := doRequest(t, mw, handler(), http.MethodGet, "/api/v1/posts", "my-key")
 	if rr.Code != http.StatusOK {
@@ -110,7 +111,7 @@ func TestIdempotency_PassesThroughOnGET(t *testing.T) {
 func TestIdempotency_PassesThroughOnDELETE(t *testing.T) {
 	t.Parallel()
 	_, rdb := startTestRedis(t)
-	mw := IdempotencyMiddleware(rdb)
+	mw := IdempotencyMiddleware(rdb, nil)
 
 	rr := doRequest(t, mw, handler(), http.MethodDelete, "/api/v1/posts/123", "my-key")
 	if rr.Code != http.StatusOK {
@@ -121,7 +122,7 @@ func TestIdempotency_PassesThroughOnDELETE(t *testing.T) {
 func TestIdempotency_PassesThroughWithoutKey(t *testing.T) {
 	t.Parallel()
 	mr, rdb := startTestRedis(t)
-	mw := IdempotencyMiddleware(rdb)
+	mw := IdempotencyMiddleware(rdb, nil)
 
 	rr := doRequest(t, mw, handler(), http.MethodPost, "/api/v1/posts", "")
 	if rr.Code != http.StatusOK {
@@ -139,7 +140,7 @@ func TestIdempotency_PassesThroughWithoutKey(t *testing.T) {
 func TestIdempotency_NilRedisClientDegradesGracefully(t *testing.T) {
 	t.Parallel()
 
-	mw := IdempotencyMiddleware(nil)
+	mw := IdempotencyMiddleware(nil, nil)
 
 	rr := doRequest(t, mw, handler(), http.MethodPost, "/api/v1/posts", "my-key")
 	if rr.Code != http.StatusOK {
@@ -150,7 +151,7 @@ func TestIdempotency_NilRedisClientDegradesGracefully(t *testing.T) {
 func TestIdempotency_CachesSuccessfulResponse(t *testing.T) {
 	t.Parallel()
 	mr, rdb := startTestRedis(t)
-	mw := IdempotencyMiddleware(rdb)
+	mw := IdempotencyMiddleware(rdb, nil)
 
 	// First request — should hit the handler and cache the result.
 	rr1 := doRequest(t, mw, handler(), http.MethodPost, "/api/v1/posts", "abc-123")
@@ -182,7 +183,7 @@ func TestIdempotency_CachesSuccessfulResponse(t *testing.T) {
 func TestIdempotency_DifferentKeysProduceDifferentEntries(t *testing.T) {
 	t.Parallel()
 	mr, rdb := startTestRedis(t)
-	mw := IdempotencyMiddleware(rdb)
+	mw := IdempotencyMiddleware(rdb, nil)
 
 	doRequest(t, mw, handler(), http.MethodPost, "/api/v1/posts", "key-1")
 	doRequest(t, mw, handler(), http.MethodPost, "/api/v1/posts", "key-2")
@@ -197,7 +198,7 @@ func TestIdempotency_DifferentKeysProduceDifferentEntries(t *testing.T) {
 func TestIdempotency_DifferentCallersWithSameKeyAreIndependent(t *testing.T) {
 	t.Parallel()
 	mr, rdb := startTestRedis(t)
-	mw := IdempotencyMiddleware(rdb)
+	mw := IdempotencyMiddleware(rdb, nil)
 
 	// Simulate two anonymous callers by varying RemoteAddr.
 	req1 := httptest.NewRequest(http.MethodPost, "/api/v1/posts", nil)
@@ -222,7 +223,7 @@ func TestIdempotency_DifferentCallersWithSameKeyAreIndependent(t *testing.T) {
 func TestIdempotency_DoesNotCacheErrorResponses(t *testing.T) {
 	t.Parallel()
 	mr, rdb := startTestRedis(t)
-	mw := IdempotencyMiddleware(rdb)
+	mw := IdempotencyMiddleware(rdb, nil)
 
 	doRequest(t, mw, errorHandler(), http.MethodPost, "/api/v1/posts", "error-key")
 
@@ -236,12 +237,12 @@ func TestIdempotency_DoesNotCacheErrorResponses(t *testing.T) {
 func TestIdempotency_CorruptedCacheEntryRecomputes(t *testing.T) {
 	t.Parallel()
 	_, rdb := startTestRedis(t)
-	mw := IdempotencyMiddleware(rdb)
+	mw := IdempotencyMiddleware(rdb, nil)
 
 	// Store a corrupted (non-JSON) value at a known key.
 	hash := idempotencyHash(http.MethodPost, "/api/v1/posts", "corrupt", "anon")
 	cacheKey := "jc:idempotency:" + hash
-	rdb.Set(t.Context(), cacheKey, "NOT-JSON", idempotencyTTL)
+	rdb.Set(t.Context(), cacheKey, "NOT-JSON", time.Duration(idempotencyTTLDefault)*time.Hour)
 
 	// The request should not panic and should fall through to the
 	// handler, returning a fresh response.
@@ -280,7 +281,7 @@ func TestIdempotency_HashIsDeterministic(t *testing.T) {
 func TestIdempotency_PreservesStatusCode(t *testing.T) {
 	t.Parallel()
 	_, rdb := startTestRedis(t)
-	mw := IdempotencyMiddleware(rdb)
+	mw := IdempotencyMiddleware(rdb, nil)
 
 	custom := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusCreated)
@@ -307,7 +308,7 @@ func TestIdempotency_PreservesStatusCode(t *testing.T) {
 func TestIdempotency_PUTandPATCHAreCached(t *testing.T) {
 	t.Parallel()
 	mr, rdb := startTestRedis(t)
-	mw := IdempotencyMiddleware(rdb)
+	mw := IdempotencyMiddleware(rdb, nil)
 
 	//nolint:paralleltest // parent checks shared Redis state after subtests complete
 	for _, method := range []string{http.MethodPut, http.MethodPatch} {
@@ -341,7 +342,7 @@ func TestIdempotency_ValkeyErrorDegradesGracefully(t *testing.T) {
 	// command fails.
 	vk := valkeypkg.NewWithFallback("127.0.0.1:1")
 
-	mw := IdempotencyMiddleware(vk.Redis())
+	mw := IdempotencyMiddleware(vk.Redis(), nil)
 
 	rr := doRequest(t, mw, handler(), http.MethodPost, "/api/v1/posts", "unreachable")
 	if rr.Code != http.StatusOK {
@@ -352,7 +353,7 @@ func TestIdempotency_ValkeyErrorDegradesGracefully(t *testing.T) {
 func TestIdempotency_ReaderClosedAfterCache(t *testing.T) {
 	t.Parallel()
 	_, rdb := startTestRedis(t)
-	mw := IdempotencyMiddleware(rdb)
+	mw := IdempotencyMiddleware(rdb, nil)
 
 	// The handler reads the body to verify it isn't empty.
 	var receivedBody string

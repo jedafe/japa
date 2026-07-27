@@ -11,6 +11,39 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const checkFieldPermissionForUser = `-- name: CheckFieldPermissionForUser :one
+SELECT
+  COALESCE(bool_or(cfp.can_view), false) AS can_view,
+  COALESCE(bool_or(cfp.can_edit), false) AS can_edit
+FROM custom_field_permissions cfp
+JOIN user_group_memberships ugm ON ugm.group_id = cfp.user_group_id
+WHERE cfp.field_id = $1
+  AND ugm.user_id = $2
+`
+
+type CheckFieldPermissionForUserParams struct {
+	FieldID pgtype.UUID `json:"field_id"`
+	UserID  pgtype.UUID `json:"user_id"`
+}
+
+type CheckFieldPermissionForUserRow struct {
+	CanView interface{} `json:"can_view"`
+	CanEdit interface{} `json:"can_edit"`
+}
+
+// Field-level RBAC (Section 06): check whether a user belongs to any
+// user_group that has can_view / can_edit on the given field. Returns
+// a row with two booleans. When no permission rows exist for the field,
+// both default to false (fail-closed) — admins must explicitly grant
+// visibility/editability per user group. Super-admins bypass this check
+// at the handler layer via rbac.IsSuperAdmin.
+func (q *Queries) CheckFieldPermissionForUser(ctx context.Context, arg CheckFieldPermissionForUserParams) (CheckFieldPermissionForUserRow, error) {
+	row := q.db.QueryRow(ctx, checkFieldPermissionForUser, arg.FieldID, arg.UserID)
+	var i CheckFieldPermissionForUserRow
+	err := row.Scan(&i.CanView, &i.CanEdit)
+	return i, err
+}
+
 const createAssignment = `-- name: CreateAssignment :one
 INSERT INTO custom_field_group_assignments (group_id, entity_class, entity_id, position)
 VALUES ($1, $2, $3, $4)
@@ -636,6 +669,37 @@ func (q *Queries) ListPermissionsByField(ctx context.Context, fieldID pgtype.UUI
 			return nil, err
 		}
 		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listVisibleFieldIDsForUser = `-- name: ListVisibleFieldIDsForUser :many
+SELECT DISTINCT cfp.field_id
+FROM custom_field_permissions cfp
+JOIN user_group_memberships ugm ON ugm.group_id = cfp.user_group_id
+WHERE ugm.user_id = $1
+  AND cfp.can_view = true
+`
+
+// Returns the field_ids the given user is allowed to view. Used by
+// ListFieldValuesByEntity to filter out values for fields the user
+// cannot see (Section 06 field-level RBAC).
+func (q *Queries) ListVisibleFieldIDsForUser(ctx context.Context, userID pgtype.UUID) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, listVisibleFieldIDsForUser, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []pgtype.UUID
+	for rows.Next() {
+		var field_id pgtype.UUID
+		if err := rows.Scan(&field_id); err != nil {
+			return nil, err
+		}
+		items = append(items, field_id)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err

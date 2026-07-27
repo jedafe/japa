@@ -80,21 +80,31 @@ func (s *Service) IsBlocked(ctx context.Context, userA, userB pgtype.UUID) (bool
 // =====================
 
 // MuteUser mutes a user. Returns true if muted, false if already muted (idempotent).
+// Invalidates the jc:muted_users:{user_id} Valkey cache (Section 52 / VALKEY-001).
 func (s *Service) MuteUser(ctx context.Context, tenantID, userID, mutedUserID pgtype.UUID) error {
-	return s.write.MuteUser(ctx, gen.MuteUserParams{
+	if err := s.write.MuteUser(ctx, gen.MuteUserParams{
 		TenantID:    tenantID,
 		UserID:      userID,
 		MutedUserID: mutedUserID,
-	})
+	}); err != nil {
+		return err
+	}
+	s.invalidateMutedUsersCache(ctx, userID)
+	return nil
 }
 
 // UnmuteUser removes a mute.
+// Invalidates the jc:muted_users:{user_id} Valkey cache (Section 52 / VALKEY-001).
 func (s *Service) UnmuteUser(ctx context.Context, tenantID, userID, mutedUserID pgtype.UUID) error {
-	return s.write.UnmuteUser(ctx, gen.UnmuteUserParams{
+	if err := s.write.UnmuteUser(ctx, gen.UnmuteUserParams{
 		TenantID:    tenantID,
 		UserID:      userID,
 		MutedUserID: mutedUserID,
-	})
+	}); err != nil {
+		return err
+	}
+	s.invalidateMutedUsersCache(ctx, userID)
+	return nil
 }
 
 // IsUserMuted checks if a user is muted.
@@ -148,21 +158,31 @@ func (s *Service) ListMutedUsers(ctx context.Context, tenantID, userID pgtype.UU
 // =====================
 
 // MuteSpace mutes a space.
+// Invalidates the jc:muted_spaces:{user_id} Valkey cache (Section 52 / VALKEY-001).
 func (s *Service) MuteSpace(ctx context.Context, tenantID, userID, spaceID pgtype.UUID) error {
-	return s.write.MuteSpace(ctx, gen.MuteSpaceParams{
+	if err := s.write.MuteSpace(ctx, gen.MuteSpaceParams{
 		TenantID: tenantID,
 		UserID:   userID,
 		SpaceID:  spaceID,
-	})
+	}); err != nil {
+		return err
+	}
+	s.invalidateMutedSpacesCache(ctx, userID)
+	return nil
 }
 
 // UnmuteSpace removes a space mute.
+// Invalidates the jc:muted_spaces:{user_id} Valkey cache (Section 52 / VALKEY-001).
 func (s *Service) UnmuteSpace(ctx context.Context, tenantID, userID, spaceID pgtype.UUID) error {
-	return s.write.UnmuteSpace(ctx, gen.UnmuteSpaceParams{
+	if err := s.write.UnmuteSpace(ctx, gen.UnmuteSpaceParams{
 		TenantID: tenantID,
 		UserID:   userID,
 		SpaceID:  spaceID,
-	})
+	}); err != nil {
+		return err
+	}
+	s.invalidateMutedSpacesCache(ctx, userID)
+	return nil
 }
 
 // IsSpaceMuted checks if a space is muted.

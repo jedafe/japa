@@ -8,6 +8,7 @@ import (
 	"log/slog"
 
 	"github.com/hibiken/asynq"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/worker"
@@ -35,8 +36,10 @@ func NewStore(read, write *gen.Queries) *Store {
 	return &Store{read: read, write: write}
 }
 
-// CreateWSTicket inserts a new WebSocket ticket with 60-second TTL.
-func (s *Store) CreateWSTicket(ctx context.Context, userID, tenantID pgtype.UUID) error {
+// CreateWSTicket inserts a new WebSocket ticket with 60-second TTL and
+// returns the generated ticket row so the caller can return the ID to the
+// client and cache it in Valkey under jc:ws_ticket:{id}.
+func (s *Store) CreateWSTicket(ctx context.Context, userID, tenantID pgtype.UUID) (gen.CreateWSTicketRow, error) {
 	return s.write.CreateWSTicket(ctx, gen.CreateWSTicketParams{
 		UserID:   userID,
 		TenantID: tenantID,
@@ -57,6 +60,18 @@ func (s *DMStore) GetOrCreateConversation(ctx context.Context, tenantID, partici
 		TenantID:       tenantID,
 		Participant1ID: participant1ID,
 		Participant2ID: participant2ID,
+	})
+}
+
+// GetConversationByParticipants returns an existing conversation between two
+// users without creating one. Returns pgx.ErrNoRows when no conversation
+// exists. Used by the DM privacy check (Section 48) to skip privacy
+// enforcement for already-active threads.
+func (s *DMStore) GetConversationByParticipants(ctx context.Context, tenantID, userA, userB pgtype.UUID) (gen.DmConversation, error) {
+	return s.read.GetConversationByParticipants(ctx, gen.GetConversationByParticipantsParams{
+		TenantID:       tenantID,
+		Participant1ID: userA,
+		Participant2ID: userB,
 	})
 }
 
@@ -169,6 +184,39 @@ func (s *DMStore) GetUserDMPrivacy(ctx context.Context, userID pgtype.UUID) (str
 	return s.read.GetUserDMPrivacy(ctx, userID)
 }
 
+// IsBlocked returns true if either user has blocked the other (bidirectional
+// check per Section 48). Wraps the sqlc-generated IsBlocked query.
+func (s *DMStore) IsBlocked(ctx context.Context, userA, userB pgtype.UUID) (bool, error) {
+	return s.read.IsBlocked(ctx, gen.IsBlockedParams{
+		BlockerID: userA,
+		BlockedID: userB,
+	})
+}
+
+// IsMutualFollow returns true if initiator follows recipient AND recipient
+// follows initiator. The sqlc IsMutualFollow query checks a single direction,
+// so we call it twice and AND the results.
+func (s *DMStore) IsMutualFollow(ctx context.Context, initiatorID, recipientID pgtype.UUID) (bool, error) {
+	initiatorFollowsRecipient, err := s.read.IsMutualFollow(ctx, gen.IsMutualFollowParams{
+		EntityID:   recipientID,
+		FollowerID: initiatorID,
+	})
+	if err != nil {
+		return false, fmt.Errorf("checking initiator->recipient follow: %w", err)
+	}
+	if !initiatorFollowsRecipient {
+		return false, nil
+	}
+	recipientFollowsInitiator, err := s.read.IsMutualFollow(ctx, gen.IsMutualFollowParams{
+		EntityID:   initiatorID,
+		FollowerID: recipientID,
+	})
+	if err != nil {
+		return false, fmt.Errorf("checking recipient->initiator follow: %w", err)
+	}
+	return recipientFollowsInitiator, nil
+}
+
 // UpsertUserDMPrivacy creates or updates the DM privacy setting.
 func (s *DMStore) UpsertUserDMPrivacy(ctx context.Context, userID pgtype.UUID, privacy string) error {
 	return s.write.UpsertUserDMPrivacy(ctx, gen.UpsertUserDMPrivacyParams{
@@ -244,13 +292,78 @@ func NewDMService(store *DMStore, hub *Hub) *DMService {
 	return &DMService{store: store, hub: hub}
 }
 
+// DM privacy / block sentinel errors per Section 48.
+var (
+	ErrDMBlocked          = errors.New("dm blocked by user_blocks")
+	ErrDMPrivacyNobody    = errors.New("recipient does not accept new DM conversations")
+	ErrDMNotMutualFollower = errors.New("recipient only accepts DMs from mutual followers")
+)
+
 // GetOrCreateConversation gets existing or creates new DM conversation.
-// If participants don't mutually follow and privacy is followers_only,
-// creates a message request instead.
+// Enforces the recipient's dm_privacy setting and the bidirectional block
+// check per Section 48 before creating a new conversation. Existing
+// conversations are returned unchanged (privacy settings do not retroactively
+// close already-active threads).
 func (s *DMService) GetOrCreateConversation(ctx context.Context, tenantID, senderID, recipientID pgtype.UUID) (ConversationResult, error) {
 	// Ensure sender != recipient
 	if senderID == recipientID {
 		return ConversationResult{}, errors.New("cannot create conversation with yourself")
+	}
+
+	// If a conversation already exists, return it — privacy settings do not
+	// retroactively close already-active threads (Section 48: "existing ones
+	// still active"). The block check still applies: a later block must
+	// prevent further interaction even on existing conversations.
+	if existing, err := s.store.GetConversationByParticipants(ctx, tenantID, senderID, recipientID); err == nil {
+		// Block check (Section 48): either direction blocks → 403, even
+		// for existing conversations.
+		blocked, bErr := s.store.IsBlocked(ctx, senderID, recipientID)
+		if bErr != nil {
+			return ConversationResult{}, fmt.Errorf("checking block status: %w", bErr)
+		}
+		if blocked {
+			return ConversationResult{}, ErrDMBlocked
+		}
+		return ConversationResult{Conversation: existing, IsNew: false}, nil
+	} else if !errors.Is(err, pgx.ErrNoRows) {
+		return ConversationResult{}, fmt.Errorf("checking existing conversation: %w", err)
+	}
+
+	// No existing conversation — apply privacy + block checks for new ones.
+	// Block check (Section 48): either direction blocks → 403.
+	blocked, err := s.store.IsBlocked(ctx, senderID, recipientID)
+	if err != nil {
+		return ConversationResult{}, fmt.Errorf("checking block status: %w", err)
+	}
+	if blocked {
+		return ConversationResult{}, ErrDMBlocked
+	}
+
+	// Privacy check (Section 48) — only applies to NEW conversations.
+	privacy, err := s.store.GetUserDMPrivacy(ctx, recipientID)
+	if err != nil {
+		return ConversationResult{}, fmt.Errorf("reading recipient dm_privacy: %w", err)
+	}
+
+	switch privacy {
+	case "nobody":
+		return ConversationResult{}, ErrDMPrivacyNobody
+	case "followers_only":
+		mutualFollow, mErr := s.store.IsMutualFollow(ctx, senderID, recipientID)
+		if mErr != nil {
+			return ConversationResult{}, fmt.Errorf("checking mutual follow: %w", mErr)
+		}
+		if !mutualFollow {
+			return ConversationResult{}, ErrDMNotMutualFollower
+		}
+	case "everyone", "":
+		// Allowed; mutual follow still grants direct access, otherwise a
+		// message request is created by the store layer.
+	default:
+		// Unknown privacy value — fail closed (treat as nobody).
+		slog.Warn("dm: unknown dm_privacy value, failing closed",
+			"recipient_id", recipientID.String(), "dm_privacy", privacy)
+		return ConversationResult{}, ErrDMPrivacyNobody
 	}
 
 	conv, err := s.store.GetOrCreateConversation(ctx, tenantID, senderID, recipientID)
@@ -258,7 +371,7 @@ func (s *DMService) GetOrCreateConversation(ctx context.Context, tenantID, sende
 		return ConversationResult{}, fmt.Errorf("getting or creating conversation: %w", err)
 	}
 
-	return ConversationResult{Conversation: conv, IsNew: false}, nil
+	return ConversationResult{Conversation: conv, IsNew: true}, nil
 }
 
 // SendMessage sends a message in a conversation.

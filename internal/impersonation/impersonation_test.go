@@ -417,15 +417,34 @@ func TestImpersonationMiddleware_InvalidUUIDPassesThrough(t *testing.T) {
 // Service — Start/End Impersonation (unit test with nil DB pool)
 // ---------------------------------------------------------------------------
 
-func TestServiceIsAdminAlwaysReturnsTrue(t *testing.T) {
+func TestServiceIsAdminWithoutRBACReturnsFalse(t *testing.T) {
 	t.Parallel()
 	store, _ := newTestStore(t)
 	svc := NewService(store, nil)
 
-	// IsAdmin is currently a simplified implementation returning true
-	got := svc.IsAdmin(t.Context(), pgtype.UUID{Bytes: [16]byte{1}, Valid: true})
+	// Without an RBAC resolver wired, IsAdmin returns false (defensive).
+	got := svc.IsAdmin(t.Context(), pgtype.UUID{Bytes: [16]byte{1}, Valid: true}, pgtype.UUID{Bytes: [16]byte{2}, Valid: true})
+	if got {
+		t.Error("IsAdmin() = true, want false when no RBAC resolver is wired")
+	}
+}
+
+// stubAdminChecker is a test-only AdminCapabilityChecker.
+type stubAdminChecker struct{ admin bool }
+
+func (s stubAdminChecker) HasAdminCapability(_ context.Context, _, _ pgtype.UUID) bool {
+	return s.admin
+}
+
+func TestServiceIsAdminWithRBACResolver(t *testing.T) {
+	t.Parallel()
+	store, _ := newTestStore(t)
+	svc := NewService(store, nil)
+	svc.SetRBAC(stubAdminChecker{admin: true})
+
+	got := svc.IsAdmin(t.Context(), pgtype.UUID{Bytes: [16]byte{1}, Valid: true}, pgtype.UUID{Bytes: [16]byte{2}, Valid: true})
 	if !got {
-		t.Error("IsAdmin() = false, want true")
+		t.Error("IsAdmin() = false, want true when resolver reports admin capability")
 	}
 }
 

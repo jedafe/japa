@@ -8,6 +8,7 @@
 package payments
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
@@ -33,18 +34,32 @@ import (
 
 const defaultPageSize int32 = 20
 
+// SettingsProvider abstracts system_settings access for pricing config
+// (SETTING-001 / Rule 3). *config.Settings satisfies this structurally.
+// When nil, the handler falls back to compiled-in defaults.
+type SettingsProvider interface {
+	GetIntOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback int) int
+	GetStringOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback string) string
+}
+
 // Handlers holds dependencies for payment HTTP handlers.
 type Handlers struct {
 	Service             *Service
 	StripeWebhookSecret string // JC_STRIPE_WEBHOOK_SECRET — Stripe webhook signing secret
 	NOWPaymentsIPNKey   string // JC_NOWPAYMENTS_IPN_SECRET — NOWPayments IPN HMAC key
 	PaystackSecretKey   string // Paystack secret key for webhook HMAC verification
+	settings            SettingsProvider
 }
 
 // NewHandlers creates Handlers with the given Service.
 func NewHandlers(service *Service) *Handlers {
 	return &Handlers{Service: service}
 }
+
+// SetSettings wires the hot-reloadable settings reader for pricing config
+// (SETTING-001). When wired, plan prices are read from system_settings;
+// otherwise compiled-in defaults are used.
+func (h *Handlers) SetSettings(sp SettingsProvider) { h.settings = sp }
 
 // ---------------------------------------------------------------------------
 // Pricing Plans & Payment Providers
@@ -89,9 +104,20 @@ func (h *Handlers) ListPricingPlans(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Pricing plans are platform-wide configuration.
-	// In the future, these could be stored in system_settings per tenant.
-	_ = tenantID
+	// Pricing plan amounts are configurable via system_settings
+	// (SETTING-001 / Rule 3). Defaults match the catalog.
+	currency := "NGN"
+	proMonthly := int64(500000)
+	proYearly := int64(5000000)
+	bizMonthly := int64(1500000)
+	bizYearly := int64(15000000)
+	if h.settings != nil {
+		currency = h.settings.GetStringOr(r.Context(), tenantID, "pricing.currency", "NGN")
+		proMonthly = int64(h.settings.GetIntOr(r.Context(), tenantID, "pricing.plan.pro.monthly_amount", 500000))
+		proYearly = int64(h.settings.GetIntOr(r.Context(), tenantID, "pricing.plan.pro.yearly_amount", 5000000))
+		bizMonthly = int64(h.settings.GetIntOr(r.Context(), tenantID, "pricing.plan.business.monthly_amount", 1500000))
+		bizYearly = int64(h.settings.GetIntOr(r.Context(), tenantID, "pricing.plan.business.yearly_amount", 15000000))
+	}
 
 	plans := []PricingPlan{
 		{
@@ -109,8 +135,8 @@ func (h *Handlers) ListPricingPlans(w http.ResponseWriter, r *http.Request) {
 				{Text: "Advanced analytics", Included: false},
 				{Text: "Custom branding", Included: false},
 			},
-			Monthly: PlanPricing{Amount: 0, Currency: "NGN"},
-			Yearly:  PlanPricing{Amount: 0, Currency: "NGN"},
+			Monthly: PlanPricing{Amount: 0, Currency: currency},
+			Yearly:  PlanPricing{Amount: 0, Currency: currency},
 		},
 		{
 			ID:          "pro",
@@ -127,8 +153,8 @@ func (h *Handlers) ListPricingPlans(w http.ResponseWriter, r *http.Request) {
 				{Text: "Document verification", Included: true},
 				{Text: "Custom branding", Included: false},
 			},
-			Monthly: PlanPricing{Amount: 500000, Currency: "NGN"},
-			Yearly:  PlanPricing{Amount: 5000000, Currency: "NGN"},
+			Monthly: PlanPricing{Amount: proMonthly, Currency: currency},
+			Yearly:  PlanPricing{Amount: proYearly, Currency: currency},
 		},
 		{
 			ID:          "business",
@@ -145,8 +171,8 @@ func (h *Handlers) ListPricingPlans(w http.ResponseWriter, r *http.Request) {
 				{Text: "Advanced analytics", Included: true},
 				{Text: "Custom branding", Included: true},
 			},
-			Monthly: PlanPricing{Amount: 1500000, Currency: "NGN"},
-			Yearly:  PlanPricing{Amount: 15000000, Currency: "NGN"},
+			Monthly: PlanPricing{Amount: bizMonthly, Currency: currency},
+			Yearly:  PlanPricing{Amount: bizYearly, Currency: currency},
 		},
 	}
 

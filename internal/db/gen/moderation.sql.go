@@ -49,6 +49,25 @@ func (q *Queries) AcknowledgeModerationAlert(ctx context.Context, arg Acknowledg
 	return i, err
 }
 
+const countPendingReportsByEntity = `-- name: CountPendingReportsByEntity :one
+SELECT COUNT(*) FROM content_reports
+WHERE tenant_id = $1 AND entity_type = $2 AND entity_id = $3
+  AND status = 'pending'
+`
+
+type CountPendingReportsByEntityParams struct {
+	TenantID   pgtype.UUID `json:"tenant_id"`
+	EntityType string      `json:"entity_type"`
+	EntityID   pgtype.UUID `json:"entity_id"`
+}
+
+func (q *Queries) CountPendingReportsByEntity(ctx context.Context, arg CountPendingReportsByEntityParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countPendingReportsByEntity, arg.TenantID, arg.EntityType, arg.EntityID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createModerationAlert = `-- name: CreateModerationAlert :one
 
 INSERT INTO moderation_alerts (
@@ -96,6 +115,19 @@ func (q *Queries) CreateModerationAlert(ctx context.Context, arg CreateModeratio
 		&i.ResolvedBy,
 	)
 	return i, err
+}
+
+const expireModerationBans = `-- name: ExpireModerationBans :exec
+UPDATE user_moderation_actions
+SET action = 'unban'
+WHERE action = 'ban'
+  AND expires_at IS NOT NULL
+  AND expires_at < now()
+`
+
+func (q *Queries) ExpireModerationBans(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, expireModerationBans)
+	return err
 }
 
 const getModerationAlert = `-- name: GetModerationAlert :one

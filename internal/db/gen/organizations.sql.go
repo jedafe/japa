@@ -273,6 +273,18 @@ func (q *Queries) CreateOwnershipClaim(ctx context.Context, arg CreateOwnershipC
 	return i, err
 }
 
+const expireOrganizationBoosts = `-- name: ExpireOrganizationBoosts :exec
+UPDATE organization_boosts
+SET status = 'ended'
+WHERE status = 'active'
+  AND end_date < now()
+`
+
+func (q *Queries) ExpireOrganizationBoosts(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, expireOrganizationBoosts)
+	return err
+}
+
 const getOrganizationAnalytics = `-- name: GetOrganizationAnalytics :one
 SELECT
   COALESCE(SUM(c.view_count), 0)::bigint AS total_views,

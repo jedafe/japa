@@ -197,6 +197,48 @@ func TestUpdateRedirectValidation(t *testing.T) {
 	}
 }
 
+func TestValidateTargetURL(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		targetURL string
+		wantErr   bool
+	}{
+		{"root-relative path", "/new-path", false},
+		{"absolute https", "https://example.com/path", false},
+		{"absolute http", "http://example.com/path", false},
+		{"empty", "", true},
+		{"protocol-relative", "//evil.com", true},
+		{"javascript scheme", "javascript:alert(1)", true},
+		{"data scheme", "data:text/html,<script>", true},
+		{"file scheme", "file:///etc/passwd", true},
+		{"relative without slash", "new-path", true},
+		{"no scheme", "example.com/path", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			err := validateTargetURL(tt.targetURL)
+			if tt.wantErr && err == nil {
+				t.Errorf("validateTargetURL(%q) expected error, got nil", tt.targetURL)
+			}
+			if !tt.wantErr && err != nil {
+				t.Errorf("validateTargetURL(%q) unexpected error: %v", tt.targetURL, err)
+			}
+		})
+	}
+}
+
+func TestCreateRedirectRejectsInvalidTargetURL(t *testing.T) {
+	t.Parallel()
+	svc := &Service{}
+	_, err := svc.CreateRedirect(t.Context(), pgtype.UUID{}, validSourcePath, "javascript:alert(1)", 301, nil)
+	if !stderrors.Is(err, ErrInvalidTargetURL) {
+		t.Errorf("CreateRedirect() with javascript: URL error = %v, want ErrInvalidTargetURL", err)
+	}
+}
+
 func TestBulkActionRejectsBadInput(t *testing.T) {
 	t.Parallel()
 

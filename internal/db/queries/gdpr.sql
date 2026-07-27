@@ -233,3 +233,23 @@ WHERE tenant_id = @tenant_id
   AND (@q::text = '' OR action_type ILIKE '%' || @q || '%' OR target_type ILIKE '%' || @q || '%' OR target_id::text ILIKE '%' || @q || '%' OR actor_user_id::text ILIKE '%' || @q || '%')
 ORDER BY created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
+
+-- name: ListStalePendingDeletionRequests :many
+SELECT id, tenant_id, user_id
+FROM account_deletion_requests
+WHERE status = 'pending'
+  AND created_at < now() - interval '30 minutes'
+ORDER BY created_at ASC
+LIMIT 50;
+
+-- name: ListRetentionWaitElapsed :many
+SELECT r.id, r.tenant_id
+FROM account_deletion_requests r
+LEFT JOIN system_settings s ON s.tenant_id = r.tenant_id AND s.key = 'gdpr.retention_days'
+WHERE r.status = 'retention_wait'
+  AND r.created_at + ((COALESCE(s.value->>0, '30'))::int || ' days')::interval <= now()
+ORDER BY r.created_at ASC
+LIMIT 100;
+
+-- name: PruneAuditLogs :exec
+DELETE FROM audit_logs WHERE created_at < now() - interval '90 days';

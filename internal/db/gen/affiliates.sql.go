@@ -246,6 +246,92 @@ func (q *Queries) DeactivateLinksByMemberStatus(ctx context.Context, userID pgty
 	return err
 }
 
+const deactivateLinksForSuspendedMembers = `-- name: DeactivateLinksForSuspendedMembers :exec
+UPDATE user_affiliate_links
+SET is_active = false
+WHERE is_active = true
+  AND user_id IN (
+      SELECT user_id FROM affiliate_program_members
+      WHERE status IN ('suspended', 'banned')
+  )
+`
+
+func (q *Queries) DeactivateLinksForSuspendedMembers(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, deactivateLinksForSuspendedMembers)
+	return err
+}
+
+const getActiveAffiliateLinkByUser = `-- name: GetActiveAffiliateLinkByUser :one
+SELECT code FROM user_affiliate_links
+WHERE user_id = $1 AND tenant_id = $2 AND is_active = true
+LIMIT 1
+`
+
+type GetActiveAffiliateLinkByUserParams struct {
+	UserID   pgtype.UUID `json:"user_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+func (q *Queries) GetActiveAffiliateLinkByUser(ctx context.Context, arg GetActiveAffiliateLinkByUserParams) (string, error) {
+	row := q.db.QueryRow(ctx, getActiveAffiliateLinkByUser, arg.UserID, arg.TenantID)
+	var code string
+	err := row.Scan(&code)
+	return code, err
+}
+
+const getAffiliateCommissionInfo = `-- name: GetAffiliateCommissionInfo :one
+SELECT apm.user_id, COALESCE(aps.commission_rates->>'pro_monthly', '0')::int AS commission_rate
+FROM affiliate_program_members apm
+JOIN user_affiliate_links ual ON ual.user_id = apm.user_id
+JOIN affiliate_program_settings aps ON aps.tenant_id = apm.tenant_id
+WHERE ual.code = $1 AND apm.status = 'active' AND ual.is_active = true
+`
+
+type GetAffiliateCommissionInfoRow struct {
+	UserID         pgtype.UUID `json:"user_id"`
+	CommissionRate int32       `json:"commission_rate"`
+}
+
+func (q *Queries) GetAffiliateCommissionInfo(ctx context.Context, code string) (GetAffiliateCommissionInfoRow, error) {
+	row := q.db.QueryRow(ctx, getAffiliateCommissionInfo, code)
+	var i GetAffiliateCommissionInfoRow
+	err := row.Scan(&i.UserID, &i.CommissionRate)
+	return i, err
+}
+
+const getAffiliateContentCommissionForCredit = `-- name: GetAffiliateContentCommissionForCredit :one
+
+SELECT id, tenant_id, author_user_id, author_share, credited
+FROM affiliate_content_commissions
+WHERE id = $1
+`
+
+type GetAffiliateContentCommissionForCreditRow struct {
+	ID           pgtype.UUID    `json:"id"`
+	TenantID     pgtype.UUID    `json:"tenant_id"`
+	AuthorUserID pgtype.UUID    `json:"author_user_id"`
+	AuthorShare  pgtype.Numeric `json:"author_share"`
+	Credited     bool           `json:"credited"`
+}
+
+// =====================
+// External Affiliate Commissions (Section 55 — Author Revenue Sharing)
+// =====================
+// AUDIT-BE-FIN-001: replaces raw SQL read in HandleAffiliateCreditAuthorCommission.
+// Fetches the commission row for crediting; returns only the fields needed.
+func (q *Queries) GetAffiliateContentCommissionForCredit(ctx context.Context, id pgtype.UUID) (GetAffiliateContentCommissionForCreditRow, error) {
+	row := q.db.QueryRow(ctx, getAffiliateContentCommissionForCredit, id)
+	var i GetAffiliateContentCommissionForCreditRow
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.AuthorUserID,
+		&i.AuthorShare,
+		&i.Credited,
+	)
+	return i, err
+}
+
 const getAffiliateLinkByCode = `-- name: GetAffiliateLinkByCode :one
 SELECT id, tenant_id, user_id, product_type, product_id, code, description,
     destination_url, click_count, conversion_count, total_earned, is_active, created_at
@@ -288,6 +374,34 @@ type GetAffiliateLinkByIDParams struct {
 
 func (q *Queries) GetAffiliateLinkByID(ctx context.Context, arg GetAffiliateLinkByIDParams) (UserAffiliateLink, error) {
 	row := q.db.QueryRow(ctx, getAffiliateLinkByID, arg.ID, arg.TenantID)
+	var i UserAffiliateLink
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.UserID,
+		&i.ProductType,
+		&i.ProductID,
+		&i.Code,
+		&i.Description,
+		&i.DestinationUrl,
+		&i.ClickCount,
+		&i.ConversionCount,
+		&i.TotalEarned,
+		&i.IsActive,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getAffiliateLinkByIDOnly = `-- name: GetAffiliateLinkByIDOnly :one
+SELECT id, tenant_id, user_id, product_type, product_id, code, description,
+    destination_url, click_count, conversion_count, total_earned, is_active, created_at
+FROM user_affiliate_links
+WHERE id = $1
+`
+
+func (q *Queries) GetAffiliateLinkByIDOnly(ctx context.Context, id pgtype.UUID) (UserAffiliateLink, error) {
+	row := q.db.QueryRow(ctx, getAffiliateLinkByIDOnly, id)
 	var i UserAffiliateLink
 	err := row.Scan(
 		&i.ID,
@@ -358,6 +472,18 @@ func (q *Queries) GetAffiliateMemberByUserID(ctx context.Context, userID pgtype.
 		&i.Notes,
 	)
 	return i, err
+}
+
+const getAffiliateMemberTenant = `-- name: GetAffiliateMemberTenant :one
+SELECT tenant_id FROM affiliate_program_members
+WHERE user_id = $1 AND status = 'active'
+`
+
+func (q *Queries) GetAffiliateMemberTenant(ctx context.Context, userID pgtype.UUID) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, getAffiliateMemberTenant, userID)
+	var tenant_id pgtype.UUID
+	err := row.Scan(&tenant_id)
+	return tenant_id, err
 }
 
 const getRecentAffiliateEvents = `-- name: GetRecentAffiliateEvents :many
@@ -550,6 +676,67 @@ type IncrementAffiliateMemberConversionsParams struct {
 func (q *Queries) IncrementAffiliateMemberConversions(ctx context.Context, arg IncrementAffiliateMemberConversionsParams) error {
 	_, err := q.db.Exec(ctx, incrementAffiliateMemberConversions, arg.Commission, arg.UserID)
 	return err
+}
+
+const insertAffiliateContentCommission = `-- name: InsertAffiliateContentCommission :one
+
+INSERT INTO affiliate_content_commissions (
+    tenant_id, content_id, provider_id, author_user_id,
+    external_commission, author_share, author_commission_pct, event_description
+) VALUES (
+    $1, $2, $3, $4,
+    $5, $6, $7, $8
+)
+RETURNING id, tenant_id, content_id, provider_id, author_user_id,
+          external_commission, author_share, author_commission_pct, event_description,
+          credited, credited_at, created_at
+`
+
+type InsertAffiliateContentCommissionParams struct {
+	TenantID            pgtype.UUID    `json:"tenant_id"`
+	ContentID           pgtype.UUID    `json:"content_id"`
+	ProviderID          pgtype.UUID    `json:"provider_id"`
+	AuthorUserID        pgtype.UUID    `json:"author_user_id"`
+	ExternalCommission  pgtype.Numeric `json:"external_commission"`
+	AuthorShare         pgtype.Numeric `json:"author_share"`
+	AuthorCommissionPct pgtype.Numeric `json:"author_commission_pct"`
+	EventDescription    *string        `json:"event_description"`
+}
+
+// =====================
+// Record external affiliate commission (Section 55 — Author Revenue Sharing)
+// =====================
+// Records an external affiliate commission earned from a content's affiliate link.
+// The author_share is pre-computed by the caller (external_commission * author_commission_pct / 100).
+// After insert, the caller enqueues the affiliate:credit_author_commission task to
+// credit the author_share to the author's wallet via the immutable credits ledger.
+func (q *Queries) InsertAffiliateContentCommission(ctx context.Context, arg InsertAffiliateContentCommissionParams) (AffiliateContentCommission, error) {
+	row := q.db.QueryRow(ctx, insertAffiliateContentCommission,
+		arg.TenantID,
+		arg.ContentID,
+		arg.ProviderID,
+		arg.AuthorUserID,
+		arg.ExternalCommission,
+		arg.AuthorShare,
+		arg.AuthorCommissionPct,
+		arg.EventDescription,
+	)
+	var i AffiliateContentCommission
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.ContentID,
+		&i.ProviderID,
+		&i.AuthorUserID,
+		&i.ExternalCommission,
+		&i.AuthorShare,
+		&i.AuthorCommissionPct,
+		&i.EventDescription,
+		&i.Credited,
+		&i.CreditedAt,
+		&i.CreatedAt,
+	)
+	return i, err
 }
 
 const listAffiliateLinkEvents = `-- name: ListAffiliateLinkEvents :many
@@ -755,6 +942,23 @@ func (q *Queries) ListAllAffiliateLinks(ctx context.Context, arg ListAllAffiliat
 		return nil, err
 	}
 	return items, nil
+}
+
+const markAffiliateCommissionCredited = `-- name: MarkAffiliateCommissionCredited :execrows
+UPDATE affiliate_content_commissions
+SET credited = true, credited_at = now()
+WHERE id = $1 AND credited = false
+`
+
+// AUDIT-BE-FIN-001: replaces raw SQL UPDATE of the commission row.
+// Marks the commission as credited; paired with the wallet_ledger INSERT
+// inside the same transaction (idempotent on commission row ID).
+func (q *Queries) MarkAffiliateCommissionCredited(ctx context.Context, id pgtype.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, markAffiliateCommissionCredited, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const updateAffiliateLink = `-- name: UpdateAffiliateLink :one

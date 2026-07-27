@@ -5,6 +5,9 @@
 package feed
 
 import (
+	"context"
+
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/valkey-io/valkey-go/valkeycompat"
 
 	"github.com/jedafe/japa/internal/db"
@@ -35,6 +38,14 @@ type Service struct {
 	db       *db.DB
 	enqueuer feedEnqueuer
 	vk       valkeycompat.Cmdable
+	settings feedSettingsReader
+}
+
+// feedSettingsReader is the subset of config.Settings the feed service uses
+// for hot-reloadable operational limits. Defined as a local interface so
+// the feed package does not import config.
+type feedSettingsReader interface {
+	GetIntOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback int) int
 }
 
 // feedEnqueuer is the subset of worker.Enqueuer that feed needs.
@@ -59,4 +70,9 @@ func NewService(database *db.DB, vk valkeycompat.Cmdable) *Service {
 // SetEnqueuer injects the Asynq enqueuer for async fan-out tasks.
 func (s *Service) SetEnqueuer(e feedEnqueuer) {
 	s.enqueuer = e
+}
+
+// SetSettings injects the hot-reloadable settings reader for feed limits.
+func (s *Service) SetSettings(sr feedSettingsReader) {
+	s.settings = sr
 }

@@ -14,8 +14,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -25,6 +28,18 @@ import (
 // MaxRenderInputSize is the maximum size in bytes of ProseMirror JSON
 // accepted by the renderer. Larger payloads are rejected.
 const MaxRenderInputSize = 512 * 1024 // 512 KiB
+
+// ScriptRootEnv is the env var that overrides the allowlist root directory
+// for the Bun SSR script. Defaults to the repo root ("./scripts/tiptap-ssr").
+const ScriptRootEnv = "JC_RENDERER_SCRIPT_ROOT"
+
+// defaultScriptRoot is the allowlist root used when JC_RENDERER_SCRIPT_ROOT
+// is unset. Resolved against the process working directory.
+const defaultScriptRoot = "scripts/tiptap-ssr"
+
+// ErrInvalidScriptPath is returned when the configured script path escapes
+// the allowlist root or is not a regular .js/.ts file.
+var ErrInvalidScriptPath = errors.New("renderer: script path must be a .js/.ts file within the allowlist root")
 
 // Renderer converts ProseMirror JSON to HTML via TipTap SSR.
 type Renderer struct {
@@ -36,12 +51,59 @@ type Renderer struct {
 // New creates a Renderer that shells out to the given Bun script.
 // The cache is used to store rendered HTML keyed by content_id:updated_at.
 // Pass nil for cache to disable caching.
-func New(scriptPath string, cache *valkey.Client) *Renderer {
+//
+// The scriptPath is validated against an allowlist root (JC_RENDERER_SCRIPT_ROOT
+// or "./scripts/tiptap-ssr" by default): it must be relative, must not contain
+// ".." traversal, and must resolve inside the root. Absolute paths are rejected.
+// This prevents path traversal even if the admin config is compromised.
+func New(scriptPath string, cache *valkey.Client) (*Renderer, error) {
+	cleaned, err := validateScriptPath(scriptPath)
+	if err != nil {
+		return nil, err
+	}
 	return &Renderer{
-		scriptPath: scriptPath,
+		scriptPath: cleaned,
 		cache:      cache,
 		cacheTTL:   24 * time.Hour,
+	}, nil
+}
+
+// validateScriptPath ensures the script path is a relative .js/.ts file that
+// resolves inside the allowlist root (JC_RENDERER_SCRIPT_ROOT or
+// defaultScriptRoot). Returns the cleaned, root-anchored absolute path.
+func validateScriptPath(scriptPath string) (string, error) {
+	if scriptPath == "" {
+		return "", ErrInvalidScriptPath
 	}
+	// Reject absolute paths — the script must live under the allowlist root.
+	if filepath.IsAbs(scriptPath) {
+		return "", ErrInvalidScriptPath
+	}
+	// Reject any ".." segment — no traversal above the root.
+	for _, seg := range strings.Split(filepath.ToSlash(scriptPath), "/") {
+		if seg == ".." {
+			return "", ErrInvalidScriptPath
+		}
+	}
+	// Must be a .js or .ts file.
+	ext := strings.ToLower(filepath.Ext(scriptPath))
+	if ext != ".js" && ext != ".ts" {
+		return "", ErrInvalidScriptPath
+	}
+	root := defaultScriptRoot
+	if env := strings.TrimSpace(os.Getenv(ScriptRootEnv)); env != "" {
+		root = env
+	}
+	absRoot, err := filepath.Abs(root)
+	if err != nil {
+		return "", fmt.Errorf("renderer: resolving script root: %w", err)
+	}
+	absScript := filepath.Join(absRoot, filepath.Clean(scriptPath))
+	rel, err := filepath.Rel(absRoot, absScript)
+	if err != nil || strings.HasPrefix(filepath.ToSlash(rel), "../") {
+		return "", ErrInvalidScriptPath
+	}
+	return absScript, nil
 }
 
 // Render converts ProseMirror JSON to HTML. If the result is cached,
@@ -77,7 +139,9 @@ func (r *Renderer) renderViaBun(ctx context.Context, json []byte) (string, error
 		return "", err
 	}
 
-	cmd := exec.CommandContext(ctx, "bun", "run", r.scriptPath) //nolint:gosec // G204: scriptPath from trusted admin config
+	// scriptPath was validated against the allowlist root in New(); no
+	// gosec suppression needed here.
+	cmd := exec.CommandContext(ctx, "bun", "run", r.scriptPath)
 	cmd.Stdin = bytes.NewReader(json)
 
 	var stdout, stderr bytes.Buffer

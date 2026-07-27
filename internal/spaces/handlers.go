@@ -31,7 +31,7 @@ import (
 // handlers need.
 type ContentService interface {
 	ListContentsBySpace(ctx context.Context, tenantID, spaceID pgtype.UUID, cursor pgtype.Timestamptz, limit int32) ([]gen.ListContentsBySpaceRow, error)
-	PinContent(ctx context.Context, spaceID, contentID, pinnedBy pgtype.UUID, position int32) (gen.PinContentToSpaceRow, error)
+	PinContent(ctx context.Context, tenantID, spaceID, contentID, pinnedBy pgtype.UUID, position int32) (gen.PinContentToSpaceRow, error)
 	UnpinContent(ctx context.Context, spaceID, contentID pgtype.UUID) error
 	ListPinnedContent(ctx context.Context, spaceID pgtype.UUID) ([]gen.ListPinnedContentRow, error)
 }
@@ -623,6 +623,9 @@ func (h *Handlers) CreateSpace(w http.ResponseWriter, r *http.Request) {
 
 	// Enqueue async auto-population (Wikipedia summary, flag image, etc.).
 	h.Service.EnqueueAutoPopulate(r.Context(), space.ID, tenantID)
+	// Enqueue Meilisearch index sync so the new space is searchable
+	// immediately (BL-004).
+	h.Service.EnqueueSearchIndex(r.Context(), space.ID, tenantID, "index")
 
 	writeJSON(w, http.StatusCreated, map[string]any{"data": space})
 }
@@ -762,6 +765,9 @@ func (h *Handlers) UpdateSpace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Re-sync the Meilisearch index so search reflects the update (BL-004).
+	h.Service.EnqueueSearchIndex(r.Context(), space.ID, tenantID, "index")
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": space})
 }
 
@@ -782,6 +788,9 @@ func (h *Handlers) DeleteSpace(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
+	// Remove the space from the Meilisearch index (BL-004).
+	h.Service.EnqueueSearchIndex(r.Context(), id, tenantID, "delete")
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
 }
@@ -1666,6 +1675,11 @@ func (h *Handlers) AddPinned(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
 	user := auth.FromContext(r.Context())
 	if user == nil {
 		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
@@ -1693,7 +1707,7 @@ func (h *Handlers) AddPinned(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	pin, err := h.content.PinContent(r.Context(), space.ID, contentID, user.UserID, input.Position)
+	pin, err := h.content.PinContent(r.Context(), tenantID, space.ID, contentID, user.UserID, input.Position)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to pin content")
 		return

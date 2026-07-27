@@ -174,3 +174,28 @@ RETURNING id, field_id, entity_type, entity_id, value_text, value_number,
 -- name: DeleteCustomFieldValue :exec
 DELETE FROM custom_field_values
 WHERE field_id = @field_id AND entity_type = @entity_type AND entity_id = @entity_id;
+
+-- name: CheckFieldPermissionForUser :one
+-- Field-level RBAC (Section 06): check whether a user belongs to any
+-- user_group that has can_view / can_edit on the given field. Returns
+-- a row with two booleans. When no permission rows exist for the field,
+-- both default to false (fail-closed) — admins must explicitly grant
+-- visibility/editability per user group. Super-admins bypass this check
+-- at the handler layer via rbac.IsSuperAdmin.
+SELECT
+  COALESCE(bool_or(cfp.can_view), false) AS can_view,
+  COALESCE(bool_or(cfp.can_edit), false) AS can_edit
+FROM custom_field_permissions cfp
+JOIN user_group_memberships ugm ON ugm.group_id = cfp.user_group_id
+WHERE cfp.field_id = @field_id
+  AND ugm.user_id = @user_id;
+
+-- name: ListVisibleFieldIDsForUser :many
+-- Returns the field_ids the given user is allowed to view. Used by
+-- ListFieldValuesByEntity to filter out values for fields the user
+-- cannot see (Section 06 field-level RBAC).
+SELECT DISTINCT cfp.field_id
+FROM custom_field_permissions cfp
+JOIN user_group_memberships ugm ON ugm.group_id = cfp.user_group_id
+WHERE ugm.user_id = @user_id
+  AND cfp.can_view = true;

@@ -26,17 +26,28 @@ type CreateEnrollmentParams struct {
 	AccessType string      `json:"access_type"`
 }
 
+type CreateEnrollmentRow struct {
+	ID          pgtype.UUID        `json:"id"`
+	TenantID    pgtype.UUID        `json:"tenant_id"`
+	UserID      pgtype.UUID        `json:"user_id"`
+	TrackID     pgtype.UUID        `json:"track_id"`
+	AccessType  string             `json:"access_type"`
+	ProgressPct pgtype.Numeric     `json:"progress_pct"`
+	EnrolledAt  pgtype.Timestamptz `json:"enrolled_at"`
+	CompletedAt pgtype.Timestamptz `json:"completed_at"`
+}
+
 // =====================
 // Enrollment Operations
 // =====================
-func (q *Queries) CreateEnrollment(ctx context.Context, arg CreateEnrollmentParams) (Enrollment, error) {
+func (q *Queries) CreateEnrollment(ctx context.Context, arg CreateEnrollmentParams) (CreateEnrollmentRow, error) {
 	row := q.db.QueryRow(ctx, createEnrollment,
 		arg.TenantID,
 		arg.UserID,
 		arg.TrackID,
 		arg.AccessType,
 	)
-	var i Enrollment
+	var i CreateEnrollmentRow
 	err := row.Scan(
 		&i.ID,
 		&i.TenantID,
@@ -157,7 +168,21 @@ type CreateLearningTrackParams struct {
 	SortOrder    int32       `json:"sort_order"`
 }
 
-func (q *Queries) CreateLearningTrack(ctx context.Context, arg CreateLearningTrackParams) (LearningTrack, error) {
+type CreateLearningTrackRow struct {
+	ID           pgtype.UUID        `json:"id"`
+	TenantID     pgtype.UUID        `json:"tenant_id"`
+	Title        string             `json:"title"`
+	Slug         string             `json:"slug"`
+	Description  *string            `json:"description"`
+	Difficulty   string             `json:"difficulty"`
+	CoverMediaID pgtype.UUID        `json:"cover_media_id"`
+	IsPublished  bool               `json:"is_published"`
+	SortOrder    int32              `json:"sort_order"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) CreateLearningTrack(ctx context.Context, arg CreateLearningTrackParams) (CreateLearningTrackRow, error) {
 	row := q.db.QueryRow(ctx, createLearningTrack,
 		arg.TenantID,
 		arg.Title,
@@ -168,7 +193,7 @@ func (q *Queries) CreateLearningTrack(ctx context.Context, arg CreateLearningTra
 		arg.IsPublished,
 		arg.SortOrder,
 	)
-	var i LearningTrack
+	var i CreateLearningTrackRow
 	err := row.Scan(
 		&i.ID,
 		&i.TenantID,
@@ -239,9 +264,20 @@ type GetEnrollmentByUserAndTrackParams struct {
 	TenantID pgtype.UUID `json:"tenant_id"`
 }
 
-func (q *Queries) GetEnrollmentByUserAndTrack(ctx context.Context, arg GetEnrollmentByUserAndTrackParams) (Enrollment, error) {
+type GetEnrollmentByUserAndTrackRow struct {
+	ID          pgtype.UUID        `json:"id"`
+	TenantID    pgtype.UUID        `json:"tenant_id"`
+	UserID      pgtype.UUID        `json:"user_id"`
+	TrackID     pgtype.UUID        `json:"track_id"`
+	AccessType  string             `json:"access_type"`
+	ProgressPct pgtype.Numeric     `json:"progress_pct"`
+	EnrolledAt  pgtype.Timestamptz `json:"enrolled_at"`
+	CompletedAt pgtype.Timestamptz `json:"completed_at"`
+}
+
+func (q *Queries) GetEnrollmentByUserAndTrack(ctx context.Context, arg GetEnrollmentByUserAndTrackParams) (GetEnrollmentByUserAndTrackRow, error) {
 	row := q.db.QueryRow(ctx, getEnrollmentByUserAndTrack, arg.UserID, arg.TrackID, arg.TenantID)
-	var i Enrollment
+	var i GetEnrollmentByUserAndTrackRow
 	err := row.Scan(
 		&i.ID,
 		&i.TenantID,
@@ -442,9 +478,23 @@ type GetLearningTrackByIDParams struct {
 	ID       pgtype.UUID `json:"id"`
 }
 
-func (q *Queries) GetLearningTrackByID(ctx context.Context, arg GetLearningTrackByIDParams) (LearningTrack, error) {
+type GetLearningTrackByIDRow struct {
+	ID           pgtype.UUID        `json:"id"`
+	TenantID     pgtype.UUID        `json:"tenant_id"`
+	Title        string             `json:"title"`
+	Slug         string             `json:"slug"`
+	Description  *string            `json:"description"`
+	Difficulty   string             `json:"difficulty"`
+	CoverMediaID pgtype.UUID        `json:"cover_media_id"`
+	IsPublished  bool               `json:"is_published"`
+	SortOrder    int32              `json:"sort_order"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) GetLearningTrackByID(ctx context.Context, arg GetLearningTrackByIDParams) (GetLearningTrackByIDRow, error) {
 	row := q.db.QueryRow(ctx, getLearningTrackByID, arg.TenantID, arg.ID)
-	var i LearningTrack
+	var i GetLearningTrackByIDRow
 	err := row.Scan(
 		&i.ID,
 		&i.TenantID,
@@ -473,9 +523,23 @@ type GetLearningTrackBySlugParams struct {
 	Slug     string      `json:"slug"`
 }
 
-func (q *Queries) GetLearningTrackBySlug(ctx context.Context, arg GetLearningTrackBySlugParams) (LearningTrack, error) {
+type GetLearningTrackBySlugRow struct {
+	ID           pgtype.UUID        `json:"id"`
+	TenantID     pgtype.UUID        `json:"tenant_id"`
+	Title        string             `json:"title"`
+	Slug         string             `json:"slug"`
+	Description  *string            `json:"description"`
+	Difficulty   string             `json:"difficulty"`
+	CoverMediaID pgtype.UUID        `json:"cover_media_id"`
+	IsPublished  bool               `json:"is_published"`
+	SortOrder    int32              `json:"sort_order"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) GetLearningTrackBySlug(ctx context.Context, arg GetLearningTrackBySlugParams) (GetLearningTrackBySlugRow, error) {
 	row := q.db.QueryRow(ctx, getLearningTrackBySlug, arg.TenantID, arg.Slug)
-	var i LearningTrack
+	var i GetLearningTrackBySlugRow
 	err := row.Scan(
 		&i.ID,
 		&i.TenantID,
@@ -740,15 +804,29 @@ WHERE tenant_id = $1
 ORDER BY sort_order ASC, created_at DESC
 `
 
-func (q *Queries) ListAllLearningTracks(ctx context.Context, tenantID pgtype.UUID) ([]LearningTrack, error) {
+type ListAllLearningTracksRow struct {
+	ID           pgtype.UUID        `json:"id"`
+	TenantID     pgtype.UUID        `json:"tenant_id"`
+	Title        string             `json:"title"`
+	Slug         string             `json:"slug"`
+	Description  *string            `json:"description"`
+	Difficulty   string             `json:"difficulty"`
+	CoverMediaID pgtype.UUID        `json:"cover_media_id"`
+	IsPublished  bool               `json:"is_published"`
+	SortOrder    int32              `json:"sort_order"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) ListAllLearningTracks(ctx context.Context, tenantID pgtype.UUID) ([]ListAllLearningTracksRow, error) {
 	rows, err := q.db.Query(ctx, listAllLearningTracks, tenantID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []LearningTrack
+	var items []ListAllLearningTracksRow
 	for rows.Next() {
-		var i LearningTrack
+		var i ListAllLearningTracksRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.TenantID,
@@ -852,15 +930,26 @@ type ListEnrollmentsByUserIDParams struct {
 	TenantID pgtype.UUID `json:"tenant_id"`
 }
 
-func (q *Queries) ListEnrollmentsByUserID(ctx context.Context, arg ListEnrollmentsByUserIDParams) ([]Enrollment, error) {
+type ListEnrollmentsByUserIDRow struct {
+	ID          pgtype.UUID        `json:"id"`
+	TenantID    pgtype.UUID        `json:"tenant_id"`
+	UserID      pgtype.UUID        `json:"user_id"`
+	TrackID     pgtype.UUID        `json:"track_id"`
+	AccessType  string             `json:"access_type"`
+	ProgressPct pgtype.Numeric     `json:"progress_pct"`
+	EnrolledAt  pgtype.Timestamptz `json:"enrolled_at"`
+	CompletedAt pgtype.Timestamptz `json:"completed_at"`
+}
+
+func (q *Queries) ListEnrollmentsByUserID(ctx context.Context, arg ListEnrollmentsByUserIDParams) ([]ListEnrollmentsByUserIDRow, error) {
 	rows, err := q.db.Query(ctx, listEnrollmentsByUserID, arg.UserID, arg.TenantID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Enrollment
+	var items []ListEnrollmentsByUserIDRow
 	for rows.Next() {
-		var i Enrollment
+		var i ListEnrollmentsByUserIDRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.TenantID,
@@ -1028,19 +1117,33 @@ WHERE tenant_id = $1 AND is_published = true
 ORDER BY sort_order ASC, created_at DESC
 `
 
+type ListPublishedLearningTracksRow struct {
+	ID           pgtype.UUID        `json:"id"`
+	TenantID     pgtype.UUID        `json:"tenant_id"`
+	Title        string             `json:"title"`
+	Slug         string             `json:"slug"`
+	Description  *string            `json:"description"`
+	Difficulty   string             `json:"difficulty"`
+	CoverMediaID pgtype.UUID        `json:"cover_media_id"`
+	IsPublished  bool               `json:"is_published"`
+	SortOrder    int32              `json:"sort_order"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
+}
+
 // Learning platform queries: tracks, modules, lessons, progress, certificates, enrollments, quizzes.
 // =====================
 // Track Operations
 // =====================
-func (q *Queries) ListPublishedLearningTracks(ctx context.Context, tenantID pgtype.UUID) ([]LearningTrack, error) {
+func (q *Queries) ListPublishedLearningTracks(ctx context.Context, tenantID pgtype.UUID) ([]ListPublishedLearningTracksRow, error) {
 	rows, err := q.db.Query(ctx, listPublishedLearningTracks, tenantID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []LearningTrack
+	var items []ListPublishedLearningTracksRow
 	for rows.Next() {
-		var i LearningTrack
+		var i ListPublishedLearningTracksRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.TenantID,
@@ -1204,7 +1307,21 @@ type UpdateLearningTrackParams struct {
 	ID           pgtype.UUID `json:"id"`
 }
 
-func (q *Queries) UpdateLearningTrack(ctx context.Context, arg UpdateLearningTrackParams) (LearningTrack, error) {
+type UpdateLearningTrackRow struct {
+	ID           pgtype.UUID        `json:"id"`
+	TenantID     pgtype.UUID        `json:"tenant_id"`
+	Title        string             `json:"title"`
+	Slug         string             `json:"slug"`
+	Description  *string            `json:"description"`
+	Difficulty   string             `json:"difficulty"`
+	CoverMediaID pgtype.UUID        `json:"cover_media_id"`
+	IsPublished  bool               `json:"is_published"`
+	SortOrder    int32              `json:"sort_order"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) UpdateLearningTrack(ctx context.Context, arg UpdateLearningTrackParams) (UpdateLearningTrackRow, error) {
 	row := q.db.QueryRow(ctx, updateLearningTrack,
 		arg.Title,
 		arg.Description,
@@ -1215,7 +1332,7 @@ func (q *Queries) UpdateLearningTrack(ctx context.Context, arg UpdateLearningTra
 		arg.TenantID,
 		arg.ID,
 	)
-	var i LearningTrack
+	var i UpdateLearningTrackRow
 	err := row.Scan(
 		&i.ID,
 		&i.TenantID,

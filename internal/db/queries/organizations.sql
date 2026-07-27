@@ -202,3 +202,9 @@ FROM organizations o
 LEFT JOIN contents c ON c.organization_id = o.id AND c.status != 'draft' AND c.deleted_at IS NULL
 WHERE o.id = @org_id AND o.tenant_id = @tenant_id AND o.deleted_at IS NULL
 GROUP BY o.id, o.follower_count;
+
+-- name: ExpireOrganizationBoosts :exec
+UPDATE organization_boosts
+SET status = 'ended'
+WHERE status = 'active'
+  AND end_date < now();

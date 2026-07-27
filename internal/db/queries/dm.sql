@@ -1,8 +1,9 @@
 -- Section 10: Real-Time WebSockets + Direct Messaging
 
--- name: CreateWSTicket :exec
+-- name: CreateWSTicket :one
 INSERT INTO ws_tickets (user_id, tenant_id, expires_at)
-VALUES (@user_id, @tenant_id, now() + interval '60 seconds');
+VALUES (@user_id, @tenant_id, now() + interval '60 seconds')
+RETURNING id, user_id, tenant_id, used, expires_at, created_at;
 
 -- name: UseWSTicket :one
 UPDATE ws_tickets SET used = true
@@ -21,6 +22,16 @@ RETURNING *;
 
 -- name: GetConversationByID :one
 SELECT * FROM dm_conversations WHERE id = @id AND tenant_id = @tenant_id;
+
+-- name: GetConversationByParticipants :one
+-- Find an existing conversation between two users without creating one.
+-- Used by the DM privacy check (Section 48) to skip privacy enforcement
+-- when a conversation already exists (existing threads stay active even
+-- when dm_privacy is later set to 'nobody').
+SELECT * FROM dm_conversations
+WHERE tenant_id = @tenant_id
+  AND participant_1_id = LEAST(@participant_1_id, @participant_2_id)
+  AND participant_2_id = GREATEST(@participant_1_id, @participant_2_id);
 
 -- name: GetUserConversations :many
 SELECT dc.id, dc.tenant_id, dc.participant_1_id, dc.participant_2_id,
@@ -114,3 +125,8 @@ WHERE id = @id AND deleted_at IS NULL;
 
 -- name: GetDMMessageByID :one
 SELECT * FROM dm_messages WHERE id = @id AND conversation_id = @conversation_id;
+
+-- name: CleanupDeclinedDMRequests :exec
+DELETE FROM dm_requests
+WHERE status = 'declined'
+  AND updated_at < now() - interval '90 days';
