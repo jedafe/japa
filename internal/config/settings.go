@@ -253,6 +253,36 @@ func (s *Settings) SetSetting(ctx context.Context, tenantID pgtype.UUID, key, va
 	return nil
 }
 
+// UpdateSettingsBatch atomically upserts multiple settings for one tenant in a
+// single transaction. Each entry in settings maps a full dot-notation key
+// (e.g. "site.name") to its already-serialized JSON value. The cache is
+// invalidated once after commit so callers do not need to invalidate per key.
+func (s *Settings) UpdateSettingsBatch(ctx context.Context, tenantID pgtype.UUID, settings map[string][]byte) error {
+	tx, err := s.db.Writer.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("beginning settings tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	for key, valueJSON := range settings {
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO system_settings (tenant_id, key, value, created_at, updated_at)
+			VALUES ($1, $2, $3::jsonb, now(), now())
+			ON CONFLICT (tenant_id, key)
+			DO UPDATE SET value = EXCLUDED.value, updated_at = now()
+		`, tenantID, key, string(valueJSON)); err != nil {
+			return fmt.Errorf("upserting setting %q: %w", key, err)
+		}
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("committing settings tx: %w", err)
+	}
+
+	s.InvalidateSettings(ctx, tenantID)
+	return nil
+}
+
 // GetPublicSettings returns all settings marked as public for the given tenant.
 func (s *Settings) GetPublicSettings(ctx context.Context, tenantID pgtype.UUID) (map[string]any, error) {
 	rows, err := s.db.Reader.Query(ctx,

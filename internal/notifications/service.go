@@ -65,12 +65,18 @@ func (s *Service) DispatchNotification(ctx context.Context, _, recipientID pgtyp
 	}
 
 	// Create new window.
+	// AUDIT-FRESH-SETTING-007: batch window is configurable via system_settings.
+	batchWindowMinutes := 5
+	if s.settings != nil {
+		batchWindowMinutes = s.settings.GetIntOr(ctx, pgtype.UUID{}, "notifications.batch_window_minutes", batchWindowMinutes)
+	}
 	if err := s.store.createBatchWindow(ctx, gen.CreateBatchWindowParams{
 		RecipientID:      recipientID,
 		NotificationType: nType,
 		SubjectType:      subjectType,
 		SubjectID:        subjectID,
 		ActorID:          actorID,
+		WindowMinutes:    int32(batchWindowMinutes),
 	}); err != nil {
 		return DispatchResult{}, fmt.Errorf("creating batch window: %w", err)
 	}

@@ -91,7 +91,7 @@ func SpaceResolver(service *Service) func(http.Handler) http.Handler {
 			ctx := context.WithValue(r.Context(), SpaceContextKey, &space)
 			// Also store the space ID under rbac.SpaceIDContextKey so the
 			// rbac.RequireSpacePermission middleware can dynamically resolve
-			// spaces.moderate.assigned via the space_moderators table
+			// spaces.moderator.assign via the space_moderators table
 			// (Section 03 / RBAC-001).
 			ctx = context.WithValue(ctx, rbac.SpaceIDContextKey, space.ID)
 			next.ServeHTTP(w, r.WithContext(ctx))

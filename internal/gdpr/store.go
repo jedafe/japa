@@ -408,6 +408,17 @@ func (s *Store) updateAccountDeletionRequestStatus(ctx context.Context, p gen.Up
 	return row, nil
 }
 
+// updateAccountDeletionRequestProgress checkpoints the erasure flow step
+// (AUDIT-FRESH-GDPR-003) so a retried job resumes from the last success.
+func (s *Store) updateAccountDeletionRequestProgress(ctx context.Context, id, tenantID pgtype.UUID, step int32) error {
+	if err := s.write.UpdateAccountDeletionRequestProgress(ctx, gen.UpdateAccountDeletionRequestProgressParams{
+		ID: id, TenantID: tenantID, ProgressStep: step,
+	}); err != nil {
+		return fmt.Errorf("checkpointing deletion progress to step %d: %w", step, err)
+	}
+	return nil
+}
+
 func (s *Store) listPendingDeletionRequests(ctx context.Context, limit int32) ([]gen.AccountDeletionRequest, error) {
 	if limit <= 0 {
 		limit = DefaultPageSize

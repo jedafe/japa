@@ -146,10 +146,10 @@ INSERT INTO account_deletion_requests (
 ) VALUES (
     @tenant_id, @user_id, 'pending', sqlc.narg(reason)
 )
-RETURNING id, tenant_id, user_id, status, reason, completed_at, created_at;
+RETURNING id, tenant_id, user_id, status, reason, completed_at, created_at, progress_step;
 
 -- name: GetAccountDeletionRequest :one
-SELECT id, tenant_id, user_id, status, reason, completed_at, created_at
+SELECT id, tenant_id, user_id, status, reason, completed_at, created_at, progress_step
 FROM account_deletion_requests
 WHERE id = @id AND tenant_id = @tenant_id;
 
@@ -158,10 +158,17 @@ UPDATE account_deletion_requests
 SET status = @status,
     completed_at = sqlc.narg(completed_at)
 WHERE id = @id AND tenant_id = @tenant_id
-RETURNING id, tenant_id, user_id, status, reason, completed_at, created_at;
+RETURNING id, tenant_id, user_id, status, reason, completed_at, created_at, progress_step;
+
+-- name: UpdateAccountDeletionRequestProgress :exec
+-- AUDIT-FRESH-GDPR-003: checkpoints the erasure flow so a retried job resumes
+-- from the last completed step instead of re-running from the top.
+UPDATE account_deletion_requests
+SET progress_step = @progress_step
+WHERE id = @id AND tenant_id = @tenant_id;
 
 -- name: ListPendingDeletionRequests :many
-SELECT id, tenant_id, user_id, status, reason, completed_at, created_at
+SELECT id, tenant_id, user_id, status, reason, completed_at, created_at, progress_step
 FROM account_deletion_requests
 WHERE status = 'pending'
 ORDER BY created_at ASC

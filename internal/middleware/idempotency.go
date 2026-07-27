@@ -28,6 +28,7 @@ import (
 	"github.com/valkey-io/valkey-go/valkeycompat"
 
 	"github.com/jedafe/japa/internal/auth"
+	errpkg "github.com/jedafe/japa/internal/errors"
 )
 
 // idempotencyTTLDefault is the fallback TTL (in hours) when the system
@@ -183,6 +184,7 @@ func IdempotencyMiddleware(rdb valkeycompat.Cmdable, settings idempotencySetting
 			if err != nil {
 				slog.Error("idempotency: failed to marshal cached response",
 					"err", err)
+				errpkg.CaptureException(fmt.Errorf("idempotency: marshal cached response: %w", err))
 				return
 			}
 
