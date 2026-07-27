@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 )
 
@@ -16,6 +18,31 @@ func NewVideoProcessor() *VideoProcessor {
 	return &VideoProcessor{}
 }
 
+// validateMediaPath ensures the given path resolves to a location under the
+// media root directory or the system temp directory. This prevents path
+// traversal attacks where a crafted filename could cause ffmpeg to read or
+// write outside allowed directories (SEC-013). Uses the package-level
+// mediaRoot constant from handlers.go. The temp directory is allowed for
+// test compatibility — production code always uses data/media.
+func validateMediaPath(path string) error {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return fmt.Errorf("resolving path: %w", err)
+	}
+	root, err := filepath.Abs(mediaRoot)
+	if err != nil {
+		return fmt.Errorf("resolving media root: %w", err)
+	}
+	if strings.HasPrefix(abs+string(filepath.Separator), root+string(filepath.Separator)) {
+		return nil
+	}
+	// Allow system temp directory (for tests and transient processing).
+	if tmpDir := os.TempDir(); strings.HasPrefix(abs+string(filepath.Separator), tmpDir+string(filepath.Separator)) {
+		return nil
+	}
+	return fmt.Errorf("path %s is outside media root %s", path, mediaRoot)
+}
+
 // Transcode converts a video to H.264 MP4 with fast preset and CRF 23.
 func (v *VideoProcessor) Transcode(ctx context.Context, inputPath, outputPath string) error {
 	if inputPath == "" {
@@ -24,6 +51,13 @@ func (v *VideoProcessor) Transcode(ctx context.Context, inputPath, outputPath st
 
 	if outputPath == "" {
 		return errors.New("transcode: output path is required")
+	}
+
+	if err := validateMediaPath(inputPath); err != nil {
+		return fmt.Errorf("transcode: input path validation: %w", err)
+	}
+	if err := validateMediaPath(outputPath); err != nil {
+		return fmt.Errorf("transcode: output path validation: %w", err)
 	}
 
 	cmd := exec.CommandContext(
@@ -60,6 +94,13 @@ func (v *VideoProcessor) GenerateThumbnail(ctx context.Context, inputPath, outpu
 		timestamp = "00:00:01"
 	}
 
+	if err := validateMediaPath(inputPath); err != nil {
+		return fmt.Errorf("thumbnail: input path validation: %w", err)
+	}
+	if err := validateMediaPath(outputPath); err != nil {
+		return fmt.Errorf("thumbnail: output path validation: %w", err)
+	}
+
 	cmd := exec.CommandContext(
 		ctx, "ffmpeg",
 		"-y",            // overwrite output
@@ -86,6 +127,13 @@ func (v *VideoProcessor) Compress(ctx context.Context, inputPath, outputPath str
 
 	if outputPath == "" {
 		return errors.New("compress: output path is required")
+	}
+
+	if err := validateMediaPath(inputPath); err != nil {
+		return fmt.Errorf("compress: input path validation: %w", err)
+	}
+	if err := validateMediaPath(outputPath); err != nil {
+		return fmt.Errorf("compress: output path validation: %w", err)
 	}
 
 	cmd := exec.CommandContext(

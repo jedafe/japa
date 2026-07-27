@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -297,6 +298,72 @@ type Service struct {
 // NewService creates a Service with the given store.
 func NewService(store *Store) *Service {
 	return &Service{store: store}
+}
+
+// APIKeyUpdateFields holds the optional fields for a partial API key update.
+// Only non-zero/non-empty fields are written; the rest are left untouched.
+type APIKeyUpdateFields struct {
+	Name          string
+	Status        string
+	RateLimitTier string
+	Notes         string
+}
+
+// ErrNoFieldsToUpdate is returned by UpdateAPIKeyFields when no updatable
+// fields were provided. Callers should map this to a 400/422 response.
+var ErrNoFieldsToUpdate = errors.New("no fields to update")
+
+// apiKeyUpdateColumns is the strict allowlist mapping field name → column name.
+// Only columns in this map can ever be interpolated into the UPDATE statement,
+// eliminating any SQL-injection surface even if the caller is later refactored
+// (SEC-002 / LAYER-003).
+var apiKeyUpdateColumns = map[string]string{
+	"name":           "name",
+	"status":         "status",
+	"rate_limit_tier": "rate_limit_tier",
+	"notes":          "notes",
+}
+
+// UpdateAPIKeyFields performs a partial update of an API key using a strict
+// column allowlist. Returns (rowsAffected, error) so the caller can map a
+// zero count to 404. The query is built from apiKeyUpdateColumns only — no
+// user-supplied column names ever reach the SQL string.
+func (s *Service) UpdateAPIKeyFields(ctx context.Context, keyID pgtype.UUID, fields APIKeyUpdateFields) (int64, error) {
+	provided := map[string]any{
+		"name":            fields.Name,
+		"status":          fields.Status,
+		"rate_limit_tier": fields.RateLimitTier,
+		"notes":           fields.Notes,
+	}
+
+	setClauses := []string{"updated_at = now()"}
+	args := []any{keyID}
+	argIdx := 2 // $1 is keyID
+	for field, val := range provided {
+		s, ok := val.(string)
+		if !ok || s == "" {
+			continue
+		}
+		col, ok := apiKeyUpdateColumns[field]
+		if !ok {
+			continue // unknown field — allowlist drops it
+		}
+		setClauses = append(setClauses, fmt.Sprintf("%s = $%d", col, argIdx))
+		args = append(args, s)
+		argIdx++
+	}
+
+	// Only updated_at — no user fields provided.
+	if len(setClauses) == 1 {
+		return 0, ErrNoFieldsToUpdate
+	}
+
+	query := fmt.Sprintf("UPDATE api_keys SET %s WHERE id = $1", strings.Join(setClauses, ", "))
+	tag, err := s.store.dbPool.Exec(ctx, query, args...)
+	if err != nil {
+		return 0, fmt.Errorf("update api key fields: %w", err)
+	}
+	return tag.RowsAffected(), nil
 }
 
 // CreateAPIKey generates a new API key, stores its hash, and returns

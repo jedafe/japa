@@ -194,7 +194,7 @@ func (s *Service) ProcessWebhook(ctx context.Context, tenantID pgtype.UUID, prov
 
 	// Record the event (idempotent via ON CONFLICT DO NOTHING on unique constraint).
 	// ErrNoRows from ON CONFLICT DO NOTHING means duplicate — treat as success.
-	// 
+	//
 	if _, err := s.store.insertWebhookEvent(ctx, gen.InsertWebhookEventParams{
 		TenantID:   tenantID,
 		Provider:   provider,
@@ -204,8 +204,17 @@ func (s *Service) ProcessWebhook(ctx context.Context, tenantID pgtype.UUID, prov
 		return fmt.Errorf("recording webhook event: %w", err)
 	}
 
-	// Enqueue async processing — the worker handles payment status updates, subscription
-	// activation, wallet adjustments, and affiliate commission crediting.
+	// Mark as processed BEFORE enqueuing the task (TX-004). This ensures the
+	// task only fires after the event is fully persisted and marked — if the
+	// mark fails, we return early without enqueuing, so the provider retries
+	// and the idempotency check re-processes cleanly.
+	if err := s.store.markWebhookEventProcessed(ctx, tenantID, provider, event.EventID); err != nil {
+		return fmt.Errorf("marking webhook event processed: %w", err)
+	}
+
+	// Enqueue async processing AFTER the event is marked processed — the worker
+	// handles payment status updates, subscription activation, wallet
+	// adjustments, and affiliate commission crediting.
 	if s.enqueuer != nil {
 		payload, _ := json.Marshal(map[string]string{
 			"event_id":  event.EventID,
@@ -213,19 +222,14 @@ func (s *Service) ProcessWebhook(ctx context.Context, tenantID pgtype.UUID, prov
 			"status":    status,
 		})
 		// Return the error so the provider receives a 5xx and retries.
-		// The event is already recorded in the DB; on retry the idempotency
-		// check sees it as processed and returns 200.
+		// The event is already recorded + marked in the DB; on retry the
+		// idempotency check sees it as processed and returns 200.
 		if err := s.enqueuer.Enqueue(worker.TypePaymentWebhookProcess, payload); err != nil {
 			slog.Error("payments: failed to enqueue webhook processing",
 				"event_id", event.EventID, "provider", provider, "error", err)
 			errpkg.CaptureException(fmt.Errorf("enqueue %s (event %s): %w", worker.TypePaymentWebhookProcess, event.EventID, err))
 			return fmt.Errorf("enqueue %s (event %s): %w", worker.TypePaymentWebhookProcess, event.EventID, err)
 		}
-	}
-
-	// Mark as processed
-	if err := s.store.markWebhookEventProcessed(ctx, tenantID, provider, event.EventID); err != nil {
-		return fmt.Errorf("marking webhook event processed: %w", err)
 	}
 
 	return nil
