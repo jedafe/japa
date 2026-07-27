@@ -317,6 +317,68 @@ func (q *Queries) ListActiveUserIDs(ctx context.Context, tenantID pgtype.UUID) (
 	return items, nil
 }
 
+const listActiveUserIDsByGeoSpace = `-- name: ListActiveUserIDsByGeoSpace :many
+SELECT u.id FROM users u
+JOIN space_members sm ON sm.user_id = u.id AND sm.tenant_id = u.tenant_id
+WHERE u.tenant_id = $1 AND u.status = 'active' AND sm.space_id = $2
+`
+
+type ListActiveUserIDsByGeoSpaceParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	SpaceID  pgtype.UUID `json:"space_id"`
+}
+
+func (q *Queries) ListActiveUserIDsByGeoSpace(ctx context.Context, arg ListActiveUserIDsByGeoSpaceParams) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, listActiveUserIDsByGeoSpace, arg.TenantID, arg.SpaceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []pgtype.UUID
+	for rows.Next() {
+		var id pgtype.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listActiveUserIDsByGroup = `-- name: ListActiveUserIDsByGroup :many
+SELECT u.id FROM users u
+JOIN user_group_memberships gm ON gm.user_id = u.id AND gm.tenant_id = u.tenant_id
+WHERE u.tenant_id = $1 AND u.status = 'active' AND gm.group_id = $2
+`
+
+type ListActiveUserIDsByGroupParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	GroupID  pgtype.UUID `json:"group_id"`
+}
+
+func (q *Queries) ListActiveUserIDsByGroup(ctx context.Context, arg ListActiveUserIDsByGroupParams) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, listActiveUserIDsByGroup, arg.TenantID, arg.GroupID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []pgtype.UUID
+	for rows.Next() {
+		var id pgtype.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listAdminBroadcasts = `-- name: ListAdminBroadcasts :many
 
 SELECT id, title, body, sent_by, sent_at, recipient_count

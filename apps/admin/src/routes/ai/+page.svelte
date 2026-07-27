@@ -126,7 +126,7 @@
 		{ key: 'content_type', label: t('ai.type'), render: (v: string) => `<span class="inline-block rounded-full bg-info/15 px-2 py-0.5 text-xs text-info dark:text-info">${v}</span>` },
 		{ key: 'source', label: t('ai.source'), render: (v: string) => `<span class="text-xs">${v}</span>` },
 		{ key: 'created_at', label: t('ai.created'), render: (v: string) => `<span class="text-xs" style="color: var(--color-muted)">${new Date(v).toLocaleDateString()}</span>` },
-		{ key: 'actions', label: t('ai.actions'), class: 'w-24', render: (_: any, row: HitlReview) => `<button class="rounded px-2 py-1 text-xs font-medium hover:bg-black/5 dark:hover:bg-surface/10" style="color: var(--color-info)" onclick="window.__reviewHitl('${row.id}')">${t('ai.review')}</button>` }
+		{ key: 'actions', label: t('ai.actions'), class: 'w-24', componentSnippet: HitlActionsCell }
 	];
 
 	const toolsMgmtColumns = [
@@ -134,7 +134,7 @@
 		{ key: 'description', label: t('ai.tools.description'), render: (v: string) => `<span class="text-xs" style="color: var(--color-muted)">${v || '—'}</span>` },
 		{ key: 'is_enabled', label: t('ai.tools.status'), render: (v: boolean) => `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium ${v ? 'bg-success/15 text-success dark:text-success' : 'bg-muted/15 text-muted dark:text-muted'}">${v ? t('ai.tools.enabled') : t('ai.tools.disabled')}</span>` },
 		{ key: 'created_at', label: t('ai.tools.created'), render: (v: string) => `<span class="text-xs" style="color: var(--color-muted)">${new Date(v).toLocaleDateString()}</span>` },
-		{ key: 'actions', label: t('common.actions'), class: 'w-32', render: (_: any, row: AiTool) => `<button class="flex items-center gap-1 rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10" style="color: var(--color-primary)" onclick="window.__configureAiTool('${row.id}')"><Settings class="h-3 w-3" />${t('common.configure')}</button>` }
+		{ key: 'actions', label: t('common.actions'), class: 'w-32', componentSnippet: ToolMgmtActionsCell }
 	];
 
 	const modelUsageColumns = [
@@ -188,17 +188,6 @@
 			? aiModels.filter((m) => (m.label || m.name).toLowerCase().includes(modelsSearchQuery.toLowerCase()))
 			: aiModels
 	);
-
-	$effect(() => {
-		(window as any).__reviewHitl = (id: string) => {
-			const review = reviews.find((r) => r.id === id);
-			if (review) openReview(review);
-		};
-		(window as any).__configureAiTool = (id: string) => {
-			const tool = tools.find((t) => t.id === id);
-			if (tool) openEditTool(tool);
-		};
-	});
 
 	let totalPages = $derived(Math.max(1, Math.ceil(totalReviews / pageSize)));
 
@@ -870,3 +859,17 @@
 		</Button>
 	</div>
 </Modal>
+
+{#snippet HitlActionsCell({ row }: { value: any; row: HitlReview })}
+	<Button variant="ghost" size="sm" onclick={() => openReview(row)} style="color: var(--color-info)">
+		<Eye class="h-3.5 w-3.5" />
+		{t('ai.review')}
+	</Button>
+{/snippet}
+
+{#snippet ToolMgmtActionsCell({ row }: { value: any; row: AiTool })}
+	<Button variant="ghost" size="sm" onclick={() => openEditTool(row)} style="color: var(--color-primary)">
+		<Settings class="h-3.5 w-3.5" />
+		{t('common.configure', 'Configure')}
+	</Button>
+{/snippet}

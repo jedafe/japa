@@ -7,7 +7,7 @@
 	import { api } from '$lib/api';
 	import { t, translations } from '$lib/stores/i18n.svelte';
 	import { escapeHtml } from '$lib/utils';
-	import { Plus, ShieldAlert, ShieldCheck, Trash2 } from 'lucide-svelte';
+	import { Plus, ShieldAlert, ShieldCheck, Trash2, CheckCircle } from 'lucide-svelte';
 	import type { DataTableColumn, DataTableRowAction } from '$lib/api/types';
 
 	type ScanResult = {
@@ -143,6 +143,19 @@
 
 	});
 
+	let scanRowActions = $derived.by<DataTableRowAction[]>(() => {
+		translations();
+		return [
+		{
+			label: t('security.resolve', 'Resolve'),
+			icon: CheckCircle,
+			variant: 'default',
+			onClick: (row) => resolveScanResult((row as unknown as ScanResult).id),
+			hidden: (row) => (row as unknown as ScanResult).resolved
+		}
+	];
+	});
+
 	let ipBlockColumns = $derived.by<DataTableColumn[]>(() => {
 		translations();
 		return [
@@ -267,7 +280,7 @@
 				loadScanResults();
 				loadIpBlocks();
 			}
-		}, 60_000);
+		}, 30_000);
 
 		const onVisible = () => {
 			if (document.visibilityState === 'visible') {
@@ -330,6 +343,21 @@
 			scanMessageType = 'error';
 		} finally {
 			scanRunning = false;
+		}
+	}
+
+	async function resolveScanResult(id: string) {
+		try {
+			const result = await api(`/control/security/${id}/resolve`, { method: 'POST' });
+			if (result.ok) {
+				results = results.map((r) => (r.id === id ? { ...r, resolved: true } : r));
+			} else {
+				scanMessage = result.error || t('security.resolve_error', 'Failed to resolve finding.');
+				scanMessageType = 'error';
+			}
+		} catch {
+			scanMessage = t('security.resolve_error', 'Failed to resolve finding.');
+			scanMessageType = 'error';
 		}
 	}
 
@@ -513,6 +541,7 @@
 			emptyMessage={t('security.no_findings')}
 			emptyIcon={ShieldCheck}
 			selectable={false}
+			rowActions={scanRowActions}
 		/>
 	</Tabs.Content>
 

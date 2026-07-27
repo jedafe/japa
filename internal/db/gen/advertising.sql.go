@@ -44,13 +44,14 @@ const createAdCampaign = `-- name: CreateAdCampaign :one
 INSERT INTO ad_campaigns (
     tenant_id, name, slot_type_id, content, target_url,
     budget, status, priority, frequency_cap_per_user,
-    start_date, end_date, created_by
+    start_date, end_date, created_by, target_geo, target_space_ids
 ) VALUES (
     $1, $2, $3, $4, $5,
     $6, $7, $8, $9,
-    $10, $11, $12
+    $10, $11, $12,
+    $13, $14
 )
-RETURNING id, tenant_id, name, slot_type_id, content, target_url, budget, spent, status, priority, frequency_cap_per_user, start_date, end_date, created_by, created_at, updated_at
+RETURNING id, tenant_id, name, slot_type_id, content, target_url, budget, spent, status, priority, frequency_cap_per_user, start_date, end_date, created_by, created_at, updated_at, target_geo, target_space_ids
 `
 
 type CreateAdCampaignParams struct {
@@ -66,6 +67,8 @@ type CreateAdCampaignParams struct {
 	StartDate           pgtype.Timestamptz `json:"start_date"`
 	EndDate             pgtype.Timestamptz `json:"end_date"`
 	CreatedBy           pgtype.UUID        `json:"created_by"`
+	TargetGeo           []string           `json:"target_geo"`
+	TargetSpaceIds      []pgtype.UUID      `json:"target_space_ids"`
 }
 
 // =====================
@@ -85,6 +88,8 @@ func (q *Queries) CreateAdCampaign(ctx context.Context, arg CreateAdCampaignPara
 		arg.StartDate,
 		arg.EndDate,
 		arg.CreatedBy,
+		arg.TargetGeo,
+		arg.TargetSpaceIds,
 	)
 	var i AdCampaign
 	err := row.Scan(
@@ -104,6 +109,8 @@ func (q *Queries) CreateAdCampaign(ctx context.Context, arg CreateAdCampaignPara
 		&i.CreatedBy,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.TargetGeo,
+		&i.TargetSpaceIds,
 	)
 	return i, err
 }
@@ -366,7 +373,7 @@ func (q *Queries) GetAdAnalyticsBySlot(ctx context.Context, arg GetAdAnalyticsBy
 }
 
 const getAdCampaignByID = `-- name: GetAdCampaignByID :one
-SELECT id, tenant_id, name, slot_type_id, content, target_url, budget, spent, status, priority, frequency_cap_per_user, start_date, end_date, created_by, created_at, updated_at FROM ad_campaigns
+SELECT id, tenant_id, name, slot_type_id, content, target_url, budget, spent, status, priority, frequency_cap_per_user, start_date, end_date, created_by, created_at, updated_at, target_geo, target_space_ids FROM ad_campaigns
 WHERE id = $1 AND tenant_id = $2
 `
 
@@ -395,6 +402,8 @@ func (q *Queries) GetAdCampaignByID(ctx context.Context, arg GetAdCampaignByIDPa
 		&i.CreatedBy,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.TargetGeo,
+		&i.TargetSpaceIds,
 	)
 	return i, err
 }
@@ -640,7 +649,7 @@ func (q *Queries) ListActiveBoosts(ctx context.Context, tenantID pgtype.UUID) ([
 }
 
 const listActiveCampaignsBySlot = `-- name: ListActiveCampaignsBySlot :many
-SELECT id, tenant_id, name, slot_type_id, content, target_url, budget, spent, status, priority, frequency_cap_per_user, start_date, end_date, created_by, created_at, updated_at FROM ad_campaigns
+SELECT id, tenant_id, name, slot_type_id, content, target_url, budget, spent, status, priority, frequency_cap_per_user, start_date, end_date, created_by, created_at, updated_at, target_geo, target_space_ids FROM ad_campaigns
 WHERE tenant_id = $1
   AND slot_type_id = $2
   AND status = 'active'
@@ -688,6 +697,8 @@ func (q *Queries) ListActiveCampaignsBySlot(ctx context.Context, arg ListActiveC
 			&i.CreatedBy,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.TargetGeo,
+			&i.TargetSpaceIds,
 		); err != nil {
 			return nil, err
 		}
@@ -700,7 +711,7 @@ func (q *Queries) ListActiveCampaignsBySlot(ctx context.Context, arg ListActiveC
 }
 
 const listAdCampaignsByTenant = `-- name: ListAdCampaignsByTenant :many
-SELECT id, tenant_id, name, slot_type_id, content, target_url, budget, spent, status, priority, frequency_cap_per_user, start_date, end_date, created_by, created_at, updated_at FROM ad_campaigns
+SELECT id, tenant_id, name, slot_type_id, content, target_url, budget, spent, status, priority, frequency_cap_per_user, start_date, end_date, created_by, created_at, updated_at, target_geo, target_space_ids FROM ad_campaigns
 WHERE tenant_id = $1
 ORDER BY created_at DESC
 LIMIT $3 OFFSET $2
@@ -738,6 +749,8 @@ func (q *Queries) ListAdCampaignsByTenant(ctx context.Context, arg ListAdCampaig
 			&i.CreatedBy,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.TargetGeo,
+			&i.TargetSpaceIds,
 		); err != nil {
 			return nil, err
 		}
@@ -881,9 +894,11 @@ SET name = $1,
     frequency_cap_per_user = $5,
     start_date = $6,
     end_date = $7,
+    target_geo = $8,
+    target_space_ids = $9,
     updated_at = now()
-WHERE id = $8 AND tenant_id = $9
-RETURNING id, tenant_id, name, slot_type_id, content, target_url, budget, spent, status, priority, frequency_cap_per_user, start_date, end_date, created_by, created_at, updated_at
+WHERE id = $10 AND tenant_id = $11
+RETURNING id, tenant_id, name, slot_type_id, content, target_url, budget, spent, status, priority, frequency_cap_per_user, start_date, end_date, created_by, created_at, updated_at, target_geo, target_space_ids
 `
 
 type UpdateAdCampaignParams struct {
@@ -894,6 +909,8 @@ type UpdateAdCampaignParams struct {
 	FrequencyCapPerUser *int32             `json:"frequency_cap_per_user"`
 	StartDate           pgtype.Timestamptz `json:"start_date"`
 	EndDate             pgtype.Timestamptz `json:"end_date"`
+	TargetGeo           []string           `json:"target_geo"`
+	TargetSpaceIds      []pgtype.UUID      `json:"target_space_ids"`
 	ID                  pgtype.UUID        `json:"id"`
 	TenantID            pgtype.UUID        `json:"tenant_id"`
 }
@@ -907,6 +924,8 @@ func (q *Queries) UpdateAdCampaign(ctx context.Context, arg UpdateAdCampaignPara
 		arg.FrequencyCapPerUser,
 		arg.StartDate,
 		arg.EndDate,
+		arg.TargetGeo,
+		arg.TargetSpaceIds,
 		arg.ID,
 		arg.TenantID,
 	)
@@ -928,6 +947,8 @@ func (q *Queries) UpdateAdCampaign(ctx context.Context, arg UpdateAdCampaignPara
 		&i.CreatedBy,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.TargetGeo,
+		&i.TargetSpaceIds,
 	)
 	return i, err
 }
@@ -936,7 +957,7 @@ const updateAdCampaignStatus = `-- name: UpdateAdCampaignStatus :one
 UPDATE ad_campaigns
 SET status = $1, updated_at = now()
 WHERE id = $2 AND tenant_id = $3
-RETURNING id, tenant_id, name, slot_type_id, content, target_url, budget, spent, status, priority, frequency_cap_per_user, start_date, end_date, created_by, created_at, updated_at
+RETURNING id, tenant_id, name, slot_type_id, content, target_url, budget, spent, status, priority, frequency_cap_per_user, start_date, end_date, created_by, created_at, updated_at, target_geo, target_space_ids
 `
 
 type UpdateAdCampaignStatusParams struct {
@@ -965,6 +986,8 @@ func (q *Queries) UpdateAdCampaignStatus(ctx context.Context, arg UpdateAdCampai
 		&i.CreatedBy,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.TargetGeo,
+		&i.TargetSpaceIds,
 	)
 	return i, err
 }

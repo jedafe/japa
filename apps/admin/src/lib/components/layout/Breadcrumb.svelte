@@ -138,6 +138,15 @@
 				case 'universities':
 					label = t('universities.title');
 					break;
+				case 'instructors':
+					label = t('university.instructors_title', 'University Instructors');
+					break;
+				case 'tracks':
+					label = t('university.tracks_title', 'University Tracks');
+					break;
+				case 'payouts':
+					label = t('university.payouts_title', 'University Payouts');
+					break;
 				case 'ticket-types':
 					label = t('ticket_types.title');
 					break;

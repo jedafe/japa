@@ -24,8 +24,8 @@ export const categoryIcons: Record<string, typeof Settings> = {
 
 export const categoryNames: Record<string, string> = {
     auth: 'Authentication',
-    feed: 'Feed & Content',
-    content: 'Feed & Content',
+    feed: 'Feed',
+    content: 'Content',
     spaces: 'Spaces',
     moderation: 'Moderation',
     security: 'Security',

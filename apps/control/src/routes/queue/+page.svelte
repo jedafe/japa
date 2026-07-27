@@ -131,7 +131,7 @@
 			if (document.visibilityState === 'visible') {
 				refresh();
 			}
-		}, 30_000);
+		}, 15_000);
 
 		const tickInterval = setInterval(() => {
 			if (document.visibilityState === 'visible') {

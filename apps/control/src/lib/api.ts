@@ -14,6 +14,13 @@ export function setToken(token: string | null) {
 	jwtToken = token;
 }
 
+// getToken returns the current JWT token (or null) so callers that need to
+// build their own fetch (e.g. multipart uploads that cannot use JSON.stringify)
+// can still attach the Authorization header.
+export function getToken(): string | null {
+	return jwtToken;
+}
+
 // readCookie returns the value of a document cookie by name, or null if absent.
 // Used for the double-submit CSRF token (the backend issues a non-HttpOnly
 // `csrf_token` cookie that the SPA echoes back as the X-CSRF-Token header).

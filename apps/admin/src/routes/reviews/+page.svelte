@@ -2,7 +2,6 @@
 	import { api } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
-	import { onMount } from 'svelte';
 	import { RefreshCw, Shield, Trash2, CheckCircle, Clock, XCircle, Star } from 'lucide-svelte';
 	import { Select } from '$lib/components/ui/select';
 	import { DataTable } from '$lib/components/ui/data-table';
@@ -160,13 +159,11 @@
 	function handleStatusTab(tab: string) {
 		statusFilter = tab;
 		currentPage = 0;
-		load();
 	}
 
 	function handleEntityTypeFilter(val: string) {
 		entityTypeFilter = val;
 		currentPage = 0;
-		load();
 	}
 
 	async function load() {
@@ -195,7 +192,7 @@
 		}
 	}
 
-	onMount(() => {
+	$effect(() => {
 		load();
 	});
 </script>

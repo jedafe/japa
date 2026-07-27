@@ -25,6 +25,7 @@
 		Building2,
 		DollarSign,
 		Clock,
+		Rocket,
 	} from 'lucide-svelte';
 	type LucideIcon = typeof LayoutDashboard;
 
@@ -147,7 +148,8 @@
 		{ href: '/feature-flags', icon: Flag },
 		{ href: '/tenants', icon: Building2 },
 		{ href: '/ai-budget', icon: DollarSign },
-		{ href: '/cron', icon: Clock }
+		{ href: '/cron', icon: Clock },
+		{ href: '/deployments', icon: Rocket }
 	];
 
 	const navKeyMap: Record<string, { label: string; tooltip: string }> = {
@@ -164,6 +166,7 @@
 		'/tenants': { label: 'nav.tenants', tooltip: 'nav.tenants_tooltip' },
 		'/ai-budget': { label: 'nav.ai_budget', tooltip: 'nav.ai_budget_tooltip' },
 		'/cron': { label: 'nav.cron', tooltip: 'nav.cron_tooltip' },
+		'/deployments': { label: 'nav.deployments', tooltip: 'nav.deployments_tooltip' },
 	};
 
 	const nav = $derived.by(() => {
