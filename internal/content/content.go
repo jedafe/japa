@@ -33,6 +33,16 @@ var ErrOrgPostForbidden = errors.New("not authorized to post as this organizatio
 // 23505 violation.
 var ErrDuplicateContent = errors.New("duplicate content: a post with this content already exists")
 
+// ErrEditWindowExpired is returned when the original author tries to edit
+// content after the `content.edit_window_minutes` window has elapsed
+// (BL-008 / Section 49). Moderators/admins editing someone else's post
+// bypass this check because the editor is not the author.
+var ErrEditWindowExpired = errors.New("edit window has expired")
+
+// defaultEditWindowMinutes is the fallback for content.edit_window_minutes
+// when the setting is unset or no settings reader is wired (BL-008).
+const defaultEditWindowMinutes = 1440
+
 // isOrgPostRole reports whether an org membership role may post/edit as the org.
 func isOrgPostRole(role string) bool {
 	return role == "owner" || role == "admin" || role == "editor"

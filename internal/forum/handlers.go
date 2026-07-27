@@ -21,6 +21,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/auth"
+	"github.com/jedafe/japa/internal/seo"
 	"github.com/jedafe/japa/internal/tenant"
 )
 
@@ -329,7 +330,37 @@ func (h *Handlers) GetThread(w http.ResponseWriter, r *http.Request) {
 		h.Service.IncrementThreadView(bgCtx, thread.ID, tenantID)
 	}()
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": thread})
+	// BL-012 / Section 08: emit QAPage JSON-LD for solved threads so search
+	// engines can index the accepted answer. The accepted-answer body is the
+	// top-voted reply (the forum has no explicit accepted_reply_id, so the
+	// highest-voted reply is the best proxy). For unsolved threads we still
+	// emit a QAPage with answerCount=0 (valid schema.org).
+	response := map[string]any{"data": thread}
+	authorName := ""
+	if thread.AuthorUsername != nil {
+		if name, ok := thread.AuthorUsername.(string); ok {
+			authorName = name
+		}
+	}
+	questionBody := ""
+	if len(thread.Body) > 0 {
+		questionBody = string(thread.Body)
+	}
+
+	var answerBody string
+	if thread.Solved {
+		if top, topErr := h.Service.GetTopReplyForThread(r.Context(), thread.ID, tenantID); topErr == nil {
+			if len(top.Body) > 0 {
+				answerBody = string(top.Body)
+			}
+		} else if !errors.Is(topErr, pgx.ErrNoRows) {
+			slog.Warn("QAPage JSON-LD: failed to fetch top reply", "thread_id", thread.ID, "error", topErr)
+		}
+	}
+
+	response["json_ld"] = seo.GenerateQAPageJSONLD(thread.Title, questionBody, answerBody, authorName, thread.Solved)
+
+	writeJSON(w, http.StatusOK, response)
 }
 
 // UpdateThread handles PATCH /api/v1/forum/threads/{id}.

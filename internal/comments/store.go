@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -191,8 +192,37 @@ func (s *Service) ListRepliesByParent(ctx context.Context, tenantID, parentID pg
 	return replies, nil
 }
 
-// UpdateComment updates a comment's body. Only the author can edit.
+// UpdateComment updates a comment's body. Only the author can edit (enforced
+// by the sqlc UpdateComment WHERE clause). The edit is rejected if the
+// `comments.edit_window_minutes` window has elapsed since creation (BL-009).
 func (s *Service) UpdateComment(ctx context.Context, tenantID, commentID, userID pgtype.UUID, body string) (gen.Comment, error) {
+	// Edit-window enforcement (BL-009 / Section 49). Fetch the comment first
+	// to read created_at. GetComment joins users/user_profiles, so it returns
+	// a GetCommentRow; we only need the CreatedAt + AuthorUserID fields.
+	existing, err := s.read.GetComment(ctx, gen.GetCommentParams{
+		ID:       commentID,
+		TenantID: tenantID,
+	})
+	if err != nil {
+		return gen.Comment{}, fmt.Errorf("getting comment for edit-window check: %w", err)
+	}
+
+	// Only enforce the window for the author. The sqlc query already rejects
+	// non-authors (no rows), so this guard is belt-and-suspenders.
+	if existing.AuthorUserID.Valid && existing.AuthorUserID.Bytes == userID.Bytes &&
+		existing.CreatedAt.Valid {
+		windowMinutes := defaultEditWindowMinutes
+		if s.settings != nil {
+			windowMinutes = s.settings.GetIntOr(ctx, tenantID, "comments.edit_window_minutes", defaultEditWindowMinutes)
+		}
+		if windowMinutes > 0 {
+			deadline := existing.CreatedAt.Time.Add(time.Duration(windowMinutes) * time.Minute)
+			if time.Now().After(deadline) {
+				return gen.Comment{}, ErrEditWindowExpired
+			}
+		}
+	}
+
 	comment, err := s.write.UpdateComment(ctx, gen.UpdateCommentParams{
 		ID:           commentID,
 		TenantID:     tenantID,

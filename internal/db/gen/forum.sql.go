@@ -842,6 +842,73 @@ func (q *Queries) GetReplyViewCount(ctx context.Context, replyID pgtype.UUID) (i
 	return view_count, err
 }
 
+const getTopReplyForThread = `-- name: GetTopReplyForThread :one
+SELECT fr.id, fr.tenant_id, fr.thread_id, fr.parent_reply_id, fr.author_user_id,
+       fr.body, fr.vote_score, fr.view_count, fr.is_anonymous, fr.is_edited,
+       fr.created_at, fr.updated_at, fr.deleted_at,
+       CASE WHEN fr.is_anonymous THEN NULL ELSE u.username END AS author_username,
+       CASE WHEN fr.is_anonymous THEN NULL ELSE up.display_name END AS author_display_name,
+       CASE WHEN fr.is_anonymous THEN NULL ELSE up.avatar_url END AS author_avatar_url
+FROM forum_replies fr
+LEFT JOIN users u ON u.id = fr.author_user_id
+LEFT JOIN user_profiles up ON up.user_id = fr.author_user_id
+WHERE fr.thread_id = $1
+  AND fr.tenant_id = $2
+  AND fr.deleted_at IS NULL
+ORDER BY fr.vote_score DESC, fr.created_at ASC
+LIMIT 1
+`
+
+type GetTopReplyForThreadParams struct {
+	ThreadID pgtype.UUID `json:"thread_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+type GetTopReplyForThreadRow struct {
+	ID                pgtype.UUID        `json:"id"`
+	TenantID          pgtype.UUID        `json:"tenant_id"`
+	ThreadID          pgtype.UUID        `json:"thread_id"`
+	ParentReplyID     pgtype.UUID        `json:"parent_reply_id"`
+	AuthorUserID      pgtype.UUID        `json:"author_user_id"`
+	Body              []byte             `json:"body"`
+	VoteScore         int32              `json:"vote_score"`
+	ViewCount         int32              `json:"view_count"`
+	IsAnonymous       bool               `json:"is_anonymous"`
+	IsEdited          bool               `json:"is_edited"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt         pgtype.Timestamptz `json:"deleted_at"`
+	AuthorUsername    interface{}        `json:"author_username"`
+	AuthorDisplayName interface{}        `json:"author_display_name"`
+	AuthorAvatarUrl   interface{}        `json:"author_avatar_url"`
+}
+
+// Returns the highest-voted non-deleted reply for a thread. Used as the
+// accepted-answer candidate for QAPage JSON-LD on solved threads (BL-012).
+func (q *Queries) GetTopReplyForThread(ctx context.Context, arg GetTopReplyForThreadParams) (GetTopReplyForThreadRow, error) {
+	row := q.db.QueryRow(ctx, getTopReplyForThread, arg.ThreadID, arg.TenantID)
+	var i GetTopReplyForThreadRow
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.ThreadID,
+		&i.ParentReplyID,
+		&i.AuthorUserID,
+		&i.Body,
+		&i.VoteScore,
+		&i.ViewCount,
+		&i.IsAnonymous,
+		&i.IsEdited,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.DeletedAt,
+		&i.AuthorUsername,
+		&i.AuthorDisplayName,
+		&i.AuthorAvatarUrl,
+	)
+	return i, err
+}
+
 const incrementEntityBookmarkCount = `-- name: IncrementEntityBookmarkCount :exec
 UPDATE forum_threads
 SET bookmark_count = bookmark_count + $1

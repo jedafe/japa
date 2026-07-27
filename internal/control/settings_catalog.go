@@ -20,7 +20,12 @@ type settingMeta struct {
 var settingsCatalog = map[string]settingMeta{
 	// Authentication
 	"auth.password.min_length":               {Type: "int", DefaultValue: "8", Description: "Minimum password length."},
+	"auth.password.max_length":               {Type: "int", DefaultValue: "128", Description: "Maximum password length."},
 	"auth.password.require_uppercase":        {Type: "bool", DefaultValue: "false", Description: "Enforce uppercase requirement."},
+	"auth.password.require_number":           {Type: "bool", DefaultValue: "true", Description: "Enforce numeric digit requirement."},
+	"auth.password.require_symbol":           {Type: "bool", DefaultValue: "false", Description: "Enforce symbol requirement."},
+	"auth.password.check_breach":             {Type: "bool", DefaultValue: "true", Description: "Check password against HIBP breach database before accepting."},
+	"auth.password.history_count":            {Type: "int", DefaultValue: "5", Description: "Number of recent password hashes to check against reuse."},
 	"auth.session.refresh_days":              {Type: "int", DefaultValue: "30", Description: "Refresh token TTL in days."},
 	"auth.session.access_token_ttl_minutes":  {Type: "int", DefaultValue: "15", Description: "Access token TTL in minutes."},
 	"auth.totp.required_for_admin":           {Type: "bool", DefaultValue: "false", Description: "Force 2FA for admin roles."},
@@ -123,6 +128,13 @@ var settingsCatalog = map[string]settingMeta{
 	"university.pro_stream_rate_kobo":     {Type: "int", DefaultValue: "5000", Description: "Amount (kobo) accrued to a creator per Pro-enrolled learner per period."},
 	// AUDIT-BE-SETTING-005: geo-aware personalization master switch (ADR-064).
 	"geo_personalization.enabled":         {Type: "bool", DefaultValue: "true", Description: "Master switch for geo-aware feed/search/discovery weighting."},
+	// AUDIT-BE2-SEC-013: link preview fetch timeout (Rule 3 — was hardcoded 10s).
+	"linkpreview.fetch_timeout_seconds":   {Type: "int", DefaultValue: "10", Min: 1, Max: 120, Description: "HTTP timeout for link preview fetches in seconds."},
+	// AUDIT-BE2-BL-014: configurable iframe embed allowlist for HTML sanitization (Section 16).
+	"content.sanitization.allowed_iframe_hosts": {Type: "csv", DefaultValue: "youtube.com,vimeo.com,codepen.io,jsfiddle.net,embed.ted.com", Description: "Comma-separated domains permitted in <iframe> src in user-generated content."},
+	// AUDIT-BE2-SEC-011: webhook delivery max attempts (Rule 3 — was hardcoded 5).
+	// Reuses notifications.max_delivery_attempts (already catalogued above) — no
+	// separate key needed; documented here for discoverability.
 }
 
 // getSettingMeta returns the metadata for a given dot-notation key.

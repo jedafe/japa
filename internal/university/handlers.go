@@ -302,6 +302,12 @@ func (h *Handlers) CreateMyTrack(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// BL-016: validate price_kobo is non-negative when set.
+	if body.PriceKobo != nil && *body.PriceKobo < 0 {
+		writeError(w, http.StatusBadRequest, "invalid_price", "price_kobo must be non-negative")
+		return
+	}
+
 	in := CreateTrackInput{
 		Title: body.Title, Slug: body.Slug, Description: body.Description,
 		Category: body.Category, Currency: body.Currency, Language: body.Language,
@@ -365,6 +371,12 @@ func (h *Handlers) UpdateMyTrack(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
+		return
+	}
+
+	// BL-016: validate price_kobo is non-negative when set.
+	if body.PriceKobo != nil && *body.PriceKobo < 0 {
+		writeError(w, http.StatusBadRequest, "invalid_price", "price_kobo must be non-negative")
 		return
 	}
 

@@ -132,6 +132,8 @@ func handleServiceError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, "duplicate_content", "Content with this body already exists")
 	case errors.Is(err, ErrOrgPostForbidden):
 		writeError(w, http.StatusForbidden, "org_post_forbidden", "Not authorized to post as this organization")
+	case errors.Is(err, ErrEditWindowExpired):
+		writeError(w, http.StatusForbidden, "edit_window_expired", "The edit window for this content has expired")
 	default:
 		writeError(w, http.StatusInternalServerError, "internal_error", "Something went wrong")
 	}
@@ -1274,7 +1276,8 @@ func (h *Handlers) AddBookmark(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var input struct {
-		Folder string `json:"folder"`
+		Folder   string `json:"folder"`
+		FolderID string `json:"folder_id"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
@@ -1282,7 +1285,15 @@ func (h *Handlers) AddBookmark(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	bm, err := h.Service.CreateBookmark(r.Context(), tenantID, user.UserID, EntityContent, contentID, input.Folder)
+	var folderID pgtype.UUID
+	if input.FolderID != "" {
+		if err := folderID.Scan(input.FolderID); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_folder_id", "Invalid folder_id format")
+			return
+		}
+	}
+
+	bm, err := h.Service.CreateBookmark(r.Context(), tenantID, user.UserID, EntityContent, contentID, input.Folder, folderID)
 	if err != nil {
 		handleServiceError(w, err)
 		return

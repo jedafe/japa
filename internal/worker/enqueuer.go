@@ -64,14 +64,15 @@ func (e *Enqueuer) Enqueue(taskType string, payload []byte, opts ...interface{})
 // get a 24h TTL; notification/email tasks get a 1h TTL via this method plus a
 // shorter TTL via the task-level Unique call.
 var idempotentTasks = map[string]bool{
-	TypeEmailSend:                   true,
-	TypePushDelivery:                true,
-	TypeScheduledPublish:            true,
-	TypeNewsletterSend:              true,
-	TypeAffiliateCreditCommission:   true,
-	TypeWalletProcessActivityEvent:  true,
-	TypePaymentWebhookProcess:       true,
-	TypeUniversityProcessEnrollment: true, // AUDIT-BE-005: double-credit guard
+	TypeEmailSend:                    true,
+	TypePushDelivery:                 true,
+	TypeScheduledPublish:             true,
+	TypeNewsletterSend:               true,
+	TypeAffiliateCreditCommission:    true,
+	TypeAffiliateCreditAuthorCommission: true, // TASK-005: defense-in-depth for author commission
+	TypeWalletProcessActivityEvent:   true,
+	TypePaymentWebhookProcess:        true,
+	TypeUniversityProcessEnrollment:  true, // AUDIT-BE-005: double-credit guard
 }
 
 func taskDefaults(taskType string) []asynq.Option {
@@ -81,7 +82,7 @@ func taskDefaults(taskType string) []asynq.Option {
 	if idempotentTasks[taskType] {
 		ttl := 1 * time.Hour
 		switch taskType {
-		case TypeScheduledPublish, TypeNewsletterSend, TypeAffiliateCreditCommission:
+		case TypeScheduledPublish, TypeNewsletterSend, TypeAffiliateCreditCommission, TypeAffiliateCreditAuthorCommission:
 			ttl = 24 * time.Hour
 		}
 		opts = append(opts, asynq.Unique(ttl))
@@ -133,6 +134,7 @@ var taskTier = func() map[string]string {
 		TypeLearningUpdateTrackCompletion, TypeVideoProcessing,
 		TypeWalletProcessActivityEvent, TypeNewsletterSend,
 		TypeAffiliateCreditAuthorCommission,
+		TypeDocsGeneratePage,
 		TypeUniversityNotifyInstructorApproved, TypeUniversityNotifyCourseApproved,
 		TypeUniversitySendInstructorPayout,
 	} {
@@ -212,6 +214,7 @@ func TaskTypeCatalog() []map[string]string {
 		{TypeVideoProcessing, "default", "Process uploaded video files"},
 		{TypeWalletProcessActivityEvent, "default", "Process wallet activity event"},
 		{TypeNewsletterSend, "default", "Send newsletter to subscribers"},
+		{TypeDocsGeneratePage, "default", "Generate a docs page via AI (fire-and-forget)"},
 		{TypeAffiliateCreditAuthorCommission, "default", "Credit author revenue share for an external affiliate commission earned on their content"},
 		// Japa University (ADR-063)
 		{TypeUniversityNotifyInstructorApproved, "default", "Notify creator their instructor application was approved"},

@@ -24,18 +24,25 @@ type FollowingInfo struct {
 	EntityName string `json:"entity_name"`
 }
 
+// joiningPermOpen is the joining_perm value that allows anyone to auto-join
+// a space on follow (BL-010 / Section 31). Kept as a local constant to avoid
+// importing the spaces package (which would couple follows → spaces).
+const joiningPermOpen = "open"
+
 // ToggleFollow handles follow/unfollow logic. Returns true if the user is now
-// following the entity, false if they unfollowed.
-func (s *Service) ToggleFollow(ctx context.Context, tenantID, followerID pgtype.UUID, entityType string, entityID pgtype.UUID) (bool, error) {
+// following the entity, false if they unfollowed. When following a space with
+// `joining_perm = 'open'`, the follower is auto-joined as a member (BL-010 /
+// Section 31). Unfollowing does NOT auto-leave (membership is independent).
+func (s *Service) ToggleFollow(ctx context.Context, tenantID, followerID pgtype.UUID, entityType string, entityId pgtype.UUID) (bool, error) {
 	if !isValidEntityType(entityType) {
 		return false, fmt.Errorf("invalid entity type: %s", entityType)
 	}
 
-	if entityType == EntityTypeUser && followerID == entityID {
+	if entityType == EntityTypeUser && followerID == entityId {
 		return false, errors.New("cannot follow yourself")
 	}
 
-	followed, err := s.store.toggleFollow(ctx, tenantID, followerID, entityType, entityID)
+	followed, err := s.store.toggleFollow(ctx, tenantID, followerID, entityType, entityId)
 	if err != nil {
 		return false, fmt.Errorf("toggling follow: %w", err)
 	}
@@ -46,9 +53,25 @@ func (s *Service) ToggleFollow(ctx context.Context, tenantID, followerID pgtype.
 		delta = 1
 	}
 
-	if err := s.updateFollowerCount(ctx, entityType, entityID, delta); err != nil {
+	if err := s.updateFollowerCount(ctx, entityType, entityId, delta); err != nil {
 		// Log but don't fail the follow operation.
-		slog.Warn("failed to update follower count", "entity_type", entityType, "entity_id", entityID, "error", err)
+		slog.Warn("failed to update follower count", "entity_type", entityType, "entity_id", entityId, "error", err)
+	}
+
+	// BL-010 / Section 31: following a space with joining_perm='open' auto-joins
+	// the follower as a member. Only auto-join on follow (not unfollow). Best-effort:
+	// a failure to join does not roll back the follow.
+	if followed && entityType == EntityTypeSpace {
+		perm, permErr := s.store.getSpaceJoiningPerm(ctx, entityId, tenantID)
+		if permErr != nil {
+			slog.Warn("auto-join: failed to read space joining_perm",
+				"space_id", entityId, "error", permErr)
+		} else if perm == joiningPermOpen {
+			if joinErr := s.store.addSpaceMember(ctx, entityId, followerID, tenantID); joinErr != nil {
+				slog.Warn("auto-join: failed to add space member",
+					"space_id", entityId, "user_id", followerID, "error", joinErr)
+			}
+		}
 	}
 
 	return followed, nil

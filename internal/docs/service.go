@@ -4,18 +4,32 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/valkey"
+	"github.com/valkey-io/valkey-go/valkeycompat"
+)
+
+// Cache TTLs (VALKEY-003 / catalog: jc:docs_nav, jc:docs_page).
+const (
+	docNavCacheTTL  = 10 * time.Minute
+	docPageCacheTTL = 5 * time.Minute
 )
 
 // Service provides business logic for documentation pages.
 type Service struct {
 	store *Store
+	cache valkeycompat.Cmdable
 }
+
+// SetCache injects a Valkey cache client for docs page/nav caching
+// (VALKEY-003). When nil, the service falls back to direct DB reads.
+func (s *Service) SetCache(c valkeycompat.Cmdable) { s.cache = c }
 
 // NewService creates a Service backed by the given database pools.
 func NewService(database *db.DB) *Service {
@@ -27,14 +41,35 @@ func NewService(database *db.DB) *Service {
 	}
 }
 
-// GetDocPageBySlug returns a published page by audience and slug.
+// GetDocPageBySlug returns a published page by audience and slug. Checks the
+// Valkey cache first (jc:docs_page:{audience}:{slug}, TTL 5min) and falls back
+// to the DB on miss (VALKEY-003).
 func (s *Service) GetDocPageBySlug(ctx context.Context, tenantID pgtype.UUID, audience, slug string) (*DocPage, error) {
+	cacheKey := valkey.MustKey("docs:page:%s:%s", audience, slug)
+	if s.cache != nil {
+		if cached, err := s.cache.Get(ctx, cacheKey).Result(); err == nil {
+			var page DocPage
+			if jsonErr := json.Unmarshal([]byte(cached), &page); jsonErr == nil {
+				return &page, nil
+			}
+		}
+	}
+
 	page, err := s.store.getBySlug(ctx, tenantID, audience, slug)
 	if err != nil {
 		return nil, err
 	}
 
-	return toDocPage(page), nil
+	result := toDocPage(page)
+	if s.cache != nil {
+		if data, jsonErr := json.Marshal(result); jsonErr == nil {
+			if err := s.cache.Set(ctx, cacheKey, string(data), docPageCacheTTL).Err(); err != nil {
+				slog.Warn("docs: failed to cache page", "key", cacheKey, "error", err)
+			}
+		}
+	}
+
+	return result, nil
 }
 
 // GetDocPageByID returns a page by ID.
@@ -128,13 +163,34 @@ func (s *Service) ListAllDocPages(ctx context.Context, tenantID pgtype.UUID) ([]
 }
 
 // GetDocNav returns the published-pages navigation tree grouped by audience.
+// Checks the Valkey cache first (jc:docs_nav, TTL 10min) and falls back to
+// the DB on miss (VALKEY-003).
 func (s *Service) GetDocNav(ctx context.Context, tenantID pgtype.UUID) ([]DocNavTree, error) {
+	cacheKey := valkey.MustKey("docs:nav")
+	if s.cache != nil {
+		if cached, err := s.cache.Get(ctx, cacheKey).Result(); err == nil {
+			var trees []DocNavTree
+			if jsonErr := json.Unmarshal([]byte(cached), &trees); jsonErr == nil {
+				return trees, nil
+			}
+		}
+	}
+
 	rows, err := s.store.listPublished(ctx, tenantID)
 	if err != nil {
 		return nil, err
 	}
 
-	return buildDocNavTree(rows), nil
+	trees := buildDocNavTree(rows)
+	if s.cache != nil {
+		if data, jsonErr := json.Marshal(trees); jsonErr == nil {
+			if err := s.cache.Set(ctx, cacheKey, string(data), docNavCacheTTL).Err(); err != nil {
+				slog.Warn("docs: failed to cache nav", "key", cacheKey, "error", err)
+			}
+		}
+	}
+
+	return trees, nil
 }
 
 // SearchDocPages returns published pages matching the query, with a plain-text excerpt.
@@ -266,6 +322,21 @@ func collectText(node any, b *strings.Builder) {
 	}
 }
 
+// invalidateCache clears the docs nav cache and a specific page cache after
+// create/update/delete operations (VALKEY-003). Best-effort: errors are logged.
+func (s *Service) invalidateCache(ctx context.Context, audience, slug string) {
+	if s.cache == nil {
+		return
+	}
+	keys := []string{valkey.MustKey("docs:nav")}
+	if audience != "" && slug != "" {
+		keys = append(keys, valkey.MustKey("docs:page:%s:%s", audience, slug))
+	}
+	if err := s.cache.Del(ctx, keys...).Err(); err != nil {
+		slog.Warn("docs: failed to invalidate cache", "keys", keys, "error", err)
+	}
+}
+
 // CreateDocPage inserts a new documentation page.
 func (s *Service) CreateDocPage(ctx context.Context, tenantID pgtype.UUID, req CreateDocPageRequest) error {
 	if !ValidAudiences[req.Audience] {
@@ -293,7 +364,7 @@ func (s *Service) CreateDocPage(ctx context.Context, tenantID pgtype.UUID, req C
 		}
 	}
 
-	return s.store.create(ctx, gen.CreateDocPageParams{
+	if err := s.store.create(ctx, gen.CreateDocPageParams{
 		TenantID:     tenantID,
 		Title:        req.Title,
 		Slug:         req.Slug,
@@ -303,7 +374,12 @@ func (s *Service) CreateDocPage(ctx context.Context, tenantID pgtype.UUID, req C
 		ReviewStatus: status,
 		ParentID:     parentID,
 		Position:     req.Position,
-	})
+	}); err != nil {
+		return err
+	}
+
+	s.invalidateCache(ctx, req.Audience, req.Slug)
+	return nil
 }
 
 // UpdateDocPage modifies an existing documentation page.
@@ -333,19 +409,30 @@ func (s *Service) UpdateDocPage(ctx context.Context, tenantID, id pgtype.UUID, r
 		}
 	}
 
-	return s.store.update(ctx, gen.UpdateDocPageParams{
+	if err := s.store.update(ctx, gen.UpdateDocPageParams{
 		ID:             id,
 		TenantID:       tenantID,
 		Title:          req.Title,
 		Content:        contentBytes,
 		ReviewStatus:   status,
 		LastReviewedBy: pgtype.UUID{},
-	})
+	}); err != nil {
+		return err
+	}
+
+	// Invalidate nav (title may have changed) and the page cache. We don't
+	// know the audience/slug here without an extra read, so just flush nav.
+	s.invalidateCache(ctx, "", "")
+	return nil
 }
 
 // DeleteDocPage removes a documentation page.
 func (s *Service) DeleteDocPage(ctx context.Context, tenantID, id pgtype.UUID) error {
-	return s.store.delete(ctx, tenantID, id)
+	if err := s.store.delete(ctx, tenantID, id); err != nil {
+		return err
+	}
+	s.invalidateCache(ctx, "", "")
+	return nil
 }
 
 // toDocPage converts a gen.DocPage to our API type.

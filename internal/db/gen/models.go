@@ -348,6 +348,7 @@ type Bookmark struct {
 	EntityID   pgtype.UUID        `json:"entity_id"`
 	Folder     string             `json:"folder"`
 	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+	FolderID   pgtype.UUID        `json:"folder_id"`
 }
 
 type BookmarkFolder struct {
