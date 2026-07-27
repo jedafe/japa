@@ -343,14 +343,13 @@ func TestUpdateSettings_UnknownKey(t *testing.T) {
 	req = withChiURLParam(req, "category", "general")
 	rr := httptest.NewRecorder()
 
-	// Key validation passes, then h.DB.Writer.Begin panics on nil DB.
-	defer func() {
-		if r := recover(); r == nil {
-			t.Error("expected panic from nil DB, but none occurred")
-		}
-	}()
-
+	// TX-001: unknown keys are rejected at validation before reaching the DB,
+	// so the handler returns 400 invalid_key instead of panicking on nil DB.
 	h.UpdateSettings(rr, req)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, rr.Code)
+	}
 }
 
 // ---------------------------------------------------------------------------

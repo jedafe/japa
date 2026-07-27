@@ -59,13 +59,14 @@ func (ns NullBanOperation) Value() (driver.Value, error) {
 }
 
 type AccountDeletionRequest struct {
-	ID          pgtype.UUID        `json:"id"`
-	TenantID    pgtype.UUID        `json:"tenant_id"`
-	UserID      pgtype.UUID        `json:"user_id"`
-	Status      string             `json:"status"`
-	Reason      *string            `json:"reason"`
-	CompletedAt pgtype.Timestamptz `json:"completed_at"`
-	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	ID           pgtype.UUID        `json:"id"`
+	TenantID     pgtype.UUID        `json:"tenant_id"`
+	UserID       pgtype.UUID        `json:"user_id"`
+	Status       string             `json:"status"`
+	Reason       *string            `json:"reason"`
+	CompletedAt  pgtype.Timestamptz `json:"completed_at"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	ProgressStep int32              `json:"progress_step"`
 }
 
 type ActivityEvent struct {

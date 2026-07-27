@@ -51,6 +51,7 @@ type SettingsProvider interface {
 	GetSetting(ctx context.Context, tenantID pgtype.UUID, key string) (string, error)
 	GetSettingBool(ctx context.Context, tenantID pgtype.UUID, key string) (bool, error)
 	GetSettingInt(ctx context.Context, tenantID pgtype.UUID, key string) (int, error)
+	GetIntOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback int) int
 }
 
 // NewService creates a Service backed by the given database pool.
@@ -256,7 +257,12 @@ func (s *Service) ProcessDataExport(ctx context.Context, requestID pgtype.UUID) 
 
 	// In production, upload to S3 and create signed URL.
 	// For now, store locally and create a reference URL.
-	expiresAt := time.Now().Add(24 * time.Hour)
+	// AUDIT-FRESH-SETTING-008: export expiry is configurable via system_settings.
+	exportExpiryDays := 1
+	if s.settings != nil {
+		exportExpiryDays = s.settings.GetIntOr(ctx, request.TenantID, "gdpr.export_expiry_days", exportExpiryDays)
+	}
+	expiresAt := time.Now().Add(time.Duration(exportExpiryDays) * 24 * time.Hour)
 	exportURL := fmt.Sprintf("/exports/%s/data.json", request.UserID.String())
 	slog.Info("data export generated",
 		"user_id", request.UserID.String(),
@@ -324,13 +330,31 @@ func (s *Service) GetAccountDeletionRequest(ctx context.Context, id, tenantID pg
 
 // ProcessAccountDeletion performs the full account deletion workflow.
 // This is called by the Asynq worker.
+//
+// Resumability (AUDIT-FRESH-GDPR-003): each phase checkpoints a progress_step
+// on the request row. If the job crashes or is retried by Asynq, the next run
+// reads progress_step and skips phases already completed, so partial work is
+// not re-executed from the top. The step map is mirrored in migration
+// 000173_account_deletion_progress_step.up.sql.
+//
+//	retention_wait flow (AUDIT-FRESH-GDPR-006): when gdpr.hard_delete_enabled
+//	is true but the gdpr.retention_days window has not elapsed since the
+//	request was created, the request is marked retention_wait instead of
+//	completed. The anonymization + token/session/Honcho erasure has already
+//	happened (steps 1-4), so the user is functionally erased from the
+//	platform; only the physical row deletion is deferred. A periodic sweep
+//	(ListRetentionWaitElapsed, run by the maintenance scheduler) re-invokes
+//	this handler once the window elapses, at which point step 5 performs the
+//	hard delete and step 6 marks the request completed.
 func (s *Service) ProcessAccountDeletion(ctx context.Context, requestID pgtype.UUID) error {
 	request, err := s.store.getAccountDeletionRequest(ctx, requestID, pgtype.UUID{})
 	if err != nil {
 		return fmt.Errorf("fetching deletion request: %w", err)
 	}
 
-	// Mark as processing.
+	// Mark as processing. A retried job re-enters here; progress_step is
+	// preserved across retries because UpdateAccountDeletionRequestStatus
+	// does not touch progress_step.
 	_, err = s.store.updateAccountDeletionRequestStatus(ctx, gen.UpdateAccountDeletionRequestStatusParams{
 		ID:     requestID,
 		Status: string(DeletionProcessing),
@@ -339,103 +363,106 @@ func (s *Service) ProcessAccountDeletion(ctx context.Context, requestID pgtype.U
 		return fmt.Errorf("marking deletion as processing: %w", err)
 	}
 
+	step := request.ProgressStep
+
 	// 1. Anonymize user row.
-	err = s.store.anonymizeUser(ctx, gen.AnonymizeUserParams{
-		UserID:   request.UserID,
-		TenantID: request.TenantID,
-	})
-	if err != nil {
-		if _, statusErr := s.store.updateAccountDeletionRequestStatus(ctx, gen.UpdateAccountDeletionRequestStatusParams{
-			ID:     requestID,
-			Status: string(DeletionFailed),
-		}); statusErr != nil {
-			slog.Error("update deletion status to failed", "error", statusErr)
+	if step < deletionStepAnonymized {
+		if err := s.store.anonymizeUser(ctx, gen.AnonymizeUserParams{
+			UserID:   request.UserID,
+			TenantID: request.TenantID,
+		}); err != nil {
+			s.markDeletionFailed(ctx, requestID)
+			return fmt.Errorf("anonymizing user: %w", err)
 		}
-
-		return fmt.Errorf("anonymizing user: %w", err)
+		if err := s.checkpoint(ctx, requestID, request.TenantID, deletionStepAnonymized); err != nil {
+			return err
+		}
+		step = deletionStepAnonymized
 	}
 
-	// 2. Revoke all refresh tokens.
-	err = s.store.deleteUserTokens(ctx, gen.DeleteUserTokensParams{
-		UserID:   request.UserID,
-		TenantID: request.TenantID,
-	})
-	if err != nil {
-		slog.Warn("failed to revoke user tokens during deletion",
-			"user_id", request.UserID.String(), "error", err)
-	}
-
-	// 3. Delete Valkey session keys.
-	if s.sessionDeleter != nil {
-		if err := s.sessionDeleter.DeleteSessions(ctx, request.UserID.String()); err != nil {
-			slog.Warn("failed to delete valkey sessions",
+	// 2. Revoke all refresh tokens (best-effort).
+	if step < deletionStepTokensRevoked {
+		if err := s.store.deleteUserTokens(ctx, gen.DeleteUserTokensParams{
+			UserID:   request.UserID,
+			TenantID: request.TenantID,
+		}); err != nil {
+			slog.Warn("failed to revoke user tokens during deletion",
 				"user_id", request.UserID.String(), "error", err)
 		}
+		if err := s.checkpoint(ctx, requestID, request.TenantID, deletionStepTokensRevoked); err != nil {
+			return err
+		}
+		step = deletionStepTokensRevoked
+	}
+
+	// 3. Delete Valkey session keys (best-effort).
+	if step < deletionStepSessionsDeleted {
+		if s.sessionDeleter != nil {
+			if err := s.sessionDeleter.DeleteSessions(ctx, request.UserID.String()); err != nil {
+				slog.Warn("failed to delete valkey sessions",
+					"user_id", request.UserID.String(), "error", err)
+			}
+		}
+		if err := s.checkpoint(ctx, requestID, request.TenantID, deletionStepSessionsDeleted); err != nil {
+			return err
+		}
+		step = deletionStepSessionsDeleted
 	}
 
 	// 4. Delete Honcho AI context — mandatory, not best-effort. If the Honcho
 	//    client is configured and the call fails, mark the deletion as failed
-	//    and return the error so Asynq retries the whole job.
-	if s.honchoEraser != nil {
-		if err := s.honchoEraser.DeleteUser(ctx, request.UserID.String()); err != nil {
-			if _, statusErr := s.store.updateAccountDeletionRequestStatus(ctx, gen.UpdateAccountDeletionRequestStatusParams{
-				ID:     requestID,
-				Status: string(DeletionFailed),
-			}); statusErr != nil {
-				slog.Error("update deletion status to failed", "error", statusErr)
+	//    and return the error so Asynq retries from this step.
+	if step < deletionStepHonchoDeleted {
+		if s.honchoEraser != nil {
+			if err := s.honchoEraser.DeleteUser(ctx, request.UserID.String()); err != nil {
+				s.markDeletionFailed(ctx, requestID)
+				return fmt.Errorf("deleting honcho context for user %s: %w", request.UserID, err)
 			}
-
-			return fmt.Errorf("deleting honcho context for user %s: %w", request.UserID, err)
+		} else if strings.EqualFold(os.Getenv("JC_ENV"), "production") {
+			// AUDIT-BE-019: In production, Honcho erasure is mandatory.
+			// A nil eraser means the service was misconfigured — fail the
+			// entire deletion job so it retries after correct wiring.
+			s.markDeletionFailed(ctx, requestID)
+			return fmt.Errorf("honcho eraser not configured — required in production for user %s", request.UserID)
+		} else {
+			slog.Warn("honcho eraser not configured, skipping AI context deletion",
+				"request_id", requestID, "user_id", request.UserID)
 		}
-	} else if strings.EqualFold(os.Getenv("JC_ENV"), "production") {
-		// AUDIT-BE-019: In production, Honcho erasure is mandatory.
-		// A nil eraser means the service was misconfigured — fail the
-		// entire deletion job so it retries after correct wiring.
-		if _, statusErr := s.store.updateAccountDeletionRequestStatus(ctx, gen.UpdateAccountDeletionRequestStatusParams{
-			ID:     requestID,
-			Status: string(DeletionFailed),
-		}); statusErr != nil {
-			slog.Error("update deletion status to failed", "error", statusErr)
+		if err := s.checkpoint(ctx, requestID, request.TenantID, deletionStepHonchoDeleted); err != nil {
+			return err
 		}
-
-		return fmt.Errorf("honcho eraser not configured — required in production for user %s", request.UserID)
-	} else {
-		slog.Warn("honcho eraser not configured, skipping AI context deletion",
-			"request_id", requestID, "user_id", request.UserID)
+		step = deletionStepHonchoDeleted
 	}
 
 	// 5. Hard delete — optional physical erasure phase (ADR-057).
-	//    Only runs if gdpr.hard_delete_enabled is true and the retention window
-	//    (gdpr.retention_days) has elapsed since the request was created.
-	//    If retention hasn't elapsed, mark as retention_wait so a periodic
-	//    sweep can re-process it later. 
+	//    See the retention_wait flow documented in the function comment above.
 	retentionWait := false
-	if s.settings != nil {
-		hardDeleteEnabled, settingsErr := s.settings.GetSettingBool(ctx, request.TenantID, "gdpr.hard_delete_enabled")
-		if settingsErr == nil && hardDeleteEnabled {
-			retentionDays, _ := s.settings.GetSettingInt(ctx, request.TenantID, "gdpr.retention_days")
-			retentionDeadline := request.CreatedAt.Time.Add(time.Duration(retentionDays) * 24 * time.Hour)
-			if time.Now().After(retentionDeadline) {
-				slog.Info("gdpr: performing physical erasure",
-					"user_id", request.UserID.String(),
-					"request_id", requestID.String())
+	if step < deletionStepHardDeleted {
+		if s.settings != nil {
+			hardDeleteEnabled, settingsErr := s.settings.GetSettingBool(ctx, request.TenantID, "gdpr.hard_delete_enabled")
+			if settingsErr == nil && hardDeleteEnabled {
+				retentionDays, _ := s.settings.GetSettingInt(ctx, request.TenantID, "gdpr.retention_days")
+				retentionDeadline := request.CreatedAt.Time.Add(time.Duration(retentionDays) * 24 * time.Hour)
+				if time.Now().After(retentionDeadline) {
+					slog.Info("gdpr: performing physical erasure",
+						"user_id", request.UserID.String(),
+						"request_id", requestID.String())
 
-				if hardErr := s.hardDeleteUser(ctx, request.UserID, request.TenantID); hardErr != nil {
-					if _, statusErr := s.store.updateAccountDeletionRequestStatus(ctx, gen.UpdateAccountDeletionRequestStatusParams{
-						ID:     requestID,
-						Status: string(DeletionFailed),
-					}); statusErr != nil {
-						slog.Error("update deletion status to failed", "error", statusErr)
+					if hardErr := s.hardDeleteUser(ctx, request.UserID, request.TenantID); hardErr != nil {
+						s.markDeletionFailed(ctx, requestID)
+						return fmt.Errorf("hard deleting user %s: %w", request.UserID, hardErr)
 					}
-					return fmt.Errorf("hard deleting user %s: %w", request.UserID, hardErr)
+				} else {
+					slog.Info("gdpr: retention period not elapsed, entering retention_wait",
+						"user_id", request.UserID.String(),
+						"retention_days", retentionDays,
+						"retention_deadline", retentionDeadline.Format(time.RFC3339))
+					retentionWait = true
 				}
-			} else {
-				slog.Info("gdpr: retention period not elapsed, entering retention_wait",
-					"user_id", request.UserID.String(),
-					"retention_days", retentionDays,
-					"retention_deadline", retentionDeadline.Format(time.RFC3339))
-				retentionWait = true
 			}
+		}
+		if err := s.checkpoint(ctx, requestID, request.TenantID, deletionStepHardDeleted); err != nil {
+			return err
 		}
 	}
 
@@ -459,7 +486,63 @@ func (s *Service) ProcessAccountDeletion(ctx context.Context, requestID pgtype.U
 		}
 	}
 
+	// AUDIT-FRESH-GDPR-004: record an audit trail entry for the erasure.
+	// GDPR requires an audit log of deletions; the actor is the system when
+	// the worker drives the flow, or the user when self-service triggered it.
+	s.logDeletionAudit(ctx, request, retentionWait)
+
 	return nil
+}
+
+// deletion progress_step constants (AUDIT-FRESH-GDPR-003). Mirrored in
+// migration 000173_account_deletion_progress_step.up.sql.
+const (
+	deletionStepNotStarted       int32 = 0
+	deletionStepAnonymized       int32 = 1
+	deletionStepTokensRevoked    int32 = 2
+	deletionStepSessionsDeleted  int32 = 3
+	deletionStepHonchoDeleted    int32 = 4
+	deletionStepHardDeleted      int32 = 5
+)
+
+// checkpoint persists the completed step so a retried job resumes after it.
+func (s *Service) checkpoint(ctx context.Context, requestID, tenantID pgtype.UUID, step int32) error {
+	if err := s.store.updateAccountDeletionRequestProgress(ctx, requestID, tenantID, step); err != nil {
+		return fmt.Errorf("checkpointing deletion step %d: %w", step, err)
+	}
+	return nil
+}
+
+// markDeletionFailed flips the request status to failed and logs the secondary error.
+func (s *Service) markDeletionFailed(ctx context.Context, requestID pgtype.UUID) {
+	if _, statusErr := s.store.updateAccountDeletionRequestStatus(ctx, gen.UpdateAccountDeletionRequestStatusParams{
+		ID:     requestID,
+		Status: string(DeletionFailed),
+	}); statusErr != nil {
+		slog.Error("update deletion status to failed", "error", statusErr)
+	}
+}
+
+// logDeletionAudit writes the GDPR-required audit trail entry for an erasure.
+// Best-effort: a logging failure is logged but does not fail the deletion.
+func (s *Service) logDeletionAudit(ctx context.Context, request gen.AccountDeletionRequest, retentionWait bool) {
+	action := "gdpr.account_deleted"
+	if retentionWait {
+		action = "gdpr.account_retention_wait"
+	}
+	if err := logAuditEvent(ctx, s.store, request.TenantID, LogAuditParams{
+		ActorUserID: request.UserID,
+		ActionType:  action,
+		TargetType:  "user",
+		TargetID:    request.UserID,
+		Metadata: map[string]any{
+			"request_id":    request.ID.String(),
+			"retention_wait": retentionWait,
+		},
+	}); err != nil {
+		slog.Warn("gdpr: failed to write deletion audit log",
+			"request_id", request.ID.String(), "error", err)
+	}
 }
 
 // hardDeleteUser performs physical deletion of the user row after handling

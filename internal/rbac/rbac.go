@@ -133,13 +133,13 @@ func (r *RBAC) HasPermission(ctx context.Context, userID, tenantID pgtype.UUID, 
 }
 
 // HasSpacePermission checks if a user has a permission in the context of a
-// specific space. For "spaces.moderate.assigned", the permission is
+// specific space. For "spaces.moderator.assign", the permission is
 // dynamically resolved by checking the space_moderators table at runtime
 // (Section 03 / RBAC-001) — it is NOT a static grant in the RBAC table.
 // For all other permission nodes, this falls back to HasPermission.
 func (r *RBAC) HasSpacePermission(ctx context.Context, userID, tenantID, spaceID pgtype.UUID, permKey string) bool {
 	// Static permissions resolve through the normal path.
-	if permKey != "spaces.moderate.assigned" {
+	if permKey != "spaces.moderator.assign" {
 		return r.HasPermission(ctx, userID, tenantID, permKey)
 	}
 

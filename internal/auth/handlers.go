@@ -524,6 +524,7 @@ func (h *AuthHandlers) VerifyLoginChallenge(w http.ResponseWriter, r *http.Reque
 	plaintext, err := decryptSecret(totpRecord.SecretEncrypted)
 	if err != nil {
 		slog.Error("decrypt TOTP secret", "user_id", userID)
+		errpkg.CaptureException(fmt.Errorf("decrypt TOTP secret for user %s: %w", userID, err))
 		writeError(w, http.StatusInternalServerError, "totp_error", "Failed to verify 2FA")
 		return
 	}
@@ -638,6 +639,7 @@ func (h *AuthHandlers) ConsumeBackupCode(w http.ResponseWriter, r *http.Request)
 	matched, remaining, err := consumeBackupCode(r.Context(), h.Database, &backupRecord, req.BackupCode, tenantID, userID)
 	if err != nil {
 		slog.Error("consume backup code", "error", err)
+		errpkg.CaptureException(fmt.Errorf("consume backup code for user %s: %w", userID, err))
 		writeError(w, http.StatusInternalServerError, "backup_error", "Failed to verify backup code")
 		return
 	}
@@ -836,6 +838,7 @@ func (h *AuthHandlers) HandleForgotPassword(w http.ResponseWriter, r *http.Reque
 	token, hash, err := GenerateResetToken()
 	if err != nil {
 		slog.Error("forgot-password: failed to generate token", "error", err)
+		errpkg.CaptureException(fmt.Errorf("forgot-password: generate token: %w", err))
 		return
 	}
 
@@ -847,6 +850,7 @@ func (h *AuthHandlers) HandleForgotPassword(w http.ResponseWriter, r *http.Reque
 		ExpiresAt: pgtype.Timestamptz{Time: expiresAt, Valid: true},
 	}); err != nil {
 		slog.Error("forgot-password: failed to store token", "error", err)
+		errpkg.CaptureException(fmt.Errorf("forgot-password: store token: %w", err))
 		return
 	}
 
@@ -994,6 +998,7 @@ func (h *AuthHandlers) HandleResetPassword(w http.ResponseWriter, r *http.Reques
 	// Mark the token as used before updating the password.
 	if err := h.DB.MarkResetTokenUsed(r.Context(), tokenHash); err != nil {
 		slog.Error("reset-password: failed to mark token used", "error", err)
+		errpkg.CaptureException(fmt.Errorf("reset-password: mark token used: %w", err))
 		writeError(w, http.StatusInternalServerError, "token_error", "Failed to process reset token")
 
 		return
@@ -1001,12 +1006,14 @@ func (h *AuthHandlers) HandleResetPassword(w http.ResponseWriter, r *http.Reques
 
 	passwordHash, err := HashPassword(req.NewPassword)
 	if err != nil {
+		errpkg.CaptureException(fmt.Errorf("reset-password: hash password: %w", err))
 		writeError(w, http.StatusInternalServerError, "hash_error", "Failed to secure password")
 		return
 	}
 
 	if err := h.DB.UpdateUserPassword(r.Context(), rec.UserID, passwordHash); err != nil {
 		slog.Error("reset-password: failed to update password", "error", err)
+		errpkg.CaptureException(fmt.Errorf("reset-password: update password: %w", err))
 		writeError(w, http.StatusInternalServerError, "update_failed", "Failed to update password")
 
 		return
