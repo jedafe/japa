@@ -61,6 +61,7 @@ export const load: LayoutServerLoad = async (event) => {
 		user,
 		theme: event.locals.theme,
 		locale: event.locals.locale,
+		isUniversityHost: event.locals.isUniversityHost,
 		menu,
 		trendingTags,
 		suggestedSpaces,

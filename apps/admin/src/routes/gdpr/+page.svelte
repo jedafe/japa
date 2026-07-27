@@ -3,7 +3,8 @@
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { DataTable } from '$lib/components/ui/data-table';
-	import { RefreshCw, Trash2 } from 'lucide-svelte';
+	import { Button } from '$lib/components/ui/button';
+	import { RefreshCw, Trash2, Play } from 'lucide-svelte';
 
 	type DeletionRequest = {
 		id: string;
@@ -26,7 +27,7 @@
 		{ key: 'reason', label: t('app.gdpr.erasure.reason', 'Reason'), render: (v: string) => `<span class="text-xs" style="color: var(--color-muted)">${v || '—'}</span>` },
 		{ key: 'status', label: t('app.gdpr.erasure.status', 'Status'), render: (v: string) => `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium ${v === 'executed' ? 'bg-success/15 text-success dark:text-success' : v === 'pending' ? 'bg-warning/15 text-warning dark:text-warning' : 'bg-muted/15 text-muted dark:text-muted'}">${v}</span>` },
 		{ key: 'requested_at', label: t('app.gdpr.erasure.requested_at', 'Requested At'), render: (v: string) => `<span class="text-xs" style="color: var(--color-muted)">${new Date(v).toLocaleString()}</span>` },
-		{ key: 'actions', label: t('common.actions', 'Actions'), class: 'w-24', render: (_: any, row: DeletionRequest) => (row.status === 'pending' && canManageDeletions) ? `<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10" onclick="window.__executeDeletion('${row.id}')">${t('app.gdpr.erasure.execute', 'Execute')}</button>` : '' }
+		{ key: 'actions', label: t('common.actions', 'Actions'), class: 'w-24', componentSnippet: DeletionActionsCell }
 	];
 
 	const filteredRequests = $derived(
@@ -34,10 +35,6 @@
 			? requests.filter((r) => r.user_id.toLowerCase().includes(searchQuery.toLowerCase()) || (r.reason || '').toLowerCase().includes(searchQuery.toLowerCase()))
 			: requests
 	);
-
-	$effect(() => {
-		(window as any).__executeDeletion = (id: string) => executeDeletion(id);
-	});
 
 	async function load() {
 		loading = true;
@@ -103,3 +100,12 @@
 		emptyMessage={t('app.gdpr.erasure.empty', 'No deletion requests found')}
 	/>
 {/if}
+
+{#snippet DeletionActionsCell({ row }: { value: any; row: DeletionRequest })}
+	{#if row.status === 'pending' && canManageDeletions}
+		<Button variant="ghost" size="sm" onclick={() => executeDeletion(row.id)} style="color: var(--color-danger)">
+			<Play class="h-3.5 w-3.5" />
+			{t('app.gdpr.erasure.execute', 'Execute')}
+		</Button>
+	{/if}
+{/snippet}

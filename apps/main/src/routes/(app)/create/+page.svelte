@@ -22,6 +22,7 @@
 		spaces={data.spaces}
 		fieldGroups={data.fieldGroups}
 		series={data.series}
+		organizations={data.organizations}
 		draft={data.draft}
 		user={data.user}
 	/>

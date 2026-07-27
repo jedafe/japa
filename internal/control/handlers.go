@@ -345,6 +345,10 @@ func (h *Handlers) UpdateSystemSettings(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	for key, value := range input {
+		// The system_settings.value column is jsonb, so every value must be
+		// valid JSON. json.Marshal produces the canonical encoding for each
+		// Go type: strings get wrapped in quotes ("3"), booleans become true,
+		// numbers stay bare, and arrays/objects are serialized as-is.
 		data, _ := json.Marshal(value)
 		_, err := h.DB.Writer.Exec(r.Context(),
 			`INSERT INTO system_settings (tenant_id, key, value, updated_at) VALUES ($1, $2, $3, NOW()) ON CONFLICT (tenant_id, key) DO UPDATE SET value = $3, updated_at = NOW()`,
@@ -380,6 +384,8 @@ func (h *Handlers) UpdateSystemSetting(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
+	// The value column is jsonb — json.Marshal produces the correct JSON
+	// encoding for each type (strings quoted, booleans bare, etc.).
 	data, _ := json.Marshal(input.Value)
 	if input.IsPublic != nil {
 		_, err := h.DB.Writer.Exec(r.Context(),

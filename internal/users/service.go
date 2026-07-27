@@ -485,23 +485,31 @@ func (s *Service) GetUserDraft(ctx context.Context, tenantID, userID, contentID 
 		fieldValues = json.RawMessage(row.FieldValues)
 	}
 
+	seoIndexable := row.SeoIndexable
 	return &DraftResponse{
-		ID:           row.ID.String(),
-		Slug:         row.Slug,
-		ContentType:  row.ContentType,
-		Title:        row.Title,
-		Body:         row.Body,
-		BodyHTML:     row.BodyHtml,
-		FieldValues:  fieldValues,
-		CanonicalURL: row.CanonicalUrl,
-		Status:       row.Status,
-		Visibility:   row.Visibility,
-		SpaceID:      uuidPtr(row.SpaceID),
-		GeoSpaceID:   uuidPtr(row.GeoSpaceID),
-		PublishAt:    tsPtr(row.PublishAt),
-		PublishedAt:  tsPtr(row.PublishedAt),
-		CreatedAt:    row.CreatedAt.Time.Format(time.RFC3339),
-		UpdatedAt:    row.UpdatedAt.Time.Format(time.RFC3339),
+		ID:              row.ID.String(),
+		Slug:            row.Slug,
+		ContentType:     row.ContentType,
+		Title:           row.Title,
+		Body:            row.Body,
+		BodyHTML:        row.BodyHtml,
+		FieldValues:     fieldValues,
+		CanonicalURL:    row.CanonicalUrl,
+		HeaderImageID:   uuidPtr(row.HeaderImageID),
+		FeaturedImageID: uuidPtr(row.FeaturedImageID),
+		MetaTitle:       row.MetaTitle,
+		MetaDescription: row.MetaDescription,
+		OgImageURL:      row.OgImageUrl,
+		SeoIndexable:    &seoIndexable,
+		OrganizationID:  uuidPtr(row.OrganizationID),
+		Status:          row.Status,
+		Visibility:      row.Visibility,
+		SpaceID:         uuidPtr(row.SpaceID),
+		GeoSpaceID:      uuidPtr(row.GeoSpaceID),
+		PublishAt:       tsPtr(row.PublishAt),
+		PublishedAt:     tsPtr(row.PublishedAt),
+		CreatedAt:       row.CreatedAt.Time.Format(time.RFC3339),
+		UpdatedAt:       row.UpdatedAt.Time.Format(time.RFC3339),
 	}, nil
 }
 

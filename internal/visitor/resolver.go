@@ -104,6 +104,27 @@ func (res *Resolver) resolve(r *http.Request) VisitorContext {
 		GeoIPCountry: geoCtx.CountryCode,
 	}
 
+	// Killswitch (ADR-064): when geo_personalization.enabled is false,
+	// short-circuit to the system default for every request. The ?geo=
+	// override is still honored (it's an explicit user action, not
+	// personalization), but preference/GeoIP sources are skipped.
+	if res.settings != nil && t != nil {
+		if !res.settings.GetBoolOr(r.Context(), t.ID, "geo_personalization.enabled", true) {
+			if q := strings.ToUpper(strings.TrimSpace(r.URL.Query().Get("geo"))); len(q) == 2 {
+				vc.ContentCountry = q
+				vc.Source = "query"
+			} else {
+				vc.ContentCountry = "NG"
+				vc.Source = "default"
+			}
+			if user != nil {
+				vc.IsAuthenticated = true
+				vc.UserID = user.UserID.String()
+			}
+			return vc
+		}
+	}
+
 	// 1. Explicit ?geo= query parameter — always wins when present.
 	if q := strings.ToUpper(strings.TrimSpace(r.URL.Query().Get("geo"))); len(q) == 2 {
 		vc.ContentCountry = q

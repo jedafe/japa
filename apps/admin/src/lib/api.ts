@@ -484,6 +484,40 @@ export const universitiesAdminApi = {
 		api(`/admin/universities/${id}/verify`, { method: 'POST' }),
 };
 
+// --- Japa University Creator Economy (ADR-063) ---
+
+export const universityAdminApi = {
+	listInstructors: (params?: string) =>
+		api<unknown>(`/admin/university/instructors${params ? `?${params}` : ''}`),
+	approveInstructor: (id: string, body: { tier?: string; commission_pct_override?: number }) =>
+		api<unknown>(`/admin/university/instructors/${id}/approve`, { method: 'POST', body }),
+	rejectInstructor: (id: string) =>
+		api<unknown>(`/admin/university/instructors/${id}/reject`, { method: 'POST', body: {} }),
+	suspendInstructor: (id: string) =>
+		api<unknown>(`/admin/university/instructors/${id}/suspend`, { method: 'POST', body: {} }),
+	reinstateInstructor: (id: string) =>
+		api<unknown>(`/admin/university/instructors/${id}/reinstate`, { method: 'POST', body: {} }),
+	listPendingTracks: (params?: string) =>
+		api<unknown>(`/admin/university/tracks/pending${params ? `?${params}` : ''}`),
+	approveTrack: (id: string) =>
+		api<unknown>(`/admin/university/tracks/${id}/approve`, { method: 'POST', body: {} }),
+	listPayouts: (params?: string) =>
+		api<unknown>(`/admin/university/payouts${params ? `?${params}` : ''}`),
+	processPayout: (id: string) =>
+		api<unknown>(`/admin/university/payouts/${id}/process`, { method: 'POST', body: {} }),
+};
+
+// --- Geo IP (public hierarchy + admin lookup) ---
+
+export const geoApi = {
+	me: () => api<unknown>('/geo/me'),
+	detect: () => api<unknown>('/geo/detect'),
+	lookup: (ip: string) => api<unknown>(`/geo/lookup?ip=${encodeURIComponent(ip)}`),
+	listCountries: () => api<unknown>('/geo/countries'),
+	listStates: (countryCode: string) => api<unknown>(`/geo/countries/${countryCode}/states`),
+	listCities: (stateId: string) => api<unknown>(`/geo/states/${stateId}/cities`),
+};
+
 // --- Unconsumed route methods (490 route initiative) ---
 
 export const adsAdminApi = {

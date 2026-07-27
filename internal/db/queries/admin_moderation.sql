@@ -169,6 +169,16 @@ DELETE FROM admin_broadcasts WHERE id = $1;
 -- name: ListActiveUserIDs :many
 SELECT id FROM users WHERE tenant_id = $1 AND status = 'active';
 
+-- name: ListActiveUserIDsByGeoSpace :many
+SELECT u.id FROM users u
+JOIN space_members sm ON sm.user_id = u.id AND sm.tenant_id = u.tenant_id
+WHERE u.tenant_id = $1 AND u.status = 'active' AND sm.space_id = $2;
+
+-- name: ListActiveUserIDsByGroup :many
+SELECT u.id FROM users u
+JOIN user_group_memberships gm ON gm.user_id = u.id AND gm.tenant_id = u.tenant_id
+WHERE u.tenant_id = $1 AND u.status = 'active' AND gm.group_id = $2;
+
 -- name: CreateBroadcastNotifications :exec
 INSERT INTO notifications (tenant_id, recipient_id, notification_type, actor_type, actor_id, title, body, created_at, updated_at)
 SELECT $1, unnest($2::uuid[]), 'system_announcement', 'system', $3, $4, $5, now(), now();

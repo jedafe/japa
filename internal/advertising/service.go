@@ -22,6 +22,8 @@ type CreateCampaignInput struct {
 	FrequencyCapPerUser *int32
 	StartDate           time.Time
 	EndDate             *time.Time
+	TargetGeo           []string
+	TargetSpaceIDs      []pgtype.UUID
 }
 
 // CreateCampaign creates a new ad campaign (admin-only in V1).
@@ -85,6 +87,8 @@ func (s *Service) CreateCampaign(ctx context.Context, tenantID, createdBy pgtype
 		StartDate:           startDate,
 		EndDate:             endDate,
 		CreatedBy:           createdBy,
+		TargetGeo:           input.TargetGeo,
+		TargetSpaceIds:      input.TargetSpaceIDs,
 	})
 }
 

@@ -226,6 +226,7 @@ export interface ContentRecord {
 	meta_description?: string | null;
 	og_image_url?: string | null;
 	seo_indexable?: boolean;
+	organization_id?: string | null;
 	status: string;
 	visibility: string;
 	publish_at?: string | null;
@@ -655,6 +656,52 @@ export interface OrgMember {
 	};
 	role: string;
 	joined_at: string;
+}
+
+/** Lean org row for the /create composer's "post on behalf of" selector.
+ *  Sourced from GET /me/organizations (the caller's memberships). */
+export interface ComposerOrganization {
+	id: string;
+	name: string;
+	slug: string;
+	logo_media_id?: string | null;
+	member_role: string;
+}
+
+/** GET /organizations/{id}/media item — the org profile Media tab. Mirrors the
+ *  media MediaResponse shape (id, url, filename, mime_type, alt_text, created_at). */
+export interface OrgMedia {
+	id: string;
+	url: string;
+	filename: string;
+	mime_type: string;
+	file_size?: number;
+	alt_text?: string | null;
+	status?: string;
+	created_at?: string;
+}
+
+/** GET /me/affiliate-earnings — EarningsSummary (total clicks/conversions/
+ *  earned, breakdown by product type, recent events). Powers the earnings
+ *  card in the settings Affiliate section. */
+export interface AffiliateEarnings {
+	total_clicks: number;
+	total_conversions: number;
+	total_earned: string;
+	by_product: Array<{
+		product_type: string;
+		clicks: number;
+		conversions: number;
+		earned: string;
+	}>;
+	recent_events: Array<{
+		id: string;
+		event_type: string;
+		commission_amount?: string;
+		created_at: string;
+		link_code: string;
+		product_type: string;
+	}>;
 }
 
 /** GET /me/analytics — aggregate analytics for the dashboard. */
@@ -1304,5 +1351,125 @@ export interface CreateReviewInput {
 	rating: number;
 	title?: string;
 	body?: string;
+}
+
+/* ------------------------------------------------------------------ *
+ * University Marketplace — Section 17 (GET /learn/university/catalog)
+ * Public marketplace tracks sold by instructors. Prices are in kobo
+ * (the smallest currency unit) per the Go backend's integer-money model.
+ * ------------------------------------------------------------------ */
+
+/** GET /learn/university/catalog item — a marketplace track. */
+export interface CatalogTrack {
+	id: string;
+	title: string;
+	slug: string;
+	description?: string | null;
+	difficulty: 'beginner' | 'intermediate' | 'advanced' | string;
+	instructor_id: string;
+	instructor_name?: string | null;
+	price_kobo: number;
+	currency?: string | null;
+	category?: string | null;
+	language?: string | null;
+	total_enrolled?: number;
+	is_published_to_university?: boolean;
+	cover_media_url?: string | null;
+	created_at: string;
+}
+
+/** A module within a marketplace track (GET /learn/university/catalog/{slug}). */
+export interface CatalogModule {
+	id: string;
+	title: string;
+	slug: string;
+	sort_order: number;
+	lessons?: CatalogLesson[];
+}
+
+/** A lesson within a marketplace track module. */
+export interface CatalogLesson {
+	id: string;
+	title: string;
+	slug: string;
+	lesson_type?: string | null;
+	duration_minutes?: number | null;
+	sort_order: number;
+}
+
+/** GET /learn/university/catalog/{slug} — track detail with modules/lessons. */
+export interface CatalogTrackDetail {
+	track: CatalogTrack;
+	modules: CatalogModule[];
+}
+
+/** GET /learn/university/instructors/{id} — public instructor profile. */
+export interface InstructorProfile {
+	id: string;
+	display_name: string;
+	headline?: string | null;
+	bio?: string | null;
+	avatar_url?: string | null;
+	tier?: string | null;
+	tracks?: CatalogTrack[];
+}
+
+// ── Geo (ADR-037 / ADR-064) ─────────────────────────────────────────
+
+/** GET /api/v1/geo/me — GeoIP context for the current request IP. */
+export interface GeoContext {
+	country_code: string;
+	country_name: string;
+	city: string;
+	subdivision: string;
+	time_zone: string;
+	latitude: number;
+	longitude: number;
+	is_valid: boolean;
+}
+
+/** GET /api/v1/geo/detect — narrower projection for locale detection. */
+export interface GeoDetect {
+	country: string;
+	state: string;
+	city: string;
+}
+
+/** GET /api/v1/geo/countries — a country-level geo space (ADR-005). */
+export interface GeoCountry {
+	id: string;
+	name: string;
+	slug: string;
+	geo_code: string;
+	level: 'country';
+	member_count: number;
+}
+
+/** GET /api/v1/geo/countries/{code}/states — a state/province geo space. */
+export interface GeoState {
+	id: string;
+	name: string;
+	slug: string;
+	geo_code: string | null;
+	level: 'state';
+	parent_id: string;
+	member_count: number;
+}
+
+/** GET /api/v1/geo/states/{id}/cities — a city-level geo space. */
+export interface GeoCity {
+	id: string;
+	name: string;
+	slug: string;
+	geo_code: string | null;
+	level: 'city';
+	parent_id: string;
+	member_count: number;
+}
+
+/** PATCH /api/v1/me/preferences/content-country response. */
+export interface ContentCountryPreference {
+	status: string;
+	content_country: string;
 }
 

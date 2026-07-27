@@ -196,6 +196,8 @@ func (h *Handlers) CreateCampaign(w http.ResponseWriter, r *http.Request) {
 		FrequencyCapPerUser *int32                 `json:"frequency_cap_per_user"`
 		StartDate           string                 `json:"start_date"`
 		EndDate             string                 `json:"end_date"`
+		TargetGeo           []string               `json:"target_geo"`
+		TargetSpaceIDs      []string               `json:"target_space_ids"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
@@ -242,6 +244,17 @@ func (h *Handlers) CreateCampaign(w http.ResponseWriter, r *http.Request) {
 		endDate = &t
 	}
 
+	// Convert target_space_ids from string to pgtype.UUID.
+	var targetSpaceIDs []pgtype.UUID
+	for _, sid := range input.TargetSpaceIDs {
+		var u pgtype.UUID
+		if err := u.Scan(sid); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_target_space_id", "Invalid target_space_ids format")
+			return
+		}
+		targetSpaceIDs = append(targetSpaceIDs, u)
+	}
+
 	campaign, err := h.Service.CreateCampaign(r.Context(), tenantID, user.UserID, CreateCampaignInput{
 		Name:                input.Name,
 		SlotTypeName:        input.SlotTypeName,
@@ -252,6 +265,8 @@ func (h *Handlers) CreateCampaign(w http.ResponseWriter, r *http.Request) {
 		FrequencyCapPerUser: input.FrequencyCapPerUser,
 		StartDate:           startDate,
 		EndDate:             endDate,
+		TargetGeo:           input.TargetGeo,
+		TargetSpaceIDs:      targetSpaceIDs,
 	})
 	if err != nil {
 		handleServiceError(w, err)

@@ -8,6 +8,7 @@
 	import Pagination from '$lib/components/ui/Pagination.svelte';
 	import { ticketTypesApi } from '$lib/api';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
+	import { Pencil, Trash2 } from 'lucide-svelte';
 
 	type TicketType = {
 		id: string;
@@ -93,10 +94,7 @@
 			const cls = v === 'urgent' ? 'text-danger dark:text-danger' : v === 'high' ? 'text-warning dark:text-warning' : '';
 			return `<span class="text-xs font-medium ${cls}">${v}</span>`;
 		}},
-		{ key: 'actions', label: '', sortable: false, render: (_v: unknown, row: TicketType) => {
-			if (!canManageTickets) return '';
-			return `<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10" style="color: var(--color-info)" data-action="edit" data-id="${row.id}">${t('app.ticket_types.edit', 'Edit')}</button><button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10" style="color: var(--color-danger)" data-action="delete" data-id="${row.id}">${t('app.ticket_types.delete', 'Delete')}</button>`;
-		}}
+		{ key: 'actions', label: '', sortable: false, class: 'w-32', componentSnippet: TicketTypeActionsCell }
 	];
 
 	function slugify(text: string): string {
@@ -206,22 +204,6 @@
 		bulkDeleting = false;
 	}
 
-	function handleTableClick(e: MouseEvent) {
-		const target = e.target as HTMLElement;
-		const btn = target.closest('[data-action]') as HTMLElement | null;
-		if (!btn) return;
-		e.stopPropagation();
-		const action = btn.dataset.action;
-		const id = btn.dataset.id;
-		if (!id) return;
-		if (action === 'edit') {
-			const item = ticketTypes.find(t => t.id === id);
-			if (item) openEdit(item);
-		} else if (action === 'delete') {
-			confirmDelete(id);
-		}
-	}
-
 	const tableData = $derived(ticketTypes.map(item => ({ ...item })));
 
 	$effect(() => {
@@ -254,7 +236,7 @@
 
 <FilterBar filters={filterDefs} onsearch={handleSearch} onclear={handleClear} />
 
-<div role="presentation" onclick={handleTableClick} onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleTableClick(e as unknown as MouseEvent); }}>
+<div>
 	<DataTable
 		{columns}
 		data={tableData}
@@ -306,3 +288,16 @@
 <Modal bind:open={showDeleteConfirm} title={t('app.ticket_types.confirm_delete', 'Confirm Delete')} onConfirm={executeDelete} confirmLabel={t('app.ticket_types.delete', 'Delete')}>
 	<p class="text-sm" style="color: var(--color-muted)">{t('ticket-types.are_you_sure_you_want_to_delete_this_tic')}</p>
 </Modal>
+
+{#snippet TicketTypeActionsCell({ row }: { value: any; row: TicketType })}
+	{#if canManageTickets}
+		<div class="flex items-center gap-1">
+			<Button variant="ghost" size="sm" onclick={() => openEdit(row)} aria-label={t('app.ticket_types.edit', 'Edit')}>
+				<Pencil class="h-3.5 w-3.5" />
+			</Button>
+			<Button variant="ghost" size="sm" onclick={() => confirmDelete(row.id)} style="color: var(--color-danger)" aria-label={t('app.ticket_types.delete', 'Delete')}>
+				<Trash2 class="h-3.5 w-3.5" />
+			</Button>
+		</div>
+	{/if}
+{/snippet}
