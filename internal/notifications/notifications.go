@@ -50,6 +50,12 @@ type Service struct {
 	client    *asynq.Client
 	push      *PushDelivery
 	pushStore *PushStore
+	settings  SettingsProvider
+}
+
+// SettingsProvider abstracts system settings access for notification batching.
+type SettingsProvider interface {
+	GetIntOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback int) int
 }
 
 // NewService creates a Service backed by the given database pool.
@@ -68,6 +74,11 @@ func NewService(database *db.DB) *Service {
 // SetAsynqClient injects the Asynq client for enqueuing push delivery tasks.
 func (s *Service) SetAsynqClient(client *asynq.Client) {
 	s.client = client
+}
+
+// SetSettings injects the system settings provider for configurable batch windows.
+func (s *Service) SetSettings(sp SettingsProvider) {
+	s.settings = sp
 }
 
 // PushDelivery returns the push delivery instance for subscription management.

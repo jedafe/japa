@@ -59,7 +59,7 @@ INSERT INTO account_deletion_requests (
 ) VALUES (
     $1, $2, 'pending', $3
 )
-RETURNING id, tenant_id, user_id, status, reason, completed_at, created_at
+RETURNING id, tenant_id, user_id, status, reason, completed_at, created_at, progress_step
 `
 
 type CreateAccountDeletionRequestParams struct {
@@ -82,6 +82,7 @@ func (q *Queries) CreateAccountDeletionRequest(ctx context.Context, arg CreateAc
 		&i.Reason,
 		&i.CompletedAt,
 		&i.CreatedAt,
+		&i.ProgressStep,
 	)
 	return i, err
 }
@@ -967,7 +968,7 @@ func (q *Queries) GdprExportUserWalletLedger(ctx context.Context, arg GdprExport
 }
 
 const getAccountDeletionRequest = `-- name: GetAccountDeletionRequest :one
-SELECT id, tenant_id, user_id, status, reason, completed_at, created_at
+SELECT id, tenant_id, user_id, status, reason, completed_at, created_at, progress_step
 FROM account_deletion_requests
 WHERE id = $1 AND tenant_id = $2
 `
@@ -988,6 +989,7 @@ func (q *Queries) GetAccountDeletionRequest(ctx context.Context, arg GetAccountD
 		&i.Reason,
 		&i.CompletedAt,
 		&i.CreatedAt,
+		&i.ProgressStep,
 	)
 	return i, err
 }
@@ -1294,7 +1296,7 @@ func (q *Queries) ListPendingDataExportRequests(ctx context.Context, pageLimit i
 }
 
 const listPendingDeletionRequests = `-- name: ListPendingDeletionRequests :many
-SELECT id, tenant_id, user_id, status, reason, completed_at, created_at
+SELECT id, tenant_id, user_id, status, reason, completed_at, created_at, progress_step
 FROM account_deletion_requests
 WHERE status = 'pending'
 ORDER BY created_at ASC
@@ -1318,6 +1320,7 @@ func (q *Queries) ListPendingDeletionRequests(ctx context.Context, pageLimit int
 			&i.Reason,
 			&i.CompletedAt,
 			&i.CreatedAt,
+			&i.ProgressStep,
 		); err != nil {
 			return nil, err
 		}
@@ -1651,12 +1654,31 @@ func (q *Queries) RevokeConsent(ctx context.Context, arg RevokeConsentParams) er
 	return err
 }
 
+const updateAccountDeletionRequestProgress = `-- name: UpdateAccountDeletionRequestProgress :exec
+UPDATE account_deletion_requests
+SET progress_step = $1
+WHERE id = $2 AND tenant_id = $3
+`
+
+type UpdateAccountDeletionRequestProgressParams struct {
+	ProgressStep int32       `json:"progress_step"`
+	ID           pgtype.UUID `json:"id"`
+	TenantID     pgtype.UUID `json:"tenant_id"`
+}
+
+// AUDIT-FRESH-GDPR-003: checkpoints the erasure flow so a retried job resumes
+// from the last completed step instead of re-running from the top.
+func (q *Queries) UpdateAccountDeletionRequestProgress(ctx context.Context, arg UpdateAccountDeletionRequestProgressParams) error {
+	_, err := q.db.Exec(ctx, updateAccountDeletionRequestProgress, arg.ProgressStep, arg.ID, arg.TenantID)
+	return err
+}
+
 const updateAccountDeletionRequestStatus = `-- name: UpdateAccountDeletionRequestStatus :one
 UPDATE account_deletion_requests
 SET status = $1,
     completed_at = $2
 WHERE id = $3 AND tenant_id = $4
-RETURNING id, tenant_id, user_id, status, reason, completed_at, created_at
+RETURNING id, tenant_id, user_id, status, reason, completed_at, created_at, progress_step
 `
 
 type UpdateAccountDeletionRequestStatusParams struct {
@@ -1682,6 +1704,7 @@ func (q *Queries) UpdateAccountDeletionRequestStatus(ctx context.Context, arg Up
 		&i.Reason,
 		&i.CompletedAt,
 		&i.CreatedAt,
+		&i.ProgressStep,
 	)
 	return i, err
 }

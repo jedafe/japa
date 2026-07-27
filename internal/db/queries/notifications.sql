@@ -68,7 +68,7 @@ WHERE recipient_id = @recipient_id
 
 -- name: CreateBatchWindow :exec
 INSERT INTO notification_batch_windows (recipient_id, notification_type, subject_type, subject_id, actor_ids, actor_count, last_actor_id, window_close_at)
-VALUES (@recipient_id, @notification_type, @subject_type, @subject_id, ARRAY[@actor_id::uuid], 1, @actor_id, now() + interval '5 minutes');
+VALUES (@recipient_id, @notification_type, @subject_type, @subject_id, ARRAY[@actor_id::uuid], 1, @actor_id, now() + make_interval(mins => @window_minutes));
 
 -- name: ExtendBatchWindow :exec
 UPDATE notification_batch_windows
