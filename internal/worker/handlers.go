@@ -1916,8 +1916,8 @@ func generateRSSForTenant(ctx context.Context, tenantID pgtype.UUID, baseURL str
 	}
 	xmlBytes = append([]byte(xml.Header+"\n"), xmlBytes...)
 
-	// Cache in Valkey under the jc: prefix (VALKEY-004 compliance).
-	cacheKey := "jc:rss:feed:" + tenantID.String()
+	// Cache in Valkey under the jc:cache:feed:rss: prefix (VALKEY-002 compliance).
+	cacheKey := "jc:cache:feed:rss:" + tenantID.String()
 	if rdb != nil {
 		if err := rdb.Set(ctx, cacheKey, string(xmlBytes), time.Hour).Err(); err != nil {
 			slog.Error("task:rss_regenerate: failed to cache feed", "tenant_id", tenantID.String(), "error", err)

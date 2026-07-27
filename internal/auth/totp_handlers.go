@@ -63,9 +63,10 @@ func (h *TOTPHandlers) HandleSetup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Omit the plaintext secret from the response — only the QR URL is needed.
+	// Returning the secret risks compromise via logs/cache/proxy capture (SEC-003).
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"data": map[string]interface{}{
-			"secret": secret,
 			"qr_url": qrURL,
 		},
 	})

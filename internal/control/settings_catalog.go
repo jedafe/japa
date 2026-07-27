@@ -34,7 +34,7 @@ var settingsCatalog = map[string]settingMeta{
 	"feed.fanout_threshold":            {Type: "int", DefaultValue: "5000", Description: "Max space members for push fan-out."},
 	"feed.velocity.gravity":            {Type: "float", DefaultValue: "1.8", Description: "HN gravity constant for Rising sort."},
 	"feed.max_followed_spaces_in_feed": {Type: "int", DefaultValue: "50", Description: "Cap on spaces contributing to feed."},
-	"feed.card_style":                  {Type: "string", DefaultValue: "reddit", Description: "reddit | compact | grid | magazine — Active feed card style."},
+	"feed.card_style":                  {Type: "json", DefaultValue: `{"default":"reddit","by_type":{}}`, Description: "{default, by_type} map; each style ∈ reddit|compact|grid|magazine — active feed card style, resolved per content type (tolerates a legacy scalar)."},
 	"content.edit_window_minutes":      {Type: "int", DefaultValue: "1440", Description: "Content edit window (24hr default)."},
 	"content.link_preview.blacklist":   {Type: "json", DefaultValue: "[]", Description: "JSON array of blocked domains for link previews."},
 	"content.min_length":               {Type: "int", DefaultValue: "10", Description: "Minimum content body length."},
@@ -73,7 +73,7 @@ var settingsCatalog = map[string]settingMeta{
 	"ai.japabot_enabled":           {Type: "bool", DefaultValue: "true", Description: "Global JapaBot toggle."},
 	"ai.content_assist_enabled":    {Type: "bool", DefaultValue: "true", Description: "In-editor AI assist toggle."},
 	// Media
-	"media.storage.provider":    {Type: "string", DefaultValue: "seaweedfs", Description: "seaweedfs | s3 | gcs | azure | local — Storage backend provider."},
+	"media.storage.provider":    {Type: "string", DefaultValue: "seaweedfs", Description: "seaweedfs | s3 | r2 | b2 — Storage backend provider."},
 	"media.storage.endpoint":    {Type: "string", DefaultValue: "", Description: "S3-compatible endpoint URL."},
 	"media.storage.bucket":      {Type: "string", DefaultValue: "japaconnect", Description: "Default bucket name."},
 	"media.storage.region":      {Type: "string", DefaultValue: "us-east-1", Description: "S3 region (SeaweedFS ignores this)."},
@@ -135,6 +135,10 @@ var settingsCatalog = map[string]settingMeta{
 	// AUDIT-BE2-SEC-011: webhook delivery max attempts (Rule 3 — was hardcoded 5).
 	// Reuses notifications.max_delivery_attempts (already catalogued above) — no
 	// separate key needed; documented here for discoverability.
+	// Onboarding promoted entities (SETTING-005 — JEOS catalog alignment).
+	"onboarding.promoted_spaces": {Type: "json", DefaultValue: "[]", Description: "JSON array of space UUIDs to promote in recommendations."},
+	"onboarding.promoted_users":  {Type: "json", DefaultValue: "[]", Description: "JSON array of user UUIDs to promote in recommendations."},
+	"onboarding.promoted_tags":   {Type: "json", DefaultValue: "[]", Description: "JSON array of tag UUIDs to promote in recommendations."},
 }
 
 // getSettingMeta returns the metadata for a given dot-notation key.

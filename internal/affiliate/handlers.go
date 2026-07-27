@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -355,7 +356,13 @@ func (h *Handlers) Redirect(w http.ResponseWriter, r *http.Request) {
 	// Enqueue async affiliate click recording task — fire-and-forget.
 	h.enqueueRecordClick(tenantID, link.ID, "", ipHash)
 
-	http.Redirect(w, r, link.DestinationUrl, http.StatusFound)
+	// Validate the destination scheme before redirecting to block
+	// javascript:/data: open-redirect vectors (SEC-004).
+	dest := link.DestinationUrl
+	if u, err := url.Parse(dest); err != nil || (u.Scheme != "http" && u.Scheme != "https") {
+		dest = "/"
+	}
+	http.Redirect(w, r, dest, http.StatusFound)
 }
 
 // ── Admin Routes ────────────────────────────────────────────────────

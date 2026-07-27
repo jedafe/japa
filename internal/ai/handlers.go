@@ -654,7 +654,7 @@ func (h *Handlers) HandleCreateHITL(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		slog.Error("creating HITL review", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to create HITL review")
 
 		return
 	}

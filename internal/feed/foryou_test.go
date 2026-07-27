@@ -68,7 +68,7 @@ func TestForYouCacheKey_IncludesSort(t *testing.T) {
 		t.Fatal("cache key must differ per sort mode")
 	}
 
-	if want := "feed:foryou:11111111-1111-1111-1111-111111111111:22222222-2222-2222-2222-222222222222:relevant"; relevant != want {
+	if want := "jc:cache:feed:foryou:11111111-1111-1111-1111-111111111111:22222222-2222-2222-2222-222222222222:relevant"; relevant != want {
 		t.Errorf("key = %q, want %q", relevant, want)
 	}
 }
