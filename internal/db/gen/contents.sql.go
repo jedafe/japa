@@ -87,10 +87,10 @@ func (q *Queries) CountContentShares(ctx context.Context, arg CountContentShares
 
 const createBookmark = `-- name: CreateBookmark :one
 
-INSERT INTO bookmarks (tenant_id, user_id, entity_type, entity_id, folder)
-VALUES ($1, $2, $3, $4, $5)
-ON CONFLICT (user_id, entity_type, entity_id) DO UPDATE SET folder = EXCLUDED.folder
-RETURNING id, tenant_id, user_id, entity_type, entity_id, folder, created_at
+INSERT INTO bookmarks (tenant_id, user_id, entity_type, entity_id, folder, folder_id)
+VALUES ($1, $2, $3, $4, $5, $6)
+ON CONFLICT (user_id, entity_type, entity_id) DO UPDATE SET folder = EXCLUDED.folder, folder_id = EXCLUDED.folder_id
+RETURNING id, tenant_id, user_id, entity_type, entity_id, folder, folder_id, created_at
 `
 
 type CreateBookmarkParams struct {
@@ -99,20 +99,33 @@ type CreateBookmarkParams struct {
 	EntityType string      `json:"entity_type"`
 	EntityID   pgtype.UUID `json:"entity_id"`
 	Folder     string      `json:"folder"`
+	FolderID   pgtype.UUID `json:"folder_id"`
+}
+
+type CreateBookmarkRow struct {
+	ID         pgtype.UUID        `json:"id"`
+	TenantID   pgtype.UUID        `json:"tenant_id"`
+	UserID     pgtype.UUID        `json:"user_id"`
+	EntityType string             `json:"entity_type"`
+	EntityID   pgtype.UUID        `json:"entity_id"`
+	Folder     string             `json:"folder"`
+	FolderID   pgtype.UUID        `json:"folder_id"`
+	CreatedAt  pgtype.Timestamptz `json:"created_at"`
 }
 
 // =====================
 // Bookmarks (polymorphic)
 // =====================
-func (q *Queries) CreateBookmark(ctx context.Context, arg CreateBookmarkParams) (Bookmark, error) {
+func (q *Queries) CreateBookmark(ctx context.Context, arg CreateBookmarkParams) (CreateBookmarkRow, error) {
 	row := q.db.QueryRow(ctx, createBookmark,
 		arg.TenantID,
 		arg.UserID,
 		arg.EntityType,
 		arg.EntityID,
 		arg.Folder,
+		arg.FolderID,
 	)
-	var i Bookmark
+	var i CreateBookmarkRow
 	err := row.Scan(
 		&i.ID,
 		&i.TenantID,
@@ -120,6 +133,7 @@ func (q *Queries) CreateBookmark(ctx context.Context, arg CreateBookmarkParams) 
 		&i.EntityType,
 		&i.EntityID,
 		&i.Folder,
+		&i.FolderID,
 		&i.CreatedAt,
 	)
 	return i, err
@@ -839,8 +853,70 @@ func (q *Queries) IsContentPinned(ctx context.Context, arg IsContentPinnedParams
 	return exists, err
 }
 
+const listBookmarksByFolder = `-- name: ListBookmarksByFolder :many
+SELECT b.id, b.tenant_id, b.user_id, b.entity_type, b.entity_id, b.folder, b.folder_id, b.created_at
+FROM bookmarks b
+WHERE b.user_id = $1 AND b.tenant_id = $2 AND b.folder_id = $3
+ORDER BY b.created_at DESC
+LIMIT $5 OFFSET $4
+`
+
+type ListBookmarksByFolderParams struct {
+	UserID     pgtype.UUID `json:"user_id"`
+	TenantID   pgtype.UUID `json:"tenant_id"`
+	FolderID   pgtype.UUID `json:"folder_id"`
+	PageOffset int32       `json:"page_offset"`
+	PageLimit  int32       `json:"page_limit"`
+}
+
+type ListBookmarksByFolderRow struct {
+	ID         pgtype.UUID        `json:"id"`
+	TenantID   pgtype.UUID        `json:"tenant_id"`
+	UserID     pgtype.UUID        `json:"user_id"`
+	EntityType string             `json:"entity_type"`
+	EntityID   pgtype.UUID        `json:"entity_id"`
+	Folder     string             `json:"folder"`
+	FolderID   pgtype.UUID        `json:"folder_id"`
+	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+}
+
+func (q *Queries) ListBookmarksByFolder(ctx context.Context, arg ListBookmarksByFolderParams) ([]ListBookmarksByFolderRow, error) {
+	rows, err := q.db.Query(ctx, listBookmarksByFolder,
+		arg.UserID,
+		arg.TenantID,
+		arg.FolderID,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListBookmarksByFolderRow
+	for rows.Next() {
+		var i ListBookmarksByFolderRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.UserID,
+			&i.EntityType,
+			&i.EntityID,
+			&i.Folder,
+			&i.FolderID,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listBookmarksByUser = `-- name: ListBookmarksByUser :many
-SELECT b.id, b.tenant_id, b.user_id, b.entity_type, b.entity_id, b.folder, b.created_at
+SELECT b.id, b.tenant_id, b.user_id, b.entity_type, b.entity_id, b.folder, b.folder_id, b.created_at
 FROM bookmarks b
 WHERE b.user_id = $1 AND b.tenant_id = $2
 ORDER BY b.created_at DESC
@@ -854,7 +930,18 @@ type ListBookmarksByUserParams struct {
 	PageLimit  int32       `json:"page_limit"`
 }
 
-func (q *Queries) ListBookmarksByUser(ctx context.Context, arg ListBookmarksByUserParams) ([]Bookmark, error) {
+type ListBookmarksByUserRow struct {
+	ID         pgtype.UUID        `json:"id"`
+	TenantID   pgtype.UUID        `json:"tenant_id"`
+	UserID     pgtype.UUID        `json:"user_id"`
+	EntityType string             `json:"entity_type"`
+	EntityID   pgtype.UUID        `json:"entity_id"`
+	Folder     string             `json:"folder"`
+	FolderID   pgtype.UUID        `json:"folder_id"`
+	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+}
+
+func (q *Queries) ListBookmarksByUser(ctx context.Context, arg ListBookmarksByUserParams) ([]ListBookmarksByUserRow, error) {
 	rows, err := q.db.Query(ctx, listBookmarksByUser,
 		arg.UserID,
 		arg.TenantID,
@@ -865,9 +952,9 @@ func (q *Queries) ListBookmarksByUser(ctx context.Context, arg ListBookmarksByUs
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Bookmark
+	var items []ListBookmarksByUserRow
 	for rows.Next() {
-		var i Bookmark
+		var i ListBookmarksByUserRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.TenantID,
@@ -875,6 +962,7 @@ func (q *Queries) ListBookmarksByUser(ctx context.Context, arg ListBookmarksByUs
 			&i.EntityType,
 			&i.EntityID,
 			&i.Folder,
+			&i.FolderID,
 			&i.CreatedAt,
 		); err != nil {
 			return nil, err
@@ -2241,6 +2329,28 @@ func (q *Queries) ScheduleContent(ctx context.Context, arg ScheduleContentParams
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const setBookmarkFolder = `-- name: SetBookmarkFolder :exec
+UPDATE bookmarks SET folder_id = $1
+WHERE user_id = $2 AND entity_type = $3 AND entity_id = $4
+`
+
+type SetBookmarkFolderParams struct {
+	FolderID   pgtype.UUID `json:"folder_id"`
+	UserID     pgtype.UUID `json:"user_id"`
+	EntityType string      `json:"entity_type"`
+	EntityID   pgtype.UUID `json:"entity_id"`
+}
+
+func (q *Queries) SetBookmarkFolder(ctx context.Context, arg SetBookmarkFolderParams) error {
+	_, err := q.db.Exec(ctx, setBookmarkFolder,
+		arg.FolderID,
+		arg.UserID,
+		arg.EntityType,
+		arg.EntityID,
+	)
+	return err
 }
 
 const unpinContentFromSpace = `-- name: UnpinContentFromSpace :exec

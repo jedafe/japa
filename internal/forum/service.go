@@ -362,6 +362,16 @@ func (s *Service) GetThreadBySlugWithDetails(ctx context.Context, slug string, t
 	return s.store.getThreadBySlugWithDetails(ctx, slug, tenantID)
 }
 
+// GetTopReplyForThread returns the highest-voted non-deleted reply for a
+// thread, used as the accepted-answer candidate for QAPage JSON-LD on solved
+// threads (BL-012). Returns pgx.ErrNoRows when the thread has no replies.
+func (s *Service) GetTopReplyForThread(ctx context.Context, threadID, tenantID pgtype.UUID) (gen.GetTopReplyForThreadRow, error) {
+	return s.store.read.GetTopReplyForThread(ctx, gen.GetTopReplyForThreadParams{
+		ThreadID: threadID,
+		TenantID: tenantID,
+	})
+}
+
 // ListThreadsByTenantWithDetails returns paginated threads with author + space.
 func (s *Service) ListThreadsByTenantWithDetails(ctx context.Context, tenantID pgtype.UUID, cursorCreatedAt pgtype.Timestamptz, limit int32) ([]gen.ListForumThreadsByTenantWithDetailsRow, error) {
 	return s.store.listThreadsByTenantWithDetails(ctx, tenantID, cursorCreatedAt, limit)

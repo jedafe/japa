@@ -494,3 +494,56 @@ func (ix *Indexer) IndexLearningTrack(ctx context.Context, trackID, tenantID [16
 	slog.Info("search:index: learning track upserted", "track_id", row.ID.String())
 	return nil
 }
+
+// ---------------------------------------------------------------------------
+// Doc Page Indexer (SEARCH-001)
+// ---------------------------------------------------------------------------
+
+// docPageDocument is the shape stored in the doc_pages index.
+type docPageDocument struct {
+	ID           string `json:"id"`
+	TenantID     string `json:"tenant_id"`
+	Title        string `json:"title"`
+	Slug         string `json:"slug"`
+	Audience     string `json:"audience"`
+	BodyPreview  string `json:"excerpt"`
+	ReviewStatus string `json:"review_status"`
+	URL          string `json:"url"`
+}
+
+// IndexDocPage fetches a doc page and upserts it into the doc_pages index
+// (SEARCH-001). AddDocuments is an upsert in Meilisearch so this handles
+// both create and update.
+func (ix *Indexer) IndexDocPage(ctx context.Context, pageID, tenantID [16]byte) error {
+	if ix.client == nil {
+		slog.Warn("search:index: no meilisearch client, skipping")
+		return nil
+	}
+
+	row, err := ix.read.GetDocPageByID(ctx, gen.GetDocPageByIDParams{
+		ID:       pgtype.UUID{Bytes: pageID, Valid: true},
+		TenantID: pgtype.UUID{Bytes: tenantID, Valid: true},
+	})
+	if err != nil {
+		return fmt.Errorf("fetching doc page for index: %w", err)
+	}
+
+	doc := docPageDocument{
+		ID:           row.ID.String(),
+		TenantID:     row.TenantID.String(),
+		Title:        row.Title,
+		Slug:         row.Slug,
+		Audience:     row.Audience,
+		BodyPreview:  buildExcerpt(string(row.Content)),
+		ReviewStatus: row.ReviewStatus,
+		URL:          fmt.Sprintf("/docs/%s/%s", row.Audience, row.Slug),
+	}
+
+	docs := []docPageDocument{doc}
+	if _, err := ix.client.Index(IndexDocPages).AddDocumentsWithContext(ctx, &docs, nil); err != nil {
+		return fmt.Errorf("indexing doc page %s: %w", doc.ID, err)
+	}
+
+	slog.Info("search:index: doc page indexed", "page_id", doc.ID, "title", doc.Title)
+	return nil
+}

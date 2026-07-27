@@ -39,6 +39,7 @@ var indexTypeByUID = map[string]string{
 	IndexSpaces:       "space",
 	IndexUsers:        "user",
 	IndexTags:         "tag",
+	IndexDocPages:     "doc_page",
 }
 
 // searchAttributesToRetrieve limits each hit to the fields the response needs,
@@ -726,7 +727,7 @@ func (h *Handlers) logSearchAsync(ctx context.Context, tenantID pgtype.UUID, que
 // typeFromParam extracts and validates the type filter parameter.
 func typeFromParam(raw string) string {
 	switch raw {
-	case "content", "user", "space", "tag":
+	case "content", "user", "space", "tag", "doc":
 		return raw
 	default:
 		return ""
@@ -746,7 +747,9 @@ func searchTypeIndexes(typeFilter string) []string {
 		return []string{IndexTags}
 	case "course":
 		return []string{IndexLearningTracks}
+	case "doc":
+		return []string{IndexDocPages}
 	default:
-		return []string{IndexPosts, IndexForumThreads, IndexSpaces, IndexUsers, IndexTags, IndexLearningTracks}
+		return []string{IndexPosts, IndexForumThreads, IndexSpaces, IndexUsers, IndexTags, IndexLearningTracks, IndexDocPages}
 	}
 }

@@ -6,6 +6,9 @@
 package wallet
 
 import (
+	"context"
+
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
 )
@@ -42,7 +45,18 @@ const (
 // Default wallet settings.
 const (
 	DefaultPointsToCreditsRate = 100 // 100 points = 1 credit
+	// DefaultMinConvertPoints is the fallback minimum points required for a
+	// single conversion when wallet.min_convert_points is unset in
+	// system_settings (AUDIT-BE2-SETTING-008).
+	DefaultMinConvertPoints = 100
 )
+
+// SettingsReader is the subset of the config.Settings API that wallet uses to
+// read global system_settings with fallbacks (AUDIT-BE2-SETTING-007/008).
+type SettingsReader interface {
+	GetIntOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback int) int
+	GetFloatOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback float64) float64
+}
 
 // Pagination defaults.
 const (
@@ -55,7 +69,14 @@ type Service struct {
 	store    *Store
 	db       *db.DB
 	enqueuer walletEnqueuer
+	// settings is the optional global system_settings reader used for
+	// wallet.points_to_credit_rate and wallet.min_convert_points
+	// (AUDIT-BE2-SETTING-007/008). When nil, compiled-in defaults are used.
+	settings SettingsReader
 }
+
+// SetSettings injects the global system_settings reader (AUDIT-BE2-SETTING-007/008).
+func (s *Service) SetSettings(r SettingsReader) { s.settings = r }
 
 // walletEnqueuer is the subset of worker.Enqueuer that wallet needs.
 type walletEnqueuer interface {

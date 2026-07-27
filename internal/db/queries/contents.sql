@@ -312,10 +312,14 @@ WHERE tenant_id = @tenant_id AND content_id = @content_id;
 -- =====================
 
 -- name: CreateBookmark :one
-INSERT INTO bookmarks (tenant_id, user_id, entity_type, entity_id, folder)
-VALUES (@tenant_id, @user_id, @entity_type, @entity_id, @folder)
-ON CONFLICT (user_id, entity_type, entity_id) DO UPDATE SET folder = EXCLUDED.folder
-RETURNING id, tenant_id, user_id, entity_type, entity_id, folder, created_at;
+INSERT INTO bookmarks (tenant_id, user_id, entity_type, entity_id, folder, folder_id)
+VALUES (@tenant_id, @user_id, @entity_type, @entity_id, @folder, @folder_id)
+ON CONFLICT (user_id, entity_type, entity_id) DO UPDATE SET folder = EXCLUDED.folder, folder_id = EXCLUDED.folder_id
+RETURNING id, tenant_id, user_id, entity_type, entity_id, folder, folder_id, created_at;
+
+-- name: SetBookmarkFolder :exec
+UPDATE bookmarks SET folder_id = @folder_id
+WHERE user_id = @user_id AND entity_type = @entity_type AND entity_id = @entity_id;
 
 -- name: DeleteBookmark :exec
 DELETE FROM bookmarks
@@ -328,9 +332,16 @@ SELECT EXISTS(
 ) AS is_bookmarked;
 
 -- name: ListBookmarksByUser :many
-SELECT b.id, b.tenant_id, b.user_id, b.entity_type, b.entity_id, b.folder, b.created_at
+SELECT b.id, b.tenant_id, b.user_id, b.entity_type, b.entity_id, b.folder, b.folder_id, b.created_at
 FROM bookmarks b
 WHERE b.user_id = @user_id AND b.tenant_id = @tenant_id
+ORDER BY b.created_at DESC
+LIMIT @page_limit OFFSET @page_offset;
+
+-- name: ListBookmarksByFolder :many
+SELECT b.id, b.tenant_id, b.user_id, b.entity_type, b.entity_id, b.folder, b.folder_id, b.created_at
+FROM bookmarks b
+WHERE b.user_id = @user_id AND b.tenant_id = @tenant_id AND b.folder_id = @folder_id
 ORDER BY b.created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 

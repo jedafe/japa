@@ -449,6 +449,8 @@ func handleServiceError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, "already_exists", "Resource already exists")
 	case errors.Is(err, errpkg.ErrMaxDepth):
 		writeError(w, http.StatusBadRequest, "depth_exceeded", err.Error())
+	case errors.Is(err, ErrEditWindowExpired):
+		writeError(w, http.StatusForbidden, "edit_window_expired", "The edit window for this comment has expired")
 	default:
 		writeError(w, http.StatusInternalServerError, "internal_error", "Something went wrong")
 	}

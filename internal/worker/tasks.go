@@ -42,6 +42,7 @@ const (
 	TypeVideoProcessing               = "content:process_video"
 	TypeWalletProcessActivityEvent    = "wallet:process_activity_event"
 	TypeNewsletterSend                = "newsletter:send"
+	TypeDocsGeneratePage              = "docs:generate_page"
 
 	// ---- Japa University creator economy (ADR-063) ----.
 	// Critical: paid enrollment must credit the creator ledger immediately.
@@ -128,6 +129,7 @@ func RegisterHandlers(mux *asynq.ServeMux) {
 	mux.HandleFunc(TypeVideoProcessing, HandleVideoProcessing)
 	mux.HandleFunc(TypeWalletProcessActivityEvent, HandleWalletProcessActivityEvent)
 	mux.HandleFunc(TypeNewsletterSend, HandleNewsletterSend)
+	mux.HandleFunc(TypeDocsGeneratePage, HandleDocsGeneratePage)
 
 	// Japa University creator economy (ADR-063)
 	mux.HandleFunc(TypeUniversityProcessEnrollment, HandleUniversityProcessEnrollment)

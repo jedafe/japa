@@ -188,20 +188,42 @@ type ConvertPointsToCreditsInput struct {
 }
 
 // ConvertPointsToCredits converts points to credits at the configured rate.
+// The rate is resolved in priority order: (1) per-tenant wallet_settings row,
+// (2) global system_settings key wallet.points_to_credit_rate, (3) compiled-in
+// DefaultPointsToCreditsRate (AUDIT-BE2-SETTING-007). The minimum convertible
+// amount is enforced from wallet.min_convert_points (AUDIT-BE2-SETTING-008).
 func (s *Service) ConvertPointsToCredits(ctx context.Context, tenantID, userID pgtype.UUID, input ConvertPointsToCreditsInput) (pointsBalance, creditsBalance int64, err error) {
 	if input.PointsToConvert <= 0 {
 		return 0, 0, errors.New("points to convert must be positive")
 	}
 
+	// AUDIT-BE2-SETTING-008: enforce minimum convertible points from settings.
+	minConvert := int64(DefaultMinConvertPoints)
+	if s.settings != nil {
+		minConvert = int64(s.settings.GetIntOr(ctx, tenantID, "wallet.min_convert_points", DefaultMinConvertPoints))
+	}
+	if input.PointsToConvert < minConvert {
+		return 0, 0, fmt.Errorf("minimum %d points required for conversion", minConvert)
+	}
+
 	// Get wallet settings for conversion rate
 	settings, err := s.store.getWalletSettings(ctx, tenantID)
-	if err != nil {
-		// Use default rate if settings not configured
-		defaultRate := int32(DefaultPointsToCreditsRate)
-		settings = gen.WalletSetting{
-			PointsToCreditsRate: &defaultRate,
+	rate := int32(DefaultPointsToCreditsRate)
+	if err == nil && settings.PointsToCreditsRate != nil && *settings.PointsToCreditsRate > 0 {
+		// (1) per-tenant wallet_settings row takes precedence.
+		rate = *settings.PointsToCreditsRate
+	} else if s.settings != nil {
+		// (2) fall back to global system_settings (AUDIT-BE2-SETTING-007).
+		// The catalog key is a float (0.01 means 1 point = 0.01 credits), but
+		// the wallet ledger uses an integer "points per credit" rate, so we
+		// invert: rate = round(1 / points_to_credit_rate). Guard against zero.
+		if perCredit := s.settings.GetFloatOr(ctx, tenantID, "wallet.points_to_credit_rate", 0); perCredit > 0 {
+			if computed := int32(1.0 / perCredit); computed > 0 {
+				rate = computed
+			}
 		}
 	}
+	settings = gen.WalletSetting{PointsToCreditsRate: &rate}
 
 	// Begin transaction to atomically check balance and insert ledger entries.
 	tx, err := s.db.Writer.Begin(ctx)

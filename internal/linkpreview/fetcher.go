@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgtype"
 	"golang.org/x/net/html"
 
 	"github.com/jedafe/japa/internal/valkey"
@@ -37,12 +38,25 @@ type Preview struct {
 	Favicon     string `json:"favicon"`
 }
 
+// fetcherSettingsReader is the subset of config.Settings the Fetcher needs to
+// read the per-request timeout from system_settings (SEC-013 / Rule 3).
+// *config.Settings satisfies this structurally. When nil, the compiled-in
+// default (10s) is used.
+type fetcherSettingsReader interface {
+	GetIntOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback int) int
+}
+
+// defaultFetchTimeoutSeconds is the compiled-in fallback for the HTTP timeout
+// when no settings reader is wired (SEC-013).
+const defaultFetchTimeoutSeconds = 10
+
 // Fetcher fetches and caches link previews.
 type Fetcher struct {
 	client    *http.Client
 	cache     *valkey.Client
 	cacheTTL  time.Duration
 	blacklist []string
+	settings  fetcherSettingsReader
 }
 
 // NewFetcher creates a Fetcher with an SSRF-safe HTTP client and Valkey cache.
@@ -61,15 +75,40 @@ func NewFetcher(client *http.Client, cache *valkey.Client) *Fetcher {
 	}
 }
 
+// SetSettings wires the hot-reloadable settings reader for the per-request
+// HTTP timeout (SEC-013 / Rule 3). When wired, each Fetch resolves
+// `linkpreview.fetch_timeout_seconds` (default 10) and applies it as a
+// per-request context deadline; otherwise the compiled-in default is used.
+func (f *Fetcher) SetSettings(sr fetcherSettingsReader) { f.settings = sr }
+
+// resolveTimeout returns the per-request fetch timeout. When a settings
+// reader is wired, reads `linkpreview.fetch_timeout_seconds` (min 1s, max 120s
+// per catalog); otherwise falls back to defaultFetchTimeoutSeconds (SEC-013).
+func (f *Fetcher) resolveTimeout(ctx context.Context) time.Duration {
+	if f.settings == nil {
+		return time.Duration(defaultFetchTimeoutSeconds) * time.Second
+	}
+	secs := f.settings.GetIntOr(ctx, pgtype.UUID{}, "linkpreview.fetch_timeout_seconds", defaultFetchTimeoutSeconds)
+	if secs < 1 {
+		secs = 1
+	}
+	if secs > 120 {
+		secs = 120
+	}
+	return time.Duration(secs) * time.Second
+}
+
 // newSSRFSafeClient returns an http.Client configured with a Transport that
 // validates every redirect target for private IP ranges and caps redirect depth.
+// The per-request timeout is applied via context deadline in fetchAndParse
+// (SEC-013), so no fixed Client.Timeout is set here — settings can raise it
+// above the compiled-in default when wired.
 func newSSRFSafeClient() *http.Client {
 	transport := &ssrfSafeTransport{
 		inner: http.DefaultTransport,
 	}
 
 	return &http.Client{
-		Timeout:   10 * time.Second,
 		Transport: transport,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			if len(via) >= maxRedirectDepth {
@@ -147,8 +186,15 @@ func (f *Fetcher) Fetch(ctx context.Context, rawURL string) (*Preview, error) {
 	return preview, nil
 }
 
-// fetchAndParse fetches the URL and extracts OG tags.
+// fetchAndParse fetches the URL and extracts OG tags. The per-request timeout
+// is resolved from system_settings when wired (SEC-013), defaulting to 10s.
 func (f *Fetcher) fetchAndParse(ctx context.Context, rawURL string) (*Preview, error) {
+	// Apply the settings-driven per-request deadline (SEC-013). If the caller
+	// already supplied a shorter deadline, WithTimeout keeps the shorter one.
+	timeout := f.resolveTimeout(ctx)
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {
 		return nil, err
@@ -237,10 +283,11 @@ func parseOGTags(r io.Reader, rawURL string) (*Preview, error) {
 }
 
 // cacheKey generates a Valkey cache key for a URL.
-// Format: jc:link_preview:{sha256_url[:16]}.
+// Format: jc:link_preview:{sha256_url}. Uses the full SHA-256 hash to
+// avoid collision risk from truncation (STD-004).
 func (f *Fetcher) cacheKey(rawURL string) string {
 	hash := sha256.Sum256([]byte(rawURL))
-	return "jc:link_preview:" + hex.EncodeToString(hash[:8])
+	return "jc:link_preview:" + hex.EncodeToString(hash[:])
 }
 
 // getHost extracts the hostname from a URL.

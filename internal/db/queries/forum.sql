@@ -276,6 +276,24 @@ WHERE fr.thread_id = @thread_id
   AND fr.deleted_at IS NULL
 ORDER BY fr.created_at ASC;
 
+-- name: GetTopReplyForThread :one
+-- Returns the highest-voted non-deleted reply for a thread. Used as the
+-- accepted-answer candidate for QAPage JSON-LD on solved threads (BL-012).
+SELECT fr.id, fr.tenant_id, fr.thread_id, fr.parent_reply_id, fr.author_user_id,
+       fr.body, fr.vote_score, fr.view_count, fr.is_anonymous, fr.is_edited,
+       fr.created_at, fr.updated_at, fr.deleted_at,
+       CASE WHEN fr.is_anonymous THEN NULL ELSE u.username END AS author_username,
+       CASE WHEN fr.is_anonymous THEN NULL ELSE up.display_name END AS author_display_name,
+       CASE WHEN fr.is_anonymous THEN NULL ELSE up.avatar_url END AS author_avatar_url
+FROM forum_replies fr
+LEFT JOIN users u ON u.id = fr.author_user_id
+LEFT JOIN user_profiles up ON up.user_id = fr.author_user_id
+WHERE fr.thread_id = @thread_id
+  AND fr.tenant_id = @tenant_id
+  AND fr.deleted_at IS NULL
+ORDER BY fr.vote_score DESC, fr.created_at ASC
+LIMIT 1;
+
 -- name: UpdateForumReply :one
 UPDATE forum_replies
 SET body = @body, is_edited = true, updated_at = now()
