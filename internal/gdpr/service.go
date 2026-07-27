@@ -507,7 +507,104 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 			return fmt.Errorf("nullifying ticket submitter: %w", err)
 		}
 
-		// 4. Physical deletion — ON DELETE CASCADE handles all child tables.
+		// 4. AUDIT-FRESH-GDPR-001: explicit cleanup for tables whose FK to
+		//    users(id) has no ON DELETE CASCADE/SET NULL. Without these the
+		//    final HardDeleteUser would block on a residual foreign key.
+
+		// content_revisions.edited_by has no CASCADE; drop the user's edit history.
+		if err := q.DeleteContentRevisionsByEditor(ctx, userID); err != nil {
+			return fmt.Errorf("deleting content revisions: %w", err)
+		}
+
+		// space_pinned_posts.pinned_by has no CASCADE; remove pins made by the user.
+		if err := q.DeleteSpacePinnedPostsByUser(ctx, userID); err != nil {
+			return fmt.Errorf("deleting space pinned posts: %w", err)
+		}
+
+		// forum_tags.moderator_user_id is nullable; clear it so the tag survives.
+		if err := q.NullifyForumTagModerator(ctx, gen.NullifyForumTagModeratorParams{
+			UserID: userID, TenantID: tenantID,
+		}); err != nil {
+			return fmt.Errorf("nullifying forum tag moderator: %w", err)
+		}
+
+		// ticket_comments.user_id has no CASCADE; delete the user's ticket comments.
+		if err := q.DeleteTicketCommentsByUser(ctx, userID); err != nil {
+			return fmt.Errorf("deleting ticket comments: %w", err)
+		}
+
+		// ticket_events.user_id is nullable audit trail; nullify the actor, keep the event.
+		if err := q.NullifyTicketEventsUser(ctx, userID); err != nil {
+			return fmt.Errorf("nullifying ticket events user: %w", err)
+		}
+
+		// user_preferences is user-owned config; remove it explicitly.
+		if err := q.DeleteUserPreferences(ctx, gen.DeleteUserPreferencesParams{
+			UserID: userID, TenantID: tenantID,
+		}); err != nil {
+			return fmt.Errorf("deleting user preferences: %w", err)
+		}
+
+		// professional_profiles.owner_user_id has no CASCADE; delete owned profiles (cascades members/invitations).
+		if err := q.DeleteProfessionalProfilesByOwner(ctx, gen.DeleteProfessionalProfilesByOwnerParams{
+			UserID: userID, TenantID: tenantID,
+		}); err != nil {
+			return fmt.Errorf("deleting professional profiles: %w", err)
+		}
+
+		// professional_profile_invitations.invited_by is nullable; clear inviter on others' profiles.
+		if err := q.NullifyProfessionalProfileInvitationInviter(ctx, userID); err != nil {
+			return fmt.Errorf("nullifying professional profile invitation inviter: %w", err)
+		}
+
+		// organizations.owner_user_id is NOT NULL; reassign to placeholder to preserve the org for remaining members.
+		if err := q.ReassignOrganizationOwner(ctx, gen.ReassignOrganizationOwnerParams{
+			UserID: userID, TenantID: tenantID, TargetUserID: deletedUserPlaceholder,
+		}); err != nil {
+			return fmt.Errorf("reassigning organization owner: %w", err)
+		}
+
+		// organization_invitations.invited_by is nullable; clear inviter reference.
+		if err := q.NullifyOrganizationInvitationInviter(ctx, userID); err != nil {
+			return fmt.Errorf("nullifying organization invitation inviter: %w", err)
+		}
+
+		// ownership_claims.claimant_user_id is NOT NULL; delete the user's submitted claims.
+		if err := q.DeleteOwnershipClaimsByClaimant(ctx, gen.DeleteOwnershipClaimsByClaimantParams{
+			UserID: userID, TenantID: tenantID,
+		}); err != nil {
+			return fmt.Errorf("deleting ownership claims: %w", err)
+		}
+
+		// consent_records.user_id is nullable; preserve the compliance record, detach the user.
+		if err := q.NullifyConsentRecordUser(ctx, gen.NullifyConsentRecordUserParams{
+			UserID: userID, TenantID: tenantID,
+		}); err != nil {
+			return fmt.Errorf("nullifying consent record user: %w", err)
+		}
+
+		// data_export_requests.user_id is NOT NULL; reassign to placeholder to preserve export audit trail.
+		if err := q.ReassignDataExportRequestUser(ctx, gen.ReassignDataExportRequestUserParams{
+			UserID: userID, TenantID: tenantID, TargetUserID: deletedUserPlaceholder,
+		}); err != nil {
+			return fmt.Errorf("reassigning data export request user: %w", err)
+		}
+
+		// account_deletion_requests.user_id is NOT NULL; reassign to placeholder so the in-flight request row survives.
+		if err := q.ReassignAccountDeletionRequestUser(ctx, gen.ReassignAccountDeletionRequestUserParams{
+			UserID: userID, TenantID: tenantID, TargetUserID: deletedUserPlaceholder,
+		}); err != nil {
+			return fmt.Errorf("reassigning account deletion request user: %w", err)
+		}
+
+		// audit_logs must be preserved for compliance; repoint actor/impersonated refs to the placeholder "Deleted User".
+		if err := q.AnonymizeAuditLogActor(ctx, gen.AnonymizeAuditLogActorParams{
+			UserID: userID, TenantID: tenantID, TargetUserID: deletedUserPlaceholder,
+		}); err != nil {
+			return fmt.Errorf("anonymizing audit log actor: %w", err)
+		}
+
+		// 5. Physical deletion — ON DELETE CASCADE handles all child tables.
 		if err := q.HardDeleteUser(ctx, gen.HardDeleteUserParams{
 			UserID: userID, TenantID: tenantID,
 		}); err != nil {
@@ -657,14 +754,38 @@ func parseIPAddress(s *string) *netip.Addr {
 
 // UserDataExport represents the complete user data export.
 type UserDataExport struct {
-	UserProfile    map[string]interface{}   `json:"user_profile"`
-	Consents       []map[string]interface{} `json:"consents"`
-	Content        []map[string]interface{} `json:"content"`
-	Comments       []map[string]interface{} `json:"comments"`
-	Spaces         []map[string]interface{} `json:"spaces"`
-	Payments       []map[string]interface{} `json:"payments"`
-	Notifications  []map[string]interface{} `json:"notifications"`
-	ExportMetadata map[string]interface{}   `json:"export_metadata"`
+	UserProfile            map[string]interface{}   `json:"user_profile"`
+	Consents               []map[string]interface{} `json:"consents"`
+	Content                []map[string]interface{} `json:"content"`
+	Comments               []map[string]interface{} `json:"comments"`
+	Spaces                 []map[string]interface{} `json:"spaces"`
+	Payments               []map[string]interface{} `json:"payments"`
+	Notifications          []map[string]interface{} `json:"notifications"`
+	UserProfiles           []map[string]interface{} `json:"user_profiles"`
+	Reactions              []map[string]interface{} `json:"reactions"`
+	Bookmarks              []map[string]interface{} `json:"bookmarks"`
+	ContentShares          []map[string]interface{} `json:"content_shares"`
+	Follows                []map[string]interface{} `json:"follows"`
+	ForumThreads           []map[string]interface{} `json:"forum_threads"`
+	ForumReplies           []map[string]interface{} `json:"forum_replies"`
+	ForumVotes             []map[string]interface{} `json:"forum_votes"`
+	ForumBookmarks         []map[string]interface{} `json:"forum_bookmarks"`
+	Media                  []map[string]interface{} `json:"media"`
+	Reviews                []map[string]interface{} `json:"reviews"`
+	SpaceMembers           []map[string]interface{} `json:"space_members"`
+	ConsentRecords         []map[string]interface{} `json:"consent_records"`
+	WalletLedger           []map[string]interface{} `json:"wallet_ledger"`
+	LessonProgress         []map[string]interface{} `json:"lesson_progress"`
+	LearningCertificates   []map[string]interface{} `json:"learning_certificates"`
+	MentorshipMatches      []map[string]interface{} `json:"mentorship_matches"`
+	ProfessionalProfiles   []map[string]interface{} `json:"professional_profiles"`
+	Organizations          []map[string]interface{} `json:"organizations"`
+	ApiKeys                []map[string]interface{} `json:"api_keys"`
+	UserPreferences        []map[string]interface{} `json:"user_preferences"`
+	UserMutes              []map[string]interface{} `json:"user_mutes"`
+	SpaceMutes             []map[string]interface{} `json:"space_mutes"`
+	TicketComments         []map[string]interface{} `json:"ticket_comments"`
+	ExportMetadata         map[string]interface{}   `json:"export_metadata"`
 }
 
 // collectUserData gathers all user data from relevant tables.
@@ -777,6 +898,178 @@ func (s *Service) collectUserData(ctx context.Context, userID, tenantID pgtype.U
 		}
 	} else {
 		slog.Warn("failed to collect notifications for export", "user_id", userID.String(), "error", err)
+	}
+
+	// AUDIT-FRESH-GDPR-002: collect the remaining user-owned tables. Each block
+	// is best-effort — a failure logs a warning and the export still succeeds
+	// with the tables that could be collected, matching the existing pattern.
+
+	// User profile detail row.
+	if rows, err := s.store.gdprExportUserProfiles(ctx, userID, tenantID); err == nil {
+		export.UserProfiles = rows
+	} else {
+		slog.Warn("failed to collect user_profiles for export", "user_id", userID.String(), "error", err)
+	}
+
+	// Reactions the user placed on content.
+	if rows, err := s.store.gdprExportUserReactions(ctx, userID, tenantID); err == nil {
+		export.Reactions = rows
+	} else {
+		slog.Warn("failed to collect reactions for export", "user_id", userID.String(), "error", err)
+	}
+
+	// Bookmarks the user saved.
+	if rows, err := s.store.gdprExportUserBookmarks(ctx, userID, tenantID); err == nil {
+		export.Bookmarks = rows
+	} else {
+		slog.Warn("failed to collect bookmarks for export", "user_id", userID.String(), "error", err)
+	}
+
+	// Content shares the user created.
+	if rows, err := s.store.gdprExportUserContentShares(ctx, userID, tenantID); err == nil {
+		export.ContentShares = rows
+	} else {
+		slog.Warn("failed to collect content_shares for export", "user_id", userID.String(), "error", err)
+	}
+
+	// Follow relationships initiated by the user.
+	if rows, err := s.store.gdprExportUserFollows(ctx, userID, tenantID); err == nil {
+		export.Follows = rows
+	} else {
+		slog.Warn("failed to collect follows for export", "user_id", userID.String(), "error", err)
+	}
+
+	// Forum threads authored by the user.
+	if rows, err := s.store.gdprExportUserForumThreads(ctx, userID, tenantID); err == nil {
+		export.ForumThreads = rows
+	} else {
+		slog.Warn("failed to collect forum_threads for export", "user_id", userID.String(), "error", err)
+	}
+
+	// Forum replies authored by the user.
+	if rows, err := s.store.gdprExportUserForumReplies(ctx, userID, tenantID); err == nil {
+		export.ForumReplies = rows
+	} else {
+		slog.Warn("failed to collect forum_replies for export", "user_id", userID.String(), "error", err)
+	}
+
+	// Forum votes cast by the user.
+	if rows, err := s.store.gdprExportUserForumVotes(ctx, userID, tenantID); err == nil {
+		export.ForumVotes = rows
+	} else {
+		slog.Warn("failed to collect forum_votes for export", "user_id", userID.String(), "error", err)
+	}
+
+	// Forum bookmarks the user saved.
+	if rows, err := s.store.gdprExportUserForumBookmarks(ctx, userID, tenantID); err == nil {
+		export.ForumBookmarks = rows
+	} else {
+		slog.Warn("failed to collect forum_bookmarks for export", "user_id", userID.String(), "error", err)
+	}
+
+	// Media uploaded by the user.
+	if rows, err := s.store.gdprExportUserMedia(ctx, userID, tenantID); err == nil {
+		export.Media = rows
+	} else {
+		slog.Warn("failed to collect media for export", "user_id", userID.String(), "error", err)
+	}
+
+	// Reviews the user wrote.
+	if rows, err := s.store.gdprExportUserReviews(ctx, userID, tenantID); err == nil {
+		export.Reviews = rows
+	} else {
+		slog.Warn("failed to collect reviews for export", "user_id", userID.String(), "error", err)
+	}
+
+	// Space membership records.
+	if rows, err := s.store.gdprExportUserSpaceMembers(ctx, userID, tenantID); err == nil {
+		export.SpaceMembers = rows
+	} else {
+		slog.Warn("failed to collect space_members for export", "user_id", userID.String(), "error", err)
+	}
+
+	// Consent records (full rows, complementing the summarized Consents block).
+	if rows, err := s.store.gdprExportUserConsentRecords(ctx, userID, tenantID); err == nil {
+		export.ConsentRecords = rows
+	} else {
+		slog.Warn("failed to collect consent_records for export", "user_id", userID.String(), "error", err)
+	}
+
+	// Wallet ledger entries for the user.
+	if rows, err := s.store.gdprExportUserWalletLedger(ctx, userID, tenantID); err == nil {
+		export.WalletLedger = rows
+	} else {
+		slog.Warn("failed to collect wallet_ledger for export", "user_id", userID.String(), "error", err)
+	}
+
+	// Learning lesson progress.
+	if rows, err := s.store.gdprExportUserLessonProgress(ctx, userID, tenantID); err == nil {
+		export.LessonProgress = rows
+	} else {
+		slog.Warn("failed to collect lesson_progress for export", "user_id", userID.String(), "error", err)
+	}
+
+	// Issued learning certificates.
+	if rows, err := s.store.gdprExportUserLearningCertificates(ctx, userID, tenantID); err == nil {
+		export.LearningCertificates = rows
+	} else {
+		slog.Warn("failed to collect learning_certificates for export", "user_id", userID.String(), "error", err)
+	}
+
+	// Mentorship matches where the user is mentor or mentee.
+	if rows, err := s.store.gdprExportUserMentorshipMatches(ctx, userID, tenantID); err == nil {
+		export.MentorshipMatches = rows
+	} else {
+		slog.Warn("failed to collect mentorship_matches for export", "user_id", userID.String(), "error", err)
+	}
+
+	// Professional profiles owned by the user.
+	if rows, err := s.store.gdprExportUserProfessionalProfiles(ctx, userID, tenantID); err == nil {
+		export.ProfessionalProfiles = rows
+	} else {
+		slog.Warn("failed to collect professional_profiles for export", "user_id", userID.String(), "error", err)
+	}
+
+	// Organizations owned by the user.
+	if rows, err := s.store.gdprExportUserOrganizations(ctx, userID, tenantID); err == nil {
+		export.Organizations = rows
+	} else {
+		slog.Warn("failed to collect organizations for export", "user_id", userID.String(), "error", err)
+	}
+
+	// API keys issued by the user.
+	if rows, err := s.store.gdprExportUserApiKeys(ctx, userID, tenantID); err == nil {
+		export.ApiKeys = rows
+	} else {
+		slog.Warn("failed to collect api_keys for export", "user_id", userID.String(), "error", err)
+	}
+
+	// User preference settings.
+	if rows, err := s.store.gdprExportUserPreferences(ctx, userID, tenantID); err == nil {
+		export.UserPreferences = rows
+	} else {
+		slog.Warn("failed to collect user_preferences for export", "user_id", userID.String(), "error", err)
+	}
+
+	// User-initiated mutes of other users.
+	if rows, err := s.store.gdprExportUserMutes(ctx, userID, tenantID); err == nil {
+		export.UserMutes = rows
+	} else {
+		slog.Warn("failed to collect user_mutes for export", "user_id", userID.String(), "error", err)
+	}
+
+	// Spaces the user muted.
+	if rows, err := s.store.gdprExportUserSpaceMutes(ctx, userID, tenantID); err == nil {
+		export.SpaceMutes = rows
+	} else {
+		slog.Warn("failed to collect space_mutes for export", "user_id", userID.String(), "error", err)
+	}
+
+	// Comments the user posted on support tickets.
+	if rows, err := s.store.gdprExportUserTicketComments(ctx, userID, tenantID); err == nil {
+		export.TicketComments = rows
+	} else {
+		slog.Warn("failed to collect ticket_comments for export", "user_id", userID.String(), "error", err)
 	}
 
 	return export, nil

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"time"
 )
 
@@ -15,10 +16,50 @@ const SignatureHeader = "X-Webhook-Signature"
 // ContentType is the media type sent with every webhook delivery.
 const ContentType = "application/json"
 
+// deliveryClient is a hardened HTTP client for outbound webhook delivery
+// (SEC-009). It enforces a 30s timeout and caps redirects at 5 to prevent
+// SSRF via redirect chains to internal IPs. http.DefaultClient has no
+// timeout and unlimited redirects — users could register internal-IP
+// webhook URLs and exfiltrate data or scan the internal network.
+var deliveryClient = &http.Client{
+	Timeout: 30 * time.Second,
+	CheckRedirect: func(req *http.Request, via []*http.Request) error {
+		if len(via) >= 5 {
+			return fmt.Errorf("stopped after 5 redirects")
+		}
+		// Block redirects to non-http(s) schemes (defense-in-depth).
+		if req.URL.Scheme != "http" && req.URL.Scheme != "https" {
+			return fmt.Errorf("redirect to non-http scheme blocked: %s", req.URL.Scheme)
+		}
+		return nil
+	},
+}
+
+// validateEndpoint checks that the webhook endpoint URL is safe to call
+// (SEC-009). Rejects non-http(s) schemes which would allow javascript:/data:
+// or file: URLs to be registered as webhook targets.
+func validateEndpoint(endpoint string) error {
+	u, err := url.Parse(endpoint)
+	if err != nil {
+		return fmt.Errorf("invalid webhook endpoint: %w", err)
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return fmt.Errorf("webhook endpoint scheme must be http or https, got: %s", u.Scheme)
+	}
+	if u.Host == "" {
+		return fmt.Errorf("webhook endpoint has empty host")
+	}
+	return nil
+}
+
 // Deliver sends a single HTTP POST to the endpoint with the signed envelope.
 // Returns an error if the request fails or the endpoint returns a non-2xx
 // status code.
 func Deliver(ctx context.Context, endpoint, secret string, envelope WebhookEnvelope) error {
+	if err := validateEndpoint(endpoint); err != nil {
+		return err
+	}
+
 	payload, err := envelope.Marshal()
 	if err != nil {
 		return fmt.Errorf("marshaling webhook envelope: %w", err)
@@ -32,7 +73,7 @@ func Deliver(ctx context.Context, endpoint, secret string, envelope WebhookEnvel
 	req.Header.Set("Content-Type", ContentType)
 	req.Header.Set(SignatureHeader, SignPayload(secret, payload))
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := deliveryClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("sending webhook to %s: %w", endpoint, err)
 	}

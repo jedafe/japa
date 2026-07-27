@@ -3,12 +3,10 @@ package publicapi
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"log/slog"
 	"math"
 	"net/http"
 	"strconv"
-	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
@@ -388,51 +386,24 @@ func (h *Handlers) UpdateAPIKeyStatus(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Build dynamic update query.
-	updates := []string{}
-	args := []any{keyID}
-	argIdx := 2
-
-	if input.Name != "" {
-		updates = append(updates, fmt.Sprintf("name = $%d", argIdx))
-		args = append(args, input.Name)
-		argIdx++
-	}
-
-	if input.Status != "" {
-		updates = append(updates, fmt.Sprintf("status = $%d", argIdx))
-		args = append(args, input.Status)
-		argIdx++
-	}
-
-	if input.RateLimitTier != "" {
-		updates = append(updates, fmt.Sprintf("rate_limit_tier = $%d", argIdx))
-		args = append(args, input.RateLimitTier)
-		argIdx++
-	}
-
-	if input.Notes != "" {
-		updates = append(updates, fmt.Sprintf("notes = $%d", argIdx))
-		args = append(args, input.Notes)
-		argIdx++
-	}
-
-	if len(updates) == 0 {
-		writeError(w, http.StatusBadRequest, "validation_error", "No fields to update")
-		return
-	}
-
-	updates = append(updates, "updated_at = now()")
-
-	query := fmt.Sprintf("UPDATE api_keys SET %s WHERE id = $1", strings.Join(updates, ", "))
-
-	tag, err := h.Service.store.dbPool.Exec(r.Context(), query, args...)
+	// Delegate to the service method which uses a strict column allowlist
+	// (SEC-002 / LAYER-003) — no hand-concatenated SQL in the handler.
+	rowsAffected, err := h.Service.UpdateAPIKeyFields(r.Context(), keyID, APIKeyUpdateFields{
+		Name:          input.Name,
+		Status:        input.Status,
+		RateLimitTier: input.RateLimitTier,
+		Notes:         input.Notes,
+	})
 	if err != nil {
+		if errors.Is(err, ErrNoFieldsToUpdate) {
+			writeError(w, http.StatusBadRequest, "validation_error", "No fields to update")
+			return
+		}
 		handleServiceError(w, err)
 		return
 	}
 
-	if tag.RowsAffected() == 0 {
+	if rowsAffected == 0 {
 		writeError(w, http.StatusNotFound, "not_found", "API key not found")
 		return
 	}

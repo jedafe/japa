@@ -523,7 +523,7 @@ func (h *AuthHandlers) VerifyLoginChallenge(w http.ResponseWriter, r *http.Reque
 
 	plaintext, err := decryptSecret(totpRecord.SecretEncrypted)
 	if err != nil {
-		slog.Error("decrypt TOTP secret", "error", err)
+		slog.Error("decrypt TOTP secret", "user_id", userID)
 		writeError(w, http.StatusInternalServerError, "totp_error", "Failed to verify 2FA")
 		return
 	}

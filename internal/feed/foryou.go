@@ -93,8 +93,9 @@ func rankCandidates(cands []Candidate, sortMode string, now time.Time) []Candida
 }
 
 // forYouCacheKey builds the per-user, per-sort Valkey key.
+// Uses the jc:cache:feed:foryou: prefix per Rule 4 (VALKEY-001/005).
 func forYouCacheKey(tenantID, userID pgtype.UUID, sortMode string) string {
-	return fmt.Sprintf("feed:foryou:%s:%s:%s",
+	return fmt.Sprintf("jc:cache:feed:foryou:%s:%s:%s",
 		uuidToString(tenantID), uuidToString(userID), sortMode)
 }
 

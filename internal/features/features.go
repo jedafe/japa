@@ -158,6 +158,14 @@ func (c *Checker) ClearCache() {
 	c.cache.entries = make(map[string]map[string]*flagCacheEntry)
 }
 
+// ClearCacheForTenant clears cached flag values for a single tenant only
+// (STD-003 — avoids clearing all tenants' caches on a per-tenant flag update).
+func (c *Checker) ClearCacheForTenant(tenantID string) {
+	c.cache.mu.Lock()
+	defer c.cache.mu.Unlock()
+	delete(c.cache.entries, tenantID)
+}
+
 // cleanupLoop periodically evicts cache entries older than maxAge.
 func (fc *flagCache) cleanupLoop(maxAge time.Duration) {
 	ticker := time.NewTicker(maxAge)

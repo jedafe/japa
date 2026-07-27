@@ -15,7 +15,7 @@ import (
 	"github.com/valkey-io/valkey-go/valkeycompat"
 )
 
-// Cache TTLs (VALKEY-003 / catalog: jc:docs_nav, jc:docs_page).
+// Cache TTLs (VALKEY-003 / catalog: jc:cache:page:docs:nav, jc:cache:page:docs:{audience}:{slug}).
 const (
 	docNavCacheTTL  = 10 * time.Minute
 	docPageCacheTTL = 5 * time.Minute
@@ -42,10 +42,10 @@ func NewService(database *db.DB) *Service {
 }
 
 // GetDocPageBySlug returns a published page by audience and slug. Checks the
-// Valkey cache first (jc:docs_page:{audience}:{slug}, TTL 5min) and falls back
+// Valkey cache first (jc:cache:page:docs:{audience}:{slug}, TTL 5min) and falls back
 // to the DB on miss (VALKEY-003).
 func (s *Service) GetDocPageBySlug(ctx context.Context, tenantID pgtype.UUID, audience, slug string) (*DocPage, error) {
-	cacheKey := valkey.MustKey("docs:page:%s:%s", audience, slug)
+	cacheKey := valkey.MustKey("cache:page:docs:%s:%s", audience, slug)
 	if s.cache != nil {
 		if cached, err := s.cache.Get(ctx, cacheKey).Result(); err == nil {
 			var page DocPage
@@ -163,10 +163,10 @@ func (s *Service) ListAllDocPages(ctx context.Context, tenantID pgtype.UUID) ([]
 }
 
 // GetDocNav returns the published-pages navigation tree grouped by audience.
-// Checks the Valkey cache first (jc:docs_nav, TTL 10min) and falls back to
-// the DB on miss (VALKEY-003).
+// Checks the Valkey cache first (jc:cache:page:docs:nav, TTL 10min) and falls back
+// to the DB on miss (VALKEY-003).
 func (s *Service) GetDocNav(ctx context.Context, tenantID pgtype.UUID) ([]DocNavTree, error) {
-	cacheKey := valkey.MustKey("docs:nav")
+	cacheKey := valkey.MustKey("cache:page:docs:nav")
 	if s.cache != nil {
 		if cached, err := s.cache.Get(ctx, cacheKey).Result(); err == nil {
 			var trees []DocNavTree
@@ -328,9 +328,9 @@ func (s *Service) invalidateCache(ctx context.Context, audience, slug string) {
 	if s.cache == nil {
 		return
 	}
-	keys := []string{valkey.MustKey("docs:nav")}
+	keys := []string{valkey.MustKey("cache:page:docs:nav")}
 	if audience != "" && slug != "" {
-		keys = append(keys, valkey.MustKey("docs:page:%s:%s", audience, slug))
+		keys = append(keys, valkey.MustKey("cache:page:docs:%s:%s", audience, slug))
 	}
 	if err := s.cache.Del(ctx, keys...).Err(); err != nil {
 		slog.Warn("docs: failed to invalidate cache", "keys", keys, "error", err)

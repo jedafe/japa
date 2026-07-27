@@ -75,7 +75,8 @@ func (h *Handlers) HandleSetFeatureFlag(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	h.checker.ClearCache()
+	// STD-003: clear only the affected tenant's cache, not all tenants.
+	h.checker.ClearCacheForTenant(t.ID.String())
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
@@ -227,7 +228,7 @@ func (h *Handlers) CreateFeatureFlag(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.checker.ClearCache()
+	h.checker.ClearCacheForTenant(t.ID.String())
 	writeJSON(w, http.StatusCreated, map[string]any{
 		"data": FeatureFlag{
 			ID:                key,
@@ -289,7 +290,7 @@ func (h *Handlers) UpdateFeatureFlag(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.checker.ClearCache()
+	h.checker.ClearCacheForTenant(t.ID.String())
 	writeJSON(w, http.StatusOK, map[string]any{
 		"data": FeatureFlag{
 			ID:                flagName,
@@ -325,7 +326,7 @@ func (h *Handlers) DeleteFeatureFlag(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.checker.ClearCache()
+	h.checker.ClearCacheForTenant(t.ID.String())
 	writeJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{"key": flagName, "deleted": true},
 	})

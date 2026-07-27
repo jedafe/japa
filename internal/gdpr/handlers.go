@@ -14,6 +14,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -316,7 +317,14 @@ func (h *Handlers) GetMyDataExportDownload(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	http.Redirect(w, r, *request.DownloadUrl, http.StatusTemporaryRedirect)
+	// Defense-in-depth: validate the scheme of the server-generated URL
+	// before redirecting (SEC-005).
+	dest := *request.DownloadUrl
+	if u, err := url.Parse(dest); err != nil || (u.Scheme != "http" && u.Scheme != "https") {
+		writeError(w, http.StatusBadRequest, "invalid_download_url", "Download URL is not valid")
+		return
+	}
+	http.Redirect(w, r, dest, http.StatusTemporaryRedirect)
 }
 
 // RequestAccountDeletion handles POST /api/v1/account/delete.

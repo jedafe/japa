@@ -253,3 +253,179 @@ LIMIT 100;
 
 -- name: PruneAuditLogs :exec
 DELETE FROM audit_logs WHERE created_at < now() - interval '90 days';
+
+-- =====================
+-- Hard-Delete Erasure — Non-CASCADE FK Cleanup (AUDIT-FRESH-GDPR-001)
+-- These tables reference users(id) without ON DELETE CASCADE/SET NULL, so the
+-- final HardDeleteUser would block on a residual FK. Each query is run inside
+-- the hardDeleteUser transaction before the physical DELETE.
+-- =====================
+
+-- name: DeleteContentRevisionsByEditor :exec
+-- content_revisions.edited_by has no CASCADE; drop the user's edit history so the FK clears.
+DELETE FROM content_revisions WHERE edited_by = @user_id;
+
+-- name: DeleteSpacePinnedPostsByUser :exec
+-- space_pinned_posts.pinned_by has no CASCADE; remove pins made by the user.
+DELETE FROM space_pinned_posts WHERE pinned_by = @user_id;
+
+-- name: NullifyForumTagModerator :exec
+-- forum_tags.moderator_user_id is nullable; clear it so the tag survives without the user.
+UPDATE forum_tags SET moderator_user_id = NULL
+WHERE moderator_user_id = @user_id AND tenant_id = @tenant_id;
+
+-- name: DeleteTicketCommentsByUser :exec
+-- ticket_comments.user_id has no CASCADE; delete the user's ticket comments.
+DELETE FROM ticket_comments WHERE user_id = @user_id;
+
+-- name: NullifyTicketEventsUser :exec
+-- ticket_events.user_id is nullable and is an audit trail; nullify the actor, keep the event.
+UPDATE ticket_events SET user_id = NULL WHERE user_id = @user_id;
+
+-- name: DeleteUserPreferences :exec
+-- user_preferences is user-owned config; remove it explicitly (CASCADE is redundant but explicit).
+DELETE FROM user_preferences WHERE user_id = @user_id AND tenant_id = @tenant_id;
+
+-- name: DeleteProfessionalProfilesByOwner :exec
+-- professional_profiles.owner_user_id has no CASCADE; delete the user's owned profiles (cascades members/invitations).
+DELETE FROM professional_profiles WHERE owner_user_id = @user_id AND tenant_id = @tenant_id;
+
+-- name: NullifyProfessionalProfileInvitationInviter :exec
+-- professional_profile_invitations.invited_by is nullable; clear inviter reference on others' profiles.
+UPDATE professional_profile_invitations SET invited_by = NULL WHERE invited_by = @user_id;
+
+-- name: ReassignOrganizationOwner :exec
+-- organizations.owner_user_id is NOT NULL; reassign to the deleted-user placeholder to preserve the org for remaining members.
+UPDATE organizations SET owner_user_id = @target_user_id
+WHERE owner_user_id = @user_id AND tenant_id = @tenant_id;
+
+-- name: NullifyOrganizationInvitationInviter :exec
+-- organization_invitations.invited_by is nullable; clear inviter reference.
+UPDATE organization_invitations SET invited_by = NULL WHERE invited_by = @user_id;
+
+-- name: DeleteOwnershipClaimsByClaimant :exec
+-- ownership_claims.claimant_user_id is NOT NULL; delete the user's submitted claims (reviewed_by is SET NULL).
+DELETE FROM ownership_claims WHERE claimant_user_id = @user_id AND tenant_id = @tenant_id;
+
+-- name: NullifyConsentRecordUser :exec
+-- consent_records.user_id is nullable; preserve the compliance record, detach the user reference.
+UPDATE consent_records SET user_id = NULL WHERE user_id = @user_id AND tenant_id = @tenant_id;
+
+-- name: ReassignDataExportRequestUser :exec
+-- data_export_requests.user_id is NOT NULL; reassign to placeholder to preserve the export audit trail.
+UPDATE data_export_requests SET user_id = @target_user_id
+WHERE user_id = @user_id AND tenant_id = @tenant_id;
+
+-- name: ReassignAccountDeletionRequestUser :exec
+-- account_deletion_requests.user_id is NOT NULL; reassign to placeholder so the in-flight request row survives the delete.
+UPDATE account_deletion_requests SET user_id = @target_user_id
+WHERE user_id = @user_id AND tenant_id = @tenant_id;
+
+-- name: AnonymizeAuditLogActor :exec
+-- audit_logs must be preserved for compliance; repoint actor/impersonated refs to the placeholder "Deleted User" label.
+UPDATE audit_logs
+SET actor_user_id = @target_user_id,
+    impersonated_user_id = CASE WHEN impersonated_user_id = @user_id THEN @target_user_id ELSE impersonated_user_id END
+WHERE (actor_user_id = @user_id OR impersonated_user_id = @user_id) AND tenant_id = @tenant_id;
+
+-- =====================
+-- GDPR Data Export — Additional User-Owned Tables (AUDIT-FRESH-GDPR-002)
+-- Each query returns the user's rows as a JSON array so the service can attach
+-- them to the export without per-table column mapping.
+-- =====================
+
+-- name: GdprExportUserProfiles :one
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (SELECT * FROM user_profiles WHERE user_id = @user_id AND tenant_id = @tenant_id) t;
+
+-- name: GdprExportUserReactions :one
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (SELECT * FROM reactions WHERE user_id = @user_id AND tenant_id = @tenant_id) t;
+
+-- name: GdprExportUserBookmarks :one
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (SELECT * FROM bookmarks WHERE user_id = @user_id AND tenant_id = @tenant_id) t;
+
+-- name: GdprExportUserContentShares :one
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (SELECT * FROM content_shares WHERE user_id = @user_id AND tenant_id = @tenant_id) t;
+
+-- name: GdprExportUserFollows :one
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (SELECT * FROM follows WHERE follower_id = @user_id AND tenant_id = @tenant_id) t;
+
+-- name: GdprExportUserForumThreads :one
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (SELECT * FROM forum_threads WHERE author_user_id = @user_id AND tenant_id = @tenant_id) t;
+
+-- name: GdprExportUserForumReplies :one
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (SELECT * FROM forum_replies WHERE author_user_id = @user_id AND tenant_id = @tenant_id) t;
+
+-- name: GdprExportUserForumVotes :one
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (SELECT * FROM forum_votes WHERE user_id = @user_id AND tenant_id = @tenant_id) t;
+
+-- name: GdprExportUserForumBookmarks :one
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (SELECT * FROM forum_bookmarks WHERE user_id = @user_id AND tenant_id = @tenant_id) t;
+
+-- name: GdprExportUserMedia :one
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (SELECT * FROM media WHERE uploader_user_id = @user_id AND tenant_id = @tenant_id) t;
+
+-- name: GdprExportUserReviews :one
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (SELECT * FROM reviews WHERE reviewer_user_id = @user_id AND tenant_id = @tenant_id) t;
+
+-- name: GdprExportUserSpaceMembers :one
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (SELECT * FROM space_members WHERE user_id = @user_id AND tenant_id = @tenant_id) t;
+
+-- name: GdprExportUserConsentRecords :one
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (SELECT * FROM consent_records WHERE user_id = @user_id AND tenant_id = @tenant_id) t;
+
+-- name: GdprExportUserWalletLedger :one
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (SELECT * FROM wallet_ledger WHERE user_id = @user_id AND tenant_id = @tenant_id) t;
+
+-- name: GdprExportUserLessonProgress :one
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (SELECT * FROM lesson_progress WHERE user_id = @user_id AND tenant_id = @tenant_id) t;
+
+-- name: GdprExportUserLearningCertificates :one
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (SELECT * FROM learning_certificates WHERE user_id = @user_id AND tenant_id = @tenant_id) t;
+
+-- name: GdprExportUserMentorshipMatches :one
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (SELECT * FROM mentorship_matches WHERE (mentor_id = @user_id OR mentee_id = @user_id) AND tenant_id = @tenant_id) t;
+
+-- name: GdprExportUserProfessionalProfiles :one
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (SELECT * FROM professional_profiles WHERE owner_user_id = @user_id AND tenant_id = @tenant_id) t;
+
+-- name: GdprExportUserOrganizations :one
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (SELECT * FROM organizations WHERE owner_user_id = @user_id AND tenant_id = @tenant_id) t;
+
+-- name: GdprExportUserApiKeys :one
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (SELECT * FROM api_keys WHERE user_id = @user_id AND tenant_id = @tenant_id) t;
+
+-- name: GdprExportUserPreferences :one
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (SELECT * FROM user_preferences WHERE user_id = @user_id AND tenant_id = @tenant_id) t;
+
+-- name: GdprExportUserMutes :one
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (SELECT * FROM user_mutes WHERE user_id = @user_id AND tenant_id = @tenant_id) t;
+
+-- name: GdprExportUserSpaceMutes :one
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (SELECT * FROM space_mutes WHERE user_id = @user_id AND tenant_id = @tenant_id) t;
+
+-- name: GdprExportUserTicketComments :one
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (SELECT * FROM ticket_comments WHERE user_id = @user_id) t;
