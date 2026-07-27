@@ -64,13 +64,14 @@ func (e *Enqueuer) Enqueue(taskType string, payload []byte, opts ...interface{})
 // get a 24h TTL; notification/email tasks get a 1h TTL via this method plus a
 // shorter TTL via the task-level Unique call.
 var idempotentTasks = map[string]bool{
-	TypeEmailSend:                  true,
-	TypePushDelivery:              true,
-	TypeScheduledPublish:          true,
-	TypeNewsletterSend:            true,
-	TypeAffiliateCreditCommission: true,
-	TypeWalletProcessActivityEvent: true,
-	TypePaymentWebhookProcess:     true,
+	TypeEmailSend:                   true,
+	TypePushDelivery:                true,
+	TypeScheduledPublish:            true,
+	TypeNewsletterSend:              true,
+	TypeAffiliateCreditCommission:   true,
+	TypeWalletProcessActivityEvent:  true,
+	TypePaymentWebhookProcess:       true,
+	TypeUniversityProcessEnrollment: true, // AUDIT-BE-005: double-credit guard
 }
 
 func taskDefaults(taskType string) []asynq.Option {
@@ -104,7 +105,10 @@ func taskDefaults(taskType string) []asynq.Option {
 	return opts
 }
 
-// taskTier maps each task type string to its queue tier.
+// taskTier maps each task type string to its queue tier. Entries are explicit
+// per JEOS asynq-tasks.md so the Control Panel cron editor and QueueForTask
+// reflect the documented tier for every registered task. Unknown task types
+// fall back to QueueDefault.
 var taskTier = func() map[string]string {
 	m := make(map[string]string, 70)
 
@@ -112,8 +116,27 @@ var taskTier = func() map[string]string {
 	for _, t := range []string{
 		TypeNotificationDispatchBatch, TypeWebhookDelivery, TypePaymentWebhookProcess,
 		TypeTicketSendConfirmation, TypePushDelivery, TypeDMNotifyRequest, TypeDMNotifyMessage,
+		TypeUniversityProcessEnrollment,
 	} {
 		m[t] = QueueCritical
+	}
+
+	// Default tier (explicit entries for tasks documented as default in JEOS
+	// asynq-tasks.md — the fallback in QueueForTask is also default, but
+	// listing them here keeps the tier map authoritative and auditable).
+	for _, t := range []string{
+		TypeEmailSend, TypeSearchIndexSync, TypeImageProcessing,
+		TypeAITaskProcessing, TypeEngagementCountUpdate, TypeModerationScan,
+		TypeScheduledPublish, TypeLinkPreviewFetch, TypeLanguagePackAITranslate,
+		TypeMediaScan, TypeContentFanOutToFeeds, TypeAIGenerateContentEmbedding,
+		TypeReviewAggregateRecalc, TypeTicketSendStatusUpdate,
+		TypeLearningUpdateTrackCompletion, TypeVideoProcessing,
+		TypeWalletProcessActivityEvent, TypeNewsletterSend,
+		TypeAffiliateCreditAuthorCommission,
+		TypeUniversityNotifyInstructorApproved, TypeUniversityNotifyCourseApproved,
+		TypeUniversitySendInstructorPayout,
+	} {
+		m[t] = QueueDefault
 	}
 
 	// Low tier
@@ -135,6 +158,8 @@ var taskTier = func() map[string]string {
 		TypeAffiliateCreditCommission, TypeAffiliateExpireCheck,
 		TypeRedirectRecordHit,
 		TypeScheduledPublishSweep, TypeGdprRetentionSweep,
+		TypeUniversityCalculatePeriodPayouts,
+		TypeContentScanAffiliateLinks,
 	} {
 		m[t] = QueueLow
 	}
@@ -163,6 +188,7 @@ func TaskTypeCatalog() []map[string]string {
 		{TypeNotificationDispatchBatch, "critical", "Batch send notifications"},
 		{TypeWebhookDelivery, "critical", "Deliver outbound webhook events"},
 		{TypePaymentWebhookProcess, "critical", "Process inbound payment webhook"},
+		{TypeUniversityProcessEnrollment, "critical", "Credit creator ledger for a paid course enrollment"},
 		{TypeTicketSendConfirmation, "critical", "Send ticket confirmation email"},
 		{TypePushDelivery, "critical", "Send push notifications"},
 		{TypeDMNotifyRequest, "critical", "Notify DM request received"},
@@ -186,6 +212,11 @@ func TaskTypeCatalog() []map[string]string {
 		{TypeVideoProcessing, "default", "Process uploaded video files"},
 		{TypeWalletProcessActivityEvent, "default", "Process wallet activity event"},
 		{TypeNewsletterSend, "default", "Send newsletter to subscribers"},
+		{TypeAffiliateCreditAuthorCommission, "default", "Credit author revenue share for an external affiliate commission earned on their content"},
+		// Japa University (ADR-063)
+		{TypeUniversityNotifyInstructorApproved, "default", "Notify creator their instructor application was approved"},
+		{TypeUniversityNotifyCourseApproved, "default", "Notify creator their track was approved to the marketplace"},
+		{TypeUniversitySendInstructorPayout, "default", "Execute a single instructor payout transfer"},
 		// Low tier
 		{TypeDigestEmail, "low", "Send digest email"},
 		{TypeSitemapGenerate, "low", "Generate sitemap XML"},
@@ -217,10 +248,12 @@ func TaskTypeCatalog() []map[string]string {
 		{TypeAffiliateRecordClick, "low", "Record affiliate link click"},
 		{TypeAffiliateCreditCommission, "low", "Credit affiliate commission"},
 		{TypeAffiliateExpireCheck, "low", "Expire stale affiliate links"},
+		{TypeContentScanAffiliateLinks, "low", "Scan content for unregistered affiliate links and record results for moderation"},
 		{TypeRedirectRecordHit, "low", "Record URL redirect hit"},
 		{TypeTenantCleanupData, "low", "Hard-delete tenant data after 30-day grace period"},
 		{TypeScheduledPublishSweep, "low", "Sweep and publish due scheduled content"},
 		{TypeGdprRetentionSweep, "low", "Process GDPR retention-wait deletions"},
+		{TypeUniversityCalculatePeriodPayouts, "low", "Roll open revenue splits into instructor payouts for a period"},
 	}
 
 	result := make([]map[string]string, len(tasks))

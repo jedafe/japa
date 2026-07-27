@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
@@ -13,11 +14,17 @@ import (
 	"github.com/jedafe/japa/internal/auth"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/tenant"
+	"github.com/valkey-io/valkey-go/valkeycompat"
 )
 
 // Handlers holds dependencies for user HTTP handlers.
 type Handlers struct {
 	Service *Service
+	// Redis is used for VisitorContext cache invalidation when the user's
+	// content_country_preference changes (ADR-064). Optional — when nil,
+	// cache invalidation is skipped (the 15-minute TTL will eventually
+	// expire the stale entry).
+	Redis valkeycompat.Cmdable
 }
 
 // NewHandlers creates Handlers with the given Service.
@@ -400,4 +407,47 @@ func (h *Handlers) UpdateMyPreferences(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "updated"}})
+}
+
+// UpdateMyContentCountry handles PATCH /api/v1/me/preferences/content-country.
+// Sets the authenticated user's content_country_preference for geo-aware
+// personalization (ADR-064). An empty body or "country": "" clears the
+// preference, causing the system to fall back to GeoIP-based detection.
+func (h *Handlers) UpdateMyContentCountry(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	var body struct {
+		Country string `json:"country"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
+		return
+	}
+
+	country := strings.ToUpper(strings.TrimSpace(body.Country))
+	if country != "" && len(country) != 2 {
+		writeError(w, http.StatusBadRequest, "invalid_country", "Country must be a 2-letter ISO code")
+		return
+	}
+
+	if err := h.Service.SetContentCountry(r.Context(), user.TenantID, user.UserID, country); err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	// Invalidate the VisitorContext cache for this user so the next request
+	// picks up the new preference immediately.
+	if h.Redis != nil {
+		_ = h.Redis.Del(r.Context(), "jc:visitor:ctx:user:"+user.UserID.String()).Err()
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data": map[string]string{
+			"status":          "updated",
+			"content_country": country,
+		},
+	})
 }

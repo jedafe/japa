@@ -164,11 +164,15 @@ func (s *Store) updateContentScore(ctx context.Context, params gen.UpdateContent
 	return nil
 }
 
-// updateVelocityScores batch updates velocity scores for posts < 7 days old.
+// updateVelocityScores batch updates velocity scores for published content
+// < 30 days old. gravity is the decay exponent (default 1.8).
 //
 //nolint:unused // reserved for future features
-func (s *Store) updateVelocityScores(ctx context.Context, tenantID pgtype.UUID) error {
-	if err := s.write.UpdateVelocityScores(ctx, tenantID); err != nil {
+func (s *Store) updateVelocityScores(ctx context.Context, tenantID pgtype.UUID, gravity float64) error {
+	if err := s.write.UpdateVelocityScores(ctx, gen.UpdateVelocityScoresParams{
+		Gravity:  gravity,
+		TenantID: tenantID,
+	}); err != nil {
 		return fmt.Errorf("updating velocity scores: %w", err)
 	}
 

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db"
 )
@@ -97,6 +98,25 @@ func (s *TOTPStoreImpl) DisableTOTP(ctx context.Context, userID pgtype.UUID) err
 	}
 
 	return nil
+}
+
+// HasTOTPEnrolled reports whether the user has an active (enabled) TOTP
+// enrollment. Implements auth.TOTPEnrollmentChecker for the
+// RequireTOTPForAdmin middleware (Section 02 — auth.totp.required_for_admin).
+// Returns false when no credential row exists or when enabled_at IS NULL.
+func (s *TOTPStoreImpl) HasTOTPEnrolled(ctx context.Context, userID, tenantID pgtype.UUID) (bool, error) {
+	var enabled bool
+	err := s.db.Reader.QueryRow(ctx,
+		`SELECT (enabled_at IS NOT NULL) FROM totp_credentials
+		 WHERE tenant_id = $1 AND user_id = $2`,
+		tenantID, userID).Scan(&enabled)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return false, nil
+		}
+		return false, fmt.Errorf("querying TOTP enrollment: %w", err)
+	}
+	return enabled, nil
 }
 
 // OAuthStoreImpl implements OAuthStore using the application database.

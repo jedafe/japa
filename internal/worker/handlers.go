@@ -2,7 +2,9 @@ package worker
 
 import (
 	"context"
+	"crypto/sha256"
 	"crypto/tls"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -69,6 +71,7 @@ func RegisterRedis(client interface {
 // satisfies it structurally.
 type settingsReader interface {
 	GetIntOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback int) int
+	GetFloatOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback float64) float64
 }
 
 // appSettings holds the injected settings reader. Nil until RegisterSettings is
@@ -150,12 +153,12 @@ func resolveBaseURL(ctx context.Context, tenantID pgtype.UUID) string {
 		return os.Getenv("JC_SITE_URL")
 	}
 
-	var baseURL string
-	err := dbPool.Reader.QueryRow(ctx,
-		`SELECT value FROM system_settings WHERE tenant_id = $1 AND key = 'site.base_url'`,
-		tenantID).Scan(&baseURL)
-	if err == nil && baseURL != "" {
-		return baseURL
+	q := gen.New(dbPool.Reader)
+	row, err := q.GetSettingValue(ctx, gen.GetSettingValueParams{
+		TenantID: tenantID, Key: "site.base_url",
+	})
+	if err == nil && len(row) > 0 {
+		return string(row)
 	}
 
 	return os.Getenv("JC_SITE_URL")
@@ -275,11 +278,12 @@ func HandlePaymentWebhookProcess(ctx context.Context, t *asynq.Task) error {
 			// so a failed enqueue doesn't lose the commission (AUDIT-BE-006).
 			if payload.Status == "succeeded" && taskEnqueuer != nil {
 				var linkCode string
-				_ = dbPool.Reader.QueryRow(ctx, `
-					SELECT code FROM user_affiliate_links
-					WHERE user_id = $1 AND tenant_id = $2 AND is_active = true
-					LIMIT 1
-				`, p.UserID, tenantID).Scan(&linkCode)
+				rq := gen.New(dbPool.Reader)
+				if linkRow, lErr := rq.GetActiveAffiliateLinkByUser(ctx, gen.GetActiveAffiliateLinkByUserParams{
+					UserID: p.UserID, TenantID: tenantID,
+				}); lErr == nil {
+					linkCode = linkRow
+				}
 
 				commissionPayload, _ := json.Marshal(map[string]any{
 					"payment_id": p.ID.String(),
@@ -304,6 +308,33 @@ func HandlePaymentWebhookProcess(ctx context.Context, t *asynq.Task) error {
 				slog.Error("task:payment:process_webhook: failed to update payment",
 					"payment_id", p.ID, "error", err)
 				continue
+			}
+
+			// ADR-063: when a course_access payment succeeds, enqueue the
+			// university enrollment processor to credit the creator ledger,
+			// upsert the enrollment, and bump the track's enrollment counter.
+			// The purpose_id is the track_id; metadata may carry the user_id
+			// if it differs from the payer (gift purchases). Fire-and-forget
+			// per Rule 8 — the payment is already marked succeeded.
+			if payload.Status == "succeeded" && p.PurposeType == "course_access" && taskEnqueuer != nil {
+				trackID := ""
+				if p.PurposeID.Valid {
+					trackID = p.PurposeID.String()
+				}
+				if trackID != "" {
+					enrollPayload, _ := json.Marshal(map[string]any{
+						"tenant_id":  tenantID.String(),
+						"user_id":    p.UserID.String(),
+						"track_id":   trackID,
+						"payment_id": p.ID.String(),
+						"source":     "purchase",
+						"gross_kobo": p.Amount - p.DiscountAmount,
+					})
+					if err := taskEnqueuer.Enqueue(TypeUniversityProcessEnrollment, enrollPayload); err != nil {
+						slog.Error("task:payment:process_webhook: failed to enqueue university enrollment",
+							"payment_id", p.ID, "error", err)
+					}
+				}
 			}
 
 			updated++
@@ -336,38 +367,23 @@ func HandleGdprRetentionSweep(ctx context.Context, _ *asynq.Task) error {
 	// These are requests whose initial enqueue was lost (H10).
 	reenqueued := 0
 	if taskEnqueuer != nil {
-		pendingRows, err := dbPool.Reader.Query(ctx, `
-			SELECT id, tenant_id, user_id
-			FROM account_deletion_requests
-			WHERE status = 'pending'
-			  AND created_at < now() - interval '30 minutes'
-			ORDER BY created_at ASC
-			LIMIT 50
-		`)
+		rq := gen.New(dbPool.Reader)
+		pendingRows, err := rq.ListStalePendingDeletionRequests(ctx)
 		if err != nil {
 			slog.Error("task:gdpr:retention_sweep: pending query failed", "error", err)
 		} else {
-			defer pendingRows.Close()
-			for pendingRows.Next() {
-				var id, tenantID, userID pgtype.UUID
-				if err := pendingRows.Scan(&id, &tenantID, &userID); err != nil {
-					slog.Error("task:gdpr:retention_sweep: pending scan error", "error", err)
-					continue
-				}
+			for _, pr := range pendingRows {
 				payload, _ := json.Marshal(map[string]string{
-					"request_id": id.String(),
-					"tenant_id":  tenantID.String(),
-					"user_id":    userID.String(),
+					"request_id": pr.ID.String(),
+					"tenant_id":  pr.TenantID.String(),
+					"user_id":    pr.UserID.String(),
 				})
 				if err := taskEnqueuer.Enqueue(TypeAccountDeletionCleanup, payload); err != nil {
 					slog.Error("task:gdpr:retention_sweep: failed to re-enqueue deletion",
-						"request_id", id.String(), "error", err)
+						"request_id", pr.ID.String(), "error", err)
 					continue
 				}
 				reenqueued++
-			}
-			if err := pendingRows.Err(); err != nil {
-				slog.Error("task:gdpr:retention_sweep: pending rows error", "error", err)
 			}
 		}
 	}
@@ -382,32 +398,16 @@ func HandleGdprRetentionSweep(ctx context.Context, _ *asynq.Task) error {
 		return nil
 	}
 
-	rows, err := dbPool.Reader.Query(ctx, `
-		SELECT r.id, r.tenant_id
-		FROM account_deletion_requests r
-		LEFT JOIN system_settings s ON s.tenant_id = r.tenant_id AND s.key = 'gdpr.retention_days'
-		WHERE r.status = 'retention_wait'
-		  AND r.created_at + ((COALESCE(s.value->>0, '30'))::int || ' days')::interval <= now()
-		ORDER BY r.created_at ASC
-		LIMIT 100
-	`)
+	rq := gen.New(dbPool.Reader)
+	retentionRows, err := rq.ListRetentionWaitElapsed(ctx)
 	if err != nil {
 		slog.Error("task:gdpr:retention_sweep: query failed", "error", err)
 		return err
 	}
-	defer rows.Close()
 
 	var requestIDs [][16]byte
-	for rows.Next() {
-		var id, tenantID pgtype.UUID
-		if err := rows.Scan(&id, &tenantID); err != nil {
-			slog.Error("task:gdpr:retention_sweep: scan error", "error", err)
-			continue
-		}
-		requestIDs = append(requestIDs, id.Bytes)
-	}
-	if err := rows.Err(); err != nil {
-		return err
+	for _, rr := range retentionRows {
+		requestIDs = append(requestIDs, rr.ID.Bytes)
 	}
 
 	if len(requestIDs) == 0 && reenqueued == 0 {
@@ -584,6 +584,8 @@ func HandleSearchIndexSync(ctx context.Context, t *asynq.Task) error {
 			indexName = "users"
 		} else if entityType == "tag" {
 			indexName = "tags"
+		} else if entityType == "learning_track" {
+			indexName = "learning_tracks"
 		}
 		return searchIndexer.DeleteDocument(ctx, indexName, entityID.Bytes)
 	}
@@ -599,6 +601,8 @@ func HandleSearchIndexSync(ctx context.Context, t *asynq.Task) error {
 		return searchIndexer.IndexUser(ctx, entityID.Bytes, tenantID.Bytes)
 	case "tag":
 		return searchIndexer.IndexTag(ctx, entityID.Bytes, tenantID.Bytes)
+	case "learning_track":
+		return searchIndexer.IndexLearningTrack(ctx, entityID.Bytes, tenantID.Bytes)
 	default:
 		slog.Warn("task:search:index_entity: unknown entity type, skipping", "entity_type", entityType)
 		return nil
@@ -828,23 +832,16 @@ func HandleScheduledPublish(ctx context.Context, t *asynq.Task) error {
 
 	// Re-validate: only publish if still scheduled and publish_at has passed.
 	// Prevents force-publishing canceled or already-published content.
-	result, err := dbPool.Writer.Exec(ctx, `
-		UPDATE contents
-		SET status = 'published',
-		    published_at = COALESCE(published_at, now()),
-		    updated_at = now()
-		WHERE id = $1
-		  AND tenant_id = $2
-		  AND status = 'scheduled'
-		  AND publish_at <= now()
-	`, contentID, tenantID)
+	rowsAffected, err := gen.New(dbPool.Writer).PublishScheduledContent(ctx, gen.PublishScheduledContentParams{
+		ID: contentID, TenantID: tenantID,
+	})
 	if err != nil {
 		slog.Error("task:content:publish_scheduled: failed to publish",
 			"content_id", payload.ContentID, "error", err)
 		return err
 	}
 
-	if rowsAffected := result.RowsAffected(); rowsAffected == 0 {
+	if rowsAffected == 0 {
 		slog.Info("task:content:publish_scheduled: content no longer scheduled or publish_at not reached",
 			"content_id", payload.ContentID)
 		return nil
@@ -852,6 +849,34 @@ func HandleScheduledPublish(ctx context.Context, t *asynq.Task) error {
 
 	slog.Info("task:content:publish_scheduled: content published",
 		"content_id", payload.ContentID)
+
+	// Enqueue feed fan-out for the newly published content (BL-005).
+	// Fetch the content to get space_id and content_type for the fan-out.
+	published, err := gen.New(dbPool.Reader).GetContentByID(ctx, gen.GetContentByIDParams{
+		ID: contentID, TenantID: tenantID,
+	})
+	if err != nil {
+		slog.Warn("task:content:publish_scheduled: failed to fetch published content for fan-out",
+			"content_id", payload.ContentID, "error", err)
+		return nil
+	}
+	fanOutType := "followers"
+	if published.SpaceID.Valid {
+		fanOutType = "space"
+	}
+	fanPayload, _ := json.Marshal(map[string]string{
+		"content_id":   contentID.String(),
+		"tenant_id":    tenantID.String(),
+		"space_id":     published.SpaceID.String(),
+		"content_type": published.ContentType,
+		"fan_out_type": fanOutType,
+	})
+	if taskEnqueuer != nil {
+		if err := taskEnqueuer.Enqueue(TypeContentFanOutToFeeds, fanPayload); err != nil {
+			slog.Warn("task:content:publish_scheduled: failed to enqueue fan-out",
+				"content_id", payload.ContentID, "error", err)
+		}
+	}
 
 	return nil
 }
@@ -1053,23 +1078,16 @@ func HandleContentFanOutToFeeds(ctx context.Context, t *asynq.Task) error {
 
 	case "space":
 		// Fan out to all members of the space (up to 5000).
-		rows, err := dbPool.Reader.Query(ctx,
-			`SELECT user_id FROM space_members WHERE space_id = $1 AND tenant_id = $2 LIMIT $3`,
-			spaceID, tenantID, maxFanOut)
+		memberIDs, err := gen.New(dbPool.Reader).ListSpaceMemberUserIDs(ctx, gen.ListSpaceMemberUserIDsParams{
+			SpaceID: spaceID, TenantID: tenantID, LimitVal: int32(maxFanOut),
+		})
 		if err != nil {
 			slog.Error("task:content:fan_out_to_feeds: failed to get space members",
 				"space_id", payload.SpaceID, "error", err)
 			return err
 		}
-		defer rows.Close()
 
-		for rows.Next() {
-			var userID pgtype.UUID
-			if err := rows.Scan(&userID); err != nil {
-				slog.Error("task:content:fan_out_to_feeds: failed to scan member", "error", err)
-				continue
-			}
-
+		for _, userID := range memberIDs {
 			if err := queries.InsertFeedItem(ctx, gen.InsertFeedItemParams{
 				TenantID:    tenantID,
 				UserID:      userID,
@@ -1086,73 +1104,67 @@ func HandleContentFanOutToFeeds(ctx context.Context, t *asynq.Task) error {
 			fedCount++
 		}
 
-		if err := rows.Err(); err != nil {
-			return err
-		}
-
 		slog.Info("task:content:fan_out_to_feeds: space fan-out complete",
 			"content_id", payload.ContentID, "space_id", payload.SpaceID, "fed_count", fedCount)
 
 	case "bubble":
 		// Fan out to parent spaces of the current space (bubble label).
-		parentID := spaceID
-		depth := 0
+		// Per Section 05, posts bubble up the space hierarchy based on
+		// spaces.bubble_depth (default 2). Spaces can have multiple parents
+		// via space_parent_spaces, so we BFS up the hierarchy.
+		maxDepth := 2
+		if appSettings != nil {
+			maxDepth = appSettings.GetIntOr(ctx, tenantID, "spaces.bubble_depth", 2)
+		}
 
-		const maxDepth = 5
+		visited := map[pgtype.UUID]bool{spaceID: true}
+		currentLevel := []pgtype.UUID{spaceID}
 
-		for depth < maxDepth {
-			space, err := queries.GetSpaceByID(ctx, gen.GetSpaceByIDParams{
-				ID:       parentID,
-				TenantID: tenantID,
-			})
-			if err != nil {
+		for depth := 0; depth < maxDepth; depth++ {
+			if len(currentLevel) == 0 {
 				break
 			}
-
-			parentID = space.ParentID
-			if parentID == (pgtype.UUID{}) {
-				break
-			}
-
-			rows, err := dbPool.Reader.Query(ctx,
-				`SELECT user_id FROM space_members WHERE space_id = $1 AND tenant_id = $2 LIMIT $3`,
-				parentID, tenantID, maxFanOut)
-			if err != nil {
-				break
-			}
-
-			for rows.Next() {
-				var userID pgtype.UUID
-				if err := rows.Scan(&userID); err != nil {
+			var nextLevel []pgtype.UUID
+			for _, currentID := range currentLevel {
+				parents, err := gen.New(dbPool.Reader).GetSpaceParentSpaces(ctx, currentID)
+				if err != nil {
 					continue
 				}
+				for _, p := range parents {
+					if !p.ParentSpaceID.Valid || visited[p.ParentSpaceID] {
+						continue
+					}
+					visited[p.ParentSpaceID] = true
+					nextLevel = append(nextLevel, p.ParentSpaceID)
 
-				if err := queries.InsertFeedItem(ctx, gen.InsertFeedItemParams{
-					TenantID:    tenantID,
-					UserID:      userID,
-					ContentID:   contentID,
-					SpaceID:     parentID,
-					ContentType: payload.ContentType,
-					Score:       pgtype.Numeric{},
-				}); err != nil {
-					continue
+					memberIDs, err := gen.New(dbPool.Reader).ListSpaceMemberUserIDs(ctx, gen.ListSpaceMemberUserIDsParams{
+						SpaceID: p.ParentSpaceID, TenantID: tenantID, LimitVal: int32(maxFanOut),
+					})
+					if err != nil {
+						continue
+					}
+
+					for _, userID := range memberIDs {
+						if err := queries.InsertFeedItem(ctx, gen.InsertFeedItemParams{
+							TenantID:    tenantID,
+							UserID:      userID,
+							ContentID:   contentID,
+							SpaceID:     p.ParentSpaceID,
+							ContentType: payload.ContentType,
+							Score:       pgtype.Numeric{},
+						}); err != nil {
+							continue
+						}
+
+						fedCount++
+					}
 				}
-
-				fedCount++
 			}
-
-			if err := rows.Err(); err != nil {
-				slog.Error("task:content:fan_out_to_feeds: bubble rows iteration error",
-					"content_id", payload.ContentID, "parent_id", parentID, "error", err)
-			}
-
-			rows.Close()
-
-			depth++
+			currentLevel = nextLevel
 		}
 
 		slog.Info("task:content:fan_out_to_feeds: bubble fan-out complete",
-			"content_id", payload.ContentID, "fed_count", fedCount, "depth", depth)
+			"content_id", payload.ContentID, "fed_count", fedCount, "max_depth", maxDepth)
 	}
 
 	return nil
@@ -1193,16 +1205,15 @@ func HandleAIGenerateContentEmbedding(ctx context.Context, t *asynq.Task) error 
 		return nil
 	}
 
-	var title, body string
-	if err := dbPool.Reader.QueryRow(ctx, `
-		SELECT COALESCE(title, ''), COALESCE(body, '')
-		FROM contents
-		WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
-	`, contentID, tenantID).Scan(&title, &body); err != nil {
+	contentRow, err := gen.New(dbPool.Reader).GetContentTitleAndBody(ctx, gen.GetContentTitleAndBodyParams{
+		ID: contentID, TenantID: tenantID,
+	})
+	if err != nil {
 		slog.Error("task:content:generate_embedding: content not found",
 			"content_id", payload.ContentID, "error", err)
 		return nil
 	}
+	title, body := contentRow.Title, contentRow.Body
 
 	text := title
 	if body != "" {
@@ -1478,10 +1489,9 @@ func HandleVideoProcessing(ctx context.Context, t *asynq.Task) error {
 	}
 
 	// Update the media record to point to the processed file.
-	_, err = dbPool.Writer.Exec(ctx,
-		`UPDATE media SET storage_path = $1 WHERE id = $2 AND tenant_id = $3 AND deleted_at IS NULL`,
-		outputPath, mediaID, tenantID)
-	if err != nil {
+	if err := gen.New(dbPool.Writer).UpdateMediaStoragePath(ctx, gen.UpdateMediaStoragePathParams{
+		StoragePath: outputPath, ID: mediaID, TenantID: tenantID,
+	}); err != nil {
 		slog.Error("task:content:process_video: failed to update storage path",
 			"media_id", payload.MediaID, "new_path", outputPath, "error", err)
 		return fmt.Errorf("task:content:process_video: update storage path: %w", err)
@@ -1526,67 +1536,52 @@ func HandleNewsletterSend(ctx context.Context, t *asynq.Task) error {
 	}
 
 	// Re-fetch campaign content from DB (payload = IDs only).
-	var subject, htmlBody string
-	err := dbPool.Reader.QueryRow(ctx,
-		`SELECT subject, html FROM newsletter_campaigns WHERE id = $1 AND tenant_id = $2`,
-		payload.NewsletterID, payload.TenantID,
-	).Scan(&subject, &htmlBody)
+	campaignID, err := scanUUID(payload.NewsletterID)
+	if err != nil {
+		return fmt.Errorf("task:newsletter:send: %w", err)
+	}
+	tenantID, err := scanUUID(payload.TenantID)
+	if err != nil {
+		return fmt.Errorf("task:newsletter:send: %w", err)
+	}
+
+	campaign, err := gen.New(dbPool.Reader).GetNewsletterCampaign(ctx, gen.GetNewsletterCampaignParams{
+		ID: campaignID, TenantID: tenantID,
+	})
 	if err != nil {
 		return fmt.Errorf("task:newsletter:send: fetch campaign %s: %w", payload.NewsletterID, err)
 	}
+	subject, htmlBody := campaign.Subject, campaign.Html
 
 	// Upsert pending send state rows for all active subscribers.
-	_, err = dbPool.Writer.Exec(ctx, `
-		INSERT INTO newsletter_send_state (campaign_id, recipient, status)
-		SELECT $1, ns.email, 'pending'
-		FROM newsletter_subscribers ns
-		WHERE ns.tenant_id = $2 AND ns.status = 'active'
-		ON CONFLICT (campaign_id, recipient) DO NOTHING
-	`, payload.NewsletterID, payload.TenantID)
-	if err != nil {
+	if err := gen.New(dbPool.Writer).UpsertNewsletterSendState(ctx, gen.UpsertNewsletterSendStateParams{
+		CampaignID: campaignID, TenantID: tenantID,
+	}); err != nil {
 		return fmt.Errorf("task:newsletter:send: upsert send state: %w", err)
 	}
 
 	// Query only pending recipients.
-	rows, err := dbPool.Reader.Query(ctx,
-		`SELECT recipient FROM newsletter_send_state WHERE campaign_id = $1 AND status = 'pending'`,
-		payload.NewsletterID)
+	pending, err := gen.New(dbPool.Reader).ListPendingNewsletterRecipients(ctx, campaignID)
 	if err != nil {
 		return fmt.Errorf("task:newsletter:send: query pending: %w", err)
-	}
-	defer rows.Close()
-
-	type pendingRecipient struct {
-		email string
-	}
-	var pending []pendingRecipient
-	for rows.Next() {
-		var r pendingRecipient
-		if err := rows.Scan(&r.email); err != nil {
-			slog.Error("task:newsletter:send: scan error", "error", err)
-			continue
-		}
-		pending = append(pending, r)
-	}
-	if err := rows.Err(); err != nil {
-		return err
 	}
 
 	sent := 0
 	failed := 0
 
 	for _, r := range pending {
-		if err := sendEmail(r.email, subject, htmlBody, true); err != nil {
+		if err := sendEmail(r, subject, htmlBody, true); err != nil {
 			slog.Error("task:newsletter:send: email failed", "error", err)
-			_, _ = dbPool.Writer.Exec(ctx,
-				`UPDATE newsletter_send_state SET status = 'failed', error = $3 WHERE campaign_id = $1 AND recipient = $2`,
-				payload.NewsletterID, r.email, err.Error())
+			errMsg := err.Error()
+			_ = gen.New(dbPool.Writer).MarkNewsletterRecipientFailed(ctx, gen.MarkNewsletterRecipientFailedParams{
+				Error: &errMsg, CampaignID: campaignID, Recipient: r,
+			})
 			failed++
 			continue
 		}
-		_, _ = dbPool.Writer.Exec(ctx,
-			`UPDATE newsletter_send_state SET status = 'sent', sent_at = now() WHERE campaign_id = $1 AND recipient = $2`,
-			payload.NewsletterID, r.email)
+		_ = gen.New(dbPool.Writer).MarkNewsletterRecipientSent(ctx, gen.MarkNewsletterRecipientSentParams{
+			CampaignID: campaignID, Recipient: r,
+		})
 		sent++
 	}
 
@@ -1630,38 +1625,19 @@ func HandleDigestEmail(ctx context.Context, t *asynq.Task) error {
 		period = "daily"
 	}
 
-	rows, err := dbPool.Reader.Query(ctx,
-		`SELECT u.id, u.tenant_id, u.email
-		 FROM users u
-		 WHERE u.status = 'active'
-		   AND u.email IS NOT NULL AND u.email != ''
-		   AND u.email_verified_at IS NOT NULL
-		   AND COALESCE(
-		     (SELECT value::bool FROM system_settings ss
-		      WHERE ss.tenant_id = u.tenant_id AND ss.key = 'email.digest_enabled'),
-		     true)
-		 ORDER BY u.id`)
+	digestUsers, err := gen.New(dbPool.Reader).ListActiveUsersForDigest(ctx)
 	if err != nil {
 		slog.Error("task:email:send_digest: list users failed", "error", err)
 		return err
 	}
-	defer rows.Close()
 
 	sentCount := 0
-	for rows.Next() {
-		var userID, tenantID, email string
-		if err := rows.Scan(&userID, &tenantID, &email); err != nil {
-			continue
-		}
-		if err := sendDigestToUser(ctx, userID, tenantID, email, period); err != nil {
-			slog.Error("task:email:send_digest: failed for user", "user_id", userID, "error", err)
+	for _, u := range digestUsers {
+		if err := sendDigestToUser(ctx, u.ID.String(), u.TenantID.String(), u.Email, period); err != nil {
+			slog.Error("task:email:send_digest: failed for user", "user_id", u.ID.String(), "error", err)
 			continue
 		}
 		sentCount++
-	}
-
-	if err := rows.Err(); err != nil {
-		slog.Error("task:email:send_digest: row iteration error", "error", err)
 	}
 
 	slog.Info("task:email:send_digest: complete", "sent", sentCount)
@@ -1684,19 +1660,12 @@ func sendDigestToUser(ctx context.Context, userID, tenantID, email, period strin
 		return fmt.Errorf("invalid tenant_id: %w", err)
 	}
 
-	feedItems, err := dbPool.Reader.Query(ctx,
-		`SELECT c.id, c.title, c.slug, c.content_type
-		 FROM feeds f
-		 JOIN contents c ON c.id = f.content_id
-		 WHERE f.user_id = $1 AND f.tenant_id = $2
-		   AND f.created_at >= now() - INTERVAL '7 days'
-		 ORDER BY f.created_at DESC
-		 LIMIT 20`,
-		uid, tid)
+	feedItems, err := gen.New(dbPool.Reader).ListDigestFeedItems(ctx, gen.ListDigestFeedItemsParams{
+		UserID: uid, TenantID: tid,
+	})
 	if err != nil {
 		return fmt.Errorf("fetching feed: %w", err)
 	}
-	defer feedItems.Close()
 
 	var body strings.Builder
 
@@ -1705,24 +1674,12 @@ func sendDigestToUser(ctx context.Context, userID, tenantID, email, period strin
 
 	itemCount := 0
 
-	for feedItems.Next() {
-		var id pgtype.UUID
-
-		var title, slug, contentType string
-		if err := feedItems.Scan(&id, &title, &slug, &contentType); err != nil {
-			continue
-		}
-
-		body.WriteString(fmt.Sprintf("  <li><strong>%s</strong></li>\n", title))
-
+	for _, fi := range feedItems {
+		body.WriteString(fmt.Sprintf("  <li><strong>%s</strong></li>\n", fi.Title))
 		itemCount++
 	}
 
 	body.WriteString("</ul>\n")
-
-	if err := feedItems.Err(); err != nil {
-		return fmt.Errorf("iterating feed: %w", err)
-	}
 
 	if itemCount == 0 {
 		return nil
@@ -1765,20 +1722,10 @@ func HandleSitemapGenerate(ctx context.Context, t *asynq.Task) error {
 		}
 		tenantIDs = []pgtype.UUID{tid}
 	} else {
-		rows, err := dbPool.Reader.Query(ctx, `SELECT id FROM tenants WHERE status = 'active'`)
+		var err error
+		tenantIDs, err = gen.New(dbPool.Reader).ListActiveTenantIDs(ctx)
 		if err != nil {
 			slog.Error("task:sitemap:generate: list tenants failed", "error", err)
-			return err
-		}
-		defer rows.Close()
-		for rows.Next() {
-			var tid pgtype.UUID
-			if err := rows.Scan(&tid); err != nil {
-				continue
-			}
-			tenantIDs = append(tenantIDs, tid)
-		}
-		if err := rows.Err(); err != nil {
 			return err
 		}
 	}
@@ -1801,17 +1748,11 @@ func HandleSitemapGenerate(ctx context.Context, t *asynq.Task) error {
 
 // generateSitemapForTenant generates the sitemap XML for a single tenant.
 func generateSitemapForTenant(ctx context.Context, tenantID pgtype.UUID, baseURL string) {
-	rows, err := dbPool.Reader.Query(ctx,
-		`SELECT slug, updated_at FROM contents
-		 WHERE tenant_id = $1 AND status = 'published'
-		 ORDER BY updated_at DESC
-		 LIMIT 10000`,
-		tenantID)
+	slugs, err := gen.New(dbPool.Reader).ListPublishedSlugsForSitemap(ctx, tenantID)
 	if err != nil {
 		slog.Error("task:sitemap:generate: failed to list content", "tenant_id", tenantID.String(), "error", err)
 		return
 	}
-	defer rows.Close()
 
 	var sitemap strings.Builder
 
@@ -1820,27 +1761,15 @@ func generateSitemapForTenant(ctx context.Context, tenantID pgtype.UUID, baseURL
 
 	urlCount := 0
 
-	for rows.Next() {
-		var slug string
-
-		var updatedAt pgtype.Timestamptz
-		if err := rows.Scan(&slug, &updatedAt); err != nil {
-			continue
-		}
-
+	for _, s := range slugs {
 		sitemap.WriteString(fmt.Sprintf("  <url>\n    <loc>%s/%s</loc>\n    <lastmod>%s</lastmod>\n  </url>\n",
-			baseURL, slug,
-			updatedAt.Time.Format("2006-01-02")))
+			baseURL, s.Slug,
+			s.UpdatedAt.Time.Format("2006-01-02")))
 
 		urlCount++
 	}
 
 	sitemap.WriteString("</urlset>\n")
-
-	if err := rows.Err(); err != nil {
-		slog.Error("task:sitemap:generate: row iteration error", "tenant_id", tenantID.String(), "error", err)
-		return
-	}
 
 	if err := os.WriteFile("sitemap.xml", []byte(sitemap.String()), 0o600); err != nil {
 		slog.Error("task:sitemap:generate: failed to write file", "tenant_id", tenantID.String(), "error", err)
@@ -1875,20 +1804,10 @@ func HandleRSSRegenerate(ctx context.Context, t *asynq.Task) error {
 		}
 		tenantIDs = []pgtype.UUID{tid}
 	} else {
-		rows, err := dbPool.Reader.Query(ctx, `SELECT id FROM tenants WHERE status = 'active'`)
+		var err error
+		tenantIDs, err = gen.New(dbPool.Reader).ListActiveTenantIDs(ctx)
 		if err != nil {
 			slog.Error("task:rss_regenerate: list tenants failed", "error", err)
-			return err
-		}
-		defer rows.Close()
-		for rows.Next() {
-			var tid pgtype.UUID
-			if err := rows.Scan(&tid); err != nil {
-				continue
-			}
-			tenantIDs = append(tenantIDs, tid)
-		}
-		if err := rows.Err(); err != nil {
 			return err
 		}
 	}
@@ -1911,17 +1830,11 @@ func HandleRSSRegenerate(ctx context.Context, t *asynq.Task) error {
 
 // generateRSSForTenant generates the RSS feed for a single tenant.
 func generateRSSForTenant(ctx context.Context, tenantID pgtype.UUID, baseURL string) {
-	rows, err := dbPool.Reader.Query(ctx,
-		`SELECT title, slug, created_at FROM contents
-		 WHERE tenant_id = $1 AND status = 'published'
-		 ORDER BY created_at DESC
-		 LIMIT 50`,
-		tenantID)
+	items, err := gen.New(dbPool.Reader).ListPublishedContentForRSS(ctx, tenantID)
 	if err != nil {
 		slog.Error("task:rss_regenerate: failed to list content", "tenant_id", tenantID.String(), "error", err)
 		return
 	}
-	defer rows.Close()
 
 	var rss strings.Builder
 
@@ -1934,19 +1847,12 @@ func generateRSSForTenant(ctx context.Context, tenantID pgtype.UUID, baseURL str
 
 	itemCount := 0
 
-	for rows.Next() {
-		var title, slug string
-
-		var createdAt pgtype.Timestamptz
-		if err := rows.Scan(&title, &slug, &createdAt); err != nil {
-			continue
-		}
-
+	for _, item := range items {
 		rss.WriteString("  <item>\n")
-		rss.WriteString(fmt.Sprintf("    <title>%s</title>\n", title))
-		rss.WriteString(fmt.Sprintf("    <link>%s/%s</link>\n", baseURL, slug))
+		rss.WriteString(fmt.Sprintf("    <title>%s</title>\n", item.Title))
+		rss.WriteString(fmt.Sprintf("    <link>%s/%s</link>\n", baseURL, item.Slug))
 		rss.WriteString(fmt.Sprintf("    <pubDate>%s</pubDate>\n",
-			createdAt.Time.Format(time.RFC1123Z)))
+			item.CreatedAt.Time.Format(time.RFC1123Z)))
 		rss.WriteString("  </item>\n")
 
 		itemCount++
@@ -1954,11 +1860,6 @@ func generateRSSForTenant(ctx context.Context, tenantID pgtype.UUID, baseURL str
 
 	rss.WriteString("</channel>\n")
 	rss.WriteString("</rss>\n")
-
-	if err := rows.Err(); err != nil {
-		slog.Error("task:rss_regenerate: row iteration error", "tenant_id", tenantID.String(), "error", err)
-		return
-	}
 
 	if err := os.WriteFile("feed.xml", []byte(rss.String()), 0o600); err != nil {
 		slog.Error("task:rss_regenerate: failed to write file", "tenant_id", tenantID.String(), "error", err)
@@ -2107,49 +2008,37 @@ func HandleMaintenanceUpdateVelocityScores(ctx context.Context, t *asynq.Task) e
 
 	// If a specific tenant was provided, process only that tenant.
 	// Otherwise, iterate over all active tenants.
-	tenantIDs := []string{}
+	var tenantIDs []pgtype.UUID
 	if payload.TenantID != "" {
-		tenantIDs = []string{payload.TenantID}
+		tid, err := scanUUID(payload.TenantID)
+		if err != nil {
+			return fmt.Errorf("task:maintenance:update_velocity_scores: %w", err)
+		}
+		tenantIDs = []pgtype.UUID{tid}
 	} else {
-		rows, err := dbPool.Reader.Query(ctx, `SELECT id::text FROM tenants WHERE status = 'active'`)
+		var err error
+		tenantIDs, err = gen.New(dbPool.Reader).ListActiveTenantIDs(ctx)
 		if err != nil {
 			slog.Error("task:maintenance:update_velocity_scores: failed to list tenants", "error", err)
 			return err
 		}
-		defer rows.Close()
-		for rows.Next() {
-			var id string
-			if err := rows.Scan(&id); err != nil {
-				continue
-			}
-			tenantIDs = append(tenantIDs, id)
-		}
 	}
 
-	for _, tid := range tenantIDs {
-		tenantID, err := scanUUID(tid)
-		if err != nil {
-			continue
-		}
+	for _, tenantID := range tenantIDs {
 		// Update velocity scores for recently active content.
-		// Velocity = (vote_score * 2 + comment_count + view_count / 100) / hours_since_publish
-		_, err = dbPool.Writer.Exec(ctx,
-			`UPDATE content_scores cs
-			 SET velocity_score = CASE
-			       WHEN c.published_at IS NOT NULL AND EXTRACT(EPOCH FROM (now() - c.published_at)) > 0
-			       THEN GREATEST(0, (cs.vote_score * 2 + cs.comment_count + cs.view_count / 100.0) /
-			            (EXTRACT(EPOCH FROM (now() - c.published_at)) / 3600.0))
-			       ELSE 0
-			     END,
-			     last_scored_at = now()
-			 FROM contents c
-			 WHERE cs.content_id = c.id
-			   AND c.tenant_id = $1
-			   AND c.status = 'published'
-			   AND c.created_at >= now() - INTERVAL '30 days'`,
-			tenantID)
-		if err != nil {
-			slog.Error("task:maintenance:update_velocity_scores: failed to update scores", "error", err, "tenant_id", tid)
+		// Velocity = (vote_score * 2 + comment_count + view_count / 100) /
+		//   (hours_since_publish ^ gravity)
+		// gravity is hot-reloadable via feed.velocity.gravity (default 1.8).
+		gravity := 1.8
+		if appSettings != nil {
+			gravity = appSettings.GetFloatOr(ctx, tenantID, "feed.velocity.gravity", 1.8)
+		}
+		q := gen.New(dbPool.Writer)
+		if err := q.UpdateVelocityScores(ctx, gen.UpdateVelocityScoresParams{
+			Gravity:  gravity,
+			TenantID: tenantID,
+		}); err != nil {
+			slog.Error("task:maintenance:update_velocity_scores: failed to update scores", "error", err, "tenant_id", tenantID.String())
 		}
 	}
 
@@ -2175,61 +2064,39 @@ func HandleMaintenanceCheckSLABreaches(ctx context.Context, t *asynq.Task) error
 
 	// If a specific tenant was provided, process only that tenant.
 	// Otherwise, iterate over all active tenants.
-	tenantIDs := []string{}
+	var tenantIDs []pgtype.UUID
 	if payload.TenantID != "" {
-		tenantIDs = []string{payload.TenantID}
+		tid, err := scanUUID(payload.TenantID)
+		if err != nil {
+			return fmt.Errorf("task:maintenance:check_sla_breaches: %w", err)
+		}
+		tenantIDs = []pgtype.UUID{tid}
 	} else {
-		rows, err := dbPool.Reader.Query(ctx, `SELECT id::text FROM tenants WHERE status = 'active'`)
+		var err error
+		tenantIDs, err = gen.New(dbPool.Reader).ListActiveTenantIDs(ctx)
 		if err != nil {
 			slog.Error("task:maintenance:check_sla_breaches: failed to list tenants", "error", err)
 			return err
-		}
-		defer rows.Close()
-		for rows.Next() {
-			var id string
-			if err := rows.Scan(&id); err != nil {
-				continue
-			}
-			tenantIDs = append(tenantIDs, id)
 		}
 	}
 
 	breachCount := 0
 
-	for _, tid := range tenantIDs {
-		tenantID, err := scanUUID(tid)
-		if err != nil {
-			continue
-		}
-
+	for _, tenantID := range tenantIDs {
 		// Find tickets where SLA has been breached.
-		rows, err := dbPool.Reader.Query(ctx,
-			`SELECT id, subject, sla_breach_at FROM tickets
-			 WHERE tenant_id = $1
-			   AND sla_breach_at IS NOT NULL
-			   AND sla_breach_at < now()
-			   AND status NOT IN ('resolved', 'closed')
-			 ORDER BY sla_breach_at ASC`,
-			tenantID)
+		breaches, err := gen.New(dbPool.Reader).ListSLABreachedTickets(ctx, tenantID)
 		if err != nil {
-			slog.Error("task:maintenance:check_sla_breaches: query failed", "error", err, "tenant_id", tid)
+			slog.Error("task:maintenance:check_sla_breaches: query failed", "error", err, "tenant_id", tenantID.String())
 			continue
 		}
 
-		for rows.Next() {
-			var id pgtype.UUID
-			var subject string
-			var slaBreachAt pgtype.Timestamptz
-			if err := rows.Scan(&id, &subject, &slaBreachAt); err != nil {
-				continue
-			}
+		for _, b := range breaches {
 			slog.Warn("task:maintenance:check_sla_breaches: SLA breach detected",
-				"ticket_id", id.String(),
-				"subject", subject,
-				"sla_breach_at", slaBreachAt.Time)
+				"ticket_id", b.ID.String(),
+				"subject", b.Subject,
+				"sla_breach_at", b.SlaBreachAt.Time)
 			breachCount++
 		}
-		rows.Close()
 	}
 
 	slog.Info("task:maintenance:check_sla_breaches: complete", "breached_count", breachCount)
@@ -2337,21 +2204,10 @@ func HandleSecurityScan(ctx context.Context, t *asynq.Task) error {
 		}
 		tenantIDs = []pgtype.UUID{tid}
 	} else {
-		rows, err := dbPool.Reader.Query(ctx, `SELECT id FROM tenants WHERE status = 'active'`)
+		var err error
+		tenantIDs, err = gen.New(dbPool.Reader).ListActiveTenantIDs(ctx)
 		if err != nil {
 			slog.Error("task:security:scan: list tenants failed", "error", err)
-			return fmt.Errorf("task:security:scan: %w", err)
-		}
-		defer rows.Close()
-		for rows.Next() {
-			var tid pgtype.UUID
-			if err := rows.Scan(&tid); err != nil {
-				continue
-			}
-			tenantIDs = append(tenantIDs, tid)
-		}
-		if err := rows.Err(); err != nil {
-			slog.Error("task:security:scan: tenant iteration error", "error", err)
 			return fmt.Errorf("task:security:scan: %w", err)
 		}
 	}
@@ -2372,35 +2228,21 @@ func HandleSecurityScan(ctx context.Context, t *asynq.Task) error {
 		}
 
 		// 2. Scan uploaded media via ClamAV (existing behaviour).
-		mediaRows, err := dbPool.Reader.Query(ctx, `
-			SELECT id, file_path FROM media
-			WHERE tenant_id = $1 AND status = 'uploaded'
-			ORDER BY created_at ASC
-			LIMIT 50
-		`, tid)
+		mediaRows, err := gen.New(dbPool.Reader).ListMediaForScanning(ctx, tid)
 		if err != nil {
 			slog.Error("task:security:scan: media query failed", "tenant_id", tid.String(), "error", err)
 			continue
 		}
 
 		scanCount := 0
-		for mediaRows.Next() {
-			var id pgtype.UUID
-			var filePath string
-			if err := mediaRows.Scan(&id, &filePath); err != nil {
-				continue
-			}
+		for _, mr := range mediaRows {
 			if moderationProcessor != nil {
-				if err := moderationProcessor.ScanContent(ctx, "media", id.String(), tid.String()); err != nil {
-					slog.Error("task:security:scan: media scan enqueue failed", "media_id", id.String(), "error", err)
+				if err := moderationProcessor.ScanContent(ctx, "media", mr.ID.String(), tid.String()); err != nil {
+					slog.Error("task:security:scan: media scan enqueue failed", "media_id", mr.ID.String(), "error", err)
 				} else {
 					scanCount++
 				}
 			}
-		}
-		mediaRows.Close()
-		if err := mediaRows.Err(); err != nil {
-			slog.Error("task:security:scan: media iteration error", "tenant_id", tid.String(), "error", err)
 		}
 
 		slog.Info("task:security:scan: tenant complete", "tenant_id", tid.String(), "media_scanned", scanCount)
@@ -2435,20 +2277,10 @@ func HandleMaintenanceRegenerateLLMsTxt(ctx context.Context, t *asynq.Task) erro
 		}
 		tenantIDs = []pgtype.UUID{tid}
 	} else {
-		rows, err := dbPool.Reader.Query(ctx, `SELECT id FROM tenants WHERE status = 'active'`)
+		var err error
+		tenantIDs, err = gen.New(dbPool.Reader).ListActiveTenantIDs(ctx)
 		if err != nil {
 			slog.Error("task:maintenance:regenerate_llms_txt: list tenants failed", "error", err)
-			return err
-		}
-		defer rows.Close()
-		for rows.Next() {
-			var tid pgtype.UUID
-			if err := rows.Scan(&tid); err != nil {
-				continue
-			}
-			tenantIDs = append(tenantIDs, tid)
-		}
-		if err := rows.Err(); err != nil {
 			return err
 		}
 	}
@@ -2471,17 +2303,11 @@ func HandleMaintenanceRegenerateLLMsTxt(ctx context.Context, t *asynq.Task) erro
 
 // generateLLMsTxtForTenant generates the llms.txt file for a single tenant.
 func generateLLMsTxtForTenant(ctx context.Context, tenantID pgtype.UUID, baseURL string) {
-	rows, err := dbPool.Reader.Query(ctx,
-		`SELECT title, slug FROM contents
-		 WHERE tenant_id = $1 AND status = 'published'
-		 ORDER BY created_at DESC
-		 LIMIT 1000`,
-		tenantID)
+	pages, err := gen.New(dbPool.Reader).ListPublishedContentForLLMsTxt(ctx, tenantID)
 	if err != nil {
 		slog.Error("task:maintenance:regenerate_llms_txt: failed to list content", "tenant_id", tenantID.String(), "error", err)
 		return
 	}
-	defer rows.Close()
 
 	var llms strings.Builder
 
@@ -2491,20 +2317,9 @@ func generateLLMsTxtForTenant(ctx context.Context, tenantID pgtype.UUID, baseURL
 
 	pageCount := 0
 
-	for rows.Next() {
-		var title, slug string
-		if err := rows.Scan(&title, &slug); err != nil {
-			continue
-		}
-
-		llms.WriteString(fmt.Sprintf("- [%s](%s/%s)\n", title, baseURL, slug))
-
+	for _, p := range pages {
+		llms.WriteString(fmt.Sprintf("- [%s](%s/%s)\n", p.Title, baseURL, p.Slug))
 		pageCount++
-	}
-
-	if err := rows.Err(); err != nil {
-		slog.Error("task:maintenance:regenerate_llms_txt: row iteration error", "tenant_id", tenantID.String(), "error", err)
-		return
 	}
 
 	if err := os.WriteFile("llms.txt", []byte(llms.String()), 0o600); err != nil {
@@ -2570,25 +2385,12 @@ func HandleDBManualVacuum(ctx context.Context, t *asynq.Task) error {
 		return err
 	}
 
-	vacuumSQL := "VACUUM"
-	if payload.Full {
-		vacuumSQL = "VACUUM FULL"
-	}
-
-	if payload.TableName != "" {
-		if !isValidTableName(payload.TableName) {
-			return fmt.Errorf("task:db:manual_vacuum: invalid table name %q", payload.TableName)
-		}
-
-		vacuumSQL += " " + payload.TableName
-	}
-
-	if _, err := dbPool.Writer.Exec(ctx, vacuumSQL); err != nil {
+	if err := dbPool.Vacuum(ctx, payload.TableName, payload.Full); err != nil {
 		slog.Error("task:db:manual_vacuum: vacuum failed", "error", err)
 		return err
 	}
 
-	slog.Info("task:db:manual_vacuum: vacuum complete", "sql", vacuumSQL)
+	slog.Info("task:db:manual_vacuum: vacuum complete", "table", payload.TableName, "full", payload.Full)
 
 	return nil
 }
@@ -2617,30 +2419,13 @@ func HandleNewsletterDigest(ctx context.Context, t *asynq.Task) error {
 	}
 
 	// Fetch recent published content for the digest.
-	rows, err := dbPool.Reader.Query(ctx,
-		`SELECT title, slug, created_at FROM contents
-		 WHERE tenant_id = $1 AND status = 'published'
-		 ORDER BY created_at DESC
-		 LIMIT 10`,
-		tenantID)
+	digestItems, err := gen.New(dbPool.Reader).ListPublishedContentForDigest(ctx, tenantID)
 	if err != nil {
 		slog.Error("task:newsletter:digest: failed to list content", "error", err)
 		return err
 	}
-	defer rows.Close()
 
-	itemCount := 0
-
-	for rows.Next() {
-		var title, slug string
-
-		var createdAt pgtype.Timestamptz
-		if err := rows.Scan(&title, &slug, &createdAt); err != nil {
-			continue
-		}
-
-		itemCount++
-	}
+	itemCount := len(digestItems)
 
 	slog.Info("task:newsletter:digest: digest prepared",
 		"tenant_id", payload.TenantID,
@@ -2718,15 +2503,12 @@ func HandlePushDelivery(ctx context.Context, t *asynq.Task) error {
 	}
 
 	// Fetch user's push subscriptions.
-	rows, err := dbPool.Reader.Query(ctx,
-		`SELECT id, endpoint, p256dh, auth_key FROM push_subscriptions WHERE user_id = $1`,
-		userID)
+	subs, err := gen.New(dbPool.Reader).ListPushSubscriptionsByUser(ctx, userID)
 	if err != nil {
 		slog.Error("task:push:deliver: failed to query subscriptions",
 			"user_id", payload.UserID, "error", err)
 		return fmt.Errorf("task:push:deliver: query subscriptions: %w", err)
 	}
-	defer rows.Close()
 
 	// Build the push payload.
 	type pushPayload struct {
@@ -2747,21 +2529,10 @@ func HandlePushDelivery(ctx context.Context, t *asynq.Task) error {
 	sent := 0
 	failed := 0
 
-	for rows.Next() {
-		var id pgtype.UUID
-
-		var endpoint, p256dh, authKey string
-		if err := rows.Scan(&id, &endpoint, &p256dh, &authKey); err != nil {
-			slog.Error("task:push:deliver: scan error", "error", err)
-
-			failed++
-
-			continue
-		}
-
-		if err := pushDelivery.Send(ctx, endpoint, p256dh, authKey, pushJSON); err != nil {
+	for _, sub := range subs {
+		if err := pushDelivery.Send(ctx, sub.Endpoint, sub.P256dh, sub.AuthKey, pushJSON); err != nil {
 			slog.Error("task:push:deliver: send failed",
-				"user_id", payload.UserID, "endpoint", endpoint[:min(30, len(endpoint))], "error", err)
+				"user_id", payload.UserID, "endpoint", sub.Endpoint[:min(30, len(sub.Endpoint))], "error", err)
 
 			failed++
 			// If subscription expired (410), remove it.
@@ -2769,18 +2540,13 @@ func HandlePushDelivery(ctx context.Context, t *asynq.Task) error {
 				slog.Info("task:push:deliver: removing expired subscription",
 					"user_id", payload.UserID)
 
-				_, _ = dbPool.Writer.Exec(ctx,
-					`DELETE FROM push_subscriptions WHERE id = $1`, id)
+				_ = gen.New(dbPool.Writer).DeletePushSubscription(ctx, sub.ID)
 			}
 
 			continue
 		}
 
 		sent++
-	}
-
-	if err := rows.Err(); err != nil {
-		slog.Error("task:push:deliver: row iteration error", "error", err)
 	}
 
 	slog.Info("task:push:deliver: complete",
@@ -2917,39 +2683,9 @@ func HandleScheduledPublishSweep(ctx context.Context, _ *asynq.Task) error {
 	}
 
 	// Find scheduled content ready to publish.
-	rows, err := dbPool.Reader.Query(ctx, `
-		SELECT id, tenant_id
-		FROM contents
-		WHERE status = 'scheduled'
-		  AND publish_at IS NOT NULL
-		  AND publish_at <= now()
-		ORDER BY publish_at ASC
-		LIMIT 100
-	`)
+	pending, err := gen.New(dbPool.Reader).ListScheduledContentReady(ctx)
 	if err != nil {
 		slog.Error("task:content:publish_sweep: query failed", "error", err)
-		return err
-	}
-	defer rows.Close()
-
-	type pendingContent struct {
-		id       pgtype.UUID
-		tenantID pgtype.UUID
-	}
-
-	var pending []pendingContent
-
-	for rows.Next() {
-		var pc pendingContent
-		if err := rows.Scan(&pc.id, &pc.tenantID); err != nil {
-			slog.Error("task:content:publish_sweep: scan error", "error", err)
-			continue
-		}
-
-		pending = append(pending, pc)
-	}
-
-	if err := rows.Err(); err != nil {
 		return err
 	}
 
@@ -2961,26 +2697,22 @@ func HandleScheduledPublishSweep(ctx context.Context, _ *asynq.Task) error {
 	published := 0
 
 	for _, pc := range pending {
-		_, err := dbPool.Writer.Exec(ctx, `
-			UPDATE contents
-			SET status = 'published',
-			    published_at = COALESCE(published_at, now()),
-			    updated_at = now()
-			WHERE id = $1
-			  AND tenant_id = $2
-			  AND status = 'scheduled'
-			  AND publish_at <= now()
-		`, pc.id, pc.tenantID)
+		rowsAffected, err := gen.New(dbPool.Writer).PublishScheduledContent(ctx, gen.PublishScheduledContentParams{
+			ID: pc.ID, TenantID: pc.TenantID,
+		})
 		if err != nil {
 			slog.Error("task:content:publish_sweep: failed to publish",
-				"content_id", pc.id.String(), "error", err)
+				"content_id", pc.ID.String(), "error", err)
+			continue
+		}
+		if rowsAffected == 0 {
 			continue
 		}
 
 		published++
 
 		slog.Info("task:content:publish_sweep: content published",
-			"content_id", pc.id.String())
+			"content_id", pc.ID.String())
 	}
 
 	slog.Info("task:content:publish_sweep: sweep complete",
@@ -3149,45 +2881,19 @@ func sendEmail(to, subject, body string, isHTML bool) error {
 	return nil
 }
 
-// isValidTableName checks if a table name contains only safe characters.
-func isValidTableName(name string) bool {
-	if name == "" {
-		return false
-	}
-
-	for _, c := range name {
-		if (c < 'a' || c > 'z') && (c < 'A' || c > 'Z') && (c < '0' || c > '9') && c != '_' {
-			return false
-		}
-	}
-
-	return true
-}
 
 // ── Missing Phase 31 Task Handlers (stub implementations) ───────────
 
 // HandleMaintenanceCheckExpiredBans lifts expired user_moderation_actions with action='ban'.
 func HandleMaintenanceCheckExpiredBans(ctx context.Context, _ *asynq.Task) error {
 	slog.Info("maintenance:check_expired_bans — lifting expired bans")
-	_, err := requireDB()
-	if err != nil {
-		return err
+	if dbPool == nil {
+		return errors.New("maintenance:check_expired_bans: database pool not registered")
 	}
 	// Mark expired bans as 'unban' actions.
-	result, err := dbPool.Writer.Exec(ctx, `
-		UPDATE user_moderation_actions
-		SET action = 'unban'
-		WHERE action = 'ban'
-		AND expires_at IS NOT NULL
-		AND expires_at < now()
-	`)
-	if err != nil {
+	if err := gen.New(dbPool.Writer).ExpireModerationBans(ctx); err != nil {
 		slog.Error("maintenance:check_expired_bans failed", "error", err)
 		return err
-	}
-	rows := result.RowsAffected()
-	if rows > 0 {
-		slog.Info("maintenance:check_expired_bans — lifted expired bans", "count", rows)
 	}
 	return nil
 }
@@ -3195,23 +2901,12 @@ func HandleMaintenanceCheckExpiredBans(ctx context.Context, _ *asynq.Task) error
 // HandleMaintenanceCheckExpiredBoosts expires organization_boosts past end_date.
 func HandleMaintenanceCheckExpiredBoosts(ctx context.Context, _ *asynq.Task) error {
 	slog.Info("maintenance:check_expired_boosts — expiring boosts")
-	_, err := requireDB()
-	if err != nil {
-		return err
+	if dbPool == nil {
+		return errors.New("maintenance:check_expired_boosts: database pool not registered")
 	}
-	result, err := dbPool.Writer.Exec(ctx, `
-		UPDATE organization_boosts
-		SET status = 'ended'
-		WHERE status = 'active'
-		AND end_date < now()
-	`)
-	if err != nil {
+	if err := gen.New(dbPool.Writer).ExpireOrganizationBoosts(ctx); err != nil {
 		slog.Error("maintenance:check_expired_boosts failed", "error", err)
 		return err
-	}
-	rows := result.RowsAffected()
-	if rows > 0 {
-		slog.Info("maintenance:check_expired_boosts — expired boosts", "count", rows)
 	}
 	return nil
 }
@@ -3219,21 +2914,12 @@ func HandleMaintenanceCheckExpiredBoosts(ctx context.Context, _ *asynq.Task) err
 // HandleMaintenancePruneOldFeeds deletes feeds rows older than 30 days.
 func HandleMaintenancePruneOldFeeds(ctx context.Context, _ *asynq.Task) error {
 	slog.Info("maintenance:prune_old_feeds — pruning old feed entries")
-	_, err := requireDB()
-	if err != nil {
-		return err
+	if dbPool == nil {
+		return errors.New("maintenance:prune_old_feeds: database pool not registered")
 	}
-	result, err := dbPool.Writer.Exec(ctx, `
-		DELETE FROM feeds
-		WHERE created_at < now() - interval '30 days'
-	`)
-	if err != nil {
+	if err := gen.New(dbPool.Writer).PruneOldFeeds(ctx); err != nil {
 		slog.Error("maintenance:prune_old_feeds failed", "error", err)
 		return err
-	}
-	rows := result.RowsAffected()
-	if rows > 0 {
-		slog.Info("maintenance:prune_old_feeds — pruned old feeds", "count", rows)
 	}
 	return nil
 }
@@ -3241,21 +2927,12 @@ func HandleMaintenancePruneOldFeeds(ctx context.Context, _ *asynq.Task) error {
 // HandleMaintenancePruneAuditLogs deletes audit_logs rows older than 90 days.
 func HandleMaintenancePruneAuditLogs(ctx context.Context, _ *asynq.Task) error {
 	slog.Info("maintenance:prune_audit_logs — pruning old audit logs")
-	_, err := requireDB()
-	if err != nil {
-		return err
+	if dbPool == nil {
+		return errors.New("maintenance:prune_audit_logs: database pool not registered")
 	}
-	result, err := dbPool.Writer.Exec(ctx, `
-		DELETE FROM audit_logs
-		WHERE created_at < now() - interval '90 days'
-	`)
-	if err != nil {
+	if err := gen.New(dbPool.Writer).PruneAuditLogs(ctx); err != nil {
 		slog.Error("maintenance:prune_audit_logs failed", "error", err)
 		return err
-	}
-	rows := result.RowsAffected()
-	if rows > 0 {
-		slog.Info("maintenance:prune_audit_logs — pruned old audit logs", "count", rows)
 	}
 	return nil
 }
@@ -3263,22 +2940,12 @@ func HandleMaintenancePruneAuditLogs(ctx context.Context, _ *asynq.Task) error {
 // HandleMaintenancePrunePushTokens deletes stale/unresponsive push tokens older than 90 days.
 func HandleMaintenancePrunePushTokens(ctx context.Context, _ *asynq.Task) error {
 	slog.Info("maintenance:prune_push_tokens — pruning stale push tokens")
-	_, err := requireDB()
-	if err != nil {
-		return err
+	if dbPool == nil {
+		return errors.New("maintenance:prune_push_tokens: database pool not registered")
 	}
-	result, err := dbPool.Writer.Exec(ctx, `
-		DELETE FROM push_tokens
-		WHERE last_used_at < now() - interval '90 days'
-		   OR (last_used_at IS NULL AND created_at < now() - interval '30 days')
-	`)
-	if err != nil {
+	if err := gen.New(dbPool.Writer).PruneStalePushTokens(ctx); err != nil {
 		slog.Error("maintenance:prune_push_tokens failed", "error", err)
 		return err
-	}
-	rows := result.RowsAffected()
-	if rows > 0 {
-		slog.Info("maintenance:prune_push_tokens — pruned stale tokens", "count", rows)
 	}
 	return nil
 }
@@ -3321,19 +2988,16 @@ func HandleModerationAutoHide(ctx context.Context, t *asynq.Task) error {
 	}
 
 	// Count pending reports for this entity.
-	var reportCount int
-	err = dbPool.Reader.QueryRow(ctx,
-		`SELECT COUNT(*) FROM content_reports
-		 WHERE tenant_id = $1 AND entity_type = $2 AND entity_id = $3
-		   AND status = 'pending'`,
-		tenantID, payload.EntityType, entityID).Scan(&reportCount)
+	reportCount, err := gen.New(dbPool.Reader).CountPendingReportsByEntity(ctx, gen.CountPendingReportsByEntityParams{
+		TenantID: tenantID, EntityType: payload.EntityType, EntityID: entityID,
+	})
 	if err != nil {
 		slog.Error("task:moderation:auto_hide: failed to count reports",
 			"entity_type", payload.EntityType, "entity_id", payload.EntityID, "error", err)
 		return err
 	}
 
-	if reportCount < threshold {
+	if int(reportCount) < threshold {
 		slog.Info("task:moderation:auto_hide: below threshold, skipping",
 			"entity_type", payload.EntityType, "entity_id", payload.EntityID,
 			"report_count", reportCount, "threshold", threshold)
@@ -3343,16 +3007,15 @@ func HandleModerationAutoHide(ctx context.Context, t *asynq.Task) error {
 	// Archive the entity based on its type.
 	switch payload.EntityType {
 	case "content":
-		result, err := dbPool.Writer.Exec(ctx,
-			`UPDATE contents SET status = 'archived', updated_at = now()
-			 WHERE id = $1 AND tenant_id = $2 AND status != 'archived'`,
-			entityID, tenantID)
+		n, err := gen.New(dbPool.Writer).ArchiveContent(ctx, gen.ArchiveContentParams{
+			ID: entityID, TenantID: tenantID,
+		})
 		if err != nil {
 			slog.Error("task:moderation:auto_hide: failed to archive content",
 				"content_id", payload.EntityID, "error", err)
 			return err
 		}
-		if n := result.RowsAffected(); n > 0 {
+		if n > 0 {
 			slog.Info("task:moderation:auto_hide: content archived",
 				"content_id", payload.EntityID, "report_count", reportCount)
 		}
@@ -3390,22 +3053,12 @@ func HandleModerationAutoHide(ctx context.Context, t *asynq.Task) error {
 // HandleDMCleanupDeclinedRequests purges dm_requests declined > 90 days ago.
 func HandleDMCleanupDeclinedRequests(ctx context.Context, _ *asynq.Task) error {
 	slog.Info("dm:cleanup_declined_requests — purging old declined requests")
-	_, err := requireDB()
-	if err != nil {
-		return err
+	if dbPool == nil {
+		return errors.New("dm:cleanup_declined_requests: database pool not registered")
 	}
-	result, err := dbPool.Writer.Exec(ctx, `
-		DELETE FROM dm_requests
-		WHERE status = 'declined'
-		AND updated_at < now() - interval '90 days'
-	`)
-	if err != nil {
+	if err := gen.New(dbPool.Writer).CleanupDeclinedDMRequests(ctx); err != nil {
 		slog.Error("dm:cleanup_declined_requests failed", "error", err)
 		return err
-	}
-	rows := result.RowsAffected()
-	if rows > 0 {
-		slog.Info("dm:cleanup_declined_requests — purged old declined requests", "count", rows)
 	}
 	return nil
 }
@@ -3416,79 +3069,35 @@ func HandleDMCleanupDeclinedRequests(ctx context.Context, _ *asynq.Task) error {
 // is safe and idempotent.
 func HandleCouponTrackEvents(ctx context.Context, t *asynq.Task) error {
 	slog.Info("coupon:track_events — flushing coupon event counters")
-	_, err := requireDB()
-	if err != nil {
-		return err
+	if dbPool == nil {
+		return errors.New("coupon:track_events: database pool not registered")
 	}
+	w := gen.New(dbPool.Writer)
 
 	// Update total_clicks from click events.
-	result, err := dbPool.Writer.Exec(ctx, `
-		UPDATE coupons c
-		SET total_clicks = (
-			SELECT COUNT(*)::int
-			FROM coupon_events ce
-			WHERE ce.coupon_id = c.id AND ce.event_type = 'click'
-		),
-		updated_at = now()
-		WHERE EXISTS (
-			SELECT 1 FROM coupon_events ce
-			WHERE ce.coupon_id = c.id AND ce.event_type = 'click'
-		)
-	`)
-	if err != nil {
+	if err := w.UpdateCouponClickCounts(ctx); err != nil {
 		slog.Error("coupon:track_events: failed to update click counts", "error", err)
 		return err
 	}
-	clickRows := result.RowsAffected()
 
 	// Update total_copies from copy events.
-	result, err = dbPool.Writer.Exec(ctx, `
-		UPDATE coupons c
-		SET total_copies = (
-			SELECT COUNT(*)::int
-			FROM coupon_events ce
-			WHERE ce.coupon_id = c.id AND ce.event_type = 'copy'
-		),
-		updated_at = now()
-		WHERE EXISTS (
-			SELECT 1 FROM coupon_events ce
-			WHERE ce.coupon_id = c.id AND ce.event_type = 'copy'
-		)
-	`)
-	if err != nil {
+	if err := w.UpdateCouponCopyCounts(ctx); err != nil {
 		slog.Error("coupon:track_events: failed to update copy counts", "error", err)
 		return err
 	}
-	copyRows := result.RowsAffected()
 
-	total := clickRows + copyRows
-	if total > 0 {
-		slog.Info("coupon:track_events — flushed counters", "click_updates", clickRows, "copy_updates", copyRows)
-	}
 	return nil
 }
 
 // HandleCouponExpireCheck marks past-expiry coupons as expired.
 func HandleCouponExpireCheck(ctx context.Context, _ *asynq.Task) error {
 	slog.Info("coupon:expire_check — checking for expired coupons")
-	_, err := requireDB()
-	if err != nil {
-		return err
+	if dbPool == nil {
+		return errors.New("coupon:expire_check: database pool not registered")
 	}
-	result, err := dbPool.Writer.Exec(ctx, `
-		UPDATE coupons
-		SET status = 'expired'
-		WHERE status = 'active'
-		AND expires_at IS NOT NULL
-		AND expires_at < now()
-	`)
-	if err != nil {
+	if err := gen.New(dbPool.Writer).ExpireCoupons(ctx); err != nil {
 		slog.Error("coupon:expire_check failed", "error", err)
 		return err
-	}
-	rows := result.RowsAffected()
-	if rows > 0 {
-		slog.Info("coupon:expire_check — expired coupons", "count", rows)
 	}
 	return nil
 }
@@ -3519,18 +3128,26 @@ func HandleAffiliateRecordClick(ctx context.Context, t *asynq.Task) error {
 		return fmt.Errorf("affiliate:record_click: %w", err)
 	}
 
-	var userID pgtype.UUID
-	if payload.UserID != "" {
-		if uidErr := userID.Scan(payload.UserID); uidErr != nil {
-			slog.Warn("affiliate:record_click: invalid user_id", "error", uidErr)
-		}
+	// Look up the link to get tenant_id (required for the event row).
+	link, err := gen.New(dbPool.Reader).GetAffiliateLinkByIDOnly(ctx, linkID)
+	if err != nil {
+		slog.Error("affiliate:record_click: link not found", "link_id", payload.LinkID, "error", err)
+		return err
 	}
 
-	_, err = dbPool.Writer.Exec(ctx, `
-		INSERT INTO affiliate_link_events (link_id, user_id, event_type, ip_addr, user_agent, created_at)
-		VALUES ($1, $2, 'click', $3, $4, now())
-	`, linkID, userID, payload.IPAddr, payload.UserAgent)
-	if err != nil {
+	// Hash the IP and user agent for privacy (sha256 hex).
+	ipHash := sha256.Sum256([]byte(payload.IPAddr))
+	ipHashStr := hex.EncodeToString(ipHash[:])
+	uaHash := sha256.Sum256([]byte(payload.UserAgent))
+	uaHashStr := hex.EncodeToString(uaHash[:])
+
+	if _, err := gen.New(dbPool.Writer).CreateAffiliateLinkEvent(ctx, gen.CreateAffiliateLinkEventParams{
+		TenantID:      link.TenantID,
+		LinkID:        linkID,
+		EventType:     "click",
+		IpHash:        &ipHashStr,
+		UserAgentHash: &uaHashStr,
+	}); err != nil {
 		slog.Error("affiliate:record_click failed", "error", err)
 		return err
 	}
@@ -3604,19 +3221,13 @@ func HandleAffiliateCreditCommission(ctx context.Context, t *asynq.Task) error {
 	}
 
 	// Look up the affiliate link and member to determine commission rate.
-	var commissionRate int
-	var memberUserID pgtype.UUID
-	err = dbPool.Reader.QueryRow(ctx, `
-		SELECT apm.user_id, COALESCE(aps.commission_rates->>'pro_monthly', '0')::int
-		FROM affiliate_program_members apm
-		JOIN user_affiliate_links ual ON ual.user_id = apm.user_id
-		JOIN affiliate_program_settings aps ON aps.tenant_id = apm.tenant_id
-		WHERE ual.code = $1 AND apm.status = 'active' AND ual.is_active = true
-	`, payload.LinkCode).Scan(&memberUserID, &commissionRate)
+	commissionInfo, err := gen.New(dbPool.Reader).GetAffiliateCommissionInfo(ctx, payload.LinkCode)
 	if err != nil {
 		slog.Warn("affiliate:credit_commission: link not found or inactive", "link_code", payload.LinkCode, "error", err)
 		return nil // not an error — link may be invalid
 	}
+	memberUserID := commissionInfo.UserID
+	commissionRate := int(commissionInfo.CommissionRate)
 
 	if commissionRate <= 0 {
 		slog.Info("affiliate:credit_commission: no commission rate configured")
@@ -3635,11 +3246,8 @@ func HandleAffiliateCreditCommission(ctx context.Context, t *asynq.Task) error {
 	}
 
 	// Resolve tenant_id from the affiliate member.
-	var memberTenantID pgtype.UUID
-	if err := dbPool.Reader.QueryRow(ctx, `
-		SELECT tenant_id FROM affiliate_program_members
-		WHERE user_id = $1 AND status = 'active'
-	`, memberUserID).Scan(&memberTenantID); err != nil {
+	memberTenantID, err := gen.New(dbPool.Reader).GetAffiliateMemberTenant(ctx, memberUserID)
+	if err != nil {
 		slog.Warn("affiliate:credit_commission: member tenant not found", "error", err)
 		return nil
 	}
@@ -3691,26 +3299,12 @@ func HandleAffiliateCreditCommission(ctx context.Context, t *asynq.Task) error {
 // HandleAffiliateExpireCheck deactivates links for suspended/banned members.
 func HandleAffiliateExpireCheck(ctx context.Context, _ *asynq.Task) error {
 	slog.Info("affiliate:expire_check — deactivating links for suspended members")
-	_, err := requireDB()
-	if err != nil {
-		return err
+	if dbPool == nil {
+		return errors.New("affiliate:expire_check: database pool not registered")
 	}
-	result, err := dbPool.Writer.Exec(ctx, `
-		UPDATE user_affiliate_links
-		SET is_active = false
-		WHERE is_active = true
-		AND user_id IN (
-			SELECT user_id FROM affiliate_program_members
-			WHERE status IN ('suspended', 'banned')
-		)
-	`)
-	if err != nil {
+	if err := gen.New(dbPool.Writer).DeactivateLinksForSuspendedMembers(ctx); err != nil {
 		slog.Error("affiliate:expire_check failed", "error", err)
 		return err
-	}
-	rows := result.RowsAffected()
-	if rows > 0 {
-		slog.Info("affiliate:expire_check — deactivated links", "count", rows)
 	}
 	return nil
 }
@@ -3742,11 +3336,7 @@ func HandleTenantCleanupData(ctx context.Context, t *asynq.Task) error {
 
 	// Verify the tenant is still in 'deleted' status before cleanup.
 	// If the tenant was re-activated (unsuspended), skip hard-delete.
-	var status string
-	err := dbPool.Reader.QueryRow(ctx,
-		`SELECT status FROM tenants WHERE id = $1`,
-		tenantID,
-	).Scan(&status)
+	status, err := gen.New(dbPool.Reader).GetTenantStatus(ctx, tenantID)
 	if err != nil {
 		// Tenant may have been already hard-deleted or doesn't exist.
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -3762,47 +3352,22 @@ func HandleTenantCleanupData(ctx context.Context, t *asynq.Task) error {
 
 	slog.Info("tenant:cleanup_data — starting cascade cleanup", "tenant_id", payload.TenantID, "initiated_by", payload.InitiatedBy)
 
-	// Delete from tables WITHOUT ON DELETE CASCADE (in dependency order).
-	// These tables reference tenants(id) but do not cascade on delete.
-	tables := []string{
-		"moderation_alerts",
-		"learning_certificates",
-		"learning_enrollments",
-		"learning_progress",
-		"learning_lessons",
-		"learning_tracks",
-		"search_events",
-		"trending_snapshots",
-		"organization_members",
-		"organizations",
-		"webhook_history",
-		"webhooks",
-		"ai_templates",
-		"doc_pages",
-		"onboarding",
-		"user_preferences",
-		"users",
-	}
-
-	totalDeleted := 0
-	for _, table := range tables {
-		result, err := dbPool.Writer.Exec(ctx, fmt.Sprintf("DELETE FROM %s WHERE tenant_id = $1", table), tenantID)
-		if err != nil {
-			slog.Error("tenant:cleanup_data — failed to delete from table", "table", table, "error", err)
-			continue
-		}
-		count := result.RowsAffected()
-		totalDeleted += int(count)
+	// Delete all tenant-scoped rows from tables WITHOUT ON DELETE CASCADE on
+	// tenants(id), in FK dependency order. Tables with CASCADE are auto-deleted
+	// by PostgreSQL and intentionally omitted from the query.
+	wq := gen.New(dbPool.Writer)
+	totalDeleted, err := wq.DeleteTenantData(ctx, tenantID)
+	if err != nil {
+		slog.Error("tenant:cleanup_data — failed to delete tenant data", "error", err)
+		return fmt.Errorf("tenant:cleanup_data: delete tenant data: %w", err)
 	}
 
 	// Hard delete the tenant itself.
-	result, err := dbPool.Writer.Exec(ctx, "DELETE FROM tenants WHERE id = $1", tenantID)
-	if err != nil {
+	if err := wq.HardDeleteTenant(ctx, tenantID); err != nil {
 		return fmt.Errorf("tenant:cleanup_data: delete tenant: %w", err)
 	}
-	rowsAffected := result.RowsAffected()
 
-	slog.Info("tenant:cleanup_data — cleanup complete", "tenant_id", payload.TenantID, "child_rows_deleted", totalDeleted, "tenant_deleted", rowsAffected > 0)
+	slog.Info("tenant:cleanup_data — cleanup complete", "tenant_id", payload.TenantID, "child_rows_deleted", totalDeleted, "tenant_deleted", true)
 
 	return nil
 }

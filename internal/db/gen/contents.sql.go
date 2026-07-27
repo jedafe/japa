@@ -31,6 +31,24 @@ func (q *Queries) AddContentTag(ctx context.Context, arg AddContentTagParams) er
 	return err
 }
 
+const archiveContent = `-- name: ArchiveContent :execrows
+UPDATE contents SET status = 'archived', updated_at = now()
+WHERE id = $1 AND tenant_id = $2 AND status != 'archived'
+`
+
+type ArchiveContentParams struct {
+	ID       pgtype.UUID `json:"id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+func (q *Queries) ArchiveContent(ctx context.Context, arg ArchiveContentParams) (int64, error) {
+	result, err := q.db.Exec(ctx, archiveContent, arg.ID, arg.TenantID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const countBookmarksByUser = `-- name: CountBookmarksByUser :one
 SELECT COUNT(*)::int AS count
 FROM bookmarks
@@ -422,6 +440,42 @@ func (q *Queries) DeleteJSONLDTemplate(ctx context.Context, arg DeleteJSONLDTemp
 	return err
 }
 
+const getContentByHash = `-- name: GetContentByHash :one
+SELECT id, tenant_id, author_id, content_hash
+FROM contents
+WHERE tenant_id = $1
+  AND content_hash = $2
+  AND deleted_at IS NULL
+  AND id <> $3
+`
+
+type GetContentByHashParams struct {
+	TenantID    pgtype.UUID `json:"tenant_id"`
+	ContentHash *string     `json:"content_hash"`
+	ExcludeID   pgtype.UUID `json:"exclude_id"`
+}
+
+type GetContentByHashRow struct {
+	ID          pgtype.UUID `json:"id"`
+	TenantID    pgtype.UUID `json:"tenant_id"`
+	AuthorID    pgtype.UUID `json:"author_id"`
+	ContentHash *string     `json:"content_hash"`
+}
+
+// Duplicate-detection check (Rule 12 / BL-006). Returns a conflicting row
+// with the same (tenant_id, content_hash), excluding the row being updated.
+func (q *Queries) GetContentByHash(ctx context.Context, arg GetContentByHashParams) (GetContentByHashRow, error) {
+	row := q.db.QueryRow(ctx, getContentByHash, arg.TenantID, arg.ContentHash, arg.ExcludeID)
+	var i GetContentByHashRow
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.AuthorID,
+		&i.ContentHash,
+	)
+	return i, err
+}
+
 const getContentByID = `-- name: GetContentByID :one
 SELECT id, tenant_id, author_id, organization_id, space_id, content_type, title, slug, body, body_html,
        field_values, content_hash, geo_space_id, header_image_id, featured_image_id,
@@ -652,6 +706,29 @@ func (q *Queries) GetContentScore(ctx context.Context, contentID pgtype.UUID) (C
 		&i.RelevanceEmbedding,
 		&i.LastScoredAt,
 	)
+	return i, err
+}
+
+const getContentTitleAndBody = `-- name: GetContentTitleAndBody :one
+SELECT COALESCE(title, '') AS title, COALESCE(body, '') AS body
+FROM contents
+WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
+`
+
+type GetContentTitleAndBodyParams struct {
+	ID       pgtype.UUID `json:"id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+type GetContentTitleAndBodyRow struct {
+	Title string `json:"title"`
+	Body  string `json:"body"`
+}
+
+func (q *Queries) GetContentTitleAndBody(ctx context.Context, arg GetContentTitleAndBodyParams) (GetContentTitleAndBodyRow, error) {
+	row := q.db.QueryRow(ctx, getContentTitleAndBody, arg.ID, arg.TenantID)
+	var i GetContentTitleAndBodyRow
+	err := row.Scan(&i.Title, &i.Body)
 	return i, err
 }
 
@@ -1817,6 +1894,175 @@ func (q *Queries) ListPublishedContentByOrganization(ctx context.Context, arg Li
 	return items, nil
 }
 
+const listPublishedContentForDigest = `-- name: ListPublishedContentForDigest :many
+SELECT title, slug, created_at
+FROM contents
+WHERE tenant_id = $1 AND status = 'published'
+ORDER BY created_at DESC
+LIMIT 10
+`
+
+type ListPublishedContentForDigestRow struct {
+	Title     string             `json:"title"`
+	Slug      string             `json:"slug"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
+func (q *Queries) ListPublishedContentForDigest(ctx context.Context, tenantID pgtype.UUID) ([]ListPublishedContentForDigestRow, error) {
+	rows, err := q.db.Query(ctx, listPublishedContentForDigest, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListPublishedContentForDigestRow
+	for rows.Next() {
+		var i ListPublishedContentForDigestRow
+		if err := rows.Scan(&i.Title, &i.Slug, &i.CreatedAt); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listPublishedContentForLLMsTxt = `-- name: ListPublishedContentForLLMsTxt :many
+SELECT title, slug
+FROM contents
+WHERE tenant_id = $1 AND status = 'published'
+ORDER BY created_at DESC
+LIMIT 1000
+`
+
+type ListPublishedContentForLLMsTxtRow struct {
+	Title string `json:"title"`
+	Slug  string `json:"slug"`
+}
+
+func (q *Queries) ListPublishedContentForLLMsTxt(ctx context.Context, tenantID pgtype.UUID) ([]ListPublishedContentForLLMsTxtRow, error) {
+	rows, err := q.db.Query(ctx, listPublishedContentForLLMsTxt, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListPublishedContentForLLMsTxtRow
+	for rows.Next() {
+		var i ListPublishedContentForLLMsTxtRow
+		if err := rows.Scan(&i.Title, &i.Slug); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listPublishedContentForRSS = `-- name: ListPublishedContentForRSS :many
+SELECT title, slug, created_at
+FROM contents
+WHERE tenant_id = $1 AND status = 'published'
+ORDER BY created_at DESC
+LIMIT 50
+`
+
+type ListPublishedContentForRSSRow struct {
+	Title     string             `json:"title"`
+	Slug      string             `json:"slug"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
+func (q *Queries) ListPublishedContentForRSS(ctx context.Context, tenantID pgtype.UUID) ([]ListPublishedContentForRSSRow, error) {
+	rows, err := q.db.Query(ctx, listPublishedContentForRSS, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListPublishedContentForRSSRow
+	for rows.Next() {
+		var i ListPublishedContentForRSSRow
+		if err := rows.Scan(&i.Title, &i.Slug, &i.CreatedAt); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listPublishedSlugsForSitemap = `-- name: ListPublishedSlugsForSitemap :many
+SELECT slug, updated_at
+FROM contents
+WHERE tenant_id = $1 AND status = 'published'
+ORDER BY updated_at DESC
+LIMIT 10000
+`
+
+type ListPublishedSlugsForSitemapRow struct {
+	Slug      string             `json:"slug"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) ListPublishedSlugsForSitemap(ctx context.Context, tenantID pgtype.UUID) ([]ListPublishedSlugsForSitemapRow, error) {
+	rows, err := q.db.Query(ctx, listPublishedSlugsForSitemap, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListPublishedSlugsForSitemapRow
+	for rows.Next() {
+		var i ListPublishedSlugsForSitemapRow
+		if err := rows.Scan(&i.Slug, &i.UpdatedAt); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listScheduledContentReady = `-- name: ListScheduledContentReady :many
+SELECT id, tenant_id
+FROM contents
+WHERE status = 'scheduled'
+  AND publish_at IS NOT NULL
+  AND publish_at <= now()
+ORDER BY publish_at ASC
+LIMIT 100
+`
+
+type ListScheduledContentReadyRow struct {
+	ID       pgtype.UUID `json:"id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+func (q *Queries) ListScheduledContentReady(ctx context.Context) ([]ListScheduledContentReadyRow, error) {
+	rows, err := q.db.Query(ctx, listScheduledContentReady)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListScheduledContentReadyRow
+	for rows.Next() {
+		var i ListScheduledContentReadyRow
+		if err := rows.Scan(&i.ID, &i.TenantID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const pinContentToSpace = `-- name: PinContentToSpace :one
 
 INSERT INTO space_pinned_posts (space_id, content_id, pinned_by, position)
@@ -1860,6 +2106,30 @@ func (q *Queries) PinContentToSpace(ctx context.Context, arg PinContentToSpacePa
 		&i.CreatedAt,
 	)
 	return i, err
+}
+
+const publishScheduledContent = `-- name: PublishScheduledContent :execrows
+UPDATE contents
+SET status = 'published',
+    published_at = COALESCE(published_at, now()),
+    updated_at = now()
+WHERE id = $1
+  AND tenant_id = $2
+  AND status = 'scheduled'
+  AND publish_at <= now()
+`
+
+type PublishScheduledContentParams struct {
+	ID       pgtype.UUID `json:"id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+func (q *Queries) PublishScheduledContent(ctx context.Context, arg PublishScheduledContentParams) (int64, error) {
+	result, err := q.db.Exec(ctx, publishScheduledContent, arg.ID, arg.TenantID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const removeContentTag = `-- name: RemoveContentTag :exec

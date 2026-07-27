@@ -17,6 +17,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/tenant"
+	"github.com/jedafe/japa/internal/visitor"
 )
 
 // Pagination defaults.
@@ -111,7 +112,13 @@ func parseWindow(r *http.Request) string {
 }
 
 func parseGeoCode(r *http.Request) string {
-	return r.URL.Query().Get("geo")
+	// ADR-064: when ?geo= is not explicitly provided, default to the
+	// VisitorContext's ContentCountry (resolved by the visitor middleware
+	// from user preference → GeoIP → system default).
+	if g := r.URL.Query().Get("geo"); g != "" {
+		return g
+	}
+	return visitor.FromContext(r.Context()).ContentCountry
 }
 
 // ---------------------------------------------------------------------------

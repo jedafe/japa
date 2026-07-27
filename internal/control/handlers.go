@@ -1533,7 +1533,10 @@ func (h *Handlers) TriggerSecurityScan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	task := asynq.NewTask("security:scan", payload)
+	// AUDIT-BE-TASK-008: use the constant worker.TypeSecurityScan instead of
+	// the hardcoded string "security:scan" (DRY — prevents silent task drops
+	// if the constant value changes).
+	task := asynq.NewTask(worker.TypeSecurityScan, payload)
 	info, err := h.Client.Enqueue(task)
 	if err != nil {
 		slog.Error("control: trigger security scan", "error", err)

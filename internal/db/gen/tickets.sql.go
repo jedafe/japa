@@ -637,6 +637,42 @@ func (q *Queries) GetTicketTypeBySlug(ctx context.Context, arg GetTicketTypeBySl
 	return i, err
 }
 
+const listSLABreachedTickets = `-- name: ListSLABreachedTickets :many
+SELECT id, subject, sla_breach_at
+FROM tickets
+WHERE tenant_id = $1
+  AND sla_breach_at IS NOT NULL
+  AND sla_breach_at < now()
+  AND status NOT IN ('resolved', 'closed')
+ORDER BY sla_breach_at ASC
+`
+
+type ListSLABreachedTicketsRow struct {
+	ID          pgtype.UUID        `json:"id"`
+	Subject     string             `json:"subject"`
+	SlaBreachAt pgtype.Timestamptz `json:"sla_breach_at"`
+}
+
+func (q *Queries) ListSLABreachedTickets(ctx context.Context, tenantID pgtype.UUID) ([]ListSLABreachedTicketsRow, error) {
+	rows, err := q.db.Query(ctx, listSLABreachedTickets, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListSLABreachedTicketsRow
+	for rows.Next() {
+		var i ListSLABreachedTicketsRow
+		if err := rows.Scan(&i.ID, &i.Subject, &i.SlaBreachAt); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listTicketAttachments = `-- name: ListTicketAttachments :many
 SELECT id, ticket_id, comment_id, media_id, created_at
 FROM ticket_attachments

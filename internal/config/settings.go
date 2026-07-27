@@ -183,6 +183,50 @@ func (s *Settings) GetIntOr(ctx context.Context, tenantID pgtype.UUID, key strin
 	return v
 }
 
+// GetStringOr returns the string value for key, or fallback when the key is
+// unset or missing. It never returns an error.
+func (s *Settings) GetStringOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback string) string {
+	val, err := s.GetSetting(ctx, tenantID, key)
+	if err != nil || val == "" {
+		return fallback
+	}
+	return val
+}
+
+// GetFloatOr returns the float64 value for key, or fallback when the key is
+// unset, missing, or not parseable as a float. It never returns an error.
+func (s *Settings) GetFloatOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback float64) float64 {
+	val, err := s.GetSetting(ctx, tenantID, key)
+	if err != nil {
+		return fallback
+	}
+	f, err := parseFloat(val)
+	if err != nil {
+		return fallback
+	}
+	return f
+}
+
+// parseFloat decodes a JSON-encoded system_setting value into a float64.
+// Accepts JSON number (1.8), JSON string ("1.8"), or bare token.
+func parseFloat(sv string) (float64, error) {
+	sv = strings.TrimSpace(sv)
+	var f float64
+	if json.Unmarshal([]byte(sv), &f) == nil {
+		return f, nil
+	}
+	var str string
+	if json.Unmarshal([]byte(sv), &str) == nil {
+		if v, convErr := strconv.ParseFloat(strings.TrimSpace(str), 64); convErr == nil {
+			return v, nil
+		}
+	}
+	if v, convErr := strconv.ParseFloat(sv, 64); convErr == nil {
+		return v, nil
+	}
+	return 0, fmt.Errorf("value is not a float: %q", sv)
+}
+
 // GetBoolOr returns the boolean value for key, or fallback when the key is
 // unset or missing. It never returns an error.
 func (s *Settings) GetBoolOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback bool) bool {

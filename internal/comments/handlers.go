@@ -2,6 +2,7 @@
 package comments
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -19,10 +20,28 @@ import (
 
 const defaultPageSize int32 = 20
 
+// NotificationDispatcher dispatches notifications via the batch system
+// (Section 35 — consolidated from comment:notify_author/parent/mention
+// into notification:dispatch_batch per Section 11). The return type is
+// intentionally ignored — comment creation is fire-and-forget for
+// notifications (Rule 8).
+type NotificationDispatcher interface {
+	DispatchNotification(
+		ctx context.Context,
+		tenantID, recipientID pgtype.UUID,
+		nType, subjectTitle string,
+		actorID pgtype.UUID,
+		subjectType string,
+		subjectID pgtype.UUID,
+		subjectURL, actorName, actorAvatar string,
+	) error
+}
+
 // Handlers holds dependencies for comment HTTP handlers.
 type Handlers struct {
 	Service      *Service
 	SpamPipeline *spam.SpamPipeline
+	notifier     NotificationDispatcher // nil disables notifications (test-only)
 }
 
 // NewHandlers creates Handlers with the given Service.
@@ -34,6 +53,10 @@ func NewHandlers(service *Service) *Handlers {
 func (h *Handlers) SetSpamPipeline(p *spam.SpamPipeline) {
 	h.SpamPipeline = p
 }
+
+// SetNotifier wires the notification dispatcher used after comment creation
+// (Section 49 — comment:notify_author/parent/mention → notification:dispatch_batch).
+func (h *Handlers) SetNotifier(n NotificationDispatcher) { h.notifier = n }
 
 // requireTenant resolves the tenant from the request context.
 func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
@@ -248,6 +271,10 @@ func (h *Handlers) CreateComment(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
+	// Fire-and-forget comment notifications (Section 49 — BL-001/BL-002).
+	// comment:notify_author/parent/mention → notification:dispatch_batch.
+	h.Service.DispatchCommentNotifications(r.Context(), tenantID, comment, h.notifier)
 
 	writeJSON(w, http.StatusCreated, map[string]any{"data": comment})
 }

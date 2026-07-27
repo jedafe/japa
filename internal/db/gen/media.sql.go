@@ -495,6 +495,38 @@ func (q *Queries) ListMediaByUploader(ctx context.Context, arg ListMediaByUpload
 	return items, nil
 }
 
+const listMediaForScanning = `-- name: ListMediaForScanning :many
+SELECT id, storage_path FROM media
+WHERE tenant_id = $1 AND status = 'uploaded'
+ORDER BY created_at ASC
+LIMIT 50
+`
+
+type ListMediaForScanningRow struct {
+	ID          pgtype.UUID `json:"id"`
+	StoragePath string      `json:"storage_path"`
+}
+
+func (q *Queries) ListMediaForScanning(ctx context.Context, tenantID pgtype.UUID) ([]ListMediaForScanningRow, error) {
+	rows, err := q.db.Query(ctx, listMediaForScanning, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListMediaForScanningRow
+	for rows.Next() {
+		var i ListMediaForScanningRow
+		if err := rows.Scan(&i.ID, &i.StoragePath); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listMediaFromOrgPublicPosts = `-- name: ListMediaFromOrgPublicPosts :many
 SELECT m.id, m.tenant_id, m.uploader_user_id, m.original_filename, m.mime_type, m.file_size_bytes, m.width_px, m.height_px, m.duration_secs, m.storage_path, m.storage_bucket, m.alt_text, m.caption, m.confirmed, m.deleted_at, m.created_at, m.quarantine_reason, m.quarantined_at, m.reviewed_by, m.reviewed_at, m.user_group_id FROM media m
 WHERE m.tenant_id = $1

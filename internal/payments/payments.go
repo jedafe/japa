@@ -6,6 +6,9 @@
 package payments
 
 import (
+	"context"
+
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
 )
@@ -86,6 +89,14 @@ type Service struct {
 	wallet    CreditSpender
 	enqueuer  paymentsEnqueuer
 	providers map[string]Provider
+	settings  paymentSettingsReader
+}
+
+// paymentSettingsReader is the subset of config.Settings the payments service
+// uses for hot-reloadable defaults (currency, etc.). Defined as a local
+// interface so the payments package does not import config.
+type paymentSettingsReader interface {
+	GetSetting(ctx context.Context, tenantID pgtype.UUID, key string) (string, error)
 }
 
 // paymentsEnqueuer is the subset of worker.Enqueuer that payments needs.
@@ -110,6 +121,11 @@ func NewService(database *db.DB, wallet CreditSpender) *Service {
 // SetEnqueuer injects the Asynq enqueuer for async webhook processing.
 func (s *Service) SetEnqueuer(e paymentsEnqueuer) {
 	s.enqueuer = e
+}
+
+// SetSettings injects the hot-reloadable settings reader for payment defaults.
+func (s *Service) SetSettings(sr paymentSettingsReader) {
+	s.settings = sr
 }
 
 // SetProvider registers a payment provider by name.

@@ -19,6 +19,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/jedafe/japa/internal/linkpreview"
 )
 
 // Platform identifier constants. Each corresponds to a host pattern recognized
@@ -84,14 +86,44 @@ type EmbedResolver struct {
 	// Used by tests to point oEmbed calls at a mock httptest server. When nil
 	// or missing a key, defaultOEmbedURLs is consulted.
 	oembedBaseURLs map[string]string
+	// ssrfEnabled controls whether fetchOEmbed validates URLs against the
+	// private/reserved IP blocklist. Production resolvers enable it; the test
+	// override constructor disables it so httptest.Server (127.0.0.1) works.
+	ssrfEnabled bool
 }
 
-// NewEmbedResolver creates an EmbedResolver with a 10-second timeout HTTP
-// client suitable for production use.
+// maxOEmbedRedirectDepth caps the number of redirect hops allowed when
+// calling an oEmbed endpoint. Matches the linkpreview fetcher's limit.
+const maxOEmbedRedirectDepth = 5
+
+// NewEmbedResolver creates an EmbedResolver with an SSRF-safe HTTP client
+// (10-second timeout) suitable for production use. The client validates the
+// initial URL and every redirect hop against the private/reserved IP ranges
+// defined in internal/linkpreview/ssrf.go, preventing redirect-based SSRF
+// attacks via compromised or malicious oEmbed endpoints.
 func NewEmbedResolver() *EmbedResolver {
 	return &EmbedResolver{
-		client: &http.Client{
-			Timeout: 10 * time.Second,
+		client:      newSSRFSafeOEmbedClient(),
+		ssrfEnabled: true,
+	}
+}
+
+// newSSRFSafeOEmbedClient returns an http.Client that validates every
+// redirect hop against the shared SSRF blocklist from internal/linkpreview.
+// The initial URL is validated in fetchOEmbed before the request is sent.
+func newSSRFSafeOEmbedClient() *http.Client {
+	return &http.Client{
+		Timeout: 10 * time.Second,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if len(via) >= maxOEmbedRedirectDepth {
+				return fmt.Errorf("stopped after %d redirects", maxOEmbedRedirectDepth)
+			}
+			if err := linkpreview.ValidateRedirectURL(req.URL.String()); err != nil {
+				slog.Warn("customfields: blocking oEmbed redirect to private/reserved IP",
+					"url", req.URL.String(), "error", err)
+				return fmt.Errorf("oembed redirect blocked: %w", err)
+			}
+			return nil
 		},
 	}
 }
@@ -105,6 +137,8 @@ func newEmbedResolverWithOverrides(client *http.Client, overrides map[string]str
 	return &EmbedResolver{
 		client:         client,
 		oembedBaseURLs: overrides,
+		// SSRF validation disabled for tests — httptest.Server binds to 127.0.0.1.
+		ssrfEnabled: false,
 	}
 }
 
@@ -443,11 +477,25 @@ func (r *EmbedResolver) oembedURL(platform, rawURL string) (string, bool) {
 }
 
 // fetchOEmbed makes a GET request to the oEmbed endpoint and parses the JSON
-// response into a map. The returned map is never nil on success.
+// response into a map. The returned map is never nil on success. The initial
+// URL is validated for SSRF before the request is sent; redirect hops are
+// validated by the SSRF-safe client configured in NewEmbedResolver.
 func (r *EmbedResolver) fetchOEmbed(
 	ctx context.Context,
 	oembedURL string,
 ) (map[string]any, error) {
+	// SSRF protection: validate the oEmbed endpoint URL before fetching.
+	// Even though the default endpoints are hardcoded to public hosts,
+	// test overrides or future config-driven endpoints could point anywhere.
+	// Skipped for the test override resolver (httptest uses 127.0.0.1).
+	if r.ssrfEnabled {
+		if err := linkpreview.ValidateURL(oembedURL); err != nil {
+			slog.Warn("customfields: blocking oEmbed fetch to private/reserved URL",
+				"url", oembedURL, "error", err)
+			return nil, fmt.Errorf("oembed url validation failed: %w", err)
+		}
+	}
+
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, oembedURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("build oembed request: %w", err)

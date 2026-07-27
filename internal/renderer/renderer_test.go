@@ -10,7 +10,12 @@ import (
 func TestCacheKey(t *testing.T) {
 	t.Parallel()
 
-	r := New("/path/to/script.ts", nil)
+	// Use a valid relative path so New succeeds; the cacheKey logic is
+	// independent of the script path content.
+	r, err := New("tiptap-ssr.ts", nil)
+	if err != nil {
+		t.Fatalf("New returned error: %v", err)
+	}
 
 	var contentID pgtype.UUID
 	if err := contentID.Scan("550e8400-e29b-41d4-a716-446655440000"); err != nil {
@@ -48,13 +53,13 @@ func TestCacheKey(t *testing.T) {
 func TestNew(t *testing.T) {
 	t.Parallel()
 
-	r := New("/path/to/script.ts", nil)
+	// Valid relative .ts path inside the default allowlist root.
+	r, err := New("tiptap-ssr.ts", nil)
+	if err != nil {
+		t.Fatalf("New returned error: %v", err)
+	}
 	if r == nil {
 		t.Fatal("New returned nil")
-	}
-
-	if r.scriptPath != "/path/to/script.ts" {
-		t.Fatalf("scriptPath = %s, want /path/to/script.ts", r.scriptPath)
 	}
 
 	if r.cache != nil {
@@ -63,5 +68,29 @@ func TestNew(t *testing.T) {
 
 	if r.cacheTTL != 24*time.Hour {
 		t.Fatalf("cacheTTL = %v, want 24h", r.cacheTTL)
+	}
+}
+
+func TestNew_RejectsInvalidScriptPath(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		path string
+	}{
+		{"absolute path", "/etc/passwd"},
+		{"parent traversal", "../escape.ts"},
+		{"nested parent traversal", "sub/../../escape.ts"},
+		{"non-js extension", "tiptap-ssr.txt"},
+		{"empty", ""},
+		{"executable", "tiptap-ssr.sh"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if _, err := New(tt.path, nil); err == nil {
+				t.Errorf("New(%q) expected error, got nil", tt.path)
+			}
+		})
 	}
 }

@@ -6,6 +6,7 @@
 package advertising
 
 import (
+	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/db"
 )
 
@@ -53,16 +54,18 @@ const (
 
 // Service provides advertising operations with reader/writer pool separation.
 type Service struct {
-	store *Store
-	db    *db.DB
+	store    *Store
+	db       *db.DB
+	settings *config.Settings
 }
 
 // NewService creates a Service backed by the given database pool.
 // Until sqlc generates advertising query code, the store uses raw
 // pgxpool connections from db.Reader and db.Writer.
-func NewService(database *db.DB) *Service {
+func NewService(database *db.DB, settings *config.Settings) *Service {
 	return &Service{
-		store: NewStore(database),
-		db:    database,
+		store:    NewStore(database),
+		db:       database,
+		settings: settings,
 	}
 }

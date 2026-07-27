@@ -288,6 +288,22 @@ func (s *Service) UpdateContent(ctx context.Context, id, tenantID, editedBy pgty
 		}
 	}
 
+	// Duplicate-content pre-check (Rule 12 / BL-006): if a content_hash is
+	// supplied, verify no other row in this tenant already has it. The unique
+	// index idx_contents_tenant_content_hash is the ultimate guard, but this
+	// yields a clean 409 duplicate_content instead of a raw 23505 violation.
+	if input.ContentHash != nil && *input.ContentHash != "" {
+		if _, err := s.read.GetContentByHash(ctx, gen.GetContentByHashParams{
+			TenantID:    tenantID,
+			ContentHash: input.ContentHash,
+			ExcludeID:   id,
+		}); err == nil {
+			return gen.UpdateContentRow{}, ErrDuplicateContent
+		} else if !errors.Is(err, pgx.ErrNoRows) {
+			return gen.UpdateContentRow{}, fmt.Errorf("checking content hash uniqueness: %w", err)
+		}
+	}
+
 	content, err := s.write.UpdateContent(ctx, gen.UpdateContentParams{
 		OrganizationID:  input.OrganizationID,
 		Title:           input.Title,
@@ -427,7 +443,22 @@ func (s *Service) GetContentRevision(ctx context.Context, id, contentID pgtype.U
 // PinContent pins a content row to a space. The pinnedBy user and position
 // are recorded. If the content is already pinned, the unique constraint
 // prevents a duplicate.
-func (s *Service) PinContent(ctx context.Context, spaceID, contentID, pinnedBy pgtype.UUID, position int32) (gen.PinContentToSpaceRow, error) {
+func (s *Service) PinContent(ctx context.Context, tenantID, spaceID, contentID, pinnedBy pgtype.UUID, position int32) (gen.PinContentToSpaceRow, error) {
+	maxPinned := 5
+	if s.settings != nil {
+		maxPinned = s.settings.GetIntOr(ctx, tenantID, "spaces.max_pinned_posts", 5)
+	}
+
+	if maxPinned > 0 {
+		existing, err := s.read.ListPinnedContent(ctx, spaceID)
+		if err != nil {
+			return gen.PinContentToSpaceRow{}, fmt.Errorf("checking pinned count: %w", err)
+		}
+		if len(existing) >= maxPinned {
+			return gen.PinContentToSpaceRow{}, fmt.Errorf("max_pinned_posts_reached: space already has %d pinned posts (limit %d)", len(existing), maxPinned)
+		}
+	}
+
 	pin, err := s.write.PinContentToSpace(ctx, gen.PinContentToSpaceParams{
 		SpaceID:   spaceID,
 		ContentID: contentID,

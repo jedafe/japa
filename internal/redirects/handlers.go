@@ -86,6 +86,8 @@ func handleServiceError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusNotFound, "not_found", err.Error())
 	case errors.Is(err, ErrInvalidHTTPStatus):
 		writeError(w, http.StatusBadRequest, "validation_error", err.Error())
+	case errors.Is(err, ErrInvalidTargetURL):
+		writeError(w, http.StatusBadRequest, "invalid_target_url", err.Error())
 	case errors.Is(err, ErrDuplicateSourcePath):
 		writeError(w, http.StatusConflict, "already_exists", err.Error())
 	case errors.Is(err, errpkg.ErrRequired):

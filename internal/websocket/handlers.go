@@ -104,15 +104,9 @@ func (h *Handlers) GetWSTicket(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 
-	// Generate a ticket ID.
-	ticketID := pgtype.UUID{}
-	if err := ticketID.Scan(generateUUID()); err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to generate ticket")
-		return
-	}
-
-	// Insert ticket into DB.
-	if err := h.service.store.CreateWSTicket(ctx, user.UserID, user.TenantID); err != nil {
+	// Insert ticket into DB and get the generated ticket ID.
+	ticket, err := h.service.store.CreateWSTicket(ctx, user.UserID, user.TenantID)
+	if err != nil {
 		slog.Error("creating ws ticket", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to create ticket")
 
@@ -126,7 +120,7 @@ func (h *Handlers) GetWSTicket(w http.ResponseWriter, r *http.Request) {
 		vctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 		defer cancel()
 
-		if err := h.vkClient.Redis().Set(vctx, "jc:ws_ticket:"+ticketID.String(),
+		if err := h.vkClient.Redis().Set(vctx, "jc:ws_ticket:"+ticket.ID.String(),
 			user.UserID.String(), 60*time.Second).Err(); err != nil {
 			slog.Error("caching ws ticket", "error", err, "user_id", user.UserID.String())
 			writeError(w, http.StatusInternalServerError, "internal_error", "Failed to create ticket")
@@ -136,7 +130,7 @@ func (h *Handlers) GetWSTicket(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]string{
-		"ticket": ticketID.String(),
+		"ticket": ticket.ID.String(),
 	})
 }
 

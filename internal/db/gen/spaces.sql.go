@@ -1184,6 +1184,38 @@ func (q *Queries) ListSpaceJoinRequests(ctx context.Context, arg ListSpaceJoinRe
 	return items, nil
 }
 
+const listSpaceMemberUserIDs = `-- name: ListSpaceMemberUserIDs :many
+SELECT user_id FROM space_members
+WHERE space_id = $1 AND tenant_id = $2
+LIMIT $3
+`
+
+type ListSpaceMemberUserIDsParams struct {
+	SpaceID  pgtype.UUID `json:"space_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+	LimitVal int32       `json:"limit_val"`
+}
+
+func (q *Queries) ListSpaceMemberUserIDs(ctx context.Context, arg ListSpaceMemberUserIDsParams) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, listSpaceMemberUserIDs, arg.SpaceID, arg.TenantID, arg.LimitVal)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []pgtype.UUID
+	for rows.Next() {
+		var user_id pgtype.UUID
+		if err := rows.Scan(&user_id); err != nil {
+			return nil, err
+		}
+		items = append(items, user_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listSpaceMembersWithProfile = `-- name: ListSpaceMembersWithProfile :many
 
 SELECT sm.user_id, u.username, up.display_name, up.avatar_url, sm.joined_at

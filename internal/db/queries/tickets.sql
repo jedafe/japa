@@ -253,3 +253,12 @@ WHERE tenant_id = @tenant_id
 UPDATE tickets
 SET sla_breach_at = now(), updated_at = now()
 WHERE id = @id AND sla_breach_at IS NULL AND status NOT IN ('resolved', 'closed', 'spam');
+
+-- name: ListSLABreachedTickets :many
+SELECT id, subject, sla_breach_at
+FROM tickets
+WHERE tenant_id = @tenant_id
+  AND sla_breach_at IS NOT NULL
+  AND sla_breach_at < now()
+  AND status NOT IN ('resolved', 'closed')
+ORDER BY sla_breach_at ASC;

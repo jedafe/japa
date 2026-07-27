@@ -19,6 +19,7 @@ import (
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/tenant"
+	"github.com/jedafe/japa/internal/visitor"
 	"github.com/meilisearch/meilisearch-go"
 )
 
@@ -136,6 +137,7 @@ func (h *Handlers) Search(w http.ResponseWriter, r *http.Request) {
 
 	limit := parseLimit(r.URL.Query().Get("limit"))
 	typeFilter := typeFromParam(r.URL.Query().Get("type"))
+	geoCountry := visitor.FromContext(r.Context()).ContentCountry
 
 	// Graceful degradation: no Meilisearch client configured or reachable.
 	if h.client == nil {
@@ -146,7 +148,7 @@ func (h *Handlers) Search(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	results, err := h.runMultiSearchFiltered(r.Context(), query, limit, t.ID, typeFilter)
+	results, err := h.runMultiSearchFiltered(r.Context(), query, limit, t.ID, typeFilter, geoCountry)
 	if err != nil {
 		slog.Warn("search query failed", "query", query, "error", err)
 		writeError(w, http.StatusServiceUnavailable, "search_unavailable", "Search is temporarily unavailable")
@@ -200,7 +202,7 @@ func (h *Handlers) SearchSpaces(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	results, err := h.runMultiSearchFiltered(r.Context(), query, limit, t.ID, "space")
+	results, err := h.runMultiSearchFiltered(r.Context(), query, limit, t.ID, "space", "")
 	if err != nil {
 		slog.Warn("space search query failed", "query", query, "error", err)
 		writeError(w, http.StatusServiceUnavailable, "search_unavailable", "Search is temporarily unavailable")
@@ -222,22 +224,32 @@ func (h *Handlers) SearchSpaces(w http.ResponseWriter, r *http.Request) {
 // indexes in a single Meilisearch multi-search call, scoped to the given
 // tenant. It returns the flattened, type-tagged results.
 func (h *Handlers) runMultiSearch(ctx context.Context, query string, limit int, tenantID pgtype.UUID) ([]SearchResult, error) {
-	return h.runMultiSearchFiltered(ctx, query, limit, tenantID, "")
+	return h.runMultiSearchFiltered(ctx, query, limit, tenantID, "", "")
 }
 
 // runMultiSearchFiltered queries indexes filtered by type. When typeFilter
-// is empty, all indexes are queried (original behavior).
-func (h *Handlers) runMultiSearchFiltered(ctx context.Context, query string, limit int, tenantID pgtype.UUID, typeFilter string) ([]SearchResult, error) {
+// is empty, all indexes are queried (original behavior). geoCountry, when
+// non-empty, adds a soft boost for learning_tracks results whose
+// relevant_countries array contains the visitor's country (ADR-064).
+func (h *Handlers) runMultiSearchFiltered(ctx context.Context, query string, limit int, tenantID pgtype.UUID, typeFilter, geoCountry string) ([]SearchResult, error) {
 	tenantFilter := fmt.Sprintf(`tenant_id = "%s"`, tenantID.String())
 	indexes := searchTypeIndexes(typeFilter)
 
 	queries := make([]*meilisearch.SearchRequest, len(indexes))
 	for i, idx := range indexes {
+		filter := tenantFilter
+		// ADR-064: for the learning_tracks index, boost results relevant to
+		// the visitor's country. We use an OR filter so globally-relevant
+		// courses (empty relevant_countries) still appear.
+		if idx == IndexLearningTracks && geoCountry != "" {
+			filter = fmt.Sprintf(`%s AND (relevant_countries IS EMPTY OR relevant_countries CONTAINS "%s")`,
+				tenantFilter, geoCountry)
+		}
 		queries[i] = &meilisearch.SearchRequest{
 			IndexUID:             idx,
 			Query:                query,
 			Limit:                int64(limit),
-			Filter:               tenantFilter,
+			Filter:               filter,
 			AttributesToRetrieve: searchAttributesToRetrieve,
 		}
 	}
@@ -732,7 +744,9 @@ func searchTypeIndexes(typeFilter string) []string {
 		return []string{IndexSpaces}
 	case "tag":
 		return []string{IndexTags}
+	case "course":
+		return []string{IndexLearningTracks}
 	default:
-		return []string{IndexPosts, IndexForumThreads, IndexSpaces, IndexUsers, IndexTags}
+		return []string{IndexPosts, IndexForumThreads, IndexSpaces, IndexUsers, IndexTags, IndexLearningTracks}
 	}
 }

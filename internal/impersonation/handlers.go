@@ -48,6 +48,8 @@ func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype
 
 func handleServiceError(w http.ResponseWriter, err error) {
 	switch {
+	case errors.Is(err, ErrTargetIsAdmin):
+		writeError(w, http.StatusForbidden, "cannot_impersonate_admin", "Cannot impersonate an admin-level user")
 	case errors.Is(err, pgx.ErrNoRows):
 		writeError(w, http.StatusNotFound, "not_found", "Resource not found")
 	case errors.Is(err, errpkg.ErrAlreadyExists):

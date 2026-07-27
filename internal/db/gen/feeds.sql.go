@@ -908,6 +908,62 @@ func (q *Queries) InsertFeedItem(ctx context.Context, arg InsertFeedItemParams) 
 	return err
 }
 
+const listDigestFeedItems = `-- name: ListDigestFeedItems :many
+SELECT c.id, c.title, c.slug, c.content_type
+FROM feeds f
+JOIN contents c ON c.id = f.content_id
+WHERE f.user_id = $1 AND f.tenant_id = $2
+  AND f.created_at >= now() - interval '7 days'
+ORDER BY f.created_at DESC
+LIMIT 20
+`
+
+type ListDigestFeedItemsParams struct {
+	UserID   pgtype.UUID `json:"user_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+type ListDigestFeedItemsRow struct {
+	ID          pgtype.UUID `json:"id"`
+	Title       string      `json:"title"`
+	Slug        string      `json:"slug"`
+	ContentType string      `json:"content_type"`
+}
+
+func (q *Queries) ListDigestFeedItems(ctx context.Context, arg ListDigestFeedItemsParams) ([]ListDigestFeedItemsRow, error) {
+	rows, err := q.db.Query(ctx, listDigestFeedItems, arg.UserID, arg.TenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListDigestFeedItemsRow
+	for rows.Next() {
+		var i ListDigestFeedItemsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Title,
+			&i.Slug,
+			&i.ContentType,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const pruneOldFeeds = `-- name: PruneOldFeeds :exec
+DELETE FROM feeds WHERE created_at < now() - interval '30 days'
+`
+
+func (q *Queries) PruneOldFeeds(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, pruneOldFeeds)
+	return err
+}
+
 const updateContentScore = `-- name: UpdateContentScore :exec
 UPDATE content_scores
 SET vote_score = $1,
@@ -941,22 +997,32 @@ func (q *Queries) UpdateContentScore(ctx context.Context, arg UpdateContentScore
 const updateVelocityScores = `-- name: UpdateVelocityScores :exec
 UPDATE content_scores cs
 SET velocity_score = CASE
-    WHEN EXTRACT(EPOCH FROM (now() - c.created_at)) / 3600 + 2 > 0
-    THEN (cs.vote_score + cs.comment_count + cs.view_count + cs.bookmark_count)::numeric
-         / (POWER(EXTRACT(EPOCH FROM (now() - c.created_at)) / 3600 + 2, 1.8))
+    WHEN c.published_at IS NOT NULL AND EXTRACT(EPOCH FROM (now() - c.published_at)) > 0
+    THEN GREATEST(0, (cs.vote_score * 2 + cs.comment_count + cs.view_count / 100.0)::numeric
+         / POWER(EXTRACT(EPOCH FROM (now() - c.published_at)) / 3600.0, $1))
     ELSE 0
 END,
 last_scored_at = now()
 FROM contents c
 WHERE cs.content_id = c.id
-  AND c.tenant_id = $1
+  AND c.tenant_id = $2
   AND c.status = 'published'
-  AND c.created_at > now() - interval '7 days'
+  AND c.created_at >= now() - interval '30 days'
 `
 
-// Batch update velocity scores for posts < 7 days old
-// velocity = engagement / (hours_old + 2)^1.8
-func (q *Queries) UpdateVelocityScores(ctx context.Context, tenantID pgtype.UUID) error {
-	_, err := q.db.Exec(ctx, updateVelocityScores, tenantID)
+type UpdateVelocityScoresParams struct {
+	Gravity  float64     `json:"gravity"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+// Batch update velocity scores for published content < 30 days old.
+// velocity = (vote_score * 2 + comment_count + view_count / 100) /
+//
+//	(hours_since_publish ^ gravity)
+//
+// gravity is passed as a parameter so it can be hot-reloaded from
+// system_settings (feed.velocity.gravity, default 1.8).
+func (q *Queries) UpdateVelocityScores(ctx context.Context, arg UpdateVelocityScoresParams) error {
+	_, err := q.db.Exec(ctx, updateVelocityScores, arg.Gravity, arg.TenantID)
 	return err
 }

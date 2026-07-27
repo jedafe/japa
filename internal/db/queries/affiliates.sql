@@ -75,6 +75,12 @@ SELECT id, tenant_id, user_id, product_type, product_id, code, description,
 FROM user_affiliate_links
 WHERE id = @id AND tenant_id = @tenant_id;
 
+-- name: GetAffiliateLinkByIDOnly :one
+SELECT id, tenant_id, user_id, product_type, product_id, code, description,
+    destination_url, click_count, conversion_count, total_earned, is_active, created_at
+FROM user_affiliate_links
+WHERE id = @id;
+
 -- name: GetAffiliateLinkByCode :one
 SELECT id, tenant_id, user_id, product_type, product_id, code, description,
     destination_url, click_count, conversion_count, total_earned, is_active, created_at
@@ -197,3 +203,67 @@ LIMIT @page_limit;
 SELECT id, code, destination_url, is_active, product_type, product_id, user_id
 FROM user_affiliate_links
 WHERE code = @code;
+
+-- =====================
+-- External Affiliate Commissions (Section 55 — Author Revenue Sharing)
+-- =====================
+
+-- name: GetAffiliateContentCommissionForCredit :one
+-- AUDIT-BE-FIN-001: replaces raw SQL read in HandleAffiliateCreditAuthorCommission.
+-- Fetches the commission row for crediting; returns only the fields needed.
+SELECT id, tenant_id, author_user_id, author_share, credited
+FROM affiliate_content_commissions
+WHERE id = @id;
+
+-- name: MarkAffiliateCommissionCredited :execrows
+-- AUDIT-BE-FIN-001: replaces raw SQL UPDATE of the commission row.
+-- Marks the commission as credited; paired with the wallet_ledger INSERT
+-- inside the same transaction (idempotent on commission row ID).
+UPDATE affiliate_content_commissions
+SET credited = true, credited_at = now()
+WHERE id = @id AND credited = false;
+
+-- =====================
+-- Record external affiliate commission (Section 55 — Author Revenue Sharing)
+-- =====================
+
+-- name: InsertAffiliateContentCommission :one
+-- Records an external affiliate commission earned from a content's affiliate link.
+-- The author_share is pre-computed by the caller (external_commission * author_commission_pct / 100).
+-- After insert, the caller enqueues the affiliate:credit_author_commission task to
+-- credit the author_share to the author's wallet via the immutable credits ledger.
+INSERT INTO affiliate_content_commissions (
+    tenant_id, content_id, provider_id, author_user_id,
+    external_commission, author_share, author_commission_pct, event_description
+) VALUES (
+    @tenant_id, @content_id, @provider_id, @author_user_id,
+    @external_commission, @author_share, @author_commission_pct, sqlc.narg(event_description)
+)
+RETURNING id, tenant_id, content_id, provider_id, author_user_id,
+          external_commission, author_share, author_commission_pct, event_description,
+          credited, credited_at, created_at;
+
+-- name: GetActiveAffiliateLinkByUser :one
+SELECT code FROM user_affiliate_links
+WHERE user_id = @user_id AND tenant_id = @tenant_id AND is_active = true
+LIMIT 1;
+
+-- name: GetAffiliateCommissionInfo :one
+SELECT apm.user_id, COALESCE(aps.commission_rates->>'pro_monthly', '0')::int AS commission_rate
+FROM affiliate_program_members apm
+JOIN user_affiliate_links ual ON ual.user_id = apm.user_id
+JOIN affiliate_program_settings aps ON aps.tenant_id = apm.tenant_id
+WHERE ual.code = @code AND apm.status = 'active' AND ual.is_active = true;
+
+-- name: GetAffiliateMemberTenant :one
+SELECT tenant_id FROM affiliate_program_members
+WHERE user_id = @user_id AND status = 'active';
+
+-- name: DeactivateLinksForSuspendedMembers :exec
+UPDATE user_affiliate_links
+SET is_active = false
+WHERE is_active = true
+  AND user_id IN (
+      SELECT user_id FROM affiliate_program_members
+      WHERE status IN ('suspended', 'banned')
+  );

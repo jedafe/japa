@@ -192,13 +192,16 @@ SET vote_score = @vote_score,
 WHERE content_id = @content_id;
 
 -- name: UpdateVelocityScores :exec
--- Batch update velocity scores for posts < 7 days old
--- velocity = engagement / (hours_old + 2)^1.8
+-- Batch update velocity scores for published content < 30 days old.
+-- velocity = (vote_score * 2 + comment_count + view_count / 100) /
+--   (hours_since_publish ^ gravity)
+-- gravity is passed as a parameter so it can be hot-reloaded from
+-- system_settings (feed.velocity.gravity, default 1.8).
 UPDATE content_scores cs
 SET velocity_score = CASE
-    WHEN EXTRACT(EPOCH FROM (now() - c.created_at)) / 3600 + 2 > 0
-    THEN (cs.vote_score + cs.comment_count + cs.view_count + cs.bookmark_count)::numeric
-         / (POWER(EXTRACT(EPOCH FROM (now() - c.created_at)) / 3600 + 2, 1.8))
+    WHEN c.published_at IS NOT NULL AND EXTRACT(EPOCH FROM (now() - c.published_at)) > 0
+    THEN GREATEST(0, (cs.vote_score * 2 + cs.comment_count + cs.view_count / 100.0)::numeric
+         / POWER(EXTRACT(EPOCH FROM (now() - c.published_at)) / 3600.0, @gravity))
     ELSE 0
 END,
 last_scored_at = now()
@@ -206,7 +209,7 @@ FROM contents c
 WHERE cs.content_id = c.id
   AND c.tenant_id = @tenant_id
   AND c.status = 'published'
-  AND c.created_at > now() - interval '7 days';
+  AND c.created_at >= now() - interval '30 days';
 
 -- name: DeleteFeedItemsByContent :exec
 DELETE FROM feeds WHERE content_id = @content_id;
@@ -301,3 +304,15 @@ GROUP BY c.id, cs.vote_score, cs.velocity_score, cs.bookmark_count,
          u.username, up.display_name, up.avatar_url,
          m.storage_bucket, m.storage_path
 LIMIT @candidate_cap;
+
+-- name: ListDigestFeedItems :many
+SELECT c.id, c.title, c.slug, c.content_type
+FROM feeds f
+JOIN contents c ON c.id = f.content_id
+WHERE f.user_id = @user_id AND f.tenant_id = @tenant_id
+  AND f.created_at >= now() - interval '7 days'
+ORDER BY f.created_at DESC
+LIMIT 20;
+
+-- name: PruneOldFeeds :exec
+DELETE FROM feeds WHERE created_at < now() - interval '30 days';

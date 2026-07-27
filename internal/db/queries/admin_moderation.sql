@@ -49,6 +49,23 @@ WHERE user_id = $1 AND action = 'ban' AND deleted_at IS NULL
   AND (expires_at IS NULL OR expires_at > now())
 ORDER BY created_at DESC;
 
+-- name: CheckUserBanExists :one
+-- AUDIT-BE-DB-001: replaces raw SQL existence check in ban enforcement middleware.
+-- Returns true when an active (non-expired) ban or suspension exists for the user.
+SELECT EXISTS(
+    SELECT 1 FROM user_moderation_actions
+    WHERE user_id = $1 AND action IN ('ban', 'suspension')
+    AND (expires_at IS NULL OR expires_at > now())
+);
+
+-- name: GetUserBanExpiration :one
+-- AUDIT-BE-DB-002: replaces raw SQL expiration lookup in ban enforcement middleware.
+-- Returns the expires_at of the most recent active ban/suspension (may be NULL = permanent).
+SELECT expires_at FROM user_moderation_actions
+WHERE user_id = $1 AND action IN ('ban', 'suspension')
+AND (expires_at IS NULL OR expires_at > now())
+ORDER BY created_at DESC LIMIT 1;
+
 -- name: CreateUserWarning :exec
 INSERT INTO user_moderation_actions (user_id, tenant_id, action, reason, created_at)
 VALUES ($1, (SELECT tenant_id FROM users WHERE id = $1), 'warning', $2, now());
