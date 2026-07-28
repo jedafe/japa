@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"net/http"
 	"strconv"
 	"time"
@@ -135,6 +136,7 @@ func handleServiceError(w http.ResponseWriter, err error) {
 	case errors.Is(err, ErrEditWindowExpired):
 		writeError(w, http.StatusForbidden, "edit_window_expired", "The edit window for this content has expired")
 	default:
+		slog.Error("content service error", "error", err, "error_type", fmt.Sprintf("%T", err))
 		writeError(w, http.StatusInternalServerError, "internal_error", "Something went wrong")
 	}
 }
@@ -459,12 +461,22 @@ func (h *Handlers) CreateContent(w http.ResponseWriter, r *http.Request) {
 		input.Visibility = VisibilityPublic
 	}
 
+	// Derive plain-text body from body_html when the client sends only
+	// body_html (the Tiptap editor always produces HTML, never plain text).
+	// Without this, body is always "" → ComputeContentHash("") is the same
+	// for every empty-body draft → unique constraint violation on
+	// idx_contents_tenant_content_hash (Rule 12 / §41 spam prevention).
+	body := input.Body
+	if body == "" && input.BodyHtml != "" {
+		body = SanitizeText(input.BodyHtml)
+	}
+
 	createInput := CreateContentInput{
 		AuthorID:        user.UserID,
 		ContentType:     input.ContentType,
 		Title:           input.Title,
 		Slug:            input.Slug,
-		Body:            SanitizeText(input.Body),
+		Body:            SanitizeText(body),
 		BodyHtml:        SanitizeHTML(input.BodyHtml),
 		FieldValues:     input.FieldValues,
 		CanonicalUrl:    input.CanonicalUrl,
@@ -712,10 +724,17 @@ func (h *Handlers) UpdateContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Derive plain-text body from body_html when the client sends only
+	// body_html (same fix as CreateContent — see §41 / Rule 12).
+	body := input.Body
+	if body == "" && input.BodyHtml != "" {
+		body = SanitizeText(input.BodyHtml)
+	}
+
 	updateInput := UpdateContentInput{
 		Title:           input.Title,
 		Slug:            input.Slug,
-		Body:            SanitizeText(input.Body),
+		Body:            SanitizeText(body),
 		BodyHtml:        SanitizeHTML(input.BodyHtml),
 		FieldValues:     input.FieldValues,
 		CanonicalUrl:    input.CanonicalUrl,
@@ -730,8 +749,12 @@ func (h *Handlers) UpdateContent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Compute content hash for duplicate detection (Rule 12).
-	hash := ComputeContentHash(input.Body)
-	updateInput.ContentHash = &hash
+	// Skip hashing for empty bodies — NULL content_hash doesn't
+	// collide (unique index has WHERE content_hash IS NOT NULL).
+	if strings.TrimSpace(body) != "" {
+		hash := ComputeContentHash(body)
+		updateInput.ContentHash = &hash
+	}
 
 	if input.GeoSpaceID != nil && *input.GeoSpaceID != "" {
 		if err := updateInput.GeoSpaceID.Scan(*input.GeoSpaceID); err != nil {

@@ -12,6 +12,10 @@ type settingMeta struct {
 	Sensitive    bool    `json:"sensitive"`
 	// Options is a JSON-encoded array of {value, label} objects for select/multi-select.
 	Options string `json:"options,omitempty"`
+	// Public indicates whether this setting should be exposed via the
+	// GET /site/settings/public endpoint (is_public = true). Appearance and
+	// general branding settings are public so the main site can render them.
+	Public bool `json:"-"`
 }
 
 // settingsCatalog maps every known dot-notation key to its metadata.
@@ -91,8 +95,8 @@ var settingsCatalog = map[string]settingMeta{
 	// Audit
 	"audit.log_retention_days": {Type: "int", DefaultValue: "365", Description: "Days to retain audit_logs before pruning."},
 	// i18n
-	"i18n.default_language":  {Type: "string", DefaultValue: "en", Description: "Platform default language."},
-	"i18n.enabled_languages": {Type: "csv", DefaultValue: "en,fr", Description: "Comma-separated active language codes."},
+	"i18n.default_language":  {Type: "string", DefaultValue: "en", Description: "Platform default language.", Public: true},
+	"i18n.enabled_languages": {Type: "csv", DefaultValue: "en,fr", Description: "Comma-separated active language codes.", Public: true},
 	// GDPR
 	"gdpr.deletion_grace_days":            {Type: "int", DefaultValue: "30", Description: "Days before hard deletion after request."},
 	"gdpr.export_expiry_days":             {Type: "int", DefaultValue: "7", Description: "Days before export download link expires."},
@@ -139,19 +143,24 @@ var settingsCatalog = map[string]settingMeta{
 	"onboarding.promoted_spaces": {Type: "json", DefaultValue: "[]", Description: "JSON array of space UUIDs to promote in recommendations."},
 	"onboarding.promoted_users":  {Type: "json", DefaultValue: "[]", Description: "JSON array of user UUIDs to promote in recommendations."},
 	"onboarding.promoted_tags":   {Type: "json", DefaultValue: "[]", Description: "JSON array of tag UUIDs to promote in recommendations."},
-	"onboarding.min_spaces_join": {Type: "int", DefaultValue: "3", Description: "Minimum number of spaces a new user must join during onboarding."},
-	"onboarding.min_tags_follow": {Type: "int", DefaultValue: "5", Description: "Minimum number of tags a new user must follow during onboarding."},
-	"onboarding.min_users_follow": {Type: "int", DefaultValue: "3", Description: "Minimum number of users a new user must follow during onboarding."},
+	"onboarding.min_spaces_join": {Type: "int", DefaultValue: "3", Description: "Minimum number of spaces a new user must join during onboarding.", Public: true},
+	"onboarding.min_tags_follow": {Type: "int", DefaultValue: "5", Description: "Minimum number of tags a new user must follow during onboarding.", Public: true},
+	"onboarding.min_users_follow": {Type: "int", DefaultValue: "3", Description: "Minimum number of users a new user must follow during onboarding.", Public: true},
 	// General platform settings (exist in DB, now catalogued for type metadata).
-	"general.site_name":              {Type: "string", DefaultValue: "JapaConnect", Description: "Platform display name."},
-	"general.site_description":       {Type: "string", DefaultValue: "", Description: "Short platform description for SEO and meta tags."},
-	"general.maintenance_mode":       {Type: "bool", DefaultValue: "false", Description: "When true, the platform shows a maintenance banner to non-admin users."},
-	"general.registration_open":      {Type: "bool", DefaultValue: "true", Description: "Whether new user self-registration is allowed."},
-	// Appearance / branding.
-	"appearance.dark_mode_default":   {Type: "bool", DefaultValue: "false", Description: "Default theme for new visitors (false = light)."},
-	"appearance.feed_card_style":     {Type: "string", DefaultValue: "reddit", Description: "Default feed card style: reddit | compact | grid | magazine.", Options: `[{"value":"reddit","label":"Reddit"},{"value":"compact","label":"Compact"},{"value":"grid","label":"Grid"},{"value":"magazine","label":"Magazine"}]`},
-	"appearance.logo_url":            {Type: "string", DefaultValue: "", Description: "URL to the platform logo image."},
-	"appearance.primary_color":       {Type: "string", DefaultValue: "#c615a6", Description: "Primary brand color (hex)."},
+	// Public so the main site can render the site name and description in SEO/meta.
+	"general.site_name":              {Type: "string", DefaultValue: "JapaConnect", Description: "Platform display name.", Public: true},
+	"general.site_description":       {Type: "string", DefaultValue: "", Description: "Short platform description for SEO and meta tags.", Public: true},
+	"general.maintenance_mode":       {Type: "bool", DefaultValue: "false", Description: "When true, the platform shows a maintenance banner to non-admin users.", Public: true},
+	"general.registration_open":      {Type: "bool", DefaultValue: "true", Description: "Whether new user self-registration is allowed.", Public: true},
+	// Appearance / branding — public so the main site can apply primary color
+	// and render the logo from the control panel settings.
+	"appearance.dark_mode_default":   {Type: "bool", DefaultValue: "false", Description: "Default theme for new visitors (false = light).", Public: true},
+	"appearance.feed_card_style":     {Type: "string", DefaultValue: "reddit", Description: "Default feed card style: reddit | compact | grid | magazine.", Options: `[{"value":"reddit","label":"Reddit"},{"value":"compact","label":"Compact"},{"value":"grid","label":"Grid"},{"value":"magazine","label":"Magazine"}]`, Public: true},
+	"appearance.default_editor":      {Type: "string", DefaultValue: "block", Description: "Default editor mode for the post composer: block | wysiwyg | markdown.", Options: `[{"value":"block","label":"Block"},{"value":"wysiwyg","label":"Rich text"},{"value":"markdown","label":"Markdown"}]`, Public: true},
+	"appearance.logo_url":            {Type: "string", DefaultValue: "", Description: "URL to the platform logo image.", Public: true},
+	"appearance.favicon_url":         {Type: "string", DefaultValue: "", Description: "URL to the platform favicon image; empty = use default favicon.svg.", Public: true},
+	"appearance.primary_color":       {Type: "string", DefaultValue: "#c615a6", Description: "Primary brand color (hex).", Public: true},
+	"appearance.auth_brand_slides":   {Type: "json", DefaultValue: "[]", Description: "Carousel slides for the auth brand panel: [{image, headline, subheading}].", Public: true},
 	// Advanced / operational.
 	"advanced.cache_ttl_seconds":     {Type: "int", DefaultValue: "20", Description: "Default Valkey cache TTL in seconds for non-explicit keys."},
 	"advanced.log_level":             {Type: "string", DefaultValue: "info", Description: "Application log level.", Options: `[{"value":"debug","label":"Debug"},{"value":"info","label":"Info"},{"value":"warn","label":"Warn"},{"value":"error","label":"Error"}]`},
@@ -178,6 +187,15 @@ var settingsCatalog = map[string]settingMeta{
 	"users.allowed_avatar_types":         {Type: "csv", DefaultValue: "png,jpg,gif,webp", Description: "Comma-separated allowed file extensions for user avatars.", Options: `[{"value":"png","label":"PNG"},{"value":"jpg","label":"JPG"},{"value":"jpeg","label":"JPEG"},{"value":"gif","label":"GIF"},{"value":"webp","label":"WebP"},{"value":"svg","label":"SVG"}]`},
 	"users.allow_social_login":           {Type: "bool", DefaultValue: "false", Description: "Whether OAuth social login providers are enabled."},
 	"users.require_profile_completion":   {Type: "bool", DefaultValue: "false", Description: "Whether users must complete their profile before posting."},
+}
+
+// IsPublicSetting reports whether the given dot-notation key is marked Public
+// in the catalog. Other packages (e.g. admin) use this to set is_public on upsert.
+func IsPublicSetting(key string) bool {
+	if meta, ok := settingsCatalog[key]; ok {
+		return meta.Public
+	}
+	return false
 }
 
 // getSettingMeta returns the metadata for a given dot-notation key.

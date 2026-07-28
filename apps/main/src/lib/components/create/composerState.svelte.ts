@@ -19,6 +19,8 @@ export interface ComposerOptions {
 	getSnapshot: () => CreateContentInput;
 	canPublish: () => boolean;
 	getPublishAt: () => string | null;
+	/** Gate for autosave — return false to suppress a save cycle (e.g. empty title). */
+	canSave?: () => boolean;
 	debounceMs?: number;
 	maxRetries?: number;
 }
@@ -43,7 +45,7 @@ export class ComposerState {
 
 	constructor(deps: ComposerDeps, opts: ComposerOptions) {
 		this.#deps = deps;
-		this.#opts = { debounceMs: 2000, maxRetries: 3, ...opts };
+		this.#opts = { debounceMs: 2000, maxRetries: 3, canSave: () => true, ...opts };
 	}
 
 	/** Call on any body/field edit. Bumps the revision and schedules a debounced save. */
@@ -67,6 +69,13 @@ export class ComposerState {
 	async flush(): Promise<void> {
 		if (this.#inFlight) return;
 		if (this.contentId && this.#rev === this.#savedRev) return; // nothing new
+		// Suppress the initial create when the form doesn't meet the save gate
+		// (e.g. title still empty). Edits are kept in local state; the next
+		// markDirty after the gate passes will trigger the save.
+		if (!this.contentId && !this.#opts.canSave()) {
+			this.status = 'pristine';
+			return;
+		}
 		this.#inFlight = true;
 		this.lastError = null;
 		const rev = this.#rev;

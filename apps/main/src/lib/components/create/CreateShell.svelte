@@ -19,11 +19,12 @@
 	import type { TypeEntry } from './contentTypeRegistry';
 	import SaveBar from './SaveBar.svelte';
 	import TitleField from './TitleField.svelte';
+	import { suggestSlug } from './slug';
 	import SpaceSelector from './SpaceSelector.svelte';
 	import OrgSelector from './OrgSelector.svelte';
 	import TagInput from './TagInput.svelte';
-	import CoverUploader from './CoverUploader.svelte';
 	import PostEditor from './editors/PostEditor.svelte';
+	import type { EditorMode } from './editors/PostEditor.svelte';
 	import ComparisonBuilder from './editors/ComparisonBuilder.svelte';
 	import CreateRightPanel from './panel/CreateRightPanel.svelte';
 
@@ -35,14 +36,16 @@
 		organizations: ComposerOrganization[];
 		draft: ContentRecord | null;
 		user: { id: string } | null;
+		defaultEditor?: EditorMode;
 	}
 
-	let { types, spaces, fieldGroups, series, organizations, draft, user }: Props = $props();
+	let { types, spaces, fieldGroups, series = $bindable(), organizations, draft, user, defaultEditor = 'block' }: Props = $props();
 
 	// ---- form state ----
 	let selectedType = $state<TypeEntry>(untrack(() => types[0] ?? resolveType('blog_post')));
 	let title = $state(untrack(() => draft?.title ?? ''));
 	let slug = $state(untrack(() => draft?.slug ?? ''));
+	let slugTouched = $state(untrack(() => Boolean(draft?.slug)));
 	let bodyHtml = $state(untrack(() => draft?.body_html ?? ''));
 	let spaceId = $state<string | null>(untrack(() => draft?.space_id ?? spaces.find((s) => s.is_primary)?.id ?? null));
 	// Post-as-org (ADR-062): null = personal post; an org id = post on behalf of
@@ -124,6 +127,7 @@
 		composer = new ComposerState(deps, {
 			getSnapshot: () => snapshot,
 			canPublish: () => gate.ok,
+			canSave: () => title.trim().length > 0,
 			getPublishAt: () => publishAt
 		});
 		// Replay the current tags/series into the freshly-created composer so
@@ -148,6 +152,18 @@
 		composer?.markDirty();
 	}
 
+	function handleTitle(v: string) {
+		title = v;
+		if (!slugTouched) slug = suggestSlug(v);
+		markDirty();
+	}
+
+	function handleSlug(v: string) {
+		slugTouched = true;
+		slug = suggestSlug(v);
+		markDirty();
+	}
+
 	async function saveDraft() {
 		await composer?.flush();
 	}
@@ -164,7 +180,10 @@
 			<select
 				class="composer-type-select"
 				value={selectedType.value}
-				onchange={(e) => (selectedType = resolveType(e.currentTarget.value))}
+				onchange={(e) => {
+				const found = types.find((ty) => ty.value === e.currentTarget.value);
+				selectedType = found ?? resolveType(e.currentTarget.value);
+			}}
 			>
 				{#each types as ty (ty.value)}
 					<option value={ty.value}>{ty.label}</option>
@@ -172,38 +191,22 @@
 			</select>
 		</div>
 
-		<TitleField {title} {slug} onTitle={(v) => { title = v; markDirty(); }} onSlug={(v) => { slug = v; markDirty(); }} />
+		<TitleField {title} onTitle={handleTitle} />
 
-		<SpaceSelector
-			{spaces}
-			selectedId={spaceId}
-			onSelect={(id) => { spaceId = id; markDirty(); }}
-			onfocus={() => (focusedField = 'space')}
-		/>
+		<div class="row-pair">
+			<SpaceSelector
+				{spaces}
+				selectedId={spaceId}
+				onSelect={(id) => { spaceId = id; markDirty(); }}
+				onfocus={() => (focusedField = 'space')}
+			/>
+			<TagInput {tags} onTags={(next) => { tags = next; markDirty(); }} onfocus={() => (focusedField = 'tags')} />
+		</div>
 
 		<OrgSelector
 			orgs={organizations}
 			selectedId={organizationId}
 			onSelect={(id) => { organizationId = id; markDirty(); }}
-		/>
-
-		<TagInput {tags} onTags={(next) => { tags = next; markDirty(); }} onfocus={() => (focusedField = 'tags')} />
-
-		<CoverUploader
-			mediaId={coverMediaId}
-			previewUrl={coverPreviewUrl}
-			onUploaded={(asset: MediaAsset) => {
-				coverMediaId = asset.id;
-				coverPreviewUrl = asset.url;
-				featuredImageId = asset.id;
-				markDirty();
-			}}
-			onRemove={() => {
-				coverMediaId = null;
-				coverPreviewUrl = null;
-				featuredImageId = null;
-				markDirty();
-			}}
 		/>
 
 		{#if selectedType.formKind === 'comparison'}
@@ -219,6 +222,7 @@
 				onedit={markDirty}
 				onhtml={(v) => { bodyHtml = v; }}
 				onfocus={() => (focusedField = 'body')}
+				defaultMode={defaultEditor}
 			/>
 		{/if}
 
@@ -235,13 +239,16 @@
 	<div class="composer-right">
 		<CreateRightPanel
 			{focusedField}
+			{slug}
 			{visibility}
 			{canonicalUrl}
 			{publishAt}
 			{fieldValues}
 			{fieldGroups}
-			{series}
+			bind:series
 			{seriesId}
+			{coverMediaId}
+			{coverPreviewUrl}
 			{metaTitle}
 			{metaDescription}
 			{ogImageUrl}
@@ -251,8 +258,21 @@
 			oncanonical={(v) => { canonicalUrl = v; markDirty(); }}
 			onpublishat={(v) => { publishAt = v; markDirty(); }}
 			onfieldvalues={(v) => { fieldValues = v; markDirty(); }}
+			onslug={handleSlug}
 			onseries={(id) => { seriesId = id; markDirty(); }}
 			onseriesfocus={() => (focusedField = 'series')}
+			oncoveruploaded={(asset: MediaAsset) => {
+				coverMediaId = asset.id;
+				coverPreviewUrl = asset.url;
+				featuredImageId = asset.id;
+				markDirty();
+			}}
+			oncoverremove={() => {
+				coverMediaId = null;
+				coverPreviewUrl = null;
+				featuredImageId = null;
+				markDirty();
+			}}
 			onmetatitle={(v) => { metaTitle = v; markDirty(); }}
 			onmetadescription={(v) => { metaDescription = v; markDirty(); }}
 			onogimageselect={(asset: MediaAsset | null) => {
@@ -279,6 +299,15 @@
 		display: flex;
 		flex-direction: column;
 		gap: 1rem;
+		min-width: 0;
+	}
+	.row-pair {
+		display: flex;
+		gap: 0.75rem;
+		min-width: 0;
+	}
+	.row-pair > :global(*) {
+		flex: 1 1 0;
 		min-width: 0;
 	}
 	.composer-header {

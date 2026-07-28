@@ -9,6 +9,7 @@
 	import { Switch } from "bits-ui";
 	import { settingsAdminApi, api } from '$lib/api';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
+	import AuthBrandSlidesEditor from '$lib/components/settings/AuthBrandSlidesEditor.svelte';
 
 	const canManage = $derived(hasPermission('admin.settings'));
 
@@ -529,7 +530,13 @@
 											disabled={!canManage}
 											onchange={(val: string) => updateSettingValue(category.key, setting.key, val)}
 										/>
-									{:else if setting.type === 'textarea'}
+									{:else if setting.type === 'brand-slides'}
+									<AuthBrandSlidesEditor
+										value={setting.value}
+										disabled={!canManage}
+										onchange={(next) => updateSettingValue(category.key, setting.key, next)}
+									/>
+								{:else if setting.type === 'textarea'}
 										<textarea
 											id={toggleId}
 											value={String(setting.value ?? '')}
