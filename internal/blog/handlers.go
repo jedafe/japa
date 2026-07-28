@@ -15,6 +15,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
@@ -279,6 +280,20 @@ func (h *Handlers) ListSeries(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		handleServiceError(w, err)
 		return
+	}
+
+	// Optional q parameter for autocomplete search — filters by title/slug
+	// (case-insensitive). Used by the /create composer's series selector.
+	if q := strings.TrimSpace(r.URL.Query().Get("q")); q != "" {
+		qLower := strings.ToLower(q)
+		filtered := make([]gen.BlogSeries, 0, len(series))
+		for _, s := range series {
+			if strings.Contains(strings.ToLower(s.Title), qLower) ||
+				strings.Contains(strings.ToLower(s.Slug), qLower) {
+				filtered = append(filtered, s)
+			}
+		}
+		series = filtered
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": series})

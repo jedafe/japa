@@ -1,5 +1,5 @@
 import { api } from '$lib/api/client';
-import type { ContentRecord, MediaAsset, SaveErrorClass, SearchHit, BlogSeries } from '$lib/types';
+import type { ContentRecord, MediaAsset, MeSpace, SaveErrorClass, SearchHit, BlogSeries } from '$lib/types';
 import { searchPath, mapUserHits, mapContentHits, mapTagHits } from '$lib/tiptap/search';
 
 export interface CreateContentInput {
@@ -47,8 +47,18 @@ export const detachTag = (id: string, tagId: string) => api.delete(`/content/${i
 
 /* ---- series (deferred linkage; standard form only) ---- */
 export const listSeries = () => api.get<BlogSeries[]>('/blog/series');
-export const createSeries = (input: { title: string; slug: string; description?: string }) =>
-	api.post<BlogSeries>('/blog/series', input);
+export const searchSeries = (q: string) =>
+	api.get<BlogSeries[]>(`/blog/series?q=${encodeURIComponent(q)}`);
+
+/* ---- spaces (debounced autocomplete search) ---- */
+export const searchSpaces = (q: string) =>
+	api.get<MeSpace[]>(`/me/spaces?q=${encodeURIComponent(q)}`);
+export const createSeries = (input: {
+	title: string;
+	slug: string;
+	description?: string;
+	cover_image_id?: string;
+}) => api.post<BlogSeries>('/blog/series', input);
 export const linkSeries = (seriesId: string, contentId: string, position: number) =>
 	api.post(`/blog/series/${seriesId}/posts`, { content_id: contentId, position });
 export const unlinkSeries = (seriesId: string, contentId: string) =>

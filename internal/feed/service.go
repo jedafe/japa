@@ -25,6 +25,8 @@ type FeedItem struct { //nolint:revive // stuttering type name preserved for API
 	ContentType       string   `json:"content_type"`
 	AuthorID          string   `json:"author_id"`
 	SpaceID           *string  `json:"space_id,omitempty"`
+	SpaceName         string   `json:"space_name,omitempty"`
+	SpaceSlug         string   `json:"space_slug,omitempty"`
 	CreatedAt         string   `json:"created_at"`
 	ViewCount         int32    `json:"view_count"`
 	CommentCount      int32    `json:"comment_count"`
@@ -308,6 +310,8 @@ func exploreRowsToItems(rows []gen.GetExploreFeedRow) []FeedItem {
 			VelocityScore:      pgNumericToFloat64(r.VelocityScore),
 			AuthorName:         r.AuthorName,
 			AuthorAvatarURL:    r.AuthorAvatarUrl,
+			SpaceName:          r.SpaceName,
+			SpaceSlug:          r.SpaceSlug,
 			Excerpt:            r.Excerpt,
 			Tags:               splitTags(r.Tags),
 			ReadingTimeMinutes: int(r.ReadTimeMinutes),
@@ -336,6 +340,8 @@ func topRowsToItems(rows []gen.GetTopFeedRow) []FeedItem {
 			VelocityScore:      pgNumericToFloat64(r.VelocityScore),
 			AuthorName:         r.AuthorName,
 			AuthorAvatarURL:    r.AuthorAvatarUrl,
+			SpaceName:          r.SpaceName,
+			SpaceSlug:          r.SpaceSlug,
 			Excerpt:            r.Excerpt,
 			Tags:               splitTags(r.Tags),
 			ReadingTimeMinutes: int(r.ReadTimeMinutes),
@@ -364,6 +370,8 @@ func risingRowsToItems(rows []gen.GetRisingFeedRow) []FeedItem {
 			VelocityScore:      pgNumericToFloat64(r.VelocityScore),
 			AuthorName:         r.AuthorName,
 			AuthorAvatarURL:    r.AuthorAvatarUrl,
+			SpaceName:          r.SpaceName,
+			SpaceSlug:          r.SpaceSlug,
 			Excerpt:            r.Excerpt,
 			Tags:               splitTags(r.Tags),
 			ReadingTimeMinutes: int(r.ReadTimeMinutes),
@@ -391,6 +399,8 @@ func primaryRowsToItems(rows []gen.GetPrimaryFeedRow) []FeedItem {
 			VoteScore:          derefInt32(r.VoteScore),
 			AuthorName:         r.AuthorName,
 			AuthorAvatarURL:    r.AuthorAvatarUrl,
+			SpaceName:          r.SpaceName,
+			SpaceSlug:          r.SpaceSlug,
 			Excerpt:            r.Excerpt,
 			Tags:               splitTags(r.Tags),
 			ReadingTimeMinutes: int(r.ReadTimeMinutes),
@@ -418,6 +428,8 @@ func spaceRowsToItems(rows []gen.GetSpaceFeedRow) []FeedItem {
 			VelocityScore:      pgNumericToFloat64(r.VelocityScore),
 			AuthorName:         r.AuthorName,
 			AuthorAvatarURL:    r.AuthorAvatarUrl,
+			SpaceName:          r.SpaceName,
+			SpaceSlug:          r.SpaceSlug,
 			Excerpt:            r.Excerpt,
 			Tags:               splitTags(r.Tags),
 			ReadingTimeMinutes: int(r.ReadTimeMinutes),
@@ -446,6 +458,8 @@ func profileRowsToItems(rows []gen.GetProfileFeedRow) []FeedItem {
 			VelocityScore:      pgNumericToFloat64(r.VelocityScore),
 			AuthorName:         r.AuthorName,
 			AuthorAvatarURL:    r.AuthorAvatarUrl,
+			SpaceName:          r.SpaceName,
+			SpaceSlug:          r.SpaceSlug,
 			Excerpt:            r.Excerpt,
 			Tags:               splitTags(r.Tags),
 			ReadingTimeMinutes: int(r.ReadTimeMinutes),

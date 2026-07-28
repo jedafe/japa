@@ -145,6 +145,7 @@ export interface FeedItem {
 	author_avatar_url?: string | null;
 	space_id?: string | null;
 	space_name?: string | null;
+	space_slug?: string | null;
 	excerpt?: string;
 	created_at: string;
 	view_count?: number;
@@ -161,7 +162,7 @@ export interface FeedItem {
  * Composer (/create) — Section 14/24/30
  * ------------------------------------------------------------------ */
 
-export type Visibility = 'public' | 'unlisted' | 'private';
+export type Visibility = 'public' | 'members' | 'private';
 
 /** GET /content-types item. */
 export interface ContentTypeMeta {

@@ -854,6 +854,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		// calls this once at startup and again after a 403 CSRF rejection.
 		r.Get("/csrf", csrf.TokenHandler(cfg.CookieDomain, cfg.IsProduction()))
 
+		// Public site settings (appearance/branding) — no auth required.
+		// Also registered outside /api/v1 at /site/settings/public for bot/SSR use.
+		r.Get("/site/settings/public", configHandlers.GetPublicSettings)
+
 		// Auth routes (public - no auth required, tenant-scoped)
 			// Tight rate limit to throttle brute-force attempts.
 			r.Route("/auth", func(r chi.Router) {

@@ -22,10 +22,12 @@
 		user: SessionUser | null;
 		collapsed: boolean;
 		userSpaces?: UserSpaceRef[];
+		/** Platform logo URL from appearance.logo_url (control panel). */
+		logoUrl?: string;
 		onToggle: () => void;
 	}
 
-	let { menu, user, collapsed, userSpaces = [], onToggle }: Props = $props();
+	let { menu, user, collapsed, userSpaces = [], logoUrl = '', onToggle }: Props = $props();
 
 	// The API already filters by auth/permissions, but guard against visibility
 	// drift so an 'authenticated' item never leaks to a guest and vice-versa.
@@ -60,11 +62,15 @@
 	<!-- Logo + collapse toggle -->
 	<div class={clsx('flex h-[var(--nav-height)] shrink-0 items-center gap-2 px-3', collapsed && 'justify-center')}>
 		<a href="/" class="flex items-center gap-2 font-medium text-[var(--color-text)]">
-			<span
-				class="grid h-8 w-8 shrink-0 place-items-center rounded-[var(--radius)] bg-[var(--color-primary)] text-sm font-semibold text-[var(--color-primary-contrast)]"
-				>JC</span
-			>
-			{#if !collapsed}<span>{t('app.name')}</span>{/if}
+			{#if logoUrl}
+				<img src={logoUrl} alt={t('app.name')} class="h-8 w-auto max-w-[140px] shrink-0 object-contain" />
+			{:else}
+				<span
+					class="grid h-8 w-8 shrink-0 place-items-center rounded-[var(--radius)] bg-[var(--color-primary)] text-sm font-semibold text-[var(--color-primary-contrast)]"
+					>JC</span
+				>
+			{/if}
+			{#if !collapsed && !logoUrl}<span>{t('app.name')}</span>{/if}
 		</a>
 		{#if !collapsed}
 			<button

@@ -50,6 +50,20 @@ const oauthRedirectCookie = "jc_oauth_redirect"
 // path is stored in a separate cookie so the callback knows where to send
 // the user after success.
 func (h *OAuthHandlers) HandleInitiate(w http.ResponseWriter, r *http.Request) {
+	// Gate social login on the users.allow_social_login system setting
+	// (admin-configurable in the Settings → Users page). When disabled, all
+	// OAuth providers are rejected at initiation so the setting actually
+	// affects the site. Ref: conventions/system-settings-catalog.md
+	if h.Settings != nil {
+		if t := tenant.FromContext(r.Context()); t != nil {
+			if allowed, err := h.Settings.GetSettingBool(r.Context(), t.ID, "users.allow_social_login"); err == nil && !allowed {
+				writeError(w, http.StatusForbidden, "social_login_disabled",
+					"Social login is disabled for this tenant")
+				return
+			}
+		}
+	}
+
 	providerName := chi.URLParam(r, "provider")
 
 	provider := h.Config.NewProvider(providerName)

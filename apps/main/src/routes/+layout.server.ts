@@ -12,6 +12,16 @@ export const load: LayoutServerLoad = async (event) => {
 	const ctx = apiContext(event);
 	const user = event.locals.user;
 
+	// Public site settings (appearance/branding) — fetched SSR so the primary
+	// color and logo are available before hydration, preventing a flash of the
+	// default theme. Ref: conventions/system-settings-catalog.md (Appearance).
+	let siteSettings: Record<string, unknown> = {};
+	try {
+		siteSettings = (await apiGet<Record<string, unknown>>(ctx, '/site/settings/public')) ?? {};
+	} catch {
+		siteSettings = {};
+	}
+
 	let menu: Menu | null = null;
 	try {
 		// The skill calls this "primary_nav"; the seeded tenant menu slug is main_sidebar.
@@ -62,6 +72,7 @@ export const load: LayoutServerLoad = async (event) => {
 		theme: event.locals.theme,
 		locale: event.locals.locale,
 		isUniversityHost: event.locals.isUniversityHost,
+		siteSettings,
 		menu,
 		trendingTags,
 		suggestedSpaces,
