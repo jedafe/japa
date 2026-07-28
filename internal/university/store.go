@@ -10,7 +10,8 @@
 // Processor interface.
 //
 // Ref: japaconnect-engineering/sections/36-learning-platform.md (Japa University)
-//      japaconnect-engineering/adr/ADR-063-japa-university-creator-economy.md
+//
+//	japaconnect-engineering/adr/ADR-063-japa-university-creator-economy.md
 package university
 
 import (
@@ -52,21 +53,21 @@ func (s *Store) DB() *db.DB { return s.db }
 
 // InstructorProfile is the API-facing instructor profile record.
 type InstructorProfile struct {
-	ID                string          `json:"id"`
-	TenantID          string          `json:"tenant_id"`
-	UserID            string          `json:"user_id"`
-	DisplayName       string          `json:"display_name"`
-	Headline          *string         `json:"headline,omitempty"`
-	Bio               *string         `json:"bio,omitempty"`
-	SocialLinks       json.RawMessage `json:"social_links"`
-	Tier              string          `json:"tier"`
-	Status            string          `json:"status"`
-	CommissionPct     *float64        `json:"commission_pct_override,omitempty"`
-	KycStatus         string          `json:"kyc_status"`
-	ApplicationNote   *string         `json:"application_note,omitempty"`
-	ReviewedAt        *time.Time      `json:"reviewed_at,omitempty"`
-	CreatedAt         time.Time       `json:"created_at"`
-	UpdatedAt         time.Time       `json:"updated_at"`
+	ID              string          `json:"id"`
+	TenantID        string          `json:"tenant_id"`
+	UserID          string          `json:"user_id"`
+	DisplayName     string          `json:"display_name"`
+	Headline        *string         `json:"headline,omitempty"`
+	Bio             *string         `json:"bio,omitempty"`
+	SocialLinks     json.RawMessage `json:"social_links"`
+	Tier            string          `json:"tier"`
+	Status          string          `json:"status"`
+	CommissionPct   *float64        `json:"commission_pct_override,omitempty"`
+	KycStatus       string          `json:"kyc_status"`
+	ApplicationNote *string         `json:"application_note,omitempty"`
+	ReviewedAt      *time.Time      `json:"reviewed_at,omitempty"`
+	CreatedAt       time.Time       `json:"created_at"`
+	UpdatedAt       time.Time       `json:"updated_at"`
 }
 
 func profileFromRow(r gen.InstructorProfile) InstructorProfile {
@@ -176,12 +177,12 @@ func (s *Store) CountByStatus(ctx context.Context, tenantID pgtype.UUID, status 
 // UpdateSelf updates creator-editable fields on the caller's own profile.
 func (s *Store) UpdateSelf(ctx context.Context, tenantID, userID pgtype.UUID, in UpdateSelfInput) (gen.InstructorProfile, error) {
 	return s.write.UpdateInstructorProfileSelf(ctx, gen.UpdateInstructorProfileSelfParams{
-		TenantID:    tenantID,
-		UserID:      userID,
-		DisplayName: in.DisplayName,
-		Headline:    in.Headline,
-		Bio:         in.Bio,
-		SocialLinks: in.SocialLinks,
+		TenantID:     tenantID,
+		UserID:       userID,
+		DisplayName:  in.DisplayName,
+		Headline:     in.Headline,
+		Bio:          in.Bio,
+		SocialLinks:  in.SocialLinks,
 		PayoutMethod: in.PayoutMethod,
 	})
 }
@@ -234,28 +235,36 @@ func (s *Store) Reinstate(ctx context.Context, tenantID, id, reviewer pgtype.UUI
 	})
 }
 
+// Delete permanently removes an instructor profile/application. Blocked
+// while the instructor is approved (reject or suspend first).
+func (s *Store) Delete(ctx context.Context, tenantID, id pgtype.UUID) (gen.DeleteInstructorProfileRow, error) {
+	return s.write.DeleteInstructorProfile(ctx, gen.DeleteInstructorProfileParams{
+		TenantID: tenantID, ID: id,
+	})
+}
+
 // ---------------------------------------------------------------------------
 // Marketplace track DTOs + queries
 // ---------------------------------------------------------------------------
 
 // Track is the API-facing marketplace track record.
 type Track struct {
-	ID                      string     `json:"id"`
-	Title                   string     `json:"title"`
-	Slug                    string     `json:"slug"`
-	Description             *string    `json:"description,omitempty"`
-	Difficulty              string     `json:"difficulty"`
-	CoverMediaID            *string    `json:"cover_media_id,omitempty"`
-	InstructorID            *string    `json:"instructor_id,omitempty"`
-	PriceKobo               *int64     `json:"price_kobo,omitempty"`
-	Currency                string     `json:"currency"`
-	Category                *string    `json:"category,omitempty"`
-	Language                string     `json:"language"`
-	TotalEnrolled           int32      `json:"total_enrolled"`
-	IsPublished             bool       `json:"is_published"`
-	IsPublishedToUniversity bool       `json:"is_published_to_university"`
-	CreatedAt               time.Time  `json:"created_at"`
-	UpdatedAt               time.Time  `json:"updated_at"`
+	ID                      string    `json:"id"`
+	Title                   string    `json:"title"`
+	Slug                    string    `json:"slug"`
+	Description             *string   `json:"description,omitempty"`
+	Difficulty              string    `json:"difficulty"`
+	CoverMediaID            *string   `json:"cover_media_id,omitempty"`
+	InstructorID            *string   `json:"instructor_id,omitempty"`
+	PriceKobo               *int64    `json:"price_kobo,omitempty"`
+	Currency                string    `json:"currency"`
+	Category                *string   `json:"category,omitempty"`
+	Language                string    `json:"language"`
+	TotalEnrolled           int32     `json:"total_enrolled"`
+	IsPublished             bool      `json:"is_published"`
+	IsPublishedToUniversity bool      `json:"is_published_to_university"`
+	CreatedAt               time.Time `json:"created_at"`
+	UpdatedAt               time.Time `json:"updated_at"`
 }
 
 func trackFromRow(r gen.GetUniversityTrackByIDRow) Track {
@@ -264,7 +273,7 @@ func trackFromRow(r gen.GetUniversityTrackByIDRow) Track {
 		Difficulty: r.Difficulty, Currency: r.Currency, Language: r.Language,
 		TotalEnrolled: r.TotalEnrolled, IsPublished: r.IsPublished,
 		IsPublishedToUniversity: r.IsPublishedToUniversity,
-		CreatedAt: r.CreatedAt.Time, UpdatedAt: r.UpdatedAt.Time,
+		CreatedAt:               r.CreatedAt.Time, UpdatedAt: r.UpdatedAt.Time,
 	}
 	if r.CoverMediaID.Valid {
 		s := r.CoverMediaID.String()
@@ -286,19 +295,19 @@ func trackFromRow(r gen.GetUniversityTrackByIDRow) Track {
 
 // CatalogTrack is a marketplace catalog row with instructor + rating.
 type CatalogTrack struct {
-	ID            string   `json:"id"`
-	Title         string   `json:"title"`
-	Slug          string   `json:"slug"`
-	Description   *string  `json:"description,omitempty"`
-	Difficulty    string   `json:"difficulty"`
-	PriceKobo     *int64   `json:"price_kobo,omitempty"`
-	Currency      string   `json:"currency"`
-	Category      *string  `json:"category,omitempty"`
-	Language      string   `json:"language"`
-	TotalEnrolled int32    `json:"total_enrolled"`
+	ID             string  `json:"id"`
+	Title          string  `json:"title"`
+	Slug           string  `json:"slug"`
+	Description    *string `json:"description,omitempty"`
+	Difficulty     string  `json:"difficulty"`
+	PriceKobo      *int64  `json:"price_kobo,omitempty"`
+	Currency       string  `json:"currency"`
+	Category       *string `json:"category,omitempty"`
+	Language       string  `json:"language"`
+	TotalEnrolled  int32   `json:"total_enrolled"`
 	InstructorName *string `json:"instructor_name,omitempty"`
-	AvgRating     float64  `json:"avg_rating"`
-	ReviewCount   int32    `json:"review_count"`
+	AvgRating      float64 `json:"avg_rating"`
+	ReviewCount    int32   `json:"review_count"`
 }
 
 func catalogTrackFromRow(r gen.ListUniversityCatalogRow) CatalogTrack {

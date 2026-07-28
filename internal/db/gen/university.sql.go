@@ -330,6 +330,34 @@ func (q *Queries) CreateUniversityTrack(ctx context.Context, arg CreateUniversit
 	return i, err
 }
 
+const deleteInstructorProfile = `-- name: DeleteInstructorProfile :one
+DELETE FROM instructor_profiles
+WHERE tenant_id = $1 AND id = $2 AND status != 'approved'
+RETURNING id, user_id
+`
+
+type DeleteInstructorProfileParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	ID       pgtype.UUID `json:"id"`
+}
+
+type DeleteInstructorProfileRow struct {
+	ID     pgtype.UUID `json:"id"`
+	UserID pgtype.UUID `json:"user_id"`
+}
+
+// Admin hard-delete of an instructor's profile/application. Blocked while
+// status='approved' — reject or suspend first so an active creator's
+// identity cannot disappear out from under their live marketplace courses.
+// revenue_splits/instructor_payouts.instructor_id are ON DELETE SET NULL
+// (migration 000181) so financial audit records survive the delete.
+func (q *Queries) DeleteInstructorProfile(ctx context.Context, arg DeleteInstructorProfileParams) (DeleteInstructorProfileRow, error) {
+	row := q.db.QueryRow(ctx, deleteInstructorProfile, arg.TenantID, arg.ID)
+	var i DeleteInstructorProfileRow
+	err := row.Scan(&i.ID, &i.UserID)
+	return i, err
+}
+
 const getEnrollmentByID = `-- name: GetEnrollmentByID :one
 SELECT id, tenant_id, user_id, track_id, access_type, progress_pct,
        enrolled_at, completed_at, payment_id

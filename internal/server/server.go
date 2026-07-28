@@ -154,13 +154,13 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	authStore := auth.NewDBStore(database)
 	bruteForce := auth.NewValkeyBruteForceStore(vkClient.Redis(), auth.DefaultFailWindow)
 	authHandlers := &auth.AuthHandlers{
-		DB:          authStore,
-		Queries:     authStore.Queries(),
-		Database:    database,
-		KeyRotation: kr,
-		BruteForce:  bruteForce,
-		Policy:      auth.DefaultPasswordPolicy(),
-		VKClient:    vkClient,
+		DB:            authStore,
+		Queries:       authStore.Queries(),
+		Database:      database,
+		KeyRotation:   kr,
+		BruteForce:    bruteForce,
+		Policy:        auth.DefaultPasswordPolicy(),
+		VKClient:      vkClient,
 		SiteName:      cfg.SiteName,
 		SupportURL:    cfg.SiteURL + "/support",
 		CookieDomain:  cfg.CookieDomain,
@@ -270,6 +270,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 	// Wire enqueuer into services that need async tasks.
 	spaceService.SetEnqueuer(taskEnqueuer)
+	// AUDIT-C4: enqueue university:fetch_logo when an admin sets/changes a
+	// university's logo_url via POST/PATCH /admin/universities.
+	universitiesHandlers.SetEnqueuer(taskEnqueuer)
 
 	// Hot-reloadable system settings (AUDIT-BE-009). Previously config.NewSettings
 	// was never instantiated, so documented operational limits were dead and
@@ -569,6 +572,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	universityStore := university.NewStore(database)
 	universityService := university.NewService(universityStore, settingsService, taskEnqueuer)
 	universityService.SetValkey(vkClient.Redis())
+	universityService.SetMediaUploader(mediaService)
+	universityService.SetSpaceLogoUpdater(spaceService)
 	universityHandlers := university.NewHandlers(universityService)
 	// Register university processor for the worker's 5 university Asynq tasks.
 	universityProcessor := university.NewProcessor(universityService)
@@ -800,65 +805,67 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				return true, expiresAt
 			}))
 
-		// Bot detection middleware — identifies known bots from User-Agent
-		// and stores bot info in request context for downstream handlers.
-		// Runs after tenant middleware (needs tenant context) but before
-		// route handlers.
-		r.Use(bots.BotDetectionMiddleware(botStore))
+			// Bot detection middleware — identifies known bots from User-Agent
+			// and stores bot info in request context for downstream handlers.
+			// Runs after tenant middleware (needs tenant context) but before
+			// route handlers.
+			r.Use(bots.BotDetectionMiddleware(botStore))
 
-		// CSRF double-submit enforcement for all mutating /api/v1 requests
-		// (Bug Hunter §5). Cookie-authenticated browser requests (the admin
-		// SPA) are protected; non-cookie auth (Authorization: Bearer,
-		// X-API-Key) is exempt — those clients are CSRF-immune and would
-		// otherwise break. The public /auth/* subtree (login, register,
-		// password reset) is also exempt: those endpoints are reached before
-		// any token cookie exists and are not state-changing on behalf of an
-		// already-authenticated session. Safe GET/OPTIONS pass through.
-		r.Use(csrf.Middleware([]string{"/"}, func(r *http.Request) bool {
-			return csrf.IsNonCookieAuthenticated(r) ||
-				strings.HasPrefix(r.URL.Path, "/api/v1/auth/") ||
-				strings.HasPrefix(r.URL.Path, "/api/v1/forms/")
-		}))
+			// CSRF double-submit enforcement for all mutating /api/v1 requests
+			// (Bug Hunter §5). Cookie-authenticated browser requests (the admin
+			// SPA) are protected; non-cookie auth (Authorization: Bearer,
+			// X-API-Key) is exempt — those clients are CSRF-immune and would
+			// otherwise break. The public /auth/* subtree (login, register,
+			// password reset) is also exempt: those endpoints are reached before
+			// any token cookie exists and are not state-changing on behalf of an
+			// already-authenticated session. Safe GET/OPTIONS pass through.
+			r.Use(csrf.Middleware([]string{"/"}, func(r *http.Request) bool {
+				return csrf.IsNonCookieAuthenticated(r) ||
+					strings.HasPrefix(r.URL.Path, "/api/v1/auth/") ||
+					strings.HasPrefix(r.URL.Path, "/api/v1/forms/")
+			}))
 
-		// Impersonation middleware (SEC-002) — injects impersonated identity
-		// into request context when an active impersonation session exists.
-		// Runs after auth + bot detection so the impersonator is authenticated
-		// first, then the impersonated user's identity is swapped in.
-		r.Use(impersonation.ImpersonationMiddleware(impersonationStore))
+			// Impersonation middleware (SEC-002) — injects impersonated identity
+			// into request context when an active impersonation session exists.
+			// Runs after auth + bot detection so the impersonator is authenticated
+			// first, then the impersonated user's identity is swapped in.
+			r.Use(impersonation.ImpersonationMiddleware(impersonationStore))
 
-		// TOTP-for-admin enforcement (SEC-006) — when the
-		// "security.totp_required_for_admin" setting is enabled, admin-level
-		// users (per rbac.HasAdminCapability) without an active TOTP
-		// enrollment are rejected with 403 totp_required on /api/v1/admin/*.
-		r.Use(auth.RequireTOTPForAdmin(settingsService, rbacResolver, totpStore))
+			// TOTP-for-admin enforcement (SEC-006) — when the
+			// "security.totp_required_for_admin" setting is enabled, admin-level
+			// users (per rbac.HasAdminCapability) without an active TOTP
+			// enrollment are rejected with 403 totp_required on /api/v1/admin/*.
+			r.Use(auth.RequireTOTPForAdmin(settingsService, rbacResolver, totpStore))
 
-		// Soft auth (ADR-064) — populates the authenticated-user context for
-		// every /api/v1 request when a valid Bearer token is present, without
-		// rejecting guests. This lets the VisitorContext resolver (below) read
-		// the user's content_country_preference on public+authenticated routes
-		// without each route needing its own OptionalAuth wrapper. Per-route
-		// RequireAuth guards still enforce 401 on protected endpoints.
-		r.Use(auth.OptionalAuth(kr, vkClient.Redis()))
+			// Soft auth (ADR-064) — populates the authenticated-user context for
+			// every /api/v1 request when a valid Bearer token is present, without
+			// rejecting guests. This lets the VisitorContext resolver (below) read
+			// the user's content_country_preference on public+authenticated routes
+			// without each route needing its own OptionalAuth wrapper. Per-route
+			// RequireAuth guards still enforce 401 on protected endpoints.
+			r.Use(auth.OptionalAuth(kr, vkClient.Redis()))
 
-		// VisitorContext resolver (ADR-064) — resolves the effective
-		// content country for geo-aware feed/search personalization. Runs
-		// after GeoIP (line 105), tenant, and soft-auth so it can use all
-		// three sources. Priority: ?geo= param → user preference → GeoIP →
-		// "NG" default. Cached in Valkey at jc:visitor:ctx:{user|ip} (15m
-		// TTL). Honors the geo_personalization.enabled killswitch.
-		visitorResolver := visitor.NewResolver(gen.New(database.Reader), vkClient.Redis(), settingsService)
-		r.Use(visitorResolver.Middleware)
+			// VisitorContext resolver (ADR-064) — resolves the effective
+			// content country for geo-aware feed/search personalization. Runs
+			// after GeoIP (line 105), tenant, and soft-auth so it can use all
+			// three sources. Priority: ?geo= param → user preference → GeoIP →
+			// "NG" default. Cached in Valkey at jc:visitor:ctx:{session_id} (30m
+			// TTL, falls back to jc:visitor:ctx:user:{user_id} for legacy tokens
+			// without a JTI, or jc:visitor:ctx:ip:{ip} for anonymous visitors).
+			// Honors the geo_personalization.enabled killswitch.
+			visitorResolver := visitor.NewResolver(gen.New(database.Reader), vkClient.Redis(), settingsService)
+			r.Use(visitorResolver.Middleware)
 
-		// CSRF token bootstrap endpoint — issues the double-submit cookie and
-		// echoes the token so the SPA can attach it as X-CSRF-Token. The SPA
-		// calls this once at startup and again after a 403 CSRF rejection.
-		r.Get("/csrf", csrf.TokenHandler(cfg.CookieDomain, cfg.IsProduction()))
+			// CSRF token bootstrap endpoint — issues the double-submit cookie and
+			// echoes the token so the SPA can attach it as X-CSRF-Token. The SPA
+			// calls this once at startup and again after a 403 CSRF rejection.
+			r.Get("/csrf", csrf.TokenHandler(cfg.CookieDomain, cfg.IsProduction()))
 
-		// Public site settings (appearance/branding) — no auth required.
-		// Also registered outside /api/v1 at /site/settings/public for bot/SSR use.
-		r.Get("/site/settings/public", configHandlers.GetPublicSettings)
+			// Public site settings (appearance/branding) — no auth required.
+			// Also registered outside /api/v1 at /site/settings/public for bot/SSR use.
+			r.Get("/site/settings/public", configHandlers.GetPublicSettings)
 
-		// Auth routes (public - no auth required, tenant-scoped)
+			// Auth routes (public - no auth required, tenant-scoped)
 			// Tight rate limit to throttle brute-force attempts.
 			r.Route("/auth", func(r chi.Router) {
 				r.Use(mw.RateLimit(vkClient.Redis(), "tight"))
@@ -1242,9 +1249,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Delete("/me/push-tokens", notificationHandlers.HandlePushUnsubscribe)
 
 			// Feed routes (Section 32 — Activity Feed / Timeline)
-			r.Get("/feed/card-style", feedHandlers.GetCardStyle)                                     // public — no auth required
-			r.Get("/explore", feedHandlers.GetExploreFeed)                                           // public — no auth required (catalog: /explore)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/feed", feedHandlers.GetPrimaryFeed)              // catalog: /feed (primary timeline)
+			r.Get("/feed/card-style", feedHandlers.GetCardStyle)                                            // public — no auth required
+			r.Get("/explore", feedHandlers.GetExploreFeed)                                                  // public — no auth required (catalog: /explore)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/feed", feedHandlers.GetPrimaryFeed)        // catalog: /feed (primary timeline)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/feed/for-you", feedHandlers.GetForYouFeed) // catalog: /feed/for-you (personalized ranked)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/feed/space/{space_id}", feedHandlers.GetSpaceFeed)
 			// catalog: GET /spaces/:id/feed — same handler, param name matches (space_id).
@@ -2013,7 +2020,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				r.With(csrf.EnsureCookie(cfg.CookieDomain, cfg.IsProduction())).Get("/public/me", publicAPIHandlers.GetMyProfile)
 			})
 
-				// User Profile & Preferences routes (catalog: /me, /me/profile)
+			// User Profile & Preferences routes (catalog: /me, /me/profile)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), csrf.EnsureCookie(cfg.CookieDomain, cfg.IsProduction())).Get("/me", usersHandlers.GetMyProfile)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Patch("/me/profile", usersHandlers.UpdateMyProfile)
 			// NOTE (§6.3 dedupe): /me/preferences overlaps /me/notification-preferences;
@@ -2499,12 +2506,16 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Post("/admin/university/instructors/{id}/suspend", universityHandlers.AdminSuspendInstructor)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "university.instructor.manage")).
 				Post("/admin/university/instructors/{id}/reinstate", universityHandlers.AdminReinstateInstructor)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "university.instructor.manage")).
+				Delete("/admin/university/instructors/{id}", universityHandlers.AdminDeleteInstructor)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "university.course.approve")).
 				Get("/admin/university/tracks/pending", universityHandlers.AdminListPendingTracks)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "university.course.approve")).
 				Post("/admin/university/tracks/{id}/approve", universityHandlers.AdminApproveTrack)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "university.payout.process")).
 				Get("/admin/university/payouts", universityHandlers.AdminListPayouts)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "university.payout.process")).
+				Get("/admin/university/payouts/{id}", universityHandlers.AdminGetPayout)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "university.payout.process")).
 				Post("/admin/university/payouts/{id}/process", universityHandlers.AdminProcessPayout)
 
@@ -2905,6 +2916,12 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Patch("/admin/affiliate/scan-results/{id}", couponHandlers.ReviewAffiliateScanResult)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "affiliate.admin.manage")).
 				Get("/admin/affiliate/commissions", couponHandlers.ListAffiliateCommissions)
+			// AUDIT-BE-TASK-001 / audit route-diff: RecordAffiliateCommission was
+			// fully implemented (handler + service + task enqueue) but never
+			// registered as a route, so admins could never record an external
+			// commission and the affiliate:credit_author_commission task never fired.
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "affiliate.admin.manage")).
+				Post("/admin/affiliate/commissions", couponHandlers.RecordAffiliateCommission)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "affiliate.admin.manage")).
 				Patch("/admin/affiliate/providers/{id}/author-commission", couponHandlers.UpdateProviderAuthorCommission)
 

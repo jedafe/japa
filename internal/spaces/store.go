@@ -358,6 +358,17 @@ func (s *Service) UpdateSpaceWikiContent(ctx context.Context, spaceID, tenantID 
 	return updated, nil
 }
 
+// UpdateSpaceLogoMediaID updates only the logo_media_id field of a space.
+// Used by the university:fetch_logo task (Section 39) to attach a downloaded
+// university logo to its space.
+func (s *Service) UpdateSpaceLogoMediaID(ctx context.Context, params gen.UpdateSpaceLogoMediaIDParams) (gen.Space, error) {
+	space, err := s.write.UpdateSpaceLogoMediaID(ctx, params)
+	if err != nil {
+		return gen.Space{}, fmt.Errorf("updating space logo_media_id: %w", err)
+	}
+	return space, nil
+}
+
 // DeleteSpace deletes a space, scoped to the tenant.
 func (s *Service) DeleteSpace(ctx context.Context, id, tenantID pgtype.UUID) error {
 	if err := s.write.DeleteSpace(ctx, gen.DeleteSpaceParams{

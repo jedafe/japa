@@ -7,13 +7,14 @@
 //  3. GeoIP country code (from the GeoIP middleware)
 //  4. System default ("NG")
 //
-// The resolved context is cached in Valkey under jc:visitor:ctx:{key} with a
-// 15-minute TTL to avoid repeated DB lookups for authenticated users. The
-// cache key is the user_id for authenticated requests and the client IP for
-// anonymous requests.
+// The resolved context is cached in Valkey under jc:visitor:ctx:{session_id}
+// with a 30-minute TTL (ADR-064) to avoid repeated DB lookups for
+// authenticated users. The cache key is the JWT JTI (session ID) for
+// authenticated requests and the client IP for anonymous requests.
 //
 // Ref: japaconnect-engineering/sections/37-ip-geolocation.md (VisitorContext)
-//      japaconnect-engineering/adr/ADR-064-geo-aware-personalization.md
+//
+//	japaconnect-engineering/adr/ADR-064-geo-aware-personalization.md
 package visitor
 
 import (
@@ -23,12 +24,12 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/valkey-io/valkey-go/valkeycompat"
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/geoip"
 	"github.com/jedafe/japa/internal/tenant"
+	"github.com/valkey-io/valkey-go/valkeycompat"
 )
 
 // ContextKey is the context key for the resolved VisitorContext.
@@ -65,8 +66,8 @@ func FromContext(ctx context.Context) VisitorContext {
 	return vc
 }
 
-// cacheTTL is the Valkey cache TTL for resolved visitor contexts.
-const cacheTTL = 15 * time.Minute
+// cacheTTL is the Valkey cache TTL for resolved visitor contexts (ADR-064).
+const cacheTTL = 30 * time.Minute
 
 // Resolver is the VisitorContext resolver middleware. It depends on:
 //   - a read-only sqlc Queries for user preference lookups
@@ -138,11 +139,19 @@ func (res *Resolver) resolve(r *http.Request) VisitorContext {
 	}
 
 	// Determine cache key and auth state.
+	// ADR-064: cache key is jc:visitor:ctx:{session_id} for authenticated
+	// users (using the JWT JTI as session ID) and jc:visitor:ctx:ip:{ip}
+	// for anonymous visitors.
 	var cacheKey string
 	if user != nil {
 		vc.IsAuthenticated = true
 		vc.UserID = user.UserID.String()
-		cacheKey = "jc:visitor:ctx:user:" + user.UserID.String()
+		if user.SessionID != "" {
+			cacheKey = "jc:visitor:ctx:" + user.SessionID
+		} else {
+			// Fallback for tokens without JTI (legacy/compat).
+			cacheKey = "jc:visitor:ctx:user:" + user.UserID.String()
+		}
 	} else {
 		cacheKey = "jc:visitor:ctx:ip:" + clientIP(r)
 	}
@@ -234,7 +243,10 @@ func SetUserPreference(ctx context.Context, q *gen.Queries, rdb valkeycompat.Cmd
 		}
 	}
 
-	// Invalidate cache.
+	// Invalidate cache. Session-based keys (jc:visitor:ctx:{jti}) can't be
+	// enumerated without SCAN, so we delete the user-based fallback key and
+	// rely on the 30-min TTL for session-scoped keys. Preference changes are
+	// infrequent and 30-min staleness is acceptable per ADR-064.
 	if rdb != nil {
 		_ = rdb.Del(ctx, "jc:visitor:ctx:user:"+userID.String()).Err()
 	}

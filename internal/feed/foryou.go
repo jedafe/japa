@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -19,6 +20,12 @@ const (
 	wRecency      = 2.0
 	tagOverlapCap = 3
 	halfLifeHours = 48.0
+
+	// Geo boost (ADR-064 §32): bounded multiplier so local content gets a
+	// relevance boost without dominating engagement/velocity signals. The
+	// cap ensures geo re-weights, never dominates.
+	wGeo        = 1.0
+	geoBoostCap = 1.5 // final score multiplied by at most 1.5 for geo-matched content
 )
 
 // Candidate is one scored row in the For-You candidate pool.
@@ -30,6 +37,7 @@ type Candidate struct {
 	IsAuthorFollowed   bool
 	IsSpaceFollowed    bool
 	FollowedTagOverlap int
+	SpaceGeoCode       string // ISO country code of the content's space (empty = no geo)
 }
 
 // recencyDecay returns an exponential decay in [0,1]; fresher content scores higher.
@@ -43,7 +51,9 @@ func recencyDecay(ageHours float64) float64 {
 
 // computeForYouScore blends the personalization signals into a single score.
 // maxVelocity normalizes velocity relative to the fetched candidate pool.
-func computeForYouScore(c Candidate, now time.Time, maxVelocity float64) float64 {
+// contentCountry (from VisitorContext) applies a bounded geo boost when the
+// candidate's space geo_code matches the visitor's content country (ADR-064 §32).
+func computeForYouScore(c Candidate, now time.Time, maxVelocity float64, contentCountry string) float64 {
 	velNorm := 0.0
 	if maxVelocity > 0 {
 		velNorm = c.VelocityScore / maxVelocity
@@ -64,11 +74,26 @@ func computeForYouScore(c Candidate, now time.Time, maxVelocity float64) float64
 	tag := float64(overlap) / float64(tagOverlapCap)
 	rec := recencyDecay(now.Sub(c.CreatedAt).Hours())
 
-	return wVelocity*velNorm + wAuthor*author + wSpace*space + wTag*tag + wRecency*rec
+	baseScore := wVelocity*velNorm + wAuthor*author + wSpace*space + wTag*tag + wRecency*rec
+
+	// Bounded geo boost (ADR-064 §32): multiply the base score by a capped
+	// factor when the content's space country matches the visitor's content
+	// country. The cap (geoBoostCap) ensures geo re-weights, never dominates.
+	if contentCountry != "" && c.SpaceGeoCode != "" && strings.EqualFold(c.SpaceGeoCode, contentCountry) {
+		boost := 1.0 + wGeo
+		if boost > geoBoostCap {
+			boost = geoBoostCap
+		}
+		baseScore *= boost
+	}
+
+	return baseScore
 }
 
 // rankCandidates orders the pool in place per sortMode and returns it.
-func rankCandidates(cands []Candidate, sortMode string, now time.Time) []Candidate {
+// contentCountry is the visitor's resolved ContentCountry (ADR-064) used for
+// the bounded geo boost; empty string disables geo weighting.
+func rankCandidates(cands []Candidate, sortMode string, now time.Time, contentCountry string) []Candidate {
 	maxVel := 0.0
 	for i := range cands {
 		if cands[i].VelocityScore > maxVel {
@@ -85,18 +110,22 @@ func rankCandidates(cands []Candidate, sortMode string, now time.Time) []Candida
 		case SortRising:
 			return cands[i].VelocityScore > cands[j].VelocityScore
 		default: // SortRelevant
-			return computeForYouScore(cands[i], now, maxVel) > computeForYouScore(cands[j], now, maxVel)
+			return computeForYouScore(cands[i], now, maxVel, contentCountry) > computeForYouScore(cands[j], now, maxVel, contentCountry)
 		}
 	})
 
 	return cands
 }
 
-// forYouCacheKey builds the per-user, per-sort Valkey key.
-// Uses the jc:cache:feed:foryou: prefix per Rule 4 (VALKEY-001/005).
-func forYouCacheKey(tenantID, userID pgtype.UUID, sortMode string) string {
-	return fmt.Sprintf("jc:cache:feed:foryou:%s:%s:%s",
-		uuidToString(tenantID), uuidToString(userID), sortMode)
+// forYouCacheKey builds the per-user, per-sort, per-content-country Valkey
+// key. contentCountry is included because the ranking (and therefore the
+// cached order) varies with the ADR-064 §32 geo boost — without it, a
+// ?geo= override or a preference change could serve a stale, wrong-geo
+// ranking for up to forYouCacheTTL. Uses the jc:cache:feed:foryou: prefix
+// per Rule 4 (VALKEY-001/005).
+func forYouCacheKey(tenantID, userID pgtype.UUID, sortMode, contentCountry string) string {
+	return fmt.Sprintf("jc:cache:feed:foryou:%s:%s:%s:%s",
+		uuidToString(tenantID), uuidToString(userID), sortMode, strings.ToUpper(contentCountry))
 }
 
 // candidateFromRow maps a generated candidate row into a scored Candidate.
@@ -132,6 +161,7 @@ func candidateFromRow(r gen.GetForYouCandidatesRow) Candidate {
 		IsAuthorFollowed:   r.IsAuthorFollowed,
 		IsSpaceFollowed:    r.IsSpaceFollowed,
 		FollowedTagOverlap: int(r.FollowedTagOverlap),
+		SpaceGeoCode:       derefStr(r.SpaceGeoCode),
 	}
 }
 

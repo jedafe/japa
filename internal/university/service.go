@@ -23,9 +23,22 @@ type TaskEnqueuer interface {
 	Enqueue(taskType string, payload []byte, opts ...interface{}) error
 }
 
+// MediaUploader downloads content from a URL, stores it to SeaweedFS, and
+// returns the media ID. The media.Service implements this via StoreFromURL.
+// Used by the university:fetch_logo task (Section 39).
+type MediaUploader interface {
+	StoreFromURL(ctx context.Context, tenantID, uploaderID pgtype.UUID, sourceURL, filename string) (pgtype.UUID, error)
+}
+
+// SpaceLogoUpdater updates a space's logo_media_id. The spaces.Service or the
+// generated Queries satisfy this via UpdateSpaceLogoMediaID.
+type SpaceLogoUpdater interface {
+	UpdateSpaceLogoMediaID(ctx context.Context, params gen.UpdateSpaceLogoMediaIDParams) (gen.Space, error)
+}
+
 // Cache TTLs for the university Valkey keys (valkey-keys-catalog.md).
 const (
-	instructorProfileTTL = 1 * time.Hour  // jc:university:instructor:{user_id}:profile
+	instructorProfileTTL = 1 * time.Hour    // jc:university:instructor:{user_id}:profile
 	trackEnrolledTTL     = 10 * time.Minute // jc:university:track:{track_id}:enrolled
 	// payoutTTL has no fixed duration — it lives until the period closes.
 	// We use a long TTL as a safety net; the key is invalidated on period close.
@@ -36,10 +49,12 @@ const (
 // It owns transaction boundaries, split-percentage resolution, and Asynq
 // task enqueueing. Settings are read via the hot-reloadable config.Settings.
 type Service struct {
-	store    *Store
-	settings *config.Settings
-	enqueuer TaskEnqueuer
-	rdb      valkeycompat.Cmdable // nil = caching disabled
+	store            *Store
+	settings         *config.Settings
+	enqueuer         TaskEnqueuer
+	rdb              valkeycompat.Cmdable // nil = caching disabled
+	mediaUploader    MediaUploader        // nil = fetch_logo task skips media storage
+	spaceLogoUpdater SpaceLogoUpdater     // nil = fetch_logo task skips space update
 }
 
 // NewService creates a university service.
@@ -54,6 +69,15 @@ func (s *Service) SetValkey(rdb valkeycompat.Cmdable) { s.rdb = rdb }
 
 // SetEnqueuer wires (or rewires) the Asynq enqueuer after construction.
 func (s *Service) SetEnqueuer(e TaskEnqueuer) { s.enqueuer = e }
+
+// SetMediaUploader wires the media uploader for the university:fetch_logo
+// task (Section 39). Optional — if not called, fetch_logo logs a warning
+// and skips media storage.
+func (s *Service) SetMediaUploader(m MediaUploader) { s.mediaUploader = m }
+
+// SetSpaceLogoUpdater wires the space logo updater for the
+// university:fetch_logo task (Section 39).
+func (s *Service) SetSpaceLogoUpdater(u SpaceLogoUpdater) { s.spaceLogoUpdater = u }
 
 // ---------------------------------------------------------------------------
 // Instructor lifecycle
@@ -143,6 +167,23 @@ func (s *Service) ReinstateInstructor(ctx context.Context, tenantID, instructorI
 		s.invalidateInstructorProfileCache(ctx, row.UserID)
 	}
 	return profileFromRow(row), nil
+}
+
+// DeleteInstructor permanently removes an instructor profile/application.
+// Blocked while status='approved' (reject or suspend the instructor
+// first) so an active creator's identity cannot disappear out from under
+// their live marketplace courses. Returns pgx.ErrNoRows if the profile
+// does not exist or is currently approved.
+func (s *Service) DeleteInstructor(ctx context.Context, tenantID, instructorID pgtype.UUID) error {
+	row, err := s.store.Delete(ctx, tenantID, instructorID)
+	if err != nil {
+		return err
+	}
+	// AUDIT-BE-VALKEY-007: invalidate the cached profile on deletion.
+	if row.UserID.Valid {
+		s.invalidateInstructorProfileCache(ctx, row.UserID)
+	}
+	return nil
 }
 
 // ---------------------------------------------------------------------------
@@ -453,6 +494,54 @@ func (s *Service) SendInstructorPayout(ctx context.Context, tenantID, payoutID p
 	}
 
 	slog.Info("university: payout sent", "payout_id", payoutID.String(), "reference", ref)
+	return nil
+}
+
+// FetchLogo downloads a university logo from a remote URL, stores it to
+// SeaweedFS via the media service, and updates the space's logo_media_id.
+// This is the handler for the university:fetch_logo Asynq task (Section 39,
+// low tier), enqueued when an admin sets/changes a university's logo_url.
+// uploaderID is the acting admin's user ID, attributed as the media
+// uploader — media.uploader_user_id is a NOT NULL FK to users(id) and there
+// is no generic "system user" row, so an invalid uploaderID (missing or
+// unparseable) causes the fetch to be skipped rather than risking an
+// FK-violation retry loop. If the media uploader or space logo updater is
+// not wired, it logs a warning and returns nil (graceful degradation in
+// dev/test).
+func (s *Service) FetchLogo(ctx context.Context, tenantID, spaceID pgtype.UUID, logoURL string, uploaderID pgtype.UUID) error {
+	if s.mediaUploader == nil {
+		slog.Warn("university:fetch_logo: no media uploader wired, skipping",
+			"space_id", spaceID.String(), "logo_url", logoURL)
+		return nil
+	}
+	if s.spaceLogoUpdater == nil {
+		slog.Warn("university:fetch_logo: no space logo updater wired, skipping",
+			"space_id", spaceID.String(), "logo_url", logoURL)
+		return nil
+	}
+	if !uploaderID.Valid {
+		slog.Warn("university:fetch_logo: no valid uploaded_by, skipping",
+			"space_id", spaceID.String(), "logo_url", logoURL)
+		return nil
+	}
+
+	filename := "university-logo-" + spaceID.String()
+
+	mediaID, err := s.mediaUploader.StoreFromURL(ctx, tenantID, uploaderID, logoURL, filename)
+	if err != nil {
+		return fmt.Errorf("university:fetch_logo: storing logo from %s: %w", logoURL, err)
+	}
+
+	if _, err := s.spaceLogoUpdater.UpdateSpaceLogoMediaID(ctx, gen.UpdateSpaceLogoMediaIDParams{
+		ID:          spaceID,
+		TenantID:    tenantID,
+		LogoMediaID: mediaID,
+	}); err != nil {
+		return fmt.Errorf("university:fetch_logo: updating space logo_media_id: %w", err)
+	}
+
+	slog.Info("university:fetch_logo: logo stored and space updated",
+		"space_id", spaceID.String(), "media_id", mediaID.String())
 	return nil
 }
 

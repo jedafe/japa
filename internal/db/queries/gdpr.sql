@@ -436,3 +436,81 @@ FROM (SELECT * FROM space_mutes WHERE user_id = @user_id AND tenant_id = @tenant
 -- name: GdprExportUserTicketComments :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (SELECT * FROM ticket_comments WHERE user_id = @user_id) t;
+
+-- =====================================================================
+-- Japa University GDPR cascade (ADR-063 / audit C2)
+-- revenue_splits and instructor_payouts are financial audit records:
+-- anonymize the instructor reference (SET NULL), never delete the row.
+-- instructor_profiles.payout_method is sensitive jsonb — clear it before
+-- the profile is cascade-deleted via users(id) ON DELETE CASCADE.
+-- =====================================================================
+
+-- name: ClearInstructorPayoutMethod :execrows
+-- Clears the sensitive payout_method jsonb on the user's instructor
+-- profile(s) before the user row is physically deleted. The profile row
+-- itself is removed by the users(id) ON DELETE CASCADE FK.
+UPDATE instructor_profiles
+SET payout_method = NULL,
+    updated_at    = now()
+WHERE tenant_id = @tenant_id AND user_id = @user_id;
+
+-- name: AnonymizeRevenueSplitsForInstructor :execrows
+-- Severs the instructor reference on all revenue_split rows owned by
+-- this user's instructor profile(s). The split rows survive for
+-- regulatory retention; only the instructor link is anonymized.
+UPDATE revenue_splits rs
+SET instructor_id = NULL
+WHERE rs.tenant_id = @tenant_id
+  AND rs.instructor_id IN (
+      SELECT ip.id FROM instructor_profiles ip
+      WHERE ip.tenant_id = @tenant_id AND ip.user_id = @user_id
+  );
+
+-- name: AnonymizeInstructorPayoutsForInstructor :execrows
+-- Severs the instructor reference on all instructor_payout rows owned by
+-- this user's instructor profile(s). The payout rows survive for
+-- regulatory retention; only the instructor link is anonymized.
+UPDATE instructor_payouts ipo
+SET instructor_id = NULL
+WHERE ipo.tenant_id = @tenant_id
+  AND ipo.instructor_id IN (
+      SELECT ip.id FROM instructor_profiles ip
+      WHERE ip.tenant_id = @tenant_id AND ip.user_id = @user_id
+  );
+
+-- =====================================================================
+-- Japa University GDPR data export (ADR-063 / audit C2)
+-- =====================================================================
+
+-- name: GdprExportInstructorProfiles :one
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (
+    SELECT id, tenant_id, display_name, headline, bio, social_links,
+           tier, status, kyc_status, application_note, created_at, updated_at
+    FROM instructor_profiles
+    WHERE tenant_id = @tenant_id AND user_id = @user_id
+) t;
+
+-- name: GdprExportRevenueSplits :one
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (
+    SELECT rs.id, rs.tenant_id, rs.track_id, rs.enrollment_id, rs.payment_id,
+           rs.payout_id, rs.source, rs.gross_kobo, rs.creator_pct,
+           rs.platform_pct, rs.creator_kobo, rs.platform_kobo,
+           rs.currency, rs.created_at
+    FROM revenue_splits rs
+    JOIN instructor_profiles ip ON ip.id = rs.instructor_id
+    WHERE rs.tenant_id = @tenant_id AND ip.user_id = @user_id
+) t;
+
+-- name: GdprExportInstructorPayouts :one
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (
+    SELECT ipo.id, ipo.tenant_id, ipo.period_start, ipo.period_end,
+           ipo.gross_kobo, ipo.platform_commission_kobo, ipo.net_kobo,
+           ipo.currency, ipo.status, ipo.payout_reference,
+           ipo.processed_at, ipo.created_at
+    FROM instructor_payouts ipo
+    JOIN instructor_profiles ip ON ip.id = ipo.instructor_id
+    WHERE ipo.tenant_id = @tenant_id AND ip.user_id = @user_id
+) t;
