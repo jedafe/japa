@@ -130,7 +130,12 @@ func (s *Service) GetRecommendations(ctx context.Context, tenantID, userID pgtyp
 	}
 
 	stepData := parseStepData(state.StepData)
-	userTags := stepData.Interests
+	// Tags is the field the frontend wizard sends; Interests is a legacy
+	// alias. Prefer Tags, fall back to Interests for backward compatibility.
+	userTags := stepData.Tags
+	if len(userTags) == 0 {
+		userTags = stepData.Interests
+	}
 	userLocation := stepData.CurrentLocation
 
 	recs := make([]OnboardingRecommendation, 0)
@@ -156,11 +161,20 @@ func (s *Service) GetRecommendations(ctx context.Context, tenantID, userID pgtyp
 }
 
 // stepDataFields holds the extracted onboarding step data.
+// Field names match what the frontend wizard sends in step_data:
+//   Step 1: name, japa_status, current_location
+//   Step 2: destination, primary_goal
+//   Step 3: tags (array of tag slugs — used for interest-based recommendations)
+//   Step 4: follows (array of space/user IDs)
 type stepDataFields struct {
-	Interests       []string `json:"interests"`
+	Name            string   `json:"name"`
+	JapaStatus      string   `json:"japa_status"`
 	CurrentLocation string   `json:"current_location"`
 	Destination     string   `json:"destination"`
-	Name            string   `json:"name"`
+	PrimaryGoal     string   `json:"primary_goal"`
+	Tags            []string `json:"tags"`
+	Interests       []string `json:"interests"` // legacy alias; Tags takes precedence
+	Follows         []string `json:"follows"`
 }
 
 func parseStepData(data json.RawMessage) stepDataFields {

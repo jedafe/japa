@@ -350,9 +350,17 @@ func (h *Handlers) UpdateSystemSettings(w http.ResponseWriter, r *http.Request) 
 		// Go type: strings get wrapped in quotes ("3"), booleans become true,
 		// numbers stay bare, and arrays/objects are serialized as-is.
 		data, _ := json.Marshal(value)
+		// Consult the catalog for the is_public flag. On INSERT, set is_public
+		// from the catalog so appearance/branding settings are exposed via
+		// GET /site/settings/public. On CONFLICT (existing row), preserve the
+		// current is_public value — an admin may have explicitly toggled it.
+		isPublic := false
+		if meta, ok := settingsCatalog[key]; ok {
+			isPublic = meta.Public
+		}
 		_, err := h.DB.Writer.Exec(r.Context(),
-			`INSERT INTO system_settings (tenant_id, key, value, updated_at) VALUES ($1, $2, $3, NOW()) ON CONFLICT (tenant_id, key) DO UPDATE SET value = $3, updated_at = NOW()`,
-			tenantID, key, string(data),
+			`INSERT INTO system_settings (tenant_id, key, value, is_public, updated_at) VALUES ($1, $2, $3, $4, NOW()) ON CONFLICT (tenant_id, key) DO UPDATE SET value = $3, updated_at = NOW()`,
+			tenantID, key, string(data), isPublic,
 		)
 		if err != nil {
 			slog.Error("control: update system setting", "key", key, "error", err)
@@ -387,26 +395,22 @@ func (h *Handlers) UpdateSystemSetting(w http.ResponseWriter, r *http.Request) {
 	// The value column is jsonb — json.Marshal produces the correct JSON
 	// encoding for each type (strings quoted, booleans bare, etc.).
 	data, _ := json.Marshal(input.Value)
+	// Resolve is_public: explicit request body value takes precedence; fall
+	// back to the catalog default so appearance/branding settings are public.
+	isPublic := false
 	if input.IsPublic != nil {
-		_, err := h.DB.Writer.Exec(r.Context(),
-			`INSERT INTO system_settings (tenant_id, key, value, is_public, updated_at) VALUES ($1, $2, $3, $4, NOW()) ON CONFLICT (tenant_id, key) DO UPDATE SET value = $3, is_public = $4, updated_at = NOW()`,
-			tenantID, key, string(data), *input.IsPublic,
-		)
-		if err != nil {
-			slog.Error("control: update system setting", "key", key, "error", err)
-			writeError(w, http.StatusInternalServerError, "internal_error", "Failed to update setting")
-			return
-		}
-	} else {
-		_, err := h.DB.Writer.Exec(r.Context(),
-			`INSERT INTO system_settings (tenant_id, key, value, updated_at) VALUES ($1, $2, $3, NOW()) ON CONFLICT (tenant_id, key) DO UPDATE SET value = $3, updated_at = NOW()`,
-			tenantID, key, string(data),
-		)
-		if err != nil {
-			slog.Error("control: update system setting", "key", key, "error", err)
-			writeError(w, http.StatusInternalServerError, "internal_error", "Failed to update setting")
-			return
-		}
+		isPublic = *input.IsPublic
+	} else if meta, ok := settingsCatalog[key]; ok {
+		isPublic = meta.Public
+	}
+	_, err := h.DB.Writer.Exec(r.Context(),
+		`INSERT INTO system_settings (tenant_id, key, value, is_public, updated_at) VALUES ($1, $2, $3, $4, NOW()) ON CONFLICT (tenant_id, key) DO UPDATE SET value = $3, is_public = $4, updated_at = NOW()`,
+		tenantID, key, string(data), isPublic,
+	)
+	if err != nil {
+		slog.Error("control: update system setting", "key", key, "error", err)
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to update setting")
+		return
 	}
 	if h.Settings != nil {
 		h.Settings.InvalidateSettings(r.Context(), tenantID)

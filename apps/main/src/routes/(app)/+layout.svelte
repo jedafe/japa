@@ -70,6 +70,8 @@
 		trendingTags={data.trendingTags}
 		suggestedSpaces={data.suggestedSpaces}
 		userSpaces={data.userSpaces}
+		logoUrl={data.siteSettings?.['appearance.logo_url'] as string | undefined}
+		enabledLanguages={data.siteSettings?.['i18n.enabled_languages'] as string | undefined}
 		hideRightSidebar={exception}
 		sidebar={routeSidebar ?? undefined}
 	>

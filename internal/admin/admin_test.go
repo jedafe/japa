@@ -662,10 +662,15 @@ func TestBroadcast_EmptyBody(t *testing.T) {
 func TestDefaultSettingsCategories(t *testing.T) {
 	t.Parallel()
 
+	// Categories intentionally removed (dead/duplicate/env-secret): features,
+	// email, integrations, advanced. See NOTE comments in settings.go.
 	expected := []string{
-		"general", "features", "email", "security",
+		"general", "auth", "feed", "security",
 		"appearance", "users", "content", "payment",
-		"media", "seo", "integrations", "ai", "advanced",
+		"media", "seo", "ai",
+		"spaces", "moderation", "wallet", "api", "ads",
+		"notifications", "tickets", "audit", "i18n", "gdpr",
+		"search", "affiliate",
 	}
 	for _, cat := range expected {
 		if _, ok := defaultSettings[cat]; !ok {

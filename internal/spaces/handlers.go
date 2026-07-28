@@ -380,6 +380,20 @@ func (h *Handlers) ListMySpaces(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Optional q parameter for autocomplete search — filters by name/slug
+	// (case-insensitive). Used by the /create composer's space selector.
+	if q := strings.TrimSpace(r.URL.Query().Get("q")); q != "" {
+		qLower := strings.ToLower(q)
+		filtered := make([]gen.Space, 0, len(spaces))
+		for _, s := range spaces {
+			if strings.Contains(strings.ToLower(s.Name), qLower) ||
+				strings.Contains(strings.ToLower(s.Slug), qLower) {
+				filtered = append(filtered, s)
+			}
+		}
+		spaces = filtered
+	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": spaces})
 }
 

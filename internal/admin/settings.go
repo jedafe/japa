@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/config"
+	"github.com/jedafe/japa/internal/control"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/rbac"
@@ -103,17 +104,12 @@ var defaultSettings = map[string]SettingCategory{
 			{Key: "registration_open", Label: "Open Registration", Type: "toggle"},
 		},
 	},
-	"features": {
-		Key:   "features",
-		Label: "Features",
-		Settings: []SettingDef{
-			{Key: "blog_enabled", Label: "Blog", Type: "toggle"},
-			{Key: "forum_enabled", Label: "Forum", Type: "toggle"},
-			{Key: "reviews_enabled", Label: "Reviews", Type: "toggle"},
-			{Key: "comparisons_enabled", Label: "Comparisons", Type: "toggle"},
-			{Key: "advertising_enabled", Label: "Advertising", Type: "toggle"},
-		},
-	},
+	// NOTE: The "features" category was removed from the admin Settings page.
+	// Those toggles duplicated the real feature-flag system (feature_flags table,
+	// keys feature.blog / feature.forum / ... edited via the Features admin page
+	// at GET /api/v1/features). Writing features.* to system_settings had no
+	// consumer, so admin edits silently did nothing. Use the Features page to
+	// toggle modules.
 	"feed": {
 		Key:   "feed",
 		Label: "Feed",
@@ -124,26 +120,23 @@ var defaultSettings = map[string]SettingCategory{
 			{Key: "card_style", Label: "Card Style", Type: "select", Options: []string{"reddit", "compact", "grid", "magazine"}},
 		},
 	},
-	"email": {
-		Key:   "email",
-		Label: "Email",
-		Settings: []SettingDef{
-			{Key: "smtp_host", Label: "SMTP Host", Type: "text", Placeholder: "smtp.gmail.com"},
-			{Key: "smtp_port", Label: "SMTP Port", Type: "number"},
-			{Key: "smtp_username", Label: "SMTP Username", Type: "text"},
-			{Key: "smtp_password", Label: "SMTP Password", Type: "text", Masked: true},
-			{Key: "from_address", Label: "From Address", Type: "text", Placeholder: "noreply@example.com"},
-		},
-	},
+	// NOTE: The "email" category was removed. SMTP credentials are secrets that
+	// belong in JC_* environment variables (Rule 3), not in system_settings.
+	// Storing SMTP passwords in a hot-reloadable settings table is a secret-in-DB
+	// risk and no backend consumer read these keys.
 	"security": {
 		Key:   "security",
 		Label: "Security",
 		Settings: []SettingDef{
 			{Key: "max_login_attempts", Label: "Max Login Attempts", Type: "number"},
-			{Key: "lockout_duration_minutes", Label: "Lockout Duration (min)", Type: "number"},
 			{Key: "fail_window_minutes", Label: "Fail Window (min)", Type: "number", Description: "Lockout window in minutes"},
-			{Key: "require_email_verification", Label: "Require Email Verification", Type: "toggle"},
-			{Key: "cors.allowed_origins", Label: "CORS Allowed Origins", Type: "textarea", Placeholder: `["https://example.com"]`},
+			// Removed: cors.allowed_origins (CORS is env-only via JC_CORS_ORIGINS;
+			//   stored under the wrong key and no consumer read it).
+			// Removed: lockout_duration_minutes (dead — bruteforce backoff is
+			//   computed from max_login_attempts + fail_window_minutes).
+			// Removed: require_email_verification (duplicate of
+			//   auth.email.verify_required in the Authentication category, which
+			//   is the consumed key).
 		},
 	},
 	"appearance": {
@@ -153,8 +146,22 @@ var defaultSettings = map[string]SettingCategory{
 			{Key: "primary_color", Label: "Primary Color", Type: "color"},
 			{Key: "logo_url", Label: "Logo URL", Type: "file", Accept: "image/*"},
 			{Key: "favicon_url", Label: "Favicon URL", Type: "file", Accept: "image/*"},
+			{
+				Key:   "auth_brand_slides",
+				Label: "Auth Brand Slides",
+				Type:  "brand-slides",
+				Description: "Carousel slides for the login/signup brand panel. Pick images from the media library and add a headline + subheading per slide.",
+				Value: []map[string]string{
+					{"image": "/brand/kigali-airplane-window.jpg", "headline": "Connecting the diaspora,", "subheading": "one journey at a time"},
+					{"image": "/brand/kigali-skyline.jpg", "headline": "Build your future abroad,", "subheading": "with your community behind you"},
+					{"image": "/brand/study-abroad.jpg", "headline": "Learn, grow, and thrive,", "subheading": "wherever your path leads"},
+					{"image": "/brand/networking.jpg", "headline": "Your network, your roots,", "subheading": "your bridge to opportunity"},
+					{"image": "/brand/opportunity.jpg", "headline": "From Kigali to the world,", "subheading": "we grow together"},
+				},
+			},
 			{Key: "dark_mode_default", Label: "Dark Mode Default", Type: "toggle"},
-			{Key: "feed_card_style", Label: "Feed Card Style", Type: "select", Options: []string{"reddit", "devto"}, Value: "reddit"},
+			{Key: "feed_card_style", Label: "Feed Card Style", Type: "select", Options: []string{"reddit", "compact", "grid", "magazine"}, Value: "reddit"},
+			{Key: "default_editor", Label: "Default Editor Mode", Type: "select", Options: []string{"block", "wysiwyg", "markdown"}, Value: "block", Description: "Default editor mode for the post composer"},
 		},
 	},
 	"users": {
@@ -190,24 +197,23 @@ var defaultSettings = map[string]SettingCategory{
 		Label: "Payment",
 		Settings: []SettingDef{
 			{Key: "currency", Label: "Currency", Type: "select", Options: []string{"NGN", "USD", "GBP", "EUR"}},
-			{Key: "paystack_public_key", Label: "Paystack Public Key", Type: "text"},
-			{Key: "paystack_secret_key", Label: "Paystack Secret Key", Type: "text", Masked: true},
-			{Key: "stripe_public_key", Label: "Stripe Public Key", Type: "text"},
-			{Key: "stripe_secret_key", Label: "Stripe Secret Key", Type: "text", Masked: true},
+			// Removed: paystack_public_key / paystack_secret_key /
+			//   stripe_public_key / stripe_secret_key — provider credentials are
+			//   secrets that belong in JC_* env vars (Rule 3), not system_settings.
+			//   No backend consumer read them; the payment service uses env config.
 		},
 	},
 	"media": {
 		Key:   "media",
 		Label: "Media",
 		Settings: []SettingDef{
-			{Key: "imgproxy_enabled", Label: "imgproxy Enabled", Type: "toggle"},
-			{Key: "imgproxy_key", Label: "imgproxy Key", Type: "text", Masked: true},
-			{Key: "imgproxy_salt", Label: "imgproxy Salt", Type: "text", Masked: true},
-			{Key: "max_image_width", Label: "Max Image Width (px)", Type: "number"},
-			{Key: "max_image_height", Label: "Max Image Height (px)", Type: "number"},
+			// Removed: imgproxy_enabled / imgproxy_key / imgproxy_salt — imgproxy
+			//   credentials are env-only (JC_IMGPROXY_*); secrets must not live in
+			//   system_settings (Rule 3).
+			// Removed: max_image_width / max_image_height — no backend consumer.
 			{Key: "allowed_video_types", Label: "Allowed Video Types", Type: "multiselect", Options: []string{"mp4", "webm", "mov", "avi", "mkv"}},
 			{Key: "max_upload_mb", Label: "Max Upload Size (MB)", Type: "number"},
-			{Key: "storage.provider", Label: "Storage Provider", Type: "select", Options: []string{"seaweedfs", "s3", "gcs", "azure", "local"}},
+			{Key: "storage.provider", Label: "Storage Provider", Type: "select", Options: []string{"seaweedfs", "s3", "r2", "b2"}},
 			{Key: "storage.endpoint", Label: "Storage Endpoint", Type: "text", Placeholder: "https://s3.amazonaws.com"},
 			{Key: "storage.bucket", Label: "Storage Bucket", Type: "text", Placeholder: "japaconnect"},
 			{Key: "storage.region", Label: "Storage Region", Type: "text", Placeholder: "us-east-1"},
@@ -227,44 +233,34 @@ var defaultSettings = map[string]SettingCategory{
 			{Key: "json_ld_type", Label: "Default JSON-LD Type", Type: "select", Options: []string{"Organization", "WebSite", "LocalBusiness"}},
 			{Key: "google_analytics_id", Label: "Google Analytics ID", Type: "text", Placeholder: "G-XXXXXXXXXX"},
 			{Key: "google_tag_manager_id", Label: "Google Tag Manager ID", Type: "text", Placeholder: "GTM-XXXXXXX"},
-			{Key: "enable_sitemap", Label: "Enable Sitemap", Type: "toggle"},
-			{Key: "enable_robots_txt", Label: "Enable robots.txt", Type: "toggle"},
-			{Key: "enable_json_ld", Label: "Enable JSON-LD Structured Data", Type: "toggle"},
+			// Removed: enable_sitemap / enable_robots_txt / enable_json_ld —
+			//   sitemap & robots.txt are always served (robots.txt is generated
+			//   from the bot registry per ADR-043, not a system_settings toggle),
+			//   and JSON-LD is emitted by the SSR shell. These toggles had no
+			//   consumer and misled admins into thinking they could disable SEO
+			//   endpoints. Bot policy is managed in the Bot Management page.
 		},
 	},
-	"integrations": {
-		Key:   "integrations",
-		Label: "Integrations",
-		Settings: []SettingDef{
-			{Key: "meilisearch_url", Label: "Meilisearch URL", Type: "text", Placeholder: "http://localhost:7700"},
-			{Key: "meilisearch_key", Label: "Meilisearch Key", Type: "text", Masked: true},
-			{Key: "honcho_enabled", Label: "Honcho Enabled", Type: "toggle"},
-			{Key: "honcho_url", Label: "Honcho URL", Type: "text", Placeholder: "https://honcho.example.com"},
-		},
-	},
+	// NOTE: The "integrations" category was removed. Meilisearch/Honcho endpoints
+	// are infrastructure configured via JC_* env vars (Rule 3), not hot-reloadable
+	// system_settings, and no backend consumer read these keys.
 	"ai": {
 		Key:   "ai",
 		Label: "AI",
 		Settings: []SettingDef{
-			{Key: "ai_assist_enabled", Label: "AI Assist Enabled", Type: "toggle"},
-			{Key: "ai_model", Label: "AI Model", Type: "select", Options: []string{"gpt-4", "gpt-3.5-turbo", "claude-3"}},
-			{Key: "ai_max_tokens", Label: "AI Max Tokens", Type: "number"},
-			{Key: "ai_content_moderation", Label: "AI Content Moderation", Type: "toggle"},
+			// Removed: ai_assist_enabled (duplicate of ai.content_assist_enabled),
+			//   ai_model / ai_max_tokens (provider config, env-only per Rule 3),
+			//   ai_content_moderation (use moderation.ai_auto_flag_threshold in
+			//   the Moderation category). None had a backend consumer.
 			{Key: "monthly_budget_usd", Label: "Monthly Budget (USD)", Type: "number", Description: "Alert threshold for AI spend"},
 			{Key: "japabot_enabled", Label: "JapaBot Enabled", Type: "toggle"},
 			{Key: "content_assist_enabled", Label: "Content Assist Enabled", Type: "toggle"},
 		},
 	},
-	"advanced": {
-		Key:   "advanced",
-		Label: "Advanced",
-		Settings: []SettingDef{
-			{Key: "debug_mode", Label: "Debug Mode", Type: "toggle"},
-			{Key: "log_level", Label: "Log Level", Type: "select", Options: []string{"debug", "info", "warn", "error"}},
-			{Key: "cache_ttl_seconds", Label: "Cache TTL (seconds)", Type: "number"},
-			{Key: "rate_limit_per_minute", Label: "Rate Limit (per minute)", Type: "number"},
-		},
-	},
+	// NOTE: The "advanced" category was removed. debug_mode / log_level are
+	// process-startup concerns configured via JC_* env vars (Rule 3); they cannot
+	// be hot-reloaded from system_settings. cache_ttl_seconds / rate_limit_per_minute
+	// were vague and had no consumer.
 	"auth": {
 		Key:   "auth",
 		Label: "Authentication",
@@ -387,10 +383,12 @@ var defaultSettings = map[string]SettingCategory{
 }
 
 // settingCategoryOrder controls the response order sent to the frontend.
+// Removed categories (features, email, integrations, advanced) are intentionally
+// absent — see the NOTE comments above each removal in defaultSettings.
 var settingCategoryOrder = []string{
-	"general", "auth", "features", "feed", "email", "security",
+	"general", "auth", "feed", "security",
 	"appearance", "users", "content", "payment",
-	"media", "seo", "integrations", "ai", "advanced",
+	"media", "seo", "ai",
 	"spaces", "moderation", "wallet", "api", "ads",
 	"notifications", "tickets", "audit", "i18n", "gdpr",
 	"search", "affiliate",
@@ -592,7 +590,10 @@ func (h *Handlers) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 
 	// Validate every key up front and serialize values to JSON before delegating
 	// the transactional upsert to the settings service (TX-001: tx belongs to service).
+	// is_public is resolved from the control settings catalog so appearance keys
+	// are exposed via GET /site/settings/public without a separate control-panel call.
 	pending := make(map[string][]byte, len(updates))
+	isPublic := make(map[string]bool, len(updates))
 	for key, value := range updates {
 		if !validKeys[key] {
 			writeError(w, http.StatusBadRequest, "invalid_key", "Unknown setting key: "+key)
@@ -603,10 +604,12 @@ func (h *Handlers) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, "invalid_value", "Cannot serialize value for key: "+key)
 			return
 		}
-		pending[category+"."+key] = valueJSON
+		fullKey := category + "." + key
+		pending[fullKey] = valueJSON
+		isPublic[fullKey] = control.IsPublicSetting(fullKey)
 	}
 
-	if err := h.Settings.UpdateSettingsBatch(ctx, tenantID, pending); err != nil {
+	if err := h.Settings.UpdateSettingsBatchWithPublic(ctx, tenantID, pending, isPublic); err != nil {
 		slog.Error("admin: failed to save settings", "category", category, "error", err)
 		writeError(w, http.StatusInternalServerError, "db_error", "Failed to save settings")
 		return

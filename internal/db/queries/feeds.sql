@@ -12,6 +12,8 @@ SELECT c.id, c.title, c.slug, c.content_type, c.author_id, c.space_id,
        cs.vote_score, cs.velocity_score,
        COALESCE(up.display_name, u.username, '') AS author_name,
        COALESCE(up.avatar_url, '') AS author_avatar_url,
+       COALESCE(s.name, '') AS space_name,
+       COALESCE(s.slug, '') AS space_slug,
        LEFT(c.body, 200) AS excerpt,
        cs.bookmark_count,
        c.read_time_minutes,
@@ -22,6 +24,7 @@ FROM contents c
 JOIN content_scores cs ON cs.content_id = c.id
 LEFT JOIN users u ON u.id = c.author_id
 LEFT JOIN user_profiles up ON up.user_id = c.author_id
+LEFT JOIN spaces s ON s.id = c.space_id
 LEFT JOIN content_tags ct ON ct.content_id = c.id
 LEFT JOIN tags t ON t.id = ct.tag_id
 LEFT JOIN media m ON m.id = c.header_image_id AND m.deleted_at IS NULL
@@ -30,6 +33,7 @@ WHERE c.tenant_id = @tenant_id
   AND c.visibility = 'public'
 GROUP BY c.id, cs.vote_score, cs.velocity_score, cs.bookmark_count,
          u.username, up.display_name, up.avatar_url,
+         s.name, s.slug,
          m.storage_bucket, m.storage_path
 ORDER BY cs.velocity_score DESC, cs.vote_score DESC
 LIMIT @page_limit OFFSET @page_offset;
@@ -42,6 +46,8 @@ SELECT f.id, f.content_id, f.space_id, f.content_type, f.score, f.created_at,
        cs.vote_score, cs.bookmark_count,
        COALESCE(up.display_name, u.username, '') AS author_name,
        COALESCE(up.avatar_url, '') AS author_avatar_url,
+       COALESCE(s.name, '') AS space_name,
+       COALESCE(s.slug, '') AS space_slug,
        LEFT(c.body, 200) AS excerpt,
        c.read_time_minutes,
        m.storage_bucket AS cover_storage_bucket,
@@ -52,6 +58,7 @@ JOIN contents c ON c.id = f.content_id
 LEFT JOIN content_scores cs ON cs.content_id = c.id
 LEFT JOIN users u ON u.id = c.author_id
 LEFT JOIN user_profiles up ON up.user_id = c.author_id
+LEFT JOIN spaces s ON s.id = c.space_id
 LEFT JOIN content_tags ct ON ct.content_id = c.id
 LEFT JOIN tags t ON t.id = ct.tag_id
 LEFT JOIN media m ON m.id = c.header_image_id AND m.deleted_at IS NULL
@@ -61,6 +68,7 @@ GROUP BY f.id, f.content_id, f.space_id, f.content_type, f.score, f.created_at,
          c.title, c.slug, c.author_id, c.created_at,
          c.view_count, c.comment_count, cs.vote_score, cs.bookmark_count,
          u.username, up.display_name, up.avatar_url,
+         s.name, s.slug,
          c.read_time_minutes, m.storage_bucket, m.storage_path
 ORDER BY f.created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
@@ -73,6 +81,8 @@ SELECT c.id, c.title, c.slug, c.content_type, c.author_id,
        cs.bookmark_count,
        COALESCE(up.display_name, u.username, '') AS author_name,
        COALESCE(up.avatar_url, '') AS author_avatar_url,
+       COALESCE(s.name, '') AS space_name,
+       COALESCE(s.slug, '') AS space_slug,
        LEFT(c.body, 200) AS excerpt,
        c.read_time_minutes,
        m.storage_bucket AS cover_storage_bucket,
@@ -82,6 +92,7 @@ FROM contents c
 JOIN content_scores cs ON cs.content_id = c.id
 LEFT JOIN users u ON u.id = c.author_id
 LEFT JOIN user_profiles up ON up.user_id = c.author_id
+LEFT JOIN spaces s ON s.id = c.space_id
 LEFT JOIN content_tags ct ON ct.content_id = c.id
 LEFT JOIN tags t ON t.id = ct.tag_id
 LEFT JOIN media m ON m.id = c.header_image_id AND m.deleted_at IS NULL
@@ -89,6 +100,7 @@ WHERE c.tenant_id = @tenant_id AND c.space_id = @space_id
   AND c.status = 'published'
 GROUP BY c.id, cs.vote_score, cs.velocity_score, cs.bookmark_count,
          u.username, up.display_name, up.avatar_url,
+         s.name, s.slug,
          m.storage_bucket, m.storage_path
 ORDER BY c.created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
@@ -101,6 +113,8 @@ SELECT c.id, c.title, c.slug, c.content_type, c.author_id, c.space_id,
        cs.bookmark_count,
        COALESCE(up.display_name, u.username, '') AS author_name,
        COALESCE(up.avatar_url, '') AS author_avatar_url,
+       COALESCE(s.name, '') AS space_name,
+       COALESCE(s.slug, '') AS space_slug,
        LEFT(c.body, 200) AS excerpt,
        c.read_time_minutes,
        m.storage_bucket AS cover_storage_bucket,
@@ -110,6 +124,7 @@ FROM contents c
 JOIN content_scores cs ON cs.content_id = c.id
 LEFT JOIN users u ON u.id = c.author_id
 LEFT JOIN user_profiles up ON up.user_id = c.author_id
+LEFT JOIN spaces s ON s.id = c.space_id
 LEFT JOIN content_tags ct ON ct.content_id = c.id
 LEFT JOIN tags t ON t.id = ct.tag_id
 LEFT JOIN media m ON m.id = c.header_image_id AND m.deleted_at IS NULL
@@ -118,6 +133,7 @@ WHERE c.tenant_id = @tenant_id AND c.author_id = @author_id
   AND c.visibility = 'public'
 GROUP BY c.id, cs.vote_score, cs.velocity_score, cs.bookmark_count,
          u.username, up.display_name, up.avatar_url,
+         s.name, s.slug,
          m.storage_bucket, m.storage_path
 ORDER BY c.created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
@@ -130,6 +146,8 @@ SELECT c.id, c.title, c.slug, c.content_type, c.author_id, c.space_id,
        cs.bookmark_count,
        COALESCE(up.display_name, u.username, '') AS author_name,
        COALESCE(up.avatar_url, '') AS author_avatar_url,
+       COALESCE(s.name, '') AS space_name,
+       COALESCE(s.slug, '') AS space_slug,
        LEFT(c.body, 200) AS excerpt,
        c.read_time_minutes,
        m.storage_bucket AS cover_storage_bucket,
@@ -139,6 +157,7 @@ FROM contents c
 JOIN content_scores cs ON cs.content_id = c.id
 LEFT JOIN users u ON u.id = c.author_id
 LEFT JOIN user_profiles up ON up.user_id = c.author_id
+LEFT JOIN spaces s ON s.id = c.space_id
 LEFT JOIN content_tags ct ON ct.content_id = c.id
 LEFT JOIN tags t ON t.id = ct.tag_id
 LEFT JOIN media m ON m.id = c.header_image_id AND m.deleted_at IS NULL
@@ -148,6 +167,7 @@ WHERE c.tenant_id = @tenant_id
   AND c.created_at > now() - interval '7 days'
 GROUP BY c.id, cs.vote_score, cs.velocity_score, cs.bookmark_count,
          u.username, up.display_name, up.avatar_url,
+         s.name, s.slug,
          m.storage_bucket, m.storage_path
 ORDER BY cs.vote_score DESC
 LIMIT @page_limit OFFSET @page_offset;
@@ -160,6 +180,8 @@ SELECT c.id, c.title, c.slug, c.content_type, c.author_id, c.space_id,
        cs.bookmark_count,
        COALESCE(up.display_name, u.username, '') AS author_name,
        COALESCE(up.avatar_url, '') AS author_avatar_url,
+       COALESCE(s.name, '') AS space_name,
+       COALESCE(s.slug, '') AS space_slug,
        LEFT(c.body, 200) AS excerpt,
        c.read_time_minutes,
        m.storage_bucket AS cover_storage_bucket,
@@ -169,6 +191,7 @@ FROM contents c
 JOIN content_scores cs ON cs.content_id = c.id
 LEFT JOIN users u ON u.id = c.author_id
 LEFT JOIN user_profiles up ON up.user_id = c.author_id
+LEFT JOIN spaces s ON s.id = c.space_id
 LEFT JOIN content_tags ct ON ct.content_id = c.id
 LEFT JOIN tags t ON t.id = ct.tag_id
 LEFT JOIN media m ON m.id = c.header_image_id AND m.deleted_at IS NULL
@@ -177,6 +200,7 @@ WHERE c.tenant_id = @tenant_id
   AND c.visibility = 'public'
 GROUP BY c.id, cs.vote_score, cs.velocity_score, cs.bookmark_count,
          u.username, up.display_name, up.avatar_url,
+         s.name, s.slug,
          m.storage_bucket, m.storage_path
 ORDER BY cs.velocity_score DESC
 LIMIT @page_limit OFFSET @page_offset;
@@ -282,6 +306,8 @@ SELECT c.id, c.title, c.slug, c.content_type, c.author_id, c.space_id,
        cs.vote_score, cs.velocity_score, cs.bookmark_count,
        COALESCE(up.display_name, u.username, '') AS author_name,
        COALESCE(up.avatar_url, '') AS author_avatar_url,
+       COALESCE(s.name, '') AS space_name,
+       COALESCE(s.slug, '') AS space_slug,
        LEFT(c.body, 200) AS excerpt,
        c.read_time_minutes,
        m.storage_bucket AS cover_storage_bucket,
@@ -297,11 +323,13 @@ JOIN candidate_ids ci ON ci.id = c.id
 LEFT JOIN content_scores cs ON cs.content_id = c.id
 LEFT JOIN users u  ON u.id = c.author_id
 LEFT JOIN user_profiles up ON up.user_id = c.author_id
+LEFT JOIN spaces s ON s.id = c.space_id
 LEFT JOIN content_tags ct ON ct.content_id = c.id
 LEFT JOIN tags t ON t.id = ct.tag_id
 LEFT JOIN media m ON m.id = c.header_image_id AND m.deleted_at IS NULL
 GROUP BY c.id, cs.vote_score, cs.velocity_score, cs.bookmark_count,
          u.username, up.display_name, up.avatar_url,
+         s.name, s.slug,
          m.storage_bucket, m.storage_path
 LIMIT @candidate_cap;
 

@@ -3,10 +3,12 @@
 	import { t } from '$lib/i18n';
 	import CreateGuidePanel from './CreateGuidePanel.svelte';
 	import CreateSettingsPanel from './CreateSettingsPanel.svelte';
+	import CreateSeoPanel from './CreateSeoPanel.svelte';
 	import type { BlogSeries, CustomFieldGroup, MediaAsset, Visibility } from '$lib/types';
 
 	interface Props {
 		focusedField: 'space' | 'tags' | 'series' | 'body' | null;
+		slug: string;
 		visibility: Visibility;
 		canonicalUrl: string;
 		publishAt: string | null;
@@ -14,17 +16,22 @@
 		fieldGroups: CustomFieldGroup[];
 		series: BlogSeries[];
 		seriesId: string | null;
+		coverMediaId: string | null;
+		coverPreviewUrl: string | null;
 		metaTitle: string | null;
 		metaDescription: string | null;
 		ogImageUrl: string | null;
 		ogImagePreviewUrl: string | null;
 		seoIndexable: boolean;
+		onslug: (v: string) => void;
 		onvisibility: (v: Visibility) => void;
 		oncanonical: (v: string) => void;
 		onpublishat: (v: string | null) => void;
 		onfieldvalues: (v: Record<string, unknown>) => void;
 		onseries: (id: string | null) => void;
 		onseriesfocus: () => void;
+		oncoveruploaded: (asset: MediaAsset) => void;
+		oncoverremove: () => void;
 		onmetatitle: (v: string | null) => void;
 		onmetadescription: (v: string | null) => void;
 		onogimageselect: (asset: MediaAsset | null) => void;
@@ -34,24 +41,30 @@
 
 	let {
 		focusedField,
+		slug,
 		visibility,
 		canonicalUrl,
 		publishAt,
 		fieldValues,
 		fieldGroups,
-		series,
+		series = $bindable(),
 		seriesId,
+		coverMediaId,
+		coverPreviewUrl,
 		metaTitle,
 		metaDescription,
 		ogImageUrl,
 		ogImagePreviewUrl,
 		seoIndexable,
+		onslug,
 		onvisibility,
 		oncanonical,
 		onpublishat,
 		onfieldvalues,
 		onseries,
 		onseriesfocus,
+		oncoveruploaded,
+		oncoverremove,
 		onmetatitle,
 		onmetadescription,
 		onogimageselect,
@@ -68,30 +81,47 @@
 		<Tabs.Trigger value="settings" class="right-panel-tab">
 			{t('create.panel.settings')}
 		</Tabs.Trigger>
+		<Tabs.Trigger value="seo" class="right-panel-tab">
+			{t('create.panel.seo')}
+		</Tabs.Trigger>
 	</Tabs.List>
 	<Tabs.Content value="guide" class="pt-2">
-		<CreateGuidePanel {focusedField} />
+		<CreateGuidePanel
+			{focusedField}
+			bind:series
+			{seriesId}
+			{coverMediaId}
+			{coverPreviewUrl}
+			{onseries}
+			{onseriesfocus}
+			{oncoveruploaded}
+			{oncoverremove}
+			{onedit}
+		/>
 	</Tabs.Content>
 	<Tabs.Content value="settings" class="pt-2">
 		<CreateSettingsPanel
+			{slug}
 			{visibility}
 			{canonicalUrl}
 			{publishAt}
 			{fieldValues}
 			{fieldGroups}
-			{series}
-			{seriesId}
+			{onslug}
+			{onvisibility}
+			{oncanonical}
+			{onpublishat}
+			{onfieldvalues}
+			{onedit}
+		/>
+	</Tabs.Content>
+	<Tabs.Content value="seo" class="pt-2">
+		<CreateSeoPanel
 			{metaTitle}
 			{metaDescription}
 			{ogImageUrl}
 			{ogImagePreviewUrl}
 			{seoIndexable}
-			{onvisibility}
-			{oncanonical}
-			{onpublishat}
-			{onfieldvalues}
-			{onseries}
-			{onseriesfocus}
 			{onmetatitle}
 			{onmetadescription}
 			{onogimageselect}
