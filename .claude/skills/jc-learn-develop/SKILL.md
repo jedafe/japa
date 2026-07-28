@@ -8,7 +8,19 @@ description: Use when building new pages or components for the JapaConnect Learn
 Course/track platform at `learn.japaconnect.com`. SSR (adapter-node + Bun). API base `/api/v1/learn/*`. **Layout is the unified app shell (ADR-058) adapted for Learn (ADR-060) — build inside it; the lesson player is the one exception.**
 
 ## ⛔ API-READINESS GATE
-Same as `jc-main-develop`: list endpoints → verify (catalog or probe) → any missing: STOP + ⚠️ MISSING BACKEND API ROUTES alert. Never mock. Known routes: `GET /learn/tracks`, `GET /learn/tracks/:slug`, `POST /learn/tracks/:id/enroll`, `GET /me/enrollments`, `GET /learn/lessons/:id`, `POST /learn/lessons/:id/progress`, `POST /learn/lessons/:id/complete`, `GET/POST /learn/quizzes/:id`, `GET /me/certificates` — verify each before use.
+Same as `jc-main-develop`: list endpoints → verify (catalog or probe) → any missing: STOP + ⚠️ MISSING BACKEND API ROUTES alert. Never mock. Known routes: `GET /learn/tracks`, `GET /learn/tracks/:slug`, `POST /learn/tracks/:id/enroll`, `GET /me/enrollments`, `GET /learn/lessons/:id`, `POST /learn/lessons/:id/progress`, `POST /learn/lessons/:id/complete`, `GET/POST /learn/quizzes/:id`, `GET /me/certificates` — verify each before use. **Japa University (ADR-063) routes**: `GET /learn/university/tracks` (marketplace catalog, filters on `is_published_to_university`), `POST /learn/university/instructors/apply` (creator application), `GET /me/instructor-profile` (own instructor status), `POST /learn/university/tracks/:id/submit` (submit course to marketplace), `GET /me/payouts` (instructor payout history) — verify each before use.
+
+## Japa University Marketplace (ADR-063 — host-detected shell)
+
+Japa University is the Learning Platform presented as a worldwide creator marketplace under its own brand. The Learn app **detects the host** (`university.japaconnect.com` default, or a custom domain from `system_settings.university.surface_domain`) and renders the Japa University shell. Not open sourced (ADR-063 §1).
+
+- **Host detection:** in root `+layout.server.ts`, compare `request.headers.get('host')` against the configured `university.surface_domain`. If match → set `data.isUniversity = true` → render the Japa University shell variant (branded header, worldwide audience copy, creator-focused nav). If not → standard Learn shell.
+- **Marketplace catalog:** `GET /learn/university/tracks` returns only `is_published_to_university = true` courses. `TrackCard` adds a price badge (`price_kobo` → formatted) and instructor name. Free and Pro-included courses show "Free" / "Pro".
+- **Creator flow:** `POST /learn/university/instructors/apply` → `instructor_profiles.status = 'pending'`. Admin approves → `university:notify_instructor_approved`. Approved instructor creates a track → `POST /learn/university/tracks/:id/submit` → admin approves course → `university:notify_course_approved` → `is_published_to_university = true`.
+- **Instructor dashboard:** `/dashboard/instructor` — course list with enrollment counts (`total_enrolled`), revenue overview from `GET /me/payouts`, pending/approved course status. LayerChart for revenue over time.
+- **Pro dual-access:** Pro subscribers enroll in any university course for free. The UI shows "Included with Pro" instead of a price for Pro users. Creators are still compensated (Pro stream rate, ADR-063 §7) — this is backend, not visible in the UI.
+- **Course reviews:** reuse the polymorphic `reviews` table (`entity_type = 'learning_track'`). Star ratings and counts from `review_aggregates`. No course-specific review UI — use the same review component as Section 29.
+- **SSR/CSR boundary unchanged:** marketplace catalog is public (SSR); instructor dashboard and payout data are CSR (session-guarded).
 
 ## ⚠️ SSR/CSR BOUNDARY — Learn's Critical Rule
 **User-specific data is NEVER server-rendered.** Progress, enrollment status, completed lessons, quiz scores → CSR only, guarded by session:

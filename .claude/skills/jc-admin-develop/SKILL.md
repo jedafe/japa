@@ -78,6 +78,29 @@ Admin Dashboard and every Analytics page (Traffic, Content, Search, Community, R
 ## RBAC-Gated UI
 `let canX = $derived(session?.permissions.includes('entity.action') ?? false)` — hide/disable unauthorized controls proactively; never rely only on backend 403.
 
+## University Management (Section 39 + ADR-063)
+Three admin entity surfaces, all with full DataTable spec + Gate 2 RBAC CRUD:
+
+### Universities (Section 39 — space type `university`)
+- **List:** `GET /api/v1/admin/universities` — filterable by country, ranking, tuition range; sortable; paginated. DataTable with all spec features.
+- **Create/Edit:** `POST/PATCH /api/v1/admin/universities` — all standard Space fields + `university_fields` custom fields (incl. logo + feature_image upload via Section 34 media). The logo doubles as the university page's profile image.
+- **Delete:** `DELETE /api/v1/admin/universities/:id` (soft delete).
+- **Verify:** `POST /api/v1/admin/universities/:id/verify` — mark as officially verified (state action, conditional on row state).
+- **Bulk import:** CSV upload with field mapping for large-scale population. Maps to a bulk endpoint.
+- **Status:** published / draft / archived (state actions for each transition).
+
+### Instructor Profiles (ADR-063 — creator economy)
+- **List:** `GET /api/v1/admin/instructors` — filterable by `status` (pending/approved/rejected/suspended), `tier` (standard/verified/partner); sortable; paginated.
+- **Review applications:** pending instructors have a review action → opens `<Dialog.Root>` with identity, content samples, approve/reject buttons.
+- **State transitions (BOTH directions):** `POST /:id/approve` AND `/:id/reject`, `/:id/suspend` AND `/:id/unsuspend` — all conditional on current state.
+- **Tier management:** `PATCH /:id` to set `tier` and optional `commission_pct_override`.
+- **KYC review:** `kyc_status` visible in detail view; sensitive `payout_method` (jsonb) masked in UI, never shown raw.
+
+### University Course Approval (ADR-063)
+- **List:** `GET /api/v1/admin/university/tracks` — filterable by `is_published_to_university` status, instructor, category; sortable; paginated.
+- **Approve/Reject:** `POST /:id/approve` AND `/:id/reject` — approve sets `is_published_to_university = true` and enqueues `university:notify_course_approved`. Both directions required.
+- **Payout management:** `GET /api/v1/admin/university/payouts` — list `instructor_payouts` by period/status; `POST /:id/process` to trigger `university:send_instructor_payout`; `POST /:id/mark-failed` for failed transfers. State: pending → processing → paid / failed.
+
 ## Stack & Design
 Same base stack as all JC apps (Svelte 5 Runes, Bits UI dot-notation, Tailwind v4, TypeScript, Lucide, `$t()` i18n, no AI attribution). Sidebar `#1C1B22`, content `#F7F7F7`/dark, accent `#3B49DF`, success/danger/warning tokens, 14px compact density, `[data-theme="dark"]`.
 

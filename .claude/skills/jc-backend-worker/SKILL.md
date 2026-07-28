@@ -5,7 +5,24 @@ description: Use when creating or modifying Asynq background tasks/workers in th
 
 # JapaConnect Backend — Asynq Workers Skill
 
-Three-tier queues on Valkey: **critical** (payments, auth emails, webhooks out) · **default** (search sync, notifications, media processing, general emails) · **low** (digests, cleanup, analytics rollups, backfills). ~68 registered tasks — keep `asynq-tasks.md` accurate.
+Three-tier queues on Valkey: **critical** (payments, auth emails, webhooks out, university payouts) · **default** (search sync, notifications, media processing, general emails, university approval notifications) · **low** (digests, cleanup, analytics rollups, backfills, payout calculation, university logo fetch). ~72 registered tasks — keep `asynq-tasks.md` accurate.
+
+## Japa University Tasks (ADR-063)
+| Task | Queue | Idempotency | Notes |
+|---|---|---|---|
+| `university:process_enrollment` | critical | SET NX on `jc:uni:enrollment:processed:{payment_id}` | Creates/updates enrollment + writes `revenue_splits` row. Guard against double-credit. |
+| `university:calculate_period_payouts` | low (scheduled) | Valkey lock per instructor+period | Aggregates open splits (`payout_id IS NULL`) into `instructor_payouts` once threshold met. |
+| `university:send_instructor_payout` | critical | Advisory lock on instructor_id inside tx | Executes transfer via Section 17 provider; stamps splits with `payout_id` AFTER success. |
+| `university:notify_instructor_approved` | default | Send-state guard | Email notification on instructor approval. |
+| `university:notify_course_approved` | default | Send-state guard | Email notification on course marketplace approval. |
+| `university:fetch_logo` | low | Natural key (university slug) | Downloads logo from seed URL → SeaweedFS → sets `logo` field. Used during university space seeding. |
+
+**Revenue splits are immutable** — `university:process_enrollment` writes one row per revenue event and never updates it. A split correction is a compensating new row, never an edit. **Pro-stream splits** (`source='pro_stream'`) have no `payment_id` — they use a different idempotency key (`jc:uni:pro_stream:{instructor_id}:{enrollment_id}`) to avoid tripping the payment-id guard.
+
+## Geo-Aware Tasks (ADR-064)
+| Task | Queue | Notes |
+|---|---|---|
+| `maintenance:update_geoip_db` | low (scheduled, weekly Sun 02:00 UTC) | Downloads MaxMind GeoLite2, atomically swaps reader pointer. No restart needed. |
 
 ## ⛔ WIRING GATE (BE-001 Anchor)
 A task that is defined but not wired is worse than no task — it fails silently. Every new task PR must show all four:

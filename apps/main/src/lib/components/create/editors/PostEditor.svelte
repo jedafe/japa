@@ -24,7 +24,9 @@
 		Underline,
 		Link as LinkIcon,
 		Undo2,
-		Redo2
+		Redo2,
+		LayoutTemplate,
+		FileCode
 	} from 'lucide-svelte';
 
 	const ICONS: Record<string, typeof Heading1> = {
@@ -79,10 +81,10 @@
 	// clobbering the textarea while the user is typing in markdown mode).
 	let markdownDirty = $state(false);
 
-	const MODES: { value: EditorMode; labelKey: string; descKey: string }[] = [
-		{ value: 'block', labelKey: 'create.editor.mode.block', descKey: 'create.editor.mode.block_desc' },
-		{ value: 'wysiwyg', labelKey: 'create.editor.mode.wysiwyg', descKey: 'create.editor.mode.wysiwyg_desc' },
-		{ value: 'markdown', labelKey: 'create.editor.mode.markdown', descKey: 'create.editor.mode.markdown_desc' }
+	const MODES: { value: EditorMode; icon: typeof Heading1; labelKey: string; descKey: string }[] = [
+		{ value: 'block', icon: LayoutTemplate, labelKey: 'create.editor.mode.block', descKey: 'create.editor.mode.block_desc' },
+		{ value: 'wysiwyg', icon: Type, labelKey: 'create.editor.mode.wysiwyg', descKey: 'create.editor.mode.wysiwyg_desc' },
+		{ value: 'markdown', icon: FileCode, labelKey: 'create.editor.mode.markdown', descKey: 'create.editor.mode.markdown_desc' }
 	];
 
 	onMount(() => {
@@ -271,23 +273,6 @@
 </script>
 
 <div class="post-editor">
-	<!-- Mode switcher (segmented control) -->
-	<div class="mode-switcher" role="tablist" aria-label={t('create.title')}>
-		{#each MODES as m (m.value)}
-			<button
-				type="button"
-				role="tab"
-				aria-selected={mode === m.value}
-				class="mode-tab"
-				class:active={mode === m.value}
-				title={t(m.descKey)}
-				onclick={() => switchMode(m.value)}
-			>
-				{t(m.labelKey)}
-			</button>
-		{/each}
-	</div>
-
 	{#if mode === 'markdown'}
 		<textarea
 			bind:this={markdownTextarea}
@@ -341,6 +326,24 @@
 		{/if}
 	</div>
 
+	<!-- Mode switcher — floated at top-right of the editing surface -->
+	<div class="mode-switcher" role="tablist" aria-label={t('create.title')}>
+		{#each MODES as m (m.value)}
+			<button
+				type="button"
+				role="tab"
+				aria-selected={mode === m.value}
+				class="mode-tab"
+				class:active={mode === m.value}
+				title={t(m.descKey)}
+				aria-label={t(m.labelKey)}
+				onclick={() => switchMode(m.value)}
+			>
+				<m.icon size={16} />
+			</button>
+		{/each}
+	</div>
+
 	{#if mode === 'block' && slashOpen && filteredBlocks.length > 0}
 		<div class="slash-menu" style="top: {slashTop}px; left: {slashLeft}px">
 			{#each filteredBlocks as block, i (block.key)}
@@ -370,24 +373,30 @@
 		position: relative;
 	}
 
-	/* ---- Mode switcher (segmented control) ---- */
+	/* ---- Mode switcher — floated at top-right of the editing surface ---- */
 	.mode-switcher {
+		position: absolute;
+		top: 8px;
+		right: 8px;
+		z-index: 20;
 		display: inline-flex;
 		gap: 2px;
 		padding: 2px;
-		margin-bottom: 8px;
 		border: 1px solid var(--color-border);
 		border-radius: var(--radius);
 		background: var(--color-surface-subtle);
 	}
 	.mode-tab {
-		padding: 4px 12px;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 28px;
+		height: 28px;
+		padding: 0;
 		border: none;
 		border-radius: calc(var(--radius) - 2px);
 		background: transparent;
 		color: var(--color-text-subtle);
-		font-size: 0.8125rem;
-		font-weight: 500;
 		cursor: pointer;
 		transition: background 0.12s, color 0.12s;
 	}

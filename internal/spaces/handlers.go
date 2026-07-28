@@ -508,6 +508,9 @@ func (h *Handlers) GetSpace(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+	if rules == nil {
+		rules = []gen.SpaceRule{}
+	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{"space": space, "rules": rules},
@@ -538,6 +541,9 @@ func (h *Handlers) AdminGetSpace(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		handleServiceError(w, err)
 		return
+	}
+	if rules == nil {
+		rules = []gen.SpaceRule{}
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
@@ -825,6 +831,9 @@ func (h *Handlers) ListSpaceRules(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		handleServiceError(w, err)
 		return
+	}
+	if rules == nil {
+		rules = []gen.SpaceRule{}
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": rules})
