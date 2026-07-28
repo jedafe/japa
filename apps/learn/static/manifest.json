@@ -1,0 +1,10 @@
+{
+	"name": "JapaConnect Learn",
+	"short_name": "Japa Learn",
+	"description": "JapaConnect learning platform — tracks, lessons, and certifications",
+	"start_url": "/",
+	"display": "standalone",
+	"background_color": "#ffffff",
+	"theme_color": "#3b49df",
+	"icons": [{ "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml" }]
+}

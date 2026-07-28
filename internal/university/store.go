@@ -541,6 +541,56 @@ func (s *Store) ListSplitsByInstructor(ctx context.Context, tenantID, instructor
 	})
 }
 
+// GetRevenueSplitByID returns a single immutable revenue-split record by ID,
+// tenant-scoped. Used by the admin audit viewer (ADR-063 §9).
+func (s *Store) GetRevenueSplitByID(ctx context.Context, tenantID, id pgtype.UUID) (gen.RevenueSplit, error) {
+	return s.read.GetRevenueSplitByID(ctx, gen.GetRevenueSplitByIDParams{
+		TenantID: tenantID, ID: id,
+	})
+}
+
+// ListRevenueSplitsFilter holds the optional filters for the admin audit
+// viewer list endpoint (ADR-063 §9). A nil/zero value on any field means
+// "no filter on this column".
+type ListRevenueSplitsFilter struct {
+	InstructorID pgtype.UUID // empty = all instructors
+	TrackID      pgtype.UUID // empty = all tracks
+	Source        string      // "" = both purchase and pro_stream
+	PayoutID     pgtype.UUID // empty = both open and stamped splits
+	FromTs       pgtype.Timestamptz // zero = no lower bound
+	ToTs         pgtype.Timestamptz // zero = no upper bound
+}
+
+// ListRevenueSplits returns a tenant-wide paginated list of immutable
+// revenue-split audit records with optional filters (ADR-063 §9).
+func (s *Store) ListRevenueSplits(ctx context.Context, tenantID pgtype.UUID, f ListRevenueSplitsFilter, limit, offset int32) ([]gen.RevenueSplit, error) {
+	return s.read.ListRevenueSplits(ctx, gen.ListRevenueSplitsParams{
+		TenantID:     tenantID,
+		InstructorID: f.InstructorID,
+		TrackID:      f.TrackID,
+		Source:       f.Source,
+		PayoutID:     f.PayoutID,
+		FromTs:       f.FromTs,
+		ToTs:         f.ToTs,
+		PageLimit:    limit,
+		PageOffset:   offset,
+	})
+}
+
+// CountRevenueSplits returns the total row count for the same filter set as
+// ListRevenueSplits, for the pagination meta envelope (ADR-063 §9).
+func (s *Store) CountRevenueSplits(ctx context.Context, tenantID pgtype.UUID, f ListRevenueSplitsFilter) (int64, error) {
+	return s.read.CountRevenueSplits(ctx, gen.CountRevenueSplitsParams{
+		TenantID:     tenantID,
+		InstructorID: f.InstructorID,
+		TrackID:      f.TrackID,
+		Source:       f.Source,
+		PayoutID:     f.PayoutID,
+		FromTs:       f.FromTs,
+		ToTs:         f.ToTs,
+	})
+}
+
 // SumOpenSplits returns gross/creator/platform totals for open splits.
 func (s *Store) SumOpenSplits(ctx context.Context, tenantID, instructorID pgtype.UUID) (gen.SumOpenSplitsByInstructorRow, error) {
 	return s.read.SumOpenSplitsByInstructor(ctx, gen.SumOpenSplitsByInstructorParams{

@@ -1,0 +1,80 @@
+<script lang="ts">
+	import { untrack, onMount, type Snippet } from 'svelte';
+	import { page } from '$app/state';
+	import AppShell from '$lib/components/shell/AppShell.svelte';
+	import MobileBottomTabBar from '$lib/components/shell/MobileBottomTabBar.svelte';
+	import { sidebarStore } from '$lib/components/shell/sidebar.svelte';
+	import { api } from '$lib/api/client';
+	import { realtime } from '$lib/realtime/realtime.svelte';
+	import { theme } from '$lib/stores/theme.svelte';
+	import { i18n } from '$lib/i18n';
+	import '../app.css';
+	import type { LayoutData } from './$types';
+
+	let { data, children }: { data: LayoutData; children: Snippet } = $props();
+
+	// Seed the client stores from the SSR-resolved values once, after hydration.
+	// This prevents flash-of-wrong-theme and ensures the toggle starts in sync.
+	$effect(() => {
+		theme.init(data.theme);
+	});
+	$effect(() => {
+		i18n.setLocale(data.locale);
+	});
+
+	// Seed from the server value once; thereafter this is user-controlled.
+	let collapsed = $state(untrack(() => data.navCollapsed));
+
+	// Route-specific right-sidebar snippet (set by child routes via setSidebar).
+	const routeSidebar = $derived(sidebarStore.current);
+
+	// Lesson player route: the reading exception (ADR-060). Auto-collapses the
+	// nav to 72px and is detected by route id so the user's persisted preference
+	// is restored when they leave the player.
+	const isLessonPlayer = $derived(
+		typeof page.route.id === 'string' &&
+			page.route.id.includes('/tracks/[slug]/[module]/[lesson]')
+	);
+
+	async function toggleCollapse() {
+		const next = !collapsed;
+		collapsed = next; // optimistic
+		if (!data.user) return; // guests have nowhere to persist; keep it session-local
+		const res = await api.patch('/me/account', { ui: { nav_collapsed: next } });
+		if (res.error) collapsed = !next; // rollback on failure
+	}
+
+	// Real-Time WebSocket: connect when an authenticated session is present,
+	// disconnect on unmount or when the session is lost. The store is a no-op
+	// during SSR; onMount guarantees a browser-only connect.
+	onMount(() => {
+		if (data.user) realtime.connect();
+		return () => realtime.disconnect();
+	});
+
+	// Reconnect if the user logs in mid-session (e.g. after /login redirect).
+	$effect(() => {
+		if (data.user) realtime.connect();
+	});
+
+	// Seed the realtime unread-notification counter from the SSR value, and
+	// re-sync whenever the server payload changes (e.g. after invalidateAll).
+	$effect(() => {
+		realtime.setUnread(data.unreadNotifications);
+	});
+</script>
+
+<AppShell
+	menu={data.menu}
+	user={data.user}
+	{collapsed}
+	onToggleCollapse={toggleCollapse}
+	logoUrl={data.logoUrl}
+	isUniversity={data.isUniversityHost}
+	sidebar={routeSidebar ?? undefined}
+	lessonPlayer={isLessonPlayer}
+>
+	{@render children()}
+</AppShell>
+
+<MobileBottomTabBar user={data.user} />

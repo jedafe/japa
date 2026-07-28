@@ -670,10 +670,11 @@ type CouponEvent struct {
 }
 
 type CustomField struct {
-	ID             pgtype.UUID        `json:"id"`
-	GroupID        pgtype.UUID        `json:"group_id"`
-	TenantID       pgtype.UUID        `json:"tenant_id"`
-	Label          string             `json:"label"`
+	ID       pgtype.UUID `json:"id"`
+	GroupID  pgtype.UUID `json:"group_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+	Label    string      `json:"label"`
+	// destination_country: ISO 3166-1 alpha-2 code of the country the user is relocating to (ADR-064 VisitorContext).
 	Key            string             `json:"key"`
 	FieldType      string             `json:"field_type"`
 	Options        []byte             `json:"options"`
