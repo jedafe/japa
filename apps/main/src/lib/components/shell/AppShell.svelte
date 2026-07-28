@@ -14,6 +14,10 @@
 		trendingTags?: TagSuggestion[];
 		suggestedSpaces?: SpaceSuggestion[];
 		userSpaces?: UserSpaceRef[];
+		/** Platform logo URL from appearance.logo_url (control panel). */
+		logoUrl?: string;
+		/** Comma-separated enabled languages from i18n.enabled_languages. */
+		enabledLanguages?: string;
 		children: Snippet;
 		/** Route-specific right-sidebar widgets. */
 		sidebar?: Snippet;
@@ -29,6 +33,8 @@
 		trendingTags = [],
 		suggestedSpaces = [],
 		userSpaces = [],
+		logoUrl = '',
+		enabledLanguages = 'en,fr',
 		children,
 		sidebar,
 		hideRightSidebar = false
@@ -42,7 +48,7 @@
 
 <div class="shell" class:hide-sidebar={hideRightSidebar} style="--current-nav-width: {navWidth}">
 	<div class="shell-nav">
-		<LeftNav {menu} {user} {collapsed} {userSpaces} onToggle={onToggleCollapse} />
+		<LeftNav {menu} {user} {collapsed} {userSpaces} {logoUrl} onToggle={onToggleCollapse} />
 	</div>
 
 	<main class="shell-center">
@@ -56,10 +62,14 @@
 				<MenuIcon size={20} />
 			</button>
 			<a href="/" class="flex items-center gap-2 font-medium text-[var(--color-text)]">
-				<span
-					class="grid h-7 w-7 place-items-center rounded-[var(--radius)] bg-[var(--color-primary)] text-xs font-semibold text-[var(--color-primary-contrast)]"
-					>JC</span
-				>
+				{#if logoUrl}
+					<img src={logoUrl} alt={t('app.name')} class="h-7 w-auto max-w-[120px] object-contain" />
+				{:else}
+					<span
+						class="grid h-7 w-7 place-items-center rounded-[var(--radius)] bg-[var(--color-primary)] text-xs font-semibold text-[var(--color-primary-contrast)]"
+						>JC</span
+					>
+				{/if}
 				<span>{t('app.name')}</span>
 			</a>
 		</div>
@@ -68,7 +78,7 @@
 
 	{#if !hideRightSidebar}
 		<div class="shell-sidebar">
-			<RightSidebar {user} {trendingTags} {suggestedSpaces} {sidebar} />
+			<RightSidebar {user} {trendingTags} {suggestedSpaces} {enabledLanguages} {sidebar} />
 		</div>
 	{/if}
 </div>
@@ -81,7 +91,7 @@
 		onclick={() => (mobileNavOpen = false)}
 	></button>
 	<div class="drawer">
-		<LeftNav {menu} {user} collapsed={false} {userSpaces} onToggle={() => (mobileNavOpen = false)} />
+		<LeftNav {menu} {user} collapsed={false} {userSpaces} {logoUrl} onToggle={() => (mobileNavOpen = false)} />
 	</div>
 {/if}
 

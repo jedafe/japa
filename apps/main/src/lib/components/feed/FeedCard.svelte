@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { ArrowUp, ArrowDown, MessageSquare, Eye, Bookmark } from 'lucide-svelte';
+	import { goto } from '$app/navigation';
 	import { relativeTime } from '$lib/feed/time';
 	import { t } from '$lib/i18n';
 	import type { CardStyle } from '$lib/feed/cardStyle';
@@ -55,7 +56,19 @@
 {#snippet metaLine()}
 	<div class="flex flex-wrap items-center gap-1.5 text-xs text-[var(--color-muted)]">
 		{@render badge()}
-		{#if item.space_name}<span class="font-semibold text-[var(--color-text-subtle)]">{item.space_name}</span>{/if}
+		{#if item.space_name}
+		{#if item.space_slug}
+			<span
+				class="font-semibold text-[var(--color-text-subtle)] hover:text-[var(--color-primary)] hover:underline cursor-pointer"
+				onclick={(e) => { e.preventDefault(); e.stopPropagation(); goto('/spaces/' + item.space_slug); }}
+				onkeydown={(e) => { if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); goto('/spaces/' + item.space_slug); } }}
+				role="link"
+				tabindex="0"
+			>{item.space_name}</span>
+		{:else}
+			<span class="font-semibold text-[var(--color-text-subtle)]">{item.space_name}</span>
+		{/if}
+	{/if}
 		{#if item.author_name}<span>·</span><span>{item.author_name}</span>{/if}
 		{#if time}<span>·</span><span>{time}</span>{/if}
 	</div>

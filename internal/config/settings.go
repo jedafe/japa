@@ -257,6 +257,7 @@ func (s *Settings) SetSetting(ctx context.Context, tenantID pgtype.UUID, key, va
 // single transaction. Each entry in settings maps a full dot-notation key
 // (e.g. "site.name") to its already-serialized JSON value. The cache is
 // invalidated once after commit so callers do not need to invalidate per key.
+// is_public is preserved on conflict (not overwritten).
 func (s *Settings) UpdateSettingsBatch(ctx context.Context, tenantID pgtype.UUID, settings map[string][]byte) error {
 	tx, err := s.db.Writer.Begin(ctx)
 	if err != nil {
@@ -271,6 +272,37 @@ func (s *Settings) UpdateSettingsBatch(ctx context.Context, tenantID pgtype.UUID
 			ON CONFLICT (tenant_id, key)
 			DO UPDATE SET value = EXCLUDED.value, updated_at = now()
 		`, tenantID, key, string(valueJSON)); err != nil {
+			return fmt.Errorf("upserting setting %q: %w", key, err)
+		}
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("committing settings tx: %w", err)
+	}
+
+	s.InvalidateSettings(ctx, tenantID)
+	return nil
+}
+
+// UpdateSettingsBatchWithPublic is like UpdateSettingsBatch but also sets the
+// is_public flag on each upserted row (used by the admin handler so appearance
+// settings are exposed via GET /site/settings/public). On conflict, is_public
+// is updated to the new value so toggling publicity takes effect immediately.
+func (s *Settings) UpdateSettingsBatchWithPublic(ctx context.Context, tenantID pgtype.UUID, settings map[string][]byte, isPublic map[string]bool) error {
+	tx, err := s.db.Writer.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("beginning settings tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	for key, valueJSON := range settings {
+		pub := isPublic[key]
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO system_settings (tenant_id, key, value, is_public, created_at, updated_at)
+			VALUES ($1, $2, $3::jsonb, $4, now(), now())
+			ON CONFLICT (tenant_id, key)
+			DO UPDATE SET value = EXCLUDED.value, is_public = EXCLUDED.is_public, updated_at = now()
+		`, tenantID, key, string(valueJSON), pub); err != nil {
 			return fmt.Errorf("upserting setting %q: %w", key, err)
 		}
 	}

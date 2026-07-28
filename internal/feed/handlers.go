@@ -64,16 +64,33 @@ func writeError(w http.ResponseWriter, status int, code, message string) {
 	})
 }
 
-// parsePageSize extracts and clamps the page_size query parameter.
-func parsePageSize(r *http.Request) int32 {
+// parsePageSize extracts and clamps the page_size query parameter. When the
+// query parameter is absent, the default comes from the system_settings key
+// `content.posts_per_page` (admin-configurable in the admin/control Settings
+// page), falling back to the compiled default. This makes the admin
+// "Posts Per Page" setting actually affect feed pagination across the site.
+// Ref: conventions/system-settings-catalog.md (content.posts_per_page)
+func (h *Handlers) parsePageSize(r *http.Request) int32 {
+	defaultSize := int32(defaultPageSize)
+	if h.settings != nil {
+		if t := tenant.FromContext(r.Context()); t != nil {
+			if v := h.settings.GetIntOr(r.Context(), t.ID, "content.posts_per_page", int(defaultPageSize)); v > 0 {
+				defaultSize = int32(v) //nolint:gosec // G109: bounded below by MaxPageSize clamp
+			}
+		}
+	}
+
 	s := r.URL.Query().Get("page_size")
 	if s == "" {
-		return defaultPageSize
+		if defaultSize > MaxPageSize {
+			return MaxPageSize
+		}
+		return defaultSize
 	}
 
 	n, err := strconv.Atoi(s)
 	if err != nil || n <= 0 {
-		return defaultPageSize
+		return defaultSize
 	}
 
 	if n > MaxPageSize {
@@ -120,7 +137,7 @@ func (h *Handlers) GetExploreFeed(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	limit := parsePageSize(r)
+	limit := h.parsePageSize(r)
 	offset := parsePageOffset(r)
 	sort := parseSort(r)
 
@@ -146,7 +163,7 @@ func (h *Handlers) GetPrimaryFeed(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	limit := parsePageSize(r)
+	limit := h.parsePageSize(r)
 	offset := parsePageOffset(r)
 	sort := parseSort(r)
 
@@ -172,7 +189,7 @@ func (h *Handlers) GetForYouFeed(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	limit := parsePageSize(r)
+	limit := h.parsePageSize(r)
 	offset := parsePageOffset(r)
 	sortMode := parseSort(r)
 
@@ -207,7 +224,7 @@ func (h *Handlers) GetSpaceFeed(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	limit := parsePageSize(r)
+	limit := h.parsePageSize(r)
 	offset := parsePageOffset(r)
 	sort := parseSort(r)
 
@@ -240,7 +257,7 @@ func (h *Handlers) GetProfileFeed(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	limit := parsePageSize(r)
+	limit := h.parsePageSize(r)
 	offset := parsePageOffset(r)
 	sort := parseSort(r)
 

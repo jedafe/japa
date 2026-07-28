@@ -12,11 +12,17 @@
 		user: SessionUser | null;
 		trendingTags?: TagSuggestion[];
 		suggestedSpaces?: SpaceSuggestion[];
+		/** Comma-separated list of enabled language codes from i18n.enabled_languages. */
+		enabledLanguages?: string;
 		/** Route-specific widgets rendered above the global defaults. */
 		sidebar?: Snippet;
 	}
 
-	let { user, trendingTags = [], suggestedSpaces = [], sidebar }: Props = $props();
+	let { user, trendingTags = [], suggestedSpaces = [], enabledLanguages = 'en,fr', sidebar }: Props = $props();
+
+	// Only show the language toggle when more than one language is enabled.
+	// Ref: conventions/system-settings-catalog.md (i18n.enabled_languages)
+	let showLanguageToggle = $derived(enabledLanguages.split(',').filter(Boolean).length > 1);
 
 	/** Current path without the leading slash, for the /fr /en redirect targets. */
 	function currentPath(): string {
@@ -41,14 +47,16 @@
 			{#if theme.current === 'dark'}<Sun size={18} />{:else}<Moon size={18} />{/if}
 		</button>
 
-		<a
-			href={i18n.locale === 'fr' ? `/en/${currentPath()}` : `/fr/${currentPath()}`}
-			class="grid h-9 w-9 shrink-0 place-items-center rounded-full text-[var(--color-muted)] hover:bg-[var(--color-surface-subtle)]"
-			aria-label={i18n.locale === 'fr' ? t('locale.switch_to_en') : t('locale.switch_to_fr')}
-			title={i18n.locale === 'fr' ? 'English' : 'Français'}
-		>
-			<Languages size={18} />
-		</a>
+		{#if showLanguageToggle}
+			<a
+				href={i18n.locale === 'fr' ? `/en/${currentPath()}` : `/fr/${currentPath()}`}
+				class="grid h-9 w-9 shrink-0 place-items-center rounded-full text-[var(--color-muted)] hover:bg-[var(--color-surface-subtle)]"
+				aria-label={i18n.locale === 'fr' ? t('locale.switch_to_en') : t('locale.switch_to_fr')}
+				title={i18n.locale === 'fr' ? 'English' : 'Français'}
+			>
+				<Languages size={18} />
+			</a>
+		{/if}
 
 		<UserDropdown {user} />
 	</div>

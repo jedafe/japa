@@ -88,7 +88,7 @@
 		border: 1px solid var(--color-border);
 		border-radius: var(--radius-card);
 		background: var(--color-surface-subtle);
-		aspect-ratio: 16 / 7;
+		aspect-ratio: 16 / 9;
 	}
 	.cover-preview-img {
 		width: 100%;

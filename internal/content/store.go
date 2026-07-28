@@ -4,9 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/pgvector/pgvector-go"
@@ -63,8 +65,13 @@ func (s *Service) CreateContent(ctx context.Context, tenantID pgtype.UUID, input
 	}
 
 	// Compute content hash from body if not provided.
+	// Skip hashing for empty bodies — the unique index has
+	// `WHERE content_hash IS NULL`, so NULL hashes don't collide.
+	// Without this, every empty-body draft gets the same hash and
+	// the autosave's first fire (before the user types body content)
+	// hits a 409 duplicate_content (Rule 12 / §41).
 	contentHash := input.ContentHash
-	if contentHash == nil {
+	if contentHash == nil && strings.TrimSpace(input.Body) != "" {
 		h := ComputeContentHash(input.Body)
 		contentHash = &h
 	}
@@ -113,6 +120,10 @@ func (s *Service) CreateContent(ctx context.Context, tenantID pgtype.UUID, input
 		PublishAt:       input.PublishAt,
 	})
 	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return gen.CreateContentRow{}, ErrDuplicateContent
+		}
 		return gen.CreateContentRow{}, fmt.Errorf("creating content: %w", err)
 	}
 

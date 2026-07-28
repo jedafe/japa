@@ -110,6 +110,18 @@ func writeError(w http.ResponseWriter, code int, errCode, message string) {
 // Register handles POST /api/v1/auth/register.
 // Creates a new user with email, username, and password.
 func (h *AuthHandlers) Register(w http.ResponseWriter, r *http.Request) {
+	// Gate registration on the general.registration_open system setting.
+	// Default is true (fail open) — only block when explicitly set to false.
+	// Ref: japaconnect-engineering/conventions/system-settings-catalog.md
+	tenant := tenant.FromContext(r.Context())
+	if h.Settings != nil && tenant != nil {
+		if open, err := h.Settings.GetSettingBool(r.Context(), tenant.ID, "general.registration_open"); err == nil && !open {
+			writeError(w, http.StatusForbidden, "registration_closed",
+				"Registration is currently closed. Please check back later.")
+			return
+		}
+	}
+
 	var req struct {
 		Email    string `json:"email"`
 		Username string `json:"username"`
@@ -148,7 +160,6 @@ func (h *AuthHandlers) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenant := tenant.FromContext(r.Context())
 	if tenant == nil {
 		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return

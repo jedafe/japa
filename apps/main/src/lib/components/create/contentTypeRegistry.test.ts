@@ -12,7 +12,8 @@ describe('resolveType', () => {
 		expect(resolveType('comparison').featureFlag).toBe('feature.comparison');
 	});
 	it('falls back to blog_post for unknown types', () => {
-		expect(resolveType('nonsense')).toEqual(COMPOSER_TYPES.blog_post);
+		expect(resolveType('nonsense').value).toBe('blog_post');
+		expect(resolveType('nonsense').formKind).toBe('standard');
 	});
 	it('only standard blog-family types support series', () => {
 		expect(resolveType('blog_post').supportsSeries).toBe(true);

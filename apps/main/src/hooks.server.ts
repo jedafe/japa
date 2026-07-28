@@ -21,8 +21,40 @@ export const handle: Handle = async ({ event, resolve }) => {
 	// Hostname excludes the port; the backend resolves the tenant from it.
 	event.locals.tenantHost = event.url.hostname;
 	event.locals.token = event.cookies.get('jc_token') ?? null;
-	event.locals.theme = event.cookies.get('jc_theme') === 'dark' ? 'dark' : 'light';
-	event.locals.locale = (event.cookies.get('jc_locale') === 'fr' ? 'fr' : 'en') as Locale;
+
+	// Theme: prefer the user's cookie, then fall back to the control panel
+	// appearance.dark_mode_default setting, then 'light'.
+	// Ref: conventions/system-settings-catalog.md (appearance.dark_mode_default)
+	const themeCookie = event.cookies.get('jc_theme');
+	if (themeCookie === 'dark' || themeCookie === 'light') {
+		event.locals.theme = themeCookie;
+	} else {
+		// Fetch the default theme from public settings. We do this lazily
+		// only when there's no cookie, to avoid an extra fetch on every
+		// request for users who have already chosen a theme.
+		try {
+			const settings = (await apiGet<Record<string, unknown>>(apiContext(event), '/site/settings/public')) ?? {};
+			event.locals.theme = settings['appearance.dark_mode_default'] === true ? 'dark' : 'light';
+		} catch {
+			event.locals.theme = 'light';
+		}
+	}
+
+	// Locale: prefer the user's cookie, then fall back to the control panel
+	// i18n.default_language setting, then 'en'.
+	// Ref: conventions/system-settings-catalog.md (i18n.default_language)
+	const localeCookie = event.cookies.get('jc_locale');
+	if (localeCookie === 'fr' || localeCookie === 'en') {
+		event.locals.locale = localeCookie as Locale;
+	} else {
+		try {
+			const settings = (await apiGet<Record<string, unknown>>(apiContext(event), '/site/settings/public')) ?? {};
+			const defaultLang = (settings['i18n.default_language'] as string | undefined) ?? 'en';
+			event.locals.locale = (defaultLang === 'fr' ? 'fr' : 'en') as Locale;
+		} catch {
+			event.locals.locale = 'en' as Locale;
+		}
+	}
 	event.locals.user = null;
 
 	// ADR-063: detect the Japa University branded surface by host.
