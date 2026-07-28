@@ -2519,6 +2519,12 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "university.payout.process")).
 				Post("/admin/university/payouts/{id}/process", universityHandlers.AdminProcessPayout)
 
+			// Admin: revenue-split audit viewer (ADR-063 §9, read-only)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "university.revenue.list")).
+				Get("/admin/university/revenue-splits", universityHandlers.AdminListRevenueSplits)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "university.revenue.view")).
+				Get("/admin/university/revenue-splits/{id}", universityHandlers.AdminGetRevenueSplit)
+
 			// Admin: CRUD for tracks, modules, lessons
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "learning.admin.manage")).
 				Get("/admin/learn/tracks", learningHandlers.ListAllTracks)

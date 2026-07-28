@@ -148,6 +148,45 @@ func (q *Queries) CountInstructorProfilesByStatus(ctx context.Context, arg Count
 	return count, err
 }
 
+const countRevenueSplits = `-- name: CountRevenueSplits :one
+SELECT COUNT(*)::bigint AS total
+FROM revenue_splits
+WHERE tenant_id = $1
+  AND ($2::uuid IS NULL OR instructor_id = $2)
+  AND ($3::uuid IS NULL OR track_id = $3)
+  AND ($4::text = '' OR source = $4)
+  AND ($5::uuid IS NULL OR payout_id = $5)
+  AND ($6::timestamptz IS NULL OR created_at >= $6)
+  AND ($7::timestamptz IS NULL OR created_at < $7)
+`
+
+type CountRevenueSplitsParams struct {
+	TenantID     pgtype.UUID        `json:"tenant_id"`
+	InstructorID pgtype.UUID        `json:"instructor_id"`
+	TrackID      pgtype.UUID        `json:"track_id"`
+	Source       string             `json:"source"`
+	PayoutID     pgtype.UUID        `json:"payout_id"`
+	FromTs       pgtype.Timestamptz `json:"from_ts"`
+	ToTs         pgtype.Timestamptz `json:"to_ts"`
+}
+
+// ADR-063 §9: total count for the same filter set as ListRevenueSplits, used
+// for the pagination meta envelope.
+func (q *Queries) CountRevenueSplits(ctx context.Context, arg CountRevenueSplitsParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countRevenueSplits,
+		arg.TenantID,
+		arg.InstructorID,
+		arg.TrackID,
+		arg.Source,
+		arg.PayoutID,
+		arg.FromTs,
+		arg.ToTs,
+	)
+	var total int64
+	err := row.Scan(&total)
+	return total, err
+}
+
 const countUniversityCatalog = `-- name: CountUniversityCatalog :one
 SELECT COUNT(*) FROM learning_tracks
 WHERE tenant_id = $1
@@ -566,6 +605,40 @@ func (q *Queries) GetPublicInstructorProfile(ctx context.Context, arg GetPublicI
 	return i, err
 }
 
+const getRevenueSplitByID = `-- name: GetRevenueSplitByID :one
+SELECT id, tenant_id, instructor_id, track_id, enrollment_id, payment_id, payout_id, source, gross_kobo, creator_pct, platform_pct, creator_kobo, platform_kobo, currency, created_at FROM revenue_splits
+WHERE tenant_id = $1 AND id = $2
+`
+
+type GetRevenueSplitByIDParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	ID       pgtype.UUID `json:"id"`
+}
+
+// ADR-063 §9: admin audit viewer, single fetch, tenant-scoped.
+func (q *Queries) GetRevenueSplitByID(ctx context.Context, arg GetRevenueSplitByIDParams) (RevenueSplit, error) {
+	row := q.db.QueryRow(ctx, getRevenueSplitByID, arg.TenantID, arg.ID)
+	var i RevenueSplit
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.InstructorID,
+		&i.TrackID,
+		&i.EnrollmentID,
+		&i.PaymentID,
+		&i.PayoutID,
+		&i.Source,
+		&i.GrossKobo,
+		&i.CreatorPct,
+		&i.PlatformPct,
+		&i.CreatorKobo,
+		&i.PlatformKobo,
+		&i.Currency,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const getUniversityTrackByID = `-- name: GetUniversityTrackByID :one
 SELECT id, tenant_id, title, slug, description, difficulty, cover_media_id,
        is_published, sort_order, instructor_id, price_kobo, currency,
@@ -731,6 +804,39 @@ func (q *Queries) GetUserContentCountryPreference(ctx context.Context, arg GetUs
 	var content_country_preference *string
 	err := row.Scan(&content_country_preference)
 	return content_country_preference, err
+}
+
+const getUserGeoProfileFields = `-- name: GetUserGeoProfileFields :one
+SELECT
+    COALESCE(MAX(CASE WHEN cf.key = 'japa_status' THEN cfv.value_text END), '')::text AS japa_status,
+    COALESCE(MAX(CASE WHEN cf.key = 'destination_country' THEN cfv.value_text END), '')::text AS destination_country
+FROM user_profiles up
+LEFT JOIN custom_field_values cfv
+    ON cfv.entity_type = 'user_profile' AND cfv.entity_id = up.id
+LEFT JOIN custom_fields cf
+    ON cf.id = cfv.field_id AND cf.key IN ('japa_status', 'destination_country')
+WHERE up.tenant_id = $1 AND up.user_id = $2
+`
+
+type GetUserGeoProfileFieldsParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	UserID   pgtype.UUID `json:"user_id"`
+}
+
+type GetUserGeoProfileFieldsRow struct {
+	JapaStatus         string `json:"japa_status"`
+	DestinationCountry string `json:"destination_country"`
+}
+
+// ADR-064: fetch the two custom-field signals the archetype resolver needs
+// (japa_status + destination_country) in a single round-trip. Both live in
+// custom_field_values (entity_type='user_profile', entity_id=profile id).
+// Returns NULLs when the user has not set either field.
+func (q *Queries) GetUserGeoProfileFields(ctx context.Context, arg GetUserGeoProfileFieldsParams) (GetUserGeoProfileFieldsRow, error) {
+	row := q.db.QueryRow(ctx, getUserGeoProfileFields, arg.TenantID, arg.UserID)
+	var i GetUserGeoProfileFieldsRow
+	err := row.Scan(&i.JapaStatus, &i.DestinationCountry)
+	return i, err
 }
 
 const hasEnrollmentForTrack = `-- name: HasEnrollmentForTrack :one
@@ -1152,6 +1258,81 @@ func (q *Queries) ListPendingUniversityTracks(ctx context.Context, arg ListPendi
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.InstructorName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listRevenueSplits = `-- name: ListRevenueSplits :many
+SELECT id, tenant_id, instructor_id, track_id, enrollment_id, payment_id, payout_id, source, gross_kobo, creator_pct, platform_pct, creator_kobo, platform_kobo, currency, created_at FROM revenue_splits
+WHERE tenant_id = $1
+  AND ($2::uuid IS NULL OR instructor_id = $2)
+  AND ($3::uuid IS NULL OR track_id = $3)
+  AND ($4::text = '' OR source = $4)
+  AND ($5::uuid IS NULL OR payout_id = $5)
+  AND ($6::timestamptz IS NULL OR created_at >= $6)
+  AND ($7::timestamptz IS NULL OR created_at < $7)
+ORDER BY created_at DESC
+LIMIT $9 OFFSET $8
+`
+
+type ListRevenueSplitsParams struct {
+	TenantID     pgtype.UUID        `json:"tenant_id"`
+	InstructorID pgtype.UUID        `json:"instructor_id"`
+	TrackID      pgtype.UUID        `json:"track_id"`
+	Source       string             `json:"source"`
+	PayoutID     pgtype.UUID        `json:"payout_id"`
+	FromTs       pgtype.Timestamptz `json:"from_ts"`
+	ToTs         pgtype.Timestamptz `json:"to_ts"`
+	PageOffset   int32              `json:"page_offset"`
+	PageLimit    int32              `json:"page_limit"`
+}
+
+// ADR-063 §9: admin audit viewer, tenant-wide paginated list with optional
+// filters. All filters are optional (empty string / NULL = no filter). The
+// date range is half-open [from, to). Ordered by created_at DESC so the most
+// recent revenue events appear first.
+func (q *Queries) ListRevenueSplits(ctx context.Context, arg ListRevenueSplitsParams) ([]RevenueSplit, error) {
+	rows, err := q.db.Query(ctx, listRevenueSplits,
+		arg.TenantID,
+		arg.InstructorID,
+		arg.TrackID,
+		arg.Source,
+		arg.PayoutID,
+		arg.FromTs,
+		arg.ToTs,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []RevenueSplit
+	for rows.Next() {
+		var i RevenueSplit
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.InstructorID,
+			&i.TrackID,
+			&i.EnrollmentID,
+			&i.PaymentID,
+			&i.PayoutID,
+			&i.Source,
+			&i.GrossKobo,
+			&i.CreatorPct,
+			&i.PlatformPct,
+			&i.CreatorKobo,
+			&i.PlatformKobo,
+			&i.Currency,
+			&i.CreatedAt,
 		); err != nil {
 			return nil, err
 		}

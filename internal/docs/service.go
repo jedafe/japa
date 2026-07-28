@@ -194,8 +194,13 @@ func (s *Service) GetDocNav(ctx context.Context, tenantID pgtype.UUID) ([]DocNav
 }
 
 // SearchDocPages returns published pages matching the query, with a plain-text excerpt.
-func (s *Service) SearchDocPages(ctx context.Context, tenantID pgtype.UUID, query string, limit int32) ([]DocSearchResult, error) {
-	rows, err := s.store.search(ctx, tenantID, query, limit)
+// When audience is non-empty, results are filtered to that audience section.
+func (s *Service) SearchDocPages(ctx context.Context, tenantID pgtype.UUID, query string, audience string, limit int32) ([]DocSearchResult, error) {
+	var audiencePtr *string
+	if audience != "" {
+		audiencePtr = &audience
+	}
+	rows, err := s.store.search(ctx, tenantID, query, audiencePtr, limit)
 	if err != nil {
 		return nil, err
 	}

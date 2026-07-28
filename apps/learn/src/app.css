@@ -1,0 +1,230 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Lora:ital,wght@0,400;0,500;1,400&display=swap');
+
+@import 'tailwindcss';
+
+/*
+ * JapaConnect Learn App — design tokens (ADR-058 / ADR-059 / ADR-060).
+ * Dark mode is driven by [data-theme="dark"] on <html>, set server-side from the
+ * jc_theme cookie (never Tailwind `dark:`). Components read these via CSS custom
+ * properties so they switch automatically with the attribute.
+ *
+ * Learn-specific additions over the main app:
+ *   - Difficulty tokens (--level-beginner / -intermediate / -advanced)
+ *   - Progress tokens (--color-progress / --color-locked)
+ *   - Chart palette is shared with the main app (ADR-059 LayerChart)
+ */
+
+:root {
+	/* Semantic surface + text tokens */
+	--color-bg: #fafafa;
+	--color-surface: #ffffff;
+	--color-surface-subtle: #f4f4f5;
+	--color-border: #e4e4e7;
+	--color-muted: #71717a;
+	--color-primary: #3b49df;
+	--color-primary-hover: #2f3bc0;
+	--color-primary-contrast: #ffffff;
+	--color-text: #18181b;
+	--color-text-subtle: #52525b;
+
+	/* Data-viz palette (LayerChart — ADR-059) */
+	--chart-1: #3b49df;
+	--chart-2: #0ea5e9;
+	--chart-3: #22c55e;
+	--chart-4: #f59e0b;
+	--chart-5: #ec4899;
+
+	/* Difficulty tokens (ADR-060 — never hardcode hex in components) */
+	--level-beginner: #22c55e;
+	--level-intermediate: #f59e0b;
+	--level-advanced: #ef4444;
+
+	/* Progress tokens (lesson player / curriculum rail) */
+	--color-progress: #22c55e;
+	--color-locked: #a1a1aa;
+
+	/* Shape + layout */
+	--radius: 8px;
+	--radius-card: 12px;
+	--nav-height: 56px;
+	--nav-width-expanded: 260px;
+	--nav-width-collapsed: 72px;
+	--sidebar-width: 350px;
+	/* Lesson player: curriculum rail width (sits in the content's left margin) */
+	--curriculum-rail-width: 280px;
+
+	/* Bits UI theme (light) */
+	--background: var(--color-bg);
+	--background-alt: var(--color-surface);
+	--foreground: var(--color-text);
+	--foreground-alt: var(--color-text-subtle);
+	--muted: var(--color-surface-subtle);
+	--muted-foreground: var(--color-muted);
+	--border-input: var(--color-border);
+	--border-input-hover: #d4d4d8;
+	--border-card: var(--color-border);
+	--dark: var(--color-text);
+	--accent: var(--color-surface-subtle);
+	--accent-foreground: var(--color-text);
+	--destructive: #dc2626;
+}
+
+:root[data-theme='dark'] {
+	--color-bg: #0a0a0a;
+	--color-surface: #161618;
+	--color-surface-subtle: #1f1f23;
+	--color-border: #27272a;
+	--color-muted: #a1a1aa;
+	--color-primary: #5865f2;
+	--color-primary-hover: #6b76f5;
+	--color-primary-contrast: #ffffff;
+	--color-text: #f4f4f5;
+	--color-text-subtle: #a1a1aa;
+
+	--chart-1: #6b76f5;
+	--chart-2: #38bdf8;
+	--chart-3: #4ade80;
+	--chart-4: #fbbf24;
+	--chart-5: #f472b6;
+
+	--level-beginner: #4ade80;
+	--level-intermediate: #fbbf24;
+	--level-advanced: #f87171;
+
+	--color-progress: #4ade80;
+	--color-locked: #71717a;
+
+	--border-input-hover: #3f3f46;
+	--destructive: #ef4444;
+}
+
+/* Expose the semantic tokens as Tailwind color utilities (bg-surface, text-muted, …). */
+@theme inline {
+	--color-bg: var(--color-bg);
+	--color-surface: var(--color-surface);
+	--color-surface-subtle: var(--color-surface-subtle);
+	--color-border: var(--color-border);
+	--color-muted: var(--color-muted);
+	--color-primary: var(--color-primary);
+	--color-primary-hover: var(--color-primary-hover);
+	--color-primary-contrast: var(--color-primary-contrast);
+	--color-text: var(--color-text);
+	--color-text-subtle: var(--color-text-subtle);
+
+	--color-background: var(--background);
+	--color-foreground: var(--foreground);
+	--color-muted-foreground: var(--muted-foreground);
+	--color-border-input: var(--border-input);
+	--color-border-card: var(--border-card);
+	--color-accent: var(--accent);
+	--color-destructive: var(--destructive);
+
+	--radius-card: 12px;
+
+	/* Difficulty + progress utilities (bg-level-beginner, text-color-progress, …) */
+	--color-level-beginner: var(--level-beginner);
+	--color-level-intermediate: var(--level-intermediate);
+	--color-level-advanced: var(--level-advanced);
+	--color-progress: var(--color-progress);
+	--color-locked: var(--color-locked);
+
+	--font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
+	--font-serif: 'Lora', ui-serif, Georgia, serif;
+}
+
+html,
+body {
+	height: 100%;
+}
+
+body {
+	background-color: var(--color-bg);
+	color: var(--color-text);
+	font-family: var(--font-sans);
+	font-size: 16px;
+	line-height: 1.7;
+	-webkit-font-smoothing: antialiased;
+	text-rendering: optimizeLegibility;
+}
+
+/* ===================== Prose (lesson article type) =====================
+ * Lesson player renders TipTap JSON → HTML server-side; this styles the
+ * resulting .prose block following the dev.to / Ghost.org reading aesthetic.
+ * Ref: ADR-060 (lesson player reading exception), sections/36 (Learning Platform)
+ */
+.prose {
+	font-family: var(--font-serif);
+	max-width: 68ch;
+	color: var(--color-text);
+	line-height: 1.8;
+	font-size: 1.125rem;
+}
+.prose h1, .prose h2, .prose h3, .prose h4 {
+	font-family: var(--font-sans);
+	font-weight: 700;
+	color: var(--color-text);
+	line-height: 1.3;
+}
+.prose h1 { font-size: 2rem; margin-top: 2.5rem; margin-bottom: 1rem; }
+.prose h2 { font-size: 1.5rem; margin-top: 2rem; margin-bottom: 0.75rem; }
+.prose h3 { font-size: 1.25rem; margin-top: 1.5rem; margin-bottom: 0.5rem; }
+.prose p { margin-top: 1.25rem; margin-bottom: 1.25rem; }
+.prose a { color: var(--color-primary); text-decoration: underline; text-underline-offset: 2px; }
+.prose a:hover { color: var(--color-primary-hover); }
+.prose ul, .prose ol { margin-top: 1.25rem; margin-bottom: 1.25rem; padding-left: 1.5rem; }
+.prose ul { list-style: disc; }
+.prose ol { list-style: decimal; }
+.prose li { margin-top: 0.5rem; margin-bottom: 0.5rem; }
+.prose blockquote {
+	border-left: 3px solid var(--color-primary);
+	padding-left: 1rem;
+	font-style: italic;
+	color: var(--color-text-subtle);
+	margin-top: 1.5rem;
+	margin-bottom: 1.5rem;
+}
+.prose code {
+	font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+	font-size: 0.875em;
+	background: var(--color-surface-subtle);
+	padding: 0.125rem 0.375rem;
+	border-radius: 4px;
+}
+.prose pre {
+	background: var(--color-surface-subtle);
+	padding: 1rem;
+	border-radius: var(--radius);
+	overflow-x: auto;
+	margin-top: 1.5rem;
+	margin-bottom: 1.5rem;
+}
+.prose pre code { background: none; padding: 0; }
+.prose img { border-radius: var(--radius-card); margin-top: 1.5rem; margin-bottom: 1.5rem; }
+.prose-table-wrapper { overflow-x: auto; margin-top: 1.5rem; margin-bottom: 1.5rem; }
+.prose table { width: 100%; border-collapse: collapse; }
+.prose th, .prose td { border: 1px solid var(--color-border); padding: 0.75rem; text-align: left; }
+.prose th { background: var(--color-surface-subtle); font-weight: 600; }
+.prose hr { border: none; border-top: 1px solid var(--color-border); margin-top: 2rem; margin-bottom: 2rem; }
+
+/* TaskList (checklist lesson type) — TipTap task-list/task-item */
+.prose ul[data-type="taskList"] { list-style: none; padding-left: 0; }
+.prose li[data-type="taskItem"] { display: flex; align-items: flex-start; gap: 0.5rem; }
+.prose li[data-type="taskItem"] > label { flex-shrink: 0; margin-top: 0.25rem; }
+.prose li[data-type="taskItem"] p { margin-top: 0; margin-bottom: 0; }
+
+*:focus-visible {
+	outline: 2px solid var(--color-primary);
+	outline-offset: 2px;
+	border-radius: 4px;
+}
+
+@keyframes jc-skeleton {
+	0% { opacity: 0.55; }
+	50% { opacity: 1; }
+	100% { opacity: 0.55; }
+}
+
+.jc-skeleton {
+	background: var(--color-surface-subtle);
+	animation: jc-skeleton 1.4s ease-in-out infinite;
+}

@@ -1,0 +1,321 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Lora:ital,wght@0,400;0,500;1,400&display=swap');
+
+@import 'tailwindcss';
+
+/*
+ * JapaConnect Docs App — design tokens (ADR-058 / ADR-059 / ADR-060).
+ * Dark mode is driven by [data-theme="dark"] on <html>, set server-side from the
+ * jc_theme cookie (never Tailwind `dark:`). Components read these via CSS custom
+ * properties so they switch automatically with the attribute.
+ *
+ * Docs-specific additions over the main app:
+ *   - HTTP method badge tokens (--method-get/post/patch/put/delete)
+ *   - Code block surface tokens (--code-bg / --code-border / --code-text)
+ *   - Reading comfort tuned to 16–18px / 1.7 (ADR-060)
+ *   - Narrower right sidebar (TOC, not social widgets)
+ */
+
+:root {
+	/* Semantic surface + text tokens */
+	--color-bg: #fafafa;
+	--color-surface: #ffffff;
+	--color-surface-subtle: #f4f4f5;
+	--color-border: #e4e4e7;
+	--color-muted: #71717a;
+	--color-primary: #3b49df;
+	--color-primary-hover: #2f3bc0;
+	--color-primary-contrast: #ffffff;
+	--color-text: #18181b;
+	--color-text-subtle: #52525b;
+
+	/* Data-viz palette (LayerChart — only if a page surfaces usage stats) */
+	--chart-1: #3b49df;
+	--chart-2: #0ea5e9;
+	--chart-3: #22c55e;
+	--chart-4: #f59e0b;
+	--chart-5: #ec4899;
+
+	/* HTTP method badge tokens (ADR-060 — API reference variant) */
+	--method-get: #16a34a;
+	--method-get-bg: #dcfce7;
+	--method-post: #2563eb;
+	--method-post-bg: #dbeafe;
+	--method-patch: #d97706;
+	--method-patch-bg: #fef3c7;
+	--method-put: #0891b2;
+	--method-put-bg: #cffafe;
+	--method-delete: #dc2626;
+	--method-delete-bg: #fee2e2;
+
+	/* Code block surface */
+	--code-bg: #1e1e2e;
+	--code-border: #313244;
+	--code-text: #cdd6f4;
+	--code-muted: #a6adc8;
+
+	/* Shape + layout */
+	--radius: 8px;
+	--radius-card: 12px;
+	--nav-height: 56px;
+	--nav-width-expanded: 280px;
+	--nav-width-collapsed: 64px;
+	/* Docs right sidebar is narrower than main's social sidebar — it's a TOC. */
+	--sidebar-width: 260px;
+	/* API reference right code-sample pane is wider than the TOC. */
+	--api-pane-width: 420px;
+
+	/* Bits UI theme (light) */
+	--background: var(--color-bg);
+	--background-alt: var(--color-surface);
+	--foreground: var(--color-text);
+	--foreground-alt: var(--color-text-subtle);
+	--muted: var(--color-surface-subtle);
+	--muted-foreground: var(--color-muted);
+	--border-input: var(--color-border);
+	--border-input-hover: #d4d4d8;
+	--border-card: var(--color-border);
+	--dark: var(--color-text);
+	--accent: var(--color-surface-subtle);
+	--accent-foreground: var(--color-text);
+	--destructive: #dc2626;
+}
+
+:root[data-theme='dark'] {
+	--color-bg: #0a0a0a;
+	--color-surface: #161618;
+	--color-surface-subtle: #1f1f23;
+	--color-border: #27272a;
+	--color-muted: #a1a1aa;
+	--color-primary: #5865f2;
+	--color-primary-hover: #6b76f5;
+	--color-primary-contrast: #ffffff;
+	--color-text: #f4f4f5;
+	--color-text-subtle: #a1a1aa;
+
+	--chart-1: #6b76f5;
+	--chart-2: #38bdf8;
+	--chart-3: #4ade80;
+	--chart-4: #fbbf24;
+	--chart-5: #f472b6;
+
+	/* Method badges stay vivid in dark mode but backgrounds dim */
+	--method-get: #4ade80;
+	--method-get-bg: #052e16;
+	--method-post: #60a5fa;
+	--method-post-bg: #0c1e3a;
+	--method-patch: #fbbf24;
+	--method-patch-bg: #2a1a05;
+	--method-put: #22d3ee;
+	--method-put-bg: #082f37;
+	--method-delete: #f87171;
+	--method-delete-bg: #3a0a0a;
+
+	--code-bg: #11111b;
+	--code-border: #1e1e2e;
+	--code-text: #cdd6f4;
+	--code-muted: #7f849c;
+
+	--border-input-hover: #3f3f46;
+	--destructive: #ef4444;
+}
+
+/* Expose the semantic tokens as Tailwind color utilities (bg-surface, text-muted, …). */
+@theme inline {
+	--color-bg: var(--color-bg);
+	--color-surface: var(--color-surface);
+	--color-surface-subtle: var(--color-surface-subtle);
+	--color-border: var(--color-border);
+	--color-muted: var(--color-muted);
+	--color-primary: var(--color-primary);
+	--color-primary-hover: var(--color-primary-hover);
+	--color-primary-contrast: var(--color-primary-contrast);
+	--color-text: var(--color-text);
+	--color-text-subtle: var(--color-text-subtle);
+
+	--color-background: var(--background);
+	--color-foreground: var(--foreground);
+	--color-muted-foreground: var(--muted-foreground);
+	--color-border-input: var(--border-input);
+	--color-border-card: var(--border-card);
+	--color-accent: var(--accent);
+	--color-destructive: var(--destructive);
+
+	--radius-card: 12px;
+
+	--font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
+	--font-serif: 'Lora', ui-serif, Georgia, serif;
+	--font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+}
+
+html,
+body {
+	height: 100%;
+}
+
+body {
+	background-color: var(--color-bg);
+	color: var(--color-text);
+	font-family: var(--font-sans);
+	font-size: 16px;
+	line-height: 1.7;
+	-webkit-font-smoothing: antialiased;
+	text-rendering: optimizeLegibility;
+}
+
+/* ===================== Prose (doc page body) =====================
+ * Doc pages render TipTap JSON → HTML server-side; this styles the resulting
+ * .prose block. Reading comfort 16–18px / 1.7 (ADR-060). Max-width ~760px is
+ * applied on the page wrapper, not here, so API reference can reuse .prose.
+ */
+.prose {
+	font-family: var(--font-serif);
+	color: var(--color-text);
+	line-height: 1.8;
+	font-size: 1.0625rem;
+}
+.prose h1, .prose h2, .prose h3, .prose h4 {
+	font-family: var(--font-sans);
+	font-weight: 700;
+	color: var(--color-text);
+	line-height: 1.3;
+	scroll-margin-top: calc(var(--nav-height) + 1rem);
+}
+.prose h1 { font-size: 2rem; margin-top: 2.5rem; margin-bottom: 1rem; }
+.prose h2 { font-size: 1.5rem; margin-top: 2rem; margin-bottom: 0.75rem; padding-bottom: 0.25rem; border-bottom: 1px solid var(--color-border); }
+.prose h3 { font-size: 1.25rem; margin-top: 1.5rem; margin-bottom: 0.5rem; }
+.prose h4 { font-size: 1rem; margin-top: 1.25rem; margin-bottom: 0.5rem; }
+.prose p { margin-top: 1.25rem; margin-bottom: 1.25rem; }
+.prose a { color: var(--color-primary); text-decoration: underline; text-underline-offset: 2px; }
+.prose a:hover { color: var(--color-primary-hover); }
+.prose ul, .prose ol { margin-top: 1.25rem; margin-bottom: 1.25rem; padding-left: 1.5rem; }
+.prose ul { list-style: disc; }
+.prose ol { list-style: decimal; }
+.prose li { margin-top: 0.5rem; margin-bottom: 0.5rem; }
+.prose blockquote {
+	border-left: 3px solid var(--color-primary);
+	padding-left: 1rem;
+	font-style: italic;
+	color: var(--color-text-subtle);
+	margin-top: 1.5rem;
+	margin-bottom: 1.5rem;
+}
+.prose code {
+	font-family: var(--font-mono);
+	font-size: 0.875em;
+	background: var(--color-surface-subtle);
+	padding: 0.125rem 0.375rem;
+	border-radius: 4px;
+}
+.prose pre {
+	background: var(--color-surface-subtle);
+	padding: 1rem;
+	border-radius: var(--radius);
+	overflow-x: auto;
+	margin-top: 1.5rem;
+	margin-bottom: 1.5rem;
+}
+.prose pre code { background: none; padding: 0; }
+.prose img { border-radius: var(--radius-card); margin-top: 1.5rem; margin-bottom: 1.5rem; }
+.prose-table-wrapper { overflow-x: auto; margin-top: 1.5rem; margin-bottom: 1.5rem; }
+.prose table { width: 100%; border-collapse: collapse; }
+.prose th, .prose td { border: 1px solid var(--color-border); padding: 0.75rem; text-align: left; }
+.prose th { background: var(--color-surface-subtle); font-weight: 600; }
+.prose hr { border: none; border-top: 1px solid var(--color-border); margin-top: 2rem; margin-bottom: 2rem; }
+
+/* TaskList (TipTap task-list/task-item) */
+.prose ul[data-type="taskList"] { list-style: none; padding-left: 0; }
+.prose li[data-type="taskItem"] { display: flex; align-items: flex-start; gap: 0.5rem; }
+.prose li[data-type="taskItem"] > label { flex-shrink: 0; margin-top: 0.25rem; }
+.prose li[data-type="taskItem"] p { margin-top: 0; margin-bottom: 0; }
+
+/* ===================== Code blocks (CodeBlock component) ===================== */
+.jc-code {
+	position: relative;
+	background: var(--code-bg);
+	border: 1px solid var(--code-border);
+	border-radius: var(--radius);
+	margin-top: 1.5rem;
+	margin-bottom: 1.5rem;
+	overflow: hidden;
+}
+.jc-code-header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	padding: 0.5rem 0.75rem;
+	border-bottom: 1px solid var(--code-border);
+	background: color-mix(in srgb, var(--code-bg) 88%, white 4%);
+}
+.jc-code-lang {
+	font-family: var(--font-mono);
+	font-size: 0.75rem;
+	font-weight: 500;
+	text-transform: uppercase;
+	letter-spacing: 0.05em;
+	color: var(--code-muted);
+}
+.jc-code-copy {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.25rem;
+	padding: 0.25rem 0.5rem;
+	border-radius: 4px;
+	font-size: 0.75rem;
+	color: var(--code-muted);
+	background: transparent;
+	border: none;
+	cursor: pointer;
+	transition: color 0.15s, background 0.15s;
+}
+.jc-code-copy:hover { color: var(--code-text); background: color-mix(in srgb, var(--code-border) 40%, transparent); }
+.jc-code-copy.copied { color: #4ade80; }
+.jc-code pre {
+	margin: 0;
+	padding: 1rem;
+	overflow-x: auto;
+	background: transparent;
+	border: none;
+}
+.jc-code code {
+	font-family: var(--font-mono);
+	font-size: 0.875rem;
+	line-height: 1.6;
+	color: var(--code-text);
+	background: none;
+	padding: 0;
+}
+
+/* ===================== HTTP method badges (API reference) ===================== */
+.method-badge {
+	display: inline-flex;
+	align-items: center;
+	font-family: var(--font-mono);
+	font-weight: 700;
+	font-size: 0.6875rem;
+	letter-spacing: 0.05em;
+	padding: 0.125rem 0.5rem;
+	border-radius: 4px;
+	text-transform: uppercase;
+}
+.method-badge.method-GET { color: var(--method-get); background: var(--method-get-bg); }
+.method-badge.method-POST { color: var(--method-post); background: var(--method-post-bg); }
+.method-badge.method-PATCH { color: var(--method-patch); background: var(--method-patch-bg); }
+.method-badge.method-PUT { color: var(--method-put); background: var(--method-put-bg); }
+.method-badge.method-DELETE { color: var(--method-delete); background: var(--method-delete-bg); }
+
+*:focus-visible {
+	outline: 2px solid var(--color-primary);
+	outline-offset: 2px;
+	border-radius: 4px;
+}
+
+@keyframes jc-skeleton {
+	0% { opacity: 0.55; }
+	50% { opacity: 1; }
+	100% { opacity: 0.55; }
+}
+
+.jc-skeleton {
+	background: var(--color-surface-subtle);
+	animation: jc-skeleton 1.4s ease-in-out infinite;
+}

@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
@@ -70,6 +71,36 @@ func scanUUIDParam(w http.ResponseWriter, r *http.Request, name string) (pgtype.
 		return pgtype.UUID{}, false
 	}
 	return id, true
+}
+
+// scanOptionalUUIDParam parses a query-string UUID that may be absent. Returns
+// (zero, false) when the param is missing or empty (meaning "no filter"); on a
+// malformed value it returns (zero, false) as well — the caller treats both as
+// "skip this filter" rather than 400-ing, since these are optional filters.
+func scanOptionalUUIDParam(r *http.Request, name string) (pgtype.UUID, bool) {
+	v := r.URL.Query().Get(name)
+	if v == "" {
+		return pgtype.UUID{}, false
+	}
+	var id pgtype.UUID
+	if err := id.Scan(v); err != nil {
+		return pgtype.UUID{}, false
+	}
+	return id, true
+}
+
+// parseOptionalTime parses an RFC 3339 query-string timestamp that may be
+// absent. Returns (zero, false) when missing/empty/malformed.
+func parseOptionalTime(r *http.Request, name string) (pgtype.Timestamptz, bool) {
+	v := r.URL.Query().Get(name)
+	if v == "" {
+		return pgtype.Timestamptz{}, false
+	}
+	t, err := time.Parse(time.RFC3339, v)
+	if err != nil {
+		return pgtype.Timestamptz{}, false
+	}
+	return pgtype.Timestamptz{Time: t, Valid: true}, true
 }
 
 func parsePagination(r *http.Request) (int32, int32) {
@@ -844,6 +875,78 @@ func (h *Handlers) AdminProcessPayout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"data": payout})
+}
+
+// AdminListRevenueSplits handles GET /admin/university/revenue-splits.
+// Read-only audit viewer over the immutable revenue_splits ledger (ADR-063 §9).
+// Supports optional filters: ?instructor_id= ?track_id= ?source=purchase|pro_stream
+// ?payout_id= ?from= ?to= (RFC 3339, half-open [from,to)) and offset pagination
+// (?page=&limit=). Returns the standard {data, meta{total,page,limit}} envelope.
+func (h *Handlers) AdminListRevenueSplits(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+	limit, offset := parsePagination(r)
+
+	f := ListRevenueSplitsFilter{
+		Source: r.URL.Query().Get("source"),
+	}
+	if id, ok := scanOptionalUUIDParam(r, "instructor_id"); ok {
+		f.InstructorID = id
+	}
+	if id, ok := scanOptionalUUIDParam(r, "track_id"); ok {
+		f.TrackID = id
+	}
+	if id, ok := scanOptionalUUIDParam(r, "payout_id"); ok {
+		f.PayoutID = id
+	}
+	if ts, ok := parseOptionalTime(r, "from"); ok {
+		f.FromTs = ts
+	}
+	if ts, ok := parseOptionalTime(r, "to"); ok {
+		f.ToTs = ts
+	}
+
+	splits, err := h.service.store.ListRevenueSplits(r.Context(), tenantID, f, limit, offset)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	total, err := h.service.store.CountRevenueSplits(r.Context(), tenantID, f)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	page := int32(0)
+	if limit > 0 {
+		page = offset/limit + 1
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data":  splits,
+		"meta": map[string]any{"total": total, "page": page, "limit": limit},
+	})
+}
+
+// AdminGetRevenueSplit handles GET /admin/university/revenue-splits/{id}.
+// Read-only single fetch of an immutable revenue-split audit record (ADR-063 §9).
+func (h *Handlers) AdminGetRevenueSplit(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+	splitID, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	split, err := h.service.store.GetRevenueSplitByID(r.Context(), tenantID, splitID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": split})
 }
 
 // trackFromGetRow maps a ListUniversityTracksByInstructorRow into the Track DTO.

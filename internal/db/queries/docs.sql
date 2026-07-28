@@ -59,6 +59,7 @@ ORDER BY audience ASC, position ASC, title ASC;
 SELECT id, title, slug, audience, content, parent_id, position, created_at
 FROM doc_pages
 WHERE tenant_id = @tenant_id AND review_status = 'published'
+  AND audience IS NOT DISTINCT FROM sqlc.narg(audience)
   AND (title ILIKE '%' || @query::text || '%' OR content::text ILIKE '%' || @query::text || '%')
 ORDER BY position ASC, title ASC
 LIMIT @result_limit;

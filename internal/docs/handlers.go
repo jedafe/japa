@@ -182,8 +182,9 @@ func (h *Handlers) ListDocNav(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"data": nav})
 }
 
-// SearchDocPages handles GET /api/v1/docs/search?q=&limit=.
-// Searches published pages by title or content.
+// SearchDocPages handles GET /api/v1/docs/search?q=&audience=&limit=.
+// Searches published pages by title or content. When audience is provided,
+// results are filtered to that audience section (ADR-060 — audience-filtered search).
 func (h *Handlers) SearchDocPages(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -196,6 +197,12 @@ func (h *Handlers) SearchDocPages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	audience := strings.TrimSpace(r.URL.Query().Get("audience"))
+	if audience != "" && !ValidAudiences[audience] {
+		writeError(w, http.StatusBadRequest, "invalid_audience", "Invalid audience section")
+		return
+	}
+
 	limit := int32(10)
 	if raw := r.URL.Query().Get("limit"); raw != "" {
 		if n, err := strconv.Atoi(raw); err == nil && n > 0 && n <= 50 {
@@ -203,7 +210,7 @@ func (h *Handlers) SearchDocPages(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	results, err := h.Service.SearchDocPages(r.Context(), tenantID, q, limit)
+	results, err := h.Service.SearchDocPages(r.Context(), tenantID, q, audience, limit)
 	if err != nil {
 		handleServiceError(w, err)
 		return
