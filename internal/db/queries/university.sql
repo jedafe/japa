@@ -366,6 +366,40 @@ WHERE tenant_id = @tenant_id AND instructor_id = @instructor_id
   AND payout_id IS NULL
   AND created_at >= @period_start AND created_at < @period_end;
 
+-- name: GetRevenueSplitByID :one
+-- ADR-063 §9: admin audit viewer, single fetch, tenant-scoped.
+SELECT * FROM revenue_splits
+WHERE tenant_id = @tenant_id AND id = @id;
+
+-- name: ListRevenueSplits :many
+-- ADR-063 §9: admin audit viewer, tenant-wide paginated list with optional
+-- filters. All filters are optional (empty string / NULL = no filter). The
+-- date range is half-open [from, to). Ordered by created_at DESC so the most
+-- recent revenue events appear first.
+SELECT * FROM revenue_splits
+WHERE tenant_id = @tenant_id
+  AND (@instructor_id::uuid IS NULL OR instructor_id = @instructor_id)
+  AND (@track_id::uuid IS NULL OR track_id = @track_id)
+  AND (@source::text = '' OR source = @source)
+  AND (@payout_id::uuid IS NULL OR payout_id = @payout_id)
+  AND (@from_ts::timestamptz IS NULL OR created_at >= @from_ts)
+  AND (@to_ts::timestamptz IS NULL OR created_at < @to_ts)
+ORDER BY created_at DESC
+LIMIT @page_limit OFFSET @page_offset;
+
+-- name: CountRevenueSplits :one
+-- ADR-063 §9: total count for the same filter set as ListRevenueSplits, used
+-- for the pagination meta envelope.
+SELECT COUNT(*)::bigint AS total
+FROM revenue_splits
+WHERE tenant_id = @tenant_id
+  AND (@instructor_id::uuid IS NULL OR instructor_id = @instructor_id)
+  AND (@track_id::uuid IS NULL OR track_id = @track_id)
+  AND (@source::text = '' OR source = @source)
+  AND (@payout_id::uuid IS NULL OR payout_id = @payout_id)
+  AND (@from_ts::timestamptz IS NULL OR created_at >= @from_ts)
+  AND (@to_ts::timestamptz IS NULL OR created_at < @to_ts);
+
 -- =====================================================================
 -- Instructor payouts
 -- =====================================================================
@@ -429,6 +463,21 @@ WHERE tenant_id = @tenant_id AND instructor_id = @instructor_id;
 SELECT content_country_preference
 FROM user_profiles
 WHERE tenant_id = @tenant_id AND user_id = @user_id;
+
+-- name: GetUserGeoProfileFields :one
+-- ADR-064: fetch the two custom-field signals the archetype resolver needs
+-- (japa_status + destination_country) in a single round-trip. Both live in
+-- custom_field_values (entity_type='user_profile', entity_id=profile id).
+-- Returns NULLs when the user has not set either field.
+SELECT
+    COALESCE(MAX(CASE WHEN cf.key = 'japa_status' THEN cfv.value_text END), '')::text AS japa_status,
+    COALESCE(MAX(CASE WHEN cf.key = 'destination_country' THEN cfv.value_text END), '')::text AS destination_country
+FROM user_profiles up
+LEFT JOIN custom_field_values cfv
+    ON cfv.entity_type = 'user_profile' AND cfv.entity_id = up.id
+LEFT JOIN custom_fields cf
+    ON cf.id = cfv.field_id AND cf.key IN ('japa_status', 'destination_country')
+WHERE up.tenant_id = @tenant_id AND up.user_id = @user_id;
 
 -- name: SetUserContentCountryPreference :exec
 UPDATE user_profiles

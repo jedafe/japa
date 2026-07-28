@@ -394,13 +394,15 @@ const searchDocPages = `-- name: SearchDocPages :many
 SELECT id, title, slug, audience, content, parent_id, position, created_at
 FROM doc_pages
 WHERE tenant_id = $1 AND review_status = 'published'
-  AND (title ILIKE '%' || $2::text || '%' OR content::text ILIKE '%' || $2::text || '%')
+  AND audience IS NOT DISTINCT FROM $2
+  AND (title ILIKE '%' || $3::text || '%' OR content::text ILIKE '%' || $3::text || '%')
 ORDER BY position ASC, title ASC
-LIMIT $3
+LIMIT $4
 `
 
 type SearchDocPagesParams struct {
 	TenantID    pgtype.UUID `json:"tenant_id"`
+	Audience    *string     `json:"audience"`
 	Query       string      `json:"query"`
 	ResultLimit int32       `json:"result_limit"`
 }
@@ -417,7 +419,12 @@ type SearchDocPagesRow struct {
 }
 
 func (q *Queries) SearchDocPages(ctx context.Context, arg SearchDocPagesParams) ([]SearchDocPagesRow, error) {
-	rows, err := q.db.Query(ctx, searchDocPages, arg.TenantID, arg.Query, arg.ResultLimit)
+	rows, err := q.db.Query(ctx, searchDocPages,
+		arg.TenantID,
+		arg.Audience,
+		arg.Query,
+		arg.ResultLimit,
+	)
 	if err != nil {
 		return nil, err
 	}

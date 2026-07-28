@@ -93,9 +93,11 @@ func (s *Store) listPublished(ctx context.Context, tenantID pgtype.UUID) ([]gen.
 }
 
 // search returns published doc pages matching the query by title or content.
-func (s *Store) search(ctx context.Context, tenantID pgtype.UUID, query string, limit int32) ([]gen.SearchDocPagesRow, error) {
+// When audience is non-nil, results are filtered to that audience section.
+func (s *Store) search(ctx context.Context, tenantID pgtype.UUID, query string, audience *string, limit int32) ([]gen.SearchDocPagesRow, error) {
 	rows, err := s.read.SearchDocPages(ctx, gen.SearchDocPagesParams{
 		TenantID:    tenantID,
+		Audience:    audience,
 		Query:       query,
 		ResultLimit: limit,
 	})
