@@ -64,15 +64,15 @@ func (e *Enqueuer) Enqueue(taskType string, payload []byte, opts ...interface{})
 // get a 24h TTL; notification/email tasks get a 1h TTL via this method plus a
 // shorter TTL via the task-level Unique call.
 var idempotentTasks = map[string]bool{
-	TypeEmailSend:                    true,
-	TypePushDelivery:                 true,
-	TypeScheduledPublish:             true,
-	TypeNewsletterSend:               true,
-	TypeAffiliateCreditCommission:    true,
+	TypeEmailSend:                       true,
+	TypePushDelivery:                    true,
+	TypeScheduledPublish:                true,
+	TypeNewsletterSend:                  true,
+	TypeAffiliateCreditCommission:       true,
 	TypeAffiliateCreditAuthorCommission: true, // TASK-005: defense-in-depth for author commission
-	TypeWalletProcessActivityEvent:   true,
-	TypePaymentWebhookProcess:        true,
-	TypeUniversityProcessEnrollment:  true, // AUDIT-BE-005: double-credit guard
+	TypeWalletProcessActivityEvent:      true,
+	TypePaymentWebhookProcess:           true,
+	TypeUniversityProcessEnrollment:     true, // AUDIT-BE-005: double-credit guard
 }
 
 func taskDefaults(taskType string) []asynq.Option {
@@ -100,7 +100,7 @@ func taskDefaults(taskType string) []asynq.Option {
 	// DB-only tasks: standard timeout.
 	case TypeScheduledPublish, TypeScheduledPublishSweep:
 		opts = append(opts, asynq.Timeout(1*time.Minute), asynq.MaxRetry(5))
-	// Default: no explicit timeout/retry — asynq defaults apply.
+		// Default: no explicit timeout/retry — asynq defaults apply.
 	}
 
 	return opts
@@ -117,7 +117,7 @@ var taskTier = func() map[string]string {
 	for _, t := range []string{
 		TypeNotificationDispatchBatch, TypeWebhookDelivery, TypePaymentWebhookProcess,
 		TypeTicketSendConfirmation, TypePushDelivery, TypeDMNotifyRequest, TypeDMNotifyMessage,
-		TypeUniversityProcessEnrollment,
+		TypeUniversityProcessEnrollment, TypeUniversitySendInstructorPayout,
 	} {
 		m[t] = QueueCritical
 	}
@@ -136,7 +136,6 @@ var taskTier = func() map[string]string {
 		TypeAffiliateCreditAuthorCommission,
 		TypeDocsGeneratePage,
 		TypeUniversityNotifyInstructorApproved, TypeUniversityNotifyCourseApproved,
-		TypeUniversitySendInstructorPayout,
 	} {
 		m[t] = QueueDefault
 	}
@@ -160,7 +159,7 @@ var taskTier = func() map[string]string {
 		TypeAffiliateCreditCommission, TypeAffiliateExpireCheck,
 		TypeRedirectRecordHit,
 		TypeScheduledPublishSweep, TypeGdprRetentionSweep,
-		TypeUniversityCalculatePeriodPayouts,
+		TypeUniversityCalculatePeriodPayouts, TypeUniversityFetchLogo,
 		TypeContentScanAffiliateLinks,
 	} {
 		m[t] = QueueLow
@@ -191,6 +190,7 @@ func TaskTypeCatalog() []map[string]string {
 		{TypeWebhookDelivery, "critical", "Deliver outbound webhook events"},
 		{TypePaymentWebhookProcess, "critical", "Process inbound payment webhook"},
 		{TypeUniversityProcessEnrollment, "critical", "Credit creator ledger for a paid course enrollment"},
+		{TypeUniversitySendInstructorPayout, "critical", "Execute a single instructor payout transfer"},
 		{TypeTicketSendConfirmation, "critical", "Send ticket confirmation email"},
 		{TypePushDelivery, "critical", "Send push notifications"},
 		{TypeDMNotifyRequest, "critical", "Notify DM request received"},
@@ -219,7 +219,6 @@ func TaskTypeCatalog() []map[string]string {
 		// Japa University (ADR-063)
 		{TypeUniversityNotifyInstructorApproved, "default", "Notify creator their instructor application was approved"},
 		{TypeUniversityNotifyCourseApproved, "default", "Notify creator their track was approved to the marketplace"},
-		{TypeUniversitySendInstructorPayout, "default", "Execute a single instructor payout transfer"},
 		// Low tier
 		{TypeDigestEmail, "low", "Send digest email"},
 		{TypeSitemapGenerate, "low", "Generate sitemap XML"},
@@ -257,6 +256,7 @@ func TaskTypeCatalog() []map[string]string {
 		{TypeScheduledPublishSweep, "low", "Sweep and publish due scheduled content"},
 		{TypeGdprRetentionSweep, "low", "Process GDPR retention-wait deletions"},
 		{TypeUniversityCalculatePeriodPayouts, "low", "Roll open revenue splits into instructor payouts for a period"},
+		{TypeUniversityFetchLogo, "low", "Fetch and store a university logo from a remote URL during space auto-seeding"},
 	}
 
 	result := make([]map[string]string, len(tasks))

@@ -268,11 +268,11 @@ func (s *Service) AdminUpdateStatus(ctx context.Context, tenantID, mediaID, revi
 		reason = *quarantineReason
 	}
 	return s.store.AdminUpdateStatus(ctx, gen.AdminUpdateMediaStatusParams{
-		ID:              mediaID,
-		TenantID:        tenantID,
-		Confirmed:       confirmed,
+		ID:               mediaID,
+		TenantID:         tenantID,
+		Confirmed:        confirmed,
 		QuarantineReason: reason,
-		ReviewedBy:      reviewerID,
+		ReviewedBy:       reviewerID,
 	})
 }
 
@@ -433,4 +433,126 @@ func (s *Service) DirectUpload(ctx context.Context, tenantID, uploaderID pgtype.
 	}
 
 	return m.ID, nil
+}
+
+// StoreFromURL downloads content from a remote URL, sniffs the MIME type
+// from the content (not the extension), uploads it to SeaweedFS, and creates
+// a media record. Returns the media ID. Used by server-side ingestion tasks
+// like university:fetch_logo (Section 39).
+//
+// The uploaderID is the system/admin user ID to attribute the media to.
+func (s *Service) StoreFromURL(ctx context.Context, tenantID, uploaderID pgtype.UUID, sourceURL, filename string) (pgtype.UUID, error) {
+	// 1. Download the image.
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, sourceURL, nil)
+	if err != nil {
+		return pgtype.UUID{}, fmt.Errorf("creating download request: %w", err)
+	}
+	req.Header.Set("User-Agent", "JapaConnect/1.0 (university:fetch_logo)")
+
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return pgtype.UUID{}, fmt.Errorf("downloading logo from %s: %w", sourceURL, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return pgtype.UUID{}, fmt.Errorf("logo download returned %d for %s", resp.StatusCode, sourceURL)
+	}
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, MaxFileSizeBytes))
+	if err != nil {
+		return pgtype.UUID{}, fmt.Errorf("reading logo body: %w", err)
+	}
+
+	if len(body) == 0 {
+		return pgtype.UUID{}, fmt.Errorf("logo body is empty from %s", sourceURL)
+	}
+
+	// 2. Sniff MIME type from content (not extension) — Section 34 rule.
+	mimeType := http.DetectContentType(body)
+
+	// 3. Generate a unique storage path under media/ prefix.
+	ext := extensionFromMIME(mimeType)
+	storagePath := fmt.Sprintf("%s/%s/%s",
+		StoragePathMedia,
+		tenantID.String(),
+		filename+ext,
+	)
+
+	// 4. Upload to S3/SeaweedFS, falling back to local disk storage when S3
+	// is not configured or the put fails. The media record must never be
+	// created/confirmed without the bytes durably stored somewhere
+	// ServeMedia/imgproxy can retrieve them — a silent gap here would leave
+	// a "confirmed" media row pointing at nothing (broken university logo).
+	stored := false
+	if s.s3 != nil {
+		if err := s.s3.PutObject(ctx, storagePath, mimeType, body); err != nil {
+			slog.Warn("media: s3 put failed for logo, trying local fallback",
+				"storage_path", storagePath, "error", err)
+		} else {
+			stored = true
+		}
+	}
+	if !stored {
+		if err := storeLocalMediaFile(DefaultBucket, storagePath, body); err != nil {
+			return pgtype.UUID{}, fmt.Errorf("storing logo to local fallback: %w", err)
+		}
+	}
+
+	// 5. Create the media record.
+	m, err := s.store.InsertMedia(ctx, gen.InsertMediaParams{
+		TenantID:         tenantID,
+		UploaderUserID:   uploaderID,
+		OriginalFilename: filename,
+		MimeType:         mimeType,
+		FileSizeBytes:    int64(len(body)),
+		StoragePath:      storagePath,
+		StorageBucket:    DefaultBucket,
+	})
+	if err != nil {
+		return pgtype.UUID{}, fmt.Errorf("inserting media record: %w", err)
+	}
+
+	if err := s.store.ConfirmMedia(ctx, m.ID, tenantID); err != nil {
+		return pgtype.UUID{}, fmt.Errorf("confirming media: %w", err)
+	}
+
+	return m.ID, nil
+}
+
+// storeLocalMediaFile writes body to disk at data/media/{bucket}/{storagePath}
+// (mediaRoot, defined in handlers.go). This is the local-storage fallback
+// used when S3/SeaweedFS is not configured or unreachable, so ServeMedia
+// can still retrieve the file.
+func storeLocalMediaFile(bucket, storagePath string, body []byte) error {
+	localPath, err := resolveMediaPath(bucket, storagePath)
+	if err != nil {
+		return fmt.Errorf("resolving local media path: %w", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(localPath), 0o755); err != nil {
+		return fmt.Errorf("creating media directory: %w", err)
+	}
+	if err := os.WriteFile(localPath, body, 0o644); err != nil { //nolint:gosec // G306: media files are meant to be world-readable via ServeMedia
+		return fmt.Errorf("writing media file: %w", err)
+	}
+	return nil
+}
+
+// extensionFromMIME returns a file extension for common image MIME types.
+func extensionFromMIME(mimeType string) string {
+	switch {
+	case strings.HasPrefix(mimeType, "image/png"):
+		return ".png"
+	case strings.HasPrefix(mimeType, "image/jpeg"):
+		return ".jpg"
+	case strings.HasPrefix(mimeType, "image/webp"):
+		return ".webp"
+	case strings.HasPrefix(mimeType, "image/gif"):
+		return ".gif"
+	case strings.HasPrefix(mimeType, "image/svg"):
+		return ".svg"
+	default:
+		return ".bin"
+	}
 }

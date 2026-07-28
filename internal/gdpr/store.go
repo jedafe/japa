@@ -240,6 +240,20 @@ func (s *Store) gdprExportUserTicketComments(ctx context.Context, userID, tenant
 	}
 	return decodeJSONSlice(data)
 }
+
+// Japa University GDPR export helpers (ADR-063 / audit C2).
+func (s *Store) gdprExportInstructorProfiles(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {
+	return exportJSONSlice(ctx, s.read.GdprExportInstructorProfiles, gen.GdprExportInstructorProfilesParams{UserID: userID, TenantID: tenantID})
+}
+
+func (s *Store) gdprExportRevenueSplits(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {
+	return exportJSONSlice(ctx, s.read.GdprExportRevenueSplits, gen.GdprExportRevenueSplitsParams{UserID: userID, TenantID: tenantID})
+}
+
+func (s *Store) gdprExportInstructorPayouts(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {
+	return exportJSONSlice(ctx, s.read.GdprExportInstructorPayouts, gen.GdprExportInstructorPayoutsParams{UserID: userID, TenantID: tenantID})
+}
+
 func (s *Store) hasConsent(ctx context.Context, userID pgtype.UUID, consentType string) (bool, error) {
 	granted, err := s.read.HasConsent(ctx, gen.HasConsentParams{
 		UserID:      userID,
@@ -308,7 +322,7 @@ func (s *Store) deleteConsent(ctx context.Context, id, tenantID pgtype.UUID) (ge
 }
 
 // qPtr returns a pointer to s. An empty string yields a pointer to "" so the
-// generated SQL filter `@q::text = ''` matches and the list returns all rows
+// generated SQL filter `@q::text = ”` matches and the list returns all rows
 // when no search term is supplied.
 func qPtr(s string) *string {
 	return &s

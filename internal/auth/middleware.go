@@ -17,8 +17,9 @@ var UserContextKey = contextKey{"user"}
 
 // AuthenticatedUser holds the user info extracted from a validated JWT.
 type AuthenticatedUser struct {
-	UserID   pgtype.UUID
-	TenantID pgtype.UUID
+	UserID    pgtype.UUID
+	TenantID  pgtype.UUID
+	SessionID string // JTI from the JWT; used as a session-scoped cache key
 }
 
 // FromContext extracts the AuthenticatedUser from the request context.
@@ -71,8 +72,9 @@ func RequireAuth(kr *KeyRotation, vkClient valkeycompat.Cmdable) func(http.Handl
 			}
 
 			user := &AuthenticatedUser{
-				UserID:   userID,
-				TenantID: tenantID,
+				UserID:    userID,
+				TenantID:  tenantID,
+				SessionID: claims.JTI,
 			}
 
 			ctx := context.WithValue(r.Context(), UserContextKey, user)
@@ -125,8 +127,9 @@ func OptionalAuth(kr *KeyRotation, vkClient valkeycompat.Cmdable) func(http.Hand
 			}
 
 			user := &AuthenticatedUser{
-				UserID:   userID,
-				TenantID: tenantID,
+				UserID:    userID,
+				TenantID:  tenantID,
+				SessionID: claims.JTI,
 			}
 
 			ctx := context.WithValue(r.Context(), UserContextKey, user)
