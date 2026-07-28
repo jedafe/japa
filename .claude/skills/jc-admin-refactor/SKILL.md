@@ -29,7 +29,13 @@ Rewrite all Chart.js / canvas / raw-SVG / D3-DOM charts as LayerChart (pattern i
 Single `$state` form object · `submitting` + `formError` states · CSRF header · dialog closes + table refreshes on success · unsaved-changes `beforeNavigate` guard on edit forms.
 
 ## 5. RBAC Hardening
-Role-string checks → permission-node checks: `$derived(session?.permissions.includes('users.ban') ?? false)`.
+Role-string checks → permission-node checks: `$derived(session?.permissions.includes('users.ban') ?? false)`. **Japa University**: each university action has its own node (`university.instructor.approve`, `university.course.approve`, `university.payout.process`) — gate each individually, not by a blanket `university.*` role.
 
 ## 6. Standard Migrations
 Svelte 4→5, Bits UI adoption, Tailwind v4, i18n sweep, a11y — apply `jc-main-refactor` §§1–2, 5. Consolidate duplicate fetches (user groups, spaces, content types) into `setContext`/`getContext` at admin root layout.
+
+## 7. Japa University Admin Pages (ADR-063 + Section 39)
+- **Add university entity pages** if missing: Universities (Section 39 space type) with full DataTable + CRUD + Verify state action + CSV bulk import. Instructor profiles with review dialog + both-direction state transitions. University course approval with Approve/Reject. Payout management with process/mark-failed state machine.
+- **Mask payout_method:** any raw display of `instructor_profiles.payout_method` → masked display (show last 4 digits or type only).
+- **University logo:** if stored as a raw URL string → migrate to Section 34 media upload (SeaweedFS + imgproxy).
+- **Run Gate 2 on every university entity** during refactor — refactoring is when missing CRUD/state routes get caught.

@@ -376,6 +376,54 @@ test.describe('Pass 5 — i18n', () => {
 	});
 });
 
+test.describe('Create page — editor mode switcher', () => {
+	test('switcher renders as icon buttons in top-right and changes modes', async ({ page }) => {
+		await login(page, USER1);
+		await page.goto('/create');
+
+		// Wait for the editor to mount
+		await page.waitForSelector('.post-editor', { timeout: 10_000 });
+
+		const switcher = page.locator('.mode-switcher');
+		await expect(switcher).toBeVisible();
+
+		// Verify position: switcher should be positioned absolute inside post-editor
+		const switcherBox = await switcher.boundingBox();
+		const editorBox = await page.locator('.post-editor').boundingBox();
+		expect(switcherBox).not.toBeNull();
+		expect(editorBox).not.toBeNull();
+		if (switcherBox && editorBox) {
+			// Should be in the top-right quadrant of the editor
+			expect(switcherBox.x + switcherBox.width).toBeLessThanOrEqual(editorBox.x + editorBox.width + 4);
+			expect(switcherBox.y).toBeGreaterThanOrEqual(editorBox.y);
+			expect(switcherBox.y).toBeLessThanOrEqual(editorBox.y + 60);
+		}
+
+		// Three tab buttons, each containing an svg icon (no text labels)
+		const tabs = switcher.locator('[role="tab"]');
+		await expect(tabs).toHaveCount(3);
+
+		for (let i = 0; i < 3; i++) {
+			const svgCount = await tabs.nth(i).locator('svg').count();
+			expect(svgCount).toBe(1);
+		}
+
+		// No raw text labels like Block / Rich text / Markdown inside the switcher
+		const switcherText = await switcher.innerText();
+		expect(switcherText).not.toMatch(/Block|Rich text|Markdown|Blocs|Texte riche/);
+
+		// Switch to markdown mode
+		await tabs.nth(2).click();
+		await expect(tabs.nth(2)).toHaveAttribute('aria-selected', 'true');
+		await expect(page.locator('.markdown-source')).toBeVisible();
+
+		// Switch back to block mode
+		await tabs.nth(0).click();
+		await expect(tabs.nth(0)).toHaveAttribute('aria-selected', 'true');
+		await expect(page.locator('.editor-surface')).toBeVisible();
+	});
+});
+
 test.describe('Pass 6 — Responsive & console hygiene matrix', () => {
 	for (const [name, viewport] of Object.entries(VIEWPORTS)) {
 		test(`no horizontal overflow or console errors on key pages @ ${name}`, async ({ browser }) => {

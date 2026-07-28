@@ -1,6 +1,6 @@
 ---
 name: jc-main-refactor
-description: Use when updating, modernizing, or refactoring existing JapaConnect Main App code (apps/web). Migrates Svelte 4 to Svelte 5 Runes, adopts Bits UI primitives, migrates legacy layouts to the unified app shell (ADR-058), consolidates the profile learning hub and cross-app links (ADR-060), converts charts to LayerChart 2.0.1, removes hardcoded data per Rule 16.Use when updating, modernizing, or refactoring existing JapaConnect Main App code (apps/web). Migrates Svelte 4 to Svelte 5 Runes, adopts Bits UI primitives, migrates legacy layouts to the unified app shell (ADR-058), converts charts to LayerChart 2.0.1, removes hardcoded data per Rule 16.
+description: Use when updating, modernizing, or refactoring existing JapaConnect Main App code (apps/main). Migrates Svelte 4 to Svelte 5 Runes, adopts Bits UI primitives, migrates legacy layouts to the unified app shell (ADR-058), consolidates the profile learning hub and cross-app links (ADR-060), converts charts to LayerChart 2.0.1, removes hardcoded data per Rule 16.Use when updating, modernizing, or refactoring existing JapaConnect Main App code (apps/web). Migrates Svelte 4 to Svelte 5 Runes, adopts Bits UI primitives, migrates legacy layouts to the unified app shell (ADR-058), converts charts to LayerChart 2.0.1, removes hardcoded data per Rule 16.
 ---
 
 # JapaConnect Main App — Updating & Refactoring Skill
@@ -54,6 +54,13 @@ Replace static arrays (nav, countries, tags, groups, post types, chart datasets)
 - Extract any Learn/Docs surface re-implemented in this app (lesson player, curriculum rail, docs nav tree) — replace with an absolute deep link to `learn.japaconnect.com` / `docs.japaconnect.com`; those apps own those surfaces.
 - Consolidate scattered learning links into the dashboard hub tabs: `/dashboard/learning`, `/dashboard/certificates`, `/dashboard/knowledge-base`.
 - Point certificate cards at the public shareable page `/certificates/:id`; add earned-certificate badges to the public profile.
+
+## 5c. Geo-Aware Personalization (ADR-064) & University Discovery (Section 39)
+- **Hardcoded geo → VisitorContext:** any hardcoded country/region list or `?geo=` default → consume `GET /api/v1/geo/me` for `ContentCountry`. The feed header gets an inline "Showing: [Country] · Change" control wired to `PATCH /api/v1/me/profile` (`content_country_preference`).
+- **Client-side geo flicker → SSR:** if the guest homepage loads global content then swaps to geo client-side, move the geo-weighted fetch into `+page.server.ts` so it's in the initial HTML.
+- **Hard geo filter → re-weight:** if `?geo=` is used to exclude non-local content, change to a boost/optional-filter (ADR-064: re-weight, never hide).
+- **University pages → shell + API:** any standalone-layout university page → migrate into `AppShell`; any hardcoded university data → `GET /api/v1/universities` / `GET /api/v1/universities/:slug`. Add JSON-LD `EducationalOrganization` + `AggregateRating`.
+- **University discovery:** add `/universities` (grid, filters from API, geo-aware default country) and `/universities/[slug]` (tabs: Overview/Posts/Forums/Courses/Members/Reviews/Compare) if not present.
 
 ## 6. Standard Patterns
 - Skeletons: `{#if loading}<Skeleton/>{:else if error}<ErrorState/>{:else if empty}<EmptyState/>{:else}...{/if}` — skeleton shape matches real content

@@ -1,6 +1,6 @@
 ---
 name: jc-main-debug
-description: Use when reviewing or debugging code in the JapaConnect Main App (apps/web, SSR). Diagnoses SSR/hydration mismatches, Svelte 5 Runes violations, Bits UI lifecycle errors, app-shell/layout drift (ADR-058), profile learning hub and cross-app link defects (ADR-060), LayerChart rendering issues, and Rule 16 violations.Use when reviewing or debugging code in the JapaConnect Main App (apps/web, SSR). Diagnoses SSR/hydration mismatches, Svelte 5 Runes violations, Bits UI lifecycle errors, app-shell/layout drift (ADR-058), LayerChart rendering issues, and Rule 16 violations.
+description: Use when reviewing or debugging code in the JapaConnect Main App (apps/main, SSR). Diagnoses SSR/hydration mismatches, Svelte 5 Runes violations, Bits UI lifecycle errors, app-shell/layout drift (ADR-058), profile learning hub and cross-app link defects (ADR-060), LayerChart rendering issues, and Rule 16 violations.Use when reviewing or debugging code in the JapaConnect Main App (apps/web, SSR). Diagnoses SSR/hydration mismatches, Svelte 5 Runes violations, Bits UI lifecycle errors, app-shell/layout drift (ADR-058), LayerChart rendering issues, and Rule 16 violations.
 ---
 
 # JapaConnect Main App — Review & Debugging Skill
@@ -69,6 +69,14 @@ If the bug involves data not loading: verify the endpoint actually exists (`curl
 - Cross-app links hardcoded to a wrong/relative path instead of `learn.japaconnect.com` / `docs.japaconnect.com` (breaks the shared-session deep link)
 - Certificate cards not linking to the public shareable page `/certificates/:id`; earned certificates missing as badges on the public profile
 - Dashboard treated as a public surface — it is private: no ad slots, and it must not be indexed
+
+## 7c. Geo-Aware Personalization (ADR-064)
+- **Guest homepage geo flicker:** geo-weighted content must be in the SSR HTML, not loaded client-side — if the page flashes global content then swaps to geo, the SSR path is broken
+- **Feed override control missing:** the feed header must show "Showing: [Country] · Change" inline — if it's buried in settings or absent, that's a defect
+- **Hard geo filtering:** content hidden by geo (non-local posts not appearing at all) instead of re-weighted — ADR-064 says re-weight, never hide. Check the `?geo=` param isn't being used as a hard filter
+- **Override not respected:** user changes `content_country_preference` but feed doesn't update — check that the feed invalidation fires after `PATCH /api/v1/me/profile`
+- **University discovery hardcoded:** `/universities` list or `/universities/[slug]` data hardcoded instead of from `GET /api/v1/universities` — Rule 16 violation
+- **University page outside the shell:** `/universities` or `/universities/[slug]` built as a standalone layout — they render INSIDE `AppShell`, they are NOT exceptions
 
 ## Output Protocol
 1. **Root cause** — one sentence · 2. **Broken code** · 3. **Fixed code** (surgical, minimal) · 4. **Secondary findings**

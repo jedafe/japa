@@ -20,7 +20,7 @@ Raw API key never in `$state` after one-time reveal (dialog `onOpenChange` clear
 Toggle `disabled` during in-flight PATCH · `toggling` guard flag · optimistic + rollback on failure · disable-with-active-content confirmation dialog.
 
 ## 4. Settings Dirty State
-Deep equality (`JSON.stringify`) not reference compare · `original` snapshot captured AFTER data load · `beforeNavigate` guard fires when dirty · batch save includes ALL changed keys.
+Deep equality (`JSON.stringify`) not reference compare · `original` snapshot captured AFTER data load · `beforeNavigate` guard fires when dirty · batch save includes ALL changed keys. **Geo/University settings:** `geo_personalization.enabled` toggle should show a warning dialog before disabling (affects all users). `university.surface_domain` change should warn (affects Learn app host detection). Commission/payout settings are numeric — validate range (0-100 for percentages, positive for kobo amounts).
 
 ## 5. DataTable Spec
 Apply the full checklist from `jc-admin-debug` §1 — including readonly-entity Delete/Clear actions on audit/impersonation/job logs, and Revoke/Enable/Disable state actions conditional on row state.

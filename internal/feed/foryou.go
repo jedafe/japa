@@ -118,6 +118,8 @@ func candidateFromRow(r gen.GetForYouCandidatesRow) Candidate {
 			VelocityScore:      pgNumericToFloat64(r.VelocityScore),
 			AuthorName:         r.AuthorName,
 			AuthorAvatarURL:    r.AuthorAvatarUrl,
+			SpaceName:          r.SpaceName,
+			SpaceSlug:          r.SpaceSlug,
 			Excerpt:            r.Excerpt,
 			Tags:               splitTags(r.Tags),
 			ReadingTimeMinutes: int(r.ReadTimeMinutes),

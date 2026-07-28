@@ -27,7 +27,7 @@ Full checklist from `jc-admin-audit` §B per entity list. Control-specific verif
 Health/queue/cost dashboards use LayerChart exclusively · `var(--color-*)` only (dark-default verified) · fixed heights · skeletons · poll-driven charts append correctly.
 
 ## F. Extension & Settings Integrity
-Toggle: in-flight disable, rollback, active-content warning. Settings: deep-equality dirty, `beforeNavigate` guard, snapshot-after-load, batch save all changed keys.
+Toggle: in-flight disable, rollback, active-content warning. Settings: deep-equality dirty, `beforeNavigate` guard, snapshot-after-load, batch save all changed keys. **Geo/Japa University settings (ADR-063/064):** `geo_personalization.enabled` killswitch present with disable-warning dialog · `university.*` settings (commission tiers, pro stream rate, payout threshold/period, surface_domain) all present and editable · JSON-typed settings validated before save · `university.surface_domain` change shows a warning (affects Learn app host detection).
 
 ## G. API Consumption, SPA, Bits UI, Svelte 5, A11y, i18n
 Apply `jc-admin-audit` §§C, E, and `jc-main-audit` §§D, B(runes), H, I. Plus: env badge correct · monospace on IDs/keys/args · health cards show last-updated timestamp.
