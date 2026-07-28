@@ -17,8 +17,10 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/tenant"
+	"github.com/jedafe/japa/internal/worker"
 )
 
 // universitySpaceTypeSlug is the space_types.slug seeded for universities
@@ -46,15 +48,54 @@ type CustomFieldsService interface {
 	ListFieldValuesByEntity(ctx context.Context, entityType string, entityID pgtype.UUID) ([]gen.CustomFieldValue, error)
 }
 
+// TaskEnqueuer is the minimal interface for enqueueing Asynq tasks.
+// The worker.Enqueuer satisfies this.
+type TaskEnqueuer interface {
+	Enqueue(taskType string, payload []byte, opts ...interface{}) error
+}
+
 // Handlers holds dependencies for university HTTP handlers.
 type Handlers struct {
 	spaces       SpacesService
 	customFields CustomFieldsService
+	enqueuer     TaskEnqueuer // nil = logo_url fetch is skipped on create/update
 }
 
 // NewHandlers creates Handlers with the given services.
 func NewHandlers(spacesService SpacesService, customFieldsService CustomFieldsService) *Handlers {
 	return &Handlers{spaces: spacesService, customFields: customFieldsService}
+}
+
+// SetEnqueuer wires the Asynq enqueuer used to trigger university:fetch_logo
+// when an admin sets/changes a university's logo_url. Optional — if not
+// called, logo_url is accepted but not fetched (graceful degradation in
+// dev/test).
+func (h *Handlers) SetEnqueuer(e TaskEnqueuer) { h.enqueuer = e }
+
+// enqueueFetchLogo enqueues university:fetch_logo (Section 39, low tier) to
+// download logoURL, store it via the media service, and set the space's
+// logo_media_id. uploadedBy is the acting admin's user ID (from
+// auth.FromContext), attributed as the media uploader — media has no
+// generic "system user" row, so the task skips gracefully if this is
+// invalid. Fire-and-forget: enqueue failures are logged, never returned to
+// the caller (Rule 8 — never block a request on fan-out).
+func (h *Handlers) enqueueFetchLogo(ctx context.Context, tenantID, spaceID, uploadedBy pgtype.UUID, logoURL string) {
+	if h.enqueuer == nil || strings.TrimSpace(logoURL) == "" {
+		return
+	}
+	payload, err := json.Marshal(map[string]string{
+		"tenant_id":   tenantID.String(),
+		"space_id":    spaceID.String(),
+		"logo_url":    logoURL,
+		"uploaded_by": uploadedBy.String(),
+	})
+	if err != nil {
+		slog.Warn("universities: marshal fetch_logo payload", "error", err)
+		return
+	}
+	if err := h.enqueuer.Enqueue(worker.TypeUniversityFetchLogo, payload); err != nil {
+		slog.Warn("universities: enqueue fetch_logo", "space_id", spaceID.String(), "error", err)
+	}
 }
 
 // requireTenant resolves the tenant from the request context.
@@ -158,9 +199,9 @@ func writeError(w http.ResponseWriter, status int, code, message string) {
 // ─── Admin University CRUD (P5.6 — Task 11) ──────────────────────────────
 
 var (
-	invalidSlugChars  = regexp.MustCompile(`[^a-z0-9-]+`)
-	multipleHyphens   = regexp.MustCompile(`-{2,}`)
-	trimHyphens       = regexp.MustCompile(`^-+|-+$`)
+	invalidSlugChars = regexp.MustCompile(`[^a-z0-9-]+`)
+	multipleHyphens  = regexp.MustCompile(`-{2,}`)
+	trimHyphens      = regexp.MustCompile(`^-+|-+$`)
 )
 
 func slugify(s string) string {
@@ -184,6 +225,7 @@ func (h *Handlers) CreateUniversity(w http.ResponseWriter, r *http.Request) {
 		Name     string `json:"name"`
 		Slug     string `json:"slug"`
 		Verified bool   `json:"verified"`
+		LogoURL  string `json:"logo_url"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_request", "Invalid body")
@@ -228,6 +270,12 @@ func (h *Handlers) CreateUniversity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var actorID pgtype.UUID
+	if u := auth.FromContext(r.Context()); u != nil {
+		actorID = u.UserID
+	}
+	h.enqueueFetchLogo(r.Context(), tenantID, space.ID, actorID, input.LogoURL)
+
 	writeJSON(w, http.StatusCreated, map[string]any{"data": space})
 }
 
@@ -254,6 +302,7 @@ func (h *Handlers) UpdateUniversity(w http.ResponseWriter, r *http.Request) {
 		Name     *string `json:"name"`
 		Slug     *string `json:"slug"`
 		Verified *bool   `json:"verified"`
+		LogoURL  *string `json:"logo_url"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_request", "Invalid body")
@@ -291,6 +340,14 @@ func (h *Handlers) UpdateUniversity(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "update_failed", "Failed to update university")
 		return
+	}
+
+	if input.LogoURL != nil {
+		var actorID pgtype.UUID
+		if u := auth.FromContext(r.Context()); u != nil {
+			actorID = u.UserID
+		}
+		h.enqueueFetchLogo(r.Context(), tenantID, space.ID, actorID, *input.LogoURL)
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": space})

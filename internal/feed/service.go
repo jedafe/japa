@@ -19,26 +19,26 @@ import (
 // FeedItem represents a single item in a feed response, normalized across
 // all feed types (explore, primary, space, profile).
 type FeedItem struct { //nolint:revive // stuttering type name preserved for API compatibility
-	ID                string   `json:"id"`
-	Title             string   `json:"title"`
-	Slug              string   `json:"slug"`
-	ContentType       string   `json:"content_type"`
-	AuthorID          string   `json:"author_id"`
-	SpaceID           *string  `json:"space_id,omitempty"`
-	SpaceName         string   `json:"space_name,omitempty"`
-	SpaceSlug         string   `json:"space_slug,omitempty"`
-	CreatedAt         string   `json:"created_at"`
-	ViewCount         int32    `json:"view_count"`
-	CommentCount      int32    `json:"comment_count"`
-	VoteScore         int32    `json:"vote_score"`
-	VelocityScore     float64  `json:"velocity_score"`
-	AuthorName        string   `json:"author_name,omitempty"`
-	AuthorAvatarURL   string   `json:"author_avatar_url,omitempty"`
-	Excerpt           string   `json:"excerpt,omitempty"`
-	Tags              []string `json:"tags,omitempty"`
-	ReadingTimeMinutes int     `json:"reading_time_minutes,omitempty"`
-	CoverImageURL     string   `json:"cover_image_url,omitempty"`
-	BookmarkCount     int32    `json:"bookmark_count,omitempty"`
+	ID                 string   `json:"id"`
+	Title              string   `json:"title"`
+	Slug               string   `json:"slug"`
+	ContentType        string   `json:"content_type"`
+	AuthorID           string   `json:"author_id"`
+	SpaceID            *string  `json:"space_id,omitempty"`
+	SpaceName          string   `json:"space_name,omitempty"`
+	SpaceSlug          string   `json:"space_slug,omitempty"`
+	CreatedAt          string   `json:"created_at"`
+	ViewCount          int32    `json:"view_count"`
+	CommentCount       int32    `json:"comment_count"`
+	VoteScore          int32    `json:"vote_score"`
+	VelocityScore      float64  `json:"velocity_score"`
+	AuthorName         string   `json:"author_name,omitempty"`
+	AuthorAvatarURL    string   `json:"author_avatar_url,omitempty"`
+	Excerpt            string   `json:"excerpt,omitempty"`
+	Tags               []string `json:"tags,omitempty"`
+	ReadingTimeMinutes int      `json:"reading_time_minutes,omitempty"`
+	CoverImageURL      string   `json:"cover_image_url,omitempty"`
+	BookmarkCount      int32    `json:"bookmark_count,omitempty"`
 }
 
 // PrimaryFeedItem represents a feed item from the personalized (push) feed.
@@ -281,6 +281,14 @@ func derefInt32(p *int32) int32 {
 		return 0
 	}
 
+	return *p
+}
+
+// derefStr safely dereferences a *string, returning "" for nil.
+func derefStr(p *string) string {
+	if p == nil {
+		return ""
+	}
 	return *p
 }
 
@@ -548,8 +556,11 @@ func (s *Service) loadAffinity(
 }
 
 // GetForYouFeed returns the personalized, ranked feed for a user, cached 90s per sort.
+// contentCountry is the visitor's resolved ContentCountry (ADR-064) used for
+// the bounded geo boost in the ranking; empty string disables geo weighting.
 func (s *Service) GetForYouFeed(
 	ctx context.Context, tenantID, userID pgtype.UUID, sortMode string, limit, offset int32,
+	contentCountry string,
 ) ([]FeedItem, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
@@ -559,7 +570,7 @@ func (s *Service) GetForYouFeed(
 		offset = 0
 	}
 
-	key := forYouCacheKey(tenantID, userID, sortMode)
+	key := forYouCacheKey(tenantID, userID, sortMode, contentCountry)
 
 	// Cache hit → slice and return.
 	if ranked, ok := s.readForYouCache(ctx, key); ok {
@@ -598,7 +609,7 @@ func (s *Service) GetForYouFeed(
 	}
 
 	ranked := make([]FeedItem, 0, len(cands))
-	for _, c := range rankCandidates(cands, sortMode, time.Now()) {
+	for _, c := range rankCandidates(cands, sortMode, time.Now(), contentCountry) {
 		ranked = append(ranked, c.Item)
 	}
 

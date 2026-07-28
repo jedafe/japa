@@ -31,6 +31,58 @@ func (q *Queries) AnonymizeAuditLogActor(ctx context.Context, arg AnonymizeAudit
 	return err
 }
 
+const anonymizeInstructorPayoutsForInstructor = `-- name: AnonymizeInstructorPayoutsForInstructor :execrows
+UPDATE instructor_payouts ipo
+SET instructor_id = NULL
+WHERE ipo.tenant_id = $1
+  AND ipo.instructor_id IN (
+      SELECT ip.id FROM instructor_profiles ip
+      WHERE ip.tenant_id = $1 AND ip.user_id = $2
+  )
+`
+
+type AnonymizeInstructorPayoutsForInstructorParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	UserID   pgtype.UUID `json:"user_id"`
+}
+
+// Severs the instructor reference on all instructor_payout rows owned by
+// this user's instructor profile(s). The payout rows survive for
+// regulatory retention; only the instructor link is anonymized.
+func (q *Queries) AnonymizeInstructorPayoutsForInstructor(ctx context.Context, arg AnonymizeInstructorPayoutsForInstructorParams) (int64, error) {
+	result, err := q.db.Exec(ctx, anonymizeInstructorPayoutsForInstructor, arg.TenantID, arg.UserID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const anonymizeRevenueSplitsForInstructor = `-- name: AnonymizeRevenueSplitsForInstructor :execrows
+UPDATE revenue_splits rs
+SET instructor_id = NULL
+WHERE rs.tenant_id = $1
+  AND rs.instructor_id IN (
+      SELECT ip.id FROM instructor_profiles ip
+      WHERE ip.tenant_id = $1 AND ip.user_id = $2
+  )
+`
+
+type AnonymizeRevenueSplitsForInstructorParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	UserID   pgtype.UUID `json:"user_id"`
+}
+
+// Severs the instructor reference on all revenue_split rows owned by
+// this user's instructor profile(s). The split rows survive for
+// regulatory retention; only the instructor link is anonymized.
+func (q *Queries) AnonymizeRevenueSplitsForInstructor(ctx context.Context, arg AnonymizeRevenueSplitsForInstructorParams) (int64, error) {
+	result, err := q.db.Exec(ctx, anonymizeRevenueSplitsForInstructor, arg.TenantID, arg.UserID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const anonymizeUser = `-- name: AnonymizeUser :exec
 UPDATE users
 SET username = 'Deleted User',
@@ -50,6 +102,37 @@ type AnonymizeUserParams struct {
 func (q *Queries) AnonymizeUser(ctx context.Context, arg AnonymizeUserParams) error {
 	_, err := q.db.Exec(ctx, anonymizeUser, arg.UserID, arg.TenantID)
 	return err
+}
+
+const clearInstructorPayoutMethod = `-- name: ClearInstructorPayoutMethod :execrows
+
+UPDATE instructor_profiles
+SET payout_method = NULL,
+    updated_at    = now()
+WHERE tenant_id = $1 AND user_id = $2
+`
+
+type ClearInstructorPayoutMethodParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	UserID   pgtype.UUID `json:"user_id"`
+}
+
+// =====================================================================
+// Japa University GDPR cascade (ADR-063 / audit C2)
+// revenue_splits and instructor_payouts are financial audit records:
+// anonymize the instructor reference (SET NULL), never delete the row.
+// instructor_profiles.payout_method is sensitive jsonb — clear it before
+// the profile is cascade-deleted via users(id) ON DELETE CASCADE.
+// =====================================================================
+// Clears the sensitive payout_method jsonb on the user's instructor
+// profile(s) before the user row is physically deleted. The profile row
+// itself is removed by the users(id) ON DELETE CASCADE FK.
+func (q *Queries) ClearInstructorPayoutMethod(ctx context.Context, arg ClearInstructorPayoutMethodParams) (int64, error) {
+	result, err := q.db.Exec(ctx, clearInstructorPayoutMethod, arg.TenantID, arg.UserID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const createAccountDeletionRequest = `-- name: CreateAccountDeletionRequest :one
@@ -311,6 +394,82 @@ type DeleteUserTokensParams struct {
 func (q *Queries) DeleteUserTokens(ctx context.Context, arg DeleteUserTokensParams) error {
 	_, err := q.db.Exec(ctx, deleteUserTokens, arg.UserID, arg.TenantID)
 	return err
+}
+
+const gdprExportInstructorPayouts = `-- name: GdprExportInstructorPayouts :one
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (
+    SELECT ipo.id, ipo.tenant_id, ipo.period_start, ipo.period_end,
+           ipo.gross_kobo, ipo.platform_commission_kobo, ipo.net_kobo,
+           ipo.currency, ipo.status, ipo.payout_reference,
+           ipo.processed_at, ipo.created_at
+    FROM instructor_payouts ipo
+    JOIN instructor_profiles ip ON ip.id = ipo.instructor_id
+    WHERE ipo.tenant_id = $1 AND ip.user_id = $2
+) t
+`
+
+type GdprExportInstructorPayoutsParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	UserID   pgtype.UUID `json:"user_id"`
+}
+
+func (q *Queries) GdprExportInstructorPayouts(ctx context.Context, arg GdprExportInstructorPayoutsParams) (interface{}, error) {
+	row := q.db.QueryRow(ctx, gdprExportInstructorPayouts, arg.TenantID, arg.UserID)
+	var data interface{}
+	err := row.Scan(&data)
+	return data, err
+}
+
+const gdprExportInstructorProfiles = `-- name: GdprExportInstructorProfiles :one
+
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (
+    SELECT id, tenant_id, display_name, headline, bio, social_links,
+           tier, status, kyc_status, application_note, created_at, updated_at
+    FROM instructor_profiles
+    WHERE tenant_id = $1 AND user_id = $2
+) t
+`
+
+type GdprExportInstructorProfilesParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	UserID   pgtype.UUID `json:"user_id"`
+}
+
+// =====================================================================
+// Japa University GDPR data export (ADR-063 / audit C2)
+// =====================================================================
+func (q *Queries) GdprExportInstructorProfiles(ctx context.Context, arg GdprExportInstructorProfilesParams) (interface{}, error) {
+	row := q.db.QueryRow(ctx, gdprExportInstructorProfiles, arg.TenantID, arg.UserID)
+	var data interface{}
+	err := row.Scan(&data)
+	return data, err
+}
+
+const gdprExportRevenueSplits = `-- name: GdprExportRevenueSplits :one
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (
+    SELECT rs.id, rs.tenant_id, rs.track_id, rs.enrollment_id, rs.payment_id,
+           rs.payout_id, rs.source, rs.gross_kobo, rs.creator_pct,
+           rs.platform_pct, rs.creator_kobo, rs.platform_kobo,
+           rs.currency, rs.created_at
+    FROM revenue_splits rs
+    JOIN instructor_profiles ip ON ip.id = rs.instructor_id
+    WHERE rs.tenant_id = $1 AND ip.user_id = $2
+) t
+`
+
+type GdprExportRevenueSplitsParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	UserID   pgtype.UUID `json:"user_id"`
+}
+
+func (q *Queries) GdprExportRevenueSplits(ctx context.Context, arg GdprExportRevenueSplitsParams) (interface{}, error) {
+	row := q.db.QueryRow(ctx, gdprExportRevenueSplits, arg.TenantID, arg.UserID)
+	var data interface{}
+	err := row.Scan(&data)
+	return data, err
 }
 
 const gdprExportUserApiKeys = `-- name: GdprExportUserApiKeys :one

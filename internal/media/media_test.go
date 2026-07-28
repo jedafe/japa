@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -478,6 +479,72 @@ func TestQuarantinedMediaJSON(t *testing.T) {
 
 	if got["mime_type"] != "image/jpeg" {
 		t.Errorf("mime_type = %v, want image/jpeg", got["mime_type"])
+	}
+}
+
+// ---------------------------------------------------------------------------
+// storeLocalMediaFile / extensionFromMIME (university:fetch_logo local
+// fallback — regression guard: a media record must never be
+// created/confirmed for bytes that were never actually stored anywhere.)
+// ---------------------------------------------------------------------------
+
+func TestExtensionFromMIME(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		mimeType string
+		want     string
+	}{
+		{"image/png", ".png"},
+		{"image/jpeg", ".jpg"},
+		{"image/webp", ".webp"},
+		{"image/gif", ".gif"},
+		{"image/svg+xml", ".svg"},
+		{"application/octet-stream", ".bin"},
+		{"", ".bin"},
+	}
+	for _, tt := range tests {
+		if got := extensionFromMIME(tt.mimeType); got != tt.want {
+			t.Errorf("extensionFromMIME(%q) = %q, want %q", tt.mimeType, got, tt.want)
+		}
+	}
+}
+
+func TestStoreLocalMediaFile_WritesRetrievableBytes(t *testing.T) {
+	// Not parallel: writes to the shared data/media/ directory relative to
+	// the package's working directory.
+	bucket := "media"
+	storagePath := "test-fetch-logo/" + t.Name() + "/logo.png"
+	body := []byte("fake-png-bytes")
+
+	t.Cleanup(func() {
+		_ = os.RemoveAll(filepath.Dir(mediaRoot)) // "data" — test-only local storage under CWD, safe to remove entirely
+	})
+
+	if err := storeLocalMediaFile(bucket, storagePath, body); err != nil {
+		t.Fatalf("storeLocalMediaFile: %v", err)
+	}
+
+	localPath, err := resolveMediaPath(bucket, storagePath)
+	if err != nil {
+		t.Fatalf("resolveMediaPath: %v", err)
+	}
+
+	got, err := os.ReadFile(filepath.Clean(localPath))
+	if err != nil {
+		t.Fatalf("reading stored file: %v", err)
+	}
+
+	if string(got) != string(body) {
+		t.Errorf("stored content = %q, want %q", got, body)
+	}
+}
+
+func TestStoreLocalMediaFile_RejectsPathEscape(t *testing.T) {
+	t.Parallel()
+
+	if err := storeLocalMediaFile("media", "../../etc/passwd", []byte("x")); err == nil {
+		t.Fatal("expected error for path traversal, got nil")
 	}
 }
 

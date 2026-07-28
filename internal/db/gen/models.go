@@ -1075,8 +1075,9 @@ type GroupRole struct {
 
 // Aggregated periodic creator payout; rolls up revenue_splits (ADR-063).
 type InstructorPayout struct {
-	ID                     pgtype.UUID        `json:"id"`
-	TenantID               pgtype.UUID        `json:"tenant_id"`
+	ID       pgtype.UUID `json:"id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+	// Owning instructor; NULL after GDPR erasure (anonymized, regulatory retention).
 	InstructorID           pgtype.UUID        `json:"instructor_id"`
 	PeriodStart            pgtype.Date        `json:"period_start"`
 	PeriodEnd              pgtype.Date        `json:"period_end"`
@@ -1921,8 +1922,9 @@ type ReplyView struct {
 
 // Immutable per-event revenue split record; aggregated into instructor_payouts (ADR-063).
 type RevenueSplit struct {
-	ID           pgtype.UUID        `json:"id"`
-	TenantID     pgtype.UUID        `json:"tenant_id"`
+	ID       pgtype.UUID `json:"id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+	// Owning instructor; NULL after GDPR erasure (anonymized, regulatory retention).
 	InstructorID pgtype.UUID        `json:"instructor_id"`
 	TrackID      pgtype.UUID        `json:"track_id"`
 	EnrollmentID pgtype.UUID        `json:"enrollment_id"`

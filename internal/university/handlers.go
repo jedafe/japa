@@ -7,9 +7,9 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/go-chi/chi/v5"
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/tenant"
@@ -647,7 +647,7 @@ func (h *Handlers) AdminApproveInstructor(w http.ResponseWriter, r *http.Request
 	}
 
 	var body struct {
-		Tier               string  `json:"tier"`
+		Tier               string   `json:"tier"`
 		CommissionOverride *float64 `json:"commission_pct_override"`
 	}
 	_ = json.NewDecoder(r.Body).Decode(&body)
@@ -729,6 +729,25 @@ func (h *Handlers) AdminReinstateInstructor(w http.ResponseWriter, r *http.Reque
 	writeJSON(w, http.StatusOK, map[string]any{"data": prof})
 }
 
+// AdminDeleteInstructor handles DELETE /admin/university/instructors/{id}.
+// Blocked while the instructor is approved — reject or suspend first.
+func (h *Handlers) AdminDeleteInstructor(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+	instructorID, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	if err := h.service.DeleteInstructor(r.Context(), tenantID, instructorID); err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
+}
+
 // ---------------------------------------------------------------------------
 // Admin — courses & payouts
 // ---------------------------------------------------------------------------
@@ -785,6 +804,25 @@ func (h *Handlers) AdminListPayouts(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"data": payouts})
 }
 
+// AdminGetPayout handles GET /admin/university/payouts/{id}.
+func (h *Handlers) AdminGetPayout(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+	payoutID, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	payout, err := h.service.store.GetPayout(r.Context(), tenantID, payoutID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": payout})
+}
+
 // AdminProcessPayout handles POST /admin/university/payouts/{id}/process.
 func (h *Handlers) AdminProcessPayout(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := requireTenant(w, r)
@@ -815,7 +853,7 @@ func trackFromGetRow(r gen.ListUniversityTracksByInstructorRow) Track {
 		Difficulty: r.Difficulty, Currency: r.Currency, Language: r.Language,
 		TotalEnrolled: r.TotalEnrolled, IsPublished: r.IsPublished,
 		IsPublishedToUniversity: r.IsPublishedToUniversity,
-		CreatedAt: r.CreatedAt.Time, UpdatedAt: r.UpdatedAt.Time,
+		CreatedAt:               r.CreatedAt.Time, UpdatedAt: r.UpdatedAt.Time,
 	}
 	if r.CoverMediaID.Valid {
 		s := r.CoverMediaID.String()

@@ -95,6 +95,28 @@ func (p *Processor) NotifyCourseApproved(_ context.Context, tenantID, trackID st
 	return nil
 }
 
+// FetchLogo handles university:fetch_logo (Section 39, low tier).
+// Downloads a university logo from a remote URL, stores it to SeaweedFS,
+// and updates the space's logo_media_id.
+// Payload: { tenant_id, space_id, logo_url, uploaded_by }. uploaded_by (the
+// acting admin's user ID) is attributed as the media uploader; there is no
+// generic "system user" row so an invalid/missing uploaded_by is passed
+// through as an invalid pgtype.UUID and Service.FetchLogo skips gracefully.
+func (p *Processor) FetchLogo(ctx context.Context, tenantID, spaceID, logoURL, uploadedBy string) error {
+	tID, err := scanUUID(tenantID)
+	if err != nil {
+		return fmt.Errorf("university: fetch logo: %w", err)
+	}
+	sID, err := scanUUID(spaceID)
+	if err != nil {
+		return fmt.Errorf("university: fetch logo: invalid space_id: %w", err)
+	}
+	// uploadedBy is best-effort: an invalid/empty value is passed through as
+	// a zero-value (invalid) pgtype.UUID rather than failing the task.
+	uID, _ := scanUUID(uploadedBy)
+	return p.service.FetchLogo(ctx, tID, sID, logoURL, uID)
+}
+
 // scanUUID parses a UUID string into a pgtype.UUID.
 func scanUUID(s string) (pgtype.UUID, error) {
 	var id pgtype.UUID
