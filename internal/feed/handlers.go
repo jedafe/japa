@@ -11,6 +11,7 @@ import (
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/tenant"
+	"github.com/jedafe/japa/internal/visitor"
 )
 
 const defaultPageSize int32 = 20
@@ -193,7 +194,7 @@ func (h *Handlers) GetForYouFeed(w http.ResponseWriter, r *http.Request) {
 	offset := parsePageOffset(r)
 	sortMode := parseSort(r)
 
-	items, err := h.service.GetForYouFeed(r.Context(), tenantID, user.UserID, sortMode, limit, offset)
+	items, err := h.service.GetForYouFeed(r.Context(), tenantID, user.UserID, sortMode, limit, offset, visitor.FromContext(r.Context()).ContentCountry)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to get For-You feed")
 		return

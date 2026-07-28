@@ -497,12 +497,12 @@ func (s *Service) ProcessAccountDeletion(ctx context.Context, requestID pgtype.U
 // deletion progress_step constants (AUDIT-FRESH-GDPR-003). Mirrored in
 // migration 000173_account_deletion_progress_step.up.sql.
 const (
-	deletionStepNotStarted       int32 = 0
-	deletionStepAnonymized       int32 = 1
-	deletionStepTokensRevoked    int32 = 2
-	deletionStepSessionsDeleted  int32 = 3
-	deletionStepHonchoDeleted    int32 = 4
-	deletionStepHardDeleted      int32 = 5
+	deletionStepNotStarted      int32 = 0
+	deletionStepAnonymized      int32 = 1
+	deletionStepTokensRevoked   int32 = 2
+	deletionStepSessionsDeleted int32 = 3
+	deletionStepHonchoDeleted   int32 = 4
+	deletionStepHardDeleted     int32 = 5
 )
 
 // checkpoint persists the completed step so a retried job resumes after it.
@@ -536,7 +536,7 @@ func (s *Service) logDeletionAudit(ctx context.Context, request gen.AccountDelet
 		TargetType:  "user",
 		TargetID:    request.UserID,
 		Metadata: map[string]any{
-			"request_id":    request.ID.String(),
+			"request_id":     request.ID.String(),
 			"retention_wait": retentionWait,
 		},
 	}); err != nil {
@@ -685,6 +685,30 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 			UserID: userID, TenantID: tenantID, TargetUserID: deletedUserPlaceholder,
 		}); err != nil {
 			return fmt.Errorf("anonymizing audit log actor: %w", err)
+		}
+
+		// Japa University GDPR cascade (ADR-063 / audit C2):
+		//   - Clear sensitive payout_method jsonb on the user's instructor
+		//     profile(s) before the profile is cascade-deleted.
+		//   - Anonymize revenue_splits and instructor_payouts: sever the
+		//     instructor_id reference (SET NULL) so the financial audit
+		//     records survive for regulatory retention. The FKs were changed
+		//     from ON DELETE CASCADE to ON DELETE SET NULL in migration
+		//     000181 to enforce this at the schema level.
+		if _, err := q.ClearInstructorPayoutMethod(ctx, gen.ClearInstructorPayoutMethodParams{
+			UserID: userID, TenantID: tenantID,
+		}); err != nil {
+			return fmt.Errorf("clearing instructor payout method: %w", err)
+		}
+		if _, err := q.AnonymizeRevenueSplitsForInstructor(ctx, gen.AnonymizeRevenueSplitsForInstructorParams{
+			UserID: userID, TenantID: tenantID,
+		}); err != nil {
+			return fmt.Errorf("anonymizing revenue splits: %w", err)
+		}
+		if _, err := q.AnonymizeInstructorPayoutsForInstructor(ctx, gen.AnonymizeInstructorPayoutsForInstructorParams{
+			UserID: userID, TenantID: tenantID,
+		}); err != nil {
+			return fmt.Errorf("anonymizing instructor payouts: %w", err)
 		}
 
 		// 5. Physical deletion — ON DELETE CASCADE handles all child tables.
@@ -837,38 +861,41 @@ func parseIPAddress(s *string) *netip.Addr {
 
 // UserDataExport represents the complete user data export.
 type UserDataExport struct {
-	UserProfile            map[string]interface{}   `json:"user_profile"`
-	Consents               []map[string]interface{} `json:"consents"`
-	Content                []map[string]interface{} `json:"content"`
-	Comments               []map[string]interface{} `json:"comments"`
-	Spaces                 []map[string]interface{} `json:"spaces"`
-	Payments               []map[string]interface{} `json:"payments"`
-	Notifications          []map[string]interface{} `json:"notifications"`
-	UserProfiles           []map[string]interface{} `json:"user_profiles"`
-	Reactions              []map[string]interface{} `json:"reactions"`
-	Bookmarks              []map[string]interface{} `json:"bookmarks"`
-	ContentShares          []map[string]interface{} `json:"content_shares"`
-	Follows                []map[string]interface{} `json:"follows"`
-	ForumThreads           []map[string]interface{} `json:"forum_threads"`
-	ForumReplies           []map[string]interface{} `json:"forum_replies"`
-	ForumVotes             []map[string]interface{} `json:"forum_votes"`
-	ForumBookmarks         []map[string]interface{} `json:"forum_bookmarks"`
-	Media                  []map[string]interface{} `json:"media"`
-	Reviews                []map[string]interface{} `json:"reviews"`
-	SpaceMembers           []map[string]interface{} `json:"space_members"`
-	ConsentRecords         []map[string]interface{} `json:"consent_records"`
-	WalletLedger           []map[string]interface{} `json:"wallet_ledger"`
-	LessonProgress         []map[string]interface{} `json:"lesson_progress"`
-	LearningCertificates   []map[string]interface{} `json:"learning_certificates"`
-	MentorshipMatches      []map[string]interface{} `json:"mentorship_matches"`
-	ProfessionalProfiles   []map[string]interface{} `json:"professional_profiles"`
-	Organizations          []map[string]interface{} `json:"organizations"`
-	ApiKeys                []map[string]interface{} `json:"api_keys"`
-	UserPreferences        []map[string]interface{} `json:"user_preferences"`
-	UserMutes              []map[string]interface{} `json:"user_mutes"`
-	SpaceMutes             []map[string]interface{} `json:"space_mutes"`
-	TicketComments         []map[string]interface{} `json:"ticket_comments"`
-	ExportMetadata         map[string]interface{}   `json:"export_metadata"`
+	UserProfile          map[string]interface{}   `json:"user_profile"`
+	Consents             []map[string]interface{} `json:"consents"`
+	Content              []map[string]interface{} `json:"content"`
+	Comments             []map[string]interface{} `json:"comments"`
+	Spaces               []map[string]interface{} `json:"spaces"`
+	Payments             []map[string]interface{} `json:"payments"`
+	Notifications        []map[string]interface{} `json:"notifications"`
+	UserProfiles         []map[string]interface{} `json:"user_profiles"`
+	Reactions            []map[string]interface{} `json:"reactions"`
+	Bookmarks            []map[string]interface{} `json:"bookmarks"`
+	ContentShares        []map[string]interface{} `json:"content_shares"`
+	Follows              []map[string]interface{} `json:"follows"`
+	ForumThreads         []map[string]interface{} `json:"forum_threads"`
+	ForumReplies         []map[string]interface{} `json:"forum_replies"`
+	ForumVotes           []map[string]interface{} `json:"forum_votes"`
+	ForumBookmarks       []map[string]interface{} `json:"forum_bookmarks"`
+	Media                []map[string]interface{} `json:"media"`
+	Reviews              []map[string]interface{} `json:"reviews"`
+	SpaceMembers         []map[string]interface{} `json:"space_members"`
+	ConsentRecords       []map[string]interface{} `json:"consent_records"`
+	WalletLedger         []map[string]interface{} `json:"wallet_ledger"`
+	LessonProgress       []map[string]interface{} `json:"lesson_progress"`
+	LearningCertificates []map[string]interface{} `json:"learning_certificates"`
+	MentorshipMatches    []map[string]interface{} `json:"mentorship_matches"`
+	ProfessionalProfiles []map[string]interface{} `json:"professional_profiles"`
+	Organizations        []map[string]interface{} `json:"organizations"`
+	ApiKeys              []map[string]interface{} `json:"api_keys"`
+	UserPreferences      []map[string]interface{} `json:"user_preferences"`
+	UserMutes            []map[string]interface{} `json:"user_mutes"`
+	SpaceMutes           []map[string]interface{} `json:"space_mutes"`
+	TicketComments       []map[string]interface{} `json:"ticket_comments"`
+	InstructorProfiles   []map[string]interface{} `json:"instructor_profiles"`
+	RevenueSplits        []map[string]interface{} `json:"revenue_splits"`
+	InstructorPayouts    []map[string]interface{} `json:"instructor_payouts"`
+	ExportMetadata       map[string]interface{}   `json:"export_metadata"`
 }
 
 // collectUserData gathers all user data from relevant tables.
@@ -1153,6 +1180,23 @@ func (s *Service) collectUserData(ctx context.Context, userID, tenantID pgtype.U
 		export.TicketComments = rows
 	} else {
 		slog.Warn("failed to collect ticket_comments for export", "user_id", userID.String(), "error", err)
+	}
+
+	// Japa University creator-economy data (ADR-063 / audit C2).
+	if rows, err := s.store.gdprExportInstructorProfiles(ctx, userID, tenantID); err == nil {
+		export.InstructorProfiles = rows
+	} else {
+		slog.Warn("failed to collect instructor_profiles for export", "user_id", userID.String(), "error", err)
+	}
+	if rows, err := s.store.gdprExportRevenueSplits(ctx, userID, tenantID); err == nil {
+		export.RevenueSplits = rows
+	} else {
+		slog.Warn("failed to collect revenue_splits for export", "user_id", userID.String(), "error", err)
+	}
+	if rows, err := s.store.gdprExportInstructorPayouts(ctx, userID, tenantID); err == nil {
+		export.InstructorPayouts = rows
+	} else {
+		slog.Warn("failed to collect instructor_payouts for export", "user_id", userID.String(), "error", err)
 	}
 
 	return export, nil

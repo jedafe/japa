@@ -1,15 +1,18 @@
 package media
 
 import (
+	"bytes"
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -136,4 +139,39 @@ func (c *S3Client) GetObjectURL(storagePath string) string {
 	}
 
 	return fmt.Sprintf("%s/%s/%s", c.endpoint, c.bucket, storagePath)
+}
+
+// PutObject uploads raw bytes to S3-compatible storage at the given storage
+// path. Used by server-side ingestion tasks (e.g. university:fetch_logo) that
+// download content from remote URLs and store it without a client-side
+// presigned URL upload. Returns nil on success.
+func (c *S3Client) PutObject(ctx context.Context, storagePath, mimeType string, body []byte) error {
+	if c == nil {
+		return errors.New("s3 client not configured")
+	}
+
+	objectURL := fmt.Sprintf("%s/%s/%s", c.endpoint, c.bucket, storagePath)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, objectURL, bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("creating s3 put request: %w", err)
+	}
+
+	if mimeType != "" {
+		req.Header.Set("Content-Type", mimeType)
+	}
+	req.Header.Set("Content-Length", strconv.FormatInt(int64(len(body)), 10))
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("executing s3 put: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		respBody, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("s3 put returned %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	return nil
 }

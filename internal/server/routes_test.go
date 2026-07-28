@@ -77,10 +77,21 @@ type routeEntry struct {
 	line   int
 }
 
+// prefixFrame tracks one active r.Route("/prefix", func(r chi.Router) {...})
+// mount scope: its fully-composed path prefix (including any outer mounts,
+// e.g. "/api/v1/auth") and the brace depth at which it was opened, so it can
+// be popped once that block closes.
+type prefixFrame struct {
+	prefix string
+	depth  int
+}
+
 // parseServerRoutes extracts route registrations from server.go. It tracks
-// the /auth and /control sub-route scopes so relative registrations inside
-// those blocks get the correct prefix. This mirrors the logic in
-// scripts/route_diff.py.
+// every r.Route("/prefix", ...) mount scope (e.g. /api/v1, and the nested
+// /auth mount inside it, and the top-level /control mount) via a depth-based
+// stack, so relative registrations inside nested mounts get the correct
+// fully-composed prefix (e.g. "/api/v1" + "/auth" + "/login"). This mirrors
+// the logic in scripts/route_diff.py.
 func parseServerRoutes(path string) ([]routeEntry, error) {
 	f, err := os.Open(path) //nolint:gosec // test uses variable path
 	if err != nil {
@@ -91,10 +102,10 @@ func parseServerRoutes(path string) ([]routeEntry, error) {
 
 	var routes []routeEntry
 
-	var routePrefix *string
+	var stack []prefixFrame
 
-	prefixDepth := 0
 	depth := 0
+	routeMount := regexp.MustCompile(`\.Route\("(/[^"]*)"`)
 	re := regexp.MustCompile(`(?:^|[^A-Za-z])(Get|Post|Put|Patch|Delete)\("(/[^"]*)"`)
 
 	scanner := bufio.NewScanner(f)
@@ -106,20 +117,17 @@ func parseServerRoutes(path string) ([]routeEntry, error) {
 
 		depth += strings.Count(line, "{") - strings.Count(line, "}")
 
-		if strings.Contains(line, `.Route("/auth"`) {
-			d := depth
-			p := "/auth"
-			routePrefix = &p
-			prefixDepth = d
-		} else if strings.Contains(line, `.Route("/control"`) {
-			d := depth
-			p := "/control"
-			routePrefix = &p
-			prefixDepth = d
+		// Pop mount scopes whose block has closed.
+		for len(stack) > 0 && depth < stack[len(stack)-1].depth {
+			stack = stack[:len(stack)-1]
 		}
 
-		if routePrefix != nil && depth < prefixDepth {
-			routePrefix = nil
+		if m := routeMount.FindStringSubmatch(line); m != nil {
+			base := ""
+			if len(stack) > 0 {
+				base = stack[len(stack)-1].prefix
+			}
+			stack = append(stack, prefixFrame{prefix: base + m[1], depth: depth})
 		}
 
 		m := re.FindStringSubmatch(line)
@@ -130,8 +138,11 @@ func parseServerRoutes(path string) ([]routeEntry, error) {
 		method := strings.ToUpper(m[1])
 		rpath := m[2]
 
-		if routePrefix != nil && !strings.HasPrefix(rpath, *routePrefix) {
-			rpath = *routePrefix + rpath
+		if len(stack) > 0 {
+			prefix := stack[len(stack)-1].prefix
+			if !strings.HasPrefix(rpath, prefix) {
+				rpath = prefix + rpath
+			}
 		}
 
 		routes = append(routes, routeEntry{

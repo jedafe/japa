@@ -447,3 +447,9 @@ LIMIT @page_limit OFFSET @page_offset;
 SELECT user_id FROM space_members
 WHERE space_id = @space_id AND tenant_id = @tenant_id
 LIMIT @limit_val;
+-- name: UpdateSpaceLogoMediaID :one
+-- Updates only the logo_media_id on a space (used by university:fetch_logo task).
+UPDATE spaces
+SET logo_media_id = @logo_media_id
+WHERE id = @id AND tenant_id = @tenant_id
+RETURNING *;

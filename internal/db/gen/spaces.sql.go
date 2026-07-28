@@ -2016,6 +2016,51 @@ func (q *Queries) UpdateSpaceJoinRequest(ctx context.Context, arg UpdateSpaceJoi
 	return err
 }
 
+const updateSpaceLogoMediaID = `-- name: UpdateSpaceLogoMediaID :one
+UPDATE spaces
+SET logo_media_id = $1
+WHERE id = $2 AND tenant_id = $3
+RETURNING id, tenant_id, parent_id, space_type_id, name, slug, description, wiki_content, logo_media_id, header_image_id, geo_code, level, member_count, post_count, follower_count, visibility, posting_perm, replying_perm, commenting_perm, joining_perm, status, created_at, updated_at
+`
+
+type UpdateSpaceLogoMediaIDParams struct {
+	LogoMediaID pgtype.UUID `json:"logo_media_id"`
+	ID          pgtype.UUID `json:"id"`
+	TenantID    pgtype.UUID `json:"tenant_id"`
+}
+
+// Updates only the logo_media_id on a space (used by university:fetch_logo task).
+func (q *Queries) UpdateSpaceLogoMediaID(ctx context.Context, arg UpdateSpaceLogoMediaIDParams) (Space, error) {
+	row := q.db.QueryRow(ctx, updateSpaceLogoMediaID, arg.LogoMediaID, arg.ID, arg.TenantID)
+	var i Space
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.ParentID,
+		&i.SpaceTypeID,
+		&i.Name,
+		&i.Slug,
+		&i.Description,
+		&i.WikiContent,
+		&i.LogoMediaID,
+		&i.HeaderImageID,
+		&i.GeoCode,
+		&i.Level,
+		&i.MemberCount,
+		&i.PostCount,
+		&i.FollowerCount,
+		&i.Visibility,
+		&i.PostingPerm,
+		&i.ReplyingPerm,
+		&i.CommentingPerm,
+		&i.JoiningPerm,
+		&i.Status,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const updateSpacePinPosition = `-- name: UpdateSpacePinPosition :exec
 
 UPDATE space_pinned_posts

@@ -4,20 +4,23 @@
 // RegisterUniversityProcessor.
 //
 // Ref: japaconnect-engineering/sections/36-learning-platform.md (Japa University)
-//      japaconnect-engineering/adr/ADR-063-japa-university-creator-economy.md
+//
+//	japaconnect-engineering/adr/ADR-063-japa-university-creator-economy.md
 package worker
 
 import "context"
 
 // UniversityProcessor defines the contract for the Japa University creator
 // economy background tasks (ADR-063): paid enrollment ledger crediting,
-// period payout aggregation, payout execution, and creator notifications.
+// period payout aggregation, payout execution, creator notifications, and
+// university logo fetching for auto-seeded university spaces (Section 39).
 type UniversityProcessor interface {
 	ProcessEnrollment(ctx context.Context, tenantID, userID, trackID, paymentID, source string, grossKobo int64) error
 	CalculatePeriodPayouts(ctx context.Context, tenantID, periodStart, periodEnd string) error
 	SendInstructorPayout(ctx context.Context, tenantID, payoutID string) error
 	NotifyInstructorApproved(ctx context.Context, tenantID, instructorID string) error
 	NotifyCourseApproved(ctx context.Context, tenantID, trackID string) error
+	FetchLogo(ctx context.Context, tenantID, spaceID, logoURL, uploadedBy string) error
 }
 
 var universityProcessor UniversityProcessor

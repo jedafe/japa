@@ -51,6 +51,7 @@ const (
 	TypeUniversityNotifyCourseApproved     = "university:notify_course_approved"
 	TypeUniversitySendInstructorPayout     = "university:send_instructor_payout"
 	TypeUniversityCalculatePeriodPayouts   = "university:calculate_period_payouts"
+	TypeUniversityFetchLogo                = "university:fetch_logo"
 
 	// ---- Low tier (background maintenance, lowest concurrency) ----.
 
@@ -137,6 +138,7 @@ func RegisterHandlers(mux *asynq.ServeMux) {
 	mux.HandleFunc(TypeUniversityNotifyCourseApproved, HandleUniversityNotifyCourseApproved)
 	mux.HandleFunc(TypeUniversitySendInstructorPayout, HandleUniversitySendInstructorPayout)
 	mux.HandleFunc(TypeUniversityCalculatePeriodPayouts, HandleUniversityCalculatePeriodPayouts)
+	mux.HandleFunc(TypeUniversityFetchLogo, HandleUniversityFetchLogo)
 
 	// Low handlers
 	mux.HandleFunc(TypeDigestEmail, HandleDigestEmail)

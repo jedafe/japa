@@ -102,6 +102,16 @@ SET status      = 'approved',
 WHERE tenant_id = @tenant_id AND id = @id AND status = 'suspended'
 RETURNING *;
 
+-- name: DeleteInstructorProfile :one
+-- Admin hard-delete of an instructor's profile/application. Blocked while
+-- status='approved' — reject or suspend first so an active creator's
+-- identity cannot disappear out from under their live marketplace courses.
+-- revenue_splits/instructor_payouts.instructor_id are ON DELETE SET NULL
+-- (migration 000181) so financial audit records survive the delete.
+DELETE FROM instructor_profiles
+WHERE tenant_id = @tenant_id AND id = @id AND status != 'approved'
+RETURNING id, user_id;
+
 -- name: GetPublicInstructorProfile :one
 -- Public marketplace view: only approved instructors, no payout_method/KYC.
 SELECT id, tenant_id, user_id, display_name, headline, bio, social_links,

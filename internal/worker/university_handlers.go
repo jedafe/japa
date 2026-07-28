@@ -162,6 +162,48 @@ func HandleUniversityNotifyCourseApproved(ctx context.Context, t *asynq.Task) er
 	return universityProcessor.NotifyCourseApproved(ctx, payload.TenantID, payload.TrackID)
 }
 
+// HandleUniversityFetchLogo downloads a university logo from a remote URL,
+// stores it to SeaweedFS via the media service, and updates the space's
+// logo_media_id. Enqueued when an admin sets/changes a university's
+// logo_url via POST/PATCH /admin/universities (Section 39). Low-tier —
+// logo fetching is non-urgent and can be retried.
+//
+// Payload: { tenant_id, space_id, logo_url, uploaded_by }. uploaded_by is
+// the acting admin's user ID, attributed as the media uploader — there is
+// no generic "system user" row, so a missing/invalid uploaded_by causes
+// the fetch to be skipped rather than violating the media.uploader_user_id
+// NOT NULL FK.
+func HandleUniversityFetchLogo(ctx context.Context, t *asynq.Task) error {
+	slog.Info("task:university:fetch_logo")
+
+	if universityProcessor == nil {
+		slog.Warn("task:university:fetch_logo: no processor registered, skipping")
+		return nil
+	}
+
+	var payload struct {
+		TenantID   string `json:"tenant_id"`
+		SpaceID    string `json:"space_id"`
+		LogoURL    string `json:"logo_url"`
+		UploadedBy string `json:"uploaded_by"`
+	}
+	if err := parsePayloadOrSkip(t, &payload); err != nil {
+		slog.Error("task:university:fetch_logo: invalid payload", "error", err)
+		return err
+	}
+
+	if payload.LogoURL == "" {
+		slog.Warn("task:university:fetch_logo: empty logo_url, skipping")
+		return nil
+	}
+
+	if err := universityProcessor.FetchLogo(ctx, payload.TenantID, payload.SpaceID, payload.LogoURL, payload.UploadedBy); err != nil {
+		slog.Error("task:university:fetch_logo: processor failed", "error", err)
+		return err
+	}
+	return nil
+}
+
 // ensure encoding/json + fmt imports are referenced (used by parsePayload).
 var (
 	_ = json.Marshal

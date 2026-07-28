@@ -317,7 +317,8 @@ SELECT c.id, c.title, c.slug, c.content_type, c.author_id, c.space_id,
        (c.space_id  = ANY(COALESCE(@space_ids::uuid[], ARRAY[]::uuid[])))             AS is_space_followed,
        COUNT(DISTINCT t.id) FILTER (
            WHERE t.id = ANY(COALESCE(@tag_ids::uuid[], ARRAY[]::uuid[]))
-       )::int                                              AS followed_tag_overlap
+       )::int                                              AS followed_tag_overlap,
+       s.geo_code                                          AS space_geo_code
 FROM contents c
 JOIN candidate_ids ci ON ci.id = c.id
 LEFT JOIN content_scores cs ON cs.content_id = c.id
@@ -329,7 +330,7 @@ LEFT JOIN tags t ON t.id = ct.tag_id
 LEFT JOIN media m ON m.id = c.header_image_id AND m.deleted_at IS NULL
 GROUP BY c.id, cs.vote_score, cs.velocity_score, cs.bookmark_count,
          u.username, up.display_name, up.avatar_url,
-         s.name, s.slug,
+         s.name, s.slug, s.geo_code,
          m.storage_bucket, m.storage_path
 LIMIT @candidate_cap;
 
