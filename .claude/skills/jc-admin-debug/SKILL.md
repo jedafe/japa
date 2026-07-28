@@ -34,10 +34,17 @@ Root layout `ssr=false`/`prerender=false` · auth guard `$effect` + `goto('/logi
 Fixed-height container present · colors `var(--color-*)` only (test dark mode) · API date strings → `Date` objects · data from `/api/v1/admin/analytics/*` not hardcoded · skeleton per chart · LayerChart `Tooltip` vs Bits UI `Tooltip` import collision — alias one (`import { Tooltip as ChartTooltip } from 'layerchart'`).
 
 ## 5. RBAC UI
-Permission-node checks (`session.permissions.includes(...)`) not role-string checks · destructive controls hidden/disabled without permission · state-action buttons permission-gated individually (ban ≠ suspend permission).
+Permission-node checks (`session.permissions.includes(...)`) not role-string checks · destructive controls hidden/disabled without permission · state-action buttons permission-gated individually (ban ≠ suspend permission). **Japa University**: `university.instructor.approve` ≠ `university.instructor.suspend` ≠ `university.course.approve` ≠ `university.payout.process` — each is a separate node, gate each action individually.
 
 ## 6. Bits UI / Svelte 5
 Apply the full violation tables from `jc-main-debug` sections 2–3.
+
+## 6b. Japa University Admin (ADR-063 + Section 39)
+- **Instructor approval missing both directions:** approve without reject (or vice versa) — Gate 2 requires BOTH directions of every state transition. A pending instructor must have Approve AND Reject; an approved instructor must have Suspend AND Unsuspend.
+- **Payout method exposed:** `instructor_profiles.payout_method` (jsonb) shown raw in the admin UI — Critical security finding. Must be masked.
+- **University course approval one-directional:** only Approve without Reject — both required. Approve sets `is_published_to_university = true`; Reject keeps it false.
+- **Payout state machine broken:** `instructor_payouts` status must go pending→processing→paid or →failed. A jump from pending to paid (skipping processing) or from paid back to pending is a defect.
+- **University logo not uploading:** logo upload must go through Section 34 media (SeaweedFS + imgproxy) — if it's stored as a raw URL string, that's a defect.
 
 ## 7. Accessibility
 `<th scope="col">` + `aria-sort` on sortable headers · bulk buttons `disabled` (not hidden) when nothing selected · focus returns to trigger on dialog close · `aria-live="polite"` on table container during load.

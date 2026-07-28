@@ -33,6 +33,12 @@ Only for backend TipTap-rendered docs content — flag any other instance.
 ## 7. Standard Checks
 Apply `jc-main-debug` §§1–3, 5–7 (SSR/hydration, Runes, Bits UI, Tailwind, SEO, a11y). LayerChart checks (`jc-main-debug` §4) if usage-stat charts present.
 
+## 8. Japa University & Geo API Docs (ADR-063/064)
+- **Missing API reference pages:** if the new v1.11.0 routes (`/geo/me`, `/learn/university/*`, `/universities`, `/admin/universities`, `/me/payouts`) don't have API reference pages, that's a docs gap — flag it
+- **`?geo=` param not documented:** feed/search/trending routes should document the `?geo=` default behavior (ContentCountry when absent, `?geo=all` for global)
+- **`price_kobo` unit confusion:** if docs show `price_kobo` without specifying it's an integer in kobo (not naira), flag it
+- **`is_published_to_university` vs `is_published`:** if docs conflate these two flags, flag it — they're distinct (marketplace visibility vs platform publish)
+
 ## Output Protocol
 1. Root cause · 2. Broken code · 3. Fixed code · 4. Secondary findings
 

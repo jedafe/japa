@@ -33,6 +33,15 @@ Custom accordions → `<Accordion.Root type="multiple">`; custom tabs → `<Tabs
 ## 6. Standard Migrations
 Apply `jc-main-refactor` §§1–2, 4–5 (Svelte 4→5, Bits UI, Rule 16, skeletons, Tailwind v4, i18n, a11y, types).
 
+## 7. Japa University Marketplace (ADR-063)
+- **Add host detection:** if root `+layout.server.ts` doesn't check the host against `university.surface_domain`, add it — set `data.isUniversity` and render the branded shell variant.
+- **Split catalog endpoints:** if the marketplace catalog calls `/learn/tracks` (all tracks), switch to `/learn/university/tracks` (only `is_published_to_university = true`).
+- **Add creator flow:** instructor application (`POST /learn/university/instructors/apply`), course submission (`POST /learn/university/tracks/:id/submit`), instructor dashboard (`/dashboard/instructor` with `GET /me/payouts`). Verify routes via Gate 0 first.
+- **Price display:** raw `price_kobo` → formatted currency; NULL → "Free" or "Pro" based on user's Pro status.
+- **Course reviews:** if a custom review component was built for courses, replace with the Section 29 polymorphic review component (`entity_type = 'learning_track'`).
+- **Pro dual-access:** add Pro status check before rendering price — Pro users see "Included with Pro".
+- **SSR/CSR boundary:** instructor dashboard and payout data must be CSR (session-guarded) — move any SSR payout/revenue fetch to `$effect`.
+
 ## App Shell & LayerChart (ADR-060 / ADR-059)
 - Learn uses the unified shell (ADR-058) adapted per ADR-060: collapsible left nav (learning-oriented, state via `ui.nav_collapsed` server-side — not localStorage), center, right sidebar (continue/streak/up-next). Flag surfaces built as a top-nav or standalone layout.
 - Lesson player is Learn's reading exception: collapsed nav + `CurriculumRail` (borderless, part of the content — not a second nav) + lesson-meta panel. Flag two-sidebar-looking rails.

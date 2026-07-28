@@ -28,7 +28,19 @@ All Control Panel dashboards render metrics with LayerChart:
 ## Key Page Patterns
 **API Keys:** DataTable · create in `<Dialog.Root>` with scope multi-select · show key ONCE in reveal dialog (copy button + `<Tooltip.Root>` "Copied!") · never keep raw key in `$state` after close (`onOpenChange` clears) · Revoke = state action with confirmation.
 **Extensions:** card grid + `<Toggle.Root>` per extension · toggle disabled while PATCH in-flight · optimistic + rollback · disabling with active content → warning dialog · Configure → manifest-driven settings dialog.
-**System Settings (49 keys):** `<Tabs.Root>` per category · type-appropriate inputs · JSON values validated before save · deep-equality dirty tracking (`$derived(JSON.stringify(a)!==JSON.stringify(b))`) · unsaved banner + `beforeNavigate` guard · batch `PATCH` with `[{key,value}]`.
+**System Settings (85 keys):** `<Tabs.Root>` per category · type-appropriate inputs · JSON values validated before save · deep-equality dirty tracking (`$derived(JSON.stringify(a)!==JSON.stringify(b))`) · unsaved banner + `beforeNavigate` guard · batch `PATCH` with `[{key,value}]`.
+
+**Geo-aware personalization (ADR-064) settings:**
+- `geo_personalization.enabled` (boolean, default `true`) — the killswitch. When false, all surfaces fall back to global ranking. Prominently placed in the settings UI with a warning dialog on disable ("This will disable geo-personalized content for all users").
+- Feed geo boost cap, search geo weight multiplier — numeric settings, tuneable without deploy.
+
+**Japa University (ADR-063) settings:**
+- `university.default_commission_pct`, `university.verified_tier_commission_pct`, `university.partner_tier_commission_pct` — revenue split percentages per tier.
+- `university.pro_stream_rate_kobo` — per-Pro-learner stream rate for creator compensation.
+- `university.payout_min_threshold_kobo` — minimum payout amount; below this, payouts roll to next period.
+- `university.payout_period_days` — payout cycle length.
+- `university.surface_domain` — the Japa University branded domain (default `university.japaconnect.com`). Changing this affects host detection in the Learn app.
+
 **Job Queue:** tabs Critical/Default/Low · stats + failed-jobs DataTable (retry action) · poll 15s.
 **Health:** service cards + LayerChart sparklines · poll 30s.
 **Safe polling (mandatory pattern):**

@@ -1,6 +1,6 @@
 ---
 name: jc-main-develop
-description: Use when building new pages or components for the JapaConnect Main App (apps/web, port 3000, SSR). Covers SvelteKit 2 + Svelte 5 Runes + Bits UI + Tailwind v4 + LayerChart 2.0.1, the unified X.com-style app shell (ADR-058) and its three exceptions, the profile learning hub and cross-app links into Learn and Docs (ADR-060), the full visual design language, the API-Readiness Gate, and Rule 16.Use when building new pages or components for the JapaConnect Main App (apps/web, port 3000, SSR). Covers SvelteKit 2 + Svelte 5 Runes + Bits UI + Tailwind v4 + LayerChart 2.0.1, the unified X.com-style app shell (ADR-058) and its three exceptions, the full visual design language, the API-Readiness Gate, and Rule 16.
+description: Use when building new pages or components for the JapaConnect Main App (apps/main, port 3000, SSR). Covers SvelteKit 2 + Svelte 5 Runes + Bits UI + Tailwind v4 + LayerChart 2.0.1, the unified X.com-style app shell (ADR-058) and its three exceptions, the profile learning hub and cross-app links into Learn and Docs (ADR-060), the full visual design language, the API-Readiness Gate, and Rule 16.Use when building new pages or components for the JapaConnect Main App (apps/web, port 3000, SSR). Covers SvelteKit 2 + Svelte 5 Runes + Bits UI + Tailwind v4 + LayerChart 2.0.1, the unified X.com-style app shell (ADR-058) and its three exceptions, the full visual design language, the API-Readiness Gate, and Rule 16.
 ---
 
 # JapaConnect Main App — Development Skill
@@ -90,7 +90,41 @@ Compose button/tab → `ComposeModal.svelte` with a content-type selector. Discu
 ### 3. Guest homepage (`/` unauthenticated) — Hashnode-style landing
 - NOT the shell. Rendered by the Page Builder from the `homepage` route-assignment (falls back to `/explore` when none assigned).
 - Slim marketing header → hero/slider → "Explore by destination" grid → trending discussions → featured universities → latest blog → newsletter form embed → CTA banner → footer. Ad slots: `hero_below`, `landing_inline_1`, `landing_footer`.
+- **Geo-aware (ADR-064):** the "Explore by destination" grid and trending discussions are geo-weighted server-side via `VisitorContext.ContentCountry` — a guest from Nigeria sees "planning to relocate" content; a guest from the UK sees "settling in / community" content; a global traveler is routed toward Japa University. This is SSR (no client flicker) and degrades gracefully when `GeoContext` is absent (falls back to global). The `?geo=` param always wins over the resolved `ContentCountry`.
 - Authenticated `/` is the Primary timeline in the shell (ADR-032, unchanged).
+
+---
+
+# UNIVERSITY DISCOVERY (Section 39 — inside the shell)
+
+Universities are a first-class space type (`space_type = 'university'`) with a dedicated discovery page and single-page profile. Both render inside `AppShell` — they are NOT exceptions.
+
+## `/universities` — discovery list (center column)
+- Filters: country (Geo Space selector), ranking tier, tuition range, programs, scholarship — all from `GET /api/v1/universities?country=&q=&page=`
+- Sort: world ranking | country ranking | name | member count | follower count
+- Layout: grid of university cards (logo, name, country, ranking, top programs) or list toggle
+- Each card: `<FollowButton>`, View button → `/universities/[slug]`
+- SEO: JSON-LD `ItemList` of `EducationalOrganization`
+- **Geo-aware:** default country filter pre-populated from `VisitorContext.ContentCountry` (a UK visitor sees UK universities first). Explicit filter always wins.
+
+## `/universities/[slug]` — single university page (center column + right sidebar)
+- Header: logo (profile image), name, country flag, rankings, quick stats bar
+- Center tabs: Overview (rich wiki TipTap) · Posts (content in this Space) · Forums (threads) · Courses (linked `learning_tracks` from Section 36) · Members · Reviews (Section 29 ratings) · Compare (link to Section 30 comparison)
+- Right sidebar: key custom field values (ranking, tuition, programs, etc.)
+- "Compare" button → opens Section 30 comparison with this university pre-selected as Item 1
+- SEO: JSON-LD `EducationalOrganization` + `AggregateRating` from Section 29
+- All data from `/api/v1/universities/:slug` — no hardcoded university data (Rule 16)
+
+---
+
+# GEO-AWARE PERSONALIZATION (ADR-064 — consumed in the frontend)
+
+The backend resolves `VisitorContext` (ADR-064) and exposes `ContentCountry` via `GET /api/v1/geo/me`. The frontend consumes it as a **default**, never a hard filter:
+
+- **Feed header override control:** an inline control in the feed header ("Showing: Nigeria · Change") — NOT buried in settings. Surfaced from `VisitorContext.ContentCountry`; changing it calls `PATCH /api/v1/me/profile` (`content_country_preference`) and invalidates the feed. Important for a diaspora audience that straddles two countries.
+- **Feed sort:** the `?geo=` param on feed/trending/discovery routes defaults to `ContentCountry` when absent. Explicit `?geo=all` for global. Never hide non-local content — re-weight only.
+- **Guest homepage:** geo-weighted SSR (above). No client flicker — the geo-resolved content is in the initial HTML.
+- **Killswitch:** if `geo_personalization.enabled = false`, all surfaces show global content. The frontend does not need to check this — the backend returns global results when the killswitch is off.
 
 ---
 

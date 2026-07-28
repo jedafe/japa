@@ -35,8 +35,18 @@ Lesson HTML SSR'd · highlight lib dynamically imported · lazy media · accordi
 ## H. Standard Compliance
 Apply `jc-main-audit` §§B (Rule 16), D (Bits UI), B(runes), H (a11y — plus progressbar roles, aria-disabled locked lessons, labeled quiz inputs), I (i18n).
 
+## I. Japa University Marketplace (ADR-063)
+- **Host detection:** root `+layout.server.ts` checks host against `university.surface_domain` → renders branded shell variant. Flag missing or client-side host detection.
+- **Marketplace catalog:** `/learn/university/tracks` filters `is_published_to_university = true` — flag if calling `/learn/tracks` instead (unpublished courses would leak).
+- **Creator flow:** instructor application, course submission, and instructor dashboard routes all verified via Gate. Flag any hardcoded creator/marketplace data (Rule 16).
+- **Price display:** `price_kobo` formatted as currency; NULL → "Free" or "Pro" (Pro status checked). Flag raw kobo display.
+- **Pro dual-access:** Pro subscribers see "Included with Pro" — flag if price shown to Pro users.
+- **Course reviews:** use polymorphic `reviews` (`entity_type = 'learning_track'`) — flag a custom/separate review system (ADR-063 §2 violation).
+- **SSR/CSR boundary for marketplace:** instructor dashboard, payout data, and revenue are CSR (session-guarded) — flag any in SSR `load()` (same critical class as §A).
+- **Instructor dashboard LayerChart:** revenue-over-time chart uses LayerChart, Gate-verified data, CSS-var colors, fixed height, skeleton.
+
 ## Report Format
-Same structure as `jc-main-audit` with categories: SSR/CSR boundary · API routes · Rule 16 · Progress logic · LayerChart · Bits UI · Svelte 5 · SEO · Performance · A11y.
+Same structure as `jc-main-audit` with categories: SSR/CSR boundary · API routes · Rule 16 · Progress logic · LayerChart · Bits UI · Svelte 5 · SEO · Performance · A11y · **Japa University marketplace (ADR-063)**.
 
 ## App Shell & LayerChart (ADR-060 / ADR-059)
 - Learn uses the unified shell (ADR-058) adapted per ADR-060: collapsible left nav (learning-oriented, state via `ui.nav_collapsed` server-side — not localStorage), center, right sidebar (continue/streak/up-next). Flag surfaces built as a top-nav or standalone layout.

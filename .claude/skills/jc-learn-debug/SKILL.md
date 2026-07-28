@@ -37,6 +37,15 @@ Apply `jc-main-debug` §4 (containers, colors, Date conversion, skeletons, toolt
 ## 8. Standard Checks
 Apply `jc-main-debug` §§1–3, 5–7 (SSR/hydration, Runes, Bits UI, Tailwind, a11y).
 
+## 9. Japa University Marketplace (ADR-063)
+- **Host detection broken:** university shell not rendering on `university.japaconnect.com` — check root `+layout.server.ts` host comparison against `system_settings.university.surface_domain`. If the setting is empty, it defaults to `university.japaconnect.com`.
+- **Marketplace catalog shows unpublished courses:** `GET /learn/university/tracks` must filter `is_published_to_university = true` — if draft/unapproved courses appear, the backend filter is missing or the frontend is calling the wrong endpoint (`/learn/tracks` instead of `/learn/university/tracks`).
+- **Creator application status stuck:** `instructor_profiles.status` not updating after admin approval — check the admin approval route and `university:notify_instructor_approved` task wiring.
+- **Price display wrong:** `price_kobo` is in kobo (integer) — display as formatted currency. NULL price = "Free" or "Pro" (check user's Pro status). Don't show raw kobo value.
+- **Instructor dashboard data leak:** payout/revenue data must be CSR (session-guarded) — if it appears in SSR HTML, that's a critical SSR/CSR boundary violation (same class as §1).
+- **Pro dual-access not reflected:** Pro subscriber sees a price instead of "Included with Pro" — check Pro status check before rendering price.
+- **Course reviews missing:** reviews should use the polymorphic `reviews` table (`entity_type = 'learning_track'`) — if a separate review system was built, that's a defect (ADR-063 §2: reuse, no `course_reviews` table).
+
 ## Output Protocol
 1. Root cause · 2. Broken code · 3. Fixed code · 4. Secondary findings
 
