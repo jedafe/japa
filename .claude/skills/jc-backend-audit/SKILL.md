@@ -32,22 +32,29 @@ Per entity: List / Get / Create / Update / Delete / state-transitions-both-direc
 - [ ] Config: JSON-encoded settings decode correctly (round-trip test exists)
 
 ## D. Migration Integrity
-Every `.up.sql` has a correct `.down.sql` twin · numbering contiguous · no edits to applied migrations (checksum/history check) · schema table count vs JEOS-stated 145 — report actual, flag drift · circular FK (users↔spaces) still resolved via stub+ALTER pattern.
+Every `.up.sql` has a correct `.down.sql` twin · numbering contiguous · no edits to applied migrations (checksum/history check) · schema table count vs JEOS-stated 148 — report actual, flag drift · circular FK (users↔spaces) still resolved via stub+ALTER pattern. **Japa University**: migration `000166` adds 3 tables (`instructor_profiles`, `revenue_splits`, `instructor_payouts`) + columns on `learning_tracks`/`enrollments`; migration `000167` adds `user_profiles.content_country_preference`. Verify `revenue_splits` has no UPDATE-enabling constructs (append-only, wallet-ledger philosophy).
 
 ## E. Asynq Reconciliation
-Enqueue call sites vs registered task types vs `asynq-tasks.md` (JEOS says 68 — report actual) · every task idempotent or justified · queue tiers sensible (payments/auth=critical, search sync/emails=default, digests/cleanup=low) · retry+backoff configured · dead-letter monitoring wired.
+Enqueue call sites vs registered task types vs `asynq-tasks.md` (JEOS says 72 — report actual) · every task idempotent or justified · queue tiers sensible (payments/auth/university-payouts=critical, search sync/emails/university-notifications=default, digests/cleanup/payout-calc/university-logo=low) · retry+backoff configured · dead-letter monitoring wired. **Japa University tasks**: `university:process_enrollment` (idempotent on payment_id), `university:calculate_period_payouts` (scheduled), `university:send_instructor_payout` (idempotent, advisory-locked), `university:notify_instructor_approved`, `university:notify_course_approved`, `university:fetch_logo`. **Geo**: `maintenance:update_geoip_db` (weekly, atomic reader swap).
 
 ## F. Valkey & Settings Reconciliation
-Keys in code vs `valkey-keys.md` (34 patterns stated) · all `jc:` namespaced · TTLs on every cache key · invalidation paired with every cached read's write path · `system_settings` keys in code vs catalog (49 stated) vs seed.
+Keys in code vs `valkey-keys.md` (35 patterns stated) · all `jc:` namespaced · TTLs on every cache key · invalidation paired with every cached read's write path · `system_settings` keys in code vs catalog (85 stated) vs seed. **Geo**: `jc:visitor:ctx:{session_id}` (30-min TTL) — verify cache invalidation on `content_country_preference` change. **Japa University**: `jc:uni:instructor:{user_id}`, `jc:uni:payout:period:{instructor_id}:{period}`, `jc:uni:enrollment:processed:{payment_id}` — verify idempotency guard TTLs. **Settings**: `geo_personalization.enabled` (killswitch), `university.*` (7 keys), `university.surface_domain`.
 
 ## G. Security
 sqlc-only data access (grep for `Exec(`/`Query(` with concatenated strings) · input validation on every handler · MIME sniffing on uploads · rate limiting on auth + expensive routes · secrets absent from logs/responses · tenant_id filtering on every tenant-scoped store method (sample-test cross-tenant access) · webhook signature verification + idempotency.
 
 ## H. GDPR/NDPR Erasure Completeness
-User deletion cascades through every user-owned table (enumerate against schema) AND calls the Honcho deletion API (required) · erasure task idempotent and resumable · exports cover the same surface.
+User deletion cascades through every user-owned table (enumerate against schema) AND calls the Honcho deletion API (required) · erasure task idempotent and resumable · exports cover the same surface. **Japa University**: `instructor_profiles`, `revenue_splits`, `instructor_payouts` are user-owned — erasure must cascade. `revenue_splits` are financial audit records: **anonymize the instructor reference, never delete the split row** (regulatory retention). `payout_method` (jsonb) is sensitive — encrypted at app layer, follow Section 19 handling rules.
 
 ## I. Contract Quality
 List routes return pagination meta · error responses use code+message shape · timestamps RFC 3339 UTC · IDs stringified · 4xx/5xx semantics correct (no 500 for expected conditions).
+
+## J. Geo-Aware Personalization (ADR-064)
+- `VisitorContext` resolver wired after `GeoIPMiddleware` in the middleware chain · `ContentCountry` resolves correctly (override > profile > IP) · cached at `jc:visitor:ctx:{session_id}` (30-min TTL) with invalidation on preference change.
+- Feed geo boost (§32) is **bounded** — verify cap prevents local content from dominating engagement/velocity signals. Search `relevant_countries` attribute populated on content sync. Trending/discovery routes default to `ContentCountry` when `?geo=` absent.
+- `geo_personalization.enabled` killswitch works — when false, all surfaces fall back to global ranking.
+- Archetype market lists (origin vs destination countries) are in config, not hardcoded in Go source.
+- Guest homepage geo rendering is SSR (no client flicker) and degrades gracefully when `GeoContext` is absent.
 
 ## Report Format
 ```
@@ -55,10 +62,10 @@ List routes return pagination meta · error responses use code+message shape · 
 **Status:** PASS / NEEDS FIXES
 ### Critical (block deployment) / High / Medium / Low
 ### Reconciliation Counts (actual vs JEOS-stated)
-| Routes: [n] vs catalog [n] | Permission nodes: seed [n] vs checked [n] vs stated 249 |
-| Tables: [n] vs 145 | Asynq tasks: [n] vs 68 | Valkey patterns: [n] vs 34 | Settings keys: [n] vs 49 |
+| Routes: [n] vs catalog ~454 | Permission nodes: seed [n] vs checked [n] vs stated 249+ |
+| Tables: [n] vs 148 | Asynq tasks: [n] vs 72 | Valkey patterns: [n] vs 35 | Settings keys: [n] vs 85 |
 ### RBAC CRUD Matrix
-[entity × routes table]
+[entity × routes table — include Japa University: instructor_profiles, revenue_splits, instructor_payouts, universities (space type)]
 ### BE-Series Regression Results
 [checklist with pass/fail]
 ### Compliance Summary
@@ -70,4 +77,6 @@ List routes return pagination meta · error responses use code+message shape · 
 | Valkey/settings | ✅/❌ |
 | Security | ✅/❌ |
 | GDPR erasure | ✅/❌ |
+| Geo-aware personalization (ADR-064) | ✅/❌ |
+| Japa University revenue/payouts (ADR-063) | ✅/❌ |
 ```

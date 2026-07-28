@@ -10,6 +10,13 @@ Developer + user documentation at `docs.japaconnect.com`. SSR (adapter-node + Bu
 ## ⛔ API-READINESS GATE
 Same as `jc-main-develop`: list endpoints → verify (catalog or probe) → any missing: STOP + ⚠️ MISSING BACKEND API ROUTES alert. Never mock, never hardcode the nav tree or page content. Known routes: `GET /docs/nav` (audience-filtered tree), `GET /docs/:audience/:slug` (page), `GET /docs/search?q=&audience=`, OpenAPI spec — verify each before use.
 
+## Japa University & Geo-Aware API Docs (ADR-063/064)
+When documenting the new v1.11.0 API surfaces, ensure the API reference pages cover:
+- **Geo-aware (ADR-064):** `GET /api/v1/geo/me` (returns `VisitorContext` with `ContentCountry`, archetype, confidence), `GET /api/v1/geo/lookup?ip=` (admin). Document the `?geo=` param behavior on feed/search/trending/discovery routes (defaults to `ContentCountry` when absent, explicit `?geo=all` for global).
+- **Japa University (ADR-063):** `/api/v1/learn/university/tracks` (marketplace catalog), `/api/v1/learn/university/instructors/apply`, `/api/v1/me/instructor-profile`, `/api/v1/learn/university/tracks/:id/submit`, `/api/v1/me/payouts`. Document `price_kobo` (integer, kobo), `is_published_to_university` (distinct from `is_published`), and Pro dual-access behavior.
+- **University spaces (Section 39):** `GET /api/v1/universities` (public discovery), `GET /api/v1/universities/:slug`, admin CRUD at `/api/v1/admin/universities`. Document `university_fields` custom field group.
+- These are API reference pages (`/docs/api/:slug`) — use the three-column API-docs variant with method badges, Request/Response/Example tabs.
+
 ## The Shell (ADR-058 primitives, ADR-060 drift)
 `AppShell` (collapsible `LeftNav` + center + `RightSidebar`), `ui.nav_collapsed` server-persistence (never localStorage), sticky right-sidebar top bar (⌘K launcher + avatar), dark-mode tokens, mobile single-column.
 - **Left nav = the audience-gated doc nav tree** (NOT social items): render the `DocNavTree` from `GET /api/v1/docs/nav` — section groups → pages → sub-pages, active link highlighted (left-border accent), Stripe-docs section headers. An **audience switcher** sits in the nav header (only audiences the session can access, server-resolved). Collapsible.

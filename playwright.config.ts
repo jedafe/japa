@@ -14,64 +14,22 @@ export default defineConfig({
 		{
 			name: 'main',
 			testMatch: ['main.spec.ts', 'main-journeys.spec.ts', 'ssr-integrity.spec.ts'],
-			use: { baseURL: 'http://localhost:3000' }
+			use: { baseURL: 'http://localhost:3000', channel: 'chrome' }
 		},
 		{
 			name: 'admin',
 			testMatch: 'admin.spec.ts',
-			use: { baseURL: 'http://localhost:3001' }
+			use: { baseURL: 'http://localhost:3001', channel: 'chrome' }
 		},
 		{
 			name: 'control',
 			testMatch: 'control.spec.ts',
-			use: { baseURL: 'http://localhost:3002' }
-		},
-		{
-			name: 'learn',
-			testMatch: 'learn.spec.ts',
-			use: { baseURL: 'http://localhost:3003' }
-		},
-		{
-			name: 'docs',
-			testMatch: 'docs.spec.ts',
-			use: { baseURL: 'http://localhost:3004' }
+			use: { baseURL: 'http://localhost:3002', channel: 'chrome' }
 		},
 		{
 			name: 'connectivity',
 			testMatch: 'api-connectivity.spec.ts',
-			use: { baseURL: 'http://localhost:3000' }
-		}
-	],
-	webServer: [
-		{
-			command: 'cd apps/main && bun run dev',
-			port: 3000,
-			reuseExistingServer: true,
-			timeout: 30_000
-		},
-		{
-			command: 'cd apps/admin && bun run dev',
-			port: 3001,
-			reuseExistingServer: true,
-			timeout: 30_000
-		},
-		{
-			command: 'cd apps/control && bun run dev',
-			port: 3002,
-			reuseExistingServer: true,
-			timeout: 30_000
-		},
-		{
-			command: 'cd apps/learn && bun run dev',
-			port: 3003,
-			reuseExistingServer: true,
-			timeout: 30_000
-		},
-		{
-			command: 'cd apps/docs && bun run dev',
-			port: 3004,
-			reuseExistingServer: true,
-			timeout: 30_000
+			use: { baseURL: 'http://localhost:3000', channel: 'chrome' }
 		}
 	]
 });

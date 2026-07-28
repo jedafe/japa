@@ -1,6 +1,6 @@
 ---
 name: japa-bugs-hunters
-description: JapaConnect comprehensive bug hunter. On load it presents a menu — (1) a frontend URL or page name of any of the 5 apps, (2) a backend API route, or (3-8) a whole surface (backend / main / control / admin / docs / learn). It hunts bugs from the JapaConnect Bug Hunter's Guide (Prompts/japa-bugs-hunters.md) against the page/route/surface, fixes frontend issues, and — when a bug needs backend work (missing route, unwired handler, incomplete CRUD, migration, RBAC, Valkey, Asynq, GDPR) — fixes the backend too until the target is 100% working. Use when the user says "hunt bugs", "bug hunt", "audit and fix", "fix bugs on <page/route>", or triggers /japa-bugs-hunters.
+description: JapaConnect comprehensive bug hunter. On load it presents a menu — (1) a frontend URL or page name of any of the 5 apps, (2) a backend API route, (3-8) a whole surface (backend / main / control / admin / docs / learn), (9) a feature name from ./internal (e.g. forum, like, bookmark, ai, affiliate) for a full cross-stack audit against JEOS Specs with findings saved to ./.jeos/audit, or (10) apply fixes to a feature's audit findings in ./.jeos/audit/<feature_name>-audit.md. It hunts bugs from the JapaConnect Bug Hunter's Guide (Prompts/japa-bugs-hunters.md) against the page/route/surface/feature, fixes frontend issues, and — when a bug needs backend work (missing route, unwired handler, incomplete CRUD, migration, RBAC, Valkey, Asynq, GDPR) — fixes the backend too until the target is 100% working. Use when the user says "hunt bugs", "bug hunt", "audit and fix", "fix bugs on <page/route>", "audit feature <name>", "fix [feature_name]", or triggers /japa-bugs-hunters.
 ---
 
 # JapaConnect Bug Hunter
@@ -68,11 +68,38 @@ options:
       Audit + fix apps/docs (port 3004, SSR) against the Guide.
   - label: "Learn platform"           (option 8)
       Audit + fix apps/learn (port 3003, SSR) against the Guide.
+  - label: "Feature name (from ./internal)"  (option 9)
+      A specific feature in the ./internal folder (e.g. forum, like, bookmark, ai, affiliate). The
+      agent asks the user to input the feature name, then runs a full cross-stack audit (backend +
+      frontend across all 5 apps + JEOS spec) for that feature, categorizes bugs by class, and saves
+      findings to ./.jeos/audit/<feature_name>-audit.md.
+  - label: "Fix feature audit findings"      (option 10)
+      Apply fixes to the bugs recorded in ./.jeos/audit/<feature_name>-audit.md (produced by Option
+      9). The agent asks for the feature name, reads the audit file, and fixes each open bug using
+      the standard japa-bugs-hunters workflow (Options 1–8 fix rules). Every successfully fixed bug
+      is marked **already implemented** in the audit file so it is never re-fixed.
 ```
 
 After the user answers, read `Prompts/japa-bugs-hunters.md` in full, then execute the matching
 workflow below. **Never skip reading the Guide** — it contains the section-number references you must
 cite in fixes and reports.
+
+**If the user picks Option 9:** immediately ask them to input the feature name (a folder under
+`./internal`, e.g. `forum`, `like`, `bookmark`, `ai`, `affiliate`). Validate that
+`./internal/<feature_name>` exists before proceeding; if it does not, list the available
+`./internal/*` subdirectories and ask the user to pick one. Then execute the **Option 9 — Feature
+Audit** workflow below.
+
+**If the user picks Option 10:** immediately ask them to input the feature name. Validate that
+`./.jeos/audit/<feature_name>-audit.md` exists; if it does not, list every file in `./.jeos/audit/`
+and ask the user to pick one (or suggest running Option 9 first to produce the audit). Then execute
+the **Option 10 — Fix Feature Audit Findings** workflow below.
+
+**Shortcut trigger:** if the user invokes the skill as `/japa-bugs-hunters "fix [feature_name]"`
+(e.g. `/japa-bugs-hunters "fix forum"`, `/japa-bugs-hunters fix bookmark`), skip the menu entirely
+and jump straight to the **Option 10 — Fix Feature Audit Findings** workflow with the supplied
+`[feature_name]`. The phrase is case-insensitive and the quotes are optional. If the audit file does
+not exist for that feature, tell the user and offer to run Option 9 first.
 
 ---
 
@@ -147,6 +174,197 @@ Map the surface to its bug sections, then audit file-by-file and fix:
 
 For each surface, produce the structured report (see below) and apply fixes until clean. Re-run the
 dev server / `svelte-check` / `go build ./...` / `gosec` as appropriate to verify.
+
+## Option 9 — Feature Audit (from ./internal)
+
+This is a **read-only audit + findings report** workflow. Unlike Options 1–8, Option 9 does **not**
+auto-fix bugs — it produces a categorized findings file in `./.jeos/audit/` for the user to triage.
+The user supplies `[feature_name]` = any folder under `./internal` (e.g. `forum`, `like`, `bookmark`,
+`ai`, `affiliate`).
+
+Run the following prompt against the supplied `[feature_name]`, then save the output to
+`./.jeos/audit/<feature_name>-audit.md` (create the `.jeos/audit/` folder if it does not exist):
+
+> There are multiple irregularities in the [feature_name] features, thoroughly review and audit the
+> [feature_name] feature for bugs, business logics, backend communication, UI Logics, UX Logics, and
+> all its intended functionalities according to JEOS Specs. Save your findings to a file in
+> `./.jeos/audit` folder.
+>
+> a. Map backend [feature_name] feature (handlers, services, stores, migrations, RBAC, Valkey, Asynq,
+>    GDPR).
+> b. Map frontend [feature_name] feature across all 5 apps (components, pages, API calls, UI/UX, i18n).
+> c. Map JEOS spec for [feature_name] feature (sections, routes catalog, permissions, Valkey, Asynq,
+>    settings, ADRs).
+> d. Cross-check implementation against JEOS spec; identify conformance gaps.
+> e. Categorize bugs by class (business logic, backend comms, UI/UX, RBAC, security, performance,
+>    GDPR).
+
+### Execution Steps
+
+1. **Validate the feature name.** Confirm `./internal/<feature_name>` exists. If not, list
+   `./internal/*` subdirectories and ask the user to pick a valid one.
+2. **Read the Guide** (`Prompts/japa-bugs-hunters.md`) and the relevant `.jeos/sections/*` files for
+   the feature (search by feature name). Also read `conventions/api-routes-catalog.md`,
+   `permission-key-naming.md`, `valkey-keys-catalog.md`, `asynq-tasks.md`, `system-settings-catalog.md`.
+3. **(a) Map backend** — list every handler, service, store, sqlc query, migration, RBAC node,
+   Valkey key, Asynq task, and GDPR erasure entry that belongs to the feature. Use `grep`/`glob` over
+   `./internal/<feature_name>`, `./internal/db/queries/`, `./db/migrations/`, `./internal/rbac/`,
+   `./internal/valkey/`, `./internal/asynq/`, `./internal/gdpr/`.
+4. **(b) Map frontend** — for each of the 5 apps (`apps/web`, `apps/admin`, `apps/control`,
+   `apps/learn`, `apps/docs`), list components, pages/routes, API calls (`/api/v1/<feature>/*`),
+   UI/UX flows, and i18n keys referencing the feature.
+5. **(c) Map JEOS spec** — list every section, route catalog entry, permission key, Valkey key,
+   Asynq task, system setting, and ADR that governs the feature.
+6. **(d) Cross-check** — for each spec item, mark ✅ (implemented & conformant) / ⚠️ (implemented but
+   non-conformant) / ❌ (missing). Record the conformance gap with file:line citations.
+7. **(e) Categorize bugs** by class: `business-logic`, `backend-comms`, `ui-ux`, `rbac`, `security`,
+   `performance`, `gdpr`. For each bug include: id, class, severity (critical/high/medium/low),
+   title, file:line, description, spec reference, suggested fix.
+8. **Save findings** to `./.jeos/audit/<feature_name>-audit.md` using the template below.
+9. **Do not apply fixes** unless the user explicitly asks. Option 9 is audit-only; the user can later
+   trigger Options 1–8 to fix specific bugs surfaced here.
+
+### Findings File Template — `./.jeos/audit/<feature_name>-audit.md`
+
+```markdown
+# Feature Audit — <feature_name>
+
+- Date: <ISO date>
+- Auditor: japa-bugs-hunters (Option 9)
+- Feature path: ./internal/<feature_name>
+
+## 1. Backend Map
+- Handlers: <list with file:line>
+- Services: <list>
+- Stores / sqlc queries: <list>
+- Migrations: <list>
+- RBAC nodes: <list>
+- Valkey keys: <list>
+- Asynq tasks: <list>
+- GDPR erasure coverage: <tables covered / missing>
+
+## 2. Frontend Map (all 5 apps)
+### apps/web (main)
+- Components: <list> · Pages: <list> · API calls: <list> · i18n keys: <list>
+### apps/admin
+- ...
+### apps/control
+- ...
+### apps/learn
+- ...
+### apps/docs
+- ...
+
+## 3. JEOS Spec Map
+- Sections: <list>
+- Routes catalog entries: <list>
+- Permission keys: <list>
+- Valkey keys: <list>
+- Asynq tasks: <list>
+- System settings: <list>
+- ADRs: <list>
+
+## 4. Conformance Cross-Check
+| Spec item | Status | Implementation | Gap |
+| --- | --- | --- | --- |
+| ... | ✅/⚠️/❌ | <file:line or "missing"> | <description> |
+
+## 5. Bugs by Class
+### business-logic
+- BUG-001 [severity] — <title> — <file:line> — <description> — spec ref — suggested fix
+### backend-comms
+- ...
+### ui-ux
+- ...
+### rbac
+- ...
+### security
+- ...
+### performance
+- ...
+### gdpr
+- ...
+
+## 6. Summary
+- Total bugs: <n> (critical <n>, high <n>, medium <n>, low <n>)
+- Conformance: <n> ✅ / <n> ⚠️ / <n> ❌
+- Top priorities: <3-5 bullet list>
+```
+
+## Option 10 — Fix Feature Audit Findings
+
+This workflow consumes the audit file produced by Option 9 (`./.jeos/audit/<feature_name>-audit.md`)
+and applies fixes to every open bug entry. It reuses the standard japa-bugs-hunters fix rules
+(Options 1–8 + Cross-Cutting Fix Rules) but is driven by the audit's bug list instead of a live
+page/route scan.
+
+### Trigger
+
+- User picks **Option 10** from the menu, OR
+- User invokes `/japa-bugs-hunters "fix [feature_name]"` (case-insensitive, quotes optional).
+
+### Execution Steps
+
+1. **Resolve the feature name.**
+   - From the shortcut trigger: parse `[feature_name]` out of the user's input.
+   - From the menu: ask the user to input the feature name.
+2. **Locate the audit file** at `./.jeos/audit/<feature_name>-audit.md`.
+   - If it does not exist: list every file in `./.jeos/audit/` and ask the user to pick one, or offer
+     to run **Option 9** first to produce the audit. Do not proceed without an audit file.
+3. **Read the audit file in full** and parse every bug entry under `## 5. Bugs by Class`. Each bug
+   line follows the template:
+   `- BUG-### [severity] — <title> — <file:line> — <description> — spec ref — suggested fix`
+   - **Skip any bug line already prefixed with `✅ ALREADY IMPLEMENTED`** (see marking rule below)
+     — those are previously fixed bugs and must never be re-fixed.
+4. **Read the Guide** (`Prompts/japa-bugs-hunters.md`) in full before applying any fix — the section
+   numbers cited in the audit's `spec ref` field map to Guide sections.
+5. **Fix bugs in priority order:** `critical` → `high` → `medium` → `low`. Within a severity tier,
+   fix in bug-id order (`BUG-001`, `BUG-002`, ...). Use a `todo_write` list to track every open bug.
+6. **For each bug**, apply the matching fix workflow from Options 1–8 based on its class:
+   - `business-logic`, `backend-comms`, `rbac`, `security`, `performance`, `gdpr` → use the
+     **Option 2 (Backend API / Route)** workflow against the bug's `file:line`.
+   - `ui-ux` → use the **Option 1 (Frontend URL / Page)** workflow against the bug's `file:line`
+     (resolve the app from the path: `apps/web`→main, `apps/admin`→admin, `apps/control`→control,
+     `apps/learn`→learn, `apps/docs`→docs). Launch Playwright to verify the fix when the bug is
+     visual/interactive.
+   - All fixes must obey the **Cross-Cutting Fix Rules** (Golden Rules, RBAC, multi-tenancy, custom
+     fields) and the standard Report Format.
+7. **Verify each fix** before marking it done:
+   - Backend: `go build ./...` (and `go test ./internal/<feature_name>/...` if tests exist), plus
+     `gosec` for security-class bugs.
+   - Frontend: `svelte-check` for the relevant app, plus a Playwright pass for `ui-ux` bugs.
+   - A fix is "successful" only when the relevant verifier passes and the original bug symptom is gone.
+8. **Mark the bug line in the audit file** immediately after a successful fix. Use the `edit` tool to
+   prefix the bug line with `✅ ALREADY IMPLEMENTED — ` and append ` — fixed <ISO date>` at the end.
+   The marked line must look exactly like:
+
+   ```
+   - ✅ ALREADY IMPLEMENTED — BUG-### [severity] — <title> — <file:line> — <description> — spec ref — suggested fix — fixed <ISO date>
+   ```
+
+   **Marking rules (critical):**
+   - Only mark a bug **after** its fix is verified — never speculatively.
+   - Never delete or rewrite the original bug line; only prepend `✅ ALREADY IMPLEMENTED — ` and
+     append ` — fixed <ISO date>`. The original text must remain intact for traceability.
+   - If a fix fails verification, leave the bug line unmarked and record the failure reason in the
+     final report. Do **not** mark it `ALREADY IMPLEMENTED`.
+   - Never re-fix a line already prefixed with `✅ ALREADY IMPLEMENTED`. If the user re-runs Option 10,
+     skip all marked lines and only process unmarked bug entries.
+9. **Update the audit file's `## 6. Summary` section** at the end of the run with the new counts:
+   - `Fixed this run: <n>`
+   - `Already implemented (prior runs): <n>`
+   - `Remaining open: <n>`
+   Keep the original totals line intact for history; append the new lines below it.
+10. **Produce the standard Bug Hunt Report** (see Report Format) at the end of the run, scoped to the
+    feature and listing every file changed, every backend addition (routes, migrations, RBAC nodes,
+    Valkey keys, Asynq tasks), and the verification results.
+
+### Re-run Safety
+
+Because every fixed bug is marked `✅ ALREADY IMPLEMENTED` in place, Option 10 is **idempotent**:
+re-running it (or re-triggering `/japa-bugs-hunters "fix [feature_name]"`) will only process bugs
+that are still open. This prevents duplicate work and avoids confusion when the user runs the fix
+workflow multiple times or resumes after an interruption.
 
 ---
 

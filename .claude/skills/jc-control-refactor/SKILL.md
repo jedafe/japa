@@ -32,7 +32,7 @@ All health/queue/cost/traffic visualizations rewritten in LayerChart (patterns i
 One-time reveal dialog clears value on close · remove any `$state` retention, URL exposure, console logging of raw keys.
 
 ## 5. Settings Modernization
-Deep-equality `$derived` dirty tracking · `beforeNavigate` guard · JSON validation `$effect` · batch save.
+Deep-equality `$derived` dirty tracking · `beforeNavigate` guard · JSON validation `$effect` · batch save. **Geo/University settings (ADR-063/064):** add `geo_personalization.enabled` killswitch with disable-warning dialog · add `university.*` settings (commission tiers, pro stream rate, payout threshold/period, surface_domain) with range validation and surface_domain change warning.
 
 ## 6. Toggle Hardening
 Add `toggling` guards, in-flight disable, optimistic + rollback to all extension/feature-flag toggles.

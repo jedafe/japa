@@ -1,6 +1,6 @@
 ---
 name: jc-main-audit
-description: Use when performing a comprehensive quality audit of the JapaConnect Main App (apps/web) before merge or release. Covers Rule 16, Svelte 5, Bits UI, app-shell/layout compliance (ADR-058), profile learning hub and cross-app compliance (ADR-060), LayerChart 2.0.1, SSR/SEO, security, accessibility, and i18n.Use when performing a comprehensive quality audit of the JapaConnect Main App (apps/web) before merge or release. Covers Rule 16, Svelte 5, Bits UI, app-shell/layout compliance (ADR-058), LayerChart 2.0.1, SSR/SEO, security, accessibility, and i18n compliance.
+description: Use when performing a comprehensive quality audit of the JapaConnect Main App (apps/main) before merge or release. Covers Rule 16, Svelte 5, Bits UI, app-shell/layout compliance (ADR-058), profile learning hub and cross-app compliance (ADR-060), LayerChart 2.0.1, SSR/SEO, security, accessibility, and i18n.Use when performing a comprehensive quality audit of the JapaConnect Main App (apps/web) before merge or release. Covers Rule 16, Svelte 5, Bits UI, app-shell/layout compliance (ADR-058), LayerChart 2.0.1, SSR/SEO, security, accessibility, and i18n compliance.
 ---
 
 # JapaConnect Main App — Audit Skill
@@ -39,6 +39,20 @@ All dropdowns/modals/selects/tooltips/accordions/tabs are Bits UI primitives · 
 - Certificate cards link to the public shareable page `/certificates/:id`; earned certificates badge the public profile
 - Dashboard is private: no ad slots, not indexed
 
+## E4. Geo-Aware Personalization (ADR-064)
+- Feed header shows inline "Showing: [Country] · Change" control — NOT buried in settings; wired to `PATCH /api/v1/me/profile` (`content_country_preference`) with feed invalidation
+- Guest homepage geo content is SSR (no client flicker); degrades gracefully when `GeoContext` absent
+- `?geo=` is a re-weight/boost, never a hard filter — non-local content must still appear (flag any hard exclusion)
+- University discovery (`/universities`) defaults country filter from `ContentCountry`; explicit filter always wins
+- No hardcoded country/region lists driving geo behavior — all from `GET /api/v1/geo/me` or API params
+
+## E5. University Discovery (Section 39)
+- `/universities` and `/universities/[slug]` render inside `AppShell` (NOT exceptions, NOT standalone layouts)
+- All university data from `GET /api/v1/universities` / `GET /api/v1/universities/:slug` — no hardcoded university data (Rule 16)
+- Single university page tabs: Overview/Posts/Forums/Courses/Members/Reviews/Compare — all API-sourced
+- JSON-LD: `ItemList` of `EducationalOrganization` on list, `EducationalOrganization` + `AggregateRating` on single
+- University logo served as profile image via Section 34 media + imgproxy (not a hardcoded URL)
+
 ## F. SSR & SEO
 Indexable routes render content in server HTML · `<svelte:head>` with title/description on every indexable route · JSON-LD: Article (blog), QAPage (solved threads), Person/Organization (profiles) · images lazy · `data-sveltekit-preload-data="hover"` on body.
 
@@ -65,6 +79,8 @@ List hardcoded strings not in `$t()` · flag keys in `en.json` missing from `fr.
 | Bits UI | ✅/❌ |
 | App Shell / Layout (ADR-058) | ✅/❌ |
 | Profile hub / Cross-app (ADR-060) | ✅/❌ |
+| Geo-aware personalization (ADR-064) | ✅/❌ |
+| University discovery (§39) | ✅/❌ |
 | LayerChart | ✅/❌ |
 | SSR/SEO | ✅/❌ |
 | Security | ✅/❌ |
