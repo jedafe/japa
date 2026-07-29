@@ -71,6 +71,7 @@ import (
 	"github.com/jedafe/japa/internal/seo"
 	"github.com/jedafe/japa/internal/spaces"
 	"github.com/jedafe/japa/internal/spam"
+	"github.com/jedafe/japa/internal/stock"
 	"github.com/jedafe/japa/internal/tags"
 	"github.com/jedafe/japa/internal/tenant"
 	"github.com/jedafe/japa/internal/tickets"
@@ -331,6 +332,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Follow System subsystem (Section 31 — Follow System).
 	followService := follows.NewService(database)
 	followHandlers := follows.NewHandlers(followService)
+	// L3: wire Valkey for is_following read-through cache (60s TTL).
+	followService.SetValkey(vkClient.Redis())
+	// H3: route space follow through the generic follows service for
+	// consistent auto-join (BL-010) and notification dispatch.
+	spaceHandlers.SetFollowToggleService(followService)
 
 	// General Tags subsystem (Sections 08, 49) — distinct from forum_tags.
 	// Composes contentService + followService directly.
@@ -340,6 +346,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Notification System subsystem (Section 35 — Notification System).
 	notificationService := notifications.NewService(database)
 	notificationHandlers := notifications.NewHandlers(notificationService)
+	// C3: wire follow.received notification dispatch (Section 35). Fire-and-forget
+	// per Rule 8 — the adapter ignores the DispatchResult and any error.
+	followService.SetNotificationDispatcher(followNotificationAdapter{svc: notificationService})
 	// BL-002: wire content mention notification dispatcher (fire-and-forget, Rule 8).
 	contentHandlers.SetMentionNotifier(commentNotificationAdapter{svc: notificationService})
 
@@ -406,6 +415,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Blog Extension subsystem (Section 24 — Blog Extension).
 	blogService := blog.NewService(database)
 	blogHandlers := blog.NewHandlers(blogService, contentService, cfg.SiteURL, cfg.SiteName)
+	blogHandlers.SetAsynqClient(asynqClient)
+	blogHandlers.SetRedis(vkClient.Redis())
 
 	// Reviews subsystem (Section 29 — Universal Ratings & Reviews).
 	reviewService := reviews.NewService(database)
@@ -508,6 +519,15 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Resolve logo_media_id to an imgproxy-signed logo_url in university
 	// responses (Section 34 / ADR-039 — audit finding H5).
 	universitiesHandlers.SetMediaResolver(mediaService)
+
+	// Stock photo service — provider search and import (Unsplash, Pexels,
+	// Pixabay, Openverse). ReloadProviders seeds provider rows from env vars
+	// and constructs enabled provider instances.
+	stockService := stock.NewService(database, mediaService, cfg)
+	if err := stockService.ReloadProviders(context.Background()); err != nil {
+		slog.Warn("server: failed to load stock providers on startup", "error", err)
+	}
+	stockHandlers := stock.NewStockHandlers(stockService)
 
 	// Register image processor for the worker's content:process_image task.
 	mediaImageAdapter := media.NewProcessorAdapter(mediaService)
@@ -1050,10 +1070,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), spaces.SpaceResolver(spaceService)).
 				Get("/spaces/{slug}/members", spaceHandlers.ListMembers)
 
-			// Space follow/unfollow (Section 31)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), spaces.SpaceResolver(spaceService)).
+			// Space follow/unfollow (Section 31) — M5: rate-limited
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), spaces.SpaceResolver(spaceService), mw.RateLimit(vkClient.Redis(), "moderate")).
 				Post("/spaces/{slug}/follow", spaceHandlers.ToggleFollow)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), spaces.SpaceResolver(spaceService)).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), spaces.SpaceResolver(spaceService), mw.RateLimit(vkClient.Redis(), "moderate")).
 				Delete("/spaces/{slug}/follow", spaceHandlers.ToggleFollow)
 
 			// Space mute/unmute (Section 52)
@@ -1213,8 +1233,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Delete("/comments/{id}/pin", commentsHandlers.UnpinComment)
 
 			// Follow System routes (Section 31 — Follow System)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "follows.toggle")).Post("/follows", followHandlers.ToggleFollow)
+			// M5: rate-limit all follow mutation routes to prevent follow spam.
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "follows.toggle"), mw.RateLimit(vkClient.Redis(), "moderate")).Post("/follows", followHandlers.ToggleFollow)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/following", followHandlers.ListMyFollowing)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/followers", followHandlers.ListMyFollowers)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/followed-tags", followHandlers.ListMyFollowedTags)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/users/{user_id}/followers", followHandlers.GetFollowers)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/users/{user_id}/following", followHandlers.GetFollowing)
@@ -1393,6 +1415,24 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Post("/admin/media/{id}/status", mediaHandlers.AdminUpdateMediaStatus)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "media.upload")).
 				Post("/admin/media/upload", mediaHandlers.AdminUpload)
+
+			// Stock photo routes (Section 34 — Stock Photo Integration).
+			// Openverse is available with media.stock.search; the other three
+			// providers additionally require media.stock.providers (enforced in-handler).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "media.stock.search")).
+				Get("/stock/providers", stockHandlers.ListProviders)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "media.stock.search")).
+				Get("/stock/search", stockHandlers.Search)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "media.stock.search")).
+				Get("/stock/photo/{provider}/{id}", stockHandlers.GetPhoto)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "media.stock.import")).
+				Post("/stock/import", stockHandlers.ImportPhoto)
+
+			// Stock photo admin routes — provider config management.
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "media.edit_any")).
+				Get("/admin/stock/providers", stockHandlers.AdminListProviders)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "media.edit_any")).
+				Patch("/admin/stock/providers/{name}", stockHandlers.AdminPatchProvider)
 
 			// Forum Q&A / Solved routes — gated by feature.forum (Section 08)
 			forumService := forum.NewService(database)
@@ -1670,9 +1710,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.OptionalAuth(kr, vkClient.Redis()), requireActiveOrgByID(orgService)).Get("/organizations/{id}/content", contentHandlers.ListByOrganization)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), requireActiveOrgByID(orgService)).Get("/organizations/{id}/analytics", orgHandlers.GetOrganizationAnalytics)
 			r.With(auth.OptionalAuth(kr, vkClient.Redis()), requireActiveOrgByID(orgService)).Get("/organizations/{id}/media", mediaHandlers.ListByOrganization)
-			// Org follow/unfollow (Section 31 — universal polymorphic follow)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "follows.toggle")).Post("/organizations/{id}/follow", orgHandlers.ToggleFollow)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "follows.toggle")).Delete("/organizations/{id}/follow", orgHandlers.ToggleFollow)
+			// Org follow/unfollow (Section 31 — universal polymorphic follow) — M5: rate-limited
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "follows.toggle"), mw.RateLimit(vkClient.Redis(), "moderate")).Post("/organizations/{id}/follow", orgHandlers.ToggleFollow)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "follows.toggle"), mw.RateLimit(vkClient.Redis(), "moderate")).Delete("/organizations/{id}/follow", orgHandlers.ToggleFollow)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "organizations.members.manage")).Post("/organizations/{id}/members", orgHandlers.AddMember)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "organizations.members.manage")).Delete("/organizations/{id}/members/{userId}", orgHandlers.RemoveMember)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "organizations.members.manage")).Patch("/organizations/{id}/members/{userId}", orgHandlers.UpdateMemberRole)
@@ -2846,9 +2886,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "blog.review.manage")).
 				Get("/admin/blog/review-queue", blogHandlers.ListReviews)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "blog.review.manage")).
-				Post("/admin/blog/review-queue/{id}/approve", blogHandlers.UpdateReview)
+				Post("/admin/blog/review-queue/{id}/approve", blogHandlers.ApproveReview)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "blog.review.manage")).
-				Post("/admin/blog/review-queue/{id}/reject", blogHandlers.UpdateReview)
+				Post("/admin/blog/review-queue/{id}/reject", blogHandlers.RejectReview)
 			// Admin blog post management (Section 24 blog extension).
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "blog.review.manage")).
 				Get("/admin/blog", blogHandlers.AdminListPosts)
@@ -3043,9 +3083,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Public per Section 32; gated to 404 non-active users.
 			r.With(auth.OptionalAuth(kr, vkClient.Redis()), requireActiveProfileUser(usersService, "id")).
 				Get("/users/{id}/content", contentHandlers.ListByAuthor)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "follows.toggle")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "follows.toggle"), mw.RateLimit(vkClient.Redis(), "moderate")).
 				Post("/users/{id}/follow", followHandlers.ToggleFollow)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "follows.toggle")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "follows.toggle"), mw.RateLimit(vkClient.Redis(), "moderate")).
 				Delete("/users/{id}/follow", followHandlers.ToggleFollow)
 
 			// Task 35: Suggestions/content (trending)
@@ -3193,6 +3233,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.Patch("/oauth-clients/{id}", controlHandlers.UpdateOAuthClient)
 			r.Delete("/oauth-clients/{id}", controlHandlers.DeleteOAuthClient)
 			r.Post("/oauth-clients/{id}/rotate-secret", controlHandlers.RotateOAuthClientSecret)
+			r.Get("/oauth-providers", controlHandlers.ListOAuthProviders)
 
 			// Extensions — super-admin CRUD (stored in system_settings as JSON)
 			r.Get("/extensions", controlHandlers.ListExtensions)
@@ -3206,6 +3247,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.Patch("/backup-configs/{id}", controlHandlers.UpdateBackupConfig)
 			r.Delete("/backup-configs/{id}", controlHandlers.DeleteBackupConfig)
 			r.Post("/backup-configs/{id}/trigger", controlHandlers.TriggerBackup)
+			r.Get("/backup-targets", controlHandlers.ListBackupTargets)
 		})
 	})
 
@@ -3243,6 +3285,30 @@ func (a *walletCreditAdapter) SpendCredits(
 // fire-and-forget per Rule 8.
 type commentNotificationAdapter struct {
 	svc *notifications.Service
+}
+
+// followNotificationAdapter adapts notifications.Service.DispatchNotification
+// to the follows.NotificationDispatcher interface. Follow notifications
+// (type follow.received, Section 35) are fire-and-forget per Rule 8 — the
+// adapter discards both the DispatchResult and any error.
+// Ref: japaconnect-engineering/sections/31-follow-system.md
+//      japaconnect-engineering/sections/35-notification-system.md
+type followNotificationAdapter struct {
+	svc *notifications.Service
+}
+
+func (a followNotificationAdapter) DispatchFollowNotification(
+	ctx context.Context,
+	tenantID, recipientID, actorID pgtype.UUID,
+	entityType string, entityID pgtype.UUID,
+) {
+	_, _ = a.svc.DispatchNotification(
+		ctx, tenantID, recipientID,
+		notifications.TypeNewFollower, "",
+		actorID,
+		entityType, entityID,
+		"", "", "",
+	)
 }
 
 func (a commentNotificationAdapter) DispatchNotification(
