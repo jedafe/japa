@@ -247,6 +247,47 @@ export interface MediaAsset {
 	status?: string;
 	created_at?: string;
 	user_group_id?: string | null;
+	// Stock attribution (present when media was imported from a stock provider)
+	source_platform?: string;
+	source_photographer?: string;
+	source_photographer_url?: string;
+	source_license?: string;
+	source_license_url?: string;
+}
+
+export interface StockProvider {
+	name: string;
+	display_name: string;
+}
+
+export interface StockPhoto {
+	id: string;
+	provider: string;
+	thumbnail_url: string;
+	full_url: string;
+	width: number;
+	height: number;
+	photographer: string;
+	photographer_url: string;
+	license?: string;
+	license_url?: string;
+	description?: string;
+}
+
+export interface StockSearchResult {
+	photos: StockPhoto[];
+	total: number;
+	page: number;
+	per_page: number;
+	has_next_page: boolean;
+}
+
+export interface StockImportResult {
+	media_id: string;
+}
+
+export interface StockProvidersResponse {
+	providers: StockProvider[];
 }
 
 /** GET /me/bookmarks — a thin bookmark record (entity_type + entity_id). */
