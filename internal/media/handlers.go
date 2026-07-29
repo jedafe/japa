@@ -35,6 +35,12 @@ type MediaResponse struct {
 	CreatedAt   string  `json:"created_at"`
 	URL         string  `json:"url"`
 	UserGroupID *string `json:"user_group_id"`
+	// Stock attribution (present when media was imported from a stock provider).
+	SourcePlatform       *string `json:"source_platform,omitempty"`
+	SourcePhotographer   *string `json:"source_photographer,omitempty"`
+	SourcePhotographerURL *string `json:"source_photographer_url,omitempty"`
+	SourceLicense        *string `json:"source_license,omitempty"`
+	SourceLicenseURL     *string `json:"source_license_url,omitempty"`
 }
 
 // toMediaResponse transforms a gen.Medium into the API response format.
@@ -53,15 +59,20 @@ func toMediaResponse(m *gen.Medium, url string) MediaResponse {
 	}
 
 	return MediaResponse{
-		ID:          m.ID.String(),
-		Filename:    m.OriginalFilename,
-		MimeType:    m.MimeType,
-		FileSize:    m.FileSizeBytes,
-		AltText:     m.AltText,
-		Status:      status,
-		CreatedAt:   m.CreatedAt.Time.Format("2006-01-02T15:04:05Z"),
-		URL:         url,
-		UserGroupID: userGroupID,
+		ID:                   m.ID.String(),
+		Filename:             m.OriginalFilename,
+		MimeType:             m.MimeType,
+		FileSize:             m.FileSizeBytes,
+		AltText:              m.AltText,
+		Status:               status,
+		CreatedAt:            m.CreatedAt.Time.Format("2006-01-02T15:04:05Z"),
+		URL:                  url,
+		UserGroupID:          userGroupID,
+		SourcePlatform:       m.SourcePlatform,
+		SourcePhotographer:   m.SourcePhotographer,
+		SourcePhotographerURL: m.SourcePhotographerUrl,
+		SourceLicense:        m.SourceLicense,
+		SourceLicenseURL:     m.SourceLicenseUrl,
 	}
 }
 
