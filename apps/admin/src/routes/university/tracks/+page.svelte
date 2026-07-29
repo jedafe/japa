@@ -4,7 +4,7 @@
 	import { Button } from "$lib/components/ui/button";
 	import { Modal } from "$lib/components/ui/modal";
 	import { TableSkeleton } from "$lib/components/ui/skeleton";
-	import { Check, Eye, RefreshCw } from "lucide-svelte";
+	import { Check, Eye, RefreshCw, X } from "lucide-svelte";
 	import { universityAdminApi } from "$lib/api";
 	import { t } from "$lib/stores/i18n.svelte";
 	import { hasPermission } from "$lib/stores/permissions.svelte";
@@ -36,9 +36,12 @@
 	let searchQuery = $state("");
 
 	let showApproveModal = $state(false);
+	let showRejectModal = $state(false);
 	let showViewModal = $state(false);
 	let target = $state<PendingTrack | null>(null);
 	let actionLoading = $state(false);
+	let rejectReason = $state("");
+	let showAllTracks = $state(false);
 
 	const canApprove = $derived(hasPermission("university.course.approve"));
 
@@ -70,7 +73,9 @@
 		loading = true;
 		errorMessage = "";
 		try {
-			const result = await universityAdminApi.listPendingTracks();
+			const result = showAllTracks
+				? await universityAdminApi.listAllTracks()
+				: await universityAdminApi.listPendingTracks();
 			if (result.ok) {
 				const data = result.data as { data: PendingTrack[] };
 				tracks = data.data ?? [];
@@ -78,13 +83,14 @@
 				errorMessage = result.error;
 			}
 		} catch {
-			errorMessage = t("common.error", "Failed to load pending tracks");
+			errorMessage = t("common.error", "Failed to load tracks");
 		} finally {
 			loading = false;
 		}
 	}
 
 	function openApprove(tr: PendingTrack) { target = tr; showApproveModal = true; }
+	function openReject(tr: PendingTrack) { target = tr; rejectReason = ""; showRejectModal = true; }
 	function openView(tr: PendingTrack) { target = tr; showViewModal = true; }
 
 	async function doApprove() {
@@ -102,6 +108,26 @@
 		actionLoading = false;
 	}
 
+	async function doReject() {
+		if (!target) return;
+		actionLoading = true;
+		errorMessage = "";
+		const result = await universityAdminApi.rejectTrack(target.id, { reason: rejectReason.trim() || undefined });
+		if (result.ok) {
+			showRejectModal = false;
+			successMessage = t("university.track_rejected", "Track rejected");
+			load();
+		} else {
+			errorMessage = result.error;
+		}
+		actionLoading = false;
+	}
+
+	function toggleAllTracks() {
+		showAllTracks = !showAllTracks;
+		load();
+	}
+
 	$effect(() => {
 		load();
 	});
@@ -117,8 +143,9 @@
 />
 
 {#if errorMessage}
-	<div class="mb-4 rounded-md border px-4 py-3 text-sm" style="border-color: var(--color-danger); background-color: color-mix(in srgb, var(--color-danger) 8%, transparent); color: var(--color-danger)">
-		{errorMessage}
+	<div class="mb-4 flex items-center justify-between rounded-md border px-4 py-3 text-sm" style="border-color: var(--color-danger); background-color: color-mix(in srgb, var(--color-danger) 8%, transparent); color: var(--color-danger)">
+		<span>{errorMessage}</span>
+		<Button variant="outline" size="sm" onclick={load}>{t("common.retry", "Retry")}</Button>
 	</div>
 {/if}
 {#if successMessage}
@@ -127,7 +154,10 @@
 	</div>
 {/if}
 
-<div class="mb-4 flex justify-end">
+<div class="mb-4 flex items-center justify-between">
+	<Button variant="outline" size="sm" onclick={toggleAllTracks}>
+		{showAllTracks ? t("university.showPending", "Show Pending Only") : t("university.showAll", "Show All Tracks")}
+	</Button>
 	<Button variant="outline" size="sm" onclick={load}>
 		<RefreshCw class="h-3.5 w-3.5" />
 		{t("common.refresh", "Refresh")}
@@ -185,6 +215,23 @@
 	</div>
 </Modal>
 
+<!-- Reject Modal -->
+<Modal open={showRejectModal} onclose={() => { showRejectModal = false; }} title={t("university.reject_track", "Reject Track")}>
+	{#if target}
+		<p class="mb-3 text-sm" style="color: var(--color-muted)">{t("university.reject_track_confirm", "Reject")} <strong>{target.title}</strong>?</p>
+		<div>
+			<label for="reject-reason" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t("university.rejectReason", "Reason (optional)")}</label>
+			<textarea id="reject-reason" bind:value={rejectReason} rows={3} class="w-full rounded-lg border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" placeholder={t("university.rejectReasonPlaceholder", "Reason for rejection...")}></textarea>
+		</div>
+	{/if}
+	<div class="mt-6 flex justify-end gap-2">
+		<Button variant="outline" onclick={() => { showRejectModal = false; }}>{t("common.cancel", "Cancel")}</Button>
+		<Button variant="destructive" onclick={doReject} disabled={actionLoading}>
+			{actionLoading ? t("common.processing", "Processing...") : t("common.reject", "Reject")}
+		</Button>
+	</div>
+</Modal>
+
 {#snippet TrackActionsCell({ row }: { value: any; row: PendingTrack })}
 	<div class="flex items-center gap-1">
 		<Button variant="ghost" size="sm" onclick={() => openView(row)} aria-label={t("common.view", "View")}>
@@ -193,6 +240,9 @@
 		{#if canApprove}
 			<Button variant="ghost" size="sm" onclick={() => openApprove(row)} style="color: var(--color-success)" aria-label={t("common.approve", "Approve")}>
 				<Check class="h-3.5 w-3.5" />
+			</Button>
+			<Button variant="ghost" size="sm" onclick={() => openReject(row)} style="color: var(--color-danger)" aria-label={t("common.reject", "Reject")}>
+				<X class="h-3.5 w-3.5" />
 			</Button>
 		{/if}
 	</div>

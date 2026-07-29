@@ -1,7 +1,15 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
+	// L1: redirectViaLogin bypasses the SvelteKit router for auth
+	// redirects, avoiding the get_navigation_intent crash that occurs
+	// when goto() is called before the router is initialized. This
+	// eliminates the brief "Loading..." flash.
+	function redirectViaLogin() {
+		if (typeof window !== 'undefined') {
+			window.location.href = '/login';
+		}
+	}
 	import { setUser, setPermissions, clearUser } from '$lib/stores/auth.svelte';
 	import { t, translations, initLocale, loadTranslations } from '$lib/stores/i18n.svelte';
 	import { setToken } from '$lib/api';
@@ -26,6 +34,11 @@
 		DollarSign,
 		Clock,
 		Rocket,
+		KeyRound,
+		Puzzle,
+		Webhook,
+		DatabaseBackup,
+		ShieldCheck,
 	} from 'lucide-svelte';
 	type LucideIcon = typeof LayoutDashboard;
 
@@ -70,26 +83,42 @@
 			authInflight = true;
 			initAuth(storedToken);
 		} else {
-			goto('/login');
+			redirectViaLogin();
 		}
 	});
 
 	async function initAuth(token: string) {
 		try {
 			const { api } = await import('$lib/api');
-			const result = await api<{ id: string; email: string; username: string; display_name: string; user_group_name: string; avatar_url: string | null; user_group_id: string; theme_preference: string; timezone: string; is_verified: boolean; created_at: string; permissions: string[] }>('/api/v1/me');
+			const result = await api<{ id: string; email: string; username: string; display_name: string; user_group_name: string; avatar_url: string | null; user_group_id: string; theme_preference: string; timezone: string; is_verified: boolean; created_at: string }>('/api/v1/me');
 			if (result.ok) {
 				const userData = result.data;
 				if (userData.user_group_name !== 'super_admin') {
 					localStorage.removeItem('jc_token');
 					setToken(null);
 					clearUser();
-					if (!isAuthPage) goto('/login');
+					if (!isAuthPage) redirectViaLogin();
 					authChecked = true;
 					return;
 				}
-				if (userData.user_group_name === 'super_admin') {
-					userData.permissions = ['*'];
+				// C1: Fetch the resolved permission set from /me/permissions
+				// and verify the control_panel.access node (or '*' wildcard).
+				// The backend RBAC resolver returns '*' for super_admin_role,
+				// plus any explicit grants like control_panel.access (migration
+				// 000184). This prevents a revoked super_admin from entering.
+				let perms: string[] = [];
+				const permResult = await api<{ permissions: string[] }>('/api/v1/me/permissions');
+				if (permResult.ok && permResult.data?.permissions) {
+					perms = permResult.data.permissions;
+				}
+				const hasControlPanelAccess = perms.includes('*') || perms.includes('control_panel.access');
+				if (!hasControlPanelAccess) {
+					localStorage.removeItem('jc_token');
+					setToken(null);
+					clearUser();
+					if (!isAuthPage) redirectViaLogin();
+					authChecked = true;
+					return;
 				}
 				setUser({
 					id: userData.id,
@@ -103,22 +132,21 @@
 					timezone: userData.timezone ?? 'UTC',
 					is_verified: userData.is_verified,
 					created_at: userData.created_at,
-					permissions: userData.permissions ?? [],
+					permissions: perms,
 				});
-				const perms = userData.permissions ?? [];
 				setPermissions(perms);
 				userPermissions = perms;
 			} else {
 				localStorage.removeItem('jc_token');
 				setToken(null);
 				clearUser();
-				if (!isAuthPage) goto('/login');
+				if (!isAuthPage) redirectViaLogin();
 			}
 		} catch {
 			localStorage.removeItem('jc_token');
 			setToken(null);
 			clearUser();
-			if (!isAuthPage) goto('/login');
+			if (!isAuthPage) redirectViaLogin();
 		}
 		authChecked = true;
 		authInflight = false;
@@ -143,6 +171,11 @@
 		{ href: '/audit', icon: ScrollText },
 		{ href: '/security', icon: Shield },
 		{ href: '/api-keys', icon: Key },
+		{ href: '/oauth-clients', icon: KeyRound },
+		{ href: '/extensions', icon: Puzzle },
+		{ href: '/webhooks', icon: Webhook },
+		{ href: '/backup-configs', icon: DatabaseBackup },
+		{ href: '/permission-nodes', icon: ShieldCheck },
 		{ href: '/cache', icon: Trash2 },
 		{ href: '/settings', icon: Settings },
 		{ href: '/feature-flags', icon: Flag },
@@ -167,6 +200,11 @@
 		'/ai-budget': { label: 'nav.ai_budget', tooltip: 'nav.ai_budget_tooltip' },
 		'/cron': { label: 'nav.cron', tooltip: 'nav.cron_tooltip' },
 		'/deployments': { label: 'nav.deployments', tooltip: 'nav.deployments_tooltip' },
+		'/oauth-clients': { label: 'nav.oauth_clients', tooltip: 'nav.oauth_clients_tooltip' },
+		'/extensions': { label: 'nav.extensions', tooltip: 'nav.extensions_tooltip' },
+		'/webhooks': { label: 'nav.webhooks', tooltip: 'nav.webhooks_tooltip' },
+		'/backup-configs': { label: 'nav.backup_configs', tooltip: 'nav.backup_configs_tooltip' },
+		'/permission-nodes': { label: 'nav.permission_nodes', tooltip: 'nav.permission_nodes_tooltip' },
 	};
 
 	const nav = $derived.by(() => {
@@ -178,9 +216,12 @@
 		}));
 	});
 
-	// Access is gated by the super_admin check in initAuth; admitted users carry
-	// the '*' permission set, so the Control Panel is effectively all-or-nothing.
-	const canAccess = $derived(userPermissions.includes('*'));
+	// C1/L2: Access is gated by the control_panel.access RBAC node (or '*'
+	// wildcard) verified in initAuth via /me/permissions. The derived check
+	// here mirrors the gate so AccessDenied renders if permissions change.
+	const canAccess = $derived(
+		userPermissions.includes('*') || userPermissions.includes('control_panel.access')
+	);
 </script>
 
 <svelte:head>

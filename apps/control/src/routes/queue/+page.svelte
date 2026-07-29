@@ -7,7 +7,7 @@
 	import type { QueueInfo, QueueStats, QueueTask, QueueTasksResponse } from '$lib/api/types';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { escapeHtml } from '$lib/utils';
-	import { ListTodo, Clock, RefreshCw, X, AlertTriangle, CheckCircle, Timer, RotateCw } from 'lucide-svelte';
+	import { ListTodo, Clock, RefreshCw, X, AlertTriangle, CheckCircle, Timer, RotateCw, RotateCcw } from 'lucide-svelte';
 	import { Dialog } from 'bits-ui';
 
 	let {} = $props();
@@ -106,6 +106,16 @@
 
 	function taskCount(state: keyof QueueTasksResponse): number {
 		return queueTasks?.[state]?.length ?? 0;
+	}
+
+	// M5: Retry a failed/retry/archived task via POST /control/queue/{queue}/tasks/{id}/retry
+	async function retryQueueTask(task: QueueTask) {
+		if (!selectedQueue) return;
+		const result = await api(`/control/queue/${selectedQueue.name}/tasks/${task.id}/retry`, { method: 'POST' });
+		if (result.ok) {
+			// Refresh the task list to reflect the state change
+			if (selectedQueue) await openQueueDetail(selectedQueue);
+		}
 	}
 
 	function formatTaskTime(ts: string | undefined): string {
@@ -388,6 +398,7 @@
 										{/if}
 										{#if taskTab === 'retry' || taskTab === 'archived'}
 											<th class="text-muted-foreground px-3 py-2 text-right font-medium">Retries</th>
+											<th class="text-muted-foreground px-3 py-2 text-right font-medium">Action</th>
 										{/if}
 									</tr>
 								</thead>
@@ -404,6 +415,16 @@
 											{/if}
 											{#if taskTab === 'retry' || taskTab === 'archived'}
 												<td class="text-muted-foreground px-3 py-2 text-right">{task.retry_count}/{task.max_retry}</td>
+												<td class="px-3 py-2 text-right">
+													<button
+														class="text-accent-foreground hover:bg-accent inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium transition-colors"
+														onclick={() => retryQueueTask(task)}
+														aria-label={t('queue.retry_task', 'Retry')}
+													>
+														<RotateCcw class="size-3" />
+														{t('queue.retry', 'Retry')}
+													</button>
+												</td>
 											{/if}
 										</tr>
 									{/each}

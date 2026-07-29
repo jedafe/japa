@@ -1,10 +1,15 @@
 import { PUBLIC_JC_API_URL } from '$env/static/public';
+import { getCsrfToken, refreshCsrfToken } from '$lib/api/csrf.svelte';
 
 /**
  * Browser-side API client for mutations and client-initiated reads.
  * Requests go to PUBLIC_JC_API_URL (proxied to the backend in dev). The proxy
  * converts the jc_token cookie into a Bearer header and forwards the tenant host,
  * so callers only pass path + body.
+ *
+ * Mutating requests (POST/PATCH/PUT/DELETE) attach the X-CSRF-Token header from
+ * the double-submit CSRF token store (Ref: §5.2 — audit finding C1). On a 403
+ * csrf_token_invalid the token is refreshed once and the request retried.
  */
 
 export interface ClientResult<T> {
@@ -13,19 +18,50 @@ export interface ClientResult<T> {
 	status: number;
 }
 
+const MUTATING_METHODS = new Set(['POST', 'PATCH', 'PUT', 'DELETE']);
+
+function withCsrfHeader(method: string, headers: Record<string, string>): Record<string, string> {
+	const token = getCsrfToken();
+	if (MUTATING_METHODS.has(method.toUpperCase()) && token) {
+		return { ...headers, 'x-csrf-token': token };
+	}
+	return headers;
+}
+
 async function clientFetch<T>(
 	path: string,
 	init: RequestInit = {}
 ): Promise<ClientResult<T>> {
-	try {
-		const res = await fetch(`${PUBLIC_JC_API_URL}${path}`, {
+	const method = (init.method ?? 'GET').toString().toUpperCase();
+	const baseHeaders: Record<string, string> = {
+		'content-type': 'application/json',
+		...((init.headers as Record<string, string>) ?? {})
+	};
+
+	async function doFetch(): Promise<Response> {
+		return fetch(`${PUBLIC_JC_API_URL}${path}`, {
 			...init,
 			credentials: 'include',
-			headers: {
-				'content-type': 'application/json',
-				...init.headers
-			}
+			headers: withCsrfHeader(method, baseHeaders)
 		});
+	}
+
+	try {
+		let res = await doFetch();
+
+		// On a CSRF rejection, refresh the token once and retry the same request.
+		if (res.status === 403 && MUTATING_METHODS.has(method)) {
+			let errBody: { error?: { code?: string } } | null = null;
+			try {
+				errBody = (await res.clone().json()) as { error?: { code?: string } };
+			} catch {
+				errBody = null;
+			}
+			if (errBody?.error?.code === 'csrf_token_invalid') {
+				await refreshCsrfToken();
+				res = await doFetch();
+			}
+		}
 
 		let body: unknown = null;
 		try {

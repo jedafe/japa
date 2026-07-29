@@ -1196,6 +1196,34 @@ func (h *Handlers) RetryDLQTask(w http.ResponseWriter, r *http.Request) {
 	writeError(w, http.StatusNotFound, "task_not_found", "Task not found in any DLQ")
 }
 
+// RetryQueueTask retries a specific task within a named queue.
+// Uses asynq.Inspector.RunTask to move a retry/archived task back to
+// pending. Wired at POST /control/queue/{queue_name}/tasks/{task_id}/retry.
+func (h *Handlers) RetryQueueTask(w http.ResponseWriter, r *http.Request) {
+	if h.Inspector == nil {
+		writeError(w, http.StatusServiceUnavailable, "no_inspector", "Inspector not available")
+		return
+	}
+
+	queueName := chi.URLParam(r, "queue_name")
+	if queueName == "" {
+		writeError(w, http.StatusBadRequest, "missing_queue", "queue_name is required")
+		return
+	}
+
+	taskID := chi.URLParam(r, "task_id")
+	if taskID == "" {
+		writeError(w, http.StatusBadRequest, "missing_task", "task_id is required")
+		return
+	}
+
+	if err := h.Inspector.RunTask(queueName, taskID); err != nil {
+		writeError(w, http.StatusNotFound, "task_not_found", "Task not found in queue")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": taskID, "status": "retried"}})
+}
+
 func (h *Handlers) DiscardDLQTask(w http.ResponseWriter, r *http.Request) {
 	if h.Inspector == nil {
 		writeError(w, http.StatusServiceUnavailable, "no_inspector", "Inspector not available")
@@ -2117,6 +2145,15 @@ func (h *Handlers) CreateCronJob(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "missing_fields", "type and spec are required")
 		return
 	}
+	// L5: Validate payload JSON if provided (defense in depth — the
+	// frontend also validates, but the backend must not accept invalid JSON).
+	if input.Payload != "" {
+		var js any
+		if json.Unmarshal([]byte(input.Payload), &js) != nil {
+			writeError(w, http.StatusBadRequest, "invalid_payload", "Payload must be valid JSON")
+			return
+		}
+	}
 
 	// Generate a unique ID for the custom entry
 	id := fmt.Sprintf("custom_%d", time.Now().UnixNano())
@@ -2178,6 +2215,14 @@ func (h *Handlers) UpdateCronJob(w http.ResponseWriter, r *http.Request) {
 		existing.Spec = *input.Spec
 	}
 	if input.Payload != nil {
+		// L5: Validate payload JSON on update (defense in depth).
+		if *input.Payload != "" {
+			var js any
+			if json.Unmarshal([]byte(*input.Payload), &js) != nil {
+				writeError(w, http.StatusBadRequest, "invalid_payload", "Payload must be valid JSON")
+				return
+			}
+		}
 		existing.Payload = *input.Payload
 	}
 	if existing.Type == "" || existing.Spec == "" {
@@ -2416,4 +2461,544 @@ func authUserFromContext(r *http.Request) pgtype.UUID {
 		return pgtype.UUID{}
 	}
 	return u.UserID
+}
+
+// ---------------------------------------------------------------------------
+// Permission Nodes Handler (RBAC CRUD gap — lists all registered nodes)
+// ---------------------------------------------------------------------------
+
+func (h *Handlers) ListPermissionNodes(w http.ResponseWriter, r *http.Request) {
+	rows, err := h.DB.Reader.Query(r.Context(),
+		`SELECT key, description FROM permissions ORDER BY key`)
+	if err != nil {
+		slog.Error("control: list permission nodes", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list permission nodes")
+		return
+	}
+	defer rows.Close()
+
+	type permNode struct {
+		Key         string `json:"key"`
+		Description string `json:"description"`
+	}
+	nodes := make([]permNode, 0)
+	for rows.Next() {
+		var n permNode
+		if err := rows.Scan(&n.Key, &n.Description); err != nil {
+			continue
+		}
+		nodes = append(nodes, n)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": nodes})
+}
+
+// ---------------------------------------------------------------------------
+// OAuth Clients Handlers (stored in system_settings as JSON under
+// the key "oauth.clients" — avoids a new table migration for V1)
+// ---------------------------------------------------------------------------
+
+type oauthClientEntry struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Provider    string `json:"provider"`
+	ClientID    string `json:"client_id"`
+	RedirectURI string `json:"redirect_uri"`
+	Enabled     bool   `json:"enabled"`
+	CreatedAt   string `json:"created_at"`
+}
+
+func oauthClientsKey(ctx context.Context) string {
+	return "jc:oauth_clients:" + tenant.IDFromContext(ctx).String()
+}
+
+func (h *Handlers) ListOAuthClients(w http.ResponseWriter, r *http.Request) {
+	if h.Valkey == nil {
+		writeJSON(w, http.StatusOK, map[string]any{"data": []any{}})
+		return
+	}
+	raw, err := h.Valkey.Get(r.Context(), oauthClientsKey(r.Context())).Result()
+	if err != nil || raw == "" {
+		writeJSON(w, http.StatusOK, map[string]any{"data": []any{}})
+		return
+	}
+	var clients []oauthClientEntry
+	if json.Unmarshal([]byte(raw), &clients) != nil {
+		writeJSON(w, http.StatusOK, map[string]any{"data": []any{}})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": clients})
+}
+
+func (h *Handlers) GetOAuthClient(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if id == "" {
+		writeError(w, http.StatusBadRequest, "missing_id", "id is required")
+		return
+	}
+	clients := h.loadOAuthClients(r)
+	for _, c := range clients {
+		if c.ID == id {
+			writeJSON(w, http.StatusOK, map[string]any{"data": c})
+			return
+		}
+	}
+	writeError(w, http.StatusNotFound, "not_found", "OAuth client not found")
+}
+
+func (h *Handlers) CreateOAuthClient(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		Name        string `json:"name"`
+		Provider    string `json:"provider"`
+		ClientID    string `json:"client_id"`
+		RedirectURI string `json:"redirect_uri"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
+	if input.Name == "" || input.Provider == "" || input.ClientID == "" {
+		writeError(w, http.StatusBadRequest, "missing_fields", "name, provider, and client_id are required")
+		return
+	}
+	clients := h.loadOAuthClients(r)
+	entry := oauthClientEntry{
+		ID:          fmt.Sprintf("oauth_%d", time.Now().UnixNano()),
+		Name:        input.Name,
+		Provider:    input.Provider,
+		ClientID:    input.ClientID,
+		RedirectURI: input.RedirectURI,
+		Enabled:     true,
+		CreatedAt:   time.Now().UTC().Format(time.RFC3339),
+	}
+	clients = append(clients, entry)
+	if err := h.saveOAuthClients(r, clients); err != nil {
+		writeError(w, http.StatusInternalServerError, "save_error", "Failed to save OAuth client")
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{"data": entry})
+}
+
+func (h *Handlers) UpdateOAuthClient(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if id == "" {
+		writeError(w, http.StatusBadRequest, "missing_id", "id is required")
+		return
+	}
+	var input struct {
+		Name        *string `json:"name"`
+		RedirectURI *string `json:"redirect_uri"`
+		Enabled     *bool   `json:"enabled"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
+	clients := h.loadOAuthClients(r)
+	for i := range clients {
+		if clients[i].ID == id {
+			if input.Name != nil {
+				clients[i].Name = *input.Name
+			}
+			if input.RedirectURI != nil {
+				clients[i].RedirectURI = *input.RedirectURI
+			}
+			if input.Enabled != nil {
+				clients[i].Enabled = *input.Enabled
+			}
+			if err := h.saveOAuthClients(r, clients); err != nil {
+				writeError(w, http.StatusInternalServerError, "save_error", "Failed to update OAuth client")
+				return
+			}
+			writeJSON(w, http.StatusOK, map[string]any{"data": clients[i]})
+			return
+		}
+	}
+	writeError(w, http.StatusNotFound, "not_found", "OAuth client not found")
+}
+
+func (h *Handlers) DeleteOAuthClient(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if id == "" {
+		writeError(w, http.StatusBadRequest, "missing_id", "id is required")
+		return
+	}
+	clients := h.loadOAuthClients(r)
+	for i, c := range clients {
+		if c.ID == id {
+			clients = append(clients[:i], clients[i+1:]...)
+			if err := h.saveOAuthClients(r, clients); err != nil {
+				writeError(w, http.StatusInternalServerError, "save_error", "Failed to delete OAuth client")
+				return
+			}
+			writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
+			return
+		}
+	}
+	writeError(w, http.StatusNotFound, "not_found", "OAuth client not found")
+}
+
+func (h *Handlers) RotateOAuthClientSecret(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if id == "" {
+		writeError(w, http.StatusBadRequest, "missing_id", "id is required")
+		return
+	}
+	clients := h.loadOAuthClients(r)
+	for i := range clients {
+		if clients[i].ID == id {
+			clients[i].ClientID = fmt.Sprintf("rotated_%d", time.Now().UnixNano())
+			if err := h.saveOAuthClients(r, clients); err != nil {
+				writeError(w, http.StatusInternalServerError, "save_error", "Failed to rotate secret")
+				return
+			}
+			writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"id": id, "new_client_id": clients[i].ClientID}})
+			return
+		}
+	}
+	writeError(w, http.StatusNotFound, "not_found", "OAuth client not found")
+}
+
+func (h *Handlers) loadOAuthClients(r *http.Request) []oauthClientEntry {
+	if h.Valkey == nil {
+		return []oauthClientEntry{}
+	}
+	raw, err := h.Valkey.Get(r.Context(), oauthClientsKey(r.Context())).Result()
+	if err != nil || raw == "" {
+		return []oauthClientEntry{}
+	}
+	var clients []oauthClientEntry
+	if json.Unmarshal([]byte(raw), &clients) != nil {
+		return []oauthClientEntry{}
+	}
+	return clients
+}
+
+func (h *Handlers) saveOAuthClients(r *http.Request, clients []oauthClientEntry) error {
+	if h.Valkey == nil {
+		return fmt.Errorf("valkey not available")
+	}
+	data, err := json.Marshal(clients)
+	if err != nil {
+		return err
+	}
+	return h.Valkey.Set(r.Context(), oauthClientsKey(r.Context()), string(data), 0).Err()
+}
+
+// ---------------------------------------------------------------------------
+// Extensions Handlers (stored in system_settings under "extensions.*")
+// ---------------------------------------------------------------------------
+
+type extensionEntry struct {
+	Key         string `json:"key"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Enabled     bool   `json:"enabled"`
+	Version     string `json:"version"`
+}
+
+// knownExtensions is the static catalog of extensions recognized by the
+// control panel. Each extension's enabled/disabled state is persisted in
+// system_settings under the key "extensions.<key>.enabled".
+var knownExtensions = []extensionEntry{
+	{Key: "blog", Name: "Blog", Description: "Blog series, content reviews, and featured posts", Enabled: false, Version: "1.0.0"},
+	{Key: "webhooks", Name: "Webhooks", Description: "Outgoing webhook delivery system", Enabled: false, Version: "1.0.0"},
+	{Key: "newsletter", Name: "Newsletter", Description: "Email newsletter subscriber management", Enabled: false, Version: "1.0.0"},
+	{Key: "ai", Name: "AI Assistant", Description: "AI-powered content assistance and moderation", Enabled: false, Version: "1.0.0"},
+	{Key: "affiliate", Name: "Affiliate Program", Description: "Affiliate tracking and commission management", Enabled: false, Version: "1.0.0"},
+}
+
+func (h *Handlers) ListExtensions(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+	result := make([]extensionEntry, 0, len(knownExtensions))
+	for _, ext := range knownExtensions {
+		settingKey := "extensions." + ext.Key + ".enabled"
+		enabled := false
+		if h.Settings != nil {
+			enabled = h.Settings.GetBoolOr(r.Context(), tenantID, settingKey, false)
+		}
+		ext.Enabled = enabled
+		result = append(result, ext)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": result})
+}
+
+func (h *Handlers) UpdateExtension(w http.ResponseWriter, r *http.Request) {
+	key := chi.URLParam(r, "key")
+	if key == "" {
+		writeError(w, http.StatusBadRequest, "missing_key", "Extension key is required")
+		return
+	}
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+	var input struct {
+		Enabled *bool   `json:"enabled"`
+		Version *string `json:"version"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
+	if input.Enabled != nil {
+		settingKey := "extensions." + key + ".enabled"
+		val := "false"
+		if *input.Enabled {
+			val = "true"
+		}
+		if _, err := h.DB.Writer.Exec(r.Context(),
+			`UPDATE system_settings SET value = $1, updated_at = now() WHERE tenant_id = $2 AND key = $3`,
+			val, tenantID, settingKey); err != nil {
+			slog.Error("control: update extension", "error", err)
+			writeError(w, http.StatusInternalServerError, "internal_error", "Failed to update extension")
+			return
+		}
+		if h.Settings != nil {
+			h.Settings.InvalidateSettings(r.Context(), tenantID)
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"key": key, "status": "updated"}})
+}
+
+func (h *Handlers) EnableExtension(w http.ResponseWriter, r *http.Request) {
+	key := chi.URLParam(r, "key")
+	if key == "" {
+		writeError(w, http.StatusBadRequest, "missing_key", "Extension key is required")
+		return
+	}
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+	settingKey := "extensions." + key + ".enabled"
+	if _, err := h.DB.Writer.Exec(r.Context(),
+		`UPDATE system_settings SET value = 'true', updated_at = now() WHERE tenant_id = $1 AND key = $2`,
+		tenantID, settingKey); err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to enable extension")
+		return
+	}
+	if h.Settings != nil {
+		h.Settings.InvalidateSettings(r.Context(), tenantID)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"key": key, "status": "enabled"}})
+}
+
+func (h *Handlers) DisableExtension(w http.ResponseWriter, r *http.Request) {
+	key := chi.URLParam(r, "key")
+	if key == "" {
+		writeError(w, http.StatusBadRequest, "missing_key", "Extension key is required")
+		return
+	}
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+	settingKey := "extensions." + key + ".enabled"
+	if _, err := h.DB.Writer.Exec(r.Context(),
+		`UPDATE system_settings SET value = 'false', updated_at = now() WHERE tenant_id = $1 AND key = $2`,
+		tenantID, settingKey); err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to disable extension")
+		return
+	}
+	if h.Settings != nil {
+		h.Settings.InvalidateSettings(r.Context(), tenantID)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"key": key, "status": "disabled"}})
+}
+
+// ---------------------------------------------------------------------------
+// Backup Configs Handlers (stored in Valkey under "jc:backup_configs:")
+// ---------------------------------------------------------------------------
+
+type backupConfigEntry struct {
+	ID           string `json:"id"`
+	Name         string `json:"name"`
+	Schedule     string `json:"schedule"`
+	StorageType  string `json:"storage_type"`
+	Destination  string `json:"destination"`
+	RetentionDays int   `json:"retention_days"`
+	Enabled      bool   `json:"enabled"`
+	LastRunAt    string `json:"last_run_at,omitempty"`
+	CreatedAt    string `json:"created_at"`
+}
+
+func backupConfigsKey(ctx context.Context) string {
+	return "jc:backup_configs:" + tenant.IDFromContext(ctx).String()
+}
+
+func (h *Handlers) ListBackupConfigs(w http.ResponseWriter, r *http.Request) {
+	if h.Valkey == nil {
+		writeJSON(w, http.StatusOK, map[string]any{"data": []any{}})
+		return
+	}
+	raw, err := h.Valkey.Get(r.Context(), backupConfigsKey(r.Context())).Result()
+	if err != nil || raw == "" {
+		writeJSON(w, http.StatusOK, map[string]any{"data": []any{}})
+		return
+	}
+	var configs []backupConfigEntry
+	if json.Unmarshal([]byte(raw), &configs) != nil {
+		writeJSON(w, http.StatusOK, map[string]any{"data": []any{}})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": configs})
+}
+
+func (h *Handlers) CreateBackupConfig(w http.ResponseWriter, r *http.Request) {
+	if h.Valkey == nil {
+		writeError(w, http.StatusServiceUnavailable, "no_valkey", "Valkey not available")
+		return
+	}
+	var input struct {
+		Name          string `json:"name"`
+		Schedule      string `json:"schedule"`
+		StorageType   string `json:"storage_type"`
+		Destination   string `json:"destination"`
+		RetentionDays int    `json:"retention_days"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
+	if input.Name == "" || input.Schedule == "" {
+		writeError(w, http.StatusBadRequest, "missing_fields", "name and schedule are required")
+		return
+	}
+	configs := h.loadBackupConfigs(r)
+	entry := backupConfigEntry{
+		ID:            fmt.Sprintf("backup_%d", time.Now().UnixNano()),
+		Name:          input.Name,
+		Schedule:      input.Schedule,
+		StorageType:   input.StorageType,
+		Destination:   input.Destination,
+		RetentionDays: input.RetentionDays,
+		Enabled:       true,
+		CreatedAt:     time.Now().UTC().Format(time.RFC3339),
+	}
+	configs = append(configs, entry)
+	if err := h.saveBackupConfigs(r, configs); err != nil {
+		writeError(w, http.StatusInternalServerError, "save_error", "Failed to save backup config")
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{"data": entry})
+}
+
+func (h *Handlers) UpdateBackupConfig(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if id == "" {
+		writeError(w, http.StatusBadRequest, "missing_id", "id is required")
+		return
+	}
+	var input struct {
+		Name          *string `json:"name"`
+		Schedule      *string `json:"schedule"`
+		Destination   *string `json:"destination"`
+		RetentionDays *int    `json:"retention_days"`
+		Enabled       *bool   `json:"enabled"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
+	configs := h.loadBackupConfigs(r)
+	for i := range configs {
+		if configs[i].ID == id {
+			if input.Name != nil {
+				configs[i].Name = *input.Name
+			}
+			if input.Schedule != nil {
+				configs[i].Schedule = *input.Schedule
+			}
+			if input.Destination != nil {
+				configs[i].Destination = *input.Destination
+			}
+			if input.RetentionDays != nil {
+				configs[i].RetentionDays = *input.RetentionDays
+			}
+			if input.Enabled != nil {
+				configs[i].Enabled = *input.Enabled
+			}
+			if err := h.saveBackupConfigs(r, configs); err != nil {
+				writeError(w, http.StatusInternalServerError, "save_error", "Failed to update backup config")
+				return
+			}
+			writeJSON(w, http.StatusOK, map[string]any{"data": configs[i]})
+			return
+		}
+	}
+	writeError(w, http.StatusNotFound, "not_found", "Backup config not found")
+}
+
+func (h *Handlers) DeleteBackupConfig(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if id == "" {
+		writeError(w, http.StatusBadRequest, "missing_id", "id is required")
+		return
+	}
+	configs := h.loadBackupConfigs(r)
+	for i, c := range configs {
+		if c.ID == id {
+			configs = append(configs[:i], configs[i+1:]...)
+			if err := h.saveBackupConfigs(r, configs); err != nil {
+				writeError(w, http.StatusInternalServerError, "save_error", "Failed to delete backup config")
+				return
+			}
+			writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
+			return
+		}
+	}
+	writeError(w, http.StatusNotFound, "not_found", "Backup config not found")
+}
+
+func (h *Handlers) TriggerBackup(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if id == "" {
+		writeError(w, http.StatusBadRequest, "missing_id", "id is required")
+		return
+	}
+	if h.Client == nil {
+		writeError(w, http.StatusServiceUnavailable, "queue_unavailable", "Task queue not available")
+		return
+	}
+	configs := h.loadBackupConfigs(r)
+	for i := range configs {
+		if configs[i].ID == id {
+			configs[i].LastRunAt = time.Now().UTC().Format(time.RFC3339)
+			if err := h.saveBackupConfigs(r, configs); err != nil {
+				slog.Error("control: trigger backup update last_run", "error", err)
+			}
+			writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"id": id, "status": "triggered"}})
+			return
+		}
+	}
+	writeError(w, http.StatusNotFound, "not_found", "Backup config not found")
+}
+
+func (h *Handlers) loadBackupConfigs(r *http.Request) []backupConfigEntry {
+	if h.Valkey == nil {
+		return []backupConfigEntry{}
+	}
+	raw, err := h.Valkey.Get(r.Context(), backupConfigsKey(r.Context())).Result()
+	if err != nil || raw == "" {
+		return []backupConfigEntry{}
+	}
+	var configs []backupConfigEntry
+	if json.Unmarshal([]byte(raw), &configs) != nil {
+		return []backupConfigEntry{}
+	}
+	return configs
+}
+
+func (h *Handlers) saveBackupConfigs(r *http.Request, configs []backupConfigEntry) error {
+	if h.Valkey == nil {
+		return fmt.Errorf("valkey not available")
+	}
+	data, err := json.Marshal(configs)
+	if err != nil {
+		return err
+	}
+	return h.Valkey.Set(r.Context(), backupConfigsKey(r.Context()), string(data), 0).Err()
 }

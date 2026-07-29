@@ -36,6 +36,13 @@
 	let analytics = $state<any>(null);
 	let analyticsLoading = $state(false);
 
+	// L3: DataTable columns for the top-keys-by-volume analytics list
+	const topKeyColumns: DataTableColumn[] = [
+		{ key: 'key_prefix', label: t('api_keys.key_prefix', 'Prefix'), sortable: true, render: (val) => `<span class="font-mono text-xs text-muted-foreground">${val}</span>` },
+		{ key: 'name', label: t('api_keys.name', 'Name'), sortable: true },
+		{ key: 'request_count', label: t('api_keys.requests', 'Requests'), sortable: true, render: (val) => `<span class="font-mono text-muted-foreground">${Number(val).toLocaleString()}</span>` }
+	];
+
 	$effect(() => {
 		load();
 		loadScopes();
@@ -260,9 +267,7 @@
 			label: t('api_keys.revoke_selected'),
 			variant: 'destructive',
 			onClick: async (ids: string[]) => {
-				for (const id of ids) {
-					await revokeKey(id);
-				}
+				await Promise.allSettled(ids.map((id) => revokeKey(id)));
 			}
 		},
 		{
@@ -302,9 +307,10 @@
 	}
 
 	async function revokeKey(id: string) {
-		// PATCH with status:'revoked' soft-revokes the key (sets status column).
-		// DELETE permanently removes the row — that is deleteKey, not revoke.
-		const result = await api(`/control/api-keys/${id}`, { method: 'PATCH', body: { status: 'revoked' } });
+		// M1: Use the dedicated POST /control/api-keys/:id/revoke endpoint
+		// instead of PATCH with status:'revoked'. This is more explicit and
+		// idempotent — the route name communicates intent.
+		const result = await api(`/control/api-keys/${id}/revoke`, { method: 'POST' });
 		if (result.ok) {
 			keys = keys.map((k) => (k.id === id ? { ...k, status: 'revoked' } : k));
 		} else {
@@ -536,19 +542,17 @@
 			</div>
 
 			{#if analytics.top_keys_by_volume?.length}
+				<!-- L3: Converted top-keys-by-volume from raw divs to DataTable -->
 				<div class="border-border-card bg-card mt-4 rounded-xl border p-4">
 					<h3 class="text-foreground mb-3 text-sm font-medium">{t('api_keys.top_keys')}</h3>
-					<div class="space-y-2">
-						{#each analytics.top_keys_by_volume as key}
-							<div class="flex items-center justify-between text-sm">
-								<div class="flex items-center gap-2">
-									<span class="font-mono text-xs text-muted-foreground">{key.key_prefix}</span>
-									<span class="text-foreground">{key.name}</span>
-								</div>
-								<span class="font-mono text-muted-foreground">{key.request_count.toLocaleString()} requests</span>
-							</div>
-						{/each}
-					</div>
+					<DataTable
+						columns={topKeyColumns}
+						rows={analytics.top_keys_by_volume}
+						totalRows={analytics.top_keys_by_volume.length}
+						pageSize={10}
+						selectable={false}
+						emptyMessage={t('api_keys.no_top_keys', 'No top keys')}
+					/>
 				</div>
 			{/if}
 
@@ -828,7 +832,7 @@
 	</Dialog.Portal>
 </Dialog.Root>
 
-<Dialog.Root bind:open={oneTimeKeyModalOpen} onOpenChange={(isOpen) => { if (!isOpen) { setTimeout(() => { oneTimeKeyValue = ''; }, 300); } }}>
+<Dialog.Root bind:open={oneTimeKeyModalOpen} onOpenChange={(isOpen) => { if (!isOpen) { oneTimeKeyValue = ''; } }}>
 	<Dialog.Portal>
 		<Dialog.Overlay class="bg-black/50 data-[state=open]:animate-in data-[state=open]:fade-in data-[state=closed]:animate-out data-[state=closed]:fade-out fixed inset-0 z-50" />
 		<Dialog.Content

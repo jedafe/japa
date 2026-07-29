@@ -60,6 +60,11 @@
 	let confirmResetSetting = $state<SystemSetting | null>(null);
 	let resetModalOpen = $state(false);
 	let confirmResetAllOpen = $state(false);
+	// C3: university.surface_domain change warning (ADR-063)
+	let confirmSurfaceDomainOpen = $state(false);
+	let pendingSurfaceDomainValue = $state('');
+	// C4: geo_personalization.enabled disable warning (ADR-064)
+	let confirmGeoDisableOpen = $state(false);
 
 	const selectOptions: Record<string, { value: string; label: string }[]> = $derived(
 		(() => {
@@ -302,6 +307,16 @@
 					return;
 				}
 			}
+			// C3: university.surface_domain change warning (ADR-063).
+			// Changing this value affects Learn app host detection — show
+			// a confirmation dialog before proceeding with the save.
+			const surfaceDomainSetting = changed.find((s) => s.key === 'university.surface_domain');
+			if (surfaceDomainSetting && !confirmSurfaceDomainOpen) {
+				pendingSurfaceDomainValue = surfaceDomainSetting.value;
+				confirmSurfaceDomainOpen = true;
+				isSaving = false;
+				return;
+			}
 			// Use the batch endpoint PATCH /control/system-settings which accepts
 			// a map of {key: value} and applies them in a single request.
 			const body = Object.fromEntries(changed.map((s) => [s.key, s.value]));
@@ -323,6 +338,28 @@
 		} finally {
 			isSaving = false;
 		}
+	}
+
+	// C3: Called when the user confirms the surface_domain change warning.
+	async function confirmSurfaceDomainSave() {
+		confirmSurfaceDomainOpen = false;
+		await saveAll();
+	}
+
+	// C4: Called when the user confirms the geo_personalization disable warning.
+	function confirmGeoDisable() {
+		confirmGeoDisableOpen = false;
+		updateSetting('geo_personalization.enabled', 'false');
+	}
+
+	// C4: Intercept geo_personalization.enabled toggle — on disable, show
+	// a confirmation dialog before applying the change (ADR-064).
+	function handleSettingToggle(key: string, checked: boolean) {
+		if (key === 'geo_personalization.enabled' && !checked) {
+			confirmGeoDisableOpen = true;
+			return;
+		}
+		updateSetting(key, checked ? 'true' : 'false');
 	}
 
 	function resetAll() {
@@ -506,7 +543,13 @@
 
 	const sensitiveKeys = new Set(categorySensitiveKeys);
 
-	function isSensitiveKey(key: string): boolean {
+	// L7: Prefer the backend's `sensitive` field (Rule 16 — backend is source
+	// of truth). Fall back to the heuristic only if the backend field is
+	// missing (e.g. for settings not yet in the catalog).
+	function isSensitiveKey(key: string, setting?: SystemSetting): boolean {
+		if (setting?.sensitive !== undefined) {
+			return setting.sensitive;
+		}
 		return sensitiveKeys.has(key) || key.includes('secret') || key.includes('password') || key.includes('token') || key.includes('api_key');
 	}
 
@@ -785,7 +828,7 @@
 								{/if}
 								{#if dirty}
 									<p class="mt-0.5 text-[10px] text-amber-600/70">
-										{t('settings.original_value', 'Original:')} {isSensitiveKey(setting.key) ? getMaskedValue(getOriginalValue(setting.key)) : getOriginalValue(setting.key)}
+										{t('settings.original_value', 'Original:')} {isSensitiveKey(setting.key, setting) ? getMaskedValue(getOriginalValue(setting.key)) : getOriginalValue(setting.key)}
 									</p>
 								{/if}
 							</div>
@@ -810,7 +853,7 @@
 											id="setting-{setting.key}"
 											checked={isTrue}
 											onCheckedChange={(checked) =>
-												updateSetting(setting.key, checked ? 'true' : 'false')}
+												handleSettingToggle(setting.key, checked)}
 											class="bg-muted data-[state=checked]:bg-emerald-500 peer inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full px-[2px] transition-colors disabled:cursor-not-allowed disabled:opacity-50"
 										>
 											<Switch.Thumb
@@ -935,42 +978,6 @@
 										class="{inputClasses} w-64 resize-y font-mono text-xs"
 									></textarea>
 
-								{:else if componentType === 'entity-multi-select'}
-									{@const selectedUuids = parseJsonArray(getDisplayValue(setting))}
-									{@const entityOpts = getEntityOptionsForSetting(setting)}
-									<div class="w-64">
-										<div class="mb-1 flex flex-wrap gap-1">
-											{#each selectedUuids as uuid}
-												{@const label = entityOpts.find((o) => o.value === uuid)?.label ?? uuid.slice(0, 8) + '…'}
-												<span class="bg-accent text-accent-foreground inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px]">
-													{label}
-													<button class="hover:text-destructive" onclick={() => updateSetting(setting.key, JSON.stringify(selectedUuids.filter((v) => v !== uuid)))}>×</button>
-												</span>
-											{/each}
-										</div>
-										<Select.Root type="single" value="" onValueChange={(v) => {
-											if (v && !selectedUuids.includes(v)) {
-												updateSetting(setting.key, JSON.stringify([...selectedUuids, v]));
-											}
-										}}>
-											<Select.Trigger class="{selectTriggerClasses} w-full" id="setting-{setting.key}">
-												<Select.Value placeholder={t('settings.add_placeholder', 'Add...')} />
-												<ChevronDown class="text-muted-foreground size-3.5" />
-											</Select.Trigger>
-											<Select.Portal>
-												<Select.Content class={selectContentClasses}>
-													<Select.Viewport class="p-1">
-														{#each entityOpts.filter((o) => !selectedUuids.includes(o.value)) as option}
-															<Select.Item class={selectItemClasses} value={option.value} label={option.label}>
-																{option.label}
-															</Select.Item>
-														{/each}
-													</Select.Viewport>
-												</Select.Content>
-											</Select.Portal>
-										</Select.Root>
-									</div>
-
 								{:else if componentType === 'number'}
 									<input
 										id="setting-{setting.key}"
@@ -1048,7 +1055,7 @@
 										/>
 									</div>
 
-								{:else if isSensitiveKey(setting.key)}
+								{:else if isSensitiveKey(setting.key, setting)}
 									<div class="flex items-center gap-1">
 										<input
 											id="setting-{setting.key}"
@@ -1104,10 +1111,10 @@
 										>
 											<p class="font-medium">{t('settings.reset_to_default')}</p>
 											<p class="text-muted-foreground mt-1">
-												{t('settings.current_label')} <span class="font-medium">{isSensitiveKey(setting.key) ? getMaskedValue(setting.value) : setting.value}</span>
+												{t('settings.current_label')} <span class="font-medium">{isSensitiveKey(setting.key, setting) ? getMaskedValue(setting.value) : setting.value}</span>
 											</p>
 											<p class="text-muted-foreground">
-												{t('settings.default_label')} <span class="font-medium">{isSensitiveKey(setting.key) ? getMaskedValue(setting.default_value) : setting.default_value}</span>
+												{t('settings.default_label')} <span class="font-medium">{isSensitiveKey(setting.key, setting) ? getMaskedValue(setting.default_value) : setting.default_value}</span>
 											</p>
 										</Tooltip.Content>
 									</Tooltip.Portal>
@@ -1188,7 +1195,7 @@
 												<Switch.Root
 													id="setting-{setting.key}"
 													checked={isTrue}
-													onCheckedChange={(checked) => updateSetting(setting.key, checked ? 'true' : 'false')}
+													onCheckedChange={(checked) => handleSettingToggle(setting.key, checked)}
 													class="bg-muted data-[state=checked]:bg-emerald-500 peer inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full px-[2px] transition-colors disabled:cursor-not-allowed disabled:opacity-50"
 												>
 													<Switch.Thumb class="bg-background pointer-events-none block size-4 shrink-0 rounded-full shadow-lg transition-transform data-[state=checked]:translate-x-4 data-[state=unchecked]:translate-x-0" />
@@ -1348,7 +1355,7 @@
 											<input type="text" value={getDisplayValue(setting)} onchange={(e) => updateSetting(setting.key, (e.currentTarget as HTMLInputElement).value)} placeholder="#000000" class="{inputClasses} w-24 font-mono text-xs" />
 										</div>
 
-									{:else if isSensitiveKey(setting.key)}
+									{:else if isSensitiveKey(setting.key, setting)}
 											<div class="flex items-center gap-1">
 												<input id="setting-{setting.key}" type={revealedKeys.has(setting.key) ? 'text' : 'password'} value={getDisplayValue(setting)} onchange={(e) => updateSetting(setting.key, (e.currentTarget as HTMLInputElement).value)} class="{inputClasses} w-44 font-mono text-xs" />
 												<button type="button" class="text-muted-foreground hover:text-foreground rounded p-1 transition-colors" onclick={() => toggleReveal(setting.key)} aria-label={revealedKeys.has(setting.key) ? t('settings.hide_value', 'Hide') : t('settings.reveal_value', 'Reveal')}>
@@ -1367,8 +1374,8 @@
 											<Tooltip.Portal>
 												<Tooltip.Content side="top" sideOffset={4} class="border-dark-10 bg-background shadow-popover z-50 w-[220px] rounded-xl border p-3 text-xs">
 													<p class="font-medium">{t('settings.reset_to_default')}</p>
-													<p class="text-muted-foreground mt-1">{t('settings.current_label')} <span class="font-medium">{isSensitiveKey(setting.key) ? getMaskedValue(setting.value) : setting.value}</span></p>
-													<p class="text-muted-foreground">{t('settings.default_label')} <span class="font-medium">{isSensitiveKey(setting.key) ? getMaskedValue(setting.default_value) : setting.default_value}</span></p>
+													<p class="text-muted-foreground mt-1">{t('settings.current_label')} <span class="font-medium">{isSensitiveKey(setting.key, setting) ? getMaskedValue(setting.value) : setting.value}</span></p>
+													<p class="text-muted-foreground">{t('settings.default_label')} <span class="font-medium">{isSensitiveKey(setting.key, setting) ? getMaskedValue(setting.default_value) : setting.default_value}</span></p>
 												</Tooltip.Content>
 											</Tooltip.Portal>
 										</Tooltip.Root>
@@ -1421,4 +1428,30 @@
 	)}
 	confirmText={t('settings.reset_confirm', 'RESET')}
 	onConfirm={resetAll}
+/>
+
+<!-- C3: university.surface_domain change warning (ADR-063) -->
+<ConfirmModal
+	bind:open={confirmSurfaceDomainOpen}
+	title={t('settings.surface_domain_warning_title', 'Surface Domain Change')}
+	consequence={t(
+		'settings.surface_domain_warning',
+		'Changing university.surface_domain affects how the Learn app detects its host. This may break Learn app routing until DNS and the Learn app config are updated. New value: '
+	) + pendingSurfaceDomainValue}
+	confirmText={t('common.confirm', 'Confirm')}
+	onConfirm={confirmSurfaceDomainSave}
+	onCancel={() => { confirmSurfaceDomainOpen = false; }}
+/>
+
+<!-- C4: geo_personalization.enabled disable warning (ADR-064) -->
+<ConfirmModal
+	bind:open={confirmGeoDisableOpen}
+	title={t('settings.geo_disable_warning_title', 'Disable Geo-Personalization')}
+	consequence={t(
+		'settings.geo_disable_warning',
+		'This will disable geo-personalized content for all users. Content feeds will no longer be tailored by geographic location.'
+	)}
+	confirmText={t('common.confirm', 'Confirm')}
+	onConfirm={confirmGeoDisable}
+	onCancel={() => { confirmGeoDisableOpen = false; }}
 />

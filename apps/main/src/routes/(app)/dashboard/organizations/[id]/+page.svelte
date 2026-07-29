@@ -1,0 +1,326 @@
+<script lang="ts">
+	// Ref: japaconnect-engineering/sections/07-organizations.md (org admin dashboard)
+	// Org admin view: edit org fields (PATCH /organizations/{id}), manage
+	// members (list + remove + change role), and view pending invitations.
+	// Mutations go through the browser API client; the org row is seeded from
+	// the server load.
+	import { t } from '$lib/i18n';
+	import { api } from '$lib/api/client';
+	import EmptyState from '$lib/components/ui/EmptyState.svelte';
+	import { Building2, Save, Trash2, Mail, Check, X, FileText, BarChart3, Settings } from 'lucide-svelte';
+	import { untrack } from 'svelte';
+	import { page } from '$app/state';
+	import type { OrganizationAdmin, OrgMember, ProfilePost } from '$lib/types';
+
+	let { data } = $props();
+	const org = $derived(data.org);
+	const invitations = $derived(data.invitations as { id: string; email?: string; role?: string; status?: string; created_at?: string }[]);
+	const content = $derived(data.content as ProfilePost[]);
+	const analytics = $derived(data.analytics as {
+		total_views?: number;
+		total_posts?: number;
+		total_followers?: number;
+		total_members?: number;
+		posts_last_30d?: number;
+	} | null);
+	const activeTab = $derived(page.url.searchParams.get('tab') ?? 'settings');
+
+	let name = $state(untrack(() => data.org?.name ?? ''));
+	let tagline = $state(untrack(() => data.org?.tagline ?? ''));
+	let description = $state(untrack(() => data.org?.description ?? ''));
+	let websiteUrl = $state(untrack(() => data.org?.website_url ?? ''));
+	let countryCode = $state(untrack(() => data.org?.country_code ?? ''));
+	let orgType = $state(untrack(() => data.org?.org_type ?? 'company'));
+
+	let saving = $state(false);
+	let savedKey = $state('');
+	let errorKey = $state('');
+
+	let members = $state<OrgMember[]>(untrack(() => data.members ?? []));
+
+	const inputClass =
+		'w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20';
+
+	async function saveOrg(e: SubmitEvent) {
+		e.preventDefault();
+		if (!org) return;
+		errorKey = '';
+		saving = true;
+		try {
+			const res = await api.patch(`/organizations/${org.id}`, {
+				name,
+				tagline: tagline || null,
+				description: description || null,
+				website_url: websiteUrl || null,
+				country_code: countryCode || null,
+				org_type: orgType
+			});
+			if (res.error) {
+				errorKey = 'org_admin.errors.save_failed';
+			} else {
+				savedKey = 'org_admin.saved';
+				setTimeout(() => (savedKey = ''), 2500);
+			}
+		} catch {
+			errorKey = 'org_admin.errors.save_failed';
+		} finally {
+			saving = false;
+		}
+	}
+
+	async function removeMember(memberUserId: string) {
+		if (!org) return;
+		if (!confirm(t('org_admin.remove_member_confirm'))) return;
+		try {
+			const res = await api.delete(`/organizations/${org.id}/members/${memberUserId}`);
+			if (!res.error) {
+				members = members.filter((m) => m.user.id !== memberUserId);
+			}
+		} catch {
+			// best-effort
+		}
+	}
+
+	async function changeRole(memberUserId: string, role: string) {
+		if (!org) return;
+		try {
+			const res = await api.patch(`/organizations/${org.id}/members/${memberUserId}`, { role });
+			if (!res.error) {
+				members = members.map((m) => (m.user.id === memberUserId ? { ...m, role } : m));
+			}
+		} catch {
+			// best-effort
+		}
+	}
+</script>
+
+<section class="space-y-6">
+	<header>
+		<a href="/dashboard/organizations" class="text-sm text-[var(--color-muted)] hover:underline">
+			← {t('org_admin.back')}
+		</a>
+		<div class="mt-2 flex items-center gap-3">
+			<div class="flex h-10 w-10 items-center justify-center rounded-full bg-[var(--color-primary)]/10 text-[var(--color-primary)]">
+				<Building2 class="h-5 w-5" />
+			</div>
+			<div>
+				<h1 class="text-lg font-medium text-[var(--color-text)]">{org?.name}</h1>
+				<p class="text-xs text-[var(--color-muted)]">/{org?.slug} · {t(`org_admin.status.${org?.status ?? 'active'}`)}</p>
+			</div>
+		</div>
+	</header>
+
+	<!-- Tabbed shell (Phase 29.01) -->
+	<div class="flex gap-1 border-b border-[var(--color-border)]">
+		<a href="?tab=settings" class="inline-flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm font-medium transition-colors {activeTab === 'settings' ? 'border-[var(--color-primary)] text-[var(--color-primary)]' : 'border-transparent text-[var(--color-text-subtle)] hover:text-[var(--color-text)]'}">
+			<Settings size={14} /> {t('org_admin.tab_settings', 'Settings')}
+		</a>
+		<a href="?tab=content" class="inline-flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm font-medium transition-colors {activeTab === 'content' ? 'border-[var(--color-primary)] text-[var(--color-primary)]' : 'border-transparent text-[var(--color-text-subtle)] hover:text-[var(--color-text)]'}">
+			<FileText size={14} /> {t('org_admin.tab_content', 'Content')}
+		</a>
+		<a href="?tab=analytics" class="inline-flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm font-medium transition-colors {activeTab === 'analytics' ? 'border-[var(--color-primary)] text-[var(--color-primary)]' : 'border-transparent text-[var(--color-text-subtle)] hover:text-[var(--color-text)]'}">
+			<BarChart3 size={14} /> {t('org_admin.tab_analytics', 'Analytics')}
+		</a>
+	</div>
+
+	{#if activeTab === 'content'}
+		<!-- Content tab (Phase 29.04) -->
+		<div class="space-y-3 rounded-[12px] border border-[var(--color-border)] bg-[var(--color-surface)] p-5">
+			<h2 class="text-sm font-medium text-[var(--color-text)]">
+				{t('org_admin.content_section', 'Published content')} ({content.length})
+			</h2>
+			{#if content.length === 0}
+				<EmptyState icon={FileText} title={t('org_admin.no_content', 'No content yet')} />
+			{:else}
+				<div class="divide-y divide-[var(--color-border)]">
+					{#each content as post (post.id)}
+						<a href="/content/{post.slug}" class="block py-3 transition-colors hover:bg-[var(--color-surface-subtle)]">
+							<div class="flex items-center gap-2 text-xs text-[var(--color-muted)]">
+								<span class="rounded-full bg-[var(--color-surface-subtle)] px-2 py-0.5 font-medium text-[var(--color-text-subtle)]">{post.content_type}</span>
+								<span>· {post.read_time_minutes} {t('feed.min_read')}</span>
+							</div>
+							<h3 class="mt-1 text-sm font-medium text-[var(--color-text)]">{post.title}</h3>
+							<div class="mt-1 flex items-center gap-4 text-xs text-[var(--color-muted)]">
+								<span>{post.view_count} {t('profile.views', 'views')}</span>
+								<span>{post.comment_count} {t('profile.comments', 'comments')}</span>
+							</div>
+						</a>
+					{/each}
+				</div>
+			{/if}
+		</div>
+	{:else if activeTab === 'analytics'}
+		<!-- Analytics tab (Phase 29.06) -->
+		{#if analytics}
+			<div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
+				<div class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+					<div class="flex items-center gap-2 text-xs text-[var(--color-muted)]">
+						<BarChart3 size={14} /> {t('org_admin.analytics_views', 'Total views')}
+					</div>
+					<p class="mt-1 text-lg font-semibold text-[var(--color-text)]">{analytics.total_views ?? 0}</p>
+				</div>
+				<div class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+					<div class="flex items-center gap-2 text-xs text-[var(--color-muted)]">
+						<FileText size={14} /> {t('org_admin.analytics_posts', 'Total posts')}
+					</div>
+					<p class="mt-1 text-lg font-semibold text-[var(--color-text)]">{analytics.total_posts ?? 0}</p>
+				</div>
+				<div class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+					<div class="flex items-center gap-2 text-xs text-[var(--color-muted)]">
+						<Building2 size={14} /> {t('org_admin.analytics_members', 'Members')}
+					</div>
+					<p class="mt-1 text-lg font-semibold text-[var(--color-text)]">{analytics.total_members ?? 0}</p>
+				</div>
+				<div class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+					<div class="flex items-center gap-2 text-xs text-[var(--color-muted)]">
+						<Building2 size={14} /> {t('org_admin.analytics_followers', 'Followers')}
+					</div>
+					<p class="mt-1 text-lg font-semibold text-[var(--color-text)]">{analytics.total_followers ?? 0}</p>
+				</div>
+				<div class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+					<div class="flex items-center gap-2 text-xs text-[var(--color-muted)]">
+						<FileText size={14} /> {t('org_admin.analytics_posts_30d', 'Posts (30d)')}
+					</div>
+					<p class="mt-1 text-lg font-semibold text-[var(--color-text)]">{analytics.posts_last_30d ?? 0}</p>
+				</div>
+			</div>
+		{:else}
+			<EmptyState icon={BarChart3} title={t('org_admin.analytics_unavailable', 'Analytics unavailable')} />
+		{/if}
+	{:else}
+	<!-- Edit org fields -->
+	<form onsubmit={saveOrg} class="space-y-4 rounded-[12px] border border-[var(--color-border)] bg-[var(--color-surface)] p-5" novalidate>
+		<h2 class="text-sm font-medium text-[var(--color-text)]">{t('org_admin.edit_section')}</h2>
+
+		{#if errorKey}
+			<p class="rounded-[var(--radius)] bg-red-500/10 px-3 py-2 text-sm text-red-500" role="alert">{t(errorKey)}</p>
+		{/if}
+		{#if savedKey}
+			<p class="rounded-[var(--radius)] bg-green-500/10 px-3 py-2 text-sm text-green-600" role="status">{t(savedKey)}</p>
+		{/if}
+
+		<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+			<label class="flex flex-col gap-1.5">
+				<span class="text-sm font-medium text-[var(--color-text)]">{t('org_admin.field_name')}</span>
+				<input class={inputClass} value={name} oninput={(e) => (name = e.currentTarget.value)} />
+			</label>
+			<label class="flex flex-col gap-1.5">
+				<span class="text-sm font-medium text-[var(--color-text)]">{t('org_admin.field_tagline')}</span>
+				<input class={inputClass} value={tagline} oninput={(e) => (tagline = e.currentTarget.value)} />
+			</label>
+		</div>
+
+		<label class="flex flex-col gap-1.5">
+			<span class="text-sm font-medium text-[var(--color-text)]">{t('org_admin.field_description')}</span>
+			<textarea class={inputClass} rows={4} value={description} oninput={(e) => (description = e.currentTarget.value)}></textarea>
+		</label>
+
+		<div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
+			<label class="flex flex-col gap-1.5">
+				<span class="text-sm font-medium text-[var(--color-text)]">{t('org_admin.field_website')}</span>
+				<input class={inputClass} value={websiteUrl} oninput={(e) => (websiteUrl = e.currentTarget.value)} placeholder="https://" />
+			</label>
+			<label class="flex flex-col gap-1.5">
+				<span class="text-sm font-medium text-[var(--color-text)]">{t('org_admin.field_country')}</span>
+				<input class={inputClass} value={countryCode} oninput={(e) => (countryCode = e.currentTarget.value)} placeholder="NG" />
+			</label>
+			<label class="flex flex-col gap-1.5">
+				<span class="text-sm font-medium text-[var(--color-text)]">{t('org_admin.field_type')}</span>
+				<input class={inputClass} value={orgType} oninput={(e) => (orgType = e.currentTarget.value)} />
+			</label>
+		</div>
+
+		<div class="flex justify-end">
+			<button
+				type="submit"
+				disabled={saving}
+				class="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-white transition hover:opacity-90 disabled:opacity-50"
+			>
+				<Save class="h-4 w-4" />
+				{saving ? '...' : t('org_admin.save')}
+			</button>
+		</div>
+	</form>
+
+	<!-- Members management -->
+	<div class="space-y-3 rounded-[12px] border border-[var(--color-border)] bg-[var(--color-surface)] p-5">
+		<h2 class="text-sm font-medium text-[var(--color-text)]">
+			{t('org_admin.members_section')} ({members.length})
+		</h2>
+
+		{#if members.length === 0}
+			<EmptyState icon={Building2} title={t('org_admin.no_members')} />
+		{:else}
+			<ul class="space-y-2">
+				{#each members as m (m.user.id)}
+					<li class="flex items-center justify-between gap-3 rounded-[var(--radius)] bg-[var(--color-surface-subtle)] p-3">
+						<div class="flex min-w-0 items-center gap-3">
+							{#if m.user.avatar_url}
+								<img src={m.user.avatar_url} alt="" class="h-8 w-8 rounded-full object-cover" />
+							{:else}
+								<div class="flex h-8 w-8 items-center justify-center rounded-full bg-[var(--color-primary)]/10 text-xs font-medium text-[var(--color-primary)]">
+									{m.user.display_name.slice(0, 1).toUpperCase()}
+								</div>
+							{/if}
+							<div class="min-w-0">
+								<p class="truncate text-sm font-medium text-[var(--color-text)]">{m.user.display_name}</p>
+								<p class="truncate text-xs text-[var(--color-muted)]">@{m.user.username}</p>
+							</div>
+						</div>
+						<div class="flex shrink-0 items-center gap-2">
+							<select
+								value={m.role}
+								onchange={(e) => changeRole(m.user.id, e.currentTarget.value)}
+								class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 text-xs text-[var(--color-text)]"
+								aria-label={t('org_admin.role_label')}
+							>
+								<option value="owner">{t('org_admin.role.owner')}</option>
+								<option value="admin">{t('org_admin.role.admin')}</option>
+								<option value="member">{t('org_admin.role.member')}</option>
+							</select>
+							<button
+								type="button"
+								onclick={() => removeMember(m.user.id)}
+								class="rounded p-1 text-[var(--color-muted)] hover:bg-red-500/10 hover:text-red-500"
+								aria-label={t('org_admin.remove_member')}
+							>
+								<Trash2 class="h-4 w-4" />
+							</button>
+						</div>
+					</li>
+				{/each}
+			</ul>
+		{/if}
+	</div>
+
+	<!-- Invitations -->
+	{#if invitations.length > 0}
+		<div class="space-y-3 rounded-[12px] border border-[var(--color-border)] bg-[var(--color-surface)] p-5">
+			<h2 class="flex items-center gap-2 text-sm font-medium text-[var(--color-text)]">
+				<Mail class="h-4 w-4" />
+				{t('org_admin.invitations_section')} ({invitations.length})
+			</h2>
+			<ul class="space-y-2">
+				{#each invitations as inv (inv.id)}
+					<li class="flex items-center justify-between gap-3 rounded-[var(--radius)] bg-[var(--color-surface-subtle)] p-3">
+						<div class="min-w-0">
+							<p class="truncate text-sm font-medium text-[var(--color-text)]">{inv.email}</p>
+							<p class="text-xs text-[var(--color-muted)]">
+								{inv.role ?? 'member'} · {inv.status ?? 'pending'}
+								{#if inv.created_at}· {new Date(inv.created_at).toLocaleDateString()}{/if}
+							</p>
+						</div>
+						{#if inv.status === 'pending'}
+							<span class="shrink-0 rounded-full bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-600">
+								{t('org_admin.invite_pending')}
+							</span>
+						{:else}
+							<Check class="h-4 w-4 shrink-0 text-green-600" />
+						{/if}
+					</li>
+				{/each}
+			</ul>
+		</div>
+	{/if}
+	{/if}
+</section>

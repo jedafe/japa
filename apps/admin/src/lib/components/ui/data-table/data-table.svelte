@@ -35,7 +35,7 @@
      loading = false,
      pageSize,
       bulkActions,
-      urlSync = false,
+      urlSync = true,
       defaultBulkActions = false,
       onbulkclear,
       onsortchange,
@@ -324,13 +324,13 @@
       </tbody>
     </table>
   </div>
-  {#if selectable && selectedIds.size > 0 && (bulkActionsSnippet || defaultBulkActions)}
-    <div class="mt-3 flex flex-wrap items-center gap-3 rounded-lg p-3" style="background: color-mix(in srgb, var(--color-primary) 12%, transparent)">
+  {#if selectable && (bulkActionsSnippet || defaultBulkActions)}
+    <div class="mt-3 flex flex-wrap items-center gap-3 rounded-lg p-3" style="background: color-mix(in srgb, var(--color-primary) 12%, transparent); opacity: {selectedIds.size > 0 ? '1' : '0.5'}">
       <span class="text-sm font-medium" style="color: var(--color-foreground)">{t('common.selected', '{count} selected').replace('{count}', String(selectedIds.size))}</span>
       {#if bulkActionsSnippet}
         {@render bulkActionsSnippet()}
       {/if}
-      <Button variant="ghost" size="sm" onclick={clearSelection} style="margin-left: auto">{t('common.clear', 'Clear')}</Button>
+      <Button variant="ghost" size="sm" onclick={clearSelection} disabled={selectedIds.size === 0} style="margin-left: auto">{t('common.clear', 'Clear')}</Button>
     </div>
   {/if}
 </div>

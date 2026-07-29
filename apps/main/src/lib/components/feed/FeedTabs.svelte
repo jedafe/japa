@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { t } from '$lib/i18n';
+	import FeedGeoControl from './FeedGeoControl.svelte';
 	import type { FeedTab, SortValue } from '$lib/feed/endpoint';
 
 	interface Props {
@@ -20,7 +21,7 @@
 </script>
 
 <div
-	class="sticky top-0 z-10 flex gap-1 border-b border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-bg)_90%,transparent)] px-3 backdrop-blur"
+	class="sticky top-0 z-10 flex items-center gap-1 border-b border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-bg)_90%,transparent)] px-3 backdrop-blur"
 	style="min-height: var(--nav-height)"
 >
 	{#each tabs as tabItem (tabItem.value)}
@@ -38,4 +39,10 @@
 			{/if}
 		</a>
 	{/each}
+	<!-- ADR-064: inline "Showing: [Country] · Change" geo control (audit H1) -->
+	{#if authed}
+		<div class="ml-auto pr-1">
+			<FeedGeoControl />
+		</div>
+	{/if}
 </div>

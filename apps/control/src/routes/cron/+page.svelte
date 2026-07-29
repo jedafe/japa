@@ -8,7 +8,7 @@
 	import { t } from '$lib/stores/i18n.svelte';
 	import { escapeHtml } from '$lib/utils';
 	import { Play, Pause, PlayCircle, Pencil, Plus, RefreshCw, Trash2 } from 'lucide-svelte';
-	import type { DataTableColumn, DataTableRowAction } from '$lib/api/types';
+	import type { DataTableColumn, DataTableRowAction, DataTableBulkAction } from '$lib/api/types';
 
 	let {} = $props();
 
@@ -43,6 +43,10 @@
 
 	let deleteModalOpen = $state(false);
 	let deletingJob = $state<CronJob | null>(null);
+	// H7: Bulk selection state for cron jobs
+	let selectedIds = $state(new Set<string>());
+	let confirmBulkDeleteOpen = $state(false);
+	let pendingBulkIds = $state<string[]>([]);
 
 	const statusItems = [
 		{ value: 'all', label: t('cron.all_status', 'All Status') },
@@ -404,6 +408,52 @@
 			onClick: (row) => confirmDelete(row as unknown as CronJob)
 		}
 	];
+
+	// H7: Bulk actions for cron jobs
+	const bulkActions: DataTableBulkAction[] = [
+		{
+			label: t('cron.pause_selected', 'Pause Selected'),
+			icon: Pause,
+			onClick: async (ids: string[]) => {
+				await Promise.allSettled(
+					ids.map((id) => api(`/control/cron/jobs/${id}/pause`, { method: 'POST' }))
+				);
+				selectedIds = new Set();
+				await load();
+			}
+		},
+		{
+			label: t('cron.resume_selected', 'Resume Selected'),
+			icon: PlayCircle,
+			onClick: async (ids: string[]) => {
+				await Promise.allSettled(
+					ids.map((id) => api(`/control/cron/jobs/${id}/unpause`, { method: 'POST' }))
+				);
+				selectedIds = new Set();
+				await load();
+			}
+		},
+		{
+			label: t('cron.delete_selected', 'Delete Selected'),
+			icon: Trash2,
+			variant: 'destructive',
+			onClick: (ids: string[]) => {
+				pendingBulkIds = ids;
+				confirmBulkDeleteOpen = true;
+			}
+		}
+	];
+
+	async function confirmBulkDelete() {
+		const ids = pendingBulkIds;
+		await Promise.allSettled(
+			ids.map((id) => api(`/control/cron/jobs/${id}`, { method: 'DELETE' }))
+		);
+		selectedIds = new Set();
+		pendingBulkIds = [];
+		confirmBulkDeleteOpen = false;
+		await load();
+	}
 </script>
 
 <PageHeader
@@ -474,9 +524,11 @@
 	bind:sortKey
 	bind:sortDirection
 	{rowActions}
+	{bulkActions}
 	{loading}
 	emptyMessage={t('cron.no_jobs', 'No cron jobs configured.')}
-	selectable={false}
+	selectable={true}
+	bind:selectedIds
 />
 
 <Dialog.Root bind:open={editModalOpen}>
@@ -635,4 +687,14 @@
 		: ''}
 	confirmText="DELETE"
 	onConfirm={handleDelete}
+/>
+
+<!-- H7: Bulk delete confirmation for cron jobs -->
+<ConfirmModal
+	bind:open={confirmBulkDeleteOpen}
+	title={t('cron.bulk_delete_title', 'Delete Selected Jobs')}
+	consequence={t('cron.bulk_delete_confirm', 'Are you sure you want to delete the selected cron jobs? This action cannot be undone.')}
+	confirmText="DELETE"
+	onConfirm={confirmBulkDelete}
+	onCancel={() => { confirmBulkDeleteOpen = false; pendingBulkIds = []; }}
 />

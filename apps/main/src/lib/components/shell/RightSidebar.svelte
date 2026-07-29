@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
+	import { page } from '$app/state';
 	import { Search, Sun, Moon, Languages } from 'lucide-svelte';
 	import { theme } from '$lib/stores/theme.svelte';
 	import { t, i18n } from '$lib/i18n';
@@ -23,6 +24,9 @@
 	// Only show the language toggle when more than one language is enabled.
 	// Ref: conventions/system-settings-catalog.md (i18n.enabled_languages)
 	let showLanguageToggle = $derived(enabledLanguages.split(',').filter(Boolean).length > 1);
+
+	// ADR-060: Dashboard is private — no ad slots on /dashboard/* routes.
+	let isDashboard = $derived(page.url.pathname.startsWith('/dashboard'));
 
 	/** Current path without the leading slash, for the /fr /en redirect targets. */
 	function currentPath(): string {
@@ -66,8 +70,11 @@
 		{@render sidebar()}
 	{/if}
 
-	<!-- Phase 24 — sidebar_top ad slot (above global widgets) -->
-	<AdSlot slot="sidebar_top" format="square" />
+	<!-- Phase 24 — sidebar_top ad slot (above global widgets). Suppressed on
+	dashboard routes per ADR-060 (dashboard is private, no ad slots). -->
+	{#if !isDashboard}
+		<AdSlot slot="sidebar_top" format="square" />
+	{/if}
 
 	<!-- Global widget: trending tags -->
 	{#if trendingTags.length > 0}
@@ -109,6 +116,9 @@
 		</section>
 	{/if}
 
-	<!-- Phase 24 — sidebar_bottom ad slot (after global widgets) -->
-	<AdSlot slot="sidebar_bottom" format="banner" />
+	<!-- Phase 24 — sidebar_bottom ad slot (after global widgets). Suppressed on
+	dashboard routes per ADR-060. -->
+	{#if !isDashboard}
+		<AdSlot slot="sidebar_bottom" format="banner" />
+	{/if}
 </aside>

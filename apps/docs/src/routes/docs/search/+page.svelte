@@ -1,25 +1,39 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import { page } from '$app/state';
 	import AppShell from '$lib/components/shell/AppShell.svelte';
 	import { Search } from 'lucide-svelte';
 	import { t } from '$lib/i18n';
-	import { AUDIENCE_LABEL_KEY } from '$lib/types';
+	import { AUDIENCE_LABEL_KEY, AUDIENCE_ORDER } from '$lib/types';
+	import type { DocAudience } from '$lib/types';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
 
 	let query = $state('');
+	let selectedAudience = $state<DocAudience | null>(null);
 
-	// Keep the input in sync with the URL param (navigations update data.q).
+	// Keep the input + audience filter in sync with the URL params.
 	$effect(() => {
 		query = data.q;
+		selectedAudience = data.audience;
 	});
 
 	function submit(e: SubmitEvent) {
 		e.preventDefault();
 		const q = query.trim();
-		goto(q ? `/docs/search?q=${encodeURIComponent(q)}` : '/docs/search');
+		const params = new URLSearchParams();
+		if (q) params.set('q', q);
+		if (selectedAudience) params.set('audience', selectedAudience);
+		goto(params.toString() ? `/docs/search?${params}` : '/docs/search');
+	}
+
+	function pickAudience(a: DocAudience | null) {
+		selectedAudience = a;
+		const q = query.trim();
+		const params = new URLSearchParams();
+		if (q) params.set('q', q);
+		if (a) params.set('audience', a);
+		goto(params.toString() ? `/docs/search?${params}` : '/docs/search');
 	}
 </script>
 
@@ -54,12 +68,36 @@
 			<button type="submit" class="submit-btn">{t('search.title')}</button>
 		</form>
 
+		<div class="audience-filters" role="group" aria-label={t('search.filter_audience')}>
+			<button
+				type="button"
+				class="chip"
+				class:active={selectedAudience === null}
+				onclick={() => pickAudience(null)}
+			>
+				{t('search.all_audiences')}
+			</button>
+			{#each AUDIENCE_ORDER.filter((a) => data.accessibleAudiences.includes(a)) as audience (audience)}
+				<button
+					type="button"
+					class="chip"
+					class:active={selectedAudience === audience}
+					onclick={() => pickAudience(audience)}
+				>
+					{t(AUDIENCE_LABEL_KEY[audience], audience)}
+				</button>
+			{/each}
+		</div>
+
 		{#if !data.q}
 			<p class="hint">{t('search.start_typing')}</p>
 		{:else if data.results.length === 0}
 			<p class="hint">{t('search.empty')}</p>
 		{:else}
-			<p class="results-for">{t('search.results_for', '', { q: data.q })}</p>
+			<p class="results-for">
+				{t('search.results_for', '', { q: data.q })}
+				{#if data.audience} · {t(AUDIENCE_LABEL_KEY[data.audience], data.audience)}{/if}
+			</p>
 			<ul class="results">
 				{#each data.results as r (r.id)}
 					<li>
@@ -129,6 +167,30 @@
 		cursor: pointer;
 	}
 	.submit-btn:hover { border-color: var(--color-primary); color: var(--color-primary); }
+
+	.audience-filters {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.375rem;
+		margin-bottom: 1.5rem;
+	}
+	.chip {
+		padding: 0.25rem 0.625rem;
+		border: 1px solid var(--color-border);
+		border-radius: 9999px;
+		background: var(--color-surface);
+		color: var(--color-muted);
+		font-size: 0.75rem;
+		font-weight: 500;
+		cursor: pointer;
+		text-transform: capitalize;
+	}
+	.chip:hover { border-color: var(--color-border-input-hover); color: var(--color-text); }
+	.chip.active {
+		background: var(--color-primary);
+		color: var(--color-primary-contrast);
+		border-color: var(--color-primary);
+	}
 
 	.hint {
 		padding: 2rem;

@@ -2,12 +2,12 @@
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import DataTable from '$lib/components/DataTable.svelte';
 	import ConfirmModal from '$lib/components/ui/ConfirmModal.svelte';
-	import { Select, Tabs } from 'bits-ui';
+	import { Select, Tabs, Dialog } from 'bits-ui';
 	import { api } from '$lib/api';
 	import type { FeatureFlag, DataTableColumn, DataTableRowAction, DataTableBulkAction } from '$lib/api/types';
 	import { t, translations } from '$lib/stores/i18n.svelte';
 	import { escapeHtml } from '$lib/utils';
-	import { Flag, RefreshCw, Check, X } from 'lucide-svelte';
+	import { Flag, RefreshCw, Check, X, Plus } from 'lucide-svelte';
 
 	let {} = $props();
 
@@ -38,6 +38,13 @@
 	let pageSize = $state(10);
 	let confirmBulkDisableOpen = $state(false);
 	let pendingBulkDisable = $state<string[] | null>(null);
+	// H5: Create feature flag dialog state
+	let showCreateModal = $state(false);
+	let createKey = $state('');
+	let createName = $state('');
+	let createDescription = $state('');
+	let createEnabled = $state(false);
+	let creating = $state(false);
 
 	async function load() {
 		loading = true;
@@ -219,24 +226,53 @@
 
 	});
 
+	// H4: Use Promise.all instead of sequential loops for bulk operations.
 	async function enableSelected(ids: string[]) {
-		for (const f of flags) {
-			if (ids.includes(f.key) && !f.enabled) {
-				await toggleFlag(f.key, true);
-			}
-		}
+		const toEnable = flags.filter((f) => ids.includes(f.key) && !f.enabled);
+		await Promise.allSettled(toEnable.map((f) => toggleFlag(f.key, true)));
 		load();
 	}
 
 	async function confirmBulkDisable() {
 		if (pendingBulkDisable) {
-			for (const id of pendingBulkDisable) {
-				const f = flags.find((x) => x.key === id);
-				if (f && f.enabled) await toggleFlag(id, false);
-			}
+			const ids = pendingBulkDisable;
+			const toDisable = flags.filter((f) => ids.includes(f.key) && f.enabled);
+			await Promise.allSettled(toDisable.map((f) => toggleFlag(f.key, false)));
 		}
 		pendingBulkDisable = null;
 		load();
+	}
+
+	// H5: Create a new feature flag via POST /control/feature-flags.
+	async function createFlag() {
+		if (!createKey.trim()) return;
+		creating = true;
+		try {
+			const result = await api('/control/feature-flags', {
+				method: 'POST',
+				body: {
+					key: createKey.trim(),
+					name: createName.trim() || createKey.trim(),
+					description: createDescription.trim(),
+					is_enabled: createEnabled
+				}
+			});
+			if (result.ok) {
+				message = t('feature_flags.create_success', 'Feature flag created successfully.');
+				showCreateModal = false;
+				createKey = '';
+				createName = '';
+				createDescription = '';
+				createEnabled = false;
+				await load();
+			} else {
+				message = result.error || t('feature_flags.create_error', 'Failed to create feature flag.');
+			}
+		} catch {
+			message = t('feature_flags.create_error', 'Failed to create feature flag.');
+		} finally {
+			creating = false;
+		}
 	}
 
 </script>
@@ -276,6 +312,14 @@
 		</Select.Portal>
 	</Select.Root>
 	<div class="flex-1"></div>
+	<!-- H5: Create button for feature flags -->
+	<button
+		class="bg-accent text-accent-foreground hover:bg-accent/90 rounded-9px flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-colors"
+		onclick={() => (showCreateModal = true)}
+	>
+		<Plus class="size-3" />
+		{t('feature_flags.create', 'Create Flag')}
+	</button>
 	<button class="border-border-input bg-background-alt hover:bg-muted text-foreground rounded-9px border px-3 py-1.5 text-xs font-medium transition-colors" onclick={load}>
 		<RefreshCw class="size-3" />
 		{t('common.refresh', 'Refresh')}
@@ -344,3 +388,73 @@
 	onConfirm={confirmDisable}
 	onCancel={() => { confirmDisableOpen = false; pendingDisableFlag = null; }}
 />
+
+<!-- H5: Create Feature Flag Dialog -->
+<Dialog.Root bind:open={showCreateModal}>
+	<Dialog.Portal>
+		<Dialog.Overlay class="bg-black/50 fixed inset-0 z-50" />
+		<Dialog.Content
+			class="border-border-card bg-background shadow-popover focus:outline-none fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-xl border p-6"
+			role="dialog"
+			aria-modal="true"
+		>
+			<Dialog.Title class="text-foreground text-lg font-semibold">
+				{t('feature_flags.create_title', 'Create Feature Flag')}
+			</Dialog.Title>
+			<div class="mt-4 space-y-4">
+				<div>
+					<label class="text-muted-foreground mb-1 block text-xs font-medium uppercase tracking-wider" for="flag-key">
+						{t('feature_flags.key', 'Key')} *
+					</label>
+					<input
+						id="flag-key"
+						bind:value={createKey}
+						placeholder="feature.my_new_flag"
+						class="border-border-input bg-background text-foreground placeholder:text-muted-foreground/50 rounded-9px w-full border px-3 py-2 text-sm"
+					/>
+				</div>
+				<div>
+					<label class="text-muted-foreground mb-1 block text-xs font-medium uppercase tracking-wider" for="flag-name">
+						{t('feature_flags.name', 'Name')}
+					</label>
+					<input
+						id="flag-name"
+						bind:value={createName}
+						placeholder={t('feature_flags.name_placeholder', 'My New Flag')}
+						class="border-border-input bg-background text-foreground placeholder:text-muted-foreground/50 rounded-9px w-full border px-3 py-2 text-sm"
+					/>
+				</div>
+				<div>
+					<label class="text-muted-foreground mb-1 block text-xs font-medium uppercase tracking-wider" for="flag-desc">
+						{t('feature_flags.description', 'Description')}
+					</label>
+					<textarea
+						id="flag-desc"
+						bind:value={createDescription}
+						rows={2}
+						class="border-border-input bg-background text-foreground placeholder:text-muted-foreground/50 rounded-9px w-full border px-3 py-2 text-sm"
+					></textarea>
+				</div>
+				<label class="flex items-center gap-2">
+					<input type="checkbox" bind:checked={createEnabled} class="size-4" />
+					<span class="text-foreground text-sm">{t('feature_flags.enabled_initial', 'Enabled initially')}</span>
+				</label>
+			</div>
+			<div class="mt-6 flex justify-end gap-2">
+				<button
+					class="border-border-input bg-background-alt hover:bg-muted text-foreground rounded-9px border px-4 py-2 text-sm font-medium transition-colors"
+					onclick={() => (showCreateModal = false)}
+				>
+					{t('common.cancel', 'Cancel')}
+				</button>
+				<button
+					class="bg-foreground text-background rounded-9px px-4 py-2 text-sm font-medium transition-colors hover:opacity-90 disabled:opacity-50"
+					disabled={creating || !createKey.trim()}
+					onclick={createFlag}
+				>
+					{creating ? t('common.creating', 'Creating...') : t('feature_flags.create', 'Create Flag')}
+				</button>
+			</div>
+		</Dialog.Content>
+	</Dialog.Portal>
+</Dialog.Root>

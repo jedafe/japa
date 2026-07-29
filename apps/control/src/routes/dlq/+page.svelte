@@ -27,12 +27,21 @@
 	let successMessage = $state('');
 	let errorMessage = $state('');
 
+	// H2: Add real polling interval for live DLQ monitoring.
+	// The previous $effect was a one-shot fetch with only an abort timeout.
 	$effect(() => {
 		const controller = new AbortController();
 		const timeout = setTimeout(() => controller.abort(), 15000);
 		load(controller.signal);
+		// Poll every 15s for live queue updates.
+		const interval = setInterval(() => {
+			const c = new AbortController();
+			const t = setTimeout(() => c.abort(), 15000);
+			load(c.signal).finally(() => clearTimeout(t));
+		}, 15_000);
 		return () => {
 			clearTimeout(timeout);
+			clearInterval(interval);
 			controller.abort();
 		};
 	});
