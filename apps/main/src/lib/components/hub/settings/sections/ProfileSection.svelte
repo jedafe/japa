@@ -2,19 +2,19 @@
 	import { untrack } from 'svelte';
 	import { DirtyForm } from '$lib/components/hub/useDirtyForm.svelte';
 	import SettingsSection from '$lib/components/hub/SettingsSection.svelte';
+	import MediaLibraryModal from '$lib/components/media/MediaLibraryModal.svelte';
 	import { patchProfile } from '$lib/api/hub';
-	import { initiateUpload, uploadToPresigned, confirmMedia } from '$lib/api/create';
 	import { api } from '$lib/api/client';
 	import { t } from '$lib/i18n';
-	import { Camera, Loader2, Image as ImageIcon } from 'lucide-svelte';
-	import type { MeProfile } from '$lib/types';
+	import { Camera, Image as ImageIcon, Loader2 } from 'lucide-svelte';
+	import type { MeProfile, MediaAsset } from '$lib/types';
 
 	let { data }: { data: unknown } = $props();
 	const profile = $derived(data as MeProfile | null);
 
 	const form = new DirtyForm(
 		untrack(() => ({
-			displayName: profile?.displayName ?? '',
+			display_name: profile?.display_name ?? '',
 			bio: profile?.bio ?? '',
 			avatar_url: profile?.avatar_url ?? '',
 			cover_url: profile?.cover_url ?? ''
@@ -22,64 +22,37 @@
 		(v) => patchProfile(v)
 	);
 
-	let avatarUploading = $state(false);
-	let coverUploading = $state(false);
-	let uploadError = $state('');
+	let avatarPickerOpen = $state(false);
+	let coverPickerOpen = $state(false);
+	let profileSaving = $state(false);
+	let profileError = $state<string | null>(null);
 
-	async function uploadImage(file: File, kind: 'avatar' | 'cover') {
-		if (kind === 'avatar') avatarUploading = true;
-		else coverUploading = true;
-		uploadError = '';
-
-		const init = await initiateUpload({
-			filename: file.name,
-			mime_type: file.type,
-			file_size: file.size
-		});
-		if (init.error || !init.data) {
-			uploadError = t('settings.profile.upload_failed', 'Upload failed');
-			if (kind === 'avatar') avatarUploading = false;
-			else coverUploading = false;
-			return;
-		}
-
-		const up = await uploadToPresigned(init.data.presigned_url, file);
-		if (!up.ok) {
-			uploadError = t('settings.profile.upload_failed', 'Upload failed');
-			if (kind === 'avatar') avatarUploading = false;
-			else coverUploading = false;
-			return;
-		}
-
-		const confirmed = await confirmMedia(init.data.media_id);
-		if (confirmed.error || !confirmed.data) {
-			uploadError = t('settings.profile.upload_failed', 'Upload failed');
-			if (kind === 'avatar') avatarUploading = false;
-			else coverUploading = false;
-			return;
-		}
-
-		// PATCH /me/profile with the new media URL.
-		const url = confirmed.data.url;
-		const res = await api.patch<MeProfile>('/me/profile', {
-			[kind === 'avatar' ? 'avatar_url' : 'cover_url']: url
-		});
+	async function handleAvatarSelect(asset: MediaAsset) {
+		avatarPickerOpen = false;
+		profileSaving = true;
+		profileError = null;
+		const res = await api.patch<MeProfile>('/me/profile', { avatar_url: asset.url });
+		profileSaving = false;
 		if (res.error) {
-			uploadError = t('settings.profile.upload_failed', 'Upload failed');
+			profileError = res.error.message;
 		} else {
-			form.set({ [kind === 'avatar' ? 'avatar_url' : 'cover_url']: url } as Record<string, string>);
+			// Already persisted — advance the snapshot so dirty stays false.
+			form.setSaved({ avatar_url: asset.url });
 		}
-		if (kind === 'avatar') avatarUploading = false;
-		else coverUploading = false;
 	}
 
-	function onAvatarChange(e: Event) {
-		const input = e.currentTarget as HTMLInputElement;
-		if (input.files?.[0]) uploadImage(input.files[0], 'avatar');
-	}
-	function onCoverChange(e: Event) {
-		const input = e.currentTarget as HTMLInputElement;
-		if (input.files?.[0]) uploadImage(input.files[0], 'cover');
+	async function handleCoverSelect(asset: MediaAsset) {
+		coverPickerOpen = false;
+		profileSaving = true;
+		profileError = null;
+		const res = await api.patch<MeProfile>('/me/profile', { cover_url: asset.url });
+		profileSaving = false;
+		if (res.error) {
+			profileError = res.error.message;
+		} else {
+			// Already persisted — advance the snapshot so dirty stays false.
+			form.setSaved({ cover_url: asset.url });
+		}
 	}
 </script>
 
@@ -95,14 +68,14 @@
 						<ImageIcon size={24} />
 					</div>
 				{/if}
-				<label class="absolute -bottom-1 -right-1 grid h-6 w-6 cursor-pointer place-items-center rounded-full bg-[var(--color-primary)] text-white hover:bg-[var(--color-primary-hover)]">
-					{#if avatarUploading}
-						<Loader2 size={12} class="animate-spin" />
-					{:else}
-						<Camera size={12} />
-					{/if}
-					<input type="file" accept="image/*" class="hidden" onchange={onAvatarChange} disabled={avatarUploading} />
-				</label>
+				{#if profileSaving}
+					<div class="absolute inset-0 grid h-16 w-16 place-items-center rounded-full bg-[var(--color-surface)]/60">
+						<Loader2 size={16} class="animate-spin text-[var(--color-primary)]" />
+					</div>
+				{/if}
+				<button type="button" disabled={profileSaving} class="absolute -bottom-1 -right-1 grid h-6 w-6 cursor-pointer place-items-center rounded-full bg-[var(--color-primary)] text-white hover:bg-[var(--color-primary-hover)] disabled:opacity-50" onclick={() => (avatarPickerOpen = true)}>
+					<Camera size={12} />
+				</button>
 			</div>
 			<div>
 				<p class="text-sm font-medium text-[var(--color-text)]">{t('settings.profile.avatar', 'Avatar')}</p>
@@ -120,29 +93,29 @@
 						<ImageIcon size={28} />
 					</div>
 				{/if}
-				<label class="absolute bottom-2 right-2 inline-flex cursor-pointer items-center gap-1 rounded-[var(--radius)] bg-[var(--color-primary)] px-2 py-1 text-xs text-white hover:bg-[var(--color-primary-hover)]">
-					{#if coverUploading}
-						<Loader2 size={12} class="animate-spin" />
-					{:else}
-						<Camera size={12} />
-					{/if}
+				{#if profileSaving}
+					<div class="absolute inset-0 grid place-items-center bg-[var(--color-surface)]/60">
+						<Loader2 size={18} class="animate-spin text-[var(--color-primary)]" />
+					</div>
+				{/if}
+				<button type="button" disabled={profileSaving} class="absolute bottom-2 right-2 inline-flex cursor-pointer items-center gap-1 rounded-[var(--radius)] bg-[var(--color-primary)] px-2 py-1 text-xs text-white hover:bg-[var(--color-primary-hover)] disabled:opacity-50" onclick={() => (coverPickerOpen = true)}>
+					<Camera size={12} />
 					{t('settings.profile.upload', 'Upload')}
-					<input type="file" accept="image/*" class="hidden" onchange={onCoverChange} disabled={coverUploading} />
-				</label>
+				</button>
 			</div>
+			{#if profileError}
+				<p class="mt-1 text-xs text-[var(--color-danger,#dc2626)]">{profileError}</p>
+			{/if}
 		</div>
 
-		{#if uploadError}
-			<p class="text-sm text-red-500" role="alert">{uploadError}</p>
-		{/if}
 	</div>
 
 	<label class="mb-3 block">
 		<span class="mb-1 block text-sm text-[var(--color-muted)]">{t('settings.profile.name')}</span>
 		<input
 			class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-[var(--color-text)]"
-			value={form.values.displayName}
-			oninput={(e) => form.set({ displayName: e.currentTarget.value })}
+			value={form.values.display_name}
+			oninput={(e) => form.set({ display_name: e.currentTarget.value })}
 		/>
 	</label>
 	<label class="block">
@@ -155,3 +128,10 @@
 		></textarea>
 	</label>
 </SettingsSection>
+
+{#if avatarPickerOpen}
+	<MediaLibraryModal onSelect={handleAvatarSelect} onClose={() => (avatarPickerOpen = false)} allowedType="image" />
+{/if}
+{#if coverPickerOpen}
+	<MediaLibraryModal onSelect={handleCoverSelect} onClose={() => (coverPickerOpen = false)} allowedType="image" />
+{/if}

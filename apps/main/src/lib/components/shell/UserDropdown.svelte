@@ -28,9 +28,9 @@
 		aria-label={t('nav.account', 'Account')}
 	>
 		{#if user?.avatar_url}
-			<img src={user.avatar_url} alt={`Avatar of ${user.displayName ?? user.username ?? "user"}`} class="h-9 w-9 rounded-full object-cover" />
+			<img src={user.avatar_url} alt={`Avatar of ${user.display_name ?? user.username ?? "user"}`} class="h-9 w-9 rounded-full object-cover" />
 		{:else if user}
-			{user.displayName?.charAt(0)?.toUpperCase() ?? '?'}
+			{user.display_name?.charAt(0)?.toUpperCase() ?? '?'}
 		{:else}
 			<User size={18} />
 		{/if}

@@ -240,20 +240,20 @@
 		{#if user}
 			<a
 				href="/u/{user.username}"
-				title={collapsed ? user.displayName : undefined}
+				title={collapsed ? user.display_name : undefined}
 				class={clsx('flex items-center gap-3 rounded-[var(--radius)] p-2 hover:bg-[var(--color-surface-subtle)]', collapsed && 'justify-center')}
 			>
 				{#if user.avatar_url}
-					<img src={user.avatar_url} alt={`Avatar of ${user.displayName ?? user.username ?? "user"}`} class="h-8 w-8 shrink-0 rounded-full object-cover" />
+					<img src={user.avatar_url} alt={`Avatar of ${user.display_name ?? user.username ?? "user"}`} class="h-8 w-8 shrink-0 rounded-full object-cover" />
 				{:else}
 					<span
 						class="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[var(--color-surface-subtle)] text-xs font-medium text-[var(--color-text-subtle)]"
-						>{user.displayName?.charAt(0)?.toUpperCase() ?? '?'}</span
+						>{user.display_name?.charAt(0)?.toUpperCase() ?? '?'}</span
 					>
 				{/if}
 				{#if !collapsed}
 					<span class="min-w-0 flex-1">
-						<span class="block truncate text-sm font-medium text-[var(--color-text)]">{user.displayName}</span>
+						<span class="block truncate text-sm font-medium text-[var(--color-text)]">{user.display_name}</span>
 						<span class="block truncate text-xs text-[var(--color-muted)]">@{user.username}</span>
 					</span>
 				{/if}

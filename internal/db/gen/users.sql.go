@@ -127,6 +127,7 @@ SELECT DISTINCT ON (u.id)
        up.display_name,
        up.avatar_url,
        up.bio,
+       up.cover_url,
        COALESCE(up.created_at, u.created_at) AS created_at,
        (SELECT COUNT(*)::int
           FROM follows f
@@ -152,6 +153,7 @@ type GetPublicProfileByUsernameRow struct {
 	DisplayName    *string            `json:"display_name"`
 	AvatarUrl      *string            `json:"avatar_url"`
 	Bio            *string            `json:"bio"`
+	CoverUrl       *string            `json:"cover_url"`
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
 	FollowingCount int32              `json:"following_count"`
 }
@@ -168,6 +170,7 @@ func (q *Queries) GetPublicProfileByUsername(ctx context.Context, arg GetPublicP
 		&i.DisplayName,
 		&i.AvatarUrl,
 		&i.Bio,
+		&i.CoverUrl,
 		&i.CreatedAt,
 		&i.FollowingCount,
 	)
@@ -223,6 +226,7 @@ SELECT DISTINCT ON (u.id)
        up.avatar_url,
        up.bio,
        up.timezone,
+       up.cover_url,
        COALESCE(up.created_at, u.created_at) AS created_at,
        COALESCE(up.updated_at, u.updated_at) AS updated_at,
        u.email, u.username, u.profile_type, u.status, u.follower_count,
@@ -248,6 +252,7 @@ type GetUserByUsernameRow struct {
 	AvatarUrl     *string            `json:"avatar_url"`
 	Bio           *string            `json:"bio"`
 	Timezone      *string            `json:"timezone"`
+	CoverUrl      *string            `json:"cover_url"`
 	CreatedAt     pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
 	Email         string             `json:"email"`
@@ -269,6 +274,7 @@ func (q *Queries) GetUserByUsername(ctx context.Context, arg GetUserByUsernamePa
 		&i.AvatarUrl,
 		&i.Bio,
 		&i.Timezone,
+		&i.CoverUrl,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.Email,
@@ -574,6 +580,7 @@ SELECT DISTINCT ON (u.id)
        up.avatar_url,
        up.bio,
        up.timezone,
+       up.cover_url,
        COALESCE(up.created_at, u.created_at) AS created_at,
        COALESCE(up.updated_at, u.updated_at) AS updated_at,
        u.email, u.username, u.profile_type, u.status, u.follower_count, u.last_login_at,
@@ -599,6 +606,7 @@ type GetUserProfileRow struct {
 	AvatarUrl     *string            `json:"avatar_url"`
 	Bio           *string            `json:"bio"`
 	Timezone      *string            `json:"timezone"`
+	CoverUrl      *string            `json:"cover_url"`
 	CreatedAt     pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
 	Email         string             `json:"email"`
@@ -621,6 +629,7 @@ func (q *Queries) GetUserProfile(ctx context.Context, arg GetUserProfileParams) 
 		&i.AvatarUrl,
 		&i.Bio,
 		&i.Timezone,
+		&i.CoverUrl,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.Email,
@@ -1164,13 +1173,14 @@ func (q *Queries) UpsertUserPrivacySettings(ctx context.Context, arg UpsertUserP
 }
 
 const upsertUserProfile = `-- name: UpsertUserProfile :exec
-INSERT INTO user_profiles (tenant_id, user_id, display_name, avatar_url, bio, timezone)
-VALUES ($1, $2, $3, $4, $5, $6)
+INSERT INTO user_profiles (tenant_id, user_id, display_name, avatar_url, bio, timezone, cover_url)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
 ON CONFLICT (tenant_id, user_id) DO UPDATE SET
     display_name = EXCLUDED.display_name,
     avatar_url = EXCLUDED.avatar_url,
     bio = EXCLUDED.bio,
     timezone = EXCLUDED.timezone,
+    cover_url = EXCLUDED.cover_url,
     updated_at = now()
 `
 
@@ -1181,6 +1191,7 @@ type UpsertUserProfileParams struct {
 	AvatarUrl   *string     `json:"avatar_url"`
 	Bio         *string     `json:"bio"`
 	Timezone    *string     `json:"timezone"`
+	CoverUrl    *string     `json:"cover_url"`
 }
 
 func (q *Queries) UpsertUserProfile(ctx context.Context, arg UpsertUserProfileParams) error {
@@ -1191,6 +1202,7 @@ func (q *Queries) UpsertUserProfile(ctx context.Context, arg UpsertUserProfilePa
 		arg.AvatarUrl,
 		arg.Bio,
 		arg.Timezone,
+		arg.CoverUrl,
 	)
 	return err
 }
