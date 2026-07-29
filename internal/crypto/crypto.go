@@ -101,7 +101,7 @@ func LoadEncryptionKey() ([]byte, error) {
 			return nil, errors.New("encryption key not configured (set JC_STOCK_ENCRYPTION_KEY or JC_TOTP_ENCRYPTION_KEY)")
 		}
 		slog.Warn("encryption key not set — secrets stored without encryption (dev only)")
-		devKey := sha256.Sum256([]byte("japaconnect-dev-encryption-key"))
+		devKey := sha256.Sum256([]byte("japaconnect-dev-totp-key"))
 		return devKey[:], nil
 	}
 	hash := sha256.Sum256([]byte(raw))
