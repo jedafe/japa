@@ -27,11 +27,12 @@
 	let stats = $state<CacheStats | null>(null);
 	let loadingStats = $state(false);
 
+	// H1: Add real polling interval for live cache dashboard updates.
+	// The previous $effect was a one-shot fetch with an empty cleanup return.
 	$effect(() => {
-		if (!stats) {
-			loadStats();
-		}
-		return () => {};
+		loadStats();
+		const interval = setInterval(loadStats, 30_000);
+		return () => clearInterval(interval);
 	});
 
 	async function loadStats() {

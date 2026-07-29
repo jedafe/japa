@@ -1,0 +1,111 @@
+<script lang="ts">
+	import { CornerUpLeft } from 'lucide-svelte';
+	import { encodeReplyBody } from '$lib/tiptap/serialize';
+	import { api } from '$lib/api/client';
+	import { t } from '$lib/i18n';
+	import type { ForumReply } from '$lib/types';
+	import ReplyItem from './ReplyItem.svelte';
+
+	interface Props {
+		/** Flat list of all replies for the thread (parent_reply_id links them). */
+		replies: ForumReply[];
+		threadId: string;
+		authed: boolean;
+		/** OP or moderator — controls the "mark as solved" affordance. */
+		canSolve: boolean;
+		/** ID of the accepted answer reply, if the thread is solved. */
+		acceptedReplyId: string | null;
+	}
+	let { replies, threadId, authed, canSolve, acceptedReplyId }: Props = $props();
+
+	// Build a parent → children map from the flat reply list. Uses $derived so
+	// the tree is computed synchronously during SSR (not deferred to $effect,
+	// which only runs client-side after the first paint).
+	const byParent = $derived.by(() => {
+		const map = new Map<string | null, ForumReply[]>();
+		for (const r of replies) {
+			const key = r.parent_reply_id ?? null;
+			const arr = map.get(key) ?? [];
+			arr.push(r);
+			map.set(key, arr);
+		}
+		return map;
+	});
+
+	const topLevel = $derived(byParent.get(null) ?? []);
+
+	function childrenOf(id: string): ForumReply[] {
+		return byParent.get(id) ?? [];
+	}
+
+	// Top-level reply composer state.
+	let topDraft = $state('');
+	let topSubmitting = $state(false);
+	let addedTop: ForumReply[] = $state([]);
+
+	async function submitTopReply() {
+		const text = topDraft.trim();
+		if (!text || topSubmitting || !authed) return;
+		topSubmitting = true;
+		const body = encodeReplyBody(text);
+		const res = await api.post<ForumReply>(`/forum/${threadId}/replies`, { body });
+		topSubmitting = false;
+		if (res.error || !res.data) return;
+		addedTop = [...addedTop, res.data];
+		topDraft = '';
+	}
+
+	const allTop = $derived([...topLevel, ...addedTop]);
+	const replyCount = $derived(replies.length + addedTop.length);
+</script>
+
+<div id="replies" class="mt-10 border-t border-[var(--color-border)] pt-6">
+	<h2 class="mb-4 text-base font-semibold text-[var(--color-text)]">
+		{t('forum.replies_heading', 'Replies')}
+		<span class="ml-1.5 text-sm font-normal text-[var(--color-muted)]">{replyCount}</span>
+	</h2>
+
+	{#if authed}
+		<div class="mb-6 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
+			<textarea
+				bind:value={topDraft}
+				rows="3"
+				placeholder={t('forum.reply_placeholder', 'Write a reply…')}
+				class="w-full resize-y rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]"
+			></textarea>
+			<div class="mt-2 flex items-center justify-between">
+				<span class="inline-flex items-center gap-1 text-xs text-[var(--color-muted)]">
+					<CornerUpLeft size={12} /> {t('forum.replying_to_thread', 'Replying to this thread')}
+				</span>
+				<button
+					type="button"
+					onclick={submitTopReply}
+					disabled={!topDraft.trim() || topSubmitting}
+					class="rounded-[var(--radius)] bg-[var(--color-primary)] px-3.5 py-1.5 text-xs font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)] disabled:opacity-50"
+				>
+					{topSubmitting ? t('common.loading', 'Loading') : t('forum.post_reply', 'Post reply')}
+				</button>
+			</div>
+		</div>
+	{/if}
+
+	{#if allTop.length === 0}
+		<p class="py-8 text-center text-sm text-[var(--color-muted)]">
+			{t('forum.no_replies', 'No replies yet — be the first to respond.')}
+		</p>
+	{:else}
+		<div class="space-y-5">
+			{#each allTop as reply (reply.id)}
+				<ReplyItem
+					{reply}
+					{childrenOf}
+					depth={0}
+					{threadId}
+					{authed}
+					{canSolve}
+					isAccepted={acceptedReplyId === reply.id}
+				/>
+			{/each}
+		</div>
+	{/if}
+</div>

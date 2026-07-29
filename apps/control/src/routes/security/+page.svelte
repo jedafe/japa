@@ -8,7 +8,7 @@
 	import { t, translations } from '$lib/stores/i18n.svelte';
 	import { escapeHtml } from '$lib/utils';
 	import { Plus, ShieldAlert, ShieldCheck, Trash2, CheckCircle } from 'lucide-svelte';
-	import type { DataTableColumn, DataTableRowAction } from '$lib/api/types';
+	import type { DataTableColumn, DataTableRowAction, DataTableBulkAction } from '$lib/api/types';
 
 	type ScanResult = {
 		id: string;
@@ -50,6 +50,12 @@
 	let ipSortDirection = $state<'asc' | 'desc'>('asc');
 	let ipPage = $state(0);
 	let ipPageSize = $state(10);
+	// H6: Bulk selection state for IP blocks
+	let selectedIpIds = $state(new Set<string>());
+	let confirmBulkDeleteIpOpen = $state(false);
+	let pendingBulkIpIds = $state<string[]>([]);
+	// L4: Bulk selection state for scan findings
+	let selectedScanIds = $state(new Set<string>());
 
 	let showCreateModal = $state(false);
 	let cidr = $state('');
@@ -156,6 +162,21 @@
 	];
 	});
 
+	// L4: Bulk actions for scan findings
+	let scanBulkActions = $derived.by<DataTableBulkAction[]>(() => {
+		translations();
+		return [
+		{
+			label: t('security.resolve_selected', 'Resolve Selected'),
+			icon: CheckCircle,
+			onClick: async (ids: string[]) => {
+				await Promise.allSettled(ids.map((id) => resolveScanResult(id)));
+				selectedScanIds = new Set();
+			}
+		}
+	];
+	});
+
 	let ipBlockColumns = $derived.by<DataTableColumn[]>(() => {
 		translations();
 		return [
@@ -201,6 +222,38 @@
 	];
 
 	});
+
+	// H6: Bulk actions for IP blocks
+	let ipBulkActions = $derived.by<DataTableBulkAction[]>(() => {
+		translations();
+		return [
+		{
+			label: t('security.delete_selected', 'Delete Selected'),
+			icon: Trash2,
+			variant: 'destructive',
+			onClick: (ids: string[]) => {
+				pendingBulkIpIds = ids;
+				confirmBulkDeleteIpOpen = true;
+			}
+		}
+	];
+
+	});
+
+	async function confirmBulkDeleteIp() {
+		const ids = pendingBulkIpIds;
+		const results = await Promise.allSettled(
+			ids.map((id) => api(`/control/security/ip-blocks/${id}`, { method: 'DELETE' }))
+		);
+		const failed = results.filter((r) => r.status === 'rejected').length;
+		if (failed > 0) {
+			deleteError = t('security.bulk_delete_partial_error', `{failed} of ${ids.length} deletes failed.`).replace('{failed}', String(failed));
+		}
+		selectedIpIds = new Set();
+		pendingBulkIpIds = [];
+		confirmBulkDeleteIpOpen = false;
+		await loadIpBlocks();
+	}
 
 	let scanSortKey = $state('');
 	let scanSortDirection = $state<'asc' | 'desc'>('asc');
@@ -540,8 +593,10 @@
 			loading={scanLoading}
 			emptyMessage={t('security.no_findings')}
 			emptyIcon={ShieldCheck}
-			selectable={false}
+			selectable={true}
+			bind:selectedIds={selectedScanIds}
 			rowActions={scanRowActions}
+			bulkActions={scanBulkActions}
 		/>
 	</Tabs.Content>
 
@@ -570,7 +625,9 @@
 			emptyMessage={t('security.no_ip_blocks')}
 			emptyIcon={ShieldCheck}
 			rowActions={ipRowActions}
-			selectable={false}
+			bulkActions={ipBulkActions}
+			selectable={true}
+			bind:selectedIds={selectedIpIds}
 		/>
 	</Tabs.Content>
 </Tabs.Root>
@@ -674,4 +731,14 @@
 	confirmText={deleteTarget?.cidr}
 	onConfirm={deleteIpBlock}
 	onCancel={closeDeleteConfirm}
+/>
+
+<!-- H6: Bulk delete confirmation for IP blocks -->
+<ConfirmModal
+	bind:open={confirmBulkDeleteIpOpen}
+	title={t('security.bulk_delete_title', 'Delete Selected IP Blocks')}
+	consequence={t('security.bulk_delete_confirm', 'Are you sure you want to delete the selected IP blocks? This action cannot be undone.')}
+	confirmText={t('common.delete', 'Delete')}
+	onConfirm={confirmBulkDeleteIp}
+	onCancel={() => { confirmBulkDeleteIpOpen = false; pendingBulkIpIds = []; }}
 />

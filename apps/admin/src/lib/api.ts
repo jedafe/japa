@@ -18,10 +18,11 @@ export function setToken(token: string | null): void {
 export async function api<T>(path: string, opts: FetchOptions = {}): Promise<ApiResult<T>> {
 	const headers: Record<string, string> = {};
 
+	const isFormData = typeof FormData !== 'undefined' && opts.body instanceof FormData;
 	const result = await _apiFetch<T>(path, {
 		method: opts.method ?? 'GET',
 		headers,
-		body: opts.body ? JSON.stringify(opts.body) : undefined,
+		body: opts.body ? (isFormData ? (opts.body as BodyInit) : JSON.stringify(opts.body)) : undefined,
 		signal: opts.signal,
 	});
 
@@ -447,11 +448,13 @@ export const tagsAdminApi = {
 };
 
 export const organisationsAdminApi = {
-	list: (params?: string) => api<unknown>(`/organizations${params ? `?${params}` : ''}`),
-	get: (id: string) => api<unknown>(`/organizations/${id}`),
-	create: (body: Record<string, unknown>) => api<unknown>('/organizations', { method: 'POST', body }),
-	update: (id: string, body: Record<string, unknown>) => api<unknown>(`/organizations/${id}`, { method: 'PATCH', body }),
-	delete: (id: string) => api<{ deleted: boolean }>(`/organizations/${id}`, { method: 'DELETE' }),
+	list: (params?: string) => api<unknown>(`/admin/organizations${params ? `?${params}` : ''}`),
+	get: (id: string) => api<unknown>(`/admin/organizations/${id}`),
+	create: (body: Record<string, unknown>) => api<unknown>('/admin/organizations', { method: 'POST', body }),
+	update: (id: string, body: Record<string, unknown>) => api<unknown>(`/admin/organizations/${id}`, { method: 'PATCH', body }),
+	delete: (id: string) => api<{ deleted: boolean }>(`/admin/organizations/${id}`, { method: 'DELETE' }),
+	listMembers: (id: string) => api<unknown>(`/admin/organizations/${id}/members`),
+	listInvitations: (id: string) => api<unknown>(`/admin/organizations/${id}/invitations`),
 	verify: (id: string, body: { verified: boolean }) =>
 		api(`/admin/organizations/${id}/verify`, { method: 'POST', body }),
 	unverify: (id: string) =>
@@ -482,6 +485,12 @@ export const universitiesAdminApi = {
 		api(`/admin/universities/${id}`, { method: 'DELETE' }),
 	verify: (id: string) =>
 		api(`/admin/universities/${id}/verify`, { method: 'POST' }),
+	unverify: (id: string) =>
+		api(`/admin/universities/${id}/verify`, { method: 'DELETE' }),
+	bulkImport: (body: FormData) =>
+		api('/admin/universities/bulk-import', { method: 'POST', body }),
+	updateStatus: (id: string, body: { status: string }) =>
+		api(`/admin/universities/${id}/status`, { method: 'PATCH', body }),
 };
 
 // --- Japa University Creator Economy (ADR-063) ---
@@ -499,12 +508,24 @@ export const universityAdminApi = {
 		api<unknown>(`/admin/university/instructors/${id}/reinstate`, { method: 'POST', body: {} }),
 	listPendingTracks: (params?: string) =>
 		api<unknown>(`/admin/university/tracks/pending${params ? `?${params}` : ''}`),
+	listAllTracks: (params?: string) =>
+		api<unknown>(`/admin/university/tracks${params ? `?${params}` : ''}`),
 	approveTrack: (id: string) =>
 		api<unknown>(`/admin/university/tracks/${id}/approve`, { method: 'POST', body: {} }),
+	rejectTrack: (id: string, body: { reason?: string }) =>
+		api<unknown>(`/admin/university/tracks/${id}/reject`, { method: 'POST', body }),
 	listPayouts: (params?: string) =>
 		api<unknown>(`/admin/university/payouts${params ? `?${params}` : ''}`),
+	getPayout: (id: string) =>
+		api<unknown>(`/admin/university/payouts/${id}`),
 	processPayout: (id: string) =>
 		api<unknown>(`/admin/university/payouts/${id}/process`, { method: 'POST', body: {} }),
+	markPayoutFailed: (id: string, body: { reason?: string }) =>
+		api<unknown>(`/admin/university/payouts/${id}/fail`, { method: 'POST', body }),
+	deleteInstructor: (id: string) =>
+		api<unknown>(`/admin/university/instructors/${id}`, { method: 'DELETE' }),
+	updateInstructor: (id: string, body: { tier?: string; commission_pct_override?: number }) =>
+		api<unknown>(`/admin/university/instructors/${id}`, { method: 'PATCH', body }),
 };
 
 // --- Geo IP (public hierarchy + admin lookup) ---
@@ -566,15 +587,15 @@ export const blogAdminApi = {
 	rejectPost: (id: string, body: { reason?: string }) =>
 		api<unknown>(`/admin/blog/review-queue/${id}/reject`, { method: 'POST', body }),
 	createPost: (body: { title: string; slug?: string; body?: string; body_html?: string; status?: string; visibility?: string }) =>
-		api<unknown>('/blog', { method: 'POST', body }),
+		api<unknown>('/admin/blog', { method: 'POST', body }),
 	updatePost: (id: string, body: Record<string, unknown>) =>
-		api<unknown>(`/blog/${id}`, { method: 'PATCH', body }),
+		api<unknown>(`/admin/blog/${id}`, { method: 'PATCH', body }),
 	publishPost: (id: string) =>
 		api<unknown>(`/content/${id}/publish`, { method: 'POST', body: {} }),
 	unpublishPost: (id: string) =>
-		api<unknown>(`/blog/${id}`, { method: 'PATCH', body: { status: 'draft' } }),
+		api<unknown>(`/admin/blog/${id}`, { method: 'PATCH', body: { status: 'draft' } }),
 	restorePost: (id: string) =>
-		api<unknown>(`/blog/${id}`, { method: 'PATCH', body: { status: 'draft' } }),
+		api<unknown>(`/admin/blog/${id}`, { method: 'PATCH', body: { status: 'draft' } }),
 	deletePost: (id: string) =>
 		api<unknown>(`/admin/blog/${id}`, { method: 'DELETE' }),
 };
@@ -586,6 +607,9 @@ export const contentAdminApi = {
 	restore: (id: string) => api<unknown>(`/admin/content/${id}/restore`, { method: 'POST', body: {} }),
 	update: (id: string, body: Record<string, unknown>) =>
 		api<unknown>(`/admin/content/${id}`, { method: 'PATCH', body }),
+	feature: (id: string) => api<unknown>(`/blog/${id}/feature`, { method: 'POST', body: {} }),
+	unfeature: (id: string) => api<unknown>(`/blog/${id}/feature`, { method: 'DELETE' }),
+	archive: (id: string) => api<unknown>(`/content/${id}/archive`, { method: 'POST', body: {} }),
 };
 
 export const mediaAdminApi = {
@@ -610,6 +634,15 @@ export const moderationAdminApi = {
 	acknowledgeAlert: (id: string) => api<unknown>(`/admin/moderation/alerts/${id}/acknowledge`, { method: 'POST', body: {} }),
 	resolveAlert: (id: string, body: { resolution: string }) =>
 		api<unknown>(`/admin/moderation/alerts/${id}/resolve`, { method: 'POST', body }),
+	listReports: (params?: string) => api<unknown>(`/admin/reports${params ? `?${params}` : ''}`),
+	getReport: (id: string) => api<unknown>(`/admin/reports/${id}`),
+	updateReport: (id: string, body: Record<string, unknown>) =>
+		api<unknown>(`/admin/reports/${id}`, { method: 'PATCH', body }),
+	deleteReport: (id: string) => api<{ deleted: boolean }>(`/admin/reports/${id}`, { method: 'DELETE' }),
+	listAppeals: (params?: string) => api<unknown>(`/admin/appeals${params ? `?${params}` : ''}`),
+	getAppeal: (id: string) => api<unknown>(`/admin/appeals/${id}`),
+	updateAppeal: (id: string, body: Record<string, unknown>) =>
+		api<unknown>(`/admin/appeals/${id}`, { method: 'PATCH', body }),
 };
 
 export const newsletterAdminApi = {

@@ -9,7 +9,7 @@
 	import { Select } from "$lib/components/ui/select";
 	import Pagination from "$lib/components/ui/Pagination.svelte";
 	import { TableSkeleton } from "$lib/components/ui/skeleton";
-	import { RefreshCw, Eye, RotateCcw, Trash2, Pencil } from "lucide-svelte";
+	import { RefreshCw, Eye, RotateCcw, Trash2, Pencil, Star, Archive } from "lucide-svelte";
 	import { contentAdminApi } from "$lib/api";
 	import { t } from "$lib/stores/i18n.svelte";
 	import { hasPermission } from "$lib/stores/permissions.svelte";
@@ -60,6 +60,10 @@
 	let editSlug = $state("");
 	let editStatus = $state("");
 	let editBody = $state("");
+
+	// Feature/Archive state
+	let showArchiveModal = $state(false);
+	let archiveTarget = $state<ContentItem | null>(null);
 
 	// Backend gates content mutations on content.delete (list/restore/delete)
 	const canManageContent = $derived(hasPermission("content.delete"));
@@ -274,6 +278,44 @@
 		}
 	}
 
+	async function toggleFeature(item: ContentItem) {
+		try {
+			const isFeatured = (item as any).is_featured === true;
+			const result = isFeatured
+				? await contentAdminApi.unfeature(item.id)
+				: await contentAdminApi.feature(item.id);
+			if (result.ok) {
+				success = isFeatured ? t("content.unfeatured", "Content unfeatured") : t("content.featured", "Content featured");
+				loadItems();
+			} else {
+				error = result.error ?? t("common.error", "Failed to toggle feature");
+			}
+		} catch (e) {
+			error = e instanceof Error ? e.message : t("common.error", "Failed to toggle feature");
+		}
+	}
+
+	function openArchive(item: ContentItem) {
+		archiveTarget = item;
+		showArchiveModal = true;
+	}
+
+	async function confirmArchive() {
+		if (!archiveTarget) return;
+		try {
+			const result = await contentAdminApi.archive(archiveTarget.id);
+			if (result.ok) {
+				showArchiveModal = false;
+				success = t("content.archived", "Content archived successfully");
+				loadItems();
+			} else {
+				error = result.error ?? t("common.error", "Failed to archive content");
+			}
+		} catch (e) {
+			error = e instanceof Error ? e.message : t("common.error", "Failed to archive content");
+		}
+	}
+
 	// Load initial data on mount
 	$effect(() => {
 		loadItems();
@@ -462,21 +504,44 @@
 	</div>
 </Modal>
 
+<!-- Archive Modal -->
+<Modal bind:open={showArchiveModal} title={t("content.archive_title", "Archive Content")} size="sm">
+	{#if archiveTarget}
+		<p class="text-sm" style="color: var(--color-foreground)">
+			{t("content.archive_confirm", "Archive this content?")} <strong>{archiveTarget.title || "Untitled"}</strong>
+		</p>
+	{/if}
+	<div class="mt-4 flex justify-end gap-2">
+		<Button variant="ghost" onclick={() => showArchiveModal = false}>{t("common.cancel", "Cancel")}</Button>
+		<Button variant="default" onclick={confirmArchive}>{t("content.archive", "Archive")}</Button>
+	</div>
+</Modal>
+
 <!-- ContentActionsCell -->
 {#snippet ContentActionsCell({ value, row }: { value: any; row: ContentItem })}
 	<div class="flex items-center gap-1 whitespace-nowrap">
-		<button class="inline-flex items-center justify-center rounded-md p-1.5 hover:bg-black/5 dark:hover:bg-white/5" onclick={() => openView(row)}>
+		<button class="inline-flex items-center justify-center rounded-md p-1.5 hover:bg-black/5 dark:hover:bg-white/5" onclick={() => openView(row)} title={t("common.view", "View")}>
 			<Eye class="h-4 w-4" />
 		</button>
-		<button class="inline-flex items-center justify-center rounded-md p-1.5 hover:bg-black/5 dark:hover:bg-white/5" onclick={() => openEdit(row)}>
+		<button class="inline-flex items-center justify-center rounded-md p-1.5 hover:bg-black/5 dark:hover:bg-white/5" onclick={() => openEdit(row)} title={t("common.edit", "Edit")}>
 			<Pencil class="h-4 w-4" />
 		</button>
+		{#if canEditContent && row.content_type === "blog_post"}
+			<button class="inline-flex items-center justify-center rounded-md p-1.5 hover:bg-black/5 dark:hover:bg-white/5" onclick={() => toggleFeature(row)} title={t("content.feature", "Feature")} style="color: var(--color-warning)">
+				<Star class="h-4 w-4" />
+			</button>
+		{/if}
+		{#if canManageContent && row.status !== "removed" && row.status !== "archived"}
+			<button class="inline-flex items-center justify-center rounded-md p-1.5 hover:bg-black/5 dark:hover:bg-white/5" onclick={() => openArchive(row)} title={t("content.archive", "Archive")}>
+				<Archive class="h-4 w-4" />
+			</button>
+		{/if}
 		{#if row.status === "removed" || !!row.removed_at}
-			<button class="inline-flex items-center justify-center rounded-md p-1.5 hover:bg-black/5 dark:hover:bg-white/5" onclick={() => openRestore(row)} style="color: var(--color-success)">
+			<button class="inline-flex items-center justify-center rounded-md p-1.5 hover:bg-black/5 dark:hover:bg-white/5" onclick={() => openRestore(row)} style="color: var(--color-success)" title={t("content.restore", "Restore")}>
 				<RotateCcw class="h-4 w-4" />
 			</button>
 		{:else}
-			<button class="inline-flex items-center justify-center rounded-md p-1.5 hover:bg-black/5 dark:hover:bg-white/5" onclick={() => openRemove(row)} style="color: var(--color-danger)">
+			<button class="inline-flex items-center justify-center rounded-md p-1.5 hover:bg-black/5 dark:hover:bg-white/5" onclick={() => openRemove(row)} style="color: var(--color-danger)" title={t("content.remove", "Remove")}>
 				<Trash2 class="h-4 w-4" />
 			</button>
 		{/if}

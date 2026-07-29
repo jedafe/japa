@@ -9,7 +9,7 @@
 	import { Select } from "$lib/components/ui/select";
 	import Pagination from "$lib/components/ui/Pagination.svelte";
 	import { TableSkeleton } from "$lib/components/ui/skeleton";
-	import { RefreshCw, Eye, Pencil, Trash2, Ticket, Clock, CheckCircle, AlertCircle } from "lucide-svelte";
+	import { RefreshCw, Eye, Pencil, Trash2, Ticket, Clock, CheckCircle, AlertCircle, MessageSquare, StickyNote } from "lucide-svelte";
 	import { ticketsAdminApi } from "$lib/api";
 	import { t } from "$lib/stores/i18n.svelte";
 	import { hasPermission } from "$lib/stores/permissions.svelte";
@@ -48,6 +48,11 @@
 	let showViewModal = $state(false);
 	let viewTarget = $state<TicketItem | null>(null);
 	let loadingView = $state(false);
+	let ticketEvents = $state<any[]>([]);
+	let newComment = $state("");
+	let newNote = $state("");
+	let addingComment = $state(false);
+	let addingNote = $state(false);
 
 	// Edit modal
 	let showEditModal = $state(false);
@@ -121,13 +126,59 @@
 		viewTarget = ticket;
 		showViewModal = true;
 		loadingView = true;
+		ticketEvents = [];
+		newComment = "";
+		newNote = "";
 		try {
-			const result = await ticketsAdminApi.get(ticket.id);
-			if (result.ok) viewTarget = (result.data as TicketItem) ?? ticket;
+			const [ticketRes, eventsRes] = await Promise.all([
+				ticketsAdminApi.get(ticket.id),
+				ticketsAdminApi.getEvents(ticket.id),
+			]);
+			if (ticketRes.ok) viewTarget = (ticketRes.data as TicketItem) ?? ticket;
+			if (eventsRes.ok) {
+				const ed = eventsRes.data as any;
+				ticketEvents = ed?.events ?? ed?.data ?? (Array.isArray(ed) ? ed : []) ?? [];
+			}
 		} catch {
 			viewTarget = ticket;
 		} finally {
 			loadingView = false;
+		}
+	}
+
+	async function submitComment() {
+		if (!viewTarget || !newComment.trim()) return;
+		addingComment = true;
+		try {
+			const result = await ticketsAdminApi.addComment(viewTarget.id, { body: newComment.trim() });
+			if (result.ok) {
+				newComment = "";
+				const eventsResult = await ticketsAdminApi.getEvents(viewTarget.id);
+				if (eventsResult.ok) {
+					const ed = eventsResult.data as any;
+					ticketEvents = ed?.events ?? ed?.data ?? (Array.isArray(ed) ? ed : []) ?? [];
+				}
+			}
+		} catch { /* ignore */ } finally {
+			addingComment = false;
+		}
+	}
+
+	async function submitNote() {
+		if (!viewTarget || !newNote.trim()) return;
+		addingNote = true;
+		try {
+			const result = await ticketsAdminApi.addNote(viewTarget.id, { body: newNote.trim() });
+			if (result.ok) {
+				newNote = "";
+				const eventsResult = await ticketsAdminApi.getEvents(viewTarget.id);
+				if (eventsResult.ok) {
+					const ed = eventsResult.data as any;
+					ticketEvents = ed?.events ?? ed?.data ?? (Array.isArray(ed) ? ed : []) ?? [];
+				}
+			}
+		} catch { /* ignore */ } finally {
+			addingNote = false;
 		}
 	}
 
@@ -313,7 +364,7 @@
 </Card>
 
 <!-- View Modal -->
-<Modal bind:open={showViewModal} title={t("tickets.details", "Ticket Details")} size="sm">
+<Modal bind:open={showViewModal} title={t("tickets.details", "Ticket Details")} size="lg">
 	{#if loadingView}
 		<p class="text-sm" style="color: var(--color-muted)">{t("common.loading", "Loading...")}</p>
 	{:else if viewTarget}
@@ -346,6 +397,55 @@
 				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("common.created", "Created")}</p>
 				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{new Date(viewTarget.created_at).toLocaleString()}</p>
 			</div>
+			{#if viewTarget.description}
+				<div>
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("tickets.description", "Description")}</p>
+					<p class="mt-1 text-sm whitespace-pre-wrap" style="color: var(--color-foreground)">{viewTarget.description}</p>
+				</div>
+			{/if}
+
+			<!-- Events timeline (comments + notes) -->
+			{#if ticketEvents.length > 0}
+				<div>
+					<p class="mb-2 text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("tickets.activity", "Activity")}</p>
+					<div class="max-h-48 space-y-2 overflow-y-auto rounded-lg border p-3" style="border-color: var(--color-border); background: var(--color-surface)">
+						{#each ticketEvents as ev}
+							<div class="flex gap-2 text-xs">
+								{#if ev.event_type === 'comment'}
+									<MessageSquare class="h-3.5 w-3.5 shrink-0 mt-0.5" style="color: var(--color-primary)" />
+								{:else if ev.event_type === 'note'}
+									<StickyNote class="h-3.5 w-3.5 shrink-0 mt-0.5" style="color: var(--color-warning)" />
+								{:else}
+									<Clock class="h-3.5 w-3.5 shrink-0 mt-0.5" style="color: var(--color-muted)" />
+								{/if}
+								<div class="flex-1">
+									<span class="font-medium" style="color: var(--color-foreground)">{ev.event_type}</span>
+									{#if ev.body}<span style="color: var(--color-muted)"> — {ev.body}</span>{/if}
+									<span class="block" style="color: var(--color-muted)">{ev.created_at ? new Date(ev.created_at).toLocaleString() : ''}</span>
+								</div>
+							</div>
+						{/each}
+					</div>
+				</div>
+			{/if}
+
+			<!-- Add comment -->
+			{#if canManageTickets}
+				<div>
+					<label for="tk-comment" class="mb-1 block text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("tickets.add_comment", "Add Comment")}</label>
+					<div class="flex gap-2">
+						<input id="tk-comment" type="text" bind:value={newComment} class="flex-1 rounded-lg border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" placeholder={t("tickets.comment_placeholder", "Type a comment...")} onkeydown={(e) => { if (e.key === 'Enter') submitComment(); }} />
+						<Button size="sm" onclick={submitComment} disabled={!newComment.trim() || addingComment}>{addingComment ? t("common.saving", "Saving...") : t("common.post", "Post")}</Button>
+					</div>
+				</div>
+				<div>
+					<label for="tk-note" class="mb-1 block text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("tickets.add_note", "Add Internal Note")}</label>
+					<div class="flex gap-2">
+						<input id="tk-note" type="text" bind:value={newNote} class="flex-1 rounded-lg border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" placeholder={t("tickets.note_placeholder", "Internal note (not visible to user)...")} onkeydown={(e) => { if (e.key === 'Enter') submitNote(); }} />
+						<Button size="sm" variant="outline" onclick={submitNote} disabled={!newNote.trim() || addingNote}>{addingNote ? t("common.saving", "Saving...") : t("common.post", "Post")}</Button>
+					</div>
+				</div>
+			{/if}
 		</div>
 	{/if}
 	<div class="mt-6 flex justify-end">

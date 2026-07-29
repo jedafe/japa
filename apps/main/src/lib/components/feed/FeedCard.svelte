@@ -17,7 +17,12 @@
 	// key; falls back to a humanized form of the raw type for unknown types.
 	// Ref: Guide §7 (i18n), Rule 16 — no hardcoded English in components.
 	const typeLabel = (ct: string) => t(`content_type.${ct}`, ct.replace(/_/g, ' '));
-	const href = (i: FeedItem) => (i.content_type === 'blog_post' ? `/blog/${i.slug}` : `/content/${i.slug}`);
+	const href = (i: FeedItem) =>
+		i.content_type === 'blog_post'
+			? `/blog/${i.slug}`
+			: i.content_type === 'forum_thread'
+				? `/forum/${i.slug}`
+				: `/content/${i.slug}`;
 	const time = $derived(relativeTime(item.created_at));
 	const initials = $derived((item.author_name ?? '?').slice(0, 2).toUpperCase());
 </script>
@@ -78,7 +83,7 @@
 	<!-- grid card (2-col cell) OR full-width grid item in a stream -->
 	<a href={href(item)} class="flex flex-col overflow-hidden {layout === 'grid-cell' ? 'rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)]' : ''} hover:bg-[color-mix(in_srgb,var(--color-surface-subtle)_45%,transparent)]">
 		{#if item.cover_image_url}
-			<img src={item.cover_image_url} alt="" loading="lazy" class="aspect-video w-full object-cover" />
+			<img src={item.cover_image_url} alt={item.title} loading="lazy" class="aspect-video w-full object-cover" />
 		{/if}
 		<div class="flex flex-1 flex-col gap-2 p-3">
 			{@render badge()}
@@ -113,7 +118,7 @@
 			</span>
 		</div>
 		{#if item.cover_image_url}
-			<img src={item.cover_image_url} alt="" loading="lazy" class="mb-3.5 aspect-video w-full rounded-[var(--radius-card)] border border-[var(--color-border)] object-cover" />
+			<img src={item.cover_image_url} alt={item.title} loading="lazy" class="mb-3.5 aspect-video w-full rounded-[var(--radius-card)] border border-[var(--color-border)] object-cover" />
 		{/if}
 		{@render badge()}
 		<h2 class="mt-2 mb-2 text-balance font-serif text-[25px] font-medium leading-tight tracking-tight text-[var(--color-text)]">{item.title}</h2>
@@ -135,7 +140,7 @@
 			<div class="flex items-center justify-between gap-3">{@render tags()}{@render metrics()}</div>
 		</span>
 		{#if item.cover_image_url}
-			<img src={item.cover_image_url} alt="" loading="lazy" class="h-[84px] w-[84px] shrink-0 rounded-[var(--radius)] object-cover" />
+			<img src={item.cover_image_url} alt={item.title} loading="lazy" class="h-[84px] w-[84px] shrink-0 rounded-[var(--radius)] object-cover" />
 		{/if}
 	</a>
 {/if}

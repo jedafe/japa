@@ -6,6 +6,7 @@
 	import type { AiBudget } from '$lib/api/types';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { DollarSign, RefreshCw, AlertTriangle, Pencil } from 'lucide-svelte';
+	import { BarChart, Spline } from 'layerchart';
 
 	let {} = $props();
 
@@ -42,6 +43,37 @@
 		if (!budget || !budget.budget_threshold_usd || budget.budget_threshold_usd <= 0) return 0;
 		return Math.round((budget.month_to_date_cost / budget.budget_threshold_usd) * 100);
 	}
+
+	// M8: Chart data derived from the budget response
+	const providerBarData = $derived.by(() => {
+		if (!budget?.by_provider) return [];
+		return budget.by_provider.map((p) => ({
+			key: p.provider,
+			label: p.provider,
+			value: p.cost_usd
+		}));
+	});
+
+	const taskBarData = $derived.by(() => {
+		if (!budget?.by_task_type) return [];
+		return budget.by_task_type.map((t) => ({
+			key: t.task_type,
+			label: t.task_type,
+			value: t.cost_usd
+		}));
+	});
+
+	// Cumulative spend spline — approximated from the by_provider data
+	// sorted by cost descending, showing cumulative accumulation.
+	const cumulativeData = $derived.by(() => {
+		if (!budget?.by_provider) return [];
+		const sorted = [...budget.by_provider].sort((a, b) => b.cost_usd - a.cost_usd);
+		let cumulative = 0;
+		return sorted.map((p, i) => {
+			cumulative += p.cost_usd;
+			return { x: i, y: cumulative, label: p.provider };
+		});
+	});
 
 	function openEditModal() {
 		editThreshold = budget ? String(budget.budget_threshold_usd ?? 0) : '0';
@@ -132,6 +164,37 @@
 		</Tabs.List>
 
 		<Tabs.Content value="overview" class="mt-4">
+			<!-- M8: Daily spend BarChart + cumulative Spline -->
+			{#if providerBarData.length > 0}
+				<div class="grid gap-4 lg:grid-cols-2 mb-4">
+					<div class="border-border-card bg-background-alt shadow-card rounded-xl p-5">
+						<h3 class="text-muted-foreground mb-4 text-xs font-semibold uppercase tracking-wider">{t('ai_budget.spend_by_provider', 'Spend by Provider')}</h3>
+						<div class="h-[200px]">
+							<BarChart
+								data={providerBarData}
+								x="value"
+								y="label"
+								orientation="horizontal"
+								grid={false}
+								xPadding={[0.2, 0.2]}
+								cRange={['var(--color-accent-foreground)']}
+							/>
+						</div>
+					</div>
+					<div class="border-border-card bg-background-alt shadow-card rounded-xl p-5">
+						<h3 class="text-muted-foreground mb-4 text-xs font-semibold uppercase tracking-wider">{t('ai_budget.cumulative_spend', 'Cumulative Spend')}</h3>
+						<div class="h-[200px]">
+							<Spline
+								data={cumulativeData}
+								x="x"
+								y="y"
+								curve="monotoneX"
+								stroke="var(--color-accent-foreground)"
+							/>
+						</div>
+					</div>
+				</div>
+			{/if}
 			<div class="border-border-card bg-background-alt shadow-card rounded-xl p-6">
 				<h3 class="text-foreground text-sm font-semibold">{t('ai_budget.budget_summary')}</h3>
 				<div class="mt-4 space-y-3">

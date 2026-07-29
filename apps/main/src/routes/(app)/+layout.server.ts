@@ -1,4 +1,5 @@
 import type { LayoutServerLoad } from './$types';
+import { redirect } from '@sveltejs/kit';
 import { apiContext, apiGet } from '$lib/server/api';
 import { normalizeConfig, type CardStyleConfig } from '$lib/feed/cardStyle';
 
@@ -7,8 +8,18 @@ import { normalizeConfig, type CardStyleConfig } from '$lib/feed/cardStyle';
  * the Home feed can resolve a card style per content type. The endpoint is
  * public, but the fetch degrades to the reddit default if it is unavailable —
  * a missing setting must never blank the shell.
+ *
+ * ADR-060: the Japa University branded host (university.japaconnect.com and
+ * configured custom domains) is served by the dedicated Learn app, not the
+ * main app. Redirect any request to that host to learn.japaconnect.com so the
+ * catalog, tracks, lesson player, instructor, and earnings surfaces live in
+ * exactly one place. Ref: audit finding C2.
  */
 export const load: LayoutServerLoad = async (event) => {
+	if (event.locals.isUniversityHost) {
+		throw redirect(302, 'https://learn.japaconnect.com');
+	}
+
 	const ctx = apiContext(event);
 
 	let cardStyleConfig: CardStyleConfig;

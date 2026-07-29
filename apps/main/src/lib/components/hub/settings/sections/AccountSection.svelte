@@ -11,8 +11,8 @@
 	const profile = $derived(data as MeProfile | null);
 
 	const themeItems: { value: ThemeName; label: string }[] = [
-		{ value: 'light', label: 'Light' },
-		{ value: 'dark', label: 'Dark' }
+		{ value: 'light', label: t('theme.light', 'Light') },
+		{ value: 'dark', label: t('theme.dark', 'Dark') }
 	];
 
 	const form = new DirtyForm(

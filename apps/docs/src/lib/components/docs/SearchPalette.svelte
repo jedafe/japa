@@ -3,14 +3,20 @@
 	import { Search, X, CornerDownLeft } from 'lucide-svelte';
 	import { t } from '$lib/i18n';
 	import { goto } from '$app/navigation';
-	import type { DocSearchResult } from '$lib/types';
+	import { page } from '$app/state';
+	import type { DocSearchResult, DocAudience } from '$lib/types';
 	import { AUDIENCE_LABEL_KEY } from '$lib/types';
 
 	interface Props {
 		onClose: () => void;
+		/**
+		 * Active audience to scope results to (ADR-060 — audience-filtered search).
+		 * Derived from the current route when not provided.
+		 */
+		audience?: DocAudience | null;
 	}
 
-	let { onClose }: Props = $props();
+	let { onClose, audience = null }: Props = $props();
 
 	let query = $state('');
 	let results = $state<DocSearchResult[]>([]);
@@ -18,7 +24,13 @@
 	let activeIndex = $state(0);
 	let inputEl: HTMLInputElement | undefined = undefined;
 
-	// Debounced fetch — 200ms → /docs/search?q=&limit= (ADR-060).
+	// Resolve the active audience from the route (/docs/[audience]/...) when the
+	// caller doesn't pass one explicitly. ADR-060 — audience-filtered search.
+	let resolvedAudience = $derived<DocAudience | null>(
+		audience ?? (page.params.audience as DocAudience | undefined) ?? null
+	);
+
+	// Debounced fetch — 200ms → /docs/search?q=&audience=&limit= (ADR-060).
 	let debounceTimer: ReturnType<typeof setTimeout> | undefined = undefined;
 
 	$effect(() => {
@@ -33,7 +45,9 @@
 		loading = true;
 		debounceTimer = setTimeout(async () => {
 			try {
-				const res = await fetch(`/api/v1/docs/search?q=${encodeURIComponent(q)}&limit=10`);
+				const params = new URLSearchParams({ q, limit: '10' });
+				if (resolvedAudience) params.set('audience', resolvedAudience);
+				const res = await fetch(`/api/v1/docs/search?${params}`);
 				if (!res.ok) throw new Error('search failed');
 				const json = await res.json();
 				results = (json.data as DocSearchResult[]) ?? [];

@@ -93,6 +93,12 @@ export const AUDIENCE_LABEL_KEY: Record<DocAudience, string> = {
 	superadmin: 'audience.superadmin'
 };
 
+/**
+ * Set of valid audience slugs (mirrors docs.ValidAudiences in the backend).
+ * Used to validate the `audience` query param before forwarding to the API.
+ */
+export const ValidAudiences: Set<DocAudience> = new Set(AUDIENCE_ORDER);
+
 /** A published documentation page (GET /docs/{audience}/{slug}). */
 export interface DocPage {
 	id: string;

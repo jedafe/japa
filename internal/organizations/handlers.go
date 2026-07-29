@@ -692,3 +692,185 @@ func (h *Handlers) GetOrganizationAnalytics(w http.ResponseWriter, r *http.Reque
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": analytics})
 }
+
+// ─── Admin handlers (bypass ownership checks) ────────────────────────────
+
+// AdminListOrganizations handles GET /admin/organizations.
+func (h *Handlers) AdminListOrganizations(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := requireTenantID(w, r)
+	if !ok {
+		return
+	}
+
+	orgType := r.URL.Query().Get("org_type")
+	countryCode := r.URL.Query().Get("country_code")
+	search := r.URL.Query().Get("q")
+	verified := r.URL.Query().Get("verified")
+	limit := parsePageSize(r)
+	offset := parsePageOffset(r)
+
+	items, total, err := h.service.AdminListOrganizations(r.Context(), tenantID, orgType, countryCode, search, verified, limit, offset)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": items, "total": total, "limit": limit, "offset": offset})
+}
+
+// AdminGetOrganization handles GET /admin/organizations/{id}.
+func (h *Handlers) AdminGetOrganization(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := requireTenantID(w, r)
+	if !ok {
+		return
+	}
+
+	id, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid organization ID")
+		return
+	}
+
+	org, err := h.service.AdminGetOrganization(r.Context(), id, tenantID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "not_found", "Organization not found")
+			return
+		}
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": org})
+}
+
+// AdminCreateOrganization handles POST /admin/organizations.
+func (h *Handlers) AdminCreateOrganization(w http.ResponseWriter, r *http.Request) {
+	user, ok := requireAuth(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := requireTenantID(w, r)
+	if !ok {
+		return
+	}
+
+	var req createOrganizationRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", "Invalid request body")
+		return
+	}
+
+	input := CreateOrganizationInput(req)
+
+	result, err := h.service.CreateOrganization(r.Context(), tenantID, user.UserID, input)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, map[string]any{"data": result})
+}
+
+// AdminUpdateOrganization handles PATCH /admin/organizations/{id}.
+func (h *Handlers) AdminUpdateOrganization(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := requireTenantID(w, r)
+	if !ok {
+		return
+	}
+
+	id, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid organization ID")
+		return
+	}
+
+	var req updateOrganizationRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", "Invalid request body")
+		return
+	}
+
+	input := UpdateOrganizationInput{}
+	if req.Name != nil {
+		input.Name = *req.Name
+	}
+	if req.Tagline != nil {
+		input.Tagline = *req.Tagline
+	}
+	if req.Description != nil {
+		input.Description = *req.Description
+	}
+	if req.WebsiteURL != nil {
+		input.WebsiteURL = *req.WebsiteURL
+	}
+	if req.CountryCode != nil {
+		input.CountryCode = *req.CountryCode
+	}
+	if req.OrgType != nil {
+		input.OrgType = *req.OrgType
+	}
+
+	if err := h.service.AdminUpdateOrganization(r.Context(), id, tenantID, input); err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"message": "Organization updated"}})
+}
+
+// AdminDeleteOrganization handles DELETE /admin/organizations/{id}.
+func (h *Handlers) AdminDeleteOrganization(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := requireTenantID(w, r)
+	if !ok {
+		return
+	}
+
+	id, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid organization ID")
+		return
+	}
+
+	if err := h.service.AdminDeleteOrganization(r.Context(), id, tenantID); err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"message": "Organization deleted"}})
+}
+
+// AdminListMembers handles GET /admin/organizations/{id}/members.
+func (h *Handlers) AdminListMembers(w http.ResponseWriter, r *http.Request) {
+	orgID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid organization ID")
+		return
+	}
+
+	members, err := h.service.AdminListMembers(r.Context(), orgID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": members})
+}
+
+// AdminListInvitations handles GET /admin/organizations/{id}/invitations.
+func (h *Handlers) AdminListInvitations(w http.ResponseWriter, r *http.Request) {
+	orgID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid organization ID")
+		return
+	}
+
+	invitations, err := h.service.AdminListInvitations(r.Context(), orgID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": invitations})
+}

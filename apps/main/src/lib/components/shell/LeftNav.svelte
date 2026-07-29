@@ -244,7 +244,7 @@
 				class={clsx('flex items-center gap-3 rounded-[var(--radius)] p-2 hover:bg-[var(--color-surface-subtle)]', collapsed && 'justify-center')}
 			>
 				{#if user.avatar_url}
-					<img src={user.avatar_url} alt="" class="h-8 w-8 shrink-0 rounded-full object-cover" />
+					<img src={user.avatar_url} alt={`Avatar of ${user.displayName ?? user.username ?? "user"}`} class="h-8 w-8 shrink-0 rounded-full object-cover" />
 				{:else}
 					<span
 						class="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[var(--color-surface-subtle)] text-xs font-medium text-[var(--color-text-subtle)]"
