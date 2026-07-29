@@ -56,6 +56,9 @@ type Config struct {
 	CORSOrigins              string // JC_CORS_ORIGINS — comma-separated allowed CORS origins for production
 	CookieDomain             string // JC_COOKIE_DOMAIN — cookie domain for cross-subdomain session sharing (e.g. ".example.com")
 	InternalToken            string // JC_INTERNAL_TOKEN — shared secret for internal service-to-service endpoints (render helpers)
+	UnsplashAccessKey        string // JC_UNSPLASH_ACCESS_KEY — Unsplash API access key
+	PexelsAPIKey             string // JC_PEXELS_API_KEY — Pexels API key
+	PixabayAPIKey            string // JC_PIXABAY_API_KEY — Pixabay API key
 }
 
 // Load reads all JC_ environment variables and returns a populated Config.
@@ -109,6 +112,9 @@ func Load() (Config, error) {
 		CORSOrigins:              os.Getenv("JC_CORS_ORIGINS"),
 		CookieDomain:             os.Getenv("JC_COOKIE_DOMAIN"),
 		InternalToken:            os.Getenv("JC_INTERNAL_TOKEN"),
+		UnsplashAccessKey:        os.Getenv("JC_UNSPLASH_ACCESS_KEY"),
+		PexelsAPIKey:             os.Getenv("JC_PEXELS_API_KEY"),
+		PixabayAPIKey:            os.Getenv("JC_PIXABAY_API_KEY"),
 	}
 
 	if err := applyDefaults(&cfg); err != nil {
