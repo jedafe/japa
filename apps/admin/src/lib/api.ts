@@ -435,9 +435,9 @@ export const spacesAdminApi = {
 
 export const tagsAdminApi = {
 	list: (params?: string) => api<unknown>(`/admin/tags${params ? `?${params}` : ''}`),
-	create: (body: { name: string; slug: string }) =>
+	create: (body: { name: string; slug: string; description?: string; color?: string }) =>
 		api('/admin/tags', { method: 'POST', body }),
-	update: (id: string, body: { name?: string; slug?: string }) =>
+	update: (id: string, body: { name?: string; slug?: string; description?: string; color?: string }) =>
 		api(`/admin/tags/${id}`, { method: 'PATCH', body }),
 	delete: (id: string) =>
 		api(`/admin/tags/${id}`, { method: 'DELETE' }),

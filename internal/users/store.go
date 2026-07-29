@@ -91,12 +91,13 @@ func (s *Store) getPublicProfileByUsername(ctx context.Context, tenantID pgtype.
 }
 
 // upsertProfile inserts or updates the user profile.
-func (s *Store) upsertProfile(ctx context.Context, tenantID, userID pgtype.UUID, displayName, avatarURL, bio, timezone *string) error {
+func (s *Store) upsertProfile(ctx context.Context, tenantID, userID pgtype.UUID, displayName, avatarURL, coverURL, bio, timezone *string) error {
 	if err := s.write.UpsertUserProfile(ctx, gen.UpsertUserProfileParams{
 		TenantID:    tenantID,
 		UserID:      userID,
 		DisplayName: displayName,
 		AvatarUrl:   avatarURL,
+		CoverUrl:    coverURL,
 		Bio:         bio,
 		Timezone:    timezone,
 	}); err != nil {

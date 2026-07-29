@@ -74,6 +74,7 @@ func (s *Service) GetProfile(ctx context.Context, tenantID, userID pgtype.UUID) 
 		Username:                 p.Username,
 		DisplayName:              p.DisplayName,
 		AvatarURL:                p.AvatarUrl,
+		CoverURL:                 p.CoverUrl,
 		Bio:                      p.Bio,
 		Timezone:                 p.Timezone,
 		ProfileType:              p.ProfileType,
@@ -106,6 +107,7 @@ func (s *Service) GetProfileByUsername(ctx context.Context, tenantID pgtype.UUID
 		Username:      p.Username,
 		DisplayName:   p.DisplayName,
 		AvatarURL:     p.AvatarUrl,
+		CoverURL:      p.CoverUrl,
 		Bio:           p.Bio,
 		Timezone:      p.Timezone,
 		ProfileType:   p.ProfileType,
@@ -131,6 +133,7 @@ func (s *Service) GetPublicProfileByUsername(ctx context.Context, tenantID pgtyp
 		Username:       p.Username,
 		DisplayName:    p.DisplayName,
 		AvatarURL:      p.AvatarUrl,
+		CoverURL:       p.CoverUrl,
 		Bio:            p.Bio,
 		ProfileType:    p.ProfileType,
 		FollowerCount:  p.FollowerCount,
@@ -159,6 +162,11 @@ func (s *Service) UpdateProfile(ctx context.Context, tenantID, userID pgtype.UUI
 		avatarURL = req.AvatarURL
 	}
 
+	coverURL := current.CoverUrl
+	if req.CoverURL != nil {
+		coverURL = req.CoverURL
+	}
+
 	bio := current.Bio
 	if req.Bio != nil {
 		bio = req.Bio
@@ -169,7 +177,7 @@ func (s *Service) UpdateProfile(ctx context.Context, tenantID, userID pgtype.UUI
 		timezone = req.Timezone
 	}
 
-	if err := s.store.upsertProfile(ctx, tenantID, userID, displayName, avatarURL, bio, timezone); err != nil {
+	if err := s.store.upsertProfile(ctx, tenantID, userID, displayName, avatarURL, coverURL, bio, timezone); err != nil {
 		return fmt.Errorf("updating profile: %w", err)
 	}
 
