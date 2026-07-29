@@ -24,9 +24,19 @@
     Shield,
     Eye,
     Pencil,
-    Search
+    Search,
+    Download,
+    Loader2,
+    Check
   } from "lucide-svelte";
-  import { api, apiFetch, mediaAdminApi, stockAdminApi, type StockProviderAdmin } from "$lib/api";
+  import {
+    api,
+    apiFetch,
+    mediaAdminApi,
+    stockAdminApi,
+    type StockProviderAdmin,
+    type StockPhoto
+  } from "$lib/api";
   import { hasPermission } from "$lib/stores/permissions.svelte";
   import Pagination from "$lib/components/ui/Pagination.svelte";
 
@@ -58,17 +68,6 @@
   let stockProvidersError = $state("");
   let stockProvidersLoaded = $state(false);
   let updatingProvider = $state<string | null>(null);
-  let providerSearch = $state("");
-
-  let filteredStockProviders = $derived.by(() => {
-    if (!providerSearch.trim()) return stockProviders;
-    const q = providerSearch.toLowerCase();
-    return stockProviders.filter(
-      (p) =>
-        p.provider_name?.toLowerCase().includes(q) ||
-        p.display_name?.toLowerCase().includes(q)
-    );
-  });
 
   let filteredItems = $derived.by(() => {
     let result = [...items];
@@ -127,6 +126,23 @@
   let uploadSubmitting = $state(false);
   let uploadProgress = $state<{ current: number; total: number; filename: string } | null>(null);
   let userGroups = $state<Array<{ id: string; name: string; slug: string }>>([]);
+
+  // Upload modal sub-tab: "upload" (file picker) or "stock" (provider search)
+  let uploadModalTab = $state<"upload" | "stock">("upload");
+
+  // Stock search state (inside upload modal)
+  let stockModalProviders = $state<{ name: string; display_name: string }[]>([]);
+  let stockModalProvidersLoaded = $state(false);
+  let stockModalQuery = $state("");
+  let stockModalResults = $state<StockPhoto[]>([]);
+  let stockModalLoading = $state(false);
+  let stockModalHasMore = $state(false);
+  let stockModalPage = $state(1);
+  let stockModalProviderFilter = $state("");
+  let stockModalImporting = $state<Set<string>>(new Set());
+  let stockModalImported = $state<Set<string>>(new Set());
+  let stockModalError = $state("");
+  let stockModalTimer: ReturnType<typeof setTimeout> | undefined;
 
   // Backend gates approve/reject/delete on media.quarantine.manage and media.delete_any
   const canManageMedia = $derived(hasPermission("media.quarantine.manage") || hasPermission("media.delete_any"));
@@ -384,8 +400,84 @@
     uploadUserGroupId = "";
     uploadAltText = "";
     uploadProgress = null;
+    uploadModalTab = "upload";
     showUploadModal = true;
     loadUserGroups();
+    loadStockModalProviders();
+  }
+
+  // --- Stock search inside upload modal ---
+
+  async function loadStockModalProviders() {
+    if (stockModalProvidersLoaded) return;
+    const result = await stockAdminApi.listAvailableProviders();
+    if (result.ok) {
+      stockModalProviders = result.data.providers ?? [];
+    }
+    stockModalProvidersLoaded = true;
+  }
+
+  function runStockModalSearch(q: string) {
+    stockModalQuery = q;
+    stockModalPage = 1;
+    if (stockModalTimer) clearTimeout(stockModalTimer);
+    if (!q.trim()) {
+      stockModalResults = [];
+      stockModalHasMore = false;
+      return;
+    }
+    stockModalTimer = setTimeout(async () => {
+      stockModalLoading = true;
+      stockModalError = "";
+      const result = await stockAdminApi.search({
+        q: q.trim(),
+        provider: stockModalProviderFilter || undefined,
+        page: stockModalPage,
+        per_page: 20,
+      });
+      if (result.ok) {
+        stockModalResults = result.data.photos ?? [];
+        stockModalHasMore = result.data.has_next_page ?? false;
+      } else {
+        stockModalError = result.error ?? "Search failed";
+        stockModalResults = [];
+        stockModalHasMore = false;
+      }
+      stockModalLoading = false;
+    }, 350);
+  }
+
+  async function loadMoreStockModal() {
+    stockModalPage++;
+    stockModalLoading = true;
+    const result = await stockAdminApi.search({
+      q: stockModalQuery.trim(),
+      provider: stockModalProviderFilter || undefined,
+      page: stockModalPage,
+      per_page: 20,
+    });
+    if (result.ok) {
+      stockModalResults = [...stockModalResults, ...(result.data.photos ?? [])];
+      stockModalHasMore = result.data.has_next_page ?? false;
+    }
+    stockModalLoading = false;
+  }
+
+  function setStockModalProvider(name: string) {
+    stockModalProviderFilter = name;
+    if (stockModalQuery.trim()) runStockModalSearch(stockModalQuery);
+  }
+
+  async function importStockModalPhoto(photo: StockPhoto) {
+    const pkey = `${photo.provider}:${photo.id}`;
+    stockModalImporting = new Set([...stockModalImporting, pkey]);
+    const result = await stockAdminApi.import(photo.provider, photo.id);
+    stockModalImporting = new Set([...stockModalImporting].filter((k) => k !== pkey));
+    if (result.ok) {
+      stockModalImported = new Set([...stockModalImported, pkey]);
+    } else {
+      stockModalError = result.error ?? "Import failed";
+    }
   }
 
   async function handleUpload() {
@@ -564,19 +656,6 @@
             {stockProvidersError}
           </div>
         {:else}
-          <!-- Provider search bar -->
-          <div class="border-b p-3" style="border-color: var(--color-border)">
-            <div class="relative max-w-sm">
-              <Search class="absolute left-2 top-1/2 h-4 w-4 -translate-y-1/2" style="color: var(--color-muted)" />
-              <input
-                type="text"
-                placeholder="Search providers..."
-                class="w-full rounded-md border py-1.5 pl-8 pr-3 text-sm"
-                style="border-color: var(--color-border); background-color: var(--color-surface); color: var(--color-foreground)"
-                bind:value={providerSearch}
-              />
-            </div>
-          </div>
           <div class="overflow-x-auto">
             <table class="w-full text-sm">
               <thead class="border-b bg-surface text-left text-xs uppercase text-muted">
@@ -588,7 +667,7 @@
                 </tr>
               </thead>
               <tbody class="divide-y">
-                {#each filteredStockProviders as p (p.provider_name)}
+                {#each stockProviders as p (p.provider_name)}
                   <tr class="hover:bg-surface/50">
                     <td class="px-4 py-3 font-medium text-foreground">{p.display_name}</td>
                     <td class="px-4 py-3">
@@ -630,13 +709,6 @@
                     </td>
                   </tr>
                 {/each}
-                {#if filteredStockProviders.length === 0}
-                  <tr>
-                    <td colspan="4" class="px-4 py-8 text-center text-muted">
-                      No providers match "{providerSearch}"
-                    </td>
-                  </tr>
-                {/if}
               </tbody>
             </table>
           </div>
@@ -807,76 +879,221 @@
 
 <!-- Upload Modal -->
 <Modal bind:open={showUploadModal} title={t('app.media.modal_upload_title', 'Upload Media')}>
-  <div class="space-y-4">
-    <div>
-      <label for="media-upload-files" class="block text-sm font-medium text-foreground mb-1">{t('app.media.upload_files', 'Files')}</label>
-      <input
-        id="media-upload-files"
-        type="file"
-        multiple
-        accept="image/*,video/*,audio/*,application/pdf,.doc,.docx"
-        onchange={(e) => {
-          const files = e.currentTarget.files;
-          if (files) uploadFiles = [...uploadFiles, ...Array.from(files)];
-        }}
-        class="block w-full text-sm text-foreground file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-primary file:text-white hover:file:bg-primary/80"
-      />
+  <!-- Sub-tab switcher: Upload files vs Stock photos -->
+  <div class="mb-4 inline-flex h-10 items-center justify-center rounded-lg p-1" style="background-color: var(--color-surface); color: var(--color-muted)">
+    <button
+      type="button"
+      class="inline-flex items-center justify-center whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium transition-all"
+      style={uploadModalTab === 'upload'
+        ? 'background-color: var(--color-surface); color: var(--color-foreground); box-shadow: 0 1px 2px rgba(0,0,0,0.05)'
+        : 'color: var(--color-muted)'}
+      onclick={() => (uploadModalTab = 'upload')}
+    >
+      <Upload class="mr-2 h-4 w-4" />
+      Upload
+    </button>
+    <button
+      type="button"
+      class="inline-flex items-center justify-center whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium transition-all"
+      style={uploadModalTab === 'stock'
+        ? 'background-color: var(--color-surface); color: var(--color-foreground); box-shadow: 0 1px 2px rgba(0,0,0,0.05)'
+        : 'color: var(--color-muted)'}
+      onclick={() => (uploadModalTab = 'stock')}
+    >
+      <Search class="mr-2 h-4 w-4" />
+      Stock Photos
+    </button>
+  </div>
+
+  {#if uploadModalTab === 'upload'}
+    <div class="space-y-4">
+      <div>
+        <label for="media-upload-files" class="block text-sm font-medium text-foreground mb-1">{t('app.media.upload_files', 'Files')}</label>
+        <input
+          id="media-upload-files"
+          type="file"
+          multiple
+          accept="image/*,video/*,audio/*,application/pdf,.doc,.docx"
+          onchange={(e) => {
+            const files = e.currentTarget.files;
+            if (files) uploadFiles = [...uploadFiles, ...Array.from(files)];
+          }}
+          class="block w-full text-sm text-foreground file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-primary file:text-white hover:file:bg-primary/80"
+        />
+      </div>
+      {#if uploadFiles.length > 0}
+        <div class="space-y-1 max-h-40 overflow-y-auto">
+          {#each uploadFiles as file, i}
+            <div class="flex items-center justify-between rounded-lg bg-surface px-3 py-1.5 text-sm">
+              <span class="truncate text-foreground">{file.name}</span>
+              <span class="ml-2 shrink-0 text-xs text-muted">{formatFileSize(file.size)}</span>
+              <button
+                type="button"
+                class="ml-2 shrink-0 text-muted hover:text-danger"
+                onclick={() => { uploadFiles = uploadFiles.filter((_, j) => j !== i); }}
+              >
+                ✕
+              </button>
+            </div>
+          {/each}
+        </div>
+      {/if}
+      <div>
+        <label for="media-upload-group" class="block text-sm font-medium text-foreground mb-1">{t('app.media.upload_user_group', 'User Group (optional)')}</label>
+        <select
+          id="media-upload-group"
+          bind:value={uploadUserGroupId}
+          class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+        >
+          <option value="">{t('app.media.upload_universal', 'Universal (all users)')}</option>
+          {#each userGroups as group}
+            <option value={group.id}>{group.name}</option>
+          {/each}
+        </select>
+      </div>
+      <div>
+        <label for="media-upload-alt" class="block text-sm font-medium text-foreground mb-1">{t('app.media.upload_alt_text', 'Alt Text (optional)')}</label>
+        <input
+          id="media-upload-alt"
+          type="text"
+          bind:value={uploadAltText}
+          placeholder={t('app.media.upload_alt_placeholder', 'Describe the media...')}
+          class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+        />
+      </div>
+      {#if uploadProgress}
+        <div class="text-sm text-muted">
+          {t('app.media.upload_progress', 'Uploading {current} of {total}...').replace('{current}', String(uploadProgress.current)).replace('{total}', String(uploadProgress.total))}
+          <span class="text-foreground-alt">— {uploadProgress.filename}</span>
+        </div>
+      {/if}
     </div>
-    {#if uploadFiles.length > 0}
-      <div class="space-y-1 max-h-40 overflow-y-auto">
-        {#each uploadFiles as file, i}
-          <div class="flex items-center justify-between rounded-lg bg-surface px-3 py-1.5 text-sm">
-            <span class="truncate text-foreground">{file.name}</span>
-            <span class="ml-2 shrink-0 text-xs text-muted">{formatFileSize(file.size)}</span>
+    <div class="mt-4 flex justify-end gap-2">
+      <Button variant="ghost" onclick={() => (showUploadModal = false)}>{t('media.cancel')}</Button>
+      <Button variant="default" onclick={handleUpload} disabled={!uploadFiles.length || uploadSubmitting}>
+        {uploadSubmitting
+          ? t('app.media.uploading', 'Uploading...')
+          : t('app.media.upload_n_files', 'Upload {n} files').replace('{n}', String(uploadFiles.length))}
+      </Button>
+    </div>
+  {:else}
+    <!-- Stock photo search + import -->
+    <div class="space-y-3">
+      {#if !stockModalProvidersLoaded}
+        <div class="flex items-center justify-center py-8">
+          <Loader2 class="h-5 w-5 animate-spin" style="color: var(--color-muted)" />
+          <span class="ml-2 text-sm" style="color: var(--color-muted)">Loading providers...</span>
+        </div>
+      {:else if stockModalProviders.length === 0}
+        <div class="py-8 text-center text-sm" style="color: var(--color-muted)">
+          No stock providers available. Enable providers in the Stock Providers tab.
+        </div>
+      {:else}
+        <!-- Search bar -->
+        <div class="relative">
+          <Search class="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2" style="color: var(--color-muted)" />
+          <input
+            type="text"
+            placeholder="Search stock photos..."
+            class="w-full rounded-lg border py-2 pl-9 pr-3 text-sm"
+            style="border-color: var(--color-border); background-color: var(--color-surface); color: var(--color-foreground)"
+            value={stockModalQuery}
+            oninput={(e) => runStockModalSearch(e.currentTarget.value)}
+          />
+        </div>
+
+        <!-- Provider filter chips -->
+        <div class="flex flex-wrap gap-2">
+          <button
+            type="button"
+            class="rounded-full px-3 py-1 text-xs font-medium transition-colors"
+            style={stockModalProviderFilter === ''
+              ? 'background-color: var(--color-primary); color: var(--color-primary-contrast, white)'
+              : 'background-color: var(--color-surface); color: var(--color-muted); border: 1px solid var(--color-border)'}
+            onclick={() => setStockModalProvider('')}
+          >All</button>
+          {#each stockModalProviders as p (p.name)}
             <button
               type="button"
-              class="ml-2 shrink-0 text-muted hover:text-danger"
-              onclick={() => { uploadFiles = uploadFiles.filter((_, j) => j !== i); }}
-            >
-              ✕
-            </button>
+              class="rounded-full px-3 py-1 text-xs font-medium transition-colors"
+              style={stockModalProviderFilter === p.name
+                ? 'background-color: var(--color-primary); color: var(--color-primary-contrast, white)'
+                : 'background-color: var(--color-surface); color: var(--color-muted); border: 1px solid var(--color-border)'}
+              onclick={() => setStockModalProvider(p.name)}
+            >{p.display_name}</button>
+          {/each}
+        </div>
+
+        {#if stockModalError}
+          <div class="rounded-lg border px-3 py-2 text-sm" style="border-color: var(--color-danger); color: var(--color-danger)">
+            {stockModalError}
           </div>
-        {/each}
-      </div>
-    {/if}
-    <div>
-      <label for="media-upload-group" class="block text-sm font-medium text-foreground mb-1">{t('app.media.upload_user_group', 'User Group (optional)')}</label>
-      <select
-        id="media-upload-group"
-        bind:value={uploadUserGroupId}
-        class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-      >
-        <option value="">{t('app.media.upload_universal', 'Universal (all users)')}</option>
-        {#each userGroups as group}
-          <option value={group.id}>{group.name}</option>
-        {/each}
-      </select>
+        {/if}
+
+        <!-- Results -->
+        <div class="max-h-[400px] overflow-y-auto">
+          {#if stockModalLoading && stockModalResults.length === 0}
+            <div class="flex items-center justify-center py-8">
+              <Loader2 class="h-5 w-5 animate-spin" style="color: var(--color-muted)" />
+              <span class="ml-2 text-sm" style="color: var(--color-muted)">Searching...</span>
+            </div>
+          {:else if stockModalResults.length === 0 && stockModalQuery}
+            <div class="py-8 text-center text-sm" style="color: var(--color-muted)">
+              No results found for "{stockModalQuery}"
+            </div>
+          {:else if stockModalResults.length === 0}
+            <div class="py-8 text-center text-sm" style="color: var(--color-muted)">
+              Search for photos to import into your media library.
+            </div>
+          {:else}
+            <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
+              {#each stockModalResults as photo (photo.provider + ':' + photo.id)}
+                {@const pkey = photo.provider + ':' + photo.id}
+                <div class="group relative overflow-hidden rounded-lg border" style="border-color: var(--color-border)">
+                  <img src={photo.thumbnail_url} alt={photo.description ?? ''} loading="lazy" class="aspect-square w-full object-cover" />
+                  <div class="absolute inset-0 flex flex-col justify-between bg-gradient-to-t from-black/60 via-transparent to-transparent p-2">
+                    <span class="truncate text-xs text-white/90">{photo.photographer}</span>
+                    <div class="flex items-center justify-between">
+                      {#if photo.license && (photo.license === 'cc-by' || photo.license === 'cc-by-sa' || photo.license === 'cc0')}
+                        <span class="rounded bg-white/20 px-1.5 py-0.5 text-[10px] font-medium text-white">{photo.license.toUpperCase()}</span>
+                      {:else}
+                        <span></span>
+                      {/if}
+                      {#if stockModalImported.has(pkey)}
+                        <span class="inline-flex items-center gap-1 rounded bg-green-500/80 px-2 py-1 text-xs text-white">
+                          <Check class="h-3 w-3" /> Imported
+                        </span>
+                      {:else if stockModalImporting.has(pkey)}
+                        <Loader2 class="h-4 w-4 animate-spin text-white" />
+                      {:else}
+                        <button
+                          type="button"
+                          class="inline-flex items-center gap-1 rounded bg-primary px-2 py-1 text-xs text-white hover:bg-primary/90"
+                          onclick={() => importStockModalPhoto(photo)}
+                        >
+                          <Download class="h-3 w-3" /> Import
+                        </button>
+                      {/if}
+                    </div>
+                  </div>
+                </div>
+              {/each}
+            </div>
+            {#if stockModalHasMore}
+              <div class="mt-3 flex justify-center">
+                <Button variant="ghost" size="sm" onclick={loadMoreStockModal} disabled={stockModalLoading}>
+                  {stockModalLoading ? 'Loading...' : 'Load more'}
+                </Button>
+              </div>
+            {/if}
+          {/if}
+        </div>
+      {/if}
     </div>
-    <div>
-      <label for="media-upload-alt" class="block text-sm font-medium text-foreground mb-1">{t('app.media.upload_alt_text', 'Alt Text (optional)')}</label>
-      <input
-        id="media-upload-alt"
-        type="text"
-        bind:value={uploadAltText}
-        placeholder={t('app.media.upload_alt_placeholder', 'Describe the media...')}
-        class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-      />
+    <div class="mt-4 flex justify-end">
+      <Button variant="ghost" onclick={() => (showUploadModal = false)}>Close</Button>
     </div>
-    {#if uploadProgress}
-      <div class="text-sm text-muted">
-        {t('app.media.upload_progress', 'Uploading {current} of {total}...').replace('{current}', String(uploadProgress.current)).replace('{total}', String(uploadProgress.total))}
-        <span class="text-foreground-alt">— {uploadProgress.filename}</span>
-      </div>
-    {/if}
-  </div>
-  <div class="mt-4 flex justify-end gap-2">
-    <Button variant="ghost" onclick={() => (showUploadModal = false)}>{t('media.cancel')}</Button>
-    <Button variant="default" onclick={handleUpload} disabled={!uploadFiles.length || uploadSubmitting}>
-      {uploadSubmitting
-        ? t('app.media.uploading', 'Uploading...')
-        : t('app.media.upload_n_files', 'Upload {n} files').replace('{n}', String(uploadFiles.length))}
-    </Button>
-  </div>
+  {/if}
 </Modal>
 
 <!-- MediaActionsCell -->

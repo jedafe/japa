@@ -629,10 +629,52 @@ export interface StockProviderAdmin {
 	updated_at?: string;
 }
 
+export interface StockPhoto {
+	id: string;
+	provider: string;
+	thumbnail_url: string;
+	full_url: string;
+	width: number;
+	height: number;
+	photographer: string;
+	photographer_url: string;
+	license?: string;
+	license_url?: string;
+	description?: string;
+}
+
+export interface StockSearchResult {
+	photos: StockPhoto[];
+	total: number;
+	page: number;
+	per_page: number;
+	has_next_page: boolean;
+}
+
+export interface StockImportResult {
+	media_id: string;
+}
+
+export interface StockProvidersResponse {
+	providers: { name: string; display_name: string }[];
+}
+
 export const stockAdminApi = {
 	listProviders: () => api<{ providers: StockProviderAdmin[] }>('/admin/stock/providers'),
 	patchProvider: (name: string, body: { enabled?: boolean; api_key?: string }) =>
 		api<{ status: string }>(`/admin/stock/providers/${name}`, { method: 'PATCH', body }),
+	/** User-facing stock endpoints (same backend, admin has wildcard perms). */
+	listAvailableProviders: () => api<StockProvidersResponse>('/stock/providers'),
+	search: (params: { q: string; provider?: string; page?: number; per_page?: number }) => {
+		const sp = new URLSearchParams();
+		sp.set('q', params.q);
+		if (params.provider) sp.set('provider', params.provider);
+		if (params.page) sp.set('page', String(params.page));
+		if (params.per_page) sp.set('per_page', String(params.per_page));
+		return api<StockSearchResult>(`/stock/search?${sp.toString()}`);
+	},
+	import: (provider: string, id: string) =>
+		api<StockImportResult>('/stock/import', { method: 'POST', body: { provider, id } }),
 };
 
 export const moderationAdminApi = {
