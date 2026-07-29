@@ -154,12 +154,16 @@
   async function loadStockProviders() {
     stockProvidersLoading = true;
     stockProvidersError = "";
-    const result = await stockAdminApi.listProviders();
-    if (result.ok) {
-      stockProviders = result.data.providers ?? [];
-      stockProvidersLoaded = true;
-    } else {
-      stockProvidersError = result.error ?? "Failed to load providers";
+    try {
+      const result = await stockAdminApi.listProviders();
+      if (result.ok) {
+        stockProviders = result.data.providers ?? [];
+        stockProvidersLoaded = true;
+      } else {
+        stockProvidersError = result.error ?? "Failed to load providers";
+      }
+    } catch (err) {
+      stockProvidersError = err instanceof Error ? err.message : "Failed to load providers";
     }
     stockProvidersLoading = false;
   }
