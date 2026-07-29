@@ -7,7 +7,7 @@
 	import { Modal } from "$lib/components/ui/modal";
 	import Pagination from "$lib/components/ui/Pagination.svelte";
 	import { TableSkeleton } from "$lib/components/ui/skeleton";
-	import { Plus, RefreshCw, Eye, Pencil, Trash2 } from "lucide-svelte";
+	import { Plus, RefreshCw, Eye, Pencil, Trash2, BadgeCheck, XCircle, Upload, Archive, FileEdit, Send } from "lucide-svelte";
 	import { universitiesAdminApi } from "$lib/api";
 	import { t } from "$lib/stores/i18n.svelte";
 	import { hasPermission } from "$lib/stores/permissions.svelte";
@@ -51,6 +51,11 @@
 	let formName = $state("");
 	let formSlug = $state("");
 	let formVerified = $state(false);
+	let showBulkImportModal = $state(false);
+	let csvFile = $state<File | null>(null);
+	let showStatusModal = $state(false);
+	let statusTarget = $state<University | null>(null);
+	let formStatus = $state("draft");
 
 	const canManage = $derived(hasPermission("admin.settings"));
 
@@ -191,6 +196,52 @@
 		} catch { error = t("common.error", "Failed to delete"); } finally { acting = false; }
 	}
 
+	async function toggleVerify(uni: University) {
+		acting = true;
+		try {
+			const result = uni.verified
+				? await universitiesAdminApi.unverify(uni.id)
+				: await universitiesAdminApi.verify(uni.id);
+			if (result.ok) { load(); } else { error = result.error; }
+		} catch { error = t("common.error", "Failed to update verification"); } finally { acting = false; }
+	}
+
+	function openStatusModal(uni: University) {
+		statusTarget = uni;
+		formStatus = uni.status;
+		showStatusModal = true;
+	}
+
+	async function submitStatusChange() {
+		if (!statusTarget) return;
+		acting = true;
+		try {
+			const result = await universitiesAdminApi.updateStatus(statusTarget.id, { status: formStatus });
+			if (result.ok) { showStatusModal = false; statusTarget = null; load(); } else { error = result.error; }
+		} catch { error = t("common.error", "Failed to update status"); } finally { acting = false; }
+	}
+
+	function openBulkImport() {
+		csvFile = null;
+		showBulkImportModal = true;
+	}
+
+	function handleFileSelect(e: Event) {
+		const input = e.currentTarget as HTMLInputElement;
+		csvFile = input.files?.[0] ?? null;
+	}
+
+	async function submitBulkImport() {
+		if (!csvFile) return;
+		acting = true;
+		try {
+			const formData = new FormData();
+			formData.append('file', csvFile);
+			const result = await universitiesAdminApi.bulkImport(formData);
+			if (result.ok) { showBulkImportModal = false; csvFile = null; load(); } else { error = result.error; }
+		} catch { error = t("common.error", "Failed to import"); } finally { acting = false; }
+	}
+
 	$effect(() => {
 		void currentPage;
 		void pageSize;
@@ -211,12 +262,16 @@
 	description={t("universities.description", "Manage university registrations and verification")}
 	actions={[
 		...(canManage ? [{ label: t("universities.create", "Create University"), icon: Plus, onclick: openCreate }] : []),
-		{ label: t("common.refresh", "Refresh"), icon: RefreshCw, variant: "ghost", onclick: load }
+		...(canManage ? [{ label: t("universities.bulkImport", "CSV Import"), icon: Upload, onclick: openBulkImport, variant: "outline" as const }] : []),
+		{ label: t("common.refresh", "Refresh"), icon: RefreshCw, variant: "ghost" as const, onclick: load }
 	]}
 />
 
 {#if error}
-	<div class="mb-4 rounded-lg p-3 text-sm" style="background: color-mix(in srgb, var(--color-danger) 10%, transparent); color: var(--color-danger)">{error}</div>
+	<div class="mb-4 flex items-center justify-between rounded-lg p-3 text-sm" style="background: color-mix(in srgb, var(--color-danger) 10%, transparent); color: var(--color-danger)">
+		<span>{error}</span>
+		<Button variant="outline" size="sm" onclick={load}>{t("common.retry", "Retry")}</Button>
+	</div>
 {/if}
 
 {#if selectedIds.size > 0}
@@ -293,12 +348,54 @@
 	</div>
 </Modal>
 
+<Modal bind:open={showStatusModal} title={t("universities.changeStatus", "Change Status")} size="sm">
+	{#if statusTarget}
+		<p class="mb-3 text-sm" style="color: var(--color-foreground)">{t("universities.statusFor", "Status for")} <strong>{statusTarget.name}</strong></p>
+		<div class="space-y-2">
+			{#each ["draft", "published", "archived"] as s}
+				<label class="flex items-center gap-2 text-sm" style="color: var(--color-foreground)">
+					<input type="radio" name="status" value={s} bind:group={formStatus} />
+					{s}
+				</label>
+			{/each}
+		</div>
+	{/if}
+	<div class="mt-6 flex justify-end gap-2">
+		<Button variant="ghost" onclick={() => (showStatusModal = false)}>{t("common.cancel", "Cancel")}</Button>
+		<Button onclick={submitStatusChange} disabled={acting}>{acting ? t("common.saving", "Saving...") : t("common.save", "Save")}</Button>
+	</div>
+</Modal>
+
+<Modal bind:open={showBulkImportModal} title={t("universities.bulkImport", "CSV Bulk Import")} size="default">
+	<div class="space-y-3">
+		<p class="text-sm" style="color: var(--color-muted)">{t("universities.bulkImportHelp", "Upload a CSV file with columns: name, slug, domain. Each row will create a university.")}</p>
+		<div>
+			<label for="csv-file" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t("universities.csvFile", "CSV File")}</label>
+			<input id="csv-file" type="file" accept=".csv" onchange={handleFileSelect} class="w-full text-sm" />
+		</div>
+	</div>
+	<div class="mt-6 flex justify-end gap-2">
+		<Button variant="ghost" onclick={() => (showBulkImportModal = false)}>{t("common.cancel", "Cancel")}</Button>
+		<Button onclick={submitBulkImport} disabled={acting || !csvFile}>{acting ? t("common.importing", "Importing...") : t("common.import", "Import")}</Button>
+	</div>
+</Modal>
+
 {#snippet ActionsCell({ value, row }: { value: any; row: University })}
 	<div class="flex items-center gap-1">
-		<Button variant="ghost" size="sm" onclick={() => openView(row)}><Eye class="h-3.5 w-3.5" /></Button>
+		<Button variant="ghost" size="sm" onclick={() => openView(row)} title={t("common.view", "View")}><Eye class="h-3.5 w-3.5" /></Button>
 		{#if canManage}
-			<Button variant="ghost" size="sm" onclick={() => openEdit(row)}><Pencil class="h-3.5 w-3.5" /></Button>
-			<Button variant="ghost" size="sm" onclick={() => confirmDelete(row)} style="color: var(--color-danger)"><Trash2 class="h-3.5 w-3.5" /></Button>
+			<Button variant="ghost" size="sm" onclick={() => toggleVerify(row)} title={row.verified ? t("universities.unverify", "Unverify") : t("universities.verify", "Verify")} disabled={acting}>
+				{#if row.verified}
+					<XCircle class="h-3.5 w-3.5" style="color: var(--color-danger)" />
+				{:else}
+					<BadgeCheck class="h-3.5 w-3.5" style="color: var(--color-success)" />
+				{/if}
+			</Button>
+			<Button variant="ghost" size="sm" onclick={() => openStatusModal(row)} title={t("universities.changeStatus", "Change Status")} disabled={acting}>
+				<FileEdit class="h-3.5 w-3.5" />
+			</Button>
+			<Button variant="ghost" size="sm" onclick={() => openEdit(row)} title={t("common.edit", "Edit")}><Pencil class="h-3.5 w-3.5" /></Button>
+			<Button variant="ghost" size="sm" onclick={() => confirmDelete(row)} title={t("common.delete", "Delete")} style="color: var(--color-danger)"><Trash2 class="h-3.5 w-3.5" /></Button>
 		{/if}
 	</div>
 {/snippet}

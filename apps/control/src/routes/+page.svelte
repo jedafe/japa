@@ -4,7 +4,7 @@
 	import StatusBadge from '$lib/components/StatusBadge.svelte';
 	import { api } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
-	import { PieChart, BarChart } from 'layerchart';
+	import { PieChart, BarChart, Spline } from 'layerchart';
 	import { RotateCw } from 'lucide-svelte';
 
 	type ServiceStatus = {
@@ -29,6 +29,9 @@
 	});
 	let lastRefresh = $state(new Date().toLocaleTimeString());
 	let apiAvailable = $state(true);
+	// M10: Time-series history of healthy-service-count for the dashboard
+	// sparkline. Appends a point on each poll tick, capped at 60 points.
+	let healthHistory = $state<{ time: number; healthy: number; total: number }[]>([]);
 
 	const groupKeys: Array<{ key: keyof HealthResponse; fallback: string; i18n: string }> = [
 		{ key: 'infrastructure', fallback: 'Infrastructure', i18n: 'dashboard.groups.infra' },
@@ -47,6 +50,11 @@
 		health = resp;
 		lastRefresh = new Date().toLocaleTimeString();
 		apiAvailable = true;
+		// M10: Append a point to the health time-series history
+		const all = groupKeys.flatMap((g) => resp[g.key]);
+		const total = all.length;
+		const healthy = all.filter((s) => s.status === 'healthy').length;
+		healthHistory = [...healthHistory, { time: Date.now(), healthy, total }].slice(-60);
 	}
 
 	const allServices = $derived(
@@ -136,6 +144,22 @@
 	<MetricCard label={t('dashboard.last_check', 'Last Check')} value={lastRefresh} />
 </div>
 
+<!-- M10: Time-series sparkline of healthy-service-count over polling history -->
+{#if healthHistory.length > 1}
+	<div class="border-border-card bg-background-alt shadow-card rounded-card p-5 mb-6">
+		<h3 class="text-muted-foreground mb-4 text-xs font-semibold uppercase tracking-wider">{t('dashboard.health_trend', 'Health Trend (Last {n} polls)').replace('{n}', String(healthHistory.length))}</h3>
+		<div class="h-[120px]">
+			<Spline
+				data={healthHistory}
+				x="time"
+				y="healthy"
+				curve="monotoneX"
+				stroke="var(--color-accent-foreground)"
+			/>
+		</div>
+	</div>
+{/if}
+
 <div class="grid gap-4 lg:grid-cols-2 mb-6">
 	<div class="border-border-card bg-background-alt shadow-card rounded-card p-5">
 		<h3 class="text-muted-foreground mb-4 text-xs font-semibold uppercase tracking-wider">{t('dashboard.health_distribution', 'Health Distribution')}</h3>
@@ -166,19 +190,17 @@
 	<div class="border-border-card bg-background-alt shadow-card rounded-card p-5">
 		<h3 class="text-muted-foreground mb-4 text-xs font-semibold uppercase tracking-wider">{t('dashboard.latency_chart', 'Latency Chart')}</h3>
 		{#if barData.length > 0}
-			{#key barData.length}
-				<div class="h-[240px]">
-					<BarChart
-						data={barData}
-						x="value"
-						y="label"
-						orientation="horizontal"
-						grid={false}
-						xPadding={[0.2, 0.2]}
-						cRange={['var(--color-accent-foreground)']}
-					/>
-				</div>
-			{/key}
+			<div class="h-[240px]">
+				<BarChart
+					data={barData}
+					x="value"
+					y="label"
+					orientation="horizontal"
+					grid={false}
+					xPadding={[0.2, 0.2]}
+					cRange={['var(--color-accent-foreground)']}
+				/>
+			</div>
 		{:else}
 			<p class="text-muted-foreground text-sm py-8 text-center">{t('dashboard.no_services', 'No services reported.')}</p>
 		{/if}

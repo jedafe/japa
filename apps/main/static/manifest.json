@@ -1,0 +1,10 @@
+{
+	"name": "JapaConnect",
+	"short_name": "JapaConnect",
+	"description": "The Nigerian diaspora community platform",
+	"start_url": "/",
+	"display": "standalone",
+	"background_color": "#ffffff",
+	"theme_color": "#0ea5e9",
+	"icons": [{ "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml" }]
+}

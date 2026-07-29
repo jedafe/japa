@@ -24,6 +24,8 @@
 	"search.loading": "Recherche…",
 	"search.start_typing": "Commencez à taper pour rechercher la doc.",
 	"search.group": "Pages",
+	"search.filter_audience": "Filtrer par audience",
+	"search.all_audiences": "Toutes les audiences",
 	"page.last_reviewed": "Dernière révision {date}",
 	"page.not_reviewed": "Pas encore révisé",
 	"page.not_found": "Page introuvable",

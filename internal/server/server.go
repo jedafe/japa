@@ -250,6 +250,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// spaceService (countries/states/cities are seeded as spaces).
 	geoHandlers := geoip.NewHandlers(geoipReader, spaceService)
 
+	// Feature flags handlers — declared in the outer scope so both the
+	// /api/v1 and /control route groups can use them.
+	featureHandlers := features.NewHandlers(featureChecker)
+
 	// Universities subsystem (Section 39) — read-view over spaces of the
 	// University space-type + their custom field values, no dedicated table.
 	universitiesHandlers := universities.NewHandlers(spaceService, cfService)
@@ -501,6 +505,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 	// Media subsystem (Section 34 — Media System).
 	mediaService := media.NewService(database)
+	// Resolve logo_media_id to an imgproxy-signed logo_url in university
+	// responses (Section 34 / ADR-039 — audit finding H5).
+	universitiesHandlers.SetMediaResolver(mediaService)
 
 	// Register image processor for the worker's content:process_image task.
 	mediaImageAdapter := media.NewProcessorAdapter(mediaService)
@@ -897,7 +904,6 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 			// Feature flags endpoint (public - frontend needs flags to
 			// render navigation, no auth required)
-			featureHandlers := features.NewHandlers(featureChecker)
 			r.Get("/feature-flags", featureHandlers.HandleGetFeatures)
 
 			// Feature flags admin toggle (requires auth + RBAC permission)
@@ -2743,6 +2749,22 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.moderation")).
 				Get("/admin/organizations/pending-claims", adminHandlers.ListPendingOwnershipClaims)
 
+			// Organizations admin CRUD
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.moderation")).
+				Get("/admin/organizations", orgHandlers.AdminListOrganizations)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.moderation")).
+				Get("/admin/organizations/{id}", orgHandlers.AdminGetOrganization)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.moderation")).
+				Post("/admin/organizations", orgHandlers.AdminCreateOrganization)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.moderation")).
+				Patch("/admin/organizations/{id}", orgHandlers.AdminUpdateOrganization)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.moderation")).
+				Delete("/admin/organizations/{id}", orgHandlers.AdminDeleteOrganization)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.moderation")).
+				Get("/admin/organizations/{id}/members", orgHandlers.AdminListMembers)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.moderation")).
+				Get("/admin/organizations/{id}/invitations", orgHandlers.AdminListInvitations)
+
 			// Task 12: Spaces admin extras
 			// Admin spaces CRUD (reuses the tenant-scoped space handlers; the
 			// admin's resolved tenant scopes the listing).
@@ -2830,6 +2852,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Admin blog post management (Section 24 blog extension).
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "blog.review.manage")).
 				Get("/admin/blog", blogHandlers.AdminListPosts)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "blog.review.manage")).
+				Post("/admin/blog", blogHandlers.AdminCreatePost)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "blog.review.manage")).
+				Patch("/admin/blog/{id}", blogHandlers.AdminUpdatePost)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "blog.review.manage")).
 				Delete("/admin/blog/{id}", blogHandlers.AdminDeletePost)
 
@@ -3077,6 +3103,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 			// Feature Flags
 			r.Get("/feature-flags", controlHandlers.ListFeatureFlags)
+			r.Post("/feature-flags", featureHandlers.CreateFeatureFlag)
 			r.Patch("/feature-flags/{flag_name}", controlHandlers.SetFeatureFlag)
 
 			// Infrastructure Health
@@ -3087,6 +3114,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Queue Monitor
 			r.Get("/queue/stats", controlHandlers.QueueStats)
 			r.Get("/queue/{queue_name}/tasks", controlHandlers.ListQueueTasks)
+			r.Post("/queue/{queue_name}/tasks/{task_id}/retry", controlHandlers.RetryQueueTask)
 			r.Get("/queue/dlq", controlHandlers.ListDLQ)
 			r.Post("/queue/dlq/{task_id}/retry", controlHandlers.RetryDLQTask)
 			r.Delete("/queue/dlq/{task_id}", controlHandlers.DiscardDLQTask)
@@ -3120,6 +3148,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.Post("/api-keys/batch-delete", controlHandlers.DeleteAPIKeysBatch)
 			r.Get("/api-keys/{id}", controlHandlers.GetAPIKey)
 			r.Patch("/api-keys/{id}", controlHandlers.UpdateAPIKey)
+			r.Post("/api-keys/{id}/revoke", publicAPIHandlers.RevokeKey)
 			r.Delete("/api-keys/{id}", controlHandlers.DeleteAPIKey)
 			r.Post("/api-keys/{id}/suspend", publicAPIHandlers.SuspendKey)
 			r.Delete("/api-keys/{id}/suspend", publicAPIHandlers.UnsuspendKey)
@@ -3142,6 +3171,41 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 			// Deployments
 			r.Get("/deployments", controlHandlers.ListDeployments)
+
+			// Permission Nodes — list all registered permission nodes
+			r.Get("/permission-nodes", controlHandlers.ListPermissionNodes)
+
+			// Webhook Endpoints — super-admin view (wires existing webhook handlers)
+			r.Get("/webhooks", webhookHandlers.ListWebhooks)
+			r.Get("/webhooks/{id}", webhookHandlers.GetWebhook)
+			r.Post("/webhooks", webhookHandlers.CreateWebhook)
+			r.Patch("/webhooks/{id}", webhookHandlers.UpdateWebhook)
+			r.Delete("/webhooks/{id}", webhookHandlers.DeleteWebhook)
+			r.Post("/webhooks/{id}/test", webhookHandlers.TestWebhook)
+			r.Get("/webhooks/{id}/deliveries", webhookHandlers.ListDeliveries)
+			r.Post("/webhooks/{id}/deliveries/{delivery_id}/retry", webhookHandlers.RetryDelivery)
+			r.Get("/webhook-events", webhookHandlers.ListWebhookEvents)
+
+			// OAuth Clients — super-admin CRUD
+			r.Get("/oauth-clients", controlHandlers.ListOAuthClients)
+			r.Get("/oauth-clients/{id}", controlHandlers.GetOAuthClient)
+			r.Post("/oauth-clients", controlHandlers.CreateOAuthClient)
+			r.Patch("/oauth-clients/{id}", controlHandlers.UpdateOAuthClient)
+			r.Delete("/oauth-clients/{id}", controlHandlers.DeleteOAuthClient)
+			r.Post("/oauth-clients/{id}/rotate-secret", controlHandlers.RotateOAuthClientSecret)
+
+			// Extensions — super-admin CRUD (stored in system_settings as JSON)
+			r.Get("/extensions", controlHandlers.ListExtensions)
+			r.Patch("/extensions/{key}", controlHandlers.UpdateExtension)
+			r.Post("/extensions/{key}/enable", controlHandlers.EnableExtension)
+			r.Post("/extensions/{key}/disable", controlHandlers.DisableExtension)
+
+			// Backup Configs — super-admin CRUD
+			r.Get("/backup-configs", controlHandlers.ListBackupConfigs)
+			r.Post("/backup-configs", controlHandlers.CreateBackupConfig)
+			r.Patch("/backup-configs/{id}", controlHandlers.UpdateBackupConfig)
+			r.Delete("/backup-configs/{id}", controlHandlers.DeleteBackupConfig)
+			r.Post("/backup-configs/{id}/trigger", controlHandlers.TriggerBackup)
 		})
 	})
 

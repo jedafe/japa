@@ -5,7 +5,7 @@
 	import { Button } from "$lib/components/ui/button";
 	import { Modal } from "$lib/components/ui/modal";
 	import { TableSkeleton } from "$lib/components/ui/skeleton";
-	import { Check, X, Ban, RotateCcw, Eye, RefreshCw } from "lucide-svelte";
+	import { Check, X, Ban, RotateCcw, Eye, RefreshCw, Trash2, Pencil } from "lucide-svelte";
 	import { universityAdminApi } from "$lib/api";
 	import { t } from "$lib/stores/i18n.svelte";
 	import { hasPermission } from "$lib/stores/permissions.svelte";
@@ -41,11 +41,21 @@
 	let showSuspendModal = $state(false);
 	let showReinstateModal = $state(false);
 	let showViewModal = $state(false);
+	let showDeleteModal = $state(false);
+	let showEditTierModal = $state(false);
 	let target = $state<InstructorProfile | null>(null);
 	let actionLoading = $state(false);
 
 	let approveTier = $state("standard");
 	let approveCommission = $state("");
+	let editTier = $state("standard");
+	let editCommission = $state("");
+
+	const tierOptions = [
+		{ value: "standard", label: t("university.tier_standard", "Standard") },
+		{ value: "verified", label: t("university.tier_verified", "Verified") },
+		{ value: "partner", label: t("university.tier_partner", "Partner") }
+	];
 
 	const canApprove = $derived(hasPermission("university.instructor.approve"));
 	const canManage = $derived(hasPermission("university.instructor.manage"));
@@ -180,6 +190,48 @@
 		actionLoading = false;
 	}
 
+	function openDelete(i: InstructorProfile) { target = i; showDeleteModal = true; }
+
+	async function doDelete() {
+		if (!target) return;
+		actionLoading = true;
+		errorMessage = "";
+		const result = await universityAdminApi.deleteInstructor(target.id);
+		if (result.ok) {
+			showDeleteModal = false;
+			successMessage = t("university.instructor_deleted", "Instructor deleted");
+			load();
+		} else {
+			errorMessage = result.error;
+		}
+		actionLoading = false;
+	}
+
+	function openEditTier(i: InstructorProfile) {
+		target = i;
+		editTier = i.tier;
+		editCommission = i.commission_pct_override != null ? String(i.commission_pct_override) : "";
+		showEditTierModal = true;
+	}
+
+	async function doEditTier() {
+		if (!target) return;
+		actionLoading = true;
+		errorMessage = "";
+		const body: { tier?: string; commission_pct_override?: number } = {};
+		if (editTier) body.tier = editTier;
+		if (editCommission.trim()) body.commission_pct_override = Number(editCommission);
+		const result = await universityAdminApi.updateInstructor(target.id, body);
+		if (result.ok) {
+			showEditTierModal = false;
+			successMessage = t("university.instructor_updated", "Instructor updated");
+			load();
+		} else {
+			errorMessage = result.error;
+		}
+		actionLoading = false;
+	}
+
 	const totalPages = $derived(Math.max(1, Math.ceil(meta.total / pageSize)));
 
 	$effect(() => {
@@ -197,8 +249,9 @@
 />
 
 {#if errorMessage}
-	<div class="mb-4 rounded-md border px-4 py-3 text-sm" style="border-color: var(--color-danger); background-color: color-mix(in srgb, var(--color-danger) 8%, transparent); color: var(--color-danger)">
-		{errorMessage}
+	<div class="mb-4 flex items-center justify-between rounded-md border px-4 py-3 text-sm" style="border-color: var(--color-danger); background-color: color-mix(in srgb, var(--color-danger) 8%, transparent); color: var(--color-danger)">
+		<span>{errorMessage}</span>
+		<Button variant="outline" size="sm" onclick={load}>{t("common.retry", "Retry")}</Button>
 	</div>
 {/if}
 {#if successMessage}
@@ -273,9 +326,9 @@
 			<div>
 				<label for="approve-tier" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t("university.tier", "Tier")}</label>
 				<select id="approve-tier" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-surface)" bind:value={approveTier}>
-					<option value="standard">standard</option>
-					<option value="verified">verified</option>
-					<option value="partner">partner</option>
+					{#each tierOptions as opt}
+						<option value={opt.value}>{opt.label}</option>
+					{/each}
 				</select>
 			</div>
 			<div>
@@ -331,6 +384,42 @@
 	</div>
 </Modal>
 
+<!-- Delete Modal -->
+<Modal open={showDeleteModal} onclose={() => { showDeleteModal = false; }} title={t("common.confirmDelete", "Confirm Delete")} size="sm">
+	{#if target}
+		<p class="text-sm" style="color: var(--color-foreground)">{t("university.delete_instructor_confirm", "Delete instructor profile for")} <strong>{target.display_name}</strong>? {t("universities.deleteWarning", "This cannot be undone.")}</p>
+	{/if}
+	<div class="mt-6 flex justify-end gap-2">
+		<Button variant="ghost" onclick={() => { showDeleteModal = false; }}>{t("common.cancel", "Cancel")}</Button>
+		<Button variant="destructive" onclick={doDelete} disabled={actionLoading}>{actionLoading ? t("common.deleting", "Deleting...") : t("common.delete", "Delete")}</Button>
+	</div>
+</Modal>
+
+<!-- Edit Tier Modal -->
+<Modal open={showEditTierModal} onclose={() => { showEditTierModal = false; }} title={t("university.edit_tier", "Edit Tier & Commission")}>
+	{#if target}
+		<div class="space-y-4">
+			<p class="text-sm" style="color: var(--color-muted)">{t("university.update_tier_for", "Update tier for")} <strong>{target.display_name}</strong></p>
+			<div>
+				<label for="edit-tier" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t("university.tier", "Tier")}</label>
+				<select id="edit-tier" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-surface)" bind:value={editTier}>
+					{#each tierOptions as opt}
+						<option value={opt.value}>{opt.label}</option>
+					{/each}
+				</select>
+			</div>
+			<div>
+				<label for="edit-commission" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t("university.commission_override", "Commission Override (%) — optional")}</label>
+				<input id="edit-commission" type="number" step="0.01" min="0" max="100" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-surface)" placeholder="e.g. 70" bind:value={editCommission} />
+			</div>
+		</div>
+	{/if}
+	<div class="mt-6 flex justify-end gap-2">
+		<Button variant="outline" onclick={() => { showEditTierModal = false; }}>{t("common.cancel", "Cancel")}</Button>
+		<Button onclick={doEditTier} disabled={actionLoading}>{actionLoading ? t("common.saving", "Saving...") : t("common.save", "Save")}</Button>
+	</div>
+</Modal>
+
 {#snippet StatusBadge({ value }: { value: string; row: InstructorProfile })}
 	<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium
 		{value === 'approved' ? 'bg-success/15 text-success' :
@@ -355,6 +444,9 @@
 			</Button>
 		{/if}
 		{#if canManage && row.status === "approved"}
+			<Button variant="ghost" size="sm" onclick={() => openEditTier(row)} aria-label={t("university.edit_tier", "Edit Tier")}>
+				<Pencil class="h-3.5 w-3.5" />
+			</Button>
 			<Button variant="ghost" size="sm" onclick={() => openSuspend(row)} style="color: var(--color-danger)" aria-label={t("common.suspend", "Suspend")}>
 				<Ban class="h-3.5 w-3.5" />
 			</Button>
@@ -362,6 +454,11 @@
 		{#if canManage && row.status === "suspended"}
 			<Button variant="ghost" size="sm" onclick={() => openReinstate(row)} style="color: var(--color-success)" aria-label={t("common.reinstate", "Reinstate")}>
 				<RotateCcw class="h-3.5 w-3.5" />
+			</Button>
+		{/if}
+		{#if canManage}
+			<Button variant="ghost" size="sm" onclick={() => openDelete(row)} style="color: var(--color-danger)" aria-label={t("common.delete", "Delete")}>
+				<Trash2 class="h-3.5 w-3.5" />
 			</Button>
 		{/if}
 	</div>

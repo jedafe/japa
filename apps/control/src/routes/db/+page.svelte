@@ -2,9 +2,11 @@
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import MetricCard from '$lib/components/MetricCard.svelte';
 	import StatusBadge from '$lib/components/StatusBadge.svelte';
+	import DataTable from '$lib/components/DataTable.svelte';
 	import { api } from '$lib/api';
-	import type { DbHealth } from '$lib/api/types';
+	import type { DbHealth, DataTableColumn } from '$lib/api/types';
 	import { t } from '$lib/stores/i18n.svelte';
+	import { escapeHtml } from '$lib/utils';
 	import ConfirmModal from '$lib/components/ui/ConfirmModal.svelte';
 	import { Tabs, Tooltip } from 'bits-ui';
 	import {
@@ -125,6 +127,137 @@
 		if (pct > 80) return 'bg-destructive';
 		if (pct > 60) return 'bg-accent';
 		return 'bg-foreground';
+	}
+
+	// M7: Convert raw table to DataTable — table-stats & slow-queries
+	type TableStat = DbHealth['tables'][number];
+	type SlowQuery = DbHealth['slow_queries'][number];
+
+	let tablesPage = $state(0);
+	let tablesPageSize = $state(10);
+	let tablesSortKey = $state('');
+	let tablesSortDirection = $state<'asc' | 'desc'>('asc');
+
+	let slowQueriesPage = $state(0);
+	let slowQueriesPageSize = $state(10);
+	let slowQueriesSortKey = $state('');
+	let slowQueriesSortDirection = $state<'asc' | 'desc'>('asc');
+
+	const tableColumns: DataTableColumn[] = [
+		{
+			key: 'name',
+			label: t('db.table_name'),
+			sortable: true,
+			render: (val) => `<span class="font-medium text-foreground">${escapeHtml(val) || '—'}</span>`
+		},
+		{
+			key: 'row_count',
+			label: t('db.row_count'),
+			sortable: true,
+			class: 'text-right',
+			render: (val) => `<span class="font-mono text-xs text-foreground">${formatNumber(val as number)}</span>`
+		},
+		{
+			key: 'size_bytes',
+			label: t('db.size'),
+			sortable: true,
+			class: 'text-right',
+			render: (val) => `<span class="font-mono text-xs text-foreground">${formatBytes(val as number)}</span>`
+		},
+		{
+			key: 'index_count',
+			label: t('db.indexes'),
+			sortable: true,
+			class: 'text-right',
+			render: (val) => `<span class="font-mono text-xs text-foreground">${val ?? '—'}</span>`
+		},
+		{
+			key: 'last_vacuum',
+			label: t('db.last_vacuum'),
+			sortable: true,
+			class: 'text-right',
+			render: (val) => `<span class="text-xs text-muted-foreground">${escapeHtml(formatVacuum(val as string | null))}</span>`
+		}
+	];
+
+	const slowQueryColumns: DataTableColumn[] = [
+		{
+			key: 'query',
+			label: t('db.query'),
+			sortable: true,
+			render: (val) => `<span class="font-mono text-xs text-foreground max-w-md truncate inline-block align-bottom">${escapeHtml(val) || '—'}</span>`
+		},
+		{
+			key: 'duration_ms',
+			label: t('db.duration'),
+			sortable: true,
+			class: 'text-right',
+			render: (val) => {
+				const ms = val as number;
+				const danger = ms > 1000;
+				return `<span class="font-mono text-xs ${danger ? 'text-destructive' : 'text-accent-foreground'}">${formatDuration(ms)}</span>`;
+			}
+		},
+		{
+			key: 'timestamp',
+			label: t('db.timestamp'),
+			sortable: true,
+			class: 'text-right',
+			render: (val) => `<span class="text-xs text-muted-foreground">${escapeHtml(formatTimestamp(val as string))}</span>`
+		}
+	];
+
+	function sortRows<T>(list: T[], key: string, direction: 'asc' | 'desc'): T[] {
+		if (!key) return list;
+		const sorted = [...list];
+		sorted.sort((a, b) => {
+			const av = (a as Record<string, unknown>)[key];
+			const bv = (b as Record<string, unknown>)[key];
+			if (av == null && bv == null) return 0;
+			if (av == null) return 1;
+			if (bv == null) return -1;
+			let cmp: number;
+			if (typeof av === 'number' && typeof bv === 'number') {
+				cmp = av - bv;
+			} else {
+				cmp = String(av).localeCompare(String(bv));
+			}
+			return direction === 'asc' ? cmp : -cmp;
+		});
+		return sorted;
+	}
+
+	let sortedTables = $derived.by(() => {
+		const list = dbHealth?.tables ?? [];
+		return sortRows(list, tablesSortKey, tablesSortDirection);
+	});
+
+	let tablesTotalRows = $derived(sortedTables.length);
+
+	let paginatedTables = $derived.by(() => {
+		const start = tablesPage * tablesPageSize;
+		return sortedTables.slice(start, start + tablesPageSize);
+	});
+
+	let sortedSlowQueries = $derived.by(() => {
+		const list = dbHealth?.slow_queries ?? [];
+		return sortRows(list, slowQueriesSortKey, slowQueriesSortDirection);
+	});
+
+	let slowQueriesTotalRows = $derived(sortedSlowQueries.length);
+
+	let paginatedSlowQueries = $derived.by(() => {
+		const start = slowQueriesPage * slowQueriesPageSize;
+		return sortedSlowQueries.slice(start, start + slowQueriesPageSize);
+	});
+
+	function getTableRowId(row: unknown): string {
+		return (row as TableStat).name;
+	}
+
+	function getSlowQueryRowId(row: unknown): string {
+		const q = row as SlowQuery;
+		return q.timestamp + q.query;
 	}
 
 	$effect(() => {
@@ -349,40 +482,20 @@
 						<h3 class="text-sm font-semibold text-foreground">{t('db.table_stats')}</h3>
 					</div>
 				</div>
-				<div class="overflow-x-auto">
-					<table class="w-full text-sm">
-						<thead>
-							<tr class="border-b border-border-card">
-								<th class="px-4 py-3 text-left font-medium text-muted-foreground">{t('db.table_name')}</th>
-								<th class="px-4 py-3 text-right font-medium text-muted-foreground">{t('db.row_count')}</th>
-								<th class="px-4 py-3 text-right font-medium text-muted-foreground">{t('db.size')}</th>
-								<th class="px-4 py-3 text-right font-medium text-muted-foreground">{t('db.indexes')}</th>
-								<th class="px-4 py-3 text-right font-medium text-muted-foreground">{t('db.last_vacuum')}</th>
-							</tr>
-						</thead>
-						<tbody>
-							{#if dbHealth.tables && dbHealth.tables.length > 0}
-								{#each dbHealth.tables as table (table.name)}
-									<tr class="border-t border-border-card">
-										<td class="px-4 py-3 font-medium text-foreground">{table.name}</td>
-										<td class="px-4 py-3 text-right font-mono text-xs text-foreground">{formatNumber(table.row_count)}</td>
-										<td class="px-4 py-3 text-right font-mono text-xs text-foreground">{formatBytes(table.size_bytes)}</td>
-										<td class="px-4 py-3 text-right font-mono text-xs text-foreground">{table.index_count}</td>
-										<td class="px-4 py-3 text-right text-xs text-muted-foreground">
-											{formatVacuum(table.last_vacuum)}
-										</td>
-									</tr>
-								{/each}
-							{:else}
-								<tr>
-									<td colspan="5" class="px-4 py-8 text-center text-muted-foreground">
-										{t('db.no_table_stats')}
-									</td>
-								</tr>
-							{/if}
-						</tbody>
-					</table>
-				</div>
+				<DataTable
+					columns={tableColumns}
+					rows={paginatedTables}
+					totalRows={tablesTotalRows}
+					bind:page={tablesPage}
+					bind:pageSize={tablesPageSize}
+					bind:sortKey={tablesSortKey}
+					bind:sortDirection={tablesSortDirection}
+					loading={loading}
+					emptyMessage={t('db.no_table_stats')}
+					emptyIcon={Table2}
+					selectable={false}
+					getRowId={getTableRowId}
+				/>
 			</div>
 		</Tabs.Content>
 
@@ -400,39 +513,20 @@
 						{/if}
 					</div>
 				</div>
-				{#if dbHealth.slow_queries && dbHealth.slow_queries.length > 0}
-					<div class="overflow-x-auto">
-						<table class="w-full text-sm">
-							<thead>
-								<tr class="border-b border-border-card">
-									<th class="px-4 py-3 text-left font-medium text-muted-foreground">{t('db.query')}</th>
-									<th class="px-4 py-3 text-right font-medium text-muted-foreground">{t('db.duration')}</th>
-									<th class="px-4 py-3 text-right font-medium text-muted-foreground">{t('db.timestamp')}</th>
-								</tr>
-							</thead>
-							<tbody>
-								{#each dbHealth.slow_queries as query (query.timestamp + query.query)}
-									<tr class="border-t border-border-card">
-										<td class="max-w-md truncate px-4 py-3 font-mono text-xs text-foreground">{query.query}</td>
-										<td class="px-4 py-3 text-right font-mono text-xs">
-											<span class={query.duration_ms > 1000 ? 'text-destructive' : 'text-accent-foreground'}>
-												{formatDuration(query.duration_ms)}
-											</span>
-										</td>
-										<td class="px-4 py-3 text-right text-xs text-muted-foreground">
-											{formatTimestamp(query.timestamp)}
-										</td>
-									</tr>
-								{/each}
-							</tbody>
-						</table>
-					</div>
-				{:else}
-					<div class="px-6 py-8 text-center text-muted-foreground">
-						<Zap class="mx-auto h-6 w-6 opacity-40" />
-						<p class="mt-2 text-sm">{t('db.no_slow_queries')}</p>
-					</div>
-				{/if}
+				<DataTable
+					columns={slowQueryColumns}
+					rows={paginatedSlowQueries}
+					totalRows={slowQueriesTotalRows}
+					bind:page={slowQueriesPage}
+					bind:pageSize={slowQueriesPageSize}
+					bind:sortKey={slowQueriesSortKey}
+					bind:sortDirection={slowQueriesSortDirection}
+					loading={loading}
+					emptyMessage={t('db.no_slow_queries')}
+					emptyIcon={Zap}
+					selectable={false}
+					getRowId={getSlowQueryRowId}
+				/>
 			</div>
 		</Tabs.Content>
 

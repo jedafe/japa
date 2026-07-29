@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
-	import { navigating } from '$app/state';
+	import { navigating, page } from '$app/state';
 	import { TriangleAlert } from 'lucide-svelte';
 	import { api } from '$lib/api/client';
 	import { feedPath, type FeedTab, type SortValue } from '$lib/feed/endpoint';
@@ -19,6 +19,14 @@
 		loadError: boolean;
 	}
 	let { items: initial, tab, sort, pageSize, config, loadError }: Props = $props();
+
+	// Geo re-weight from the user's content_country_preference or ?geo= param
+	// (ADR-064). Forwarded on load-more so paginated results stay geo-consistent.
+	const geo = $derived(
+		page.url.searchParams.get('geo') ??
+			page.data.user?.content_country_preference ??
+			undefined
+	);
 
 	let items = $state<FeedItem[]>(untrack(() => initial));
 	let atEnd = $state(false);
@@ -54,7 +62,7 @@
 	async function loadMore() {
 		if (loading || atEnd) return;
 		loading = true;
-		const res = await api.get<FeedItem[]>(feedPath(tab, sort, pageSize, items.length));
+		const res = await api.get<FeedItem[]>(feedPath(tab, sort, pageSize, items.length, geo));
 		if (res.error) {
 			loading = false;
 			return;

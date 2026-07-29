@@ -1,7 +1,7 @@
 <script lang="ts">
 	interface Props {
-		/** 'lines' = stacked text bars; 'card' = avatar + lines block. */
-		variant?: 'lines' | 'card';
+		/** 'lines' = stacked text bars; 'card' = avatar + lines block; 'chart' = bar chart placeholder. */
+		variant?: 'lines' | 'card' | 'chart';
 		/** Number of rows (lines) or cards to render. */
 		count?: number;
 		class?: string;
@@ -24,7 +24,7 @@
 				></div>
 			{/each}
 		</div>
-	{:else}
+	{:else if variant === 'card'}
 		<div class="space-y-4">
 			{#each Array.from({ length: count }) as _, i (i)}
 				<div
@@ -57,6 +57,16 @@
 						></div>
 					</div>
 				</div>
+			{/each}
+		</div>
+	{:else}
+		<!-- chart: pulsing bar placeholders -->
+		<div class="flex h-full items-end justify-around gap-4 pb-8">
+			{#each Array.from({ length: 4 }) as _, i (i)}
+				<div
+					class="w-1/5 rounded-t bg-[var(--color-surface-subtle)]"
+					style="height: {[60, 85, 45, 70][i]}%; animation: jc-skeleton 1.4s ease-in-out infinite; animation-delay: {i * 0.15}s"
+				></div>
 			{/each}
 		</div>
 	{/if}

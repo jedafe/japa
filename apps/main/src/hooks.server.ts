@@ -56,6 +56,7 @@ export const handle: Handle = async ({ event, resolve }) => {
 		}
 	}
 	event.locals.user = null;
+	event.locals.csrfToken = null;
 
 	// ADR-063: detect the Japa University branded surface by host.
 	// university.japaconnect.com (and configurable custom domains like japauni.com)
@@ -74,6 +75,20 @@ export const handle: Handle = async ({ event, resolve }) => {
 				event.locals.token = null;
 			}
 			// Any other failure (backend unreachable) also degrades to guest.
+		}
+	}
+
+	// Fetch the double-submit CSRF token for authenticated users so server-side
+	// mutations (form actions, apiPost/apiPatch/apiDelete) can attach the
+	// X-CSRF-Token header. The backend's /csrf endpoint issues the cookie and
+	// echoes the token value. Guests never mutate, so we skip the extra fetch.
+	// Ref: japa-bugs-hunters.md §5.2 (CSRF) — audit finding C1.
+	if (event.locals.token && !building) {
+		try {
+			const csrf = await apiGet<{ csrfToken: string }>(apiContext(event), '/csrf');
+			event.locals.csrfToken = csrf?.csrfToken ?? null;
+		} catch {
+			event.locals.csrfToken = null;
 		}
 	}
 

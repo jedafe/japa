@@ -12,6 +12,11 @@
 	);
 </script>
 
+<svelte:head>
+	<!-- ADR-060: Dashboard is private — not indexed, no ad slots. -->
+	<meta name="robots" content="noindex, nofollow" />
+</svelte:head>
+
 <div class="grid grid-cols-1 gap-6 md:grid-cols-[220px_1fr]">
 	<HubRail {groups} basePath="/dashboard" {active} labelKey="dashboard.nav.label" />
 	<div class="min-w-0 px-1 py-4">{@render children()}</div>

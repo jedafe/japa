@@ -44,6 +44,8 @@ export interface SessionUser {
 	primary_space?: SpaceRef | null;
 	/** UI preferences persisted via PATCH /me/account, e.g. nav_collapsed. */
 	ui?: { nav_collapsed?: boolean } & Record<string, unknown>;
+	/** Geo-aware feed personalization country (ADR-064). Empty = use GeoIP default. */
+	content_country_preference?: string;
 }
 
 export interface SpaceRef {
@@ -845,6 +847,13 @@ export interface DMMessage {
  * rows filtered to university space types. Reuses the Space shape.
  * ------------------------------------------------------------------ */
 export type University = Space;
+
+/** University detail response (GET /universities/{slug}) — Space + fields + resolved logo URL. */
+export interface UniversityDetail extends Space {
+	fields?: unknown[];
+	/** imgproxy-signed logo URL resolved from logo_media_id (Section 34 / ADR-039). */
+	logo_url?: string | null;
+}
 
 /** GET /universities/{id}/compare response — `{ space, fields }`. */
 export interface UniversityCompare {

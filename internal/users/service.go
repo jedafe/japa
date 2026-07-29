@@ -62,22 +62,29 @@ func (s *Service) GetProfile(ctx context.Context, tenantID, userID pgtype.UUID) 
 		lastLogin = &s
 	}
 
+	// Best-effort fetch of the user's content_country_preference (ADR-064)
+	// so the feed header can render the inline geo control without an extra
+	// round-trip. A failure degrades to an empty string (frontend falls back
+	// to the GeoIP-resolved country).
+	contentCountry, _ := s.GetContentCountry(ctx, tenantID, userID)
+
 	return &UserProfileResponse{
-		ID:            p.UserID.String(),
-		Email:         p.Email,
-		Username:      p.Username,
-		DisplayName:   p.DisplayName,
-		AvatarURL:     p.AvatarUrl,
-		Bio:           p.Bio,
-		Timezone:      p.Timezone,
-		ProfileType:   p.ProfileType,
-		Status:        p.Status,
-		FollowerCount: p.FollowerCount,
-		UserGroupName: groupName,
-		Groups:        groups,
-		LastLoginAt:   lastLogin,
-		CreatedAt:     p.CreatedAt.Time.Format(time.RFC3339),
-		UpdatedAt:     p.UpdatedAt.Time.Format(time.RFC3339),
+		ID:                       p.UserID.String(),
+		Email:                    p.Email,
+		Username:                 p.Username,
+		DisplayName:              p.DisplayName,
+		AvatarURL:                p.AvatarUrl,
+		Bio:                      p.Bio,
+		Timezone:                 p.Timezone,
+		ProfileType:              p.ProfileType,
+		Status:                   p.Status,
+		FollowerCount:            p.FollowerCount,
+		UserGroupName:            groupName,
+		Groups:                   groups,
+		LastLoginAt:              lastLogin,
+		CreatedAt:                p.CreatedAt.Time.Format(time.RFC3339),
+		UpdatedAt:                p.UpdatedAt.Time.Format(time.RFC3339),
+		ContentCountryPreference: contentCountry,
 	}, nil
 }
 
