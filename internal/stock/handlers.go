@@ -1,0 +1,330 @@
+package stock
+
+import (
+	"encoding/json"
+	"log/slog"
+	"net/http"
+	"strconv"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/jedafe/japa/internal/auth"
+	"github.com/jedafe/japa/internal/crypto"
+	"github.com/jedafe/japa/internal/rbac"
+	"github.com/jedafe/japa/internal/tenant"
+)
+
+// MaxStockBody is the maximum request body size for stock POST/PATCH endpoints.
+const MaxStockBody int64 = 1 << 20 // 1MB — only small JSON payloads expected
+
+// StockHandlers holds the stock service for HTTP handler methods.
+type StockHandlers struct {
+	svc *Service
+}
+
+// NewStockHandlers creates a StockHandlers with the given service.
+func NewStockHandlers(svc *Service) *StockHandlers {
+	return &StockHandlers{svc: svc}
+}
+
+// writeJSON serializes the given value as JSON and writes it to the response.
+func writeJSON(w http.ResponseWriter, status int, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	if err := json.NewEncoder(w).Encode(v); err != nil {
+		slog.Warn("stock: json encode error", "error", err)
+	}
+}
+
+// writeError writes a JSON error response following the JapaConnect API format.
+func writeError(w http.ResponseWriter, status int, code, message string) {
+	writeJSON(w, status, map[string]any{
+		"error": map[string]string{"code": code, "message": message},
+	})
+}
+
+// requireUser resolves the authenticated user from the request context.
+func (h *StockHandlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
+	user := auth.FromContext(r.Context())
+	if user == nil {
+		writeError(w, http.StatusUnauthorized, "unauthenticated", "Authentication required")
+		return nil, false
+	}
+	return user, true
+}
+
+// requireTenant resolves the tenant from the request context.
+func (h *StockHandlers) requireTenant(w http.ResponseWriter, r *http.Request) (*tenant.Tenant, bool) {
+	t := tenant.FromContext(r.Context())
+	if t == nil {
+		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		return nil, false
+	}
+	return t, true
+}
+
+// userPermissionKeys returns the authenticated user's resolved permission node
+// keys via the RBAC resolver stored in context by RequirePermission middleware.
+// Returns nil if the resolver or user is unavailable.
+func userPermissionKeys(r *http.Request) []string {
+	resolver := rbac.FromContext(r.Context())
+	user := auth.FromContext(r.Context())
+	if resolver == nil || user == nil {
+		return nil
+	}
+	uc, err := resolver.GetUserContext(r.Context(), user.UserID, user.TenantID)
+	if err != nil || uc == nil {
+		return nil
+	}
+	keys := make([]string, 0, len(uc.Permissions))
+	for k := range uc.Permissions {
+		keys = append(keys, k)
+	}
+	return keys
+}
+
+// hasPermission checks a single permission node via the RBAC resolver in context.
+func hasPermission(r *http.Request, permKey string) bool {
+	resolver := rbac.FromContext(r.Context())
+	user := auth.FromContext(r.Context())
+	if resolver == nil || user == nil {
+		return false
+	}
+	return resolver.HasPermission(r.Context(), user.UserID, user.TenantID, permKey)
+}
+
+// ---------------------------------------------------------------------------
+// User-facing handlers
+// ---------------------------------------------------------------------------
+
+// ListProviders returns providers available to the authenticated user.
+// GET /api/v1/stock/providers
+func (h *StockHandlers) ListProviders(w http.ResponseWriter, r *http.Request) {
+	if _, ok := h.requireUser(w, r); !ok {
+		return
+	}
+
+	userPerms := userPermissionKeys(r)
+	names := h.svc.AvailableProviders(r.Context(), userPerms)
+
+	result := make([]map[string]string, 0, len(names))
+	for _, name := range names {
+		result = append(result, map[string]string{
+			"name":         name,
+			"display_name": displayName(name),
+		})
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"providers": result}})
+}
+
+// Search searches stock photos across available providers.
+// GET /api/v1/stock/search?q=...&provider=...&page=...&per_page=...
+func (h *StockHandlers) Search(w http.ResponseWriter, r *http.Request) {
+	if _, ok := h.requireUser(w, r); !ok {
+		return
+	}
+
+	q := r.URL.Query().Get("q")
+	if q == "" {
+		writeError(w, http.StatusBadRequest, "missing_query", "query parameter 'q' is required")
+		return
+	}
+
+	provider := r.URL.Query().Get("provider")
+	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+	if page <= 0 {
+		page = 1
+	}
+	perPage, _ := strconv.Atoi(r.URL.Query().Get("per_page"))
+	if perPage <= 0 || perPage > 80 {
+		perPage = 20
+	}
+
+	// RBAC filter: if user doesn't have media.stock.providers, only allow openverse.
+	hasProviders := hasPermission(r, "media.stock.providers")
+	if !hasProviders && provider != "" && provider != "openverse" {
+		writeError(w, http.StatusForbidden, "provider_unavailable", "Provider not available without media.stock.providers permission")
+		return
+	}
+	if !hasProviders && provider == "" {
+		provider = "openverse"
+	}
+
+	result, err := h.svc.Search(r.Context(), q, provider, page, perPage)
+	if err != nil {
+		slog.Error("stock: search failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "search_error", err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": result})
+}
+
+// GetPhoto returns metadata for a single stock photo.
+// GET /api/v1/stock/photo/{provider}/{id}
+func (h *StockHandlers) GetPhoto(w http.ResponseWriter, r *http.Request) {
+	if _, ok := h.requireUser(w, r); !ok {
+		return
+	}
+
+	providerName := chi.URLParam(r, "provider")
+	photoID := chi.URLParam(r, "id")
+	if providerName == "" || photoID == "" {
+		writeError(w, http.StatusBadRequest, "missing_params", "provider and id are required")
+		return
+	}
+
+	// RBAC: non-openverse providers require media.stock.providers.
+	if providerName != "openverse" && !hasPermission(r, "media.stock.providers") {
+		writeError(w, http.StatusForbidden, "provider_unavailable", "Provider not available without media.stock.providers permission")
+		return
+	}
+
+	photo, err := h.svc.GetPhoto(r.Context(), providerName, photoID)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "photo_not_found", err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": photo})
+}
+
+// ImportPhoto downloads a stock photo and stores it in the media library.
+// POST /api/v1/stock/import  body: { "provider": "...", "id": "..." }
+func (h *StockHandlers) ImportPhoto(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, MaxStockBody)
+
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	t, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	var body struct {
+		Provider string `json:"provider"`
+		ID       string `json:"id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
+
+	if body.Provider == "" || body.ID == "" {
+		writeError(w, http.StatusBadRequest, "missing_params", "provider and id are required")
+		return
+	}
+
+	// RBAC: provider != openverse requires media.stock.providers.
+	// (media.stock.import is enforced at the route level by RequirePermission.)
+	if body.Provider != "openverse" && !hasPermission(r, "media.stock.providers") {
+		writeError(w, http.StatusForbidden, "provider_unavailable", "Provider requires media.stock.providers permission")
+		return
+	}
+
+	mediaID, err := h.svc.ImportPhoto(r.Context(), t.ID, user.UserID, body.Provider, body.ID)
+	if err != nil {
+		slog.Error("stock: import failed", "error", err, "provider", body.Provider, "photo_id", body.ID)
+		writeError(w, http.StatusInternalServerError, "import_error", err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data": map[string]string{"media_id": mediaID.String()},
+	})
+}
+
+// ---------------------------------------------------------------------------
+// Admin handlers
+// ---------------------------------------------------------------------------
+
+// AdminListProviders returns all providers with enabled/disabled status.
+// GET /api/v1/admin/stock/providers
+func (h *StockHandlers) AdminListProviders(w http.ResponseWriter, r *http.Request) {
+	rows, err := h.svc.store.ListProviders(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "list_error", err.Error())
+		return
+	}
+
+	result := make([]map[string]any, 0, len(rows))
+	for _, row := range rows {
+		hasKey := row.APIKeyEncrypted != ""
+		result = append(result, map[string]any{
+			"provider_name": row.ProviderName,
+			"display_name":  displayName(row.ProviderName),
+			"enabled":       row.Enabled,
+			"has_api_key":   hasKey,
+			"updated_at":    row.UpdatedAt,
+		})
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"providers": result}})
+}
+
+// AdminPatchProvider toggles enabled status or updates the API key.
+// PATCH /api/v1/admin/stock/providers/{name}  body: { "enabled": bool, "api_key": "..." }
+func (h *StockHandlers) AdminPatchProvider(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, MaxStockBody)
+
+	providerName := chi.URLParam(r, "name")
+	if providerName == "" {
+		writeError(w, http.StatusBadRequest, "missing_provider", "provider name is required")
+		return
+	}
+
+	var body struct {
+		Enabled *bool   `json:"enabled,omitempty"`
+		APIKey  *string `json:"api_key,omitempty"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
+
+	if body.Enabled != nil {
+		if err := h.svc.store.ToggleProvider(r.Context(), providerName, *body.Enabled); err != nil {
+			writeError(w, http.StatusInternalServerError, "toggle_error", err.Error())
+			return
+		}
+	}
+
+	if body.APIKey != nil && *body.APIKey != "" {
+		encrypted, err := crypto.Encrypt(*body.APIKey)
+		if err != nil {
+			slog.Error("stock: failed to encrypt API key", "provider", providerName, "error", err)
+			writeError(w, http.StatusInternalServerError, "encrypt_error", "Failed to encrypt API key")
+			return
+		}
+		if err := h.svc.store.SetAPIKey(r.Context(), providerName, encrypted); err != nil {
+			writeError(w, http.StatusInternalServerError, "update_error", err.Error())
+			return
+		}
+	}
+
+	// Reload providers to pick up the change.
+	if err := h.svc.ReloadProviders(r.Context()); err != nil {
+		slog.Warn("stock: failed to reload providers after admin update", "error", err)
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "ok"}})
+}
+
+// displayName maps a provider identifier to a human-readable display name.
+func displayName(name string) string {
+	switch name {
+	case "unsplash":
+		return "Unsplash"
+	case "pexels":
+		return "Pexels"
+	case "pixabay":
+		return "Pixabay"
+	case "openverse":
+		return "Openverse"
+	default:
+		return name
+	}
+}
