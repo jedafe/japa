@@ -293,6 +293,18 @@
 								{#if item.filename}
 									<span class="media-thumb-name">{item.filename}</span>
 								{/if}
+								{#if item.source_photographer}
+									<span class="stock-attribution">
+										{#if item.source_photographer_url}
+											<a href={item.source_photographer_url} target="_blank" rel="noreferrer">{item.source_photographer}</a>
+										{:else}
+											{item.source_photographer}
+										{/if}
+										{#if item.source_license && (item.source_license === 'cc-by' || item.source_license === 'cc-by-sa' || item.source_license === 'cc0')}
+											<a href={item.source_license_url ?? '#'} target="_blank" rel="noreferrer" class="license-badge">{item.source_license.toUpperCase()}</a>
+										{/if}
+									</span>
+								{/if}
 							</button>
 						{/each}
 					</div>
@@ -811,6 +823,30 @@
 	.stock-load-more:disabled {
 		opacity: 0.6;
 		cursor: not-allowed;
+	}
+
+	.stock-attribution {
+		display: block;
+		font-size: 0.625rem;
+		color: var(--color-text-subtle, #888);
+		margin-top: 2px;
+		line-height: 1.2;
+		text-align: center;
+	}
+	.stock-attribution a {
+		color: inherit;
+		text-decoration: none;
+	}
+	.stock-attribution a:hover {
+		text-decoration: underline;
+	}
+	.license-badge {
+		display: inline-block;
+		margin-left: 4px;
+		padding: 0 3px;
+		border: 1px solid currentColor;
+		border-radius: 2px;
+		font-size: 0.5625rem;
 	}
 
 	@media (max-width: 640px) {
