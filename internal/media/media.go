@@ -32,6 +32,16 @@ const (
 	MaxPageSize     int32 = 100
 )
 
+// MediaAttribution carries stock photo source metadata for attribution display.
+type MediaAttribution struct {
+	SourcePlatform        string
+	SourcePhotographer    string
+	SourcePhotographerURL string
+	SourceLicense         string
+	SourceLicenseURL      string
+	SourcePhotoID         string
+}
+
 // Service provides media operations with reader/writer pool separation.
 type Service struct {
 	store *Store
