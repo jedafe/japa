@@ -1,14 +1,15 @@
 <script lang="ts">
 	import { t } from '$lib/i18n';
 	import { Dialog } from 'bits-ui';
-	import { X, Search, Loader2, ImagePlus, Upload } from 'lucide-svelte';
+	import { X, Search, Loader2, ImagePlus, Upload, Download, Check } from 'lucide-svelte';
 	import {
 		listMyMedia,
 		initiateUpload,
 		uploadToPresigned,
 		confirmMedia
 	} from '$lib/api/create';
-	import type { MediaAsset } from '$lib/types';
+	import { listStockProviders, searchStock, importStockPhoto } from '$lib/api/stock';
+	import type { MediaAsset, StockPhoto, StockProvider } from '$lib/types';
 
 	interface Props {
 		/** Called with the selected media when the user confirms. */
@@ -21,7 +22,7 @@
 
 	let { onSelect, onClose, allowedType = 'image' }: Props = $props();
 
-	type Tab = 'library' | 'upload';
+	type Tab = 'library' | 'upload' | 'stock';
 	let tab = $state<Tab>('library');
 	let items = $state<MediaAsset[]>([]);
 	let loading = $state(false);
@@ -31,6 +32,19 @@
 	let selectedId = $state<string | null>(null);
 	let uploading = $state(false);
 	let uploadError = $state<string | null>(null);
+
+	// --- Stock tab state ---
+	let stockProviders = $state<StockProvider[]>([]);
+	let stockProvidersLoaded = $state(false);
+	let stockResults = $state<StockPhoto[]>([]);
+	let stockLoading = $state(false);
+	let stockQuery = $state('');
+	let stockTimer: ReturnType<typeof setTimeout> | null = null;
+	let stockPage = $state(1);
+	let stockHasMore = $state(false);
+	let stockProviderFilter = $state<string>(''); // '' = all providers
+	let importingIds = $state<Set<string>>(new Set());
+	let importedIds = $state<Set<string>>(new Set());
 
 	// Load the user's media library on mount.
 	$effect(() => {
@@ -106,6 +120,99 @@
 			input.value = '';
 		}
 	}
+
+	// --- Stock tab logic ---
+
+	function loadStockProviders() {
+		listStockProviders()
+			.then((res) => {
+				stockProviders = res.data?.providers ?? [];
+				stockProvidersLoaded = true;
+			})
+			.catch(() => {
+				stockProviders = [];
+				stockProvidersLoaded = true;
+			});
+	}
+
+	// Load providers when switching to the stock tab (once).
+	$effect(() => {
+		if (tab === 'stock' && !stockProvidersLoaded) {
+			loadStockProviders();
+		}
+	});
+
+	function runStockSearch(q: string) {
+		stockQuery = q;
+		stockPage = 1;
+		if (stockTimer) clearTimeout(stockTimer);
+		if (!q.trim()) {
+			stockResults = [];
+			stockHasMore = false;
+			return;
+		}
+		stockTimer = setTimeout(() => {
+			stockLoading = true;
+			searchStock({
+				q: q.trim(),
+				provider: stockProviderFilter || undefined,
+				page: stockPage,
+				per_page: 30
+			})
+				.then((res) => {
+					stockResults = res.data?.photos ?? [];
+					stockHasMore = res.data?.has_next_page ?? false;
+				})
+				.catch(() => {
+					stockResults = [];
+					stockHasMore = false;
+				})
+				.finally(() => {
+					stockLoading = false;
+				});
+		}, 350);
+	}
+
+	function loadMoreStock() {
+		stockPage++;
+		stockLoading = true;
+		searchStock({
+			q: stockQuery.trim(),
+			provider: stockProviderFilter || undefined,
+			page: stockPage,
+			per_page: 30
+		})
+			.then((res) => {
+				stockResults = [...stockResults, ...(res.data?.photos ?? [])];
+				stockHasMore = res.data?.has_next_page ?? false;
+			})
+			.finally(() => {
+				stockLoading = false;
+			});
+	}
+
+	function setStockProviderFilter(name: string) {
+		stockProviderFilter = name;
+		if (stockQuery.trim()) runStockSearch(stockQuery);
+	}
+
+	function importPhoto(photo: StockPhoto) {
+		const key = photo.provider + ':' + photo.id;
+		importingIds = new Set([...importingIds, key]);
+		importStockPhoto(photo.provider, photo.id)
+			.then((res) => {
+				if (res.data?.media_id) {
+					importedIds = new Set([...importedIds, key]);
+					// Refresh the Library tab so the imported asset shows up.
+					loadLibrary();
+				}
+			})
+			.finally(() => {
+				const next = new Set(importingIds);
+				next.delete(key);
+				importingIds = next;
+			});
+	}
 </script>
 
 <Dialog.Root open={true} onOpenChange={(v) => { if (!v) onClose(); }}>
@@ -137,6 +244,15 @@
 			>
 				<Upload size={14} />
 				{t('media.picker.tab_upload')}
+			</button>
+			<button
+				type="button"
+				class="modal-tab"
+				class:active={tab === 'stock'}
+				onclick={() => (tab = 'stock')}
+			>
+				<Search size={14} />
+				{t('media.picker.tab_stock', 'Stock')}
 			</button>
 		</div>
 
@@ -197,7 +313,7 @@
 					{t('media.picker.select')}
 				</button>
 			</footer>
-		{:else}
+		{:else if tab === 'upload'}
 			<!-- Upload tab -->
 			<div class="modal-upload-area">
 				<label class="upload-dropzone" class:busy={uploading}>
@@ -218,6 +334,99 @@
 				</label>
 				{#if uploadError}
 					<span class="upload-error">{uploadError}</span>
+				{/if}
+			</div>
+		{:else if tab === 'stock'}
+			<!-- Stock tab -->
+			<div class="stock-panel">
+				{#if !stockProvidersLoaded}
+					<div class="modal-state">
+						<Loader2 size={24} class="animate-spin" />
+						<span>{t('media.picker.loading')}</span>
+					</div>
+				{:else if stockProviders.length === 0}
+					<div class="modal-state">
+						<span>{t('media.picker.stock_no_providers', 'No stock providers available. Contact your administrator.')}</span>
+					</div>
+				{:else}
+					<!-- Search bar -->
+					<div class="modal-search">
+						<Search size={16} class="modal-search-icon" />
+						<input
+							type="text"
+							class="modal-search-input"
+							placeholder={t('media.picker.stock_search_placeholder', 'Search stock photos...')}
+							oninput={(e) => runStockSearch(e.currentTarget.value)}
+						/>
+					</div>
+
+					<!-- Provider chips -->
+					<div class="stock-providers">
+						<button
+							type="button"
+							class="chip"
+							class:active={stockProviderFilter === ''}
+							onclick={() => setStockProviderFilter('')}
+						>{t('media.picker.stock_all_providers', 'All')}</button>
+						{#each stockProviders as p (p.name)}
+							<button
+								type="button"
+								class="chip"
+								class:active={stockProviderFilter === p.name}
+								onclick={() => setStockProviderFilter(p.name)}
+							>{p.display_name}</button>
+						{/each}
+					</div>
+
+					<!-- Results grid -->
+					<div class="modal-grid-wrap">
+						{#if stockLoading && stockResults.length === 0}
+							<div class="modal-state">
+								<Loader2 size={24} class="animate-spin" />
+								<span>{t('media.picker.loading')}</span>
+							</div>
+						{:else if stockResults.length === 0 && stockQuery}
+							<div class="modal-state">
+								<span>{t('media.picker.stock_no_results', 'No results found')}</span>
+							</div>
+						{:else if stockResults.length === 0}
+							<div class="modal-state">
+								<span>{t('media.picker.stock_empty', 'Search for photos to import.')}</span>
+							</div>
+						{:else}
+							<div class="stock-grid">
+								{#each stockResults as photo (photo.provider + ':' + photo.id)}
+									{@const pkey = photo.provider + ':' + photo.id}
+									<div class="stock-card">
+										<img src={photo.thumbnail_url} alt={photo.description ?? ''} loading="lazy" />
+										<div class="stock-card-overlay">
+											<span class="stock-photographer">{photo.photographer}</span>
+											{#if photo.license && (photo.license === 'cc-by' || photo.license === 'cc-by-sa' || photo.license === 'cc0')}
+												<a href={photo.license_url ?? '#'} target="_blank" class="stock-license-badge" rel="noreferrer">
+													{photo.license.toUpperCase()}
+												</a>
+											{/if}
+											{#if importedIds.has(pkey)}
+												<span class="stock-imported"><Check size={14} /> {t('media.picker.stock_imported', 'Imported')}</span>
+											{:else if importingIds.has(pkey)}
+												<Loader2 size={16} class="animate-spin" />
+											{:else}
+												<button type="button" class="stock-import-btn" onclick={() => importPhoto(photo)}>
+													<Download size={14} />
+													{t('media.picker.stock_import', 'Import')}
+												</button>
+											{/if}
+										</div>
+									</div>
+								{/each}
+							</div>
+							{#if stockHasMore}
+								<button type="button" class="stock-load-more" onclick={loadMoreStock} disabled={stockLoading}>
+									{stockLoading ? t('media.picker.loading') : t('media.picker.load_more', 'Load more')}
+								</button>
+							{/if}
+						{/if}
+					</div>
 				{/if}
 			</div>
 		{/if}
@@ -478,6 +687,130 @@
 	.upload-error {
 		font-size: 0.8rem;
 		color: var(--destructive, #dc2626);
+	}
+
+
+	/* Stock tab */
+	.stock-panel {
+		display: flex;
+		flex-direction: column;
+		flex: 1;
+		min-height: 0;
+	}
+	.stock-providers {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 6px;
+		padding: 0 1.25rem 0.5rem;
+	}
+	.chip {
+		padding: 4px 10px;
+		border: 1px solid var(--color-border);
+		border-radius: 999px;
+		background: var(--color-surface);
+		color: var(--color-muted);
+		font-size: 0.75rem;
+		cursor: pointer;
+		transition: background 0.15s, color 0.15s, border-color 0.15s;
+	}
+	.chip:hover {
+		color: var(--color-text);
+		border-color: var(--color-text-subtle);
+	}
+	.chip.active {
+		background: var(--color-primary);
+		border-color: var(--color-primary);
+		color: var(--color-primary-contrast);
+	}
+	.stock-grid {
+		display: grid;
+		grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+		gap: 10px;
+		padding-top: 0.5rem;
+	}
+	.stock-card {
+		position: relative;
+		border-radius: var(--radius);
+		overflow: hidden;
+		background: var(--color-surface-subtle);
+		aspect-ratio: 1;
+	}
+	.stock-card img {
+		width: 100%;
+		height: 100%;
+		object-fit: cover;
+		display: block;
+	}
+	.stock-card-overlay {
+		position: absolute;
+		inset: auto 0 0 0;
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 4px;
+		padding: 6px;
+		background: linear-gradient(to top, rgb(0 0 0 / 0.7), transparent);
+		color: #fff;
+		font-size: 0.7rem;
+	}
+	.stock-photographer {
+		flex: 1;
+		min-width: 0;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+	.stock-license-badge {
+		display: inline-block;
+		padding: 0 4px;
+		border: 1px solid currentColor;
+		border-radius: 2px;
+		font-size: 0.6rem;
+		color: #fff;
+		text-decoration: none;
+	}
+	.stock-license-badge:hover {
+		text-decoration: underline;
+	}
+	.stock-import-btn {
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
+		padding: 3px 8px;
+		border: none;
+		border-radius: var(--radius);
+		background: var(--color-primary);
+		color: var(--color-primary-contrast);
+		font-size: 0.7rem;
+		cursor: pointer;
+	}
+	.stock-import-btn:hover {
+		background: var(--color-primary-hover);
+	}
+	.stock-imported {
+		display: inline-flex;
+		align-items: center;
+		gap: 3px;
+		color: #4ade80;
+		font-size: 0.7rem;
+	}
+	.stock-load-more {
+		display: block;
+		margin: 0.75rem auto;
+		padding: 6px 16px;
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius);
+		background: var(--color-surface);
+		color: var(--color-text);
+		font-size: 0.8rem;
+		cursor: pointer;
+	}
+	.stock-load-more:hover:not(:disabled) {
+		background: var(--color-surface-subtle);
+	}
+	.stock-load-more:disabled {
+		opacity: 0.6;
+		cursor: not-allowed;
 	}
 
 	@media (max-width: 640px) {
