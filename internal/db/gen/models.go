@@ -315,6 +315,7 @@ type BlogSeries struct {
 	Status       string             `json:"status"`
 	CreatedAt    pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt    pgtype.Timestamptz `json:"deleted_at"`
 }
 
 type BlogSeriesPost struct {
@@ -569,6 +570,7 @@ type ContentReview struct {
 	Feedback       *string            `json:"feedback"`
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
 }
 
 type ContentRevision struct {
@@ -1246,6 +1248,18 @@ type Medium struct {
 	ReviewedBy       pgtype.UUID        `json:"reviewed_by"`
 	ReviewedAt       pgtype.Timestamptz `json:"reviewed_at"`
 	UserGroupID      pgtype.UUID        `json:"user_group_id"`
+	// Stock provider name: unsplash, pexels, pixabay, openverse
+	SourcePlatform *string `json:"source_platform"`
+	// Photographer display name for attribution
+	SourcePhotographer *string `json:"source_photographer"`
+	// Link to photographer profile page
+	SourcePhotographerUrl *string `json:"source_photographer_url"`
+	// License identifier: cc0, cc-by, cc-by-sa, pixabay
+	SourceLicense *string `json:"source_license"`
+	// Link to license deed
+	SourceLicenseUrl *string `json:"source_license_url"`
+	// Provider-specific photo ID for dedup
+	SourcePhotoID *string `json:"source_photo_id"`
 }
 
 type MentorReview struct {
@@ -2106,6 +2120,14 @@ type SpaceType struct {
 	CreatedAt    pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
 	IsUniversity bool               `json:"is_university"`
+}
+
+type StockProvider struct {
+	ProviderName    string             `json:"provider_name"`
+	Enabled         bool               `json:"enabled"`
+	ApiKeyEncrypted *string            `json:"api_key_encrypted"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
 }
 
 type Subscription struct {

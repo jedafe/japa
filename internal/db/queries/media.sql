@@ -6,8 +6,18 @@
 -- =====================
 
 -- name: InsertMedia :one
-INSERT INTO media (tenant_id, uploader_user_id, original_filename, mime_type, file_size_bytes, storage_path, storage_bucket)
-VALUES (@tenant_id, @uploader_user_id, @original_filename, @mime_type, @file_size_bytes, @storage_path, @storage_bucket)
+INSERT INTO media (
+    tenant_id, uploader_user_id, original_filename, mime_type, file_size_bytes,
+    storage_path, storage_bucket,
+    source_platform, source_photographer, source_photographer_url,
+    source_license, source_license_url, source_photo_id
+)
+VALUES (
+    @tenant_id, @uploader_user_id, @original_filename, @mime_type, @file_size_bytes,
+    @storage_path, @storage_bucket,
+    @source_platform, @source_photographer, @source_photographer_url,
+    @source_license, @source_license_url, @source_photo_id
+)
 RETURNING *;
 
 -- =====================
