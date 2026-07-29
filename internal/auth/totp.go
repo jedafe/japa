@@ -8,22 +8,16 @@ package auth
 
 import (
 	"context"
-	"crypto/aes"
-	"crypto/cipher"
 	"crypto/rand"
-	"crypto/sha256"
 	"encoding/base32"
-	"encoding/hex"
 	"errors"
 	"fmt"
-	"io"
-	"log/slog"
-	"os"
 	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/pquerna/otp/totp"
+	"github.com/jedafe/japa/internal/crypto"
 )
 
 // defaultTOTPIssuer is the fallback issuer label shown in authenticator apps.
@@ -153,103 +147,12 @@ func DisableTOTP(ctx context.Context, store TOTPStore, userID pgtype.UUID, code 
 	return store.DisableTOTP(ctx, userID)
 }
 
-// encryptSecret encrypts a TOTP secret using AES-256-GCM with the key from
-// JC_TOTP_ENCRYPTION_KEY. The key is derived via SHA-256 so it can be provided
-// as any-length passphrase. Returns "v1:<hex nonce>:<hex ciphertext>".
-//
-// If the encryption key is not configured, the function logs a warning and
-// returns an error — in production, missing encryption key must fail closed.
 func encryptSecret(secret string) (string, error) {
-	key, err := loadEncryptionKey()
-	if err != nil {
-		return "", err
-	}
-
-	block, err := aes.NewCipher(key)
-	if err != nil {
-		return "", fmt.Errorf("creating AES cipher: %w", err)
-	}
-
-	gcm, err := cipher.NewGCM(block)
-	if err != nil {
-		return "", fmt.Errorf("creating GCM: %w", err)
-	}
-
-	nonce := make([]byte, gcm.NonceSize())
-	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
-		return "", fmt.Errorf("generating nonce: %w", err)
-	}
-
-	ciphertext := gcm.Seal(nil, nonce, []byte(secret), nil)
-
-	return fmt.Sprintf("v1:%s:%s", hex.EncodeToString(nonce), hex.EncodeToString(ciphertext)), nil
+	return crypto.Encrypt(secret)
 }
 
-// decryptSecret reverses encryptSecret. It parses the "v1:<nonce>:<ciphertext>"
-// format and decrypts using AES-256-GCM. Returns an error if the format is
-// invalid or the key does not match.
 func decryptSecret(encrypted string) (string, error) {
-	key, err := loadEncryptionKey()
-	if err != nil {
-		return "", err
-	}
-
-	parts := strings.SplitN(encrypted, ":", 3)
-	if len(parts) != 3 || parts[0] != "v1" {
-		// Legacy plaintext secret — return as-is for backward compatibility
-		// during migration. Once all secrets are re-encrypted, remove this.
-		return encrypted, nil
-	}
-
-	nonce, err := hex.DecodeString(parts[1])
-	if err != nil {
-		return "", fmt.Errorf("decoding nonce: %w", err)
-	}
-
-	ciphertext, err := hex.DecodeString(parts[2])
-	if err != nil {
-		return "", fmt.Errorf("decoding ciphertext: %w", err)
-	}
-
-	block, err := aes.NewCipher(key)
-	if err != nil {
-		return "", fmt.Errorf("creating AES cipher: %w", err)
-	}
-
-	gcm, err := cipher.NewGCM(block)
-	if err != nil {
-		return "", fmt.Errorf("creating GCM: %w", err)
-	}
-
-	plaintext, err := gcm.Open(nil, nonce, ciphertext, nil)
-	if err != nil {
-		return "", fmt.Errorf("decrypting: %w", err)
-	}
-
-	return string(plaintext), nil
-}
-
-// loadEncryptionKey reads JC_TOTP_ENCRYPTION_KEY from the environment and
-// derives a 32-byte AES-256 key via SHA-256. Returns an error in production
-// when the key is missing — we fail closed rather than store plaintext.
-func loadEncryptionKey() ([]byte, error) {
-	raw := os.Getenv("JC_TOTP_ENCRYPTION_KEY")
-	if raw == "" {
-		env := os.Getenv("JC_ENV")
-		if strings.EqualFold(env, "production") {
-			return nil, errors.New("JC_TOTP_ENCRYPTION_KEY is required in production")
-		}
-
-		slog.Warn("JC_TOTP_ENCRYPTION_KEY not set — TOTP secrets stored without encryption (dev only)")
-		// Return a deterministic dev-only key so encrypt/decrypt round-trip works.
-		devKey := sha256.Sum256([]byte("japaconnect-dev-totp-key"))
-
-		return devKey[:], nil
-	}
-
-	hash := sha256.Sum256([]byte(raw))
-
-	return hash[:], nil
+	return crypto.Decrypt(encrypted)
 }
 
 // FormatBackupCodes formats backup codes as a JSON-compatible string slice.
