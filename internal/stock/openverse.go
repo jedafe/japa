@@ -29,6 +29,10 @@ func NewOpenverseProvider() *OpenverseProvider {
 func (p *OpenverseProvider) Name() string { return "openverse" }
 
 func (p *OpenverseProvider) Search(ctx context.Context, query string, page, perPage int) (*SearchResult, error) {
+	// Openverse API enforces a maximum page_size of 20.
+	if perPage > 20 {
+		perPage = 20
+	}
 	params := url.Values{}
 	params.Set("q", query)
 	params.Set("page", strconv.Itoa(page))

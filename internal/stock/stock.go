@@ -184,7 +184,14 @@ func (s *Service) AvailableProviders(ctx context.Context, userPerms []string) []
 			hasProviders = true
 		}
 	}
+	return s.AvailableProvidersForPerms(hasSearch, hasProviders)
+}
 
+// AvailableProvidersForPerms returns provider names available to a user with
+// the given resolved permission flags. This uses the RBAC resolver's
+// HasPermission result (which honours the "*" wildcard) rather than raw
+// permission keys, so super-admins correctly see all providers.
+func (s *Service) AvailableProvidersForPerms(hasSearch, hasProviders bool) []string {
 	if !hasSearch {
 		return nil
 	}
@@ -193,13 +200,12 @@ func (s *Service) AvailableProviders(ctx context.Context, userPerms []string) []
 	defer s.mu.RUnlock()
 
 	var names []string
-	for name, prov := range s.providers {
+	for name := range s.providers {
 		if name == "openverse" {
 			names = append(names, name)
 			continue
 		}
 		if hasProviders {
-			_ = prov // provider exists, include it
 			names = append(names, name)
 		}
 	}
