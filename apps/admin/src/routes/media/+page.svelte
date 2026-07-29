@@ -4,7 +4,6 @@
   import { goto } from "$app/navigation";
   import PageHeader from "$lib/components/layout/page-header.svelte";
   import { Card, CardContent } from "$lib/components/ui/card";
-  import { Tabs } from "$lib/components/ui/tabs";
   import { DataTable } from "$lib/components/ui/data-table";
   import { FilterBar } from "$lib/components/ui/filter-bar";
   import { Badge } from "$lib/components/ui/badge";
@@ -24,7 +23,8 @@
     Trash2,
     Shield,
     Eye,
-    Pencil
+    Pencil,
+    Search
   } from "lucide-svelte";
   import { api, apiFetch, mediaAdminApi, stockAdminApi, type StockProviderAdmin } from "$lib/api";
   import { hasPermission } from "$lib/stores/permissions.svelte";
@@ -58,6 +58,17 @@
   let stockProvidersError = $state("");
   let stockProvidersLoaded = $state(false);
   let updatingProvider = $state<string | null>(null);
+  let providerSearch = $state("");
+
+  let filteredStockProviders = $derived.by(() => {
+    if (!providerSearch.trim()) return stockProviders;
+    const q = providerSearch.toLowerCase();
+    return stockProviders.filter(
+      (p) =>
+        p.provider_name?.toLowerCase().includes(q) ||
+        p.display_name?.toLowerCase().includes(q)
+    );
+  });
 
   let filteredItems = $derived.by(() => {
     let result = [...items];
@@ -445,7 +456,24 @@
 
 <div class="space-y-6">
   <div class="flex items-center justify-between">
-    <Tabs {tabs} bind:value={activeTab} />
+    <div class="inline-flex h-11 items-center justify-center rounded-lg p-1" style="background-color: var(--color-surface); color: var(--color-muted)">
+      {#each tabs as tab}
+        <button
+          type="button"
+          class="inline-flex items-center justify-center whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium transition-all"
+          style={activeTab === tab.value
+            ? 'background-color: var(--color-surface); color: var(--color-foreground); box-shadow: 0 1px 2px rgba(0,0,0,0.05)'
+            : 'color: var(--color-muted)'}
+          onclick={() => (activeTab = tab.value)}
+        >
+          {#if tab.icon}
+            {@const Icon = tab.icon}
+            <Icon class="mr-2 h-4 w-4" />
+          {/if}
+          {tab.label}
+        </button>
+      {/each}
+    </div>
 
     <div class="flex items-center gap-2">
       {#if activeTab !== "stock-providers"}
@@ -536,6 +564,19 @@
             {stockProvidersError}
           </div>
         {:else}
+          <!-- Provider search bar -->
+          <div class="border-b p-3" style="border-color: var(--color-border)">
+            <div class="relative max-w-sm">
+              <Search class="absolute left-2 top-1/2 h-4 w-4 -translate-y-1/2" style="color: var(--color-muted)" />
+              <input
+                type="text"
+                placeholder="Search providers..."
+                class="w-full rounded-md border py-1.5 pl-8 pr-3 text-sm"
+                style="border-color: var(--color-border); background-color: var(--color-surface); color: var(--color-foreground)"
+                bind:value={providerSearch}
+              />
+            </div>
+          </div>
           <div class="overflow-x-auto">
             <table class="w-full text-sm">
               <thead class="border-b bg-surface text-left text-xs uppercase text-muted">
@@ -547,7 +588,7 @@
                 </tr>
               </thead>
               <tbody class="divide-y">
-                {#each stockProviders as p (p.provider_name)}
+                {#each filteredStockProviders as p (p.provider_name)}
                   <tr class="hover:bg-surface/50">
                     <td class="px-4 py-3 font-medium text-foreground">{p.display_name}</td>
                     <td class="px-4 py-3">
@@ -589,6 +630,13 @@
                     </td>
                   </tr>
                 {/each}
+                {#if filteredStockProviders.length === 0}
+                  <tr>
+                    <td colspan="4" class="px-4 py-8 text-center text-muted">
+                      No providers match "{providerSearch}"
+                    </td>
+                  </tr>
+                {/if}
               </tbody>
             </table>
           </div>
