@@ -621,6 +621,20 @@ export const mediaAdminApi = {
 	delete: (id: string) => api<{ deleted: boolean }>(`/admin/media/${id}`, { method: 'DELETE' }),
 };
 
+export interface StockProviderAdmin {
+	provider_name: string;
+	display_name: string;
+	enabled: boolean;
+	has_api_key: boolean;
+	updated_at?: string;
+}
+
+export const stockAdminApi = {
+	listProviders: () => api<{ providers: StockProviderAdmin[] }>('/admin/stock/providers'),
+	patchProvider: (name: string, body: { enabled?: boolean; api_key?: string }) =>
+		api<{ status: string }>(`/admin/stock/providers/${name}`, { method: 'PATCH', body }),
+};
+
 export const moderationAdminApi = {
 	getQueue: (params?: string) => api<unknown>(`/admin/moderation-queue${params ? `?${params}` : ''}`),
 	getAlerts: (params?: string) => api<unknown>(`/admin/moderation/alerts${params ? `?${params}` : ''}`),
