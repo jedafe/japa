@@ -1,4 +1,4 @@
-DELETE FROM permission_nodes WHERE node IN (
+DELETE FROM permissions WHERE key IN (
     'media.stock.search',
     'media.stock.import',
     'media.stock.providers'
