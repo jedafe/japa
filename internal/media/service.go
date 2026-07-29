@@ -435,6 +435,75 @@ func (s *Service) DirectUpload(ctx context.Context, tenantID, uploaderID pgtype.
 	return m.ID, nil
 }
 
+// StoreFromBytes stores raw bytes as a confirmed media item. When attribution
+// is non-nil, the source_* columns are populated for stock photo attribution.
+func (s *Service) StoreFromBytes(ctx context.Context, tenantID, uploaderID pgtype.UUID, data []byte, filename string, attribution *MediaAttribution) (pgtype.UUID, error) {
+	if len(data) == 0 {
+		return pgtype.UUID{}, errors.New("data is empty")
+	}
+	if int64(len(data)) > MaxFileSizeBytes {
+		return pgtype.UUID{}, fmt.Errorf("data too large: %d bytes exceeds limit of %d bytes", len(data), MaxFileSizeBytes)
+	}
+
+	// Sniff MIME type from content.
+	mimeType := http.DetectContentType(data)
+
+	// Generate unique storage path.
+	ext := extensionFromMIME(mimeType)
+	storagePath := fmt.Sprintf("%s/%s/%s%s",
+		StoragePathMedia,
+		tenantID.String(),
+		uuid.New().String(),
+		ext,
+	)
+
+	// Upload to S3/SeaweedFS with local fallback.
+	stored := false
+	if s.s3 != nil {
+		if err := s.s3.PutObject(ctx, storagePath, mimeType, data); err != nil {
+			slog.Warn("media: s3 put failed, trying local fallback",
+				"storage_path", storagePath, "error", err)
+		} else {
+			stored = true
+		}
+	}
+	if !stored {
+		if err := storeLocalMediaFile(DefaultBucket, storagePath, data); err != nil {
+			return pgtype.UUID{}, fmt.Errorf("storing to local fallback: %w", err)
+		}
+	}
+
+	// Build insert params with optional attribution.
+	params := gen.InsertMediaParams{
+		TenantID:         tenantID,
+		UploaderUserID:   uploaderID,
+		OriginalFilename: filename,
+		MimeType:         mimeType,
+		FileSizeBytes:    int64(len(data)),
+		StoragePath:      storagePath,
+		StorageBucket:    DefaultBucket,
+	}
+	if attribution != nil && attribution.SourcePlatform != "" {
+		params.SourcePlatform = &attribution.SourcePlatform
+		params.SourcePhotographer = &attribution.SourcePhotographer
+		params.SourcePhotographerUrl = &attribution.SourcePhotographerURL
+		params.SourceLicense = &attribution.SourceLicense
+		params.SourceLicenseUrl = &attribution.SourceLicenseURL
+		params.SourcePhotoID = &attribution.SourcePhotoID
+	}
+
+	m, err := s.store.InsertMedia(ctx, params)
+	if err != nil {
+		return pgtype.UUID{}, fmt.Errorf("inserting media record: %w", err)
+	}
+
+	if err := s.store.ConfirmMedia(ctx, m.ID, tenantID); err != nil {
+		return pgtype.UUID{}, fmt.Errorf("confirming media: %w", err)
+	}
+
+	return m.ID, nil
+}
+
 // StoreFromURL downloads content from a remote URL, sniffs the MIME type
 // from the content (not the extension), uploads it to SeaweedFS, and creates
 // a media record. Returns the media ID. Used by server-side ingestion tasks
@@ -469,56 +538,7 @@ func (s *Service) StoreFromURL(ctx context.Context, tenantID, uploaderID pgtype.
 		return pgtype.UUID{}, fmt.Errorf("logo body is empty from %s", sourceURL)
 	}
 
-	// 2. Sniff MIME type from content (not extension) — Section 34 rule.
-	mimeType := http.DetectContentType(body)
-
-	// 3. Generate a unique storage path under media/ prefix.
-	ext := extensionFromMIME(mimeType)
-	storagePath := fmt.Sprintf("%s/%s/%s",
-		StoragePathMedia,
-		tenantID.String(),
-		filename+ext,
-	)
-
-	// 4. Upload to S3/SeaweedFS, falling back to local disk storage when S3
-	// is not configured or the put fails. The media record must never be
-	// created/confirmed without the bytes durably stored somewhere
-	// ServeMedia/imgproxy can retrieve them — a silent gap here would leave
-	// a "confirmed" media row pointing at nothing (broken university logo).
-	stored := false
-	if s.s3 != nil {
-		if err := s.s3.PutObject(ctx, storagePath, mimeType, body); err != nil {
-			slog.Warn("media: s3 put failed for logo, trying local fallback",
-				"storage_path", storagePath, "error", err)
-		} else {
-			stored = true
-		}
-	}
-	if !stored {
-		if err := storeLocalMediaFile(DefaultBucket, storagePath, body); err != nil {
-			return pgtype.UUID{}, fmt.Errorf("storing logo to local fallback: %w", err)
-		}
-	}
-
-	// 5. Create the media record.
-	m, err := s.store.InsertMedia(ctx, gen.InsertMediaParams{
-		TenantID:         tenantID,
-		UploaderUserID:   uploaderID,
-		OriginalFilename: filename,
-		MimeType:         mimeType,
-		FileSizeBytes:    int64(len(body)),
-		StoragePath:      storagePath,
-		StorageBucket:    DefaultBucket,
-	})
-	if err != nil {
-		return pgtype.UUID{}, fmt.Errorf("inserting media record: %w", err)
-	}
-
-	if err := s.store.ConfirmMedia(ctx, m.ID, tenantID); err != nil {
-		return pgtype.UUID{}, fmt.Errorf("confirming media: %w", err)
-	}
-
-	return m.ID, nil
+	return s.StoreFromBytes(ctx, tenantID, uploaderID, body, filename, nil)
 }
 
 // storeLocalMediaFile writes body to disk at data/media/{bucket}/{storagePath}
