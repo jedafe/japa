@@ -2,7 +2,6 @@
 	import { untrack, onMount, type Snippet } from 'svelte';
 	import { page } from '$app/state';
 	import AppShell from '$lib/components/shell/AppShell.svelte';
-	import UniversityShell from '$lib/components/shell/UniversityShell.svelte';
 	import MobileBottomTabBar from '$lib/components/shell/MobileBottomTabBar.svelte';
 	import { isExceptionRoute } from '$lib/components/create/gate';
 	import { sidebarStore } from '$lib/components/shell/sidebar.svelte';
@@ -56,11 +55,6 @@
 {#if isGuestLanding}
 	<!-- ADR-058 §5 Exception #3: guest landing page — no app shell -->
 	{@render children()}
-{:else if data.isUniversityHost}
-	<!-- ADR-063: Japa University branded surface — university shell -->
-	<UniversityShell user={data.user}>
-		{@render children()}
-	</UniversityShell>
 {:else}
 	<AppShell
 		menu={data.menu}

@@ -158,3 +158,33 @@ func TestSearchDocPagesHandlerRequiresQuery(t *testing.T) {
 		t.Errorf("expected error code 'missing_query', got %v", errObj["code"])
 	}
 }
+
+// TestSearchDocPagesHandlerRejectsInvalidAudience verifies the audience query
+// param is validated against ValidAudiences when provided (ADR-060 —
+// audience-filtered search). Ref: sections/44-documentation-system.md
+func TestSearchDocPagesHandlerRejectsInvalidAudience(t *testing.T) {
+	t.Parallel()
+
+	req := httptest.NewRequest(http.MethodGet, "/docs/search?q=hello&audience=bogus", nil)
+	ctx := context.WithValue(req.Context(), tenant.TenantContextKey, &tenant.Tenant{ID: mustUUID(t, "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11")})
+	req = req.WithContext(ctx)
+
+	w := httptest.NewRecorder()
+	h := &Handlers{Service: &Service{}}
+	h.SearchDocPages(w, req)
+
+	resp := w.Result()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("expected 400 for invalid audience, got %d", resp.StatusCode)
+	}
+
+	var body map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decoding error body: %v", err)
+	}
+
+	errObj, _ := body["error"].(map[string]any)
+	if errObj["code"] != "invalid_audience" {
+		t.Errorf("expected error code 'invalid_audience', got %v", errObj["code"])
+	}
+}

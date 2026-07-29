@@ -11,6 +11,7 @@
 
 	let { value, row, onchange }: { value: unknown; row: { id: string; username: string; email?: string; status?: string }; onchange?: () => void } = $props();
 
+	let showViewModal = $state(false);
 	let showWarnModal = $state(false);
 	let warnReason = $state("");
 	let showBanConfirm = $state(false);
@@ -27,7 +28,7 @@
 	const isSuspended = $derived(row?.status === "suspended");
 
 	const actions = $derived([
-		{ label: t("common.view", "View"), icon: Eye as unknown as Component, onclick: () => goto(`/users/${row?.id}`) },
+		{ label: t("common.view", "View"), icon: Eye as unknown as Component, onclick: () => { showViewModal = true; } },
 		...(canManage ? [
 			{ label: t("common.edit", "Edit"), icon: Pencil as unknown as Component, onclick: () => goto(`/users/${row?.id}`) },
 			...(isDeleted
@@ -142,6 +143,38 @@
 </script>
 
 <ActionCell {actions} />
+
+<Modal bind:open={showViewModal} title={t("users.view_user", "View User")}>
+	{#if row}
+		<div class="grid grid-cols-2 gap-4">
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("users.username", "Username")}</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.username}</p>
+			</div>
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("users.email", "Email")}</p>
+				<p class="mt-1 text-sm" style="color: var(--color-foreground)">{row.email ?? "—"}</p>
+			</div>
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("users.status", "Status")}</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.status ?? "—"}</p>
+			</div>
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("users.id", "User ID")}</p>
+				<p class="mt-1 text-sm font-mono" style="color: var(--color-foreground)">{row.id}</p>
+			</div>
+		</div>
+	{/if}
+	<div class="mt-6 flex justify-end gap-2">
+		{#if canManage}
+			<Button variant="outline" onclick={() => { showViewModal = false; goto(`/users/${row?.id}`); }}>
+				<Pencil class="h-3.5 w-3.5" />
+				{t("common.edit", "Edit")}
+			</Button>
+		{/if}
+		<Button variant="ghost" onclick={() => showViewModal = false}>{t("common.close", "Close")}</Button>
+	</div>
+</Modal>
 
 <Modal bind:open={showWarnModal} title={t("users.warn_user", "Warn User")}>
 	<p class="mb-4 text-sm" style="color: var(--color-foreground)">

@@ -2,28 +2,43 @@
 	import { t } from '$lib/stores/i18n.svelte';
 	import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-svelte';
 	import { Select } from '$lib/components/ui/select';
+	import { page as sveltekitPage } from '$app/state';
 
 	let {
 		page = $bindable(0),
 		totalPages,
 		totalItems = 0,
 		pageSize = $bindable(10),
-		pageSizeOptions = [10, 25, 50, 100]
+		pageSizeOptions = [10, 25, 50, 100],
+		urlSync = true
 	}: {
 		page: number;
 		totalPages: number;
 		totalItems?: number;
 		pageSize?: number;
 		pageSizeOptions?: number[];
+		urlSync?: boolean;
 	} = $props();
+
+	function syncToUrl() {
+		if (!urlSync || typeof window === 'undefined') return;
+		const url = new URL(window.location.href);
+		if (page > 0) url.searchParams.set('page', String(page + 1));
+		else url.searchParams.delete('page');
+		if (pageSize !== 10) url.searchParams.set('pageSize', String(pageSize));
+		else url.searchParams.delete('pageSize');
+		window.history.replaceState({}, '', url.toString());
+	}
 
 	function goTo(p: number) {
 		page = Math.max(0, Math.min(p, totalPages - 1));
+		syncToUrl();
 	}
 
 	function handlePageSizeChange(val: string) {
 		pageSize = Number(val);
 		page = 0;
+		syncToUrl();
 	}
 </script>
 

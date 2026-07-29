@@ -31,6 +31,9 @@
 	let createName = $state('');
 	let createSlug = $state('');
 	let createDomain = $state('');
+	// L6: Track whether the user has manually edited the slug. If they
+	// clear it, we resume auto-slugging on name changes.
+	let slugManuallyEdited = $state(false);
 
 	let showEditModal = $state(false);
 	let editingTenant = $state<Tenant | null>(null);
@@ -76,6 +79,7 @@
 		createName = '';
 		createSlug = '';
 		createDomain = '';
+		slugManuallyEdited = false;
 		showCreateModal = true;
 	}
 
@@ -284,13 +288,19 @@
 
 	let rowActions = $derived(buildRowActions());
 
+	// H4: Use Promise.all with error aggregation instead of sequential
+	// loops. Sequential loops leave half the tenants suspended if one
+	// fails mid-loop, with no rollback. Promise.all fires all requests
+	// concurrently and reports any failures.
 	let bulkActions: DataTableBulkAction[] = $derived([
 		{
 			label: t('tenants.suspend_selected', 'Suspend Selected'),
 			icon: Ban,
 			onClick: async (ids: string[]) => {
-				for (const id of ids) {
-					await suspendTenant(id);
+				const results = await Promise.allSettled(ids.map((id) => suspendTenant(id)));
+				const failed = results.filter((r) => r.status === 'rejected').length;
+				if (failed > 0) {
+					errorMessage = t('tenants.bulk_partial_error', `{failed} of ${ids.length} suspend operations failed.`).replace('{failed}', String(failed));
 				}
 				selectedIds = new Set();
 			}
@@ -300,8 +310,10 @@
 			icon: Trash2,
 			variant: 'destructive',
 			onClick: async (ids: string[]) => {
-				for (const id of ids) {
-					await deleteTenant(id);
+				const results = await Promise.allSettled(ids.map((id) => deleteTenant(id)));
+				const failed = results.filter((r) => r.status === 'rejected').length;
+				if (failed > 0) {
+					errorMessage = t('tenants.bulk_partial_error', `{failed} of ${ids.length} delete operations failed.`).replace('{failed}', String(failed));
 				}
 				selectedIds = new Set();
 			}
@@ -312,6 +324,7 @@
 		createName = '';
 		createSlug = '';
 		createDomain = '';
+		slugManuallyEdited = false;
 	}
 
 	function resetEditForm() {
@@ -396,11 +409,11 @@
 				<div class="space-y-4">
 					<div>
 						<label for="create-name" class="text-foreground mb-1 block text-sm font-medium">{t('tenants.name_label')}</label>
-						<input id="create-name" type="text" bind:value={createName} required class="border-border-input bg-background text-foreground w-full rounded-9px border px-3 py-2 text-sm transition-colors hover:border-border-input-hover focus:border-border-input-hover focus:shadow-date-field-focus" placeholder={t('tenants.name_placeholder')} oninput={() => { if (!createSlug) createSlug = autoSlug(createName); }} />
+						<input id="create-name" type="text" bind:value={createName} required class="border-border-input bg-background text-foreground w-full rounded-9px border px-3 py-2 text-sm transition-colors hover:border-border-input-hover focus:border-border-input-hover focus:shadow-date-field-focus" placeholder={t('tenants.name_placeholder')} oninput={() => { if (!slugManuallyEdited) createSlug = autoSlug(createName); }} />
 					</div>
 					<div>
 						<label for="create-slug" class="text-foreground mb-1 block text-sm font-medium">{t('tenants.slug_label')}</label>
-						<input id="create-slug" type="text" bind:value={createSlug} required class="border-border-input bg-background text-foreground w-full rounded-9px border px-3 py-2 text-sm" placeholder={t('tenants.slug_placeholder')} />
+						<input id="create-slug" type="text" bind:value={createSlug} required class="border-border-input bg-background text-foreground w-full rounded-9px border px-3 py-2 text-sm" placeholder={t('tenants.slug_placeholder')} oninput={() => { slugManuallyEdited = createSlug.trim() !== ''; }} />
 						<p class="text-muted-foreground mt-1 text-xs">{t('tenants.slug_hint')}</p>
 					</div>
 					<div>

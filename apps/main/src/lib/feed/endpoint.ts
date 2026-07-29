@@ -18,9 +18,23 @@ const SORTS: SortValue[] = ['relevant', 'latest', 'top', 'rising'];
  * Build the bare backend path for a feed request. Returns a path WITHOUT the
  * /api/v1 prefix — the server client (apiList) and browser client (api.get)
  * each prepend their own base, so we must not double-prefix.
+ *
+ * When geo is provided (a non-empty country code from the user's
+ * content_country_preference or the ?geo= query param), it is forwarded as a
+ * re-weight parameter — never a hard filter (ADR-064). The backend applies it
+ * as a boost, not a WHERE clause, so content from other countries still
+ * appears but is de-prioritized.
  */
-export function feedPath(tab: FeedTab, sort: SortValue, pageSize: number, pageOffset: number): string {
-	return `${TAB_PATH[tab]}?sort=${sort}&page_size=${pageSize}&page_offset=${pageOffset}`;
+export function feedPath(
+	tab: FeedTab,
+	sort: SortValue,
+	pageSize: number,
+	pageOffset: number,
+	geo?: string
+): string {
+	let path = `${TAB_PATH[tab]}?sort=${sort}&page_size=${pageSize}&page_offset=${pageOffset}`;
+	if (geo) path += `&geo=${encodeURIComponent(geo)}`;
+	return path;
 }
 
 /** Resolve the active tab. Guests are always explore; authed users default to for_you. */

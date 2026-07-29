@@ -1,9 +1,10 @@
 <script lang="ts">
-	import { beforeNavigate } from '$app/navigation';
+	import { beforeNavigate, goto } from '$app/navigation';
 	import { t } from '$lib/stores/i18n.svelte';
 	import PageHeader from '$lib/components/layout/page-header.svelte';
 	import { Card, CardContent, CardHeader } from '$lib/components/ui/card';
 	import { Button } from '$lib/components/ui/button';
+	import { Modal } from '$lib/components/ui/modal';
 	import { Select } from '$lib/components/ui/select';
 	import { RefreshCw, Save, Check, Upload, RotateCcw, Undo2, AlertTriangle } from 'lucide-svelte';
 	import { Switch } from "bits-ui";
@@ -129,15 +130,24 @@
 		return count;
 	});
 
-	// Unsaved changes warning
-	beforeNavigate(({ cancel }) => {
+	// Unsaved changes warning — uses a modal instead of window.confirm
+	let showUnsavedDialog = $state(false);
+	let pendingNavigationUrl = $state('');
+
+	beforeNavigate(({ to, cancel }) => {
 		if (isDirty) {
-			const confirmed = window.confirm(
-				t('settings.unsaved_navigate', 'You have unsaved changes. Are you sure you want to leave?')
-			);
-			if (!confirmed) cancel();
+			cancel();
+			pendingNavigationUrl = to?.url?.pathname ?? '/';
+			showUnsavedDialog = true;
 		}
 	});
+
+	function confirmLeaveWithUnsaved() {
+		showUnsavedDialog = false;
+		if (pendingNavigationUrl) {
+			goto(pendingNavigationUrl);
+		}
+	}
 
 	function isSettingDirty(catKey: string, settingKey: string, settingType: string): boolean {
 		const cat = categories.find(c => c.key === catKey);
@@ -686,3 +696,13 @@
 		{/each}
 	</div>
 {/if}
+
+<Modal bind:open={showUnsavedDialog} title={t('settings.unsaved_changes', 'Unsaved Changes')} size="sm">
+	<p class="text-sm" style="color: var(--color-foreground)">
+		{t('settings.unsaved_navigate', 'You have unsaved changes. Are you sure you want to leave?')}
+	</p>
+	<div class="mt-6 flex justify-end gap-2">
+		<Button variant="ghost" onclick={() => (showUnsavedDialog = false)}>{t('common.stay_here', 'Stay Here')}</Button>
+		<Button variant="destructive" onclick={confirmLeaveWithUnsaved}>{t('common.leave', 'Leave')}</Button>
+	</div>
+</Modal>

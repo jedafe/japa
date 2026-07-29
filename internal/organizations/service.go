@@ -416,3 +416,52 @@ func NowForTest() time.Time {
 func (s *Service) GetOrganizationAnalytics(ctx context.Context, orgID, tenantID pgtype.UUID) (gen.GetOrganizationAnalyticsRow, error) {
 	return s.store.GetOrganizationAnalytics(ctx, orgID, tenantID)
 }
+
+// ─── Admin methods (bypass ownership checks) ─────────────────────────────
+
+// AdminListOrganizations lists all organisations for admin view (no ownership filter).
+func (s *Service) AdminListOrganizations(ctx context.Context, tenantID pgtype.UUID, orgType, countryCode, search, verified string, limit, offset int32) ([]gen.ListOrganizationsRow, int64, error) {
+	items, err := s.store.ListOrganizations(ctx, tenantID, orgType, countryCode, search, verified, limit, offset)
+	if err != nil {
+		return nil, 0, err
+	}
+	total, err := s.store.CountOrganizations(ctx, tenantID, orgType, countryCode, search, verified)
+	if err != nil {
+		return nil, 0, err
+	}
+	return items, total, nil
+}
+
+// AdminGetOrganization retrieves a single organisation by ID (no ownership check).
+func (s *Service) AdminGetOrganization(ctx context.Context, id, tenantID pgtype.UUID) (gen.Organization, error) {
+	return s.store.GetOrganizationByID(ctx, id, tenantID)
+}
+
+// AdminUpdateOrganization updates an organisation without checking membership role.
+func (s *Service) AdminUpdateOrganization(ctx context.Context, id, tenantID pgtype.UUID, input UpdateOrganizationInput) error {
+	return s.store.UpdateOrganization(ctx, gen.UpdateOrganizationParams{
+		ID:          id,
+		TenantID:    tenantID,
+		Name:        input.Name,
+		Tagline:     strPtr(input.Tagline),
+		Description: strPtr(input.Description),
+		WebsiteUrl:  strPtr(input.WebsiteURL),
+		CountryCode: strPtr(input.CountryCode),
+		OrgType:     input.OrgType,
+	})
+}
+
+// AdminDeleteOrganization soft-deletes an organisation without checking ownership.
+func (s *Service) AdminDeleteOrganization(ctx context.Context, id, tenantID pgtype.UUID) error {
+	return s.store.SoftDeleteOrganization(ctx, id, tenantID)
+}
+
+// AdminListMembers lists members of an organisation (no membership check).
+func (s *Service) AdminListMembers(ctx context.Context, orgID pgtype.UUID) ([]gen.ListOrganizationMembersRow, error) {
+	return s.store.ListMembers(ctx, orgID)
+}
+
+// AdminListInvitations lists invitations for an organisation (no membership check).
+func (s *Service) AdminListInvitations(ctx context.Context, orgID pgtype.UUID) ([]gen.OrganizationInvitation, error) {
+	return s.store.ListInvitations(ctx, orgID)
+}

@@ -259,7 +259,10 @@
 		onkeydown={handleFilterKeydown}
 		aria-label={t('audit.actor_placeholder', 'Filter by actor...')}
 	/>
-	<Select.Root type="single" bind:value={filterAction} items={actionTypes}>
+	<!-- H3: Select and date filters auto-apply on change (filter-on-change
+	     per DataTable spec). Text inputs keep Enter-to-apply to avoid
+	     fetching on every keystroke. -->
+	<Select.Root type="single" bind:value={filterAction} items={actionTypes} onValueChange={() => applyFilters()}>
 		<Select.Trigger
 			class="border-border-input bg-background data-placeholder:text-muted-foreground/50 rounded-9px flex h-10 w-full items-center border px-3 text-sm transition-colors hover:border-border-input-hover"
 			aria-label={t('audit.action_placeholder', 'Filter by action')}
@@ -297,12 +300,14 @@
 		type="date"
 		class="border-border-input bg-background text-foreground rounded-9px border px-3 py-2 text-sm transition-colors hover:border-border-input-hover focus:border-border-input-hover focus:shadow-date-field-focus"
 		bind:value={filterFrom}
+		onchange={applyFilters}
 		aria-label="Filter from date"
 	/>
 	<input
 		type="date"
 		class="border-border-input bg-background text-foreground rounded-9px border px-3 py-2 text-sm transition-colors hover:border-border-input-hover focus:border-border-input-hover focus:shadow-date-field-focus"
 		bind:value={filterTo}
+		onchange={applyFilters}
 		aria-label="Filter to date"
 	/>
 </div>

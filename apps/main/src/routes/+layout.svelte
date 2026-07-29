@@ -5,6 +5,7 @@
 	import { theme } from '$lib/stores/theme.svelte';
 	import { i18n } from '$lib/i18n/store.svelte';
 	import { t } from '$lib/i18n';
+	import { seedCsrfToken } from '$lib/api/csrf.svelte';
 	import type { Snippet } from 'svelte';
 	import type { LayoutData } from './$types';
 
@@ -13,6 +14,14 @@
 	// Sync the client theme store with the server-resolved value once, after
 	// hydration. The initial attribute is already on <html>, so there is no flash.
 	onMount(() => theme.init(data.theme));
+
+	// Seed the browser-side CSRF token from server-rendered page data so the
+	// first client mutation already carries X-CSRF-Token without a boot fetch.
+	// Re-seeds whenever navigation refreshes the layout data (token may rotate).
+	// Ref: japa-bugs-hunters.md §5.2 — audit finding C1.
+	$effect(() => {
+		seedCsrfToken(data.csrfToken ?? null);
+	});
 
 	// Sync the i18n locale with the server-resolved cookie value. Updates
 	// reactively when the locale cookie changes (e.g. after visiting /fr).
@@ -85,11 +94,11 @@
 	<link rel="alternate" hreflang="en" href={canonicalEn} />
 	<link rel="alternate" hreflang="fr" href={canonicalFr} />
 	<link rel="alternate" hreflang="x-default" href={canonicalEn} />
-	<link rel="alternate" type="application/rss+xml" title="JapaConnect Blog" href="/blog/rss.xml" />
+	<link rel="alternate" type="application/rss+xml" title={t('blog.rss_title', 'JapaConnect Blog')} href="/blog/rss.xml" />
 	<link
 		rel="alternate"
 		type="application/rss+xml"
-		title="JapaConnect Forum"
+		title={t('forum.rss_title', 'JapaConnect Forum')}
 		href="/forum/rss.xml"
 	/>
 	{#if siteDescription}

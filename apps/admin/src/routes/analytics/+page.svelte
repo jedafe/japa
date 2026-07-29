@@ -63,7 +63,7 @@
 		const rangeParams = [f && `from=${f}`, toVal && `to=${toVal}`].filter(Boolean).join("&") || undefined;
 		const [overviewRes, securityRes, usersRes, contentRes, spacesRes, revenueRes, searchRes] = await Promise.allSettled([
 			analyticsAdminApi.getOverview(rangeParams),
-			analyticsAdminApi.getSecurity(),
+			analyticsAdminApi.getSecurity(rangeParams),
 			analyticsAdminApi.getUsers(rangeParams),
 			analyticsAdminApi.getContent(rangeParams),
 			analyticsAdminApi.getSpaces(rangeParams),

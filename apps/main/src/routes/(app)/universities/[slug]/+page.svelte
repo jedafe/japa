@@ -1,0 +1,360 @@
+<script lang="ts">
+	import { t } from '$lib/i18n';
+	import { page } from '$app/state';
+	import { GraduationCap, Users, MessageSquare, Info, ArrowRight, FileText, Star, GitCompare, BookOpen, UsersRound, ExternalLink } from 'lucide-svelte';
+	import { EmptyState } from '$lib/components/ui';
+	import type { PageData } from './$types';
+
+	let { data }: { data: PageData } = $props();
+
+	const university = $derived(data.university);
+	const posts = $derived(data.posts ?? []);
+	const reviews = $derived(data.reviews ?? []);
+	const members = $derived(data.members ?? []);
+	const forums = $derived(data.forums ?? []);
+	const activeTab = $derived(page.url.searchParams.get('tab') ?? 'about');
+
+	const title = $derived(
+		t('university.title', '{name} — JapaConnect').replace('{name}', university.name)
+	);
+	const description = $derived(
+		university.description ??
+			t('university.description', 'Explore {name} on JapaConnect.').replace(
+				'{name}',
+				university.name
+			)
+	);
+
+	// JSON-LD: EducationalOrganization + AggregateRating (H3 — audit finding).
+	const jsonLd = $derived(
+		JSON.stringify({
+			'@context': 'https://schema.org',
+			'@type': 'EducationalOrganization',
+			name: university.name,
+			description: university.description ?? '',
+			url: page.url.href,
+			...(university.logo_url ? { logo: { '@type': 'ImageObject', url: university.logo_url } } : {}),
+			...(reviews.length > 0
+				? {
+						aggregateRating: {
+							'@type': 'AggregateRating',
+							ratingValue: reviews.reduce((s, r) => s + r.rating, 0) / reviews.length,
+							reviewCount: reviews.length
+						}
+					}
+				: {})
+		})
+	);
+
+	const stats = $derived([
+		{
+			icon: Users,
+			label: t('university.members', 'Members'),
+			value: university.member_count
+		},
+		{
+			icon: MessageSquare,
+			label: t('university.posts', 'Posts'),
+			value: university.post_count
+		},
+		{
+			icon: GraduationCap,
+			label: t('university.followers', 'Followers'),
+			value: university.follower_count
+		}
+	]);
+
+	const tabs = $derived([
+		{ key: 'about', label: t('university.tab_about', 'Overview') },
+		{ key: 'posts', label: t('university.tab_posts', 'Posts') },
+		{ key: 'forums', label: t('university.tab_forums', 'Forums') },
+		{ key: 'courses', label: t('university.tab_courses', 'Courses') },
+		{ key: 'members', label: t('university.tab_members', 'Members') },
+		{ key: 'reviews', label: t('university.tab_reviews', 'Reviews') },
+		{ key: 'compare', label: t('university.tab_compare', 'Compare') }
+	]);
+</script>
+
+<svelte:head>
+	<title>{title}</title>
+	<meta name="description" content={description} />
+	<meta property="og:title" content={title} />
+	<meta property="og:description" content={description} />
+	<meta property="og:type" content="website" />
+	<meta property="og:url" content={page.url.href} />
+	{@html `<script type="application/ld+json">${jsonLd}</script>`}
+</svelte:head>
+
+<div class="mx-auto w-full max-w-2xl">
+	<!-- University header -->
+	<div class="border-b border-[var(--color-border)] px-4 py-4">
+		<a
+			href="/universities"
+			class="mb-2 inline-flex items-center gap-1.5 text-sm text-[var(--color-text-subtle)] transition-colors hover:text-[var(--color-text)]"
+		>
+			<GraduationCap size={16} /> {t('university.back', 'All universities')}
+		</a>
+		<div class="flex items-center gap-3">
+			{#if university.logo_url}
+				<img
+					src={university.logo_url}
+					alt={t('university.logo_alt', 'Logo of {name}').replace('{name}', university.name)}
+					class="h-14 w-14 shrink-0 rounded-[var(--radius-card)] object-cover"
+				/>
+			{:else}
+				<span
+					class="grid h-14 w-14 shrink-0 place-items-center rounded-[var(--radius-card)] bg-[var(--color-surface-subtle)] text-[var(--color-primary)]"
+				>
+					<GraduationCap size={26} />
+				</span>
+			{/if}
+			<div class="min-w-0 flex-1">
+				<h1 class="truncate text-xl font-semibold text-[var(--color-text)]">{university.name}</h1>
+				<p class="text-xs capitalize text-[var(--color-muted)]">
+					{university.level} · {university.visibility}
+				</p>
+			</div>
+		</div>
+		{#if university.description}
+			<p class="mt-3 text-sm text-[var(--color-text-subtle)]">{university.description}</p>
+		{/if}
+
+		<!-- Compare button (Phase 15.07) -->
+		<div class="mt-3 flex flex-wrap gap-2">
+			<a
+				href="/compare?add={university.slug}"
+				class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
+			>
+				<GitCompare size={15} />
+				{t('university.compare', 'Compare')}
+			</a>
+			<a
+				href="/spaces/{university.slug}"
+				class="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1.5 text-sm font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)]"
+			>
+				<MessageSquare size={15} />
+				{t('university.discussions', 'View discussions')}
+			</a>
+		</div>
+	</div>
+
+	<!-- Tabs — Section 39 / ADR-039: Overview / Posts / Forums / Courses / Members / Reviews / Compare -->
+	<div class="flex gap-1 overflow-x-auto border-b border-[var(--color-border)] px-4">
+		{#each tabs as tab (tab.key)}
+			<a
+				href="?tab={tab.key}"
+				class="whitespace-nowrap border-b-2 px-3 py-2 text-sm font-medium transition-colors {activeTab === tab.key ? 'border-[var(--color-primary)] text-[var(--color-primary)]' : 'border-transparent text-[var(--color-text-subtle)] hover:text-[var(--color-text)]'}"
+			>
+				{tab.label}
+			</a>
+		{/each}
+	</div>
+
+	<div class="p-3">
+		<!-- Stats row -->
+		<div class="grid grid-cols-3 gap-2">
+			{#each stats as stat (stat.label)}
+				<div
+					class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3 text-center"
+				>
+					<stat.icon size={18} class="mx-auto text-[var(--color-text-subtle)]" />
+					<p class="mt-1.5 text-lg font-semibold text-[var(--color-text)]">{stat.value}</p>
+					<p class="text-xs text-[var(--color-muted)]">{stat.label}</p>
+				</div>
+			{/each}
+		</div>
+
+		{#if activeTab === 'about'}
+			<!-- Overview / wiki -->
+			<section
+				class="mt-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4"
+			>
+				<h2 class="flex items-center gap-2 text-sm font-medium text-[var(--color-text)]">
+					<Info size={16} /> {t('university.about', 'About')}
+				</h2>
+				{#if university.wiki_content}
+					<div class="mt-3 text-sm leading-relaxed text-[var(--color-text-subtle)]">
+						{university.wiki_content}
+					</div>
+				{:else if university.description}
+					<p class="mt-3 text-sm leading-relaxed text-[var(--color-text-subtle)]">
+						{university.description}
+					</p>
+				{:else}
+					<div class="mt-3">
+						<EmptyState
+							icon={Info}
+							title={t('university.no_about', 'No description yet')}
+						/>
+					</div>
+				{/if}
+			</section>
+		{:else if activeTab === 'posts'}
+			<!-- Posts tab -->
+			{#if posts.length === 0}
+				<div class="mt-3">
+					<EmptyState icon={FileText} title={t('university.no_posts', 'No posts yet')} />
+				</div>
+			{:else}
+				<div class="mt-3 divide-y divide-[var(--color-border)] overflow-hidden rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)]">
+					{#each posts as post (post.id)}
+						<a href="/content/{post.slug}" class="block p-4 transition-colors hover:bg-[var(--color-surface-subtle)]">
+							<div class="flex items-center gap-2 text-xs text-[var(--color-muted)]">
+								<span class="rounded-full bg-[var(--color-surface-subtle)] px-2 py-0.5 font-medium text-[var(--color-text-subtle)]">{post.content_type}</span>
+								<span>· {post.read_time_minutes} {t('feed.min_read')}</span>
+							</div>
+							<h3 class="mt-1.5 text-sm font-medium text-[var(--color-text)]">{post.title}</h3>
+							<div class="mt-2 flex items-center gap-4 text-xs text-[var(--color-muted)]">
+								<span>{post.view_count} {t('profile.views', 'views')}</span>
+								<span>{post.comment_count} {t('profile.comments', 'comments')}</span>
+							</div>
+						</a>
+					{/each}
+				</div>
+			{/if}
+		{:else if activeTab === 'forums'}
+			<!-- Forums tab — threads in this university's space -->
+			{#if forums.length === 0}
+				<div class="mt-3">
+					<EmptyState icon={MessageSquare} title={t('university.no_forums', 'No forum threads yet')} />
+				</div>
+			{:else}
+				<div class="mt-3 divide-y divide-[var(--color-border)] overflow-hidden rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)]">
+					{#each forums as thread (thread.id)}
+						<a href="/forum/{thread.slug}" class="block p-4 transition-colors hover:bg-[var(--color-surface-subtle)]">
+							<h3 class="text-sm font-medium text-[var(--color-text)]">{thread.title}</h3>
+							<div class="mt-2 flex items-center gap-4 text-xs text-[var(--color-muted)]">
+								<span>{thread.comment_count ?? 0} {t('profile.comments', 'comments')}</span>
+								<span>{thread.view_count ?? 0} {t('profile.views', 'views')}</span>
+							</div>
+						</a>
+					{/each}
+				</div>
+			{/if}
+		{:else if activeTab === 'courses'}
+			<!-- Courses tab — links to the Learn app (ADR-060: courses live on learn.japaconnect.com) -->
+			<div class="mt-3">
+				<a
+					href="https://learn.japaconnect.com/university/{university.slug}"
+					class="flex items-center justify-between rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 transition-colors hover:bg-[var(--color-surface-subtle)]"
+				>
+					<span class="flex items-center gap-2.5">
+						<BookOpen size={20} class="text-[var(--color-primary)]" />
+						<span class="min-w-0">
+							<span class="block text-sm font-medium text-[var(--color-text)]">
+								{t('university.courses_title', 'Courses & Tracks')}
+							</span>
+							<span class="block text-xs text-[var(--color-muted)]">
+								{t('university.courses_hint', 'Browse courses on the Learn platform')}
+							</span>
+						</span>
+					</span>
+					<ExternalLink size={18} class="shrink-0 text-[var(--color-text-subtle)]" />
+				</a>
+			</div>
+		{:else if activeTab === 'members'}
+			<!-- Members tab -->
+			{#if members.length === 0}
+				<div class="mt-3">
+					<EmptyState icon={UsersRound} title={t('university.no_members', 'No members yet')} />
+				</div>
+			{:else}
+				<ul class="mt-3 space-y-2">
+					{#each members as member (member.user_id)}
+						<li>
+							<a
+								href="/u/{member.username}"
+								class="flex items-center gap-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3 transition-colors hover:bg-[var(--color-surface-subtle)]"
+							>
+								{#if member.avatar_url}
+									<img src={member.avatar_url} alt={t('profile.avatar_alt', 'Avatar of {name}').replace('{name}', member.display_name ?? member.username)} class="h-10 w-10 rounded-full object-cover" />
+								{:else}
+									<span class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[var(--color-surface-subtle)] text-sm font-medium text-[var(--color-text-subtle)]">
+										{member.display_name?.charAt(0)?.toUpperCase() ?? '?'}
+									</span>
+								{/if}
+								<span class="min-w-0 flex-1">
+									<span class="block truncate text-sm font-medium text-[var(--color-text)]">{member.display_name ?? member.username}</span>
+									<span class="block text-xs text-[var(--color-muted)]">@{member.username}</span>
+								</span>
+							</a>
+						</li>
+					{/each}
+				</ul>
+			{/if}
+		{:else if activeTab === 'reviews'}
+			<!-- Reviews tab -->
+			{#if reviews.length === 0}
+				<div class="mt-3">
+					<EmptyState icon={Star} title={t('university.no_reviews', 'No reviews yet')} />
+				</div>
+			{:else}
+				<ul class="mt-3 space-y-2">
+					{#each reviews as review (review.id)}
+						<li class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+							<div class="flex items-center gap-2">
+								<div class="flex">
+									{#each Array(5) as _, i}
+										<Star
+											size={14}
+											class={i < review.rating ? 'fill-[var(--color-primary)] text-[var(--color-primary)]' : 'text-[var(--color-muted)]'}
+										/>
+									{/each}
+								</div>
+								{#if review.title}
+									<span class="text-sm font-medium text-[var(--color-text)]">{review.title}</span>
+								{/if}
+							</div>
+							{#if review.body}
+								<p class="mt-2 text-sm text-[var(--color-text-subtle)]">{review.body}</p>
+							{/if}
+							<p class="mt-2 text-xs text-[var(--color-muted)]">
+								{review.author_name ?? '—'} · {new Date(review.created_at).toLocaleDateString()}
+							</p>
+						</li>
+					{/each}
+				</ul>
+			{/if}
+		{:else if activeTab === 'compare'}
+			<!-- Compare tab — redirects to the compare tool with this university pre-selected -->
+			<div class="mt-3">
+				<a
+					href="/compare?add={university.slug}"
+					class="flex items-center justify-between rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 transition-colors hover:bg-[var(--color-surface-subtle)]"
+				>
+					<span class="flex items-center gap-2.5">
+						<GitCompare size={20} class="text-[var(--color-primary)]" />
+						<span class="min-w-0">
+							<span class="block text-sm font-medium text-[var(--color-text)]">
+								{t('university.compare_title', 'Compare with other universities')}
+							</span>
+							<span class="block text-xs text-[var(--color-muted)]">
+								{t('university.compare_hint', 'Add this university to the comparison tool')}
+							</span>
+						</span>
+					</span>
+					<ArrowRight size={18} class="shrink-0 text-[var(--color-text-subtle)]" />
+				</a>
+			</div>
+		{/if}
+
+		<!-- CTA to discussions -->
+		<a
+			href="/spaces/{university.slug}"
+			class="mt-3 flex items-center justify-between rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 transition-colors hover:bg-[var(--color-surface-subtle)]"
+		>
+			<span class="flex items-center gap-2.5">
+				<MessageSquare size={20} class="text-[var(--color-primary)]" />
+				<span class="min-w-0">
+					<span class="block text-sm font-medium text-[var(--color-text)]">
+						{t('university.discussions', 'View discussions')}
+					</span>
+					<span class="block text-xs text-[var(--color-muted)]">
+						{t('university.discussions_hint', 'Join the conversation in this space')}
+					</span>
+				</span>
+			</span>
+			<ArrowRight size={18} class="shrink-0 text-[var(--color-text-subtle)]" />
+		</a>
+	</div>
+</div>

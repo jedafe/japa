@@ -5,7 +5,7 @@
 	import { Button } from "$lib/components/ui/button";
 	import { Modal } from "$lib/components/ui/modal";
 	import { TableSkeleton } from "$lib/components/ui/skeleton";
-	import { DollarSign, RefreshCw } from "lucide-svelte";
+	import { DollarSign, RefreshCw, AlertTriangle, Eye } from "lucide-svelte";
 	import { universityAdminApi } from "$lib/api";
 	import { t } from "$lib/stores/i18n.svelte";
 	import { hasPermission } from "$lib/stores/permissions.svelte";
@@ -34,8 +34,11 @@
 	let filterValues = $state<Record<string, string>>({});
 
 	let showProcessModal = $state(false);
+	let showFailModal = $state(false);
+	let showViewModal = $state(false);
 	let target = $state<Payout | null>(null);
 	let actionLoading = $state(false);
+	let failReason = $state("");
 
 	const canProcess = $derived(hasPermission("university.payout.process"));
 
@@ -96,6 +99,8 @@
 	}
 
 	function openProcess(p: Payout) { target = p; showProcessModal = true; }
+	function openFail(p: Payout) { target = p; failReason = p.failure_reason ?? ""; showFailModal = true; }
+	function openView(p: Payout) { target = p; showViewModal = true; }
 
 	async function doProcess() {
 		if (!target) return;
@@ -105,6 +110,21 @@
 		if (result.ok) {
 			showProcessModal = false;
 			successMessage = t("university.payout_processing", "Payout processing initiated");
+			load();
+		} else {
+			errorMessage = result.error;
+		}
+		actionLoading = false;
+	}
+
+	async function doMarkFailed() {
+		if (!target) return;
+		actionLoading = true;
+		errorMessage = "";
+		const result = await universityAdminApi.markPayoutFailed(target.id, { reason: failReason.trim() || undefined });
+		if (result.ok) {
+			showFailModal = false;
+			successMessage = t("university.payout_marked_failed", "Payout marked as failed");
 			load();
 		} else {
 			errorMessage = result.error;
@@ -127,8 +147,9 @@
 />
 
 {#if errorMessage}
-	<div class="mb-4 rounded-md border px-4 py-3 text-sm" style="border-color: var(--color-danger); background-color: color-mix(in srgb, var(--color-danger) 8%, transparent); color: var(--color-danger)">
-		{errorMessage}
+	<div class="mb-4 flex items-center justify-between rounded-md border px-4 py-3 text-sm" style="border-color: var(--color-danger); background-color: color-mix(in srgb, var(--color-danger) 8%, transparent); color: var(--color-danger)">
+		<span>{errorMessage}</span>
+		<Button variant="outline" size="sm" onclick={load}>{t("common.retry", "Retry")}</Button>
 	</div>
 {/if}
 {#if successMessage}
@@ -187,6 +208,56 @@
 	</div>
 </Modal>
 
+<!-- Mark Failed Modal -->
+<Modal open={showFailModal} onclose={() => { showFailModal = false; }} title={t("university.mark_failed", "Mark Payout as Failed")}>
+	{#if target}
+		<div class="space-y-3">
+			<p class="text-sm" style="color: var(--color-muted)">{t("university.mark_failed_confirm", "Mark this payout as failed?")}</p>
+			<div class="rounded-lg border p-3 space-y-1" style="border-color: var(--color-border); background-color: var(--color-surface)">
+				<div class="flex justify-between text-sm"><span style="color: var(--color-muted)">{t("university.period", "Period")}</span><span>{target.period_start} → {target.period_end}</span></div>
+				<div class="flex justify-between text-sm"><span style="color: var(--color-muted)">{t("university.net", "Net")}</span><span class="font-medium">{formatKobo(target.net_kobo, target.currency)}</span></div>
+			</div>
+			<div>
+				<label for="fail-reason" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t("university.failureReason", "Failure Reason")}</label>
+				<textarea id="fail-reason" bind:value={failReason} rows={3} class="w-full rounded-lg border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" placeholder={t("university.failureReasonPlaceholder", "Reason for failure...")}></textarea>
+			</div>
+		</div>
+	{/if}
+	<div class="mt-6 flex justify-end gap-2">
+		<Button variant="outline" onclick={() => { showFailModal = false; }}>{t("common.cancel", "Cancel")}</Button>
+		<Button variant="destructive" onclick={doMarkFailed} disabled={actionLoading}>
+			<AlertTriangle class="h-3.5 w-3.5" />
+			{actionLoading ? t("common.processing", "Processing...") : t("university.mark_failed", "Mark Failed")}
+		</Button>
+	</div>
+</Modal>
+
+<!-- View Modal -->
+<Modal open={showViewModal} onclose={() => { showViewModal = false; }} title={t("university.payout_details", "Payout Details")}>
+	{#if target}
+		<div class="grid grid-cols-2 gap-4">
+			<div><p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("university.instructor_id", "Instructor ID")}</p><p class="mt-1 text-sm font-mono">{target.instructor_id}</p></div>
+			<div><p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("university.status", "Status")}</p><p class="mt-1 text-sm font-medium">{target.status}</p></div>
+			<div><p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("university.period", "Period")}</p><p class="mt-1 text-sm">{target.period_start} → {target.period_end}</p></div>
+			<div><p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("university.gross", "Gross")}</p><p class="mt-1 text-sm font-medium">{formatKobo(target.gross_kobo, target.currency)}</p></div>
+			<div><p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("university.commission", "Commission")}</p><p class="mt-1 text-sm">{formatKobo(target.platform_commission_kobo, target.currency)}</p></div>
+			<div><p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("university.net", "Net")}</p><p class="mt-1 text-sm font-semibold" style="color: var(--color-success)">{formatKobo(target.net_kobo, target.currency)}</p></div>
+			{#if target.payout_reference}
+				<div><p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("university.payoutReference", "Reference")}</p><p class="mt-1 text-sm font-mono">{target.payout_reference}</p></div>
+			{/if}
+			{#if target.processed_at}
+				<div><p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("university.processedAt", "Processed At")}</p><p class="mt-1 text-sm">{new Date(target.processed_at).toLocaleString()}</p></div>
+			{/if}
+			{#if target.failure_reason}
+				<div class="col-span-2"><p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("university.failureReason", "Failure Reason")}</p><p class="mt-1 text-sm" style="color: var(--color-danger)">{target.failure_reason}</p></div>
+			{/if}
+		</div>
+	{/if}
+	<div class="mt-6 flex justify-end">
+		<Button variant="outline" onclick={() => { showViewModal = false; }}>{t("common.close", "Close")}</Button>
+	</div>
+</Modal>
+
 {#snippet PayoutStatusBadge({ value }: { value: string; row: Payout })}
 	<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium
 		{value === 'paid' ? 'bg-success/15 text-success' :
@@ -198,10 +269,19 @@
 {/snippet}
 
 {#snippet PayoutActionsCell({ row }: { value: any; row: Payout })}
-	{#if canProcess && (row.status === 'pending' || row.status === 'failed')}
-		<Button variant="ghost" size="sm" onclick={() => openProcess(row)} style="color: var(--color-primary)">
-			<DollarSign class="h-3.5 w-3.5" />
-			{t("university.process", "Process")}
+	<div class="flex items-center gap-1">
+		<Button variant="ghost" size="sm" onclick={() => openView(row)} aria-label={t("common.view", "View")}>
+			<Eye class="h-3.5 w-3.5" />
 		</Button>
-	{/if}
+		{#if canProcess && (row.status === 'pending' || row.status === 'failed')}
+			<Button variant="ghost" size="sm" onclick={() => openProcess(row)} style="color: var(--color-primary)" aria-label={t("university.process", "Process")}>
+				<DollarSign class="h-3.5 w-3.5" />
+			</Button>
+		{/if}
+		{#if canProcess && (row.status === 'pending' || row.status === 'processing')}
+			<Button variant="ghost" size="sm" onclick={() => openFail(row)} style="color: var(--color-danger)" aria-label={t("university.mark_failed", "Mark Failed")}>
+				<AlertTriangle class="h-3.5 w-3.5" />
+			</Button>
+		{/if}
+	</div>
 {/snippet}

@@ -19,6 +19,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/media"
 	"github.com/jedafe/japa/internal/tenant"
 	"github.com/jedafe/japa/internal/worker"
 )
@@ -48,6 +49,13 @@ type CustomFieldsService interface {
 	ListFieldValuesByEntity(ctx context.Context, entityType string, entityID pgtype.UUID) ([]gen.CustomFieldValue, error)
 }
 
+// MediaResolver resolves a media ID to an imgproxy-signed URL for the
+// university logo. The media.Service satisfies this. Nil = logo_url omitted.
+type MediaResolver interface {
+	GetMedia(ctx context.Context, tenantID, mediaID pgtype.UUID) (gen.Medium, error)
+	GetMediaURL(m *gen.Medium, opts media.ImageProxyOpts) string
+}
+
 // TaskEnqueuer is the minimal interface for enqueueing Asynq tasks.
 // The worker.Enqueuer satisfies this.
 type TaskEnqueuer interface {
@@ -58,13 +66,18 @@ type TaskEnqueuer interface {
 type Handlers struct {
 	spaces       SpacesService
 	customFields CustomFieldsService
-	enqueuer     TaskEnqueuer // nil = logo_url fetch is skipped on create/update
+	media        MediaResolver // nil = logo_url omitted from responses
+	enqueuer     TaskEnqueuer  // nil = logo_url fetch is skipped on create/update
 }
 
 // NewHandlers creates Handlers with the given services.
 func NewHandlers(spacesService SpacesService, customFieldsService CustomFieldsService) *Handlers {
 	return &Handlers{spaces: spacesService, customFields: customFieldsService}
 }
+
+// SetMediaResolver wires the media service used to resolve logo_media_id to a
+// signed imgproxy URL (returned as logo_url in university responses). Optional.
+func (h *Handlers) SetMediaResolver(m MediaResolver) { h.media = m }
 
 // SetEnqueuer wires the Asynq enqueuer used to trigger university:fetch_logo
 // when an admin sets/changes a university's logo_url. Optional — if not
@@ -109,11 +122,29 @@ func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype
 	return t.ID, true
 }
 
+// resolveLogoURL resolves a space's logo_media_id to an imgproxy-signed URL
+// via the media service. Returns an empty string when no logo is set, the
+// media resolver is not wired, or the media item cannot be loaded. Best-effort
+// — a failure never blocks the university response.
+func (h *Handlers) resolveLogoURL(ctx context.Context, tenantID pgtype.UUID, logoMediaID pgtype.UUID) string {
+	if !logoMediaID.Valid || h.media == nil {
+		return ""
+	}
+	m, err := h.media.GetMedia(ctx, tenantID, logoMediaID)
+	if err != nil {
+		return ""
+	}
+	return h.media.GetMediaURL(&m, media.ImageProxyOpts{Width: 128, Height: 128, Format: "webp"})
+}
+
 // universityDetail pairs a space with its resolved university-specific field
-// values so a single response carries both.
+// values so a single response carries both. LogoURL is the imgproxy-signed URL
+// for the university logo (resolved from logo_media_id); empty when no logo
+// is set or the media service is unavailable.
 type universityDetail struct {
 	gen.Space
-	Fields []gen.CustomFieldValue `json:"fields"`
+	Fields  []gen.CustomFieldValue `json:"fields"`
+	LogoURL string                 `json:"logo_url"`
 }
 
 // ListUniversities handles GET /api/v1/universities — every space of the
@@ -176,7 +207,12 @@ func (h *Handlers) GetUniversity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": universityDetail{Space: space, Fields: fields}})
+	// Resolve the logo media ID to an imgproxy-signed URL (Section 34 / ADR-039).
+	// Best-effort: a missing or unreachable media service degrades to an empty
+	// logo_url, and the frontend falls back to the GraduationCap icon.
+	logoURL := h.resolveLogoURL(r.Context(), tenantID, space.LogoMediaID)
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": universityDetail{Space: space, Fields: fields, LogoURL: logoURL}})
 }
 
 // writeJSON serializes the given value as JSON and writes it to the response.

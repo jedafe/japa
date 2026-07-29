@@ -33,9 +33,11 @@
 	let isDirty = $derived(
 		JSON.stringify(currentSettings) !== JSON.stringify(originalSettings)
 	);
+	// M3: Use key-based comparison (like the system settings page) instead of
+	// index-based comparison, which is order-dependent and fragile.
 	let dirtyCount = $derived(
 		currentSettings.filter(
-			(s, i) => s.value !== originalSettings[i]?.value
+			(s) => s.value !== getOriginalValue(s.key)
 		).length
 	);
 
@@ -47,6 +49,11 @@
 	let confirmResetSetting = $state<SystemSetting | null>(null);
 	let resetModalOpen = $state(false);
 	let confirmResetAllOpen = $state(false);
+	// C3: university.surface_domain change warning (ADR-063)
+	let confirmSurfaceDomainOpen = $state(false);
+	let pendingSurfaceDomainValue = $state('');
+	// C4: geo_personalization.enabled disable warning (ADR-064)
+	let confirmGeoDisableOpen = $state(false);
 
 	const selectOptions: Record<string, { value: string; label: string }[]> = $derived(
 		(() => {
@@ -223,7 +230,7 @@
 		message = '';
 		try {
 			const changed = currentSettings.filter(
-				(s, i) => s.value !== originalSettings[i]?.value
+				(s) => s.value !== getOriginalValue(s.key)
 			);
 			for (const setting of changed) {
 				const error = validateSettingValue(setting);
@@ -233,6 +240,17 @@
 					return;
 				}
 			}
+			// C3: university.surface_domain change warning (ADR-063).
+			const surfaceDomainSetting = changed.find((s) => s.key === 'university.surface_domain');
+			if (surfaceDomainSetting && !confirmSurfaceDomainOpen) {
+				pendingSurfaceDomainValue = surfaceDomainSetting.value;
+				confirmSurfaceDomainOpen = true;
+				isSaving = false;
+				return;
+			}
+			// M2: Use Promise.all with error aggregation for parallel saves.
+			// The backend does not yet expose a batch endpoint for tenant
+			// settings, so parallel PATCHes are the best available option.
 			let failed = 0;
 			const results = await Promise.all(
 				changed.map((setting) =>
@@ -259,6 +277,28 @@
 		} finally {
 			isSaving = false;
 		}
+	}
+
+	// C3: Called when the user confirms the surface_domain change warning.
+	async function confirmSurfaceDomainSave() {
+		confirmSurfaceDomainOpen = false;
+		await saveAll();
+	}
+
+	// C4: Called when the user confirms the geo_personalization disable warning.
+	function confirmGeoDisable() {
+		confirmGeoDisableOpen = false;
+		updateSetting('geo_personalization.enabled', 'false');
+	}
+
+	// C4: Intercept geo_personalization.enabled toggle — on disable, show
+	// a confirmation dialog before applying the change (ADR-064).
+	function handleSettingToggle(key: string, checked: boolean) {
+		if (key === 'geo_personalization.enabled' && !checked) {
+			confirmGeoDisableOpen = true;
+			return;
+		}
+		updateSetting(key, checked ? 'true' : 'false');
 	}
 
 	function resetAll() {
@@ -731,7 +771,7 @@
 														id="setting-{setting.key}"
 														checked={isTrue}
 														onCheckedChange={(checked) =>
-															updateSetting(setting.key, checked ? 'true' : 'false')}
+															handleSettingToggle(setting.key, checked)}
 														class="bg-muted data-[state=checked]:bg-emerald-500 peer inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full px-[2px] transition-colors disabled:cursor-not-allowed disabled:opacity-50"
 													>
 														<Switch.Thumb
@@ -1010,4 +1050,30 @@
 	)}
 	confirmText={t('settings.reset_confirm', 'RESET')}
 	onConfirm={resetAll}
+/>
+
+<!-- C3: university.surface_domain change warning (ADR-063) -->
+<ConfirmModal
+	bind:open={confirmSurfaceDomainOpen}
+	title={t('settings.surface_domain_warning_title', 'Surface Domain Change')}
+	consequence={t(
+		'settings.surface_domain_warning',
+		'Changing university.surface_domain affects how the Learn app detects its host. This may break Learn app routing until DNS and the Learn app config are updated. New value: '
+	) + pendingSurfaceDomainValue}
+	confirmText={t('common.confirm', 'Confirm')}
+	onConfirm={confirmSurfaceDomainSave}
+	onCancel={() => { confirmSurfaceDomainOpen = false; }}
+/>
+
+<!-- C4: geo_personalization.enabled disable warning (ADR-064) -->
+<ConfirmModal
+	bind:open={confirmGeoDisableOpen}
+	title={t('settings.geo_disable_warning_title', 'Disable Geo-Personalization')}
+	consequence={t(
+		'settings.geo_disable_warning',
+		'This will disable geo-personalized content for all users. Content feeds will no longer be tailored by geographic location.'
+	)}
+	confirmText={t('common.confirm', 'Confirm')}
+	onConfirm={confirmGeoDisable}
+	onCancel={() => { confirmGeoDisableOpen = false; }}
 />

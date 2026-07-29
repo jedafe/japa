@@ -74,7 +74,6 @@ Prompts/* (Copy).md
 .password.md
 
 # Binaries
-main
 api
 meilisearch
 seed
