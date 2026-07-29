@@ -19,6 +19,8 @@
 		id: string;
 		name: string;
 		slug: string;
+		description?: string;
+		color?: string;
 		post_count: number;
 		follower_count: number;
 		created_at: string;
@@ -51,6 +53,8 @@
 	let editingTag = $state<Tag | null>(null);
 	let formName = $state("");
 	let formSlug = $state("");
+	let formDescription = $state("");
+	let formColor = $state("");
 	let saving = $state(false);
 	let showDeleteConfirm = $state(false);
 	let deleteTarget = $state<Tag | null>(null);
@@ -150,6 +154,8 @@
 		editingTag = null;
 		formName = "";
 		formSlug = "";
+		formDescription = "";
+		formColor = "";
 		showModal = true;
 	}
 
@@ -157,6 +163,8 @@
 		editingTag = tag;
 		formName = tag.name;
 		formSlug = tag.slug;
+		formDescription = tag.description ?? "";
+		formColor = tag.color ?? "";
 		showModal = true;
 	}
 
@@ -164,7 +172,12 @@
 		if (!formName.trim()) return;
 		saving = true;
 		error = "";
-		const body = { name: formName.trim(), slug: formSlug.trim() || slugify(formName) };
+		const body: { name: string; slug: string; description?: string; color?: string } = {
+			name: formName.trim(),
+			slug: formSlug.trim() || slugify(formName)
+		};
+		if (formDescription.trim()) body.description = formDescription.trim();
+		if (formColor.trim()) body.color = formColor.trim();
 		const result = editingTag
 			? await tagsAdminApi.update(editingTag.id, body)
 			: await tagsAdminApi.create(body);
@@ -391,6 +404,17 @@
 		<div>
 			<label for="tag-slug" class="block text-sm font-medium" style="color: var(--color-foreground)">{t("tags.slug", "Slug")}</label>
 			<input id="tag-slug" type="text" class="mt-1 w-full rounded-lg border p-2 text-sm font-mono" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" placeholder="javascript" bind:value={formSlug} />
+		</div>
+		<div>
+			<label for="tag-description" class="block text-sm font-medium" style="color: var(--color-foreground)">{t("tags.description", "Description")}</label>
+			<textarea id="tag-description" rows="2" class="mt-1 w-full rounded-lg border p-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" placeholder="Optional description..." bind:value={formDescription}></textarea>
+		</div>
+		<div>
+			<label for="tag-color" class="block text-sm font-medium" style="color: var(--color-foreground)">{t("tags.color", "Color")}</label>
+			<div class="mt-1 flex items-center gap-2">
+				<input id="tag-color" type="color" class="h-9 w-12 cursor-pointer rounded border" style="border-color: var(--color-border); background: var(--color-surface)" bind:value={formColor} />
+				<input type="text" class="w-full rounded-lg border p-2 text-sm font-mono" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" placeholder="#3b82f6" bind:value={formColor} />
+			</div>
 		</div>
 	</div>
 	<div class="mt-4 flex justify-end gap-2">

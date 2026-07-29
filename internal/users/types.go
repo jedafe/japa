@@ -9,6 +9,7 @@ import "encoding/json"
 type UpdateProfileRequest struct {
 	DisplayName *string `json:"display_name"`
 	AvatarURL   *string `json:"avatar_url"`
+	CoverURL    *string `json:"cover_url"`
 	Bio         *string `json:"bio"`
 	Timezone    *string `json:"timezone"`
 }
@@ -26,6 +27,7 @@ type UserProfileResponse struct {
 	Username                 string   `json:"username"`
 	DisplayName              *string  `json:"display_name"`
 	AvatarURL                *string  `json:"avatar_url"`
+	CoverURL                 *string  `json:"cover_url"`
 	Bio                      *string  `json:"bio"`
 	Timezone                 *string  `json:"timezone"`
 	ProfileType              string   `json:"profile_type"`
@@ -93,6 +95,7 @@ type PublicProfileResponse struct {
 	Username       string  `json:"username"`
 	DisplayName    *string `json:"display_name"`
 	AvatarURL      *string `json:"avatar_url"`
+	CoverURL       *string `json:"cover_url"`
 	Bio            *string `json:"bio"`
 	ProfileType    string  `json:"profile_type"`
 	FollowerCount  int32   `json:"follower_count"`

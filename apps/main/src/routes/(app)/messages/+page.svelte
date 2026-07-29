@@ -96,7 +96,7 @@
 					id: res.data.id,
 					sender_id: page.data.user?.id ?? '',
 					sender_username: page.data.user?.username ?? '',
-					sender_display_name: page.data.user?.displayName ?? '',
+					sender_display_name: page.data.user?.display_name ?? '',
 					body,
 					created_at: new Date().toISOString(),
 					read_at: null

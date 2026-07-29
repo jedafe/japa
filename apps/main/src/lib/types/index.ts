@@ -38,7 +38,7 @@ export interface SessionUser {
 	id: string;
 	email: string;
 	username: string;
-	displayName: string;
+	display_name?: string | null;
 	avatar_url?: string | null;
 	groups?: string[];
 	primary_space?: SpaceRef | null;
@@ -349,7 +349,7 @@ export interface MeProfile {
 	id: string;
 	email: string;
 	username: string;
-	displayName: string;
+	display_name?: string | null;
 	bio?: string | null;
 	avatar_url?: string | null;
 	cover_url?: string | null;
@@ -359,7 +359,7 @@ export interface MeProfile {
 
 /** GET/PATCH /me/privacy — a map of privacy toggles (nested). */
 export interface PrivacySettings {
-	profile_visibility?: 'public' | 'members' | 'private';
+	profile_visibility?: 'public' | 'members' | 'followers';
 	show_activity?: boolean;
 	searchable?: boolean;
 	[key: string]: unknown;
@@ -852,6 +852,20 @@ export interface Notification {
 	read_at: string | null;
 	created_at: string;
 	type_label: string;
+}
+
+/**
+ * GET /me/notification-preferences item — PreferenceOutput (Section 35).
+ * The API returns every enabled notification_type merged with the user's
+ * overrides; types the user has never configured fall back to defaults.
+ */
+export interface NotificationPreference {
+	type: string;
+	label: string;
+	description: string | null;
+	in_app: boolean;
+	email: boolean;
+	push: boolean;
 }
 
 /* ------------------------------------------------------------------ *
