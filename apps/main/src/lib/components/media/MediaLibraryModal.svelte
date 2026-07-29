@@ -8,6 +8,7 @@
 		uploadToPresigned,
 		confirmMedia
 	} from '$lib/api/create';
+	import { convertImageToModernFormat } from '$lib/utils/imageConvert';
 	import { listStockProviders, searchStock, importStockPhoto } from '$lib/api/stock';
 	import type { MediaAsset, StockPhoto, StockProvider } from '$lib/types';
 
@@ -98,21 +99,33 @@
 		uploading = true;
 		uploadError = null;
 		try {
+			const convertedFile = await convertImageToModernFormat(file);
 			const init = await initiateUpload({
-				filename: file.name,
-				mime_type: file.type,
-				file_size: file.size
+				filename: convertedFile.name,
+				mime_type: convertedFile.type,
+				file_size: convertedFile.size
 			});
 			if (init.error || !init.data) throw new Error(init.error?.message ?? 'initiate failed');
-			const up = await uploadToPresigned(init.data.presigned_url, file);
+			const up = await uploadToPresigned(init.data.presigned_url, convertedFile);
 			if (!up.ok) throw new Error('upload failed');
 			const conf = await confirmMedia(init.data.media_id);
 			if (conf.error || !conf.data) throw new Error(conf.error?.message ?? 'confirm failed');
+			// Build a proper MediaAsset from the initiate + confirm data.
+			// confirmMedia returns { confirmed: true }, not a full MediaAsset,
+			// so we construct the URL from the storage_path returned by initiateUpload.
+			const uploadedAsset: MediaAsset = {
+				id: init.data.media_id,
+				url: `/api/v1/media/serve/media/${init.data.storage_path}`,
+				filename: convertedFile.name,
+				mime_type: convertedFile.type,
+				file_size: convertedFile.size,
+				status: 'approved'
+			};
 			// Switch to library tab and select the freshly uploaded asset.
 			tab = 'library';
 			loadLibrary();
-			selectedId = conf.data.id;
-			onSelect(conf.data);
+			selectedId = uploadedAsset.id;
+			onSelect(uploadedAsset);
 		} catch (err) {
 			uploadError = err instanceof Error ? err.message : 'Upload failed';
 		} finally {
@@ -157,7 +170,7 @@
 				q: q.trim(),
 				provider: stockProviderFilter || undefined,
 				page: stockPage,
-				per_page: 30
+				per_page: 20
 			})
 				.then((res) => {
 					stockResults = res.data?.photos ?? [];
@@ -180,7 +193,7 @@
 			q: stockQuery.trim(),
 			provider: stockProviderFilter || undefined,
 			page: stockPage,
-			per_page: 30
+			per_page: 20
 		})
 			.then((res) => {
 				stockResults = [...stockResults, ...(res.data?.photos ?? [])];
