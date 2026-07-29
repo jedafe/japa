@@ -62,26 +62,6 @@ func (h *StockHandlers) requireTenant(w http.ResponseWriter, r *http.Request) (*
 	return t, true
 }
 
-// userPermissionKeys returns the authenticated user's resolved permission node
-// keys via the RBAC resolver stored in context by RequirePermission middleware.
-// Returns nil if the resolver or user is unavailable.
-func userPermissionKeys(r *http.Request) []string {
-	resolver := rbac.FromContext(r.Context())
-	user := auth.FromContext(r.Context())
-	if resolver == nil || user == nil {
-		return nil
-	}
-	uc, err := resolver.GetUserContext(r.Context(), user.UserID, user.TenantID)
-	if err != nil || uc == nil {
-		return nil
-	}
-	keys := make([]string, 0, len(uc.Permissions))
-	for k := range uc.Permissions {
-		keys = append(keys, k)
-	}
-	return keys
-}
-
 // hasPermission checks a single permission node via the RBAC resolver in context.
 func hasPermission(r *http.Request, permKey string) bool {
 	resolver := rbac.FromContext(r.Context())
@@ -103,8 +83,9 @@ func (h *StockHandlers) ListProviders(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userPerms := userPermissionKeys(r)
-	names := h.svc.AvailableProviders(r.Context(), userPerms)
+	hasSearch := hasPermission(r, "media.stock.search")
+	hasProviders := hasPermission(r, "media.stock.providers")
+	names := h.svc.AvailableProvidersForPerms(hasSearch, hasProviders)
 
 	result := make([]map[string]string, 0, len(names))
 	for _, name := range names {
@@ -121,6 +102,11 @@ func (h *StockHandlers) ListProviders(w http.ResponseWriter, r *http.Request) {
 // GET /api/v1/stock/search?q=...&provider=...&page=...&per_page=...
 func (h *StockHandlers) Search(w http.ResponseWriter, r *http.Request) {
 	if _, ok := h.requireUser(w, r); !ok {
+		return
+	}
+
+	if !hasPermission(r, "media.stock.search") {
+		writeError(w, http.StatusForbidden, "forbidden", "media.stock.search permission required")
 		return
 	}
 
@@ -167,6 +153,11 @@ func (h *StockHandlers) GetPhoto(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if !hasPermission(r, "media.stock.search") {
+		writeError(w, http.StatusForbidden, "forbidden", "media.stock.search permission required")
+		return
+	}
+
 	providerName := chi.URLParam(r, "provider")
 	photoID := chi.URLParam(r, "id")
 	if providerName == "" || photoID == "" {
@@ -196,6 +187,11 @@ func (h *StockHandlers) ImportPhoto(w http.ResponseWriter, r *http.Request) {
 
 	user, ok := h.requireUser(w, r)
 	if !ok {
+		return
+	}
+
+	if !hasPermission(r, "media.stock.import") {
+		writeError(w, http.StatusForbidden, "forbidden", "media.stock.import permission required")
 		return
 	}
 
