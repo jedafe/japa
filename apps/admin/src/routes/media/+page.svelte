@@ -26,7 +26,7 @@
     Eye,
     Pencil
   } from "lucide-svelte";
-  import { api, apiFetch, mediaAdminApi } from "$lib/api";
+  import { api, apiFetch, mediaAdminApi, stockAdminApi, type StockProviderAdmin } from "$lib/api";
   import { hasPermission } from "$lib/stores/permissions.svelte";
   import Pagination from "$lib/components/ui/Pagination.svelte";
 
@@ -51,6 +51,13 @@
   let filters = $state<Record<string, string>>({});
   let viewMode = $state<"grid" | "list">("grid");
   let selectedIds = $state<Set<string>>(new Set());
+
+  // --- Stock providers management ---
+  let stockProviders = $state<StockProviderAdmin[]>([]);
+  let stockProvidersLoading = $state(false);
+  let stockProvidersError = $state("");
+  let stockProvidersLoaded = $state(false);
+  let updatingProvider = $state<string | null>(null);
 
   let filteredItems = $derived.by(() => {
     let result = [...items];
@@ -143,9 +150,54 @@
     showDeleteModal = true;
   }
 
+  // --- Stock providers management functions ---
+  async function loadStockProviders() {
+    stockProvidersLoading = true;
+    stockProvidersError = "";
+    const result = await stockAdminApi.listProviders();
+    if (result.ok) {
+      stockProviders = result.data.providers ?? [];
+      stockProvidersLoaded = true;
+    } else {
+      stockProvidersError = result.error ?? "Failed to load providers";
+    }
+    stockProvidersLoading = false;
+  }
+
+  async function toggleStockProvider(name: string, enabled: boolean) {
+    updatingProvider = name;
+    const result = await stockAdminApi.patchProvider(name, { enabled });
+    if (result.ok) {
+      await loadStockProviders();
+    } else {
+      stockProvidersError = result.error ?? "Failed to update provider";
+    }
+    updatingProvider = null;
+  }
+
+  async function updateProviderKey(name: string, apiKey: string) {
+    if (!apiKey.trim()) return;
+    updatingProvider = name;
+    const result = await stockAdminApi.patchProvider(name, { api_key: apiKey.trim() });
+    if (result.ok) {
+      await loadStockProviders();
+    } else {
+      stockProvidersError = result.error ?? "Failed to update API key";
+    }
+    updatingProvider = null;
+  }
+
+  // Load stock providers when switching to the tab (once).
+  $effect(() => {
+    if (activeTab === "stock-providers" && !stockProvidersLoaded) {
+      loadStockProviders();
+    }
+  });
+
   const tabs = $derived([
     { value: "all", label: t('app.media.tab_all', 'All Media') },
-    { value: "quarantined", label: t('app.media.tab_quarantined', 'Quarantined'), icon: Shield }
+    { value: "quarantined", label: t('app.media.tab_quarantined', 'Quarantined'), icon: Shield },
+    { value: "stock-providers", label: t('app.media.tab_stock_providers', 'Stock Providers') }
   ]);
 
   const columns = [
@@ -392,6 +444,7 @@
     <Tabs {tabs} bind:value={activeTab} />
 
     <div class="flex items-center gap-2">
+      {#if activeTab !== "stock-providers"}
       <Button
         size="icon"
         variant={viewMode === 'grid' ? 'default' : 'ghost'}
@@ -410,6 +463,7 @@
       >
         <List class="h-4 w-4" />
       </Button>
+      {/if}
       <Button
         size="icon"
         variant="ghost"
@@ -428,6 +482,7 @@
     </div>
   </div>
 
+  {#if activeTab !== "stock-providers"}
   <FilterBar
     bind:value={filters}
     filters={[
@@ -455,6 +510,7 @@
     onsearch={handleSearch}
     onclear={handleClear}
   />
+  {/if}
 
   {#if errorMessage}
     <div class="rounded-lg border border-danger bg-danger-50 px-4 py-3 text-sm text-danger">
@@ -462,6 +518,83 @@
     </div>
   {/if}
 
+  {#if activeTab === "stock-providers"}
+    <!-- Stock Providers management tab -->
+    <Card>
+      <CardContent class="p-0">
+        {#if stockProvidersLoading}
+          <div class="flex items-center justify-center py-12">
+            <RefreshCw class="h-5 w-5 animate-spin text-muted" />
+            <span class="ml-2 text-sm text-muted">Loading...</span>
+          </div>
+        {:else if stockProvidersError}
+          <div class="rounded-lg border border-danger bg-danger-50 px-4 py-3 text-sm text-danger">
+            {stockProvidersError}
+          </div>
+        {:else}
+          <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+              <thead class="border-b bg-surface text-left text-xs uppercase text-muted">
+                <tr>
+                  <th class="px-4 py-3 font-medium">Provider</th>
+                  <th class="px-4 py-3 font-medium">Enabled</th>
+                  <th class="px-4 py-3 font-medium">API Key</th>
+                  <th class="px-4 py-3 font-medium">RBAC Permission</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y">
+                {#each stockProviders as p (p.provider_name)}
+                  <tr class="hover:bg-surface/50">
+                    <td class="px-4 py-3 font-medium text-foreground">{p.display_name}</td>
+                    <td class="px-4 py-3">
+                      <label class="inline-flex cursor-pointer items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={p.enabled}
+                          disabled={updatingProvider === p.provider_name}
+                          onchange={(e) => toggleStockProvider(p.provider_name, e.currentTarget.checked)}
+                        />
+                        <span class="text-xs text-muted">
+                          {updatingProvider === p.provider_name ? 'Saving...' : (p.enabled ? 'On' : 'Off')}
+                        </span>
+                      </label>
+                    </td>
+                    <td class="px-4 py-3">
+                      {#if p.provider_name === 'openverse'}
+                        <span class="text-xs text-muted">No key required</span>
+                      {:else}
+                        <input
+                          type="password"
+                          class="w-full max-w-xs rounded border border-border bg-surface px-2 py-1 text-xs"
+                          placeholder={p.has_api_key ? '•••••••• (enter new key to replace)' : 'Paste API key...'}
+                          onkeydown={(e) => {
+                            if (e.key === 'Enter' && e.currentTarget.value.trim()) {
+                              updateProviderKey(p.provider_name, e.currentTarget.value);
+                              e.currentTarget.value = '';
+                            }
+                          }}
+                        />
+                      {/if}
+                    </td>
+                    <td class="px-4 py-3">
+                      {#if p.provider_name === 'openverse'}
+                        <Badge>media.stock.search</Badge>
+                      {:else}
+                        <Badge>media.stock.providers</Badge>
+                      {/if}
+                    </td>
+                  </tr>
+                {/each}
+              </tbody>
+            </table>
+          </div>
+          <p class="border-t px-4 py-2 text-xs text-muted">
+            Press <kbd class="rounded border px-1">Enter</kbd> in the API Key field to save. Keys are encrypted at rest.
+          </p>
+        {/if}
+      </CardContent>
+    </Card>
+  {:else}
   {#if loading}
     <div class="flex items-center justify-center py-12">
       <RefreshCw class="h-5 w-5 animate-spin text-muted" />
@@ -539,8 +672,9 @@
       </CardContent>
     </Card>
   {/if}
+  {/if}
 
-  {#if totalItems > pageSize}
+  {#if totalItems > pageSize && activeTab !== "stock-providers"}
     <Pagination
       bind:page={currentPage}
       {totalPages}
