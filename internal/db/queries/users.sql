@@ -7,6 +7,7 @@ SELECT DISTINCT ON (u.id)
        up.avatar_url,
        up.bio,
        up.timezone,
+       up.cover_url,
        COALESCE(up.created_at, u.created_at) AS created_at,
        COALESCE(up.updated_at, u.updated_at) AS updated_at,
        u.email, u.username, u.profile_type, u.status, u.follower_count, u.last_login_at,
@@ -32,6 +33,7 @@ SELECT DISTINCT ON (u.id)
        up.avatar_url,
        up.bio,
        up.timezone,
+       up.cover_url,
        COALESCE(up.created_at, u.created_at) AS created_at,
        COALESCE(up.updated_at, u.updated_at) AS updated_at,
        u.email, u.username, u.profile_type, u.status, u.follower_count,
@@ -44,13 +46,14 @@ WHERE u.tenant_id = @tenant_id AND u.username = @username
 ORDER BY u.id, CASE WHEN ug.slug = 'super_admin' THEN 0 ELSE 1 END;
 
 -- name: UpsertUserProfile :exec
-INSERT INTO user_profiles (tenant_id, user_id, display_name, avatar_url, bio, timezone)
-VALUES (@tenant_id, @user_id, @display_name, @avatar_url, @bio, @timezone)
+INSERT INTO user_profiles (tenant_id, user_id, display_name, avatar_url, bio, timezone, cover_url)
+VALUES (@tenant_id, @user_id, @display_name, @avatar_url, @bio, @timezone, @cover_url)
 ON CONFLICT (tenant_id, user_id) DO UPDATE SET
     display_name = EXCLUDED.display_name,
     avatar_url = EXCLUDED.avatar_url,
     bio = EXCLUDED.bio,
     timezone = EXCLUDED.timezone,
+    cover_url = EXCLUDED.cover_url,
     updated_at = now();
 
 -- name: GetUserPreferences :one
@@ -244,6 +247,7 @@ SELECT DISTINCT ON (u.id)
        up.display_name,
        up.avatar_url,
        up.bio,
+       up.cover_url,
        COALESCE(up.created_at, u.created_at) AS created_at,
        (SELECT COUNT(*)::int
           FROM follows f

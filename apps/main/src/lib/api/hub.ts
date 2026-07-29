@@ -13,9 +13,15 @@ export { classifyError };
  */
 
 /* ---- profile / account / privacy (Plan 1) ---- */
-export const patchProfile = (v: Partial<MeProfile>) => api.patch<MeProfile>('/me/profile', v);
+export const patchProfile = (v: Partial<MeProfile>) => {
+	// All keys are already snake_case (matching backend json tags).
+	return api.patch<MeProfile>('/me/profile', v);
+};
 export const patchAccount = (v: Record<string, unknown>) => api.patch<MeProfile>('/me/account', v);
 export const patchPrivacy = (v: PrivacySettings) => api.patch<PrivacySettings>('/me/privacy', v);
+
+/* ---- preferences (language / dark_mode) — PUT /me/preferences ---- */
+export const putPreferences = (v: Record<string, unknown>) => api.put('/me/preferences', v);
 
 /* ---- security ---- */
 export const changePassword = (current: string, next: string) =>
@@ -24,7 +30,7 @@ export const totpStatus = () => api.get<{ enabled: boolean }>('/me/totp/status')
 export const totpEnable = () => api.post<{ secret: string; otpauth_url: string }>('/me/totp/enable');
 export const totpConfirm = (code: string) =>
 	api.post<{ backup_codes: string[] }>('/me/totp/confirm', { code });
-export const totpDisable = () => api.delete('/me/totp');
+export const totpDisable = (code: string) => api.delete('/me/totp', { code });
 export const revokeSession = (id: string) => api.delete(`/me/sessions/${id}`);
 export const revokeOtherSessions = () => api.delete('/me/sessions');
 
@@ -55,6 +61,7 @@ export const reactivateSubscription = () => api.post('/me/subscription/reactivat
 
 /* ---- danger ---- */
 export const exportData = () => api.post('/me/data-export');
+export const cancelDataExport = () => api.delete('/me/data-export');
 export const deactivateAccount = () => api.post('/me/deactivate');
 export const deleteAccount = () => api.delete('/me');
 
