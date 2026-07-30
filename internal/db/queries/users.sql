@@ -24,6 +24,11 @@ SELECT id, tenant_id, email, username, profile_type, status, follower_count, cre
 FROM users
 WHERE tenant_id = @tenant_id AND id = @user_id;
 
+-- name: GetUserEmailVerifiedStatus :one
+-- Returns email_verified_at for the user. Used by the CanPostInSpace
+-- "verified" posting_perm axis (Section 05 line 149, BUG-003).
+SELECT email_verified_at FROM users WHERE id = @user_id;
+
 -- name: GetUserByUsername :one
 SELECT DISTINCT ON (u.id)
        COALESCE(up.id, gen_random_uuid()) AS id,

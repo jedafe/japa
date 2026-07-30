@@ -133,6 +133,9 @@
 		<div
 			class="max-h-60 overflow-auto rounded-lg border shadow-md"
 			style="{dropdownStyle} border-color: var(--color-border); background-color: var(--color-surface); color: var(--color-foreground);"
+			role="listbox"
+			aria-label="Options"
+			tabindex="-1"
 			onmousedown={(e) => e.preventDefault()}
 		>
 			{#each filteredOptions as option, i}

@@ -60,7 +60,7 @@ ORDER BY total_views DESC
 LIMIT $4;
 
 -- name: GetDailySpaceStats :many
-SELECT date_trunc('day', s.created_at)::date AS day, s.tenant_id, s.id AS space_id,
+SELECT date_trunc('day', s.created_at)::date AS day, s.tenant_id, s.id AS space_id, s.name AS space_name,
        (SELECT COUNT(*)::bigint FROM space_members sm WHERE sm.space_id = s.id) AS joins,
        (SELECT COUNT(*)::bigint FROM contents c WHERE c.space_id = s.id AND c.status != 'draft') AS posts,
        (SELECT COUNT(DISTINCT sm2.user_id)::bigint FROM space_members sm2 WHERE sm2.space_id = s.id) AS active_users

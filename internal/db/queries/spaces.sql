@@ -63,13 +63,29 @@ WHERE id = @id AND tenant_id = @tenant_id AND is_system = false;
 -- =====================
 
 -- name: ListSpacesByTenant :many
-SELECT id, tenant_id, parent_id, space_type_id, name, slug, description, wiki_content,
-       logo_media_id, header_image_id, geo_code, level, member_count, post_count,
-       follower_count, visibility, posting_perm, replying_perm, commenting_perm,
-       joining_perm, status, created_at, updated_at, deleted_at
-FROM spaces
-WHERE tenant_id = @tenant_id AND deleted_at IS NULL
-ORDER BY created_at DESC, id DESC;
+-- Public discovery list. Filters by visibility so unauthenticated callers
+-- only see public spaces; authenticated callers also see members/private
+-- spaces they belong to (Section 05 line 272, §9 multi-tenancy).
+-- Pass @viewer_user_id as NULL for unauthenticated requests.
+SELECT s.id, s.tenant_id, s.parent_id, s.space_type_id, s.name, s.slug, s.description,
+       s.wiki_content, s.logo_media_id, s.header_image_id, s.geo_code, s.level,
+       s.member_count, s.post_count, s.follower_count, s.visibility, s.posting_perm,
+       s.replying_perm, s.commenting_perm, s.joining_perm, s.status, s.created_at,
+       s.updated_at, s.deleted_at
+FROM spaces s
+WHERE s.tenant_id = @tenant_id AND s.deleted_at IS NULL
+  AND (
+    s.visibility = 'public'
+    OR (
+      @viewer_user_id::uuid IS NOT NULL
+      AND EXISTS (
+        SELECT 1 FROM space_members sm
+        WHERE sm.space_id = s.id AND sm.user_id = @viewer_user_id::uuid
+          AND sm.tenant_id = s.tenant_id AND sm.status = 'approved'
+      )
+    )
+  )
+ORDER BY s.created_at DESC, s.id DESC;
 
 -- name: ListSpacesByLevel :many
 SELECT id, tenant_id, parent_id, space_type_id, name, slug, description, wiki_content,
@@ -305,6 +321,22 @@ SELECT EXISTS(
 -- name: AddSpaceMember :exec
 INSERT INTO space_members (space_id, user_id, tenant_id, role)
 VALUES (@space_id, @user_id, @tenant_id, 'member')
+ON CONFLICT (space_id, user_id) DO NOTHING;
+
+-- name: AddSpaceOwner :exec
+-- Inserts the creator as the space owner (role='owner'). Used by CreateSpace
+-- so the creator can exercise the space_owner moderator-assignment path
+-- (Section 05 lines 198-224). ON CONFLICT DO NOTHING keeps it idempotent.
+INSERT INTO space_members (space_id, user_id, tenant_id, role)
+VALUES (@space_id, @user_id, @tenant_id, 'owner')
+ON CONFLICT (space_id, user_id) DO NOTHING;
+
+-- name: AddSpaceMemberPending :exec
+-- Inserts a pending join request (status='pending') for spaces with
+-- joining_perm='request'. The admin approves/rejects via the join-requests
+-- routes (Section 05 lines 358-360).
+INSERT INTO space_members (space_id, user_id, tenant_id, role, status)
+VALUES (@space_id, @user_id, @tenant_id, 'member', 'pending')
 ON CONFLICT (space_id, user_id) DO NOTHING;
 
 -- name: RemoveSpaceMember :exec

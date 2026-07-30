@@ -292,12 +292,12 @@ func (s *Service) GetAdminDashboardData(ctx context.Context, tenantID pgtype.UUI
 		return AdminDashboard{}, fmt.Errorf("fetching top content: %w", err)
 	}
 
-	contentStats, err := s.store.GetDailyContentStats(ctx, tenantID, &startDate, endDate, pgtype.UUID{})
+	contentStats, err := s.store.GetDailyContentStats(ctx, tenantID, &startDate, endDate, pgtype.UUID{Bytes: [16]byte{}, Valid: true})
 	if err != nil {
 		return AdminDashboard{}, fmt.Errorf("fetching content stats: %w", err)
 	}
 
-	spaceStats, err := s.store.GetDailySpaceStats(ctx, tenantID, &startDate, endDate, pgtype.UUID{})
+	spaceStats, err := s.store.GetDailySpaceStats(ctx, tenantID, &startDate, endDate, pgtype.UUID{Bytes: [16]byte{}, Valid: true})
 	if err != nil {
 		return AdminDashboard{}, fmt.Errorf("fetching space stats: %w", err)
 	}

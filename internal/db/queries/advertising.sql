@@ -115,11 +115,14 @@ DELETE FROM ad_campaigns
 WHERE id = @id AND tenant_id = @tenant_id AND status IN ('draft', 'ended');
 
 -- name: GetCampaignStats :one
+-- Ref: japaconnect-engineering/sections/25-ad-placement.md
+-- ad_events stores one row per impression/click (event_type discriminator),
+-- NOT aggregate counters. Aggregate by counting rows per event_type.
 SELECT
-    COALESCE(SUM(impressions), 0)::bigint AS impressions,
-    COALESCE(SUM(clicks), 0)::bigint AS clicks,
+    COUNT(*) FILTER (WHERE event_type = 'impression')::bigint AS impressions,
+    COUNT(*) FILTER (WHERE event_type = 'click')::bigint AS clicks,
     COUNT(DISTINCT user_id)::bigint AS unique_users,
-    COALESCE(SUM(conversions), 0)::bigint AS conversions
+    0::bigint AS conversions
 FROM ad_events
 WHERE campaign_id = @campaign_id AND tenant_id = @tenant_id;
 

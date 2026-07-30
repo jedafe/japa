@@ -81,17 +81,33 @@ func (s *Store) getCampaignStats(ctx context.Context, campaignID, tenantID pgtyp
 		return nil, fmt.Errorf("get campaign stats: %w", err)
 	}
 
+	// Ref: japaconnect-engineering/sections/25-ad-placement.md
+	// Stats contract consumed by apps/admin ads page: campaign_id, impressions,
+	// clicks, conversions, spend, ctr, cpc, daily_stats. Missing fields render
+	// as `undefined` in the modal, so always include every key with a zero
+	// default. Spend aggregation from ad_campaigns.spent_credits is not yet
+	// wired into the ad_events rollup; default to 0 until that lands.
+	ctr := 0.0
+	if row.Impressions > 0 {
+		ctr = float64(row.Clicks) / float64(row.Impressions) * 100
+	}
+
+	const spend = 0.0
+	cpc := 0.0
+	if row.Clicks > 0 {
+		cpc = spend / float64(row.Clicks)
+	}
+
 	stats := map[string]any{
+		"campaign_id":  campaignID.String(),
 		"impressions":  row.Impressions,
 		"clicks":       row.Clicks,
 		"unique_users": row.UniqueUsers,
 		"conversions":  row.Conversions,
-	}
-
-	if row.Impressions > 0 {
-		stats["ctr"] = float64(row.Clicks) / float64(row.Impressions) * 100
-	} else {
-		stats["ctr"] = 0.0
+		"spend":        spend,
+		"ctr":          ctr,
+		"cpc":          cpc,
+		"daily_stats":  []map[string]any{},
 	}
 
 	return stats, nil

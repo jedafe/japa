@@ -713,7 +713,10 @@ func (h *Handlers) ListSpaces(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	spaces, err := h.Queries.ListSpacesByTenant(r.Context(), keyCtx.TenantID)
+	spaces, err := h.Queries.ListSpacesByTenant(r.Context(), gen.ListSpacesByTenantParams{
+		TenantID:     keyCtx.TenantID,
+		ViewerUserID: pgtype.UUID{}, // public API key has no user context → NULL → public spaces only
+	})
 	if err != nil {
 		handleServiceError(w, err)
 		return
