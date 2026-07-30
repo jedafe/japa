@@ -61,7 +61,8 @@ export const SETTINGS_LOADERS: Record<string, (ctx: ApiContext) => Promise<unkno
 	}),
 	wallet: async (ctx) => ({
 		wallet: await apiGet<unknown>(ctx, '/me/wallet'),
-		ledger: (await apiList<unknown>(ctx, '/me/wallet/ledger')).items
+		ledger: (await apiList<unknown>(ctx, '/me/wallet/ledger')).items,
+		settings: await apiGet<unknown>(ctx, '/wallet/settings').catch(() => null)
 	}),
 	subscription: (ctx) => apiGet<unknown>(ctx, '/me/subscription').catch(() => null),
 	danger: async () => null
