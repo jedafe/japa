@@ -17,6 +17,7 @@
 	type ContentOverTimeRow = { day: string; content_count: number };
 	type TopContentRow = {
 		content_id: string;
+		content_title: string;
 		total_views: number;
 		total_reactions: number;
 		total_comments: number;
@@ -454,7 +455,7 @@
 								<a href="/content/{item.content_id}" class="flex items-center justify-between rounded-lg px-3 py-2 hover:bg-[color-mix(in_srgb,var(--color-muted)_5%,transparent)]">
 									<div class="min-w-0 flex-1">
 										<p class="truncate text-sm font-medium" style="color: var(--color-foreground)">
-											{item.content_id.slice(0, 8)}...
+											{item.content_title || item.content_id.slice(0, 8)}
 										</p>
 										<div class="mt-1 flex items-center gap-3 text-xs" style="color: var(--color-muted)">
 											<span>{item.total_views.toLocaleString()} {t('dashboard.views', 'views')}</span>
