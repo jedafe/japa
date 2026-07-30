@@ -14,7 +14,7 @@
 		Download, RefreshCw, Shield, DollarSign, Search, UserPlus
 	} from "lucide-svelte";
 	import { analyticsAdminApi } from "$lib/api";
-	import { LineChart, AreaChart } from "layerchart";
+	import { LineChart, AreaChart, BarChart } from "layerchart";
 	import { curveMonotoneX } from "d3-shape";
 	import StatCard from "$lib/components/ui/StatCard.svelte";
 	import { CardSkeleton } from "$lib/components/ui/skeleton";
@@ -121,50 +121,70 @@
 		{ value: "security", label: t('analytics.tab_security', 'Security'), icon: Shield }
 	];
 	
+	// pctChange computes the percentage change between the last and
+	// second-to-last values of a time series. Returns undefined when there
+	// is not enough data or the previous value is zero (avoid div-by-zero).
+	function pctChange<T>(series: T[] | null | undefined, pick: (item: T) => number): number | undefined {
+		if (!series || series.length < 2) return undefined;
+		const last = pick(series[series.length - 1]);
+		const prev = pick(series[series.length - 2]);
+		if (prev === 0) return undefined;
+		return Math.round(((last - prev) / prev) * 100);
+	}
+
 	const overviewCards = $derived([
-		{ 
-			label: t('analytics.daily_active_users', 'Daily Active Users'), 
-			value: overview?.daily_active_users?.[overview.daily_active_users.length - 1]?.dau ?? 0, 
-			change: 0,
-			icon: Users, 
-			color: "primary" 
+		{
+			label: t('analytics.daily_active_users', 'Daily Active Users'),
+			value: overview?.daily_active_users?.[overview.daily_active_users.length - 1]?.dau ?? 0,
+			change: pctChange(overview?.daily_active_users, (d) => d.dau),
+			icon: Users,
+			color: "primary"
 		},
-		{ 
-			label: t('analytics.monthly_active_users', 'Monthly Active Users'), 
-			value: overview?.monthly_active_users?.[overview.monthly_active_users.length - 1]?.mau ?? 0, 
-			change: 0,
-			icon: Users, 
-			color: "success" 
+		{
+			label: t('analytics.monthly_active_users', 'Monthly Active Users'),
+			value: overview?.monthly_active_users?.[overview.monthly_active_users.length - 1]?.mau ?? 0,
+			change: pctChange(overview?.monthly_active_users, (d) => d.mau),
+			icon: Users,
+			color: "success"
 		},
-		{ 
-			label: t('analytics.new_signups', 'New Signups (Latest)'), 
-			value: overview?.user_growth?.[overview.user_growth.length - 1]?.new_users ?? 0, 
-			change: 0,
-			icon: UserPlus, 
-			color: "info" 
+		{
+			label: t('analytics.new_signups', 'New Signups (Latest)'),
+			value: overview?.user_growth?.[overview.user_growth.length - 1]?.new_users ?? 0,
+			change: pctChange(overview?.user_growth, (d) => d.new_users),
+			icon: UserPlus,
+			color: "info"
 		},
-		{ 
-			label: t('analytics.total_spaces', 'Total Spaces'), 
-			value: overview?.space_stats ? new Set(overview.space_stats.map((s: any) => s.space_id)).size : 0, 
-			change: 0,
-			icon: Eye, 
-			color: "warning" 
+		{
+			label: t('analytics.total_spaces', 'Total Spaces'),
+			value: overview?.space_stats ? new Set(overview.space_stats.map((s: any) => s.space_id)).size : 0,
+			change: undefined,
+			icon: Eye,
+			color: "warning"
 		},
-		{ 
-			label: t('analytics.content_count', 'Content Items'), 
-			value: overview?.content_over_time?.reduce((sum, d) => sum + d.content_count, 0) ?? 0, 
-			change: 0,
-			icon: MessageSquare, 
-			color: "primary" 
+		{
+			label: t('analytics.content_count', 'Content Items'),
+			value: overview?.content_over_time?.reduce((sum, d) => sum + d.content_count, 0) ?? 0,
+			change: undefined,
+			icon: MessageSquare,
+			color: "primary"
 		},
-		{ 
-			label: t('analytics.event_count', 'Events'), 
-			value: overview?.event_counts?.reduce((sum, e) => sum + e.count, 0) ?? 0, 
-			change: 0,
-			icon: TrendingUp, 
-			color: "success" 
+		{
+			label: t('analytics.event_count', 'Events'),
+			value: overview?.event_counts?.reduce((sum, e) => sum + e.count, 0) ?? 0,
+			change: undefined,
+			icon: TrendingUp,
+			color: "success"
 		}
 	]);
+
+	// Top Content table columns for the Overview tab.
+	const topContentColumns = [
+		{ key: "content_id", label: t('analytics.content_id', 'Content ID'), sortable: true, render: (v: string) => `<span class="font-mono text-xs">${(v ?? '').slice(0, 12)}</span>` },
+		{ key: "total_views", label: t('analytics.views', 'Views'), sortable: true },
+		{ key: "total_reactions", label: t('analytics.reactions', 'Reactions'), sortable: true },
+		{ key: "total_comments", label: t('analytics.comments', 'Comments'), sortable: true },
+		{ key: "total_unique_viewers", label: t('analytics.unique_viewers', 'Unique Viewers'), sortable: true }
+	];
 
 	// Map the user analytics summary object into metric/value rows for the
 	// Users tab DataTable (backend returns an object, not an array).
@@ -372,8 +392,50 @@
 				</CardContent>
 			</Card>
 		</div>
+
+		<!-- Traffic Sources + Top Content (data the backend already returns) -->
+		<div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
+			<Card>
+				<CardHeader>
+					<h3 class="text-sm font-medium" style="color: var(--color-muted)">{t('analytics.traffic_sources', 'Traffic Sources')}</h3>
+				</CardHeader>
+				<CardContent>
+					{#if loading}
+						<div class="h-48 animate-pulse rounded-lg" style="background: var(--color-surface)"></div>
+					{:else if (overview?.traffic_sources ?? []).length > 0}
+						<div class="h-48">
+							<BarChart
+								data={(overview?.traffic_sources ?? []).map((d) => ({ source: d.referrer ?? t('analytics.direct', 'Direct'), visits: d.visits }))}
+								x="source"
+								y="visits"
+								cRange={['var(--chart-2)']}
+								axis={chartAxisFormat}
+							/>
+						</div>
+					{:else}
+						<div class="flex h-48 items-center justify-center">
+							<p class="text-sm" style="color: var(--color-muted)">{t('analytics.no_data_available', 'No data available')}</p>
+						</div>
+					{/if}
+				</CardContent>
+			</Card>
+
+			<Card>
+				<CardHeader>
+					<h3 class="text-sm font-medium" style="color: var(--color-muted)">{t('analytics.top_content', 'Top Content')}</h3>
+				</CardHeader>
+				<CardContent>
+					<DataTable
+						columns={topContentColumns}
+						data={overview?.top_content ?? []}
+						pageSize={5}
+						emptyMessage={t('analytics.no_top_content', 'No top content data')}
+					/>
+				</CardContent>
+			</Card>
+		</div>
 	{/if}
-	
+
 	{#if activeTab === "security"}
 		<Card>
 			<CardHeader>
@@ -445,11 +507,12 @@
 			<CardContent>
 				<DataTable
 					columns={[
-						{ key: "space_id", label: t('analytics.space_id', 'Space ID'), sortable: true },
+						{ key: "space_name", label: t('analytics.space_name', 'Space Name'), sortable: true },
 						{ key: "total_joins", label: t('analytics.total_joins', 'Total Joins'), sortable: true },
 						{ key: "total_posts", label: t('analytics.total_posts', 'Total Posts'), sortable: true }
 					]}
 					data={spaceAnalytics ?? []}
+					pageSize={10}
 					emptyMessage={t('analytics.no_space_analytics', 'No space analytics data')}
 				/>
 			</CardContent>

@@ -329,6 +329,14 @@ func (h *Handlers) ListSpaces(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Resolve the optional viewer user so the visibility filter can include
+	// members/private spaces the caller belongs to (BUG-007, Section 05 line 272).
+	// On OptionalAuth routes the user may be nil → zero UUID → public spaces only.
+	var viewerUserID pgtype.UUID
+	if user := auth.FromContext(r.Context()); user != nil {
+		viewerUserID = user.UserID
+	}
+
 	q := r.URL.Query()
 
 	var spaces []gen.Space
@@ -355,7 +363,7 @@ func (h *Handlers) ListSpaces(w http.ResponseWriter, r *http.Request) {
 
 		spaces, err = h.Service.ListChildSpaces(r.Context(), tenantID, parentID)
 	default:
-		spaces, err = h.Service.ListSpaces(r.Context(), tenantID)
+		spaces, err = h.Service.ListSpaces(r.Context(), tenantID, viewerUserID)
 	}
 
 	if err != nil {
@@ -615,14 +623,15 @@ func (h *Handlers) AdminGetSpace(w http.ResponseWriter, r *http.Request) {
 // default axes are applied.
 func (h *Handlers) CreateSpace(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Name        string  `json:"name"`
-		Slug        string  `json:"slug"`
-		SpaceTypeID string  `json:"space_type_id"`
-		Level       string  `json:"level"`
-		ParentID    string  `json:"parent_id"`
-		Description *string `json:"description"`
-		GeoCode     *string `json:"geo_code"`
-		PresetName  string  `json:"preset_name"`
+		Name           string   `json:"name"`
+		Slug           string   `json:"slug"`
+		SpaceTypeID    string   `json:"space_type_id"`
+		Level          string   `json:"level"`
+		ParentID       string   `json:"parent_id"`
+		ParentSpaceIDs []string `json:"parent_space_ids"`
+		Description    *string  `json:"description"`
+		GeoCode        *string  `json:"geo_code"`
+		PresetName     string   `json:"preset_name"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -638,6 +647,16 @@ func (h *Handlers) CreateSpace(w http.ResponseWriter, r *http.Request) {
 
 	if !IsValidLevel(req.Level) {
 		writeError(w, http.StatusBadRequest, "invalid_level", "Level must be country, state, city, or custom")
+		return
+	}
+
+	// BUG-002: custom spaces must be linked to at least one primary space
+	// (country/state/city) via space_parent_spaces (Section 05 line 14, 190).
+	// Primary spaces (country/state/city) are themselves parents and need no
+	// parent linkage.
+	if req.Level == LevelCustom && len(req.ParentSpaceIDs) == 0 {
+		writeError(w, http.StatusBadRequest, "missing_parent",
+			"Custom spaces must belong to at least one primary space (country, state, or city)")
 		return
 	}
 
@@ -689,6 +708,29 @@ func (h *Handlers) CreateSpace(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// BUG-002: validate each parent_space_id is a primary space (level IN
+	// country/state/city) within the tenant. Collect the parsed UUIDs for
+	// linkage after the space is created.
+	parentSpaceUUIDs := make([]pgtype.UUID, 0, len(req.ParentSpaceIDs))
+	for _, psidStr := range req.ParentSpaceIDs {
+		var psid pgtype.UUID
+		if err := psid.Scan(psidStr); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_id", "Invalid parent_space_id format")
+			return
+		}
+		parent, err := h.Service.GetSpace(r.Context(), psid, tenantID)
+		if err != nil {
+			handleServiceError(w, err)
+			return
+		}
+		if parent.Level != LevelCountry && parent.Level != LevelState && parent.Level != LevelCity {
+			writeError(w, http.StatusBadRequest, "invalid_parent",
+				"Parent spaces must be primary (country, state, or city)")
+			return
+		}
+		parentSpaceUUIDs = append(parentSpaceUUIDs, psid)
+	}
+
 	// Resolve permission axes: from the named preset, or the defaults.
 	axes := DefaultPermAxes()
 
@@ -727,6 +769,30 @@ func (h *Handlers) CreateSpace(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		handleServiceError(w, err)
 		return
+	}
+
+	// BUG-001: add the creator as the space owner (role='owner') so they can
+	// exercise the space_owner moderator-assignment path (Section 05 lines
+	// 198-224). Without this the creator could never assign moderators.
+	if err := h.Service.AddOwner(r.Context(), space.ID, user.UserID, tenantID); err != nil {
+		slog.Warn("create space: failed to add creator as owner",
+			"space_id", space.ID.String(), "user_id", user.UserID.String(), "error", err)
+		// Non-fatal: the space exists; the owner row can be repaired later.
+	} else if err := h.Service.IncrementSpaceCount(r.Context(), space.ID, tenantID, 1); err != nil {
+		slog.Warn("create space: failed to increment member_count",
+			"space_id", space.ID.String(), "error", err)
+	}
+
+	// BUG-002: link the new custom space to its primary parent spaces via
+	// space_parent_spaces (Section 05 lines 46-53, 190). Best-effort —
+	// logs failures but does not fail the request since the space row is
+	// already committed; the parent links can be repaired via POST
+	// /spaces/{slug}/parents.
+	for _, psid := range parentSpaceUUIDs {
+		if err := h.Service.AddParentSpace(r.Context(), space.ID, psid); err != nil {
+			slog.Warn("create space: failed to link parent space",
+				"space_id", space.ID.String(), "parent_id", psid.String(), "error", err)
+		}
 	}
 
 	// Enqueue async auto-population (Wikipedia summary, flag image, etc.).
@@ -1069,14 +1135,40 @@ func (h *Handlers) ToggleSpaceMembership(w http.ResponseWriter, r *http.Request)
 			return
 		}
 	} else {
-		if err := h.Service.Join(r.Context(), space.ID, user.UserID, tenantID); err != nil {
-			handleServiceError(w, err)
+		// BUG-004: honor the space's joining_perm axis (Section 05 lines 358-360).
+		// - 'open': immediate membership (existing behavior).
+		// - 'request': insert a pending join request (status='pending') for
+		//   admin approval; do NOT increment member_count until approved.
+		// - 'invite': only invited users may join; reject otherwise.
+		switch space.JoiningPerm {
+		case JoiningRequest:
+			if err := h.Service.JoinPending(r.Context(), space.ID, user.UserID, tenantID); err != nil {
+				handleServiceError(w, err)
+				return
+			}
+			writeJSON(w, http.StatusAccepted, map[string]any{
+				"data": map[string]any{
+					"joined":       false,
+					"pending":      true,
+					"member_count": 0, // unchanged — pending requests don't count
+				},
+			})
 			return
-		}
+		case JoiningInvite:
+			writeError(w, http.StatusForbidden, "invite_only",
+				"This space is invite-only; you cannot join without an invitation")
+			return
+		default:
+			// JoiningOpen — immediate membership.
+			if err := h.Service.Join(r.Context(), space.ID, user.UserID, tenantID); err != nil {
+				handleServiceError(w, err)
+				return
+			}
 
-		if err := h.Service.IncrementSpaceCount(r.Context(), space.ID, tenantID, 1); err != nil {
-			handleServiceError(w, err)
-			return
+			if err := h.Service.IncrementSpaceCount(r.Context(), space.ID, tenantID, 1); err != nil {
+				handleServiceError(w, err)
+				return
+			}
 		}
 	}
 
@@ -2056,6 +2148,35 @@ func (h *Handlers) GetSpaceAnalytics(w http.ResponseWriter, r *http.Request) {
 	summary, err := h.Service.GetSpaceAnalyticsSummary(r.Context(), spaceID, tenantID)
 	if err != nil {
 		slog.Error("space stats: loading analytics summary", "error", err, "space_id", spaceID.String())
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to load space stats")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
+		"member_count":  summary.MemberCount,
+		"content_count": summary.ContentCount,
+		"view_count":    summary.ViewCount,
+	}})
+}
+
+// GetSpaceAnalyticsBySlug handles GET /spaces/{slug}/analytics — the
+// slug-based variant for the main app's analytics tab (BUG-005). The space is
+// resolved by the SpaceResolver middleware and read from the request context.
+func (h *Handlers) GetSpaceAnalyticsBySlug(w http.ResponseWriter, r *http.Request) {
+	space, ok := spaceFromContext(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	// BUG-020: single round-trip aggregate instead of 3 sequential queries.
+	summary, err := h.Service.GetSpaceAnalyticsSummary(r.Context(), space.ID, tenantID)
+	if err != nil {
+		slog.Error("space stats: loading analytics summary", "error", err, "space_id", space.ID.String())
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to load space stats")
 		return
 	}

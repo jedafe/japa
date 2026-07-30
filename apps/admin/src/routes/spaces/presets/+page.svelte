@@ -128,7 +128,7 @@
 						</h3>
 						{#if canManage}
 							<Button
-								variant="primary"
+								variant="default"
 								size="sm"
 								disabled={saving === p.name}
 								onclick={() => savePreset(p.name)}
@@ -145,8 +145,8 @@
 							<div>
 								<label class="mb-1 block text-xs font-medium" style="color: var(--color-muted-foreground)">
 									{t("spaces.visibility", "Visibility")}
-								</label>
-								<select
+								
+							<select
 									class="w-full rounded-lg border px-2 py-1.5 text-sm"
 									style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
 									bind:value={draft.visibility}
@@ -155,13 +155,13 @@
 									{#each visibilityOptions as opt}
 										<option value={opt}>{opt}</option>
 									{/each}
-								</select>
+								</select></label>
 							</div>
 							<div>
 								<label class="mb-1 block text-xs font-medium" style="color: var(--color-muted-foreground)">
 									{t("spaces.posting", "Posting")}
-								</label>
-								<select
+								
+							<select
 									class="w-full rounded-lg border px-2 py-1.5 text-sm"
 									style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
 									bind:value={draft.posting_perm}
@@ -170,13 +170,13 @@
 									{#each postingOptions as opt}
 										<option value={opt}>{opt}</option>
 									{/each}
-								</select>
+								</select></label>
 							</div>
 							<div>
 								<label class="mb-1 block text-xs font-medium" style="color: var(--color-muted-foreground)">
 									{t("spaces.replying", "Replying")}
-								</label>
-								<select
+								
+							<select
 									class="w-full rounded-lg border px-2 py-1.5 text-sm"
 									style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
 									bind:value={draft.replying_perm}
@@ -185,13 +185,13 @@
 									{#each postingOptions as opt}
 										<option value={opt}>{opt}</option>
 									{/each}
-								</select>
+								</select></label>
 							</div>
 							<div>
 								<label class="mb-1 block text-xs font-medium" style="color: var(--color-muted-foreground)">
 									{t("spaces.commenting", "Commenting")}
-								</label>
-								<select
+								
+							<select
 									class="w-full rounded-lg border px-2 py-1.5 text-sm"
 									style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
 									bind:value={draft.commenting_perm}
@@ -200,13 +200,13 @@
 									{#each postingOptions as opt}
 										<option value={opt}>{opt}</option>
 									{/each}
-								</select>
+								</select></label>
 							</div>
 							<div>
 								<label class="mb-1 block text-xs font-medium" style="color: var(--color-muted-foreground)">
 									{t("spaces.joining", "Joining")}
-								</label>
-								<select
+								
+							<select
 									class="w-full rounded-lg border px-2 py-1.5 text-sm"
 									style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
 									bind:value={draft.joining_perm}
@@ -215,7 +215,7 @@
 									{#each joiningOptions as opt}
 										<option value={opt}>{opt}</option>
 									{/each}
-								</select>
+								</select></label>
 							</div>
 						</div>
 					{/if}

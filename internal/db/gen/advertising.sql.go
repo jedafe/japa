@@ -460,10 +460,10 @@ func (q *Queries) GetAdSlotTypeByName(ctx context.Context, arg GetAdSlotTypeByNa
 
 const getCampaignStats = `-- name: GetCampaignStats :one
 SELECT
-    COALESCE(SUM(impressions), 0)::bigint AS impressions,
-    COALESCE(SUM(clicks), 0)::bigint AS clicks,
+    COUNT(*) FILTER (WHERE event_type = 'impression')::bigint AS impressions,
+    COUNT(*) FILTER (WHERE event_type = 'click')::bigint AS clicks,
     COUNT(DISTINCT user_id)::bigint AS unique_users,
-    COALESCE(SUM(conversions), 0)::bigint AS conversions
+    0::bigint AS conversions
 FROM ad_events
 WHERE campaign_id = $1 AND tenant_id = $2
 `
@@ -480,6 +480,9 @@ type GetCampaignStatsRow struct {
 	Conversions int64 `json:"conversions"`
 }
 
+// Ref: japaconnect-engineering/sections/25-ad-placement.md
+// ad_events stores one row per impression/click (event_type discriminator),
+// NOT aggregate counters. Aggregate by counting rows per event_type.
 func (q *Queries) GetCampaignStats(ctx context.Context, arg GetCampaignStatsParams) (GetCampaignStatsRow, error) {
 	row := q.db.QueryRow(ctx, getCampaignStats, arg.CampaignID, arg.TenantID)
 	var i GetCampaignStatsRow

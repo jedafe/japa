@@ -133,8 +133,14 @@ func (s *Service) DeleteSpaceType(ctx context.Context, id, tenantID pgtype.UUID)
 // ---------------------------------------------------------------------------
 
 // ListSpaces returns every space owned by the given tenant, newest first.
-func (s *Service) ListSpaces(ctx context.Context, tenantID pgtype.UUID) ([]gen.Space, error) {
-	spaces, err := s.read.ListSpacesByTenant(ctx, tenantID)
+// The viewerUserID filters by visibility: unauthenticated callers (zero UUID)
+// only see public spaces; authenticated callers also see members/private
+// spaces they belong to (Section 05 line 272, §9 multi-tenancy, BUG-007).
+func (s *Service) ListSpaces(ctx context.Context, tenantID, viewerUserID pgtype.UUID) ([]gen.Space, error) {
+	spaces, err := s.read.ListSpacesByTenant(ctx, gen.ListSpacesByTenantParams{
+		TenantID:     tenantID,
+		ViewerUserID: viewerUserID,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("listing spaces: %w", err)
 	}
@@ -527,6 +533,37 @@ func (s *Service) Join(ctx context.Context, spaceID, userID, tenantID pgtype.UUI
 		TenantID: tenantID,
 	}); err != nil {
 		return fmt.Errorf("adding space member: %w", err)
+	}
+
+	return nil
+}
+
+// JoinPending submits a pending join request for spaces with
+// joining_perm='request' (Section 05 lines 358-360, BUG-004). The row is
+// inserted with status='pending' and must be approved by an admin before the
+// user is considered a member.
+func (s *Service) JoinPending(ctx context.Context, spaceID, userID, tenantID pgtype.UUID) error {
+	if err := s.write.AddSpaceMemberPending(ctx, gen.AddSpaceMemberPendingParams{
+		SpaceID:  spaceID,
+		UserID:   userID,
+		TenantID: tenantID,
+	}); err != nil {
+		return fmt.Errorf("adding pending space member: %w", err)
+	}
+
+	return nil
+}
+
+// AddOwner inserts the creator as the space owner (role='owner') so they can
+// exercise the space_owner moderator-assignment path (Section 05 lines
+// 198-224, BUG-001).
+func (s *Service) AddOwner(ctx context.Context, spaceID, userID, tenantID pgtype.UUID) error {
+	if err := s.write.AddSpaceOwner(ctx, gen.AddSpaceOwnerParams{
+		SpaceID:  spaceID,
+		UserID:   userID,
+		TenantID: tenantID,
+	}); err != nil {
+		return fmt.Errorf("adding space owner: %w", err)
 	}
 
 	return nil

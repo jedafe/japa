@@ -66,6 +66,20 @@ type Handlers struct {
 	SpamPipeline *spam.SpamPipeline
 	settings     *config.Settings
 	notifier     MentionNotifier // nil disables mention notifications (test-only)
+	spaceChecker SpacePostChecker // nil disables space posting-perm checks (BUG-003)
+}
+
+// SpacePostChecker checks whether a user may post into a space, based on the
+// space's posting_perm axis (Section 05 lines 145-154, BUG-003). Implemented
+// by spaces.Service.CanPostInSpace via an adapter.
+type SpacePostChecker interface {
+	CanPostInSpace(ctx context.Context, spaceID, userID, tenantID pgtype.UUID) (bool, error)
+}
+
+// SetSpacePostChecker injects the space posting-permission checker so the
+// content creation handler can enforce the space's posting_perm axis.
+func (h *Handlers) SetSpacePostChecker(c SpacePostChecker) {
+	h.spaceChecker = c
 }
 
 // NewHandlers creates Handlers with the given Service.
@@ -530,6 +544,22 @@ func (h *Handlers) CreateContent(w http.ResponseWriter, r *http.Request) {
 		if err := createInput.SpaceID.Scan(*input.SpaceID); err != nil {
 			writeError(w, http.StatusBadRequest, "invalid_space_id", "Invalid space_id format")
 			return
+		}
+
+		// BUG-003: enforce the space's posting_perm axis (Section 05 lines
+		// 145-154). The check is skipped when no space checker is wired
+		// (backward compatibility / tests).
+		if h.spaceChecker != nil {
+			allowed, err := h.spaceChecker.CanPostInSpace(r.Context(), createInput.SpaceID, user.UserID, tenantID)
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, "internal_error", "Failed to check space posting permission")
+				return
+			}
+			if !allowed {
+				writeError(w, http.StatusForbidden, "space_post_denied",
+					"You do not have permission to post in this space")
+				return
+			}
 		}
 	}
 

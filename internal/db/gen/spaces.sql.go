@@ -48,6 +48,46 @@ func (q *Queries) AddSpaceMember(ctx context.Context, arg AddSpaceMemberParams) 
 	return err
 }
 
+const addSpaceMemberPending = `-- name: AddSpaceMemberPending :exec
+INSERT INTO space_members (space_id, user_id, tenant_id, role, status)
+VALUES ($1, $2, $3, 'member', 'pending')
+ON CONFLICT (space_id, user_id) DO NOTHING
+`
+
+type AddSpaceMemberPendingParams struct {
+	SpaceID  pgtype.UUID `json:"space_id"`
+	UserID   pgtype.UUID `json:"user_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+// Inserts a pending join request (status='pending') for spaces with
+// joining_perm='request'. The admin approves/rejects via the join-requests
+// routes (Section 05 lines 358-360).
+func (q *Queries) AddSpaceMemberPending(ctx context.Context, arg AddSpaceMemberPendingParams) error {
+	_, err := q.db.Exec(ctx, addSpaceMemberPending, arg.SpaceID, arg.UserID, arg.TenantID)
+	return err
+}
+
+const addSpaceOwner = `-- name: AddSpaceOwner :exec
+INSERT INTO space_members (space_id, user_id, tenant_id, role)
+VALUES ($1, $2, $3, 'owner')
+ON CONFLICT (space_id, user_id) DO NOTHING
+`
+
+type AddSpaceOwnerParams struct {
+	SpaceID  pgtype.UUID `json:"space_id"`
+	UserID   pgtype.UUID `json:"user_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+// Inserts the creator as the space owner (role='owner'). Used by CreateSpace
+// so the creator can exercise the space_owner moderator-assignment path
+// (Section 05 lines 198-224). ON CONFLICT DO NOTHING keeps it idempotent.
+func (q *Queries) AddSpaceOwner(ctx context.Context, arg AddSpaceOwnerParams) error {
+	_, err := q.db.Exec(ctx, addSpaceOwner, arg.SpaceID, arg.UserID, arg.TenantID)
+	return err
+}
+
 const adminListSpaces = `-- name: AdminListSpaces :many
 SELECT s.id, s.tenant_id, s.parent_id, s.space_type_id, s.name, s.slug, s.description,
        s.wiki_content, s.logo_media_id, s.header_image_id, s.geo_code, s.level,
@@ -1772,20 +1812,41 @@ func (q *Queries) ListSpacesByOwnerUser(ctx context.Context, arg ListSpacesByOwn
 
 const listSpacesByTenant = `-- name: ListSpacesByTenant :many
 
-SELECT id, tenant_id, parent_id, space_type_id, name, slug, description, wiki_content,
-       logo_media_id, header_image_id, geo_code, level, member_count, post_count,
-       follower_count, visibility, posting_perm, replying_perm, commenting_perm,
-       joining_perm, status, created_at, updated_at, deleted_at
-FROM spaces
-WHERE tenant_id = $1 AND deleted_at IS NULL
-ORDER BY created_at DESC, id DESC
+SELECT s.id, s.tenant_id, s.parent_id, s.space_type_id, s.name, s.slug, s.description,
+       s.wiki_content, s.logo_media_id, s.header_image_id, s.geo_code, s.level,
+       s.member_count, s.post_count, s.follower_count, s.visibility, s.posting_perm,
+       s.replying_perm, s.commenting_perm, s.joining_perm, s.status, s.created_at,
+       s.updated_at, s.deleted_at
+FROM spaces s
+WHERE s.tenant_id = $1 AND s.deleted_at IS NULL
+  AND (
+    s.visibility = 'public'
+    OR (
+      $2::uuid IS NOT NULL
+      AND EXISTS (
+        SELECT 1 FROM space_members sm
+        WHERE sm.space_id = s.id AND sm.user_id = $2::uuid
+          AND sm.tenant_id = s.tenant_id AND sm.status = 'approved'
+      )
+    )
+  )
+ORDER BY s.created_at DESC, s.id DESC
 `
+
+type ListSpacesByTenantParams struct {
+	TenantID     pgtype.UUID `json:"tenant_id"`
+	ViewerUserID pgtype.UUID `json:"viewer_user_id"`
+}
 
 // =====================
 // Spaces
 // =====================
-func (q *Queries) ListSpacesByTenant(ctx context.Context, tenantID pgtype.UUID) ([]Space, error) {
-	rows, err := q.db.Query(ctx, listSpacesByTenant, tenantID)
+// Public discovery list. Filters by visibility so unauthenticated callers
+// only see public spaces; authenticated callers also see members/private
+// spaces they belong to (Section 05 line 272, §9 multi-tenancy).
+// Pass @viewer_user_id as NULL for unauthenticated requests.
+func (q *Queries) ListSpacesByTenant(ctx context.Context, arg ListSpacesByTenantParams) ([]Space, error) {
+	rows, err := q.db.Query(ctx, listSpacesByTenant, arg.TenantID, arg.ViewerUserID)
 	if err != nil {
 		return nil, err
 	}

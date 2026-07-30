@@ -282,8 +282,8 @@
 	description={t("spaces.description", "Manage platform spaces")}
 	actions={[
 		...(canManageSpaces ? [{ label: t("spaces.create", "Create Space"), icon: Plus, onclick: () => goto("/spaces/new") }] : []),
-		...(canManageSpaces ? [{ label: t("spaces.presets_title", "Permission Presets"), icon: SlidersHorizontal, variant: "ghost", onclick: () => goto("/spaces/presets") }] : []),
-		{ label: t("common.refresh", "Refresh"), icon: RefreshCw, variant: "ghost", onclick: loadSpaces }
+		...(canManageSpaces ? [{ label: t("spaces.presets_title", "Permission Presets"), icon: SlidersHorizontal, variant: "ghost" as const, onclick: () => goto("/spaces/presets") }] : []),
+		{ label: t("common.refresh", "Refresh"), icon: RefreshCw, variant: "ghost" as const, onclick: loadSpaces }
 	]}
 />
 

@@ -4,33 +4,22 @@ vi.mock('$app/environment', () => ({ browser: false }));
 
 import { load } from './+layout';
 
-// The root layout no longer fetches auth data client-side: the server layout
-// (+layout.server.ts) validates the token and resolves user/permissions, and
-// the universal load passes that data through unchanged.
+// The admin app is a pure SPA (ssr=false). The universal +layout.ts load
+// resolves the locale from the jc_locale cookie (client-only) and initializes
+// the i18n store, then returns an empty object — auth is handled client-side
+// in +layout.svelte's onMount via /me + /me/permissions.
 describe('admin root +layout load', () => {
-	it('passes through server-validated auth data', async () => {
+	it('returns an empty object (SPA — auth is client-side in onMount)', async () => {
 		const result = (await load({
-			url: new URL('http://admin.japaconnect.com/users'),
-			data: {
-				token: 'jwt-token',
-				user: { id: '1', display_name: 'Ada' },
-				permissions: ['admin.users.view']
-			}
+			url: new URL('http://admin.japaconnect.com/users')
 		} as any)) as any;
 
-		expect(result.token).toBe('jwt-token');
-		expect(result.user).toEqual({ id: '1', display_name: 'Ada' });
-		expect(result.permissions).toEqual(['admin.users.view']);
+		expect(result).toEqual({});
 	});
 
-	it('passes through null auth fields for unauthenticated visitors', async () => {
-		const result = (await load({
-			url: new URL('http://admin.japaconnect.com/login'),
-			data: { token: null, user: null, permissions: [] }
-		} as any)) as any;
-
-		expect(result.user).toBeNull();
-		expect(result.token).toBeNull();
-		expect(result.permissions).toEqual([]);
+	it('does not throw for the login route', async () => {
+		await expect(load({
+			url: new URL('http://admin.japaconnect.com/login')
+		} as any)).resolves.toEqual({});
 	});
 });

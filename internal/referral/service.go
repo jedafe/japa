@@ -3,8 +3,10 @@ package referral
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db"
 )
@@ -45,7 +47,10 @@ func NewService(database *db.DB) *Service {
 	return &Service{db: database}
 }
 
-// GetProgram returns the referral program settings for the tenant.
+// GetProgram returns the referral program settings for the tenant. If no row
+// exists yet (first admin visit), it seeds a default row using the column
+// defaults from migration 000056 and returns it — so the admin UI always has
+// a program to render instead of a 500.
 func (s *Service) GetProgram(ctx context.Context, tenantID pgtype.UUID) (Program, error) {
 	var p Program
 
@@ -59,10 +64,55 @@ func (s *Service) GetProgram(ctx context.Context, tenantID pgtype.UUID) (Program
 		&p.MaxReferrals, &p.CookieDays, &p.IsActive, &p.Description,
 		&p.CreatedAt, &p.UpdatedAt,
 	)
-	if err != nil {
+	if err == nil {
+		return p, nil
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
 		return Program{}, fmt.Errorf("fetching referral program: %w", err)
 	}
 
+	// Seed a default row (UNIQUE(tenant_id) makes this safe against races;
+	// a concurrent insert surfaces as a unique violation we re-read past).
+	return s.seedDefaultProgram(ctx, tenantID)
+}
+
+// seedDefaultProgram inserts a default referral_programs row for the tenant
+// and returns it. On a unique-violation race it re-reads the existing row.
+func (s *Service) seedDefaultProgram(ctx context.Context, tenantID pgtype.UUID) (Program, error) {
+	var p Program
+
+	err := s.db.Writer.QueryRow(ctx, `
+		INSERT INTO referral_programs (tenant_id)
+		VALUES ($1)
+		ON CONFLICT (tenant_id) DO NOTHING
+		RETURNING id, tenant_id, referrer_reward_cents, referee_reward_cents,
+		          max_referrals, cookie_days, is_active, description, created_at, updated_at
+	`, tenantID).Scan(
+		&p.ID, &p.TenantID, &p.ReferrerRewardCents, &p.RefereeRewardCents,
+		&p.MaxReferrals, &p.CookieDays, &p.IsActive, &p.Description,
+		&p.CreatedAt, &p.UpdatedAt,
+	)
+	if err == nil {
+		return p, nil
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return Program{}, fmt.Errorf("seeding referral program: %w", err)
+	}
+
+	// ON CONFLICT DO NOTHING returned no rows — another request won the race.
+	err = s.db.Reader.QueryRow(ctx, `
+		SELECT id, tenant_id, referrer_reward_cents, referee_reward_cents,
+		       max_referrals, cookie_days, is_active, description, created_at, updated_at
+		FROM referral_programs
+		WHERE tenant_id = $1
+	`, tenantID).Scan(
+		&p.ID, &p.TenantID, &p.ReferrerRewardCents, &p.RefereeRewardCents,
+		&p.MaxReferrals, &p.CookieDays, &p.IsActive, &p.Description,
+		&p.CreatedAt, &p.UpdatedAt,
+	)
+	if err != nil {
+		return Program{}, fmt.Errorf("re-reading seeded referral program: %w", err)
+	}
 	return p, nil
 }
 
@@ -168,4 +218,23 @@ func (s *Service) GetReferral(ctx context.Context, tenantID, id pgtype.UUID) (Re
 	}
 
 	return ref, nil
+}
+
+// DeleteReferral soft-deletes a referral by setting status to 'expired'
+// (Rule 11 — no hard-delete of user content in V1). The referrals table has
+// no deleted_at column, so the existing 'expired' status value (valid per the
+// CHECK constraint from migration 000056) is used to mark it inactive.
+func (s *Service) DeleteReferral(ctx context.Context, tenantID, id pgtype.UUID) error {
+	cmd, err := s.db.Writer.Exec(ctx, `
+		UPDATE referrals
+		SET status = 'expired'
+		WHERE tenant_id = $1 AND id = $2
+	`, tenantID, id)
+	if err != nil {
+		return fmt.Errorf("deleting referral %s: %w", id, err)
+	}
+	if cmd.RowsAffected() == 0 {
+		return pgx.ErrNoRows
+	}
+	return nil
 }

@@ -493,10 +493,33 @@ WHERE id = @id AND tenant_id = @tenant_id AND status != 'archived';
 -- non-public/draft content is excluded. total_likes counts reactions on the
 -- author's published+public content. Follower/following counts come from the
 -- users table / follows subquery so the analytics response is self-contained.
+-- Uses subqueries for content aggregates so the user row is always returned
+-- even when the user has zero published posts (no GROUP BY needed).
 SELECT
-    COALESCE(SUM(c.view_count), 0)::int AS total_views,
-    COALESCE(SUM(c.share_count), 0)::int AS total_shares,
-    COUNT(c.id)::int AS total_posts,
+    COALESCE((
+        SELECT SUM(c.view_count)::int FROM contents c
+        WHERE c.tenant_id = @tenant_id
+          AND c.author_id = @author_id
+          AND c.status = 'published'
+          AND c.visibility = 'public'
+          AND c.deleted_at IS NULL
+    ), 0)::int AS total_views,
+    COALESCE((
+        SELECT SUM(c.share_count)::int FROM contents c
+        WHERE c.tenant_id = @tenant_id
+          AND c.author_id = @author_id
+          AND c.status = 'published'
+          AND c.visibility = 'public'
+          AND c.deleted_at IS NULL
+    ), 0)::int AS total_shares,
+    COALESCE((
+        SELECT COUNT(c.id)::int FROM contents c
+        WHERE c.tenant_id = @tenant_id
+          AND c.author_id = @author_id
+          AND c.status = 'published'
+          AND c.visibility = 'public'
+          AND c.deleted_at IS NULL
+    ), 0)::int AS total_posts,
     COALESCE((
         SELECT COUNT(*)::int FROM reactions r
         WHERE r.tenant_id = @tenant_id
@@ -513,10 +536,5 @@ SELECT
     u.follower_count::int AS total_followers,
     (SELECT COUNT(*)::int FROM follows f
       WHERE f.tenant_id = @tenant_id AND f.follower_id = u.id) AS total_following
-FROM contents c
-RIGHT JOIN users u ON u.id = @author_id AND u.tenant_id = @tenant_id
-WHERE c.tenant_id = @tenant_id
-  AND c.author_id = @author_id
-  AND c.status = 'published'
-  AND c.visibility = 'public'
-  AND c.deleted_at IS NULL;
+FROM users u
+WHERE u.id = @author_id AND u.tenant_id = @tenant_id;
