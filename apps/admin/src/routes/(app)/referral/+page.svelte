@@ -5,28 +5,32 @@
 	import { Card, CardContent } from '$lib/components/ui/card';
 	import { Tabs } from '$lib/components/ui/tabs';
 	import { DataTable } from '$lib/components/ui/data-table';
-	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
-	import { Select } from '$lib/components/ui/select';
 	import { Gift, Users, Trash2 } from 'lucide-svelte';
 
+	// Backend contract: internal/referral/service.go Program struct.
 	type ReferralProgram = {
 		id: string;
-		name: string;
-		reward_type: string;
-		reward_value: number;
+		tenant_id: string;
+		referrer_reward_cents: number;
+		referee_reward_cents: number;
+		max_referrals: number;
+		cookie_days: number;
 		is_active: boolean;
+		description: string;
 		created_at: string;
+		updated_at: string;
 	};
 
+	// Backend contract: internal/referral/service.go Referral struct.
 	type Referral = {
 		id: string;
-		referrer_user_id: string;
-		referrer_username: string;
-		referred_user_id: string;
-		referred_username: string;
+		tenant_id: string;
+		referrer_id: string;
+		referee_id: string | null;
+		referral_code: string;
 		status: string;
-		reward_granted: boolean;
+		reward_paid_at: string | null;
 		created_at: string;
 	};
 
@@ -36,58 +40,64 @@
 	let error = $state('');
 	let saving = $state(false);
 	let activeTab = $state('program');
-	let searchQuery = $state("");
+	let searchQuery = $state('');
 	let selectedIds = $state<Set<string>>(new Set());
 	let bulkDeleting = $state(false);
 
 	const tabs = $derived([
-		{ value: 'program', label: 'Program Settings', icon: Gift },
-		{ value: 'referrals', label: 'Recent Referrals', icon: Users, count: referrals.length }
+		{ value: 'program', label: t('referral.program_settings'), icon: Gift },
+		{ value: 'referrals', label: t('referral.recent_referrals'), icon: Users, count: referrals.length }
 	]);
 
-	const referralColumns = [
+	const referralColumns = $derived([
 		{
-			key: 'referrer_username',
-			label: 'Referrer',
+			key: 'referral_code',
+			label: t('referral.code'),
 			sortable: true,
-			render: (value: string) => `<span class="font-medium text-foreground">${value}</span>`
+			render: (value: string) => `<span class="font-mono text-xs font-medium text-foreground">${value}</span>`
 		},
 		{
-			key: 'referred_username',
-			label: 'Referred',
+			key: 'referrer_id',
+			label: t('referral.referrer'),
 			sortable: true,
-			render: (value: string) => `<span class="text-foreground-alt">${value}</span>`
+			render: (value: string) => `<span class="font-medium text-foreground">${value ? value.slice(0, 8) : '—'}</span>`
+		},
+		{
+			key: 'referee_id',
+			label: t('referral.referred'),
+			render: (value: string | null) => `<span class="text-foreground-alt">${value ? value.slice(0, 8) : '—'}</span>`
 		},
 		{
 			key: 'status',
-			label: 'Status',
+			label: t('referral.status'),
 			sortable: true,
 			render: (value: string) => {
 				const classes: Record<string, string> = {
-					completed: 'bg-success/15 text-success border-success',
+					qualified: 'bg-success/15 text-success border-success',
+					rewarded: 'bg-success/15 text-success border-success',
 					pending: 'bg-warning/15 text-warning border-warning',
-					cancelled: 'bg-danger/15 text-danger border-danger'
+					expired: 'bg-danger/15 text-danger border-danger'
 				};
 				return `<span class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${classes[value] || 'bg-surface text-foreground border'}">${value}</span>`;
 			}
 		},
 		{
-			key: 'reward_granted',
-			label: 'Reward',
-			render: (_: any, row: any) => {
-				if (row.reward_granted) {
-					return '<span class="text-sm font-medium text-success-600">Granted</span>';
+			key: 'reward_paid_at',
+			label: t('referral.reward'),
+			render: (value: string | null) => {
+				if (value) {
+					return '<span class="text-sm font-medium text-success">Granted</span>';
 				}
 				return '<span class="text-sm text-muted">Pending</span>';
 			}
 		},
 		{
 			key: 'created_at',
-			label: 'Date',
+			label: t('referral.date'),
 			sortable: true,
 			render: (value: string) => `<span class="text-sm">${new Date(value).toLocaleDateString()}</span>`
 		}
-	];
+	]);
 
 	$effect(() => {
 		load();
@@ -103,13 +113,11 @@
 			]);
 			if (programResult.ok) {
 				program = programResult.data;
+			} else {
+				error = programResult.error;
 			}
 			if (referralsResult.ok) {
 				referrals = referralsResult.data ?? [];
-			}
-			if (searchQuery) {
-				const q = searchQuery.toLowerCase();
-				referrals = referrals.filter((r: any) => r.username?.toLowerCase().includes(q) || r.code?.toLowerCase().includes(q));
 			}
 		} catch {
 			error = t('common.error');
@@ -121,11 +129,24 @@
 	async function updateProgram() {
 		if (!program) return;
 		saving = true;
+		error = '';
 		try {
-			await api('/admin/referral/program', {
+			const result = await api<ReferralProgram>('/admin/referral/program', {
 				method: 'PUT',
-				body: program
+				body: {
+					referrer_reward_cents: program.referrer_reward_cents,
+					referee_reward_cents: program.referee_reward_cents,
+					max_referrals: program.max_referrals,
+					cookie_days: program.cookie_days,
+					is_active: program.is_active,
+					description: program.description
+				}
 			});
+			if (result.ok) {
+				program = result.data;
+			} else {
+				error = result.error;
+			}
 		} catch {
 			error = t('common.error');
 		} finally {
@@ -142,7 +163,7 @@
 				await api(`/admin/referral/referrals/${id}`, { method: 'DELETE' });
 			}
 			selectedIds = new Set();
-			load();
+			await load();
 		} catch {
 			error = t('common.error');
 		}
@@ -176,35 +197,57 @@
 			<Card>
 				<CardContent class="p-6">
 					<h3 class="mb-4 text-lg font-semibold text-foreground">{t('referral.program_settings')}</h3>
-					<div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+					<div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
 						<div>
-							<label for="prog-name" class="mb-1 block text-sm font-medium text-foreground-alt">{t('referral.name')}</label>
+							<label for="prog-referrer-reward" class="mb-1 block text-sm font-medium text-foreground-alt">{t('referral.referrer_reward')}</label>
 							<input
-								id="prog-name"
-								type="text"
-								class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
-								bind:value={program.name}
+								id="prog-referrer-reward"
+								type="number"
+								min="0"
+								class="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
+								bind:value={program.referrer_reward_cents}
+							/>
+							<p class="mt-1 text-xs text-muted">{t('referral.cents_hint')}</p>
+						</div>
+						<div>
+							<label for="prog-referee-reward" class="mb-1 block text-sm font-medium text-foreground-alt">{t('referral.referee_reward')}</label>
+							<input
+								id="prog-referee-reward"
+								type="number"
+								min="0"
+								class="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
+								bind:value={program.referee_reward_cents}
+							/>
+							<p class="mt-1 text-xs text-muted">{t('referral.cents_hint')}</p>
+						</div>
+						<div>
+							<label for="prog-max-referrals" class="mb-1 block text-sm font-medium text-foreground-alt">{t('referral.max_referrals')}</label>
+							<input
+								id="prog-max-referrals"
+								type="number"
+								min="0"
+								class="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
+								bind:value={program.max_referrals}
+							/>
+							<p class="mt-1 text-xs text-muted">{t('referral.max_referrals_hint')}</p>
+						</div>
+						<div>
+							<label for="prog-cookie-days" class="mb-1 block text-sm font-medium text-foreground-alt">{t('referral.cookie_days')}</label>
+							<input
+								id="prog-cookie-days"
+								type="number"
+								min="0"
+								class="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
+								bind:value={program.cookie_days}
 							/>
 						</div>
 						<div>
-						<label for="prog-reward-type" class="mb-1 block text-sm font-medium text-foreground-alt">{t('referral.reward_type')}</label>
-						<Select
-							options={[
-								{ value: 'credits', label: t('referral.credits') },
-								{ value: 'discount', label: t('referral.discount') },
-								{ value: 'points', label: t('referral.points') }
-							]}
-							bind:value={program.reward_type}
-						/>
-						</div>
-						<div>
-							<label for="prog-reward-value" class="mb-1 block text-sm font-medium text-foreground-alt">{t('referral.reward_value')}</label>
+							<label for="prog-description" class="mb-1 block text-sm font-medium text-foreground-alt">{t('referral.description_label')}</label>
 							<input
-								id="prog-reward-value"
-								type="number"
-								min="0"
-								class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
-								bind:value={program.reward_value}
+								id="prog-description"
+								type="text"
+								class="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
+								bind:value={program.description}
 							/>
 						</div>
 						<div class="flex items-end">
@@ -212,7 +255,7 @@
 								<input
 									type="checkbox"
 									bind:checked={program.is_active}
-									class="h-4 w-4 rounded border text-primary-600 focus:ring-primary"
+									class="h-4 w-4 rounded border-border text-primary-600 focus:ring-primary"
 								/>
 								<span class="text-sm font-medium text-foreground-alt">{t('referral.active')}</span>
 							</label>
@@ -236,14 +279,14 @@
 					pageSize={20}
 					emptyMessage={t('referral.no_referrals')}
 					searchable
-					onsearch={(q) => { searchQuery = q; load(); }}
+					onsearch={(q) => { searchQuery = q; }}
 					selectable
 					bind:selectedIds
 				>
 					{#snippet bulkActions()}
 						<Button variant="destructive" size="sm" onclick={bulkDelete} disabled={bulkDeleting || selectedIds.size === 0}>
 							<Trash2 class="h-3.5 w-3.5 mr-1" />
-							{bulkDeleting ? t('common.deleting', 'Deleting...') : t('common.deleteSelected', 'Delete Selected')} ({selectedIds.size})
+							{bulkDeleting ? t('common.deleting', 'Deleting...') : t('common.delete_selected', 'Delete Selected')} ({selectedIds.size})
 						</Button>
 					{/snippet}
 				</DataTable>

@@ -7,7 +7,17 @@
 	import { goto } from "$app/navigation";
 	import { ArrowLeft, Save } from "lucide-svelte";
 
-	type SlotType = { id: string; name: string; description?: string; width: number; height: number };
+	// Ref: japaconnect-engineering/sections/25-ad-placement.md — the backend
+	// AdSlotType sqlc struct exposes `slot_name` and `max_display_per_page`
+	// (NOT `name`/`width`/`height`). The previous type caused the dropdown to
+	// render blank `(x)` options.
+	type SlotType = {
+		id: string;
+		slot_name: string;
+		description?: string | null;
+		max_display_per_page?: number;
+		is_active?: boolean;
+	};
 	type GeoSpace = { id: string; name: string; slug: string; geo_code?: string | null; level: string };
 
 	const canManage = $derived(hasPermission('ad.campaign.manage'));
@@ -52,14 +62,18 @@
 					spacesAdminApi.list('level=country&limit=200')
 				]);
 				if (slotsResult.ok) {
-					const data = slotsResult.data as { data?: SlotType[] } | SlotType[];
+					// §6.2: guard null data; backend returns {data: [...]} envelope
+					// which apiFetch already unwraps, so result.data is the array.
+					const data = (slotsResult.data ?? []) as { data?: SlotType[] } | SlotType[];
 					slotTypes = Array.isArray(data) ? data : (data.data ?? []);
+				} else {
+					errorMessage = slotsResult.error || t('ads.load_error', 'Failed to load form data');
 				}
 				if (countriesResult.ok) {
 					countries = (countriesResult.data as GeoSpace[]) ?? [];
 				}
 				if (spacesResult.ok) {
-					const data = spacesResult.data as { data?: GeoSpace[] } | GeoSpace[];
+					const data = (spacesResult.data ?? []) as { data?: GeoSpace[] } | GeoSpace[];
 					geoSpaces = Array.isArray(data) ? data : (data.data ?? []);
 				}
 			} catch {
@@ -173,7 +187,7 @@
 				<select id="ad-slot" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-background)" bind:value={slotTypeName}>
 					<option value="">{t('ads.select_slot', 'Select a slot type...')}</option>
 					{#each slotTypes as slot}
-						<option value={slot.name}>{slot.name} ({slot.width}x{slot.height})</option>
+						<option value={slot.slot_name}>{slot.slot_name}{#if slot.max_display_per_page} ({slot.max_display_per_page}/page){/if}</option>
 					{/each}
 				</select>
 			</div>

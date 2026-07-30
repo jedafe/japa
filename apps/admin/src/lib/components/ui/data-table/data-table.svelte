@@ -6,6 +6,7 @@
   import { clsx, type ClassValue } from "clsx";
   import type { Component, Snippet } from "svelte";
   import { Button } from "$lib/components/ui/button";
+  import Pagination from "$lib/components/ui/Pagination.svelte";
   import { sanitizeHtml } from "$lib/utils/html";
 
   function extractId(row: any): string {
@@ -33,7 +34,7 @@
      class: className,
      showPagination = true,
      loading = false,
-     pageSize,
+     pageSize = $bindable(10),
       bulkActions,
       urlSync = true,
       defaultBulkActions = false,
@@ -82,6 +83,9 @@
   let sortColumn = $state<string | null>(null);
   let sortDirection = $state<"asc" | "desc">("asc");
 
+  // Client-side pagination state
+  let currentPage = $state(0);
+
   $effect(() => {
     if (urlSync) {
       sortColumn = urlParams.get("sort") ?? null;
@@ -105,6 +109,22 @@
       });
     }
     return sorted;
+  });
+
+  // Client-side pagination derived state (must come after sortedData)
+  const totalRows = $derived(sortedData.length);
+  const totalPages = $derived(Math.max(1, Math.ceil(totalRows / pageSize)));
+  const paginatedData = $derived(
+    showPagination
+      ? sortedData.slice(currentPage * pageSize, (currentPage + 1) * pageSize)
+      : sortedData
+  );
+
+  // Reset to first page when data or page size changes
+  $effect(() => {
+    void totalRows;
+    void pageSize;
+    if (currentPage >= totalPages) currentPage = 0;
   });
 
   function handleSort(column: string) {
@@ -275,7 +295,7 @@
         </tr>
       </thead>
       <tbody>
-        {#each sortedData as row, i (row.id ?? i)}
+        {#each paginatedData as row, i (row.id ?? i)}
           <tr
             class={clsx(
               "transition-colors hover:bg-black/[0.02] dark:hover:bg-white/[0.02]",
@@ -324,6 +344,15 @@
       </tbody>
     </table>
   </div>
+  {#if showPagination && totalRows > pageSize}
+    <Pagination
+      bind:page={currentPage}
+      {totalPages}
+      totalItems={totalRows}
+      bind:pageSize
+      urlSync={false}
+    />
+  {/if}
   {#if selectable && (bulkActionsSnippet || defaultBulkActions)}
     <div class="mt-3 flex flex-wrap items-center gap-3 rounded-lg p-3" style="background: color-mix(in srgb, var(--color-primary) 12%, transparent); opacity: {selectedIds.size > 0 ? '1' : '0.5'}">
       <span class="text-sm font-medium" style="color: var(--color-foreground)">{t('common.selected', '{count} selected').replace('{count}', String(selectedIds.size))}</span>

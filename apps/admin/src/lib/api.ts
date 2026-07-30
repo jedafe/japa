@@ -94,38 +94,6 @@ export const spaceTypesApi = {
 		api(`/admin/space-types/${id}`, { method: 'DELETE' }),
 };
 
-export const permissionPresetsApi = {
-	list: () => api<{ data: PermissionPreset[] }>('/space-permission-presets'),
-};
-
-export type PermissionPreset = {
-	id: string;
-	name: string;
-	visibility: string;
-	posting_perm: string;
-	replying_perm: string;
-	commenting_perm: string;
-	joining_perm: string;
-	is_system: boolean;
-};
-
-export const permissionPresetsApi = {
-	list: () => api<{ data: PermissionPreset[] }>('/space-permission-presets'),
-	update: (name: string, body: Partial<Omit<PermissionPreset, 'id' | 'name' | 'is_system'>>) =>
-		api(`/space-permission-presets/${name}`, { method: 'PUT', body }),
-};
-
-export type PermissionPreset = {
-	id: string;
-	name: string;
-	visibility: string;
-	posting_perm: string;
-	replying_perm: string;
-	commenting_perm: string;
-	joining_perm: string;
-	is_system: boolean;
-};
-
 export const impersonationApi = {
 	start: (userId: string) =>
 		api<{ token: string }>('/admin/impersonate', { method: 'POST', body: { user_id: userId } }),

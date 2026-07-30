@@ -340,6 +340,14 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	spaceHandlers.SetFollowToggleService(followService)
 	spaceHandlers.SetPermCacheInvalidator(rbacResolver)
 
+	// BUG-003: wire the space posting-permission checker into the content
+	// handler so CreateContent enforces the space's posting_perm axis
+	// (Section 05 lines 145-154). The PermChecker is wired after
+	// usersService is created (the "verified" axis needs email status).
+	spacePostChecker := spaces.NewPostCheckerAdapter(spaceService)
+	spacePostChecker.PermChecker = rbacResolver
+	contentHandlers.SetSpacePostChecker(spacePostChecker)
+
 	// General Tags subsystem (Sections 08, 49) — distinct from forum_tags.
 	// Composes contentService + followService directly.
 	tagsService := tags.NewService(database)
@@ -690,6 +698,16 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// User Profile & Preferences subsystem.
 	usersService := users.NewService(database)
 	usersHandlers := users.NewHandlers(usersService)
+
+	// BUG-003: wire the "verified" axis checker for CanPostInSpace. The
+	// "verified" posting_perm requires email_verified_at IS NOT NULL.
+	spacePostChecker.VerifiedChecker = func(ctx context.Context, userID, tenantID pgtype.UUID) (bool, error) {
+		verifiedAt, err := gen.New(database.Reader).GetUserEmailVerifiedStatus(ctx, userID)
+		if err != nil {
+			return false, err
+		}
+		return verifiedAt.Valid, nil
+	}
 
 	// Meilisearch client for search (graceful if unreachable — NewClient
 	// logs a warning and returns a usable client so the server boots even
@@ -1066,10 +1084,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.OptionalAuth(kr, vkClient.Redis())).Get("/spaces", spaceHandlers.ListSpaces)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/spaces", spaceHandlers.ListMySpaces)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/spaces/moderated", spaceHandlers.ListMyModeratedSpaces)
-			// NOTE (P5): /me/spaces/owned has no wiring — the spaces table has no
-			// owner_id/created_by column (consistent with the geo-first model where
-			// Country/State/City spaces aren't owned by anyone); needs a schema
-			// decision, not just a query.
+			// BUG-006: /me/spaces/owned — ownership is tracked via
+			// space_members.role='owner' (migration 000033), not a spaces
+			// column. The ListMyOwnedSpaces handler queries that join.
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/spaces/owned", spaceHandlers.ListMyOwnedSpaces)
 			r.With(auth.OptionalAuth(kr, vkClient.Redis()), spaces.SpaceResolver(spaceService)).
 				Get("/spaces/{slug}", spaceHandlers.GetSpace)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "spaces.create")).
@@ -1103,6 +1121,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Get("/spaces/{slug}/content", spaceHandlers.ListSpaceContent)
 			r.With(auth.OptionalAuth(kr, vkClient.Redis()), spaces.SpaceResolver(spaceService)).
 				Get("/spaces/{slug}/pinned", spaceHandlers.ListPinned)
+			// BUG-005: slug-based analytics route for the main app's analytics tab.
+			// The catalog lists GET /spaces/{id}/analytics (admin path, line 2877);
+			// this slug variant lets the SSR space page fetch analytics by slug.
+			r.With(auth.OptionalAuth(kr, vkClient.Redis()), spaces.SpaceResolver(spaceService)).
+				Get("/spaces/{slug}/analytics", spaceHandlers.GetSpaceAnalyticsBySlug)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), spaces.SpaceResolver(spaceService), rbac.RequirePermission(rbacResolver, "spaces.moderate")).
 				Post("/spaces/{slug}/pinned", spaceHandlers.AddPinned)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), spaces.SpaceResolver(spaceService), rbac.RequirePermission(rbacResolver, "spaces.moderate")).
@@ -2480,6 +2503,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Get("/admin/referral/referrals", referralHandlers.ListReferrals)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "referral.admin")).
 				Get("/admin/referral/referrals/{id}", referralHandlers.GetReferral)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "referral.admin")).
+				Delete("/admin/referral/referrals/{id}", referralHandlers.DeleteReferral)
 
 			// Mentorship admin routes (Section 35 — Mentorship)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "mentorship.admin")).

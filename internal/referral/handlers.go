@@ -196,3 +196,26 @@ func (h *Handlers) GetReferral(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": referral})
 }
+
+// DeleteReferral soft-deletes a referral by setting status to 'expired'.
+// DELETE /admin/referral/referrals/{id}.
+func (h *Handlers) DeleteReferral(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	var id pgtype.UUID
+	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid referral ID")
+		return
+	}
+
+	if err := h.Service.DeleteReferral(r.Context(), tenantID, id); err != nil {
+		slog.Error("deleting referral", "error", err)
+		writeError(w, http.StatusNotFound, "not_found", "Referral not found")
+		return
+	}
+
+	writeJSON(w, http.StatusNoContent, nil)
+}

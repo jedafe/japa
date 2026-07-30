@@ -812,9 +812,30 @@ func (q *Queries) GetJSONLDTemplate(ctx context.Context, arg GetJSONLDTemplatePa
 
 const getPublicAuthorAnalytics = `-- name: GetPublicAuthorAnalytics :one
 SELECT
-    COALESCE(SUM(c.view_count), 0)::int AS total_views,
-    COALESCE(SUM(c.share_count), 0)::int AS total_shares,
-    COUNT(c.id)::int AS total_posts,
+    COALESCE((
+        SELECT SUM(c.view_count)::int FROM contents c
+        WHERE c.tenant_id = $1
+          AND c.author_id = $2
+          AND c.status = 'published'
+          AND c.visibility = 'public'
+          AND c.deleted_at IS NULL
+    ), 0)::int AS total_views,
+    COALESCE((
+        SELECT SUM(c.share_count)::int FROM contents c
+        WHERE c.tenant_id = $1
+          AND c.author_id = $2
+          AND c.status = 'published'
+          AND c.visibility = 'public'
+          AND c.deleted_at IS NULL
+    ), 0)::int AS total_shares,
+    COALESCE((
+        SELECT COUNT(c.id)::int FROM contents c
+        WHERE c.tenant_id = $1
+          AND c.author_id = $2
+          AND c.status = 'published'
+          AND c.visibility = 'public'
+          AND c.deleted_at IS NULL
+    ), 0)::int AS total_posts,
     COALESCE((
         SELECT COUNT(*)::int FROM reactions r
         WHERE r.tenant_id = $1
@@ -831,13 +852,8 @@ SELECT
     u.follower_count::int AS total_followers,
     (SELECT COUNT(*)::int FROM follows f
       WHERE f.tenant_id = $1 AND f.follower_id = u.id) AS total_following
-FROM contents c
-RIGHT JOIN users u ON u.id = $2 AND u.tenant_id = $1
-WHERE c.tenant_id = $1
-  AND c.author_id = $2
-  AND c.status = 'published'
-  AND c.visibility = 'public'
-  AND c.deleted_at IS NULL
+FROM users u
+WHERE u.id = $2 AND u.tenant_id = $1
 `
 
 type GetPublicAuthorAnalyticsParams struct {
@@ -859,6 +875,8 @@ type GetPublicAuthorAnalyticsRow struct {
 // non-public/draft content is excluded. total_likes counts reactions on the
 // author's published+public content. Follower/following counts come from the
 // users table / follows subquery so the analytics response is self-contained.
+// Uses subqueries for content aggregates so the user row is always returned
+// even when the user has zero published posts (no GROUP BY needed).
 func (q *Queries) GetPublicAuthorAnalytics(ctx context.Context, arg GetPublicAuthorAnalyticsParams) (GetPublicAuthorAnalyticsRow, error) {
 	row := q.db.QueryRow(ctx, getPublicAuthorAnalytics, arg.TenantID, arg.AuthorID)
 	var i GetPublicAuthorAnalyticsRow

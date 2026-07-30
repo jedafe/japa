@@ -129,6 +129,16 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	}
 }
 
+// nonNilSlice replaces a nil slice with an empty, non-nil slice so the JSON
+// encoder emits `[]` instead of `null` (§6.2 — nil slice serialized as null
+// breaks frontends that read `.items`/`.length` on the response data).
+func nonNilSlice[T any](s []T) []T {
+	if s == nil {
+		return []T{}
+	}
+	return s
+}
+
 // writeError writes a JSON error response following the JapaConnect API format.
 func writeError(w http.ResponseWriter, status int, code, message string) {
 	writeJSON(w, status, map[string]any{
@@ -324,7 +334,7 @@ func (h *Handlers) ListCampaigns(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": campaigns})
+	writeJSON(w, http.StatusOK, map[string]any{"data": nonNilSlice(campaigns)})
 }
 
 // ActivateCampaign handles POST /api/v1/admin/advertising/campaigns/{id}/activate.
@@ -555,7 +565,7 @@ func (h *Handlers) ListSlotTypes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": slotTypes})
+	writeJSON(w, http.StatusOK, map[string]any{"data": nonNilSlice(slotTypes)})
 }
 
 // CreateSlotType handles POST /api/v1/admin/advertising/slot-types.
@@ -852,7 +862,7 @@ func (h *Handlers) ListBoosts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": boosts})
+	writeJSON(w, http.StatusOK, map[string]any{"data": nonNilSlice(boosts)})
 }
 
 // ListActiveBoosts handles GET /api/v1/admin/advertising/boosts/active.
@@ -873,7 +883,7 @@ func (h *Handlers) ListActiveBoosts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": boosts})
+	writeJSON(w, http.StatusOK, map[string]any{"data": nonNilSlice(boosts)})
 }
 
 // EndBoost handles POST /api/v1/admin/advertising/boosts/{id}/end.
