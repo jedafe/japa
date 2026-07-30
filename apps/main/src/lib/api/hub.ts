@@ -55,9 +55,38 @@ export const createAffiliate = (v: { target_url: string; label?: string }) =>
 export const deleteAffiliate = (id: string) => api.delete(`/me/affiliate-links/${id}`);
 
 /* ---- wallet / subscription ---- */
-export const convertWallet = (points: number) => api.post('/me/wallet/convert', { points_to_convert: points });
-export const cancelSubscription = () => api.post('/me/subscription/cancel');
-export const reactivateSubscription = () => api.post('/me/subscription/reactivate');
+export const convertWallet = (points: number) =>
+	api.post('/me/wallet/convert', { points_to_convert: points }, {
+		// Rule 9: financial endpoints require an Idempotency-Key so the backend
+		// dedupes retries of the same conversion attempt (and distinct attempts
+		// get distinct keys). A fresh UUID per call is the correct granularity.
+		'Idempotency-Key': crypto.randomUUID()
+	});
+export const cancelSubscription = () =>
+	api.post('/me/subscription/cancel', undefined, {
+		// Rule 9: financial state-change endpoints require an Idempotency-Key.
+		'Idempotency-Key': crypto.randomUUID()
+	});
+export const reactivateSubscription = () =>
+	api.post('/me/subscription/reactivate', undefined, {
+		// Rule 9: financial state-change endpoints require an Idempotency-Key.
+		'Idempotency-Key': crypto.randomUUID()
+	});
+
+export interface PaymentProvider {
+	id: string;
+	name: string;
+	description: string;
+	enabled: boolean;
+}
+
+export const listPaymentProviders = () => api.get<PaymentProvider[]>('/payment-providers');
+
+export const createSubscription = (plan: string, provider: string) =>
+	api.post('/subscriptions', { plan, provider }, {
+		// Rule 9: financial state-change endpoints require an Idempotency-Key.
+		'Idempotency-Key': crypto.randomUUID()
+	});
 
 /* ---- danger ---- */
 export const exportData = () => api.post('/me/data-export');

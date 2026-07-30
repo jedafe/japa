@@ -1,4 +1,4 @@
-# Japa Connect
+# JapaConnect
 
 A community platform for the Nigerian diaspora.
 

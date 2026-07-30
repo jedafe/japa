@@ -75,7 +75,8 @@
 			const result = await api(`/admin/comparison-types/${deleteTarget.id}`, { method: 'DELETE' });
 			if (result.ok) {
 				showDeleteConfirm = false;
-				types = types.filter((t) => t.id !== deleteTarget!.id);
+				deleteTarget = null;
+				await load();
 			} else {
 				errorMessage = result.error;
 			}

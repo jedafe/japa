@@ -62,8 +62,15 @@ export const SETTINGS_LOADERS: Record<string, (ctx: ApiContext) => Promise<unkno
 	wallet: async (ctx) => ({
 		wallet: await apiGet<unknown>(ctx, '/me/wallet'),
 		ledger: (await apiList<unknown>(ctx, '/me/wallet/ledger')).items,
-		settings: await apiGet<unknown>(ctx, '/wallet/settings').catch(() => null)
+		settings: await apiGet<unknown>(ctx, '/me/wallet/settings').catch(() => null)
 	}),
-	subscription: (ctx) => apiGet<unknown>(ctx, '/me/subscription').catch(() => null),
+	subscription: async (ctx) => ({
+		// GET /me/subscription — current subscription (null when none active).
+		subscription: await apiGet<unknown>(ctx, '/me/subscription').catch(() => null),
+		// GET /pricing/plans — available plans for the subscribe flow (Rule 16).
+		plans: await apiGet<unknown[]>(ctx, '/pricing/plans').catch(() => []),
+		// GET /payment-providers — enabled payment providers for the checkout.
+		providers: await apiGet<unknown[]>(ctx, '/payment-providers').catch(() => [])
+	}),
 	danger: async () => null
 };

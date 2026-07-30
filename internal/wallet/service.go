@@ -6,10 +6,12 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/db/gen"
+	mw "github.com/jedafe/japa/internal/middleware"
 )
 
 // EmitActivityEventInput holds parameters for emitting an activity event.
@@ -282,8 +284,26 @@ func (s *Service) ConvertPointsToCredits(ctx context.Context, tenantID, userID p
 
 	newCreditsBalance := currentCredits + creditsToAdd
 
-	// Create idempotency key
-	idempotencyKey := fmt.Sprintf("convert:%x:%d", userID.Bytes, input.PointsToConvert)
+	// Create idempotency keys. Prefer the request's Idempotency-Key header
+	// (propagated via context by the idempotency middleware) so retries of the
+	// same logical request dedupe at the ledger level too. When no header is
+	// present, generate a unique UUID per request — deriving the key from
+	// (userID, points) would falsely collide across distinct same-amount
+	// conversions, permanently blocking a user from converting the same amount
+	// twice (Rule 9 / §13).
+	reqKey := mw.IdempotencyKeyFromContext(ctx)
+	pointsKey := reqKey
+	if pointsKey == "" {
+		pointsKey = "convert:" + uuid.NewString()
+	} else {
+		pointsKey = "convert:" + pointsKey + ":points"
+	}
+	creditsKey := reqKey
+	if creditsKey == "" {
+		creditsKey = "convert_credits:" + uuid.NewString()
+	} else {
+		creditsKey = "convert_credits:" + creditsKey + ":credits"
+	}
 
 	// Insert points debit entry
 	_, err = qtx.InsertLedgerEntry(ctx, gen.InsertLedgerEntryParams{
@@ -295,7 +315,7 @@ func (s *Service) ConvertPointsToCredits(ctx context.Context, tenantID, userID p
 		ResultingBalance: newPointsBalance,
 		Source:           strPtr("wallet_conversion"),
 		Reference:        strPtr(fmt.Sprintf("Converted %d points to %d credits", input.PointsToConvert, creditsToAdd)),
-		IdempotencyKey:   &idempotencyKey,
+		IdempotencyKey:   &pointsKey,
 		Reason:           nil,
 	})
 	if err != nil {
@@ -303,8 +323,6 @@ func (s *Service) ConvertPointsToCredits(ctx context.Context, tenantID, userID p
 	}
 
 	// Insert credits credit entry
-	creditsIdempotencyKey := fmt.Sprintf("convert_credits:%x:%d", userID.Bytes, input.PointsToConvert)
-
 	_, err = qtx.InsertLedgerEntry(ctx, gen.InsertLedgerEntryParams{
 		TenantID:         tenantID,
 		UserID:           userID,
@@ -314,7 +332,7 @@ func (s *Service) ConvertPointsToCredits(ctx context.Context, tenantID, userID p
 		ResultingBalance: newCreditsBalance,
 		Source:           strPtr("wallet_conversion"),
 		Reference:        strPtr(fmt.Sprintf("Converted %d points to %d credits", input.PointsToConvert, creditsToAdd)),
-		IdempotencyKey:   &creditsIdempotencyKey,
+		IdempotencyKey:   &creditsKey,
 		Reason:           nil,
 	})
 	if err != nil {
@@ -496,13 +514,26 @@ func (s *Service) AdminAdjustBalance(ctx context.Context, tenantID, actorUserID 
 }
 
 // GetWalletSettings returns wallet settings for a tenant.
-// If no settings row exists yet, returns sensible defaults instead of an error.
+// If no per-tenant wallet_settings row exists yet, the conversion rate is
+// resolved from the global system_settings key wallet.points_to_credit_rate
+// (a float: credits-per-point, e.g. 0.001 = 1000 points per credit) and
+// inverted to the integer "points per credit" rate the ledger uses, falling
+// back to DefaultPointsToCreditsRate when unset. This MUST stay consistent
+// with the resolution in ConvertPointsToCredits so the displayed rate matches
+// the rate actually enforced at conversion time (AUDIT-BE2-SETTING-007).
 func (s *Service) GetWalletSettings(ctx context.Context, tenantID pgtype.UUID) (gen.WalletSetting, error) {
 	settings, err := s.store.getWalletSettings(ctx, tenantID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			// No settings row yet — return defaults.
+			// No settings row yet — resolve rate from system_settings, then defaults.
 			rate := int32(DefaultPointsToCreditsRate)
+			if s.settings != nil {
+				if perCredit := s.settings.GetFloatOr(ctx, tenantID, "wallet.points_to_credit_rate", 0); perCredit > 0 {
+					if computed := int32(1.0 / perCredit); computed > 0 {
+						rate = computed
+					}
+				}
+			}
 			return gen.WalletSetting{
 				TenantID:            tenantID,
 				PointsToCreditsRate: &rate,

@@ -40,7 +40,7 @@ func NewHandlers(reader *Reader, spacesService SpacesService) *Handlers {
 func (h *Handlers) HandleGeoMe(w http.ResponseWriter, r *http.Request) {
 	geo := FromContext(r.Context())
 	if !geo.IsValid {
-		writeJSON(w, http.StatusOK, map[string]any{"data": nil})
+		writeError(w, http.StatusNotFound, "geo_not_available", "Geolocation data not available for this request")
 		return
 	}
 
@@ -80,7 +80,7 @@ func (h *Handlers) HandleGeoLookup(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) HandleGeoDetect(w http.ResponseWriter, r *http.Request) {
 	geo := FromContext(r.Context())
 	if !geo.IsValid {
-		writeJSON(w, http.StatusOK, map[string]any{"data": nil})
+		writeError(w, http.StatusNotFound, "geo_not_available", "Geolocation data not available for this request")
 		return
 	}
 

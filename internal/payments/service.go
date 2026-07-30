@@ -305,6 +305,12 @@ func (s *Service) CancelSubscription(ctx context.Context, id, tenantID pgtype.UU
 	return s.store.cancelSubscription(ctx, id, tenantID)
 }
 
+// ReactivateSubscription reactivates the caller's most recently canceled
+// subscription. Returns the updated subscription row.
+func (s *Service) ReactivateSubscription(ctx context.Context, userID, tenantID pgtype.UUID) (gen.Subscription, error) {
+	return s.store.reactivateSubscription(ctx, userID, tenantID)
+}
+
 // ---------------------------------------------------------------------------
 // Discount Codes
 // ---------------------------------------------------------------------------

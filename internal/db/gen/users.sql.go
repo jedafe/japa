@@ -1097,6 +1097,24 @@ func (q *Queries) UpdateLastLoginAt(ctx context.Context, arg UpdateLastLoginAtPa
 	return err
 }
 
+const updateUserGeoSpace = `-- name: UpdateUserGeoSpace :exec
+UPDATE users
+SET current_geo_space_id = $1, updated_at = now()
+WHERE id = $2 AND tenant_id = $3
+`
+
+type UpdateUserGeoSpaceParams struct {
+	CurrentGeoSpaceID pgtype.UUID `json:"current_geo_space_id"`
+	ID                pgtype.UUID `json:"id"`
+	TenantID          pgtype.UUID `json:"tenant_id"`
+}
+
+// Sets the user's current primary geo space (Section 05, ADR-005).
+func (q *Queries) UpdateUserGeoSpace(ctx context.Context, arg UpdateUserGeoSpaceParams) error {
+	_, err := q.db.Exec(ctx, updateUserGeoSpace, arg.CurrentGeoSpaceID, arg.ID, arg.TenantID)
+	return err
+}
+
 const updateUserPassword = `-- name: UpdateUserPassword :exec
 UPDATE users SET password_hash = $2, updated_at = now() WHERE id = $1
 `

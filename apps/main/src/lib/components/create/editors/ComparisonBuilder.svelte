@@ -5,6 +5,10 @@
 		createComparison,
 		addComparisonItem,
 		addComparisonDimension,
+		deleteComparisonItem,
+		deleteComparisonDimension,
+		patchComparisonItem,
+		patchComparisonDimension,
 		setDimensionValues
 	} from '$lib/api/create';
 
@@ -21,6 +25,9 @@
 	let items = $state<{ id: string | null; title: string }[]>([]);
 	let dimensions = $state<{ id: string | null; label: string; dimension_type: string }[]>([]);
 	let cells = $state<Record<string, string>>({}); // `${dimId}:${itemId}` → value
+
+	// Debounce timers for cell-value writes (avoid N API calls per keystroke).
+	let valueTimers = $state<Record<string, ReturnType<typeof setTimeout>>>({});
 
 	$effect(() => oncounts(items.length, dimensions.length));
 
@@ -55,24 +62,65 @@
 		onedit();
 	}
 
-	function removeItem(idx: number) {
+	// Server-first removal: call DELETE, then drop the row from local state only
+	// after the server confirms (Rule 16 — never mutate server data locally).
+	async function removeItem(idx: number) {
+		const item = items[idx];
+		if (item?.id) {
+			const res = await deleteComparisonItem(item.id);
+			if (res.error) return;
+		}
 		items = items.filter((_, i) => i !== idx);
 		onedit();
 	}
 
-	function removeDimension(idx: number) {
+	async function removeDimension(idx: number) {
+		const dim = dimensions[idx];
+		if (dim?.id) {
+			const res = await deleteComparisonDimension(dim.id);
+			if (res.error) return;
+		}
 		dimensions = dimensions.filter((_, i) => i !== idx);
 		onedit();
 	}
 
-	async function editCell(dimIdx: number, itemIdx: number, value: string) {
-		cells = { ...cells, [cellKey(dimIdx, itemIdx)]: value };
+	// Persist item/dimension title edits on blur (Rule 16 — server is source of
+	// truth). Local state updates immediately for responsiveness; the PATCH
+	// confirms on blur.
+	async function commitItemTitle(idx: number) {
+		const item = items[idx];
+		if (!item?.id) return;
+		await patchComparisonItem(item.id, { title: item.title });
 		onedit();
+	}
+
+	async function commitDimensionLabel(idx: number) {
+		const dim = dimensions[idx];
+		if (!dim?.id) return;
+		await patchComparisonDimension(dim.id, { label: dim.label });
+		onedit();
+	}
+
+	// Debounced cell-value write: update local state immediately, but only fire
+	// the PUT after 400ms of inactivity (one call per cell edit, not per
+	// keystroke).
+	function editCell(dimIdx: number, itemIdx: number, value: string) {
+		const key = cellKey(dimIdx, itemIdx);
+		cells = { ...cells, [key]: value };
+		onedit();
+		const existing = valueTimers[key];
+		if (existing) clearTimeout(existing);
+		valueTimers = { ...valueTimers, [key]: setTimeout(() => void flushCell(dimIdx, itemIdx), 400) };
+	}
+
+	async function flushCell(dimIdx: number, itemIdx: number) {
 		const dim = dimensions[dimIdx];
 		const item = items[itemIdx];
+		const key = cellKey(dimIdx, itemIdx);
 		if (dim?.id && item?.id) {
-			await setDimensionValues(dim.id, [{ item_id: item.id, value }]);
+			await setDimensionValues(dim.id, [{ item_id: item.id, value: cells[key] ?? '' }]);
 		}
+		valueTimers = { ...valueTimers, [key]: undefined as unknown as ReturnType<typeof setTimeout> };
 	}
 </script>
 
@@ -102,6 +150,7 @@
 										dimensions[dIdx].label = e.currentTarget.value;
 										onedit();
 									}}
+								onblur={() => commitDimensionLabel(dIdx)}
 								/>
 								<button type="button" onclick={() => removeDimension(dIdx)} class="text-[var(--color-muted)] hover:text-red-500">
 									<X size={12} />
@@ -122,6 +171,7 @@
 										items[iIdx].title = e.currentTarget.value;
 										onedit();
 									}}
+								onblur={() => commitItemTitle(iIdx)}
 								/>
 								<button type="button" onclick={() => removeItem(iIdx)} class="text-[var(--color-muted)] hover:text-red-500">
 									<X size={12} />

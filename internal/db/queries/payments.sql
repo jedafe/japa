@@ -121,15 +121,15 @@ RETURNING *;
 
 -- name: SoftDeleteSubscription :exec
 UPDATE subscriptions
-SET status = 'cancelled', cancelled_at = now(), updated_at = now()
+SET status = 'canceled', cancel_at = now(), updated_at = now()
 WHERE id = @id AND tenant_id = @tenant_id;
 
 -- name: ReactivateSubscription :one
 UPDATE subscriptions
-SET status = 'active', cancelled_at = NULL, updated_at = now()
+SET status = 'active', cancel_at = NULL, updated_at = now()
 WHERE id = (
     SELECT s.id FROM subscriptions s
-    WHERE s.user_id = @user_id AND s.tenant_id = @tenant_id AND s.status = 'cancelled'
+    WHERE s.user_id = @user_id AND s.tenant_id = @tenant_id AND s.status = 'canceled'
     ORDER BY s.updated_at DESC
     LIMIT 1
 )

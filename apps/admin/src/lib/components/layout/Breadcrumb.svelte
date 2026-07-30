@@ -150,6 +150,9 @@
 				case 'ticket-types':
 					label = t('ticket_types.title');
 					break;
+				case 'plans':
+					label = t('nav.plans', 'Subscription Plans');
+					break;
 				case 'space-types':
 					label = t('space_types.title');
 					break;
