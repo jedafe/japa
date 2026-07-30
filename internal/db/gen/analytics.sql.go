@@ -532,7 +532,7 @@ func (q *Queries) GetSpaceAnalyticsSummary(ctx context.Context, arg GetSpaceAnal
 }
 
 const getTopContentByViews = `-- name: GetTopContentByViews :many
-SELECT id AS content_id, view_count AS total_views, comment_count AS total_comments, share_count AS total_reactions, view_count AS total_unique_viewers
+SELECT id AS content_id, title AS content_title, view_count AS total_views, comment_count AS total_comments, share_count AS total_reactions, view_count AS total_unique_viewers
 FROM contents
 WHERE tenant_id = $1
   AND status != 'draft'
@@ -552,6 +552,7 @@ type GetTopContentByViewsParams struct {
 
 type GetTopContentByViewsRow struct {
 	ContentID          pgtype.UUID `json:"content_id"`
+	ContentTitle       string      `json:"content_title"`
 	TotalViews         int32       `json:"total_views"`
 	TotalComments      int32       `json:"total_comments"`
 	TotalReactions     int32       `json:"total_reactions"`
@@ -574,6 +575,7 @@ func (q *Queries) GetTopContentByViews(ctx context.Context, arg GetTopContentByV
 		var i GetTopContentByViewsRow
 		if err := rows.Scan(
 			&i.ContentID,
+			&i.ContentTitle,
 			&i.TotalViews,
 			&i.TotalComments,
 			&i.TotalReactions,
