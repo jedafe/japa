@@ -5,15 +5,17 @@
 	import SetSidebar from '$lib/components/shell/SetSidebar.svelte';
 	import ProfileHeader from '$lib/components/profile/ProfileHeader.svelte';
 	import ProfileTabs from '$lib/components/profile/ProfileTabs.svelte';
-	import FollowButton from '$lib/components/profile/FollowButton.svelte';
+	import FollowButton from '$lib/components/ui/FollowButton.svelte';
 	import UserProfileSidebar from '$lib/components/profile/UserProfileSidebar.svelte';
 	import { EmptyState } from '$lib/components/ui';
+	import type { ProfileAnalytics } from '$lib/types';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
 
 	const user = $derived(data.user);
 	const isOwnProfile = $derived(data.isOwnProfile);
+	const initiallyFollowing = $derived(data.initiallyFollowing);
 	const activeTab = $derived(page.url.searchParams.get('tab') ?? 'posts');
 
 	const tabs = $derived([
@@ -26,14 +28,7 @@
 		{ key: 'analytics', labelKey: 'profile.tab.analytics', href: `?tab=analytics` }
 	]);
 
-	const analytics = $derived(data.analytics as {
-		total_views?: number;
-		total_likes?: number;
-		total_shares?: number;
-		total_followers?: number;
-		total_following?: number;
-		total_posts?: number;
-	} | null);
+	const analytics = $derived(data.analytics as ProfileAnalytics | null);
 
 	const title = $derived(`${user.display_name} (@${user.username}) — ${t('app.name')}`);
 	const description = $derived(user.bio ?? `${user.display_name} on ${t('app.name')}`);
@@ -65,6 +60,7 @@
 	<UserProfileSidebar
 		{user}
 		{isOwnProfile}
+		{initiallyFollowing}
 		certificates={data.certificates}
 		spaces={data.spaces}
 	/>
@@ -72,7 +68,7 @@
 
 <ProfileHeader {user} {isOwnProfile}>
 	{#if !isOwnProfile}
-		<FollowButton userId={user.id} />
+		<FollowButton entityType="user" entityId={user.id} {initiallyFollowing} />
 	{/if}
 </ProfileHeader>
 
@@ -95,6 +91,9 @@
 								<span>· {post.read_time_minutes} {t('feed.min_read')}</span>
 							</div>
 							<h3 class="mt-1.5 text-sm font-medium text-[var(--color-text)]">{post.title}</h3>
+							{#if post.excerpt}
+								<p class="mt-1 line-clamp-2 text-xs text-[var(--color-muted)]">{post.excerpt}</p>
+							{/if}
 							<div class="mt-2 flex items-center gap-4 text-xs text-[var(--color-muted)]">
 								<span>{post.view_count} {t('profile.views', 'views')}</span>
 								<span>{post.comment_count} {t('profile.comments', 'comments')}</span>
@@ -123,11 +122,11 @@
 						</dd>
 					</div>
 					<div class="flex justify-between gap-4">
-						<dt class="text-sm text-[var(--color-muted)]">{t('profile.followers', 'Followers')}</dt>
+						<dt class="text-sm text-[var(--color-muted)]">{t('profile.followers_label', 'Followers')}</dt>
 						<dd class="text-sm text-[var(--color-text)]">{user.follower_count}</dd>
 					</div>
 					<div class="flex justify-between gap-4">
-						<dt class="text-sm text-[var(--color-muted)]">{t('profile.following', 'Following')}</dt>
+						<dt class="text-sm text-[var(--color-muted)]">{t('profile.following_label', 'Following')}</dt>
 						<dd class="text-sm text-[var(--color-text)]">{user.following_count}</dd>
 					</div>
 				</dl>
@@ -160,15 +159,22 @@
 				</div>
 			{/if}
 		{:else if activeTab === 'likes'}
-			{#if (data.feed?.length ?? 0) === 0}
+			{#if data.likes.length === 0}
 				<EmptyState icon={Heart} title={t('profile.likes_empty', 'No liked posts yet')} />
 			{:else}
 				<ul class="space-y-2">
-					{#each data.feed as item (item.id)}
+					{#each data.likes as item (item.id)}
 						<li>
 							<a href="/content/{item.slug}" class="block rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3 transition-colors hover:bg-[var(--color-surface-subtle)]">
 								<span class="text-xs text-[var(--color-muted)]">{item.content_type}</span>
 								<h3 class="mt-1 text-sm font-medium text-[var(--color-text)]">{item.title}</h3>
+								{#if item.excerpt}
+									<p class="mt-1 line-clamp-2 text-xs text-[var(--color-muted)]">{item.excerpt}</p>
+								{/if}
+								<div class="mt-1.5 flex items-center gap-2 text-xs text-[var(--color-muted)]">
+									{#if item.author_name}<span>{item.author_name}</span>{/if}
+									<span>· {item.view_count} views</span>
+								</div>
 							</a>
 						</li>
 					{/each}

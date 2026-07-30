@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/tenant"
 	"github.com/valkey-io/valkey-go/valkeycompat"
 )
@@ -450,4 +451,41 @@ func (h *Handlers) UpdateMyContentCountry(w http.ResponseWriter, r *http.Request
 			"content_country": country,
 		},
 	})
+}
+
+// GetUserAnalytics handles GET /users/{id}/analytics — the public profile
+// Analytics tab. Public per JEOS api-routes-catalog §340: OptionalAuth (guests
+// can view). Gated by requireActiveProfileUser on the route (404 for
+// banned/suspended/deleted). Returns aggregate stats for the {id} user's
+// published+public content plus follower/following counts.
+//
+// Ref: japaconnect-engineering/sections/33-professional-profiles.md
+//      japaconnect-engineering/conventions/api-routes-catalog.md §340
+func (h *Handlers) GetUserAnalytics(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	var userID pgtype.UUID
+	if err := userID.Scan(chi.URLParam(r, "id")); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_user_id", "Invalid user ID format")
+		return
+	}
+
+	stats, err := h.Service.store.read.GetPublicAuthorAnalytics(r.Context(), gen.GetPublicAuthorAnalyticsParams{
+		TenantID: tenantID,
+		AuthorID: userID,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "user_not_found", "User not found")
+			return
+		}
+		slog.Error("users: GetUserAnalytics failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "analytics_error", "Failed to load analytics")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": stats})
 }

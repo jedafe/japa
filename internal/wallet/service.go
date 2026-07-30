@@ -194,7 +194,7 @@ type ConvertPointsToCreditsInput struct {
 // amount is enforced from wallet.min_convert_points (AUDIT-BE2-SETTING-008).
 func (s *Service) ConvertPointsToCredits(ctx context.Context, tenantID, userID pgtype.UUID, input ConvertPointsToCreditsInput) (pointsBalance, creditsBalance int64, err error) {
 	if input.PointsToConvert <= 0 {
-		return 0, 0, errors.New("points to convert must be positive")
+		return 0, 0, fmt.Errorf("%w: points to convert must be positive", errpkg.ErrInvalid)
 	}
 
 	// AUDIT-BE2-SETTING-008: enforce minimum convertible points from settings.
@@ -203,7 +203,7 @@ func (s *Service) ConvertPointsToCredits(ctx context.Context, tenantID, userID p
 		minConvert = int64(s.settings.GetIntOr(ctx, tenantID, "wallet.min_convert_points", DefaultMinConvertPoints))
 	}
 	if input.PointsToConvert < minConvert {
-		return 0, 0, fmt.Errorf("minimum %d points required for conversion", minConvert)
+		return 0, 0, fmt.Errorf("%w: minimum %d points required for conversion", errpkg.ErrInvalid, minConvert)
 	}
 
 	// Get wallet settings for conversion rate
@@ -258,13 +258,13 @@ func (s *Service) ConvertPointsToCredits(ctx context.Context, tenantID, userID p
 
 	// Check sufficient balance
 	if currentPoints < input.PointsToConvert {
-		return 0, 0, errors.New("insufficient points balance")
+		return 0, 0, fmt.Errorf("%w: insufficient points balance", errpkg.ErrInsufficientBalance)
 	}
 
 	// Calculate credits to add (integer division)
 	creditsToAdd := input.PointsToConvert / int64(*settings.PointsToCreditsRate)
 	if creditsToAdd <= 0 {
-		return 0, 0, errors.New("conversion rate too high for amount")
+		return 0, 0, fmt.Errorf("%w: conversion rate too high for amount", errpkg.ErrInvalid)
 	}
 
 	// New points balance

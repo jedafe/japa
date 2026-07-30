@@ -2,7 +2,6 @@
 	import { beforeNavigate, goto } from '$app/navigation';
 	import { t } from '$lib/stores/i18n.svelte';
 	import PageHeader from '$lib/components/layout/page-header.svelte';
-	import { Card, CardContent, CardHeader } from '$lib/components/ui/card';
 	import { Button } from '$lib/components/ui/button';
 	import { Modal } from '$lib/components/ui/modal';
 	import { Select } from '$lib/components/ui/select';
@@ -11,6 +10,7 @@
 	import { settingsAdminApi, api } from '$lib/api';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import AuthBrandSlidesEditor from '$lib/components/settings/AuthBrandSlidesEditor.svelte';
+	import { convertImageToModernFormat } from '$lib/utils/imageConvert';
 
 	const canManage = $derived(hasPermission('admin.settings'));
 
@@ -40,23 +40,19 @@
 
 	let categories = $state<SettingCategory[]>([]);
 	let originalCategories = $state<SettingCategory[]>([]);
+	let activeTab = $state('');
 
 	const CATEGORY_ICONS: Record<string, string> = {
 		general: '⚙️',
 		auth: '🔐',
-		features: '🧩',
 		feed: '📰',
-		email: '📧',
 		security: '🔒',
 		appearance: '🎨',
 		users: '👤',
 		content: '📝',
-		payment: '💳',
 		media: '🖼️',
 		seo: '🔍',
-		integrations: '🔗',
 		ai: '🤖',
-		advanced: '⚡',
 		spaces: '🏠',
 		moderation: '🛡️',
 		wallet: '💰',
@@ -74,19 +70,14 @@
 	const CATEGORY_DESCRIPTIONS: Record<string, string> = {
 		general: t('settings.cat_general_desc', 'Basic platform settings'),
 		auth: t('settings.cat_auth_desc', 'Password, session, and 2FA settings'),
-		features: t('settings.cat_features_desc', 'Enable or disable platform features'),
 		feed: t('settings.cat_feed_desc', 'Feed rendering and fan-out settings'),
-		email: t('settings.cat_email_desc', 'Email delivery configuration'),
 		security: t('settings.cat_security_desc', 'Authentication and security settings'),
 		appearance: t('settings.cat_appearance_desc', 'Branding, logo, favicon, and visual theme'),
 		users: t('settings.cat_users_desc', 'User profile and registration settings'),
 		content: t('settings.cat_content_desc', 'Content creation and moderation settings'),
-		payment: t('settings.cat_payment_desc', 'Payment gateway configuration'),
 		media: t('settings.cat_media_desc', 'Image processing and upload settings'),
 		seo: t('settings.cat_seo_desc', 'Search engine optimization and metadata'),
-		integrations: t('settings.cat_integrations_desc', 'Third-party service connections'),
 		ai: t('settings.cat_ai_desc', 'AI-powered features configuration'),
-		advanced: t('settings.cat_advanced_desc', 'System-level and debug settings'),
 		spaces: t('settings.cat_spaces_desc', 'Space hierarchy and pinning settings'),
 		moderation: t('settings.cat_moderation_desc', 'Content moderation and spam detection'),
 		wallet: t('settings.cat_wallet_desc', 'Points and credit conversion settings'),
@@ -100,6 +91,18 @@
 		search: t('settings.cat_search_desc', 'Search and autocomplete settings'),
 		affiliate: t('settings.cat_affiliate_desc', 'Affiliate program commission settings')
 	};
+
+	// Tab definitions derived from the loaded categories. The count badge shows
+	// the total number of settings in each category so the user can see the
+	// category's size at a glance.
+	let tabs = $derived(
+		categories.map((cat) => ({
+			value: cat.key,
+			label: cat.label,
+			icon: undefined,
+			count: cat.settings.length
+		}))
+	);
 
 	// Track toggle states per category+key
 	let toggleStates = $state<Record<string, boolean>>({});
@@ -181,7 +184,22 @@
 	function getDisplayValue(value: unknown): string {
 		if (value === null || value === undefined) return '';
 		if (value === '[]' || value === '{}') return '';
+		if (Array.isArray(value)) {
+			if (value.length === 0) return '';
+			return value.length + ' items';
+		}
 		const str = String(value);
+		// Check if the string is a JSON-encoded array
+		if (str.startsWith('[') && str.endsWith(']')) {
+			try {
+				const parsed = JSON.parse(str);
+				if (Array.isArray(parsed)) {
+					return parsed.length + ' items';
+				}
+			} catch {
+				// Not valid JSON, fall through to display as-is
+			}
+		}
 		if (str.startsWith('"') && str.endsWith('"')) return str.slice(1, -1);
 		return str;
 	}
@@ -218,6 +236,10 @@
 					}
 				}
 				originalToggleStates = JSON.parse(JSON.stringify(toggleStates));
+			// Select the first category tab once categories are loaded.
+			if (categories.length > 0 && !activeTab) {
+				activeTab = categories[0].key;
+			}
 			} else {
 				error = result.error;
 				messageType = 'error';
@@ -333,6 +355,7 @@
 		uploadingKey = `${catKey}.${settingKey}`;
 		uploadError = '';
 		try {
+			const convertedFile = await convertImageToModernFormat(file);
 			const initiateRes = await api<{
 				media_id: string;
 				storage_path: string;
@@ -340,7 +363,7 @@
 				expires_at: string;
 			}>('/api/v1/media/upload', {
 				method: 'POST',
-				body: { filename: file.name, mime_type: file.type, file_size: file.size }
+				body: { filename: convertedFile.name, mime_type: convertedFile.type, file_size: convertedFile.size }
 			});
 			if (!initiateRes.ok) {
 				uploadError = initiateRes.error || t('settings.upload_initiate_failed', 'Failed to initiate upload');
@@ -353,8 +376,8 @@
 			const { media_id, presigned_url } = initiateRes.data;
 			const putRes = await fetch(presigned_url, {
 				method: 'PUT',
-				headers: { 'Content-Type': file.type },
-				body: file
+				headers: { 'Content-Type': convertedFile.type },
+				body: convertedFile
 			});
 			if (!putRes.ok) {
 				uploadError = t('settings.upload_file_failed', 'File upload failed: ') + putRes.statusText;
@@ -433,7 +456,43 @@
 		</div>
 	{/if}
 
-	<div class="space-y-6">
+	<!-- Category sidebar + content -->
+	{#if categories.length > 0}
+		<div class="flex gap-6">
+			<!-- Sidebar Navigation -->
+			<nav class="hidden w-56 shrink-0 md:block">
+				<div class="sticky top-4">
+					<div class="space-y-0.5">
+						{#each tabs as tab}
+							<button
+								class="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors {activeTab === tab.value
+									? 'font-medium'
+									: 'hover:bg-muted/50'}"
+								style={activeTab === tab.value
+									? 'background: color-mix(in srgb, var(--color-primary) 10%, transparent); color: var(--color-foreground)'
+									: 'color: var(--color-muted)'}
+								onclick={() => (activeTab = tab.value)}
+							>
+								<span class="flex-1 text-left">{tab.label}</span>
+								<span class="text-xs" style="color: var(--color-muted)">{tab.count}</span>
+							</button>
+						{/each}
+					</div>
+				</div>
+			</nav>
+
+			<!-- Mobile category selector -->
+			<div class="mb-4 w-full md:hidden">
+				<Select
+					options={tabs.map((tab) => ({ value: tab.value, label: `${tab.label} (${tab.count})` }))}
+					value={activeTab}
+					onchange={(val: string) => (activeTab = val)}
+				/>
+			</div>
+
+			<!-- Main Content -->
+			<div class="min-w-0 flex-1">
+		<!-- Tab content: one Card per category, shown when its tab is active -->
 		{#each categories as category (category.key)}
 			{@const catDirtyCount = (() => {
 				let count = 0;
@@ -442,30 +501,31 @@
 				}
 				return count;
 			})()}
-			<Card>
-				<CardHeader>
-					<div class="flex items-center gap-3">
-						<span class="text-2xl">{CATEGORY_ICONS[category.key] ?? '⚙️'}</span>
-						<div>
-							<h3 class="text-lg font-semibold" style="color: var(--color-foreground)">{category.label}</h3>
-							<p class="text-sm" style="color: var(--color-muted)">{CATEGORY_DESCRIPTIONS[category.key] ?? ''}</p>
-						</div>
-						{#if catDirtyCount > 0}
-							<span
-								class="ml-auto rounded-full px-2 py-0.5 text-xs font-medium"
-								style="background: color-mix(in srgb, var(--color-warning) 10%, transparent); color: var(--color-warning)"
-							>
-								{catDirtyCount} {t('settings.modified', 'modified')}
-							</span>
-						{/if}
+			{#if activeTab === category.key}
+				<!-- Category header -->
+				<div class="mb-4 flex items-center gap-3">
+					<span class="text-2xl">{CATEGORY_ICONS[category.key] ?? '⚙️'}</span>
+					<div>
+						<h3 class="text-lg font-semibold" style="color: var(--color-foreground)">{category.label}</h3>
+						<p class="text-sm" style="color: var(--color-muted)">{CATEGORY_DESCRIPTIONS[category.key] ?? ''}</p>
 					</div>
-				</CardHeader>
-				<CardContent>
-					<div class="space-y-6">
+					{#if catDirtyCount > 0}
+						<span
+							class="ml-auto rounded-full px-2 py-0.5 text-xs font-medium"
+							style="background: color-mix(in srgb, var(--color-warning) 10%, transparent); color: var(--color-warning)"
+						>
+							{catDirtyCount} {t('settings.modified', 'modified')}
+						</span>
+					{/if}
+				</div>
+
+				<!-- Settings list -->
+				<div class="overflow-hidden rounded-xl border" style="border-color: var(--color-border)">
+					<div class="divide-y" style="border-color: var(--color-border)">
 						{#each category.settings as setting (setting.key)}
 							{@const toggleId = `${category.key}.${setting.key}`}
 							{@const dirty = isSettingDirty(category.key, setting.key, setting.type)}
-							<div class="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:items-center" style={dirty ? "background: color-mix(in srgb, var(--color-warning) 3%, transparent); margin: -0.5rem; padding: 0.5rem; border-radius: 0.5rem;" : ''}>
+							<div class="grid grid-cols-1 gap-4 px-5 py-3.5 sm:grid-cols-2 sm:items-center" style={dirty ? "background: color-mix(in srgb, var(--color-warning) 5%, transparent)" : ''}>
 								<div>
 									<div class="flex items-center gap-2">
 										<label for={toggleId} class="text-sm font-medium" style="color: var(--color-foreground)">
@@ -541,12 +601,12 @@
 											onchange={(val: string) => updateSettingValue(category.key, setting.key, val)}
 										/>
 									{:else if setting.type === 'brand-slides'}
-									<AuthBrandSlidesEditor
-										value={setting.value}
-										disabled={!canManage}
-										onchange={(next) => updateSettingValue(category.key, setting.key, next)}
-									/>
-								{:else if setting.type === 'textarea'}
+										<AuthBrandSlidesEditor
+											value={setting.value}
+											disabled={!canManage}
+											onchange={(next) => updateSettingValue(category.key, setting.key, next)}
+										/>
+									{:else if setting.type === 'textarea'}
 										<textarea
 											id={toggleId}
 											value={String(setting.value ?? '')}
@@ -666,35 +726,38 @@
 							</div>
 						{/each}
 					</div>
+				</div>
 
-					<div class="mt-6 flex items-center justify-end gap-4">
-						{#if savedCategory === category.key}
-							<div class="flex items-center gap-2" style="color: var(--color-success)">
-								<Check class="h-4 w-4" />
-								<span class="text-sm font-medium">{t('settings.saved')}</span>
-							</div>
-						{/if}
+				<!-- Save / Revert bar -->
+				<div class="mt-4 flex items-center justify-end gap-4">
+					{#if savedCategory === category.key}
+						<div class="flex items-center gap-2" style="color: var(--color-success)">
+							<Check class="h-4 w-4" />
+							<span class="text-sm font-medium">{t('settings.saved')}</span>
+						</div>
+					{/if}
 
-						{#if canManage}
-							<Button disabled={saving || !isDirty} variant="outline" size="sm" onclick={() => revertAll()}>
-								<Undo2 class="h-4 w-4" />
-								{t('settings.revert', 'Revert')}
-							</Button>
-							<Button disabled={saving} variant="outline" size="sm" onclick={() => saveCategory(category.key)}>
-								{#if saving}
-									<RefreshCw class="h-4 w-4 animate-spin" />
-									{t('common.saving', 'Saving...')}
-								{:else}
-									<Save class="h-4 w-4" />
-									{t('settings.save', 'Save')} {category.label}
-								{/if}
-							</Button>
-						{/if}
-					</div>
-				</CardContent>
-			</Card>
+					{#if canManage}
+						<Button disabled={saving || !isDirty} variant="outline" size="sm" onclick={() => revertAll()}>
+							<Undo2 class="h-4 w-4" />
+							{t('settings.revert', 'Revert')}
+						</Button>
+						<Button disabled={saving} variant="outline" size="sm" onclick={() => saveCategory(category.key)}>
+							{#if saving}
+								<RefreshCw class="h-4 w-4 animate-spin" />
+								{t('common.saving', 'Saving...')}
+							{:else}
+								<Save class="h-4 w-4" />
+								{t('settings.save', 'Save')} {category.label}
+							{/if}
+						</Button>
+					{/if}
+				</div>
+			{/if}
 		{/each}
-	</div>
+			</div><!-- /min-w-0 flex-1 -->
+		</div><!-- /flex gap-6 -->
+	{/if}
 {/if}
 
 <Modal bind:open={showUnsavedDialog} title={t('settings.unsaved_changes', 'Unsaved Changes')} size="sm">

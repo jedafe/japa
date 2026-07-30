@@ -3,10 +3,8 @@
 	import { t } from '$lib/stores/i18n.svelte';
 	import { Home, AlertCircle, RefreshCw } from 'lucide-svelte';
 
-	// L8: Error boundary renders within the app shell (the layout wraps this).
-	// Distinguish 404 (not found) from 500 (server error) for better UX.
-	const errorCode = $derived(page.error?.code ?? '500');
-	const isNotFound = $derived(String(errorCode) === '404');
+	const status = $derived(page.status);
+	const isNotFound = $derived(status === 404);
 	const errorTitle = $derived(
 		isNotFound
 			? t('error.not_found_title', 'Page Not Found')
@@ -38,7 +36,7 @@
 		{/if}
 	</div>
 	<h1 class="text-foreground mb-2 text-5xl font-bold">
-		{errorCode}
+		{status}
 	</h1>
 	<h2 class="text-foreground mb-3 text-xl font-semibold">
 		{errorTitle}

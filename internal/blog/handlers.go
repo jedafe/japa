@@ -18,13 +18,17 @@ import (
 	"strings"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/content"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/media"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/tenant"
+	"github.com/jedafe/japa/internal/worker"
+	"github.com/valkey-io/valkey-go/valkeycompat"
 )
 
 // deleteEntity is a shared helper for DELETE handlers that follow the pattern:
@@ -77,15 +81,63 @@ type ContentService interface {
 
 // Handlers holds dependencies for blog HTTP handlers.
 type Handlers struct {
-	Service  *Service
-	content  ContentService
-	siteURL  string
-	siteName string
+	Service     *Service
+	content     ContentService
+	siteURL     string
+	siteName    string
+	AsynqClient TaskEnqueueClient // C6: enqueue rss:regenerate on publish
+	Redis       CacheReader       // C6: serve live feed from Valkey cache
+}
+
+// TaskEnqueueClient is the subset of asynq.Client used by blog handlers.
+type TaskEnqueueClient interface {
+	Enqueue(task *asynq.Task, opts ...asynq.Option) (*asynq.TaskInfo, error)
+}
+
+// CacheReader is the subset of valkeycompat.Cmdable used by blog handlers for
+// reading the cached RSS feed.
+type CacheReader interface {
+	Get(ctx context.Context, key string) *valkeycompat.StringCmd
 }
 
 // NewHandlers creates Handlers with the given Service.
 func NewHandlers(service *Service, contentService ContentService, siteURL string, siteName string) *Handlers {
 	return &Handlers{Service: service, content: contentService, siteURL: siteURL, siteName: siteName}
+}
+
+// SetAsynqClient injects the Asynq client for enqueuing background tasks
+// (C6: rss:regenerate on publish).
+func (h *Handlers) SetAsynqClient(c TaskEnqueueClient) {
+	h.AsynqClient = c
+}
+
+// SetRedis injects the Valkey/Redis client for reading cached feeds (C6).
+func (h *Handlers) SetRedis(r CacheReader) {
+	h.Redis = r
+}
+
+// enqueueRSSRegenerate enqueues the rss:regenerate task for a tenant (C6).
+// Fire-and-forget: errors are logged but never propagated (Rule 8).
+func (h *Handlers) enqueueRSSRegenerate(tenantID pgtype.UUID) {
+	if h.AsynqClient == nil {
+		return
+	}
+
+	payload, err := json.Marshal(map[string]string{
+		"tenant_id": tenantID.String(),
+	})
+	if err != nil {
+		slog.Warn("blog: failed to marshal rss:regenerate payload", "error", err)
+		return
+	}
+
+	if _, err := h.AsynqClient.Enqueue(
+		asynq.NewTask(worker.TypeRSSRegenerate, payload),
+		asynq.Queue(worker.QueueForTask(worker.TypeRSSRegenerate)),
+	); err != nil {
+		slog.Warn("blog: failed to enqueue rss:regenerate task",
+			"tenant_id", tenantID.String(), "error", err)
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -187,6 +239,22 @@ func parsePageSizeOffset(r *http.Request) int32 {
 	return int32(n) //nolint:gosec // G109: bounded by MaxPageSize check above
 }
 
+// mediaURL builds a signed imgproxy URL (or local serve fallback) for a media
+// item identified by its storage bucket and path. Used by the enriched blog
+// post DTOs to surface featured_image_url without storing it in the DB.
+func mediaURL(storageBucket, storagePath string) string {
+	return media.MediaURL(storageBucket, storagePath, media.ImageProxyOpts{})
+}
+
+// excerptFromBody returns a plain-text excerpt of up to 160 characters from
+// the post body, used as a fallback when no explicit excerpt is stored.
+func excerptFromBody(body string) string {
+	if len(body) <= 160 {
+		return body
+	}
+	return body[:160] + "…"
+}
+
 // ---------------------------------------------------------------------------
 // Series Handlers
 // ---------------------------------------------------------------------------
@@ -248,7 +316,9 @@ func (h *Handlers) CreateSeries(w http.ResponseWriter, r *http.Request) {
 }
 
 // ListSeries handles GET /api/v1/blog/series.
-// Supports ?author_id=, ?page_size=, ?page_offset=.
+// Supports ?author_id=, ?q=, ?page_size=, ?page_offset=.
+// L2: the q filter is now applied in SQL (ListBlogSeriesByTenant) rather than
+// in Go memory after fetching all rows.
 func (h *Handlers) ListSeries(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -277,24 +347,12 @@ func (h *Handlers) ListSeries(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	series, err := h.Service.ListSeriesByTenant(r.Context(), tenantID, limit, offset)
+	// L2: q filter is now applied in SQL via ListSeriesByTenant.
+	q := strings.TrimSpace(r.URL.Query().Get("q"))
+	series, err := h.Service.ListSeriesByTenant(r.Context(), tenantID, q, limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return
-	}
-
-	// Optional q parameter for autocomplete search — filters by title/slug
-	// (case-insensitive). Used by the /create composer's series selector.
-	if q := strings.TrimSpace(r.URL.Query().Get("q")); q != "" {
-		qLower := strings.ToLower(q)
-		filtered := make([]gen.BlogSeries, 0, len(series))
-		for _, s := range series {
-			if strings.Contains(strings.ToLower(s.Title), qLower) ||
-				strings.Contains(strings.ToLower(s.Slug), qLower) {
-				filtered = append(filtered, s)
-			}
-		}
-		series = filtered
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": series})
@@ -342,7 +400,7 @@ func (h *Handlers) ListSeriesPosts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	posts, err := h.Service.ListPostsInSeries(r.Context(), id)
+	posts, err := h.Service.ListPostsInSeries(r.Context(), id, tenantID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -371,6 +429,7 @@ func (h *Handlers) UpdateSeries(w http.ResponseWriter, r *http.Request) {
 
 	var input struct {
 		Title        string  `json:"title"`
+		Slug         string  `json:"slug"`
 		Description  string  `json:"description"`
 		CoverImageID *string `json:"cover_image_id"`
 		Status       string  `json:"status"`
@@ -394,7 +453,7 @@ func (h *Handlers) UpdateSeries(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	series, err := h.Service.UpdateSeries(r.Context(), id, tenantID, input.Title, input.Description, coverImageID, input.Status)
+	series, err := h.Service.UpdateSeries(r.Context(), id, tenantID, input.Title, input.Slug, input.Description, coverImageID, input.Status)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -415,8 +474,14 @@ func (h *Handlers) DeleteSeries(w http.ResponseWriter, r *http.Request) {
 // ---------------------------------------------------------------------------
 
 // AddPostToSeries handles POST /api/v1/blog/series/{id}/posts.
+// H7: verifies the content belongs to the same tenant before linking.
 func (h *Handlers) AddPostToSeries(w http.ResponseWriter, r *http.Request) {
 	_, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -448,7 +513,7 @@ func (h *Handlers) AddPostToSeries(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Service.AddPostToSeries(r.Context(), seriesID, contentID, input.Position); err != nil {
+	if err := h.Service.AddPostToSeries(r.Context(), seriesID, contentID, tenantID, input.Position); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -585,8 +650,11 @@ func (h *Handlers) CreateReview(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, map[string]any{"data": review})
 }
 
-// ListReviews handles GET /api/v1/blog/reviews.
+// ListReviews handles GET /api/v1/blog/reviews and GET /api/v1/admin/blog/review-queue.
 // Supports ?content_id=, ?pending=true, ?page_size=, ?page_offset=.
+// C3: the admin review-queue path returns joined summaries (title/slug/author/excerpt).
+// L1: the default branch now returns pending reviews (same as ?pending=true);
+// the dead ?pending=false branch is removed.
 func (h *Handlers) ListReviews(w http.ResponseWriter, r *http.Request) {
 	_, ok := h.requireUser(w, r)
 	if !ok {
@@ -620,31 +688,20 @@ func (h *Handlers) ListReviews(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if r.URL.Query().Get("pending") == "true" {
-		reviews, err := h.Service.ListPendingReviews(r.Context(), tenantID, limit, offset)
-		if err != nil {
-			handleServiceError(w, err)
-			return
-		}
-
-		writeJSON(w, http.StatusOK, map[string]any{"data": reviews})
-
-		return
-	}
-
-	// Default: list all pending reviews.
-	reviews, err := h.Service.ListPendingReviews(r.Context(), tenantID, limit, offset)
+	// C3: return enriched review summaries (with post title/slug/author/excerpt)
+	// for the admin review-queue. This is the default and ?pending=true path.
+	summaries, err := h.Service.ListPendingReviewSummaries(r.Context(), tenantID, limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": reviews})
+	writeJSON(w, http.StatusOK, map[string]any{"data": summaries})
 }
 
 // UpdateReview handles PATCH /api/v1/blog/reviews/{id}.
 func (h *Handlers) UpdateReview(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireUser(w, r)
+	user, ok := h.requireUser(w, r)
 	if !ok {
 		return
 	}
@@ -675,7 +732,7 @@ func (h *Handlers) UpdateReview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	review, err := h.Service.UpdateReviewStatus(r.Context(), id, tenantID, input.Status, input.Feedback)
+	review, err := h.Service.UpdateReviewStatus(r.Context(), id, tenantID, user.UserID, input.Status, input.Feedback)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -708,6 +765,96 @@ func (h *Handlers) DeleteReview(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
+}
+
+// ApproveReview handles POST /api/v1/admin/blog/review-queue/{id}/approve (C2).
+// Dedicated handler that sets status='approved' from the route, reading only
+// feedback from the body — does not require a status field.
+func (h *Handlers) ApproveReview(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	id, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid review ID")
+		return
+	}
+
+	var input struct {
+		Feedback string `json:"feedback"`
+	}
+
+	// Body is optional — approve can be called with empty body.
+	_ = json.NewDecoder(r.Body).Decode(&input)
+
+	review, err := h.Service.UpdateReviewStatus(r.Context(), id, tenantID, user.UserID, ReviewStatusApproved, input.Feedback)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	// Flip the content status to published on approval.
+	if _, err := h.content.UpdateContentStatus(r.Context(), review.ContentID, tenantID, content.StatusPublished); err != nil {
+		slog.Error("failed to publish content on approve", "error", err, "content_id", review.ContentID)
+	}
+
+	// C6: enqueue rss:regenerate so the feed reflects the newly published post.
+	h.enqueueRSSRegenerate(tenantID)
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": review})
+}
+
+// RejectReview handles POST /api/v1/admin/blog/review-queue/{id}/reject (C2).
+// Dedicated handler that sets status='rejected' from the route, reading only
+// feedback from the body — does not require a status field.
+func (h *Handlers) RejectReview(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	id, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid review ID")
+		return
+	}
+
+	var input struct {
+		Feedback string `json:"feedback"`
+		Reason   string `json:"reason"` // frontend sends 'reason' — map to feedback
+	}
+
+	_ = json.NewDecoder(r.Body).Decode(&input)
+
+	feedback := input.Feedback
+	if feedback == "" {
+		feedback = input.Reason
+	}
+
+	review, err := h.Service.UpdateReviewStatus(r.Context(), id, tenantID, user.UserID, ReviewStatusRejected, feedback)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	// Flip the content status back to draft on rejection.
+	if _, err := h.content.UpdateContentStatus(r.Context(), review.ContentID, tenantID, "draft"); err != nil {
+		slog.Error("failed to revert content to draft on reject", "error", err, "content_id", review.ContentID)
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": review})
 }
 
 // ---------------------------------------------------------------------------
@@ -777,6 +924,8 @@ func (h *Handlers) UnfeaturePost(w http.ResponseWriter, r *http.Request) {
 }
 
 // ListFeatured handles GET /api/v1/blog/featured.
+// H6: returns enriched blog post cards (with title/slug/author/cover image)
+// instead of raw content_featured junction rows.
 func (h *Handlers) ListFeatured(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -786,16 +935,44 @@ func (h *Handlers) ListFeatured(w http.ResponseWriter, r *http.Request) {
 	limit := parsePageSize(r)
 	offset := parsePageSizeOffset(r)
 
-	featured, err := h.Service.ListFeaturedPosts(r.Context(), tenantID, limit, offset)
+	cards, err := h.Service.ListFeaturedBlogPostCards(r.Context(), tenantID, limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": featured})
+	// Construct featured_image_url from storage_bucket/storage_path.
+	result := make([]map[string]any, 0, len(cards))
+	for _, c := range cards {
+		card := map[string]any{
+			"featured_id":    c.FeaturedID,
+			"content_id":     c.ContentID,
+			"featured_order": c.FeaturedOrder,
+			"featured_until": c.FeaturedUntil,
+			"title":          c.Title,
+			"slug":           c.Slug,
+			"body":           c.Body,
+			"body_html":      c.BodyHtml,
+			"excerpt":        c.Excerpt,
+			"read_time_minutes": c.ReadTimeMinutes,
+			"view_count":     c.ViewCount,
+			"comment_count":  c.CommentCount,
+			"reshare_count":  c.ReshareCount,
+			"author_id":      c.AuthorID,
+			"author_name":    c.AuthorName,
+			"id":             c.ContentID, // for card compatibility
+		}
+		if c.FeaturedStorageBucket != nil && c.FeaturedStoragePath != nil {
+			card["featured_image_url"] = mediaURL(*c.FeaturedStorageBucket, *c.FeaturedStoragePath)
+		}
+		result = append(result, card)
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": result})
 }
 
 // ReorderFeatured handles PATCH /api/v1/blog/featured/reorder.
+// M3: uses a transactional bulk update so partial failure leaves consistent order.
 func (h *Handlers) ReorderFeatured(w http.ResponseWriter, r *http.Request) {
 	_, ok := h.requireUser(w, r)
 	if !ok {
@@ -824,17 +1001,22 @@ func (h *Handlers) ReorderFeatured(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	for _, item := range input.Items {
-		var id pgtype.UUID
-		if err := id.Scan(item.ID); err != nil {
+	items := make([]struct {
+		ID    pgtype.UUID
+		Order int32
+	}, len(input.Items))
+	for i, item := range input.Items {
+		if err := items[i].ID.Scan(item.ID); err != nil {
 			writeError(w, http.StatusBadRequest, "invalid_id", "Invalid featured ID in items array")
 			return
 		}
 
-		if err := h.Service.UpdateFeaturedPostOrder(r.Context(), id, tenantID, item.Order); err != nil {
-			handleServiceError(w, err)
-			return
-		}
+		items[i].Order = item.Order
+	}
+
+	if err := h.Service.BulkUpdateFeaturedOrder(r.Context(), tenantID, items); err != nil {
+		handleServiceError(w, err)
+		return
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "reordered"}})
@@ -845,12 +1027,28 @@ func (h *Handlers) ReorderFeatured(w http.ResponseWriter, r *http.Request) {
 // ---------------------------------------------------------------------------
 
 // GetRSSFeed handles GET /api/v1/blog/feed.xml (public, no auth required).
+// C6: serves the live feed from the Valkey cache (jc:cache:feed:rss:{tenant_id})
+// populated by the rss:regenerate worker task. Falls back to live DB generation
+// when the cache is empty or Redis is unavailable.
 func (h *Handlers) GetRSSFeed(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
 
+	// C6: try the Valkey cache first.
+	cacheKey := "jc:cache:feed:rss:" + tenantID.String()
+	if h.Redis != nil {
+		if cached, err := h.Redis.Get(r.Context(), cacheKey).Result(); err == nil && cached != "" {
+			w.Header().Set("Content-Type", "application/rss+xml; charset=utf-8")
+			w.Header().Set("X-Cache", "HIT")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(cached))
+			return
+		}
+	}
+
+	// Cache miss — generate live from the DB.
 	posts, err := h.Service.ListPublishedPostsForRSS(r.Context(), tenantID, 50)
 	if err != nil {
 		handleServiceError(w, err)
@@ -858,6 +1056,7 @@ func (h *Handlers) GetRSSFeed(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/rss+xml; charset=utf-8")
+	w.Header().Set("X-Cache", "MISS")
 	w.WriteHeader(http.StatusOK)
 
 	if err := generateRSSXML(w, posts, h.siteURL, h.siteName); err != nil {
@@ -866,50 +1065,12 @@ func (h *Handlers) GetRSSFeed(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// ListPosts handles GET /api/v1/blog — published blog posts, newest first.
-// Supports ?cursor= (RFC3339 timestamp) and ?page_size=. Blog posts are
-// content rows with content_type=blog_post; this is a thin wrapper over
-// content.Service.ListContentsByType with the type pinned.
-func (h *Handlers) ListPosts(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
-
-	limit := parsePageSize(r)
-
-	var cursor pgtype.Timestamptz
-	if cs := r.URL.Query().Get("cursor"); cs != "" {
-		if err := cursor.Scan(cs); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_cursor", "Invalid cursor timestamp")
-			return
-		}
-	}
-
-	posts, err := h.content.ListContentsByType(r.Context(), tenantID, contentTypeBlogPost, cursor, limit)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list blog posts")
-		return
-	}
-
-	// This route is public (no auth middleware) — ListContentsByType has no
-	// status filter, so drafts/archived posts must be filtered out here rather
-	// than exposed to anonymous readers.
-	published := make([]gen.ListContentsByTypeRow, 0, len(posts))
-
-	for _, p := range posts {
-		if p.Status == content.StatusPublished {
-			published = append(published, p)
-		}
-	}
-
-	writeJSON(w, http.StatusOK, map[string]any{"data": published})
-}
-
 // GetPost handles GET /api/v1/blog/{slug} — a single published blog post.
 // Public (no auth middleware); only content_type=blog_post and
 // status=published are visible here — anything else 404s rather than
 // disclosing the existence/content of drafts or unrelated content types.
+// C4: returns an enriched DTO with author name, avatar, featured image URL,
+// tags, and series navigation (prev/next within a series).
 func (h *Handlers) GetPost(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -922,18 +1083,152 @@ func (h *Handlers) GetPost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	post, err := h.content.GetContentBySlug(r.Context(), slug, tenantID)
+	post, err := h.Service.GetBlogPostDetail(r.Context(), slug, tenantID)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "not_found", "Post not found")
 		return
 	}
 
-	if post.ContentType != contentTypeBlogPost || post.Status != content.StatusPublished {
-		writeError(w, http.StatusNotFound, "not_found", "Post not found")
+	// Build the enriched response DTO.
+	dto := map[string]any{
+		"id":                 post.ID,
+		"tenant_id":          post.TenantID,
+		"author_id":          post.AuthorID,
+		"space_id":           post.SpaceID,
+		"content_type":       post.ContentType,
+		"title":              post.Title,
+		"slug":               post.Slug,
+		"body":               post.Body,
+		"body_html":          post.BodyHtml,
+		"field_values":       post.FieldValues,
+		"content_hash":       post.ContentHash,
+		"geo_space_id":       post.GeoSpaceID,
+		"header_image_id":    post.HeaderImageID,
+		"featured_image_id":  post.FeaturedImageID,
+		"canonical_url":      post.CanonicalUrl,
+		"meta_title":         post.MetaTitle,
+		"meta_description":   post.MetaDescription,
+		"og_image_url":       post.OgImageUrl,
+		"seo_indexable":      post.SeoIndexable,
+		"status":             post.Status,
+		"visibility":         post.Visibility,
+		"is_locked":          post.IsLocked,
+		"is_pinned":          post.IsPinned,
+		"read_time_minutes":  post.ReadTimeMinutes,
+		"view_count":         post.ViewCount,
+		"comment_count":      post.CommentCount,
+		"share_count":        post.ShareCount,
+		"reshare_count":      post.ReshareCount,
+		"publish_at":         post.PublishAt,
+		"published_at":       post.PublishedAt,
+		"created_at":         post.CreatedAt,
+		"updated_at":         post.UpdatedAt,
+		"author_name":        post.AuthorName,
+		"author_avatar_url":  post.AuthorAvatarUrl,
+		"space_name":         post.SpaceName,
+		"excerpt":            excerptFromBody(post.Body),
+	}
+
+	// Construct featured_image_url from storage_bucket/storage_path.
+	if post.FeaturedStorageBucket != nil && post.FeaturedStoragePath != nil {
+		dto["featured_image_url"] = mediaURL(*post.FeaturedStorageBucket, *post.FeaturedStoragePath)
+	}
+
+	// Tags — split the CSV string into an array.
+	if post.TagsCsv != "" {
+		dto["tags"] = strings.Split(post.TagsCsv, ",")
+	} else {
+		dto["tags"] = []string{}
+	}
+
+	// Series navigation.
+	if post.SeriesID.Valid {
+		dto["series_id"] = post.SeriesID
+		if post.SeriesTitle != nil {
+			dto["series_title"] = *post.SeriesTitle
+		}
+		if post.SeriesPart != nil {
+			dto["series_part"] = *post.SeriesPart
+		}
+		dto["series_total"] = post.SeriesTotal
+		if post.SeriesPrevSlug != "" {
+			dto["series_prev_slug"] = post.SeriesPrevSlug
+		}
+		if post.SeriesNextSlug != "" {
+			dto["series_next_slug"] = post.SeriesNextSlug
+		}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": dto})
+}
+
+// ListPosts handles GET /api/v1/blog — published blog posts, newest first.
+// Supports ?page_size= and ?page_offset= (Rule 5 offset pagination).
+// C5/H3: uses the enriched ListPublishedBlogPosts query that filters
+// status='published' and deleted_at IS NULL in SQL (not Go memory), and
+// JOINs users + media for author name and featured image URL.
+// BUG-005: switched from cursor-based to offset-based pagination per Rule 5.
+func (h *Handlers) ListPosts(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": post})
+	limit := parsePageSize(r)
+	offset := parsePageSizeOffset(r)
+
+	posts, err := h.Service.ListPublishedBlogPosts(r.Context(), tenantID, limit, offset)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list blog posts")
+		return
+	}
+
+	// Build enriched card DTOs with featured_image_url.
+	result := make([]map[string]any, 0, len(posts))
+	for _, p := range posts {
+		card := map[string]any{
+			"id":                p.ID,
+			"tenant_id":         p.TenantID,
+			"author_id":         p.AuthorID,
+			"space_id":          p.SpaceID,
+			"content_type":      p.ContentType,
+			"title":             p.Title,
+			"slug":              p.Slug,
+			"body":              p.Body,
+			"body_html":         p.BodyHtml,
+			"field_values":      p.FieldValues,
+			"content_hash":      p.ContentHash,
+			"geo_space_id":      p.GeoSpaceID,
+			"header_image_id":   p.HeaderImageID,
+			"featured_image_id": p.FeaturedImageID,
+			"canonical_url":     p.CanonicalUrl,
+			"meta_title":        p.MetaTitle,
+			"meta_description":  p.MetaDescription,
+			"og_image_url":      p.OgImageUrl,
+			"seo_indexable":     p.SeoIndexable,
+			"status":            p.Status,
+			"visibility":        p.Visibility,
+			"is_locked":         p.IsLocked,
+			"is_pinned":         p.IsPinned,
+			"read_time_minutes": p.ReadTimeMinutes,
+			"view_count":        p.ViewCount,
+			"comment_count":     p.CommentCount,
+			"share_count":       p.ShareCount,
+			"reshare_count":     p.ReshareCount,
+			"publish_at":        p.PublishAt,
+			"published_at":      p.PublishedAt,
+			"created_at":        p.CreatedAt,
+			"updated_at":        p.UpdatedAt,
+			"author_name":       p.AuthorName,
+			"excerpt":           p.Excerpt,
+		}
+		if p.FeaturedStorageBucket != nil && p.FeaturedStoragePath != nil {
+			card["featured_image_url"] = mediaURL(*p.FeaturedStorageBucket, *p.FeaturedStoragePath)
+		}
+		result = append(result, card)
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": result})
 }
 
 // AdminListPosts handles GET /api/v1/admin/blog — all blog posts
@@ -967,6 +1262,7 @@ func (h *Handlers) AdminListPosts(w http.ResponseWriter, r *http.Request) {
 
 // AdminDeletePost handles DELETE /api/v1/admin/blog/{id} — soft-deletes
 // a blog post (Rule 11: user content is soft-deleted, never hard-deleted).
+// H2: returns 204 No Content on success (REST DELETE convention).
 func (h *Handlers) AdminDeletePost(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -984,11 +1280,12 @@ func (h *Handlers) AdminDeletePost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"deleted": true}})
+	writeJSON(w, http.StatusNoContent, nil)
 }
 
 // CreatePost handles POST /api/v1/blog — creates a blog post (content_type
 // forced to blog_post regardless of any type field in the request body).
+// M1: accepts all content fields (excerpt, meta, SEO, scheduling, space).
 func (h *Handlers) CreatePost(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
 	if !ok {
@@ -1001,12 +1298,23 @@ func (h *Handlers) CreatePost(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var input struct {
-		Title      string `json:"title"`
-		Slug       string `json:"slug"`
-		Body       string `json:"body"`
-		BodyHtml   string `json:"body_html"` //nolint:revive // matches sqlc-generated field name
-		Status     string `json:"status"`
-		Visibility string `json:"visibility"`
+		Title           string          `json:"title"`
+		Slug            string          `json:"slug"`
+		Body            string          `json:"body"`
+		BodyHtml        string          `json:"body_html"` //nolint:revive // matches sqlc-generated field name
+		FieldValues     json.RawMessage `json:"field_values"`
+		CanonicalUrl    *string         `json:"canonical_url"` //nolint:revive // matches sqlc-generated field name
+		HeaderImageID   *string         `json:"header_image_id"`
+		FeaturedImageID *string         `json:"featured_image_id"`
+		MetaTitle       *string         `json:"meta_title"`
+		MetaDescription *string         `json:"meta_description"`
+		OgImageUrl      *string         `json:"og_image_url"` //nolint:revive // matches sqlc-generated field name
+		SeoIndexable    *bool           `json:"seo_indexable"`
+		Status          string          `json:"status"`
+		Visibility      string          `json:"visibility"`
+		PublishAt       *string         `json:"publish_at"`
+		SpaceID         *string         `json:"space_id"`
+		GeoSpaceID      *string         `json:"geo_space_id"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
@@ -1027,17 +1335,62 @@ func (h *Handlers) CreatePost(w http.ResponseWriter, r *http.Request) {
 		input.Visibility = "public"
 	}
 
-	post, err := h.content.CreateContent(r.Context(), tenantID, content.CreateContentInput{
-		AuthorID:     user.UserID,
-		ContentType:  contentTypeBlogPost,
-		Title:        input.Title,
-		Slug:         input.Slug,
-		Body:         content.SanitizeText(input.Body),
-		BodyHtml:     content.SanitizeHTML(input.BodyHtml),
-		SeoIndexable: true, // default: indexable — matches the column DEFAULT
-		Status:       input.Status,
-		Visibility:   input.Visibility,
-	})
+	createInput := content.CreateContentInput{
+		AuthorID:        user.UserID,
+		ContentType:     contentTypeBlogPost,
+		Title:           input.Title,
+		Slug:            input.Slug,
+		Body:            content.SanitizeText(input.Body),
+		BodyHtml:        content.SanitizeHTML(input.BodyHtml),
+		FieldValues:     input.FieldValues,
+		CanonicalUrl:    input.CanonicalUrl,
+		MetaTitle:       input.MetaTitle,
+		MetaDescription: input.MetaDescription,
+		OgImageUrl:      input.OgImageUrl,
+		SeoIndexable:    true,
+		Status:          input.Status,
+		Visibility:      input.Visibility,
+	}
+	if input.SeoIndexable != nil {
+		createInput.SeoIndexable = *input.SeoIndexable
+	}
+
+	if input.SpaceID != nil && *input.SpaceID != "" {
+		if err := createInput.SpaceID.Scan(*input.SpaceID); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_space_id", "Invalid space_id format")
+			return
+		}
+	}
+
+	if input.GeoSpaceID != nil && *input.GeoSpaceID != "" {
+		if err := createInput.GeoSpaceID.Scan(*input.GeoSpaceID); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_geo_space_id", "Invalid geo_space_id format")
+			return
+		}
+	}
+
+	if input.HeaderImageID != nil && *input.HeaderImageID != "" {
+		if err := createInput.HeaderImageID.Scan(*input.HeaderImageID); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_header_image_id", "Invalid header_image_id format")
+			return
+		}
+	}
+
+	if input.FeaturedImageID != nil && *input.FeaturedImageID != "" {
+		if err := createInput.FeaturedImageID.Scan(*input.FeaturedImageID); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_featured_image_id", "Invalid featured_image_id format")
+			return
+		}
+	}
+
+	if input.PublishAt != nil && *input.PublishAt != "" {
+		if err := createInput.PublishAt.Scan(*input.PublishAt); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_publish_at", "Invalid publish_at format")
+			return
+		}
+	}
+
+	post, err := h.content.CreateContent(r.Context(), tenantID, createInput)
 	if err != nil {
 		slog.Error("failed to create blog post", "error", err, "title", input.Title, "slug", input.Slug)
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to create blog post")
@@ -1048,7 +1401,8 @@ func (h *Handlers) CreatePost(w http.ResponseWriter, r *http.Request) {
 }
 
 // SubmitForReview handles POST /api/v1/blog/{id}/submit-for-review —
-// transitions the post's content status to in_review.
+// transitions the post's content status to in_review AND creates a pending
+// content_reviews row so the post appears in the admin review-queue (C1).
 func (h *Handlers) SubmitForReview(w http.ResponseWriter, r *http.Request) {
 	_, ok := h.requireUser(w, r)
 	if !ok {
@@ -1083,6 +1437,18 @@ func (h *Handlers) SubmitForReview(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to submit post for review")
 		return
+	}
+
+	// C1: create a pending content_reviews row so the admin review-queue
+	// (ListPendingReviewSummaries) can list this submission. BUG-003: the
+	// reviewer is unassigned (zero UUID → NULL) — the actual reviewer is
+	// recorded when approve/reject is called.
+	if _, err := h.Service.CreateReview(r.Context(), tenantID, pgtype.UUID{}, CreateReviewInput{
+		ContentID: contentID,
+		Status:    ReviewStatusPending,
+	}); err != nil {
+		slog.Error("failed to create content review on submit", "error", err, "content_id", contentID)
+		// Don't fail the request — the status flip already succeeded.
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": post})

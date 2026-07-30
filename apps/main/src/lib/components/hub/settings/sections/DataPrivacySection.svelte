@@ -18,55 +18,128 @@
 	import { Switch } from 'bits-ui';
 	import { t } from '$lib/i18n';
 	import { api } from '$lib/api/client';
-	import { exportData } from '$lib/api/hub';
-	import { Download, Loader2, ShieldCheck } from 'lucide-svelte';
+	import { exportData, cancelDataExport } from '$lib/api/hub';
+	import { Download, Loader2, ShieldCheck, X } from 'lucide-svelte';
 
+	/** Backend consent record — matches gen.ConsentRecord (Section 19). */
 	interface ConsentRecord {
-		type: string;
-		consented: boolean;
-		consented_at?: string | null;
+		consent_type: string;
+		granted: boolean;
+		policy_version?: string;
+		created_at?: string | null;
 	}
+
+	/**
+	 * All valid consent types defined by the backend (internal/gdpr/types.go).
+	 * These are platform constants, not admin-configurable values — like theme
+	 * names. Ref: japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
+	 */
+	const CONSENT_TYPES = [
+		'marketing_email',
+		'analytics_tracking',
+		'third_party_sharing',
+		'ai_processing'
+	] as const;
+
+	/** Current policy version — matches the backend default ("1.0"). */
+	const POLICY_VERSION = '1.0';
 
 	interface DataPrivacyData {
 		consents: ConsentRecord[];
-		exportStatus: { status: 'none' | 'pending' | 'ready' | 'failed'; download_url?: string | null };
+		exportStatus: ExportStatusResponse;
 	}
+
+	/** Raw response from GET /me/data-export/status. */
+	type ExportStatusResponse =
+		| { status: 'no_pending_export' }
+		| { status: string; download_url?: string | null; [k: string]: unknown };
+
+	/** Normalized status used by the UI. */
+	type UiStatus = 'none' | 'pending' | 'ready' | 'failed';
 
 	let { data }: { data: unknown } = $props();
 	const payload = $derived(data as DataPrivacyData | null);
-	const consents = $state<ConsentRecord[]>(untrack(() => payload?.consents ?? []));
-	const exportStatus = $state<{ status: string; download_url?: string | null }>(
-		untrack(() => payload?.exportStatus ?? { status: 'none' })
-	);
+
+	/** Build a map of consent_type → granted from the API response.
+	 *  All consent types default to true (opt-out model) — the user
+	 *  must explicitly revoke a consent to turn it off. Existing API
+	 *  records override the default. */
+	function buildConsentMap(records: ConsentRecord[]): Map<string, boolean> {
+		const map = new Map<string, boolean>();
+		// Pre-seed all consent types as granted by default.
+		for (const type of CONSENT_TYPES) map.set(type, true);
+		const seen = new Set<string>();
+		for (const r of records) {
+			// Only the latest record per type matters; backend returns newest-first.
+			if (seen.has(r.consent_type)) continue;
+			seen.add(r.consent_type);
+			map.set(r.consent_type, r.granted);
+		}
+		return map;
+	}
+
+	/** Normalize the raw export status response into UI states. */
+	function normalizeStatus(raw: ExportStatusResponse | null | undefined): { status: UiStatus; download_url: string | null } {
+		if (!raw || raw.status === 'no_pending_export' || !raw.status) {
+			return { status: 'none', download_url: null };
+		}
+		// Backend uses: pending, processing, completed, failed.
+		// Map to UI: pending (includes processing), ready (completed), failed.
+		if (raw.status === 'completed') return { status: 'ready', download_url: raw.download_url ?? null };
+		if (raw.status === 'failed') return { status: 'failed', download_url: null };
+		// pending, processing, or anything else → pending
+		return { status: 'pending', download_url: null };
+	}
+
+	const consentMap = $state<Map<string, boolean>>(untrack(() => buildConsentMap(payload?.consents ?? [])));
+	const initialNorm = untrack(() => normalizeStatus(payload?.exportStatus));
+	let uiStatus = $state<UiStatus>(initialNorm.status);
+	let downloadUrl = $state<string | null>(initialNorm.download_url);
+
+	// Re-seed on SSR payload change (navigation).
+	$effect(() => {
+		const p = data as DataPrivacyData | null;
+		consentMap.clear();
+		for (const [k, v] of buildConsentMap(p?.consents ?? [])) consentMap.set(k, v);
+		const norm = normalizeStatus(p?.exportStatus);
+		uiStatus = norm.status;
+		downloadUrl = norm.download_url;
+	});
+
+	let toggling = $state<string | null>(null);
+	let consentError = $state('');
 
 	let requesting = $state(false);
 	let requestError = $state('');
 	let requestSuccess = $state('');
 
-	// Re-seed on SSR payload change.
-	$effect(() => {
-		const p = data as DataPrivacyData | null;
-		consents.splice(0, consents.length, ...(p?.consents ?? []));
-		Object.assign(exportStatus, p?.exportStatus ?? { status: 'none' });
-	});
+	let cancelling = $state(false);
+	let cancelError = $state('');
 
 	/** Toggle a consent type on/off via POST /consent or DELETE /consent/{type}. */
-	async function toggleConsent(idx: number) {
-		const c = consents[idx];
-		if (!c) return;
-		const wasConsented = c.consented;
-		// Optimistic
-		consents[idx] = { ...c, consented: !wasConsented };
+	async function toggleConsent(type: string) {
+		if (toggling) return;
+		toggling = type;
+		consentError = '';
+		const wasGranted = consentMap.get(type) ?? false;
+		// Optimistic update
+		consentMap.set(type, !wasGranted);
 		try {
-			if (wasConsented) {
-				await api.delete(`/consent/${c.type}`);
+			if (wasGranted) {
+				await api.delete(`/consent/${type}`);
 			} else {
-				await api.post('/consent', { type: c.type });
+				await api.post('/consent', {
+					consent_type: type,
+					granted: true,
+					policy_version: POLICY_VERSION
+				});
 			}
-		} catch {
+		} catch (e) {
 			// Revert on error
-			consents[idx] = c;
+			consentMap.set(type, wasGranted);
+			consentError = t('settings.data_privacy.consent_error', 'Failed to update consent. Try again.');
 		}
+		toggling = null;
 	}
 
 	/** Request a data export — POST /me/data-export. */
@@ -80,24 +153,41 @@
 			requestError = t('settings.data_privacy.export_error', 'Failed to request export. Try again later.');
 		} else {
 			requestSuccess = t('settings.data_privacy.export_requested', 'Export requested. You will be emailed when it is ready.');
-			exportStatus.status = 'pending';
+			uiStatus = 'pending';
 		}
 		requesting = false;
 	}
 
+	/** Cancel a pending data export — DELETE /me/data-export. */
+	async function cancelExport() {
+		if (cancelling) return;
+		cancelling = true;
+		cancelError = '';
+		const res = await cancelDataExport();
+		if (res.error) {
+			cancelError = t('settings.data_privacy.cancel_error', 'Failed to cancel export. Try again.');
+		} else {
+			uiStatus = 'none';
+			downloadUrl = null;
+			requestSuccess = '';
+		}
+		cancelling = false;
+	}
+
 	// Poll export status while pending (every 30s).
 	onMount(() => {
-		if (exportStatus.status !== 'pending') return;
+		if (uiStatus !== 'pending') return;
 		const interval = setInterval(async () => {
-			if (exportStatus.status !== 'pending') {
+			if (uiStatus !== 'pending') {
 				clearInterval(interval);
 				return;
 			}
-			const res = await api.get<{ status: string; download_url?: string | null }>('/me/data-export/status');
+			const res = await api.get<ExportStatusResponse>('/me/data-export/status');
 			if (res.data) {
-				exportStatus.status = res.data.status;
-				exportStatus.download_url = res.data.download_url ?? null;
-				if (res.data.status !== 'pending') clearInterval(interval);
+				const norm = normalizeStatus(res.data);
+				uiStatus = norm.status;
+				downloadUrl = norm.download_url;
+				if (norm.status !== 'pending') clearInterval(interval);
 			}
 		}, 30000);
 		return () => clearInterval(interval);
@@ -115,29 +205,30 @@
 		<h2 class="mb-3 flex items-center gap-1.5 text-sm font-medium text-[var(--color-text)]">
 			<ShieldCheck size={15} /> {t('settings.data_privacy.consents', 'Consent preferences')}
 		</h2>
-		{#if consents.length === 0}
-			<p class="text-sm text-[var(--color-muted)]">{t('settings.data_privacy.no_consents', 'No consent records yet.')}</p>
-		{:else}
-			<ul class="space-y-2">
-				{#each consents as c, idx (c.type)}
-					<li class="flex items-center justify-between rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2">
-						<span class="min-w-0 flex-1">
-							<span class="block text-sm font-medium text-[var(--color-text)]">{t(`consent.${c.type}.title`, c.type)}</span>
-							<span class="block text-xs text-[var(--color-muted)]">{t(`consent.${c.type}.desc`, '')}</span>
-						</span>
-							<Switch.Root
-								checked={c.consented}
-								onCheckedChange={() => toggleConsent(idx)}
-								class="relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors data-[state=checked]:bg-[var(--color-primary)] data-[state=unchecked]:bg-[var(--color-border)]"
-							>
-								<Switch.Thumb
-									class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform data-[state=checked]:translate-x-4 data-[state=unchecked]:translate-x-0.5"
-								/>
-							</Switch.Root>
-					</li>
-				{/each}
-			</ul>
+		{#if consentError}
+			<p class="mb-2 rounded-[var(--radius)] bg-red-500/10 px-3 py-2 text-xs text-red-500" role="alert">{consentError}</p>
 		{/if}
+		<ul class="space-y-2">
+			{#each CONSENT_TYPES as type (type)}
+				{@const granted = consentMap.get(type) ?? false}
+				<li class="flex items-center justify-between rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2">
+					<span class="min-w-0 flex-1">
+						<span class="block text-sm font-medium text-[var(--color-text)]">{t(`consent.${type}.title`, type)}</span>
+						<span class="block text-xs text-[var(--color-muted)]">{t(`consent.${type}.desc`, '')}</span>
+					</span>
+					<Switch.Root
+						checked={granted}
+						onCheckedChange={() => toggleConsent(type)}
+						disabled={toggling === type}
+						class="relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors data-[state=checked]:bg-[var(--color-primary)] data-[state=unchecked]:bg-[var(--color-border)]"
+					>
+						<Switch.Thumb
+							class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform data-[state=checked]:translate-x-4 data-[state=unchecked]:translate-x-0.5"
+						/>
+					</Switch.Root>
+				</li>
+			{/each}
+		</ul>
 	</section>
 
 	<!-- Data export -->
@@ -156,18 +247,51 @@
 			<p class="mb-3 rounded-[var(--radius)] bg-green-500/10 px-3 py-2 text-sm text-green-600" role="status">{requestSuccess}</p>
 		{/if}
 
-		{#if exportStatus.status === 'ready' && exportStatus.download_url}
+		{#if uiStatus === 'ready'}
 			<a
-				href={exportStatus.download_url}
+				href="/api/v1/me/data-export/download"
 				class="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-[var(--color-primary-contrast)] hover:bg-[var(--color-primary-hover)]"
 			>
 				<Download size={14} /> {t('settings.data_privacy.download_ready', 'Download ready')}
 			</a>
-		{:else if exportStatus.status === 'pending'}
-			<p class="inline-flex items-center gap-1.5 text-sm text-[var(--color-muted)]">
-				<Loader2 size={14} class="animate-spin" />
-				{t('settings.data_privacy.export_pending', 'Export in progress...')}
-			</p>
+		{:else if uiStatus === 'pending'}
+			<div class="flex flex-wrap items-center gap-3">
+				<p class="inline-flex items-center gap-1.5 text-sm text-[var(--color-muted)]">
+					<Loader2 size={14} class="animate-spin" />
+					{t('settings.data_privacy.export_pending', 'Export in progress...')}
+				</p>
+				<button
+					type="button"
+					onclick={cancelExport}
+					disabled={cancelling}
+					class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-sm font-medium text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)] disabled:opacity-50"
+				>
+					{#if cancelling}
+						<Loader2 size={14} class="animate-spin" />
+					{:else}
+						<X size={14} />
+					{/if}
+					{t('settings.data_privacy.cancel_export', 'Cancel')}
+				</button>
+			</div>
+			{#if cancelError}
+				<p class="mt-2 rounded-[var(--radius)] bg-red-500/10 px-3 py-2 text-xs text-red-500" role="alert">{cancelError}</p>
+			{/if}
+		{:else if uiStatus === 'failed'}
+			<p class="mb-2 text-sm text-red-500">{t('settings.data_privacy.export_failed', 'Export failed. Please try again.')}</p>
+			<button
+				type="button"
+				onclick={requestExport}
+				disabled={requesting}
+				class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] px-4 py-2 text-sm font-medium text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)] disabled:opacity-50"
+			>
+				{#if requesting}
+					<Loader2 size={14} class="animate-spin" />
+				{:else}
+					<Download size={14} />
+				{/if}
+				{t('settings.data_privacy.request_export', 'Request data export')}
+			</button>
 		{:else}
 			<button
 				type="button"

@@ -716,6 +716,8 @@ type Certificate struct {
 	CertificateNumber string       `json:"certificate_number"`
 	MediaID           *pgtype.UUID `json:"media_id,omitempty"`
 	IssuedAt          time.Time    `json:"issued_at"`
+	Title             *string      `json:"title,omitempty"`
+	TrackSlug         *string      `json:"track_slug,omitempty"`
 }
 
 func certFromRow(r gen.LearningCertificate) Certificate {
@@ -732,6 +734,28 @@ func certFromRow(r gen.LearningCertificate) Certificate {
 		CertificateNumber: r.CertificateNumber,
 		MediaID:           mediaID,
 		IssuedAt:          r.IssuedAt.Time,
+	}
+}
+
+// certFromListRow maps the joined certificate+track row (used by the public
+// profile Certificates tab) to a Certificate, populating Title and TrackSlug
+// from the joined learning_tracks columns.
+func certFromListRow(r gen.ListLearningCertificatesByUserRow) Certificate {
+	var mediaID *pgtype.UUID
+	if r.MediaID.Valid {
+		mediaID = &r.MediaID
+	}
+
+	return Certificate{
+		ID:                r.ID,
+		TenantID:          r.TenantID,
+		UserID:            r.UserID,
+		TrackID:           r.TrackID,
+		CertificateNumber: r.CertificateNumber,
+		MediaID:           mediaID,
+		IssuedAt:          r.IssuedAt.Time,
+		Title:             r.TrackTitle,
+		TrackSlug:         r.TrackSlug,
 	}
 }
 
@@ -778,7 +802,7 @@ func (s *Store) ListCertificatesByUser(ctx context.Context, tenantID, userID pgt
 	certs := make([]Certificate, 0, len(rows))
 
 	for _, r := range rows {
-		certs = append(certs, certFromRow(r))
+		certs = append(certs, certFromListRow(r))
 	}
 
 	return certs, nil

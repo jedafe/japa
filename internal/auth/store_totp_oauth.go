@@ -119,6 +119,36 @@ func (s *TOTPStoreImpl) HasTOTPEnrolled(ctx context.Context, userID, tenantID pg
 	return enabled, nil
 }
 
+// SaveBackupCodes stores hashed backup codes for a user.
+func (s *TOTPStoreImpl) SaveBackupCodes(ctx context.Context, userID pgtype.UUID, hashedCodes []string) error {
+	encoded, err := encodeBackupHashes(hashedCodes)
+	if err != nil {
+		return fmt.Errorf("encoding backup codes: %w", err)
+	}
+	_, err = s.db.Writer.Exec(ctx,
+		`UPDATE totp_credentials SET backup_codes = $1, updated_at = now() WHERE user_id = $2`,
+		encoded, userID,
+	)
+	if err != nil {
+		return fmt.Errorf("saving backup codes: %w", err)
+	}
+	return nil
+}
+
+// GetUserEmail retrieves the email for a user, used as the account label
+// in the TOTP QR code so authenticator apps display the correct identity.
+func (s *TOTPStoreImpl) GetUserEmail(ctx context.Context, userID pgtype.UUID) (string, error) {
+	var email string
+	err := s.db.Reader.QueryRow(ctx,
+		`SELECT email FROM users WHERE id = $1`,
+		userID,
+	).Scan(&email)
+	if err != nil {
+		return "", fmt.Errorf("querying user email: %w", err)
+	}
+	return email, nil
+}
+
 // OAuthStoreImpl implements OAuthStore using the application database.
 type OAuthStoreImpl struct {
 	db *db.DB

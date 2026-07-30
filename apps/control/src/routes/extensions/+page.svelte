@@ -86,8 +86,10 @@
 				: `/control/extensions/${ext.key}/disable`;
 			const result = await api<Extension>(path, { method: 'POST' });
 			if (result.ok) {
-				// Reconcile with the server response if it returns updated fields.
-				if (result.data) {
+				// Reconcile with the server response if it returns an enabled field.
+				// The enable/disable endpoints return {key, status} without an
+				// enabled boolean, so we keep the optimistic state in that case.
+				if (result.data && typeof result.data.enabled === 'boolean') {
 					extensions = extensions.map((e) =>
 						e.key === ext.key
 							? {

@@ -4,7 +4,7 @@
 	import { t } from '$lib/i18n';
 	import { cancelSubscription, reactivateSubscription } from '$lib/api/hub';
 	import { optimisticAction } from '$lib/components/hub/optimisticAction';
-	import { invalidate } from '$app/navigation';
+	import { invalidateAll } from '$app/navigation';
 
 	interface Subscription {
 		plan?: string;
@@ -15,6 +15,7 @@
 	let { data }: { data: unknown } = $props();
 	let sub = $state<Subscription>(untrack(() => (data as Subscription | null) ?? {}));
 	let cancelOpen = $state(false);
+	let loading = $state(false);
 	let error = $state<string | null>(null);
 
 	const isCancelled = $derived(sub.status === 'cancelled' || sub.status === 'canceled');
@@ -22,24 +23,28 @@
 	async function doCancel() {
 		cancelOpen = false;
 		error = null;
+		loading = true;
 		const res = await optimisticAction({
 			apply: () => (sub = { ...sub, status: 'cancelled' }),
 			rollback: () => (sub = (data as Subscription | null) ?? {}),
 			call: () => cancelSubscription()
 		});
+		loading = false;
 		if (!res.ok) error = res.error?.message ?? null;
-		await invalidate('/api/v1/me/subscription');
+		await invalidateAll();
 	}
 
 	async function doReactivate() {
 		error = null;
+		loading = true;
 		const res = await optimisticAction({
 			apply: () => (sub = { ...sub, status: 'active' }),
 			rollback: () => (sub = (data as Subscription | null) ?? {}),
 			call: () => reactivateSubscription()
 		});
+		loading = false;
 		if (!res.ok) error = res.error?.message ?? null;
-		await invalidate('/api/v1/me/subscription');
+		await invalidateAll();
 	}
 </script>
 
@@ -71,10 +76,11 @@
 	{#if isCancelled}
 		<button
 			type="button"
-			class="rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-white"
+			disabled={loading}
+			class="rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
 			onclick={doReactivate}
 		>
-			{t('settings.subscription.reactivate')}
+			{loading ? '...' : t('settings.subscription.reactivate')}
 		</button>
 	{:else}
 		<Dialog.Root bind:open={cancelOpen}>
@@ -99,10 +105,11 @@
 						</Dialog.Close>
 						<button
 							type="button"
-							class="rounded-[var(--radius)] bg-[var(--color-danger,#dc2626)] px-4 py-1.5 text-sm font-medium text-white"
+							disabled={loading}
+							class="rounded-[var(--radius)] bg-[var(--color-danger,#dc2626)] px-4 py-1.5 text-sm font-medium text-white disabled:opacity-50"
 							onclick={doCancel}
 						>
-							{t('settings.subscription.cancel_confirm')}
+							{loading ? '...' : t('settings.subscription.cancel_confirm')}
 						</button>
 					</div>
 				</Dialog.Content>

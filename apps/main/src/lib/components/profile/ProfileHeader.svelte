@@ -21,8 +21,14 @@
 </script>
 
 <header class="border-b border-[var(--color-border)] bg-[var(--color-surface)]">
-	<!-- Cover gradient placeholder — replaced when cover_url is available -->
-	<div class="h-32 bg-gradient-to-br from-[var(--color-primary)]/15 to-[var(--color-surface-subtle)] sm:h-40"></div>
+	<!-- Cover image — falls back to a gradient when cover_url is absent -->
+	{#if user.cover_url}
+		<div class="h-32 overflow-hidden sm:h-40">
+			<img src={user.cover_url} alt="" class="h-full w-full object-cover" />
+		</div>
+	{:else}
+		<div class="h-32 bg-gradient-to-br from-[var(--color-primary)]/15 to-[var(--color-surface-subtle)] sm:h-40"></div>
+	{/if}
 
 	<div class="px-4 pb-4">
 		<div class="-mt-12 flex flex-col gap-3 sm:-mt-16 sm:flex-row sm:items-end sm:gap-4">

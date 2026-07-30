@@ -16,6 +16,10 @@ export type Locale = 'en' | 'fr';
 export interface ApiOk<T> {
 	data: T;
 	meta?: ListMeta;
+	/** Optional JSON-LD structured data emitted by some GET endpoints (e.g. forum thread detail). */
+	json_ld?: unknown;
+	/** Optional capability flag emitted by some GET endpoints (e.g. forum can_solve). */
+	can_solve?: boolean;
 }
 
 /** Error envelope: `{ error: { code, message } }`. */
@@ -581,6 +585,7 @@ export interface PublicUser {
 	username: string;
 	display_name: string;
 	avatar_url?: string | null;
+	cover_url?: string | null;
 	bio?: string | null;
 	profile_type: string;
 	follower_count: number;
@@ -599,6 +604,7 @@ export interface ProfilePost {
 	title: string;
 	slug: string;
 	body_html: string;
+	excerpt?: string;
 	header_image_id: string | null;
 	featured_image_id: string | null;
 	read_time_minutes: number;
@@ -608,6 +614,23 @@ export interface ProfilePost {
 	is_pinned: boolean;
 	published_at: string;
 	created_at: string;
+}
+
+/** GET /users/{id}/likes — profile Likes tab (published+public content the user reacted to). */
+export interface ProfileLike {
+	id: string;
+	title: string;
+	slug: string;
+	content_type: string;
+	author_id: string;
+	space_id: string | null;
+	created_at: string;
+	view_count: number;
+	comment_count: number;
+	author_name: string;
+	author_avatar_url: string;
+	excerpt: string;
+	reacted_at: string;
 }
 
 /** GET /users/{id}/replies — profile Replies tab. */
@@ -636,6 +659,16 @@ export interface ProfileCertificate {
 	title?: string;
 	track_slug?: string;
 	issued_at?: string;
+}
+
+/** GET /users/{id}/analytics — public profile Analytics tab. */
+export interface ProfileAnalytics {
+	total_views: number;
+	total_shares: number;
+	total_posts: number;
+	total_likes: number;
+	total_followers: number;
+	total_following: number;
 }
 
 /** GET /users/{id}/media — profile Media tab. */

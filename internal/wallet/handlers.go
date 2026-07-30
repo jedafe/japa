@@ -14,6 +14,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
@@ -79,10 +80,25 @@ func handleServiceError(w http.ResponseWriter, err error) {
 	case errors.Is(err, errpkg.ErrAlreadyExists), errors.Is(err, errpkg.ErrDuplicate):
 		writeError(w, http.StatusConflict, "already_exists", "Resource already exists")
 	case errors.Is(err, errpkg.ErrInsufficientBalance):
-		writeError(w, http.StatusUnprocessableEntity, "insufficient_balance", err.Error())
+		writeError(w, http.StatusUnprocessableEntity, "insufficient_balance", stripSentinel(err))
+	case errors.Is(err, errpkg.ErrInvalid):
+		writeError(w, http.StatusBadRequest, "invalid_input", stripSentinel(err))
+	case errors.Is(err, errpkg.ErrForbidden):
+		writeError(w, http.StatusForbidden, "forbidden", "You do not have permission to perform this action")
 	default:
 		writeError(w, http.StatusInternalServerError, "internal_error", "Something went wrong")
 	}
+}
+
+// stripSentinel removes the sentinel error prefix from an error message.
+// For fmt.Errorf("%w: detail", sentinel) it returns just "detail".
+func stripSentinel(err error) string {
+	msg := err.Error()
+	// Find the last ": " separator which separates sentinel from detail
+	if i := strings.LastIndex(msg, ": "); i >= 0 {
+		return msg[i+2:]
+	}
+	return msg
 }
 
 // writeJSON serializes the given value as JSON and writes it to the response.

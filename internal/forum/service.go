@@ -46,7 +46,7 @@ func (s *Service) CreateThread(ctx context.Context, tenantID, authorUserID pgtyp
 		// compiled-in default when unset or settings not injected. See AUDIT-BE-009.
 		def := DefaultEditWindowMinutes
 		if s.settings != nil {
-			def = s.settings.GetIntOr(ctx, tenantID, "content.edit_window_minutes", DefaultEditWindowMinutes)
+			def = s.settings.GetIntOr(ctx, tenantID, "forum.edit_window_minutes", DefaultEditWindowMinutes)
 		}
 		editWindow = int32(def)
 	}
@@ -70,6 +70,11 @@ func (s *Service) CreateThread(ctx context.Context, tenantID, authorUserID pgtyp
 	if err != nil {
 		return gen.ForumThread{}, fmt.Errorf("creating forum thread: %w", err)
 	}
+
+	// Fire-and-forget forum.thread.created webhook (Section 12). Rule 8.
+	s.emitWebhook(ctx, tenantID, "forum.thread.created", map[string]any{
+		"thread_id": thread.ID, "author_id": authorUserID, "slug": thread.Slug,
+	})
 
 	return thread, nil
 }
@@ -104,20 +109,18 @@ func (s *Service) ListThreadsByTag(ctx context.Context, tenantID, tagID pgtype.U
 	return s.store.listThreadsByTag(ctx, tenantID, tagID, cursorCreatedAt, limit)
 }
 
-// UpdateThread updates a forum thread. Only the author can edit within the
-// edit window; after the window, edits are flagged as edited.
+// UpdateThread updates a forum thread. The author can edit; a moderator
+// (or any holder of forum.thread.edit_any / super-admin wildcard) may also
+// edit. Ref: Section 08 + §26 RBAC CRUD.
 func (s *Service) UpdateThread(ctx context.Context, id, tenantID, userID pgtype.UUID, title string, body []byte, isAnonymous bool) (gen.ForumThread, error) {
 	thread, err := s.store.getThreadByID(ctx, id, tenantID)
 	if err != nil {
 		return gen.ForumThread{}, fmt.Errorf("getting thread for update: %w", err)
 	}
 
-	if thread.AuthorUserID != userID {
-		return gen.ForumThread{}, errors.New("only the author can edit this thread")
+	if !s.canModerateThread(ctx, thread, userID, tenantID, "forum.thread.edit_any") {
+		return gen.ForumThread{}, errors.New("only the author or a moderator can edit this thread")
 	}
-
-	// Edit window check removed — the update query always sets is_edited=true
-	// when the content changes, regardless of the window.
 
 	if title == "" {
 		title = thread.Title
@@ -127,23 +130,108 @@ func (s *Service) UpdateThread(ctx context.Context, id, tenantID, userID pgtype.
 		body = thread.Body
 	}
 
-	return s.store.updateThread(ctx, gen.UpdateForumThreadParams{
+	updated, err := s.store.updateThread(ctx, gen.UpdateForumThreadParams{
 		ID:          id,
 		TenantID:    tenantID,
 		Title:       title,
 		Body:        body,
 		IsAnonymous: isAnonymous,
 	})
+	if err != nil {
+		return gen.ForumThread{}, err
+	}
+
+	s.emitWebhook(ctx, tenantID, "forum.thread.updated", map[string]any{"thread_id": id, "actor_id": userID})
+	return updated, nil
 }
 
-// DeleteThread soft-deletes a forum thread.
-func (s *Service) DeleteThread(ctx context.Context, id, tenantID pgtype.UUID) error {
-	return s.store.softDeleteThread(ctx, id, tenantID)
+// DeleteThread soft-deletes a forum thread. The author or a moderator
+// (forum.thread.delete_any / super-admin) may delete. Ref: Section 08 + §26.
+func (s *Service) DeleteThread(ctx context.Context, id, tenantID, userID pgtype.UUID) error {
+	thread, err := s.store.getThreadByID(ctx, id, tenantID)
+	if err != nil {
+		return fmt.Errorf("getting thread for delete: %w", err)
+	}
+
+	if !s.canModerateThread(ctx, thread, userID, tenantID, "forum.thread.delete_any") {
+		return errors.New("only the author or a moderator can delete this thread")
+	}
+
+	if err := s.store.softDeleteThread(ctx, id, tenantID); err != nil {
+		return err
+	}
+
+	s.emitWebhook(ctx, tenantID, "forum.thread.deleted", map[string]any{"thread_id": id, "actor_id": userID})
+	return nil
 }
 
-// SolveThread marks a thread as solved by the given user.
+// SolveThread marks a thread as solved. Per Section 08, only the OP or a
+// moderator (or a holder of forum.thread.solve / super-admin) may solve.
+// The route RBAC gate (forum.thread.solve) admits members; this method
+// enforces the OP/moderator scope. Ref: Section 08 Solved flag.
 func (s *Service) SolveThread(ctx context.Context, id, tenantID, solverUserID pgtype.UUID) error {
-	return s.store.solveThread(ctx, id, tenantID, solverUserID)
+	thread, err := s.store.getThreadByID(ctx, id, tenantID)
+	if err != nil {
+		return fmt.Errorf("getting thread for solve: %w", err)
+	}
+
+	if !s.canSolveThread(ctx, thread, solverUserID, tenantID) {
+		return errors.New("only the author or a moderator can solve this thread")
+	}
+
+	if err := s.store.solveThread(ctx, id, tenantID, solverUserID); err != nil {
+		return err
+	}
+
+	s.emitWebhook(ctx, tenantID, "forum.thread.solved", map[string]any{"thread_id": id, "solver_id": solverUserID})
+	return nil
+}
+
+// UnsolveThread reverts the solved flag (DELETE /forum/{id}/solve).
+// Ref: Section 08 Solved flag + api-routes-catalog L590.
+func (s *Service) UnsolveThread(ctx context.Context, id, tenantID, userID pgtype.UUID) error {
+	thread, err := s.store.getThreadByID(ctx, id, tenantID)
+	if err != nil {
+		return fmt.Errorf("getting thread for unsolve: %w", err)
+	}
+
+	if !s.canSolveThread(ctx, thread, userID, tenantID) {
+		return errors.New("only the author or a moderator can unsolve this thread")
+	}
+
+	return s.store.unsolveThread(ctx, id, tenantID)
+}
+
+// canModerateThread reports whether the user may edit/delete the thread:
+// the author, a space moderator of the thread's space, or a holder of the
+// given _any node (super-admin satisfies this via the wildcard). Ref: §26.
+func (s *Service) canModerateThread(ctx context.Context, thread gen.ForumThread, userID, tenantID pgtype.UUID, anyNode string) bool {
+	if thread.AuthorUserID == userID {
+		return true
+	}
+	if s.store.isSpaceModerator(ctx, userID, thread.SpaceID) {
+		return true
+	}
+	if s.rbac != nil && s.rbac.HasPermission(ctx, userID, tenantID, anyNode) {
+		return true
+	}
+	return false
+}
+
+// canSolveThread reports whether the user may solve/unsolve the thread:
+// the OP, a space moderator, or a holder of forum.thread.solve (super-admin
+// via wildcard). Ref: Section 08 "OP or moderator".
+func (s *Service) canSolveThread(ctx context.Context, thread gen.ForumThread, userID, tenantID pgtype.UUID) bool {
+	if thread.AuthorUserID == userID {
+		return true
+	}
+	if s.store.isSpaceModerator(ctx, userID, thread.SpaceID) {
+		return true
+	}
+	if s.rbac != nil && s.rbac.HasPermission(ctx, userID, tenantID, "forum.thread.solve") {
+		return true
+	}
+	return false
 }
 
 // ---------------------------------------------------------------------------
@@ -181,6 +269,10 @@ func (s *Service) CreateReply(ctx context.Context, tenantID, threadID, authorUse
 		slog.Warn("failed to increment reply count", "thread_id", threadID, "error", err)
 	}
 
+	s.emitWebhook(ctx, tenantID, "forum.reply.created", map[string]any{
+		"reply_id": reply.ID, "thread_id": threadID, "author_id": authorUserID,
+	})
+
 	return reply, nil
 }
 
@@ -194,31 +286,74 @@ func (s *Service) ListRepliesByThread(ctx context.Context, threadID, tenantID pg
 	return s.store.listRepliesByThread(ctx, threadID, tenantID)
 }
 
-// UpdateReply updates a reply's body. Only the author can edit.
+// UpdateReply updates a reply's body. The author can edit; a moderator
+// (forum.reply.edit_any / super-admin) may also edit. Ref: §26 RBAC CRUD.
 func (s *Service) UpdateReply(ctx context.Context, id, tenantID, userID pgtype.UUID, body []byte) (gen.ForumReply, error) {
 	reply, err := s.store.getReplyByID(ctx, id, tenantID)
 	if err != nil {
 		return gen.ForumReply{}, fmt.Errorf("getting reply for update: %w", err)
 	}
 
-	if reply.AuthorUserID != userID {
-		return gen.ForumReply{}, errors.New("only the author can edit this reply")
+	if reply.AuthorUserID != userID && !s.canModerateReply(ctx, reply, userID, tenantID, "forum.reply.edit_any") {
+		return gen.ForumReply{}, errors.New("only the author or a moderator can edit this reply")
 	}
 
 	if body == nil {
 		body = reply.Body
 	}
 
-	return s.store.updateReply(ctx, gen.UpdateForumReplyParams{
+	updated, err := s.store.updateReply(ctx, gen.UpdateForumReplyParams{
 		ID:       id,
 		TenantID: tenantID,
 		Body:     body,
 	})
+	if err != nil {
+		return gen.ForumReply{}, err
+	}
+
+	s.emitWebhook(ctx, tenantID, "forum.reply.updated", map[string]any{"reply_id": id, "actor_id": userID})
+	return updated, nil
 }
 
-// DeleteReply soft-deletes a reply.
-func (s *Service) DeleteReply(ctx context.Context, id, tenantID pgtype.UUID) error {
-	return s.store.softDeleteReply(ctx, id, tenantID)
+// DeleteReply soft-deletes a reply and decrements the thread reply count.
+// The author or a moderator (forum.reply.delete_any / super-admin) may
+// delete. Ref: §26 RBAC CRUD.
+func (s *Service) DeleteReply(ctx context.Context, id, tenantID, userID pgtype.UUID) error {
+	reply, err := s.store.getReplyByID(ctx, id, tenantID)
+	if err != nil {
+		return fmt.Errorf("getting reply for delete: %w", err)
+	}
+
+	if reply.AuthorUserID != userID && !s.canModerateReply(ctx, reply, userID, tenantID, "forum.reply.delete_any") {
+		return errors.New("only the author or a moderator can delete this reply")
+	}
+
+	if err := s.store.softDeleteReply(ctx, id, tenantID); err != nil {
+		return err
+	}
+
+	// BUG-007: decrement the denormalized reply_count on the parent thread.
+	if err := s.store.incrementReplyCount(ctx, reply.ThreadID, tenantID, -1); err != nil {
+		slog.Warn("failed to decrement thread reply count", "error", err)
+	}
+
+	s.emitWebhook(ctx, tenantID, "forum.reply.deleted", map[string]any{"reply_id": id, "actor_id": userID})
+	return nil
+}
+
+// canModerateReply reports whether the user may edit/delete the reply via a
+// moderator-override node. Resolves the reply's thread to check space
+// moderation. Ref: §26.
+func (s *Service) canModerateReply(ctx context.Context, reply gen.ForumReply, userID, tenantID pgtype.UUID, anyNode string) bool {
+	if s.rbac != nil && s.rbac.HasPermission(ctx, userID, tenantID, anyNode) {
+		return true
+	}
+	// Resolve the thread to check space moderation.
+	thread, err := s.store.getThreadByID(ctx, reply.ThreadID, tenantID)
+	if err != nil {
+		return false
+	}
+	return s.store.isSpaceModerator(ctx, userID, thread.SpaceID)
 }
 
 // ---------------------------------------------------------------------------
@@ -254,18 +389,43 @@ func (s *Service) Vote(ctx context.Context, tenantID, userID pgtype.UUID, input 
 	}
 
 	// Recalculate the entity's vote score.
-	switch input.EntityType {
+	s.recalcVoteScore(ctx, input.EntityType, input.EntityID)
+
+	s.emitWebhook(ctx, tenantID, "forum.vote.cast", map[string]any{
+		"entity_type": input.EntityType, "entity_id": input.EntityID,
+		"user_id": userID, "value": input.Value,
+	})
+
+	return vote, nil
+}
+
+// RemoveVote retracts the user's vote on a thread or reply and recalculates
+// the entity's score. Ref: api-routes-catalog L591 (DELETE /forum/{id}/vote).
+func (s *Service) RemoveVote(ctx context.Context, tenantID, userID pgtype.UUID, entityType string, entityID pgtype.UUID) error {
+	if entityType != EntityTypeThread && entityType != EntityTypeReply {
+		return errors.New("entity type must be 'thread' or 'reply'")
+	}
+
+	if err := s.store.deleteVote(ctx, tenantID, userID, entityType, entityID); err != nil {
+		return fmt.Errorf("removing vote: %w", err)
+	}
+
+	s.recalcVoteScore(ctx, entityType, entityID)
+	return nil
+}
+
+// recalcVoteScore recalculates the denormalized vote_score for an entity.
+func (s *Service) recalcVoteScore(ctx context.Context, entityType string, entityID pgtype.UUID) {
+	switch entityType {
 	case EntityTypeThread:
-		if err := s.store.updateThreadVoteScore(ctx, input.EntityID); err != nil {
+		if err := s.store.updateThreadVoteScore(ctx, entityID); err != nil {
 			slog.Warn("failed to update thread vote score", "error", err)
 		}
 	case EntityTypeReply:
-		if err := s.store.updateReplyVoteScore(ctx, input.EntityID); err != nil {
+		if err := s.store.updateReplyVoteScore(ctx, entityID); err != nil {
 			slog.Warn("failed to update reply vote score", "error", err)
 		}
 	}
-
-	return vote, nil
 }
 
 // GetVoteScore returns the aggregate vote score for an entity.
@@ -307,12 +467,32 @@ func (s *Service) AddBookmark(ctx context.Context, tenantID, userID pgtype.UUID,
 }
 
 // RemoveBookmark removes a bookmark.
-func (s *Service) RemoveBookmark(ctx context.Context, userID pgtype.UUID, entityType string, entityID pgtype.UUID) error {
-	if err := s.store.removeBookmark(ctx, userID, entityType, entityID); err != nil {
+func (s *Service) RemoveBookmark(ctx context.Context, tenantID, userID pgtype.UUID, entityType string, entityID pgtype.UUID) error {
+	if err := s.store.removeBookmark(ctx, tenantID, userID, entityType, entityID); err != nil {
 		return fmt.Errorf("removing bookmark: %w", err)
 	}
 	// Decrement the entity's bookmark count.
 	if err := s.store.incrementEntityBookmarkCount(ctx, entityID, -1); err != nil {
+		slog.Warn("failed to decrement bookmark count", "error", err)
+	}
+
+	return nil
+}
+
+// RemoveBookmarkByID removes a bookmark by its primary key
+// (DELETE /forum/bookmarks/{id}). Resolves the entity first so the
+// denormalized bookmark_count can be decremented. Ref: api-routes-catalog L610.
+func (s *Service) RemoveBookmarkByID(ctx context.Context, id, userID, tenantID pgtype.UUID) error {
+	bm, err := s.store.getBookmarkByID(ctx, id, userID, tenantID)
+	if err != nil {
+		return fmt.Errorf("resolving bookmark: %w", err)
+	}
+
+	if err := s.store.deleteBookmarkByID(ctx, id, userID, tenantID); err != nil {
+		return fmt.Errorf("deleting bookmark: %w", err)
+	}
+
+	if err := s.store.incrementEntityBookmarkCount(ctx, bm.EntityID, -1); err != nil {
 		slog.Warn("failed to decrement bookmark count", "error", err)
 	}
 

@@ -315,6 +315,23 @@ func (q *Queries) DeleteContentRevisionsByEditor(ctx context.Context, userID pgt
 	return err
 }
 
+const deleteForumThreadTagsByAuthor = `-- name: DeleteForumThreadTagsByAuthor :exec
+DELETE FROM forum_thread_tags
+WHERE thread_id IN (SELECT id FROM forum_threads WHERE author_user_id = $1 AND tenant_id = $2)
+`
+
+type DeleteForumThreadTagsByAuthorParams struct {
+	UserID   pgtype.UUID `json:"user_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+// BUG-022: delete junction rows for threads authored by the user during
+// GDPR erasure, so the final hard-delete doesn't leave orphaned rows.
+func (q *Queries) DeleteForumThreadTagsByAuthor(ctx context.Context, arg DeleteForumThreadTagsByAuthorParams) error {
+	_, err := q.db.Exec(ctx, deleteForumThreadTagsByAuthor, arg.UserID, arg.TenantID)
+	return err
+}
+
 const deleteOwnershipClaimsByClaimant = `-- name: DeleteOwnershipClaimsByClaimant :exec
 DELETE FROM ownership_claims WHERE claimant_user_id = $1 AND tenant_id = $2
 `
@@ -672,6 +689,19 @@ func (q *Queries) GdprExportUserForumBookmarks(ctx context.Context, arg GdprExpo
 	return data, err
 }
 
+const gdprExportUserForumPollVotes = `-- name: GdprExportUserForumPollVotes :one
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (SELECT id, poll_id, option_id, user_id, created_at FROM forum_poll_votes WHERE user_id = $1) t
+`
+
+// BUG-022: forum_poll_votes has no tenant_id column.
+func (q *Queries) GdprExportUserForumPollVotes(ctx context.Context, userID pgtype.UUID) (interface{}, error) {
+	row := q.db.QueryRow(ctx, gdprExportUserForumPollVotes, userID)
+	var data interface{}
+	err := row.Scan(&data)
+	return data, err
+}
+
 const gdprExportUserForumReplies = `-- name: GdprExportUserForumReplies :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (SELECT id, tenant_id, thread_id, parent_reply_id, author_user_id, body, vote_score, view_count, is_anonymous, is_edited, created_at, updated_at, deleted_at FROM forum_replies WHERE author_user_id = $1 AND tenant_id = $2) t
@@ -684,6 +714,24 @@ type GdprExportUserForumRepliesParams struct {
 
 func (q *Queries) GdprExportUserForumReplies(ctx context.Context, arg GdprExportUserForumRepliesParams) (interface{}, error) {
 	row := q.db.QueryRow(ctx, gdprExportUserForumReplies, arg.UserID, arg.TenantID)
+	var data interface{}
+	err := row.Scan(&data)
+	return data, err
+}
+
+const gdprExportUserForumThreadTags = `-- name: GdprExportUserForumThreadTags :one
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (SELECT ftt.thread_id, ftt.tag_id FROM forum_thread_tags ftt JOIN forum_threads ft ON ft.id = ftt.thread_id WHERE ft.author_user_id = $1 AND ft.tenant_id = $2) t
+`
+
+type GdprExportUserForumThreadTagsParams struct {
+	UserID   pgtype.UUID `json:"user_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+// BUG-022: junction rows for threads authored by the user.
+func (q *Queries) GdprExportUserForumThreadTags(ctx context.Context, arg GdprExportUserForumThreadTagsParams) (interface{}, error) {
+	row := q.db.QueryRow(ctx, gdprExportUserForumThreadTags, arg.UserID, arg.TenantID)
 	var data interface{}
 	err := row.Scan(&data)
 	return data, err
@@ -759,7 +807,7 @@ func (q *Queries) GdprExportUserLessonProgress(ctx context.Context, arg GdprExpo
 
 const gdprExportUserMedia = `-- name: GdprExportUserMedia :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (SELECT id, tenant_id, uploader_user_id, original_filename, mime_type, file_size_bytes, width_px, height_px, duration_secs, storage_path, storage_bucket, alt_text, caption, confirmed, deleted_at, created_at, quarantine_reason, quarantined_at, reviewed_by, reviewed_at, user_group_id FROM media WHERE uploader_user_id = $1 AND tenant_id = $2) t
+FROM (SELECT id, tenant_id, uploader_user_id, original_filename, mime_type, file_size_bytes, width_px, height_px, duration_secs, storage_path, storage_bucket, alt_text, caption, confirmed, deleted_at, created_at, quarantine_reason, quarantined_at, reviewed_by, reviewed_at, user_group_id, source_platform, source_photographer, source_photographer_url, source_license, source_license_url, source_photo_id FROM media WHERE uploader_user_id = $1 AND tenant_id = $2) t
 `
 
 type GdprExportUserMediaParams struct {
@@ -960,7 +1008,7 @@ func (q *Queries) GdprExportUserProfessionalProfiles(ctx context.Context, arg Gd
 const gdprExportUserProfiles = `-- name: GdprExportUserProfiles :one
 
 SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (SELECT id, tenant_id, user_id, display_name, avatar_url, bio, timezone, business_name, registration_number, operating_hours, created_at, updated_at, content_country_preference FROM user_profiles WHERE user_id = $1 AND tenant_id = $2) t
+FROM (SELECT id, tenant_id, user_id, display_name, avatar_url, bio, timezone, business_name, registration_number, operating_hours, created_at, updated_at, content_country_preference, cover_url FROM user_profiles WHERE user_id = $1 AND tenant_id = $2) t
 `
 
 type GdprExportUserProfilesParams struct {
@@ -997,6 +1045,19 @@ func (q *Queries) GdprExportUserReactions(ctx context.Context, arg GdprExportUse
 	return data, err
 }
 
+const gdprExportUserReplyViews = `-- name: GdprExportUserReplyViews :one
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (SELECT reply_id, user_id, viewed_at FROM reply_views WHERE user_id = $1) t
+`
+
+// BUG-022: reply_views has no tenant_id column.
+func (q *Queries) GdprExportUserReplyViews(ctx context.Context, userID pgtype.UUID) (interface{}, error) {
+	row := q.db.QueryRow(ctx, gdprExportUserReplyViews, userID)
+	var data interface{}
+	err := row.Scan(&data)
+	return data, err
+}
+
 const gdprExportUserReviews = `-- name: GdprExportUserReviews :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (SELECT id, tenant_id, entity_type, entity_id, reviewer_user_id, rating, title, body, status, created_at, updated_at FROM reviews WHERE reviewer_user_id = $1 AND tenant_id = $2) t
@@ -1026,6 +1087,23 @@ type GdprExportUserSpaceMembersParams struct {
 
 func (q *Queries) GdprExportUserSpaceMembers(ctx context.Context, arg GdprExportUserSpaceMembersParams) (interface{}, error) {
 	row := q.db.QueryRow(ctx, gdprExportUserSpaceMembers, arg.UserID, arg.TenantID)
+	var data interface{}
+	err := row.Scan(&data)
+	return data, err
+}
+
+const gdprExportUserSpaceModerators = `-- name: GdprExportUserSpaceModerators :one
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (SELECT id, tenant_id, space_id, user_id, assigned_by, assigned_by_user_id, created_at FROM space_moderators WHERE user_id = $1 AND tenant_id = $2) t
+`
+
+type GdprExportUserSpaceModeratorsParams struct {
+	UserID   pgtype.UUID `json:"user_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+func (q *Queries) GdprExportUserSpaceModerators(ctx context.Context, arg GdprExportUserSpaceModeratorsParams) (interface{}, error) {
+	row := q.db.QueryRow(ctx, gdprExportUserSpaceModerators, arg.UserID, arg.TenantID)
 	var data interface{}
 	err := row.Scan(&data)
 	return data, err
@@ -1680,6 +1758,26 @@ func (q *Queries) ReassignAccountDeletionRequestUser(ctx context.Context, arg Re
 	return err
 }
 
+const reassignBlogSeriesAuthor = `-- name: ReassignBlogSeriesAuthor :exec
+UPDATE blog_series SET author_user_id = $1
+WHERE author_user_id = $2 AND tenant_id = $3
+`
+
+type ReassignBlogSeriesAuthorParams struct {
+	TargetUserID pgtype.UUID `json:"target_user_id"`
+	UserID       pgtype.UUID `json:"user_id"`
+	TenantID     pgtype.UUID `json:"tenant_id"`
+}
+
+// C7: reassign blog_series authorship before user deletion to preserve
+// curated multi-part series (ADR-014 soft-delete-and-anonymize). Without
+// this, ON DELETE CASCADE on blog_series.author_user_id destroys all
+// user-authored series and cascades to blog_series_posts.
+func (q *Queries) ReassignBlogSeriesAuthor(ctx context.Context, arg ReassignBlogSeriesAuthorParams) error {
+	_, err := q.db.Exec(ctx, reassignBlogSeriesAuthor, arg.TargetUserID, arg.UserID, arg.TenantID)
+	return err
+}
+
 const reassignContentAuthor = `-- name: ReassignContentAuthor :exec
 UPDATE contents SET author_id = $1
 WHERE author_id = $2 AND tenant_id = $3
@@ -1694,6 +1792,25 @@ type ReassignContentAuthorParams struct {
 // Reassigns content authorship before user deletion to preserve thread continuity.
 func (q *Queries) ReassignContentAuthor(ctx context.Context, arg ReassignContentAuthorParams) error {
 	_, err := q.db.Exec(ctx, reassignContentAuthor, arg.TargetUserID, arg.UserID, arg.TenantID)
+	return err
+}
+
+const reassignContentReviewReviewer = `-- name: ReassignContentReviewReviewer :exec
+UPDATE content_reviews SET reviewer_user_id = $1
+WHERE reviewer_user_id = $2 AND tenant_id = $3
+`
+
+type ReassignContentReviewReviewerParams struct {
+	TargetUserID pgtype.UUID `json:"target_user_id"`
+	UserID       pgtype.UUID `json:"user_id"`
+	TenantID     pgtype.UUID `json:"tenant_id"`
+}
+
+// C7: reassign content_reviews reviewer before user deletion to preserve
+// editorial audit history (ADR-014). Without this, ON DELETE CASCADE on
+// content_reviews.reviewer_user_id destroys all review records.
+func (q *Queries) ReassignContentReviewReviewer(ctx context.Context, arg ReassignContentReviewReviewerParams) error {
+	_, err := q.db.Exec(ctx, reassignContentReviewReviewer, arg.TargetUserID, arg.UserID, arg.TenantID)
 	return err
 }
 

@@ -3,7 +3,7 @@
 	import { Card, CardContent, CardHeader } from "$lib/components/ui/card";
 	import { Button } from "$lib/components/ui/button";
 	import { ArrowLeft, Save } from "lucide-svelte";
-	import { spacesAdminApi, spaceTypesApi } from "$lib/api";
+	import { spacesAdminApi, spaceTypesApi, permissionPresetsApi, type PermissionPreset } from "$lib/api";
 	import { goto } from "$app/navigation";
 	import { t } from "$lib/stores/i18n.svelte";
 
@@ -19,12 +19,13 @@
 
 	type SpaceType = { id: string; name: string; slug: string };
 	let spaceTypes = $state<SpaceType[]>([]);
+	let presets = $state<PermissionPreset[]>([]);
 
 	const levels = [
-		{ value: "country", label: "Country" },
-		{ value: "state", label: "State" },
-		{ value: "city", label: "City" },
-		{ value: "custom", label: "Custom" }
+		{ value: "country", label: t("spaces.level_country", "Country") },
+		{ value: "state", label: t("spaces.level_state", "State") },
+		{ value: "city", label: t("spaces.level_city", "City") },
+		{ value: "custom", label: t("spaces.level_custom", "Custom") }
 	];
 
 	function generateSlug(s: string): string {
@@ -46,6 +47,17 @@
 			if (result.ok) {
 				const d = result.data as SpaceType[] | { items?: SpaceType[] };
 				spaceTypes = Array.isArray(d) ? d : (d.items ?? []);
+			}
+		} catch {
+			// non-critical
+		}
+	}
+
+	async function loadPresets() {
+		try {
+			const result = await permissionPresetsApi.list();
+			if (result.ok && result.data?.data) {
+				presets = result.data.data;
 			}
 		} catch {
 			// non-critical
@@ -83,6 +95,7 @@
 
 	$effect(() => {
 		loadSpaceTypes();
+		loadPresets();
 	});
 </script>
 
@@ -121,7 +134,7 @@
 						class="w-full rounded-lg border px-3 py-2 text-sm"
 						style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
 						bind:value={name}
-						placeholder="e.g. Nigeria"
+						placeholder={t("spaces.name_placeholder", "Enter space name")}
 						required
 					/>
 				</div>
@@ -135,7 +148,7 @@
 						class="w-full rounded-lg border px-3 py-2 text-sm"
 						style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
 						bind:value={slug}
-						placeholder="e.g. nigeria"
+						placeholder={t("spaces.slug_placeholder", "auto-generated-from-name")}
 						required
 					/>
 				</div>
@@ -182,21 +195,24 @@
 						class="w-full rounded-lg border px-3 py-2 text-sm"
 						style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
 						bind:value={parentId}
-						placeholder="Optional UUID"
+						placeholder={t("spaces.parent_placeholder", "Optional UUID")}
 					/>
 				</div>
 				<div>
 					<label for="preset-name" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">
 						{t("spaces.preset_name", "Permission Preset")}
 					</label>
-					<input
+					<select
 						id="preset-name"
-						type="text"
 						class="w-full rounded-lg border px-3 py-2 text-sm"
 						style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
 						bind:value={presetName}
-						placeholder="Optional preset name"
-					/>
+					>
+						<option value="">{t("spaces.preset_none", "None (use defaults)")}</option>
+						{#each presets as p (p.id)}
+							<option value={p.name}>{p.name}</option>
+						{/each}
+					</select>
 				</div>
 			</div>
 			<div>

@@ -272,11 +272,41 @@ LIMIT 1`, sparqlStringLiteral(name))
 }
 
 // sparqlStringLiteral wraps a string in SPARQL string literal syntax with
-// proper escaping for special characters.
+// proper escaping for all special characters per the SPARQL 1.1 spec
+// (§18.104.1): backslash, double-quote, newline, carriage return, tab,
+// backspace, form feed, and control chars. Without full escaping a
+// crafted space name could break out of the literal and inject SPARQL.
 func sparqlStringLiteral(s string) string {
-	s = strings.ReplaceAll(s, `\`, `\\`)
-	s = strings.ReplaceAll(s, `"`, `\"`)
-	return `"` + s + `"`
+	var b strings.Builder
+	b.Grow(len(s) + 2)
+	b.WriteByte('"')
+	for _, r := range s {
+		switch r {
+		case '\\':
+			b.WriteString(`\\`)
+		case '"':
+			b.WriteString(`\"`)
+		case '\n':
+			b.WriteString(`\n`)
+		case '\r':
+			b.WriteString(`\r`)
+		case '\t':
+			b.WriteString(`\t`)
+		case '\b':
+			b.WriteString(`\b`)
+		case '\f':
+			b.WriteString(`\f`)
+		default:
+			if r < 0x20 {
+				// Control characters — escape as \uXXXX per SPARQL spec.
+				fmt.Fprintf(&b, `\u%04X`, r)
+			} else {
+				b.WriteRune(r)
+			}
+		}
+	}
+	b.WriteByte('"')
+	return b.String()
 }
 
 // wikipediaSummary is the subset of the Wikipedia REST API response we store.

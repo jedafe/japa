@@ -166,11 +166,14 @@ func (s *Service) AdminListSpacesCount(ctx context.Context, tenantID pgtype.UUID
 }
 
 // ListSpacesByMember returns every space the given user belongs to, most
-// recently joined first (catalog: GET /me/spaces).
-func (s *Service) ListSpacesByMember(ctx context.Context, tenantID, userID pgtype.UUID) ([]gen.Space, error) {
+// recently joined first (catalog: GET /me/spaces). The search parameter
+// filters by name/slug (case-insensitive) at the SQL level — pass "" for
+// no filter.
+func (s *Service) ListSpacesByMember(ctx context.Context, tenantID, userID pgtype.UUID, search string) ([]gen.Space, error) {
 	spaces, err := s.read.ListSpacesByMemberUser(ctx, gen.ListSpacesByMemberUserParams{
 		UserID:   userID,
 		TenantID: tenantID,
+		Search:   search,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("listing spaces by member: %w", err)
@@ -193,10 +196,50 @@ func (s *Service) ListSpacesByModerator(ctx context.Context, tenantID, userID pg
 	return spaces, nil
 }
 
+// ListSpacesByOwner returns every space the given user owns
+// (space_members.role = 'owner') (catalog: GET /me/spaces/owned).
+func (s *Service) ListSpacesByOwner(ctx context.Context, tenantID, userID pgtype.UUID) ([]gen.Space, error) {
+	spaces, err := s.read.ListSpacesByOwnerUser(ctx, gen.ListSpacesByOwnerUserParams{
+		UserID:   userID,
+		TenantID: tenantID,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("listing spaces by owner: %w", err)
+	}
+
+	return spaces, nil
+}
+
+// CountSpacesByOwner returns the number of spaces the user owns, for the
+// max_spaces_creatable quota check (Section 03, §26).
+func (s *Service) CountSpacesByOwner(ctx context.Context, tenantID, userID pgtype.UUID) (int, error) {
+	count, err := s.read.CountSpacesByOwnerUser(ctx, gen.CountSpacesByOwnerUserParams{
+		UserID:   userID,
+		TenantID: tenantID,
+	})
+	if err != nil {
+		return 0, fmt.Errorf("counting spaces by owner: %w", err)
+	}
+	return int(count), nil
+}
+
+// GetUserMaxSpacesCreatable returns the most permissive max_spaces_creatable
+// from the user's group memberships. -1 = unlimited, 0 = none, N = capped.
+func (s *Service) GetUserMaxSpacesCreatable(ctx context.Context, tenantID, userID pgtype.UUID) (int, error) {
+	max, err := s.read.GetUserMaxSpacesCreatable(ctx, gen.GetUserMaxSpacesCreatableParams{
+		TenantID: tenantID,
+		UserID:   userID,
+	})
+	if err != nil {
+		return 0, fmt.Errorf("getting max_spaces_creatable: %w", err)
+	}
+	return int(max), nil
+}
+
 // ListPublicByMemberUser returns the PUBLIC, active spaces the given user is
 // a member of, paginated. Powers the public profile Spaces tab — excludes
 // members-only/private and non-active spaces.
-func (s *Service) ListPublicByMemberUser(ctx context.Context, tenantID, userID pgtype.UUID, limit, offset int32) ([]gen.Space, error) {
+func (s *Service) ListPublicByMemberUser(ctx context.Context, tenantID, userID pgtype.UUID, limit, offset int32) ([]gen.ListPublicSpacesByMemberUserRow, error) {
 	spaces, err := s.read.ListPublicSpacesByMemberUser(ctx, gen.ListPublicSpacesByMemberUserParams{
 		UserID:     userID,
 		TenantID:   tenantID,
@@ -462,6 +505,20 @@ func (s *Service) IsMember(ctx context.Context, spaceID, userID, tenantID pgtype
 	return isMember, nil
 }
 
+// IsOwner returns true if the user is the owner (role='owner') of the space.
+func (s *Service) IsOwner(ctx context.Context, spaceID, userID, tenantID pgtype.UUID) (bool, error) {
+	isOwner, err := s.read.CheckSpaceOwnership(ctx, gen.CheckSpaceOwnershipParams{
+		SpaceID:  spaceID,
+		UserID:   userID,
+		TenantID: tenantID,
+	})
+	if err != nil {
+		return false, fmt.Errorf("checking space ownership: %w", err)
+	}
+
+	return isOwner, nil
+}
+
 // Join adds the user as a member of the space.
 func (s *Service) Join(ctx context.Context, spaceID, userID, tenantID pgtype.UUID) error {
 	if err := s.write.AddSpaceMember(ctx, gen.AddSpaceMemberParams{
@@ -568,17 +625,19 @@ func (s *Service) RemoveModerator(ctx context.Context, spaceID, userID pgtype.UU
 }
 
 // GetUserIDByUsername resolves a username to a user ID within the tenant.
+// Uses the sqlc-generated GetUserByUsername query (Rule 2 — no raw SQL).
 func (s *Service) GetUserIDByUsername(ctx context.Context, tenantID pgtype.UUID, username string) (pgtype.UUID, error) {
-	var id pgtype.UUID
-	if err := s.db.Reader.QueryRow(ctx,
-		`SELECT id FROM users WHERE username = $1 AND tenant_id = $2`, username, tenantID,
-	).Scan(&id); err != nil {
+	row, err := s.read.GetUserByUsername(ctx, gen.GetUserByUsernameParams{
+		TenantID: tenantID,
+		Username: username,
+	})
+	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return id, fmt.Errorf("user not found")
+			return pgtype.UUID{}, fmt.Errorf("user not found")
 		}
-		return id, fmt.Errorf("resolving username: %w", err)
+		return pgtype.UUID{}, fmt.Errorf("resolving username: %w", err)
 	}
-	return id, nil
+	return row.ID, nil
 }
 
 // GetSpaceByID returns a space by its ID within the tenant.
@@ -669,4 +728,56 @@ func (s *Service) GetChildSpaces(ctx context.Context, spaceID, tenantID pgtype.U
 	}
 
 	return spaces, nil
+}
+
+// ReorderPinned atomically updates the position of each pinned content in the
+// given order. All updates run in a single transaction so a mid-loop failure
+// rolls back the entire reorder (BUG-007 fix, §6.2 transaction boundary).
+func (s *Service) ReorderPinned(ctx context.Context, spaceID pgtype.UUID, contentIDs []pgtype.UUID) error {
+	tx, err := s.db.Writer.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("beginning reorder transaction: %w", err)
+	}
+	defer tx.Rollback(ctx) // no-op after commit
+
+	q := gen.New(tx)
+	for i, contentID := range contentIDs {
+		if err := q.UpdateSpacePinPosition(ctx, gen.UpdateSpacePinPositionParams{
+			SpaceID:   spaceID,
+			ContentID: contentID,
+			Position:  int32(i),
+		}); err != nil {
+			return fmt.Errorf("updating pin position %d: %w", i, err)
+		}
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("committing reorder: %w", err)
+	}
+	return nil
+}
+
+// SpaceAnalyticsSummary holds the three aggregate counts returned by
+// GetSpaceAnalytics in a single round-trip (BUG-020).
+type SpaceAnalyticsSummary struct {
+	MemberCount  int
+	ContentCount int
+	ViewCount    int
+}
+
+// GetSpaceAnalyticsSummary returns member/content/view counts for a space
+// in a single SQL query instead of three sequential ones (BUG-020).
+func (s *Service) GetSpaceAnalyticsSummary(ctx context.Context, spaceID, tenantID pgtype.UUID) (SpaceAnalyticsSummary, error) {
+	row, err := s.read.GetSpaceAnalyticsSummary(ctx, gen.GetSpaceAnalyticsSummaryParams{
+		SpaceID:  spaceID,
+		TenantID: tenantID,
+	})
+	if err != nil {
+		return SpaceAnalyticsSummary{}, fmt.Errorf("getting space analytics summary: %w", err)
+	}
+	return SpaceAnalyticsSummary{
+		MemberCount:  int(row.MemberCount),
+		ContentCount: int(row.ContentCount),
+		ViewCount:    int(row.ViewCount),
+	}, nil
 }

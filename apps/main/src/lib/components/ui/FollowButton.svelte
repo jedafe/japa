@@ -59,9 +59,17 @@
 		pending = true;
 
 		const path = followPath();
-		const res = wasFollowing ? await api.delete(path) : await api.post(path);
+		const res = wasFollowing ? await api.delete<{ following: boolean }>(path) : await api.post<{ following: boolean }>(path);
 
-		if (res.error) following = wasFollowing; // rollback
+		// H2: read the response body for the authoritative following state.
+		// On success, trust the server's value (it may differ from the
+		// optimistic toggle — e.g. idempotent unfollow returns false).
+		// On error, roll back to the previous state.
+		if (res.error) {
+			following = wasFollowing;
+		} else if (res.data && typeof res.data.following === 'boolean') {
+			following = res.data.following;
+		}
 		pending = false;
 	}
 

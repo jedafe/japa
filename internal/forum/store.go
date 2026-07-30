@@ -404,6 +404,36 @@ func (s *Store) solveThread(ctx context.Context, id, tenantID, solverUserID pgty
 	return nil
 }
 
+// unsolveThread reverts the solved flag (DELETE /forum/{id}/solve).
+// Ref: japaconnect-engineering/sections/08-forum-qa-solved.md (Solved flag)
+func (s *Store) unsolveThread(ctx context.Context, id, tenantID pgtype.UUID) error {
+	if err := s.write.UnsolveForumThread(ctx, gen.UnsolveForumThreadParams{
+		ID:       id,
+		TenantID: tenantID,
+	}); err != nil {
+		return fmt.Errorf("unsolving forum thread: %w", err)
+	}
+
+	return nil
+}
+
+// isSpaceModerator reports whether the given user is a moderator of the
+// given space. Used by SolveThread/UpdateThread/UpdateReply to enforce the
+// "OP or moderator" rule from Section 08. Returns false when the space is
+// unset (forum threads may have a null space_id).
+func (s *Store) isSpaceModerator(ctx context.Context, userID, spaceID pgtype.UUID) bool {
+	if !spaceID.Valid {
+		return false
+	}
+	if _, err := s.read.GetSpaceModerator(ctx, gen.GetSpaceModeratorParams{
+		SpaceID: spaceID,
+		UserID:  userID,
+	}); err != nil {
+		return false
+	}
+	return true
+}
+
 // incrementReplyCount adjusts the reply_count on a thread.
 func (s *Store) incrementReplyCount(ctx context.Context, id, tenantID pgtype.UUID, delta int32) error {
 	if err := s.write.IncrementThreadReplyCount(ctx, gen.IncrementThreadReplyCountParams{
@@ -499,6 +529,18 @@ func (s *Store) upsertVote(ctx context.Context, p gen.UpsertForumVoteParams) (ge
 	return v, nil
 }
 
+// deleteVote removes a user's vote on an entity (DELETE /forum/{id}/vote).
+func (s *Store) deleteVote(ctx context.Context, tenantID, userID pgtype.UUID, entityType string, entityID pgtype.UUID) error {
+	if err := s.write.DeleteForumVote(ctx, gen.DeleteForumVoteParams{
+		UserID:     userID,
+		EntityType: entityType,
+		EntityID:   entityID,
+	}); err != nil {
+		return fmt.Errorf("deleting forum vote: %w", err)
+	}
+	return nil
+}
+
 // getVoteScore returns the aggregate vote score for an entity.
 func (s *Store) getVoteScore(ctx context.Context, entityType string, entityID pgtype.UUID) (int32, error) {
 	score, err := s.read.GetForumVoteScore(ctx, gen.GetForumVoteScoreParams{
@@ -545,8 +587,9 @@ func (s *Store) addBookmark(ctx context.Context, p gen.AddForumBookmarkParams) (
 }
 
 // removeBookmark deletes a bookmark.
-func (s *Store) removeBookmark(ctx context.Context, userID pgtype.UUID, entityType string, entityID pgtype.UUID) error {
+func (s *Store) removeBookmark(ctx context.Context, tenantID, userID pgtype.UUID, entityType string, entityID pgtype.UUID) error {
 	if err := s.write.RemoveForumBookmark(ctx, gen.RemoveForumBookmarkParams{
+		TenantID:   tenantID,
 		UserID:     userID,
 		EntityType: entityType,
 		EntityID:   entityID,
@@ -554,6 +597,33 @@ func (s *Store) removeBookmark(ctx context.Context, userID pgtype.UUID, entityTy
 		return fmt.Errorf("removing forum bookmark: %w", err)
 	}
 
+	return nil
+}
+
+// getBookmarkByID fetches a bookmark by its primary key (and owner).
+// Used by DELETE /forum/bookmarks/{id} to resolve the entity before
+// decrementing the denormalized bookmark_count.
+func (s *Store) getBookmarkByID(ctx context.Context, id, userID, tenantID pgtype.UUID) (gen.ForumBookmark, error) {
+	bm, err := s.read.GetForumBookmarkByID(ctx, gen.GetForumBookmarkByIDParams{
+		ID:       id,
+		UserID:   userID,
+		TenantID: tenantID,
+	})
+	if err != nil {
+		return gen.ForumBookmark{}, fmt.Errorf("getting forum bookmark by id: %w", err)
+	}
+	return bm, nil
+}
+
+// deleteBookmarkByID deletes a bookmark by its primary key (and owner).
+func (s *Store) deleteBookmarkByID(ctx context.Context, id, userID, tenantID pgtype.UUID) error {
+	if err := s.write.DeleteForumBookmarkByID(ctx, gen.DeleteForumBookmarkByIDParams{
+		ID:       id,
+		UserID:   userID,
+		TenantID: tenantID,
+	}); err != nil {
+		return fmt.Errorf("deleting forum bookmark by id: %w", err)
+	}
 	return nil
 }
 
@@ -666,6 +736,16 @@ func (s *Store) addThreadTag(ctx context.Context, threadID, tagID pgtype.UUID) e
 	return nil
 }
 
+// countThreadTags returns the number of tags currently assigned to a thread.
+// Used to enforce the "max 5 tags per post" rule. Ref: Section 08 Tags.
+func (s *Store) countThreadTags(ctx context.Context, threadID pgtype.UUID) (int32, error) {
+	count, err := s.read.CountForumThreadTags(ctx, threadID)
+	if err != nil {
+		return 0, fmt.Errorf("counting forum thread tags: %w", err)
+	}
+	return count, nil
+}
+
 // removeThreadTag removes a tag from a thread.
 func (s *Store) removeThreadTag(ctx context.Context, threadID, tagID pgtype.UUID) error {
 	if err := s.write.RemoveForumThreadTag(ctx, gen.RemoveForumThreadTagParams{
@@ -752,6 +832,29 @@ func (s *Store) votePoll(ctx context.Context, p gen.VoteForumPollParams) (gen.Fo
 	}
 
 	return v, nil
+}
+
+// getPollByOptionID resolves the poll that owns a given option. Used by
+// POST/DELETE /poll-options/{id}/vote where the URL param is the option_id.
+// Ref: api-routes-catalog L612-613.
+func (s *Store) getPollByOptionID(ctx context.Context, optionID pgtype.UUID) (gen.ForumPoll, error) {
+	poll, err := s.read.GetForumPollByOptionID(ctx, optionID)
+	if err != nil {
+		return gen.ForumPoll{}, fmt.Errorf("getting forum poll by option id: %w", err)
+	}
+	return poll, nil
+}
+
+// retractPollVote removes a user's vote on a poll
+// (DELETE /poll-options/{id}/vote).
+func (s *Store) retractPollVote(ctx context.Context, pollID, userID pgtype.UUID) error {
+	if err := s.write.RetractForumPollVote(ctx, gen.RetractForumPollVoteParams{
+		PollID: pollID,
+		UserID: userID,
+	}); err != nil {
+		return fmt.Errorf("retracting forum poll vote: %w", err)
+	}
+	return nil
 }
 
 // getPollResults returns aggregated vote counts for a poll.
@@ -919,4 +1022,31 @@ func (s *Store) listRepliesByThreadWithAuthor(ctx context.Context, threadID, ten
 		return nil, fmt.Errorf("listing forum replies by thread with author: %w", err)
 	}
 	return rows, nil
+}
+
+// getThreadSpaceIDByID returns the space_id for a thread by ID (no tenant
+// scope — used for WebSocket broadcasts where tenant is not available).
+func (s *Store) getThreadSpaceIDByID(ctx context.Context, id pgtype.UUID) (pgtype.UUID, error) {
+	spaceID, err := s.read.GetForumThreadSpaceIDByID(ctx, id)
+	if err != nil {
+		return pgtype.UUID{}, fmt.Errorf("getting thread space_id by ID: %w", err)
+	}
+	return spaceID, nil
+}
+
+// ---------------------------------------------------------------------------
+// Votes — delete by entity (for vote retraction)
+// Ref: japaconnect-engineering/sections/08-forum-qa-solved.md
+// ---------------------------------------------------------------------------
+
+// deleteVoteByEntity deletes a user's vote on a specific entity.
+func (s *Store) deleteVoteByEntity(ctx context.Context, userID pgtype.UUID, entityType string, entityID pgtype.UUID) error {
+	if err := s.write.DeleteForumVoteByEntity(ctx, gen.DeleteForumVoteByEntityParams{
+		UserID:     userID,
+		EntityType: entityType,
+		EntityID:   entityID,
+	}); err != nil {
+		return fmt.Errorf("deleting forum vote by entity: %w", err)
+	}
+	return nil
 }

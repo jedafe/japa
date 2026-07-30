@@ -3,6 +3,7 @@ package seo
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"image"
 	"image/color"
 	"image/png"
@@ -122,18 +123,26 @@ func (h *OGImageHandler) ServeOGImage(w http.ResponseWriter, r *http.Request) {
 	var buf bytes.Buffer
 	if err := png.Encode(&buf, img); err != nil {
 		slog.Error("og-image: png encode failed", "error", err)
-		http.Error(w, "Failed to generate image", http.StatusInternalServerError)
-
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to generate image")
 		return
 	}
 
 	w.Header().Set("Content-Type", "image/png")
-	w.Header().Set("Cache-Control", "public, max-age=86400") // 24h cache
+	w.Header().Set("Cache-Control", "public, max-age=86400")
 	w.WriteHeader(http.StatusOK)
 
 	if _, err := w.Write(buf.Bytes()); err != nil {
 		slog.Warn("og-image: write failed", "error", err)
 	}
+}
+
+// writeError writes a JSON error response in the JapaConnect API format.
+func writeError(w http.ResponseWriter, status int, code, message string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"error": map[string]string{"code": code, "message": message},
+	})
 }
 
 // generateOGImage creates a 1200x630 OG image with real font rendering.

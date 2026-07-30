@@ -4,6 +4,8 @@ import (
 	"encoding/xml"
 	"fmt"
 	"io"
+	"regexp"
+	"strings"
 	"time"
 
 	"github.com/jedafe/japa/internal/db/gen"
@@ -36,6 +38,24 @@ type RSSItem struct {
 	Author      string `xml:"author,omitempty"`
 }
 
+// htmlTagPattern matches HTML/XML tags for stripping to plain text.
+var htmlTagPattern = regexp.MustCompile(`<[^>]*>`)
+
+// htmlToTextExcerpt strips HTML tags from bodyHtml, collapses whitespace,
+// and truncates to maxRunes characters, returning a clean plain-text excerpt
+// suitable for an RSS <description> element (M4).
+func htmlToTextExcerpt(bodyHtml string, maxRunes int) string {
+	plain := htmlTagPattern.ReplaceAllString(bodyHtml, "")
+	plain = strings.TrimSpace(plain)
+	// Collapse runs of whitespace into single spaces.
+	plain = strings.Join(strings.Fields(plain), " ")
+	if len([]rune(plain)) <= maxRunes {
+		return plain
+	}
+	runes := []rune(plain)
+	return string(runes[:maxRunes]) + "…"
+}
+
 // generateRSSXML writes an RSS 2.0 XML feed to the given writer.
 func generateRSSXML(w io.Writer, posts []gen.ListPublishedPostsForRSSRow, siteURL string, siteName string) error {
 	channel := RSSChannel{
@@ -58,7 +78,10 @@ func generateRSSXML(w io.Writer, posts []gen.ListPublishedPostsForRSSRow, siteUR
 			Title:       p.Title,
 			Link:        siteURL + "/blog/" + p.Slug,
 			GUID:        guid,
-			Description: p.BodyHtml,
+			// M4: use a plain-text excerpt (HTML stripped, truncated to 300
+			// runes) instead of raw body_html — avoids XSS-in-feed and
+			// malformed-feeling feeds in RSS readers.
+			Description: htmlToTextExcerpt(p.BodyHtml, 300),
 			PubDate:     pubDate,
 		}
 		channel.Items = append(channel.Items, item)

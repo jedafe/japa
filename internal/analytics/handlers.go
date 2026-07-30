@@ -436,7 +436,7 @@ func (h *Handlers) HandleCacheFlush(w http.ResponseWriter, r *http.Request) {
 
 	deleted, err := h.CacheFlusher.FlushCache(r.Context(), scope)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "flush_error", err.Error())
+		writeError(w, http.StatusInternalServerError, "flush_error", "Failed to flush cache")
 		return
 	}
 

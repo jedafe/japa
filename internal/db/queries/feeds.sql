@@ -30,6 +30,7 @@ LEFT JOIN tags t ON t.id = ct.tag_id
 LEFT JOIN media m ON m.id = c.header_image_id AND m.deleted_at IS NULL
 WHERE c.tenant_id = @tenant_id
   AND c.status = 'published'
+  AND c.deleted_at IS NULL
   AND c.visibility = 'public'
 GROUP BY c.id, cs.vote_score, cs.velocity_score, cs.bookmark_count,
          u.username, up.display_name, up.avatar_url,
@@ -39,7 +40,9 @@ ORDER BY cs.velocity_score DESC, cs.vote_score DESC
 LIMIT @page_limit OFFSET @page_offset;
 
 -- name: GetPrimaryFeed :many
--- User's personalized feed from feeds table (push side)
+-- User's personalized feed from feeds table (push side).
+-- sort: 'latest' (default), 'top' (vote_score DESC), 'rising' (velocity_score DESC).
+-- 'relevant' falls back to latest (pgvector relevance is only used in the for-you feed).
 SELECT f.id, f.content_id, f.space_id, f.content_type, f.score, f.created_at,
        c.title, c.slug, c.author_id, c.created_at AS content_created_at,
        c.view_count, c.comment_count,
@@ -64,17 +67,23 @@ LEFT JOIN tags t ON t.id = ct.tag_id
 LEFT JOIN media m ON m.id = c.header_image_id AND m.deleted_at IS NULL
 WHERE f.tenant_id = @tenant_id AND f.user_id = @user_id
   AND c.status = 'published'
+  AND c.deleted_at IS NULL
 GROUP BY f.id, f.content_id, f.space_id, f.content_type, f.score, f.created_at,
          c.title, c.slug, c.author_id, c.created_at,
          c.view_count, c.comment_count, cs.vote_score, cs.bookmark_count,
          u.username, up.display_name, up.avatar_url,
          s.name, s.slug,
          c.read_time_minutes, m.storage_bucket, m.storage_path
-ORDER BY f.created_at DESC
+ORDER BY
+    CASE WHEN @sort = 'top' THEN cs.vote_score END DESC,
+    CASE WHEN @sort = 'rising' THEN cs.velocity_score END DESC,
+    f.created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 
 -- name: GetSpaceFeed :many
--- Posts in a specific space
+-- Posts in a specific space.
+-- sort: 'latest' (default), 'top' (vote_score DESC), 'rising' (velocity_score DESC).
+-- 'relevant' falls back to latest (pgvector relevance is only used in the for-you feed).
 SELECT c.id, c.title, c.slug, c.content_type, c.author_id,
        c.created_at, c.view_count, c.comment_count,
        cs.vote_score, cs.velocity_score,
@@ -98,15 +107,21 @@ LEFT JOIN tags t ON t.id = ct.tag_id
 LEFT JOIN media m ON m.id = c.header_image_id AND m.deleted_at IS NULL
 WHERE c.tenant_id = @tenant_id AND c.space_id = @space_id
   AND c.status = 'published'
+  AND c.deleted_at IS NULL
 GROUP BY c.id, cs.vote_score, cs.velocity_score, cs.bookmark_count,
          u.username, up.display_name, up.avatar_url,
          s.name, s.slug,
          m.storage_bucket, m.storage_path
-ORDER BY c.created_at DESC
+ORDER BY
+    CASE WHEN @sort = 'top' THEN cs.vote_score END DESC,
+    CASE WHEN @sort = 'rising' THEN cs.velocity_score END DESC,
+    c.created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 
 -- name: GetProfileFeed :many
--- All public posts by a specific user
+-- All public posts by a specific user.
+-- sort: 'latest' (default), 'top' (vote_score DESC), 'rising' (velocity_score DESC).
+-- 'relevant' falls back to latest (pgvector relevance is only used in the for-you feed).
 SELECT c.id, c.title, c.slug, c.content_type, c.author_id, c.space_id,
        c.created_at, c.view_count, c.comment_count,
        cs.vote_score, cs.velocity_score,
@@ -130,12 +145,16 @@ LEFT JOIN tags t ON t.id = ct.tag_id
 LEFT JOIN media m ON m.id = c.header_image_id AND m.deleted_at IS NULL
 WHERE c.tenant_id = @tenant_id AND c.author_id = @author_id
   AND c.status = 'published'
+  AND c.deleted_at IS NULL
   AND c.visibility = 'public'
 GROUP BY c.id, cs.vote_score, cs.velocity_score, cs.bookmark_count,
          u.username, up.display_name, up.avatar_url,
          s.name, s.slug,
          m.storage_bucket, m.storage_path
-ORDER BY c.created_at DESC
+ORDER BY
+    CASE WHEN @sort = 'top' THEN cs.vote_score END DESC,
+    CASE WHEN @sort = 'rising' THEN cs.velocity_score END DESC,
+    c.created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 
 -- name: GetTopFeed :many
@@ -163,6 +182,7 @@ LEFT JOIN tags t ON t.id = ct.tag_id
 LEFT JOIN media m ON m.id = c.header_image_id AND m.deleted_at IS NULL
 WHERE c.tenant_id = @tenant_id
   AND c.status = 'published'
+  AND c.deleted_at IS NULL
   AND c.visibility = 'public'
   AND c.created_at > now() - interval '7 days'
 GROUP BY c.id, cs.vote_score, cs.velocity_score, cs.bookmark_count,
@@ -197,6 +217,7 @@ LEFT JOIN tags t ON t.id = ct.tag_id
 LEFT JOIN media m ON m.id = c.header_image_id AND m.deleted_at IS NULL
 WHERE c.tenant_id = @tenant_id
   AND c.status = 'published'
+  AND c.deleted_at IS NULL
   AND c.visibility = 'public'
 GROUP BY c.id, cs.vote_score, cs.velocity_score, cs.bookmark_count,
          u.username, up.display_name, up.avatar_url,
@@ -233,16 +254,17 @@ FROM contents c
 WHERE cs.content_id = c.id
   AND c.tenant_id = @tenant_id
   AND c.status = 'published'
+  AND c.deleted_at IS NULL
   AND c.created_at >= now() - interval '30 days';
 
 -- name: DeleteFeedItemsByContent :exec
-DELETE FROM feeds WHERE content_id = @content_id;
+DELETE FROM feeds WHERE content_id = @content_id AND tenant_id = @tenant_id;
 
 -- name: DeleteFeedItemsByUser :exec
-DELETE FROM feeds WHERE user_id = @user_id;
+DELETE FROM feeds WHERE user_id = @user_id AND tenant_id = @tenant_id;
 
 -- name: GetFeedItemCount :one
-SELECT COUNT(*)::int AS count FROM feeds WHERE user_id = @user_id;
+SELECT COUNT(*)::int AS count FROM feeds WHERE user_id = @user_id AND tenant_id = @tenant_id;
 
 -- name: GetFollowedEntityIDsByType :many
 -- Lean ID-only lookup of everything a user follows of one entity type.
@@ -270,6 +292,7 @@ WITH affinity AS (
     FROM contents c
     WHERE c.tenant_id = @tenant_id
       AND c.status = 'published'
+      AND c.deleted_at IS NULL
       AND c.visibility = 'public'
       AND c.created_at >= @window_start
       AND c.author_id <> @exclude_author_id
@@ -290,6 +313,7 @@ velocity AS (
     JOIN content_scores cs ON cs.content_id = c.id
     WHERE c.tenant_id = @tenant_id
       AND c.status = 'published'
+      AND c.deleted_at IS NULL
       AND c.visibility = 'public'
       AND c.created_at >= @window_start
       AND c.author_id <> @exclude_author_id
@@ -344,4 +368,6 @@ ORDER BY f.created_at DESC
 LIMIT 20;
 
 -- name: PruneOldFeeds :exec
+-- Intentionally global (no tenant_id filter): this is a retention prune that
+-- runs weekly across all tenants. Ref: Section 32, asynq-tasks catalog.
 DELETE FROM feeds WHERE created_at < now() - interval '30 days';

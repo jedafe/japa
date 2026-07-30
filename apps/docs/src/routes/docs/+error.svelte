@@ -3,9 +3,23 @@
 	import AppShell from '$lib/components/shell/AppShell.svelte';
 	import { t } from '$lib/i18n';
 	import type { LayoutData } from '../$types';
+	import { AlertTriangle } from 'lucide-svelte';
 
 	let { data }: { data: LayoutData } = $props();
+
+	const status = $derived(page.status);
+	const isNotFound = $derived(status === 404);
+	const title = $derived(isNotFound ? t('page.not_found', 'Page not found') : t('page.server_error', 'Server error'));
+	const message = $derived(
+		isNotFound
+			? t('page.not_found_body', "The page you're looking for doesn't exist or has been moved.")
+			: page.error?.message ?? t('page.server_error_body', 'Something went wrong. Please try again later.')
+	);
 </script>
+
+<svelte:head>
+	<title>{title} — {t('app.name', 'JapaConnect Docs')}</title>
+</svelte:head>
 
 <AppShell
 	nav={data.nav}
@@ -15,41 +29,18 @@
 	collapsed={data.navCollapsed}
 	onToggleCollapse={() => {}}
 >
-	<section class="not-found">
-		<h1>{page.status}</h1>
-		<p>{page.status === 404 ? t('page.not_found_body') : page.error?.message ?? t('page.not_found_body')}</p>
-		<a href="/docs" class="back">{t('page.back_to_docs')}</a>
-	</section>
+	<div class="flex min-h-[60vh] flex-col items-center justify-center px-4 text-center">
+		<div class="mb-4 flex items-center justify-center">
+			<AlertTriangle class="size-12 {isNotFound ? 'text-[var(--color-muted)]' : 'text-[var(--destructive)]'}" />
+		</div>
+		<h1 class="text-foreground mb-2 text-5xl font-bold">{status}</h1>
+		<h2 class="text-foreground mb-3 text-xl font-semibold">{title}</h2>
+		<p class="text-muted-foreground mb-8 max-w-md text-sm">{message}</p>
+		<a
+			href="/docs"
+			class="bg-foreground text-background hover:bg-foreground/90 inline-flex items-center gap-2 rounded-lg px-5 py-2 text-sm font-medium transition-colors"
+		>
+			{t('page.back_to_docs', 'Back to docs')}
+		</a>
+	</div>
 </AppShell>
-
-<style>
-	.not-found {
-		max-width: 560px;
-		margin: 0 auto;
-		padding: 4rem 1.5rem;
-		text-align: center;
-	}
-	.not-found h1 {
-		font-family: var(--font-sans);
-		font-size: 3rem;
-		font-weight: 700;
-		color: var(--color-muted);
-		margin: 0 0 0.5rem;
-	}
-	.not-found p {
-		font-size: 0.9375rem;
-		color: var(--color-text-subtle);
-		margin: 0 0 1.5rem;
-	}
-	.back {
-		display: inline-block;
-		padding: 0.5rem 1rem;
-		border: 1px solid var(--color-border);
-		border-radius: var(--radius);
-		color: var(--color-text);
-		text-decoration: none;
-		font-size: 0.875rem;
-		font-weight: 500;
-	}
-	.back:hover { border-color: var(--color-primary); color: var(--color-primary); }
-</style>
