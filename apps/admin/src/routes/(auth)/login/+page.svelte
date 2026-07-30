@@ -105,7 +105,7 @@
 				style="background: var(--color-primary)"
 				disabled={loading || !email || !password}
 			>
-				{loading ? 'Signing in...' : 'Sign In'}
+				{loading ? t('login.signing_in', 'Signing in...') : t('login.submit', 'Sign In')}
 			</button>
 		</form>
 	</div>

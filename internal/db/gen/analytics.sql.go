@@ -266,7 +266,7 @@ func (q *Queries) GetDailyContentStats(ctx context.Context, arg GetDailyContentS
 }
 
 const getDailySpaceStats = `-- name: GetDailySpaceStats :many
-SELECT date_trunc('day', s.created_at)::date AS day, s.tenant_id, s.id AS space_id,
+SELECT date_trunc('day', s.created_at)::date AS day, s.tenant_id, s.id AS space_id, s.name AS space_name,
        (SELECT COUNT(*)::bigint FROM space_members sm WHERE sm.space_id = s.id) AS joins,
        (SELECT COUNT(*)::bigint FROM contents c WHERE c.space_id = s.id AND c.status != 'draft') AS posts,
        (SELECT COUNT(DISTINCT sm2.user_id)::bigint FROM space_members sm2 WHERE sm2.space_id = s.id) AS active_users
@@ -290,6 +290,7 @@ type GetDailySpaceStatsRow struct {
 	Day         pgtype.Date `json:"day"`
 	TenantID    pgtype.UUID `json:"tenant_id"`
 	SpaceID     pgtype.UUID `json:"space_id"`
+	SpaceName   string      `json:"space_name"`
 	Joins       int64       `json:"joins"`
 	Posts       int64       `json:"posts"`
 	ActiveUsers int64       `json:"active_users"`
@@ -313,6 +314,7 @@ func (q *Queries) GetDailySpaceStats(ctx context.Context, arg GetDailySpaceStats
 			&i.Day,
 			&i.TenantID,
 			&i.SpaceID,
+			&i.SpaceName,
 			&i.Joins,
 			&i.Posts,
 			&i.ActiveUsers,

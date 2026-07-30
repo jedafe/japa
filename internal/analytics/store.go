@@ -40,7 +40,7 @@ func (s *Store) ListPlatformEvents(ctx context.Context, tenantID pgtype.UUID, fi
 	return s.queries.ListPlatformEvents(ctx, gen.ListPlatformEventsParams{
 		TenantID: tenantID,
 		Column2:  filter.EventType,
-		Column3:  pgtype.UUID{}, // zero UUID = no user filter
+		Column3:  pgtype.UUID{Bytes: [16]byte{}, Valid: true}, // zero UUID = no user filter
 		Column4:  filter.EntityType,
 		Column5:  nullableTimestamptz(filter.StartDate),
 		Column6:  nullableTimestamptz(filter.EndDate),

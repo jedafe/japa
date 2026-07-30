@@ -410,6 +410,8 @@ func (h *Handlers) ListAuditLogs(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, "invalid_actor", "Invalid actor_user_id")
 			return
 		}
+	} else {
+		actorUserID = pgtype.UUID{Bytes: [16]byte{}, Valid: true}
 	}
 
 	var startDate, endDate *time.Time

@@ -565,7 +565,7 @@ func (h *Handlers) GetSpaceAnalytics(w http.ResponseWriter, r *http.Request) {
 		endDate = &pgtype.Date{Time: *to, Valid: true}
 	}
 
-	spaceStats, err := h.Service.store.GetDailySpaceStats(r.Context(), tenantID, &startDate, endDate, pgtype.UUID{})
+	spaceStats, err := h.Service.store.GetDailySpaceStats(r.Context(), tenantID, &startDate, endDate, pgtype.UUID{Bytes: [16]byte{}, Valid: true})
 	if err != nil {
 		slog.Error("get space analytics", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to retrieve space analytics")
@@ -575,6 +575,7 @@ func (h *Handlers) GetSpaceAnalytics(w http.ResponseWriter, r *http.Request) {
 	// Aggregate by space
 	type SpaceSummary struct {
 		SpaceID    string `json:"space_id"`
+		SpaceName  string `json:"space_name"`
 		TotalJoins int64  `json:"total_joins"`
 		TotalPosts int64  `json:"total_posts"`
 	}
@@ -582,7 +583,7 @@ func (h *Handlers) GetSpaceAnalytics(w http.ResponseWriter, r *http.Request) {
 	for _, ss := range spaceStats {
 		sid := ss.SpaceID.String()
 		if _, ok := spaceMap[sid]; !ok {
-			spaceMap[sid] = &SpaceSummary{SpaceID: sid}
+			spaceMap[sid] = &SpaceSummary{SpaceID: sid, SpaceName: ss.SpaceName}
 		}
 		spaceMap[sid].TotalJoins += ss.Joins
 		spaceMap[sid].TotalPosts += ss.Posts
@@ -683,7 +684,7 @@ func (h *Handlers) GetAdminContentAnalytics(w http.ResponseWriter, r *http.Reque
 		endDate = &pgtype.Date{Time: *to, Valid: true}
 	}
 
-	contentStats, err := h.Service.store.GetDailyContentStats(r.Context(), tenantID, &startDate, endDate, pgtype.UUID{})
+	contentStats, err := h.Service.store.GetDailyContentStats(r.Context(), tenantID, &startDate, endDate, pgtype.UUID{Bytes: [16]byte{}, Valid: true})
 	if err != nil {
 		slog.Error("get content analytics", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to retrieve content analytics")

@@ -14,7 +14,10 @@
 	type Campaign = {
 		id: string;
 		name: string;
-		status: 'active' | 'paused' | 'draft' | 'completed';
+		// Ref: sections/25-ad-placement.md — backend statuses are
+		// pending_review | active | paused | ended | rejected (plus the legacy
+		// `completed`/`draft` aliases the UI previously assumed).
+		status: 'active' | 'paused' | 'draft' | 'completed' | 'ended' | 'pending_review' | 'rejected';
 		impressions: number;
 		clicks: number;
 		budget: number;
@@ -50,7 +53,10 @@
 	let errorMessage = $state('');
 	let activeTab = $state('campaigns');
 
-	const canManageAds = $derived(hasPermission('ads.manage'));
+	// Ref: japaconnect-engineering/sections/03-rbac.md — the enforced node is
+	// `ad.campaign.manage` (seeded in migration 000109). The previous `ads.manage`
+	// was an unseeded typo that only worked for super_admin via the `*` wildcard.
+	const canManageAds = $derived(hasPermission('ad.campaign.manage'));
 
 	// Stats modal
 	let showStatsModal = $state(false);
@@ -72,60 +78,66 @@
 	let bulkDeleting = $state(false);
 
 	const tabs = $derived([
-		{ value: 'campaigns', label: 'Campaigns', icon: BarChart3, count: campaigns.length },
-		{ value: 'boosts', label: 'Boosts', icon: Zap, count: activeBoosts.length }
+		{ value: 'campaigns', label: t('ads.tab_campaigns', 'Campaigns'), icon: BarChart3, count: campaigns.length },
+		{ value: 'boosts', label: t('ads.tab_boosts', 'Boosts'), icon: Zap, count: activeBoosts.length }
 	]);
 
+	// Ref: japaconnect-engineering/conventions/svelte-component-patterns.md —
+	// status badges use semantic token classes (success/warning/info), never
+	// raw hex or non-token shades like `info-100`/`info-800`.
 	const statusBadge = (value: string) => {
 		const classes: Record<string, string> = {
 			active: 'bg-success/15 text-success border-success',
 			paused: 'bg-warning/15 text-warning border-warning',
-			completed: 'bg-surface text-foreground border',
-			draft: 'bg-info-100 text-info-800 border-info-200'
+			completed: 'bg-surface text-foreground border-border',
+			draft: 'bg-info/15 text-info border-info',
+			ended: 'bg-surface text-foreground border-border',
+			pending_review: 'bg-warning/15 text-warning border-warning',
+			rejected: 'bg-danger/15 text-danger border-danger'
 		};
-		return `<span class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${classes[value] || 'bg-surface text-foreground border'}">${value}</span>`;
+		return `<span class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${classes[value] || 'bg-surface text-foreground border-border'}">${value}</span>`;
 	};
 
-	const campaignColumns = [
+	const campaignColumns = $derived([
 		{
 			key: 'name',
-			label: 'Campaign',
+			label: t('ads.col_campaign', 'Campaign'),
 			sortable: true,
 			render: (_: any, row: any) => `
 				<div>
 					<a href="/ads/${row.id}" class="font-medium text-foreground hover:underline">${row.name}</a>
-					<p class="text-xs text-muted">${row.start_date} &mdash; ${row.end_date ?? 'ongoing'}</p>
+					<p class="text-xs text-muted">${row.start_date ?? ''} &mdash; ${row.end_date ?? 'ongoing'}</p>
 				</div>
 			`
 		},
 		{
 			key: 'status',
-			label: 'Status',
+			label: t('ads.col_status', 'Status'),
 			sortable: true,
 			render: (value: string) => statusBadge(value)
 		},
 		{
 			key: 'impressions',
-			label: 'Impressions',
+			label: t('ads.col_impressions', 'Impressions'),
 			sortable: true,
 			render: (value: number) => `<span class="font-medium">${(value ?? 0).toLocaleString()}</span>`
 		},
 		{
 			key: 'clicks',
-			label: 'Clicks',
+			label: t('ads.col_clicks', 'Clicks'),
 			sortable: true,
 			render: (value: number) => `<span class="font-medium">${(value ?? 0).toLocaleString()}</span>`
 		},
 		{
-			key: 'impressions',
-			label: 'CTR',
+			key: 'ctr',
+			label: t('ads.col_ctr', 'CTR'),
 			render: (_: any, row: any) => `<span class="text-sm">${row.impressions > 0 ? ((row.clicks / row.impressions) * 100).toFixed(1) : '0.0'}%</span>`
 		},
 		{
 			key: 'budget',
-			label: 'Budget',
+			label: t('ads.col_budget', 'Budget'),
 			sortable: true,
-			render: (value: number) => `<span class="text-sm font-medium">$${(value ?? 0).toLocaleString()}</span>`
+			render: (value: number) => `<span class="text-sm font-medium">${(value ?? 0).toLocaleString()}</span>`
 		},
 		{
 			key: 'actions',
@@ -133,41 +145,35 @@
 			class: 'w-24',
 			componentSnippet: CampaignActionsCell
 		}
-	];
+	]);
 
-	const boostColumns = [
+	const boostColumns = $derived([
 		{
 			key: 'boost_type',
-			label: 'Boost Type',
+			label: t('ads.col_boost_type', 'Boost Type'),
 			sortable: true,
 			render: (value: string) => `<span class="text-xs font-medium">${value}</span>`
 		},
 		{
 			key: 'space_id',
-			label: 'Space',
+			label: t('ads.col_space', 'Space'),
 			render: (value: string) => `<span class="font-mono text-xs text-muted">${(value ?? '').slice(0, 12)}</span>`
 		},
 		{
 			key: 'organization_id',
-			label: 'Organization',
+			label: t('ads.col_organization', 'Organization'),
 			render: (value: string) => `<span class="font-mono text-xs text-muted">${(value ?? '').slice(0, 12)}</span>`
 		},
 		{
 			key: 'start_date',
-			label: 'Period',
-			render: (_: any, row: any) => `<span class="text-xs text-muted">${row.start_date} — ${row.end_date}</span>`
+			label: t('ads.col_period', 'Period'),
+			render: (_: any, row: any) => `<span class="text-xs text-muted">${row.start_date ?? ''} — ${row.end_date ?? ''}</span>`
 		},
 		{
 			key: 'status',
-			label: 'Status',
+			label: t('ads.col_status', 'Status'),
 			sortable: true,
-			render: (value: string) => {
-				const classes: Record<string, string> = {
-					active: 'bg-success/15 text-success border-success',
-					completed: 'bg-surface text-foreground border'
-				};
-				return `<span class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${classes[value] || 'bg-surface text-foreground border'}">${value}</span>`;
-			}
+			render: (value: string) => statusBadge(value)
 		},
 		{
 			key: 'actions',
@@ -175,7 +181,7 @@
 			class: 'w-24',
 			componentSnippet: BoostActionsCell
 		}
-	];
+	]);
 
 	async function load() {
 		loading = true;
@@ -184,24 +190,28 @@
 			if (activeTab === 'campaigns') {
 				const result = await adsAdminApi.listCampaigns();
 				if (result.ok) {
-					const data = result.data as { items?: Campaign[]; campaigns?: Campaign[] } | Campaign[];
-					campaigns = Array.isArray(data) ? data : (data.items ?? data.campaigns ?? []);
+					// §6.2: backend may historically return null for an empty list;
+					// guard so a null `data` never throws on `.items` access.
+					const data = (result.data ?? []) as { items?: Campaign[]; campaigns?: Campaign[] } | Campaign[];
+					let list = Array.isArray(data) ? data : (data.items ?? data.campaigns ?? []);
 					if (searchQuery) {
 						const q = searchQuery.toLowerCase();
-						campaigns = campaigns.filter((c: any) => c.name?.toLowerCase().includes(q) || c.status?.toLowerCase().includes(q));
+						list = list.filter((c: any) => c.name?.toLowerCase().includes(q) || c.status?.toLowerCase().includes(q));
 					}
+					campaigns = list;
 				} else {
 					errorMessage = result.error;
 				}
 			} else {
 				const result = await adsAdminApi.listActiveBoosts();
 				if (result.ok) {
-					const data = result.data as { items?: ActiveBoost[]; boosts?: ActiveBoost[] } | ActiveBoost[];
-					activeBoosts = Array.isArray(data) ? data : (data.items ?? data.boosts ?? []);
+					const data = (result.data ?? []) as { items?: ActiveBoost[]; boosts?: ActiveBoost[] } | ActiveBoost[];
+					let list = Array.isArray(data) ? data : (data.items ?? data.boosts ?? []);
 					if (searchQuery) {
 						const q = searchQuery.toLowerCase();
-						activeBoosts = activeBoosts.filter((b: any) => b.username?.toLowerCase().includes(q) || b.status?.toLowerCase().includes(q));
+						list = list.filter((b: any) => b.boost_type?.toLowerCase().includes(q) || b.status?.toLowerCase().includes(q));
 					}
+					activeBoosts = list;
 				} else {
 					errorMessage = result.error;
 				}
@@ -213,6 +223,9 @@
 		}
 	}
 
+	// Ref: AGENTS.md Rule 16 — after a successful mutation, re-fetch from the
+	// server instead of patching local state, so the UI never diverges from
+	// truth on a partial/failed write.
 	async function toggleCampaign(campaignId: string) {
 		const campaign = campaigns.find((c) => c.id === campaignId);
 		if (!campaign) return;
@@ -221,8 +234,9 @@
 				? await adsAdminApi.pauseCampaign(campaign.id)
 				: await adsAdminApi.activateCampaign(campaign.id);
 			if (result.ok) {
-				campaign.status = campaign.status === 'active' ? 'paused' : 'active';
-				campaigns = campaigns;
+				await load();
+			} else {
+				errorMessage = result.error || t('ads.status_error');
 			}
 		} catch {
 			errorMessage = t('ads.status_error');
@@ -233,9 +247,9 @@
 		try {
 			const result = await adsAdminApi.endCampaign(campaignId);
 			if (result.ok) {
-				const campaign = campaigns.find((c) => c.id === campaignId);
-				if (campaign) campaign.status = 'completed';
-				campaigns = campaigns;
+				await load();
+			} else {
+				errorMessage = result.error || t('ads.status_error');
 			}
 		} catch {
 			errorMessage = t('ads.status_error');
@@ -246,7 +260,9 @@
 		try {
 			const result = await adsAdminApi.endBoost(boostId);
 			if (result.ok) {
-				load();
+				await load();
+			} else {
+				errorMessage = result.error || t('ads.status_error');
 			}
 		} catch {
 			errorMessage = t('ads.status_error');
@@ -264,6 +280,8 @@
 			const result = await adsAdminApi.getCampaignStats(campaign.id);
 			if (result.ok) {
 				stats = result.data as CampaignStats;
+			} else {
+				errorMessage = result.error || t('ads.stats_error');
 			}
 		} catch {
 			errorMessage = t('ads.stats_error');
@@ -304,7 +322,7 @@
 				await api(`/admin/ads/campaigns/${id}`, { method: 'DELETE' });
 			}
 			selectedCampaignIds = new Set();
-			load();
+			await load();
 		} catch {
 			errorMessage = t('ads.load_error');
 		}
@@ -319,7 +337,7 @@
 				await api(`/admin/ads/boosts/${id}`, { method: 'DELETE' });
 			}
 			selectedBoostIds = new Set();
-			load();
+			await load();
 		} catch {
 			errorMessage = t('ads.load_error');
 		}
@@ -332,7 +350,7 @@
 </script>
 
 <svelte:head>
-	<title>Advertising — JapaConnect Admin</title>
+	<title>{t('ads.title')} — JapaConnect Admin</title>
 </svelte:head>
 
 <PageHeader
@@ -345,7 +363,7 @@
 
 <div class="space-y-6">
 	{#if errorMessage}
-		<div class="rounded-lg border border-danger bg-danger-50 px-4 py-3 text-sm text-danger-700">
+		<div class="rounded-lg border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger">
 			{errorMessage}
 		</div>
 	{/if}
@@ -370,7 +388,7 @@
 				{#snippet bulkActions()}
 					<Button variant="destructive" size="sm" onclick={bulkDeleteCampaigns} disabled={bulkDeleting || selectedCampaignIds.size === 0}>
 						<Trash2 class="h-3.5 w-3.5 mr-1" />
-						{bulkDeleting ? 'Deleting...' : 'Delete Selected'} ({selectedCampaignIds.size})
+						{bulkDeleting ? t('ads.deleting', 'Deleting...') : t('ads.delete_selected', 'Delete Selected')} ({selectedCampaignIds.size})
 					</Button>
 				{/snippet}
 			</DataTable>
@@ -392,7 +410,7 @@
 				{#snippet bulkActions()}
 					<Button variant="destructive" size="sm" onclick={bulkDeleteBoosts} disabled={bulkDeleting || selectedBoostIds.size === 0}>
 						<Trash2 class="h-3.5 w-3.5 mr-1" />
-						{bulkDeleting ? 'Deleting...' : 'Delete Selected'} ({selectedBoostIds.size})
+						{bulkDeleting ? t('ads.deleting', 'Deleting...') : t('ads.delete_selected', 'Delete Selected')} ({selectedBoostIds.size})
 					</Button>
 				{/snippet}
 			</DataTable>
@@ -408,38 +426,38 @@
 	{:else if stats}
 		<div class="space-y-4">
 			<div class="grid grid-cols-2 gap-3">
-				<div class="rounded-lg border border bg-surface p-3">
+				<div class="rounded-lg border border-border bg-surface p-3">
 					<p class="text-xs text-muted">{t('ads.impressions')}</p>
-					<p class="text-lg font-bold text-foreground">{stats.impressions.toLocaleString()}</p>
+					<p class="text-lg font-bold text-foreground">{(stats.impressions ?? 0).toLocaleString()}</p>
 				</div>
-				<div class="rounded-lg border border bg-surface p-3">
+				<div class="rounded-lg border border-border bg-surface p-3">
 					<p class="text-xs text-muted">{t('ads.clicks')}</p>
-					<p class="text-lg font-bold text-foreground">{stats.clicks.toLocaleString()}</p>
+					<p class="text-lg font-bold text-foreground">{(stats.clicks ?? 0).toLocaleString()}</p>
 				</div>
-				<div class="rounded-lg border border bg-surface p-3">
+				<div class="rounded-lg border border-border bg-surface p-3">
 					<p class="text-xs text-muted">{t('ads.conversions')}</p>
-					<p class="text-lg font-bold text-foreground">{stats.conversions.toLocaleString()}</p>
+					<p class="text-lg font-bold text-foreground">{(stats.conversions ?? 0).toLocaleString()}</p>
 				</div>
-				<div class="rounded-lg border border bg-surface p-3">
+				<div class="rounded-lg border border-border bg-surface p-3">
 					<p class="text-xs text-muted">{t('ads.spend')}</p>
-					<p class="text-lg font-bold text-foreground">${stats.spend.toLocaleString()}</p>
+					<p class="text-lg font-bold text-foreground">{(stats.spend ?? 0).toLocaleString()}</p>
 				</div>
-				<div class="rounded-lg border border bg-surface p-3">
+				<div class="rounded-lg border border-border bg-surface p-3">
 					<p class="text-xs text-muted">{t('ads.ctr')}</p>
-					<p class="text-lg font-bold text-foreground">{stats.ctr.toFixed(2)}%</p>
+					<p class="text-lg font-bold text-foreground">{(stats.ctr ?? 0).toFixed(2)}%</p>
 				</div>
-				<div class="rounded-lg border border bg-surface p-3">
+				<div class="rounded-lg border border-border bg-surface p-3">
 					<p class="text-xs text-muted">{t('ads.cpc')}</p>
-					<p class="text-lg font-bold text-foreground">${stats.cpc.toFixed(2)}</p>
+					<p class="text-lg font-bold text-foreground">{(stats.cpc ?? 0).toFixed(2)}</p>
 				</div>
 			</div>
 			{#if stats.daily_stats?.length}
 				<div>
 					<h3 class="mb-2 text-sm font-medium text-foreground">{t('ads.daily_breakdown')}</h3>
-					<div class="max-h-48 overflow-y-auto rounded-lg border border">
+					<div class="max-h-48 overflow-y-auto rounded-lg border border-border">
 						<table class="w-full text-xs">
 							<thead>
-								<tr class="border-b border bg-surface">
+								<tr class="border-b border-border bg-surface">
 									<th class="px-3 py-2 text-left text-muted">{t('ads.date')}</th>
 									<th class="px-3 py-2 text-right text-muted">{t('ads.impressions')}</th>
 									<th class="px-3 py-2 text-right text-muted">{t('ads.clicks')}</th>
@@ -448,11 +466,11 @@
 							</thead>
 							<tbody>
 								{#each stats.daily_stats as day}
-									<tr class="border-b border last:border-0">
+									<tr class="border-b border-border last:border-0">
 										<td class="px-3 py-2">{day.date}</td>
-										<td class="px-3 py-2 text-right">{day.impressions.toLocaleString()}</td>
-										<td class="px-3 py-2 text-right">{day.clicks.toLocaleString()}</td>
-										<td class="px-3 py-2 text-right">${day.spend.toFixed(2)}</td>
+										<td class="px-3 py-2 text-right">{(day.impressions ?? 0).toLocaleString()}</td>
+										<td class="px-3 py-2 text-right">{(day.clicks ?? 0).toLocaleString()}</td>
+										<td class="px-3 py-2 text-right">{(day.spend ?? 0).toFixed(2)}</td>
 									</tr>
 								{/each}
 							</tbody>
@@ -503,7 +521,7 @@
 		<Button variant="ghost" size="sm" onclick={() => viewStats(row.id)} title={t('ads.stats')}>
 			<Eye class="h-3.5 w-3.5" />
 		</Button>
-		{#if canManageAds && row.status !== 'completed'}
+		{#if canManageAds && row.status !== 'completed' && row.status !== 'ended'}
 			<Button variant="ghost" size="sm" onclick={() => toggleCampaign(row.id)} style={row.status === 'active' ? 'color: var(--color-warning)' : 'color: var(--color-success)'}>
 				{#if row.status === 'active'}<Pause class="h-3.5 w-3.5" />{:else}<Play class="h-3.5 w-3.5" />{/if}
 			</Button>
@@ -518,7 +536,7 @@
 {#snippet BoostActionsCell({ value, row }: { value: any; row: ActiveBoost })}
 	<div class="flex items-center gap-1">
 		{#if canManageAds && row.status === 'active'}
-			<Button variant="ghost" size="sm" onclick={() => confirmEndBoost(row)} style="color: var(--color-danger)" title={t('ads.end')}>
+			<Button variant="ghost" size="sm" onclick={() => confirmEndBoost(row)} style="color: var(--color-danger)" title={t('ads.end', 'End')}>
 				<StopCircle class="h-3.5 w-3.5" />
 			</Button>
 		{/if}

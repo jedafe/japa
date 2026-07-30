@@ -56,125 +56,125 @@
 	const sections: NavSection[] = [
 		{
 			id: "dashboard",
-			label: "Dashboard",
+			label: t("nav.section.dashboard", "Dashboard"),
 			items: [
-				{ path: "/", label: "Overview", icon: LayoutDashboard }
+				{ path: "/", label: t("nav.overview", "Overview"), icon: LayoutDashboard }
 			]
 		},
 		{
 			id: "users",
-			label: "User Management",
+			label: t("nav.section.users", "User Management"),
 			items: [
-				{ path: "/users", label: "Users", icon: Users, permission: "admin.users.view" },
-				{ path: "/organisations", label: "Organisations", icon: Building, permission: "organizations.manage" },
-				{ path: "/universities", label: "Universities", icon: GraduationCap, permission: "admin.settings" },
-				{ path: "/professional-types", label: "Professional Types", icon: Briefcase, permission: "professional.manage" },
-				{ path: "/users/groups", label: "Groups", icon: Users2, permission: "admin.users.view" }
+				{ path: "/users", label: t("nav.users", "Users"), icon: Users, permission: "admin.users.view" },
+				{ path: "/organisations", label: t("nav.organisations", "Organisations"), icon: Building, permission: "organizations.manage" },
+				{ path: "/universities", label: t("nav.universities", "Universities"), icon: GraduationCap, permission: "admin.settings" },
+				{ path: "/professional-types", label: t("nav.professional_types", "Professional Types"), icon: Briefcase, permission: "professional.manage" },
+				{ path: "/users/groups", label: t("nav.users_groups", "Groups"), icon: Users2, permission: "admin.users.view" }
 			]
 		},
 		{
 			id: "content",
-			label: "Content",
+			label: t("nav.section.content", "Content"),
 			items: [
-				{ path: "/content", label: "All Content", icon: FileText, permission: "admin.content.view" },
-				{ path: "/blog/review-queue", label: "Blog Posts", icon: BookOpen, permission: "blog.review.manage" },
-			{ path: "/docs", label: "Documentation", icon: FileCode, permission: "docs.manage" },
-			{ path: "/media", label: "Media", icon: Image, permission: "media.view_all" },
-			{ path: "/spaces", label: "Spaces", icon: Globe, permission: "spaces.admin" },
-			{ path: "/geo", label: "Geo Tools", icon: Globe, permission: "geo.lookup" },
-			{ path: "/space-types", label: "Space Types", icon: Layout, permission: "space_types.create" },
-			{ path: "/tags", label: "Tags", icon: Tag, permission: "tags.manage" },
-			{ path: "/reactions", label: "Reactions", icon: Star, permission: "content.reaction_types.manage" }
+				{ path: "/content", label: t("nav.content", "All Content"), icon: FileText, permission: "admin.content.view" },
+				{ path: "/blog/review-queue", label: t("nav.blog_review_queue", "Blog Posts"), icon: BookOpen, permission: "blog.review.manage" },
+			{ path: "/docs", label: t("nav.docs", "Documentation"), icon: FileCode, permission: "docs.manage" },
+			{ path: "/media", label: t("nav.media", "Media"), icon: Image, permission: "media.view_all" },
+			{ path: "/spaces", label: t("nav.spaces", "Spaces"), icon: Globe, permission: "spaces.admin" },
+			{ path: "/geo", label: t("nav.geo", "Geo Tools"), icon: Globe, permission: "geo.lookup" },
+			{ path: "/space-types", label: t("nav.space_types", "Space Types"), icon: Layout, permission: "space_types.create" },
+			{ path: "/tags", label: t("nav.tags", "Tags"), icon: Tag, permission: "tags.manage" },
+			{ path: "/reactions", label: t("nav.reactions", "Reactions"), icon: Star, permission: "content.reaction_types.manage" }
 			]
 		},
 		{
 			id: "moderation",
-			label: "Moderation",
+			label: t("nav.section.moderation", "Moderation"),
 			items: [
-				{ path: "/moderation", label: "Queue", icon: Shield, permission: "admin.moderation" },
-				{ path: "/moderation-queue", label: "Review Queue", icon: AlertTriangle, permission: "admin.moderation" },
-				{ path: "/moderation/appeals", label: "Appeals", icon: MessageCircle, permission: "admin.moderation" },
-				{ path: "/moderation/reports", label: "Reports", icon: FileText, permission: "admin.moderation" },
-				{ path: "/moderation/content", label: "Content", icon: FileText, permission: "admin.moderation" },
-				{ path: "/moderation/alerts", label: "Alerts", icon: AlertTriangle, permission: "admin.moderation" },
-				{ path: "/spam", label: "Spam Management", icon: AlertTriangle, permission: "spam.ip_block.manage" },
-			{ path: "/tickets", label: "Support Tickets", icon: Ticket, permission: "tickets.admin" },
-			{ path: "/reviews", label: "Reviews", icon: MessageCircle, permission: "reviews.moderate" }
+				{ path: "/moderation", label: t("nav.moderation", "Queue"), icon: Shield, permission: "admin.moderation" },
+				{ path: "/moderation-queue", label: t("nav.moderation_queue", "Review Queue"), icon: AlertTriangle, permission: "admin.moderation" },
+				{ path: "/moderation/appeals", label: t("nav.moderation_appeals", "Appeals"), icon: MessageCircle, permission: "admin.moderation" },
+				{ path: "/moderation/reports", label: t("nav.moderation_reports", "Reports"), icon: FileText, permission: "admin.moderation" },
+				{ path: "/moderation/content", label: t("nav.moderation_content", "Content"), icon: FileText, permission: "admin.moderation" },
+				{ path: "/moderation/alerts", label: t("nav.moderation_alerts", "Alerts"), icon: AlertTriangle, permission: "admin.moderation" },
+				{ path: "/spam", label: t("nav.spam", "Spam Management"), icon: AlertTriangle, permission: "spam.ip_block.manage" },
+			{ path: "/tickets", label: t("nav.tickets", "Support Tickets"), icon: Ticket, permission: "tickets.admin" },
+			{ path: "/reviews", label: t("nav.reviews", "Reviews"), icon: MessageCircle, permission: "reviews.moderate" }
 			]
 		},
 		{
 			id: "analytics",
-			label: "Analytics & Reports",
+			label: t("nav.section.analytics", "Analytics & Reports"),
 			items: [
-				{ path: "/analytics", label: "Analytics", icon: BarChart3, permission: "admin.analytics.view" },
-			{ path: "/reports", label: "Reports", icon: FileText, permission: "reports.review" },
-			{ path: "/search", label: "Search Analytics", icon: Search, permission: "search.analytics.view" }
+				{ path: "/analytics", label: t("nav.analytics", "Analytics"), icon: BarChart3, permission: "admin.analytics.view" },
+			{ path: "/reports", label: t("nav.reports", "Reports"), icon: FileText, permission: "reports.review" },
+			{ path: "/search", label: t("nav.search", "Search Analytics"), icon: Search, permission: "search.analytics.view" }
 			]
 		},
 		{
 			id: "engagement",
-			label: "Engagement",
+			label: t("nav.section.engagement", "Engagement"),
 			items: [
-			{ path: "/newsletter", label: "Newsletter", icon: Mail, permission: "newsletter.admin" },
-			{ path: "/broadcast", label: "Broadcasts", icon: Bell, permission: "admin.broadcast" },
-			{ path: "/forms", label: "Forms", icon: FileInput, permission: "forms.create" },
-			{ path: "/learning", label: "Learning", icon: GraduationCap, permission: "learning.admin.manage" },
-			{ path: "/university/instructors", label: "University Instructors", icon: GraduationCap, permission: "university.instructor.approve" },
-			{ path: "/university/tracks", label: "University Tracks", icon: BookOpen, permission: "university.course.approve" },
-			{ path: "/university/payouts", label: "University Payouts", icon: DollarSign, permission: "university.payout.process" },
-		{ path: "/mentorship", label: "Mentorship", icon: Users2, permission: "mentorship.admin" },
-		{ path: "/onboarding", label: "Onboarding", icon: UserPlus, permission: "admin.settings.view" }
+			{ path: "/newsletter", label: t("nav.newsletter", "Newsletter"), icon: Mail, permission: "newsletter.admin" },
+			{ path: "/broadcasts", label: t("nav.broadcasts", "Broadcasts"), icon: Bell, permission: "admin.broadcast" },
+			{ path: "/forms", label: t("nav.forms", "Forms"), icon: FileInput, permission: "forms.create" },
+			{ path: "/learning", label: t("nav.learning", "Learning"), icon: GraduationCap, permission: "learning.admin.manage" },
+			{ path: "/university/instructors", label: t("nav.university_instructors", "University Instructors"), icon: GraduationCap, permission: "university.instructor.approve" },
+			{ path: "/university/tracks", label: t("nav.university_tracks", "University Tracks"), icon: BookOpen, permission: "university.course.approve" },
+			{ path: "/university/payouts", label: t("nav.university_payouts", "University Payouts"), icon: DollarSign, permission: "university.payout.process" },
+		{ path: "/mentorship", label: t("nav.mentorship", "Mentorship"), icon: Users2, permission: "mentorship.admin" },
+		{ path: "/onboarding", label: t("nav.onboarding", "Onboarding"), icon: UserPlus, permission: "admin.settings.view" }
 		]
 	},
 	{
 		id: "monetization",
-			label: "Monetization",
+			label: t("nav.section.monetization", "Monetization"),
 			items: [
-				{ path: "/wallet", label: "Wallet", icon: Wallet, permission: "wallet.admin" },
-			{ path: "/coupons", label: "Coupons", icon: Tag, permission: "coupons.manage" },
-			{ path: "/discount-codes", label: "Discount Codes", icon: DollarSign, permission: "payments.discount_codes.manage" },
-			{ path: "/affiliate", label: "Affiliate Links", icon: Link, permission: "affiliate.admin.view" },
-			{ path: "/referral", label: "Referrals", icon: Share2, permission: "referral.admin" },
-			{ path: "/ads", label: "Advertisements", icon: Zap, permission: "ad.campaign.manage" }
+				{ path: "/wallet", label: t("nav.wallet", "Wallet"), icon: Wallet, permission: "wallet.admin" },
+			{ path: "/coupons", label: t("nav.coupons", "Coupons"), icon: Tag, permission: "coupons.manage" },
+			{ path: "/discount-codes", label: t("nav.discount_codes", "Discount Codes"), icon: DollarSign, permission: "payments.discount_codes.manage" },
+			{ path: "/affiliate", label: t("nav.affiliate", "Affiliate Links"), icon: Link, permission: "affiliate.admin.view" },
+			{ path: "/referral", label: t("nav.referral", "Referrals"), icon: Share2, permission: "referral.admin" },
+			{ path: "/ads", label: t("nav.ads", "Advertisements"), icon: Zap, permission: "ad.campaign.manage" }
 			]
 		},
 		{
 			id: "automation",
-			label: "Automation",
+			label: t("nav.section.automation", "Automation"),
 			items: [
-				{ path: "/ai", label: "AI Tools", icon: Bot, permission: "admin.ai.view" },
-				{ path: "/bots", label: "Bots", icon: Bot, permission: "bots.admin" },
-				{ path: "/webhooks", label: "Webhooks", icon: Webhook, permission: "webhooks.manage" },
-				{ path: "/feature-flags", label: "Feature Flags", icon: Zap, permission: "admin.feature_flags.view" }
+				{ path: "/ai", label: t("nav.ai", "AI Tools"), icon: Bot, permission: "admin.ai.view" },
+				{ path: "/bots", label: t("nav.bots", "Bots"), icon: Bot, permission: "bots.admin" },
+				{ path: "/webhooks", label: t("nav.webhooks", "Webhooks"), icon: Webhook, permission: "webhooks.manage" },
+				{ path: "/feature-flags", label: t("nav.feature_flags", "Feature Flags"), icon: Zap, permission: "admin.feature_flags.view" }
 			]
 		},
 		{
 			id: "customization",
-			label: "Customization",
+			label: t("nav.section.customization", "Customization"),
 			items: [
-			{ path: "/page-builder", label: "Page Builder", icon: Layout, permission: "pagebuilder.blocks.manage" },
-			{ path: "/page-builder/pages", label: "Pages", icon: FileText, permission: "pages.manage" },
-			{ path: "/page-builder/themes", label: "Page Themes", icon: Palette, permission: "pagebuilder.themes.manage" },
-			{ path: "/page-templates", label: "Page Templates", icon: FileText, permission: "pagebuilder.templates.manage" },
-			{ path: "/custom-fields", label: "Custom Fields", icon: Type, permission: "custom_fields.group.view" },
-			{ path: "/comparisons", label: "Comparisons", icon: GitCompare, permission: "comparison.type.create" },
-			{ path: "/comparison-types", label: "Comparison Types", icon: ListOrdered, permission: "comparison.type.create" }
+			{ path: "/page-builder", label: t("nav.page_builder", "Page Builder"), icon: Layout, permission: "pagebuilder.blocks.manage" },
+			{ path: "/page-builder/pages", label: t("nav.page_builder_pages", "Pages"), icon: FileText, permission: "pages.manage" },
+			{ path: "/page-builder/themes", label: t("nav.page_builder_themes", "Page Themes"), icon: Palette, permission: "pagebuilder.themes.manage" },
+			{ path: "/page-templates", label: t("nav.page_templates", "Page Templates"), icon: FileText, permission: "pagebuilder.templates.manage" },
+			{ path: "/custom-fields", label: t("nav.custom_fields", "Custom Fields"), icon: Type, permission: "custom_fields.group.view" },
+			{ path: "/comparisons", label: t("nav.comparisons", "Comparisons"), icon: GitCompare, permission: "comparison.type.create" },
+			{ path: "/comparison-types", label: t("nav.comparison_types", "Comparison Types"), icon: ListOrdered, permission: "comparison.type.create" }
 			]
 		},
 		{
 			id: "system",
-			label: "System",
+			label: t("nav.section.system", "System"),
 			items: [
-			{ path: "/settings", label: "Settings", icon: Settings, permission: "admin.settings.view" },
-			{ path: "/i18n", label: "Translations", icon: Languages, permission: "i18n.manage" },
-			{ path: "/notification-types", label: "Notifications", icon: Bell, permission: "notifications.manage" },
-			{ path: "/jsonld-templates", label: "JSON-LD Templates", icon: FileCode, permission: "content.jsonld.manage" },
-			{ path: "/menus", label: "Menus", icon: Menu, permission: "menus.manage" },
-			{ path: "/email-templates", label: "Email Templates", icon: Mail, permission: "email.templates.manage" },
-			{ path: "/redirects", label: "Redirects", icon: ArrowRightLeft, permission: "redirects.manage" },
-			{ path: "/data-exports", label: "Data Exports", icon: Download, permission: "gdpr.data_exports.view" },
-				{ path: "/deletions", label: "Account Deletions", icon: Trash2, permission: "admin.moderation.view" },
-				{ path: "/gdpr", label: "GDPR Compliance", icon: Accessibility, permission: "admin.moderation.view" }
+			{ path: "/settings", label: t("nav.settings", "Settings"), icon: Settings, permission: "admin.settings.view" },
+			{ path: "/i18n", label: t("nav.i18n", "Translations"), icon: Languages, permission: "i18n.manage" },
+			{ path: "/notification-types", label: t("nav.notification_types", "Notifications"), icon: Bell, permission: "notifications.manage" },
+			{ path: "/jsonld-templates", label: t("nav.jsonld_templates", "JSON-LD Templates"), icon: FileCode, permission: "content.jsonld.manage" },
+			{ path: "/menus", label: t("nav.menus", "Menus"), icon: Menu, permission: "menus.manage" },
+			{ path: "/email-templates", label: t("nav.email_templates", "Email Templates"), icon: Mail, permission: "email.templates.manage" },
+			{ path: "/redirects", label: t("nav.redirects", "Redirects"), icon: ArrowRightLeft, permission: "redirects.manage" },
+			{ path: "/data-exports", label: t("nav.data_exports", "Data Exports"), icon: Download, permission: "gdpr.data_exports.view" },
+				{ path: "/deletions", label: t("nav.deletions", "Account Deletions"), icon: Trash2, permission: "gdpr.deletions.view" },
+				{ path: "/gdpr", label: t("nav.gdpr", "GDPR Compliance"), icon: Accessibility, permission: "gdpr.deletions.view" }
 			]
 		}
 	];

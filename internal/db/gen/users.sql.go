@@ -449,6 +449,19 @@ func (q *Queries) GetUserDraft(ctx context.Context, arg GetUserDraftParams) (Get
 	return i, err
 }
 
+const getUserEmailVerifiedStatus = `-- name: GetUserEmailVerifiedStatus :one
+SELECT email_verified_at FROM users WHERE id = $1
+`
+
+// Returns email_verified_at for the user. Used by the CanPostInSpace
+// "verified" posting_perm axis (Section 05 line 149, BUG-003).
+func (q *Queries) GetUserEmailVerifiedStatus(ctx context.Context, userID pgtype.UUID) (pgtype.Timestamptz, error) {
+	row := q.db.QueryRow(ctx, getUserEmailVerifiedStatus, userID)
+	var email_verified_at pgtype.Timestamptz
+	err := row.Scan(&email_verified_at)
+	return email_verified_at, err
+}
+
 const getUserFollowerGrowth = `-- name: GetUserFollowerGrowth :many
 SELECT date_trunc('day', f.created_at)::date AS day, COUNT(*)::bigint AS new_followers
 FROM follows f
