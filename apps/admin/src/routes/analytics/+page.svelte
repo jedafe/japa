@@ -48,6 +48,7 @@
 	let spaceAnalytics = $state<Array<Record<string, unknown>> | null>(null);
 	let revenueAnalytics = $state<{ total_revenue?: number; monthly_revenue?: number; active_subscriptions?: number; periods?: Array<{ period: string; revenue: number; transactions: number }> } | null>(null);
 	let searchAnalytics = $state<Array<Record<string, unknown>> | null>(null);
+	let scanning = $state(false);
 	let loadAbortController: AbortController | null = null;
 	
 	async function loadAnalytics(f = from, toVal = to) {
@@ -87,7 +88,35 @@
 			if (!signal.aborted) loading = false;
 		}
 	}
-	
+
+	async function runSecurityScan() {
+		scanning = true;
+		try {
+			const res = await analyticsAdminApi.runSecurityScan({});
+			if (!res.ok) throw new Error('Scan failed');
+			// Wait a moment for the async scan to process, then reload security data
+			await new Promise(r => setTimeout(r, 2000));
+			const params = [from && `from=${from}`, to && `to=${to}`].filter(Boolean).join("&") || undefined;
+			const secRes = await analyticsAdminApi.getSecurity(params);
+			security = secRes.ok ? (secRes.data as Array<Record<string, unknown>>) : [];
+		} catch (e) {
+			error = e instanceof Error ? e.message : t('analytics.scan_failed', 'Scan failed');
+		} finally {
+			scanning = false;
+		}
+	}
+
+	async function resolveScan(id: string) {
+		try {
+			await analyticsAdminApi.resolveSecurityItem(id, {});
+			security = (security ?? []).map((s) =>
+				s.id === id ? { ...s, resolved_at: new Date().toISOString() } : s
+			);
+		} catch (e) {
+			error = e instanceof Error ? e.message : t('analytics.resolve_failed', 'Failed to resolve');
+		}
+	}
+
 	// Push the chosen date range to the URL (?from=&to=) to drive the reload
 	function applyRange() {
 		const url = new URL(page.url);
@@ -204,24 +233,29 @@
 	};
 
 	const securityColumns = [
-		{ key: "id", label: t('analytics.scan_id', 'Scan ID'), sortable: true },
 		{ key: "scan_type", label: t('analytics.type', 'Type'), sortable: true },
-		{ 
-			key: "severity", 
-			label: t('analytics.status', 'Severity'), 
+		{
+			key: "severity",
+			label: t('analytics.severity', 'Severity'),
 			sortable: true,
 			render: (value: string) => {
 				const colors: Record<string, string> = { info: 'bg-info-100 text-info-800', warning: 'bg-warning/15 text-warning', low: 'bg-info-100 text-info-800', medium: 'bg-warning/15 text-warning', high: 'bg-danger/15 text-danger', critical: 'bg-danger text-white' };
 				return `<span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${colors[value] || 'bg-surface text-foreground'}">${value}</span>`;
 			}
 		},
-		{ 
-			key: "created_at", 
-			label: t('analytics.date', 'Date'), 
+		{
+			key: "created_at",
+			label: t('analytics.date', 'Date'),
 			sortable: true,
-			render: (value: string) => new Date(value).toLocaleString()
+			render: (value: string) => value ? new Date(value).toLocaleString() : '—'
 		},
-		{ key: "finding", label: t('analytics.findings', 'Finding'), sortable: true }
+		{ key: "finding", label: t('analytics.findings', 'Finding'), sortable: true },
+		{
+			key: "resolved_at",
+			label: t('analytics.resolved', 'Resolved'),
+			sortable: true,
+			render: (value: string) => value ? new Date(value).toLocaleString() : `<span class="text-warning font-medium">${t('analytics.unresolved', 'Unresolved')}</span>`
+		}
 	];
 	
 	async function handleFlushCache() {
@@ -439,14 +473,25 @@
 	{#if activeTab === "security"}
 		<Card>
 			<CardHeader>
-				<h3 class="text-lg font-semibold" style="color: var(--color-foreground)">{t('analytics.security_scans', 'Security Scans')}</h3>
+				<div class="flex items-center justify-between">
+					<h3 class="text-lg font-semibold" style="color: var(--color-foreground)">{t('analytics.security_scans', 'Security Scans')}</h3>
+					<Button onclick={runSecurityScan} disabled={scanning}>
+						{#if scanning}
+							<RefreshCw class="mr-2 h-4 w-4 animate-spin" />
+							{t('analytics.scanning', 'Scanning...')}
+						{:else}
+							<Shield class="mr-2 h-4 w-4" />
+							{t('analytics.run_scan', 'Run Scan')}
+						{/if}
+					</Button>
+				</div>
 			</CardHeader>
 			<CardContent>
 				<DataTable
 					columns={securityColumns}
 					data={security ?? []}
 					pageSize={10}
-					emptyMessage={t('analytics.no_security_scans', 'No security scans found')}
+					emptyMessage={t('analytics.no_security_scans', 'No security scans found. Click "Run Scan" to start a security scan.')}
 				/>
 			</CardContent>
 		</Card>
