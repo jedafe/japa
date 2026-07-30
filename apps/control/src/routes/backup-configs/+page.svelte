@@ -4,11 +4,11 @@
 	import DataTable from '$lib/components/DataTable.svelte';
 	import AlertBanner from '$lib/components/ui/AlertBanner.svelte';
 	import ConfirmModal from '$lib/components/ui/ConfirmModal.svelte';
-	import { Dialog, Select } from 'bits-ui';
+	import { Dialog, Select, Popover } from 'bits-ui';
 	import { api } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { escapeHtml } from '$lib/utils';
-	import { DatabaseBackup, Plus, Trash2, Play, Power, RefreshCw } from 'lucide-svelte';
+	import { DatabaseBackup, Plus, Trash2, Play, Power, RefreshCw, ChevronDown, Check, X } from 'lucide-svelte';
 	import type { DataTableColumn, DataTableRowAction, DataTableBulkAction } from '$lib/api/types';
 
 	let {} = $props();
@@ -19,11 +19,22 @@
 		schedule: string;
 		storage_type: 'local' | 's3' | 'gcs' | 'azure';
 		destination: string;
+		what_to_backup: string[];
 		retention_days: number;
 		enabled: boolean;
 		last_run_at: string | null;
 		created_at: string;
 	}
+
+	interface BackupTargetDef {
+		key: string;
+		label: string;
+		description: string;
+	}
+
+	let backupTargets = $state<BackupTargetDef[]>([
+		{ key: 'database', label: 'Database', description: 'PostgreSQL full database dump' }
+	]);
 
 	let configs = $state<BackupConfig[]>([]);
 	let loading = $state(true);
@@ -41,9 +52,63 @@
 		schedule: '',
 		storage_type: 'local' as BackupConfig['storage_type'],
 		destination: '',
+		what_to_backup: ['database'] as string[],
 		retention_days: 30
 	});
 	let saving = $state(false);
+	let selectedSchedulePreset = $state('daily_3am');
+	let customScheduleMode = $state(false);
+
+	interface SchedulePreset {
+		value: string;
+		label: string;
+		cron: string;
+	}
+
+	const schedulePresets: SchedulePreset[] = [
+		{ value: 'every_minute', label: 'Every minute', cron: '* * * * *' },
+		{ value: 'every_5min', label: 'Every 5 minutes', cron: '*/5 * * * *' },
+		{ value: 'every_15min', label: 'Every 15 minutes', cron: '*/15 * * * *' },
+		{ value: 'every_30min', label: 'Every 30 minutes', cron: '*/30 * * * *' },
+		{ value: 'hourly', label: 'Every hour', cron: '0 * * * *' },
+		{ value: 'every_6h', label: 'Every 6 hours', cron: '0 */6 * * *' },
+		{ value: 'daily_3am', label: 'Daily at 03:00', cron: '0 3 * * *' },
+		{ value: 'daily_midnight', label: 'Daily at 00:00', cron: '0 0 * * *' },
+		{ value: 'weekly_sun_2am', label: 'Weekly (Sun 02:00)', cron: '0 2 * * 0' },
+		{ value: 'monthly_1st_2am', label: 'Monthly (1st 02:00)', cron: '0 2 1 * *' },
+		{ value: 'custom', label: 'Custom cron expression...', cron: '' }
+	];
+
+	function onSchedulePresetChange(value: string) {
+		selectedSchedulePreset = value;
+		if (value === 'custom') {
+			customScheduleMode = true;
+			createForm.schedule = '';
+		} else {
+			customScheduleMode = false;
+			const preset = schedulePresets.find((p) => p.value === value);
+			if (preset) createForm.schedule = preset.cron;
+		}
+	}
+
+	function toggleBackupTarget(targetKey: string) {
+		if (createForm.what_to_backup.includes(targetKey)) {
+			createForm.what_to_backup = createForm.what_to_backup.filter((t) => t !== targetKey);
+		} else {
+			createForm.what_to_backup = [...createForm.what_to_backup, targetKey];
+		}
+	}
+
+	function removeBackupTarget(targetKey: string) {
+		createForm.what_to_backup = createForm.what_to_backup.filter((t) => t !== targetKey);
+	}
+
+	let selectedTargetLabels = $derived.by(() => {
+		return createForm.what_to_backup.map((key) => {
+			const def = backupTargets.find((t) => t.key === key);
+			return { key, label: def?.label ?? key };
+		});
+	});
 
 	let deleteModalOpen = $state(false);
 	let deletingConfig = $state<BackupConfig | null>(null);
@@ -72,6 +137,17 @@
 			label: t('backup_configs.schedule', 'Schedule'),
 			sortable: true,
 			render: (val) => `<span class="font-mono text-xs">${escapeHtml(val as string) || '—'}</span>`
+		},
+		{
+			key: 'what_to_backup',
+			label: t('backup_configs.what_to_backup', 'What to Backup'),
+			render: (val) => {
+				const arr = Array.isArray(val) ? val : [];
+				if (arr.length === 0) return `<span class="text-muted-foreground text-xs">—</span>`;
+				return arr
+					.map((e) => `<span class="bg-muted text-muted-foreground rounded-5px px-1.5 py-0.5 font-mono text-xs">${escapeHtml(e)}</span>`)
+					.join(' ');
+			}
 		},
 		{
 			key: 'storage_type',
@@ -195,11 +271,14 @@
 	function openCreateModal() {
 		createForm = {
 			name: '',
-			schedule: '',
+			schedule: '0 3 * * *',
 			storage_type: 'local',
 			destination: '',
+			what_to_backup: ['database'],
 			retention_days: 30
 		};
+		selectedSchedulePreset = 'daily_3am';
+		customScheduleMode = false;
 		createModalOpen = true;
 	}
 
@@ -210,8 +289,11 @@
 			schedule: '',
 			storage_type: 'local',
 			destination: '',
+			what_to_backup: ['database'],
 			retention_days: 30
 		};
+		selectedSchedulePreset = 'daily_3am';
+		customScheduleMode = false;
 	}
 
 	let formValid = $derived(
@@ -232,6 +314,7 @@
 				schedule: createForm.schedule.trim(),
 				storage_type: createForm.storage_type,
 				destination: createForm.destination.trim(),
+				what_to_backup: createForm.what_to_backup,
 				retention_days: createForm.retention_days
 			};
 			const result = await api<BackupConfig>('/control/backup-configs', {
@@ -273,8 +356,16 @@
 		}
 	}
 
+	async function loadBackupTargets() {
+		const result = await api<BackupTargetDef[]>('/control/backup-targets');
+		if (result.ok && Array.isArray(result.data) && result.data.length > 0) {
+			backupTargets = result.data;
+		}
+	}
+
 	$effect(() => {
 		load();
+		loadBackupTargets();
 		const interval = setInterval(() => {
 			load();
 		}, 30000);
@@ -433,15 +524,125 @@
 					<label for="bc-schedule" class="text-foreground mb-1 block text-sm font-medium">
 						{t('backup_configs.schedule', 'Schedule')}
 					</label>
-					<input
-						id="bc-schedule"
-						type="text"
-						bind:value={createForm.schedule}
-						class="border-border-input bg-background text-foreground w-full rounded-9px border px-3 py-2 font-mono text-sm transition-colors hover:border-border-input-hover focus:border-border-input-hover focus:shadow-date-field-focus"
-						placeholder="0 3 * * *"
-					/>
+					<Select.Root type="single" value={selectedSchedulePreset} onValueChange={(v) => { if (v) onSchedulePresetChange(v); }}>
+						<Select.Trigger
+							id="bc-schedule"
+							class="border-border-input bg-background text-foreground w-full rounded-9px border px-3 py-2 text-sm transition-colors hover:border-border-input-hover focus:border-border-input-hover focus:shadow-date-field-focus"
+							aria-label={t('backup_configs.schedule', 'Schedule')}
+						>
+							<Select.Value placeholder={t('backup_configs.schedule', 'Select schedule...')} />
+						</Select.Trigger>
+						<Select.Portal>
+							<Select.Content
+								class="border-border-input bg-background shadow-popover z-50 rounded-xl border"
+								sideOffset={4}
+							>
+								<Select.Viewport class="p-1">
+									{#each schedulePresets as preset (preset.value)}
+										<Select.Item
+											class="data-highlighted:bg-accent rounded-9px flex h-9 cursor-pointer items-center px-3 text-sm outline-none"
+											value={preset.value}
+											label={preset.label}
+										>
+											{#snippet children({ selected })}
+												<span>{preset.label}</span>
+												{#if selected}<span class="ml-auto">✓</span>{/if}
+											{/snippet}
+										</Select.Item>
+									{/each}
+								</Select.Viewport>
+							</Select.Content>
+						</Select.Portal>
+					</Select.Root>
+					{#if customScheduleMode}
+						<input
+							id="bc-schedule-custom"
+							type="text"
+							bind:value={createForm.schedule}
+							class="border-border-input bg-background text-foreground mt-2 w-full rounded-9px border px-3 py-2 font-mono text-sm transition-colors hover:border-border-input-hover focus:border-border-input-hover focus:shadow-date-field-focus"
+							placeholder="0 3 * * *"
+						/>
+					{/if}
 					<p class="text-muted-foreground mt-1 text-xs">
-						{t('backup_configs.cron_expression', 'Cron expression (e.g. 0 3 * * *)')}
+						{customScheduleMode
+							? t('backup_configs.cron_expression', 'Cron expression (e.g. 0 3 * * *)')
+							: t('backup_configs.schedule_hint', 'Select a preset or choose custom for a cron expression.')}
+					</p>
+				</div>
+				<div>
+					<label class="text-foreground mb-1 block text-sm font-medium">
+						{t('backup_configs.what_to_backup', 'What to Backup')}
+					</label>
+
+					{#if selectedTargetLabels.length > 0}
+						<div class="mb-2 flex flex-wrap gap-1.5">
+							{#each selectedTargetLabels as target (target.key)}
+								<span class="bg-muted text-muted-foreground flex items-center gap-1 rounded-5px px-2 py-0.5 font-mono text-xs">
+									{target.label}
+									<button
+										type="button"
+										class="text-muted-foreground hover:text-foreground"
+										onclick={() => removeBackupTarget(target.key)}
+										aria-label="Remove {target.label}"
+									>
+										<X class="size-3" />
+									</button>
+								</span>
+							{/each}
+						</div>
+					{/if}
+
+					<Popover.Root>
+						<Popover.Trigger
+							class="border-border-input bg-background text-foreground hover:border-border-input-hover focus:border-border-input-hover focus:shadow-date-field-focus flex w-full items-center justify-between rounded-9px border px-3 py-2 text-sm transition-colors"
+							aria-label={t('backup_configs.what_to_backup', 'What to Backup')}
+						>
+							<span class={createForm.what_to_backup.length === 0 ? 'text-muted-foreground' : ''}>
+								{createForm.what_to_backup.length === 0
+									? t('backup_configs.select_targets', 'Select what to backup...')
+									: t('backup_configs.targets_selected', '{count} selected').replace('{count}', String(createForm.what_to_backup.length))}
+							</span>
+							<ChevronDown class="text-muted-foreground size-4 shrink-0" />
+						</Popover.Trigger>
+						<Popover.Portal>
+							<Popover.Content
+								class="border-border-input bg-background shadow-popover z-50 w-[var(--bits-popover-anchor-width)] rounded-xl border p-0"
+								sideOffset={4}
+							>
+								<div class="max-h-60 overflow-y-auto p-1">
+									{#each backupTargets as target (target.key)}
+										<button
+											type="button"
+											class="hover:bg-accent flex w-full items-center gap-2 rounded-9px px-3 py-2 text-left text-sm transition-colors {createForm.what_to_backup.includes(target.key) ? 'bg-accent' : ''}"
+											onclick={() => toggleBackupTarget(target.key)}
+											title={target.description}
+										>
+											<span class="flex-1">
+												<span class="text-foreground block font-medium">{target.label}</span>
+												<span class="text-muted-foreground block text-xs">{target.description}</span>
+											</span>
+											{#if createForm.what_to_backup.includes(target.key)}
+												<Check class="text-foreground size-4 shrink-0" />
+											{/if}
+										</button>
+									{/each}
+								</div>
+								{#if createForm.what_to_backup.length > 0}
+									<div class="border-border-input border-t p-2">
+										<button
+											type="button"
+											class="text-muted-foreground hover:text-foreground w-full text-center text-xs font-medium"
+											onclick={() => { createForm.what_to_backup = []; }}
+										>
+											{t('backup_configs.clear_all', 'Clear all')}
+										</button>
+									</div>
+								{/if}
+							</Popover.Content>
+						</Popover.Portal>
+					</Popover.Root>
+					<p class="text-muted-foreground mt-1 text-xs">
+						{t('backup_configs.what_to_backup_hint', 'Select which components to include in the backup.')}
 					</p>
 				</div>
 				<div>

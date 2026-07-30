@@ -283,22 +283,57 @@ func (h *Handlers) enqueueModerationScan(entityType string, entityID, tenantID p
 	}
 }
 
-// enqueueFeedFanOut enqueues a content:fan_out_to_feeds task for published
-// content (BL-005). The fan-out type is "space" if the post is in a space,
-// "followers" otherwise. The worker's "bubble" branch is triggered
-// automatically by the space fan-out when the space has parent spaces.
+// enqueueFeedFanOut enqueues content:fan_out_to_feeds tasks for published
+// content (BL-005). Per Section 32, fan-out fires:
+//  1. To the author's followers (always).
+//  2. To each assigned space's members (once per space in content_spaces,
+//     Section 14). If the content has no content_spaces rows, falls back to
+//     the primary contents.space_id.
+//  3. Bubble fan-out to parent spaces for each assigned space.
+//
+// The worker decides push vs pull per space based on feed.fanout_threshold.
 // Fire-and-forget per Rule 8.
-func (h *Handlers) enqueueFeedFanOut(contentID, tenantID, spaceID pgtype.UUID, contentType string) {
+// Ref: japaconnect-engineering/sections/32-activity-feed-timeline.md
+func (h *Handlers) enqueueFeedFanOut(ctx context.Context, contentID, tenantID, authorID, primarySpaceID pgtype.UUID, contentType string) {
 	if h.AsynqClient == nil {
 		return
 	}
-	fanOutType := "followers"
-	if spaceID.Valid {
-		fanOutType = "space"
+
+	// 1. Always fan out to the author's followers.
+	h.enqueueFanOutTask(contentID, tenantID, authorID, pgtype.UUID{}, contentType, "followers")
+
+	// 2. Fan out to each assigned space via content_spaces (Section 14).
+	//    Falls back to the primary contents.space_id if no content_spaces rows
+	//    exist (backwards compatibility with pre-content_spaces content).
+	spaceIDs := []pgtype.UUID{}
+	if h.Service != nil && h.Service.read != nil {
+		rows, err := h.Service.read.GetContentSpaces(ctx, contentID)
+		if err != nil {
+			slog.Warn("content: failed to fetch content_spaces for fan-out, using primary space_id",
+				"content_id", contentID.String(), "error", err)
+		} else {
+			for _, r := range rows {
+				spaceIDs = append(spaceIDs, r.SpaceID)
+			}
+		}
 	}
+	if len(spaceIDs) == 0 && primarySpaceID.Valid {
+		spaceIDs = append(spaceIDs, primarySpaceID)
+	}
+
+	// 3. Enqueue a "space" task and a "bubble" task per assigned space.
+	for _, sid := range spaceIDs {
+		h.enqueueFanOutTask(contentID, tenantID, authorID, sid, contentType, "space")
+		h.enqueueFanOutTask(contentID, tenantID, authorID, sid, contentType, "bubble")
+	}
+}
+
+// enqueueFanOutTask marshals and enqueues a single fan-out task.
+func (h *Handlers) enqueueFanOutTask(contentID, tenantID, authorID, spaceID pgtype.UUID, contentType, fanOutType string) {
 	payload, err := json.Marshal(map[string]string{
 		"content_id":   contentID.String(),
 		"tenant_id":    tenantID.String(),
+		"author_id":    authorID.String(),
 		"space_id":     spaceID.String(),
 		"content_type": contentType,
 		"fan_out_type": fanOutType,
@@ -312,7 +347,7 @@ func (h *Handlers) enqueueFeedFanOut(contentID, tenantID, spaceID pgtype.UUID, c
 		asynq.Queue(worker.QueueForTask(worker.TypeContentFanOutToFeeds)),
 	); err != nil {
 		slog.Warn("content: failed to enqueue fan-out task",
-			"content_id", contentID.String(), "error", err)
+			"content_id", contentID.String(), "fan_out_type", fanOutType, "error", err)
 	}
 }
 
@@ -586,7 +621,7 @@ func (h *Handlers) CreateContent(w http.ResponseWriter, r *http.Request) {
 	// Enqueue feed fan-out for published content (BL-005). Scheduled posts
 	// are fanned out by the scheduled-publish handler when they go live.
 	if content.Status == StatusPublished {
-		h.enqueueFeedFanOut(content.ID, tenantID, content.SpaceID, content.ContentType)
+		h.enqueueFeedFanOut(r.Context(), content.ID, tenantID, user.UserID, content.SpaceID, content.ContentType)
 	}
 
 	writeJSON(w, http.StatusCreated, map[string]any{"data": content})

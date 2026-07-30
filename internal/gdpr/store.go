@@ -175,6 +175,31 @@ func (s *Store) gdprExportUserForumBookmarks(ctx context.Context, userID, tenant
 	return exportJSONSlice(ctx, s.read.GdprExportUserForumBookmarks, gen.GdprExportUserForumBookmarksParams{UserID: userID, TenantID: tenantID})
 }
 
+// BUG-022: the following three export wrappers cover forum tables that were
+// missing from the original GDPR export. Ref: Section 08 + GDPR erasure model.
+
+func (s *Store) gdprExportUserForumPollVotes(ctx context.Context, userID pgtype.UUID) ([]map[string]interface{}, error) {
+	// forum_poll_votes has no tenant_id column; the query takes only user_id.
+	data, err := s.read.GdprExportUserForumPollVotes(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	return decodeJSONSlice(data)
+}
+
+func (s *Store) gdprExportUserReplyViews(ctx context.Context, userID pgtype.UUID) ([]map[string]interface{}, error) {
+	// reply_views has no tenant_id column; the query takes only user_id.
+	data, err := s.read.GdprExportUserReplyViews(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	return decodeJSONSlice(data)
+}
+
+func (s *Store) gdprExportUserForumThreadTags(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {
+	return exportJSONSlice(ctx, s.read.GdprExportUserForumThreadTags, gen.GdprExportUserForumThreadTagsParams{UserID: userID, TenantID: tenantID})
+}
+
 func (s *Store) gdprExportUserMedia(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {
 	return exportJSONSlice(ctx, s.read.GdprExportUserMedia, gen.GdprExportUserMediaParams{UserID: userID, TenantID: tenantID})
 }
@@ -185,6 +210,10 @@ func (s *Store) gdprExportUserReviews(ctx context.Context, userID, tenantID pgty
 
 func (s *Store) gdprExportUserSpaceMembers(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {
 	return exportJSONSlice(ctx, s.read.GdprExportUserSpaceMembers, gen.GdprExportUserSpaceMembersParams{UserID: userID, TenantID: tenantID})
+}
+
+func (s *Store) gdprExportUserSpaceModerators(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {
+	return exportJSONSlice(ctx, s.read.GdprExportUserSpaceModerators, gen.GdprExportUserSpaceModeratorsParams{UserID: userID, TenantID: tenantID})
 }
 
 func (s *Store) gdprExportUserConsentRecords(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {

@@ -60,6 +60,8 @@ SELECT f.id, f.tenant_id, f.follower_id, f.entity_type, f.entity_id, f.created_a
         WHEN 'user' THEN (SELECT username FROM users WHERE id = f.entity_id)
         WHEN 'space' THEN (SELECT name FROM spaces WHERE id = f.entity_id)
         WHEN 'tag' THEN (SELECT name FROM tags WHERE id = f.entity_id)
+        WHEN 'organization' THEN (SELECT name FROM organizations WHERE id = f.entity_id)
+        WHEN 'professional_profile' THEN (SELECT display_name FROM professional_profiles WHERE id = f.entity_id)
         ELSE ''
     END AS entity_name
 FROM follows f
@@ -73,6 +75,8 @@ SELECT f.id, f.tenant_id, f.follower_id, f.entity_type, f.entity_id, f.created_a
         WHEN 'user' THEN (SELECT username FROM users WHERE id = f.entity_id)
         WHEN 'space' THEN (SELECT name FROM spaces WHERE id = f.entity_id)
         WHEN 'tag' THEN (SELECT name FROM tags WHERE id = f.entity_id)
+        WHEN 'organization' THEN (SELECT name FROM organizations WHERE id = f.entity_id)
+        WHEN 'professional_profile' THEN (SELECT display_name FROM professional_profiles WHERE id = f.entity_id)
         ELSE ''
     END AS entity_name
 FROM follows f
@@ -97,13 +101,18 @@ WHERE tenant_id = @tenant_id AND follower_id = @follower_id;
 -- =====================
 
 -- name: GetBulkFollowingStatus :many
-SELECT f.entity_type, f.entity_id, EXISTS (
-    SELECT 1 FROM follows sub
-    WHERE sub.follower_id = @follower_id AND sub.entity_type = f.entity_type AND sub.entity_id = f.entity_id
-) AS is_following
-FROM follows f
-WHERE f.tenant_id = @tenant_id AND f.entity_type = @entity_type AND f.entity_id = ANY(@entity_ids::uuid[])
-GROUP BY f.entity_type, f.entity_id;
+-- Uses unnest so every input entity_id appears in the output with
+-- is_following = false when no follow row exists for the current user.
+-- Ref: japaconnect-engineering/sections/31-follow-system.md (bulk is_following)
+SELECT @entity_type::text AS entity_type, eid::uuid AS entity_id,
+    EXISTS (
+        SELECT 1 FROM follows sub
+        WHERE sub.tenant_id = @tenant_id
+          AND sub.follower_id = @follower_id
+          AND sub.entity_type = @entity_type
+          AND sub.entity_id = eid
+    ) AS is_following
+FROM unnest(@entity_ids::uuid[]) AS t(eid);
 
 -- =====================
 -- Cleanup

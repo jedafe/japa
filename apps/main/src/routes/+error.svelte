@@ -14,6 +14,10 @@
 	);
 </script>
 
+<svelte:head>
+	<title>{meta.title} — {t('app.name', 'JapaConnect')}</title>
+</svelte:head>
+
 <div class="grid min-h-screen place-items-center bg-[var(--color-bg)] px-4">
 	<EmptyState
 		icon={meta.icon}

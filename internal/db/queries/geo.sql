@@ -41,23 +41,26 @@ WHERE space_id = @space_id;
 SELECT id, tenant_id, parent_id, space_type_id, name, slug, description, wiki_content,
        logo_media_id, header_image_id, geo_code, level, member_count, post_count,
        follower_count, visibility, posting_perm, replying_perm, commenting_perm,
-       joining_perm, status, created_at, updated_at
+       joining_perm, status, created_at, updated_at, deleted_at
 FROM spaces
 WHERE tenant_id = @tenant_id
   AND level = 'country'
   AND status = 'active'
+  AND deleted_at IS NULL
 ORDER BY name ASC;
 
 -- name: ListStatesByCountry :many
 SELECT s.id, s.tenant_id, s.parent_id, s.space_type_id, s.name, s.slug, s.description,
        s.wiki_content, s.logo_media_id, s.header_image_id, s.geo_code, s.level,
        s.member_count, s.post_count, s.follower_count, s.visibility, s.posting_perm,
-       s.replying_perm, s.commenting_perm, s.joining_perm, s.status, s.created_at, s.updated_at
+       s.replying_perm, s.commenting_perm, s.joining_perm, s.status, s.created_at, s.updated_at,
+       s.deleted_at
 FROM spaces s
 JOIN space_parent_spaces sps ON sps.space_id = s.id
 WHERE sps.parent_space_id = @country_space_id
   AND s.level = 'state'
   AND s.tenant_id = @tenant_id
+  AND s.deleted_at IS NULL
 ORDER BY s.name ASC;
 
 -- name: GetGeoHierarchy :many
@@ -84,11 +87,12 @@ ORDER BY depth DESC;
 SELECT id, tenant_id, parent_id, space_type_id, name, slug, description, wiki_content,
        logo_media_id, header_image_id, geo_code, level, member_count, post_count,
        follower_count, visibility, posting_perm, replying_perm, commenting_perm,
-       joining_perm, status, created_at, updated_at
+       joining_perm, status, created_at, updated_at, deleted_at
 FROM spaces
 WHERE tenant_id = @tenant_id
   AND level IN ('country', 'state', 'city')
   AND status = 'active'
+  AND deleted_at IS NULL
   AND name ILIKE '%' || @query || '%'
 ORDER BY
     CASE WHEN name ILIKE @query || '%' THEN 0 ELSE 1 END,

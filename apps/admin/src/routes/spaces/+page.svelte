@@ -8,7 +8,7 @@
 	import { Select } from "$lib/components/ui/select";
 	import Pagination from "$lib/components/ui/Pagination.svelte";
 	import { TableSkeleton } from "$lib/components/ui/skeleton";
-	import { Plus, RefreshCw, Eye, Pencil, Trash2 } from "lucide-svelte";
+	import { Plus, RefreshCw, Eye, Pencil, Trash2, SlidersHorizontal } from "lucide-svelte";
 	import { spacesAdminApi } from "$lib/api";
 	import { goto } from "$app/navigation";
 	import { t } from "$lib/stores/i18n.svelte";
@@ -282,6 +282,7 @@
 	description={t("spaces.description", "Manage platform spaces")}
 	actions={[
 		...(canManageSpaces ? [{ label: t("spaces.create", "Create Space"), icon: Plus, onclick: () => goto("/spaces/new") }] : []),
+		...(canManageSpaces ? [{ label: t("spaces.presets_title", "Permission Presets"), icon: SlidersHorizontal, variant: "ghost", onclick: () => goto("/spaces/presets") }] : []),
 		{ label: t("common.refresh", "Refresh"), icon: RefreshCw, variant: "ghost", onclick: loadSpaces }
 	]}
 />

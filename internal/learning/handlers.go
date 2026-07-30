@@ -1205,6 +1205,5 @@ func (h *Handlers) ListTrackReviews(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleReviewError(w http.ResponseWriter, err error) {
-	// TODO: map common review errors (duplicate, not enrolled) to proper codes.
-	writeError(w, http.StatusInternalServerError, "review_error", err.Error())
+	writeError(w, http.StatusInternalServerError, "review_error", "An unexpected error occurred")
 }

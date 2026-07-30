@@ -300,3 +300,70 @@ func (s *Service) CreateDelivery(ctx context.Context, tenantID, endpointID, even
 
 	return s.store.CreateDelivery(ctx, tenantID, endpointID, eventID, eventType, payloadJSON)
 }
+
+// EmitEvent dispatches a webhook event to all active endpoints for the tenant
+// that subscribe to the given event type. For each matching endpoint it
+// creates a pending delivery row and enqueues the Asynq webhook_delivery
+// task. This is the canonical entry point for feature services to fire
+// outgoing webhooks (Section 12).
+//
+// Ref: japaconnect-engineering/sections/12-webhooks.md
+func (s *Service) EmitEvent(ctx context.Context, tenantID pgtype.UUID, eventType string, payload any) {
+	endpoints, err := s.store.ListEndpoints(ctx, tenantID)
+	if err != nil {
+		slog.Warn("webhooks: failed to list endpoints for emit", "tenant_id", tenantID, "error", err)
+		return
+	}
+
+	var eventID pgtype.UUID
+	if err := eventID.Scan("00000000-0000-0000-0000-000000000000"); err != nil {
+		slog.Warn("webhooks: failed to scan zero event ID", "error", err)
+		return
+	}
+
+	for _, ep := range endpoints {
+		if ep.Status != "active" {
+			continue
+		}
+
+		// Check if the endpoint subscribes to this event type.
+		matched := false
+		for _, et := range ep.EventTypes {
+			if et == eventType || et == "*" {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			continue
+		}
+
+		deliveryID, err := s.CreateDelivery(ctx, tenantID, ep.ID, eventID, eventType, payload)
+		if err != nil {
+			slog.Error("webhooks: failed to create delivery for emit",
+				"endpoint_id", ep.ID, "event_type", eventType, "error", err)
+			errpkg.CaptureException(fmt.Errorf("emit create delivery %s: %w", eventType, err))
+			continue
+		}
+
+		if s.enqueuer != nil {
+			taskPayload, _ := json.Marshal(map[string]string{"delivery_id": deliveryID.String()})
+			if err := s.enqueuer.Enqueue(worker.TypeWebhookDelivery, taskPayload); err != nil {
+				slog.Error("webhooks: failed to enqueue delivery for emit",
+					"delivery_id", deliveryID.String(), "error", err)
+				errpkg.CaptureException(fmt.Errorf("enqueue %s (delivery %s): %w", worker.TypeWebhookDelivery, deliveryID.String(), err))
+			}
+		}
+	}
+}
+
+// endpointMatches reports whether the endpoint's event_types list includes
+// the event (or a "*" wildcard).
+func endpointMatches(eventTypes []string, eventType string) bool {
+	for _, t := range eventTypes {
+		if t == "*" || t == eventType {
+			return true
+		}
+	}
+	return false
+}

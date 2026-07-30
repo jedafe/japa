@@ -15,9 +15,16 @@
 		name: string;
 		provider: string;
 		client_id: string;
+		client_secret: string;
 		redirect_uri: string;
 		enabled: boolean;
 		created_at: string;
+	}
+
+	interface OAuthProviderDef {
+		key: string;
+		label: string;
+		description: string;
 	}
 
 	let {} = $props();
@@ -37,19 +44,22 @@
 	let createName = $state('');
 	let createProvider = $state('google');
 	let createClientId = $state('');
+	let createClientSecret = $state('');
 	let createRedirectUri = $state('');
+
+	let providers = $state<OAuthProviderDef[]>([
+		{ key: 'google', label: 'Google', description: 'Google OAuth 2.0 / OpenID Connect' }
+	]);
 
 	let confirmDeleteOpen = $state(false);
 	let pendingDeleteId = $state<string | null>(null);
 	let pendingBulkDeleteIds = $state<string[]>([]);
 	let confirmBulkDeleteOpen = $state(false);
 
-	const providers = ['google', 'github', 'apple', 'facebook', 'microsoft', 'twitter'];
-
 	async function load() {
 		const result = await api<OAuthClient[]>('/control/oauth-clients');
 		if (result.ok) {
-			clients = result.data;
+			clients = Array.isArray(result.data) ? result.data : [];
 			apiAvailable = true;
 		} else {
 			apiAvailable = false;
@@ -58,8 +68,16 @@
 		loading = false;
 	}
 
+	async function loadProviders() {
+		const result = await api<OAuthProviderDef[]>('/control/oauth-providers');
+		if (result.ok && Array.isArray(result.data) && result.data.length > 0) {
+			providers = result.data;
+		}
+	}
+
 	$effect(() => {
 		load();
+		loadProviders();
 		const interval = setInterval(() => {
 			if (document.visibilityState === 'visible') load();
 		}, 30_000);
@@ -163,8 +181,8 @@
 	});
 
 	async function createClient() {
-		if (!createName.trim() || !createClientId.trim()) {
-			errorMessage = t('oauth_clients.required_fields', 'Name and Client ID are required');
+		if (!createName.trim() || !createClientId.trim() || !createClientSecret.trim()) {
+			errorMessage = t('oauth_clients.required_fields', 'Name, Client ID, and Client Secret are required');
 			return;
 		}
 		const result = await api<OAuthClient>('/control/oauth-clients', {
@@ -173,6 +191,7 @@
 				name: createName,
 				provider: createProvider,
 				client_id: createClientId,
+				client_secret: createClientSecret,
 				redirect_uri: createRedirectUri
 			}
 		});
@@ -180,6 +199,7 @@
 			showCreateModal = false;
 			createName = '';
 			createClientId = '';
+			createClientSecret = '';
 			createRedirectUri = '';
 			load();
 		} else {
@@ -206,6 +226,7 @@
 		createName = '';
 		createProvider = 'google';
 		createClientId = '';
+		createClientSecret = '';
 		createRedirectUri = '';
 		errorMessage = '';
 		showCreateModal = true;
@@ -266,14 +287,24 @@
 				<div>
 					<label for="oauth-provider" class="text-foreground mb-1 block text-sm font-medium">{t('oauth_clients.provider_label', 'Provider')}</label>
 					<select id="oauth-provider" bind:value={createProvider} class="border-border-input bg-background text-foreground w-full rounded-lg border px-3 py-2 text-sm">
-						{#each providers as p}
-							<option value={p}>{p}</option>
+						{#each providers as p (p.key)}
+							<option value={p.key}>{p.label}</option>
 						{/each}
 					</select>
+					<p class="text-muted-foreground mt-1 text-xs">
+						{providers.find((p) => p.key === createProvider)?.description ?? ''}
+					</p>
 				</div>
 				<div>
 					<label for="oauth-client-id" class="text-foreground mb-1 block text-sm font-medium">{t('oauth_clients.client_id_label', 'Client ID')}</label>
 					<input id="oauth-client-id" type="text" bind:value={createClientId} required class="border-border-input bg-background text-foreground w-full rounded-lg border px-3 py-2 text-sm font-mono" placeholder="xxxxxxxxxx.apps.googleusercontent.com" />
+				</div>
+				<div>
+					<label for="oauth-client-secret" class="text-foreground mb-1 block text-sm font-medium">{t('oauth_clients.client_secret_label', 'Client Secret')}</label>
+					<input id="oauth-client-secret" type="password" bind:value={createClientSecret} required class="border-border-input bg-background text-foreground w-full rounded-lg border px-3 py-2 text-sm font-mono" placeholder="GOCSPX-xxxxxxxxxxxxx" />
+					<p class="text-muted-foreground mt-1 text-xs">
+						{t('oauth_clients.client_secret_hint', 'Used to authenticate with the OAuth provider. Stored encrypted.')}
+					</p>
 				</div>
 				<div>
 					<label for="oauth-redirect" class="text-foreground mb-1 block text-sm font-medium">{t('oauth_clients.redirect_uri_label', 'Redirect URI')}</label>

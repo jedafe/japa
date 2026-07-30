@@ -135,8 +135,7 @@ func (h *Handlers) ToggleBlock(w http.ResponseWriter, r *http.Request) {
 
 	blocked, err := h.service.ToggleBlock(r.Context(), user.UserID, targetID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
-
+		writeError(w, http.StatusInternalServerError, "internal_error", "An unexpected error occurred")
 		return
 	}
 

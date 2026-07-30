@@ -28,7 +28,11 @@
 	}
 
 	async function logout() {
-		await apiFetch('/auth/logout', { method: 'POST' }).catch(() => {});
+		try {
+			await apiFetch('/auth/logout', { method: 'POST' });
+		} catch (err) {
+			console.warn('[logout] backend logout failed', err);
+		}
 		clearUser();
 		clearAccessToken();
 		await goto('/login', { invalidateAll: true });

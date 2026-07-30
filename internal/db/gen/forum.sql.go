@@ -92,6 +92,21 @@ func (q *Queries) AddForumThreadTag(ctx context.Context, arg AddForumThreadTagPa
 	return err
 }
 
+const countForumThreadTags = `-- name: CountForumThreadTags :one
+SELECT COUNT(*)::int AS tag_count
+FROM forum_thread_tags
+WHERE thread_id = $1
+`
+
+// Enforces the "max 5 tags per post" rule at the handler/service layer.
+// Ref: Section 08 Tags Schema.
+func (q *Queries) CountForumThreadTags(ctx context.Context, threadID pgtype.UUID) (int32, error) {
+	row := q.db.QueryRow(ctx, countForumThreadTags, threadID)
+	var tag_count int32
+	err := row.Scan(&tag_count)
+	return tag_count, err
+}
+
 const createForumPoll = `-- name: CreateForumPoll :one
 
 INSERT INTO forum_polls (thread_id, question, is_multi_select, close_at)
@@ -330,6 +345,22 @@ func (q *Queries) CreateForumThread(ctx context.Context, arg CreateForumThreadPa
 	return i, err
 }
 
+const deleteForumBookmarkByID = `-- name: DeleteForumBookmarkByID :exec
+DELETE FROM forum_bookmarks
+WHERE id = $1 AND user_id = $2 AND tenant_id = $3
+`
+
+type DeleteForumBookmarkByIDParams struct {
+	ID       pgtype.UUID `json:"id"`
+	UserID   pgtype.UUID `json:"user_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+func (q *Queries) DeleteForumBookmarkByID(ctx context.Context, arg DeleteForumBookmarkByIDParams) error {
+	_, err := q.db.Exec(ctx, deleteForumBookmarkByID, arg.ID, arg.UserID, arg.TenantID)
+	return err
+}
+
 const deleteForumVote = `-- name: DeleteForumVote :exec
 DELETE FROM forum_votes
 WHERE user_id = $1 AND entity_type = $2 AND entity_id = $3
@@ -346,6 +377,57 @@ func (q *Queries) DeleteForumVote(ctx context.Context, arg DeleteForumVoteParams
 	return err
 }
 
+const deleteForumVoteByEntity = `-- name: DeleteForumVoteByEntity :exec
+
+DELETE FROM forum_votes
+WHERE user_id = $1 AND entity_type = $2 AND entity_id = $3
+`
+
+type DeleteForumVoteByEntityParams struct {
+	UserID     pgtype.UUID `json:"user_id"`
+	EntityType string      `json:"entity_type"`
+	EntityID   pgtype.UUID `json:"entity_id"`
+}
+
+// =====================
+// Polls — option-based lookup + vote retraction
+// Ref: japaconnect-engineering/sections/08-forum-qa-solved.md
+// =====================
+func (q *Queries) DeleteForumVoteByEntity(ctx context.Context, arg DeleteForumVoteByEntityParams) error {
+	_, err := q.db.Exec(ctx, deleteForumVoteByEntity, arg.UserID, arg.EntityType, arg.EntityID)
+	return err
+}
+
+const getForumBookmarkByID = `-- name: GetForumBookmarkByID :one
+SELECT id, tenant_id, user_id, entity_type, entity_id, folder, created_at
+FROM forum_bookmarks
+WHERE id = $1 AND user_id = $2 AND tenant_id = $3
+`
+
+type GetForumBookmarkByIDParams struct {
+	ID       pgtype.UUID `json:"id"`
+	UserID   pgtype.UUID `json:"user_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+// Fetches a bookmark by its primary key (and owner) so DELETE
+// /forum/bookmarks/{id} can resolve the entity to decrement the
+// denormalized bookmark_count. Ref: api-routes-catalog L610.
+func (q *Queries) GetForumBookmarkByID(ctx context.Context, arg GetForumBookmarkByIDParams) (ForumBookmark, error) {
+	row := q.db.QueryRow(ctx, getForumBookmarkByID, arg.ID, arg.UserID, arg.TenantID)
+	var i ForumBookmark
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.UserID,
+		&i.EntityType,
+		&i.EntityID,
+		&i.Folder,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const getForumPollByID = `-- name: GetForumPollByID :one
 SELECT id, thread_id, question, is_multi_select, close_at, created_at
 FROM forum_polls
@@ -354,6 +436,30 @@ WHERE id = $1
 
 func (q *Queries) GetForumPollByID(ctx context.Context, id pgtype.UUID) (ForumPoll, error) {
 	row := q.db.QueryRow(ctx, getForumPollByID, id)
+	var i ForumPoll
+	err := row.Scan(
+		&i.ID,
+		&i.ThreadID,
+		&i.Question,
+		&i.IsMultiSelect,
+		&i.CloseAt,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getForumPollByOptionID = `-- name: GetForumPollByOptionID :one
+SELECT p.id, p.thread_id, p.question, p.is_multi_select, p.close_at, p.created_at
+FROM forum_polls p
+JOIN forum_poll_options o ON o.poll_id = p.id
+WHERE o.id = $1
+`
+
+// Resolves the poll that owns a given option. Used by POST/DELETE
+// /poll-options/{id}/vote where the URL param is the option_id, not the
+// poll_id. Ref: api-routes-catalog L612-613.
+func (q *Queries) GetForumPollByOptionID(ctx context.Context, optionID pgtype.UUID) (ForumPoll, error) {
+	row := q.db.QueryRow(ctx, getForumPollByOptionID, optionID)
 	var i ForumPoll
 	err := row.Scan(
 		&i.ID,
@@ -697,12 +803,16 @@ SELECT ft.id, ft.tenant_id, ft.content_id, ft.space_id, ft.author_user_id,
        CASE WHEN ft.is_anonymous THEN NULL ELSE u.username END AS author_username,
        CASE WHEN ft.is_anonymous THEN NULL ELSE up.display_name END AS author_display_name,
        CASE WHEN ft.is_anonymous THEN NULL ELSE up.avatar_url END AS author_avatar_url,
+       CASE WHEN ft.solved_by_user_id IS NULL THEN NULL ELSE su.username END AS solved_by_username,
+       CASE WHEN ft.solved_by_user_id IS NULL THEN NULL ELSE sup.display_name END AS solved_by_display_name,
        s.name AS space_name,
        s.slug AS space_slug,
        s.level AS space_level
 FROM forum_threads ft
 LEFT JOIN users u ON u.id = ft.author_user_id
 LEFT JOIN user_profiles up ON up.user_id = ft.author_user_id
+LEFT JOIN users su ON su.id = ft.solved_by_user_id
+LEFT JOIN user_profiles sup ON sup.user_id = ft.solved_by_user_id
 LEFT JOIN spaces s ON s.id = ft.space_id
 WHERE ft.slug = $1 AND ft.tenant_id = $2 AND ft.deleted_at IS NULL
 `
@@ -713,34 +823,36 @@ type GetForumThreadBySlugWithDetailsParams struct {
 }
 
 type GetForumThreadBySlugWithDetailsRow struct {
-	ID                pgtype.UUID        `json:"id"`
-	TenantID          pgtype.UUID        `json:"tenant_id"`
-	ContentID         pgtype.UUID        `json:"content_id"`
-	SpaceID           pgtype.UUID        `json:"space_id"`
-	AuthorUserID      pgtype.UUID        `json:"author_user_id"`
-	ParentReplyID     pgtype.UUID        `json:"parent_reply_id"`
-	Title             string             `json:"title"`
-	Slug              string             `json:"slug"`
-	Body              []byte             `json:"body"`
-	IsAnonymous       bool               `json:"is_anonymous"`
-	Solved            bool               `json:"solved"`
-	SolvedAt          pgtype.Timestamptz `json:"solved_at"`
-	SolvedByUserID    pgtype.UUID        `json:"solved_by_user_id"`
-	VoteScore         int32              `json:"vote_score"`
-	ReplyCount        int32              `json:"reply_count"`
-	ViewCount         int32              `json:"view_count"`
-	BookmarkCount     int32              `json:"bookmark_count"`
-	EditWindowMinutes int32              `json:"edit_window_minutes"`
-	IsEdited          bool               `json:"is_edited"`
-	CreatedAt         pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
-	DeletedAt         pgtype.Timestamptz `json:"deleted_at"`
-	AuthorUsername    interface{}        `json:"author_username"`
-	AuthorDisplayName interface{}        `json:"author_display_name"`
-	AuthorAvatarUrl   interface{}        `json:"author_avatar_url"`
-	SpaceName         *string            `json:"space_name"`
-	SpaceSlug         *string            `json:"space_slug"`
-	SpaceLevel        *string            `json:"space_level"`
+	ID                  pgtype.UUID        `json:"id"`
+	TenantID            pgtype.UUID        `json:"tenant_id"`
+	ContentID           pgtype.UUID        `json:"content_id"`
+	SpaceID             pgtype.UUID        `json:"space_id"`
+	AuthorUserID        pgtype.UUID        `json:"author_user_id"`
+	ParentReplyID       pgtype.UUID        `json:"parent_reply_id"`
+	Title               string             `json:"title"`
+	Slug                string             `json:"slug"`
+	Body                []byte             `json:"body"`
+	IsAnonymous         bool               `json:"is_anonymous"`
+	Solved              bool               `json:"solved"`
+	SolvedAt            pgtype.Timestamptz `json:"solved_at"`
+	SolvedByUserID      pgtype.UUID        `json:"solved_by_user_id"`
+	VoteScore           int32              `json:"vote_score"`
+	ReplyCount          int32              `json:"reply_count"`
+	ViewCount           int32              `json:"view_count"`
+	BookmarkCount       int32              `json:"bookmark_count"`
+	EditWindowMinutes   int32              `json:"edit_window_minutes"`
+	IsEdited            bool               `json:"is_edited"`
+	CreatedAt           pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt           pgtype.Timestamptz `json:"deleted_at"`
+	AuthorUsername      interface{}        `json:"author_username"`
+	AuthorDisplayName   interface{}        `json:"author_display_name"`
+	AuthorAvatarUrl     interface{}        `json:"author_avatar_url"`
+	SolvedByUsername    interface{}        `json:"solved_by_username"`
+	SolvedByDisplayName interface{}        `json:"solved_by_display_name"`
+	SpaceName           *string            `json:"space_name"`
+	SpaceSlug           *string            `json:"space_slug"`
+	SpaceLevel          *string            `json:"space_level"`
 }
 
 // =====================
@@ -779,11 +891,29 @@ func (q *Queries) GetForumThreadBySlugWithDetails(ctx context.Context, arg GetFo
 		&i.AuthorUsername,
 		&i.AuthorDisplayName,
 		&i.AuthorAvatarUrl,
+		&i.SolvedByUsername,
+		&i.SolvedByDisplayName,
 		&i.SpaceName,
 		&i.SpaceSlug,
 		&i.SpaceLevel,
 	)
 	return i, err
+}
+
+const getForumThreadSpaceIDByID = `-- name: GetForumThreadSpaceIDByID :one
+
+SELECT space_id FROM forum_threads WHERE id = $1 AND deleted_at IS NULL
+`
+
+// =====================
+// Solved / Unsolve
+// Ref: japaconnect-engineering/sections/08-forum-qa-solved.md
+// =====================
+func (q *Queries) GetForumThreadSpaceIDByID(ctx context.Context, id pgtype.UUID) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, getForumThreadSpaceIDByID, id)
+	var space_id pgtype.UUID
+	err := row.Scan(&space_id)
+	return space_id, err
 }
 
 const getForumVote = `-- name: GetForumVote :one
@@ -2047,17 +2177,23 @@ func (q *Queries) ListForumThreadsByTenantWithDetails(ctx context.Context, arg L
 
 const removeForumBookmark = `-- name: RemoveForumBookmark :exec
 DELETE FROM forum_bookmarks
-WHERE user_id = $1 AND entity_type = $2 AND entity_id = $3
+WHERE user_id = $1 AND entity_type = $2 AND entity_id = $3 AND tenant_id = $4
 `
 
 type RemoveForumBookmarkParams struct {
 	UserID     pgtype.UUID `json:"user_id"`
 	EntityType string      `json:"entity_type"`
 	EntityID   pgtype.UUID `json:"entity_id"`
+	TenantID   pgtype.UUID `json:"tenant_id"`
 }
 
 func (q *Queries) RemoveForumBookmark(ctx context.Context, arg RemoveForumBookmarkParams) error {
-	_, err := q.db.Exec(ctx, removeForumBookmark, arg.UserID, arg.EntityType, arg.EntityID)
+	_, err := q.db.Exec(ctx, removeForumBookmark,
+		arg.UserID,
+		arg.EntityType,
+		arg.EntityID,
+		arg.TenantID,
+	)
 	return err
 }
 
@@ -2073,6 +2209,22 @@ type RemoveForumThreadTagParams struct {
 
 func (q *Queries) RemoveForumThreadTag(ctx context.Context, arg RemoveForumThreadTagParams) error {
 	_, err := q.db.Exec(ctx, removeForumThreadTag, arg.ThreadID, arg.TagID)
+	return err
+}
+
+const retractForumPollVote = `-- name: RetractForumPollVote :exec
+DELETE FROM forum_poll_votes
+WHERE poll_id = $1 AND user_id = $2
+`
+
+type RetractForumPollVoteParams struct {
+	PollID pgtype.UUID `json:"poll_id"`
+	UserID pgtype.UUID `json:"user_id"`
+}
+
+// Removes a user's vote on a poll (DELETE /poll-options/{id}/vote).
+func (q *Queries) RetractForumPollVote(ctx context.Context, arg RetractForumPollVoteParams) error {
+	_, err := q.db.Exec(ctx, retractForumPollVote, arg.PollID, arg.UserID)
 	return err
 }
 
@@ -2137,6 +2289,23 @@ type SolveForumThreadParams struct {
 
 func (q *Queries) SolveForumThread(ctx context.Context, arg SolveForumThreadParams) error {
 	_, err := q.db.Exec(ctx, solveForumThread, arg.SolverUserID, arg.ID, arg.TenantID)
+	return err
+}
+
+const unsolveForumThread = `-- name: UnsolveForumThread :exec
+UPDATE forum_threads
+SET solved = false, solved_at = NULL, solved_by_user_id = NULL, updated_at = now()
+WHERE id = $1 AND tenant_id = $2
+`
+
+type UnsolveForumThreadParams struct {
+	ID       pgtype.UUID `json:"id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+// Reverts the solved flag (DELETE /forum/{id}/solve). Ref: Section 08 Solved flag.
+func (q *Queries) UnsolveForumThread(ctx context.Context, arg UnsolveForumThreadParams) error {
+	_, err := q.db.Exec(ctx, unsolveForumThread, arg.ID, arg.TenantID)
 	return err
 }
 

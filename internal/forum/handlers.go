@@ -8,19 +8,18 @@
 package forum
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"log/slog"
 	"net/http"
 	"strconv"
-	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/auth"
+	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/seo"
 	"github.com/jedafe/japa/internal/tenant"
 )
@@ -80,6 +79,8 @@ func handleServiceError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusNotFound, "not_found", "Resource not found")
 	case errors.Is(err, errpkg.ErrDuplicate):
 		writeError(w, http.StatusConflict, "already_exists", "Resource already exists")
+	case errors.Is(err, ErrTooManyTags):
+		writeError(w, http.StatusConflict, "too_many_tags", err.Error())
 	default:
 		writeError(w, http.StatusInternalServerError, "internal_error", "Something went wrong")
 	}
@@ -323,12 +324,9 @@ func (h *Handlers) GetThread(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Increment view count fire-and-forget — never blocks the response.
-	go func() {
-		bgCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		h.Service.IncrementThreadView(bgCtx, thread.ID, tenantID)
-	}()
+	// BUG-021: enqueue the view-count increment to a shared background
+	// worker instead of spawning a per-request goroutine. Non-blocking.
+	h.Service.enqueueViewIncrement(thread.ID, tenantID)
 
 	// BL-012 / Section 08: emit QAPage JSON-LD for solved threads so search
 	// engines can index the accepted answer. The accepted-answer body is the
@@ -347,18 +345,52 @@ func (h *Handlers) GetThread(w http.ResponseWriter, r *http.Request) {
 		questionBody = string(thread.Body)
 	}
 
-	var answerBody string
+	// BUG-020: cache the JSON-LD for solved threads to avoid a synchronous
+	// DB round-trip (GetTopReplyForThread) on every request. The cache has
+	// a 5-minute TTL; on a cache miss we fetch the top reply, generate the
+	// JSON-LD, and store it. For unsolved threads we generate inline (no
+	// DB fetch needed).
+	var jsonLd any
 	if thread.Solved {
-		if top, topErr := h.Service.GetTopReplyForThread(r.Context(), thread.ID, tenantID); topErr == nil {
-			if len(top.Body) > 0 {
-				answerBody = string(top.Body)
+		if cached, ok := h.Service.getJSONLDCache(thread.ID); ok {
+			var parsed any
+			if err := json.Unmarshal([]byte(cached), &parsed); err == nil {
+				jsonLd = parsed
+			} else {
+				jsonLd = cached
 			}
-		} else if !errors.Is(topErr, pgx.ErrNoRows) {
-			slog.Warn("QAPage JSON-LD: failed to fetch top reply", "thread_id", thread.ID, "error", topErr)
+		} else {
+			var answerBody string
+			if top, topErr := h.Service.GetTopReplyForThread(r.Context(), thread.ID, tenantID); topErr == nil {
+				if len(top.Body) > 0 {
+					answerBody = string(top.Body)
+				}
+			} else if !errors.Is(topErr, pgx.ErrNoRows) {
+				slog.Warn("QAPage JSON-LD: failed to fetch top reply", "thread_id", thread.ID, "error", topErr)
+			}
+			jsonLd = seo.GenerateQAPageJSONLD(thread.Title, questionBody, answerBody, authorName, thread.Solved)
+			if b, err := json.Marshal(jsonLd); err == nil {
+				h.Service.setJSONLDCache(thread.ID, string(b))
+			}
 		}
+	} else {
+		jsonLd = seo.GenerateQAPageJSONLD(thread.Title, questionBody, "", authorName, thread.Solved)
 	}
 
-	response["json_ld"] = seo.GenerateQAPageJSONLD(thread.Title, questionBody, answerBody, authorName, thread.Solved)
+	response["json_ld"] = jsonLd
+
+	// Add can_solve flag for the frontend so it can show the solve/unsolve
+	// affordance to the OP or moderators (BUG-014).
+	// Ref: japaconnect-engineering/sections/08-forum-qa-solved.md ("OP or moderator")
+	canSolve := false
+	if user := auth.FromContext(r.Context()); user != nil {
+		threadModel := gen.ForumThread{
+			AuthorUserID: thread.AuthorUserID,
+			SpaceID:      thread.SpaceID,
+		}
+		canSolve = h.Service.canSolveThread(r.Context(), threadModel, user.UserID, tenantID)
+	}
+	response["can_solve"] = canSolve
 
 	writeJSON(w, http.StatusOK, response)
 }
@@ -403,7 +435,7 @@ func (h *Handlers) UpdateThread(w http.ResponseWriter, r *http.Request) {
 
 // DeleteThread handles DELETE /api/v1/forum/threads/{id}.
 func (h *Handlers) DeleteThread(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireUser(w, r)
+	user, ok := h.requireUser(w, r)
 	if !ok {
 		return
 	}
@@ -419,7 +451,7 @@ func (h *Handlers) DeleteThread(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Service.DeleteThread(r.Context(), id, tenantID); err != nil {
+	if err := h.Service.DeleteThread(r.Context(), id, tenantID, user.UserID); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -451,6 +483,33 @@ func (h *Handlers) SolveThread(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "solved"}})
+}
+
+// UnsolveThread handles DELETE /api/v1/forum/threads/{id}/solve.
+// Ref: api-routes-catalog L590.
+func (h *Handlers) UnsolveThread(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	id, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid thread ID")
+		return
+	}
+
+	if err := h.Service.UnsolveThread(r.Context(), id, tenantID, user.UserID); err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "unsolved"}})
 }
 
 // ---------------------------------------------------------------------------
@@ -569,7 +628,7 @@ func (h *Handlers) UpdateReply(w http.ResponseWriter, r *http.Request) {
 
 // DeleteReply handles DELETE /api/v1/forum/replies/{id}.
 func (h *Handlers) DeleteReply(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireUser(w, r)
+	user, ok := h.requireUser(w, r)
 	if !ok {
 		return
 	}
@@ -585,7 +644,7 @@ func (h *Handlers) DeleteReply(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Service.DeleteReply(r.Context(), id, tenantID); err != nil {
+	if err := h.Service.DeleteReply(r.Context(), id, tenantID, user.UserID); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -654,6 +713,102 @@ func (h *Handlers) Vote(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"data": vote})
 }
 
+// VoteOnThread handles POST /api/v1/forum/{id}/vote.
+// The entity id is resolved from the URL param; the entity_type defaults to
+// "thread" but may be overridden to "reply" via the body for reply votes.
+// Ref: api-routes-catalog L591.
+func (h *Handlers) VoteOnThread(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	entityID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid entity ID")
+		return
+	}
+
+	var input struct {
+		EntityType string `json:"entity_type"`
+		Value      int16  `json:"value"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
+
+	if input.EntityType == "" {
+		input.EntityType = EntityTypeThread
+	}
+
+	if input.EntityType != EntityTypeThread && input.EntityType != EntityTypeReply {
+		writeError(w, http.StatusBadRequest, "invalid_entity_type", "entity_type must be 'thread' or 'reply'")
+		return
+	}
+
+	if input.Value != VoteDown && input.Value != VoteUp {
+		writeError(w, http.StatusBadRequest, "invalid_vote_value", "value must be -1 or 1")
+		return
+	}
+
+	vote, err := h.Service.Vote(r.Context(), tenantID, user.UserID, VoteInput{
+		EntityType: input.EntityType,
+		EntityID:   entityID,
+		Value:      input.Value,
+	})
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": vote})
+}
+
+// RemoveThreadVote handles DELETE /api/v1/forum/{id}/vote.
+// Retracts the user's vote on the entity resolved from the URL param.
+// Ref: api-routes-catalog L591.
+func (h *Handlers) RemoveThreadVote(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	entityID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid entity ID")
+		return
+	}
+
+	entityType := r.URL.Query().Get("entity_type")
+	if entityType == "" {
+		entityType = EntityTypeThread
+	}
+
+	if entityType != EntityTypeThread && entityType != EntityTypeReply {
+		writeError(w, http.StatusBadRequest, "invalid_entity_type", "entity_type must be 'thread' or 'reply'")
+		return
+	}
+
+	if err := h.Service.RemoveVote(r.Context(), tenantID, user.UserID, entityType, entityID); err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusNoContent, nil)
+}
+
 // ---------------------------------------------------------------------------
 // Bookmark Handlers
 // ---------------------------------------------------------------------------
@@ -707,39 +862,26 @@ func (h *Handlers) AddBookmark(w http.ResponseWriter, r *http.Request) {
 }
 
 // RemoveBookmark handles DELETE /api/v1/forum/bookmarks/{id}.
+// Resolves the bookmark by its primary key from the URL param — no query
+// params required. Ref: api-routes-catalog L610.
 func (h *Handlers) RemoveBookmark(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
 	if !ok {
 		return
 	}
 
-	_, ok = h.requireTenant(w, r)
+	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	if _, err := parseUUIDParam(r, "id"); err != nil {
+	id, err := parseUUIDParam(r, "id")
+	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid bookmark ID")
 		return
 	}
 
-	// We need entity_type and entity_id from the bookmark to remove it.
-	// The client should provide these via query params or we look them up.
-	entityType := r.URL.Query().Get("entity_type")
-	entityIDStr := r.URL.Query().Get("entity_id")
-
-	if entityType == "" || entityIDStr == "" {
-		writeError(w, http.StatusBadRequest, "missing_params", "entity_type and entity_id query params required")
-		return
-	}
-
-	var entityID pgtype.UUID
-	if err := entityID.Scan(entityIDStr); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_entity_id", "Invalid entity_id")
-		return
-	}
-
-	if err := h.Service.RemoveBookmark(r.Context(), user.UserID, entityType, entityID); err != nil {
+	if err := h.Service.RemoveBookmarkByID(r.Context(), id, user.UserID, tenantID); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -929,6 +1071,120 @@ func (h *Handlers) GetPoll(w http.ResponseWriter, r *http.Request) {
 			"results": results,
 		},
 	})
+}
+
+// CreatePollForThread handles POST /api/v1/forum/{id}/poll.
+// The thread id is resolved from the URL param, not the body.
+// Ref: api-routes-catalog L592.
+func (h *Handlers) CreatePollForThread(w http.ResponseWriter, r *http.Request) {
+	_, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	threadID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_thread_id", "Invalid thread ID")
+		return
+	}
+
+	var input struct {
+		Question      string  `json:"question"`
+		IsMultiSelect bool    `json:"is_multi_select"`
+		CloseAt       *string `json:"close_at"`
+		Options       []struct {
+			Label    string `json:"label"`
+			Position int32  `json:"position"`
+		} `json:"options"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
+
+	if input.Question == "" {
+		writeError(w, http.StatusBadRequest, "missing_question", "question is required")
+		return
+	}
+
+	if len(input.Options) < 2 {
+		writeError(w, http.StatusBadRequest, "insufficient_options", "At least 2 options required")
+		return
+	}
+
+	var closeAt pgtype.Timestamptz
+	if input.CloseAt != nil {
+		if err := closeAt.Scan(*input.CloseAt); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_close_at", "Invalid close_at date format")
+			return
+		}
+	}
+
+	opts := make([]PollOptionInput, len(input.Options))
+	for i, o := range input.Options {
+		opts[i] = PollOptionInput{Label: o.Label, Position: o.Position}
+	}
+
+	poll, err := h.Service.CreatePoll(r.Context(), CreatePollInput{
+		ThreadID:      threadID,
+		Question:      input.Question,
+		IsMultiSelect: input.IsMultiSelect,
+		CloseAt:       closeAt,
+		Options:       opts,
+	})
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, map[string]any{"data": poll})
+}
+
+// VotePollOption handles POST /api/v1/poll-options/{id}/vote.
+// The URL param is the option_id (not the poll_id). The poll is resolved
+// from the option. Ref: api-routes-catalog L612.
+func (h *Handlers) VotePollOption(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	optionID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_option_id", "Invalid poll option ID")
+		return
+	}
+
+	if err := h.Service.VotePollByOptionID(r.Context(), optionID, user.UserID); err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "voted"}})
+}
+
+// RetractPollVoteHandler handles DELETE /api/v1/poll-options/{id}/vote.
+// The URL param is the option_id; the poll is resolved from the option.
+// Ref: api-routes-catalog L613.
+func (h *Handlers) RetractPollVoteHandler(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	optionID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_option_id", "Invalid poll option ID")
+		return
+	}
+
+	if err := h.Service.RetractPollVote(r.Context(), optionID, user.UserID); err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusNoContent, nil)
 }
 
 // ---------------------------------------------------------------------------
@@ -1152,6 +1408,53 @@ func (h *Handlers) AddThreadTag(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.Service.AddThreadTag(r.Context(), user.TenantID, threadID, tagID); err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "added"}})
+}
+
+// AddThreadTagsBulk handles POST /api/v1/forum/{id}/tags.
+// Accepts a JSON array of tag ids and assigns them all to the thread,
+// enforcing the MaxTagsPerThread cap. Ref: api-routes-catalog L596.
+func (h *Handlers) AddThreadTagsBulk(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	threadID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_thread_id", "Invalid thread ID")
+		return
+	}
+
+	var input struct {
+		TagIDs []string `json:"tag_ids"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
+
+	if len(input.TagIDs) == 0 {
+		writeError(w, http.StatusBadRequest, "missing_tag_ids", "tag_ids array is required")
+		return
+	}
+
+	tagIDs := make([]pgtype.UUID, 0, len(input.TagIDs))
+	for _, idStr := range input.TagIDs {
+		var id pgtype.UUID
+		if err := id.Scan(idStr); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_tag_id", "Invalid tag_id in list")
+			return
+		}
+		tagIDs = append(tagIDs, id)
+	}
+
+	if err := h.Service.AddThreadTagsBulk(r.Context(), user.TenantID, threadID, tagIDs); err != nil {
 		handleServiceError(w, err)
 		return
 	}

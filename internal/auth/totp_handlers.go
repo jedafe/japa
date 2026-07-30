@@ -14,10 +14,11 @@ type TOTPHandlers struct {
 	SiteName string
 }
 
-// HandleSetup handles POST /api/v1/auth/totp/setup.
-// Generates a new TOTP secret and returns the QR code URL for the user
-// to scan with their authenticator app. The secret is stored but 2FA
-// is not yet enabled — the user must verify a code via /totp/verify first.
+// HandleSetup handles POST /api/v1/me/totp/enable.
+// Generates a new TOTP secret and returns the secret + otpauth URL for the
+// user to scan with their authenticator app. The secret is stored encrypted
+// but 2FA is not yet enabled — the user must verify a code via /totp/confirm.
+// Ref: japaconnect-engineering/sections/02-authentication-sessions.md (2FA TOTP)
 func (h *TOTPHandlers) HandleSetup(w http.ResponseWriter, r *http.Request) {
 	user := authUserFromContext(w, r)
 	if user == nil {
@@ -37,13 +38,18 @@ func (h *TOTPHandlers) HandleSetup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// We need the email for the QR code label. Fetch from existing record
-	// or use a placeholder — the user object from JWT doesn't carry email.
-	secret, qrURL, err := GenerateTOTPSecret(user.UserID.String(), "user@"+user.UserID.String()+".local", h.SiteName)
+	// Fetch the user's email for the QR code label so authenticator apps
+	// display the correct identity instead of a placeholder.
+	email, err := h.Store.GetUserEmail(r.Context(), user.UserID)
+	if err != nil {
+		slog.Warn("fetch user email for TOTP, using fallback", "user_id", user.UserID.String(), "error", err)
+		email = "user@" + user.UserID.String() + ".local"
+	}
+
+	secret, otpauthURL, err := GenerateTOTPSecret(user.UserID.String(), email, h.SiteName)
 	if err != nil {
 		slog.Error("generate TOTP secret", "error", err)
 		writeError(w, http.StatusInternalServerError, "totp_error", "Failed to generate 2FA secret")
-
 		return
 	}
 
@@ -52,30 +58,32 @@ func (h *TOTPHandlers) HandleSetup(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("encrypt TOTP secret", "error", err)
 		writeError(w, http.StatusInternalServerError, "totp_error", "Failed to encrypt 2FA secret")
-
 		return
 	}
 
 	if err := h.Store.UpsertTOTPSecret(r.Context(), user.UserID, encrypted); err != nil {
 		slog.Error("store TOTP secret", "error", err)
 		writeError(w, http.StatusInternalServerError, "totp_error", "Failed to save 2FA secret")
-
 		return
 	}
 
-	// Omit the plaintext secret from the response — only the QR URL is needed.
-	// Returning the secret risks compromise via logs/cache/proxy capture (SEC-003).
+	// Return the plaintext secret and otpauth URL. The secret is needed for
+	// manual entry when the user can't scan the QR code. It is only returned
+	// this one time during setup — the stored copy is encrypted.
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"data": map[string]interface{}{
-			"qr_url": qrURL,
+			"secret":       secret,
+			"otpauth_url":  otpauthURL,
 		},
 	})
 }
 
-// HandleVerify handles POST /api/v1/auth/totp/verify.
+// HandleVerify handles POST /api/v1/me/totp/confirm.
 // Verifies the TOTP code and enables 2FA for the user. This is the
-// second step after /totp/setup — the user scans the QR code, enters
-// the 6-digit code, and this endpoint confirms it and flips the switch.
+// second step after /totp/enable — the user scans the QR code, enters
+// the 6-digit code, and this endpoint confirms it, enables 2FA, and
+// generates one-time backup codes for account recovery.
+// Ref: japaconnect-engineering/sections/02-authentication-sessions.md (2FA TOTP)
 func (h *TOTPHandlers) HandleVerify(w http.ResponseWriter, r *http.Request) {
 	user := authUserFromContext(w, r)
 	if user == nil {
@@ -100,21 +108,47 @@ func (h *TOTPHandlers) HandleVerify(w http.ResponseWriter, r *http.Request) {
 	if err := EnableTOTP(r.Context(), h.Store, user.UserID, req.Code); err != nil {
 		slog.Warn("TOTP verify failed", "user_id", user.UserID.String(), "error", err)
 		writeError(w, http.StatusBadRequest, "totp_verify_failed", err.Error())
-
 		return
+	}
+
+	// Generate one-time backup codes for account recovery.
+	// Stored as SHA-256 hashes; plaintext returned once for the user to save.
+	backupCodes, err := GenerateBackupCodes()
+	if err != nil {
+		slog.Error("generate backup codes", "user_id", user.UserID.String(), "error", err)
+		// 2FA is already enabled — don't fail the whole request, just
+		// return without backup codes. The user can regenerate later.
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"data": map[string]interface{}{
+				"enabled":       true,
+				"backup_codes":  []string{},
+				"message":       "2FA has been enabled. Backup code generation failed — please contact support.",
+			},
+		})
+		return
+	}
+
+	hashed := make([]string, len(backupCodes))
+	for i, c := range backupCodes {
+		hashed[i] = hashBackupCode(c)
+	}
+	if err := h.Store.SaveBackupCodes(r.Context(), user.UserID, hashed); err != nil {
+		slog.Error("save backup codes", "user_id", user.UserID.String(), "error", err)
 	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"data": map[string]interface{}{
-			"enabled": true,
-			"message": "2FA has been enabled",
+			"enabled":       true,
+			"backup_codes":  backupCodes,
+			"message":       "2FA has been enabled",
 		},
 	})
 }
 
-// HandleDisable handles POST /api/v1/auth/totp/disable.
+// HandleDisable handles DELETE /api/v1/me/totp.
 // Requires a valid TOTP code to confirm the disable action, preventing
 // an attacker with session access from silently turning off 2FA.
+// Ref: japaconnect-engineering/sections/02-authentication-sessions.md (2FA TOTP)
 func (h *TOTPHandlers) HandleDisable(w http.ResponseWriter, r *http.Request) {
 	user := authUserFromContext(w, r)
 	if user == nil {

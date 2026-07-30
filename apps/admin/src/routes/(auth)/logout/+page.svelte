@@ -9,9 +9,9 @@
 			await fetch('/api/v1/auth/logout', {
 				method: 'POST',
 				credentials: 'include'
-			}).catch(() => {});
-		} catch {
-			// Ignore errors
+			});
+		} catch (err) {
+			console.warn('[logout] backend logout failed', err);
 		}
 
 		clearUser();

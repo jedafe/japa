@@ -126,15 +126,15 @@
   let showDeleteConfirm = $state(false);
   let deleteTarget = $state<BlogPost | null>(null);
 
-  // Backend gates blog mutations on content.create
-  const canManageBlog = $derived(hasPermission("content.create"));
+  // BUG-004: backend gates admin blog mutations on blog.review.manage.
+  const canManageBlog = $derived(hasPermission("blog.review.manage"));
 
   const tabs = $derived([
     { value: "all", label: `${t('app.blog.tab_all', 'All Posts')} (${posts.length})` },
     { value: "published", label: `${t('app.blog.tab_published', 'Published')} (${posts.filter(p => p.status === 'published').length})` },
     { value: "draft", label: `${t('app.blog.tab_drafts', 'Drafts')} (${posts.filter(p => p.status === 'draft').length})` },
     { value: "in_review", label: `${t('app.blog.tab_in_review', 'In Review')} (${posts.filter(p => p.status === 'in_review').length})` },
-    { value: "removed", label: `${t('app.blog.tab_removed', 'Removed')} (${posts.filter(p => p.status === 'removed').length})` }
+    { value: "archived", label: `${t('app.blog.tab_archived', 'Archived')} (${posts.filter(p => p.status === 'archived').length})` }
   ]);
 
   const columns = $derived([
@@ -150,8 +150,8 @@
       render: (value: string) => value || t('app.blog.unknown', 'Unknown')
     },
     {
-      key: "categories",
-      label: t('app.blog.col_categories', 'Categories'),
+      key: "tags",
+      label: t('app.blog.col_tags', 'Tags'),
       render: (value: string[]) => {
         if (!value || value.length === 0) return "—";
         return value.slice(0, 2).join(", ") + (value.length > 2 ? ` +${value.length - 2}` : "");
@@ -167,7 +167,6 @@
           draft: "var(--color-warning)",
           in_review: "var(--color-info)",
           review: "var(--color-info)",
-          removed: "var(--color-danger)",
           archived: "var(--color-muted)"
         };
         const labels: Record<string, string> = {
@@ -175,7 +174,6 @@
           draft: "draft",
           in_review: "in review",
           review: "in review",
-          removed: "removed",
           archived: "archived"
         };
         const color = colors[value] || colors.draft;
@@ -203,14 +201,15 @@
     }
   ]);
 
-  const categoryOptions = $derived.by(() => {
-    const cats = new Set<string>();
+  // BUG-008: Section 24 says "tags only, no categories" — use tag filter.
+  const tagOptions = $derived.by(() => {
+    const tags = new Set<string>();
     for (const p of posts) {
-      if (p.categories) {
-        for (const c of p.categories) cats.add(c);
+      if (p.tags) {
+        for (const tg of p.tags) tags.add(tg);
       }
     }
-    return Array.from(cats).sort().map((c) => ({ value: c, label: c }));
+    return Array.from(tags).sort().map((tg) => ({ value: tg, label: tg }));
   });
 
   let filteredPosts = $derived.by(() => {
@@ -218,8 +217,8 @@
     if (activeTab !== "all") {
       result = result.filter((p) => p.status === activeTab);
     }
-    if (filters.category) {
-      result = result.filter((p) => p.categories?.includes(filters.category));
+    if (filters.tag) {
+      result = result.filter((p) => p.tags?.includes(filters.tag));
     }
     if (filters.search) {
       const q = filters.search.toLowerCase();
@@ -298,14 +297,10 @@
     if (!deleteTarget) return;
     acting = true;
     try {
-      let result;
-      if (deleteTarget.status === 'removed') {
-        // Hard-delete: permanently remove from database
-        result = await blogAdminApi.deletePost(deleteTarget.id);
-      } else {
-        // Soft-delete: move to "Removed" tab
-        result = await blogAdminApi.updatePost(deleteTarget.id, { status: 'removed' });
-      }
+      // BUG-002: always soft-delete via DELETE /admin/blog/{id} (Rule 11).
+      // The backend sets deleted_at; setting status='removed' was invalid
+      // ('removed' is not a valid content status per Section 14).
+      const result = await blogAdminApi.deletePost(deleteTarget.id);
       if (result.ok) {
         showDeleteConfirm = false;
         loadPosts();
@@ -383,7 +378,16 @@
     bulkDeleting = true;
     error = "";
     try {
-      await Promise.all(ids.map((id) => api(`/admin/blog/${id}`, { method: "DELETE" })));
+      // BUG-011: check each result.ok so partial failures surface an error.
+      const results = await Promise.all(
+        ids.map((id) => api(`/admin/blog/${id}`, { method: "DELETE" }))
+      );
+      const failed = results.filter((r) => !r.ok);
+      if (failed.length > 0) {
+        error = t('app.blog.error_bulk_delete_partial', '{n} of {total} deletes failed')
+          .replace('{n}', String(failed.length))
+          .replace('{total}', String(ids.length));
+      }
       selectedIds = new Set();
       loadPosts();
     } catch {
@@ -418,9 +422,9 @@
   <FilterBar
     filters={[
       {
-        key: "category",
-        label: t('app.blog.filter_category', 'Category'),
-        options: categoryOptions
+        key: "tag",
+        label: t('app.blog.filter_tag', 'Tag'),
+        options: tagOptions
       }
     ]}
     onsearch={handleSearch}
@@ -492,16 +496,6 @@
           <p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.published_at ? new Date(viewTarget.published_at).toLocaleString() : "—"}</p>
         </div>
       </div>
-      {#if viewTarget.categories?.length}
-        <div>
-          <p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.blog.detail_categories', 'Categories')}</p>
-          <div class="mt-1 flex flex-wrap gap-1">
-            {#each viewTarget.categories as cat}
-              <span class="inline-block rounded-full px-2 py-0.5 text-xs" style="background: color-mix(in srgb, var(--color-primary) 15%, transparent); color: var(--color-primary)">{cat}</span>
-            {/each}
-          </div>
-        </div>
-      {/if}
       {#if viewTarget.tags?.length}
         <div>
           <p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.blog.detail_tags', 'Tags')}</p>
@@ -551,20 +545,16 @@
 </Modal>
 
 <!-- Delete Confirmation -->
-<Modal bind:open={showDeleteConfirm} title={deleteTarget?.status === 'removed' ? t('app.blog.modal_permanent_delete', 'Permanently Delete Post') : t('app.blog.modal_delete_post', 'Delete Post')}>
+<Modal bind:open={showDeleteConfirm} title={t('app.blog.modal_delete_post', 'Delete Post')}>
   <div class="space-y-4">
     <p class="text-sm" style="color: var(--color-foreground)">
-      {#if deleteTarget?.status === 'removed'}
-        {t('app.blog.permanent_delete_confirm', 'Are you sure you want to permanently delete "{title}"? This cannot be undone.').replace('{title}', deleteTarget?.title ?? '')}
-      {:else}
-        {t('app.blog.delete_confirm', 'Are you sure you want to delete "{title}"? It will be moved to the Removed tab.').replace('{title}', deleteTarget?.title ?? '')}
-      {/if}
+      {t('app.blog.delete_confirm', 'Are you sure you want to delete "{title}"? This will soft-delete the post.').replace('{title}', deleteTarget?.title ?? '')}
     </p>
   </div>
   <div class="mt-4 flex justify-end gap-2">
     <Button variant="ghost" onclick={() => (showDeleteConfirm = false)}>{t('app.blog.cancel', 'Cancel')}</Button>
     <Button variant="destructive" onclick={executeDelete} disabled={acting}>
-      {acting ? t('app.blog.deleting', 'Deleting...') : (deleteTarget?.status === 'removed' ? t('app.blog.permanent_delete', 'Permanently Delete') : t('app.blog.delete', 'Delete'))}
+      {acting ? t('app.blog.deleting', 'Deleting...') : t('app.blog.delete', 'Delete')}
     </Button>
   </div>
 </Modal>

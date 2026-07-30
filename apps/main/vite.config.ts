@@ -46,7 +46,11 @@ export default defineConfig({
 			// backend's GET /api/v1/ws?ticket=... handler.
 			'/api/v1/ws': { target: API_TARGET.replace(/^http/, 'ws'), ws: true, changeOrigin: true },
 			'/api/v1': { target: API_TARGET, changeOrigin: true },
-			'/ws': { target: API_TARGET.replace(/^http/, 'ws'), ws: true, changeOrigin: true }
+			'/ws': { target: API_TARGET.replace(/^http/, 'ws'), ws: true, changeOrigin: true },
+			// SeaweedFS upload fallback — dev-only presigned URL proxy.
+			// When S3 is not configured, the backend returns /seaweedfs/upload/...
+			// as the presigned URL; the client PUTs raw bytes there.
+			'/seaweedfs': { target: API_TARGET, changeOrigin: true }
 		}
 	},
 	test: {

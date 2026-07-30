@@ -62,7 +62,7 @@
 						<div class="flex flex-1 flex-col p-5">
 							<span class="mb-2 text-xs font-medium uppercase tracking-wide text-[var(--color-primary)]">{t('blog.card_label', 'Blog post')}</span>
 							<h2 class="text-xl font-semibold leading-snug text-[var(--color-text)] group-hover:text-[var(--color-primary)]" style="font-family: var(--font-serif);">{post.title}</h2>
-							<p class="mt-2 line-clamp-3 flex-1 text-sm text-[var(--color-text-subtle)]">{post.body.slice(0, 160)}</p>
+							<p class="mt-2 line-clamp-3 flex-1 text-sm text-[var(--color-text-subtle)]">{post.excerpt}</p>
 							<div class="mt-4 flex items-center gap-3 text-xs text-[var(--color-muted)]">
 								{#if post.read_time_minutes > 0}
 									<span class="flex items-center gap-1"><Clock size={12} /> {post.read_time_minutes} {t('blog.min_read', 'min read')}</span>
@@ -73,6 +73,27 @@
 					</a>
 				{/each}
 			</div>
+
+			<!-- Pagination (BUG-005: offset-based per Rule 5) -->
+			{#if data.pageSize > 0}
+				<div class="mt-8 flex items-center justify-center gap-4">
+					<a
+						href="?tab={data.tab}&page={Math.max(1, data.page - 1)}"
+						class="rounded-lg border border-[var(--color-border)] px-4 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:border-[var(--color-primary)]/40 disabled:pointer-events-none {data.page <= 1 ? 'pointer-events-none opacity-40' : ''}"
+						aria-disabled={data.page <= 1}
+					>
+						{t('blog.prev_page', 'Previous')}
+					</a>
+					<span class="text-sm text-[var(--color-text-subtle)]">{data.page}</span>
+					<a
+						href="?tab={data.tab}&page={data.page + 1}"
+						class="rounded-lg border border-[var(--color-border)] px-4 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:border-[var(--color-primary)]/40 {data.items.length < data.pageSize ? 'pointer-events-none opacity-40' : ''}"
+						aria-disabled={data.items.length < data.pageSize}
+					>
+						{t('blog.next_page', 'Next')}
+					</a>
+				</div>
+			{/if}
 		{/if}
 	</div>
 </div>

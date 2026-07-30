@@ -272,6 +272,7 @@ SELECT date_trunc('day', s.created_at)::date AS day, s.tenant_id, s.id AS space_
        (SELECT COUNT(DISTINCT sm2.user_id)::bigint FROM space_members sm2 WHERE sm2.space_id = s.id) AS active_users
 FROM spaces s
 WHERE s.tenant_id = $1
+  AND s.deleted_at IS NULL
   AND ($2::date IS NULL OR s.created_at::date >= $2)
   AND ($3::date IS NULL OR s.created_at::date <= $3)
   AND ($4::uuid = '00000000-0000-0000-0000-000000000000'::uuid OR s.id = $4)
@@ -490,6 +491,41 @@ func (q *Queries) GetRevenueSummary(ctx context.Context, tenantID pgtype.UUID) (
 	row := q.db.QueryRow(ctx, getRevenueSummary, tenantID)
 	var i GetRevenueSummaryRow
 	err := row.Scan(&i.TotalRevenue, &i.MonthlyRevenue, &i.ActiveSubscriptions)
+	return i, err
+}
+
+const getSpaceAnalyticsSummary = `-- name: GetSpaceAnalyticsSummary :one
+
+SELECT
+  (SELECT COUNT(*) FROM space_members
+     WHERE space_members.space_id = $1 AND space_members.tenant_id = $2)::int AS member_count,
+  (SELECT COUNT(*) FROM contents
+     WHERE contents.space_id = $1 AND contents.tenant_id = $2 AND contents.status = 'published')::int AS content_count,
+  (SELECT COUNT(*) FROM content_views
+     WHERE content_views.space_id = $1 AND content_views.tenant_id = $2)::int AS view_count
+`
+
+type GetSpaceAnalyticsSummaryParams struct {
+	SpaceID  pgtype.UUID `json:"space_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+type GetSpaceAnalyticsSummaryRow struct {
+	MemberCount  int32 `json:"member_count"`
+	ContentCount int32 `json:"content_count"`
+	ViewCount    int32 `json:"view_count"`
+}
+
+// =====================
+// Space Analytics (single-query aggregate)
+// =====================
+// Returns member_count, content_count, and view_count in a single round
+// trip instead of three sequential queries (BUG-020). Each subquery is
+// independent so the planner can parallelise them.
+func (q *Queries) GetSpaceAnalyticsSummary(ctx context.Context, arg GetSpaceAnalyticsSummaryParams) (GetSpaceAnalyticsSummaryRow, error) {
+	row := q.db.QueryRow(ctx, getSpaceAnalyticsSummary, arg.SpaceID, arg.TenantID)
+	var i GetSpaceAnalyticsSummaryRow
+	err := row.Scan(&i.MemberCount, &i.ContentCount, &i.ViewCount)
 	return i, err
 }
 

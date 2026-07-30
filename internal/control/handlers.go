@@ -267,6 +267,7 @@ func (h *Handlers) ListSystemSettings(w http.ResponseWriter, r *http.Request) {
 		DefaultValue string      `json:"default_value"`
 		Description  string      `json:"description"`
 		Namespace    string      `json:"namespace"`
+		Panel        string      `json:"panel"`
 		Min          float64     `json:"min,omitempty"`
 		Max          float64     `json:"max,omitempty"`
 		Sensitive    bool        `json:"sensitive"`
@@ -287,6 +288,7 @@ func (h *Handlers) ListSystemSettings(w http.ResponseWriter, r *http.Request) {
 		s.Sensitive = meta.Sensitive
 		s.Min = meta.Min
 		s.Max = meta.Max
+		s.Panel = meta.Panel
 		// Derive namespace from the first dot segment.
 		if idx := strings.IndexByte(s.Key, '.'); idx >= 0 {
 			s.Namespace = s.Key[:idx]
@@ -325,6 +327,7 @@ func (h *Handlers) ListSystemSettings(w http.ResponseWriter, r *http.Request) {
 			DefaultValue: meta.DefaultValue,
 			Description:  meta.Description,
 			Namespace:    ns,
+			Panel:        meta.Panel,
 			Min:          meta.Min,
 			Max:          meta.Max,
 			Sensitive:    meta.Sensitive,
@@ -349,7 +352,27 @@ func (h *Handlers) UpdateSystemSettings(w http.ResponseWriter, r *http.Request) 
 		// valid JSON. json.Marshal produces the canonical encoding for each
 		// Go type: strings get wrapped in quotes ("3"), booleans become true,
 		// numbers stay bare, and arrays/objects are serialized as-is.
-		data, _ := json.Marshal(value)
+		//
+		// However, when the frontend sends a JSON array/object as a string
+		// (e.g. the onboarding.promoted_* settings store '["uuid"]' as a
+		// string), json.Marshal would double-encode it to '"[\\"uuid\\"]"'.
+		// Detect this case and store the raw JSON directly.
+		var data []byte
+		if s, ok := value.(string); ok {
+			trimmed := strings.TrimSpace(s)
+			if (strings.HasPrefix(trimmed, "[") && strings.HasSuffix(trimmed, "]")) ||
+				(strings.HasPrefix(trimmed, "{") && strings.HasSuffix(trimmed, "}")) {
+				if json.Valid([]byte(trimmed)) {
+					data = []byte(trimmed)
+				} else {
+					data, _ = json.Marshal(value)
+				}
+			} else {
+				data, _ = json.Marshal(value)
+			}
+		} else {
+			data, _ = json.Marshal(value)
+		}
 		// Consult the catalog for the is_public flag. On INSERT, set is_public
 		// from the catalog so appearance/branding settings are exposed via
 		// GET /site/settings/public. On CONFLICT (existing row), preserve the
@@ -487,6 +510,7 @@ func (h *Handlers) GetTenantSettings(w http.ResponseWriter, r *http.Request) {
 		DefaultValue string      `json:"default_value"`
 		Description  string      `json:"description"`
 		Namespace    string      `json:"namespace"`
+		Panel        string      `json:"panel"`
 		Min          float64     `json:"min,omitempty"`
 		Max          float64     `json:"max,omitempty"`
 		Sensitive    bool        `json:"sensitive"`
@@ -506,6 +530,7 @@ func (h *Handlers) GetTenantSettings(w http.ResponseWriter, r *http.Request) {
 		s.Sensitive = meta.Sensitive
 		s.Min = meta.Min
 		s.Max = meta.Max
+		s.Panel = meta.Panel
 		if idx := strings.IndexByte(s.Key, '.'); idx >= 0 {
 			s.Namespace = s.Key[:idx]
 		}
@@ -541,6 +566,7 @@ func (h *Handlers) GetTenantSettings(w http.ResponseWriter, r *http.Request) {
 			DefaultValue: meta.DefaultValue,
 			Description:  meta.Description,
 			Namespace:    ns,
+			Panel:        meta.Panel,
 			Min:          meta.Min,
 			Max:          meta.Max,
 			Sensitive:    meta.Sensitive,
@@ -2498,13 +2524,24 @@ func (h *Handlers) ListPermissionNodes(w http.ResponseWriter, r *http.Request) {
 // ---------------------------------------------------------------------------
 
 type oauthClientEntry struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	Provider    string `json:"provider"`
-	ClientID    string `json:"client_id"`
-	RedirectURI string `json:"redirect_uri"`
-	Enabled     bool   `json:"enabled"`
-	CreatedAt   string `json:"created_at"`
+	ID           string `json:"id"`
+	Name         string `json:"name"`
+	Provider     string `json:"provider"`
+	ClientID     string `json:"client_id"`
+	ClientSecret string `json:"client_secret"`
+	RedirectURI  string `json:"redirect_uri"`
+	Enabled      bool   `json:"enabled"`
+	CreatedAt    string `json:"created_at"`
+}
+
+// supportedOAuthProviders returns the providers the OAuth engine can actually
+// instantiate (google, github, apple, facebook). Microsoft and Twitter are not
+// implemented in internal/auth/oauth.go and must not be offered.
+var supportedOAuthProviders = []map[string]string{
+	{"key": "google", "label": "Google", "description": "Google OAuth 2.0 / OpenID Connect"},
+	{"key": "github", "label": "GitHub", "description": "GitHub OAuth 2.0"},
+	{"key": "apple", "label": "Apple", "description": "Sign in with Apple"},
+	{"key": "facebook", "label": "Facebook", "description": "Facebook Login"},
 }
 
 func oauthClientsKey(ctx context.Context) string {
@@ -2529,6 +2566,12 @@ func (h *Handlers) ListOAuthClients(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"data": clients})
 }
 
+// ListOAuthProviders handles GET /control/oauth-providers — returns the list of
+// OAuth providers supported by the engine (google, github, apple, facebook).
+func (h *Handlers) ListOAuthProviders(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]any{"data": supportedOAuthProviders})
+}
+
 func (h *Handlers) GetOAuthClient(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	if id == "" {
@@ -2547,28 +2590,42 @@ func (h *Handlers) GetOAuthClient(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handlers) CreateOAuthClient(w http.ResponseWriter, r *http.Request) {
 	var input struct {
-		Name        string `json:"name"`
-		Provider    string `json:"provider"`
-		ClientID    string `json:"client_id"`
-		RedirectURI string `json:"redirect_uri"`
+		Name         string `json:"name"`
+		Provider     string `json:"provider"`
+		ClientID     string `json:"client_id"`
+		ClientSecret string `json:"client_secret"`
+		RedirectURI  string `json:"redirect_uri"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
-	if input.Name == "" || input.Provider == "" || input.ClientID == "" {
-		writeError(w, http.StatusBadRequest, "missing_fields", "name, provider, and client_id are required")
+	if input.Name == "" || input.Provider == "" || input.ClientID == "" || input.ClientSecret == "" {
+		writeError(w, http.StatusBadRequest, "missing_fields", "name, provider, client_id, and client_secret are required")
+		return
+	}
+	// Validate provider against the supported list.
+	providerValid := false
+	for _, p := range supportedOAuthProviders {
+		if p["key"] == input.Provider {
+			providerValid = true
+			break
+		}
+	}
+	if !providerValid {
+		writeError(w, http.StatusBadRequest, "invalid_provider", "Unsupported OAuth provider: "+input.Provider)
 		return
 	}
 	clients := h.loadOAuthClients(r)
 	entry := oauthClientEntry{
-		ID:          fmt.Sprintf("oauth_%d", time.Now().UnixNano()),
-		Name:        input.Name,
-		Provider:    input.Provider,
-		ClientID:    input.ClientID,
-		RedirectURI: input.RedirectURI,
-		Enabled:     true,
-		CreatedAt:   time.Now().UTC().Format(time.RFC3339),
+		ID:           fmt.Sprintf("oauth_%d", time.Now().UnixNano()),
+		Name:         input.Name,
+		Provider:     input.Provider,
+		ClientID:     input.ClientID,
+		ClientSecret: input.ClientSecret,
+		RedirectURI:  input.RedirectURI,
+		Enabled:      true,
+		CreatedAt:    time.Now().UTC().Format(time.RFC3339),
 	}
 	clients = append(clients, entry)
 	if err := h.saveOAuthClients(r, clients); err != nil {
@@ -2585,9 +2642,10 @@ func (h *Handlers) UpdateOAuthClient(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var input struct {
-		Name        *string `json:"name"`
-		RedirectURI *string `json:"redirect_uri"`
-		Enabled     *bool   `json:"enabled"`
+		Name         *string `json:"name"`
+		ClientSecret *string `json:"client_secret"`
+		RedirectURI  *string `json:"redirect_uri"`
+		Enabled      *bool   `json:"enabled"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
@@ -2598,6 +2656,9 @@ func (h *Handlers) UpdateOAuthClient(w http.ResponseWriter, r *http.Request) {
 		if clients[i].ID == id {
 			if input.Name != nil {
 				clients[i].Name = *input.Name
+			}
+			if input.ClientSecret != nil {
+				clients[i].ClientSecret = *input.ClientSecret
 			}
 			if input.RedirectURI != nil {
 				clients[i].RedirectURI = *input.RedirectURI
@@ -2646,12 +2707,13 @@ func (h *Handlers) RotateOAuthClientSecret(w http.ResponseWriter, r *http.Reques
 	clients := h.loadOAuthClients(r)
 	for i := range clients {
 		if clients[i].ID == id {
-			clients[i].ClientID = fmt.Sprintf("rotated_%d", time.Now().UnixNano())
+			// Generate a new random secret (32 hex chars).
+			clients[i].ClientSecret = fmt.Sprintf("sec_%x", time.Now().UnixNano())
 			if err := h.saveOAuthClients(r, clients); err != nil {
 				writeError(w, http.StatusInternalServerError, "save_error", "Failed to rotate secret")
 				return
 			}
-			writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"id": id, "new_client_id": clients[i].ClientID}})
+			writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"id": id, "status": "rotated"}})
 			return
 		}
 	}
@@ -2750,8 +2812,8 @@ func (h *Handlers) UpdateExtension(w http.ResponseWriter, r *http.Request) {
 			val = "true"
 		}
 		if _, err := h.DB.Writer.Exec(r.Context(),
-			`UPDATE system_settings SET value = $1, updated_at = now() WHERE tenant_id = $2 AND key = $3`,
-			val, tenantID, settingKey); err != nil {
+			`INSERT INTO system_settings (tenant_id, key, value, updated_at) VALUES ($1, $2, $3, NOW()) ON CONFLICT (tenant_id, key) DO UPDATE SET value = $3, updated_at = NOW()`,
+			tenantID, settingKey, val); err != nil {
 			slog.Error("control: update extension", "error", err)
 			writeError(w, http.StatusInternalServerError, "internal_error", "Failed to update extension")
 			return
@@ -2775,7 +2837,7 @@ func (h *Handlers) EnableExtension(w http.ResponseWriter, r *http.Request) {
 	}
 	settingKey := "extensions." + key + ".enabled"
 	if _, err := h.DB.Writer.Exec(r.Context(),
-		`UPDATE system_settings SET value = 'true', updated_at = now() WHERE tenant_id = $1 AND key = $2`,
+		`INSERT INTO system_settings (tenant_id, key, value, updated_at) VALUES ($1, $2, 'true', NOW()) ON CONFLICT (tenant_id, key) DO UPDATE SET value = 'true', updated_at = NOW()`,
 		tenantID, settingKey); err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to enable extension")
 		return
@@ -2798,7 +2860,7 @@ func (h *Handlers) DisableExtension(w http.ResponseWriter, r *http.Request) {
 	}
 	settingKey := "extensions." + key + ".enabled"
 	if _, err := h.DB.Writer.Exec(r.Context(),
-		`UPDATE system_settings SET value = 'false', updated_at = now() WHERE tenant_id = $1 AND key = $2`,
+		`INSERT INTO system_settings (tenant_id, key, value, updated_at) VALUES ($1, $2, 'false', NOW()) ON CONFLICT (tenant_id, key) DO UPDATE SET value = 'false', updated_at = NOW()`,
 		tenantID, settingKey); err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to disable extension")
 		return
@@ -2814,15 +2876,26 @@ func (h *Handlers) DisableExtension(w http.ResponseWriter, r *http.Request) {
 // ---------------------------------------------------------------------------
 
 type backupConfigEntry struct {
-	ID           string `json:"id"`
-	Name         string `json:"name"`
-	Schedule     string `json:"schedule"`
-	StorageType  string `json:"storage_type"`
-	Destination  string `json:"destination"`
-	RetentionDays int   `json:"retention_days"`
-	Enabled      bool   `json:"enabled"`
-	LastRunAt    string `json:"last_run_at,omitempty"`
-	CreatedAt    string `json:"created_at"`
+	ID            string   `json:"id"`
+	Name          string   `json:"name"`
+	Schedule      string   `json:"schedule"`
+	StorageType   string   `json:"storage_type"`
+	Destination   string   `json:"destination"`
+	WhatToBackup  []string `json:"what_to_backup"`
+	RetentionDays int      `json:"retention_days"`
+	Enabled       bool     `json:"enabled"`
+	LastRunAt     string   `json:"last_run_at,omitempty"`
+	CreatedAt     string   `json:"created_at"`
+}
+
+// supportedBackupTargets defines what can be included in a backup.
+var supportedBackupTargets = []map[string]string{
+	{"key": "database", "label": "Database", "description": "PostgreSQL full database dump"},
+	{"key": "media", "label": "Media & Uploads", "description": "User-uploaded files, images, and attachments"},
+	{"key": "valkey", "label": "Valkey (Redis)", "description": "Cached data, sessions, and queues"},
+	{"key": "search_indexes", "label": "Search Indexes", "description": "Meilisearch index snapshots"},
+	{"key": "logs", "label": "Application Logs", "description": "Structured application log archives"},
+	{"key": "configs", "label": "Configuration", "description": "System settings and environment configuration"},
 }
 
 func backupConfigsKey(ctx context.Context) string {
@@ -2847,17 +2920,24 @@ func (h *Handlers) ListBackupConfigs(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"data": configs})
 }
 
+// ListBackupTargets handles GET /control/backup-targets — returns the list of
+// components that can be included in a backup.
+func (h *Handlers) ListBackupTargets(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]any{"data": supportedBackupTargets})
+}
+
 func (h *Handlers) CreateBackupConfig(w http.ResponseWriter, r *http.Request) {
 	if h.Valkey == nil {
 		writeError(w, http.StatusServiceUnavailable, "no_valkey", "Valkey not available")
 		return
 	}
 	var input struct {
-		Name          string `json:"name"`
-		Schedule      string `json:"schedule"`
-		StorageType   string `json:"storage_type"`
-		Destination   string `json:"destination"`
-		RetentionDays int    `json:"retention_days"`
+		Name          string   `json:"name"`
+		Schedule      string   `json:"schedule"`
+		StorageType   string   `json:"storage_type"`
+		Destination   string   `json:"destination"`
+		WhatToBackup  []string `json:"what_to_backup"`
+		RetentionDays int      `json:"retention_days"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
@@ -2867,6 +2947,21 @@ func (h *Handlers) CreateBackupConfig(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "missing_fields", "name and schedule are required")
 		return
 	}
+	// Validate backup targets.
+	validTargets := make(map[string]bool)
+	for _, t := range supportedBackupTargets {
+		validTargets[t["key"]] = true
+	}
+	for _, t := range input.WhatToBackup {
+		if !validTargets[t] {
+			writeError(w, http.StatusBadRequest, "invalid_target", "Unknown backup target: "+t)
+			return
+		}
+	}
+	// Default to database if nothing selected.
+	if len(input.WhatToBackup) == 0 {
+		input.WhatToBackup = []string{"database"}
+	}
 	configs := h.loadBackupConfigs(r)
 	entry := backupConfigEntry{
 		ID:            fmt.Sprintf("backup_%d", time.Now().UnixNano()),
@@ -2874,6 +2969,7 @@ func (h *Handlers) CreateBackupConfig(w http.ResponseWriter, r *http.Request) {
 		Schedule:      input.Schedule,
 		StorageType:   input.StorageType,
 		Destination:   input.Destination,
+		WhatToBackup:  input.WhatToBackup,
 		RetentionDays: input.RetentionDays,
 		Enabled:       true,
 		CreatedAt:     time.Now().UTC().Format(time.RFC3339),
@@ -2893,11 +2989,12 @@ func (h *Handlers) UpdateBackupConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var input struct {
-		Name          *string `json:"name"`
-		Schedule      *string `json:"schedule"`
-		Destination   *string `json:"destination"`
-		RetentionDays *int    `json:"retention_days"`
-		Enabled       *bool   `json:"enabled"`
+		Name          *string  `json:"name"`
+		Schedule      *string  `json:"schedule"`
+		Destination   *string  `json:"destination"`
+		WhatToBackup  []string `json:"what_to_backup"`
+		RetentionDays *int     `json:"retention_days"`
+		Enabled       *bool    `json:"enabled"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
@@ -2914,6 +3011,9 @@ func (h *Handlers) UpdateBackupConfig(w http.ResponseWriter, r *http.Request) {
 			}
 			if input.Destination != nil {
 				configs[i].Destination = *input.Destination
+			}
+			if input.WhatToBackup != nil {
+				configs[i].WhatToBackup = input.WhatToBackup
 			}
 			if input.RetentionDays != nil {
 				configs[i].RetentionDays = *input.RetentionDays

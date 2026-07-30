@@ -1,6 +1,6 @@
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGet, apiList, ApiError } from '$lib/server/api';
+import { apiContext, apiGet, apiGetEnvelope, apiList, ApiError } from '$lib/server/api';
 import type { ForumThread, ForumReply, PollWithResults } from '$lib/types';
 
 /**
@@ -20,8 +20,17 @@ export const load: PageServerLoad = async (event) => {
 	const authed = !!event.locals.user;
 
 	let thread: ForumThread;
+	let jsonLd: unknown = null;
+	let backendCanSolve = false;
 	try {
-		thread = await apiGet<ForumThread>(ctx, `/forum/${slug}`);
+		// BUG-013/BUG-014: use the full envelope to capture the backend-provided
+		// json_ld (QAPage structured data with acceptedAnswer text) and the
+		// can_solve capability flag (which includes moderator scope, not just
+		// the author). Ref: japaconnect-engineering/sections/08-forum-qa-solved.md
+		const envelope = await apiGetEnvelope<ForumThread>(ctx, `/forum/${slug}`);
+		thread = envelope.data;
+		jsonLd = envelope.json_ld ?? null;
+		backendCanSolve = envelope.can_solve ?? false;
 	} catch (err) {
 		if (err instanceof ApiError && err.status === 404) {
 			throw error(404, { code: 'not_found', message: 'Discussion not found' });
@@ -59,12 +68,11 @@ export const load: PageServerLoad = async (event) => {
 		related = [];
 	}
 
-	// The current user may mark the thread solved if they are the author or a
-	// moderator. The backend enforces the actual permission; this flag only
-	// gates the UI affordance. The forum API does not join author details, so
-	// we compare against the session user id directly.
+	// BUG-014: canSolve now uses the backend-provided can_solve flag which
+	// correctly includes moderators and permission-holders, not just the
+	// author. Fall back to author check when the backend didn't provide it.
 	const currentUserId = event.locals.user?.id ?? null;
-	const canSolve = authed && currentUserId === thread.author_user_id;
+	const canSolve = backendCanSolve || (authed && currentUserId === thread.author_user_id);
 
 	return {
 		thread,
@@ -73,6 +81,7 @@ export const load: PageServerLoad = async (event) => {
 		related,
 		authed,
 		canSolve,
+		jsonLd,
 		acceptedReplyId: thread.solved ? null : null
 	};
 };

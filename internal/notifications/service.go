@@ -23,6 +23,19 @@ type PreferenceInfo struct {
 	gen.GetNotificationPreferencesRow
 }
 
+// PreferenceOutput is the API response shape for a single notification
+// preference. It merges the notification_type defaults with the user's
+// overrides so the frontend always sees every available type — even when
+// the user has never saved a preference for it (Section 35).
+type PreferenceOutput struct {
+	Type        string  `json:"type"`
+	Label       string  `json:"label"`
+	Description *string `json:"description"`
+	InApp       bool    `json:"in_app"`
+	Email       bool    `json:"email"`
+	Push        bool    `json:"push"`
+}
+
 // DispatchResult describes the outcome of a dispatch attempt.
 type DispatchResult struct {
 	Action   string      `json:"action"` // "created", "extended", or "immediate"
@@ -297,16 +310,47 @@ func (s *Service) DeleteNotification(ctx context.Context, notificationID, recipi
 	return s.store.deleteNotification(ctx, notificationID, recipientID)
 }
 
-// GetPreferences returns user's notification preferences.
-func (s *Service) GetPreferences(ctx context.Context, userID pgtype.UUID) ([]PreferenceInfo, error) {
-	rows, err := s.store.getNotificationPreferences(ctx, userID)
+// GetPreferences returns all notification types merged with the user's
+// overrides. Types the user has never configured fall back to the
+// notification_types defaults (Section 35). This ensures the frontend
+// always shows every available type — not just the ones the user has
+// explicitly saved.
+func (s *Service) GetPreferences(ctx context.Context, userID pgtype.UUID) ([]PreferenceOutput, error) {
+	types, err := s.store.getNotificationTypes(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("getting preferences: %w", err)
+		return nil, fmt.Errorf("getting notification types: %w", err)
 	}
 
-	result := make([]PreferenceInfo, len(rows))
-	for i, r := range rows {
-		result[i] = PreferenceInfo{GetNotificationPreferencesRow: r}
+	userPrefs, err := s.store.getNotificationPreferences(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("getting user preferences: %w", err)
+	}
+
+	// Index user overrides by type for O(1) lookup.
+	overrides := make(map[string]gen.GetNotificationPreferencesRow, len(userPrefs))
+	for _, p := range userPrefs {
+		overrides[p.NotificationType] = p
+	}
+
+	result := make([]PreferenceOutput, 0, len(types))
+	for _, nt := range types {
+		if !nt.Enabled {
+			continue
+		}
+		pref := PreferenceOutput{
+			Type:        nt.Key,
+			Label:       nt.Label,
+			Description: nt.Description,
+			InApp:       nt.DefaultInApp,
+			Email:       nt.DefaultEmail,
+			Push:        nt.DefaultPush,
+		}
+		if o, ok := overrides[nt.Key]; ok {
+			pref.InApp = o.InApp
+			pref.Email = o.Email
+			pref.Push = o.Push
+		}
+		result = append(result, pref)
 	}
 
 	return result, nil

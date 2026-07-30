@@ -51,15 +51,22 @@ func (s *Store) addSpaceMember(ctx context.Context, spaceID, userID, tenantID pg
 // toggleFollow inserts a follow row. Returns true if a new row was inserted,
 // false if the row already existed (ON CONFLICT DO NOTHING).
 func (s *Store) toggleFollow(ctx context.Context, tenantID, followerID pgtype.UUID, entityType string, entityID pgtype.UUID) (bool, error) {
+	return s.toggleFollowTx(ctx, s.write, tenantID, followerID, entityType, entityID)
+}
+
+// toggleFollowTx is the transaction-scoped version of toggleFollow. It uses
+// the provided gen.Queries (which may be backed by a transaction) for both
+// the read check and the write, ensuring the toggle + count update are atomic.
+func (s *Store) toggleFollowTx(ctx context.Context, q *gen.Queries, tenantID, followerID pgtype.UUID, entityType string, entityID pgtype.UUID) (bool, error) {
 	// First check if the follow already exists.
-	existing, err := s.read.GetFollow(ctx, gen.GetFollowParams{
+	existing, err := q.GetFollow(ctx, gen.GetFollowParams{
 		FollowerID: followerID,
 		EntityType: entityType,
 		EntityID:   entityID,
 	})
 	if err == nil && existing.ID.Valid {
 		// Already following — delete (unfollow).
-		if err := s.write.DeleteFollowByFollowerEntity(ctx, gen.DeleteFollowByFollowerEntityParams{
+		if err := q.DeleteFollowByFollowerEntity(ctx, gen.DeleteFollowByFollowerEntityParams{
 			FollowerID: followerID,
 			EntityType: entityType,
 			EntityID:   entityID,
@@ -71,7 +78,7 @@ func (s *Store) toggleFollow(ctx context.Context, tenantID, followerID pgtype.UU
 	}
 
 	// Not following — insert.
-	if err := s.write.InsertFollow(ctx, gen.InsertFollowParams{
+	if err := q.InsertFollow(ctx, gen.InsertFollowParams{
 		TenantID:   tenantID,
 		FollowerID: followerID,
 		EntityType: entityType,

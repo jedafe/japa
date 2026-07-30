@@ -4,6 +4,8 @@
 	// session user, calls PATCH /me/preferences/content-country, and invalidates
 	// the feed so the new geo re-weight takes effect immediately.
 	// Audit finding H1.
+	// Ref: japaconnect-engineering/sections/32-activity-feed-timeline.md (Geo)
+	// Ref: Rule 16 — country list fetched from /spaces?level=country, not hardcoded.
 	import { invalidate } from '$app/navigation';
 	import { page } from '$app/state';
 	import { t } from '$lib/i18n';
@@ -13,21 +15,34 @@
 	let changing = $state(false);
 	let saving = $state(false);
 
+	// Country spaces fetched from the backend on first dropdown open.
+	// Rule 16: no hardcoded country lists — the backend /spaces?level=country
+	// endpoint is the single source of truth.
+	let countrySpaces = $state<{ code: string; label: string }[]>([]);
+	let countriesLoaded = false;
+
 	const user = $derived(page.data.user);
 	const currentCountry = $derived(user?.content_country_preference ?? '');
 
-	// A short list of common diaspora destinations. The full country list is
-	// driven by the backend /spaces?level=country endpoint; this control offers
-	// a quick switcher for the most common destinations plus a "More" link to
-	// the full Settings → Language & Region page.
-	const quickCountries = [
-		{ code: '', label: 'Auto (GeoIP)' },
-		{ code: 'NG', label: 'Nigeria' },
-		{ code: 'US', label: 'United States' },
-		{ code: 'GB', label: 'United Kingdom' },
-		{ code: 'CA', label: 'Canada' },
-		{ code: 'AU', label: 'Australia' }
-	];
+	// Quick countries = "Auto" + the first 5 country spaces from the API.
+	// The full list is available in Settings → Language & Region.
+	const quickCountries = $derived([
+		{ code: '', label: t('feed.geo_auto', 'Auto (GeoIP)') },
+		...countrySpaces.slice(0, 5)
+	]);
+
+	async function loadCountries() {
+		if (countriesLoaded) return;
+		countriesLoaded = true;
+		const res = await api.get<{ items: { country_code: string; name: string }[] }>(
+			'/spaces?level=country&page_size=5'
+		);
+		if (!res.error && res.data?.items) {
+			countrySpaces = res.data.items
+				.filter((s) => s.country_code)
+				.map((s) => ({ code: s.country_code, label: s.name }));
+		}
+	}
 
 	async function changeCountry(code: string) {
 		if (saving || code === currentCountry) {
@@ -44,6 +59,13 @@
 			await invalidate('/explore');
 		}
 	}
+
+	async function toggleDropdown() {
+		changing = !changing;
+		if (changing) {
+			await loadCountries();
+		}
+	}
 </script>
 
 <div class="relative flex items-center gap-1.5 text-xs text-[var(--color-muted)]">
@@ -51,7 +73,7 @@
 	<span>{t('feed.showing', 'Showing:')}</span>
 	<button
 		type="button"
-		onclick={() => (changing = !changing)}
+		onclick={toggleDropdown}
 		class="inline-flex items-center gap-0.5 font-medium text-[var(--color-text-subtle)] hover:text-[var(--color-text)]"
 		aria-expanded={changing}
 	>

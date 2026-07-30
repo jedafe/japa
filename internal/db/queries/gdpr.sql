@@ -201,6 +201,21 @@ WHERE id = @user_id AND tenant_id = @tenant_id AND status = 'deleted';
 UPDATE contents SET author_id = @target_user_id
 WHERE author_id = @user_id AND tenant_id = @tenant_id;
 
+-- name: ReassignBlogSeriesAuthor :exec
+-- C7: reassign blog_series authorship before user deletion to preserve
+-- curated multi-part series (ADR-014 soft-delete-and-anonymize). Without
+-- this, ON DELETE CASCADE on blog_series.author_user_id destroys all
+-- user-authored series and cascades to blog_series_posts.
+UPDATE blog_series SET author_user_id = @target_user_id
+WHERE author_user_id = @user_id AND tenant_id = @tenant_id;
+
+-- name: ReassignContentReviewReviewer :exec
+-- C7: reassign content_reviews reviewer before user deletion to preserve
+-- editorial audit history (ADR-014). Without this, ON DELETE CASCADE on
+-- content_reviews.reviewer_user_id destroys all review records.
+UPDATE content_reviews SET reviewer_user_id = @target_user_id
+WHERE reviewer_user_id = @user_id AND tenant_id = @tenant_id;
+
 -- name: NullifyPaymentUserRefs :exec
 -- Nulls payment-related user references for financial audit trail preservation.
 UPDATE payments SET user_id = NULL
@@ -377,6 +392,27 @@ FROM (SELECT * FROM forum_votes WHERE user_id = @user_id AND tenant_id = @tenant
 SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (SELECT * FROM forum_bookmarks WHERE user_id = @user_id AND tenant_id = @tenant_id) t;
 
+-- name: GdprExportUserForumPollVotes :one
+-- BUG-022: forum_poll_votes has no tenant_id column.
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (SELECT * FROM forum_poll_votes WHERE user_id = @user_id) t;
+
+-- name: GdprExportUserReplyViews :one
+-- BUG-022: reply_views has no tenant_id column.
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (SELECT * FROM reply_views WHERE user_id = @user_id) t;
+
+-- name: GdprExportUserForumThreadTags :one
+-- BUG-022: junction rows for threads authored by the user.
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (SELECT ftt.* FROM forum_thread_tags ftt JOIN forum_threads ft ON ft.id = ftt.thread_id WHERE ft.author_user_id = @user_id AND ft.tenant_id = @tenant_id) t;
+
+-- name: DeleteForumThreadTagsByAuthor :exec
+-- BUG-022: delete junction rows for threads authored by the user during
+-- GDPR erasure, so the final hard-delete doesn't leave orphaned rows.
+DELETE FROM forum_thread_tags
+WHERE thread_id IN (SELECT id FROM forum_threads WHERE author_user_id = @user_id AND tenant_id = @tenant_id);
+
 -- name: GdprExportUserMedia :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (SELECT * FROM media WHERE uploader_user_id = @user_id AND tenant_id = @tenant_id) t;
@@ -388,6 +424,10 @@ FROM (SELECT * FROM reviews WHERE reviewer_user_id = @user_id AND tenant_id = @t
 -- name: GdprExportUserSpaceMembers :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (SELECT * FROM space_members WHERE user_id = @user_id AND tenant_id = @tenant_id) t;
+
+-- name: GdprExportUserSpaceModerators :one
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (SELECT * FROM space_moderators WHERE user_id = @user_id AND tenant_id = @tenant_id) t;
 
 -- name: GdprExportUserConsentRecords :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data

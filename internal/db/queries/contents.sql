@@ -101,6 +101,21 @@ WHERE tenant_id = @tenant_id AND space_id = @space_id
 ORDER BY created_at DESC, id DESC
 LIMIT @page_limit;
 
+-- name: SearchContentsBySpace :many
+SELECT id, tenant_id, author_id, space_id, content_type, title, slug, body, body_html,
+       field_values, content_hash, geo_space_id, header_image_id, featured_image_id,
+       canonical_url, meta_title, meta_description, og_image_url, seo_indexable,
+       status, visibility, is_locked, is_pinned, read_time_minutes,
+       view_count, comment_count, share_count, reshare_count, publish_at, published_at,
+       created_at, updated_at
+FROM contents
+WHERE tenant_id = @tenant_id AND space_id = @space_id
+  AND deleted_at IS NULL
+  AND auto_hidden = false
+  AND title ILIKE '%' || @query || '%'
+ORDER BY created_at DESC, id DESC
+LIMIT @page_limit OFFSET @page_offset;
+
 -- name: UpdateContent :one
 UPDATE contents
 SET title = @title, slug = @slug, body = @body, body_html = @body_html,
@@ -276,6 +291,14 @@ FROM content_tags ct
 JOIN tags t ON t.id = ct.tag_id
 WHERE ct.content_id = @content_id
 ORDER BY t.name;
+
+-- name: GetContentSpaces :many
+-- Returns all space assignments for a content item (Section 14: content_spaces).
+-- Used by feed fan-out (Section 32) to distribute a post to every assigned space.
+SELECT cs.space_id, cs.is_primary
+FROM content_spaces cs
+WHERE cs.content_id = @content_id
+ORDER BY cs.is_primary DESC, cs.created_at ASC;
 
 -- name: ListContentByTag :many
 SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c.body_html,
@@ -463,3 +486,37 @@ LIMIT 10;
 -- name: ArchiveContent :execrows
 UPDATE contents SET status = 'archived', updated_at = now()
 WHERE id = @id AND tenant_id = @tenant_id AND status != 'archived';
+
+-- name: GetPublicAuthorAnalytics :one
+-- Public profile Analytics tab (GET /users/{id}/analytics): aggregates
+-- published+public content stats for the profile owner. Soft-deleted and
+-- non-public/draft content is excluded. total_likes counts reactions on the
+-- author's published+public content. Follower/following counts come from the
+-- users table / follows subquery so the analytics response is self-contained.
+SELECT
+    COALESCE(SUM(c.view_count), 0)::int AS total_views,
+    COALESCE(SUM(c.share_count), 0)::int AS total_shares,
+    COUNT(c.id)::int AS total_posts,
+    COALESCE((
+        SELECT COUNT(*)::int FROM reactions r
+        WHERE r.tenant_id = @tenant_id
+          AND r.entity_type = 'content'
+          AND r.entity_id IN (
+              SELECT c2.id FROM contents c2
+              WHERE c2.tenant_id = @tenant_id
+                AND c2.author_id = @author_id
+                AND c2.status = 'published'
+                AND c2.visibility = 'public'
+                AND c2.deleted_at IS NULL
+          )
+    ), 0)::int AS total_likes,
+    u.follower_count::int AS total_followers,
+    (SELECT COUNT(*)::int FROM follows f
+      WHERE f.tenant_id = @tenant_id AND f.follower_id = u.id) AS total_following
+FROM contents c
+RIGHT JOIN users u ON u.id = @author_id AND u.tenant_id = @tenant_id
+WHERE c.tenant_id = @tenant_id
+  AND c.author_id = @author_id
+  AND c.status = 'published'
+  AND c.visibility = 'public'
+  AND c.deleted_at IS NULL;

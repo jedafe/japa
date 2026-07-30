@@ -94,6 +94,38 @@ export const spaceTypesApi = {
 		api(`/admin/space-types/${id}`, { method: 'DELETE' }),
 };
 
+export const permissionPresetsApi = {
+	list: () => api<{ data: PermissionPreset[] }>('/space-permission-presets'),
+};
+
+export type PermissionPreset = {
+	id: string;
+	name: string;
+	visibility: string;
+	posting_perm: string;
+	replying_perm: string;
+	commenting_perm: string;
+	joining_perm: string;
+	is_system: boolean;
+};
+
+export const permissionPresetsApi = {
+	list: () => api<{ data: PermissionPreset[] }>('/space-permission-presets'),
+	update: (name: string, body: Partial<Omit<PermissionPreset, 'id' | 'name' | 'is_system'>>) =>
+		api(`/space-permission-presets/${name}`, { method: 'PUT', body }),
+};
+
+export type PermissionPreset = {
+	id: string;
+	name: string;
+	visibility: string;
+	posting_perm: string;
+	replying_perm: string;
+	commenting_perm: string;
+	joining_perm: string;
+	is_system: boolean;
+};
+
 export const impersonationApi = {
 	start: (userId: string) =>
 		api<{ token: string }>('/admin/impersonate', { method: 'POST', body: { user_id: userId } }),
@@ -608,7 +640,7 @@ export const contentAdminApi = {
 	update: (id: string, body: Record<string, unknown>) =>
 		api<unknown>(`/admin/content/${id}`, { method: 'PATCH', body }),
 	feature: (id: string) => api<unknown>(`/blog/${id}/feature`, { method: 'POST', body: {} }),
-	unfeature: (id: string) => api<unknown>(`/blog/${id}/feature`, { method: 'DELETE' }),
+	unfeature: (id: string) => api<unknown>(`/blog/featured/${id}`, { method: 'DELETE' }),
 	archive: (id: string) => api<unknown>(`/content/${id}/archive`, { method: 'POST', body: {} }),
 };
 
@@ -1136,4 +1168,24 @@ export const profilesAdminApiV2 = {
 
 export const usersWarningsAdminApi = {
 	list: (id: string) => api<unknown>(`/admin/users/${id}/warnings`),
+};
+
+export interface PermissionPreset {
+	id: string;
+	tenant_id: string;
+	name: string;
+	visibility: string;
+	posting_perm: string;
+	replying_perm: string;
+	commenting_perm: string;
+	joining_perm: string;
+	is_system: boolean;
+	created_at: string;
+	updated_at: string;
+}
+
+export const permissionPresetsApi = {
+	list: () => api<{ data: PermissionPreset[] }>('/space-permission-presets'),
+	update: (name: string, body: { visibility: string; posting_perm: string; replying_perm: string; commenting_perm: string; joining_perm: string }) =>
+		api<PermissionPreset>(`/space-permission-presets/${encodeURIComponent(name)}`, { method: 'PUT', body }),
 };

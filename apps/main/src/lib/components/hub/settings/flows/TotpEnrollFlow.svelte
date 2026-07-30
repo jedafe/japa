@@ -1,8 +1,25 @@
 <script lang="ts">
+	/**
+	 * TOTP 2FA enrollment flow — Section 02 (Authentication & Sessions).
+	 *
+	 * Three states: disabled → enrolling → enabled.
+	 *
+	 * - disabled:  Shows "Enable 2FA" button → calls POST /me/totp/enable
+	 * - enrolling: Shows QR code (from otpauth_url) + secret for manual entry,
+	 *              code input → calls POST /me/totp/confirm
+	 * - enabled:   Shows "Disable 2FA" button → prompts for TOTP code →
+	 *              calls DELETE /me/totp with the code
+	 *
+	 * Backup codes are shown once after successful enrollment.
+	 *
+	 * Ref: japaconnect-engineering/sections/02-authentication-sessions.md (2FA TOTP)
+	 */
 	import { Dialog } from 'bits-ui';
 	import { untrack } from 'svelte';
 	import { t } from '$lib/i18n';
 	import { totpEnable, totpConfirm, totpDisable } from '$lib/api/hub';
+	import QRCode from 'qrcode';
+	import { ShieldCheck, ShieldAlert, Smartphone, Copy, Check } from 'lucide-svelte';
 
 	type Step = 'disabled' | 'enrolling' | 'enabled';
 
@@ -11,12 +28,28 @@
 	let step = $state<Step>(untrack(() => (enabled ? 'enabled' : 'disabled')));
 	let secret = $state('');
 	let otpauthUrl = $state('');
+	let qrDataUrl = $state('');
 	let code = $state('');
 	let backupCodes = $state<string[]>([]);
 	let error = $state<string | null>(null);
 	let loading = $state(false);
 	let disableOpen = $state(false);
-	let backupOpen = $state(true);
+	let disableCode = $state('');
+	let backupOpen = $state(false);
+	let copiedSecret = $state(false);
+
+	// Generate QR code data URL from the otpauth URL.
+	async function generateQR(url: string) {
+		try {
+			qrDataUrl = await QRCode.toDataURL(url, {
+				width: 200,
+				margin: 1,
+				color: { dark: '#000000', light: '#ffffff' }
+			});
+		} catch {
+			qrDataUrl = '';
+		}
+	}
 
 	async function startEnable() {
 		error = null;
@@ -29,6 +62,7 @@
 		}
 		secret = res.data?.secret ?? '';
 		otpauthUrl = res.data?.otpauth_url ?? '';
+		await generateQR(otpauthUrl);
 		step = 'enrolling';
 	}
 
@@ -42,94 +76,191 @@
 			return;
 		}
 		backupCodes = res.data?.backup_codes ?? [];
-		backupOpen = true;
+		backupOpen = backupCodes.length > 0;
 		step = 'enabled';
 		code = '';
 	}
 
 	async function doDisable() {
-		disableOpen = false;
 		error = null;
+		if (!disableCode.trim()) {
+			error = t('settings.security.totp_disable_code_required');
+			return;
+		}
 		loading = true;
-		const res = await totpDisable();
+		const res = await totpDisable(disableCode.trim());
 		loading = false;
 		if (res.error) {
 			error = res.error.message;
 			return;
 		}
+		disableOpen = false;
+		disableCode = '';
 		step = 'disabled';
 		secret = '';
 		otpauthUrl = '';
+		qrDataUrl = '';
 		backupCodes = [];
+	}
+
+	async function copySecret() {
+		try {
+			await navigator.clipboard.writeText(secret);
+			copiedSecret = true;
+			setTimeout(() => (copiedSecret = false), 2000);
+		} catch {
+			// ignore
+		}
+	}
+
+	function openDisableDialog() {
+		disableCode = '';
+		error = null;
+		disableOpen = true;
 	}
 </script>
 
 <div class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-	<h2 class="mb-2 text-sm font-medium text-[var(--color-text)]">{t('settings.security.totp_title')}</h2>
-	{#if error}<p class="mb-2 text-xs text-[var(--color-danger,#dc2626)]">{error}</p>{/if}
+	<div class="mb-3 flex items-center gap-2">
+		{#if step === 'enabled'}
+			<ShieldCheck size={18} class="text-green-600" />
+		{:else}
+			<ShieldAlert size={18} class="text-[var(--color-muted)]" />
+		{/if}
+		<h2 class="text-sm font-medium text-[var(--color-text)]">{t('settings.security.totp_title')}</h2>
+	</div>
+
+	{#if error}<p class="mb-3 text-xs text-[var(--color-danger)]">{error}</p>{/if}
 
 	{#if step === 'disabled'}
 		<p class="mb-3 text-sm text-[var(--color-muted)]">{t('settings.security.totp_disabled_desc')}</p>
 		<button
 			type="button"
 			disabled={loading}
-			class="rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+			class="inline-flex items-center gap-2 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
 			onclick={startEnable}
 		>
-			{t('settings.security.totp_enable')}
+			<Smartphone size={16} />
+			{loading ? t('settings.security.totp_loading') : t('settings.security.totp_enable')}
 		</button>
+
 	{:else if step === 'enrolling'}
-		<p class="mb-2 text-sm text-[var(--color-muted)]">{t('settings.security.totp_enroll_desc')}</p>
-		<div class="mb-3 rounded-[var(--radius)] bg-[var(--color-surface-subtle)] p-3">
-			<p class="mb-1 text-xs text-[var(--color-muted)]">{t('settings.security.totp_secret')}</p>
-			<code class="block break-all text-sm text-[var(--color-text)]">{secret}</code>
+		<p class="mb-4 text-sm text-[var(--color-muted)]">{t('settings.security.totp_enroll_desc')}</p>
+
+		<!-- QR code -->
+		{#if qrDataUrl}
+			<div class="mb-4 flex justify-center">
+				<div class="rounded-[var(--radius)] border border-[var(--color-border)] bg-white p-3">
+					<img src={qrDataUrl} alt={t('settings.security.totp_qr_alt')} class="h-[200px] w-[200px]" />
+				</div>
+			</div>
+		{/if}
+
+		<!-- Secret for manual entry -->
+		<div class="mb-4 rounded-[var(--radius)] bg-[var(--color-surface-subtle)] p-3">
+			<div class="mb-1 flex items-center justify-between">
+				<span class="text-xs text-[var(--color-muted)]">{t('settings.security.totp_secret')}</span>
+				<button
+					type="button"
+					class="inline-flex items-center gap-1 text-xs text-[var(--color-primary)] hover:underline"
+					onclick={copySecret}
+				>
+					{#if copiedSecret}
+						<Check size={12} /> {t('settings.security.totp_copied')}
+					{:else}
+						<Copy size={12} /> {t('settings.security.totp_copy')}
+					{/if}
+				</button>
+			</div>
+			<code class="block break-all font-mono text-sm text-[var(--color-text)]">{secret}</code>
 		</div>
+
+		<!-- Code input -->
 		<label class="mb-3 block">
 			<span class="mb-1 block text-sm text-[var(--color-muted)]">{t('settings.security.totp_code')}</span>
 			<input
 				type="text"
+				inputmode="numeric"
+				maxlength="6"
+				placeholder="000000"
 				class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]"
 				value={code}
-				oninput={(e) => (code = e.currentTarget.value)}
+				oninput={(e) => (code = e.currentTarget.value.replace(/\D/g, ''))}
 			/>
 		</label>
+		<div class="flex gap-2">
+			<button
+				type="button"
+				disabled={loading || code.length < 6}
+				class="rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+				onclick={confirmCode}
+			>
+				{loading ? t('settings.security.totp_loading') : t('settings.security.totp_confirm')}
+			</button>
+			<button
+				type="button"
+				class="rounded-[var(--radius)] border border-[var(--color-border)] px-4 py-2 text-sm text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
+				onclick={() => { step = 'disabled'; secret = ''; otpauthUrl = ''; qrDataUrl = ''; code = ''; error = null; }}
+			>
+				{t('common.cancel')}
+			</button>
+		</div>
+
+	{:else if step === 'enabled'}
+		<p class="mb-3 inline-flex items-center gap-1.5 text-sm text-green-600">
+			<ShieldCheck size={14} />
+			{t('settings.security.totp_enabled')}
+		</p>
+
 		<button
 			type="button"
-			disabled={loading || !code}
-			class="rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
-			onclick={confirmCode}
+			class="rounded-[var(--radius)] border border-[var(--color-border)] px-4 py-2 text-sm text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
+			onclick={openDisableDialog}
 		>
-			{t('settings.security.totp_confirm')}
+			{t('settings.security.totp_disable')}
 		</button>
-	{:else if step === 'enabled'}
-		<p class="mb-3 text-sm text-green-600">{t('settings.security.totp_enabled')}</p>
+
+		<!-- Disable confirmation dialog — requires TOTP code -->
 		<Dialog.Root bind:open={disableOpen}>
-			<Dialog.Trigger
-				class="rounded-[var(--radius)] border border-[var(--color-border)] px-4 py-2 text-sm text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
-			>
-				{t('settings.security.totp_disable')}
-			</Dialog.Trigger>
 			<Dialog.Portal>
 				<Dialog.Content class="z-50 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-lg">
 					<Dialog.Title class="mb-2 text-lg font-medium text-[var(--color-text)]">
 						{t('settings.security.totp_disable_confirm')}
 					</Dialog.Title>
+					<Dialog.Description class="mb-4 text-sm text-[var(--color-muted)]">
+						{t('settings.security.totp_disable_desc')}
+					</Dialog.Description>
+					<label class="mb-4 block">
+						<span class="mb-1 block text-sm text-[var(--color-muted)]">{t('settings.security.totp_code')}</span>
+						<input
+							type="text"
+							inputmode="numeric"
+							maxlength="6"
+							placeholder="000000"
+							class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]"
+							value={disableCode}
+							oninput={(e) => (disableCode = e.currentTarget.value.replace(/\D/g, ''))}
+						/>
+					</label>
+					{#if error}<p class="mb-3 text-xs text-[var(--color-danger)]">{error}</p>{/if}
 					<div class="flex justify-end gap-2">
 						<Dialog.Close class="rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-sm text-[var(--color-text)]">
 							{t('common.cancel')}
 						</Dialog.Close>
 						<button
 							type="button"
-							class="rounded-[var(--radius)] bg-[var(--color-danger,#dc2626)] px-4 py-1.5 text-sm font-medium text-white"
+							disabled={loading || disableCode.length < 6}
+							class="rounded-[var(--radius)] bg-[var(--color-danger)] px-4 py-1.5 text-sm font-medium text-white disabled:opacity-50"
 							onclick={doDisable}
 						>
-							{t('settings.security.totp_disable')}
+							{loading ? t('settings.security.totp_loading') : t('settings.security.totp_disable')}
 						</button>
 					</div>
 				</Dialog.Content>
 			</Dialog.Portal>
 		</Dialog.Root>
 
+		<!-- Backup codes dialog (shown once after enrollment) -->
 		{#if backupCodes.length > 0}
 			<Dialog.Root bind:open={backupOpen}>
 				<Dialog.Portal>
@@ -142,7 +273,7 @@
 						</Dialog.Description>
 						<div class="mb-4 grid grid-cols-2 gap-2 rounded-[var(--radius)] bg-[var(--color-surface-subtle)] p-3">
 							{#each backupCodes as code_item (code_item)}
-								<code class="text-sm text-[var(--color-text)]">{code_item}</code>
+								<code class="font-mono text-sm text-[var(--color-text)]">{code_item}</code>
 							{/each}
 						</div>
 						<div class="flex justify-end">

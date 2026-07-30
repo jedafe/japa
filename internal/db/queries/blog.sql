@@ -1,4 +1,5 @@
 -- Blog Extension — series, content reviews, featured posts, RSS feed.
+-- Ref: japaconnect-engineering/sections/24-blog-extension.md
 
 -- =====================
 -- Blog Series
@@ -12,48 +13,52 @@ INSERT INTO blog_series (
     sqlc.narg(cover_image_id), @author_user_id
 )
 RETURNING id, tenant_id, title, slug, description, cover_image_id,
-          author_user_id, status, created_at, updated_at;
+          author_user_id, status, created_at, updated_at, deleted_at;
 
 -- name: GetBlogSeriesByID :one
 SELECT id, tenant_id, title, slug, description, cover_image_id,
-       author_user_id, status, created_at, updated_at
+       author_user_id, status, created_at, updated_at, deleted_at
 FROM blog_series
-WHERE id = @id AND tenant_id = @tenant_id;
+WHERE id = @id AND tenant_id = @tenant_id AND deleted_at IS NULL;
 
 -- name: GetBlogSeriesBySlug :one
 SELECT id, tenant_id, title, slug, description, cover_image_id,
-       author_user_id, status, created_at, updated_at
+       author_user_id, status, created_at, updated_at, deleted_at
 FROM blog_series
-WHERE slug = @slug AND tenant_id = @tenant_id;
+WHERE slug = @slug AND tenant_id = @tenant_id AND deleted_at IS NULL;
 
 -- name: ListBlogSeriesByTenant :many
 SELECT id, tenant_id, title, slug, description, cover_image_id,
-       author_user_id, status, created_at, updated_at
+       author_user_id, status, created_at, updated_at, deleted_at
 FROM blog_series
-WHERE tenant_id = @tenant_id
+WHERE tenant_id = @tenant_id AND deleted_at IS NULL
+  AND (@q::text IS NULL OR title ILIKE '%' || @q || '%' OR slug ILIKE '%' || @q || '%')
 ORDER BY created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 
 -- name: ListBlogSeriesByAuthor :many
 SELECT id, tenant_id, title, slug, description, cover_image_id,
-       author_user_id, status, created_at, updated_at
+       author_user_id, status, created_at, updated_at, deleted_at
 FROM blog_series
 WHERE tenant_id = @tenant_id AND author_user_id = @author_user_id
+  AND deleted_at IS NULL
 ORDER BY created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 
 -- name: UpdateBlogSeries :one
 UPDATE blog_series
-SET title = @title, description = sqlc.narg(description),
+SET title = @title, slug = sqlc.narg(slug), description = sqlc.narg(description),
     cover_image_id = sqlc.narg(cover_image_id), status = @status,
     updated_at = now()
-WHERE id = @id AND tenant_id = @tenant_id
+WHERE id = @id AND tenant_id = @tenant_id AND deleted_at IS NULL
 RETURNING id, tenant_id, title, slug, description, cover_image_id,
-          author_user_id, status, created_at, updated_at;
+          author_user_id, status, created_at, updated_at, deleted_at;
 
 -- name: DeleteBlogSeries :exec
-DELETE FROM blog_series
-WHERE id = @id AND tenant_id = @tenant_id;
+-- Soft-delete (Rule 11): blog_series is user-authored content.
+UPDATE blog_series
+SET deleted_at = now(), status = 'archived', updated_at = now()
+WHERE id = @id AND tenant_id = @tenant_id AND deleted_at IS NULL;
 
 -- =====================
 -- Blog Series Posts
@@ -70,11 +75,15 @@ DELETE FROM blog_series_posts
 WHERE series_id = @series_id AND content_id = @content_id;
 
 -- name: ListPostsInSeries :many
+-- H5: filter deleted_at on contents; tenant-scoped via series ownership.
 SELECT bsp.series_id, bsp.content_id, bsp.position,
        c.id AS content_id, c.title, c.slug, c.status, c.created_at
 FROM blog_series_posts bsp
 JOIN contents c ON c.id = bsp.content_id
+JOIN blog_series bs ON bs.id = bsp.series_id
 WHERE bsp.series_id = @series_id
+  AND bs.tenant_id = @tenant_id
+  AND c.deleted_at IS NULL
 ORDER BY bsp.position ASC;
 
 -- name: ReorderSeriesPosts :exec
@@ -86,6 +95,10 @@ WHERE series_id = @series_id AND content_id = @content_id;
 DELETE FROM blog_series_posts
 WHERE series_id = @series_id;
 
+-- name: GetContentTenantID :one
+-- H7: verify a content_id belongs to the same tenant before linking to a series.
+SELECT tenant_id FROM contents WHERE id = @id AND deleted_at IS NULL;
+
 -- =====================
 -- Content Reviews
 -- =====================
@@ -94,42 +107,68 @@ WHERE series_id = @series_id;
 INSERT INTO content_reviews (
     tenant_id, content_id, reviewer_user_id, status, feedback
 ) VALUES (
-    @tenant_id, @content_id, @reviewer_user_id, @status, sqlc.narg(feedback)
+    @tenant_id, @content_id, sqlc.narg(reviewer_user_id), @status, sqlc.narg(feedback)
 )
 RETURNING id, tenant_id, content_id, reviewer_user_id, status, feedback,
-          created_at, updated_at;
+          created_at, updated_at, deleted_at;
 
 -- name: GetContentReviewByID :one
 SELECT id, tenant_id, content_id, reviewer_user_id, status, feedback,
-       created_at, updated_at
+       created_at, updated_at, deleted_at
 FROM content_reviews
-WHERE id = @id AND tenant_id = @tenant_id;
+WHERE id = @id AND tenant_id = @tenant_id AND deleted_at IS NULL;
 
 -- name: ListContentReviewsByContent :many
 SELECT id, tenant_id, content_id, reviewer_user_id, status, feedback,
-       created_at, updated_at
+       created_at, updated_at, deleted_at
 FROM content_reviews
-WHERE content_id = @content_id AND tenant_id = @tenant_id
+WHERE content_id = @content_id AND tenant_id = @tenant_id AND deleted_at IS NULL
 ORDER BY created_at DESC;
 
 -- name: ListPendingContentReviews :many
 SELECT id, tenant_id, content_id, reviewer_user_id, status, feedback,
-       created_at, updated_at
+       created_at, updated_at, deleted_at
 FROM content_reviews
-WHERE tenant_id = @tenant_id AND status = 'pending'
+WHERE tenant_id = @tenant_id AND status = 'pending' AND deleted_at IS NULL
 ORDER BY created_at ASC
 LIMIT @page_limit OFFSET @page_offset;
 
+-- name: ListPendingReviewSummaries :many
+-- C3: JOIN content_reviews → contents → users for the admin review-queue.
+-- Returns the post title/slug/author/excerpt the frontend ReviewItem expects.
+SELECT cr.id, cr.content_id, cr.status, cr.created_at AS submitted_at,
+       cr.feedback,
+       c.title, c.slug, c.author_id,
+       COALESCE(up.display_name, u.username, '') AS author_name,
+       COALESCE(up.avatar_url, '') AS author_avatar_url,
+       COALESCE(LEFT(c.body, 200), '') AS excerpt
+FROM content_reviews cr
+JOIN contents c ON c.id = cr.content_id
+LEFT JOIN users u ON u.id = c.author_id
+LEFT JOIN user_profiles up ON up.user_id = c.author_id
+WHERE cr.tenant_id = @tenant_id
+  AND cr.status = 'pending'
+  AND cr.deleted_at IS NULL
+  AND c.deleted_at IS NULL
+ORDER BY cr.created_at ASC
+LIMIT @page_limit OFFSET @page_offset;
+
 -- name: UpdateContentReviewStatus :one
+-- BUG-003: also set reviewer_user_id (nullable) so the actual reviewer is
+-- recorded on approve/reject, not the submitting author placeholder.
 UPDATE content_reviews
-SET status = @status, feedback = sqlc.narg(feedback), updated_at = now()
-WHERE id = @id AND tenant_id = @tenant_id
+SET status = @status, feedback = sqlc.narg(feedback),
+    reviewer_user_id = COALESCE(sqlc.narg(reviewer_user_id), reviewer_user_id),
+    updated_at = now()
+WHERE id = @id AND tenant_id = @tenant_id AND deleted_at IS NULL
 RETURNING id, tenant_id, content_id, reviewer_user_id, status, feedback,
-          created_at, updated_at;
+          created_at, updated_at, deleted_at;
 
 -- name: DeleteContentReview :exec
-DELETE FROM content_reviews
-WHERE id = @id AND tenant_id = @tenant_id;
+-- Soft-delete (Rule 11 / H1): content_reviews is editorial audit history.
+UPDATE content_reviews
+SET deleted_at = now(), updated_at = now()
+WHERE id = @id AND tenant_id = @tenant_id AND deleted_at IS NULL;
 
 -- =====================
 -- Content Featured
@@ -159,7 +198,35 @@ WHERE cf.tenant_id = @tenant_id
 ORDER BY cf.featured_order ASC
 LIMIT @page_limit OFFSET @page_offset;
 
+-- name: ListFeaturedBlogPostCards :many
+-- H6: JOIN content_featured → contents → media → users for the featured tab.
+SELECT cf.id AS featured_id, cf.content_id, cf.featured_order, cf.featured_until,
+       c.title, c.slug, c.body, c.body_html, c.read_time_minutes,
+       c.view_count, c.comment_count, c.reshare_count,
+       c.author_id,
+       COALESCE(up.display_name, u.username, '') AS author_name,
+       m.storage_bucket AS featured_storage_bucket,
+       m.storage_path AS featured_storage_path,
+       COALESCE(LEFT(c.body, 200), '') AS excerpt
+FROM content_featured cf
+JOIN contents c ON c.id = cf.content_id
+LEFT JOIN users u ON u.id = c.author_id
+LEFT JOIN user_profiles up ON up.user_id = c.author_id
+LEFT JOIN media m ON m.id = c.featured_image_id AND m.deleted_at IS NULL
+WHERE cf.tenant_id = @tenant_id
+  AND (cf.featured_until IS NULL OR cf.featured_until > now())
+  AND c.status = 'published'
+  AND c.deleted_at IS NULL
+ORDER BY cf.featured_order ASC
+LIMIT @page_limit OFFSET @page_offset;
+
 -- name: UpdateFeaturedOrder :exec
+UPDATE content_featured
+SET featured_order = @featured_order
+WHERE id = @id AND tenant_id = @tenant_id;
+
+-- name: BulkUpdateFeaturedOrder :exec
+-- M3: transactional bulk reorder — all-or-nothing.
 UPDATE content_featured
 SET featured_order = @featured_order
 WHERE id = @id AND tenant_id = @tenant_id;
@@ -171,15 +238,104 @@ WHERE featured_until IS NOT NULL AND featured_until <= now()
   AND featured_until > '2000-01-01';
 
 -- =====================
+-- Blog Post Detail / List (enriched DTOs)
+-- =====================
+
+-- name: GetBlogPostDetail :one
+-- C4: enriched DTO with author name, avatar, featured image, space name,
+-- tags, and series navigation (prev/next within the series).
+SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type,
+       c.title, c.slug, c.body, c.body_html, c.field_values, c.content_hash,
+       c.geo_space_id, c.header_image_id, c.featured_image_id,
+       c.canonical_url, c.meta_title, c.meta_description, c.og_image_url,
+       c.seo_indexable, c.status, c.visibility, c.is_locked, c.is_pinned,
+       c.read_time_minutes, c.view_count, c.comment_count, c.share_count,
+       c.reshare_count, c.publish_at, c.published_at, c.created_at, c.updated_at,
+       COALESCE(up.display_name, u.username, '') AS author_name,
+       COALESCE(up.avatar_url, '') AS author_avatar_url,
+       COALESCE(s.name, '') AS space_name,
+       m.storage_bucket AS featured_storage_bucket,
+       m.storage_path AS featured_storage_path,
+       COALESCE(string_agg(t.slug, ',' ORDER BY t.slug), '')::text AS tags_csv,
+       bs.id AS series_id,
+       bs.title AS series_title,
+       bsp.position AS series_part,
+       (SELECT COUNT(*) FROM blog_series_posts WHERE series_id = bs.id) AS series_total,
+       COALESCE(prev_c.slug, '') AS series_prev_slug,
+       COALESCE(next_c.slug, '') AS series_next_slug
+FROM contents c
+LEFT JOIN users u ON u.id = c.author_id
+LEFT JOIN user_profiles up ON up.user_id = c.author_id
+LEFT JOIN spaces s ON s.id = c.space_id
+LEFT JOIN media m ON m.id = c.featured_image_id AND m.deleted_at IS NULL
+LEFT JOIN content_tags ct ON ct.content_id = c.id
+LEFT JOIN tags t ON t.id = ct.tag_id
+LEFT JOIN blog_series_posts bsp ON bsp.content_id = c.id
+LEFT JOIN blog_series bs ON bs.id = bsp.series_id AND bs.deleted_at IS NULL
+LEFT JOIN LATERAL (
+    SELECT c3.slug
+    FROM blog_series_posts bsp4
+    JOIN contents c3 ON c3.id = bsp4.content_id AND c3.deleted_at IS NULL
+    WHERE bsp4.series_id = bs.id AND bsp4.position < bsp.position
+    ORDER BY bsp4.position DESC
+    LIMIT 1
+) prev_c ON true
+LEFT JOIN LATERAL (
+    SELECT c2.slug
+    FROM blog_series_posts bsp3
+    JOIN contents c2 ON c2.id = bsp3.content_id AND c2.deleted_at IS NULL
+    WHERE bsp3.series_id = bs.id AND bsp3.position > bsp.position
+    ORDER BY bsp3.position ASC
+    LIMIT 1
+) next_c ON true
+WHERE c.slug = @slug AND c.tenant_id = @tenant_id
+  AND c.content_type = 'blog_post'
+  AND c.status = 'published'
+  AND c.deleted_at IS NULL
+GROUP BY c.id, up.display_name, u.username, s.name,
+         m.storage_bucket, m.storage_path,
+         bs.id, bs.title, bsp.position,
+         prev_c.slug, next_c.slug;
+
+-- name: ListPublishedBlogPosts :many
+-- C5/H3: published-only blog post cards with author + featured image,
+-- status filter in SQL (not Go memory), deleted_at filtered.
+-- BUG-005: offset-based pagination per Rule 5 (?page_size=N&page_offset=N).
+SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type,
+       c.title, c.slug, c.body, c.body_html, c.field_values, c.content_hash,
+       c.geo_space_id, c.header_image_id, c.featured_image_id,
+       c.canonical_url, c.meta_title, c.meta_description, c.og_image_url,
+       c.seo_indexable, c.status, c.visibility, c.is_locked, c.is_pinned,
+       c.read_time_minutes, c.view_count, c.comment_count, c.share_count,
+       c.reshare_count, c.publish_at, c.published_at, c.created_at, c.updated_at,
+       COALESCE(up.display_name, u.username, '') AS author_name,
+       m.storage_bucket AS featured_storage_bucket,
+       m.storage_path AS featured_storage_path,
+       COALESCE(LEFT(c.body, 200), '') AS excerpt
+FROM contents c
+LEFT JOIN users u ON u.id = c.author_id
+LEFT JOIN user_profiles up ON up.user_id = c.author_id
+LEFT JOIN media m ON m.id = c.featured_image_id AND m.deleted_at IS NULL
+WHERE c.tenant_id = @tenant_id
+  AND c.content_type = 'blog_post'
+  AND c.status = 'published'
+  AND c.deleted_at IS NULL
+  AND c.auto_hidden = false
+ORDER BY c.created_at DESC, c.id DESC
+LIMIT @page_limit OFFSET @page_offset;
+
+-- =====================
 -- RSS Feed Queries
 -- =====================
 
 -- name: ListPublishedPostsForRSS :many
-SELECT c.id, c.title, c.slug, c.body_html, c.author_id,
+-- H4: filter deleted_at so soft-deleted posts don't leak into the feed.
+SELECT c.id, c.title, c.slug, c.body_html, c.body, c.author_id,
        c.published_at, c.created_at, c.read_time_minutes
 FROM contents c
 WHERE c.tenant_id = @tenant_id
   AND c.status = 'published'
   AND c.content_type = 'blog_post'
+  AND c.deleted_at IS NULL
 ORDER BY c.published_at DESC
 LIMIT @page_limit;

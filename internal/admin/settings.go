@@ -192,34 +192,17 @@ var defaultSettings = map[string]SettingCategory{
 			{Key: "forum.edit_window_minutes", Label: "Forum Edit Window (min)", Type: "number"},
 		},
 	},
-	"payment": {
-		Key:   "payment",
-		Label: "Payment",
-		Settings: []SettingDef{
-			{Key: "currency", Label: "Currency", Type: "select", Options: []string{"NGN", "USD", "GBP", "EUR"}},
-			// Removed: paystack_public_key / paystack_secret_key /
-			//   stripe_public_key / stripe_secret_key — provider credentials are
-			//   secrets that belong in JC_* env vars (Rule 3), not system_settings.
-			//   No backend consumer read them; the payment service uses env config.
-		},
-	},
+	// NOTE: The "payment" category was removed. Currency is a pricing-level
+	// decision managed via pricing.currency in the Control Panel. Provider
+	// credentials are secrets that belong in JC_* env vars (Rule 3).
 	"media": {
 		Key:   "media",
 		Label: "Media",
 		Settings: []SettingDef{
-			// Removed: imgproxy_enabled / imgproxy_key / imgproxy_salt — imgproxy
-			//   credentials are env-only (JC_IMGPROXY_*); secrets must not live in
-			//   system_settings (Rule 3).
-			// Removed: max_image_width / max_image_height — no backend consumer.
+			// NOTE: Media storage infrastructure (storage.*, cdn.*) managed via Control Panel.
+			// Only content-level media settings belong in admin.
 			{Key: "allowed_video_types", Label: "Allowed Video Types", Type: "multiselect", Options: []string{"mp4", "webm", "mov", "avi", "mkv"}},
 			{Key: "max_upload_mb", Label: "Max Upload Size (MB)", Type: "number"},
-			{Key: "storage.provider", Label: "Storage Provider", Type: "select", Options: []string{"seaweedfs", "s3", "r2", "b2"}},
-			{Key: "storage.endpoint", Label: "Storage Endpoint", Type: "text", Placeholder: "https://s3.amazonaws.com"},
-			{Key: "storage.bucket", Label: "Storage Bucket", Type: "text", Placeholder: "japaconnect"},
-			{Key: "storage.region", Label: "Storage Region", Type: "text", Placeholder: "us-east-1"},
-			{Key: "storage.access_key", Label: "Storage Access Key", Type: "text", Masked: true},
-			{Key: "storage.secret_key", Label: "Storage Secret Key", Type: "text", Masked: true},
-			{Key: "cdn.base_url", Label: "CDN Base URL", Type: "text", Placeholder: "https://cdn.example.com"},
 		},
 	},
 	"seo": {
@@ -387,7 +370,7 @@ var defaultSettings = map[string]SettingCategory{
 // absent — see the NOTE comments above each removal in defaultSettings.
 var settingCategoryOrder = []string{
 	"general", "auth", "feed", "security",
-	"appearance", "users", "content", "payment",
+	"appearance", "users", "content",
 	"media", "seo", "ai",
 	"spaces", "moderation", "wallet", "api", "ads",
 	"notifications", "tickets", "audit", "i18n", "gdpr",

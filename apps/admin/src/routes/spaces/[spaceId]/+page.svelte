@@ -185,7 +185,7 @@
 	description={t("spaces.moderators_desc", "Manage space moderators")}
 	actions={[
 		{ label: t("common.back", "Back"), icon: ArrowLeft, variant: "ghost", onclick: () => goto("/spaces") },
-		{ label: t("spaces.add_moderator", "Add Moderator"), icon: Plus, onclick: () => showAddModal = true },
+		...(canManageModerators ? [{ label: t("spaces.add_moderator", "Add Moderator"), icon: Plus, onclick: () => showAddModal = true }] : []),
 		{ label: t("common.refresh", "Refresh"), icon: RefreshCw, variant: "ghost", onclick: loadModerators }
 	]}
 />

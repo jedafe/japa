@@ -16,6 +16,11 @@ type settingMeta struct {
 	// GET /site/settings/public endpoint (is_public = true). Appearance and
 	// general branding settings are public so the main site can render them.
 	Public bool `json:"-"`
+	// Panel determines which settings panel manages this setting.
+	// "admin" = content/platform settings managed by regular admins.
+	// "control" = infrastructure/system-level settings managed by super admins.
+	// Empty string = shown in both panels (legacy/unclassified).
+	Panel string `json:"-"`
 }
 
 // settingsCatalog maps every known dot-notation key to its metadata.
@@ -23,170 +28,205 @@ type settingMeta struct {
 // When a setting is not in the catalog, it falls back to type "string" with no metadata.
 var settingsCatalog = map[string]settingMeta{
 	// Authentication
-	"auth.password.min_length":               {Type: "int", DefaultValue: "8", Description: "Minimum password length."},
-	"auth.password.max_length":               {Type: "int", DefaultValue: "128", Description: "Maximum password length."},
-	"auth.password.require_uppercase":        {Type: "bool", DefaultValue: "false", Description: "Enforce uppercase requirement."},
-	"auth.password.require_number":           {Type: "bool", DefaultValue: "true", Description: "Enforce numeric digit requirement."},
-	"auth.password.require_symbol":           {Type: "bool", DefaultValue: "false", Description: "Enforce symbol requirement."},
-	"auth.password.check_breach":             {Type: "bool", DefaultValue: "true", Description: "Check password against HIBP breach database before accepting."},
-	"auth.password.history_count":            {Type: "int", DefaultValue: "5", Description: "Number of recent password hashes to check against reuse."},
-	"auth.session.refresh_days":              {Type: "int", DefaultValue: "30", Description: "Refresh token TTL in days."},
-	"auth.session.access_token_ttl_minutes":  {Type: "int", DefaultValue: "15", Description: "Access token TTL in minutes."},
-	"auth.totp.required_for_admin":           {Type: "bool", DefaultValue: "false", Description: "Force 2FA for admin roles."},
-	"auth.email.verify_required":             {Type: "bool", DefaultValue: "true", Description: "Require email verification before posting."},
+	"auth.password.min_length":               {Type: "int", DefaultValue: "8", Description: "Minimum password length.", Panel: "admin"},
+	"auth.password.max_length":               {Type: "int", DefaultValue: "128", Description: "Maximum password length.", Panel: "admin"},
+	"auth.password.require_uppercase":        {Type: "bool", DefaultValue: "false", Description: "Enforce uppercase requirement.", Panel: "admin"},
+	"auth.password.require_number":           {Type: "bool", DefaultValue: "true", Description: "Enforce numeric digit requirement.", Panel: "admin"},
+	"auth.password.require_symbol":           {Type: "bool", DefaultValue: "false", Description: "Enforce symbol requirement.", Panel: "admin"},
+	"auth.password.check_breach":             {Type: "bool", DefaultValue: "true", Description: "Check password against HIBP breach database before accepting.", Panel: "admin"},
+	"auth.password.history_count":            {Type: "int", DefaultValue: "5", Description: "Number of recent password hashes to check against reuse.", Panel: "admin"},
+	"auth.session.refresh_days":              {Type: "int", DefaultValue: "30", Description: "Refresh token TTL in days.", Panel: "admin"},
+	"auth.session.access_token_ttl_minutes":  {Type: "int", DefaultValue: "15", Description: "Access token TTL in minutes.", Panel: "admin"},
+	"auth.totp.required_for_admin":           {Type: "bool", DefaultValue: "false", Description: "Force 2FA for admin roles.", Panel: "admin"},
+	"auth.email.verify_required":             {Type: "bool", DefaultValue: "true", Description: "Require email verification before posting.", Panel: "admin"},
 	// Feed & Content
-	"feed.fanout_threshold":            {Type: "int", DefaultValue: "5000", Description: "Max space members for push fan-out."},
-	"feed.velocity.gravity":            {Type: "float", DefaultValue: "1.8", Description: "HN gravity constant for Rising sort."},
-	"feed.max_followed_spaces_in_feed": {Type: "int", DefaultValue: "50", Description: "Cap on spaces contributing to feed."},
-	"feed.card_style":                  {Type: "json", DefaultValue: `{"default":"reddit","by_type":{}}`, Description: "{default, by_type} map; each style ∈ reddit|compact|grid|magazine — active feed card style, resolved per content type (tolerates a legacy scalar)."},
-	"content.edit_window_minutes":      {Type: "int", DefaultValue: "1440", Description: "Content edit window (24hr default)."},
-	"content.link_preview.blacklist":   {Type: "json", DefaultValue: "[]", Description: "JSON array of blocked domains for link previews."},
-	"content.min_length":               {Type: "int", DefaultValue: "10", Description: "Minimum content body length."},
-	"content.max_tags":                 {Type: "int", DefaultValue: "5", Description: "Max tags per content item."},
-	"content.edit_lock_ttl_seconds":    {Type: "int", DefaultValue: "120", Description: "Editor lock TTL in seconds."},
-	"comments.edit_window_minutes":     {Type: "int", DefaultValue: "60", Description: "Comment edit window."},
-	"forum.edit_window_minutes":        {Type: "int", DefaultValue: "30", Description: "Editable window (minutes) after posting a forum thread/reply."},
+	"feed.fanout_threshold":            {Type: "int", DefaultValue: "5000", Description: "Max space members for push fan-out.", Panel: "admin"},
+	"feed.velocity.gravity":            {Type: "float", DefaultValue: "1.8", Description: "HN gravity constant for Rising sort.", Panel: "admin"},
+	"feed.max_followed_spaces_in_feed": {Type: "int", DefaultValue: "50", Description: "Cap on spaces contributing to feed.", Panel: "admin"},
+	"feed.card_style":                  {Type: "json", DefaultValue: `{"default":"reddit","by_type":{}}`, Description: "{default, by_type} map; each style ∈ reddit|compact|grid|magazine — active feed card style, resolved per content type (tolerates a legacy scalar).", Panel: "admin"},
+	"content.edit_window_minutes":      {Type: "int", DefaultValue: "1440", Description: "Content edit window (24hr default).", Panel: "admin"},
+	"content.link_preview.blacklist":   {Type: "json", DefaultValue: "[]", Description: "JSON array of blocked domains for link previews.", Panel: "admin"},
+	"content.min_length":               {Type: "int", DefaultValue: "10", Description: "Minimum content body length.", Panel: "admin"},
+	"content.max_tags":                 {Type: "int", DefaultValue: "5", Description: "Max tags per content item.", Panel: "admin"},
+	"content.edit_lock_ttl_seconds":    {Type: "int", DefaultValue: "120", Description: "Editor lock TTL in seconds.", Panel: "admin"},
+	"comments.edit_window_minutes":               {Type: "int", DefaultValue: "60", Description: "Comment edit window.", Panel: "admin"},
+	"forum.edit_window_minutes":                  {Type: "int", DefaultValue: "30", Description: "Editable window (minutes) after posting a forum thread/reply.", Panel: "admin"},
+	// Admin handler stores these under the "content" namespace (key prefix
+	// "content.") so catalog them with the matching key to prevent uncatalogued
+	// DB entries from leaking into the control panel.
+	"content.comments.edit_window_minutes":       {Type: "int", DefaultValue: "60", Description: "Comment edit window (stored under content.* by admin handler).", Panel: "admin"},
+	"content.forum.edit_window_minutes":          {Type: "int", DefaultValue: "30", Description: "Forum edit window (stored under content.* by admin handler).", Panel: "admin"},
 	// Spaces
-	"spaces.bubble_depth":       {Type: "int", DefaultValue: "2", Description: "How many levels posts bubble up the space hierarchy."},
-	"spaces.max_pinned_posts":   {Type: "int", DefaultValue: "5", Description: "Max pinned posts per space."},
+	"spaces.bubble_depth":       {Type: "int", DefaultValue: "2", Description: "How many levels posts bubble up the space hierarchy.", Panel: "admin"},
+	"spaces.max_pinned_posts":   {Type: "int", DefaultValue: "5", Description: "Max pinned posts per space.", Panel: "admin"},
 	// Moderation
-	"moderation.auto_hide_report_count":      {Type: "int", DefaultValue: "5", Description: "Auto-hide content after N reports."},
-	"moderation.ai_auto_flag_threshold":      {Type: "float", DefaultValue: "0.85", Description: "AI classifier confidence for auto-flag."},
-	"moderation.max_links_per_post":          {Type: "int", DefaultValue: "3", Description: "Max links per post (spam detection)."},
-	"moderation.new_account_threshold_days":  {Type: "int", DefaultValue: "7", Description: "Days before account is no longer 'new'."},
+	"moderation.auto_hide_report_count":      {Type: "int", DefaultValue: "5", Description: "Auto-hide content after N reports.", Panel: "admin"},
+	"moderation.ai_auto_flag_threshold":      {Type: "float", DefaultValue: "0.85", Description: "AI classifier confidence for auto-flag.", Panel: "admin"},
+	"moderation.max_links_per_post":          {Type: "int", DefaultValue: "3", Description: "Max links per post (spam detection).", Panel: "admin"},
+	"moderation.new_account_threshold_days":  {Type: "int", DefaultValue: "7", Description: "Days before account is no longer 'new'.", Panel: "admin"},
 	// Security
-	"security.max_login_attempts": {Type: "int", DefaultValue: "5", Description: "Max failed login attempts before lockout."},
-	"security.fail_window_minutes": {Type: "int", DefaultValue: "15", Description: "Lockout window in minutes."},
+	"security.max_login_attempts": {Type: "int", DefaultValue: "5", Description: "Max failed login attempts before lockout.", Panel: "admin"},
+	"security.fail_window_minutes": {Type: "int", DefaultValue: "15", Description: "Lockout window in minutes.", Panel: "admin"},
 	// Wallet
-	"wallet.min_convert_points":    {Type: "int", DefaultValue: "100", Description: "Minimum points for conversion."},
-	"wallet.points_to_credit_rate": {Type: "float", DefaultValue: "0.01", Description: "1 point = 0.01 credits by default."},
-	"wallet.max_daily_earn_points": {Type: "int", DefaultValue: "500", Description: "Cap on points earned per user per day."},
+	"wallet.min_convert_points":    {Type: "int", DefaultValue: "100", Description: "Minimum points for conversion.", Panel: "admin"},
+	"wallet.points_to_credit_rate": {Type: "float", DefaultValue: "0.01", Description: "1 point = 0.01 credits by default.", Panel: "admin"},
+	"wallet.max_daily_earn_points": {Type: "int", DefaultValue: "500", Description: "Cap on points earned per user per day.", Panel: "admin"},
 	// API Rate Limits
-	"api.rate_limit.basic":    {Type: "int", DefaultValue: "100", Description: "Requests per minute — basic tier."},
-	"api.rate_limit.standard": {Type: "int", DefaultValue: "1000", Description: "Requests per minute — standard tier."},
-	"api.rate_limit.premium":  {Type: "int", DefaultValue: "10000", Description: "Requests per minute — premium tier."},
-	"api.keys.max_per_user":   {Type: "int", DefaultValue: "5", Description: "Max API keys per user."},
-	"api.idempotency_ttl_hours": {Type: "int", DefaultValue: "24", Description: "Idempotency key TTL in hours."},
+	"api.rate_limit.basic":    {Type: "int", DefaultValue: "100", Description: "Requests per minute — basic tier.", Panel: "admin"},
+	"api.rate_limit.standard": {Type: "int", DefaultValue: "1000", Description: "Requests per minute — standard tier.", Panel: "admin"},
+	"api.rate_limit.premium":  {Type: "int", DefaultValue: "10000", Description: "Requests per minute — premium tier.", Panel: "admin"},
+	"api.keys.max_per_user":   {Type: "int", DefaultValue: "5", Description: "Max API keys per user.", Panel: "admin"},
+	"api.idempotency_ttl_hours": {Type: "int", DefaultValue: "24", Description: "Idempotency key TTL in hours.", Panel: "admin"},
 	// CORS
-	"cors.allowed_origins": {Type: "csv", DefaultValue: "*", Description: "Comma-separated list of allowed CORS origins."},
+	"cors.allowed_origins": {Type: "csv", DefaultValue: "*", Description: "Comma-separated list of allowed CORS origins.", Panel: "control"},
 	// Ads
-	"ads.frequency_cap_per_day": {Type: "int", DefaultValue: "3", Description: "Max ad impressions per user per day (global default)."},
-	"ads.min_campaign_budget":   {Type: "float", DefaultValue: "10", Description: "Minimum campaign budget in credits."},
+	"ads.frequency_cap_per_day": {Type: "int", DefaultValue: "3", Description: "Max ad impressions per user per day (global default).", Panel: "admin"},
+	"ads.min_campaign_budget":   {Type: "float", DefaultValue: "10", Description: "Minimum campaign budget in credits.", Panel: "admin"},
 	// AI
-	"ai.monthly_budget_usd":        {Type: "float", DefaultValue: "100", Description: "Alert threshold for AI spend (not hard cap)."},
-	"ai.japabot_enabled":           {Type: "bool", DefaultValue: "true", Description: "Global JapaBot toggle."},
-	"ai.content_assist_enabled":    {Type: "bool", DefaultValue: "true", Description: "In-editor AI assist toggle."},
+	"ai.monthly_budget_usd":        {Type: "float", DefaultValue: "100", Description: "Alert threshold for AI spend (not hard cap).", Panel: "admin"},
+	"ai.japabot_enabled":           {Type: "bool", DefaultValue: "true", Description: "Global JapaBot toggle.", Panel: "admin"},
+	"ai.content_assist_enabled":    {Type: "bool", DefaultValue: "true", Description: "In-editor AI assist toggle.", Panel: "admin"},
 	// Media
-	"media.storage.provider":    {Type: "string", DefaultValue: "seaweedfs", Description: "seaweedfs | s3 | r2 | b2 — Storage backend provider."},
-	"media.storage.endpoint":    {Type: "string", DefaultValue: "", Description: "S3-compatible endpoint URL."},
-	"media.storage.bucket":      {Type: "string", DefaultValue: "japaconnect", Description: "Default bucket name."},
-	"media.storage.region":      {Type: "string", DefaultValue: "us-east-1", Description: "S3 region (SeaweedFS ignores this)."},
-	"media.storage.access_key":  {Type: "string", DefaultValue: "", Description: "S3 access key.", Sensitive: true},
-	"media.storage.secret_key":  {Type: "string", DefaultValue: "", Description: "S3 secret key.", Sensitive: true},
-	"media.cdn.base_url":        {Type: "string", DefaultValue: "", Description: "CDN base URL (empty = use imgproxy directly)."},
-	"media.max_upload_mb":       {Type: "int", DefaultValue: "50", Description: "Max file size in MB."},
-	"media.allowed_video_types": {Type: "csv", DefaultValue: "mp4,webm,mov", Description: "Allowed video MIME extensions."},
+	"media.storage.provider":    {Type: "string", DefaultValue: "seaweedfs", Description: "seaweedfs | s3 | r2 | b2 — Storage backend provider.", Panel: "control"},
+	"media.storage.endpoint":    {Type: "string", DefaultValue: "", Description: "S3-compatible endpoint URL.", Panel: "control"},
+	"media.storage.bucket":      {Type: "string", DefaultValue: "japaconnect", Description: "Default bucket name.", Panel: "control"},
+	"media.storage.region":      {Type: "string", DefaultValue: "us-east-1", Description: "S3 region (SeaweedFS ignores this).", Panel: "control"},
+	"media.storage.access_key":  {Type: "string", DefaultValue: "", Description: "S3 access key.", Sensitive: true, Panel: "control"},
+	"media.storage.secret_key":  {Type: "string", DefaultValue: "", Description: "S3 secret key.", Sensitive: true, Panel: "control"},
+	"media.cdn.base_url":        {Type: "string", DefaultValue: "", Description: "CDN base URL (empty = use imgproxy directly).", Panel: "control"},
+	"media.max_upload_mb":       {Type: "int", DefaultValue: "50", Description: "Max file size in MB.", Panel: "admin"},
+	"media.allowed_video_types": {Type: "csv", DefaultValue: "mp4,webm,mov", Description: "Allowed video MIME extensions.", Panel: "admin"},
 	// Notifications
-	"notifications.max_delivery_attempts": {Type: "int", DefaultValue: "5", Description: "Max retry attempts for notification delivery."},
-	"notifications.batch_window_minutes":  {Type: "int", DefaultValue: "5", Description: "Notification dedup batch window."},
+	"notifications.max_delivery_attempts": {Type: "int", DefaultValue: "5", Description: "Max retry attempts for notification delivery.", Panel: "admin"},
+	"notifications.batch_window_minutes":  {Type: "int", DefaultValue: "5", Description: "Notification dedup batch window.", Panel: "admin"},
 	// Tickets
-	"tickets.default_sla_hours":         {Type: "int", DefaultValue: "48", Description: "Default SLA response time."},
-	"tickets.auto_close_resolved_days":  {Type: "int", DefaultValue: "7", Description: "Auto-close resolved tickets after N days."},
+	"tickets.default_sla_hours":         {Type: "int", DefaultValue: "48", Description: "Default SLA response time.", Panel: "admin"},
+	"tickets.auto_close_resolved_days":  {Type: "int", DefaultValue: "7", Description: "Auto-close resolved tickets after N days.", Panel: "admin"},
 	// Audit
-	"audit.log_retention_days": {Type: "int", DefaultValue: "365", Description: "Days to retain audit_logs before pruning."},
+	"audit.log_retention_days": {Type: "int", DefaultValue: "365", Description: "Days to retain audit_logs before pruning.", Panel: "admin"},
 	// i18n
-	"i18n.default_language":  {Type: "string", DefaultValue: "en", Description: "Platform default language.", Public: true},
-	"i18n.enabled_languages": {Type: "csv", DefaultValue: "en,fr", Description: "Comma-separated active language codes.", Public: true},
+	"i18n.default_language":  {Type: "string", DefaultValue: "en", Description: "Platform default language.", Public: true, Panel: "admin"},
+	"i18n.enabled_languages": {Type: "csv", DefaultValue: "en,fr", Description: "Comma-separated active language codes.", Public: true, Panel: "admin"},
 	// GDPR
-	"gdpr.deletion_grace_days":            {Type: "int", DefaultValue: "30", Description: "Days before hard deletion after request."},
-	"gdpr.export_expiry_days":             {Type: "int", DefaultValue: "7", Description: "Days before export download link expires."},
-	"gdpr.hard_delete_enabled":            {Type: "bool", DefaultValue: "false", Description: "Enable physical user erasure after anonymization (ADR-057)."},
-	"gdpr.retention_days":                 {Type: "int", DefaultValue: "0", Description: "Days after anonymization before hard delete (0 = immediate, ADR-057)."},
-	"gdpr.deleted_user_placeholder_uuid":  {Type: "string", DefaultValue: "", Description: "UUID assigned to orphaned content authorship after hard delete."},
+	"gdpr.deletion_grace_days":            {Type: "int", DefaultValue: "30", Description: "Days before hard deletion after request.", Panel: "admin"},
+	"gdpr.export_expiry_days":             {Type: "int", DefaultValue: "7", Description: "Days before export download link expires.", Panel: "admin"},
+	"gdpr.hard_delete_enabled":            {Type: "bool", DefaultValue: "false", Description: "Enable physical user erasure after anonymization (ADR-057).", Panel: "admin"},
+	"gdpr.retention_days":                 {Type: "int", DefaultValue: "0", Description: "Days after anonymization before hard delete (0 = immediate, ADR-057).", Panel: "admin"},
+	"gdpr.deleted_user_placeholder_uuid":  {Type: "string", DefaultValue: "", Description: "UUID assigned to orphaned content authorship after hard delete.", Panel: "admin"},
 	// Search
-	"search.autocomplete_max": {Type: "int", DefaultValue: "8", Description: "Max autocomplete suggestions returned."},
+	"search.autocomplete_max": {Type: "int", DefaultValue: "8", Description: "Max autocomplete suggestions returned.", Panel: "admin"},
 	// Pricing Plans (SETTING-001 / Rule 3 — prices must be configurable).
-	"pricing.plan.pro.monthly_amount":     {Type: "int", DefaultValue: "500000", Description: "Pro plan monthly price in kobo (NGN)."},
-	"pricing.plan.pro.yearly_amount":      {Type: "int", DefaultValue: "5000000", Description: "Pro plan yearly price in kobo (NGN)."},
-	"pricing.plan.business.monthly_amount": {Type: "int", DefaultValue: "1500000", Description: "Business plan monthly price in kobo (NGN)."},
-	"pricing.plan.business.yearly_amount":  {Type: "int", DefaultValue: "15000000", Description: "Business plan yearly price in kobo (NGN)."},
-	"pricing.currency":                    {Type: "string", DefaultValue: "NGN", Description: "Currency code for plan prices.", Options: `[{"value":"NGN","label":"Nigerian Naira (NGN)"},{"value":"USD","label":"US Dollar (USD)"},{"value":"GBP","label":"British Pound (GBP)"},{"value":"EUR","label":"Euro (EUR)"}]`},
+	"pricing.plan.pro.monthly_amount":     {Type: "int", DefaultValue: "500000", Description: "Pro plan monthly price in kobo (NGN).", Panel: "control"},
+	"pricing.plan.pro.yearly_amount":      {Type: "int", DefaultValue: "5000000", Description: "Pro plan yearly price in kobo (NGN).", Panel: "control"},
+	"pricing.plan.business.monthly_amount": {Type: "int", DefaultValue: "1500000", Description: "Business plan monthly price in kobo (NGN).", Panel: "control"},
+	"pricing.plan.business.yearly_amount":  {Type: "int", DefaultValue: "15000000", Description: "Business plan yearly price in kobo (NGN).", Panel: "control"},
+	"pricing.currency":                    {Type: "string", DefaultValue: "NGN", Description: "Currency code for plan prices.", Options: `[{"value":"NGN","label":"Nigerian Naira (NGN)"},{"value":"USD","label":"US Dollar (USD)"},{"value":"GBP","label":"British Pound (GBP)"},{"value":"EUR","label":"Euro (EUR)"}]`, Panel: "control"},
+	// payment.currency is a deprecated duplicate of pricing.currency (which is
+	// the control-panel key). The admin panel no longer exposes a payment
+	// category. Catalogued as Panel: "admin" so existing DB entries don't leak
+	// into the control panel.
+	"payment.currency":                    {Type: "string", DefaultValue: "NGN", Description: "Deprecated — use pricing.currency in the control panel.", Panel: "admin"},
 	// Affiliate
-	"affiliate.min_account_days":        {Type: "int", DefaultValue: "30", Description: "Minimum account age (days) to enroll in affiliate program."},
-	"affiliate.attribution_window_days": {Type: "int", DefaultValue: "30", Description: "Click attribution window in days."},
-	"affiliate.commission.pro_monthly":  {Type: "float", DefaultValue: "15", Description: "Commission % on Pro monthly subscription purchase."},
-	"affiliate.commission.pro_annual":   {Type: "float", DefaultValue: "20", Description: "Commission % on Pro annual subscription purchase."},
-	"affiliate.commission.course":       {Type: "float", DefaultValue: "10", Description: "Commission % on course access purchase."},
-	"affiliate.max_links_per_user":      {Type: "int", DefaultValue: "10", Description: "Max active affiliate links per enrolled user."},
+	"affiliate.min_account_days":        {Type: "int", DefaultValue: "30", Description: "Minimum account age (days) to enroll in affiliate program.", Panel: "admin"},
+	"affiliate.attribution_window_days": {Type: "int", DefaultValue: "30", Description: "Click attribution window in days.", Panel: "admin"},
+	"affiliate.commission.pro_monthly":  {Type: "float", DefaultValue: "15", Description: "Commission % on Pro monthly subscription purchase.", Panel: "admin"},
+	"affiliate.commission.pro_annual":   {Type: "float", DefaultValue: "20", Description: "Commission % on Pro annual subscription purchase.", Panel: "admin"},
+	"affiliate.commission.course":       {Type: "float", DefaultValue: "10", Description: "Commission % on course access purchase.", Panel: "admin"},
+	"affiliate.max_links_per_user":      {Type: "int", DefaultValue: "10", Description: "Max active affiliate links per enrolled user.", Panel: "admin"},
 	// AUDIT-BE-SETTING-001/002/003: affiliate enhancement settings (Section 55).
-	"affiliate.author_commission_default": {Type: "float", DefaultValue: "25", Description: "Default % of external affiliate commission shared with content author (when provider has no override)."},
-	"affiliate.unregistered_link_policy":  {Type: "string", DefaultValue: "flag", Description: "How to handle unregistered affiliate links: flag (log only), block (prevent publish), strip (remove link).", Options: `[{"value":"flag","label":"Flag (log only)"},{"value":"block","label":"Block (prevent publish)"},{"value":"strip","label":"Strip (remove link)"}]`},
-	"affiliate.scan_on_publish":           {Type: "bool", DefaultValue: "true", Description: "Whether to scan content for unregistered affiliate links on publish."},
+	"affiliate.author_commission_default": {Type: "float", DefaultValue: "25", Description: "Default % of external affiliate commission shared with content author (when provider has no override).", Panel: "admin"},
+	"affiliate.unregistered_link_policy":  {Type: "string", DefaultValue: "flag", Description: "How to handle unregistered affiliate links: flag (log only), block (prevent publish), strip (remove link).", Options: `[{"value":"flag","label":"Flag (log only)"},{"value":"block","label":"Block (prevent publish)"},{"value":"strip","label":"Strip (remove link)"}]`, Panel: "admin"},
+	"affiliate.scan_on_publish":           {Type: "bool", DefaultValue: "true", Description: "Whether to scan content for unregistered affiliate links on publish.", Panel: "admin"},
 	// AUDIT-BE-SETTING-004: Japa University creator economy settings (ADR-063, Section 36).
-	"university.subdomain":                {Type: "string", DefaultValue: "university", Description: "Host label for the Japa University shell."},
-	"university.custom_domain":            {Type: "string", DefaultValue: "", Description: "Optional custom domain (e.g. japauni.com); empty = use subdomain."},
-	"university.creator_percentage_default": {Type: "int", DefaultValue: "75", Description: "Default creator revenue share % (platform takes the remainder)."},
-	"university.platform_percentage_default": {Type: "int", DefaultValue: "25", Description: "Default platform revenue share %."},
-	"university.payout_schedule":          {Type: "string", DefaultValue: "monthly", Description: "Payout cadence: weekly | monthly.", Options: `[{"value":"weekly","label":"Weekly"},{"value":"monthly","label":"Monthly"}]`},
-	"university.min_payout_kobo":          {Type: "int", DefaultValue: "500000", Description: "Minimum accrued net (kobo) before a payout is issued."},
-	"university.pro_stream_rate_kobo":     {Type: "int", DefaultValue: "5000", Description: "Amount (kobo) accrued to a creator per Pro-enrolled learner per period."},
+	"university.subdomain":                {Type: "string", DefaultValue: "university", Description: "Host label for the Japa University shell.", Panel: "control"},
+	"university.custom_domain":            {Type: "string", DefaultValue: "", Description: "Optional custom domain (e.g. japauni.com); empty = use subdomain.", Panel: "control"},
+	"university.creator_percentage_default": {Type: "int", DefaultValue: "75", Description: "Default creator revenue share % (platform takes the remainder).", Panel: "control"},
+	"university.platform_percentage_default": {Type: "int", DefaultValue: "25", Description: "Default platform revenue share %.", Panel: "control"},
+	"university.payout_schedule":          {Type: "string", DefaultValue: "monthly", Description: "Payout cadence: weekly | monthly.", Options: `[{"value":"weekly","label":"Weekly"},{"value":"monthly","label":"Monthly"}]`, Panel: "control"},
+	"university.min_payout_kobo":          {Type: "int", DefaultValue: "500000", Description: "Minimum accrued net (kobo) before a payout is issued.", Panel: "control"},
+	"university.pro_stream_rate_kobo":     {Type: "int", DefaultValue: "5000", Description: "Amount (kobo) accrued to a creator per Pro-enrolled learner per period.", Panel: "control"},
 	// AUDIT-BE-SETTING-005: geo-aware personalization master switch (ADR-064).
-	"geo_personalization.enabled":         {Type: "bool", DefaultValue: "true", Description: "Master switch for geo-aware feed/search/discovery weighting."},
+	"geo_personalization.enabled":         {Type: "bool", DefaultValue: "true", Description: "Master switch for geo-aware feed/search/discovery weighting.", Panel: "control"},
 	// AUDIT-BE2-SEC-013: link preview fetch timeout (Rule 3 — was hardcoded 10s).
-	"linkpreview.fetch_timeout_seconds":   {Type: "int", DefaultValue: "10", Min: 1, Max: 120, Description: "HTTP timeout for link preview fetches in seconds."},
+	"linkpreview.fetch_timeout_seconds":   {Type: "int", DefaultValue: "10", Min: 1, Max: 120, Description: "HTTP timeout for link preview fetches in seconds.", Panel: "control"},
 	// AUDIT-BE2-BL-014: configurable iframe embed allowlist for HTML sanitization (Section 16).
-	"content.sanitization.allowed_iframe_hosts": {Type: "csv", DefaultValue: "youtube.com,vimeo.com,codepen.io,jsfiddle.net,embed.ted.com", Description: "Comma-separated domains permitted in <iframe> src in user-generated content."},
+	"content.sanitization.allowed_iframe_hosts": {Type: "csv", DefaultValue: "youtube.com,vimeo.com,codepen.io,jsfiddle.net,embed.ted.com", Description: "Comma-separated domains permitted in <iframe> src in user-generated content.", Panel: "control"},
 	// AUDIT-BE2-SEC-011: webhook delivery max attempts (Rule 3 — was hardcoded 5).
 	// Reuses notifications.max_delivery_attempts (already catalogued above) — no
 	// separate key needed; documented here for discoverability.
 	// Onboarding promoted entities (SETTING-005 — JEOS catalog alignment).
-	"onboarding.promoted_spaces": {Type: "json", DefaultValue: "[]", Description: "JSON array of space UUIDs to promote in recommendations."},
-	"onboarding.promoted_users":  {Type: "json", DefaultValue: "[]", Description: "JSON array of user UUIDs to promote in recommendations."},
-	"onboarding.promoted_tags":   {Type: "json", DefaultValue: "[]", Description: "JSON array of tag UUIDs to promote in recommendations."},
-	"onboarding.min_spaces_join": {Type: "int", DefaultValue: "3", Description: "Minimum number of spaces a new user must join during onboarding.", Public: true},
-	"onboarding.min_tags_follow": {Type: "int", DefaultValue: "5", Description: "Minimum number of tags a new user must follow during onboarding.", Public: true},
-	"onboarding.min_users_follow": {Type: "int", DefaultValue: "3", Description: "Minimum number of users a new user must follow during onboarding.", Public: true},
+	"onboarding.promoted_spaces": {Type: "json", DefaultValue: "[]", Description: "JSON array of space UUIDs to promote in recommendations.", Panel: "control"},
+	"onboarding.promoted_users":  {Type: "json", DefaultValue: "[]", Description: "JSON array of user UUIDs to promote in recommendations.", Panel: "control"},
+	"onboarding.promoted_tags":   {Type: "json", DefaultValue: "[]", Description: "JSON array of tag UUIDs to promote in recommendations.", Panel: "control"},
+	"onboarding.min_spaces_join": {Type: "int", DefaultValue: "3", Description: "Minimum number of spaces a new user must join during onboarding.", Public: true, Panel: "control"},
+	"onboarding.min_tags_follow": {Type: "int", DefaultValue: "5", Description: "Minimum number of tags a new user must follow during onboarding.", Public: true, Panel: "control"},
+	"onboarding.min_users_follow": {Type: "int", DefaultValue: "3", Description: "Minimum number of users a new user must follow during onboarding.", Public: true, Panel: "control"},
 	// General platform settings (exist in DB, now catalogued for type metadata).
 	// Public so the main site can render the site name and description in SEO/meta.
-	"general.site_name":              {Type: "string", DefaultValue: "JapaConnect", Description: "Platform display name.", Public: true},
-	"general.site_description":       {Type: "string", DefaultValue: "", Description: "Short platform description for SEO and meta tags.", Public: true},
-	"general.maintenance_mode":       {Type: "bool", DefaultValue: "false", Description: "When true, the platform shows a maintenance banner to non-admin users.", Public: true},
-	"general.registration_open":      {Type: "bool", DefaultValue: "true", Description: "Whether new user self-registration is allowed.", Public: true},
+	"general.site_name":              {Type: "string", DefaultValue: "JapaConnect", Description: "Platform display name.", Public: true, Panel: "admin"},
+	"general.site_description":       {Type: "string", DefaultValue: "", Description: "Short platform description for SEO and meta tags.", Public: true, Panel: "admin"},
+	"general.maintenance_mode":       {Type: "bool", DefaultValue: "false", Description: "When true, the platform shows a maintenance banner to non-admin users.", Public: true, Panel: "admin"},
+	"general.registration_open":      {Type: "bool", DefaultValue: "true", Description: "Whether new user self-registration is allowed.", Public: true, Panel: "admin"},
 	// Appearance / branding — public so the main site can apply primary color
 	// and render the logo from the control panel settings.
-	"appearance.dark_mode_default":   {Type: "bool", DefaultValue: "false", Description: "Default theme for new visitors (false = light).", Public: true},
-	"appearance.feed_card_style":     {Type: "string", DefaultValue: "reddit", Description: "Default feed card style: reddit | compact | grid | magazine.", Options: `[{"value":"reddit","label":"Reddit"},{"value":"compact","label":"Compact"},{"value":"grid","label":"Grid"},{"value":"magazine","label":"Magazine"}]`, Public: true},
-	"appearance.default_editor":      {Type: "string", DefaultValue: "block", Description: "Default editor mode for the post composer: block | wysiwyg | markdown.", Options: `[{"value":"block","label":"Block"},{"value":"wysiwyg","label":"Rich text"},{"value":"markdown","label":"Markdown"}]`, Public: true},
-	"appearance.logo_url":            {Type: "string", DefaultValue: "", Description: "URL to the platform logo image.", Public: true},
-	"appearance.favicon_url":         {Type: "string", DefaultValue: "", Description: "URL to the platform favicon image; empty = use default favicon.svg.", Public: true},
-	"appearance.primary_color":       {Type: "string", DefaultValue: "#c615a6", Description: "Primary brand color (hex).", Public: true},
-	"appearance.auth_brand_slides":   {Type: "json", DefaultValue: "[]", Description: "Carousel slides for the auth brand panel: [{image, headline, subheading}].", Public: true},
+	"appearance.dark_mode_default":   {Type: "bool", DefaultValue: "false", Description: "Default theme for new visitors (false = light).", Public: true, Panel: "admin"},
+	"appearance.feed_card_style":     {Type: "string", DefaultValue: "reddit", Description: "Default feed card style: reddit | compact | grid | magazine.", Options: `[{"value":"reddit","label":"Reddit"},{"value":"compact","label":"Compact"},{"value":"grid","label":"Grid"},{"value":"magazine","label":"Magazine"}]`, Public: true, Panel: "admin"},
+	"appearance.default_editor":      {Type: "string", DefaultValue: "block", Description: "Default editor mode for the post composer: block | wysiwyg | markdown.", Options: `[{"value":"block","label":"Block"},{"value":"wysiwyg","label":"Rich text"},{"value":"markdown","label":"Markdown"}]`, Public: true, Panel: "admin"},
+	"appearance.logo_url":            {Type: "string", DefaultValue: "", Description: "URL to the platform logo image.", Public: true, Panel: "admin"},
+	"appearance.favicon_url":         {Type: "string", DefaultValue: "", Description: "URL to the platform favicon image; empty = use default favicon.svg.", Public: true, Panel: "admin"},
+	"appearance.primary_color":       {Type: "string", DefaultValue: "#c615a6", Description: "Primary brand color (hex).", Public: true, Panel: "admin"},
+	"appearance.auth_brand_slides":   {Type: "json", DefaultValue: "[]", Description: "Carousel slides for the auth brand panel: [{image, headline, subheading}].", Public: true, Panel: "admin"},
 	// Advanced / operational.
-	"advanced.cache_ttl_seconds":     {Type: "int", DefaultValue: "20", Description: "Default Valkey cache TTL in seconds for non-explicit keys."},
-	"advanced.log_level":             {Type: "string", DefaultValue: "info", Description: "Application log level.", Options: `[{"value":"debug","label":"Debug"},{"value":"info","label":"Info"},{"value":"warn","label":"Warn"},{"value":"error","label":"Error"}]`},
+	// These are dead — log_level is a process-startup concern (JC_* env var,
+	// not hot-reloadable), and cache_ttl_seconds had no consumer.
+	// Marked Panel: "admin" so they never appear in the control panel.
+	"advanced.cache_ttl_seconds":     {Type: "int", DefaultValue: "20", Description: "Default Valkey cache TTL in seconds for non-explicit keys.", Panel: "admin"},
+	"advanced.log_level":             {Type: "string", DefaultValue: "info", Description: "Application log level.", Options: `[{"value":"debug","label":"Debug"},{"value":"info","label":"Info"},{"value":"warn","label":"Warn"},{"value":"error","label":"Error"}]`, Panel: "admin"},
 	// Content settings not yet in the JEOS catalog but present in the DB.
-	"content.allow_anonymous_posts":  {Type: "bool", DefaultValue: "false", Description: "Whether anonymous (logged-out) users can create posts."},
-	"content.allowed_upload_types":   {Type: "csv", DefaultValue: "jpeg,png,jpg", Description: "Comma-separated allowed file extensions for content uploads.", Options: `[{"value":"jpeg","label":"JPEG"},{"value":"jpg","label":"JPG"},{"value":"png","label":"PNG"},{"value":"gif","label":"GIF"},{"value":"webp","label":"WebP"},{"value":"svg","label":"SVG"},{"value":"pdf","label":"PDF"},{"value":"doc","label":"DOC"},{"value":"docx","label":"DOCX"},{"value":"mp4","label":"MP4"},{"value":"webm","label":"WebM"},{"value":"mov","label":"MOV"}]`},
-	"content.max_upload_size_mb":     {Type: "int", DefaultValue: "5", Description: "Maximum upload file size in MB for content attachments."},
-	"content.posts_per_page":         {Type: "int", DefaultValue: "12", Description: "Number of posts per page in feed/list views."},
-	"content.require_content_review": {Type: "bool", DefaultValue: "true", Description: "Whether new content requires admin review before publishing."},
+	"content.allow_anonymous_posts":  {Type: "bool", DefaultValue: "false", Description: "Whether anonymous (logged-out) users can create posts.", Panel: "admin"},
+	"content.allowed_upload_types":   {Type: "csv", DefaultValue: "jpeg,png,jpg", Description: "Comma-separated allowed file extensions for content uploads.", Options: `[{"value":"jpeg","label":"JPEG"},{"value":"jpg","label":"JPG"},{"value":"png","label":"PNG"},{"value":"gif","label":"GIF"},{"value":"webp","label":"WebP"},{"value":"svg","label":"SVG"},{"value":"pdf","label":"PDF"},{"value":"doc","label":"DOC"},{"value":"docx","label":"DOCX"},{"value":"mp4","label":"MP4"},{"value":"webm","label":"WebM"},{"value":"mov","label":"MOV"}]`, Panel: "admin"},
+	"content.max_upload_size_mb":     {Type: "int", DefaultValue: "5", Description: "Maximum upload file size in MB for content attachments.", Panel: "admin"},
+	"content.posts_per_page":         {Type: "int", DefaultValue: "12", Description: "Number of posts per page in feed/list views.", Panel: "admin"},
+	"content.require_content_review": {Type: "bool", DefaultValue: "true", Description: "Whether new content requires admin review before publishing.", Panel: "admin"},
 	// Feature flags (platform-level toggles).
-	"features.advertising_enabled":   {Type: "bool", DefaultValue: "true", Description: "Master toggle for the advertising module."},
-	"features.blog_enabled":          {Type: "bool", DefaultValue: "true", Description: "Master toggle for the blog module."},
-	"features.comparisons_enabled":   {Type: "bool", DefaultValue: "true", Description: "Master toggle for the comparison module."},
-	"features.forum_enabled":         {Type: "bool", DefaultValue: "true", Description: "Master toggle for the forum module."},
-	"features.reviews_enabled":       {Type: "bool", DefaultValue: "true", Description: "Master toggle for the reviews module."},
+	// These are dead — they duplicated the real feature_flags table managed
+	// via the Features admin page. Marked Panel: "admin" so they never appear
+	// in the control panel. Use the Features page to toggle modules.
+	"features.advertising_enabled":   {Type: "bool", DefaultValue: "true", Description: "Master toggle for the advertising module.", Panel: "admin"},
+	"features.blog_enabled":          {Type: "bool", DefaultValue: "true", Description: "Master toggle for the blog module.", Panel: "admin"},
+	"features.comparisons_enabled":   {Type: "bool", DefaultValue: "true", Description: "Master toggle for the comparison module.", Panel: "admin"},
+	"features.forum_enabled":         {Type: "bool", DefaultValue: "true", Description: "Master toggle for the forum module.", Panel: "admin"},
+	"features.reviews_enabled":       {Type: "bool", DefaultValue: "true", Description: "Master toggle for the reviews module.", Panel: "admin"},
 	// Security settings not in the JEOS catalog.
-	"security.lockout_duration_minutes":    {Type: "int", DefaultValue: "15", Description: "Account lockout duration in minutes after max login attempts."},
-	"security.require_email_verification":  {Type: "bool", DefaultValue: "true", Description: "Whether email verification is required before posting."},
+	// security.lockout_duration_minutes is dead — bruteforce backoff is computed
+	// from max_login_attempts + fail_window_minutes (both in admin).
+	// security.require_email_verification is a duplicate of
+	// auth.email.verify_required (the consumed key, in admin).
+	// Both marked Panel: "admin" so they never appear in the control panel.
+	"security.lockout_duration_minutes":    {Type: "int", DefaultValue: "15", Description: "Account lockout duration in minutes after max login attempts.", Panel: "admin"},
+	"security.require_email_verification":  {Type: "bool", DefaultValue: "true", Description: "Whether email verification is required before posting.", Panel: "admin"},
 	// SEO settings.
-	"seo.enable_json_ld":     {Type: "bool", DefaultValue: "true", Description: "Generate JSON-LD structured data on content pages."},
-	"seo.enable_robots_txt":  {Type: "bool", DefaultValue: "true", Description: "Serve a robots.txt file."},
-	"seo.enable_sitemap":     {Type: "bool", DefaultValue: "true", Description: "Generate and serve an XML sitemap."},
+	// seo.enable_* toggles are dead (no consumer — sitemap & robots.txt are
+	// always served, JSON-LD is emitted by SSR). Marked Panel: "admin" so they
+	// never appear in the control panel.
+	"seo.enable_json_ld":     {Type: "bool", DefaultValue: "true", Description: "Generate JSON-LD structured data on content pages.", Panel: "admin"},
+	"seo.enable_robots_txt":  {Type: "bool", DefaultValue: "true", Description: "Serve a robots.txt file.", Panel: "admin"},
+	"seo.enable_sitemap":     {Type: "bool", DefaultValue: "true", Description: "Generate and serve an XML sitemap.", Panel: "admin"},
+	// SEO settings managed by the admin panel (not previously catalogued —
+	// adding them with Panel: "admin" prevents DB entries from leaking into
+	// the control panel).
+	"seo.meta_title_template":       {Type: "string", DefaultValue: "", Description: "Template for meta titles.", Panel: "admin"},
+	"seo.meta_description_template": {Type: "string", DefaultValue: "", Description: "Template for meta descriptions.", Panel: "admin"},
+	"seo.og_image":                  {Type: "string", DefaultValue: "", Description: "Default Open Graph image URL.", Panel: "admin"},
+	"seo.twitter_handle":            {Type: "string", DefaultValue: "", Description: "Twitter/X handle for meta cards.", Panel: "admin"},
+	"seo.json_ld_type":              {Type: "string", DefaultValue: "Organization", Description: "Default JSON-LD type.", Options: `[{"value":"Organization","label":"Organization"},{"value":"WebSite","label":"WebSite"},{"value":"LocalBusiness","label":"LocalBusiness"}]`, Panel: "admin"},
+	"seo.google_analytics_id":       {Type: "string", DefaultValue: "", Description: "Google Analytics tracking ID.", Panel: "admin"},
+	"seo.google_tag_manager_id":     {Type: "string", DefaultValue: "", Description: "Google Tag Manager container ID.", Panel: "admin"},
 	// User profile settings.
-	"users.allowed_avatar_types":         {Type: "csv", DefaultValue: "png,jpg,gif,webp", Description: "Comma-separated allowed file extensions for user avatars.", Options: `[{"value":"png","label":"PNG"},{"value":"jpg","label":"JPG"},{"value":"jpeg","label":"JPEG"},{"value":"gif","label":"GIF"},{"value":"webp","label":"WebP"},{"value":"svg","label":"SVG"}]`},
-	"users.allow_social_login":           {Type: "bool", DefaultValue: "false", Description: "Whether OAuth social login providers are enabled."},
-	"users.require_profile_completion":   {Type: "bool", DefaultValue: "false", Description: "Whether users must complete their profile before posting."},
+	"users.allowed_avatar_types":         {Type: "csv", DefaultValue: "png,jpg,gif,webp", Description: "Comma-separated allowed file extensions for user avatars.", Options: `[{"value":"png","label":"PNG"},{"value":"jpg","label":"JPG"},{"value":"jpeg","label":"JPEG"},{"value":"gif","label":"GIF"},{"value":"webp","label":"WebP"},{"value":"svg","label":"SVG"}]`, Panel: "admin"},
+	"users.allow_social_login":           {Type: "bool", DefaultValue: "false", Description: "Whether OAuth social login providers are enabled.", Panel: "admin"},
+	"users.require_profile_completion":   {Type: "bool", DefaultValue: "false", Description: "Whether users must complete their profile before posting.", Panel: "admin"},
+	"users.max_avatar_size_mb":           {Type: "int", DefaultValue: "5", Description: "Max user avatar file size in MB.", Panel: "admin"},
 }
 
 // IsPublicSetting reports whether the given dot-notation key is marked Public
@@ -196,6 +236,15 @@ func IsPublicSetting(key string) bool {
 		return meta.Public
 	}
 	return false
+}
+
+// getSettingPanel returns the panel assignment ("admin" or "control") for a
+// given dot-notation key. Empty string means unclassified (shown in both panels).
+func getSettingPanel(key string) string {
+	if meta, ok := settingsCatalog[key]; ok {
+		return meta.Panel
+	}
+	return ""
 }
 
 // getSettingMeta returns the metadata for a given dot-notation key.

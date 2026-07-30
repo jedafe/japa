@@ -94,7 +94,51 @@ func (s *Service) VotePoll(ctx context.Context, pollID, optionID, userID pgtype.
 		return fmt.Errorf("voting on poll: %w", err)
 	}
 
+	// Live update: broadcast the new results to the space's WS room.
+	s.broadcastPollResults(ctx, poll)
+
 	return nil
+}
+
+// VotePollByOptionID casts a vote on the poll that owns the given option.
+// Used by POST /poll-options/{id}/vote where the URL param is the option_id,
+// not the poll_id. Ref: api-routes-catalog L612.
+func (s *Service) VotePollByOptionID(ctx context.Context, optionID, userID pgtype.UUID) error {
+	poll, err := s.store.getPollByOptionID(ctx, optionID)
+	if err != nil {
+		return fmt.Errorf("resolving poll from option: %w", err)
+	}
+	return s.VotePoll(ctx, poll.ID, optionID, userID)
+}
+
+// RetractPollVote removes the user's vote on a poll
+// (DELETE /poll-options/{id}/vote). Ref: api-routes-catalog L613.
+func (s *Service) RetractPollVote(ctx context.Context, optionID, userID pgtype.UUID) error {
+	poll, err := s.store.getPollByOptionID(ctx, optionID)
+	if err != nil {
+		return fmt.Errorf("resolving poll from option: %w", err)
+	}
+	if err := s.store.retractPollVote(ctx, poll.ID, userID); err != nil {
+		return fmt.Errorf("retracting poll vote: %w", err)
+	}
+	s.broadcastPollResults(ctx, poll)
+	return nil
+}
+
+// broadcastPollResults publishes the current poll results to the space's
+// WebSocket room so connected clients see live vote counts. Ref: Section 10.
+func (s *Service) broadcastPollResults(ctx context.Context, poll gen.ForumPoll) {
+	thread, err := s.store.getThreadByID(ctx, poll.ThreadID, pgtype.UUID{})
+	if err != nil {
+		return
+	}
+	results, err := s.GetPollResults(ctx, poll.ID)
+	if err != nil {
+		return
+	}
+	s.broadcastSpace(thread.SpaceID, "forum.poll.updated", map[string]any{
+		"poll_id": poll.ID, "results": results,
+	})
 }
 
 // GetPollResults returns aggregated vote counts for a poll.
@@ -120,6 +164,12 @@ func (s *Service) GetPollResults(ctx context.Context, pollID pgtype.UUID) ([]Pol
 // GetPollByThreadID returns the poll for a given thread.
 func (s *Service) GetPollByThreadID(ctx context.Context, threadID pgtype.UUID) (gen.ForumPoll, error) {
 	return s.store.getPollByThreadID(ctx, threadID)
+}
+
+// GetPollByOptionID resolves a poll from one of its option IDs.
+// Ref: japaconnect-engineering/sections/08-forum-qa-solved.md (BUG-006)
+func (s *Service) GetPollByOptionID(ctx context.Context, optionID pgtype.UUID) (gen.ForumPoll, error) {
+	return s.store.getPollByOptionID(ctx, optionID)
 }
 
 // GetUserPollVote returns the user's vote on a poll.

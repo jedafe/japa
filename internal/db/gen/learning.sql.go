@@ -971,10 +971,12 @@ func (q *Queries) ListEnrollmentsByUserID(ctx context.Context, arg ListEnrollmen
 }
 
 const listLearningCertificatesByUser = `-- name: ListLearningCertificatesByUser :many
-SELECT id, tenant_id, user_id, track_id, certificate_number, media_id, issued_at
-FROM learning_certificates
-WHERE tenant_id = $1 AND user_id = $2
-ORDER BY issued_at DESC
+SELECT lc.id, lc.tenant_id, lc.user_id, lc.track_id, lc.certificate_number, lc.media_id, lc.issued_at,
+       lt.title AS track_title, lt.slug AS track_slug
+FROM learning_certificates lc
+LEFT JOIN learning_tracks lt ON lt.id = lc.track_id AND lt.tenant_id = lc.tenant_id
+WHERE lc.tenant_id = $1 AND lc.user_id = $2
+ORDER BY lc.issued_at DESC
 `
 
 type ListLearningCertificatesByUserParams struct {
@@ -982,15 +984,27 @@ type ListLearningCertificatesByUserParams struct {
 	UserID   pgtype.UUID `json:"user_id"`
 }
 
-func (q *Queries) ListLearningCertificatesByUser(ctx context.Context, arg ListLearningCertificatesByUserParams) ([]LearningCertificate, error) {
+type ListLearningCertificatesByUserRow struct {
+	ID                pgtype.UUID        `json:"id"`
+	TenantID          pgtype.UUID        `json:"tenant_id"`
+	UserID            pgtype.UUID        `json:"user_id"`
+	TrackID           pgtype.UUID        `json:"track_id"`
+	CertificateNumber string             `json:"certificate_number"`
+	MediaID           pgtype.UUID        `json:"media_id"`
+	IssuedAt          pgtype.Timestamptz `json:"issued_at"`
+	TrackTitle        *string            `json:"track_title"`
+	TrackSlug         *string            `json:"track_slug"`
+}
+
+func (q *Queries) ListLearningCertificatesByUser(ctx context.Context, arg ListLearningCertificatesByUserParams) ([]ListLearningCertificatesByUserRow, error) {
 	rows, err := q.db.Query(ctx, listLearningCertificatesByUser, arg.TenantID, arg.UserID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []LearningCertificate
+	var items []ListLearningCertificatesByUserRow
 	for rows.Next() {
-		var i LearningCertificate
+		var i ListLearningCertificatesByUserRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.TenantID,
@@ -999,6 +1013,8 @@ func (q *Queries) ListLearningCertificatesByUser(ctx context.Context, arg ListLe
 			&i.CertificateNumber,
 			&i.MediaID,
 			&i.IssuedAt,
+			&i.TrackTitle,
+			&i.TrackSlug,
 		); err != nil {
 			return nil, err
 		}

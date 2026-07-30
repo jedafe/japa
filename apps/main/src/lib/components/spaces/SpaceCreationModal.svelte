@@ -121,8 +121,7 @@
 						<label for="space-name" class="mb-1 block text-xs font-medium text-[var(--color-muted)]">{t('spaces.name_label')}</label>
 						<input
 							id="space-name"
-							value={name}
-							oninput={(e) => (name = e.currentTarget.value)}
+							bind:value={name}
 							placeholder={t('spaces.name_placeholder')}
 							class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]"
 						/>
@@ -132,8 +131,7 @@
 						<label for="space-slug" class="mb-1 block text-xs font-medium text-[var(--color-muted)]">{t('spaces.slug_label')}</label>
 						<input
 							id="space-slug"
-							value={slug}
-							oninput={(e) => (slug = e.currentTarget.value)}
+							bind:value={slug}
 							placeholder="my-space"
 							class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]"
 						/>
@@ -144,8 +142,7 @@
 							<label for="space-type" class="mb-1 block text-xs font-medium text-[var(--color-muted)]">{t('spaces.type_label')}</label>
 							<select
 								id="space-type"
-								value={spaceTypeId}
-								onchange={(e) => (spaceTypeId = e.currentTarget.value)}
+								bind:value={spaceTypeId}
 								class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]"
 							>
 								{#each spaceTypes as st (st.id)}
@@ -157,8 +154,7 @@
 							<label for="space-level" class="mb-1 block text-xs font-medium text-[var(--color-muted)]">{t('spaces.level_label')}</label>
 							<select
 								id="space-level"
-								value={level}
-								onchange={(e) => (level = e.currentTarget.value)}
+								bind:value={level}
 								class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]"
 							>
 								<option value="custom">{t('spaces.level_custom')}</option>
@@ -173,8 +169,7 @@
 						<label for="space-desc" class="mb-1 block text-xs font-medium text-[var(--color-muted)]">{t('spaces.description_label')}</label>
 						<textarea
 							id="space-desc"
-							value={description}
-							oninput={(e) => (description = e.currentTarget.value)}
+							bind:value={description}
 							rows={2}
 							placeholder={t('spaces.description_placeholder')}
 							class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]"
