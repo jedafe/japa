@@ -49,7 +49,7 @@ WHERE tenant_id = $1
 ORDER BY day DESC, views DESC;
 
 -- name: GetTopContentByViews :many
-SELECT id AS content_id, view_count AS total_views, comment_count AS total_comments, share_count AS total_reactions, view_count AS total_unique_viewers
+SELECT id AS content_id, title AS content_title, view_count AS total_views, comment_count AS total_comments, share_count AS total_reactions, view_count AS total_unique_viewers
 FROM contents
 WHERE tenant_id = $1
   AND status != 'draft'

@@ -2410,5 +2410,6 @@
   "analytics.unresolved": "Non résolu",
   "analytics.scanning": "Analyse en cours...",
   "analytics.scan_failed": "Échec de l'analyse",
-  "analytics.resolve_failed": "Échec de la résolution"
+  "analytics.resolve_failed": "Échec de la résolution",
+  "analytics.content_title": "Titre du contenu"
 }
