@@ -27,8 +27,25 @@
 		}));
 	}
 
+	// Initial suggestions — show up to 5 spaces (primary first) when the field is focused.
+	async function initialFetcher(): Promise<AutocompleteItem[]> {
+		return spaces
+			.slice()
+			.sort((a, b) => (a.is_primary ? -1 : b.is_primary ? 1 : 0))
+			.slice(0, 5)
+			.map((s) => ({
+				id: s.id,
+				label: s.name,
+				sublabel: s.is_primary ? '★' : undefined
+			}));
+	}
+
 	function handleSelect(item: AutocompleteItem) {
 		onSelect(item.id);
+	}
+
+	function handleClear() {
+		onSelect('');
 	}
 </script>
 
@@ -36,9 +53,11 @@
 	placeholder={t('create.placeholder.space_search')}
 	emptyMessage={t('create.placeholder.space_no_results')}
 	{fetcher}
+	{initialFetcher}
 	{selectedId}
 	selectedLabel={selectedSpace?.name ?? null}
 	selectedBadge={selectedSpace?.is_primary ? '★' : null}
 	onSelect={handleSelect}
+	onClear={handleClear}
 	{onfocus}
 />

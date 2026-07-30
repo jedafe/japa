@@ -15,7 +15,7 @@
 		Star, MessageCircle, Layout, Image,
 		Type, ListOrdered, GitCompare, Palette,
 		Clock, UserPlus, ChevronDown, ChevronRight,
-		Briefcase, Eye, X, Menu, ArrowRightLeft
+		Briefcase, Eye, X, Menu, ArrowRightLeft, CreditCard
 	} from "lucide-svelte";
 	import { clsx } from "clsx";
 
@@ -133,6 +133,7 @@
 				{ path: "/wallet", label: t("nav.wallet", "Wallet"), icon: Wallet, permission: "wallet.admin" },
 			{ path: "/coupons", label: t("nav.coupons", "Coupons"), icon: Tag, permission: "coupons.manage" },
 			{ path: "/discount-codes", label: t("nav.discount_codes", "Discount Codes"), icon: DollarSign, permission: "payments.discount_codes.manage" },
+			{ path: "/plans", label: t("nav.plans", "Subscription Plans"), icon: CreditCard, permission: "payments.plans.manage" },
 			{ path: "/affiliate", label: t("nav.affiliate", "Affiliate Links"), icon: Link, permission: "affiliate.admin.view" },
 			{ path: "/referral", label: t("nav.referral", "Referrals"), icon: Share2, permission: "referral.admin" },
 			{ path: "/ads", label: t("nav.ads", "Advertisements"), icon: Zap, permission: "ad.campaign.manage" }

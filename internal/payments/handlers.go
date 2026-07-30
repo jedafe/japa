@@ -98,14 +98,37 @@ type PaymentProviderInfo struct {
 
 // ListPricingPlans handles GET /api/v1/pricing/plans.
 // Returns the available subscription plans with pricing details.
+// Plans are read from the subscription_plans table (managed via the admin
+// panel). If no rows exist yet, falls back to system_settings pricing config
+// and ultimately to compiled-in defaults (Rule 3).
 func (h *Handlers) ListPricingPlans(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	// Pricing plan amounts are configurable via system_settings
-	// (SETTING-001 / Rule 3). Defaults match the catalog.
+	// Try DB-managed plans first.
+	dbPlans, err := gen.New(h.Service.db.Reader).ListActiveSubscriptionPlans(r.Context(), tenantID)
+	if err == nil && len(dbPlans) > 0 {
+		plans := make([]PricingPlan, 0, len(dbPlans))
+		for _, p := range dbPlans {
+			var features []PlanFeature
+			_ = json.Unmarshal(p.Features, &features)
+			plans = append(plans, PricingPlan{
+				ID:          p.Slug,
+				Name:        p.Name,
+				Description: p.Description,
+				Highlighted: p.Highlighted,
+				Features:    features,
+				Monthly:     PlanPricing{Amount: p.MonthlyAmount, Currency: p.Currency},
+				Yearly:      PlanPricing{Amount: p.YearlyAmount, Currency: p.Currency},
+			})
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"data": plans})
+		return
+	}
+
+	// Fallback: system_settings-configured defaults (SETTING-001 / Rule 3).
 	currency := "NGN"
 	proMonthly := int64(500000)
 	proYearly := int64(5000000)
@@ -1221,14 +1244,219 @@ func (h *Handlers) ReactivateSubscription(w http.ResponseWriter, r *http.Request
 	if !ok {
 		return
 	}
-	queries := gen.New(h.Service.db.Writer)
-	_, err := queries.ReactivateSubscription(r.Context(), gen.ReactivateSubscriptionParams{
-		UserID:   user.UserID,
+	subscription, err := h.Service.ReactivateSubscription(r.Context(), user.UserID, tenantID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": subscription})
+}
+
+// ---------------------------------------------------------------------------
+// Admin: Subscription Plans CRUD (GET/POST/PATCH/DELETE /admin/plans)
+// ---------------------------------------------------------------------------
+
+// AdminPlanFeature is the JSON shape for a single feature row in plan create/update.
+type AdminPlanFeature struct {
+	Text     string `json:"text"`
+	Included bool   `json:"included"`
+}
+
+// AdminPlanInput is the request body for creating/updating a plan.
+type AdminPlanInput struct {
+	Slug          string             `json:"slug"`
+	Name          string             `json:"name"`
+	Description   string             `json:"description"`
+	Features      []AdminPlanFeature `json:"features"`
+	MonthlyAmount int64              `json:"monthly_amount"`
+	YearlyAmount  int64              `json:"yearly_amount"`
+	Currency      string             `json:"currency"`
+	Highlighted   bool               `json:"highlighted"`
+	SortOrder     int32              `json:"sort_order"`
+	Status        string             `json:"status"`
+}
+
+// AdminPlanResponse is the JSON-serializable plan shape returned by admin endpoints.
+// The gen.SubscriptionPlan.Features field is []byte (raw JSONB), which json.Marshal
+// base64-encodes. This struct parses features into a proper JSON array so the
+// frontend receives a usable array.
+type AdminPlanResponse struct {
+	ID            string             `json:"id"`
+	TenantID      string             `json:"tenant_id"`
+	Slug          string             `json:"slug"`
+	Name          string             `json:"name"`
+	Description   string             `json:"description"`
+	Features      []AdminPlanFeature `json:"features"`
+	MonthlyAmount int64              `json:"monthly_amount"`
+	YearlyAmount  int64              `json:"yearly_amount"`
+	Currency      string             `json:"currency"`
+	Highlighted   bool               `json:"highlighted"`
+	SortOrder     int32              `json:"sort_order"`
+	Status        string             `json:"status"`
+	CreatedAt     string             `json:"created_at"`
+	UpdatedAt     string             `json:"updated_at"`
+}
+
+// toAdminPlanResponse converts a gen.SubscriptionPlan to an AdminPlanResponse,
+// parsing the raw JSONB features bytes into a proper slice.
+func toAdminPlanResponse(p gen.SubscriptionPlan) AdminPlanResponse {
+	var features []AdminPlanFeature
+	if len(p.Features) > 0 {
+		_ = json.Unmarshal(p.Features, &features)
+	}
+	resp := AdminPlanResponse{
+		Slug:          p.Slug,
+		Name:          p.Name,
+		Description:   p.Description,
+		Features:      features,
+		MonthlyAmount: p.MonthlyAmount,
+		YearlyAmount:  p.YearlyAmount,
+		Currency:      p.Currency,
+		Highlighted:   p.Highlighted,
+		SortOrder:     p.SortOrder,
+		Status:        p.Status,
+	}
+	if p.ID.Valid {
+		resp.ID = p.ID.String()
+	}
+	if p.TenantID.Valid {
+		resp.TenantID = p.TenantID.String()
+	}
+	if p.CreatedAt.Valid {
+		resp.CreatedAt = p.CreatedAt.Time.Format(time.RFC3339)
+	}
+	if p.UpdatedAt.Valid {
+		resp.UpdatedAt = p.UpdatedAt.Time.Format(time.RFC3339)
+	}
+	return resp
+}
+
+// ListAdminPlans handles GET /api/v1/admin/plans.
+func (h *Handlers) ListAdminPlans(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+	plans, err := gen.New(h.Service.db.Reader).ListSubscriptionPlans(r.Context(), tenantID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list plans")
+		return
+	}
+	resp := make([]AdminPlanResponse, 0, len(plans))
+	for _, p := range plans {
+		resp = append(resp, toAdminPlanResponse(p))
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": resp})
+}
+
+// CreateAdminPlan handles POST /api/v1/admin/plans.
+func (h *Handlers) CreateAdminPlan(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+	var input AdminPlanInput
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
+	if input.Name == "" || input.Slug == "" {
+		writeError(w, http.StatusBadRequest, "missing_fields", "name and slug are required")
+		return
+	}
+	if input.Status == "" {
+		input.Status = "active"
+	}
+	if input.Currency == "" {
+		input.Currency = "NGN"
+	}
+	featuresJSON, _ := json.Marshal(input.Features)
+
+	plan, err := gen.New(h.Service.db.Writer).CreateSubscriptionPlan(r.Context(), gen.CreateSubscriptionPlanParams{
+		TenantID:      tenantID,
+		Slug:          input.Slug,
+		Name:          input.Name,
+		Description:   input.Description,
+		Features:      featuresJSON,
+		MonthlyAmount: input.MonthlyAmount,
+		YearlyAmount:  input.YearlyAmount,
+		Currency:      input.Currency,
+		Highlighted:   input.Highlighted,
+		SortOrder:     input.SortOrder,
+		Status:        input.Status,
+	})
+	if err != nil {
+		if strings.Contains(err.Error(), "duplicate key") {
+			writeError(w, http.StatusConflict, "plan_exists", "A plan with this slug already exists")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to create plan")
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{"data": toAdminPlanResponse(plan)})
+}
+
+// UpdateAdminPlan handles PATCH /api/v1/admin/plans/{id}.
+func (h *Handlers) UpdateAdminPlan(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+	id, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid plan ID")
+		return
+	}
+	var input AdminPlanInput
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
+	featuresJSON, _ := json.Marshal(input.Features)
+
+	plan, err := gen.New(h.Service.db.Writer).UpdateSubscriptionPlan(r.Context(), gen.UpdateSubscriptionPlanParams{
+		ID:            id,
+		TenantID:      tenantID,
+		Slug:          input.Slug,
+		Name:          input.Name,
+		Description:   input.Description,
+		Features:      featuresJSON,
+		MonthlyAmount: input.MonthlyAmount,
+		YearlyAmount:  input.YearlyAmount,
+		Currency:      input.Currency,
+		Highlighted:   input.Highlighted,
+		SortOrder:     input.SortOrder,
+		Status:        input.Status,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "plan_not_found", "Plan not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to update plan")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": toAdminPlanResponse(plan)})
+}
+
+// DeleteAdminPlan handles DELETE /api/v1/admin/plans/{id}.
+func (h *Handlers) DeleteAdminPlan(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+	id, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid plan ID")
+		return
+	}
+	err = gen.New(h.Service.db.Writer).DeleteSubscriptionPlan(r.Context(), gen.DeleteSubscriptionPlanParams{
+		ID:       id,
 		TenantID: tenantID,
 	})
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to reactivate subscription")
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to delete plan")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"reactivated": true}})
+	writeJSON(w, http.StatusNoContent, nil)
 }

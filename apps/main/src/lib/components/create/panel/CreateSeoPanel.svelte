@@ -209,7 +209,7 @@
 		border: 1px solid rgb(255 255 255 / 0.3);
 		border-radius: var(--radius);
 		background: rgb(0 0 0 / 0.6);
-		color: #fff;
+		color: var(--color-surface);
 		font-size: 0.75rem;
 		font-weight: 500;
 		cursor: pointer;

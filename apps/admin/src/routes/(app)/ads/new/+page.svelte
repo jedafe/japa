@@ -1,11 +1,13 @@
 <script lang="ts">
 	import PageHeader from "$lib/components/layout/page-header.svelte";
 	import { Button } from "$lib/components/ui/button";
-	import { adSlotTypesApi, adsAdminApi, geoApi, spacesAdminApi } from "$lib/api";
+	import { adSlotTypesApi, adsAdminApi, geoApi } from "$lib/api";
+	import SpaceAutocomplete from "$lib/components/ui/SpaceAutocomplete.svelte";
 	import { t } from "$lib/stores/i18n.svelte";
 	import { hasPermission } from "$lib/stores/permissions.svelte";
 	import { goto } from "$app/navigation";
-	import { ArrowLeft, Save } from "lucide-svelte";
+	import { ArrowLeft, Save, Image as ImageIcon, X, Code, FileText, Type, Eye } from "lucide-svelte";
+	import MediaPickerModal from "$lib/components/ui/MediaPickerModal.svelte";
 
 	// Ref: japaconnect-engineering/sections/25-ad-placement.md — the backend
 	// AdSlotType sqlc struct exposes `slot_name` and `max_display_per_page`
@@ -33,33 +35,31 @@
 	let contentHeadline = $state('');
 	let contentBody = $state('');
 	let contentCta = $state('');
+	let contentHtml = $state('');
+	let contentMarkdown = $state('');
+	let contentMode = $state<'text' | 'html' | 'markdown' | 'image' | 'preview'>('text');
+	let imageMediaId = $state('');
+	let imageUrl = $state('');
+	let showMediaPicker = $state(false);
 
 	// Geo targeting
 	let targetGeo = $state<string[]>([]);
 	let targetSpaceIds = $state<string[]>([]);
 	let geoInput = $state('');
 	let countries = $state<GeoSpace[]>([]);
-	let geoSpaces = $state<GeoSpace[]>([]);
-	let spaceSearch = $state('');
 
 	let slotTypes = $state<SlotType[]>([]);
 	let saving = $state(false);
 	let errorMessage = $state('');
 	let successMessage = $state('');
-
-	const filteredSpaces = $derived(
-		spaceSearch
-			? geoSpaces.filter((s) => s.name.toLowerCase().includes(spaceSearch.toLowerCase()) || s.slug.toLowerCase().includes(spaceSearch.toLowerCase()))
-			: geoSpaces.slice(0, 50)
-	);
+	let formDataLoading = $state(true);
 
 	$effect(() => {
 		(async () => {
 			try {
-				const [slotsResult, countriesResult, spacesResult] = await Promise.all([
-					adSlotTypesApi.list(),
-					geoApi.listCountries(),
-					spacesAdminApi.list('level=country&limit=200')
+				const [slotsResult, countriesResult] = await Promise.all([
+					adSlotTypesApi.list('page_size=100'),
+					geoApi.listCountries()
 				]);
 				if (slotsResult.ok) {
 					// §6.2: guard null data; backend returns {data: [...]} envelope
@@ -72,12 +72,10 @@
 				if (countriesResult.ok) {
 					countries = (countriesResult.data as GeoSpace[]) ?? [];
 				}
-				if (spacesResult.ok) {
-					const data = (spacesResult.data ?? []) as { data?: GeoSpace[] } | GeoSpace[];
-					geoSpaces = Array.isArray(data) ? data : (data.data ?? []);
-				}
 			} catch {
 				errorMessage = t('ads.load_error', 'Failed to load form data');
+			} finally {
+				formDataLoading = false;
 			}
 		})();
 	});
@@ -94,17 +92,76 @@
 		targetGeo = targetGeo.filter((c) => c !== code);
 	}
 
-	function toggleSpace(id: string) {
-		if (targetSpaceIds.includes(id)) {
-			targetSpaceIds = targetSpaceIds.filter((s) => s !== id);
-		} else {
-			targetSpaceIds = [...targetSpaceIds, id];
-		}
+	function handleMediaSelect(media: { id: string; url: string; filename: string }) {
+		imageMediaId = media.id;
+		imageUrl = media.url;
 	}
 
+	function removeImage() {
+		imageMediaId = '';
+		imageUrl = '';
+	}
+
+	// Minimal markdown-to-HTML for the preview tab. Handles headings, bold,
+	// italic, code, links, lists, and paragraphs — enough for a realistic
+	// ad preview without pulling in a full markdown library.
+	function renderMarkdown(md: string): string {
+		if (!md.trim()) return '';
+		const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+		const lines = md.split('\n');
+		let html = '';
+		let inList = false;
+		for (const raw of lines) {
+			const line = raw.trim();
+			if (!line) {
+				if (inList) { html += '</ul>'; inList = false; }
+				continue;
+			}
+			let processed = esc(line)
+				.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+				.replace(/\*(.+?)\*/g, '<em>$1</em>')
+				.replace(/`(.+?)`/g, '<code>$1</code>')
+				.replace(/\[(.+?)\]\((.+?)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+			if (/^#{1,3}\s/.test(line)) {
+				if (inList) { html += '</ul>'; inList = false; }
+				const level = line.match(/^#+/)?.[0].length ?? 1;
+				processed = processed.replace(/^#+\s/, '');
+				html += `<h${level}>${processed}</h${level}>`;
+			} else if (/^[-*]\s/.test(line)) {
+				if (!inList) { html += '<ul>'; inList = true; }
+				processed = processed.replace(/^[-*]\s/, '');
+				html += `<li>${processed}</li>`;
+			} else {
+				if (inList) { html += '</ul>'; inList = false; }
+				html += `<p>${processed}</p>`;
+			}
+		}
+		if (inList) html += '</ul>';
+		return html;
+	}
+
+	// Track the last editing mode so the preview knows which content
+	// type to render. Updated whenever a non-preview tab is clicked.
+	let lastEditMode = $state<'text' | 'html' | 'markdown' | 'image'>('text');
+
+	function switchMode(mode: 'text' | 'html' | 'markdown' | 'image' | 'preview') {
+		if (mode !== 'preview') lastEditMode = mode;
+		contentMode = mode;
+	}
+
+	// Derived: the rendered HTML body for the preview, based on the last
+	// editing mode the user was in before clicking Preview.
+	let previewBodyHtml = $derived.by(() => {
+		if (lastEditMode === 'html') return contentHtml;
+		if (lastEditMode === 'markdown') return renderMarkdown(contentMarkdown);
+		if (lastEditMode === 'image') return imageUrl ? `<img src="${imageUrl}" alt="" style="max-width:100%;border-radius:0.5rem" />` : '';
+		return contentBody ? `<p>${contentBody.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</p>` : '';
+	});
+
+
 	async function save() {
-		if (!name || !slotTypeName) {
-			errorMessage = t('ads.name_required', 'Name and slot type are required');
+		if (!name || !slotTypeName || !contentHeadline.trim()) {
+			errorMessage = t('ads.name_required', 'Name, slot type, and headline are required');
 			return;
 		}
 		saving = true;
@@ -117,7 +174,11 @@
 				content: {
 					headline: contentHeadline,
 					body: contentBody,
-					cta: contentCta
+					cta: contentCta,
+					...(contentHtml ? { html: contentHtml } : {}),
+					...(contentMarkdown ? { markdown: contentMarkdown } : {}),
+					...(imageMediaId ? { image_media_id: imageMediaId } : {}),
+					...(imageUrl ? { image_url: imageUrl } : {})
 				},
 				priority: Number(priority) || 0
 			};
@@ -159,6 +220,10 @@
 {#if !canManage}
 	<div class="rounded-lg border p-6 text-center" style="border-color: var(--color-border); background-color: var(--color-surface)">
 		<p class="text-sm" style="color: var(--color-muted)">{t('ads.no_permission', 'You need ad.campaign.manage permission to create campaigns.')}</p>
+	</div>
+{:else if formDataLoading}
+	<div class="rounded-lg border p-6 text-center" style="border-color: var(--color-border); background-color: var(--color-surface)">
+		<p class="text-sm" style="color: var(--color-muted)">{t('common.loading')}</p>
 	</div>
 {:else}
 	<div class="mx-auto max-w-3xl space-y-6">
@@ -203,13 +268,119 @@
 			<h2 class="text-sm font-semibold uppercase tracking-wider" style="color: var(--color-muted)">{t('ads.content', 'Ad Content')}</h2>
 
 			<div>
-				<label for="ad-headline" class="mb-1 block text-sm font-medium">{t('ads.headline', 'Headline')}</label>
+				<label for="ad-headline" class="mb-1 block text-sm font-medium">{t('ads.headline', 'Headline')} *</label>
 				<input id="ad-headline" type="text" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-background)" bind:value={contentHeadline} placeholder="Discover Nigeria" />
 			</div>
 
+			<!-- Body with mode tabs: Text / HTML / Image -->
 			<div>
-				<label for="ad-body" class="mb-1 block text-sm font-medium">{t('ads.body', 'Body Text')}</label>
-				<textarea id="ad-body" rows="3" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-background)" bind:value={contentBody} placeholder="Explore the vibrant culture and landscapes..."></textarea>
+				<div class="mb-1 flex items-center justify-between">
+					<label for="ad-body" class="block text-sm font-medium">{t('ads.body', 'Body')}</label>
+					<div class="flex gap-1">
+						<button
+							type="button"
+							class="rounded px-2 py-0.5 text-xs font-medium transition-colors"
+							style={contentMode === 'text' ? 'background-color: var(--color-primary); color: white' : 'color: var(--color-muted)'}
+							onclick={() => switchMode('text')}
+						>
+							<Type class="mr-1 inline h-3 w-3" />{t('ads.mode_text', 'Text')}
+						</button>
+						<button
+							type="button"
+							class="rounded px-2 py-0.5 text-xs font-medium transition-colors"
+							style={contentMode === 'html' ? 'background-color: var(--color-primary); color: white' : 'color: var(--color-muted)'}
+							onclick={() => switchMode('html')}
+						>
+							<Code class="mr-1 inline h-3 w-3" />{t('ads.mode_html', 'HTML')}
+						</button>
+						<button
+							type="button"
+							class="rounded px-2 py-0.5 text-xs font-medium transition-colors"
+							style={contentMode === 'markdown' ? 'background-color: var(--color-primary); color: white' : 'color: var(--color-muted)'}
+							onclick={() => switchMode('markdown')}
+						>
+							<FileText class="mr-1 inline h-3 w-3" />{t('ads.mode_markdown', 'Markdown')}
+						</button>
+						<button
+							type="button"
+							class="rounded px-2 py-0.5 text-xs font-medium transition-colors"
+							style={contentMode === 'image' ? 'background-color: var(--color-primary); color: white' : 'color: var(--color-muted)'}
+							onclick={() => switchMode('image')}
+						>
+							<ImageIcon class="mr-1 inline h-3 w-3" />{t('ads.mode_image', 'Image')}
+						</button>
+						<button
+							type="button"
+							class="rounded px-2 py-0.5 text-xs font-medium transition-colors"
+							style={contentMode === 'preview' ? 'background-color: var(--color-primary); color: white' : 'color: var(--color-muted)'}
+							onclick={() => switchMode('preview')}
+						>
+							<Eye class="mr-1 inline h-3 w-3" />{t('ads.mode_preview', 'Preview')}
+						</button>
+					</div>
+				</div>
+				{#if contentMode === 'text'}
+					<textarea id="ad-body" rows="3" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-background)" bind:value={contentBody} placeholder="Explore the vibrant culture and landscapes..."></textarea>
+				{:else if contentMode === 'html'}
+					<textarea id="ad-body-html" rows="5" class="w-full rounded-md border px-3 py-2 font-mono text-sm" style="border-color: var(--color-border); background-color: var(--color-background)" bind:value={contentHtml} placeholder="<p>Write <strong>HTML</strong> content here...</p>"></textarea>
+					<p class="mt-1 text-xs" style="color: var(--color-muted)">{t('ads.html_helper', 'Raw HTML — will be sanitized on render')}</p>
+				{:else if contentMode === 'markdown'}
+					<textarea id="ad-body-md" rows="5" class="w-full rounded-md border px-3 py-2 font-mono text-sm" style="border-color: var(--color-border); background-color: var(--color-background)" bind:value={contentMarkdown} placeholder="**Bold** and *italic* markdown content..."></textarea>
+					<p class="mt-1 text-xs" style="color: var(--color-muted)">{t('ads.markdown_helper', 'Markdown — rendered to HTML on display')}</p>
+				{:else if contentMode === 'image'}
+					<!-- Image mode: pick an image from the media library -->
+					{#if imageUrl}
+						<div class="relative inline-block">
+							<img src={imageUrl} alt="" class="max-h-48 rounded-lg border object-cover" style="border-color: var(--color-border)" />
+							<button
+								type="button"
+								class="absolute -right-2 -top-2 rounded-full p-1 shadow-lg"
+								style="background-color: var(--color-danger); color: white"
+								onclick={removeImage}
+								aria-label={t('common.remove', 'Remove')}
+							>
+								<X class="h-4 w-4" />
+							</button>
+						</div>
+					{:else}
+						<button
+							type="button"
+							class="flex w-full items-center justify-center gap-2 rounded-lg border-2 border-dashed py-8 text-sm transition-colors hover:opacity-70"
+							style="border-color: var(--color-border); color: var(--color-muted)"
+							onclick={() => (showMediaPicker = true)}
+						>
+							<ImageIcon class="h-5 w-5" />
+							{t('ads.content_image_placeholder', 'Click to select an image from the media library')}
+						</button>
+					{/if}
+				{:else}
+					<!-- Preview mode: render the ad as it will appear to users -->
+					<div class="rounded-lg border p-4" style="border-color: var(--color-border); background-color: var(--color-background)">
+						{#if !contentHeadline.trim() && !previewBodyHtml}
+							<p class="py-8 text-center text-sm" style="color: var(--color-muted)">
+								{t('ads.preview_empty', 'Nothing to preview yet — add a headline and body content.')}
+							</p>
+						{:else}
+							<div class="space-y-3">
+								{#if contentHeadline.trim()}
+									<h3 class="text-lg font-bold" style="color: var(--color-foreground)">{contentHeadline}</h3>
+								{/if}
+								{#if previewBodyHtml}
+									<!-- eslint-disable-next-line svelte/no-at-html-tags -- preview only, content is admin-authored -->
+									<div class="text-sm leading-relaxed prose prose-sm max-w-none" style="color: var(--color-foreground)">
+										{@html previewBodyHtml}
+									</div>
+								{/if}
+								{#if contentCta.trim()}
+									<span class="inline-block rounded-md px-4 py-2 text-sm font-medium" style="background-color: var(--color-primary); color: white">
+										{contentCta}
+									</span>
+								{/if}
+							</div>
+						{/if}
+					</div>
+					<p class="mt-1 text-xs" style="color: var(--color-muted)">{t('ads.preview_helper', 'Preview — switch back to a content tab to edit')}</p>
+				{/if}
 			</div>
 
 			<div>
@@ -217,7 +388,6 @@
 				<input id="ad-cta" type="text" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-background)" bind:value={contentCta} placeholder="Learn More" />
 			</div>
 		</div>
-
 		<!-- Budget & Schedule -->
 		<div class="rounded-lg border p-6 space-y-4" style="border-color: var(--color-border); background-color: var(--color-surface)">
 			<h2 class="text-sm font-semibold uppercase tracking-wider" style="color: var(--color-muted)">{t('ads.budget_schedule', 'Budget & Schedule')}</h2>
@@ -226,6 +396,7 @@
 				<div>
 					<label for="ad-budget" class="mb-1 block text-sm font-medium">{t('ads.budget', 'Budget (credits)')}</label>
 					<input id="ad-budget" type="number" min="0" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-background)" bind:value={budget} placeholder="1000" />
+					<p class="mt-1 text-xs" style="color: var(--color-muted)">{t('ads.budget_helper', 'Minimum 10 credits if specified')}</p>
 				</div>
 				<div>
 					<label for="ad-priority" class="mb-1 block text-sm font-medium">{t('ads.priority', 'Priority')}</label>
@@ -272,49 +443,32 @@
 				{#if countries.length > 0}
 					<div class="mt-2 flex flex-wrap gap-1">
 						{#each countries.slice(0, 20) as c}
-							<button class="rounded px-2 py-0.5 text-xs hover:opacity-70" style="background-color: var(--color-muted); color: var(--color-background)" onclick={() => { const code = (c.geo_code ?? c.slug).toUpperCase(); if (!targetGeo.includes(code)) targetGeo = [...targetGeo, code]; }}>
-								{c.name} ({c.geo_code ?? c.slug})
+								{#if c.geo_code}
+							<button class="rounded px-2 py-0.5 text-xs hover:opacity-70" style="background-color: var(--color-muted); color: var(--color-background)" onclick={() => { const code = c.geo_code!.toUpperCase(); if (!targetGeo.includes(code)) targetGeo = [...targetGeo, code]; }}>
+								{c.name} ({c.geo_code})
 							</button>
+								{/if}
 						{/each}
 					</div>
 				{/if}
 			</div>
 
-			<!-- Target Space IDs -->
+			<!-- Target Space IDs — debounced autocomplete dropdown -->
 			<div>
-				<label for="ad-space-search" class="mb-1 block text-sm font-medium">{t('ads.target_spaces', 'Target Specific Spaces')}</label>
-				<input id="ad-space-search" type="text" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-background)" placeholder={t('ads.search_spaces', 'Search spaces...')} bind:value={spaceSearch} />
-				{#if targetSpaceIds.length > 0}
-					<div class="mt-2 flex flex-wrap gap-2">
-						{#each targetSpaceIds as id}
-							{@const space = geoSpaces.find((s) => s.id === id)}
-							<span class="inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-medium" style="background-color: var(--color-info); color: white">
-								{space?.name ?? id.slice(0, 8)}
-								<button onclick={() => toggleSpace(id)} class="hover:opacity-70" aria-label={t('common.remove', 'Remove')}>×</button>
-							</span>
-						{/each}
-					</div>
-				{/if}
-				{#if spaceSearch && filteredSpaces.length > 0}
-					<div class="mt-2 max-h-40 overflow-y-auto rounded-md border" style="border-color: var(--color-border)">
-						{#each filteredSpaces.slice(0, 20) as s}
-							<button class="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:opacity-70" style="border-bottom: 1px solid var(--color-border)" onclick={() => toggleSpace(s.id)}>
-								<span>{s.name}</span>
-								<span class="text-xs font-mono" style="color: var(--color-muted)">{s.slug}</span>
-							</button>
-						{/each}
-					</div>
-				{/if}
+				<label for="space-autocomplete-input" class="mb-1 block text-sm font-medium">{t('ads.target_spaces', 'Target Specific Spaces')}</label>
+				<SpaceAutocomplete bind:selectedIds={targetSpaceIds} placeholder={t('ads.search_spaces', 'Search spaces...')} />
 			</div>
 		</div>
 
 		<!-- Actions -->
 		<div class="flex justify-end gap-2">
 			<Button variant="outline" onclick={() => goto('/ads')}>{t('common.cancel', 'Cancel')}</Button>
-			<Button onclick={save} disabled={saving || !name || !slotTypeName}>
+			<Button onclick={save} disabled={saving || !name || !slotTypeName || !contentHeadline.trim()}>
 				<Save class="h-3.5 w-3.5" />
 				{saving ? t('common.saving', 'Saving...') : t('ads.create_campaign', 'Create Campaign')}
 			</Button>
 		</div>
 	</div>
 {/if}
+
+<MediaPickerModal bind:open={showMediaPicker} onselect={handleMediaSelect} />

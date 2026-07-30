@@ -15,13 +15,13 @@ type ConsentType string
 
 const (
 	// ConsentMarketingEmail is the consent marketing email constant.
-	ConsentMarketingEmail    ConsentType = "marketing_email"
- // ConsentAnalyticsTracking is the consent analytics tracking.
+	ConsentMarketingEmail ConsentType = "marketing_email"
+	// ConsentAnalyticsTracking is the consent analytics tracking.
 	ConsentAnalyticsTracking ConsentType = "analytics_tracking"
- // ConsentThirdPartySharing is the consent third party sharing.
+	// ConsentThirdPartySharing is the consent third party sharing.
 	ConsentThirdPartySharing ConsentType = "third_party_sharing"
- // ConsentAIProcessing is the consent a i processing.
-	ConsentAIProcessing      ConsentType = "ai_processing"
+	// ConsentAIProcessing is the consent a i processing.
+	ConsentAIProcessing ConsentType = "ai_processing"
 )
 
 // AllConsentTypes returns all valid consent types.
@@ -39,13 +39,13 @@ type ExportStatus string
 
 const (
 	// ExportPending is the export pending constant.
-	ExportPending    ExportStatus = "pending"
- // ExportProcessing is the export processing.
+	ExportPending ExportStatus = "pending"
+	// ExportProcessing is the export processing.
 	ExportProcessing ExportStatus = "processing"
- // ExportCompleted is the export completed.
-	ExportCompleted  ExportStatus = "completed"
- // ExportFailed is the export failed.
-	ExportFailed     ExportStatus = "failed"
+	// ExportCompleted is the export completed.
+	ExportCompleted ExportStatus = "completed"
+	// ExportFailed is the export failed.
+	ExportFailed ExportStatus = "failed"
 )
 
 // DeletionStatus represents the lifecycle state of an account deletion request.
@@ -53,16 +53,16 @@ type DeletionStatus string
 
 const (
 	// DeletionPending is the deletion pending constant.
-	DeletionPending       DeletionStatus = "pending"
+	DeletionPending DeletionStatus = "pending"
 	// DeletionProcessing is the deletion processing.
-	DeletionProcessing    DeletionStatus = "processing"
+	DeletionProcessing DeletionStatus = "processing"
 	// DeletionRetentionWait means the user is anonymized but hard delete is
-	// waiting for the retention period to elapse. 
+	// waiting for the retention period to elapse.
 	DeletionRetentionWait DeletionStatus = "retention_wait"
 	// DeletionCompleted is the deletion completed.
-	DeletionCompleted     DeletionStatus = "completed"
+	DeletionCompleted DeletionStatus = "completed"
 	// DeletionFailed is the deletion failed.
-	DeletionFailed        DeletionStatus = "failed"
+	DeletionFailed DeletionStatus = "failed"
 )
 
 // Pagination defaults.

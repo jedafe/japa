@@ -19,6 +19,9 @@
 	const ledger = $derived(walletData?.ledger ?? []);
 	const rate = $derived(walletData?.settings?.settings?.points_to_credits_rate ?? 100);
 	const minConvert = $derived(walletData?.settings?.min_convert_points ?? 100);
+	// Effective floor: conversion can never yield fewer than 1 credit, so the
+	// minimum the user can actually convert is max(min_convert_points, rate).
+	const effectiveMin = $derived(Math.max(minConvert, rate));
 
 	let convertAmount = $state('');
 	let converting = $state(false);
@@ -28,11 +31,11 @@
 	function userMessage(code: string | undefined, fallback: string): string {
 		switch (code) {
 			case 'insufficient_balance':
-				return "You don't have enough points for this conversion.";
+				return t('settings.wallet.error_insufficient_balance');
 			case 'internal_error':
-				return 'Conversion failed. Please try again later.';
+				return t('settings.wallet.error_internal');
 			case 'forbidden':
-				return 'You do not have permission to perform this action.';
+				return t('settings.wallet.error_forbidden');
 			default:
 				return fallback;
 		}
@@ -73,7 +76,7 @@
 		</div>
 	</div>
 
-	<p class="text-muted-foreground mb-4 text-xs">
+	<p class="mb-4 text-xs text-[var(--color-muted)]">
 		{t('settings.wallet.conversion_rate', '1 credit = {rate} points').replace('{rate}', String(rate))}
 	</p>
 
@@ -81,18 +84,22 @@
 		<label class="mb-2 block">
 			<span class="mb-1 block text-sm text-[var(--color-muted)]">{t('settings.wallet.convert_label')}</span>
 			<span class="mb-1 block text-xs text-[var(--color-muted)]">
-				{t('settings.wallet.minimum', 'Minimum {minConvert} points').replace('{minConvert}', String(minConvert))}
+				{t('settings.wallet.minimum', 'Minimum {minConvert} points').replace('{minConvert}', String(effectiveMin))}
 			</span>
 			<input
 				type="number"
-				min={minConvert}
+				min={effectiveMin}
 				class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]"
 				value={convertAmount}
-				oninput={(e) => (convertAmount = e.currentTarget.value)}
+				oninput={(e) => {
+					convertAmount = e.currentTarget.value;
+					success = false;
+					error = null;
+				}}
 			/>
 		</label>
-		{#if error}<p class="mb-2 text-xs text-[var(--color-danger,#dc2626)]">{error}</p>{/if}
-		{#if success}<p class="mb-2 text-xs text-green-600">{t('settings.wallet.convert_success')}</p>{/if}
+		{#if error}<p class="mb-2 text-xs text-[var(--color-danger)]">{error}</p>{/if}
+		{#if success}<p class="mb-2 text-xs text-[var(--color-success)]">{t('settings.wallet.convert_success')}</p>{/if}
 		<button
 			type="submit"
 			disabled={converting || !convertAmount}

@@ -31,6 +31,34 @@ func (q *Queries) AnonymizeAuditLogActor(ctx context.Context, arg AnonymizeAudit
 	return err
 }
 
+const anonymizeComparisonItemsByAuthor = `-- name: AnonymizeComparisonItemsByAuthor :execrows
+UPDATE comparison_items ci
+SET title = '[anonymized]',
+    description = NULL,
+    image_id = NULL
+FROM contents c
+WHERE ci.content_id = c.id
+  AND c.tenant_id = $1
+  AND c.author_id = $2
+  AND ci.deleted_at IS NULL
+`
+
+type AnonymizeComparisonItemsByAuthorParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	UserID   pgtype.UUID `json:"user_id"`
+}
+
+// BUG-029: anonymize comparison_items.title/description for content authored by
+// the deleted user, so soft-deleted contents don't re-identify the user via
+// comparison item text. Runs before HardDeleteUser.
+func (q *Queries) AnonymizeComparisonItemsByAuthor(ctx context.Context, arg AnonymizeComparisonItemsByAuthorParams) (int64, error) {
+	result, err := q.db.Exec(ctx, anonymizeComparisonItemsByAuthor, arg.TenantID, arg.UserID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const anonymizeInstructorPayoutsForInstructor = `-- name: AnonymizeInstructorPayoutsForInstructor :execrows
 UPDATE instructor_payouts ipo
 SET instructor_id = NULL

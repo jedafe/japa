@@ -295,6 +295,12 @@ WHERE f.tenant_id = $1
 GROUP BY 1
 ORDER BY 1 DESC;
 
+-- name: UpdateUserGeoSpace :exec
+-- Sets the user's current primary geo space (Section 05, ADR-005).
+UPDATE users
+SET current_geo_space_id = $1, updated_at = now()
+WHERE id = $2 AND tenant_id = $3;
+
 -- name: ListActiveUsersForDigest :many
 SELECT u.id, u.tenant_id, u.email
 FROM users u
