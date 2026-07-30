@@ -14,6 +14,7 @@ package comparison
 
 import (
 	"github.com/jedafe/japa/internal/content"
+	"github.com/jedafe/japa/internal/customfields"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
 )
@@ -65,6 +66,7 @@ type Service struct {
 	store      *Store
 	db         *db.DB
 	contentSvc *content.Service
+	cfSvc      *customfields.Service
 }
 
 // NewService creates a Service backed by the given database pool.
@@ -76,5 +78,6 @@ func NewService(database *db.DB) *Service {
 		},
 		db:         database,
 		contentSvc: content.NewService(database),
+		cfSvc:      customfields.NewService(database),
 	}
 }

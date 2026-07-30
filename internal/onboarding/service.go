@@ -84,6 +84,15 @@ func (s *Service) UpdateStep(ctx context.Context, tenantID, userID pgtype.UUID, 
 	// Merge step_data: existing + new data (new keys overwrite old).
 	merged := mergeJSON(existingData, req.StepData)
 
+	// Auto-join primary geo spaces when location fields are present (Section 05, ADR-005).
+	fields := parseStepData(merged)
+	if fields.CountryCode != "" {
+		if err := s.autoJoinGeoSpaces(ctx, tenantID, userID, fields); err != nil {
+			slog.Warn("auto-join geo spaces failed", "error", err)
+			// Non-fatal — don't block onboarding.
+		}
+	}
+
 	// Advance to the requested step or next if step is 0/omitted.
 	newStep := req.Step
 	if newStep <= 0 {
@@ -170,6 +179,9 @@ type stepDataFields struct {
 	Name            string   `json:"name"`
 	JapaStatus      string   `json:"japa_status"`
 	CurrentLocation string   `json:"current_location"`
+	CountryCode     string   `json:"country_code"`
+	StateID         string   `json:"state_id"`
+	CityID          string   `json:"city_id"`
 	Destination     string   `json:"destination"`
 	PrimaryGoal     string   `json:"primary_goal"`
 	Tags            []string `json:"tags"`
@@ -375,6 +387,86 @@ func tagOverlapScore(description string, tags []string) float64 {
 	}
 
 	return math.Min(float64(matchCount)/float64(len(tags)), 1.0)
+}
+
+// autoJoinGeoSpaces joins the user to the country, state, and city geo spaces
+// based on the onboarding step data. Failures are non-fatal — the caller logs
+// and continues without blocking onboarding.
+func (s *Service) autoJoinGeoSpaces(ctx context.Context, tenantID, userID pgtype.UUID, fields stepDataFields) error {
+	queries := gen.New(s.db.Writer)
+
+	// Find country space by geo_code.
+	countrySpace, err := queries.GetSpaceByGeoCode(ctx, gen.GetSpaceByGeoCodeParams{
+		GeoCode:  &fields.CountryCode,
+		TenantID: tenantID,
+	})
+	if err != nil {
+		return fmt.Errorf("finding country space for %s: %w", fields.CountryCode, err)
+	}
+
+	// Join country space (idempotent via ON CONFLICT DO NOTHING).
+	if err := queries.AddSpaceMember(ctx, gen.AddSpaceMemberParams{
+		SpaceID:  countrySpace.ID,
+		UserID:   userID,
+		TenantID: tenantID,
+	}); err != nil {
+		slog.Warn("failed to join country space", "space_id", countrySpace.ID, "error", err)
+	}
+
+	geoSpaceID := countrySpace.ID
+
+	// Join state space if provided.
+	if fields.StateID != "" {
+		var stateID pgtype.UUID
+		if err := stateID.Scan(fields.StateID); err == nil {
+			stateSpace, err := queries.GetSpaceByID(ctx, gen.GetSpaceByIDParams{
+				ID:       stateID,
+				TenantID: tenantID,
+			})
+			if err == nil {
+				if err := queries.AddSpaceMember(ctx, gen.AddSpaceMemberParams{
+					SpaceID:  stateSpace.ID,
+					UserID:   userID,
+					TenantID: tenantID,
+				}); err != nil {
+					slog.Warn("failed to join state space", "space_id", stateSpace.ID, "error", err)
+				}
+				geoSpaceID = stateSpace.ID
+			}
+		}
+	}
+
+	// Join city space if provided.
+	if fields.CityID != "" {
+		var cityID pgtype.UUID
+		if err := cityID.Scan(fields.CityID); err == nil {
+			citySpace, err := queries.GetSpaceByID(ctx, gen.GetSpaceByIDParams{
+				ID:       cityID,
+				TenantID: tenantID,
+			})
+			if err == nil {
+				if err := queries.AddSpaceMember(ctx, gen.AddSpaceMemberParams{
+					SpaceID:  citySpace.ID,
+					UserID:   userID,
+					TenantID: tenantID,
+				}); err != nil {
+					slog.Warn("failed to join city space", "space_id", citySpace.ID, "error", err)
+				}
+				geoSpaceID = citySpace.ID
+			}
+		}
+	}
+
+	// Set current_geo_space_id to the deepest resolved level.
+	if err := queries.UpdateUserGeoSpace(ctx, gen.UpdateUserGeoSpaceParams{
+		CurrentGeoSpaceID: geoSpaceID,
+		ID:                userID,
+		TenantID:          tenantID,
+	}); err != nil {
+		return fmt.Errorf("setting user geo space: %w", err)
+	}
+
+	return nil
 }
 
 // ---------------------------------------------------------------------------

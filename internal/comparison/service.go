@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/content"
 	"github.com/jedafe/japa/internal/db/gen"
@@ -76,12 +77,21 @@ func (s *Service) ListComparisonTypes(ctx context.Context, tenantID pgtype.UUID,
 	return s.store.listComparisonTypesByTenant(ctx, tenantID, limit, offset)
 }
 
+// ComparisonItemInput is a single item passed by the create wizard.
+type ComparisonItemInput struct {
+	Name string
+	Slug string
+}
+
 // CreateComparisonInput holds parameters for creating a comparison.
 type CreateComparisonInput struct {
 	Title      string
 	Body       string
 	Visibility string
 	SpaceID    pgtype.UUID
+	TypeID     pgtype.UUID // optional: links the comparison to a comparison_type_definition
+	Items      []ComparisonItemInput
+	Dimensions []string // dimension labels (from the wizard's step 3)
 }
 
 // CreateComparisonResult holds the result of creating a comparison.
@@ -95,9 +105,30 @@ type CreateComparisonResult struct {
 	SpaceID    pgtype.UUID `json:"space_id"`
 }
 
+// fieldTypeToDimensionType maps a custom_field field_type to a comparison
+// dimension_type. Unknown field types default to text.
+func fieldTypeToDimensionType(fieldType string) string {
+	switch fieldType {
+	case "number", "integer":
+		return DimensionTypeNumber
+	case "currency":
+		return DimensionTypeCurrency
+	case "boolean", "checkbox":
+		return DimensionTypeBoolean
+	case "rating", "select":
+		return DimensionTypeRating
+	default:
+		return DimensionTypeText
+	}
+}
+
 // CreateComparison creates a comparison by inserting a content row with
-// content_type='comparison'. The comparison items, dimensions, and values
-// are then linked to this content row via its ID.
+// content_type='comparison', then creates the items and dimensions supplied by
+// the wizard. When a type_id is supplied, the type's field-group fields are
+// auto-converted into dimensions (Section 30: "each field = one
+// comparison_dimension row") unless the caller already supplied dimensions.
+//
+// Ref: japaconnect-engineering/sections/30-generic-comparison-system.md
 func (s *Service) CreateComparison(ctx context.Context, tenantID, userID pgtype.UUID, input CreateComparisonInput) (CreateComparisonResult, error) {
 	if input.Title == "" {
 		return CreateComparisonResult{}, errors.New("title is required")
@@ -122,6 +153,85 @@ func (s *Service) CreateComparison(ctx context.Context, tenantID, userID pgtype.
 		return CreateComparisonResult{}, fmt.Errorf("creating comparison content: %w", err)
 	}
 
+	// Resolve the comparison type (if supplied) so we can link items/dimensions
+	// to it and auto-generate dimensions from its field group (BUG-003/BUG-004).
+	var typeDef *gen.ComparisonTypeDefinition
+	if input.TypeID.Valid {
+		td, err := s.store.getComparisonTypeByID(ctx, input.TypeID, tenantID)
+		if err != nil {
+			return CreateComparisonResult{}, fmt.Errorf("resolving comparison type: %w", err)
+		}
+		typeDef = &td
+	}
+
+	// Create items supplied by the wizard (BUG-002).
+	for i, item := range input.Items {
+		if item.Name == "" {
+			continue
+		}
+		title := item.Name
+		if item.Slug != "" {
+			title = item.Name // name is the display title; slug is for routing
+		}
+		_, err := s.store.createComparisonItem(ctx, gen.CreateComparisonItemParams{
+			ContentID: contentRow.ID,
+			TenantID:  tenantID,
+			TypeID:    input.TypeID,
+			Title:     title,
+			Position:  int32(i),
+		})
+		if err != nil {
+			return CreateComparisonResult{}, fmt.Errorf("creating comparison item %d: %w", i, err)
+		}
+	}
+
+	// Determine dimensions: if the caller supplied labels, use them. Otherwise,
+	// if a type with a field group was supplied, auto-generate one dimension per
+	// field in the group (Section 30, BUG-004).
+	dimLabels := input.Dimensions
+	if len(dimLabels) == 0 && typeDef != nil && typeDef.FieldGroupID.Valid {
+		fields, ferr := s.cfSvc.ListFieldsByGroup(ctx, typeDef.FieldGroupID, tenantID)
+		if ferr != nil {
+			return CreateComparisonResult{}, fmt.Errorf("listing field-group fields: %w", ferr)
+		}
+		for _, f := range fields {
+			dimLabels = append(dimLabels, f.Label)
+		}
+		// Store the auto-generated dimensions with the correct dimension_type.
+		for i, f := range fields {
+			_, derr := s.store.createComparisonDimension(ctx, gen.CreateComparisonDimensionParams{
+				ContentID:     contentRow.ID,
+				TenantID:      tenantID,
+				TypeID:        input.TypeID,
+				Label:         f.Label,
+				DimensionType: fieldTypeToDimensionType(f.FieldType),
+				Position:      int32(i),
+			})
+			if derr != nil {
+				return CreateComparisonResult{}, fmt.Errorf("auto-creating dimension %d: %w", i, derr)
+			}
+		}
+		// Skip the generic loop below — dimensions already created.
+		dimLabels = nil
+	}
+
+	for i, label := range dimLabels {
+		if label == "" {
+			continue
+		}
+		_, err := s.store.createComparisonDimension(ctx, gen.CreateComparisonDimensionParams{
+			ContentID:     contentRow.ID,
+			TenantID:      tenantID,
+			TypeID:        input.TypeID,
+			Label:         label,
+			DimensionType: DimensionTypeText,
+			Position:      int32(i),
+		})
+		if err != nil {
+			return CreateComparisonResult{}, fmt.Errorf("creating comparison dimension %d: %w", i, err)
+		}
+	}
+
 	return CreateComparisonResult{
 		ID:         contentRow.ID,
 		TenantID:   contentRow.TenantID,
@@ -133,9 +243,102 @@ func (s *Service) CreateComparison(ctx context.Context, tenantID, userID pgtype.
 	}, nil
 }
 
+// UpdateComparisonInput holds parameters for updating a comparison's metadata.
+// Only the parent content row's metadata is editable here; items, dimensions,
+// and values have their own endpoints.
+type UpdateComparisonInput struct {
+	Title      string
+	Slug       string
+	Body       string
+	Visibility string
+	EditedBy   pgtype.UUID
+}
+
+// UpdateComparison updates the metadata of the content row backing a comparison
+// (PATCH /api/v1/comparisons/{id}). It delegates to the content service so the
+// standard edit-window, slug-uniqueness, and revision-creation rules apply.
+//
+// Ref: japaconnect-engineering/sections/30-generic-comparison-system.md
+func (s *Service) UpdateComparison(ctx context.Context, id, tenantID pgtype.UUID, input UpdateComparisonInput) (gen.UpdateContentRow, error) {
+	visibility := input.Visibility
+	body := input.Body
+
+	return s.contentSvc.UpdateContent(ctx, id, tenantID, input.EditedBy, content.UpdateContentInput{
+		Title:      input.Title,
+		Slug:       input.Slug,
+		Body:       body,
+		Visibility: visibility,
+	})
+}
+
+// DeleteComparison soft-deletes the content row backing a comparison
+// (DELETE /api/v1/comparisons/{id}). Per Rule 11, only the content row is
+// soft-deleted in V1; the linked comparison_items/dimensions/values remain
+// (hidden because list queries filter on contents.deleted_at IS NULL) and are
+// hard-removed only by the account:deletion_cleanup Asynq task.
+//
+// Ref: japaconnect-engineering/sections/30-generic-comparison-system.md
+func (s *Service) DeleteComparison(ctx context.Context, id, tenantID pgtype.UUID) error {
+	return s.contentSvc.DeleteContent(ctx, id, tenantID)
+}
+
+// ComparisonDetail is the full detail view for a single comparison: the parent
+// content metadata plus its items and dimensions.
+type ComparisonDetail struct {
+	ID         pgtype.UUID                                `json:"id"`
+	TenantID   pgtype.UUID                                `json:"tenant_id"`
+	AuthorID   pgtype.UUID                                `json:"author_id"`
+	Title      string                                     `json:"title"`
+	Slug       string                                     `json:"slug"`
+	Body       string                                     `json:"body"`
+	Visibility string                                     `json:"visibility"`
+	Status     string                                     `json:"status"`
+	SpaceID    pgtype.UUID                                `json:"space_id"`
+	Items      []gen.ListComparisonItemsByContentRow      `json:"items"`
+	Dimensions []gen.ListComparisonDimensionsByContentRow `json:"dimensions"`
+}
+
+// GetComparisonDetail returns the parent content metadata together with the
+// comparison's items and dimensions (GET /api/v1/comparisons/{id}). The earlier
+// handler returned only items+dimensions and dropped the title/slug/author the
+// detail page needs.
+//
+// Ref: japaconnect-engineering/sections/30-generic-comparison-system.md
+func (s *Service) GetComparisonDetail(ctx context.Context, id, tenantID pgtype.UUID) (ComparisonDetail, error) {
+	contentRow, err := s.contentSvc.GetContent(ctx, id, tenantID)
+	if err != nil {
+		return ComparisonDetail{}, fmt.Errorf("getting comparison content: %w", err)
+	}
+
+	items, err := s.store.listComparisonItemsByContent(ctx, id, tenantID)
+	if err != nil {
+		return ComparisonDetail{}, fmt.Errorf("listing comparison items: %w", err)
+	}
+
+	dimensions, err := s.store.listComparisonDimensionsByContent(ctx, id, tenantID)
+	if err != nil {
+		return ComparisonDetail{}, fmt.Errorf("listing comparison dimensions: %w", err)
+	}
+
+	return ComparisonDetail{
+		ID:         contentRow.ID,
+		TenantID:   contentRow.TenantID,
+		AuthorID:   contentRow.AuthorID,
+		Title:      contentRow.Title,
+		Slug:       contentRow.Slug,
+		Body:       contentRow.Body,
+		Visibility: contentRow.Visibility,
+		Status:     contentRow.Status,
+		SpaceID:    contentRow.SpaceID,
+		Items:      items,
+		Dimensions: dimensions,
+	}, nil
+}
+
 // UpdateComparisonTypeInput holds parameters for updating a comparison type.
 type UpdateComparisonTypeInput struct {
 	Name        string
+	Slug        string
 	Description string
 	Icon        string
 	ItemLabel   string
@@ -157,18 +360,45 @@ func (s *Service) UpdateComparisonType(ctx context.Context, id, tenantID pgtype.
 		icon = &input.Icon
 	}
 
+	var slug *string
+	if input.Slug != "" {
+		slug = &input.Slug
+	}
+
 	return s.store.updateComparisonType(ctx, gen.UpdateComparisonTypeParams{
 		ID:          id,
 		TenantID:    tenantID,
 		Name:        input.Name,
+		Slug:        slug,
 		Description: description,
 		Icon:        icon,
 		ItemLabel:   input.ItemLabel,
 	})
 }
 
+// ErrComparisonTypeInUse is returned when a DeleteComparisonType is attempted
+// on a type that still has comparison_items linked to it.
+var ErrComparisonTypeInUse = errors.New("comparison type is in use by existing comparisons")
+
 // DeleteComparisonType removes a comparison type and its cascaded children.
+// It refuses to delete a type that is still referenced by comparison_items
+// (Section 30 — in-use guard, BUG-006). System types (is_system=true) are
+// also protected from deletion.
 func (s *Service) DeleteComparisonType(ctx context.Context, id, tenantID pgtype.UUID) error {
+	td, err := s.store.getComparisonTypeByID(ctx, id, tenantID)
+	if err != nil {
+		return fmt.Errorf("resolving comparison type: %w", err)
+	}
+	if td.IsSystem {
+		return errors.New("system comparison types cannot be deleted")
+	}
+	count, err := s.store.countComparisonItemsByType(ctx, id, tenantID)
+	if err != nil {
+		return fmt.Errorf("checking comparison type usage: %w", err)
+	}
+	if count > 0 {
+		return ErrComparisonTypeInUse
+	}
 	return s.store.deleteComparisonType(ctx, id, tenantID)
 }
 
@@ -185,7 +415,13 @@ type SetComparisonTypeAccessInput struct {
 }
 
 // SetComparisonTypeAccess upserts access permissions for a user group on a type.
-func (s *Service) SetComparisonTypeAccess(ctx context.Context, typeID pgtype.UUID, input SetComparisonTypeAccessInput) error {
+// The type is first verified to belong to the caller's tenant so a guessed or
+// leaked type_id UUID cannot read/write another tenant's access rows.
+func (s *Service) SetComparisonTypeAccess(ctx context.Context, typeID, tenantID pgtype.UUID, input SetComparisonTypeAccessInput) error {
+	if _, err := s.store.getComparisonTypeByID(ctx, typeID, tenantID); err != nil {
+		return fmt.Errorf("verifying comparison type ownership: %w", err)
+	}
+
 	return s.store.setComparisonTypeAccess(ctx, gen.SetComparisonTypeAccessParams{
 		TypeID:      typeID,
 		UserGroupID: input.UserGroupID,
@@ -195,8 +431,13 @@ func (s *Service) SetComparisonTypeAccess(ctx context.Context, typeID pgtype.UUI
 	})
 }
 
-// ListComparisonTypeAccess returns all access entries for a type.
-func (s *Service) ListComparisonTypeAccess(ctx context.Context, typeID pgtype.UUID) ([]gen.ListComparisonTypeAccessRow, error) {
+// ListComparisonTypeAccess returns all access entries for a type. The type is
+// first verified to belong to the caller's tenant (cross-tenant guard).
+func (s *Service) ListComparisonTypeAccess(ctx context.Context, typeID, tenantID pgtype.UUID) ([]gen.ListComparisonTypeAccessRow, error) {
+	if _, err := s.store.getComparisonTypeByID(ctx, typeID, tenantID); err != nil {
+		return nil, fmt.Errorf("verifying comparison type ownership: %w", err)
+	}
+
 	return s.store.listComparisonTypeAccess(ctx, typeID)
 }
 
@@ -220,9 +461,9 @@ type CreateComparisonItemInput struct {
 }
 
 // CreateComparisonItem adds a new item to a comparison.
-func (s *Service) CreateComparisonItem(ctx context.Context, tenantID pgtype.UUID, input CreateComparisonItemInput) (gen.ComparisonItem, error) {
+func (s *Service) CreateComparisonItem(ctx context.Context, tenantID pgtype.UUID, input CreateComparisonItemInput) (gen.CreateComparisonItemRow, error) {
 	if input.Title == "" {
-		return gen.ComparisonItem{}, errors.New("title is required")
+		return gen.CreateComparisonItemRow{}, errors.New("title is required")
 	}
 
 	var description *string
@@ -242,7 +483,7 @@ func (s *Service) CreateComparisonItem(ctx context.Context, tenantID pgtype.UUID
 }
 
 // ListComparisonItems returns all items for a comparison.
-func (s *Service) ListComparisonItems(ctx context.Context, contentID, tenantID pgtype.UUID) ([]gen.ComparisonItem, error) {
+func (s *Service) ListComparisonItems(ctx context.Context, contentID, tenantID pgtype.UUID) ([]gen.ListComparisonItemsByContentRow, error) {
 	return s.store.listComparisonItemsByContent(ctx, contentID, tenantID)
 }
 
@@ -256,9 +497,9 @@ type UpdateComparisonItemInput struct {
 }
 
 // UpdateComparisonItem updates an existing comparison item.
-func (s *Service) UpdateComparisonItem(ctx context.Context, id, tenantID pgtype.UUID, input UpdateComparisonItemInput) (gen.ComparisonItem, error) {
+func (s *Service) UpdateComparisonItem(ctx context.Context, id, tenantID pgtype.UUID, input UpdateComparisonItemInput) (gen.UpdateComparisonItemRow, error) {
 	if input.Title == "" {
-		return gen.ComparisonItem{}, errors.New("title is required")
+		return gen.UpdateComparisonItemRow{}, errors.New("title is required")
 	}
 
 	var description *string
@@ -300,13 +541,13 @@ type CreateComparisonDimensionInput struct {
 }
 
 // CreateComparisonDimension adds a new dimension to a comparison.
-func (s *Service) CreateComparisonDimension(ctx context.Context, tenantID pgtype.UUID, input CreateComparisonDimensionInput) (gen.ComparisonDimension, error) {
+func (s *Service) CreateComparisonDimension(ctx context.Context, tenantID pgtype.UUID, input CreateComparisonDimensionInput) (gen.CreateComparisonDimensionRow, error) {
 	if input.Label == "" {
-		return gen.ComparisonDimension{}, errors.New("label is required")
+		return gen.CreateComparisonDimensionRow{}, errors.New("label is required")
 	}
 
 	if !IsValidDimensionType(input.DimensionType) {
-		return gen.ComparisonDimension{}, fmt.Errorf("invalid dimension type: %s", input.DimensionType)
+		return gen.CreateComparisonDimensionRow{}, fmt.Errorf("invalid dimension type: %s", input.DimensionType)
 	}
 
 	return s.store.createComparisonDimension(ctx, gen.CreateComparisonDimensionParams{
@@ -319,7 +560,7 @@ func (s *Service) CreateComparisonDimension(ctx context.Context, tenantID pgtype
 }
 
 // ListComparisonDimensions returns all dimensions for a comparison.
-func (s *Service) ListComparisonDimensions(ctx context.Context, contentID, tenantID pgtype.UUID) ([]gen.ComparisonDimension, error) {
+func (s *Service) ListComparisonDimensions(ctx context.Context, contentID, tenantID pgtype.UUID) ([]gen.ListComparisonDimensionsByContentRow, error) {
 	return s.store.listComparisonDimensionsByContent(ctx, contentID, tenantID)
 }
 
@@ -331,13 +572,13 @@ type UpdateComparisonDimensionInput struct {
 }
 
 // UpdateComparisonDimension updates an existing dimension.
-func (s *Service) UpdateComparisonDimension(ctx context.Context, id, tenantID pgtype.UUID, input UpdateComparisonDimensionInput) (gen.ComparisonDimension, error) {
+func (s *Service) UpdateComparisonDimension(ctx context.Context, id, tenantID pgtype.UUID, input UpdateComparisonDimensionInput) (gen.UpdateComparisonDimensionRow, error) {
 	if input.Label == "" {
-		return gen.ComparisonDimension{}, errors.New("label is required")
+		return gen.UpdateComparisonDimensionRow{}, errors.New("label is required")
 	}
 
 	if !IsValidDimensionType(input.DimensionType) {
-		return gen.ComparisonDimension{}, fmt.Errorf("invalid dimension type: %s", input.DimensionType)
+		return gen.UpdateComparisonDimensionRow{}, fmt.Errorf("invalid dimension type: %s", input.DimensionType)
 	}
 
 	return s.store.updateComparisonDimension(ctx, gen.UpdateComparisonDimensionParams{
@@ -401,6 +642,65 @@ func (s *Service) UpsertComparisonValue(ctx context.Context, tenantID pgtype.UUI
 	})
 }
 
+// BatchUpsertComparisonValues upserts multiple values for a single dimension in
+// one round-trip using pgx.Batch (BUG-027). This replaces the per-value loop
+// in the handler and avoids N round-trips for a large matrix.
+func (s *Service) BatchUpsertComparisonValues(ctx context.Context, tenantID, dimensionID pgtype.UUID, inputs []UpsertComparisonValueInput) ([]gen.ComparisonValue, error) {
+	if len(inputs) == 0 {
+		return nil, nil
+	}
+
+	const upsertSQL = `INSERT INTO comparison_values (
+    dimension_id, item_id, tenant_id, value, value_rating, value_boolean
+) VALUES ($1, $2, $3, $4, $5, $6)
+ON CONFLICT (dimension_id, item_id) DO UPDATE
+SET value = EXCLUDED.value,
+    value_rating = EXCLUDED.value_rating,
+    value_boolean = EXCLUDED.value_boolean,
+    created_at = now()
+RETURNING dimension_id, item_id, tenant_id, value, value_rating, value_boolean, created_at`
+
+	batch := &pgx.Batch{}
+	for _, input := range inputs {
+		var value *string
+		if input.Value != "" {
+			value = &input.Value
+		}
+		var valueRating pgtype.Numeric
+		if input.ValueRating != nil {
+			_ = valueRating.Scan(fmt.Sprintf("%v", *input.ValueRating))
+		}
+		batch.Queue(upsertSQL, dimensionID, input.ItemID, tenantID, value, valueRating, input.ValueBoolean)
+	}
+
+	results := make([]gen.ComparisonValue, 0, len(inputs))
+	br := s.db.Writer.SendBatch(ctx, batch)
+	defer br.Close()
+
+	for range inputs {
+		rows, err := br.Query()
+		if err != nil {
+			return nil, fmt.Errorf("batch upsert query: %w", err)
+		}
+		if !rows.Next() {
+			rows.Close()
+			return nil, fmt.Errorf("batch upsert returned no row")
+		}
+		var v gen.ComparisonValue
+		if err := rows.Scan(
+			&v.DimensionID, &v.ItemID, &v.TenantID, &v.Value,
+			&v.ValueRating, &v.ValueBoolean, &v.CreatedAt,
+		); err != nil {
+			rows.Close()
+			return nil, fmt.Errorf("scanning batch upsert row: %w", err)
+		}
+		rows.Close()
+		results = append(results, v)
+	}
+
+	return results, nil
+}
+
 // ListComparisonValuesByDimension returns all values for a dimension with item titles.
 func (s *Service) ListComparisonValuesByDimension(ctx context.Context, dimensionID, tenantID pgtype.UUID) ([]gen.ListComparisonValuesByDimensionRow, error) {
 	return s.store.listComparisonValuesByDimension(ctx, dimensionID, tenantID)
@@ -417,8 +717,8 @@ func (s *Service) GetComparisonValue(ctx context.Context, dimensionID, itemID, t
 
 // ComparisonMatrixItem represents a single item in the comparison matrix.
 type ComparisonMatrixItem struct { //nolint:revive // stuttering type name preserved for API compatibility
-	Item       gen.ComparisonItem          `json:"item"`
-	Dimensions []ComparisonMatrixDimension `json:"dimensions"`
+	Item       gen.ListComparisonItemsByContentRow `json:"item"`
+	Dimensions []ComparisonMatrixDimension         `json:"dimensions"`
 }
 
 // ComparisonMatrixDimension represents a dimension value for an item in the matrix.
@@ -493,9 +793,27 @@ func (s *Service) GetComparisonMatrix(ctx context.Context, contentID, tenantID p
 	return matrix, nil
 }
 
-// ListComparisons returns a page of comparison content rows for the tenant.
-// Comparisons are content rows with content_type='comparison'; they carry no
-// comparison-type linkage in the schema, so no type filter is available here.
-func (s *Service) ListComparisons(ctx context.Context, tenantID pgtype.UUID, limit int32) ([]gen.ListContentsByTypeRow, error) {
-	return s.contentSvc.ListContentsByType(ctx, tenantID, content.TypeComparison, pgtype.Timestamptz{}, limit)
+// ListComparisonsFilter holds optional filters for the comparison list.
+type ListComparisonsFilter struct {
+	TypeID  pgtype.UUID
+	SpaceID pgtype.UUID
+	Cursor  pgtype.Timestamptz
+	Limit   int32
+}
+
+// ListComparisons returns a page of comparison content rows for the tenant,
+// optionally filtered by type_id and space_id (Section 30, BUG-007/BUG-008).
+// When no filters are supplied it falls back to the simpler ListContentsByType
+// query for backward compatibility.
+func (s *Service) ListComparisons(ctx context.Context, tenantID pgtype.UUID, f ListComparisonsFilter) ([]gen.ListComparisonsFilteredRow, error) {
+	if f.Limit <= 0 || f.Limit > MaxPageSize {
+		f.Limit = DefaultPageSize
+	}
+	return s.store.listComparisonsFiltered(ctx, gen.ListComparisonsFilteredParams{
+		TenantID:        tenantID,
+		SpaceID:         f.SpaceID,
+		TypeID:          f.TypeID,
+		CursorCreatedAt: f.Cursor,
+		PageLimit:       f.Limit,
+	})
 }

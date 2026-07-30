@@ -36,6 +36,21 @@ import (
 // window and overnight automated retries without hoarding stale entries.
 const idempotencyTTLDefault = 24
 
+// idempotencyKeyCtx is the context key carrying the request's Idempotency-Key
+// header value so downstream services (e.g. the wallet ledger) can use it as
+// the persistence-level idempotency key instead of deriving one from the
+// payload — which would falsely collide across distinct same-amount
+// conversions (Rule 9).
+type idempotencyKeyCtx struct{}
+
+// IdempotencyKeyFromContext returns the Idempotency-Key header value propagated
+// by IdempotencyMiddleware, or an empty string when the request did not carry
+// one (callers must then generate their own unique key).
+func IdempotencyKeyFromContext(ctx context.Context) string {
+	v, _ := ctx.Value(idempotencyKeyCtx{}).(string)
+	return v
+}
+
 // idempotencySettingsReader is the subset of config.Settings the
 // idempotency middleware needs.
 type idempotencySettingsReader interface {
@@ -100,6 +115,10 @@ func IdempotencyMiddleware(rdb valkeycompat.Cmdable, settings idempotencySetting
 			}
 
 			key := r.Header.Get("Idempotency-Key")
+			// Propagate the Idempotency-Key (even when empty) into the request
+			// context so downstream services can use it as the persistence-level
+			// idempotency key. When absent, services generate their own unique key.
+			r = r.WithContext(context.WithValue(r.Context(), idempotencyKeyCtx{}, key))
 			if key == "" {
 				next.ServeHTTP(w, r)
 				return

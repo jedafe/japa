@@ -409,6 +409,8 @@ type ComparisonDimension struct {
 	DimensionType string             `json:"dimension_type"`
 	Position      int32              `json:"position"`
 	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+	TypeID        pgtype.UUID        `json:"type_id"`
+	DeletedAt     pgtype.Timestamptz `json:"deleted_at"`
 }
 
 type ComparisonItem struct {
@@ -421,6 +423,8 @@ type ComparisonItem struct {
 	GeoSpaceID  pgtype.UUID        `json:"geo_space_id"`
 	Position    int32              `json:"position"`
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	TypeID      pgtype.UUID        `json:"type_id"`
+	DeletedAt   pgtype.Timestamptz `json:"deleted_at"`
 }
 
 type ComparisonTypeAccess struct {
@@ -2146,6 +2150,23 @@ type Subscription struct {
 	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
 }
 
+type SubscriptionPlan struct {
+	ID            pgtype.UUID        `json:"id"`
+	TenantID      pgtype.UUID        `json:"tenant_id"`
+	Slug          string             `json:"slug"`
+	Name          string             `json:"name"`
+	Description   string             `json:"description"`
+	Features      []byte             `json:"features"`
+	MonthlyAmount int64              `json:"monthly_amount"`
+	YearlyAmount  int64              `json:"yearly_amount"`
+	Currency      string             `json:"currency"`
+	Highlighted   bool               `json:"highlighted"`
+	SortOrder     int32              `json:"sort_order"`
+	Status        string             `json:"status"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
+}
+
 type SystemSetting struct {
 	ID        pgtype.UUID        `json:"id"`
 	TenantID  pgtype.UUID        `json:"tenant_id"`
@@ -2303,6 +2324,7 @@ type User struct {
 	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
 	FollowerCount       int32              `json:"follower_count"`
 	ForcePasswordChange bool               `json:"force_password_change"`
+	CurrentGeoSpaceID   pgtype.UUID        `json:"current_geo_space_id"`
 }
 
 type UserAffiliateLink struct {

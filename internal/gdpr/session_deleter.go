@@ -41,7 +41,7 @@ func (d *ValkeySessionDeleter) DeleteSessions(ctx context.Context, userID string
 
 	// Bruteforce keys are keyed by LoginIdentifier(email, ip), not userID, so
 	// a userID-prefixed Del is a no-op. Bruteforce keys have short TTLs (~15 min),
-	// so they expire naturally. 
+	// so they expire naturally.
 
 	// Wildcard patterns requiring SCAN — space unread counters and rate limits.
 	wildcardPatterns := []string{
@@ -56,7 +56,7 @@ func (d *ValkeySessionDeleter) DeleteSessions(ctx context.Context, userID string
 
 	// Editor lock keys are keyed by {content_type}:{content_id} with the user
 	// as the *value*, not part of the key name. SCAN for all locks and delete
-	// those held by this user. 
+	// those held by this user.
 	if err := d.scanAndDeleteByValue(ctx, "jc:editor_lock:*", userID); err != nil {
 		slog.Warn("gdpr: failed to delete editor lock keys during session cleanup",
 			"user_id", userID, "error", err)

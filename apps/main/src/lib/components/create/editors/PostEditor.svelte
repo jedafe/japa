@@ -706,10 +706,10 @@
 		color: var(--color-text);
 	}
 
-	.slash-item.active .slash-icon {
-		background: var(--color-primary);
-		color: #fff;
-	}
+.slash-item.active .slash-icon {
+    background: var(--color-primary);
+    color: var(--color-surface);
+}
 
 	.slash-text {
 		display: flex;

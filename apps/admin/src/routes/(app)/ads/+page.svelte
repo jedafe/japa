@@ -344,6 +344,10 @@
 		bulkDeleting = false;
 	}
 
+	// The $effect tracks `activeTab` and `searchQuery` (both read inside
+	// load), so tab switches and search-box changes automatically re-fetch.
+	// The DataTable `onsearch` callback only sets `searchQuery` — it must NOT
+	// also call load() or the effect fires a second fetch (double-load bug).
 	$effect(() => {
 		load();
 	});
@@ -381,7 +385,7 @@
 				pageSize={20}
 				emptyMessage={t('ads.empty')}
 				searchable
-				onsearch={(q) => { searchQuery = q; load(); }}
+				onsearch={(q) => { searchQuery = q; }}
 				selectable
 				bind:selectedIds={selectedCampaignIds}
 			>
@@ -403,7 +407,7 @@
 				pageSize={20}
 				emptyMessage={t('ads.no_boosts')}
 				searchable
-				onsearch={(q) => { searchQuery = q; load(); }}
+				onsearch={(q) => { searchQuery = q; }}
 				selectable
 				bind:selectedIds={selectedBoostIds}
 			>
