@@ -956,6 +956,56 @@ func (q *Queries) UpdateAdCampaign(ctx context.Context, arg UpdateAdCampaignPara
 	return i, err
 }
 
+const updateAdCampaignDetails = `-- name: UpdateAdCampaignDetails :one
+UPDATE ad_campaigns
+SET name = COALESCE(NULLIF($1::text, ''), name),
+    budget = COALESCE($2, budget),
+    updated_at = now()
+WHERE id = $3 AND tenant_id = $4
+RETURNING id, tenant_id, name, slot_type_id, content, target_url, budget, spent, status, priority, frequency_cap_per_user, start_date, end_date, created_by, created_at, updated_at, target_geo, target_space_ids
+`
+
+type UpdateAdCampaignDetailsParams struct {
+	Name     string      `json:"name"`
+	Budget   *int64      `json:"budget"`
+	ID       pgtype.UUID `json:"id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+// Partial PATCH for the admin UI: only name and budget are editable from
+// the campaign row. ad_campaigns has no description column, so it is
+// intentionally omitted. Fields use COALESCE so callers can omit either.
+func (q *Queries) UpdateAdCampaignDetails(ctx context.Context, arg UpdateAdCampaignDetailsParams) (AdCampaign, error) {
+	row := q.db.QueryRow(ctx, updateAdCampaignDetails,
+		arg.Name,
+		arg.Budget,
+		arg.ID,
+		arg.TenantID,
+	)
+	var i AdCampaign
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.Name,
+		&i.SlotTypeID,
+		&i.Content,
+		&i.TargetUrl,
+		&i.Budget,
+		&i.Spent,
+		&i.Status,
+		&i.Priority,
+		&i.FrequencyCapPerUser,
+		&i.StartDate,
+		&i.EndDate,
+		&i.CreatedBy,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.TargetGeo,
+		&i.TargetSpaceIds,
+	)
+	return i, err
+}
+
 const updateAdCampaignStatus = `-- name: UpdateAdCampaignStatus :one
 UPDATE ad_campaigns
 SET status = $1, updated_at = now()

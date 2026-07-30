@@ -2405,5 +2405,11 @@
   "analytics.space_name": "Space Name",
   "common.showing": "Showing {start}-{end} of {total}",
   "common.previous": "Previous",
-  "common.next": "Next"
+  "common.next": "Next",
+  "analytics.severity": "Severity",
+  "analytics.resolved": "Resolved",
+  "analytics.unresolved": "Unresolved",
+  "analytics.scanning": "Scanning...",
+  "analytics.scan_failed": "Scan failed",
+  "analytics.resolve_failed": "Failed to resolve finding"
 }

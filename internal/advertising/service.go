@@ -144,6 +144,29 @@ func (s *Service) EndCampaign(ctx context.Context, id, tenantID pgtype.UUID) (Ad
 	})
 }
 
+// UpdateCampaignDetails partially updates a campaign's editable fields
+// (name and budget). ad_campaigns has no description column; the previous
+// raw-SQL handler referenced one and would 500. Uses the generated
+// UpdateAdCampaignDetails query (COALESCE-based partial update).
+func (s *Service) UpdateCampaignDetails(ctx context.Context, id, tenantID pgtype.UUID, name string, budget *int64) (AdCampaign, error) {
+	return s.store.Queries().UpdateAdCampaignDetails(ctx, gen.UpdateAdCampaignDetailsParams{
+		ID:       id,
+		TenantID: tenantID,
+		Name:     name,
+		Budget:   budget,
+	})
+}
+
+// GetSlotType retrieves a slot type by ID. Uses the generated
+// GetAdSlotTypeByID query; the previous raw-SQL handler referenced
+// non-existent width/height columns and would 500.
+func (s *Service) GetSlotType(ctx context.Context, id, tenantID pgtype.UUID) (AdSlotType, error) {
+	return s.store.Queries().GetAdSlotTypeByID(ctx, gen.GetAdSlotTypeByIDParams{
+		ID:       id,
+		TenantID: tenantID,
+	})
+}
+
 // RenderSlot returns eligible campaigns for a slot.
 // Returns empty slice (never an error with nil campaigns) when no match.
 func (s *Service) RenderSlot(ctx context.Context, tenantID, userID pgtype.UUID, slotName string) ([]AdCampaign, error) {

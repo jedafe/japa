@@ -210,6 +210,6 @@ WHERE id = @id AND tenant_id = @tenant_id AND deleted_at IS NULL;
 
 -- name: ListMediaForScanning :many
 SELECT id, storage_path FROM media
-WHERE tenant_id = @tenant_id AND status = 'uploaded'
+WHERE tenant_id = @tenant_id AND confirmed = false AND deleted_at IS NULL AND quarantined_at IS NULL
 ORDER BY created_at ASC
 LIMIT 50;
