@@ -988,6 +988,10 @@ func (h *Handlers) DeleteBoost(w http.ResponseWriter, r *http.Request) {
 // ─── P5.6 Advertising Extras ─────────────────────────────────────────────
 
 // UpdateCampaign handles PATCH /admin/ads/campaigns/:id.
+// Ref: japaconnect-engineering/sections/25-ad-placement.md
+// Partial update of name and budget only — ad_campaigns has no description
+// column. Uses the generated UpdateAdCampaignDetails query via the service
+// layer (Rule 2 — never raw SQL in handlers).
 func (h *Handlers) UpdateCampaign(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -999,27 +1003,26 @@ func (h *Handlers) UpdateCampaign(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var input struct {
-		Name        string `json:"name"`
-		Description string `json:"description"`
-		Budget      *int64 `json:"budget"`
+		Name   string `json:"name"`
+		Budget *int64 `json:"budget"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
-	_, err = h.Service.db.Writer.Exec(r.Context(),
-		`UPDATE ad_campaigns SET name = COALESCE(NULLIF($3,''), name),
-		 description = COALESCE(NULLIF($4,''), description),
-		 budget = COALESCE($5, budget), updated_at = now()
-		 WHERE id = $1 AND tenant_id = $2`, id, tenantID, input.Name, input.Description, input.Budget)
+	campaign, err := h.Service.UpdateCampaignDetails(r.Context(), id, tenantID, input.Name, input.Budget)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"id": id.String()}})
+	writeJSON(w, http.StatusOK, map[string]any{"data": campaign})
 }
 
 // GetSlotType handles GET /admin/ads/slot-types/:id.
+// Ref: japaconnect-engineering/sections/25-ad-placement.md
+// Returns the full AdSlotType struct (slot_name, max_display_per_page, etc.)
+// via the generated GetAdSlotTypeByID query. The previous raw-SQL handler
+// referenced non-existent width/height columns and would 500.
 func (h *Handlers) GetSlotType(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -1030,19 +1033,9 @@ func (h *Handlers) GetSlotType(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid slot type ID")
 		return
 	}
-	var slotType struct {
-		ID          string `json:"id"`
-		Name        string `json:"name"`
-		Description string `json:"description"`
-		Width       int    `json:"width"`
-		Height      int    `json:"height"`
-	}
-	err = h.Service.db.Reader.QueryRow(r.Context(),
-		`SELECT id, name, COALESCE(description,''), width, height
-		 FROM ad_slot_types WHERE id = $1 AND tenant_id = $2`, id, tenantID).
-		Scan(&slotType.ID, &slotType.Name, &slotType.Description, &slotType.Width, &slotType.Height)
+	slotType, err := h.Service.GetSlotType(r.Context(), id, tenantID)
 	if err != nil {
-		writeError(w, http.StatusNotFound, "not_found", "Slot type not found")
+		handleServiceError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"data": slotType})
