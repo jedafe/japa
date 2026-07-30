@@ -310,13 +310,18 @@ func (h *Handlers) GetSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	settings, err := h.Service.GetWalletSettings(r.Context(), tenantID)
+	settings, minConvert, err := h.Service.GetWalletSettingsWithMinConvert(r.Context(), tenantID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": settings})
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data": map[string]any{
+			"settings":           settings,
+			"min_convert_points": minConvert,
+		},
+	})
 }
 
 // UpdateSettings handles PUT /api/v1/wallet/settings.

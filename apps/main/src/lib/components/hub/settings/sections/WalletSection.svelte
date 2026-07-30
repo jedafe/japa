@@ -6,6 +6,10 @@
 	interface WalletData {
 		wallet: { points?: number; credits?: number };
 		ledger: Array<{ id: string; type: string; amount?: number; description?: string; created_at?: string }>;
+		settings?: {
+			settings?: { points_to_credits_rate?: number };
+			min_convert_points?: number;
+		};
 	}
 
 	let { data }: { data: unknown } = $props();
@@ -13,6 +17,8 @@
 	const points = $derived(walletData?.wallet?.points ?? 0);
 	const credits = $derived(walletData?.wallet?.credits ?? 0);
 	const ledger = $derived(walletData?.ledger ?? []);
+	const rate = $derived(walletData?.settings?.settings?.points_to_credits_rate ?? 100);
+	const minConvert = $derived(walletData?.settings?.min_convert_points ?? 100);
 
 	let convertAmount = $state('');
 	let converting = $state(false);
@@ -23,9 +29,6 @@
 		switch (code) {
 			case 'insufficient_balance':
 				return "You don't have enough points for this conversion.";
-			case 'invalid_input':
-			case 'invalid_amount':
-				return 'Please enter a valid amount.';
 			case 'internal_error':
 				return 'Conversion failed. Please try again later.';
 			case 'forbidden':
@@ -70,12 +73,19 @@
 		</div>
 	</div>
 
+	<p class="text-muted-foreground mb-4 text-xs">
+		{t('settings.wallet.conversion_rate', '1 credit = {rate} points').replace('{rate}', String(rate))}
+	</p>
+
 	<form class="mb-6" onsubmit={(e) => { e.preventDefault(); doConvert(); }}>
 		<label class="mb-2 block">
 			<span class="mb-1 block text-sm text-[var(--color-muted)]">{t('settings.wallet.convert_label')}</span>
+			<span class="mb-1 block text-xs text-[var(--color-muted)]">
+				{t('settings.wallet.minimum', 'Minimum {minConvert} points').replace('{minConvert}', String(minConvert))}
+			</span>
 			<input
 				type="number"
-				min="1"
+				min={minConvert}
 				class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]"
 				value={convertAmount}
 				oninput={(e) => (convertAmount = e.currentTarget.value)}
