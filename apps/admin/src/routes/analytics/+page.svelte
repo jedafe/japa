@@ -208,7 +208,7 @@
 
 	// Top Content table columns for the Overview tab.
 	const topContentColumns = [
-		{ key: "content_id", label: t('analytics.content_id', 'Content ID'), sortable: true, render: (v: string) => `<span class="font-mono text-xs">${(v ?? '').slice(0, 12)}</span>` },
+		{ key: "content_title", label: t('analytics.content_title', 'Content Title'), sortable: true, render: (v: string) => v ? `<span class="font-medium">${v}</span>` : '—' },
 		{ key: "total_views", label: t('analytics.views', 'Views'), sortable: true },
 		{ key: "total_reactions", label: t('analytics.reactions', 'Reactions'), sortable: true },
 		{ key: "total_comments", label: t('analytics.comments', 'Comments'), sortable: true },

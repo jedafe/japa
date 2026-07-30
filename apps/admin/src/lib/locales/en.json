@@ -2411,5 +2411,6 @@
   "analytics.unresolved": "Unresolved",
   "analytics.scanning": "Scanning...",
   "analytics.scan_failed": "Scan failed",
-  "analytics.resolve_failed": "Failed to resolve finding"
+  "analytics.resolve_failed": "Failed to resolve finding",
+  "analytics.content_title": "Content Title"
 }
