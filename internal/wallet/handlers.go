@@ -19,8 +19,8 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/auth"
+	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/tenant"
 )
 
@@ -300,6 +300,42 @@ func (h *Handlers) ConvertPoints(w http.ResponseWriter, r *http.Request) {
 
 // GetSettings handles GET /api/v1/wallet/settings.
 func (h *Handlers) GetSettings(w http.ResponseWriter, r *http.Request) {
+	_, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	settings, minConvert, err := h.Service.GetWalletSettingsWithMinConvert(r.Context(), tenantID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data": map[string]any{
+			"settings":           settings,
+			"min_convert_points": minConvert,
+		},
+	})
+}
+
+// GetMemberSettings handles GET /api/v1/me/wallet/settings.
+//
+// Member-facing, read-only view of the conversion rate and minimum convertible
+// points so the Wallet settings page can display the effective rate without
+// requiring the admin `wallet.admin.settings.manage` node. Reuses the same
+// service resolution path as the admin endpoint (per-tenant wallet_settings
+// row → global system_settings → compiled defaults), returning the same
+// envelope shape (`{ settings, min_convert_points }`) the frontend already
+// reads.
+//
+// Ref: japaconnect-engineering/sections/28-wallet-credits.md (Wallet API Routes)
+func (h *Handlers) GetMemberSettings(w http.ResponseWriter, r *http.Request) {
 	_, ok := h.requireUser(w, r)
 	if !ok {
 		return

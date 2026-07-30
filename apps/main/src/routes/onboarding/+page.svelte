@@ -5,7 +5,7 @@
 	import { t } from '$lib/i18n';
 	import { Check, ChevronRight, Sparkles, MapPin } from 'lucide-svelte';
 	import type { PageData } from './$types';
-	import type { OnboardingRecommendation, TagSuggestion } from '$lib/types';
+	import type { GeoCity, GeoState, OnboardingRecommendation, TagSuggestion } from '$lib/types';
 
 	let { data }: { data: PageData } = $props();
 
@@ -34,6 +34,12 @@
 	// Country selector sourced from /geo/countries (ADR-005). Empty = no
 	// selection (user can still free-text the location field).
 	let selectedCountry = $state(untrack(() => data.geoContext?.country_code ?? ''));
+	let selectedState = $state('');
+	let selectedCity = $state('');
+	let states = $state<GeoState[]>([]);
+	let cities = $state<GeoCity[]>([]);
+	let loadingStates = $state(false);
+	let loadingCities = $state(false);
 
 	// Step 2: Destination & Goals
 	let destination = $state('');
@@ -66,6 +72,42 @@
 			: [...selectedRecs, id];
 	}
 
+	// Cascade: fetch states when country changes.
+	$effect(() => {
+		const code = selectedCountry;
+		if (!code) {
+			states = [];
+			selectedState = '';
+			cities = [];
+			selectedCity = '';
+			return;
+		}
+		loadingStates = true;
+		states = [];
+		selectedState = '';
+		cities = [];
+		selectedCity = '';
+		api.get<GeoState[]>(`/geo/countries/${code}/states`).then((res) => {
+			if (res.data) states = res.data;
+		}).finally(() => { loadingStates = false; });
+	});
+
+	// Cascade: fetch cities when state changes.
+	$effect(() => {
+		const id = selectedState;
+		if (!id) {
+			cities = [];
+			selectedCity = '';
+			return;
+		}
+		loadingCities = true;
+		cities = [];
+		selectedCity = '';
+		api.get<GeoCity[]>(`/geo/states/${id}/cities`).then((res) => {
+			if (res.data) cities = res.data;
+		}).finally(() => { loadingCities = false; });
+	});
+
 	async function saveStep() {
 		saving = true;
 		error = null;
@@ -75,6 +117,9 @@
 			stepData.name = name;
 			stepData.japa_status = japaStatus;
 			stepData.current_location = currentLocation;
+			stepData.country_code = selectedCountry;
+			stepData.state_id = selectedState;
+			stepData.city_id = selectedCity;
 		} else if (currentStep === 2) {
 			stepData.destination = destination;
 			stepData.primary_goal = primaryGoal;
@@ -193,6 +238,40 @@
 							</p>
 						{/if}
 					</div>
+					{#if selectedCountry}
+						<div>
+							<label class="mb-1 block text-sm font-medium text-[var(--color-text)]" for="ob-state">{t('onboarding.field_state', 'State / Province')}</label>
+							{#if loadingStates}
+								<p class="text-xs text-[var(--color-muted)]">{t('common.loading', 'Loading...')}</p>
+							{:else if states.length > 0}
+								<select id="ob-state" bind:value={selectedState} class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none">
+									<option value="">{t('onboarding.select_option', 'Select...')}</option>
+									{#each states as s (s.id)}
+										<option value={s.id}>{s.name}</option>
+									{/each}
+								</select>
+							{:else}
+								<p class="text-xs text-[var(--color-muted)]">{t('onboarding.no_states', 'No states available for this country')}</p>
+							{/if}
+						</div>
+					{/if}
+					{#if selectedState}
+						<div>
+							<label class="mb-1 block text-sm font-medium text-[var(--color-text)]" for="ob-city">{t('onboarding.field_city', 'City')}</label>
+							{#if loadingCities}
+								<p class="text-xs text-[var(--color-muted)]">{t('common.loading', 'Loading...')}</p>
+							{:else if cities.length > 0}
+								<select id="ob-city" bind:value={selectedCity} class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none">
+									<option value="">{t('onboarding.select_option', 'Select...')}</option>
+									{#each cities as c (c.id)}
+										<option value={c.id}>{c.name}</option>
+									{/each}
+								</select>
+							{:else}
+								<p class="text-xs text-[var(--color-muted)]">{t('onboarding.no_cities', 'No cities available for this state')}</p>
+							{/if}
+						</div>
+					{/if}
 					<div>
 						<label class="mb-1 block text-sm font-medium text-[var(--color-text)]" for="ob-location">{t('onboarding.field_location', 'Current location')}</label>
 						<input id="ob-location" bind:value={currentLocation} type="text" placeholder="e.g. Lagos, Nigeria" class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none" />

@@ -64,6 +64,43 @@ export const ticketTypesApi = {
 		api(`/admin/ticket-types/${id}`, { method: 'DELETE' }),
 };
 
+export interface PlanFeature {
+	text: string;
+	included: boolean;
+}
+
+export interface SubscriptionPlan {
+	id: string;
+	tenant_id: string;
+	slug: string;
+	name: string;
+	description: string;
+	features: PlanFeature[];
+	monthly_amount: number;
+	yearly_amount: number;
+	currency: string;
+	highlighted: boolean;
+	sort_order: number;
+	status: string;
+	created_at: string;
+	updated_at: string;
+}
+
+export const plansApi = {
+	list: () => api<SubscriptionPlan[]>('/admin/plans'),
+	create: (body: {
+		slug: string; name: string; description: string;
+		features: PlanFeature[]; monthly_amount: number; yearly_amount: number;
+		currency: string; highlighted: boolean; sort_order: number; status: string;
+	}) => api('/admin/plans', { method: 'POST', body }),
+	update: (id: string, body: {
+		slug?: string; name?: string; description?: string;
+		features?: PlanFeature[]; monthly_amount?: number; yearly_amount?: number;
+		currency?: string; highlighted?: boolean; sort_order?: number; status?: string;
+	}) => api(`/admin/plans/${id}`, { method: 'PATCH', body }),
+	delete: (id: string) => api(`/admin/plans/${id}`, { method: 'DELETE' }),
+};
+
 export const walletApi = {
 	getRules: (params?: string) => api<unknown>(`/admin/wallet/rules${params ? `?${params}` : ''}`),
 	createRule: (body: { activity_key: string; point_value: number; is_enabled: boolean; description?: string }) =>
@@ -138,7 +175,10 @@ export interface ComparisonType {
 	name: string;
 	slug: string;
 	description: string;
-	is_public: boolean;
+	icon?: string;
+	field_group_id: string;
+	item_label: string;
+	is_system: boolean;
 	created_at: string;
 }
 
@@ -147,24 +187,59 @@ export interface ComparisonTypeDetail extends ComparisonType {
 	item_count: number;
 }
 
-export interface ComparisonTypeAccess {
-	allowed_groups: string[];
-	allowed_roles: string[];
+// Per-UserGroup access row — matches the backend comparison_type_access shape
+// (Section 30). user_group_id is null for AI-agent-only access.
+export interface ComparisonTypeAccessRow {
+	type_id: string;
+	user_group_id: string | null;
+	can_create: boolean;
+	can_fill: boolean;
+	ai_can_fill: boolean;
+	group_name: string | null;
+}
+
+export interface CustomFieldGroupOption {
+	id: string;
+	name: string;
+	slug: string;
 }
 
 export const comparisonAdminApi = {
 	listTypes: () => api<ComparisonType[]>('/comparisons/types'),
-	getType: (id: string) => api<ComparisonTypeDetail>(`/comparisons/types/${id}`),
-	createType: (body: { name: string; slug: string; description: string; is_public: boolean }) =>
-		api<ComparisonType>('/comparisons/types', { method: 'POST', body }),
-	updateType: (id: string, body: { name?: string; description?: string; is_public?: boolean }) =>
-		api<ComparisonType>(`/comparisons/types/${id}`, { method: 'PATCH', body }),
+	// Section 30 exposes GET /comparisons/types/{slug} (by slug, not id).
+	getType: (slug: string): Promise<ApiResult<ComparisonTypeDetail>> =>
+		api<ComparisonType>(`/comparisons/types/${slug}`).then((r) =>
+			r.ok
+				? { ok: true as const, data: { ...r.data, dimensions: [], item_count: 0 } }
+				: { ok: false as const, error: r.error }
+		),
+	createType: (body: {
+		name: string;
+		slug: string;
+		description?: string;
+		icon?: string;
+		field_group_id: string;
+		item_label?: string;
+	}) => api<ComparisonType>('/comparisons/types', { method: 'POST', body }),
+	updateType: (
+		id: string,
+		body: {
+			name?: string;
+			slug?: string;
+			description?: string;
+			icon?: string;
+			item_label?: string;
+		}
+	) => api<ComparisonType>(`/comparisons/types/${id}`, { method: 'PATCH', body }),
 	deleteType: (id: string) =>
 		api<{ deleted: boolean }>(`/comparisons/types/${id}`, { method: 'DELETE' }),
 	getTypeAccess: (id: string) =>
-		api<ComparisonTypeAccess>(`/comparisons/types/${id}/access`),
-	setTypeAccess: (id: string, body: { allowed_groups: string[]; allowed_roles: string[] }) =>
-		api<{ updated: boolean }>(`/comparisons/types/${id}/access`, { method: 'PUT', body }),
+		api<ComparisonTypeAccessRow[]>(`/comparisons/types/${id}/access`),
+	setTypeAccess: (
+		id: string,
+		body: { user_group_id: string; can_create: boolean; can_fill: boolean; ai_can_fill: boolean }
+	) => api<{ updated: boolean }>(`/comparisons/types/${id}/access`, { method: 'PUT', body }),
+	listFieldGroups: () => api<CustomFieldGroupOption[]>('/custom-field-groups'),
 };
 
 export interface ProfileType {

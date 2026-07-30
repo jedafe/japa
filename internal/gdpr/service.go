@@ -642,6 +642,15 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 			return fmt.Errorf("nullifying ticket submitter: %w", err)
 		}
 
+		// 3b. Anonymize comparison_items authored by the user (BUG-029).
+		// comparison_items carry title/description/image_id that can re-identify
+		// a user even after their content is soft-deleted.
+		if _, err := q.AnonymizeComparisonItemsByAuthor(ctx, gen.AnonymizeComparisonItemsByAuthorParams{
+			UserID: userID, TenantID: tenantID,
+		}); err != nil {
+			return fmt.Errorf("anonymizing comparison items: %w", err)
+		}
+
 		// 4. AUDIT-FRESH-GDPR-001: explicit cleanup for tables whose FK to
 		//    users(id) has no ON DELETE CASCADE/SET NULL. Without these the
 		//    final HardDeleteUser would block on a residual foreign key.

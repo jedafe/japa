@@ -29,8 +29,23 @@
 		}));
 	}
 
+	// Initial suggestions — show up to 5 series when the field is focused.
+	async function initialFetcher(): Promise<AutocompleteItem[]> {
+		return series
+			.slice(0, 5)
+			.map((s) => ({
+				id: s.id,
+				label: s.title,
+				sublabel: s.slug
+			}));
+	}
+
 	function handleSelect(item: AutocompleteItem) {
 		onselect(item.id);
+	}
+
+	function handleClear() {
+		onselect(null);
 	}
 
 	// ---- Inline "Create new series" form ----
@@ -175,9 +190,11 @@
 			placeholder={t('create.placeholder.series_search')}
 			emptyMessage={t('create.placeholder.series_no_results')}
 			{fetcher}
+			{initialFetcher}
 			selectedId={seriesId}
 			selectedLabel={selectedSeries?.title ?? null}
 			onSelect={handleSelect}
+			onClear={handleClear}
 			{onfocus}
 		/>
 		<button
@@ -197,6 +214,10 @@
 		display: flex;
 		gap: 6px;
 		align-items: stretch;
+	}
+
+	.series-selector-row > :global(*) {
+		min-width: 0;
 	}
 
 	.series-create-btn {

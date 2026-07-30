@@ -32,7 +32,7 @@ LIMIT @page_limit OFFSET @page_offset;
 
 -- name: UpdateComparisonType :one
 UPDATE comparison_type_definitions
-SET name = @name, description = sqlc.narg(description), icon = sqlc.narg(icon),
+SET name = @name, slug = sqlc.narg(slug), description = sqlc.narg(description), icon = sqlc.narg(icon),
     item_label = @item_label
 WHERE id = @id AND tenant_id = @tenant_id
 RETURNING id, tenant_id, name, slug, description, icon, field_group_id, item_label, is_system, created_at;
@@ -70,35 +70,35 @@ WHERE type_id = @type_id AND user_group_id = sqlc.narg(user_group_id);
 
 -- name: CreateComparisonItem :one
 INSERT INTO comparison_items (
-    content_id, tenant_id, title, description, image_id, geo_space_id, position
+    content_id, tenant_id, type_id, title, description, image_id, geo_space_id, position
 ) VALUES (
-    @content_id, @tenant_id, @title, sqlc.narg(description),
+    @content_id, @tenant_id, sqlc.narg(type_id), @title, sqlc.narg(description),
     sqlc.narg(image_id), sqlc.narg(geo_space_id), @position
 )
-RETURNING id, content_id, tenant_id, title, description, image_id, geo_space_id, position, created_at;
+RETURNING id, content_id, tenant_id, type_id, title, description, image_id, geo_space_id, position, created_at, deleted_at;
 
 -- name: ListComparisonItemsByContent :many
-SELECT id, content_id, tenant_id, title, description, image_id, geo_space_id, position, created_at
+SELECT id, content_id, tenant_id, type_id, title, description, image_id, geo_space_id, position, created_at, deleted_at
 FROM comparison_items
-WHERE content_id = @content_id AND tenant_id = @tenant_id
+WHERE content_id = @content_id AND tenant_id = @tenant_id AND deleted_at IS NULL
 ORDER BY position ASC, created_at ASC;
 
 -- name: GetComparisonItemByID :one
-SELECT id, content_id, tenant_id, title, description, image_id, geo_space_id, position, created_at
+SELECT id, content_id, tenant_id, type_id, title, description, image_id, geo_space_id, position, created_at, deleted_at
 FROM comparison_items
-WHERE id = @id AND tenant_id = @tenant_id;
+WHERE id = @id AND tenant_id = @tenant_id AND deleted_at IS NULL;
 
 -- name: UpdateComparisonItem :one
 UPDATE comparison_items
 SET title = @title, description = sqlc.narg(description),
     image_id = sqlc.narg(image_id), geo_space_id = sqlc.narg(geo_space_id),
     position = @position
-WHERE id = @id AND tenant_id = @tenant_id
-RETURNING id, content_id, tenant_id, title, description, image_id, geo_space_id, position, created_at;
+WHERE id = @id AND tenant_id = @tenant_id AND deleted_at IS NULL
+RETURNING id, content_id, tenant_id, type_id, title, description, image_id, geo_space_id, position, created_at, deleted_at;
 
 -- name: DeleteComparisonItem :exec
-DELETE FROM comparison_items
-WHERE id = @id AND tenant_id = @tenant_id;
+UPDATE comparison_items SET deleted_at = now()
+WHERE id = @id AND tenant_id = @tenant_id AND deleted_at IS NULL;
 
 -- name: ReorderComparisonItems :exec
 UPDATE comparison_items SET position = @position
@@ -110,32 +110,32 @@ WHERE id = @id AND content_id = @content_id AND tenant_id = @tenant_id;
 
 -- name: CreateComparisonDimension :one
 INSERT INTO comparison_dimensions (
-    content_id, tenant_id, label, dimension_type, position
+    content_id, tenant_id, type_id, label, dimension_type, position
 ) VALUES (
-    @content_id, @tenant_id, @label, @dimension_type, @position
+    @content_id, @tenant_id, sqlc.narg(type_id), @label, @dimension_type, @position
 )
-RETURNING id, content_id, tenant_id, label, dimension_type, position, created_at;
+RETURNING id, content_id, tenant_id, type_id, label, dimension_type, position, created_at, deleted_at;
 
 -- name: ListComparisonDimensionsByContent :many
-SELECT id, content_id, tenant_id, label, dimension_type, position, created_at
+SELECT id, content_id, tenant_id, type_id, label, dimension_type, position, created_at, deleted_at
 FROM comparison_dimensions
-WHERE content_id = @content_id AND tenant_id = @tenant_id
+WHERE content_id = @content_id AND tenant_id = @tenant_id AND deleted_at IS NULL
 ORDER BY position ASC, created_at ASC;
 
 -- name: GetComparisonDimensionByID :one
-SELECT id, content_id, tenant_id, label, dimension_type, position, created_at
+SELECT id, content_id, tenant_id, type_id, label, dimension_type, position, created_at, deleted_at
 FROM comparison_dimensions
-WHERE id = @id AND tenant_id = @tenant_id;
+WHERE id = @id AND tenant_id = @tenant_id AND deleted_at IS NULL;
 
 -- name: UpdateComparisonDimension :one
 UPDATE comparison_dimensions
 SET label = @label, dimension_type = @dimension_type, position = @position
-WHERE id = @id AND tenant_id = @tenant_id
-RETURNING id, content_id, tenant_id, label, dimension_type, position, created_at;
+WHERE id = @id AND tenant_id = @tenant_id AND deleted_at IS NULL
+RETURNING id, content_id, tenant_id, type_id, label, dimension_type, position, created_at, deleted_at;
 
 -- name: DeleteComparisonDimension :exec
-DELETE FROM comparison_dimensions
-WHERE id = @id AND tenant_id = @tenant_id;
+UPDATE comparison_dimensions SET deleted_at = now()
+WHERE id = @id AND tenant_id = @tenant_id AND deleted_at IS NULL;
 
 -- name: ReorderComparisonDimensions :exec
 UPDATE comparison_dimensions SET position = @position
@@ -190,3 +190,31 @@ FROM comparison_values cv
 JOIN comparison_items ci ON ci.id = cv.item_id
 JOIN comparison_dimensions cd ON cd.id = cv.dimension_id
 WHERE ci.content_id = @content_id AND cv.tenant_id = @tenant_id;
+
+-- =====================
+-- Comparison list with type + space filters (Section 30, BUG-007)
+-- =====================
+
+-- name: ListComparisonsFiltered :many
+SELECT DISTINCT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type,
+       c.title, c.slug, c.body, c.body_html, c.field_values, c.content_hash,
+       c.geo_space_id, c.header_image_id, c.featured_image_id, c.canonical_url,
+       c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
+       c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
+       c.view_count, c.comment_count, c.share_count, c.reshare_count,
+       c.publish_at, c.published_at, c.created_at, c.updated_at
+FROM contents c
+LEFT JOIN comparison_items ci ON ci.content_id = c.id AND ci.tenant_id = c.tenant_id
+WHERE c.tenant_id = @tenant_id
+  AND c.content_type = 'comparison'
+  AND c.deleted_at IS NULL
+  AND c.auto_hidden = false
+  AND (sqlc.narg(space_id)::uuid IS NULL OR c.space_id = sqlc.narg(space_id))
+  AND (sqlc.narg(type_id)::uuid IS NULL OR ci.type_id = sqlc.narg(type_id))
+  AND (c.created_at < sqlc.narg(cursor_created_at) OR sqlc.narg(cursor_created_at) IS NULL)
+ORDER BY c.created_at DESC, c.id DESC
+LIMIT @page_limit;
+
+-- name: CountComparisonItemsByType :one
+SELECT count(*)::int FROM comparison_items WHERE type_id = @type_id AND tenant_id = @tenant_id;
+

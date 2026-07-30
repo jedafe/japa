@@ -918,10 +918,10 @@ func (q *Queries) MarkWebhookEventProcessed(ctx context.Context, arg MarkWebhook
 
 const reactivateSubscription = `-- name: ReactivateSubscription :one
 UPDATE subscriptions
-SET status = 'active', cancelled_at = NULL, updated_at = now()
+SET status = 'active', cancel_at = NULL, updated_at = now()
 WHERE id = (
     SELECT s.id FROM subscriptions s
-    WHERE s.user_id = $1 AND s.tenant_id = $2 AND s.status = 'cancelled'
+    WHERE s.user_id = $1 AND s.tenant_id = $2 AND s.status = 'canceled'
     ORDER BY s.updated_at DESC
     LIMIT 1
 )
@@ -955,7 +955,7 @@ func (q *Queries) ReactivateSubscription(ctx context.Context, arg ReactivateSubs
 
 const softDeleteSubscription = `-- name: SoftDeleteSubscription :exec
 UPDATE subscriptions
-SET status = 'cancelled', cancelled_at = now(), updated_at = now()
+SET status = 'canceled', cancel_at = now(), updated_at = now()
 WHERE id = $1 AND tenant_id = $2
 `
 

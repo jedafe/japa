@@ -103,12 +103,28 @@ async function clientFetch<T>(
 
 export const api = {
 	get: <T>(path: string) => clientFetch<T>(path, { method: 'GET' }),
-	post: <T>(path: string, body?: unknown) =>
-		clientFetch<T>(path, { method: 'POST', body: body ? JSON.stringify(body) : undefined }),
-	patch: <T>(path: string, body?: unknown) =>
-		clientFetch<T>(path, { method: 'PATCH', body: body ? JSON.stringify(body) : undefined }),
-	put: <T>(path: string, body?: unknown) =>
-		clientFetch<T>(path, { method: 'PUT', body: body ? JSON.stringify(body) : undefined }),
-	delete: <T>(path: string, body?: unknown) =>
-		clientFetch<T>(path, { method: 'DELETE', body: body ? JSON.stringify(body) : undefined })
+	post: <T>(path: string, body?: unknown, headers?: Record<string, string>) =>
+		clientFetch<T>(path, {
+			method: 'POST',
+			body: body ? JSON.stringify(body) : undefined,
+			headers
+		}),
+	patch: <T>(path: string, body?: unknown, headers?: Record<string, string>) =>
+		clientFetch<T>(path, {
+			method: 'PATCH',
+			body: body ? JSON.stringify(body) : undefined,
+			headers
+		}),
+	put: <T>(path: string, body?: unknown, headers?: Record<string, string>) =>
+		clientFetch<T>(path, {
+			method: 'PUT',
+			body: body ? JSON.stringify(body) : undefined,
+			headers
+		}),
+	delete: <T>(path: string, body?: unknown, headers?: Record<string, string>) =>
+		clientFetch<T>(path, {
+			method: 'DELETE',
+			body: body ? JSON.stringify(body) : undefined,
+			headers
+		})
 };

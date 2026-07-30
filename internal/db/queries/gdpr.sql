@@ -554,3 +554,17 @@ FROM (
     JOIN instructor_profiles ip ON ip.id = ipo.instructor_id
     WHERE ipo.tenant_id = @tenant_id AND ip.user_id = @user_id
 ) t;
+
+-- name: AnonymizeComparisonItemsByAuthor :execrows
+-- BUG-029: anonymize comparison_items.title/description for content authored by
+-- the deleted user, so soft-deleted contents don't re-identify the user via
+-- comparison item text. Runs before HardDeleteUser.
+UPDATE comparison_items ci
+SET title = '[anonymized]',
+    description = NULL,
+    image_id = NULL
+FROM contents c
+WHERE ci.content_id = c.id
+  AND c.tenant_id = @tenant_id
+  AND c.author_id = @user_id
+  AND ci.deleted_at IS NULL;

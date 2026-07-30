@@ -18,10 +18,9 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
-	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
-	"github.com/jedafe/japa/internal/db/gen"
+	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/tenant"
 )
 
@@ -230,9 +229,8 @@ func (h *Handlers) ListComparisonTypes(w http.ResponseWriter, r *http.Request) {
 }
 
 // ListComparisons handles GET /api/v1/comparisons — a page of comparison
-// content rows for the tenant. A type_slug query parameter is accepted for
-// forward compatibility but not applied: comparison content carries no
-// comparison-type linkage in the schema.
+// content rows for the tenant, optionally filtered by type and space_id
+// (Section 30, BUG-007/BUG-008).
 func (h *Handlers) ListComparisons(w http.ResponseWriter, r *http.Request) {
 	_, ok := h.requireUser(w, r)
 	if !ok {
@@ -244,7 +242,40 @@ func (h *Handlers) ListComparisons(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	comparisons, err := h.Service.ListComparisons(r.Context(), tenantID, parsePageSize(r))
+	q := r.URL.Query()
+	var filter ListComparisonsFilter
+	filter.Limit = parsePageSize(r)
+
+	// type filter: accept either type_id (uuid) or type (slug) and resolve to id.
+	if v := q.Get("type_id"); v != "" {
+		if err := filter.TypeID.Scan(v); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_type_id", "Invalid type_id")
+			return
+		}
+	} else if v := q.Get("type"); v != "" {
+		td, err := h.Service.GetComparisonTypeBySlug(r.Context(), v, tenantID)
+		if err != nil {
+			handleServiceError(w, err)
+			return
+		}
+		filter.TypeID = td.ID
+	}
+
+	if v := q.Get("space_id"); v != "" {
+		if err := filter.SpaceID.Scan(v); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_space_id", "Invalid space_id")
+			return
+		}
+	}
+
+	if v := q.Get("cursor"); v != "" {
+		if err := filter.Cursor.Scan(v); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_cursor", "Invalid cursor")
+			return
+		}
+	}
+
+	comparisons, err := h.Service.ListComparisons(r.Context(), tenantID, filter)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -300,6 +331,7 @@ func (h *Handlers) UpdateComparisonType(w http.ResponseWriter, r *http.Request) 
 
 	var input struct {
 		Name        string `json:"name"`
+		Slug        string `json:"slug"`
 		Description string `json:"description"`
 		Icon        string `json:"icon"`
 		ItemLabel   string `json:"item_label"`
@@ -317,6 +349,7 @@ func (h *Handlers) UpdateComparisonType(w http.ResponseWriter, r *http.Request) 
 
 	result, err := h.Service.UpdateComparisonType(r.Context(), id, tenantID, UpdateComparisonTypeInput{
 		Name:        input.Name,
+		Slug:        input.Slug,
 		Description: input.Description,
 		Icon:        input.Icon,
 		ItemLabel:   input.ItemLabel,
@@ -366,7 +399,7 @@ func (h *Handlers) SetComparisonTypeAccess(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	_, ok = h.requireTenant(w, r)
+	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -389,6 +422,8 @@ func (h *Handlers) SetComparisonTypeAccess(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	// Empty user_group_id is intentionally left as pgtype.UUID{Valid:false}
+	// so NULL is stored — Section 30: "NULL = AI agent only".
 	var userGroupID pgtype.UUID
 	if input.UserGroupID != "" {
 		if err := userGroupID.Scan(input.UserGroupID); err != nil {
@@ -397,7 +432,7 @@ func (h *Handlers) SetComparisonTypeAccess(w http.ResponseWriter, r *http.Reques
 		}
 	}
 
-	if err := h.Service.SetComparisonTypeAccess(r.Context(), typeID, SetComparisonTypeAccessInput{
+	if err := h.Service.SetComparisonTypeAccess(r.Context(), typeID, tenantID, SetComparisonTypeAccessInput{
 		UserGroupID: userGroupID,
 		CanCreate:   input.CanCreate,
 		CanFill:     input.CanFill,
@@ -417,13 +452,18 @@ func (h *Handlers) ListComparisonTypeAccess(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
 	typeID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid comparison type ID")
 		return
 	}
 
-	access, err := h.Service.ListComparisonTypeAccess(r.Context(), typeID)
+	access, err := h.Service.ListComparisonTypeAccess(r.Context(), typeID, tenantID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -453,6 +493,12 @@ func (h *Handlers) CreateComparison(w http.ResponseWriter, r *http.Request) {
 		Body       string `json:"body"`
 		Visibility string `json:"visibility"`
 		SpaceID    string `json:"space_id"`
+		TypeID     string `json:"type_id"`
+		Items      []struct {
+			Name string `json:"name"`
+			Slug string `json:"slug"`
+		} `json:"items"`
+		Dimensions []string `json:"dimensions"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
@@ -473,11 +519,30 @@ func (h *Handlers) CreateComparison(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	var typeID pgtype.UUID
+	if input.TypeID != "" {
+		if err := typeID.Scan(input.TypeID); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_type_id", "Invalid type_id")
+			return
+		}
+	}
+
+	items := make([]ComparisonItemInput, 0, len(input.Items))
+	for _, it := range input.Items {
+		if it.Name == "" {
+			continue
+		}
+		items = append(items, ComparisonItemInput{Name: it.Name, Slug: it.Slug})
+	}
+
 	result, err := h.Service.CreateComparison(r.Context(), tenantID, user.UserID, CreateComparisonInput{
 		Title:      input.Title,
 		Body:       input.Body,
 		Visibility: input.Visibility,
 		SpaceID:    spaceID,
+		TypeID:     typeID,
+		Items:      items,
+		Dimensions: input.Dimensions,
 	})
 	if err != nil {
 		handleServiceError(w, err)
@@ -505,25 +570,98 @@ func (h *Handlers) GetComparison(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	items, err := h.Service.ListComparisonItems(r.Context(), contentID, tenantID)
+	detail, err := h.Service.GetComparisonDetail(r.Context(), contentID, tenantID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
 
-	dimensions, err := h.Service.ListComparisonDimensions(r.Context(), contentID, tenantID)
-	if err != nil {
-		handleServiceError(w, err)
+	writeJSON(w, http.StatusOK, map[string]any{"data": detail})
+}
+
+// UpdateComparison handles PATCH /api/v1/comparisons/{id} — updates the
+// comparison's metadata (title/slug/body/visibility) on the backing content
+// row. Previously this route was wired to UpdateComparisonItem, which treated
+// {id} as an item id and corrupted comparison items.
+//
+// Ref: japaconnect-engineering/sections/30-generic-comparison-system.md
+func (h *Handlers) UpdateComparison(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
-		"data": map[string]any{
-			"id":         contentID,
-			"items":      items,
-			"dimensions": dimensions,
-		},
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	id, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid comparison ID")
+		return
+	}
+
+	var input struct {
+		Title      string `json:"title"`
+		Slug       string `json:"slug"`
+		Body       string `json:"body"`
+		Visibility string `json:"visibility"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
+
+	if input.Title == "" {
+		writeError(w, http.StatusBadRequest, "missing_title", "title is required")
+		return
+	}
+
+	result, err := h.Service.UpdateComparison(r.Context(), id, tenantID, UpdateComparisonInput{
+		Title:      input.Title,
+		Slug:       input.Slug,
+		Body:       input.Body,
+		Visibility: input.Visibility,
+		EditedBy:   user.UserID,
 	})
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": result})
+}
+
+// DeleteComparison handles DELETE /api/v1/comparisons/{id} — soft-deletes the
+// backing content row. Previously this route was wired to DeleteComparisonItem,
+// which hard-deleted a comparison item instead of the comparison itself.
+//
+// Ref: japaconnect-engineering/sections/30-generic-comparison-system.md
+func (h *Handlers) DeleteComparison(w http.ResponseWriter, r *http.Request) {
+	_, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	id, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid comparison ID")
+		return
+	}
+
+	if err := h.Service.DeleteComparison(r.Context(), id, tenantID); err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusNoContent, nil)
 }
 
 // GetComparisonMatrix handles GET /api/v1/comparison/{id}/matrix.
@@ -892,28 +1030,27 @@ func (h *Handlers) UpsertComparisonValues(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	results := make([]gen.ComparisonValue, 0, len(input.Values))
-
+	// Batch upsert: one round-trip for all values (BUG-027).
+	inputs := make([]UpsertComparisonValueInput, 0, len(input.Values))
 	for _, v := range input.Values {
 		var itemID pgtype.UUID
 		if err := itemID.Scan(v.ItemID); err != nil {
 			writeError(w, http.StatusBadRequest, "invalid_item_id", "Invalid item_id")
 			return
 		}
-
-		val, err := h.Service.UpsertComparisonValue(r.Context(), tenantID, UpsertComparisonValueInput{
+		inputs = append(inputs, UpsertComparisonValueInput{
 			DimensionID:  dimensionID,
 			ItemID:       itemID,
 			Value:        v.Value,
 			ValueRating:  v.ValueRating,
 			ValueBoolean: v.ValueBoolean,
 		})
-		if err != nil {
-			handleServiceError(w, err)
-			return
-		}
+	}
 
-		results = append(results, val)
+	results, err := h.Service.BatchUpsertComparisonValues(r.Context(), tenantID, dimensionID, inputs)
+	if err != nil {
+		handleServiceError(w, err)
+		return
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": results})
