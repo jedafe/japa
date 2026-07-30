@@ -3,10 +3,16 @@
 	 * Language & Timezone settings — Phase 18.09.
 	 *
 	 * Language selector populated from GET /i18n/packs (Rule 16 — no hardcoded
-	 * locale list). Timezone selector uses the browser's Intl.supportedValuesOf
-	 * API (a static list of IANA timezone names that never changes per-user or
-	 * per-tenant — it is the platform's own enumeration, not app data). Both
-	 * persist via PATCH /me/account with `language_preference` and `timezone`.
+	 * locale list). The API returns string[] of locale codes (e.g. ["en","fr"]);
+	 * display names are resolved via Intl.DisplayNames (a platform API, not app
+	 * data — Rule 16 safe). Timezone selector uses the browser's
+	 * Intl.supportedValuesOf API (a static list of IANA timezone names that never
+	 * changes per-user or per-tenant — it is the platform's own enumeration, not
+	 * app data).
+	 *
+	 * Language persists via PUT /me/preferences ({ language }).
+	 * Timezone persists via PATCH /me/account ({ timezone }).
+	 * Content-country persists via PATCH /me/preferences/content-country.
 	 *
 	 * Ref: japaconnect-engineering/sections/18-i18n-language-packs.md
 	 *      japaconnect-engineering/sections/50-user-dashboard-settings.md
@@ -15,29 +21,40 @@
 	import { untrack } from 'svelte';
 	import { DirtyForm } from '$lib/components/hub/useDirtyForm.svelte';
 	import SettingsSection from '$lib/components/hub/SettingsSection.svelte';
-	import { patchAccount } from '$lib/api/hub';
+	import { patchAccount, putPreferences } from '$lib/api/hub';
 	import { setContentCountry } from '$lib/api/geo';
 	import { t } from '$lib/i18n';
 	import { Globe, Clock, MapPin } from 'lucide-svelte';
 	import type { GeoCountry } from '$lib/types';
 
-	interface LanguagePack {
-		code: string;
-		name: string;
-		native_name?: string | null;
-	}
-
 	interface LanguageData {
-		packs: LanguagePack[];
-		current: { language_preference?: string | null; timezone?: string | null; content_country_preference?: string | null };
+		packs: string[];
+		prefs: { language?: string | null; dark_mode?: string | null };
+		profile: { timezone?: string | null; content_country_preference?: string | null };
 		countries?: GeoCountry[];
 	}
 
 	let { data }: { data: unknown } = $props();
 	const payload = $derived(data as LanguageData | null);
 	const packs = $derived(payload?.packs ?? []);
-	const current = $derived(payload?.current ?? {});
+	const prefs = $derived(payload?.prefs ?? {});
+	const profile = $derived(payload?.profile ?? {});
 	const countries = $derived(payload?.countries ?? []);
+
+	// Resolve a locale code to a display name via Intl.DisplayNames (platform
+	// API, not app data — Rule 16 safe). Falls back to the code itself.
+	const displayNames = (() => {
+		try {
+			// Use the browser's default locale for display names.
+			return new Intl.DisplayNames(undefined, { type: 'language' });
+		} catch {
+			return null;
+		}
+	})();
+
+	function localeLabel(code: string): string {
+		return displayNames?.of(code) ?? code;
+	}
 
 	// IANA timezone list — platform enumeration, not app data (Rule 16 safe).
 	const timezones: string[] = (() => {
@@ -59,16 +76,30 @@
 
 	const form = new DirtyForm(
 		untrack(() => ({
-			language_preference: current.language_preference ?? 'en',
-			timezone: current.timezone ?? browserTz
+			language: prefs.language ?? 'en',
+			timezone: profile.timezone ?? browserTz
 		})),
-		(v) => patchAccount({ language_preference: v.language_preference, timezone: v.timezone })
+		// Language saves via PUT /me/preferences; timezone saves via PATCH /me/account.
+		// Both fire in parallel — they are independent fields on different endpoints.
+		async (v) => {
+			const [langRes, tzRes] = await Promise.all([
+				putPreferences({ language: v.language }),
+				patchAccount({ timezone: v.timezone })
+			]);
+			// Surface the first error if either call failed.
+			const err = langRes.error ?? tzRes.error;
+			return {
+				data: langRes.data ?? tzRes.data,
+				error: err ? { message: err.message, status: err.status } : null,
+				status: err ? err.status : 200
+			};
+		}
 	);
 
 	// Content-country preference (ADR-064) — separate from the DirtyForm
 	// because it uses a different endpoint (PATCH /me/preferences/content-country)
 	// and has its own cache-invalidation semantics.
-	let contentCountry = $state(untrack(() => current.content_country_preference ?? ''));
+	let contentCountry = $state(untrack(() => profile.content_country_preference ?? ''));
 	let savingCountry = $state(false);
 
 	async function saveContentCountry(value: string) {
@@ -86,28 +117,26 @@
 		</span>
 		<Select.Root
 			type="single"
-			value={form.values.language_preference}
-			onValueChange={(v) => v && form.set({ language_preference: v })}
+			value={form.values.language}
+			onValueChange={(v) => v && form.set({ language: v })}
 		>
 			<Select.Trigger
 				class="inline-flex w-full items-center justify-between rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]"
 				aria-label={t('settings.language.language', 'Language')}
 			>
-				{packs.find((p) => p.code === form.values.language_preference)?.native_name
-					?? packs.find((p) => p.code === form.values.language_preference)?.name
-					?? form.values.language_preference}
+				{localeLabel(form.values.language)}
 			</Select.Trigger>
 			<Select.Portal>
 				<Select.Content class="z-50 max-h-60 overflow-y-auto rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-1 shadow-lg">
 					<Select.Viewport>
-						{#each packs as pack (pack.code)}
+						{#each packs as code (code)}
 							<Select.Item
-								value={pack.code}
-								label={pack.native_name ?? pack.name}
+								value={code}
+								label={localeLabel(code)}
 								class="flex cursor-pointer items-center justify-between rounded px-2 py-1.5 text-sm text-[var(--color-text)] data-[highlighted]:bg-[var(--color-surface-subtle)]"
 							>
-								<span>{pack.native_name ?? pack.name}</span>
-								<span class="text-xs text-[var(--color-muted)]">{pack.code}</span>
+								<span>{localeLabel(code)}</span>
+								<span class="text-xs text-[var(--color-muted)]">{code}</span>
 							</Select.Item>
 						{/each}
 					</Select.Viewport>

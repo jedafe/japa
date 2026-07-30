@@ -139,7 +139,7 @@ func (h *StockHandlers) Search(w http.ResponseWriter, r *http.Request) {
 	result, err := h.svc.Search(r.Context(), q, provider, page, perPage)
 	if err != nil {
 		slog.Error("stock: search failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "search_error", err.Error())
+		writeError(w, http.StatusInternalServerError, "search_error", "Failed to search stock")
 		return
 	}
 
@@ -224,7 +224,7 @@ func (h *StockHandlers) ImportPhoto(w http.ResponseWriter, r *http.Request) {
 	mediaID, err := h.svc.ImportPhoto(r.Context(), t.ID, user.UserID, body.Provider, body.ID)
 	if err != nil {
 		slog.Error("stock: import failed", "error", err, "provider", body.Provider, "photo_id", body.ID)
-		writeError(w, http.StatusInternalServerError, "import_error", err.Error())
+		writeError(w, http.StatusInternalServerError, "import_error", "Failed to import photo")
 		return
 	}
 
@@ -242,7 +242,7 @@ func (h *StockHandlers) ImportPhoto(w http.ResponseWriter, r *http.Request) {
 func (h *StockHandlers) AdminListProviders(w http.ResponseWriter, r *http.Request) {
 	rows, err := h.svc.store.ListProviders(r.Context())
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "list_error", err.Error())
+		writeError(w, http.StatusInternalServerError, "list_error", "Failed to list providers")
 		return
 	}
 
@@ -283,7 +283,7 @@ func (h *StockHandlers) AdminPatchProvider(w http.ResponseWriter, r *http.Reques
 
 	if body.Enabled != nil {
 		if err := h.svc.store.ToggleProvider(r.Context(), providerName, *body.Enabled); err != nil {
-			writeError(w, http.StatusInternalServerError, "toggle_error", err.Error())
+			writeError(w, http.StatusInternalServerError, "toggle_error", "Failed to toggle provider")
 			return
 		}
 	}
@@ -296,7 +296,7 @@ func (h *StockHandlers) AdminPatchProvider(w http.ResponseWriter, r *http.Reques
 			return
 		}
 		if err := h.svc.store.SetAPIKey(r.Context(), providerName, encrypted); err != nil {
-			writeError(w, http.StatusInternalServerError, "update_error", err.Error())
+			writeError(w, http.StatusInternalServerError, "update_error", "Failed to update provider")
 			return
 		}
 	}

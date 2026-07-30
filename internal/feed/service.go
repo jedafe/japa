@@ -149,7 +149,19 @@ func (s *Service) getExploreFeed(ctx context.Context, tenantID pgtype.UUID, sort
 		}
 
 		return risingRowsToItems(rows), nil
-	default: // "latest" or "relevant" both use velocity_score DESC
+	case SortRelevant:
+		// Explore is guest-facing — there is no user interest embedding
+		// available for pgvector cosine similarity (Section 32 L120–125
+		// requires a $user_embedding). Fall back to the top feed (7-day
+		// rolling window) as the closest relevance proxy for guests.
+		// The for-you feed handles true pgvector relevance for authed users.
+		rows, err := s.store.getTopFeed(ctx, tenantID, limit, offset)
+		if err != nil {
+			return nil, err
+		}
+
+		return topRowsToItems(rows), nil
+	default: // "latest" uses velocity_score DESC
 		rows, err := s.store.getExploreFeed(ctx, tenantID, limit, offset)
 		if err != nil {
 			return nil, err
@@ -160,8 +172,10 @@ func (s *Service) getExploreFeed(ctx context.Context, tenantID pgtype.UUID, sort
 }
 
 // getPrimaryFeedItems returns the user's personalized feed with sort.
-func (s *Service) getPrimaryFeedItems(ctx context.Context, tenantID, userID pgtype.UUID, _ string, limit, offset int32) ([]FeedItem, error) {
-	rows, err := s.store.getPrimaryFeed(ctx, tenantID, userID, limit, offset)
+// sort: 'latest' (default), 'top' (vote_score DESC), 'rising' (velocity_score DESC).
+// 'relevant' falls back to latest (pgvector relevance is only in the for-you feed).
+func (s *Service) getPrimaryFeedItems(ctx context.Context, tenantID, userID pgtype.UUID, sort string, limit, offset int32) ([]FeedItem, error) {
+	rows, err := s.store.getPrimaryFeed(ctx, tenantID, userID, sort, limit, offset)
 	if err != nil {
 		return nil, err
 	}
@@ -170,27 +184,22 @@ func (s *Service) getPrimaryFeedItems(ctx context.Context, tenantID, userID pgty
 }
 
 // getSpaceFeedItems returns space-specific feed with sort.
+// sort: 'latest' (default), 'top' (vote_score DESC), 'rising' (velocity_score DESC).
+// 'relevant' falls back to latest (pgvector relevance is only in the for-you feed).
 func (s *Service) getSpaceFeedItems(ctx context.Context, tenantID, spaceID pgtype.UUID, sort string, limit, offset int32) ([]FeedItem, error) {
-	switch sort {
-	case SortTop:
-		// For space top feed, filter by space_id via a different query.
-		// Since GetTopFeed doesn't filter by space, fall through to default.
-		fallthrough
-	case SortRising:
-		fallthrough
-	default:
-		rows, err := s.store.getSpaceFeed(ctx, tenantID, spaceID, limit, offset)
-		if err != nil {
-			return nil, err
-		}
-
-		return spaceRowsToItems(rows), nil
+	rows, err := s.store.getSpaceFeed(ctx, tenantID, spaceID, sort, limit, offset)
+	if err != nil {
+		return nil, err
 	}
+
+	return spaceRowsToItems(rows), nil
 }
 
 // getProfileFeedItems returns a user's public posts with sort.
-func (s *Service) getProfileFeedItems(ctx context.Context, tenantID, authorID pgtype.UUID, _ string, limit, offset int32) ([]FeedItem, error) {
-	rows, err := s.store.getProfileFeed(ctx, tenantID, authorID, limit, offset)
+// sort: 'latest' (default), 'top' (vote_score DESC), 'rising' (velocity_score DESC).
+// 'relevant' falls back to latest (pgvector relevance is only in the for-you feed).
+func (s *Service) getProfileFeedItems(ctx context.Context, tenantID, authorID pgtype.UUID, sort string, limit, offset int32) ([]FeedItem, error) {
+	rows, err := s.store.getProfileFeed(ctx, tenantID, authorID, sort, limit, offset)
 	if err != nil {
 		return nil, err
 	}
@@ -216,19 +225,19 @@ func (s *Service) UpdateContentScore(ctx context.Context, contentID pgtype.UUID,
 	})
 }
 
-// DeleteFeedItemsByContent removes all feed rows for a content ID.
-func (s *Service) DeleteFeedItemsByContent(ctx context.Context, contentID pgtype.UUID) error {
-	return s.store.deleteFeedItemsByContent(ctx, contentID)
+// DeleteFeedItemsByContent removes all feed rows for a content ID (tenant-scoped).
+func (s *Service) DeleteFeedItemsByContent(ctx context.Context, tenantID, contentID pgtype.UUID) error {
+	return s.store.deleteFeedItemsByContent(ctx, tenantID, contentID)
 }
 
-// DeleteFeedItemsByUser removes all feed rows for a user.
-func (s *Service) DeleteFeedItemsByUser(ctx context.Context, userID pgtype.UUID) error {
-	return s.store.deleteFeedItemsByUser(ctx, userID)
+// DeleteFeedItemsByUser removes all feed rows for a user (tenant-scoped).
+func (s *Service) DeleteFeedItemsByUser(ctx context.Context, tenantID, userID pgtype.UUID) error {
+	return s.store.deleteFeedItemsByUser(ctx, tenantID, userID)
 }
 
-// GetFeedItemCount returns the total number of feed items for a user.
-func (s *Service) GetFeedItemCount(ctx context.Context, userID pgtype.UUID) (int, error) {
-	count, err := s.store.getFeedItemCount(ctx, userID)
+// GetFeedItemCount returns the total number of feed items for a user (tenant-scoped).
+func (s *Service) GetFeedItemCount(ctx context.Context, tenantID, userID pgtype.UUID) (int, error) {
+	count, err := s.store.getFeedItemCount(ctx, tenantID, userID)
 	if err != nil {
 		return 0, err
 	}
@@ -480,11 +489,20 @@ func profileRowsToItems(rows []gen.GetProfileFeedRow) []FeedItem {
 }
 
 // ComputeVelocity calculates the velocity score for a post.
-// Formula: engagement / (hours_old + 2)^1.8.
+// This Go helper mirrors the SQL formula in feeds.sql (UpdateVelocityScores)
+// so the cron-written content_scores.velocity_score and any in-process
+// computation agree. Formula:
+//   (vote_score*2 + comment_count + view_count/100) / hours^gravity
+// Ref: japaconnect-engineering/sections/32-activity-feed-timeline.md
 func ComputeVelocity(voteScore, commentCount, viewCount, bookmarkCount int32, hoursOld float64) float64 {
-	engagement := float64(voteScore + commentCount + viewCount + bookmarkCount)
+	// Match the SQL formula: vote*2 + comment + view/100.
+	// bookmark_count is not in the SQL formula; kept as a param for API compat.
+	engagement := float64(voteScore*2) + float64(commentCount) + float64(viewCount)/100.0
 
-	denominator := math.Pow(hoursOld+2, 1.8)
+	if hoursOld <= 0 {
+		hoursOld = 1 // avoid division by zero for very fresh posts
+	}
+	denominator := math.Pow(hoursOld, 1.8)
 	if denominator == 0 {
 		return 0
 	}
@@ -558,6 +576,8 @@ func (s *Service) loadAffinity(
 // GetForYouFeed returns the personalized, ranked feed for a user, cached 90s per sort.
 // contentCountry is the visitor's resolved ContentCountry (ADR-064) used for
 // the bounded geo boost in the ranking; empty string disables geo weighting.
+// The geo boost is also disabled when the tenant setting
+// geo_personalization.enabled is false (Section 32 L147–149).
 func (s *Service) GetForYouFeed(
 	ctx context.Context, tenantID, userID pgtype.UUID, sortMode string, limit, offset int32,
 	contentCountry string,
@@ -568,6 +588,14 @@ func (s *Service) GetForYouFeed(
 
 	if offset < 0 {
 		offset = 0
+	}
+
+	// BUG-007: honor geo_personalization.enabled. When disabled, clear
+	// contentCountry so no geo boost is applied. Ref: Section 32 L147–149.
+	if s.settings != nil && contentCountry != "" {
+		if !s.settings.GetBoolOr(ctx, tenantID, "geo_personalization.enabled", true) {
+			contentCountry = ""
+		}
 	}
 
 	key := forYouCacheKey(tenantID, userID, sortMode, contentCountry)

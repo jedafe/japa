@@ -66,36 +66,36 @@ WHERE id = @id AND tenant_id = @tenant_id AND is_system = false;
 SELECT id, tenant_id, parent_id, space_type_id, name, slug, description, wiki_content,
        logo_media_id, header_image_id, geo_code, level, member_count, post_count,
        follower_count, visibility, posting_perm, replying_perm, commenting_perm,
-       joining_perm, status, created_at, updated_at
+       joining_perm, status, created_at, updated_at, deleted_at
 FROM spaces
-WHERE tenant_id = @tenant_id
+WHERE tenant_id = @tenant_id AND deleted_at IS NULL
 ORDER BY created_at DESC, id DESC;
 
 -- name: ListSpacesByLevel :many
 SELECT id, tenant_id, parent_id, space_type_id, name, slug, description, wiki_content,
        logo_media_id, header_image_id, geo_code, level, member_count, post_count,
        follower_count, visibility, posting_perm, replying_perm, commenting_perm,
-       joining_perm, status, created_at, updated_at
+       joining_perm, status, created_at, updated_at, deleted_at
 FROM spaces
-WHERE tenant_id = @tenant_id AND level = @level
+WHERE tenant_id = @tenant_id AND level = @level AND deleted_at IS NULL
 ORDER BY created_at DESC, id DESC;
 
 -- name: ListSpacesByType :many
 SELECT id, tenant_id, parent_id, space_type_id, name, slug, description, wiki_content,
        logo_media_id, header_image_id, geo_code, level, member_count, post_count,
        follower_count, visibility, posting_perm, replying_perm, commenting_perm,
-       joining_perm, status, created_at, updated_at
+       joining_perm, status, created_at, updated_at, deleted_at
 FROM spaces
-WHERE tenant_id = @tenant_id AND space_type_id = @space_type_id
+WHERE tenant_id = @tenant_id AND space_type_id = @space_type_id AND deleted_at IS NULL
 ORDER BY created_at DESC, id DESC;
 
 -- name: ListChildSpaces :many
 SELECT id, tenant_id, parent_id, space_type_id, name, slug, description, wiki_content,
        logo_media_id, header_image_id, geo_code, level, member_count, post_count,
        follower_count, visibility, posting_perm, replying_perm, commenting_perm,
-       joining_perm, status, created_at, updated_at
+       joining_perm, status, created_at, updated_at, deleted_at
 FROM spaces
-WHERE parent_id = @parent_id AND tenant_id = @tenant_id
+WHERE parent_id = @parent_id AND tenant_id = @tenant_id AND deleted_at IS NULL
 ORDER BY created_at ASC, id ASC;
 
 -- name: AdminListSpaces :many
@@ -103,7 +103,7 @@ SELECT s.id, s.tenant_id, s.parent_id, s.space_type_id, s.name, s.slug, s.descri
        s.wiki_content, s.logo_media_id, s.header_image_id, s.geo_code, s.level,
        s.member_count, s.post_count, s.follower_count, s.visibility, s.posting_perm,
        s.replying_perm, s.commenting_perm, s.joining_perm, s.status, s.created_at,
-       s.updated_at,
+       s.updated_at, s.deleted_at,
        COALESCE(u.username, '') AS owner,
        COALESCE(u.id::text, '') AS owner_id,
        COALESCE(st.name, '') AS space_type
@@ -111,24 +111,25 @@ FROM spaces s
 LEFT JOIN space_members sm ON sm.space_id = s.id AND sm.tenant_id = s.tenant_id AND sm.role = 'owner'
 LEFT JOIN users u ON u.id = sm.user_id AND u.tenant_id = s.tenant_id
 LEFT JOIN space_types st ON st.id = s.space_type_id AND st.tenant_id = s.tenant_id
-WHERE s.tenant_id = @tenant_id
+WHERE s.tenant_id = @tenant_id AND s.deleted_at IS NULL
 ORDER BY s.created_at DESC, s.id DESC
 LIMIT @limit_val OFFSET @offset_val;
 
 -- name: AdminListSpacesCount :one
 SELECT COUNT(*) AS total
 FROM spaces s
-WHERE s.tenant_id = @tenant_id;
+WHERE s.tenant_id = @tenant_id AND s.deleted_at IS NULL;
 
 -- name: ListSpacesByMemberUser :many
 SELECT s.id, s.tenant_id, s.parent_id, s.space_type_id, s.name, s.slug, s.description,
        s.wiki_content, s.logo_media_id, s.header_image_id, s.geo_code, s.level,
        s.member_count, s.post_count, s.follower_count, s.visibility, s.posting_perm,
        s.replying_perm, s.commenting_perm, s.joining_perm, s.status, s.created_at,
-       s.updated_at
+       s.updated_at, s.deleted_at
 FROM spaces s
 JOIN space_members sm ON sm.space_id = s.id
-WHERE sm.user_id = @user_id AND sm.tenant_id = @tenant_id
+WHERE sm.user_id = @user_id AND sm.tenant_id = @tenant_id AND s.deleted_at IS NULL
+  AND (@search::text = '' OR s.name ILIKE '%' || @search || '%' OR s.slug ILIKE '%' || @search || '%')
 ORDER BY sm.joined_at DESC, s.id DESC;
 
 -- name: ListSpacesByModeratorUser :many
@@ -136,11 +137,42 @@ SELECT s.id, s.tenant_id, s.parent_id, s.space_type_id, s.name, s.slug, s.descri
        s.wiki_content, s.logo_media_id, s.header_image_id, s.geo_code, s.level,
        s.member_count, s.post_count, s.follower_count, s.visibility, s.posting_perm,
        s.replying_perm, s.commenting_perm, s.joining_perm, s.status, s.created_at,
-       s.updated_at
+       s.updated_at, s.deleted_at
 FROM spaces s
 JOIN space_moderators sm ON sm.space_id = s.id
-WHERE sm.user_id = @user_id AND sm.tenant_id = @tenant_id
+WHERE sm.user_id = @user_id AND sm.tenant_id = @tenant_id AND s.deleted_at IS NULL
 ORDER BY sm.created_at DESC, s.id DESC;
+
+-- name: ListSpacesByOwnerUser :many
+-- Spaces the caller owns (space_members.role = 'owner').
+-- Catalog: GET /me/spaces/owned.
+SELECT s.id, s.tenant_id, s.parent_id, s.space_type_id, s.name, s.slug, s.description,
+       s.wiki_content, s.logo_media_id, s.header_image_id, s.geo_code, s.level,
+       s.member_count, s.post_count, s.follower_count, s.visibility, s.posting_perm,
+       s.replying_perm, s.commenting_perm, s.joining_perm, s.status, s.created_at,
+       s.updated_at, s.deleted_at
+FROM spaces s
+JOIN space_members sm ON sm.space_id = s.id AND sm.tenant_id = s.tenant_id
+WHERE sm.user_id = @user_id AND sm.tenant_id = @tenant_id AND sm.role = 'owner'
+  AND s.deleted_at IS NULL
+ORDER BY sm.joined_at DESC, s.id DESC;
+
+-- name: CountSpacesByOwnerUser :one
+-- Counts spaces the user owns (role='owner'), for max_spaces_creatable quota.
+SELECT COUNT(*)::int AS count
+FROM spaces s
+JOIN space_members sm ON sm.space_id = s.id AND sm.tenant_id = s.tenant_id
+WHERE sm.user_id = @user_id AND sm.tenant_id = @tenant_id AND sm.role = 'owner'
+  AND s.deleted_at IS NULL;
+
+-- name: GetUserMaxSpacesCreatable :one
+-- Returns the max_spaces_creatable from the user's group. If the user is in
+-- multiple groups, returns the highest value (most permissive). -1 = unlimited.
+-- Ref: Section 03 line 44, §26 quantity gate.
+SELECT COALESCE(MAX(ug.max_spaces_creatable), 0)::int AS max_spaces_creatable
+FROM user_group_memberships ugm
+JOIN user_groups ug ON ugm.group_id = ug.id
+WHERE ugm.tenant_id = @tenant_id AND ugm.user_id = @user_id;
 
 -- name: ListStatesByCountryGeoCode :many
 -- Geo hierarchy (catalog: GET /geo/countries/:code/states). Countries and
@@ -150,12 +182,13 @@ SELECT s.id, s.tenant_id, s.parent_id, s.space_type_id, s.name, s.slug, s.descri
        s.wiki_content, s.logo_media_id, s.header_image_id, s.geo_code, s.level,
        s.member_count, s.post_count, s.follower_count, s.visibility, s.posting_perm,
        s.replying_perm, s.commenting_perm, s.joining_perm, s.status, s.created_at,
-       s.updated_at
+       s.updated_at, s.deleted_at
 FROM spaces s
 JOIN space_parent_spaces sps ON sps.space_id = s.id
 JOIN spaces country ON country.id = sps.parent_space_id
 WHERE country.tenant_id = @tenant_id AND country.level = 'country'
   AND country.geo_code = @country_code AND s.level = 'state'
+  AND s.deleted_at IS NULL AND country.deleted_at IS NULL
 ORDER BY s.name;
 
 -- name: ListCitiesByStateID :many
@@ -166,27 +199,28 @@ SELECT s.id, s.tenant_id, s.parent_id, s.space_type_id, s.name, s.slug, s.descri
        s.wiki_content, s.logo_media_id, s.header_image_id, s.geo_code, s.level,
        s.member_count, s.post_count, s.follower_count, s.visibility, s.posting_perm,
        s.replying_perm, s.commenting_perm, s.joining_perm, s.status, s.created_at,
-       s.updated_at
+       s.updated_at, s.deleted_at
 FROM spaces s
 JOIN space_parent_spaces sps ON sps.space_id = s.id
 WHERE sps.parent_space_id = @state_id AND s.tenant_id = @tenant_id AND s.level = 'city'
+  AND s.deleted_at IS NULL
 ORDER BY s.name;
 
 -- name: GetSpaceByID :one
 SELECT id, tenant_id, parent_id, space_type_id, name, slug, description, wiki_content,
        logo_media_id, header_image_id, geo_code, level, member_count, post_count,
        follower_count, visibility, posting_perm, replying_perm, commenting_perm,
-       joining_perm, status, created_at, updated_at
+       joining_perm, status, created_at, updated_at, deleted_at
 FROM spaces
-WHERE id = @id AND tenant_id = @tenant_id;
+WHERE id = @id AND tenant_id = @tenant_id AND deleted_at IS NULL;
 
 -- name: GetSpaceBySlug :one
 SELECT id, tenant_id, parent_id, space_type_id, name, slug, description, wiki_content,
        logo_media_id, header_image_id, geo_code, level, member_count, post_count,
        follower_count, visibility, posting_perm, replying_perm, commenting_perm,
-       joining_perm, status, created_at, updated_at
+       joining_perm, status, created_at, updated_at, deleted_at
 FROM spaces
-WHERE slug = @slug AND tenant_id = @tenant_id;
+WHERE slug = @slug AND tenant_id = @tenant_id AND deleted_at IS NULL;
 
 -- name: CreateSpace :one
 INSERT INTO spaces (
@@ -200,7 +234,7 @@ INSERT INTO spaces (
 RETURNING id, tenant_id, parent_id, space_type_id, name, slug, description, wiki_content,
           logo_media_id, header_image_id, geo_code, level, member_count, post_count,
           follower_count, visibility, posting_perm, replying_perm, commenting_perm,
-          joining_perm, status, created_at, updated_at;
+          joining_perm, status, created_at, updated_at, deleted_at;
 
 -- name: UpdateSpace :one
 UPDATE spaces
@@ -208,15 +242,17 @@ SET name = @name, description = sqlc.narg(description), wiki_content = sqlc.narg
     geo_code = sqlc.narg(geo_code), visibility = @visibility, posting_perm = @posting_perm,
     replying_perm = @replying_perm, commenting_perm = @commenting_perm, joining_perm = @joining_perm,
     status = @status
-WHERE id = @id AND tenant_id = @tenant_id
+WHERE id = @id AND tenant_id = @tenant_id AND deleted_at IS NULL
 RETURNING id, tenant_id, parent_id, space_type_id, name, slug, description, wiki_content,
           logo_media_id, header_image_id, geo_code, level, member_count, post_count,
           follower_count, visibility, posting_perm, replying_perm, commenting_perm,
-          joining_perm, status, created_at, updated_at;
+          joining_perm, status, created_at, updated_at, deleted_at;
 
 -- name: DeleteSpace :exec
-DELETE FROM spaces
-WHERE id = @id AND tenant_id = @tenant_id;
+-- Soft-delete: set deleted_at instead of hard-deleting (Rule 11, ADR-014).
+-- The account:deletion_cleanup Asynq task may hard-delete after GDPR erasure.
+UPDATE spaces SET deleted_at = now(), status = 'deleted'
+WHERE id = @id AND tenant_id = @tenant_id AND deleted_at IS NULL;
 
 -- name: IncrementSpaceCount :exec
 UPDATE spaces
@@ -257,6 +293,14 @@ SELECT EXISTS(
     SELECT 1 FROM space_members
     WHERE space_id = @space_id AND user_id = @user_id AND tenant_id = @tenant_id
 ) AS is_member;
+
+-- name: CheckSpaceOwnership :one
+-- Returns true if the user is the owner (role='owner') of the space.
+SELECT EXISTS(
+    SELECT 1 FROM space_members
+    WHERE space_id = @space_id AND user_id = @user_id AND tenant_id = @tenant_id
+      AND role = 'owner'
+) AS is_owner;
 
 -- name: AddSpaceMember :exec
 INSERT INTO space_members (space_id, user_id, tenant_id, role)
@@ -331,10 +375,10 @@ SELECT s.id, s.tenant_id, s.parent_id, s.space_type_id, s.name, s.slug, s.descri
        s.wiki_content, s.logo_media_id, s.header_image_id, s.geo_code, s.level,
        s.member_count, s.post_count, s.follower_count, s.visibility, s.posting_perm,
        s.replying_perm, s.commenting_perm, s.joining_perm, s.status, s.created_at,
-       s.updated_at
+       s.updated_at, s.deleted_at
 FROM spaces s
 JOIN space_parent_spaces sps ON sps.parent_space_id = s.id
-WHERE sps.space_id = @space_id AND s.tenant_id = @tenant_id
+WHERE sps.space_id = @space_id AND s.tenant_id = @tenant_id AND s.deleted_at IS NULL
 ORDER BY s.name;
 
 -- name: GetChildSpacesByParentID :many
@@ -342,10 +386,10 @@ SELECT s.id, s.tenant_id, s.parent_id, s.space_type_id, s.name, s.slug, s.descri
        s.wiki_content, s.logo_media_id, s.header_image_id, s.geo_code, s.level,
        s.member_count, s.post_count, s.follower_count, s.visibility, s.posting_perm,
        s.replying_perm, s.commenting_perm, s.joining_perm, s.status, s.created_at,
-       s.updated_at
+       s.updated_at, s.deleted_at
 FROM spaces s
 JOIN space_parent_spaces sps ON sps.space_id = s.id
-WHERE sps.parent_space_id = @parent_space_id AND s.tenant_id = @tenant_id
+WHERE sps.parent_space_id = @parent_space_id AND s.tenant_id = @tenant_id AND s.deleted_at IS NULL
 ORDER BY s.name;
 
 -- =====================
@@ -399,7 +443,7 @@ SET position = @position
 WHERE space_id = @space_id AND content_id = @content_id;
 
 -- name: UpdateSpaceStatus :exec
-UPDATE spaces SET status = @status, updated_at = now() WHERE id = @id AND tenant_id = @tenant_id;
+UPDATE spaces SET status = @status, updated_at = now() WHERE id = @id AND tenant_id = @tenant_id AND deleted_at IS NULL;
 
 -- name: CountSpacePublishedContent :one
 SELECT COUNT(*) AS count
@@ -408,7 +452,7 @@ WHERE space_id = @space_id AND tenant_id = @tenant_id AND status = 'published';
 
 -- name: SuggestParentSpaces :many
 SELECT s.id, s.name, s.slug FROM spaces s
-WHERE s.tenant_id = @tenant_id AND s.status = 'active'
+WHERE s.tenant_id = @tenant_id AND s.status = 'active' AND s.deleted_at IS NULL
   AND s.space_type_id IN (SELECT id FROM space_types WHERE slug = 'category')
 ORDER BY s.name LIMIT 20;
 
@@ -431,15 +475,16 @@ WHERE id = @id AND tenant_id = @tenant_id AND follower_count > 0;
 -- name: ListPublicSpacesByMemberUser :many
 -- Public profile Spaces tab: PUBLIC, active spaces the user is a member of.
 -- Excludes 'members'/'private' visibility and non-active spaces. Public-safe.
+-- Includes the member's role (sm.role) so the profile card can show it.
 SELECT s.id, s.tenant_id, s.parent_id, s.space_type_id, s.name, s.slug, s.description,
        s.wiki_content, s.logo_media_id, s.header_image_id, s.geo_code, s.level,
        s.member_count, s.post_count, s.follower_count, s.visibility, s.posting_perm,
        s.replying_perm, s.commenting_perm, s.joining_perm, s.status, s.created_at,
-       s.updated_at
+       s.updated_at, s.deleted_at, sm.role AS member_role
 FROM spaces s
 JOIN space_members sm ON sm.space_id = s.id AND sm.tenant_id = s.tenant_id
 WHERE sm.user_id = @user_id AND s.tenant_id = @tenant_id
-  AND s.visibility = 'public' AND s.status = 'active'
+  AND s.visibility = 'public' AND s.status = 'active' AND s.deleted_at IS NULL
 ORDER BY sm.joined_at DESC, s.id DESC
 LIMIT @page_limit OFFSET @page_offset;
 
@@ -451,5 +496,5 @@ LIMIT @limit_val;
 -- Updates only the logo_media_id on a space (used by university:fetch_logo task).
 UPDATE spaces
 SET logo_media_id = @logo_media_id
-WHERE id = @id AND tenant_id = @tenant_id
+WHERE id = @id AND tenant_id = @tenant_id AND deleted_at IS NULL
 RETURNING *;

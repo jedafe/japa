@@ -46,6 +46,8 @@ type Service struct {
 // the feed package does not import config.
 type feedSettingsReader interface {
 	GetIntOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback int) int
+	GetFloatOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback float64) float64
+	GetBoolOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback bool) bool
 }
 
 // feedEnqueuer is the subset of worker.Enqueuer that feed needs.

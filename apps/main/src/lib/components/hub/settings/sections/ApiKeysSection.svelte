@@ -1,12 +1,22 @@
 <script lang="ts">
+	/**
+	 * API Keys settings — Section 50 (Developer).
+	 *
+	 * Create, rotate, and revoke API keys. Scopes are selectable via a
+	 * multi-select dropdown populated from GET /developer/scopes (Rule 16 —
+	 * no hardcoded scope list).
+	 *
+	 * Ref: japaconnect-engineering/sections/50-user-dashboard-settings.md
+	 */
 	import { Dialog } from 'bits-ui';
-	import { untrack } from 'svelte';
+	import { untrack, onMount } from 'svelte';
 	import { t } from '$lib/i18n';
+	import { api } from '$lib/api/client';
 	import { createApiKey, rotateApiKey, revokeApiKey } from '$lib/api/hub';
 	import { optimisticAction } from '$lib/components/hub/optimisticAction';
 	import { invalidate } from '$app/navigation';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
-	import { Key } from 'lucide-svelte';
+	import { Key, ChevronDown, Check, X } from 'lucide-svelte';
 	import ApiKeyRevealDialog from '../flows/ApiKeyRevealDialog.svelte';
 
 	interface ApiKey {
@@ -17,11 +27,17 @@
 		created_at?: string;
 	}
 
+	interface ScopeOption {
+		value: string;
+		label: string;
+		description: string;
+	}
+
 	let { data }: { data: unknown } = $props();
 	let keys = $state<ApiKey[]>(untrack(() => (data as ApiKey[] | null) ?? []));
 
 	let newName = $state('');
-	let newScopes = $state('');
+	let selectedScopes = $state<string[]>([]);
 	let creating = $state(false);
 	let error = $state<string | null>(null);
 
@@ -29,12 +45,36 @@
 	let revealedKey = $state('');
 	let revokeTarget = $state<string | null>(null);
 
+	// Scope catalog from GET /developer/scopes (Rule 16 — no hardcoded list).
+	let scopes = $state<ScopeOption[]>([]);
+	let scopeDropdownOpen = $state(false);
+
+	onMount(async () => {
+		const res = await api.get<ScopeOption[]>('/developer/scopes');
+		if (res.data) scopes = res.data;
+	});
+
+	function toggleScope(value: string) {
+		if (selectedScopes.includes(value)) {
+			selectedScopes = selectedScopes.filter((s) => s !== value);
+		} else {
+			selectedScopes = [...selectedScopes, value];
+		}
+	}
+
+	function removeScope(value: string) {
+		selectedScopes = selectedScopes.filter((s) => s !== value);
+	}
+
+	function scopeLabel(value: string): string {
+		return scopes.find((s) => s.value === value)?.label ?? value;
+	}
+
 	async function doCreate() {
 		if (!newName.trim()) return;
 		creating = true;
 		error = null;
-		const scopes = newScopes.split(',').map((s) => s.trim()).filter(Boolean);
-		const res = await createApiKey({ name: newName.trim(), scopes });
+		const res = await createApiKey({ name: newName.trim(), scopes: selectedScopes });
 		creating = false;
 		if (res.error) {
 			error = res.error.message;
@@ -44,7 +84,7 @@
 		revealedKey = res.data?.key ?? '';
 		revealOpen = true;
 		newName = '';
-		newScopes = '';
+		selectedScopes = [];
 		await invalidate('/api/v1/me/api-keys');
 	}
 
@@ -95,17 +135,88 @@
 				oninput={(e) => (newName = e.currentTarget.value)}
 			/>
 		</label>
-		<label class="block">
+
+		<!-- Scope multi-select -->
+		<div class="block">
 			<span class="mb-1 block text-sm text-[var(--color-muted)]">{t('settings.apikeys.scopes')}</span>
-			<input
-				type="text"
-				class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]"
-				placeholder="read,write"
-				value={newScopes}
-				oninput={(e) => (newScopes = e.currentTarget.value)}
-			/>
-		</label>
-		{#if error}<p class="text-xs text-[var(--color-danger,#dc2626)]">{error}</p>{/if}
+
+			<!-- Selected scope chips -->
+			{#if selectedScopes.length > 0}
+				<div class="mb-2 flex flex-wrap gap-1.5">
+					{#each selectedScopes as scope (scope)}
+						<span class="inline-flex items-center gap-1 rounded-full bg-[var(--color-primary)]/10 px-2.5 py-1 text-xs font-medium text-[var(--color-primary)]">
+							{scopeLabel(scope)}
+							<button
+								type="button"
+								class="hover:text-[var(--color-danger)]"
+								onclick={() => removeScope(scope)}
+								aria-label={t('settings.apikeys.remove_scope', 'Remove scope')}
+							>
+								<X size={12} />
+							</button>
+						</span>
+					{/each}
+				</div>
+			{/if}
+
+			<!-- Dropdown trigger -->
+			<div class="relative">
+				<button
+					type="button"
+					onclick={() => (scopeDropdownOpen = !scopeDropdownOpen)}
+					class="inline-flex w-full items-center justify-between rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
+					aria-expanded={scopeDropdownOpen}
+					aria-label={t('settings.apikeys.select_scopes', 'Select scopes')}
+				>
+					<span class={selectedScopes.length === 0 ? 'text-[var(--color-muted)]' : ''}>
+						{selectedScopes.length === 0
+							? t('settings.apikeys.select_scopes', 'Select scopes...')
+							: t('settings.apikeys.scopes_selected', '{count} selected').replace('{count}', String(selectedScopes.length))}
+					</span>
+					<ChevronDown size={16} class="transition-transform {scopeDropdownOpen ? 'rotate-180' : ''}" />
+				</button>
+
+				{#if scopeDropdownOpen}
+					<!-- Click-outside backdrop -->
+					<button
+						type="button"
+						class="fixed inset-0 z-40 cursor-default"
+						aria-hidden="true"
+						tabindex="-1"
+						onclick={() => (scopeDropdownOpen = false)}
+					></button>
+
+					<!-- Scope dropdown panel -->
+					<div class="absolute z-50 mt-1 max-h-60 w-full overflow-y-auto rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] shadow-lg">
+						{#if scopes.length === 0}
+							<div class="px-3 py-2 text-sm text-[var(--color-muted)]">
+								{t('settings.apikeys.scopes_loading', 'Loading scopes...')}
+							</div>
+						{:else}
+							{#each scopes as scope (scope.value)}
+								<button
+									type="button"
+									class="flex w-full items-start gap-2 px-3 py-2 text-left hover:bg-[var(--color-surface-subtle)]"
+									onclick={() => toggleScope(scope.value)}
+								>
+									<span class="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded border border-[var(--color-border)] {selectedScopes.includes(scope.value) ? 'bg-[var(--color-primary)] text-white' : ''}">
+										{#if selectedScopes.includes(scope.value)}
+											<Check size={12} />
+										{/if}
+									</span>
+									<span class="min-w-0 flex-1">
+										<span class="block text-sm font-medium text-[var(--color-text)]">{scope.label}</span>
+										<span class="block text-xs text-[var(--color-muted)]">{scope.description}</span>
+									</span>
+								</button>
+							{/each}
+						{/if}
+					</div>
+				{/if}
+			</div>
+		</div>
+
+		{#if error}<p class="text-xs text-[var(--color-danger)]">{error}</p>{/if}
 		<button
 			type="submit"
 			disabled={creating || !newName.trim()}
@@ -125,7 +236,12 @@
 						<p class="text-sm font-medium text-[var(--color-text)]">{key.name}</p>
 						<p class="text-xs text-[var(--color-muted)]">
 							{key.prefix ?? '••••'}
-							{#if key.scopes?.length} · {key.scopes.join(', ')}{/if}
+							{#if key.scopes?.length}
+								{#each key.scopes as s, i (s)}
+									{#if i === 0} · {/if}
+									<span class="inline-block rounded bg-[var(--color-surface-subtle)] px-1.5 py-0.5 text-[10px] font-medium">{scopeLabel(s)}</span>
+								{/each}
+							{/if}
 						</p>
 					</div>
 					<div class="ml-3 flex shrink-0 gap-2">
@@ -138,7 +254,7 @@
 						</button>
 						<button
 							type="button"
-							class="text-xs text-[var(--color-muted)] hover:text-[var(--color-danger,#dc2626)]"
+							class="text-xs text-[var(--color-muted)] hover:text-[var(--color-danger)]"
 							onclick={() => (revokeTarget = key.id)}
 						>
 							{t('settings.apikeys.revoke')}
@@ -166,7 +282,7 @@
 					</Dialog.Close>
 					<button
 						type="button"
-						class="rounded-[var(--radius)] bg-[var(--color-danger,#dc2626)] px-4 py-1.5 text-sm font-medium text-white"
+						class="rounded-[var(--radius)] bg-[var(--color-danger)] px-4 py-1.5 text-sm font-medium text-white"
 						onclick={doRevoke}
 					>
 						{t('settings.apikeys.revoke')}

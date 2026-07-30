@@ -98,10 +98,10 @@
 			<ul class="space-y-2">
 				{#each following as user (user.id)}
 					<li class="flex items-center justify-between rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3">
-						<a href="/profile/{user.username ?? user.id}" class="text-sm font-medium text-[var(--color-text)] hover:underline">
+						<a href="/u/{user.username ?? user.id}" class="text-sm font-medium text-[var(--color-text)] hover:underline">
 							{user.display_name ?? user.username ?? user.id}
 						</a>
-						<button type="button" class="text-xs text-[var(--color-muted)] hover:text-[var(--color-danger,#dc2626)]" onclick={() => doUnfollowUser(user.id)}>
+						<button type="button" class="text-xs text-[var(--color-muted)] hover:text-[var(--color-danger)]" onclick={() => doUnfollowUser(user.id)}>
 							{t('dashboard.relationships.unfollow')}
 						</button>
 					</li>
@@ -118,7 +118,7 @@
 						<a href="/spaces/{space.slug ?? space.id}" class="text-sm font-medium text-[var(--color-text)] hover:underline">
 							{space.name ?? space.slug ?? space.id}
 						</a>
-						<button type="button" class="text-xs text-[var(--color-muted)] hover:text-[var(--color-danger,#dc2626)]" onclick={() => doLeaveSpace(space.slug ?? space.id)}>
+						<button type="button" class="text-xs text-[var(--color-muted)] hover:text-[var(--color-danger)]" onclick={() => doLeaveSpace(space.slug ?? space.id)}>
 							{t('dashboard.relationships.leave')}
 						</button>
 					</li>
@@ -135,7 +135,7 @@
 						<a href="/tags/{tag.slug ?? tag.id}" class="text-sm font-medium text-[var(--color-text)] hover:underline">
 							#{tag.name ?? tag.slug ?? tag.id}
 						</a>
-						<button type="button" class="text-xs text-[var(--color-muted)] hover:text-[var(--color-danger,#dc2626)]" onclick={() => doUnfollowTag(tag.slug ?? tag.id)}>
+						<button type="button" class="text-xs text-[var(--color-muted)] hover:text-[var(--color-danger)]" onclick={() => doUnfollowTag(tag.slug ?? tag.id)}>
 							{t('dashboard.relationships.unfollow')}
 						</button>
 					</li>

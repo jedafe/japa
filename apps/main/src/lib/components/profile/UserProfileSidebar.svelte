@@ -1,22 +1,23 @@
 <script lang="ts">
 	import { t } from '$lib/i18n';
 	import { Award } from 'lucide-svelte';
-	import FollowButton from './FollowButton.svelte';
+	import FollowButton from '$lib/components/ui/FollowButton.svelte';
 	import type { PublicUser, ProfileCertificate, ProfileSpace } from '$lib/types';
 
 	interface Props {
 		user: PublicUser;
 		isOwnProfile: boolean;
+		initiallyFollowing?: boolean;
 		certificates: ProfileCertificate[];
 		spaces: ProfileSpace[];
 	}
-	let { user, isOwnProfile, certificates, spaces }: Props = $props();
+	let { user, isOwnProfile, initiallyFollowing = false, certificates, spaces }: Props = $props();
 </script>
 
 <!-- Route-specific right sidebar for /u/[username] — rendered above global widgets. -->
 {#if !isOwnProfile}
 	<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-		<FollowButton userId={user.id} />
+		<FollowButton entityType="user" entityId={user.id} {initiallyFollowing} />
 	</section>
 {/if}
 

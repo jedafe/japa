@@ -1,6 +1,6 @@
 ---
 name: japa-bugs-hunters
-description: JapaConnect comprehensive bug hunter. On load it presents a menu — (1) a frontend URL or page name of any of the 5 apps, (2) a backend API route, (3-8) a whole surface (backend / main / control / admin / docs / learn), (9) a feature name from ./internal (e.g. forum, like, bookmark, ai, affiliate) for a full cross-stack audit against JEOS Specs with findings saved to ./.jeos/audit, or (10) apply fixes to a feature's audit findings in ./.jeos/audit/<feature_name>-audit.md. It hunts bugs from the JapaConnect Bug Hunter's Guide (Prompts/japa-bugs-hunters.md) against the page/route/surface/feature, fixes frontend issues, and — when a bug needs backend work (missing route, unwired handler, incomplete CRUD, migration, RBAC, Valkey, Asynq, GDPR) — fixes the backend too until the target is 100% working. Use when the user says "hunt bugs", "bug hunt", "audit and fix", "fix bugs on <page/route>", "audit feature <name>", "fix [feature_name]", or triggers /japa-bugs-hunters.
+description: JapaConnect comprehensive bug hunter. On load it presents a menu — (1) a frontend URL or page name of any of the 5 apps, (2) a backend API route, (3-8) a whole surface (backend / main / control / admin / docs / learn), (9) a feature name from ./internal (e.g. forum, like, bookmark, ai, affiliate) for a full cross-stack audit against JEOS Specs with findings saved to ./.jeos/audit, or (10) apply fixes to a feature's audit findings in ./.jeos/audit/<feature_name>-audit.md. It hunts bugs from the JapaConnect Bug Hunter's Guide (Prompts/japa-bugs-hunters.md) against the page/route/surface/feature, fixes frontend issues, and — when a bug needs backend work (missing route, unwired handler, incomplete CRUD, migration, RBAC, Valkey, Asynq, GDPR) — fixes the backend too until the target is 100% working. Use when the user says "hunt bugs", "bug hunt", "audit and fix", "fix bugs on <page/route>", "audit feature <name>", "audit [feature_name]", "fix [feature_name]", "audit /api/v1/<route>", "fix /api/v1/<route>", "audit <url-or-path>", "fix <url-or-path>", "audit <surface>", "fix <surface>" (surface = backend/main/control/admin/docs/learn), or triggers /japa-bugs-hunters.
 ---
 
 # JapaConnect Bug Hunter
@@ -95,15 +95,55 @@ Audit** workflow below.
 and ask the user to pick one (or suggest running Option 9 first to produce the audit). Then execute
 the **Option 10 — Fix Feature Audit Findings** workflow below.
 
-**Shortcut trigger:** if the user invokes the skill as `/japa-bugs-hunters "fix [feature_name]"`
-(e.g. `/japa-bugs-hunters "fix forum"`, `/japa-bugs-hunters fix bookmark`), skip the menu entirely
-and jump straight to the **Option 10 — Fix Feature Audit Findings** workflow with the supplied
-`[feature_name]`. The phrase is case-insensitive and the quotes are optional. If the audit file does
-not exist for that feature, tell the user and offer to run Option 9 first.
+**Shortcut triggers:**
+
+Any of these skip the menu entirely. The phrase is case-insensitive and the quotes are optional
+(e.g. `/japa-bugs-hunters "audit forum"`, `/japa-bugs-hunters fix /dashboard/overview`). The verb
+`audit` vs `fix` only changes the workflow for **features** (Option 9 = audit-only, Option 10 =
+fix-only); for every other target both verbs trigger that target's combined audit+fix workflow.
+
+**Routing rules** (evaluate in order, first match wins):
+
+1. **Feature audit/fix** — `/japa-bugs-hunters "audit [feature_name]"` or
+   `/japa-bugs-hunters "fix [feature_name]"` where `[feature_name]` is a folder under `./internal`
+   (e.g. `forum`, `like`, `bookmark`, `ai`, `affiliate`).
+   - `audit [feature_name]` → **Option 9 — Feature Audit** (read-only, writes
+     `./.jeos/audit/<feature_name>-audit.md`). Validate `./internal/<feature_name>` exists; if not,
+     list `./internal/*` subdirectories and ask the user to pick one.
+   - `fix [feature_name]` → **Option 10 — Fix Feature Audit Findings**. Validate
+     `./.jeos/audit/<feature_name>-audit.md` exists; if not, list every file in `./.jeos/audit/` and
+     offer to run Option 9 first.
+2. **Backend API / route** — `/japa-bugs-hunters "audit /api/v1/<route>"` or
+   `/japa-bugs-hunters "fix /api/v1/<route>"` (any target starting with `/api/v1/`, or a handler
+   identifier like `forum.CreatePost`) → **Option 2 — Backend API / Route**.
+3. **Frontend URL / page** — `/japa-bugs-hunters "audit <url-or-path>"` or
+   `/japa-bugs-hunters "fix <url-or-path>"` where the target is a URL
+   (`http://localhost:3000/...`, `https://admin.japaconnect.com/...`) or a frontend path
+   (`/dashboard/overview`, `/forum/threads`, `/settings/profile`) → **Option 1 — Frontend URL / Page**.
+   Resolve the app from the URL/path per Option 1's app-resolution rules.
+4. **Whole surface** — `/japa-bugs-hunters "audit <surface>"` or
+   `/japa-bugs-hunters "fix <surface>"` where `<surface>` is one of the surface keywords:
+   - `backend`  → **Option 3 — Backend (whole)**
+   - `main`     → **Option 4 — Main app**
+   - `control`  → **Option 5 — Control panel**
+   - `admin`    → **Option 6 — Admin panel**
+   - `docs`     → **Option 7 — Docs site**
+   - `learn`    → **Option 8 — Learn platform**
+
+**Ambiguity fallback:** if a target could match multiple rules (e.g. a single word that is neither a
+known `./internal/` feature nor a surface keyword), ask the user to clarify with the menu. When the
+verb is omitted entirely (e.g. `/japa-bugs-hunters forum`), treat it as `audit` for features and as
+the combined audit+fix for all other targets.
 
 ---
 
 ## Option 1 — Frontend URL / Page
+
+### Trigger
+
+- User picks **Option 1** from the menu, OR
+- User invokes `/japa-bugs-hunters "audit <url-or-path>"` or `/japa-bugs-hunters "fix <url-or-path>"`
+  with a URL or frontend path (see routing rule 3).
 
 1. **Resolve the app from the URL** (or ask which app if only a page name is given):
    - `localhost:3000` / `japaconnect.com` → **main** (SSR, ADR-058 shell)
@@ -135,6 +175,12 @@ not exist for that feature, tell the user and offer to run Option 9 first.
 
 ## Option 2 — Backend API / Route
 
+### Trigger
+
+- User picks **Option 2** from the menu, OR
+- User invokes `/japa-bugs-hunters "audit /api/v1/<route>"` or `/japa-bugs-hunters "fix /api/v1/<route>"`
+  with a backend route or handler identifier (see routing rule 2).
+
 1. Locate the handler in `internal/` (match route → package → `server.go`/`handlers`). Confirm it is
    registered in chi and matches `conventions/api-routes-catalog.md`.
 2. Review the **full vertical slice**: route → handler → service → store (sqlc) → migration.
@@ -153,6 +199,12 @@ not exist for that feature, tell the user and offer to run Option 9 first.
 5. Verify the route returns non-404/non-500 under correct auth and matches the section's contract.
 
 ## Options 3–8 — Whole Surface Audit + Fix
+
+### Trigger
+
+- User picks **Option 3–8** from the menu, OR
+- User invokes `/japa-bugs-hunters "audit <surface>"` or `/japa-bugs-hunters "fix <surface>"` with a
+  surface keyword (`backend`, `main`, `control`, `admin`, `docs`, `learn`) — see routing rule 4.
 
 Map the surface to its bug sections, then audit file-by-file and fix:
 
@@ -181,6 +233,11 @@ This is a **read-only audit + findings report** workflow. Unlike Options 1–8, 
 auto-fix bugs — it produces a categorized findings file in `./.jeos/audit/` for the user to triage.
 The user supplies `[feature_name]` = any folder under `./internal` (e.g. `forum`, `like`, `bookmark`,
 `ai`, `affiliate`).
+
+### Trigger
+
+- User picks **Option 9** from the menu, OR
+- User invokes `/japa-bugs-hunters "audit [feature_name]"` (case-insensitive, quotes optional).
 
 Run the following prompt against the supplied `[feature_name]`, then save the output to
 `./.jeos/audit/<feature_name>-audit.md` (create the `.jeos/audit/` folder if it does not exist):

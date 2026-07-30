@@ -25,27 +25,14 @@
 	const title = $derived(`${thread.title} — ${t('forum.list_title', 'Forum')}`);
 	const description = $derived(tiptapExcerpt(thread.body, 160));
 
-	// JSON-LD: QAPage when the thread is solved, DiscussionForumPosting otherwise
-	// (H3 — audit finding). QAPage is the correct schema for solved Q&A threads.
+	// BUG-013: use the backend-provided JSON-LD (which includes the
+	// acceptedAnswer text from the top-voted reply) instead of computing a
+	// client-side version that was missing the answer text and causing double
+	// emission. Fall back to a minimal DiscussionForumPosting when the backend
+	// didn't provide one. Ref: japaconnect-engineering/sections/08-forum-qa-solved.md
 	const jsonLd = $derived(
-		thread.solved
-			? JSON.stringify({
-					'@context': 'https://schema.org',
-					'@type': 'QAPage',
-					mainEntity: {
-						'@type': 'Question',
-						name: thread.title,
-						text: tiptapExcerpt(thread.body, 500),
-						dateCreated: thread.created_at,
-						author: { '@type': 'Person', name: authorLabel },
-						acceptedAnswer: {
-							'@type': 'Answer',
-							dateCreated: thread.created_at,
-							author: { '@type': 'Person', name: authorLabel }
-						},
-						answerCount: thread.reply_count
-					}
-				})
+		data.jsonLd
+			? JSON.stringify(data.jsonLd)
 			: JSON.stringify({
 					'@context': 'https://schema.org',
 					'@type': 'DiscussionForumPosting',
@@ -80,6 +67,31 @@
 			: await api.post(`/forum/${thread.id}/solve`);
 		solving = false;
 		if (res.error) solved = wasSolved; // rollback
+	}
+
+	// BUG-015: wire up the Share button with the Web Share API (fallback to
+	// clipboard copy) and the Report button with a navigation to the report
+	// flow. Ref: japaconnect-engineering/sections/08-forum-qa-solved.md
+	let shared = $state(false);
+
+	async function shareThread() {
+		const url = page.url.href;
+		const shareData = { title: thread.title, url };
+		try {
+			if (navigator.share) {
+				await navigator.share(shareData);
+			} else {
+				await navigator.clipboard.writeText(url);
+				shared = true;
+				setTimeout(() => (shared = false), 2000);
+			}
+		} catch {
+			// user dismissed the share sheet — no action needed
+		}
+	}
+
+	function reportThread() {
+		window.location.href = `/report?entity_type=forum_thread&entity_id=${thread.id}`;
 	}
 </script>
 
@@ -185,10 +197,10 @@
 			<span class="flex items-center gap-1 [font-variant-numeric:tabular-nums]">
 				<Bookmark size={14} /> {thread.bookmark_count}
 			</span>
-			<button type="button" class="flex items-center gap-1 transition-colors hover:text-[var(--color-text)]">
-				<Share2 size={14} /> {t('forum.share', 'Share')}
+			<button type="button" onclick={shareThread} class="flex items-center gap-1 transition-colors hover:text-[var(--color-text)]">
+				<Share2 size={14} /> {shared ? t('forum.shared', 'Copied!') : t('forum.share', 'Share')}
 			</button>
-			<button type="button" class="flex items-center gap-1 transition-colors hover:text-[var(--color-text)]">
+			<button type="button" onclick={reportThread} class="flex items-center gap-1 transition-colors hover:text-[var(--color-text)]">
 				<Flag size={14} /> {t('forum.report', 'Report')}
 			</button>
 			{#if data.canSolve}

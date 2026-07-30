@@ -19,7 +19,7 @@ import (
 
 // Notification type constants — must match the seeded rows in notification_types.
 const (
-	TypeNewFollower        = "new_follower"
+	TypeNewFollower        = "follow.received"
 	TypePostReply          = "post_reply"
 	TypeComment            = "comment"
 	TypeMention            = "mention"

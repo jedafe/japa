@@ -53,6 +53,7 @@ WHERE s.id NOT IN (
     SELECT space_id FROM space_members WHERE user_id = $1 AND tenant_id = $2
 )
 AND s.tenant_id = $2
+AND s.deleted_at IS NULL
 GROUP BY s.id, s.name, s.slug, s.member_count, s.post_count
 ORDER BY shared_members DESC
 LIMIT $3

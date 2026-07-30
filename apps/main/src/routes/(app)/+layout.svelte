@@ -18,8 +18,22 @@
 	// This covers both the Page Builder landing and the default GuestLanding fallback.
 	const isGuestLanding = $derived(!!page.data.landing || !!page.data.guestLanding);
 
+	// Settings hub: auto-collapse the left nav to give settings panels more
+	// room, but keep the right sidebar and let the user expand via the toggle.
+	const isSettings = $derived(page.route.id?.startsWith('/(app)/settings') ?? false);
+
 	// Seed from the server value once; thereafter this is user-controlled.
 	let collapsed = $state(untrack(() => data.navCollapsed));
+
+	// Auto-collapse when entering settings (once per transition). The user
+	// can still expand via the toggle — we only collapse on entry, not force.
+	let prevWasSettings = $state(false);
+	$effect(() => {
+		if (isSettings && !prevWasSettings) {
+			collapsed = true;
+		}
+		prevWasSettings = isSettings;
+	});
 
 	// Route-specific right-sidebar snippet (set by child routes via setSidebar).
 	const routeSidebar = $derived(sidebarStore.current);

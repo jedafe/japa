@@ -228,6 +228,31 @@ func (s *Service) ListContentsBySpace(ctx context.Context, tenantID, spaceID pgt
 	return contents, nil
 }
 
+// SearchContentsBySpace returns content within a space whose title matches the
+// query (case-insensitive substring). Used by the space search tab
+// (GET /spaces/{slug}/content?q=...). Offset-paginated.
+func (s *Service) SearchContentsBySpace(ctx context.Context, tenantID, spaceID pgtype.UUID, query string, limit, offset int32) ([]gen.SearchContentsBySpaceRow, error) {
+	if limit <= 0 || limit > MaxPageSize {
+		limit = DefaultPageSize
+	}
+	if offset < 0 {
+		offset = 0
+	}
+
+	contents, err := s.read.SearchContentsBySpace(ctx, gen.SearchContentsBySpaceParams{
+		TenantID:   tenantID,
+		SpaceID:    spaceID,
+		Query:      &query,
+		PageLimit:  limit,
+		PageOffset: offset,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("searching contents by space: %w", err)
+	}
+
+	return contents, nil
+}
+
 // UpdateContentInput holds the parameters for updating an existing content row.
 type UpdateContentInput struct {
 	Title           string

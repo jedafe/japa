@@ -31,9 +31,17 @@ import (
 // handlers need.
 type ContentService interface {
 	ListContentsBySpace(ctx context.Context, tenantID, spaceID pgtype.UUID, cursor pgtype.Timestamptz, limit int32) ([]gen.ListContentsBySpaceRow, error)
+	SearchContentsBySpace(ctx context.Context, tenantID, spaceID pgtype.UUID, query string, limit, offset int32) ([]gen.SearchContentsBySpaceRow, error)
 	PinContent(ctx context.Context, tenantID, spaceID, contentID, pinnedBy pgtype.UUID, position int32) (gen.PinContentToSpaceRow, error)
 	UnpinContent(ctx context.Context, spaceID, contentID pgtype.UUID) error
 	ListPinnedContent(ctx context.Context, spaceID pgtype.UUID) ([]gen.ListPinnedContentRow, error)
+}
+
+// PermCacheInvalidator flushes a user's permission cache (jc:perm:{user_id})
+// after a permission-affecting mutation. Implemented by rbac.RBAC.
+// Ref: AGENTS.md Rule 6, sections/03-rbac.md (Permission Cache Invalidation).
+type PermCacheInvalidator interface {
+	InvalidateUserCache(ctx context.Context, userID pgtype.UUID)
 }
 
 // Handlers holds dependencies for space HTTP handlers. The Service wraps the
@@ -43,6 +51,40 @@ type Handlers struct {
 	Service *Service
 	Unread  *UnreadCounter
 	content ContentService
+	follows FollowToggleService
+	permCache PermCacheInvalidator
+}
+
+// FollowToggleService is the subset of the follows.Service used by the space
+// handler to toggle follow status. Routing space follow through the generic
+// follows service ensures auto-join for open spaces (BL-010 / Section 31)
+// and notification dispatch are applied consistently (H3).
+type FollowToggleService interface {
+	ToggleFollow(ctx context.Context, tenantID, followerID pgtype.UUID, entityType string, entityID pgtype.UUID) (bool, error)
+}
+
+// SetFollowToggleService injects the generic follows service for space follow.
+func (h *Handlers) SetFollowToggleService(s FollowToggleService) {
+	h.follows = s
+}
+
+// SetPermCacheInvalidator injects the RBAC resolver so handlers can flush
+// the TARGET user's permission cache after moderator assign/remove (Rule 6).
+// The middleware-level RequirePermissionWithInvalidation only flushes the
+// CALLER's cache; the target user's cache must be flushed here.
+func (h *Handlers) SetPermCacheInvalidator(p PermCacheInvalidator) {
+	h.permCache = p
+}
+
+// invalidateTargetPermCache flushes the target user's permission cache after
+// a moderator assignment/removal. It is a no-op when no invalidator is wired
+// (graceful degradation). Errors are logged but never fail the request — the
+// mutation has already succeeded and the cache will expire via TTL.
+func (h *Handlers) invalidateTargetPermCache(ctx context.Context, targetUserID pgtype.UUID) {
+	if h.permCache == nil {
+		return
+	}
+	h.permCache.InvalidateUserCache(ctx, targetUserID)
 }
 
 // NewHandlers creates Handlers with the given Service and UnreadCounter.
@@ -374,24 +416,15 @@ func (h *Handlers) ListMySpaces(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	spaces, err := h.Service.ListSpacesByMember(r.Context(), tenantID, user.UserID)
+	// Optional q parameter for autocomplete search — filtered at the SQL
+	// level by name/slug (case-insensitive ILIKE). Used by the /create
+	// composer's space selector.
+	q := strings.TrimSpace(r.URL.Query().Get("q"))
+
+	spaces, err := h.Service.ListSpacesByMember(r.Context(), tenantID, user.UserID, q)
 	if err != nil {
 		handleServiceError(w, err)
 		return
-	}
-
-	// Optional q parameter for autocomplete search — filters by name/slug
-	// (case-insensitive). Used by the /create composer's space selector.
-	if q := strings.TrimSpace(r.URL.Query().Get("q")); q != "" {
-		qLower := strings.ToLower(q)
-		filtered := make([]gen.Space, 0, len(spaces))
-		for _, s := range spaces {
-			if strings.Contains(strings.ToLower(s.Name), qLower) ||
-				strings.Contains(strings.ToLower(s.Slug), qLower) {
-				filtered = append(filtered, s)
-			}
-		}
-		spaces = filtered
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": spaces})
@@ -438,10 +471,11 @@ type SpaceCard struct {
 	HeaderImageID pgtype.UUID        `json:"header_image_id"`
 	MemberCount   int32              `json:"member_count"`
 	Visibility    string             `json:"visibility"`
+	Role          string             `json:"role"`
 	CreatedAt     pgtype.Timestamptz `json:"created_at"`
 }
 
-func toSpaceCards(spaces []gen.Space) []SpaceCard {
+func toSpaceCards(spaces []gen.ListPublicSpacesByMemberUserRow) []SpaceCard {
 	cards := make([]SpaceCard, len(spaces))
 	for i := range spaces {
 		s := &spaces[i]
@@ -454,6 +488,7 @@ func toSpaceCards(spaces []gen.Space) []SpaceCard {
 			HeaderImageID: s.HeaderImageID,
 			MemberCount:   s.MemberCount,
 			Visibility:    s.Visibility,
+			Role:          s.MemberRole,
 			CreatedAt:     s.CreatedAt,
 		}
 	}
@@ -475,6 +510,30 @@ func (h *Handlers) ListMyModeratedSpaces(w http.ResponseWriter, r *http.Request)
 	}
 
 	spaces, err := h.Service.ListSpacesByModerator(r.Context(), tenantID, user.UserID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": spaces})
+}
+
+// ListMyOwnedSpaces handles GET /api/v1/me/spaces/owned — every space the
+// caller owns (space_members.role = 'owner'). Distinct from /me/spaces which
+// returns every space the caller belongs to as a member.
+func (h *Handlers) ListMyOwnedSpaces(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	user := auth.FromContext(r.Context())
+	if user == nil {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		return
+	}
+
+	spaces, err := h.Service.ListSpacesByOwner(r.Context(), tenantID, user.UserID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -585,6 +644,35 @@ func (h *Handlers) CreateSpace(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
+	}
+
+	user := auth.FromContext(r.Context())
+	if user == nil {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		return
+	}
+
+	// §26 / Section 03: enforce max_spaces_creatable quota from the caller's
+	// user group. -1 = unlimited, 0 = none, N = capped at N spaces.
+	maxSpaces, err := h.Service.GetUserMaxSpacesCreatable(r.Context(), tenantID, user.UserID)
+	if err != nil {
+		slog.Warn("create space: failed to load max_spaces_creatable quota",
+			"user_id", user.UserID.String(), "error", err)
+		// Fail open — don't block creation on a quota lookup failure.
+	} else if maxSpaces == 0 {
+		writeError(w, http.StatusForbidden, "quota_exceeded",
+			"Your account is not allowed to create spaces")
+		return
+	} else if maxSpaces > 0 {
+		currentCount, err := h.Service.CountSpacesByOwner(r.Context(), tenantID, user.UserID)
+		if err != nil {
+			slog.Warn("create space: failed to count owned spaces",
+				"user_id", user.UserID.String(), "error", err)
+		} else if currentCount >= maxSpaces {
+			writeError(w, http.StatusForbidden, "quota_exceeded",
+				"You have reached the maximum number of spaces you can create")
+			return
+		}
 	}
 
 	var spaceTypeID pgtype.UUID
@@ -1133,8 +1221,32 @@ func (h *Handlers) AssignModerator(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Determine who is assigning: site_admin or space_owner.
-	assignedBy := "space_owner"
+	// The route is behind spaces.moderator.assign permission. If the caller
+	// is the space owner, use the space_owner path and require the target to
+	// be an existing member (Section 03). Otherwise treat as site_admin.
+	assignedBy := "site_admin"
 	assignedByID := user.UserID
+
+	isOwner, err := h.Service.IsOwner(r.Context(), space.ID, user.UserID, tenantID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	if isOwner {
+		assignedBy = "space_owner"
+		// Section 03: space_owner path requires the target to be an existing
+		// member of the space before promoting to moderator.
+		isMember, err := h.Service.IsMember(r.Context(), space.ID, targetUserID, tenantID)
+		if err != nil {
+			handleServiceError(w, err)
+			return
+		}
+		if !isMember {
+			writeError(w, http.StatusBadRequest, "not_a_member",
+				"Target user must be a member of the space before being assigned as a moderator")
+			return
+		}
+	}
 
 	if err := h.Service.AssignModerator(r.Context(), gen.AssignSpaceModeratorParams{
 		TenantID:         tenantID,
@@ -1146,6 +1258,11 @@ func (h *Handlers) AssignModerator(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
+	// Rule 6: invalidate the TARGET user's permission cache so the newly
+	// assigned moderator's spaces.moderate.assigned node is visible
+	// immediately (the middleware only flushed the CALLER's cache).
+	h.invalidateTargetPermCache(r.Context(), targetUserID)
 
 	writeJSON(w, http.StatusCreated, map[string]any{
 		"data": map[string]any{
@@ -1174,6 +1291,10 @@ func (h *Handlers) RemoveModerator(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
+	// Rule 6: invalidate the removed moderator's permission cache so their
+	// spaces.moderate.assigned node is revoked immediately.
+	h.invalidateTargetPermCache(r.Context(), userID)
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "removed"}})
 }
@@ -1287,6 +1408,9 @@ func (h *Handlers) AdminAssignModerator(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	// Rule 6: invalidate the TARGET user's permission cache.
+	h.invalidateTargetPermCache(r.Context(), targetUserID)
+
 	writeJSON(w, http.StatusCreated, map[string]any{
 		"data": map[string]any{
 			"space_id": space.ID.String(),
@@ -1345,6 +1469,9 @@ func (h *Handlers) AdminRemoveModerator(w http.ResponseWriter, r *http.Request) 
 		handleServiceError(w, err)
 		return
 	}
+
+	// Rule 6: invalidate the removed moderator's permission cache.
+	h.invalidateTargetPermCache(r.Context(), targetUserID)
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
@@ -1545,17 +1672,26 @@ func (h *Handlers) ToggleFollow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	followed, err := h.Service.ToggleFollowSpace(r.Context(), tenantID, user.UserID, space.ID)
+	// H3: route through the generic follows service when available, so
+	// auto-join for open spaces (BL-010) and notification dispatch are
+	// applied consistently. Fall back to the space-specific path only when
+	// the generic service is not wired (backward compatibility).
+	var followed bool
+	var err error
+	if h.follows != nil {
+		followed, err = h.follows.ToggleFollow(r.Context(), tenantID, user.UserID, "space", space.ID)
+	} else {
+		followed, err = h.Service.ToggleFollowSpace(r.Context(), tenantID, user.UserID, space.ID)
+	}
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
 
-	if r.Method == http.MethodDelete {
-		writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"following": false}})
-		return
-	}
-
+	// Return the actual post-toggle state. The `followed` bool is true when
+	// the user is now following, false when now unfollowed. Hardcoding false
+	// on DELETE would misreport the state when the user wasn't following
+	// before (the toggle follows them but the response says false).
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"following": followed}})
 }
 
@@ -1644,6 +1780,8 @@ func (h *Handlers) GetMuteStatus(w http.ResponseWriter, r *http.Request) {
 
 // ListSpaceContent handles GET /api/v1/spaces/{slug}/content — content
 // belonging to this space, newest first. Supports ?cursor= and ?page_size=.
+// When ?q= is supplied, results are filtered by title (case-insensitive
+// substring) and offset-paginated via ?page_offset= (space search tab).
 func (h *Handlers) ListSpaceContent(w http.ResponseWriter, r *http.Request) {
 	space, ok := spaceFromContext(w, r)
 	if !ok {
@@ -1656,6 +1794,20 @@ func (h *Handlers) ListSpaceContent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	limit := parsePageSize(r)
+
+	if q := strings.TrimSpace(r.URL.Query().Get("q")); q != "" {
+		offset := parsePageSizeOffset(r)
+		items, err := h.content.SearchContentsBySpace(r.Context(), tenantID, space.ID, q, limit, offset)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "internal_error", "Failed to search space content")
+			return
+		}
+		if items == nil {
+			items = []gen.SearchContentsBySpaceRow{}
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"data": items})
+		return
+	}
 
 	var cursor pgtype.Timestamptz
 	if cs := r.URL.Query().Get("cursor"); cs != "" {
@@ -1899,41 +2051,19 @@ func (h *Handlers) GetSpaceAnalytics(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	memberCount, err := h.Service.read.CountSpaceMembers(r.Context(), gen.CountSpaceMembersParams{
-		SpaceID:  spaceID,
-		TenantID: tenantID,
-	})
+
+	// BUG-020: single round-trip aggregate instead of 3 sequential queries.
+	summary, err := h.Service.GetSpaceAnalyticsSummary(r.Context(), spaceID, tenantID)
 	if err != nil {
-		slog.Error("space stats: counting members", "error", err, "space_id", spaceID.String())
+		slog.Error("space stats: loading analytics summary", "error", err, "space_id", spaceID.String())
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to load space stats")
-
-		return
-	}
-
-	contentCount, err := h.Service.read.CountSpacePublishedContent(r.Context(), gen.CountSpacePublishedContentParams{
-		SpaceID:  spaceID,
-		TenantID: tenantID,
-	})
-	if err != nil {
-		slog.Error("space stats: counting published content", "error", err, "space_id", spaceID.String())
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to load space stats")
-
-		return
-	}
-
-	viewCount, err := h.Service.read.SumSpaceContentViews(r.Context(), gen.SumSpaceContentViewsParams{
-		SpaceID:  spaceID,
-		TenantID: tenantID,
-	})
-	if err != nil {
-		slog.Error("space stats: summing content views", "error", err, "space_id", spaceID.String())
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to load space stats")
-
 		return
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
-		"member_count": memberCount, "content_count": contentCount, "view_count": viewCount,
+		"member_count":  summary.MemberCount,
+		"content_count": summary.ContentCount,
+		"view_count":    summary.ViewCount,
 	}})
 }
 
@@ -1951,23 +2081,21 @@ func (h *Handlers) ReorderPinned(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
-	for i, contentIDStr := range input.Order {
+
+	contentIDs := make([]pgtype.UUID, 0, len(input.Order))
+	for _, contentIDStr := range input.Order {
 		var contentID pgtype.UUID
 		if scanErr := contentID.Scan(contentIDStr); scanErr != nil {
 			writeError(w, http.StatusBadRequest, "invalid_content_id", "Invalid content ID: "+contentIDStr)
 			return
 		}
-		if err := h.Service.write.UpdateSpacePinPosition(r.Context(), gen.UpdateSpacePinPositionParams{
-			SpaceID:   spaceID,
-			ContentID: contentID,
-			Position:  int32(i),
-		}); err != nil {
-			slog.Error("reordering pinned content", "error", err,
-				"space_id", spaceID.String(), "content_id", contentID.String())
-			writeError(w, http.StatusInternalServerError, "internal_error", "Failed to reorder pinned content")
+		contentIDs = append(contentIDs, contentID)
+	}
 
-			return
-		}
+	if err := h.Service.ReorderPinned(r.Context(), spaceID, contentIDs); err != nil {
+		slog.Error("reordering pinned content", "error", err, "space_id", spaceID.String())
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to reorder pinned content")
+		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"reordered": true}})
 }

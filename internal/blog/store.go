@@ -53,13 +53,14 @@ func (s *Store) getBlogSeriesBySlug(ctx context.Context, slug string, tenantID p
 	return row, nil
 }
 
-func (s *Store) listBlogSeriesByTenant(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]gen.BlogSeries, error) {
+func (s *Store) listBlogSeriesByTenant(ctx context.Context, tenantID pgtype.UUID, q string, limit, offset int32) ([]gen.BlogSeries, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
 
 	rows, err := s.read.ListBlogSeriesByTenant(ctx, gen.ListBlogSeriesByTenantParams{
 		TenantID:   tenantID,
+		Q:          q,
 		PageLimit:  limit,
 		PageOffset: offset,
 	})
@@ -128,13 +129,22 @@ func (s *Store) removePostFromSeries(ctx context.Context, seriesID, contentID pg
 	return nil
 }
 
-func (s *Store) listPostsInSeries(ctx context.Context, seriesID pgtype.UUID) ([]gen.ListPostsInSeriesRow, error) {
-	rows, err := s.read.ListPostsInSeries(ctx, seriesID)
+func (s *Store) listPostsInSeries(ctx context.Context, seriesID, tenantID pgtype.UUID) ([]gen.ListPostsInSeriesRow, error) {
+	rows, err := s.read.ListPostsInSeries(ctx, gen.ListPostsInSeriesParams{
+		SeriesID: seriesID,
+		TenantID: tenantID,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("listing posts in series: %w", err)
 	}
 
 	return rows, nil
+}
+
+// getContentTenantID returns the tenant_id of a content row, for cross-tenant
+// verification before linking a post to a series (H7).
+func (s *Store) getContentTenantID(ctx context.Context, contentID pgtype.UUID) (pgtype.UUID, error) {
+	return s.read.GetContentTenantID(ctx, contentID)
 }
 
 func (s *Store) reorderSeriesPosts(ctx context.Context, seriesID, contentID pgtype.UUID, position int32) error {
@@ -308,6 +318,113 @@ func (s *Store) expireFeaturedPosts(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+// listFeaturedBlogPostCards returns enriched featured post cards with JOINs
+// to contents, users, and media (H6).
+func (s *Store) listFeaturedBlogPostCards(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]gen.ListFeaturedBlogPostCardsRow, error) {
+	if limit <= 0 || limit > MaxPageSize {
+		limit = DefaultPageSize
+	}
+
+	rows, err := s.read.ListFeaturedBlogPostCards(ctx, gen.ListFeaturedBlogPostCardsParams{
+		TenantID:   tenantID,
+		PageLimit:  limit,
+		PageOffset: offset,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("listing featured blog post cards: %w", err)
+	}
+
+	return rows, nil
+}
+
+// bulkUpdateFeaturedOrder updates all featured post orders in a single
+// transaction (M3 — all-or-nothing on failure).
+func (s *Store) bulkUpdateFeaturedOrder(ctx context.Context, tenantID pgtype.UUID, items []struct {
+	ID    pgtype.UUID
+	Order int32
+}) error {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("beginning bulk featured reorder transaction: %w", err)
+	}
+
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	q := s.write.WithTx(tx)
+
+	for _, item := range items {
+		if err := q.UpdateFeaturedOrder(ctx, gen.UpdateFeaturedOrderParams{
+			ID:            item.ID,
+			TenantID:      tenantID,
+			FeaturedOrder: item.Order,
+		}); err != nil {
+			return fmt.Errorf("updating featured order in bulk: %w", err)
+		}
+	}
+
+	return tx.Commit(ctx)
+}
+
+// ---------------------------------------------------------------------------
+// Blog Post Detail / List (enriched DTOs)
+// ---------------------------------------------------------------------------
+
+// getBlogPostDetail returns a single blog post with author, avatar, featured
+// image, space name, tags, and series navigation (C4).
+func (s *Store) getBlogPostDetail(ctx context.Context, slug string, tenantID pgtype.UUID) (gen.GetBlogPostDetailRow, error) {
+	row, err := s.read.GetBlogPostDetail(ctx, gen.GetBlogPostDetailParams{
+		Slug:     slug,
+		TenantID: tenantID,
+	})
+	if err != nil {
+		return gen.GetBlogPostDetailRow{}, fmt.Errorf("getting blog post detail: %w", err)
+	}
+
+	return row, nil
+}
+
+// listPublishedBlogPosts returns published blog post cards with author and
+// featured image, status-filtered in SQL (C5/H3).
+// BUG-005: offset-based pagination per Rule 5 (page_size + page_offset).
+func (s *Store) listPublishedBlogPosts(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]gen.ListPublishedBlogPostsRow, error) {
+	if limit <= 0 || limit > MaxPageSize {
+		limit = DefaultPageSize
+	}
+	if offset < 0 {
+		offset = 0
+	}
+
+	rows, err := s.read.ListPublishedBlogPosts(ctx, gen.ListPublishedBlogPostsParams{
+		TenantID:   tenantID,
+		PageOffset: offset,
+		PageLimit:  limit,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("listing published blog posts: %w", err)
+	}
+
+	return rows, nil
+}
+
+// listPendingReviewSummaries returns joined review-queue rows with post
+// title/slug/author/excerpt for the admin review-queue (C3).
+func (s *Store) listPendingReviewSummaries(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]gen.ListPendingReviewSummariesRow, error) {
+	if limit <= 0 || limit > MaxPageSize {
+		limit = DefaultPageSize
+	}
+
+	rows, err := s.read.ListPendingReviewSummaries(ctx, gen.ListPendingReviewSummariesParams{
+		TenantID:   tenantID,
+		PageLimit:  limit,
+		PageOffset: offset,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("listing pending review summaries: %w", err)
+	}
+
+	return rows, nil
 }
 
 // ---------------------------------------------------------------------------

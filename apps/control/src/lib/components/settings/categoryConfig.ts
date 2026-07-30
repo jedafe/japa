@@ -1,81 +1,47 @@
-import { Bell, Cpu, CreditCard, FolderOpen, Globe, Mail, Monitor, Palette, Server, Settings, Shield, Sliders } from 'lucide-svelte';
+import { CreditCard, FolderOpen, Globe, Monitor, Server, Settings, Sliders } from 'lucide-svelte';
+
+// Only categories that have Panel: "control" settings appear in the control
+// panel. Admin-only categories (general, auth, feed, appearance, content,
+// spaces, moderation, wallet, api, ads, ai, i18n, email, notifications, etc.)
+// are intentionally absent — they are managed in the admin panel.
 
 export const categoryIcons: Record<string, typeof Settings> = {
-    general: Monitor,
-    advanced: Cpu,
-    feed: FolderOpen,
-    appearance: Palette,
-    media: Server,
-    i18n: Globe,
-    payment: CreditCard,
-    notification: Bell,
-    security: Shield,
-    email: Mail,
     cors: Globe,
+    media: Server,
+    pricing: CreditCard,
+    university: Monitor,
+    geo_personalization: Globe,
+    linkpreview: Sliders,
     content: Sliders,
-    auth: Shield,
-    spaces: Globe,
-    moderation: Shield,
-    wallet: CreditCard,
-    api: Server,
-    ads: Sliders,
-    ai: Cpu
+    onboarding: FolderOpen
 };
 
 export const categoryNames: Record<string, string> = {
-    auth: 'Authentication',
-    feed: 'Feed',
-    content: 'Content',
-    spaces: 'Spaces',
-    moderation: 'Moderation',
-    security: 'Security',
-    wallet: 'Wallet',
-    api: 'API Rate Limits',
     cors: 'CORS',
-    ads: 'Ads',
-    ai: 'AI',
-    general: 'General',
-    advanced: 'Advanced',
-    appearance: 'Appearance',
-    media: 'Media',
-    i18n: 'Languages',
-    payment: 'Payment',
-    notification: 'Notifications',
-    email: 'Email'
+    media: 'Media Storage',
+    pricing: 'Pricing Plans',
+    university: 'Japa University',
+    geo_personalization: 'Geo Personalization',
+    linkpreview: 'Link Preview',
+    content: 'Content',
+    onboarding: 'Onboarding'
 };
 
+// Sensitive keys that should be masked in the UI (control-panel settings only).
 export const sensitiveKeys: string[] = [
-    'email.smtp_password',
-    'email.smtp_username',
-    'payment.secret_key',
-    'payment.publishable_key',
-    'payment.paystack_secret_key',
-    'payment.stripe_secret_key',
     'media.storage.access_key',
-    'media.storage.secret_key',
-    'media.imgproxy_key',
-    'media.imgproxy_salt',
-    'integrations.meilisearch_key',
-    'security.jwt_secret',
-    'security.encryption_key',
-    'oauth.client_secret',
-    'oauth.google_client_secret',
-    'oauth.github_client_secret'
+    'media.storage.secret_key'
 ];
 
+// Settings that render as textareas (control-panel settings only).
 export const textareaKeys: string[] = [
-    'general.site_description',
-    'cors.allowed_origins',
-    'content.link_preview.blacklist',
-    'seo.meta_description_template'
+    'cors.allowed_origins'
 ];
 
-export const uploadKeys: string[] = [
-    'appearance.favicon_url',
-    'appearance.logo_url',
-    'seo.og_image'
-];
+// Settings that accept file uploads (control-panel settings only).
+// Currently no control-panel settings use file uploads.
+export const uploadKeys: string[] = [];
 
-export const colorKeys: string[] = [
-    'appearance.primary_color'
-];
+// Settings that use color pickers (control-panel settings only).
+// Currently no control-panel settings use color pickers.
+export const colorKeys: string[] = [];

@@ -58,6 +58,9 @@ func (h *Handlers) ListLikedByUser(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "list_error", "Failed to list liked content")
 		return
 	}
+	if rows == nil {
+		rows = []gen.ListContentLikedByUserRow{}
+	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": rows})
 }

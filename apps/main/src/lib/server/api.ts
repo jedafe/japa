@@ -90,6 +90,15 @@ export async function apiGet<T>(ctx: ApiContext, path: string): Promise<T> {
 }
 
 /**
+ * GET a single resource, returning the full response envelope (including
+ * optional `json_ld` and `can_solve` fields). Use this when an endpoint
+ * emits sidecar data beyond the standard `{ data }` wrapper.
+ */
+export async function apiGetEnvelope<T>(ctx: ApiContext, path: string): Promise<ApiOk<T>> {
+	return request<T>(ctx, 'GET', path);
+}
+
+/**
  * GET a list endpoint. The backend returns `{ data: T[] }` (bare array, no
  * wrapper object) and may include `meta`; a null/absent data becomes `[]`.
  */

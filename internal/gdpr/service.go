@@ -212,6 +212,36 @@ func (s *Service) GetLatestDataExportRequest(ctx context.Context, userID, tenant
 	return s.store.getLatestDataExportRequestByUser(ctx, userID, tenantID)
 }
 
+// CancelDataExportRequest cancels a pending data export request. Only
+// requests with status "pending" or "processing" can be cancelled; once
+// completed the data has already been generated and the download link
+// should be allowed to expire naturally.
+func (s *Service) CancelDataExportRequest(ctx context.Context, userID, tenantID pgtype.UUID) (gen.DataExportRequest, error) {
+	request, found, err := s.store.getLatestDataExportRequestByUser(ctx, userID, tenantID)
+	if err != nil {
+		return gen.DataExportRequest{}, fmt.Errorf("getting data export request: %w", err)
+	}
+	if !found {
+		return gen.DataExportRequest{}, errors.New("no data export request to cancel")
+	}
+	if request.Status != "pending" && request.Status != "processing" {
+		return gen.DataExportRequest{}, fmt.Errorf("cannot cancel export with status: %s", request.Status)
+	}
+
+	updated, err := s.store.updateDataExportRequestStatus(ctx, gen.UpdateDataExportRequestStatusParams{
+		Status:      "cancelled",
+		DownloadUrl: nil,
+		ExpiresAt:   pgtype.Timestamptz{},
+		CompletedAt: pgtype.Timestamptz{},
+		ID:          request.ID,
+		TenantID:    tenantID,
+	})
+	if err != nil {
+		return gen.DataExportRequest{}, fmt.Errorf("cancelling data export request: %w", err)
+	}
+	return updated, nil
+}
+
 // ProcessDataExport collects user data, generates JSON, and stores a signed URL.
 // This is called by the Asynq worker.
 func (s *Service) ProcessDataExport(ctx context.Context, requestID pgtype.UUID) error {
@@ -574,6 +604,28 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 			return fmt.Errorf("reassigning content authorship: %w", err)
 		}
 
+		// C7: reassign blog_series authorship to preserve curated multi-part
+		// series. Without this, ON DELETE CASCADE on blog_series.author_user_id
+		// destroys all user-authored series and cascades to blog_series_posts.
+		if err := q.ReassignBlogSeriesAuthor(ctx, gen.ReassignBlogSeriesAuthorParams{
+			UserID:       userID,
+			TenantID:     tenantID,
+			TargetUserID: deletedUserPlaceholder,
+		}); err != nil {
+			return fmt.Errorf("reassigning blog series authorship: %w", err)
+		}
+
+		// C7: reassign content_reviews reviewer to preserve editorial audit
+		// history. Without this, ON DELETE CASCADE on
+		// content_reviews.reviewer_user_id destroys all review records.
+		if err := q.ReassignContentReviewReviewer(ctx, gen.ReassignContentReviewReviewerParams{
+			UserID:       userID,
+			TenantID:     tenantID,
+			TargetUserID: deletedUserPlaceholder,
+		}); err != nil {
+			return fmt.Errorf("reassigning content review reviewer: %w", err)
+		}
+
 		// 2. Nullify payment user references (financial audit trail survives).
 		//    Errors are fatal inside the tx — a leftover reference would block
 		//    the final DELETE on its foreign key anyway.
@@ -609,6 +661,17 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 			UserID: userID, TenantID: tenantID,
 		}); err != nil {
 			return fmt.Errorf("nullifying forum tag moderator: %w", err)
+		}
+
+		// BUG-022: forum_thread_tags for threads authored by the user are
+		// junction rows that reference the user's threads. Delete them so the
+		// final HardDeleteUser (which cascades to forum_threads →
+		// forum_thread_tags) doesn't leave orphaned junction rows if the
+		// thread is retained for soft-delete. Ref: Section 08 + GDPR.
+		if err := q.DeleteForumThreadTagsByAuthor(ctx, gen.DeleteForumThreadTagsByAuthorParams{
+			UserID: userID, TenantID: tenantID,
+		}); err != nil {
+			return fmt.Errorf("deleting forum thread tags by author: %w", err)
 		}
 
 		// ticket_comments.user_id has no CASCADE; delete the user's ticket comments.
@@ -711,7 +774,31 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 			return fmt.Errorf("anonymizing instructor payouts: %w", err)
 		}
 
+		// C7: follows where the deleted user is the TARGET (entity_id with
+		// entity_type='user') have no FK (polymorphic entity_id) and are not
+		// CASCADE-deleted. Remove them explicitly so other users' "following"
+		// lists don't contain dead entries pointing to the deleted user.
+		// Follows where the deleted user is the FOLLOWER are CASCADE-deleted
+		// by the follower_id FK and need no explicit cleanup here.
+		// Ref: japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
+		if err := q.DeleteFollowsByEntity(ctx, gen.DeleteFollowsByEntityParams{
+			EntityType: "user",
+			EntityID:   userID,
+		}); err != nil {
+			return fmt.Errorf("deleting follows targeting deleted user: %w", err)
+		}
+
 		// 5. Physical deletion — ON DELETE CASCADE handles all child tables.
+		// The following feed-related tables are cascade-purged here (no
+		// explicit step needed, documented for GDPR traceability — BUG-014):
+		//   - feeds (ON DELETE CASCADE from feeds.user_id → users(id) and
+		//     feeds.content_id → contents(id); the user's feed rows and any
+		//     feed rows pointing to their reassigned content are removed)
+		//   - content_scores (ON DELETE CASCADE from
+		//     content_scores.content_id → contents(id); scores for the
+		//     user's content are removed when the content is cascade-deleted
+		//     or retained when content is reassigned to the placeholder)
+		// Ref: japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
 		if err := q.HardDeleteUser(ctx, gen.HardDeleteUserParams{
 			UserID: userID, TenantID: tenantID,
 		}); err != nil {
@@ -877,9 +964,13 @@ type UserDataExport struct {
 	ForumReplies         []map[string]interface{} `json:"forum_replies"`
 	ForumVotes           []map[string]interface{} `json:"forum_votes"`
 	ForumBookmarks       []map[string]interface{} `json:"forum_bookmarks"`
+	ForumPollVotes       []map[string]interface{} `json:"forum_poll_votes"`
+	ForumThreadTags      []map[string]interface{} `json:"forum_thread_tags"`
+	ReplyViews           []map[string]interface{} `json:"reply_views"`
 	Media                []map[string]interface{} `json:"media"`
 	Reviews              []map[string]interface{} `json:"reviews"`
 	SpaceMembers         []map[string]interface{} `json:"space_members"`
+	SpaceModerators      []map[string]interface{} `json:"space_moderators"`
 	ConsentRecords       []map[string]interface{} `json:"consent_records"`
 	WalletLedger         []map[string]interface{} `json:"wallet_ledger"`
 	LessonProgress       []map[string]interface{} `json:"lesson_progress"`
@@ -1077,6 +1168,27 @@ func (s *Service) collectUserData(ctx context.Context, userID, tenantID pgtype.U
 		slog.Warn("failed to collect forum_bookmarks for export", "user_id", userID.String(), "error", err)
 	}
 
+	// BUG-022: forum_poll_votes, forum_thread_tags, and reply_views were
+	// missing from the original GDPR export. These are user-owned rows that
+	// must be included in a data export. Ref: Section 08 + GDPR erasure model.
+	if rows, err := s.store.gdprExportUserForumPollVotes(ctx, userID); err == nil {
+		export.ForumPollVotes = rows
+	} else {
+		slog.Warn("failed to collect forum_poll_votes for export", "user_id", userID.String(), "error", err)
+	}
+
+	if rows, err := s.store.gdprExportUserForumThreadTags(ctx, userID, tenantID); err == nil {
+		export.ForumThreadTags = rows
+	} else {
+		slog.Warn("failed to collect forum_thread_tags for export", "user_id", userID.String(), "error", err)
+	}
+
+	if rows, err := s.store.gdprExportUserReplyViews(ctx, userID); err == nil {
+		export.ReplyViews = rows
+	} else {
+		slog.Warn("failed to collect reply_views for export", "user_id", userID.String(), "error", err)
+	}
+
 	// Media uploaded by the user.
 	if rows, err := s.store.gdprExportUserMedia(ctx, userID, tenantID); err == nil {
 		export.Media = rows
@@ -1096,6 +1208,13 @@ func (s *Service) collectUserData(ctx context.Context, userID, tenantID pgtype.U
 		export.SpaceMembers = rows
 	} else {
 		slog.Warn("failed to collect space_members for export", "user_id", userID.String(), "error", err)
+	}
+
+	// Space moderator assignments (space_moderators table).
+	if rows, err := s.store.gdprExportUserSpaceModerators(ctx, userID, tenantID); err == nil {
+		export.SpaceModerators = rows
+	} else {
+		slog.Warn("failed to collect space_moderators for export", "user_id", userID.String(), "error", err)
 	}
 
 	// Consent records (full rows, complementing the summarized Consents block).

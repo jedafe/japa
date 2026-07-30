@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"crypto/subtle"
+	"encoding/json"
 	"net"
 	"net/http"
 
@@ -31,14 +32,18 @@ func InternalGuard(expectedToken string) func(http.Handler) http.Handler {
 				host = r.RemoteAddr
 			}
 
-			if ip := net.ParseIP(host); ip != nil && ip.IsLoopback() {
-				next.ServeHTTP(w, r)
-				return
-			}
+		if ip := net.ParseIP(host); ip != nil && ip.IsLoopback() {
+			next.ServeHTTP(w, r)
+			return
+		}
 
-			http.Error(w, "forbidden: internal endpoint", http.StatusForbidden)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusForbidden)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"error": map[string]string{"code": "forbidden", "message": "Access to this endpoint is restricted to internal callers"},
 		})
-	}
+	})
+}
 }
 
 // ClientIP extracts the client IP from the request, honouring forwarding

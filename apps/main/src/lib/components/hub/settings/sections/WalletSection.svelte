@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { t } from '$lib/i18n';
 	import { convertWallet } from '$lib/api/hub';
-	import { invalidate } from '$app/navigation';
+	import { invalidateAll } from '$app/navigation';
 
 	interface WalletData {
 		wallet: { points?: number; credits?: number };
@@ -33,7 +33,7 @@
 		}
 		success = true;
 		convertAmount = '';
-		await invalidate('/api/v1/me/wallet');
+		await invalidateAll();
 	}
 </script>
 

@@ -104,19 +104,21 @@ func (q *Queries) DeleteFollowsByFollower(ctx context.Context, followerID pgtype
 
 const getBulkFollowingStatus = `-- name: GetBulkFollowingStatus :many
 
-SELECT f.entity_type, f.entity_id, EXISTS (
-    SELECT 1 FROM follows sub
-    WHERE sub.follower_id = $1 AND sub.entity_type = f.entity_type AND sub.entity_id = f.entity_id
-) AS is_following
-FROM follows f
-WHERE f.tenant_id = $2 AND f.entity_type = $3 AND f.entity_id = ANY($4::uuid[])
-GROUP BY f.entity_type, f.entity_id
+SELECT $1::text AS entity_type, eid::uuid AS entity_id,
+    EXISTS (
+        SELECT 1 FROM follows sub
+        WHERE sub.tenant_id = $2
+          AND sub.follower_id = $3
+          AND sub.entity_type = $1
+          AND sub.entity_id = eid
+    ) AS is_following
+FROM unnest($4::uuid[]) AS t(eid)
 `
 
 type GetBulkFollowingStatusParams struct {
-	FollowerID pgtype.UUID   `json:"follower_id"`
-	TenantID   pgtype.UUID   `json:"tenant_id"`
 	EntityType string        `json:"entity_type"`
+	TenantID   pgtype.UUID   `json:"tenant_id"`
+	FollowerID pgtype.UUID   `json:"follower_id"`
 	EntityIds  []pgtype.UUID `json:"entity_ids"`
 }
 
@@ -129,11 +131,14 @@ type GetBulkFollowingStatusRow struct {
 // =====================
 // Bulk Operations
 // =====================
+// Uses unnest so every input entity_id appears in the output with
+// is_following = false when no follow row exists for the current user.
+// Ref: japaconnect-engineering/sections/31-follow-system.md (bulk is_following)
 func (q *Queries) GetBulkFollowingStatus(ctx context.Context, arg GetBulkFollowingStatusParams) ([]GetBulkFollowingStatusRow, error) {
 	rows, err := q.db.Query(ctx, getBulkFollowingStatus,
-		arg.FollowerID,
-		arg.TenantID,
 		arg.EntityType,
+		arg.TenantID,
+		arg.FollowerID,
 		arg.EntityIds,
 	)
 	if err != nil {
@@ -259,6 +264,8 @@ SELECT f.id, f.tenant_id, f.follower_id, f.entity_type, f.entity_id, f.created_a
         WHEN 'user' THEN (SELECT username FROM users WHERE id = f.entity_id)
         WHEN 'space' THEN (SELECT name FROM spaces WHERE id = f.entity_id)
         WHEN 'tag' THEN (SELECT name FROM tags WHERE id = f.entity_id)
+        WHEN 'organization' THEN (SELECT name FROM organizations WHERE id = f.entity_id)
+        WHEN 'professional_profile' THEN (SELECT display_name FROM professional_profiles WHERE id = f.entity_id)
         ELSE ''
     END AS entity_name
 FROM follows f
@@ -323,6 +330,8 @@ SELECT f.id, f.tenant_id, f.follower_id, f.entity_type, f.entity_id, f.created_a
         WHEN 'user' THEN (SELECT username FROM users WHERE id = f.entity_id)
         WHEN 'space' THEN (SELECT name FROM spaces WHERE id = f.entity_id)
         WHEN 'tag' THEN (SELECT name FROM tags WHERE id = f.entity_id)
+        WHEN 'organization' THEN (SELECT name FROM organizations WHERE id = f.entity_id)
+        WHEN 'professional_profile' THEN (SELECT display_name FROM professional_profiles WHERE id = f.entity_id)
         ELSE ''
     END AS entity_name
 FROM follows f

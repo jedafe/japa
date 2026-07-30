@@ -12,12 +12,14 @@ describe('Settings +page.svelte', () => {
 		expect(screen.getByText('Settings')).toBeTruthy();
 	});
 
-	it('shows all 13 category tabs after load', async () => {
+	it('shows all category tabs after load', async () => {
 		render(Page);
 		await waitFor(() => {
 			expect(screen.getByText('General')).toBeTruthy();
 		});
-		const tabs = ['Appearance', 'Features', 'Users', 'Content', 'Email', 'Payment', 'Media', 'Seo', 'Security', 'Integrations', 'Ai', 'Advanced'];
+		// Only categories still present in settingCategoryOrder (features, email,
+		// integrations, advanced, payment have been removed).
+		const tabs = ['Appearance', 'Users', 'Content', 'Media', 'Seo', 'Security', 'Ai'];
 		for (const tab of tabs) {
 			expect(screen.getByText(tab)).toBeTruthy();
 		}

@@ -142,6 +142,31 @@ func scanUUID(s string) (pgtype.UUID, error) {
 	return u, nil
 }
 
+// scheduleFanOutTask enqueues a content:fan_out_to_feeds task with the given
+// fan-out type. Used by the scheduled-publish handler to trigger multi-space
+// fan-out (Section 32). Fire-and-forget per Rule 8.
+func scheduleFanOutTask(enq *Enqueuer, contentID, tenantID, authorID, spaceID pgtype.UUID, contentType, fanOutType string) {
+	if enq == nil {
+		return
+	}
+	payload, err := json.Marshal(map[string]string{
+		"content_id":   contentID.String(),
+		"tenant_id":    tenantID.String(),
+		"author_id":    authorID.String(),
+		"space_id":     spaceID.String(),
+		"content_type": contentType,
+		"fan_out_type": fanOutType,
+	})
+	if err != nil {
+		slog.Warn("scheduleFanOutTask: failed to marshal payload", "error", err)
+		return
+	}
+	if err := enq.Enqueue(TypeContentFanOutToFeeds, payload); err != nil {
+		slog.Warn("scheduleFanOutTask: failed to enqueue fan-out",
+			"content_id", contentID.String(), "fan_out_type", fanOutType, "error", err)
+	}
+}
+
 // requireDB returns the query interface or an error if the pool is not registered.
 func requireDB() (*gen.Queries, error) {
 	if dbPool == nil {
@@ -896,7 +921,9 @@ func HandleScheduledPublish(ctx context.Context, t *asynq.Task) error {
 		"content_id", payload.ContentID)
 
 	// Enqueue feed fan-out for the newly published content (BL-005).
-	// Fetch the content to get space_id and content_type for the fan-out.
+	// Fetch the content to get author_id, space_id and content_type for the
+	// fan-out. Per Section 32, fan-out fires to author followers + each
+	// assigned space (content_spaces) + bubble to parent spaces.
 	published, err := gen.New(dbPool.Reader).GetContentByID(ctx, gen.GetContentByIDParams{
 		ID: contentID, TenantID: tenantID,
 	})
@@ -905,22 +932,29 @@ func HandleScheduledPublish(ctx context.Context, t *asynq.Task) error {
 			"content_id", payload.ContentID, "error", err)
 		return nil
 	}
-	fanOutType := "followers"
-	if published.SpaceID.Valid {
-		fanOutType = "space"
-	}
-	fanPayload, _ := json.Marshal(map[string]string{
-		"content_id":   contentID.String(),
-		"tenant_id":    tenantID.String(),
-		"space_id":     published.SpaceID.String(),
-		"content_type": published.ContentType,
-		"fan_out_type": fanOutType,
-	})
-	if taskEnqueuer != nil {
-		if err := taskEnqueuer.Enqueue(TypeContentFanOutToFeeds, fanPayload); err != nil {
-			slog.Warn("task:content:publish_scheduled: failed to enqueue fan-out",
-				"content_id", payload.ContentID, "error", err)
+
+	// 1. Always fan out to the author's followers.
+	scheduleFanOutTask(taskEnqueuer, contentID, tenantID, published.AuthorID, pgtype.UUID{}, published.ContentType, "followers")
+
+	// 2. Fan out to each assigned space via content_spaces (Section 14).
+	//    Falls back to the primary contents.space_id if no content_spaces rows.
+	spaceIDs := []pgtype.UUID{}
+	if rows, err := gen.New(dbPool.Reader).GetContentSpaces(ctx, contentID); err == nil {
+		for _, r := range rows {
+			spaceIDs = append(spaceIDs, r.SpaceID)
 		}
+	} else {
+		slog.Warn("task:content:publish_scheduled: failed to fetch content_spaces, using primary space_id",
+			"content_id", payload.ContentID, "error", err)
+	}
+	if len(spaceIDs) == 0 && published.SpaceID.Valid {
+		spaceIDs = append(spaceIDs, published.SpaceID)
+	}
+
+	// 3. Enqueue a "space" task and a "bubble" task per assigned space.
+	for _, sid := range spaceIDs {
+		scheduleFanOutTask(taskEnqueuer, contentID, tenantID, published.AuthorID, sid, published.ContentType, "space")
+		scheduleFanOutTask(taskEnqueuer, contentID, tenantID, published.AuthorID, sid, published.ContentType, "bubble")
 	}
 
 	return nil
@@ -1058,14 +1092,23 @@ func HandleContentFanOutToFeeds(ctx context.Context, t *asynq.Task) error {
 		return fmt.Errorf("task:content:fan_out_to_feeds: %w", err)
 	}
 
-	authorID, err := scanUUID(payload.AuthorID)
-	if err != nil {
-		return fmt.Errorf("task:content:fan_out_to_feeds: %w", err)
+	// authorID is optional — only required for "followers" fan-out. For
+	// "space" and "bubble" tasks it may be empty (zero UUID).
+	var authorID pgtype.UUID
+	if payload.AuthorID != "" {
+		authorID, err = scanUUID(payload.AuthorID)
+		if err != nil {
+			return fmt.Errorf("task:content:fan_out_to_feeds: %w", err)
+		}
 	}
 
-	spaceID, err := scanUUID(payload.SpaceID)
-	if err != nil {
-		return fmt.Errorf("task:content:fan_out_to_feeds: %w", err)
+	// spaceID is optional — only required for "space" and "bubble" fan-out.
+	var spaceID pgtype.UUID
+	if payload.SpaceID != "" {
+		spaceID, err = scanUUID(payload.SpaceID)
+		if err != nil {
+			return fmt.Errorf("task:content:fan_out_to_feeds: %w", err)
+		}
 	}
 
 	fedCount := 0
@@ -1079,6 +1122,11 @@ func HandleContentFanOutToFeeds(ctx context.Context, t *asynq.Task) error {
 
 	switch payload.FanOutType {
 	case "followers":
+		if !authorID.Valid {
+			slog.Warn("task:content:fan_out_to_feeds: followers fan-out requires author_id",
+				"content_id", payload.ContentID)
+			return nil
+		}
 		// Fan out to all followers of the author (up to 1000).
 		followers, err := queries.GetFollowersByEntity(ctx, gen.GetFollowersByEntityParams{
 			TenantID:   tenantID,
@@ -1122,7 +1170,37 @@ func HandleContentFanOutToFeeds(ctx context.Context, t *asynq.Task) error {
 			"content_id", payload.ContentID, "fed_count", fedCount)
 
 	case "space":
-		// Fan out to all members of the space (up to 5000).
+		if !spaceID.Valid {
+			slog.Warn("task:content:fan_out_to_feeds: space fan-out requires space_id",
+				"content_id", payload.ContentID)
+			return nil
+		}
+		// Section 32 hybrid fan-out: push for spaces ≤ threshold, pull for
+		// larger spaces. In pull mode, we skip writing feeds rows — members
+		// will discover the post via the space feed query (GetSpaceFeed),
+		// which pulls by space_id at read time. This prevents unbounded
+		// feed row writes for very large spaces.
+		memberCount, err := gen.New(dbPool.Reader).CountSpaceMembers(ctx, gen.CountSpaceMembersParams{
+			SpaceID: spaceID, TenantID: tenantID,
+		})
+		if err != nil {
+			slog.Error("task:content:fan_out_to_feeds: failed to count space members",
+				"space_id", payload.SpaceID, "error", err)
+			return err
+		}
+
+		if memberCount > int64(maxFanOut) {
+			// Pull strategy: skip push fan-out. The space feed query
+			// (GetSpaceFeed) already pulls published content by space_id,
+			// so members will see this post on their next space feed request
+			// without a feeds row. Ref: Section 32 L50–55.
+			slog.Info("task:content:fan_out_to_feeds: pull strategy (space over threshold)",
+				"content_id", payload.ContentID, "space_id", payload.SpaceID,
+				"member_count", memberCount, "threshold", maxFanOut)
+			return nil
+		}
+
+		// Push strategy: write a feeds row for every member.
 		memberIDs, err := gen.New(dbPool.Reader).ListSpaceMemberUserIDs(ctx, gen.ListSpaceMemberUserIDsParams{
 			SpaceID: spaceID, TenantID: tenantID, LimitVal: int32(maxFanOut),
 		})

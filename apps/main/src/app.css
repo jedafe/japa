@@ -21,6 +21,7 @@
 	--color-primary-contrast: #ffffff;
 	--color-text: #18181b;
 	--color-text-subtle: #52525b;
+	--color-danger: #dc2626;
 
 	/* Data-viz palette (LayerChart) */
 	--chart-1: #3b49df;
@@ -64,6 +65,7 @@
 	--color-primary-contrast: #ffffff;
 	--color-text: #f4f4f5;
 	--color-text-subtle: #a1a1aa;
+	--color-danger: #ef4444;
 
 	--chart-1: #6b76f5;
 	--chart-2: #38bdf8;
@@ -87,6 +89,7 @@
 	--color-primary-contrast: var(--color-primary-contrast);
 	--color-text: var(--color-text);
 	--color-text-subtle: var(--color-text-subtle);
+	--color-danger: var(--color-danger);
 
 	--color-background: var(--background);
 	--color-foreground: var(--foreground);

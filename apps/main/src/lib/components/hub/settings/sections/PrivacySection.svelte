@@ -27,10 +27,12 @@
 			})
 	);
 
-	const visibilityOptions: { value: 'public' | 'members' | 'private'; labelKey: string }[] = [
+	// Ref: japaconnect-engineering/sections/50-user-dashboard-settings.md
+	// Spec: profile_visibility: 'public'|'members'|'followers'
+	const visibilityOptions: { value: 'public' | 'members' | 'followers'; labelKey: string }[] = [
 		{ value: 'public', labelKey: 'settings.privacy.visibility_public' },
 		{ value: 'members', labelKey: 'settings.privacy.visibility_members' },
-		{ value: 'private', labelKey: 'settings.privacy.visibility_private' }
+		{ value: 'followers', labelKey: 'settings.privacy.visibility_followers' }
 	];
 
 	function togglePref(key: 'show_activity' | 'searchable', next: boolean) {

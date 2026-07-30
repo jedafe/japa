@@ -1,9 +1,11 @@
 <script lang="ts">
 	import { Select } from 'bits-ui';
 	import { untrack } from 'svelte';
+	import { page } from '$app/state';
 	import { DirtyForm } from '$lib/components/hub/useDirtyForm.svelte';
 	import SettingsSection from '$lib/components/hub/SettingsSection.svelte';
 	import { patchAccount } from '$lib/api/hub';
+	import { theme as themeStore } from '$lib/stores/theme.svelte';
 	import { t } from '$lib/i18n';
 	import type { MeProfile, ThemeName } from '$lib/types';
 
@@ -15,10 +17,14 @@
 		{ value: 'dark', label: t('theme.dark', 'Dark') }
 	];
 
+	// Default to the user's saved preference, then the server-resolved theme
+	// from page.data.theme (which already accounts for the admin
+	// appearance.dark_mode_default setting), then 'light'. This keeps the
+	// selector in sync with the actual <html data-theme> attribute.
 	const form = new DirtyForm(
 		untrack(() => ({
 			username: profile?.username ?? '',
-			theme: (profile?.ui?.theme as ThemeName) ?? 'light'
+			theme: (profile?.ui?.theme as ThemeName) ?? (page.data.theme as ThemeName) ?? 'light'
 		})),
 		(v) => patchAccount({ username: v.username, ui: { theme: v.theme } })
 	);
@@ -44,7 +50,11 @@
 		<Select.Root
 			type="single"
 			value={form.values.theme}
-			onValueChange={(v) => form.set({ theme: (v as ThemeName) ?? 'light' })}
+			onValueChange={(v) => {
+				const next = (v as ThemeName) ?? 'light';
+				form.set({ theme: next });
+				themeStore.set(next);
+			}}
 		>
 			<Select.Trigger
 				class="inline-flex w-full items-center justify-between rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]"

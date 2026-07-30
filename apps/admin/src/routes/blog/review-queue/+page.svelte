@@ -131,8 +131,10 @@
 	}
 
 	function openExternal(item: ReviewItem) {
-		if (item.url) {
-			window.open(item.url, '_blank');
+		// BUG-010: backend ListPendingReviewSummaries doesn't return url;
+		// derive it from the slug so the "View Live" link always works.
+		if (item.slug) {
+			window.open(`/blog/${item.slug}`, '_blank');
 		}
 	}
 </script>
@@ -221,7 +223,7 @@
 				<XCircle class="h-3.5 w-3.5" />
 			</Button>
 		{/if}
-		{#if row.url}
+		{#if row.slug}
 			<Button variant="ghost" size="sm" onclick={() => openExternal(row)}>
 				<ExternalLink class="h-3.5 w-3.5" />
 			</Button>

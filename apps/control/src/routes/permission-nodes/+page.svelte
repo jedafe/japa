@@ -6,7 +6,7 @@
 	import { api } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { escapeHtml } from '$lib/utils';
-	import { Shield, Key, Search, RefreshCw } from 'lucide-svelte';
+	import { Shield, Search, RefreshCw } from 'lucide-svelte';
 	import type { DataTableColumn } from '$lib/api/types';
 
 	let {} = $props();
@@ -32,14 +32,14 @@
 			key: 'key',
 			label: t('permission_nodes.key', 'Permission Key'),
 			sortable: true,
-			render: (val) =>
+			render: (val: unknown) =>
 				`<span class="bg-muted text-muted-foreground rounded-5px px-1.5 py-0.5 font-mono text-xs">${escapeHtml(val) || '—'}</span>`
 		},
 		{
 			key: 'description',
 			label: t('permission_nodes.description', 'Description'),
 			sortable: false,
-			render: (val) =>
+			render: (val: unknown) =>
 				`<span class="text-muted-foreground text-sm">${escapeHtml(val) || '—'}</span>`
 		}
 	];
@@ -49,7 +49,7 @@
 		try {
 			const result = await api<PermissionNode[]>('/control/permission-nodes');
 			if (result.ok) {
-				nodes = result.data;
+				nodes = Array.isArray(result.data) ? result.data : [];
 			} else {
 				message = result.error || t('permission_nodes.load_error', 'Failed to load permission nodes.');
 				messageType = 'error';
@@ -64,8 +64,6 @@
 
 	$effect(() => {
 		load();
-		const interval = setInterval(() => load(), 60_000);
-		return () => clearInterval(interval);
 	});
 
 	let filteredNodes = $derived.by(() => {
@@ -152,4 +150,5 @@
 	{loading}
 	emptyMessage={t('permission_nodes.no_nodes', 'No permission nodes registered.')}
 	selectable={false}
+	getRowId={(row) => (row as PermissionNode).key}
 />

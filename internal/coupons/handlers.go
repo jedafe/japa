@@ -666,7 +666,7 @@ func (h *Handlers) RecordAffiliateCommission(w http.ResponseWriter, r *http.Requ
 	})
 	if err != nil {
 		errpkg.CaptureException(err)
-		writeError(w, http.StatusInternalServerError, "record_failed", err.Error())
+		writeError(w, http.StatusInternalServerError, "record_failed", "Failed to record commission")
 		return
 	}
 

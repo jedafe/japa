@@ -51,6 +51,16 @@ export class DirtyForm<T extends Record<string, unknown>> {
 		this.values = { ...this.values, ...patch };
 	}
 
+	/**
+	 * Set values AND advance the snapshot so the form is clean.
+	 * Use this after an *already-persisted* direct API call (e.g. avatar/cover
+	 * upload) to avoid a false dirty state.
+	 */
+	setSaved(patch: Partial<T>): void {
+		this.values = { ...this.values, ...patch };
+		this.#snapshot = clone(this.values);
+	}
+
 	async save(): Promise<boolean> {
 		if (!this.dirty) return true;
 		this.saving = true;

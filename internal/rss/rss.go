@@ -6,6 +6,7 @@
 package rss
 
 import (
+	"encoding/json"
 	"encoding/xml"
 	"log/slog"
 	"net/http"
@@ -58,7 +59,7 @@ func HandleFeed(q *gen.Queries, feedType string, siteURL string, siteName string
 	return func(w http.ResponseWriter, r *http.Request) {
 		tenantID := tenant.IDFromContext(r.Context())
 		if tenantID == (pgtype.UUID{}) {
-			http.Error(w, "tenant unavailable", http.StatusServiceUnavailable)
+			writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 			return
 		}
 
@@ -87,8 +88,7 @@ func HandleFeed(q *gen.Queries, feedType string, siteURL string, siteName string
 
 		if err != nil {
 			slog.Error("rss: query feed", "feed_type", feedType, "error", err)
-			http.Error(w, "Internal error", http.StatusInternalServerError)
-
+			writeError(w, http.StatusInternalServerError, "internal_error", "Internal server error")
 			return
 		}
 
@@ -102,13 +102,13 @@ func HandleSpaceFeed(q *gen.Queries, siteURL string, siteName string) http.Handl
 	return func(w http.ResponseWriter, r *http.Request) {
 		slug := chi.URLParam(r, "slug")
 		if slug == "" {
-			http.Error(w, "missing space slug", http.StatusBadRequest)
+			writeError(w, http.StatusBadRequest, "missing_field", "Space slug is required")
 			return
 		}
 
 		tenantID := tenant.IDFromContext(r.Context())
 		if tenantID == (pgtype.UUID{}) {
-			http.Error(w, "tenant unavailable", http.StatusServiceUnavailable)
+			writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 			return
 		}
 
@@ -118,8 +118,7 @@ func HandleSpaceFeed(q *gen.Queries, siteURL string, siteName string) http.Handl
 		})
 		if err != nil {
 			slog.Error("rss: query space feed", "slug", slug, "error", err)
-			http.Error(w, "Internal error", http.StatusInternalServerError)
-
+			writeError(w, http.StatusInternalServerError, "internal_error", "Internal server error")
 			return
 		}
 
@@ -134,13 +133,13 @@ func HandleTagFeed(q *gen.Queries, siteURL string, siteName string) http.Handler
 	return func(w http.ResponseWriter, r *http.Request) {
 		slug := chi.URLParam(r, "slug")
 		if slug == "" {
-			http.Error(w, "missing tag slug", http.StatusBadRequest)
+			writeError(w, http.StatusBadRequest, "missing_field", "Tag slug is required")
 			return
 		}
 
 		tenantID := tenant.IDFromContext(r.Context())
 		if tenantID == (pgtype.UUID{}) {
-			http.Error(w, "tenant unavailable", http.StatusServiceUnavailable)
+			writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 			return
 		}
 
@@ -150,8 +149,7 @@ func HandleTagFeed(q *gen.Queries, siteURL string, siteName string) http.Handler
 		})
 		if err != nil {
 			slog.Error("rss: query tag feed", "slug", slug, "error", err)
-			http.Error(w, "Internal error", http.StatusInternalServerError)
-
+			writeError(w, http.StatusInternalServerError, "internal_error", "Internal server error")
 			return
 		}
 
@@ -166,24 +164,23 @@ func HandleUserFeed(q *gen.Queries, siteURL string, siteName string) http.Handle
 	return func(w http.ResponseWriter, r *http.Request) {
 		username := chi.URLParam(r, "username")
 		if username == "" {
-			http.Error(w, "missing username", http.StatusBadRequest)
+			writeError(w, http.StatusBadRequest, "missing_field", "Username is required")
 			return
 		}
 
 		tenantID := tenant.IDFromContext(r.Context())
 		if tenantID == (pgtype.UUID{}) {
-			http.Error(w, "tenant unavailable", http.StatusServiceUnavailable)
+			writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 			return
 		}
 
 		rows, err := q.ListRSSUserFeedItems(r.Context(), gen.ListRSSUserFeedItemsParams{
-			TenantID: tenantID,
+			TenantID:  tenantID,
 			Username: username,
 		})
 		if err != nil {
 			slog.Error("rss: query user feed", "username", username, "error", err)
-			http.Error(w, "Internal error", http.StatusInternalServerError)
-
+			writeError(w, http.StatusInternalServerError, "internal_error", "Internal server error")
 			return
 		}
 
@@ -196,6 +193,15 @@ func HandleUserFeed(q *gen.Queries, siteURL string, siteName string) http.Handle
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+// writeError writes a JSON error response in the JapaConnect API format.
+func writeError(w http.ResponseWriter, status int, code, message string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"error": map[string]string{"code": code, "message": message},
+	})
+}
 
 // formatTime formats a pgtype.Timestamptz as RFC1123Z.
 func formatTime(t pgtype.Timestamptz) string {

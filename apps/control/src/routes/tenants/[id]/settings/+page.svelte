@@ -1,12 +1,11 @@
 <script lang="ts">
 	import { beforeNavigate, goto } from '$app/navigation';
-	import PageHeader from '$lib/components/PageHeader.svelte';
 	import ConfirmModal from '$lib/components/ui/ConfirmModal.svelte';
 	import { Switch, Tooltip, Label, Select } from 'bits-ui';
 	import { api } from '$lib/api';
 	import type { SystemSetting } from '$lib/api/types';
 	import { t, translations } from '$lib/stores/i18n.svelte';
-	import FeedCardStyleEditor from '$lib/components/FeedCardStyleEditor.svelte';
+	import { convertImageToModernFormat } from '$lib/utils/imageConvert';
 	import { categoryIcons, categoryNames, sensitiveKeys as categorySensitiveKeys, textareaKeys as categoryTextareaKeys, uploadKeys as categoryUploadKeys, colorKeys as categoryColorKeys } from '$lib/components/settings/categoryConfig';
 	import {
 		Settings,
@@ -19,7 +18,6 @@
 		Undo2,
 		AlertTriangle,
 		ArrowLeft,
-		Sliders,
 		Upload
 	} from 'lucide-svelte';
 
@@ -29,7 +27,6 @@
 	let tenantName = $state('');
 	let originalSettings = $state<SystemSetting[]>([]);
 	let currentSettings = $state<SystemSetting[]>([]);
-	let contentTypes = $state<{ value: string; label: string }[]>([]);
 	let isDirty = $derived(
 		JSON.stringify(currentSettings) !== JSON.stringify(originalSettings)
 	);
@@ -347,8 +344,12 @@
 			tenantName = tenantRes.data.name;
 		}
 		if (settingsRes.ok) {
-			originalSettings = JSON.parse(JSON.stringify(settingsRes.data));
-			currentSettings = JSON.parse(JSON.stringify(settingsRes.data));
+			// Filter to control-panel settings only (Panel === 'control').
+			const filtered = normalizeSettings(
+				settingsRes.data.filter((s) => s.panel === 'control')
+			);
+			originalSettings = JSON.parse(JSON.stringify(filtered));
+			currentSettings = JSON.parse(JSON.stringify(filtered));
 		}
 		isLoading = false;
 	}
@@ -410,7 +411,6 @@
 	}
 
 	function getSettingComponentType(setting: SystemSetting): string {
-		if (setting.key === 'feed.card_style') return 'card-style';
 		if (setting.type === 'bool' || isBoolValue(setting.value)) return 'switch';
 		if (isSelectKey(setting.key)) return 'select';
 		if (isMultiSelectKey(setting.key)) return 'multi-select';
@@ -439,6 +439,38 @@
 		'data-highlighted:bg-accent rounded-lg flex h-9 cursor-pointer items-center px-3 text-sm outline-none';
 
 	const sensitiveKeys = new Set(categorySensitiveKeys);
+
+	// normalizeValue strips the JSON string quoting that the batch PATCH
+	// endpoint used to add (e.g. "\"3\"" → "3"). This ensures originalSettings
+	// and currentSettings hold clean values so isDirty / dirtyCount comparisons
+	// are accurate and a value toggled back to its original is not permanently
+	// marked dirty.
+	// However, values that are JSON strings containing a JSON array/object
+	// (e.g. '"[\\"uuid\\"]"') must NOT have their outer quotes stripped —
+	// that would leave [\"uuid\"] which is not valid JSON. parseJsonArray
+	// handles the full unescaping.
+	function normalizeValue(v: string): string {
+		if (typeof v !== 'string') return v;
+		if (v.length >= 2 && v.startsWith('"') && v.endsWith('"')) {
+			const inner = v.slice(1, -1);
+			// Don't strip quotes if the inner value is a JSON array/object
+			// string — those need the outer quotes to remain valid JSON strings
+			// that parseJsonArray can handle via JSON.parse.
+			if (inner.startsWith('[') || inner.startsWith('{')) {
+				return v; // keep the outer quotes
+			}
+			return inner;
+		}
+		return v;
+	}
+
+	function normalizeSettings(settings: SystemSetting[]): SystemSetting[] {
+		return settings.map((s) => ({
+			...s,
+			value: normalizeValue(s.value ?? ''),
+			default_value: normalizeValue(s.default_value ?? '')
+		}));
+	}
 
 	function isSensitiveKey(key: string): boolean {
 		return sensitiveKeys.has(key) || key.includes('secret') || key.includes('password') || key.includes('token') || key.includes('api_key');
@@ -477,6 +509,7 @@
 		}
 
 		try {
+			const convertedFile = await convertImageToModernFormat(file);
 			const initiateRes = await api<{
 				media_id: string;
 				storage_path: string;
@@ -484,7 +517,7 @@
 				expires_at: string;
 			}>('/api/v1/media/upload', {
 				method: 'POST',
-				body: { filename: file.name, mime_type: file.type, file_size: file.size }
+				body: { filename: convertedFile.name, mime_type: convertedFile.type, file_size: convertedFile.size }
 			});
 			if (!initiateRes.ok) {
 				uploadError = initiateRes.error || 'Failed to initiate upload';
@@ -497,8 +530,8 @@
 			const { media_id, presigned_url } = initiateRes.data;
 			const putRes = await fetch(presigned_url, {
 				method: 'PUT',
-				headers: { 'Content-Type': file.type },
-				body: file
+				headers: { 'Content-Type': convertedFile.type },
+				body: convertedFile
 			});
 			if (!putRes.ok) {
 				uploadError = `File upload failed: ${putRes.statusText}`;
@@ -753,13 +786,7 @@
 										</div>
 
 										<div class="flex items-center gap-2">
-											{#if componentType === 'card-style'}
-												<FeedCardStyleEditor
-													value={setting.value}
-													{contentTypes}
-													onchange={(v) => updateSetting('feed.card_style', v)}
-												/>
-											{:else if componentType === 'switch'}
+											{#if componentType === 'switch'}
 												{@const isTrue =
 													isBoolValue(setting.value) &&
 													setting.value.replace(/^"(.*)"$/, '$1').toLowerCase() === 'true'}

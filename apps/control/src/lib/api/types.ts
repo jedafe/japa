@@ -92,6 +92,7 @@ export interface SystemSetting {
 	default_value: string;
 	description: string;
 	namespace: string;
+	panel?: string;
 	min?: number;
 	max?: number;
 	sensitive?: boolean;

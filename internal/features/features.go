@@ -300,7 +300,7 @@ type FlagRow struct {
 }
 
 // Gate is HTTP middleware that checks if a feature is enabled.
-// If disabled, returns 404 with {"error":"feature_disabled"}.
+// If disabled, returns 404 with {"error":{"code":"feature_disabled","message":"..."}}.
 // This MUST be used inside the tenant middleware group so tenant
 // context is available.
 func Gate(checker *Checker, key string) func(http.Handler) http.Handler {
@@ -308,18 +308,12 @@ func Gate(checker *Checker, key string) func(http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			t := tenant.FromContext(r.Context())
 			if t == nil {
-				w.Header().Set("Content-Type", "application/json")
-				w.WriteHeader(http.StatusServiceUnavailable)
-				_ = json.NewEncoder(w).Encode(map[string]string{"error": "feature_disabled"})
-
+				writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 				return
 			}
 
 			if !checker.IsEnabled(r.Context(), t.ID, key) {
-				w.Header().Set("Content-Type", "application/json")
-				w.WriteHeader(http.StatusNotFound)
-				_ = json.NewEncoder(w).Encode(map[string]string{"error": "feature_disabled"})
-
+				writeError(w, http.StatusNotFound, "feature_disabled", "This feature is not available")
 				return
 			}
 
