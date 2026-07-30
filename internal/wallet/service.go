@@ -515,6 +515,22 @@ func (s *Service) GetWalletSettings(ctx context.Context, tenantID pgtype.UUID) (
 	return settings, nil
 }
 
+// GetWalletSettingsWithMinConvert returns wallet settings plus the effective
+// minimum points required for a single conversion. The minimum is read from
+// system_settings key wallet.min_convert_points, falling back to
+// DefaultMinConvertPoints when unset.
+func (s *Service) GetWalletSettingsWithMinConvert(ctx context.Context, tenantID pgtype.UUID) (gen.WalletSetting, int64, error) {
+	settings, err := s.GetWalletSettings(ctx, tenantID)
+	if err != nil {
+		return gen.WalletSetting{}, 0, err
+	}
+	minConvert := int64(DefaultMinConvertPoints)
+	if s.settings != nil {
+		minConvert = int64(s.settings.GetIntOr(ctx, tenantID, "wallet.min_convert_points", DefaultMinConvertPoints))
+	}
+	return settings, minConvert, nil
+}
+
 // UpdateWalletSettingsInput holds parameters for updating wallet settings.
 type UpdateWalletSettingsInput struct {
 	PointsToCreditsRate int32

@@ -11,10 +11,10 @@
 | Severity | Count | Status |
 |----------|-------|--------|
 | Critical (page-breaking) | 3 | Fixed |
-| High (contract drift / RBAC) | 3 | Fixed |
+| High (contract drift / RBAC) | 5 | Fixed |
 | Medium (i18n / token classes) | 2 | Fixed |
 | Low (defensive guards) | 2 | Fixed |
-| **Total** | **10** | **10 fixed** |
+| **Total** | **12** | **12 fixed** |
 
 All fixes verified end-to-end with Playwright: list renders, empty states show, campaign create → redirect → row appears, activate/pause/end status transitions work, stats modal loads with 200 (was 500), slot-type dropdown shows real names (was blank `(x)`). `svelte-check` 0 errors, `go build ./...` clean.
 
@@ -90,9 +90,10 @@ All fixes verified end-to-end with Playwright: list renders, empty states show, 
 
 | File | Change |
 |------|--------|
-| `internal/advertising/handlers.go` | `nonNilSlice` helper; applied to 4 list handlers |
+| `internal/advertising/handlers.go` | `nonNilSlice` helper; applied to 4 list handlers; rewrote `UpdateCampaign` + `GetSlotType` to use service/generated queries |
+| `internal/advertising/service.go` | `getCampaignStats` full contract; added `UpdateCampaignDetails` + `GetSlotType` methods |
 | `internal/advertising/store.go` | `getCampaignStats` full contract + spend/cpc defaults |
-| `internal/db/queries/advertising.sql` | `GetCampaignStats` query rewritten (COUNT FILTER) |
+| `internal/db/queries/advertising.sql` | `GetCampaignStats` query rewritten (COUNT FILTER); added `UpdateAdCampaignDetails` query |
 | `internal/db/gen/advertising.sql.go` | Regenerated via `make sqlc-gen` |
 | `apps/admin/src/routes/(app)/ads/+page.svelte` | RBAC node, null-guards, Rule 16 reloads, i18n, statusBadge tokens, Campaign status union |
 | `apps/admin/src/routes/(app)/ads/new/+page.svelte` | SlotType contract fix, null-guards, error surfacing |
@@ -121,4 +122,19 @@ All fixes verified end-to-end with Playwright: list renders, empty states show, 
 
 - **`daily_stats` aggregation** — the stats response returns `[]` for `daily_stats` because no daily rollup table/query exists yet. Wiring `ad_analytics_daily` into the stats endpoint is a future enhancement, not a bug in the current page.
 - **`spend` aggregation** — defaults to 0.0 until `ad_campaigns.spent_credits` (or a spend ledger) is summed into the stats query.
-- **`UpdateCampaign` / `GetSlotType` raw SQL** — `handlers.go` lines 980-1039 use `h.Service.db.Writer.Exec` / `db.Reader.QueryRow` with raw SQL referencing columns (`width`, `height`) that don't exist on `ad_slot_types`. These endpoints will 500 if called, but they are not exercised by the `/ads` or `/ads/new` page flows. Flagged for a follow-up fix.
+
+---
+
+## Additional Bugs Fixed (Follow-up)
+
+### BUG-11 — HIGH: `UpdateCampaign` raw SQL referenced non-existent `description` column (500)
+**File:** `internal/advertising/handlers.go`, `internal/advertising/service.go`, `internal/db/queries/advertising.sql`
+**Symptom:** `PATCH /admin/ads/campaigns/:id` would 500 — raw SQL did `UPDATE ad_campaigns SET ... description = COALESCE(...)` but `ad_campaigns` has no `description` column.
+**Fix:** Added `UpdateAdCampaignDetails` sqlc query (partial PATCH: name + budget via COALESCE, no description). Added `Service.UpdateCampaignDetails` method. Rewrote handler to use the service method instead of raw SQL (Rule 2). Handler now returns the full updated campaign object (was just `{id}`).
+**Verified:** `PATCH` with `{"name":"Updated Test Campaign","budget":250}` → 200, returns full campaign with updated fields.
+
+### BUG-12 — HIGH: `GetSlotType` raw SQL referenced non-existent `width`/`height` columns (500)
+**File:** `internal/advertising/handlers.go`, `internal/advertising/service.go`
+**Symptom:** `GET /admin/ads/slot-types/:id` would 500 — raw SQL did `SELECT id, name, ..., width, height FROM ad_slot_types` but the table has `slot_name`/`max_display_per_page` (no `name`/`width`/`height`).
+**Fix:** Added `Service.GetSlotType` method using the existing generated `GetAdSlotTypeByID` query. Rewrote handler to use the service method. Now returns the full `AdSlotType` struct with correct field names. 404 on missing ID via `handleServiceError` (pgx.ErrNoRows → `not_found`).
+**Verified:** `GET` with real ID → 200 with `slot_name`/`max_display_per_page`/`is_active`; bad ID → 404 `{"error":{"code":"not_found",...}}`.
