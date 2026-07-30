@@ -17,7 +17,7 @@ import (
 func TestToSpaceCards_LeanAndCorrect(t *testing.T) {
 	desc := "a public space"
 	wiki := []byte(`{"secret":"internal wiki body"}`)
-	row := gen.Space{
+	row := gen.ListPublicSpacesByMemberUserRow{
 		ID:            mustUUID(t, "11111111-1111-1111-1111-111111111111"),
 		TenantID:      mustUUID(t, "22222222-2222-2222-2222-222222222222"),
 		ParentID:      mustUUID(t, "33333333-3333-3333-3333-333333333333"),
@@ -33,16 +33,20 @@ func TestToSpaceCards_LeanAndCorrect(t *testing.T) {
 		ReplyingPerm:  "members",
 		JoiningPerm:   "open",
 		Status:        "active",
+		MemberRole:    "member",
 		CreatedAt:     pgtype.Timestamptz{Time: time.Now(), Valid: true},
 	}
 
-	cards := toSpaceCards([]gen.Space{row})
+	cards := toSpaceCards([]gen.ListPublicSpacesByMemberUserRow{row})
 	if len(cards) != 1 {
 		t.Fatalf("got %d cards, want 1", len(cards))
 	}
 	c := cards[0]
 	if c.Name != "Lagos Devs" || c.Slug != "lagos-devs" || c.MemberCount != 42 || c.Visibility != "public" {
 		t.Fatalf("field-copy mismatch: %+v", c)
+	}
+	if c.Role != "member" {
+		t.Errorf("Role = %q, want %q", c.Role, "member")
 	}
 
 	blob, err := json.Marshal(cards)
@@ -55,7 +59,7 @@ func TestToSpaceCards_LeanAndCorrect(t *testing.T) {
 			t.Errorf("SpaceCard JSON leaks internal field %q: %s", leaked, got)
 		}
 	}
-	for _, want := range []string{"\"id\"", "\"name\"", "\"slug\"", "\"member_count\""} {
+	for _, want := range []string{"\"id\"", "\"name\"", "\"slug\"", "\"member_count\"", "\"role\""} {
 		if !strings.Contains(got, want) {
 			t.Errorf("SpaceCard JSON missing expected field %q: %s", want, got)
 		}

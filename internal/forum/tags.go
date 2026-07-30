@@ -10,6 +10,10 @@ import (
 	"github.com/jedafe/japa/internal/db/gen"
 )
 
+// ErrTooManyTags is returned when adding tags would exceed MaxTagsPerThread.
+// Ref: japaconnect-engineering/sections/08-forum-qa-solved.md (BUG-008)
+var ErrTooManyTags = errors.New("too many tags: maximum 5 tags per thread")
+
 // CreateTagInput holds parameters for creating a new forum tag.
 type CreateTagInput struct {
 	Name            string
@@ -52,6 +56,13 @@ func (s *Service) CreateTag(ctx context.Context, tenantID pgtype.UUID, input Cre
 		return gen.ForumTag{}, fmt.Errorf("creating forum tag: %w", err)
 	}
 
+	// BUG-017: assigning a tag moderator is a capability grant — invalidate
+	// the new moderator's permission cache so the grant is visible promptly.
+	// Ref: Rule 6 + Section 03 (Permission Cache Invalidation).
+	if moderatorUserID.Valid {
+		s.invalidateModeratorCache(ctx, moderatorUserID)
+	}
+
 	return tag, nil
 }
 
@@ -70,8 +81,18 @@ func (s *Service) ListTags(ctx context.Context, tenantID pgtype.UUID, limit, off
 	return s.store.listTags(ctx, tenantID, limit, offset)
 }
 
-// AddThreadTag adds a tag to a thread.
+// AddThreadTag adds a tag to a thread. Enforces the MaxTagsPerThread cap.
+// Ref: Section 08 Tags (max 5 tags per post).
 func (s *Service) AddThreadTag(ctx context.Context, tenantID, threadID, tagID pgtype.UUID) error {
+	// Enforce the per-thread tag cap before inserting.
+	count, err := s.store.countThreadTags(ctx, threadID)
+	if err != nil {
+		return fmt.Errorf("counting thread tags: %w", err)
+	}
+	if count >= MaxTagsPerThread {
+		return fmt.Errorf("thread already has the maximum of %d tags", MaxTagsPerThread)
+	}
+
 	if err := s.store.addThreadTag(ctx, threadID, tagID); err != nil {
 		return fmt.Errorf("adding tag to thread: %w", err)
 	}
@@ -80,6 +101,42 @@ func (s *Service) AddThreadTag(ctx context.Context, tenantID, threadID, tagID pg
 		slog.Warn("failed to increment tag follower count", "error", err)
 	}
 
+	return nil
+}
+
+// AddThreadTagsBulk adds multiple tags to a thread in one call
+// (POST /forum/{id}/tags). Enforces the MaxTagsPerThread cap across the
+// combined set. Ref: api-routes-catalog L596.
+func (s *Service) AddThreadTagsBulk(ctx context.Context, tenantID, threadID pgtype.UUID, tagIDs []pgtype.UUID) error {
+	existing, err := s.store.countThreadTags(ctx, threadID)
+	if err != nil {
+		return fmt.Errorf("counting thread tags: %w", err)
+	}
+	// De-duplicate the incoming ids against each other.
+	seen := make(map[[16]byte]struct{}, len(tagIDs))
+	unique := make([]pgtype.UUID, 0, len(tagIDs))
+	for _, id := range tagIDs {
+		if !id.Valid {
+			continue
+		}
+		if _, ok := seen[id.Bytes]; ok {
+			continue
+		}
+		seen[id.Bytes] = struct{}{}
+		unique = append(unique, id)
+	}
+	if existing+int32(len(unique)) > MaxTagsPerThread {
+		return fmt.Errorf("adding these tags would exceed the maximum of %d tags per thread", MaxTagsPerThread)
+	}
+
+	for _, tagID := range unique {
+		if err := s.store.addThreadTag(ctx, threadID, tagID); err != nil {
+			return fmt.Errorf("adding tag to thread: %w", err)
+		}
+		if err := s.store.updateTagFollowerCount(ctx, tagID, tenantID, 1); err != nil {
+			slog.Warn("failed to increment tag follower count", "error", err)
+		}
+	}
 	return nil
 }
 
@@ -152,7 +209,39 @@ func (s *Service) UpdateTag(ctx context.Context, id, tenantID pgtype.UUID, input
 		moderatorUserID = input.ModeratorUserID
 	}
 
-	return s.store.updateTag(ctx, id, tenantID, name, slug, description, rules, coverImageID, moderatorUserID)
+	updated, err := s.store.updateTag(ctx, id, tenantID, name, slug, description, rules, coverImageID, moderatorUserID)
+	if err != nil {
+		return gen.ForumTag{}, err
+	}
+
+	// BUG-017: invalidate the permission cache for the previous and the new
+	// moderator whenever the assignment changes. Ref: Rule 6.
+	if !uuidEqual(existing.ModeratorUserID, moderatorUserID) {
+		if existing.ModeratorUserID.Valid {
+			s.invalidateModeratorCache(ctx, existing.ModeratorUserID)
+		}
+		if moderatorUserID.Valid {
+			s.invalidateModeratorCache(ctx, moderatorUserID)
+		}
+	}
+
+	return updated, nil
+}
+
+// invalidateModeratorCache clears the user's permission cache. No-op when
+// the perm-cache invalidator was not injected. Ref: Rule 6.
+func (s *Service) invalidateModeratorCache(ctx context.Context, userID pgtype.UUID) {
+	if s.permCache == nil {
+		return
+	}
+	if err := s.permCache.InvalidatePermCache(ctx, userID); err != nil {
+		slog.Warn("failed to invalidate tag moderator perm cache", "user_id", userID, "error", err)
+	}
+}
+
+// uuidEqual reports whether two pgtype.UUID values are equal.
+func uuidEqual(a, b pgtype.UUID) bool {
+	return a.Valid == b.Valid && a.Bytes == b.Bytes
 }
 
 // DeleteTag soft-deletes a forum tag.

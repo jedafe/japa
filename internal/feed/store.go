@@ -53,7 +53,7 @@ func (s *Store) getExploreFeed(ctx context.Context, tenantID pgtype.UUID, limit,
 // getPrimaryFeed returns the user's personalized feed from the feeds table.
 //
 //nolint:unused // reserved for future features
-func (s *Store) getPrimaryFeed(ctx context.Context, tenantID, userID pgtype.UUID, limit, offset int32) ([]gen.GetPrimaryFeedRow, error) {
+func (s *Store) getPrimaryFeed(ctx context.Context, tenantID, userID pgtype.UUID, sort string, limit, offset int32) ([]gen.GetPrimaryFeedRow, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -61,6 +61,7 @@ func (s *Store) getPrimaryFeed(ctx context.Context, tenantID, userID pgtype.UUID
 	rows, err := s.read.GetPrimaryFeed(ctx, gen.GetPrimaryFeedParams{
 		TenantID:   tenantID,
 		UserID:     userID,
+		Sort:       sort,
 		PageLimit:  limit,
 		PageOffset: offset,
 	})
@@ -74,7 +75,7 @@ func (s *Store) getPrimaryFeed(ctx context.Context, tenantID, userID pgtype.UUID
 // getSpaceFeed returns published posts in a specific space.
 //
 //nolint:unused // reserved for future features
-func (s *Store) getSpaceFeed(ctx context.Context, tenantID, spaceID pgtype.UUID, limit, offset int32) ([]gen.GetSpaceFeedRow, error) {
+func (s *Store) getSpaceFeed(ctx context.Context, tenantID, spaceID pgtype.UUID, sort string, limit, offset int32) ([]gen.GetSpaceFeedRow, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -82,6 +83,7 @@ func (s *Store) getSpaceFeed(ctx context.Context, tenantID, spaceID pgtype.UUID,
 	rows, err := s.read.GetSpaceFeed(ctx, gen.GetSpaceFeedParams{
 		TenantID:   tenantID,
 		SpaceID:    spaceID,
+		Sort:       sort,
 		PageLimit:  limit,
 		PageOffset: offset,
 	})
@@ -95,7 +97,7 @@ func (s *Store) getSpaceFeed(ctx context.Context, tenantID, spaceID pgtype.UUID,
 // getProfileFeed returns all public published posts by a specific user.
 //
 //nolint:unused // reserved for future features
-func (s *Store) getProfileFeed(ctx context.Context, tenantID, authorID pgtype.UUID, limit, offset int32) ([]gen.GetProfileFeedRow, error) {
+func (s *Store) getProfileFeed(ctx context.Context, tenantID, authorID pgtype.UUID, sort string, limit, offset int32) ([]gen.GetProfileFeedRow, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -103,6 +105,7 @@ func (s *Store) getProfileFeed(ctx context.Context, tenantID, authorID pgtype.UU
 	rows, err := s.read.GetProfileFeed(ctx, gen.GetProfileFeedParams{
 		TenantID:   tenantID,
 		AuthorID:   authorID,
+		Sort:       sort,
 		PageLimit:  limit,
 		PageOffset: offset,
 	})
@@ -182,8 +185,10 @@ func (s *Store) updateVelocityScores(ctx context.Context, tenantID pgtype.UUID, 
 // deleteFeedItemsByContent removes all feed rows referencing a content ID.
 //
 //nolint:unused // reserved for future features
-func (s *Store) deleteFeedItemsByContent(ctx context.Context, contentID pgtype.UUID) error {
-	if err := s.write.DeleteFeedItemsByContent(ctx, contentID); err != nil {
+func (s *Store) deleteFeedItemsByContent(ctx context.Context, tenantID, contentID pgtype.UUID) error {
+	if err := s.write.DeleteFeedItemsByContent(ctx, gen.DeleteFeedItemsByContentParams{
+		ContentID: contentID, TenantID: tenantID,
+	}); err != nil {
 		return fmt.Errorf("deleting feed items by content: %w", err)
 	}
 
@@ -193,8 +198,10 @@ func (s *Store) deleteFeedItemsByContent(ctx context.Context, contentID pgtype.U
 // deleteFeedItemsByUser removes all feed rows for a user.
 //
 //nolint:unused // reserved for future features
-func (s *Store) deleteFeedItemsByUser(ctx context.Context, userID pgtype.UUID) error {
-	if err := s.write.DeleteFeedItemsByUser(ctx, userID); err != nil {
+func (s *Store) deleteFeedItemsByUser(ctx context.Context, tenantID, userID pgtype.UUID) error {
+	if err := s.write.DeleteFeedItemsByUser(ctx, gen.DeleteFeedItemsByUserParams{
+		UserID: userID, TenantID: tenantID,
+	}); err != nil {
 		return fmt.Errorf("deleting feed items by user: %w", err)
 	}
 
@@ -204,8 +211,10 @@ func (s *Store) deleteFeedItemsByUser(ctx context.Context, userID pgtype.UUID) e
 // getFeedItemCount returns the total number of feed items for a user.
 //
 //nolint:unused // reserved for future features
-func (s *Store) getFeedItemCount(ctx context.Context, userID pgtype.UUID) (int32, error) {
-	count, err := s.read.GetFeedItemCount(ctx, userID)
+func (s *Store) getFeedItemCount(ctx context.Context, tenantID, userID pgtype.UUID) (int32, error) {
+	count, err := s.read.GetFeedItemCount(ctx, gen.GetFeedItemCountParams{
+		UserID: userID, TenantID: tenantID,
+	})
 	if err != nil {
 		return 0, fmt.Errorf("counting feed items: %w", err)
 	}

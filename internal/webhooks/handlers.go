@@ -323,15 +323,89 @@ func (h *Handlers) RetryDelivery(w http.ResponseWriter, r *http.Request) {
 // ListWebhookEvents handles GET /webhook-events — returns available webhook event types.
 func (h *Handlers) ListWebhookEvents(w http.ResponseWriter, r *http.Request) {
 	events := []map[string]string{
+		// Content
 		{ "key": "content.published", "label": "Content Published", "description": "When content is published" },
 		{ "key": "content.updated", "label": "Content Updated", "description": "When content is updated" },
-		{ "key": "content.deleted", "label": "Content Deleted", "description": "When content is deleted" },
+		{ "key": "content.deleted", "label": "Content Deleted", "description": "When content is soft-deleted" },
+		{ "key": "content.liked", "label": "Content Liked", "description": "When a user likes content" },
+		{ "key": "content.bookmarked", "label": "Content Bookmarked", "description": "When a user bookmarks content" },
+		{ "key": "content.reviewed", "label": "Content Reviewed", "description": "When content receives a review" },
+		// Claims
 		{ "key": "claim.approved", "label": "Claim Approved", "description": "When an ownership claim is approved" },
 		{ "key": "claim.rejected", "label": "Claim Rejected", "description": "When an ownership claim is rejected" },
+		{ "key": "claim.submitted", "label": "Claim Submitted", "description": "When an ownership claim is submitted" },
+		// Reviews
 		{ "key": "review.created", "label": "Review Created", "description": "When a new review is created" },
+		{ "key": "review.updated", "label": "Review Updated", "description": "When a review is updated" },
+		{ "key": "review.deleted", "label": "Review Deleted", "description": "When a review is deleted" },
+		// Organizations
 		{ "key": "organization.verified", "label": "Organization Verified", "description": "When an organization is verified" },
+		{ "key": "organization.created", "label": "Organization Created", "description": "When a new organization is created" },
+		{ "key": "organization.updated", "label": "Organization Updated", "description": "When an organization profile is updated" },
+		// Payments
 		{ "key": "payment.succeeded", "label": "Payment Succeeded", "description": "When a payment succeeds" },
 		{ "key": "payment.failed", "label": "Payment Failed", "description": "When a payment fails" },
+		{ "key": "payment.refunded", "label": "Payment Refunded", "description": "When a payment is refunded" },
+		{ "key": "payment.disputed", "label": "Payment Disputed", "description": "When a payment dispute is opened" },
+		// Users
+		{ "key": "user.registered", "label": "User Registered", "description": "When a new user account is created" },
+		{ "key": "user.verified", "label": "User Verified", "description": "When a user account is verified" },
+		{ "key": "user.deleted", "label": "User Deleted", "description": "When a user account is deleted (GDPR erasure)" },
+		{ "key": "user.banned", "label": "User Banned", "description": "When a user is banned" },
+		{ "key": "user.unbanned", "label": "User Unbanned", "description": "When a user ban is lifted" },
+		{ "key": "user.profile_updated", "label": "User Profile Updated", "description": "When a user updates their profile" },
+		// Comments
+		{ "key": "comment.created", "label": "Comment Created", "description": "When a new comment is posted" },
+		{ "key": "comment.updated", "label": "Comment Updated", "description": "When a comment is edited" },
+		{ "key": "comment.deleted", "label": "Comment Deleted", "description": "When a comment is deleted" },
+		{ "key": "comment.liked", "label": "Comment Liked", "description": "When a comment receives a like" },
+		// Forum
+		{ "key": "forum.thread.created", "label": "Forum Thread Created", "description": "When a new forum thread is created" },
+		{ "key": "forum.thread.updated", "label": "Forum Thread Updated", "description": "When a forum thread is edited" },
+		{ "key": "forum.thread.deleted", "label": "Forum Thread Deleted", "description": "When a forum thread is deleted" },
+		{ "key": "forum.thread.solved", "label": "Forum Thread Solved", "description": "When a forum thread is marked as solved" },
+		{ "key": "forum.reply.created", "label": "Forum Reply Created", "description": "When a new reply is posted in a forum thread" },
+		{ "key": "forum.reply.updated", "label": "Forum Reply Updated", "description": "When a forum reply is edited" },
+		{ "key": "forum.reply.deleted", "label": "Forum Reply Deleted", "description": "When a forum reply is deleted" },
+		{ "key": "forum.vote.cast", "label": "Forum Vote Cast", "description": "When a user votes on a forum thread or reply" },
+		// Spaces
+		{ "key": "space.created", "label": "Space Created", "description": "When a new space is created" },
+		{ "key": "space.updated", "label": "Space Updated", "description": "When a space profile is updated" },
+		{ "key": "space.deleted", "label": "Space Deleted", "description": "When a space is deleted" },
+		{ "key": "space.joined", "label": "Space Joined", "description": "When a user joins a space" },
+		{ "key": "space.left", "label": "Space Left", "description": "When a user leaves a space" },
+		// Wallet
+		{ "key": "wallet.points.earned", "label": "Points Earned", "description": "When a user earns wallet points" },
+		{ "key": "wallet.points.spent", "label": "Points Spent", "description": "When a user spends wallet points" },
+		{ "key": "wallet.points.adjusted", "label": "Points Adjusted", "description": "When an admin adjusts a user's wallet points" },
+		{ "key": "wallet.converted", "label": "Wallet Converted", "description": "When a user converts between wallet currencies" },
+		// Moderation
+		{ "key": "moderation.report.created", "label": "Report Created", "description": "When a moderation report is filed" },
+		{ "key": "moderation.report.resolved", "label": "Report Resolved", "description": "When a moderation report is resolved" },
+		{ "key": "moderation.content.removed", "label": "Content Removed", "description": "When content is removed by moderation" },
+		{ "key": "moderation.user.suspended", "label": "User Suspended", "description": "When a user is suspended by moderation" },
+		// Subscriptions
+		{ "key": "subscription.created", "label": "Subscription Created", "description": "When a new subscription is created" },
+		{ "key": "subscription.cancelled", "label": "Subscription Cancelled", "description": "When a subscription is cancelled" },
+		{ "key": "subscription.renewed", "label": "Subscription Renewed", "description": "When a subscription is renewed" },
+		{ "key": "subscription.expired", "label": "Subscription Expired", "description": "When a subscription expires" },
+		// Newsletter
+		{ "key": "newsletter.subscribed", "label": "Newsletter Subscribed", "description": "When a user subscribes to the newsletter" },
+		{ "key": "newsletter.unsubscribed", "label": "Newsletter Unsubscribed", "description": "When a user unsubscribes from the newsletter" },
+		// Affiliate
+		{ "key": "affiliate.referral.created", "label": "Referral Created", "description": "When a new affiliate referral is created" },
+		{ "key": "affiliate.commission.earned", "label": "Commission Earned", "description": "When an affiliate commission is earned" },
+		{ "key": "affiliate.payout.requested", "label": "Payout Requested", "description": "When an affiliate payout is requested" },
+		// AI
+		{ "key": "ai.content.generated", "label": "AI Content Generated", "description": "When AI generates content" },
+		{ "key": "ai.moderation.flagged", "label": "AI Moderation Flagged", "description": "When AI flags content for moderation" },
+		// DM
+		{ "key": "dm.message.sent", "label": "DM Sent", "description": "When a direct message is sent" },
+		{ "key": "dm.conversation.created", "label": "DM Conversation Created", "description": "When a new DM conversation is created" },
+		// Ads
+		{ "key": "ad.campaign.created", "label": "Ad Campaign Created", "description": "When a new ad campaign is created" },
+		{ "key": "ad.campaign.started", "label": "Ad Campaign Started", "description": "When an ad campaign goes live" },
+		{ "key": "ad.campaign.ended", "label": "Ad Campaign Ended", "description": "When an ad campaign ends" },
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": events})

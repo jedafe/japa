@@ -723,6 +723,40 @@ func (q *Queries) GetContentScore(ctx context.Context, contentID pgtype.UUID) (C
 	return i, err
 }
 
+const getContentSpaces = `-- name: GetContentSpaces :many
+SELECT cs.space_id, cs.is_primary
+FROM content_spaces cs
+WHERE cs.content_id = $1
+ORDER BY cs.is_primary DESC, cs.created_at ASC
+`
+
+type GetContentSpacesRow struct {
+	SpaceID   pgtype.UUID `json:"space_id"`
+	IsPrimary bool        `json:"is_primary"`
+}
+
+// Returns all space assignments for a content item (Section 14: content_spaces).
+// Used by feed fan-out (Section 32) to distribute a post to every assigned space.
+func (q *Queries) GetContentSpaces(ctx context.Context, contentID pgtype.UUID) ([]GetContentSpacesRow, error) {
+	rows, err := q.db.Query(ctx, getContentSpaces, contentID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetContentSpacesRow
+	for rows.Next() {
+		var i GetContentSpacesRow
+		if err := rows.Scan(&i.SpaceID, &i.IsPrimary); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getContentTitleAndBody = `-- name: GetContentTitleAndBody :one
 SELECT COALESCE(title, '') AS title, COALESCE(body, '') AS body
 FROM contents
@@ -772,6 +806,69 @@ func (q *Queries) GetJSONLDTemplate(ctx context.Context, arg GetJSONLDTemplatePa
 		&i.IsActive,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getPublicAuthorAnalytics = `-- name: GetPublicAuthorAnalytics :one
+SELECT
+    COALESCE(SUM(c.view_count), 0)::int AS total_views,
+    COALESCE(SUM(c.share_count), 0)::int AS total_shares,
+    COUNT(c.id)::int AS total_posts,
+    COALESCE((
+        SELECT COUNT(*)::int FROM reactions r
+        WHERE r.tenant_id = $1
+          AND r.entity_type = 'content'
+          AND r.entity_id IN (
+              SELECT c2.id FROM contents c2
+              WHERE c2.tenant_id = $1
+                AND c2.author_id = $2
+                AND c2.status = 'published'
+                AND c2.visibility = 'public'
+                AND c2.deleted_at IS NULL
+          )
+    ), 0)::int AS total_likes,
+    u.follower_count::int AS total_followers,
+    (SELECT COUNT(*)::int FROM follows f
+      WHERE f.tenant_id = $1 AND f.follower_id = u.id) AS total_following
+FROM contents c
+RIGHT JOIN users u ON u.id = $2 AND u.tenant_id = $1
+WHERE c.tenant_id = $1
+  AND c.author_id = $2
+  AND c.status = 'published'
+  AND c.visibility = 'public'
+  AND c.deleted_at IS NULL
+`
+
+type GetPublicAuthorAnalyticsParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	AuthorID pgtype.UUID `json:"author_id"`
+}
+
+type GetPublicAuthorAnalyticsRow struct {
+	TotalViews     int32 `json:"total_views"`
+	TotalShares    int32 `json:"total_shares"`
+	TotalPosts     int32 `json:"total_posts"`
+	TotalLikes     int32 `json:"total_likes"`
+	TotalFollowers int32 `json:"total_followers"`
+	TotalFollowing int32 `json:"total_following"`
+}
+
+// Public profile Analytics tab (GET /users/{id}/analytics): aggregates
+// published+public content stats for the profile owner. Soft-deleted and
+// non-public/draft content is excluded. total_likes counts reactions on the
+// author's published+public content. Follower/following counts come from the
+// users table / follows subquery so the analytics response is self-contained.
+func (q *Queries) GetPublicAuthorAnalytics(ctx context.Context, arg GetPublicAuthorAnalyticsParams) (GetPublicAuthorAnalyticsRow, error) {
+	row := q.db.QueryRow(ctx, getPublicAuthorAnalytics, arg.TenantID, arg.AuthorID)
+	var i GetPublicAuthorAnalyticsRow
+	err := row.Scan(
+		&i.TotalViews,
+		&i.TotalShares,
+		&i.TotalPosts,
+		&i.TotalLikes,
+		&i.TotalFollowers,
+		&i.TotalFollowing,
 	)
 	return i, err
 }
@@ -2329,6 +2426,124 @@ func (q *Queries) ScheduleContent(ctx context.Context, arg ScheduleContentParams
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const searchContentsBySpace = `-- name: SearchContentsBySpace :many
+SELECT id, tenant_id, author_id, space_id, content_type, title, slug, body, body_html,
+       field_values, content_hash, geo_space_id, header_image_id, featured_image_id,
+       canonical_url, meta_title, meta_description, og_image_url, seo_indexable,
+       status, visibility, is_locked, is_pinned, read_time_minutes,
+       view_count, comment_count, share_count, reshare_count, publish_at, published_at,
+       created_at, updated_at
+FROM contents
+WHERE tenant_id = $1 AND space_id = $2
+  AND deleted_at IS NULL
+  AND auto_hidden = false
+  AND title ILIKE '%' || $3 || '%'
+ORDER BY created_at DESC, id DESC
+LIMIT $5 OFFSET $4
+`
+
+type SearchContentsBySpaceParams struct {
+	TenantID   pgtype.UUID `json:"tenant_id"`
+	SpaceID    pgtype.UUID `json:"space_id"`
+	Query      *string     `json:"query"`
+	PageOffset int32       `json:"page_offset"`
+	PageLimit  int32       `json:"page_limit"`
+}
+
+type SearchContentsBySpaceRow struct {
+	ID              pgtype.UUID        `json:"id"`
+	TenantID        pgtype.UUID        `json:"tenant_id"`
+	AuthorID        pgtype.UUID        `json:"author_id"`
+	SpaceID         pgtype.UUID        `json:"space_id"`
+	ContentType     string             `json:"content_type"`
+	Title           string             `json:"title"`
+	Slug            string             `json:"slug"`
+	Body            string             `json:"body"`
+	BodyHtml        string             `json:"body_html"`
+	FieldValues     []byte             `json:"field_values"`
+	ContentHash     *string            `json:"content_hash"`
+	GeoSpaceID      pgtype.UUID        `json:"geo_space_id"`
+	HeaderImageID   pgtype.UUID        `json:"header_image_id"`
+	FeaturedImageID pgtype.UUID        `json:"featured_image_id"`
+	CanonicalUrl    *string            `json:"canonical_url"`
+	MetaTitle       *string            `json:"meta_title"`
+	MetaDescription *string            `json:"meta_description"`
+	OgImageUrl      *string            `json:"og_image_url"`
+	SeoIndexable    bool               `json:"seo_indexable"`
+	Status          string             `json:"status"`
+	Visibility      string             `json:"visibility"`
+	IsLocked        bool               `json:"is_locked"`
+	IsPinned        bool               `json:"is_pinned"`
+	ReadTimeMinutes int32              `json:"read_time_minutes"`
+	ViewCount       int32              `json:"view_count"`
+	CommentCount    int32              `json:"comment_count"`
+	ShareCount      int32              `json:"share_count"`
+	ReshareCount    int32              `json:"reshare_count"`
+	PublishAt       pgtype.Timestamptz `json:"publish_at"`
+	PublishedAt     pgtype.Timestamptz `json:"published_at"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) SearchContentsBySpace(ctx context.Context, arg SearchContentsBySpaceParams) ([]SearchContentsBySpaceRow, error) {
+	rows, err := q.db.Query(ctx, searchContentsBySpace,
+		arg.TenantID,
+		arg.SpaceID,
+		arg.Query,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SearchContentsBySpaceRow
+	for rows.Next() {
+		var i SearchContentsBySpaceRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.AuthorID,
+			&i.SpaceID,
+			&i.ContentType,
+			&i.Title,
+			&i.Slug,
+			&i.Body,
+			&i.BodyHtml,
+			&i.FieldValues,
+			&i.ContentHash,
+			&i.GeoSpaceID,
+			&i.HeaderImageID,
+			&i.FeaturedImageID,
+			&i.CanonicalUrl,
+			&i.MetaTitle,
+			&i.MetaDescription,
+			&i.OgImageUrl,
+			&i.SeoIndexable,
+			&i.Status,
+			&i.Visibility,
+			&i.IsLocked,
+			&i.IsPinned,
+			&i.ReadTimeMinutes,
+			&i.ViewCount,
+			&i.CommentCount,
+			&i.ShareCount,
+			&i.ReshareCount,
+			&i.PublishAt,
+			&i.PublishedAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const setBookmarkFolder = `-- name: SetBookmarkFolder :exec

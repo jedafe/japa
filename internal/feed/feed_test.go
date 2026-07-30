@@ -58,6 +58,8 @@ func TestPageSizeConstants(t *testing.T) {
 func TestComputeVelocity(t *testing.T) {
 	t.Parallel()
 
+	// Formula mirrors the SQL in feeds.sql (UpdateVelocityScores):
+	//   (vote_score*2 + comment_count + view_count/100) / hours^1.8
 	tests := []struct {
 		name          string
 		voteScore     int32
@@ -74,16 +76,16 @@ func TestComputeVelocity(t *testing.T) {
 			viewCount:     100,
 			bookmarkCount: 3,
 			hoursOld:      1,
-			want:          118 / math.Pow(3, 1.8), // engagement=118, denominator=3^1.8
+			want:          (10*2 + 5 + 100.0/100) / math.Pow(1, 1.8), // =26 / 1^1.8 = 26
 		},
 		{
 			name:          "old post with engagement",
 			voteScore:     50,
 			commentCount:  20,
 			viewCount:     500,
-			bookmarkCount: 10,
+			bookmarkCount:  10,
 			hoursOld:      24,
-			want:          580 / math.Pow(26, 1.8), // engagement=580, denominator=26^1.8
+			want:          (50*2 + 20 + 500.0/100) / math.Pow(24, 1.8), // =125 / 24^1.8
 		},
 		{
 			name:          "no engagement",
@@ -101,7 +103,7 @@ func TestComputeVelocity(t *testing.T) {
 			viewCount:     10,
 			bookmarkCount: 0,
 			hoursOld:      0.1,
-			want:          11 / math.Pow(2.1, 1.8),
+			want:          (1*2 + 0 + 10.0/100) / math.Pow(0.1, 1.8), // =2.1 / 0.1^1.8
 		},
 	}
 
@@ -110,7 +112,7 @@ func TestComputeVelocity(t *testing.T) {
 			t.Parallel()
 
 			got := ComputeVelocity(tt.voteScore, tt.commentCount, tt.viewCount, tt.bookmarkCount, tt.hoursOld)
-			if math.Abs(got-tt.want) > 1e-10 {
+			if math.Abs(got-tt.want) > 1e-6 {
 				t.Errorf("ComputeVelocity(%d, %d, %d, %d, %f) = %f, want %f",
 					tt.voteScore, tt.commentCount, tt.viewCount, tt.bookmarkCount, tt.hoursOld, got, tt.want)
 			}

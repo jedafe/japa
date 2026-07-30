@@ -704,8 +704,7 @@ func (h *Handlers) HandleApproveHITL(w http.ResponseWriter, r *http.Request) {
 
 	if err := ApproveReview(r.Context(), h.Store, reviewID, user.UserID); err != nil {
 		slog.Error("approving HITL review", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
-
+		writeError(w, http.StatusInternalServerError, "internal_error", "An unexpected error occurred")
 		return
 	}
 
@@ -738,8 +737,7 @@ func (h *Handlers) HandleRejectHITL(w http.ResponseWriter, r *http.Request) {
 
 	if err := RejectReview(r.Context(), h.Store, reviewID, user.UserID, input.Reason); err != nil {
 		slog.Error("rejecting HITL review", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
-
+		writeError(w, http.StatusInternalServerError, "internal_error", "An unexpected error occurred")
 		return
 	}
 

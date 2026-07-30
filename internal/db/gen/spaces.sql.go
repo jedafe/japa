@@ -53,7 +53,7 @@ SELECT s.id, s.tenant_id, s.parent_id, s.space_type_id, s.name, s.slug, s.descri
        s.wiki_content, s.logo_media_id, s.header_image_id, s.geo_code, s.level,
        s.member_count, s.post_count, s.follower_count, s.visibility, s.posting_perm,
        s.replying_perm, s.commenting_perm, s.joining_perm, s.status, s.created_at,
-       s.updated_at,
+       s.updated_at, s.deleted_at,
        COALESCE(u.username, '') AS owner,
        COALESCE(u.id::text, '') AS owner_id,
        COALESCE(st.name, '') AS space_type
@@ -61,7 +61,7 @@ FROM spaces s
 LEFT JOIN space_members sm ON sm.space_id = s.id AND sm.tenant_id = s.tenant_id AND sm.role = 'owner'
 LEFT JOIN users u ON u.id = sm.user_id AND u.tenant_id = s.tenant_id
 LEFT JOIN space_types st ON st.id = s.space_type_id AND st.tenant_id = s.tenant_id
-WHERE s.tenant_id = $1
+WHERE s.tenant_id = $1 AND s.deleted_at IS NULL
 ORDER BY s.created_at DESC, s.id DESC
 LIMIT $3 OFFSET $2
 `
@@ -96,6 +96,7 @@ type AdminListSpacesRow struct {
 	Status         string             `json:"status"`
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
 	Owner          string             `json:"owner"`
 	OwnerID        interface{}        `json:"owner_id"`
 	SpaceType      string             `json:"space_type"`
@@ -134,6 +135,7 @@ func (q *Queries) AdminListSpaces(ctx context.Context, arg AdminListSpacesParams
 			&i.Status,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.DeletedAt,
 			&i.Owner,
 			&i.OwnerID,
 			&i.SpaceType,
@@ -151,7 +153,7 @@ func (q *Queries) AdminListSpaces(ctx context.Context, arg AdminListSpacesParams
 const adminListSpacesCount = `-- name: AdminListSpacesCount :one
 SELECT COUNT(*) AS total
 FROM spaces s
-WHERE s.tenant_id = $1
+WHERE s.tenant_id = $1 AND s.deleted_at IS NULL
 `
 
 func (q *Queries) AdminListSpacesCount(ctx context.Context, tenantID pgtype.UUID) (int64, error) {
@@ -214,6 +216,28 @@ func (q *Queries) CheckSpaceMembership(ctx context.Context, arg CheckSpaceMember
 	return is_member, err
 }
 
+const checkSpaceOwnership = `-- name: CheckSpaceOwnership :one
+SELECT EXISTS(
+    SELECT 1 FROM space_members
+    WHERE space_id = $1 AND user_id = $2 AND tenant_id = $3
+      AND role = 'owner'
+) AS is_owner
+`
+
+type CheckSpaceOwnershipParams struct {
+	SpaceID  pgtype.UUID `json:"space_id"`
+	UserID   pgtype.UUID `json:"user_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+// Returns true if the user is the owner (role='owner') of the space.
+func (q *Queries) CheckSpaceOwnership(ctx context.Context, arg CheckSpaceOwnershipParams) (bool, error) {
+	row := q.db.QueryRow(ctx, checkSpaceOwnership, arg.SpaceID, arg.UserID, arg.TenantID)
+	var is_owner bool
+	err := row.Scan(&is_owner)
+	return is_owner, err
+}
+
 const countSpaceMembers = `-- name: CountSpaceMembers :one
 SELECT COUNT(*) AS count
 FROM space_members
@@ -250,6 +274,27 @@ func (q *Queries) CountSpacePublishedContent(ctx context.Context, arg CountSpace
 	return count, err
 }
 
+const countSpacesByOwnerUser = `-- name: CountSpacesByOwnerUser :one
+SELECT COUNT(*)::int AS count
+FROM spaces s
+JOIN space_members sm ON sm.space_id = s.id AND sm.tenant_id = s.tenant_id
+WHERE sm.user_id = $1 AND sm.tenant_id = $2 AND sm.role = 'owner'
+  AND s.deleted_at IS NULL
+`
+
+type CountSpacesByOwnerUserParams struct {
+	UserID   pgtype.UUID `json:"user_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+// Counts spaces the user owns (role='owner'), for max_spaces_creatable quota.
+func (q *Queries) CountSpacesByOwnerUser(ctx context.Context, arg CountSpacesByOwnerUserParams) (int32, error) {
+	row := q.db.QueryRow(ctx, countSpacesByOwnerUser, arg.UserID, arg.TenantID)
+	var count int32
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createSpace = `-- name: CreateSpace :one
 INSERT INTO spaces (
     tenant_id, parent_id, space_type_id, name, slug, description, wiki_content,
@@ -262,7 +307,7 @@ INSERT INTO spaces (
 RETURNING id, tenant_id, parent_id, space_type_id, name, slug, description, wiki_content,
           logo_media_id, header_image_id, geo_code, level, member_count, post_count,
           follower_count, visibility, posting_perm, replying_perm, commenting_perm,
-          joining_perm, status, created_at, updated_at
+          joining_perm, status, created_at, updated_at, deleted_at
 `
 
 type CreateSpaceParams struct {
@@ -326,6 +371,7 @@ func (q *Queries) CreateSpace(ctx context.Context, arg CreateSpaceParams) (Space
 		&i.Status,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DeletedAt,
 	)
 	return i, err
 }
@@ -424,8 +470,8 @@ func (q *Queries) DecrementSpaceFollowerCount(ctx context.Context, arg Decrement
 }
 
 const deleteSpace = `-- name: DeleteSpace :exec
-DELETE FROM spaces
-WHERE id = $1 AND tenant_id = $2
+UPDATE spaces SET deleted_at = now(), status = 'deleted'
+WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
 `
 
 type DeleteSpaceParams struct {
@@ -433,6 +479,8 @@ type DeleteSpaceParams struct {
 	TenantID pgtype.UUID `json:"tenant_id"`
 }
 
+// Soft-delete: set deleted_at instead of hard-deleting (Rule 11, ADR-014).
+// The account:deletion_cleanup Asynq task may hard-delete after GDPR erasure.
 func (q *Queries) DeleteSpace(ctx context.Context, arg DeleteSpaceParams) error {
 	_, err := q.db.Exec(ctx, deleteSpace, arg.ID, arg.TenantID)
 	return err
@@ -473,10 +521,10 @@ SELECT s.id, s.tenant_id, s.parent_id, s.space_type_id, s.name, s.slug, s.descri
        s.wiki_content, s.logo_media_id, s.header_image_id, s.geo_code, s.level,
        s.member_count, s.post_count, s.follower_count, s.visibility, s.posting_perm,
        s.replying_perm, s.commenting_perm, s.joining_perm, s.status, s.created_at,
-       s.updated_at
+       s.updated_at, s.deleted_at
 FROM spaces s
 JOIN space_parent_spaces sps ON sps.space_id = s.id
-WHERE sps.parent_space_id = $1 AND s.tenant_id = $2
+WHERE sps.parent_space_id = $1 AND s.tenant_id = $2 AND s.deleted_at IS NULL
 ORDER BY s.name
 `
 
@@ -518,6 +566,7 @@ func (q *Queries) GetChildSpacesByParentID(ctx context.Context, arg GetChildSpac
 			&i.Status,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.DeletedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -534,10 +583,10 @@ SELECT s.id, s.tenant_id, s.parent_id, s.space_type_id, s.name, s.slug, s.descri
        s.wiki_content, s.logo_media_id, s.header_image_id, s.geo_code, s.level,
        s.member_count, s.post_count, s.follower_count, s.visibility, s.posting_perm,
        s.replying_perm, s.commenting_perm, s.joining_perm, s.status, s.created_at,
-       s.updated_at
+       s.updated_at, s.deleted_at
 FROM spaces s
 JOIN space_parent_spaces sps ON sps.parent_space_id = s.id
-WHERE sps.space_id = $1 AND s.tenant_id = $2
+WHERE sps.space_id = $1 AND s.tenant_id = $2 AND s.deleted_at IS NULL
 ORDER BY s.name
 `
 
@@ -579,6 +628,7 @@ func (q *Queries) GetParentSpacesBySpaceID(ctx context.Context, arg GetParentSpa
 			&i.Status,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.DeletedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -624,9 +674,9 @@ const getSpaceByID = `-- name: GetSpaceByID :one
 SELECT id, tenant_id, parent_id, space_type_id, name, slug, description, wiki_content,
        logo_media_id, header_image_id, geo_code, level, member_count, post_count,
        follower_count, visibility, posting_perm, replying_perm, commenting_perm,
-       joining_perm, status, created_at, updated_at
+       joining_perm, status, created_at, updated_at, deleted_at
 FROM spaces
-WHERE id = $1 AND tenant_id = $2
+WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
 `
 
 type GetSpaceByIDParams struct {
@@ -661,6 +711,7 @@ func (q *Queries) GetSpaceByID(ctx context.Context, arg GetSpaceByIDParams) (Spa
 		&i.Status,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DeletedAt,
 	)
 	return i, err
 }
@@ -669,9 +720,9 @@ const getSpaceBySlug = `-- name: GetSpaceBySlug :one
 SELECT id, tenant_id, parent_id, space_type_id, name, slug, description, wiki_content,
        logo_media_id, header_image_id, geo_code, level, member_count, post_count,
        follower_count, visibility, posting_perm, replying_perm, commenting_perm,
-       joining_perm, status, created_at, updated_at
+       joining_perm, status, created_at, updated_at, deleted_at
 FROM spaces
-WHERE slug = $1 AND tenant_id = $2
+WHERE slug = $1 AND tenant_id = $2 AND deleted_at IS NULL
 `
 
 type GetSpaceBySlugParams struct {
@@ -706,6 +757,7 @@ func (q *Queries) GetSpaceBySlug(ctx context.Context, arg GetSpaceBySlugParams) 
 		&i.Status,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DeletedAt,
 	)
 	return i, err
 }
@@ -794,6 +846,28 @@ func (q *Queries) GetSpaceTypeBySlug(ctx context.Context, arg GetSpaceTypeBySlug
 		&i.IsUniversity,
 	)
 	return i, err
+}
+
+const getUserMaxSpacesCreatable = `-- name: GetUserMaxSpacesCreatable :one
+SELECT COALESCE(MAX(ug.max_spaces_creatable), 0)::int AS max_spaces_creatable
+FROM user_group_memberships ugm
+JOIN user_groups ug ON ugm.group_id = ug.id
+WHERE ugm.tenant_id = $1 AND ugm.user_id = $2
+`
+
+type GetUserMaxSpacesCreatableParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	UserID   pgtype.UUID `json:"user_id"`
+}
+
+// Returns the max_spaces_creatable from the user's group. If the user is in
+// multiple groups, returns the highest value (most permissive). -1 = unlimited.
+// Ref: Section 03 line 44, §26 quantity gate.
+func (q *Queries) GetUserMaxSpacesCreatable(ctx context.Context, arg GetUserMaxSpacesCreatableParams) (int32, error) {
+	row := q.db.QueryRow(ctx, getUserMaxSpacesCreatable, arg.TenantID, arg.UserID)
+	var max_spaces_creatable int32
+	err := row.Scan(&max_spaces_creatable)
+	return max_spaces_creatable, err
 }
 
 const incrementSpaceCount = `-- name: IncrementSpaceCount :exec
@@ -886,9 +960,9 @@ const listChildSpaces = `-- name: ListChildSpaces :many
 SELECT id, tenant_id, parent_id, space_type_id, name, slug, description, wiki_content,
        logo_media_id, header_image_id, geo_code, level, member_count, post_count,
        follower_count, visibility, posting_perm, replying_perm, commenting_perm,
-       joining_perm, status, created_at, updated_at
+       joining_perm, status, created_at, updated_at, deleted_at
 FROM spaces
-WHERE parent_id = $1 AND tenant_id = $2
+WHERE parent_id = $1 AND tenant_id = $2 AND deleted_at IS NULL
 ORDER BY created_at ASC, id ASC
 `
 
@@ -930,6 +1004,7 @@ func (q *Queries) ListChildSpaces(ctx context.Context, arg ListChildSpacesParams
 			&i.Status,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.DeletedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -946,10 +1021,11 @@ SELECT s.id, s.tenant_id, s.parent_id, s.space_type_id, s.name, s.slug, s.descri
        s.wiki_content, s.logo_media_id, s.header_image_id, s.geo_code, s.level,
        s.member_count, s.post_count, s.follower_count, s.visibility, s.posting_perm,
        s.replying_perm, s.commenting_perm, s.joining_perm, s.status, s.created_at,
-       s.updated_at
+       s.updated_at, s.deleted_at
 FROM spaces s
 JOIN space_parent_spaces sps ON sps.space_id = s.id
 WHERE sps.parent_space_id = $1 AND s.tenant_id = $2 AND s.level = 'city'
+  AND s.deleted_at IS NULL
 ORDER BY s.name
 `
 
@@ -994,6 +1070,7 @@ func (q *Queries) ListCitiesByStateID(ctx context.Context, arg ListCitiesByState
 			&i.Status,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.DeletedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -1056,11 +1133,11 @@ SELECT s.id, s.tenant_id, s.parent_id, s.space_type_id, s.name, s.slug, s.descri
        s.wiki_content, s.logo_media_id, s.header_image_id, s.geo_code, s.level,
        s.member_count, s.post_count, s.follower_count, s.visibility, s.posting_perm,
        s.replying_perm, s.commenting_perm, s.joining_perm, s.status, s.created_at,
-       s.updated_at
+       s.updated_at, s.deleted_at, sm.role AS member_role
 FROM spaces s
 JOIN space_members sm ON sm.space_id = s.id AND sm.tenant_id = s.tenant_id
 WHERE sm.user_id = $1 AND s.tenant_id = $2
-  AND s.visibility = 'public' AND s.status = 'active'
+  AND s.visibility = 'public' AND s.status = 'active' AND s.deleted_at IS NULL
 ORDER BY sm.joined_at DESC, s.id DESC
 LIMIT $4 OFFSET $3
 `
@@ -1072,12 +1149,41 @@ type ListPublicSpacesByMemberUserParams struct {
 	PageLimit  int32       `json:"page_limit"`
 }
 
+type ListPublicSpacesByMemberUserRow struct {
+	ID             pgtype.UUID        `json:"id"`
+	TenantID       pgtype.UUID        `json:"tenant_id"`
+	ParentID       pgtype.UUID        `json:"parent_id"`
+	SpaceTypeID    pgtype.UUID        `json:"space_type_id"`
+	Name           string             `json:"name"`
+	Slug           string             `json:"slug"`
+	Description    *string            `json:"description"`
+	WikiContent    []byte             `json:"wiki_content"`
+	LogoMediaID    pgtype.UUID        `json:"logo_media_id"`
+	HeaderImageID  pgtype.UUID        `json:"header_image_id"`
+	GeoCode        *string            `json:"geo_code"`
+	Level          string             `json:"level"`
+	MemberCount    int32              `json:"member_count"`
+	PostCount      int32              `json:"post_count"`
+	FollowerCount  int32              `json:"follower_count"`
+	Visibility     string             `json:"visibility"`
+	PostingPerm    string             `json:"posting_perm"`
+	ReplyingPerm   string             `json:"replying_perm"`
+	CommentingPerm string             `json:"commenting_perm"`
+	JoiningPerm    string             `json:"joining_perm"`
+	Status         string             `json:"status"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
+	MemberRole     string             `json:"member_role"`
+}
+
 // =====================
 // Public Profile Spaces Tab
 // =====================
 // Public profile Spaces tab: PUBLIC, active spaces the user is a member of.
 // Excludes 'members'/'private' visibility and non-active spaces. Public-safe.
-func (q *Queries) ListPublicSpacesByMemberUser(ctx context.Context, arg ListPublicSpacesByMemberUserParams) ([]Space, error) {
+// Includes the member's role (sm.role) so the profile card can show it.
+func (q *Queries) ListPublicSpacesByMemberUser(ctx context.Context, arg ListPublicSpacesByMemberUserParams) ([]ListPublicSpacesByMemberUserRow, error) {
 	rows, err := q.db.Query(ctx, listPublicSpacesByMemberUser,
 		arg.UserID,
 		arg.TenantID,
@@ -1088,9 +1194,9 @@ func (q *Queries) ListPublicSpacesByMemberUser(ctx context.Context, arg ListPubl
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Space
+	var items []ListPublicSpacesByMemberUserRow
 	for rows.Next() {
-		var i Space
+		var i ListPublicSpacesByMemberUserRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.TenantID,
@@ -1115,6 +1221,8 @@ func (q *Queries) ListPublicSpacesByMemberUser(ctx context.Context, arg ListPubl
 			&i.Status,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.DeletedAt,
+			&i.MemberRole,
 		); err != nil {
 			return nil, err
 		}
@@ -1415,9 +1523,9 @@ const listSpacesByLevel = `-- name: ListSpacesByLevel :many
 SELECT id, tenant_id, parent_id, space_type_id, name, slug, description, wiki_content,
        logo_media_id, header_image_id, geo_code, level, member_count, post_count,
        follower_count, visibility, posting_perm, replying_perm, commenting_perm,
-       joining_perm, status, created_at, updated_at
+       joining_perm, status, created_at, updated_at, deleted_at
 FROM spaces
-WHERE tenant_id = $1 AND level = $2
+WHERE tenant_id = $1 AND level = $2 AND deleted_at IS NULL
 ORDER BY created_at DESC, id DESC
 `
 
@@ -1459,6 +1567,7 @@ func (q *Queries) ListSpacesByLevel(ctx context.Context, arg ListSpacesByLevelPa
 			&i.Status,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.DeletedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -1475,20 +1584,22 @@ SELECT s.id, s.tenant_id, s.parent_id, s.space_type_id, s.name, s.slug, s.descri
        s.wiki_content, s.logo_media_id, s.header_image_id, s.geo_code, s.level,
        s.member_count, s.post_count, s.follower_count, s.visibility, s.posting_perm,
        s.replying_perm, s.commenting_perm, s.joining_perm, s.status, s.created_at,
-       s.updated_at
+       s.updated_at, s.deleted_at
 FROM spaces s
 JOIN space_members sm ON sm.space_id = s.id
-WHERE sm.user_id = $1 AND sm.tenant_id = $2
+WHERE sm.user_id = $1 AND sm.tenant_id = $2 AND s.deleted_at IS NULL
+  AND ($3::text = '' OR s.name ILIKE '%' || $3 || '%' OR s.slug ILIKE '%' || $3 || '%')
 ORDER BY sm.joined_at DESC, s.id DESC
 `
 
 type ListSpacesByMemberUserParams struct {
 	UserID   pgtype.UUID `json:"user_id"`
 	TenantID pgtype.UUID `json:"tenant_id"`
+	Search   string      `json:"search"`
 }
 
 func (q *Queries) ListSpacesByMemberUser(ctx context.Context, arg ListSpacesByMemberUserParams) ([]Space, error) {
-	rows, err := q.db.Query(ctx, listSpacesByMemberUser, arg.UserID, arg.TenantID)
+	rows, err := q.db.Query(ctx, listSpacesByMemberUser, arg.UserID, arg.TenantID, arg.Search)
 	if err != nil {
 		return nil, err
 	}
@@ -1520,6 +1631,7 @@ func (q *Queries) ListSpacesByMemberUser(ctx context.Context, arg ListSpacesByMe
 			&i.Status,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.DeletedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -1536,10 +1648,10 @@ SELECT s.id, s.tenant_id, s.parent_id, s.space_type_id, s.name, s.slug, s.descri
        s.wiki_content, s.logo_media_id, s.header_image_id, s.geo_code, s.level,
        s.member_count, s.post_count, s.follower_count, s.visibility, s.posting_perm,
        s.replying_perm, s.commenting_perm, s.joining_perm, s.status, s.created_at,
-       s.updated_at
+       s.updated_at, s.deleted_at
 FROM spaces s
 JOIN space_moderators sm ON sm.space_id = s.id
-WHERE sm.user_id = $1 AND sm.tenant_id = $2
+WHERE sm.user_id = $1 AND sm.tenant_id = $2 AND s.deleted_at IS NULL
 ORDER BY sm.created_at DESC, s.id DESC
 `
 
@@ -1581,6 +1693,72 @@ func (q *Queries) ListSpacesByModeratorUser(ctx context.Context, arg ListSpacesB
 			&i.Status,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.DeletedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listSpacesByOwnerUser = `-- name: ListSpacesByOwnerUser :many
+SELECT s.id, s.tenant_id, s.parent_id, s.space_type_id, s.name, s.slug, s.description,
+       s.wiki_content, s.logo_media_id, s.header_image_id, s.geo_code, s.level,
+       s.member_count, s.post_count, s.follower_count, s.visibility, s.posting_perm,
+       s.replying_perm, s.commenting_perm, s.joining_perm, s.status, s.created_at,
+       s.updated_at, s.deleted_at
+FROM spaces s
+JOIN space_members sm ON sm.space_id = s.id AND sm.tenant_id = s.tenant_id
+WHERE sm.user_id = $1 AND sm.tenant_id = $2 AND sm.role = 'owner'
+  AND s.deleted_at IS NULL
+ORDER BY sm.joined_at DESC, s.id DESC
+`
+
+type ListSpacesByOwnerUserParams struct {
+	UserID   pgtype.UUID `json:"user_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+// Spaces the caller owns (space_members.role = 'owner').
+// Catalog: GET /me/spaces/owned.
+func (q *Queries) ListSpacesByOwnerUser(ctx context.Context, arg ListSpacesByOwnerUserParams) ([]Space, error) {
+	rows, err := q.db.Query(ctx, listSpacesByOwnerUser, arg.UserID, arg.TenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Space
+	for rows.Next() {
+		var i Space
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.ParentID,
+			&i.SpaceTypeID,
+			&i.Name,
+			&i.Slug,
+			&i.Description,
+			&i.WikiContent,
+			&i.LogoMediaID,
+			&i.HeaderImageID,
+			&i.GeoCode,
+			&i.Level,
+			&i.MemberCount,
+			&i.PostCount,
+			&i.FollowerCount,
+			&i.Visibility,
+			&i.PostingPerm,
+			&i.ReplyingPerm,
+			&i.CommentingPerm,
+			&i.JoiningPerm,
+			&i.Status,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.DeletedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -1597,9 +1775,9 @@ const listSpacesByTenant = `-- name: ListSpacesByTenant :many
 SELECT id, tenant_id, parent_id, space_type_id, name, slug, description, wiki_content,
        logo_media_id, header_image_id, geo_code, level, member_count, post_count,
        follower_count, visibility, posting_perm, replying_perm, commenting_perm,
-       joining_perm, status, created_at, updated_at
+       joining_perm, status, created_at, updated_at, deleted_at
 FROM spaces
-WHERE tenant_id = $1
+WHERE tenant_id = $1 AND deleted_at IS NULL
 ORDER BY created_at DESC, id DESC
 `
 
@@ -1639,6 +1817,7 @@ func (q *Queries) ListSpacesByTenant(ctx context.Context, tenantID pgtype.UUID) 
 			&i.Status,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.DeletedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -1654,9 +1833,9 @@ const listSpacesByType = `-- name: ListSpacesByType :many
 SELECT id, tenant_id, parent_id, space_type_id, name, slug, description, wiki_content,
        logo_media_id, header_image_id, geo_code, level, member_count, post_count,
        follower_count, visibility, posting_perm, replying_perm, commenting_perm,
-       joining_perm, status, created_at, updated_at
+       joining_perm, status, created_at, updated_at, deleted_at
 FROM spaces
-WHERE tenant_id = $1 AND space_type_id = $2
+WHERE tenant_id = $1 AND space_type_id = $2 AND deleted_at IS NULL
 ORDER BY created_at DESC, id DESC
 `
 
@@ -1698,6 +1877,7 @@ func (q *Queries) ListSpacesByType(ctx context.Context, arg ListSpacesByTypePara
 			&i.Status,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.DeletedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -1714,12 +1894,13 @@ SELECT s.id, s.tenant_id, s.parent_id, s.space_type_id, s.name, s.slug, s.descri
        s.wiki_content, s.logo_media_id, s.header_image_id, s.geo_code, s.level,
        s.member_count, s.post_count, s.follower_count, s.visibility, s.posting_perm,
        s.replying_perm, s.commenting_perm, s.joining_perm, s.status, s.created_at,
-       s.updated_at
+       s.updated_at, s.deleted_at
 FROM spaces s
 JOIN space_parent_spaces sps ON sps.space_id = s.id
 JOIN spaces country ON country.id = sps.parent_space_id
 WHERE country.tenant_id = $1 AND country.level = 'country'
   AND country.geo_code = $2 AND s.level = 'state'
+  AND s.deleted_at IS NULL AND country.deleted_at IS NULL
 ORDER BY s.name
 `
 
@@ -1764,6 +1945,7 @@ func (q *Queries) ListStatesByCountryGeoCode(ctx context.Context, arg ListStates
 			&i.Status,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.DeletedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -1823,7 +2005,7 @@ func (q *Queries) RemoveSpaceModerator(ctx context.Context, arg RemoveSpaceModer
 
 const suggestParentSpaces = `-- name: SuggestParentSpaces :many
 SELECT s.id, s.name, s.slug FROM spaces s
-WHERE s.tenant_id = $1 AND s.status = 'active'
+WHERE s.tenant_id = $1 AND s.status = 'active' AND s.deleted_at IS NULL
   AND s.space_type_id IN (SELECT id FROM space_types WHERE slug = 'category')
 ORDER BY s.name LIMIT 20
 `
@@ -1927,11 +2109,11 @@ SET name = $1, description = $2, wiki_content = $3,
     geo_code = $4, visibility = $5, posting_perm = $6,
     replying_perm = $7, commenting_perm = $8, joining_perm = $9,
     status = $10
-WHERE id = $11 AND tenant_id = $12
+WHERE id = $11 AND tenant_id = $12 AND deleted_at IS NULL
 RETURNING id, tenant_id, parent_id, space_type_id, name, slug, description, wiki_content,
           logo_media_id, header_image_id, geo_code, level, member_count, post_count,
           follower_count, visibility, posting_perm, replying_perm, commenting_perm,
-          joining_perm, status, created_at, updated_at
+          joining_perm, status, created_at, updated_at, deleted_at
 `
 
 type UpdateSpaceParams struct {
@@ -1989,6 +2171,7 @@ func (q *Queries) UpdateSpace(ctx context.Context, arg UpdateSpaceParams) (Space
 		&i.Status,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DeletedAt,
 	)
 	return i, err
 }
@@ -2019,8 +2202,8 @@ func (q *Queries) UpdateSpaceJoinRequest(ctx context.Context, arg UpdateSpaceJoi
 const updateSpaceLogoMediaID = `-- name: UpdateSpaceLogoMediaID :one
 UPDATE spaces
 SET logo_media_id = $1
-WHERE id = $2 AND tenant_id = $3
-RETURNING id, tenant_id, parent_id, space_type_id, name, slug, description, wiki_content, logo_media_id, header_image_id, geo_code, level, member_count, post_count, follower_count, visibility, posting_perm, replying_perm, commenting_perm, joining_perm, status, created_at, updated_at
+WHERE id = $2 AND tenant_id = $3 AND deleted_at IS NULL
+RETURNING id, tenant_id, parent_id, space_type_id, name, slug, description, wiki_content, logo_media_id, header_image_id, geo_code, level, member_count, post_count, follower_count, visibility, posting_perm, replying_perm, commenting_perm, joining_perm, status, created_at, updated_at, deleted_at
 `
 
 type UpdateSpaceLogoMediaIDParams struct {
@@ -2057,6 +2240,7 @@ func (q *Queries) UpdateSpaceLogoMediaID(ctx context.Context, arg UpdateSpaceLog
 		&i.Status,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DeletedAt,
 	)
 	return i, err
 }
@@ -2119,7 +2303,7 @@ func (q *Queries) UpdateSpaceRule(ctx context.Context, arg UpdateSpaceRuleParams
 }
 
 const updateSpaceStatus = `-- name: UpdateSpaceStatus :exec
-UPDATE spaces SET status = $1, updated_at = now() WHERE id = $2 AND tenant_id = $3
+UPDATE spaces SET status = $1, updated_at = now() WHERE id = $2 AND tenant_id = $3 AND deleted_at IS NULL
 `
 
 type UpdateSpaceStatusParams struct {

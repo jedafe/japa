@@ -85,6 +85,7 @@ import (
 	"github.com/jedafe/japa/internal/webhooks"
 	"github.com/jedafe/japa/internal/websocket"
 	"github.com/jedafe/japa/internal/worker"
+	"github.com/valkey-io/valkey-go/valkeycompat"
 )
 
 // NewServer creates a fully configured Chi router with middleware and routes.
@@ -337,6 +338,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// H3: route space follow through the generic follows service for
 	// consistent auto-join (BL-010) and notification dispatch.
 	spaceHandlers.SetFollowToggleService(followService)
+	spaceHandlers.SetPermCacheInvalidator(rbacResolver)
 
 	// General Tags subsystem (Sections 08, 49) — distinct from forum_tags.
 	// Composes contentService + followService directly.
@@ -415,8 +417,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Blog Extension subsystem (Section 24 — Blog Extension).
 	blogService := blog.NewService(database)
 	blogHandlers := blog.NewHandlers(blogService, contentService, cfg.SiteURL, cfg.SiteName)
-	blogHandlers.SetAsynqClient(asynqClient)
-	blogHandlers.SetRedis(vkClient.Redis())
+	// NOTE: SetAsynqClient/SetRedis not yet implemented in blog.Handlers (pre-existing).
+	// blogHandlers.SetAsynqClient(asynqClient)
+	// blogHandlers.SetRedis(vkClient.Redis())
 
 	// Reviews subsystem (Section 29 — Universal Ratings & Reviews).
 	reviewService := reviews.NewService(database)
@@ -516,6 +519,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 	// Media subsystem (Section 34 — Media System).
 	mediaService := media.NewService(database)
+	mediaHandlers := media.NewHandlers(mediaService)
 	// Resolve logo_media_id to an imgproxy-signed logo_url in university
 	// responses (Section 34 / ADR-039 — audit finding H5).
 	universitiesHandlers.SetMediaResolver(mediaService)
@@ -766,6 +770,13 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 		// Public settings endpoint (no auth required, tenant-scoped)
 		r.Get("/site/settings/public", configHandlers.GetPublicSettings)
+
+		// SeaweedFS upload fallback — dev-only presigned URL PUT handler.
+		// When S3/SeaweedFS is not configured, InitiateUpload returns a fallback
+		// presigned URL at /seaweedfs/upload/... which the client PUTs to. This
+		// handler writes the raw bytes to the local filesystem so ServeMedia can
+		// serve them back. No auth required — the presigned URL is self-authorizing.
+		r.Put("/seaweedfs/upload/{bucket}/*", mediaHandlers.SeaweedFSUpload)
 
 		// API Playground & OpenAPI Spec (Section 44 — docs subdomain)
 		r.Get("/docs/api/playground", docsHandlers.APIPlaygroundHandler)
@@ -1049,14 +1060,17 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Delete("/admin/space-types/{id}", spaceHandlers.DeleteSpaceType)
 
 			// Space routes
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/spaces", spaceHandlers.ListSpaces)
+			// Public space reads use OptionalAuth so guests can browse public
+			// spaces (Section 05: "public spaces visible to all"; Guide §16 lists
+			// /spaces/* as SSR-public). Mutations and /me/* stay RequireAuth.
+			r.With(auth.OptionalAuth(kr, vkClient.Redis())).Get("/spaces", spaceHandlers.ListSpaces)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/spaces", spaceHandlers.ListMySpaces)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/spaces/moderated", spaceHandlers.ListMyModeratedSpaces)
 			// NOTE (P5): /me/spaces/owned has no wiring — the spaces table has no
 			// owner_id/created_by column (consistent with the geo-first model where
 			// Country/State/City spaces aren't owned by anyone); needs a schema
 			// decision, not just a query.
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), spaces.SpaceResolver(spaceService)).
+			r.With(auth.OptionalAuth(kr, vkClient.Redis()), spaces.SpaceResolver(spaceService)).
 				Get("/spaces/{slug}", spaceHandlers.GetSpace)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "spaces.create")).
 				Post("/spaces", spaceHandlers.CreateSpace)
@@ -1067,7 +1081,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Space membership (join/leave toggle)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), spaces.SpaceResolver(spaceService)).
 				Post("/spaces/{slug}/join", spaceHandlers.ToggleSpaceMembership)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), spaces.SpaceResolver(spaceService)).
+			r.With(auth.OptionalAuth(kr, vkClient.Redis()), spaces.SpaceResolver(spaceService)).
 				Get("/spaces/{slug}/members", spaceHandlers.ListMembers)
 
 			// Space follow/unfollow (Section 31) — M5: rate-limited
@@ -1085,9 +1099,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Get("/spaces/{slug}/mute-status", spaceHandlers.GetMuteStatus)
 
 			// Space content & pinned posts
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), spaces.SpaceResolver(spaceService)).
+			r.With(auth.OptionalAuth(kr, vkClient.Redis()), spaces.SpaceResolver(spaceService)).
 				Get("/spaces/{slug}/content", spaceHandlers.ListSpaceContent)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), spaces.SpaceResolver(spaceService)).
+			r.With(auth.OptionalAuth(kr, vkClient.Redis()), spaces.SpaceResolver(spaceService)).
 				Get("/spaces/{slug}/pinned", spaceHandlers.ListPinned)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), spaces.SpaceResolver(spaceService), rbac.RequirePermission(rbacResolver, "spaces.moderate")).
 				Post("/spaces/{slug}/pinned", spaceHandlers.AddPinned)
@@ -1103,7 +1117,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "moderation.report")).Post("/spaces/{id}/report", reportsHandlers.ReportSpace)
 
 			// Space rule routes (slug-resolved via SpaceResolver middleware)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), spaces.SpaceResolver(spaceService)).
+			r.With(auth.OptionalAuth(kr, vkClient.Redis()), spaces.SpaceResolver(spaceService)).
 				Get("/spaces/{slug}/rules", spaceHandlers.ListSpaceRules)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), spaces.SpaceResolver(spaceService), rbac.RequirePermission(rbacResolver, "spaces.moderate")).
 				Post("/spaces/{slug}/rules", spaceHandlers.CreateSpaceRule)
@@ -1381,7 +1395,6 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			})
 
 			// Media routes (Section 34 — Media System)
-			mediaHandlers := media.NewHandlers(mediaService)
 			mediaHandlers.AsynqClient = asynqClient
 
 			// Media serving endpoint (no auth required for serving files)
@@ -1437,6 +1450,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Forum Q&A / Solved routes — gated by feature.forum (Section 08)
 			forumService := forum.NewService(database)
 			forumService.SetSettings(settingsService)
+			forumService.SetRBAC(rbacResolver)
+			forumService.SetPermCacheInvalidator(&forumPermCacheInvalidator{vk: vkClient.Redis()})
+			forumService.SetWebhookEmitter(&forumWebhookEmitter{svc: webhookService})
+			forumService.SetSpaceBroadcaster(&forumSpaceBroadcaster{hub: wsHub})
 			forumHandlers := forum.NewHandlers(forumService)
 
 			r.With(features.Gate(featureChecker, "feature.forum")).Group(func(r chi.Router) {
@@ -1450,6 +1467,13 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Delete("/forum/{id}", forumHandlers.DeleteThread)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.thread.solve")).
 					Post("/forum/{id}/solve", forumHandlers.SolveThread)
+				// BUG-016: the unsolve route uses RequireAuth only (not
+				// RequirePermission) so the OP — a regular member without the
+				// forum.thread.solve grant — can unsolve their own thread. The
+				// service enforces author/space-moderator/permission-holder
+				// scope. Ref: Section 08 "OP or moderator".
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).
+					Delete("/forum/{id}/solve", forumHandlers.UnsolveThread)
 
 				// Reply routes
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.reply.create")).Post("/forum/{id}/replies", forumHandlers.CreateReply)
@@ -1459,13 +1483,19 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.reply.delete_own")).
 					Delete("/forum/replies/{id}", forumHandlers.DeleteReply)
 
-				// Vote route
+				// Vote routes — body-based (legacy) + URL-param (catalog).
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.vote")).Post("/forum/vote", forumHandlers.Vote)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.vote")).Post("/forum/{id}/vote", forumHandlers.VoteOnThread)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.vote")).Delete("/forum/{id}/vote", forumHandlers.RemoveThreadVote)
 
 				// Poll routes
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.poll.create")).
 					Post("/forum/polls", forumHandlers.CreatePoll)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.poll.create")).
+					Post("/forum/{id}/poll", forumHandlers.CreatePollForThread)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.poll.vote")).Post("/forum/polls/{id}/vote", forumHandlers.VotePoll)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.poll.vote")).Post("/poll-options/{id}/vote", forumHandlers.VotePollOption)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.poll.vote")).Delete("/poll-options/{id}/vote", forumHandlers.RetractPollVoteHandler)
 				r.Get("/forum/polls/{id}", forumHandlers.GetPoll)
 
 				// Tag routes
@@ -1473,6 +1503,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Post("/forum/tags", forumHandlers.CreateTag)
 				r.Get("/forum/tags", forumHandlers.ListTags)
 				r.Get("/forum/tags/{slug}", forumHandlers.GetTagBySlug)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.tag.assign")).Post("/forum/{id}/tags", forumHandlers.AddThreadTagsBulk)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.tag.assign")).Post("/forum/{id}/tags/{tagId}", forumHandlers.AddThreadTag)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.tag.assign")).Delete("/forum/{id}/tags/{tagId}", forumHandlers.RemoveThreadTag)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.tag.edit")).Patch("/forum/tags/{id}", forumHandlers.UpdateTag)
@@ -1487,17 +1518,20 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Blog Extension routes — gated by feature.blog (Section 24)
 			r.With(features.Gate(featureChecker, "feature.blog")).Group(func(r chi.Router) {
 				// Base post CRUD — blog posts are content rows (content_type=
-				// blog_post), so this reuses the existing content.* permission
-				// nodes rather than inventing blog-specific ones.
+				// blog_post). BUG-001/BUG-012: use Section 24 granular blog.*
+				// permission nodes (blog.create, blog.edit_own) instead of the
+				// generic content.* nodes. The edit-window check in the content
+				// service enforces own-vs-any scoping for blog.edit_own; admin
+				// "edit any" is covered by PATCH /admin/blog/{id} (blog.review.manage).
 				r.Get("/blog", blogHandlers.ListPosts)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "moderate"), rbac.RequirePermission(rbacResolver, "content.create")).
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "moderate"), rbac.RequirePermission(rbacResolver, "blog.create")).
 					Post("/blog", blogHandlers.CreatePost)
 				r.Get("/blog/{slug}", blogHandlers.GetPost)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.edit")).
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "blog.edit_own")).
 					Patch("/blog/{id}", contentHandlers.UpdateContent)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.delete")).
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "blog.edit_own")).
 					Delete("/blog/{id}", contentHandlers.DeleteContent)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.edit")).
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "blog.create")).
 					Post("/blog/{id}/submit-for-review", blogHandlers.SubmitForReview)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "blog.feature")).
 					Post("/blog/{id}/feature", blogHandlers.FeaturePostByID)
@@ -2108,6 +2142,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// not the users-package stubs. Consolidated here from /account/* (§6).
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Delete("/me", gdprHandlers.RequestAccountDeletion)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "moderate")).Post("/me/data-export", gdprHandlers.RequestDataExport)
+			// Cancel a pending/processing data export request.
+			// NOTE: CancelMyDataExport not yet implemented in gdpr.Handlers (pre-existing).
+			// r.With(auth.RequireAuth(kr, vkClient.Redis())).Delete("/me/data-export", gdprHandlers.CancelMyDataExport)
 			// NOTE: replaces the users-package stub that hardcoded "no_pending_export"
 			// regardless of actual state (same class of bug as the DELETE /me fix).
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/data-export/status", gdprHandlers.GetMyDataExportStatus)
@@ -2837,9 +2874,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Post("/admin/spaces/{id}/moderators", spaceHandlers.AdminAssignModerator)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermissionWithInvalidation(rbacResolver, "spaces.moderator.assign")).
 				Delete("/admin/spaces/{id}/moderators/{moderator_id}", spaceHandlers.AdminRemoveModerator)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/spaces/{id}/analytics", spaceHandlers.GetSpaceAnalytics)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "spaces.moderate")).
-				Post("/spaces/{id}/pinned/reorder", spaceHandlers.ReorderPinned)
+			r.With(auth.OptionalAuth(kr, vkClient.Redis())).Get("/spaces/{id}/analytics", spaceHandlers.GetSpaceAnalytics)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "spaces.moderate")).
 				Patch("/spaces/{id}/pinned/reorder", spaceHandlers.ReorderPinned)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/spaces/suggest-parents", spaceHandlers.SuggestParentSpaces)
@@ -2885,10 +2920,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Task 18: Blog review queue
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "blog.review.manage")).
 				Get("/admin/blog/review-queue", blogHandlers.ListReviews)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "blog.review.manage")).
-				Post("/admin/blog/review-queue/{id}/approve", blogHandlers.ApproveReview)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "blog.review.manage")).
-				Post("/admin/blog/review-queue/{id}/reject", blogHandlers.RejectReview)
+			// NOTE: ApproveReview/RejectReview not yet implemented in blog.Handlers (pre-existing).
+			// r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "blog.review.manage")).
+			// 	Post("/admin/blog/review-queue/{id}/approve", blogHandlers.ApproveReview)
+			// r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "blog.review.manage")).
+			// 	Post("/admin/blog/review-queue/{id}/reject", blogHandlers.RejectReview)
 			// Admin blog post management (Section 24 blog extension).
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "blog.review.manage")).
 				Get("/admin/blog", blogHandlers.AdminListPosts)
@@ -3033,7 +3069,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).
 				Delete("/me/push-tokens/{id}", notificationHandlers.HandlePushUnsubscribe)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).
-				Get("/me/spaces/owned", spaceHandlers.ListMySpaces)
+				Get("/me/spaces/owned", spaceHandlers.ListMyOwnedSpaces)
 
 			// Task 29: AI conversations
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).
@@ -3076,8 +3112,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Patch("/content/{id}/spaces", contentHandlers.UpdateContent)
 
 			// Task 34: Users public extras
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).
-				Get("/users/{id}/analytics", usersHandlers.GetMyAnalytics)
+			// Public profile Analytics tab — public per JEOS §340; gated to 404
+			// for banned/suspended/deleted users by requireActiveProfileUser.
+			r.With(auth.OptionalAuth(kr, vkClient.Redis()), requireActiveProfileUser(usersService, "id")).
+				Get("/users/{id}/analytics", usersHandlers.GetUserAnalytics)
 			// Public profile Posts tab — author-scoped published+public content (was
 			// wired to ListContent, which ignored {id} and returned all tenant content).
 			// Public per Section 32; gated to 404 non-active users.
@@ -3323,6 +3361,37 @@ func (a commentNotificationAdapter) DispatchNotification(
 	_, err := a.svc.DispatchNotification(ctx, tenantID, recipientID, nType, subjectTitle,
 		actorID, subjectType, subjectID, subjectURL, actorName, actorAvatar)
 	return err
+}
+
+// forumPermCacheInvalidator adapts rbac.InvalidatePermCache to the forum
+// service's permCacheInvalidator interface. Ref: Rule 6.
+type forumPermCacheInvalidator struct {
+	vk valkeycompat.Cmdable
+}
+
+func (f *forumPermCacheInvalidator) InvalidatePermCache(ctx context.Context, userID pgtype.UUID) error {
+	return rbac.InvalidatePermCache(ctx, f.vk, userID)
+}
+
+// forumWebhookEmitter adapts webhooks.Service.EmitEvent to the forum
+// service's webhookEmitter interface. Ref: Section 12 + Rule 8.
+type forumWebhookEmitter struct {
+	svc *webhooks.Service
+}
+
+func (f *forumWebhookEmitter) EmitEvent(ctx context.Context, tenantID pgtype.UUID, eventType string, payload any) {
+	f.svc.EmitEvent(ctx, tenantID, eventType, payload)
+}
+
+// forumSpaceBroadcaster adapts websocket.Hub.BroadcastToSpace to the forum
+// service's spaceBroadcaster interface. The wsEvent shape is compatible via
+// JSON marshaling. Ref: Section 10.
+type forumSpaceBroadcaster struct {
+	hub *websocket.Hub
+}
+
+func (f *forumSpaceBroadcaster) BroadcastToSpace(spaceID string, event forum.WSEvent) {
+	f.hub.BroadcastToSpace(spaceID, websocket.WSEvent{Type: event.Type, Payload: event.Payload})
 }
 
 // StartWorker creates an Asynq worker server from the provided config,

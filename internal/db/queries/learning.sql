@@ -173,10 +173,12 @@ ON CONFLICT DO NOTHING
 RETURNING id, tenant_id, user_id, track_id, certificate_number, media_id, issued_at;
 
 -- name: ListLearningCertificatesByUser :many
-SELECT id, tenant_id, user_id, track_id, certificate_number, media_id, issued_at
-FROM learning_certificates
-WHERE tenant_id = @tenant_id AND user_id = @user_id
-ORDER BY issued_at DESC;
+SELECT lc.id, lc.tenant_id, lc.user_id, lc.track_id, lc.certificate_number, lc.media_id, lc.issued_at,
+       lt.title AS track_title, lt.slug AS track_slug
+FROM learning_certificates lc
+LEFT JOIN learning_tracks lt ON lt.id = lc.track_id AND lt.tenant_id = lc.tenant_id
+WHERE lc.tenant_id = @tenant_id AND lc.user_id = @user_id
+ORDER BY lc.issued_at DESC;
 
 -- name: GetLearningCertificateByID :one
 SELECT id, tenant_id, user_id, track_id, certificate_number, media_id, issued_at

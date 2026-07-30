@@ -46,7 +46,7 @@ func (h *SitemapHandler) ServeSitemap(w http.ResponseWriter, r *http.Request) {
 
 	contentList, err := h.queries.ListContentForSitemap(r.Context(), t.ID)
 	if err != nil {
-		http.Error(w, "Failed to generate sitemap", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to generate sitemap")
 		return
 	}
 
@@ -84,7 +84,7 @@ func (h *SitemapHandler) ServeContentSitemap(w http.ResponseWriter, r *http.Requ
 	t := tenant.FromContext(r.Context())
 	contentList, err := h.queries.ListContentForSitemap(r.Context(), t.ID)
 	if err != nil {
-		http.Error(w, "Failed to generate sitemap", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to generate sitemap")
 		return
 	}
 	baseURL := "https://" + r.Host
@@ -110,7 +110,7 @@ func (h *SitemapHandler) ServeSpacesSitemap(w http.ResponseWriter, r *http.Reque
 	rows, err := h.reader.Query(r.Context(),
 		`SELECT slug, updated_at FROM spaces WHERE tenant_id = $1 AND status = 'active' ORDER BY updated_at DESC`, t.ID)
 	if err != nil {
-		http.Error(w, "Failed to generate sitemap", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to generate sitemap")
 		return
 	}
 	defer rows.Close()
@@ -138,7 +138,7 @@ func (h *SitemapHandler) ServeTagsSitemap(w http.ResponseWriter, r *http.Request
 	rows, err := h.reader.Query(r.Context(),
 		`SELECT slug FROM tags WHERE tenant_id = $1 ORDER BY name`, t.ID)
 	if err != nil {
-		http.Error(w, "Failed to generate sitemap", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to generate sitemap")
 		return
 	}
 	defer rows.Close()
@@ -164,7 +164,7 @@ func (h *SitemapHandler) ServeUsersSitemap(w http.ResponseWriter, r *http.Reques
 	rows, err := h.reader.Query(r.Context(),
 		`SELECT username, updated_at FROM users WHERE tenant_id = $1 AND status = 'active' ORDER BY updated_at DESC`, t.ID)
 	if err != nil {
-		http.Error(w, "Failed to generate sitemap", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to generate sitemap")
 		return
 	}
 	defer rows.Close()
@@ -201,17 +201,16 @@ func (h *SitemapHandler) ValidateSEO(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		http.Error(w, "No tenant", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "tenant_unavailable", "No tenant available")
 		return
 	}
-	// Check if the page exists and has basic SEO fields
 	var title, slug string
 	var canonicalURL *string
 	err := h.reader.QueryRow(r.Context(),
 		`SELECT title, slug, canonical_url FROM contents WHERE id = $1 AND tenant_id = $2`, id, t.ID).
 		Scan(&title, &slug, &canonicalURL)
 	if err != nil {
-		http.Error(w, "Page not found", http.StatusNotFound)
+		writeError(w, http.StatusNotFound, "not_found", "Page not found")
 		return
 	}
 	issues := []string{}
@@ -233,3 +232,5 @@ func (h *SitemapHandler) ValidateSEO(w http.ResponseWriter, r *http.Request) {
 		},
 	})
 }
+
+// writeError is defined in ogimage.go and shared across the seo package.

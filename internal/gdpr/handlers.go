@@ -293,6 +293,36 @@ func (h *Handlers) GetMyDataExportStatus(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, map[string]any{"data": request})
 }
 
+// CancelMyDataExport handles DELETE /api/v1/me/data-export.
+// Cancels the caller's most recent pending/processing data export request.
+func (h *Handlers) CancelMyDataExport(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	request, err := h.Service.CancelDataExportRequest(r.Context(), user.UserID, tenantID)
+	if err != nil {
+		if strings.Contains(err.Error(), "no data export request") {
+			writeError(w, http.StatusNotFound, "no_pending_export", "No data export request to cancel")
+			return
+		}
+		if strings.Contains(err.Error(), "cannot cancel") {
+			writeError(w, http.StatusConflict, "export_not_cancellable", err.Error())
+			return
+		}
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": request})
+}
+
 // GetMyDataExportDownload handles GET /api/v1/me/data-export/download.
 // Redirects to the signed download URL once the export has completed.
 func (h *Handlers) GetMyDataExportDownload(w http.ResponseWriter, r *http.Request) {

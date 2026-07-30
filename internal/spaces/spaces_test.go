@@ -192,18 +192,19 @@ func TestUnreadCounter_NilClient(t *testing.T) {
 	t.Parallel()
 
 	c := NewUnreadCounter(nil)
+	tid := mustUUID(t, "440e8400-e29b-41d4-a716-446655440000")
 	uid := mustUUID(t, "550e8400-e29b-41d4-a716-446655440000")
 	sid := mustUUID(t, "660e8400-e29b-41d4-a716-446655440000")
 
-	if err := c.Increment(t.Context(), uid, sid); err != nil {
+	if err := c.Increment(t.Context(), tid, uid, sid); err != nil {
 		t.Errorf("Increment with nil client returned error: %v", err)
 	}
 
-	if err := c.Reset(t.Context(), uid, sid); err != nil {
+	if err := c.Reset(t.Context(), tid, uid, sid); err != nil {
 		t.Errorf("Reset with nil client returned error: %v", err)
 	}
 
-	n, err := c.Get(t.Context(), uid, sid)
+	n, err := c.Get(t.Context(), tid, uid, sid)
 	if err != nil {
 		t.Errorf("Get with nil client returned error: %v", err)
 	}
@@ -212,7 +213,7 @@ func TestUnreadCounter_NilClient(t *testing.T) {
 		t.Errorf("Get with nil client = %d, want 0", n)
 	}
 
-	batch, err := c.GetBatch(t.Context(), uid, []pgtype.UUID{sid})
+	batch, err := c.GetBatch(t.Context(), tid, uid, []pgtype.UUID{sid})
 	if err != nil {
 		t.Errorf("GetBatch with nil client returned error: %v", err)
 	}

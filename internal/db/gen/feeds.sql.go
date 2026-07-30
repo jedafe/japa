@@ -12,20 +12,30 @@ import (
 )
 
 const deleteFeedItemsByContent = `-- name: DeleteFeedItemsByContent :exec
-DELETE FROM feeds WHERE content_id = $1
+DELETE FROM feeds WHERE content_id = $1 AND tenant_id = $2
 `
 
-func (q *Queries) DeleteFeedItemsByContent(ctx context.Context, contentID pgtype.UUID) error {
-	_, err := q.db.Exec(ctx, deleteFeedItemsByContent, contentID)
+type DeleteFeedItemsByContentParams struct {
+	ContentID pgtype.UUID `json:"content_id"`
+	TenantID  pgtype.UUID `json:"tenant_id"`
+}
+
+func (q *Queries) DeleteFeedItemsByContent(ctx context.Context, arg DeleteFeedItemsByContentParams) error {
+	_, err := q.db.Exec(ctx, deleteFeedItemsByContent, arg.ContentID, arg.TenantID)
 	return err
 }
 
 const deleteFeedItemsByUser = `-- name: DeleteFeedItemsByUser :exec
-DELETE FROM feeds WHERE user_id = $1
+DELETE FROM feeds WHERE user_id = $1 AND tenant_id = $2
 `
 
-func (q *Queries) DeleteFeedItemsByUser(ctx context.Context, userID pgtype.UUID) error {
-	_, err := q.db.Exec(ctx, deleteFeedItemsByUser, userID)
+type DeleteFeedItemsByUserParams struct {
+	UserID   pgtype.UUID `json:"user_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+func (q *Queries) DeleteFeedItemsByUser(ctx context.Context, arg DeleteFeedItemsByUserParams) error {
+	_, err := q.db.Exec(ctx, deleteFeedItemsByUser, arg.UserID, arg.TenantID)
 	return err
 }
 
@@ -53,6 +63,7 @@ LEFT JOIN tags t ON t.id = ct.tag_id
 LEFT JOIN media m ON m.id = c.header_image_id AND m.deleted_at IS NULL
 WHERE c.tenant_id = $1
   AND c.status = 'published'
+  AND c.deleted_at IS NULL
   AND c.visibility = 'public'
 GROUP BY c.id, cs.vote_score, cs.velocity_score, cs.bookmark_count,
          u.username, up.display_name, up.avatar_url,
@@ -136,11 +147,16 @@ func (q *Queries) GetExploreFeed(ctx context.Context, arg GetExploreFeedParams) 
 }
 
 const getFeedItemCount = `-- name: GetFeedItemCount :one
-SELECT COUNT(*)::int AS count FROM feeds WHERE user_id = $1
+SELECT COUNT(*)::int AS count FROM feeds WHERE user_id = $1 AND tenant_id = $2
 `
 
-func (q *Queries) GetFeedItemCount(ctx context.Context, userID pgtype.UUID) (int32, error) {
-	row := q.db.QueryRow(ctx, getFeedItemCount, userID)
+type GetFeedItemCountParams struct {
+	UserID   pgtype.UUID `json:"user_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+func (q *Queries) GetFeedItemCount(ctx context.Context, arg GetFeedItemCountParams) (int32, error) {
+	row := q.db.QueryRow(ctx, getFeedItemCount, arg.UserID, arg.TenantID)
 	var count int32
 	err := row.Scan(&count)
 	return count, err
@@ -187,6 +203,7 @@ WITH affinity AS (
     FROM contents c
     WHERE c.tenant_id = $5
       AND c.status = 'published'
+      AND c.deleted_at IS NULL
       AND c.visibility = 'public'
       AND c.created_at >= $6
       AND c.author_id <> $7
@@ -207,6 +224,7 @@ velocity AS (
     JOIN content_scores cs ON cs.content_id = c.id
     WHERE c.tenant_id = $5
       AND c.status = 'published'
+      AND c.deleted_at IS NULL
       AND c.visibility = 'public'
       AND c.created_at >= $6
       AND c.author_id <> $7
@@ -411,19 +429,24 @@ LEFT JOIN tags t ON t.id = ct.tag_id
 LEFT JOIN media m ON m.id = c.header_image_id AND m.deleted_at IS NULL
 WHERE f.tenant_id = $1 AND f.user_id = $2
   AND c.status = 'published'
+  AND c.deleted_at IS NULL
 GROUP BY f.id, f.content_id, f.space_id, f.content_type, f.score, f.created_at,
          c.title, c.slug, c.author_id, c.created_at,
          c.view_count, c.comment_count, cs.vote_score, cs.bookmark_count,
          u.username, up.display_name, up.avatar_url,
          s.name, s.slug,
          c.read_time_minutes, m.storage_bucket, m.storage_path
-ORDER BY f.created_at DESC
-LIMIT $4 OFFSET $3
+ORDER BY
+    CASE WHEN $3 = 'top' THEN cs.vote_score END DESC,
+    CASE WHEN $3 = 'rising' THEN cs.velocity_score END DESC,
+    f.created_at DESC
+LIMIT $5 OFFSET $4
 `
 
 type GetPrimaryFeedParams struct {
 	TenantID   pgtype.UUID `json:"tenant_id"`
 	UserID     pgtype.UUID `json:"user_id"`
+	Sort       interface{} `json:"sort"`
 	PageOffset int32       `json:"page_offset"`
 	PageLimit  int32       `json:"page_limit"`
 }
@@ -454,11 +477,14 @@ type GetPrimaryFeedRow struct {
 	Tags               interface{}        `json:"tags"`
 }
 
-// User's personalized feed from feeds table (push side)
+// User's personalized feed from feeds table (push side).
+// sort: 'latest' (default), 'top' (vote_score DESC), 'rising' (velocity_score DESC).
+// 'relevant' falls back to latest (pgvector relevance is only used in the for-you feed).
 func (q *Queries) GetPrimaryFeed(ctx context.Context, arg GetPrimaryFeedParams) ([]GetPrimaryFeedRow, error) {
 	rows, err := q.db.Query(ctx, getPrimaryFeed,
 		arg.TenantID,
 		arg.UserID,
+		arg.Sort,
 		arg.PageOffset,
 		arg.PageLimit,
 	)
@@ -528,18 +554,23 @@ LEFT JOIN tags t ON t.id = ct.tag_id
 LEFT JOIN media m ON m.id = c.header_image_id AND m.deleted_at IS NULL
 WHERE c.tenant_id = $1 AND c.author_id = $2
   AND c.status = 'published'
+  AND c.deleted_at IS NULL
   AND c.visibility = 'public'
 GROUP BY c.id, cs.vote_score, cs.velocity_score, cs.bookmark_count,
          u.username, up.display_name, up.avatar_url,
          s.name, s.slug,
          m.storage_bucket, m.storage_path
-ORDER BY c.created_at DESC
-LIMIT $4 OFFSET $3
+ORDER BY
+    CASE WHEN $3 = 'top' THEN cs.vote_score END DESC,
+    CASE WHEN $3 = 'rising' THEN cs.velocity_score END DESC,
+    c.created_at DESC
+LIMIT $5 OFFSET $4
 `
 
 type GetProfileFeedParams struct {
 	TenantID   pgtype.UUID `json:"tenant_id"`
 	AuthorID   pgtype.UUID `json:"author_id"`
+	Sort       interface{} `json:"sort"`
 	PageOffset int32       `json:"page_offset"`
 	PageLimit  int32       `json:"page_limit"`
 }
@@ -568,11 +599,14 @@ type GetProfileFeedRow struct {
 	Tags               interface{}        `json:"tags"`
 }
 
-// All public posts by a specific user
+// All public posts by a specific user.
+// sort: 'latest' (default), 'top' (vote_score DESC), 'rising' (velocity_score DESC).
+// 'relevant' falls back to latest (pgvector relevance is only used in the for-you feed).
 func (q *Queries) GetProfileFeed(ctx context.Context, arg GetProfileFeedParams) ([]GetProfileFeedRow, error) {
 	rows, err := q.db.Query(ctx, getProfileFeed,
 		arg.TenantID,
 		arg.AuthorID,
+		arg.Sort,
 		arg.PageOffset,
 		arg.PageLimit,
 	)
@@ -640,6 +674,7 @@ LEFT JOIN tags t ON t.id = ct.tag_id
 LEFT JOIN media m ON m.id = c.header_image_id AND m.deleted_at IS NULL
 WHERE c.tenant_id = $1
   AND c.status = 'published'
+  AND c.deleted_at IS NULL
   AND c.visibility = 'public'
 GROUP BY c.id, cs.vote_score, cs.velocity_score, cs.bookmark_count,
          u.username, up.display_name, up.avatar_url,
@@ -746,17 +781,22 @@ LEFT JOIN tags t ON t.id = ct.tag_id
 LEFT JOIN media m ON m.id = c.header_image_id AND m.deleted_at IS NULL
 WHERE c.tenant_id = $1 AND c.space_id = $2
   AND c.status = 'published'
+  AND c.deleted_at IS NULL
 GROUP BY c.id, cs.vote_score, cs.velocity_score, cs.bookmark_count,
          u.username, up.display_name, up.avatar_url,
          s.name, s.slug,
          m.storage_bucket, m.storage_path
-ORDER BY c.created_at DESC
-LIMIT $4 OFFSET $3
+ORDER BY
+    CASE WHEN $3 = 'top' THEN cs.vote_score END DESC,
+    CASE WHEN $3 = 'rising' THEN cs.velocity_score END DESC,
+    c.created_at DESC
+LIMIT $5 OFFSET $4
 `
 
 type GetSpaceFeedParams struct {
 	TenantID   pgtype.UUID `json:"tenant_id"`
 	SpaceID    pgtype.UUID `json:"space_id"`
+	Sort       interface{} `json:"sort"`
 	PageOffset int32       `json:"page_offset"`
 	PageLimit  int32       `json:"page_limit"`
 }
@@ -784,11 +824,14 @@ type GetSpaceFeedRow struct {
 	Tags               interface{}        `json:"tags"`
 }
 
-// Posts in a specific space
+// Posts in a specific space.
+// sort: 'latest' (default), 'top' (vote_score DESC), 'rising' (velocity_score DESC).
+// 'relevant' falls back to latest (pgvector relevance is only used in the for-you feed).
 func (q *Queries) GetSpaceFeed(ctx context.Context, arg GetSpaceFeedParams) ([]GetSpaceFeedRow, error) {
 	rows, err := q.db.Query(ctx, getSpaceFeed,
 		arg.TenantID,
 		arg.SpaceID,
+		arg.Sort,
 		arg.PageOffset,
 		arg.PageLimit,
 	)
@@ -855,6 +898,7 @@ LEFT JOIN tags t ON t.id = ct.tag_id
 LEFT JOIN media m ON m.id = c.header_image_id AND m.deleted_at IS NULL
 WHERE c.tenant_id = $1
   AND c.status = 'published'
+  AND c.deleted_at IS NULL
   AND c.visibility = 'public'
   AND c.created_at > now() - interval '7 days'
 GROUP BY c.id, cs.vote_score, cs.velocity_score, cs.bookmark_count,
@@ -1018,6 +1062,8 @@ const pruneOldFeeds = `-- name: PruneOldFeeds :exec
 DELETE FROM feeds WHERE created_at < now() - interval '30 days'
 `
 
+// Intentionally global (no tenant_id filter): this is a retention prune that
+// runs weekly across all tenants. Ref: Section 32, asynq-tasks catalog.
 func (q *Queries) PruneOldFeeds(ctx context.Context) error {
 	_, err := q.db.Exec(ctx, pruneOldFeeds)
 	return err
@@ -1066,6 +1112,7 @@ FROM contents c
 WHERE cs.content_id = c.id
   AND c.tenant_id = $2
   AND c.status = 'published'
+  AND c.deleted_at IS NULL
   AND c.created_at >= now() - interval '30 days'
 `
 

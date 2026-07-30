@@ -2038,6 +2038,7 @@ type Space struct {
 	Status         string             `json:"status"`
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
 }
 
 type SpaceMember struct {
@@ -2430,6 +2431,7 @@ type UserProfile struct {
 	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
 	// User override for geo content weighting (ISO country code). NULL = use resolved VisitorContext (ADR-064).
 	ContentCountryPreference *string `json:"content_country_preference"`
+	CoverUrl                 *string `json:"cover_url"`
 }
 
 type UserRole struct {

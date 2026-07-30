@@ -1,12 +1,11 @@
 <script lang="ts">
 	import { beforeNavigate } from '$app/navigation';
-	import PageHeader from '$lib/components/PageHeader.svelte';
 	import ConfirmModal from '$lib/components/ui/ConfirmModal.svelte';
 	import { Switch, Tooltip, Label, Select } from 'bits-ui';
 	import { api, getToken } from '$lib/api';
 	import type { SystemSetting } from '$lib/api/types';
 	import { t, translations } from '$lib/stores/i18n.svelte';
-	import FeedCardStyleEditor from '$lib/components/FeedCardStyleEditor.svelte';
+	import { convertImageToModernFormat } from '$lib/utils/imageConvert';
 	import { categoryIcons, categoryNames, sensitiveKeys as categorySensitiveKeys, textareaKeys as categoryTextareaKeys, uploadKeys as categoryUploadKeys, colorKeys as categoryColorKeys } from '$lib/components/settings/categoryConfig';
 	import {
 		Settings,
@@ -18,24 +17,11 @@
 		Save,
 		Undo2,
 		AlertTriangle,
-		Sliders,
-		Globe,
-		Shield,
-		Mail,
-		Monitor,
-		Palette,
-		CreditCard,
-		Server,
-		Cpu,
-		Bell,
-		FolderOpen,
-		Upload,
-		Image as ImageIcon
+		Upload
 	} from 'lucide-svelte';
 
 	let originalSettings = $state<SystemSetting[]>([]);
 	let currentSettings = $state<SystemSetting[]>([]);
-	let contentTypes = $state<{ value: string; label: string }[]>([]);
 	// Entity name lookups for onboarding promoted_* fields (which store UUIDs).
 	// Fetched once on load so the UI can show human-readable names instead of UUIDs.
 	let entityOptions = $state<Record<string, { value: string; label: string }[]>>({
@@ -43,6 +29,17 @@
 		'onboarding.promoted_users': [],
 		'onboarding.promoted_tags': []
 	});
+	let entitySearch = $state('');
+	let entityDropdownRefs = $state<Record<string, HTMLDivElement>>({});
+
+	// Close entity dropdowns when clicking outside
+	function handleEntityDropdownClick(e: MouseEvent) {
+		const target = e.target as HTMLElement;
+		if (!target.closest('[data-entity-dropdown]') && !target.closest('button')) {
+			document.querySelectorAll('[data-entity-dropdown]').forEach((d) => d.classList.add('hidden'));
+		}
+	}
+
 	let isDirty = $derived(
 		JSON.stringify(currentSettings) !== JSON.stringify(originalSettings)
 	);
@@ -70,33 +67,11 @@
 		(() => {
 			translations();
 			const opts: Record<string, { value: string; label: string }[]> = {
-				'advanced.log_level': [
-					{ value: 'debug', label: t('settings.log_level_debug', 'Debug') },
-					{ value: 'info', label: t('settings.log_level_info', 'Info') },
-					{ value: 'warn', label: t('settings.log_level_warn', 'Warn') },
-					{ value: 'error', label: t('settings.log_level_error', 'Error') }
-				],
-				'feed.card_style': [
-					{ value: 'reddit', label: t('settings.card_style_reddit', 'Reddit') },
-					{ value: 'compact', label: t('settings.card_style_compact', 'Compact') },
-					{ value: 'grid', label: t('settings.card_style_grid', 'Grid') },
-					{ value: 'magazine', label: t('settings.card_style_magazine', 'Magazine') }
-				],
-				'i18n.default_language': [
-					{ value: 'en', label: t('settings.lang_en', 'English') },
-					{ value: 'fr', label: t('settings.lang_fr', 'Francais') }
-				],
 				'media.storage.provider': [
 					{ value: 'seaweedfs', label: t('settings.storage_seaweedfs', 'SeaweedFS') },
 					{ value: 's3', label: t('settings.storage_s3', 'Amazon S3') },
 					{ value: 'r2', label: t('settings.storage_r2', 'Cloudflare R2') },
 					{ value: 'b2', label: t('settings.storage_b2', 'Backblaze B2') }
-				],
-				'payment.currency': [
-					{ value: 'NGN', label: t('settings.currency_ngn', 'Nigerian Naira (NGN)') },
-					{ value: 'USD', label: t('settings.currency_usd', 'US Dollar (USD)') },
-					{ value: 'GBP', label: t('settings.currency_gbp', 'British Pound (GBP)') },
-					{ value: 'EUR', label: t('settings.currency_eur', 'Euro (EUR)') }
 				]
 			};
 			return opts;
@@ -106,24 +81,10 @@
 	const multiSelectOptions: Record<string, { value: string; label: string }[]> = $derived(
 		(() => {
 			translations();
-			const opts: Record<string, { value: string; label: string }[]> = {
-				'i18n.enabled_languages': [
-					{ value: 'en', label: t('settings.lang_en', 'English') },
-					{ value: 'fr', label: t('settings.lang_fr', 'Francais') },
-					{ value: 'yo', label: t('settings.lang_yo', 'Yoruba') },
-					{ value: 'ha', label: t('settings.lang_ha', 'Hausa') },
-					{ value: 'ig', label: t('settings.lang_ig', 'Igbo') },
-					{ value: 'pcm', label: t('settings.lang_pcm', 'Nigerian Pidgin') }
-				],
-				'media.allowed_video_types': [
-					{ value: 'mp4', label: t('settings.video_mp4', 'MP4') },
-					{ value: 'webm', label: t('settings.video_webm', 'WebM') },
-					{ value: 'mov', label: t('settings.video_mov', 'MOV') },
-					{ value: 'avi', label: t('settings.video_avi', 'AVI') },
-					{ value: 'mkv', label: t('settings.video_mkv', 'MKV') }
-				]
-			};
-			return opts;
+			// No control-panel settings use hardcoded multi-select options.
+			// Settings with options (e.g. pricing.currency) get them from the
+			// backend catalog via setting.options.
+			return {};
 		})()
 	);
 
@@ -155,13 +116,30 @@
 
 	// parseJsonArray safely parses a JSON array string (e.g. '["uuid1", "uuid2"]')
 	// returning an empty array on any parse error.
+	// Handles double-encoded values where the backend stored a JSON string
+	// containing a JSON array: "[\"uuid\"]" → after normalizeValue → [\"uuid\"]
+	// which has literal backslash-quotes and is not valid JSON as-is.
 	function parseJsonArray(v: string): string[] {
 		if (!v) return [];
 		try {
 			const parsed = JSON.parse(v);
-			return Array.isArray(parsed) ? parsed.map(String) : [];
-		} catch {
+			if (Array.isArray(parsed)) return parsed.map(String);
+			// Value might be a JSON string containing a JSON array
+			if (typeof parsed === 'string') {
+				const inner = JSON.parse(parsed);
+				return Array.isArray(inner) ? inner.map(String) : [];
+			}
 			return [];
+		} catch {
+			// Handle the case where normalizeValue stripped the outer quotes
+			// from a double-encoded value, leaving: [\"uuid\"]
+			try {
+				const unescaped = v.replace(/\\"/g, '"');
+				const parsed = JSON.parse(unescaped);
+				return Array.isArray(parsed) ? parsed.map(String) : [];
+			} catch {
+				return [];
+			}
 		}
 	}
 
@@ -169,6 +147,31 @@
 	// onboarding promoted_* fields (spaces, users, tags).
 	function getEntityOptionsForSetting(setting: SystemSetting): { value: string; label: string }[] {
 		return entityOptions[setting.key] ?? [];
+	}
+
+	// getCurrentUuids reads the current value of a setting and parses it as a
+	// JSON array. Unlike {@const selectedUuids} which is captured once per render,
+	// this function always reads the latest value from currentSettings, making it
+	// safe to use inside event handlers where the stale {at const} would cause bugs.
+	function getCurrentUuids(key: string): string[] {
+		const setting = currentSettings.find((s) => s.key === key);
+		if (!setting) return [];
+		return parseJsonArray(setting.value);
+	}
+
+	// addUuidToSetting appends a UUID to a setting's JSON array value,
+	// then updates currentSettings so reactivity flows.
+	function addUuidToSetting(key: string, uuid: string) {
+		const current = getCurrentUuids(key);
+		if (!current.includes(uuid)) {
+			updateSetting(key, JSON.stringify([...current, uuid]));
+		}
+	}
+
+	// removeUuidFromSetting removes a UUID from a setting's JSON array value.
+	function removeUuidFromSetting(key: string, uuid: string) {
+		const current = getCurrentUuids(key);
+		updateSetting(key, JSON.stringify(current.filter((v) => v !== uuid)));
 	}
 
 	function isTextareaKey(key: string): boolean {
@@ -186,7 +189,29 @@
 	function getDisplayValue(setting: SystemSetting): string {
 		const val = setting.value ?? '';
 		if (val === '[]' || val === '{}') return '';
-		if (val.startsWith('"') && val.endsWith('"')) return val.slice(1, -1);
+		if (val.startsWith('"') && val.endsWith('"')) {
+			const inner = val.slice(1, -1);
+			if (inner.startsWith('[') || inner.startsWith('{')) {
+				// Check if it's an array and return item count
+				try {
+					const parsed = JSON.parse(val);
+					if (Array.isArray(parsed)) {
+						return parsed.length > 0 ? `${parsed.length} items` : '';
+					}
+				} catch { /* fall through */ }
+				return val;
+			}
+			return inner;
+		}
+		// Check if the raw value is a JSON array (not wrapped in quotes)
+		if (val.startsWith('[')) {
+			try {
+				const parsed = JSON.parse(val);
+				if (Array.isArray(parsed)) {
+					return parsed.length > 0 ? `${parsed.length} items` : '';
+				}
+			} catch { /* fall through */ }
+		}
 		return val;
 	}
 
@@ -195,10 +220,21 @@
 	// and currentSettings hold clean values so isDirty / dirtyCount comparisons
 	// are accurate and a value toggled back to its original is not permanently
 	// marked dirty.
+	// However, values that are JSON strings containing a JSON array/object
+	// (e.g. '"[\\"uuid\\"]"') must NOT have their outer quotes stripped —
+	// that would leave [\"uuid\"] which is not valid JSON. parseJsonArray
+	// handles the full unescaping.
 	function normalizeValue(v: string): string {
 		if (typeof v !== 'string') return v;
 		if (v.length >= 2 && v.startsWith('"') && v.endsWith('"')) {
-			return v.slice(1, -1);
+			const inner = v.slice(1, -1);
+			// Don't strip quotes if the inner value is a JSON array/object
+			// string — those need the outer quotes to remain valid JSON strings
+			// that parseJsonArray can handle via JSON.parse.
+			if (inner.startsWith('[') || inner.startsWith('{')) {
+				return v; // keep the outer quotes
+			}
+			return inner;
 		}
 		return v;
 	}
@@ -242,6 +278,21 @@
 
 	function getOriginalValue(key: string): string {
 		return originalSettings.find((s) => s.key === key)?.value ?? '';
+	}
+
+	function formatOriginalValue(key: string, setting: SystemSetting): string {
+		const raw = getOriginalValue(key);
+		if (!raw) return '';
+		const str = String(raw);
+		if (str.startsWith('[') && str.endsWith(']')) {
+			try {
+				const parsed = JSON.parse(str);
+				if (Array.isArray(parsed)) {
+					return parsed.length + ' items';
+				}
+			} catch { /* fall through */ }
+		}
+		return str;
 	}
 
 	// validateSettingValue checks a single changed setting's value against its
@@ -401,13 +452,15 @@
 		message = '';
 		const result = await api<SystemSetting[]>('/control/system-settings');
 		if (result.ok) {
-			const normalized = normalizeSettings(result.data);
+			// Filter to control-panel settings only (Panel === 'control').
+			// Using a positive filter ensures uncatalogued settings (panel === '')
+			// never leak into the control panel — only explicitly control-panel
+			// settings are shown.
+			const normalized = normalizeSettings(
+				result.data.filter((s) => s.panel === 'control')
+			);
 			originalSettings = JSON.parse(JSON.stringify(normalized));
 			currentSettings = JSON.parse(JSON.stringify(normalized));
-			const ctRes = await api<{ value: string; label: string }[]>('/api/v1/content-types');
-			if (ctRes.ok && Array.isArray(ctRes.data)) {
-				contentTypes = ctRes.data;
-			}
 			// Fetch entity names for onboarding promoted_* fields (UUID → name).
 			await loadEntityOptions();
 		}
@@ -506,7 +559,6 @@
 	}
 
 	function getSettingComponentType(setting: SystemSetting): string {
-		if (setting.key === 'feed.card_style') return 'card-style';
 		if (setting.type === 'bool' || isBoolValue(setting.value)) return 'switch';
 		// Onboarding promoted_* fields store JSON arrays of UUIDs — render as
 		// an entity multi-select that shows names instead of raw UUIDs.
@@ -601,8 +653,9 @@
 			// locally in development (no S3/SeaweedFS required) and returns a
 			// ready-to-use serve URL. The two-step /media/upload flow requires
 			// a configured S3 client for presigned URLs.
+			const convertedFile = await convertImageToModernFormat(file);
 			const formData = new FormData();
-			formData.append('file', file);
+			formData.append('file', convertedFile);
 			const token = getToken();
 			const csrf = readCookieValue('csrf_token');
 			const res = await fetch('/api/v1/admin/media/upload', {
@@ -636,6 +689,11 @@
 
 	let uploadingKey = $state('');
 	let uploadError = $state('');
+
+	$effect(() => {
+		document.addEventListener('click', handleEntityDropdownClick);
+		return () => document.removeEventListener('click', handleEntityDropdownClick);
+	});
 </script>
 
 <div class="flex h-full gap-6">
@@ -828,20 +886,14 @@
 								{/if}
 								{#if dirty}
 									<p class="mt-0.5 text-[10px] text-amber-600/70">
-										{t('settings.original_value', 'Original:')} {isSensitiveKey(setting.key, setting) ? getMaskedValue(getOriginalValue(setting.key)) : getOriginalValue(setting.key)}
+										{t('settings.original_value', 'Original:')} {isSensitiveKey(setting.key, setting) ? getMaskedValue(getOriginalValue(setting.key)) : formatOriginalValue(setting.key, setting)}
 									</p>
 								{/if}
 							</div>
 
 							<!-- Control -->
 							<div class="flex items-center gap-2">
-								{#if componentType === 'card-style'}
-											<FeedCardStyleEditor
-												value={setting.value}
-												{contentTypes}
-												onchange={(v) => updateSetting('feed.card_style', v)}
-											/>
-										{:else if componentType === 'switch'}
+								{#if componentType === 'switch'}
 									{@const isTrue =
 										isBoolValue(setting.value) &&
 										setting.value.replace(/^"(.*)"$/, '$1').toLowerCase() === 'true'}
@@ -925,43 +977,108 @@
 										</Select.Root>
 									</div>
 
-								{:else if componentType === 'entity-multi-select'}
-									{@const selectedUuids = parseJsonArray(getDisplayValue(setting))}
-									{@const entityOpts = getEntityOptionsForSetting(setting)}
-									<div class="w-64">
-										<div class="mb-1 flex flex-wrap gap-1">
-											{#each selectedUuids as uuid}
-												{@const label = entityOpts.find((o) => o.value === uuid)?.label ?? uuid.slice(0, 8) + '…'}
-												<span class="bg-accent text-accent-foreground inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px]">
-													{label}
-													<button class="hover:text-destructive" onclick={() => updateSetting(setting.key, JSON.stringify(selectedUuids.filter((v) => v !== uuid)))}>×</button>
-												</span>
-											{/each}
-										</div>
-										<Select.Root type="single" value="" onValueChange={(v) => {
-											if (v && !selectedUuids.includes(v)) {
-												updateSetting(setting.key, JSON.stringify([...selectedUuids, v]));
-											}
-										}}>
-											<Select.Trigger class="{selectTriggerClasses} w-full" id="setting-{setting.key}">
-												<Select.Value placeholder={t('settings.add_placeholder', 'Add...')} />
-												<ChevronDown class="text-muted-foreground size-3.5" />
-											</Select.Trigger>
-											<Select.Portal>
-												<Select.Content class={selectContentClasses}>
-													<Select.Viewport class="p-1">
-														{#each entityOpts.filter((o) => !selectedUuids.includes(o.value)) as option}
-															<Select.Item class={selectItemClasses} value={option.value} label={option.label}>
-																{option.label}
-															</Select.Item>
-														{/each}
-													</Select.Viewport>
-												</Select.Content>
-											</Select.Portal>
-										</Select.Root>
+							{:else if componentType === 'entity-multi-select'}
+								<div class="w-64">
+									<div class="mb-1 flex flex-wrap gap-1">
+										{#each getCurrentUuids(setting.key) as uuid}
+											<span class="bg-accent text-accent-foreground inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px]">
+												{entityOptions[setting.key]?.find((o) => o.value === uuid)?.label ?? uuid.slice(0, 8) + '…'}
+												<button class="hover:text-destructive" onclick={() => removeUuidFromSetting(setting.key, uuid)}>×</button>
+											</span>
+										{/each}
 									</div>
+									{#if (entityOptions[setting.key] ?? []).filter((o) => !getCurrentUuids(setting.key).includes(o.value)).length > 0}
+										<div class="relative" bind:this={entityDropdownRefs[setting.key]}>
+											<button
+												type="button"
+												class="{selectTriggerClasses} w-full"
+												onclick={(e) => {
+													const container = e.currentTarget.parentElement;
+													const dropdown = container?.querySelector('[data-entity-dropdown]') as HTMLElement | null;
+													if (dropdown) {
+														const isHidden = dropdown.classList.contains('hidden');
+														(document.querySelectorAll('[data-entity-dropdown]') as NodeListOf<HTMLElement>).forEach(d => {
+															d.classList.add('hidden');
+															d.style.bottom = '';
+															d.style.top = '';
+															d.style.marginBottom = '';
+															d.style.marginTop = '';
+														});
+if (isHidden) {
+														dropdown.classList.remove('hidden');
+														const triggerBtn = e.currentTarget as HTMLElement;
+														requestAnimationFrame(() => {
+															const btnRect = triggerBtn.getBoundingClientRect();
+																const spaceBelow = window.innerHeight - btnRect.bottom;
+																if (spaceBelow < 220) {
+																	dropdown.style.bottom = '100%';
+																	dropdown.style.top = 'auto';
+																	dropdown.style.marginBottom = '4px';
+																	dropdown.style.marginTop = '0';
+																} else {
+																	dropdown.style.bottom = 'auto';
+																	dropdown.style.top = '100%';
+																	dropdown.style.marginTop = '4px';
+																	dropdown.style.marginBottom = '0';
+																}
+															});
+														}
+													}
+												}}
+											>
+												<span class="text-muted-foreground">{t('settings.add_placeholder', 'Add...')}</span>
+												<ChevronDown class="text-muted-foreground size-3.5 ml-auto" />
+											</button>
+											<div
+												data-entity-dropdown
+												class="border-border-input bg-background absolute z-[99999] mt-1 hidden max-h-48 w-full overflow-y-auto rounded-lg border p-1 shadow-lg"
+											>
+												<input
+													type="text"
+													placeholder="Search..."
+													class="bg-background border-border-input mb-1 w-full rounded border px-2 py-1 text-xs outline-none"
+												oninput={(e) => {
+													const container = e.currentTarget.closest('[data-entity-dropdown]');
+													const buttons = container?.querySelectorAll('button[data-entity-option]');
+													const query = (e.target as HTMLInputElement).value.toLowerCase();
+													buttons?.forEach((btn) => {
+														const el = btn as HTMLElement;
+														const label = el.dataset.optionLabel?.toLowerCase() ?? '';
+														el.style.display = label.includes(query) ? '' : 'none';
+													});
+												}}
+												onfocus={(e) => e.stopPropagation()}
+											/>
+												{#each (entityOptions[setting.key] ?? []).filter((o) => !getCurrentUuids(setting.key).includes(o.value)) as option}
+													<button
+														type="button"
+														data-entity-option
+														data-option-label={option.label}
+														class="hover:bg-muted flex w-full items-center rounded px-2 py-1 text-left text-xs"
+														onmousedown={(e) => e.preventDefault()}
+														onclick={(e) => {
+															addUuidToSetting(setting.key, option.value);
+															const dropdown = e.currentTarget.closest('[data-entity-dropdown]') as HTMLElement | null;
+															if (dropdown) {
+																dropdown.classList.add('hidden');
+																dropdown.style.bottom = '';
+																dropdown.style.top = '';
+																dropdown.style.marginBottom = '';
+																dropdown.style.marginTop = '';
+															}
+															const input = dropdown?.querySelector('input') as HTMLInputElement;
+															if (input) input.value = '';
+														}}
+													>
+														{option.label}
+													</button>
+												{/each}
+											</div>
+										</div>
+									{/if}
+								</div>
 
-								{:else if componentType === 'textarea'}
+							{:else if componentType === 'textarea'}
 									<textarea
 										id="setting-{setting.key}"
 										rows={2}
@@ -1182,13 +1299,7 @@
 										{/if}
 									</div>
 									<div class="flex items-center gap-2">
-										{#if componentType === 'card-style'}
-											<FeedCardStyleEditor
-												value={setting.value}
-												{contentTypes}
-												onchange={(v) => updateSetting('feed.card_style', v)}
-											/>
-										{:else if componentType === 'switch'}
+										{#if componentType === 'switch'}
 											{@const isTrue = isBoolValue(setting.value) && setting.value.replace(/^"(.*)"$/, '$1').toLowerCase() === 'true'}
 											<div class="flex items-center gap-2">
 												<span class="text-muted-foreground w-8 text-right text-xs">{isTrue ? t('settings.on') : t('settings.off')}</span>
@@ -1275,43 +1386,108 @@
 											class="{inputClasses} w-64 resize-y font-mono text-xs"
 										></textarea>
 
-									{:else if componentType === 'entity-multi-select'}
-										{@const selectedUuids = parseJsonArray(getDisplayValue(setting))}
-										{@const entityOpts = getEntityOptionsForSetting(setting)}
-										<div class="w-64">
-											<div class="mb-1 flex flex-wrap gap-1">
-												{#each selectedUuids as uuid}
-													{@const label = entityOpts.find((o) => o.value === uuid)?.label ?? uuid.slice(0, 8) + '…'}
-													<span class="bg-accent text-accent-foreground inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px]">
-														{label}
-														<button class="hover:text-destructive" onclick={() => updateSetting(setting.key, JSON.stringify(selectedUuids.filter((v) => v !== uuid)))}>×</button>
-													</span>
+								{:else if componentType === 'entity-multi-select'}
+									<div class="w-64">
+										<div class="mb-1 flex flex-wrap gap-1">
+											{#each getCurrentUuids(setting.key) as uuid}
+												<span class="bg-accent text-accent-foreground inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px]">
+													{entityOptions[setting.key]?.find((o) => o.value === uuid)?.label ?? uuid.slice(0, 8) + '…'}
+													<button class="hover:text-destructive" onclick={() => removeUuidFromSetting(setting.key, uuid)}>×</button>
+												</span>
+											{/each}
+										</div>
+										{#if (entityOptions[setting.key] ?? []).filter((o) => !getCurrentUuids(setting.key).includes(o.value)).length > 0}
+											<div class="relative" bind:this={entityDropdownRefs[setting.key]}>
+											<button
+												type="button"
+												class="{selectTriggerClasses} w-full"
+												onclick={(e) => {
+													const container = e.currentTarget.parentElement;
+													const dropdown = container?.querySelector('[data-entity-dropdown]') as HTMLElement | null;
+													if (dropdown) {
+														const isHidden = dropdown.classList.contains('hidden');
+														(document.querySelectorAll('[data-entity-dropdown]') as NodeListOf<HTMLElement>).forEach(d => {
+															d.classList.add('hidden');
+															d.style.bottom = '';
+															d.style.top = '';
+															d.style.marginBottom = '';
+															d.style.marginTop = '';
+														});
+if (isHidden) {
+													dropdown.classList.remove('hidden');
+													const triggerBtn = e.currentTarget as HTMLElement;
+													requestAnimationFrame(() => {
+														const btnRect = triggerBtn.getBoundingClientRect();
+															const spaceBelow = window.innerHeight - btnRect.bottom;
+															if (spaceBelow < 220) {
+																dropdown.style.bottom = '100%';
+																dropdown.style.top = 'auto';
+																dropdown.style.marginBottom = '4px';
+																dropdown.style.marginTop = '0';
+															} else {
+																dropdown.style.bottom = 'auto';
+																dropdown.style.top = '100%';
+																dropdown.style.marginTop = '4px';
+																dropdown.style.marginBottom = '0';
+															}
+														});
+													}
+												}
+											}}
+										>
+											<span class="text-muted-foreground">{t('settings.add_placeholder', 'Add...')}</span>
+											<ChevronDown class="text-muted-foreground size-3.5 ml-auto" />
+										</button>
+										<div
+											data-entity-dropdown
+											class="border-border-input bg-background absolute z-[99999] mt-1 hidden max-h-48 w-full overflow-y-auto rounded-lg border p-1 shadow-lg"
+										>
+												<input
+													type="text"
+													placeholder="Search..."
+													class="bg-background border-border-input mb-1 w-full rounded border px-2 py-1 text-xs outline-none"
+													oninput={(e) => {
+															const container = e.currentTarget.closest('[data-entity-dropdown]');
+															const buttons = container?.querySelectorAll('button[data-entity-option]');
+															const query = (e.target as HTMLInputElement).value.toLowerCase();
+															buttons?.forEach((btn) => {
+																const el = btn as HTMLElement;
+																const label = el.dataset.optionLabel?.toLowerCase() ?? '';
+																el.style.display = label.includes(query) ? '' : 'none';
+															});
+														}}
+														onfocus={(e) => e.stopPropagation()}
+													/>
+												{#each (entityOptions[setting.key] ?? []).filter((o) => !getCurrentUuids(setting.key).includes(o.value)) as option}
+													<button
+														type="button"
+														data-entity-option
+														data-option-label={option.label}
+														class="hover:bg-muted flex w-full items-center rounded px-2 py-1 text-left text-xs"
+														onmousedown={(e) => e.preventDefault()}
+														onclick={(e) => {
+															addUuidToSetting(setting.key, option.value);
+															const dropdown = e.currentTarget.closest('[data-entity-dropdown]') as HTMLElement | null;
+															if (dropdown) {
+																dropdown.classList.add('hidden');
+																dropdown.style.bottom = '';
+																dropdown.style.top = '';
+																dropdown.style.marginBottom = '';
+																dropdown.style.marginTop = '';
+															}
+															const input = dropdown?.querySelector('input') as HTMLInputElement;
+															if (input) input.value = '';
+														}}
+													>
+														{option.label}
+													</button>
 												{/each}
 											</div>
-											<Select.Root type="single" value="" onValueChange={(v) => {
-												if (v && !selectedUuids.includes(v)) {
-													updateSetting(setting.key, JSON.stringify([...selectedUuids, v]));
-												}
-											}}>
-												<Select.Trigger class="{selectTriggerClasses} w-full" id="setting-{setting.key}">
-													<Select.Value placeholder={t('settings.add_placeholder', 'Add...')} />
-													<ChevronDown class="text-muted-foreground size-3.5" />
-												</Select.Trigger>
-												<Select.Portal>
-													<Select.Content class={selectContentClasses}>
-														<Select.Viewport class="p-1">
-															{#each entityOpts.filter((o) => !selectedUuids.includes(o.value)) as option}
-																<Select.Item class={selectItemClasses} value={option.value} label={option.label}>
-																	{option.label}
-																</Select.Item>
-															{/each}
-														</Select.Viewport>
-													</Select.Content>
-												</Select.Portal>
-											</Select.Root>
 										</div>
+									{/if}
+								</div>
 
-									{:else if componentType === 'number'}
+								{:else if componentType === 'number'}
 										<input
 											id="setting-{setting.key}"
 											type="number"

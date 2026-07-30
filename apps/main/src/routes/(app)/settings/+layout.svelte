@@ -15,7 +15,7 @@
 	const groupSections = $derived(sectionsInGroup(activeGroup));
 </script>
 
-<div class="grid grid-cols-1 gap-6 md:grid-cols-[200px_1fr]">
+<div class="grid grid-cols-1 gap-6 px-4 py-4 md:grid-cols-[200px_1fr] md:px-6 lg:px-8">
 	<SettingsGroupRail
 		{groups}
 		basePath="/settings"
@@ -23,7 +23,7 @@
 		labelKey="settings.nav.label"
 	/>
 
-	<div class="min-w-0 px-1 py-4">
+	<div class="min-w-0 px-2 py-2 md:px-4">
 		<!-- Section tabs within the active group -->
 		{#if groupSections.length > 1}
 			<nav

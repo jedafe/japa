@@ -102,12 +102,16 @@ SELECT ft.id, ft.tenant_id, ft.content_id, ft.space_id, ft.author_user_id,
        CASE WHEN ft.is_anonymous THEN NULL ELSE u.username END AS author_username,
        CASE WHEN ft.is_anonymous THEN NULL ELSE up.display_name END AS author_display_name,
        CASE WHEN ft.is_anonymous THEN NULL ELSE up.avatar_url END AS author_avatar_url,
+       CASE WHEN ft.solved_by_user_id IS NULL THEN NULL ELSE su.username END AS solved_by_username,
+       CASE WHEN ft.solved_by_user_id IS NULL THEN NULL ELSE sup.display_name END AS solved_by_display_name,
        s.name AS space_name,
        s.slug AS space_slug,
        s.level AS space_level
 FROM forum_threads ft
 LEFT JOIN users u ON u.id = ft.author_user_id
 LEFT JOIN user_profiles up ON up.user_id = ft.author_user_id
+LEFT JOIN users su ON su.id = ft.solved_by_user_id
+LEFT JOIN user_profiles sup ON sup.user_id = ft.solved_by_user_id
 LEFT JOIN spaces s ON s.id = ft.space_id
 WHERE ft.slug = @slug AND ft.tenant_id = @tenant_id AND ft.deleted_at IS NULL;
 
@@ -221,6 +225,12 @@ WHERE id = @id AND tenant_id = @tenant_id;
 -- name: SolveForumThread :exec
 UPDATE forum_threads
 SET solved = true, solved_at = now(), solved_by_user_id = @solver_user_id, updated_at = now()
+WHERE id = @id AND tenant_id = @tenant_id;
+
+-- name: UnsolveForumThread :exec
+-- Reverts the solved flag (DELETE /forum/{id}/solve). Ref: Section 08 Solved flag.
+UPDATE forum_threads
+SET solved = false, solved_at = NULL, solved_by_user_id = NULL, updated_at = now()
 WHERE id = @id AND tenant_id = @tenant_id;
 
 -- name: IncrementThreadReplyCount :exec
@@ -390,6 +400,20 @@ SELECT fpv.id, fpv.poll_id, fpv.option_id, fpv.user_id, fpv.created_at
 FROM forum_poll_votes fpv
 WHERE fpv.poll_id = @poll_id AND fpv.user_id = @user_id;
 
+-- name: GetForumPollByOptionID :one
+-- Resolves the poll that owns a given option. Used by POST/DELETE
+-- /poll-options/{id}/vote where the URL param is the option_id, not the
+-- poll_id. Ref: api-routes-catalog L612-613.
+SELECT p.id, p.thread_id, p.question, p.is_multi_select, p.close_at, p.created_at
+FROM forum_polls p
+JOIN forum_poll_options o ON o.poll_id = p.id
+WHERE o.id = @option_id;
+
+-- name: RetractForumPollVote :exec
+-- Removes a user's vote on a poll (DELETE /poll-options/{id}/vote).
+DELETE FROM forum_poll_votes
+WHERE poll_id = @poll_id AND user_id = @user_id;
+
 -- =====================
 -- Tags
 -- =====================
@@ -425,6 +449,13 @@ LIMIT @page_limit OFFSET @page_offset;
 INSERT INTO forum_thread_tags (thread_id, tag_id)
 VALUES (@thread_id, @tag_id)
 ON CONFLICT DO NOTHING;
+
+-- name: CountForumThreadTags :one
+-- Enforces the "max 5 tags per post" rule at the handler/service layer.
+-- Ref: Section 08 Tags Schema.
+SELECT COUNT(*)::int AS tag_count
+FROM forum_thread_tags
+WHERE thread_id = @thread_id;
 
 -- name: RemoveForumThreadTag :exec
 DELETE FROM forum_thread_tags
@@ -468,7 +499,19 @@ RETURNING id, tenant_id, user_id, entity_type, entity_id, folder, created_at;
 
 -- name: RemoveForumBookmark :exec
 DELETE FROM forum_bookmarks
-WHERE user_id = @user_id AND entity_type = @entity_type AND entity_id = @entity_id;
+WHERE user_id = @user_id AND entity_type = @entity_type AND entity_id = @entity_id AND tenant_id = @tenant_id;
+
+-- name: GetForumBookmarkByID :one
+-- Fetches a bookmark by its primary key (and owner) so DELETE
+-- /forum/bookmarks/{id} can resolve the entity to decrement the
+-- denormalized bookmark_count. Ref: api-routes-catalog L610.
+SELECT id, tenant_id, user_id, entity_type, entity_id, folder, created_at
+FROM forum_bookmarks
+WHERE id = @id AND user_id = @user_id AND tenant_id = @tenant_id;
+
+-- name: DeleteForumBookmarkByID :exec
+DELETE FROM forum_bookmarks
+WHERE id = @id AND user_id = @user_id AND tenant_id = @tenant_id;
 
 -- name: ListForumBookmarksByUser :many
 SELECT id, tenant_id, user_id, entity_type, entity_id, folder, created_at
@@ -499,3 +542,20 @@ ON CONFLICT (reply_id, user_id) DO NOTHING;
 
 -- name: GetReplyViewCount :one
 SELECT view_count FROM forum_replies WHERE id = @reply_id;
+
+-- =====================
+-- Solved / Unsolve
+-- Ref: japaconnect-engineering/sections/08-forum-qa-solved.md
+-- =====================
+
+-- name: GetForumThreadSpaceIDByID :one
+SELECT space_id FROM forum_threads WHERE id = @id AND deleted_at IS NULL;
+
+-- =====================
+-- Polls — option-based lookup + vote retraction
+-- Ref: japaconnect-engineering/sections/08-forum-qa-solved.md
+-- =====================
+
+-- name: DeleteForumVoteByEntity :exec
+DELETE FROM forum_votes
+WHERE user_id = @user_id AND entity_type = @entity_type AND entity_id = @entity_id;

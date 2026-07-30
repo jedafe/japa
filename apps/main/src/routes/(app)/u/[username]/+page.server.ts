@@ -8,6 +8,8 @@ import type {
 	ProfileSpace,
 	ProfileCertificate,
 	ProfileMedia,
+	ProfileLike,
+	ProfileAnalytics,
 	FeedItem
 } from '$lib/types';
 
@@ -21,6 +23,7 @@ import type {
  *
  * Ref: japaconnect-engineering/sections/33-professional-profiles.md
  *      japaconnect-engineering/sections/23-main-site-frontend.md (Profile tabs)
+ *      japaconnect-engineering/sections/32-activity-feed-timeline.md (Profile feed)
  */
 export const load: PageServerLoad = async (event) => {
 	const ctx = apiContext(event);
@@ -41,27 +44,46 @@ export const load: PageServerLoad = async (event) => {
 	const userId = user.id;
 	const isOwnProfile = !!event.locals.user && event.locals.user.id === userId;
 
+	// C2: hydrate the follow button's initial state on SSR. Only fetch when
+	// the viewer is authenticated and viewing someone else's profile — own
+	// profile has no follow button, and guests can't follow. Best-effort:
+	// a failure degrades to `false` (not following).
+	const initiallyFollowing =
+		!isOwnProfile && event.locals.user
+			? apiGet<{ following: boolean }>(ctx, `/users/${userId}/follow-status`)
+					.then((r) => r.following)
+					.catch(() => false)
+			: Promise.resolve(false);
+
 	// Tab data — each degrades to an empty list on failure (a missing tab must
-	// never blank the whole profile).
-	const [posts, replies, media, spaces, certificates, feed, analytics] = await Promise.all([
+	// never blank the whole profile). Each tab fetches its dedicated
+	// /users/{id}/<tab> endpoint (JEOS api-routes-catalog §334–340). The
+	// profile timeline feed (/feed/profile/{id}) is fetched alongside the
+	// tabs so the profile can show a ranked/curated feed of the user's posts.
+	const [posts, replies, media, spaces, certificates, likes, feed, analytics, isFollowing] = await Promise.all([
 		apiList<ProfilePost>(ctx, `/users/${userId}/content`).then((r) => r.items).catch(() => []),
 		apiList<ProfileReply>(ctx, `/users/${userId}/replies`).then((r) => r.items).catch(() => []),
 		apiList<ProfileMedia>(ctx, `/users/${userId}/media`).then((r) => r.items).catch(() => []),
 		apiList<ProfileSpace>(ctx, `/users/${userId}/spaces`).then((r) => r.items).catch(() => []),
 		apiList<ProfileCertificate>(ctx, `/users/${userId}/certificates`).then((r) => r.items).catch(() => []),
+		apiList<ProfileLike>(ctx, `/users/${userId}/likes`).then((r) => r.items).catch(() => []),
+		// Profile timeline feed (Section 32) — ranked public posts by this user.
 		apiList<FeedItem>(ctx, `/feed/profile/${userId}?page_size=10`).then((r) => r.items).catch(() => []),
 		// Phase 11.07 — public analytics summary (best-effort).
-		apiGet<unknown>(ctx, `/users/${userId}/analytics`).catch(() => null)
+		apiGet<ProfileAnalytics>(ctx, `/users/${userId}/analytics`).catch(() => null),
+		initiallyFollowing
 	]);
 
 	return {
 		user,
 		isOwnProfile,
+		initiallyFollowing: isFollowing,
 		posts,
 		replies,
 		media,
 		spaces,
 		certificates,
+		likes,
 		feed,
 		analytics
 	};

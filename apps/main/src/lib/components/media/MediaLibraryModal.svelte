@@ -231,10 +231,10 @@
 <Dialog.Root open={true} onOpenChange={(v) => { if (!v) onClose(); }}>
 	<Dialog.Portal>
 		<Dialog.Overlay class="fixed inset-0 z-[100] bg-black/50 backdrop-blur-sm" />
-		<Dialog.Content class="fixed left-1/2 top-1/2 z-[101] flex max-h-[85vh] w-full max-w-[720px] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] shadow-2xl">
+		<Dialog.Content class="fixed left-1/2 top-1/2 z-[101] flex max-h-[90vh] w-full max-w-[720px] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] shadow-2xl sm:max-h-[85vh]">
 			<header class="modal-header">
 				<h2 class="modal-title">{t('media.picker.title')}</h2>
-				<Dialog.Close class="modal-close">
+				<Dialog.Close class="flex h-8 w-8 cursor-pointer items-center justify-center rounded-[var(--radius)] border-none bg-transparent text-[var(--color-muted)] transition-[background-color,color] duration-150 hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-text)]">
 					<X size={18} />
 				</Dialog.Close>
 			</header>
@@ -460,31 +460,6 @@
 </Dialog.Root>
 
 <style>
-	.modal-overlay {
-		position: fixed;
-		inset: 0;
-		z-index: 100;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		padding: 1rem;
-		background: rgb(0 0 0 / 0.5);
-		backdrop-filter: blur(2px);
-	}
-
-	.modal-panel {
-		display: flex;
-		flex-direction: column;
-		width: 100%;
-		max-width: 720px;
-		max-height: 85vh;
-		border: 1px solid var(--color-border);
-		border-radius: var(--radius-card);
-		background: var(--color-surface);
-		box-shadow: 0 20px 60px rgb(0 0 0 / 0.25);
-		overflow: hidden;
-	}
-
 	.modal-header {
 		display: flex;
 		align-items: center;
@@ -498,24 +473,6 @@
 		font-weight: 600;
 		color: var(--color-text);
 	}
-	.modal-close {
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		width: 32px;
-		height: 32px;
-		border: none;
-		border-radius: var(--radius);
-		background: transparent;
-		color: var(--color-muted);
-		cursor: pointer;
-		transition: background 0.15s, color 0.15s;
-	}
-	.modal-close:hover {
-		background: var(--color-surface-subtle);
-		color: var(--color-text);
-	}
-
 	.modal-tabs {
 		display: flex;
 		gap: 2px;
@@ -863,9 +820,6 @@
 	}
 
 	@media (max-width: 640px) {
-		.modal-panel {
-			max-height: 90vh;
-		}
 		.modal-grid {
 			grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
 		}

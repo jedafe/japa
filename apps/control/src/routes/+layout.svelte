@@ -185,34 +185,34 @@
 		{ href: '/deployments', icon: Rocket }
 	];
 
-	const navKeyMap: Record<string, { label: string; tooltip: string }> = {
-		'/': { label: 'nav.dashboard', tooltip: 'nav.dashboard_tooltip' },
-		'/queue': { label: 'nav.queue', tooltip: 'nav.queue_tooltip' },
-		'/dlq': { label: 'nav.dlq', tooltip: 'nav.dlq_tooltip' },
-		'/db': { label: 'nav.db_health', tooltip: 'nav.db_tooltip' },
-		'/audit': { label: 'nav.audit', tooltip: 'nav.audit_tooltip' },
-		'/security': { label: 'nav.security', tooltip: 'nav.security_tooltip' },
-		'/api-keys': { label: 'nav.api_keys', tooltip: 'nav.api_keys_tooltip' },
-		'/cache': { label: 'nav.cache', tooltip: 'nav.cache_tooltip' },
-		'/settings': { label: 'nav.settings', tooltip: 'nav.settings_tooltip' },
-		'/feature-flags': { label: 'nav.feature_flags', tooltip: 'nav.feature_flags_tooltip' },
-		'/tenants': { label: 'nav.tenants', tooltip: 'nav.tenants_tooltip' },
-		'/ai-budget': { label: 'nav.ai_budget', tooltip: 'nav.ai_budget_tooltip' },
-		'/cron': { label: 'nav.cron', tooltip: 'nav.cron_tooltip' },
-		'/deployments': { label: 'nav.deployments', tooltip: 'nav.deployments_tooltip' },
-		'/oauth-clients': { label: 'nav.oauth_clients', tooltip: 'nav.oauth_clients_tooltip' },
-		'/extensions': { label: 'nav.extensions', tooltip: 'nav.extensions_tooltip' },
-		'/webhooks': { label: 'nav.webhooks', tooltip: 'nav.webhooks_tooltip' },
-		'/backup-configs': { label: 'nav.backup_configs', tooltip: 'nav.backup_configs_tooltip' },
-		'/permission-nodes': { label: 'nav.permission_nodes', tooltip: 'nav.permission_nodes_tooltip' },
+	const navKeyMap: Record<string, { label: string; tooltip: string; defaultLabel: string; defaultTooltip: string }> = {
+		'/': { label: 'nav.dashboard', tooltip: 'nav.dashboard_tooltip', defaultLabel: 'Dashboard', defaultTooltip: 'System health overview' },
+		'/queue': { label: 'nav.queue', tooltip: 'nav.queue_tooltip', defaultLabel: 'Queue', defaultTooltip: 'Background job queue stats' },
+		'/dlq': { label: 'nav.dlq', tooltip: 'nav.dlq_tooltip', defaultLabel: 'Dead Letter Queue', defaultTooltip: 'Dead letter queue entries' },
+		'/db': { label: 'nav.db_health', tooltip: 'nav.db_tooltip', defaultLabel: 'DB Health', defaultTooltip: 'PostgreSQL health & metrics' },
+		'/audit': { label: 'nav.audit', tooltip: 'nav.audit_tooltip', defaultLabel: 'Audit Log', defaultTooltip: 'Audit log history' },
+		'/security': { label: 'nav.security', tooltip: 'nav.security_tooltip', defaultLabel: 'Security', defaultTooltip: 'Security overview & blocks' },
+		'/api-keys': { label: 'nav.api_keys', tooltip: 'nav.api_keys_tooltip', defaultLabel: 'API Keys', defaultTooltip: 'API key management' },
+		'/cache': { label: 'nav.cache', tooltip: 'nav.cache_tooltip', defaultLabel: 'Cache', defaultTooltip: 'Cache management & stats' },
+		'/settings': { label: 'nav.settings', tooltip: 'nav.settings_tooltip', defaultLabel: 'Settings', defaultTooltip: 'Platform configuration' },
+		'/feature-flags': { label: 'nav.feature_flags', tooltip: 'nav.feature_flags_tooltip', defaultLabel: 'Feature Flags', defaultTooltip: 'Feature flag management' },
+		'/tenants': { label: 'nav.tenants', tooltip: 'nav.tenants_tooltip', defaultLabel: 'Tenants', defaultTooltip: 'Multi-tenant management' },
+		'/ai-budget': { label: 'nav.ai_budget', tooltip: 'nav.ai_budget_tooltip', defaultLabel: 'AI Budget', defaultTooltip: 'AI cost tracking & limits' },
+		'/cron': { label: 'nav.cron', tooltip: 'nav.cron_tooltip', defaultLabel: 'Cron Jobs', defaultTooltip: 'Scheduled job management' },
+		'/deployments': { label: 'nav.deployments', tooltip: 'nav.deployments_tooltip', defaultLabel: 'Deployments', defaultTooltip: 'Deployment version history' },
+		'/oauth-clients': { label: 'nav.oauth_clients', tooltip: 'nav.oauth_clients_tooltip', defaultLabel: 'OAuth Clients', defaultTooltip: 'OAuth provider client management' },
+		'/extensions': { label: 'nav.extensions', tooltip: 'nav.extensions_tooltip', defaultLabel: 'Extensions', defaultTooltip: 'Platform extensions and integrations' },
+		'/webhooks': { label: 'nav.webhooks', tooltip: 'nav.webhooks_tooltip', defaultLabel: 'Webhooks', defaultTooltip: 'Webhook endpoint management' },
+		'/backup-configs': { label: 'nav.backup_configs', tooltip: 'nav.backup_configs_tooltip', defaultLabel: 'Backup Configs', defaultTooltip: 'Database backup configuration' },
+		'/permission-nodes': { label: 'nav.permission_nodes', tooltip: 'nav.permission_nodes_tooltip', defaultLabel: 'Permission Nodes', defaultTooltip: 'RBAC permission key viewer' },
 	};
 
 	const nav = $derived.by(() => {
 		const tr = translations();
 		return navConfig.map((cfg) => ({
 			...cfg,
-			label: tr[navKeyMap[cfg.href].label] ?? navKeyMap[cfg.href].label,
-			tooltip: tr[navKeyMap[cfg.href].tooltip] ?? navKeyMap[cfg.href].tooltip,
+			label: tr[navKeyMap[cfg.href].label] ?? navKeyMap[cfg.href].defaultLabel,
+			tooltip: tr[navKeyMap[cfg.href].tooltip] ?? navKeyMap[cfg.href].defaultTooltip,
 		}));
 	});
 

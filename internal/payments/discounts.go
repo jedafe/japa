@@ -50,8 +50,8 @@ type DiscountCodeUsage struct {
 }
 
 // GetDiscountCodeUsageStats returns usage statistics for a discount code.
-func (s *Service) GetDiscountCodeUsageStats(ctx context.Context, tenantID pgtype.UUID, code string) (DiscountCodeUsage, error) {
-	discountCode, err := s.store.getDiscountCodeByCode(ctx, tenantID, code)
+func (s *Service) GetDiscountCodeUsageStats(ctx context.Context, tenantID, codeID pgtype.UUID) (DiscountCodeUsage, error) {
+	discountCode, err := s.store.getDiscountCodeByID(ctx, codeID, tenantID)
 	if err != nil {
 		return DiscountCodeUsage{}, errors.New("discount code not found")
 	}

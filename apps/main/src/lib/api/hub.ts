@@ -55,7 +55,7 @@ export const createAffiliate = (v: { target_url: string; label?: string }) =>
 export const deleteAffiliate = (id: string) => api.delete(`/me/affiliate-links/${id}`);
 
 /* ---- wallet / subscription ---- */
-export const convertWallet = (points: number) => api.post('/me/wallet/convert', { points });
+export const convertWallet = (points: number) => api.post('/me/wallet/convert', { points_to_convert: points });
 export const cancelSubscription = () => api.post('/me/subscription/cancel');
 export const reactivateSubscription = () => api.post('/me/subscription/reactivate');
 

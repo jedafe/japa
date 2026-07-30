@@ -349,7 +349,7 @@ func (h *Handlers) ConfirmUpload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.service.ConfirmUpload(r.Context(), tenantID, mediaID); err != nil {
-		writeError(w, http.StatusInternalServerError, "confirm_error", err.Error())
+		writeError(w, http.StatusInternalServerError, "confirm_error", "Failed to confirm upload")
 		return
 	}
 
@@ -524,7 +524,7 @@ func (h *Handlers) updateMetadataHandler(w http.ResponseWriter, r *http.Request)
 	}
 
 	if err := h.service.UpdateMetadata(r.Context(), tenantID, mediaID, input.AltText, input.Caption, input.Width, input.Height, input.Duration, userGroupID); err != nil {
-		writeError(w, http.StatusInternalServerError, "update_error", err.Error())
+		writeError(w, http.StatusInternalServerError, "update_error", "Failed to update media")
 		return
 	}
 
@@ -557,7 +557,7 @@ func (h *Handlers) DeleteMedia(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.service.DeleteMedia(r.Context(), tenantID, mediaID); err != nil {
-		writeError(w, http.StatusInternalServerError, "delete_error", err.Error())
+		writeError(w, http.StatusInternalServerError, "delete_error", "Failed to delete media")
 		return
 	}
 
@@ -605,7 +605,7 @@ func (h *Handlers) ListMedia(w http.ResponseWriter, r *http.Request) {
 
 	items, err := h.service.ListMedia(r.Context(), tenantID, uploaderID, mimeType, query, limit, offset)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "list_error", err.Error())
+		writeError(w, http.StatusInternalServerError, "list_error", "Failed to load media")
 		return
 	}
 
@@ -640,7 +640,7 @@ func (h *Handlers) ListMyMedia(w http.ResponseWriter, r *http.Request) {
 
 	items, err := h.service.ListMedia(r.Context(), tenantID, &user.UserID, mimeType, query, limit, offset)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "list_error", err.Error())
+		writeError(w, http.StatusInternalServerError, "list_error", "Failed to load media")
 		return
 	}
 
@@ -665,7 +665,7 @@ func (h *Handlers) ListByUser(w http.ResponseWriter, r *http.Request) {
 
 	items, total, err := h.service.ListByUser(r.Context(), tenantID, uploaderID, limit, offset)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "list_error", err.Error())
+		writeError(w, http.StatusInternalServerError, "list_error", "Failed to load media")
 		return
 	}
 
@@ -694,7 +694,7 @@ func (h *Handlers) ListByOrganization(w http.ResponseWriter, r *http.Request) {
 
 	items, total, err := h.service.ListByOrganization(r.Context(), tenantID, orgID, limit, offset)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "list_error", err.Error())
+		writeError(w, http.StatusInternalServerError, "list_error", "Failed to load media")
 		return
 	}
 
@@ -726,7 +726,7 @@ func (h *Handlers) ListQuarantined(w http.ResponseWriter, r *http.Request) {
 
 	items, err := h.service.ListQuarantined(r.Context(), tenantID, limit, offset)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "list_quarantined_error", err.Error())
+		writeError(w, http.StatusInternalServerError, "list_quarantined_error", "Failed to load quarantined media")
 		return
 	}
 
@@ -742,7 +742,7 @@ func (h *Handlers) ApproveQuarantined(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.service.ApproveMedia(r.Context(), mediaID, tenantID, userID); err != nil {
-		writeError(w, http.StatusInternalServerError, "approve_error", err.Error())
+		writeError(w, http.StatusInternalServerError, "approve_error", "Failed to approve media")
 		return
 	}
 
@@ -758,7 +758,7 @@ func (h *Handlers) RejectQuarantined(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.service.RejectMedia(r.Context(), mediaID, tenantID, userID); err != nil {
-		writeError(w, http.StatusInternalServerError, "reject_error", err.Error())
+		writeError(w, http.StatusInternalServerError, "reject_error", "Failed to reject media")
 		return
 	}
 
@@ -812,7 +812,7 @@ func (h *Handlers) AdminUpdateMediaStatus(w http.ResponseWriter, r *http.Request
 	}
 
 	if err := h.service.AdminUpdateStatus(r.Context(), tenantID, mediaID, user.UserID, confirmed, quarantineReason); err != nil {
-		writeError(w, http.StatusInternalServerError, "status_update_error", err.Error())
+		writeError(w, http.StatusInternalServerError, "status_update_error", "Failed to update media status")
 		return
 	}
 
@@ -969,7 +969,7 @@ func (h *Handlers) BulkDelete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.service.BulkDelete(r.Context(), tenantID, ids); err != nil {
-		writeError(w, http.StatusInternalServerError, "bulk_delete_error", err.Error())
+		writeError(w, http.StatusInternalServerError, "bulk_delete_error", "Failed to delete media")
 		return
 	}
 
@@ -1067,6 +1067,54 @@ func isActiveContentType(contentType string) bool {
 	base, _, _ := strings.Cut(contentType, ";")
 
 	return activeContentTypes[strings.TrimSpace(strings.ToLower(base))]
+}
+
+// SeaweedFSUpload handles PUT /seaweedfs/upload/{bucket}/*.
+// This is the dev-only fallback for presigned URL uploads when S3/SeaweedFS is
+// not configured. The client PUTs raw file bytes to the presigned URL; this
+// handler writes them to the local filesystem so ServeMedia can retrieve them.
+func (h *Handlers) SeaweedFSUpload(w http.ResponseWriter, r *http.Request) {
+	bucket := chi.URLParam(r, "bucket")
+	storagePath := chi.URLParam(r, "*") // catch-all
+
+	if bucket == "" || storagePath == "" {
+		writeError(w, http.StatusBadRequest, "invalid_path", "Invalid upload path")
+		return
+	}
+
+	localPath, err := resolveMediaPath(bucket, storagePath)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_path", "Invalid upload path")
+		return
+	}
+
+	if err := os.MkdirAll(filepath.Dir(localPath), 0o755); err != nil {
+		slog.Warn("seaweedfs upload: failed to create directory", "path", localPath, "error", err)
+		writeError(w, http.StatusInternalServerError, "dir_error", "Failed to create upload directory")
+		return
+	}
+
+	// Enforce 50MB body limit.
+	r.Body = http.MaxBytesReader(w, r.Body, MaxFileSizeBytes)
+
+	dst, err := os.Create(localPath)
+	if err != nil {
+		slog.Warn("seaweedfs upload: failed to create file", "path", localPath, "error", err)
+		writeError(w, http.StatusInternalServerError, "file_error", "Failed to create file")
+		return
+	}
+	defer dst.Close()
+
+	written, err := io.Copy(dst, r.Body)
+	if err != nil {
+		slog.Warn("seaweedfs upload: failed to write file", "path", localPath, "error", err)
+		writeError(w, http.StatusInternalServerError, "write_error", "Failed to write file")
+		return
+	}
+
+	slog.Info("seaweedfs upload: file stored locally", "path", localPath, "bytes", written)
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(`{"ok":true}`))
 }
 
 // writePlaceholderSVG returns a static placeholder image for missing media.

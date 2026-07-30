@@ -15,7 +15,7 @@ func TestNotificationTypeConstants(t *testing.T) {
 	t.Parallel()
 
 	want := map[string]string{
-		TypeNewFollower:        "new_follower",
+		TypeNewFollower:        "follow.received",
 		TypePostReply:          "post_reply",
 		TypeComment:            "comment",
 		TypeMention:            "mention",

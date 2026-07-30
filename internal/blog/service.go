@@ -3,6 +3,7 @@ package blog
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
@@ -51,9 +52,10 @@ func (s *Service) GetSeriesBySlug(ctx context.Context, slug string, tenantID pgt
 	return s.store.getBlogSeriesBySlug(ctx, slug, tenantID)
 }
 
-// ListSeriesByTenant returns paginated series for a tenant.
-func (s *Service) ListSeriesByTenant(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]gen.BlogSeries, error) {
-	return s.store.listBlogSeriesByTenant(ctx, tenantID, limit, offset)
+// ListSeriesByTenant returns paginated series for a tenant, optionally
+// filtered by the autocomplete query `q` (L2 — filter now in SQL).
+func (s *Service) ListSeriesByTenant(ctx context.Context, tenantID pgtype.UUID, q string, limit, offset int32) ([]gen.BlogSeries, error) {
+	return s.store.listBlogSeriesByTenant(ctx, tenantID, q, limit, offset)
 }
 
 // ListSeriesByAuthor returns paginated series for an author.
@@ -61,8 +63,8 @@ func (s *Service) ListSeriesByAuthor(ctx context.Context, tenantID, authorUserID
 	return s.store.listBlogSeriesByAuthor(ctx, tenantID, authorUserID, limit, offset)
 }
 
-// UpdateSeries updates a blog series.
-func (s *Service) UpdateSeries(ctx context.Context, id, tenantID pgtype.UUID, title, description string, coverImageID pgtype.UUID, status string) (gen.BlogSeries, error) {
+// UpdateSeries updates a blog series. M2: slug is now updatable.
+func (s *Service) UpdateSeries(ctx context.Context, id, tenantID pgtype.UUID, title, slug, description string, coverImageID pgtype.UUID, status string) (gen.BlogSeries, error) {
 	if title == "" {
 		return gen.BlogSeries{}, errors.New("title is required")
 	}
@@ -76,10 +78,16 @@ func (s *Service) UpdateSeries(ctx context.Context, id, tenantID pgtype.UUID, ti
 		desc = &description
 	}
 
+	var slugPtr *string
+	if slug != "" {
+		slugPtr = &slug
+	}
+
 	return s.store.updateBlogSeries(ctx, gen.UpdateBlogSeriesParams{
 		ID:           id,
 		TenantID:     tenantID,
 		Title:        title,
+		Slug:         slugPtr,
 		Description:  desc,
 		CoverImageID: coverImageID,
 		Status:       status,
@@ -95,8 +103,19 @@ func (s *Service) DeleteSeries(ctx context.Context, id, tenantID pgtype.UUID) er
 // Series Posts
 // ---------------------------------------------------------------------------
 
-// AddPostToSeries adds a post to a series at the given position.
-func (s *Service) AddPostToSeries(ctx context.Context, seriesID, contentID pgtype.UUID, position int32) error {
+// AddPostToSeries adds a post to a series at the given position. H7: verifies
+// the content belongs to the same tenant before linking to prevent
+// cross-tenant content linkage.
+func (s *Service) AddPostToSeries(ctx context.Context, seriesID, contentID, tenantID pgtype.UUID, position int32) error {
+	contentTenant, err := s.store.getContentTenantID(ctx, contentID)
+	if err != nil {
+		return fmt.Errorf("verifying content tenant for series link: %w", err)
+	}
+
+	if contentTenant != tenantID {
+		return errors.New("content does not belong to this tenant")
+	}
+
 	return s.store.addPostToSeries(ctx, gen.AddPostToSeriesParams{
 		SeriesID:  seriesID,
 		ContentID: contentID,
@@ -110,8 +129,9 @@ func (s *Service) RemovePostFromSeries(ctx context.Context, seriesID, contentID 
 }
 
 // ListPostsInSeries returns all posts in a series ordered by position.
-func (s *Service) ListPostsInSeries(ctx context.Context, seriesID pgtype.UUID) ([]gen.ListPostsInSeriesRow, error) {
-	return s.store.listPostsInSeries(ctx, seriesID)
+// H5: now tenant-scoped and filters soft-deleted contents.
+func (s *Service) ListPostsInSeries(ctx context.Context, seriesID, tenantID pgtype.UUID) ([]gen.ListPostsInSeriesRow, error) {
+	return s.store.listPostsInSeries(ctx, seriesID, tenantID)
 }
 
 // ReorderPostsInSeries updates the position of a post within a series.
@@ -141,6 +161,8 @@ type CreateReviewInput struct {
 }
 
 // CreateReview creates a new content review.
+// BUG-003: reviewer_user_id is now nullable — pass pgtype.UUID{} (zero value,
+// Valid=false → NULL) when no reviewer is assigned yet (e.g. SubmitForReview).
 func (s *Service) CreateReview(ctx context.Context, tenantID, reviewerUserID pgtype.UUID, input CreateReviewInput) (gen.ContentReview, error) {
 	if input.ContentID == (pgtype.UUID{}) {
 		return gen.ContentReview{}, errors.New("content_id is required")
@@ -159,7 +181,7 @@ func (s *Service) CreateReview(ctx context.Context, tenantID, reviewerUserID pgt
 	return s.store.createContentReview(ctx, gen.CreateContentReviewParams{
 		TenantID:       tenantID,
 		ContentID:      input.ContentID,
-		ReviewerUserID: reviewerUserID,
+		ReviewerUserID: reviewerUserID, // zero value → NULL when no reviewer
 		Status:         status,
 		Feedback:       feedback,
 	})
@@ -181,7 +203,8 @@ func (s *Service) ListPendingReviews(ctx context.Context, tenantID pgtype.UUID, 
 }
 
 // UpdateReviewStatus updates a review's status and feedback.
-func (s *Service) UpdateReviewStatus(ctx context.Context, id, tenantID pgtype.UUID, status, feedback string) (gen.ContentReview, error) {
+// BUG-003: also records the actual reviewer's user ID on approve/reject.
+func (s *Service) UpdateReviewStatus(ctx context.Context, id, tenantID, reviewerUserID pgtype.UUID, status, feedback string) (gen.ContentReview, error) {
 	if status == "" {
 		return gen.ContentReview{}, errors.New("status is required")
 	}
@@ -192,10 +215,11 @@ func (s *Service) UpdateReviewStatus(ctx context.Context, id, tenantID pgtype.UU
 	}
 
 	return s.store.updateContentReviewStatus(ctx, gen.UpdateContentReviewStatusParams{
-		ID:       id,
-		TenantID: tenantID,
-		Status:   status,
-		Feedback: fb,
+		ID:             id,
+		TenantID:       tenantID,
+		ReviewerUserID: reviewerUserID, // COALESCE in SQL keeps existing if zero
+		Status:         status,
+		Feedback:       fb,
 	})
 }
 
@@ -244,9 +268,47 @@ func (s *Service) UpdateFeaturedPostOrder(ctx context.Context, id, tenantID pgty
 	return s.store.updateFeaturedOrder(ctx, id, tenantID, order)
 }
 
+// BulkUpdateFeaturedOrder transactionally updates all featured post orders
+// (M3 — all-or-nothing on failure).
+func (s *Service) BulkUpdateFeaturedOrder(ctx context.Context, tenantID pgtype.UUID, items []struct {
+	ID    pgtype.UUID
+	Order int32
+}) error {
+	return s.store.bulkUpdateFeaturedOrder(ctx, tenantID, items)
+}
+
+// ListFeaturedBlogPostCards returns enriched featured post cards with JOINs
+// to contents, users, and media (H6).
+func (s *Service) ListFeaturedBlogPostCards(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]gen.ListFeaturedBlogPostCardsRow, error) {
+	return s.store.listFeaturedBlogPostCards(ctx, tenantID, limit, offset)
+}
+
 // ExpireFeaturedPosts marks all past-due featured posts as expired.
 func (s *Service) ExpireFeaturedPosts(ctx context.Context) error {
 	return s.store.expireFeaturedPosts(ctx)
+}
+
+// ---------------------------------------------------------------------------
+// Blog Post Detail / List (enriched DTOs)
+// ---------------------------------------------------------------------------
+
+// GetBlogPostDetail returns a single blog post with author, avatar, featured
+// image, space name, tags, and series navigation (C4).
+func (s *Service) GetBlogPostDetail(ctx context.Context, slug string, tenantID pgtype.UUID) (gen.GetBlogPostDetailRow, error) {
+	return s.store.getBlogPostDetail(ctx, slug, tenantID)
+}
+
+// ListPublishedBlogPosts returns published blog post cards with author and
+// featured image, status-filtered in SQL (C5/H3).
+// BUG-005: offset-based pagination per Rule 5 (page_size + page_offset).
+func (s *Service) ListPublishedBlogPosts(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]gen.ListPublishedBlogPostsRow, error) {
+	return s.store.listPublishedBlogPosts(ctx, tenantID, limit, offset)
+}
+
+// ListPendingReviewSummaries returns joined review-queue rows with post
+// title/slug/author/excerpt for the admin review-queue (C3).
+func (s *Service) ListPendingReviewSummaries(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]gen.ListPendingReviewSummariesRow, error) {
+	return s.store.listPendingReviewSummaries(ctx, tenantID, limit, offset)
 }
 
 // ---------------------------------------------------------------------------

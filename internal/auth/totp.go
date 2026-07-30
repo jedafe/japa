@@ -29,6 +29,8 @@ type TOTPStore interface {
 	UpsertTOTPSecret(ctx context.Context, userID pgtype.UUID, secretEncrypted string) error
 	EnableTOTP(ctx context.Context, userID pgtype.UUID) error
 	DisableTOTP(ctx context.Context, userID pgtype.UUID) error
+	SaveBackupCodes(ctx context.Context, userID pgtype.UUID, hashedCodes []string) error
+	GetUserEmail(ctx context.Context, userID pgtype.UUID) (string, error)
 }
 
 // TOTPRecord holds the stored TOTP credential for a user.

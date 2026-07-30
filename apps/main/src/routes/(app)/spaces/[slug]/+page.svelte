@@ -46,10 +46,10 @@
 			return;
 		}
 		searching = true;
-		const res = await api.get<{ items: SpaceContentItem[] }>(
+		const res = await api.get<SpaceContentItem[]>(
 			`/spaces/${space.slug}/content?q=${encodeURIComponent(searchQuery.trim())}&page_size=20`
 		);
-		searchResults = res.data?.items ?? [];
+		searchResults = res.data ?? [];
 		searching = false;
 	}
 

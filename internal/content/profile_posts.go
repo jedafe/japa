@@ -5,13 +5,18 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"regexp"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/jedafe/japa/internal/db/gen"
 )
+
+// htmlTagPattern matches HTML tags for stripping when building excerpts.
+var htmlTagPattern = regexp.MustCompile(`<[^>]*>`)
 
 // ListPublishedByAuthor returns a user's published+public content, newest first,
 // paginated. Powers the public profile Posts tab (GET /users/{id}/content).
@@ -104,6 +109,7 @@ type PostCard struct {
 	Title           string             `json:"title"`
 	Slug            string             `json:"slug"`
 	BodyHtml        string             `json:"body_html"`
+	Excerpt         string             `json:"excerpt"`
 	HeaderImageID   pgtype.UUID        `json:"header_image_id"`
 	FeaturedImageID pgtype.UUID        `json:"featured_image_id"`
 	ReadTimeMinutes int32              `json:"read_time_minutes"`
@@ -113,6 +119,22 @@ type PostCard struct {
 	IsPinned        bool               `json:"is_pinned"`
 	PublishedAt     pgtype.Timestamptz `json:"published_at"`
 	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+}
+
+// makeExcerpt strips HTML tags from bodyHtml, collapses whitespace, and
+// truncates to maxLen characters for use as a post preview.
+func makeExcerpt(bodyHtml string, maxLen int) string {
+	plain := htmlTagPattern.ReplaceAllString(bodyHtml, "")
+	plain = strings.Join(strings.Fields(plain), " ")
+	if len(plain) > maxLen {
+		// Try to cut at a word boundary.
+		cut := strings.LastIndex(plain[:maxLen], " ")
+		if cut < maxLen/2 {
+			cut = maxLen
+		}
+		plain = plain[:cut] + "…"
+	}
+	return plain
 }
 
 func toPostCards(items []gen.ListPublishedContentByAuthorRow) []PostCard {
@@ -129,6 +151,7 @@ func toPostCards(items []gen.ListPublishedContentByAuthorRow) []PostCard {
 			Title:           c.Title,
 			Slug:            c.Slug,
 			BodyHtml:        c.BodyHtml,
+			Excerpt:         makeExcerpt(c.BodyHtml, 200),
 			HeaderImageID:   c.HeaderImageID,
 			FeaturedImageID: c.FeaturedImageID,
 			ReadTimeMinutes: c.ReadTimeMinutes,
@@ -203,6 +226,7 @@ func toOrgPostCards(items []gen.ListPublishedContentByOrganizationRow) []PostCar
 			Title:           c.Title,
 			Slug:            c.Slug,
 			BodyHtml:        c.BodyHtml,
+			Excerpt:         makeExcerpt(c.BodyHtml, 200),
 			HeaderImageID:   c.HeaderImageID,
 			FeaturedImageID: c.FeaturedImageID,
 			ReadTimeMinutes: c.ReadTimeMinutes,
