@@ -86,7 +86,7 @@ func handleServiceError(w http.ResponseWriter, err error) {
 	case errors.Is(err, errpkg.ErrForbidden):
 		writeError(w, http.StatusForbidden, "forbidden", "You do not have permission to perform this action")
 	default:
-		writeError(w, http.StatusInternalServerError, "internal_error", "Something went wrong")
+		writeError(w, http.StatusInternalServerError, "internal_error", "An unexpected error occurred. Please try again later.")
 	}
 }
 
