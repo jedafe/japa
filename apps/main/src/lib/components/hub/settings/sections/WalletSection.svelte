@@ -19,6 +19,22 @@
 	let error = $state<string | null>(null);
 	let success = $state(false);
 
+	function userMessage(code: string | undefined, fallback: string): string {
+		switch (code) {
+			case 'insufficient_balance':
+				return "You don't have enough points for this conversion.";
+			case 'invalid_input':
+			case 'invalid_amount':
+				return 'Please enter a valid amount.';
+			case 'internal_error':
+				return 'Conversion failed. Please try again later.';
+			case 'forbidden':
+				return 'You do not have permission to perform this action.';
+			default:
+				return fallback;
+		}
+	}
+
 	async function doConvert() {
 		const pts = parseInt(convertAmount, 10);
 		if (!pts || pts <= 0) return;
@@ -28,7 +44,7 @@
 		const res = await convertWallet(pts);
 		converting = false;
 		if (res.error) {
-			error = res.error.message;
+			error = userMessage(res.error.code, res.error.message);
 			return;
 		}
 		success = true;
