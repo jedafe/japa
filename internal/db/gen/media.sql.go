@@ -549,7 +549,7 @@ func (q *Queries) ListMediaByUploader(ctx context.Context, arg ListMediaByUpload
 
 const listMediaForScanning = `-- name: ListMediaForScanning :many
 SELECT id, storage_path FROM media
-WHERE tenant_id = $1 AND status = 'uploaded'
+WHERE tenant_id = $1 AND confirmed = false AND deleted_at IS NULL AND quarantined_at IS NULL
 ORDER BY created_at ASC
 LIMIT 50
 `

@@ -90,6 +90,17 @@ SET status = @status, updated_at = now()
 WHERE id = @id AND tenant_id = @tenant_id
 RETURNING *;
 
+-- name: UpdateAdCampaignDetails :one
+-- Partial PATCH for the admin UI: only name and budget are editable from
+-- the campaign row. ad_campaigns has no description column, so it is
+-- intentionally omitted. Fields use COALESCE so callers can omit either.
+UPDATE ad_campaigns
+SET name = COALESCE(NULLIF(@name::text, ''), name),
+    budget = COALESCE(@budget, budget),
+    updated_at = now()
+WHERE id = @id AND tenant_id = @tenant_id
+RETURNING *;
+
 -- name: UpdateAdCampaign :one
 UPDATE ad_campaigns
 SET name = @name,

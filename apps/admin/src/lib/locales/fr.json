@@ -2404,5 +2404,11 @@
   "analytics.space_name": "Nom de l'espace",
   "common.showing": "Affichage de {start}-{end} sur {total}",
   "common.previous": "Précédent",
-  "common.next": "Suivant"
+  "common.next": "Suivant",
+  "analytics.severity": "Gravité",
+  "analytics.resolved": "Résolu",
+  "analytics.unresolved": "Non résolu",
+  "analytics.scanning": "Analyse en cours...",
+  "analytics.scan_failed": "Échec de l'analyse",
+  "analytics.resolve_failed": "Échec de la résolution"
 }
