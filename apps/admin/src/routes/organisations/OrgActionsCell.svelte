@@ -25,7 +25,7 @@
 	let acting = $state(false);
 
 	const canManage = $derived(
-		getPermissions().includes("organizations.manage") || getPermissions().includes("*")
+		getPermissions().includes("admin.moderation") || getPermissions().includes("*")
 	);
 	const pendingClaim = $derived(pendingClaimsByOrg?.[row?.id] ?? null);
 

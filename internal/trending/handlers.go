@@ -9,15 +9,19 @@ package trending
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
+	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/tenant"
 	"github.com/jedafe/japa/internal/visitor"
+	"github.com/valkey-io/valkey-go"
 )
 
 // Pagination defaults.
@@ -26,14 +30,23 @@ const (
 	maxLimit     = 50
 )
 
+// trendingCacheTTL is the TTL for jc:trending:tags:{tenant}:{geo} (Section 53).
+const trendingCacheTTL = 30 * time.Minute
+
 // Handlers holds dependencies for trending HTTP handlers.
 type Handlers struct {
 	Store *Store
+	cache valkey.Client // nil disables caching (tests)
 }
 
 // NewHandlers creates Handlers with the given Store.
 func NewHandlers(store *Store) *Handlers {
 	return &Handlers{Store: store}
+}
+
+// SetCache injects a Valkey cache client for jc:trending:tags caching (BUG-015).
+func (h *Handlers) SetCache(c valkey.Client) {
+	h.cache = c
 }
 
 // ---------------------------------------------------------------------------
@@ -121,6 +134,16 @@ func parseGeoCode(r *http.Request) string {
 	return visitor.FromContext(r.Context()).ContentCountry
 }
 
+// parseGeoCodePtr is like parseGeoCode but returns a *string suitable for
+// sqlc narg binding (nil when empty → NULL → global ranking in the query).
+func parseGeoCodePtr(r *http.Request) *string {
+	g := parseGeoCode(r)
+	if g == "" {
+		return nil
+	}
+	return &g
+}
+
 // ---------------------------------------------------------------------------
 // Public trending endpoints
 // ---------------------------------------------------------------------------
@@ -156,10 +179,30 @@ func (h *Handlers) GetTrendingTags(w http.ResponseWriter, r *http.Request) {
 	geoCode := parseGeoCode(r)
 	limit := parseLimit(r)
 
+	// Try Valkey cache first (jc:trending:tags:{tenant}:{geo}, Section 53, TTL 30min).
+	tenantStr := tenantID.String()
+	cacheKey := fmt.Sprintf("jc:trending:tags:%s:%s", tenantStr, geoCode)
+	if h.cache != nil {
+		if cached, err := h.cache.Do(r.Context(), h.cache.B().Get().Key(cacheKey).Build()).ToString(); err == nil {
+			var data []gen.GetTrendingTagsRow
+			if json.Unmarshal([]byte(cached), &data) == nil {
+				writeJSON(w, http.StatusOK, map[string]any{"data": data})
+				return
+			}
+		}
+	}
+
 	data, err := h.Store.GetTrendingTags(r.Context(), tenantID, window, geoCode, limit)
 	if err != nil {
 		handleServiceError(w, err)
 		return
+	}
+
+	// Cache the result (fire-and-forget; cache miss is acceptable).
+	if h.cache != nil {
+		if encoded, err := json.Marshal(data); err == nil {
+			_ = h.cache.Do(r.Context(), h.cache.B().Set().Key(cacheKey).Value(string(encoded)).Ex(trendingCacheTTL).Build()).Error()
+		}
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": data})
@@ -210,6 +253,8 @@ func (h *Handlers) GetTrendingUsers(w http.ResponseWriter, r *http.Request) {
 // ---------------------------------------------------------------------------
 
 // GetSuggestedUsers handles GET /api/v1/suggestions/users.
+// ADR-064 / roadmap task 38.04: defaults ?geo= to the VisitorContext's
+// ContentCountry when omitted; explicit ?geo= (including "all") overrides.
 func (h *Handlers) GetSuggestedUsers(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -222,8 +267,9 @@ func (h *Handlers) GetSuggestedUsers(w http.ResponseWriter, r *http.Request) {
 	}
 
 	limit := parseLimit(r)
+	geoCode := parseGeoCodePtr(r)
 
-	data, err := h.Store.GetSuggestedUsers(r.Context(), user.UserID, tenantID, limit)
+	data, err := h.Store.GetSuggestedUsers(r.Context(), user.UserID, tenantID, limit, geoCode)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -233,6 +279,8 @@ func (h *Handlers) GetSuggestedUsers(w http.ResponseWriter, r *http.Request) {
 }
 
 // GetSuggestedSpaces handles GET /api/v1/suggestions/spaces.
+// ADR-064 / roadmap task 38.04: defaults ?geo= to the VisitorContext's
+// ContentCountry when omitted; explicit ?geo= (including "all") overrides.
 func (h *Handlers) GetSuggestedSpaces(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -245,8 +293,9 @@ func (h *Handlers) GetSuggestedSpaces(w http.ResponseWriter, r *http.Request) {
 	}
 
 	limit := parseLimit(r)
+	geoCode := parseGeoCodePtr(r)
 
-	data, err := h.Store.GetSuggestedSpaces(r.Context(), user.UserID, tenantID, limit)
+	data, err := h.Store.GetSuggestedSpaces(r.Context(), user.UserID, tenantID, limit, geoCode)
 	if err != nil {
 		handleServiceError(w, err)
 		return

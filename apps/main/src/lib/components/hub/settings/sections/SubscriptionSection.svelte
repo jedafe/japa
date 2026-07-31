@@ -42,10 +42,16 @@
 		highlighted: boolean;
 	}
 
+	interface Currency {
+		code: string;
+		symbol: string;
+	}
+
 	interface SubscriptionData {
 		subscription: Subscription | null;
 		plans: PricingPlan[];
 		providers: PaymentProvider[];
+		currencies?: Currency[];
 	}
 
 	let { data }: { data: unknown } = $props();
@@ -53,6 +59,7 @@
 	let sub = $state<Subscription | null>(rawData?.subscription ?? null);
 	let plans = $state<PricingPlan[]>(rawData?.plans ?? []);
 	let providers = $state<PaymentProvider[]>(rawData?.providers ?? []);
+	let currencies = $state<Currency[]>(rawData?.currencies ?? []);
 	let cancelOpen = $state(false);
 	let loading = $state(false);
 	let error = $state<string | null>(null);
@@ -86,15 +93,14 @@
 	const subscribablePlans = $derived(plans.filter((p) => p.monthly.amount > 0));
 	const enabledProviders = $derived(providers.filter((p) => p.enabled));
 
-	const CURRENCY_SYMBOLS: Record<string, string> = {
-		NGN: '₦',
-		USD: '$',
-		EUR: '€',
-		GBP: '£'
-	};
+	// Currency symbols from the API (Rule 16 — no hardcoded data).
+	// Falls back to the currency code if the symbol is not found.
+	const currencySymbolMap = $derived(
+		new Map(currencies.map((c) => [c.code, c.symbol]))
+	);
 
 	function formatPrice(amount: number, currency: string): string {
-		const symbol = CURRENCY_SYMBOLS[currency] ?? '';
+		const symbol = currencySymbolMap.get(currency) ?? currency;
 		return `${symbol}${(amount / 100).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
 	}
 

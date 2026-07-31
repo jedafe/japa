@@ -1,20 +1,16 @@
 <script lang="ts">
-	import { api, comparisonsAdminApiExtended } from '$lib/api';
+	import {
+		comparisonAdminApi,
+		type ComparisonEntry,
+		type ComparisonType
+	} from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { Plus, Pencil, Trash2, Eye } from 'lucide-svelte';
 	import Modal from '$lib/components/Modal.svelte';
 	import { DataTable } from '$lib/components/ui/data-table';
 
-	type ComparisonType = {
-		id: string;
-		name: string;
-		slug: string;
-		description?: string;
-		is_public: boolean;
-		created_at: string;
-	};
-
+	let comparisons = $state<ComparisonEntry[]>([]);
 	let types = $state<ComparisonType[]>([]);
 	let loading = $state(true);
 	let errorMessage = $state('');
@@ -22,25 +18,42 @@
 
 	let showCreateModal = $state(false);
 	let showEditModal = $state(false);
-	let editingType = $state<ComparisonType | null>(null);
+	let editingEntry = $state<ComparisonEntry | null>(null);
 	let saving = $state(false);
 
-	let modalOpen = $state(false);
-
 	let showViewModal = $state(false);
-	let viewTarget = $state<ComparisonType | null>(null);
+	let viewTarget = $state<ComparisonEntry | null>(null);
 	let showDeleteConfirm = $state(false);
-	let deleteTarget = $state<ComparisonType | null>(null);
+	let deleteTarget = $state<ComparisonEntry | null>(null);
 
-	const canManageComparisons = $derived(hasPermission('comparison.type.create'));
+	const canCreateComparison = $derived(hasPermission('comparison.create'));
+	const canEditComparison = $derived(hasPermission('comparison.edit_own') || hasPermission('comparison.edit_any'));
+	const canDeleteComparison = $derived(hasPermission('comparison.delete_own') || hasPermission('comparison.delete_any'));
+
+	const visibilityOptions = [
+		{ value: 'public', label: t('comparisons.vis_public') },
+		{ value: 'members', label: t('comparisons.vis_members') },
+		{ value: 'private', label: t('comparisons.vis_private') }
+	];
 
 	const columns = [
-		{ key: 'name', label: t('comparisons.name'), sortable: true },
-		{ key: 'slug', label: t('comparisons.slug'), render: (v: string) => `<span class="text-xs font-mono" style="color: var(--color-muted)">${v}</span>` },
+		{ key: 'title', label: t('comparisons.col_title'), sortable: true },
+		{ key: 'slug', label: t('comparisons.col_slug'), render: (v: string) => `<span class="text-xs font-mono" style="color: var(--color-muted)">${v}</span>` },
 		{
-			key: 'is_public',
-			label: t('comparisons.visibility'),
-			render: (v: boolean) => `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium ${v ? 'bg-success/15 text-success dark:text-success' : 'bg-muted/15 text-muted dark:text-muted'}">${v ? t('comparisons.public') : t('comparisons.private')}</span>`
+			key: 'visibility',
+			label: t('comparisons.col_visibility'),
+			render: (v: string) => `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium ${v === 'public' ? 'bg-success/15 text-success dark:text-success' : v === 'members' ? 'bg-muted/15 text-muted dark:text-muted' : 'bg-danger/15 text-danger dark:text-danger'}">${visibilityOptions.find((o) => o.value === v)?.label ?? v}</span>`
+		},
+		{
+			key: 'status',
+			label: t('comparisons.col_status'),
+			render: (v: string) => `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium ${v === 'published' ? 'bg-success/15 text-success dark:text-success' : 'bg-muted/15 text-muted dark:text-muted'}">${v}</span>`
+		},
+		{
+			key: 'created_at',
+			label: t('comparisons.col_created'),
+			sortable: true,
+			render: (v: string) => `<span class="text-xs" style="color: var(--color-muted)">${v ? new Date(v).toLocaleDateString() : '—'}</span>`
 		},
 		{
 			key: 'actions',
@@ -49,22 +62,22 @@
 		}
 	];
 
-	const filteredTypes = $derived.by(() => {
-		let items = types;
+	const filteredComparisons = $derived.by(() => {
+		let items = comparisons;
 		if (searchQuery) {
 			const q = searchQuery.toLowerCase();
-			items = items.filter((ct) => ct.name.toLowerCase().includes(q) || ct.slug.toLowerCase().includes(q));
+			items = items.filter((c) => c.title.toLowerCase().includes(q) || c.slug.toLowerCase().includes(q));
 		}
 		return items;
 	});
 
-	function openView(ct: ComparisonType) {
-		viewTarget = ct;
+	function openView(c: ComparisonEntry) {
+		viewTarget = c;
 		showViewModal = true;
 	}
 
-	function confirmDelete(ct: ComparisonType) {
-		deleteTarget = ct;
+	function confirmDelete(c: ComparisonEntry) {
+		deleteTarget = c;
 		showDeleteConfirm = true;
 	}
 
@@ -72,7 +85,7 @@
 		if (!deleteTarget) return;
 		errorMessage = '';
 		try {
-			const result = await api(`/admin/comparison-types/${deleteTarget.id}`, { method: 'DELETE' });
+			const result = await comparisonAdminApi.deleteComparison(deleteTarget.id);
 			if (result.ok) {
 				showDeleteConfirm = false;
 				deleteTarget = null;
@@ -85,20 +98,27 @@
 		}
 	}
 
-	let name = $state('');
+	let title = $state('');
 	let slug = $state('');
-	let description = $state('');
-	let isPublic = $state(true);
+	let body = $state('');
+	let visibility = $state('members');
+	let typeId = $state('');
 
 	async function load() {
 		loading = true;
 		errorMessage = '';
 		try {
-			const result = await api<ComparisonType[]>('/admin/comparison-types');
-			if (result.ok) {
-				types = result.data ?? [];
+			const [compResult, typesResult] = await Promise.all([
+				comparisonAdminApi.listComparisons(),
+				comparisonAdminApi.listTypes()
+			]);
+			if (compResult.ok) {
+				comparisons = compResult.data ?? [];
 			} else {
-				errorMessage = result.error;
+				errorMessage = compResult.error;
+			}
+			if (typesResult.ok) {
+				types = typesResult.data ?? [];
 			}
 		} catch {
 			errorMessage = t('common.error');
@@ -107,34 +127,46 @@
 		}
 	}
 
+	function slugify(text: string): string {
+		return text
+			.toLowerCase()
+			.replace(/[^a-z0-9]+/g, '-')
+			.replace(/^-|-$/g, '');
+	}
+
 	function openCreate() {
-		name = '';
+		title = '';
 		slug = '';
-		description = '';
-		isPublic = true;
-		modalOpen = true;
+		body = '';
+		visibility = 'members';
+		typeId = '';
+		showCreateModal = true;
 	}
 
-	function openEdit(ct: ComparisonType) {
-		editingType = ct;
-		name = ct.name;
-		slug = ct.slug;
-		description = ct.description || '';
-		isPublic = ct.is_public;
-		modalOpen = true;
+	function openEdit(c: ComparisonEntry) {
+		editingEntry = c;
+		title = c.title;
+		slug = c.slug;
+		body = c.body || '';
+		visibility = c.visibility || 'members';
+		typeId = '';
+		showEditModal = true;
 	}
 
-	async function createType() {
-		if (!name.trim() || !slug.trim()) return;
+	async function createComparison() {
+		if (!title.trim()) return;
 		saving = true;
 		errorMessage = '';
 		try {
-			const result = await api('/admin/comparison-types', {
-				method: 'POST',
-				body: { name: name.trim(), slug: slug.trim(), description: description.trim() || undefined, is_public: isPublic }
+			const result = await comparisonAdminApi.createComparison({
+				title: title.trim(),
+				slug: slug.trim() || slugify(title),
+				body: body.trim() || undefined,
+				visibility,
+				type_id: typeId || undefined
 			});
 			if (result.ok) {
-				modalOpen = false;
+				showCreateModal = false;
 				load();
 			} else {
 				errorMessage = result.error;
@@ -146,18 +178,20 @@
 		}
 	}
 
-	async function updateType() {
-		if (!editingType || !name.trim() || !slug.trim()) return;
+	async function updateComparison() {
+		if (!editingEntry || !title.trim()) return;
 		saving = true;
 		errorMessage = '';
 		try {
-			const result = await api(`/admin/comparison-types/${editingType.id}`, {
-				method: 'PATCH',
-				body: { name: name.trim(), slug: slug.trim(), description: description.trim() || undefined, is_public: isPublic }
+			const result = await comparisonAdminApi.updateComparison(editingEntry.id, {
+				title: title.trim(),
+				slug: slug.trim() || slugify(title),
+				body: body.trim() || undefined,
+				visibility
 			});
 			if (result.ok) {
-				modalOpen = false;
-				editingType = null;
+				showEditModal = false;
+				editingEntry = null;
 				load();
 			} else {
 				errorMessage = result.error;
@@ -179,7 +213,7 @@
 </svelte:head>
 
 <h1 class="mb-1 text-2xl font-bold tracking-tight">{t('comparisons.title')}</h1>
-<p class="mb-4 text-sm" style="color: var(--color-muted)">{t('comparisons.description')}</p>
+<p class="mb-4 text-sm" style="color: var(--color-muted)">{t('comparisons.subtitle')}</p>
 
 {#if errorMessage}
 	<div class="mb-4 rounded-md border px-4 py-3 text-sm" style="border-color: var(--color-danger); background-color: color-mix(in srgb, var(--color-danger) 8%, transparent); color: var(--color-danger)">
@@ -188,10 +222,10 @@
 {/if}
 
 <div class="mb-4 flex justify-end">
-	{#if canManageComparisons}
+	{#if canCreateComparison}
 		<button class="btn btn-primary flex items-center gap-1.5 text-xs" onclick={openCreate}>
 			<Plus class="h-3 w-3" />
-			{t('comparisons.create_type')}
+			{t('comparisons.create')}
 		</button>
 	{/if}
 </div>
@@ -201,7 +235,7 @@
 {:else}
 	<DataTable
 		columns={columns}
-		data={filteredTypes}
+		data={filteredComparisons}
 		pageSize={25}
 		emptyMessage={t('comparisons.empty')}
 		searchable
@@ -210,25 +244,31 @@
 {/if}
 
 <!-- View Modal -->
-<Modal bind:open={showViewModal} title={t('comparisons.view_type')}>
+<Modal bind:open={showViewModal} title={t('comparisons.view')}>
 	{#if viewTarget}
 		<div class="space-y-4">
 			<div>
-				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('comparisons.name')}</p>
-				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.name}</p>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('comparisons.col_title')}</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.title}</p>
 			</div>
 			<div>
-				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('comparisons.slug')}</p>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('comparisons.col_slug')}</p>
 				<p class="mt-1 text-sm font-mono" style="color: var(--color-foreground)">{viewTarget.slug}</p>
 			</div>
 			<div>
-				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('comparisons.description')}</p>
-				<p class="mt-1 text-sm" style="color: var(--color-foreground)">{viewTarget.description || '—'}</p>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('comparisons.col_visibility')}</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{visibilityOptions.find((o) => o.value === viewTarget!.visibility)?.label ?? viewTarget!.visibility}</p>
 			</div>
 			<div>
-				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('comparisons.visibility')}</p>
-				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.is_public ? t('comparisons.public') : t('comparisons.private')}</p>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('comparisons.col_status')}</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.status}</p>
 			</div>
+			{#if viewTarget.body}
+				<div>
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('comparisons.body')}</p>
+					<p class="mt-1 text-sm" style="color: var(--color-foreground)">{viewTarget.body}</p>
+				</div>
+			{/if}
 		</div>
 	{/if}
 	<div class="mt-6 flex justify-end">
@@ -239,41 +279,82 @@
 <!-- Delete Confirmation -->
 <Modal bind:open={showDeleteConfirm} title={t('common.confirm')} confirmLabel={t('common.delete')} onConfirm={executeDelete}>
 	<p class="text-sm" style="color: var(--color-muted)">
-		{t('comparisons.delete_confirm')} <strong>{deleteTarget?.name}</strong>?
+		{t('comparisons.delete_confirm')} <strong>{deleteTarget?.title}</strong>?
 	</p>
 </Modal>
 
-<!-- Create/Edit Modal -->
-<Modal bind:open={modalOpen} title={editingType ? t('comparisons.edit_type') : t('comparisons.create_type')} onConfirm={editingType ? updateType : createType} confirmLabel={saving ? t('common.saving') : editingType ? t('common.save') : t('common.create')}>
+<!-- Create Modal -->
+<Modal bind:open={showCreateModal} title={t('comparisons.create')} onConfirm={createComparison} confirmLabel={saving ? t('common.saving') : t('common.create')}>
 	<div class="space-y-4">
 		<div>
-			<label for="ct-name" class="mb-1 block text-sm font-medium">{t('comparisons.name')}</label>
-			<input id="ct-name" type="text" bind:value={name} required class="w-full rounded-lg border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-background); color: var(--color-foreground)" />
+			<label for="cmp-title" class="mb-1 block text-sm font-medium">{t('comparisons.col_title')}</label>
+			<input id="cmp-title" type="text" bind:value={title} required class="w-full rounded-lg border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-background); color: var(--color-foreground)" oninput={() => { if (!slug) slug = slugify(title); }} />
 		</div>
 		<div>
-			<label for="ct-slug" class="mb-1 block text-sm font-medium">{t('comparisons.slug')}</label>
-			<input id="ct-slug" type="text" bind:value={slug} required class="w-full rounded-lg border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-background); color: var(--color-foreground)" />
+			<label for="cmp-slug" class="mb-1 block text-sm font-medium">{t('comparisons.col_slug')}</label>
+			<input id="cmp-slug" type="text" bind:value={slug} class="w-full rounded-lg border px-3 py-2 text-sm font-mono" style="border-color: var(--color-border); background-color: var(--color-background); color: var(--color-foreground)" />
 		</div>
 		<div>
-			<label for="ct-desc" class="mb-1 block text-sm font-medium">{t('comparisons.description')}</label>
-			<textarea id="ct-desc" bind:value={description} rows="3" class="w-full rounded-lg border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-background); color: var(--color-foreground)"></textarea>
+			<label for="cmp-type" class="mb-1 block text-sm font-medium">{t('comparisons.type')}</label>
+			<select id="cmp-type" bind:value={typeId} class="w-full rounded-lg border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-background); color: var(--color-foreground)">
+				<option value="">{t('comparisons.type_none')}</option>
+				{#each types as tp (tp.id)}
+					<option value={tp.id}>{tp.name}</option>
+				{/each}
+			</select>
 		</div>
-		<div class="flex items-center gap-2">
-			<input id="ct-public" type="checkbox" bind:checked={isPublic} class="rounded" />
-			<label for="ct-public" class="text-sm">{t('comparisons.is_public')}</label>
+		<div>
+			<label for="cmp-vis" class="mb-1 block text-sm font-medium">{t('comparisons.col_visibility')}</label>
+			<select id="cmp-vis" bind:value={visibility} class="w-full rounded-lg border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-background); color: var(--color-foreground)">
+				{#each visibilityOptions as opt (opt.value)}
+					<option value={opt.value}>{opt.label}</option>
+				{/each}
+			</select>
+		</div>
+		<div>
+			<label for="cmp-body" class="mb-1 block text-sm font-medium">{t('comparisons.body')}</label>
+			<textarea id="cmp-body" bind:value={body} rows="3" class="w-full rounded-lg border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-background); color: var(--color-foreground)"></textarea>
 		</div>
 	</div>
 </Modal>
 
-{#snippet ComparisonActionsCell({ value, row }: { value: any; row: ComparisonType })}
+<!-- Edit Modal -->
+<Modal bind:open={showEditModal} title={t('comparisons.edit')} onConfirm={updateComparison} confirmLabel={saving ? t('common.saving') : t('common.save')}>
+	<div class="space-y-4">
+		<div>
+			<label for="cmp-edit-title" class="mb-1 block text-sm font-medium">{t('comparisons.col_title')}</label>
+			<input id="cmp-edit-title" type="text" bind:value={title} required class="w-full rounded-lg border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-background); color: var(--color-foreground)" />
+		</div>
+		<div>
+			<label for="cmp-edit-slug" class="mb-1 block text-sm font-medium">{t('comparisons.col_slug')}</label>
+			<input id="cmp-edit-slug" type="text" bind:value={slug} class="w-full rounded-lg border px-3 py-2 text-sm font-mono" style="border-color: var(--color-border); background-color: var(--color-background); color: var(--color-foreground)" />
+		</div>
+		<div>
+			<label for="cmp-edit-vis" class="mb-1 block text-sm font-medium">{t('comparisons.col_visibility')}</label>
+			<select id="cmp-edit-vis" bind:value={visibility} class="w-full rounded-lg border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-background); color: var(--color-foreground)">
+				{#each visibilityOptions as opt (opt.value)}
+					<option value={opt.value}>{opt.label}</option>
+				{/each}
+			</select>
+		</div>
+		<div>
+			<label for="cmp-edit-body" class="mb-1 block text-sm font-medium">{t('comparisons.body')}</label>
+			<textarea id="cmp-edit-body" bind:value={body} rows="3" class="w-full rounded-lg border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-background); color: var(--color-foreground)"></textarea>
+		</div>
+	</div>
+</Modal>
+
+{#snippet ComparisonActionsCell({ value, row }: { value: any; row: ComparisonEntry })}
 	<div class="flex items-center justify-end gap-1">
 		<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10" onclick={() => openView(row)}>
 			<Eye class="h-3 w-3" style="color: var(--color-muted)" />
 		</button>
-		{#if canManageComparisons}
+		{#if canEditComparison}
 			<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10" onclick={() => openEdit(row)}>
 				<Pencil class="h-3 w-3" style="color: var(--color-primary)" />
 			</button>
+		{/if}
+		{#if canDeleteComparison}
 			<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10" onclick={() => confirmDelete(row)}>
 				<Trash2 class="h-3 w-3" style="color: var(--color-danger)" />
 			</button>

@@ -3,6 +3,8 @@ import type { SearchHit } from '$lib/types';
 
 interface RendererConfig {
 	onSearch: (query: string) => Promise<SearchHit[]>;
+	/** entity_type stored in the mention node attrs (Section 15: {id, entity_type, label}). */
+	entityType?: string;
 }
 
 interface RenderReturn {
@@ -56,7 +58,9 @@ export function createSuggestionRenderer(cfg: RendererConfig): RenderReturn {
 
 	function selectItem(i: number) {
 		if (!items[i] || !command) return;
-		command({ id: items[i].id, label: items[i].label });
+		// Section 15: all reference nodes store { id, entity_type, label }.
+		// entity_type defaults to 'user' for @-mentions.
+		command({ id: items[i].id, entity_type: cfg.entityType ?? 'user', label: items[i].label });
 		close();
 	}
 

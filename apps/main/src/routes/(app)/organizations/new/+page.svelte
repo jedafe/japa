@@ -13,7 +13,7 @@
 	let description = $state('');
 	let websiteUrl = $state('');
 	let countryCode = $state('');
-	let orgType = $state('company');
+	let orgType = $state('business');
 	let submitting = $state(false);
 	let slugTouched = $state(false);
 
@@ -187,10 +187,13 @@
 						{t('organizations.new.field_type', 'Organization type')}
 					</label>
 					<select id="org_type" name="org_type" bind:value={orgType} class={inputClass}>
-						<option value="company">{t('organizations.new.type_company', 'Company')}</option>
-						<option value="nonprofit">{t('organizations.new.type_nonprofit', 'Nonprofit')}</option>
-						<option value="community">{t('organizations.new.type_community', 'Community')}</option>
+						<option value="business">{t('organizations.new.type_business', 'Business')}</option>
+						<option value="ngo">{t('organizations.new.type_ngo', 'NGO')}</option>
 						<option value="government">{t('organizations.new.type_government', 'Government')}</option>
+						<option value="embassy">{t('organizations.new.type_embassy', 'Embassy')}</option>
+						<option value="university">{t('organizations.new.type_university', 'University')}</option>
+						<option value="media">{t('organizations.new.type_media', 'Media')}</option>
+						<option value="community">{t('organizations.new.type_community', 'Community')}</option>
 					</select>
 				</div>
 

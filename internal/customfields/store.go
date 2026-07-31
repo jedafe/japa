@@ -2,8 +2,10 @@ package customfields
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -39,6 +41,28 @@ func (s *Service) ListFieldGroupsByEntityClass(ctx context.Context, tenantID pgt
 	}
 
 	return groups, nil
+}
+
+// ListAllAssignmentsByTenant returns every group assignment for groups owned
+// by the given tenant. Used to enrich ListFieldGroups with entity_type without
+// N+1 per-group assignment lookups.
+func (s *Service) ListAllAssignmentsByTenant(ctx context.Context, tenantID pgtype.UUID) ([]gen.CustomFieldGroupAssignment, error) {
+	assignments, err := s.read.ListAssignmentsByTenantGroups(ctx, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("listing assignments by tenant groups: %w", err)
+	}
+	return assignments, nil
+}
+
+// ListAllFieldsByTenant returns every custom field for groups owned by the
+// given tenant. Used to enrich ListFieldGroups with fields[] without N+1
+// per-group field lookups.
+func (s *Service) ListAllFieldsByTenant(ctx context.Context, tenantID pgtype.UUID) ([]gen.CustomField, error) {
+	fields, err := s.read.ListAllCustomFieldsByTenant(ctx, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("listing all custom fields by tenant: %w", err)
+	}
+	return fields, nil
 }
 
 // GetFieldGroup returns the custom field group with the given ID, scoped to
@@ -312,32 +336,26 @@ func (s *Service) ListFieldValuesByEntity(ctx context.Context, entityType string
 // field-level RBAC (Section 06). When visibleFieldIDs is empty, no values are
 // returned (fail-closed). Super-admins should bypass this method by calling
 // ListFieldValuesByEntity directly.
-func (s *Service) ListFieldValuesByEntityForUser(ctx context.Context, entityType string, entityID pgtype.UUID, visibleFieldIDs []pgtype.UUID) ([]gen.CustomFieldValue, error) {
+//
+// BUG-017: the visible-field-ID filter is pushed into SQL via
+// ListCustomFieldValuesByEntityForUser (field_id = ANY(visible_field_ids))
+// instead of fetching all values and filtering in Go.
+func (s *Service) ListFieldValuesByEntityForUser(ctx context.Context, tenantID pgtype.UUID, entityType string, entityID pgtype.UUID, visibleFieldIDs []pgtype.UUID) ([]gen.CustomFieldValue, error) {
 	if len(visibleFieldIDs) == 0 {
 		return []gen.CustomFieldValue{}, nil
 	}
 
-	values, err := s.read.ListCustomFieldValuesByEntity(ctx, gen.ListCustomFieldValuesByEntityParams{
-		EntityType: entityType,
-		EntityID:   entityID,
+	values, err := s.read.ListCustomFieldValuesByEntityForUser(ctx, gen.ListCustomFieldValuesByEntityForUserParams{
+		EntityType:      entityType,
+		EntityID:        entityID,
+		TenantID:        tenantID,
+		VisibleFieldIds: visibleFieldIDs,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("listing custom field values by entity: %w", err)
+		return nil, fmt.Errorf("listing custom field values by entity for user: %w", err)
 	}
 
-	visibleSet := make(map[pgtype.UUID]struct{}, len(visibleFieldIDs))
-	for _, id := range visibleFieldIDs {
-		visibleSet[id] = struct{}{}
-	}
-
-	filtered := make([]gen.CustomFieldValue, 0, len(values))
-	for _, v := range values {
-		if _, ok := visibleSet[v.FieldID]; ok {
-			filtered = append(filtered, v)
-		}
-	}
-
-	return filtered, nil
+	return values, nil
 }
 
 // CheckFieldPermissionForUser returns the can_view / can_edit flags for the
@@ -362,13 +380,59 @@ func (s *Service) CheckFieldPermissionForUser(ctx context.Context, fieldID, user
 }
 
 // ListVisibleFieldIDsForUser returns the set of field IDs the user is allowed
-// to view per field-level RBAC (Section 06).
+// to view per field-level RBAC (Section 06). Results are cached in Valkey
+// under jc:field_perm:{user_id} with a 5-minute TTL (BUG-016). When the
+// cache is unavailable or not configured, the DB is queried directly.
 func (s *Service) ListVisibleFieldIDsForUser(ctx context.Context, userID pgtype.UUID) ([]pgtype.UUID, error) {
+	// BUG-016: try Valkey cache first.
+	if s.cache != nil {
+		key := fmt.Sprintf("jc:field_perm:%s", userID.String())
+		if cached, err := s.cache.Get(ctx, key).Bytes(); err == nil && len(cached) > 0 {
+			var ids []string
+			if json.Unmarshal(cached, &ids) == nil && len(ids) > 0 {
+				result := make([]pgtype.UUID, 0, len(ids))
+				for _, idStr := range ids {
+					var id pgtype.UUID
+					if err := id.Scan(idStr); err == nil {
+						result = append(result, id)
+					}
+				}
+				if len(result) > 0 {
+					return result, nil
+				}
+			}
+		}
+	}
+
 	ids, err := s.read.ListVisibleFieldIDsForUser(ctx, userID)
 	if err != nil {
 		return nil, fmt.Errorf("listing visible field ids: %w", err)
 	}
+
+	// BUG-016: cache the result for 5 minutes.
+	if s.cache != nil && len(ids) > 0 {
+		key := fmt.Sprintf("jc:field_perm:%s", userID.String())
+		idStrs := make([]string, 0, len(ids))
+		for _, id := range ids {
+			idStrs = append(idStrs, id.String())
+		}
+		if data, err := json.Marshal(idStrs); err == nil {
+			s.cache.Set(ctx, key, data, 5*time.Minute)
+		}
+	}
+
 	return ids, nil
+}
+
+// InvalidateFieldPermissionCache clears the cached visible field IDs for a
+// user. Must be called after SetFieldPermission or user_group membership
+// changes (BUG-015/BUG-016).
+func (s *Service) InvalidateFieldPermissionCache(ctx context.Context, userID pgtype.UUID) {
+	if s.cache == nil {
+		return
+	}
+	key := fmt.Sprintf("jc:field_perm:%s", userID.String())
+	s.cache.Del(ctx, key)
 }
 
 // UpsertFieldValue inserts or updates the stored value for a field on a given
@@ -683,7 +747,7 @@ func (s *Service) DeleteFormStep(ctx context.Context, id, formID pgtype.UUID) er
 // ---------------------------------------------------------------------------
 
 // ListFormSubmissions returns a page of submissions for a form, scoped to the
-// tenant, using cursor-based pagination (newest first).
+// tenant, using offset pagination (Rule 5: newest first).
 func (s *Service) ListFormSubmissions(ctx context.Context, params gen.ListFormSubmissionsByFormParams) ([]gen.FormSubmission, error) {
 	submissions, err := s.read.ListFormSubmissionsByForm(ctx, params)
 	if err != nil {
@@ -691,6 +755,17 @@ func (s *Service) ListFormSubmissions(ctx context.Context, params gen.ListFormSu
 	}
 
 	return submissions, nil
+}
+
+// CountFormSubmissions returns the total count of submissions for a form,
+// optionally filtered by status. Used by the offset-pagination response
+// envelope (Rule 5) to populate the total count.
+func (s *Service) CountFormSubmissions(ctx context.Context, params gen.CountFormSubmissionsByFormParams) (int64, error) {
+	count, err := s.read.CountFormSubmissionsByForm(ctx, params)
+	if err != nil {
+		return 0, fmt.Errorf("counting form submissions: %w", err)
+	}
+	return count, nil
 }
 
 // CreateFormSubmission records a new submission for a form.
@@ -740,5 +815,109 @@ func (s *Service) DeleteFormSubmission(ctx context.Context, id, tenantID pgtype.
 		return fmt.Errorf("deleting form submission: %w", err)
 	}
 
+	return nil
+}
+
+// =====================
+// Form Submission Triggers (Section 06)
+// =====================
+
+// ListFormTriggers returns the triggers configured on a form, ordered by position.
+func (s *Service) ListFormTriggers(ctx context.Context, formID pgtype.UUID) ([]gen.FormSubmissionTrigger, error) {
+	triggers, err := s.read.ListFormSubmissionTriggersByForm(ctx, formID)
+	if err != nil {
+		return nil, fmt.Errorf("listing form submission triggers: %w", err)
+	}
+	return triggers, nil
+}
+
+// CreateFormTrigger creates a new trigger on a form.
+func (s *Service) CreateFormTrigger(ctx context.Context, params gen.CreateFormSubmissionTriggerParams) (gen.FormSubmissionTrigger, error) {
+	trigger, err := s.write.CreateFormSubmissionTrigger(ctx, params)
+	if err != nil {
+		return gen.FormSubmissionTrigger{}, fmt.Errorf("creating form submission trigger: %w", err)
+	}
+	return trigger, nil
+}
+
+// UpdateFormTrigger updates a trigger's type, config, and position.
+func (s *Service) UpdateFormTrigger(ctx context.Context, params gen.UpdateFormSubmissionTriggerParams) (gen.FormSubmissionTrigger, error) {
+	trigger, err := s.write.UpdateFormSubmissionTrigger(ctx, params)
+	if err != nil {
+		return gen.FormSubmissionTrigger{}, fmt.Errorf("updating form submission trigger: %w", err)
+	}
+	return trigger, nil
+}
+
+// DeleteFormTrigger deletes a trigger from a form.
+func (s *Service) DeleteFormTrigger(ctx context.Context, id, formID pgtype.UUID) error {
+	if err := s.write.DeleteFormSubmissionTrigger(ctx, gen.DeleteFormSubmissionTriggerParams{
+		ID:     id,
+		FormID: formID,
+	}); err != nil {
+		return fmt.Errorf("deleting form submission trigger: %w", err)
+	}
+	return nil
+}
+
+// ReorderFormTriggers updates the position of each trigger by ID. The
+// trigger_ids array is in the desired order; position is assigned by index.
+func (s *Service) ReorderFormTriggers(ctx context.Context, formID pgtype.UUID, triggerIDs []pgtype.UUID) error {
+	for i, id := range triggerIDs {
+		if err := s.write.UpdateFormSubmissionTriggerPosition(ctx, gen.UpdateFormSubmissionTriggerPositionParams{
+			ID:       id,
+			FormID:   formID,
+			Position: int32(i),
+		}); err != nil {
+			return fmt.Errorf("reordering form submission triggers at index %d: %w", i, err)
+		}
+	}
+	return nil
+}
+
+// =====================
+// Custom Field Entity Types (Section 06)
+// =====================
+
+// ListEntityTypes returns all entity types for a tenant, ordered by sort_order.
+func (s *Service) ListEntityTypes(ctx context.Context, tenantID pgtype.UUID) ([]gen.CustomFieldEntityType, error) {
+	types, err := s.read.ListCustomFieldEntityTypes(ctx, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("listing custom field entity types: %w", err)
+	}
+	return types, nil
+}
+
+// CreateEntityType creates a new custom field entity type for a tenant.
+func (s *Service) CreateEntityType(ctx context.Context, params gen.CreateCustomFieldEntityTypeParams) (gen.CustomFieldEntityType, error) {
+	et, err := s.write.CreateCustomFieldEntityType(ctx, params)
+	if err != nil {
+		return gen.CustomFieldEntityType{}, fmt.Errorf("creating custom field entity type: %w", err)
+	}
+	return et, nil
+}
+
+// UpdateEntityType updates the label and sort_order of an entity type.
+func (s *Service) UpdateEntityType(ctx context.Context, params gen.UpdateCustomFieldEntityTypeParams) (gen.CustomFieldEntityType, error) {
+	et, err := s.write.UpdateCustomFieldEntityType(ctx, params)
+	if err != nil {
+		return gen.CustomFieldEntityType{}, fmt.Errorf("updating custom field entity type: %w", err)
+	}
+	return et, nil
+}
+
+// DeleteEntityType deletes a non-system entity type. System types (is_system=true)
+// are protected at the SQL layer and will return 0 rows affected.
+func (s *Service) DeleteEntityType(ctx context.Context, id, tenantID pgtype.UUID) error {
+	rows, err := s.write.DeleteCustomFieldEntityType(ctx, gen.DeleteCustomFieldEntityTypeParams{
+		ID:       id,
+		TenantID: tenantID,
+	})
+	if err != nil {
+		return fmt.Errorf("deleting custom field entity type: %w", err)
+	}
+	if rows == 0 {
+		return errors.New("entity type not found or is a system type that cannot be deleted")
+	}
 	return nil
 }

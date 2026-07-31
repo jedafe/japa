@@ -138,14 +138,17 @@ function renderMarks(text: string, marks: PMMark[] | undefined): string {
 	return out;
 }
 
-/** Serialize a single TipTap node to an HTML string. */
-function renderNode(node: PMNode): string {
+/** Serialize a single TipTap node to an HTML string.
+ * @param deleted Optional set of erased user IDs — mentions of these
+ *   users render as `@[deleted user]` (Section 15 / ADR-029).
+ */
+function renderNode(node: PMNode, deleted?: Set<string>): string {
 	// Text node — apply marks.
 	if (typeof node.text === 'string') {
 		return renderMarks(node.text, node.marks);
 	}
 
-	const inner = (node.content ?? []).map(renderNode).join('');
+	const inner = (node.content ?? []).map((n) => renderNode(n, deleted)).join('');
 
 	switch (node.type) {
 		case 'doc':
@@ -185,8 +188,14 @@ function renderNode(node: PMNode): string {
 			return `<img src="${src}" alt="${alt}" loading="lazy" />`;
 		}
 		case 'mention': {
+			// Section 15 / ADR-029: a mention of an erased user renders as
+			// `@[deleted user]` with no link.
+			const mentionId = String(node.attrs?.id ?? '');
+			if (deleted && deleted.has(mentionId)) {
+				return '<span class="mention mention-deleted">@[deleted user]</span>';
+			}
 			const label = escapeHtml(String(node.attrs?.label ?? ''));
-			return `<span class="mention">${label}</span>`;
+			return `<span class="mention" data-user-id="${escapeAttr(mentionId)}">${label}</span>`;
 		}
 		case 'hashtag': {
 			const label = escapeHtml(String(node.attrs?.label ?? ''));
@@ -210,20 +219,36 @@ function renderNode(node: PMNode): string {
 	}
 }
 
-/** Serialize a TipTap document to an HTML string (SSR-safe, no DOM). */
-export function tiptapToHtml(doc: TipTapDoc | PMNode[] | null): string {
+/** Serialize a TipTap document to an HTML string (SSR-safe, no DOM).
+ *
+ * @param doc The TipTap document (or bare array of nodes).
+ * @param opts Optional render-time context:
+ *   - deletedUserIds: Set of user UUIDs whose accounts have been erased.
+ *     Mentions of these users render as `@[deleted user]` with no link
+ *     (Section 15 / ADR-029).
+ */
+export function tiptapToHtml(
+	doc: TipTapDoc | PMNode[] | null,
+	opts?: { deletedUserIds?: Set<string> }
+): string {
 	if (!doc) return '';
+	const deleted = opts?.deletedUserIds;
 	// The backend may store the body as a bare array of nodes (no `doc` wrapper)
 	// or as a full TipTap document. Handle both.
 	if (Array.isArray(doc)) {
-		return doc.map(renderNode).join('');
+		return doc.map((n) => renderNode(n, deleted)).join('');
 	}
-	return renderNode(doc);
+	return renderNode(doc, deleted);
 }
 
-/** Decode a base64 TipTap body and serialize to HTML in one call. */
-export function tiptapBodyToHtml(b64: string | null | undefined): string {
-	return tiptapToHtml(decodeTipTapDoc(b64));
+/** Decode a base64 TipTap body and serialize to HTML in one call.
+ * @param opts Optional render-time context (see tiptapToHtml).
+ */
+export function tiptapBodyToHtml(
+	b64: string | null | undefined,
+	opts?: { deletedUserIds?: Set<string> }
+): string {
+	return tiptapToHtml(decodeTipTapDoc(b64), opts);
 }
 
 /* ------------------------------------------------------------------ *

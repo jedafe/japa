@@ -2,10 +2,13 @@
 	import PageHeader from "$lib/components/layout/page-header.svelte";
 	import { Card, CardContent, CardHeader } from "$lib/components/ui/card";
 	import { DataTable } from "$lib/components/ui/data-table";
+	import Pagination from "$lib/components/ui/Pagination.svelte";
 	import { Badge } from "$lib/components/ui/badge";
 	import { Button } from "$lib/components/ui/button";
 	import { Modal } from "$lib/components/ui/modal";
 	import { TableSkeleton } from "$lib/components/ui/skeleton";
+	import { Tabs } from "$lib/components/ui/tabs";
+	import { Tabs as BitsTabs } from "bits-ui";
 	import { RefreshCw, Eye, RotateCcw, Send, Pencil } from "lucide-svelte";
 	import { emailTemplatesAdminApi } from "$lib/api";
 	import { t } from "$lib/stores/i18n.svelte";
@@ -21,6 +24,10 @@
 	};
 
 	let templates = $state<EmailTemplate[]>([]);
+	let currentPage = $state(0);
+	let totalItems = $state(0);
+	let pageSize = $state(25);
+	let totalPages = $state(1);
 	let loading = $state(true);
 	let error = $state("");
 	let success = $state("");
@@ -29,9 +36,18 @@
 	// View/Edit modal
 	let showViewModal = $state(false);
 	let viewingTemplate = $state<EmailTemplate | null>(null);
+	let editName = $state("");
 	let editSubject = $state("");
 	let editBody = $state("");
+	let bodyTab = $state("edit");
 	let saving = $state(false);
+	let formError = $state("");
+	let modalLoading = $state(false);
+
+	const bodyTabs = [
+		{ value: "edit", label: t("email_templates.tab_edit", "Edit") },
+		{ value: "preview", label: t("email_templates.tab_preview", "Preview") }
+	];
 
 	// Reset modal
 	let showResetModal = $state(false);
@@ -44,6 +60,25 @@
 	let testing = $state(false);
 
 	const canManageTemplates = $derived(hasPermission("email.templates.manage"));
+
+	const templateSampleValues: Record<string, string> = {
+		SiteName: "JapaConnect",
+		SiteURL: "https://japaconnect.com",
+		UserName: "Test User",
+		ActionURL: "https://japaconnect.com/reset-password?token=abc123",
+		Expiry: "1 hour",
+		SupportURL: "https://japaconnect.com/support",
+	};
+
+	const previewBody = $derived.by(() => {
+		if (!editBody) return "";
+		let body = editBody;
+		for (const [variable, value] of Object.entries(templateSampleValues)) {
+			const pattern = new RegExp(`{{\\s*\\.${variable}\\s*}}`, "g");
+			body = body.replace(pattern, value);
+		}
+		return body.replace(/\{\{\s*(?:if|else|range|end)\b[^}]*\}\}/g, "");
+	});
 
 	const columns = [
 		{ key: "name", label: t("email_templates.name", "Name"), sortable: true },
@@ -61,14 +96,16 @@
 		loading = true;
 		error = "";
 		try {
-			const result = await emailTemplatesAdminApi.list();
+			const params = new URLSearchParams({
+				page_size: String(pageSize),
+				page_offset: String(currentPage * pageSize)
+			});
+			const result = await emailTemplatesAdminApi.list(params.toString());
 			if (result.ok) {
-				let items = (result.data as EmailTemplate[]) ?? [];
-				if (searchQuery) {
-					const q = searchQuery.toLowerCase();
-					items = items.filter(t => t.name.toLowerCase().includes(q) || t.slug.toLowerCase().includes(q) || t.subject.toLowerCase().includes(q));
-				}
-				templates = items;
+				const d = result.data as unknown as { items: EmailTemplate[]; total?: number; page: number; total_pages: number };
+				templates = d.items ?? [];
+				totalItems = d.total ?? (d.items?.length ?? 0) + (d.total_pages > 1 ? (d.total_pages - 1) * pageSize : 0);
+				totalPages = d.total_pages ?? 1;
 			} else {
 				error = result.error ?? t("common.error", "Failed to load email templates");
 			}
@@ -79,32 +116,49 @@
 		}
 	}
 
-	async function openView(id: string) {
-		const template = templates.find((tpl) => tpl.id === id);
+	async function openView(id: string, defaultTab: string = "edit") {
+		let template = templates.find((tpl) => tpl.id === id);
 		if (!template) return;
+		bodyTab = defaultTab;
 		viewingTemplate = template;
-		loading = true;
+		formError = "";
+		editName = template.name;
+		modalLoading = true;
 		try {
 			const result = await emailTemplatesAdminApi.get(id);
 			if (result.ok && result.data) {
 				const data = result.data as { subject?: string; html_body?: string; plain_text_body?: string };
 				editSubject = data.subject ?? template.subject;
-				editBody = data.html_body ?? data.plain_text_body ?? "";
+				editBody = data.html_body || data.plain_text_body || "";
 			}
 		} catch (e) {
 			error = e instanceof Error ? e.message : t("common.error", "Failed to load template");
 		} finally {
-			loading = false;
+			modalLoading = false;
 			showViewModal = true;
 		}
 	}
 
 	async function saveTemplate() {
 		if (!viewingTemplate) return;
+		if (!editName.trim()) {
+			formError = t("email_templates.name_required", "Name cannot be empty");
+			return;
+		}
+		if (!editSubject.trim()) {
+			formError = t("email_templates.subject_required", "Subject cannot be empty");
+			return;
+		}
+		if (!editBody.trim()) {
+			formError = t("email_templates.body_required", "Body cannot be empty");
+			return;
+		}
+		formError = "";
 		saving = true;
 		error = "";
 		try {
 			const result = await emailTemplatesAdminApi.update(viewingTemplate.id, {
+				name: editName.trim(),
 				subject: editSubject,
 				html_body: editBody
 			});
@@ -154,7 +208,12 @@
 		}
 	}
 
-	loadTemplates();
+	$effect(() => {
+		void currentPage;
+		void pageSize;
+		void searchQuery;
+		loadTemplates();
+	});
 </script>
 
 <svelte:head>
@@ -189,7 +248,13 @@
 				{t("email_templates.empty", "No email templates found")}
 			</div>
 		{:else}
-			<DataTable {columns} data={templates} pageSize={10} searchable onsearch={(q) => { searchQuery = q; loadTemplates(); }} />
+			<DataTable {columns} data={templates} showPagination={false} />
+			<Pagination
+				bind:page={currentPage}
+				{totalPages}
+				{totalItems}
+				bind:pageSize
+			/>
 		{/if}
 	</CardContent>
 </Card>
@@ -198,8 +263,16 @@
 <Modal bind:open={showViewModal} title={t("email_templates.view", "Email Template")}>
 	{#if viewingTemplate}
 		<div class="space-y-4">
+			{#if formError}
+				<div class="rounded-lg p-3 text-sm" style="background: color-mix(in srgb, var(--color-danger) 10%, transparent); color: var(--color-danger)">
+					{formError}
+				</div>
+			{/if}
 			<div>
-				<span class="text-sm font-medium" style="color: var(--color-muted)">{viewingTemplate.name}</span>
+				<label for="et-name" class="block text-sm font-medium" style="color: var(--color-foreground)">{t("email_templates.name", "Name")}</label>
+				<input id="et-name" type="text" bind:value={editName} class="mt-1 w-full rounded-lg border p-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" />
+			</div>
+			<div>
 				<p class="text-xs font-mono" style="color: var(--color-muted)">{viewingTemplate.slug}</p>
 			</div>
 			<div>
@@ -208,7 +281,16 @@
 			</div>
 			<div>
 				<label for="et-body" class="block text-sm font-medium" style="color: var(--color-foreground)">{t("email_templates.body", "Body (HTML)")}</label>
-				<textarea id="et-body" bind:value={editBody} rows="12" class="mt-1 w-full rounded-lg border p-2 text-sm font-mono" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"></textarea>
+				<Tabs tabs={bodyTabs} bind:value={bodyTab} class="mt-1">
+					{#snippet children()}
+						<BitsTabs.Content value="edit">
+							<textarea id="et-body" bind:value={editBody} rows="12" class="w-full rounded-lg border p-2 text-sm font-mono" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"></textarea>
+						</BitsTabs.Content>
+						<BitsTabs.Content value="preview">
+							<iframe srcdoc={previewBody} title="Email body preview" class="w-full rounded-lg border" style="border-color: var(--color-border); min-height: 300px;"></iframe>
+						</BitsTabs.Content>
+					{/snippet}
+				</Tabs>
 			</div>
 		</div>
 		<div class="mt-4 flex justify-end gap-2">
@@ -249,11 +331,11 @@
 
 {#snippet TemplateActionsCell({ value, row }: { value: any; row: EmailTemplate })}
 	<div class="flex items-center gap-1">
-		<Button variant="ghost" size="sm" onclick={() => openView(row.id)}>
+		<Button variant="ghost" size="sm" onclick={() => openView(row.id, "preview")}>
 			<Eye class="h-3.5 w-3.5" />
 		</Button>
 		{#if canManageTemplates}
-			<Button variant="ghost" size="sm" onclick={() => openView(row.id)} style="color: var(--color-primary)">
+			<Button variant="ghost" size="sm" onclick={() => openView(row.id, "edit")} style="color: var(--color-primary)">
 				<Pencil class="h-3.5 w-3.5" />
 			</Button>
 			<Button variant="ghost" size="sm" onclick={() => { resetTarget = row; showResetModal = true; }} style="color: var(--color-foreground)">

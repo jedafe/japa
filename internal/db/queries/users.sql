@@ -5,6 +5,8 @@ SELECT DISTINCT ON (u.id)
        u.id AS user_id,
        up.display_name,
        up.avatar_url,
+       up.avatar_media_id,
+       up.header_media_id,
        up.bio,
        up.timezone,
        up.cover_url,
@@ -27,7 +29,8 @@ WHERE tenant_id = @tenant_id AND id = @user_id;
 -- name: GetUserEmailVerifiedStatus :one
 -- Returns email_verified_at for the user. Used by the CanPostInSpace
 -- "verified" posting_perm axis (Section 05 line 149, BUG-003).
-SELECT email_verified_at FROM users WHERE id = @user_id;
+-- Tenant-scoped per Section 04 (BUG-009).
+SELECT email_verified_at FROM users WHERE id = @user_id AND tenant_id = @tenant_id;
 
 -- name: GetUserByUsername :one
 SELECT DISTINCT ON (u.id)
@@ -51,11 +54,13 @@ WHERE u.tenant_id = @tenant_id AND u.username = @username
 ORDER BY u.id, CASE WHEN ug.slug = 'super_admin' THEN 0 ELSE 1 END;
 
 -- name: UpsertUserProfile :exec
-INSERT INTO user_profiles (tenant_id, user_id, display_name, avatar_url, bio, timezone, cover_url)
-VALUES (@tenant_id, @user_id, @display_name, @avatar_url, @bio, @timezone, @cover_url)
+INSERT INTO user_profiles (tenant_id, user_id, display_name, avatar_url, avatar_media_id, header_media_id, bio, timezone, cover_url)
+VALUES (@tenant_id, @user_id, @display_name, @avatar_url, @avatar_media_id, @header_media_id, @bio, @timezone, @cover_url)
 ON CONFLICT (tenant_id, user_id) DO UPDATE SET
     display_name = EXCLUDED.display_name,
     avatar_url = EXCLUDED.avatar_url,
+    avatar_media_id = EXCLUDED.avatar_media_id,
+    header_media_id = EXCLUDED.header_media_id,
     bio = EXCLUDED.bio,
     timezone = EXCLUDED.timezone,
     cover_url = EXCLUDED.cover_url,
@@ -126,15 +131,17 @@ WHERE u.tenant_id = @tenant_id
   ));
 
 -- name: GetUserPrivacySettings :one
-SELECT user_id, dm_privacy, profile_visibility, search_indexable,
+-- Tenant-scoped per Section 04 (BUG-009).
+SELECT user_id, tenant_id, dm_privacy, profile_visibility, search_indexable,
        show_online_status, show_activity, created_at, updated_at
 FROM user_privacy_settings
-WHERE user_id = $1;
+WHERE tenant_id = $1 AND user_id = $2;
 
 -- name: UpsertUserPrivacySettings :exec
-INSERT INTO user_privacy_settings (user_id, dm_privacy, profile_visibility, search_indexable, show_online_status, show_activity)
-VALUES ($1, $2, $3, $4, $5, $6)
-ON CONFLICT (user_id) DO UPDATE SET
+-- Tenant-scoped per Section 04 (BUG-009).
+INSERT INTO user_privacy_settings (tenant_id, user_id, dm_privacy, profile_visibility, search_indexable, show_online_status, show_activity)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
+ON CONFLICT (tenant_id, user_id) DO UPDATE SET
     dm_privacy = EXCLUDED.dm_privacy,
     profile_visibility = EXCLUDED.profile_visibility,
     search_indexable = EXCLUDED.search_indexable,
@@ -146,19 +153,23 @@ ON CONFLICT (user_id) DO UPDATE SET
 SELECT id, password_hash FROM users WHERE id = $1 AND tenant_id = $2;
 
 -- name: UpdateUserPassword :exec
-UPDATE users SET password_hash = $2, updated_at = now() WHERE id = $1;
+-- Tenant-scoped per Section 04 (BUG-009).
+UPDATE users SET password_hash = $3, updated_at = now() WHERE id = $1 AND tenant_id = $2;
 
 -- name: ListUserSessions :many
+-- Tenant-scoped per Section 04 (BUG-009).
 SELECT id, token_hash, expires_at, created_at
 FROM refresh_tokens
-WHERE user_id = $1 AND revoked_at IS NULL
+WHERE tenant_id = $1 AND user_id = $2 AND revoked_at IS NULL
 ORDER BY created_at DESC;
 
 -- name: RevokeUserSession :exec
-UPDATE refresh_tokens SET revoked_at = now() WHERE id = $1 AND user_id = $2 AND revoked_at IS NULL;
+-- Tenant-scoped per Section 04 (BUG-009).
+UPDATE refresh_tokens SET revoked_at = now() WHERE id = $1 AND tenant_id = $2 AND user_id = $3 AND revoked_at IS NULL;
 
 -- name: RevokeAllUserSessions :exec
-UPDATE refresh_tokens SET revoked_at = now() WHERE user_id = $1 AND revoked_at IS NULL AND id != $2;
+-- Tenant-scoped per Section 04 (BUG-009).
+UPDATE refresh_tokens SET revoked_at = now() WHERE tenant_id = $1 AND user_id = $2 AND revoked_at IS NULL AND id != $3;
 
 -- name: ListOAuthAccounts :many
 SELECT id, provider, provider_user_id, created_at
@@ -169,7 +180,8 @@ WHERE tenant_id = $1 AND user_id = $2;
 DELETE FROM oauth_accounts WHERE tenant_id = $1 AND user_id = $2 AND provider = $3;
 
 -- name: UserHasPassword :one
-SELECT EXISTS(SELECT 1 FROM users WHERE id = $1 AND password_hash IS NOT NULL AND password_hash != '') AS has_password;
+-- Tenant-scoped per Section 04 (BUG-009).
+SELECT EXISTS(SELECT 1 FROM users WHERE id = $1 AND tenant_id = $2 AND password_hash IS NOT NULL AND password_hash != '') AS has_password;
 
 -- name: ListUserContent :many
 SELECT c.id, c.title, c.content_type, c.status, c.created_at, c.updated_at
@@ -209,9 +221,10 @@ UPDATE users SET status = 'suspended', updated_at = now() WHERE id = $1 AND tena
 UPDATE users SET status = 'deleted', updated_at = now() WHERE id = $1 AND tenant_id = $2;
 
 -- name: GetUserStatus :one
+-- Tenant-scoped per Section 04 (BUG-009).
 SELECT COALESCE(status, 'active') AS status
 FROM users
-WHERE id = $1;
+WHERE id = $1 AND tenant_id = $2;
 
 -- name: ListUserActivity :many
 -- Recent authored contents and comments merged into one feed, newest first
@@ -312,3 +325,65 @@ WHERE u.status = 'active'
      WHERE ss.tenant_id = u.tenant_id AND ss.key = 'email.digest_enabled'),
     true)
 ORDER BY u.id;
+
+-- ---------------------------------------------------------------------------
+-- Account management (Section 50: PATCH /me/account)
+-- Ref: japaconnect-engineering/sections/50-user-dashboard-settings.md
+-- ---------------------------------------------------------------------------
+
+-- name: GetUserAccountForUpdate :one
+-- Fetches the fields needed to validate an account update (username cooldown,
+-- email uniqueness, current verified state). Row-locks the user for the
+-- duration of the transaction to prevent concurrent account edits.
+SELECT id, username, email, email_verified_at, username_changed_at
+FROM users
+WHERE id = $1 AND tenant_id = $2
+FOR UPDATE;
+
+-- name: UpdateUserUsername :exec
+-- Updates the username and stamps username_changed_at for cooldown tracking.
+-- Section 50: username may be changed once per 30 days.
+UPDATE users
+SET username = $3, username_changed_at = now(), updated_at = now()
+WHERE id = $1 AND tenant_id = $2;
+
+-- name: UpdateUserEmail :exec
+-- Updates the email and resets email_verified_at to NULL so the user must
+-- re-verify the new address (Section 50: email change triggers re-verification).
+UPDATE users
+SET email = $3, email_verified_at = NULL, updated_at = now()
+WHERE id = $1 AND tenant_id = $2;
+
+-- name: EmailExistsForTenant :one
+-- Checks whether an email is already taken by another user in the same tenant.
+-- Returns the count (0 = available).
+SELECT COUNT(*)::int AS count
+FROM users
+WHERE tenant_id = $1 AND email = $2 AND id != $3;
+
+-- name: UsernameExistsForTenant :one
+-- Checks whether a username is already taken by another user in the same tenant.
+SELECT COUNT(*)::int AS count
+FROM users
+WHERE tenant_id = $1 AND username = $2 AND id != $3;
+
+-- ---------------------------------------------------------------------------
+-- Analytics counts (Section 40: BUG-012 — replace row iteration with SQL COUNT)
+-- Ref: japaconnect-engineering/sections/40-platform-analytics-site-reports.md
+-- ---------------------------------------------------------------------------
+
+-- name: CountUserContent :one
+-- Counts the user's content by status within the tenant.
+SELECT
+    COUNT(*)::int AS total,
+    COUNT(*) FILTER (WHERE status = 'draft')::int AS draft_count,
+    COUNT(*) FILTER (WHERE status = 'published')::int AS published_count
+FROM contents
+WHERE tenant_id = @tenant_id AND author_id = @user_id
+  AND deleted_at IS NULL;
+
+-- name: CountUserBookmarks :one
+-- Counts the user's bookmarks.
+SELECT COUNT(*)::int AS count
+FROM bookmarks
+WHERE user_id = @user_id AND tenant_id = @tenant_id;

@@ -191,15 +191,15 @@ func (s *Service) DispatchBatch(ctx context.Context, windowID pgtype.UUID) error
 // notificationAction maps notification types to human-readable action verbs.
 func notificationAction(ntype string) string {
 	switch ntype {
-	case TypeReaction:
+	case TypeContentReaction:
 		return "reacted"
-	case TypeComment:
+	case TypeContentComment:
 		return "commented"
-	case TypeMention:
+	case TypeMentionContent, TypeMentionComment:
 		return "mentioned you"
 	case TypeNewFollower:
 		return "followed you"
-	case TypePostReply:
+	case TypeCommentReply:
 		return "replied"
 	case TypeDMMessage:
 		return "sent a message"

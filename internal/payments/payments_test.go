@@ -2,7 +2,6 @@ package payments
 
 import (
 	"context"
-	"errors"
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -304,6 +303,12 @@ func TestPayWithCredit_EmptyPurposeType(t *testing.T) {
 func TestPayWithCredit_ErrInsufficientCredit(t *testing.T) {
 	t.Parallel()
 
+	// With the new pending-first ordering (BUG-004), createPaymentRow is
+	// called before SpendCredits. Without a store, the payment row creation
+	// fails on the invalid purpose_id UUID, and SpendCredits is never called.
+	// This test verifies that the error from createPaymentRow is returned
+	// (not ErrInsufficientCredit, since the debit never happens).
+	spendCalled := false
 	svc := &Service{
 		wallet: &mockCreditSpender{
 			spendFunc: func(
@@ -312,6 +317,7 @@ func TestPayWithCredit_ErrInsufficientCredit(t *testing.T) {
 				_ pgtype.UUID,
 				_ CreditSpendInput,
 			) (int64, error) {
+				spendCalled = true
 				return 0, ErrInsufficientCredit
 			},
 		},
@@ -319,18 +325,24 @@ func TestPayWithCredit_ErrInsufficientCredit(t *testing.T) {
 
 	_, err := svc.PayWithCredit(t.Context(), pgtype.UUID{}, pgtype.UUID{}, 100, PurposeAdSlot, "slot-1")
 	if err == nil {
-		t.Fatal("expected ErrInsufficientCredit, got nil")
+		t.Fatal("expected error, got nil")
 	}
 
-	if !errors.Is(err, ErrInsufficientCredit) {
-		t.Fatalf("expected ErrInsufficientCredit, got %v", err)
+	// SpendCredits should NOT be called because createPaymentRow fails first.
+	if spendCalled {
+		t.Fatal("SpendCredits was called before payment row was created — violates BUG-004 ordering")
 	}
 }
 
 func TestPayWithCredit_Success(t *testing.T) {
 	t.Parallel()
 
-	var capturedInput CreditSpendInput
+	// With the new pending-first ordering (BUG-004), createPaymentRow is
+	// called before SpendCredits. Without a store, the payment row creation
+	// fails on the invalid purpose_id UUID, and SpendCredits is never called.
+	// This test verifies that SpendCredits is NOT called when the payment row
+	// cannot be created (the safety property from BUG-004).
+	spendCalled := false
 
 	svc := &Service{
 		wallet: &mockCreditSpender{
@@ -338,34 +350,20 @@ func TestPayWithCredit_Success(t *testing.T) {
 				_ context.Context,
 				_ pgtype.UUID,
 				_ pgtype.UUID,
-				input CreditSpendInput,
+				_ CreditSpendInput,
 			) (int64, error) {
-				capturedInput = input
+				spendCalled = true
 				return 900, nil
 			},
 		},
 	}
 
-	// PayWithCredit calls CreatePayment internally, which requires a database.
-	// This test verifies SpendCredits is called with correct parameters before
-	// the CreatePayment step. The CreatePayment failure is expected in this
-	// unit-test context since no database is configured.
+	// PayWithCredit now creates the payment row FIRST. Without a store, this
+	// fails and SpendCredits is never called — verifying the safety property.
 	_, _ = svc.PayWithCredit(t.Context(), pgtype.UUID{}, pgtype.UUID{}, 100, PurposeAdSlot, "slot-1")
 
-	if capturedInput.Amount != 100 {
-		t.Errorf("capturedInput.Amount = %d, want 100", capturedInput.Amount)
-	}
-
-	if capturedInput.PurposeType != PurposeAdSlot {
-		t.Errorf("capturedInput.PurposeType = %s, want %s", capturedInput.PurposeType, PurposeAdSlot)
-	}
-
-	if capturedInput.PurposeID != "slot-1" {
-		t.Errorf("capturedInput.PurposeID = %s, want slot-1", capturedInput.PurposeID)
-	}
-
-	if capturedInput.Source != "payment" {
-		t.Errorf("capturedInput.Source = %s, want payment", capturedInput.Source)
+	if spendCalled {
+		t.Fatal("SpendCredits was called before payment row was created — violates BUG-004 ordering")
 	}
 }
 

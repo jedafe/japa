@@ -1,0 +1,362 @@
+- generic [ref=f5e3]:
+  - complementary [ref=f5e4]:
+    - link "Admin" [ref=f5e6] [cursor=pointer]:
+      - /url: /
+    - textbox "Search navigation..." [ref=f5e11]
+    - navigation [ref=f5e12]:
+      - generic [ref=f5e13]:
+        - button "Dashboard" [ref=f5e14]
+        - link "Overview" [ref=f5e18] [cursor=pointer]:
+          - /url: /
+      - generic [ref=f5e21]:
+        - button "User Management" [ref=f5e22]
+        - generic [ref=f5e25]:
+          - link "Users" [ref=f5e26] [cursor=pointer]:
+            - /url: /users
+          - link "Organisations" [ref=f5e29] [cursor=pointer]:
+            - /url: /organisations
+          - link "Universities" [ref=f5e32] [cursor=pointer]:
+            - /url: /universities
+          - link "Professional Types" [ref=f5e35] [cursor=pointer]:
+            - /url: /professional-types
+          - link "Groups" [ref=f5e38] [cursor=pointer]:
+            - /url: /users/groups
+      - generic [ref=f5e41]:
+        - button "Content" [ref=f5e42]
+        - generic [ref=f5e45]:
+          - link "All Content" [ref=f5e46] [cursor=pointer]:
+            - /url: /content
+          - link "Blog Posts" [ref=f5e49] [cursor=pointer]:
+            - /url: /blog/review-queue
+          - link "Documentation" [ref=f5e52] [cursor=pointer]:
+            - /url: /docs
+          - link "Media" [ref=f5e55] [cursor=pointer]:
+            - /url: /media
+          - link "Spaces" [ref=f5e58] [cursor=pointer]:
+            - /url: /spaces
+          - link "Geo Tools" [ref=f5e61] [cursor=pointer]:
+            - /url: /geo
+          - link "Space Types" [ref=f5e64] [cursor=pointer]:
+            - /url: /space-types
+          - link "Tags" [ref=f5e67] [cursor=pointer]:
+            - /url: /tags
+          - link "Reactions" [ref=f5e70] [cursor=pointer]:
+            - /url: /reactions
+      - generic [ref=f5e73]:
+        - button "Moderation" [ref=f5e74]
+        - generic [ref=f5e77]:
+          - link "Moderation" [ref=f5e78] [cursor=pointer]:
+            - /url: /moderation
+          - link "Review Queue" [ref=f5e81] [cursor=pointer]:
+            - /url: /moderation-queue
+          - link "Appeals" [ref=f5e84] [cursor=pointer]:
+            - /url: /moderation/appeals
+          - link "Reports" [ref=f5e87] [cursor=pointer]:
+            - /url: /moderation/reports
+          - link "Content" [ref=f5e90] [cursor=pointer]:
+            - /url: /moderation/content
+          - link "Alerts" [ref=f5e93] [cursor=pointer]:
+            - /url: /moderation/alerts
+          - link "Spam Management" [ref=f5e96] [cursor=pointer]:
+            - /url: /spam
+          - link "Tickets" [ref=f5e99] [cursor=pointer]:
+            - /url: /tickets
+          - link "Reviews" [ref=f5e102] [cursor=pointer]:
+            - /url: /reviews
+      - button "Analytics & Reports" [ref=f5e106]
+      - button "Engagement" [ref=f5e110]
+      - button "Monetization" [ref=f5e114]
+      - button "Automation" [ref=f5e118]
+      - button "Customization" [ref=f5e122]
+      - button "System" [ref=f5e126]
+    - generic [ref=f5e130]:
+      - generic [ref=f5e131]: A
+      - generic [ref=f5e133]:
+        - paragraph [ref=f5e134]: Admin
+        - paragraph
+      - link "Logout" [ref=f5e135] [cursor=pointer]:
+        - /url: /logout
+  - generic [ref=f5e139]:
+    - banner [ref=f5e140]:
+      - link "JapaConnect Admin" [ref=f5e142] [cursor=pointer]:
+        - /url: /
+      - generic [ref=f5e143]:
+        - button [ref=f5e145]
+        - button [ref=f5e147]
+        - link "JC" [ref=f5e149] [cursor=pointer]:
+          - /url: /
+    - main [ref=f5e152]:
+      - generic [ref=f5e153]:
+        - navigation "Breadcrumb" [ref=f5e154]:
+          - link [ref=f5e155] [cursor=pointer]:
+            - /url: /
+          - generic [ref=f5e158]: Email templates
+        - generic [ref=f5e159]:
+          - generic [ref=f5e160]:
+            - heading "Email Templates" [level=1] [ref=f5e161]
+            - paragraph [ref=f5e162]: Manage system email templates
+          - button "Refresh" [ref=f5e164]
+        - generic [ref=f5e167]:
+          - table [ref=f5e170]:
+            - rowgroup [ref=f5e171]:
+              - row [ref=f5e172]:
+                - columnheader [ref=f5e173] [cursor=pointer]
+                - columnheader [ref=f5e176] [cursor=pointer]
+                - columnheader [ref=f5e179] [cursor=pointer]
+                - columnheader [ref=f5e182] [cursor=pointer]
+                - columnheader "Actions" [ref=f5e185]
+            - rowgroup [ref=f5e187]:
+              - row [ref=f5e188]:
+                - cell "Account Deletion Confirmed" [ref=f5e189]
+                - cell "account_deletion_confirmed" [ref=f5e190]
+                - 'cell "Your {{.SiteName}} account has been deleted" [ref=f5e191]'
+                - cell "Active" [ref=f5e192]
+                - cell [ref=f5e193]:
+                  - generic [ref=f5e194]:
+                    - button [ref=f5e195]
+                    - button [ref=f5e197]
+                    - button [ref=f5e199]
+                    - button [ref=f5e201]
+              - row [ref=f5e203]:
+                - cell "Moderation Appeal Submitted" [ref=f5e204]
+                - cell "admin_appeal_submitted" [ref=f5e205]
+                - 'cell "[{{.SiteName}}] Moderation appeal from {{.AppellantUsername}}" [ref=f5e206]'
+                - cell "Active" [ref=f5e207]
+                - cell [ref=f5e208]:
+                  - generic [ref=f5e209]:
+                    - button [ref=f5e210]
+                    - button [ref=f5e212]
+                    - button [ref=f5e214]
+                    - button [ref=f5e216]
+              - row [ref=f5e218]:
+                - cell "Content Reported" [ref=f5e219]
+                - cell "admin_content_reported" [ref=f5e220]
+                - 'cell "[{{.SiteName}}] Content reported by {{.ReporterUsername}}" [ref=f5e221]'
+                - cell "Active" [ref=f5e222]
+                - cell [ref=f5e223]:
+                  - generic [ref=f5e224]:
+                    - button [ref=f5e225]
+                    - button [ref=f5e227]
+                    - button [ref=f5e229]
+                    - button [ref=f5e231]
+              - row [ref=f5e233]:
+                - cell "New User Registration" [ref=f5e234]
+                - cell "admin_new_user" [ref=f5e235]
+                - 'cell "[{{.SiteName}}] New user registered: {{.NewUsername}}" [ref=f5e236]'
+                - cell "Active" [ref=f5e237]
+                - cell [ref=f5e238]:
+                  - generic [ref=f5e239]:
+                    - button [ref=f5e240]
+                    - button [ref=f5e242]
+                    - button [ref=f5e244]
+                    - button [ref=f5e246]
+              - row [ref=f5e248]:
+                - cell "Certificate Issued" [ref=f5e249]
+                - cell "certificate_issued" [ref=f5e250]
+                - 'cell "Your certificate for {{.CourseName}} is ready!" [ref=f5e251]'
+                - cell "Active" [ref=f5e252]
+                - cell [ref=f5e253]:
+                  - generic [ref=f5e254]:
+                    - button [ref=f5e255]
+                    - button [ref=f5e257]
+                    - button [ref=f5e259]
+                    - button [ref=f5e261]
+              - row [ref=f5e263]:
+                - cell "Course Completed" [ref=f5e264]
+                - cell "course_completed" [ref=f5e265]
+                - 'cell "You completed {{.CourseName}}!" [ref=f5e266]'
+                - cell "Active" [ref=f5e267]
+                - cell [ref=f5e268]:
+                  - generic [ref=f5e269]:
+                    - button [ref=f5e270]
+                    - button [ref=f5e272]
+                    - button [ref=f5e274]
+                    - button [ref=f5e276]
+              - row [ref=f5e278]:
+                - cell "Daily Digest" [ref=f5e279]
+                - cell "daily_digest" [ref=f5e280]
+                - 'cell "Your daily {{.SiteName}} digest" [ref=f5e281]'
+                - cell "Active" [ref=f5e282]
+                - cell [ref=f5e283]:
+                  - generic [ref=f5e284]:
+                    - button [ref=f5e285]
+                    - button [ref=f5e287]
+                    - button [ref=f5e289]
+                    - button [ref=f5e291]
+              - row [ref=f5e293]:
+                - cell "Email Address Changed" [ref=f5e294]
+                - cell "email_changed" [ref=f5e295]
+                - 'cell "Your {{.SiteName}} email address has been updated" [ref=f5e296]'
+                - cell "Active" [ref=f5e297]
+                - cell [ref=f5e298]:
+                  - generic [ref=f5e299]:
+                    - button [ref=f5e300]
+                    - button [ref=f5e302]
+                    - button [ref=f5e304]
+                    - button [ref=f5e306]
+              - row [ref=f5e308]:
+                - cell "Email Verification" [ref=f5e309]
+                - cell "email_verification" [ref=f5e310]
+                - 'cell "Verify your email for {{.SiteName}}" [ref=f5e311]'
+                - cell "Active" [ref=f5e312]
+                - cell [ref=f5e313]:
+                  - generic [ref=f5e314]:
+                    - button [ref=f5e315]
+                    - button [ref=f5e317]
+                    - button [ref=f5e319]
+                    - button [ref=f5e321]
+              - row [ref=f5e323]:
+                - cell "New Login Alert" [ref=f5e324]
+                - cell "login_alert" [ref=f5e325]
+                - 'cell "New sign-in to your {{.SiteName}} account" [ref=f5e326]'
+                - cell "Active" [ref=f5e327]
+                - cell [ref=f5e328]:
+                  - generic [ref=f5e329]:
+                    - button [ref=f5e330]
+                    - button [ref=f5e332]
+                    - button [ref=f5e334]
+                    - button [ref=f5e336]
+              - row [ref=f5e338]:
+                - cell "Newsletter" [ref=f5e339]
+                - cell "newsletter" [ref=f5e340]
+                - 'cell "{{.Subject}}" [ref=f5e341]'
+                - cell "Active" [ref=f5e342]
+                - cell [ref=f5e343]:
+                  - generic [ref=f5e344]:
+                    - button [ref=f5e345]
+                    - button [ref=f5e347]
+                    - button [ref=f5e349]
+                    - button [ref=f5e351]
+              - row [ref=f5e353]:
+                - cell "Password Reset" [ref=f5e354]
+                - cell "password_reset" [ref=f5e355]
+                - 'cell "Reset your {{.SiteName}} password" [ref=f5e356]'
+                - cell "Active" [ref=f5e357]
+                - cell [ref=f5e358]:
+                  - generic [ref=f5e359]:
+                    - button [ref=f5e360]
+                    - button [ref=f5e362]
+                    - button [ref=f5e364]
+                    - button [ref=f5e366]
+              - row [ref=f5e368]:
+                - cell "Payment Failed" [ref=f5e369]
+                - cell "payment_failed" [ref=f5e370]
+                - 'cell "Payment to {{.SiteName}} was unsuccessful" [ref=f5e371]'
+                - cell "Active" [ref=f5e372]
+                - cell [ref=f5e373]:
+                  - generic [ref=f5e374]:
+                    - button [ref=f5e375]
+                    - button [ref=f5e377]
+                    - button [ref=f5e379]
+                    - button [ref=f5e381]
+              - row [ref=f5e383]:
+                - cell "Payment Receipt" [ref=f5e384]
+                - cell "payment_receipt" [ref=f5e385]
+                - 'cell "Receipt from {{.SiteName}} — {{.Amount}} {{.Currency}}" [ref=f5e386]'
+                - cell "Active" [ref=f5e387]
+                - cell [ref=f5e388]:
+                  - generic [ref=f5e389]:
+                    - button [ref=f5e390]
+                    - button [ref=f5e392]
+                    - button [ref=f5e394]
+                    - button [ref=f5e396]
+              - row [ref=f5e398]:
+                - cell "Subscription Cancelled" [ref=f5e399]
+                - cell "subscription_cancelled" [ref=f5e400]
+                - 'cell "Your {{.SiteName}} subscription has been cancelled" [ref=f5e401]'
+                - cell "Active" [ref=f5e402]
+                - cell [ref=f5e403]:
+                  - generic [ref=f5e404]:
+                    - button [ref=f5e405]
+                    - button [ref=f5e407]
+                    - button [ref=f5e409]
+                    - button [ref=f5e411]
+              - row [ref=f5e413]:
+                - cell "Subscription Started" [ref=f5e414]
+                - cell "subscription_created" [ref=f5e415]
+                - 'cell "Your {{.SiteName}} subscription is active" [ref=f5e416]'
+                - cell "Active" [ref=f5e417]
+                - cell [ref=f5e418]:
+                  - generic [ref=f5e419]:
+                    - button [ref=f5e420]
+                    - button [ref=f5e422]
+                    - button [ref=f5e424]
+                    - button [ref=f5e426]
+              - row [ref=f5e428]:
+                - cell "Subscription Expiring Soon" [ref=f5e429]
+                - cell "subscription_expiring" [ref=f5e430]
+                - 'cell "Your {{.SiteName}} subscription expires soon" [ref=f5e431]'
+                - cell "Active" [ref=f5e432]
+                - cell [ref=f5e433]:
+                  - generic [ref=f5e434]:
+                    - button [ref=f5e435]
+                    - button [ref=f5e437]
+                    - button [ref=f5e439]
+                    - button [ref=f5e441]
+              - row [ref=f5e443]:
+                - cell "Support Ticket Confirmation" [ref=f5e444]
+                - cell "ticket_confirmation" [ref=f5e445]
+                - 'cell "Ticket #{{.TicketID}} received — {{.Subject}}" [ref=f5e446]'
+                - cell "Active" [ref=f5e447]
+                - cell [ref=f5e448]:
+                  - generic [ref=f5e449]:
+                    - button [ref=f5e450]
+                    - button [ref=f5e452]
+                    - button [ref=f5e454]
+                    - button [ref=f5e456]
+              - row [ref=f5e458]:
+                - cell "New Response to Your Ticket" [ref=f5e459]
+                - cell "ticket_response" [ref=f5e460]
+                - 'cell "New response on ticket #{{.TicketID}}" [ref=f5e461]'
+                - cell "Active" [ref=f5e462]
+                - cell [ref=f5e463]:
+                  - generic [ref=f5e464]:
+                    - button [ref=f5e465]
+                    - button [ref=f5e467]
+                    - button [ref=f5e469]
+                    - button [ref=f5e471]
+              - row [ref=f5e473]:
+                - cell "Ticket Status Updated" [ref=f5e474]
+                - cell "ticket_status_update" [ref=f5e475]
+                - 'cell "Ticket #{{.TicketID}} status updated to {{.NewStatus}}" [ref=f5e476]'
+                - cell "Active" [ref=f5e477]
+                - cell [ref=f5e478]:
+                  - generic [ref=f5e479]:
+                    - button [ref=f5e480]
+                    - button [ref=f5e482]
+                    - button [ref=f5e484]
+                    - button [ref=f5e486]
+              - row [ref=f5e488]:
+                - cell "Weekly Digest" [ref=f5e489]
+                - cell "weekly_digest" [ref=f5e490]
+                - 'cell "Your weekly {{.SiteName}} digest" [ref=f5e491]'
+                - cell "Active" [ref=f5e492]
+                - cell [ref=f5e493]:
+                  - generic [ref=f5e494]:
+                    - button [ref=f5e495]
+                    - button [ref=f5e497]
+                    - button [ref=f5e499]
+                    - button [ref=f5e501]
+              - row [ref=f5e503]:
+                - cell "Welcome Email" [ref=f5e504]
+                - cell "welcome" [ref=f5e505]
+                - 'cell "Welcome to {{.SiteName}}, {{.UserName}}!" [ref=f5e506]'
+                - cell "Active" [ref=f5e507]
+                - cell [ref=f5e508]:
+                  - generic [ref=f5e509]:
+                    - button [ref=f5e510]
+                    - button [ref=f5e512]
+                    - button [ref=f5e514]
+                    - button [ref=f5e516]
+          - generic [ref=f5e518]:
+            - generic [ref=f5e519]:
+              - generic [ref=f5e520]: 22 items
+              - generic [ref=f5e521]:
+                - generic [ref=f5e522]: "Per page:"
+                - button "25" [ref=f5e523]
+            - generic [ref=f5e526]:
+              - button "First page" [disabled] [ref=f5e527]
+              - button "Previous page" [disabled] [ref=f5e529]
+              - generic [ref=f5e531]: Page 1 of 1
+              - button "Next page" [disabled] [ref=f5e532]
+              - button "Last page" [disabled] [ref=f5e534]

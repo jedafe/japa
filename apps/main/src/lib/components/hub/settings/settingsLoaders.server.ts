@@ -70,7 +70,9 @@ export const SETTINGS_LOADERS: Record<string, (ctx: ApiContext) => Promise<unkno
 		// GET /pricing/plans — available plans for the subscribe flow (Rule 16).
 		plans: await apiGet<unknown[]>(ctx, '/pricing/plans').catch(() => []),
 		// GET /payment-providers — enabled payment providers for the checkout.
-		providers: await apiGet<unknown[]>(ctx, '/payment-providers').catch(() => [])
+		providers: await apiGet<unknown[]>(ctx, '/payment-providers').catch(() => []),
+		// GET /wallet/currencies — currency symbols for price formatting (Rule 16).
+		currencies: await apiGet<unknown[]>(ctx, '/wallet/currencies').catch(() => [])
 	}),
 	danger: async () => null
 };

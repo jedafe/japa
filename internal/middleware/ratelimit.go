@@ -37,10 +37,11 @@ type RateLimitTier struct {
 // ADR-022. The values are deliberately generous for legitimate clients
 // while still throttling abusive burst traffic.
 var Tiers = map[string]RateLimitTier{
-	"tight":    {Requests: 10, Window: time.Minute},
-	"moderate": {Requests: 60, Window: time.Minute},
-	"loose":    {Requests: 300, Window: time.Minute},
-	"webhook":  {Requests: 3000, Window: time.Minute},
+	"tight":            {Requests: 10, Window: time.Minute},
+	"moderate":         {Requests: 60, Window: time.Minute},
+	"loose":            {Requests: 300, Window: time.Minute},
+	"webhook":          {Requests: 3000, Window: time.Minute},
+	"form_submission":  {Requests: 10, Window: time.Hour}, // §06: 10 submissions per user per hour
 }
 
 // RateLimit returns middleware that enforces a fixed-window rate limit

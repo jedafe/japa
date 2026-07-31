@@ -22,9 +22,10 @@ func NewService(database *db.DB) *Service {
 }
 
 type ListTemplatesResponse struct {
-	Items      []gen.EmailTemplate `json:"items"`
-	Page       int32               `json:"page"`
-	TotalPages int32               `json:"total_pages"`
+	Items      []gen.ListEmailTemplatesRow `json:"items"`
+	Page       int32                       `json:"page"`
+	Total      int64                       `json:"total"`
+	TotalPages int32                       `json:"total_pages"`
 }
 
 func (s *Service) ListTemplates(ctx context.Context, tenantID pgtype.UUID, filterType string, limit, offset int32) (*ListTemplatesResponse, error) {
@@ -40,18 +41,18 @@ func (s *Service) ListTemplates(ctx context.Context, tenantID pgtype.UUID, filte
 	if total%limit > 0 {
 		totalPages++
 	}
-	return &ListTemplatesResponse{Items: templates, Page: offset / limit, TotalPages: totalPages}, nil
+	return &ListTemplatesResponse{Items: templates, Page: offset / limit, Total: int64(total), TotalPages: totalPages}, nil
 }
 
-func (s *Service) GetTemplate(ctx context.Context, id, tenantID pgtype.UUID) (gen.EmailTemplate, error) {
+func (s *Service) GetTemplate(ctx context.Context, id, tenantID pgtype.UUID) (gen.GetEmailTemplateRow, error) {
 	return s.store.getTemplate(ctx, id, tenantID)
 }
 
-func (s *Service) GetTemplateByType(ctx context.Context, tenantID pgtype.UUID, templateType string) (gen.EmailTemplate, error) {
+func (s *Service) GetTemplateByType(ctx context.Context, tenantID pgtype.UUID, templateType string) (gen.GetEmailTemplateByTypeRow, error) {
 	return s.store.getTemplateByType(ctx, tenantID, templateType)
 }
 
-func (s *Service) UpdateTemplate(ctx context.Context, id, tenantID pgtype.UUID, name, subject, htmlBody, plainTextBody, status string) (gen.EmailTemplate, error) {
+func (s *Service) UpdateTemplate(ctx context.Context, id, tenantID pgtype.UUID, name, subject, htmlBody, plainTextBody, status string) (gen.UpdateEmailTemplateRow, error) {
 	return s.store.updateTemplate(ctx, gen.UpdateEmailTemplateParams{
 		ID:             id,
 		TenantID:       tenantID,

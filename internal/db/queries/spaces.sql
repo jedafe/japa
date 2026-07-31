@@ -71,7 +71,7 @@ SELECT s.id, s.tenant_id, s.parent_id, s.space_type_id, s.name, s.slug, s.descri
        s.wiki_content, s.logo_media_id, s.header_image_id, s.geo_code, s.level,
        s.member_count, s.post_count, s.follower_count, s.visibility, s.posting_perm,
        s.replying_perm, s.commenting_perm, s.joining_perm, s.status, s.created_at,
-       s.updated_at, s.deleted_at
+       s.updated_at, s.deleted_at, s.currency_code
 FROM spaces s
 WHERE s.tenant_id = @tenant_id AND s.deleted_at IS NULL
   AND (
@@ -91,7 +91,7 @@ ORDER BY s.created_at DESC, s.id DESC;
 SELECT id, tenant_id, parent_id, space_type_id, name, slug, description, wiki_content,
        logo_media_id, header_image_id, geo_code, level, member_count, post_count,
        follower_count, visibility, posting_perm, replying_perm, commenting_perm,
-       joining_perm, status, created_at, updated_at, deleted_at
+       joining_perm, status, created_at, updated_at, deleted_at, currency_code
 FROM spaces
 WHERE tenant_id = @tenant_id AND level = @level AND deleted_at IS NULL
 ORDER BY created_at DESC, id DESC;
@@ -100,7 +100,7 @@ ORDER BY created_at DESC, id DESC;
 SELECT id, tenant_id, parent_id, space_type_id, name, slug, description, wiki_content,
        logo_media_id, header_image_id, geo_code, level, member_count, post_count,
        follower_count, visibility, posting_perm, replying_perm, commenting_perm,
-       joining_perm, status, created_at, updated_at, deleted_at
+       joining_perm, status, created_at, updated_at, deleted_at, currency_code
 FROM spaces
 WHERE tenant_id = @tenant_id AND space_type_id = @space_type_id AND deleted_at IS NULL
 ORDER BY created_at DESC, id DESC;
@@ -109,7 +109,7 @@ ORDER BY created_at DESC, id DESC;
 SELECT id, tenant_id, parent_id, space_type_id, name, slug, description, wiki_content,
        logo_media_id, header_image_id, geo_code, level, member_count, post_count,
        follower_count, visibility, posting_perm, replying_perm, commenting_perm,
-       joining_perm, status, created_at, updated_at, deleted_at
+       joining_perm, status, created_at, updated_at, deleted_at, currency_code
 FROM spaces
 WHERE parent_id = @parent_id AND tenant_id = @tenant_id AND deleted_at IS NULL
 ORDER BY created_at ASC, id ASC;
@@ -119,7 +119,7 @@ SELECT s.id, s.tenant_id, s.parent_id, s.space_type_id, s.name, s.slug, s.descri
        s.wiki_content, s.logo_media_id, s.header_image_id, s.geo_code, s.level,
        s.member_count, s.post_count, s.follower_count, s.visibility, s.posting_perm,
        s.replying_perm, s.commenting_perm, s.joining_perm, s.status, s.created_at,
-       s.updated_at, s.deleted_at,
+       s.updated_at, s.deleted_at, s.currency_code,
        COALESCE(u.username, '') AS owner,
        COALESCE(u.id::text, '') AS owner_id,
        COALESCE(st.name, '') AS space_type
@@ -141,7 +141,7 @@ SELECT s.id, s.tenant_id, s.parent_id, s.space_type_id, s.name, s.slug, s.descri
        s.wiki_content, s.logo_media_id, s.header_image_id, s.geo_code, s.level,
        s.member_count, s.post_count, s.follower_count, s.visibility, s.posting_perm,
        s.replying_perm, s.commenting_perm, s.joining_perm, s.status, s.created_at,
-       s.updated_at, s.deleted_at
+       s.updated_at, s.deleted_at, s.currency_code
 FROM spaces s
 JOIN space_members sm ON sm.space_id = s.id
 WHERE sm.user_id = @user_id AND sm.tenant_id = @tenant_id AND s.deleted_at IS NULL
@@ -153,7 +153,7 @@ SELECT s.id, s.tenant_id, s.parent_id, s.space_type_id, s.name, s.slug, s.descri
        s.wiki_content, s.logo_media_id, s.header_image_id, s.geo_code, s.level,
        s.member_count, s.post_count, s.follower_count, s.visibility, s.posting_perm,
        s.replying_perm, s.commenting_perm, s.joining_perm, s.status, s.created_at,
-       s.updated_at, s.deleted_at
+       s.updated_at, s.deleted_at, s.currency_code
 FROM spaces s
 JOIN space_moderators sm ON sm.space_id = s.id
 WHERE sm.user_id = @user_id AND sm.tenant_id = @tenant_id AND s.deleted_at IS NULL
@@ -166,7 +166,7 @@ SELECT s.id, s.tenant_id, s.parent_id, s.space_type_id, s.name, s.slug, s.descri
        s.wiki_content, s.logo_media_id, s.header_image_id, s.geo_code, s.level,
        s.member_count, s.post_count, s.follower_count, s.visibility, s.posting_perm,
        s.replying_perm, s.commenting_perm, s.joining_perm, s.status, s.created_at,
-       s.updated_at, s.deleted_at
+       s.updated_at, s.deleted_at, s.currency_code
 FROM spaces s
 JOIN space_members sm ON sm.space_id = s.id AND sm.tenant_id = s.tenant_id
 WHERE sm.user_id = @user_id AND sm.tenant_id = @tenant_id AND sm.role = 'owner'
@@ -198,7 +198,7 @@ SELECT s.id, s.tenant_id, s.parent_id, s.space_type_id, s.name, s.slug, s.descri
        s.wiki_content, s.logo_media_id, s.header_image_id, s.geo_code, s.level,
        s.member_count, s.post_count, s.follower_count, s.visibility, s.posting_perm,
        s.replying_perm, s.commenting_perm, s.joining_perm, s.status, s.created_at,
-       s.updated_at, s.deleted_at
+       s.updated_at, s.deleted_at, s.currency_code
 FROM spaces s
 JOIN space_parent_spaces sps ON sps.space_id = s.id
 JOIN spaces country ON country.id = sps.parent_space_id
@@ -215,7 +215,7 @@ SELECT s.id, s.tenant_id, s.parent_id, s.space_type_id, s.name, s.slug, s.descri
        s.wiki_content, s.logo_media_id, s.header_image_id, s.geo_code, s.level,
        s.member_count, s.post_count, s.follower_count, s.visibility, s.posting_perm,
        s.replying_perm, s.commenting_perm, s.joining_perm, s.status, s.created_at,
-       s.updated_at, s.deleted_at
+       s.updated_at, s.deleted_at, s.currency_code
 FROM spaces s
 JOIN space_parent_spaces sps ON sps.space_id = s.id
 WHERE sps.parent_space_id = @state_id AND s.tenant_id = @tenant_id AND s.level = 'city'
@@ -226,7 +226,7 @@ ORDER BY s.name;
 SELECT id, tenant_id, parent_id, space_type_id, name, slug, description, wiki_content,
        logo_media_id, header_image_id, geo_code, level, member_count, post_count,
        follower_count, visibility, posting_perm, replying_perm, commenting_perm,
-       joining_perm, status, created_at, updated_at, deleted_at
+       joining_perm, status, created_at, updated_at, deleted_at, currency_code
 FROM spaces
 WHERE id = @id AND tenant_id = @tenant_id AND deleted_at IS NULL;
 
@@ -235,7 +235,7 @@ WHERE id = @id AND tenant_id = @tenant_id AND deleted_at IS NULL;
 SELECT id, tenant_id, parent_id, space_type_id, name, slug, description, wiki_content,
        logo_media_id, header_image_id, geo_code, level, member_count, post_count,
        follower_count, visibility, posting_perm, replying_perm, commenting_perm,
-       joining_perm, status, created_at, updated_at, deleted_at
+       joining_perm, status, created_at, updated_at, deleted_at, currency_code
 FROM spaces
 WHERE geo_code = $1 AND level = 'country' AND tenant_id = $2 AND deleted_at IS NULL
 LIMIT 1;
@@ -244,7 +244,7 @@ LIMIT 1;
 SELECT id, tenant_id, parent_id, space_type_id, name, slug, description, wiki_content,
        logo_media_id, header_image_id, geo_code, level, member_count, post_count,
        follower_count, visibility, posting_perm, replying_perm, commenting_perm,
-       joining_perm, status, created_at, updated_at, deleted_at
+       joining_perm, status, created_at, updated_at, deleted_at, currency_code
 FROM spaces
 WHERE slug = @slug AND tenant_id = @tenant_id AND deleted_at IS NULL;
 
@@ -260,7 +260,7 @@ INSERT INTO spaces (
 RETURNING id, tenant_id, parent_id, space_type_id, name, slug, description, wiki_content,
           logo_media_id, header_image_id, geo_code, level, member_count, post_count,
           follower_count, visibility, posting_perm, replying_perm, commenting_perm,
-          joining_perm, status, created_at, updated_at, deleted_at;
+          joining_perm, status, created_at, updated_at, deleted_at, currency_code;
 
 -- name: UpdateSpace :one
 UPDATE spaces
@@ -272,7 +272,7 @@ WHERE id = @id AND tenant_id = @tenant_id AND deleted_at IS NULL
 RETURNING id, tenant_id, parent_id, space_type_id, name, slug, description, wiki_content,
           logo_media_id, header_image_id, geo_code, level, member_count, post_count,
           follower_count, visibility, posting_perm, replying_perm, commenting_perm,
-          joining_perm, status, created_at, updated_at, deleted_at;
+          joining_perm, status, created_at, updated_at, deleted_at, currency_code;
 
 -- name: DeleteSpace :exec
 -- Soft-delete: set deleted_at instead of hard-deleting (Rule 11, ADR-014).
@@ -417,7 +417,7 @@ SELECT s.id, s.tenant_id, s.parent_id, s.space_type_id, s.name, s.slug, s.descri
        s.wiki_content, s.logo_media_id, s.header_image_id, s.geo_code, s.level,
        s.member_count, s.post_count, s.follower_count, s.visibility, s.posting_perm,
        s.replying_perm, s.commenting_perm, s.joining_perm, s.status, s.created_at,
-       s.updated_at, s.deleted_at
+       s.updated_at, s.deleted_at, s.currency_code
 FROM spaces s
 JOIN space_parent_spaces sps ON sps.parent_space_id = s.id
 WHERE sps.space_id = @space_id AND s.tenant_id = @tenant_id AND s.deleted_at IS NULL
@@ -428,7 +428,7 @@ SELECT s.id, s.tenant_id, s.parent_id, s.space_type_id, s.name, s.slug, s.descri
        s.wiki_content, s.logo_media_id, s.header_image_id, s.geo_code, s.level,
        s.member_count, s.post_count, s.follower_count, s.visibility, s.posting_perm,
        s.replying_perm, s.commenting_perm, s.joining_perm, s.status, s.created_at,
-       s.updated_at, s.deleted_at
+       s.updated_at, s.deleted_at, s.currency_code
 FROM spaces s
 JOIN space_parent_spaces sps ON sps.space_id = s.id
 WHERE sps.parent_space_id = @parent_space_id AND s.tenant_id = @tenant_id AND s.deleted_at IS NULL
@@ -522,7 +522,7 @@ SELECT s.id, s.tenant_id, s.parent_id, s.space_type_id, s.name, s.slug, s.descri
        s.wiki_content, s.logo_media_id, s.header_image_id, s.geo_code, s.level,
        s.member_count, s.post_count, s.follower_count, s.visibility, s.posting_perm,
        s.replying_perm, s.commenting_perm, s.joining_perm, s.status, s.created_at,
-       s.updated_at, s.deleted_at, sm.role AS member_role
+       s.updated_at, s.deleted_at, s.currency_code, sm.role AS member_role
 FROM spaces s
 JOIN space_members sm ON sm.space_id = s.id AND sm.tenant_id = s.tenant_id
 WHERE sm.user_id = @user_id AND s.tenant_id = @tenant_id

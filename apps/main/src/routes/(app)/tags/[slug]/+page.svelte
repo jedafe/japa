@@ -68,11 +68,19 @@
 		class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4"
 	>
 		<div class="flex items-center gap-3">
-			<span
-				class="grid h-12 w-12 shrink-0 place-items-center rounded-[var(--radius)] bg-[var(--color-surface-subtle)] text-[var(--color-primary)]"
-			>
-				<Hash size={24} />
-			</span>
+			{#if tag.logo_url}
+				<img
+					src={tag.logo_url}
+					alt={tag.name}
+					class="h-12 w-12 shrink-0 rounded-[var(--radius)] border border-[var(--color-border)] object-cover"
+				/>
+			{:else}
+				<span
+					class="grid h-12 w-12 shrink-0 place-items-center rounded-[var(--radius)] bg-[var(--color-surface-subtle)] text-[var(--color-primary)]"
+				>
+					<Hash size={24} />
+				</span>
+			{/if}
 			<div class="min-w-0 flex-1">
 				<h2 class="truncate text-base font-semibold text-[var(--color-text)]">#{tag.name}</h2>
 				<p class="text-xs text-[var(--color-muted)]">{followerLabel}</p>
@@ -115,11 +123,19 @@
 			<ArrowLeft size={16} /> {t('tag.back', 'All tags')}
 		</a>
 		<div class="flex items-center gap-3">
-			<span
-				class="grid h-12 w-12 shrink-0 place-items-center rounded-[var(--radius)] bg-[var(--color-surface-subtle)] text-[var(--color-primary)]"
-			>
-				<Hash size={24} />
-			</span>
+			{#if tag.logo_url}
+				<img
+					src={tag.logo_url}
+					alt={tag.name}
+					class="h-12 w-12 shrink-0 rounded-[var(--radius)] border border-[var(--color-border)] object-cover"
+				/>
+			{:else}
+				<span
+					class="grid h-12 w-12 shrink-0 place-items-center rounded-[var(--radius)] bg-[var(--color-surface-subtle)] text-[var(--color-primary)]"
+				>
+					<Hash size={24} />
+				</span>
+			{/if}
 			<div class="min-w-0 flex-1">
 				<h1 class="truncate text-xl font-semibold text-[var(--color-text)]">#{tag.name}</h1>
 				<p class="text-xs text-[var(--color-muted)]">{followerLabel}</p>

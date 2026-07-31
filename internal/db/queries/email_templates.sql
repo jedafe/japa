@@ -1,8 +1,8 @@
 -- Email Templates — Tenant-customizable transactional emails (ADR-054)
 
 -- name: ListEmailTemplates :many
-SELECT id, tenant_id, type, name, subject, html_body, plain_text_body,
-       variables, status, created_at, updated_at
+SELECT id, tenant_id, type, name, slug, subject, html_body, plain_text_body,
+       is_active, variables, status, created_at, updated_at
 FROM email_templates
 WHERE tenant_id = @tenant_id
   AND (@type = '' OR type = @type)
@@ -40,3 +40,9 @@ RETURNING id, tenant_id, type, name, subject, html_body, plain_text_body,
 UPDATE email_templates
 SET html_body = '', plain_text_body = '', updated_at = now()
 WHERE id = @id AND tenant_id = @tenant_id;
+
+-- name: GetEmailTemplateBySlug :one
+SELECT id, tenant_id, type, name, slug, subject, html_body, plain_text_body,
+       variables, status, created_at, updated_at
+FROM email_templates
+WHERE slug = @slug AND tenant_id = @tenant_id AND is_active = true;

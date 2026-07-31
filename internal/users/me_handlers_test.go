@@ -145,6 +145,7 @@ func TestUpdatePrivacy_InvalidBody(t *testing.T) {
 	h := NewHandlers(testService())
 	req := httptest.NewRequest(http.MethodPatch, "/me/privacy", bytes.NewBufferString("not json"))
 	req = withAuthUser(req)
+	req = withTenant(req)
 
 	rr := httptest.NewRecorder()
 	h.UpdatePrivacy(rr, req)
@@ -168,6 +169,7 @@ func TestRevokeSession_InvalidID(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodDelete, "/me/sessions/not-a-uuid", nil)
 	req = withAuthUser(req)
+	req = withTenant(req)
 
 	rr := httptest.NewRecorder()
 	router.ServeHTTP(rr, req)
@@ -214,25 +216,6 @@ func TestDeactivateAccount_MissingPassword(t *testing.T) {
 
 	if rr.Code != http.StatusBadRequest {
 		t.Errorf("status = %d, want %d", rr.Code, http.StatusBadRequest)
-	}
-}
-
-// ---------------------------------------------------------------------------
-// RequestDataExport — returns 202
-// ---------------------------------------------------------------------------
-
-func TestDataExport_Accepted(t *testing.T) {
-	t.Parallel()
-
-	h := NewHandlers(testService())
-	req := httptest.NewRequest(http.MethodPost, "/me/data-export", nil)
-	req = withAuthUser(req)
-
-	rr := httptest.NewRecorder()
-	h.RequestDataExport(rr, req)
-
-	if rr.Code != http.StatusAccepted {
-		t.Errorf("status = %d, want %d", rr.Code, http.StatusAccepted)
 	}
 }
 

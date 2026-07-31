@@ -6,12 +6,27 @@ package users
 import "encoding/json"
 
 // UpdateProfileRequest is the JSON body for PATCH /api/v1/users/me.
+// Supports both URL-based (avatar_url/cover_url) and media-system
+// (avatar_media_id/header_media_id) fields per Section 50 (BUG-004).
+// When media IDs are provided, the service resolves them to URLs.
 type UpdateProfileRequest struct {
+	DisplayName    *string `json:"display_name"`
+	AvatarURL      *string `json:"avatar_url"`
+	AvatarMediaID  *string `json:"avatar_media_id"`
+	CoverURL       *string `json:"cover_url"`
+	HeaderMediaID  *string `json:"header_media_id"`
+	Bio            *string `json:"bio"`
+	Timezone       *string `json:"timezone"`
+}
+
+// UpdateAccountRequest is the JSON body for PATCH /api/v1/me/account.
+// Per Section 50: username may be changed once per 30 days; email change
+// triggers re-verification (email_verified_at reset to NULL); display_name
+// is also editable here. All fields are optional (partial update).
+type UpdateAccountRequest struct {
+	Username    *string `json:"username"`
+	Email       *string `json:"email"`
 	DisplayName *string `json:"display_name"`
-	AvatarURL   *string `json:"avatar_url"`
-	CoverURL    *string `json:"cover_url"`
-	Bio         *string `json:"bio"`
-	Timezone    *string `json:"timezone"`
 }
 
 // UpdatePreferencesRequest is the JSON body for PUT /api/v1/users/me/preferences.
@@ -27,7 +42,9 @@ type UserProfileResponse struct {
 	Username                 string   `json:"username"`
 	DisplayName              *string  `json:"display_name"`
 	AvatarURL                *string  `json:"avatar_url"`
+	AvatarMediaID            *string  `json:"avatar_media_id"`
 	CoverURL                 *string  `json:"cover_url"`
+	HeaderMediaID            *string  `json:"header_media_id"`
 	Bio                      *string  `json:"bio"`
 	Timezone                 *string  `json:"timezone"`
 	ProfileType              string   `json:"profile_type"`

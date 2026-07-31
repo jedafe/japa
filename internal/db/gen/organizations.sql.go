@@ -125,6 +125,25 @@ func (q *Queries) CountOrganizations(ctx context.Context, arg CountOrganizations
 	return count, err
 }
 
+const countOrganizationsByOwner = `-- name: CountOrganizationsByOwner :one
+SELECT COUNT(*) FROM organizations
+WHERE owner_user_id = $1 AND tenant_id = $2 AND deleted_at IS NULL
+`
+
+type CountOrganizationsByOwnerParams struct {
+	OwnerUserID pgtype.UUID `json:"owner_user_id"`
+	TenantID    pgtype.UUID `json:"tenant_id"`
+}
+
+// Counts active (non-deleted) organizations owned by a user in a tenant.
+// Used by the organizations.max_per_user quantity gate (BUG-015).
+func (q *Queries) CountOrganizationsByOwner(ctx context.Context, arg CountOrganizationsByOwnerParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countOrganizationsByOwner, arg.OwnerUserID, arg.TenantID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countPublicOrganizations = `-- name: CountPublicOrganizations :one
 SELECT COUNT(*) FROM organizations
 WHERE tenant_id = $1 AND status = 'active' AND deleted_at IS NULL AND verified = true
@@ -291,16 +310,17 @@ SELECT
   COUNT(c.id)::bigint AS total_posts,
   (SELECT COUNT(*)::bigint FROM organization_members om WHERE om.organization_id = $1) AS total_members,
   o.follower_count::bigint AS total_followers,
-  COUNT(c.id) FILTER (WHERE c.created_at >= NOW() - INTERVAL '30 days')::bigint AS posts_last_30d
+  COUNT(c.id) FILTER (WHERE c.created_at >= NOW() - make_interval(days => $2))::bigint AS posts_last_30d
 FROM organizations o
 LEFT JOIN contents c ON c.organization_id = o.id AND c.status != 'draft' AND c.deleted_at IS NULL
-WHERE o.id = $1 AND o.tenant_id = $2 AND o.deleted_at IS NULL
+WHERE o.id = $1 AND o.tenant_id = $3 AND o.deleted_at IS NULL
 GROUP BY o.id, o.follower_count
 `
 
 type GetOrganizationAnalyticsParams struct {
-	OrgID    pgtype.UUID `json:"org_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
+	OrgID      pgtype.UUID `json:"org_id"`
+	PeriodDays int32       `json:"period_days"`
+	TenantID   pgtype.UUID `json:"tenant_id"`
 }
 
 type GetOrganizationAnalyticsRow struct {
@@ -313,9 +333,9 @@ type GetOrganizationAnalyticsRow struct {
 
 // Aggregated analytics for a single organization (Section 07, 40).
 // Returns total views (sum of content view_count), total posts, members,
-// followers, and posts created in the last 30 days.
+// followers, and posts created in the last @period_days days (default 30).
 func (q *Queries) GetOrganizationAnalytics(ctx context.Context, arg GetOrganizationAnalyticsParams) (GetOrganizationAnalyticsRow, error) {
-	row := q.db.QueryRow(ctx, getOrganizationAnalytics, arg.OrgID, arg.TenantID)
+	row := q.db.QueryRow(ctx, getOrganizationAnalytics, arg.OrgID, arg.PeriodDays, arg.TenantID)
 	var i GetOrganizationAnalyticsRow
 	err := row.Scan(
 		&i.TotalViews,
@@ -339,6 +359,43 @@ type GetOrganizationByIDParams struct {
 
 func (q *Queries) GetOrganizationByID(ctx context.Context, arg GetOrganizationByIDParams) (Organization, error) {
 	row := q.db.QueryRow(ctx, getOrganizationByID, arg.ID, arg.TenantID)
+	var i Organization
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.OwnerUserID,
+		&i.Name,
+		&i.Slug,
+		&i.Tagline,
+		&i.Description,
+		&i.LogoMediaID,
+		&i.HeaderMediaID,
+		&i.WebsiteUrl,
+		&i.CountryCode,
+		&i.GeoSpaceID,
+		&i.OrgType,
+		&i.Verified,
+		&i.VerificationType,
+		&i.FollowerCount,
+		&i.MemberCount,
+		&i.Status,
+		&i.FieldValues,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.DeletedAt,
+	)
+	return i, err
+}
+
+const getOrganizationByIDOnly = `-- name: GetOrganizationByIDOnly :one
+SELECT id, tenant_id, owner_user_id, name, slug, tagline, description, logo_media_id, header_media_id, website_url, country_code, geo_space_id, org_type, verified, verification_type, follower_count, member_count, status, field_values, created_at, updated_at, deleted_at FROM organizations
+WHERE id = $1 AND deleted_at IS NULL
+`
+
+// Used by invitation acceptance where tenant_id is not yet known; the org's
+// tenant_id is read from the row and used for subsequent tenant-scoped calls.
+func (q *Queries) GetOrganizationByIDOnly(ctx context.Context, id pgtype.UUID) (Organization, error) {
+	row := q.db.QueryRow(ctx, getOrganizationByIDOnly, id)
 	var i Organization
 	err := row.Scan(
 		&i.ID,
@@ -444,6 +501,58 @@ func (q *Queries) GetOrganizationMemberRole(ctx context.Context, arg GetOrganiza
 	var role string
 	err := row.Scan(&role)
 	return role, err
+}
+
+const getOwnershipClaimByID = `-- name: GetOwnershipClaimByID :one
+SELECT oc.id, oc.tenant_id, oc.claimant_user_id, oc.organization_id, oc.evidence_url, oc.notes, oc.status, oc.reviewed_by, oc.resolution_note, oc.created_at, oc.reviewed_at, u.username AS claimant_username, o.name AS org_name
+FROM ownership_claims oc
+JOIN users u ON u.id = oc.claimant_user_id
+JOIN organizations o ON o.id = oc.organization_id
+WHERE oc.id = $1 AND oc.tenant_id = $2
+`
+
+type GetOwnershipClaimByIDParams struct {
+	ID       pgtype.UUID `json:"id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+type GetOwnershipClaimByIDRow struct {
+	ID               pgtype.UUID        `json:"id"`
+	TenantID         pgtype.UUID        `json:"tenant_id"`
+	ClaimantUserID   pgtype.UUID        `json:"claimant_user_id"`
+	OrganizationID   pgtype.UUID        `json:"organization_id"`
+	EvidenceUrl      *string            `json:"evidence_url"`
+	Notes            *string            `json:"notes"`
+	Status           string             `json:"status"`
+	ReviewedBy       pgtype.UUID        `json:"reviewed_by"`
+	ResolutionNote   *string            `json:"resolution_note"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	ReviewedAt       pgtype.Timestamptz `json:"reviewed_at"`
+	ClaimantUsername string             `json:"claimant_username"`
+	OrgName          string             `json:"org_name"`
+}
+
+// Returns a single ownership claim by ID (for GET /claim-ownership/{id}).
+// Joined with the claimant's username and org name for display.
+func (q *Queries) GetOwnershipClaimByID(ctx context.Context, arg GetOwnershipClaimByIDParams) (GetOwnershipClaimByIDRow, error) {
+	row := q.db.QueryRow(ctx, getOwnershipClaimByID, arg.ID, arg.TenantID)
+	var i GetOwnershipClaimByIDRow
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.ClaimantUserID,
+		&i.OrganizationID,
+		&i.EvidenceUrl,
+		&i.Notes,
+		&i.Status,
+		&i.ReviewedBy,
+		&i.ResolutionNote,
+		&i.CreatedAt,
+		&i.ReviewedAt,
+		&i.ClaimantUsername,
+		&i.OrgName,
+	)
+	return i, err
 }
 
 const getPendingOwnershipClaim = `-- name: GetPendingOwnershipClaim :one
@@ -560,16 +669,18 @@ func (q *Queries) GetPublicOrganizationBySlug(ctx context.Context, arg GetPublic
 const incrementOrganizationMemberCount = `-- name: IncrementOrganizationMemberCount :exec
 UPDATE organizations
 SET member_count = member_count + $2, updated_at = now()
-WHERE id = $1
+WHERE id = $1 AND tenant_id = $3
 `
 
 type IncrementOrganizationMemberCountParams struct {
 	ID          pgtype.UUID `json:"id"`
 	MemberCount int32       `json:"member_count"`
+	TenantID    pgtype.UUID `json:"tenant_id"`
 }
 
+// Defense-in-depth: tenant-scoped to prevent cross-tenant count corruption.
 func (q *Queries) IncrementOrganizationMemberCount(ctx context.Context, arg IncrementOrganizationMemberCountParams) error {
-	_, err := q.db.Exec(ctx, incrementOrganizationMemberCount, arg.ID, arg.MemberCount)
+	_, err := q.db.Exec(ctx, incrementOrganizationMemberCount, arg.ID, arg.MemberCount, arg.TenantID)
 	return err
 }
 
@@ -1104,6 +1215,25 @@ func (q *Queries) ReviewOwnershipClaim(ctx context.Context, arg ReviewOwnershipC
 	return err
 }
 
+const revokeOrganizationInvitation = `-- name: RevokeOrganizationInvitation :exec
+DELETE FROM organization_invitations
+WHERE id = $1 AND organization_id = $2 AND accepted_at IS NULL
+`
+
+type RevokeOrganizationInvitationParams struct {
+	ID             pgtype.UUID `json:"id"`
+	OrganizationID pgtype.UUID `json:"organization_id"`
+}
+
+// Revoke (hard-delete) a pending invitation. Only un-accepted invitations
+// can be revoked; an already-accepted invitation is a member relationship
+// and must be removed via DELETE /organizations/{id}/members/{userId}.
+// Ref: japaconnect-engineering/sections/07-organization-profiles-claim-ownership.md
+func (q *Queries) RevokeOrganizationInvitation(ctx context.Context, arg RevokeOrganizationInvitationParams) error {
+	_, err := q.db.Exec(ctx, revokeOrganizationInvitation, arg.ID, arg.OrganizationID)
+	return err
+}
+
 const softDeleteOrganization = `-- name: SoftDeleteOrganization :exec
 UPDATE organizations
 SET deleted_at = now(), updated_at = now()
@@ -1122,14 +1252,18 @@ func (q *Queries) SoftDeleteOrganization(ctx context.Context, arg SoftDeleteOrga
 
 const updateOrganization = `-- name: UpdateOrganization :exec
 UPDATE organizations
-SET name = $3, tagline = $4, description = $5, website_url = $6,
-    country_code = $7, geo_space_id = $8, org_type = $9, updated_at = now()
-WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
+SET name = COALESCE(NULLIF($1::text, ''), name),
+    tagline = COALESCE($2, tagline),
+    description = COALESCE($3, description),
+    website_url = COALESCE($4, website_url),
+    country_code = COALESCE($5, country_code),
+    geo_space_id = COALESCE($6, geo_space_id),
+    org_type = COALESCE(NULLIF($7::text, ''), org_type),
+    updated_at = now()
+WHERE id = $8 AND tenant_id = $9 AND deleted_at IS NULL
 `
 
 type UpdateOrganizationParams struct {
-	ID          pgtype.UUID `json:"id"`
-	TenantID    pgtype.UUID `json:"tenant_id"`
 	Name        string      `json:"name"`
 	Tagline     *string     `json:"tagline"`
 	Description *string     `json:"description"`
@@ -1137,12 +1271,16 @@ type UpdateOrganizationParams struct {
 	CountryCode *string     `json:"country_code"`
 	GeoSpaceID  pgtype.UUID `json:"geo_space_id"`
 	OrgType     string      `json:"org_type"`
+	ID          pgtype.UUID `json:"id"`
+	TenantID    pgtype.UUID `json:"tenant_id"`
 }
 
+// Partial update: COALESCE preserves the existing column value when the
+// caller omits a field (nullable *string → NULL, empty string for NOT NULL
+// text columns, NULL pgtype.UUID for geo_space_id). This prevents a PATCH
+// that only updates one field from blanking out the rest (BUG-004/005).
 func (q *Queries) UpdateOrganization(ctx context.Context, arg UpdateOrganizationParams) error {
 	_, err := q.db.Exec(ctx, updateOrganization,
-		arg.ID,
-		arg.TenantID,
 		arg.Name,
 		arg.Tagline,
 		arg.Description,
@@ -1150,6 +1288,8 @@ func (q *Queries) UpdateOrganization(ctx context.Context, arg UpdateOrganization
 		arg.CountryCode,
 		arg.GeoSpaceID,
 		arg.OrgType,
+		arg.ID,
+		arg.TenantID,
 	)
 	return err
 }
@@ -1168,5 +1308,23 @@ type UpdateOrganizationMemberRoleParams struct {
 
 func (q *Queries) UpdateOrganizationMemberRole(ctx context.Context, arg UpdateOrganizationMemberRoleParams) error {
 	_, err := q.db.Exec(ctx, updateOrganizationMemberRole, arg.OrganizationID, arg.UserID, arg.Role)
+	return err
+}
+
+const withdrawOwnershipClaim = `-- name: WithdrawOwnershipClaim :exec
+DELETE FROM ownership_claims
+WHERE id = $1 AND tenant_id = $2 AND claimant_user_id = $3 AND status = 'pending'
+`
+
+type WithdrawOwnershipClaimParams struct {
+	ID             pgtype.UUID `json:"id"`
+	TenantID       pgtype.UUID `json:"tenant_id"`
+	ClaimantUserID pgtype.UUID `json:"claimant_user_id"`
+}
+
+// Withdraw (delete) a pending claim by the claimant. Only pending claims
+// can be withdrawn; reviewed claims are historical records.
+func (q *Queries) WithdrawOwnershipClaim(ctx context.Context, arg WithdrawOwnershipClaimParams) error {
+	_, err := q.db.Exec(ctx, withdrawOwnershipClaim, arg.ID, arg.TenantID, arg.ClaimantUserID)
 	return err
 }

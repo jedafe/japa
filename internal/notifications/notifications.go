@@ -17,16 +17,26 @@ import (
 	"github.com/jedafe/japa/internal/worker"
 )
 
-// Notification type constants — must match the seeded rows in notification_types.
+// Notification type constants — must match the seeded rows in notification_types
+// (migration 000099, Section 35 seed catalog).
 const (
 	TypeNewFollower        = "follow.received"
-	TypePostReply          = "post_reply"
-	TypeComment            = "comment"
-	TypeMention            = "mention"
-	TypeReaction           = "reaction"
-	TypeDMMessage          = "dm_message"
-	TypeDMRequest          = "dm_request"
-	TypeSystemAnnouncement = "system_announcement"
+	TypeContentComment     = "content.comment"
+	TypeCommentReply       = "comment.reply"
+	TypeMentionContent     = "mention.content"
+	TypeMentionComment     = "mention.comment"
+	TypeContentReaction    = "content.reaction"
+	TypeDMMessage          = "dm.message"
+	TypeDMRequest          = "dm.request"
+	TypeSystemAnnouncement = "broadcast"
+
+	// Deprecated aliases for backward compatibility with older call-sites.
+	// These map to the legacy 000013 seed keys. New code should use the
+	// JEOS-spec constants above.
+	TypePostReply = "post_reply" //nolint:revive // legacy alias
+	TypeComment   = "comment"    //nolint:revive // legacy alias
+	TypeMention   = "mention"    //nolint:revive // legacy alias
+	TypeReaction  = "reaction"   //nolint:revive // legacy alias
 )
 
 // Actor type constants.
