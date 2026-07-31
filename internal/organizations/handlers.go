@@ -122,6 +122,10 @@ func handleServiceError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusNotFound, "not_found", "Resource not found")
 	case errors.Is(err, errpkg.ErrDuplicate):
 		writeError(w, http.StatusConflict, "already_exists", "Resource already exists")
+	case errors.Is(err, errpkg.ErrInvalid):
+		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+	case errors.Is(err, errpkg.ErrForbidden):
+		writeError(w, http.StatusForbidden, "forbidden", err.Error())
 	default:
 		slog.Error("service error", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "Something went wrong")
@@ -517,6 +521,34 @@ func (h *Handlers) ListInvitations(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"data": result})
 }
 
+// RevokeInvitation handles DELETE /organizations/{id}/invitations/{invitationId}.
+// Ref: japaconnect-engineering/sections/07-organization-profiles-claim-ownership.md
+func (h *Handlers) RevokeInvitation(w http.ResponseWriter, r *http.Request) {
+	user, ok := requireAuth(w, r)
+	if !ok {
+		return
+	}
+
+	orgID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid organization ID")
+		return
+	}
+
+	invitationID, err := parseUUIDParam(r, "invitationId")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_invitation_id", "Invalid invitation ID")
+		return
+	}
+
+	if err := h.service.RevokeInvitation(r.Context(), orgID, user.UserID, invitationID); err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusNoContent, nil)
+}
+
 // AcceptInvitation handles POST /organizations/invitations/{token}/accept.
 func (h *Handlers) AcceptInvitation(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireAuth(w, r)
@@ -589,6 +621,72 @@ func (h *Handlers) ListClaims(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": result})
+}
+
+// GetClaim handles GET /claim-ownership/{id}.
+// Returns a single claim. Admins can view any claim; the claimant can view
+// their own claim.
+// Ref: japaconnect-engineering/sections/07-organization-profiles-claim-ownership.md
+func (h *Handlers) GetClaim(w http.ResponseWriter, r *http.Request) {
+	user, ok := requireAuth(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := requireTenantID(w, r)
+	if !ok {
+		return
+	}
+
+	claimID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid claim ID")
+		return
+	}
+
+	claim, err := h.service.GetOwnershipClaimByID(r.Context(), claimID, tenantID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	// Non-admin users can only view their own claims. The admin gate is
+	// enforced at the route level (RequirePermission admin.moderation) for
+	// the list endpoint; this GET route is auth-only so we check ownership.
+	if claim.ClaimantUserID.Bytes != user.UserID.Bytes {
+		writeError(w, http.StatusForbidden, "forbidden", "You can only view your own claims")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": claim})
+}
+
+// WithdrawClaim handles DELETE /claim-ownership/{id}.
+// Only the claimant can withdraw their own pending claim.
+// Ref: japaconnect-engineering/sections/07-organization-profiles-claim-ownership.md
+func (h *Handlers) WithdrawClaim(w http.ResponseWriter, r *http.Request) {
+	user, ok := requireAuth(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := requireTenantID(w, r)
+	if !ok {
+		return
+	}
+
+	claimID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid claim ID")
+		return
+	}
+
+	if err := h.service.WithdrawOwnershipClaim(r.Context(), claimID, tenantID, user.UserID); err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusNoContent, nil)
 }
 
 type reviewClaimRequest struct {
@@ -680,7 +778,16 @@ func (h *Handlers) GetOrganizationAnalytics(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	analytics, err := h.service.GetOrganizationAnalytics(r.Context(), orgID, tenantID)
+	// Section 07 spec: ?period=7d|30d|90d (default 30d).
+	periodDays := int32(30)
+	switch r.URL.Query().Get("period") {
+	case "7d":
+		periodDays = 7
+	case "90d":
+		periodDays = 90
+	}
+
+	analytics, err := h.service.GetOrganizationAnalytics(r.Context(), orgID, tenantID, periodDays)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeError(w, http.StatusNotFound, "not_found", "Organization not found")

@@ -21,12 +21,20 @@ export interface PricingPlan {
 	highlighted: boolean;
 }
 
+export interface Currency {
+	code: string;
+	symbol: string;
+}
+
 export const load: PageServerLoad = async (event) => {
 	const ctx = apiContext(event);
 	try {
-		const plans = await apiGet<PricingPlan[]>(ctx, '/pricing/plans');
-		return { plans };
+		const [plans, currencies] = await Promise.all([
+			apiGet<PricingPlan[]>(ctx, '/pricing/plans'),
+			apiGet<Currency[]>(ctx, '/wallet/currencies').catch(() => [] as Currency[])
+		]);
+		return { plans, currencies };
 	} catch {
-		return { plans: [] as PricingPlan[] };
+		return { plans: [] as PricingPlan[], currencies: [] as Currency[] };
 	}
 };

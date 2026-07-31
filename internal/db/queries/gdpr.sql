@@ -184,6 +184,27 @@ SET username = 'Deleted User',
     updated_at = now()
 WHERE id = @user_id AND tenant_id = @tenant_id;
 
+-- name: AnonymizeUserProfile :exec
+-- Clears PII columns in user_profiles during the GDPR retention window
+-- (ADR-014 / ADR-057). Runs immediately after AnonymizeUser so the profile
+-- row — display_name, bio, timezone, business info, content_country_preference
+-- (which reveals country origin/preference), preferred_currency, avatar/cover
+-- URLs — is scrubbed before the hard-delete phase. The row itself is preserved
+-- (FK integrity) until HardDeleteUser cascades.
+UPDATE user_profiles
+SET display_name = 'Deleted User',
+    avatar_url = NULL,
+    cover_url = NULL,
+    bio = NULL,
+    timezone = NULL,
+    business_name = NULL,
+    registration_number = NULL,
+    operating_hours = NULL,
+    content_country_preference = NULL,
+    preferred_currency = NULL,
+    updated_at = now()
+WHERE user_id = @user_id AND tenant_id = @tenant_id;
+
 -- name: DeleteUserTokens :exec
 UPDATE refresh_tokens
 SET revoked_at = now(), updated_at = now()
@@ -220,6 +241,24 @@ WHERE reviewer_user_id = @user_id AND tenant_id = @tenant_id;
 -- Nulls payment-related user references for financial audit trail preservation.
 UPDATE payments SET user_id = NULL
 WHERE user_id = @user_id AND tenant_id = @tenant_id;
+
+-- name: NullifySubscriptionUserRefs :exec
+-- Nulls subscription user references for GDPR erasure (BUG-020).
+-- Preserves subscription history for financial audit while removing PII.
+UPDATE subscriptions SET user_id = NULL
+WHERE user_id = @user_id AND tenant_id = @tenant_id;
+
+-- name: NullifyDiscountCodeCreatorRefs :exec
+-- Nulls discount code created_by references for GDPR erasure (BUG-020).
+UPDATE discount_codes SET created_by = NULL
+WHERE created_by = @user_id AND tenant_id = @tenant_id;
+
+-- name: NullifyDiscountCodeUseUserRefs :exec
+-- Nulls discount code use user_id references for GDPR erasure (BUG-020).
+-- The PRIMARY KEY (code_id, user_id) requires setting user_id to a sentinel
+-- UUID rather than NULL. We use the all-zeros UUID as the sentinel.
+UPDATE discount_code_uses SET user_id = '00000000-0000-0000-0000-000000000000'::uuid
+WHERE user_id = @user_id;
 
 -- name: NullifyTicketSubmitter :exec
 -- Nulls ticket submitter reference.
@@ -296,6 +335,12 @@ DELETE FROM space_pinned_posts WHERE pinned_by = @user_id;
 UPDATE forum_tags SET moderator_user_id = NULL
 WHERE moderator_user_id = @user_id AND tenant_id = @tenant_id;
 
+-- name: DeleteTagModeratorsByUser :exec
+-- tag_moderators.user_id has ON DELETE CASCADE but we delete explicitly to document
+-- the erasure path and ensure the user's moderation history is cleared before the
+-- final HardDeleteUser. Ref: Section 08/49, GDPR erasure coverage.
+DELETE FROM tag_moderators WHERE user_id = @user_id AND tenant_id = @tenant_id;
+
 -- name: DeleteTicketCommentsByUser :exec
 -- ticket_comments.user_id has no CASCADE; delete the user's ticket comments.
 DELETE FROM ticket_comments WHERE user_id = @user_id;
@@ -326,8 +371,18 @@ WHERE owner_user_id = @user_id AND tenant_id = @tenant_id;
 UPDATE organization_invitations SET invited_by = NULL WHERE invited_by = @user_id;
 
 -- name: DeleteOwnershipClaimsByClaimant :exec
--- ownership_claims.claimant_user_id is NOT NULL; delete the user's submitted claims (reviewed_by is SET NULL).
+-- ownership_claims.claimant_user_id is NOT NULL; delete the user's submitted claims.
 DELETE FROM ownership_claims WHERE claimant_user_id = @user_id AND tenant_id = @tenant_id;
+
+-- name: NullifyOwnershipClaimReviewer :exec
+-- ownership_claims.reviewed_by is nullable; clear reviewer reference when an admin is erased.
+UPDATE ownership_claims SET reviewed_by = NULL WHERE reviewed_by = @user_id AND tenant_id = @tenant_id;
+
+-- name: DeleteOrganizationMembersByUser :exec
+-- organization_members.user_id is NOT NULL; remove the erased user's memberships to
+-- prevent re-identification via the member roster. member_count on the org row is
+-- decremented for each removed row.
+DELETE FROM organization_members WHERE user_id = @user_id;
 
 -- name: NullifyConsentRecordUser :exec
 -- consent_records.user_id is nullable; preserve the compliance record, detach the user reference.
@@ -428,6 +483,12 @@ FROM (SELECT * FROM space_members WHERE user_id = @user_id AND tenant_id = @tena
 -- name: GdprExportUserSpaceModerators :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (SELECT * FROM space_moderators WHERE user_id = @user_id AND tenant_id = @tenant_id) t;
+
+-- name: GdprExportUserTagModerators :one
+-- Tag moderation history (Section 08/49). tag_moderators.user_id has ON DELETE CASCADE
+-- so the final HardDeleteUser will remove these rows; this export captures them first.
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (SELECT * FROM tag_moderators WHERE user_id = @user_id AND tenant_id = @tenant_id) t;
 
 -- name: GdprExportUserConsentRecords :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
@@ -568,3 +629,53 @@ WHERE ci.content_id = c.id
   AND c.tenant_id = @tenant_id
   AND c.author_id = @user_id
   AND ci.deleted_at IS NULL;
+
+-- name: DeleteCustomFieldValuesByEntity :execrows
+-- BUG-018: delete custom_field_values for the user's profile entity so PII
+-- stored in custom fields (e.g. Japa Status, phone, address) does not survive
+-- account deletion. The custom_field_values table is polymorphic on
+-- (entity_type, entity_id); we delete rows where entity_type='user_profile'
+-- and entity_id is the user's ID. Also covers entity_type='user' if used.
+DELETE FROM custom_field_values
+WHERE entity_type IN ('user_profile', 'user') AND entity_id = @user_id;
+
+-- name: AnonymizeFormSubmissionsByUser :execrows
+-- BUG-019: anonymize form_submissions authored by the deleted user. The
+-- submission row is preserved for analytics/audit (form submission counts,
+-- trigger audit trail), but the user_id reference is severed and the PII
+-- fields (ip_address, field_values jsonb) are scrubbed.
+UPDATE form_submissions
+SET user_id = NULL,
+    ip_address = NULL,
+    field_values = '{}'::jsonb
+WHERE user_id = @user_id;
+
+-- name: GdprExportCustomFieldValues :one
+-- BUG-020: export custom_field_values for the user's profile entity so the
+-- GDPR data export includes PII stored in custom fields (Japa Status, phone,
+-- address, etc.). The custom_field_values table is polymorphic on
+-- (entity_type, entity_id); we export rows where entity_type is
+-- 'user_profile' or 'user' and entity_id is the user's ID.
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (
+    SELECT cfv.field_id, cfv.entity_type, cfv.entity_id,
+           cfv.value_text, cfv.value_number, cfv.value_bool,
+           cfv.value_date, cfv.value_json, cfv.created_at, cfv.updated_at,
+           cf.key AS field_key, cf.label AS field_label
+    FROM custom_field_values cfv
+    LEFT JOIN custom_fields cf ON cfv.field_id = cf.id
+    WHERE cfv.entity_type IN ('user_profile', 'user') AND cfv.entity_id = @user_id
+    ORDER BY cfv.created_at
+) t;
+
+-- name: GdprExportPushTokens :one
+-- BUG-014: export push_tokens for the user so the GDPR data export includes
+-- device push notification tokens (PII-adjacent device identifiers).
+-- Ref: japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (
+    SELECT id, platform, token, device_name, created_at, last_used_at
+    FROM push_tokens
+    WHERE user_id = @user_id AND tenant_id = @tenant_id
+    ORDER BY created_at
+) t;

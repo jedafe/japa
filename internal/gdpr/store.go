@@ -216,6 +216,10 @@ func (s *Store) gdprExportUserSpaceModerators(ctx context.Context, userID, tenan
 	return exportJSONSlice(ctx, s.read.GdprExportUserSpaceModerators, gen.GdprExportUserSpaceModeratorsParams{UserID: userID, TenantID: tenantID})
 }
 
+func (s *Store) gdprExportUserTagModerators(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {
+	return exportJSONSlice(ctx, s.read.GdprExportUserTagModerators, gen.GdprExportUserTagModeratorsParams{UserID: userID, TenantID: tenantID})
+}
+
 func (s *Store) gdprExportUserConsentRecords(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {
 	return exportJSONSlice(ctx, s.read.GdprExportUserConsentRecords, gen.GdprExportUserConsentRecordsParams{UserID: userID, TenantID: tenantID})
 }
@@ -281,6 +285,23 @@ func (s *Store) gdprExportRevenueSplits(ctx context.Context, userID, tenantID pg
 
 func (s *Store) gdprExportInstructorPayouts(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {
 	return exportJSONSlice(ctx, s.read.GdprExportInstructorPayouts, gen.GdprExportInstructorPayoutsParams{UserID: userID, TenantID: tenantID})
+}
+
+// gdprExportCustomFieldValues exports custom_field_values for the user's
+// profile entity (BUG-020). The query takes only userID (no tenantID)
+// because custom_field_values is polymorphic on (entity_type, entity_id)
+// and the user's ID is the entity_id.
+func (s *Store) gdprExportCustomFieldValues(ctx context.Context, userID pgtype.UUID) ([]map[string]interface{}, error) {
+	return exportJSONSlice(ctx, s.read.GdprExportCustomFieldValues, userID)
+}
+
+// gdprExportPushTokens exports push_tokens for the user (BUG-014).
+// Ref: japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
+func (s *Store) gdprExportPushTokens(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {
+	return exportJSONSlice(ctx, s.read.GdprExportPushTokens, gen.GdprExportPushTokensParams{
+		UserID:   userID,
+		TenantID: tenantID,
+	})
 }
 
 func (s *Store) hasConsent(ctx context.Context, userID pgtype.UUID, consentType string) (bool, error) {
@@ -478,6 +499,19 @@ func (s *Store) listPendingDeletionRequests(ctx context.Context, limit int32) ([
 func (s *Store) anonymizeUser(ctx context.Context, p gen.AnonymizeUserParams) error {
 	if err := s.write.AnonymizeUser(ctx, p); err != nil {
 		return fmt.Errorf("anonymizing user: %w", err)
+	}
+
+	return nil
+}
+
+// anonymizeUserProfile clears PII columns in user_profiles (display_name, bio,
+// timezone, business info, content_country_preference, preferred_currency,
+// avatar/cover URLs) during the GDPR retention window (ADR-014 / ADR-057).
+// Called immediately after anonymizeUser so the profile is scrubbed before
+// the hard-delete phase.
+func (s *Store) anonymizeUserProfile(ctx context.Context, p gen.AnonymizeUserProfileParams) error {
+	if err := s.write.AnonymizeUserProfile(ctx, p); err != nil {
+		return fmt.Errorf("anonymizing user profile: %w", err)
 	}
 
 	return nil

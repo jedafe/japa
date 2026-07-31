@@ -380,7 +380,7 @@ func (h *Handlers) InitiatePayment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	payment, err := h.Service.CreatePayment(r.Context(), tenantID, user.UserID, CreatePaymentInput{
+	result, err := h.Service.CreatePayment(r.Context(), tenantID, user.UserID, CreatePaymentInput{
 		Provider:     input.Provider,
 		PurposeType:  input.PurposeType,
 		PurposeID:    input.PurposeID,
@@ -394,7 +394,9 @@ func (h *Handlers) InitiatePayment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": payment})
+	writeJSON(w, http.StatusCreated, map[string]any{
+		"data": toPaymentAPIResponse(result.Payment, result.CheckoutURL),
+	})
 }
 
 // HandlePaystackWebhook handles POST /api/v1/payments/webhook/paystack.
@@ -415,10 +417,9 @@ func (h *Handlers) HandlePaystackWebhook(w http.ResponseWriter, r *http.Request)
 	defer func() { _ = r.Body.Close() }()
 
 	// Verify Paystack webhook signature (HMAC-SHA256 of body with secret key).
-	// In production, reject webhooks when the secret is unset — a misconfigured
-	// deploy must not silently accept forged webhooks. 
+	// Reject unsigned webhooks unless explicitly allowed in dev (Guide §5.2).
 	if h.PaystackSecretKey == "" {
-		if strings.EqualFold(os.Getenv("JC_ENV"), "production") {
+		if !strings.EqualFold(os.Getenv("JC_ALLOW_UNSIGNED_WEBHOOKS"), "true") {
 			writeError(w, http.StatusInternalServerError, "misconfigured", "Paystack webhook secret not configured")
 			return
 		}
@@ -430,15 +431,20 @@ func (h *Handlers) HandlePaystackWebhook(w http.ResponseWriter, r *http.Request)
 		}
 	}
 
-	// Parse event
+	// Parse event — populate Payload map from raw body for provider-specific
+	// field access, then extract event ID and provider reference.
 	var event WebhookEvent
-	if err := json.Unmarshal(body, &event); err != nil {
+	event.Payload = make(map[string]interface{})
+	if err := json.Unmarshal(body, &event.Payload); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_event", "Invalid webhook event")
 		return
 	}
 
 	event.Provider = ProviderPaystack
 	event.RawPayload = body
+	event.EventID = extractPaystackEventID(event.Payload)
+	event.ProviderRef = extractPaystackProviderRef(event.Payload)
+	event.EventType, _ = event.Payload["event"].(string)
 
 	// Resolve payment status from the Paystack event type in the payload.
 	status := resolvePaystackStatus(event)
@@ -472,9 +478,9 @@ func (h *Handlers) HandleStripeWebhook(w http.ResponseWriter, r *http.Request) {
 	defer func() { _ = r.Body.Close() }()
 
 	// Verify Stripe webhook signature (HMAC-SHA256 with webhook secret).
-	// In production, reject webhooks when the secret is unset. 
+	// Reject unsigned webhooks unless explicitly allowed in dev (Guide §5.2).
 	if h.StripeWebhookSecret == "" {
-		if strings.EqualFold(os.Getenv("JC_ENV"), "production") {
+		if !strings.EqualFold(os.Getenv("JC_ALLOW_UNSIGNED_WEBHOOKS"), "true") {
 			writeError(w, http.StatusInternalServerError, "misconfigured", "Stripe webhook secret not configured")
 			return
 		}
@@ -486,15 +492,20 @@ func (h *Handlers) HandleStripeWebhook(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Parse event
+	// Parse event — populate Payload map from raw body for provider-specific
+	// field access, then extract event ID and provider reference.
 	var event WebhookEvent
-	if err := json.Unmarshal(body, &event); err != nil {
+	event.Payload = make(map[string]interface{})
+	if err := json.Unmarshal(body, &event.Payload); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_event", "Invalid webhook event")
 		return
 	}
 
 	event.Provider = ProviderStripe
 	event.RawPayload = body
+	event.EventID = extractStripeEventID(event.Payload)
+	event.ProviderRef = extractStripeProviderRef(event.Payload)
+	event.EventType, _ = event.Payload["type"].(string)
 
 	// Resolve payment status from the Stripe event type.
 	status := resolveStripeStatus(event)
@@ -530,9 +541,9 @@ func (h *Handlers) HandleNOWPaymentsWebhook(w http.ResponseWriter, r *http.Reque
 	defer func() { _ = r.Body.Close() }()
 
 	// Verify NOWPayments IPN signature (HMAC-SHA256 with IPN secret).
-	// In production, reject webhooks when the secret is unset. 
+	// Reject unsigned webhooks unless explicitly allowed in dev (Guide §5.2).
 	if h.NOWPaymentsIPNKey == "" {
-		if strings.EqualFold(os.Getenv("JC_ENV"), "production") {
+		if !strings.EqualFold(os.Getenv("JC_ALLOW_UNSIGNED_WEBHOOKS"), "true") {
 			writeError(w, http.StatusInternalServerError, "misconfigured", "NOWPayments IPN secret not configured")
 			return
 		}
@@ -544,15 +555,22 @@ func (h *Handlers) HandleNOWPaymentsWebhook(w http.ResponseWriter, r *http.Reque
 		}
 	}
 
-	// Parse event
+	// Parse event — populate Payload map from raw body for provider-specific
+	// field access, then extract event ID and provider reference.
 	var event WebhookEvent
-	if err := json.Unmarshal(body, &event); err != nil {
+	event.Payload = make(map[string]interface{})
+	if err := json.Unmarshal(body, &event.Payload); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_event", "Invalid webhook event")
 		return
 	}
 
 	event.Provider = ProviderNOWPayments
 	event.RawPayload = body
+	event.EventID = extractNOWPaymentsEventID(event.Payload)
+	event.ProviderRef = extractNOWPaymentsProviderRef(event.Payload)
+	if ps, ok := event.Payload["payment_status"].(string); ok {
+		event.EventType = ps
+	}
 
 	// Resolve payment status from the NOWPayments event payload.
 	status := resolveNOWPaymentsStatus(event)
@@ -569,25 +587,40 @@ func (h *Handlers) HandleNOWPaymentsWebhook(w http.ResponseWriter, r *http.Reque
 }
 
 // resolvePaystackStatus maps Paystack event types to payment status strings.
-// Paystack sends "charge.success" for successful payments, other events map to "failed".
+// Handles the common Paystack event types; unknown events default to
+// "processing" rather than "failed" so pending/in-progress payments are not
+// prematurely marked failed (Guide §3.2).
 func resolvePaystackStatus(event WebhookEvent) string {
-	if ev, ok := event.Payload["event"].(string); ok && ev == "charge.success" {
+	ev, _ := event.Payload["event"].(string)
+	switch ev {
+	case "charge.success", "transfer.success":
 		return "succeeded"
+	case "refund.processed":
+		return "refunded"
+	case "not.processed", "transfer.failed", "charge.failed":
+		return "failed"
 	}
-	return "failed"
+	return "processing"
 }
 
 // resolveStripeStatus maps Stripe event types to payment status strings.
-// Stripe sends "payment_intent.succeeded" for successful payments.
+// Handles payment_intent, charge, and refund events; unknown events default
+// to "processing" rather than "failed".
 func resolveStripeStatus(event WebhookEvent) string {
-	if ev, ok := event.Payload["type"].(string); ok && ev == "payment_intent.succeeded" {
+	ev, _ := event.Payload["type"].(string)
+	switch ev {
+	case "payment_intent.succeeded", "charge.succeeded":
 		return "succeeded"
+	case "payment_intent.payment_failed", "charge.failed":
+		return "failed"
+	case "charge.refunded":
+		return "refunded"
 	}
-	return "failed"
+	return "processing"
 }
 
 // resolveNOWPaymentsStatus maps NOWPayments event data for payment status.
-// NOWPayments sends "payment_status" or "payment_status.created" with specific statuses.
+// NOWPayments sends "payment_status" with specific statuses.
 func resolveNOWPaymentsStatus(event WebhookEvent) string {
 	if ps, ok := event.Payload["payment_status"].(string); ok {
 		switch ps {
@@ -597,9 +630,89 @@ func resolveNOWPaymentsStatus(event WebhookEvent) string {
 			return "failed"
 		case "refunded":
 			return "refunded"
+		case "waiting", "confirming", "partially_paid":
+			return "processing"
 		}
 	}
-	return "failed"
+	return "processing"
+}
+
+// extractPaystackEventID extracts the event ID from a Paystack webhook payload.
+// Paystack events carry "event" (type) and an "id" or "reference" field.
+func extractPaystackEventID(payload map[string]interface{}) string {
+	// Paystack event ID is in data.reference or top-level id
+	if data, ok := payload["data"].(map[string]interface{}); ok {
+		if ref, ok := data["reference"].(string); ok && ref != "" {
+			return ref
+		}
+	}
+	if id, ok := payload["id"].(string); ok && id != "" {
+		return id
+	}
+	// Fall back to event type as a last resort
+	if ev, ok := payload["event"].(string); ok {
+		return ev
+	}
+	return ""
+}
+
+// extractPaystackProviderRef extracts the transaction reference that matches
+// payments.provider_ref from a Paystack webhook payload.
+func extractPaystackProviderRef(payload map[string]interface{}) string {
+	if data, ok := payload["data"].(map[string]interface{}); ok {
+		if ref, ok := data["reference"].(string); ok && ref != "" {
+			return ref
+		}
+	}
+	return ""
+}
+
+// extractStripeEventID extracts the event ID from a Stripe webhook payload.
+// Stripe events have a top-level "id" field (evt_...) and "data.object.id".
+func extractStripeEventID(payload map[string]interface{}) string {
+	if id, ok := payload["id"].(string); ok && id != "" {
+		return id
+	}
+	return ""
+}
+
+// extractStripeProviderRef extracts the object ID that matches
+// payments.provider_ref from a Stripe webhook payload. For payment_intent
+// events this is data.object.id (pi_... or cs_... for checkout sessions).
+func extractStripeProviderRef(payload map[string]interface{}) string {
+	if data, ok := payload["data"].(map[string]interface{}); ok {
+		if obj, ok := data["object"].(map[string]interface{}); ok {
+			// For payment_intent.succeeded, object.id is the payment intent ID.
+			// For checkout.session.completed, object.id is the checkout session ID.
+			if id, ok := obj["id"].(string); ok && id != "" {
+				return id
+			}
+		}
+	}
+	return ""
+}
+
+// extractNOWPaymentsEventID extracts the event ID from a NOWPayments IPN payload.
+func extractNOWPaymentsEventID(payload map[string]interface{}) string {
+	if id, ok := payload["payment_id"].(string); ok && id != "" {
+		return id
+	}
+	if id, ok := payload["order_id"].(string); ok && id != "" {
+		return id
+	}
+	return ""
+}
+
+// extractNOWPaymentsProviderRef extracts the reference matching
+// payments.provider_ref from a NOWPayments IPN payload.
+func extractNOWPaymentsProviderRef(payload map[string]interface{}) string {
+	if id, ok := payload["pay_address"].(string); ok && id != "" {
+		return id
+	}
+	if id, ok := payload["order_id"].(string); ok && id != "" {
+		return id
+	}
+	return ""
 }
 
 // ListPayments handles GET /api/v1/payments.
@@ -623,7 +736,7 @@ func (h *Handlers) ListPayments(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": payments})
+	writeJSON(w, http.StatusOK, map[string]any{"data": toPaymentAPIResponses(payments)})
 }
 
 // GetPayment handles GET /api/v1/payments/{id}.
@@ -650,7 +763,7 @@ func (h *Handlers) GetPayment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": payment})
+	writeJSON(w, http.StatusOK, map[string]any{"data": toPaymentAPIResponse(payment, "")})
 }
 
 // RefundPayment handles POST /api/v1/payments/{id}/refund.
@@ -1459,4 +1572,82 @@ func (h *Handlers) DeleteAdminPlan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusNoContent, nil)
+}
+
+// ListAdminPayments handles GET /api/v1/admin/payments.
+// Lists all payments across the platform with optional filters (JEOS §17
+// "Admin Payment Routes"). Gated by payments.refund permission (admin-only).
+func (h *Handlers) ListAdminPayments(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	limit := parsePageSize(r)
+	offset := parsePageSizeOffset(r)
+
+	// Parse optional filters from query params.
+	var params gen.ListAdminPaymentsParams
+	params.TenantID = tenantID
+	params.PageLimit = limit
+	params.PageOffset = offset
+
+	if v := r.URL.Query().Get("user_id"); v != "" {
+		var uid pgtype.UUID
+		if err := uid.Scan(v); err == nil {
+			params.UserID = uid
+		}
+	}
+	if v := r.URL.Query().Get("status"); v != "" {
+		params.Status = &v
+	}
+	if v := r.URL.Query().Get("purpose_type"); v != "" {
+		params.PurposeType = &v
+	}
+	if v := r.URL.Query().Get("provider"); v != "" {
+		params.Provider = &v
+	}
+	if v := r.URL.Query().Get("start"); v != "" {
+		var t pgtype.Timestamptz
+		if err := t.Scan(v); err == nil {
+			params.StartDate = t
+		}
+	}
+	if v := r.URL.Query().Get("end"); v != "" {
+		var t pgtype.Timestamptz
+		if err := t.Scan(v); err == nil {
+			params.EndDate = t
+		}
+	}
+
+	payments, err := h.Service.ListAdminPayments(r.Context(), params)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": toPaymentAPIResponses(payments)})
+}
+
+// GetAdminPayment handles GET /api/v1/admin/payments/:id.
+// Returns payment detail (JEOS §17 "Admin Payment Routes").
+func (h *Handlers) GetAdminPayment(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	id, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid payment ID")
+		return
+	}
+
+	payment, err := h.Service.GetAdminPayment(r.Context(), id, tenantID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": toPaymentAPIResponse(payment, "")})
 }

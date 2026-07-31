@@ -37,6 +37,20 @@ func (s *Store) GetOrganizationByID(ctx context.Context, id, tenantID pgtype.UUI
 	return s.read.GetOrganizationByID(ctx, gen.GetOrganizationByIDParams{ID: id, TenantID: tenantID})
 }
 
+// GetOrganizationByIDOnly returns an organization by ID without tenant scoping.
+// Used by invitation acceptance where tenant_id is not yet known.
+func (s *Store) GetOrganizationByIDOnly(ctx context.Context, id pgtype.UUID) (gen.Organization, error) {
+	return s.read.GetOrganizationByIDOnly(ctx, id)
+}
+
+// CountOrganizationsByOwner counts active orgs owned by a user in a tenant.
+func (s *Store) CountOrganizationsByOwner(ctx context.Context, ownerID, tenantID pgtype.UUID) (int64, error) {
+	return s.read.CountOrganizationsByOwner(ctx, gen.CountOrganizationsByOwnerParams{
+		OwnerUserID: ownerID,
+		TenantID:    tenantID,
+	})
+}
+
 // GetOrganizationBySlug returns an organization by slug.
 func (s *Store) GetOrganizationBySlug(ctx context.Context, slug string, tenantID pgtype.UUID) (gen.Organization, error) {
 	return s.read.GetOrganizationBySlug(ctx, gen.GetOrganizationBySlugParams{Slug: slug, TenantID: tenantID})
@@ -133,6 +147,15 @@ func (s *Store) AcceptInvitation(ctx context.Context, id, organizationID pgtype.
 	})
 }
 
+// RevokeInvitation revokes (hard-deletes) a pending invitation.
+// Ref: japaconnect-engineering/sections/07-organization-profiles-claim-ownership.md
+func (s *Store) RevokeInvitation(ctx context.Context, id, organizationID pgtype.UUID) error {
+	return s.write.RevokeOrganizationInvitation(ctx, gen.RevokeOrganizationInvitationParams{
+		ID:             id,
+		OrganizationID: organizationID,
+	})
+}
+
 // GetInvitationByToken returns an invitation by token hash.
 func (s *Store) GetInvitationByToken(ctx context.Context, tokenHash string) (gen.OrganizationInvitation, error) {
 	return s.read.GetOrganizationInvitationByToken(ctx, tokenHash)
@@ -182,6 +205,23 @@ func (s *Store) GetPendingOwnershipClaims(ctx context.Context, tenantID pgtype.U
 	return s.read.GetPendingOwnershipClaims(ctx, tenantID)
 }
 
+// GetOwnershipClaimByID returns a single ownership claim by ID.
+func (s *Store) GetOwnershipClaimByID(ctx context.Context, claimID, tenantID pgtype.UUID) (gen.GetOwnershipClaimByIDRow, error) {
+	return s.read.GetOwnershipClaimByID(ctx, gen.GetOwnershipClaimByIDParams{
+		ID:       claimID,
+		TenantID: tenantID,
+	})
+}
+
+// WithdrawOwnershipClaim withdraws (deletes) a pending claim by the claimant.
+func (s *Store) WithdrawOwnershipClaim(ctx context.Context, claimID, tenantID, claimantUserID pgtype.UUID) error {
+	return s.write.WithdrawOwnershipClaim(ctx, gen.WithdrawOwnershipClaimParams{
+		ID:              claimID,
+		TenantID:        tenantID,
+		ClaimantUserID:  claimantUserID,
+	})
+}
+
 // ApproveOwnershipClaim approves a pending ownership claim.
 func (s *Store) ApproveOwnershipClaim(ctx context.Context, claimID, tenantID, reviewedBy pgtype.UUID, note string) error {
 	return s.write.ApproveOwnershipClaim(ctx, gen.ApproveOwnershipClaimParams{
@@ -193,10 +233,12 @@ func (s *Store) ApproveOwnershipClaim(ctx context.Context, claimID, tenantID, re
 }
 
 // IncrementMemberCount atomically increments/decrements member count.
-func (s *Store) IncrementMemberCount(ctx context.Context, orgID pgtype.UUID, delta int32) error {
+// Tenant-scoped for defense-in-depth.
+func (s *Store) IncrementMemberCount(ctx context.Context, orgID, tenantID pgtype.UUID, delta int32) error {
 	return s.write.IncrementOrganizationMemberCount(ctx, gen.IncrementOrganizationMemberCountParams{
 		ID:          orgID,
 		MemberCount: delta,
+		TenantID:    tenantID,
 	})
 }
 
@@ -224,9 +266,10 @@ func (s *Store) CountPublicOrganizations(ctx context.Context, tenantID pgtype.UU
 
 // GetOrganizationAnalytics returns aggregated analytics for a single org.
 // Ref: japaconnect-engineering/sections/07-organization-profiles-claim-ownership.md
-func (s *Store) GetOrganizationAnalytics(ctx context.Context, orgID, tenantID pgtype.UUID) (gen.GetOrganizationAnalyticsRow, error) {
+func (s *Store) GetOrganizationAnalytics(ctx context.Context, orgID, tenantID pgtype.UUID, periodDays int32) (gen.GetOrganizationAnalyticsRow, error) {
 	return s.read.GetOrganizationAnalytics(ctx, gen.GetOrganizationAnalyticsParams{
-		OrgID:    orgID,
-		TenantID: tenantID,
+		OrgID:      orgID,
+		TenantID:   tenantID,
+		PeriodDays: periodDays,
 	})
 }

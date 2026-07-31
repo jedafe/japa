@@ -52,10 +52,13 @@ const (
 )
 
 // SettingsReader is the subset of the config.Settings API that wallet uses to
-// read global system_settings with fallbacks (AUDIT-BE2-SETTING-007/008).
+// read global system_settings with fallbacks (AUDIT-BE2-SETTING-007/008,
+// Section 58 wallet.credit_purchase_enabled + wallet.default_currency).
 type SettingsReader interface {
 	GetIntOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback int) int
 	GetFloatOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback float64) float64
+	GetStringOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback string) string
+	GetBoolOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback bool) bool
 }
 
 // Pagination defaults.
@@ -73,10 +76,55 @@ type Service struct {
 	// wallet.points_to_credit_rate and wallet.min_convert_points
 	// (AUDIT-BE2-SETTING-007/008). When nil, compiled-in defaults are used.
 	settings SettingsReader
+	// currencyResolver resolves the active fiat currency for a user at
+	// checkout time (Section 58, ADR-065). Optional — when nil, the system
+	// default (wallet.default_currency) is used.
+	currencyResolver *CurrencyResolver
+	// paymentsService creates payment rows for credit purchases (Section 17).
+	// Optional — when nil, purchaseCredits returns computed pricing without
+	// creating a payment row (used in tests).
+	paymentsService PaymentCreator
+}
+
+// PaymentCreator is the subset of the payments.Service API that wallet needs to
+// create credit-purchase payment rows (Section 17 + Section 58). Defined as a
+// local interface so the wallet package does not import payments.
+type PaymentCreator interface {
+	CreatePayment(ctx context.Context, tenantID, userID pgtype.UUID, input PaymentCreateInput) (PaymentCreateResult, error)
+}
+
+// PaymentCreateInput mirrors payments.CreatePaymentInput (Section 17).
+type PaymentCreateInput struct {
+	Provider     string
+	PurposeType  string
+	PurposeID    string
+	Amount       int64
+	Currency     string
+	Metadata     map[string]interface{}
+	DiscountCode string
+}
+
+// PaymentCreateResult mirrors gen.Payment fields needed by the wallet.
+type PaymentCreateResult struct {
+	ID           string
+	Provider     string
+	ProviderRef  string
+	CheckoutURL  string
+	Status       string
+	Amount       int64
+	Currency     string
 }
 
 // SetSettings injects the global system_settings reader (AUDIT-BE2-SETTING-007/008).
 func (s *Service) SetSettings(r SettingsReader) { s.settings = r }
+
+// SetCurrencyResolver injects the currency resolver for geo-aware currency
+// resolution at checkout (Section 58, ADR-065).
+func (s *Service) SetCurrencyResolver(r *CurrencyResolver) { s.currencyResolver = r }
+
+// SetPaymentsService injects the payments service for creating credit-purchase
+// payment rows (Section 17 + Section 58).
+func (s *Service) SetPaymentsService(p PaymentCreator) { s.paymentsService = p }
 
 // walletEnqueuer is the subset of worker.Enqueuer that wallet needs.
 type walletEnqueuer interface {
@@ -97,4 +145,10 @@ func NewService(database *db.DB) *Service {
 // SetEnqueuer injects the Asynq enqueuer for async activity event processing.
 func (s *Service) SetEnqueuer(e walletEnqueuer) {
 	s.enqueuer = e
+}
+
+// Store returns the wallet store. Used by the currency resolver which needs
+// the same DB pool for currency lookups (Section 58, ADR-065).
+func (s *Service) Store() *Store {
+	return s.store
 }

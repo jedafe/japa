@@ -14,10 +14,12 @@ import (
 	"github.com/jedafe/japa/internal/content"
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/follows"
+	"github.com/jedafe/japa/internal/media"
 	"github.com/jedafe/japa/internal/tenant"
 )
 
 const defaultPageSize int32 = 20
+const maxPageSize int32 = 100
 
 // Handlers holds dependencies for tag HTTP handlers. Composes the existing
 // content and follows services directly (no import cycle: neither imports
@@ -67,24 +69,24 @@ func parseUUIDParam(r *http.Request, param string) (pgtype.UUID, error) {
 
 // resolveTag looks up a tag by slug, writing a 404 and returning ok=false if
 // it doesn't exist. Shared by every handler below GetTag.
-func (h *Handlers) resolveTag(w http.ResponseWriter, r *http.Request, tenantID pgtype.UUID) (gen.Tag, bool) {
+func (h *Handlers) resolveTag(w http.ResponseWriter, r *http.Request, tenantID pgtype.UUID) (gen.GetTagBySlugRow, bool) {
 	slug := chi.URLParam(r, "slug")
 	if slug == "" {
 		writeError(w, http.StatusBadRequest, "missing_slug", "Tag slug is required")
-		return gen.Tag{}, false
+		return gen.GetTagBySlugRow{}, false
 	}
 
 	tag, err := h.service.GetTagBySlug(r.Context(), tenantID, slug)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "not_found", "Tag not found")
-		return gen.Tag{}, false
+		return gen.GetTagBySlugRow{}, false
 	}
 
 	return tag, true
 }
 
-// ListTags handles GET /api/v1/tags and GET /api/v1/admin/tags. [public + admin]
-// The admin route uses the q parameter for search filtering.
+// ListTags handles GET /api/v1/tags — public list with ?q, ?sort, ?page, ?page_size.
+// Also handles GET /api/v1/admin/tags — admin list with pagination.
 func (h *Handlers) ListTags(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -92,20 +94,68 @@ func (h *Handlers) ListTags(w http.ResponseWriter, r *http.Request) {
 	}
 
 	q := r.URL.Query().Get("q")
+	sortParam := r.URL.Query().Get("sort")
+	if sortParam == "" {
+		sortParam = "newest"
+	}
 
-	tags, err := h.service.AdminListTags(r.Context(), tenantID, q)
+	limit := parsePageSize(r)
+	offset := parsePageOffset(r)
+
+	// Check if this is the admin route (has page/limit params from DataTable)
+	// vs the public route (uses page_size/page_offset).
+	// Both use the same handler; admin route adds min_content_count filter.
+	minContentCount := int32(0)
+	if mcc := r.URL.Query().Get("min_content_count"); mcc != "" {
+		if v, err := strconv.ParseInt(mcc, 10, 32); err == nil && v > 0 {
+			minContentCount = int32(v)
+		}
+	}
+
+	// Use admin-listing query when filter or sort is specified, otherwise
+	// the admin route also benefits from pagination.
+	tags, err := h.service.AdminListTags(r.Context(), gen.AdminListTagsParams{
+		TenantID:        tenantID,
+		Q:               q,
+		MinContentCount: minContentCount,
+		Sort:            sortParam,
+		PageOffset:      offset,
+		PageLimit:       limit,
+	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list tags")
 		return
 	}
 
-	count, err := h.service.AdminCountTags(r.Context(), tenantID, q)
+	count, err := h.service.AdminCountTags(r.Context(), gen.AdminCountTagsParams{
+		TenantID:        tenantID,
+		Q:               q,
+		MinContentCount: minContentCount,
+	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to count tags")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": tags, "total": count})
+	totalPages := int32(1)
+	if limit > 0 {
+		totalPages = (int32(count) + limit - 1) / limit
+	}
+
+	// Enrich each tag with a resolved logo_url from the joined media columns.
+	enriched := make([]map[string]any, 0, len(tags))
+	for _, t := range tags {
+		row := structToMap(t)
+		row["logo_url"] = resolveLogoURL(t.LogoStoragePath, t.LogoStorageBucket)
+		enriched = append(enriched, row)
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data":        enriched,
+		"total":       count,
+		"page":        offset / limit,
+		"total_pages": totalPages,
+	})
 }
 
 // GetTag handles GET /api/v1/tags/{slug}. [public]
@@ -120,7 +170,9 @@ func (h *Handlers) GetTag(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": tag})
+	row := structToMap(tag)
+	row["logo_url"] = resolveLogoURL(tag.LogoStoragePath, tag.LogoStorageBucket)
+	writeJSON(w, http.StatusOK, map[string]any{"data": row})
 }
 
 // GetTagContent handles GET /api/v1/tags/{slug}/content — published content
@@ -213,11 +265,14 @@ func (h *Handlers) GetTagFollowers(w http.ResponseWriter, r *http.Request) {
 func parsePageSize(r *http.Request) int32 {
 	s := r.URL.Query().Get("page_size")
 	if s == "" {
+		s = r.URL.Query().Get("limit")
+	}
+	if s == "" {
 		return defaultPageSize
 	}
 
 	v, err := strconv.ParseInt(s, 10, 32)
-	if err != nil || v <= 0 || v > 100 {
+	if err != nil || v <= 0 || v > int64(maxPageSize) {
 		return defaultPageSize
 	}
 
@@ -228,6 +283,12 @@ func parsePageSize(r *http.Request) int32 {
 func parsePageOffset(r *http.Request) int32 {
 	s := r.URL.Query().Get("page_offset")
 	if s == "" {
+		// Support page-based offset: page=N → offset = N * page_size
+		if ps := r.URL.Query().Get("page"); ps != "" {
+			if p, err := strconv.ParseInt(ps, 10, 32); err == nil && p >= 0 {
+				return int32(p) * parsePageSize(r)
+			}
+		}
 		return 0
 	}
 
@@ -256,6 +317,38 @@ func writeError(w http.ResponseWriter, status int, code, message string) {
 	})
 }
 
+// resolveLogoURL constructs a serve URL from the media storage path/bucket
+// returned by the LEFT JOIN in the tag queries. Returns empty string when
+// the tag has no logo.
+func resolveLogoURL(storagePath, storageBucket *string) string {
+	if storagePath == nil || *storagePath == "" {
+		return ""
+	}
+	bucket := "media"
+	if storageBucket != nil && *storageBucket != "" {
+		bucket = *storageBucket
+	}
+	return media.MediaURL(bucket, *storagePath, media.ImageProxyOpts{})
+}
+
+// structToMap converts a struct with json tags to a map[string]any via JSON
+// round-trip. Used to enrich tag responses with computed fields like logo_url
+// without exposing internal join columns (logo_storage_path/bucket).
+func structToMap(v any) map[string]any {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return map[string]any{}
+	}
+	var m map[string]any
+	if err := json.Unmarshal(b, &m); err != nil {
+		return map[string]any{}
+	}
+	// Remove internal join columns — the API exposes logo_url, not raw storage paths.
+	delete(m, "logo_storage_path")
+	delete(m, "logo_storage_bucket")
+	return m
+}
+
 // CreateTag handles POST /api/v1/admin/tags.
 func (h *Handlers) CreateTag(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
@@ -268,6 +361,8 @@ func (h *Handlers) CreateTag(w http.ResponseWriter, r *http.Request) {
 		Slug        string  `json:"slug"`
 		Description *string `json:"description"`
 		Color       *string `json:"color"`
+		IsSystem    bool    `json:"is_system"`
+		LogoMediaID string  `json:"logo_media_id"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
@@ -290,11 +385,29 @@ func (h *Handlers) CreateTag(w http.ResponseWriter, r *http.Request) {
 		input.Description = &sanitized
 	}
 
+	// Validate color format if provided (must be a valid hex color).
+	if input.Color != nil && *input.Color != "" {
+		if !isValidHexColor(*input.Color) {
+			writeError(w, http.StatusBadRequest, "invalid_color", "color must be a valid hex color (e.g. #3b82f6)")
+			return
+		}
+	}
+
+	var logoMediaID pgtype.UUID
+	if input.LogoMediaID != "" {
+		if err := logoMediaID.Scan(input.LogoMediaID); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_logo_media_id", "logo_media_id must be a valid UUID")
+			return
+		}
+	}
+
 	tag, err := h.service.CreateTag(r.Context(), tenantID, CreateTagInput{
 		Name:        content.SanitizeText(input.Name),
 		Slug:        slug,
 		Description: input.Description,
 		Color:       input.Color,
+		IsSystem:    input.IsSystem,
+		LogoMediaID: logoMediaID,
 	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to create tag")
@@ -321,6 +434,7 @@ func (h *Handlers) UpdateTag(w http.ResponseWriter, r *http.Request) {
 		Name        string  `json:"name"`
 		Description *string `json:"description"`
 		Color       *string `json:"color"`
+		LogoMediaID *string `json:"logo_media_id"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
@@ -338,10 +452,26 @@ func (h *Handlers) UpdateTag(w http.ResponseWriter, r *http.Request) {
 		input.Description = &sanitized
 	}
 
+	if input.Color != nil && *input.Color != "" {
+		if !isValidHexColor(*input.Color) {
+			writeError(w, http.StatusBadRequest, "invalid_color", "color must be a valid hex color (e.g. #3b82f6)")
+			return
+		}
+	}
+
+	var logoMediaID pgtype.UUID
+	if input.LogoMediaID != nil && *input.LogoMediaID != "" {
+		if err := logoMediaID.Scan(*input.LogoMediaID); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_logo_media_id", "logo_media_id must be a valid UUID")
+			return
+		}
+	}
+
 	tag, err := h.service.UpdateTag(r.Context(), id, tenantID, UpdateTagInput{
 		Name:        content.SanitizeText(input.Name),
 		Description: input.Description,
 		Color:       input.Color,
+		LogoMediaID: logoMediaID,
 	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to update tag")
@@ -352,6 +482,7 @@ func (h *Handlers) UpdateTag(w http.ResponseWriter, r *http.Request) {
 }
 
 // DeleteTag handles DELETE /api/v1/admin/tags/{id}.
+// Spec: "delete tag (only if no content tagged)" and system tags cannot be deleted.
 func (h *Handlers) DeleteTag(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -364,6 +495,28 @@ func (h *Handlers) DeleteTag(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Guard 1: Check if tag is a system tag (cannot be deleted).
+	tag, err := h.service.GetTagByID(r.Context(), id, tenantID)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "not_found", "Tag not found")
+		return
+	}
+	if tag.IsSystem {
+		writeError(w, http.StatusForbidden, "system_tag_protected", "System tags cannot be deleted")
+		return
+	}
+
+	// Guard 2: Check if any content is tagged with this tag.
+	contentCount, err := h.service.CountContentByTag(r.Context(), id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to check tag usage")
+		return
+	}
+	if contentCount > 0 {
+		writeError(w, http.StatusConflict, "tag_in_use", "Tag is in use by content and cannot be deleted")
+		return
+	}
+
 	if err := h.service.DeleteTag(r.Context(), id, tenantID); err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to delete tag")
 		return
@@ -372,8 +525,23 @@ func (h *Handlers) DeleteTag(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"deleted": true}})
 }
 
-// AddTagModerator handles POST /admin/tags/:id/moderators (P5.6 — Task 7).
-// NOTE: No tag_moderators table exists yet — returns accepted but does not persist.
+// isValidHexColor checks if a string is a valid CSS hex color (#RGB or #RRGGBB).
+func isValidHexColor(s string) bool {
+	if len(s) == 0 || s[0] != '#' {
+		return false
+	}
+	hex := s[1:]
+	if len(hex) != 3 && len(hex) != 6 {
+		return false
+	}
+	for _, c := range hex {
+		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')) {
+			return false
+		}
+	}
+	return true
+}
+
 // ListTagModerators handles GET /api/v1/admin/tags/:id/moderators.
 func (h *Handlers) ListTagModerators(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
@@ -412,6 +580,11 @@ func (h *Handlers) AddTagModerator(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
 	tagID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid tag ID")
@@ -445,7 +618,13 @@ func (h *Handlers) AddTagModerator(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	row, err := h.service.AddTagModerator(r.Context(), tagID, userID, tenantID)
+	row, err := h.service.AddTagModerator(r.Context(), AddTagModeratorInput{
+		TagID:            tagID,
+		UserID:           userID,
+		TenantID:         tenantID,
+		AssignedBy:       "site_admin",
+		AssignedByUserID: user.UserID,
+	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to add tag moderator")
 		return

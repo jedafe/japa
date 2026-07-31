@@ -12,6 +12,25 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const countFormSubmissionsByForm = `-- name: CountFormSubmissionsByForm :one
+SELECT count(*) FROM form_submissions
+WHERE form_id = $1 AND tenant_id = $2
+  AND ($3 IS NULL OR status = $3)
+`
+
+type CountFormSubmissionsByFormParams struct {
+	FormID       pgtype.UUID `json:"form_id"`
+	TenantID     pgtype.UUID `json:"tenant_id"`
+	StatusFilter interface{} `json:"status_filter"`
+}
+
+func (q *Queries) CountFormSubmissionsByForm(ctx context.Context, arg CountFormSubmissionsByFormParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countFormSubmissionsByForm, arg.FormID, arg.TenantID, arg.StatusFilter)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createForm = `-- name: CreateForm :one
 INSERT INTO forms (tenant_id, space_id, name, slug, description, is_multi_step,
                     submit_label, success_message, status, is_system)
@@ -142,6 +161,37 @@ func (q *Queries) CreateFormSubmission(ctx context.Context, arg CreateFormSubmis
 	return i, err
 }
 
+const createFormSubmissionTrigger = `-- name: CreateFormSubmissionTrigger :one
+INSERT INTO form_submission_triggers (form_id, trigger_type, config, position)
+VALUES ($1, $2, $3, $4)
+RETURNING id, form_id, trigger_type, config, position
+`
+
+type CreateFormSubmissionTriggerParams struct {
+	FormID      pgtype.UUID `json:"form_id"`
+	TriggerType string      `json:"trigger_type"`
+	Config      []byte      `json:"config"`
+	Position    int32       `json:"position"`
+}
+
+func (q *Queries) CreateFormSubmissionTrigger(ctx context.Context, arg CreateFormSubmissionTriggerParams) (FormSubmissionTrigger, error) {
+	row := q.db.QueryRow(ctx, createFormSubmissionTrigger,
+		arg.FormID,
+		arg.TriggerType,
+		arg.Config,
+		arg.Position,
+	)
+	var i FormSubmissionTrigger
+	err := row.Scan(
+		&i.ID,
+		&i.FormID,
+		&i.TriggerType,
+		&i.Config,
+		&i.Position,
+	)
+	return i, err
+}
+
 const deleteForm = `-- name: DeleteForm :exec
 DELETE FROM forms
 WHERE id = $1 AND tenant_id = $2 AND is_system = false
@@ -184,6 +234,21 @@ type DeleteFormSubmissionParams struct {
 
 func (q *Queries) DeleteFormSubmission(ctx context.Context, arg DeleteFormSubmissionParams) error {
 	_, err := q.db.Exec(ctx, deleteFormSubmission, arg.ID, arg.TenantID)
+	return err
+}
+
+const deleteFormSubmissionTrigger = `-- name: DeleteFormSubmissionTrigger :exec
+DELETE FROM form_submission_triggers
+WHERE id = $1 AND form_id = $2
+`
+
+type DeleteFormSubmissionTriggerParams struct {
+	ID     pgtype.UUID `json:"id"`
+	FormID pgtype.UUID `json:"form_id"`
+}
+
+func (q *Queries) DeleteFormSubmissionTrigger(ctx context.Context, arg DeleteFormSubmissionTriggerParams) error {
+	_, err := q.db.Exec(ctx, deleteFormSubmissionTrigger, arg.ID, arg.FormID)
 	return err
 }
 
@@ -344,24 +409,59 @@ func (q *Queries) ListFormStepsByForm(ctx context.Context, formID pgtype.UUID) (
 	return items, nil
 }
 
+const listFormSubmissionTriggersByForm = `-- name: ListFormSubmissionTriggersByForm :many
+
+SELECT id, form_id, trigger_type, config, position
+FROM form_submission_triggers
+WHERE form_id = $1
+ORDER BY position ASC
+`
+
+// =====================
+// Form Submission Triggers (Section 06)
+// =====================
+func (q *Queries) ListFormSubmissionTriggersByForm(ctx context.Context, formID pgtype.UUID) ([]FormSubmissionTrigger, error) {
+	rows, err := q.db.Query(ctx, listFormSubmissionTriggersByForm, formID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []FormSubmissionTrigger
+	for rows.Next() {
+		var i FormSubmissionTrigger
+		if err := rows.Scan(
+			&i.ID,
+			&i.FormID,
+			&i.TriggerType,
+			&i.Config,
+			&i.Position,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listFormSubmissionsByForm = `-- name: ListFormSubmissionsByForm :many
 
 SELECT id, form_id, tenant_id, user_id, ip_address, field_values, status, created_at
 FROM form_submissions
 WHERE form_id = $1 AND tenant_id = $2
-  AND ($3 IS NULL
-       OR created_at < $3
-       OR (created_at = $3 AND id < $4))
+  AND ($3 IS NULL OR status = $3)
 ORDER BY created_at DESC, id DESC
-LIMIT $5
+LIMIT $5 OFFSET $4
 `
 
 type ListFormSubmissionsByFormParams struct {
-	FormID          pgtype.UUID `json:"form_id"`
-	TenantID        pgtype.UUID `json:"tenant_id"`
-	CursorCreatedAt interface{} `json:"cursor_created_at"`
-	CursorID        pgtype.UUID `json:"cursor_id"`
-	PageLimit       int32       `json:"page_limit"`
+	FormID       pgtype.UUID `json:"form_id"`
+	TenantID     pgtype.UUID `json:"tenant_id"`
+	StatusFilter interface{} `json:"status_filter"`
+	PageOffset   int32       `json:"page_offset"`
+	PageLimit    int32       `json:"page_limit"`
 }
 
 // =====================
@@ -371,8 +471,8 @@ func (q *Queries) ListFormSubmissionsByForm(ctx context.Context, arg ListFormSub
 	rows, err := q.db.Query(ctx, listFormSubmissionsByForm,
 		arg.FormID,
 		arg.TenantID,
-		arg.CursorCreatedAt,
-		arg.CursorID,
+		arg.StatusFilter,
+		arg.PageOffset,
 		arg.PageLimit,
 	)
 	if err != nil {
@@ -612,5 +712,56 @@ type UpdateFormSubmissionStatusParams struct {
 
 func (q *Queries) UpdateFormSubmissionStatus(ctx context.Context, arg UpdateFormSubmissionStatusParams) error {
 	_, err := q.db.Exec(ctx, updateFormSubmissionStatus, arg.Status, arg.ID, arg.TenantID)
+	return err
+}
+
+const updateFormSubmissionTrigger = `-- name: UpdateFormSubmissionTrigger :one
+UPDATE form_submission_triggers
+SET trigger_type = $1, config = $2, position = $3
+WHERE id = $4 AND form_id = $5
+RETURNING id, form_id, trigger_type, config, position
+`
+
+type UpdateFormSubmissionTriggerParams struct {
+	TriggerType string      `json:"trigger_type"`
+	Config      []byte      `json:"config"`
+	Position    int32       `json:"position"`
+	ID          pgtype.UUID `json:"id"`
+	FormID      pgtype.UUID `json:"form_id"`
+}
+
+func (q *Queries) UpdateFormSubmissionTrigger(ctx context.Context, arg UpdateFormSubmissionTriggerParams) (FormSubmissionTrigger, error) {
+	row := q.db.QueryRow(ctx, updateFormSubmissionTrigger,
+		arg.TriggerType,
+		arg.Config,
+		arg.Position,
+		arg.ID,
+		arg.FormID,
+	)
+	var i FormSubmissionTrigger
+	err := row.Scan(
+		&i.ID,
+		&i.FormID,
+		&i.TriggerType,
+		&i.Config,
+		&i.Position,
+	)
+	return i, err
+}
+
+const updateFormSubmissionTriggerPosition = `-- name: UpdateFormSubmissionTriggerPosition :exec
+UPDATE form_submission_triggers
+SET position = $1
+WHERE id = $2 AND form_id = $3
+`
+
+type UpdateFormSubmissionTriggerPositionParams struct {
+	Position int32       `json:"position"`
+	ID       pgtype.UUID `json:"id"`
+	FormID   pgtype.UUID `json:"form_id"`
+}
+
+func (q *Queries) UpdateFormSubmissionTriggerPosition(ctx context.Context, arg UpdateFormSubmissionTriggerPositionParams) error {
+	_, err := q.db.Exec(ctx, updateFormSubmissionTriggerPosition, arg.Position, arg.ID, arg.FormID)
 	return err
 }

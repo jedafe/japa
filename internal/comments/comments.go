@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/mentions"
 )
 
 // ErrEditWindowExpired is returned when the author tries to edit a comment
@@ -31,10 +32,11 @@ type settingsReader interface {
 
 // Service provides comment operations with reader/writer pool separation.
 type Service struct {
-	db       *db.DB
-	read     *gen.Queries
-	write    *gen.Queries
-	settings settingsReader
+	db              *db.DB
+	read            *gen.Queries
+	write           *gen.Queries
+	settings        settingsReader
+	mentionCheckers *mentions.DBCheckers // nil disables privacy filtering (BUG-004)
 }
 
 // NewService creates a Service backed by the given database pool.
@@ -50,3 +52,8 @@ func NewService(database *db.DB) *Service {
 // when not called, the service falls back to the compiled-in default for
 // comments.edit_window_minutes.
 func (s *Service) SetSettings(sr settingsReader) { s.settings = sr }
+
+// SetMentionCheckers wires the DB-backed privacy checkers (blocks, erased
+// users, private-space membership) used by FilterMentions for comment
+// mention notifications (BUG-004). nil disables privacy filtering.
+func (s *Service) SetMentionCheckers(c *mentions.DBCheckers) { s.mentionCheckers = c }

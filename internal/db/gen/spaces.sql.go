@@ -93,7 +93,7 @@ SELECT s.id, s.tenant_id, s.parent_id, s.space_type_id, s.name, s.slug, s.descri
        s.wiki_content, s.logo_media_id, s.header_image_id, s.geo_code, s.level,
        s.member_count, s.post_count, s.follower_count, s.visibility, s.posting_perm,
        s.replying_perm, s.commenting_perm, s.joining_perm, s.status, s.created_at,
-       s.updated_at, s.deleted_at,
+       s.updated_at, s.deleted_at, s.currency_code,
        COALESCE(u.username, '') AS owner,
        COALESCE(u.id::text, '') AS owner_id,
        COALESCE(st.name, '') AS space_type
@@ -137,6 +137,7 @@ type AdminListSpacesRow struct {
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
 	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
+	CurrencyCode   *string            `json:"currency_code"`
 	Owner          string             `json:"owner"`
 	OwnerID        interface{}        `json:"owner_id"`
 	SpaceType      string             `json:"space_type"`
@@ -176,6 +177,7 @@ func (q *Queries) AdminListSpaces(ctx context.Context, arg AdminListSpacesParams
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.DeletedAt,
+			&i.CurrencyCode,
 			&i.Owner,
 			&i.OwnerID,
 			&i.SpaceType,
@@ -347,7 +349,7 @@ INSERT INTO spaces (
 RETURNING id, tenant_id, parent_id, space_type_id, name, slug, description, wiki_content,
           logo_media_id, header_image_id, geo_code, level, member_count, post_count,
           follower_count, visibility, posting_perm, replying_perm, commenting_perm,
-          joining_perm, status, created_at, updated_at, deleted_at
+          joining_perm, status, created_at, updated_at, deleted_at, currency_code
 `
 
 type CreateSpaceParams struct {
@@ -412,6 +414,7 @@ func (q *Queries) CreateSpace(ctx context.Context, arg CreateSpaceParams) (Space
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DeletedAt,
+		&i.CurrencyCode,
 	)
 	return i, err
 }
@@ -561,7 +564,7 @@ SELECT s.id, s.tenant_id, s.parent_id, s.space_type_id, s.name, s.slug, s.descri
        s.wiki_content, s.logo_media_id, s.header_image_id, s.geo_code, s.level,
        s.member_count, s.post_count, s.follower_count, s.visibility, s.posting_perm,
        s.replying_perm, s.commenting_perm, s.joining_perm, s.status, s.created_at,
-       s.updated_at, s.deleted_at
+       s.updated_at, s.deleted_at, s.currency_code
 FROM spaces s
 JOIN space_parent_spaces sps ON sps.space_id = s.id
 WHERE sps.parent_space_id = $1 AND s.tenant_id = $2 AND s.deleted_at IS NULL
@@ -607,6 +610,7 @@ func (q *Queries) GetChildSpacesByParentID(ctx context.Context, arg GetChildSpac
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.DeletedAt,
+			&i.CurrencyCode,
 		); err != nil {
 			return nil, err
 		}
@@ -623,7 +627,7 @@ SELECT s.id, s.tenant_id, s.parent_id, s.space_type_id, s.name, s.slug, s.descri
        s.wiki_content, s.logo_media_id, s.header_image_id, s.geo_code, s.level,
        s.member_count, s.post_count, s.follower_count, s.visibility, s.posting_perm,
        s.replying_perm, s.commenting_perm, s.joining_perm, s.status, s.created_at,
-       s.updated_at, s.deleted_at
+       s.updated_at, s.deleted_at, s.currency_code
 FROM spaces s
 JOIN space_parent_spaces sps ON sps.parent_space_id = s.id
 WHERE sps.space_id = $1 AND s.tenant_id = $2 AND s.deleted_at IS NULL
@@ -669,6 +673,7 @@ func (q *Queries) GetParentSpacesBySpaceID(ctx context.Context, arg GetParentSpa
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.DeletedAt,
+			&i.CurrencyCode,
 		); err != nil {
 			return nil, err
 		}
@@ -714,7 +719,7 @@ const getSpaceByGeoCode = `-- name: GetSpaceByGeoCode :one
 SELECT id, tenant_id, parent_id, space_type_id, name, slug, description, wiki_content,
        logo_media_id, header_image_id, geo_code, level, member_count, post_count,
        follower_count, visibility, posting_perm, replying_perm, commenting_perm,
-       joining_perm, status, created_at, updated_at, deleted_at
+       joining_perm, status, created_at, updated_at, deleted_at, currency_code
 FROM spaces
 WHERE geo_code = $1 AND level = 'country' AND tenant_id = $2 AND deleted_at IS NULL
 LIMIT 1
@@ -754,6 +759,7 @@ func (q *Queries) GetSpaceByGeoCode(ctx context.Context, arg GetSpaceByGeoCodePa
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DeletedAt,
+		&i.CurrencyCode,
 	)
 	return i, err
 }
@@ -762,7 +768,7 @@ const getSpaceByID = `-- name: GetSpaceByID :one
 SELECT id, tenant_id, parent_id, space_type_id, name, slug, description, wiki_content,
        logo_media_id, header_image_id, geo_code, level, member_count, post_count,
        follower_count, visibility, posting_perm, replying_perm, commenting_perm,
-       joining_perm, status, created_at, updated_at, deleted_at
+       joining_perm, status, created_at, updated_at, deleted_at, currency_code
 FROM spaces
 WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
 `
@@ -800,6 +806,7 @@ func (q *Queries) GetSpaceByID(ctx context.Context, arg GetSpaceByIDParams) (Spa
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DeletedAt,
+		&i.CurrencyCode,
 	)
 	return i, err
 }
@@ -808,7 +815,7 @@ const getSpaceBySlug = `-- name: GetSpaceBySlug :one
 SELECT id, tenant_id, parent_id, space_type_id, name, slug, description, wiki_content,
        logo_media_id, header_image_id, geo_code, level, member_count, post_count,
        follower_count, visibility, posting_perm, replying_perm, commenting_perm,
-       joining_perm, status, created_at, updated_at, deleted_at
+       joining_perm, status, created_at, updated_at, deleted_at, currency_code
 FROM spaces
 WHERE slug = $1 AND tenant_id = $2 AND deleted_at IS NULL
 `
@@ -846,6 +853,7 @@ func (q *Queries) GetSpaceBySlug(ctx context.Context, arg GetSpaceBySlugParams) 
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DeletedAt,
+		&i.CurrencyCode,
 	)
 	return i, err
 }
@@ -1048,7 +1056,7 @@ const listChildSpaces = `-- name: ListChildSpaces :many
 SELECT id, tenant_id, parent_id, space_type_id, name, slug, description, wiki_content,
        logo_media_id, header_image_id, geo_code, level, member_count, post_count,
        follower_count, visibility, posting_perm, replying_perm, commenting_perm,
-       joining_perm, status, created_at, updated_at, deleted_at
+       joining_perm, status, created_at, updated_at, deleted_at, currency_code
 FROM spaces
 WHERE parent_id = $1 AND tenant_id = $2 AND deleted_at IS NULL
 ORDER BY created_at ASC, id ASC
@@ -1093,6 +1101,7 @@ func (q *Queries) ListChildSpaces(ctx context.Context, arg ListChildSpacesParams
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.DeletedAt,
+			&i.CurrencyCode,
 		); err != nil {
 			return nil, err
 		}
@@ -1109,7 +1118,7 @@ SELECT s.id, s.tenant_id, s.parent_id, s.space_type_id, s.name, s.slug, s.descri
        s.wiki_content, s.logo_media_id, s.header_image_id, s.geo_code, s.level,
        s.member_count, s.post_count, s.follower_count, s.visibility, s.posting_perm,
        s.replying_perm, s.commenting_perm, s.joining_perm, s.status, s.created_at,
-       s.updated_at, s.deleted_at
+       s.updated_at, s.deleted_at, s.currency_code
 FROM spaces s
 JOIN space_parent_spaces sps ON sps.space_id = s.id
 WHERE sps.parent_space_id = $1 AND s.tenant_id = $2 AND s.level = 'city'
@@ -1159,6 +1168,7 @@ func (q *Queries) ListCitiesByStateID(ctx context.Context, arg ListCitiesByState
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.DeletedAt,
+			&i.CurrencyCode,
 		); err != nil {
 			return nil, err
 		}
@@ -1221,7 +1231,7 @@ SELECT s.id, s.tenant_id, s.parent_id, s.space_type_id, s.name, s.slug, s.descri
        s.wiki_content, s.logo_media_id, s.header_image_id, s.geo_code, s.level,
        s.member_count, s.post_count, s.follower_count, s.visibility, s.posting_perm,
        s.replying_perm, s.commenting_perm, s.joining_perm, s.status, s.created_at,
-       s.updated_at, s.deleted_at, sm.role AS member_role
+       s.updated_at, s.deleted_at, s.currency_code, sm.role AS member_role
 FROM spaces s
 JOIN space_members sm ON sm.space_id = s.id AND sm.tenant_id = s.tenant_id
 WHERE sm.user_id = $1 AND s.tenant_id = $2
@@ -1262,6 +1272,7 @@ type ListPublicSpacesByMemberUserRow struct {
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
 	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
+	CurrencyCode   *string            `json:"currency_code"`
 	MemberRole     string             `json:"member_role"`
 }
 
@@ -1310,6 +1321,7 @@ func (q *Queries) ListPublicSpacesByMemberUser(ctx context.Context, arg ListPubl
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.DeletedAt,
+			&i.CurrencyCode,
 			&i.MemberRole,
 		); err != nil {
 			return nil, err
@@ -1611,7 +1623,7 @@ const listSpacesByLevel = `-- name: ListSpacesByLevel :many
 SELECT id, tenant_id, parent_id, space_type_id, name, slug, description, wiki_content,
        logo_media_id, header_image_id, geo_code, level, member_count, post_count,
        follower_count, visibility, posting_perm, replying_perm, commenting_perm,
-       joining_perm, status, created_at, updated_at, deleted_at
+       joining_perm, status, created_at, updated_at, deleted_at, currency_code
 FROM spaces
 WHERE tenant_id = $1 AND level = $2 AND deleted_at IS NULL
 ORDER BY created_at DESC, id DESC
@@ -1656,6 +1668,7 @@ func (q *Queries) ListSpacesByLevel(ctx context.Context, arg ListSpacesByLevelPa
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.DeletedAt,
+			&i.CurrencyCode,
 		); err != nil {
 			return nil, err
 		}
@@ -1672,7 +1685,7 @@ SELECT s.id, s.tenant_id, s.parent_id, s.space_type_id, s.name, s.slug, s.descri
        s.wiki_content, s.logo_media_id, s.header_image_id, s.geo_code, s.level,
        s.member_count, s.post_count, s.follower_count, s.visibility, s.posting_perm,
        s.replying_perm, s.commenting_perm, s.joining_perm, s.status, s.created_at,
-       s.updated_at, s.deleted_at
+       s.updated_at, s.deleted_at, s.currency_code
 FROM spaces s
 JOIN space_members sm ON sm.space_id = s.id
 WHERE sm.user_id = $1 AND sm.tenant_id = $2 AND s.deleted_at IS NULL
@@ -1720,6 +1733,7 @@ func (q *Queries) ListSpacesByMemberUser(ctx context.Context, arg ListSpacesByMe
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.DeletedAt,
+			&i.CurrencyCode,
 		); err != nil {
 			return nil, err
 		}
@@ -1736,7 +1750,7 @@ SELECT s.id, s.tenant_id, s.parent_id, s.space_type_id, s.name, s.slug, s.descri
        s.wiki_content, s.logo_media_id, s.header_image_id, s.geo_code, s.level,
        s.member_count, s.post_count, s.follower_count, s.visibility, s.posting_perm,
        s.replying_perm, s.commenting_perm, s.joining_perm, s.status, s.created_at,
-       s.updated_at, s.deleted_at
+       s.updated_at, s.deleted_at, s.currency_code
 FROM spaces s
 JOIN space_moderators sm ON sm.space_id = s.id
 WHERE sm.user_id = $1 AND sm.tenant_id = $2 AND s.deleted_at IS NULL
@@ -1782,6 +1796,7 @@ func (q *Queries) ListSpacesByModeratorUser(ctx context.Context, arg ListSpacesB
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.DeletedAt,
+			&i.CurrencyCode,
 		); err != nil {
 			return nil, err
 		}
@@ -1798,7 +1813,7 @@ SELECT s.id, s.tenant_id, s.parent_id, s.space_type_id, s.name, s.slug, s.descri
        s.wiki_content, s.logo_media_id, s.header_image_id, s.geo_code, s.level,
        s.member_count, s.post_count, s.follower_count, s.visibility, s.posting_perm,
        s.replying_perm, s.commenting_perm, s.joining_perm, s.status, s.created_at,
-       s.updated_at, s.deleted_at
+       s.updated_at, s.deleted_at, s.currency_code
 FROM spaces s
 JOIN space_members sm ON sm.space_id = s.id AND sm.tenant_id = s.tenant_id
 WHERE sm.user_id = $1 AND sm.tenant_id = $2 AND sm.role = 'owner'
@@ -1847,6 +1862,7 @@ func (q *Queries) ListSpacesByOwnerUser(ctx context.Context, arg ListSpacesByOwn
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.DeletedAt,
+			&i.CurrencyCode,
 		); err != nil {
 			return nil, err
 		}
@@ -1864,7 +1880,7 @@ SELECT s.id, s.tenant_id, s.parent_id, s.space_type_id, s.name, s.slug, s.descri
        s.wiki_content, s.logo_media_id, s.header_image_id, s.geo_code, s.level,
        s.member_count, s.post_count, s.follower_count, s.visibility, s.posting_perm,
        s.replying_perm, s.commenting_perm, s.joining_perm, s.status, s.created_at,
-       s.updated_at, s.deleted_at
+       s.updated_at, s.deleted_at, s.currency_code
 FROM spaces s
 WHERE s.tenant_id = $1 AND s.deleted_at IS NULL
   AND (
@@ -1927,6 +1943,7 @@ func (q *Queries) ListSpacesByTenant(ctx context.Context, arg ListSpacesByTenant
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.DeletedAt,
+			&i.CurrencyCode,
 		); err != nil {
 			return nil, err
 		}
@@ -1942,7 +1959,7 @@ const listSpacesByType = `-- name: ListSpacesByType :many
 SELECT id, tenant_id, parent_id, space_type_id, name, slug, description, wiki_content,
        logo_media_id, header_image_id, geo_code, level, member_count, post_count,
        follower_count, visibility, posting_perm, replying_perm, commenting_perm,
-       joining_perm, status, created_at, updated_at, deleted_at
+       joining_perm, status, created_at, updated_at, deleted_at, currency_code
 FROM spaces
 WHERE tenant_id = $1 AND space_type_id = $2 AND deleted_at IS NULL
 ORDER BY created_at DESC, id DESC
@@ -1987,6 +2004,7 @@ func (q *Queries) ListSpacesByType(ctx context.Context, arg ListSpacesByTypePara
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.DeletedAt,
+			&i.CurrencyCode,
 		); err != nil {
 			return nil, err
 		}
@@ -2003,7 +2021,7 @@ SELECT s.id, s.tenant_id, s.parent_id, s.space_type_id, s.name, s.slug, s.descri
        s.wiki_content, s.logo_media_id, s.header_image_id, s.geo_code, s.level,
        s.member_count, s.post_count, s.follower_count, s.visibility, s.posting_perm,
        s.replying_perm, s.commenting_perm, s.joining_perm, s.status, s.created_at,
-       s.updated_at, s.deleted_at
+       s.updated_at, s.deleted_at, s.currency_code
 FROM spaces s
 JOIN space_parent_spaces sps ON sps.space_id = s.id
 JOIN spaces country ON country.id = sps.parent_space_id
@@ -2055,6 +2073,7 @@ func (q *Queries) ListStatesByCountryGeoCode(ctx context.Context, arg ListStates
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.DeletedAt,
+			&i.CurrencyCode,
 		); err != nil {
 			return nil, err
 		}
@@ -2222,7 +2241,7 @@ WHERE id = $11 AND tenant_id = $12 AND deleted_at IS NULL
 RETURNING id, tenant_id, parent_id, space_type_id, name, slug, description, wiki_content,
           logo_media_id, header_image_id, geo_code, level, member_count, post_count,
           follower_count, visibility, posting_perm, replying_perm, commenting_perm,
-          joining_perm, status, created_at, updated_at, deleted_at
+          joining_perm, status, created_at, updated_at, deleted_at, currency_code
 `
 
 type UpdateSpaceParams struct {
@@ -2281,6 +2300,7 @@ func (q *Queries) UpdateSpace(ctx context.Context, arg UpdateSpaceParams) (Space
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DeletedAt,
+		&i.CurrencyCode,
 	)
 	return i, err
 }
@@ -2312,7 +2332,7 @@ const updateSpaceLogoMediaID = `-- name: UpdateSpaceLogoMediaID :one
 UPDATE spaces
 SET logo_media_id = $1
 WHERE id = $2 AND tenant_id = $3 AND deleted_at IS NULL
-RETURNING id, tenant_id, parent_id, space_type_id, name, slug, description, wiki_content, logo_media_id, header_image_id, geo_code, level, member_count, post_count, follower_count, visibility, posting_perm, replying_perm, commenting_perm, joining_perm, status, created_at, updated_at, deleted_at
+RETURNING id, tenant_id, parent_id, space_type_id, name, slug, description, wiki_content, logo_media_id, header_image_id, geo_code, level, member_count, post_count, follower_count, visibility, posting_perm, replying_perm, commenting_perm, joining_perm, status, created_at, updated_at, deleted_at, currency_code
 `
 
 type UpdateSpaceLogoMediaIDParams struct {
@@ -2350,6 +2370,7 @@ func (q *Queries) UpdateSpaceLogoMediaID(ctx context.Context, arg UpdateSpaceLog
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DeletedAt,
+		&i.CurrencyCode,
 	)
 	return i, err
 }

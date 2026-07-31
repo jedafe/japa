@@ -13,6 +13,7 @@
 	import { t } from "$lib/stores/i18n.svelte";
 	import { hasPermission, getPermissions } from "$lib/stores/permissions.svelte";
 	import OrgActionsCell from "./OrgActionsCell.svelte";
+	import VerifiedBadge from "./VerifiedBadge.svelte";
 
 	type Organisation = {
 		id: string;
@@ -54,7 +55,7 @@
 	let pendingClaimsByOrg = $state<Record<string, PendingClaim>>({});
 
 	const canManage = $derived(
-		getPermissions().includes("organizations.manage") || getPermissions().includes("*")
+		getPermissions().includes("admin.moderation") || getPermissions().includes("*")
 	);
 
 	const filterDefs = [
@@ -77,10 +78,7 @@
 			key: "verified",
 			label: t("organisations.verified", "Verified"),
 			sortable: true,
-			render: (v: boolean) => {
-				const cls = v ? "bg-success/15 text-success dark:text-success" : "bg-muted/15 text-muted dark:text-muted";
-				return `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium ${cls}">${v ? "Yes" : "No"}</span>`;
-			}
+			component: VerifiedBadge
 		},
 		{ key: "created_at", label: t("common.created", "Created"), sortable: true, render: (v: string) => new Date(v).toLocaleDateString() },
 		{ key: "actions", label: t("common.actions", "Actions"), class: "w-48", component: OrgActionsCell, componentProps: { pendingClaimsByOrg, onchange: load } }
@@ -154,6 +152,7 @@
 	async function bulkDelete() {
 		const ids = Array.from(selectedIds);
 		if (ids.length === 0) return;
+		if (!confirm(t("organisations.bulk_delete_confirm", "Delete {count} selected organisations? This cannot be undone.").replace("{count}", String(ids.length)))) return;
 		acting = true;
 		try {
 			await Promise.all(ids.map((id) => organisationsAdminApi.delete(id)));

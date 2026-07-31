@@ -12,17 +12,18 @@ import (
 )
 
 const addTagModerator = `-- name: AddTagModerator :one
-INSERT INTO tag_moderators (tenant_id, tag_id, user_id, assigned_by)
-VALUES ($1, $2, $3, $4)
+INSERT INTO tag_moderators (tenant_id, tag_id, user_id, assigned_by, assigned_by_user_id)
+VALUES ($1, $2, $3, $4, $5)
 ON CONFLICT (tenant_id, tag_id, user_id) DO UPDATE SET created_at = now()
 RETURNING id, tenant_id, tag_id, user_id, assigned_by, assigned_by_user_id, created_at
 `
 
 type AddTagModeratorParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
-	TagID      pgtype.UUID `json:"tag_id"`
-	UserID     pgtype.UUID `json:"user_id"`
-	AssignedBy string      `json:"assigned_by"`
+	TenantID         pgtype.UUID `json:"tenant_id"`
+	TagID            pgtype.UUID `json:"tag_id"`
+	UserID           pgtype.UUID `json:"user_id"`
+	AssignedBy       string      `json:"assigned_by"`
+	AssignedByUserID pgtype.UUID `json:"assigned_by_user_id"`
 }
 
 // Idempotent: re-adding an existing moderator just refreshes created_at.
@@ -32,6 +33,7 @@ func (q *Queries) AddTagModerator(ctx context.Context, arg AddTagModeratorParams
 		arg.TagID,
 		arg.UserID,
 		arg.AssignedBy,
+		arg.AssignedByUserID,
 	)
 	var i TagModerator
 	err := row.Scan(
@@ -51,52 +53,104 @@ SELECT COUNT(*)::int AS count
 FROM tags
 WHERE tenant_id = $1
   AND ($2::text = '' OR name ILIKE '%' || $2 || '%' OR slug ILIKE '%' || $2 || '%')
+  AND ($3::int = 0 OR content_count >= $3)
 `
 
 type AdminCountTagsParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	Q        string      `json:"q"`
+	TenantID        pgtype.UUID `json:"tenant_id"`
+	Q               string      `json:"q"`
+	MinContentCount int32       `json:"min_content_count"`
 }
 
 func (q *Queries) AdminCountTags(ctx context.Context, arg AdminCountTagsParams) (int32, error) {
-	row := q.db.QueryRow(ctx, adminCountTags, arg.TenantID, arg.Q)
+	row := q.db.QueryRow(ctx, adminCountTags, arg.TenantID, arg.Q, arg.MinContentCount)
 	var count int32
 	err := row.Scan(&count)
 	return count, err
 }
 
 const adminListTags = `-- name: AdminListTags :many
-SELECT id, tenant_id, name, slug, description, color, follower_count, created_at, updated_at
-FROM tags
-WHERE tenant_id = $1
-  AND ($2::text = '' OR name ILIKE '%' || $2 || '%' OR slug ILIKE '%' || $2 || '%')
-ORDER BY name
+SELECT t.id, t.tenant_id, t.name, t.slug, t.description, t.rules, t.cover_media_id,
+       t.logo_media_id, t.color, t.follower_count, t.content_count, t.is_system,
+       t.field_values, t.created_at, t.updated_at,
+       lm.storage_path AS logo_storage_path, lm.storage_bucket AS logo_storage_bucket
+FROM tags t
+LEFT JOIN media lm ON lm.id = t.logo_media_id
+WHERE t.tenant_id = $1
+  AND ($2::text = '' OR t.name ILIKE '%' || $2 || '%' OR t.slug ILIKE '%' || $2 || '%')
+  AND ($3::int = 0 OR t.content_count >= $3)
+ORDER BY
+  CASE WHEN $4::text = 'popular' THEN t.follower_count END DESC,
+  CASE WHEN $4::text = 'followers' THEN t.follower_count END DESC,
+  CASE WHEN $4::text = 'content' THEN t.content_count END DESC,
+  CASE WHEN $4::text != 'popular' AND $4::text != 'followers' AND $4::text != 'content' THEN t.created_at END DESC
+LIMIT $6 OFFSET $5
 `
 
 type AdminListTagsParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	Q        string      `json:"q"`
+	TenantID        pgtype.UUID `json:"tenant_id"`
+	Q               string      `json:"q"`
+	MinContentCount int32       `json:"min_content_count"`
+	Sort            string      `json:"sort"`
+	PageOffset      int32       `json:"page_offset"`
+	PageLimit       int32       `json:"page_limit"`
 }
 
-func (q *Queries) AdminListTags(ctx context.Context, arg AdminListTagsParams) ([]Tag, error) {
-	rows, err := q.db.Query(ctx, adminListTags, arg.TenantID, arg.Q)
+type AdminListTagsRow struct {
+	ID                pgtype.UUID        `json:"id"`
+	TenantID          pgtype.UUID        `json:"tenant_id"`
+	Name              string             `json:"name"`
+	Slug              string             `json:"slug"`
+	Description       *string            `json:"description"`
+	Rules             *string            `json:"rules"`
+	CoverMediaID      pgtype.UUID        `json:"cover_media_id"`
+	LogoMediaID       pgtype.UUID        `json:"logo_media_id"`
+	Color             *string            `json:"color"`
+	FollowerCount     int32              `json:"follower_count"`
+	ContentCount      int32              `json:"content_count"`
+	IsSystem          bool               `json:"is_system"`
+	FieldValues       []byte             `json:"field_values"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+	LogoStoragePath   *string            `json:"logo_storage_path"`
+	LogoStorageBucket *string            `json:"logo_storage_bucket"`
+}
+
+// Admin list with offset pagination + search (Section 08: GET /admin/tags).
+func (q *Queries) AdminListTags(ctx context.Context, arg AdminListTagsParams) ([]AdminListTagsRow, error) {
+	rows, err := q.db.Query(ctx, adminListTags,
+		arg.TenantID,
+		arg.Q,
+		arg.MinContentCount,
+		arg.Sort,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Tag
+	var items []AdminListTagsRow
 	for rows.Next() {
-		var i Tag
+		var i AdminListTagsRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.TenantID,
 			&i.Name,
 			&i.Slug,
 			&i.Description,
+			&i.Rules,
+			&i.CoverMediaID,
+			&i.LogoMediaID,
 			&i.Color,
 			&i.FollowerCount,
+			&i.ContentCount,
+			&i.IsSystem,
+			&i.FieldValues,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.LogoStoragePath,
+			&i.LogoStorageBucket,
 		); err != nil {
 			return nil, err
 		}
@@ -108,11 +162,45 @@ func (q *Queries) AdminListTags(ctx context.Context, arg AdminListTagsParams) ([
 	return items, nil
 }
 
+const countContentByTag = `-- name: CountContentByTag :one
+SELECT COUNT(*)::int AS count
+FROM content_tags
+WHERE tag_id = $1
+`
+
+// Used by DeleteTag guard: spec says "delete tag (only if no content tagged)".
+func (q *Queries) CountContentByTag(ctx context.Context, tagID pgtype.UUID) (int32, error) {
+	row := q.db.QueryRow(ctx, countContentByTag, tagID)
+	var count int32
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countTagsPaginated = `-- name: CountTagsPaginated :one
+SELECT COUNT(*)::int AS count
+FROM tags
+WHERE tenant_id = $1
+  AND ($2::text = '' OR name ILIKE '%' || $2 || '%' OR slug ILIKE '%' || $2 || '%')
+`
+
+type CountTagsPaginatedParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	Q        string      `json:"q"`
+}
+
+func (q *Queries) CountTagsPaginated(ctx context.Context, arg CountTagsPaginatedParams) (int32, error) {
+	row := q.db.QueryRow(ctx, countTagsPaginated, arg.TenantID, arg.Q)
+	var count int32
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createTag = `-- name: CreateTag :one
 
-INSERT INTO tags (tenant_id, name, slug, description, color)
-VALUES ($1, $2, $3, $4, $5)
-RETURNING id, tenant_id, name, slug, description, color, follower_count, created_at, updated_at
+INSERT INTO tags (tenant_id, name, slug, description, color, is_system, logo_media_id)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
+RETURNING id, tenant_id, name, slug, description, rules, cover_media_id, logo_media_id, color,
+          follower_count, content_count, is_system, field_values, created_at, updated_at
 `
 
 type CreateTagParams struct {
@@ -121,26 +209,54 @@ type CreateTagParams struct {
 	Slug        string      `json:"slug"`
 	Description *string     `json:"description"`
 	Color       *string     `json:"color"`
+	IsSystem    bool        `json:"is_system"`
+	LogoMediaID pgtype.UUID `json:"logo_media_id"`
+}
+
+type CreateTagRow struct {
+	ID            pgtype.UUID        `json:"id"`
+	TenantID      pgtype.UUID        `json:"tenant_id"`
+	Name          string             `json:"name"`
+	Slug          string             `json:"slug"`
+	Description   *string            `json:"description"`
+	Rules         *string            `json:"rules"`
+	CoverMediaID  pgtype.UUID        `json:"cover_media_id"`
+	LogoMediaID   pgtype.UUID        `json:"logo_media_id"`
+	Color         *string            `json:"color"`
+	FollowerCount int32              `json:"follower_count"`
+	ContentCount  int32              `json:"content_count"`
+	IsSystem      bool               `json:"is_system"`
+	FieldValues   []byte             `json:"field_values"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
 }
 
 // Admin CRUD (catalog: POST/PATCH/DELETE /admin/tags).
-func (q *Queries) CreateTag(ctx context.Context, arg CreateTagParams) (Tag, error) {
+func (q *Queries) CreateTag(ctx context.Context, arg CreateTagParams) (CreateTagRow, error) {
 	row := q.db.QueryRow(ctx, createTag,
 		arg.TenantID,
 		arg.Name,
 		arg.Slug,
 		arg.Description,
 		arg.Color,
+		arg.IsSystem,
+		arg.LogoMediaID,
 	)
-	var i Tag
+	var i CreateTagRow
 	err := row.Scan(
 		&i.ID,
 		&i.TenantID,
 		&i.Name,
 		&i.Slug,
 		&i.Description,
+		&i.Rules,
+		&i.CoverMediaID,
+		&i.LogoMediaID,
 		&i.Color,
 		&i.FollowerCount,
+		&i.ContentCount,
+		&i.IsSystem,
+		&i.FieldValues,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -161,10 +277,75 @@ func (q *Queries) DeleteTag(ctx context.Context, arg DeleteTagParams) error {
 	return err
 }
 
+const getTagByID = `-- name: GetTagByID :one
+SELECT t.id, t.tenant_id, t.name, t.slug, t.description, t.rules, t.cover_media_id,
+       t.logo_media_id, t.color, t.follower_count, t.content_count, t.is_system,
+       t.field_values, t.created_at, t.updated_at,
+       lm.storage_path AS logo_storage_path, lm.storage_bucket AS logo_storage_bucket
+FROM tags t
+LEFT JOIN media lm ON lm.id = t.logo_media_id
+WHERE t.id = $1 AND t.tenant_id = $2
+`
+
+type GetTagByIDParams struct {
+	ID       pgtype.UUID `json:"id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+type GetTagByIDRow struct {
+	ID                pgtype.UUID        `json:"id"`
+	TenantID          pgtype.UUID        `json:"tenant_id"`
+	Name              string             `json:"name"`
+	Slug              string             `json:"slug"`
+	Description       *string            `json:"description"`
+	Rules             *string            `json:"rules"`
+	CoverMediaID      pgtype.UUID        `json:"cover_media_id"`
+	LogoMediaID       pgtype.UUID        `json:"logo_media_id"`
+	Color             *string            `json:"color"`
+	FollowerCount     int32              `json:"follower_count"`
+	ContentCount      int32              `json:"content_count"`
+	IsSystem          bool               `json:"is_system"`
+	FieldValues       []byte             `json:"field_values"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+	LogoStoragePath   *string            `json:"logo_storage_path"`
+	LogoStorageBucket *string            `json:"logo_storage_bucket"`
+}
+
+// Used by DeleteTag guard to check is_system before deletion.
+func (q *Queries) GetTagByID(ctx context.Context, arg GetTagByIDParams) (GetTagByIDRow, error) {
+	row := q.db.QueryRow(ctx, getTagByID, arg.ID, arg.TenantID)
+	var i GetTagByIDRow
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.Name,
+		&i.Slug,
+		&i.Description,
+		&i.Rules,
+		&i.CoverMediaID,
+		&i.LogoMediaID,
+		&i.Color,
+		&i.FollowerCount,
+		&i.ContentCount,
+		&i.IsSystem,
+		&i.FieldValues,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.LogoStoragePath,
+		&i.LogoStorageBucket,
+	)
+	return i, err
+}
+
 const getTagBySlug = `-- name: GetTagBySlug :one
-SELECT id, tenant_id, name, slug, description, color, follower_count, created_at, updated_at
-FROM tags
-WHERE tenant_id = $1 AND slug = $2
+SELECT t.id, t.tenant_id, t.name, t.slug, t.description, t.rules, t.cover_media_id,
+       t.logo_media_id, t.color, t.follower_count, t.content_count, t.is_system,
+       t.field_values, t.created_at, t.updated_at,
+       lm.storage_path AS logo_storage_path, lm.storage_bucket AS logo_storage_bucket
+FROM tags t
+LEFT JOIN media lm ON lm.id = t.logo_media_id
+WHERE t.tenant_id = $1 AND t.slug = $2
 `
 
 type GetTagBySlugParams struct {
@@ -172,21 +353,93 @@ type GetTagBySlugParams struct {
 	Slug     string      `json:"slug"`
 }
 
-func (q *Queries) GetTagBySlug(ctx context.Context, arg GetTagBySlugParams) (Tag, error) {
+type GetTagBySlugRow struct {
+	ID                pgtype.UUID        `json:"id"`
+	TenantID          pgtype.UUID        `json:"tenant_id"`
+	Name              string             `json:"name"`
+	Slug              string             `json:"slug"`
+	Description       *string            `json:"description"`
+	Rules             *string            `json:"rules"`
+	CoverMediaID      pgtype.UUID        `json:"cover_media_id"`
+	LogoMediaID       pgtype.UUID        `json:"logo_media_id"`
+	Color             *string            `json:"color"`
+	FollowerCount     int32              `json:"follower_count"`
+	ContentCount      int32              `json:"content_count"`
+	IsSystem          bool               `json:"is_system"`
+	FieldValues       []byte             `json:"field_values"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+	LogoStoragePath   *string            `json:"logo_storage_path"`
+	LogoStorageBucket *string            `json:"logo_storage_bucket"`
+}
+
+func (q *Queries) GetTagBySlug(ctx context.Context, arg GetTagBySlugParams) (GetTagBySlugRow, error) {
 	row := q.db.QueryRow(ctx, getTagBySlug, arg.TenantID, arg.Slug)
-	var i Tag
+	var i GetTagBySlugRow
 	err := row.Scan(
 		&i.ID,
 		&i.TenantID,
 		&i.Name,
 		&i.Slug,
 		&i.Description,
+		&i.Rules,
+		&i.CoverMediaID,
+		&i.LogoMediaID,
 		&i.Color,
 		&i.FollowerCount,
+		&i.ContentCount,
+		&i.IsSystem,
+		&i.FieldValues,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.LogoStoragePath,
+		&i.LogoStorageBucket,
 	)
 	return i, err
+}
+
+const getTagsBySlugs = `-- name: GetTagsBySlugs :many
+SELECT id, tenant_id, name, slug
+FROM tags
+WHERE tenant_id = $1 AND slug = ANY($2::text[])
+`
+
+type GetTagsBySlugsParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	Slugs    []string    `json:"slugs"`
+}
+
+type GetTagsBySlugsRow struct {
+	ID       pgtype.UUID `json:"id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+	Name     string      `json:"name"`
+	Slug     string      `json:"slug"`
+}
+
+// Resolve multiple tag slugs to their IDs in one query (Section 14: bulk tag_slugs).
+func (q *Queries) GetTagsBySlugs(ctx context.Context, arg GetTagsBySlugsParams) ([]GetTagsBySlugsRow, error) {
+	rows, err := q.db.Query(ctx, getTagsBySlugs, arg.TenantID, arg.Slugs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetTagsBySlugsRow
+	for rows.Next() {
+		var i GetTagsBySlugsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.Name,
+			&i.Slug,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listTagModerators = `-- name: ListTagModerators :many
@@ -235,35 +488,155 @@ func (q *Queries) ListTagModerators(ctx context.Context, arg ListTagModeratorsPa
 
 const listTagsByTenant = `-- name: ListTagsByTenant :many
 
-SELECT id, tenant_id, name, slug, description, color, follower_count, created_at, updated_at
-FROM tags
-WHERE tenant_id = $1
-ORDER BY name
+SELECT t.id, t.tenant_id, t.name, t.slug, t.description, t.rules, t.cover_media_id,
+       t.logo_media_id, t.color, t.follower_count, t.content_count, t.is_system,
+       t.field_values, t.created_at, t.updated_at,
+       lm.storage_path AS logo_storage_path, lm.storage_bucket AS logo_storage_bucket
+FROM tags t
+LEFT JOIN media lm ON lm.id = t.logo_media_id
+WHERE t.tenant_id = $1
+ORDER BY t.name
 `
+
+type ListTagsByTenantRow struct {
+	ID                pgtype.UUID        `json:"id"`
+	TenantID          pgtype.UUID        `json:"tenant_id"`
+	Name              string             `json:"name"`
+	Slug              string             `json:"slug"`
+	Description       *string            `json:"description"`
+	Rules             *string            `json:"rules"`
+	CoverMediaID      pgtype.UUID        `json:"cover_media_id"`
+	LogoMediaID       pgtype.UUID        `json:"logo_media_id"`
+	Color             *string            `json:"color"`
+	FollowerCount     int32              `json:"follower_count"`
+	ContentCount      int32              `json:"content_count"`
+	IsSystem          bool               `json:"is_system"`
+	FieldValues       []byte             `json:"field_values"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+	LogoStoragePath   *string            `json:"logo_storage_path"`
+	LogoStorageBucket *string            `json:"logo_storage_bucket"`
+}
 
 // General cross-domain tags (Section 08/49 catalog: GET /tags, /tags/:slug).
 // Distinct from forum_tags (forum-scoped) — this is the tags table content
 // is tagged against via content_tags, and the entity followed via follows
 // (entity_type='tag').
-func (q *Queries) ListTagsByTenant(ctx context.Context, tenantID pgtype.UUID) ([]Tag, error) {
+func (q *Queries) ListTagsByTenant(ctx context.Context, tenantID pgtype.UUID) ([]ListTagsByTenantRow, error) {
 	rows, err := q.db.Query(ctx, listTagsByTenant, tenantID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Tag
+	var items []ListTagsByTenantRow
 	for rows.Next() {
-		var i Tag
+		var i ListTagsByTenantRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.TenantID,
 			&i.Name,
 			&i.Slug,
 			&i.Description,
+			&i.Rules,
+			&i.CoverMediaID,
+			&i.LogoMediaID,
 			&i.Color,
 			&i.FollowerCount,
+			&i.ContentCount,
+			&i.IsSystem,
+			&i.FieldValues,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.LogoStoragePath,
+			&i.LogoStorageBucket,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listTagsPaginated = `-- name: ListTagsPaginated :many
+SELECT t.id, t.tenant_id, t.name, t.slug, t.description, t.rules, t.cover_media_id,
+       t.logo_media_id, t.color, t.follower_count, t.content_count, t.is_system,
+       t.field_values, t.created_at, t.updated_at,
+       lm.storage_path AS logo_storage_path, lm.storage_bucket AS logo_storage_bucket
+FROM tags t
+LEFT JOIN media lm ON lm.id = t.logo_media_id
+WHERE t.tenant_id = $1
+  AND ($2::text = '' OR t.name ILIKE '%' || $2 || '%' OR t.slug ILIKE '%' || $2 || '%')
+ORDER BY
+  CASE WHEN $3::text = 'popular' THEN t.follower_count END DESC,
+  CASE WHEN $3::text != 'popular' THEN t.created_at END DESC
+LIMIT $5 OFFSET $4
+`
+
+type ListTagsPaginatedParams struct {
+	TenantID   pgtype.UUID `json:"tenant_id"`
+	Q          string      `json:"q"`
+	Sort       string      `json:"sort"`
+	PageOffset int32       `json:"page_offset"`
+	PageLimit  int32       `json:"page_limit"`
+}
+
+type ListTagsPaginatedRow struct {
+	ID                pgtype.UUID        `json:"id"`
+	TenantID          pgtype.UUID        `json:"tenant_id"`
+	Name              string             `json:"name"`
+	Slug              string             `json:"slug"`
+	Description       *string            `json:"description"`
+	Rules             *string            `json:"rules"`
+	CoverMediaID      pgtype.UUID        `json:"cover_media_id"`
+	LogoMediaID       pgtype.UUID        `json:"logo_media_id"`
+	Color             *string            `json:"color"`
+	FollowerCount     int32              `json:"follower_count"`
+	ContentCount      int32              `json:"content_count"`
+	IsSystem          bool               `json:"is_system"`
+	FieldValues       []byte             `json:"field_values"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+	LogoStoragePath   *string            `json:"logo_storage_path"`
+	LogoStorageBucket *string            `json:"logo_storage_bucket"`
+}
+
+// Public list with sort + offset pagination (Section 08: ?sort=popular|newest&page=1).
+func (q *Queries) ListTagsPaginated(ctx context.Context, arg ListTagsPaginatedParams) ([]ListTagsPaginatedRow, error) {
+	rows, err := q.db.Query(ctx, listTagsPaginated,
+		arg.TenantID,
+		arg.Q,
+		arg.Sort,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListTagsPaginatedRow
+	for rows.Next() {
+		var i ListTagsPaginatedRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.Name,
+			&i.Slug,
+			&i.Description,
+			&i.Rules,
+			&i.CoverMediaID,
+			&i.LogoMediaID,
+			&i.Color,
+			&i.FollowerCount,
+			&i.ContentCount,
+			&i.IsSystem,
+			&i.FieldValues,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.LogoStoragePath,
+			&i.LogoStorageBucket,
 		); err != nil {
 			return nil, err
 		}
@@ -293,36 +666,63 @@ func (q *Queries) RemoveTagModerator(ctx context.Context, arg RemoveTagModerator
 
 const updateTag = `-- name: UpdateTag :one
 UPDATE tags
-SET name = $1, description = $2, color = $3, updated_at = now()
-WHERE id = $4 AND tenant_id = $5
-RETURNING id, tenant_id, name, slug, description, color, follower_count, created_at, updated_at
+SET name = $1, description = $2, color = $3, logo_media_id = $4, updated_at = now()
+WHERE id = $5 AND tenant_id = $6
+RETURNING id, tenant_id, name, slug, description, rules, cover_media_id, logo_media_id, color,
+          follower_count, content_count, is_system, field_values, created_at, updated_at
 `
 
 type UpdateTagParams struct {
 	Name        string      `json:"name"`
 	Description *string     `json:"description"`
 	Color       *string     `json:"color"`
+	LogoMediaID pgtype.UUID `json:"logo_media_id"`
 	ID          pgtype.UUID `json:"id"`
 	TenantID    pgtype.UUID `json:"tenant_id"`
 }
 
-func (q *Queries) UpdateTag(ctx context.Context, arg UpdateTagParams) (Tag, error) {
+type UpdateTagRow struct {
+	ID            pgtype.UUID        `json:"id"`
+	TenantID      pgtype.UUID        `json:"tenant_id"`
+	Name          string             `json:"name"`
+	Slug          string             `json:"slug"`
+	Description   *string            `json:"description"`
+	Rules         *string            `json:"rules"`
+	CoverMediaID  pgtype.UUID        `json:"cover_media_id"`
+	LogoMediaID   pgtype.UUID        `json:"logo_media_id"`
+	Color         *string            `json:"color"`
+	FollowerCount int32              `json:"follower_count"`
+	ContentCount  int32              `json:"content_count"`
+	IsSystem      bool               `json:"is_system"`
+	FieldValues   []byte             `json:"field_values"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) UpdateTag(ctx context.Context, arg UpdateTagParams) (UpdateTagRow, error) {
 	row := q.db.QueryRow(ctx, updateTag,
 		arg.Name,
 		arg.Description,
 		arg.Color,
+		arg.LogoMediaID,
 		arg.ID,
 		arg.TenantID,
 	)
-	var i Tag
+	var i UpdateTagRow
 	err := row.Scan(
 		&i.ID,
 		&i.TenantID,
 		&i.Name,
 		&i.Slug,
 		&i.Description,
+		&i.Rules,
+		&i.CoverMediaID,
+		&i.LogoMediaID,
 		&i.Color,
 		&i.FollowerCount,
+		&i.ContentCount,
+		&i.IsSystem,
+		&i.FieldValues,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)

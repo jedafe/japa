@@ -4,41 +4,106 @@
 -- (entity_type='tag').
 
 -- name: ListTagsByTenant :many
-SELECT id, tenant_id, name, slug, description, color, follower_count, created_at, updated_at
-FROM tags
-WHERE tenant_id = @tenant_id
-ORDER BY name;
+SELECT t.id, t.tenant_id, t.name, t.slug, t.description, t.rules, t.cover_media_id,
+       t.logo_media_id, t.color, t.follower_count, t.content_count, t.is_system,
+       t.field_values, t.created_at, t.updated_at,
+       lm.storage_path AS logo_storage_path, lm.storage_bucket AS logo_storage_bucket
+FROM tags t
+LEFT JOIN media lm ON lm.id = t.logo_media_id
+WHERE t.tenant_id = @tenant_id
+ORDER BY t.name;
 
--- name: GetTagBySlug :one
-SELECT id, tenant_id, name, slug, description, color, follower_count, created_at, updated_at
-FROM tags
-WHERE tenant_id = @tenant_id AND slug = @slug;
+-- name: ListTagsPaginated :many
+-- Public list with sort + offset pagination (Section 08: ?sort=popular|newest&page=1).
+SELECT t.id, t.tenant_id, t.name, t.slug, t.description, t.rules, t.cover_media_id,
+       t.logo_media_id, t.color, t.follower_count, t.content_count, t.is_system,
+       t.field_values, t.created_at, t.updated_at,
+       lm.storage_path AS logo_storage_path, lm.storage_bucket AS logo_storage_bucket
+FROM tags t
+LEFT JOIN media lm ON lm.id = t.logo_media_id
+WHERE t.tenant_id = @tenant_id
+  AND (@q::text = '' OR t.name ILIKE '%' || @q || '%' OR t.slug ILIKE '%' || @q || '%')
+ORDER BY
+  CASE WHEN @sort::text = 'popular' THEN t.follower_count END DESC,
+  CASE WHEN @sort::text != 'popular' THEN t.created_at END DESC
+LIMIT @page_limit OFFSET @page_offset;
 
--- name: AdminListTags :many
-SELECT id, tenant_id, name, slug, description, color, follower_count, created_at, updated_at
-FROM tags
-WHERE tenant_id = @tenant_id
-  AND (@q::text = '' OR name ILIKE '%' || @q || '%' OR slug ILIKE '%' || @q || '%')
-ORDER BY name;
-
--- name: AdminCountTags :one
+-- name: CountTagsPaginated :one
 SELECT COUNT(*)::int AS count
 FROM tags
 WHERE tenant_id = @tenant_id
   AND (@q::text = '' OR name ILIKE '%' || @q || '%' OR slug ILIKE '%' || @q || '%');
 
+-- name: GetTagBySlug :one
+SELECT t.id, t.tenant_id, t.name, t.slug, t.description, t.rules, t.cover_media_id,
+       t.logo_media_id, t.color, t.follower_count, t.content_count, t.is_system,
+       t.field_values, t.created_at, t.updated_at,
+       lm.storage_path AS logo_storage_path, lm.storage_bucket AS logo_storage_bucket
+FROM tags t
+LEFT JOIN media lm ON lm.id = t.logo_media_id
+WHERE t.tenant_id = @tenant_id AND t.slug = @slug;
+
+-- name: GetTagsBySlugs :many
+-- Resolve multiple tag slugs to their IDs in one query (Section 14: bulk tag_slugs).
+SELECT id, tenant_id, name, slug
+FROM tags
+WHERE tenant_id = @tenant_id AND slug = ANY(@slugs::text[]);
+
+-- name: GetTagByID :one
+-- Used by DeleteTag guard to check is_system before deletion.
+SELECT t.id, t.tenant_id, t.name, t.slug, t.description, t.rules, t.cover_media_id,
+       t.logo_media_id, t.color, t.follower_count, t.content_count, t.is_system,
+       t.field_values, t.created_at, t.updated_at,
+       lm.storage_path AS logo_storage_path, lm.storage_bucket AS logo_storage_bucket
+FROM tags t
+LEFT JOIN media lm ON lm.id = t.logo_media_id
+WHERE t.id = @id AND t.tenant_id = @tenant_id;
+
+-- name: CountContentByTag :one
+-- Used by DeleteTag guard: spec says "delete tag (only if no content tagged)".
+SELECT COUNT(*)::int AS count
+FROM content_tags
+WHERE tag_id = @tag_id;
+
+-- name: AdminListTags :many
+-- Admin list with offset pagination + search (Section 08: GET /admin/tags).
+SELECT t.id, t.tenant_id, t.name, t.slug, t.description, t.rules, t.cover_media_id,
+       t.logo_media_id, t.color, t.follower_count, t.content_count, t.is_system,
+       t.field_values, t.created_at, t.updated_at,
+       lm.storage_path AS logo_storage_path, lm.storage_bucket AS logo_storage_bucket
+FROM tags t
+LEFT JOIN media lm ON lm.id = t.logo_media_id
+WHERE t.tenant_id = @tenant_id
+  AND (@q::text = '' OR t.name ILIKE '%' || @q || '%' OR t.slug ILIKE '%' || @q || '%')
+  AND (@min_content_count::int = 0 OR t.content_count >= @min_content_count)
+ORDER BY
+  CASE WHEN @sort::text = 'popular' THEN t.follower_count END DESC,
+  CASE WHEN @sort::text = 'followers' THEN t.follower_count END DESC,
+  CASE WHEN @sort::text = 'content' THEN t.content_count END DESC,
+  CASE WHEN @sort::text != 'popular' AND @sort::text != 'followers' AND @sort::text != 'content' THEN t.created_at END DESC
+LIMIT @page_limit OFFSET @page_offset;
+
+-- name: AdminCountTags :one
+SELECT COUNT(*)::int AS count
+FROM tags
+WHERE tenant_id = @tenant_id
+  AND (@q::text = '' OR name ILIKE '%' || @q || '%' OR slug ILIKE '%' || @q || '%')
+  AND (@min_content_count::int = 0 OR content_count >= @min_content_count);
+
 -- Admin CRUD (catalog: POST/PATCH/DELETE /admin/tags).
 
 -- name: CreateTag :one
-INSERT INTO tags (tenant_id, name, slug, description, color)
-VALUES (@tenant_id, @name, @slug, @description, @color)
-RETURNING id, tenant_id, name, slug, description, color, follower_count, created_at, updated_at;
+INSERT INTO tags (tenant_id, name, slug, description, color, is_system, logo_media_id)
+VALUES (@tenant_id, @name, @slug, @description, @color, @is_system, @logo_media_id)
+RETURNING id, tenant_id, name, slug, description, rules, cover_media_id, logo_media_id, color,
+          follower_count, content_count, is_system, field_values, created_at, updated_at;
 
 -- name: UpdateTag :one
 UPDATE tags
-SET name = @name, description = @description, color = @color, updated_at = now()
+SET name = @name, description = @description, color = @color, logo_media_id = @logo_media_id, updated_at = now()
 WHERE id = @id AND tenant_id = @tenant_id
-RETURNING id, tenant_id, name, slug, description, color, follower_count, created_at, updated_at;
+RETURNING id, tenant_id, name, slug, description, rules, cover_media_id, logo_media_id, color,
+          follower_count, content_count, is_system, field_values, created_at, updated_at;
 
 -- name: DeleteTag :exec
 DELETE FROM tags WHERE id = @id AND tenant_id = @tenant_id;
@@ -57,8 +122,8 @@ ORDER BY tm.created_at ASC;
 
 -- name: AddTagModerator :one
 -- Idempotent: re-adding an existing moderator just refreshes created_at.
-INSERT INTO tag_moderators (tenant_id, tag_id, user_id, assigned_by)
-VALUES (@tenant_id, @tag_id, @user_id, @assigned_by)
+INSERT INTO tag_moderators (tenant_id, tag_id, user_id, assigned_by, assigned_by_user_id)
+VALUES (@tenant_id, @tag_id, @user_id, @assigned_by, @assigned_by_user_id)
 ON CONFLICT (tenant_id, tag_id, user_id) DO UPDATE SET created_at = now()
 RETURNING id, tenant_id, tag_id, user_id, assigned_by, assigned_by_user_id, created_at;
 

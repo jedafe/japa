@@ -76,7 +76,7 @@ func (h *Handlers) ChangePassword(w http.ResponseWriter, r *http.Request) {
 	}
 
 	hashStr := string(newHash)
-	if err := h.Service.store.updateUserPassword(r.Context(), user.UserID, &hashStr); err != nil {
+	if err := h.Service.store.updateUserPassword(r.Context(), tenantID, user.UserID, &hashStr); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -100,7 +100,12 @@ func (h *Handlers) GetPrivacy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	settings, err := h.Service.GetPrivacySettings(r.Context(), user.UserID)
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	settings, err := h.Service.GetPrivacySettings(r.Context(), tenantID, user.UserID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -125,13 +130,18 @@ func (h *Handlers) UpdatePrivacy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
 	var req UpdatePrivacyRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
 		return
 	}
 
-	if err := h.Service.UpdatePrivacySettings(r.Context(), user.UserID, &req); err != nil {
+	if err := h.Service.UpdatePrivacySettings(r.Context(), tenantID, user.UserID, &req); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -153,7 +163,12 @@ func (h *Handlers) ListSessions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sessions, err := h.Service.ListSessions(r.Context(), user.UserID)
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	sessions, err := h.Service.ListSessions(r.Context(), tenantID, user.UserID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -169,6 +184,11 @@ func (h *Handlers) RevokeSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
 	idStr := chi.URLParam(r, "id")
 	var id pgtype.UUID
 	if err := id.Scan(idStr); err != nil {
@@ -176,7 +196,7 @@ func (h *Handlers) RevokeSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Service.RevokeSession(r.Context(), user.UserID, id); err != nil {
+	if err := h.Service.RevokeSession(r.Context(), tenantID, user.UserID, id); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -196,12 +216,17 @@ func (h *Handlers) RevokeAllSessions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
 	var req RevokeAllSessionsRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		req.KeepCurrent = true
 	}
 
-	if err := h.Service.RevokeAllSessions(r.Context(), user.UserID, req.KeepCurrent); err != nil {
+	if err := h.Service.RevokeAllSessions(r.Context(), tenantID, user.UserID, req.KeepCurrent); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -255,7 +280,7 @@ func (h *Handlers) DisconnectAccount(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Check user has a password set (prevent lockout).
-	hasPassword, err := h.Service.store.userHasPassword(r.Context(), user.UserID)
+	hasPassword, err := h.Service.store.userHasPassword(r.Context(), tenantID, user.UserID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -437,6 +462,45 @@ func (h *Handlers) GetMyAnalytics(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"data": analytics})
 }
 
+// UpdateMyAccount handles PATCH /api/v1/me/account.
+// Ref: japaconnect-engineering/sections/50-user-dashboard-settings.md
+// Updates username (once per 30 days), email (triggers re-verification),
+// and display_name. All fields are optional (partial update).
+func (h *Handlers) UpdateMyAccount(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	var req UpdateAccountRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
+		return
+	}
+
+	result, err := h.Service.UpdateAccount(r.Context(), tenantID, user.UserID, &req)
+	if err != nil {
+		switch {
+		case errors.Is(err, ErrUsernameCooldown):
+			writeError(w, http.StatusTooManyRequests, "username_cooldown", "Username can only be changed once every 30 days")
+		case errors.Is(err, ErrUsernameTaken):
+			writeError(w, http.StatusConflict, "username_taken", "This username is already in use")
+		case errors.Is(err, ErrEmailTaken):
+			writeError(w, http.StatusConflict, "email_taken", "This email is already in use")
+		default:
+			handleServiceError(w, err)
+		}
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": result})
+}
+
 // DeactivateAccountRequest is the input for account deactivation.
 type DeactivateAccountRequest struct {
 	Password string `json:"password"`
@@ -486,29 +550,6 @@ func (h *Handlers) DeactivateAccount(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deactivated"}})
 }
-
-// RequestDataExportRequest is the input for requesting data export.
-type RequestDataExportRequest struct {
-	Format string `json:"format,omitempty"`
-}
-
-// RequestDataExport handles POST /api/v1/me/data-export.
-func (h *Handlers) RequestDataExport(w http.ResponseWriter, r *http.Request) {
-	user, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-
-	_ = user
-
-	writeJSON(w, http.StatusAccepted, map[string]any{
-		"data": map[string]string{
-			"status":  "export_requested",
-			"message": "Your data export has been requested. You will receive a download link via email when ready.",
-		},
-	})
-}
-
 
 // Ensure pgx.ErrNoRows is referenced to avoid import cycle.
 var _ = pgx.ErrNoRows

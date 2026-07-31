@@ -17,7 +17,7 @@ func NewStore(read, write *gen.Queries) *Store {
 	return &Store{read: read, write: write}
 }
 
-func (s *Store) listTemplates(ctx context.Context, tenantID pgtype.UUID, filterType string, limit, offset int32) ([]gen.EmailTemplate, error) {
+func (s *Store) listTemplates(ctx context.Context, tenantID pgtype.UUID, filterType string, limit, offset int32) ([]gen.ListEmailTemplatesRow, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -40,28 +40,28 @@ func (s *Store) countTemplates(ctx context.Context, tenantID pgtype.UUID, filter
 	return count, nil
 }
 
-func (s *Store) getTemplate(ctx context.Context, id, tenantID pgtype.UUID) (gen.EmailTemplate, error) {
+func (s *Store) getTemplate(ctx context.Context, id, tenantID pgtype.UUID) (gen.GetEmailTemplateRow, error) {
 	row, err := s.read.GetEmailTemplate(ctx, gen.GetEmailTemplateParams{ID: id, TenantID: tenantID})
 	if err != nil {
-		return gen.EmailTemplate{}, fmt.Errorf("getting email template: %w", err)
+		return gen.GetEmailTemplateRow{}, fmt.Errorf("getting email template: %w", err)
 	}
 	return row, nil
 }
 
-func (s *Store) getTemplateByType(ctx context.Context, tenantID pgtype.UUID, templateType string) (gen.EmailTemplate, error) {
+func (s *Store) getTemplateByType(ctx context.Context, tenantID pgtype.UUID, templateType string) (gen.GetEmailTemplateByTypeRow, error) {
 	row, err := s.read.GetEmailTemplateByType(ctx, gen.GetEmailTemplateByTypeParams{
 		TenantID: tenantID, Type: templateType,
 	})
 	if err != nil {
-		return gen.EmailTemplate{}, fmt.Errorf("getting email template by type: %w", err)
+		return gen.GetEmailTemplateByTypeRow{}, fmt.Errorf("getting email template by type: %w", err)
 	}
 	return row, nil
 }
 
-func (s *Store) updateTemplate(ctx context.Context, p gen.UpdateEmailTemplateParams) (gen.EmailTemplate, error) {
+func (s *Store) updateTemplate(ctx context.Context, p gen.UpdateEmailTemplateParams) (gen.UpdateEmailTemplateRow, error) {
 	row, err := s.write.UpdateEmailTemplate(ctx, p)
 	if err != nil {
-		return gen.EmailTemplate{}, fmt.Errorf("updating email template: %w", err)
+		return gen.UpdateEmailTemplateRow{}, fmt.Errorf("updating email template: %w", err)
 	}
 	return row, nil
 }

@@ -16,7 +16,7 @@ UPDATE subscriptions
 SET status = 'canceled', cancel_at = now(), updated_at = now()
 WHERE id = $1 AND tenant_id = $2
   AND status = 'active'
-RETURNING id, tenant_id, user_id, plan, provider, provider_ref, status, current_period_start, current_period_end, cancel_at, created_at, updated_at
+RETURNING id, tenant_id, user_id, plan, provider, provider_ref, status, current_period_start, current_period_end, cancel_at, created_at, updated_at, provider_sub_id, cancel_at_period_end, cancelled_at
 `
 
 type CancelSubscriptionParams struct {
@@ -40,8 +40,26 @@ func (q *Queries) CancelSubscription(ctx context.Context, arg CancelSubscription
 		&i.CancelAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ProviderSubID,
+		&i.CancelAtPeriodEnd,
+		&i.CancelledAt,
 	)
 	return i, err
+}
+
+const countDiscountCodeUses = `-- name: CountDiscountCodeUses :one
+SELECT COUNT(*)::int FROM discount_code_uses
+WHERE code_id = $1
+`
+
+// Total uses of a code across all users (for max_uses enforcement).
+// Replaces the list+len pattern that fetched up to 1000 rows just to
+// count them and silently under-counted beyond 1000 (BUG-018).
+func (q *Queries) CountDiscountCodeUses(ctx context.Context, codeID pgtype.UUID) (int32, error) {
+	row := q.db.QueryRow(ctx, countDiscountCodeUses, codeID)
+	var column_1 int32
+	err := row.Scan(&column_1)
+	return column_1, err
 }
 
 const countDiscountCodeUsesByUser = `-- name: CountDiscountCodeUsesByUser :one
@@ -130,13 +148,14 @@ const createPayment = `-- name: CreatePayment :one
 INSERT INTO payments (
     tenant_id, user_id, provider, provider_ref, purpose_type, purpose_id,
     amount, currency, status, metadata, subscription_id,
-    discount_code_id, discount_amount
+    discount_code_id, discount_amount, idempotency_key
 ) VALUES (
     $1, $2, $3, $4, $5,
     $6, $7, $8, $9, $10,
-    $11, $12, $13
+    $11, $12, $13,
+    $14
 )
-RETURNING id, tenant_id, user_id, provider, provider_ref, purpose_type, purpose_id, amount, currency, status, metadata, subscription_id, discount_code_id, discount_amount, created_at, updated_at
+RETURNING id, tenant_id, user_id, provider, provider_ref, purpose_type, purpose_id, amount, currency, status, metadata, subscription_id, discount_code_id, discount_amount, created_at, updated_at, idempotency_key
 `
 
 type CreatePaymentParams struct {
@@ -153,6 +172,7 @@ type CreatePaymentParams struct {
 	SubscriptionID pgtype.UUID `json:"subscription_id"`
 	DiscountCodeID pgtype.UUID `json:"discount_code_id"`
 	DiscountAmount int64       `json:"discount_amount"`
+	IdempotencyKey *string     `json:"idempotency_key"`
 }
 
 // Payment Core — payments, subscriptions, discount codes, refunds.
@@ -174,6 +194,7 @@ func (q *Queries) CreatePayment(ctx context.Context, arg CreatePaymentParams) (P
 		arg.SubscriptionID,
 		arg.DiscountCodeID,
 		arg.DiscountAmount,
+		arg.IdempotencyKey,
 	)
 	var i Payment
 	err := row.Scan(
@@ -193,6 +214,7 @@ func (q *Queries) CreatePayment(ctx context.Context, arg CreatePaymentParams) (P
 		&i.DiscountAmount,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.IdempotencyKey,
 	)
 	return i, err
 }
@@ -248,7 +270,7 @@ INSERT INTO subscriptions (
     $1, $2, $3, $4, $5,
     $6, $7, $8, $9
 )
-RETURNING id, tenant_id, user_id, plan, provider, provider_ref, status, current_period_start, current_period_end, cancel_at, created_at, updated_at
+RETURNING id, tenant_id, user_id, plan, provider, provider_ref, status, current_period_start, current_period_end, cancel_at, created_at, updated_at, provider_sub_id, cancel_at_period_end, cancelled_at
 `
 
 type CreateSubscriptionParams struct {
@@ -292,6 +314,9 @@ func (q *Queries) CreateSubscription(ctx context.Context, arg CreateSubscription
 		&i.CancelAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ProviderSubID,
+		&i.CancelAtPeriodEnd,
+		&i.CancelledAt,
 	)
 	return i, err
 }
@@ -312,7 +337,7 @@ func (q *Queries) DeleteDiscountCode(ctx context.Context, arg DeleteDiscountCode
 }
 
 const getActiveSubscriptionByUser = `-- name: GetActiveSubscriptionByUser :one
-SELECT id, tenant_id, user_id, plan, provider, provider_ref, status, current_period_start, current_period_end, cancel_at, created_at, updated_at FROM subscriptions
+SELECT id, tenant_id, user_id, plan, provider, provider_ref, status, current_period_start, current_period_end, cancel_at, created_at, updated_at, provider_sub_id, cancel_at_period_end, cancelled_at FROM subscriptions
 WHERE tenant_id = $1
   AND user_id = $2
   AND status = 'active'
@@ -342,6 +367,46 @@ func (q *Queries) GetActiveSubscriptionByUser(ctx context.Context, arg GetActive
 		&i.CancelAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ProviderSubID,
+		&i.CancelAtPeriodEnd,
+		&i.CancelledAt,
+	)
+	return i, err
+}
+
+const getAdminPaymentByID = `-- name: GetAdminPaymentByID :one
+SELECT id, tenant_id, user_id, provider, provider_ref, purpose_type, purpose_id, amount, currency, status, metadata, subscription_id, discount_code_id, discount_amount, created_at, updated_at, idempotency_key FROM payments
+WHERE id = $1 AND tenant_id = $2
+`
+
+type GetAdminPaymentByIDParams struct {
+	ID       pgtype.UUID `json:"id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+// Admin payment detail (JEOS §17). Same as GetPaymentByID but used by
+// the admin route to signal admin context for audit logging.
+func (q *Queries) GetAdminPaymentByID(ctx context.Context, arg GetAdminPaymentByIDParams) (Payment, error) {
+	row := q.db.QueryRow(ctx, getAdminPaymentByID, arg.ID, arg.TenantID)
+	var i Payment
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.UserID,
+		&i.Provider,
+		&i.ProviderRef,
+		&i.PurposeType,
+		&i.PurposeID,
+		&i.Amount,
+		&i.Currency,
+		&i.Status,
+		&i.Metadata,
+		&i.SubscriptionID,
+		&i.DiscountCodeID,
+		&i.DiscountAmount,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.IdempotencyKey,
 	)
 	return i, err
 }
@@ -409,7 +474,7 @@ func (q *Queries) GetDiscountCodeByID(ctx context.Context, arg GetDiscountCodeBy
 }
 
 const getPaymentByID = `-- name: GetPaymentByID :one
-SELECT id, tenant_id, user_id, provider, provider_ref, purpose_type, purpose_id, amount, currency, status, metadata, subscription_id, discount_code_id, discount_amount, created_at, updated_at FROM payments
+SELECT id, tenant_id, user_id, provider, provider_ref, purpose_type, purpose_id, amount, currency, status, metadata, subscription_id, discount_code_id, discount_amount, created_at, updated_at, idempotency_key FROM payments
 WHERE id = $1 AND tenant_id = $2
 `
 
@@ -438,12 +503,55 @@ func (q *Queries) GetPaymentByID(ctx context.Context, arg GetPaymentByIDParams) 
 		&i.DiscountAmount,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.IdempotencyKey,
+	)
+	return i, err
+}
+
+const getPaymentByProviderRef = `-- name: GetPaymentByProviderRef :one
+SELECT id, tenant_id, user_id, provider, provider_ref, purpose_type, purpose_id, amount, currency, status, metadata, subscription_id, discount_code_id, discount_amount, created_at, updated_at, idempotency_key FROM payments
+WHERE tenant_id = $1
+  AND provider_ref = $2
+ORDER BY created_at DESC
+LIMIT 1
+`
+
+type GetPaymentByProviderRefParams struct {
+	TenantID    pgtype.UUID `json:"tenant_id"`
+	ProviderRef *string     `json:"provider_ref"`
+}
+
+// Direct lookup by provider reference (Stripe pi_.../cs_..., Paystack
+// reference, NOWPayments order_id). Uses idx_payments_provider_ref.
+// Replaces the full-scan ListPaymentsByStatus + iterate match in the
+// webhook worker (BUG-019).
+func (q *Queries) GetPaymentByProviderRef(ctx context.Context, arg GetPaymentByProviderRefParams) (Payment, error) {
+	row := q.db.QueryRow(ctx, getPaymentByProviderRef, arg.TenantID, arg.ProviderRef)
+	var i Payment
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.UserID,
+		&i.Provider,
+		&i.ProviderRef,
+		&i.PurposeType,
+		&i.PurposeID,
+		&i.Amount,
+		&i.Currency,
+		&i.Status,
+		&i.Metadata,
+		&i.SubscriptionID,
+		&i.DiscountCodeID,
+		&i.DiscountAmount,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.IdempotencyKey,
 	)
 	return i, err
 }
 
 const getSubscriptionByID = `-- name: GetSubscriptionByID :one
-SELECT id, tenant_id, user_id, plan, provider, provider_ref, status, current_period_start, current_period_end, cancel_at, created_at, updated_at FROM subscriptions
+SELECT id, tenant_id, user_id, plan, provider, provider_ref, status, current_period_start, current_period_end, cancel_at, created_at, updated_at, provider_sub_id, cancel_at_period_end, cancelled_at FROM subscriptions
 WHERE id = $1 AND tenant_id = $2
 `
 
@@ -468,6 +576,9 @@ func (q *Queries) GetSubscriptionByID(ctx context.Context, arg GetSubscriptionBy
 		&i.CancelAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ProviderSubID,
+		&i.CancelAtPeriodEnd,
+		&i.CancelledAt,
 	)
 	return i, err
 }
@@ -507,18 +618,19 @@ func (q *Queries) InsertDiscountCodeUse(ctx context.Context, arg InsertDiscountC
 const insertWebhookEvent = `-- name: InsertWebhookEvent :one
 
 INSERT INTO payment_webhook_events (
-    tenant_id, provider, event_id, raw_payload
+    tenant_id, provider, event_id, event_type, raw_payload
 ) VALUES (
-    $1, $2, $3, $4
+    $1, $2, $3, $4, $5
 )
 ON CONFLICT (tenant_id, provider, event_id) DO NOTHING
-RETURNING id, tenant_id, provider, event_id, raw_payload, processed_at, created_at
+RETURNING id, tenant_id, provider, event_id, raw_payload, processed_at, created_at, event_type
 `
 
 type InsertWebhookEventParams struct {
 	TenantID   pgtype.UUID `json:"tenant_id"`
 	Provider   string      `json:"provider"`
 	EventID    string      `json:"event_id"`
+	EventType  string      `json:"event_type"`
 	RawPayload []byte      `json:"raw_payload"`
 }
 
@@ -530,6 +642,7 @@ func (q *Queries) InsertWebhookEvent(ctx context.Context, arg InsertWebhookEvent
 		arg.TenantID,
 		arg.Provider,
 		arg.EventID,
+		arg.EventType,
 		arg.RawPayload,
 	)
 	var i PaymentWebhookEvent
@@ -541,6 +654,7 @@ func (q *Queries) InsertWebhookEvent(ctx context.Context, arg InsertWebhookEvent
 		&i.RawPayload,
 		&i.ProcessedAt,
 		&i.CreatedAt,
+		&i.EventType,
 	)
 	return i, err
 }
@@ -569,7 +683,7 @@ func (q *Queries) IsWebhookEventProcessed(ctx context.Context, arg IsWebhookEven
 }
 
 const listActiveSubscriptions = `-- name: ListActiveSubscriptions :many
-SELECT id, tenant_id, user_id, plan, provider, provider_ref, status, current_period_start, current_period_end, cancel_at, created_at, updated_at FROM subscriptions
+SELECT id, tenant_id, user_id, plan, provider, provider_ref, status, current_period_start, current_period_end, cancel_at, created_at, updated_at, provider_sub_id, cancel_at_period_end, cancelled_at FROM subscriptions
 WHERE tenant_id = $1 AND status = 'active'
 ORDER BY created_at DESC
 LIMIT $3 OFFSET $2
@@ -603,6 +717,84 @@ func (q *Queries) ListActiveSubscriptions(ctx context.Context, arg ListActiveSub
 			&i.CancelAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.ProviderSubID,
+			&i.CancelAtPeriodEnd,
+			&i.CancelledAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listAdminPayments = `-- name: ListAdminPayments :many
+SELECT id, tenant_id, user_id, provider, provider_ref, purpose_type, purpose_id, amount, currency, status, metadata, subscription_id, discount_code_id, discount_amount, created_at, updated_at, idempotency_key FROM payments
+WHERE tenant_id = $1
+  AND ($2::uuid IS NULL OR user_id = $2)
+  AND ($3::text IS NULL OR status = $3)
+  AND ($4::text IS NULL OR purpose_type = $4)
+  AND ($5::text IS NULL OR provider = $5)
+  AND ($6::timestamptz IS NULL OR created_at >= $6)
+  AND ($7::timestamptz IS NULL OR created_at <= $7)
+ORDER BY created_at DESC
+LIMIT $9 OFFSET $8
+`
+
+type ListAdminPaymentsParams struct {
+	TenantID    pgtype.UUID        `json:"tenant_id"`
+	UserID      pgtype.UUID        `json:"user_id"`
+	Status      *string            `json:"status"`
+	PurposeType *string            `json:"purpose_type"`
+	Provider    *string            `json:"provider"`
+	StartDate   pgtype.Timestamptz `json:"start_date"`
+	EndDate     pgtype.Timestamptz `json:"end_date"`
+	PageOffset  int32              `json:"page_offset"`
+	PageLimit   int32              `json:"page_limit"`
+}
+
+// Admin cross-platform payment list with optional filters (JEOS §17
+// "Admin Payment Routes"). Nullable parameters are skipped via sqlc.narg.
+func (q *Queries) ListAdminPayments(ctx context.Context, arg ListAdminPaymentsParams) ([]Payment, error) {
+	rows, err := q.db.Query(ctx, listAdminPayments,
+		arg.TenantID,
+		arg.UserID,
+		arg.Status,
+		arg.PurposeType,
+		arg.Provider,
+		arg.StartDate,
+		arg.EndDate,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Payment
+	for rows.Next() {
+		var i Payment
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.UserID,
+			&i.Provider,
+			&i.ProviderRef,
+			&i.PurposeType,
+			&i.PurposeID,
+			&i.Amount,
+			&i.Currency,
+			&i.Status,
+			&i.Metadata,
+			&i.SubscriptionID,
+			&i.DiscountCodeID,
+			&i.DiscountAmount,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.IdempotencyKey,
 		); err != nil {
 			return nil, err
 		}
@@ -700,7 +892,7 @@ func (q *Queries) ListDiscountCodes(ctx context.Context, arg ListDiscountCodesPa
 }
 
 const listPaymentsByStatus = `-- name: ListPaymentsByStatus :many
-SELECT id, tenant_id, user_id, provider, provider_ref, purpose_type, purpose_id, amount, currency, status, metadata, subscription_id, discount_code_id, discount_amount, created_at, updated_at FROM payments
+SELECT id, tenant_id, user_id, provider, provider_ref, purpose_type, purpose_id, amount, currency, status, metadata, subscription_id, discount_code_id, discount_amount, created_at, updated_at, idempotency_key FROM payments
 WHERE tenant_id = $1 AND status = $2
 ORDER BY created_at DESC
 LIMIT $4 OFFSET $3
@@ -744,6 +936,7 @@ func (q *Queries) ListPaymentsByStatus(ctx context.Context, arg ListPaymentsBySt
 			&i.DiscountAmount,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.IdempotencyKey,
 		); err != nil {
 			return nil, err
 		}
@@ -756,7 +949,7 @@ func (q *Queries) ListPaymentsByStatus(ctx context.Context, arg ListPaymentsBySt
 }
 
 const listPaymentsByUser = `-- name: ListPaymentsByUser :many
-SELECT id, tenant_id, user_id, provider, provider_ref, purpose_type, purpose_id, amount, currency, status, metadata, subscription_id, discount_code_id, discount_amount, created_at, updated_at FROM payments
+SELECT id, tenant_id, user_id, provider, provider_ref, purpose_type, purpose_id, amount, currency, status, metadata, subscription_id, discount_code_id, discount_amount, created_at, updated_at, idempotency_key FROM payments
 WHERE tenant_id = $1 AND user_id = $2
 ORDER BY created_at DESC
 LIMIT $4 OFFSET $3
@@ -800,6 +993,7 @@ func (q *Queries) ListPaymentsByUser(ctx context.Context, arg ListPaymentsByUser
 			&i.DiscountAmount,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.IdempotencyKey,
 		); err != nil {
 			return nil, err
 		}
@@ -846,7 +1040,7 @@ func (q *Queries) ListRefundsByPayment(ctx context.Context, paymentID pgtype.UUI
 }
 
 const listSubscriptionsByUser = `-- name: ListSubscriptionsByUser :many
-SELECT id, tenant_id, user_id, plan, provider, provider_ref, status, current_period_start, current_period_end, cancel_at, created_at, updated_at FROM subscriptions
+SELECT id, tenant_id, user_id, plan, provider, provider_ref, status, current_period_start, current_period_end, cancel_at, created_at, updated_at, provider_sub_id, cancel_at_period_end, cancelled_at FROM subscriptions
 WHERE tenant_id = $1 AND user_id = $2
 ORDER BY created_at DESC
 LIMIT $4 OFFSET $3
@@ -886,6 +1080,9 @@ func (q *Queries) ListSubscriptionsByUser(ctx context.Context, arg ListSubscript
 			&i.CancelAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.ProviderSubID,
+			&i.CancelAtPeriodEnd,
+			&i.CancelledAt,
 		); err != nil {
 			return nil, err
 		}
@@ -925,7 +1122,7 @@ WHERE id = (
     ORDER BY s.updated_at DESC
     LIMIT 1
 )
-RETURNING id, tenant_id, user_id, plan, provider, provider_ref, status, current_period_start, current_period_end, cancel_at, created_at, updated_at
+RETURNING id, tenant_id, user_id, plan, provider, provider_ref, status, current_period_start, current_period_end, cancel_at, created_at, updated_at, provider_sub_id, cancel_at_period_end, cancelled_at
 `
 
 type ReactivateSubscriptionParams struct {
@@ -949,6 +1146,9 @@ func (q *Queries) ReactivateSubscription(ctx context.Context, arg ReactivateSubs
 		&i.CancelAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ProviderSubID,
+		&i.CancelAtPeriodEnd,
+		&i.CancelledAt,
 	)
 	return i, err
 }
@@ -1021,7 +1221,7 @@ const updatePaymentStatus = `-- name: UpdatePaymentStatus :one
 UPDATE payments
 SET status = $1, updated_at = now()
 WHERE id = $2 AND tenant_id = $3
-RETURNING id, tenant_id, user_id, provider, provider_ref, purpose_type, purpose_id, amount, currency, status, metadata, subscription_id, discount_code_id, discount_amount, created_at, updated_at
+RETURNING id, tenant_id, user_id, provider, provider_ref, purpose_type, purpose_id, amount, currency, status, metadata, subscription_id, discount_code_id, discount_amount, created_at, updated_at, idempotency_key
 `
 
 type UpdatePaymentStatusParams struct {
@@ -1050,6 +1250,7 @@ func (q *Queries) UpdatePaymentStatus(ctx context.Context, arg UpdatePaymentStat
 		&i.DiscountAmount,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.IdempotencyKey,
 	)
 	return i, err
 }
@@ -1058,7 +1259,7 @@ const updateSubscriptionStatus = `-- name: UpdateSubscriptionStatus :one
 UPDATE subscriptions
 SET status = $1, updated_at = now()
 WHERE id = $2 AND tenant_id = $3
-RETURNING id, tenant_id, user_id, plan, provider, provider_ref, status, current_period_start, current_period_end, cancel_at, created_at, updated_at
+RETURNING id, tenant_id, user_id, plan, provider, provider_ref, status, current_period_start, current_period_end, cancel_at, created_at, updated_at, provider_sub_id, cancel_at_period_end, cancelled_at
 `
 
 type UpdateSubscriptionStatusParams struct {
@@ -1083,6 +1284,9 @@ func (q *Queries) UpdateSubscriptionStatus(ctx context.Context, arg UpdateSubscr
 		&i.CancelAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ProviderSubID,
+		&i.CancelAtPeriodEnd,
+		&i.CancelledAt,
 	)
 	return i, err
 }

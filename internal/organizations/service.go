@@ -12,7 +12,30 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
+	errpkg "github.com/jedafe/japa/internal/errors"
 )
+
+// validOrgTypes is the allow-list enforced by the organizations.org_type
+// CHECK constraint (migration 000105). Validating here surfaces a 400
+// invalid_org_type envelope instead of a raw 500 from the DB constraint.
+// Ref: japaconnect-engineering/sections/07-organization-profiles-claim-ownership.md
+var validOrgTypes = map[string]bool{
+	OrgTypeBusiness: true, OrgTypeNGO: true, OrgTypeGovernment: true,
+	OrgTypeEmbassy: true, OrgTypeUniversity: true, OrgTypeMedia: true,
+	OrgTypeCommunity: true,
+}
+
+// validateOrgType returns errpkg.ErrInvalid wrapped with a descriptive
+// message when orgType is non-empty and not in the allow-list.
+func validateOrgType(orgType string) error {
+	if orgType == "" {
+		return nil
+	}
+	if !validOrgTypes[orgType] {
+		return fmt.Errorf("%w: invalid org_type %q", errpkg.ErrInvalid, orgType)
+	}
+	return nil
+}
 
 // CreateOrganizationInput is the input for creating an organization.
 type CreateOrganizationInput struct {
@@ -67,6 +90,27 @@ func (s *Service) CreateOrganization(ctx context.Context, tenantID, userID pgtyp
 	if orgType == "" {
 		orgType = OrgTypeBusiness
 	}
+	if err := validateOrgType(orgType); err != nil {
+		return gen.Organization{}, err
+	}
+
+	// Quantity gate: organizations.max_per_user (0 = none, -1 = unlimited, N = cap).
+	// Ref: japaconnect-engineering/conventions/system-settings-catalog.md
+	if s.settings != nil {
+		maxPerUser, _ := s.settings.GetSettingInt(ctx, tenantID, "organizations.max_per_user")
+		if maxPerUser == 0 {
+			return gen.Organization{}, fmt.Errorf("%w: organization creation is disabled", errpkg.ErrForbidden)
+		}
+		if maxPerUser > 0 {
+			count, err := s.store.CountOrganizationsByOwner(ctx, userID, tenantID)
+			if err != nil {
+				return gen.Organization{}, fmt.Errorf("checking org count: %w", err)
+			}
+			if count >= int64(maxPerUser) {
+				return gen.Organization{}, fmt.Errorf("%w: maximum organizations reached (%d)", errpkg.ErrForbidden, maxPerUser)
+			}
+		}
+	}
 
 	org, err := s.store.CreateOrganization(ctx, gen.CreateOrganizationParams{
 		TenantID:    tenantID,
@@ -93,7 +137,7 @@ func (s *Service) CreateOrganization(ctx context.Context, tenantID, userID pgtyp
 	}
 
 	// Increment member count.
-	if err := s.store.IncrementMemberCount(ctx, org.ID, 1); err != nil {
+	if err := s.store.IncrementMemberCount(ctx, org.ID, tenantID, 1); err != nil {
 		return gen.Organization{}, fmt.Errorf("incrementing member count: %w", err)
 	}
 
@@ -161,13 +205,17 @@ func (s *Service) ListOrganizations(ctx context.Context, tenantID pgtype.UUID, o
 
 // UpdateOrganization updates an organization. Only owner or admin can update.
 func (s *Service) UpdateOrganization(ctx context.Context, id, tenantID, userID pgtype.UUID, input UpdateOrganizationInput) error {
+	if err := validateOrgType(input.OrgType); err != nil {
+		return err
+	}
+
 	role, err := s.store.GetMemberRole(ctx, id, userID)
 	if err != nil {
 		return fmt.Errorf("checking membership: %w", err)
 	}
 
 	if role != MemberRoleOwner && role != MemberRoleAdmin {
-		return errors.New("insufficient permissions")
+		return fmt.Errorf("%w: insufficient permissions", errpkg.ErrForbidden)
 	}
 
 	return s.store.UpdateOrganization(ctx, gen.UpdateOrganizationParams{
@@ -190,7 +238,7 @@ func (s *Service) DeleteOrganization(ctx context.Context, id, tenantID, userID p
 	}
 
 	if role != MemberRoleOwner {
-		return errors.New("only the owner can delete an organization")
+		return fmt.Errorf("%w: only the owner can delete an organization", errpkg.ErrForbidden)
 	}
 
 	return s.store.SoftDeleteOrganization(ctx, id, tenantID)
@@ -208,7 +256,7 @@ func (s *Service) InviteMember(ctx context.Context, orgID, _, invitedBy pgtype.U
 	}
 
 	if role != MemberRoleOwner && role != MemberRoleAdmin {
-		return gen.OrganizationInvitation{}, errors.New("insufficient permissions")
+		return gen.OrganizationInvitation{}, fmt.Errorf("%w: insufficient permissions", errpkg.ErrForbidden)
 	}
 
 	invRole := input.Role
@@ -236,10 +284,25 @@ func (s *Service) ListInvitations(ctx context.Context, orgID, userID pgtype.UUID
 	}
 
 	if role != MemberRoleOwner && role != MemberRoleAdmin {
-		return nil, errors.New("insufficient permissions")
+		return nil, fmt.Errorf("%w: insufficient permissions", errpkg.ErrForbidden)
 	}
 
 	return s.store.ListInvitations(ctx, orgID)
+}
+
+// RevokeInvitation revokes a pending invitation. Only owner or admin can revoke.
+// Ref: japaconnect-engineering/sections/07-organization-profiles-claim-ownership.md
+func (s *Service) RevokeInvitation(ctx context.Context, orgID, userID, invitationID pgtype.UUID) error {
+	role, err := s.store.GetMemberRole(ctx, orgID, userID)
+	if err != nil {
+		return fmt.Errorf("checking membership: %w", err)
+	}
+
+	if role != MemberRoleOwner && role != MemberRoleAdmin {
+		return fmt.Errorf("%w: insufficient permissions", errpkg.ErrForbidden)
+	}
+
+	return s.store.RevokeInvitation(ctx, invitationID, orgID)
 }
 
 // AcceptInvitation accepts an invitation by token and adds the user as a member.
@@ -247,6 +310,12 @@ func (s *Service) AcceptInvitation(ctx context.Context, tokenHash string, userID
 	inv, err := s.store.GetInvitationByToken(ctx, tokenHash)
 	if err != nil {
 		return fmt.Errorf("finding invitation: %w", err)
+	}
+
+	// Fetch the org to get its tenant_id for the tenant-scoped member-count update.
+	org, err := s.store.GetOrganizationByIDOnly(ctx, inv.OrganizationID)
+	if err != nil {
+		return fmt.Errorf("finding organization: %w", err)
 	}
 
 	if err := s.store.AcceptInvitation(ctx, inv.ID, inv.OrganizationID); err != nil {
@@ -261,7 +330,7 @@ func (s *Service) AcceptInvitation(ctx context.Context, tokenHash string, userID
 		return fmt.Errorf("adding member: %w", err)
 	}
 
-	if err := s.store.IncrementMemberCount(ctx, inv.OrganizationID, 1); err != nil {
+	if err := s.store.IncrementMemberCount(ctx, inv.OrganizationID, org.TenantID, 1); err != nil {
 		return fmt.Errorf("incrementing member count: %w", err)
 	}
 
@@ -276,7 +345,7 @@ func (s *Service) RemoveMember(ctx context.Context, orgID, removedBy, targetUser
 	}
 
 	if role != MemberRoleOwner && role != MemberRoleAdmin {
-		return errors.New("insufficient permissions")
+		return fmt.Errorf("%w: insufficient permissions", errpkg.ErrForbidden)
 	}
 
 	// Cannot remove the owner.
@@ -286,14 +355,20 @@ func (s *Service) RemoveMember(ctx context.Context, orgID, removedBy, targetUser
 	}
 
 	if targetRole == MemberRoleOwner {
-		return errors.New("cannot remove the owner")
+		return fmt.Errorf("%w: cannot remove the owner", errpkg.ErrForbidden)
 	}
 
 	if err := s.store.RemoveMember(ctx, orgID, targetUserID); err != nil {
 		return fmt.Errorf("removing member: %w", err)
 	}
 
-	if err := s.store.IncrementMemberCount(ctx, orgID, -1); err != nil {
+	// Fetch the org for tenant-scoped member-count update.
+	org, err := s.store.GetOrganizationByIDOnly(ctx, orgID)
+	if err != nil {
+		return fmt.Errorf("finding organization: %w", err)
+	}
+
+	if err := s.store.IncrementMemberCount(ctx, orgID, org.TenantID, -1); err != nil {
 		return fmt.Errorf("decrementing member count: %w", err)
 	}
 
@@ -313,7 +388,7 @@ func (s *Service) UpdateMemberRole(ctx context.Context, orgID, updatedBy, target
 	}
 
 	if role != MemberRoleOwner {
-		return errors.New("only the owner can change roles")
+		return fmt.Errorf("%w: only the owner can change roles", errpkg.ErrForbidden)
 	}
 
 	if err := s.store.UpdateMemberRole(ctx, gen.UpdateOrganizationMemberRoleParams{
@@ -323,7 +398,10 @@ func (s *Service) UpdateMemberRole(ctx context.Context, orgID, updatedBy, target
 	}); err != nil {
 		return err
 	}
-	// Note: If org membership feeds into RBAC resolution, call InvalidateUserCache here.
+	// Org membership does not feed into RBAC resolution (no org-role-based
+	// permission nodes exist in the seed), so no perm-cache invalidation is
+	// needed here. If org roles ever become RBAC-relevant, call
+	// rbac.InvalidatePermCache(ctx, valkey, targetUserID) here.
 	slog.Info("organization: member role updated", "org_id", orgID.String(), "user_id", targetUserID.String(), "role", newRole)
 	return nil
 }
@@ -347,6 +425,19 @@ func (s *Service) ListOwnershipClaims(ctx context.Context, tenantID pgtype.UUID,
 // GetPendingOwnershipClaims returns pending claims with details (admin).
 func (s *Service) GetPendingOwnershipClaims(ctx context.Context, tenantID pgtype.UUID) ([]gen.GetPendingOwnershipClaimsRow, error) {
 	return s.store.GetPendingOwnershipClaims(ctx, tenantID)
+}
+
+// GetOwnershipClaimByID returns a single claim by ID. The caller must verify
+// the requesting user is the claimant or an admin (handler enforces this).
+// Ref: japaconnect-engineering/sections/07-organization-profiles-claim-ownership.md
+func (s *Service) GetOwnershipClaimByID(ctx context.Context, claimID, tenantID pgtype.UUID) (gen.GetOwnershipClaimByIDRow, error) {
+	return s.store.GetOwnershipClaimByID(ctx, claimID, tenantID)
+}
+
+// WithdrawOwnershipClaim withdraws a pending claim by the claimant.
+// Ref: japaconnect-engineering/sections/07-organization-profiles-claim-ownership.md
+func (s *Service) WithdrawOwnershipClaim(ctx context.Context, claimID, tenantID, claimantUserID pgtype.UUID) error {
+	return s.store.WithdrawOwnershipClaim(ctx, claimID, tenantID, claimantUserID)
 }
 
 // ReviewOwnershipClaim approves or rejects a claim (admin).
@@ -413,8 +504,8 @@ func NowForTest() time.Time {
 
 // GetOrganizationAnalytics returns aggregated analytics for a single org.
 // Ref: japaconnect-engineering/sections/07-organization-profiles-claim-ownership.md
-func (s *Service) GetOrganizationAnalytics(ctx context.Context, orgID, tenantID pgtype.UUID) (gen.GetOrganizationAnalyticsRow, error) {
-	return s.store.GetOrganizationAnalytics(ctx, orgID, tenantID)
+func (s *Service) GetOrganizationAnalytics(ctx context.Context, orgID, tenantID pgtype.UUID, periodDays int32) (gen.GetOrganizationAnalyticsRow, error) {
+	return s.store.GetOrganizationAnalytics(ctx, orgID, tenantID, periodDays)
 }
 
 // ─── Admin methods (bypass ownership checks) ─────────────────────────────
@@ -439,6 +530,9 @@ func (s *Service) AdminGetOrganization(ctx context.Context, id, tenantID pgtype.
 
 // AdminUpdateOrganization updates an organisation without checking membership role.
 func (s *Service) AdminUpdateOrganization(ctx context.Context, id, tenantID pgtype.UUID, input UpdateOrganizationInput) error {
+	if err := validateOrgType(input.OrgType); err != nil {
+		return err
+	}
 	return s.store.UpdateOrganization(ctx, gen.UpdateOrganizationParams{
 		ID:          id,
 		TenantID:    tenantID,

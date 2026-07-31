@@ -26,7 +26,7 @@ func NewService(database *db.DB) *Service {
 }
 
 // ListTags returns every tag for the tenant, alphabetically.
-func (s *Service) ListTags(ctx context.Context, tenantID pgtype.UUID) ([]gen.Tag, error) {
+func (s *Service) ListTags(ctx context.Context, tenantID pgtype.UUID) ([]gen.ListTagsByTenantRow, error) {
 	tags, err := s.read.ListTagsByTenant(ctx, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("listing tags: %w", err)
@@ -35,18 +35,36 @@ func (s *Service) ListTags(ctx context.Context, tenantID pgtype.UUID) ([]gen.Tag
 	return tags, nil
 }
 
-// AdminListTags returns tags filtered by a search query for admin listing.
-func (s *Service) AdminListTags(ctx context.Context, tenantID pgtype.UUID, q string) ([]gen.Tag, error) {
-	tags, err := s.read.AdminListTags(ctx, gen.AdminListTagsParams{TenantID: tenantID, Q: q})
+// ListTagsPaginated returns tags filtered by search, sorted, and offset-paginated.
+func (s *Service) ListTagsPaginated(ctx context.Context, params gen.ListTagsPaginatedParams) ([]gen.ListTagsPaginatedRow, error) {
+	tags, err := s.read.ListTagsPaginated(ctx, params)
+	if err != nil {
+		return nil, fmt.Errorf("listing tags paginated: %w", err)
+	}
+	return tags, nil
+}
+
+// CountTagsPaginated returns the count of tags matching the search query.
+func (s *Service) CountTagsPaginated(ctx context.Context, params gen.CountTagsPaginatedParams) (int, error) {
+	count, err := s.read.CountTagsPaginated(ctx, params)
+	if err != nil {
+		return 0, fmt.Errorf("counting tags paginated: %w", err)
+	}
+	return int(count), nil
+}
+
+// AdminListTags returns tags filtered by search, sort, and offset-paginated for admin listing.
+func (s *Service) AdminListTags(ctx context.Context, params gen.AdminListTagsParams) ([]gen.AdminListTagsRow, error) {
+	tags, err := s.read.AdminListTags(ctx, params)
 	if err != nil {
 		return nil, fmt.Errorf("admin listing tags: %w", err)
 	}
 	return tags, nil
 }
 
-// AdminCountTags returns the count of tags matching a search query.
-func (s *Service) AdminCountTags(ctx context.Context, tenantID pgtype.UUID, q string) (int, error) {
-	count, err := s.read.AdminCountTags(ctx, gen.AdminCountTagsParams{TenantID: tenantID, Q: q})
+// AdminCountTags returns the count of tags matching a search query and filter.
+func (s *Service) AdminCountTags(ctx context.Context, params gen.AdminCountTagsParams) (int, error) {
+	count, err := s.read.AdminCountTags(ctx, params)
 	if err != nil {
 		return 0, fmt.Errorf("admin counting tags: %w", err)
 	}
@@ -54,13 +72,53 @@ func (s *Service) AdminCountTags(ctx context.Context, tenantID pgtype.UUID, q st
 }
 
 // GetTagBySlug returns a single tag by its slug.
-func (s *Service) GetTagBySlug(ctx context.Context, tenantID pgtype.UUID, slug string) (gen.Tag, error) {
+func (s *Service) GetTagBySlug(ctx context.Context, tenantID pgtype.UUID, slug string) (gen.GetTagBySlugRow, error) {
 	tag, err := s.read.GetTagBySlug(ctx, gen.GetTagBySlugParams{TenantID: tenantID, Slug: slug})
 	if err != nil {
-		return gen.Tag{}, fmt.Errorf("getting tag by slug: %w", err)
+		return gen.GetTagBySlugRow{}, fmt.Errorf("getting tag by slug: %w", err)
 	}
 
 	return tag, nil
+}
+
+// GetTagByID returns a single tag by its ID (used by DeleteTag guard).
+func (s *Service) GetTagByID(ctx context.Context, id, tenantID pgtype.UUID) (gen.GetTagByIDRow, error) {
+	tag, err := s.read.GetTagByID(ctx, gen.GetTagByIDParams{ID: id, TenantID: tenantID})
+	if err != nil {
+		return gen.GetTagByIDRow{}, fmt.Errorf("getting tag by id: %w", err)
+	}
+	return tag, nil
+}
+
+// ResolveTagSlugs resolves multiple tag slugs to their IDs in one query (Section 14).
+func (s *Service) ResolveTagSlugs(ctx context.Context, tenantID pgtype.UUID, slugs []string) ([]gen.GetTagsBySlugsRow, error) {
+	rows, err := s.read.GetTagsBySlugs(ctx, gen.GetTagsBySlugsParams{TenantID: tenantID, Slugs: slugs})
+	if err != nil {
+		return nil, fmt.Errorf("resolving tag slugs: %w", err)
+	}
+	return rows, nil
+}
+
+// ResolveTagSlugMap resolves tag slugs to a slug→userID map (content.TagSlugResolver adapter).
+func (s *Service) ResolveTagSlugMap(ctx context.Context, tenantID pgtype.UUID, slugs []string) (map[string]pgtype.UUID, error) {
+	rows, err := s.ResolveTagSlugs(ctx, tenantID, slugs)
+	if err != nil {
+		return nil, err
+	}
+	m := make(map[string]pgtype.UUID, len(rows))
+	for _, row := range rows {
+		m[row.Slug] = row.ID
+	}
+	return m, nil
+}
+
+// CountContentByTag returns the number of content items tagged with the given tag.
+func (s *Service) CountContentByTag(ctx context.Context, tagID pgtype.UUID) (int, error) {
+	count, err := s.read.CountContentByTag(ctx, tagID)
+	if err != nil {
+		return 0, fmt.Errorf("counting content by tag: %w", err)
+	}
+	return int(count), nil
 }
 
 // CreateTagInput holds parameters for creating a tag (catalog: POST /admin/tags).
@@ -69,19 +127,23 @@ type CreateTagInput struct {
 	Slug        string
 	Description *string
 	Color       *string
+	IsSystem    bool
+	LogoMediaID pgtype.UUID
 }
 
 // CreateTag creates a new tag.
-func (s *Service) CreateTag(ctx context.Context, tenantID pgtype.UUID, input CreateTagInput) (gen.Tag, error) {
+func (s *Service) CreateTag(ctx context.Context, tenantID pgtype.UUID, input CreateTagInput) (gen.CreateTagRow, error) {
 	tag, err := s.write.CreateTag(ctx, gen.CreateTagParams{
 		TenantID:    tenantID,
 		Name:        input.Name,
 		Slug:        input.Slug,
 		Description: input.Description,
 		Color:       input.Color,
+		IsSystem:    input.IsSystem,
+		LogoMediaID: input.LogoMediaID,
 	})
 	if err != nil {
-		return gen.Tag{}, fmt.Errorf("creating tag: %w", err)
+		return gen.CreateTagRow{}, fmt.Errorf("creating tag: %w", err)
 	}
 
 	return tag, nil
@@ -92,19 +154,21 @@ type UpdateTagInput struct {
 	Name        string
 	Description *string
 	Color       *string
+	LogoMediaID pgtype.UUID
 }
 
-// UpdateTag updates an existing tag's name/description/color. Slug is immutable.
-func (s *Service) UpdateTag(ctx context.Context, id, tenantID pgtype.UUID, input UpdateTagInput) (gen.Tag, error) {
+// UpdateTag updates an existing tag's name/description/color/logo. Slug is immutable.
+func (s *Service) UpdateTag(ctx context.Context, id, tenantID pgtype.UUID, input UpdateTagInput) (gen.UpdateTagRow, error) {
 	tag, err := s.write.UpdateTag(ctx, gen.UpdateTagParams{
 		ID:          id,
 		TenantID:    tenantID,
 		Name:        input.Name,
 		Description: input.Description,
 		Color:       input.Color,
+		LogoMediaID: input.LogoMediaID,
 	})
 	if err != nil {
-		return gen.Tag{}, fmt.Errorf("updating tag: %w", err)
+		return gen.UpdateTagRow{}, fmt.Errorf("updating tag: %w", err)
 	}
 
 	return tag, nil
@@ -129,14 +193,24 @@ func (s *Service) ListTagModerators(ctx context.Context, tagID, tenantID pgtype.
 	return rows, nil
 }
 
+// AddTagModeratorInput holds parameters for assigning a tag moderator.
+type AddTagModeratorInput struct {
+	TagID            pgtype.UUID
+	UserID           pgtype.UUID
+	TenantID         pgtype.UUID
+	AssignedBy       string
+	AssignedByUserID pgtype.UUID
+}
+
 // AddTagModerator assigns a user as a moderator of a tag (Section 49).
 // Idempotent — re-adding an existing moderator is a no-op refresh.
-func (s *Service) AddTagModerator(ctx context.Context, tagID, userID, tenantID pgtype.UUID) (gen.TagModerator, error) {
+func (s *Service) AddTagModerator(ctx context.Context, input AddTagModeratorInput) (gen.TagModerator, error) {
 	row, err := s.write.AddTagModerator(ctx, gen.AddTagModeratorParams{
-		TenantID:  tenantID,
-		TagID:     tagID,
-		UserID:    userID,
-		AssignedBy: "site_admin",
+		TenantID:         input.TenantID,
+		TagID:            input.TagID,
+		UserID:           input.UserID,
+		AssignedBy:       input.AssignedBy,
+		AssignedByUserID: input.AssignedByUserID,
 	})
 	if err != nil {
 		return gen.TagModerator{}, fmt.Errorf("adding tag moderator: %w", err)

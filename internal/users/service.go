@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db"
@@ -19,6 +20,16 @@ import (
 type Service struct {
 	store *Store
 	db    *db.DB
+	// MediaResolver resolves a media_id to a presigned URL. Optional —
+	// when nil, avatar_media_id/header_media_id fields are stored as-is
+	// without URL resolution (BUG-004).
+	MediaResolver MediaResolver
+}
+
+// MediaResolver resolves a media UUID to a presigned URL.
+// Implemented by the media package; injected at server wiring time.
+type MediaResolver interface {
+	ResolveMediaURL(ctx context.Context, tenantID, mediaID pgtype.UUID) (string, error)
 }
 
 // NewService creates a Service backed by the given database pool.
@@ -68,13 +79,26 @@ func (s *Service) GetProfile(ctx context.Context, tenantID, userID pgtype.UUID) 
 	// to the GeoIP-resolved country).
 	contentCountry, _ := s.GetContentCountry(ctx, tenantID, userID)
 
+	// Map media IDs to strings for the response (BUG-004).
+	var avatarMediaID, headerMediaID *string
+	if p.AvatarMediaID.Valid {
+		s := uuid.UUID(p.AvatarMediaID.Bytes).String()
+		avatarMediaID = &s
+	}
+	if p.HeaderMediaID.Valid {
+		s := uuid.UUID(p.HeaderMediaID.Bytes).String()
+		headerMediaID = &s
+	}
+
 	return &UserProfileResponse{
 		ID:                       p.UserID.String(),
 		Email:                    p.Email,
 		Username:                 p.Username,
 		DisplayName:              p.DisplayName,
 		AvatarURL:                p.AvatarUrl,
+		AvatarMediaID:            avatarMediaID,
 		CoverURL:                 p.CoverUrl,
+		HeaderMediaID:            headerMediaID,
 		Bio:                      p.Bio,
 		Timezone:                 p.Timezone,
 		ProfileType:              p.ProfileType,
@@ -144,6 +168,8 @@ func (s *Service) GetPublicProfileByUsername(ctx context.Context, tenantID pgtyp
 
 // UpdateProfile updates the user profile fields. Only non-nil fields are
 // overwritten; nil fields are left unchanged via a read-then-merge strategy.
+// Supports both URL-based (avatar_url/cover_url) and media-system
+// (avatar_media_id/header_media_id) fields per Section 50 (BUG-004).
 func (s *Service) UpdateProfile(ctx context.Context, tenantID, userID pgtype.UUID, req *UpdateProfileRequest) error {
 	// Read current profile to preserve existing values for omitted fields.
 	current, err := s.store.getProfile(ctx, tenantID, userID)
@@ -177,7 +203,49 @@ func (s *Service) UpdateProfile(ctx context.Context, tenantID, userID pgtype.UUI
 		timezone = req.Timezone
 	}
 
-	if err := s.store.upsertProfile(ctx, tenantID, userID, displayName, avatarURL, coverURL, bio, timezone); err != nil {
+	// Media ID fields (BUG-004): when provided, resolve to URLs via the
+	// MediaResolver (if wired) and store both the media_id and the URL.
+	avatarMediaID := current.AvatarMediaID
+	if req.AvatarMediaID != nil {
+		if *req.AvatarMediaID == "" {
+			avatarMediaID = pgtype.UUID{}
+		} else {
+			var mid pgtype.UUID
+			if err := mid.Scan(*req.AvatarMediaID); err != nil {
+				return fmt.Errorf("invalid avatar_media_id: %w", err)
+			}
+			avatarMediaID = mid
+			// Resolve to URL if a MediaResolver is wired.
+			if s.MediaResolver != nil {
+				url, err := s.MediaResolver.ResolveMediaURL(ctx, tenantID, mid)
+				if err == nil {
+					avatarURL = &url
+				}
+			}
+		}
+	}
+
+	headerMediaID := current.HeaderMediaID
+	if req.HeaderMediaID != nil {
+		if *req.HeaderMediaID == "" {
+			headerMediaID = pgtype.UUID{}
+		} else {
+			var mid pgtype.UUID
+			if err := mid.Scan(*req.HeaderMediaID); err != nil {
+				return fmt.Errorf("invalid header_media_id: %w", err)
+			}
+			headerMediaID = mid
+			// Resolve to URL if a MediaResolver is wired.
+			if s.MediaResolver != nil {
+				url, err := s.MediaResolver.ResolveMediaURL(ctx, tenantID, mid)
+				if err == nil {
+					coverURL = &url
+				}
+			}
+		}
+	}
+
+	if err := s.store.upsertProfile(ctx, tenantID, userID, displayName, avatarURL, coverURL, bio, timezone, avatarMediaID, headerMediaID); err != nil {
 		return fmt.Errorf("updating profile: %w", err)
 	}
 
@@ -240,6 +308,66 @@ func (s *Service) SetContentCountry(ctx context.Context, tenantID, userID pgtype
 // GetContentCountry returns the user's content_country_preference.
 func (s *Service) GetContentCountry(ctx context.Context, tenantID, userID pgtype.UUID) (string, error) {
 	return s.store.GetContentCountryPreference(ctx, tenantID, userID)
+}
+
+// GetUserModerationConfig returns the platform's valid user statuses, profile
+// types, violation types, restriction operations, and restriction durations
+// so the admin frontend does not need to hardcode them (BUG-017 through
+// BUG-021). These are platform constants sourced from the schema CHECK
+// constraints and the moderation subsystem's canonical value sets.
+// Ref: japaconnect-engineering/sections/03-rbac.md (user statuses/profile types)
+//
+//	japaconnect-engineering/sections/46-impersonation.md (moderation)
+func (s *Service) GetUserModerationConfig(ctx context.Context) (*UserModerationConfig, error) {
+	return &UserModerationConfig{
+		// User statuses — mirrors the values used by the users.status column
+		// and surfaced in the admin users filter (BUG-017).
+		Statuses: []ConfigOption{
+			{Value: "active", Label: "Active"},
+			{Value: "pending", Label: "Pending"},
+			{Value: "restricted", Label: "Restricted"},
+			{Value: "suspended", Label: "Suspended"},
+			{Value: "banned", Label: "Banned"},
+			{Value: "deleted", Label: "Deleted"},
+		},
+		// Profile types — mirrors users.profile_type CHECK constraint
+		// (BUG-019).
+		ProfileTypes: []ConfigOption{
+			{Value: "personal", Label: "Personal"},
+			{Value: "business", Label: "Business"},
+			{Value: "organisation", Label: "Organisation"},
+		},
+		// Violation types — canonical moderation violation categories
+		// (BUG-020).
+		ViolationTypes: []ConfigOption{
+			{Value: "spam", Label: "Spam"},
+			{Value: "harassment", Label: "Harassment"},
+			{Value: "misinformation", Label: "Misinformation"},
+			{Value: "hate_speech", Label: "Hate Speech"},
+			{Value: "other", Label: "Other"},
+		},
+		// Restriction operations — the moderation actions that can be
+		// applied to a user (BUG-021).
+		RestrictionOps: []ConfigOption{
+			{Value: "post", Label: "Post"},
+			{Value: "comment", Label: "Comment"},
+			{Value: "discussion", Label: "Discussion"},
+			{Value: "blog", Label: "Blog"},
+			{Value: "message", Label: "Message"},
+		},
+		// Restriction durations — the time-boxed enforcement windows
+		// (BUG-021).
+		RestrictionDurations: []ConfigDuration{
+			{Value: "1h", Label: "1 Hour"},
+			{Value: "2h", Label: "2 Hours"},
+			{Value: "6h", Label: "6 Hours"},
+			{Value: "12h", Label: "12 Hours"},
+			{Value: "1d", Label: "1 Day"},
+			{Value: "7d", Label: "7 Days"},
+			{Value: "30d", Label: "30 Days"},
+			{Value: "permanent", Label: "Permanent"},
+		},
+	}, nil
 }
 
 // ListUsers returns a paginated list of users for admin use, with optional
@@ -315,8 +443,8 @@ func parseString(v interface{}) string {
 }
 
 // GetPrivacySettings returns the user's privacy settings.
-func (s *Service) GetPrivacySettings(ctx context.Context, userID pgtype.UUID) (*PrivacySettings, error) {
-	settings, err := s.store.getUserPrivacySettings(ctx, userID)
+func (s *Service) GetPrivacySettings(ctx context.Context, tenantID, userID pgtype.UUID) (*PrivacySettings, error) {
+	settings, err := s.store.getUserPrivacySettings(ctx, tenantID, userID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return &PrivacySettings{
@@ -340,8 +468,8 @@ func (s *Service) GetPrivacySettings(ctx context.Context, userID pgtype.UUID) (*
 }
 
 // UpdatePrivacySettings updates the user's privacy settings.
-func (s *Service) UpdatePrivacySettings(ctx context.Context, userID pgtype.UUID, req *UpdatePrivacyRequest) error {
-	current, err := s.GetPrivacySettings(ctx, userID)
+func (s *Service) UpdatePrivacySettings(ctx context.Context, tenantID, userID pgtype.UUID, req *UpdatePrivacyRequest) error {
+	current, err := s.GetPrivacySettings(ctx, tenantID, userID)
 	if err != nil {
 		return fmt.Errorf("reading current settings: %w", err)
 	}
@@ -371,12 +499,12 @@ func (s *Service) UpdatePrivacySettings(ctx context.Context, userID pgtype.UUID,
 		showActivity = *req.ShowActivity
 	}
 
-	return s.store.upsertUserPrivacySettings(ctx, userID, dmPrivacy, profileVisibility, searchIndexable, showOnlineStatus, showActivity)
+	return s.store.upsertUserPrivacySettings(ctx, tenantID, userID, dmPrivacy, profileVisibility, searchIndexable, showOnlineStatus, showActivity)
 }
 
 // ListSessions returns the user's active sessions.
-func (s *Service) ListSessions(ctx context.Context, userID pgtype.UUID) ([]SessionInfo, error) {
-	sessions, err := s.store.listUserSessions(ctx, userID)
+func (s *Service) ListSessions(ctx context.Context, tenantID, userID pgtype.UUID) ([]SessionInfo, error) {
+	sessions, err := s.store.listUserSessions(ctx, tenantID, userID)
 	if err != nil {
 		return nil, fmt.Errorf("listing sessions: %w", err)
 	}
@@ -419,24 +547,24 @@ func (s *Service) ListUserActivity(ctx context.Context, tenantID, userID pgtype.
 }
 
 // RevokeSession revokes a specific session.
-func (s *Service) RevokeSession(ctx context.Context, userID, sessionID pgtype.UUID) error {
-	return s.store.revokeUserSession(ctx, sessionID, userID)
+func (s *Service) RevokeSession(ctx context.Context, tenantID, userID, sessionID pgtype.UUID) error {
+	return s.store.revokeUserSession(ctx, tenantID, sessionID, userID)
 }
 
 // RevokeAllSessions revokes all sessions, optionally keeping the current one.
-func (s *Service) RevokeAllSessions(ctx context.Context, userID pgtype.UUID, keepCurrent bool) error {
+func (s *Service) RevokeAllSessions(ctx context.Context, tenantID, userID pgtype.UUID, keepCurrent bool) error {
 	if keepCurrent {
 		// Find the most recently created session to keep.
-		sessions, err := s.store.listUserSessions(ctx, userID)
+		sessions, err := s.store.listUserSessions(ctx, tenantID, userID)
 		if err != nil {
 			return fmt.Errorf("listing sessions: %w", err)
 		}
 		if len(sessions) > 0 {
-			return s.store.revokeAllUserSessions(ctx, userID, sessions[0].ID)
+			return s.store.revokeAllUserSessions(ctx, tenantID, userID, sessions[0].ID)
 		}
 	}
 	// Revoke all by passing a zero UUID (won't match any real session).
-	return s.store.revokeAllUserSessions(ctx, userID, pgtype.UUID{})
+	return s.store.revokeAllUserSessions(ctx, tenantID, userID, pgtype.UUID{})
 }
 
 // ListConnectedAccounts returns the user's linked OAuth accounts.
@@ -576,32 +704,25 @@ type UserAnalytics struct {
 }
 
 // GetUserAnalytics returns aggregated analytics for the user.
+// Uses SQL COUNT queries instead of row iteration (BUG-012).
+// Ref: japaconnect-engineering/sections/40-platform-analytics-site-reports.md
 func (s *Service) GetUserAnalytics(ctx context.Context, tenantID, userID pgtype.UUID) (*UserAnalytics, error) {
-	all, err := s.store.listUserContent(ctx, tenantID, userID, "", 1000, 0)
+	contentCounts, err := s.store.countUserContent(ctx, tenantID, userID)
 	if err != nil {
-		return nil, fmt.Errorf("listing content for analytics: %w", err)
+		return nil, fmt.Errorf("counting user content: %w", err)
 	}
 
-	bookmarks, err := s.store.listUserBookmarks(ctx, userID, 1000, 0)
+	bookmarkCount, err := s.store.countUserBookmarks(ctx, tenantID, userID)
 	if err != nil {
-		return nil, fmt.Errorf("listing bookmarks for analytics: %w", err)
+		return nil, fmt.Errorf("counting user bookmarks: %w", err)
 	}
 
-	analytics := &UserAnalytics{
-		TotalContent:   int32(len(all)),       //nolint:gosec // bounded by query LIMIT
-		TotalBookmarks: int32(len(bookmarks)), //nolint:gosec // bounded by query LIMIT
-	}
-
-	for _, c := range all {
-		switch c.Status {
-		case "draft":
-			analytics.DraftContent++
-		case "published":
-			analytics.PublishedContent++
-		}
-	}
-
-	return analytics, nil
+	return &UserAnalytics{
+		TotalContent:     contentCounts.Total,
+		DraftContent:     contentCounts.DraftCount,
+		PublishedContent: contentCounts.PublishedCount,
+		TotalBookmarks:   bookmarkCount,
+	}, nil
 }
 
 // DeactivateAccount soft-deactivates the user account.
@@ -616,7 +737,7 @@ func (s *Service) SoftDeleteUser(ctx context.Context, tenantID, userID pgtype.UU
 
 // UpdateProfileType changes a user's profile_type (personal, business, organisation).
 func (s *Service) UpdateProfileType(ctx context.Context, tenantID, userID pgtype.UUID, profileType string) error {
-	return s.store.read.UpdateUserProfileType(ctx, gen.UpdateUserProfileTypeParams{
+	return s.store.write.UpdateUserProfileType(ctx, gen.UpdateUserProfileTypeParams{
 		TenantID:    tenantID,
 		ID:          userID,
 		ProfileType: profileType,
@@ -643,4 +764,113 @@ func (s *Service) GetUserFollowerGrowth(ctx context.Context, tenantID, userID pg
 	}
 	from := pgtype.Date{Time: time.Now().AddDate(0, 0, -days), Valid: true}
 	return s.store.getUserFollowerGrowth(ctx, tenantID, userID, &from, nil)
+}
+
+// ---------------------------------------------------------------------------
+// Account management (Section 50: PATCH /me/account)
+// Ref: japaconnect-engineering/sections/50-user-dashboard-settings.md
+// ---------------------------------------------------------------------------
+
+// usernameCooldownDays is the minimum interval between username changes.
+// Section 50: "username (once per 30 days)".
+const usernameCooldownDays = 30
+
+// ErrUsernameCooldown is returned when the user attempts to change their
+// username before the cooldown window has elapsed.
+var ErrUsernameCooldown = errors.New("username change cooldown not elapsed")
+
+// ErrUsernameTaken is returned when the requested username is already in use.
+var ErrUsernameTaken = errors.New("username already taken")
+
+// ErrEmailTaken is returned when the requested email is already in use.
+var ErrEmailTaken = errors.New("email already taken")
+
+// UpdateAccountResult describes the outcome of an account update so the
+// handler can inform the frontend whether email re-verification is needed.
+type UpdateAccountResult struct {
+	UsernameChanged         bool `json:"username_changed"`
+	EmailChanged            bool `json:"email_changed"`
+	EmailVerificationNeeded bool `json:"email_verification_needed"`
+	DisplayNameChanged      bool `json:"display_name_changed"`
+}
+
+// UpdateAccount updates the user's account-level fields (username, email,
+// display_name) per Section 50. Username changes are rate-limited to once
+// per 30 days; email changes reset email_verified_at to NULL (triggering
+// re-verification). All fields are optional (partial update).
+func (s *Service) UpdateAccount(ctx context.Context, tenantID, userID pgtype.UUID, req *UpdateAccountRequest) (*UpdateAccountResult, error) {
+	result := &UpdateAccountResult{}
+
+	// Row-lock the user for the duration of the update to prevent concurrent
+	// account edits from racing on uniqueness checks.
+	acct, err := s.store.getUserAccountForUpdate(ctx, tenantID, userID)
+	if err != nil {
+		return nil, fmt.Errorf("getting account for update: %w", err)
+	}
+
+	// --- Username change (with 30-day cooldown) ---
+	if req.Username != nil {
+		newUsername := strings.TrimSpace(*req.Username)
+		if newUsername == "" {
+			return nil, errors.New("username cannot be empty")
+		}
+		if newUsername != acct.Username {
+			// Enforce 30-day cooldown.
+			if acct.UsernameChangedAt.Valid {
+				elapsed := time.Since(acct.UsernameChangedAt.Time)
+				if elapsed < time.Duration(usernameCooldownDays)*24*time.Hour {
+					return nil, ErrUsernameCooldown
+				}
+			}
+			// Check uniqueness within the tenant.
+			count, err := s.store.usernameExistsForTenant(ctx, tenantID, userID, newUsername)
+			if err != nil {
+				return nil, fmt.Errorf("checking username uniqueness: %w", err)
+			}
+			if count > 0 {
+				return nil, ErrUsernameTaken
+			}
+			if err := s.store.updateUsername(ctx, tenantID, userID, newUsername); err != nil {
+				return nil, fmt.Errorf("updating username: %w", err)
+			}
+			result.UsernameChanged = true
+		}
+	}
+
+	// --- Email change (triggers re-verification) ---
+	if req.Email != nil {
+		newEmail := strings.TrimSpace(strings.ToLower(*req.Email))
+		if newEmail == "" {
+			return nil, errors.New("email cannot be empty")
+		}
+		if newEmail != acct.Email {
+			// Check uniqueness within the tenant.
+			count, err := s.store.emailExistsForTenant(ctx, tenantID, userID, newEmail)
+			if err != nil {
+				return nil, fmt.Errorf("checking email uniqueness: %w", err)
+			}
+			if count > 0 {
+				return nil, ErrEmailTaken
+			}
+			if err := s.store.updateEmail(ctx, tenantID, userID, newEmail); err != nil {
+				return nil, fmt.Errorf("updating email: %w", err)
+			}
+			result.EmailChanged = true
+			result.EmailVerificationNeeded = true
+		}
+	}
+
+	// --- Display name change (delegates to profile upsert) ---
+	if req.DisplayName != nil {
+		newDisplayName := strings.TrimSpace(*req.DisplayName)
+		// Update the display_name on the user_profiles row via the existing
+		// UpdateProfile path (which upserts user_profiles).
+		profileReq := &UpdateProfileRequest{DisplayName: &newDisplayName}
+		if err := s.UpdateProfile(ctx, tenantID, userID, profileReq); err != nil {
+			return nil, fmt.Errorf("updating display name: %w", err)
+		}
+		result.DisplayNameChanged = true
+	}
+
+	return result, nil
 }

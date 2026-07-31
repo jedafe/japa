@@ -28,9 +28,9 @@ func TestExtractMentions(t *testing.T) {
 				"type": "paragraph",
 				"content": [
 					{"type": "text", "text": "Hello "},
-					{"type": "japaMention", "attrs": {"id": "550e8400-e29b-41d4-a716-446655440000", "entity_type": "user", "label": "Alice"}},
+					{"type": "mention", "attrs": {"id": "550e8400-e29b-41d4-a716-446655440000", "entity_type": "user", "label": "Alice"}},
 					{"type": "text", "text": " and "},
-					{"type": "japaMention", "attrs": {"id": "660e8400-e29b-41d4-a716-446655440000", "entity_type": "user", "label": "Bob"}}
+					{"type": "mention", "attrs": {"id": "660e8400-e29b-41d4-a716-446655440000", "entity_type": "user", "label": "Bob"}}
 				]
 			}
 		]
@@ -54,6 +54,110 @@ func TestExtractMentions(t *testing.T) {
 	}
 }
 
+func TestExtractMentions_DefaultsEntityTypeForMentionNode(t *testing.T) {
+	t.Parallel()
+
+	// A "mention" node without entity_type should default to "user"
+	// (the frontend suggestion renderer may omit entity_type).
+	doc := `{
+		"type": "doc",
+		"content": [
+			{
+				"type": "paragraph",
+				"content": [
+					{"type": "mention", "attrs": {"id": "550e8400-e29b-41d4-a716-446655440000", "label": "Alice"}}
+				]
+			}
+		]
+	}`
+
+	mentions, err := ExtractMentions([]byte(doc))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(mentions) != 1 {
+		t.Fatalf("expected 1 mention (default entity_type), got %d", len(mentions))
+	}
+
+	if mentions[0].EntityType != "user" {
+		t.Errorf("EntityType = %s, want user (default)", mentions[0].EntityType)
+	}
+}
+
+func TestExtractMentions_NestedInTable(t *testing.T) {
+	t.Parallel()
+
+	// A mention nested inside a table → tableRow → tableCell → paragraph
+	// must be found by the recursive walker.
+	doc := `{
+		"type": "doc",
+		"content": [
+			{
+				"type": "table",
+				"content": [
+					{
+						"type": "tableRow",
+						"content": [
+							{
+								"type": "tableCell",
+								"content": [
+									{
+										"type": "paragraph",
+										"content": [
+											{"type": "mention", "attrs": {"id": "550e8400-e29b-41d4-a716-446655440000", "entity_type": "user", "label": "Nested"}}
+										]
+									}
+								]
+							}
+						]
+					}
+				]
+			}
+		]
+	}`
+
+	mentions, err := ExtractMentions([]byte(doc))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(mentions) != 1 {
+		t.Fatalf("expected 1 nested mention, got %d", len(mentions))
+	}
+
+	if mentions[0].Label != "Nested" {
+		t.Errorf("Label = %s, want Nested", mentions[0].Label)
+	}
+}
+
+func TestExtractMentions_BareArray(t *testing.T) {
+	t.Parallel()
+
+	// A bare array of top-level nodes (no doc wrapper).
+	doc := `[
+		{
+			"type": "paragraph",
+			"content": [
+				{"type": "mention", "attrs": {"id": "550e8400-e29b-41d4-a716-446655440000", "entity_type": "user", "label": "Bare"}}
+			]
+		}
+	]`
+
+	mentions, err := ExtractMentions([]byte(doc))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(mentions) != 1 {
+		t.Fatalf("expected 1 mention from bare array, got %d", len(mentions))
+	}
+
+	if mentions[0].Label != "Bare" {
+		t.Errorf("Label = %s, want Bare", mentions[0].Label)
+	}
+}
+
 func TestExtractMentions_SkipsNonUser(t *testing.T) {
 	t.Parallel()
 
@@ -63,7 +167,7 @@ func TestExtractMentions_SkipsNonUser(t *testing.T) {
 			{
 				"type": "paragraph",
 				"content": [
-					{"type": "japaMention", "attrs": {"id": "550e8400-e29b-41d4-a716-446655440000", "entity_type": "content", "label": "Post"}}
+					{"type": "mention", "attrs": {"id": "550e8400-e29b-41d4-a716-446655440000", "entity_type": "content", "label": "Post"}}
 				]
 			}
 		]
@@ -81,6 +185,7 @@ func TestExtractMentions_SkipsNonUser(t *testing.T) {
 
 func TestFilterMentions_SkipsAuthor(t *testing.T) {
 	t.Parallel()
+	tenantID := mustUUID(t, "110e8400-e29b-41d4-a716-446655440000")
 	authorID := mustUUID(t, "550e8400-e29b-41d4-a716-446655440000")
 	spaceID := mustUUID(t, "660e8400-e29b-41d4-a716-446655440000")
 
@@ -91,6 +196,7 @@ func TestFilterMentions_SkipsAuthor(t *testing.T) {
 	filtered, err := FilterMentions(
 		t.Context(),
 		mentions,
+		tenantID,
 		authorID,
 		spaceID,
 		false,
@@ -107,6 +213,7 @@ func TestFilterMentions_SkipsAuthor(t *testing.T) {
 
 func TestFilterMentions_SkipsBlocked(t *testing.T) {
 	t.Parallel()
+	tenantID := mustUUID(t, "110e8400-e29b-41d4-a716-446655440000")
 	authorID := mustUUID(t, "550e8400-e29b-41d4-a716-446655440000")
 	mentionedID := mustUUID(t, "660e8400-e29b-41d4-a716-446655440000")
 	spaceID := mustUUID(t, "770e8400-e29b-41d4-a716-446655440000")
@@ -121,6 +228,7 @@ func TestFilterMentions_SkipsBlocked(t *testing.T) {
 	filtered, err := FilterMentions(
 		t.Context(),
 		mentions,
+		tenantID,
 		authorID,
 		spaceID,
 		false,
@@ -137,6 +245,7 @@ func TestFilterMentions_SkipsBlocked(t *testing.T) {
 
 func TestFilterMentions_SkipsNonMemberInPrivateSpace(t *testing.T) {
 	t.Parallel()
+	tenantID := mustUUID(t, "110e8400-e29b-41d4-a716-446655440000")
 	authorID := mustUUID(t, "550e8400-e29b-41d4-a716-446655440000")
 	mentionedID := mustUUID(t, "660e8400-e29b-41d4-a716-446655440000")
 	spaceID := mustUUID(t, "770e8400-e29b-41d4-a716-446655440000")
@@ -151,6 +260,7 @@ func TestFilterMentions_SkipsNonMemberInPrivateSpace(t *testing.T) {
 	filtered, err := FilterMentions(
 		t.Context(),
 		mentions,
+		tenantID,
 		authorID,
 		spaceID,
 		true, // private space
@@ -179,6 +289,6 @@ type mockMemberChecker struct {
 	isMember bool
 }
 
-func (m *mockMemberChecker) IsMember(_ context.Context, _, _ pgtype.UUID) (bool, error) {
+func (m *mockMemberChecker) IsMember(_ context.Context, _, _, _ pgtype.UUID) (bool, error) {
 	return m.isMember, nil
 }

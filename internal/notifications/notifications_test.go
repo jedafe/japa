@@ -16,13 +16,14 @@ func TestNotificationTypeConstants(t *testing.T) {
 
 	want := map[string]string{
 		TypeNewFollower:        "follow.received",
-		TypePostReply:          "post_reply",
-		TypeComment:            "comment",
-		TypeMention:            "mention",
-		TypeReaction:           "reaction",
-		TypeDMMessage:          "dm_message",
-		TypeDMRequest:          "dm_request",
-		TypeSystemAnnouncement: "system_announcement",
+		TypeContentComment:     "content.comment",
+		TypeCommentReply:       "comment.reply",
+		TypeMentionContent:     "mention.content",
+		TypeMentionComment:     "mention.comment",
+		TypeContentReaction:    "content.reaction",
+		TypeDMMessage:          "dm.message",
+		TypeDMRequest:          "dm.request",
+		TypeSystemAnnouncement: "broadcast",
 	}
 	for got, want := range want {
 		if got != want {
