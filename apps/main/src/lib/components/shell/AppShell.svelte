@@ -23,6 +23,8 @@
 		sidebar?: Snippet;
 		/** ADR-058 Exception routes suppress the right sidebar entirely. */
 		hideRightSidebar?: boolean;
+		/** Page Builder blocks for the right sidebar (sitewide). */
+		rightSidebarBlocks?: unknown[];
 	}
 
 	let {
@@ -37,7 +39,8 @@
 		enabledLanguages = 'en,fr',
 		children,
 		sidebar,
-		hideRightSidebar = false
+		hideRightSidebar = false,
+		rightSidebarBlocks = []
 	}: Props = $props();
 
 	let mobileNavOpen = $state(false);
@@ -78,7 +81,7 @@
 
 	{#if !hideRightSidebar}
 		<div class="shell-sidebar">
-			<RightSidebar {user} {trendingTags} {suggestedSpaces} {enabledLanguages} {sidebar} />
+			<RightSidebar {user} {trendingTags} {suggestedSpaces} {enabledLanguages} {sidebar} {rightSidebarBlocks} />
 		</div>
 	{/if}
 </div>

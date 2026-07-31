@@ -1,6 +1,6 @@
 // Package content — Block Template Registry for the Page Builder (Section 16).
 //
-// The registry defines the 15 block types available in the page builder
+// The registry defines the 17 block types available in the page builder
 // front-end. Each block carries sensible default props so the editor can
 // instantiate a new block without a round-trip. Categories group blocks
 // in the picker UI.
@@ -13,6 +13,7 @@ const (
 	BlockCategoryMedia       = "media"
 	BlockCategoryInteractive = "interactive"
 	BlockCategoryData        = "data"
+	BlockCategoryMonetization = "monetization"
 )
 
 // BlockTemplate describes a single block type available in the page builder.
@@ -38,11 +39,11 @@ type BlockTemplateRegistry struct {
 	templates []BlockTemplate
 }
 
-// defaultRegistry is the package-level registry initialised with all 15 block
+// defaultRegistry is the package-level registry initialised with all 17 block
 // types. Constructed via newDefaultRegistry at package init time.
 var defaultRegistry = newDefaultRegistry()
 
-// newDefaultRegistry builds the registry with all 15 block types and their
+// newDefaultRegistry builds the registry with all 17 block types and their
 // default props.
 func newDefaultRegistry() *BlockTemplateRegistry {
 	return &BlockTemplateRegistry{
@@ -247,6 +248,21 @@ func newDefaultRegistry() *BlockTemplateRegistry {
 					"children": []any{},
 				},
 				Category: BlockCategoryLayout,
+			},
+			{
+				Type:        "advertisement",
+				Name:        "Advertisement",
+				Description: "Ad slot supporting Google AdSense, Ezoic, Media.net, or custom HTML",
+				Icon:        "megaphone",
+				DefaultProps: map[string]any{
+					"provider":     "adsense",
+					"slot_id":      "",
+					"format":       "auto",
+					"custom_html":  "",
+					"fallback_url": "",
+					"lazy_load":    true,
+				},
+				Category: BlockCategoryMonetization,
 			},
 		},
 	}

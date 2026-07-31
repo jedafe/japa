@@ -47,6 +47,8 @@
 <AppShell
 	nav={data.nav}
 	accessibleAudiences={data.accessibleAudiences}
+	logoUrl={(data.siteSettings?.["appearance.logo_url"] as string | undefined) ?? ""}
+	footerMenu={data.footerMenu}
 	activeAudience={null}
 	user={data.user}
 	collapsed={data.navCollapsed}

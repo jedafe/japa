@@ -396,6 +396,7 @@ export interface UserGroup {
 	name: string;
 	slug: string;
 	description: string;
+	is_system?: boolean;
 	member_count: number;
 	permissions: string[];
 }
@@ -1108,6 +1109,11 @@ export const pageBuilderAdminApiExtended = {
 	setDefaultTheme: (id: string) =>
 		api<unknown>(`/admin/pagebuilder/themes/${id}/default`, { method: 'POST', body: {} }),
 	deleteTheme: (id: string) => api<{ deleted: boolean }>(`/admin/pagebuilder/themes/${id}`, { method: 'DELETE' }),
+	// Sidebar management (sitewide left/right sidebar blocks)
+	getSidebarConfig: () => api<unknown>('/admin/sidebars'),
+	getSidebar: (position: string) => api<unknown>(`/admin/sidebars/${position}`),
+	updateSidebar: (position: string, body: Record<string, unknown>) =>
+		api<unknown>(`/admin/sidebars/${position}`, { method: 'PATCH', body }),
 };
 
 export const pageTemplatesAdminApiExtended = {
@@ -1243,7 +1249,7 @@ export const menusAdminApi = {
 		api<unknown>(`/admin/menus/${id}/items/${itemId}`, { method: 'PATCH', body }),
 	deleteItem: (id: string, itemId: string) =>
 		api<{ deleted: boolean }>(`/admin/menus/${id}/items/${itemId}`, { method: 'DELETE' }),
-	reorderItems: (id: string, body: { item_ids: string[] }) =>
+	reorderItems: (id: string, body: { items: { id: string; sort_order: number }[] }) =>
 		api<unknown>(`/admin/menus/${id}/items/reorder`, { method: 'POST', body }),
 };
 

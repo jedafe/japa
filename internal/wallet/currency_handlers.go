@@ -117,6 +117,7 @@ func (h *Handlers) ControlCreateCurrency(w http.ResponseWriter, r *http.Request)
 		Symbol          string `json:"symbol"`
 		CreditsPerUnit  int    `json:"credits_per_unit"`
 		Position        int    `json:"position"`
+		Reason          string `json:"reason"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
@@ -138,6 +139,10 @@ func (h *Handlers) ControlCreateCurrency(w http.ResponseWriter, r *http.Request)
 	}
 	if input.CreditsPerUnit <= 0 {
 		writeError(w, http.StatusBadRequest, "invalid_credits_per_unit", "credits_per_unit must be positive")
+		return
+	}
+	if input.Reason == "" {
+		writeError(w, http.StatusBadRequest, "missing_reason", "reason is required for currency adjustments (Section 58)")
 		return
 	}
 
@@ -174,9 +179,15 @@ func (h *Handlers) ControlUpdateCurrency(w http.ResponseWriter, r *http.Request)
 		CreditsPerUnit  int    `json:"credits_per_unit"`
 		IsActive        *bool  `json:"is_active"`
 		Position        int    `json:"position"`
+		Reason          string `json:"reason"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
+
+	if input.Reason == "" {
+		writeError(w, http.StatusBadRequest, "missing_reason", "reason is required for currency adjustments (Section 58)")
 		return
 	}
 
@@ -214,6 +225,16 @@ func (h *Handlers) ControlDeleteCurrency(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	// Reason is required for currency adjustments (Section 58).
+	var input struct {
+		Reason string `json:"reason"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&input)
+	if input.Reason == "" {
+		writeError(w, http.StatusBadRequest, "missing_reason", "reason is required for currency adjustments (Section 58)")
+		return
+	}
+
 	// Check how many country spaces use this currency (for the response).
 	count, _ := h.Service.countSpacesByCurrency(r.Context(), code)
 
@@ -224,9 +245,9 @@ func (h *Handlers) ControlDeleteCurrency(w http.ResponseWriter, r *http.Request)
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
-			"code":             code,
-			"is_active":        false,
-			"spaces_affected":  count,
+			"code":            code,
+			"is_active":       false,
+			"spaces_affected": count,
 		},
 	})
 }

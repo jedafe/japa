@@ -327,5 +327,30 @@ func (s *Service) ReorderBlocks(ctx context.Context, id, tenantID pgtype.UUID, b
 		Blocks:      blocksJSON,
 		Meta:        existing.Meta,
 		Status:      existing.Status,
+		PageType:    existing.PageType,
 	})
+}
+
+// ---------------------------------------------------------------------------
+// Sidebar operations
+// ---------------------------------------------------------------------------
+
+// GetSidebarPage returns the sidebar page for the given position.
+func (s *Service) GetSidebarPage(ctx context.Context, position string, tenantID pgtype.UUID) (Page, error) {
+	return s.store.GetSidebarPage(ctx, position, tenantID)
+}
+
+// UpdateSidebarBlocks updates the blocks array on a sidebar page.
+func (s *Service) UpdateSidebarBlocks(ctx context.Context, position string, tenantID pgtype.UUID, blocks json.RawMessage) (Page, error) {
+	return s.store.UpdateSidebarBlocks(ctx, position, tenantID, blocks)
+}
+
+// UpdateSidebarMeta updates the meta JSONB on a sidebar page.
+func (s *Service) UpdateSidebarMeta(ctx context.Context, position string, tenantID pgtype.UUID, meta json.RawMessage) (Page, error) {
+	return s.store.UpdateSidebarMeta(ctx, position, tenantID, meta)
+}
+
+// GetSidebarConfig returns both sidebar pages in one call.
+func (s *Service) GetSidebarConfig(ctx context.Context, tenantID pgtype.UUID) (map[string]Page, error) {
+	return s.store.GetSidebarConfig(ctx, tenantID)
 }

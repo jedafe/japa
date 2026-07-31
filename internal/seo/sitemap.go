@@ -205,14 +205,22 @@ func (h *SitemapHandler) ValidateSEO(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var title, slug string
-	var canonicalURL *string
+	var metaJSON []byte
 	err := h.reader.QueryRow(r.Context(),
-		`SELECT title, slug, canonical_url FROM contents WHERE id = $1 AND tenant_id = $2`, id, t.ID).
-		Scan(&title, &slug, &canonicalURL)
+		`SELECT title, slug, COALESCE(meta, '{}'::jsonb) FROM pages WHERE id = $1 AND tenant_id = $2`, id, t.ID).
+		Scan(&title, &slug, &metaJSON)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "not_found", "Page not found")
 		return
 	}
+	// Parse the meta JSONB to extract canonical_url and meta_description.
+	var meta struct {
+		CanonicalURL    string `json:"canonical_url"`
+		MetaDescription string `json:"meta_description"`
+		OGTitle         string `json:"og_title"`
+	}
+	_ = json.Unmarshal(metaJSON, &meta)
+
 	issues := []string{}
 	if title == "" {
 		issues = append(issues, "missing_title")
@@ -220,8 +228,14 @@ func (h *SitemapHandler) ValidateSEO(w http.ResponseWriter, r *http.Request) {
 	if slug == "" {
 		issues = append(issues, "missing_slug")
 	}
-	if canonicalURL == nil || *canonicalURL == "" {
+	if meta.CanonicalURL == "" {
 		issues = append(issues, "missing_canonical_url")
+	}
+	if meta.MetaDescription == "" {
+		issues = append(issues, "missing_meta_description")
+	}
+	if meta.OGTitle == "" {
+		issues = append(issues, "missing_og_title")
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{

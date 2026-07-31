@@ -164,6 +164,7 @@ type Page struct {
 	Blocks      json.RawMessage     `json:"blocks"`
 	Meta        json.RawMessage     `json:"meta"`
 	Status      string              `json:"status"`
+	PageType    string              `json:"page_type"`
 	PublishedAt *pgtype.Timestamptz `json:"published_at"`
 	CreatedBy   *pgtype.UUID        `json:"created_by"`
 	CreatedAt   pgtype.Timestamptz  `json:"created_at"`
@@ -180,6 +181,7 @@ type CreatePageInput struct {
 	Blocks      json.RawMessage `json:"blocks"`
 	Meta        json.RawMessage `json:"meta"`
 	Status      string          `json:"status"`
+	PageType    string          `json:"page_type"`
 }
 
 // UpdatePageInput holds parameters for updating a page.
@@ -192,6 +194,7 @@ type UpdatePageInput struct {
 	Blocks      json.RawMessage `json:"blocks"`
 	Meta        json.RawMessage `json:"meta"`
 	Status      string          `json:"status"`
+	PageType    string          `json:"page_type"`
 }
 
 // now returns the current time as a pgtype.Timestamptz.

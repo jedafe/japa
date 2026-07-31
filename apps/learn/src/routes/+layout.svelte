@@ -66,6 +66,7 @@
 
 <AppShell
 	menu={data.menu}
+	footerMenu={data.footerMenu}
 	user={data.user}
 	{collapsed}
 	onToggleCollapse={toggleCollapse}

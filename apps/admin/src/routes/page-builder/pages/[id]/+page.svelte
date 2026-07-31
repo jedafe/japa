@@ -224,7 +224,7 @@
 </script>
 
 <svelte:head>
-	<title>{pageData?.title ?? 'Page Editor'} — JapaConnect Admin</title>
+	<title>{pageData?.title ?? t('page_builder.page_editor', 'Page Editor')} — JapaConnect Admin</title>
 </svelte:head>
 
 {#if loading}
@@ -234,7 +234,7 @@
 {:else if errorMessage && !pageData}
 	<div class="flex h-[calc(100vh-4rem)] flex-col items-center justify-center gap-4">
 		<p class="text-sm" style="color: var(--color-danger)">{errorMessage}</p>
-		<Button variant="ghost" onclick={() => goto('/page-builder/pages')}><ArrowLeft class="mr-2 h-4 w-4" />Back</Button>
+		<Button variant="ghost" onclick={() => goto('/page-builder/pages')}><ArrowLeft class="mr-2 h-4 w-4" />{t('common.back', 'Back')}</Button>
 	</div>
 {:else}
 	<div class="flex h-screen flex-col overflow-hidden">
