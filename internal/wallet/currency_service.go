@@ -55,7 +55,12 @@ func (s *Service) getCurrencyByCode(ctx context.Context, code string) (gen.Curre
 
 // createCurrency creates a new currency.
 func (s *Service) createCurrency(ctx context.Context, p gen.CreateCurrencyParams) (gen.Currency, error) {
-	return s.store.createCurrency(ctx, p)
+	c, err := s.store.createCurrency(ctx, p)
+	if err != nil {
+		return gen.Currency{}, err
+	}
+	s.invalidateCurrenciesCache(ctx)
+	return c, nil
 }
 
 // updateCurrency updates an existing currency.
@@ -66,12 +71,31 @@ func (s *Service) updateCurrency(ctx context.Context, p gen.UpdateCurrencyParams
 	if p.CreditsPerUnit <= 0 {
 		return gen.Currency{}, errors.New("credits_per_unit must be positive")
 	}
-	return s.store.updateCurrency(ctx, p)
+	c, err := s.store.updateCurrency(ctx, p)
+	if err != nil {
+		return gen.Currency{}, err
+	}
+	s.invalidateCurrenciesCache(ctx)
+	return c, nil
 }
 
 // deactivateCurrency soft-deletes a currency.
 func (s *Service) deactivateCurrency(ctx context.Context, code string) error {
-	return s.store.deactivateCurrency(ctx, code)
+	if err := s.store.deactivateCurrency(ctx, code); err != nil {
+		return err
+	}
+	s.invalidateCurrenciesCache(ctx)
+	return nil
+}
+
+// invalidateCurrenciesCache flushes the jc:wallet:currencies:{tenant_id}
+// cache after any currency CRUD operation (Section 58, Rule 4). Currencies
+// are platform-wide, so the root tenant ID is used.
+func (s *Service) invalidateCurrenciesCache(ctx context.Context) {
+	if s.cacheInvalidator == nil {
+		return
+	}
+	_ = s.cacheInvalidator.InvalidateCurrenciesCache(ctx, pgtype.UUID{})
 }
 
 // countSpacesByCurrency returns how many country spaces use a currency.

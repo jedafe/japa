@@ -30,6 +30,13 @@ export const load: LayoutServerLoad = async (event) => {
 		menu = null;
 	}
 
+	let footerMenu: Menu | null = null;
+	try {
+		footerMenu = await apiGet<Menu>(ctx, '/menus/main_footer');
+	} catch {
+		footerMenu = null;
+	}
+
 	let trendingTags: TagSuggestion[] = [];
 	try {
 		trendingTags = (await apiList<TagSuggestion>(ctx, '/suggestions/tags?limit=8')).items;
@@ -42,6 +49,27 @@ export const load: LayoutServerLoad = async (event) => {
 		suggestedSpaces = (await apiList<SpaceSuggestion>(ctx, '/suggestions/spaces?limit=5')).items;
 	} catch {
 		suggestedSpaces = [];
+	}
+
+	// Sitewide sidebar blocks (Page Builder sidebars). Fetched SSR so the
+	// sidebars paint during initial render. Each call degrades gracefully.
+	let leftSidebarBlocks: unknown[] = [];
+	let rightSidebarBlocks: unknown[] = [];
+	let leftSidebarEnabled = true;
+	let rightSidebarEnabled = true;
+	try {
+		const leftRes = await apiGet<{ blocks?: unknown[]; meta?: Record<string, unknown> }>(ctx, '/sidebars/left');
+		leftSidebarBlocks = leftRes.blocks ?? [];
+		leftSidebarEnabled = leftRes.meta?.show_left_sidebar !== false;
+	} catch {
+		// sidebar endpoint not available — keep defaults
+	}
+	try {
+		const rightRes = await apiGet<{ blocks?: unknown[]; meta?: Record<string, unknown> }>(ctx, '/sidebars/right');
+		rightSidebarBlocks = rightRes.blocks ?? [];
+		rightSidebarEnabled = rightRes.meta?.show_right_sidebar !== false;
+	} catch {
+		// sidebar endpoint not available — keep defaults
 	}
 
 	// Authed-only: the user's joined spaces for the LeftNav Space switcher.
@@ -75,10 +103,15 @@ export const load: LayoutServerLoad = async (event) => {
 		csrfToken: event.locals.csrfToken ?? null,
 		siteSettings,
 		menu,
+		footerMenu,
 		trendingTags,
 		suggestedSpaces,
 		userSpaces,
 		navCollapsed: user?.ui?.nav_collapsed ?? false,
-		unreadNotifications
+		unreadNotifications,
+		leftSidebarBlocks,
+		rightSidebarBlocks,
+		leftSidebarEnabled,
+		rightSidebarEnabled
 	};
 };

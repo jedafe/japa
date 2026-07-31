@@ -1384,22 +1384,23 @@ type Menu struct {
 }
 
 type MenuItem struct {
-	ID             pgtype.UUID        `json:"id"`
-	TenantID       pgtype.UUID        `json:"tenant_id"`
-	MenuID         pgtype.UUID        `json:"menu_id"`
-	ParentID       pgtype.UUID        `json:"parent_id"`
-	Label          string             `json:"label"`
-	Url            string             `json:"url"`
-	Icon           *string            `json:"icon"`
-	SortOrder      int32              `json:"sort_order"`
-	PermissionNode *string            `json:"permission_node"`
-	Visibility     string             `json:"visibility"`
-	Target         string             `json:"target"`
-	IsAdSlot       bool               `json:"is_ad_slot"`
-	AdSlotConfig   []byte             `json:"ad_slot_config"`
-	Status         string             `json:"status"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	ID               pgtype.UUID        `json:"id"`
+	TenantID         pgtype.UUID        `json:"tenant_id"`
+	MenuID           pgtype.UUID        `json:"menu_id"`
+	ParentID         pgtype.UUID        `json:"parent_id"`
+	Label            string             `json:"label"`
+	Url              string             `json:"url"`
+	Icon             *string            `json:"icon"`
+	SortOrder        int32              `json:"sort_order"`
+	PermissionNode   *string            `json:"permission_node"`
+	Visibility       string             `json:"visibility"`
+	Target           string             `json:"target"`
+	IsAdSlot         bool               `json:"is_ad_slot"`
+	AdSlotConfig     []byte             `json:"ad_slot_config"`
+	Status           string             `json:"status"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+	RequiredGroupIds []byte             `json:"required_group_ids"`
 }
 
 type ModerationAlert struct {

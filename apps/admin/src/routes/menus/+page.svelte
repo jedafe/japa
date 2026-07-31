@@ -8,26 +8,41 @@
 	import { TableSkeleton } from "$lib/components/ui/skeleton";
 	import { Plus, Pencil, Trash2, RefreshCw, ArrowUp, ArrowDown, Menu as MenuIcon } from "lucide-svelte";
 	import { Select } from '$lib/components/ui/select';
-	import { menusAdminApi } from "$lib/api";
+	import IconPicker from '$lib/components/ui/icon-picker.svelte';
+	import { menusAdminApi, userManagementApi, type UserGroup } from "$lib/api";
+	import { suggestRoutes } from "$lib/data/routes";
 	import { t } from "$lib/stores/i18n.svelte";
 	import { hasPermission } from "$lib/stores/permissions.svelte";
 
 	type MenuItem = {
 		id: string;
+		tenant_id: string;
+		menu_id: string;
+		parent_id?: string | null;
 		label: string;
 		url: string;
-		parent_id?: string | null;
+		icon?: string | null;
 		sort_order: number;
-		is_visible: boolean;
+		permission_node?: string | null;
+		required_group_ids?: string[];
+		visibility: string;
+		target: string;
+		is_ad_slot: boolean;
+		ad_slot_config?: Record<string, unknown> | null;
+		status: string;
+		children?: MenuItem[];
 	};
 
 	type Menu = {
 		id: string;
-		name: string;
+		tenant_id: string;
 		slug: string;
-		location: string;
-		items?: MenuItem[];
+		name: string;
+		placement: string;
+		status: string;
 		created_at: string;
+		updated_at: string;
+		items?: MenuItem[];
 	};
 
 	let menus = $state<Menu[]>([]);
@@ -42,7 +57,7 @@
 	let savingMenu = $state(false);
 	let menuName = $state("");
 	let menuSlug = $state("");
-	let menuLocation = $state("");
+	let menuPlacement = $state<string>("sidebar");
 
 	// Item modal state
 	let showItemModal = $state(false);
@@ -51,8 +66,24 @@
 	let itemLabel = $state("");
 	let itemUrl = $state("");
 	let itemParent = $state("");
-	let itemVisible = $state(true);
+	let itemVisibility = $state<string>("all");
+	let itemTarget = $state<string>("_self");
+	let itemIcon = $state("");
+	let itemPermissionNode = $state("");
+	let itemRequiredGroupIds = $state<Set<string>>(new Set());
 	let activeMenuForItems = $state<Menu | null>(null);
+
+	// User groups for the required_group_ids multi-select
+	let userGroups = $state<UserGroup[]>([]);
+
+	// Group autocomplete state
+	let groupSearch = $state("");
+	let groupDropdownOpen = $state(false);
+	let groupDebounce: ReturnType<typeof setTimeout> | null = null;
+
+	// URL combobox state
+	let urlSearch = $state("");
+	let urlDropdownOpen = $state(false);
 
 	// Selected menu for viewing items
 	let selectedMenu = $state<Menu | null>(null);
@@ -63,41 +94,112 @@
 
 	const canManageMenus = $derived(hasPermission("menus.manage"));
 
-	function viewMenuItems(menu: Menu) {
-		selectedMenu = menu;
+	// Collect all existing URLs from loaded menus' items (to merge with route list)
+	const existingUrlSet = $derived.by(() => {
+		const urls = new Set<string>();
+		for (const item of selectedMenu?.items ?? []) {
+			if (item.url) urls.add(item.url);
+		}
+		for (const m of menus) {
+			for (const item of m.items ?? []) {
+				if (item.url) urls.add(item.url);
+			}
+		}
+		return urls;
+	});
+
+	// URL suggestions: all JapaConnect routes + any custom URLs from existing items
+	const urlSuggestions = $derived(
+		suggestRoutes(urlSearch, new Set([itemUrl]))
+			// Also include custom URLs from existing items that aren't in the routes list
+			.concat([...existingUrlSet].filter((u) => !suggestRoutes('', new Set()).includes(u) && u !== itemUrl && (!urlSearch || u.toLowerCase().includes(urlSearch.toLowerCase()))))
+			.slice(0, 20)
+	);
+
+	async function loadUserGroups() {
+		try {
+			const result = await userManagementApi.listGroups();
+			if (result.ok) {
+				userGroups = ((result.data as { groups: UserGroup[] })?.groups) ?? [];
+			}
+		} catch {
+			userGroups = [];
+		}
 	}
 
-	const menuColumns = [
+	// Selected group objects for chip rendering
+	const selectedGroupObjs = $derived(
+		userGroups.filter((g) => itemRequiredGroupIds.has(g.id))
+	);
+
+	// Filtered suggestions for the autocomplete dropdown (excludes already-selected)
+	const groupSuggestions = $derived(
+		groupSearch.trim()
+			? userGroups.filter(
+					(g) =>
+						!itemRequiredGroupIds.has(g.id) &&
+						(g.name.toLowerCase().includes(groupSearch.toLowerCase()) ||
+							g.slug.toLowerCase().includes(groupSearch.toLowerCase()))
+				).slice(0, 10)
+			: userGroups.filter((g) => !itemRequiredGroupIds.has(g.id)).slice(0, 10)
+	);
+
+	function handleGroupInput(e: Event) {
+		const target = e.target as HTMLInputElement;
+		groupSearch = target.value;
+		if (groupDebounce) clearTimeout(groupDebounce);
+		groupDebounce = setTimeout(() => {
+			groupDropdownOpen = true;
+		}, 200);
+	}
+
+	function addGroup(groupId: string) {
+		const next = new Set(itemRequiredGroupIds);
+		next.add(groupId);
+		itemRequiredGroupIds = next;
+		groupSearch = "";
+	}
+
+	function removeGroup(groupId: string) {
+		const next = new Set(itemRequiredGroupIds);
+		next.delete(groupId);
+		itemRequiredGroupIds = next;
+	}
+
+	const menuColumns = $derived([
 		{ key: "name", label: t("menus.name", "Name"), sortable: true },
 		{ key: "slug", label: t("menus.slug", "Slug"), sortable: true },
-		{ key: "location", label: t("menus.location", "Location"), sortable: true },
-		{
-			key: "items_count",
-			label: t("menus.items", "Items"),
-			sortable: true,
-			render: (_: any, row: Menu) => String(row.items?.length ?? 0)
+		{ key: "placement", label: t("menus.placement", "Placement"), sortable: true,
+			render: (v: string) => t(`menus.placement_${v}`, v)
+		},
+		{ key: "status", label: t("common.status", "Status"), sortable: true,
+			render: (v: string) => t(`common.status_${v}`, v)
 		},
 		{ key: "actions", label: t("common.actions", "Actions"), class: "w-40",
 			componentSnippet: MenuActionsCell
 		}
-	];
+	]);
 
-	const itemColumns = [
+	const itemColumns = $derived([
 		{ key: "label", label: t("menus.item_label", "Label"), sortable: true },
 		{ key: "url", label: t("menus.item_url", "URL"), sortable: true },
-		{ key: "is_visible", label: t("common.visible", "Visible"), sortable: true,
-			render: (v: boolean) => v ? t("common.yes", "Yes") : t("common.no", "No")
+		{ key: "visibility", label: t("menus.visibility", "Visibility"), sortable: true,
+			render: (v: string) => t(`menus.visibility_${v}`, v)
+		},
+		{ key: "target", label: t("menus.target", "Target"), sortable: true,
+			render: (v: string) => v === "_blank" ? t("menus.target_blank", "New tab") : t("menus.target_self", "Same tab")
 		},
 		{ key: "actions", label: t("common.actions", "Actions"), class: "w-48",
 			componentSnippet: ItemActionsCell
 		}
-	];
+	]);
 
-	async function loadMenus() {
+	async function loadMenus(searchQuery?: string) {
 		loading = true;
 		error = "";
 		try {
-			const result = await menusAdminApi.list();
+			const params = searchQuery ? `q=${encodeURIComponent(searchQuery)}` : undefined;
+			const result = await menusAdminApi.list(params);
 			if (result.ok) {
 				menus = ((result.data as { items: Menu[] })?.items) ?? [];
 			} else {
@@ -110,13 +212,32 @@
 		}
 	}
 
+	async function viewMenuItems(menu: Menu) {
+		loading = true;
+		error = "";
+		try {
+			const result = await menusAdminApi.get(menu.id);
+			if (result.ok) {
+				selectedMenu = result.data as Menu;
+			} else {
+				selectedMenu = menu;
+				error = result.error ?? t("common.error", "Failed to load menu items");
+			}
+		} catch (e) {
+			selectedMenu = menu;
+			error = e instanceof Error ? e.message : t("common.error", "Failed to load menu items");
+		} finally {
+			loading = false;
+		}
+	}
+
 	// Menu CRUD
 	function openCreateMenu() {
 		menuModalMode = "create";
 		editingMenu = null;
 		menuName = "";
 		menuSlug = "";
-		menuLocation = "";
+		menuPlacement = "sidebar";
 		showMenuModal = true;
 	}
 
@@ -126,7 +247,7 @@
 		editingMenu = menu;
 		menuName = menu.name;
 		menuSlug = menu.slug;
-		menuLocation = menu.location;
+		menuPlacement = menu.placement || "sidebar";
 		showMenuModal = true;
 	}
 
@@ -138,7 +259,7 @@
 			const body = {
 				name: menuName.trim(),
 				slug: menuSlug.trim().toLowerCase().replace(/\s+/g, "-"),
-				location: menuLocation.trim()
+				placement: menuPlacement
 			};
 			const result = editingMenu
 				? await menusAdminApi.update(editingMenu.id, body)
@@ -187,8 +308,15 @@
 		editingItem = null;
 		itemLabel = "";
 		itemUrl = "";
+		urlSearch = "";
 		itemParent = "";
-		itemVisible = true;
+		itemVisibility = "all";
+		itemTarget = "_self";
+		itemIcon = "";
+		itemPermissionNode = "";
+		itemRequiredGroupIds = new Set();
+		groupSearch = "";
+		groupDropdownOpen = false;
 		showItemModal = true;
 	}
 
@@ -200,8 +328,15 @@
 		editingItem = item;
 		itemLabel = item.label;
 		itemUrl = item.url;
+		urlSearch = "";
 		itemParent = item.parent_id ?? "";
-		itemVisible = item.is_visible;
+		itemVisibility = item.visibility || "all";
+		itemTarget = item.target || "_self";
+		itemIcon = item.icon ?? "";
+		itemPermissionNode = item.permission_node ?? "";
+		itemRequiredGroupIds = new Set(item.required_group_ids ?? []);
+		groupSearch = "";
+		groupDropdownOpen = false;
 		showItemModal = true;
 	}
 
@@ -210,11 +345,15 @@
 		savingItem = true;
 		error = "";
 		try {
-			const body = {
+			const body: Record<string, unknown> = {
 				label: itemLabel.trim(),
 				url: itemUrl.trim(),
 				parent_id: itemParent || null,
-				is_visible: itemVisible
+				visibility: itemVisibility,
+				target: itemTarget,
+				icon: itemIcon.trim() || null,
+				permission_node: itemPermissionNode.trim() || null,
+				required_group_ids: [...itemRequiredGroupIds]
 			};
 			const result = editingItem
 				? await menusAdminApi.updateItem(activeMenuForItems.id, editingItem.id, body)
@@ -223,10 +362,12 @@
 			if (result.ok) {
 				showItemModal = false;
 				success = editingItem ? t("menus.item_updated", "Item updated") : t("menus.item_created", "Item created");
+				// Re-fetch the selected menu to get the updated items tree
+				const refreshed = await menusAdminApi.get(activeMenuForItems.id);
+				if (refreshed.ok) {
+					selectedMenu = refreshed.data as Menu;
+				}
 				await loadMenus();
-				// Refresh selected menu
-				const refreshed = menus.find((m) => m.id === activeMenuForItems?.id);
-				if (refreshed) selectedMenu = refreshed;
 			} else {
 				error = result.error ?? t("common.error", "Failed to save item");
 			}
@@ -250,9 +391,12 @@
 			showDeleteItemConfirm = false;
 			deleteItemTarget = null;
 			success = t("menus.item_deleted", "Item deleted");
+			// Re-fetch the selected menu to get the updated items tree
+			const refreshed = await menusAdminApi.get(selectedMenu.id);
+			if (refreshed.ok) {
+				selectedMenu = refreshed.data as Menu;
+			}
 			await loadMenus();
-			const refreshed = menus.find((m) => m.id === selectedMenu?.id);
-			if (refreshed) selectedMenu = refreshed;
 		} else {
 			error = result.error ?? t("common.error", "Failed to delete item");
 		}
@@ -267,13 +411,16 @@
 
 		const reordered = [...items];
 		[reordered[idx], reordered[swapIdx]] = [reordered[swapIdx], reordered[idx]];
-		const itemIds = reordered.map((i) => i.id);
+		const reorderItems = reordered.map((i, sortIdx) => ({ id: i.id, sort_order: sortIdx }));
 
-		const result = await menusAdminApi.reorderItems(selectedMenu.id, { item_ids: itemIds });
+		const result = await menusAdminApi.reorderItems(selectedMenu.id, { items: reorderItems });
 		if (result.ok) {
+			// Re-fetch the selected menu to get the updated items tree
+			const refreshed = await menusAdminApi.get(selectedMenu.id);
+			if (refreshed.ok) {
+				selectedMenu = refreshed.data as Menu;
+			}
 			await loadMenus();
-			const refreshed = menus.find((m) => m.id === selectedMenu?.id);
-			if (refreshed) selectedMenu = refreshed;
 		} else {
 			error = result.error ?? t("common.error", "Failed to reorder items");
 		}
@@ -282,6 +429,29 @@
 	function backToMenus() {
 		selectedMenu = null;
 		selectedItemIds = new Set();
+	}
+
+	async function refreshPage() {
+		if (selectedMenu) {
+			// In items view: re-fetch the selected menu's items tree, then the list
+			loading = true;
+			error = "";
+			try {
+				const result = await menusAdminApi.get(selectedMenu.id);
+				if (result.ok) {
+					selectedMenu = result.data as Menu;
+				} else {
+					error = result.error ?? t("common.error", "Failed to load menu items");
+				}
+				await loadMenus();
+			} catch (e) {
+				error = e instanceof Error ? e.message : t("common.error", "Failed to load menu items");
+			} finally {
+				loading = false;
+			}
+		} else {
+			await loadMenus();
+		}
 	}
 
 	async function bulkDeleteMenus() {
@@ -309,9 +479,12 @@
 				await menusAdminApi.deleteItem(selectedMenu.id, itemId);
 			}
 			selectedItemIds = new Set();
+			// Re-fetch the selected menu to get the updated items tree
+			const refreshed = await menusAdminApi.get(selectedMenu.id);
+			if (refreshed.ok) {
+				selectedMenu = refreshed.data as Menu;
+			}
 			await loadMenus();
-			const refreshed = menus.find((m) => m.id === selectedMenu?.id);
-			if (refreshed) selectedMenu = refreshed;
 		} catch {
 			error = t("common.error", "Failed to delete items");
 		}
@@ -319,6 +492,7 @@
 	}
 
 	loadMenus();
+	loadUserGroups();
 </script>
 
 <svelte:head>
@@ -331,7 +505,7 @@
 	actions={[
 		...(selectedMenu ? [{ label: t("menus.back", "Back to Menus"), icon: MenuIcon, variant: "ghost" as const, onclick: backToMenus }] : []),
 		...(canManageMenus ? [{ label: selectedMenu ? t("menus.add_item", "Add Item") : t("menus.create", "Create Menu"), icon: Plus, onclick: selectedMenu ? openCreateItem : openCreateMenu }] : []),
-		{ label: t("common.refresh", "Refresh"), icon: RefreshCw, variant: "ghost" as const, onclick: loadMenus }
+		{ label: t("common.refresh", "Refresh"), icon: RefreshCw, variant: "ghost" as const, onclick: refreshPage }
 	]}
 />
 
@@ -356,8 +530,7 @@
 					{t("menus.empty", "No menus found")}
 				</div>
 			{:else}
-				<!-- wire the search box to re-fetch menus; API ignores q today (see report) -->
-				<DataTable columns={menuColumns} data={menus} pageSize={10} searchable onsearch={() => loadMenus()} selectable bind:selectedIds={selectedMenuIds}>
+				<DataTable columns={menuColumns} data={menus} pageSize={10} searchable onsearch={(q) => loadMenus(q)} selectable bind:selectedIds={selectedMenuIds}>
 					{#snippet bulkActions()}
 						<Button variant="destructive" size="sm" onclick={bulkDeleteMenus} disabled={bulkDeleting || selectedMenuIds.size === 0}>
 							<Trash2 class="h-3.5 w-3.5 mr-1" />
@@ -408,8 +581,18 @@
 			<input id="menu-slug" type="text" bind:value={menuSlug} class="mt-1 w-full rounded-lg border p-2 text-sm font-mono" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" placeholder="primary-nav" />
 		</div>
 		<div>
-			<label for="menu-location" class="block text-sm font-medium" style="color: var(--color-foreground)">{t("menus.location", "Location")}</label>
-			<input id="menu-location" type="text" bind:value={menuLocation} class="mt-1 w-full rounded-lg border p-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" placeholder="header" />
+			<label for="menu-placement" class="block text-sm font-medium" style="color: var(--color-foreground)">{t("menus.placement", "Placement")}</label>
+			<Select
+				options={[
+					{ value: "sidebar", label: t("menus.placement_sidebar", "Sidebar") },
+					{ value: "bottom_bar", label: t("menus.placement_bottom_bar", "Bottom Bar") },
+					{ value: "dropdown", label: t("menus.placement_dropdown", "Dropdown") },
+					{ value: "footer", label: t("menus.placement_footer", "Footer") },
+					{ value: "header", label: t("menus.placement_header", "Header") }
+				]}
+				value={menuPlacement}
+				onchange={(val) => (menuPlacement = val)}
+			/>
 		</div>
 	</div>
 	<div class="mt-4 flex justify-end gap-2">
@@ -422,17 +605,46 @@
 
 <!-- Item Create/Edit Modal -->
 <Modal bind:open={showItemModal} title={editingItem ? t("menus.edit_item", "Edit Item") : t("menus.add_item", "Add Item")}>
-	<div class="space-y-4">
+	<div class="grid grid-cols-2 gap-4">
 		<div>
 			<label for="item-label" class="block text-sm font-medium" style="color: var(--color-foreground)">{t("menus.item_label", "Label")}</label>
 			<input id="item-label" type="text" bind:value={itemLabel} class="mt-1 w-full rounded-lg border p-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" placeholder="Home" />
 		</div>
 		<div>
+			<label class="block text-sm font-medium" style="color: var(--color-foreground)">{t("menus.icon", "Icon")}</label>
+			<div class="mt-1">
+				<IconPicker bind:value={itemIcon} />
+			</div>
+		</div>
+		<div class="col-span-2">
 			<label for="item-url" class="block text-sm font-medium" style="color: var(--color-foreground)">{t("menus.item_url", "URL")}</label>
-			<input id="item-url" type="text" bind:value={itemUrl} class="mt-1 w-full rounded-lg border p-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" placeholder="/" />
+			<div class="relative mt-1">
+				<input
+					id="item-url"
+					type="text"
+					bind:value={itemUrl}
+					oninput={() => { urlSearch = itemUrl; urlDropdownOpen = true; }}
+					onfocus={() => { urlSearch = itemUrl; urlDropdownOpen = true; }}
+					onblur={() => setTimeout(() => (urlDropdownOpen = false), 200)}
+					class="w-full rounded-lg border p-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" placeholder="/" />
+				{#if urlDropdownOpen && urlSuggestions.length > 0}
+					<div class="absolute z-50 mt-1 max-h-48 w-full overflow-auto rounded-lg border shadow-lg" style="border-color: var(--color-border); background: var(--color-surface)">
+						{#each urlSuggestions.slice(0, 10) as suggestedUrl}
+							<button
+								type="button"
+								class="block w-full px-3 py-1.5 text-left text-sm hover:opacity-80"
+								style="color: var(--color-foreground)"
+								onclick={() => { itemUrl = suggestedUrl; urlDropdownOpen = false; }}
+							>
+								{suggestedUrl}
+							</button>
+						{/each}
+					</div>
+				{/if}
+			</div>
 		</div>
 		{#if selectedMenu && (selectedMenu.items ?? []).length > 0}
-			<div>
+			<div class="col-span-2">
 				<label for="item-parent" class="block text-sm font-medium" style="color: var(--color-foreground)">{t("menus.parent", "Parent")}</label>
 				<Select
 					options={[
@@ -447,9 +659,92 @@
 				/>
 			</div>
 		{/if}
-		<div class="flex items-center gap-2">
-			<input id="item-visible" type="checkbox" bind:checked={itemVisible} class="h-4 w-4 rounded" style="accent-color: var(--color-primary)" />
-			<label for="item-visible" class="text-sm font-medium" style="color: var(--color-foreground)">{t("common.visible", "Visible")}</label>
+		<div>
+			<label for="item-visibility" class="block text-sm font-medium" style="color: var(--color-foreground)">{t("menus.visibility", "Visibility")}</label>
+			<Select
+				options={[
+					{ value: "all", label: t("menus.visibility_all", "All") },
+					{ value: "authenticated", label: t("menus.visibility_authenticated", "Authenticated") },
+					{ value: "guest", label: t("menus.visibility_guest", "Guest") }
+				]}
+				value={itemVisibility}
+				onchange={(val) => (itemVisibility = val)}
+			/>
+		</div>
+		<div>
+			<label for="item-target" class="block text-sm font-medium" style="color: var(--color-foreground)">{t("menus.target", "Target")}</label>
+			<Select
+				options={[
+					{ value: "_self", label: t("menus.target_self", "Same tab") },
+					{ value: "_blank", label: t("menus.target_blank", "New tab") }
+				]}
+				value={itemTarget}
+				onchange={(val) => (itemTarget = val)}
+			/>
+		</div>
+		<div class="col-span-2">
+			<label class="block text-sm font-medium" style="color: var(--color-foreground)">{t("menus.required_groups", "Required User Groups")}</label>
+			<p class="mt-0.5 text-xs" style="color: var(--color-muted)">{t("menus.required_groups_hint", "Item is visible only to users in at least one selected group. Leave empty for everyone.")}</p>
+			<div class="relative mt-1">
+				<div
+					class="flex flex-wrap items-center gap-1 w-full rounded-lg border p-1.5 min-h-[2.5rem]"
+					style="border-color: var(--color-border); background: var(--color-surface)"
+				>
+					{#each selectedGroupObjs as group (group.id)}
+						<span class="inline-flex items-center gap-1 rounded px-2 py-0.5 text-xs" style="background: color-mix(in srgb, var(--color-primary) 15%, transparent); color: var(--color-foreground)">
+							{group.name}
+							<button
+								type="button"
+								class="ml-0.5 opacity-60 hover:opacity-100"
+								style="color: var(--color-foreground)"
+								onclick={() => removeGroup(group.id)}
+								aria-label={t("common.remove", "Remove")}
+							>
+								&times;
+							</button>
+						</span>
+					{/each}
+					<input
+						type="text"
+						value={groupSearch}
+						oninput={handleGroupInput}
+						onfocus={() => { groupDropdownOpen = true; }}
+						onblur={() => setTimeout(() => (groupDropdownOpen = false), 200)}
+						onkeydown={(e) => {
+							if (e.key === "Escape") groupDropdownOpen = false;
+							else if (e.key === "Enter" && groupSuggestions.length > 0) {
+								e.preventDefault();
+								addGroup(groupSuggestions[0].id);
+							} else if (e.key === "Backspace" && !groupSearch && selectedGroupObjs.length > 0) {
+								removeGroup(selectedGroupObjs[selectedGroupObjs.length - 1].id);
+							}
+						}}
+						class="flex-1 min-w-[8rem] bg-transparent border-0 outline-none text-sm py-1 px-1"
+						style="color: var(--color-foreground)"
+						placeholder={itemRequiredGroupIds.size === 0 ? t("menus.search_groups", "Search groups...") : ""}
+					/>
+				</div>
+				{#if groupDropdownOpen && groupSuggestions.length > 0}
+					<ul class="absolute z-[60] mt-1 max-h-48 w-full overflow-auto rounded-lg border shadow-lg" style="border-color: var(--color-border); background: var(--color-surface)">
+						{#each groupSuggestions as group (group.id)}
+							<li>
+								<button
+									type="button"
+									class="w-full px-3 py-2 text-left text-sm hover:bg-black/5 dark:hover:bg-white/10 flex items-center gap-2"
+									style="color: var(--color-foreground)"
+									onmousedown={(e) => { e.preventDefault(); addGroup(group.id); }}
+								>
+									<span>{group.name}</span>
+									{#if group.is_system ?? false}
+										<span class="text-xs px-1.5 py-0.5 rounded" style="background: var(--color-muted); color: var(--color-surface)">system</span>
+									{/if}
+									<span class="ml-auto text-xs" style="color: var(--color-muted)">{group.member_count ?? 0}</span>
+								</button>
+							</li>
+						{/each}
+					</ul>
+				{/if}
+			</div>
 		</div>
 	</div>
 	<div class="mt-4 flex justify-end gap-2">

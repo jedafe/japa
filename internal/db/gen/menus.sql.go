@@ -86,31 +86,53 @@ func (q *Queries) CreateMenu(ctx context.Context, arg CreateMenuParams) (Menu, e
 
 const createMenuItem = `-- name: CreateMenuItem :one
 INSERT INTO menu_items (tenant_id, menu_id, parent_id, label, url, icon,
-    sort_order, permission_node, visibility, target, is_ad_slot, ad_slot_config)
+    sort_order, permission_node, visibility, target, is_ad_slot, ad_slot_config,
+    required_group_ids)
 VALUES ($1, $2, $3, $4, $5, $6,
     $7, $8, $9, $10, $11,
-    $12)
+    $12, $13)
 RETURNING id, tenant_id, menu_id, parent_id, label, url, icon, sort_order,
     permission_node, visibility, target, is_ad_slot, ad_slot_config,
-    status, created_at, updated_at
+    status, required_group_ids, created_at, updated_at
 `
 
 type CreateMenuItemParams struct {
-	TenantID       pgtype.UUID `json:"tenant_id"`
-	MenuID         pgtype.UUID `json:"menu_id"`
-	ParentID       pgtype.UUID `json:"parent_id"`
-	Label          string      `json:"label"`
-	Url            string      `json:"url"`
-	Icon           *string     `json:"icon"`
-	SortOrder      int32       `json:"sort_order"`
-	PermissionNode *string     `json:"permission_node"`
-	Visibility     string      `json:"visibility"`
-	Target         string      `json:"target"`
-	IsAdSlot       bool        `json:"is_ad_slot"`
-	AdSlotConfig   []byte      `json:"ad_slot_config"`
+	TenantID         pgtype.UUID `json:"tenant_id"`
+	MenuID           pgtype.UUID `json:"menu_id"`
+	ParentID         pgtype.UUID `json:"parent_id"`
+	Label            string      `json:"label"`
+	Url              string      `json:"url"`
+	Icon             *string     `json:"icon"`
+	SortOrder        int32       `json:"sort_order"`
+	PermissionNode   *string     `json:"permission_node"`
+	Visibility       string      `json:"visibility"`
+	Target           string      `json:"target"`
+	IsAdSlot         bool        `json:"is_ad_slot"`
+	AdSlotConfig     []byte      `json:"ad_slot_config"`
+	RequiredGroupIds []byte      `json:"required_group_ids"`
 }
 
-func (q *Queries) CreateMenuItem(ctx context.Context, arg CreateMenuItemParams) (MenuItem, error) {
+type CreateMenuItemRow struct {
+	ID               pgtype.UUID        `json:"id"`
+	TenantID         pgtype.UUID        `json:"tenant_id"`
+	MenuID           pgtype.UUID        `json:"menu_id"`
+	ParentID         pgtype.UUID        `json:"parent_id"`
+	Label            string             `json:"label"`
+	Url              string             `json:"url"`
+	Icon             *string            `json:"icon"`
+	SortOrder        int32              `json:"sort_order"`
+	PermissionNode   *string            `json:"permission_node"`
+	Visibility       string             `json:"visibility"`
+	Target           string             `json:"target"`
+	IsAdSlot         bool               `json:"is_ad_slot"`
+	AdSlotConfig     []byte             `json:"ad_slot_config"`
+	Status           string             `json:"status"`
+	RequiredGroupIds []byte             `json:"required_group_ids"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) CreateMenuItem(ctx context.Context, arg CreateMenuItemParams) (CreateMenuItemRow, error) {
 	row := q.db.QueryRow(ctx, createMenuItem,
 		arg.TenantID,
 		arg.MenuID,
@@ -124,8 +146,9 @@ func (q *Queries) CreateMenuItem(ctx context.Context, arg CreateMenuItemParams) 
 		arg.Target,
 		arg.IsAdSlot,
 		arg.AdSlotConfig,
+		arg.RequiredGroupIds,
 	)
-	var i MenuItem
+	var i CreateMenuItemRow
 	err := row.Scan(
 		&i.ID,
 		&i.TenantID,
@@ -141,6 +164,7 @@ func (q *Queries) CreateMenuItem(ctx context.Context, arg CreateMenuItemParams) 
 		&i.IsAdSlot,
 		&i.AdSlotConfig,
 		&i.Status,
+		&i.RequiredGroupIds,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -265,7 +289,7 @@ func (q *Queries) GetMenuBySlugForTenant(ctx context.Context, arg GetMenuBySlugF
 const getMenuItem = `-- name: GetMenuItem :one
 SELECT id, tenant_id, menu_id, parent_id, label, url, icon, sort_order,
        permission_node, visibility, target, is_ad_slot, ad_slot_config,
-       status, created_at, updated_at
+       status, required_group_ids, created_at, updated_at
 FROM menu_items
 WHERE id = $1 AND tenant_id = $2
 `
@@ -275,9 +299,29 @@ type GetMenuItemParams struct {
 	TenantID pgtype.UUID `json:"tenant_id"`
 }
 
-func (q *Queries) GetMenuItem(ctx context.Context, arg GetMenuItemParams) (MenuItem, error) {
+type GetMenuItemRow struct {
+	ID               pgtype.UUID        `json:"id"`
+	TenantID         pgtype.UUID        `json:"tenant_id"`
+	MenuID           pgtype.UUID        `json:"menu_id"`
+	ParentID         pgtype.UUID        `json:"parent_id"`
+	Label            string             `json:"label"`
+	Url              string             `json:"url"`
+	Icon             *string            `json:"icon"`
+	SortOrder        int32              `json:"sort_order"`
+	PermissionNode   *string            `json:"permission_node"`
+	Visibility       string             `json:"visibility"`
+	Target           string             `json:"target"`
+	IsAdSlot         bool               `json:"is_ad_slot"`
+	AdSlotConfig     []byte             `json:"ad_slot_config"`
+	Status           string             `json:"status"`
+	RequiredGroupIds []byte             `json:"required_group_ids"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) GetMenuItem(ctx context.Context, arg GetMenuItemParams) (GetMenuItemRow, error) {
 	row := q.db.QueryRow(ctx, getMenuItem, arg.ID, arg.TenantID)
-	var i MenuItem
+	var i GetMenuItemRow
 	err := row.Scan(
 		&i.ID,
 		&i.TenantID,
@@ -293,17 +337,50 @@ func (q *Queries) GetMenuItem(ctx context.Context, arg GetMenuItemParams) (MenuI
 		&i.IsAdSlot,
 		&i.AdSlotConfig,
 		&i.Status,
+		&i.RequiredGroupIds,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
 	return i, err
 }
 
+const getUserGroupIDs = `-- name: GetUserGroupIDs :many
+SELECT group_id::text AS group_id
+FROM user_group_memberships
+WHERE tenant_id = $1 AND user_id = $2
+`
+
+type GetUserGroupIDsParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	UserID   pgtype.UUID `json:"user_id"`
+}
+
+func (q *Queries) GetUserGroupIDs(ctx context.Context, arg GetUserGroupIDsParams) ([]string, error) {
+	rows, err := q.db.Query(ctx, getUserGroupIDs, arg.TenantID, arg.UserID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var group_id string
+		if err := rows.Scan(&group_id); err != nil {
+			return nil, err
+		}
+		items = append(items, group_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listMenuItems = `-- name: ListMenuItems :many
 
 SELECT mi.id, mi.tenant_id, mi.menu_id, mi.parent_id, mi.label, mi.url,
        mi.icon, mi.sort_order, mi.permission_node, mi.visibility, mi.target,
-       mi.is_ad_slot, mi.ad_slot_config, mi.status, mi.created_at, mi.updated_at
+       mi.is_ad_slot, mi.ad_slot_config, mi.status, mi.required_group_ids,
+       mi.created_at, mi.updated_at
 FROM menu_items mi
 WHERE mi.tenant_id = $1 AND mi.menu_id = $2
 ORDER BY mi.sort_order ASC, mi.created_at ASC
@@ -314,18 +391,38 @@ type ListMenuItemsParams struct {
 	MenuID   pgtype.UUID `json:"menu_id"`
 }
 
+type ListMenuItemsRow struct {
+	ID               pgtype.UUID        `json:"id"`
+	TenantID         pgtype.UUID        `json:"tenant_id"`
+	MenuID           pgtype.UUID        `json:"menu_id"`
+	ParentID         pgtype.UUID        `json:"parent_id"`
+	Label            string             `json:"label"`
+	Url              string             `json:"url"`
+	Icon             *string            `json:"icon"`
+	SortOrder        int32              `json:"sort_order"`
+	PermissionNode   *string            `json:"permission_node"`
+	Visibility       string             `json:"visibility"`
+	Target           string             `json:"target"`
+	IsAdSlot         bool               `json:"is_ad_slot"`
+	AdSlotConfig     []byte             `json:"ad_slot_config"`
+	Status           string             `json:"status"`
+	RequiredGroupIds []byte             `json:"required_group_ids"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+}
+
 // =====================
 // Menu Items CRUD
 // =====================
-func (q *Queries) ListMenuItems(ctx context.Context, arg ListMenuItemsParams) ([]MenuItem, error) {
+func (q *Queries) ListMenuItems(ctx context.Context, arg ListMenuItemsParams) ([]ListMenuItemsRow, error) {
 	rows, err := q.db.Query(ctx, listMenuItems, arg.TenantID, arg.MenuID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []MenuItem
+	var items []ListMenuItemsRow
 	for rows.Next() {
-		var i MenuItem
+		var i ListMenuItemsRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.TenantID,
@@ -341,6 +438,7 @@ func (q *Queries) ListMenuItems(ctx context.Context, arg ListMenuItemsParams) ([
 			&i.IsAdSlot,
 			&i.AdSlotConfig,
 			&i.Status,
+			&i.RequiredGroupIds,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -454,30 +552,52 @@ SET label = $1, url = $2, icon = $3,
     permission_node = $6, visibility = $7,
     target = $8, is_ad_slot = $9,
     ad_slot_config = $10, status = $11,
+    required_group_ids = $12,
     updated_at = now()
-WHERE id = $12 AND tenant_id = $13
+WHERE id = $13 AND tenant_id = $14
 RETURNING id, tenant_id, menu_id, parent_id, label, url, icon, sort_order,
     permission_node, visibility, target, is_ad_slot, ad_slot_config,
-    status, created_at, updated_at
+    status, required_group_ids, created_at, updated_at
 `
 
 type UpdateMenuItemParams struct {
-	Label          string      `json:"label"`
-	Url            string      `json:"url"`
-	Icon           *string     `json:"icon"`
-	ParentID       pgtype.UUID `json:"parent_id"`
-	SortOrder      int32       `json:"sort_order"`
-	PermissionNode *string     `json:"permission_node"`
-	Visibility     string      `json:"visibility"`
-	Target         string      `json:"target"`
-	IsAdSlot       bool        `json:"is_ad_slot"`
-	AdSlotConfig   []byte      `json:"ad_slot_config"`
-	Status         string      `json:"status"`
-	ID             pgtype.UUID `json:"id"`
-	TenantID       pgtype.UUID `json:"tenant_id"`
+	Label            string      `json:"label"`
+	Url              string      `json:"url"`
+	Icon             *string     `json:"icon"`
+	ParentID         pgtype.UUID `json:"parent_id"`
+	SortOrder        int32       `json:"sort_order"`
+	PermissionNode   *string     `json:"permission_node"`
+	Visibility       string      `json:"visibility"`
+	Target           string      `json:"target"`
+	IsAdSlot         bool        `json:"is_ad_slot"`
+	AdSlotConfig     []byte      `json:"ad_slot_config"`
+	Status           string      `json:"status"`
+	RequiredGroupIds []byte      `json:"required_group_ids"`
+	ID               pgtype.UUID `json:"id"`
+	TenantID         pgtype.UUID `json:"tenant_id"`
 }
 
-func (q *Queries) UpdateMenuItem(ctx context.Context, arg UpdateMenuItemParams) (MenuItem, error) {
+type UpdateMenuItemRow struct {
+	ID               pgtype.UUID        `json:"id"`
+	TenantID         pgtype.UUID        `json:"tenant_id"`
+	MenuID           pgtype.UUID        `json:"menu_id"`
+	ParentID         pgtype.UUID        `json:"parent_id"`
+	Label            string             `json:"label"`
+	Url              string             `json:"url"`
+	Icon             *string            `json:"icon"`
+	SortOrder        int32              `json:"sort_order"`
+	PermissionNode   *string            `json:"permission_node"`
+	Visibility       string             `json:"visibility"`
+	Target           string             `json:"target"`
+	IsAdSlot         bool               `json:"is_ad_slot"`
+	AdSlotConfig     []byte             `json:"ad_slot_config"`
+	Status           string             `json:"status"`
+	RequiredGroupIds []byte             `json:"required_group_ids"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) UpdateMenuItem(ctx context.Context, arg UpdateMenuItemParams) (UpdateMenuItemRow, error) {
 	row := q.db.QueryRow(ctx, updateMenuItem,
 		arg.Label,
 		arg.Url,
@@ -490,10 +610,11 @@ func (q *Queries) UpdateMenuItem(ctx context.Context, arg UpdateMenuItemParams) 
 		arg.IsAdSlot,
 		arg.AdSlotConfig,
 		arg.Status,
+		arg.RequiredGroupIds,
 		arg.ID,
 		arg.TenantID,
 	)
-	var i MenuItem
+	var i UpdateMenuItemRow
 	err := row.Scan(
 		&i.ID,
 		&i.TenantID,
@@ -509,6 +630,7 @@ func (q *Queries) UpdateMenuItem(ctx context.Context, arg UpdateMenuItemParams) 
 		&i.IsAdSlot,
 		&i.AdSlotConfig,
 		&i.Status,
+		&i.RequiredGroupIds,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)

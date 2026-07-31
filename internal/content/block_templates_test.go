@@ -14,8 +14,8 @@ import (
 func TestBlockTemplateCount(t *testing.T) {
 	t.Parallel()
 
-	if got := BlockTypeCount(); got != 16 {
-		t.Errorf("BlockTypeCount() = %d, want 16", got)
+	if got := BlockTypeCount(); got != 17 {
+		t.Errorf("BlockTypeCount() = %d, want 17", got)
 	}
 }
 
@@ -23,8 +23,8 @@ func TestGetBlockTemplatesReturnsAll(t *testing.T) {
 	t.Parallel()
 
 	templates := GetBlockTemplates()
-	if len(templates) != 16 {
-		t.Fatalf("GetBlockTemplates() returned %d templates, want 16", len(templates))
+	if len(templates) != 17 {
+		t.Fatalf("GetBlockTemplates() returned %d templates, want 17", len(templates))
 	}
 }
 
@@ -49,11 +49,12 @@ func TestBlockTemplatesRequiredFields(t *testing.T) {
 
 	templates := GetBlockTemplates()
 	validCategories := map[string]bool{
-		BlockCategoryLayout:      true,
-		BlockCategoryContent:     true,
-		BlockCategoryMedia:       true,
-		BlockCategoryInteractive: true,
-		BlockCategoryData:        true,
+		BlockCategoryLayout:       true,
+		BlockCategoryContent:      true,
+		BlockCategoryMedia:        true,
+		BlockCategoryInteractive:  true,
+		BlockCategoryData:         true,
+		BlockCategoryMonetization: true,
 	}
 
 	for i, bt := range templates {
@@ -101,7 +102,7 @@ func TestGetBlockTemplateByType(t *testing.T) {
 		"hero", "rich_text", "image", "cta", "stats",
 		"faq", "testimonial", "comparison", "form", "spacer",
 		"dynamic_listing", "table", "table_of_contents", "countdown", "slider",
-		"grid_row",
+		"grid_row", "advertisement",
 	}
 	for _, typ := range expected {
 		bt, ok := GetBlockTemplateByType(typ)
@@ -139,8 +140,8 @@ func TestBlockTemplatesJSONSerializable(t *testing.T) {
 		t.Fatalf("json.Unmarshal round-trip error: %v", err)
 	}
 
-	if len(decoded) != 16 {
-		t.Errorf("round-trip produced %d templates, want 16", len(decoded))
+	if len(decoded) != 17 {
+		t.Errorf("round-trip produced %d templates, want 17", len(decoded))
 	}
 }
 
@@ -175,7 +176,7 @@ func TestListBlockTypesHandler(t *testing.T) {
 		t.Fatalf("unmarshal response: %v", err)
 	}
 
-	if len(body.Data.BlockTypes) != 16 {
-		t.Errorf("response contained %d block types, want 16", len(body.Data.BlockTypes))
+	if len(body.Data.BlockTypes) != 17 {
+		t.Errorf("response contained %d block types, want 17", len(body.Data.BlockTypes))
 	}
 }

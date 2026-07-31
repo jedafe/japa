@@ -34,6 +34,15 @@ export const load: LayoutServerLoad = async (event) => {
 		menu = null;
 	}
 
+	// Footer menu — ADR-054 cross-app menu system. The Learn footer slug is
+	// `learn_footer`. Degrades to null if unseeded; GuestFooter renders nothing.
+	let footerMenu: Menu | null = null;
+	try {
+		footerMenu = await apiGet<Menu>(ctx, '/menus/learn_footer');
+	} catch {
+		footerMenu = null;
+	}
+
 	// Authed-only: unread notification count for the LeftNav badge. Seeded
 	// server-side so the badge paints during SSR; the realtime store keeps it
 	// live via WebSocket notification events.
@@ -54,6 +63,7 @@ export const load: LayoutServerLoad = async (event) => {
 		isUniversityHost: event.locals.isUniversityHost,
 		siteSettings,
 		menu,
+		footerMenu,
 		unreadNotifications,
 		navCollapsed: user?.ui?.nav_collapsed ?? false,
 		// Platform logo from appearance.logo_url (control panel).

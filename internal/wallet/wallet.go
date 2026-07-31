@@ -84,6 +84,17 @@ type Service struct {
 	// Optional — when nil, purchaseCredits returns computed pricing without
 	// creating a payment row (used in tests).
 	paymentsService PaymentCreator
+	// cacheInvalidator flushes the jc:wallet:currencies:{tenant_id} cache
+	// after any currency CRUD operation (Section 58, Rule 4). Optional —
+	// when nil, cache invalidation is skipped (tests).
+	cacheInvalidator CacheInvalidator
+}
+
+// CacheInvalidator flushes Valkey cache entries for the wallet currency
+// system (Section 58). The implementation deletes the
+// jc:wallet:currencies:{tenant_id} key after any currency CRUD operation.
+type CacheInvalidator interface {
+	InvalidateCurrenciesCache(ctx context.Context, tenantID pgtype.UUID) error
 }
 
 // PaymentCreator is the subset of the payments.Service API that wallet needs to
@@ -125,6 +136,10 @@ func (s *Service) SetCurrencyResolver(r *CurrencyResolver) { s.currencyResolver 
 // SetPaymentsService injects the payments service for creating credit-purchase
 // payment rows (Section 17 + Section 58).
 func (s *Service) SetPaymentsService(p PaymentCreator) { s.paymentsService = p }
+
+// SetCacheInvalidator injects the Valkey cache invalidator for the currency
+// cache (Section 58, Rule 4). Called after any currency CRUD operation.
+func (s *Service) SetCacheInvalidator(c CacheInvalidator) { s.cacheInvalidator = c }
 
 // walletEnqueuer is the subset of worker.Enqueuer that wallet needs.
 type walletEnqueuer interface {
