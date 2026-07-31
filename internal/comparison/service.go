@@ -72,6 +72,108 @@ func (s *Service) GetComparisonTypeBySlug(ctx context.Context, slug string, tena
 	return s.store.getComparisonTypeBySlug(ctx, slug, tenantID)
 }
 
+// ComparisonTypeDimension is the dimension (custom field) projection shown in
+// the admin Comparison Type detail view. Each field in the type's field group
+// becomes one comparison dimension (Section 30).
+type ComparisonTypeDimension struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	FieldType   string `json:"field_type"`
+}
+
+// ComparisonTypeDetail is the enriched type response returned by
+// GET /comparisons/types/{slug}. It augments the raw type definition with the
+// field-group dimensions and the item count so the admin detail panel can
+// render real data instead of placeholders (Section 30 — "field count,
+// comparison count").
+type ComparisonTypeDetail struct {
+	gen.ComparisonTypeDefinition
+	Dimensions []ComparisonTypeDimension `json:"dimensions"`
+	ItemCount  int32                     `json:"item_count"`
+}
+
+// GetComparisonTypeDetail returns a comparison type by slug together with its
+// dimensions (projected from the linked custom field group's fields) and the
+// count of comparison items linked to the type.
+//
+// Ref: japaconnect-engineering/sections/30-generic-comparison-system.md
+func (s *Service) GetComparisonTypeDetail(ctx context.Context, slug string, tenantID pgtype.UUID) (ComparisonTypeDetail, error) {
+	typeDef, err := s.store.getComparisonTypeBySlug(ctx, slug, tenantID)
+	if err != nil {
+		return ComparisonTypeDetail{}, err
+	}
+
+	dimensions := make([]ComparisonTypeDimension, 0)
+	if typeDef.FieldGroupID.Valid {
+		fields, err := s.cfSvc.ListFieldsByGroup(ctx, typeDef.FieldGroupID, tenantID)
+		if err != nil {
+			return ComparisonTypeDetail{}, fmt.Errorf("listing type dimensions: %w", err)
+		}
+		for _, f := range fields {
+			dimensions = append(dimensions, ComparisonTypeDimension{
+				ID:          f.ID.String(),
+				Name:        f.Label,
+				Description: f.Key,
+				FieldType:   f.FieldType,
+			})
+		}
+	}
+
+	itemCount, err := s.store.countComparisonItemsByType(ctx, typeDef.ID, tenantID)
+	if err != nil {
+		return ComparisonTypeDetail{}, fmt.Errorf("counting comparison items: %w", err)
+	}
+
+	return ComparisonTypeDetail{
+		ComparisonTypeDefinition: typeDef,
+		Dimensions:               dimensions,
+		ItemCount:                itemCount,
+	}, nil
+}
+
+// ComparisonTypeListItem augments a type definition with aggregate counts for
+// the admin list view (Section 30 — "name, slug, field count, comparison
+// count, enabled/disabled").
+type ComparisonTypeListItem struct {
+	gen.ComparisonTypeDefinition
+	FieldCount int32 `json:"field_count"`
+	ItemCount  int32 `json:"item_count"`
+}
+
+// ListComparisonTypesWithCounts returns all comparison types for a tenant,
+// each enriched with its field count (dimensions) and item count.
+//
+// Ref: japaconnect-engineering/sections/30-generic-comparison-system.md
+func (s *Service) ListComparisonTypesWithCounts(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]ComparisonTypeListItem, error) {
+	types, err := s.store.listComparisonTypesByTenant(ctx, tenantID, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+
+	items := make([]ComparisonTypeListItem, 0, len(types))
+	for _, td := range types {
+		var fieldCount int32
+		if td.FieldGroupID.Valid {
+			fields, err := s.cfSvc.ListFieldsByGroup(ctx, td.FieldGroupID, tenantID)
+			if err != nil {
+				return nil, fmt.Errorf("listing fields for type %s: %w", td.Slug, err)
+			}
+			fieldCount = int32(len(fields))
+		}
+		itemCount, err := s.store.countComparisonItemsByType(ctx, td.ID, tenantID)
+		if err != nil {
+			return nil, fmt.Errorf("counting items for type %s: %w", td.Slug, err)
+		}
+		items = append(items, ComparisonTypeListItem{
+			ComparisonTypeDefinition: td,
+			FieldCount:               fieldCount,
+			ItemCount:                itemCount,
+		})
+	}
+	return items, nil
+}
+
 // ListComparisonTypes returns all comparison types for a tenant.
 func (s *Service) ListComparisonTypes(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]gen.ComparisonTypeDefinition, error) {
 	return s.store.listComparisonTypesByTenant(ctx, tenantID, limit, offset)

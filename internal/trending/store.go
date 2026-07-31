@@ -166,30 +166,38 @@ func (s *Store) GetTrendingSearchQueries(
 }
 
 // GetSuggestedUsers returns users the authenticated user might want to follow.
+// geoCode (ADR-064) re-weights the ranking to prefer users in spaces matching
+// the visitor's ContentCountry; nil = global ranking.
 func (s *Store) GetSuggestedUsers(
 	ctx context.Context,
 	userID pgtype.UUID,
 	tenantID pgtype.UUID,
 	limit int32,
+	geoCode *string,
 ) ([]gen.GetSuggestedUsersRow, error) {
 	return s.queries.GetSuggestedUsers(ctx, gen.GetSuggestedUsersParams{
 		UserID:   userID,
 		TenantID: tenantID,
 		Limit:    limit,
+		GeoCode:  geoCode,
 	})
 }
 
 // GetSuggestedSpaces returns spaces the authenticated user might want to join.
+// geoCode (ADR-064) re-weights the ranking to prefer spaces matching the
+// visitor's ContentCountry; nil = global ranking.
 func (s *Store) GetSuggestedSpaces(
 	ctx context.Context,
 	userID pgtype.UUID,
 	tenantID pgtype.UUID,
 	limit int32,
+	geoCode *string,
 ) ([]gen.GetSuggestedSpacesRow, error) {
 	return s.queries.GetSuggestedSpaces(ctx, gen.GetSuggestedSpacesParams{
 		UserID:   userID,
 		TenantID: tenantID,
 		Limit:    limit,
+		GeoCode:  geoCode,
 	})
 }
 

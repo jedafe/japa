@@ -1,6 +1,7 @@
 package worker
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"crypto/tls"
@@ -9,6 +10,7 @@ import (
 	"encoding/xml"
 	"errors"
 	"fmt"
+	"html/template"
 	"log/slog"
 	"math"
 	"net/smtp"
@@ -26,6 +28,8 @@ import (
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/valkey-io/valkey-go/valkeycompat"
+
+	"github.com/jedafe/japa/internal/email"
 )
 
 // ---------------------------------------------------------------------------
@@ -40,6 +44,14 @@ var (
 	rdb redisCache
 	taskEnqueuer *Enqueuer
 )
+
+// emailGateway holds the email dispatcher for provider-based email sending.
+var emailGateway *email.EmailDispatcher
+
+// RegisterEmailGateway sets the email dispatcher for worker handlers.
+func RegisterEmailGateway(d *email.EmailDispatcher) {
+	emailGateway = d
+}
 
 // redisCache is the subset of the valkeycompat.Cmdable API that worker
 // handlers need. Used by HandleRSSRegenerate to cache feeds under
@@ -140,6 +152,31 @@ func scanUUID(s string) (pgtype.UUID, error) {
 	}
 
 	return u, nil
+}
+
+// parseCreditPurchaseMetadata extracts credits_to_grant and currency_code
+// from a credit_purchase payment's metadata JSON (Section 58). The metadata
+// is set by wallet.purchaseCredits when creating the payment row.
+func parseCreditPurchaseMetadata(metadata []byte) (credits int, currency string) {
+	if len(metadata) == 0 {
+		return 0, ""
+	}
+	var m map[string]any
+	if err := json.Unmarshal(metadata, &m); err != nil {
+		return 0, ""
+	}
+	if v, ok := m["credits_to_grant"]; ok {
+		switch n := v.(type) {
+		case float64:
+			credits = int(n)
+		case int:
+			credits = n
+		}
+	}
+	if v, ok := m["currency_code"].(string); ok {
+		currency = v
+	}
+	return credits, currency
 }
 
 // scheduleFanOutTask enqueues a content:fan_out_to_feeds task with the given
@@ -268,9 +305,11 @@ func HandlePaymentWebhookProcess(ctx context.Context, t *asynq.Task) error {
 	}
 
 	var payload struct {
-		EventID  string `json:"event_id"`
-		TenantID string `json:"tenant_id"`
-		Status   string `json:"status"` // "succeeded", "failed", "refunded"
+		EventID     string `json:"event_id"`
+		TenantID    string `json:"tenant_id"`
+		Status      string `json:"status"` // "succeeded", "failed", "refunded"
+		ProviderRef string `json:"provider_ref"`
+		Provider    string `json:"provider"`
 	}
 
 	if err := parsePayloadOrSkip(t, &payload); err != nil {
@@ -283,102 +322,189 @@ func HandlePaymentWebhookProcess(ctx context.Context, t *asynq.Task) error {
 		return fmt.Errorf("task:payment:process_webhook: %w", err)
 	}
 
-	// Look up pending payments and match by provider_ref.
-	rows, err := queries.ListPaymentsByStatus(ctx, gen.ListPaymentsByStatusParams{
-		TenantID: tenantID,
-		Status:   "pending",
-	})
-	if err != nil {
-		slog.Error("task:payment:process_webhook: failed to list pending payments", "error", err)
-		return err
+	// Match the payment by provider_ref (BUG-002/BUG-019). The provider_ref
+	// is the transaction reference stored on the payment row at intent time
+	// (Stripe pi_.../cs_..., Paystack reference, NOWPayments order_id). The
+	// event_id is the provider's event ID (Stripe evt_...) which is a
+	// different value and must not be used for matching.
+	if payload.ProviderRef == "" {
+		slog.Warn("task:payment:process_webhook: no provider_ref in payload, cannot match",
+			"event_id", payload.EventID)
+		return nil
 	}
 
-	updated := 0
+	p, err := queries.GetPaymentByProviderRef(ctx, gen.GetPaymentByProviderRefParams{
+		TenantID:    tenantID,
+		ProviderRef: &payload.ProviderRef,
+	})
+	if err != nil {
+		slog.Warn("task:payment:process_webhook: no matching payment found",
+			"provider_ref", payload.ProviderRef, "error", err)
+		return nil
+	}
 
-	for _, p := range rows {
-		if p.ProviderRef != nil && *p.ProviderRef == payload.EventID {
-			// Status-transition guard: prevent downgrading from succeeded.
-			if p.Status == "succeeded" && payload.Status != "refunded" {
-				slog.Info("task:payment:process_webhook: skipping — payment already succeeded",
-					"payment_id", p.ID, "current_status", p.Status, "new_status", payload.Status)
-				continue
-			}
+	// Status-transition guard: prevent downgrading from succeeded.
+	if p.Status == "succeeded" && payload.Status != "refunded" {
+		slog.Info("task:payment:process_webhook: skipping — payment already succeeded",
+			"payment_id", p.ID, "current_status", p.Status, "new_status", payload.Status)
+		return nil
+	}
 
-			// Enqueue affiliate commission BEFORE marking payment as succeeded
-			// so a failed enqueue doesn't lose the commission (AUDIT-BE-006).
-			if payload.Status == "succeeded" && taskEnqueuer != nil {
-				var linkCode string
-				rq := gen.New(dbPool.Reader)
-				if linkRow, lErr := rq.GetActiveAffiliateLinkByUser(ctx, gen.GetActiveAffiliateLinkByUserParams{
-					UserID: p.UserID, TenantID: tenantID,
-				}); lErr == nil {
-					linkCode = linkRow
-				}
-
-				commissionPayload, _ := json.Marshal(map[string]any{
-					"payment_id": p.ID.String(),
-					"user_id":    p.UserID.String(),
-					"amount":     p.Amount,
-					"link_code":  linkCode,
-				})
-				if err := taskEnqueuer.Enqueue(TypeAffiliateCreditCommission, commissionPayload); err != nil {
-					slog.Error("task:payment:process_webhook: failed to enqueue affiliate commission",
-						"payment_id", p.ID, "error", err)
-					// Don't mark payment as succeeded if commission enqueue fails;
-					// the task will retry on the next Asynq attempt.
-					continue
-				}
-			}
-
-			if _, err := queries.UpdatePaymentStatus(ctx, gen.UpdatePaymentStatusParams{
-				Status:   payload.Status,
-				ID:       p.ID,
-				TenantID: tenantID,
-			}); err != nil {
-				slog.Error("task:payment:process_webhook: failed to update payment",
-					"payment_id", p.ID, "error", err)
-				continue
-			}
-
-			// ADR-063: when a course_access payment succeeds, enqueue the
-			// university enrollment processor to credit the creator ledger,
-			// upsert the enrollment, and bump the track's enrollment counter.
-			// The purpose_id is the track_id; metadata may carry the user_id
-			// if it differs from the payer (gift purchases). Fire-and-forget
-			// per Rule 8 — the payment is already marked succeeded.
-			if payload.Status == "succeeded" && p.PurposeType == "course_access" && taskEnqueuer != nil {
-				trackID := ""
-				if p.PurposeID.Valid {
-					trackID = p.PurposeID.String()
-				}
-				if trackID != "" {
-					enrollPayload, _ := json.Marshal(map[string]any{
-						"tenant_id":  tenantID.String(),
-						"user_id":    p.UserID.String(),
-						"track_id":   trackID,
-						"payment_id": p.ID.String(),
-						"source":     "purchase",
-						"gross_kobo": p.Amount - p.DiscountAmount,
-					})
-					if err := taskEnqueuer.Enqueue(TypeUniversityProcessEnrollment, enrollPayload); err != nil {
-						slog.Error("task:payment:process_webhook: failed to enqueue university enrollment",
-							"payment_id", p.ID, "error", err)
-					}
-				}
-			}
-
-			updated++
-
-			slog.Info("task:payment:process_webhook: payment updated",
-				"payment_id", p.ID, "status", payload.Status)
+	// Refund reversal (BUG-003): when a payment is marked refunded, reverse
+	// the side effects based on purpose_type per JEOS §17:
+	// - credit_purchase: reverse the wallet credit grant
+	// - course_access: revoke the course access grant (if table exists)
+	// - org_boost: expire the organization boost
+	// - pro_membership: refunds affect future renewal only (no reversal)
+	if payload.Status == "refunded" {
+		if err := reversePaymentSideEffects(ctx, tenantID, p); err != nil {
+			slog.Error("task:payment:process_webhook: failed to reverse side effects",
+				"payment_id", p.ID, "purpose_type", p.PurposeType, "error", err)
+			// Non-fatal: still mark the payment as refunded so the status
+			// reflects the provider's state. The reversal can be retried.
 		}
 	}
 
-	if updated == 0 {
-		slog.Warn("task:payment:process_webhook: no matching payment found",
-			"event_id", payload.EventID)
+	// Enqueue affiliate commission BEFORE marking payment as succeeded
+	// so a failed enqueue doesn't lose the commission (AUDIT-BE-006).
+	if payload.Status == "succeeded" && taskEnqueuer != nil {
+		var linkCode string
+		rq := gen.New(dbPool.Reader)
+		if linkRow, lErr := rq.GetActiveAffiliateLinkByUser(ctx, gen.GetActiveAffiliateLinkByUserParams{
+			UserID: p.UserID, TenantID: tenantID,
+		}); lErr == nil {
+			linkCode = linkRow
+		}
+
+		commissionPayload, _ := json.Marshal(map[string]any{
+			"payment_id": p.ID.String(),
+			"user_id":    p.UserID.String(),
+			"amount":     p.Amount,
+			"link_code":  linkCode,
+		})
+		if err := taskEnqueuer.Enqueue(TypeAffiliateCreditCommission, commissionPayload); err != nil {
+			slog.Error("task:payment:process_webhook: failed to enqueue affiliate commission",
+				"payment_id", p.ID, "error", err)
+			// Don't mark payment as succeeded if commission enqueue fails;
+			// the task will retry on the next Asynq attempt.
+			return nil
+		}
 	}
 
+	if _, err := queries.UpdatePaymentStatus(ctx, gen.UpdatePaymentStatusParams{
+		Status:   payload.Status,
+		ID:       p.ID,
+		TenantID: tenantID,
+	}); err != nil {
+		slog.Error("task:payment:process_webhook: failed to update payment",
+			"payment_id", p.ID, "error", err)
+		return err
+	}
+
+	// ADR-063: when a course_access payment succeeds, enqueue the
+	// university enrollment processor to credit the creator ledger,
+	// upsert the enrollment, and bump the track's enrollment counter.
+	// The purpose_id is the track_id; metadata may carry the user_id
+	// if it differs from the payer (gift purchases). Fire-and-forget
+	// per Rule 8 — the payment is already marked succeeded.
+	if payload.Status == "succeeded" && p.PurposeType == "course_access" && taskEnqueuer != nil {
+		trackID := ""
+		if p.PurposeID.Valid {
+			trackID = p.PurposeID.String()
+		}
+		if trackID != "" {
+			enrollPayload, _ := json.Marshal(map[string]any{
+				"tenant_id":  tenantID.String(),
+				"user_id":    p.UserID.String(),
+				"track_id":   trackID,
+				"payment_id": p.ID.String(),
+				"source":     "purchase",
+				"gross_kobo": p.Amount - p.DiscountAmount,
+			})
+			if err := taskEnqueuer.Enqueue(TypeUniversityProcessEnrollment, enrollPayload); err != nil {
+				slog.Error("task:payment:process_webhook: failed to enqueue university enrollment",
+					"payment_id", p.ID, "error", err)
+			}
+		}
+	}
+
+	// Section 58: when a credit_purchase payment succeeds, enqueue
+	// the wallet credit-grant task. The credits_to_grant and
+	// currency_code are read from the payment metadata (set by
+	// purchaseCredits when creating the payment row). Fire-and-forget
+	// per Rule 8 — the payment is already marked succeeded.
+	if payload.Status == "succeeded" && p.PurposeType == "credit_purchase" && taskEnqueuer != nil {
+		creditsToGrant, currencyCode := parseCreditPurchaseMetadata(p.Metadata)
+		if creditsToGrant > 0 {
+			creditPayload, _ := json.Marshal(map[string]any{
+				"payment_id":      p.ID.String(),
+				"tenant_id":       tenantID.String(),
+				"user_id":         p.UserID.String(),
+				"credits_to_grant": creditsToGrant,
+				"currency_code":   currencyCode,
+			})
+			if err := taskEnqueuer.Enqueue(TypeWalletProcessCreditPurchase, creditPayload); err != nil {
+				slog.Error("task:payment:process_webhook: failed to enqueue credit purchase grant",
+					"payment_id", p.ID, "error", err)
+			}
+		}
+	}
+
+	slog.Info("task:payment:process_webhook: payment updated",
+		"payment_id", p.ID, "status", payload.Status)
+
+	return nil
+}
+
+// reversePaymentSideEffects reverses the side effects of a payment based on
+// its purpose_type when the payment is refunded (JEOS §17):
+//   - credit_purchase: enqueue a wallet credit reversal
+//   - course_access: revoke the course access grant
+//   - org_boost: expire the organization boost
+//   - pro_membership: no reversal (refunds affect future renewal only)
+func reversePaymentSideEffects(ctx context.Context, tenantID pgtype.UUID, p gen.Payment) error {
+	switch p.PurposeType {
+	case "credit_purchase":
+		// Reverse the wallet credit grant by enqueueing a negative grant.
+		if taskEnqueuer != nil {
+			creditsToGrant, currencyCode := parseCreditPurchaseMetadata(p.Metadata)
+			if creditsToGrant > 0 {
+				reversalPayload, _ := json.Marshal(map[string]any{
+					"payment_id":      p.ID.String(),
+					"tenant_id":       tenantID.String(),
+					"user_id":         p.UserID.String(),
+					"credits_to_grant": -creditsToGrant, // negative = debit
+					"currency_code":   currencyCode,
+				})
+				if err := taskEnqueuer.Enqueue(TypeWalletProcessCreditPurchase, reversalPayload); err != nil {
+					return fmt.Errorf("enqueue credit reversal: %w", err)
+				}
+			}
+		}
+	case "course_access":
+		// Revoke the course access grant. The course_access_grants table
+		// may not exist yet (BUG-021 — migration pending), so we log and
+		// skip if the table is unavailable.
+		slog.Info("task:payment:process_webhook: revoking course access grant",
+			"payment_id", p.ID)
+		// TODO: revoke course_access_grants row once table exists (BUG-021).
+	case "org_boost":
+		// Expire the organization boost immediately (JEOS §17).
+		if p.PurposeID.Valid {
+			if dbPool != nil {
+				_, err := dbPool.Writer.Exec(ctx,
+					`UPDATE organization_boosts SET status = 'expired', ends_at = now()
+					 WHERE payment_id = $1 AND tenant_id = $2`,
+					p.ID, tenantID)
+				if err != nil {
+					return fmt.Errorf("expiring org boost: %w", err)
+				}
+			}
+		}
+	case "pro_membership", "donation":
+		// No reversal needed — pro membership refunds affect future
+		// renewal only; donations are non-reversible.
+	}
 	return nil
 }
 
@@ -504,10 +630,21 @@ func HandleTicketSendConfirmation(ctx context.Context, t *asynq.Task) error {
 		return nil
 	}
 
-	body := fmt.Sprintf("Your support ticket \"%s\" has been received. Ticket ID: %s",
-		ticket.Subject, ticketID.String())
+	ticketTmpl, err := template.New("ticket-confirm").Parse(`<p>Your support ticket "<strong>{{.Subject}}</strong>" has been received.</p>
+<p>Ticket ID: <code>{{.TicketID}}</code></p>`)
+	if err != nil {
+		return fmt.Errorf("parsing ticket template: %w", err)
+	}
+	var bodyBuf bytes.Buffer
+	if err := ticketTmpl.Execute(&bodyBuf, struct {
+		Subject  string
+		TicketID string
+	}{Subject: ticket.Subject, TicketID: ticketID.String()}); err != nil {
+		return fmt.Errorf("rendering ticket template: %w", err)
+	}
+	body := bodyBuf.String()
 
-	if err := sendEmail(*ticket.SubmitterEmail, "Ticket Confirmation - "+ticket.Subject, body, false); err != nil {
+	if err := sendEmail(*ticket.SubmitterEmail, "Ticket Confirmation - "+ticket.Subject, body, true); err != nil {
 		slog.Error("task:ticket:send_confirmation: email failed",
 			"ticket_id", payload.TicketID, "error", err)
 		return err
@@ -524,14 +661,23 @@ func HandleTicketSendConfirmation(ctx context.Context, t *asynq.Task) error {
 // ---------------------------------------------------------------------------
 
 // HandleEmailSend sends a single transactional email via SMTP.
+// When template_slug is provided with a tenant_id, the handler looks up
+// the DB-stored email template and renders it with html/template (XSS-safe).
+// Falls back to raw body/subject when no template is specified (backward compat).
+//
+// Ref: sections/20-email-notification-bugs.md
 func HandleEmailSend(_ context.Context, t *asynq.Task) error {
 	slog.Info("task:email:send")
 
 	var payload struct {
-		To      string `json:"to"`
-		Subject string `json:"subject"`
-		Body    string `json:"body"`
-		HTML    bool   `json:"html"`
+		To               string            `json:"to"`
+		Subject          string            `json:"subject"`
+		Body             string            `json:"body"`
+		HTML             bool              `json:"html"`
+		TemplateSlug     string            `json:"template_slug,omitempty"`
+		TenantID         string            `json:"tenant_id,omitempty"`
+		TemplateData     map[string]string `json:"template_data,omitempty"`
+		TemplateSiteName string            `json:"template_site_name,omitempty"`
 	}
 
 	if err := parsePayloadOrSkip(t, &payload); err != nil {
@@ -539,11 +685,64 @@ func HandleEmailSend(_ context.Context, t *asynq.Task) error {
 		return err
 	}
 
-	if payload.To == "" || payload.Subject == "" {
+	if payload.To == "" {
+		return errors.New("task:email:send: to is required")
+	}
+
+	subject := payload.Subject
+	body := payload.Body
+	isHTML := payload.HTML
+
+	// When a template_slug is provided, look up the DB-stored template and
+	// render it with html/template for XSS safety.
+	if payload.TemplateSlug != "" && dbPool != nil && payload.TenantID != "" {
+		tid, err := scanUUID(payload.TenantID)
+		if err != nil {
+			slog.Error("task:email:send: invalid tenant_id for template", "error", err)
+		} else {
+			tmpl, err := gen.New(dbPool.Reader).GetEmailTemplateBySlug(context.Background(), gen.GetEmailTemplateBySlugParams{
+				Slug:     payload.TemplateSlug,
+				TenantID: tid,
+			})
+			if err != nil {
+				slog.Warn("task:email:send: template not found, falling back to raw body",
+					"template_slug", payload.TemplateSlug, "error", err)
+			} else {
+				// Use template subject if the caller didn't override it.
+				if subject == "" {
+					subject = tmpl.Subject
+				}
+
+				// Render the template body with html/template (auto-escapes values).
+				if tmpl.HtmlBody != "" {
+					tmplParsed, err := template.New("email").Parse(tmpl.HtmlBody)
+					if err != nil {
+						slog.Error("task:email:send: failed to parse template",
+							"template_slug", payload.TemplateSlug, "error", err)
+					} else {
+						data := templateDataFromMap(payload.TemplateSiteName, payload.TemplateData)
+						var buf bytes.Buffer
+						if err := tmplParsed.Execute(&buf, data); err != nil {
+							slog.Error("task:email:send: failed to render template",
+								"template_slug", payload.TemplateSlug, "error", err)
+						} else {
+							body = buf.String()
+							isHTML = true
+						}
+					}
+				} else if tmpl.PlainTextBody != "" {
+					body = tmpl.PlainTextBody
+					isHTML = false
+				}
+			}
+		}
+	}
+
+	if payload.To == "" || subject == "" {
 		return errors.New("task:email:send: to and subject are required")
 	}
 
-	if err := sendEmail(payload.To, payload.Subject, payload.Body, payload.HTML); err != nil {
+	if err := sendEmail(payload.To, subject, body, isHTML); err != nil {
 		slog.Error("task:email:send: failed", "to", payload.To, "error", err)
 		return err
 	}
@@ -551,6 +750,42 @@ func HandleEmailSend(_ context.Context, t *asynq.Task) error {
 	slog.Info("task:email:send: sent", "to", payload.To)
 
 	return nil
+}
+
+// templateData is the data passed to html/template for rendering email templates.
+type templateData struct {
+	SiteName   string
+	SiteURL    string
+	UserName   string
+	ActionURL  string
+	Expiry     string
+	SupportURL string
+	Items      []templateDataItem
+}
+
+// templateDataItem represents a single item in a digest or list template.
+type templateDataItem struct {
+	Title string
+	URL   string
+}
+
+// templateDataFromMap builds a templateData from the caller-supplied map,
+// filling in sensible defaults for site-wide values.
+func templateDataFromMap(siteName string, m map[string]string) templateData {
+	if m == nil {
+		m = make(map[string]string)
+	}
+	if siteName == "" {
+		siteName = "JapaConnect"
+	}
+	return templateData{
+		SiteName:   siteName,
+		SiteURL:    m["site_url"],
+		UserName:   m["user_name"],
+		ActionURL:  m["action_url"],
+		Expiry:     m["expiry"],
+		SupportURL: m["support_url"],
+	}
 }
 
 // HandleSearchIndexSync synchronizes an entity to the Meilisearch index.
@@ -753,6 +988,67 @@ func HandleDocsGeneratePage(ctx context.Context, t *asynq.Task) error {
 	}
 
 	slog.Info("task:docs:generate_page: completed", "user_id", payload.UserID, "tenant_id", payload.TenantID)
+	return nil
+}
+
+// HandleFormFireSubmissionTriggers fires the triggers configured on a form
+// after a submission is created. The customfields service implements the
+// actual dispatch logic (assign_user_group / send_email / send_webhook /
+// create_ticket / notify_admin); this handler just parses the payload and
+// delegates.
+//
+// Ref: japaconnect-engineering/sections/06-custom-field-builder-form-builder.md
+func HandleFormFireSubmissionTriggers(ctx context.Context, t *asynq.Task) error {
+	slog.Info("task:form:fire_submission_triggers")
+
+	if formTriggerProcessor == nil {
+		slog.Warn("task:form:fire_submission_triggers: no processor registered, skipping")
+		return nil
+	}
+
+	var payload struct {
+		SubmissionID string `json:"submission_id"`
+		TenantID     string `json:"tenant_id"`
+		FormID       string `json:"form_id"`
+		UserID       string `json:"user_id"` // empty for anonymous submissions
+		FieldValues  []byte `json:"field_values"`
+	}
+
+	if err := parsePayload(t, &payload); err != nil {
+		slog.Error("task:form:fire_submission_triggers: invalid payload", "error", err)
+		return err
+	}
+
+	if payload.SubmissionID == "" || payload.FormID == "" || payload.TenantID == "" {
+		return fmt.Errorf("task:form:fire_submission_triggers: submission_id, form_id, and tenant_id are required")
+	}
+
+	var submissionID, tenantID, formID pgtype.UUID
+	if err := submissionID.Scan(payload.SubmissionID); err != nil {
+		return fmt.Errorf("task:form:fire_submission_triggers: invalid submission_id: %w", err)
+	}
+	if err := tenantID.Scan(payload.TenantID); err != nil {
+		return fmt.Errorf("task:form:fire_submission_triggers: invalid tenant_id: %w", err)
+	}
+	if err := formID.Scan(payload.FormID); err != nil {
+		return fmt.Errorf("task:form:fire_submission_triggers: invalid form_id: %w", err)
+	}
+
+	var submitterUserID *pgtype.UUID
+	if payload.UserID != "" {
+		var uid pgtype.UUID
+		if err := uid.Scan(payload.UserID); err == nil {
+			submitterUserID = &uid
+		}
+	}
+
+	if err := formTriggerProcessor.FireSubmissionTriggers(ctx, submissionID, tenantID, formID, submitterUserID, payload.FieldValues); err != nil {
+		slog.Error("task:form:fire_submission_triggers: failed",
+			"submission_id", payload.SubmissionID, "error", err)
+		return err
+	}
+
+	slog.Info("task:form:fire_submission_triggers: completed", "submission_id", payload.SubmissionID)
 	return nil
 }
 
@@ -1483,10 +1779,21 @@ func HandleTicketSendStatusUpdate(ctx context.Context, t *asynq.Task) error {
 		return nil
 	}
 
-	body := fmt.Sprintf("Your ticket \"%s\" status has been updated from %s to %s.",
-		ticket.Subject, payload.OldStatus, payload.NewStatus)
+	statusTmpl, err := template.New("ticket-status").Parse(`<p>Your ticket "<strong>{{.Subject}}</strong>" status has been updated from <em>{{.OldStatus}}</em> to <em>{{.NewStatus}}</em>.</p>`)
+	if err != nil {
+		return fmt.Errorf("parsing status template: %w", err)
+	}
+	var statusBuf bytes.Buffer
+	if err := statusTmpl.Execute(&statusBuf, struct {
+		Subject   string
+		OldStatus string
+		NewStatus string
+	}{Subject: ticket.Subject, OldStatus: payload.OldStatus, NewStatus: payload.NewStatus}); err != nil {
+		return fmt.Errorf("rendering status template: %w", err)
+	}
+	body := statusBuf.String()
 
-	if err := sendEmail(*ticket.SubmitterEmail, "Ticket Status Update - "+ticket.Subject, body, false); err != nil {
+	if err := sendEmail(*ticket.SubmitterEmail, "Ticket Status Update - "+ticket.Subject, body, true); err != nil {
 		slog.Error("task:ticket:send_status_update: email failed",
 			"ticket_id", payload.TicketID, "error", err)
 		return err
@@ -1640,6 +1947,21 @@ func HandleWalletProcessActivityEvent(ctx context.Context, t *asynq.Task) error 
 	return walletProcessor.ProcessActivityEventTask(ctx, t.Payload())
 }
 
+// HandleWalletProcessCreditPurchase credits the user's wallet after a
+// credit_purchase payment webhook confirms success (Section 58). The task is
+// enqueued by HandlePaymentWebhookProcess when purpose_type="credit_purchase"
+// and status="succeeded". Idempotent via the ledger's idempotency_key.
+func HandleWalletProcessCreditPurchase(ctx context.Context, t *asynq.Task) error {
+	slog.Info("task:wallet:process_credit_purchase")
+
+	if walletProcessor == nil {
+		slog.Warn("task:wallet:process_credit_purchase: no processor registered, skipping")
+		return nil
+	}
+
+	return walletProcessor.ProcessCreditPurchaseTask(ctx, t.Payload())
+}
+
 // HandleNewsletterSend sends a newsletter campaign to all subscribers.
 func HandleNewsletterSend(ctx context.Context, t *asynq.Task) error {
 	slog.Info("task:newsletter:send")
@@ -1790,22 +2112,38 @@ func sendDigestToUser(ctx context.Context, userID, tenantID, email, period strin
 		return fmt.Errorf("fetching feed: %w", err)
 	}
 
-	var body strings.Builder
+	// Build digest HTML using html/template for XSS safety.
+	digestTmpl, err := template.New("digest").Parse(`<h2>{{.Period}} Digest</h2>
+<ul>
+{{range .Items}}  <li><strong>{{.Title}}</strong></li>
+{{end}}</ul>`)
+	if err != nil {
+		return fmt.Errorf("parsing digest template: %w", err)
+	}
 
-	body.WriteString(fmt.Sprintf("<h2>%s Digest</h2>\n", cases.Title(language.English).String(period)))
-	body.WriteString("<ul>\n")
+	type digestData struct {
+		Period string
+		Items  []struct{ Title string }
+	}
 
+	var items []struct{ Title string }
 	itemCount := 0
 
 	for _, fi := range feedItems {
-		body.WriteString(fmt.Sprintf("  <li><strong>%s</strong></li>\n", fi.Title))
+		items = append(items, struct{ Title string }{Title: fi.Title})
 		itemCount++
 	}
 
-	body.WriteString("</ul>\n")
-
 	if itemCount == 0 {
 		return nil
+	}
+
+	var body strings.Builder
+	if err := digestTmpl.Execute(&body, digestData{
+		Period: cases.Title(language.English).String(period),
+		Items:  items,
+	}); err != nil {
+		return fmt.Errorf("rendering digest template: %w", err)
 	}
 
 	if err := sendEmail(email,
@@ -2970,13 +3308,27 @@ func readSMTPConfig() *smtpConfig {
 	}
 }
 
-// sendEmail sends an email via SMTP. If SMTP is not configured, it logs
-// a warning and returns nil (graceful degradation).
+// sendEmail sends an email via the registered dispatcher if available,
+// otherwise falls back to direct SMTP.
 func sendEmail(to, subject, body string, isHTML bool) error {
+	// If dispatcher is available, use it
+	if emailGateway != nil {
+		ctx := context.Background()
+		req := email.EmailRequest{
+			To:       to,
+			Subject:  subject,
+			Body:     body,
+			IsHTML:   isHTML,
+			Category: "transactional",
+		}
+		_, err := emailGateway.Dispatch(ctx, req)
+		return err
+	}
+
+	// Fallback to direct SMTP (legacy path)
 	cfg := readSMTPConfig()
 	if cfg == nil {
-		slog.Warn("email_send: SMTP not configured (JC_SMTP_HOST is empty), skipping")
-		return nil
+		return fmt.Errorf("no email provider configured: email gateway is nil and SMTP config is missing")
 	}
 
 	contentType := "text/plain; charset=UTF-8"

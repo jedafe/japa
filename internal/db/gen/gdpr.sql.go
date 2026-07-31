@@ -59,6 +59,26 @@ func (q *Queries) AnonymizeComparisonItemsByAuthor(ctx context.Context, arg Anon
 	return result.RowsAffected(), nil
 }
 
+const anonymizeFormSubmissionsByUser = `-- name: AnonymizeFormSubmissionsByUser :execrows
+UPDATE form_submissions
+SET user_id = NULL,
+    ip_address = NULL,
+    field_values = '{}'::jsonb
+WHERE user_id = $1
+`
+
+// BUG-019: anonymize form_submissions authored by the deleted user. The
+// submission row is preserved for analytics/audit (form submission counts,
+// trigger audit trail), but the user_id reference is severed and the PII
+// fields (ip_address, field_values jsonb) are scrubbed.
+func (q *Queries) AnonymizeFormSubmissionsByUser(ctx context.Context, userID pgtype.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, anonymizeFormSubmissionsByUser, userID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const anonymizeInstructorPayoutsForInstructor = `-- name: AnonymizeInstructorPayoutsForInstructor :execrows
 UPDATE instructor_payouts ipo
 SET instructor_id = NULL
@@ -129,6 +149,38 @@ type AnonymizeUserParams struct {
 
 func (q *Queries) AnonymizeUser(ctx context.Context, arg AnonymizeUserParams) error {
 	_, err := q.db.Exec(ctx, anonymizeUser, arg.UserID, arg.TenantID)
+	return err
+}
+
+const anonymizeUserProfile = `-- name: AnonymizeUserProfile :exec
+UPDATE user_profiles
+SET display_name = 'Deleted User',
+    avatar_url = NULL,
+    cover_url = NULL,
+    bio = NULL,
+    timezone = NULL,
+    business_name = NULL,
+    registration_number = NULL,
+    operating_hours = NULL,
+    content_country_preference = NULL,
+    preferred_currency = NULL,
+    updated_at = now()
+WHERE user_id = $1 AND tenant_id = $2
+`
+
+type AnonymizeUserProfileParams struct {
+	UserID   pgtype.UUID `json:"user_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+// Clears PII columns in user_profiles during the GDPR retention window
+// (ADR-014 / ADR-057). Runs immediately after AnonymizeUser so the profile
+// row — display_name, bio, timezone, business info, content_country_preference
+// (which reveals country origin/preference), preferred_currency, avatar/cover
+// URLs — is scrubbed before the hard-delete phase. The row itself is preserved
+// (FK integrity) until HardDeleteUser cascades.
+func (q *Queries) AnonymizeUserProfile(ctx context.Context, arg AnonymizeUserProfileParams) error {
+	_, err := q.db.Exec(ctx, anonymizeUserProfile, arg.UserID, arg.TenantID)
 	return err
 }
 
@@ -343,6 +395,24 @@ func (q *Queries) DeleteContentRevisionsByEditor(ctx context.Context, userID pgt
 	return err
 }
 
+const deleteCustomFieldValuesByEntity = `-- name: DeleteCustomFieldValuesByEntity :execrows
+DELETE FROM custom_field_values
+WHERE entity_type IN ('user_profile', 'user') AND entity_id = $1
+`
+
+// BUG-018: delete custom_field_values for the user's profile entity so PII
+// stored in custom fields (e.g. Japa Status, phone, address) does not survive
+// account deletion. The custom_field_values table is polymorphic on
+// (entity_type, entity_id); we delete rows where entity_type='user_profile'
+// and entity_id is the user's ID. Also covers entity_type='user' if used.
+func (q *Queries) DeleteCustomFieldValuesByEntity(ctx context.Context, userID pgtype.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteCustomFieldValuesByEntity, userID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const deleteForumThreadTagsByAuthor = `-- name: DeleteForumThreadTagsByAuthor :exec
 DELETE FROM forum_thread_tags
 WHERE thread_id IN (SELECT id FROM forum_threads WHERE author_user_id = $1 AND tenant_id = $2)
@@ -360,6 +430,18 @@ func (q *Queries) DeleteForumThreadTagsByAuthor(ctx context.Context, arg DeleteF
 	return err
 }
 
+const deleteOrganizationMembersByUser = `-- name: DeleteOrganizationMembersByUser :exec
+DELETE FROM organization_members WHERE user_id = $1
+`
+
+// organization_members.user_id is NOT NULL; remove the erased user's memberships to
+// prevent re-identification via the member roster. member_count on the org row is
+// decremented for each removed row.
+func (q *Queries) DeleteOrganizationMembersByUser(ctx context.Context, userID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteOrganizationMembersByUser, userID)
+	return err
+}
+
 const deleteOwnershipClaimsByClaimant = `-- name: DeleteOwnershipClaimsByClaimant :exec
 DELETE FROM ownership_claims WHERE claimant_user_id = $1 AND tenant_id = $2
 `
@@ -369,7 +451,7 @@ type DeleteOwnershipClaimsByClaimantParams struct {
 	TenantID pgtype.UUID `json:"tenant_id"`
 }
 
-// ownership_claims.claimant_user_id is NOT NULL; delete the user's submitted claims (reviewed_by is SET NULL).
+// ownership_claims.claimant_user_id is NOT NULL; delete the user's submitted claims.
 func (q *Queries) DeleteOwnershipClaimsByClaimant(ctx context.Context, arg DeleteOwnershipClaimsByClaimantParams) error {
 	_, err := q.db.Exec(ctx, deleteOwnershipClaimsByClaimant, arg.UserID, arg.TenantID)
 	return err
@@ -397,6 +479,23 @@ DELETE FROM space_pinned_posts WHERE pinned_by = $1
 // space_pinned_posts.pinned_by has no CASCADE; remove pins made by the user.
 func (q *Queries) DeleteSpacePinnedPostsByUser(ctx context.Context, userID pgtype.UUID) error {
 	_, err := q.db.Exec(ctx, deleteSpacePinnedPostsByUser, userID)
+	return err
+}
+
+const deleteTagModeratorsByUser = `-- name: DeleteTagModeratorsByUser :exec
+DELETE FROM tag_moderators WHERE user_id = $1 AND tenant_id = $2
+`
+
+type DeleteTagModeratorsByUserParams struct {
+	UserID   pgtype.UUID `json:"user_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+// tag_moderators.user_id has ON DELETE CASCADE but we delete explicitly to document
+// the erasure path and ensure the user's moderation history is cleared before the
+// final HardDeleteUser. Ref: Section 08/49, GDPR erasure coverage.
+func (q *Queries) DeleteTagModeratorsByUser(ctx context.Context, arg DeleteTagModeratorsByUserParams) error {
+	_, err := q.db.Exec(ctx, deleteTagModeratorsByUser, arg.UserID, arg.TenantID)
 	return err
 }
 
@@ -439,6 +538,32 @@ type DeleteUserTokensParams struct {
 func (q *Queries) DeleteUserTokens(ctx context.Context, arg DeleteUserTokensParams) error {
 	_, err := q.db.Exec(ctx, deleteUserTokens, arg.UserID, arg.TenantID)
 	return err
+}
+
+const gdprExportCustomFieldValues = `-- name: GdprExportCustomFieldValues :one
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (
+    SELECT cfv.field_id, cfv.entity_type, cfv.entity_id,
+           cfv.value_text, cfv.value_number, cfv.value_bool,
+           cfv.value_date, cfv.value_json, cfv.created_at, cfv.updated_at,
+           cf.key AS field_key, cf.label AS field_label
+    FROM custom_field_values cfv
+    LEFT JOIN custom_fields cf ON cfv.field_id = cf.id
+    WHERE cfv.entity_type IN ('user_profile', 'user') AND cfv.entity_id = $1
+    ORDER BY cfv.created_at
+) t
+`
+
+// BUG-020: export custom_field_values for the user's profile entity so the
+// GDPR data export includes PII stored in custom fields (Japa Status, phone,
+// address, etc.). The custom_field_values table is polymorphic on
+// (entity_type, entity_id); we export rows where entity_type is
+// 'user_profile' or 'user' and entity_id is the user's ID.
+func (q *Queries) GdprExportCustomFieldValues(ctx context.Context, userID pgtype.UUID) (interface{}, error) {
+	row := q.db.QueryRow(ctx, gdprExportCustomFieldValues, userID)
+	var data interface{}
+	err := row.Scan(&data)
+	return data, err
 }
 
 const gdprExportInstructorPayouts = `-- name: GdprExportInstructorPayouts :one
@@ -487,6 +612,31 @@ type GdprExportInstructorProfilesParams struct {
 // =====================================================================
 func (q *Queries) GdprExportInstructorProfiles(ctx context.Context, arg GdprExportInstructorProfilesParams) (interface{}, error) {
 	row := q.db.QueryRow(ctx, gdprExportInstructorProfiles, arg.TenantID, arg.UserID)
+	var data interface{}
+	err := row.Scan(&data)
+	return data, err
+}
+
+const gdprExportPushTokens = `-- name: GdprExportPushTokens :one
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (
+    SELECT id, platform, token, device_name, created_at, last_used_at
+    FROM push_tokens
+    WHERE user_id = $1 AND tenant_id = $2
+    ORDER BY created_at
+) t
+`
+
+type GdprExportPushTokensParams struct {
+	UserID   pgtype.UUID `json:"user_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+// BUG-014: export push_tokens for the user so the GDPR data export includes
+// device push notification tokens (PII-adjacent device identifiers).
+// Ref: japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
+func (q *Queries) GdprExportPushTokens(ctx context.Context, arg GdprExportPushTokensParams) (interface{}, error) {
+	row := q.db.QueryRow(ctx, gdprExportPushTokens, arg.UserID, arg.TenantID)
 	var data interface{}
 	err := row.Scan(&data)
 	return data, err
@@ -1036,7 +1186,7 @@ func (q *Queries) GdprExportUserProfessionalProfiles(ctx context.Context, arg Gd
 const gdprExportUserProfiles = `-- name: GdprExportUserProfiles :one
 
 SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (SELECT id, tenant_id, user_id, display_name, avatar_url, bio, timezone, business_name, registration_number, operating_hours, created_at, updated_at, content_country_preference, cover_url FROM user_profiles WHERE user_id = $1 AND tenant_id = $2) t
+FROM (SELECT id, tenant_id, user_id, display_name, avatar_url, bio, timezone, business_name, registration_number, operating_hours, created_at, updated_at, content_country_preference, cover_url, preferred_currency, avatar_media_id, header_media_id FROM user_profiles WHERE user_id = $1 AND tenant_id = $2) t
 `
 
 type GdprExportUserProfilesParams struct {
@@ -1201,6 +1351,25 @@ func (q *Queries) GdprExportUserSpaces(ctx context.Context, arg GdprExportUserSp
 		return nil, err
 	}
 	return items, nil
+}
+
+const gdprExportUserTagModerators = `-- name: GdprExportUserTagModerators :one
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (SELECT id, tenant_id, tag_id, user_id, assigned_by, assigned_by_user_id, created_at FROM tag_moderators WHERE user_id = $1 AND tenant_id = $2) t
+`
+
+type GdprExportUserTagModeratorsParams struct {
+	UserID   pgtype.UUID `json:"user_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+// Tag moderation history (Section 08/49). tag_moderators.user_id has ON DELETE CASCADE
+// so the final HardDeleteUser will remove these rows; this export captures them first.
+func (q *Queries) GdprExportUserTagModerators(ctx context.Context, arg GdprExportUserTagModeratorsParams) (interface{}, error) {
+	row := q.db.QueryRow(ctx, gdprExportUserTagModerators, arg.UserID, arg.TenantID)
+	var data interface{}
+	err := row.Scan(&data)
+	return data, err
 }
 
 const gdprExportUserTicketComments = `-- name: GdprExportUserTicketComments :one
@@ -1682,6 +1851,35 @@ func (q *Queries) NullifyConsentRecordUser(ctx context.Context, arg NullifyConse
 	return err
 }
 
+const nullifyDiscountCodeCreatorRefs = `-- name: NullifyDiscountCodeCreatorRefs :exec
+UPDATE discount_codes SET created_by = NULL
+WHERE created_by = $1 AND tenant_id = $2
+`
+
+type NullifyDiscountCodeCreatorRefsParams struct {
+	UserID   pgtype.UUID `json:"user_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+// Nulls discount code created_by references for GDPR erasure (BUG-020).
+func (q *Queries) NullifyDiscountCodeCreatorRefs(ctx context.Context, arg NullifyDiscountCodeCreatorRefsParams) error {
+	_, err := q.db.Exec(ctx, nullifyDiscountCodeCreatorRefs, arg.UserID, arg.TenantID)
+	return err
+}
+
+const nullifyDiscountCodeUseUserRefs = `-- name: NullifyDiscountCodeUseUserRefs :exec
+UPDATE discount_code_uses SET user_id = '00000000-0000-0000-0000-000000000000'::uuid
+WHERE user_id = $1
+`
+
+// Nulls discount code use user_id references for GDPR erasure (BUG-020).
+// The PRIMARY KEY (code_id, user_id) requires setting user_id to a sentinel
+// UUID rather than NULL. We use the all-zeros UUID as the sentinel.
+func (q *Queries) NullifyDiscountCodeUseUserRefs(ctx context.Context, userID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, nullifyDiscountCodeUseUserRefs, userID)
+	return err
+}
+
 const nullifyForumTagModerator = `-- name: NullifyForumTagModerator :exec
 UPDATE forum_tags SET moderator_user_id = NULL
 WHERE moderator_user_id = $1 AND tenant_id = $2
@@ -1708,6 +1906,21 @@ func (q *Queries) NullifyOrganizationInvitationInviter(ctx context.Context, user
 	return err
 }
 
+const nullifyOwnershipClaimReviewer = `-- name: NullifyOwnershipClaimReviewer :exec
+UPDATE ownership_claims SET reviewed_by = NULL WHERE reviewed_by = $1 AND tenant_id = $2
+`
+
+type NullifyOwnershipClaimReviewerParams struct {
+	UserID   pgtype.UUID `json:"user_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+// ownership_claims.reviewed_by is nullable; clear reviewer reference when an admin is erased.
+func (q *Queries) NullifyOwnershipClaimReviewer(ctx context.Context, arg NullifyOwnershipClaimReviewerParams) error {
+	_, err := q.db.Exec(ctx, nullifyOwnershipClaimReviewer, arg.UserID, arg.TenantID)
+	return err
+}
+
 const nullifyPaymentUserRefs = `-- name: NullifyPaymentUserRefs :exec
 UPDATE payments SET user_id = NULL
 WHERE user_id = $1 AND tenant_id = $2
@@ -1731,6 +1944,23 @@ UPDATE professional_profile_invitations SET invited_by = NULL WHERE invited_by =
 // professional_profile_invitations.invited_by is nullable; clear inviter reference on others' profiles.
 func (q *Queries) NullifyProfessionalProfileInvitationInviter(ctx context.Context, userID pgtype.UUID) error {
 	_, err := q.db.Exec(ctx, nullifyProfessionalProfileInvitationInviter, userID)
+	return err
+}
+
+const nullifySubscriptionUserRefs = `-- name: NullifySubscriptionUserRefs :exec
+UPDATE subscriptions SET user_id = NULL
+WHERE user_id = $1 AND tenant_id = $2
+`
+
+type NullifySubscriptionUserRefsParams struct {
+	UserID   pgtype.UUID `json:"user_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+// Nulls subscription user references for GDPR erasure (BUG-020).
+// Preserves subscription history for financial audit while removing PII.
+func (q *Queries) NullifySubscriptionUserRefs(ctx context.Context, arg NullifySubscriptionUserRefsParams) error {
+	_, err := q.db.Exec(ctx, nullifySubscriptionUserRefs, arg.UserID, arg.TenantID)
 	return err
 }
 

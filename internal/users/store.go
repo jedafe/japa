@@ -91,15 +91,17 @@ func (s *Store) getPublicProfileByUsername(ctx context.Context, tenantID pgtype.
 }
 
 // upsertProfile inserts or updates the user profile.
-func (s *Store) upsertProfile(ctx context.Context, tenantID, userID pgtype.UUID, displayName, avatarURL, coverURL, bio, timezone *string) error {
+func (s *Store) upsertProfile(ctx context.Context, tenantID, userID pgtype.UUID, displayName, avatarURL, coverURL, bio, timezone *string, avatarMediaID, headerMediaID pgtype.UUID) error {
 	if err := s.write.UpsertUserProfile(ctx, gen.UpsertUserProfileParams{
-		TenantID:    tenantID,
-		UserID:      userID,
-		DisplayName: displayName,
-		AvatarUrl:   avatarURL,
-		CoverUrl:    coverURL,
-		Bio:         bio,
-		Timezone:    timezone,
+		TenantID:      tenantID,
+		UserID:        userID,
+		DisplayName:   displayName,
+		AvatarUrl:     avatarURL,
+		AvatarMediaID: avatarMediaID,
+		HeaderMediaID: headerMediaID,
+		CoverUrl:      coverURL,
+		Bio:           bio,
+		Timezone:      timezone,
 	}); err != nil {
 		return fmt.Errorf("upserting user profile: %w", err)
 	}
@@ -173,19 +175,24 @@ func (s *Store) getUserPasswordHash(ctx context.Context, userID, tenantID pgtype
 	})
 }
 
-func (s *Store) updateUserPassword(ctx context.Context, userID pgtype.UUID, passwordHash *string) error {
+func (s *Store) updateUserPassword(ctx context.Context, tenantID, userID pgtype.UUID, passwordHash *string) error {
 	return s.write.UpdateUserPassword(ctx, gen.UpdateUserPasswordParams{
 		ID:           userID,
+		TenantID:     tenantID,
 		PasswordHash: passwordHash,
 	})
 }
 
-func (s *Store) getUserPrivacySettings(ctx context.Context, userID pgtype.UUID) (gen.UserPrivacySetting, error) {
-	return s.read.GetUserPrivacySettings(ctx, userID)
+func (s *Store) getUserPrivacySettings(ctx context.Context, tenantID, userID pgtype.UUID) (gen.GetUserPrivacySettingsRow, error) {
+	return s.read.GetUserPrivacySettings(ctx, gen.GetUserPrivacySettingsParams{
+		TenantID: tenantID,
+		UserID:   userID,
+	})
 }
 
-func (s *Store) upsertUserPrivacySettings(ctx context.Context, userID pgtype.UUID, dmPrivacy, profileVisibility string, searchIndexable, showOnlineStatus, showActivity bool) error {
+func (s *Store) upsertUserPrivacySettings(ctx context.Context, tenantID, userID pgtype.UUID, dmPrivacy, profileVisibility string, searchIndexable, showOnlineStatus, showActivity bool) error {
 	return s.write.UpsertUserPrivacySettings(ctx, gen.UpsertUserPrivacySettingsParams{
+		TenantID:          tenantID,
 		UserID:            userID,
 		DmPrivacy:         dmPrivacy,
 		ProfileVisibility: profileVisibility,
@@ -195,8 +202,11 @@ func (s *Store) upsertUserPrivacySettings(ctx context.Context, userID pgtype.UUI
 	})
 }
 
-func (s *Store) listUserSessions(ctx context.Context, userID pgtype.UUID) ([]gen.ListUserSessionsRow, error) {
-	return s.read.ListUserSessions(ctx, userID)
+func (s *Store) listUserSessions(ctx context.Context, tenantID, userID pgtype.UUID) ([]gen.ListUserSessionsRow, error) {
+	return s.read.ListUserSessions(ctx, gen.ListUserSessionsParams{
+		TenantID: tenantID,
+		UserID:   userID,
+	})
 }
 
 func (s *Store) listUserActivity(ctx context.Context, tenantID, userID pgtype.UUID, limit int32) ([]gen.ListUserActivityRow, error) {
@@ -214,17 +224,19 @@ func (s *Store) countUserActivity(ctx context.Context, tenantID, userID pgtype.U
 	})
 }
 
-func (s *Store) revokeUserSession(ctx context.Context, sessionID, userID pgtype.UUID) error {
+func (s *Store) revokeUserSession(ctx context.Context, tenantID, sessionID, userID pgtype.UUID) error {
 	return s.write.RevokeUserSession(ctx, gen.RevokeUserSessionParams{
-		ID:     sessionID,
-		UserID: userID,
+		ID:       sessionID,
+		TenantID: tenantID,
+		UserID:   userID,
 	})
 }
 
-func (s *Store) revokeAllUserSessions(ctx context.Context, userID, keepCurrentID pgtype.UUID) error {
+func (s *Store) revokeAllUserSessions(ctx context.Context, tenantID, userID, keepCurrentID pgtype.UUID) error {
 	return s.write.RevokeAllUserSessions(ctx, gen.RevokeAllUserSessionsParams{
-		UserID: userID,
-		ID:     keepCurrentID,
+		TenantID: tenantID,
+		UserID:   userID,
+		ID:       keepCurrentID,
 	})
 }
 
@@ -243,8 +255,11 @@ func (s *Store) disconnectOAuthAccount(ctx context.Context, tenantID, userID pgt
 	})
 }
 
-func (s *Store) userHasPassword(ctx context.Context, userID pgtype.UUID) (bool, error) {
-	return s.read.UserHasPassword(ctx, userID)
+func (s *Store) userHasPassword(ctx context.Context, tenantID, userID pgtype.UUID) (bool, error) {
+	return s.read.UserHasPassword(ctx, gen.UserHasPasswordParams{
+		ID:       userID,
+		TenantID: tenantID,
+	})
 }
 
 func (s *Store) listUserContent(ctx context.Context, tenantID, userID pgtype.UUID, status string, limit, offset int32) ([]gen.ListUserContentRow, error) {
@@ -326,4 +341,76 @@ func derefDate(d *pgtype.Date) pgtype.Date {
 		return pgtype.Date{}
 	}
 	return *d
+}
+
+// ---------------------------------------------------------------------------
+// Account management (Section 50: PATCH /me/account)
+// Ref: japaconnect-engineering/sections/50-user-dashboard-settings.md
+// ---------------------------------------------------------------------------
+
+// getUserAccountForUpdate row-locks the user and returns the fields needed
+// to validate an account update (username cooldown, email uniqueness).
+func (s *Store) getUserAccountForUpdate(ctx context.Context, tenantID, userID pgtype.UUID) (gen.GetUserAccountForUpdateRow, error) {
+	return s.write.GetUserAccountForUpdate(ctx, gen.GetUserAccountForUpdateParams{
+		ID:       userID,
+		TenantID: tenantID,
+	})
+}
+
+// updateUsername updates the username and stamps username_changed_at.
+func (s *Store) updateUsername(ctx context.Context, tenantID, userID pgtype.UUID, username string) error {
+	return s.write.UpdateUserUsername(ctx, gen.UpdateUserUsernameParams{
+		ID:       userID,
+		TenantID: tenantID,
+		Username: username,
+	})
+}
+
+// updateEmail updates the email and resets email_verified_at to NULL.
+func (s *Store) updateEmail(ctx context.Context, tenantID, userID pgtype.UUID, email string) error {
+	return s.write.UpdateUserEmail(ctx, gen.UpdateUserEmailParams{
+		ID:       userID,
+		TenantID: tenantID,
+		Email:    email,
+	})
+}
+
+// emailExistsForTenant returns the count of other users in the tenant with
+// the given email (0 = available).
+func (s *Store) emailExistsForTenant(ctx context.Context, tenantID, userID pgtype.UUID, email string) (int32, error) {
+	return s.write.EmailExistsForTenant(ctx, gen.EmailExistsForTenantParams{
+		TenantID: tenantID,
+		Email:    email,
+		ID:       userID,
+	})
+}
+
+// usernameExistsForTenant returns the count of other users in the tenant with
+// the given username (0 = available).
+func (s *Store) usernameExistsForTenant(ctx context.Context, tenantID, userID pgtype.UUID, username string) (int32, error) {
+	return s.write.UsernameExistsForTenant(ctx, gen.UsernameExistsForTenantParams{
+		TenantID: tenantID,
+		Username: username,
+		ID:       userID,
+	})
+}
+
+// ---------------------------------------------------------------------------
+// Analytics counts (Section 40: BUG-012 — SQL COUNT instead of row iteration)
+// ---------------------------------------------------------------------------
+
+// countUserContent returns total/draft/published content counts for the user.
+func (s *Store) countUserContent(ctx context.Context, tenantID, userID pgtype.UUID) (gen.CountUserContentRow, error) {
+	return s.read.CountUserContent(ctx, gen.CountUserContentParams{
+		TenantID: tenantID,
+		UserID:   userID,
+	})
+}
+
+// countUserBookmarks returns the total bookmark count for the user.
+func (s *Store) countUserBookmarks(ctx context.Context, tenantID, userID pgtype.UUID) (int32, error) {
+	return s.read.CountUserBookmarks(ctx, gen.CountUserBookmarksParams{
+		UserID:   userID,
+		TenantID: tenantID,
+	})
 }

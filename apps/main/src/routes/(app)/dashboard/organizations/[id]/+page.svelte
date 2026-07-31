@@ -1,15 +1,16 @@
 <script lang="ts">
 	// Ref: japaconnect-engineering/sections/07-organizations.md (org admin dashboard)
 	// Org admin view: edit org fields (PATCH /organizations/{id}), manage
-	// members (list + remove + change role), and view pending invitations.
-	// Mutations go through the browser API client; the org row is seeded from
-	// the server load.
+	// members (list + remove + change role), invite members, revoke invitations,
+	// and delete the org. Mutations go through the browser API client; the org
+	// row is seeded from the server load.
 	import { t } from '$lib/i18n';
 	import { api } from '$lib/api/client';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
-	import { Building2, Save, Trash2, Mail, Check, X, FileText, BarChart3, Settings } from 'lucide-svelte';
+	import { Building2, Save, Trash2, Mail, Check, X, FileText, BarChart3, Settings, Send, UserPlus } from 'lucide-svelte';
 	import { untrack } from 'svelte';
 	import { page } from '$app/state';
+	import { invalidateAll, goto } from '$app/navigation';
 	import type { OrganizationAdmin, OrgMember, ProfilePost } from '$lib/types';
 
 	let { data } = $props();
@@ -30,13 +31,22 @@
 	let description = $state(untrack(() => data.org?.description ?? ''));
 	let websiteUrl = $state(untrack(() => data.org?.website_url ?? ''));
 	let countryCode = $state(untrack(() => data.org?.country_code ?? ''));
-	let orgType = $state(untrack(() => data.org?.org_type ?? 'company'));
+	let orgType = $state(untrack(() => data.org?.org_type ?? 'business'));
 
 	let saving = $state(false);
 	let savedKey = $state('');
 	let errorKey = $state('');
 
 	let members = $state<OrgMember[]>(untrack(() => data.members ?? []));
+
+	// Invite-member form state
+	let inviteEmail = $state('');
+	let inviteRole = $state('member');
+	let inviting = $state(false);
+	let inviteErrorKey = $state('');
+
+	// Delete-org state
+	let deleting = $state(false);
 
 	const inputClass =
 		'w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20';
@@ -60,6 +70,7 @@
 			} else {
 				savedKey = 'org_admin.saved';
 				setTimeout(() => (savedKey = ''), 2500);
+				await invalidateAll();
 			}
 		} catch {
 			errorKey = 'org_admin.errors.save_failed';
@@ -74,7 +85,7 @@
 		try {
 			const res = await api.delete(`/organizations/${org.id}/members/${memberUserId}`);
 			if (!res.error) {
-				members = members.filter((m) => m.user.id !== memberUserId);
+				await invalidateAll();
 			}
 		} catch {
 			// best-effort
@@ -86,10 +97,63 @@
 		try {
 			const res = await api.patch(`/organizations/${org.id}/members/${memberUserId}`, { role });
 			if (!res.error) {
-				members = members.map((m) => (m.user.id === memberUserId ? { ...m, role } : m));
+				await invalidateAll();
 			}
 		} catch {
 			// best-effort
+		}
+	}
+
+	async function inviteMember(e: SubmitEvent) {
+		e.preventDefault();
+		if (!org || !inviteEmail.trim()) return;
+		inviteErrorKey = '';
+		inviting = true;
+		try {
+			const res = await api.post(`/organizations/${org.id}/invitations`, {
+				email: inviteEmail.trim(),
+				role: inviteRole
+			});
+			if (res.error) {
+				inviteErrorKey = 'org_admin.errors.invite_failed';
+			} else {
+				inviteEmail = '';
+				inviteRole = 'member';
+				await invalidateAll();
+			}
+		} catch {
+			inviteErrorKey = 'org_admin.errors.invite_failed';
+		} finally {
+			inviting = false;
+		}
+	}
+
+	async function revokeInvitation(invitationId: string) {
+		if (!org) return;
+		if (!confirm(t('org_admin.revoke_invite_confirm', 'Revoke this invitation?'))) return;
+		try {
+			const res = await api.delete(`/organizations/${org.id}/invitations/${invitationId}`);
+			if (!res.error) {
+				await invalidateAll();
+			}
+		} catch {
+			// best-effort
+		}
+	}
+
+	async function deleteOrg() {
+		if (!org) return;
+		if (!confirm(t('org_admin.delete_confirm', 'Delete this organization? This cannot be undone.'))) return;
+		deleting = true;
+		try {
+			const res = await api.delete(`/organizations/${org.id}`);
+			if (!res.error) {
+				await goto('/dashboard/organizations');
+			}
+		} catch {
+			// best-effort
+		} finally {
+			deleting = false;
 		}
 	}
 </script>
@@ -226,11 +290,28 @@
 			</label>
 			<label class="flex flex-col gap-1.5">
 				<span class="text-sm font-medium text-[var(--color-text)]">{t('org_admin.field_type')}</span>
-				<input class={inputClass} value={orgType} oninput={(e) => (orgType = e.currentTarget.value)} />
+				<select class={inputClass} bind:value={orgType}>
+					<option value="business">{t('organizations.new.type_business', 'Business')}</option>
+					<option value="ngo">{t('organizations.new.type_ngo', 'NGO')}</option>
+					<option value="government">{t('organizations.new.type_government', 'Government')}</option>
+					<option value="embassy">{t('organizations.new.type_embassy', 'Embassy')}</option>
+					<option value="university">{t('organizations.new.type_university', 'University')}</option>
+					<option value="media">{t('organizations.new.type_media', 'Media')}</option>
+					<option value="community">{t('organizations.new.type_community', 'Community')}</option>
+				</select>
 			</label>
 		</div>
 
-		<div class="flex justify-end">
+		<div class="flex items-center justify-between">
+			<button
+				type="button"
+				onclick={deleteOrg}
+				disabled={deleting}
+				class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-red-500/30 px-4 py-2 text-sm font-medium text-red-500 transition hover:bg-red-500/10 disabled:opacity-50"
+			>
+				<Trash2 class="h-4 w-4" />
+				{deleting ? '...' : t('org_admin.delete', 'Delete organization')}
+			</button>
 			<button
 				type="submit"
 				disabled={saving}
@@ -238,6 +319,39 @@
 			>
 				<Save class="h-4 w-4" />
 				{saving ? '...' : t('org_admin.save')}
+			</button>
+		</div>
+	</form>
+
+	<!-- Invite member -->
+	<form onsubmit={inviteMember} class="space-y-3 rounded-[12px] border border-[var(--color-border)] bg-[var(--color-surface)] p-5" novalidate>
+		<h2 class="flex items-center gap-2 text-sm font-medium text-[var(--color-text)]">
+			<UserPlus class="h-4 w-4" />
+			{t('org_admin.invite_section', 'Invite member')}
+		</h2>
+		{#if inviteErrorKey}
+			<p class="rounded-[var(--radius)] bg-red-500/10 px-3 py-2 text-sm text-red-500" role="alert">{t(inviteErrorKey)}</p>
+		{/if}
+		<div class="flex flex-col gap-3 sm:flex-row sm:items-end">
+			<label class="flex flex-1 flex-col gap-1.5">
+				<span class="text-sm font-medium text-[var(--color-text)]">{t('org_admin.invite_email', 'Email')}</span>
+				<input class={inputClass} type="email" bind:value={inviteEmail} placeholder="member@example.com" required />
+			</label>
+			<label class="flex flex-col gap-1.5">
+				<span class="text-sm font-medium text-[var(--color-text)]">{t('org_admin.invite_role', 'Role')}</span>
+				<select class={inputClass} bind:value={inviteRole}>
+					<option value="admin">{t('org_admin.role.admin')}</option>
+					<option value="editor">{t('org_admin.role.editor', 'Editor')}</option>
+					<option value="member">{t('org_admin.role.member')}</option>
+				</select>
+			</label>
+			<button
+				type="submit"
+				disabled={inviting || !inviteEmail.trim()}
+				class="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-white transition hover:opacity-90 disabled:opacity-50"
+			>
+				<Send class="h-4 w-4" />
+				{inviting ? '...' : t('org_admin.invite_send', 'Send invite')}
 			</button>
 		</div>
 	</form>
@@ -276,6 +390,7 @@
 							>
 								<option value="owner">{t('org_admin.role.owner')}</option>
 								<option value="admin">{t('org_admin.role.admin')}</option>
+								<option value="editor">{t('org_admin.role.editor', 'Editor')}</option>
 								<option value="member">{t('org_admin.role.member')}</option>
 							</select>
 							<button
@@ -311,9 +426,19 @@
 							</p>
 						</div>
 						{#if inv.status === 'pending'}
-							<span class="shrink-0 rounded-full bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-600">
-								{t('org_admin.invite_pending')}
-							</span>
+							<div class="flex shrink-0 items-center gap-2">
+								<span class="rounded-full bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-600">
+									{t('org_admin.invite_pending')}
+								</span>
+								<button
+									type="button"
+									onclick={() => revokeInvitation(inv.id)}
+									class="rounded p-1 text-[var(--color-muted)] hover:bg-red-500/10 hover:text-red-500"
+									aria-label={t('org_admin.revoke_invite', 'Revoke invitation')}
+								>
+									<X class="h-4 w-4" />
+								</button>
+							</div>
 						{:else}
 							<Check class="h-4 w-4 shrink-0 text-green-600" />
 						{/if}

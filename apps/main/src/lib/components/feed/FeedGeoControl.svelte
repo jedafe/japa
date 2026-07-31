@@ -10,6 +10,7 @@
 	import { page } from '$app/state';
 	import { t } from '$lib/i18n';
 	import { api } from '$lib/api/client';
+	import { setContentCountry } from '$lib/api/geo';
 	import { Globe, ChevronDown } from 'lucide-svelte';
 
 	let changing = $state(false);
@@ -34,13 +35,15 @@
 	async function loadCountries() {
 		if (countriesLoaded) return;
 		countriesLoaded = true;
-		const res = await api.get<{ items: { country_code: string; name: string }[] }>(
+		// Space rows expose the ISO country code as `geo_code` (Space type,
+		// apps/main/src/lib/types/index.ts). Not `country_code`.
+		const res = await api.get<{ items: { geo_code: string | null; name: string }[] }>(
 			'/spaces?level=country&page_size=5'
 		);
 		if (!res.error && res.data?.items) {
 			countrySpaces = res.data.items
-				.filter((s) => s.country_code)
-				.map((s) => ({ code: s.country_code, label: s.name }));
+				.filter((s) => s.geo_code)
+				.map((s) => ({ code: s.geo_code as string, label: s.name }));
 		}
 	}
 
@@ -50,14 +53,16 @@
 			return;
 		}
 		saving = true;
-		const res = await api.patch('/me/preferences/content-country', { content_country: code });
+		// Use the shared setContentCountry helper so the PATCH body field name
+		// (`{ country }`) stays in sync with the backend handler and the
+		// Settings page. Sending `{ content_country }` was silently clearing
+		// the preference (BUG-001).
+		await setContentCountry(code);
 		saving = false;
 		changing = false;
-		if (!res.error) {
-			// Invalidate the feed so the new geo re-weight takes effect.
-			await invalidate('/feed/for-you');
-			await invalidate('/explore');
-		}
+		// Invalidate the feed so the new geo re-weight takes effect.
+		await invalidate('/feed/for-you');
+		await invalidate('/explore');
 	}
 
 	async function toggleDropdown() {

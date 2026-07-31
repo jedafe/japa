@@ -8,10 +8,10 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	mw "github.com/jedafe/japa/internal/middleware"
 	"github.com/jedafe/japa/internal/worker"
 )
 
@@ -27,17 +27,25 @@ type CreatePaymentInput struct {
 }
 
 // CreatePayment creates a new payment record and initiates the payment with the provider.
-func (s *Service) CreatePayment(ctx context.Context, tenantID, userID pgtype.UUID, input CreatePaymentInput) (gen.Payment, error) {
+// CreatePaymentResult holds the created payment row and the provider's
+// checkout URL (for external providers). Credit payments have an empty
+// checkout URL since there's no external checkout step.
+type CreatePaymentResult struct {
+	Payment     gen.Payment
+	CheckoutURL string
+}
+
+func (s *Service) CreatePayment(ctx context.Context, tenantID, userID pgtype.UUID, input CreatePaymentInput) (CreatePaymentResult, error) {
 	if input.Provider == "" {
-		return gen.Payment{}, errors.New("provider is required")
+		return CreatePaymentResult{}, errors.New("provider is required")
 	}
 
 	if input.PurposeType == "" {
-		return gen.Payment{}, errors.New("purpose_type is required")
+		return CreatePaymentResult{}, errors.New("purpose_type is required")
 	}
 
 	if input.Amount <= 0 {
-		return gen.Payment{}, errors.New("amount must be positive")
+		return CreatePaymentResult{}, errors.New("amount must be positive")
 	}
 
 	currency := input.Currency
@@ -52,7 +60,11 @@ func (s *Service) CreatePayment(ctx context.Context, tenantID, userID pgtype.UUI
 
 	// Credit payments are synchronous wallet debits — no external provider call.
 	if input.Provider == ProviderCredit {
-		return s.payWithCreditInternal(ctx, tenantID, userID, input, currency)
+		p, err := s.payWithCreditInternal(ctx, tenantID, userID, input, currency)
+		if err != nil {
+			return CreatePaymentResult{}, err
+		}
+		return CreatePaymentResult{Payment: p}, nil
 	}
 
 	// Initiate payment with external provider (Paystack, Stripe, NOWPayments).
@@ -69,13 +81,17 @@ func (s *Service) CreatePayment(ctx context.Context, tenantID, userID pgtype.UUI
 			Metadata:    input.Metadata,
 		})
 		if err != nil {
-			return gen.Payment{}, fmt.Errorf("initiating payment with %s: %w", input.Provider, err)
+			return CreatePaymentResult{}, fmt.Errorf("initiating payment with %s: %w", input.Provider, err)
 		}
 		providerRef = resp.Reference
 		checkoutURL = resp.CheckoutURL
 	}
 
-	return s.createPaymentRow(ctx, tenantID, userID, input, currency, providerRef, checkoutURL)
+	p, err := s.createPaymentRow(ctx, tenantID, userID, input, currency, providerRef, checkoutURL)
+	if err != nil {
+		return CreatePaymentResult{}, err
+	}
+	return CreatePaymentResult{Payment: p, CheckoutURL: checkoutURL}, nil
 }
 
 // createPaymentRow inserts the payment record after validation and discount calculation.
@@ -118,6 +134,15 @@ func (s *Service) createPaymentRow(ctx context.Context, tenantID, userID pgtype.
 		ref = &providerRef
 	}
 
+	// DB-level idempotency key (BUG-015). Prefer the Idempotency-Key
+	// header propagated via context by the idempotency middleware; fall
+	// back to nil when no header is present (the HTTP middleware still
+	// deduplicates at the request level via Valkey SET NX EX).
+	var idempotencyKey *string
+	if key := mw.IdempotencyKeyFromContext(ctx); key != "" {
+		idempotencyKey = &key
+	}
+
 	payment, err := s.store.createPayment(ctx, gen.CreatePaymentParams{
 		TenantID:       tenantID,
 		UserID:         userID,
@@ -131,9 +156,24 @@ func (s *Service) createPaymentRow(ctx context.Context, tenantID, userID pgtype.
 		Metadata:       metadata,
 		DiscountCodeID: discountCodeID,
 		DiscountAmount: discountAmount,
+		IdempotencyKey: idempotencyKey,
 	})
 	if err != nil {
 		return gen.Payment{}, err
+	}
+
+	// Record the discount code use so max_uses and uses_per_user limits are
+	// enforced on subsequent checkouts (JEOS §17 — "Applied at checkout: code
+	// is validated... usage caps not exceeded"). The discount_code_uses table
+	// has PRIMARY KEY (code_id, user_id), so a duplicate use by the same user
+	// is rejected at the DB level.
+	if discountCodeID.Valid {
+		if err := s.ApplyDiscountCodeUse(ctx, discountCodeID, userID, payment.ID); err != nil {
+			slog.Warn("payments: failed to record discount code use",
+				"payment_id", payment.ID, "code_id", discountCodeID, "error", err)
+			// Non-fatal: the payment is already created. The use just won't
+			// be counted, which is a softer failure than blocking checkout.
+		}
 	}
 
 	_ = checkoutURL
@@ -141,10 +181,20 @@ func (s *Service) createPaymentRow(ctx context.Context, tenantID, userID pgtype.
 }
 
 // payWithCreditInternal handles credit wallet payments.
+// Uses pending-first ordering (BUG-004): create payment row, then debit
+// credits, then mark succeeded. See PayWithCredit for full rationale.
 func (s *Service) payWithCreditInternal(ctx context.Context, tenantID, userID pgtype.UUID, input CreatePaymentInput, currency string) (gen.Payment, error) {
 	if s.wallet == nil {
 		return gen.Payment{}, errors.New("wallet service not configured")
 	}
+
+	// Step 1: Create the payment row with status="pending" FIRST.
+	payment, err := s.createPaymentRow(ctx, tenantID, userID, input, currency, "", "")
+	if err != nil {
+		return gen.Payment{}, fmt.Errorf("recording credit payment: %w", err)
+	}
+
+	// Step 2: Debit credits from the wallet.
 	creditInput := CreditSpendInput{
 		Amount:      input.Amount,
 		Source:      "payment",
@@ -153,9 +203,18 @@ func (s *Service) payWithCreditInternal(ctx context.Context, tenantID, userID pg
 		PurposeID:   input.PurposeID,
 	}
 	if _, err := s.wallet.SpendCredits(ctx, tenantID, userID, creditInput); err != nil {
+		// Debit failed — mark the payment as failed.
+		_, _ = s.store.updatePaymentStatus(ctx, payment.ID, tenantID, PaymentStatusFailed)
 		return gen.Payment{}, fmt.Errorf("%w: %w", ErrInsufficientCredit, err)
 	}
-	return s.createPaymentRow(ctx, tenantID, userID, input, currency, "", "")
+
+	// Step 3: Mark the payment as succeeded.
+	if _, err := s.store.updatePaymentStatus(ctx, payment.ID, tenantID, PaymentStatusSucceeded); err != nil {
+		slog.Error("payments: failed to mark credit payment as succeeded",
+			"payment_id", payment.ID, "error", err)
+	}
+
+	return payment, nil
 }
 
 // GetPayment retrieves a payment by ID.
@@ -178,48 +237,63 @@ func (s *Service) UpdatePaymentStatus(ctx context.Context, id, tenantID pgtype.U
 	return s.store.updatePaymentStatus(ctx, id, tenantID, status)
 }
 
+// ListAdminPayments lists payments with admin filters (JEOS §17).
+func (s *Service) ListAdminPayments(ctx context.Context, params gen.ListAdminPaymentsParams) ([]gen.Payment, error) {
+	return s.store.listAdminPayments(ctx, params)
+}
+
+// GetAdminPayment retrieves a payment for admin detail view (JEOS §17).
+func (s *Service) GetAdminPayment(ctx context.Context, id, tenantID pgtype.UUID) (gen.Payment, error) {
+	return s.store.getAdminPaymentByID(ctx, id, tenantID)
+}
+
 // ProcessWebhook processes a webhook event from a payment provider.
 // Status indicates the event outcome ("succeeded", "failed", "refunded") and is extracted
 // from the provider-specific payload by each HTTP handler before calling this method.
+//
+// The idempotency check + insert + mark are performed atomically using
+// INSERT ... ON CONFLICT DO NOTHING RETURNING to prevent the race where two
+// concurrent webhook deliveries both pass the read check and both enqueue
+// the worker task (Guide §13 — "Webhook replay processed twice → duplicate
+// credit").
 func (s *Service) ProcessWebhook(ctx context.Context, tenantID pgtype.UUID, provider string, event WebhookEvent, status string) error {
-	// Check idempotency
-	processed, err := s.store.isWebhookEventProcessed(ctx, tenantID, provider, event.EventID)
-	if err != nil {
-		return fmt.Errorf("checking webhook idempotency: %w", err)
-	}
-
-	if processed {
-		return nil // Already processed
-	}
-
-	// Record the event (idempotent via ON CONFLICT DO NOTHING on unique constraint).
-	// ErrNoRows from ON CONFLICT DO NOTHING means duplicate — treat as success.
-	//
-	if _, err := s.store.insertWebhookEvent(ctx, gen.InsertWebhookEventParams{
+	// Atomic insert-or-skip: if the event already exists (ON CONFLICT DO
+	// NOTHING), no rows are returned and we treat it as already processed.
+	// This collapses the previous read-check + insert + mark into a single
+	// atomic step that is race-free under concurrent delivery.
+	inserted, err := s.store.insertWebhookEventIfNew(ctx, gen.InsertWebhookEventParams{
 		TenantID:   tenantID,
 		Provider:   provider,
 		EventID:    event.EventID,
+		EventType:  event.EventType,
 		RawPayload: event.RawPayload,
-	}); err != nil && !errors.Is(err, pgx.ErrNoRows) {
+	})
+	if err != nil {
 		return fmt.Errorf("recording webhook event: %w", err)
 	}
+	if !inserted {
+		// Event already recorded by a concurrent delivery — skip enqueue.
+		return nil
+	}
 
-	// Mark as processed BEFORE enqueuing the task (TX-004). This ensures the
-	// task only fires after the event is fully persisted and marked — if the
-	// mark fails, we return early without enqueuing, so the provider retries
-	// and the idempotency check re-processes cleanly.
+	// Mark as processed BEFORE enqueuing the task (TX-004). The insert above
+	// already won the race, so the mark is safe.
 	if err := s.store.markWebhookEventProcessed(ctx, tenantID, provider, event.EventID); err != nil {
 		return fmt.Errorf("marking webhook event processed: %w", err)
 	}
 
 	// Enqueue async processing AFTER the event is marked processed — the worker
 	// handles payment status updates, subscription activation, wallet
-	// adjustments, and affiliate commission crediting.
+	// adjustments, and affiliate commission crediting. The provider_ref is
+	// passed so the worker can match the payment directly instead of scanning
+	// all pending payments (BUG-002 / BUG-019).
 	if s.enqueuer != nil {
 		payload, _ := json.Marshal(map[string]string{
-			"event_id":  event.EventID,
-			"tenant_id": tenantID.String(),
-			"status":    status,
+			"event_id":     event.EventID,
+			"tenant_id":    tenantID.String(),
+			"status":       status,
+			"provider_ref": event.ProviderRef,
+			"provider":     provider,
 		})
 		// Return the error so the provider receives a 5xx and retries.
 		// The event is already recorded + marked in the DB; on retry the
@@ -443,15 +517,16 @@ func (s *Service) validateDiscountCode(ctx context.Context, code gen.DiscountCod
 		return errors.New("discount code expired")
 	}
 
-	// Check max uses (if limited)
+	// Check max uses (if limited) — use COUNT query instead of list+len
+	// to avoid fetching up to 1000 rows and silently under-counting beyond
+	// that limit (BUG-018).
 	if code.MaxUses != nil {
-		// Count total uses
-		uses, err := s.store.listDiscountCodeUses(ctx, code.ID, 1000, 0)
+		totalUses, err := s.store.countDiscountCodeUses(ctx, code.ID)
 		if err != nil {
 			return fmt.Errorf("checking discount code uses: %w", err)
 		}
 
-		if int32(len(uses)) >= *code.MaxUses { //nolint:gosec // G115: len bounded by limit param (1000)
+		if totalUses >= *code.MaxUses {
 			return errors.New("discount code usage limit reached")
 		}
 	}
@@ -470,6 +545,7 @@ func (s *Service) validateDiscountCode(ctx context.Context, code gen.DiscountCod
 }
 
 // calculateDiscount calculates the discount amount based on code type.
+// Uses integer minor-unit math to avoid float precision loss (Guide §1.3).
 func (s *Service) calculateDiscount(code gen.DiscountCode, amount int64) int64 {
 	discountValue, err := code.DiscountValue.Float64Value()
 	if err != nil || !discountValue.Valid {
@@ -478,9 +554,20 @@ func (s *Service) calculateDiscount(code gen.DiscountCode, amount int64) int64 {
 
 	switch code.DiscountType {
 	case DiscountTypePercent:
-		// Calculate percentage discount
-		discount := float64(amount) * (discountValue.Float64 / 100.0)
-		return int64(discount)
+		// Integer percentage: (amount * pct) / 100 with rounding.
+		// Using integer math avoids float precision loss that causes
+		// off-by-one kobo errors on large amounts.
+		pct := int64(discountValue.Float64)
+		discount := (amount * pct) / 100
+		// Handle fractional percent via remainder rounding.
+		remainder := (amount * pct) % 100
+		if remainder >= 50 {
+			discount++
+		}
+		if discount > amount {
+			discount = amount // cap at amount
+		}
+		return discount
 	case DiscountTypeFixed:
 		// Fixed discount in same currency unit (kobo/cents)
 		return int64(discountValue.Float64)

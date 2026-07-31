@@ -2,21 +2,30 @@
 	import Modal from '$lib/components/Modal.svelte';
 	import {
 		comparisonAdminApi,
+		userManagementApi,
 		type ComparisonType,
 		type ComparisonTypeDetail,
 		type ComparisonTypeAccessRow,
-		type CustomFieldGroupOption
+		type CustomFieldGroupOption,
+		type UserGroup
 	} from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
+	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { DataTable } from '$lib/components/ui/data-table';
 	import { FilterBar } from '$lib/components/ui/filter-bar';
 	import { GitCompare, ChevronDown, ChevronRight, Shield } from 'lucide-svelte';
 
 	let types = $state<ComparisonType[]>([]);
 	let fieldGroups = $state<CustomFieldGroupOption[]>([]);
+	let userGroups = $state<UserGroup[]>([]);
 	let loading = $state(true);
 	let errorMessage = $state('');
 	let searchQuery = $state('');
+
+	const canCreateType = $derived(hasPermission('comparison.type.create'));
+	const canEditType = $derived(hasPermission('comparison.type.edit'));
+	const canDeleteType = $derived(hasPermission('comparison.type.delete'));
+	const canManageAccess = $derived(hasPermission('comparison.type.access.manage'));
 
 	const filterDefs = [
 		{
@@ -74,7 +83,7 @@
 			label: t('comparison_types.visibility'),
 			render: (v: boolean) => `<span class="inline-block rounded-full px-2 py-0.5 text-xs ${v ? 'bg-success/15 text-success dark:text-success' : 'bg-muted/15 text-muted dark:text-muted'}">${v ? t('comparison_types.system') : t('comparison_types.custom')}</span>`
 		},
-		{ key: 'items', label: t('comparison_types.items'), render: () => `<span class="text-xs" style="color: var(--color-muted)">—</span>` },
+		{ key: 'items', label: t('comparison_types.items'), render: (v: unknown, row: ComparisonType) => `<span class="text-xs" style="color: var(--color-muted)">${row.item_count ?? 0}</span>` },
 		{
 			key: 'actions',
 			label: '',
@@ -105,9 +114,10 @@
 	async function load() {
 		loading = true;
 		errorMessage = '';
-		const [typesResult, groupsResult] = await Promise.all([
+		const [typesResult, groupsResult, userGroupsResult] = await Promise.all([
 			comparisonAdminApi.listTypes(),
-			comparisonAdminApi.listFieldGroups()
+			comparisonAdminApi.listFieldGroups(),
+			userManagementApi.listGroups()
 		]);
 		if (typesResult.ok) {
 			types = typesResult.data ?? [];
@@ -116,6 +126,9 @@
 		}
 		if (groupsResult.ok) {
 			fieldGroups = groupsResult.data ?? [];
+		}
+		if (userGroupsResult.ok) {
+			userGroups = userGroupsResult.data.groups ?? [];
 		}
 		loading = false;
 	}
@@ -280,13 +293,15 @@
 {/if}
 
 <div class="mb-4 flex justify-end">
-	<button
-		class="rounded-md px-4 py-2 text-sm font-medium text-white transition-colors"
-		style="background-color: var(--color-primary)"
-		onclick={openCreate}
-	>
-		{t('comparison_types.add')}
-	</button>
+	{#if canCreateType}
+		<button
+			class="rounded-md px-4 py-2 text-sm font-medium text-white transition-colors"
+			style="background-color: var(--color-primary)"
+			onclick={openCreate}
+		>
+			{t('comparison_types.add')}
+		</button>
+	{/if}
 </div>
 
 <FilterBar filters={filterDefs} onsearch={handleSearch} onclear={handleClear} />
@@ -356,14 +371,17 @@
 							<div class="space-y-2 rounded-md border p-3" style="border-color: var(--color-border)">
 								<div>
 									<label for="ct-user-group" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('comparison_types.user_group')}</label>
-									<input
+									<select
 										id="ct-user-group"
-										type="text"
 										class="w-full rounded-md border px-3 py-2 text-sm"
 										style="border-color: var(--color-border); background-color: var(--color-background)"
-										placeholder={t('comparison_types.user_group_placeholder')}
 										bind:value={accessForm.user_group_id}
-									/>
+									>
+										<option value="">{t('comparison_types.user_group_placeholder')}</option>
+										{#each userGroups as ug (ug.id)}
+											<option value={ug.id}>{ug.name}</option>
+										{/each}
+									</select>
 								</div>
 								<div class="flex flex-wrap items-center gap-4">
 									<label class="flex items-center gap-2 text-xs">
@@ -379,14 +397,16 @@
 										{t('comparison_types.ai_can_fill')}
 									</label>
 								</div>
-								<button
-									class="rounded-md px-3 py-1.5 text-xs font-medium text-white transition-colors"
-									style="background-color: var(--color-primary)"
-									onclick={saveAccess}
-									disabled={accessSaving}
-								>
-									{accessSaving ? t('common.saving') : t('comparison_types.add_access')}
-								</button>
+								{#if canManageAccess}
+									<button
+										class="rounded-md px-3 py-1.5 text-xs font-medium text-white transition-colors"
+										style="background-color: var(--color-primary)"
+										onclick={saveAccess}
+										disabled={accessSaving}
+									>
+										{accessSaving ? t('common.saving') : t('comparison_types.add_access')}
+									</button>
+								{/if}
 							</div>
 						</div>
 					</div>
@@ -466,6 +486,7 @@
 			class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10"
 			style="color: var(--color-info)"
 			onclick={() => openEdit(row)}
+			disabled={!canEditType}
 		>
 			{t('common.edit')}
 		</button>
@@ -473,6 +494,7 @@
 			class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10"
 			style="color: var(--color-danger)"
 			onclick={() => confirmDelete(row.id)}
+			disabled={!canDeleteType}
 		>
 			{t('common.delete')}
 		</button>

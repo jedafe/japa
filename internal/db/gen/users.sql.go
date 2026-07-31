@@ -51,6 +51,59 @@ func (q *Queries) CountUserActivity(ctx context.Context, arg CountUserActivityPa
 	return total, err
 }
 
+const countUserBookmarks = `-- name: CountUserBookmarks :one
+SELECT COUNT(*)::int AS count
+FROM bookmarks
+WHERE user_id = $1 AND tenant_id = $2
+`
+
+type CountUserBookmarksParams struct {
+	UserID   pgtype.UUID `json:"user_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+// Counts the user's bookmarks.
+func (q *Queries) CountUserBookmarks(ctx context.Context, arg CountUserBookmarksParams) (int32, error) {
+	row := q.db.QueryRow(ctx, countUserBookmarks, arg.UserID, arg.TenantID)
+	var count int32
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countUserContent = `-- name: CountUserContent :one
+
+SELECT
+    COUNT(*)::int AS total,
+    COUNT(*) FILTER (WHERE status = 'draft')::int AS draft_count,
+    COUNT(*) FILTER (WHERE status = 'published')::int AS published_count
+FROM contents
+WHERE tenant_id = $1 AND author_id = $2
+  AND deleted_at IS NULL
+`
+
+type CountUserContentParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	UserID   pgtype.UUID `json:"user_id"`
+}
+
+type CountUserContentRow struct {
+	Total          int32 `json:"total"`
+	DraftCount     int32 `json:"draft_count"`
+	PublishedCount int32 `json:"published_count"`
+}
+
+// ---------------------------------------------------------------------------
+// Analytics counts (Section 40: BUG-012 — replace row iteration with SQL COUNT)
+// Ref: japaconnect-engineering/sections/40-platform-analytics-site-reports.md
+// ---------------------------------------------------------------------------
+// Counts the user's content by status within the tenant.
+func (q *Queries) CountUserContent(ctx context.Context, arg CountUserContentParams) (CountUserContentRow, error) {
+	row := q.db.QueryRow(ctx, countUserContent, arg.TenantID, arg.UserID)
+	var i CountUserContentRow
+	err := row.Scan(&i.Total, &i.DraftCount, &i.PublishedCount)
+	return i, err
+}
+
 const countUsers = `-- name: CountUsers :one
 SELECT COUNT(*)::int AS count
 FROM users u
@@ -118,6 +171,27 @@ func (q *Queries) DisconnectOAuthAccount(ctx context.Context, arg DisconnectOAut
 	return err
 }
 
+const emailExistsForTenant = `-- name: EmailExistsForTenant :one
+SELECT COUNT(*)::int AS count
+FROM users
+WHERE tenant_id = $1 AND email = $2 AND id != $3
+`
+
+type EmailExistsForTenantParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	Email    string      `json:"email"`
+	ID       pgtype.UUID `json:"id"`
+}
+
+// Checks whether an email is already taken by another user in the same tenant.
+// Returns the count (0 = available).
+func (q *Queries) EmailExistsForTenant(ctx context.Context, arg EmailExistsForTenantParams) (int32, error) {
+	row := q.db.QueryRow(ctx, emailExistsForTenant, arg.TenantID, arg.Email, arg.ID)
+	var count int32
+	err := row.Scan(&count)
+	return count, err
+}
+
 const getPublicProfileByUsername = `-- name: GetPublicProfileByUsername :one
 SELECT DISTINCT ON (u.id)
        u.id AS user_id,
@@ -173,6 +247,47 @@ func (q *Queries) GetPublicProfileByUsername(ctx context.Context, arg GetPublicP
 		&i.CoverUrl,
 		&i.CreatedAt,
 		&i.FollowingCount,
+	)
+	return i, err
+}
+
+const getUserAccountForUpdate = `-- name: GetUserAccountForUpdate :one
+
+SELECT id, username, email, email_verified_at, username_changed_at
+FROM users
+WHERE id = $1 AND tenant_id = $2
+FOR UPDATE
+`
+
+type GetUserAccountForUpdateParams struct {
+	ID       pgtype.UUID `json:"id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+type GetUserAccountForUpdateRow struct {
+	ID                pgtype.UUID        `json:"id"`
+	Username          string             `json:"username"`
+	Email             string             `json:"email"`
+	EmailVerifiedAt   pgtype.Timestamptz `json:"email_verified_at"`
+	UsernameChangedAt pgtype.Timestamptz `json:"username_changed_at"`
+}
+
+// ---------------------------------------------------------------------------
+// Account management (Section 50: PATCH /me/account)
+// Ref: japaconnect-engineering/sections/50-user-dashboard-settings.md
+// ---------------------------------------------------------------------------
+// Fetches the fields needed to validate an account update (username cooldown,
+// email uniqueness, current verified state). Row-locks the user for the
+// duration of the transaction to prevent concurrent account edits.
+func (q *Queries) GetUserAccountForUpdate(ctx context.Context, arg GetUserAccountForUpdateParams) (GetUserAccountForUpdateRow, error) {
+	row := q.db.QueryRow(ctx, getUserAccountForUpdate, arg.ID, arg.TenantID)
+	var i GetUserAccountForUpdateRow
+	err := row.Scan(
+		&i.ID,
+		&i.Username,
+		&i.Email,
+		&i.EmailVerifiedAt,
+		&i.UsernameChangedAt,
 	)
 	return i, err
 }
@@ -450,13 +565,19 @@ func (q *Queries) GetUserDraft(ctx context.Context, arg GetUserDraftParams) (Get
 }
 
 const getUserEmailVerifiedStatus = `-- name: GetUserEmailVerifiedStatus :one
-SELECT email_verified_at FROM users WHERE id = $1
+SELECT email_verified_at FROM users WHERE id = $1 AND tenant_id = $2
 `
+
+type GetUserEmailVerifiedStatusParams struct {
+	UserID   pgtype.UUID `json:"user_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
 
 // Returns email_verified_at for the user. Used by the CanPostInSpace
 // "verified" posting_perm axis (Section 05 line 149, BUG-003).
-func (q *Queries) GetUserEmailVerifiedStatus(ctx context.Context, userID pgtype.UUID) (pgtype.Timestamptz, error) {
-	row := q.db.QueryRow(ctx, getUserEmailVerifiedStatus, userID)
+// Tenant-scoped per Section 04 (BUG-009).
+func (q *Queries) GetUserEmailVerifiedStatus(ctx context.Context, arg GetUserEmailVerifiedStatusParams) (pgtype.Timestamptz, error) {
+	row := q.db.QueryRow(ctx, getUserEmailVerifiedStatus, arg.UserID, arg.TenantID)
 	var email_verified_at pgtype.Timestamptz
 	err := row.Scan(&email_verified_at)
 	return email_verified_at, err
@@ -562,17 +683,36 @@ func (q *Queries) GetUserPreferences(ctx context.Context, arg GetUserPreferences
 }
 
 const getUserPrivacySettings = `-- name: GetUserPrivacySettings :one
-SELECT user_id, dm_privacy, profile_visibility, search_indexable,
+SELECT user_id, tenant_id, dm_privacy, profile_visibility, search_indexable,
        show_online_status, show_activity, created_at, updated_at
 FROM user_privacy_settings
-WHERE user_id = $1
+WHERE tenant_id = $1 AND user_id = $2
 `
 
-func (q *Queries) GetUserPrivacySettings(ctx context.Context, userID pgtype.UUID) (UserPrivacySetting, error) {
-	row := q.db.QueryRow(ctx, getUserPrivacySettings, userID)
-	var i UserPrivacySetting
+type GetUserPrivacySettingsParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	UserID   pgtype.UUID `json:"user_id"`
+}
+
+type GetUserPrivacySettingsRow struct {
+	UserID            pgtype.UUID        `json:"user_id"`
+	TenantID          pgtype.UUID        `json:"tenant_id"`
+	DmPrivacy         string             `json:"dm_privacy"`
+	ProfileVisibility string             `json:"profile_visibility"`
+	SearchIndexable   bool               `json:"search_indexable"`
+	ShowOnlineStatus  bool               `json:"show_online_status"`
+	ShowActivity      bool               `json:"show_activity"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+}
+
+// Tenant-scoped per Section 04 (BUG-009).
+func (q *Queries) GetUserPrivacySettings(ctx context.Context, arg GetUserPrivacySettingsParams) (GetUserPrivacySettingsRow, error) {
+	row := q.db.QueryRow(ctx, getUserPrivacySettings, arg.TenantID, arg.UserID)
+	var i GetUserPrivacySettingsRow
 	err := row.Scan(
 		&i.UserID,
+		&i.TenantID,
 		&i.DmPrivacy,
 		&i.ProfileVisibility,
 		&i.SearchIndexable,
@@ -591,6 +731,8 @@ SELECT DISTINCT ON (u.id)
        u.id AS user_id,
        up.display_name,
        up.avatar_url,
+       up.avatar_media_id,
+       up.header_media_id,
        up.bio,
        up.timezone,
        up.cover_url,
@@ -617,6 +759,8 @@ type GetUserProfileRow struct {
 	UserID        pgtype.UUID        `json:"user_id"`
 	DisplayName   *string            `json:"display_name"`
 	AvatarUrl     *string            `json:"avatar_url"`
+	AvatarMediaID pgtype.UUID        `json:"avatar_media_id"`
+	HeaderMediaID pgtype.UUID        `json:"header_media_id"`
 	Bio           *string            `json:"bio"`
 	Timezone      *string            `json:"timezone"`
 	CoverUrl      *string            `json:"cover_url"`
@@ -640,6 +784,8 @@ func (q *Queries) GetUserProfile(ctx context.Context, arg GetUserProfileParams) 
 		&i.UserID,
 		&i.DisplayName,
 		&i.AvatarUrl,
+		&i.AvatarMediaID,
+		&i.HeaderMediaID,
 		&i.Bio,
 		&i.Timezone,
 		&i.CoverUrl,
@@ -659,11 +805,17 @@ func (q *Queries) GetUserProfile(ctx context.Context, arg GetUserProfileParams) 
 const getUserStatus = `-- name: GetUserStatus :one
 SELECT COALESCE(status, 'active') AS status
 FROM users
-WHERE id = $1
+WHERE id = $1 AND tenant_id = $2
 `
 
-func (q *Queries) GetUserStatus(ctx context.Context, id pgtype.UUID) (string, error) {
-	row := q.db.QueryRow(ctx, getUserStatus, id)
+type GetUserStatusParams struct {
+	ID       pgtype.UUID `json:"id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+// Tenant-scoped per Section 04 (BUG-009).
+func (q *Queries) GetUserStatus(ctx context.Context, arg GetUserStatusParams) (string, error) {
+	row := q.db.QueryRow(ctx, getUserStatus, arg.ID, arg.TenantID)
 	var status string
 	err := row.Scan(&status)
 	return status, err
@@ -911,9 +1063,14 @@ func (q *Queries) ListUserContent(ctx context.Context, arg ListUserContentParams
 const listUserSessions = `-- name: ListUserSessions :many
 SELECT id, token_hash, expires_at, created_at
 FROM refresh_tokens
-WHERE user_id = $1 AND revoked_at IS NULL
+WHERE tenant_id = $1 AND user_id = $2 AND revoked_at IS NULL
 ORDER BY created_at DESC
 `
+
+type ListUserSessionsParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	UserID   pgtype.UUID `json:"user_id"`
+}
 
 type ListUserSessionsRow struct {
 	ID        pgtype.UUID        `json:"id"`
@@ -922,8 +1079,9 @@ type ListUserSessionsRow struct {
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 }
 
-func (q *Queries) ListUserSessions(ctx context.Context, userID pgtype.UUID) ([]ListUserSessionsRow, error) {
-	rows, err := q.db.Query(ctx, listUserSessions, userID)
+// Tenant-scoped per Section 04 (BUG-009).
+func (q *Queries) ListUserSessions(ctx context.Context, arg ListUserSessionsParams) ([]ListUserSessionsRow, error) {
+	rows, err := q.db.Query(ctx, listUserSessions, arg.TenantID, arg.UserID)
 	if err != nil {
 		return nil, err
 	}
@@ -1042,30 +1200,34 @@ func (q *Queries) ListUsers(ctx context.Context, arg ListUsersParams) ([]ListUse
 }
 
 const revokeAllUserSessions = `-- name: RevokeAllUserSessions :exec
-UPDATE refresh_tokens SET revoked_at = now() WHERE user_id = $1 AND revoked_at IS NULL AND id != $2
+UPDATE refresh_tokens SET revoked_at = now() WHERE tenant_id = $1 AND user_id = $2 AND revoked_at IS NULL AND id != $3
 `
 
 type RevokeAllUserSessionsParams struct {
-	UserID pgtype.UUID `json:"user_id"`
-	ID     pgtype.UUID `json:"id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+	UserID   pgtype.UUID `json:"user_id"`
+	ID       pgtype.UUID `json:"id"`
 }
 
+// Tenant-scoped per Section 04 (BUG-009).
 func (q *Queries) RevokeAllUserSessions(ctx context.Context, arg RevokeAllUserSessionsParams) error {
-	_, err := q.db.Exec(ctx, revokeAllUserSessions, arg.UserID, arg.ID)
+	_, err := q.db.Exec(ctx, revokeAllUserSessions, arg.TenantID, arg.UserID, arg.ID)
 	return err
 }
 
 const revokeUserSession = `-- name: RevokeUserSession :exec
-UPDATE refresh_tokens SET revoked_at = now() WHERE id = $1 AND user_id = $2 AND revoked_at IS NULL
+UPDATE refresh_tokens SET revoked_at = now() WHERE id = $1 AND tenant_id = $2 AND user_id = $3 AND revoked_at IS NULL
 `
 
 type RevokeUserSessionParams struct {
-	ID     pgtype.UUID `json:"id"`
-	UserID pgtype.UUID `json:"user_id"`
+	ID       pgtype.UUID `json:"id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+	UserID   pgtype.UUID `json:"user_id"`
 }
 
+// Tenant-scoped per Section 04 (BUG-009).
 func (q *Queries) RevokeUserSession(ctx context.Context, arg RevokeUserSessionParams) error {
-	_, err := q.db.Exec(ctx, revokeUserSession, arg.ID, arg.UserID)
+	_, err := q.db.Exec(ctx, revokeUserSession, arg.ID, arg.TenantID, arg.UserID)
 	return err
 }
 
@@ -1097,6 +1259,25 @@ func (q *Queries) UpdateLastLoginAt(ctx context.Context, arg UpdateLastLoginAtPa
 	return err
 }
 
+const updateUserEmail = `-- name: UpdateUserEmail :exec
+UPDATE users
+SET email = $3, email_verified_at = NULL, updated_at = now()
+WHERE id = $1 AND tenant_id = $2
+`
+
+type UpdateUserEmailParams struct {
+	ID       pgtype.UUID `json:"id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+	Email    string      `json:"email"`
+}
+
+// Updates the email and resets email_verified_at to NULL so the user must
+// re-verify the new address (Section 50: email change triggers re-verification).
+func (q *Queries) UpdateUserEmail(ctx context.Context, arg UpdateUserEmailParams) error {
+	_, err := q.db.Exec(ctx, updateUserEmail, arg.ID, arg.TenantID, arg.Email)
+	return err
+}
+
 const updateUserGeoSpace = `-- name: UpdateUserGeoSpace :exec
 UPDATE users
 SET current_geo_space_id = $1, updated_at = now()
@@ -1116,16 +1297,18 @@ func (q *Queries) UpdateUserGeoSpace(ctx context.Context, arg UpdateUserGeoSpace
 }
 
 const updateUserPassword = `-- name: UpdateUserPassword :exec
-UPDATE users SET password_hash = $2, updated_at = now() WHERE id = $1
+UPDATE users SET password_hash = $3, updated_at = now() WHERE id = $1 AND tenant_id = $2
 `
 
 type UpdateUserPasswordParams struct {
 	ID           pgtype.UUID `json:"id"`
+	TenantID     pgtype.UUID `json:"tenant_id"`
 	PasswordHash *string     `json:"password_hash"`
 }
 
+// Tenant-scoped per Section 04 (BUG-009).
 func (q *Queries) UpdateUserPassword(ctx context.Context, arg UpdateUserPasswordParams) error {
-	_, err := q.db.Exec(ctx, updateUserPassword, arg.ID, arg.PasswordHash)
+	_, err := q.db.Exec(ctx, updateUserPassword, arg.ID, arg.TenantID, arg.PasswordHash)
 	return err
 }
 
@@ -1141,6 +1324,25 @@ type UpdateUserProfileTypeParams struct {
 
 func (q *Queries) UpdateUserProfileType(ctx context.Context, arg UpdateUserProfileTypeParams) error {
 	_, err := q.db.Exec(ctx, updateUserProfileType, arg.TenantID, arg.ID, arg.ProfileType)
+	return err
+}
+
+const updateUserUsername = `-- name: UpdateUserUsername :exec
+UPDATE users
+SET username = $3, username_changed_at = now(), updated_at = now()
+WHERE id = $1 AND tenant_id = $2
+`
+
+type UpdateUserUsernameParams struct {
+	ID       pgtype.UUID `json:"id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+	Username string      `json:"username"`
+}
+
+// Updates the username and stamps username_changed_at for cooldown tracking.
+// Section 50: username may be changed once per 30 days.
+func (q *Queries) UpdateUserUsername(ctx context.Context, arg UpdateUserUsernameParams) error {
+	_, err := q.db.Exec(ctx, updateUserUsername, arg.ID, arg.TenantID, arg.Username)
 	return err
 }
 
@@ -1171,9 +1373,9 @@ func (q *Queries) UpsertUserPreferences(ctx context.Context, arg UpsertUserPrefe
 }
 
 const upsertUserPrivacySettings = `-- name: UpsertUserPrivacySettings :exec
-INSERT INTO user_privacy_settings (user_id, dm_privacy, profile_visibility, search_indexable, show_online_status, show_activity)
-VALUES ($1, $2, $3, $4, $5, $6)
-ON CONFLICT (user_id) DO UPDATE SET
+INSERT INTO user_privacy_settings (tenant_id, user_id, dm_privacy, profile_visibility, search_indexable, show_online_status, show_activity)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
+ON CONFLICT (tenant_id, user_id) DO UPDATE SET
     dm_privacy = EXCLUDED.dm_privacy,
     profile_visibility = EXCLUDED.profile_visibility,
     search_indexable = EXCLUDED.search_indexable,
@@ -1183,6 +1385,7 @@ ON CONFLICT (user_id) DO UPDATE SET
 `
 
 type UpsertUserPrivacySettingsParams struct {
+	TenantID          pgtype.UUID `json:"tenant_id"`
 	UserID            pgtype.UUID `json:"user_id"`
 	DmPrivacy         string      `json:"dm_privacy"`
 	ProfileVisibility string      `json:"profile_visibility"`
@@ -1191,8 +1394,10 @@ type UpsertUserPrivacySettingsParams struct {
 	ShowActivity      bool        `json:"show_activity"`
 }
 
+// Tenant-scoped per Section 04 (BUG-009).
 func (q *Queries) UpsertUserPrivacySettings(ctx context.Context, arg UpsertUserPrivacySettingsParams) error {
 	_, err := q.db.Exec(ctx, upsertUserPrivacySettings,
+		arg.TenantID,
 		arg.UserID,
 		arg.DmPrivacy,
 		arg.ProfileVisibility,
@@ -1204,11 +1409,13 @@ func (q *Queries) UpsertUserPrivacySettings(ctx context.Context, arg UpsertUserP
 }
 
 const upsertUserProfile = `-- name: UpsertUserProfile :exec
-INSERT INTO user_profiles (tenant_id, user_id, display_name, avatar_url, bio, timezone, cover_url)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
+INSERT INTO user_profiles (tenant_id, user_id, display_name, avatar_url, avatar_media_id, header_media_id, bio, timezone, cover_url)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 ON CONFLICT (tenant_id, user_id) DO UPDATE SET
     display_name = EXCLUDED.display_name,
     avatar_url = EXCLUDED.avatar_url,
+    avatar_media_id = EXCLUDED.avatar_media_id,
+    header_media_id = EXCLUDED.header_media_id,
     bio = EXCLUDED.bio,
     timezone = EXCLUDED.timezone,
     cover_url = EXCLUDED.cover_url,
@@ -1216,13 +1423,15 @@ ON CONFLICT (tenant_id, user_id) DO UPDATE SET
 `
 
 type UpsertUserProfileParams struct {
-	TenantID    pgtype.UUID `json:"tenant_id"`
-	UserID      pgtype.UUID `json:"user_id"`
-	DisplayName *string     `json:"display_name"`
-	AvatarUrl   *string     `json:"avatar_url"`
-	Bio         *string     `json:"bio"`
-	Timezone    *string     `json:"timezone"`
-	CoverUrl    *string     `json:"cover_url"`
+	TenantID      pgtype.UUID `json:"tenant_id"`
+	UserID        pgtype.UUID `json:"user_id"`
+	DisplayName   *string     `json:"display_name"`
+	AvatarUrl     *string     `json:"avatar_url"`
+	AvatarMediaID pgtype.UUID `json:"avatar_media_id"`
+	HeaderMediaID pgtype.UUID `json:"header_media_id"`
+	Bio           *string     `json:"bio"`
+	Timezone      *string     `json:"timezone"`
+	CoverUrl      *string     `json:"cover_url"`
 }
 
 func (q *Queries) UpsertUserProfile(ctx context.Context, arg UpsertUserProfileParams) error {
@@ -1231,6 +1440,8 @@ func (q *Queries) UpsertUserProfile(ctx context.Context, arg UpsertUserProfilePa
 		arg.UserID,
 		arg.DisplayName,
 		arg.AvatarUrl,
+		arg.AvatarMediaID,
+		arg.HeaderMediaID,
 		arg.Bio,
 		arg.Timezone,
 		arg.CoverUrl,
@@ -1239,12 +1450,38 @@ func (q *Queries) UpsertUserProfile(ctx context.Context, arg UpsertUserProfilePa
 }
 
 const userHasPassword = `-- name: UserHasPassword :one
-SELECT EXISTS(SELECT 1 FROM users WHERE id = $1 AND password_hash IS NOT NULL AND password_hash != '') AS has_password
+SELECT EXISTS(SELECT 1 FROM users WHERE id = $1 AND tenant_id = $2 AND password_hash IS NOT NULL AND password_hash != '') AS has_password
 `
 
-func (q *Queries) UserHasPassword(ctx context.Context, id pgtype.UUID) (bool, error) {
-	row := q.db.QueryRow(ctx, userHasPassword, id)
+type UserHasPasswordParams struct {
+	ID       pgtype.UUID `json:"id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+// Tenant-scoped per Section 04 (BUG-009).
+func (q *Queries) UserHasPassword(ctx context.Context, arg UserHasPasswordParams) (bool, error) {
+	row := q.db.QueryRow(ctx, userHasPassword, arg.ID, arg.TenantID)
 	var has_password bool
 	err := row.Scan(&has_password)
 	return has_password, err
+}
+
+const usernameExistsForTenant = `-- name: UsernameExistsForTenant :one
+SELECT COUNT(*)::int AS count
+FROM users
+WHERE tenant_id = $1 AND username = $2 AND id != $3
+`
+
+type UsernameExistsForTenantParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	Username string      `json:"username"`
+	ID       pgtype.UUID `json:"id"`
+}
+
+// Checks whether a username is already taken by another user in the same tenant.
+func (q *Queries) UsernameExistsForTenant(ctx context.Context, arg UsernameExistsForTenantParams) (int32, error) {
+	row := q.db.QueryRow(ctx, usernameExistsForTenant, arg.TenantID, arg.Username, arg.ID)
+	var count int32
+	err := row.Scan(&count)
+	return count, err
 }

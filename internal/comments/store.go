@@ -12,6 +12,7 @@ import (
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/mentions"
+	"github.com/jedafe/japa/internal/notifications"
 )
 
 // ---------------------------------------------------------------------------
@@ -71,9 +72,9 @@ func (s *Service) CreateComment(ctx context.Context, tenantID, userID pgtype.UUI
 // errors are logged but never returned to the caller.
 //
 // Notifications dispatched:
-//  1. comment_new — to the content author (if commenter ≠ author, top-level)
-//  2. comment_reply — to the parent comment author (if reply and replier ≠ parent author)
-//  3. comment_mention — to each @mentioned user (extracted from TipTap JSON body)
+//  1. content.comment — to the content author (if commenter ≠ author, top-level)
+//  2. comment.reply — to the parent comment author (if reply and replier ≠ parent author)
+//  3. mention.comment — to each @mentioned user (extracted from TipTap JSON body)
 func (s *Service) DispatchCommentNotifications(ctx context.Context, tenantID pgtype.UUID, comment gen.Comment, dispatcher NotificationDispatcher) {
 	if dispatcher == nil {
 		return
@@ -90,12 +91,12 @@ func (s *Service) DispatchCommentNotifications(ctx context.Context, tenantID pgt
 		} else if content.AuthorID.Valid && content.AuthorID != comment.AuthorUserID {
 			if err := dispatcher.DispatchNotification(
 				ctx, tenantID, content.AuthorID,
-				"comment_new", "",
+				notifications.TypeContentComment, "",
 				comment.AuthorUserID,
 				"comment", comment.ID,
 				"", "", "",
 			); err != nil {
-				slog.Warn("comments: failed to dispatch comment_new notification", "error", err)
+				slog.Warn("comments: failed to dispatch content.comment notification", "error", err)
 			}
 		}
 	}
@@ -111,34 +112,70 @@ func (s *Service) DispatchCommentNotifications(ctx context.Context, tenantID pgt
 		} else if parent.AuthorUserID.Valid && parent.AuthorUserID != comment.AuthorUserID {
 			if err := dispatcher.DispatchNotification(
 				ctx, tenantID, parent.AuthorUserID,
-				"comment_reply", "",
+				notifications.TypeCommentReply, "",
 				comment.AuthorUserID,
 				"comment", comment.ID,
 				"", "", "",
 			); err != nil {
-				slog.Warn("comments: failed to dispatch comment_reply notification", "error", err)
+				slog.Warn("comments: failed to dispatch comment.reply notification", "error", err)
 			}
 		}
 	}
 
 	// 3. Notify @mentioned users (extracted from TipTap JSON body).
+	// Apply privacy filtering when DB checkers are wired (BUG-004):
+	// skip erased users (GDPR), blocked users (privacy), and non-members
+	// of private spaces (visibility leak). Section 15 mention edge cases.
 	mentionedUsers, err := mentions.ExtractMentions([]byte(comment.Body))
 	if err != nil {
 		// Body may not be valid TipTap JSON (e.g., plain text); skip mentions.
 		return
 	}
+
+	if s.mentionCheckers != nil {
+		// Fetch the content to get its spaceID for private-space filtering.
+		content, err := s.read.GetContentByID(ctx, gen.GetContentByIDParams{
+			ID:       comment.ContentID,
+			TenantID: tenantID,
+		})
+		if err != nil {
+			slog.Warn("comments: failed to fetch content for mention filtering",
+				"content_id", comment.ContentID.String(), "error", err)
+		} else {
+			isPrivateSpace := false
+			if content.SpaceID.Valid {
+				space, err := s.read.GetSpaceByID(ctx, gen.GetSpaceByIDParams{
+					ID:       content.SpaceID,
+					TenantID: tenantID,
+				})
+				if err == nil && space.Visibility != "public" {
+					isPrivateSpace = true
+				}
+			}
+
+			mentionedUsers, err = mentions.FilterMentions(
+				ctx, mentionedUsers, tenantID, comment.AuthorUserID, content.SpaceID, isPrivateSpace,
+				s.mentionCheckers, s.mentionCheckers, s.mentionCheckers,
+			)
+			if err != nil {
+				slog.Warn("comments: FilterMentions failed, dispatching unfiltered",
+					"comment_id", comment.ID.String(), "error", err)
+			}
+		}
+	}
+
 	for _, m := range mentionedUsers {
 		if m.EntityType != "user" || !m.ID.Valid || m.ID == comment.AuthorUserID {
 			continue
 		}
 		if err := dispatcher.DispatchNotification(
 			ctx, tenantID, m.ID,
-			"comment_mention", "",
+			"mention.comment", "",
 			comment.AuthorUserID,
 			"comment", comment.ID,
 			"", "", "",
 		); err != nil {
-			slog.Warn("comments: failed to dispatch comment_mention notification", "user_id", m.ID.String(), "error", err)
+			slog.Warn("comments: failed to dispatch mention.comment notification", "user_id", m.ID.String(), "error", err)
 		}
 	}
 }

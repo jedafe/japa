@@ -44,7 +44,7 @@ func (q *Queries) DeleteTrendingSnapshotsByType(ctx context.Context, arg DeleteT
 }
 
 const getSuggestedSpaces = `-- name: GetSuggestedSpaces :many
-SELECT DISTINCT s.id, s.name, s.slug, s.member_count, s.post_count,
+SELECT DISTINCT s.id, s.name, s.slug, s.member_count, s.post_count, s.geo_code,
        COUNT(DISTINCT sm2.user_id) AS shared_members
 FROM spaces s
 JOIN space_members sm ON sm.user_id = $1 AND sm.tenant_id = $2
@@ -54,8 +54,8 @@ WHERE s.id NOT IN (
 )
 AND s.tenant_id = $2
 AND s.deleted_at IS NULL
-GROUP BY s.id, s.name, s.slug, s.member_count, s.post_count
-ORDER BY shared_members DESC
+GROUP BY s.id, s.name, s.slug, s.member_count, s.post_count, s.geo_code
+ORDER BY (CASE WHEN s.geo_code = $4 THEN 0 ELSE 1 END), shared_members DESC
 LIMIT $3
 `
 
@@ -63,6 +63,7 @@ type GetSuggestedSpacesParams struct {
 	UserID   pgtype.UUID `json:"user_id"`
 	TenantID pgtype.UUID `json:"tenant_id"`
 	Limit    int32       `json:"limit"`
+	GeoCode  *string     `json:"geo_code"`
 }
 
 type GetSuggestedSpacesRow struct {
@@ -71,11 +72,20 @@ type GetSuggestedSpacesRow struct {
 	Slug          string      `json:"slug"`
 	MemberCount   int32       `json:"member_count"`
 	PostCount     int32       `json:"post_count"`
+	GeoCode       *string     `json:"geo_code"`
 	SharedMembers int64       `json:"shared_members"`
 }
 
+// ADR-064: when geoCode is provided, spaces matching the visitor's
+// ContentCountry are preferred (re-weighted, not hidden). Empty geoCode =
+// global ranking (original behavior).
 func (q *Queries) GetSuggestedSpaces(ctx context.Context, arg GetSuggestedSpacesParams) ([]GetSuggestedSpacesRow, error) {
-	rows, err := q.db.Query(ctx, getSuggestedSpaces, arg.UserID, arg.TenantID, arg.Limit)
+	rows, err := q.db.Query(ctx, getSuggestedSpaces,
+		arg.UserID,
+		arg.TenantID,
+		arg.Limit,
+		arg.GeoCode,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -89,6 +99,7 @@ func (q *Queries) GetSuggestedSpaces(ctx context.Context, arg GetSuggestedSpaces
 			&i.Slug,
 			&i.MemberCount,
 			&i.PostCount,
+			&i.GeoCode,
 			&i.SharedMembers,
 		); err != nil {
 			return nil, err
@@ -158,10 +169,12 @@ func (q *Queries) GetSuggestedTags(ctx context.Context, arg GetSuggestedTagsPara
 const getSuggestedUsers = `-- name: GetSuggestedUsers :many
 
 SELECT DISTINCT u.id, u.username, up.display_name, up.avatar_url, up.bio,
-       COUNT(DISTINCT sm2.space_id) AS shared_spaces
+       COUNT(DISTINCT sm2.space_id) AS shared_spaces,
+       COUNT(DISTINCT CASE WHEN sp.geo_code = $4 THEN sm2.space_id END) AS geo_shared_spaces
 FROM users u
 JOIN space_members sm ON sm.user_id = $1 AND sm.tenant_id = $2
 JOIN space_members sm2 ON sm2.space_id = sm.space_id AND sm2.user_id = u.id AND sm2.tenant_id = $2
+LEFT JOIN spaces sp ON sp.id = sm2.space_id AND sp.tenant_id = $2
 LEFT JOIN user_profiles up ON up.user_id = u.id AND up.tenant_id = $2
 WHERE u.id != $1
   AND u.tenant_id = $2
@@ -170,7 +183,7 @@ WHERE u.id != $1
       WHERE f.follower_id = $1 AND f.entity_type = 'user' AND f.entity_id = u.id AND f.tenant_id = $2
   )
 GROUP BY u.id, u.username, up.display_name, up.avatar_url, up.bio
-ORDER BY shared_spaces DESC
+ORDER BY geo_shared_spaces DESC, shared_spaces DESC
 LIMIT $3
 `
 
@@ -178,22 +191,32 @@ type GetSuggestedUsersParams struct {
 	UserID   pgtype.UUID `json:"user_id"`
 	TenantID pgtype.UUID `json:"tenant_id"`
 	Limit    int32       `json:"limit"`
+	GeoCode  *string     `json:"geo_code"`
 }
 
 type GetSuggestedUsersRow struct {
-	ID           pgtype.UUID `json:"id"`
-	Username     string      `json:"username"`
-	DisplayName  *string     `json:"display_name"`
-	AvatarUrl    *string     `json:"avatar_url"`
-	Bio          *string     `json:"bio"`
-	SharedSpaces int64       `json:"shared_spaces"`
+	ID              pgtype.UUID `json:"id"`
+	Username        string      `json:"username"`
+	DisplayName     *string     `json:"display_name"`
+	AvatarUrl       *string     `json:"avatar_url"`
+	Bio             *string     `json:"bio"`
+	SharedSpaces    int64       `json:"shared_spaces"`
+	GeoSharedSpaces int64       `json:"geo_shared_spaces"`
 }
 
 // =====================
 // Suggestions (computed from user relationships)
 // =====================
+// ADR-064: when geoCode is provided, users whose shared spaces match the
+// visitor's ContentCountry are preferred (re-weighted, not hidden). Empty
+// geoCode = global ranking (original behavior).
 func (q *Queries) GetSuggestedUsers(ctx context.Context, arg GetSuggestedUsersParams) ([]GetSuggestedUsersRow, error) {
-	rows, err := q.db.Query(ctx, getSuggestedUsers, arg.UserID, arg.TenantID, arg.Limit)
+	rows, err := q.db.Query(ctx, getSuggestedUsers,
+		arg.UserID,
+		arg.TenantID,
+		arg.Limit,
+		arg.GeoCode,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -208,6 +231,7 @@ func (q *Queries) GetSuggestedUsers(ctx context.Context, arg GetSuggestedUsersPa
 			&i.AvatarUrl,
 			&i.Bio,
 			&i.SharedSpaces,
+			&i.GeoSharedSpaces,
 		); err != nil {
 			return nil, err
 		}

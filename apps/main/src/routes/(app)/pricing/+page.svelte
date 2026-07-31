@@ -5,16 +5,14 @@
 
 	let { data }: { data: PageData } = $props();
 
-	const CYMBOLS: Record<string, string> = {
-		NGN: '₦',
-		USD: '$',
-		EUR: '€',
-		GBP: '£'
-	};
+	// Currency symbols from the API (Rule 16 — no hardcoded data).
+	const currencySymbolMap = $derived(
+		new Map((data.currencies ?? []).map((c: { code: string; symbol: string }) => [c.code, c.symbol]))
+	);
 
 	function formatPrice(amount: number, currency: string): string {
 		if (amount === 0) return t('pricing.free', 'Free');
-		const symbol = CYMBOLS[currency] ?? '';
+		const symbol = currencySymbolMap.get(currency) ?? currency;
 		return `${symbol}${(amount / 100).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
 	}
 </script>

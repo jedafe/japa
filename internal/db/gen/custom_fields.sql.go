@@ -239,16 +239,24 @@ func (q *Queries) DeleteCustomFieldGroup(ctx context.Context, arg DeleteCustomFi
 const deleteCustomFieldValue = `-- name: DeleteCustomFieldValue :exec
 DELETE FROM custom_field_values
 WHERE field_id = $1 AND entity_type = $2 AND entity_id = $3
+  AND EXISTS (SELECT 1 FROM custom_fields cf WHERE cf.id = custom_field_values.field_id AND cf.tenant_id = $4)
 `
 
 type DeleteCustomFieldValueParams struct {
 	FieldID    pgtype.UUID `json:"field_id"`
 	EntityType string      `json:"entity_type"`
 	EntityID   pgtype.UUID `json:"entity_id"`
+	TenantID   pgtype.UUID `json:"tenant_id"`
 }
 
+// BUG-014: tenant scoping via a subquery check on custom_fields.tenant_id.
 func (q *Queries) DeleteCustomFieldValue(ctx context.Context, arg DeleteCustomFieldValueParams) error {
-	_, err := q.db.Exec(ctx, deleteCustomFieldValue, arg.FieldID, arg.EntityType, arg.EntityID)
+	_, err := q.db.Exec(ctx, deleteCustomFieldValue,
+		arg.FieldID,
+		arg.EntityType,
+		arg.EntityID,
+		arg.TenantID,
+	)
 	return err
 }
 
@@ -385,23 +393,35 @@ func (q *Queries) GetCustomFieldGroupBySlug(ctx context.Context, arg GetCustomFi
 
 const getCustomFieldValue = `-- name: GetCustomFieldValue :one
 
-SELECT id, field_id, entity_type, entity_id, value_text, value_number,
-       value_bool, value_date, value_json, created_at, updated_at
-FROM custom_field_values
-WHERE field_id = $1 AND entity_type = $2 AND entity_id = $3
+SELECT cfv.id, cfv.field_id, cfv.entity_type, cfv.entity_id, cfv.value_text,
+       cfv.value_number, cfv.value_bool, cfv.value_date, cfv.value_json,
+       cfv.created_at, cfv.updated_at
+FROM custom_field_values cfv
+JOIN custom_fields cf ON cfv.field_id = cf.id
+WHERE cfv.field_id = $1 AND cfv.entity_type = $2 AND cfv.entity_id = $3
+  AND cf.tenant_id = $4
 `
 
 type GetCustomFieldValueParams struct {
 	FieldID    pgtype.UUID `json:"field_id"`
 	EntityType string      `json:"entity_type"`
 	EntityID   pgtype.UUID `json:"entity_id"`
+	TenantID   pgtype.UUID `json:"tenant_id"`
 }
 
 // =====================
 // Field Values
 // =====================
+// BUG-014: JOIN custom_fields to enforce tenant scoping at the SQL layer
+// (defense-in-depth). The custom_field_values table has no tenant_id column;
+// tenancy is enforced transitively via field_id → custom_fields.tenant_id.
 func (q *Queries) GetCustomFieldValue(ctx context.Context, arg GetCustomFieldValueParams) (CustomFieldValue, error) {
-	row := q.db.QueryRow(ctx, getCustomFieldValue, arg.FieldID, arg.EntityType, arg.EntityID)
+	row := q.db.QueryRow(ctx, getCustomFieldValue,
+		arg.FieldID,
+		arg.EntityType,
+		arg.EntityID,
+		arg.TenantID,
+	)
 	var i CustomFieldValue
 	err := row.Scan(
 		&i.ID,
@@ -419,6 +439,56 @@ func (q *Queries) GetCustomFieldValue(ctx context.Context, arg GetCustomFieldVal
 	return i, err
 }
 
+const listAllCustomFieldsByTenant = `-- name: ListAllCustomFieldsByTenant :many
+SELECT id, group_id, tenant_id, label, key, field_type, options, embed_platforms,
+       placeholder, default_value, is_required, is_system, show_in_frontend,
+       filterable, sortable, searchable, position, created_at
+FROM custom_fields
+WHERE tenant_id = $1
+ORDER BY group_id, position ASC, created_at ASC
+`
+
+// All fields for all groups belonging to a tenant, used to enrich
+// ListFieldGroups with fields[] without N+1 per-group field lookups.
+func (q *Queries) ListAllCustomFieldsByTenant(ctx context.Context, tenantID pgtype.UUID) ([]CustomField, error) {
+	rows, err := q.db.Query(ctx, listAllCustomFieldsByTenant, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []CustomField
+	for rows.Next() {
+		var i CustomField
+		if err := rows.Scan(
+			&i.ID,
+			&i.GroupID,
+			&i.TenantID,
+			&i.Label,
+			&i.Key,
+			&i.FieldType,
+			&i.Options,
+			&i.EmbedPlatforms,
+			&i.Placeholder,
+			&i.DefaultValue,
+			&i.IsRequired,
+			&i.IsSystem,
+			&i.ShowInFrontend,
+			&i.Filterable,
+			&i.Sortable,
+			&i.Searchable,
+			&i.Position,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listAssignmentsByEntityClass = `-- name: ListAssignmentsByEntityClass :many
 
 SELECT id, group_id, entity_class, entity_id, position, created_at
@@ -432,6 +502,43 @@ ORDER BY position ASC
 // =====================
 func (q *Queries) ListAssignmentsByEntityClass(ctx context.Context, entityClass string) ([]CustomFieldGroupAssignment, error) {
 	rows, err := q.db.Query(ctx, listAssignmentsByEntityClass, entityClass)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []CustomFieldGroupAssignment
+	for rows.Next() {
+		var i CustomFieldGroupAssignment
+		if err := rows.Scan(
+			&i.ID,
+			&i.GroupID,
+			&i.EntityClass,
+			&i.EntityID,
+			&i.Position,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listAssignmentsByTenantGroups = `-- name: ListAssignmentsByTenantGroups :many
+SELECT cfga.id, cfga.group_id, cfga.entity_class, cfga.entity_id, cfga.position, cfga.created_at
+FROM custom_field_group_assignments cfga
+JOIN custom_field_groups cfg ON cfga.group_id = cfg.id
+WHERE cfg.tenant_id = $1
+ORDER BY cfga.position ASC
+`
+
+// All assignments for groups belonging to a tenant, used to enrich
+// ListFieldGroups with entity_type without N+1 per-group assignment lookups.
+func (q *Queries) ListAssignmentsByTenantGroups(ctx context.Context, tenantID pgtype.UUID) ([]CustomFieldGroupAssignment, error) {
+	rows, err := q.db.Query(ctx, listAssignmentsByTenantGroups, tenantID)
 	if err != nil {
 		return nil, err
 	}
@@ -541,19 +648,83 @@ func (q *Queries) ListCustomFieldGroupsByTenantAndEntityClass(ctx context.Contex
 }
 
 const listCustomFieldValuesByEntity = `-- name: ListCustomFieldValuesByEntity :many
-SELECT id, field_id, entity_type, entity_id, value_text, value_number,
-       value_bool, value_date, value_json, created_at, updated_at
-FROM custom_field_values
-WHERE entity_type = $1 AND entity_id = $2
+SELECT cfv.id, cfv.field_id, cfv.entity_type, cfv.entity_id, cfv.value_text,
+       cfv.value_number, cfv.value_bool, cfv.value_date, cfv.value_json,
+       cfv.created_at, cfv.updated_at
+FROM custom_field_values cfv
+JOIN custom_fields cf ON cfv.field_id = cf.id
+WHERE cfv.entity_type = $1 AND cfv.entity_id = $2
+  AND cf.tenant_id = $3
 `
 
 type ListCustomFieldValuesByEntityParams struct {
 	EntityType string      `json:"entity_type"`
 	EntityID   pgtype.UUID `json:"entity_id"`
+	TenantID   pgtype.UUID `json:"tenant_id"`
 }
 
+// BUG-014: JOIN custom_fields to enforce tenant scoping at the SQL layer.
 func (q *Queries) ListCustomFieldValuesByEntity(ctx context.Context, arg ListCustomFieldValuesByEntityParams) ([]CustomFieldValue, error) {
-	rows, err := q.db.Query(ctx, listCustomFieldValuesByEntity, arg.EntityType, arg.EntityID)
+	rows, err := q.db.Query(ctx, listCustomFieldValuesByEntity, arg.EntityType, arg.EntityID, arg.TenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []CustomFieldValue
+	for rows.Next() {
+		var i CustomFieldValue
+		if err := rows.Scan(
+			&i.ID,
+			&i.FieldID,
+			&i.EntityType,
+			&i.EntityID,
+			&i.ValueText,
+			&i.ValueNumber,
+			&i.ValueBool,
+			&i.ValueDate,
+			&i.ValueJson,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listCustomFieldValuesByEntityForUser = `-- name: ListCustomFieldValuesByEntityForUser :many
+SELECT cfv.id, cfv.field_id, cfv.entity_type, cfv.entity_id, cfv.value_text,
+       cfv.value_number, cfv.value_bool, cfv.value_date, cfv.value_json,
+       cfv.created_at, cfv.updated_at
+FROM custom_field_values cfv
+JOIN custom_fields cf ON cfv.field_id = cf.id
+WHERE cfv.entity_type = $1 AND cfv.entity_id = $2
+  AND cf.tenant_id = $3
+  AND cfv.field_id = ANY($4::uuid[])
+`
+
+type ListCustomFieldValuesByEntityForUserParams struct {
+	EntityType      string        `json:"entity_type"`
+	EntityID        pgtype.UUID   `json:"entity_id"`
+	TenantID        pgtype.UUID   `json:"tenant_id"`
+	VisibleFieldIds []pgtype.UUID `json:"visible_field_ids"`
+}
+
+// BUG-017: push the visible-field-ID filter into SQL instead of fetching
+// all values and filtering in Go. The visible_field_ids array is the set
+// of field IDs the user is allowed to view per field-level RBAC.
+// Also BUG-014: tenant-scoped via JOIN to custom_fields.
+func (q *Queries) ListCustomFieldValuesByEntityForUser(ctx context.Context, arg ListCustomFieldValuesByEntityForUserParams) ([]CustomFieldValue, error) {
+	rows, err := q.db.Query(ctx, listCustomFieldValuesByEntityForUser,
+		arg.EntityType,
+		arg.EntityID,
+		arg.TenantID,
+		arg.VisibleFieldIds,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -860,6 +1031,10 @@ type UpsertCustomFieldValueParams struct {
 	ValueJson   []byte             `json:"value_json"`
 }
 
+// Tenant scoping for upsert is enforced at the handler layer via a
+// GetField(fieldID, tenantID) pre-check (the handler rejects 404 before
+// reaching this query). The custom_field_values table has no tenant_id
+// column, so the INSERT itself cannot be tenant-scoped at the SQL level.
 func (q *Queries) UpsertCustomFieldValue(ctx context.Context, arg UpsertCustomFieldValueParams) (CustomFieldValue, error) {
 	row := q.db.QueryRow(ctx, upsertCustomFieldValue,
 		arg.FieldID,

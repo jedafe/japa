@@ -84,11 +84,14 @@ WHERE id = @id AND form_id = @form_id;
 SELECT id, form_id, tenant_id, user_id, ip_address, field_values, status, created_at
 FROM form_submissions
 WHERE form_id = @form_id AND tenant_id = @tenant_id
-  AND (sqlc.narg(cursor_created_at) IS NULL
-       OR created_at < sqlc.narg(cursor_created_at)
-       OR (created_at = sqlc.narg(cursor_created_at) AND id < sqlc.narg(cursor_id)))
+  AND (sqlc.narg(status_filter) IS NULL OR status = sqlc.narg(status_filter))
 ORDER BY created_at DESC, id DESC
-LIMIT @page_limit;
+LIMIT @page_limit OFFSET @page_offset;
+
+-- name: CountFormSubmissionsByForm :one
+SELECT count(*) FROM form_submissions
+WHERE form_id = @form_id AND tenant_id = @tenant_id
+  AND (sqlc.narg(status_filter) IS NULL OR status = sqlc.narg(status_filter));
 
 -- name: CreateFormSubmission :one
 INSERT INTO form_submissions (form_id, tenant_id, user_id, ip_address, field_values, status)
@@ -108,3 +111,33 @@ WHERE id = @id AND tenant_id = @tenant_id;
 -- name: DeleteFormSubmission :exec
 DELETE FROM form_submissions
 WHERE id = @id AND tenant_id = @tenant_id;
+
+-- =====================
+-- Form Submission Triggers (Section 06)
+-- =====================
+
+-- name: ListFormSubmissionTriggersByForm :many
+SELECT id, form_id, trigger_type, config, position
+FROM form_submission_triggers
+WHERE form_id = @form_id
+ORDER BY position ASC;
+
+-- name: CreateFormSubmissionTrigger :one
+INSERT INTO form_submission_triggers (form_id, trigger_type, config, position)
+VALUES (@form_id, @trigger_type, @config, @position)
+RETURNING id, form_id, trigger_type, config, position;
+
+-- name: UpdateFormSubmissionTrigger :one
+UPDATE form_submission_triggers
+SET trigger_type = @trigger_type, config = @config, position = @position
+WHERE id = @id AND form_id = @form_id
+RETURNING id, form_id, trigger_type, config, position;
+
+-- name: DeleteFormSubmissionTrigger :exec
+DELETE FROM form_submission_triggers
+WHERE id = @id AND form_id = @form_id;
+
+-- name: UpdateFormSubmissionTriggerPosition :exec
+UPDATE form_submission_triggers
+SET position = @position
+WHERE id = @id AND form_id = @form_id;

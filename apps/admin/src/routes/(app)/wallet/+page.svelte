@@ -73,17 +73,16 @@
 	];
 
 	// Predefined activity keys from Section 28 / internal/wallet/wallet.go.
-	const activityKeyOptions = [
-		{ value: 'post_created', label: 'post_created — Creating a post' },
-		{ value: 'comment_created', label: 'comment_created — Creating a comment' },
-		{ value: 'reaction_added', label: 'reaction_added — Adding a reaction' },
-		{ value: 'content_flagged_removed', label: 'content_flagged_removed — Content flagged/removed' },
-		{ value: 'spam_detected', label: 'spam_detected — Spam detected' },
-		{ value: 'referral_completed', label: 'referral_completed — Referral completed' },
-		{ value: 'daily_login', label: 'daily_login — Daily login' },
-		{ value: 'profile_completed', label: 'profile_completed — Profile completed' },
+	// Activity key options derived from existing rules (Rule 16 — no
+	// hardcoded data). The rules table is the source of truth for which
+	// activity keys exist. New keys can still be entered via "Custom key".
+	const activityKeyOptions = $derived([
+		...rules
+			.map((r) => r.activity_key)
+			.filter((k, i, arr) => k && arr.indexOf(k) === i) // unique
+			.map((k) => ({ value: k, label: k })),
 		{ value: '_custom', label: '— Custom key —' }
-	];
+	]);
 	let activityKeyMode = $state<'select' | 'custom'>('select');
 
 	const ruleColumns = [

@@ -15,7 +15,8 @@
 		Star, MessageCircle, Layout, Image,
 		Type, ListOrdered, GitCompare, Palette,
 		Clock, UserPlus, ChevronDown, ChevronRight,
-		Briefcase, Eye, X, Menu, ArrowRightLeft, CreditCard
+		Briefcase, Eye, X, Menu, ArrowRightLeft, CreditCard,
+		Package, Receipt
 	} from "lucide-svelte";
 	import { clsx } from "clsx";
 
@@ -131,6 +132,8 @@
 			label: t("nav.section.monetization", "Monetization"),
 			items: [
 				{ path: "/wallet", label: t("nav.wallet", "Wallet"), icon: Wallet, permission: "wallet.admin" },
+			{ path: "/wallet/credit-packs", label: t("nav.credit_packs", "Credit Packs"), icon: Package, permission: "wallet.credit_pack.manage" },
+			{ path: "/wallet/purchases", label: t("nav.credit_purchases", "Credit Purchases"), icon: Receipt, permission: "wallet.purchases.view_any" },
 			{ path: "/coupons", label: t("nav.coupons", "Coupons"), icon: Tag, permission: "coupons.manage" },
 			{ path: "/discount-codes", label: t("nav.discount_codes", "Discount Codes"), icon: DollarSign, permission: "payments.discount_codes.manage" },
 			{ path: "/plans", label: t("nav.plans", "Subscription Plans"), icon: CreditCard, permission: "payments.plans.manage" },
@@ -158,7 +161,8 @@
 			{ path: "/page-builder/themes", label: t("nav.page_builder_themes", "Page Themes"), icon: Palette, permission: "pagebuilder.themes.manage" },
 			{ path: "/page-templates", label: t("nav.page_templates", "Page Templates"), icon: FileText, permission: "pagebuilder.templates.manage" },
 			{ path: "/custom-fields", label: t("nav.custom_fields", "Custom Fields"), icon: Type, permission: "custom_fields.group.view" },
-			{ path: "/comparisons", label: t("nav.comparisons", "Comparisons"), icon: GitCompare, permission: "comparison.type.create" },
+			{ path: "/custom-fields/entity-types", label: t("nav.custom_field_entity_types", "Entity Types"), icon: Type, permission: "custom_fields.group.view" },
+			{ path: "/comparisons", label: t("nav.comparisons", "Comparisons"), icon: GitCompare, permission: "comparison.create" },
 			{ path: "/comparison-types", label: t("nav.comparison_types", "Comparison Types"), icon: ListOrdered, permission: "comparison.type.create" }
 			]
 		},

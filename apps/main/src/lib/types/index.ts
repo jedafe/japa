@@ -116,6 +116,8 @@ export interface TagDetail {
 	name: string;
 	description?: string | null;
 	color?: string | null;
+	logo_url?: string | null;
+	logo_media_id?: string | null;
 	follower_count: number;
 	created_at: string;
 	updated_at: string;

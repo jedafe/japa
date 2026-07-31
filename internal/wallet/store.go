@@ -2,10 +2,13 @@ package wallet
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
+	errpkg "github.com/jedafe/japa/internal/errors"
 )
 
 // Store provides low-level database access for wallet operations. The Service
@@ -278,4 +281,198 @@ func derefString(s *string) string {
 	}
 
 	return *s
+}
+
+// ---------------------------------------------------------------------------
+// Credit Currency System (Section 58, ADR-065)
+// ---------------------------------------------------------------------------
+
+// listActiveCurrencies returns all active currencies ordered by position.
+func (s *Store) listActiveCurrencies(ctx context.Context) ([]gen.Currency, error) {
+	rows, err := s.read.ListActiveCurrencies(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("listing active currencies: %w", err)
+	}
+	return rows, nil
+}
+
+// listAllCurrencies returns all currencies (including inactive) ordered by position.
+func (s *Store) listAllCurrencies(ctx context.Context) ([]gen.Currency, error) {
+	rows, err := s.read.ListAllCurrencies(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("listing all currencies: %w", err)
+	}
+	return rows, nil
+}
+
+// getCurrencyByCode returns a single currency by its ISO 4217 code.
+func (s *Store) getCurrencyByCode(ctx context.Context, code string) (gen.Currency, error) {
+	row, err := s.read.GetCurrencyByCode(ctx, code)
+	if err != nil {
+		return gen.Currency{}, fmt.Errorf("getting currency %s: %w", code, err)
+	}
+	return row, nil
+}
+
+// createCurrency inserts a new currency.
+func (s *Store) createCurrency(ctx context.Context, p gen.CreateCurrencyParams) (gen.Currency, error) {
+	row, err := s.write.CreateCurrency(ctx, p)
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return gen.Currency{}, fmt.Errorf("creating currency: %w: %s", errpkg.ErrDuplicate, p.Code)
+		}
+		return gen.Currency{}, fmt.Errorf("creating currency: %w", err)
+	}
+	return row, nil
+}
+
+// updateCurrency updates an existing currency.
+func (s *Store) updateCurrency(ctx context.Context, p gen.UpdateCurrencyParams) (gen.Currency, error) {
+	row, err := s.write.UpdateCurrency(ctx, p)
+	if err != nil {
+		return gen.Currency{}, fmt.Errorf("updating currency: %w", err)
+	}
+	return row, nil
+}
+
+// deactivateCurrency sets is_active=false on a currency (soft delete).
+func (s *Store) deactivateCurrency(ctx context.Context, code string) error {
+	if err := s.write.DeactivateCurrency(ctx, code); err != nil {
+		return fmt.Errorf("deactivating currency %s: %w", code, err)
+	}
+	return nil
+}
+
+// countSpacesByCurrency returns the number of country spaces using a currency.
+func (s *Store) countSpacesByCurrency(ctx context.Context, code string) (int32, error) {
+	count, err := s.read.CountSpacesByCurrency(ctx, &code)
+	if err != nil {
+		return 0, fmt.Errorf("counting spaces by currency: %w", err)
+	}
+	return count, nil
+}
+
+// getCurrencyByCountryCode resolves a currency from a country's ISO code
+// via the spaces.currency_code linkage.
+func (s *Store) getCurrencyByCountryCode(ctx context.Context, geoCode string, tenantID pgtype.UUID) (string, error) {
+	row, err := s.read.GetCurrencyByCountryCode(ctx, gen.GetCurrencyByCountryCodeParams{
+		GeoCode:  &geoCode,
+		TenantID: tenantID,
+	})
+	if err != nil {
+		return "", fmt.Errorf("resolving currency for country %s: %w", geoCode, err)
+	}
+	return row.Code, nil
+}
+
+// ---------------------------------------------------------------------------
+// Credit Packs
+// ---------------------------------------------------------------------------
+
+// listActiveCreditPacks returns all active credit packs for a tenant.
+func (s *Store) listActiveCreditPacks(ctx context.Context, tenantID pgtype.UUID) ([]gen.CreditPack, error) {
+	rows, err := s.read.ListActiveCreditPacks(ctx, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("listing active credit packs: %w", err)
+	}
+	return rows, nil
+}
+
+// listAllCreditPacks returns all credit packs (including inactive) for a tenant.
+func (s *Store) listAllCreditPacks(ctx context.Context, tenantID pgtype.UUID) ([]gen.CreditPack, error) {
+	rows, err := s.read.ListAllCreditPacks(ctx, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("listing all credit packs: %w", err)
+	}
+	return rows, nil
+}
+
+// getCreditPackByID returns a single credit pack by ID.
+func (s *Store) getCreditPackByID(ctx context.Context, id, tenantID pgtype.UUID) (gen.CreditPack, error) {
+	row, err := s.read.GetCreditPackByID(ctx, gen.GetCreditPackByIDParams{
+		ID:       id,
+		TenantID: tenantID,
+	})
+	if err != nil {
+		return gen.CreditPack{}, fmt.Errorf("getting credit pack: %w", err)
+	}
+	return row, nil
+}
+
+// createCreditPack inserts a new credit pack.
+func (s *Store) createCreditPack(ctx context.Context, p gen.CreateCreditPackParams) (gen.CreditPack, error) {
+	row, err := s.write.CreateCreditPack(ctx, p)
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return gen.CreditPack{}, fmt.Errorf("creating credit pack: %w: %s", errpkg.ErrDuplicate, p.Name)
+		}
+		return gen.CreditPack{}, fmt.Errorf("creating credit pack: %w", err)
+	}
+	return row, nil
+}
+
+// updateCreditPack updates an existing credit pack.
+func (s *Store) updateCreditPack(ctx context.Context, p gen.UpdateCreditPackParams) (gen.CreditPack, error) {
+	row, err := s.write.UpdateCreditPack(ctx, p)
+	if err != nil {
+		return gen.CreditPack{}, fmt.Errorf("updating credit pack: %w", err)
+	}
+	return row, nil
+}
+
+// deactivateCreditPack sets is_active=false on a credit pack (soft delete).
+func (s *Store) deactivateCreditPack(ctx context.Context, id, tenantID pgtype.UUID) error {
+	if err := s.write.DeactivateCreditPack(ctx, gen.DeactivateCreditPackParams{
+		ID:       id,
+		TenantID: tenantID,
+	}); err != nil {
+		return fmt.Errorf("deactivating credit pack: %w", err)
+	}
+	return nil
+}
+
+// ---------------------------------------------------------------------------
+// User Preferred Currency
+// ---------------------------------------------------------------------------
+
+// getUserPreferredCurrency returns the user's explicit currency preference.
+func (s *Store) getUserPreferredCurrency(ctx context.Context, userID pgtype.UUID) (string, error) {
+	row, err := s.read.GetUserPreferredCurrency(ctx, userID)
+	if err != nil {
+		return "", fmt.Errorf("getting user preferred currency: %w", err)
+	}
+	if row == nil {
+		return "", nil
+	}
+	return *row, nil
+}
+
+// setUserPreferredCurrency sets or clears the user's currency preference.
+func (s *Store) setUserPreferredCurrency(ctx context.Context, userID pgtype.UUID, currencyCode string) error {
+	var code *string
+	if currencyCode != "" {
+		code = &currencyCode
+	}
+	if err := s.write.SetUserPreferredCurrency(ctx, gen.SetUserPreferredCurrencyParams{
+		UserID:            userID,
+		PreferredCurrency: code,
+	}); err != nil {
+		return fmt.Errorf("setting user preferred currency: %w", err)
+	}
+	return nil
+}
+
+// ---------------------------------------------------------------------------
+// Credit Purchase History
+// ---------------------------------------------------------------------------
+
+// listCreditPurchases returns credit purchase payment rows for admin viewing.
+func (s *Store) listCreditPurchases(ctx context.Context, p gen.ListCreditPurchasesParams) ([]gen.ListCreditPurchasesRow, error) {
+	rows, err := s.read.ListCreditPurchases(ctx, p)
+	if err != nil {
+		return nil, fmt.Errorf("listing credit purchases: %w", err)
+	}
+	return rows, nil
 }

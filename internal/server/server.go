@@ -34,6 +34,7 @@ import (
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/docs"
+	"github.com/jedafe/japa/internal/email"
 	emailtemplates "github.com/jedafe/japa/internal/email/templates"
 	errtracking "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/features"
@@ -51,6 +52,7 @@ import (
 	"github.com/jedafe/japa/internal/media"
 	"github.com/jedafe/japa/internal/mentorship"
 	"github.com/jedafe/japa/internal/menus"
+	"github.com/jedafe/japa/internal/mentions"
 	mw "github.com/jedafe/japa/internal/middleware"
 	"github.com/jedafe/japa/internal/newsletter"
 	"github.com/jedafe/japa/internal/notifications"
@@ -230,6 +232,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 	// Custom field and form subsystem (Section 06).
 	cfService := customfields.NewService(database)
+	cfService.SetCache(vkClient.Redis()) // BUG-016: cache field-level RBAC checks
 	embedResolver := customfields.NewEmbedResolver()
 	cfHandlers := customfields.NewHandlers(cfService, embedResolver)
 	cfHandlers.SetRBAC(rbacResolver) // SEC-005: field-level RBAC enforcement
@@ -352,6 +355,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Composes contentService + followService directly.
 	tagsService := tags.NewService(database)
 	tagsHandlers := tags.NewHandlers(tagsService, contentService, followService)
+	// Wire the tag slug resolver so content handlers can accept bulk {tag_slugs} (BUG-006).
+	contentHandlers.SetTagResolver(tagSlugResolverAdapter{svc: tagsService})
 
 	// Notification System subsystem (Section 35 — Notification System).
 	notificationService := notifications.NewService(database)
@@ -361,6 +366,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	followService.SetNotificationDispatcher(followNotificationAdapter{svc: notificationService})
 	// BL-002: wire content mention notification dispatcher (fire-and-forget, Rule 8).
 	contentHandlers.SetMentionNotifier(commentNotificationAdapter{svc: notificationService})
+	// BUG-004: wire DB-backed privacy checkers for mention filtering
+	// (blocks, erased users, private-space membership). Section 15.
+	mentionCheckers := mentions.NewDBCheckers(database)
+	contentHandlers.SetMentionCheckers(mentionCheckers)
 
 	// Comments subsystem (Section 49 — Unified Comments).
 	commentsService := comments.NewService(database)
@@ -369,6 +378,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	commentsHandlers.SetSpamPipeline(spamPipeline)
 	// BL-001: wire comment notification dispatcher (fire-and-forget, Rule 8).
 	commentsHandlers.SetNotifier(commentNotificationAdapter{svc: notificationService})
+	// BUG-004: wire DB-backed privacy checkers for comment mention filtering.
+	commentsService.SetMentionCheckers(mentionCheckers)
 
 	// Interactions subsystem (Sections 41, 52 — Blocks & Mutes).
 	interactionsService := interactions.NewService(database)
@@ -377,6 +388,18 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 	worker.RegisterSettings(settingsService)
 	worker.RegisterRedis(vkClient.Redis()) // TASK-003: RSS feed caching in Valkey
+
+	// Initialize email provider gateway (ADR-015 — multi-provider failover)
+	emailDispatcher := email.NewEmailDispatcher()
+	if smtpProvider, err := email.NewSMTPProvider(); err != nil {
+		slog.Warn("email: smtp provider not available", "error", err)
+	} else if smtpProvider != nil {
+		emailDispatcher.RegisterProvider("transactional", smtpProvider)
+		emailDispatcher.RegisterProvider("marketing", smtpProvider)
+		slog.Info("email: registered smtp provider")
+	}
+	worker.RegisterEmailGateway(emailDispatcher)
+
 	// Inject into services with hot-reloadable moderation/ops limits (AUDIT-BE-009).
 	spamPipeline.SetSettings(settingsService)
 	notificationService.SetAsynqClient(asynqClient)
@@ -386,6 +409,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	oauthHandlers.Settings = settingsService
 	kr.Settings = settingsService
 	contentHandlers.AsynqClient = asynqClient
+	// Wire the Asynq client into customfields so SubmitForm can enqueue
+	// form:fire_submission_triggers tasks (Section 06, BUG-002).
+	cfHandlers.SetAsynqClient(asynqClient)
 	// Wire password policy from system_settings (BE-054).
 	if defaultTenantPW, err := tenantStore.GetDefaultTenant(context.Background()); err == nil && defaultTenantPW != nil {
 		authHandlers.Policy = auth.PasswordPolicyFromSettings(context.Background(), settingsService, defaultTenantPW.ID)
@@ -416,6 +442,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Trending & Discovery subsystem (Phase 28).
 	trendingStore := trending.NewStore(database)
 	trendingHandlers := trending.NewHandlers(trendingStore)
+	trendingHandlers.SetCache(vkClient.Valkey())
 
 	// Register trending processor with worker for background tasks.
 	trendingProc := trending.NewProcessor(database, slog.Default())
@@ -443,7 +470,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	professionalHandlers := professional.NewHandlers(professionalService, rbacResolver, followService)
 
 	// Organization system (Section 07).
-	orgService := organizations.NewService(database)
+	orgService := organizations.NewServiceWithSettings(database, settingsService)
 	orgHandlers := organizations.NewHandlers(orgService, followService)
 
 	// Wallet & Credits subsystem (Section 28 — Wallet & Credits).
@@ -452,12 +479,26 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	walletHandlers := wallet.NewHandlers(walletService)
 	walletService.SetEnqueuer(taskEnqueuer)
 
+	// Currency resolver for geo-aware currency resolution at checkout
+	// (Section 58, ADR-065). The default currency is read from
+	// system_settings wallet.default_currency (fallback NGN). A zero tenant
+	// UUID reads the global setting; the resolver also has SetDefaultCurrency
+	// for hot-reload when the setting changes.
+	defaultCurrency := settingsService.GetStringOr(context.Background(), pgtype.UUID{}, "wallet.default_currency", "NGN")
+	currencyResolver := wallet.NewCurrencyResolver(walletService.Store(), defaultCurrency)
+	walletService.SetCurrencyResolver(currencyResolver)
+
 	// Register wallet processor with worker for background tasks.
 	worker.RegisterWalletProcessor(walletService)
 
 	// Payment Core subsystem (Section 17 — Payment Core).
 	paymentService := payments.NewService(database, &walletCreditAdapter{svc: walletService})
 	paymentService.SetEnqueuer(taskEnqueuer)
+
+	// Wire the payments service back into the wallet so credit purchases can
+	// create payment rows (Section 58). The adapter converts between the
+	// wallet.PaymentCreator interface and payments.Service.CreatePayment.
+	walletService.SetPaymentsService(&walletPaymentAdapter{svc: paymentService})
 
 	// Register payment providers so InitiatePayment can call real provider APIs.
 	paymentService.SetProvider(payments.NewPaystackProvider(cfg.PaystackSecretKey))
@@ -518,7 +559,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 	// Email Templates — Tenant-customizable transactional emails (ADR-055).
 	emailTemplatesService := emailtemplates.NewService(database)
-	emailTemplatesHandlers := emailtemplates.NewHandlers(emailTemplatesService)
+	emailTemplatesHandlers := emailtemplates.NewHandlers(emailTemplatesService, asynqClient)
 
 	// Redirects — Admin-managed URL redirect rules (ADR-056).
 	redirectsService := redirects.NewService(database, vkClient.Redis())
@@ -570,6 +611,25 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// so the Asynq push_delivery handler can send web push notifications.
 	worker.RegisterPushDelivery(notificationService.PushDelivery())
 	worker.RegisterNotificationBatchDispatcher(notificationService)
+
+	// Form submission triggers (Section 06, BUG-002): register the
+	// TriggerDispatcher so the form:fire_submission_triggers worker handler
+	// can dispatch assign_user_group / send_email / send_webhook /
+	// create_ticket / notify_admin triggers after a form submission.
+	formTriggerDispatcher := customfields.NewTriggerDispatcher(cfService)
+	formTriggerDispatcher.SetRBACAssigner(func(ctx context.Context, tenantID, userID, groupID pgtype.UUID) error {
+		return rbacStore.AddUserToGroup(ctx, tenantID, userID, groupID)
+	})
+	formTriggerDispatcher.SetNotifyAdmin(func(ctx context.Context, tenantID pgtype.UUID, title, body, actionURL string) error {
+		// Log the admin notification; a future enhancement can fan this out
+		// to tenant admins via the notification service once a
+		// ListTenantAdmins query is added. The trigger infrastructure is
+		// complete — this hook is the notification delivery channel.
+		slog.Info("customfields: notify_admin form trigger",
+			"tenant_id", tenantID.String(), "title", title)
+		return nil
+	})
+	worker.RegisterFormTriggerProcessor(formTriggerDispatcher)
 
 	// Documentation System subsystem (Section 44).
 	docsService := docs.NewService(database)
@@ -697,12 +757,18 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 	// User Profile & Preferences subsystem.
 	usersService := users.NewService(database)
+	// Wire the media resolver so PATCH /me/profile can accept
+	// avatar_media_id/header_media_id and resolve them to URLs (BUG-004).
+	usersService.MediaResolver = &mediaURLResolver{media: mediaService}
 	usersHandlers := users.NewHandlers(usersService)
 
 	// BUG-003: wire the "verified" axis checker for CanPostInSpace. The
 	// "verified" posting_perm requires email_verified_at IS NOT NULL.
 	spacePostChecker.VerifiedChecker = func(ctx context.Context, userID, tenantID pgtype.UUID) (bool, error) {
-		verifiedAt, err := gen.New(database.Reader).GetUserEmailVerifiedStatus(ctx, userID)
+		verifiedAt, err := gen.New(database.Reader).GetUserEmailVerifiedStatus(ctx, gen.GetUserEmailVerifiedStatusParams{
+			UserID:   userID,
+			TenantID: tenantID,
+		})
 		if err != nil {
 			return false, err
 		}
@@ -984,6 +1050,15 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/custom-field-groups/{id}/fields", cfHandlers.ListFieldsByGroup)
 			// Custom field entity types (public — for frontend entity type selection)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/custom-field-entity-types", cfHandlers.ListEntityTypes)
+			// Admin CRUD for custom field entity types (Section 06)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "custom_fields.group.view")).
+				Get("/admin/custom-field-entity-types", cfHandlers.ListEntityTypesAdmin)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "custom_fields.group.create")).
+				Post("/admin/custom-field-entity-types", cfHandlers.CreateEntityType)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "custom_fields.group.edit")).
+				Patch("/admin/custom-field-entity-types/{id}", cfHandlers.UpdateEntityType)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "custom_fields.group.delete")).
+				Delete("/admin/custom-field-entity-types/{id}", cfHandlers.DeleteEntityType)
 			// Write (require auth + permission)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "custom_fields.group.create")).
 				Post("/custom-field-groups", cfHandlers.CreateFieldGroup)
@@ -1001,6 +1076,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Delete("/custom-fields/{id}", cfHandlers.DeleteField)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "custom_fields.field.edit")).
 				Put("/custom-fields/{id}/permissions", cfHandlers.SetFieldPermission)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/custom-fields/{id}/permissions", cfHandlers.ListFieldPermissions)
 
 			// Field value routes
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/custom-field-values/{entity_type}/{entity_id}", cfHandlers.ListFieldValues)
@@ -1009,10 +1085,17 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 			// Form routes
 			// Public submission (optional auth — anonymous users can submit forms)
-			r.With(auth.OptionalAuth(kr, vkClient.Redis())).Post("/forms/{id}/submissions", cfHandlers.SubmitForm)
+			// §06: rate-limited to 10 submissions per user (or IP for anonymous) per hour.
+			r.With(auth.OptionalAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "form_submission")).Post("/forms/{id}/submissions", cfHandlers.SubmitForm)
 			// Read (require auth)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/forms", cfHandlers.ListForms)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/forms/{id}", cfHandlers.GetForm)
+			// Public form schema by slug (§06 L240). The embed route is the
+			// iframe-friendly variant; /forms/{slug}/embed serves both the
+			// canonical schema and the embed use case. A separate
+			// /forms/{slug} route would conflict with /forms/{id} in chi's
+			// router (both are single-segment params), so the embed route
+			// is the canonical public form schema route.
 			r.Get("/forms/{slug}/embed", cfHandlers.GetFormEmbed)
 			// Write (require auth + permission)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forms.create")).
@@ -1031,6 +1114,20 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forms.submissions.view")).
 				Get("/forms/{id}/submissions", cfHandlers.ListFormSubmissions)
 
+			// Form submission trigger management (Section 06, BUG-003). The
+			// admin form builder UI calls these to configure triggers that
+			// fire after a submission is created.
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forms.submissions.view")).
+				Get("/forms/{id}/triggers", cfHandlers.ListFormTriggers)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forms.edit")).
+				Post("/forms/{id}/triggers", cfHandlers.CreateFormTrigger)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forms.edit")).
+				Patch("/forms/{id}/triggers/{triggerId}", cfHandlers.UpdateFormTrigger)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forms.delete")).
+				Delete("/forms/{id}/triggers/{triggerId}", cfHandlers.DeleteFormTrigger)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forms.edit")).
+				Post("/forms/{id}/triggers/reorder", cfHandlers.ReorderFormTriggers)
+
 			// Admin field-group routes — the same underlying handlers as the
 			// /custom-field-groups block above, mounted a second time under
 			// /admin per catalog (an admin-facing management surface distinct
@@ -1043,6 +1140,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Patch("/admin/field-groups/{id}", cfHandlers.UpdateFieldGroup)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "custom_fields.group.delete")).
 				Delete("/admin/field-groups/{id}", cfHandlers.DeleteFieldGroup)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "custom_fields.group.view")).
+				Get("/admin/field-groups/{id}/fields", cfHandlers.ListFieldsByGroup)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "custom_fields.field.create")).
 				Post("/admin/field-groups/{id}/fields", cfHandlers.CreateField)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "custom_fields.field.edit")).
@@ -1062,6 +1161,24 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Patch("/admin/forms/{id}/submissions/{sub_id}", cfHandlers.UpdateFormSubmission)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forms.submissions.delete")).
 				Delete("/admin/forms/{id}/submissions/{sub_id}", cfHandlers.DeleteFormSubmission)
+
+			// Admin form management (Section 06 L253-261, BUG-008). The bare
+			// /forms routes above remain for backward compatibility with the
+			// existing admin frontend; these /admin/forms routes are the
+			// §06-canonical admin surface. The list-submissions route is
+			// mounted here because §06 specifies it under /admin/forms.
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forms.submissions.view")).
+				Get("/admin/forms", cfHandlers.ListForms)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forms.create")).
+				Post("/admin/forms", cfHandlers.CreateForm)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forms.submissions.view")).
+				Get("/admin/forms/{id}", cfHandlers.GetForm)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forms.edit")).
+				Patch("/admin/forms/{id}", cfHandlers.UpdateForm)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forms.delete")).
+				Delete("/admin/forms/{id}", cfHandlers.DeleteForm)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forms.submissions.view")).
+				Get("/admin/forms/{id}/submissions", cfHandlers.ListFormSubmissions)
 
 			// Space type routes — reads stay bare (any user creating a space needs
 			// the type list for e.g. a dropdown); writes move under /admin per
@@ -1121,11 +1238,6 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Get("/spaces/{slug}/content", spaceHandlers.ListSpaceContent)
 			r.With(auth.OptionalAuth(kr, vkClient.Redis()), spaces.SpaceResolver(spaceService)).
 				Get("/spaces/{slug}/pinned", spaceHandlers.ListPinned)
-			// BUG-005: slug-based analytics route for the main app's analytics tab.
-			// The catalog lists GET /spaces/{id}/analytics (admin path, line 2877);
-			// this slug variant lets the SSR space page fetch analytics by slug.
-			r.With(auth.OptionalAuth(kr, vkClient.Redis()), spaces.SpaceResolver(spaceService)).
-				Get("/spaces/{slug}/analytics", spaceHandlers.GetSpaceAnalyticsBySlug)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), spaces.SpaceResolver(spaceService), rbac.RequirePermission(rbacResolver, "spaces.moderate")).
 				Post("/spaces/{slug}/pinned", spaceHandlers.AddPinned)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), spaces.SpaceResolver(spaceService), rbac.RequirePermission(rbacResolver, "spaces.moderate")).
@@ -1774,9 +1886,12 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "organizations.members.manage")).Patch("/organizations/{id}/members/{userId}", orgHandlers.UpdateMemberRole)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "organizations.invite")).Post("/organizations/{id}/invitations", orgHandlers.InviteMember)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/organizations/{id}/invitations", orgHandlers.ListInvitations)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "organizations.invite")).Delete("/organizations/{id}/invitations/{invitationId}", orgHandlers.RevokeInvitation)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "organizations.invite")).Post("/organizations/invitations/{token}/accept", orgHandlers.AcceptInvitation)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "organizations.claim")).Post("/claim-ownership", orgHandlers.ClaimOwnership)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/claim-ownership", orgHandlers.ListClaims)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.moderation")).Get("/claim-ownership", orgHandlers.ListClaims)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "organizations.claim")).Get("/claim-ownership/{id}", orgHandlers.GetClaim)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "organizations.claim")).Delete("/claim-ownership/{id}", orgHandlers.WithdrawClaim)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.moderation")).Patch("/claim-ownership/{id}", orgHandlers.ReviewClaim)
 
 			// Payment Core routes (Section 17 — Payment Core)
@@ -1792,6 +1907,12 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Payment listing and details (catalog: /me/payments)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/payments", paymentHandlers.ListPayments)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/payments/{id}", paymentHandlers.GetPayment)
+			// Admin payment routes (Section 17 — Admin Payment Routes).
+			// Gated by payments.refund (admin-only permission).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "payments.refund")).
+				Get("/admin/payments", paymentHandlers.ListAdminPayments)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "payments.refund")).
+				Get("/admin/payments/{id}", paymentHandlers.GetAdminPayment)
 			// Refunds — idempotency middleware prevents duplicate refund processing. See AUDIT-BE-004 / Rule 9.
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "payments.refund"),
 				mw.IdempotencyMiddleware(vkClient.Redis(), settingsService)).
@@ -1867,6 +1988,31 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Post("/admin/wallet/adjust", walletHandlers.AdminAdjust)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wallet.admin.adjust")).
 					Get("/admin/wallet/user/{userId}/balance", walletHandlers.AdminGetUserBalance)
+
+				// Credit Currency System (Section 58, ADR-065)
+				// Public: currencies + credit packs + purchase
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).
+					Get("/wallet/currencies", walletHandlers.ListCurrencies)
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).
+					Get("/wallet/credit-packs", walletHandlers.ListCreditPacks)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wallet.credits.purchase")).
+					Post("/wallet/purchase-credits", walletHandlers.PurchaseCredits)
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).
+					Patch("/me/preferences/currency", walletHandlers.SetPreferredCurrency)
+
+				// Admin Panel: credit pack CRUD + purchase history
+
+				// Admin Panel: credit pack CRUD + purchase history
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wallet.credit_pack.manage")).
+					Get("/admin/wallet/credit-packs", walletHandlers.AdminListCreditPacks)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wallet.credit_pack.manage")).
+					Post("/admin/wallet/credit-packs", walletHandlers.AdminCreateCreditPack)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wallet.credit_pack.manage")).
+					Patch("/admin/wallet/credit-packs/{id}", walletHandlers.AdminUpdateCreditPack)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wallet.credit_pack.manage")).
+					Delete("/admin/wallet/credit-packs/{id}", walletHandlers.AdminDeleteCreditPack)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wallet.purchases.view_any")).
+					Get("/admin/wallet/purchases", walletHandlers.AdminListCreditPurchases)
 			})
 
 			// Advertising routes (Section 25 — Ad Placement)
@@ -1992,6 +2138,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Post("/consent", gdprHandlers.RecordConsent)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).
 				Get("/consent", gdprHandlers.GetUserConsents)
+			// BUG-015/BUG-016: consent types + policy version config endpoint
+			// so the frontend does not hardcode them.
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).
+				Get("/consent/config", gdprHandlers.GetConsentConfig)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).
 				Delete("/consent/{type}", gdprHandlers.RevokeConsent)
 			// NOTE (§6.1/§6.2 dedupe): data-export and account-deletion are served
@@ -2138,7 +2288,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 			// User Profile & Preferences routes (catalog: /me, /me/profile)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), csrf.EnsureCookie(cfg.CookieDomain, cfg.IsProduction())).Get("/me", usersHandlers.GetMyProfile)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Patch("/me/profile", usersHandlers.UpdateMyProfile)
+			// Ref: japaconnect-engineering/sections/50-user-dashboard-settings.md (user.profile.edit_own)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "user.profile.edit_own")).Patch("/me/profile", usersHandlers.UpdateMyProfile)
 			// NOTE (§6.3 dedupe): /me/preferences overlaps /me/notification-preferences;
 			// kept as a documented extra pending confirmation of distinct semantics.
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/preferences", usersHandlers.GetMyPreferences)
@@ -2176,13 +2327,12 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// GDPR deletion + data export — served by the REAL gdpr handlers
 			// (queue-backed export via data:export_user_data + Honcho hard erasure),
 			// not the users-package stubs. Consolidated here from /account/* (§6).
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Delete("/me", gdprHandlers.RequestAccountDeletion)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "moderate")).Post("/me/data-export", gdprHandlers.RequestDataExport)
+			// Ref: japaconnect-engineering/sections/50-user-dashboard-settings.md (user.account.delete_own, user.data.export_own)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "user.account.delete_own")).Delete("/me", gdprHandlers.RequestAccountDeletion)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "user.data.export_own"), mw.RateLimit(vkClient.Redis(), "moderate")).Post("/me/data-export", gdprHandlers.RequestDataExport)
 			// Cancel a pending/processing data export request.
-			// NOTE: CancelMyDataExport not yet implemented in gdpr.Handlers (pre-existing).
-			// r.With(auth.RequireAuth(kr, vkClient.Redis())).Delete("/me/data-export", gdprHandlers.CancelMyDataExport)
-			// NOTE: replaces the users-package stub that hardcoded "no_pending_export"
-			// regardless of actual state (same class of bug as the DELETE /me fix).
+			// Ref: japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Delete("/me/data-export", gdprHandlers.CancelMyDataExport)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/data-export/status", gdprHandlers.GetMyDataExportStatus)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/data-export/download", gdprHandlers.GetMyDataExportDownload)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/reports", reportsHandlers.ListMyReports)
@@ -2201,6 +2351,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Public profile Replies tab — user's comments on published+public content; gated to 404 non-active users.
 			r.With(auth.OptionalAuth(kr, vkClient.Redis()), requireActiveProfileUser(usersService, "id")).Get("/users/{id}/replies", commentsHandlers.ListByAuthor)
 			// Admin user routes (catalog: /admin/users)
+			// BUG-017 through BUG-021: config endpoint surfacing valid user
+			// statuses, profile types, violation types, restriction operations,
+			// and restriction durations so the admin frontend does not hardcode them.
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.users.list")).Get("/admin/users/config", usersHandlers.GetUserModerationConfig)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.users.list")).Get("/admin/users", usersHandlers.ListUsers)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.users.manage")).Post("/admin/users", adminHandlers.CreateUser)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.users.list")).Get("/admin/users/{id}", usersHandlers.GetAdminUser)
@@ -2244,21 +2398,21 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/tags/{slug}/followers", tagsHandlers.GetTagFollowers)
 			// Admin tag CRUD (previously missing entirely — content_tags/
 			// AddContentTag was unreachable since there was no way to create a tag).
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tags.create")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tags.manage")).
 				Post("/admin/tags", tagsHandlers.CreateTag)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tags.edit")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tags.manage")).
 				Patch("/admin/tags/{id}", tagsHandlers.UpdateTag)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tags.delete")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tags.manage")).
 				Delete("/admin/tags/{id}", tagsHandlers.DeleteTag)
 			// Admin tag listing (reuses the tenant-scoped ListTags handler).
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tags.edit")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tags.manage")).
 				Get("/admin/tags", tagsHandlers.ListTags)
 			// Tag moderators (Section 49).
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tags.edit")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tags.manage")).
 				Get("/admin/tags/{id}/moderators", tagsHandlers.ListTagModerators)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tags.edit")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tags.manage")).
 				Post("/admin/tags/{id}/moderators", tagsHandlers.AddTagModerator)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tags.edit")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tags.manage")).
 				Delete("/admin/tags/{id}/moderators/{userId}", tagsHandlers.RemoveTagModerator)
 
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.analytics.search")).
@@ -3098,16 +3252,18 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.Get("/widgets/{id}", pagebuilderHandlers.GetBlock)
 
 			// Task 28: Me additions
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).
-				Patch("/me/account", usersHandlers.UpdateMyProfile)
+			// Ref: japaconnect-engineering/sections/50-user-dashboard-settings.md
+			// /me/account updates username (30-day cooldown), email (re-verify),
+			// display_name — distinct from /me/profile (avatar/bio/timezone).
+			// Gated by user.account.manage_own (Section 50 line 263).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "user.account.manage_own")).
+				Patch("/me/account", usersHandlers.UpdateMyAccount)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "api.keys.self_manage")).
 				Get("/me/api-keys/{id}", publicAPIHandlers.GetAPIKey)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "api.keys.self_manage")).
 				Patch("/me/api-keys/{id}", publicAPIHandlers.UpdateAPIKey)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).
 				Delete("/me/push-tokens/{id}", notificationHandlers.HandlePushUnsubscribe)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).
-				Get("/me/spaces/owned", spaceHandlers.ListMyOwnedSpaces)
 
 			// Task 29: AI conversations
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).
@@ -3118,22 +3274,6 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Task 30: DM requests
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).
 				Get("/dm/requests", wsHandlers.ListMessageRequests)
-
-			// Task 32: Forum extras
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.thread.solve")).
-				Delete("/forum/{id}/solve", forumHandlers.SolveThread)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.vote")).
-				Delete("/forum/{id}/vote", forumHandlers.Vote)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.tag.create")).
-				Post("/forum/{id}/tags", forumHandlers.AddThreadTag)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.vote")).
-				Post("/forum/{id}/vote", forumHandlers.Vote)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.poll.create")).
-				Post("/forum/{id}/poll", forumHandlers.CreatePoll)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.vote")).
-				Post("/poll-options/{id}/vote", forumHandlers.VotePoll)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.vote")).
-				Delete("/poll-options/{id}/vote", forumHandlers.VotePoll)
 
 			// Task 33: Content public extras
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).
@@ -3324,6 +3464,16 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.Delete("/backup-configs/{id}", controlHandlers.DeleteBackupConfig)
 			r.Post("/backup-configs/{id}/trigger", controlHandlers.TriggerBackup)
 			r.Get("/backup-targets", controlHandlers.ListBackupTargets)
+
+			// Wallet Currencies — super_admin CRUD
+			r.With(rbac.RequirePermission(rbacResolver, "wallet.currency.manage")).
+				Get("/wallet/currencies", walletHandlers.ControlListCurrencies)
+			r.With(rbac.RequirePermission(rbacResolver, "wallet.currency.manage")).
+				Post("/wallet/currencies", walletHandlers.ControlCreateCurrency)
+			r.With(rbac.RequirePermission(rbacResolver, "wallet.currency.manage")).
+				Patch("/wallet/currencies/{code}", walletHandlers.ControlUpdateCurrency)
+			r.With(rbac.RequirePermission(rbacResolver, "wallet.currency.manage")).
+				Delete("/wallet/currencies/{code}", walletHandlers.ControlDeleteCurrency)
 		})
 	})
 
@@ -3354,6 +3504,45 @@ func (a *walletCreditAdapter) SpendCredits(
 	})
 }
 
+// walletPaymentAdapter adapts payments.Service to implement wallet.PaymentCreator.
+// This lets the wallet create credit-purchase payment rows via the Section 17
+// payment provider abstraction without importing the payments package.
+type walletPaymentAdapter struct {
+	svc *payments.Service
+}
+
+func (a *walletPaymentAdapter) CreatePayment(
+	ctx context.Context,
+	tenantID, userID pgtype.UUID,
+	input wallet.PaymentCreateInput,
+) (wallet.PaymentCreateResult, error) {
+	createResult, err := a.svc.CreatePayment(ctx, tenantID, userID, payments.CreatePaymentInput{
+		Provider:     input.Provider,
+		PurposeType:  input.PurposeType,
+		PurposeID:    input.PurposeID,
+		Amount:       input.Amount,
+		Currency:     input.Currency,
+		Metadata:     input.Metadata,
+		DiscountCode: input.DiscountCode,
+	})
+	if err != nil {
+		return wallet.PaymentCreateResult{}, err
+	}
+	payment := createResult.Payment
+	result := wallet.PaymentCreateResult{
+		ID:          payment.ID.String(),
+		Provider:    payment.Provider,
+		Status:      payment.Status,
+		Amount:      payment.Amount,
+		Currency:    payment.Currency,
+		CheckoutURL: createResult.CheckoutURL,
+	}
+	if payment.ProviderRef != nil {
+		result.ProviderRef = *payment.ProviderRef
+	}
+	return result, nil
+}
+
 // commentNotificationAdapter adapts notifications.Service.DispatchNotification
 // (returns DispatchResult) to the comments.NotificationDispatcher and
 // content.MentionNotifier interfaces (both return only error). The
@@ -3361,6 +3550,18 @@ func (a *walletCreditAdapter) SpendCredits(
 // fire-and-forget per Rule 8.
 type commentNotificationAdapter struct {
 	svc *notifications.Service
+}
+
+// tagSlugResolverAdapter adapts tags.Service.ResolveTagSlugMap to the
+// content.TagSlugResolver interface, avoiding an import cycle (tags imports
+// content, so content cannot import tags directly).
+// Ref: japaconnect-engineering/sections/14-content-type-system.md (bulk tag_slugs)
+type tagSlugResolverAdapter struct {
+	svc *tags.Service
+}
+
+func (a tagSlugResolverAdapter) ResolveTagSlugs(ctx context.Context, tenantID pgtype.UUID, slugs []string) (map[string]pgtype.UUID, error) {
+	return a.svc.ResolveTagSlugMap(ctx, tenantID, slugs)
 }
 
 // followNotificationAdapter adapts notifications.Service.DispatchNotification
@@ -3431,6 +3632,22 @@ type forumSpaceBroadcaster struct {
 
 func (f *forumSpaceBroadcaster) BroadcastToSpace(spaceID string, event forum.WSEvent) {
 	f.hub.BroadcastToSpace(spaceID, websocket.WSEvent{Type: event.Type, Payload: event.Payload})
+}
+
+// mediaURLResolver adapts media.Service to the users.MediaResolver
+// interface so PATCH /me/profile can resolve avatar_media_id and
+// header_media_id to presigned URLs (BUG-004).
+// Ref: japaconnect-engineering/sections/50-user-dashboard-settings.md
+type mediaURLResolver struct {
+	media *media.Service
+}
+
+func (r *mediaURLResolver) ResolveMediaURL(ctx context.Context, tenantID, mediaID pgtype.UUID) (string, error) {
+	m, err := r.media.GetMedia(ctx, tenantID, mediaID)
+	if err != nil {
+		return "", err
+	}
+	return r.media.GetMediaURL(&m, media.ImageProxyOpts{}), nil
 }
 
 // StartWorker creates an Asynq worker server from the provided config,

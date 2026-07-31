@@ -195,18 +195,45 @@ WHERE tenant_id = $1
 ORDER BY name ASC
 `
 
+type ListCountriesRow struct {
+	ID             pgtype.UUID        `json:"id"`
+	TenantID       pgtype.UUID        `json:"tenant_id"`
+	ParentID       pgtype.UUID        `json:"parent_id"`
+	SpaceTypeID    pgtype.UUID        `json:"space_type_id"`
+	Name           string             `json:"name"`
+	Slug           string             `json:"slug"`
+	Description    *string            `json:"description"`
+	WikiContent    []byte             `json:"wiki_content"`
+	LogoMediaID    pgtype.UUID        `json:"logo_media_id"`
+	HeaderImageID  pgtype.UUID        `json:"header_image_id"`
+	GeoCode        *string            `json:"geo_code"`
+	Level          string             `json:"level"`
+	MemberCount    int32              `json:"member_count"`
+	PostCount      int32              `json:"post_count"`
+	FollowerCount  int32              `json:"follower_count"`
+	Visibility     string             `json:"visibility"`
+	PostingPerm    string             `json:"posting_perm"`
+	ReplyingPerm   string             `json:"replying_perm"`
+	CommentingPerm string             `json:"commenting_perm"`
+	JoiningPerm    string             `json:"joining_perm"`
+	Status         string             `json:"status"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
+}
+
 // =====================
 // Geo Space Lookups
 // =====================
-func (q *Queries) ListCountries(ctx context.Context, tenantID pgtype.UUID) ([]Space, error) {
+func (q *Queries) ListCountries(ctx context.Context, tenantID pgtype.UUID) ([]ListCountriesRow, error) {
 	rows, err := q.db.Query(ctx, listCountries, tenantID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Space
+	var items []ListCountriesRow
 	for rows.Next() {
-		var i Space
+		var i ListCountriesRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.TenantID,
@@ -263,15 +290,42 @@ type ListStatesByCountryParams struct {
 	TenantID       pgtype.UUID `json:"tenant_id"`
 }
 
-func (q *Queries) ListStatesByCountry(ctx context.Context, arg ListStatesByCountryParams) ([]Space, error) {
+type ListStatesByCountryRow struct {
+	ID             pgtype.UUID        `json:"id"`
+	TenantID       pgtype.UUID        `json:"tenant_id"`
+	ParentID       pgtype.UUID        `json:"parent_id"`
+	SpaceTypeID    pgtype.UUID        `json:"space_type_id"`
+	Name           string             `json:"name"`
+	Slug           string             `json:"slug"`
+	Description    *string            `json:"description"`
+	WikiContent    []byte             `json:"wiki_content"`
+	LogoMediaID    pgtype.UUID        `json:"logo_media_id"`
+	HeaderImageID  pgtype.UUID        `json:"header_image_id"`
+	GeoCode        *string            `json:"geo_code"`
+	Level          string             `json:"level"`
+	MemberCount    int32              `json:"member_count"`
+	PostCount      int32              `json:"post_count"`
+	FollowerCount  int32              `json:"follower_count"`
+	Visibility     string             `json:"visibility"`
+	PostingPerm    string             `json:"posting_perm"`
+	ReplyingPerm   string             `json:"replying_perm"`
+	CommentingPerm string             `json:"commenting_perm"`
+	JoiningPerm    string             `json:"joining_perm"`
+	Status         string             `json:"status"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
+}
+
+func (q *Queries) ListStatesByCountry(ctx context.Context, arg ListStatesByCountryParams) ([]ListStatesByCountryRow, error) {
 	rows, err := q.db.Query(ctx, listStatesByCountry, arg.CountrySpaceID, arg.TenantID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Space
+	var items []ListStatesByCountryRow
 	for rows.Next() {
-		var i Space
+		var i ListStatesByCountryRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.TenantID,
@@ -356,15 +410,42 @@ type SearchGeoSpacesParams struct {
 	LimitCount int32       `json:"limit_count"`
 }
 
-func (q *Queries) SearchGeoSpaces(ctx context.Context, arg SearchGeoSpacesParams) ([]Space, error) {
+type SearchGeoSpacesRow struct {
+	ID             pgtype.UUID        `json:"id"`
+	TenantID       pgtype.UUID        `json:"tenant_id"`
+	ParentID       pgtype.UUID        `json:"parent_id"`
+	SpaceTypeID    pgtype.UUID        `json:"space_type_id"`
+	Name           string             `json:"name"`
+	Slug           string             `json:"slug"`
+	Description    *string            `json:"description"`
+	WikiContent    []byte             `json:"wiki_content"`
+	LogoMediaID    pgtype.UUID        `json:"logo_media_id"`
+	HeaderImageID  pgtype.UUID        `json:"header_image_id"`
+	GeoCode        *string            `json:"geo_code"`
+	Level          string             `json:"level"`
+	MemberCount    int32              `json:"member_count"`
+	PostCount      int32              `json:"post_count"`
+	FollowerCount  int32              `json:"follower_count"`
+	Visibility     string             `json:"visibility"`
+	PostingPerm    string             `json:"posting_perm"`
+	ReplyingPerm   string             `json:"replying_perm"`
+	CommentingPerm string             `json:"commenting_perm"`
+	JoiningPerm    string             `json:"joining_perm"`
+	Status         string             `json:"status"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
+}
+
+func (q *Queries) SearchGeoSpaces(ctx context.Context, arg SearchGeoSpacesParams) ([]SearchGeoSpacesRow, error) {
 	rows, err := q.db.Query(ctx, searchGeoSpaces, arg.TenantID, arg.Query, arg.LimitCount)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Space
+	var items []SearchGeoSpacesRow
 	for rows.Next() {
-		var i Space
+		var i SearchGeoSpacesRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.TenantID,

@@ -1,8 +1,8 @@
 <script lang="ts">
-	import { api, fieldGroupsAdminApiExtended } from '$lib/api';
+	import { api, fieldGroupsAdminApiExtended, userManagementApi } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
-	import { Plus, Pencil, Trash2, Shield } from 'lucide-svelte';
+	import { Plus, Pencil, Trash2, Shield, List } from 'lucide-svelte';
 	import Modal from '$lib/components/Modal.svelte';
 	import { DataTable } from '$lib/components/ui/data-table';
 	import { FilterBar } from '$lib/components/ui/filter-bar';
@@ -61,19 +61,18 @@
 
 	const canManageFields = $derived(hasPermission('custom_fields.group.create'));
 
-	const filterDefs = [
+	// Entity types are fetched from GET /custom-field-entity-types so the
+	// filter options always match the backend's supported entity classes
+	// (Rule 16 — no hardcoded option lists in the frontend).
+	let entityTypeOptions = $state<Array<{ value: string; label: string }>>([]);
+
+	const filterDefs = $derived([
 		{
 			key: 'entity_type',
-			label: 'Entity Type',
-			options: [
-				{ value: 'user', label: 'User' },
-				{ value: 'post', label: 'Post' },
-				{ value: 'space', label: 'Space' },
-				{ value: 'comment', label: 'Comment' },
-				{ value: 'message', label: 'Message' }
-			]
+			label: t('fieldGroups.entity_type'),
+			options: entityTypeOptions
 		}
-	];
+	]);
 
 	let filterValues = $state<Record<string, string>>({});
 
@@ -114,9 +113,11 @@
 		errorMessage = '';
 		try {
 			await api(`/admin/field-groups/${deleteTarget.id}`, { method: 'DELETE' });
-			groups = groups.filter((g) => g.id !== deleteTarget!.id);
 			showDeleteConfirm = false;
 			deleteTarget = null;
+			// Re-fetch from the server to stay consistent with server truth
+			// (Rule 16 — invalidate and re-fetch after server confirms).
+			await load();
 		} catch {
 			errorMessage = t('common.error');
 		}
@@ -154,6 +155,13 @@
 				groups = (Array.isArray(result.data) ? result.data : []) as FieldGroup[];
 			} else {
 				errorMessage = result.error;
+			}
+			// Fetch entity types from the backend (Rule 16) if not already loaded.
+			if (entityTypeOptions.length === 0) {
+				const typesResult = await userManagementApi.listCustomFieldEntityTypes();
+				if (typesResult.ok && Array.isArray(typesResult.data)) {
+					entityTypeOptions = typesResult.data;
+				}
 			}
 		} catch {
 			errorMessage = t('common.error');
@@ -228,8 +236,8 @@
 			const fieldsResult = await api<FieldItem[]>(`/admin/field-groups/${group.id}/fields`);
 			groupFields = fieldsResult.ok ? (fieldsResult.data ?? []) : [];
 
-			const ugResult = await api<Array<{ id: string; name: string }>>('/admin/user-groups');
-			userGroups = ugResult.ok ? (ugResult.data ?? []) : [];
+			const ugResult = await api<{ groups: Array<{ id: string; name: string }>; total: number }>('/admin/user-groups');
+			userGroups = ugResult.ok && ugResult.data?.groups ? ugResult.data.groups : [];
 
 			permissions = [];
 			for (const field of groupFields) {
@@ -293,7 +301,7 @@
 	<button
 		class="flex items-center gap-1.5 rounded-md px-4 py-2 text-sm font-medium transition-colors"
 		style={activeTab === 'permissions' ? 'background-color: var(--color-primary); color: white' : ''}
-		onclick={() => { if (selectedGroup) openPermissions(selectedGroup); }}
+		onclick={() => { activeTab = 'permissions'; }}
 	>
 		<Shield class="h-3 w-3" />
 		{t('fieldGroups.permissions')}
@@ -334,8 +342,29 @@
 	{/if}
 
 {:else if activeTab === 'permissions'}
+	<!-- Group selector -->
+	<div class="mb-6 flex items-center gap-3">
+		<label for="perm-group-select" class="text-sm font-medium" style="color: var(--color-foreground)">Field Group:</label>
+		<select
+			id="perm-group-select"
+			class="rounded-lg border px-3 py-2 text-sm"
+			style="border-color: var(--color-border); background-color: var(--color-background); color: var(--color-foreground)"
+			value={selectedGroup?.id ?? ''}
+			onchange={(e) => {
+				const id = (e.target as HTMLSelectElement).value;
+				const group = groups.find((g) => g.id === id);
+				if (group) openPermissions(group);
+			}}
+		>
+			<option value="" disabled>Select a field group…</option>
+			{#each groups as g}
+				<option value={g.id}>{g.name}</option>
+			{/each}
+		</select>
+	</div>
+
 	{#if !selectedGroup}
-		<p class="py-8 text-center text-sm" style="color: var(--color-muted)">{t('custom-fields.select_a_field_group_to_manage_permissio')}</p>
+		<p class="py-8 text-center text-sm" style="color: var(--color-muted)">Select a field group above to manage its field permissions.</p>
 	{:else if permissionsLoading}
 		<p class="py-8 text-center text-sm" style="color: var(--color-muted)">{t('common.loading')}</p>
 	{:else}
@@ -344,7 +373,9 @@
 		</p>
 
 		{#if groupFields.length === 0}
-			<p class="py-8 text-center text-sm" style="color: var(--color-muted)">{t('custom-fields.no_fields_in_this_group')}</p>
+			<p class="py-8 text-center text-sm" style="color: var(--color-muted)">No fields in this group. Add fields first from the Field Groups tab.</p>
+		{:else if userGroups.length === 0}
+			<p class="py-8 text-center text-sm" style="color: var(--color-muted)">No user groups found. Create user groups first from the User Management section.</p>
 		{:else}
 			<div class="overflow-x-auto rounded-lg border" style="border-color: var(--color-border)">
 				<table class="w-full text-sm">
@@ -403,7 +434,12 @@
 		</div>
 		<div>
 			<label for="fg-entity" class="mb-1 block text-sm font-medium">{t('fieldGroups.entity_type')}</label>
-			<input id="fg-entity" type="text" bind:value={entityType} required class="w-full rounded-lg border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-background); color: var(--color-foreground)" />
+			<select id="fg-entity" bind:value={entityType} required class="w-full rounded-lg border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-background); color: var(--color-foreground)">
+				<option value="" disabled>Select…</option>
+				{#each entityTypeOptions as opt}
+					<option value={opt.value}>{opt.label}</option>
+				{/each}
+			</select>
 		</div>
 	</div>
 </Modal>
@@ -418,6 +454,9 @@
 <!-- FieldGroupActionsCell snippet for DataTable -->
 {#snippet FieldGroupActionsCell({ value, row }: { value: any; row: FieldGroup })}
 	<div class="flex items-center gap-1">
+		<a href={`/custom-fields/${row.id}`} class="inline-flex items-center justify-center rounded-md p-1.5 hover:opacity-70" title="Manage fields">
+			<List class="h-3.5 w-3.5" style="color: var(--color-foreground)" />
+		</a>
 		<Button variant="ghost" size="sm" onclick={() => openPermissions(row)} title={t('fieldGroups.permissions')}>
 			<Shield class="h-3.5 w-3.5" style="color: var(--color-primary)" />
 		</Button>

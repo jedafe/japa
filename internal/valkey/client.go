@@ -141,3 +141,10 @@ func (c *Client) Close() {
 func (c *Client) Redis() valkeycompat.Cmdable {
 	return c.rdb
 }
+
+// Valkey returns the raw valkey-go client for native command building (e.g.
+// cache-aside patterns with B().Set().Key().Value().EX().Build()). Returns
+// nil when the client is in degraded mode.
+func (c *Client) Valkey() valkey.Client {
+	return c.vk
+}

@@ -197,6 +197,23 @@ func (h *AuthHandlers) Register(w http.ResponseWriter, r *http.Request) {
 		slog.Warn("register: failed to record password history", "error", err)
 	}
 
+	// Send welcome email (fire-and-forget, Golden Rule 8).
+	if h.AsynqClient != nil {
+		welcomePayload, _ := json.Marshal(map[string]interface{}{
+			"to":            req.Email,
+			"template_slug": "welcome",
+			"tenant_id":     tenant.ID.String(),
+			"template_data": map[string]string{
+				"user_name": req.Username,
+			},
+			"template_site_name": h.SiteName,
+		})
+		task := asynq.NewTask("email:send", welcomePayload)
+		if _, err := h.AsynqClient.Enqueue(task, asynq.Queue("default"), asynq.MaxRetry(3)); err != nil {
+			slog.Warn("register: failed to enqueue welcome email", "error", err)
+		}
+	}
+
 	accessToken, err := h.KeyRotation.MintAccessToken(userID, tenant.ID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "token_error", "Failed to create session")

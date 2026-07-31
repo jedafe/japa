@@ -95,11 +95,20 @@
 						href="/tags/{tag.slug}"
 						class="group flex items-center gap-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 transition-colors hover:border-[var(--color-primary)]/40 hover:bg-[var(--color-surface-subtle)]"
 					>
-						<span
-							class="grid h-10 w-10 shrink-0 place-items-center rounded-[var(--radius)] bg-[var(--color-surface-subtle)] text-[var(--color-primary)]"
-						>
-							<Hash size={18} />
-						</span>
+						{#if tag.logo_url}
+							<img
+								src={tag.logo_url}
+								alt={tag.name}
+								loading="lazy"
+								class="h-10 w-10 shrink-0 rounded-[var(--radius)] border border-[var(--color-border)] object-cover"
+							/>
+						{:else}
+							<span
+								class="grid h-10 w-10 shrink-0 place-items-center rounded-[var(--radius)] bg-[var(--color-surface-subtle)] text-[var(--color-primary)]"
+							>
+								<Hash size={18} />
+							</span>
+						{/if}
 						<span class="min-w-0 flex-1">
 							<span
 								class="block truncate text-sm font-medium text-[var(--color-text)] group-hover:text-[var(--color-primary)]"

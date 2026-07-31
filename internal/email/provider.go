@@ -1,0 +1,29 @@
+package email
+
+import "context"
+
+// EmailRequest is the standard envelope sent to any email provider.
+type EmailRequest struct {
+	To       string
+	Subject  string
+	Body     string
+	IsHTML   bool
+	Category string // "transactional" or "marketing"
+}
+
+// EmailResponse is the standard envelope returned by any email provider.
+type EmailResponse struct {
+	ProviderRef string // provider-assigned reference ID for audit trail
+	Status      string // "success", "failed"
+}
+
+// EmailProvider defines the contract every email backend must implement.
+// Business logic never calls a vendor SDK directly; it always goes
+// through this interface so providers can be swapped or fallback can
+// be applied without touching callers.
+type EmailProvider interface {
+	// Name returns a human-readable identifier for logs and dashboards.
+	Name() string
+	// Send dispatches an email request to the provider and returns the response.
+	Send(ctx context.Context, req EmailRequest) (EmailResponse, error)
+}

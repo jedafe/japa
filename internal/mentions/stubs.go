@@ -25,19 +25,24 @@ func (c *DBCheckers) IsBlocked(ctx context.Context, blockerID, blockedID pgtype.
 	return blocked, err
 }
 
-// IsMember checks whether a user is a member of a space (tenant-agnostic).
-func (c *DBCheckers) IsMember(ctx context.Context, spaceID, userID pgtype.UUID) (bool, error) {
+// IsMember checks whether a user is a member of a space.
+// Tenant-scoped per Section 04 (BUG-005).
+func (c *DBCheckers) IsMember(ctx context.Context, tenantID, spaceID, userID pgtype.UUID) (bool, error) {
 	isMember, err := c.read.CheckSpaceMembership(ctx, gen.CheckSpaceMembershipParams{
 		SpaceID:  spaceID,
 		UserID:   userID,
-		TenantID: pgtype.UUID{},
+		TenantID: tenantID,
 	})
 	return isMember, err
 }
 
 // IsErased checks whether a user's account has been deleted/erased.
-func (c *DBCheckers) IsErased(ctx context.Context, userID pgtype.UUID) (bool, error) {
-	status, err := c.read.GetUserStatus(ctx, userID)
+// Tenant-scoped per Section 04 (BUG-009).
+func (c *DBCheckers) IsErased(ctx context.Context, tenantID, userID pgtype.UUID) (bool, error) {
+	status, err := c.read.GetUserStatus(ctx, gen.GetUserStatusParams{
+		ID:       userID,
+		TenantID: tenantID,
+	})
 	if err != nil {
 		return false, err
 	}

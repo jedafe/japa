@@ -216,6 +216,25 @@ func (h *Handlers) GetUserConsents(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"data": records})
 }
 
+// GetConsentConfig handles GET /api/v1/consent/config.
+// Returns the platform's valid consent types and the current privacy policy
+// version so the frontend does not need to hardcode them (BUG-015, BUG-016).
+// Ref: japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
+func (h *Handlers) GetConsentConfig(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	cfg, err := h.Service.GetConsentConfig(r.Context(), tenantID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": cfg})
+}
+
 // RevokeConsent handles DELETE /api/v1/consent/:type.
 func (h *Handlers) RevokeConsent(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
