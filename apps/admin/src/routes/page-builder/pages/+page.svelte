@@ -228,7 +228,7 @@
 			<Pencil class="mr-1 h-3 w-3" />{t('common.edit', 'Edit')}
 		</Button>
 		<Button variant="ghost" size="sm" onclick={() => validateSeo(row.id)}>
-			SEO
+			{t('page_builder.seo_button', 'SEO')}
 		</Button>
 		{#if canManagePages}
 			<Button variant="ghost" size="sm" onclick={() => openSaveAsTemplate(row.id, row.title)}>
@@ -387,17 +387,17 @@
 {/if}
 
 {#if showSeoModal}
-	<Modal bind:open={showSeoModal} title="SEO Validation" onclose={() => { showSeoModal = false; }}>
+	<Modal bind:open={showSeoModal} title={t('page_builder.seo_validation', 'SEO Validation')} onclose={() => { showSeoModal = false; }}>
 		{#if seoLoading}
 			<p class="text-sm" style="color: var(--color-muted)">{t('common.loading')}</p>
 		{:else if seoIssues.length === 0}
-			<div class="rounded-md border border-success bg-success p-4 text-sm text-success dark:dark:border-success dark:dark:bg-success dark:dark:text-success">
-				No SEO issues found.
+			<div class="rounded-md border p-4 text-sm" style="border-color: var(--color-success); background: color-mix(in srgb, var(--color-success) 10%, transparent); color: var(--color-success)">
+				{t('page_builder.seo_no_issues', 'No SEO issues found.')}
 			</div>
 		{:else}
 			<ul class="space-y-2">
 				{#each seoIssues as issue}
-					<li class="rounded-md border border-warning bg-warning px-3 py-2 text-sm text-warning dark:border-warning dark:bg-warning dark:dark:text-warning">
+					<li class="rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-warning); background: color-mix(in srgb, var(--color-warning) 10%, transparent); color: var(--color-warning)">
 						{issue}
 					</li>
 				{/each}

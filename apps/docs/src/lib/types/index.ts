@@ -196,3 +196,32 @@ export interface OpenAPIRequestBody {
 	description?: string;
 	content?: Record<string, { schema?: unknown }>;
 }
+
+/* ------------------------------------------------------------------ *
+ * Navigation menus (ADR-054) — GET /menus/{slug}
+ * ------------------------------------------------------------------ */
+
+export type MenuPlacement = 'sidebar' | 'bottom_bar' | 'dropdown' | 'footer' | 'header';
+export type MenuVisibility = 'all' | 'authenticated' | 'guest';
+
+export interface MenuItem {
+	id: string;
+	label: string;
+	url: string;
+	icon: string | null;
+	sort_order: number;
+	visibility: MenuVisibility;
+	target: '_self' | '_blank';
+	permission_node?: string | null;
+	is_ad_slot: boolean;
+	ad_slot_config?: Record<string, unknown> | null;
+	children?: MenuItem[];
+}
+
+export interface Menu {
+	id: string;
+	slug: string;
+	name: string;
+	placement: MenuPlacement;
+	items: MenuItem[];
+}

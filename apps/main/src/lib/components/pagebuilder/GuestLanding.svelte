@@ -47,23 +47,6 @@
 </svelte:head>
 
 <div class="min-h-screen bg-[var(--color-bg)]">
-	<!-- Slim marketing header -->
-	<header class="sticky top-0 z-50 border-b border-[var(--color-border)] bg-[var(--color-bg)]/80 backdrop-blur-md">
-		<div class="mx-auto flex h-14 max-w-6xl items-center justify-between px-4">
-			<a href="/" class="flex items-center gap-2 text-lg font-bold text-[var(--color-text)]">
-				{t('app.name')}
-			</a>
-			<nav class="flex items-center gap-3">
-				<a href="/explore" class="text-sm text-[var(--color-text-subtle)] hover:text-[var(--color-text)]">{t('landing.nav_explore', 'Explore')}</a>
-				<a href="/blog" class="text-sm text-[var(--color-text-subtle)] hover:text-[var(--color-text)]">{t('landing.nav_blog', 'Blog')}</a>
-				<a href="/login" class="text-sm text-[var(--color-text-subtle)] hover:text-[var(--color-text)]">{t('landing.login', 'Log in')}</a>
-				<a href="/signup" class="rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-1.5 text-sm font-semibold text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)]">
-					{t('landing.signup', 'Sign up')}
-				</a>
-			</nav>
-		</div>
-	</header>
-
 	<!-- Hero — Hashnode-style with gradient + serif title -->
 	<section class="relative overflow-hidden border-b border-[var(--color-border)]">
 		<div class="absolute inset-0 bg-gradient-to-br from-[var(--color-primary)]/8 via-[var(--color-primary)]/3 to-transparent"></div>
@@ -209,44 +192,4 @@
 			</a>
 		</div>
 	</section>
-
-	<!-- Footer -->
-	<footer class="border-t border-[var(--color-border)] bg-[var(--color-surface)]">
-		<div class="mx-auto max-w-6xl px-6 py-12">
-			<div class="grid grid-cols-2 gap-8 sm:grid-cols-4">
-				<div>
-					<h3 class="mb-3 text-sm font-semibold text-[var(--color-text)]">{t('landing.footer_product', 'Product')}</h3>
-					<ul class="space-y-2 text-sm text-[var(--color-text-subtle)]">
-						<li><a href="/explore" class="hover:text-[var(--color-text)]">{t('landing.nav_explore', 'Explore')}</a></li>
-						<li><a href="/blog" class="hover:text-[var(--color-text)]">{t('landing.nav_blog', 'Blog')}</a></li>
-						<li><a href="/search" class="hover:text-[var(--color-text)]">{t('landing.footer_search', 'Search')}</a></li>
-					</ul>
-				</div>
-				<div>
-					<h3 class="mb-3 text-sm font-semibold text-[var(--color-text)]">{t('landing.footer_community', 'Community')}</h3>
-					<ul class="space-y-2 text-sm text-[var(--color-text-subtle)]">
-						<li><a href="/signup" class="hover:text-[var(--color-text)]">{t('landing.signup', 'Sign up')}</a></li>
-						<li><a href="/login" class="hover:text-[var(--color-text)]">{t('landing.login', 'Log in')}</a></li>
-					</ul>
-				</div>
-				<div>
-					<h3 class="mb-3 text-sm font-semibold text-[var(--color-text)]">{t('landing.footer_company', 'Company')}</h3>
-					<ul class="space-y-2 text-sm text-[var(--color-text-subtle)]">
-						<li><a href="/about" class="hover:text-[var(--color-text)]">{t('landing.footer_about', 'About')}</a></li>
-						<li><a href="/docs" class="hover:text-[var(--color-text)]">{t('landing.footer_docs', 'Docs')}</a></li>
-					</ul>
-				</div>
-				<div>
-					<h3 class="mb-3 text-sm font-semibold text-[var(--color-text)]">{t('landing.footer_legal', 'Legal')}</h3>
-					<ul class="space-y-2 text-sm text-[var(--color-text-subtle)]">
-						<li><a href="/privacy" class="hover:text-[var(--color-text)]">{t('landing.footer_privacy', 'Privacy')}</a></li>
-						<li><a href="/terms" class="hover:text-[var(--color-text)]">{t('landing.footer_terms', 'Terms')}</a></li>
-					</ul>
-				</div>
-			</div>
-			<div class="mt-10 border-t border-[var(--color-border)] pt-6 text-center text-sm text-[var(--color-muted)]">
-				© {new Date().getFullYear()} {t('app.name')}. {t('landing.footer_rights', 'All rights reserved.')}
-			</div>
-		</div>
-	</footer>
 </div>

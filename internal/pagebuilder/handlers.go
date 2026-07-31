@@ -771,3 +771,110 @@ func slugify(s string) string {
 	}
 	return string(result)
 }
+
+// ─── Sidebar Handlers ────────────────────────────────────────────────────
+
+// GetSidebar handles GET /api/v1/admin/sidebars/{position}.
+// Returns the sidebar page (with its blocks array) for the given position.
+func (h *Handlers) GetSidebar(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	position := chi.URLParam(r, "position")
+	page, err := h.Service.GetSidebarPage(r.Context(), position, tenantID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": page})
+}
+
+// GetSidebarConfig handles GET /api/v1/admin/sidebars.
+// Returns both sidebar pages (left and right) in one response.
+func (h *Handlers) GetSidebarConfig(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	config, err := h.Service.GetSidebarConfig(r.Context(), tenantID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": config})
+}
+
+// UpdateSidebar handles PATCH /api/v1/admin/sidebars/{position}.
+// Updates the blocks array and/or meta on a sidebar page.
+func (h *Handlers) UpdateSidebar(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	position := chi.URLParam(r, "position")
+
+	var input struct {
+		Blocks json.RawMessage `json:"blocks"`
+		Meta   json.RawMessage `json:"meta"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
+
+	// If blocks is provided, update blocks.
+	if input.Blocks != nil {
+		page, err := h.Service.UpdateSidebarBlocks(r.Context(), position, tenantID, input.Blocks)
+		if err != nil {
+			handleServiceError(w, err)
+			return
+		}
+		// If meta is also provided, update meta on the same page.
+		if input.Meta != nil {
+			page, err = h.Service.UpdateSidebarMeta(r.Context(), position, tenantID, input.Meta)
+			if err != nil {
+				handleServiceError(w, err)
+				return
+			}
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"data": page})
+		return
+	}
+
+	// If only meta is provided, update meta.
+	if input.Meta != nil {
+		page, err := h.Service.UpdateSidebarMeta(r.Context(), position, tenantID, input.Meta)
+		if err != nil {
+			handleServiceError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"data": page})
+		return
+	}
+
+	writeError(w, http.StatusBadRequest, "missing_fields", "Either blocks or meta must be provided")
+}
+
+// GetPublishedSidebar handles GET /api/v1/sidebars/{position} — public endpoint.
+// Returns the sidebar page blocks for rendering on public-facing apps.
+func (h *Handlers) GetPublishedSidebar(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	position := chi.URLParam(r, "position")
+	page, err := h.Service.GetSidebarPage(r.Context(), position, tenantID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": page})
+}

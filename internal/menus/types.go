@@ -23,6 +23,9 @@ type Placement string
 const (
 	PlacementSidebar   Placement = "sidebar"
 	PlacementBottomBar Placement = "bottom_bar"
+	PlacementDropdown  Placement = "dropdown"
+	PlacementFooter    Placement = "footer"
+	PlacementHeader    Placement = "header"
 )
 
 // Visibility controls which auth states see a menu item.
@@ -58,7 +61,9 @@ const (
 
 // ValidPlacement checks whether a string is a valid placement.
 func ValidPlacement(s string) bool {
-	return s == string(PlacementSidebar) || s == string(PlacementBottomBar)
+	return s == string(PlacementSidebar) || s == string(PlacementBottomBar) ||
+		s == string(PlacementDropdown) || s == string(PlacementFooter) ||
+		s == string(PlacementHeader)
 }
 
 // ValidVisibility checks whether a string is a valid visibility.

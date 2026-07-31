@@ -5,8 +5,10 @@
 	import TableOfContents from './TableOfContents.svelte';
 	import SearchLauncher from './SearchLauncher.svelte';
 	import UserDropdown from './UserDropdown.svelte';
+	import GuestHeader from './GuestHeader.svelte';
+	import GuestFooter from './GuestFooter.svelte';
 	import { t } from '$lib/i18n';
-	import type { DocNavTree as DocNavTreeType, DocAudience, SessionUser } from '$lib/types';
+	import type { DocNavTree as DocNavTreeType, DocAudience, SessionUser, Menu } from '$lib/types';
 
 	interface Props {
 		nav: DocNavTreeType[];
@@ -26,6 +28,10 @@
 		variant?: 'doc' | 'api' | 'full';
 		/** API reference: the right code-sample pane snippet (variant='api'). */
 		apiPane?: Snippet;
+		/** Platform logo URL from appearance.logo_url (control panel). */
+		logoUrl?: string;
+		/** Footer menu from GET /menus/docs_footer — ADR-054. */
+		footerMenu?: Menu | null;
 		children: Snippet;
 	}
 
@@ -39,6 +45,8 @@
 		sidebar,
 		variant = 'doc',
 		apiPane,
+		logoUrl = '',
+		footerMenu = null,
 		children
 	}: Props = $props();
 
@@ -65,6 +73,17 @@
 			{@render children()}
 		</main>
 	</div>
+{:else if !user}
+	<!-- Guest layout: full-width top nav bar instead of the three-column shell. -->
+	<GuestHeader
+		{logoUrl}
+		{accessibleAudiences}
+		{activeAudience}
+	/>
+	<div class="guest-shell-content">
+		{@render children()}
+	</div>
+	<GuestFooter menu={footerMenu} />
 {:else}
 	<div
 		class="shell"
@@ -279,5 +298,10 @@
 		.mobile-topbar {
 			display: flex;
 		}
+	}
+
+	.guest-shell-content {
+		min-height: calc(100vh - var(--nav-height));
+		background: var(--color-bg);
 	}
 </style>

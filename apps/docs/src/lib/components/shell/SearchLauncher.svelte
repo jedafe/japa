@@ -14,7 +14,7 @@
 	}
 </script>
 
-<svelte:window on:keydown={onKeydown} />
+<svelte:window onkeydown={onKeydown} />
 
 <button
 	type="button"
