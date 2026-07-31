@@ -488,6 +488,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	currencyResolver := wallet.NewCurrencyResolver(walletService.Store(), defaultCurrency)
 	walletService.SetCurrencyResolver(currencyResolver)
 
+	// Wire the Valkey cache invalidator for the currency cache
+	// (Section 58, Rule 4). After any currency CRUD operation, the
+	// jc:wallet:currencies:{tenant_id} key is flushed.
+	walletService.SetCacheInvalidator(&walletCacheInvalidator{vk: vkClient.Redis()})
+
 	// Register wallet processor with worker for background tasks.
 	worker.RegisterWalletProcessor(walletService)
 
@@ -2890,6 +2895,17 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Public page endpoint (no auth required)
 			r.Get("/pages/{slug}", pagebuilderHandlers.GetPublishedPage)
 
+			// Public sidebar endpoints (no auth required) — sitewide sidebar blocks
+			r.Get("/sidebars/{position}", pagebuilderHandlers.GetPublishedSidebar)
+
+			// Admin sidebar management (requires pages.manage permission)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "pages.manage")).
+				Get("/admin/sidebars", pagebuilderHandlers.GetSidebarConfig)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "pages.manage")).
+				Get("/admin/sidebars/{position}", pagebuilderHandlers.GetSidebar)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "pages.manage")).
+				Patch("/admin/sidebars/{position}", pagebuilderHandlers.UpdateSidebar)
+
 			// Public page-templates endpoints (read-only, no auth required)
 			r.Get("/page-templates", pagebuilderHandlers.ListTemplates)
 			r.Get("/page-templates/{id}", pagebuilderHandlers.GetTemplate)
@@ -3234,7 +3250,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Task 26: Moderation queue assign + SEO validate
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.moderation")).
 				Patch("/admin/moderation-queue/{id}/assign", adminHandlers.AssignModerationItem)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "docs.admin")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "pages.manage")).
 				Get("/admin/seo/validate/{id}", sitemapHandler.ValidateSEO)
 
 			// Task 27: Pagebuilder admin extra + public pages
@@ -3648,6 +3664,18 @@ func (r *mediaURLResolver) ResolveMediaURL(ctx context.Context, tenantID, mediaI
 		return "", err
 	}
 	return r.media.GetMediaURL(&m, media.ImageProxyOpts{}), nil
+}
+
+// walletCacheInvalidator adapts the Valkey client to the wallet.Service's
+// CacheInvalidator interface. It deletes the jc:wallet:currencies:{tenant_id}
+// key after any currency CRUD operation (Section 58, Rule 4).
+type walletCacheInvalidator struct {
+	vk valkeycompat.Cmdable
+}
+
+func (w *walletCacheInvalidator) InvalidateCurrenciesCache(ctx context.Context, tenantID pgtype.UUID) error {
+	key := "jc:wallet:currencies:" + tenantID.String()
+	return w.vk.Del(ctx, key).Err()
 }
 
 // StartWorker creates an Asynq worker server from the provided config,

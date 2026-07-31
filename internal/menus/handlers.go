@@ -220,13 +220,20 @@ func (h *Handlers) CreateMenuItem(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	menuID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid menu ID")
+		return
+	}
 	var input CreateMenuItemInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
 		return
 	}
-	if input.Label == "" || input.URL == "" || input.MenuID == "" {
-		writeError(w, http.StatusBadRequest, "validation_error", "label, url, and menu_id are required")
+	// menu_id comes from the URL path (/admin/menus/{id}/items), not the body.
+	input.MenuID = menuID.String()
+	if input.Label == "" || input.URL == "" {
+		writeError(w, http.StatusBadRequest, "validation_error", "label and url are required")
 		return
 	}
 	item, err := h.Service.CreateMenuItem(r.Context(), tenantID, input)
@@ -312,21 +319,21 @@ func (h *Handlers) GetMenuBySlug(w http.ResponseWriter, r *http.Request) {
 	}
 
 	isAuthenticated := false
-	userPermissions := map[string]bool{}
+	userGroupIDs := map[string]bool{}
 
 	user := auth.FromContext(r.Context())
 	if user != nil {
 		isAuthenticated = true
-		resolver := rbac.FromContext(r.Context())
-		if resolver != nil {
-			uc, err := resolver.GetUserContext(r.Context(), user.UserID, tenantID)
-			if err == nil && uc != nil {
-				userPermissions = uc.Permissions
+		// Resolve the user's group memberships for group-based menu item gating.
+		groupIDs, err := h.Service.GetUserGroupIDs(r.Context(), tenantID, user.UserID.String())
+		if err == nil {
+			for _, gid := range groupIDs {
+				userGroupIDs[gid] = true
 			}
 		}
 	}
 
-	menu, err := h.Service.GetMenuBySlug(r.Context(), tenantID, slug, userPermissions, isAuthenticated)
+	menu, err := h.Service.GetMenuBySlug(r.Context(), tenantID, slug, userGroupIDs, isAuthenticated)
 	if err != nil {
 		handleServiceError(w, err)
 		return

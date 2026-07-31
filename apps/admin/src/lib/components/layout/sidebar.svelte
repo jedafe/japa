@@ -16,7 +16,7 @@
 		Type, ListOrdered, GitCompare, Palette,
 		Clock, UserPlus, ChevronDown, ChevronRight,
 		Briefcase, Eye, X, Menu, ArrowRightLeft, CreditCard,
-		Package, Receipt
+		Package, Receipt, PanelLeft
 	} from "lucide-svelte";
 	import { clsx } from "clsx";
 
@@ -159,6 +159,7 @@
 			{ path: "/page-builder", label: t("nav.page_builder", "Page Builder"), icon: Layout, permission: "pagebuilder.blocks.manage" },
 			{ path: "/page-builder/pages", label: t("nav.page_builder_pages", "Pages"), icon: FileText, permission: "pages.manage" },
 			{ path: "/page-builder/themes", label: t("nav.page_builder_themes", "Page Themes"), icon: Palette, permission: "pagebuilder.themes.manage" },
+		{ path: "/page-builder/sidebars", label: t("nav.page_builder_sidebars", "Sidebars"), icon: PanelLeft, permission: "pages.manage" },
 			{ path: "/page-templates", label: t("nav.page_templates", "Page Templates"), icon: FileText, permission: "pagebuilder.templates.manage" },
 			{ path: "/custom-fields", label: t("nav.custom_fields", "Custom Fields"), icon: Type, permission: "custom_fields.group.view" },
 			{ path: "/custom-fields/entity-types", label: t("nav.custom_field_entity_types", "Entity Types"), icon: Type, permission: "custom_fields.group.view" },

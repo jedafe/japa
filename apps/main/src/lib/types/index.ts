@@ -69,7 +69,7 @@ export interface UserSpaceRef {
  * Navigation menus (ADR-054) — GET /menus/{slug}
  * ------------------------------------------------------------------ */
 
-export type MenuPlacement = 'sidebar' | 'bottom_bar';
+export type MenuPlacement = 'sidebar' | 'bottom_bar' | 'dropdown' | 'footer' | 'header';
 export type MenuVisibility = 'all' | 'authenticated' | 'guest';
 
 export interface MenuItem {

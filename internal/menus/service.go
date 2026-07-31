@@ -74,7 +74,7 @@ func (s *Service) GetMenu(ctx context.Context, id, tenantID pgtype.UUID) (*MenuR
 	}, nil
 }
 
-func (s *Service) GetMenuBySlug(ctx context.Context, tenantID pgtype.UUID, slug string, userPermissions map[string]bool, isAuthenticated bool) (*MenuResponse, error) {
+func (s *Service) GetMenuBySlug(ctx context.Context, tenantID pgtype.UUID, slug string, userGroupIDs map[string]bool, isAuthenticated bool) (*MenuResponse, error) {
 	menu, err := s.store.getMenuBySlug(ctx, tenantID, slug)
 	if err != nil {
 		return nil, fmt.Errorf("getting menu by slug: %w", err)
@@ -84,7 +84,7 @@ func (s *Service) GetMenuBySlug(ctx context.Context, tenantID pgtype.UUID, slug 
 		return nil, fmt.Errorf("listing menu items: %w", err)
 	}
 	jsonItems := genMenuItemsToJSON(items)
-	filteredItems := filterMenuItems(jsonItems, userPermissions, isAuthenticated)
+	filteredItems := filterMenuItems(jsonItems, userGroupIDs, isAuthenticated)
 	treeItems := buildMenuTree(filteredItems)
 	return &MenuResponse{
 		ID:        menu.ID.String(),
@@ -122,95 +122,113 @@ func (s *Service) DeleteMenu(ctx context.Context, id, tenantID pgtype.UUID) erro
 // ── Menu Item CRUD ────────────────────────────────────────────────────
 
 type CreateMenuItemInput struct {
-	MenuID         string  `json:"menu_id"`
-	ParentID       *string `json:"parent_id"`
-	Label          string  `json:"label"`
-	URL            string  `json:"url"`
-	Icon           *string `json:"icon"`
-	SortOrder      int     `json:"sort_order"`
-	PermissionNode *string `json:"permission_node"`
-	Visibility     string  `json:"visibility"`
-	Target         string  `json:"target"`
-	IsAdSlot       bool    `json:"is_ad_slot"`
-	AdSlotConfig   json.RawMessage `json:"ad_slot_config"`
+	MenuID           string         `json:"menu_id"`
+	ParentID         *string        `json:"parent_id"`
+	Label            string         `json:"label"`
+	URL              string         `json:"url"`
+	Icon             *string        `json:"icon"`
+	SortOrder        int            `json:"sort_order"`
+	PermissionNode   *string        `json:"permission_node"`
+	RequiredGroupIDs []string       `json:"required_group_ids"`
+	Visibility       string         `json:"visibility"`
+	Target           string         `json:"target"`
+	IsAdSlot         bool           `json:"is_ad_slot"`
+	AdSlotConfig     json.RawMessage `json:"ad_slot_config"`
 }
 
 type UpdateMenuItemInput struct {
-	Label          string  `json:"label"`
-	URL            string  `json:"url"`
-	Icon           *string `json:"icon"`
-	ParentID       *string `json:"parent_id"`
-	SortOrder      int     `json:"sort_order"`
-	PermissionNode *string `json:"permission_node"`
-	Visibility     string  `json:"visibility"`
-	Target         string  `json:"target"`
-	IsAdSlot       bool    `json:"is_ad_slot"`
-	AdSlotConfig   json.RawMessage `json:"ad_slot_config"`
-	Status         string  `json:"status"`
+	Label            string  `json:"label"`
+	URL              string  `json:"url"`
+	Icon             *string `json:"icon"`
+	ParentID         *string `json:"parent_id"`
+	SortOrder        int     `json:"sort_order"`
+	PermissionNode   *string `json:"permission_node"`
+	RequiredGroupIDs []string `json:"required_group_ids"`
+	Visibility       string  `json:"visibility"`
+	Target           string  `json:"target"`
+	IsAdSlot         bool    `json:"is_ad_slot"`
+	AdSlotConfig     json.RawMessage `json:"ad_slot_config"`
+	Status           string  `json:"status"`
 }
 
-func (s *Service) CreateMenuItem(ctx context.Context, tenantID pgtype.UUID, input CreateMenuItemInput) (gen.MenuItem, error) {
+func (s *Service) CreateMenuItem(ctx context.Context, tenantID pgtype.UUID, input CreateMenuItemInput) (gen.CreateMenuItemRow, error) {
 	if !ValidVisibility(input.Visibility) {
-		return gen.MenuItem{}, ErrInvalidVisibility
+		return gen.CreateMenuItemRow{}, ErrInvalidVisibility
 	}
 	var menuID pgtype.UUID
 	if err := menuID.Scan(input.MenuID); err != nil {
-		return gen.MenuItem{}, fmt.Errorf("invalid menu_id: %w", err)
+		return gen.CreateMenuItemRow{}, fmt.Errorf("invalid menu_id: %w", err)
 	}
 	var parentID pgtype.UUID
 	if input.ParentID != nil {
 		if err := parentID.Scan(*input.ParentID); err != nil {
-			return gen.MenuItem{}, fmt.Errorf("invalid parent_id: %w", err)
+			return gen.CreateMenuItemRow{}, fmt.Errorf("invalid parent_id: %w", err)
 		}
 	}
 	var adConfig []byte
 	if len(input.AdSlotConfig) > 0 {
 		adConfig = input.AdSlotConfig
 	}
+	groupIDsJSON, err := json.Marshal(input.RequiredGroupIDs)
+	if err != nil {
+		return gen.CreateMenuItemRow{}, fmt.Errorf("encoding required_group_ids: %w", err)
+	}
+	if len(groupIDsJSON) == 0 {
+		groupIDsJSON = []byte("[]")
+	}
 	return s.store.createMenuItem(ctx, gen.CreateMenuItemParams{
-		TenantID:       tenantID,
-		MenuID:         menuID,
-		ParentID:       parentID,
-		Label:          input.Label,
-		Url:            input.URL,
-		Icon:           input.Icon,
-		SortOrder:      int32(input.SortOrder),
-		PermissionNode: input.PermissionNode,
-		Visibility:     input.Visibility,
-		Target:         input.Target,
-		IsAdSlot:       input.IsAdSlot,
-		AdSlotConfig:   adConfig,
+		TenantID:         tenantID,
+		MenuID:           menuID,
+		ParentID:         parentID,
+		Label:            input.Label,
+		Url:              input.URL,
+		Icon:             input.Icon,
+		SortOrder:        int32(input.SortOrder),
+		PermissionNode:   input.PermissionNode,
+		Visibility:       input.Visibility,
+		Target:           input.Target,
+		IsAdSlot:         input.IsAdSlot,
+		AdSlotConfig:     adConfig,
+		RequiredGroupIds: groupIDsJSON,
 	})
 }
 
-func (s *Service) UpdateMenuItem(ctx context.Context, id, tenantID pgtype.UUID, input UpdateMenuItemInput) (gen.MenuItem, error) {
+func (s *Service) UpdateMenuItem(ctx context.Context, id, tenantID pgtype.UUID, input UpdateMenuItemInput) (gen.UpdateMenuItemRow, error) {
 	if !ValidVisibility(input.Visibility) {
-		return gen.MenuItem{}, ErrInvalidVisibility
+		return gen.UpdateMenuItemRow{}, ErrInvalidVisibility
 	}
 	var parentID pgtype.UUID
 	if input.ParentID != nil {
 		if err := parentID.Scan(*input.ParentID); err != nil {
-			return gen.MenuItem{}, fmt.Errorf("invalid parent_id: %w", err)
+			return gen.UpdateMenuItemRow{}, fmt.Errorf("invalid parent_id: %w", err)
 		}
 	}
 	var adConfig []byte
 	if len(input.AdSlotConfig) > 0 {
 		adConfig = input.AdSlotConfig
 	}
+	groupIDsJSON, err := json.Marshal(input.RequiredGroupIDs)
+	if err != nil {
+		return gen.UpdateMenuItemRow{}, fmt.Errorf("encoding required_group_ids: %w", err)
+	}
+	if len(groupIDsJSON) == 0 {
+		groupIDsJSON = []byte("[]")
+	}
 	return s.store.updateMenuItem(ctx, gen.UpdateMenuItemParams{
-		ID:             id,
-		TenantID:       tenantID,
-		Label:          input.Label,
-		Url:            input.URL,
-		Icon:           input.Icon,
-		ParentID:       parentID,
-		SortOrder:      int32(input.SortOrder),
-		PermissionNode: input.PermissionNode,
-		Visibility:     input.Visibility,
-		Target:         input.Target,
-		IsAdSlot:       input.IsAdSlot,
-		AdSlotConfig:   adConfig,
-		Status:         input.Status,
+		ID:               id,
+		TenantID:         tenantID,
+		Label:            input.Label,
+		Url:              input.URL,
+		Icon:             input.Icon,
+		ParentID:         parentID,
+		SortOrder:        int32(input.SortOrder),
+		PermissionNode:   input.PermissionNode,
+		Visibility:       input.Visibility,
+		Target:           input.Target,
+		IsAdSlot:         input.IsAdSlot,
+		AdSlotConfig:     adConfig,
+		Status:           input.Status,
+		RequiredGroupIds: groupIDsJSON,
 	})
 }
 
@@ -247,9 +265,19 @@ func (s *Service) ReorderMenuItems(ctx context.Context, tenantID pgtype.UUID, it
 	return nil
 }
 
+// GetUserGroupIDs returns the set of user group IDs the user belongs to.
+// Used for group-based menu item visibility filtering.
+func (s *Service) GetUserGroupIDs(ctx context.Context, tenantID pgtype.UUID, userID string) ([]string, error) {
+	var uid pgtype.UUID
+	if err := uid.Scan(userID); err != nil {
+		return nil, fmt.Errorf("invalid user_id: %w", err)
+	}
+	return s.store.getUserGroupIDs(ctx, tenantID, uid)
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────
 
-func genMenuItemsToJSON(rows []gen.MenuItem) []MenuItem {
+func genMenuItemsToJSON(rows []gen.ListMenuItemsRow) []MenuItem {
 	items := make([]MenuItem, len(rows))
 	for i, row := range rows {
 		items[i] = genMenuItemToJSON(row)
@@ -257,8 +285,12 @@ func genMenuItemsToJSON(rows []gen.MenuItem) []MenuItem {
 	return items
 }
 
-// filterMenuItems removes items the user should not see based on auth state and permissions.
-func filterMenuItems(items []MenuItem, userPermissions map[string]bool, isAuthenticated bool) []MenuItem {
+// filterMenuItems removes items the user should not see based on auth state
+// and required user group membership. An item with required_group_ids is
+// shown only if the user belongs to at least one of the listed groups.
+// Items with no required_group_ids are visible to everyone (subject to
+// visibility rules).
+func filterMenuItems(items []MenuItem, userGroupIDs map[string]bool, isAuthenticated bool) []MenuItem {
 	var filtered []MenuItem
 	for _, item := range items {
 		if item.Status != "active" {
@@ -274,8 +306,18 @@ func filterMenuItems(items []MenuItem, userPermissions map[string]bool, isAuthen
 				continue
 			}
 		}
-		if item.PermissionNode != nil && *item.PermissionNode != "" {
-			if !userPermissions[*item.PermissionNode] {
+		// Group-based gating: if the item specifies required groups, the
+		// user must be a member of at least one. An empty list means no
+		// group restriction (visible to everyone per visibility rules).
+		if len(item.RequiredGroupIDs) > 0 {
+			matched := false
+			for _, gid := range item.RequiredGroupIDs {
+				if userGroupIDs[gid] {
+					matched = true
+					break
+				}
+			}
+			if !matched {
 				continue
 			}
 		}

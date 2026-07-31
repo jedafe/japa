@@ -7,6 +7,7 @@
 	import SearchAutocomplete from './SearchAutocomplete.svelte';
 	import UserDropdown from './UserDropdown.svelte';
 	import { AdSlot } from '$lib/components/ui';
+	import SidebarBlocks from './SidebarBlocks.svelte';
 	import type { SessionUser, TagSuggestion, SpaceSuggestion } from '$lib/types';
 
 	interface Props {
@@ -17,9 +18,11 @@
 		enabledLanguages?: string;
 		/** Route-specific widgets rendered above the global defaults. */
 		sidebar?: Snippet;
+		/** Page Builder blocks for this sidebar (sitewide, from admin). */
+		rightSidebarBlocks?: unknown[];
 	}
 
-	let { user, trendingTags = [], suggestedSpaces = [], enabledLanguages = 'en,fr', sidebar }: Props = $props();
+	let { user, trendingTags = [], suggestedSpaces = [], enabledLanguages = 'en,fr', sidebar, rightSidebarBlocks = [] }: Props = $props();
 
 	// Only show the language toggle when more than one language is enabled.
 	// Ref: conventions/system-settings-catalog.md (i18n.enabled_languages)
@@ -68,6 +71,11 @@
 	<!-- Route-specific widgets -->
 	{#if sidebar}
 		{@render sidebar()}
+	{/if}
+
+	<!-- Page Builder sidebar blocks (managed from admin /page-builder/sidebars) -->
+	{#if rightSidebarBlocks.length > 0}
+		<SidebarBlocks blocks={rightSidebarBlocks} />
 	{/if}
 
 	<!-- Phase 24 — sidebar_top ad slot (above global widgets). Suppressed on

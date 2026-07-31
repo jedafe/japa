@@ -14,7 +14,10 @@
 	import CountdownBlock from './blocks/CountdownBlock.svelte';
 	import ComparisonEmbedBlock from './blocks/ComparisonEmbedBlock.svelte';
 	import FormEmbedBlock from './blocks/FormEmbedBlock.svelte';
+	import AdvertisementBlock from './blocks/AdvertisementBlock.svelte';
 	import type { LandingBlock } from './types';
+	// Self-import for recursive grid_row rendering (Svelte 5 pattern).
+	import BlockRenderer from './BlockRenderer.svelte';
 
 	interface Props {
 		block: LandingBlock;
@@ -52,6 +55,14 @@
 	<ComparisonEmbedBlock props={block.props as any} />
 {:else if block.type === 'form_embed'}
 	<FormEmbedBlock props={block.props as any} />
+{:else if block.type === 'advertisement' || block.type === 'ad'}
+	<AdvertisementBlock props={block.props as any} />
+{:else if block.type === 'grid_row'}
+	<div class="grid gap-4" style={`grid-template-columns: repeat(${(block.props as any)?.columns ?? 2}, 1fr)`}>
+		{#each (block.props as any)?.children ?? [] as child (child.id ?? crypto.randomUUID())}
+			<BlockRenderer block={child} />
+		{/each}
+	</div>
 {:else}
 	<!-- Unknown block type — render nothing rather than crashing. -->
 {/if}

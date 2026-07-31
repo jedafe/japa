@@ -83,7 +83,7 @@ func (s *Store) deleteMenu(ctx context.Context, id, tenantID pgtype.UUID) error 
 
 // ── Menu Items ────────────────────────────────────────────────────────
 
-func (s *Store) listMenuItems(ctx context.Context, tenantID, menuID pgtype.UUID) ([]gen.MenuItem, error) {
+func (s *Store) listMenuItems(ctx context.Context, tenantID, menuID pgtype.UUID) ([]gen.ListMenuItemsRow, error) {
 	rows, err := s.read.ListMenuItems(ctx, gen.ListMenuItemsParams{TenantID: tenantID, MenuID: menuID})
 	if err != nil {
 		return nil, fmt.Errorf("listing menu items: %w", err)
@@ -91,26 +91,26 @@ func (s *Store) listMenuItems(ctx context.Context, tenantID, menuID pgtype.UUID)
 	return rows, nil
 }
 
-func (s *Store) getMenuItem(ctx context.Context, id, tenantID pgtype.UUID) (gen.MenuItem, error) {
+func (s *Store) getMenuItem(ctx context.Context, id, tenantID pgtype.UUID) (gen.GetMenuItemRow, error) {
 	row, err := s.read.GetMenuItem(ctx, gen.GetMenuItemParams{ID: id, TenantID: tenantID})
 	if err != nil {
-		return gen.MenuItem{}, fmt.Errorf("getting menu item: %w", err)
+		return gen.GetMenuItemRow{}, fmt.Errorf("getting menu item: %w", err)
 	}
 	return row, nil
 }
 
-func (s *Store) createMenuItem(ctx context.Context, p gen.CreateMenuItemParams) (gen.MenuItem, error) {
+func (s *Store) createMenuItem(ctx context.Context, p gen.CreateMenuItemParams) (gen.CreateMenuItemRow, error) {
 	row, err := s.write.CreateMenuItem(ctx, p)
 	if err != nil {
-		return gen.MenuItem{}, fmt.Errorf("creating menu item: %w", err)
+		return gen.CreateMenuItemRow{}, fmt.Errorf("creating menu item: %w", err)
 	}
 	return row, nil
 }
 
-func (s *Store) updateMenuItem(ctx context.Context, p gen.UpdateMenuItemParams) (gen.MenuItem, error) {
+func (s *Store) updateMenuItem(ctx context.Context, p gen.UpdateMenuItemParams) (gen.UpdateMenuItemRow, error) {
 	row, err := s.write.UpdateMenuItem(ctx, p)
 	if err != nil {
-		return gen.MenuItem{}, fmt.Errorf("updating menu item: %w", err)
+		return gen.UpdateMenuItemRow{}, fmt.Errorf("updating menu item: %w", err)
 	}
 	return row, nil
 }
@@ -131,25 +131,38 @@ func (s *Store) bulkUpdateMenuItemSortOrder(ctx context.Context, tenantID pgtype
 	return nil
 }
 
+// ── User group resolution ──────────────────────────────────────────────
+
+func (s *Store) getUserGroupIDs(ctx context.Context, tenantID, userID pgtype.UUID) ([]string, error) {
+	rows, err := s.read.GetUserGroupIDs(ctx, gen.GetUserGroupIDsParams{
+		TenantID: tenantID, UserID: userID,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("getting user group ids: %w", err)
+	}
+	return rows, nil
+}
+
 // ── JSON serialization helpers ────────────────────────────────────────
 
 // MenuItem is the JSON-safe representation of a menu item with children.
 type MenuItem struct {
-	ID             string         `json:"id"`
-	TenantID       string         `json:"tenant_id"`
-	MenuID         string         `json:"menu_id"`
-	ParentID       *string        `json:"parent_id,omitempty"`
-	Label          string         `json:"label"`
-	URL            string         `json:"url"`
-	Icon           *string        `json:"icon,omitempty"`
-	SortOrder      int            `json:"sort_order"`
-	PermissionNode *string        `json:"permission_node,omitempty"`
-	Visibility     string         `json:"visibility"`
-	Target         string         `json:"target"`
-	IsAdSlot       bool           `json:"is_ad_slot"`
-	AdSlotConfig   map[string]any `json:"ad_slot_config,omitempty"`
-	Status         string         `json:"status"`
-	Children       []MenuItem     `json:"children"`
+	ID               string         `json:"id"`
+	TenantID         string         `json:"tenant_id"`
+	MenuID           string         `json:"menu_id"`
+	ParentID         *string        `json:"parent_id,omitempty"`
+	Label            string         `json:"label"`
+	URL              string         `json:"url"`
+	Icon             *string        `json:"icon,omitempty"`
+	SortOrder        int            `json:"sort_order"`
+	PermissionNode   *string        `json:"permission_node,omitempty"`
+	RequiredGroupIDs []string       `json:"required_group_ids"`
+	Visibility       string         `json:"visibility"`
+	Target           string         `json:"target"`
+	IsAdSlot         bool           `json:"is_ad_slot"`
+	AdSlotConfig     map[string]any `json:"ad_slot_config,omitempty"`
+	Status           string         `json:"status"`
+	Children         []MenuItem     `json:"children"`
 }
 
 // MenuResponse is the JSON response for a menu with resolved items.
@@ -163,34 +176,94 @@ type MenuResponse struct {
 	Items     []MenuItem `json:"items"`
 }
 
-// genMenuItemToJSON converts a gen.MenuItem into a JSON-safe MenuItem.
-func genMenuItemToJSON(row gen.MenuItem) MenuItem {
-	item := MenuItem{
-		ID:             row.ID.String(),
-		TenantID:       row.TenantID.String(),
-		MenuID:         row.MenuID.String(),
-		Label:          row.Label,
-		URL:            row.Url,
-		SortOrder:      int(row.SortOrder),
-		PermissionNode: row.PermissionNode,
-		Visibility:     string(row.Visibility),
-		Target:         string(row.Target),
-		IsAdSlot:       row.IsAdSlot,
-		Status:         string(row.Status),
-		Children:       []MenuItem{},
+// menuItemFields is a type constraint for any sqlc-generated row that has
+// the menu item fields we need for JSON serialization.
+type menuItemFields interface {
+	gen.ListMenuItemsRow | gen.GetMenuItemRow | gen.CreateMenuItemRow | gen.UpdateMenuItemRow
+}
+
+// genMenuItemToJSON converts a sqlc-generated menu item row into a JSON-safe MenuItem.
+func genMenuItemToJSON[T menuItemFields](row T) MenuItem {
+	// All Row types have identical fields; convert via a helper that reads
+	// the common fields by passing the row through a type switch.
+	return menuItemRowToJSON(row)
+}
+
+// menuItemRowToJSON uses a type switch to extract fields from any Row type.
+func menuItemRowToJSON(row any) MenuItem {
+	type fields struct {
+		ID               pgtype.UUID
+		TenantID         pgtype.UUID
+		MenuID           pgtype.UUID
+		ParentID         pgtype.UUID
+		Label            string
+		Url              string
+		Icon             *string
+		SortOrder        int32
+		PermissionNode   *string
+		Visibility       string
+		Target           string
+		IsAdSlot         bool
+		AdSlotConfig     []byte
+		Status           string
+		RequiredGroupIds []byte
 	}
 
-	if row.ParentID.Valid {
-		s := row.ParentID.String()
+	f := fields{}
+	switch r := row.(type) {
+	case gen.ListMenuItemsRow:
+		f = fields{r.ID, r.TenantID, r.MenuID, r.ParentID, r.Label, r.Url, r.Icon,
+			r.SortOrder, r.PermissionNode, r.Visibility, r.Target, r.IsAdSlot,
+			r.AdSlotConfig, r.Status, r.RequiredGroupIds}
+	case gen.GetMenuItemRow:
+		f = fields{r.ID, r.TenantID, r.MenuID, r.ParentID, r.Label, r.Url, r.Icon,
+			r.SortOrder, r.PermissionNode, r.Visibility, r.Target, r.IsAdSlot,
+			r.AdSlotConfig, r.Status, r.RequiredGroupIds}
+	case gen.CreateMenuItemRow:
+		f = fields{r.ID, r.TenantID, r.MenuID, r.ParentID, r.Label, r.Url, r.Icon,
+			r.SortOrder, r.PermissionNode, r.Visibility, r.Target, r.IsAdSlot,
+			r.AdSlotConfig, r.Status, r.RequiredGroupIds}
+	case gen.UpdateMenuItemRow:
+		f = fields{r.ID, r.TenantID, r.MenuID, r.ParentID, r.Label, r.Url, r.Icon,
+			r.SortOrder, r.PermissionNode, r.Visibility, r.Target, r.IsAdSlot,
+			r.AdSlotConfig, r.Status, r.RequiredGroupIds}
+	default:
+		return MenuItem{Children: []MenuItem{}}
+	}
+
+	item := MenuItem{
+		ID:               f.ID.String(),
+		TenantID:         f.TenantID.String(),
+		MenuID:           f.MenuID.String(),
+		Label:            f.Label,
+		URL:              f.Url,
+		SortOrder:        int(f.SortOrder),
+		PermissionNode:   f.PermissionNode,
+		RequiredGroupIDs: []string{},
+		Visibility:       f.Visibility,
+		Target:           f.Target,
+		IsAdSlot:         f.IsAdSlot,
+		Status:           f.Status,
+		Children:         []MenuItem{},
+	}
+
+	if f.ParentID.Valid {
+		s := f.ParentID.String()
 		item.ParentID = &s
 	}
-	if row.Icon != nil {
-		item.Icon = row.Icon
+	if f.Icon != nil {
+		item.Icon = f.Icon
 	}
-	if len(row.AdSlotConfig) > 0 && string(row.AdSlotConfig) != "null" {
+	if len(f.AdSlotConfig) > 0 && string(f.AdSlotConfig) != "null" {
 		var cfg map[string]any
-		if err := json.Unmarshal(row.AdSlotConfig, &cfg); err == nil {
+		if err := json.Unmarshal(f.AdSlotConfig, &cfg); err == nil {
 			item.AdSlotConfig = cfg
+		}
+	}
+	if len(f.RequiredGroupIds) > 0 && string(f.RequiredGroupIds) != "null" {
+		var ids []string
+		if err := json.Unmarshal(f.RequiredGroupIds, &ids); err == nil {
+			item.RequiredGroupIDs = ids
 		}
 	}
 

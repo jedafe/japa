@@ -2,6 +2,8 @@
 	import { untrack, onMount, type Snippet } from 'svelte';
 	import { page } from '$app/state';
 	import AppShell from '$lib/components/shell/AppShell.svelte';
+	import GuestHeader from '$lib/components/shell/GuestHeader.svelte';
+	import GuestFooter from '$lib/components/shell/GuestFooter.svelte';
 	import MobileBottomTabBar from '$lib/components/shell/MobileBottomTabBar.svelte';
 	import { isExceptionRoute } from '$lib/components/create/gate';
 	import { sidebarStore } from '$lib/components/shell/sidebar.svelte';
@@ -67,8 +69,25 @@
 </script>
 
 {#if isGuestLanding}
-	<!-- ADR-058 §5 Exception #3: guest landing page — no app shell -->
+	<!-- ADR-058 §5 Exception #3: guest landing page — GuestHeader + content + GuestFooter -->
+	<GuestHeader
+		logoUrl={data.siteSettings?.['appearance.logo_url'] as string | undefined}
+		menu={data.menu}
+	/>
 	{@render children()}
+	<GuestFooter menu={data.footerMenu} />
+{:else if !data.user}
+	<!-- ADR-058 §5 Exception #4: unauthenticated users get a full-width top
+	     nav bar instead of the app shell (Compose/Notifications/LeftNav are
+	     incoherent for guests). Public pages render below the GuestHeader. -->
+	<GuestHeader
+		logoUrl={data.siteSettings?.['appearance.logo_url'] as string | undefined}
+		menu={data.menu}
+	/>
+	<div class="guest-shell-content">
+		{@render children()}
+	</div>
+	<GuestFooter menu={data.footerMenu} />
 {:else}
 	<AppShell
 		menu={data.menu}
@@ -80,7 +99,8 @@
 		userSpaces={data.userSpaces}
 		logoUrl={data.siteSettings?.['appearance.logo_url'] as string | undefined}
 		enabledLanguages={data.siteSettings?.['i18n.enabled_languages'] as string | undefined}
-		hideRightSidebar={exception}
+		hideRightSidebar={exception || !data.rightSidebarEnabled}
+		rightSidebarBlocks={data.rightSidebarBlocks}
 		sidebar={routeSidebar ?? undefined}
 	>
 		{@render children()}
@@ -89,3 +109,10 @@
 		<MobileBottomTabBar user={data.user} />
 	{/if}
 {/if}
+
+<style>
+	.guest-shell-content {
+		min-height: calc(100vh - var(--nav-height));
+		background: var(--color-bg);
+	}
+</style>
