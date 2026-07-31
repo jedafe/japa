@@ -48,10 +48,12 @@ type PaymentResponse struct {
 
 // WebhookEvent represents a parsed webhook event from a payment provider.
 type WebhookEvent struct {
-	Provider   string
-	EventID    string
-	Payload    map[string]interface{}
-	RawPayload []byte
+	Provider    string
+	EventID     string
+	EventType   string // provider event type (charge.succeeded, payment_intent.succeeded, etc.)
+	ProviderRef string // transaction reference matching payments.provider_ref
+	Payload     map[string]interface{}
+	RawPayload  []byte
 }
 
 // ---------------------------------------------------------------------------

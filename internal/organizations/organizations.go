@@ -8,6 +8,9 @@
 package organizations
 
 import (
+	"context"
+
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
 )
@@ -59,10 +62,16 @@ const (
 	MaxPageSize     int32 = 100
 )
 
+// SettingsReader is the subset of config.Settings used by the org service.
+type SettingsReader interface {
+	GetSettingInt(ctx context.Context, tenantID pgtype.UUID, key string) (int, error)
+}
+
 // Service provides organization business logic.
 type Service struct {
-	store *Store
-	db    *db.DB
+	store    *Store
+	db       *db.DB
+	settings SettingsReader
 }
 
 // NewService creates a Service backed by the given database.
@@ -70,5 +79,15 @@ func NewService(database *db.DB) *Service {
 	return &Service{
 		store: NewStore(gen.New(database.Reader), gen.New(database.Writer), database.Writer),
 		db:    database,
+	}
+}
+
+// NewServiceWithSettings creates a Service with a settings reader for
+// system_settings-backed gates (e.g. organizations.max_per_user).
+func NewServiceWithSettings(database *db.DB, settings SettingsReader) *Service {
+	return &Service{
+		store:    NewStore(gen.New(database.Reader), gen.New(database.Writer), database.Writer),
+		db:       database,
+		settings: settings,
 	}
 }

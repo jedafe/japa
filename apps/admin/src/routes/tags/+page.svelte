@@ -7,8 +7,9 @@
 	import { Modal } from "$lib/components/ui/modal";
 	import Pagination from "$lib/components/ui/Pagination.svelte";
 	import { TableSkeleton } from "$lib/components/ui/skeleton";
-	import { Plus, Pencil, Trash2, RefreshCw, Eye, Shield } from "lucide-svelte";
+	import { Plus, Pencil, Trash2, RefreshCw, Eye, Shield, Image as ImageIcon, X } from "lucide-svelte";
 	import UserAutocomplete from "$lib/components/ui/UserAutocomplete.svelte";
+	import MediaPickerModal from "$lib/components/ui/MediaPickerModal.svelte";
 	import { tagsAdminApi, tagsModeratorsAdminApi } from "$lib/api";
 	import { t } from "$lib/stores/i18n.svelte";
 	import { hasPermission } from "$lib/stores/permissions.svelte";
@@ -21,8 +22,12 @@
 		slug: string;
 		description?: string;
 		color?: string;
+		logo_url?: string;
+		logo_media_id?: string;
+		content_count: number;
 		post_count: number;
 		follower_count: number;
+		is_system: boolean;
 		created_at: string;
 	};
 
@@ -45,6 +50,20 @@
 		page.url.searchParams.get("filter") ? { post_count: page.url.searchParams.get("filter")! } : {}
 	);
 	let selectedIds = $state<Set<string>>(new Set());
+	let sortKey = $state(page.url.searchParams.get("sort") ?? "");
+
+	// mapTag normalizes the API response: content_count → post_count for display.
+	function mapTag(raw: any): Tag {
+		return {
+			...raw,
+			content_count: raw.content_count ?? 0,
+			post_count: raw.content_count ?? raw.post_count ?? 0,
+			is_system: raw.is_system ?? false,
+			follower_count: raw.follower_count ?? 0,
+			logo_url: raw.logo_url ?? '',
+			logo_media_id: raw.logo_media_id ?? ''
+		};
+	}
 
 	// Modals
 	let showViewModal = $state(false);
@@ -55,7 +74,11 @@
 	let formSlug = $state("");
 	let formDescription = $state("");
 	let formColor = $state("");
+	let formIsSystem = $state(false);
+	let formLogoMediaId = $state("");
+	let formLogoUrl = $state("");
 	let saving = $state(false);
+	let showMediaPicker = $state(false);
 	let showDeleteConfirm = $state(false);
 	let deleteTarget = $state<Tag | null>(null);
 
@@ -75,6 +98,7 @@
 	];
 
 	const columns = [
+		{ key: "logo_url", label: t("tags.logo", "Logo"), sortable: false, class: "w-16", componentSnippet: TagLogoCell },
 		{ key: "name", label: t("tags.name", "Name"), sortable: true },
 		{ key: "slug", label: t("tags.slug", "Slug"), sortable: true },
 		{ key: "post_count", label: t("tags.posts", "Posts"), sortable: true, render: (v: number) => (v ?? 0).toLocaleString() },
@@ -99,20 +123,27 @@
 				params.set("q", searchQuery);
 			}
 			if (filterValues.post_count) {
-				params.set("filter", filterValues.post_count);
+				params.set("min_content_count", filterValues.post_count);
+			}
+			if (sortKey) {
+				params.set("sort", sortKey);
 			}
 
 			const result = await tagsAdminApi.list(params.toString());
 			if (result.ok) {
-				const d = result.data as Tag[] | { items: Tag[]; page: number; total_pages: number };
+				const d = result.data as { data: Tag[]; total: number; page: number; total_pages: number } | Tag[];
 				if (Array.isArray(d)) {
-					tags = d;
+					tags = d.map(mapTag);
 					totalItems = d.length;
 					totalPages = 1;
-				} else {
-					tags = d.items ?? [];
-					totalItems = d.items?.length ?? 0;
+				} else if (d.data) {
+					tags = d.data.map(mapTag);
+					totalItems = d.total ?? d.data.length;
 					totalPages = d.total_pages ?? 1;
+				} else {
+					tags = [];
+					totalItems = 0;
+					totalPages = 1;
 				}
 			} else {
 				error = result.error ?? t("common.error", "Failed to load tags");
@@ -128,7 +159,15 @@
 		const params = new URLSearchParams(page.url.searchParams.toString());
 		if (searchQuery) params.set("q", searchQuery); else params.delete("q");
 		if (filterValues.post_count) params.set("filter", filterValues.post_count); else params.delete("filter");
+		if (sortKey) params.set("sort", sortKey); else params.delete("sort");
 		goto(`?${params.toString()}`, { keepFocus: true, noScroll: true });
+	}
+
+	function handleSort(key: string) {
+		sortKey = sortKey === key ? "" : key;
+		currentPage = 0;
+		syncUrl();
+		loadTags();
 	}
 
 	function handleSearch(values: Record<string, string>) {
@@ -156,6 +195,9 @@
 		formSlug = "";
 		formDescription = "";
 		formColor = "";
+		formIsSystem = false;
+		formLogoMediaId = "";
+		formLogoUrl = "";
 		showModal = true;
 	}
 
@@ -165,6 +207,9 @@
 		formSlug = tag.slug;
 		formDescription = tag.description ?? "";
 		formColor = tag.color ?? "";
+		formIsSystem = tag.is_system ?? false;
+		formLogoMediaId = tag.logo_media_id ?? "";
+		formLogoUrl = tag.logo_url ?? "";
 		showModal = true;
 	}
 
@@ -172,12 +217,14 @@
 		if (!formName.trim()) return;
 		saving = true;
 		error = "";
-		const body: { name: string; slug: string; description?: string; color?: string } = {
+		const body: { name: string; slug: string; description?: string; color?: string; is_system?: boolean; logo_media_id?: string } = {
 			name: formName.trim(),
 			slug: formSlug.trim() || slugify(formName)
 		};
 		if (formDescription.trim()) body.description = formDescription.trim();
 		if (formColor.trim()) body.color = formColor.trim();
+		if (formLogoMediaId) body.logo_media_id = formLogoMediaId;
+		if (!editingTag) body.is_system = formIsSystem;
 		const result = editingTag
 			? await tagsAdminApi.update(editingTag.id, body)
 			: await tagsAdminApi.create(body);
@@ -286,6 +333,16 @@
 		}
 	}
 
+	function handleLogoSelect(media: { id: string; url: string; filename: string }) {
+		formLogoMediaId = media.id;
+		formLogoUrl = media.url;
+	}
+
+	function clearLogo() {
+		formLogoMediaId = "";
+		formLogoUrl = "";
+	}
+
 	$effect(() => {
 		void currentPage;
 		void pageSize;
@@ -349,6 +406,7 @@
 					selectable={canManageTags}
 					bind:selectedIds
 					urlSync
+					showPagination={false}
 				/>
 			</div>
 			<Pagination
@@ -365,6 +423,11 @@
 <Modal bind:open={showViewModal} title={t("tags.details", "Tag Details")} size="sm">
 	{#if viewTarget}
 		<div class="space-y-4">
+			{#if viewTarget.logo_url}
+				<div class="flex justify-center">
+					<img src={viewTarget.logo_url} alt={viewTarget.name} class="h-16 w-16 rounded-xl object-cover border" style="border-color: var(--color-border)" />
+				</div>
+			{/if}
 			<div class="grid grid-cols-2 gap-4">
 				<div>
 					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('tags.name')}</p>
@@ -416,6 +479,33 @@
 				<input type="text" class="w-full rounded-lg border p-2 text-sm font-mono" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" placeholder="#3b82f6" bind:value={formColor} />
 			</div>
 		</div>
+		<div>
+			<span class="block text-sm font-medium" style="color: var(--color-foreground)">{t("tags.logo", "Logo")}</span>
+			<div class="mt-1 flex items-center gap-3">
+				{#if formLogoUrl}
+					<div class="relative">
+						<img src={formLogoUrl} alt="Tag logo" class="h-12 w-12 rounded-lg border object-cover" style="border-color: var(--color-border)" />
+						<button type="button" onclick={clearLogo} class="absolute -right-1 -top-1 rounded-full p-0.5" style="background: var(--color-danger); color: white" aria-label={t("common.remove", "Remove")}>
+							<X class="h-3 w-3" />
+						</button>
+					</div>
+				{:else}
+					<div class="grid h-12 w-12 place-items-center rounded-lg border" style="border-color: var(--color-border); background: var(--color-surface)">
+						<ImageIcon class="h-5 w-5" style="color: var(--color-muted)" />
+					</div>
+				{/if}
+				<Button type="button" variant="outline" size="sm" onclick={() => (showMediaPicker = true)}>
+					<ImageIcon class="mr-1 h-4 w-4" />
+					{t("tags.choose_logo", "Choose Logo")}
+				</Button>
+			</div>
+		</div>
+		{#if !editingTag}
+			<div class="flex items-center gap-2">
+				<input id="tag-is-system" type="checkbox" class="h-4 w-4 rounded" bind:checked={formIsSystem} />
+				<label for="tag-is-system" class="text-sm font-medium" style="color: var(--color-foreground)">{t("tags.is_system", "System tag (cannot be deleted)")}</label>
+			</div>
+		{/if}
 	</div>
 	<div class="mt-4 flex justify-end gap-2">
 		<Button variant="ghost" onclick={() => showModal = false}>{t("common.cancel", "Cancel")}</Button>
@@ -516,3 +606,17 @@
 		{/if}
 	</div>
 {/snippet}
+
+<!-- TagLogoCell component — shows the tag logo thumbnail or a hash placeholder -->
+{#snippet TagLogoCell({ row }: { row: Tag })}
+	{#if row.logo_url}
+		<img src={row.logo_url} alt={row.name} class="h-8 w-8 rounded-lg object-cover" loading="lazy" />
+	{:else}
+		<div class="grid h-8 w-8 place-items-center rounded-lg" style="background: var(--color-surface); color: var(--color-muted)">
+			<span class="text-xs font-semibold">#</span>
+		</div>
+	{/if}
+{/snippet}
+
+<!-- Media Picker Modal for logo selection -->
+<MediaPickerModal bind:open={showMediaPicker} onselect={handleLogoSelect} />

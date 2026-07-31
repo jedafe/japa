@@ -2134,14 +2134,24 @@ func (h *Handlers) UpdateSpaceStatus(w http.ResponseWriter, r *http.Request) {
 
 // GetSpaceAnalytics handles GET /admin/spaces/:id/analytics.
 func (h *Handlers) GetSpaceAnalytics(w http.ResponseWriter, r *http.Request) {
-	spaceID, err := parseUUIDParam(r, "id")
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", err.Error())
-		return
-	}
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
+	}
+
+	// BUG-005: accept both UUID and slug. The catalog route is
+	// /spaces/{id}/analytics, but the SSR space page passes the slug.
+	// Try UUID first; if parsing fails, fall back to slug lookup.
+	param := chi.URLParam(r, "id")
+	var spaceID pgtype.UUID
+	if err := spaceID.Scan(param); err != nil {
+		// Not a UUID — try slug lookup.
+		space, err := h.Service.GetSpaceBySlug(r.Context(), param, tenantID)
+		if err != nil {
+			writeError(w, http.StatusNotFound, "space_not_found", "Space not found")
+			return
+		}
+		spaceID = space.ID
 	}
 
 	// BUG-020: single round-trip aggregate instead of 3 sequential queries.

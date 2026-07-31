@@ -3,22 +3,56 @@ package templates
 import (
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"strconv"
+	"sync"
+	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/auth"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/tenant"
 )
 
 type Handlers struct {
-	Service *Service
+	Service     *Service
+	AsynqClient *asynq.Client
 }
 
-func NewHandlers(service *Service) *Handlers {
-	return &Handlers{Service: service}
+func NewHandlers(service *Service, asynqClient *asynq.Client) *Handlers {
+	return &Handlers{Service: service, AsynqClient: asynqClient}
 }
+
+// testEmailRateLimiter is a simple in-memory fixed-window rate limiter keyed
+// by user ID. It limits test-email requests to 3 per minute per user.
+type testEmailRateLimiter struct {
+	mu      sync.Mutex
+	windows map[string]*rateLimitWindow
+}
+
+type rateLimitWindow struct {
+	count     int
+	expiresAt time.Time
+}
+
+func (r *testEmailRateLimiter) Allow(key string, max int, window time.Duration) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	now := time.Now()
+	w, ok := r.windows[key]
+	if !ok || now.After(w.expiresAt) {
+		r.windows[key] = &rateLimitWindow{count: 1, expiresAt: now.Add(window)}
+		return true
+	}
+	w.count++
+	return w.count <= max
+}
+
+var testEmailLimiter = &testEmailRateLimiter{windows: make(map[string]*rateLimitWindow)}
 
 // ── Helpers ─────────────────────────────────────────────────────────────
 
@@ -178,6 +212,17 @@ func (h *Handlers) TestTemplate(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
+	// Rate limit: 3 test emails per minute per user.
+	user := auth.FromContext(r.Context())
+	if user != nil {
+		key := "test_email:" + user.UserID.String()
+		if !testEmailLimiter.Allow(key, 3, 1*time.Minute) {
+			writeError(w, http.StatusTooManyRequests, "rate_limit_exceeded", "Too many test email requests. Please try again later.")
+			return
+		}
+	}
+
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid template ID")
@@ -194,15 +239,29 @@ func (h *Handlers) TestTemplate(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "validation_error", "email is required")
 		return
 	}
-	// Test send is a future feature — for now, validate the template exists and
-	// return accepted status. The actual email sending will be implemented when
-	// the email:send task supports template-based rendering.
 	tmpl, err := h.Service.GetTemplate(r.Context(), id, tenantID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
-	_ = tmpl
+
+	// Enqueue an email:send task using the template's slug for DB lookup.
+	if h.AsynqClient != nil {
+		payload := map[string]interface{}{
+			"to":            input.Email,
+			"template_slug": tmpl.Type,
+			"tenant_id":     tenantID.String(),
+			"template_data": map[string]string{},
+		}
+		body, _ := json.Marshal(payload)
+		task := asynq.NewTask("email:send", body)
+		if _, err := h.AsynqClient.Enqueue(task, asynq.Queue("default"), asynq.MaxRetry(3)); err != nil {
+			slog.Error("test_template: failed to enqueue email", "error", err)
+			writeError(w, http.StatusInternalServerError, "enqueue_failed", "Failed to queue test email")
+			return
+		}
+	}
+
 	writeJSON(w, http.StatusAccepted, map[string]any{
 		"data": map[string]string{
 			"status":  "queued",

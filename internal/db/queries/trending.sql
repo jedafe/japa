@@ -113,11 +113,16 @@ LIMIT $2;
 -- =====================
 
 -- name: GetSuggestedUsers :many
+-- ADR-064: when geoCode is provided, users whose shared spaces match the
+-- visitor's ContentCountry are preferred (re-weighted, not hidden). Empty
+-- geoCode = global ranking (original behavior).
 SELECT DISTINCT u.id, u.username, up.display_name, up.avatar_url, up.bio,
-       COUNT(DISTINCT sm2.space_id) AS shared_spaces
+       COUNT(DISTINCT sm2.space_id) AS shared_spaces,
+       COUNT(DISTINCT CASE WHEN sp.geo_code = sqlc.narg(geo_code) THEN sm2.space_id END) AS geo_shared_spaces
 FROM users u
 JOIN space_members sm ON sm.user_id = $1 AND sm.tenant_id = $2
 JOIN space_members sm2 ON sm2.space_id = sm.space_id AND sm2.user_id = u.id AND sm2.tenant_id = $2
+LEFT JOIN spaces sp ON sp.id = sm2.space_id AND sp.tenant_id = $2
 LEFT JOIN user_profiles up ON up.user_id = u.id AND up.tenant_id = $2
 WHERE u.id != $1
   AND u.tenant_id = $2
@@ -126,11 +131,14 @@ WHERE u.id != $1
       WHERE f.follower_id = $1 AND f.entity_type = 'user' AND f.entity_id = u.id AND f.tenant_id = $2
   )
 GROUP BY u.id, u.username, up.display_name, up.avatar_url, up.bio
-ORDER BY shared_spaces DESC
+ORDER BY geo_shared_spaces DESC, shared_spaces DESC
 LIMIT $3;
 
 -- name: GetSuggestedSpaces :many
-SELECT DISTINCT s.id, s.name, s.slug, s.member_count, s.post_count,
+-- ADR-064: when geoCode is provided, spaces matching the visitor's
+-- ContentCountry are preferred (re-weighted, not hidden). Empty geoCode =
+-- global ranking (original behavior).
+SELECT DISTINCT s.id, s.name, s.slug, s.member_count, s.post_count, s.geo_code,
        COUNT(DISTINCT sm2.user_id) AS shared_members
 FROM spaces s
 JOIN space_members sm ON sm.user_id = $1 AND sm.tenant_id = $2
@@ -140,8 +148,8 @@ WHERE s.id NOT IN (
 )
 AND s.tenant_id = $2
 AND s.deleted_at IS NULL
-GROUP BY s.id, s.name, s.slug, s.member_count, s.post_count
-ORDER BY shared_members DESC
+GROUP BY s.id, s.name, s.slug, s.member_count, s.post_count, s.geo_code
+ORDER BY (CASE WHEN s.geo_code = sqlc.narg(geo_code) THEN 0 ELSE 1 END), shared_members DESC
 LIMIT $3;
 
 -- name: GetSuggestedTags :many

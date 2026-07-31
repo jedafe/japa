@@ -675,6 +675,41 @@ type CouponEvent struct {
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 }
 
+type CourseAccessGrant struct {
+	ID        pgtype.UUID        `json:"id"`
+	UserID    pgtype.UUID        `json:"user_id"`
+	ContentID pgtype.UUID        `json:"content_id"`
+	GrantType string             `json:"grant_type"`
+	PaymentID pgtype.UUID        `json:"payment_id"`
+	GrantedAt pgtype.Timestamptz `json:"granted_at"`
+	RevokedAt pgtype.Timestamptz `json:"revoked_at"`
+}
+
+type CreditPack struct {
+	ID           pgtype.UUID        `json:"id"`
+	TenantID     pgtype.UUID        `json:"tenant_id"`
+	Name         string             `json:"name"`
+	Description  *string            `json:"description"`
+	CreditAmount int32              `json:"credit_amount"`
+	BonusCredits int32              `json:"bonus_credits"`
+	MinUserLevel *string            `json:"min_user_level"`
+	IsActive     bool               `json:"is_active"`
+	Position     int32              `json:"position"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
+}
+
+type Currency struct {
+	Code           string             `json:"code"`
+	Name           string             `json:"name"`
+	Symbol         string             `json:"symbol"`
+	CreditsPerUnit int32              `json:"credits_per_unit"`
+	IsActive       bool               `json:"is_active"`
+	Position       int32              `json:"position"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+}
+
 type CustomField struct {
 	ID       pgtype.UUID `json:"id"`
 	GroupID  pgtype.UUID `json:"group_id"`
@@ -695,6 +730,17 @@ type CustomField struct {
 	Searchable     bool               `json:"searchable"`
 	Position       int32              `json:"position"`
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+}
+
+type CustomFieldEntityType struct {
+	ID        pgtype.UUID        `json:"id"`
+	TenantID  pgtype.UUID        `json:"tenant_id"`
+	Value     string             `json:"value"`
+	Label     string             `json:"label"`
+	IsSystem  bool               `json:"is_system"`
+	SortOrder int32              `json:"sort_order"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
 
 type CustomFieldGroup struct {
@@ -863,6 +909,8 @@ type EmailTemplate struct {
 	Status        string             `json:"status"`
 	CreatedAt     pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
+	Slug          string             `json:"slug"`
+	IsActive      bool               `json:"is_active"`
 }
 
 type EmailVerification struct {
@@ -1715,6 +1763,7 @@ type Payment struct {
 	DiscountAmount int64              `json:"discount_amount"`
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	IdempotencyKey *string            `json:"idempotency_key"`
 }
 
 type PaymentRefund struct {
@@ -1735,6 +1784,7 @@ type PaymentWebhookEvent struct {
 	RawPayload  []byte             `json:"raw_payload"`
 	ProcessedAt pgtype.Timestamptz `json:"processed_at"`
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	EventType   string             `json:"event_type"`
 }
 
 type Permission struct {
@@ -2043,6 +2093,7 @@ type Space struct {
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
 	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
+	CurrencyCode   *string            `json:"currency_code"`
 }
 
 type SpaceMember struct {
@@ -2148,6 +2199,9 @@ type Subscription struct {
 	CancelAt           pgtype.Timestamptz `json:"cancel_at"`
 	CreatedAt          pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+	ProviderSubID      *string            `json:"provider_sub_id"`
+	CancelAtPeriodEnd  bool               `json:"cancel_at_period_end"`
+	CancelledAt        pgtype.Timestamptz `json:"cancelled_at"`
 }
 
 type SubscriptionPlan struct {
@@ -2187,6 +2241,12 @@ type Tag struct {
 	FollowerCount int32              `json:"follower_count"`
 	CreatedAt     pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
+	Rules         *string            `json:"rules"`
+	CoverMediaID  pgtype.UUID        `json:"cover_media_id"`
+	ContentCount  int32              `json:"content_count"`
+	IsSystem      bool               `json:"is_system"`
+	FieldValues   []byte             `json:"field_values"`
+	LogoMediaID   pgtype.UUID        `json:"logo_media_id"`
 }
 
 type TagModerator struct {
@@ -2325,6 +2385,7 @@ type User struct {
 	FollowerCount       int32              `json:"follower_count"`
 	ForcePasswordChange bool               `json:"force_password_change"`
 	CurrentGeoSpaceID   pgtype.UUID        `json:"current_geo_space_id"`
+	UsernameChangedAt   pgtype.Timestamptz `json:"username_changed_at"`
 }
 
 type UserAffiliateLink struct {
@@ -2436,6 +2497,7 @@ type UserPrivacySetting struct {
 	ShowActivity      bool               `json:"show_activity"`
 	CreatedAt         pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+	TenantID          pgtype.UUID        `json:"tenant_id"`
 }
 
 type UserProfile struct {
@@ -2452,8 +2514,11 @@ type UserProfile struct {
 	CreatedAt          pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
 	// User override for geo content weighting (ISO country code). NULL = use resolved VisitorContext (ADR-064).
-	ContentCountryPreference *string `json:"content_country_preference"`
-	CoverUrl                 *string `json:"cover_url"`
+	ContentCountryPreference *string     `json:"content_country_preference"`
+	CoverUrl                 *string     `json:"cover_url"`
+	PreferredCurrency        *string     `json:"preferred_currency"`
+	AvatarMediaID            pgtype.UUID `json:"avatar_media_id"`
+	HeaderMediaID            pgtype.UUID `json:"header_media_id"`
 }
 
 type UserRole struct {

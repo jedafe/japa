@@ -219,7 +219,7 @@ func (h *Handlers) ListComparisonTypes(w http.ResponseWriter, r *http.Request) {
 	limit := parsePageSize(r)
 	offset := parsePageSizeOffset(r)
 
-	types, err := h.Service.ListComparisonTypes(r.Context(), tenantID, limit, offset)
+	types, err := h.Service.ListComparisonTypesWithCounts(r.Context(), tenantID, limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -302,7 +302,7 @@ func (h *Handlers) GetComparisonType(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := h.Service.GetComparisonTypeBySlug(r.Context(), slug, tenantID)
+	result, err := h.Service.GetComparisonTypeDetail(r.Context(), slug, tenantID)
 	if err != nil {
 		handleServiceError(w, err)
 		return

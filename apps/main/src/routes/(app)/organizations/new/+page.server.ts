@@ -30,7 +30,7 @@ export const actions: Actions = {
 		const description = String(form.get('description') ?? '').trim();
 		const websiteUrl = String(form.get('website_url') ?? '').trim();
 		const countryCode = String(form.get('country_code') ?? '').trim();
-		const orgType = String(form.get('org_type') ?? 'company');
+		const orgType = String(form.get('org_type') ?? 'business');
 
 		if (!name) {
 			return fail(400, {

@@ -143,6 +143,47 @@ func (s *Service) GetUserConsents(ctx context.Context, userID pgtype.UUID, conse
 	return s.store.getUserConsents(ctx, userID, consentType)
 }
 
+// ConsentConfigResponse is the API payload returned by GET /consent/config.
+// It surfaces the platform's valid consent types and the current privacy
+// policy version so the frontend does not need to hardcode them
+// (BUG-015, BUG-016).
+// Ref: japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
+type ConsentConfigResponse struct {
+	ConsentTypes  []string `json:"consent_types"`
+	PolicyVersion string   `json:"policy_version"`
+}
+
+// validConsentTypes is the canonical list of consent types recognized by the
+// platform. Mirrors the values documented in Section 19 and enforced by the
+// consent_records.consent_type column. These are platform constants — they
+// are NOT admin-configurable, but surfacing them via the API keeps the
+// frontend in sync if the set changes (BUG-015).
+var validConsentTypes = []string{
+	"marketing_email",
+	"analytics_tracking",
+	"third_party_sharing",
+	"ai_processing",
+}
+
+// GetConsentConfig returns the valid consent types and the current privacy
+// policy version for the tenant. The policy version is sourced from
+// system_settings key "gdpr.policy_version" (default "1.0") so admins can
+// bump it without a code change (BUG-016).
+// Ref: japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
+func (s *Service) GetConsentConfig(ctx context.Context, tenantID pgtype.UUID) (*ConsentConfigResponse, error) {
+	policyVersion := "1.0"
+	if s.settings != nil {
+		if v, err := s.settings.GetSetting(ctx, tenantID, "gdpr.policy_version"); err == nil && v != "" {
+			policyVersion = v
+		}
+	}
+
+	return &ConsentConfigResponse{
+		ConsentTypes:  validConsentTypes,
+		PolicyVersion: policyVersion,
+	}, nil
+}
+
 // HasConsent checks whether a user has granted a specific consent.
 func (s *Service) HasConsent(ctx context.Context, userID pgtype.UUID, consentType string) (bool, error) {
 	return s.store.hasConsent(ctx, userID, consentType)
@@ -395,7 +436,7 @@ func (s *Service) ProcessAccountDeletion(ctx context.Context, requestID pgtype.U
 
 	step := request.ProgressStep
 
-	// 1. Anonymize user row.
+	// 1. Anonymize user row + user_profile PII.
 	if step < deletionStepAnonymized {
 		if err := s.store.anonymizeUser(ctx, gen.AnonymizeUserParams{
 			UserID:   request.UserID,
@@ -403,6 +444,18 @@ func (s *Service) ProcessAccountDeletion(ctx context.Context, requestID pgtype.U
 		}); err != nil {
 			s.markDeletionFailed(ctx, requestID)
 			return fmt.Errorf("anonymizing user: %w", err)
+		}
+		// Clear PII in user_profiles (display_name, bio, timezone, business
+		// info, content_country_preference, preferred_currency, avatar/cover)
+		// so it is scrubbed during the retention window, not just at hard
+		// delete (ADR-014 / ADR-057). Best-effort: a failure logs a warning
+		// but does not abort — the user row is already anonymized.
+		if err := s.store.anonymizeUserProfile(ctx, gen.AnonymizeUserProfileParams{
+			UserID:   request.UserID,
+			TenantID: request.TenantID,
+		}); err != nil {
+			slog.Warn("failed to anonymize user profile during deletion",
+				"user_id", request.UserID.String(), "error", err)
 		}
 		if err := s.checkpoint(ctx, requestID, request.TenantID, deletionStepAnonymized); err != nil {
 			return err
@@ -635,6 +688,27 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 			return fmt.Errorf("nullifying payment user refs: %w", err)
 		}
 
+		// 2a. Nullify subscription user references (BUG-020).
+		if err := q.NullifySubscriptionUserRefs(ctx, gen.NullifySubscriptionUserRefsParams{
+			UserID: userID, TenantID: tenantID,
+		}); err != nil {
+			return fmt.Errorf("nullifying subscription user refs: %w", err)
+		}
+
+		// 2b. Nullify discount code creator references (BUG-020).
+		if err := q.NullifyDiscountCodeCreatorRefs(ctx, gen.NullifyDiscountCodeCreatorRefsParams{
+			UserID: userID, TenantID: tenantID,
+		}); err != nil {
+			return fmt.Errorf("nullifying discount code creator refs: %w", err)
+		}
+
+		// 2c. Nullify discount code use user references (BUG-020).
+		// Uses a sentinel UUID because the PRIMARY KEY (code_id, user_id) does
+		// not allow NULL user_id.
+		if err := q.NullifyDiscountCodeUseUserRefs(ctx, userID); err != nil {
+			return fmt.Errorf("nullifying discount code use user refs: %w", err)
+		}
+
 		// 3. Nullify ticket submitter references.
 		if err := q.NullifyTicketSubmitter(ctx, gen.NullifyTicketSubmitterParams{
 			UserID: userID, TenantID: tenantID,
@@ -649,6 +723,24 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 			UserID: userID, TenantID: tenantID,
 		}); err != nil {
 			return fmt.Errorf("anonymizing comparison items: %w", err)
+		}
+
+		// BUG-018: delete custom_field_values for the user's profile entity
+		// so PII stored in custom fields (Japa Status, phone, address, etc.)
+		// does not survive account deletion. The custom_field_values table
+		// is polymorphic on (entity_type, entity_id); we delete rows where
+		// entity_type is 'user_profile' or 'user' and entity_id is the user.
+		if _, err := q.DeleteCustomFieldValuesByEntity(ctx, userID); err != nil {
+			return fmt.Errorf("deleting custom field values for user entity: %w", err)
+		}
+
+		// BUG-019: anonymize form_submissions authored by the deleted user.
+		// The submission row is preserved for analytics/audit (form
+		// submission counts, trigger audit trail), but the user_id reference
+		// is severed and the PII fields (ip_address, field_values jsonb) are
+		// scrubbed to '{}' so submitted answers cannot re-identify the user.
+		if _, err := q.AnonymizeFormSubmissionsByUser(ctx, userID); err != nil {
+			return fmt.Errorf("anonymizing form submissions: %w", err)
 		}
 
 		// 4. AUDIT-FRESH-GDPR-001: explicit cleanup for tables whose FK to
@@ -670,6 +762,15 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 			UserID: userID, TenantID: tenantID,
 		}); err != nil {
 			return fmt.Errorf("nullifying forum tag moderator: %w", err)
+		}
+
+		// tag_moderators.user_id links the user to tags they moderate (Section 08/49).
+		// The FK has ON DELETE CASCADE, but we delete explicitly to document the
+		// erasure path and clear the moderation history before the final HardDeleteUser.
+		if err := q.DeleteTagModeratorsByUser(ctx, gen.DeleteTagModeratorsByUserParams{
+			UserID: userID, TenantID: tenantID,
+		}); err != nil {
+			return fmt.Errorf("deleting tag moderators: %w", err)
 		}
 
 		// BUG-022: forum_thread_tags for threads authored by the user are
@@ -729,6 +830,19 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 			UserID: userID, TenantID: tenantID,
 		}); err != nil {
 			return fmt.Errorf("deleting ownership claims: %w", err)
+		}
+
+		// ownership_claims.reviewed_by is nullable; clear reviewer reference when an admin is erased.
+		if err := q.NullifyOwnershipClaimReviewer(ctx, gen.NullifyOwnershipClaimReviewerParams{
+			UserID: userID, TenantID: tenantID,
+		}); err != nil {
+			return fmt.Errorf("nullifying ownership claim reviewer: %w", err)
+		}
+
+		// organization_members.user_id is NOT NULL; remove the erased user's memberships
+		// to prevent re-identification via the member roster.
+		if err := q.DeleteOrganizationMembersByUser(ctx, userID); err != nil {
+			return fmt.Errorf("deleting organization memberships: %w", err)
 		}
 
 		// consent_records.user_id is nullable; preserve the compliance record, detach the user.
@@ -980,6 +1094,7 @@ type UserDataExport struct {
 	Reviews              []map[string]interface{} `json:"reviews"`
 	SpaceMembers         []map[string]interface{} `json:"space_members"`
 	SpaceModerators      []map[string]interface{} `json:"space_moderators"`
+	TagModerators        []map[string]interface{} `json:"tag_moderators"`
 	ConsentRecords       []map[string]interface{} `json:"consent_records"`
 	WalletLedger         []map[string]interface{} `json:"wallet_ledger"`
 	LessonProgress       []map[string]interface{} `json:"lesson_progress"`
@@ -995,6 +1110,8 @@ type UserDataExport struct {
 	InstructorProfiles   []map[string]interface{} `json:"instructor_profiles"`
 	RevenueSplits        []map[string]interface{} `json:"revenue_splits"`
 	InstructorPayouts    []map[string]interface{} `json:"instructor_payouts"`
+	CustomFieldValues    []map[string]interface{} `json:"custom_field_values"` // BUG-020
+	PushTokens           []map[string]interface{} `json:"push_tokens"`         // BUG-014
 	ExportMetadata       map[string]interface{}   `json:"export_metadata"`
 }
 
@@ -1226,6 +1343,13 @@ func (s *Service) collectUserData(ctx context.Context, userID, tenantID pgtype.U
 		slog.Warn("failed to collect space_moderators for export", "user_id", userID.String(), "error", err)
 	}
 
+	// Tag moderator assignments (tag_moderators table — Section 08/49).
+	if rows, err := s.store.gdprExportUserTagModerators(ctx, userID, tenantID); err == nil {
+		export.TagModerators = rows
+	} else {
+		slog.Warn("failed to collect tag_moderators for export", "user_id", userID.String(), "error", err)
+	}
+
 	// Consent records (full rows, complementing the summarized Consents block).
 	if rows, err := s.store.gdprExportUserConsentRecords(ctx, userID, tenantID); err == nil {
 		export.ConsentRecords = rows
@@ -1325,6 +1449,23 @@ func (s *Service) collectUserData(ctx context.Context, userID, tenantID pgtype.U
 		export.InstructorPayouts = rows
 	} else {
 		slog.Warn("failed to collect instructor_payouts for export", "user_id", userID.String(), "error", err)
+	}
+
+	// BUG-020: export custom_field_values for the user's profile entity so
+	// the GDPR data export includes PII stored in custom fields.
+	if rows, err := s.store.gdprExportCustomFieldValues(ctx, userID); err == nil {
+		export.CustomFieldValues = rows
+	} else {
+		slog.Warn("failed to collect custom_field_values for export", "user_id", userID.String(), "error", err)
+	}
+
+	// BUG-014: export push_tokens (device push notification tokens) so the
+	// GDPR data export includes PII-adjacent device identifiers.
+	// Ref: japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
+	if rows, err := s.store.gdprExportPushTokens(ctx, userID, tenantID); err == nil {
+		export.PushTokens = rows
+	} else {
+		slog.Warn("failed to collect push_tokens for export", "user_id", userID.String(), "error", err)
 	}
 
 	return export, nil

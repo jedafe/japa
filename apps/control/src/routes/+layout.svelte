@@ -39,6 +39,7 @@
 		Webhook,
 		DatabaseBackup,
 		ShieldCheck,
+		Coins,
 	} from 'lucide-svelte';
 	type LucideIcon = typeof LayoutDashboard;
 
@@ -182,7 +183,8 @@
 		{ href: '/tenants', icon: Building2 },
 		{ href: '/ai-budget', icon: DollarSign },
 		{ href: '/cron', icon: Clock },
-		{ href: '/deployments', icon: Rocket }
+		{ href: '/deployments', icon: Rocket },
+		{ href: '/currencies', icon: Coins }
 	];
 
 	const navKeyMap: Record<string, { label: string; tooltip: string; defaultLabel: string; defaultTooltip: string }> = {
@@ -205,6 +207,7 @@
 		'/webhooks': { label: 'nav.webhooks', tooltip: 'nav.webhooks_tooltip', defaultLabel: 'Webhooks', defaultTooltip: 'Webhook endpoint management' },
 		'/backup-configs': { label: 'nav.backup_configs', tooltip: 'nav.backup_configs_tooltip', defaultLabel: 'Backup Configs', defaultTooltip: 'Database backup configuration' },
 		'/permission-nodes': { label: 'nav.permission_nodes', tooltip: 'nav.permission_nodes_tooltip', defaultLabel: 'Permission Nodes', defaultTooltip: 'RBAC permission key viewer' },
+		'/currencies': { label: 'nav.currencies', tooltip: 'nav.currencies_tooltip', defaultLabel: 'Currencies', defaultTooltip: 'Credit currency exchange rates' },
 	};
 
 	const nav = $derived.by(() => {

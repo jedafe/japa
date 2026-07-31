@@ -7,6 +7,18 @@ RETURNING *;
 SELECT * FROM organizations
 WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL;
 
+-- name: GetOrganizationByIDOnly :one
+-- Used by invitation acceptance where tenant_id is not yet known; the org's
+-- tenant_id is read from the row and used for subsequent tenant-scoped calls.
+SELECT * FROM organizations
+WHERE id = $1 AND deleted_at IS NULL;
+
+-- name: CountOrganizationsByOwner :one
+-- Counts active (non-deleted) organizations owned by a user in a tenant.
+-- Used by the organizations.max_per_user quantity gate (BUG-015).
+SELECT COUNT(*) FROM organizations
+WHERE owner_user_id = $1 AND tenant_id = $2 AND deleted_at IS NULL;
+
 -- name: GetOrganizationBySlug :one
 SELECT * FROM organizations
 WHERE slug = $1 AND tenant_id = $2 AND deleted_at IS NULL;
@@ -32,10 +44,20 @@ WHERE tenant_id = $1 AND deleted_at IS NULL
   AND ($5::text = '' OR verified = ($5 = 'true'));
 
 -- name: UpdateOrganization :exec
+-- Partial update: COALESCE preserves the existing column value when the
+-- caller omits a field (nullable *string → NULL, empty string for NOT NULL
+-- text columns, NULL pgtype.UUID for geo_space_id). This prevents a PATCH
+-- that only updates one field from blanking out the rest (BUG-004/005).
 UPDATE organizations
-SET name = $3, tagline = $4, description = $5, website_url = $6,
-    country_code = $7, geo_space_id = $8, org_type = $9, updated_at = now()
-WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL;
+SET name = COALESCE(NULLIF(@name::text, ''), name),
+    tagline = COALESCE(@tagline, tagline),
+    description = COALESCE(@description, description),
+    website_url = COALESCE(@website_url, website_url),
+    country_code = COALESCE(@country_code, country_code),
+    geo_space_id = COALESCE(@geo_space_id, geo_space_id),
+    org_type = COALESCE(NULLIF(@org_type::text, ''), org_type),
+    updated_at = now()
+WHERE id = @id AND tenant_id = @tenant_id AND deleted_at IS NULL;
 
 -- name: SoftDeleteOrganization :exec
 UPDATE organizations
@@ -83,6 +105,14 @@ UPDATE organization_invitations
 SET accepted_at = now()
 WHERE id = $1 AND organization_id = $2 AND expires_at > now() AND accepted_at IS NULL;
 
+-- name: RevokeOrganizationInvitation :exec
+-- Revoke (hard-delete) a pending invitation. Only un-accepted invitations
+-- can be revoked; an already-accepted invitation is a member relationship
+-- and must be removed via DELETE /organizations/{id}/members/{userId}.
+-- Ref: japaconnect-engineering/sections/07-organization-profiles-claim-ownership.md
+DELETE FROM organization_invitations
+WHERE id = $1 AND organization_id = $2 AND accepted_at IS NULL;
+
 -- name: CreateOwnershipClaim :one
 INSERT INTO ownership_claims (tenant_id, claimant_user_id, organization_id, evidence_url, notes)
 VALUES ($1, $2, $3, $4, $5)
@@ -102,6 +132,21 @@ LIMIT $3 OFFSET $4;
 SELECT id FROM ownership_claims
 WHERE organization_id = $1 AND tenant_id = $2 AND status = 'pending'
 ORDER BY created_at DESC LIMIT 1;
+
+-- name: GetOwnershipClaimByID :one
+-- Returns a single ownership claim by ID (for GET /claim-ownership/{id}).
+-- Joined with the claimant's username and org name for display.
+SELECT oc.*, u.username AS claimant_username, o.name AS org_name
+FROM ownership_claims oc
+JOIN users u ON u.id = oc.claimant_user_id
+JOIN organizations o ON o.id = oc.organization_id
+WHERE oc.id = $1 AND oc.tenant_id = $2;
+
+-- name: WithdrawOwnershipClaim :exec
+-- Withdraw (delete) a pending claim by the claimant. Only pending claims
+-- can be withdrawn; reviewed claims are historical records.
+DELETE FROM ownership_claims
+WHERE id = $1 AND tenant_id = $2 AND claimant_user_id = $3 AND status = 'pending';
 
 -- name: GetPendingOwnershipClaims :many
 SELECT oc.id, oc.organization_id, oc.claimant_user_id, oc.evidence_url, oc.notes, oc.created_at,
@@ -133,9 +178,10 @@ SELECT role FROM organization_members
 WHERE organization_id = $1 AND user_id = $2;
 
 -- name: IncrementOrganizationMemberCount :exec
+-- Defense-in-depth: tenant-scoped to prevent cross-tenant count corruption.
 UPDATE organizations
 SET member_count = member_count + $2, updated_at = now()
-WHERE id = $1;
+WHERE id = $1 AND tenant_id = $3;
 
 -- name: ActiveOrgExistsByID :one
 -- Existence check for the public org profile gate: is there an ACTIVE,
@@ -191,13 +237,13 @@ WHERE tenant_id = @tenant_id AND status = 'active' AND deleted_at IS NULL AND ve
 -- name: GetOrganizationAnalytics :one
 -- Aggregated analytics for a single organization (Section 07, 40).
 -- Returns total views (sum of content view_count), total posts, members,
--- followers, and posts created in the last 30 days.
+-- followers, and posts created in the last @period_days days (default 30).
 SELECT
   COALESCE(SUM(c.view_count), 0)::bigint AS total_views,
   COUNT(c.id)::bigint AS total_posts,
   (SELECT COUNT(*)::bigint FROM organization_members om WHERE om.organization_id = @org_id) AS total_members,
   o.follower_count::bigint AS total_followers,
-  COUNT(c.id) FILTER (WHERE c.created_at >= NOW() - INTERVAL '30 days')::bigint AS posts_last_30d
+  COUNT(c.id) FILTER (WHERE c.created_at >= NOW() - make_interval(days => @period_days))::bigint AS posts_last_30d
 FROM organizations o
 LEFT JOIN contents c ON c.organization_id = o.id AND c.status != 'draft' AND c.deleted_at IS NULL
 WHERE o.id = @org_id AND o.tenant_id = @tenant_id AND o.deleted_at IS NULL

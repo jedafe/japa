@@ -33,16 +33,20 @@
 	 * All valid consent types defined by the backend (internal/gdpr/types.go).
 	 * These are platform constants, not admin-configurable values — like theme
 	 * names. Ref: japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
+	 *
+	 * BUG-015/BUG-016: consent types and policy version are now fetched from
+	 * GET /consent/config at runtime instead of being hardcoded. The defaults
+	 * below are kept as a fallback so the UI still renders if the API is down.
 	 */
-	const CONSENT_TYPES = [
+	let consentTypes = $state<string[]>([
 		'marketing_email',
 		'analytics_tracking',
 		'third_party_sharing',
 		'ai_processing'
-	] as const;
+	]);
 
-	/** Current policy version — matches the backend default ("1.0"). */
-	const POLICY_VERSION = '1.0';
+	/** Current policy version — fallback default ("1.0") if the API is unavailable. */
+	let policyVersion = $state('1.0');
 
 	interface DataPrivacyData {
 		consents: ConsentRecord[];
@@ -67,7 +71,7 @@
 	function buildConsentMap(records: ConsentRecord[]): Map<string, boolean> {
 		const map = new Map<string, boolean>();
 		// Pre-seed all consent types as granted by default.
-		for (const type of CONSENT_TYPES) map.set(type, true);
+		for (const type of consentTypes) map.set(type, true);
 		const seen = new Set<string>();
 		for (const r of records) {
 			// Only the latest record per type matters; backend returns newest-first.
@@ -131,7 +135,7 @@
 				await api.post('/consent', {
 					consent_type: type,
 					granted: true,
-					policy_version: POLICY_VERSION
+					policy_version: policyVersion
 				});
 			}
 		} catch (e) {
@@ -174,6 +178,20 @@
 		cancelling = false;
 	}
 
+	// Fetch consent types + policy version from the backend (BUG-015/BUG-016).
+	// Falls back to the hardcoded defaults above if the API is unavailable.
+	onMount(async () => {
+		try {
+			const res = await api.get<{ consent_types: string[]; policy_version: string }>('/consent/config');
+			if (res.data) {
+				if (res.data.consent_types?.length) consentTypes = res.data.consent_types;
+				if (res.data.policy_version) policyVersion = res.data.policy_version;
+			}
+		} catch {
+			// Keep fallback defaults — the UI remains functional.
+		}
+	});
+
 	// Poll export status while pending (every 30s).
 	onMount(() => {
 		if (uiStatus !== 'pending') return;
@@ -209,7 +227,7 @@
 			<p class="mb-2 rounded-[var(--radius)] bg-red-500/10 px-3 py-2 text-xs text-red-500" role="alert">{consentError}</p>
 		{/if}
 		<ul class="space-y-2">
-			{#each CONSENT_TYPES as type (type)}
+			{#each consentTypes as type (type)}
 				{@const granted = consentMap.get(type) ?? false}
 				<li class="flex items-center justify-between rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2">
 					<span class="min-w-0 flex-1">

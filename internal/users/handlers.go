@@ -216,10 +216,64 @@ func (h *Handlers) ListUsers(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"data": result})
 }
 
+// UserModerationConfig is the API payload returned by
+// GET /admin/users/config. It surfaces the platform's valid user statuses,
+// profile types, violation types, restriction operations, and restriction
+// durations so the admin frontend does not need to hardcode them
+// (BUG-017 through BUG-021).
+// Ref: japaconnect-engineering/sections/03-rbac.md (user statuses)
+//
+//	japaconnect-engineering/sections/46-impersonation.md (moderation)
+type UserModerationConfig struct {
+	Statuses             []ConfigOption   `json:"statuses"`
+	ProfileTypes         []ConfigOption   `json:"profile_types"`
+	ViolationTypes       []ConfigOption   `json:"violation_types"`
+	RestrictionOps       []ConfigOption   `json:"restriction_operations"`
+	RestrictionDurations []ConfigDuration `json:"restriction_durations"`
+}
+
+// ConfigOption is a value/label pair for a dropdown or filter.
+type ConfigOption struct {
+	Value string `json:"value"`
+	Label string `json:"label"`
+}
+
+// ConfigDuration is a value/label pair for a duration selector.
+type ConfigDuration struct {
+	Value string `json:"value"`
+	Label string `json:"label"`
+}
+
+// GetUserModerationConfig handles GET /api/v1/admin/users/config.
+// Returns the platform's valid user statuses, profile types, violation
+// types, restriction operations, and restriction durations so the admin
+// frontend does not hardcode them (BUG-017 through BUG-021).
+// Ref: japaconnect-engineering/sections/03-rbac.md (user statuses/profile types)
+//
+//	japaconnect-engineering/sections/46-impersonation.md (moderation)
+func (h *Handlers) GetUserModerationConfig(w http.ResponseWriter, r *http.Request) {
+	if _, ok := h.requireTenant(w, r); !ok {
+		return
+	}
+	if user := auth.FromContext(r.Context()); user == nil {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		return
+	}
+
+	cfg, err := h.Service.GetUserModerationConfig(r.Context())
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": cfg})
+}
+
 // ListUserSessions handles GET /api/v1/admin/users/{id}/sessions.
 // Admin-scoped variant of /me/sessions that lists sessions for any user.
 func (h *Handlers) ListUserSessions(w http.ResponseWriter, r *http.Request) {
-	if _, ok := h.requireTenant(w, r); !ok {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
 		return
 	}
 	if user := auth.FromContext(r.Context()); user == nil {
@@ -233,7 +287,7 @@ func (h *Handlers) ListUserSessions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sessions, err := h.Service.ListSessions(r.Context(), userID)
+	sessions, err := h.Service.ListSessions(r.Context(), tenantID, userID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -440,8 +494,15 @@ func (h *Handlers) UpdateMyContentCountry(w http.ResponseWriter, r *http.Request
 	}
 
 	// Invalidate the VisitorContext cache for this user so the next request
-	// picks up the new preference immediately.
+	// picks up the new preference immediately. Delete both the session-scoped
+	// key (jc:visitor:ctx:{jti}, the primary key for tokens with a JTI) and
+	// the user-id fallback key (jc:visitor:ctx:user:{id}, for legacy tokens
+	// without a JTI). Without the session-scoped deletion the resolver would
+	// return the stale cached context for up to 30 minutes.
 	if h.Redis != nil {
+		if user.SessionID != "" {
+			_ = h.Redis.Del(r.Context(), "jc:visitor:ctx:"+user.SessionID).Err()
+		}
 		_ = h.Redis.Del(r.Context(), "jc:visitor:ctx:user:"+user.UserID.String()).Err()
 	}
 

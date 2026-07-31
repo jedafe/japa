@@ -13,7 +13,11 @@
 package customfields
 
 import (
+	"strings"
+
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/valkey-io/valkey-go/valkeycompat"
+
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
 )
@@ -132,6 +136,37 @@ var SupportedEmbedPlatforms = []string{
 	"youtube", "github", "twitter", "vimeo", "spotify", "figma", "codepen", "google_maps",
 }
 
+// EntityTypeFromClass derives a simplified entity_type token from a full
+// entity_class assignment string (Section 06). For example:
+//   - "content_type:blog_post" → "content"
+//   - "space_type:university"  → "space"
+//   - "user_profile"           → "user_profile"
+//   - "organization"           → "organization"
+//   - "form:{uuid}"            → "form"
+//   - "tag"                    → "tag"
+//   - "ticket_type:{uuid}"     → "ticket_type"
+//
+// The simplified token is what the frontend uses to filter groups by entity
+// type (e.g. the content composer filters on entity_type === "content").
+func EntityTypeFromClass(entityClass string) string {
+	// Take the part before the first colon.
+	prefix := entityClass
+	if idx := strings.Index(entityClass, ":"); idx > 0 {
+		prefix = entityClass[:idx]
+	}
+	// Map the assignment prefix to the simplified entity_type token.
+	switch prefix {
+	case "content_type":
+		return "content"
+	case "space_type":
+		return "space"
+	case "ticket_type":
+		return "ticket_type"
+	default:
+		return prefix
+	}
+}
+
 // Service provides custom field operations with reader/writer pool
 // separation. Reads go through the reader pool; writes go through the
 // writer pool. This follows the same pattern as the existing db.DB struct.
@@ -139,6 +174,7 @@ type Service struct {
 	read  *gen.Queries
 	write *gen.Queries
 	pool  *pgxpool.Pool
+	cache valkeycompat.Cmdable // optional Valkey client for field-permission caching (BUG-016)
 }
 
 // NewService creates a Service backed by the given database pool.
@@ -148,4 +184,12 @@ func NewService(database *db.DB) *Service {
 		write: gen.New(database.Writer),
 		pool:  database.Writer,
 	}
+}
+
+// SetCache sets the Valkey client used for field-level RBAC caching
+// (BUG-016). When set, ListVisibleFieldIDsForUser caches the result
+// under jc:field_perm:{user_id} with a 5-minute TTL. When nil (the
+// default), every call hits the DB directly — the pre-cache behavior.
+func (s *Service) SetCache(rdb valkeycompat.Cmdable) {
+	s.cache = rdb
 }

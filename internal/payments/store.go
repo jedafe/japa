@@ -2,8 +2,10 @@ package payments
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
 )
@@ -110,6 +112,24 @@ func (s *Store) insertWebhookEvent(ctx context.Context, p gen.InsertWebhookEvent
 	return row, nil
 }
 
+// insertWebhookEventIfNew atomically inserts a webhook event and returns
+// true if this was the first insert (new event), false if the event already
+// existed (ON CONFLICT DO NOTHING). This replaces the non-atomic
+// read-check + insert pattern and prevents duplicate task enqueue under
+// concurrent webhook delivery (BUG-011).
+func (s *Store) insertWebhookEventIfNew(ctx context.Context, p gen.InsertWebhookEventParams) (bool, error) {
+	row, err := s.write.InsertWebhookEvent(ctx, p)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			// ON CONFLICT DO NOTHING returned no rows — event already exists.
+			return false, nil
+		}
+		return false, fmt.Errorf("inserting webhook event: %w", err)
+	}
+	_ = row
+	return true, nil
+}
+
 //nolint:unused // reserved for future features
 func (s *Store) isWebhookEventProcessed(ctx context.Context, tenantID pgtype.UUID, provider, eventID string) (bool, error) {
 	processed, err := s.read.IsWebhookEventProcessed(ctx, gen.IsWebhookEventProcessedParams{
@@ -135,6 +155,56 @@ func (s *Store) markWebhookEventProcessed(ctx context.Context, tenantID pgtype.U
 	}
 
 	return nil
+}
+
+// getPaymentByProviderRef looks up a payment by its provider reference
+// (Stripe pi_.../cs_..., Paystack reference, NOWPayments order_id) using
+// idx_payments_provider_ref. Replaces the full-scan match in the webhook
+// worker (BUG-019).
+func (s *Store) getPaymentByProviderRef(ctx context.Context, tenantID pgtype.UUID, providerRef string) (gen.Payment, error) {
+	row, err := s.read.GetPaymentByProviderRef(ctx, gen.GetPaymentByProviderRefParams{
+		TenantID:    tenantID,
+		ProviderRef: &providerRef,
+	})
+	if err != nil {
+		return gen.Payment{}, fmt.Errorf("getting payment by provider_ref: %w", err)
+	}
+
+	return row, nil
+}
+
+// countDiscountCodeUses returns the total number of uses of a discount code
+// across all users. Replaces the list+len pattern (BUG-018).
+func (s *Store) countDiscountCodeUses(ctx context.Context, codeID pgtype.UUID) (int32, error) {
+	count, err := s.read.CountDiscountCodeUses(ctx, codeID)
+	if err != nil {
+		return 0, fmt.Errorf("counting discount code uses: %w", err)
+	}
+
+	return count, nil
+}
+
+// listAdminPayments lists payments with admin filters (JEOS §17).
+func (s *Store) listAdminPayments(ctx context.Context, p gen.ListAdminPaymentsParams) ([]gen.Payment, error) {
+	rows, err := s.read.ListAdminPayments(ctx, p)
+	if err != nil {
+		return nil, fmt.Errorf("listing admin payments: %w", err)
+	}
+
+	return rows, nil
+}
+
+// getAdminPaymentByID retrieves a payment for admin detail view (JEOS §17).
+func (s *Store) getAdminPaymentByID(ctx context.Context, id, tenantID pgtype.UUID) (gen.Payment, error) {
+	row, err := s.read.GetAdminPaymentByID(ctx, gen.GetAdminPaymentByIDParams{
+		ID:       id,
+		TenantID: tenantID,
+	})
+	if err != nil {
+		return gen.Payment{}, fmt.Errorf("getting admin payment: %w", err)
+	}
+
+	return row, nil
 }
 
 // ---------------------------------------------------------------------------

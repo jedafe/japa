@@ -13,9 +13,9 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"strings"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -25,6 +25,7 @@ import (
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/config"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/mentions"
 	"github.com/jedafe/japa/internal/spam"
 	"github.com/jedafe/japa/internal/tenant"
@@ -61,12 +62,20 @@ type MentionNotifier interface {
 
 // Handlers holds dependencies for content HTTP handlers.
 type Handlers struct {
-	Service      *Service
-	AsynqClient  TaskEnqueueClient
-	SpamPipeline *spam.SpamPipeline
-	settings     *config.Settings
-	notifier     MentionNotifier // nil disables mention notifications (test-only)
-	spaceChecker SpacePostChecker // nil disables space posting-perm checks (BUG-003)
+	Service          *Service
+	AsynqClient      TaskEnqueueClient
+	SpamPipeline     *spam.SpamPipeline
+	settings         *config.Settings
+	notifier         MentionNotifier        // nil disables mention notifications (test-only)
+	spaceChecker     SpacePostChecker      // nil disables space posting-perm checks (BUG-003)
+	tagResolver      TagSlugResolver       // nil disables bulk tag_slugs resolution (BUG-006)
+	mentionCheckers  *mentions.DBCheckers  // nil disables privacy filtering (BUG-004)
+}
+
+// TagSlugResolver resolves tag slugs to tag IDs within a tenant (Section 14).
+// Implemented by tags.Service to avoid an import cycle (tags imports content).
+type TagSlugResolver interface {
+	ResolveTagSlugs(ctx context.Context, tenantID pgtype.UUID, slugs []string) (map[string]pgtype.UUID, error)
 }
 
 // SpacePostChecker checks whether a user may post into a space, based on the
@@ -80,6 +89,11 @@ type SpacePostChecker interface {
 // content creation handler can enforce the space's posting_perm axis.
 func (h *Handlers) SetSpacePostChecker(c SpacePostChecker) {
 	h.spaceChecker = c
+}
+
+// SetTagResolver injects the tag slug resolver for bulk tag_slugs support (BUG-006).
+func (h *Handlers) SetTagResolver(r TagSlugResolver) {
+	h.tagResolver = r
 }
 
 // NewHandlers creates Handlers with the given Service.
@@ -101,6 +115,11 @@ func (h *Handlers) SetSettings(s *config.Settings) {
 // @mentioned users after content creation (BL-002 — mentions:notify →
 // notification:dispatch_batch).
 func (h *Handlers) SetMentionNotifier(n MentionNotifier) { h.notifier = n }
+
+// SetMentionCheckers wires the DB-backed privacy checkers (blocks, erased
+// users, private-space membership) used by FilterMentions (BUG-004).
+// nil disables privacy filtering (backward compatibility / tests).
+func (h *Handlers) SetMentionCheckers(c *mentions.DBCheckers) { h.mentionCheckers = c }
 
 // parseUUIDParam extracts a URL parameter and scans it into a pgtype.UUID.
 func parseUUIDParam(r *http.Request, param string) (pgtype.UUID, error) {
@@ -366,12 +385,14 @@ func (h *Handlers) enqueueFanOutTask(contentID, tenantID, authorID, spaceID pgty
 }
 
 // dispatchMentionNotifications extracts @mentioned users from the content
-// body (TipTap JSON) and fires a content_mention notification to each via
+// body (TipTap JSON) and fires a mention.content notification to each via
 // the batch system (Section 35 — BL-002). Fire-and-forget per Rule 8:
 // errors are logged but never propagated to the caller.
 //
 // Self-mentions (mentioning the content author) are skipped.
-func (h *Handlers) dispatchMentionNotifications(ctx context.Context, tenantID, authorID, contentID pgtype.UUID, body string) {
+// Privacy filtering (blocks, erased users, private-space membership) is
+// applied via mentions.FilterMentions when checkers are wired (Section 15).
+func (h *Handlers) dispatchMentionNotifications(ctx context.Context, tenantID, authorID, contentID, spaceID pgtype.UUID, body string) {
 	if h.notifier == nil {
 		return
 	}
@@ -380,18 +401,44 @@ func (h *Handlers) dispatchMentionNotifications(ctx context.Context, tenantID, a
 		// Body may not be valid TipTap JSON (e.g., plain text); skip mentions.
 		return
 	}
+
+	// Apply privacy filtering when DB checkers are wired (BUG-004):
+	// skip erased users (GDPR), blocked users (privacy), and non-members
+	// of private spaces (visibility leak). Section 15 mention edge cases.
+	if h.mentionCheckers != nil {
+		isPrivateSpace := false
+		if spaceID.Valid {
+			space, err := h.Service.read.GetSpaceByID(ctx, gen.GetSpaceByIDParams{
+				ID:       spaceID,
+				TenantID: tenantID,
+			})
+			if err == nil && space.Visibility != "public" {
+				isPrivateSpace = true
+			}
+		}
+
+		mentioned, err = mentions.FilterMentions(
+			ctx, mentioned, tenantID, authorID, spaceID, isPrivateSpace,
+			h.mentionCheckers, h.mentionCheckers, h.mentionCheckers,
+		)
+		if err != nil {
+			slog.Warn("content: FilterMentions failed, dispatching unfiltered",
+				"content_id", contentID.String(), "error", err)
+		}
+	}
+
 	for _, m := range mentioned {
 		if m.EntityType != "user" || !m.ID.Valid || m.ID == authorID {
 			continue
 		}
 		if err := h.notifier.DispatchNotification(
 			ctx, tenantID, m.ID,
-			"content_mention", "",
+			"mention.content", "",
 			authorID,
 			"content", contentID,
 			"", "", "",
 		); err != nil {
-			slog.Warn("content: failed to dispatch content_mention notification",
+			slog.Warn("content: failed to dispatch mention.content notification",
 				"user_id", m.ID.String(), "error", err)
 		}
 	}
@@ -646,7 +693,7 @@ func (h *Handlers) CreateContent(w http.ResponseWriter, r *http.Request) {
 	h.enqueueModerationScan("content", content.ID, tenantID)
 
 	// Dispatch @mention notifications — fire-and-forget (BL-002).
-	h.dispatchMentionNotifications(r.Context(), tenantID, user.UserID, content.ID, content.Body)
+	h.dispatchMentionNotifications(r.Context(), tenantID, user.UserID, content.ID, content.SpaceID, content.Body)
 
 	// Enqueue feed fan-out for published content (BL-005). Scheduled posts
 	// are fanned out by the scheduled-publish handler when they go live.
@@ -879,6 +926,12 @@ func (h *Handlers) UpdateContent(w http.ResponseWriter, r *http.Request) {
 
 	// Enqueue moderation scan — fire-and-forget.
 	h.enqueueModerationScan("content", id, tenantID)
+
+	// Dispatch @mention notifications for newly added mentions — fire-and-forget
+	// (BUG-006). The notification batch system deduplicates by (recipient, type,
+	// subject) so mentions that were already notified on create won't produce
+	// duplicate notifications — the existing batch window is extended instead.
+	h.dispatchMentionNotifications(r.Context(), tenantID, user.UserID, content.ID, content.SpaceID, content.Body)
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": content})
 }
@@ -1455,6 +1508,8 @@ func (h *Handlers) ListContentTags(w http.ResponseWriter, r *http.Request) {
 }
 
 // AddContentTag handles POST /api/v1/content/{id}/tags.
+// Accepts the spec-compliant body {tag_slugs: string[]} (Section 14) for bulk
+// slug-based tagging, and the legacy {tag_id: string} for backward compatibility.
 func (h *Handlers) AddContentTag(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
 	if !ok {
@@ -1473,7 +1528,8 @@ func (h *Handlers) AddContentTag(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var input struct {
-		TagID string `json:"tag_id"`
+		TagSlugs []string `json:"tag_slugs"`
+		TagID    string   `json:"tag_id"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
@@ -1481,9 +1537,38 @@ func (h *Handlers) AddContentTag(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var tagID pgtype.UUID
-	if err := tagID.Scan(input.TagID); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_tag_id", "Invalid tag_id format")
+	// Resolve input to a list of tag IDs.
+	var tagIDs []pgtype.UUID
+	if len(input.TagSlugs) > 0 {
+		if h.tagResolver == nil {
+			writeError(w, http.StatusServiceUnavailable, "tag_resolver_unavailable", "Tag slug resolution is not configured")
+			return
+		}
+		slugMap, err := h.tagResolver.ResolveTagSlugs(r.Context(), tenantID, input.TagSlugs)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_tag_slugs", "One or more tag slugs could not be resolved")
+			return
+		}
+		for _, slug := range input.TagSlugs {
+			if id, exists := slugMap[slug]; exists {
+				tagIDs = append(tagIDs, id)
+			}
+		}
+	} else if input.TagID != "" {
+		// Legacy single tag_id support (backward compatibility).
+		var tagID pgtype.UUID
+		if err := tagID.Scan(input.TagID); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_tag_id", "Invalid tag_id format")
+			return
+		}
+		tagIDs = append(tagIDs, tagID)
+	} else {
+		writeError(w, http.StatusBadRequest, "missing_tags", "tag_slugs or tag_id is required")
+		return
+	}
+
+	if len(tagIDs) == 0 {
+		writeError(w, http.StatusBadRequest, "no_valid_tags", "No valid tags provided")
 		return
 	}
 
@@ -1497,19 +1582,23 @@ func (h *Handlers) AddContentTag(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
-	if len(existing) >= maxTags {
-		writeError(w, http.StatusBadRequest, "too_many_tags", "Content has reached the maximum number of tags")
+	if len(existing)+len(tagIDs) > maxTags {
+		writeError(w, http.StatusBadRequest, "too_many_tags", "Content would exceed the maximum number of tags")
 		return
 	}
 
-	if err := h.Service.AddContentTag(r.Context(), contentID, tagID); err != nil {
-		handleServiceError(w, err)
-		return
+	added := 0
+	for _, tagID := range tagIDs {
+		if err := h.Service.AddContentTag(r.Context(), contentID, tagID); err != nil {
+			handleServiceError(w, err)
+			return
+		}
+		added++
 	}
 
 	_ = user // permission check handled by middleware
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": map[string]bool{"added": true}})
+	writeJSON(w, http.StatusCreated, map[string]any{"data": map[string]int{"added": added}})
 }
 
 // RemoveContentTag handles DELETE /api/v1/content/{id}/tags/{tagId}.
@@ -1620,13 +1709,13 @@ func (h *Handlers) GetRelatedContent(w http.ResponseWriter, r *http.Request) {
 // ListContentTypes handles GET /content-types — returns available content types.
 func (h *Handlers) ListContentTypes(w http.ResponseWriter, r *http.Request) {
 	types := []map[string]string{
-		{ "value": "discussion", "label": "Discussion" },
-		{ "value": "blog_post", "label": "Blog Post" },
-		{ "value": "page", "label": "Page" },
-		{ "value": "comparison", "label": "Comparison" },
-		{ "value": "question", "label": "Question" },
-		{ "value": "article", "label": "Article" },
-		{ "value": "guide", "label": "Guide" },
+		{"value": "discussion", "label": "Discussion"},
+		{"value": "blog_post", "label": "Blog Post"},
+		{"value": "page", "label": "Page"},
+		{"value": "comparison", "label": "Comparison"},
+		{"value": "question", "label": "Question"},
+		{"value": "article", "label": "Article"},
+		{"value": "guide", "label": "Guide"},
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": types})

@@ -24,11 +24,13 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/tenant"
+	"github.com/jedafe/japa/internal/worker"
 )
 
 // SuperAdminChecker reports whether a user is a super-admin (bypasses
@@ -41,10 +43,16 @@ type SuperAdminChecker interface {
 // wraps the reader/writer database pools; the EmbedResolver validates
 // platform_embed field values at write time. The RBAC resolver enforces
 // field-level visibility/editability per user group (Section 06).
+// Handlers struct
 type Handlers struct {
 	Service *Service
 	Embed   *EmbedResolver
 	rbac    SuperAdminChecker // nil disables field-level RBAC (test-only)
+
+	// AsynqClient is used to enqueue form:fire_submission_triggers after a
+	// form submission is created (Section 06). Nil in tests — SubmitForm
+	// gracefully skips trigger enqueuing when not wired.
+	AsynqClient *asynq.Client
 }
 
 // NewHandlers creates Handlers with the given Service and EmbedResolver.
@@ -55,6 +63,11 @@ func NewHandlers(service *Service, embed *EmbedResolver) *Handlers {
 // SetRBAC wires the RBAC resolver used for field-level visibility/editability
 // checks (Section 06). Required in production; tests may omit it.
 func (h *Handlers) SetRBAC(rbac SuperAdminChecker) { h.rbac = rbac }
+
+// SetAsynqClient wires the Asynq client used to enqueue form submission
+// trigger tasks (Section 06). Required in production for trigger firing;
+// tests may omit it.
+func (h *Handlers) SetAsynqClient(c *asynq.Client) { h.AsynqClient = c }
 
 // errorResponse is the JSON body returned for error responses, following the
 // JapaConnect API error format: {"error": {"code": "...", "message": "..."}}.
@@ -145,6 +158,122 @@ func handleServiceError(w http.ResponseWriter, err error) {
 // Custom Field Groups
 // ---------------------------------------------------------------------------
 
+// fieldGroupEnriched is the enriched field group response that includes the
+// derived entity_type (from assignments) and the group's fields. Both the
+// main app content composer and the admin panel expect these fields.
+type fieldGroupEnriched struct {
+	ID          pgtype.UUID        `json:"id"`
+	TenantID    pgtype.UUID        `json:"tenant_id"`
+	Name        string             `json:"name"`
+	Slug        string             `json:"slug"`
+	Description *string            `json:"description"`
+	IsSystem    bool               `json:"is_system"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	EntityType  string             `json:"entity_type"`
+	FieldCount  int                `json:"field_count"`
+	Fields      []fieldSummary     `json:"fields"`
+}
+
+// fieldSummary is a frontend-friendly custom field representation. Unlike
+// gen.CustomField (which serializes Options []byte as base64), this type
+// uses json.RawMessage so the JSONB options are passed through as raw JSON.
+type fieldSummary struct {
+	ID           pgtype.UUID        `json:"id"`
+	GroupID      pgtype.UUID        `json:"group_id"`
+	Label        string             `json:"label"`
+	Key          string             `json:"key"`
+	FieldType    string             `json:"field_type"`
+	Options      json.RawMessage    `json:"options"`
+	EmbedPlatforms []string         `json:"embed_platforms"`
+	Placeholder  *string            `json:"placeholder"`
+	DefaultValue *string            `json:"default_value"`
+	IsRequired   bool               `json:"is_required"`
+	IsSystem     bool               `json:"is_system"`
+	ShowInFrontend bool             `json:"show_in_frontend"`
+	Filterable   bool               `json:"filterable"`
+	Sortable     bool               `json:"sortable"`
+	Searchable   bool               `json:"searchable"`
+	Position     int32              `json:"position"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+}
+
+// toFieldSummary converts a gen.CustomField to a fieldSummary, preserving
+// the Options JSONB as raw JSON instead of base64-encoded []byte.
+func toFieldSummary(f gen.CustomField) fieldSummary {
+	var opts json.RawMessage
+	if f.Options != nil {
+		opts = json.RawMessage(f.Options)
+	}
+	return fieldSummary{
+		ID:             f.ID,
+		GroupID:        f.GroupID,
+		Label:          f.Label,
+		Key:            f.Key,
+		FieldType:      f.FieldType,
+		Options:        opts,
+		EmbedPlatforms: f.EmbedPlatforms,
+		Placeholder:    f.Placeholder,
+		DefaultValue:   f.DefaultValue,
+		IsRequired:     f.IsRequired,
+		IsSystem:       f.IsSystem,
+		ShowInFrontend: f.ShowInFrontend,
+		Filterable:     f.Filterable,
+		Sortable:       f.Sortable,
+		Searchable:     f.Searchable,
+		Position:       f.Position,
+		CreatedAt:      f.CreatedAt,
+	}
+}
+
+// enrichFieldGroups assembles enriched field group objects from the bare
+// group structs, their assignments (for entity_type), and their fields.
+// Uses bulk queries to avoid N+1 per-group lookups.
+func (h *Handlers) enrichFieldGroups(
+	ctx context.Context,
+	tenantID pgtype.UUID,
+	groups []gen.CustomFieldGroup,
+) []fieldGroupEnriched {
+	// Bulk-fetch all assignments and fields for the tenant's groups.
+	assignments, _ := h.Service.ListAllAssignmentsByTenant(ctx, tenantID)
+	allFields, _ := h.Service.ListAllFieldsByTenant(ctx, tenantID)
+
+	// Build lookup maps: group_id → entity_type (from first assignment),
+	// group_id → fields[].
+	assignmentByGroup := make(map[pgtype.UUID]string)
+	for _, a := range assignments {
+		if _, exists := assignmentByGroup[a.GroupID]; !exists {
+			assignmentByGroup[a.GroupID] = EntityTypeFromClass(a.EntityClass)
+		}
+	}
+
+	fieldsByGroup := make(map[pgtype.UUID][]fieldSummary)
+	for _, f := range allFields {
+		fieldsByGroup[f.GroupID] = append(fieldsByGroup[f.GroupID], toFieldSummary(f))
+	}
+
+	enriched := make([]fieldGroupEnriched, 0, len(groups))
+	for _, g := range groups {
+		entityType := assignmentByGroup[g.ID]
+		fields := fieldsByGroup[g.ID]
+		if fields == nil {
+			fields = []fieldSummary{}
+		}
+		enriched = append(enriched, fieldGroupEnriched{
+			ID:          g.ID,
+			TenantID:    g.TenantID,
+			Name:        g.Name,
+			Slug:        g.Slug,
+			Description: g.Description,
+			IsSystem:    g.IsSystem,
+			CreatedAt:   g.CreatedAt,
+			EntityType:  entityType,
+			FieldCount:  len(fields),
+			Fields:      fields,
+		})
+	}
+	return enriched
+}
+
 // ListFieldGroups handles GET /api/v1/custom-field-groups.
 func (h *Handlers) ListFieldGroups(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
@@ -167,7 +296,8 @@ func (h *Handlers) ListFieldGroups(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": groups})
+	enriched := h.enrichFieldGroups(r.Context(), tenantID, groups)
+	writeJSON(w, http.StatusOK, map[string]any{"data": enriched})
 }
 
 // GetFieldGroup handles GET /api/v1/custom-field-groups/{id}. It returns the
@@ -547,10 +677,15 @@ func (h *Handlers) ReorderFields(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Accept the §06 canonical shape { ordered_field_ids: uuid[] } where
+	// position is assigned by index, as well as the legacy shape
+	// { fields: [{id, position}] } for backward compatibility with existing
+	// admin frontend callers.
 	var req struct {
-		Fields []struct {
+		OrderedFieldIDs []string `json:"ordered_field_ids"`
+		Fields          []struct {
 			ID       string `json:"id"`
-			Position int32  `json:"position"`
+			Position int32   `json:"position"`
 		} `json:"fields"`
 	}
 
@@ -564,6 +699,24 @@ func (h *Handlers) ReorderFields(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// §06 canonical shape: ordered_field_ids. Position is the array index.
+	if len(req.OrderedFieldIDs) > 0 {
+		for i, idStr := range req.OrderedFieldIDs {
+			var fieldID pgtype.UUID
+			if err := fieldID.Scan(idStr); err != nil {
+				writeError(w, http.StatusBadRequest, "invalid_field_id", "Invalid field id: "+idStr)
+				return
+			}
+			if err := h.Service.UpdateFieldPosition(r.Context(), fieldID, groupID, tenantID, int32(i)); err != nil {
+				handleServiceError(w, err)
+				return
+			}
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"reordered": true}})
+		return
+	}
+
+	// Legacy shape: fields with explicit positions.
 	for _, f := range req.Fields {
 		var fieldID pgtype.UUID
 		if err := fieldID.Scan(f.ID); err != nil {
@@ -610,7 +763,7 @@ func (h *Handlers) ListFieldValues(w http.ResponseWriter, r *http.Request) {
 				handleServiceError(w, err)
 				return
 			}
-			values, err := h.Service.ListFieldValuesByEntityForUser(r.Context(), entityType, entityID, visibleIDs)
+			values, err := h.Service.ListFieldValuesByEntityForUser(r.Context(), tenantID, entityType, entityID, visibleIDs)
 			if err != nil {
 				handleServiceError(w, err)
 				return
@@ -791,6 +944,33 @@ func (h *Handlers) SetFieldValue(w http.ResponseWriter, r *http.Request) {
 // ---------------------------------------------------------------------------
 
 // SetFieldPermission handles PUT /api/v1/custom-fields/{id}/permissions.
+//
+// BUG-015/BUG-016 note: field-permission checks (CheckFieldPermissionForUser,
+// ListVisibleFieldIDsForUser) are cached in Valkey under
+// jc:field_perm:{user_id} with a 5-minute TTL. This handler upserts a
+// permission for a user_group (not a specific user), so invalidating the
+// cache would require finding all users in the group — the 5-minute TTL
+// is the staleness bound. If a cache layer is added later that requires
+// immediate invalidation, query user_group_members here and call
+// Service.InvalidateFieldPermissionCache for each member.
+// ListFieldPermissions handles GET /custom-fields/{id}/permissions — returns
+// all RBAC permission rows for the given field (one per user group).
+func (h *Handlers) ListFieldPermissions(w http.ResponseWriter, r *http.Request) {
+	fieldID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		return
+	}
+
+	perms, err := h.Service.ListPermissionsByField(r.Context(), fieldID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": perms})
+}
+
 func (h *Handlers) SetFieldPermission(w http.ResponseWriter, r *http.Request) {
 	fieldID, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -1384,13 +1564,65 @@ func (h *Handlers) SubmitForm(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Enqueue form:fire_submission_triggers so the worker dispatches any
+	// triggers configured on this form (Section 06). Fire-and-forget per
+	// Rule 8 — a failed enqueue is logged but does not fail the submission,
+	// which has already been persisted.
+	h.enqueueFormTriggers(formID, tenantID, submission.ID, userID, fieldValues)
+
 	writeJSON(w, http.StatusCreated, map[string]any{
 		"data": map[string]any{"id": submission.ID, "status": "new"},
 	})
 }
 
+// enqueueFormTriggers enqueues a form:fire_submission_triggers task for the
+// given submission. It is a no-op when AsynqClient is nil (tests). Errors are
+// logged, not returned — the submission is already persisted and the user
+// should not be penalized for an infra issue.
+func (h *Handlers) enqueueFormTriggers(formID, tenantID, submissionID, userID pgtype.UUID, fieldValues []byte) {
+	if h.AsynqClient == nil {
+		return
+	}
+
+	payload := map[string]string{
+		"submission_id": submissionID.String(),
+		"tenant_id":     tenantID.String(),
+		"form_id":       formID.String(),
+	}
+	if userID.Valid {
+		payload["user_id"] = userID.String()
+	}
+
+	// field_values is included as a raw JSON fragment so the worker can pass
+	// it through to the trigger dispatcher without re-parsing.
+	payloadBytes, err := json.Marshal(struct {
+		SubmissionID string `json:"submission_id"`
+		TenantID     string `json:"tenant_id"`
+		FormID       string `json:"form_id"`
+		UserID       string `json:"user_id,omitempty"`
+		FieldValues  []byte `json:"field_values"`
+	}{
+		SubmissionID: payload["submission_id"],
+		TenantID:     payload["tenant_id"],
+		FormID:       payload["form_id"],
+		UserID:       payload["user_id"],
+		FieldValues:  fieldValues,
+	})
+	if err != nil {
+		slog.Warn("customfields: encoding form trigger payload", "error", err)
+		return
+	}
+
+	task := asynq.NewTask(worker.TypeFormFireSubmissionTriggers, payloadBytes)
+	if _, err := h.AsynqClient.Enqueue(task, asynq.Queue(worker.QueueForTask(worker.TypeFormFireSubmissionTriggers))); err != nil {
+		slog.Warn("customfields: enqueuing form trigger task",
+			"submission_id", submissionID.String(), "error", err)
+	}
+}
+
 // ListFormSubmissions handles GET /api/v1/forms/{id}/submissions with
-// cursor-based pagination (newest first).
+// offset pagination (Rule 5: ?page_size=N&page_offset=N, newest first).
+// Supports an optional ?status=new|reviewed filter per §06.
 func (h *Handlers) ListFormSubmissions(w http.ResponseWriter, r *http.Request) {
 	formID, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -1403,24 +1635,33 @@ func (h *Handlers) ListFormSubmissions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	limit := int32(20)
-
-	if raw := r.URL.Query().Get("limit"); raw != "" {
+	// Offset pagination per Rule 5 / api-response-format.md.
+	pageSize := int32(20)
+	if raw := r.URL.Query().Get("page_size"); raw != "" {
 		if n, perr := strconv.Atoi(raw); perr == nil && n > 0 && n <= 100 {
-			limit = int32(n) //nolint:gosec // G109: bounded by MaxPageSize check above
+			pageSize = int32(n) //nolint:gosec // G109: bounded by MaxPageSize check above
 		}
+	}
+
+	pageOffset := int32(0)
+	if raw := r.URL.Query().Get("page_offset"); raw != "" {
+		if n, perr := strconv.Atoi(raw); perr == nil && n >= 0 {
+			pageOffset = int32(n) //nolint:gosec // G109: bounded by MaxPageSize check above
+		}
+	}
+
+	// Optional status filter (§06: ?status=new|reviewed).
+	var statusFilter interface{}
+	if status := r.URL.Query().Get("status"); status != "" {
+		statusFilter = status
 	}
 
 	params := gen.ListFormSubmissionsByFormParams{
-		FormID:    formID,
-		TenantID:  tenantID,
-		PageLimit: limit,
-	}
-
-	if cursor := r.URL.Query().Get("cursor"); cursor != "" {
-		if t, perr := time.Parse(time.RFC3339, cursor); perr == nil {
-			params.CursorCreatedAt = pgtype.Timestamptz{Time: t, Valid: true}
-		}
+		FormID:       formID,
+		TenantID:     tenantID,
+		StatusFilter: statusFilter,
+		PageLimit:    pageSize,
+		PageOffset:   pageOffset,
 	}
 
 	submissions, err := h.Service.ListFormSubmissions(r.Context(), params)
@@ -1429,7 +1670,20 @@ func (h *Handlers) ListFormSubmissions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": submissions})
+	// Total count for the pagination envelope.
+	total, err := h.Service.CountFormSubmissions(r.Context(), gen.CountFormSubmissionsByFormParams{
+		FormID:       formID,
+		TenantID:     tenantID,
+		StatusFilter: statusFilter,
+	})
+	if err != nil {
+		total = 0
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data":  submissions,
+		"total": total,
+	})
 }
 
 // GetFormSubmission handles GET /api/v1/admin/forms/{id}/submissions/{sub_id}.
@@ -1558,17 +1812,350 @@ func (h *Handlers) DeleteFormSubmission(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
 }
 
-// ListEntityTypes handles GET /custom-field-entity-types — returns available entity types for custom fields.
-func (h *Handlers) ListEntityTypes(w http.ResponseWriter, r *http.Request) {
-	entityTypes := []map[string]string{
-		{ "value": "user_profile", "label": "User Profile" },
-		{ "value": "content", "label": "Content" },
-		{ "value": "space", "label": "Space" },
-		{ "value": "organization", "label": "Organization" },
-		{ "value": "tag", "label": "Tag" },
-		{ "value": "ticket_type", "label": "Ticket Type" },
-		{ "value": "form", "label": "Form" },
+// ---------------------------------------------------------------------------
+// Form Submission Triggers (Section 06)
+// ---------------------------------------------------------------------------
+
+// validTriggerTypes is the set of trigger_type values supported by the form
+// submission trigger system (Section 06).
+var validTriggerTypes = map[string]bool{
+	"assign_user_group": true,
+	"send_email":        true,
+	"send_webhook":      true,
+	"create_ticket":     true,
+	"notify_admin":      true,
+}
+
+// ListFormTriggers handles GET /forms/{id}/triggers — returns the triggers
+// configured on a form, ordered by position.
+func (h *Handlers) ListFormTriggers(w http.ResponseWriter, r *http.Request) {
+	formID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": entityTypes})
+	triggers, err := h.Service.ListFormTriggers(r.Context(), formID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": triggers})
+}
+
+// CreateFormTrigger handles POST /forms/{id}/triggers — creates a new trigger.
+func (h *Handlers) CreateFormTrigger(w http.ResponseWriter, r *http.Request) {
+	formID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		return
+	}
+
+	var req struct {
+		TriggerType string          `json:"trigger_type"`
+		Config      json.RawMessage `json:"config"`
+		Position    int32           `json:"position"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
+		return
+	}
+
+	if !validTriggerTypes[req.TriggerType] {
+		writeError(w, http.StatusBadRequest, "invalid_trigger_type",
+			"trigger_type must be one of: assign_user_group, send_email, send_webhook, create_ticket, notify_admin")
+		return
+	}
+
+	if req.Config == nil {
+		req.Config = json.RawMessage("{}")
+	}
+
+	trigger, err := h.Service.CreateFormTrigger(r.Context(), gen.CreateFormSubmissionTriggerParams{
+		FormID:      formID,
+		TriggerType: req.TriggerType,
+		Config:      req.Config,
+		Position:    req.Position,
+	})
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, map[string]any{"data": trigger})
+}
+
+// UpdateFormTrigger handles PATCH /forms/{id}/triggers/{triggerId}.
+func (h *Handlers) UpdateFormTrigger(w http.ResponseWriter, r *http.Request) {
+	formID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		return
+	}
+
+	triggerID, err := parseUUIDParam(r, "triggerId")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		return
+	}
+
+	var req struct {
+		TriggerType string          `json:"trigger_type"`
+		Config      json.RawMessage `json:"config"`
+		Position    int32           `json:"position"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
+		return
+	}
+
+	if !validTriggerTypes[req.TriggerType] {
+		writeError(w, http.StatusBadRequest, "invalid_trigger_type",
+			"trigger_type must be one of: assign_user_group, send_email, send_webhook, create_ticket, notify_admin")
+		return
+	}
+
+	if req.Config == nil {
+		req.Config = json.RawMessage("{}")
+	}
+
+	trigger, err := h.Service.UpdateFormTrigger(r.Context(), gen.UpdateFormSubmissionTriggerParams{
+		ID:          triggerID,
+		FormID:      formID,
+		TriggerType: req.TriggerType,
+		Config:      req.Config,
+		Position:    req.Position,
+	})
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": trigger})
+}
+
+// DeleteFormTrigger handles DELETE /forms/{id}/triggers/{triggerId}.
+func (h *Handlers) DeleteFormTrigger(w http.ResponseWriter, r *http.Request) {
+	formID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		return
+	}
+
+	triggerID, err := parseUUIDParam(r, "triggerId")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		return
+	}
+
+	if err := h.Service.DeleteFormTrigger(r.Context(), triggerID, formID); err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
+}
+
+// ReorderFormTriggers handles POST /forms/{id}/triggers/reorder — updates the
+// position of each trigger by index in the trigger_ids array.
+func (h *Handlers) ReorderFormTriggers(w http.ResponseWriter, r *http.Request) {
+	formID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		return
+	}
+
+	var req struct {
+		TriggerIDs []string `json:"trigger_ids"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
+		return
+	}
+
+	if len(req.TriggerIDs) == 0 {
+		writeError(w, http.StatusBadRequest, "invalid_body", "trigger_ids must not be empty")
+		return
+	}
+
+	triggerIDs := make([]pgtype.UUID, 0, len(req.TriggerIDs))
+	for _, idStr := range req.TriggerIDs {
+		var id pgtype.UUID
+		if err := id.Scan(idStr); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_id", "Invalid trigger ID format")
+			return
+		}
+		triggerIDs = append(triggerIDs, id)
+	}
+
+	if err := h.Service.ReorderFormTriggers(r.Context(), formID, triggerIDs); err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "reordered"}})
+}
+
+// ListEntityTypes handles GET /custom-field-entity-types — returns available
+// entity types for custom fields, read from the custom_field_entity_types
+// table (tenant-scoped). Falls back to a hardcoded list if the table is
+// empty (e.g. before the seed migration runs).
+func (h *Handlers) ListEntityTypes(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	types, err := h.Service.ListEntityTypes(r.Context(), tenantID)
+	if err != nil || len(types) == 0 {
+		// Fallback to the hardcoded list if the table is empty or the
+		// query fails (e.g. migration not yet applied).
+		fallback := []map[string]string{
+			{"value": "user_profile", "label": "User Profile"},
+			{"value": "content", "label": "Content"},
+			{"value": "space", "label": "Space"},
+			{"value": "organization", "label": "Organization"},
+			{"value": "tag", "label": "Tag"},
+			{"value": "ticket_type", "label": "Ticket Type"},
+			{"value": "form", "label": "Form"},
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"data": fallback})
+		return
+	}
+
+	// Map DB rows to the {value, label} shape the frontend expects.
+	result := make([]map[string]string, 0, len(types))
+	for _, t := range types {
+		result = append(result, map[string]string{
+			"value": t.Value,
+			"label": t.Label,
+		})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": result})
+}
+
+// ---------------------------------------------------------------------------
+// Custom Field Entity Types CRUD (Section 06)
+// ---------------------------------------------------------------------------
+
+// ListEntityTypesAdmin handles GET /admin/custom-field-entity-types — returns
+// the full entity type rows (including is_system, sort_order) for the admin UI.
+func (h *Handlers) ListEntityTypesAdmin(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	types, err := h.Service.ListEntityTypes(r.Context(), tenantID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": types})
+}
+
+// CreateEntityType handles POST /admin/custom-field-entity-types.
+func (h *Handlers) CreateEntityType(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	var req struct {
+		Value     string `json:"value"`
+		Label     string `json:"label"`
+		SortOrder int32  `json:"sort_order"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
+		return
+	}
+
+	if req.Value == "" || req.Label == "" {
+		writeError(w, http.StatusBadRequest, "invalid_body", "value and label are required")
+		return
+	}
+
+	et, err := h.Service.CreateEntityType(r.Context(), gen.CreateCustomFieldEntityTypeParams{
+		TenantID:  tenantID,
+		Value:     req.Value,
+		Label:     req.Label,
+		SortOrder: req.SortOrder,
+	})
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, map[string]any{"data": et})
+}
+
+// UpdateEntityType handles PATCH /admin/custom-field-entity-types/{id}.
+func (h *Handlers) UpdateEntityType(w http.ResponseWriter, r *http.Request) {
+	id, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	var req struct {
+		Label     string `json:"label"`
+		SortOrder int32  `json:"sort_order"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
+		return
+	}
+
+	if req.Label == "" {
+		writeError(w, http.StatusBadRequest, "invalid_body", "label is required")
+		return
+	}
+
+	et, err := h.Service.UpdateEntityType(r.Context(), gen.UpdateCustomFieldEntityTypeParams{
+		ID:        id,
+		TenantID:  tenantID,
+		Label:     req.Label,
+		SortOrder: req.SortOrder,
+	})
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": et})
+}
+
+// DeleteEntityType handles DELETE /admin/custom-field-entity-types/{id}.
+// System entity types (is_system=true) cannot be deleted.
+func (h *Handlers) DeleteEntityType(w http.ResponseWriter, r *http.Request) {
+	id, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	if err := h.Service.DeleteEntityType(r.Context(), id, tenantID); err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
 }

@@ -9,11 +9,12 @@
 	import { TableSkeleton } from "$lib/components/ui/skeleton";
 	import { RefreshCw, Trash2, Plus, Trash } from "lucide-svelte";
 	import { userManagementApi, impersonationApi } from "$lib/api";
-	import type { UserDetail } from "$lib/api";
+	import type { UserDetail, ModerationConfig } from "$lib/api";
 	import UserActionsCell from "./UserActionsCell.svelte";
 	import { t } from "$lib/stores/i18n.svelte";
 	import { goto, invalidateAll } from "$app/navigation";
 	import { hasPermission } from "$lib/stores/permissions.svelte";
+	import { onMount } from "svelte";
 
 	// Usernames are user-controlled, so they must be escaped before being
 	// interpolated into the {@html} confirmation copy.
@@ -74,7 +75,12 @@
 		Array.from(selectedIds).some(id => users.find(u => u.id === id)?.status === "deleted")
 	);
 
-	const filterDefs = [
+	// Filter definitions for the FilterBar. These start as hardcoded fallback
+	// defaults and are refreshed from the backend on mount via
+	// loadFilterOptions() — status options come from GET /admin/users/config
+	// (BUG-017) and group options come from userManagementApi.listGroups()
+	// (BUG-018).
+	let filterDefs = $state([
 		{
 			key: "status",
 			label: t("common.status", "Status"),
@@ -97,7 +103,48 @@
 				{ value: "super_admin", label: t("users.role_super_admin", "Super Admin") }
 			]
 		}
-	];
+	]);
+
+	// loadFilterOptions fetches status filter options from the backend
+	// moderation config (BUG-017) and group filter options from the RBAC
+	// user-groups endpoint (BUG-018), replacing the hardcoded fallbacks
+	// above. Failures are swallowed so the defaults remain in place.
+	async function loadFilterOptions() {
+		try {
+			const [configResult, groupsResult] = await Promise.all([
+				userManagementApi.getModerationConfig(),
+				userManagementApi.listGroups()
+			]);
+
+			let statusOptions: Array<{ value: string; label: string }> | undefined;
+			if (configResult.ok) {
+				const cfg = configResult.data as ModerationConfig;
+				if (cfg?.statuses?.length) {
+					statusOptions = cfg.statuses.map((s) => ({ value: s.value, label: s.label }));
+				}
+			}
+
+			let groupOptions: Array<{ value: string; label: string }> | undefined;
+			if (groupsResult.ok) {
+				const groups = groupsResult.data.groups ?? [];
+				if (groups.length) {
+					groupOptions = groups.map((g) => ({ value: g.slug, label: g.name }));
+				}
+			}
+
+			filterDefs = filterDefs.map((def) => {
+				if (def.key === "status" && statusOptions) {
+					return { ...def, options: statusOptions };
+				}
+				if (def.key === "group" && groupOptions) {
+					return { ...def, options: groupOptions };
+				}
+				return def;
+			});
+		} catch {
+			// Keep hardcoded fallback defaults on failure.
+		}
+	}
 
 	const columns = [
 		{
@@ -337,6 +384,11 @@
 
 	$effect(() => {
 		checkImpersonation();
+	});
+
+	// Fetch status/group filter options from the backend on mount (BUG-017/BUG-018).
+	onMount(() => {
+		loadFilterOptions();
 	});
 </script>
 

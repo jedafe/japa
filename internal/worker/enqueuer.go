@@ -73,6 +73,7 @@ var idempotentTasks = map[string]bool{
 	TypeWalletProcessActivityEvent:      true,
 	TypePaymentWebhookProcess:           true,
 	TypeUniversityProcessEnrollment:     true, // AUDIT-BE-005: double-credit guard
+	TypeWalletProcessCreditPurchase:     true, // Section 58: double-credit guard
 }
 
 func taskDefaults(taskType string) []asynq.Option {
@@ -135,6 +136,8 @@ var taskTier = func() map[string]string {
 		TypeWalletProcessActivityEvent, TypeNewsletterSend,
 		TypeAffiliateCreditAuthorCommission,
 		TypeDocsGeneratePage,
+		TypeFormFireSubmissionTriggers,
+		TypeWalletProcessCreditPurchase,
 		TypeUniversityNotifyInstructorApproved, TypeUniversityNotifyCourseApproved,
 	} {
 		m[t] = QueueDefault
@@ -213,6 +216,7 @@ func TaskTypeCatalog() []map[string]string {
 		{TypeLearningUpdateTrackCompletion, "default", "Update learning track completion"},
 		{TypeVideoProcessing, "default", "Process uploaded video files"},
 		{TypeWalletProcessActivityEvent, "default", "Process wallet activity event"},
+		{TypeWalletProcessCreditPurchase, "default", "Credit wallet on credit purchase payment success"},
 		{TypeNewsletterSend, "default", "Send newsletter to subscribers"},
 		{TypeDocsGeneratePage, "default", "Generate a docs page via AI (fire-and-forget)"},
 		{TypeAffiliateCreditAuthorCommission, "default", "Credit author revenue share for an external affiliate commission earned on their content"},

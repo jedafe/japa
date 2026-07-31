@@ -4,13 +4,14 @@
 	import { DataTable } from '$lib/components/ui/data-table';
 	import { Button } from '$lib/components/ui/button';
 	import { Select } from '$lib/components/ui/select';
-	import { plansApi, type SubscriptionPlan, type PlanFeature } from '$lib/api';
+	import { plansApi, walletApi, type SubscriptionPlan, type PlanFeature } from '$lib/api';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { Pencil, Trash2, Plus, X, Check, Star } from 'lucide-svelte';
 
 	type Plan = SubscriptionPlan;
 
 	let plans = $state<Plan[]>([]);
+	let currencies = $state<{ code: string; symbol: string; name?: string }[]>([]);
 	let loading = $state(true);
 	let errorMessage = $state('');
 	let selectedIds = $state<Set<string>>(new Set());
@@ -39,12 +40,11 @@
 
 	const canManage = $derived(hasPermission('payments.plans.manage'));
 
-	const currencies = [
-		{ value: 'NGN', label: 'Nigerian Naira (NGN)' },
-		{ value: 'USD', label: 'US Dollar (USD)' },
-		{ value: 'GBP', label: 'British Pound (GBP)' },
-		{ value: 'EUR', label: 'Euro (EUR)' }
-	];
+	// Currency options from the API (Rule 16 — no hardcoded data).
+	const currencyOptions = $derived(
+		currencies.map((c) => ({ value: c.code, label: c.name ? `${c.name} (${c.code})` : c.code }))
+	);
+	const currencySymbolMap = $derived(new Map(currencies.map((c) => [c.code, c.symbol])));
 
 	const statuses = [
 		{ value: 'active', label: 'Active' },
@@ -60,12 +60,12 @@
 		{ key: 'slug', label: 'Slug', sortable: true, class: 'font-mono text-xs' },
 		{ key: 'monthly_amount', label: 'Monthly', sortable: true, render: (v: number, row: Plan) => {
 			if (v === 0) return '<span class="text-success text-xs">Free</span>';
-			const sym = row.currency === 'NGN' ? '₦' : row.currency === 'USD' ? '$' : row.currency === 'GBP' ? '£' : '€';
+			const sym = currencySymbolMap.get(row.currency) ?? row.currency;
 			return `<span class="text-xs">${sym}${(v / 100).toLocaleString()}</span>`;
 		} },
 		{ key: 'yearly_amount', label: 'Yearly', sortable: true, render: (v: number, row: Plan) => {
 			if (v === 0) return '<span class="text-muted text-xs">—</span>';
-			const sym = row.currency === 'NGN' ? '₦' : row.currency === 'USD' ? '$' : row.currency === 'GBP' ? '£' : '€';
+			const sym = currencySymbolMap.get(row.currency) ?? row.currency;
 			return `<span class="text-xs">${sym}${(v / 100).toLocaleString()}</span>`;
 		} },
 		{ key: 'features', label: 'Features', sortable: false, render: (v: PlanFeature[]) => {
@@ -86,7 +86,10 @@
 	async function load() {
 		loading = true;
 		errorMessage = '';
-		const result = await plansApi.list();
+		const [result, currResult] = await Promise.all([
+			plansApi.list(),
+			walletApi.getCurrencies()
+		]);
 		if (result.ok) {
 			const raw = (result.data ?? []) as Plan[];
 			// The backend serializes JSONB features as a raw JSON string ([]byte),
@@ -97,6 +100,9 @@
 			}));
 		} else {
 			errorMessage = result.error ?? 'Failed to load plans';
+		}
+		if (currResult.ok && currResult.data) {
+			currencies = currResult.data;
 		}
 		loading = false;
 	}
@@ -336,7 +342,7 @@
 		<div class="grid grid-cols-2 gap-3">
 			<div>
 				<label for="plan-currency" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">Currency</label>
-				<Select options={currencies} bind:value={form.currency} />
+				<Select options={currencyOptions} bind:value={form.currency} />
 			</div>
 			<div>
 				<label for="plan-status" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">Status</label>

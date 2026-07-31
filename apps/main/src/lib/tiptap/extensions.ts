@@ -32,7 +32,7 @@ export function buildExtensions(opts: ExtensionOptions = {}): Extensions {
 		suggestion: {
 			char: '@',
 			allowSpaces: true,
-			render: () => createSuggestionRenderer({ onSearch: (q) => search('users', q) })
+			render: () => createSuggestionRenderer({ onSearch: (q) => search('users', q), entityType: 'user' })
 		}
 	}).extend({ name: 'mention' });
 
@@ -40,7 +40,7 @@ export function buildExtensions(opts: ExtensionOptions = {}): Extensions {
 		HTMLAttributes: { class: 'hashtag' },
 		suggestion: {
 			char: '#',
-			render: () => createSuggestionRenderer({ onSearch: (q) => search('tags', q) })
+			render: () => createSuggestionRenderer({ onSearch: (q) => search('tags', q), entityType: 'tag' })
 		}
 	}).extend({ name: 'hashtag' });
 
@@ -49,7 +49,7 @@ export function buildExtensions(opts: ExtensionOptions = {}): Extensions {
 		suggestion: {
 			char: '[',
 			allowSpaces: true,
-			render: () => createSuggestionRenderer({ onSearch: (q) => search('content', q) })
+			render: () => createSuggestionRenderer({ onSearch: (q) => search('content', q), entityType: 'content' })
 		}
 	}).extend({ name: 'interlink' });
 

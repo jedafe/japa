@@ -8,6 +8,7 @@ import (
 // The wallet service implements this interface and registers with the worker.
 type WalletProcessor interface {
 	ProcessActivityEventTask(ctx context.Context, payload []byte) error
+	ProcessCreditPurchaseTask(ctx context.Context, payload []byte) error
 }
 
 var walletProcessor WalletProcessor

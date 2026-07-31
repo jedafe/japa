@@ -119,6 +119,20 @@ export const walletApi = {
 	getUserBalance: (userId: string) => api<unknown>(`/admin/wallet/user/${userId}/balance`),
 	adjustBalance: (body: { user_id: string; amount: number; reason: string; ledger_type: 'points' | 'credits' }) =>
 		api('/admin/wallet/adjust', { method: 'POST', body }),
+
+	// Credit Currency System (Section 58, ADR-065)
+	listCreditPacks: () => api<unknown>('/admin/wallet/credit-packs'),
+	createCreditPack: (body: { name: string; description?: string; credit_amount: number; bonus_credits: number; min_user_level?: string; position: number }) =>
+		api('/admin/wallet/credit-packs', { method: 'POST', body }),
+	updateCreditPack: (id: string, body: { name?: string; description?: string; credit_amount?: number; bonus_credits?: number; min_user_level?: string; is_active?: boolean; position?: number }) =>
+		api(`/admin/wallet/credit-packs/${id}`, { method: 'PATCH', body }),
+	deleteCreditPack: (id: string) =>
+		api(`/admin/wallet/credit-packs/${id}`, { method: 'DELETE' }),
+	listCreditPurchases: (params?: string) =>
+		api<unknown>(`/admin/wallet/purchases${params ? `?${params}` : ''}`),
+
+	// Currencies — for currency symbol lookup (Rule 16, BUG-022)
+	getCurrencies: () => api<{ code: string; symbol: string; name?: string }[]>('/wallet/currencies'),
 };
 
 export const spaceTypesApi = {
@@ -180,10 +194,19 @@ export interface ComparisonType {
 	item_label: string;
 	is_system: boolean;
 	created_at: string;
+	field_count?: number;
+	item_count?: number;
+}
+
+export interface ComparisonTypeDimension {
+	id: string;
+	name: string;
+	description: string;
+	field_type: string;
 }
 
 export interface ComparisonTypeDetail extends ComparisonType {
-	dimensions: Array<{ id: string; name: string; description: string }>;
+	dimensions: ComparisonTypeDimension[];
 	item_count: number;
 }
 
@@ -204,15 +227,23 @@ export interface CustomFieldGroupOption {
 	slug: string;
 }
 
+// Comparison content entry — the actual comparison articles (Section 30).
+export interface ComparisonEntry {
+	id: string;
+	title: string;
+	slug: string;
+	body: string;
+	visibility: string;
+	status: string;
+	created_at: string;
+	updated_at: string;
+}
+
 export const comparisonAdminApi = {
 	listTypes: () => api<ComparisonType[]>('/comparisons/types'),
 	// Section 30 exposes GET /comparisons/types/{slug} (by slug, not id).
-	getType: (slug: string): Promise<ApiResult<ComparisonTypeDetail>> =>
-		api<ComparisonType>(`/comparisons/types/${slug}`).then((r) =>
-			r.ok
-				? { ok: true as const, data: { ...r.data, dimensions: [], item_count: 0 } }
-				: { ok: false as const, error: r.error }
-		),
+	// Returns the enriched detail with dimensions + item_count.
+	getType: (slug: string) => api<ComparisonTypeDetail>(`/comparisons/types/${slug}`),
 	createType: (body: {
 		name: string;
 		slug: string;
@@ -240,6 +271,25 @@ export const comparisonAdminApi = {
 		body: { user_group_id: string; can_create: boolean; can_fill: boolean; ai_can_fill: boolean }
 	) => api<{ updated: boolean }>(`/comparisons/types/${id}/access`, { method: 'PUT', body }),
 	listFieldGroups: () => api<CustomFieldGroupOption[]>('/custom-field-groups'),
+	// Comparison content CRUD (Section 30 — actual comparison articles).
+	listComparisons: (params?: string) =>
+		api<ComparisonEntry[]>(`/comparisons${params ? `?${params}` : ''}`),
+	createComparison: (body: {
+		title: string;
+		slug?: string;
+		body?: string;
+		visibility?: string;
+		type_id?: string;
+		space_id?: string;
+		items?: Array<{ name: string; slug?: string }>;
+		dimensions?: string[];
+	}) => api<ComparisonEntry>('/comparisons', { method: 'POST', body }),
+	updateComparison: (
+		id: string,
+		body: { title?: string; slug?: string; body?: string; visibility?: string }
+	) => api<ComparisonEntry>(`/comparisons/${id}`, { method: 'PATCH', body }),
+	deleteComparison: (id: string) =>
+		api<unknown>(`/comparisons/${id}`, { method: 'DELETE' }),
 };
 
 export interface ProfileType {
@@ -306,6 +356,20 @@ export interface UserDetail {
 	last_login_at?: string;
 }
 
+// Moderation config option (value/label pair) — BUG-019/BUG-020/BUG-021
+export interface ModerationConfigOption {
+	value: string;
+	label: string;
+}
+
+export interface ModerationConfig {
+	statuses: ModerationConfigOption[];
+	profile_types: ModerationConfigOption[];
+	violation_types: ModerationConfigOption[];
+	restriction_operations: ModerationConfigOption[];
+	restriction_durations: ModerationConfigOption[];
+}
+
 export interface UserActivity {
 	type: string;
 	content: string;
@@ -330,6 +394,7 @@ export interface UserSession {
 export interface UserGroup {
 	id: string;
 	name: string;
+	slug: string;
 	description: string;
 	member_count: number;
 	permissions: string[];
@@ -419,6 +484,10 @@ export const userManagementApi = {
 
 	listCustomFieldEntityTypes: () =>
 		api<Array<{ value: string; label: string }>>('/custom-field-entity-types'),
+	// Moderation config (profile types, violation types, restriction
+	// operations + durations) — BUG-019/BUG-020/BUG-021
+	getModerationConfig: () =>
+		api<ModerationConfig>('/admin/users/config'),
 };
 
 export interface HitlReview {
@@ -510,9 +579,9 @@ export const spacesAdminApi = {
 
 export const tagsAdminApi = {
 	list: (params?: string) => api<unknown>(`/admin/tags${params ? `?${params}` : ''}`),
-	create: (body: { name: string; slug: string; description?: string; color?: string }) =>
+	create: (body: { name: string; slug: string; description?: string; color?: string; is_system?: boolean; logo_media_id?: string }) =>
 		api('/admin/tags', { method: 'POST', body }),
-	update: (id: string, body: { name?: string; slug?: string; description?: string; color?: string }) =>
+	update: (id: string, body: { name?: string; slug?: string; description?: string; color?: string; logo_media_id?: string }) =>
 		api(`/admin/tags/${id}`, { method: 'PATCH', body }),
 	delete: (id: string) =>
 		api(`/admin/tags/${id}`, { method: 'DELETE' }),
@@ -842,6 +911,24 @@ export const fieldGroupsAdminApiExtended = {
 		api<{ deleted: boolean }>(`/admin/field-groups/${id}/fields/${fid}`, { method: 'DELETE' }),
 	reorderFields: (id: string, body: Record<string, unknown>) =>
 		api<unknown>(`/admin/field-groups/${id}/fields/reorder`, { method: 'POST', body }),
+};
+
+export interface CustomFieldEntityType {
+	id: string;
+	value: string;
+	label: string;
+	is_system: boolean;
+	sort_order: number;
+}
+
+export const entityTypesAdminApi = {
+	list: () => api<CustomFieldEntityType[]>('/admin/custom-field-entity-types'),
+	create: (body: { value: string; label: string; sort_order?: number }) =>
+		api<CustomFieldEntityType>('/admin/custom-field-entity-types', { method: 'POST', body }),
+	update: (id: string, body: { label: string; sort_order?: number }) =>
+		api<CustomFieldEntityType>(`/admin/custom-field-entity-types/${id}`, { method: 'PATCH', body }),
+	delete: (id: string) =>
+		api<{ deleted: boolean }>(`/admin/custom-field-entity-types/${id}`, { method: 'DELETE' }),
 };
 
 export const formsAdminApi = {

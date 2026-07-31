@@ -33,60 +33,86 @@ type BlockChecker interface {
 }
 
 // SpaceMemberChecker determines whether a user is a member of a space.
+// Tenant-scoped per Section 04 (BUG-005).
 type SpaceMemberChecker interface {
-	IsMember(ctx context.Context, spaceID, userID pgtype.UUID) (bool, error)
+	IsMember(ctx context.Context, tenantID, spaceID, userID pgtype.UUID) (bool, error)
 }
 
 // UserStatusChecker determines whether a user account is active or erased.
 type UserStatusChecker interface {
-	IsErased(ctx context.Context, userID pgtype.UUID) (bool, error)
+	IsErased(ctx context.Context, tenantID, userID pgtype.UUID) (bool, error)
 }
 
 // ExtractMentions walks a ProseMirror JSON document and returns all
 // mention nodes with entity_type == "user".
+//
+// The document may be either a full {type:"doc",content:[...]} document
+// or a bare array of top-level nodes (both shapes are produced by the
+// backend — see serialize.ts which handles both).
+//
+// The walker recurses through all nesting levels (tables, lists,
+// blockquotes) so mentions inside any block structure are found.
+// Node type "mention" is the canonical TipTap Mention extension name;
+// "japaMention" is accepted for backward compatibility with older docs.
 func ExtractMentions(docJSON []byte) ([]Mention, error) {
-	var doc struct {
-		Type    string `json:"type"`
-		Content []struct {
-			Type    string         `json:"type"`
-			Attrs   map[string]any `json:"attrs"`
-			Content []struct {
-				Type  string         `json:"type"`
-				Attrs map[string]any `json:"attrs"`
-			} `json:"content"`
-		} `json:"content"`
+	// A ProseMirror node — content is recursive.
+	type pmNode struct {
+		Type    string         `json:"type"`
+		Attrs   map[string]any `json:"attrs"`
+		Content []pmNode       `json:"content"`
 	}
 
-	if err := json.Unmarshal(docJSON, &doc); err != nil {
-		return nil, err
+	// Try unmarshalling as a full document first, then as a bare array.
+	var doc pmNode
+	var topBlocks []pmNode
+
+	if err := json.Unmarshal(docJSON, &doc); err == nil && doc.Type == "doc" {
+		topBlocks = doc.Content
+	} else {
+		// Try bare array of nodes.
+		if err := json.Unmarshal(docJSON, &topBlocks); err != nil {
+			return nil, err
+		}
 	}
 
 	var mentions []Mention
 
-	for _, block := range doc.Content {
-		for _, node := range block.Content {
-			if node.Type == "japaMention" && node.Attrs != nil {
+	// Recursive walker — descends into every node's content array.
+	var walk func(nodes []pmNode)
+	walk = func(nodes []pmNode) {
+		for _, node := range nodes {
+			// Check this node for a mention.
+			if (node.Type == "mention" || node.Type == "japaMention") && node.Attrs != nil {
 				entityType, _ := node.Attrs["entity_type"].(string)
-				if entityType != "user" {
-					continue
+				// Default entity_type to "user" for the "mention" node
+				// when absent (frontend may omit it for @-mentions).
+				if entityType == "" && node.Type == "mention" {
+					entityType = "user"
 				}
 
-				idStr, _ := node.Attrs["id"].(string)
-				label, _ := node.Attrs["label"].(string)
+				if entityType == "user" {
+					idStr, _ := node.Attrs["id"].(string)
+					label, _ := node.Attrs["label"].(string)
 
-				var id pgtype.UUID
-				if err := id.Scan(idStr); err != nil {
-					continue // skip invalid UUIDs
+					var id pgtype.UUID
+					if err := id.Scan(idStr); err == nil {
+						mentions = append(mentions, Mention{
+							ID:         id,
+							EntityType: entityType,
+							Label:      label,
+						})
+					}
 				}
+			}
 
-				mentions = append(mentions, Mention{
-					ID:         id,
-					EntityType: entityType,
-					Label:      label,
-				})
+			// Recurse into children.
+			if len(node.Content) > 0 {
+				walk(node.Content)
 			}
 		}
 	}
+
+	walk(topBlocks)
 
 	return mentions, nil
 }
@@ -100,6 +126,7 @@ func ExtractMentions(docJSON []byte) ([]Mention, error) {
 func FilterMentions(
 	ctx context.Context,
 	mentions []Mention,
+	tenantID pgtype.UUID,
 	authorID pgtype.UUID,
 	spaceID pgtype.UUID,
 	isPrivateSpace bool,
@@ -117,7 +144,7 @@ func FilterMentions(
 
 		// Skip if mentioned user's account is erased
 		if userChecker != nil {
-			erased, err := userChecker.IsErased(ctx, m.ID)
+			erased, err := userChecker.IsErased(ctx, tenantID, m.ID)
 			if err != nil {
 				continue // skip on error
 			}
@@ -127,7 +154,9 @@ func FilterMentions(
 			}
 		}
 
-		// Skip if post author has blocked the mentioned user
+		// Skip if there is a block between the author and the mentioned user
+		// (either direction). The IsBlocked query checks both directions in
+		// a single call, so only one call is needed (BUG-011).
 		if blockChecker != nil {
 			blocked, err := blockChecker.IsBlocked(ctx, authorID, m.ID)
 			if err != nil {
@@ -137,21 +166,12 @@ func FilterMentions(
 			if blocked {
 				continue
 			}
-
-			// Skip if mentioned user has blocked the post author
-			blocked, err = blockChecker.IsBlocked(ctx, m.ID, authorID)
-			if err != nil {
-				continue
-			}
-
-			if blocked {
-				continue
-			}
 		}
 
-		// Skip if post is in a private space and mentioned user is not a member
+		// Skip if post is in a private space and mentioned user is not a member.
+		// Tenant-scoped per Section 04 (BUG-005).
 		if isPrivateSpace && memberChecker != nil {
-			isMember, err := memberChecker.IsMember(ctx, spaceID, m.ID)
+			isMember, err := memberChecker.IsMember(ctx, tenantID, spaceID, m.ID)
 			if err != nil {
 				continue
 			}

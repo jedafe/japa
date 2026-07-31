@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { t } from '$lib/stores/i18n.svelte';
+  import { onMount } from "svelte";
   import { page } from "$app/state";
   import { goto, invalidateAll } from "$app/navigation";
   import PageHeader from "$lib/components/layout/page-header.svelte";
@@ -11,7 +12,7 @@
   import { DataTable } from "$lib/components/ui/data-table";
   import Pagination from "$lib/components/ui/Pagination.svelte";
   import { UserPlus, Users, Shield, AlertTriangle, Trash2, Ban, Play, RotateCcw } from "lucide-svelte";
-   import { userManagementApi, impersonationApi, usersWarningsAdminApi, type UserSession } from "$lib/api";
+   import { userManagementApi, impersonationApi, usersWarningsAdminApi, type UserSession, type ModerationConfigOption } from "$lib/api";
   import { hasPermission } from "$lib/stores/permissions.svelte";
 
   type UserDetail = {
@@ -431,7 +432,50 @@
     } else flash(t('users.detail.action_error', 'Action failed'), true);
   }
 
-  const profileTypeOptions = ['personal', 'business', 'organisation'];
+  // Moderation config options — fetched from backend (BUG-019/BUG-020/BUG-021),
+  // with hardcoded values kept as fallback defaults.
+  let profileTypeOptions = $state<string[]>(['personal', 'business', 'organisation']);
+  let violationTypes = $state<ModerationConfigOption[]>([
+    { value: 'spam', label: 'Spam' },
+    { value: 'harassment', label: 'Harassment' },
+    { value: 'misinformation', label: 'Misinformation' },
+    { value: 'hate_speech', label: 'Hate Speech' },
+    { value: 'other', label: 'Other' },
+  ]);
+  let restrictionOps = $state<ModerationConfigOption[]>([
+    { value: 'post', label: 'Post' },
+    { value: 'comment', label: 'Comment' },
+    { value: 'discussion', label: 'Discussion' },
+    { value: 'blog', label: 'Blog' },
+    { value: 'message', label: 'Message' },
+  ]);
+  let restrictionDurations = $state<ModerationConfigOption[]>([
+    { value: '1h', label: '1 Hour' },
+    { value: '2h', label: '2 Hours' },
+    { value: '6h', label: '6 Hours' },
+    { value: '12h', label: '12 Hours' },
+    { value: '1d', label: '1 Day' },
+    { value: '7d', label: '7 Days' },
+    { value: '30d', label: '30 Days' },
+    { value: 'permanent', label: 'Permanent' },
+  ]);
+
+  // Fetch moderation config from the backend; on failure keep the fallback
+  // defaults above. (BUG-019/BUG-020/BUG-021)
+  async function loadModerationConfig() {
+    try {
+      const result = await userManagementApi.getModerationConfig();
+      if (result.ok) {
+        const cfg = result.data;
+        if (cfg.profile_types?.length) profileTypeOptions = cfg.profile_types.map((o) => o.value);
+        if (cfg.violation_types?.length) violationTypes = cfg.violation_types;
+        if (cfg.restriction_operations?.length) restrictionOps = cfg.restriction_operations;
+        if (cfg.restriction_durations?.length) restrictionDurations = cfg.restriction_durations;
+      }
+    } catch {
+      // keep fallback defaults
+    }
+  }
 
   async function handleProfileTypeChange() {
     showProfileTypeModal = false;
@@ -486,6 +530,12 @@
     else if (tab === "ai") loadAiContext();
     else if (tab === "sessions") loadSessions();
     else if (tab === "warnings") loadWarnings();
+  });
+
+  // Load moderation config (profile types, violation types, restriction
+  // operations + durations) from the backend on mount. BUG-019/BUG-020/BUG-021
+  onMount(() => {
+    loadModerationConfig();
   });
 </script>
 
@@ -744,11 +794,11 @@
     <div>
       <p class="mb-2 text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Operations to restrict</p>
       <div class="grid grid-cols-2 gap-2">
-        {#each ['post', 'comment', 'discussion', 'blog', 'message'] as op}
-          {@const alreadyRestricted = restrictions.some(r => r.operation === op)}
+        {#each restrictionOps as op}
+          {@const alreadyRestricted = restrictions.some(r => r.operation === op.value)}
           <label class="flex items-center gap-2 text-sm" class:opacity-50={alreadyRestricted}>
-            <input type="checkbox" value={op} bind:group={restrictOperations} class="rounded" disabled={alreadyRestricted} />
-            {op}
+            <input type="checkbox" value={op.value} bind:group={restrictOperations} class="rounded" disabled={alreadyRestricted} />
+            {op.label}
             {#if alreadyRestricted}
               <span class="text-xs" style="color: var(--color-warning)">(already restricted)</span>
             {/if}
@@ -759,10 +809,10 @@
     <div>
       <p class="mb-1 text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Duration</p>
       <div class="grid grid-cols-4 gap-2">
-        {#each [['1h', '1 Hour'], ['2h', '2 Hours'], ['6h', '6 Hours'], ['12h', '12 Hours'], ['1d', '1 Day'], ['7d', '7 Days'], ['30d', '30 Days'], ['permanent', 'Permanent']] as [val, label]}
+        {#each restrictionDurations as d}
           <label class="flex items-center gap-2 text-sm">
-            <input type="radio" name="restrict_duration" value={val} bind:group={restrictDuration} class="rounded" />
-            {label}
+            <input type="radio" name="restrict_duration" value={d.value} bind:group={restrictDuration} class="rounded" />
+            {d.label}
           </label>
         {/each}
       </div>
@@ -811,11 +861,9 @@
     <div>
       <label for="warning-violation" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">Violation Type</label>
       <select id="warning-violation" bind:value={warningViolationType} class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-surface)">
-        <option value="spam">Spam</option>
-        <option value="harassment">Harassment</option>
-        <option value="misinformation">Misinformation</option>
-        <option value="hate_speech">Hate Speech</option>
-        <option value="other">Other</option>
+        {#each violationTypes as vt}
+          <option value={vt.value}>{vt.label}</option>
+        {/each}
       </select>
     </div>
     <div>
