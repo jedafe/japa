@@ -85,7 +85,8 @@
 			{ path: "/geo", label: t("nav.geo", "Geo Tools"), icon: Globe, permission: "geo.lookup" },
 			{ path: "/space-types", label: t("nav.space_types", "Space Types"), icon: Layout, permission: "space_types.create" },
 			{ path: "/tags", label: t("nav.tags", "Tags"), icon: Tag, permission: "tags.manage" },
-			{ path: "/reactions", label: t("nav.reactions", "Reactions"), icon: Star, permission: "content.reaction_types.manage" }
+			{ path: "/reactions", label: t("nav.reactions", "Reactions"), icon: Star, permission: "content.reaction_types.manage" },
+		{ path: "/share-platforms", label: t("nav.share_platforms", "Share Platforms"), icon: Share2, permission: "content.reaction_types.manage" }
 			]
 		},
 		{
@@ -162,6 +163,7 @@
 			{ path: "/page-templates", label: t("nav.page_templates", "Page Templates"), icon: FileText, permission: "pagebuilder.templates.manage" },
 			{ path: "/custom-fields", label: t("nav.custom_fields", "Custom Fields"), icon: Type, permission: "custom_fields.group.view" },
 			{ path: "/custom-fields/entity-types", label: t("nav.custom_field_entity_types", "Entity Types"), icon: Type, permission: "custom_fields.group.view" },
+			{ path: "/guide-categories", label: t("nav.guide_categories", "Guide Categories"), icon: Type, permission: "custom_fields.group.view" },
 			{ path: "/comparisons", label: t("nav.comparisons", "Comparisons"), icon: GitCompare, permission: "comparison.create" },
 			{ path: "/comparison-types", label: t("nav.comparison_types", "Comparison Types"), icon: ListOrdered, permission: "comparison.type.create" }
 			]

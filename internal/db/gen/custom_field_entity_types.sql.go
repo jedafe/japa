@@ -130,6 +130,47 @@ func (q *Queries) ListCustomFieldEntityTypes(ctx context.Context, tenantID pgtyp
 	return items, nil
 }
 
+const listCustomFieldEntityTypesByPrefix = `-- name: ListCustomFieldEntityTypesByPrefix :many
+SELECT id, tenant_id, value, label, is_system, sort_order, created_at, updated_at
+FROM custom_field_entity_types
+WHERE tenant_id = $1 AND value LIKE $2
+ORDER BY sort_order ASC, label ASC
+`
+
+type ListCustomFieldEntityTypesByPrefixParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	Prefix   string      `json:"prefix"`
+}
+
+func (q *Queries) ListCustomFieldEntityTypesByPrefix(ctx context.Context, arg ListCustomFieldEntityTypesByPrefixParams) ([]CustomFieldEntityType, error) {
+	rows, err := q.db.Query(ctx, listCustomFieldEntityTypesByPrefix, arg.TenantID, arg.Prefix)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []CustomFieldEntityType
+	for rows.Next() {
+		var i CustomFieldEntityType
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.Value,
+			&i.Label,
+			&i.IsSystem,
+			&i.SortOrder,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const updateCustomFieldEntityType = `-- name: UpdateCustomFieldEntityType :one
 UPDATE custom_field_entity_types
 SET label = $1,

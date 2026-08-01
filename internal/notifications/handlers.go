@@ -406,12 +406,16 @@ func (h *Handlers) HandleGetVAPIDKey(w http.ResponseWriter, _ *http.Request) {
 }
 
 // CreateNotificationType handles POST /admin/notification-types (P5.6).
+// Ref: japaconnect-engineering/sections/35-notification-system.md
 func (h *Handlers) CreateNotificationType(w http.ResponseWriter, r *http.Request) {
 	var input struct {
-		Key         string  `json:"key"`
-		Label       string  `json:"label"`
-		Description *string `json:"description"`
-		Enabled     *bool   `json:"enabled"`
+		Key           string  `json:"key"`
+		Label         string  `json:"label"`
+		Description   *string `json:"description"`
+		Enabled       *bool   `json:"enabled"`
+		DefaultInApp  *bool   `json:"default_in_app"`
+		DefaultEmail  *bool   `json:"default_email"`
+		DefaultPush   *bool   `json:"default_push"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_request", "Invalid request body")
@@ -425,7 +429,20 @@ func (h *Handlers) CreateNotificationType(w http.ResponseWriter, r *http.Request
 	if input.Enabled != nil {
 		enabled = *input.Enabled
 	}
-	if err := h.service.CreateNotificationType(r.Context(), input.Key, input.Label, input.Description, enabled); err != nil {
+	// Section 35 defaults: in_app=true, email=false, push=false
+	defaultInApp := true
+	if input.DefaultInApp != nil {
+		defaultInApp = *input.DefaultInApp
+	}
+	defaultEmail := false
+	if input.DefaultEmail != nil {
+		defaultEmail = *input.DefaultEmail
+	}
+	defaultPush := false
+	if input.DefaultPush != nil {
+		defaultPush = *input.DefaultPush
+	}
+	if err := h.service.CreateNotificationType(r.Context(), input.Key, input.Label, input.Description, enabled, defaultInApp, defaultEmail, defaultPush); err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to create notification type")
 		return
 	}
@@ -433,12 +450,16 @@ func (h *Handlers) CreateNotificationType(w http.ResponseWriter, r *http.Request
 }
 
 // UpdateNotificationType handles PATCH /admin/notification-types/:key (P5.6).
+// Ref: japaconnect-engineering/sections/35-notification-system.md
 func (h *Handlers) UpdateNotificationType(w http.ResponseWriter, r *http.Request) {
 	key := chi.URLParam(r, "key")
 	var input struct {
-		Label       string  `json:"label"`
-		Description *string `json:"description"`
-		Enabled     *bool   `json:"enabled"`
+		Label         string  `json:"label"`
+		Description   *string `json:"description"`
+		Enabled       *bool   `json:"enabled"`
+		DefaultInApp  *bool   `json:"default_in_app"`
+		DefaultEmail  *bool   `json:"default_email"`
+		DefaultPush   *bool   `json:"default_push"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_request", "Invalid request body")
@@ -448,7 +469,19 @@ func (h *Handlers) UpdateNotificationType(w http.ResponseWriter, r *http.Request
 	if input.Enabled != nil {
 		enabled = *input.Enabled
 	}
-	if err := h.service.UpdateNotificationType(r.Context(), key, input.Label, input.Description, enabled); err != nil {
+	defaultInApp := true
+	if input.DefaultInApp != nil {
+		defaultInApp = *input.DefaultInApp
+	}
+	defaultEmail := false
+	if input.DefaultEmail != nil {
+		defaultEmail = *input.DefaultEmail
+	}
+	defaultPush := false
+	if input.DefaultPush != nil {
+		defaultPush = *input.DefaultPush
+	}
+	if err := h.service.UpdateNotificationType(r.Context(), key, input.Label, input.Description, enabled, defaultInApp, defaultEmail, defaultPush); err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to update notification type")
 		return
 	}

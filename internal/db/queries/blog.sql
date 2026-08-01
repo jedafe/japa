@@ -202,7 +202,9 @@ LIMIT @page_limit OFFSET @page_offset;
 -- H6: JOIN content_featured → contents → media → users for the featured tab.
 SELECT cf.id AS featured_id, cf.content_id, cf.featured_order, cf.featured_until,
        c.title, c.slug, c.body, c.body_html, c.read_time_minutes,
-       c.view_count, c.comment_count, c.reshare_count,
+       c.view_count,
+       (SELECT COUNT(*) FROM comments WHERE content_id = c.id AND deleted_at IS NULL) AS comment_count,
+       (SELECT COUNT(*) FROM reactions WHERE entity_id = c.id AND entity_type = 'content') AS reshare_count,
        c.author_id,
        COALESCE(up.display_name, u.username, '') AS author_name,
        m.storage_bucket AS featured_storage_bucket,
@@ -249,8 +251,11 @@ SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type,
        c.geo_space_id, c.header_image_id, c.featured_image_id,
        c.canonical_url, c.meta_title, c.meta_description, c.og_image_url,
        c.seo_indexable, c.status, c.visibility, c.is_locked, c.is_pinned,
-       c.read_time_minutes, c.view_count, c.comment_count, c.share_count,
-       c.reshare_count, c.publish_at, c.published_at, c.created_at, c.updated_at,
+       c.read_time_minutes, c.view_count,
+       (SELECT COUNT(*) FROM comments WHERE content_id = c.id AND deleted_at IS NULL) AS comment_count,
+       c.share_count,
+       (SELECT COUNT(*) FROM reactions WHERE entity_id = c.id AND entity_type = 'content') AS reshare_count,
+       c.publish_at, c.published_at, c.created_at, c.updated_at,
        COALESCE(up.display_name, u.username, '') AS author_name,
        COALESCE(up.avatar_url, '') AS author_avatar_url,
        COALESCE(s.name, '') AS space_name,
@@ -292,10 +297,37 @@ WHERE c.slug = @slug AND c.tenant_id = @tenant_id
   AND c.content_type = 'blog_post'
   AND c.status = 'published'
   AND c.deleted_at IS NULL
-GROUP BY c.id, up.display_name, u.username, s.name,
+GROUP BY c.id, up.display_name, up.avatar_url, u.username, s.name,
          m.storage_bucket, m.storage_path,
          bs.id, bs.title, bsp.position,
          prev_c.slug, next_c.slug;
+
+-- name: ListAdminBlogPosts :many
+-- BUG-B: enriched admin blog list with author_name (the generic
+-- ListContentsByType returns no author join, so the admin /blog table
+-- showed "—" for every author). Admin sees all statuses (not just
+-- published); deleted_at filtered per Rule 11. Offset-paginated per Rule 5.
+SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type,
+       c.title, c.slug, c.body, c.body_html, c.field_values, c.content_hash,
+       c.geo_space_id, c.header_image_id, c.featured_image_id,
+       c.canonical_url, c.meta_title, c.meta_description, c.og_image_url,
+       c.seo_indexable, c.status, c.visibility, c.is_locked, c.is_pinned,
+       c.read_time_minutes, c.view_count,
+       (SELECT COUNT(*) FROM comments WHERE content_id = c.id AND deleted_at IS NULL) AS comment_count,
+       c.share_count,
+       (SELECT COUNT(*) FROM reactions WHERE entity_id = c.id AND entity_type = 'content') AS reshare_count,
+       c.publish_at, c.published_at, c.created_at, c.updated_at,
+       COALESCE(up.display_name, u.username, '') AS author_name,
+       COALESCE(up.avatar_url, '') AS author_avatar_url,
+       COALESCE(LEFT(c.body, 200), '') AS excerpt
+FROM contents c
+LEFT JOIN users u ON u.id = c.author_id
+LEFT JOIN user_profiles up ON up.user_id = c.author_id
+WHERE c.tenant_id = @tenant_id
+  AND c.content_type = 'blog_post'
+  AND c.deleted_at IS NULL
+ORDER BY c.created_at DESC, c.id DESC
+LIMIT @page_limit OFFSET @page_offset;
 
 -- name: ListPublishedBlogPosts :many
 -- C5/H3: published-only blog post cards with author + featured image,
@@ -306,8 +338,11 @@ SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type,
        c.geo_space_id, c.header_image_id, c.featured_image_id,
        c.canonical_url, c.meta_title, c.meta_description, c.og_image_url,
        c.seo_indexable, c.status, c.visibility, c.is_locked, c.is_pinned,
-       c.read_time_minutes, c.view_count, c.comment_count, c.share_count,
-       c.reshare_count, c.publish_at, c.published_at, c.created_at, c.updated_at,
+       c.read_time_minutes, c.view_count,
+       (SELECT COUNT(*) FROM comments WHERE content_id = c.id AND deleted_at IS NULL) AS comment_count,
+       c.share_count,
+       (SELECT COUNT(*) FROM reactions WHERE entity_id = c.id AND entity_type = 'content') AS reshare_count,
+       c.publish_at, c.published_at, c.created_at, c.updated_at,
        COALESCE(up.display_name, u.username, '') AS author_name,
        m.storage_bucket AS featured_storage_bucket,
        m.storage_path AS featured_storage_path,
@@ -323,6 +358,15 @@ WHERE c.tenant_id = @tenant_id
   AND c.auto_hidden = false
 ORDER BY c.created_at DESC, c.id DESC
 LIMIT @page_limit OFFSET @page_offset;
+
+-- name: CountPublishedBlogPosts :one
+-- Returns the total number of published blog posts for pagination meta.
+SELECT COUNT(*) FROM contents c
+WHERE c.tenant_id = @tenant_id
+  AND c.content_type = 'blog_post'
+  AND c.status = 'published'
+  AND c.deleted_at IS NULL
+  AND c.auto_hidden = false;
 
 -- =====================
 -- RSS Feed Queries

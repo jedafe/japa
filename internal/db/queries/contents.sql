@@ -9,21 +9,22 @@ INSERT INTO contents (
     tenant_id, author_id, organization_id, space_id, content_type, title, slug, body, body_html,
     field_values, content_hash, geo_space_id, header_image_id, featured_image_id,
     canonical_url, meta_title, meta_description, og_image_url, seo_indexable,
-    status, visibility, read_time_minutes, publish_at, published_at
+    status, visibility, read_time_minutes, publish_at, published_at, guide_category
 ) VALUES (
     @tenant_id, @author_id, sqlc.narg(organization_id), sqlc.narg(space_id), @content_type, @title, @slug, @body, @body_html,
     @field_values, sqlc.narg(content_hash), sqlc.narg(geo_space_id),
     sqlc.narg(header_image_id), sqlc.narg(featured_image_id),
     sqlc.narg(canonical_url), sqlc.narg(meta_title), sqlc.narg(meta_description),
     sqlc.narg(og_image_url), @seo_indexable,
-    @status, @visibility, @read_time_minutes, sqlc.narg(publish_at), sqlc.narg(published_at)
+    @status, @visibility, @read_time_minutes, sqlc.narg(publish_at), sqlc.narg(published_at),
+    sqlc.narg(guide_category)
 )
 RETURNING id, tenant_id, author_id, organization_id, space_id, content_type, title, slug, body, body_html,
           field_values, content_hash, geo_space_id, header_image_id, featured_image_id,
           canonical_url, meta_title, meta_description, og_image_url, seo_indexable,
           status, visibility, is_locked, is_pinned, read_time_minutes,
           view_count, comment_count, share_count, reshare_count, publish_at, published_at,
-          created_at, updated_at;
+          created_at, updated_at, guide_category;
 
 -- name: GetContentByID :one
 SELECT id, tenant_id, author_id, organization_id, space_id, content_type, title, slug, body, body_html,
@@ -31,7 +32,7 @@ SELECT id, tenant_id, author_id, organization_id, space_id, content_type, title,
        canonical_url, meta_title, meta_description, og_image_url, seo_indexable,
        status, visibility, is_locked, is_pinned, read_time_minutes,
        view_count, comment_count, share_count, reshare_count, publish_at, published_at,
-       created_at, updated_at
+       created_at, updated_at, guide_category
 FROM contents
 WHERE id = @id AND tenant_id = @tenant_id AND deleted_at IS NULL;
 
@@ -46,14 +47,18 @@ WHERE tenant_id = @tenant_id
   AND id <> @exclude_id;
 
 -- name: GetContentBySlug :one
-SELECT id, tenant_id, author_id, space_id, content_type, title, slug, body, body_html,
-       field_values, content_hash, geo_space_id, header_image_id, featured_image_id,
-       canonical_url, meta_title, meta_description, og_image_url, seo_indexable,
-       status, visibility, is_locked, is_pinned, read_time_minutes,
-       view_count, comment_count, share_count, reshare_count, publish_at, published_at,
-       created_at, updated_at
-FROM contents
-WHERE slug = @slug AND tenant_id = @tenant_id AND deleted_at IS NULL;
+SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c.body_html,
+       c.field_values, c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,
+       c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
+       c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
+       c.view_count,
+       (SELECT COUNT(*) FROM comments WHERE content_id = c.id AND deleted_at IS NULL) AS comment_count,
+       c.share_count,
+       (SELECT COUNT(*) FROM reactions WHERE entity_id = c.id AND entity_type = 'content') AS reshare_count,
+       c.publish_at, c.published_at,
+       c.created_at, c.updated_at, c.guide_category
+FROM contents c
+WHERE c.slug = @slug AND c.tenant_id = @tenant_id AND c.deleted_at IS NULL;
 
 -- name: ListContentsByTenant :many
 SELECT id, tenant_id, author_id, space_id, content_type, title, slug, body, body_html,
@@ -61,7 +66,7 @@ SELECT id, tenant_id, author_id, space_id, content_type, title, slug, body, body
        canonical_url, meta_title, meta_description, og_image_url, seo_indexable,
        status, visibility, is_locked, is_pinned, read_time_minutes,
        view_count, comment_count, share_count, reshare_count, publish_at, published_at,
-       created_at, updated_at
+       created_at, updated_at, guide_category
 FROM contents
 WHERE tenant_id = @tenant_id
   AND deleted_at IS NULL
@@ -77,7 +82,7 @@ SELECT id, tenant_id, author_id, space_id, content_type, title, slug, body, body
        canonical_url, meta_title, meta_description, og_image_url, seo_indexable,
        status, visibility, is_locked, is_pinned, read_time_minutes,
        view_count, comment_count, share_count, reshare_count, publish_at, published_at,
-       created_at, updated_at
+       created_at, updated_at, guide_category
 FROM contents
 WHERE tenant_id = @tenant_id AND content_type = @content_type
   AND deleted_at IS NULL
@@ -92,7 +97,7 @@ SELECT id, tenant_id, author_id, space_id, content_type, title, slug, body, body
        canonical_url, meta_title, meta_description, og_image_url, seo_indexable,
        status, visibility, is_locked, is_pinned, read_time_minutes,
        view_count, comment_count, share_count, reshare_count, publish_at, published_at,
-       created_at, updated_at
+       created_at, updated_at, guide_category
 FROM contents
 WHERE tenant_id = @tenant_id AND space_id = @space_id
   AND deleted_at IS NULL
@@ -107,7 +112,7 @@ SELECT id, tenant_id, author_id, space_id, content_type, title, slug, body, body
        canonical_url, meta_title, meta_description, og_image_url, seo_indexable,
        status, visibility, is_locked, is_pinned, read_time_minutes,
        view_count, comment_count, share_count, reshare_count, publish_at, published_at,
-       created_at, updated_at
+       created_at, updated_at, guide_category
 FROM contents
 WHERE tenant_id = @tenant_id AND space_id = @space_id
   AND deleted_at IS NULL
@@ -130,14 +135,15 @@ SET title = @title, slug = @slug, body = @body, body_html = @body_html,
     status = @status, visibility = @visibility, read_time_minutes = @read_time_minutes,
     publish_at = sqlc.narg(publish_at), published_at = sqlc.narg(published_at),
     is_locked = @is_locked, is_pinned = @is_pinned,
-    organization_id = sqlc.narg(organization_id), updated_at = now()
+    organization_id = sqlc.narg(organization_id), guide_category = sqlc.narg(guide_category),
+    updated_at = now()
 WHERE id = @id AND tenant_id = @tenant_id AND deleted_at IS NULL
 RETURNING id, tenant_id, author_id, organization_id, space_id, content_type, title, slug, body, body_html,
           field_values, content_hash, geo_space_id, header_image_id, featured_image_id,
           canonical_url, meta_title, meta_description, og_image_url, seo_indexable,
           status, visibility, is_locked, is_pinned, read_time_minutes,
           view_count, comment_count, share_count, reshare_count, publish_at, published_at,
-          created_at, updated_at;
+          created_at, updated_at, guide_category;
 
 -- name: UpdateContentStatus :one
 UPDATE contents
@@ -149,7 +155,7 @@ RETURNING id, tenant_id, author_id, space_id, content_type, title, slug, body, b
           canonical_url, meta_title, meta_description, og_image_url, seo_indexable,
           status, visibility, is_locked, is_pinned, read_time_minutes,
           view_count, comment_count, share_count, reshare_count, publish_at, published_at,
-          created_at, updated_at;
+          created_at, updated_at, guide_category;
 
 -- name: ScheduleContent :one
 -- Sets status='scheduled' and publish_at without touching title/body/other
@@ -164,7 +170,7 @@ RETURNING id, tenant_id, author_id, space_id, content_type, title, slug, body, b
           canonical_url, meta_title, meta_description, og_image_url, seo_indexable,
           status, visibility, is_locked, is_pinned, read_time_minutes,
           view_count, comment_count, share_count, reshare_count, publish_at, published_at,
-          created_at, updated_at;
+          created_at, updated_at, guide_category;
 
 -- name: IncrementContentView :exec
 UPDATE contents SET view_count = view_count + 1 WHERE id = @id AND tenant_id = @tenant_id AND deleted_at IS NULL;
@@ -379,7 +385,7 @@ SELECT id, tenant_id, author_id, space_id, content_type, title, slug, body, body
        canonical_url, meta_title, meta_description, og_image_url, seo_indexable,
        status, visibility, is_locked, is_pinned, read_time_minutes,
        view_count, comment_count, share_count, reshare_count, publish_at, published_at,
-       created_at, updated_at
+       created_at, updated_at, guide_category
 FROM contents
 WHERE author_profile_id = @author_profile_id AND tenant_id = @tenant_id AND deleted_at IS NULL
 ORDER BY created_at DESC

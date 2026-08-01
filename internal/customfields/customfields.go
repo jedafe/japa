@@ -13,14 +13,28 @@
 package customfields
 
 import (
+	"context"
+	"fmt"
 	"strings"
 
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/valkey-io/valkey-go/valkeycompat"
 
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
 )
+
+// GuideCategory is a evergreen guide category (Visa, Travel, Scholarship, etc.).
+// Defined here to avoid an import cycle (content imports the interface,
+// customfields provides the implementation, server.go wires them together).
+type GuideCategory struct {
+	Slug      string
+	Label     string
+	IsSystem  bool   `json:"is_system"`
+	GroupID   string `json:"group_id,omitempty"`
+	GroupSlug string `json:"group_slug,omitempty"`
+}
 
 // Field types supported by the custom field system.
 const (
@@ -47,6 +61,8 @@ const (
 	FieldTypeMedia         = "media"
 	FieldTypePlatformEmbed = "platform_embed"
 	FieldTypeReference     = "reference"
+	FieldTypeRepeater      = "repeater"
+	FieldTypeGroup         = "group"
 )
 
 // FieldOption represents a single option in a select or multiselect field.
@@ -66,6 +82,7 @@ var validFieldTypes = map[string]bool{
 	FieldTypeColor: true, FieldTypeRating: true,
 	FieldTypeImageSingle: true, FieldTypeImageMulti: true, FieldTypeMedia: true,
 	FieldTypePlatformEmbed: true, FieldTypeReference: true,
+	FieldTypeRepeater: true, FieldTypeGroup: true,
 }
 
 // IsValidFieldType returns true if the given string is a recognized field type.
@@ -83,7 +100,7 @@ func FieldTypeValueColumn(ft string) (column string, ok bool) {
 		return "value_text", true
 	case FieldTypeRichText, FieldTypeSelect, FieldTypeMultiselect,
 		FieldTypeMedia, FieldTypeImageSingle, FieldTypeImageMulti,
-		FieldTypeReference:
+		FieldTypeReference, FieldTypeRepeater:
 		return "value_json", true
 	case FieldTypeNumber, FieldTypeCurrency, FieldTypePercentage,
 		FieldTypeRating:
@@ -92,6 +109,9 @@ func FieldTypeValueColumn(ft string) (column string, ok bool) {
 		return "value_bool", true
 	case FieldTypeDate, FieldTypeDatetime, FieldTypeTime, FieldTypeDuration:
 		return "value_date", true
+	case FieldTypeGroup:
+		// Group fields have no value — they are visual containers only.
+		return "", false
 	default:
 		return "", false
 	}
@@ -193,3 +213,149 @@ func NewService(database *db.DB) *Service {
 func (s *Service) SetCache(rdb valkeycompat.Cmdable) {
 	s.cache = rdb
 }
+
+// ListGuideCategories returns all guide categories for a tenant. Guide
+// categories are stored in custom_field_entity_types with value prefix
+// 'guide_category:'. The slug is the part after the prefix. Also enriches
+// each category with its field group ID so the admin panel can link to the
+// field editor.
+func (s *Service) ListGuideCategories(ctx context.Context, tenantID pgtype.UUID) ([]GuideCategory, error) {
+	rows, err := s.read.ListCustomFieldEntityTypesByPrefix(ctx, gen.ListCustomFieldEntityTypesByPrefixParams{
+		TenantID: tenantID,
+		Prefix:   "guide_category:%",
+	})
+	if err != nil {
+		return nil, fmt.Errorf("listing guide categories: %w", err)
+	}
+	cats := make([]GuideCategory, 0, len(rows))
+	for _, row := range rows {
+		slug := strings.TrimPrefix(row.Value, "guide_category:")
+		cat := GuideCategory{Slug: slug, Label: row.Label, IsSystem: row.IsSystem}
+
+		// Try to find the associated field group (slug = "guide_{slug}_fields").
+		groupSlug := "guide_" + slug + "_fields"
+		group, err := s.read.GetCustomFieldGroupBySlug(ctx, gen.GetCustomFieldGroupBySlugParams{
+			TenantID: tenantID,
+			Slug:     groupSlug,
+		})
+		if err == nil {
+			cat.GroupID = group.ID.String()
+			cat.GroupSlug = group.Slug
+		}
+		cats = append(cats, cat)
+	}
+	return cats, nil
+}
+
+// CreateGuideCategoryInput holds parameters for creating a guide category.
+type CreateGuideCategoryInput struct {
+	Slug  string // e.g. "visa", "scholarship"
+	Label string // e.g. "Visa Guide"
+}
+
+// CreateGuideCategory creates a new guide category: inserts a
+// custom_field_entity_types row (value = "guide_category:{slug}"), creates a
+// custom_field_groups row for the category's fields, and assigns the group to
+// the "content_type:guide:{slug}" entity_class so the composer can load
+// category-specific fields. All three inserts run in a single transaction.
+func (s *Service) CreateGuideCategory(ctx context.Context, tenantID pgtype.UUID, input CreateGuideCategoryInput) (GuideCategory, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return GuideCategory{}, fmt.Errorf("beginning tx: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	q := gen.New(tx)
+
+	value := "guide_category:" + input.Slug
+	_, err = q.CreateCustomFieldEntityType(ctx, gen.CreateCustomFieldEntityTypeParams{
+		TenantID:  tenantID,
+		Value:     value,
+		Label:     input.Label,
+		SortOrder: 0,
+	})
+	if err != nil {
+		return GuideCategory{}, fmt.Errorf("creating entity type: %w", err)
+	}
+
+	groupSlug := "guide_" + input.Slug + "_fields"
+	group, err := q.CreateCustomFieldGroup(ctx, gen.CreateCustomFieldGroupParams{
+		TenantID:    tenantID,
+		Name:        input.Label + " Fields",
+		Slug:        groupSlug,
+		Description: ptr("Custom fields for " + input.Label),
+		IsSystem:    false,
+	})
+	if err != nil {
+		return GuideCategory{}, fmt.Errorf("creating field group: %w", err)
+	}
+
+	_, err = q.CreateAssignment(ctx, gen.CreateAssignmentParams{
+		GroupID:      group.ID,
+		EntityClass:  "content_type:guide:" + input.Slug,
+		EntityID:     pgtype.UUID{},
+		Position:     0,
+	})
+	if err != nil {
+		return GuideCategory{}, fmt.Errorf("creating assignment: %w", err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return GuideCategory{}, fmt.Errorf("committing tx: %w", err)
+	}
+
+	return GuideCategory{Slug: input.Slug, Label: input.Label}, nil
+}
+
+// DeleteGuideCategory removes a guide category and its associated custom field
+// group. The entity_type, field group, and assignment are all deleted. System
+// categories (is_system = true) cannot be deleted.
+func (s *Service) DeleteGuideCategory(ctx context.Context, tenantID pgtype.UUID, slug string) error {
+	value := "guide_category:" + slug
+
+	// Find the entity type to get its ID and check is_system.
+	et, err := s.read.GetCustomFieldEntityTypeByValue(ctx, gen.GetCustomFieldEntityTypeByValueParams{
+		TenantID: tenantID,
+		Value:    value,
+	})
+	if err != nil {
+		return fmt.Errorf("finding guide category: %w", err)
+	}
+	if et.IsSystem {
+		return fmt.Errorf("cannot delete system guide category")
+	}
+
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("beginning tx: %w", err)
+	}
+	defer tx.Rollback(ctx)
+	q := gen.New(tx)
+
+	// Delete the field group (cascades to fields and assignments).
+	groupSlug := "guide_" + slug + "_fields"
+	group, err := q.GetCustomFieldGroupBySlug(ctx, gen.GetCustomFieldGroupBySlugParams{
+		TenantID: tenantID,
+		Slug:     groupSlug,
+	})
+	if err == nil {
+		if err := q.DeleteCustomFieldGroup(ctx, gen.DeleteCustomFieldGroupParams{
+			ID:       group.ID,
+			TenantID: tenantID,
+		}); err != nil {
+			return fmt.Errorf("deleting field group: %w", err)
+		}
+	}
+
+	// Delete the entity type.
+	if _, err := q.DeleteCustomFieldEntityType(ctx, gen.DeleteCustomFieldEntityTypeParams{
+		ID:       et.ID,
+		TenantID: tenantID,
+	}); err != nil {
+		return fmt.Errorf("deleting entity type: %w", err)
+	}
+
+	return tx.Commit(ctx)
+}
+
+func ptr[T any](v T) *T { return &v }

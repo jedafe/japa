@@ -9,7 +9,10 @@
 		key: string;
 		label: string;
 		description: string;
-		default_channels: { email: boolean; push: boolean; in_app: boolean };
+		enabled: boolean;
+		default_in_app: boolean;
+		default_email: boolean;
+		default_push: boolean;
 	};
 
 	let types = $state<NotificationType[]>([]);
@@ -17,27 +20,43 @@
 	let error = $state('');
 	let searchQuery = $state('');
 	let showCreateModal = $state(false);
-	let editingType = $state<NotificationType | null>(null);
-	let newType = $state({ key: '', label: '', description: '' });
-	let saving = $state(false);
 	let showDeleteConfirm = $state(false);
+	let editingType = $state<NotificationType | null>(null);
 	let deleteTarget = $state<NotificationType | null>(null);
+	let newType = $state({
+		key: '',
+		label: '',
+		description: '',
+		enabled: true,
+		default_in_app: true,
+		default_email: false,
+		default_push: false
+	});
+	let saving = $state(false);
 
 	const canManageNotificationTypes = $derived(hasPermission('notifications.manage'));
 
 	const columns = [
 		{ key: 'key', label: t('notification_types.key'), sortable: true, render: (v: string) => `<span class="font-mono text-xs">${v}</span>` },
 		{ key: 'label', label: t('notification_types.label'), sortable: true },
-		{ key: 'description', label: t('notification_types.description'), render: (v: string) => `<span class="text-xs" style="color: var(--color-muted)">${v || '-'}</span>` },
+		{ key: 'description', label: t('common.description'), render: (v: string) => `<span class="text-xs" style="color: var(--color-muted)">${v || '-'}</span>` },
+		{
+			key: 'enabled',
+			label: t('notification_types.enabled'),
+			sortable: true,
+			render: (_: any, row: NotificationType) => row.enabled
+				? `<span class="rounded px-1.5 py-0.5 text-xs bg-success/15 text-success">${t('common.status_active')}</span>`
+				: `<span class="rounded px-1.5 py-0.5 text-xs bg-danger/15 text-danger">${t('common.status_inactive')}</span>`
+		},
 		{
 			key: 'default_channels',
 			label: t('notification_types.channels'),
 			render: (_: any, row: NotificationType) => {
 				const badges: string[] = [];
-				if (row.default_channels?.email) badges.push(`<span class="rounded px-1.5 py-0.5 text-xs bg-info/15 text-info">${t('notification-types.email')}</span>`);
-				if (row.default_channels?.push) badges.push(`<span class="rounded px-1.5 py-0.5 text-xs bg-info/15 text-info">${t('notification-types.push')}</span>`);
-				if (row.default_channels?.in_app) badges.push(`<span class="rounded px-1.5 py-0.5 text-xs bg-success/15 text-success">${t('notification-types.in_app')}</span>`);
-				return `<div class="flex gap-1">${badges.join('')}</div>`;
+				if (row.default_in_app) badges.push(`<span class="rounded px-1.5 py-0.5 text-xs bg-success/15 text-success">${t('notification-types.in_app')}</span>`);
+				if (row.default_email) badges.push(`<span class="rounded px-1.5 py-0.5 text-xs bg-info/15 text-info">${t('notification-types.email')}</span>`);
+				if (row.default_push) badges.push(`<span class="rounded px-1.5 py-0.5 text-xs bg-info/15 text-info">${t('notification-types.push')}</span>`);
+				return `<div class="flex gap-1">${badges.join('') || '-'}</div>`;
 			}
 		},
 		{
@@ -65,10 +84,14 @@
 		if (!deleteTarget) return;
 		error = '';
 		try {
-			await api(`/admin/notification-types/${deleteTarget.key}`, { method: 'DELETE' });
-			types = types.filter((t) => t.key !== deleteTarget!.key);
+			const result = await api(`/admin/notification-types/${deleteTarget.key}`, { method: 'DELETE' });
+			if (!result.ok) {
+				error = result.error;
+				return;
+			}
 			showDeleteConfirm = false;
 			deleteTarget = null;
+			await load();
 		} catch {
 			error = t('common.error');
 		}
@@ -96,34 +119,68 @@
 	}
 
 	function openCreate() {
-		newType = { key: '', label: '', description: '' };
+		newType = {
+			key: '',
+			label: '',
+			description: '',
+			enabled: true,
+			default_in_app: true,
+			default_email: false,
+			default_push: false
+		};
 		editingType = null;
 		showCreateModal = true;
 	}
 
 	function openEdit(ntype: NotificationType) {
 		editingType = { ...ntype };
-		newType = { key: ntype.key, label: ntype.label, description: ntype.description };
+		newType = {
+			key: ntype.key,
+			label: ntype.label,
+			description: ntype.description,
+			enabled: ntype.enabled,
+			default_in_app: ntype.default_in_app,
+			default_email: ntype.default_email,
+			default_push: ntype.default_push
+		};
 		showCreateModal = true;
 	}
 
 	async function save() {
 		if (!newType.key || !newType.label) return;
 		saving = true;
+		error = '';
 		try {
-			if (editingType) {
-				await api(`/admin/notification-types/${editingType.key}`, {
+			const result = editingType
+				? await api(`/admin/notification-types/${editingType.key}`, {
 					method: 'PATCH',
-					body: newType
-				});
-			} else {
-				await api('/admin/notification-types', {
+					body: {
+						label: newType.label,
+						description: newType.description || null,
+						enabled: newType.enabled,
+						default_in_app: newType.default_in_app,
+						default_email: newType.default_email,
+						default_push: newType.default_push
+					}
+				})
+				: await api('/admin/notification-types', {
 					method: 'POST',
-					body: newType
+					body: {
+						key: newType.key,
+						label: newType.label,
+						description: newType.description || null,
+						enabled: newType.enabled,
+						default_in_app: newType.default_in_app,
+						default_email: newType.default_email,
+						default_push: newType.default_push
+					}
 				});
+			if (!result.ok) {
+				error = result.error;
+				return;
 			}
 			showCreateModal = false;
-			load();
+			await load();
 		} catch {
 			error = t('common.error');
 		} finally {
@@ -165,6 +222,7 @@
 	<DataTable
 		columns={columns}
 		data={filteredTypes}
+		rowKey={(row: NotificationType) => row.key}
 		pageSize={25}
 		emptyMessage={t('notification_types.no_types')}
 		searchable
@@ -173,7 +231,12 @@
 {/if}
 
 {#if showCreateModal}
-	<Modal title={editingType ? t('notification_types.edit') : t('notification_types.create')} onclose={() => { showCreateModal = false; }}>
+	<Modal
+		bind:open={showCreateModal}
+		title={editingType ? t('notification_types.edit') : t('notification_types.create')}
+		onConfirm={save}
+		confirmLabel={t('common.save')}
+	>
 		<div class="space-y-4">
 			<div>
 				<label for="type-key" class="mb-1 block text-sm font-medium">{t('notification_types.key')}</label>
@@ -199,7 +262,7 @@
 				/>
 			</div>
 			<div>
-				<label for="type-desc" class="mb-1 block text-sm font-medium">{t('notification_types.description')}</label>
+				<label for="type-desc" class="mb-1 block text-sm font-medium">{t('common.description')}</label>
 				<textarea
 					id="type-desc"
 					class="w-full rounded-md border px-3 py-2 text-sm"
@@ -208,26 +271,38 @@
 					bind:value={newType.description}
 				></textarea>
 			</div>
-			<div class="flex justify-end gap-2">
-				<button
-					class="rounded-md px-4 py-2 text-sm font-medium"
-					style="border: 1px solid var(--color-border)"
-					onclick={() => { showCreateModal = false; }}
-				>
-					{t('common.cancel')}
-				</button>
-				<button
-					class="rounded-md px-4 py-2 text-sm font-medium text-white transition-colors disabled:opacity-50"
-					style="background-color: var(--color-primary)"
-					disabled={saving || !newType.key || !newType.label}
-					onclick={save}
-				>
-					{saving ? t('common.saving') : t('common.save')}
-				</button>
+			<div class="flex items-center gap-2">
+				<input
+					id="type-enabled"
+					type="checkbox"
+					class="h-4 w-4 rounded"
+					bind:checked={newType.enabled}
+				/>
+				<label for="type-enabled" class="text-sm font-medium">{t('notification_types.enabled')}</label>
+			</div>
+			<div>
+				<span class="mb-1 block text-sm font-medium">{t('notification_types.default_channels')}</span>
+				<p class="mb-2 text-xs" style="color: var(--color-muted)">{t('notification_types.default_channels_hint')}</p>
+				<div class="flex flex-wrap gap-4">
+					<label class="flex items-center gap-2 text-sm">
+						<input type="checkbox" class="h-4 w-4 rounded" bind:checked={newType.default_in_app} />
+						{t('notification-types.in_app')}
+					</label>
+					<label class="flex items-center gap-2 text-sm">
+						<input type="checkbox" class="h-4 w-4 rounded" bind:checked={newType.default_email} />
+						{t('notification-types.email')}
+					</label>
+					<label class="flex items-center gap-2 text-sm">
+						<input type="checkbox" class="h-4 w-4 rounded" bind:checked={newType.default_push} />
+						{t('notification-types.push')}
+					</label>
+				</div>
 			</div>
 		</div>
 	</Modal>
+{/if}
 
+{#if showDeleteConfirm}
 	<Modal bind:open={showDeleteConfirm} title={t('common.confirmDelete')} confirmLabel={t('common.delete')} onConfirm={executeDelete}>
 		<p class="text-sm" style="color: var(--color-muted)">
 			{t('notification_types.confirm_delete')} <strong>{deleteTarget?.label}</strong>?

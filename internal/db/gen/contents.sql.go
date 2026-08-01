@@ -146,21 +146,22 @@ INSERT INTO contents (
     tenant_id, author_id, organization_id, space_id, content_type, title, slug, body, body_html,
     field_values, content_hash, geo_space_id, header_image_id, featured_image_id,
     canonical_url, meta_title, meta_description, og_image_url, seo_indexable,
-    status, visibility, read_time_minutes, publish_at, published_at
+    status, visibility, read_time_minutes, publish_at, published_at, guide_category
 ) VALUES (
     $1, $2, $3, $4, $5, $6, $7, $8, $9,
     $10, $11, $12,
     $13, $14,
     $15, $16, $17,
     $18, $19,
-    $20, $21, $22, $23, $24
+    $20, $21, $22, $23, $24,
+    $25
 )
 RETURNING id, tenant_id, author_id, organization_id, space_id, content_type, title, slug, body, body_html,
           field_values, content_hash, geo_space_id, header_image_id, featured_image_id,
           canonical_url, meta_title, meta_description, og_image_url, seo_indexable,
           status, visibility, is_locked, is_pinned, read_time_minutes,
           view_count, comment_count, share_count, reshare_count, publish_at, published_at,
-          created_at, updated_at
+          created_at, updated_at, guide_category
 `
 
 type CreateContentParams struct {
@@ -188,6 +189,7 @@ type CreateContentParams struct {
 	ReadTimeMinutes int32              `json:"read_time_minutes"`
 	PublishAt       pgtype.Timestamptz `json:"publish_at"`
 	PublishedAt     pgtype.Timestamptz `json:"published_at"`
+	GuideCategory   *string            `json:"guide_category"`
 }
 
 type CreateContentRow struct {
@@ -224,6 +226,7 @@ type CreateContentRow struct {
 	PublishedAt     pgtype.Timestamptz `json:"published_at"`
 	CreatedAt       pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+	GuideCategory   *string            `json:"guide_category"`
 }
 
 // Content, revision, slug history, pinned posts, JSON-LD templates, and scores.
@@ -256,6 +259,7 @@ func (q *Queries) CreateContent(ctx context.Context, arg CreateContentParams) (C
 		arg.ReadTimeMinutes,
 		arg.PublishAt,
 		arg.PublishedAt,
+		arg.GuideCategory,
 	)
 	var i CreateContentRow
 	err := row.Scan(
@@ -292,6 +296,7 @@ func (q *Queries) CreateContent(ctx context.Context, arg CreateContentParams) (C
 		&i.PublishedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.GuideCategory,
 	)
 	return i, err
 }
@@ -496,7 +501,7 @@ SELECT id, tenant_id, author_id, organization_id, space_id, content_type, title,
        canonical_url, meta_title, meta_description, og_image_url, seo_indexable,
        status, visibility, is_locked, is_pinned, read_time_minutes,
        view_count, comment_count, share_count, reshare_count, publish_at, published_at,
-       created_at, updated_at
+       created_at, updated_at, guide_category
 FROM contents
 WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
 `
@@ -540,6 +545,7 @@ type GetContentByIDRow struct {
 	PublishedAt     pgtype.Timestamptz `json:"published_at"`
 	CreatedAt       pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+	GuideCategory   *string            `json:"guide_category"`
 }
 
 func (q *Queries) GetContentByID(ctx context.Context, arg GetContentByIDParams) (GetContentByIDRow, error) {
@@ -579,19 +585,24 @@ func (q *Queries) GetContentByID(ctx context.Context, arg GetContentByIDParams) 
 		&i.PublishedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.GuideCategory,
 	)
 	return i, err
 }
 
 const getContentBySlug = `-- name: GetContentBySlug :one
-SELECT id, tenant_id, author_id, space_id, content_type, title, slug, body, body_html,
-       field_values, content_hash, geo_space_id, header_image_id, featured_image_id,
-       canonical_url, meta_title, meta_description, og_image_url, seo_indexable,
-       status, visibility, is_locked, is_pinned, read_time_minutes,
-       view_count, comment_count, share_count, reshare_count, publish_at, published_at,
-       created_at, updated_at
-FROM contents
-WHERE slug = $1 AND tenant_id = $2 AND deleted_at IS NULL
+SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c.body_html,
+       c.field_values, c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,
+       c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
+       c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
+       c.view_count,
+       (SELECT COUNT(*) FROM comments WHERE content_id = c.id AND deleted_at IS NULL) AS comment_count,
+       c.share_count,
+       (SELECT COUNT(*) FROM reactions WHERE entity_id = c.id AND entity_type = 'content') AS reshare_count,
+       c.publish_at, c.published_at,
+       c.created_at, c.updated_at, c.guide_category
+FROM contents c
+WHERE c.slug = $1 AND c.tenant_id = $2 AND c.deleted_at IS NULL
 `
 
 type GetContentBySlugParams struct {
@@ -625,13 +636,14 @@ type GetContentBySlugRow struct {
 	IsPinned        bool               `json:"is_pinned"`
 	ReadTimeMinutes int32              `json:"read_time_minutes"`
 	ViewCount       int32              `json:"view_count"`
-	CommentCount    int32              `json:"comment_count"`
+	CommentCount    int64              `json:"comment_count"`
 	ShareCount      int32              `json:"share_count"`
-	ReshareCount    int32              `json:"reshare_count"`
+	ReshareCount    int64              `json:"reshare_count"`
 	PublishAt       pgtype.Timestamptz `json:"publish_at"`
 	PublishedAt     pgtype.Timestamptz `json:"published_at"`
 	CreatedAt       pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+	GuideCategory   *string            `json:"guide_category"`
 }
 
 func (q *Queries) GetContentBySlug(ctx context.Context, arg GetContentBySlugParams) (GetContentBySlugRow, error) {
@@ -670,6 +682,7 @@ func (q *Queries) GetContentBySlug(ctx context.Context, arg GetContentBySlugPara
 		&i.PublishedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.GuideCategory,
 	)
 	return i, err
 }
@@ -1293,7 +1306,7 @@ SELECT id, tenant_id, author_id, space_id, content_type, title, slug, body, body
        canonical_url, meta_title, meta_description, og_image_url, seo_indexable,
        status, visibility, is_locked, is_pinned, read_time_minutes,
        view_count, comment_count, share_count, reshare_count, publish_at, published_at,
-       created_at, updated_at
+       created_at, updated_at, guide_category
 FROM contents
 WHERE author_profile_id = $1 AND tenant_id = $2 AND deleted_at IS NULL
 ORDER BY created_at DESC
@@ -1340,6 +1353,7 @@ type ListContentsByAuthorProfileRow struct {
 	PublishedAt     pgtype.Timestamptz `json:"published_at"`
 	CreatedAt       pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+	GuideCategory   *string            `json:"guide_category"`
 }
 
 func (q *Queries) ListContentsByAuthorProfile(ctx context.Context, arg ListContentsByAuthorProfileParams) ([]ListContentsByAuthorProfileRow, error) {
@@ -1389,6 +1403,7 @@ func (q *Queries) ListContentsByAuthorProfile(ctx context.Context, arg ListConte
 			&i.PublishedAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.GuideCategory,
 		); err != nil {
 			return nil, err
 		}
@@ -1406,7 +1421,7 @@ SELECT id, tenant_id, author_id, space_id, content_type, title, slug, body, body
        canonical_url, meta_title, meta_description, og_image_url, seo_indexable,
        status, visibility, is_locked, is_pinned, read_time_minutes,
        view_count, comment_count, share_count, reshare_count, publish_at, published_at,
-       created_at, updated_at
+       created_at, updated_at, guide_category
 FROM contents
 WHERE tenant_id = $1 AND space_id = $2
   AND deleted_at IS NULL
@@ -1456,6 +1471,7 @@ type ListContentsBySpaceRow struct {
 	PublishedAt     pgtype.Timestamptz `json:"published_at"`
 	CreatedAt       pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+	GuideCategory   *string            `json:"guide_category"`
 }
 
 func (q *Queries) ListContentsBySpace(ctx context.Context, arg ListContentsBySpaceParams) ([]ListContentsBySpaceRow, error) {
@@ -1505,6 +1521,7 @@ func (q *Queries) ListContentsBySpace(ctx context.Context, arg ListContentsBySpa
 			&i.PublishedAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.GuideCategory,
 		); err != nil {
 			return nil, err
 		}
@@ -1522,7 +1539,7 @@ SELECT id, tenant_id, author_id, space_id, content_type, title, slug, body, body
        canonical_url, meta_title, meta_description, og_image_url, seo_indexable,
        status, visibility, is_locked, is_pinned, read_time_minutes,
        view_count, comment_count, share_count, reshare_count, publish_at, published_at,
-       created_at, updated_at
+       created_at, updated_at, guide_category
 FROM contents
 WHERE tenant_id = $1
   AND deleted_at IS NULL
@@ -1573,6 +1590,7 @@ type ListContentsByTenantRow struct {
 	PublishedAt     pgtype.Timestamptz `json:"published_at"`
 	CreatedAt       pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+	GuideCategory   *string            `json:"guide_category"`
 }
 
 func (q *Queries) ListContentsByTenant(ctx context.Context, arg ListContentsByTenantParams) ([]ListContentsByTenantRow, error) {
@@ -1622,6 +1640,7 @@ func (q *Queries) ListContentsByTenant(ctx context.Context, arg ListContentsByTe
 			&i.PublishedAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.GuideCategory,
 		); err != nil {
 			return nil, err
 		}
@@ -1639,7 +1658,7 @@ SELECT id, tenant_id, author_id, space_id, content_type, title, slug, body, body
        canonical_url, meta_title, meta_description, og_image_url, seo_indexable,
        status, visibility, is_locked, is_pinned, read_time_minutes,
        view_count, comment_count, share_count, reshare_count, publish_at, published_at,
-       created_at, updated_at
+       created_at, updated_at, guide_category
 FROM contents
 WHERE tenant_id = $1 AND content_type = $2
   AND deleted_at IS NULL
@@ -1689,6 +1708,7 @@ type ListContentsByTypeRow struct {
 	PublishedAt     pgtype.Timestamptz `json:"published_at"`
 	CreatedAt       pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+	GuideCategory   *string            `json:"guide_category"`
 }
 
 func (q *Queries) ListContentsByType(ctx context.Context, arg ListContentsByTypeParams) ([]ListContentsByTypeRow, error) {
@@ -1738,6 +1758,7 @@ func (q *Queries) ListContentsByType(ctx context.Context, arg ListContentsByType
 			&i.PublishedAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.GuideCategory,
 		); err != nil {
 			return nil, err
 		}
@@ -2358,7 +2379,7 @@ RETURNING id, tenant_id, author_id, space_id, content_type, title, slug, body, b
           canonical_url, meta_title, meta_description, og_image_url, seo_indexable,
           status, visibility, is_locked, is_pinned, read_time_minutes,
           view_count, comment_count, share_count, reshare_count, publish_at, published_at,
-          created_at, updated_at
+          created_at, updated_at, guide_category
 `
 
 type ScheduleContentParams struct {
@@ -2400,6 +2421,7 @@ type ScheduleContentRow struct {
 	PublishedAt     pgtype.Timestamptz `json:"published_at"`
 	CreatedAt       pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+	GuideCategory   *string            `json:"guide_category"`
 }
 
 // Sets status='scheduled' and publish_at without touching title/body/other
@@ -2442,6 +2464,7 @@ func (q *Queries) ScheduleContent(ctx context.Context, arg ScheduleContentParams
 		&i.PublishedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.GuideCategory,
 	)
 	return i, err
 }
@@ -2452,7 +2475,7 @@ SELECT id, tenant_id, author_id, space_id, content_type, title, slug, body, body
        canonical_url, meta_title, meta_description, og_image_url, seo_indexable,
        status, visibility, is_locked, is_pinned, read_time_minutes,
        view_count, comment_count, share_count, reshare_count, publish_at, published_at,
-       created_at, updated_at
+       created_at, updated_at, guide_category
 FROM contents
 WHERE tenant_id = $1 AND space_id = $2
   AND deleted_at IS NULL
@@ -2503,6 +2526,7 @@ type SearchContentsBySpaceRow struct {
 	PublishedAt     pgtype.Timestamptz `json:"published_at"`
 	CreatedAt       pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+	GuideCategory   *string            `json:"guide_category"`
 }
 
 func (q *Queries) SearchContentsBySpace(ctx context.Context, arg SearchContentsBySpaceParams) ([]SearchContentsBySpaceRow, error) {
@@ -2553,6 +2577,7 @@ func (q *Queries) SearchContentsBySpace(ctx context.Context, arg SearchContentsB
 			&i.PublishedAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.GuideCategory,
 		); err != nil {
 			return nil, err
 		}
@@ -2614,14 +2639,15 @@ SET title = $1, slug = $2, body = $3, body_html = $4,
     status = $15, visibility = $16, read_time_minutes = $17,
     publish_at = $18, published_at = $19,
     is_locked = $20, is_pinned = $21,
-    organization_id = $22, updated_at = now()
-WHERE id = $23 AND tenant_id = $24 AND deleted_at IS NULL
+    organization_id = $22, guide_category = $23,
+    updated_at = now()
+WHERE id = $24 AND tenant_id = $25 AND deleted_at IS NULL
 RETURNING id, tenant_id, author_id, organization_id, space_id, content_type, title, slug, body, body_html,
           field_values, content_hash, geo_space_id, header_image_id, featured_image_id,
           canonical_url, meta_title, meta_description, og_image_url, seo_indexable,
           status, visibility, is_locked, is_pinned, read_time_minutes,
           view_count, comment_count, share_count, reshare_count, publish_at, published_at,
-          created_at, updated_at
+          created_at, updated_at, guide_category
 `
 
 type UpdateContentParams struct {
@@ -2647,6 +2673,7 @@ type UpdateContentParams struct {
 	IsLocked        bool               `json:"is_locked"`
 	IsPinned        bool               `json:"is_pinned"`
 	OrganizationID  pgtype.UUID        `json:"organization_id"`
+	GuideCategory   *string            `json:"guide_category"`
 	ID              pgtype.UUID        `json:"id"`
 	TenantID        pgtype.UUID        `json:"tenant_id"`
 }
@@ -2685,6 +2712,7 @@ type UpdateContentRow struct {
 	PublishedAt     pgtype.Timestamptz `json:"published_at"`
 	CreatedAt       pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+	GuideCategory   *string            `json:"guide_category"`
 }
 
 func (q *Queries) UpdateContent(ctx context.Context, arg UpdateContentParams) (UpdateContentRow, error) {
@@ -2711,6 +2739,7 @@ func (q *Queries) UpdateContent(ctx context.Context, arg UpdateContentParams) (U
 		arg.IsLocked,
 		arg.IsPinned,
 		arg.OrganizationID,
+		arg.GuideCategory,
 		arg.ID,
 		arg.TenantID,
 	)
@@ -2749,6 +2778,7 @@ func (q *Queries) UpdateContent(ctx context.Context, arg UpdateContentParams) (U
 		&i.PublishedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.GuideCategory,
 	)
 	return i, err
 }
@@ -2763,7 +2793,7 @@ RETURNING id, tenant_id, author_id, space_id, content_type, title, slug, body, b
           canonical_url, meta_title, meta_description, og_image_url, seo_indexable,
           status, visibility, is_locked, is_pinned, read_time_minutes,
           view_count, comment_count, share_count, reshare_count, publish_at, published_at,
-          created_at, updated_at
+          created_at, updated_at, guide_category
 `
 
 type UpdateContentStatusParams struct {
@@ -2805,6 +2835,7 @@ type UpdateContentStatusRow struct {
 	PublishedAt     pgtype.Timestamptz `json:"published_at"`
 	CreatedAt       pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+	GuideCategory   *string            `json:"guide_category"`
 }
 
 func (q *Queries) UpdateContentStatus(ctx context.Context, arg UpdateContentStatusParams) (UpdateContentStatusRow, error) {
@@ -2843,6 +2874,7 @@ func (q *Queries) UpdateContentStatus(ctx context.Context, arg UpdateContentStat
 		&i.PublishedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.GuideCategory,
 	)
 	return i, err
 }
