@@ -114,17 +114,24 @@ func TestParseOffset(t *testing.T) {
 
 func TestClientIP(t *testing.T) {
 	t.Parallel()
-	// X-Forwarded-For.
+	// X-Forwarded-For — peer must be a trusted proxy for the header to be
+	// honoured (clientip.FromRequest validates the peer against
+	// JC_TRUSTED_PROXIES, which defaults to loopback + RFC1918).
+	// The XFF chain is walked right-to-left past trusted proxies; the
+	// first untrusted IP is the client. Here 10.0.0.5 is a trusted RFC1918
+	// proxy and 1.2.3.4 is the real client.
 	r := httptest.NewRequest(http.MethodGet, "/", nil)
-	r.Header.Set("X-Forwarded-For", "1.2.3.4, 5.6.7.8")
+	r.RemoteAddr = "127.0.0.1:1234"
+	r.Header.Set("X-Forwarded-For", "1.2.3.4, 10.0.0.5")
 
 	ip := clientIP(r)
 	if ip == nil || *ip != "1.2.3.4" {
 		t.Errorf("expected 1.2.3.4, got %v", ip)
 	}
 
-	// X-Real-IP.
+	// X-Real-IP — same trusted-proxy requirement.
 	r2 := httptest.NewRequest(http.MethodGet, "/", nil)
+	r2.RemoteAddr = "127.0.0.1:1234"
 	r2.Header.Set("X-Real-IP", "9.10.11.12")
 
 	ip2 := clientIP(r2)
@@ -132,7 +139,7 @@ func TestClientIP(t *testing.T) {
 		t.Errorf("expected 9.10.11.12, got %v", ip2)
 	}
 
-	// No headers.
+	// No headers — peer address is returned directly.
 	r3 := httptest.NewRequest(http.MethodGet, "/", nil)
 	r3.RemoteAddr = "127.0.0.1:8080"
 

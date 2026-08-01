@@ -172,16 +172,17 @@ func TestMiddlewarePassesThrough(t *testing.T) {
 func TestMiddlewareRejects(t *testing.T) {
 	t.Parallel()
 
+	// These cases all have a csrf cookie present (the browser sends it
+	// automatically on a cross-site request) but the X-CSRF-Token header is
+	// missing or mismatched — a real CSRF attempt. The middleware must reject
+	// with 403.
 	tests := []struct {
 		name   string
 		cookie string
 		header string
 	}{
-		{name: "no cookie and no header"},
 		{name: "cookie without header", cookie: "abc123"},
-		{name: "header without cookie", header: "abc123"},
 		{name: "mismatched token", cookie: "abc123", header: "def456"},
-		{name: "empty cookie value", cookie: "", header: "abc123"},
 	}
 
 	for _, tt := range tests {
@@ -223,6 +224,54 @@ func TestMiddlewareRejects(t *testing.T) {
 
 			if body.Error.Code != "csrf_token_invalid" {
 				t.Errorf("error code = %q, want csrf_token_invalid", body.Error.Code)
+			}
+		})
+	}
+}
+
+// TestMiddlewarePassesThroughNoCookie verifies that a mutating request with no
+// csrf cookie and no non-cookie credential passes through to the next handler.
+// This lets RequireAuth return 401 missing_token for unauthenticated requests
+// instead of a misleading 403 csrf_token_invalid. A real CSRF attempt always
+// carries the victim's cookie (sent automatically by the browser).
+func TestMiddlewarePassesThroughNoCookie(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		cookie string
+		header string
+	}{
+		{name: "no cookie and no header"},
+		{name: "header without cookie", header: "abc123"},
+		{name: "empty cookie value", cookie: "", header: "abc123"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			called := false
+			handler := Middleware([]string{"/control/"}, nil)(okHandler(&called))
+			rec := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodPost, testPath, nil)
+
+			if tt.cookie != "" {
+				req.AddCookie(&http.Cookie{Name: CookieName, Value: tt.cookie})
+			}
+
+			if tt.header != "" {
+				req.Header.Set(HeaderName, tt.header)
+			}
+
+			handler.ServeHTTP(rec, req)
+
+			if !called {
+				t.Error("next handler was not called — unauthenticated request should pass through to RequireAuth")
+			}
+
+			if rec.Code != http.StatusOK {
+				t.Errorf("status = %d, want 200 (pass-through)", rec.Code)
 			}
 		})
 	}
@@ -337,6 +386,42 @@ func TestTokenHandlerEchoesCookieToken(t *testing.T) {
 
 	if body.Data.CSRFToken != cookie.Value {
 		t.Errorf("body token %q != cookie token %q", body.Data.CSRFToken, cookie.Value)
+	}
+}
+
+// TestTokenHandlerReusesExistingCookie verifies that when a valid csrf_token
+// cookie is already present on the request, TokenHandler echoes the same value
+// back instead of generating a new token. This prevents token rotation races
+// when multiple concurrent requests hit /csrf.
+func TestTokenHandlerReusesExistingCookie(t *testing.T) {
+	t.Parallel()
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/csrf-token", nil)
+	req.AddCookie(&http.Cookie{Name: CookieName, Value: "existing-token-value"})
+
+	TokenHandler("example.com", true)(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+
+	var body struct {
+		Data struct {
+			CSRFToken string `json:"csrfToken"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode body: %v", err)
+	}
+
+	if body.Data.CSRFToken != "existing-token-value" {
+		t.Errorf("token = %q, want existing-token-value (should reuse cookie)", body.Data.CSRFToken)
+	}
+
+	// No Set-Cookie should be issued when reusing the existing token.
+	if c := findCookie(t, rec); c != nil {
+		t.Errorf("unexpected Set-Cookie with value %q — should not rotate when cookie exists", c.Value)
 	}
 }
 

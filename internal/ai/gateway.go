@@ -34,6 +34,49 @@ func (d *Dispatcher) RegisterProvider(category string, p Provider) {
 	d.providersByCategory[category] = append(d.providersByCategory[category], p)
 }
 
+// RegisteredModels returns the union of models exposed by every registered
+// provider across all categories. Used by the admin model picker so the list
+// reflects the providers actually wired at startup (Rule 16).
+func (d *Dispatcher) RegisteredModels() []Model {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
+	seen := make(map[string]struct{})
+	var models []Model
+
+	for _, providers := range d.providersByCategory {
+		for _, p := range providers {
+			for _, mi := range p.Models() {
+				if mi.ID == "" {
+					continue
+				}
+				if _, ok := seen[mi.ID]; ok {
+					continue
+				}
+				seen[mi.ID] = struct{}{}
+				models = append(models, Model{ID: mi.ID, Label: mi.Label})
+			}
+		}
+	}
+
+	return models
+}
+
+// RegisteredCategories returns the categories that have at least one provider
+// wired at startup. Used by HandleListCategories so the list reflects the
+// actual gateway configuration (Rule 16: no hardcoded data).
+func (d *Dispatcher) RegisteredCategories() []string {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
+	categories := make([]string, 0, len(d.providersByCategory))
+	for cat := range d.providersByCategory {
+		categories = append(categories, cat)
+	}
+
+	return categories
+}
+
 // Dispatch sends the request to the first available provider for the given
 // category. On failure it logs the error and tries the next provider, returning
 // on the first success. If all providers fail, the last error is returned.

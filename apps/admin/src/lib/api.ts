@@ -420,9 +420,9 @@ export const userManagementApi = {
 		api<{ activities: UserActivity[]; total: number }>(`/admin/users/${userId}/activity${params ? `?${params}` : ''}`),
 
 	getAiContext: (userId: string) =>
-		api<AiContextEntry[]>(`/admin/ai/context/${userId}`),
+		api<AiContextEntry[]>(`/admin/users/${userId}/ai-context`),
 	deleteAiContextEntry: (userId: string, entryId: string) =>
-		api<{ deleted: boolean }>(`/admin/ai/context/${userId}/${entryId}`, { method: 'DELETE' }),
+		api<{ deleted: boolean }>(`/admin/users/${userId}/ai-context/${entryId}`, { method: 'DELETE' }),
 
 	getUserSessions: (userId: string) =>
 		api<UserSession[]>(`/admin/users/${userId}/sessions`),
@@ -707,9 +707,9 @@ export const aiAdminApi = {
 	getToolsUsage: () => api<unknown>('/admin/ai/tools/usage'),
 	getAiUsage: () => api<unknown>('/admin/ai/usage'),
 	updateTool: (id: string, body: Record<string, unknown>) => api<unknown>(`/admin/ai/tools/${id}`, { method: 'PUT', body }),
-	getUserAiContext: (userId: string) => api<unknown>(`/admin/ai/context/${userId}`),
+	getUserAiContext: (userId: string) => api<unknown>(`/admin/users/${userId}/ai-context`),
 	deleteAiContextEntry: (userId: string, entryId: string) =>
-		api<{ deleted: boolean }>(`/admin/ai/context/${userId}/${entryId}`, { method: 'DELETE' }),
+		api<{ deleted: boolean }>(`/admin/users/${userId}/ai-context/${entryId}`, { method: 'DELETE' }),
 };
 
 export const analyticsAdminApi = {
@@ -757,6 +757,7 @@ export const contentAdminApi = {
 	feature: (id: string) => api<unknown>(`/blog/${id}/feature`, { method: 'POST', body: {} }),
 	unfeature: (id: string) => api<unknown>(`/blog/featured/${id}`, { method: 'DELETE' }),
 	archive: (id: string) => api<unknown>(`/content/${id}/archive`, { method: 'POST', body: {} }),
+	listContentTypes: () => api<{ value: string; label: string }[]>('/content-types'),
 };
 
 export const mediaAdminApi = {

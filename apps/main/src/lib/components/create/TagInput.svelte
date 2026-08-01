@@ -22,7 +22,10 @@
 
 	function addTag(value: string) {
 		const v = value.trim().toLowerCase().replace(/\s+/g, '-');
-		if (v && !tags.includes(v)) onTags([...tags, v]);
+		// Enforce content.max_tags (default 5) client-side (Section 14).
+		// The backend also enforces this, but preventing the user from
+		// adding more than the limit avoids a wasted API round-trip.
+		if (v && !tags.includes(v) && tags.length < 5) onTags([...tags, v]);
 		draft = '';
 		suggestions = [];
 		activeIndex = -1;

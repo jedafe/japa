@@ -5,15 +5,32 @@
 	import { t } from '$lib/stores/i18n.svelte';
 	import { Modal } from '$lib/components/ui/modal';
 	import { Button } from '$lib/components/ui/button';
+	import { Select } from '$lib/components/ui/select';
 
 	type Bot = {
 		id: string;
 		name: string;
-		avatar_url: string;
-		description: string;
-		rate_limit: number;
-		created_at: string;
+		user_agent_pattern: string;
+		bot_type: string;
+		policy: string;
+		is_system: boolean;
+		crawl_delay: number;
 	};
+
+	const BOT_TYPES = [
+		{ value: 'search_engine', label: 'Search Engine' },
+		{ value: 'ai_llm', label: 'AI / LLM' },
+		{ value: 'social', label: 'Social' },
+		{ value: 'monitoring', label: 'Monitoring' },
+		{ value: 'scraper', label: 'Scraper' },
+		{ value: 'unknown', label: 'Unknown' }
+	];
+
+	const POLICIES = [
+		{ value: 'allow', label: 'Allow' },
+		{ value: 'block', label: 'Block' },
+		{ value: 'limit', label: 'Limit' }
+	];
 
 	let bot = $state<Bot | null>(null);
 	let loading = $state(true);
@@ -22,9 +39,10 @@
 
 	// Edit form
 	let editName = $state('');
-	let editAvatarUrl = $state('');
-	let editDescription = $state('');
-	let rateLimitValue = $state(100);
+	let editUserAgentPattern = $state('');
+	let editBotType = $state('search_engine');
+	let editPolicy = $state('allow');
+	let editCrawlDelay = $state(0);
 	let saving = $state(false);
 	let showDeleteModal = $state(false);
 
@@ -38,21 +56,22 @@
 			if (result.ok) {
 				bot = result.data;
 				editName = bot.name;
-				editAvatarUrl = bot.avatar_url ?? '';
-				editDescription = bot.description ?? '';
-				rateLimitValue = bot.rate_limit ?? 100;
+				editUserAgentPattern = bot.user_agent_pattern;
+				editBotType = bot.bot_type;
+				editPolicy = bot.policy;
+				editCrawlDelay = bot.crawl_delay;
 			} else {
 				errorMessage = result.error;
 			}
 		} catch {
-			errorMessage = t('bots.load_error');
+			errorMessage = t('bots.load_error', 'Failed to load bot');
 		} finally {
 			loading = false;
 		}
 	}
 
 	async function saveBot() {
-		if (!bot || !editName.trim()) return;
+		if (!bot || !editName.trim() || !editUserAgentPattern.trim()) return;
 		saving = true;
 		errorMessage = '';
 		successMessage = '';
@@ -61,20 +80,20 @@
 				method: 'PUT',
 				body: {
 					name: editName.trim(),
-					avatar_url: editAvatarUrl.trim() || null,
-					description: editDescription.trim() || null
+					user_agent_pattern: editUserAgentPattern.trim(),
+					bot_type: editBotType,
+					policy: editPolicy,
+					crawl_delay: editCrawlDelay
 				}
 			});
 			if (result.ok) {
-				successMessage = t('bots.updated');
-				bot.name = editName.trim();
-				bot.avatar_url = editAvatarUrl.trim();
-				bot.description = editDescription.trim();
+				successMessage = t('bots.updated', 'Bot updated successfully');
+				await load();
 			} else {
 				errorMessage = result.error;
 			}
 		} catch {
-			errorMessage = t('bots.update_error');
+			errorMessage = t('bots.update_error', 'Failed to update bot');
 		} finally {
 			saving = false;
 		}
@@ -90,7 +109,7 @@
 </svelte:head>
 
 <div class="mb-4">
-	<a href="/bots" class="text-sm hover:underline" style="color: var(--color-muted)">&larr; {t('bots.back')}</a>
+	<a href="/bots" class="text-sm hover:underline" style="color: var(--color-muted)">&larr; {t('bots.back', 'Back to Bots')}</a>
 </div>
 
 {#if errorMessage}
@@ -105,18 +124,21 @@
 {/if}
 
 {#if loading}
-	<p class="py-8 text-center text-sm" style="color: var(--color-muted)">{t('common.loading')}</p>
+	<p class="py-8 text-center text-sm" style="color: var(--color-muted)">{t('common.loading', 'Loading...')}</p>
 {:else if bot}
 	<h1 class="mb-1 text-2xl font-bold tracking-tight">{bot.name}</h1>
 	<p class="mb-6 text-sm" style="color: var(--color-muted)">
-		Created: {bot.created_at}
+		{t('app.bots.user_agent_pattern', 'User-Agent')}: {bot.user_agent_pattern}
+		{#if bot.is_system}
+			· <span class="text-xs">{t('app.bots.is_system', 'System bot')}</span>
+		{/if}
 	</p>
 
 	<div class="rounded-lg border p-6" style="border-color: var(--color-border); background-color: var(--color-surface)">
-		<h2 class="mb-4 text-sm font-semibold uppercase tracking-wider" style="color: var(--color-muted)">{t('bots.bot_details')}</h2>
+		<h2 class="mb-4 text-sm font-semibold uppercase tracking-wider" style="color: var(--color-muted)">{t('bots.bot_details', 'Bot Details')}</h2>
 		<div class="space-y-4">
 			<div>
-				<label for="edit-name" class="mb-1 block text-sm font-medium">{t('bots.name')}</label>
+				<label for="edit-name" class="mb-1 block text-sm font-medium">{t('bots.name', 'Name')}</label>
 				<input
 					id="edit-name"
 					type="text"
@@ -126,55 +148,62 @@
 				/>
 			</div>
 			<div>
-				<label for="edit-avatar" class="mb-1 block text-sm font-medium">{t('bots.avatar_url')}</label>
+				<label for="edit-ua" class="mb-1 block text-sm font-medium">{t('app.bots.user_agent_pattern', 'User-Agent Pattern')}</label>
 				<input
-					id="edit-avatar"
-					type="url"
+					id="edit-ua"
+					type="text"
 					class="w-full rounded-md border px-3 py-2 text-sm"
 					style="border-color: var(--color-border); background-color: var(--color-background)"
-					placeholder="https://example.com/avatar.png"
-					bind:value={editAvatarUrl}
+					bind:value={editUserAgentPattern}
 				/>
 			</div>
 			<div>
-				<label for="edit-desc" class="mb-1 block text-sm font-medium">{t('bots.description_label')}</label>
-				<textarea
-					id="edit-desc"
+				<label for="edit-type" class="mb-1 block text-sm font-medium">{t('bots.type', 'Type')}</label>
+				<Select options={BOT_TYPES} bind:value={editBotType} />
+			</div>
+			<div>
+				<label for="edit-policy" class="mb-1 block text-sm font-medium">{t('app.bots.policy', 'Policy')}</label>
+				<Select options={POLICIES} bind:value={editPolicy} />
+			</div>
+			<div>
+				<label for="edit-delay" class="mb-1 block text-sm font-medium">{t('app.bots.crawl_delay', 'Crawl Delay (seconds)')}</label>
+				<input
+					id="edit-delay"
+					type="number"
+					min="0"
 					class="w-full rounded-md border px-3 py-2 text-sm"
 					style="border-color: var(--color-border); background-color: var(--color-background)"
-					rows="3"
-					bind:value={editDescription}
-				></textarea>
+					bind:value={editCrawlDelay}
+				/>
 			</div>
 			<div class="flex items-center gap-3 pt-2">
 				<button
 					class="rounded-md px-4 py-2 text-sm font-medium text-white transition-colors disabled:opacity-50"
 					style="background-color: var(--color-primary)"
-					disabled={saving || !editName.trim()}
+					disabled={saving || !editName.trim() || !editUserAgentPattern.trim()}
 					onclick={saveBot}
 				>
-					{saving ? t('common.saving') : t('bots.save_changes')}
+					{saving ? t('common.saving', 'Saving...') : t('bots.save_changes', 'Save Changes')}
 				</button>
-				<button
-					class="rounded-md px-4 py-2 text-sm font-medium transition-colors hover:bg-black/5 dark:hover:bg-surface/10"
-					style="color: var(--color-danger)"
-					onclick={() => {
-						if (!bot) return;
-						showDeleteModal = true;
-					}}
-				>
-					{t('bots.delete_bot')}
-				</button>
+				{#if !bot.is_system}
+					<button
+						class="rounded-md px-4 py-2 text-sm font-medium transition-colors hover:bg-black/5 dark:hover:bg-surface/10"
+						style="color: var(--color-danger)"
+						onclick={() => { if (bot) showDeleteModal = true; }}
+					>
+						{t('bots.delete_bot', 'Delete Bot')}
+					</button>
+				{/if}
 			</div>
 		</div>
 	</div>
 
-	<Modal bind:open={showDeleteModal} title={t('bots.delete_confirm')} size="sm">
+	<Modal bind:open={showDeleteModal} title={t('bots.delete_confirm', 'Delete this bot permanently?')} size="sm">
 		<p class="text-sm" style="color: var(--color-muted)">
-			{t('bots.delete_warning', 'This action cannot be undone. The bot and all its data will be permanently removed.')}
+			{t('app.bots.delete_warning', 'This action cannot be undone. The bot will be permanently removed.')}
 		</p>
 		<div class="mt-4 flex justify-end gap-2">
-			<Button variant="ghost" onclick={() => (showDeleteModal = false)}>{t('common.cancel')}</Button>
+			<Button variant="ghost" onclick={() => (showDeleteModal = false)}>{t('common.cancel', 'Cancel')}</Button>
 			<Button
 				variant="destructive"
 				onclick={async () => {
@@ -188,7 +217,7 @@
 					}
 				}}
 			>
-				{t('common.delete')}
+				{t('common.delete', 'Delete')}
 			</Button>
 		</div>
 	</Modal>

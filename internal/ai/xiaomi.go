@@ -217,6 +217,17 @@ func (p *XiaomiProvider) VerifyWebhookSignature(_ []byte, _ string) error {
 	return nil
 }
 
+// Models returns the MiMo models this provider can serve, for the admin model
+// picker (Rule 16: derived from registered providers, not hardcoded).
+func (p *XiaomiProvider) Models() []ModelInfo {
+	return []ModelInfo{
+		{ID: XiaomiModelFlash, Label: "MiMo Flash (Xiaomi)"},
+		{ID: XiaomiModelPro, Label: "MiMo Pro (Xiaomi)"},
+		{ID: XiaomiModelV25Pro, Label: "MiMo v2.5 Pro (Xiaomi)"},
+		{ID: XiaomiModelOmni, Label: "MiMo Omni (Xiaomi)"},
+	}
+}
+
 // truncate shortens s to maxLen characters, appending "..." if truncated.
 func truncate(s string, maxLen int) string {
 	if len(s) <= maxLen {

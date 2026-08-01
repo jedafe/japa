@@ -23,6 +23,12 @@ export interface ApiContext {
 	token: string | null;
 	/** Hostname with the port stripped — resolves the tenant on the backend. */
 	host: string;
+	/**
+	 * Double-submit CSRF token (Ref: §5.2). Attached as X-CSRF-Token on every
+	 * non-GET request so the backend's csrf.Middleware accepts the mutation.
+	 * Null for guests (no mutations) or when the token could not be fetched.
+	 */
+	csrfToken: string | null;
 }
 
 /** Build an ApiContext from a SvelteKit request event. */
@@ -30,7 +36,8 @@ export function apiContext(event: RequestEvent): ApiContext {
 	return {
 		fetch: event.fetch,
 		token: event.locals.token,
-		host: event.locals.tenantHost
+		host: event.locals.tenantHost,
+		csrfToken: event.locals.csrfToken ?? null
 	};
 }
 
@@ -48,6 +55,9 @@ async function request<T>(
 		'x-forwarded-host': ctx.host
 	};
 	if (ctx.token) headers.authorization = `Bearer ${ctx.token}`;
+	// Attach the double-submit CSRF token on every mutating request so the
+	// backend's csrf.Middleware (Ref: §5.2) accepts it. GETs are exempt.
+	if (method !== 'GET' && ctx.csrfToken) headers['x-csrf-token'] = ctx.csrfToken;
 
 	const res = await ctx.fetch(`${API_V1}${path}`, {
 		method,

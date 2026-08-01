@@ -11,13 +11,13 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
+	"github.com/jedafe/japa/internal/clientip"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/tenant"
 	"github.com/jedafe/japa/internal/worker"
@@ -137,7 +137,7 @@ func handleServiceError(w http.ResponseWriter, err error) {
 	case errors.Is(err, errpkg.ErrRequired):
 		writeError(w, http.StatusBadRequest, "validation_error", err.Error())
 	default:
-		writeError(w, http.StatusInternalServerError, "internal_error", "Something went wrong")
+		errpkg.HandleServiceError(w, err)
 	}
 }
 
@@ -334,7 +334,7 @@ func (h *Handlers) Redirect(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Deduplicate clicks: same IP + user_agent within 1 hour = same click
-	ipHash := sha256Hex(realIP(r))
+	ipHash := sha256Hex(clientip.FromRequest(r))
 	uaHash := sha256Hex(r.Header.Get("User-Agent"))
 
 	// Record click async (fire-and-forget)
@@ -489,17 +489,6 @@ func (h *Handlers) ListAllLinksAdmin(w http.ResponseWriter, r *http.Request) {
 func sha256Hex(s string) string {
 	h := sha256.Sum256([]byte(s))
 	return hex.EncodeToString(h[:])
-}
-
-func realIP(r *http.Request) string {
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		parts := strings.Split(xff, ",")
-		return strings.TrimSpace(parts[0])
-	}
-	if xri := r.Header.Get("X-Real-IP"); xri != "" {
-		return xri
-	}
-	return r.RemoteAddr
 }
 
 func referrerPtr(r *http.Request) *string {

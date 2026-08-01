@@ -63,12 +63,13 @@ func (s *Store) CreateHITLReview(ctx context.Context, review HITLReview) (HITLRe
 }
 
 // ApproveHITLReview sets the review status to 'approved' with the reviewer identity.
-func (s *Store) ApproveHITLReview(ctx context.Context, reviewID, reviewerID pgtype.UUID) error {
+// The tenant_id filter prevents cross-tenant approve/reject (Section 09 multi-tenancy).
+func (s *Store) ApproveHITLReview(ctx context.Context, tenantID, reviewID, reviewerID pgtype.UUID) error {
 	tag, err := s.write.Exec(ctx, `
 		UPDATE ai_hitl_reviews
-		SET status = 'approved', reviewer_id = $2, reviewed_at = now()
-		WHERE id = $1 AND status = 'pending'
-	`, reviewID, reviewerID)
+		SET status = 'approved', reviewer_id = $3, reviewed_at = now()
+		WHERE id = $1 AND tenant_id = $2 AND status = 'pending'
+	`, reviewID, tenantID, reviewerID)
 	if err != nil {
 		return fmt.Errorf("approving HITL review: %w", err)
 	}
@@ -81,12 +82,13 @@ func (s *Store) ApproveHITLReview(ctx context.Context, reviewID, reviewerID pgty
 }
 
 // RejectHITLReview sets the review status to 'rejected' with a reason.
-func (s *Store) RejectHITLReview(ctx context.Context, reviewID, reviewerID pgtype.UUID, reason string) error {
+// The tenant_id filter prevents cross-tenant approve/reject (Section 09 multi-tenancy).
+func (s *Store) RejectHITLReview(ctx context.Context, tenantID, reviewID, reviewerID pgtype.UUID, reason string) error {
 	tag, err := s.write.Exec(ctx, `
 		UPDATE ai_hitl_reviews
-		SET status = 'rejected', reviewer_id = $2, reviewed_at = now(), reason = $3
-		WHERE id = $1 AND status = 'pending'
-	`, reviewID, reviewerID, reason)
+		SET status = 'rejected', reviewer_id = $3, reviewed_at = now(), reason = $4
+		WHERE id = $1 AND tenant_id = $2 AND status = 'pending'
+	`, reviewID, tenantID, reviewerID, reason)
 	if err != nil {
 		return fmt.Errorf("rejecting HITL review: %w", err)
 	}
@@ -130,4 +132,163 @@ func (s *Store) ListPendingHITLReviews(ctx context.Context, tenantID pgtype.UUID
 	}
 
 	return reviews, nil
+}
+
+// ---------------------------------------------------------------------------
+// AI Usage Log (Section 20 — admin AI usage monitoring)
+// ---------------------------------------------------------------------------
+
+// AIUsageSummary is the aggregated usage response for GET /admin/ai/usage.
+// Matches the Section 20 contract: { total_cost_usd, tokens_used, by_task_type }.
+type AIUsageSummary struct {
+	TotalCostUSD float64                  `json:"total_cost_usd"`
+	TokensUsed   int64                    `json:"tokens_used"`
+	ByTaskType   []AIUsageByTaskType      `json:"by_task_type"`
+	ByProvider   []AIUsageByProvider      `json:"by_provider,omitempty"`
+}
+
+// AIUsageByTaskType is the per-task-type cost/token breakdown.
+type AIUsageByTaskType struct {
+	TaskType      string  `json:"task_type"`
+	TokensUsed    int64   `json:"tokens_used"`
+	TotalCostUSD  float64 `json:"total_cost_usd"`
+	Calls         int64   `json:"calls"`
+}
+
+// AIUsageByProvider is the per-provider cost/token breakdown.
+type AIUsageByProvider struct {
+	Provider     string  `json:"provider"`
+	TokensUsed   int64   `json:"tokens_used"`
+	TotalCostUSD float64 `json:"total_cost_usd"`
+	Calls        int64   `json:"calls"`
+}
+
+// GetAIUsageSummary returns aggregated AI usage for a tenant within the given
+// period. periodDays <= 0 defaults to 30. An optional provider filter limits
+// the summary to a single provider (empty string = all providers).
+func (s *Store) GetAIUsageSummary(ctx context.Context, tenantID pgtype.UUID, periodDays int, provider string) (AIUsageSummary, error) {
+	if periodDays <= 0 {
+		periodDays = 30
+	}
+
+	since := time.Now().AddDate(0, 0, -periodDays)
+
+	// Totals (optionally filtered by provider).
+	var summary AIUsageSummary
+
+	totalsQuery := `
+		SELECT COALESCE(SUM(total_tokens), 0), COALESCE(SUM(cost_usd), 0), COUNT(*)
+		FROM ai_usage_log
+		WHERE tenant_id = $1 AND created_at >= $2
+	`
+	totalsArgs := []any{tenantID, since}
+
+	if provider != "" {
+		totalsQuery += ` AND provider = $3`
+		totalsArgs = append(totalsArgs, provider)
+	}
+
+	if err := s.read.QueryRow(ctx, totalsQuery, totalsArgs...).Scan(
+		&summary.TokensUsed, &summary.TotalCostUSD, new(int64),
+	); err != nil {
+		return AIUsageSummary{}, fmt.Errorf("querying ai usage totals: %w", err)
+	}
+
+	// Per-task-type breakdown (always across all providers for the period).
+	rows, err := s.read.Query(ctx, `
+		SELECT task_type,
+		       COALESCE(SUM(total_tokens), 0) AS tokens_used,
+		       COALESCE(SUM(cost_usd), 0)     AS total_cost_usd,
+		       COUNT(*)                       AS calls
+		FROM ai_usage_log
+		WHERE tenant_id = $1 AND created_at >= $2
+		GROUP BY task_type
+		ORDER BY total_cost_usd DESC
+	`, tenantID, since)
+	if err != nil {
+		return AIUsageSummary{}, fmt.Errorf("querying ai usage by task type: %w", err)
+	}
+
+	defer rows.Close()
+
+	for rows.Next() {
+		var b AIUsageByTaskType
+		if err := rows.Scan(&b.TaskType, &b.TokensUsed, &b.TotalCostUSD, &b.Calls); err != nil {
+			return AIUsageSummary{}, fmt.Errorf("scanning ai usage by task type: %w", err)
+		}
+
+		summary.ByTaskType = append(summary.ByTaskType, b)
+	}
+
+	// Per-provider breakdown.
+	prows, err := s.read.Query(ctx, `
+		SELECT provider,
+		       COALESCE(SUM(total_tokens), 0) AS tokens_used,
+		       COALESCE(SUM(cost_usd), 0)     AS total_cost_usd,
+		       COUNT(*)                       AS calls
+		FROM ai_usage_log
+		WHERE tenant_id = $1 AND created_at >= $2
+		GROUP BY provider
+		ORDER BY total_cost_usd DESC
+	`, tenantID, since)
+	if err != nil {
+		return AIUsageSummary{}, fmt.Errorf("querying ai usage by provider: %w", err)
+	}
+
+	defer func() { prows.Close() }()
+
+	for prows.Next() {
+		var b AIUsageByProvider
+		if err := prows.Scan(&b.Provider, &b.TokensUsed, &b.TotalCostUSD, &b.Calls); err != nil {
+			return AIUsageSummary{}, fmt.Errorf("scanning ai usage by provider: %w", err)
+		}
+
+		summary.ByProvider = append(summary.ByProvider, b)
+	}
+
+	return summary, rows.Err()
+}
+
+// RecordAIUsage inserts a single ai_usage_log row. Called after every AI
+// gateway dispatch so admin usage monitoring stays current.
+func (s *Store) RecordAIUsage(ctx context.Context, tenantID, userID pgtype.UUID, provider, model, taskType, requestRef string, promptTokens, completionTokens, totalTokens int32, costUSD float64) error {
+	var userIDArg any
+	if userID.Valid {
+		userIDArg = userID
+	} else {
+		userIDArg = nil
+	}
+
+	_, err := s.write.Exec(ctx, `
+		INSERT INTO ai_usage_log
+			(tenant_id, user_id, provider, model, task_type,
+			 prompt_tokens, completion_tokens, total_tokens, cost_usd, request_ref)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+	`, tenantID, userIDArg, provider, model, taskType,
+		promptTokens, completionTokens, totalTokens, costUSD, requestRef)
+	if err != nil {
+		return fmt.Errorf("recording ai usage: %w", err)
+	}
+
+	return nil
+}
+
+// UserBelongsToTenant reports whether the given user id exists within the
+// given tenant. Used by the admin AI-context handlers to prevent cross-tenant
+// access to a user's Honcho memory (ADR-027, §9 multi-tenancy).
+func (s *Store) UserBelongsToTenant(ctx context.Context, tenantID pgtype.UUID, userID string) (bool, error) {
+	var uid pgtype.UUID
+	if err := uid.Scan(userID); err != nil {
+		return false, fmt.Errorf("invalid user id %q: %w", userID, err)
+	}
+
+	var exists bool
+	err := s.read.QueryRow(ctx, `
+		SELECT EXISTS(SELECT 1 FROM users WHERE id = $1 AND tenant_id = $2)
+	`, uid, tenantID).Scan(&exists)
+	if err != nil {
+		return false, fmt.Errorf("checking user tenant membership: %w", err)
+	}
+
+	return exists, nil
 }

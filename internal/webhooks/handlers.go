@@ -12,14 +12,13 @@ package webhooks
 
 import (
 	"encoding/json"
-	"errors"
 	"log/slog"
 	"net/http"
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/tenant"
 )
 
@@ -54,14 +53,12 @@ func writeError(w http.ResponseWriter, status int, code, message string) {
 
 func handleServiceError(w http.ResponseWriter, err error) {
 	switch {
-	case errors.Is(err, pgx.ErrNoRows):
-		writeError(w, http.StatusNotFound, "not_found", "Resource not found")
 	case contains(err.Error(), "not found"):
 		writeError(w, http.StatusNotFound, "not_found", "Resource not found")
 	case contains(err.Error(), "already"):
 		writeError(w, http.StatusConflict, "already_exists", "Resource already exists")
 	default:
-		writeError(w, http.StatusInternalServerError, "internal_error", "Something went wrong")
+		errpkg.HandleServiceError(w, err)
 	}
 }
 

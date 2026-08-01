@@ -10,6 +10,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
+	"github.com/jedafe/japa/internal/clientip"
 	"github.com/jedafe/japa/internal/spam"
 )
 
@@ -235,10 +236,7 @@ func (h *Handlers) SendMessage(w http.ResponseWriter, r *http.Request) {
 
 	// Spam pipeline check — multi-layer content safety (BE-034).
 	if h.spamPipeline != nil {
-		clientIP := r.Header.Get("X-Forwarded-For")
-		if clientIP == "" {
-			clientIP = r.RemoteAddr
-		}
+		clientIP := clientip.FromRequest(r)
 		spamResult, err := h.spamPipeline.Check(r.Context(), tenantID, spam.SpamCheckRequest{
 			Content:    req.Body,
 			UserID:     user.UserID,

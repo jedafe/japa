@@ -55,10 +55,12 @@ func RegisterEmailGateway(d *email.EmailDispatcher) {
 
 // redisCache is the subset of the valkeycompat.Cmdable API that worker
 // handlers need. Used by HandleRSSRegenerate to cache feeds under
-// jc:rss:feed:* (TASK-003). valkeycompat.Cmdable satisfies this interface.
+// jc:rss:feed:* (TASK-003) and by HandleMaintenanceRegenerateLLMsTxt to
+// invalidate llms.txt caches. valkeycompat.Cmdable satisfies this interface.
 type redisCache interface {
 	Set(ctx context.Context, key string, value interface{}, expiration time.Duration) *valkeycompat.StatusCmd
 	Get(ctx context.Context, key string) *valkeycompat.StringCmd
+	Del(ctx context.Context, keys ...string) *valkeycompat.IntCmd
 }
 
 // RegisterDBPool sets the database connection pool for worker handlers.
@@ -2788,6 +2790,10 @@ func HandleSecurityScan(ctx context.Context, t *asynq.Task) error {
 
 // HandleMaintenanceRegenerateLLMsTxt regenerates the llms.txt file for the tenant.
 // When called by the cron scheduler with an empty payload, iterates all active tenants.
+// The handler invalidates the Valkey cache keys (jc:llms_txt:{tenant_id} and
+// jc:llms_full_txt:{tenant_id}) so the next request to /llms.txt or /llms-full.txt
+// regenerates the content from the database via bots.LLMsHandler.
+// Ref: japaconnect-engineering/sections/43-bot-crawler-management.md
 func HandleMaintenanceRegenerateLLMsTxt(ctx context.Context, t *asynq.Task) error {
 	slog.Info("task:maintenance:regenerate_llms_txt")
 
@@ -2820,49 +2826,34 @@ func HandleMaintenanceRegenerateLLMsTxt(ctx context.Context, t *asynq.Task) erro
 	}
 
 	for _, tenantID := range tenantIDs {
-		baseURL := payload.BaseURL
-		if baseURL == "" {
-			baseURL = resolveBaseURL(ctx, tenantID)
-		}
-		if baseURL == "" {
-			slog.Warn("task:maintenance:regenerate_llms_txt: no base_url, skipping tenant", "tenant_id", tenantID.String())
-			continue
-		}
-
-		generateLLMsTxtForTenant(ctx, tenantID, baseURL)
+		invalidateLLMsCacheForTenant(ctx, tenantID)
 	}
 
+	slog.Info("task:maintenance:regenerate_llms_txt: complete", "tenant_count", len(tenantIDs))
 	return nil
 }
 
-// generateLLMsTxtForTenant generates the llms.txt file for a single tenant.
-func generateLLMsTxtForTenant(ctx context.Context, tenantID pgtype.UUID, baseURL string) {
-	pages, err := gen.New(dbPool.Reader).ListPublishedContentForLLMsTxt(ctx, tenantID)
-	if err != nil {
-		slog.Error("task:maintenance:regenerate_llms_txt: failed to list content", "tenant_id", tenantID.String(), "error", err)
+// invalidateLLMsCacheForTenant deletes the cached llms.txt and llms-full.txt
+// for a tenant so the next request regenerates them from the database.
+func invalidateLLMsCacheForTenant(ctx context.Context, tenantID pgtype.UUID) {
+	if rdb == nil {
+		slog.Warn("task:maintenance:regenerate_llms_txt: no redis client, skipping", "tenant_id", tenantID.String())
 		return
 	}
 
-	var llms strings.Builder
-
-	llms.WriteString(fmt.Sprintf("# %s\n\n", siteName))
-	llms.WriteString("A community platform for the Nigerian diaspora.\n\n")
-	llms.WriteString("## Pages\n\n")
-
-	pageCount := 0
-
-	for _, p := range pages {
-		llms.WriteString(fmt.Sprintf("- [%s](%s/%s)\n", p.Title, baseURL, p.Slug))
-		pageCount++
+	keys := []string{
+		"jc:llms_txt:" + tenantID.String(),
+		"jc:llms_full_txt:" + tenantID.String(),
+		"jc:robots_txt:" + tenantID.String(),
 	}
 
-	if err := os.WriteFile("llms.txt", []byte(llms.String()), 0o600); err != nil {
-		slog.Error("task:maintenance:regenerate_llms_txt: failed to write file", "tenant_id", tenantID.String(), "error", err)
-		return
+	for _, key := range keys {
+		if err := rdb.Del(ctx, key).Err(); err != nil {
+			slog.Warn("task:maintenance:regenerate_llms_txt: failed to delete cache key", "key", key, "error", err)
+		}
 	}
 
-	slog.Info("task:maintenance:regenerate_llms_txt: file written",
-		"tenant_id", tenantID.String(), "page_count", pageCount)
+	slog.Info("task:maintenance:regenerate_llms_txt: invalidated caches", "tenant_id", tenantID.String())
 }
 
 // HandleLearningIssueCertificate issues a completion certificate for a learning track.

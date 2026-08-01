@@ -23,9 +23,11 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
+	"github.com/jedafe/japa/internal/clientip"
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/geoip"
 	"github.com/jedafe/japa/internal/mentions"
 	"github.com/jedafe/japa/internal/spam"
 	"github.com/jedafe/japa/internal/tenant"
@@ -37,6 +39,10 @@ const defaultPageSize int32 = 20
 // defaultMaxTags is the fallback for content.max_tags when the setting is
 // unset or unparseable. Matches the settings catalog default.
 const defaultMaxTags = 5
+
+// defaultMinLength is the fallback for content.min_length when the setting
+// is unset or unparseable. Matches the settings catalog default (§14).
+const defaultMinLength = 10
 
 // TaskEnqueueClient is the interface for enqueueing background tasks.
 // The Asynq client satisfies this interface. A nil client means tasks
@@ -185,17 +191,14 @@ func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.Au
 // response.
 func handleServiceError(w http.ResponseWriter, err error) {
 	switch {
-	case errors.Is(err, pgx.ErrNoRows):
-		writeError(w, http.StatusNotFound, "not_found", "Resource not found")
-	case errors.Is(err, errpkg.ErrDuplicate), errors.Is(err, ErrDuplicateContent):
+	case errors.Is(err, ErrDuplicateContent):
 		writeError(w, http.StatusConflict, "duplicate_content", "Content with this body already exists")
 	case errors.Is(err, ErrOrgPostForbidden):
 		writeError(w, http.StatusForbidden, "org_post_forbidden", "Not authorized to post as this organization")
 	case errors.Is(err, ErrEditWindowExpired):
 		writeError(w, http.StatusForbidden, "edit_window_expired", "The edit window for this content has expired")
 	default:
-		slog.Error("content service error", "error", err, "error_type", fmt.Sprintf("%T", err))
-		writeError(w, http.StatusInternalServerError, "internal_error", "Something went wrong")
+		errpkg.HandleServiceError(w, err)
 	}
 }
 
@@ -593,6 +596,21 @@ func (h *Handlers) CreateContent(w http.ResponseWriter, r *http.Request) {
 		body = SanitizeText(input.BodyHtml)
 	}
 
+	// Enforce content.min_length on non-draft content (§14).
+	// Drafts may have empty bodies; published/scheduled content must meet
+	// the minimum length configured in system_settings.
+	if input.Status != StatusDraft {
+		minLength := defaultMinLength
+		if h.settings != nil {
+			minLength = h.settings.GetIntOr(r.Context(), tenantID, "content.min_length", defaultMinLength)
+		}
+		if len(strings.TrimSpace(body)) < minLength {
+			writeError(w, http.StatusBadRequest, "body_too_short",
+				fmt.Sprintf("Content body must be at least %d characters", minLength))
+			return
+		}
+	}
+
 	createInput := CreateContentInput{
 		AuthorID:        user.UserID,
 		ContentType:     input.ContentType,
@@ -679,10 +697,7 @@ func (h *Handlers) CreateContent(w http.ResponseWriter, r *http.Request) {
 
 	// Spam pipeline check — multi-layer content safety (BE-034).
 	if h.SpamPipeline != nil {
-		clientIP := r.Header.Get("X-Forwarded-For")
-		if clientIP == "" {
-			clientIP = r.RemoteAddr
-		}
+		clientIP := clientip.FromRequest(r)
 		spamResult, err := h.SpamPipeline.Check(r.Context(), tenantID, spam.SpamCheckRequest{
 			Content:    input.Body,
 			UserID:     user.UserID,
@@ -753,6 +768,17 @@ func (h *Handlers) GetContent(w http.ResponseWriter, r *http.Request) {
 
 		if err != nil {
 			handleServiceError(w, err)
+			return
+		}
+	}
+
+	// Visibility gate: unauthenticated users may only view published
+	// content. Drafts, scheduled, archived, and removed content require
+	// authentication (and the author/admin permission for non-public
+	// statuses). Ref: Section 14 — public content SSR.
+	if user := auth.FromContext(r.Context()); user == nil {
+		if content.Status != StatusPublished {
+			writeError(w, http.StatusNotFound, "not_found", "Content not found")
 			return
 		}
 	}
@@ -869,6 +895,20 @@ func (h *Handlers) UpdateContent(w http.ResponseWriter, r *http.Request) {
 	body := input.Body
 	if body == "" && input.BodyHtml != "" {
 		body = SanitizeText(input.BodyHtml)
+	}
+
+	// Enforce content.min_length on non-draft content (§14).
+	// Only check when a body is actually being updated (non-empty).
+	if body != "" && input.Status != StatusDraft {
+		minLength := defaultMinLength
+		if h.settings != nil {
+			minLength = h.settings.GetIntOr(r.Context(), tenantID, "content.min_length", defaultMinLength)
+		}
+		if len(strings.TrimSpace(body)) < minLength {
+			writeError(w, http.StatusBadRequest, "body_too_short",
+				fmt.Sprintf("Content body must be at least %d characters", minLength))
+			return
+		}
 	}
 
 	updateInput := UpdateContentInput{
@@ -1096,6 +1136,11 @@ func (h *Handlers) ScheduleContent(w http.ResponseWriter, r *http.Request) {
 }
 
 // RecordContentView handles POST /api/v1/content/{id}/view.
+// Uses OptionalAuth so both authenticated and anonymous viewers are
+// counted. For authenticated users, the user_id is recorded; for
+// anonymous users, the session_id (or a fingerprint fallback) is used
+// for deduplication. The country_code is resolved server-side from the
+// client IP via the GeoIP middleware (Section 14 — view tracking).
 func (h *Handlers) RecordContentView(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -1108,7 +1153,34 @@ func (h *Handlers) RecordContentView(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Service.IncrementContentView(r.Context(), id, tenantID); err != nil {
+	// Resolve user (optional — anonymous views are allowed) and session.
+	var userID pgtype.UUID
+	var sessionID *string
+	if user := auth.FromContext(r.Context()); user != nil {
+		userID = user.UserID
+		if user.SessionID != "" {
+			s := user.SessionID
+			sessionID = &s
+		}
+	}
+
+	// Resolve country code from GeoIP context (set by GeoIPMiddleware).
+	var countryCode *string
+	if geo := geoip.FromContext(r.Context()); geo.IsValid && geo.CountryCode != "" {
+		cc := geo.CountryCode
+		countryCode = &cc
+	}
+
+	// For anonymous users without a session ID, use the client IP as a
+	// fingerprint for deduplication (prevents inflate-by-refresh).
+	if !userID.Valid && sessionID == nil {
+		if ip := clientip.FromRequest(r); ip != "" {
+			fp := "ip:" + ip
+			sessionID = &fp
+		}
+	}
+
+	if err := h.Service.RecordContentViewWithDetails(r.Context(), id, tenantID, userID, sessionID, countryCode); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -1849,4 +1921,88 @@ func (h *Handlers) ListContentTypes(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": types})
+}
+
+// UpdateContentSpaces handles PATCH /content/{id}/spaces — replaces the
+// full set of space assignments for a content item (Section 14:
+// content_spaces). The body must include a primary_space_id and may
+// include additional_space_ids. At least one primary space is required.
+func (h *Handlers) UpdateContentSpaces(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	contentID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		return
+	}
+
+	var input struct {
+		PrimarySpaceID    string   `json:"primary_space_id"`
+		AdditionalSpaceIDs []string `json:"additional_space_ids"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
+
+	if input.PrimarySpaceID == "" {
+		writeError(w, http.StatusBadRequest, "missing_primary_space",
+			"A primary_space_id is required")
+		return
+	}
+
+	var primarySpaceID pgtype.UUID
+	if err := primarySpaceID.Scan(input.PrimarySpaceID); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_primary_space_id",
+			"Invalid primary_space_id format")
+		return
+	}
+
+	// Verify the content exists and belongs to the caller's tenant.
+	// The route middleware already enforces content.edit permission.
+	existing, err := h.Service.GetContent(r.Context(), contentID, tenantID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	// Ensure the caller is the author (admins with content.edit_any
+	// bypass this via the RBAC layer's _any scope).
+	if existing.AuthorID.Valid && existing.AuthorID.Bytes != user.UserID.Bytes {
+		writeError(w, http.StatusForbidden, "not_author",
+			"Only the author can update space assignments")
+		return
+	}
+
+	var additionalSpaceIDs []pgtype.UUID
+	for _, sidStr := range input.AdditionalSpaceIDs {
+		var sid pgtype.UUID
+		if err := sid.Scan(sidStr); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_space_id",
+				fmt.Sprintf("Invalid space_id format: %s", sidStr))
+			return
+		}
+		additionalSpaceIDs = append(additionalSpaceIDs, sid)
+	}
+
+	if err := h.Service.UpdateContentSpaces(r.Context(), contentID, primarySpaceID, additionalSpaceIDs); err != nil {
+		slog.Error("updating content spaces",
+			"error", err, "content_id", contentID.String(),
+			"user_id", user.UserID.String())
+		writeError(w, http.StatusInternalServerError, "internal_error",
+			"Failed to update space assignments")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data": map[string]any{"updated": true},
+	})
 }

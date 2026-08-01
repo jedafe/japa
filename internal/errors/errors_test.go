@@ -3,6 +3,9 @@ package errors
 import (
 	stderrors "errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -78,4 +81,87 @@ func TestTrackingNoopsWithoutDSN(t *testing.T) {
 	CaptureException(stderrors.New("boom"))
 	CaptureMessage("hello")
 	Flush(0)
+}
+
+func TestStripSentinelPrefix(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		err      error
+		sentinel error
+		want     string
+	}{
+		{"wrapped with colon", fmt.Errorf("%w: points to convert must be positive", ErrInvalid), ErrInvalid, "points to convert must be positive"},
+		{"wrapped no colon", fmt.Errorf("%w details here", ErrForbidden), ErrForbidden, "details here"},
+		{"bare sentinel", ErrNotFound, ErrNotFound, "not_found"},
+		{"no match", stderrors.New("some other error"), ErrInvalid, "some other error"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := stripSentinelPrefix(tc.err, tc.sentinel)
+			if got != tc.want {
+				t.Errorf("stripSentinelPrefix(%v, %v) = %q, want %q", tc.err, tc.sentinel, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestHandleServiceErrorMapping(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		err        error
+		wantStatus int
+		wantCode   string
+	}{
+		{"ErrNotFound", ErrNotFound, http.StatusNotFound, "not_found"},
+		{"ErrDuplicate", ErrDuplicate, http.StatusConflict, "already_exists"},
+		{"ErrAlreadyExists", ErrAlreadyExists, http.StatusConflict, "already_exists"},
+		{"ErrRequired", ErrRequired, http.StatusBadRequest, "validation_error"},
+		{"ErrInvalid", ErrInvalid, http.StatusBadRequest, "validation_error"},
+		{"ErrForbidden", ErrForbidden, http.StatusForbidden, "forbidden"},
+		{"ErrBelongsToAnother", ErrBelongsToAnother, http.StatusForbidden, "forbidden"},
+		{"ErrExpired", ErrExpired, http.StatusUnauthorized, "expired"},
+		{"ErrMaxDepth", ErrMaxDepth, http.StatusBadRequest, "depth_exceeded"},
+		{"ErrInvalidStatusTransition", ErrInvalidStatusTransition, http.StatusConflict, "invalid_status_transition"},
+		{"ErrInsufficientBalance", ErrInsufficientBalance, http.StatusUnprocessableEntity, "insufficient_balance"},
+		{"unknown error", stderrors.New("boom"), http.StatusInternalServerError, "internal_error"},
+		{"wrapped ErrInvalid", fmt.Errorf("%w: bad input", ErrInvalid), http.StatusBadRequest, "validation_error"},
+		{"wrapped ErrForbidden", fmt.Errorf("%w: insufficient permissions", ErrForbidden), http.StatusForbidden, "forbidden"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			rr := httptest.NewRecorder()
+			HandleServiceError(rr, tc.err)
+
+			if rr.Code != tc.wantStatus {
+				t.Errorf("status = %d, want %d", rr.Code, tc.wantStatus)
+			}
+
+			body := rr.Body.String()
+			if !strings.Contains(body, tc.wantCode) {
+				t.Errorf("body %q does not contain code %q", body, tc.wantCode)
+			}
+		})
+	}
+}
+
+func TestHandleServiceErrorStripsSentinelPrefix(t *testing.T) {
+	t.Parallel()
+
+	rr := httptest.NewRecorder()
+	HandleServiceError(rr, fmt.Errorf("%w: points to convert must be positive", ErrInvalid))
+
+	body := rr.Body.String()
+	if strings.Contains(body, "invalid: points") {
+		t.Errorf("sentinel prefix leaked into response: %s", body)
+	}
+	if !strings.Contains(body, "points to convert must be positive") {
+		t.Errorf("detail message lost from response: %s", body)
+	}
 }

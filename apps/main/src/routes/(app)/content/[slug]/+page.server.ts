@@ -1,4 +1,4 @@
-import { error, redirect } from '@sveltejs/kit';
+import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext, apiGet, apiList, ApiError } from '$lib/server/api';
 import type { ContentArticle } from '$lib/types/content';
@@ -16,10 +16,9 @@ import type { Comment } from '$lib/types';
 export const load: PageServerLoad = async (event) => {
 	const ctx = apiContext(event);
 
-	if (!event.locals.user) {
-		throw redirect(302, `/login?redirect=${encodeURIComponent(event.url.pathname)}`);
-	}
-
+	// Published content is publicly readable (Section 14 — public content
+	// SSR). Guests are no longer redirected to login; the backend returns
+	// 404 for non-published content when unauthenticated.
 	const slug = event.params.slug;
 
 	let article: ContentArticle;
@@ -74,7 +73,39 @@ export const load: PageServerLoad = async (event) => {
 		// sidebar endpoint not available — keep defaults
 	}
 
+	// Related content (Section 14 — GET /content/{id}/related). Best-effort.
+	let relatedContent: ContentArticle[] = [];
+	try {
+		const relRes = await apiGet<ContentArticle[]>(ctx, `/content/${article.id}/related?limit=4`);
+		relatedContent = relRes ?? [];
+	} catch {
+		// related endpoint not available — keep empty
+	}
+
+	// JSON-LD structured data template (Section 14, Section 26 — SEO).
+	let jsonldTemplate: Record<string, unknown> | null = null;
+	try {
+		const templatesRes = await apiGet<{ templates?: Record<string, unknown>[] }>(ctx, `/content/jsonld-templates`);
+		const templates = templatesRes.templates ?? [];
+		if (Array.isArray(templates) && templates.length > 0) {
+			jsonldTemplate = templates[0] ?? null;
+		}
+	} catch {
+		// jsonld-templates endpoint not available — skip JSON-LD
+	}
+
 	const isFollowing = await initiallyFollowing;
 
-	return { article, authed: true, currentUserId, canModerate, comments, commentsLoadError, rightSidebarWidgets, initiallyFollowing: isFollowing };
+	return {
+		article,
+		authed: !!event.locals.user,
+		currentUserId,
+		canModerate,
+		comments,
+		commentsLoadError,
+		rightSidebarWidgets,
+		relatedContent,
+		jsonldTemplate,
+		initiallyFollowing: isFollowing
+	};
 };

@@ -9,12 +9,10 @@ package pagebuilder
 
 import (
 	"encoding/json"
-	"errors"
 	"log/slog"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	errpkg "github.com/jedafe/japa/internal/errors"
@@ -69,18 +67,7 @@ func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.Au
 
 // handleServiceError translates a Service-layer error into the appropriate HTTP response.
 func handleServiceError(w http.ResponseWriter, err error) {
-	switch {
-	case errors.Is(err, pgx.ErrNoRows), errors.Is(err, errpkg.ErrNotFound):
-		writeError(w, http.StatusNotFound, "not_found", "Resource not found")
-	case errors.Is(err, errpkg.ErrDuplicate), errors.Is(err, errpkg.ErrAlreadyExists):
-		writeError(w, http.StatusConflict, "already_exists", "Resource already exists")
-	case errors.Is(err, errpkg.ErrRequired), errors.Is(err, errpkg.ErrInvalid):
-		writeError(w, http.StatusBadRequest, "validation_error", err.Error())
-	case errors.Is(err, errpkg.ErrForbidden):
-		writeError(w, http.StatusForbidden, "forbidden", err.Error())
-	default:
-		writeError(w, http.StatusInternalServerError, "internal_error", "Something went wrong")
-	}
+	errpkg.HandleServiceError(w, err)
 }
 
 // writeJSON serializes the given value as JSON and writes it to the response.
