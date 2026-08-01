@@ -11,9 +11,9 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/hibiken/asynq"
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
+	"github.com/jedafe/japa/internal/clientip"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/spam"
 	"github.com/jedafe/japa/internal/tenant"
@@ -289,10 +289,7 @@ func (h *Handlers) CreateComment(w http.ResponseWriter, r *http.Request) {
 
 	// Spam pipeline check — multi-layer content safety (BE-034).
 	if h.SpamPipeline != nil {
-		clientIP := r.Header.Get("X-Forwarded-For")
-		if clientIP == "" {
-			clientIP = r.RemoteAddr
-		}
+		clientIP := clientip.FromRequest(r)
 		spamResult, err := h.SpamPipeline.Check(r.Context(), tenantID, spam.SpamCheckRequest{
 			Content:    input.Body,
 			UserID:     user.UserID,
@@ -491,15 +488,11 @@ func (h *Handlers) UnpinComment(w http.ResponseWriter, r *http.Request) {
 // response.
 func handleServiceError(w http.ResponseWriter, err error) {
 	switch {
-	case errors.Is(err, pgx.ErrNoRows):
-		writeError(w, http.StatusNotFound, "not_found", "Resource not found")
-	case errors.Is(err, errpkg.ErrDuplicate):
-		writeError(w, http.StatusConflict, "already_exists", "Resource already exists")
 	case errors.Is(err, errpkg.ErrMaxDepth):
 		writeError(w, http.StatusBadRequest, "depth_exceeded", err.Error())
 	case errors.Is(err, ErrEditWindowExpired):
 		writeError(w, http.StatusForbidden, "edit_window_expired", "The edit window for this comment has expired")
 	default:
-		writeError(w, http.StatusInternalServerError, "internal_error", "Something went wrong")
+		errpkg.HandleServiceError(w, err)
 	}
 }

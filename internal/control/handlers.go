@@ -31,6 +31,13 @@ import (
 	"github.com/jedafe/japa/internal/worker"
 )
 
+// HonchoHealthChecker checks Honcho service connectivity for the Control
+// Panel infrastructure health group (ADR-027). The honcho.Client satisfies
+// this interface.
+type HonchoHealthChecker interface {
+	Health(ctx context.Context) error
+}
+
 // Handlers holds dependencies for control panel HTTP handlers.
 type Handlers struct {
 	Service          *Service
@@ -45,6 +52,7 @@ type Handlers struct {
 	Valkey           valkeycompat.Cmdable
 	MeiliSearch      meilisearch.ServiceManager
 	WSHub            *websocket.Hub
+	Honcho           HonchoHealthChecker
 	StartTime        time.Time
 }
 
@@ -93,6 +101,12 @@ func (h *Handlers) SetMeiliSearch(m meilisearch.ServiceManager) {
 // SetWSHub injects the WebSocket hub for health checks.
 func (h *Handlers) SetWSHub(hub *websocket.Hub) {
 	h.WSHub = hub
+}
+
+// SetHoncho injects the Honcho health checker for the infrastructure health
+// group (ADR-027).
+func (h *Handlers) SetHoncho(hc HonchoHealthChecker) {
+	h.Honcho = hc
 }
 
 // ---------------------------------------------------------------------------
@@ -763,6 +777,14 @@ func (h *Handlers) HealthCheck(w http.ResponseWriter, r *http.Request) {
 		infrastructure = append(infrastructure, checkService("Valkey", func(ctx context.Context) error {
 			_, err := h.Valkey.Ping(ctx).Result()
 			return err
+		}))
+	}
+
+	// Honcho agent-memory service (ADR-027: Control Panel infrastructure
+	// health group — connectivity, same pattern as Meilisearch/Valkey).
+	if h.Honcho != nil {
+		infrastructure = append(infrastructure, checkService("Honcho", func(ctx context.Context) error {
+			return h.Honcho.Health(ctx)
 		}))
 	}
 

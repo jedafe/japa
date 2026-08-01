@@ -273,7 +273,6 @@ func TestDeleteEntryErrors(t *testing.T) {
 		{name: "missing user id", entryID: "e1", status: http.StatusOK},
 		{name: "missing entry id", userID: testUserID, status: http.StatusOK},
 		{name: "server error", userID: testUserID, entryID: "e1", status: http.StatusInternalServerError},
-		{name: "not found", userID: testUserID, entryID: "e1", status: http.StatusNotFound},
 	}
 
 	for _, tt := range tests {
@@ -286,6 +285,18 @@ func TestDeleteEntryErrors(t *testing.T) {
 				t.Error("DeleteEntry() error = nil, want error")
 			}
 		})
+	}
+}
+
+// TestDeleteEntryNotFoundIsIdempotent verifies that a 404 response is treated
+// as success (the entry was already deleted), consistent with DeleteUser.
+func TestDeleteEntryNotFoundIsIdempotent(t *testing.T) {
+	t.Parallel()
+
+	client := newTestClient(t, statusHandler(http.StatusNotFound))
+
+	if err := client.DeleteEntry(t.Context(), testUserID, "e1"); err != nil {
+		t.Errorf("DeleteEntry() on 404 error = %v, want nil (idempotent)", err)
 	}
 }
 

@@ -10,7 +10,6 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/hibiken/asynq"
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	errpkg "github.com/jedafe/japa/internal/errors"
@@ -103,13 +102,8 @@ func handleServiceError(w http.ResponseWriter, err error) {
 	}
 
 	switch {
-	case errors.Is(err, pgx.ErrNoRows):
-		writeError(w, http.StatusNotFound, "not_found", "Resource not found")
-	case errors.Is(err, errpkg.ErrDuplicate):
-		writeError(w, http.StatusConflict, "already_exists", "Resource already exists")
 	default:
-		slog.Error("handleServiceError", "err", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Something went wrong")
+		errpkg.HandleServiceError(w, err)
 	}
 }
 

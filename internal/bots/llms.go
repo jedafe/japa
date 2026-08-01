@@ -108,10 +108,11 @@ func GenerateLLMsFullTxt(siteName, siteDescription string, data LLMsData) string
 }
 
 // LLMsHandler serves /llms.txt and /llms-full.txt. The output is cached
-// in Valkey with a 1-hour TTL. In production, the data source would query
-// recent posts, tags, and spaces from the database. For now, the handler
-// returns a basic template that can be enhanced with real data.
-func LLMsHandler(_ *Store, rdb *valkey.Client, siteName, siteDescription string) http.HandlerFunc {
+// in Valkey with a 1-hour TTL. The brief version includes the site name,
+// description, and top-level links (recent published content). The full
+// version adds recent posts, top tags, and active public spaces.
+// Ref: japaconnect-engineering/sections/43-bot-crawler-management.md
+func LLMsHandler(store *Store, rdb *valkey.Client, siteName, siteDescription string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		t := tenant.FromContext(r.Context())
 		if t == nil {
@@ -141,11 +142,27 @@ func LLMsHandler(_ *Store, rdb *valkey.Client, siteName, siteDescription string)
 			}
 		}
 
+		// Fetch real data from the database
+		data, err := store.GetLLMsData(r.Context(), t.ID)
+		if err != nil {
+			slog.Error("llms: failed to load data", "tenant_id", t.ID, "error", err)
+			w.Header().Set("Content-Type", "text/plain")
+			w.Header().Set("Cache-Control", "public, max-age=300")
+			_, _ = w.Write([]byte(GenerateLLMsTxt(siteName, siteDescription, nil)))
+
+			return
+		}
+
 		var txt string
 		if isFull {
-			txt = GenerateLLMsFullTxt(siteName, siteDescription, LLMsData{})
+			txt = GenerateLLMsFullTxt(siteName, siteDescription, data)
 		} else {
-			txt = GenerateLLMsTxt(siteName, siteDescription, nil)
+			// Brief version: use recent posts as top-level links
+			topLinks := data.RecentPosts
+			if len(topLinks) > 10 {
+				topLinks = topLinks[:10]
+			}
+			txt = GenerateLLMsTxt(siteName, siteDescription, topLinks)
 		}
 
 		// Cache in Valkey

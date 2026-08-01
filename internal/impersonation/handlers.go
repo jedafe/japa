@@ -6,7 +6,6 @@ import (
 	"log/slog"
 	"net/http"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	errpkg "github.com/jedafe/japa/internal/errors"
@@ -50,16 +49,8 @@ func handleServiceError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, ErrTargetIsAdmin):
 		writeError(w, http.StatusForbidden, "cannot_impersonate_admin", "Cannot impersonate an admin-level user")
-	case errors.Is(err, pgx.ErrNoRows):
-		writeError(w, http.StatusNotFound, "not_found", "Resource not found")
-	case errors.Is(err, errpkg.ErrAlreadyExists):
-		writeError(w, http.StatusConflict, "already_exists", "Resource already exists")
-	case errors.Is(err, errpkg.ErrRequired):
-		writeError(w, http.StatusBadRequest, "validation_error", err.Error())
-	case errors.Is(err, errpkg.ErrInvalid):
-		writeError(w, http.StatusBadRequest, "validation_error", err.Error())
 	default:
-		writeError(w, http.StatusInternalServerError, "internal_error", "Something went wrong")
+		errpkg.HandleServiceError(w, err)
 	}
 }
 

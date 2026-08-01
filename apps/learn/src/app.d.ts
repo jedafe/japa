@@ -20,12 +20,20 @@ declare global {
 			locale: Locale;
 			/** True when the request host is the Japa University surface (ADR-063). */
 			isUniversityHost: boolean;
+			/**
+			 * Double-submit CSRF token fetched from GET /csrf (Ref: §5.2).
+			 * Threaded through ApiContext so server-side mutations attach
+			 * X-CSRF-Token. Null for guests or when the backend is unreachable.
+			 */
+			csrfToken: string | null;
 		}
 		interface PageData {
 			user: SessionUser | null;
 			theme: ThemeName;
 			locale: Locale;
 			isUniversityHost: boolean;
+			/** CSRF token for client-side mutations (echoed as X-CSRF-Token). */
+			csrfToken: string | null;
 		}
 		// interface PageState {}
 		// interface Platform {}

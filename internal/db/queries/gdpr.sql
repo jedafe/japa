@@ -427,6 +427,20 @@ FROM (SELECT * FROM bookmarks WHERE user_id = @user_id AND tenant_id = @tenant_i
 SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (SELECT * FROM content_shares WHERE user_id = @user_id AND tenant_id = @tenant_id) t;
 
+-- name: GdprExportUserContentViews :one
+-- Exports user_content_views rows for GDPR data export (Section 14).
+-- user_content_views contains user_id PII and must be included in the
+-- right-to-access response and anonymized on erasure.
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (SELECT content_id, session_id, country_code, viewed_at
+      FROM user_content_views WHERE user_id = @user_id) t;
+
+-- name: GdprDeleteUserContentViews :exec
+-- Deletes user_content_views rows for the user being erased (Section 14,
+-- ADR-014). The table has no tenant_id column — deletion is by user_id
+-- only, which is safe because user_ids are globally unique.
+DELETE FROM user_content_views WHERE user_id = @user_id;
+
 -- name: GdprExportUserFollows :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (SELECT * FROM follows WHERE follower_id = @user_id AND tenant_id = @tenant_id) t;

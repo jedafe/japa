@@ -117,19 +117,7 @@ func parseUUIDParam(r *http.Request, param string) (pgtype.UUID, error) {
 }
 
 func handleServiceError(w http.ResponseWriter, err error) {
-	switch {
-	case errors.Is(err, pgx.ErrNoRows):
-		writeError(w, http.StatusNotFound, "not_found", "Resource not found")
-	case errors.Is(err, errpkg.ErrDuplicate):
-		writeError(w, http.StatusConflict, "already_exists", "Resource already exists")
-	case errors.Is(err, errpkg.ErrInvalid):
-		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
-	case errors.Is(err, errpkg.ErrForbidden):
-		writeError(w, http.StatusForbidden, "forbidden", err.Error())
-	default:
-		slog.Error("service error", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Something went wrong")
-	}
+	errpkg.HandleServiceError(w, err)
 }
 
 type createOrganizationRequest struct {

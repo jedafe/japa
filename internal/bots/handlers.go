@@ -16,13 +16,10 @@ import (
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/jackc/pgx/v5"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/tenant"
 )
-
-const defaultPageSize int32 = 20
 
 // Handlers holds dependencies for Bot management HTTP handlers.
 type Handlers struct {
@@ -58,18 +55,7 @@ func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype
 }
 
 func handleServiceError(w http.ResponseWriter, err error) {
-	switch {
-	case errors.Is(err, pgx.ErrNoRows):
-		writeError(w, http.StatusNotFound, "not_found", "Resource not found")
-	case errors.Is(err, errpkg.ErrAlreadyExists), errors.Is(err, errpkg.ErrDuplicate):
-		writeError(w, http.StatusConflict, "already_exists", "Resource already exists")
-	case errors.Is(err, errpkg.ErrRequired):
-		writeError(w, http.StatusBadRequest, "validation_error", err.Error())
-	case errors.Is(err, errpkg.ErrInvalid):
-		writeError(w, http.StatusBadRequest, "validation_error", err.Error())
-	default:
-		writeError(w, http.StatusInternalServerError, "internal_error", "Something went wrong")
-	}
+	errpkg.HandleServiceError(w, err)
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
@@ -106,13 +92,13 @@ func parsePageSize(r *http.Request) int32 {
 }
 
 func parseOffset(r *http.Request) int32 {
-	if v := r.URL.Query().Get("offset"); v != "" {
+	if v := r.URL.Query().Get("page_offset"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
 			if n > math.MaxInt32 {
-				return defaultPageSize
+				return math.MaxInt32
 			}
 
-			return int32(n) //nolint:gosec // G109: bounded by MaxPageSize check above
+			return int32(n) //nolint:gosec // G115: bounded by MaxInt32 check above
 		}
 	}
 
@@ -137,7 +123,7 @@ func (h *Handlers) ListKnownBots(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	bots, err := h.Service.ListKnownBots(r.Context(), tenantID, botType)
+	bots, err := h.Service.ListKnownBots(r.Context(), tenantID, botType, parsePageSize(r), parseOffset(r))
 	if err != nil {
 		handleServiceError(w, err)
 		return

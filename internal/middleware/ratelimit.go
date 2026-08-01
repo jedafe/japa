@@ -15,7 +15,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"net"
 	"net/http"
 	"strconv"
 	"time"
@@ -23,6 +22,7 @@ import (
 	"github.com/valkey-io/valkey-go/valkeycompat"
 
 	"github.com/jedafe/japa/internal/auth"
+	"github.com/jedafe/japa/internal/clientip"
 )
 
 // RateLimitTier defines the maximum number of requests allowed within a
@@ -37,11 +37,11 @@ type RateLimitTier struct {
 // ADR-022. The values are deliberately generous for legitimate clients
 // while still throttling abusive burst traffic.
 var Tiers = map[string]RateLimitTier{
-	"tight":            {Requests: 10, Window: time.Minute},
-	"moderate":         {Requests: 60, Window: time.Minute},
-	"loose":            {Requests: 300, Window: time.Minute},
-	"webhook":          {Requests: 3000, Window: time.Minute},
-	"form_submission":  {Requests: 10, Window: time.Hour}, // §06: 10 submissions per user per hour
+	"tight":           {Requests: 10, Window: time.Minute},
+	"moderate":        {Requests: 60, Window: time.Minute},
+	"loose":           {Requests: 300, Window: time.Minute},
+	"webhook":         {Requests: 3000, Window: time.Minute},
+	"form_submission": {Requests: 10, Window: time.Hour}, // §06: 10 submissions per user per hour
 }
 
 // RateLimit returns middleware that enforces a fixed-window rate limit
@@ -125,16 +125,12 @@ func RateLimit(rdb valkeycompat.Cmdable, tier string) func(http.Handler) http.Ha
 
 // callerIdentifier returns a stable per-caller key segment. Authenticated
 // users are identified by their user ID; anonymous callers fall back to
-// the client IP set by chi's RealIP middleware.
+// the client IP resolved by clientip.FromRequest, which honours
+// X-Forwarded-For / X-Real-IP only when the peer is a trusted proxy.
 func callerIdentifier(r *http.Request) string {
 	if user := auth.FromContext(r.Context()); user != nil && user.UserID.Valid {
 		return "user:" + user.UserID.String()
 	}
 
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		return "ip:" + r.RemoteAddr
-	}
-
-	return "ip:" + host
+	return "ip:" + clientip.FromRequest(r)
 }

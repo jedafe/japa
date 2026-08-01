@@ -9,7 +9,6 @@ package wallet
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -17,7 +16,6 @@ import (
 	"strings"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	errpkg "github.com/jedafe/japa/internal/errors"
@@ -74,20 +72,7 @@ func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.Au
 
 // handleServiceError translates a Service-layer error into the appropriate HTTP response.
 func handleServiceError(w http.ResponseWriter, err error) {
-	switch {
-	case errors.Is(err, pgx.ErrNoRows):
-		writeError(w, http.StatusNotFound, "not_found", "Resource not found")
-	case errors.Is(err, errpkg.ErrAlreadyExists), errors.Is(err, errpkg.ErrDuplicate):
-		writeError(w, http.StatusConflict, "already_exists", "Resource already exists")
-	case errors.Is(err, errpkg.ErrInsufficientBalance):
-		writeError(w, http.StatusUnprocessableEntity, "insufficient_balance", stripSentinel(err))
-	case errors.Is(err, errpkg.ErrInvalid):
-		writeError(w, http.StatusBadRequest, "invalid_input", stripSentinel(err))
-	case errors.Is(err, errpkg.ErrForbidden):
-		writeError(w, http.StatusForbidden, "forbidden", "You do not have permission to perform this action")
-	default:
-		writeError(w, http.StatusInternalServerError, "internal_error", "An unexpected error occurred. Please try again later.")
-	}
+	errpkg.HandleServiceError(w, err)
 }
 
 // stripSentinel removes the sentinel error prefix from an error message.

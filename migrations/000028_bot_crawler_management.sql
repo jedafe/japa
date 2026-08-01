@@ -32,6 +32,6 @@ VALUES
     ('00000000-0000-0000-0000-000000000001', 'PerplexityBot', 'PerplexityBot', 'ai_llm', 'allow', true),
     ('00000000-0000-0000-0000-000000000001', 'Twitterbot', 'Twitterbot', 'social', 'allow', true),
     ('00000000-0000-0000-0000-000000000001', 'LinkedInBot', 'LinkedInBot', 'social', 'allow', true),
-    ('00000000-0000-0000-0000-000000000001', 'AhrefsBot', 'AhrefsBot', 'monitoring', 'allow', true),
-    ('00000000-0000-0000-0000-000000000001', 'SemrushBot', 'SemrushBot', 'monitoring', 'allow', true)
+    ('00000000-0000-0000-0000-000000000001', 'AhrefsBot', 'AhrefsBot', 'scraper', 'limit', true),
+    ('00000000-0000-0000-0000-000000000001', 'SemrushBot', 'SemrushBot', 'scraper', 'limit', true)
 ON CONFLICT DO NOTHING;

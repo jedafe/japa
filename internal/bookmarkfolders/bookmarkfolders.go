@@ -8,17 +8,13 @@ package bookmarkfolders
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
+	errpkg "github.com/jedafe/japa/internal/errors"
 )
-
-// ErrNotFound is returned when a folder doesn't exist or doesn't belong to
-// the caller.
-var ErrNotFound = errors.New("bookmark folder not found")
 
 // Service provides bookmark folder CRUD.
 type Service struct {
@@ -68,7 +64,7 @@ func (s *Service) UpdateFolder(ctx context.Context, id, tenantID, userID pgtype.
 		UserID:   userID,
 	})
 	if err != nil {
-		return gen.BookmarkFolder{}, fmt.Errorf("%w: %w", ErrNotFound, err)
+		return gen.BookmarkFolder{}, fmt.Errorf("%w: %w", errpkg.ErrNotFound, err)
 	}
 
 	return folder, nil
@@ -87,7 +83,7 @@ func (s *Service) DeleteFolder(ctx context.Context, id, tenantID, userID pgtype.
 	}
 
 	if affected == 0 {
-		return ErrNotFound
+		return errpkg.ErrNotFound
 	}
 
 	return nil

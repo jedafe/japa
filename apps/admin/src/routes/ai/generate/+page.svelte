@@ -5,7 +5,7 @@
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { Select } from '$lib/components/ui/select';
 
-	const canGenerate = $derived(hasPermission('ai.context.generate'));
+	const canGenerate = $derived(hasPermission('ai.generate'));
 
 	// ─── Form State ───────────────────────────────────────────────
 	let prompt = $state('');
@@ -45,18 +45,17 @@
 
 	$effect(() => {
 		(async () => {
+			// Rule 16: models come from the backend (/admin/ai/models), which
+			// derives them from the providers actually registered with the
+			// dispatcher. No hardcoded model fallback — if the API fails the
+			// single "Default" entry (set at init) remains.
 			try {
 				const res = await aiApi.listModels();
 				if (res.ok && res.data.length > 0) {
 					models = res.data.map((m) => ({ value: m.id, label: m.label }));
 				}
 			} catch {
-				models = [
-					{ value: '', label: 'Default' },
-					{ value: 'gpt-4', label: t('ai.model.gpt4') },
-					{ value: 'gpt-3.5-turbo', label: t('ai.model.gpt35') },
-					{ value: 'claude-3', label: t('ai.model.claude3') }
-				];
+				// keep the initial "Default"-only list; do not invent models.
 			}
 			try {
 				const catsRes = await aiApi.listCategories();

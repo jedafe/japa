@@ -33,8 +33,9 @@ func CreateHITLReview(ctx context.Context, store *Store, review HITLReview) (HIT
 	return store.CreateHITLReview(ctx, review)
 }
 
-// ApproveReview approves a pending HITL review.
-func ApproveReview(ctx context.Context, store *Store, reviewID, reviewerID pgtype.UUID) error {
+// ApproveReview approves a pending HITL review. The tenantID scopes the
+// update to the caller's tenant (Section 09 multi-tenancy).
+func ApproveReview(ctx context.Context, store *Store, tenantID, reviewID, reviewerID pgtype.UUID) error {
 	if reviewID == (pgtype.UUID{}) {
 		return errors.New("review_id is required")
 	}
@@ -43,11 +44,12 @@ func ApproveReview(ctx context.Context, store *Store, reviewID, reviewerID pgtyp
 		return errors.New("reviewer_id is required")
 	}
 
-	return store.ApproveHITLReview(ctx, reviewID, reviewerID)
+	return store.ApproveHITLReview(ctx, tenantID, reviewID, reviewerID)
 }
 
-// RejectReview rejects a pending HITL review with a reason.
-func RejectReview(ctx context.Context, store *Store, reviewID, reviewerID pgtype.UUID, reason string) error {
+// RejectReview rejects a pending HITL review with a reason. The tenantID
+// scopes the update to the caller's tenant (Section 09 multi-tenancy).
+func RejectReview(ctx context.Context, store *Store, tenantID, reviewID, reviewerID pgtype.UUID, reason string) error {
 	if reviewID == (pgtype.UUID{}) {
 		return errors.New("review_id is required")
 	}
@@ -60,7 +62,7 @@ func RejectReview(ctx context.Context, store *Store, reviewID, reviewerID pgtype
 		return errors.New("rejection reason is required")
 	}
 
-	return store.RejectHITLReview(ctx, reviewID, reviewerID, reason)
+	return store.RejectHITLReview(ctx, tenantID, reviewID, reviewerID, reason)
 }
 
 // ListPendingReviews returns pending HITL reviews for a tenant.

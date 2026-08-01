@@ -83,10 +83,27 @@ export const handle: Handle = async ({ event, resolve }) => {
 	// X-CSRF-Token header. The backend's /csrf endpoint issues the cookie and
 	// echoes the token value. Guests never mutate, so we skip the extra fetch.
 	// Ref: japa-bugs-hunters.md §5.2 (CSRF) — audit finding C1.
+	//
+	// We also set the csrf_token cookie on the browser response so client-side
+	// mutations (apps/main/src/lib/api/client.ts) can read it and echo it back
+	// as X-CSRF-Token. The backend's Set-Cookie from the server-side /csrf fetch
+	// is consumed by SvelteKit's server fetch and never reaches the browser, so
+	// without this step the browser would lack the cookie after email/password
+	// login (the SvelteKit login route only forwards jc_token, not csrf_token).
 	if (event.locals.token && !building) {
 		try {
 			const csrf = await apiGet<{ csrfToken: string }>(apiContext(event), '/csrf');
 			event.locals.csrfToken = csrf?.csrfToken ?? null;
+			// Mirror the backend's csrf_token cookie onto the browser response so
+			// the double-submit pattern works for client-side fetches too.
+			if (event.locals.csrfToken) {
+				event.cookies.set('csrf_token', event.locals.csrfToken, {
+					path: '/',
+					httpOnly: false,
+					secure: true,
+					sameSite: 'lax'
+				});
+			}
 		} catch {
 			event.locals.csrfToken = null;
 		}

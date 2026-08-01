@@ -139,6 +139,20 @@ func exportJSONSlice[P any](
 	return decodeJSONSlice(data)
 }
 
+// exportJSONSliceNoTenant is like exportJSONSlice but for queries that
+// take only a userID (no tenant_id column on the target table).
+func exportJSONSliceNoTenant(
+	ctx context.Context,
+	query func(context.Context, pgtype.UUID) (interface{}, error),
+	userID pgtype.UUID,
+) ([]map[string]interface{}, error) {
+	data, err := query(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	return decodeJSONSlice(data)
+}
+
 func (s *Store) gdprExportUserProfiles(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {
 	return exportJSONSlice(ctx, s.read.GdprExportUserProfiles, gen.GdprExportUserProfilesParams{UserID: userID, TenantID: tenantID})
 }
@@ -153,6 +167,16 @@ func (s *Store) gdprExportUserBookmarks(ctx context.Context, userID, tenantID pg
 
 func (s *Store) gdprExportUserContentShares(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {
 	return exportJSONSlice(ctx, s.read.GdprExportUserContentShares, gen.GdprExportUserContentSharesParams{UserID: userID, TenantID: tenantID})
+}
+
+func (s *Store) gdprExportUserContentViews(ctx context.Context, userID pgtype.UUID) ([]map[string]interface{}, error) {
+	return exportJSONSliceNoTenant(ctx, s.read.GdprExportUserContentViews, userID)
+}
+
+// GdprDeleteUserContentViews deletes all user_content_views rows for the
+// given user. Called during GDPR erasure (ADR-014).
+func (s *Store) GdprDeleteUserContentViews(ctx context.Context, userID pgtype.UUID) error {
+	return s.write.GdprDeleteUserContentViews(ctx, userID)
 }
 
 func (s *Store) gdprExportUserFollows(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {

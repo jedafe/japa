@@ -117,7 +117,14 @@ func Middleware(protectPrefixes []string, exempt ExemptFunc) func(http.Handler) 
 
 			cookie, err := r.Cookie(CookieName)
 			if err != nil || cookie.Value == "" {
-				writeRejection(w)
+				// No CSRF cookie and no non-cookie credential (exempt would have
+				// passed above). This is an unauthenticated request — let the
+				// downstream RequireAuth middleware return 401 missing_token
+				// instead of a misleading 403 csrf_token_invalid. A real CSRF
+				// attempt always carries the victim's cookie (the browser sends
+				// it automatically), so reaching this branch with no cookie
+				// means the request is simply unauthenticated, not a CSRF attack.
+				next.ServeHTTP(w, r)
 				return
 			}
 			header := r.Header.Get(HeaderName)
@@ -147,21 +154,33 @@ func IsNonCookieAuthenticated(r *http.Request) bool {
 	return false
 }
 
-// TokenHandler returns an http.HandlerFunc that issues a fresh double-submit
-// CSRF token: it ensures the csrf_token cookie is set on the response and echoes
-// the same token back in the JSON body using the standard {data:{...}} envelope.
+// TokenHandler returns an http.HandlerFunc that issues a double-submit CSRF
+// token: it ensures the csrf_token cookie is set on the response and echoes the
+// same token back in the JSON body using the standard {data:{...}} envelope.
 // The SPA calls this once at bootstrap (and again after a 403) to learn the token
 // it must send as the X-CSRF-Token header on subsequent mutating requests.
+//
+// If a valid csrf_token cookie is already present on the request, the existing
+// value is reused instead of generating a new one. This avoids token rotation
+// races when multiple concurrent requests hit /csrf (e.g. the SSR hooks.server.ts
+// fetches /csrf on every page load) — each response would otherwise set a
+// different cookie value, invalidating tokens issued by earlier responses.
 func TokenHandler(domain string, secure bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		// Reuse the existing cookie value if present so concurrent /csrf calls
+		// don't clobber each other's tokens.
+		if existing, err := r.Cookie(CookieName); err == nil && existing.Value != "" {
+			writeJSON(w, http.StatusOK, map[string]any{
+				"data": map[string]any{"csrfToken": existing.Value},
+			})
+			return
+		}
 		token, err := GenerateToken()
 		if err != nil {
 			slog.Error("csrf: generate token", "error", err)
 			writeError(w, http.StatusInternalServerError, "csrf_token_error", "failed to issue CSRF token")
 			return
 		}
-		// Overwrite any existing cookie so the echoed token matches what the
-		// browser will submit on the next mutating request.
 		http.SetCookie(w, &http.Cookie{
 			Name:     CookieName,
 			Value:    token,
@@ -219,10 +238,9 @@ func pathHasPrefix(path string, prefixes []string) bool {
 	return false
 }
 
-// writeRejection writes the standard 403 response for a missing or mismatched CSRF
-// token, matching the project's error envelope (conventions/api-response-format.md).
+// writeRejection writes the standard 403 response for a missing or mismatched
+// CSRF token, using the same error envelope as writeError for consistency
+// (conventions/api-response-format.md).
 func writeRejection(w http.ResponseWriter) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusForbidden)
-	_, _ = w.Write([]byte(`{"error":{"code":"csrf_token_invalid","message":"Invalid or missing CSRF token"}}`))
+	writeError(w, http.StatusForbidden, "csrf_token_invalid", "Invalid or missing CSRF token")
 }
