@@ -212,11 +212,17 @@ WHERE om.organization_id = @organization_id
 ORDER BY om.joined_at DESC;
 
 -- name: ListPublicOrganizations :many
--- Public Discover "Organizations": VERIFIED + ACTIVE orgs only, newest first.
+-- Public Discover "Organizations": ACTIVE orgs only. By default only verified
+-- orgs are shown (matching the original behavior); pass verified="" to include
+-- unverified. Search filters by name or slug. org_type filters by type (empty
+-- = all). Ordered by created_at DESC (newest first).
 SELECT id, name, slug, tagline, org_type, logo_media_id, header_media_id,
        country_code, verified, follower_count, member_count, created_at
 FROM organizations
-WHERE tenant_id = @tenant_id AND status = 'active' AND deleted_at IS NULL AND verified = true
+WHERE tenant_id = @tenant_id AND status = 'active' AND deleted_at IS NULL
+  AND (@verified::text = '' OR verified = (@verified = 'true'))
+  AND (@org_type::text = '' OR org_type = @org_type)
+  AND (@search::text = '' OR name ILIKE '%' || @search || '%' OR slug ILIKE '%' || @search || '%')
 ORDER BY created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 
@@ -232,7 +238,10 @@ LIMIT @page_limit OFFSET @page_offset;
 
 -- name: CountPublicOrganizations :one
 SELECT COUNT(*) FROM organizations
-WHERE tenant_id = @tenant_id AND status = 'active' AND deleted_at IS NULL AND verified = true;
+WHERE tenant_id = @tenant_id AND status = 'active' AND deleted_at IS NULL
+  AND (@verified::text = '' OR verified = (@verified = 'true'))
+  AND (@org_type::text = '' OR org_type = @org_type)
+  AND (@search::text = '' OR name ILIKE '%' || @search || '%' OR slug ILIKE '%' || @search || '%');
 
 -- name: GetOrganizationAnalytics :one
 -- Aggregated analytics for a single organization (Section 07, 40).

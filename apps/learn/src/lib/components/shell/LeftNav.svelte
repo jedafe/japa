@@ -92,7 +92,7 @@
 		</button>
 	{/if}
 
-	<!-- Nav items (from GET /menus/learn_nav — ADR-054) -->
+	<!-- Nav items (from GET /menus/learn_sidebar — ADR-054, migration 000213) -->
 	<ul class="flex-1 overflow-y-auto px-2 py-2">
 		{#each items as item (item.id)}
 			{@const Icon = resolveIcon(item.icon)}

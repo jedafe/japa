@@ -256,12 +256,24 @@ func (s *Store) ListPublicMembers(ctx context.Context, orgID, tenantID pgtype.UU
 	return s.read.ListPublicOrganizationMembers(ctx, gen.ListPublicOrganizationMembersParams{OrganizationID: orgID, TenantID: tenantID})
 }
 
-func (s *Store) ListPublicOrganizations(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]gen.ListPublicOrganizationsRow, error) {
-	return s.read.ListPublicOrganizations(ctx, gen.ListPublicOrganizationsParams{TenantID: tenantID, PageLimit: clampLimit(limit), PageOffset: offset})
+func (s *Store) ListPublicOrganizations(ctx context.Context, tenantID pgtype.UUID, search, orgType, verified string, limit, offset int32) ([]gen.ListPublicOrganizationsRow, error) {
+	return s.read.ListPublicOrganizations(ctx, gen.ListPublicOrganizationsParams{
+		TenantID:   tenantID,
+		Search:     search,
+		OrgType:    orgType,
+		Verified:   verified,
+		PageLimit:  clampLimit(limit),
+		PageOffset: offset,
+	})
 }
 
-func (s *Store) CountPublicOrganizations(ctx context.Context, tenantID pgtype.UUID) (int64, error) {
-	return s.read.CountPublicOrganizations(ctx, tenantID)
+func (s *Store) CountPublicOrganizations(ctx context.Context, tenantID pgtype.UUID, search, orgType, verified string) (int64, error) {
+	return s.read.CountPublicOrganizations(ctx, gen.CountPublicOrganizationsParams{
+		TenantID: tenantID,
+		Search:   search,
+		OrgType:  orgType,
+		Verified: verified,
+	})
 }
 
 // GetOrganizationAnalytics returns aggregated analytics for a single org.

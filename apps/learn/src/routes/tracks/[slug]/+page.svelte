@@ -53,8 +53,10 @@
 	async function enroll() {
 		if (!data.user) {
 			// Login lives on the Main app (shared jc_token cookie). Send the user
-			// there with a redirect back to this track on Learn.
-			goto(loginUrl(`/tracks/${track.slug}`));
+			// there with a redirect back to this track on Learn. Use
+			// window.location.href (not goto) because the login URL is
+			// cross-origin — goto only handles internal SvelteKit navigation.
+			window.location.href = loginUrl(`/tracks/${track.slug}`);
 			return;
 		}
 		enrolling = true;
@@ -193,7 +195,7 @@
 				value="curriculum"
 				class="border-b-2 border-transparent px-4 py-2 text-sm font-medium text-[var(--color-text-subtle)] data-[state=active]:border-[var(--color-primary)] data-[state=active]:text-[var(--color-primary)]"
 			>
-				{t('learn.curriculum')} ({track.modules.reduce((n, m) => n + m.lessons.length, 0)} {t('learn.lessons')})
+				{t('learn.curriculum')} ({(track.modules ?? []).reduce((n, m) => n + (m.lessons?.length ?? 0), 0)} {t('learn.lessons')})
 			</Tabs.Trigger>
 			<Tabs.Trigger
 				value="reviews"

@@ -15,13 +15,32 @@ import type { Locale } from '$lib/i18n';
  */
 export const MAIN_ORIGIN = (PUBLIC_MAIN_ORIGIN || 'http://localhost:3000').replace(/\/$/, '');
 
-/** Build a Main app login URL with an optional redirect back to Learn. */
+/**
+ * Build a Main app login URL with an optional redirect back to the Learn app.
+ *
+ * `redirectPath` is a path on the LEARN app (e.g. `/dashboard/instructor`).
+ * The redirect target must be an absolute URL pointing back to the Learn app
+ * (NOT the Main app, which doesn't host Learn routes). On the client side the
+ * Learn origin is `window.location.origin`; on the server side the caller must
+ * pass an already-absolute URL (e.g. `${event.url.origin}/dashboard/instructor`).
+ */
 export function loginUrl(redirectPath?: string): string {
 	const base = `${MAIN_ORIGIN}/login`;
 	if (!redirectPath) return base;
-	const abs = redirectPath.startsWith('http')
-		? redirectPath
-		: `${MAIN_ORIGIN}${redirectPath}`;
+	// If the caller already passed an absolute URL (server-side with
+	// event.url.origin), use it as-is. Otherwise (client-side relative path)
+	// prefix with the current Learn app origin from the browser.
+	let abs: string;
+	if (redirectPath.startsWith('http')) {
+		abs = redirectPath;
+	} else if (typeof window !== 'undefined') {
+		abs = `${window.location.origin}${redirectPath}`;
+	} else {
+		// SSR without an absolute URL — fall back to the path relative to the
+		// Main app. This should not happen in practice; server-side callers
+		// should pass event.url.origin + path.
+		abs = `${MAIN_ORIGIN}${redirectPath}`;
+	}
 	return `${base}?redirect=${encodeURIComponent(abs)}`;
 }
 

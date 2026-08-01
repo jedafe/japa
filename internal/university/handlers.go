@@ -628,7 +628,9 @@ func (h *Handlers) GetCatalogTrack(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": track})
+	// Map through CatalogTrackDetailFromRow to add the `level` JSON alias for
+	// the frontend TrackDetail.level contract (ADR-060).
+	writeJSON(w, http.StatusOK, map[string]any{"data": CatalogTrackDetailFromRow(track)})
 }
 
 // ---------------------------------------------------------------------------

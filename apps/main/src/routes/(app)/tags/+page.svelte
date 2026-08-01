@@ -2,8 +2,8 @@
 	import { untrack } from 'svelte';
 	import { page } from '$app/state';
 	import { t } from '$lib/i18n';
-	import { Hash, Search, Users } from 'lucide-svelte';
-	import { EmptyState } from '$lib/components/ui';
+	import { Hash, Search, Users, ShieldX, ChevronLeft, ChevronRight } from 'lucide-svelte';
+	import { EmptyState, FollowButton } from '$lib/components/ui';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -23,17 +23,33 @@
 		})
 	);
 
-	// Client-side filter refines the SSR list without a round-trip; the server
-	// `q` param seeds the input so deep links and back/forward keep their state.
 	let query = $state(untrack(() => data.q));
+	let selectedSort = $state(untrack(() => data.sort));
 	const searchPlaceholder = $derived(t('tags.search_placeholder', 'Search tags…'));
-	let filtered = $derived(
-		query.trim()
-			? data.tags.filter((tag) =>
-					tag.name.toLowerCase().includes(query.trim().toLowerCase())
-				)
-			: data.tags
-	);
+
+	const sortOptions = [
+		{ value: '', label: 'Newest' },
+		{ value: 'popular', label: 'Popular' },
+		{ value: 'followers', label: 'Most Followed' },
+		{ value: 'content', label: 'Most Content' }
+	];
+
+	function buildHref(pageNum: number): string {
+		const params = new URLSearchParams();
+		if (data.q) params.set('q', data.q);
+		if (data.sort) params.set('sort', data.sort);
+		if (pageNum > 0) params.set('page', String(pageNum));
+		const qs = params.toString();
+		return qs ? `/tags?${qs}` : '/tags';
+	}
+
+	function onFilterChange() {
+		const params = new URLSearchParams();
+		if (query.trim()) params.set('q', query.trim());
+		if (selectedSort) params.set('sort', selectedSort);
+		const qs = params.toString();
+		window.location.href = qs ? `/tags?${qs}` : '/tags';
+	}
 </script>
 
 <svelte:head>
@@ -50,7 +66,7 @@
 </svelte:head>
 
 <div class="mx-auto w-full max-w-4xl">
-	<!-- Header + search -->
+	<!-- Header + search + filters -->
 	<div class="border-b border-[var(--color-border)] px-4 py-4">
 		<h1 class="flex items-center gap-2 text-lg font-semibold text-[var(--color-text)]">
 			<Hash size={20} /> {t('tags.heading', 'Tags')}
@@ -73,59 +89,106 @@
 					class="w-full bg-transparent text-sm text-[var(--color-text)] outline-none placeholder:text-[var(--color-muted)]"
 				/>
 			</div>
+			{#if selectedSort}
+				<input type="hidden" name="sort" value={selectedSort} />
+			{/if}
 		</form>
+
+		<!-- Sort filter chips -->
+		<div class="mt-3 flex flex-wrap gap-2">
+			{#each sortOptions as so (so.value)}
+				<button
+					type="button"
+					onclick={() => { selectedSort = so.value; onFilterChange(); }}
+					class="rounded-full border px-3 py-1 text-xs transition-colors {selectedSort === so.value
+						? 'border-[var(--color-primary)] bg-[var(--color-primary)]/10 text-[var(--color-primary)]'
+						: 'border-[var(--color-border)] text-[var(--color-muted)] hover:border-[var(--color-primary)]/40'}"
+				>
+					{so.label}
+				</button>
+			{/each}
+		</div>
 	</div>
 
 	<div class="p-4">
-		{#if data.loadError}
+		{#if data.forbidden}
+			<div class="flex flex-col items-center gap-3 py-16 text-center">
+				<ShieldX size={40} class="text-[var(--color-muted)]" />
+				<p class="text-sm font-medium text-[var(--color-text)]">
+					{t('tags.forbidden', 'You do not have permission to view this directory.')}
+				</p>
+			</div>
+		{:else if data.loadError}
 			<p class="py-12 text-center text-[var(--color-text-subtle)]">
 				{t('tags.load_error', 'Failed to load tags. Please try again later.')}
 			</p>
 		{:else if data.tags.length === 0}
 			<EmptyState icon={Hash} title={t('tags.empty', 'No tags yet.')} />
-		{:else if filtered.length === 0}
-			<EmptyState
-				icon={Search}
-				title={t('tags.no_match', 'No tags match your search.')}
-			/>
 		{:else}
-			<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-				{#each filtered as tag (tag.id)}
-					<a
-						href="/tags/{tag.slug}"
+			<p class="mb-3 text-xs text-[var(--color-muted)]">
+				{data.total} {t('tags.results', 'tags')}
+			</p>
+			<!-- 2 columns as requested -->
+			<div class="grid gap-3 sm:grid-cols-2">
+				{#each data.tags as tag (tag.id)}
+					<div
 						class="group flex items-center gap-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 transition-colors hover:border-[var(--color-primary)]/40 hover:bg-[var(--color-surface-subtle)]"
 					>
-						{#if tag.logo_url}
-							<img
-								src={tag.logo_url}
-								alt={tag.name}
-								loading="lazy"
-								class="h-10 w-10 shrink-0 rounded-[var(--radius)] border border-[var(--color-border)] object-cover"
-							/>
-						{:else}
-							<span
-								class="grid h-10 w-10 shrink-0 place-items-center rounded-[var(--radius)] bg-[var(--color-surface-subtle)] text-[var(--color-primary)]"
-							>
-								<Hash size={18} />
+						<a href="/tags/{tag.slug}" class="flex min-w-0 flex-1 items-center gap-3">
+							{#if tag.logo_url}
+								<img
+									src={tag.logo_url}
+									alt={tag.name}
+									loading="lazy"
+									class="h-10 w-10 shrink-0 rounded-[var(--radius)] border border-[var(--color-border)] object-cover"
+								/>
+							{:else}
+								<span
+									class="grid h-10 w-10 shrink-0 place-items-center rounded-[var(--radius)] bg-[var(--color-surface-subtle)] text-[var(--color-primary)]"
+								>
+									<Hash size={18} />
+								</span>
+							{/if}
+							<span class="min-w-0 flex-1">
+								<span
+									class="block truncate text-sm font-medium text-[var(--color-text)] group-hover:text-[var(--color-primary)]"
+								>
+									#{tag.name}
+								</span>
+								<span class="mt-1 flex items-center gap-1 text-xs text-[var(--color-muted)]">
+									<Users size={12} />
+									{tag.follower_count}
+									{t('tags.followers', 'followers')}
+								</span>
 							</span>
+						</a>
+						{#if page.data.user}
+							<FollowButton entityType="tag" entityId={tag.id} entitySlug={tag.slug} compact />
 						{/if}
-						<span class="min-w-0 flex-1">
-							<span
-								class="block truncate text-sm font-medium text-[var(--color-text)] group-hover:text-[var(--color-primary)]"
-							>
-								#{tag.name}
-							</span>
-							<span
-								class="mt-1 flex items-center gap-1 text-xs text-[var(--color-muted)]"
-							>
-								<Users size={12} />
-								{tag.follower_count}
-								{t('tags.followers', 'followers')}
-							</span>
-						</span>
-					</a>
+					</div>
 				{/each}
 			</div>
+
+			<!-- Pagination -->
+			{#if data.totalPages > 1}
+				<div class="mt-6 flex items-center justify-center gap-4">
+					<a
+						href={buildHref(data.page - 1)}
+						class="inline-flex items-center gap-1 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-sm text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)] {data.page === 0 ? 'pointer-events-none opacity-40' : ''}"
+					>
+						<ChevronLeft size={16} /> {t('common.prev', 'Prev')}
+					</a>
+					<span class="text-xs text-[var(--color-muted)]">
+						{data.page + 1} / {data.totalPages}
+					</span>
+					<a
+						href={buildHref(data.page + 1)}
+						class="inline-flex items-center gap-1 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-sm text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)] {data.page >= data.totalPages - 1 ? 'pointer-events-none opacity-40' : ''}"
+					>
+						{t('common.next', 'Next')} <ChevronRight size={16} />
+					</a>
+				</div>
+			{/if}
 		{/if}
 	</div>
 </div>

@@ -3,6 +3,7 @@ package learning
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -41,11 +42,22 @@ type Track struct {
 	Slug         string       `json:"slug"`
 	Description  *string      `json:"description,omitempty"`
 	Difficulty   string       `json:"difficulty"`
+	/** Level is an alias for Difficulty, matching the frontend TrackSummary.level
+	 *  contract (ADR-060). Always equal to Difficulty. */
+	Level        string       `json:"level"`
 	CoverMediaID *pgtype.UUID `json:"cover_media_id,omitempty"`
 	IsPublished  bool         `json:"is_published"`
 	SortOrder    int32        `json:"sort_order"`
 	CreatedAt    time.Time    `json:"created_at"`
 	UpdatedAt    time.Time    `json:"updated_at"`
+	// Marketplace columns (migration 000166, ADR-063).
+	InstructorID            *pgtype.UUID `json:"instructor_id,omitempty"`
+	PriceKobo               *int64       `json:"price_kobo,omitempty"`
+	Currency                string       `json:"currency,omitempty"`
+	IsPublishedToUniversity bool         `json:"is_published_to_university,omitempty"`
+	Category                *string      `json:"category,omitempty"`
+	Language                string       `json:"language,omitempty"`
+	TotalEnrolled           int32        `json:"total_enrolled,omitempty"`
 }
 
 // CreateTrackInput represents create track input.
@@ -69,11 +81,11 @@ type UpdateTrackInput struct {
 	SortOrder    int32       `json:"sort_order"`
 }
 
-// trackFromFields builds a Track DTO from the base learning_tracks columns.
-// Migration 000166 added marketplace columns (instructor_id, price_kobo, etc.)
-// which caused sqlc to emit per-query row types instead of reusing the
-// gen.LearningTrack model. All these row types share the same base columns,
-// so callers extract the fields and pass them here.
+// trackFromFields builds a Track DTO from the base learning_tracks columns
+// plus the marketplace columns added by migration 000166 (ADR-063). Migration
+// 000166 caused sqlc to emit per-query row types instead of reusing the
+// gen.LearningTrack model; all these row types share the same columns, so
+// callers extract the fields and pass them here.
 func trackFromFields(
 	id, tenantID pgtype.UUID,
 	title, slug string,
@@ -83,24 +95,43 @@ func trackFromFields(
 	isPublished bool,
 	sortOrder int32,
 	createdAt, updatedAt pgtype.Timestamptz,
+	instructorID pgtype.UUID,
+	priceKobo *int64,
+	currency string,
+	isPublishedToUniversity bool,
+	category *string,
+	language string,
+	totalEnrolled int32,
 ) Track {
 	var cmID *pgtype.UUID
 	if coverMediaID.Valid {
 		cmID = &coverMediaID
 	}
+	var instrID *pgtype.UUID
+	if instructorID.Valid {
+		instrID = &instructorID
+	}
 
 	return Track{
-		ID:           id,
-		TenantID:     tenantID,
-		Title:        title,
-		Slug:         slug,
-		Description:  description,
-		Difficulty:   difficulty,
-		CoverMediaID: cmID,
-		IsPublished:  isPublished,
-		SortOrder:    sortOrder,
-		CreatedAt:    createdAt.Time,
-		UpdatedAt:    updatedAt.Time,
+		ID:                      id,
+		TenantID:                tenantID,
+		Title:                   title,
+		Slug:                    slug,
+		Description:             description,
+		Difficulty:              difficulty,
+		Level:                   difficulty,
+		CoverMediaID:            cmID,
+		IsPublished:             isPublished,
+		SortOrder:               sortOrder,
+		CreatedAt:               createdAt.Time,
+		UpdatedAt:               updatedAt.Time,
+		InstructorID:            instrID,
+		PriceKobo:               priceKobo,
+		Currency:                currency,
+		IsPublishedToUniversity: isPublishedToUniversity,
+		Category:                category,
+		Language:                language,
+		TotalEnrolled:           totalEnrolled,
 	}
 }
 
@@ -114,7 +145,7 @@ func (s *Store) ListPublishedTracks(ctx context.Context, tenantID pgtype.UUID) (
 	tracks := make([]Track, 0, len(rows))
 
 	for _, r := range rows {
-		tracks = append(tracks, trackFromFields(r.ID, r.TenantID, r.Title, r.Slug, r.Description, r.Difficulty, r.CoverMediaID, r.IsPublished, r.SortOrder, r.CreatedAt, r.UpdatedAt))
+		tracks = append(tracks, trackFromFields(r.ID, r.TenantID, r.Title, r.Slug, r.Description, r.Difficulty, r.CoverMediaID, r.IsPublished, r.SortOrder, r.CreatedAt, r.UpdatedAt, r.InstructorID, r.PriceKobo, r.Currency, r.IsPublishedToUniversity, r.Category, r.Language, r.TotalEnrolled))
 	}
 
 	return tracks, nil
@@ -130,7 +161,7 @@ func (s *Store) GetTrackBySlug(ctx context.Context, tenantID pgtype.UUID, slug s
 		return nil, fmt.Errorf("get track by slug: %w", err)
 	}
 
-	t := trackFromFields(r.ID, r.TenantID, r.Title, r.Slug, r.Description, r.Difficulty, r.CoverMediaID, r.IsPublished, r.SortOrder, r.CreatedAt, r.UpdatedAt)
+	t := trackFromFields(r.ID, r.TenantID, r.Title, r.Slug, r.Description, r.Difficulty, r.CoverMediaID, r.IsPublished, r.SortOrder, r.CreatedAt, r.UpdatedAt, r.InstructorID, r.PriceKobo, r.Currency, r.IsPublishedToUniversity, r.Category, r.Language, r.TotalEnrolled)
 	return &t, nil
 }
 
@@ -144,7 +175,7 @@ func (s *Store) GetTrackByID(ctx context.Context, tenantID, id pgtype.UUID) (*Tr
 		return nil, fmt.Errorf("get track by id: %w", err)
 	}
 
-	t := trackFromFields(r.ID, r.TenantID, r.Title, r.Slug, r.Description, r.Difficulty, r.CoverMediaID, r.IsPublished, r.SortOrder, r.CreatedAt, r.UpdatedAt)
+	t := trackFromFields(r.ID, r.TenantID, r.Title, r.Slug, r.Description, r.Difficulty, r.CoverMediaID, r.IsPublished, r.SortOrder, r.CreatedAt, r.UpdatedAt, r.InstructorID, r.PriceKobo, r.Currency, r.IsPublishedToUniversity, r.Category, r.Language, r.TotalEnrolled)
 	return &t, nil
 }
 
@@ -164,7 +195,7 @@ func (s *Store) CreateTrack(ctx context.Context, tenantID pgtype.UUID, input Cre
 		return nil, fmt.Errorf("create track: %w", err)
 	}
 
-	t := trackFromFields(r.ID, r.TenantID, r.Title, r.Slug, r.Description, r.Difficulty, r.CoverMediaID, r.IsPublished, r.SortOrder, r.CreatedAt, r.UpdatedAt)
+	t := trackFromFields(r.ID, r.TenantID, r.Title, r.Slug, r.Description, r.Difficulty, r.CoverMediaID, r.IsPublished, r.SortOrder, r.CreatedAt, r.UpdatedAt, r.InstructorID, r.PriceKobo, r.Currency, r.IsPublishedToUniversity, r.Category, r.Language, r.TotalEnrolled)
 	return &t, nil
 }
 
@@ -184,7 +215,7 @@ func (s *Store) UpdateTrack(ctx context.Context, tenantID, id pgtype.UUID, input
 		return nil, fmt.Errorf("update track: %w", err)
 	}
 
-	t := trackFromFields(r.ID, r.TenantID, r.Title, r.Slug, r.Description, r.Difficulty, r.CoverMediaID, r.IsPublished, r.SortOrder, r.CreatedAt, r.UpdatedAt)
+	t := trackFromFields(r.ID, r.TenantID, r.Title, r.Slug, r.Description, r.Difficulty, r.CoverMediaID, r.IsPublished, r.SortOrder, r.CreatedAt, r.UpdatedAt, r.InstructorID, r.PriceKobo, r.Currency, r.IsPublishedToUniversity, r.Category, r.Language, r.TotalEnrolled)
 	return &t, nil
 }
 
@@ -230,7 +261,7 @@ func (s *Store) ListAllTracks(ctx context.Context, tenantID pgtype.UUID) ([]Trac
 	tracks := make([]Track, 0, len(rows))
 
 	for _, r := range rows {
-		tracks = append(tracks, trackFromFields(r.ID, r.TenantID, r.Title, r.Slug, r.Description, r.Difficulty, r.CoverMediaID, r.IsPublished, r.SortOrder, r.CreatedAt, r.UpdatedAt))
+		tracks = append(tracks, trackFromFields(r.ID, r.TenantID, r.Title, r.Slug, r.Description, r.Difficulty, r.CoverMediaID, r.IsPublished, r.SortOrder, r.CreatedAt, r.UpdatedAt, r.InstructorID, r.PriceKobo, r.Currency, r.IsPublishedToUniversity, r.Category, r.Language, r.TotalEnrolled))
 	}
 
 	return tracks, nil
@@ -251,6 +282,72 @@ type Module struct {
 	SortOrder   int32       `json:"sort_order"`
 	CreatedAt   time.Time   `json:"created_at"`
 	UpdatedAt   time.Time   `json:"updated_at"`
+}
+
+// LessonSummary is the lightweight lesson view nested inside ModuleWithLessons
+// for the track-detail response (GET /learn/tracks/:slug). Mirrors the frontend
+// LessonSummary type (ADR-060). Content is omitted — only metadata.
+type LessonSummary struct {
+	ID              pgtype.UUID `json:"id"`
+	Slug            string      `json:"slug"`
+	Title           string      `json:"title"`
+	LessonType      string      `json:"lesson_type"`
+	DurationMinutes *int32      `json:"duration_minutes,omitempty"`
+	SortOrder       int32       `json:"sort_order"`
+	IsPreview       bool        `json:"is_preview"`
+}
+
+// ModuleWithLessons is a module with its nested lessons, used in the track-detail
+// response (GET /learn/tracks/:slug). Matches the frontend ModuleSummary contract
+// (ADR-060): modules carry their lessons so the curriculum accordion renders
+// from a single fetch.
+type ModuleWithLessons struct {
+	ID          pgtype.UUID    `json:"id"`
+	Slug        string         `json:"slug"`
+	Title       string         `json:"title"`
+	Description *string        `json:"description,omitempty"`
+	SortOrder   int32          `json:"sort_order"`
+	Lessons     []LessonSummary `json:"lessons"`
+}
+
+// TrackDetail is the flat DTO returned by GET /learn/tracks/:slug. Per Section 36
+// the route returns "track detail: modules, lessons, instructor" in one response.
+// The frontend TrackDetail type (ADR-060) expects a flat object with a `modules`
+// array where each module carries its `lessons` — NOT the legacy `{track, modules}`
+// envelope. `Level` aliases `Difficulty` for the frontend contract.
+// Fields not yet backed by DB columns (thumbnail_url, subtitle, overview_html,
+// objectives, prerequisites, duration_iso) are included as optional JSON keys
+// so the frontend contract is stable; they serialize as null/omitted until the
+// corresponding migrations land.
+type TrackDetail struct {
+	ID           pgtype.UUID        `json:"id"`
+	TenantID     pgtype.UUID        `json:"tenant_id"`
+	Title        string             `json:"title"`
+	Slug         string             `json:"slug"`
+	Description  *string            `json:"description,omitempty"`
+	Difficulty   string             `json:"difficulty"`
+	Level        string             `json:"level"`
+	CoverMediaID *pgtype.UUID       `json:"cover_media_id,omitempty"`
+	IsPublished  bool               `json:"is_published"`
+	SortOrder    int32              `json:"sort_order"`
+	CreatedAt    time.Time          `json:"created_at"`
+	UpdatedAt    time.Time          `json:"updated_at"`
+	Modules      []ModuleWithLessons `json:"modules"`
+	// Marketplace / enrollment fields (migration 000166).
+	PriceKobo               *int64  `json:"price_kobo,omitempty"`
+	Currency                string  `json:"currency,omitempty"`
+	EnrolledCount           int32   `json:"enrolled_count,omitempty"`
+	IsPublishedToUniversity bool    `json:"is_published_to_university,omitempty"`
+	Category                *string `json:"category,omitempty"`
+	Language                string  `json:"language,omitempty"`
+	// Duration computed from the sum of lesson duration_minutes (ADR-060).
+	DurationLabel string `json:"duration_label,omitempty"`
+	DurationISO   string `json:"duration_iso,omitempty"`
+	// Optional fields the frontend reads with {#if} guards — omitted from JSON
+	// when absent so they're undefined on the client (falsy).
+	ThumbnailURL   *string `json:"thumbnail_url,omitempty"`
+	Subtitle       *string `json:"subtitle,omitempty"`
+	InstructorName *string `json:"instructor_name,omitempty"`
 }
 
 // CreateModuleInput represents create module input.
@@ -299,6 +396,128 @@ func (s *Store) ListModulesByTrack(ctx context.Context, tenantID, trackID pgtype
 	}
 
 	return modules, nil
+}
+
+// GetTrackDetail builds the flat track-detail DTO (Section 36: "track detail:
+// modules, lessons, instructor") for GET /learn/tracks/:slug. It fetches the
+// track by slug, its modules, and each module's lessons, then assembles them
+// into a single TrackDetail response with nested ModuleWithLessons. This
+// matches the frontend TrackDetail contract (ADR-060) — NOT the legacy
+// `{track, modules}` envelope.
+func (s *Store) GetTrackDetail(ctx context.Context, tenantID pgtype.UUID, slug string) (*TrackDetail, error) {
+	track, err := s.GetTrackBySlug(ctx, tenantID, slug)
+	if err != nil {
+		return nil, fmt.Errorf("get track by slug: %w", err)
+	}
+
+	modRows, err := s.read.ListLearningModulesByTrack(ctx, gen.ListLearningModulesByTrackParams{
+		TenantID: tenantID,
+		TrackID:  track.ID,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("list modules by track: %w", err)
+	}
+
+	modules := make([]ModuleWithLessons, 0, len(modRows))
+	for _, m := range modRows {
+		lessonRows, err := s.read.ListLearningLessonsByModule(ctx, gen.ListLearningLessonsByModuleParams{
+			TenantID: tenantID,
+			ModuleID: m.ID,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("list lessons by module: %w", err)
+		}
+
+		lessons := make([]LessonSummary, 0, len(lessonRows))
+		for _, l := range lessonRows {
+			// Only include published lessons in the public track-detail view.
+			if !l.IsPublished {
+				continue
+			}
+			lessons = append(lessons, LessonSummary{
+				ID:              l.ID,
+				Slug:            l.Slug,
+				Title:           l.Title,
+				LessonType:      l.LessonType,
+				DurationMinutes: l.DurationMinutes,
+				SortOrder:       l.SortOrder,
+				// is_preview column not yet migrated (Section 36 spec calls for
+				// it); default to false until migration 000NNN adds it.
+				IsPreview: false,
+			})
+		}
+
+		modules = append(modules, ModuleWithLessons{
+			ID:          m.ID,
+			Slug:        m.Slug,
+			Title:       m.Title,
+			Description: m.Description,
+			SortOrder:   m.SortOrder,
+			Lessons:     lessons,
+		})
+	}
+
+	// Compute total duration from all published lessons' duration_minutes.
+	totalMinutes := 0
+	for _, m := range modules {
+		for _, l := range m.Lessons {
+			if l.DurationMinutes != nil {
+				totalMinutes += int(*l.DurationMinutes)
+			}
+		}
+	}
+	durationLabel, durationISO := formatTrackDuration(totalMinutes)
+
+	return &TrackDetail{
+		ID:                      track.ID,
+		TenantID:                track.TenantID,
+		Title:                   track.Title,
+		Slug:                    track.Slug,
+		Description:             track.Description,
+		Difficulty:              track.Difficulty,
+		Level:                   track.Difficulty,
+		CoverMediaID:            track.CoverMediaID,
+		IsPublished:             track.IsPublished,
+		SortOrder:               track.SortOrder,
+		CreatedAt:               track.CreatedAt,
+		UpdatedAt:               track.UpdatedAt,
+		Modules:                 modules,
+		PriceKobo:               track.PriceKobo,
+		Currency:                track.Currency,
+		EnrolledCount:           track.TotalEnrolled,
+		IsPublishedToUniversity: track.IsPublishedToUniversity,
+		Category:                track.Category,
+		Language:                track.Language,
+		DurationLabel:           durationLabel,
+		DurationISO:             durationISO,
+	}, nil
+}
+
+// formatTrackDuration converts a total minutes value into a human-readable
+// label (e.g. "2h 30m") and an ISO 8601 duration (e.g. "PT2H30M"). Returns
+// empty strings when totalMinutes is zero so the frontend {#if} guard hides
+// the duration stat.
+func formatTrackDuration(totalMinutes int) (label, iso string) {
+	if totalMinutes <= 0 {
+		return "", ""
+	}
+	hours := totalMinutes / 60
+	mins := totalMinutes % 60
+	if hours > 0 && mins > 0 {
+		label = fmt.Sprintf("%dh %dm", hours, mins)
+	} else if hours > 0 {
+		label = fmt.Sprintf("%dh", hours)
+	} else {
+		label = fmt.Sprintf("%dm", mins)
+	}
+	iso = "PT"
+	if hours > 0 {
+		iso += fmt.Sprintf("%dH", hours)
+	}
+	if mins > 0 {
+		iso += fmt.Sprintf("%dM", mins)
+	}
+	return label, iso
 }
 
 // GetModuleBySlug retrieves a module by its slug.
@@ -538,6 +757,151 @@ func (s *Store) GetLessonBySlug(ctx context.Context, tenantID, moduleID pgtype.U
 
 	l := lessonFromRow(r)
 	return &l, nil
+}
+
+// LessonNavRef is a reference to an adjacent lesson for prev/next navigation
+// in the lesson player (ADR-060).
+type LessonNavRef struct {
+	Slug        string `json:"slug"`
+	Title       string `json:"title"`
+	ModuleSlug  string `json:"module_slug"`
+}
+
+// LessonDetail is the enriched lesson response for the lesson player
+// (ADR-060). It extends Lesson with track/module context, prev/next
+// navigation, and content_html (plain-text content rendered to basic HTML).
+// The frontend Lesson type expects these fields (contract: §3.3).
+type LessonDetail struct {
+	Lesson
+	ModuleTitle string        `json:"module_title"`
+	ModuleSlug  string        `json:"module_slug"`
+	TrackID     pgtype.UUID   `json:"track_id"`
+	TrackSlug   string        `json:"track_slug"`
+	TrackTitle  string        `json:"track_title"`
+	ContentHTML string        `json:"content_html,omitempty"`
+	IsPreview   bool          `json:"is_preview"`
+	PrevLesson  *LessonNavRef `json:"prev_lesson,omitempty"`
+	NextLesson  *LessonNavRef `json:"next_lesson,omitempty"`
+}
+
+// GetLessonDetail retrieves a lesson by slug with track/module context and
+// prev/next navigation, suitable for the lesson player (ADR-060).
+func (s *Store) GetLessonDetail(ctx context.Context, tenantID, moduleID pgtype.UUID, slug string) (*LessonDetail, error) {
+	r, err := s.read.GetLearningLessonDetailBySlug(ctx, gen.GetLearningLessonDetailBySlugParams{
+		TenantID: tenantID,
+		ModuleID: moduleID,
+		Slug:     slug,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("get lesson detail by slug: %w", err)
+	}
+
+	var mediaID *pgtype.UUID
+	if r.MediaID.Valid {
+		mediaID = &r.MediaID
+	}
+
+	detail := &LessonDetail{
+		Lesson: Lesson{
+			ID:              r.ID,
+			TenantID:        r.TenantID,
+			ModuleID:        r.ModuleID,
+			Title:           r.Title,
+			Slug:            r.Slug,
+			LessonType:      r.LessonType,
+			Content:         r.Content,
+			MediaID:         mediaID,
+			DurationMinutes: r.DurationMinutes,
+			SortOrder:       r.SortOrder,
+			IsPublished:     r.IsPublished,
+			CreatedAt:       r.CreatedAt.Time,
+			UpdatedAt:       r.UpdatedAt.Time,
+		},
+		ModuleTitle: r.ModuleTitle,
+		ModuleSlug:  r.ModuleSlug,
+		TrackID:     r.TrackID,
+		TrackSlug:   r.TrackSlug,
+		TrackTitle:  r.TrackTitle,
+		IsPreview:   false, // no is_preview column in V1 (migration 000039)
+		ContentHTML: renderLessonContentHTML(r.Content),
+	}
+
+	// Compute prev/next lesson navigation across the whole track.
+	navRows, err := s.read.ListTrackLessonsForNav(ctx, gen.ListTrackLessonsForNavParams{
+		TrackID:  r.TrackID,
+		TenantID: tenantID,
+	})
+	if err == nil {
+		for i, row := range navRows {
+			if row.ID == r.ID {
+				if i > 0 {
+					p := navRows[i-1]
+					detail.PrevLesson = &LessonNavRef{
+						Slug:       p.Slug,
+						Title:      p.Title,
+						ModuleSlug: p.ModuleSlug,
+					}
+				}
+				if i < len(navRows)-1 {
+					n := navRows[i+1]
+					detail.NextLesson = &LessonNavRef{
+						Slug:       n.Slug,
+						Title:      n.Title,
+						ModuleSlug: n.ModuleSlug,
+					}
+				}
+				break
+			}
+		}
+	}
+
+	return detail, nil
+}
+
+// renderLessonContentHTML converts plain-text lesson content into basic,
+// escaped HTML paragraphs. The learning_lessons.content column is plain text
+// (migration 000039), not ProseMirror JSON, so the TipTap renderer does not
+// apply. Empty/nil content renders to an empty string.
+func renderLessonContentHTML(content *string) string {
+	if content == nil || *content == "" {
+		return ""
+	}
+	// Escape HTML special characters to prevent stored XSS (§5.1).
+	text := *content
+	var b strings.Builder
+	b.Grow(len(text) + 64)
+	for _, r := range text {
+		switch r {
+		case '&':
+			b.WriteString("&amp;")
+		case '<':
+			b.WriteString("&lt;")
+		case '>':
+			b.WriteString("&gt;")
+		case '"':
+			b.WriteString("&quot;")
+		case '\'':
+			b.WriteString("&#39;")
+		default:
+			b.WriteRune(r)
+		}
+	}
+	// Split on blank lines into paragraphs; single-line content gets one <p>.
+	escaped := b.String()
+	paragraphs := strings.Split(escaped, "\n\n")
+	var out strings.Builder
+	for _, p := range paragraphs {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+		// Preserve single newlines within a paragraph as <br>.
+		p = strings.ReplaceAll(p, "\n", "<br>")
+		out.WriteString("<p>")
+		out.WriteString(p)
+		out.WriteString("</p>")
+	}
+	return out.String()
 }
 
 // GetLessonByID retrieves a lesson by its ID.

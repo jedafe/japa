@@ -154,7 +154,8 @@ func (q *Queries) CreateLearningModule(ctx context.Context, arg CreateLearningMo
 const createLearningTrack = `-- name: CreateLearningTrack :one
 INSERT INTO learning_tracks (tenant_id, title, slug, description, difficulty, cover_media_id, is_published, sort_order)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-RETURNING id, tenant_id, title, slug, description, difficulty, cover_media_id, is_published, sort_order, created_at, updated_at
+RETURNING id, tenant_id, title, slug, description, difficulty, cover_media_id, is_published, sort_order, created_at, updated_at,
+          instructor_id, price_kobo, currency, is_published_to_university, category, language, total_enrolled
 `
 
 type CreateLearningTrackParams struct {
@@ -169,17 +170,24 @@ type CreateLearningTrackParams struct {
 }
 
 type CreateLearningTrackRow struct {
-	ID           pgtype.UUID        `json:"id"`
-	TenantID     pgtype.UUID        `json:"tenant_id"`
-	Title        string             `json:"title"`
-	Slug         string             `json:"slug"`
-	Description  *string            `json:"description"`
-	Difficulty   string             `json:"difficulty"`
-	CoverMediaID pgtype.UUID        `json:"cover_media_id"`
-	IsPublished  bool               `json:"is_published"`
-	SortOrder    int32              `json:"sort_order"`
-	CreatedAt    pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
+	ID                      pgtype.UUID        `json:"id"`
+	TenantID                pgtype.UUID        `json:"tenant_id"`
+	Title                   string             `json:"title"`
+	Slug                    string             `json:"slug"`
+	Description             *string            `json:"description"`
+	Difficulty              string             `json:"difficulty"`
+	CoverMediaID            pgtype.UUID        `json:"cover_media_id"`
+	IsPublished             bool               `json:"is_published"`
+	SortOrder               int32              `json:"sort_order"`
+	CreatedAt               pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt               pgtype.Timestamptz `json:"updated_at"`
+	InstructorID            pgtype.UUID        `json:"instructor_id"`
+	PriceKobo               *int64             `json:"price_kobo"`
+	Currency                string             `json:"currency"`
+	IsPublishedToUniversity bool               `json:"is_published_to_university"`
+	Category                *string            `json:"category"`
+	Language                string             `json:"language"`
+	TotalEnrolled           int32              `json:"total_enrolled"`
 }
 
 func (q *Queries) CreateLearningTrack(ctx context.Context, arg CreateLearningTrackParams) (CreateLearningTrackRow, error) {
@@ -206,6 +214,13 @@ func (q *Queries) CreateLearningTrack(ctx context.Context, arg CreateLearningTra
 		&i.SortOrder,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.InstructorID,
+		&i.PriceKobo,
+		&i.Currency,
+		&i.IsPublishedToUniversity,
+		&i.Category,
+		&i.Language,
+		&i.TotalEnrolled,
 	)
 	return i, err
 }
@@ -409,6 +424,74 @@ func (q *Queries) GetLearningLessonBySlug(ctx context.Context, arg GetLearningLe
 	return i, err
 }
 
+const getLearningLessonDetailBySlug = `-- name: GetLearningLessonDetailBySlug :one
+SELECT ll.id, ll.tenant_id, ll.module_id, ll.title, ll.slug, ll.lesson_type,
+       ll.content, ll.media_id, ll.duration_minutes, ll.sort_order,
+       ll.is_published, ll.created_at, ll.updated_at,
+       lm.title AS module_title, lm.slug AS module_slug,
+       lt.id AS track_id, lt.slug AS track_slug, lt.title AS track_title
+FROM learning_lessons ll
+JOIN learning_modules lm ON lm.id = ll.module_id AND lm.tenant_id = ll.tenant_id
+JOIN learning_tracks lt ON lt.id = lm.track_id AND lt.tenant_id = lm.tenant_id
+WHERE ll.tenant_id = $1 AND ll.module_id = $2 AND ll.slug = $3
+`
+
+type GetLearningLessonDetailBySlugParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	ModuleID pgtype.UUID `json:"module_id"`
+	Slug     string      `json:"slug"`
+}
+
+type GetLearningLessonDetailBySlugRow struct {
+	ID              pgtype.UUID        `json:"id"`
+	TenantID        pgtype.UUID        `json:"tenant_id"`
+	ModuleID        pgtype.UUID        `json:"module_id"`
+	Title           string             `json:"title"`
+	Slug            string             `json:"slug"`
+	LessonType      string             `json:"lesson_type"`
+	Content         *string            `json:"content"`
+	MediaID         pgtype.UUID        `json:"media_id"`
+	DurationMinutes *int32             `json:"duration_minutes"`
+	SortOrder       int32              `json:"sort_order"`
+	IsPublished     bool               `json:"is_published"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+	ModuleTitle     string             `json:"module_title"`
+	ModuleSlug      string             `json:"module_slug"`
+	TrackID         pgtype.UUID        `json:"track_id"`
+	TrackSlug       string             `json:"track_slug"`
+	TrackTitle      string             `json:"track_title"`
+}
+
+// Fetches a lesson joined to its module and track for the lesson player
+// (ADR-060). Returns module_title, track_id, track_slug, track_title so the
+// frontend can build breadcrumbs, the curriculum rail, and prev/next nav.
+func (q *Queries) GetLearningLessonDetailBySlug(ctx context.Context, arg GetLearningLessonDetailBySlugParams) (GetLearningLessonDetailBySlugRow, error) {
+	row := q.db.QueryRow(ctx, getLearningLessonDetailBySlug, arg.TenantID, arg.ModuleID, arg.Slug)
+	var i GetLearningLessonDetailBySlugRow
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.ModuleID,
+		&i.Title,
+		&i.Slug,
+		&i.LessonType,
+		&i.Content,
+		&i.MediaID,
+		&i.DurationMinutes,
+		&i.SortOrder,
+		&i.IsPublished,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.ModuleTitle,
+		&i.ModuleSlug,
+		&i.TrackID,
+		&i.TrackSlug,
+		&i.TrackTitle,
+	)
+	return i, err
+}
+
 const getLearningModuleByID = `-- name: GetLearningModuleByID :one
 SELECT id, tenant_id, track_id, title, slug, description, sort_order, created_at, updated_at
 FROM learning_modules
@@ -468,7 +551,9 @@ func (q *Queries) GetLearningModuleBySlug(ctx context.Context, arg GetLearningMo
 
 const getLearningTrackByID = `-- name: GetLearningTrackByID :one
 SELECT id, tenant_id, title, slug, description, difficulty, cover_media_id,
-       is_published, sort_order, created_at, updated_at
+       is_published, sort_order, created_at, updated_at,
+       instructor_id, price_kobo, currency, is_published_to_university,
+       category, language, total_enrolled
 FROM learning_tracks
 WHERE tenant_id = $1 AND id = $2
 `
@@ -479,17 +564,24 @@ type GetLearningTrackByIDParams struct {
 }
 
 type GetLearningTrackByIDRow struct {
-	ID           pgtype.UUID        `json:"id"`
-	TenantID     pgtype.UUID        `json:"tenant_id"`
-	Title        string             `json:"title"`
-	Slug         string             `json:"slug"`
-	Description  *string            `json:"description"`
-	Difficulty   string             `json:"difficulty"`
-	CoverMediaID pgtype.UUID        `json:"cover_media_id"`
-	IsPublished  bool               `json:"is_published"`
-	SortOrder    int32              `json:"sort_order"`
-	CreatedAt    pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
+	ID                      pgtype.UUID        `json:"id"`
+	TenantID                pgtype.UUID        `json:"tenant_id"`
+	Title                   string             `json:"title"`
+	Slug                    string             `json:"slug"`
+	Description             *string            `json:"description"`
+	Difficulty              string             `json:"difficulty"`
+	CoverMediaID            pgtype.UUID        `json:"cover_media_id"`
+	IsPublished             bool               `json:"is_published"`
+	SortOrder               int32              `json:"sort_order"`
+	CreatedAt               pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt               pgtype.Timestamptz `json:"updated_at"`
+	InstructorID            pgtype.UUID        `json:"instructor_id"`
+	PriceKobo               *int64             `json:"price_kobo"`
+	Currency                string             `json:"currency"`
+	IsPublishedToUniversity bool               `json:"is_published_to_university"`
+	Category                *string            `json:"category"`
+	Language                string             `json:"language"`
+	TotalEnrolled           int32              `json:"total_enrolled"`
 }
 
 func (q *Queries) GetLearningTrackByID(ctx context.Context, arg GetLearningTrackByIDParams) (GetLearningTrackByIDRow, error) {
@@ -507,13 +599,22 @@ func (q *Queries) GetLearningTrackByID(ctx context.Context, arg GetLearningTrack
 		&i.SortOrder,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.InstructorID,
+		&i.PriceKobo,
+		&i.Currency,
+		&i.IsPublishedToUniversity,
+		&i.Category,
+		&i.Language,
+		&i.TotalEnrolled,
 	)
 	return i, err
 }
 
 const getLearningTrackBySlug = `-- name: GetLearningTrackBySlug :one
 SELECT id, tenant_id, title, slug, description, difficulty, cover_media_id,
-       is_published, sort_order, created_at, updated_at
+       is_published, sort_order, created_at, updated_at,
+       instructor_id, price_kobo, currency, is_published_to_university,
+       category, language, total_enrolled
 FROM learning_tracks
 WHERE tenant_id = $1 AND slug = $2
 `
@@ -524,17 +625,24 @@ type GetLearningTrackBySlugParams struct {
 }
 
 type GetLearningTrackBySlugRow struct {
-	ID           pgtype.UUID        `json:"id"`
-	TenantID     pgtype.UUID        `json:"tenant_id"`
-	Title        string             `json:"title"`
-	Slug         string             `json:"slug"`
-	Description  *string            `json:"description"`
-	Difficulty   string             `json:"difficulty"`
-	CoverMediaID pgtype.UUID        `json:"cover_media_id"`
-	IsPublished  bool               `json:"is_published"`
-	SortOrder    int32              `json:"sort_order"`
-	CreatedAt    pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
+	ID                      pgtype.UUID        `json:"id"`
+	TenantID                pgtype.UUID        `json:"tenant_id"`
+	Title                   string             `json:"title"`
+	Slug                    string             `json:"slug"`
+	Description             *string            `json:"description"`
+	Difficulty              string             `json:"difficulty"`
+	CoverMediaID            pgtype.UUID        `json:"cover_media_id"`
+	IsPublished             bool               `json:"is_published"`
+	SortOrder               int32              `json:"sort_order"`
+	CreatedAt               pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt               pgtype.Timestamptz `json:"updated_at"`
+	InstructorID            pgtype.UUID        `json:"instructor_id"`
+	PriceKobo               *int64             `json:"price_kobo"`
+	Currency                string             `json:"currency"`
+	IsPublishedToUniversity bool               `json:"is_published_to_university"`
+	Category                *string            `json:"category"`
+	Language                string             `json:"language"`
+	TotalEnrolled           int32              `json:"total_enrolled"`
 }
 
 func (q *Queries) GetLearningTrackBySlug(ctx context.Context, arg GetLearningTrackBySlugParams) (GetLearningTrackBySlugRow, error) {
@@ -552,6 +660,13 @@ func (q *Queries) GetLearningTrackBySlug(ctx context.Context, arg GetLearningTra
 		&i.SortOrder,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.InstructorID,
+		&i.PriceKobo,
+		&i.Currency,
+		&i.IsPublishedToUniversity,
+		&i.Category,
+		&i.Language,
+		&i.TotalEnrolled,
 	)
 	return i, err
 }
@@ -798,24 +913,33 @@ func (q *Queries) ListAllLearningModules(ctx context.Context, tenantID pgtype.UU
 
 const listAllLearningTracks = `-- name: ListAllLearningTracks :many
 SELECT id, tenant_id, title, slug, description, difficulty, cover_media_id,
-       is_published, sort_order, created_at, updated_at
+       is_published, sort_order, created_at, updated_at,
+       instructor_id, price_kobo, currency, is_published_to_university,
+       category, language, total_enrolled
 FROM learning_tracks
 WHERE tenant_id = $1
 ORDER BY sort_order ASC, created_at DESC
 `
 
 type ListAllLearningTracksRow struct {
-	ID           pgtype.UUID        `json:"id"`
-	TenantID     pgtype.UUID        `json:"tenant_id"`
-	Title        string             `json:"title"`
-	Slug         string             `json:"slug"`
-	Description  *string            `json:"description"`
-	Difficulty   string             `json:"difficulty"`
-	CoverMediaID pgtype.UUID        `json:"cover_media_id"`
-	IsPublished  bool               `json:"is_published"`
-	SortOrder    int32              `json:"sort_order"`
-	CreatedAt    pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
+	ID                      pgtype.UUID        `json:"id"`
+	TenantID                pgtype.UUID        `json:"tenant_id"`
+	Title                   string             `json:"title"`
+	Slug                    string             `json:"slug"`
+	Description             *string            `json:"description"`
+	Difficulty              string             `json:"difficulty"`
+	CoverMediaID            pgtype.UUID        `json:"cover_media_id"`
+	IsPublished             bool               `json:"is_published"`
+	SortOrder               int32              `json:"sort_order"`
+	CreatedAt               pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt               pgtype.Timestamptz `json:"updated_at"`
+	InstructorID            pgtype.UUID        `json:"instructor_id"`
+	PriceKobo               *int64             `json:"price_kobo"`
+	Currency                string             `json:"currency"`
+	IsPublishedToUniversity bool               `json:"is_published_to_university"`
+	Category                *string            `json:"category"`
+	Language                string             `json:"language"`
+	TotalEnrolled           int32              `json:"total_enrolled"`
 }
 
 func (q *Queries) ListAllLearningTracks(ctx context.Context, tenantID pgtype.UUID) ([]ListAllLearningTracksRow, error) {
@@ -839,6 +963,13 @@ func (q *Queries) ListAllLearningTracks(ctx context.Context, tenantID pgtype.UUI
 			&i.SortOrder,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.InstructorID,
+			&i.PriceKobo,
+			&i.Currency,
+			&i.IsPublishedToUniversity,
+			&i.Category,
+			&i.Language,
+			&i.TotalEnrolled,
 		); err != nil {
 			return nil, err
 		}
@@ -1127,24 +1258,33 @@ const listPublishedLearningTracks = `-- name: ListPublishedLearningTracks :many
 
 
 SELECT id, tenant_id, title, slug, description, difficulty, cover_media_id,
-       is_published, sort_order, created_at, updated_at
+       is_published, sort_order, created_at, updated_at,
+       instructor_id, price_kobo, currency, is_published_to_university,
+       category, language, total_enrolled
 FROM learning_tracks
 WHERE tenant_id = $1 AND is_published = true
 ORDER BY sort_order ASC, created_at DESC
 `
 
 type ListPublishedLearningTracksRow struct {
-	ID           pgtype.UUID        `json:"id"`
-	TenantID     pgtype.UUID        `json:"tenant_id"`
-	Title        string             `json:"title"`
-	Slug         string             `json:"slug"`
-	Description  *string            `json:"description"`
-	Difficulty   string             `json:"difficulty"`
-	CoverMediaID pgtype.UUID        `json:"cover_media_id"`
-	IsPublished  bool               `json:"is_published"`
-	SortOrder    int32              `json:"sort_order"`
-	CreatedAt    pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
+	ID                      pgtype.UUID        `json:"id"`
+	TenantID                pgtype.UUID        `json:"tenant_id"`
+	Title                   string             `json:"title"`
+	Slug                    string             `json:"slug"`
+	Description             *string            `json:"description"`
+	Difficulty              string             `json:"difficulty"`
+	CoverMediaID            pgtype.UUID        `json:"cover_media_id"`
+	IsPublished             bool               `json:"is_published"`
+	SortOrder               int32              `json:"sort_order"`
+	CreatedAt               pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt               pgtype.Timestamptz `json:"updated_at"`
+	InstructorID            pgtype.UUID        `json:"instructor_id"`
+	PriceKobo               *int64             `json:"price_kobo"`
+	Currency                string             `json:"currency"`
+	IsPublishedToUniversity bool               `json:"is_published_to_university"`
+	Category                *string            `json:"category"`
+	Language                string             `json:"language"`
+	TotalEnrolled           int32              `json:"total_enrolled"`
 }
 
 // Learning platform queries: tracks, modules, lessons, progress, certificates, enrollments, quizzes.
@@ -1172,6 +1312,68 @@ func (q *Queries) ListPublishedLearningTracks(ctx context.Context, tenantID pgty
 			&i.SortOrder,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.InstructorID,
+			&i.PriceKobo,
+			&i.Currency,
+			&i.IsPublishedToUniversity,
+			&i.Category,
+			&i.Language,
+			&i.TotalEnrolled,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listTrackLessonsForNav = `-- name: ListTrackLessonsForNav :many
+SELECT ll.id, ll.slug, ll.title, ll.lesson_type, ll.sort_order,
+       lm.slug AS module_slug, lm.sort_order AS module_sort_order
+FROM learning_lessons ll
+JOIN learning_modules lm ON lm.id = ll.module_id AND lm.tenant_id = ll.tenant_id
+WHERE lm.track_id = $1 AND ll.tenant_id = $2 AND ll.is_published = true
+ORDER BY lm.sort_order ASC, ll.sort_order ASC, ll.created_at DESC
+`
+
+type ListTrackLessonsForNavParams struct {
+	TrackID  pgtype.UUID `json:"track_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+type ListTrackLessonsForNavRow struct {
+	ID              pgtype.UUID `json:"id"`
+	Slug            string      `json:"slug"`
+	Title           string      `json:"title"`
+	LessonType      string      `json:"lesson_type"`
+	SortOrder       int32       `json:"sort_order"`
+	ModuleSlug      string      `json:"module_slug"`
+	ModuleSortOrder int32       `json:"module_sort_order"`
+}
+
+// Lists all published lessons in a track (across modules) ordered by module
+// sort_order then lesson sort_order, so the handler can compute prev/next
+// lesson navigation for the lesson player (ADR-060).
+func (q *Queries) ListTrackLessonsForNav(ctx context.Context, arg ListTrackLessonsForNavParams) ([]ListTrackLessonsForNavRow, error) {
+	rows, err := q.db.Query(ctx, listTrackLessonsForNav, arg.TrackID, arg.TenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListTrackLessonsForNavRow
+	for rows.Next() {
+		var i ListTrackLessonsForNavRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Slug,
+			&i.Title,
+			&i.LessonType,
+			&i.SortOrder,
+			&i.ModuleSlug,
+			&i.ModuleSortOrder,
 		); err != nil {
 			return nil, err
 		}
@@ -1309,7 +1511,8 @@ SET title = COALESCE($1, title),
     sort_order = COALESCE($6, sort_order),
     updated_at = now()
 WHERE tenant_id = $7 AND id = $8
-RETURNING id, tenant_id, title, slug, description, difficulty, cover_media_id, is_published, sort_order, created_at, updated_at
+RETURNING id, tenant_id, title, slug, description, difficulty, cover_media_id, is_published, sort_order, created_at, updated_at,
+          instructor_id, price_kobo, currency, is_published_to_university, category, language, total_enrolled
 `
 
 type UpdateLearningTrackParams struct {
@@ -1324,17 +1527,24 @@ type UpdateLearningTrackParams struct {
 }
 
 type UpdateLearningTrackRow struct {
-	ID           pgtype.UUID        `json:"id"`
-	TenantID     pgtype.UUID        `json:"tenant_id"`
-	Title        string             `json:"title"`
-	Slug         string             `json:"slug"`
-	Description  *string            `json:"description"`
-	Difficulty   string             `json:"difficulty"`
-	CoverMediaID pgtype.UUID        `json:"cover_media_id"`
-	IsPublished  bool               `json:"is_published"`
-	SortOrder    int32              `json:"sort_order"`
-	CreatedAt    pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
+	ID                      pgtype.UUID        `json:"id"`
+	TenantID                pgtype.UUID        `json:"tenant_id"`
+	Title                   string             `json:"title"`
+	Slug                    string             `json:"slug"`
+	Description             *string            `json:"description"`
+	Difficulty              string             `json:"difficulty"`
+	CoverMediaID            pgtype.UUID        `json:"cover_media_id"`
+	IsPublished             bool               `json:"is_published"`
+	SortOrder               int32              `json:"sort_order"`
+	CreatedAt               pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt               pgtype.Timestamptz `json:"updated_at"`
+	InstructorID            pgtype.UUID        `json:"instructor_id"`
+	PriceKobo               *int64             `json:"price_kobo"`
+	Currency                string             `json:"currency"`
+	IsPublishedToUniversity bool               `json:"is_published_to_university"`
+	Category                *string            `json:"category"`
+	Language                string             `json:"language"`
+	TotalEnrolled           int32              `json:"total_enrolled"`
 }
 
 func (q *Queries) UpdateLearningTrack(ctx context.Context, arg UpdateLearningTrackParams) (UpdateLearningTrackRow, error) {
@@ -1361,6 +1571,13 @@ func (q *Queries) UpdateLearningTrack(ctx context.Context, arg UpdateLearningTra
 		&i.SortOrder,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.InstructorID,
+		&i.PriceKobo,
+		&i.Currency,
+		&i.IsPublishedToUniversity,
+		&i.Category,
+		&i.Language,
+		&i.TotalEnrolled,
 	)
 	return i, err
 }

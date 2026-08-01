@@ -87,7 +87,7 @@ var settingsCatalog = map[string]settingMeta{
 	"ai.japabot_enabled":           {Type: "bool", DefaultValue: "true", Description: "Global JapaBot toggle.", Panel: "admin"},
 	"ai.content_assist_enabled":    {Type: "bool", DefaultValue: "true", Description: "In-editor AI assist toggle.", Panel: "admin"},
 	// Media
-	"media.storage.provider":    {Type: "string", DefaultValue: "seaweedfs", Description: "seaweedfs | s3 | r2 | b2 — Storage backend provider.", Panel: "control"},
+	"media.storage.provider":    {Type: "string", DefaultValue: "seaweedfs", Description: "Storage backend provider.", Options: `[{"value":"seaweedfs","label":"SeaweedFS"},{"value":"s3","label":"Amazon S3"},{"value":"r2","label":"Cloudflare R2"},{"value":"b2","label":"Backblaze B2"}]`, Panel: "control"},
 	"media.storage.endpoint":    {Type: "string", DefaultValue: "", Description: "S3-compatible endpoint URL.", Panel: "control"},
 	"media.storage.bucket":      {Type: "string", DefaultValue: "japaconnect", Description: "Default bucket name.", Panel: "control"},
 	"media.storage.region":      {Type: "string", DefaultValue: "us-east-1", Description: "S3 region (SeaweedFS ignores this).", Panel: "control"},

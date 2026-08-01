@@ -59,8 +59,9 @@
 				<span>{field.label}{#if field.is_required}<span class="cf-required">*</span>{/if}</span>
 			</label>
 		{:else if field.field_type === 'select'}
-			<label class="cf-label">{field.label}{#if field.is_required}<span class="cf-required">*</span>{/if}</label>
+			<label class="cf-label" for={field.key}>{field.label}{#if field.is_required}<span class="cf-required">*</span>{/if}</label>
 			<select
+				id={field.key}
 				class="cf-input"
 				value={values[field.key] ?? ''}
 				onchange={(e) => setField(field.key, e.currentTarget.value)}
@@ -71,7 +72,7 @@
 				{/each}
 			</select>
 		{:else if field.field_type === 'multiselect'}
-			<label class="cf-label">{field.label}{#if field.is_required}<span class="cf-required">*</span>{/if}</label>
+			<span class="cf-label">{field.label}{#if field.is_required}<span class="cf-required">*</span>{/if}</span>
 			<div class="cf-multiselect">
 				{#each field.options ?? [] as opt (opt)}
 					<label class="cf-checkbox">
@@ -96,32 +97,36 @@
 				oninput={(e) => setField(field.key, e.currentTarget.valueAsNumber)}
 			/>
 		{:else if field.field_type === 'date'}
-			<label class="cf-label">{field.label}{#if field.is_required}<span class="cf-required">*</span>{/if}</label>
+			<label class="cf-label" for={field.key}>{field.label}{#if field.is_required}<span class="cf-required">*</span>{/if}</label>
 			<input
+				id={field.key}
 				type="date"
 				class="cf-input"
 				value={values[field.key] ?? ''}
 				oninput={(e) => setField(field.key, e.currentTarget.value)}
 			/>
 		{:else if field.field_type === 'datetime'}
-			<label class="cf-label">{field.label}{#if field.is_required}<span class="cf-required">*</span>{/if}</label>
+			<label class="cf-label" for={field.key}>{field.label}{#if field.is_required}<span class="cf-required">*</span>{/if}</label>
 			<input
+				id={field.key}
 				type="datetime-local"
 				class="cf-input"
 				value={values[field.key] ?? ''}
 				oninput={(e) => setField(field.key, e.currentTarget.value)}
 			/>
 		{:else if field.field_type === 'time'}
-			<label class="cf-label">{field.label}{#if field.is_required}<span class="cf-required">*</span>{/if}</label>
+			<label class="cf-label" for={field.key}>{field.label}{#if field.is_required}<span class="cf-required">*</span>{/if}</label>
 			<input
+				id={field.key}
 				type="time"
 				class="cf-input"
 				value={values[field.key] ?? ''}
 				oninput={(e) => setField(field.key, e.currentTarget.value)}
 			/>
 		{:else if field.field_type === 'duration'}
-			<label class="cf-label">{field.label}{#if field.is_required}<span class="cf-required">*</span>{/if}</label>
+			<label class="cf-label" for={field.key}>{field.label}{#if field.is_required}<span class="cf-required">*</span>{/if}</label>
 			<input
+				id={field.key}
 				type="text"
 				class="cf-input"
 				placeholder="e.g. 2 weeks, 3 months, 30 days"
@@ -129,8 +134,9 @@
 				oninput={(e) => setField(field.key, e.currentTarget.value)}
 			/>
 		{:else if field.field_type === 'textarea'}
-			<label class="cf-label">{field.label}{#if field.is_required}<span class="cf-required">*</span>{/if}</label>
+			<label class="cf-label" for={field.key}>{field.label}{#if field.is_required}<span class="cf-required">*</span>{/if}</label>
 			<textarea
+				id={field.key}
 				class="cf-input cf-textarea"
 				rows="3"
 				oninput={(e) => setField(field.key, e.currentTarget.value)}
@@ -160,15 +166,16 @@
 				oninput={(e) => setField(field.key, e.currentTarget.value)}
 			/>
 		{:else if field.field_type === 'color'}
-			<label class="cf-label">{field.label}{#if field.is_required}<span class="cf-required">*</span>{/if}</label>
+			<label class="cf-label" for={field.key}>{field.label}{#if field.is_required}<span class="cf-required">*</span>{/if}</label>
 			<input
+				id={field.key}
 				type="color"
 				class="cf-color"
 				value={values[field.key] ?? '#000000'}
 				oninput={(e) => setField(field.key, e.currentTarget.value)}
 			/>
 		{:else if field.field_type === 'repeater'}
-			<label class="cf-label">{field.label}{#if field.is_required}<span class="cf-required">*</span>{/if}</label>
+			<span class="cf-label">{field.label}{#if field.is_required}<span class="cf-required">*</span>{/if}</span>
 			<div class="cf-repeater">
 				{#each (Array.isArray(values[field.key]) ? (values[field.key] as string[]) : []) as item, idx (idx)}
 					<div class="cf-repeater-row">
