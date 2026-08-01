@@ -41,7 +41,8 @@
 		'select', 'multiselect',
 		'url', 'email', 'phone', 'color', 'rating',
 		'image_single', 'image_multi', 'media',
-		'platform_embed', 'reference'
+		'platform_embed', 'reference',
+		'repeater', 'group'
 	];
 	const entityTypes = ['content', 'user', 'space', 'tag'];
 

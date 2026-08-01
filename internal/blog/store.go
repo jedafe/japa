@@ -408,6 +408,38 @@ func (s *Store) listPublishedBlogPosts(ctx context.Context, tenantID pgtype.UUID
 	return rows, nil
 }
 
+// countPublishedBlogPosts returns the total number of published blog posts
+// for pagination meta.
+func (s *Store) countPublishedBlogPosts(ctx context.Context, tenantID pgtype.UUID) (int64, error) {
+	count, err := s.read.CountPublishedBlogPosts(ctx, tenantID)
+	if err != nil {
+		return 0, fmt.Errorf("counting published blog posts: %w", err)
+	}
+	return count, nil
+}
+
+// listAdminBlogPosts returns all-status blog post cards with author name
+// for the admin /blog table (BUG-B). Offset-paginated per Rule 5.
+func (s *Store) listAdminBlogPosts(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]gen.ListAdminBlogPostsRow, error) {
+	if limit <= 0 || limit > MaxPageSize {
+		limit = DefaultPageSize
+	}
+	if offset < 0 {
+		offset = 0
+	}
+
+	rows, err := s.read.ListAdminBlogPosts(ctx, gen.ListAdminBlogPostsParams{
+		TenantID:   tenantID,
+		PageOffset: offset,
+		PageLimit:  limit,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("listing admin blog posts: %w", err)
+	}
+
+	return rows, nil
+}
+
 // listPendingReviewSummaries returns joined review-queue rows with post
 // title/slug/author/excerpt for the admin review-queue (C3).
 func (s *Store) listPendingReviewSummaries(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]gen.ListPendingReviewSummariesRow, error) {

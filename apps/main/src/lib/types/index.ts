@@ -176,6 +176,14 @@ export type Visibility = 'public' | 'members' | 'private';
 export interface ContentTypeMeta {
 	value: string;
 	label: string;
+	has_category?: boolean;
+	categories?: GuideCategory[];
+}
+
+/** A guide category (Visa, Travel, Scholarship, etc.) — admin-configurable. */
+export interface GuideCategory {
+	Slug: string;
+	Label: string;
 }
 
 /** GET /me/spaces item (the caller's joined spaces). */
@@ -201,6 +209,7 @@ export interface CustomFieldDef {
 export interface CustomFieldGroup {
 	id: string;
 	name: string;
+	slug?: string;
 	entity_type: string;
 	fields: CustomFieldDef[];
 }
@@ -240,6 +249,7 @@ export interface ContentRecord {
 	visibility: string;
 	publish_at?: string | null;
 	space_id?: string | null;
+	guide_category?: string | null;
 }
 
 /** Uploaded media (POST /media/upload → confirm, or GET /me/media). */

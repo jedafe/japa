@@ -62,20 +62,25 @@ type MentionNotifier interface {
 
 // Handlers holds dependencies for content HTTP handlers.
 type Handlers struct {
-	Service          *Service
-	AsynqClient      TaskEnqueueClient
-	SpamPipeline     *spam.SpamPipeline
-	settings         *config.Settings
-	notifier         MentionNotifier        // nil disables mention notifications (test-only)
-	spaceChecker     SpacePostChecker      // nil disables space posting-perm checks (BUG-003)
-	tagResolver      TagSlugResolver       // nil disables bulk tag_slugs resolution (BUG-006)
-	mentionCheckers  *mentions.DBCheckers  // nil disables privacy filtering (BUG-004)
+	Service             *Service
+	AsynqClient         TaskEnqueueClient
+	SpamPipeline        *spam.SpamPipeline
+	settings            *config.Settings
+	notifier            MentionNotifier        // nil disables mention notifications (test-only)
+	spaceChecker        SpacePostChecker      // nil disables space posting-perm checks (BUG-003)
+	tagResolver         TagSlugResolver       // nil disables bulk tag_slugs resolution (BUG-006)
+	mentionCheckers     *mentions.DBCheckers  // nil disables privacy filtering (BUG-004)
+	guideCategoryLister GuideCategoryLister   // nil disables guide category listing
 }
 
 // TagSlugResolver resolves tag slugs to tag IDs within a tenant (Section 14).
 // Implemented by tags.Service to avoid an import cycle (tags imports content).
 type TagSlugResolver interface {
 	ResolveTagSlugs(ctx context.Context, tenantID pgtype.UUID, slugs []string) (map[string]pgtype.UUID, error)
+	// GetOrCreateTagSlugs resolves slugs to IDs, creating any slug that does
+	// not yet exist as a new tag. Used by the composer's tag_slugs flow where
+	// users type new tag names that may not exist yet.
+	GetOrCreateTagSlugs(ctx context.Context, tenantID pgtype.UUID, slugs []string) (map[string]pgtype.UUID, error)
 }
 
 // SpacePostChecker checks whether a user may post into a space, based on the
@@ -94,6 +99,26 @@ func (h *Handlers) SetSpacePostChecker(c SpacePostChecker) {
 // SetTagResolver injects the tag slug resolver for bulk tag_slugs support (BUG-006).
 func (h *Handlers) SetTagResolver(r TagSlugResolver) {
 	h.tagResolver = r
+}
+
+// GuideCategory is a evergreen guide category (Visa, Travel, Scholarship, etc.)
+// stored in custom_field_entity_types with value prefix 'guide_category:'.
+type GuideCategory struct {
+	Slug  string
+	Label string
+}
+
+// GuideCategoryLister lists guide categories for a tenant. Implemented by
+// an adapter in server.go wrapping customfields.Service to avoid an import
+// cycle (customfields cannot import content).
+type GuideCategoryLister interface {
+	ListGuideCategories(ctx context.Context, tenantID pgtype.UUID) ([]GuideCategory, error)
+}
+
+// SetGuideCategoryLister injects the guide category lister so ListContentTypes
+// can dynamically return admin-configured guide categories.
+func (h *Handlers) SetGuideCategoryLister(l GuideCategoryLister) {
+	h.guideCategoryLister = l
 }
 
 // NewHandlers creates Handlers with the given Service.
@@ -533,6 +558,7 @@ func (h *Handlers) CreateContent(w http.ResponseWriter, r *http.Request) {
 		SpaceID         *string         `json:"space_id"`
 		GeoSpaceID      *string         `json:"geo_space_id"`
 		OrganizationID  *string         `json:"organization_id"`
+		GuideCategory   *string         `json:"guide_category"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
@@ -582,6 +608,7 @@ func (h *Handlers) CreateContent(w http.ResponseWriter, r *http.Request) {
 		SeoIndexable:    true, // default: indexable; caller can override
 		Status:          input.Status,
 		Visibility:      input.Visibility,
+		GuideCategory:   input.GuideCategory,
 	}
 	if input.SeoIndexable != nil {
 		createInput.SeoIndexable = *input.SeoIndexable
@@ -829,6 +856,7 @@ func (h *Handlers) UpdateContent(w http.ResponseWriter, r *http.Request) {
 		OrganizationID  *string         `json:"organization_id"`
 		IsLocked        bool            `json:"is_locked"`
 		IsPinned        bool            `json:"is_pinned"`
+		GuideCategory   *string         `json:"guide_category"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
@@ -858,6 +886,7 @@ func (h *Handlers) UpdateContent(w http.ResponseWriter, r *http.Request) {
 		Visibility:      input.Visibility,
 		IsLocked:        input.IsLocked,
 		IsPinned:        input.IsPinned,
+		GuideCategory:   input.GuideCategory,
 	}
 
 	// Compute content hash for duplicate detection (Rule 12).
@@ -1280,6 +1309,19 @@ func (h *Handlers) AddReaction(w http.ResponseWriter, r *http.Request) {
 
 	reaction, err := h.Service.AddReaction(r.Context(), tenantID, EntityContent, contentID, user.UserID, input.ReactionKey)
 	if err != nil {
+		// ON CONFLICT DO NOTHING returns ErrNoRows when the user already has
+		// this reaction — treat as idempotent success, not a 404.
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
+				"tenant_id":    tenantID,
+				"entity_type":  EntityContent,
+				"entity_id":    contentID,
+				"user_id":      user.UserID,
+				"reaction_key": input.ReactionKey,
+				"already_reacted": true,
+			}})
+			return
+		}
 		handleServiceError(w, err)
 		return
 	}
@@ -1339,6 +1381,35 @@ func (h *Handlers) ListReactions(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": counts})
+}
+
+// ListUserReactions handles GET /api/v1/content/{id}/reactions/me.
+// Returns the current user's reactions for a content item (used by the
+// frontend to initialise the like button state on page load).
+func (h *Handlers) ListUserReactions(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	contentID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		return
+	}
+
+	reactions, err := h.Service.GetUserReactions(r.Context(), tenantID, EntityContent, contentID, user.UserID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": reactions})
 }
 
 // ---------------------------------------------------------------------------
@@ -1544,7 +1615,9 @@ func (h *Handlers) AddContentTag(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusServiceUnavailable, "tag_resolver_unavailable", "Tag slug resolution is not configured")
 			return
 		}
-		slugMap, err := h.tagResolver.ResolveTagSlugs(r.Context(), tenantID, input.TagSlugs)
+		// Get-or-create: user-typed slugs that don't exist yet are auto-
+		// created as tenant-scoped tags (Section 14 — composer flow).
+		slugMap, err := h.tagResolver.GetOrCreateTagSlugs(r.Context(), tenantID, input.TagSlugs)
 		if err != nil {
 			writeError(w, http.StatusBadRequest, "invalid_tag_slugs", "One or more tag slugs could not be resolved")
 			return
@@ -1602,6 +1675,9 @@ func (h *Handlers) AddContentTag(w http.ResponseWriter, r *http.Request) {
 }
 
 // RemoveContentTag handles DELETE /api/v1/content/{id}/tags/{tagId}.
+// The {tagId} path segment accepts either a tag UUID or a tag slug. UUID is
+// tried first (zero allocations); if it fails and a tag slug resolver is
+// wired, the slug is resolved to a tag UUID within the tenant (Section 14).
 func (h *Handlers) RemoveContentTag(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
 	if !ok {
@@ -1617,8 +1693,27 @@ func (h *Handlers) RemoveContentTag(w http.ResponseWriter, r *http.Request) {
 
 	tagID, err := parseUUIDParam(r, "tagId")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_tag_id", "Invalid tag ID format")
-		return
+		// Not a valid UUID — try slug resolution if a resolver is wired.
+		if h.tagResolver == nil {
+			writeError(w, http.StatusBadRequest, "invalid_tag_id", "Invalid tag ID format")
+			return
+		}
+		tenantID, ok := h.requireTenant(w, r)
+		if !ok {
+			return
+		}
+		slug := chi.URLParam(r, "tagId")
+		slugMap, rerr := h.tagResolver.ResolveTagSlugs(r.Context(), tenantID, []string{slug})
+		if rerr != nil {
+			writeError(w, http.StatusBadRequest, "invalid_tag_slug", "Tag slug could not be resolved")
+			return
+		}
+		var found bool
+		tagID, found = slugMap[slug]
+		if !found {
+			writeError(w, http.StatusNotFound, "tag_not_found", "Tag not found")
+			return
+		}
 	}
 
 	if err := h.Service.RemoveContentTag(r.Context(), contentID, tagID); err != nil {
@@ -1707,15 +1802,33 @@ func (h *Handlers) GetRelatedContent(w http.ResponseWriter, r *http.Request) {
 }
 
 // ListContentTypes handles GET /content-types — returns available content types.
+// The `guide` type has `has_category: true` and a `categories` array listing
+// the evergreen guide categories (Visa, Travel, Scholarship, etc.) loaded from
+// custom_field_entity_types (value prefix 'guide_category:'). Admins can add
+// new categories from the admin panel — no code change required.
 func (h *Handlers) ListContentTypes(w http.ResponseWriter, r *http.Request) {
-	types := []map[string]string{
+	tenantID, _ := h.requireTenant(w, r)
+
+	guideCategories := []map[string]string{}
+	if h.guideCategoryLister != nil && tenantID.Valid {
+		cats, err := h.guideCategoryLister.ListGuideCategories(r.Context(), tenantID)
+		if err == nil {
+			for _, c := range cats {
+				guideCategories = append(guideCategories, map[string]string{
+					"Slug":  c.Slug,
+					"Label": c.Label,
+				})
+			}
+		}
+	}
+
+	types := []map[string]any{
 		{"value": "discussion", "label": "Discussion"},
 		{"value": "blog_post", "label": "Blog Post"},
 		{"value": "page", "label": "Page"},
 		{"value": "comparison", "label": "Comparison"},
 		{"value": "question", "label": "Question"},
-		{"value": "article", "label": "Article"},
-		{"value": "guide", "label": "Guide"},
+		{"value": "guide", "label": "Guide", "has_category": true, "categories": guideCategories},
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": types})

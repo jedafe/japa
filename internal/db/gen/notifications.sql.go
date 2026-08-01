@@ -410,15 +410,19 @@ func (q *Queries) MarkNotificationRead(ctx context.Context, arg MarkNotification
 
 const updateNotificationType = `-- name: UpdateNotificationType :exec
 UPDATE notification_types
-SET label = $1, description = $2, enabled = $3
-WHERE key = $4
+SET label = $1, description = $2, enabled = $3,
+    default_in_app = $4, default_email = $5, default_push = $6
+WHERE key = $7
 `
 
 type UpdateNotificationTypeParams struct {
-	Label       string  `json:"label"`
-	Description *string `json:"description"`
-	Enabled     bool    `json:"enabled"`
-	Key         string  `json:"key"`
+	Label        string  `json:"label"`
+	Description  *string `json:"description"`
+	Enabled      bool    `json:"enabled"`
+	DefaultInApp bool    `json:"default_in_app"`
+	DefaultEmail bool    `json:"default_email"`
+	DefaultPush  bool    `json:"default_push"`
+	Key          string  `json:"key"`
 }
 
 func (q *Queries) UpdateNotificationType(ctx context.Context, arg UpdateNotificationTypeParams) error {
@@ -426,6 +430,9 @@ func (q *Queries) UpdateNotificationType(ctx context.Context, arg UpdateNotifica
 		arg.Label,
 		arg.Description,
 		arg.Enabled,
+		arg.DefaultInApp,
+		arg.DefaultEmail,
+		arg.DefaultPush,
 		arg.Key,
 	)
 	return err
@@ -459,15 +466,24 @@ func (q *Queries) UpsertNotificationPreference(ctx context.Context, arg UpsertNo
 
 const upsertNotificationType = `-- name: UpsertNotificationType :exec
 INSERT INTO notification_types (key, label, description, enabled, default_in_app, default_email, default_push)
-VALUES ($1, $2, $3, $4, true, true, false)
-ON CONFLICT (key) DO UPDATE SET label = EXCLUDED.label, description = EXCLUDED.description
+VALUES ($1, $2, $3, $4, $5, $6, $7)
+ON CONFLICT (key) DO UPDATE SET
+  label = EXCLUDED.label,
+  description = EXCLUDED.description,
+  enabled = EXCLUDED.enabled,
+  default_in_app = EXCLUDED.default_in_app,
+  default_email = EXCLUDED.default_email,
+  default_push = EXCLUDED.default_push
 `
 
 type UpsertNotificationTypeParams struct {
-	Key         string  `json:"key"`
-	Label       string  `json:"label"`
-	Description *string `json:"description"`
-	Enabled     bool    `json:"enabled"`
+	Key          string  `json:"key"`
+	Label        string  `json:"label"`
+	Description  *string `json:"description"`
+	Enabled      bool    `json:"enabled"`
+	DefaultInApp bool    `json:"default_in_app"`
+	DefaultEmail bool    `json:"default_email"`
+	DefaultPush  bool    `json:"default_push"`
 }
 
 func (q *Queries) UpsertNotificationType(ctx context.Context, arg UpsertNotificationTypeParams) error {
@@ -476,6 +492,9 @@ func (q *Queries) UpsertNotificationType(ctx context.Context, arg UpsertNotifica
 		arg.Label,
 		arg.Description,
 		arg.Enabled,
+		arg.DefaultInApp,
+		arg.DefaultEmail,
+		arg.DefaultPush,
 	)
 	return err
 }

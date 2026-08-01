@@ -96,12 +96,19 @@ FROM notification_types ORDER BY key;
 
 -- name: UpsertNotificationType :exec
 INSERT INTO notification_types (key, label, description, enabled, default_in_app, default_email, default_push)
-VALUES (@key, @label, @description, @enabled, true, true, false)
-ON CONFLICT (key) DO UPDATE SET label = EXCLUDED.label, description = EXCLUDED.description;
+VALUES (@key, @label, @description, @enabled, @default_in_app, @default_email, @default_push)
+ON CONFLICT (key) DO UPDATE SET
+  label = EXCLUDED.label,
+  description = EXCLUDED.description,
+  enabled = EXCLUDED.enabled,
+  default_in_app = EXCLUDED.default_in_app,
+  default_email = EXCLUDED.default_email,
+  default_push = EXCLUDED.default_push;
 
 -- name: UpdateNotificationType :exec
 UPDATE notification_types
-SET label = @label, description = @description, enabled = @enabled
+SET label = @label, description = @description, enabled = @enabled,
+    default_in_app = @default_in_app, default_email = @default_email, default_push = @default_push
 WHERE key = @key;
 
 -- name: DeleteNotificationType :exec

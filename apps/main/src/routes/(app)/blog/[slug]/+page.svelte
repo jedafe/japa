@@ -54,7 +54,7 @@
 <div class="mx-auto flex max-w-6xl gap-8 px-4 py-8">
 	<!-- Left margin: borderless ReactionRail (distinct from the collapsed nav) -->
 	<div class="hidden w-14 shrink-0 lg:block">
-		<ReactionRail voteScore={article.reshare_count} commentCount={article.comment_count} />
+		<ReactionRail contentId={article.id} voteScore={article.reshare_count} commentCount={article.comment_count} authed={data.authed} />
 	</div>
 
 	<!-- Center: article -->

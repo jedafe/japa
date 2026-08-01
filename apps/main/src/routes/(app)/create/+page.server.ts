@@ -37,7 +37,14 @@ export const load: PageServerLoad = async (event) => {
 	const spaces = spacesRes.status === 'fulfilled' ? spacesRes.value.items : [];
 	const fieldGroups =
 		groupsRes.status === 'fulfilled'
-			? groupsRes.value.items.filter((g) => g.entity_type === 'content')
+			? groupsRes.value.items.filter(
+					(g) =>
+						g.entity_type === 'content' &&
+						// Exclude guide category-specific field groups — those are loaded
+						// on demand by CreateShell when a guide category is selected,
+						// via GET /custom-field-groups?entity_class=content_type:guide:{cat}
+						!(g.slug?.startsWith('guide_') && g.slug?.endsWith('_fields'))
+				)
 			: [];
 	const series = seriesRes.status === 'fulfilled' ? seriesRes.value.items : [];
 	const organizations = orgsRes.status === 'fulfilled' ? orgsRes.value.items : [];

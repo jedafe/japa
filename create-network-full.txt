@@ -1,0 +1,170 @@
+1. [GET] http://localhost:3000/create => [200] OK
+2. [GET] https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Lora:ital,wght@0,400;0,500;1,400&display=swap => [200] 
+3. [GET] http://localhost:3000/api/v1/media/serve/media/temp/00000000-0000-0000-0000-000000000001/7b00f782-51fb-45fa-9616-11d9f82d8f7c.png => [200] OK
+4. [GET] http://localhost:3000/api/v1/media/serve/media/media/00000000-0000-0000-0000-000000000001/458a6590-b9f5-4184-abc3-2e4334f2be85.jpg => [200] OK
+5. [GET] http://localhost:3000/node_modules/@sveltejs/kit/src/runtime/client/entry.js => [304] Not Modified
+6. [GET] http://localhost:3000/@fs/home/jmobile/websites/japa/japaconnect/apps/main/.svelte-kit/generated/client/app.js => [304] Not Modified
+7. [GET] https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa1ZL7.woff2 => [200] 
+8. [GET] http://localhost:3000/manifest.json => [200] OK
+9. [GET] http://localhost:3000/node_modules/@sveltejs/kit/src/runtime/client/client.js?v=4a2bb639 => [200] OK
+10. [GET] http://localhost:3000/@vite/client => [304] Not Modified
+11. [GET] http://localhost:3000/.svelte-kit/generated/client/matchers.js?t=1785456872175 => [304] Not Modified
+12. [GET] http://localhost:3000/.svelte-kit/generated/root.js?t=1785456872187 => [304] Not Modified
+13. [GET] http://localhost:3000/node_modules/.vite/deps/esm-env.js?v=4a2bb639 => [200] OK
+14. [GET] http://localhost:3000/node_modules/.vite/deps/svelte.js?v=4a2bb639 => [200] OK
+15. [GET] http://localhost:3000/node_modules/@sveltejs/kit/src/exports/internal/index.js?v=4a2bb639 => [200] OK
+16. [GET] http://localhost:3000/node_modules/@sveltejs/kit/src/utils/url.js?v=4a2bb639 => [200] OK
+17. [GET] http://localhost:3000/node_modules/@sveltejs/kit/src/runtime/client/fetcher.js?v=4a2bb639 => [200] OK
+18. [GET] http://localhost:3000/node_modules/@sveltejs/kit/src/runtime/client/parse.js?v=4a2bb639 => [200] OK
+19. [GET] http://localhost:3000/node_modules/@sveltejs/kit/src/runtime/client/session-storage.js?v=4a2bb639 => [200] OK
+20. [GET] http://localhost:3000/node_modules/@sveltejs/kit/src/runtime/client/utils.js?v=4a2bb639 => [200] OK
+21. [GET] http://localhost:3000/node_modules/@sveltejs/kit/src/runtime/app/paths/index.js?v=4a2bb639 => [200] OK
+22. [GET] http://localhost:3000/node_modules/.vite/deps/devalue.js?v=4a2bb639 => [200] OK
+23. [GET] http://localhost:3000/node_modules/@sveltejs/kit/src/runtime/client/constants.js?v=4a2bb639 => [200] OK
+24. [GET] http://localhost:3000/node_modules/@sveltejs/kit/src/utils/exports.js?v=4a2bb639 => [200] OK
+25. [GET] http://localhost:3000/node_modules/@sveltejs/kit/src/utils/functions.js?v=4a2bb639 => [200] OK
+26. [GET] http://localhost:3000/node_modules/@sveltejs/kit/src/utils/array.js?v=4a2bb639 => [200] OK
+27. [GET] http://localhost:3000/node_modules/@sveltejs/kit/src/runtime/shared.js?v=4a2bb639 => [200] OK
+28. [GET] http://localhost:3000/node_modules/@sveltejs/kit/src/utils/error.js?v=4a2bb639 => [200] OK
+29. [GET] http://localhost:3000/node_modules/.vite/deps/svelte_store.js?v=4a2bb639 => [200] OK
+30. [GET] http://localhost:3000/node_modules/@sveltejs/kit/src/runtime/client/state.svelte.js?v=4a2bb639 => [200] OK
+31. [GET] http://localhost:3000/node_modules/@sveltejs/kit/src/runtime/pathname.js?v=4a2bb639 => [200] OK
+32. [GET] http://localhost:3000/node_modules/@sveltejs/kit/src/runtime/telemetry/noop.js?v=4a2bb639 => [200] OK
+33. [GET] http://localhost:3000/node_modules/@sveltejs/kit/src/runtime/client/ndjson.js?v=4a2bb639 => [200] OK
+34. [GET] http://localhost:3000/node_modules/.vite/deps/runtime-BkisJWgo.js?v=4a2bb639 => [200] OK
+35. [GET] http://localhost:3000/node_modules/.vite/deps/index-client-C6u4w0g8.js?v=4a2bb639 => [200] OK
+36. [GET] http://localhost:3000/node_modules/.vite/deps/legacy-client-DLOXvD-n.js?v=4a2bb639 => [200] OK
+37. [GET] http://localhost:3000/node_modules/@sveltejs/kit/src/exports/internal/remote-functions.js?v=4a2bb639 => [200] OK
+38. [GET] http://localhost:3000/node_modules/@sveltejs/kit/src/utils/hash.js?v=4a2bb639 => [200] OK
+39. [GET] http://localhost:3000/node_modules/@sveltejs/kit/src/runtime/utils.js?v=4a2bb639 => [200] OK
+40. [GET] http://localhost:3000/node_modules/@sveltejs/kit/src/utils/routing.js?v=4a2bb639 => [200] OK
+41. [GET] http://localhost:3000/node_modules/@sveltejs/kit/src/runtime/app/env/index.js?v=4a2bb639 => [200] OK
+42. [GET] http://localhost:3000/node_modules/@sveltejs/kit/src/runtime/app/paths/client.js?v=4a2bb639 => [200] OK
+43. [GET] http://localhost:3000/node_modules/.vite/deps/svelte_internal_client.js?v=4a2bb639 => [200] OK
+44. [GET] http://localhost:3000/node_modules/@sveltejs/kit/src/runtime/client/stream.js?v=4a2bb639 => [200] OK
+45. [GET] http://localhost:3000/node_modules/.vite/deps/warnings-Cxn636N6.js?v=4a2bb639 => [200] OK
+46. [GET] http://localhost:3000/node_modules/.vite/deps/flags-rVKwA43h.js?v=4a2bb639 => [200] OK
+47. [GET] http://localhost:3000/node_modules/.vite/deps/events-bHKAgOrs.js?v=4a2bb639 => [200] OK
+48. [GET] http://localhost:3000/node_modules/.vite/deps/svelte_n_clsx.js?v=4a2bb639 => [200] OK
+49. [GET] http://localhost:3000/node_modules/@sveltejs/kit/src/runtime/app/env/internal.js?v=4a2bb639 => [200] OK
+50. [GET] http://localhost:3000/node_modules/@sveltejs/kit/src/runtime/app/paths/internal/client.js?v=4a2bb639 => [200] OK
+51. [GET] http://localhost:3000/node_modules/.pnpm/vite@8.1.5_@types+node@22.20.1_jiti@2.7.0/node_modules/vite/dist/client/env.mjs => [304] Not Modified
+52. [GET] http://localhost:3000/node_modules/.vite/deps/svelte_legacy.js?v=4a2bb639 => [200] OK
+53. [GET] http://localhost:3000/.svelte-kit/generated/root.svelte => [304] Not Modified
+54. [GET] http://localhost:3000/favicon.svg => [200] OK
+55. [GET] http://localhost:3000/node_modules/.vite/deps/svelte_internal_disclose-version.js?v=4a2bb639 => [200] OK
+56. [GET] http://localhost:3000/.svelte-kit/generated/client/nodes/0.js?t=1785456872033 => [304] Not Modified
+57. [GET] http://localhost:3000/.svelte-kit/generated/client/nodes/1.js?t=1785456872035 => [304] Not Modified
+58. [GET] http://localhost:3000/.svelte-kit/generated/client/nodes/2.js?t=1785456872037 => [304] Not Modified
+59. [GET] http://localhost:3000/.svelte-kit/generated/client/nodes/19.js?t=1785456872073 => [200] OK
+60. [GET] http://localhost:3000/src/routes/+layout.svelte?t=1785453842315 => [304] Not Modified
+61. [GET] http://localhost:3000/src/routes/+error.svelte?t=1785453576198 => [304] Not Modified
+62. [GET] http://localhost:3000/src/routes/(app)/+layout.svelte?t=1785453576198 => [304] Not Modified
+63. [GET] http://localhost:3000/src/routes/(app)/create/+page.ts => [200] OK
+64. [GET] http://localhost:3000/src/routes/(app)/create/+page.svelte?t=1785453576198 => [200] OK
+65. [GET] http://localhost:3000/src/app.css?t=1785453842315 => [304] Not Modified
+66. [GET] http://localhost:3000/node_modules/@sveltejs/kit/src/runtime/app/state/index.js?v=4a2bb639 => [200] OK
+67. [GET] http://localhost:3000/src/lib/stores/theme.svelte.ts => [304] Not Modified
+68. [GET] http://localhost:3000/src/lib/i18n/store.svelte.ts?t=1785453576198 => [304] Not Modified
+69. [GET] http://localhost:3000/src/lib/i18n/index.ts?t=1785453576198 => [304] Not Modified
+70. [GET] http://localhost:3000/src/lib/api/csrf.svelte.ts => [304] Not Modified
+71. [GET] http://localhost:3000/node_modules/@sveltejs/kit/src/runtime/app/state/client.js?v=4a2bb639 => [200] OK
+72. [GET] http://localhost:3000/node_modules/@sveltejs/kit/src/runtime/app/state/server.js?v=4a2bb639 => [200] OK
+73. [GET] http://localhost:3000/node_modules/.vite/deps/lucide-svelte.js?v=4a2bb639 => [200] OK
+74. [GET] http://localhost:3000/src/lib/components/ui/index.ts?t=1785453576198 => [304] Not Modified
+75. [GET] http://localhost:3000/node_modules/.vite/deps/rolldown-runtime-EAsCxrDo.js?v=4a2bb639 => [200] OK
+76. [GET] http://localhost:3000/node_modules/.vite/deps/svelte_internal_flags_legacy.js?v=4a2bb639 => [200] OK
+77. [GET] http://localhost:3000/src/lib/components/shell/AppShell.svelte?t=1785453576198 => [304] Not Modified
+78. [GET] http://localhost:3000/src/lib/components/shell/MobileBottomTabBar.svelte?t=1785453576198 => [304] Not Modified
+79. [GET] http://localhost:3000/src/lib/components/create/gate.ts => [304] Not Modified
+80. [GET] http://localhost:3000/src/lib/components/shell/sidebar.svelte.ts => [304] Not Modified
+81. [GET] http://localhost:3000/src/lib/api/client.ts?t=1785404329390 => [304] Not Modified
+82. [GET] http://localhost:3000/src/lib/realtime/realtime.svelte.ts => [304] Not Modified
+83. [GET] http://localhost:3000/src/lib/i18n/en.json?import&t=1785453554181 => [304] Not Modified
+84. [GET] http://localhost:3000/src/lib/i18n/fr.json?import&t=1785453576198 => [304] Not Modified
+85. [GET] http://localhost:3000/src/lib/components/create/CreateShell.svelte?t=1785453576198 => [200] OK
+86. [GET] http://localhost:3000/@id/__x00__virtual:env/static/public => [304] Not Modified
+87. [GET] http://localhost:3000/src/lib/components/ui/EmptyState.svelte => [304] Not Modified
+88. [GET] http://localhost:3000/src/lib/components/ui/LoadingSkeleton.svelte => [304] Not Modified
+89. [GET] http://localhost:3000/src/lib/components/ui/AdSlot.svelte?t=1785453576198 => [304] Not Modified
+90. [GET] http://localhost:3000/src/lib/components/ui/RelativeTime.svelte => [304] Not Modified
+91. [GET] http://localhost:3000/src/lib/components/ui/VerificationBadge.svelte => [304] Not Modified
+92. [GET] http://localhost:3000/src/lib/components/ui/BookmarkButton.svelte?t=1785453576198 => [304] Not Modified
+93. [GET] http://localhost:3000/src/lib/components/ui/FollowButton.svelte?t=1785453576198 => [304] Not Modified
+94. [GET] http://localhost:3000/src/lib/components/ui/PaginationControls.svelte?t=1785453576198 => [304] Not Modified
+95. [GET] http://localhost:3000/src/lib/components/ui/EntityCard.svelte => [304] Not Modified
+96. [GET] http://localhost:3000/src/lib/components/ui/icons.ts => [304] Not Modified
+97. [GET] http://localhost:3000/src/lib/components/shell/LeftNav.svelte?t=1785453576198 => [304] Not Modified
+98. [GET] http://localhost:3000/src/lib/components/shell/RightSidebar.svelte?t=1785453576198 => [304] Not Modified
+99. [GET] http://localhost:3000/src/lib/components/shell/AppShell.svelte?svelte&type=style&lang.css => [304] Not Modified
+100. [GET] http://localhost:3000/src/lib/components/shell/ComposeModal.svelte?t=1785453576198 => [304] Not Modified
+101. [GET] http://localhost:3000/src/lib/realtime/wsClient.ts => [304] Not Modified
+102. [GET] http://localhost:3000/src/lib/components/create/composerState.svelte.ts => [200] OK
+103. [GET] http://localhost:3000/src/lib/components/create/contentTypeRegistry.ts => [200] OK
+104. [GET] http://localhost:3000/src/lib/api/create.ts?t=1785414872591 => [200] OK
+105. [GET] http://localhost:3000/src/lib/components/create/SaveBar.svelte?t=1785453576198 => [200] OK
+106. [GET] http://localhost:3000/src/lib/components/create/TitleField.svelte?t=1785453576198 => [200] OK
+107. [GET] http://localhost:3000/src/lib/components/create/slug.ts => [200] OK
+108. [GET] http://localhost:3000/src/lib/components/create/SpaceSelector.svelte?t=1785453576198 => [200] OK
+109. [GET] http://localhost:3000/src/lib/components/create/OrgSelector.svelte?t=1785453576198 => [200] OK
+110. [GET] http://localhost:3000/src/lib/components/create/TagInput.svelte?t=1785453576198 => [200] OK
+111. [GET] http://localhost:3000/src/lib/components/create/editors/PostEditor.svelte?t=1785453576198 => [200] OK
+112. [GET] http://localhost:3000/src/lib/components/create/editors/ComparisonBuilder.svelte?t=1785453576198 => [200] OK
+113. [GET] http://localhost:3000/src/lib/components/create/panel/CreateRightPanel.svelte?t=1785453576198 => [200] OK
+114. [GET] http://localhost:3000/src/lib/components/create/CreateShell.svelte?svelte&type=style&lang.css => [200] OK
+115. [GET] http://localhost:3000/node_modules/.vite/deps/clsx.js?v=4a2bb639 => [200] OK
+116. [GET] http://localhost:3000/node_modules/.vite/deps/bits-ui.js?v=4a2bb639 => [200] OK
+117. [GET] http://localhost:3000/src/lib/components/shell/NotificationCentre.svelte?t=1785453576198 => [304] Not Modified
+118. [GET] http://localhost:3000/src/lib/components/shell/SearchAutocomplete.svelte?t=1785453576198 => [304] Not Modified
+119. [GET] http://localhost:3000/src/lib/components/shell/UserDropdown.svelte?t=1785453576198 => [304] Not Modified
+120. [GET] http://localhost:3000/node_modules/@sveltejs/kit/src/runtime/app/navigation.js?v=4a2bb639 => [200] OK
+121. [GET] http://localhost:3000/node_modules/.vite/deps/index-client-D61iSclX.js?v=4a2bb639 => [200] OK
+122. [GET] http://localhost:3000/node_modules/.vite/deps/svelte_events.js?v=4a2bb639 => [200] OK
+123. [GET] http://localhost:3000/node_modules/.vite/deps/floating-ui.dom-BrxQmN37.js?v=4a2bb639 => [200] OK
+124. [GET] http://localhost:3000/node_modules/.vite/deps/reactive-value-Cr5d2mOk.js?v=4a2bb639 => [200] OK
+125. [GET] http://localhost:3000/src/lib/tiptap/search.ts => [200] OK
+126. [GET] http://localhost:3000/src/lib/components/create/TitleField.svelte?svelte&type=style&lang.css => [200] OK
+127. [GET] http://localhost:3000/src/lib/components/create/TagInput.svelte?svelte&type=style&lang.css => [200] OK
+128. [GET] http://localhost:3000/src/lib/components/create/Autocomplete.svelte?t=1785453576198 => [200] OK
+129. [GET] http://localhost:3000/src/lib/components/create/editors/ComparisonBuilder.svelte?svelte&type=style&lang.css => [200] OK
+130. [GET] http://localhost:3000/src/lib/components/create/panel/CreateGuidePanel.svelte?t=1785453576198 => [200] OK
+131. [GET] http://localhost:3000/src/lib/components/create/panel/CreateSettingsPanel.svelte?t=1785453576198 => [200] OK
+132. [GET] http://localhost:3000/src/lib/components/create/panel/CreateSeoPanel.svelte?t=1785453576198 => [200] OK
+133. [GET] http://localhost:3000/src/lib/components/create/panel/CreateRightPanel.svelte?svelte&type=style&lang.css => [200] OK
+134. [GET] http://localhost:3000/node_modules/.vite/deps/@tiptap_core.js?v=4a2bb639 => [200] OK
+135. [GET] http://localhost:3000/src/lib/tiptap/extensions.ts?t=1785452448863 => [200] OK
+136. [GET] http://localhost:3000/src/lib/tiptap/slashMenu.ts => [200] OK
+137. [GET] http://localhost:3000/src/lib/components/create/editors/PostEditor.svelte?t=1785403825264&svelte&type=style&lang.css => [200] OK
+138. [GET] http://localhost:3000/src/lib/components/create/panel/CustomFieldGroup.svelte => [200] OK
+139. [GET] http://localhost:3000/src/lib/components/create/panel/CreateSettingsPanel.svelte?svelte&type=style&lang.css => [200] OK
+140. [GET] http://localhost:3000/src/lib/components/create/panel/SeriesSelector.svelte?t=1785453576198 => [200] OK
+141. [GET] http://localhost:3000/src/lib/components/create/CoverUploader.svelte?t=1785453576198 => [200] OK
+142. [GET] http://localhost:3000/src/lib/components/create/panel/CreateGuidePanel.svelte?svelte&type=style&lang.css => [200] OK
+143. [GET] http://localhost:3000/src/lib/components/create/Autocomplete.svelte?t=1785406110903&svelte&type=style&lang.css => [200] OK
+144. [GET] http://localhost:3000/src/lib/components/media/MediaLibraryModal.svelte?t=1785453576198 => [200] OK
+145. [GET] http://localhost:3000/src/lib/components/create/panel/CreateSeoPanel.svelte?t=1785403827667&svelte&type=style&lang.css => [200] OK
+146. [GET] http://localhost:3000/node_modules/.vite/deps/dist-BT2gTOri.js?v=4a2bb639 => [200] OK
+147. [GET] http://localhost:3000/node_modules/.vite/deps/@tiptap_starter-kit.js?v=4a2bb639 => [200] OK
+148. [GET] http://localhost:3000/node_modules/.vite/deps/@tiptap_extension-image.js?v=4a2bb639 => [200] OK
+149. [GET] http://localhost:3000/node_modules/.vite/deps/@tiptap_extension-link.js?v=4a2bb639 => [200] OK
+150. [GET] http://localhost:3000/node_modules/.vite/deps/@tiptap_extension-placeholder.js?v=4a2bb639 => [200] OK
+151. [GET] http://localhost:3000/node_modules/.vite/deps/@tiptap_extension-mention.js?v=4a2bb639 => [200] OK
+152. [GET] http://localhost:3000/node_modules/.vite/deps/@tiptap_extension-task-list.js?v=4a2bb639 => [200] OK
+153. [GET] http://localhost:3000/node_modules/.vite/deps/@tiptap_extension-task-item.js?v=4a2bb639 => [200] OK
+154. [GET] http://localhost:3000/node_modules/.vite/deps/@tiptap_extension-table.js?v=4a2bb639 => [200] OK
+155. [GET] http://localhost:3000/node_modules/.vite/deps/@tiptap_extension-table-row.js?v=4a2bb639 => [200] OK
+156. [GET] http://localhost:3000/node_modules/.vite/deps/@tiptap_extension-table-cell.js?v=4a2bb639 => [200] OK
+157. [GET] http://localhost:3000/node_modules/.vite/deps/@tiptap_extension-table-header.js?v=4a2bb639 => [200] OK
+158. [GET] http://localhost:3000/node_modules/.vite/deps/@tiptap_markdown.js?v=4a2bb639 => [200] OK
+159. [GET] http://localhost:3000/src/lib/tiptap/suggestionRenderer.ts?t=1785452418651 => [200] OK
+160. [GET] http://localhost:3000/src/lib/components/create/panel/CustomFieldGroup.svelte?svelte&type=style&lang.css => [200] OK
+161. [GET] http://localhost:3000/src/lib/components/create/CoverUploader.svelte?svelte&type=style&lang.css => [200] OK
+162. [GET] http://localhost:3000/src/lib/components/create/panel/SeriesSelector.svelte?t=1785412697883&svelte&type=style&lang.css => [200] OK
+163. [GET] http://localhost:3000/src/lib/utils/imageConvert.ts => [200] OK
+164. [GET] http://localhost:3000/src/lib/api/stock.ts?t=1785404329390 => [200] OK
+165. [GET] http://localhost:3000/src/lib/components/media/MediaLibraryModal.svelte?svelte&type=style&lang.css => [200] OK
+166. [GET] http://localhost:3000/node_modules/.vite/deps/dist-CyW-lqm6.js?v=4a2bb639 => [200] OK
+167. [GET] http://localhost:3000/node_modules/.vite/deps/dist-CDocUexL.js?v=4a2bb639 => [200] OK
+168. [GET] http://localhost:3000/node_modules/.vite/deps/dist-BQ-YRRfK.js?v=4a2bb639 => [200] OK
+169. [GET] http://localhost:3000/node_modules/.vite/deps/dist-C-XSnDqm.js?v=4a2bb639 => [200] OK
+170. [POST] http://localhost:3000/api/v1/auth/ws-ticket => [200] OK

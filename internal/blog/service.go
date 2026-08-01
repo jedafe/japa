@@ -305,10 +305,22 @@ func (s *Service) ListPublishedBlogPosts(ctx context.Context, tenantID pgtype.UU
 	return s.store.listPublishedBlogPosts(ctx, tenantID, limit, offset)
 }
 
+// CountPublishedBlogPosts returns the total number of published blog posts
+// for pagination meta.
+func (s *Service) CountPublishedBlogPosts(ctx context.Context, tenantID pgtype.UUID) (int64, error) {
+	return s.store.countPublishedBlogPosts(ctx, tenantID)
+}
+
 // ListPendingReviewSummaries returns joined review-queue rows with post
 // title/slug/author/excerpt for the admin review-queue (C3).
 func (s *Service) ListPendingReviewSummaries(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]gen.ListPendingReviewSummariesRow, error) {
 	return s.store.listPendingReviewSummaries(ctx, tenantID, limit, offset)
+}
+
+// ListAdminBlogPosts returns all-status blog post cards with author name
+// for the admin /blog table (BUG-B). Offset-paginated per Rule 5.
+func (s *Service) ListAdminBlogPosts(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]gen.ListAdminBlogPostsRow, error) {
+	return s.store.listAdminBlogPosts(ctx, tenantID, limit, offset)
 }
 
 // ---------------------------------------------------------------------------
