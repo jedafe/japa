@@ -5,6 +5,7 @@
 	// theme toggle, language toggle, and auth buttons.
 	import { t, i18n } from '$lib/i18n';
 	import { theme } from '$lib/stores/theme.svelte';
+	import { loginUrl, MAIN_ORIGIN, switchLocale } from '$lib/appOrigins';
 	import { Sun, Moon, LogIn, UserPlus, Languages, GraduationCap } from 'lucide-svelte';
 	import SearchAutocomplete from './SearchAutocomplete.svelte';
 	import type { Menu, MenuItem } from '$lib/types';
@@ -26,11 +27,6 @@
 	);
 
 	const brandLabel = $derived(isUniversity ? t('university.name') : t('app.name'));
-
-	function currentPath(): string {
-		if (typeof window === 'undefined') return '';
-		return window.location.pathname.slice(1);
-	}
 </script>
 
 <header class="guest-header">
@@ -60,14 +56,15 @@
 			<div class="guest-search">
 				<SearchAutocomplete />
 			</div>
-			<a
-				href={i18n.locale === 'fr' ? `/en/${currentPath()}` : `/fr/${currentPath()}`}
+			<button
+				type="button"
 				class="guest-icon-btn"
+				onclick={() => switchLocale(i18n.locale === 'fr' ? 'en' : 'fr')}
 				aria-label={i18n.locale === 'fr' ? t('locale.switch_to_en') : t('locale.switch_to_fr')}
 				title={i18n.locale === 'fr' ? 'English' : 'Français'}
 			>
 				<Languages size={18} />
-			</a>
+			</button>
 			<button
 				type="button"
 				class="guest-icon-btn"
@@ -76,11 +73,11 @@
 			>
 				{#if theme.current === 'dark'}<Sun size={18} />{:else}<Moon size={18} />{/if}
 			</button>
-			<a href="/login" class="guest-login-btn">
+			<a href={loginUrl()} class="guest-login-btn">
 				<LogIn size={16} />
 				<span>{t('nav.login')}</span>
 			</a>
-			<a href="/signup" class="guest-signup-btn">
+			<a href={`${MAIN_ORIGIN}/signup`} class="guest-signup-btn">
 				<UserPlus size={16} />
 				<span>{t('nav.signup')}</span>
 			</a>

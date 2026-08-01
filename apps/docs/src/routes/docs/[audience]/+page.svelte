@@ -26,7 +26,7 @@
 	<meta name="twitter:title" content={data.meta.twitterTitle} />
 	<meta name="twitter:description" content={data.meta.twitterDescription} />
 	{#if data.meta.jsonLdString}
-		<script type="application/ld+json">{data.meta.jsonLdString}</script>
+		{@html `<script type="application/ld+json">${data.meta.jsonLdString}</script>`}
 	{/if}
 </svelte:head>
 

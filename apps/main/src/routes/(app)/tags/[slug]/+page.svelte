@@ -31,9 +31,11 @@
 		})
 	);
 
-	// Optimistic follow state for the tag. The backend exposes
+	// Follow state for the tag. Hydrated server-side from
+	// /users/{tag.id}/follow-status?entity_type=tag so the button reflects
+	// the caller's actual follow state on SSR load. The backend exposes
 	// POST/DELETE /tags/{slug}/follow (auth-gated).
-	let following = $state(false);
+	let following = $state(untrack(() => data.initiallyFollowing ?? false));
 	let pending = $state(false);
 
 	async function toggleFollow() {
@@ -42,9 +44,13 @@
 		following = !was;
 		pending = true;
 		const res = was
-			? await api.delete(`/tags/${tag.slug}/follow`)
-			: await api.post(`/tags/${tag.slug}/follow`);
-		if (res.error) following = was;
+			? await api.delete<{ following: boolean }>(`/tags/${tag.slug}/follow`)
+			: await api.post<{ following: boolean }>(`/tags/${tag.slug}/follow`);
+		if (res.error) {
+			following = was;
+		} else if (res.data && typeof res.data.following === 'boolean') {
+			following = res.data.following;
+		}
 		pending = false;
 	}
 </script>

@@ -1,12 +1,20 @@
 <script lang="ts">
 	import AppShell from '$lib/components/shell/AppShell.svelte';
 	import { t } from '$lib/i18n';
+	import { persistNavCollapse } from '$lib/nav-collapse';
 	import { AUDIENCE_LABEL_KEY, AUDIENCE_ORDER } from '$lib/types';
 	import type { DocAudience } from '$lib/types';
 	import type { PageData } from './$types';
 	import { ArrowRight } from 'lucide-svelte';
 
 	let { data }: { data: PageData } = $props();
+
+	let collapsed = $state(data.navCollapsed);
+
+	async function toggleCollapse() {
+		collapsed = !collapsed;
+		await persistNavCollapse(collapsed);
+	}
 
 	// Layout data (nav, accessibleAudiences, user, navCollapsed) comes via the
 	// nearest layout — here the root +layout.svelte. We read it from $props.
@@ -42,7 +50,7 @@
 	<meta name="twitter:title" content={data.meta.twitterTitle} />
 	<meta name="twitter:description" content={data.meta.twitterDescription} />
 	{#if data.meta.jsonLdString}
-		<script type="application/ld+json">{data.meta.jsonLdString}</script>
+		{@html `<script type="application/ld+json">${data.meta.jsonLdString}</script>`}
 	{/if}
 </svelte:head>
 
@@ -54,8 +62,8 @@
 	rightSidebarWidgets={data.rightSidebarWidgets}
 	activeAudience={null}
 	user={data.user}
-	collapsed={data.navCollapsed}
-	onToggleCollapse={() => {}}
+	collapsed={collapsed}
+	onToggleCollapse={toggleCollapse}
 >
 	<section class="landing">
 		<header class="hero">

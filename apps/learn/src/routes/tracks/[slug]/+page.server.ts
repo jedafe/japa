@@ -1,5 +1,5 @@
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGet, apiGetOrNull, apiList, ApiError } from '$lib/server/api';
+import { apiContext, apiGet, apiGetBody, ApiError } from '$lib/server/api';
 import { error } from '@sveltejs/kit';
 import type { TrackDetail, TrackReview, ReviewAggregate } from '$lib/types';
 import { courseJsonLd, breadcrumbJsonLd } from '$lib/seo';
@@ -30,20 +30,22 @@ export const load: PageServerLoad = async (event) => {
 		throw err;
 	}
 
-	// Public reviews (polymorphic reviews table, entity_type = 'learning_track').
+	// Public reviews + aggregate. The backend returns both inline from a single
+	// GET /learn/tracks/{id}/reviews call (`{ data: [...], aggregate: {...} }`) —
+	// there is NO separate /reviews/aggregate route (per api-routes-catalog.md:
+	// "GET /learn/tracks/{id}/reviews [public] — list reviews + aggregate").
+	// Reading them together avoids a 404 on a non-existent aggregate endpoint.
 	let reviews: TrackReview[] = [];
-	try {
-		const res = await apiList<TrackReview>(ctx, `/learn/tracks/${track.id}/reviews?limit=10`);
-		reviews = res.items;
-	} catch {
-		reviews = [];
-	}
-
-	// Review aggregate (avg + count).
 	let reviewAggregate: ReviewAggregate | null = null;
 	try {
-		reviewAggregate = await apiGetOrNull<ReviewAggregate>(ctx, `/learn/tracks/${track.id}/reviews/aggregate`);
+		const body = await apiGetBody<{
+			data?: TrackReview[];
+			aggregate?: ReviewAggregate;
+		}>(ctx, `/learn/tracks/${track.id}/reviews?limit=10`);
+		reviews = body.data ?? [];
+		reviewAggregate = body.aggregate ?? null;
 	} catch {
+		reviews = [];
 		reviewAggregate = null;
 	}
 

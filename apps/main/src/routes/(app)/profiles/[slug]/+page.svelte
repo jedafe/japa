@@ -9,6 +9,7 @@
 
 	const profile = $derived(data.profile);
 	const posts = $derived(data.posts ?? []);
+	const initiallyFollowing = $derived(data.initiallyFollowing ?? false);
 	const activeTab = $derived(page.url.searchParams.get('tab') ?? 'about');
 
 	// field_values is a record of key → value; render as key-value pairs.
@@ -70,7 +71,7 @@
 				</div>
 			</div>
 			{#if page.data.user}
-				<FollowButton entityType="profile" entityId={profile.id} />
+				<FollowButton entityType="profile" entityId={profile.id} {initiallyFollowing} />
 			{/if}
 		</div>
 	</div>

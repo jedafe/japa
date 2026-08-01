@@ -381,6 +381,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	commentsHandlers.SetSpamPipeline(spamPipeline)
 	// BL-001: wire comment notification dispatcher (fire-and-forget, Rule 8).
 	commentsHandlers.SetNotifier(commentNotificationAdapter{svc: notificationService})
+	// Wire the Asynq client so comment creation enqueues a content engagement
+	// count update (keeps content_scores.comment_count in sync for feed
+	// ranking). Ref: Section 32, Guide §21.
+	commentsHandlers.SetAsynqClient(asynqClient)
 	// BUG-004: wire DB-backed privacy checkers for comment mention filtering.
 	commentsService.SetMentionCheckers(mentionCheckers)
 
@@ -2557,6 +2561,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Get("/webhook-events", webhookHandlers.ListWebhookEvents)
 
 			// Newsletter admin routes (Section 33 — Newsletter)
+			// Public subscribe endpoint — gated by feature.newsletter, rate-limited
+			// to prevent form-spam. Ref: conventions/api-routes-catalog.md
+			r.With(features.Gate(featureChecker, "feature.newsletter"), mw.RateLimit(vkClient.Redis(), "form_submission")).
+				Post("/newsletter/subscribe", newsletterHandlers.Subscribe)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "newsletter.admin")).
 				Get("/admin/newsletter/subscribers", newsletterHandlers.ListSubscribers)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "newsletter.admin")).
@@ -3167,7 +3175,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Post("/admin/spaces/{id}/moderators", spaceHandlers.AdminAssignModerator)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermissionWithInvalidation(rbacResolver, "spaces.moderator.assign")).
 				Delete("/admin/spaces/{id}/moderators/{moderator_id}", spaceHandlers.AdminRemoveModerator)
-			r.With(auth.OptionalAuth(kr, vkClient.Redis())).Get("/spaces/{id}/analytics", spaceHandlers.GetSpaceAnalytics)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/spaces/{id}/analytics", spaceHandlers.GetSpaceAnalytics)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "spaces.moderate")).
 				Patch("/spaces/{id}/pinned/reorder", spaceHandlers.ReorderPinned)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/spaces/suggest-parents", spaceHandlers.SuggestParentSpaces)
@@ -3387,9 +3395,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Patch("/content/{id}/spaces", contentHandlers.UpdateContent)
 
 			// Task 34: Users public extras
-			// Public profile Analytics tab — public per JEOS §340; gated to 404
-			// for banned/suspended/deleted users by requireActiveProfileUser.
-			r.With(auth.OptionalAuth(kr, vkClient.Redis()), requireActiveProfileUser(usersService, "id")).
+			// Profile Analytics dashboard — owner-only per JEOS §342 [auth, self].
+			// RequireAuth blocks guests; the handler blocks non-owner users with
+			// 403 analytics_forbidden. requireActiveProfileUser still 404s for
+			// banned/suspended/deleted users.
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), requireActiveProfileUser(usersService, "id")).
 				Get("/users/{id}/analytics", usersHandlers.GetUserAnalytics)
 			// Public profile Posts tab — author-scoped published+public content (was
 			// wired to ListContent, which ignored {id} and returned all tenant content).

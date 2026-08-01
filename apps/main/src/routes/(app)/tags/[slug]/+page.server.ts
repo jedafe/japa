@@ -42,10 +42,22 @@ export const load: PageServerLoad = async (event) => {
 		loadError = true;
 	}
 
+	// Hydrate the follow button's initial state. Best-effort: a failure
+	// degrades to `false` (not following). Only fetch when the viewer is
+	// authenticated — guests can't follow.
+	const initiallyFollowing = event.locals.user
+		? apiGet<{ following: boolean }>(ctx, `/users/${tag.id}/follow-status?entity_type=tag`)
+				.then((r) => r.following)
+				.catch(() => false)
+		: Promise.resolve(false);
+
+	const isFollowing = await initiallyFollowing;
+
 	return {
 		tag,
 		items,
 		pageSize: PAGE_SIZE,
-		loadError
+		loadError,
+		initiallyFollowing: isFollowing
 	};
 };

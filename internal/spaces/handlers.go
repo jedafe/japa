@@ -2134,6 +2134,12 @@ func (h *Handlers) UpdateSpaceStatus(w http.ResponseWriter, r *http.Request) {
 
 // GetSpaceAnalytics handles GET /admin/spaces/:id/analytics.
 func (h *Handlers) GetSpaceAnalytics(w http.ResponseWriter, r *http.Request) {
+	user := auth.FromContext(r.Context())
+	if user == nil {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		return
+	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
@@ -2154,6 +2160,20 @@ func (h *Handlers) GetSpaceAnalytics(w http.ResponseWriter, r *http.Request) {
 		spaceID = space.ID
 	}
 
+	// [auth, space-admin] per JEOS §215 — only the space owner or an assigned
+	// moderator may view the analytics dashboard. Guests are blocked by
+	// RequireAuth on the route; non-admin members are blocked here.
+	canManage, err := h.Service.CanManageSpace(r.Context(), spaceID, user.UserID, tenantID)
+	if err != nil {
+		slog.Error("space stats: checking manage permission", "error", err, "space_id", spaceID.String())
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to authorize analytics")
+		return
+	}
+	if !canManage {
+		writeError(w, http.StatusForbidden, "analytics_forbidden", "Only space admins can view analytics")
+		return
+	}
+
 	// BUG-020: single round-trip aggregate instead of 3 sequential queries.
 	summary, err := h.Service.GetSpaceAnalyticsSummary(r.Context(), spaceID, tenantID)
 	if err != nil {
@@ -2172,7 +2192,15 @@ func (h *Handlers) GetSpaceAnalytics(w http.ResponseWriter, r *http.Request) {
 // GetSpaceAnalyticsBySlug handles GET /spaces/{slug}/analytics — the
 // slug-based variant for the main app's analytics tab (BUG-005). The space is
 // resolved by the SpaceResolver middleware and read from the request context.
+// [auth, space-admin] per JEOS §215 — only the space owner or an assigned
+// moderator may view the analytics dashboard.
 func (h *Handlers) GetSpaceAnalyticsBySlug(w http.ResponseWriter, r *http.Request) {
+	user := auth.FromContext(r.Context())
+	if user == nil {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		return
+	}
+
 	space, ok := spaceFromContext(w, r)
 	if !ok {
 		return
@@ -2180,6 +2208,18 @@ func (h *Handlers) GetSpaceAnalyticsBySlug(w http.ResponseWriter, r *http.Reques
 
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
+		return
+	}
+
+	// Only the space owner or an assigned moderator may view analytics.
+	canManage, err := h.Service.CanManageSpace(r.Context(), space.ID, user.UserID, tenantID)
+	if err != nil {
+		slog.Error("space stats: checking manage permission", "error", err, "space_id", space.ID.String())
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to authorize analytics")
+		return
+	}
+	if !canManage {
+		writeError(w, http.StatusForbidden, "analytics_forbidden", "Only space admins can view analytics")
 		return
 	}
 

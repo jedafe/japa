@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
-	import { navigating } from '$app/state';
+	import { navigating, page } from '$app/state';
 	import { MessageSquarePlus, TriangleAlert } from 'lucide-svelte';
 	import { api } from '$lib/api/client';
 	import { EmptyState, LoadingSkeleton } from '$lib/components/ui';
@@ -109,7 +109,7 @@
 		icon={MessageSquarePlus}
 		title={t('forum.empty_title', 'No discussions yet')}
 		body={t('forum.empty_body', 'Be the first to start a discussion.')}
-		action={{ label: t('forum.start_discussion', 'Start a discussion'), href: '/create?type=forum' }}
+		action={{ label: t('forum.start_discussion', 'Start a discussion'), href: page.data.user ? '/create?type=forum' : '/login?redirect=' + encodeURIComponent('/create?type=forum') }}
 	/>
 {:else}
 	{#if navigating.to}

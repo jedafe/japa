@@ -10,12 +10,14 @@ import (
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/spam"
 	"github.com/jedafe/japa/internal/tenant"
+	"github.com/jedafe/japa/internal/worker"
 )
 
 const defaultPageSize int32 = 20
@@ -37,10 +39,17 @@ type NotificationDispatcher interface {
 	) error
 }
 
+// TaskEnqueueClient is the subset of the Asynq client needed to enqueue
+// background tasks. Implemented by *asynq.Client.
+type TaskEnqueueClient interface {
+	Enqueue(task *asynq.Task, opts ...asynq.Option) (*asynq.TaskInfo, error)
+}
+
 // Handlers holds dependencies for comment HTTP handlers.
 type Handlers struct {
 	Service      *Service
 	SpamPipeline *spam.SpamPipeline
+	asynqClient  TaskEnqueueClient      // nil disables engagement updates (test-only)
 	notifier     NotificationDispatcher // nil disables notifications (test-only)
 }
 
@@ -53,6 +62,10 @@ func NewHandlers(service *Service) *Handlers {
 func (h *Handlers) SetSpamPipeline(p *spam.SpamPipeline) {
 	h.SpamPipeline = p
 }
+
+// SetAsynqClient wires the Asynq client used to enqueue engagement count
+// updates after comment creation (content_scores.comment_count sync).
+func (h *Handlers) SetAsynqClient(c TaskEnqueueClient) { h.asynqClient = c }
 
 // SetNotifier wires the notification dispatcher used after comment creation
 // (Section 49 — comment:notify_author/parent/mention → notification:dispatch_batch).
@@ -93,6 +106,35 @@ func writeError(w http.ResponseWriter, status int, code, message string) {
 	writeJSON(w, status, map[string]any{
 		"error": map[string]string{"code": code, "message": message},
 	})
+}
+
+// enqueueEngagementUpdate enqueues an async content engagement count update
+// task (worker.TypeEngagementCountUpdate). Fire-and-forget per Rule 8 —
+// errors are logged but never returned to the caller. Used to keep
+// content_scores.comment_count in sync with contents.comment_count.
+func (h *Handlers) enqueueEngagementUpdate(entityType string, entityID pgtype.UUID, engagementType string, delta int) {
+	if h.asynqClient == nil {
+		return
+	}
+
+	payload, err := json.Marshal(map[string]interface{}{
+		"entity_type":     entityType,
+		"entity_id":       entityID.String(),
+		"engagement_type": engagementType,
+		"delta":           delta,
+	})
+	if err != nil {
+		slog.Warn("comments: failed to marshal engagement update payload", "error", err)
+		return
+	}
+
+	if _, err := h.asynqClient.Enqueue(
+		asynq.NewTask(worker.TypeEngagementCountUpdate, payload),
+		asynq.Queue(worker.QueueForTask(worker.TypeEngagementCountUpdate)),
+	); err != nil {
+		slog.Warn("comments: failed to enqueue engagement update task",
+			"entity_id", entityID.String(), "error", err)
+	}
 }
 
 func parsePageSize(r *http.Request) int32 {
@@ -275,6 +317,12 @@ func (h *Handlers) CreateComment(w http.ResponseWriter, r *http.Request) {
 	// Fire-and-forget comment notifications (Section 49 — BL-001/BL-002).
 	// comment:notify_author/parent/mention → notification:dispatch_batch.
 	h.Service.DispatchCommentNotifications(r.Context(), tenantID, comment, h.notifier)
+
+	// Enqueue an async engagement count update so content_scores.comment_count
+	// (used by the feed ranking pipeline) stays in sync with the denormalized
+	// contents.comment_count incremented in the service layer. Fire-and-forget
+	// per Rule 8. Ref: Section 32, Guide §21.
+	h.enqueueEngagementUpdate("content", contentID, "comment", 1)
 
 	writeJSON(w, http.StatusCreated, map[string]any{"data": comment})
 }

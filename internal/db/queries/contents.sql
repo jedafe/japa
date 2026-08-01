@@ -175,6 +175,19 @@ RETURNING id, tenant_id, author_id, space_id, content_type, title, slug, body, b
 -- name: IncrementContentView :exec
 UPDATE contents SET view_count = view_count + 1 WHERE id = @id AND tenant_id = @tenant_id AND deleted_at IS NULL;
 
+-- name: IncrementContentCommentCount :exec
+-- Increments the denormalized comment_count on a content row. Called
+-- synchronously when a comment is created so feed cards (which read
+-- c.comment_count) show accurate counts without waiting for the async
+-- scoring pipeline. Ref: Section 32 (feed reads contents.comment_count).
+UPDATE contents SET comment_count = comment_count + 1
+WHERE id = @id AND tenant_id = @tenant_id AND deleted_at IS NULL;
+
+-- name: DecrementContentCommentCount :exec
+-- Decrements comment_count when a comment is soft-deleted/removed.
+UPDATE contents SET comment_count = GREATEST(comment_count - 1, 0)
+WHERE id = @id AND tenant_id = @tenant_id AND deleted_at IS NULL;
+
 -- name: DeleteContent :exec
 UPDATE contents SET deleted_at = now(), updated_at = now() WHERE id = @id AND tenant_id = @tenant_id AND deleted_at IS NULL;
 
@@ -273,6 +286,42 @@ SET vote_score = EXCLUDED.vote_score, comment_count = EXCLUDED.comment_count,
     view_count = EXCLUDED.view_count, bookmark_count = EXCLUDED.bookmark_count,
     velocity_score = EXCLUDED.velocity_score, last_scored_at = now()
 RETURNING content_id, vote_score, comment_count, view_count, bookmark_count, velocity_score, relevance_embedding, last_scored_at;
+
+-- name: EnsureContentScore :exec
+-- Creates a zero-default content_scores row if one does not yet exist.
+-- Called on content publish and by the engagement worker so that INNER JOIN
+-- feed queries (explore/top/rising/space/profile) never exclude content for
+-- lacking a score row, and so the worker can increment counts in place.
+-- ON CONFLICT DO NOTHING preserves any existing scores.
+INSERT INTO content_scores (content_id)
+VALUES (@content_id)
+ON CONFLICT (content_id) DO NOTHING;
+
+-- name: IncrementScoreVote :exec
+-- Atomically increments vote_score by delta. Used by the engagement worker
+-- to avoid the read-modify-write race that loses deltas when concurrent
+-- events (vote, comment, bookmark, view) overwrite each other's columns.
+UPDATE content_scores
+SET vote_score = vote_score + @delta, last_scored_at = now()
+WHERE content_id = @content_id;
+
+-- name: IncrementScoreComment :exec
+-- Atomically increments comment_count by delta.
+UPDATE content_scores
+SET comment_count = comment_count + @delta, last_scored_at = now()
+WHERE content_id = @content_id;
+
+-- name: IncrementScoreView :exec
+-- Atomically increments view_count by delta.
+UPDATE content_scores
+SET view_count = view_count + @delta, last_scored_at = now()
+WHERE content_id = @content_id;
+
+-- name: IncrementScoreBookmark :exec
+-- Atomically increments bookmark_count by delta.
+UPDATE content_scores
+SET bookmark_count = bookmark_count + @delta, last_scored_at = now()
+WHERE content_id = @content_id;
 
 -- name: GetContentScore :one
 SELECT content_id, vote_score, comment_count, view_count, bookmark_count, velocity_score, relevance_embedding, last_scored_at

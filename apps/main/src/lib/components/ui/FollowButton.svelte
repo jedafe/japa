@@ -12,6 +12,7 @@
 	import { t } from '$lib/i18n';
 	import { UserPlus, UserCheck, Loader2 } from 'lucide-svelte';
 	import { api } from '$lib/api/client';
+	import { requireAuthOrRedirect } from '$lib/auth/guest';
 
 	type EntityType = 'user' | 'organization' | 'profile' | 'space' | 'tag';
 
@@ -54,6 +55,8 @@
 
 	async function toggle() {
 		if (pending) return;
+		// Guests can't follow — redirect to login instead of hitting a 401.
+		if (!(await requireAuthOrRedirect())) return;
 		const wasFollowing = following;
 		following = !wasFollowing; // optimistic
 		pending = true;
@@ -89,7 +92,7 @@
 		<Loader2 size={compact ? 12 : 16} class="animate-spin" />
 	{:else if following}
 		<UserCheck size={compact ? 12 : 16} />
-		{t('profile.following', 'Following')}
+		{t('profile.following_label', 'Following')}
 	{:else}
 		<UserPlus size={compact ? 12 : 16} />
 		{t('profile.follow', 'Follow')}

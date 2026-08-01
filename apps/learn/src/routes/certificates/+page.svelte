@@ -69,7 +69,7 @@
 					</div>
 					<p class="text-base font-semibold text-[var(--color-text)]">{cert.track_title}</p>
 					<p class="mt-1 text-sm text-[var(--color-muted)]">
-						{t('learn.instructor')}: {cert.recipient_name}
+						{t('learn.earned_by')}: {cert.recipient_name}
 					</p>
 					<p class="mt-2 text-xs text-[var(--color-muted)]">
 						{new Date(cert.issued_at).toLocaleDateString()}

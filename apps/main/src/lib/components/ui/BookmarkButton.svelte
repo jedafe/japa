@@ -3,6 +3,7 @@
 	import { api } from '$lib/api/client';
 	import { t } from '$lib/i18n';
 	import { untrack } from 'svelte';
+	import { requireAuthOrRedirect } from '$lib/auth/guest';
 
 	interface Props {
 		entityType: string;
@@ -24,6 +25,8 @@
 
 	async function toggle() {
 		if (loading) return;
+		// Guests can't bookmark — redirect to login instead of hitting a 401.
+		if (!(await requireAuthOrRedirect())) return;
 		loading = true;
 		const wasOn = isOn;
 		isOn = !wasOn;

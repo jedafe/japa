@@ -1065,7 +1065,7 @@ func HandleEngagementCountUpdate(ctx context.Context, t *asynq.Task) error {
 	var payload struct {
 		EntityType     string `json:"entity_type"`
 		EntityID       string `json:"entity_id"`
-		EngagementType string `json:"engagement_type"` // "view", "comment", "share", "bookmark"
+		EngagementType string `json:"engagement_type"` // "view", "comment", "vote", "share", "bookmark"
 		Delta          int    `json:"delta"`
 	}
 
@@ -1085,45 +1085,61 @@ func HandleEngagementCountUpdate(ctx context.Context, t *asynq.Task) error {
 		return fmt.Errorf("task:content:update_engagement: %w", err)
 	}
 
-	// Fetch current scores.
-	score, err := queries.GetContentScore(ctx, entityID)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			slog.Warn("task:content:update_engagement: no content_score found",
-				"content_id", payload.EntityID)
-			return nil
-		}
-
-		slog.Error("task:content:update_engagement: failed to get content score",
+	// Ensure a content_scores row exists before incrementing. Without this,
+	// content published before the score-row-on-publish fix (or via paths that
+	// bypass UpdateContentStatus) would be silently skipped, leaving
+	// vote_score/bookmark_count stuck at 0. Idempotent (ON CONFLICT DO NOTHING).
+	if err := queries.EnsureContentScore(ctx, entityID); err != nil {
+		slog.Error("task:content:update_engagement: failed to ensure content_scores row",
 			"content_id", payload.EntityID, "error", err)
-
 		return err
 	}
 
-	voteScore := score.VoteScore
-	commentCount := score.CommentCount
-	viewCount := score.ViewCount
-	bookmarkCount := score.BookmarkCount
+	// Atomically increment the relevant column. This avoids the read-modify-
+	// write race condition where concurrent engagement events (vote, comment,
+	// bookmark, view arriving simultaneously) each read the same baseline,
+	// add their delta, and write the full row back — overwriting each other's
+	// deltas. Each event touches only its own column, so concurrent UPDATEs
+	// never interfere. Ref: Section 32, Guide §21.
+	delta := int32(payload.Delta) //nolint:gosec // G115: delta is typically ±1 for engagement events
 
 	switch payload.EngagementType {
 	case "view":
-		viewCount += int32(payload.Delta) //nolint:gosec // G115: delta is typically ±1 for engagement events
+		if err := queries.IncrementScoreView(ctx, gen.IncrementScoreViewParams{
+			Delta: delta, ContentID: entityID,
+		}); err != nil {
+			slog.Error("task:content:update_engagement: failed to increment view_count",
+				"content_id", payload.EntityID, "error", err)
+			return err
+		}
 	case "comment":
-		commentCount += int32(payload.Delta) //nolint:gosec // G115: delta is typically ±1 for engagement events
+		if err := queries.IncrementScoreComment(ctx, gen.IncrementScoreCommentParams{
+			Delta: delta, ContentID: entityID,
+		}); err != nil {
+			slog.Error("task:content:update_engagement: failed to increment comment_count",
+				"content_id", payload.EntityID, "error", err)
+			return err
+		}
+	case "vote":
+		if err := queries.IncrementScoreVote(ctx, gen.IncrementScoreVoteParams{
+			Delta: delta, ContentID: entityID,
+		}); err != nil {
+			slog.Error("task:content:update_engagement: failed to increment vote_score",
+				"content_id", payload.EntityID, "error", err)
+			return err
+		}
 	case "bookmark":
-		bookmarkCount += int32(payload.Delta) //nolint:gosec // G115: delta is typically ±1 for engagement events
-	}
-
-	if err := queries.UpdateContentScore(ctx, gen.UpdateContentScoreParams{
-		VoteScore:     voteScore,
-		CommentCount:  commentCount,
-		ViewCount:     viewCount,
-		BookmarkCount: bookmarkCount,
-		ContentID:     entityID,
-	}); err != nil {
-		slog.Error("task:content:update_engagement: failed to update score",
-			"content_id", payload.EntityID, "error", err)
-		return err
+		if err := queries.IncrementScoreBookmark(ctx, gen.IncrementScoreBookmarkParams{
+			Delta: delta, ContentID: entityID,
+		}); err != nil {
+			slog.Error("task:content:update_engagement: failed to increment bookmark_count",
+				"content_id", payload.EntityID, "error", err)
+			return err
+		}
+	default:
+		slog.Warn("task:content:update_engagement: unknown engagement type",
+			"engagement_type", payload.EngagementType)
+		return nil
 	}
 
 	slog.Info("task:content:update_engagement: score updated",
@@ -1215,6 +1231,14 @@ func HandleScheduledPublish(ctx context.Context, t *asynq.Task) error {
 
 	slog.Info("task:content:publish_scheduled: content published",
 		"content_id", payload.ContentID)
+
+	// Ensure a content_scores row exists so the published content is not
+	// excluded from INNER JOIN feed queries (explore/top/rising/space/profile).
+	// Ref: Section 32, Guide §21.
+	if err := gen.New(dbPool.Writer).EnsureContentScore(ctx, contentID); err != nil {
+		slog.Warn("task:content:publish_scheduled: failed to ensure content_scores row",
+			"content_id", payload.ContentID, "error", err)
+	}
 
 	// Enqueue feed fan-out for the newly published content (BL-005).
 	// Fetch the content to get author_id, space_id and content_type for the

@@ -99,6 +99,12 @@ export const load: LayoutServerLoad = async (event) => {
 
 	return {
 		user,
+		// Dedicated auth flag — page-level load functions may return their own
+		// `user` key (e.g. the profile page returns the viewed profile's user),
+		// which overrides `user` in page.data. This boolean is only set by the
+		// root layout and never overridden, so client-side auth guards can rely
+		// on it regardless of which page is loaded.
+		isAuthed: !!user,
 		theme: event.locals.theme,
 		locale: event.locals.locale,
 		isUniversityHost: event.locals.isUniversityHost,

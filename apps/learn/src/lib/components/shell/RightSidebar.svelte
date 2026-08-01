@@ -3,6 +3,7 @@
 	import { Search, Sun, Moon, Languages } from 'lucide-svelte';
 	import { theme } from '$lib/stores/theme.svelte';
 	import { t, i18n } from '$lib/i18n';
+	import { switchLocale } from '$lib/appOrigins';
 	import SearchAutocomplete from './SearchAutocomplete.svelte';
 	import UserDropdown from './UserDropdown.svelte';
 	import ContinueLearningCard from './ContinueLearningCard.svelte';
@@ -39,12 +40,6 @@
 	// The enabled set is resolved server-side from i18n.enabled_languages; for
 	// now Learn always offers en+fr, so the toggle is always shown.
 	let showLanguageToggle = $derived(true);
-
-	/** Current path without the leading slash, for the /fr /en redirect targets. */
-	function currentPath(): string {
-		if (typeof window === 'undefined') return '';
-		return window.location.pathname.slice(1);
-	}
 </script>
 
 <aside class="flex h-full flex-col gap-4 overflow-y-auto px-4 py-3">
@@ -64,14 +59,15 @@
 		</button>
 
 		{#if showLanguageToggle}
-			<a
-				href={i18n.locale === 'fr' ? `/en/${currentPath()}` : `/fr/${currentPath()}`}
+			<button
+				type="button"
+				onclick={() => switchLocale(i18n.locale === 'fr' ? 'en' : 'fr')}
 				class="grid h-9 w-9 shrink-0 place-items-center rounded-full text-[var(--color-muted)] hover:bg-[var(--color-surface-subtle)]"
 				aria-label={i18n.locale === 'fr' ? t('locale.switch_to_en') : t('locale.switch_to_fr')}
 				title={i18n.locale === 'fr' ? 'English' : 'Français'}
 			>
 				<Languages size={18} />
-			</a>
+			</button>
 		{/if}
 
 		<UserDropdown {user} />

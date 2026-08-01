@@ -90,7 +90,7 @@
 	}
 </script>
 
-<svelte:window on:keydown={onKeydown} />
+<svelte:window onkeydown={onKeydown} />
 
 <div class="overlay">
 	<button type="button" class="backdrop" onclick={onClose} aria-label={t('a11y.close_menu')}></button>

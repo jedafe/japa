@@ -52,35 +52,41 @@
 	</div>
 {:else if widget.widget_type === 'rich_text'}
 	{#if typeof widgetProps.content === 'string' && widgetProps.content.trim()}
+		<!-- NOTE: Content must be sanitized server-side (allowlist tags) before
+		     storage per Guide §5.1/§14. The backend's sidebar widget CRUD is
+		     responsible for sanitization; the frontend renders the stored HTML. -->
 		<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 prose prose-sm max-w-none">
 			{@html widgetProps.content}
 		</section>
 	{/if}
 {:else if widget.widget_type === 'custom_html'}
 	{#if typeof widgetProps.html === 'string' && widgetProps.html.trim()}
+		<!-- NOTE: Raw HTML widget — must be sanitized server-side (allowlist tags)
+		     before storage per Guide §5.1/§14. Admin-only content; the backend's
+		     sidebar widget CRUD is responsible for sanitization. -->
 		<section class="sidebar-widget-custom-html">
 			{@html widgetProps.html}
 		</section>
 	{/if}
 {:else if widget.widget_type === 'recent_content'}
 	<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-		<h2 class="mb-3 text-sm font-medium text-[var(--color-text)]">{title || 'Recent Posts'}</h2>
-		<p class="text-xs text-[var(--color-muted)]">Loading recent content…</p>
+		<h2 class="mb-3 text-sm font-medium text-[var(--color-text)]">{title || t('sidebar.recent_posts')}</h2>
+		<p class="text-xs text-[var(--color-muted)]">{t('sidebar.loading')}</p>
 	</section>
 {:else if widget.widget_type === 'space_list'}
 	<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-		<h2 class="mb-3 text-sm font-medium text-[var(--color-text)]">{title || 'Spaces'}</h2>
-		<p class="text-xs text-[var(--color-muted)]">Loading spaces…</p>
+		<h2 class="mb-3 text-sm font-medium text-[var(--color-text)]">{title || t('sidebar.spaces')}</h2>
+		<p class="text-xs text-[var(--color-muted)]">{t('sidebar.loading')}</p>
 	</section>
 {:else if widget.widget_type === 'trending_tags'}
 	<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 		<h2 class="mb-3 text-sm font-medium text-[var(--color-text)]">{title || t('sidebar.trending_tags', 'Trending Tags')}</h2>
-		<p class="text-xs text-[var(--color-muted)]">Loading trending tags…</p>
+		<p class="text-xs text-[var(--color-muted)]">{t('sidebar.loading')}</p>
 	</section>
 {:else if widget.widget_type === 'suggested_spaces'}
 	<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 		<h2 class="mb-3 text-sm font-medium text-[var(--color-text)]">{title || t('sidebar.suggested_spaces', 'Suggested Spaces')}</h2>
-		<p class="text-xs text-[var(--color-muted)]">Loading suggested spaces…</p>
+		<p class="text-xs text-[var(--color-muted)]">{t('sidebar.loading')}</p>
 	</section>
 {:else if widget.widget_type === 'search_launcher'}
 	<SearchLauncher />
@@ -94,13 +100,21 @@
 		{#if theme.current === 'dark'}<Sun size={18} />{:else}<Moon size={18} />{/if}
 	</button>
 {:else if widget.widget_type === 'language_toggle'}
-	<a
-		href={i18n.locale === 'fr' ? `/en${typeof window !== 'undefined' ? window.location.pathname.slice(1) : ''}` : `/fr${typeof window !== 'undefined' ? window.location.pathname.slice(1) : ''}`}
+	<!-- Locale switch: sets the jc_locale cookie and reloads so the server
+	     re-renders with the new locale (§16 — the onclick handler runs
+	     client-side only, so window is safe; no hydration mismatch). -->
+	<button
+		type="button"
+		onclick={() => {
+			const newLocale = i18n.locale === 'fr' ? 'en' : 'fr';
+			document.cookie = `jc_locale=${newLocale}; path=/; max-age=31536000; samesite=lax`;
+			window.location.reload();
+		}}
 		class="grid h-9 w-9 shrink-0 place-items-center rounded-full text-[var(--color-muted)] hover:bg-[var(--color-surface-subtle)]"
 		aria-label={i18n.locale === 'fr' ? t('locale.switch_to_en') : t('locale.switch_to_fr')}
 	>
 		<Languages size={18} />
-	</a>
+	</button>
 {:else if widget.widget_type === 'table_of_contents'}
 	<!-- TOC is rendered by the Docs page route snippet, not the widget renderer.
 	     This branch exists so the widget type is recognized and not flagged as unknown. -->
@@ -108,13 +122,13 @@
 	<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 		<div class="mb-3 flex items-center gap-2">
 			<ThumbsUp size={18} class="text-[var(--color-text-subtle)]" />
-			<h2 class="text-sm font-medium text-[var(--color-text)]">{t('docs.helpful', 'Was this helpful?')}</h2>
+			<h2 class="text-sm font-medium text-[var(--color-text)]">{t('docs.helpful')}</h2>
 		</div>
 		<div class="flex gap-2">
-			<button type="button" class="grid h-9 w-9 place-items-center rounded-[var(--radius)] border border-[var(--color-border)] hover:bg-[var(--color-surface-subtle)]" aria-label="Yes">
+			<button type="button" class="grid h-9 w-9 place-items-center rounded-[var(--radius)] border border-[var(--color-border)] hover:bg-[var(--color-surface-subtle)]" aria-label={t('docs.helpful_yes')}>
 				<ThumbsUp size={16} />
 			</button>
-			<button type="button" class="grid h-9 w-9 place-items-center rounded-[var(--radius)] border border-[var(--color-border)] hover:bg-[var(--color-surface-subtle)]" aria-label="No">
+			<button type="button" class="grid h-9 w-9 place-items-center rounded-[var(--radius)] border border-[var(--color-border)] hover:bg-[var(--color-surface-subtle)]" aria-label={t('docs.helpful_no')}>
 				<ThumbsUp size={16} class="rotate-180" />
 			</button>
 		</div>
@@ -162,51 +176,51 @@
 			class="flex w-full items-center justify-center gap-2 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2.5 text-sm font-semibold text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)]"
 		>
 			<MousePointerClick size={16} />
-			{typeof widgetProps.label === 'string' ? widgetProps.label : 'Get Started'}
+			{typeof widgetProps.label === 'string' ? widgetProps.label : t('sidebar.get_started')}
 		</a>
 	</section>
 {:else if widget.widget_type === 'leaderboard'}
 	<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 		<div class="mb-3 flex items-center gap-2">
 			<Trophy size={18} class="text-[var(--color-primary)]" />
-			<h2 class="text-sm font-medium text-[var(--color-text)]">{title || 'Top Contributors'}</h2>
+			<h2 class="text-sm font-medium text-[var(--color-text)]">{title || t('sidebar.top_contributors')}</h2>
 		</div>
-		<p class="text-xs text-[var(--color-muted)]">Loading leaderboard…</p>
+		<p class="text-xs text-[var(--color-muted)]">{t('sidebar.loading')}</p>
 	</section>
 {:else if widget.widget_type === 'featured_content'}
 	<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 		<div class="mb-3 flex items-center gap-2">
 			<Star size={18} class="text-[var(--color-primary)]" />
-			<h2 class="text-sm font-medium text-[var(--color-text)]">{title || 'Featured'}</h2>
+			<h2 class="text-sm font-medium text-[var(--color-text)]">{title || t('sidebar.featured')}</h2>
 		</div>
-		<p class="text-xs text-[var(--color-muted)]">Loading featured content…</p>
+		<p class="text-xs text-[var(--color-muted)]">{t('sidebar.loading')}</p>
 	</section>
 {:else if widget.widget_type === 'related_discussions'}
 	<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 		<div class="mb-3 flex items-center gap-2">
 			<MessageSquare size={18} class="text-[var(--color-text-subtle)]" />
-			<h2 class="text-sm font-medium text-[var(--color-text)]">{title || 'Related Discussions'}</h2>
+			<h2 class="text-sm font-medium text-[var(--color-text)]">{title || t('sidebar.related_discussions')}</h2>
 		</div>
-		<p class="text-xs text-[var(--color-muted)]">Loading discussions…</p>
+		<p class="text-xs text-[var(--color-muted)]">{t('sidebar.loading')}</p>
 	</section>
 {:else if widget.widget_type === 'upcoming_events'}
 	<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 		<div class="mb-3 flex items-center gap-2">
 			<Calendar size={18} class="text-[var(--color-text-subtle)]" />
-			<h2 class="text-sm font-medium text-[var(--color-text)]">{title || 'Upcoming Events'}</h2>
+			<h2 class="text-sm font-medium text-[var(--color-text)]">{title || t('sidebar.upcoming_events')}</h2>
 		</div>
-		<p class="text-xs text-[var(--color-muted)]">Loading events…</p>
+		<p class="text-xs text-[var(--color-muted)]">{t('sidebar.loading')}</p>
 	</section>
 {:else if widget.widget_type === 'tag_cloud'}
 	<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-		<h2 class="mb-3 text-sm font-medium text-[var(--color-text)]">{title || 'Popular Tags'}</h2>
-		<p class="text-xs text-[var(--color-muted)]">Loading tags…</p>
+		<h2 class="mb-3 text-sm font-medium text-[var(--color-text)]">{title || t('sidebar.popular_tags')}</h2>
+		<p class="text-xs text-[var(--color-muted)]">{t('sidebar.loading')}</p>
 	</section>
 {:else if widget.widget_type === 'metric_card'}
 	<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 		<div class="flex items-center gap-2 text-[var(--color-text-subtle)]">
 			<BarChart3 size={16} />
-			<span class="text-xs font-medium">{typeof widgetProps.label === 'string' ? widgetProps.label : 'Metric'}</span>
+			<span class="text-xs font-medium">{typeof widgetProps.label === 'string' ? widgetProps.label : t('sidebar.metric')}</span>
 		</div>
 		<p class="mt-2 text-2xl font-bold text-[var(--color-text)]">{typeof widgetProps.value === 'string' ? widgetProps.value : '—'}</p>
 		{#if typeof widgetProps.delta === 'string' && widgetProps.delta}
@@ -217,57 +231,57 @@
 	<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 		<div class="mb-3 flex items-center gap-2">
 			<UserCircle size={18} class="text-[var(--color-text-subtle)]" />
-			<h2 class="text-sm font-medium text-[var(--color-text)]">{title || 'Featured User'}</h2>
+			<h2 class="text-sm font-medium text-[var(--color-text)]">{title || t('sidebar.featured_user')}</h2>
 		</div>
-		<p class="text-xs text-[var(--color-muted)]">Loading user…</p>
+		<p class="text-xs text-[var(--color-muted)]">{t('sidebar.loading')}</p>
 	</section>
 {:else if widget.widget_type === 'space_categories'}
 	<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 		<div class="mb-3 flex items-center gap-2">
 			<FolderTree size={18} class="text-[var(--color-text-subtle)]" />
-			<h2 class="text-sm font-medium text-[var(--color-text)]">{title || 'Browse Spaces'}</h2>
+			<h2 class="text-sm font-medium text-[var(--color-text)]">{title || t('sidebar.browse_spaces')}</h2>
 		</div>
-		<p class="text-xs text-[var(--color-muted)]">Loading categories…</p>
+		<p class="text-xs text-[var(--color-muted)]">{t('sidebar.loading')}</p>
 	</section>
 {:else if widget.widget_type === 'bookmark_folders'}
 	<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 		<div class="mb-3 flex items-center gap-2">
 			<Bookmark size={18} class="text-[var(--color-text-subtle)]" />
-			<h2 class="text-sm font-medium text-[var(--color-text)]">{title || 'Bookmarks'}</h2>
+			<h2 class="text-sm font-medium text-[var(--color-text)]">{title || t('sidebar.bookmarks')}</h2>
 		</div>
-		<p class="text-xs text-[var(--color-muted)]">Loading bookmarks…</p>
+		<p class="text-xs text-[var(--color-muted)]">{t('sidebar.loading')}</p>
 	</section>
 {:else if widget.widget_type === 'continue_learning'}
 	<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 		<div class="mb-3 flex items-center gap-2">
 			<PlayCircle size={18} class="text-[var(--color-primary)]" />
-			<h2 class="text-sm font-medium text-[var(--color-text)]">{title || 'Continue Learning'}</h2>
+			<h2 class="text-sm font-medium text-[var(--color-text)]">{title || t('sidebar.continue_learning')}</h2>
 		</div>
-		<p class="text-xs text-[var(--color-muted)]">Loading your courses…</p>
+		<p class="text-xs text-[var(--color-muted)]">{t('sidebar.loading')}</p>
 	</section>
 {:else if widget.widget_type === 'learning_enrollments'}
 	<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 		<div class="mb-3 flex items-center gap-2">
 			<GraduationCap size={18} class="text-[var(--color-primary)]" />
-			<h2 class="text-sm font-medium text-[var(--color-text)]">{title || 'My Learning'}</h2>
+			<h2 class="text-sm font-medium text-[var(--color-text)]">{title || t('sidebar.my_learning')}</h2>
 		</div>
-		<p class="text-xs text-[var(--color-muted)]">Loading enrollments…</p>
+		<p class="text-xs text-[var(--color-muted)]">{t('sidebar.loading')}</p>
 	</section>
 {:else if widget.widget_type === 'progress_ring'}
 	<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 text-center">
-		<h2 class="mb-3 text-sm font-medium text-[var(--color-text)]">{title || 'My Progress'}</h2>
+		<h2 class="mb-3 text-sm font-medium text-[var(--color-text)]">{title || t('sidebar.my_progress')}</h2>
 		<div class="mx-auto grid h-20 w-20 place-items-center">
 			<CircleDashed size={64} class="text-[var(--color-border)]" />
 		</div>
-		<p class="mt-2 text-xs text-[var(--color-muted)]">Loading progress…</p>
+		<p class="mt-2 text-xs text-[var(--color-muted)]">{t('sidebar.loading')}</p>
 	</section>
 {:else if widget.widget_type === 'track_card'}
 	<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 		<div class="mb-3 flex items-center gap-2">
 			<BookOpen size={18} class="text-[var(--color-primary)]" />
-			<h2 class="text-sm font-medium text-[var(--color-text)]">{title || 'Featured Track'}</h2>
+			<h2 class="text-sm font-medium text-[var(--color-text)]">{title || t('sidebar.featured_track')}</h2>
 		</div>
-		<p class="text-xs text-[var(--color-muted)]">Loading track…</p>
+		<p class="text-xs text-[var(--color-muted)]">{t('sidebar.loading')}</p>
 	</section>
 {:else if widget.widget_type === 'curriculum_rail'}
 	<!-- Curriculum rail — rendered by the Learn app on lesson pages; no-op in Docs. -->
