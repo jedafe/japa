@@ -7,8 +7,14 @@ RETURNING id, user_id, tenant_id, used, expires_at, created_at;
 
 -- name: UseWSTicket :one
 UPDATE ws_tickets SET used = true
-WHERE id = @id AND user_id = @user_id AND used = false AND expires_at > now()
+WHERE id = @id AND user_id = @user_id AND tenant_id = @tenant_id AND used = false AND expires_at > now()
 RETURNING *;
+
+-- name: GetWSTicketForRedemption :one
+-- Resolves a ticket by ID when the Valkey cache misses, returning the
+-- user_id and tenant_id needed to upgrade the WebSocket connection.
+SELECT * FROM ws_tickets
+WHERE id = @id AND used = false AND expires_at > now();
 
 -- name: GetOrCreateConversation :one
 -- Get existing conversation or create new one (ordering participant IDs)
@@ -52,21 +58,22 @@ ORDER BY dc.last_message_at DESC NULLS LAST
 LIMIT @page_limit OFFSET @page_offset;
 
 -- name: InsertDMMessage :exec
-INSERT INTO dm_messages (conversation_id, sender_id, body)
-VALUES (@conversation_id, @sender_id, @body);
+INSERT INTO dm_messages (conversation_id, sender_id, tenant_id, body)
+VALUES (@conversation_id, @sender_id, @tenant_id, @body);
 
 -- name: GetConversationMessages :many
 SELECT dm.*, u.username AS sender_username, p.display_name AS sender_display_name
 FROM dm_messages dm
 JOIN users u ON u.id = dm.sender_id
 LEFT JOIN user_profiles p ON p.user_id = u.id AND p.tenant_id = @tenant_id
-WHERE dm.conversation_id = @conversation_id
+WHERE dm.conversation_id = @conversation_id AND dm.tenant_id = @tenant_id
 ORDER BY dm.created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 
 -- name: MarkMessagesRead :exec
 UPDATE dm_messages SET read_at = now()
-WHERE conversation_id = @conversation_id AND sender_id != @user_id AND read_at IS NULL;
+WHERE conversation_id = @conversation_id AND tenant_id = @tenant_id
+  AND sender_id != @user_id AND read_at IS NULL;
 
 -- name: UpdateConversationLastMessage :exec
 UPDATE dm_conversations
@@ -88,23 +95,39 @@ SET p1_unread_count = CASE WHEN participant_1_id = @user_id THEN 0 ELSE p1_unrea
 WHERE id = @conversation_id;
 
 -- name: GetMessageRequest :one
-SELECT * FROM dm_message_requests WHERE conversation_id = @conversation_id;
+SELECT * FROM dm_requests WHERE conversation_id = @conversation_id;
 
 -- name: CreateMessageRequest :exec
-INSERT INTO dm_message_requests (conversation_id, status)
-VALUES (@conversation_id, 'pending')
-ON CONFLICT (conversation_id) DO NOTHING;
+INSERT INTO dm_requests (tenant_id, requester_id, recipient_id, conversation_id, preview_message, status)
+SELECT @tenant_id, dc.participant_1_id, dc.participant_2_id, dc.id, @preview_message, 'pending'
+FROM dm_conversations dc
+WHERE dc.id = @conversation_id
+ON CONFLICT (requester_id, recipient_id) DO NOTHING;
 
 -- name: UpdateMessageRequestStatus :exec
-UPDATE dm_message_requests SET status = @status WHERE conversation_id = @conversation_id;
+UPDATE dm_requests SET status = @status, resolved_at = now()
+WHERE conversation_id = @conversation_id;
+
+-- name: GetPendingMessageRequests :many
+-- Lists pending DM requests for a recipient (BUG-003). Filters by
+-- recipient_id and status = 'pending' so the handler returns only
+-- actionable requests, not all conversations.
+SELECT dr.*, u.username AS requester_username, p.display_name AS requester_display_name, p.avatar_url AS requester_avatar_url
+FROM dm_requests dr
+JOIN users u ON u.id = dr.requester_id
+LEFT JOIN user_profiles p ON p.user_id = u.id AND p.tenant_id = dr.tenant_id
+WHERE dr.recipient_id = @recipient_id AND dr.tenant_id = @tenant_id AND dr.status = 'pending'
+ORDER BY dr.created_at DESC
+LIMIT @page_limit OFFSET @page_offset;
 
 -- name: GetUserDMPrivacy :one
-SELECT COALESCE(dm_privacy, 'everyone') AS dm_privacy FROM user_dm_settings WHERE user_id = @user_id;
+SELECT COALESCE(dm_privacy, 'everyone') AS dm_privacy FROM user_dm_settings
+WHERE user_id = @user_id AND tenant_id = @tenant_id;
 
 -- name: UpsertUserDMPrivacy :exec
-INSERT INTO user_dm_settings (user_id, dm_privacy, updated_at)
-VALUES (@user_id, @dm_privacy, now())
-ON CONFLICT (user_id) DO UPDATE SET dm_privacy = EXCLUDED.dm_privacy, updated_at = now();
+INSERT INTO user_dm_settings (user_id, tenant_id, dm_privacy, updated_at)
+VALUES (@user_id, @tenant_id, @dm_privacy, now())
+ON CONFLICT (tenant_id, user_id) DO UPDATE SET dm_privacy = EXCLUDED.dm_privacy, updated_at = now();
 
 -- name: EditDMMessage :exec
 UPDATE dm_messages

@@ -249,22 +249,28 @@ func (s *Store) Delete(ctx context.Context, tenantID, id pgtype.UUID) (gen.Delet
 
 // Track is the API-facing marketplace track record.
 type Track struct {
-	ID                      string    `json:"id"`
-	Title                   string    `json:"title"`
-	Slug                    string    `json:"slug"`
-	Description             *string   `json:"description,omitempty"`
-	Difficulty              string    `json:"difficulty"`
-	CoverMediaID            *string   `json:"cover_media_id,omitempty"`
-	InstructorID            *string   `json:"instructor_id,omitempty"`
-	PriceKobo               *int64    `json:"price_kobo,omitempty"`
-	Currency                string    `json:"currency"`
-	Category                *string   `json:"category,omitempty"`
-	Language                string    `json:"language"`
-	TotalEnrolled           int32     `json:"total_enrolled"`
-	IsPublished             bool      `json:"is_published"`
-	IsPublishedToUniversity bool      `json:"is_published_to_university"`
-	CreatedAt               time.Time `json:"created_at"`
-	UpdatedAt               time.Time `json:"updated_at"`
+	ID                        string     `json:"id"`
+	Title                     string     `json:"title"`
+	Slug                      string     `json:"slug"`
+	Description               *string    `json:"description,omitempty"`
+	Difficulty                string     `json:"difficulty"`
+	CoverMediaID              *string    `json:"cover_media_id,omitempty"`
+	InstructorID              *string    `json:"instructor_id,omitempty"`
+	PriceKobo                 *int64     `json:"price_kobo,omitempty"`
+	Currency                  string     `json:"currency"`
+	Category                  *string    `json:"category,omitempty"`
+	Language                  string     `json:"language"`
+	TotalEnrolled             int32      `json:"total_enrolled"`
+	IsPublished               bool       `json:"is_published"`
+	IsPublishedToUniversity   bool       `json:"is_published_to_university"`
+	SubmissionStatus          string     `json:"submission_status"`
+	SubmittedAt               *time.Time `json:"submitted_at,omitempty"`
+	ReviewedAt                *time.Time `json:"reviewed_at,omitempty"`
+	RejectionReason           *string    `json:"rejection_reason,omitempty"`
+	TotalRevenueKobo          int64      `json:"total_revenue_kobo"`
+	ThumbnailURL              *string    `json:"thumbnail_url,omitempty"`
+	CreatedAt                 time.Time  `json:"created_at"`
+	UpdatedAt                 time.Time  `json:"updated_at"`
 }
 
 func trackFromRow(r gen.GetUniversityTrackByIDRow) Track {
@@ -272,8 +278,10 @@ func trackFromRow(r gen.GetUniversityTrackByIDRow) Track {
 		ID: r.ID.String(), Title: r.Title, Slug: r.Slug, Description: r.Description,
 		Difficulty: r.Difficulty, Currency: r.Currency, Language: r.Language,
 		TotalEnrolled: r.TotalEnrolled, IsPublished: r.IsPublished,
-		IsPublishedToUniversity: r.IsPublishedToUniversity,
-		CreatedAt:               r.CreatedAt.Time, UpdatedAt: r.UpdatedAt.Time,
+		IsPublishedToUniversity:   r.IsPublishedToUniversity,
+		SubmissionStatus:          r.UniversitySubmissionStatus,
+		RejectionReason:           r.UniversityRejectionReason,
+		CreatedAt:                 r.CreatedAt.Time, UpdatedAt: r.UpdatedAt.Time,
 	}
 	if r.CoverMediaID.Valid {
 		s := r.CoverMediaID.String()
@@ -289,6 +297,14 @@ func trackFromRow(r gen.GetUniversityTrackByIDRow) Track {
 	}
 	if r.Category != nil {
 		t.Category = r.Category
+	}
+	if r.UniversitySubmittedAt.Valid {
+		tm := r.UniversitySubmittedAt.Time
+		t.SubmittedAt = &tm
+	}
+	if r.UniversityReviewedAt.Valid {
+		tm := r.UniversityReviewedAt.Time
+		t.ReviewedAt = &tm
 	}
 	return t
 }
@@ -658,5 +674,96 @@ func (s *Store) UpdatePayoutStatus(ctx context.Context, tenantID, id pgtype.UUID
 func (s *Store) EarningsSummary(ctx context.Context, tenantID, instructorID pgtype.UUID) (gen.GetInstructorEarningsSummaryRow, error) {
 	return s.read.GetInstructorEarningsSummary(ctx, gen.GetInstructorEarningsSummaryParams{
 		TenantID: tenantID, InstructorID: instructorID,
+	})
+}
+
+// DashboardSummary returns aggregate stats (total_enrolled, total_revenue,
+// courses_count) for the instructor dashboard (BUG-003).
+func (s *Store) DashboardSummary(ctx context.Context, tenantID, instructorID pgtype.UUID) (gen.GetInstructorDashboardSummaryRow, error) {
+	return s.read.GetInstructorDashboardSummary(ctx, gen.GetInstructorDashboardSummaryParams{
+		TenantID: tenantID, InstructorID: instructorID,
+	})
+}
+
+// RevenueSeries returns the daily creator revenue series for an instructor (BUG-005).
+func (s *Store) RevenueSeries(ctx context.Context, tenantID, instructorID pgtype.UUID) ([]gen.GetInstructorRevenueSeriesRow, error) {
+	return s.read.GetInstructorRevenueSeries(ctx, gen.GetInstructorRevenueSeriesParams{
+		TenantID: tenantID, InstructorID: instructorID,
+	})
+}
+
+// TrackRevenueSeries returns the daily revenue series for a single track (BUG-007).
+func (s *Store) TrackRevenueSeries(ctx context.Context, tenantID, trackID pgtype.UUID) ([]gen.GetTrackRevenueSeriesRow, error) {
+	return s.read.GetTrackRevenueSeries(ctx, gen.GetTrackRevenueSeriesParams{
+		TenantID: tenantID, TrackID: trackID,
+	})
+}
+
+// TrackEnrollmentSeries returns the daily enrollment series for a track (BUG-007).
+func (s *Store) TrackEnrollmentSeries(ctx context.Context, tenantID, trackID pgtype.UUID) ([]gen.GetTrackEnrollmentSeriesRow, error) {
+	return s.read.GetTrackEnrollmentSeries(ctx, gen.GetTrackEnrollmentSeriesParams{
+		TenantID: tenantID, TrackID: trackID,
+	})
+}
+
+// TrackCompletionRate returns total/completed enrollment counts for a track (BUG-007).
+func (s *Store) TrackCompletionRate(ctx context.Context, tenantID, trackID pgtype.UUID) (gen.GetTrackCompletionRateRow, error) {
+	return s.read.GetTrackCompletionRate(ctx, gen.GetTrackCompletionRateParams{
+		TenantID: tenantID, TrackID: trackID,
+	})
+}
+
+// HasProStreamSplit checks whether a pro_stream split already exists for the
+// given instructor/track/user combination (BUG-008 idempotency guard).
+func (s *Store) HasProStreamSplit(ctx context.Context, tenantID, instructorID, trackID, userID pgtype.UUID) (bool, error) {
+	return s.read.HasProStreamSplitForPeriod(ctx, gen.HasProStreamSplitForPeriodParams{
+		TenantID: tenantID, InstructorID: instructorID, TrackID: trackID, UserID: userID,
+	})
+}
+
+// ListAllTracks returns all marketplace tracks (admin view, BUG-002).
+func (s *Store) ListAllTracks(ctx context.Context, tenantID pgtype.UUID, status string, limit, offset int32) ([]gen.ListAllUniversityTracksRow, error) {
+	return s.read.ListAllUniversityTracks(ctx, gen.ListAllUniversityTracksParams{
+		TenantID: tenantID, Status: status, PageLimit: limit, PageOffset: offset,
+	})
+}
+
+// CountAllTracks returns the total count of marketplace tracks (BUG-002).
+func (s *Store) CountAllTracks(ctx context.Context, tenantID pgtype.UUID, status string) (int64, error) {
+	return s.read.CountAllUniversityTracks(ctx, gen.CountAllUniversityTracksParams{
+		TenantID: tenantID, Status: status,
+	})
+}
+
+// RejectTrack rejects a submitted track with an optional reason (BUG-002, BUG-004).
+func (s *Store) RejectTrack(ctx context.Context, tenantID, trackID pgtype.UUID, reason *string) (gen.RejectUniversityTrackRow, error) {
+	return s.write.RejectUniversityTrack(ctx, gen.RejectUniversityTrackParams{
+		TenantID: tenantID, ID: trackID, RejectionReason: reason,
+	})
+}
+
+// UpdateInstructorAdmin updates an instructor's tier and/or commission override (BUG-002).
+func (s *Store) UpdateInstructorAdmin(ctx context.Context, tenantID, id pgtype.UUID, tier *string, commissionOverride *pgtype.Numeric) (gen.InstructorProfile, error) {
+	params := gen.UpdateInstructorProfileAdminParams{
+		TenantID: tenantID, ID: id, Tier: tier,
+	}
+	if commissionOverride != nil {
+		params.CommissionPctOverride = *commissionOverride
+	}
+	return s.write.UpdateInstructorProfileAdmin(ctx, params)
+}
+
+// ListPublishedTracksByInstructor returns only live marketplace tracks for
+// an instructor, filtered at the DB level (BUG-017).
+func (s *Store) ListPublishedTracksByInstructor(ctx context.Context, tenantID, instructorID pgtype.UUID) ([]gen.ListPublishedTracksByInstructorRow, error) {
+	return s.read.ListPublishedTracksByInstructor(ctx, gen.ListPublishedTracksByInstructorParams{
+		TenantID: tenantID, InstructorID: instructorID,
+	})
+}
+
+// SetTrackFeatured features or unfeatures a marketplace track (BUG-012).
+func (s *Store) SetTrackFeatured(ctx context.Context, tenantID, trackID pgtype.UUID, featured bool) (gen.SetUniversityTrackFeaturedRow, error) {
+	return s.write.SetUniversityTrackFeatured(ctx, gen.SetUniversityTrackFeaturedParams{
+		TenantID: tenantID, ID: trackID, Featured: featured,
 	})
 }

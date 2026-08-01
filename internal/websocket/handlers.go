@@ -19,10 +19,6 @@ import (
 	"github.com/valkey-io/valkey-go/valkeycompat"
 )
 
-// defaultTenantID is used for ticket lookups until the tenant is stored
-// alongside the cached ticket.
-const defaultTenantID = "00000000-0000-0000-0000-000000000001"
-
 var wsUpgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
 	WriteBufferSize: 1024,
@@ -42,12 +38,13 @@ var wsUpgrader = websocket.Upgrader{
 
 // Handlers holds dependencies for WebSocket and DM HTTP handlers.
 type Handlers struct {
-	service      *Service
-	dmService    *DMService
-	hub          *Hub
-	vkClient     *valkey.Client
-	keyRotation  *auth.KeyRotation
-	spamPipeline *spam.SpamPipeline
+	service        *Service
+	dmService      *DMService
+	hub            *Hub
+	vkClient       *valkey.Client
+	keyRotation    *auth.KeyRotation
+	spamPipeline   *spam.SpamPipeline
+	sessionChecker func(userID string) bool // BUG-018
 }
 
 // NewHandlers creates Handlers with the given dependencies.
@@ -64,6 +61,13 @@ func NewHandlers(service *Service, dmService *DMService, hub *Hub, vkClient *val
 // SetSpamPipeline injects the spam detection pipeline for DM safety checks.
 func (h *Handlers) SetSpamPipeline(p *spam.SpamPipeline) {
 	h.spamPipeline = p
+}
+
+// SetSessionChecker injects the session validity checker used to re-validate
+// WebSocket connections on each pong (BUG-018). The checker returns false if
+// the user's session has been revoked or the user has been banned.
+func (h *Handlers) SetSessionChecker(checker func(userID string) bool) {
+	h.sessionChecker = checker
 }
 
 // requireUser extracts the authenticated user from context.
@@ -113,15 +117,21 @@ func (h *Handlers) GetWSTicket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Store in Valkey for fast lookup: jc:ws_ticket:{ticket_id} -> user_id, TTL 60s.
+	// Store in Valkey for fast lookup: jc:ws_ticket:{ticket_id} -> {user_id, tenant_id}, TTL 60s.
 	// The upgrade handler resolves tickets from Valkey only, so a failed write
-	// would hand the client a ticket that can never be redeemed.
+	// would hand the client a ticket that can never be redeemed. The tenant_id
+	// is cached alongside the user_id so the upgrade handler does not fall back
+	// to a hardcoded default tenant (Rule 4: Valkey keys must be tenant-scoped).
 	if h.vkClient != nil {
 		vctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 		defer cancel()
 
-		if err := h.vkClient.Redis().Set(vctx, "jc:ws_ticket:"+ticket.ID.String(),
-			user.UserID.String(), 60*time.Second).Err(); err != nil {
+		ticketFields := map[string]interface{}{
+			"user_id":   user.UserID.String(),
+			"tenant_id": user.TenantID.String(),
+		}
+		if err := h.vkClient.Redis().HSet(vctx, "jc:ws_ticket:"+ticket.ID.String(),
+			ticketFields, 60*time.Second).Err(); err != nil {
 			slog.Error("caching ws ticket", "error", err, "user_id", user.UserID.String())
 			writeError(w, http.StatusInternalServerError, "internal_error", "Failed to create ticket")
 
@@ -160,32 +170,43 @@ func (h *Handlers) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 		vctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 		defer cancel()
 
-		val, err := h.vkClient.Redis().Get(vctx, "jc:ws_ticket:"+ticketStr).Result()
+		fields, err := h.vkClient.Redis().HGetAll(vctx, "jc:ws_ticket:"+ticketStr).Result()
 
 		switch {
-		case errors.Is(err, valkeycompat.Nil):
+		case errors.Is(err, valkeycompat.Nil), len(fields) == 0:
 			// Unknown or expired ticket — handled by the !userID.Valid check below.
 		case err != nil:
 			slog.Error("looking up ws ticket", "error", err)
 		default:
-			if scanErr := userID.Scan(val); scanErr != nil {
-				slog.Error("cached ws ticket holds an invalid user id", "error", scanErr, "ticket", ticketStr)
+			if val, ok := fields["user_id"]; ok {
+				if scanErr := userID.Scan(val); scanErr != nil {
+					slog.Error("cached ws ticket holds an invalid user id", "error", scanErr, "ticket", ticketStr)
+				}
 			}
-			// Tenant ID not stored in Valkey, use default for now.
-			if scanErr := tenantID.Scan(defaultTenantID); scanErr != nil {
-				slog.Error("scanning default tenant id", "error", scanErr)
+			if val, ok := fields["tenant_id"]; ok {
+				if scanErr := tenantID.Scan(val); scanErr != nil {
+					slog.Error("cached ws ticket holds an invalid tenant id", "error", scanErr, "ticket", ticketStr)
+				}
 			}
 		}
 	}
 
-	// Fallback to DB if Valkey didn't have it.
+	// Fallback to DB if Valkey didn't have it. This resolves the user_id and
+	// tenant_id from the persistent ticket record so a Valkey eviction does not
+	// make a valid ticket unredeemable.
 	if !userID.Valid {
-		writeError(w, http.StatusUnauthorized, "invalid_ticket", "Ticket not found or expired")
-		return
+		ticket, err := h.service.store.GetWSTicketForRedemption(ctx, ticketID)
+		if err != nil {
+			writeError(w, http.StatusUnauthorized, "invalid_ticket", "Ticket not found or expired")
+			return
+		}
+		userID = ticket.UserID
+		tenantID = ticket.TenantID
 	}
 
-	// Mark ticket as used in DB.
-	if _, err := h.service.store.UseWSTicket(ctx, ticketID, userID); err != nil {
+	// Mark ticket as used in DB, validating tenant_id alongside user_id so a
+	// ticket minted in tenant A cannot be consumed in tenant B (BUG-019).
+	if _, err := h.service.store.UseWSTicket(ctx, ticketID, userID, tenantID); err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to consume ticket")
 		return
 	}
@@ -206,12 +227,13 @@ func (h *Handlers) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 	// Create Client.
 	client := &Client{
-		Hub:      h.hub,
-		Conn:     conn,
-		UserID:   userID.String(),
-		TenantID: tenantID.String(),
-		Send:     make(chan []byte, 256),
-		SpaceIDs: make(map[string]bool),
+		Hub:            h.hub,
+		Conn:           conn,
+		UserID:         userID.String(),
+		TenantID:       tenantID.String(),
+		Send:           make(chan []byte, 256),
+		SpaceIDs:       make(map[string]bool),
+		SessionChecker: h.sessionChecker, // BUG-018
 	}
 
 	// Register with hub.
@@ -246,6 +268,15 @@ func (c *Client) readPump(_ *DMService) {
 	_ = c.Conn.SetReadDeadline(time.Now().Add(60 * time.Second))
 	c.Conn.SetPongHandler(func(string) error {
 		_ = c.Conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+
+		// BUG-018: re-validate the session on each pong (every 30-60s).
+		// If the user has been banned or their sessions revoked mid-connection,
+		// close the socket so it does not stay live with stale credentials.
+		if c.SessionChecker != nil && !c.SessionChecker(c.UserID) {
+			slog.Info("ws session invalidated, closing connection", "user_id", c.UserID)
+			return websocket.ErrCloseSent
+		}
+
 		return nil
 	})
 

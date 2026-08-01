@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
@@ -30,8 +31,11 @@ const (
 	maxLimit     = 50
 )
 
-// trendingCacheTTL is the TTL for jc:trending:tags:{tenant}:{geo} (Section 53).
+// trendingCacheTTL is the TTL for jc:trending:* cache keys (Section 53).
 const trendingCacheTTL = 30 * time.Minute
+
+// suggestionsCacheTTL is the TTL for jc:suggestions:* cache keys (Section 53).
+const suggestionsCacheTTL = 1 * time.Hour
 
 // Handlers holds dependencies for trending HTTP handlers.
 type Handlers struct {
@@ -144,11 +148,56 @@ func parseGeoCodePtr(r *http.Request) *string {
 	return &g
 }
 
+// parseContentType extracts the ?type= filter for /trending/content
+// (Section 53: ?type=discussion|blog_post). Returns empty string when
+// absent or invalid (no filter applied).
+func parseContentType(r *http.Request) string {
+	v := r.URL.Query().Get("type")
+	switch v {
+	case "discussion", "blog_post", "article", "poll", "question":
+		return v
+	}
+	return ""
+}
+
+// parseContentTypePtr is like parseContentType but returns a *string for
+// sqlc narg binding (nil when empty → no filter).
+func parseContentTypePtr(r *http.Request) *string {
+	ct := parseContentType(r)
+	if ct == "" {
+		return nil
+	}
+	return &ct
+}
+
+// parseLevel extracts the ?level= filter for /trending/spaces
+// (Section 53: ?level=country|state|city|custom). Returns empty string
+// when absent or invalid (no filter applied).
+func parseLevel(r *http.Request) string {
+	v := r.URL.Query().Get("level")
+	switch v {
+	case "country", "state", "city", "custom":
+		return v
+	}
+	return ""
+}
+
+// parseLevelPtr is like parseLevel but returns a *string for sqlc narg
+// binding (nil when empty → no filter).
+func parseLevelPtr(r *http.Request) *string {
+	l := parseLevel(r)
+	if l == "" {
+		return nil
+	}
+	return &l
+}
+
 // ---------------------------------------------------------------------------
 // Public trending endpoints
 // ---------------------------------------------------------------------------
 
 // GetTrendingContent handles GET /api/v1/trending/content.
+// BUG-007: supports ?type=discussion|blog_post filter (Section 53).
 func (h *Handlers) GetTrendingContent(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -158,17 +207,65 @@ func (h *Handlers) GetTrendingContent(w http.ResponseWriter, r *http.Request) {
 	window := parseWindow(r)
 	geoCode := parseGeoCode(r)
 	limit := parseLimit(r)
+	contentType := parseContentTypePtr(r) // BUG-007
 
-	data, err := h.Store.GetTrendingContent(r.Context(), tenantID, window, geoCode, limit)
+	// Try Valkey cache (jc:trending:content:{tenant}:{geo}:{window}, Section 53, TTL 30min).
+	// Include content_type in the cache key when filtering.
+	tenantStr := tenantID.String()
+	cacheKey := fmt.Sprintf("jc:trending:content:%s:%s:%s", tenantStr, geoCode, window)
+	if contentType != nil {
+		cacheKey += ":" + *contentType
+	}
+	if h.cache != nil {
+		if cached, err := h.cache.Do(r.Context(), h.cache.B().Get().Key(cacheKey).Build()).ToString(); err == nil {
+			var data []gen.GetTrendingContentRow
+			if json.Unmarshal([]byte(cached), &data) == nil {
+				writeJSON(w, http.StatusOK, map[string]any{"data": data})
+				return
+			}
+		}
+	}
+
+	// Fetch a larger pool when filtering by type, then filter in Go.
+	fetchLimit := limit
+	if contentType != nil {
+		fetchLimit = maxLimit // fetch max, filter, then truncate
+	}
+
+	data, err := h.Store.GetTrendingContent(r.Context(), tenantID, window, geoCode, fetchLimit)
 	if err != nil {
 		handleServiceError(w, err)
 		return
+	}
+
+	// Apply content_type filter in Go (BUG-007).
+	if contentType != nil {
+		filtered := make([]gen.GetTrendingContentRow, 0, len(data))
+		for _, item := range data {
+			if item.ContentType == *contentType {
+				filtered = append(filtered, item)
+			}
+		}
+		data = filtered
+		if int32(len(data)) > limit {
+			data = data[:limit]
+		}
+	}
+
+	// Cache the result (fire-and-forget; cache miss is acceptable).
+	if h.cache != nil {
+		if encoded, err := json.Marshal(data); err == nil {
+			_ = h.cache.Do(r.Context(), h.cache.B().Set().Key(cacheKey).Value(string(encoded)).Ex(trendingCacheTTL).Build()).Error()
+		}
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": data})
 }
 
 // GetTrendingTags handles GET /api/v1/trending/tags.
+// BUG-013: uses a short Valkey lock (SET NX EX 5s) on cache miss to prevent
+// cache stampede — concurrent requests wait for the lock holder to populate
+// the cache rather than all hitting the DB simultaneously.
 func (h *Handlers) GetTrendingTags(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -192,6 +289,30 @@ func (h *Handlers) GetTrendingTags(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// BUG-013: cache stampede protection — acquire a short lock; if another
+	// request holds it, briefly wait and re-check the cache.
+	lockKey := cacheKey + ":lock"
+	if h.cache != nil {
+		acquired, _ := h.cache.Do(r.Context(), h.cache.B().Set().Key(lockKey).Value("1").Nx().Ex(5*time.Second).Build()).ToString()
+		if acquired != "OK" {
+			// Another request is populating the cache; wait briefly and re-check.
+			time.Sleep(100 * time.Millisecond)
+			if cached, err := h.cache.Do(r.Context(), h.cache.B().Get().Key(cacheKey).Build()).ToString(); err == nil {
+				var data []gen.GetTrendingTagsRow
+				if json.Unmarshal([]byte(cached), &data) == nil {
+					writeJSON(w, http.StatusOK, map[string]any{"data": data})
+					return
+				}
+			}
+			// Lock wait expired; proceed to DB (rare).
+		}
+		defer func() {
+			if h.cache != nil {
+				_ = h.cache.Do(r.Context(), h.cache.B().Del().Key(lockKey).Build()).Error()
+			}
+		}()
+	}
+
 	data, err := h.Store.GetTrendingTags(r.Context(), tenantID, window, geoCode, limit)
 	if err != nil {
 		handleServiceError(w, err)
@@ -209,6 +330,7 @@ func (h *Handlers) GetTrendingTags(w http.ResponseWriter, r *http.Request) {
 }
 
 // GetTrendingSpaces handles GET /api/v1/trending/spaces.
+// BUG-008: supports ?level=country|state|city|custom filter (Section 53).
 func (h *Handlers) GetTrendingSpaces(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -218,11 +340,66 @@ func (h *Handlers) GetTrendingSpaces(w http.ResponseWriter, r *http.Request) {
 	window := parseWindow(r)
 	geoCode := parseGeoCode(r)
 	limit := parseLimit(r)
+	level := parseLevelPtr(r) // BUG-008
 
-	data, err := h.Store.GetTrendingSpaces(r.Context(), tenantID, window, geoCode, limit)
+	// Try Valkey cache (jc:trending:spaces:{tenant}:{geo}, Section 53, TTL 30min).
+	// Include level in the cache key when filtering.
+	tenantStr := tenantID.String()
+	cacheKey := fmt.Sprintf("jc:trending:spaces:%s:%s", tenantStr, geoCode)
+	if level != nil {
+		cacheKey += ":" + *level
+	}
+	if h.cache != nil {
+		if cached, err := h.cache.Do(r.Context(), h.cache.B().Get().Key(cacheKey).Build()).ToString(); err == nil {
+			var data []gen.GetTrendingSpacesRow
+			if json.Unmarshal([]byte(cached), &data) == nil {
+				writeJSON(w, http.StatusOK, map[string]any{"data": data})
+				return
+			}
+		}
+	}
+
+	// Fetch a larger pool when filtering by level, then filter in Go.
+	fetchLimit := limit
+	if level != nil {
+		fetchLimit = maxLimit
+	}
+
+	data, err := h.Store.GetTrendingSpaces(r.Context(), tenantID, window, geoCode, fetchLimit)
 	if err != nil {
 		handleServiceError(w, err)
 		return
+	}
+
+	// Apply level filter in Go (BUG-008). The row doesn't include level,
+	// so we fetch the levels for the returned space IDs and filter.
+	if level != nil {
+		ids := make([]pgtype.UUID, 0, len(data))
+		for _, item := range data {
+			ids = append(ids, item.ID_2)
+		}
+		levels, err := h.Store.GetSpaceLevels(r.Context(), tenantID, ids)
+		if err != nil {
+			handleServiceError(w, err)
+			return
+		}
+		filtered := make([]gen.GetTrendingSpacesRow, 0, len(data))
+		for _, item := range data {
+			if l, ok := levels[item.ID_2.Bytes]; ok && l == *level {
+				filtered = append(filtered, item)
+			}
+		}
+		data = filtered
+		if int32(len(data)) > limit {
+			data = data[:limit]
+		}
+	}
+
+	// Cache the result (fire-and-forget; cache miss is acceptable).
+	if h.cache != nil {
+		if encoded, err := json.Marshal(data); err == nil {
+			_ = h.cache.Do(r.Context(), h.cache.B().Set().Key(cacheKey).Value(string(encoded)).Ex(trendingCacheTTL).Build()).Error()
+		}
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": data})
@@ -269,10 +446,30 @@ func (h *Handlers) GetSuggestedUsers(w http.ResponseWriter, r *http.Request) {
 	limit := parseLimit(r)
 	geoCode := parseGeoCodePtr(r)
 
+	// Try Valkey cache (jc:suggestions:users:{user_id}, Section 53, TTL 1hr).
+	userStr := user.UserID.String()
+	cacheKey := fmt.Sprintf("jc:suggestions:users:%s", userStr)
+	if h.cache != nil {
+		if cached, err := h.cache.Do(r.Context(), h.cache.B().Get().Key(cacheKey).Build()).ToString(); err == nil {
+			var data []gen.GetSuggestedUsersRow
+			if json.Unmarshal([]byte(cached), &data) == nil {
+				writeJSON(w, http.StatusOK, map[string]any{"data": data})
+				return
+			}
+		}
+	}
+
 	data, err := h.Store.GetSuggestedUsers(r.Context(), user.UserID, tenantID, limit, geoCode)
 	if err != nil {
 		handleServiceError(w, err)
 		return
+	}
+
+	// Cache the result (fire-and-forget; cache miss is acceptable).
+	if h.cache != nil {
+		if encoded, err := json.Marshal(data); err == nil {
+			_ = h.cache.Do(r.Context(), h.cache.B().Set().Key(cacheKey).Value(string(encoded)).Ex(suggestionsCacheTTL).Build()).Error()
+		}
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": data})
@@ -295,10 +492,30 @@ func (h *Handlers) GetSuggestedSpaces(w http.ResponseWriter, r *http.Request) {
 	limit := parseLimit(r)
 	geoCode := parseGeoCodePtr(r)
 
+	// Try Valkey cache (jc:suggestions:spaces:{user_id}, Section 53, TTL 1hr).
+	userStr := user.UserID.String()
+	cacheKey := fmt.Sprintf("jc:suggestions:spaces:%s", userStr)
+	if h.cache != nil {
+		if cached, err := h.cache.Do(r.Context(), h.cache.B().Get().Key(cacheKey).Build()).ToString(); err == nil {
+			var data []gen.GetSuggestedSpacesRow
+			if json.Unmarshal([]byte(cached), &data) == nil {
+				writeJSON(w, http.StatusOK, map[string]any{"data": data})
+				return
+			}
+		}
+	}
+
 	data, err := h.Store.GetSuggestedSpaces(r.Context(), user.UserID, tenantID, limit, geoCode)
 	if err != nil {
 		handleServiceError(w, err)
 		return
+	}
+
+	// Cache the result (fire-and-forget; cache miss is acceptable).
+	if h.cache != nil {
+		if encoded, err := json.Marshal(data); err == nil {
+			_ = h.cache.Do(r.Context(), h.cache.B().Set().Key(cacheKey).Value(string(encoded)).Ex(suggestionsCacheTTL).Build()).Error()
+		}
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": data})
@@ -319,6 +536,42 @@ func (h *Handlers) GetSuggestedTags(w http.ResponseWriter, r *http.Request) {
 	limit := parseLimit(r)
 
 	data, err := h.Store.GetSuggestedTags(r.Context(), user.UserID, tenantID, limit)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": data})
+}
+
+// GetSuggestedContent handles GET /api/v1/suggestions/content.
+// Section 53: "You might also like" — pgvector cosine similarity when
+// ?seed_content_id is provided; falls back to top trending content otherwise.
+// BUG-003: previously wired to GetTrendingContent which ignored the seed.
+func (h *Handlers) GetSuggestedContent(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	_, ok = h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	window := parseWindow(r)
+	geoCode := parseGeoCodePtr(r)
+	limit := parseLimit(r)
+
+	// Parse optional ?seed_content_id=uuid
+	var seedContentID pgtype.UUID
+	if v := r.URL.Query().Get("seed_content_id"); v != "" {
+		if parsed, err := uuid.Parse(v); err == nil {
+			seedContentID = pgtype.UUID{Bytes: parsed, Valid: true}
+		}
+	}
+
+	data, err := h.Store.GetSuggestedContent(r.Context(), tenantID, window, geoCode, seedContentID, limit)
 	if err != nil {
 		handleServiceError(w, err)
 		return

@@ -15,11 +15,12 @@ const PubSubChannel = "jc:ws:broadcast"
 
 // PubSubMessage wraps a WSEvent with routing metadata for cross-instance
 // delivery. When an event is published to Valkey, the bridge attaches the
-// target user or space ID so that receiving instances can dispatch it to
-// the correct local subscribers.
+// target user or space ID (and the tenant ID for space-scoped delivery) so
+// that receiving instances can dispatch it to the correct local subscribers.
 type PubSubMessage struct {
 	Type          string      `json:"type"`
 	TargetUserID  string      `json:"target_user_id,omitempty"`
+	TargetTenantID string     `json:"target_tenant_id,omitempty"`
 	TargetSpaceID string      `json:"target_space_id,omitempty"`
 	Payload       interface{} `json:"payload"`
 }
@@ -82,12 +83,15 @@ func (b *PubSubBridge) Start(ctx context.Context) {
 // Valkey for delivery to other instances. The local hub is NOT called
 // here — callers invoke BroadcastToUser/BroadcastToSpace/BroadcastToAll
 // for local delivery and call Publish separately for cross-instance.
-func (b *PubSubBridge) Publish(event WSEvent, targetUserID, targetSpaceID string) {
+func (b *PubSubBridge) Publish(event WSEvent, targetUserID, targetTenantID, targetSpaceID string) {
+	// For space-scoped delivery the tenant_id is carried in the message so
+	// receiving instances scope local delivery to the correct tenant.
 	msg := PubSubMessage{
-		Type:          event.Type,
-		TargetUserID:  targetUserID,
-		TargetSpaceID: targetSpaceID,
-		Payload:       event.Payload,
+		Type:           event.Type,
+		TargetUserID:   targetUserID,
+		TargetTenantID: targetTenantID,
+		TargetSpaceID:  targetSpaceID,
+		Payload:        event.Payload,
 	}
 
 	data, err := json.Marshal(msg)
@@ -114,7 +118,7 @@ func (b *PubSubBridge) dispatch(msg PubSubMessage) {
 	case msg.TargetUserID != "":
 		b.hub.deliverLocalUser(msg.TargetUserID, event)
 	case msg.TargetSpaceID != "":
-		b.hub.deliverLocalSpace(msg.TargetSpaceID, event)
+		b.hub.deliverLocalSpace(msg.TargetTenantID, msg.TargetSpaceID, event)
 	default:
 		b.hub.deliverLocalAll(event)
 	}

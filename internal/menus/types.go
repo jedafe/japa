@@ -10,10 +10,12 @@ package menus
 import "errors"
 
 var (
-	ErrMenuNotFound     = errors.New("menu not found")
-	ErrMenuItemNotFound = errors.New("menu item not found")
-	ErrInvalidPlacement = errors.New("invalid placement; must be sidebar or bottom_bar")
+	ErrMenuNotFound      = errors.New("menu not found")
+	ErrMenuItemNotFound  = errors.New("menu item not found")
+	ErrInvalidPlacement  = errors.New("invalid placement; must be sidebar or bottom_bar")
 	ErrInvalidVisibility = errors.New("invalid visibility; must be all, authenticated, or guest")
+	ErrInvalidStatus     = errors.New("invalid status; must be active or inactive")
+	ErrInvalidTarget     = errors.New("invalid target; must be _self or _blank")
 	ErrDuplicateSlug     = errors.New("menu slug already exists for this tenant")
 )
 
@@ -69,4 +71,14 @@ func ValidPlacement(s string) bool {
 // ValidVisibility checks whether a string is a valid visibility.
 func ValidVisibility(s string) bool {
 	return s == string(VisibilityAll) || s == string(VisibilityAuthenticated) || s == string(VisibilityGuest)
+}
+
+// ValidStatus checks whether a string is a valid status.
+func ValidStatus(s string) bool {
+	return s == string(StatusActive) || s == string(StatusInactive)
+}
+
+// ValidTarget checks whether a string is a valid link target.
+func ValidTarget(s string) bool {
+	return s == string(TargetSelf) || s == string(TargetBlank)
 }

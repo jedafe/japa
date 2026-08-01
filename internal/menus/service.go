@@ -155,6 +155,9 @@ func (s *Service) CreateMenuItem(ctx context.Context, tenantID pgtype.UUID, inpu
 	if !ValidVisibility(input.Visibility) {
 		return gen.CreateMenuItemRow{}, ErrInvalidVisibility
 	}
+	if !ValidTarget(input.Target) {
+		return gen.CreateMenuItemRow{}, ErrInvalidTarget
+	}
 	var menuID pgtype.UUID
 	if err := menuID.Scan(input.MenuID); err != nil {
 		return gen.CreateMenuItemRow{}, fmt.Errorf("invalid menu_id: %w", err)
@@ -196,6 +199,12 @@ func (s *Service) CreateMenuItem(ctx context.Context, tenantID pgtype.UUID, inpu
 func (s *Service) UpdateMenuItem(ctx context.Context, id, tenantID pgtype.UUID, input UpdateMenuItemInput) (gen.UpdateMenuItemRow, error) {
 	if !ValidVisibility(input.Visibility) {
 		return gen.UpdateMenuItemRow{}, ErrInvalidVisibility
+	}
+	if !ValidStatus(input.Status) {
+		return gen.UpdateMenuItemRow{}, ErrInvalidStatus
+	}
+	if !ValidTarget(input.Target) {
+		return gen.UpdateMenuItemRow{}, ErrInvalidTarget
 	}
 	var parentID pgtype.UUID
 	if input.ParentID != nil {

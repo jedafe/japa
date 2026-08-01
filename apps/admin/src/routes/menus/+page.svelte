@@ -353,7 +353,14 @@
 				target: itemTarget,
 				icon: itemIcon.trim() || null,
 				permission_node: itemPermissionNode.trim() || null,
-				required_group_ids: [...itemRequiredGroupIds]
+				required_group_ids: [...itemRequiredGroupIds],
+				// Preserve fields with no UI control on edit so the backend
+				// doesn't overwrite them with zero values (status="" violates
+				// the menu_items.status CHECK constraint → 500).
+				status: editingItem?.status ?? "active",
+				sort_order: editingItem?.sort_order ?? 0,
+				is_ad_slot: editingItem?.is_ad_slot ?? false,
+				ad_slot_config: editingItem?.ad_slot_config ?? null
 			};
 			const result = editingItem
 				? await menusAdminApi.updateItem(activeMenuForItems.id, editingItem.id, body)

@@ -51,23 +51,25 @@ export const load: LayoutServerLoad = async (event) => {
 		suggestedSpaces = [];
 	}
 
-	// Sitewide sidebar blocks (Page Builder sidebars). Fetched SSR so the
-	// sidebars paint during initial render. Each call degrades gracefully.
-	let leftSidebarBlocks: unknown[] = [];
-	let rightSidebarBlocks: unknown[] = [];
+	// Sitewide sidebar widgets (Sidebar Management System, Section 59, ADR-066).
+	// Fetched SSR so the sidebars paint during initial render. Each call
+	// degrades gracefully. The resolve endpoint matches the current page
+	// path against sidebar page_pattern globs and filters widgets by the
+	// user's auth state and group membership.
+	let leftSidebarWidgets: unknown[] = [];
+	let rightSidebarWidgets: unknown[] = [];
 	let leftSidebarEnabled = true;
 	let rightSidebarEnabled = true;
+	const sidebarPath = event.url.pathname;
 	try {
-		const leftRes = await apiGet<{ blocks?: unknown[]; meta?: Record<string, unknown> }>(ctx, '/sidebars/left');
-		leftSidebarBlocks = leftRes.blocks ?? [];
-		leftSidebarEnabled = leftRes.meta?.show_left_sidebar !== false;
+		const leftRes = await apiGet<{ widgets?: unknown[] }>(ctx, `/sidebars/resolve?app=main&position=left&path=${encodeURIComponent(sidebarPath)}`);
+		leftSidebarWidgets = leftRes.widgets ?? [];
 	} catch {
 		// sidebar endpoint not available — keep defaults
 	}
 	try {
-		const rightRes = await apiGet<{ blocks?: unknown[]; meta?: Record<string, unknown> }>(ctx, '/sidebars/right');
-		rightSidebarBlocks = rightRes.blocks ?? [];
-		rightSidebarEnabled = rightRes.meta?.show_right_sidebar !== false;
+		const rightRes = await apiGet<{ widgets?: unknown[] }>(ctx, `/sidebars/resolve?app=main&position=right&path=${encodeURIComponent(sidebarPath)}`);
+		rightSidebarWidgets = rightRes.widgets ?? [];
 	} catch {
 		// sidebar endpoint not available — keep defaults
 	}
@@ -109,8 +111,8 @@ export const load: LayoutServerLoad = async (event) => {
 		userSpaces,
 		navCollapsed: user?.ui?.nav_collapsed ?? false,
 		unreadNotifications,
-		leftSidebarBlocks,
-		rightSidebarBlocks,
+		leftSidebarWidgets,
+		rightSidebarWidgets,
 		leftSidebarEnabled,
 		rightSidebarEnabled
 	};

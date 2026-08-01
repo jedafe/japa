@@ -11,8 +11,18 @@
 	const canManagePages = $derived(hasPermission('pages.manage'));
 	const canPublishPages = $derived(hasPermission('pages.publish'));
 
+	// slugify derives a URL-safe slug from a free-form title so the backend
+	// (CreatePageInput.Slug — optional) always receives a valid value even
+	// when the admin leaves the Slug field blank. Mirrors the blocks page.
+	function slugify(value: string): string {
+		return value.toLowerCase().trim()
+			.replace(/[^a-z0-9]+/g, '-')
+			.replace(/^-+|-+$/g, '');
+	}
+
 	let showDeleteConfirm = $state(false);
 	let deleteTarget = $state<Page | null>(null);
+	let deleting = $state(false);
 
 	type Page = {
 		id: string;
@@ -95,7 +105,7 @@
 		if (!newPage.title) return;
 		creating = true;
 		try {
-			const body: Record<string, unknown> = { title: newPage.title, slug: newPage.slug };
+			const body: Record<string, unknown> = { title: newPage.title, slug: newPage.slug || slugify(newPage.title) };
 			if (newPage.template_id) body.template_id = newPage.template_id;
 			if (newPage.theme_id) body.theme_id = newPage.theme_id;
 			const result = await api<{ id: string }>('/admin/pages', { method: 'POST', body });
@@ -160,8 +170,9 @@
 	}
 
 	async function executeDelete() {
-		if (!deleteTarget) return;
+		if (!deleteTarget || deleting) return;
 		error = '';
+		deleting = true;
 		try {
 			const result = await api(`/admin/pages/${deleteTarget.id}`, { method: 'DELETE' });
 			if (result.ok) {
@@ -174,6 +185,7 @@
 		} finally {
 			showDeleteConfirm = false;
 			deleteTarget = null;
+			deleting = false;
 		}
 	}
 
@@ -312,7 +324,7 @@
 					type="text"
 					class="w-full rounded-md border px-3 py-2 text-sm"
 					style="border-color: var(--color-border); background-color: var(--color-background)"
-					placeholder="my-page"
+					placeholder="auto-generated from title"
 					bind:value={newPage.slug}
 				/>
 			</div>
@@ -342,7 +354,7 @@
 				<button
 					class="rounded-md px-4 py-2 text-sm font-medium text-white transition-colors disabled:opacity-50"
 					style="background-color: var(--color-primary)"
-					disabled={creating || !newPage.title || !newPage.slug}
+					disabled={creating || !newPage.title}
 					onclick={createPage}
 				>
 					{creating ? t('common.creating') : t('common.create')}
@@ -416,6 +428,8 @@
 	{/if}
 	<div class="mt-4 flex justify-end gap-2">
 		<Button variant="ghost" onclick={() => (showDeleteConfirm = false)}>{t('common.cancel', 'Cancel')}</Button>
-		<Button variant="destructive" onclick={executeDelete}>{t('common.delete', 'Delete')}</Button>
+		<Button variant="destructive" onclick={executeDelete} disabled={deleting}>
+			{deleting ? t('common.deleting', 'Deleting...') : t('common.delete', 'Delete')}
+		</Button>
 	</div>
 </Modal>

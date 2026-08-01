@@ -76,19 +76,10 @@
 	/>
 	{@render children()}
 	<GuestFooter menu={data.footerMenu} />
-{:else if !data.user}
-	<!-- ADR-058 §5 Exception #4: unauthenticated users get a full-width top
-	     nav bar instead of the app shell (Compose/Notifications/LeftNav are
-	     incoherent for guests). Public pages render below the GuestHeader. -->
-	<GuestHeader
-		logoUrl={data.siteSettings?.['appearance.logo_url'] as string | undefined}
-		menu={data.menu}
-	/>
-	<div class="guest-shell-content">
-		{@render children()}
-	</div>
-	<GuestFooter menu={data.footerMenu} />
 {:else}
+	<!-- AppShell handles both authenticated and guest users. The LeftNav
+	     shows a Login button for guests and filters menu items by visibility.
+	     The RightSidebar renders admin-managed widgets for all users. -->
 	<AppShell
 		menu={data.menu}
 		user={data.user}
@@ -100,7 +91,7 @@
 		logoUrl={data.siteSettings?.['appearance.logo_url'] as string | undefined}
 		enabledLanguages={data.siteSettings?.['i18n.enabled_languages'] as string | undefined}
 		hideRightSidebar={exception || !data.rightSidebarEnabled}
-		rightSidebarBlocks={data.rightSidebarBlocks}
+		rightSidebarWidgets={data.rightSidebarWidgets}
 		sidebar={routeSidebar ?? undefined}
 	>
 		{@render children()}
@@ -110,9 +101,4 @@
 	{/if}
 {/if}
 
-<style>
-	.guest-shell-content {
-		min-height: calc(100vh - var(--nav-height));
-		background: var(--color-bg);
-	}
-</style>
+<style></style>

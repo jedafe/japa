@@ -73,6 +73,7 @@
 	logoUrl={data.logoUrl}
 	isUniversity={data.isUniversityHost}
 	sidebar={routeSidebar ?? undefined}
+	rightSidebarWidgets={data.rightSidebarWidgets}
 	lessonPlayer={isLessonPlayer}
 >
 	{@render children()}

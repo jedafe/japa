@@ -185,6 +185,8 @@ VALUES (
 RETURNING id, tenant_id, title, slug, description, difficulty, cover_media_id,
           is_published, sort_order, instructor_id, price_kobo, currency,
           is_published_to_university, category, language, geo_space_id, total_enrolled,
+          university_submission_status, university_submitted_at,
+          university_reviewed_at, university_rejection_reason,
           created_at, updated_at;
 
 -- name: UpdateUniversityTrack :one
@@ -205,30 +207,51 @@ WHERE tenant_id = @tenant_id AND id = @id AND instructor_id = @instructor_id
 RETURNING id, tenant_id, title, slug, description, difficulty, cover_media_id,
           is_published, sort_order, instructor_id, price_kobo, currency,
           is_published_to_university, category, language, geo_space_id, total_enrolled,
+          university_submission_status, university_submitted_at,
+          university_reviewed_at, university_rejection_reason,
           created_at, updated_at;
 
 -- name: SubmitUniversityTrack :one
--- Creator submits a track for marketplace approval. Resets to
--- is_published_to_university=false so a re-submit after a reject re-enters
--- the queue. The actual publish flag is set by ApproveUniversityTrack.
+-- Creator submits a track for marketplace approval. Sets submission_status
+-- to 'pending' and stamps submitted_at. A re-submit after a reject resets
+-- the rejection_reason. is_published_to_university stays false until
+-- ApproveUniversityTrack sets it.
 UPDATE learning_tracks
-SET is_published_to_university = false,
-    updated_at = now()
+SET is_published_to_university   = false,
+    university_submission_status = 'pending',
+    university_submitted_at      = now(),
+    university_rejection_reason  = NULL,
+    updated_at                   = now()
 WHERE tenant_id = @tenant_id AND id = @id AND instructor_id = @instructor_id
   AND is_published_to_university = false
+  AND university_submission_status IN ('draft','rejected')
 RETURNING id, tenant_id, title, slug, description, difficulty, cover_media_id,
           is_published, sort_order, instructor_id, price_kobo, currency,
           is_published_to_university, category, language, total_enrolled,
+          university_submission_status, university_submitted_at,
+          university_reviewed_at, university_rejection_reason,
           created_at, updated_at;
 
 -- name: ListUniversityTracksByInstructor :many
-SELECT id, tenant_id, title, slug, description, difficulty, cover_media_id,
-       is_published, sort_order, instructor_id, price_kobo, currency,
-       is_published_to_university, category, language, geo_space_id, total_enrolled,
-       created_at, updated_at
-FROM learning_tracks
-WHERE tenant_id = @tenant_id AND instructor_id = @instructor_id
-ORDER BY created_at DESC;
+SELECT lt.id, lt.tenant_id, lt.title, lt.slug, lt.description, lt.difficulty,
+       lt.cover_media_id, lt.is_published, lt.sort_order, lt.instructor_id,
+       lt.price_kobo, lt.currency, lt.is_published_to_university, lt.category,
+       lt.language, lt.geo_space_id, lt.total_enrolled,
+       lt.university_submission_status, lt.university_submitted_at,
+       lt.university_reviewed_at, lt.university_rejection_reason,
+       lt.created_at, lt.updated_at,
+       COALESCE(rs.total_revenue_kobo, 0)::bigint AS total_revenue_kobo,
+       m.storage_path AS thumbnail_url
+FROM learning_tracks lt
+LEFT JOIN (
+    SELECT track_id, SUM(creator_kobo)::bigint AS total_revenue_kobo
+    FROM revenue_splits rs
+    WHERE rs.tenant_id = @tenant_id
+    GROUP BY track_id
+) rs ON rs.track_id = lt.id
+LEFT JOIN media m ON m.id = lt.cover_media_id
+WHERE lt.tenant_id = @tenant_id AND lt.instructor_id = @instructor_id
+ORDER BY lt.created_at DESC;
 
 -- name: ListPendingUniversityTracks :many
 -- Tracks submitted for approval: a submitted track is one with an
@@ -239,6 +262,8 @@ SELECT lt.id, lt.tenant_id, lt.title, lt.slug, lt.description,
        lt.difficulty, lt.cover_media_id, lt.instructor_id, lt.price_kobo,
        lt.currency, lt.category, lt.language, lt.geo_space_id, lt.total_enrolled,
        lt.is_published, lt.is_published_to_university,
+       lt.university_submission_status, lt.university_submitted_at,
+       lt.university_reviewed_at, lt.university_rejection_reason,
        lt.created_at, lt.updated_at,
        ip.display_name AS instructor_name
 FROM learning_tracks lt
@@ -252,22 +277,30 @@ ORDER BY lt.updated_at ASC
 LIMIT @page_limit OFFSET @page_offset;
 
 -- name: ApproveUniversityTrack :one
--- Admin approves a submitted track to the marketplace.
+-- Admin approves a submitted track to the marketplace. Sets submission_status
+-- to 'approved' and stamps reviewed_at.
 UPDATE learning_tracks
-SET is_published_to_university = true,
-    updated_at = now()
+SET is_published_to_university   = true,
+    university_submission_status = 'approved',
+    university_reviewed_at       = now(),
+    university_rejection_reason  = NULL,
+    updated_at                   = now()
 WHERE tenant_id = @tenant_id AND id = @id
   AND instructor_id IS NOT NULL
   AND is_published_to_university = false
 RETURNING id, tenant_id, title, slug, description, difficulty, cover_media_id,
           is_published, sort_order, instructor_id, price_kobo, currency,
           is_published_to_university, category, language, geo_space_id, total_enrolled,
+          university_submission_status, university_submitted_at,
+          university_reviewed_at, university_rejection_reason,
           created_at, updated_at;
 
 -- name: GetUniversityTrackByID :one
 SELECT id, tenant_id, title, slug, description, difficulty, cover_media_id,
        is_published, sort_order, instructor_id, price_kobo, currency,
        is_published_to_university, category, language, geo_space_id, total_enrolled,
+       university_submission_status, university_submitted_at,
+       university_reviewed_at, university_rejection_reason,
        created_at, updated_at
 FROM learning_tracks
 WHERE tenant_id = @tenant_id AND id = @id;
@@ -454,6 +487,162 @@ SELECT
     COUNT(*)::bigint AS total_splits
 FROM revenue_splits
 WHERE tenant_id = @tenant_id AND instructor_id = @instructor_id;
+
+-- name: GetInstructorDashboardSummary :one
+-- Aggregate stats for the instructor dashboard (BUG-003): total enrolled
+-- across all tracks, total creator revenue, and course count.
+SELECT
+    COALESCE(SUM(lt.total_enrolled), 0)::int AS total_enrolled,
+    COALESCE(SUM(rs.creator_kobo), 0)::bigint AS total_revenue_kobo,
+    COUNT(DISTINCT lt.id)::int AS courses_count
+FROM learning_tracks lt
+LEFT JOIN revenue_splits rs ON rs.track_id = lt.id AND rs.tenant_id = lt.tenant_id
+WHERE lt.tenant_id = @tenant_id AND lt.instructor_id = @instructor_id;
+
+-- name: GetInstructorRevenueSeries :many
+-- Daily creator revenue series for the earnings LayerChart (BUG-005).
+-- Grouped by date (truncated to day), ordered ascending.
+SELECT
+    date_trunc('day', created_at)::date AS rev_date,
+    SUM(creator_kobo)::bigint AS kobo
+FROM revenue_splits
+WHERE tenant_id = @tenant_id AND instructor_id = @instructor_id
+GROUP BY rev_date
+ORDER BY rev_date ASC;
+
+-- name: GetTrackRevenueSeries :many
+-- Daily creator revenue series for a single track (BUG-007).
+SELECT
+    date_trunc('day', created_at)::date AS rev_date,
+    SUM(creator_kobo)::bigint AS kobo
+FROM revenue_splits
+WHERE tenant_id = @tenant_id AND track_id = @track_id
+GROUP BY rev_date
+ORDER BY rev_date ASC;
+
+-- name: GetTrackEnrollmentSeries :many
+-- Daily enrollment count series for a single track (BUG-007).
+SELECT
+    date_trunc('day', enrolled_at)::date AS enroll_date,
+    COUNT(*)::int AS count
+FROM enrollments
+WHERE tenant_id = @tenant_id AND track_id = @track_id
+GROUP BY enroll_date
+ORDER BY enroll_date ASC;
+
+-- name: GetTrackCompletionRate :one
+-- Percentage of enrollments with completed_at set (BUG-007).
+SELECT
+    COUNT(*)::int AS total_enrolled,
+    COUNT(completed_at)::int AS completed
+FROM enrollments
+WHERE tenant_id = @tenant_id AND track_id = @track_id;
+
+-- name: HasProStreamSplitForPeriod :one
+-- Idempotency guard for pro_stream revenue splits (BUG-008). A pro_stream
+-- split is identified by (tenant_id, instructor_id, track_id, user_id, source).
+-- Since pro_stream has no payment_id, we guard on the enrollment_id instead.
+SELECT EXISTS (
+    SELECT 1 FROM revenue_splits rs
+    JOIN enrollments e ON e.id = rs.enrollment_id
+    WHERE rs.tenant_id = @tenant_id
+      AND rs.instructor_id = @instructor_id
+      AND rs.track_id = @track_id
+      AND e.user_id = @user_id
+      AND rs.source = 'pro_stream'
+) AS has_split;
+
+-- =====================================================================
+-- Admin: all university tracks (BUG-002)
+-- =====================================================================
+
+-- name: ListAllUniversityTracks :many
+-- Admin view of all marketplace tracks (not just pending). Includes
+-- instructor name and submission status.
+SELECT lt.id, lt.tenant_id, lt.title, lt.slug, lt.description,
+       lt.difficulty, lt.cover_media_id, lt.instructor_id, lt.price_kobo,
+       lt.currency, lt.category, lt.language, lt.geo_space_id, lt.total_enrolled,
+       lt.is_published, lt.is_published_to_university,
+       lt.university_submission_status, lt.university_submitted_at,
+       lt.university_reviewed_at, lt.university_rejection_reason,
+       lt.created_at, lt.updated_at,
+       ip.display_name AS instructor_name
+FROM learning_tracks lt
+LEFT JOIN instructor_profiles ip ON ip.id = lt.instructor_id
+WHERE lt.tenant_id = @tenant_id
+  AND lt.instructor_id IS NOT NULL
+  AND (@status::text = '' OR lt.university_submission_status = @status)
+ORDER BY lt.created_at DESC
+LIMIT @page_limit OFFSET @page_offset;
+
+-- name: CountAllUniversityTracks :one
+SELECT COUNT(*) FROM learning_tracks
+WHERE tenant_id = @tenant_id
+  AND instructor_id IS NOT NULL
+  AND (@status::text = '' OR university_submission_status = @status);
+
+-- name: RejectUniversityTrack :one
+-- Admin rejects a submitted track. Sets submission_status to 'rejected'
+-- and records the rejection reason (BUG-002, BUG-004).
+UPDATE learning_tracks
+SET university_submission_status = 'rejected',
+    university_reviewed_at       = now(),
+    university_rejection_reason  = sqlc.narg(rejection_reason),
+    updated_at                   = now()
+WHERE tenant_id = @tenant_id AND id = @id
+  AND instructor_id IS NOT NULL
+  AND is_published_to_university = false
+  AND university_submission_status = 'pending'
+RETURNING id, tenant_id, title, slug, description, difficulty, cover_media_id,
+          is_published, sort_order, instructor_id, price_kobo, currency,
+          is_published_to_university, category, language, geo_space_id, total_enrolled,
+          university_submission_status, university_submitted_at,
+          university_reviewed_at, university_rejection_reason,
+          created_at, updated_at;
+
+-- name: UpdateInstructorProfileAdmin :one
+-- Admin updates an instructor's tier and/or commission override (BUG-002).
+-- Only applies to approved or suspended instructors.
+UPDATE instructor_profiles
+SET tier                    = COALESCE(sqlc.narg(tier), tier),
+    commission_pct_override = sqlc.narg(commission_pct_override),
+    updated_at              = now()
+WHERE tenant_id = @tenant_id AND id = @id
+  AND status IN ('approved','suspended')
+RETURNING *;
+
+-- name: SetUniversityTrackFeatured :one
+-- Admin features/unfeatures a marketplace track (BUG-012: wires the
+-- university.course.feature RBAC node to a route).
+UPDATE learning_tracks
+SET university_featured = @featured,
+    updated_at          = now()
+WHERE tenant_id = @tenant_id AND id = @id
+  AND is_published_to_university = true
+RETURNING id, tenant_id, title, slug, description, difficulty, cover_media_id,
+          is_published, sort_order, instructor_id, price_kobo, currency,
+          is_published_to_university, category, language, geo_space_id, total_enrolled,
+          university_submission_status, university_submitted_at,
+          university_reviewed_at, university_rejection_reason,
+          created_at, updated_at;
+
+-- name: ListPublishedTracksByInstructor :many
+-- Public instructor profile: only live marketplace tracks, filtered at the
+-- DB level (BUG-017 — avoids in-memory filter).
+SELECT lt.id, lt.tenant_id, lt.title, lt.slug, lt.description, lt.difficulty,
+       lt.cover_media_id, lt.is_published, lt.sort_order, lt.instructor_id,
+       lt.price_kobo, lt.currency, lt.is_published_to_university, lt.category,
+       lt.language, lt.geo_space_id, lt.total_enrolled,
+       lt.university_submission_status, lt.university_submitted_at,
+       lt.university_reviewed_at, lt.university_rejection_reason,
+       lt.created_at, lt.updated_at,
+       m.storage_path AS thumbnail_url
+FROM learning_tracks lt
+LEFT JOIN media m ON m.id = lt.cover_media_id
+WHERE lt.tenant_id = @tenant_id
+  AND lt.instructor_id = @instructor_id
+  AND lt.is_published_to_university = true
+ORDER BY lt.total_enrolled DESC, lt.created_at DESC;
 
 -- =====================================================================
 -- Geo personalization (ADR-064) — user override column
