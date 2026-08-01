@@ -3,7 +3,7 @@
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
-	import { unfollowUser, leaveSpace, unfollowTag } from '$lib/api/hub';
+	import { unfollowUser, leaveSpace, unfollowTag, unblockUser } from '$lib/api/hub';
 	import { optimisticAction } from '$lib/components/hub/optimisticAction';
 	import { invalidate } from '$app/navigation';
 	import MetricCard from '$lib/components/hub/MetricCard.svelte';
@@ -13,11 +13,13 @@
 	interface FollowedUser { id: string; username?: string; display_name?: string; }
 	interface Space { id: string; slug?: string; name?: string; }
 	interface FollowedTag { id: string; slug?: string; name?: string; }
+	interface BlockedUser { blocked_id: string; username?: string; display_name?: string; created_at?: string; }
 
 	interface RelationshipsData {
 		following: FollowedUser[];
 		spaces: Space[];
 		tags: FollowedTag[];
+		blocked?: BlockedUser[];
 	}
 
 	let { data }: { data: unknown } = $props();
@@ -25,13 +27,15 @@
 	let following = $state<FollowedUser[]>(untrack(() => rel?.following ?? []));
 	let spaces = $state<Space[]>(untrack(() => rel?.spaces ?? []));
 	let tags = $state<FollowedTag[]>(untrack(() => rel?.tags ?? []));
+	let blocked = $state<BlockedUser[]>(untrack(() => rel?.blocked ?? []));
 
 	const activeTab = $derived(page.url.searchParams.get('tab') ?? 'following');
 
 	const tabs: { key: string; labelKey: string }[] = [
 		{ key: 'following', labelKey: 'dashboard.relationships.tab_following' },
 		{ key: 'spaces', labelKey: 'dashboard.relationships.tab_spaces' },
-		{ key: 'tags', labelKey: 'dashboard.relationships.tab_tags' }
+		{ key: 'tags', labelKey: 'dashboard.relationships.tab_tags' },
+		{ key: 'blocked', labelKey: 'dashboard.relationships.tab_blocked' }
 	];
 
 	function switchTab(key: string) {
@@ -63,6 +67,15 @@
 			call: () => unfollowTag(slug)
 		});
 		await invalidate('/api/v1/me/followed-tags');
+	}
+
+	async function doUnblockUser(id: string) {
+		await optimisticAction({
+			apply: () => (blocked = blocked.filter((u) => u.blocked_id !== id)),
+			rollback: () => (blocked = rel?.blocked ?? []),
+			call: () => unblockUser(id)
+		});
+		await invalidate('/api/v1/me/blocked-users');
 	}
 </script>
 
@@ -137,6 +150,23 @@
 						</a>
 						<button type="button" class="text-xs text-[var(--color-muted)] hover:text-[var(--color-danger)]" onclick={() => doUnfollowTag(tag.slug ?? tag.id)}>
 							{t('dashboard.relationships.unfollow')}
+						</button>
+					</li>
+				{/each}
+			</ul>
+		{/if}
+	{:else if activeTab === 'blocked'}
+		{#if blocked.length === 0}
+			<EmptyState icon={Users} title={t('dashboard.relationships.blocked_empty')} />
+		{:else}
+			<ul class="space-y-2">
+				{#each blocked as user (user.blocked_id)}
+					<li class="flex items-center justify-between rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3">
+						<a href="/u/{user.username ?? user.blocked_id}" class="text-sm font-medium text-[var(--color-text)] hover:underline">
+							{user.display_name ?? user.username ?? user.blocked_id}
+						</a>
+						<button type="button" class="text-xs text-[var(--color-muted)] hover:text-[var(--color-danger)]" onclick={() => doUnblockUser(user.blocked_id)}>
+							{t('dashboard.relationships.unblock')}
 						</button>
 					</li>
 				{/each}

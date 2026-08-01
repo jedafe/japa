@@ -12,7 +12,7 @@
 	import ProgressRing from '$lib/components/learn/ProgressRing.svelte';
 	import { CheckCircle, ArrowRight, ArrowLeft, NotebookPen } from 'lucide-svelte';
 	import type { PageData } from './$types';
-	import type { Enrollment } from '$lib/types';
+	import type { Enrollment, Quiz, QuizQuestion, QuizResult, QuizSubmission } from '$lib/types';
 
 	let { data }: { data: PageData } = $props();
 	const track = $derived(data.track);
@@ -79,6 +79,81 @@
 			lastProgressSave = now;
 			api.post(`/learn/lessons/${lesson.id}/progress`, { progress_secs: now });
 		}
+	}
+
+	// Quiz engine state — answers map, submission, results, retake.
+	let quizAnswers = $state<Record<string, string[]>>({});
+	let quizTextAnswers = $state<Record<string, string>>({});
+	let quizSubmitted = $state(false);
+	let quizResult = $state<QuizResult | null>(null);
+	let quizSubmitting = $state(false);
+
+	// Reset quiz state when the lesson changes.
+	$effect(() => {
+		const _ = lesson.id;
+		quizAnswers = {};
+		quizTextAnswers = {};
+		quizSubmitted = false;
+		quizResult = null;
+		quizSubmitting = false;
+	});
+
+	// All questions answered? Submit guard (called reactively in template).
+	function quizCanSubmit(): boolean {
+		const q = lesson.quiz;
+		if (!q || quizSubmitting) return false;
+		return q.questions.every((question: QuizQuestion) => {
+			if (question.type === 'text') {
+				return (quizTextAnswers[question.id] ?? '').trim().length > 0;
+			}
+			return (quizAnswers[question.id] ?? []).length > 0;
+		});
+	}
+
+	function toggleOption(question: QuizQuestion, optionId: string) {
+		if (quizSubmitted) return;
+		if (question.type === 'single') {
+			quizAnswers = { ...quizAnswers, [question.id]: [optionId] };
+		} else {
+			const current = quizAnswers[question.id] ?? [];
+			quizAnswers = {
+				...quizAnswers,
+				[question.id]: current.includes(optionId)
+					? current.filter((id) => id !== optionId)
+					: [...current, optionId]
+			};
+		}
+	}
+
+	async function submitQuiz() {
+		const q = lesson.quiz;
+		if (!q || !quizCanSubmit()) return;
+		quizSubmitting = true;
+		const payload: QuizSubmission[] = q.questions.map((question: QuizQuestion) => ({
+			question_id: question.id,
+			answer:
+				question.type === 'text'
+					? (quizTextAnswers[question.id] ?? '')
+					: (quizAnswers[question.id] ?? [])
+		}));
+		const r = await api.post<QuizResult>(`/learn/quizzes/${q.id}/submit`, { answers: payload });
+		quizSubmitting = false;
+		if (r.data) {
+			quizResult = r.data;
+			quizSubmitted = true;
+		}
+	}
+
+	function retakeQuiz() {
+		quizAnswers = {};
+		quizTextAnswers = {};
+		quizSubmitted = false;
+		quizResult = null;
+	}
+
+	// Look up per-question result after submission.
+	function questionResult(questionId: string) {
+		return quizResult?.results.find((r) => r.question_id === questionId) ?? null;
 	}
 </script>
 
@@ -180,10 +255,176 @@
 					<p class="text-[var(--color-muted)]">{t('common.empty')}</p>
 				{/if}
 			{:else if lesson.lesson_type === 'quiz'}
-				<!-- Quiz engine — TODO: wire to GET/POST /learn/quizzes/:id -->
+				<!-- Quiz engine — GET on load, POST /learn/quizzes/:id/submit -->
 				{#if lesson.quiz}
-					<p class="text-[var(--color-text-subtle)]">{lesson.quiz.title}</p>
-					<p class="mt-2 text-sm text-[var(--color-muted)]">{t('lesson.submit_quiz')}</p>
+					{@const quiz = lesson.quiz as Quiz}
+					<section class="quiz-engine">
+						<header class="mb-4">
+							<h2 class="text-xl font-bold text-[var(--color-text)]">{quiz.title}</h2>
+							{#if quiz.description}
+								<p class="mt-1 text-sm text-[var(--color-text-subtle)]">{quiz.description}</p>
+							{/if}
+							{#if quiz.pass_score_pct != null}
+								<p class="mt-1 text-xs text-[var(--color-muted)]">
+									{t('learn.pass_score', 'Pass score')}: {quiz.pass_score_pct}%
+								</p>
+							{/if}
+						</header>
+
+						{#if quizSubmitted && quizResult}
+							<!-- Overall result banner -->
+							<div
+								class="mb-6 rounded-[var(--radius-card)] border p-4 {quizResult.passed
+									? 'border-[var(--color-progress)] bg-[var(--color-surface)]'
+									: 'border-[var(--color-destructive)] bg-[var(--color-surface)]'}"
+							>
+								<p class="text-lg font-bold text-[var(--color-text)]">
+									{quizResult.score_pct}% — {quizResult.passed
+										? t('learn.quiz_passed', 'Passed!')
+										: t('learn.quiz_failed', 'Not passed')}
+								</p>
+								<p class="mt-1 text-sm text-[var(--color-text-subtle)]">
+									{quizResult.earned_points}/{quizResult.total_points} {t('learn.points', 'points')}
+								</p>
+							</div>
+						{/if}
+
+						<ol class="space-y-6">
+							{#each quiz.questions as question, qi (question.id)}
+								{@const qr = questionResult(question.id)}
+								<li
+									class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4"
+								>
+									<div class="mb-3 flex items-start gap-2">
+										{#if quizSubmitted && qr}
+											<span
+												class="mt-0.5 font-bold {qr.correct
+													? 'text-[var(--color-progress)]'
+													: 'text-[var(--color-destructive)]'}"
+											>
+												{qr.correct ? '✓' : '✗'}
+											</span>
+										{/if}
+										<p class="text-sm font-medium text-[var(--color-text)]">
+											{qi + 1}. {question.prompt}
+										</p>
+									</div>
+
+									<!-- Single: radio buttons -->
+									{#if question.type === 'single' && question.options}
+										<ul class="space-y-2">
+											{#each question.options as option (option.id)}
+												{@const selected = (quizAnswers[question.id] ?? []).includes(option.id)}
+												<li>
+													<label
+														class="flex cursor-pointer items-center gap-2 rounded-[var(--radius)] border p-2 text-sm transition-colors {selected
+															? 'border-[var(--color-primary)] bg-[var(--color-surface)]'
+															: 'border-[var(--color-border)] hover:bg-[var(--color-surface)]'} {quizSubmitted
+															? 'cursor-default'
+															: ''}"
+													>
+														<input
+															type="radio"
+															name={question.id}
+															checked={selected}
+															disabled={quizSubmitted}
+															onchange={() => toggleOption(question, option.id)}
+														/>
+														<span class="text-[var(--color-text)]">{option.label}</span>
+													</label>
+												</li>
+											{/each}
+										</ul>
+									{:else if question.type === 'multiple' && question.options}
+										<!-- Multiple: checkboxes -->
+										<ul class="space-y-2">
+											{#each question.options as option (option.id)}
+												{@const selected = (quizAnswers[question.id] ?? []).includes(option.id)}
+												<li>
+													<label
+														class="flex cursor-pointer items-center gap-2 rounded-[var(--radius)] border p-2 text-sm transition-colors {selected
+															? 'border-[var(--color-primary)] bg-[var(--color-surface)]'
+															: 'border-[var(--color-border)] hover:bg-[var(--color-surface)]'} {quizSubmitted
+															? 'cursor-default'
+															: ''}"
+													>
+														<input
+															type="checkbox"
+															checked={selected}
+															disabled={quizSubmitted}
+															onchange={() => toggleOption(question, option.id)}
+														/>
+														<span class="text-[var(--color-text)]">{option.label}</span>
+													</label>
+												</li>
+											{/each}
+										</ul>
+									{:else if question.type === 'text'}
+										<!-- Text: free-text input -->
+										<input
+											type="text"
+											value={quizTextAnswers[question.id] ?? ''}
+											disabled={quizSubmitted}
+											oninput={(e) => {
+												if (quizSubmitted) return;
+												quizTextAnswers = {
+													...quizTextAnswers,
+													[question.id]: e.currentTarget.value
+												};
+											}}
+											placeholder={t('learn.type_answer', 'Type your answer…')}
+											class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-2 text-sm text-[var(--color-text)] placeholder:text-[var(--color-muted)] focus:border-[var(--color-primary)] focus:outline-none disabled:opacity-70"
+										/>
+									{/if}
+
+									<!-- Per-question feedback after submit -->
+									{#if quizSubmitted && qr}
+										{#if !qr.correct && qr.correct_answers.length > 0}
+											<p class="mt-3 text-xs text-[var(--color-text-subtle)]">
+												{t('learn.correct_answers', 'Correct answers')}:
+												{#if question.options}
+													{#each qr.correct_answers as cid, i}{#if i > 0}, {/if}{question.options?.find((o) => o.id === cid)?.label ?? cid}{/each}
+												{:else}
+													{qr.correct_answers.join(', ')}
+												{/if}
+											</p>
+										{/if}
+										{#if qr.explanation}
+											<p class="mt-2 text-sm text-[var(--color-text-subtle)]">{qr.explanation}</p>
+										{:else if question.explanation}
+											<p class="mt-2 text-sm text-[var(--color-text-subtle)]">{question.explanation}</p>
+										{/if}
+									{/if}
+								</li>
+							{/each}
+						</ol>
+
+						<!-- Submit / Retake controls -->
+						<div class="mt-6 flex items-center gap-3">
+							{#if !quizSubmitted}
+								<button
+									type="button"
+									onclick={submitQuiz}
+									disabled={!quizCanSubmit()}
+									class="inline-flex items-center gap-2 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)] disabled:opacity-60"
+								>
+									{#if quizSubmitting}
+										{t('learn.submitting', 'Submitting…')}
+									{:else}
+										{t('learn.submit_quiz', 'Submit quiz')}
+									{/if}
+								</button>
+							{:else}
+								<button
+									type="button"
+									onclick={retakeQuiz}
+									class="inline-flex items-center gap-2 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface)]"
+								>
+									{t('learn.retake_quiz', 'Retake quiz')}
+								</button>
+							{/if}
+						</div>
+					</section>
 				{:else}
 					<p class="text-[var(--color-muted)]">{t('common.empty')}</p>
 				{/if}

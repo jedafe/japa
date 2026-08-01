@@ -1206,11 +1206,12 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forms.submissions.view")).
 				Get("/admin/forms/{id}/submissions", cfHandlers.ListFormSubmissions)
 
-			// Space type routes — reads stay bare (any user creating a space needs
-			// the type list for e.g. a dropdown); writes move under /admin per
-			// catalog (management of the type definitions themselves is admin-only).
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/space-types", spaceHandlers.ListSpaceTypes)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/space-types/{id}", spaceHandlers.GetSpaceType)
+			// Space type routes — reads are public (OptionalAuth) so the /spaces
+			// directory page can render the type filter chips for guests; writes
+			// move under /admin per catalog (management of the type definitions
+			// themselves is admin-only).
+			r.With(auth.OptionalAuth(kr, vkClient.Redis())).Get("/space-types", spaceHandlers.ListSpaceTypes)
+			r.With(auth.OptionalAuth(kr, vkClient.Redis())).Get("/space-types/{id}", spaceHandlers.GetSpaceType)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "space_types.create")).
 				Get("/admin/space-types", spaceHandlers.ListSpaceTypes)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "space_types.create")).
@@ -1224,7 +1225,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Public space reads use OptionalAuth so guests can browse public
 			// spaces (Section 05: "public spaces visible to all"; Guide §16 lists
 			// /spaces/* as SSR-public). Mutations and /me/* stay RequireAuth.
-			r.With(auth.OptionalAuth(kr, vkClient.Redis())).Get("/spaces", spaceHandlers.ListSpaces)
+			// OptionalPermission lets admins revoke directory.spaces.view from a
+			// group to hide /spaces from that group's authed members.
+			// Ref: japaconnect-engineering/sections/03-rbac.md (Directory visibility nodes)
+			r.With(auth.OptionalAuth(kr, vkClient.Redis()), rbac.OptionalPermission(rbacResolver, "directory.spaces.view")).Get("/spaces", spaceHandlers.ListSpaces)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/spaces", spaceHandlers.ListMySpaces)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/spaces/moderated", spaceHandlers.ListMyModeratedSpaces)
 			// BUG-006: /me/spaces/owned — ownership is tracked via
@@ -1922,7 +1926,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 			// Organization routes (Section 07 — Organization Profiles & Claim Ownership)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "organizations.create")).Post("/organizations", orgHandlers.CreateOrganization)
-			r.With(auth.OptionalAuth(kr, vkClient.Redis())).Get("/organizations", orgHandlers.ListPublicOrganizations)
+			r.With(auth.OptionalAuth(kr, vkClient.Redis()), rbac.OptionalPermission(rbacResolver, "directory.organizations.view")).Get("/organizations", orgHandlers.ListPublicOrganizations)
 			r.With(auth.OptionalAuth(kr, vkClient.Redis())).Get("/organizations/{slug}", orgHandlers.GetPublicOrganization)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "organizations.edit_own")).Patch("/organizations/{id}", orgHandlers.UpdateOrganization)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "organizations.delete_own")).Delete("/organizations/{id}", orgHandlers.DeleteOrganization)
@@ -2388,7 +2392,15 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/data-export/status", gdprHandlers.GetMyDataExportStatus)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/data-export/download", gdprHandlers.GetMyDataExportDownload)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/reports", reportsHandlers.ListMyReports)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.users.list")).Get("/users", usersHandlers.ListUsers)
+			// Public user directory — PII-safe (no email/status/groups). OptionalAuth
+			// so authed users get their session without a 401. OptionalPermission
+			// lets admins revoke directory.users.view from a group to hide /users
+			// from that group's authed members (guests always pass through).
+			// Admin listing stays at GET /admin/users with admin.users.list.
+			// Ref: japaconnect-engineering/sections/02-authentication-sessions.md
+			//      japaconnect-engineering/sections/03-rbac.md (Directory visibility nodes)
+			//      japaconnect-engineering/sections/19-privacy-gdpr.md (search_indexable opt-out)
+			r.With(auth.OptionalAuth(kr, vkClient.Redis()), rbac.OptionalPermission(rbacResolver, "directory.users.view")).Get("/users", usersHandlers.ListPublicUsers)
 			// Public per Section 32:12 (profile timeline audience = "Anyone").
 			r.With(auth.OptionalAuth(kr, vkClient.Redis())).Get("/users/{username}", usersHandlers.GetUserByUsername)
 			// Public profile Media tab (Task A3) — same audience rule as above.
@@ -2442,7 +2454,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/tags/{slug}/search", searchHandlers.SearchTag)
 
 			// General Tags (Sections 08, 49) — distinct from forum tags.
-			r.Get("/tags", tagsHandlers.ListTags)
+			// OptionalPermission lets admins revoke directory.tags.view from a
+			// group to hide /tags from that group's authed members.
+			// Ref: japaconnect-engineering/sections/03-rbac.md (Directory visibility nodes)
+			r.With(auth.OptionalAuth(kr, vkClient.Redis()), rbac.OptionalPermission(rbacResolver, "directory.tags.view")).Get("/tags", tagsHandlers.ListTags)
 			r.Get("/tags/{slug}", tagsHandlers.GetTag)
 			r.Get("/tags/{slug}/content", tagsHandlers.GetTagContent)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "moderate")).Post("/tags/{slug}/follow", tagsHandlers.ToggleTagFollow)

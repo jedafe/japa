@@ -146,11 +146,26 @@ func (q *Queries) CountOrganizationsByOwner(ctx context.Context, arg CountOrgani
 
 const countPublicOrganizations = `-- name: CountPublicOrganizations :one
 SELECT COUNT(*) FROM organizations
-WHERE tenant_id = $1 AND status = 'active' AND deleted_at IS NULL AND verified = true
+WHERE tenant_id = $1 AND status = 'active' AND deleted_at IS NULL
+  AND ($2::text = '' OR verified = ($2 = 'true'))
+  AND ($3::text = '' OR org_type = $3)
+  AND ($4::text = '' OR name ILIKE '%' || $4 || '%' OR slug ILIKE '%' || $4 || '%')
 `
 
-func (q *Queries) CountPublicOrganizations(ctx context.Context, tenantID pgtype.UUID) (int64, error) {
-	row := q.db.QueryRow(ctx, countPublicOrganizations, tenantID)
+type CountPublicOrganizationsParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	Verified string      `json:"verified"`
+	OrgType  string      `json:"org_type"`
+	Search   string      `json:"search"`
+}
+
+func (q *Queries) CountPublicOrganizations(ctx context.Context, arg CountPublicOrganizationsParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countPublicOrganizations,
+		arg.TenantID,
+		arg.Verified,
+		arg.OrgType,
+		arg.Search,
+	)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -1115,13 +1130,19 @@ const listPublicOrganizations = `-- name: ListPublicOrganizations :many
 SELECT id, name, slug, tagline, org_type, logo_media_id, header_media_id,
        country_code, verified, follower_count, member_count, created_at
 FROM organizations
-WHERE tenant_id = $1 AND status = 'active' AND deleted_at IS NULL AND verified = true
+WHERE tenant_id = $1 AND status = 'active' AND deleted_at IS NULL
+  AND ($2::text = '' OR verified = ($2 = 'true'))
+  AND ($3::text = '' OR org_type = $3)
+  AND ($4::text = '' OR name ILIKE '%' || $4 || '%' OR slug ILIKE '%' || $4 || '%')
 ORDER BY created_at DESC
-LIMIT $3 OFFSET $2
+LIMIT $6 OFFSET $5
 `
 
 type ListPublicOrganizationsParams struct {
 	TenantID   pgtype.UUID `json:"tenant_id"`
+	Verified   string      `json:"verified"`
+	OrgType    string      `json:"org_type"`
+	Search     string      `json:"search"`
 	PageOffset int32       `json:"page_offset"`
 	PageLimit  int32       `json:"page_limit"`
 }
@@ -1141,9 +1162,19 @@ type ListPublicOrganizationsRow struct {
 	CreatedAt     pgtype.Timestamptz `json:"created_at"`
 }
 
-// Public Discover "Organizations": VERIFIED + ACTIVE orgs only, newest first.
+// Public Discover "Organizations": ACTIVE orgs only. By default only verified
+// orgs are shown (matching the original behavior); pass verified="" to include
+// unverified. Search filters by name or slug. org_type filters by type (empty
+// = all). Ordered by created_at DESC (newest first).
 func (q *Queries) ListPublicOrganizations(ctx context.Context, arg ListPublicOrganizationsParams) ([]ListPublicOrganizationsRow, error) {
-	rows, err := q.db.Query(ctx, listPublicOrganizations, arg.TenantID, arg.PageOffset, arg.PageLimit)
+	rows, err := q.db.Query(ctx, listPublicOrganizations,
+		arg.TenantID,
+		arg.Verified,
+		arg.OrgType,
+		arg.Search,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
 	if err != nil {
 		return nil, err
 	}

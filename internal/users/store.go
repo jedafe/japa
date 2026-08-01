@@ -153,6 +153,39 @@ func (s *Store) listUsers(ctx context.Context, tenantID pgtype.UUID, search, sta
 	return rows, nil
 }
 
+// listPublicUsers returns a paginated, PII-safe list of active, search-indexable
+// users for the public directory at GET /users. Filters by username or display_name
+// and optionally by profile_type. Ref: japaconnect-engineering/sections/02-authentication-sessions.md
+//      japaconnect-engineering/sections/19-privacy-gdpr.md (search_indexable opt-out)
+func (s *Store) listPublicUsers(ctx context.Context, tenantID pgtype.UUID, search, profileType string, limit, offset int32) ([]gen.ListPublicUsersRow, error) {
+	rows, err := s.read.ListPublicUsers(ctx, gen.ListPublicUsersParams{
+		TenantID:    tenantID,
+		Search:      search,
+		ProfileType: profileType,
+		PageLimit:   limit,
+		PageOffset:  offset,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("listing public users: %w", err)
+	}
+	return rows, nil
+}
+
+// countPublicUsers returns the total count of active, search-indexable users
+// matching the search term and profile_type filter, for pagination of the
+// public directory.
+func (s *Store) countPublicUsers(ctx context.Context, tenantID pgtype.UUID, search, profileType string) (int32, error) {
+	count, err := s.read.CountPublicUsers(ctx, gen.CountPublicUsersParams{
+		TenantID:    tenantID,
+		Search:      search,
+		ProfileType: profileType,
+	})
+	if err != nil {
+		return 0, fmt.Errorf("counting public users: %w", err)
+	}
+	return count, nil
+}
+
 // countUsers returns the total count of users for a tenant, optionally filtered by search, status, and group.
 func (s *Store) countUsers(ctx context.Context, tenantID pgtype.UUID, search, status, groupSlug string) (int32, error) {
 	count, err := s.read.CountUsers(ctx, gen.CountUsersParams{

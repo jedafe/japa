@@ -75,6 +75,15 @@ type ListUsersResponse struct {
 	Total      int32          `json:"total"`
 }
 
+// PublicUserListResponse is the paginated API response for the public user
+// directory at GET /users. Contains PII-safe PublicProfileResponse items.
+type PublicUserListResponse struct {
+	Items      []PublicProfileResponse `json:"items"`
+	Page       int32                   `json:"page"`
+	TotalPages int32                   `json:"total_pages"`
+	Total      int32                   `json:"total"`
+}
+
 // UserActivityItem is one row in the admin user-activity feed: a content
 // item the user authored (content = title) or a comment (content = body,
 // truncated server-side).

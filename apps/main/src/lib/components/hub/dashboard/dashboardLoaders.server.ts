@@ -23,7 +23,8 @@ export const DASHBOARD_LOADERS: Record<string, (ctx: ApiContext) => Promise<unkn
 	relationships: async (ctx) => ({
 		following: (await apiList<unknown>(ctx, '/me/following')).items,
 		spaces: (await apiList<unknown>(ctx, '/me/spaces')).items,
-		tags: (await apiList<unknown>(ctx, '/me/followed-tags')).items
+		tags: (await apiList<unknown>(ctx, '/me/followed-tags')).items,
+		blocked: (await apiList<unknown>(ctx, '/me/blocked-users')).items
 	}),
 	learning: async (ctx) => (await apiList<unknown>(ctx, '/me/enrollments')).items,
 	certificates: async (ctx) => (await apiList<unknown>(ctx, '/me/certificates')).items,

@@ -45,14 +45,27 @@
 
 	let mobileNavOpen = $state(false);
 	// The lesson player auto-collapses the nav to 72px regardless of the user's
-	// preference (ADR-060 reading exception). The collapsed prop from the layout
-	// is overridden here for the grid width only — the user's persisted preference
-	// is restored when they leave the player.
+	// preference (ADR-060 reading exception). The user can still manually expand
+	// via the toggle button — `userExpanded` overrides the auto-collapse until
+	// they navigate away.
+	let userExpanded = $state(false);
+	const autoCollapsed = $derived(lessonPlayer && !userExpanded);
+	const effectiveCollapsed = $derived(autoCollapsed || collapsed);
 	const navWidth = $derived(
-		lessonPlayer || collapsed
+		effectiveCollapsed
 			? 'var(--nav-width-collapsed)'
 			: 'var(--nav-width-expanded)'
 	);
+
+	function onNavToggle() {
+		if (autoCollapsed) {
+			// Auto-collapsed: first click expands (overrides auto-collapse),
+			// second click re-collapses (back to auto-collapsed state).
+			userExpanded = !userExpanded;
+		} else {
+			onToggleCollapse();
+		}
+	}
 </script>
 
 {#if !user}
@@ -60,11 +73,12 @@
 	     a Login button for guests; RightSidebar renders admin-managed widgets. -->
 	<div
 		class="shell"
+		class:hide-sidebar={hideRightSidebar}
 		class:university={isUniversity}
 		style="--current-nav-width: {navWidth}"
 	>
 		<div class="shell-nav">
-			<LeftNav {menu} {user} {collapsed} {logoUrl} {isUniversity} onToggle={onToggleCollapse} />
+			<LeftNav {menu} {user} collapsed={effectiveCollapsed} {logoUrl} {isUniversity} onToggle={onNavToggle} />
 		</div>
 
 		<main class="shell-center">
@@ -94,7 +108,7 @@
 
 		{#if !hideRightSidebar}
 			<div class="shell-sidebar">
-				<RightSidebar {user} {isUniversity} rightSidebarWidgets={rightSidebarWidgets} />
+				<RightSidebar {user} {isUniversity} rightSidebarWidgets={rightSidebarWidgets} suppressAds={lessonPlayer} />
 			</div>
 		{/if}
 	</div>
@@ -118,7 +132,7 @@
 		style="--current-nav-width: {navWidth}"
 	>
 		<div class="shell-nav">
-			<LeftNav {menu} {user} {collapsed} {logoUrl} {isUniversity} onToggle={onToggleCollapse} />
+			<LeftNav {menu} {user} collapsed={effectiveCollapsed} {logoUrl} {isUniversity} onToggle={onNavToggle} />
 		</div>
 
 		<main class="shell-center">
@@ -148,7 +162,7 @@
 
 		{#if !hideRightSidebar}
 			<div class="shell-sidebar">
-				<RightSidebar {user} {isUniversity} {sidebar} {rightSidebarWidgets} />
+				<RightSidebar {user} {isUniversity} {sidebar} {rightSidebarWidgets} suppressAds={lessonPlayer} />
 			</div>
 		{/if}
 	</div>

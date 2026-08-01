@@ -661,6 +661,8 @@ export const universityAdminApi = {
 		api<unknown>(`/admin/university/tracks/${id}/reject`, { method: 'POST', body }),
 	listPayouts: (params?: string) =>
 		api<unknown>(`/admin/university/payouts${params ? `?${params}` : ''}`),
+	listRevenueSplits: (params?: string) =>
+		api<unknown>(`/admin/university/revenue-splits${params ? `?${params}` : ''}`),
 	getPayout: (id: string) =>
 		api<unknown>(`/admin/university/payouts/${id}`),
 	processPayout: (id: string) =>
@@ -1219,9 +1221,26 @@ export const pageBuilderSaveAsTemplateApi = {
 		api<unknown>(`/admin/pages/${pageId}/save-as-template`, { method: 'POST', body }),
 };
 
+export interface SeoValidationResult {
+	id: string;
+	type: string;
+	title: string;
+	slug: string;
+	meta_title: string;
+	meta_description: string;
+	og_title: string;
+	og_description: string;
+	og_image_url: string;
+	canonical_url: string;
+	json_ld_type: string;
+	robots_meta: string;
+	issues: string[];
+	score: number;
+}
+
 export const seoAdminApi = {
 	validate: (id: string) =>
-		api<{ issues: string[] }>(`/admin/seo/validate/${id}`),
+		api<{ data: SeoValidationResult }>(`/admin/seo/validate/${id}`),
 };
 
 export const fieldPermissionsApi = {

@@ -6,27 +6,34 @@
 
 -- name: ListPublishedLearningTracks :many
 SELECT id, tenant_id, title, slug, description, difficulty, cover_media_id,
-       is_published, sort_order, created_at, updated_at
+       is_published, sort_order, created_at, updated_at,
+       instructor_id, price_kobo, currency, is_published_to_university,
+       category, language, total_enrolled
 FROM learning_tracks
 WHERE tenant_id = @tenant_id AND is_published = true
 ORDER BY sort_order ASC, created_at DESC;
 
 -- name: GetLearningTrackBySlug :one
 SELECT id, tenant_id, title, slug, description, difficulty, cover_media_id,
-       is_published, sort_order, created_at, updated_at
+       is_published, sort_order, created_at, updated_at,
+       instructor_id, price_kobo, currency, is_published_to_university,
+       category, language, total_enrolled
 FROM learning_tracks
 WHERE tenant_id = @tenant_id AND slug = @slug;
 
 -- name: GetLearningTrackByID :one
 SELECT id, tenant_id, title, slug, description, difficulty, cover_media_id,
-       is_published, sort_order, created_at, updated_at
+       is_published, sort_order, created_at, updated_at,
+       instructor_id, price_kobo, currency, is_published_to_university,
+       category, language, total_enrolled
 FROM learning_tracks
 WHERE tenant_id = @tenant_id AND id = @id;
 
 -- name: CreateLearningTrack :one
 INSERT INTO learning_tracks (tenant_id, title, slug, description, difficulty, cover_media_id, is_published, sort_order)
 VALUES (@tenant_id, @title, @slug, sqlc.narg(description), @difficulty, sqlc.narg(cover_media_id), @is_published, @sort_order)
-RETURNING id, tenant_id, title, slug, description, difficulty, cover_media_id, is_published, sort_order, created_at, updated_at;
+RETURNING id, tenant_id, title, slug, description, difficulty, cover_media_id, is_published, sort_order, created_at, updated_at,
+          instructor_id, price_kobo, currency, is_published_to_university, category, language, total_enrolled;
 
 -- name: UpdateLearningTrack :one
 UPDATE learning_tracks
@@ -38,14 +45,17 @@ SET title = COALESCE(@title, title),
     sort_order = COALESCE(@sort_order, sort_order),
     updated_at = now()
 WHERE tenant_id = @tenant_id AND id = @id
-RETURNING id, tenant_id, title, slug, description, difficulty, cover_media_id, is_published, sort_order, created_at, updated_at;
+RETURNING id, tenant_id, title, slug, description, difficulty, cover_media_id, is_published, sort_order, created_at, updated_at,
+          instructor_id, price_kobo, currency, is_published_to_university, category, language, total_enrolled;
 
 -- name: DeleteLearningTrack :exec
 DELETE FROM learning_tracks WHERE tenant_id = @tenant_id AND id = @id;
 
 -- name: ListAllLearningTracks :many
 SELECT id, tenant_id, title, slug, description, difficulty, cover_media_id,
-       is_published, sort_order, created_at, updated_at
+       is_published, sort_order, created_at, updated_at,
+       instructor_id, price_kobo, currency, is_published_to_university,
+       category, language, total_enrolled
 FROM learning_tracks
 WHERE tenant_id = @tenant_id
 ORDER BY sort_order ASC, created_at DESC;
@@ -109,6 +119,31 @@ SELECT id, tenant_id, module_id, title, slug, lesson_type, content, media_id,
        duration_minutes, sort_order, is_published, created_at, updated_at
 FROM learning_lessons
 WHERE tenant_id = @tenant_id AND id = @id;
+
+-- name: GetLearningLessonDetailBySlug :one
+-- Fetches a lesson joined to its module and track for the lesson player
+-- (ADR-060). Returns module_title, track_id, track_slug, track_title so the
+-- frontend can build breadcrumbs, the curriculum rail, and prev/next nav.
+SELECT ll.id, ll.tenant_id, ll.module_id, ll.title, ll.slug, ll.lesson_type,
+       ll.content, ll.media_id, ll.duration_minutes, ll.sort_order,
+       ll.is_published, ll.created_at, ll.updated_at,
+       lm.title AS module_title, lm.slug AS module_slug,
+       lt.id AS track_id, lt.slug AS track_slug, lt.title AS track_title
+FROM learning_lessons ll
+JOIN learning_modules lm ON lm.id = ll.module_id AND lm.tenant_id = ll.tenant_id
+JOIN learning_tracks lt ON lt.id = lm.track_id AND lt.tenant_id = lm.tenant_id
+WHERE ll.tenant_id = @tenant_id AND ll.module_id = @module_id AND ll.slug = @slug;
+
+-- name: ListTrackLessonsForNav :many
+-- Lists all published lessons in a track (across modules) ordered by module
+-- sort_order then lesson sort_order, so the handler can compute prev/next
+-- lesson navigation for the lesson player (ADR-060).
+SELECT ll.id, ll.slug, ll.title, ll.lesson_type, ll.sort_order,
+       lm.slug AS module_slug, lm.sort_order AS module_sort_order
+FROM learning_lessons ll
+JOIN learning_modules lm ON lm.id = ll.module_id AND lm.tenant_id = ll.tenant_id
+WHERE lm.track_id = @track_id AND ll.tenant_id = @tenant_id AND ll.is_published = true
+ORDER BY lm.sort_order ASC, ll.sort_order ASC, ll.created_at DESC;
 
 -- name: CreateLearningLesson :one
 INSERT INTO learning_lessons (tenant_id, module_id, title, slug, lesson_type, content, media_id, duration_minutes, sort_order, is_published)

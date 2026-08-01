@@ -84,7 +84,11 @@ func (h *Handlers) ListPublishedTracks(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"data": tracks})
 }
 
-// GetTrackDetail returns a published track with its modules and lesson counts.
+// GetTrackDetail returns a published track with its modules and nested lessons
+// as a single flat DTO. Per Section 36 the route returns "track detail: modules,
+// lessons, instructor" in one response. The frontend TrackDetail type (ADR-060)
+// expects a flat object with a `modules` array where each module carries its
+// `lessons` — NOT the legacy `{track, modules}` envelope.
 func (h *Handlers) GetTrackDetail(w http.ResponseWriter, r *http.Request) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
@@ -98,24 +102,13 @@ func (h *Handlers) GetTrackDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	track, err := h.store.GetTrackBySlug(r.Context(), t.ID, slug)
+	detail, err := h.store.GetTrackDetail(r.Context(), t.ID, slug)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "track_not_found", "Track not found")
 		return
 	}
 
-	modules, err := h.store.ListModulesByTrack(r.Context(), t.ID, track.ID)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "db_error", "Failed to list modules")
-		return
-	}
-
-	writeJSON(w, http.StatusOK, map[string]any{
-		"data": map[string]any{
-			"track":   track,
-			"modules": modules,
-		},
-	})
+	writeJSON(w, http.StatusOK, map[string]any{"data": detail})
 }
 
 // GetLesson returns a single lesson by its slug within the track/module hierarchy.
@@ -147,7 +140,9 @@ func (h *Handlers) GetLesson(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	lesson, err := h.store.GetLessonBySlug(r.Context(), t.ID, module.ID, lessonSlug)
+	// Use the enriched LessonDetail (ADR-060) so the frontend receives
+	// module_title, track context, content_html, and prev/next navigation.
+	lesson, err := h.store.GetLessonDetail(r.Context(), t.ID, module.ID, lessonSlug)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "lesson_not_found", "Lesson not found")
 		return

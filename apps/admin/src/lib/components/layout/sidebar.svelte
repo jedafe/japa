@@ -68,6 +68,7 @@
 			items: [
 				{ path: "/users", label: t("nav.users", "Users"), icon: Users, permission: "admin.users.view" },
 				{ path: "/organisations", label: t("nav.organisations", "Organisations"), icon: Building, permission: "organizations.manage" },
+			{ path: "/organisations/claims", label: t("nav.organisation_claims", "Ownership Claims"), icon: FileText, permission: "admin.moderation" },
 				{ path: "/universities", label: t("nav.universities", "Universities"), icon: GraduationCap, permission: "admin.settings" },
 				{ path: "/professional-types", label: t("nav.professional_types", "Professional Types"), icon: Briefcase, permission: "professional.manage" },
 				{ path: "/users/groups", label: t("nav.users_groups", "Groups"), icon: Users2, permission: "admin.users.view" }
@@ -124,6 +125,7 @@
 			{ path: "/university/instructors", label: t("nav.university_instructors", "University Instructors"), icon: GraduationCap, permission: "university.instructor.approve" },
 			{ path: "/university/tracks", label: t("nav.university_tracks", "University Tracks"), icon: BookOpen, permission: "university.course.approve" },
 			{ path: "/university/payouts", label: t("nav.university_payouts", "University Payouts"), icon: DollarSign, permission: "university.payout.process" },
+		{ path: "/university/revenue-splits", label: t("nav.university_revenue_splits", "Revenue Splits"), icon: DollarSign, permission: "university.revenue.list" },
 		{ path: "/mentorship", label: t("nav.mentorship", "Mentorship"), icon: Users2, permission: "mentorship.admin" },
 		{ path: "/onboarding", label: t("nav.onboarding", "Onboarding"), icon: UserPlus, permission: "admin.settings.view" }
 		]
@@ -173,6 +175,7 @@
 			label: t("nav.section.system", "System"),
 			items: [
 			{ path: "/settings", label: t("nav.settings", "Settings"), icon: Settings, permission: "admin.settings.view" },
+			{ path: "/seo", label: t("nav.seo_validation", "SEO Validation"), icon: Search, permission: "admin.settings" },
 			{ path: "/i18n", label: t("nav.i18n", "Translations"), icon: Languages, permission: "i18n.manage" },
 			{ path: "/notification-types", label: t("nav.notification_types", "Notifications"), icon: Bell, permission: "notifications.manage" },
 			{ path: "/jsonld-templates", label: t("nav.jsonld_templates", "JSON-LD Templates"), icon: FileCode, permission: "content.jsonld.manage" },

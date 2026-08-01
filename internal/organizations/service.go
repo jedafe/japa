@@ -467,13 +467,17 @@ func (s *Service) ListPublicMembers(ctx context.Context, orgID, tenantID pgtype.
 	return s.store.ListPublicMembers(ctx, orgID, tenantID)
 }
 
-// ListPublicOrganizations returns verified+active orgs for the public Discover list.
-func (s *Service) ListPublicOrganizations(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]gen.ListPublicOrganizationsRow, int64, error) {
-	rows, err := s.store.ListPublicOrganizations(ctx, tenantID, limit, offset)
+// ListPublicOrganizations returns active orgs for the public Discover list.
+// search filters by name/slug, orgType filters by org_type, verified filters
+// by verified status (empty = all, "true" = verified only, "false" = unverified
+// only). By default the handler passes verified="true" to preserve the original
+// behavior of only showing verified orgs.
+func (s *Service) ListPublicOrganizations(ctx context.Context, tenantID pgtype.UUID, search, orgType, verified string, limit, offset int32) ([]gen.ListPublicOrganizationsRow, int64, error) {
+	rows, err := s.store.ListPublicOrganizations(ctx, tenantID, search, orgType, verified, limit, offset)
 	if err != nil {
 		return nil, 0, err
 	}
-	total, err := s.store.CountPublicOrganizations(ctx, tenantID)
+	total, err := s.store.CountPublicOrganizations(ctx, tenantID, search, orgType, verified)
 	if err != nil {
 		return nil, 0, err
 	}

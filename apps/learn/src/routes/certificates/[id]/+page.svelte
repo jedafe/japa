@@ -1,11 +1,31 @@
 <script lang="ts">
 	// Public certificate share page — SSR (ADR-060 §4, shareable social proof).
 	import { t } from '$lib/i18n';
-	import { Award, GraduationCap, CheckCircle } from 'lucide-svelte';
+	import { api } from '$lib/api/client';
+	import { Award, GraduationCap, CheckCircle, Download } from 'lucide-svelte';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
 	const cert = $derived(data.cert);
+
+	let downloading = $state(false);
+	let downloadError = $state('');
+
+	async function downloadCertificate() {
+		downloading = true;
+		downloadError = '';
+		const r = await api.get<{ download_url?: string; message?: string }>(`/certificates/${cert.id}/download`);
+		downloading = false;
+		if (r.error) {
+			downloadError = r.error.message;
+			return;
+		}
+		if (r.data?.download_url) {
+			window.open(r.data.download_url, '_blank');
+		} else if (r.data?.message) {
+			downloadError = r.data.message;
+		}
+	}
 </script>
 
 <svelte:head>
@@ -65,12 +85,27 @@
 			{/if}
 		</div>
 
-		<a
-			href="/tracks/{cert.track_slug}"
-			class="mt-6 inline-flex items-center gap-2 rounded-[var(--radius)] border border-[var(--color-border)] px-4 py-2 text-sm font-medium text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
-		>
-			<CheckCircle size={16} class="text-[var(--color-progress)]" />
-			View course
-		</a>
+		<div class="mt-6 flex flex-wrap items-center justify-center gap-3">
+			<a
+				href="/tracks/{cert.track_slug}"
+				class="inline-flex items-center gap-2 rounded-[var(--radius)] border border-[var(--color-border)] px-4 py-2 text-sm font-medium text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
+			>
+				<CheckCircle size={16} class="text-[var(--color-progress)]" />
+				View course
+			</a>
+			<button
+				type="button"
+				class="inline-flex items-center gap-2 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-[var(--color-primary-contrast)] hover:bg-[var(--color-primary-hover)] disabled:opacity-50"
+				onclick={downloadCertificate}
+				disabled={downloading}
+			>
+				<Download size={16} />
+				{downloading ? t('common.loading', 'Loading…') : t('learn.download_certificate', 'Download')}
+			</button>
+		</div>
+
+		{#if downloadError}
+			<p class="mt-3 text-sm text-[var(--color-muted)]">{downloadError}</p>
+		{/if}
 	</div>
 </div>

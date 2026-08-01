@@ -2,6 +2,7 @@ package organizations
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jedafe/japa/internal/auth"
@@ -78,9 +79,11 @@ func (h *Handlers) ListPublicMembers(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"data": toOrgMembers(rows)})
 }
 
-// ListPublicOrganizations handles GET /organizations (public): verified+active
-// orgs, paginated. Reuses the org package's shared parsePageSize/parsePageOffset
-// helpers so pagination behaves identically to the authenticated list.
+// ListPublicOrganizations handles GET /organizations (public): active orgs,
+// paginated with search and filters. Query params: q (search by name/slug),
+// org_type (filter: business/ngo/government/embassy/university/media/community),
+// verified (filter: "true"=verified only [default], "false"=unverified only,
+// empty=all), page_size, page_offset.
 func (h *Handlers) ListPublicOrganizations(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := requireTenantID(w, r)
 	if !ok {
@@ -89,14 +92,34 @@ func (h *Handlers) ListPublicOrganizations(w http.ResponseWriter, r *http.Reques
 
 	limit := parsePageSize(r)
 	offset := parsePageOffset(r)
+	search := strings.TrimSpace(r.URL.Query().Get("q"))
+	orgType := strings.TrimSpace(r.URL.Query().Get("org_type"))
+	verified := strings.TrimSpace(r.URL.Query().Get("verified"))
+	if verified == "" {
+		// Default: only verified orgs (preserves original behavior).
+		verified = "true"
+	}
 
-	rows, total, err := h.service.ListPublicOrganizations(r.Context(), tenantID, limit, offset)
+	rows, total, err := h.service.ListPublicOrganizations(r.Context(), tenantID, search, orgType, verified, limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
+
+	totalPages := int64(0)
+	if limit > 0 {
+		totalPages = total / int64(limit)
+		if total%int64(limit) > 0 {
+			totalPages++
+		}
+	}
+
 	writeJSON(w, http.StatusOK, map[string]any{
 		"data": toPublicOrgList(rows),
-		"meta": map[string]any{"total": total, "limit": limit, "offset": offset},
+		"meta": map[string]any{
+			"total":       total,
+			"page":        offset / limit,
+			"total_pages": totalPages,
+		},
 	})
 }
