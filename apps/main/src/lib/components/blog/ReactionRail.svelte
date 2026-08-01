@@ -14,6 +14,14 @@
 		color: string;
 	}
 
+	interface ReactionType {
+		key: string;
+		emoji: string;
+		label: string;
+		enabled: boolean;
+		position: number;
+	}
+
 	interface Props {
 		/** The content ID (UUID) for API calls. */
 		contentId: string;
@@ -34,15 +42,29 @@
 	}: Props = $props();
 
 	let isBookmarked = $state(untrack(() => bookmarked));
-	let isLiked = $state(false);
-	let likeCount = $state(untrack(() => voteScore));
-	let likePending = $state(false);
+	let activeReactions = $state<Set<string>>(new Set());
+	let reactionCounts = $state<Record<string, number>>({ like: untrack(() => voteScore) });
+	let reactionPending = $state<string | null>(null);
 	let bookmarkPending = $state(false);
 	let shared = $state(false);
 	let showShareMenu = $state(false);
 	let sharePlatforms = $state<SharePlatform[]>([]);
+	let reactionTypes = $state<ReactionType[]>([]);
 
-	// Fetch initial bookmark + like status on mount when authenticated.
+	// Fetch admin-configured reaction types (Section 14 — reactions are
+	// admin-configurable per tenant, not hardcoded).
+	$effect(() => {
+		(async () => {
+			const res = await api.get<ReactionType[]>('/reaction-types');
+			if (res.data) {
+				reactionTypes = res.data
+					.filter((r) => r.enabled)
+					.sort((a, b) => a.position - b.position);
+			}
+		})();
+	});
+
+	// Fetch initial bookmark + reaction status on mount when authenticated.
 	$effect(() => {
 		if (!authed || !contentId) return;
 		(async () => {
@@ -54,7 +76,7 @@
 				isBookmarked = bmRes.data.bookmarked;
 			}
 			if (reactRes.data) {
-				isLiked = reactRes.data.some((r) => r.reaction_key === 'like');
+				activeReactions = new Set(reactRes.data.map((r) => r.reaction_key));
 			}
 		})();
 	});
@@ -89,30 +111,42 @@
 		return true;
 	}
 
-	async function toggleLike() {
-		if (!requireAuth() || likePending) return;
-		likePending = true;
-		const wasLiked = isLiked;
+	async function toggleReaction(reactionKey: string) {
+		if (!requireAuth() || reactionPending) return;
+		reactionPending = reactionKey;
+		const wasActive = activeReactions.has(reactionKey);
 		// Optimistic update
-		isLiked = !wasLiked;
-		likeCount += isLiked ? 1 : -1;
+		const next = new Set(activeReactions);
+		if (wasActive) {
+			next.delete(reactionKey);
+		} else {
+			next.add(reactionKey);
+		}
+		activeReactions = next;
+		reactionCounts[reactionKey] = (reactionCounts[reactionKey] || 0) + (wasActive ? -1 : 1);
 
 		try {
-			if (wasLiked) {
-				const res = await api.delete(`/content/${contentId}/reactions/like`);
+			if (wasActive) {
+				const res = await api.delete(`/content/${contentId}/reactions/${reactionKey}`);
 				if (res.error) throw new Error(res.error.message);
 			} else {
 				const res = await api.post(`/content/${contentId}/reactions`, {
-					reaction_key: 'like'
+					reaction_key: reactionKey
 				});
 				if (res.error) throw new Error(res.error.message);
 			}
 		} catch {
 			// Rollback on failure
-			isLiked = wasLiked;
-			likeCount += wasLiked ? 1 : -1;
+			const rollback = new Set(activeReactions);
+			if (wasActive) {
+				rollback.add(reactionKey);
+			} else {
+				rollback.delete(reactionKey);
+			}
+			activeReactions = rollback;
+			reactionCounts[reactionKey] = (reactionCounts[reactionKey] || 0) + (wasActive ? 1 : -1);
 		} finally {
-			likePending = false;
+			reactionPending = null;
 		}
 	}
 
@@ -145,12 +179,18 @@
 		return template.replace('{url}', url).replace('{title}', title);
 	}
 
-	function shareToPlatform(platform: SharePlatform) {
+	async function shareToPlatform(platform: SharePlatform) {
 		const shareUrl = buildShareUrl(platform.url_template);
 		window.open(shareUrl, '_blank', 'noopener,noreferrer,width=600,height=500');
 		showShareMenu = false;
 		shared = true;
 		setTimeout(() => (shared = false), 2000);
+		// Record the share event (Section 14 — POST /content/{id}/share).
+		// Fire-and-forget; a failure does not affect the user experience.
+		api.post(`/content/${contentId}/share`, {
+			share_type: 'external',
+			platform: platform.key
+		});
 	}
 
 	async function nativeShare() {
@@ -185,18 +225,40 @@
 <!-- ADR-058 Exception #1: borderless, transparent vertical strip in the article's LEFT margin.
      Must read as distinct from the bordered 72px nav — separated by a clear gap. -->
 <div class="sticky top-24 flex flex-col items-center gap-4 py-4">
-	<button
-		type="button"
-		onclick={toggleLike}
-		class="flex flex-col items-center gap-1 transition-colors"
-		aria-label={t('blog.react', 'React')}
-		aria-pressed={isLiked}
-	>
-		<span class="grid h-10 w-10 place-items-center rounded-full transition-colors {isLiked ? 'bg-[var(--color-primary)]/10 text-[var(--color-primary)]' : 'text-[var(--color-text-subtle)] hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-primary)]'}">
-			<Heart size={20} fill={isLiked ? 'currentColor' : 'none'} />
-		</span>
-		<span class="text-xs font-medium text-[var(--color-text-subtle)] [font-variant-numeric:tabular-nums]">{likeCount}</span>
-	</button>
+	<!-- Render admin-configured reaction types (Section 14 — fetched from
+	     GET /reaction-types, not hardcoded). Falls back to 'like' with
+	     Heart icon when the API returns no types. -->
+	{#if reactionTypes.length > 0}
+		{#each reactionTypes as rt (rt.key)}
+			<button
+				type="button"
+				onclick={() => toggleReaction(rt.key)}
+				class="flex flex-col items-center gap-1 transition-colors"
+				aria-label={rt.label}
+				aria-pressed={activeReactions.has(rt.key)}
+				disabled={reactionPending !== null}
+			>
+				<span class="grid h-10 w-10 place-items-center rounded-full transition-colors {activeReactions.has(rt.key) ? 'bg-[var(--color-primary)]/10 text-[var(--color-primary)]' : 'text-[var(--color-text-subtle)] hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-primary)]'}">
+					<span class="text-xl" aria-hidden="true">{rt.emoji}</span>
+				</span>
+				<span class="text-xs font-medium text-[var(--color-text-subtle)] [font-variant-numeric:tabular-nums]">{reactionCounts[rt.key] ?? 0}</span>
+			</button>
+		{/each}
+	{:else}
+		<button
+			type="button"
+			onclick={() => toggleReaction('like')}
+			class="flex flex-col items-center gap-1 transition-colors"
+			aria-label={t('blog.react', 'React')}
+			aria-pressed={activeReactions.has('like')}
+			disabled={reactionPending !== null}
+		>
+			<span class="grid h-10 w-10 place-items-center rounded-full transition-colors {activeReactions.has('like') ? 'bg-[var(--color-primary)]/10 text-[var(--color-primary)]' : 'text-[var(--color-text-subtle)] hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-primary)]'}">
+				<Heart size={20} fill={activeReactions.has('like') ? 'currentColor' : 'none'} />
+			</span>
+			<span class="text-xs font-medium text-[var(--color-text-subtle)] [font-variant-numeric:tabular-nums]">{reactionCounts['like'] ?? voteScore}</span>
+		</button>
+	{/if}
 
 	<a
 		href="#comments"

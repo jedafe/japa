@@ -9,7 +9,6 @@ package comparison
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -17,7 +16,6 @@ import (
 	"strings"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	errpkg "github.com/jedafe/japa/internal/errors"
@@ -74,14 +72,7 @@ func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.Au
 
 // handleServiceError translates a Service-layer error into the appropriate HTTP response.
 func handleServiceError(w http.ResponseWriter, err error) {
-	switch {
-	case errors.Is(err, pgx.ErrNoRows):
-		writeError(w, http.StatusNotFound, "not_found", "Resource not found")
-	case errors.Is(err, errpkg.ErrAlreadyExists), errors.Is(err, errpkg.ErrDuplicate):
-		writeError(w, http.StatusConflict, "already_exists", "Resource already exists")
-	default:
-		writeError(w, http.StatusInternalServerError, "internal_error", "Something went wrong")
-	}
+	errpkg.HandleServiceError(w, err)
 }
 
 // writeJSON serializes the given value as JSON and writes it to the response.

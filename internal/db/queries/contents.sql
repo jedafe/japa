@@ -175,6 +175,14 @@ RETURNING id, tenant_id, author_id, space_id, content_type, title, slug, body, b
 -- name: IncrementContentView :exec
 UPDATE contents SET view_count = view_count + 1 WHERE id = @id AND tenant_id = @tenant_id AND deleted_at IS NULL;
 
+-- name: RecordContentView :exec
+-- Inserts a deduplicated view record into user_content_views (Section 14).
+-- The PK deduplicates per user/session per day; ON CONFLICT does nothing.
+-- country_code is resolved server-side from the client IP via GeoIP.
+INSERT INTO user_content_views (content_id, user_id, session_id, country_code, viewed_at)
+VALUES (@content_id, @user_id, @session_id, @country_code, now())
+ON CONFLICT DO NOTHING;
+
 -- name: IncrementContentCommentCount :exec
 -- Increments the denormalized comment_count on a content row. Called
 -- synchronously when a comment is created so feed cards (which read
@@ -354,6 +362,17 @@ SELECT cs.space_id, cs.is_primary
 FROM content_spaces cs
 WHERE cs.content_id = @content_id
 ORDER BY cs.is_primary DESC, cs.created_at ASC;
+
+-- name: DeleteContentSpaces :exec
+-- Removes all space assignments for a content item (Section 14).
+-- Used by UpdateContentSpaces to replace the full assignment set.
+DELETE FROM content_spaces WHERE content_id = @content_id;
+
+-- name: AddContentSpace :exec
+-- Inserts a single space assignment for a content item (Section 14).
+-- is_primary must be true for exactly one row per content item.
+INSERT INTO content_spaces (content_id, space_id, is_primary)
+VALUES (@content_id, @space_id, @is_primary);
 
 -- name: ListContentByTag :many
 SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c.body_html,

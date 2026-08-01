@@ -182,8 +182,41 @@ func (c *Client) DeleteEntry(ctx context.Context, userID, entryID string) error 
 
 	_, _ = io.Copy(io.Discard, resp.Body)
 
+	// 404 means the entry was already deleted — treat as success (idempotent),
+	// consistent with DeleteUser's 404 handling.
+	if resp.StatusCode == http.StatusNotFound {
+		return nil
+	}
+
 	if resp.StatusCode >= 400 {
 		return fmt.Errorf("honcho: delete entry %s for user %s returned status %d", entryID, userID, resp.StatusCode)
+	}
+
+	return nil
+}
+
+// Health pings the Honcho service to report connectivity for the Control
+// Panel infrastructure health group (ADR-027). Returns nil when the service
+// responds with any 2xx/4xx status (reachable), and an error only when the
+// HTTP call itself fails (unreachable).
+func (c *Client) Health(ctx context.Context) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/health", nil)
+	if err != nil {
+		return fmt.Errorf("honcho: creating health request: %w", err)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("honcho: health check: %w", err)
+	}
+
+	defer func() { _ = resp.Body.Close() }()
+	_, _ = io.Copy(io.Discard, resp.Body)
+
+	// 5xx means the service is up but unhealthy; anything else (including 404)
+	// means the service is reachable.
+	if resp.StatusCode >= 500 {
+		return fmt.Errorf("honcho: health check returned status %d", resp.StatusCode)
 	}
 
 	return nil

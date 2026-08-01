@@ -25,6 +25,12 @@ declare global {
 			 * /docs/access-denied (ADR-060 — server-side gating only).
 			 */
 			accessibleAudiences: DocAudience[];
+			/**
+			 * Double-submit CSRF token fetched from GET /csrf (Ref: §5.2).
+			 * Threaded through ApiContext so server-side mutations attach
+			 * X-CSRF-Token. Null for guests or when the backend is unreachable.
+			 */
+			csrfToken: string | null;
 		}
 		interface PageData {
 			user: SessionUser | null;

@@ -12,22 +12,21 @@ package customfields
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"net/netip"
 	"strconv"
 	"strings"
+	"time"
 
 	errpkg "github.com/jedafe/japa/internal/errors"
-	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/hibiken/asynq"
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
+	"github.com/jedafe/japa/internal/clientip"
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/tenant"
 	"github.com/jedafe/japa/internal/worker"
@@ -107,26 +106,6 @@ func parseUUIDParam(r *http.Request, param string) (pgtype.UUID, error) {
 	return id, nil
 }
 
-// clientIP extracts the client IP from the request, respecting X-Forwarded-For
-// and X-Real-IP headers set by the reverse proxy.
-func clientIP(r *http.Request) string {
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		parts := strings.SplitN(xff, ",", 2)
-		return strings.TrimSpace(parts[0])
-	}
-
-	if xri := r.Header.Get("X-Real-IP"); xri != "" {
-		return strings.TrimSpace(xri)
-	}
-
-	idx := strings.LastIndex(r.RemoteAddr, ":")
-	if idx > 0 {
-		return r.RemoteAddr[:idx]
-	}
-
-	return r.RemoteAddr
-}
-
 // requireTenant resolves the tenant from the request context and writes a 503
 // error when none is available. The boolean return is false when the caller
 // should abort (the error has already been written).
@@ -144,14 +123,7 @@ func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype
 // response. It centralizes the not-found, duplicate, and fallback mapping so
 // every handler stays consistent.
 func handleServiceError(w http.ResponseWriter, err error) {
-	switch {
-	case errors.Is(err, pgx.ErrNoRows):
-		writeError(w, http.StatusNotFound, "not_found", "Resource not found")
-	case errors.Is(err, errpkg.ErrDuplicate):
-		writeError(w, http.StatusConflict, "already_exists", "Resource already exists")
-	default:
-		writeError(w, http.StatusInternalServerError, "internal_error", "Something went wrong")
-	}
+	errpkg.HandleServiceError(w, err)
 }
 
 // ---------------------------------------------------------------------------
@@ -178,23 +150,23 @@ type fieldGroupEnriched struct {
 // gen.CustomField (which serializes Options []byte as base64), this type
 // uses json.RawMessage so the JSONB options are passed through as raw JSON.
 type fieldSummary struct {
-	ID           pgtype.UUID        `json:"id"`
-	GroupID      pgtype.UUID        `json:"group_id"`
-	Label        string             `json:"label"`
-	Key          string             `json:"key"`
-	FieldType    string             `json:"field_type"`
-	Options      json.RawMessage    `json:"options"`
-	EmbedPlatforms []string         `json:"embed_platforms"`
-	Placeholder  *string            `json:"placeholder"`
-	DefaultValue *string            `json:"default_value"`
-	IsRequired   bool               `json:"is_required"`
-	IsSystem     bool               `json:"is_system"`
-	ShowInFrontend bool             `json:"show_in_frontend"`
-	Filterable   bool               `json:"filterable"`
-	Sortable     bool               `json:"sortable"`
-	Searchable   bool               `json:"searchable"`
-	Position     int32              `json:"position"`
-	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	ID             pgtype.UUID        `json:"id"`
+	GroupID        pgtype.UUID        `json:"group_id"`
+	Label          string             `json:"label"`
+	Key            string             `json:"key"`
+	FieldType      string             `json:"field_type"`
+	Options        json.RawMessage    `json:"options"`
+	EmbedPlatforms []string           `json:"embed_platforms"`
+	Placeholder    *string            `json:"placeholder"`
+	DefaultValue   *string            `json:"default_value"`
+	IsRequired     bool               `json:"is_required"`
+	IsSystem       bool               `json:"is_system"`
+	ShowInFrontend bool               `json:"show_in_frontend"`
+	Filterable     bool               `json:"filterable"`
+	Sortable       bool               `json:"sortable"`
+	Searchable     bool               `json:"searchable"`
+	Position       int32              `json:"position"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
 }
 
 // toFieldSummary converts a gen.CustomField to a fieldSummary, preserving
@@ -685,7 +657,7 @@ func (h *Handlers) ReorderFields(w http.ResponseWriter, r *http.Request) {
 		OrderedFieldIDs []string `json:"ordered_field_ids"`
 		Fields          []struct {
 			ID       string `json:"id"`
-			Position int32   `json:"position"`
+			Position int32  `json:"position"`
 		} `json:"fields"`
 	}
 
@@ -1118,19 +1090,19 @@ func (h *Handlers) GetForm(w http.ResponseWriter, r *http.Request) {
 	// Return all form fields including slug, status etc.
 	writeJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
-			"id":             form.ID,
-			"name":           form.Name,
-			"description":    form.Description,
-			"slug":           form.Slug,
-			"status":         form.Status,
-			"is_multi_step":  form.IsMultiStep,
-			"submit_label":   form.SubmitLabel,
+			"id":              form.ID,
+			"name":            form.Name,
+			"description":     form.Description,
+			"slug":            form.Slug,
+			"status":          form.Status,
+			"is_multi_step":   form.IsMultiStep,
+			"submit_label":    form.SubmitLabel,
 			"success_message": form.SuccessMessage,
-			"is_system":      form.IsSystem,
-			"fields":         fieldList,
-			"field_group_id": fieldGroupID,
-			"space_id":       form.SpaceID,
-			"created_at":     form.CreatedAt,
+			"is_system":       form.IsSystem,
+			"fields":          fieldList,
+			"field_group_id":  fieldGroupID,
+			"space_id":        form.SpaceID,
+			"created_at":      form.CreatedAt,
 		},
 	})
 }
@@ -1545,7 +1517,7 @@ func (h *Handlers) SubmitForm(w http.ResponseWriter, r *http.Request) {
 	// recorded as nil rather than failing the submission.
 	var ipAddr *netip.Addr
 
-	if ip := clientIP(r); ip != "" {
+	if ip := clientip.FromRequest(r); ip != "" {
 		if addr, err := netip.ParseAddr(ip); err == nil {
 			ipAddr = &addr
 		}

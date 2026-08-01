@@ -665,7 +665,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 	// Bot & Crawler Management subsystem (Section 43).
 	botStore := bots.NewStoreWithDB(database)
-	botService := bots.NewServiceFromStore(botStore)
+	botService := bots.NewServiceWithValkey(botStore, vkClient)
 	botHandlers := bots.NewHandlers(botService)
 
 	// Spam Prevention & Content Safety admin handlers (Section 41).
@@ -731,6 +731,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	aiStore := ai.NewStore(database.Reader, database.Writer)
 	aiHandlers := ai.NewHandlers(aiDispatcher, aiStore)
 	aiHandlers.SetHonchoClient(honcho.NewClient(cfg.HonchoURL))
+	aiHandlers.SetSettings(settingsService) // Rule 3: ai.japabot_enabled global toggle
+	aiHandlers.SetRBAC(rbacResolver)        // ADR-025: ai.context.* category node checks
 	aiHandlers.AsynqClient = asynqClient
 
 	aiToolRegistry := ai.NewToolRegistry(database)
@@ -847,6 +849,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	controlHandlers.SetSettings(settingsService)
 	controlHandlers.SetValkey(vkClient.Redis())
 	controlHandlers.SetMeiliSearch(meiliClient)
+	controlHandlers.SetHoncho(honcho.NewClient(cfg.HonchoURL)) // ADR-027: infra health
 
 	// Infrastructure routes bypass tenant middleware
 	r.Get("/health", h.HealthCheck)
@@ -950,7 +953,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// and stores bot info in request context for downstream handlers.
 			// Runs after tenant middleware (needs tenant context) but before
 			// route handlers.
-			r.Use(bots.BotDetectionMiddleware(botStore))
+			r.Use(bots.BotDetectionMiddleware(botStore, vkClient))
 
 			// CSRF double-submit enforcement for all mutating /api/v1 requests
 			// (Bug Hunter §5). Cookie-authenticated browser requests (the admin
@@ -1320,9 +1323,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Create (require auth + moderate rate limit + permission)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "moderate"), rbac.RequirePermission(rbacResolver, "content.create")).
 				Post("/content", contentHandlers.CreateContent)
-			// Read (require auth)
+			// Read (require auth for list; single content is public for
+			// published items — Section 14 public content SSR).
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/content", contentHandlers.ListContent)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/content/{slug}", contentHandlers.GetContent)
+			r.With(auth.OptionalAuth(kr, vkClient.Redis())).Get("/content/{slug}", contentHandlers.GetContent)
 			// Content types (public — for frontend content type selection)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/content-types", contentHandlers.ListContentTypes)
 			// Update/Delete (require auth + permission)
@@ -1338,7 +1342,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Post("/content/{id}/archive", contentHandlers.ArchiveContent)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.edit")).
 				Post("/content/{id}/schedule", contentHandlers.ScheduleContent)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/content/{id}/view", contentHandlers.RecordContentView)
+			r.With(auth.OptionalAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "loose")).Post("/content/{id}/view", contentHandlers.RecordContentView)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/content/{id}/share-count", contentHandlers.GetContentShareCount)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "moderation.report")).Post("/content/{id}/report", reportsHandlers.ReportContent)
 			// Revisions (require auth + permission to view)
@@ -2489,20 +2493,24 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ai.generate")).
 				Post("/ai/generate", aiHandlers.HandleGenerate)
 
-			// JapaBot chat — gated by feature.ai_chat, moderate rate limit.
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.ai_chat"), mw.RateLimit(vkClient.Redis(), "moderate")).
+			// JapaBot chat — gated by feature.ai_chat flag + ai.context.use RBAC
+			// (Section 20: "Auth required + ai.context.use permission"). Per §19,
+			// ai.context.* nodes default OFF including for super_admin.
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.ai_chat"), rbac.RequirePermission(rbacResolver, "ai.context.use"), mw.RateLimit(vkClient.Redis(), "moderate")).
 				Post("/ai/chat", aiHandlers.HandleChat)
 
-			// Content AI Assist endpoints (catalog: /ai/assist/*), moderate rate limit.
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "moderate")).
+			// Content AI Assist endpoints (catalog: /ai/assist/*), gated by
+			// ai.editor.assist (Section 20 V1 Tool Catalog: content.editor_assist
+			// behind ai.editor.assist), moderate rate limit.
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ai.editor.assist"), mw.RateLimit(vkClient.Redis(), "moderate")).
 				Post("/ai/assist/improve", aiHandlers.HandleImprove)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "moderate")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ai.editor.assist"), mw.RateLimit(vkClient.Redis(), "moderate")).
 				Post("/ai/assist/summarize", aiHandlers.HandleSummarize)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "moderate")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ai.editor.assist"), mw.RateLimit(vkClient.Redis(), "moderate")).
 				Post("/ai/assist/translate", aiHandlers.HandleTranslate)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "moderate")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ai.editor.assist"), mw.RateLimit(vkClient.Redis(), "moderate")).
 				Post("/ai/assist/generate-tags", aiHandlers.HandleGenerateTags)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "moderate")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ai.editor.assist"), mw.RateLimit(vkClient.Redis(), "moderate")).
 				Post("/ai/assist/generate-og", aiHandlers.HandleGenerateOG)
 
 			// HITL review routes
@@ -2529,9 +2537,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 			// AI Context admin routes — view/delete user AI context via Honcho
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ai.context.admin_view")).
-				Get("/admin/ai/context/{user_id}", aiHandlers.HandleGetUserContext)
+				Get("/admin/users/{id}/ai-context", aiHandlers.HandleGetUserContext)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ai.context.admin_delete_entry")).
-				Delete("/admin/ai/context/{user_id}/{entry_id}", aiHandlers.HandleDeleteUserContextEntry)
+				Delete("/admin/users/{id}/ai-context/{entryId}", aiHandlers.HandleDeleteUserContextEntry)
 
 			// AI Usage admin route (stub until ai_usage_log table exists)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ai.context.admin_view")).
@@ -3271,10 +3279,6 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Get("/admin/gdpr/exports", gdprHandlers.ListPendingDataExports)
 
 			// Task 21: Users admin moderation
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.users.list")).
-				Get("/admin/users/{id}/ai-context", aiHandlers.HandleGetUserContext)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.users.list")).
-				Delete("/admin/users/{id}/ai-context/{entryId}", aiHandlers.HandleDeleteUserContextEntry)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.moderation")).
 				Post("/admin/users/{id}/ban", adminHandlers.BanUser)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.moderation")).
@@ -3406,8 +3410,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Post("/content/{id}/react", contentHandlers.AddReaction)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.reactions.remove")).
 				Delete("/content/{id}/react", contentHandlers.RemoveReaction)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.pin")).
-				Patch("/content/{id}/spaces", contentHandlers.UpdateContent)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.edit")).
+				Patch("/content/{id}/spaces", contentHandlers.UpdateContentSpaces)
 
 			// Task 34: Users public extras
 			// Profile Analytics dashboard — owner-only per JEOS §342 [auth, self].

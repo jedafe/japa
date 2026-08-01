@@ -33,6 +33,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
+	"github.com/jedafe/japa/internal/clientip"
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/geoip"
@@ -195,7 +196,7 @@ func (res *Resolver) resolve(r *http.Request) VisitorContext {
 			cacheKey = "jc:visitor:ctx:user:" + user.UserID.String()
 		}
 	} else {
-		cacheKey = "jc:visitor:ctx:ip:" + clientIP(r)
+		cacheKey = "jc:visitor:ctx:ip:" + clientip.FromRequest(r)
 	}
 
 	// Try cache first.
@@ -393,22 +394,6 @@ func resolveLanguage(r *http.Request) string {
 		return "en"
 	}
 	return accept
-}
-
-// clientIP extracts the client IP from the request, respecting proxy headers.
-func clientIP(r *http.Request) string {
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		parts := strings.SplitN(xff, ",", 2)
-		return strings.TrimSpace(parts[0])
-	}
-	if xri := r.Header.Get("X-Real-IP"); xri != "" {
-		return strings.TrimSpace(xri)
-	}
-	idx := strings.LastIndex(r.RemoteAddr, ":")
-	if idx > 0 {
-		return r.RemoteAddr[:idx]
-	}
-	return r.RemoteAddr
 }
 
 // SetUserPreference updates the user's content_country_preference and

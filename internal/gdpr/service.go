@@ -752,6 +752,13 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 			return fmt.Errorf("deleting content revisions: %w", err)
 		}
 
+		// user_content_views.user_id has ON DELETE CASCADE, but we delete
+		// explicitly to document the erasure path and ensure PII is
+		// removed before the final HardDeleteUser (Section 14, ADR-014).
+		if err := q.GdprDeleteUserContentViews(ctx, userID); err != nil {
+			return fmt.Errorf("deleting user content views: %w", err)
+		}
+
 		// space_pinned_posts.pinned_by has no CASCADE; remove pins made by the user.
 		if err := q.DeleteSpacePinnedPostsByUser(ctx, userID); err != nil {
 			return fmt.Errorf("deleting space pinned posts: %w", err)
@@ -1152,6 +1159,7 @@ type UserDataExport struct {
 	Reactions            []map[string]interface{} `json:"reactions"`
 	Bookmarks            []map[string]interface{} `json:"bookmarks"`
 	ContentShares        []map[string]interface{} `json:"content_shares"`
+	ContentViews         []map[string]interface{} `json:"content_views"`
 	Follows              []map[string]interface{} `json:"follows"`
 	ForumThreads         []map[string]interface{} `json:"forum_threads"`
 	ForumReplies         []map[string]interface{} `json:"forum_replies"`
@@ -1332,6 +1340,13 @@ func (s *Service) collectUserData(ctx context.Context, userID, tenantID pgtype.U
 		export.ContentShares = rows
 	} else {
 		slog.Warn("failed to collect content_shares for export", "user_id", userID.String(), "error", err)
+	}
+
+	// Content views the user recorded (Section 14 — user_content_views PII).
+	if rows, err := s.store.gdprExportUserContentViews(ctx, userID); err == nil {
+		export.ContentViews = rows
+	} else {
+		slog.Warn("failed to collect content_views for export", "user_id", userID.String(), "error", err)
 	}
 
 	// Follow relationships initiated by the user.

@@ -262,6 +262,21 @@ type AiToolUsage struct {
 	CreatedAt  pgtype.Timestamptz `json:"created_at"`
 }
 
+type AiUsageLog struct {
+	ID               pgtype.UUID        `json:"id"`
+	TenantID         pgtype.UUID        `json:"tenant_id"`
+	UserID           pgtype.UUID        `json:"user_id"`
+	Provider         string             `json:"provider"`
+	Model            string             `json:"model"`
+	TaskType         string             `json:"task_type"`
+	PromptTokens     int32              `json:"prompt_tokens"`
+	CompletionTokens int32              `json:"completion_tokens"`
+	TotalTokens      int32              `json:"total_tokens"`
+	CostUsd          pgtype.Numeric     `json:"cost_usd"`
+	RequestRef       *string            `json:"request_ref"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+}
+
 type ApiKey struct {
 	ID            pgtype.UUID        `json:"id"`
 	TenantID      pgtype.UUID        `json:"tenant_id"`
@@ -2457,6 +2472,15 @@ type UserBlock struct {
 	BlockerID pgtype.UUID        `json:"blocker_id"`
 	BlockedID pgtype.UUID        `json:"blocked_id"`
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
+type UserContentView struct {
+	ID          pgtype.UUID        `json:"id"`
+	ContentID   pgtype.UUID        `json:"content_id"`
+	UserID      pgtype.UUID        `json:"user_id"`
+	SessionID   *string            `json:"session_id"`
+	CountryCode *string            `json:"country_code"`
+	ViewedAt    pgtype.Timestamptz `json:"viewed_at"`
 }
 
 type UserDmSetting struct {

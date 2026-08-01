@@ -180,13 +180,13 @@ func TestParseOffset(t *testing.T) {
 	}
 
 	// Custom offset
-	r2 := httptest.NewRequest(http.MethodGet, "/bots?offset=10", nil)
+	r2 := httptest.NewRequest(http.MethodGet, "/bots?page_offset=10", nil)
 	if o := parseOffset(r2); o != 10 {
 		t.Errorf("expected offset 10, got %d", o)
 	}
 
 	// Invalid offset
-	r3 := httptest.NewRequest(http.MethodGet, "/bots?offset=abc", nil)
+	r3 := httptest.NewRequest(http.MethodGet, "/bots?page_offset=abc", nil)
 	if o := parseOffset(r3); o != 0 {
 		t.Errorf("expected default offset for invalid input, got %d", o)
 	}

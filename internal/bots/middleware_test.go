@@ -13,7 +13,7 @@ func TestBotDetectionMiddleware_NoTenant(t *testing.T) {
 	t.Parallel()
 
 	store := &Store{}
-	middleware := BotDetectionMiddleware(store)
+	middleware := BotDetectionMiddleware(store, nil)
 
 	handler := middleware(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -39,7 +39,7 @@ func TestBotDetectionMiddleware_NoUserAgent(t *testing.T) {
 	t.Parallel()
 
 	store := &Store{}
-	middleware := BotDetectionMiddleware(store)
+	middleware := BotDetectionMiddleware(store, nil)
 
 	handler := middleware(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)

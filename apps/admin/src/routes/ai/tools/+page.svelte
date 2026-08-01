@@ -10,20 +10,21 @@
 		id: string;
 		name: string;
 		description: string;
-		model: string;
-		enabled: boolean;
+		category: string;
+		is_enabled: boolean;
+		required_permission?: string;
 		created_at: string;
 	};
 
-	type AIUsage = {
-		total_requests: number;
-		total_tokens: number;
-		total_cost: number;
-		by_model: Array<{ model: string; requests: number; tokens: number; cost: number }>;
+	type AIUsageSummary = {
+		total_cost_usd: number;
+		tokens_used: number;
+		by_task_type: Array<{ task_type: string; tokens_used: number; total_cost_usd: number; calls: number }>;
+		by_provider?: Array<{ provider: string; tokens_used: number; total_cost_usd: number; calls: number }>;
 	};
 
 	let tools = $state<AITool[]>([]);
-	let usage = $state<AIUsage | null>(null);
+	let usage = $state<AIUsageSummary | null>(null);
 	let loading = $state(true);
 	let error = $state('');
 	let activeTab = $state<'tools' | 'usage'>('tools');
@@ -35,16 +36,16 @@
 	const toolColumns = [
 		{ key: 'name', label: t('ai.tool_name'), sortable: true },
 		{ key: 'description', label: t('ai.description'), render: (v: string) => v || '-' },
-		{ key: 'model', label: t('ai.model'), render: (v: string) => `<span class="font-mono text-xs">${v}</span>` },
-		{ key: 'enabled', label: t('ai.status'), render: (v: boolean) => `<span class="rounded-full px-2 py-0.5 text-xs font-medium ${v ? 'bg-success/15 text-success dark:text-success' : 'bg-muted/15 text-muted dark:text-muted'}">${v ? t('ai.enabled') : t('ai.disabled')}</span>` },
+		{ key: 'category', label: t('ai.category'), render: (v: string) => `<span class="font-mono text-xs">${v}</span>` },
+		{ key: 'is_enabled', label: t('ai.status'), render: (v: boolean) => `<span class="rounded-full px-2 py-0.5 text-xs font-medium ${v ? 'bg-success/15 text-success dark:text-success' : 'bg-muted/15 text-muted dark:text-muted'}">${v ? t('ai.enabled') : t('ai.disabled')}</span>` },
 		{ key: 'actions', label: t('common.actions'), class: 'w-24', componentSnippet: ToolActionsCell }
 	];
 
 	const usageColumns = [
-		{ key: 'model', label: t('ai.model'), render: (v: string) => `<span class="font-mono">${v}</span>` },
-		{ key: 'requests', label: t('ai.requests'), render: (v: number) => v.toLocaleString() },
-		{ key: 'tokens', label: t('ai.tokens'), render: (v: number) => v.toLocaleString() },
-		{ key: 'cost', label: t('ai.cost'), render: (v: number) => `$${v.toFixed(2)}` }
+		{ key: 'task_type', label: t('ai.category'), render: (v: string) => `<span class="font-mono">${v}</span>` },
+		{ key: 'calls', label: t('ai.requests'), render: (v: number) => v.toLocaleString() },
+		{ key: 'tokens_used', label: t('ai.tokens'), render: (v: number) => v.toLocaleString() },
+		{ key: 'total_cost_usd', label: t('ai.cost'), render: (v: number) => `$${(v ?? 0).toFixed(2)}` }
 	];
 
 	const filteredTools = $derived(
@@ -69,7 +70,7 @@
 					error = result.error;
 				}
 			} else {
-				const result = await api<AIUsage>('/admin/ai/usage');
+				const result = await api<AIUsageSummary>('/admin/ai/usage');
 				if (result.ok) {
 					usage = result.data;
 				} else {
@@ -92,9 +93,16 @@
 		if (!editingTool) return;
 		saving = true;
 		try {
+			// Send only the fields the backend UpdateTool accepts
+			// (description, is_enabled, required_permission). Name and
+			// category are not editable here.
 			await api(`/admin/ai/tools/${editingTool.id}`, {
 				method: 'PUT',
-				body: editingTool
+				body: {
+					description: editingTool.description,
+					is_enabled: editingTool.is_enabled,
+					required_permission: editingTool.required_permission ?? null
+				}
 			});
 			showEditModal = false;
 			load();
@@ -151,26 +159,28 @@
 {:else if activeTab === 'usage' && usage}
 	<div class="grid grid-cols-1 gap-4 sm:grid-cols-3 mb-6">
 		<div class="rounded-lg border p-4" style="border-color: var(--color-border)">
-			<p class="text-sm" style="color: var(--color-muted)">{t('ai.total_requests')}</p>
-			<p class="mt-1 text-2xl font-bold">{usage.total_requests.toLocaleString()}</p>
-		</div>
-		<div class="rounded-lg border p-4" style="border-color: var(--color-border)">
 			<p class="text-sm" style="color: var(--color-muted)">{t('ai.total_tokens')}</p>
-			<p class="mt-1 text-2xl font-bold">{usage.total_tokens.toLocaleString()}</p>
+			<p class="mt-1 text-2xl font-bold">{(usage.tokens_used ?? 0).toLocaleString()}</p>
 		</div>
 		<div class="rounded-lg border p-4" style="border-color: var(--color-border)">
 			<p class="text-sm" style="color: var(--color-muted)">{t('ai.total_cost')}</p>
-			<p class="mt-1 text-2xl font-bold">${usage.total_cost.toFixed(2)}</p>
+			<p class="mt-1 text-2xl font-bold">${(usage.total_cost_usd ?? 0).toFixed(2)}</p>
+		</div>
+		<div class="rounded-lg border p-4" style="border-color: var(--color-border)">
+			<p class="text-sm" style="color: var(--color-muted)">{t('ai.requests')}</p>
+			<p class="mt-1 text-2xl font-bold">{(usage.by_task_type ?? []).reduce((s, r) => s + (r.calls ?? 0), 0).toLocaleString()}</p>
 		</div>
 	</div>
 
 	<DataTable
 		columns={usageColumns}
-		data={usage.by_model}
+		data={usage.by_task_type ?? []}
 		pageSize={25}
 		emptyMessage={t('ai.no_usage_data')}
 		showPagination={false}
 	/>
+{:else if activeTab === 'usage' && !usage}
+	<p class="text-sm" style="color: var(--color-muted)">{t('ai.no_usage_data')}</p>
 {/if}
 
 {#if showEditModal && editingTool}
@@ -197,20 +207,21 @@
 				></textarea>
 			</div>
 			<div>
-				<label for="tool-model" class="mb-1 block text-sm font-medium">{t('ai.model')}</label>
+				<label for="tool-perm" class="mb-1 block text-sm font-medium">{t('ai.required_permission') ?? 'Required permission'}</label>
 				<input
-					id="tool-model"
+					id="tool-perm"
 					type="text"
+					placeholder="e.g. ai.generate"
 					class="w-full rounded-md border px-3 py-2 text-sm"
 					style="border-color: var(--color-border); background-color: var(--color-background)"
-					bind:value={editingTool.model}
+					bind:value={editingTool.required_permission}
 				/>
 			</div>
 			<div class="flex items-center gap-2">
 				<input
 					type="checkbox"
 					id="tool-enabled"
-					bind:checked={editingTool.enabled}
+					bind:checked={editingTool.is_enabled}
 					class="rounded"
 				/>
 				<label for="tool-enabled" class="text-sm">{t('ai.enabled')}</label>

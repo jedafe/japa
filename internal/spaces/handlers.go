@@ -119,14 +119,7 @@ func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype
 // response. It centralizes the not-found, duplicate, and fallback mapping so
 // every handler stays consistent.
 func handleServiceError(w http.ResponseWriter, err error) {
-	switch {
-	case errors.Is(err, pgx.ErrNoRows):
-		writeError(w, http.StatusNotFound, "not_found", "Resource not found")
-	case errors.Is(err, errpkg.ErrDuplicate):
-		writeError(w, http.StatusConflict, "already_exists", "Resource already exists")
-	default:
-		writeError(w, http.StatusInternalServerError, "internal_error", "Something went wrong")
-	}
+	errpkg.HandleServiceError(w, err)
 }
 
 // spaceFromContext writes a 404 error and returns false when no resolved space

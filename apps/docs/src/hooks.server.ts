@@ -87,6 +87,31 @@ export const handle: Handle = async ({ event, resolve }) => {
 
 	event.locals.accessibleAudiences = resolveAudiences(event.locals.user);
 
+	// Fetch the double-submit CSRF token for authenticated users so server-side
+	// mutations (form actions, apiPost/apiPatch/apiDelete) can attach the
+	// X-CSRF-Token header. Also mirror the csrf_token cookie onto the browser
+	// response so any client-side fetches can echo it back. The backend's
+	// Set-Cookie from the server-side /csrf fetch is consumed by SvelteKit's
+	// server fetch and never reaches the browser, so we set it explicitly here.
+	// Ref: japa-bugs-hunters.md §5.2 (CSRF) — audit finding C1.
+	event.locals.csrfToken = null;
+	if (event.locals.token && !building) {
+		try {
+			const csrf = await apiGet<{ csrfToken: string }>(apiContext(event), '/csrf');
+			event.locals.csrfToken = csrf?.csrfToken ?? null;
+			if (event.locals.csrfToken) {
+				event.cookies.set('csrf_token', event.locals.csrfToken, {
+					path: '/',
+					httpOnly: false,
+					secure: true,
+					sameSite: 'lax'
+				});
+			}
+		} catch {
+			event.locals.csrfToken = null;
+		}
+	}
+
 	return resolve(event, {
 		transformPageChunk: ({ html }) =>
 			html

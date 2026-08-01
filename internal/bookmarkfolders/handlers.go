@@ -9,6 +9,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
+	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/tenant"
 )
 
@@ -134,7 +135,7 @@ func (h *Handlers) UpdateFolder(w http.ResponseWriter, r *http.Request) {
 
 	folder, err := h.service.UpdateFolder(r.Context(), id, tenantID, user.UserID, input.Name)
 	if err != nil {
-		if errors.Is(err, ErrNotFound) {
+		if errors.Is(err, errpkg.ErrNotFound) {
 			writeError(w, http.StatusNotFound, "not_found", "Bookmark folder not found")
 			return
 		}
@@ -165,7 +166,7 @@ func (h *Handlers) DeleteFolder(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.service.DeleteFolder(r.Context(), id, tenantID, user.UserID); err != nil {
-		if errors.Is(err, ErrNotFound) {
+		if errors.Is(err, errpkg.ErrNotFound) {
 			writeError(w, http.StatusNotFound, "not_found", "Bookmark folder not found")
 			return
 		}
