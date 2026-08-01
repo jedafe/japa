@@ -36,36 +36,37 @@ export const handle: Handle = async ({ event, resolve }) => {
 	event.locals.tenantHost = event.url.hostname;
 	event.locals.token = event.cookies.get('jc_token') ?? null;
 
-	// Theme: prefer the user's cookie, then fall back to the control panel
-	// appearance.dark_mode_default setting, then 'light'.
+	// Theme + locale: prefer the user's cookie, then fall back to the control
+	// panel appearance/i18n settings, then defaults. The settings endpoint is
+	// fetched at most once per request (shared between theme + locale).
 	const themeCookie = event.cookies.get('jc_theme');
-	if (themeCookie === 'dark' || themeCookie === 'light') {
-		event.locals.theme = themeCookie;
-	} else {
+	const localeCookie = event.cookies.get('jc_locale');
+	const needSettings = themeCookie !== 'dark' && themeCookie !== 'light';
+	const needLocaleSettings = localeCookie !== 'fr' && localeCookie !== 'en';
+
+	let settings: Record<string, unknown> = {};
+	if ((needSettings || needLocaleSettings) && !building) {
 		try {
-			const settings =
+			settings =
 				(await apiGet<Record<string, unknown>>(apiContext(event), '/site/settings/public')) ?? {};
-			event.locals.theme = settings['appearance.dark_mode_default'] === true ? 'dark' : 'light';
 		} catch {
-			event.locals.theme = 'light';
+			settings = {};
 		}
 	}
 
-	// Locale: prefer the user's cookie, then fall back to the control panel
-	// i18n.default_language setting, then 'en'.
-	const localeCookie = event.cookies.get('jc_locale');
-	if (localeCookie === 'fr' || localeCookie === 'en') {
-		event.locals.locale = localeCookie as Locale;
-	} else {
-		try {
-			const settings =
-				(await apiGet<Record<string, unknown>>(apiContext(event), '/site/settings/public')) ?? {};
-			const defaultLang = (settings['i18n.default_language'] as string | undefined) ?? 'en';
-			event.locals.locale = (defaultLang === 'fr' ? 'fr' : 'en') as Locale;
-		} catch {
-			event.locals.locale = 'en' as Locale;
-		}
-	}
+	event.locals.theme =
+		themeCookie === 'dark' || themeCookie === 'light'
+			? themeCookie
+			: settings['appearance.dark_mode_default'] === true
+				? 'dark'
+				: 'light';
+
+	const defaultLang = (settings['i18n.default_language'] as string | undefined) ?? 'en';
+	event.locals.locale = (localeCookie === 'fr' || localeCookie === 'en'
+		? localeCookie
+		: defaultLang === 'fr'
+			? 'fr'
+			: 'en') as Locale;
 
 	event.locals.user = null;
 

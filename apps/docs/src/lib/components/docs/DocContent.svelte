@@ -4,13 +4,15 @@
 	import type { TocHeading } from '$lib/tiptap/serialize';
 
 	interface Props {
+		/** Page ID for helpful-vote localStorage persistence. */
+		pageId: string;
 		/** Server-rendered doc HTML (TipTap JSON → HTML). */
 		html: string;
 		lastReviewedAt?: string | null;
 		lastReviewedBy?: string | null;
 	}
 
-	let { html, lastReviewedAt = null, lastReviewedBy = null }: Props = $props();
+	let { pageId, html, lastReviewedAt = null, lastReviewedBy = null }: Props = $props();
 
 	let contentEl: HTMLDivElement | undefined = undefined;
 
@@ -35,7 +37,7 @@
 <div class="doc-content" bind:this={contentEl}>
 	<!-- eslint-disable-next-line svelte/no-at-html-tags — server-rendered from trusted TipTap JSON -->
 	{@html html}
-	<HelpfulWidget {lastReviewedAt} {lastReviewedBy} />
+	<HelpfulWidget {pageId} {lastReviewedAt} {lastReviewedBy} />
 </div>
 
 <style>

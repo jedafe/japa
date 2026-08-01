@@ -68,13 +68,46 @@
 	interface RecentContentItem { id: string; title: string; slug: string; content_type: string; }
 	interface BookmarkFolderItem { id: string; name: string; bookmark_count?: number; }
 	interface EnrollmentItem { id: string; track_id: string; track_title?: string; progress_percent?: number; }
+	interface LeaderboardUser { id: string; username: string; display_name?: string; avatar_url?: string; score: number; }
+	interface EventItem { id: string; title: string; starts_at?: string; url?: string; }
 
 	let featuredPosts = $state<FeaturedPost[]>([]);
 	let spaces = $state<SpaceItem[]>([]);
 	let recentContent = $state<RecentContentItem[]>([]);
 	let bookmarkFolders = $state<BookmarkFolderItem[]>([]);
 	let enrollments = $state<EnrollmentItem[]>([]);
+	let leaderboard = $state<LeaderboardUser[]>([]);
+	let events = $state<EventItem[]>([]);
 	let dataLoaded = $state<Record<string, boolean>>({});
+
+	// Newsletter subscribe form state (Rule 16: calls POST /newsletter/subscribe).
+	let newsletterEmail = $state('');
+	let newsletterSubmitting = $state(false);
+	let newsletterMessage = $state<{ kind: 'success' | 'error' | 'info'; text: string } | null>(null);
+
+	async function handleNewsletterSubmit(e: SubmitEvent) {
+		e.preventDefault();
+		if (newsletterSubmitting) return;
+		const email = newsletterEmail.trim();
+		if (!email || !email.includes('@') || !email.includes('.')) {
+			newsletterMessage = { kind: 'error', text: t('sidebar.newsletter_invalid') };
+			return;
+		}
+		newsletterSubmitting = true;
+		newsletterMessage = null;
+		const res = await api.post<{ status?: string }>('/newsletter/subscribe', { email });
+		newsletterSubmitting = false;
+		if (res.error) {
+			newsletterMessage = { kind: 'error', text: t('sidebar.newsletter_error') };
+			return;
+		}
+		if (res.data?.status === 'already_subscribed') {
+			newsletterMessage = { kind: 'info', text: t('sidebar.newsletter_already') };
+		} else {
+			newsletterMessage = { kind: 'success', text: t('sidebar.newsletter_success') };
+			newsletterEmail = '';
+		}
+	}
 
 	$effect(() => {
 		const wt = widget.widget_type;
@@ -108,12 +141,26 @@
 			enrollments = res.data ?? [];
 			dataLoaded = { ...dataLoaded, learning_enrollments: true };
 		}
+		async function fetchLeaderboard() {
+			const res = await api.get<LeaderboardUser[]>(`/trending/users?limit=${limit}`);
+			leaderboard = res.data ?? [];
+			dataLoaded = { ...dataLoaded, leaderboard: true };
+		}
+		async function fetchEvents() {
+			// The events feature is not yet implemented in JEOS; the endpoint
+			// returns 404 until it is. Gracefully degrade to the empty state.
+			const res = await api.get<EventItem[]>(`/events?upcoming=true&limit=${limit}`);
+			events = res.data ?? [];
+			dataLoaded = { ...dataLoaded, upcoming_events: true };
+		}
 
 		if (wt === 'featured_content') fetchFeatured();
 		else if (wt === 'space_list') fetchSpaces();
 		else if (wt === 'recent_content') fetchRecent();
 		else if (wt === 'bookmark_folders') fetchBookmarks();
 		else if (wt === 'learning_enrollments' || wt === 'continue_learning') fetchEnrollments();
+		else if (wt === 'leaderboard') fetchLeaderboard();
+		else if (wt === 'upcoming_events') fetchEvents();
 	});
 </script>
 
@@ -256,18 +303,35 @@
 	<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 		<div class="mb-3 flex items-center gap-2">
 			<Mail size={18} class="text-[var(--color-primary)]" />
-			<h2 class="text-sm font-medium text-[var(--color-text)]">{title || t('sidebar.newsletter', 'Subscribe')}</h2>
+			<h2 class="text-sm font-medium text-[var(--color-text)]">{title || t('sidebar.newsletter')}</h2>
 		</div>
-		<form class="space-y-2" onsubmit={(e) => e.preventDefault()}>
+		<form class="space-y-2" onsubmit={handleNewsletterSubmit}>
 			<input
 				type="email"
+				bind:value={newsletterEmail}
 				placeholder={typeof widgetProps.placeholder === 'string' ? widgetProps.placeholder : 'your@email.com'}
-				class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2 text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none"
+				disabled={newsletterSubmitting}
+				class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2 text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none disabled:opacity-60"
 			/>
-			<button type="submit" class="w-full rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-[var(--color-primary-contrast)] hover:bg-[var(--color-primary-hover)]">
-				{typeof widgetProps.button_text === 'string' ? widgetProps.button_text : t('sidebar.subscribe', 'Subscribe')}
+			<button
+				type="submit"
+				disabled={newsletterSubmitting}
+				class="w-full rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)] disabled:opacity-60"
+			>
+				{typeof widgetProps.button_text === 'string' ? widgetProps.button_text : t('sidebar.subscribe')}
 			</button>
 		</form>
+		{#if newsletterMessage}
+			<p
+				class="mt-2 text-xs {newsletterMessage.kind === 'error'
+					? 'text-[var(--color-danger)]'
+					: newsletterMessage.kind === 'success'
+						? 'text-[var(--color-success)]'
+						: 'text-[var(--color-muted)]'}"
+			>
+				{newsletterMessage.text}
+			</p>
+		{/if}
 	</section>
 {:else if widget.widget_type === 'social_links'}
 	<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
@@ -317,9 +381,30 @@
 	<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 		<div class="mb-3 flex items-center gap-2">
 			<Trophy size={18} class="text-[var(--color-primary)]" />
-			<h2 class="text-sm font-medium text-[var(--color-text)]">{title || t('sidebar.top_contributors', 'Top Contributors')}</h2>
+			<h2 class="text-sm font-medium text-[var(--color-text)]">{title || t('sidebar.top_contributors')}</h2>
 		</div>
-		<p class="text-xs text-[var(--color-muted)]">{t('sidebar.no_leaderboard', 'No leaderboard data available')}</p>
+		{#if leaderboard.length === 0}
+			<p class="text-xs text-[var(--color-muted)]">{t('sidebar.no_leaderboard')}</p>
+		{:else}
+			<ul class="space-y-2">
+				{#each leaderboard.slice(0, limit) as entry, i (entry.id)}
+					<li>
+						<a href={`/u/${entry.username}`} class="flex items-center gap-2 rounded-[var(--radius)] p-1.5 hover:bg-[var(--color-surface-subtle)]">
+							<span class="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-[var(--color-surface-subtle)] text-xs font-semibold text-[var(--color-text-subtle)]">{i + 1}</span>
+							{#if entry.avatar_url}
+								<img src={entry.avatar_url} alt="" class="h-8 w-8 shrink-0 rounded-full object-cover" />
+							{:else}
+								<span class="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[var(--color-surface-subtle)] text-xs font-medium text-[var(--color-text-subtle)]">{(entry.display_name ?? entry.username).charAt(0).toUpperCase()}</span>
+							{/if}
+							<span class="min-w-0 flex-1">
+								<span class="block truncate text-sm text-[var(--color-text)]">{entry.display_name ?? entry.username}</span>
+								<span class="block text-xs text-[var(--color-muted)]">@{entry.username}</span>
+							</span>
+						</a>
+					</li>
+				{/each}
+			</ul>
+		{/if}
 	</section>
 {:else if widget.widget_type === 'featured_content'}
 	<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
@@ -351,9 +436,24 @@
 	<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 		<div class="mb-3 flex items-center gap-2">
 			<Calendar size={18} class="text-[var(--color-text-subtle)]" />
-			<h2 class="text-sm font-medium text-[var(--color-text)]">{title || t('sidebar.upcoming_events', 'Upcoming Events')}</h2>
+			<h2 class="text-sm font-medium text-[var(--color-text)]">{title || t('sidebar.upcoming_events')}</h2>
 		</div>
-		<p class="text-xs text-[var(--color-muted)]">{t('sidebar.no_events', 'No upcoming events')}</p>
+		{#if events.length === 0}
+			<p class="text-xs text-[var(--color-muted)]">{t('sidebar.no_events')}</p>
+		{:else}
+			<ul class="space-y-2">
+				{#each events.slice(0, limit) as event (event.id)}
+					<li>
+						<a href={event.url ?? '#'} class="block text-sm text-[var(--color-text)] hover:text-[var(--color-primary)]">
+							<span class="block truncate">{event.title}</span>
+							{#if event.starts_at}
+								<span class="mt-0.5 block text-xs text-[var(--color-muted)]">{new Date(event.starts_at).toLocaleDateString()}</span>
+							{/if}
+						</a>
+					</li>
+				{/each}
+			</ul>
+		{/if}
 	</section>
 {:else if widget.widget_type === 'bookmark_folders'}
 	{#if user}
@@ -368,7 +468,7 @@
 				<ul class="space-y-1.5">
 					{#each bookmarkFolders.slice(0, limit) as folder (folder.id)}
 						<li>
-							<a href="/bookmarks?folder=${folder.id}" class="flex items-center justify-between text-sm text-[var(--color-text)] hover:text-[var(--color-primary)]">
+							<a href={`/bookmarks?folder=${folder.id}`} class="flex items-center justify-between text-sm text-[var(--color-text)] hover:text-[var(--color-primary)]">
 								<span class="truncate">{folder.name}</span>
 								{#if folder.bookmark_count != null}
 									<span class="text-xs text-[var(--color-muted)]">{folder.bookmark_count}</span>

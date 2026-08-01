@@ -7,6 +7,7 @@
 	import { api } from '$lib/api/client';
 	import { untrack } from 'svelte';
 	import { BarChart3 } from 'lucide-svelte';
+	import { requireAuthOrRedirect } from '$lib/auth/guest';
 	import type { PollWithResults, PollResult } from '$lib/types';
 
 	interface Props {
@@ -37,6 +38,8 @@
 
 	async function vote() {
 		if (selected.size === 0 || voting) return;
+		// Guests can't vote — redirect to login instead of hitting a 401.
+		if (!(await requireAuthOrRedirect())) return;
 		voting = true;
 		error = '';
 		try {

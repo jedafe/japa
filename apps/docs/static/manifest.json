@@ -1,0 +1,10 @@
+{
+	"name": "JapaConnect Docs",
+	"short_name": "JC Docs",
+	"description": "Developer & user documentation for JapaConnect",
+	"start_url": "/docs",
+	"display": "standalone",
+	"background_color": "#ffffff",
+	"theme_color": "#3b49df",
+	"icons": [{ "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml" }]
+}

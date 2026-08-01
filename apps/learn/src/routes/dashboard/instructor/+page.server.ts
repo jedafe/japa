@@ -1,5 +1,6 @@
 import type { PageServerLoad } from './$types';
 import { redirect } from '@sveltejs/kit';
+import { loginUrl } from '$lib/appOrigins';
 
 /**
  * Instructor dashboard — auth gate only. All instructor data (profile, tracks,
@@ -7,7 +8,8 @@ import { redirect } from '@sveltejs/kit';
  */
 export const load: PageServerLoad = async (event) => {
 	if (!event.locals.user) {
-		throw redirect(302, `/login?redirect=/dashboard/instructor`);
+		// Login lives on the Main app (shared jc_token cookie).
+		throw redirect(302, loginUrl('/dashboard/instructor'));
 	}
 	return {};
 };

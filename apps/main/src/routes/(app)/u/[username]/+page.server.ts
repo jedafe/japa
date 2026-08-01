@@ -69,8 +69,12 @@ export const load: PageServerLoad = async (event) => {
 		apiList<ProfileLike>(ctx, `/users/${userId}/likes`).then((r) => r.items).catch(() => []),
 		// Profile timeline feed (Section 32) — ranked public posts by this user.
 		apiList<FeedItem>(ctx, `/feed/profile/${userId}?page_size=10`).then((r) => r.items).catch(() => []),
-		// Phase 11.07 — public analytics summary (best-effort).
-		apiGet<ProfileAnalytics>(ctx, `/users/${userId}/analytics`).catch(() => null),
+		// Phase 11.07 — analytics dashboard, owner-only per JEOS §342 [auth,
+		// self]. Only fetch for the profile owner; for guests and other users
+		// the tab is hidden and the route would 403, so skip the request.
+		isOwnProfile
+			? apiGet<ProfileAnalytics>(ctx, `/users/${userId}/analytics`).catch(() => null)
+			: Promise.resolve(null),
 		initiallyFollowing
 	]);
 

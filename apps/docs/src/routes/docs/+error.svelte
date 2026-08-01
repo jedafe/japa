@@ -2,10 +2,18 @@
 	import { page } from '$app/state';
 	import AppShell from '$lib/components/shell/AppShell.svelte';
 	import { t } from '$lib/i18n';
+	import { persistNavCollapse } from '$lib/nav-collapse';
 	import type { LayoutData } from '../$types';
 	import { AlertTriangle } from 'lucide-svelte';
 
 	let { data }: { data: LayoutData } = $props();
+
+	let collapsed = $state(data.navCollapsed);
+
+	async function toggleCollapse() {
+		collapsed = !collapsed;
+		await persistNavCollapse(collapsed);
+	}
 
 	const status = $derived(page.status);
 	const isNotFound = $derived(status === 404);
@@ -29,8 +37,8 @@
 	rightSidebarWidgets={data.rightSidebarWidgets}
 	activeAudience={null}
 	user={data.user}
-	collapsed={data.navCollapsed}
-	onToggleCollapse={() => {}}
+	collapsed={collapsed}
+	onToggleCollapse={toggleCollapse}
 >
 	<div class="flex min-h-[60vh] flex-col items-center justify-center px-4 text-center">
 		<div class="mb-4 flex items-center justify-center">

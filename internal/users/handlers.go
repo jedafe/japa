@@ -514,15 +514,21 @@ func (h *Handlers) UpdateMyContentCountry(w http.ResponseWriter, r *http.Request
 	})
 }
 
-// GetUserAnalytics handles GET /users/{id}/analytics — the public profile
-// Analytics tab. Public per JEOS api-routes-catalog §340: OptionalAuth (guests
-// can view). Gated by requireActiveProfileUser on the route (404 for
-// banned/suspended/deleted). Returns aggregate stats for the {id} user's
-// published+public content plus follower/following counts.
+// GetUserAnalytics handles GET /users/{id}/analytics — the profile Analytics
+// dashboard. Owner-only per JEOS api-routes-catalog §342: [auth, self] — the
+// caller must be the profile owner (viewer id == {id}). Guests and other users
+// receive 403 analytics_forbidden. Gated by requireActiveProfileUser on the
+// route (404 for banned/suspended/deleted). Returns aggregate stats for the
+// {id} user's published+public content plus follower/following counts.
 //
 // Ref: japaconnect-engineering/sections/33-professional-profiles.md
-//      japaconnect-engineering/conventions/api-routes-catalog.md §340
+//      japaconnect-engineering/conventions/api-routes-catalog.md §342
 func (h *Handlers) GetUserAnalytics(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
@@ -531,6 +537,13 @@ func (h *Handlers) GetUserAnalytics(w http.ResponseWriter, r *http.Request) {
 	var userID pgtype.UUID
 	if err := userID.Scan(chi.URLParam(r, "id")); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_user_id", "Invalid user ID format")
+		return
+	}
+
+	// Owner-only: analytics is a self-dashboard. Guests are blocked by
+	// RequireAuth on the route; other authenticated users are blocked here.
+	if userID != user.UserID {
+		writeError(w, http.StatusForbidden, "analytics_forbidden", "You can only view your own analytics")
 		return
 	}
 

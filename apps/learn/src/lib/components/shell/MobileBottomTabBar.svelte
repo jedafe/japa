@@ -4,6 +4,7 @@
 	import { page } from '$app/state';
 	import { Compass, LayoutDashboard, Trophy, Bookmark, User } from 'lucide-svelte';
 	import { t } from '$lib/i18n';
+	import { loginUrl, profileUrl } from '$lib/appOrigins';
 	import type { SessionUser } from '$lib/types';
 
 	interface Props {
@@ -11,7 +12,7 @@
 	}
 	let { user }: Props = $props();
 
-	const profileHref = $derived(user ? `/u/${user.username}` : '/login');
+	const profileHref = $derived(user ? profileUrl(user.username) : loginUrl());
 
 	const tabs = $derived([
 		{ href: '/', icon: Compass, label: t('learn.explore'), active: page.url.pathname === '/' },

@@ -28,7 +28,7 @@
 	<meta name="twitter:title" content={data.meta.twitterTitle} />
 	<meta name="twitter:description" content={data.meta.twitterDescription} />
 	{#if data.meta.jsonLdString}
-		<script type="application/ld+json">{data.meta.jsonLdString}</script>
+		{@html `<script type="application/ld+json">${data.meta.jsonLdString}</script>`}
 	{/if}
 </svelte:head>
 
@@ -60,6 +60,7 @@
 
 		<div class="prose">
 			<DocContent
+				pageId={data.page.id}
 				html={data.html}
 				lastReviewedAt={data.page.last_reviewed_at}
 				lastReviewedBy={data.page.last_reviewed_by}

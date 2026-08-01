@@ -3,6 +3,7 @@
 	import { t } from '$lib/i18n';
 	import { UserPlus, UserCheck } from 'lucide-svelte';
 	import { api } from '$lib/api/client';
+	import { requireAuthOrRedirect } from '$lib/auth/guest';
 
 	interface Props {
 		userId: string;
@@ -15,6 +16,8 @@
 
 	async function toggle() {
 		if (pending) return;
+		// Guests can't follow — redirect to login instead of hitting a 401.
+		if (!(await requireAuthOrRedirect())) return;
 		const wasFollowing = following;
 		following = !wasFollowing; // optimistic
 		pending = true;
@@ -39,7 +42,7 @@
 >
 	{#if following}
 		<UserCheck size={16} />
-		{t('profile.following', 'Following')}
+		{t('profile.following_label', 'Following')}
 	{:else}
 		<UserPlus size={16} />
 		{t('profile.follow', 'Follow')}
