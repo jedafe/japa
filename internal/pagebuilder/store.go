@@ -3,10 +3,8 @@ package pagebuilder
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jedafe/japa/internal/db"
@@ -535,7 +533,7 @@ func (s *Store) ListPages(ctx context.Context, tenantID pgtype.UUID, q string) (
 		if err := rows.Scan(
 			&p.ID, &p.TenantID, &p.Title, &p.Slug, &p.Description,
 			&p.TemplateID, &p.ThemeID, &p.Blocks, &p.Meta,
-			&p.Status, &p.PublishedAt, &p.CreatedBy, &p.CreatedAt, &p.UpdatedAt,
+			&p.Status, &p.PageType, &p.PublishedAt, &p.CreatedBy, &p.CreatedAt, &p.UpdatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("scanning page: %w", err)
 		}
@@ -569,7 +567,7 @@ func (s *Store) ListPublishedPages(ctx context.Context, tenantID pgtype.UUID) ([
 		if err := rows.Scan(
 			&p.ID, &p.TenantID, &p.Title, &p.Slug, &p.Description,
 			&p.TemplateID, &p.ThemeID, &p.Blocks, &p.Meta,
-			&p.Status, &p.PublishedAt, &p.CreatedBy, &p.CreatedAt, &p.UpdatedAt,
+			&p.Status, &p.PageType, &p.PublishedAt, &p.CreatedBy, &p.CreatedAt, &p.UpdatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("scanning page: %w", err)
 		}
@@ -737,7 +735,7 @@ func (s *Store) PublishPage(ctx context.Context, id, tenantID pgtype.UUID) (Page
 		RETURNING id, tenant_id, title, slug, description, template_id, theme_id,
 		          COALESCE(blocks, '[]'::jsonb),
 		          COALESCE(meta, '{}'::jsonb),
-		          status, published_at, created_by, created_at, updated_at
+		          status, page_type, published_at, created_by, created_at, updated_at
 	`, id, tenantID).Scan(
 		&p.ID, &p.TenantID, &p.Title, &p.Slug, &p.Description,
 		&p.TemplateID, &p.ThemeID, &p.Blocks, &p.Meta,
@@ -761,7 +759,7 @@ func (s *Store) ArchivePage(ctx context.Context, id, tenantID pgtype.UUID) (Page
 		RETURNING id, tenant_id, title, slug, description, template_id, theme_id,
 		          COALESCE(blocks, '[]'::jsonb),
 		          COALESCE(meta, '{}'::jsonb),
-		          status, published_at, created_by, created_at, updated_at
+		          status, page_type, published_at, created_by, created_at, updated_at
 	`, id, tenantID).Scan(
 		&p.ID, &p.TenantID, &p.Title, &p.Slug, &p.Description,
 		&p.TemplateID, &p.ThemeID, &p.Blocks, &p.Meta,
@@ -772,140 +770,4 @@ func (s *Store) ArchivePage(ctx context.Context, id, tenantID pgtype.UUID) (Page
 	}
 
 	return p, nil
-}
-
-// ---------------------------------------------------------------------------
-// Sidebar pages (sitewide left/right sidebar block management)
-// ---------------------------------------------------------------------------
-
-// Sidebar position constants.
-const (
-	SidebarPositionLeft  = "left"
-	SidebarPositionRight = "right"
-)
-
-// sidebarSlug maps a sidebar position to its reserved page slug.
-func sidebarSlug(position string) string {
-	switch position {
-	case SidebarPositionLeft:
-		return "_sidebar_left"
-	case SidebarPositionRight:
-		return "_sidebar_right"
-	default:
-		return ""
-	}
-}
-
-// GetSidebarPage returns the sidebar page for the given position.
-// The page's blocks JSONB holds the ordered sidebar widgets.
-func (s *Store) GetSidebarPage(ctx context.Context, position string, tenantID pgtype.UUID) (Page, error) {
-	slug := sidebarSlug(position)
-	if slug == "" {
-		return Page{}, fmt.Errorf("%w: invalid sidebar position %q", errpkg.ErrInvalid, position)
-	}
-
-	var p Page
-
-	err := s.reader.QueryRow(ctx, `
-		SELECT id, tenant_id, title, slug, description, template_id, theme_id,
-		       COALESCE(blocks, '[]'::jsonb),
-		       COALESCE(meta, '{}'::jsonb),
-		       status, page_type, published_at, created_by, created_at, updated_at
-		FROM pages
-		WHERE slug = $1 AND tenant_id = $2 AND page_type = 'sidebar'
-	`, slug, tenantID).Scan(
-		&p.ID, &p.TenantID, &p.Title, &p.Slug, &p.Description,
-		&p.TemplateID, &p.ThemeID, &p.Blocks, &p.Meta,
-		&p.Status, &p.PageType, &p.PublishedAt, &p.CreatedBy, &p.CreatedAt, &p.UpdatedAt,
-	)
-	if err != nil {
-		return Page{}, fmt.Errorf("getting sidebar page: %w", err)
-	}
-
-	return p, nil
-}
-
-// UpdateSidebarBlocks updates the blocks array on a sidebar page.
-func (s *Store) UpdateSidebarBlocks(ctx context.Context, position string, tenantID pgtype.UUID, blocks json.RawMessage) (Page, error) {
-	slug := sidebarSlug(position)
-	if slug == "" {
-		return Page{}, fmt.Errorf("%w: invalid sidebar position %q", errpkg.ErrInvalid, position)
-	}
-
-	if blocks == nil {
-		blocks = json.RawMessage(`[]`)
-	}
-
-	var p Page
-
-	err := s.writer.QueryRow(ctx, `
-		UPDATE pages
-		SET blocks = $3, updated_at = now()
-		WHERE slug = $1 AND tenant_id = $2 AND page_type = 'sidebar'
-		RETURNING id, tenant_id, title, slug, description, template_id, theme_id,
-		          COALESCE(blocks, '[]'::jsonb),
-		          COALESCE(meta, '{}'::jsonb),
-		          status, page_type, published_at, created_by, created_at, updated_at
-	`, slug, tenantID, blocks).Scan(
-		&p.ID, &p.TenantID, &p.Title, &p.Slug, &p.Description,
-		&p.TemplateID, &p.ThemeID, &p.Blocks, &p.Meta,
-		&p.Status, &p.PageType, &p.PublishedAt, &p.CreatedBy, &p.CreatedAt, &p.UpdatedAt,
-	)
-	if err != nil {
-		return Page{}, fmt.Errorf("updating sidebar blocks: %w", err)
-	}
-
-	return p, nil
-}
-
-// UpdateSidebarMeta updates the meta JSONB on a sidebar page (used for
-// sidebar visibility toggles like show_left_sidebar / show_right_sidebar).
-func (s *Store) UpdateSidebarMeta(ctx context.Context, position string, tenantID pgtype.UUID, meta json.RawMessage) (Page, error) {
-	slug := sidebarSlug(position)
-	if slug == "" {
-		return Page{}, fmt.Errorf("%w: invalid sidebar position %q", errpkg.ErrInvalid, position)
-	}
-
-	if meta == nil {
-		meta = json.RawMessage(`{}`)
-	}
-
-	var p Page
-
-	err := s.writer.QueryRow(ctx, `
-		UPDATE pages
-		SET meta = $3, updated_at = now()
-		WHERE slug = $1 AND tenant_id = $2 AND page_type = 'sidebar'
-		RETURNING id, tenant_id, title, slug, description, template_id, theme_id,
-		          COALESCE(blocks, '[]'::jsonb),
-		          COALESCE(meta, '{}'::jsonb),
-		          status, page_type, published_at, created_by, created_at, updated_at
-	`, slug, tenantID, meta).Scan(
-		&p.ID, &p.TenantID, &p.Title, &p.Slug, &p.Description,
-		&p.TemplateID, &p.ThemeID, &p.Blocks, &p.Meta,
-		&p.Status, &p.PageType, &p.PublishedAt, &p.CreatedBy, &p.CreatedAt, &p.UpdatedAt,
-	)
-	if err != nil {
-		return Page{}, fmt.Errorf("updating sidebar meta: %w", err)
-	}
-
-	return p, nil
-}
-
-// GetSidebarConfig returns both sidebar pages (left and right) in one call.
-func (s *Store) GetSidebarConfig(ctx context.Context, tenantID pgtype.UUID) (map[string]Page, error) {
-	left, err := s.GetSidebarPage(ctx, SidebarPositionLeft, tenantID)
-	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-		return nil, err
-	}
-
-	right, err := s.GetSidebarPage(ctx, SidebarPositionRight, tenantID)
-	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-		return nil, err
-	}
-
-	return map[string]Page{
-		"left":  left,
-		"right": right,
-	}, nil
 }

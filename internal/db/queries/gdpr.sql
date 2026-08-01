@@ -679,3 +679,113 @@ FROM (
     WHERE user_id = @user_id AND tenant_id = @tenant_id
     ORDER BY created_at
 ) t;
+
+-- name: GdprExportUserDMConversations :one
+-- BUG-022: export dm_conversations where the user is a participant so the
+-- GDPR data export includes DM conversation metadata.
+-- Ref: japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (
+    SELECT id, tenant_id, participant_1_id, participant_2_id,
+           last_message_at, last_message_preview,
+           p1_unread_count, p2_unread_count, created_at, updated_at
+    FROM dm_conversations
+    WHERE tenant_id = @tenant_id
+      AND (participant_1_id = @user_id OR participant_2_id = @user_id)
+    ORDER BY created_at
+) t;
+
+-- name: GdprExportUserDMMessages :one
+-- BUG-022: export dm_messages authored by the user so the GDPR data export
+-- includes DM message content (PII: message bodies).
+-- Ref: japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (
+    SELECT dm.id, dm.conversation_id, dm.sender_id, dm.tenant_id,
+           dm.body, dm.created_at, dm.read_at, dm.edited_at, dm.deleted_at
+    FROM dm_messages dm
+    WHERE dm.tenant_id = @tenant_id AND dm.sender_id = @user_id
+    ORDER BY dm.created_at
+) t;
+
+-- name: GdprExportUserDMRequests :one
+-- BUG-022: export dm_requests where the user is requester or recipient so
+-- the GDPR data export includes DM request metadata and preview messages.
+-- Ref: japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (
+    SELECT id, tenant_id, requester_id, recipient_id, conversation_id,
+           preview_message, status, created_at, updated_at, resolved_at
+    FROM dm_requests
+    WHERE tenant_id = @tenant_id
+      AND (requester_id = @user_id OR recipient_id = @user_id)
+    ORDER BY created_at
+) t;
+
+-- name: GdprExportUserDMSettings :one
+-- BUG-022: export user_dm_settings for the user so the GDPR data export
+-- includes DM privacy preferences.
+-- Ref: japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (
+    SELECT user_id, tenant_id, dm_privacy, updated_at
+    FROM user_dm_settings
+    WHERE tenant_id = @tenant_id AND user_id = @user_id
+) t;
+
+-- name: GdprExportUserBlocks :one
+-- BUG-022: export user_blocks where the user is blocker or blocked so the
+-- GDPR data export includes block relationships (PII-adjacent).
+-- Ref: japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (
+    SELECT blocker_id, blocked_id, created_at
+    FROM user_blocks
+    WHERE blocker_id = @user_id OR blocked_id = @user_id
+    ORDER BY created_at
+) t;
+
+-- name: AnonymizeDMMessagesBySender :exec
+-- BUG-024: anonymize dm_messages authored by the user during GDPR erasure.
+-- The message body is cleared and the sender_id is reassigned to the
+-- placeholder so the row survives HardDeleteUser for the other participant.
+-- Ref: japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md, ADR-014
+UPDATE dm_messages
+SET body = '', sender_id = @target_user_id
+WHERE sender_id = @user_id AND tenant_id = @tenant_id;
+
+-- name: ReassignDMConversationParticipant1 :exec
+-- BUG-024: reassign dm_conversations.participant_1_id to the placeholder
+-- during GDPR erasure so the conversation survives for the other participant.
+UPDATE dm_conversations
+SET participant_1_id = @target_user_id
+WHERE participant_1_id = @user_id AND tenant_id = @tenant_id;
+
+-- name: ReassignDMConversationParticipant2 :exec
+-- BUG-024: reassign dm_conversations.participant_2_id to the placeholder
+-- during GDPR erasure so the conversation survives for the other participant.
+UPDATE dm_conversations
+SET participant_2_id = @target_user_id
+WHERE participant_2_id = @user_id AND tenant_id = @tenant_id;
+
+-- name: AnonymizeDMRequestsByUser :exec
+-- BUG-024: anonymize dm_requests where the user is requester or recipient
+-- during GDPR erasure. The preview_message is cleared and the user_id
+-- fields are reassigned to the placeholder.
+UPDATE dm_requests
+SET preview_message = '',
+    requester_id = CASE WHEN requester_id = @user_id THEN @target_user_id ELSE requester_id END,
+    recipient_id = CASE WHEN recipient_id = @user_id THEN @target_user_id ELSE recipient_id END
+WHERE tenant_id = @tenant_id
+  AND (requester_id = @user_id OR recipient_id = @user_id);
+
+-- name: DeleteUserDMSettingsByUser :exec
+-- BUG-024: delete user_dm_settings for the user during GDPR erasure.
+-- dm_privacy is user-owned config with no PII in the row itself.
+DELETE FROM user_dm_settings WHERE user_id = @user_id AND tenant_id = @tenant_id;
+
+-- name: DeleteUserBlocksByUser :exec
+-- BUG-024: delete user_blocks where the user is blocker or blocked during
+-- GDPR erasure. Block relationships are user-owned config.
+DELETE FROM user_blocks
+WHERE blocker_id = @user_id OR blocked_id = @user_id;

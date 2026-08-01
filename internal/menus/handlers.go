@@ -96,7 +96,8 @@ func handleServiceError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, ErrMenuNotFound), errors.Is(err, ErrMenuItemNotFound):
 		writeError(w, http.StatusNotFound, "not_found", err.Error())
-	case errors.Is(err, ErrInvalidPlacement), errors.Is(err, ErrInvalidVisibility):
+	case errors.Is(err, ErrInvalidPlacement), errors.Is(err, ErrInvalidVisibility),
+		errors.Is(err, ErrInvalidStatus), errors.Is(err, ErrInvalidTarget):
 		writeError(w, http.StatusBadRequest, "validation_error", err.Error())
 	case errors.Is(err, ErrDuplicateSlug):
 		writeError(w, http.StatusConflict, "already_exists", err.Error())

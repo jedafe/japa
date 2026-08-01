@@ -12,12 +12,14 @@ import (
 // Store provides database operations for trending and discovery.
 type Store struct {
 	queries *gen.Queries
+	db      *db.DB
 }
 
 // NewStore creates a Store backed by the Writer pool.
 func NewStore(database *db.DB) *Store {
 	return &Store{
 		queries: gen.New(database.Writer),
+		db:     database,
 	}
 }
 
@@ -25,6 +27,7 @@ func NewStore(database *db.DB) *Store {
 func NewStoreWithReader(database *db.DB) *Store {
 	return &Store{
 		queries: gen.New(database.Reader),
+		db:     database,
 	}
 }
 
@@ -213,4 +216,59 @@ func (s *Store) GetSuggestedTags(
 		TenantID: tenantID,
 		Limit:    limit,
 	})
+}
+
+// GetSuggestedContent returns content similar to the seed content (pgvector
+// cosine similarity) or top trending content when no seed is provided.
+// Section 53: "You might also like" (BUG-003).
+func (s *Store) GetSuggestedContent(
+	ctx context.Context,
+	tenantID pgtype.UUID,
+	window string,
+	geoCode *string,
+	seedContentID pgtype.UUID,
+	limit int32,
+) ([]gen.GetSuggestedContentRow, error) {
+	var gc string
+	if geoCode != nil {
+		gc = *geoCode
+	}
+	return s.queries.GetSuggestedContent(ctx, gen.GetSuggestedContentParams{
+		TenantID: tenantID,
+		Window:   window,
+		Column3:  gc,
+		Column4:  seedContentID,
+		Limit:    limit,
+	})
+}
+
+// GetSpaceLevels returns a map of space ID → level for the given space IDs.
+// Used by GetTrendingSpaces to apply the ?level= filter in Go (BUG-008).
+func (s *Store) GetSpaceLevels(
+	ctx context.Context,
+	tenantID pgtype.UUID,
+	spaceIDs []pgtype.UUID,
+) (map[[16]byte]string, error) {
+	if len(spaceIDs) == 0 {
+		return map[[16]byte]string{}, nil
+	}
+	rows, err := s.db.Reader.Query(ctx, `
+		SELECT id, level FROM spaces
+		WHERE tenant_id = $1 AND id = ANY($2) AND deleted_at IS NULL
+	`, tenantID, spaceIDs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	levels := make(map[[16]byte]string, len(spaceIDs))
+	for rows.Next() {
+		var id [16]byte
+		var level string
+		if err := rows.Scan(&id, &level); err != nil {
+			return nil, err
+		}
+		levels[id] = level
+	}
+	return levels, rows.Err()
 }

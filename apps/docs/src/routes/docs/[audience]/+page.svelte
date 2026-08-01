@@ -35,6 +35,7 @@
 	accessibleAudiences={data.accessibleAudiences}
 	logoUrl={(data.siteSettings?.["appearance.logo_url"] as string | undefined) ?? ""}
 	footerMenu={data.footerMenu}
+	rightSidebarWidgets={data.rightSidebarWidgets}
 	activeAudience={data.audience}
 	user={data.user}
 	collapsed={collapsed}

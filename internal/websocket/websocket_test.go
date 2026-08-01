@@ -236,7 +236,7 @@ func TestHubSubscribeToSpace(t *testing.T) {
 		t.Error("client should be subscribed to space-1")
 	}
 
-	subs, ok := hub.spaceSubscribers["space-1"]
+	subs, ok := hub.spaceSubscribers["tenant-1:space-1"]
 	if !ok || len(subs) != 1 {
 		t.Error("space-1 should have 1 subscriber")
 	}
@@ -247,7 +247,7 @@ func TestHubSubscribeToSpace(t *testing.T) {
 		t.Error("client should not be subscribed to space-1 after unsubscribe")
 	}
 
-	subs, ok = hub.spaceSubscribers["space-1"]
+	subs, ok = hub.spaceSubscribers["tenant-1:space-1"]
 	if ok && len(subs) > 0 {
 		t.Error("space-1 should have 0 subscribers after unsubscribe")
 	}
@@ -282,7 +282,7 @@ func TestHubBroadcastToSpace(t *testing.T) {
 		Type:    EventSpaceActivity,
 		Payload: map[string]interface{}{"space_id": "space-1"},
 	}
-	hub.BroadcastToSpace("space-1", event)
+	hub.BroadcastToSpace("tenant-1", "space-1", event)
 
 	// Both clients should receive the message.
 	for _, client := range []*Client{client1, client2} {

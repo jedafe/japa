@@ -43,6 +43,104 @@ func (q *Queries) DeleteTrendingSnapshotsByType(ctx context.Context, arg DeleteT
 	return err
 }
 
+const getSuggestedContent = `-- name: GetSuggestedContent :many
+WITH seed AS (
+    SELECT cs.relevance_embedding AS emb
+    FROM content_scores cs
+    WHERE cs.content_id = $4::uuid
+)
+SELECT c.id, c.title, c.slug, c.content_type, c.author_id, c.space_id,
+       c.view_count,
+       CASE
+         WHEN (SELECT emb FROM seed) IS NOT NULL
+         THEN 1 - (cs.relevance_embedding <=> (SELECT emb FROM seed))
+         ELSE ts.score
+       END AS similarity_score,
+       ts.score AS trending_score
+FROM contents c
+JOIN trending_snapshots ts ON ts.entity_id = c.id
+    AND ts.tenant_id = c.tenant_id
+    AND ts.entity_type = 'content'
+    AND ts."window" = $2
+    AND ts.expires_at > now()
+    AND ($3::text IS NULL OR ts.geo_code = $3)
+LEFT JOIN content_scores cs ON cs.content_id = c.id
+WHERE c.tenant_id = $1
+  AND c.status = 'published'
+  AND c.visibility = 'public'
+  AND c.deleted_at IS NULL
+  AND ($4::uuid IS NULL OR c.id != $4::uuid)
+  AND ($4::uuid IS NULL OR cs.relevance_embedding IS NOT NULL)
+ORDER BY
+    CASE
+        WHEN (SELECT emb FROM seed) IS NOT NULL
+        THEN cs.relevance_embedding <=> (SELECT emb FROM seed)
+        ELSE -ts.score
+    END
+LIMIT $5
+`
+
+type GetSuggestedContentParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	Window   string      `json:"window"`
+	Column3  string      `json:"column_3"`
+	Column4  pgtype.UUID `json:"column_4"`
+	Limit    int32       `json:"limit"`
+}
+
+type GetSuggestedContentRow struct {
+	ID              pgtype.UUID `json:"id"`
+	Title           string      `json:"title"`
+	Slug            string      `json:"slug"`
+	ContentType     string      `json:"content_type"`
+	AuthorID        pgtype.UUID `json:"author_id"`
+	SpaceID         pgtype.UUID `json:"space_id"`
+	ViewCount       int32       `json:"view_count"`
+	SimilarityScore interface{} `json:"similarity_score"`
+	TrendingScore   float64     `json:"trending_score"`
+}
+
+// Section 53: "You might also like" — pgvector cosine similarity between the
+// seed content's relevance_embedding and all other published content.
+// Falls back to trending content ordering when no seed is provided
+// (seed_content_id IS NULL → returns top trending content by score).
+// Params: $1=tenant_id, $2=window, $3=geo_code(narg), $4=seed_content_id, $5=limit
+func (q *Queries) GetSuggestedContent(ctx context.Context, arg GetSuggestedContentParams) ([]GetSuggestedContentRow, error) {
+	rows, err := q.db.Query(ctx, getSuggestedContent,
+		arg.TenantID,
+		arg.Window,
+		arg.Column3,
+		arg.Column4,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetSuggestedContentRow
+	for rows.Next() {
+		var i GetSuggestedContentRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Title,
+			&i.Slug,
+			&i.ContentType,
+			&i.AuthorID,
+			&i.SpaceID,
+			&i.ViewCount,
+			&i.SimilarityScore,
+			&i.TrendingScore,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getSuggestedSpaces = `-- name: GetSuggestedSpaces :many
 SELECT DISTINCT s.id, s.name, s.slug, s.member_count, s.post_count, s.geo_code,
        COUNT(DISTINCT sm2.user_id) AS shared_members

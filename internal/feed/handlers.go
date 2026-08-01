@@ -2,9 +2,11 @@ package feed
 
 import (
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -12,14 +14,19 @@ import (
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/tenant"
 	"github.com/jedafe/japa/internal/visitor"
+	"github.com/valkey-io/valkey-go"
 )
 
 const defaultPageSize int32 = 20
+
+// exploreCacheTTL is the TTL for jc:explore:{tenant}:{geo}:{page} (Section 53).
+const exploreCacheTTL = 15 * time.Minute
 
 // Handlers holds dependencies for feed HTTP handlers.
 type Handlers struct {
 	service  *Service
 	settings *config.Settings
+	cache    valkey.Client
 }
 
 // NewHandlers creates Handlers with the given Service.
@@ -30,6 +37,11 @@ func NewHandlers(service *Service) *Handlers {
 // SetSettings injects the settings service for reading feed.card_style.
 func (h *Handlers) SetSettings(s *config.Settings) {
 	h.settings = s
+}
+
+// SetCache injects the Valkey client for explore feed caching (BUG-006).
+func (h *Handlers) SetCache(c valkey.Client) {
+	h.cache = c
 }
 
 // requireTenant resolves the tenant from the request context.
@@ -132,6 +144,7 @@ func parseSort(r *http.Request) string {
 // ---------------------------------------------------------------------------
 
 // GetExploreFeed handles GET /api/v1/feed/explore — public, no auth required.
+// BUG-006: caches results in Valkey (jc:explore:{tenant}:{geo}:{page}, Section 53, TTL 15min).
 func (h *Handlers) GetExploreFeed(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -142,10 +155,36 @@ func (h *Handlers) GetExploreFeed(w http.ResponseWriter, r *http.Request) {
 	offset := parsePageOffset(r)
 	sort := parseSort(r)
 
+	// Resolve geo code for cache key (ADR-064 VisitorContext).
+	geoCode := "global"
+	if vc := visitor.FromContext(r.Context()); vc.ContentCountry != "" {
+		geoCode = vc.ContentCountry
+	}
+	page := int(offset) / int(limit)
+	cacheKey := fmt.Sprintf("jc:explore:%s:%s:%d", tenantID.String(), geoCode, page)
+
+	// Try Valkey cache.
+	if h.cache != nil {
+		if cached, err := h.cache.Do(r.Context(), h.cache.B().Get().Key(cacheKey).Build()).ToString(); err == nil {
+			var items []any
+			if json.Unmarshal([]byte(cached), &items) == nil {
+				writeJSON(w, http.StatusOK, map[string]any{"data": items})
+				return
+			}
+		}
+	}
+
 	items, err := h.service.GetFeed(r.Context(), tenantID, "explore", nil, nil, nil, sort, limit, offset)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to get explore feed")
 		return
+	}
+
+	// Cache the result (fire-and-forget; cache miss is acceptable).
+	if h.cache != nil {
+		if encoded, err := json.Marshal(items); err == nil {
+			_ = h.cache.Do(r.Context(), h.cache.B().Set().Key(cacheKey).Value(string(encoded)).Ex(exploreCacheTTL).Build()).Error()
+		}
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": items})

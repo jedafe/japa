@@ -52,5 +52,16 @@ export const load: PageServerLoad = async (event) => {
 		commentsLoadError = true;
 	}
 
-	return { article, authed: true, currentUserId, canModerate, comments, commentsLoadError };
+	// Sidebar widgets (Section 59, ADR-066). The content reading layout renders
+	// these below the CreatorCard in the right <aside>.
+	let rightSidebarWidgets: unknown[] = [];
+	try {
+		const sidebarPath = event.url.pathname;
+		const rightRes = await apiGet<{ widgets?: unknown[] }>(ctx, `/sidebars/resolve?app=main&position=right&path=${encodeURIComponent(sidebarPath)}`);
+		rightSidebarWidgets = rightRes.widgets ?? [];
+	} catch {
+		// sidebar endpoint not available — keep defaults
+	}
+
+	return { article, authed: true, currentUserId, canModerate, comments, commentsLoadError, rightSidebarWidgets };
 };

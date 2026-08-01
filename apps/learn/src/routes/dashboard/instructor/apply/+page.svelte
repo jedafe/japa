@@ -1,14 +1,17 @@
 <script lang="ts">
 	// Creator application — Japa University instructor application form (ADR-063).
 	// CSR ONLY: POST /learn/university/instructor/apply.
+	// Payload matches backend ApplyInput (internal/university/store.go):
+	//   display_name (required), headline, bio, application_note.
 	import { t } from '$lib/i18n';
 	import { api } from '$lib/api/client';
 	import { goto } from '$app/navigation';
 	import { GraduationCap, Send } from 'lucide-svelte';
 
+	let displayName = $state('');
+	let headline = $state('');
 	let bio = $state('');
-	let expertise = $state('');
-	let portfolioUrl = $state('');
+	let applicationNote = $state('');
 	let submitting = $state(false);
 	let error = $state<string | null>(null);
 
@@ -18,9 +21,10 @@
 		submitting = true;
 		error = null;
 		const r = await api.post('/learn/university/instructor/apply', {
-			bio,
-			expertise,
-			portfolio_url: portfolioUrl || undefined
+			display_name: displayName,
+			headline: headline || undefined,
+			bio: bio || undefined,
+			application_note: applicationNote || undefined
 		});
 		submitting = false;
 		if (r.error) {
@@ -43,9 +47,38 @@
 				{t('university.apply')}
 			</h1>
 			<p class="mt-1 text-sm text-[var(--color-muted)]">
-				Apply to become a Japa University instructor.
+				{t('university.apply_description')}
 			</p>
 		</header>
+
+		<!-- Display Name (required) -->
+		<div>
+			<label for="display_name" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
+				{t('university.display_name_label')}
+			</label>
+			<input
+				id="display_name"
+				type="text"
+				bind:value={displayName}
+				required
+				placeholder="Your public instructor name"
+				class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-3 text-sm text-[var(--color-text)] placeholder:text-[var(--color-muted)] focus:border-[var(--color-primary)] focus:outline-none"
+			/>
+		</div>
+
+		<!-- Headline -->
+		<div>
+			<label for="headline" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
+				{t('university.headline_label')}
+			</label>
+			<input
+				id="headline"
+				type="text"
+				bind:value={headline}
+				placeholder="e.g. Senior Go Engineer & Course Creator"
+				class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-3 text-sm text-[var(--color-text)] placeholder:text-[var(--color-muted)] focus:border-[var(--color-primary)] focus:outline-none"
+			/>
+		</div>
 
 		<!-- Bio -->
 		<div>
@@ -56,39 +89,23 @@
 				id="bio"
 				bind:value={bio}
 				rows="4"
-				required
 				placeholder="Tell us about your teaching experience and expertise…"
 				class="w-full resize-none rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-3 text-sm text-[var(--color-text)] placeholder:text-[var(--color-muted)] focus:border-[var(--color-primary)] focus:outline-none"
 			></textarea>
 		</div>
 
-		<!-- Expertise -->
+		<!-- Application Note (portfolio URL, expertise, samples) -->
 		<div>
-			<label for="expertise" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
-				{t('university.expertise_label')}
+			<label for="application_note" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
+				{t('university.application_note_label')}
 			</label>
-			<input
-				id="expertise"
-				type="text"
-				bind:value={expertise}
-				required
-				placeholder="e.g. Go, Distributed Systems, Data Engineering"
-				class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-3 text-sm text-[var(--color-text)] placeholder:text-[var(--color-muted)] focus:border-[var(--color-primary)] focus:outline-none"
-			/>
-		</div>
-
-		<!-- Portfolio URL -->
-		<div>
-			<label for="portfolio" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
-				{t('university.portfolio_label')}
-			</label>
-			<input
-				id="portfolio"
-				type="url"
-				bind:value={portfolioUrl}
-				placeholder="https://your-portfolio.com"
-				class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-3 text-sm text-[var(--color-text)] placeholder:text-[var(--color-muted)] focus:border-[var(--color-primary)] focus:outline-none"
-			/>
+			<textarea
+				id="application_note"
+				bind:value={applicationNote}
+				rows="3"
+				placeholder="Portfolio URL, areas of expertise, sample content links…"
+				class="w-full resize-none rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-3 text-sm text-[var(--color-text)] placeholder:text-[var(--color-muted)] focus:border-[var(--color-primary)] focus:outline-none"
+			></textarea>
 		</div>
 
 		{#if error}
