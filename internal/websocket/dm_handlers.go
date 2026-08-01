@@ -270,6 +270,11 @@ func (h *Handlers) MarkAsRead(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	tenantID, ok := requireTenantFromContext(w, r)
+	if !ok {
+		return
+	}
+
 	conversationIDStr := chi.URLParam(r, "id")
 
 	var conversationID pgtype.UUID
@@ -279,7 +284,7 @@ func (h *Handlers) MarkAsRead(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.dmService.MarkAsRead(r.Context(), conversationID, user.UserID); err != nil {
+	if err := h.dmService.MarkAsRead(r.Context(), tenantID, conversationID, user.UserID); err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to mark messages as read")
 		return
 	}
@@ -385,6 +390,11 @@ func (h *Handlers) UpdateDMPrivacy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	tenantID, ok := requireTenantFromContext(w, r)
+	if !ok {
+		return
+	}
+
 	var req struct {
 		Privacy string `json:"privacy"`
 	}
@@ -394,7 +404,7 @@ func (h *Handlers) UpdateDMPrivacy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.dmService.UpdateDMPrivacy(r.Context(), user.UserID, req.Privacy); err != nil {
+	if err := h.dmService.UpdateDMPrivacy(r.Context(), tenantID, user.UserID, req.Privacy); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_privacy", "Invalid privacy setting")
 		return
 	}
@@ -492,7 +502,8 @@ func (h *Handlers) DeleteMessage(w http.ResponseWriter, r *http.Request) {
 // ─── P5.6 DM Requests List ───────────────────────────────────────────────
 
 // ListMessageRequests handles GET /dm/requests (P5.6).
-// Lists pending DM requests for the current user.
+// Lists pending DM requests for the current user, filtering by recipient_id
+// and status = 'pending' so only actionable requests are returned (BUG-003).
 func (h *Handlers) ListMessageRequests(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUserFromContext(r)
 	if !ok {
@@ -503,11 +514,14 @@ func (h *Handlers) ListMessageRequests(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	// Use existing conversation listing — filter for pending requests
-	conversations, err := h.dmService.GetConversations(r.Context(), tenantID, user.UserID, 50, 0)
+
+	limit := parsePageSize(r)
+	offset := parsePageOffset(r)
+
+	requests, err := h.dmService.GetPendingMessageRequests(r.Context(), tenantID, user.UserID, limit, offset)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list message requests")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": conversations})
+	writeJSON(w, http.StatusOK, map[string]any{"data": requests})
 }

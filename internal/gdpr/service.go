@@ -789,6 +789,53 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 			return fmt.Errorf("deleting ticket comments: %w", err)
 		}
 
+		// BUG-024: DM erasure — anonymize DM content and reassign participant
+		// references to the placeholder so the conversation survives for the
+		// other participant. Without these steps, the CASCADE on users(id)
+		// would hard-delete the entire conversation (including the other
+		// participant's copy) during HardDeleteUser, violating ADR-014's
+		// "never hard delete; soft-delete-and-anonymize" principle.
+		// Ref: Section 19 + ADR-014.
+
+		// Anonymize dm_messages authored by the user (clear body, reassign sender).
+		if err := q.AnonymizeDMMessagesBySender(ctx, gen.AnonymizeDMMessagesBySenderParams{
+			UserID: userID, TenantID: tenantID, TargetUserID: deletedUserPlaceholder,
+		}); err != nil {
+			return fmt.Errorf("anonymizing dm messages: %w", err)
+		}
+
+		// Reassign dm_conversations participant references to placeholder.
+		if err := q.ReassignDMConversationParticipant1(ctx, gen.ReassignDMConversationParticipant1Params{
+			UserID: userID, TenantID: tenantID, TargetUserID: deletedUserPlaceholder,
+		}); err != nil {
+			return fmt.Errorf("reassigning dm conversation participant 1: %w", err)
+		}
+
+		if err := q.ReassignDMConversationParticipant2(ctx, gen.ReassignDMConversationParticipant2Params{
+			UserID: userID, TenantID: tenantID, TargetUserID: deletedUserPlaceholder,
+		}); err != nil {
+			return fmt.Errorf("reassigning dm conversation participant 2: %w", err)
+		}
+
+		// Anonymize dm_requests (clear preview, reassign requester/recipient).
+		if err := q.AnonymizeDMRequestsByUser(ctx, gen.AnonymizeDMRequestsByUserParams{
+			UserID: userID, TenantID: tenantID, TargetUserID: deletedUserPlaceholder,
+		}); err != nil {
+			return fmt.Errorf("anonymizing dm requests: %w", err)
+		}
+
+		// Delete user_dm_settings (user-owned config, no PII in the row).
+		if err := q.DeleteUserDMSettingsByUser(ctx, gen.DeleteUserDMSettingsByUserParams{
+			UserID: userID, TenantID: tenantID,
+		}); err != nil {
+			return fmt.Errorf("deleting user dm settings: %w", err)
+		}
+
+		// Delete user_blocks (user-owned config).
+		if err := q.DeleteUserBlocksByUser(ctx, userID); err != nil {
+			return fmt.Errorf("deleting user blocks: %w", err)
+		}
+
 		// ticket_events.user_id is nullable audit trail; nullify the actor, keep the event.
 		if err := q.NullifyTicketEventsUser(ctx, userID); err != nil {
 			return fmt.Errorf("nullifying ticket events user: %w", err)
@@ -909,6 +956,29 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 			EntityID:   userID,
 		}); err != nil {
 			return fmt.Errorf("deleting follows targeting deleted user: %w", err)
+		}
+
+		// BUG-010: search_analytics.user_id references users(id) but has no
+		// ON DELETE clause. Nullify the user_id on the user's search history
+		// rows so the search analytics (zero-result detection, trending
+		// queries) survive for platform insights while severing the PII link.
+		// Ref: Section 53; ADR-014.
+		if _, err := s.db.Writer.Exec(ctx, `
+			UPDATE search_analytics SET user_id = NULL
+			WHERE user_id = $1
+		`, userID); err != nil {
+			return fmt.Errorf("nullifying search_analytics user_id: %w", err)
+		}
+
+		// BUG-011: trending_snapshots with entity_type='user' reference the
+		// user via entity_id (no FK — polymorphic). Delete them so the user's
+		// trending presence does not survive erasure.
+		// Ref: Section 53; ADR-014.
+		if _, err := s.db.Writer.Exec(ctx, `
+			DELETE FROM trending_snapshots
+			WHERE entity_type = 'user' AND entity_id = $1
+		`, userID); err != nil {
+			return fmt.Errorf("deleting trending_snapshots for user: %w", err)
 		}
 
 		// 5. Physical deletion — ON DELETE CASCADE handles all child tables.
@@ -1112,6 +1182,11 @@ type UserDataExport struct {
 	InstructorPayouts    []map[string]interface{} `json:"instructor_payouts"`
 	CustomFieldValues    []map[string]interface{} `json:"custom_field_values"` // BUG-020
 	PushTokens           []map[string]interface{} `json:"push_tokens"`         // BUG-014
+	DMConversations      []map[string]interface{} `json:"dm_conversations"`    // BUG-022
+	DMMessages           []map[string]interface{} `json:"dm_messages"`         // BUG-022
+	DMRequests           []map[string]interface{} `json:"dm_requests"`         // BUG-022
+	DMSettings           []map[string]interface{} `json:"dm_settings"`         // BUG-022
+	UserBlocks           []map[string]interface{} `json:"user_blocks"`         // BUG-022
 	ExportMetadata       map[string]interface{}   `json:"export_metadata"`
 }
 
@@ -1466,6 +1541,39 @@ func (s *Service) collectUserData(ctx context.Context, userID, tenantID pgtype.U
 		export.PushTokens = rows
 	} else {
 		slog.Warn("failed to collect push_tokens for export", "user_id", userID.String(), "error", err)
+	}
+
+	// BUG-022: export DM tables so the GDPR data export includes DM
+	// conversations, messages, requests, privacy settings, and block
+	// relationships. Ref: Section 19 + ADR-014.
+	if rows, err := s.store.gdprExportUserDMConversations(ctx, userID, tenantID); err == nil {
+		export.DMConversations = rows
+	} else {
+		slog.Warn("failed to collect dm_conversations for export", "user_id", userID.String(), "error", err)
+	}
+
+	if rows, err := s.store.gdprExportUserDMMessages(ctx, userID, tenantID); err == nil {
+		export.DMMessages = rows
+	} else {
+		slog.Warn("failed to collect dm_messages for export", "user_id", userID.String(), "error", err)
+	}
+
+	if rows, err := s.store.gdprExportUserDMRequests(ctx, userID, tenantID); err == nil {
+		export.DMRequests = rows
+	} else {
+		slog.Warn("failed to collect dm_requests for export", "user_id", userID.String(), "error", err)
+	}
+
+	if rows, err := s.store.gdprExportUserDMSettings(ctx, userID, tenantID); err == nil {
+		export.DMSettings = rows
+	} else {
+		slog.Warn("failed to collect user_dm_settings for export", "user_id", userID.String(), "error", err)
+	}
+
+	if rows, err := s.store.gdprExportUserBlocks(ctx, userID); err == nil {
+		export.UserBlocks = rows
+	} else {
+		slog.Warn("failed to collect user_blocks for export", "user_id", userID.String(), "error", err)
 	}
 
 	return export, nil

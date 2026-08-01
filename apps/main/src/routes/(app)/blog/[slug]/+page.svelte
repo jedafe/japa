@@ -4,12 +4,20 @@
 	import { ArrowLeft, Clock, Eye } from 'lucide-svelte';
 	import ReactionRail from '$lib/components/blog/ReactionRail.svelte';
 	import CreatorCard from '$lib/components/blog/CreatorCard.svelte';
+	import SidebarWidgetRenderer from '$lib/components/shell/SidebarWidgetRenderer.svelte';
 	import CommentThread from '$lib/components/comments/CommentThread.svelte';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
 
 	const article = $derived(data.article);
+
+	// Normalize sidebar widgets to the typed shape expected by SidebarWidgetRenderer.
+	const sidebarWidgets = $derived(
+		(data.rightSidebarWidgets as { id: string; widget_type: string; label: string; props: Record<string, unknown>; sort_order: number }[]).filter(
+			(w) => w && typeof w.widget_type === 'string'
+		)
+	);
 	const publishedDate = $derived(new Date(article.published_at || article.created_at).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' }));
 	const title = $derived(`${article.title} — ${t('app.name')}`);
 	const description = $derived(article.excerpt ?? article.body.slice(0, 160));
@@ -150,12 +158,16 @@
 
 	<!-- Right: CreatorCard replaces the search/avatar bar -->
 	<aside class="hidden w-80 shrink-0 xl:block">
-		<div class="sticky top-24">
+		<div class="sticky top-24 flex flex-col gap-4">
 			<CreatorCard
 				authorName={article.author_name}
 				authorAvatarUrl={article.author_avatar_url}
 				spaceName={article.space_name}
 			/>
+			<!-- Admin-managed sidebar widgets (Section 59, ADR-066). -->
+			{#each sidebarWidgets as widget (widget.id)}
+				<SidebarWidgetRenderer {widget} user={null} />
+			{/each}
 		</div>
 	</aside>
 </div>

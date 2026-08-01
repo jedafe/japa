@@ -3,6 +3,7 @@ package university
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -163,6 +164,9 @@ func (h *Handlers) Apply(w http.ResponseWriter, r *http.Request) {
 }
 
 // GetMyInstructorProfile handles GET /learn/university/instructor/me.
+// Returns the profile plus aggregate dashboard stats (total_enrolled,
+// total_revenue_kobo, courses_count) so the creator dashboard can render
+// without a second round-trip (BUG-003).
 func (h *Handlers) GetMyInstructorProfile(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
@@ -178,7 +182,31 @@ func (h *Handlers) GetMyInstructorProfile(w http.ResponseWriter, r *http.Request
 		handleServiceError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": prof})
+
+	// Enrich with aggregate dashboard stats.
+	var profID pgtype.UUID
+	_ = profID.Scan(prof.ID)
+	summary, _ := h.service.store.DashboardSummary(r.Context(), tenantID, profID)
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
+		"id":                  prof.ID,
+		"tenant_id":           prof.TenantID,
+		"user_id":             prof.UserID,
+		"display_name":        prof.DisplayName,
+		"headline":            prof.Headline,
+		"bio":                 prof.Bio,
+		"social_links":        prof.SocialLinks,
+		"tier":                prof.Tier,
+		"status":              prof.Status,
+		"commission_pct_override": prof.CommissionPct,
+		"kyc_status":          prof.KycStatus,
+		"application_note":    prof.ApplicationNote,
+		"reviewed_at":         prof.ReviewedAt,
+		"created_at":          prof.CreatedAt,
+		"updated_at":          prof.UpdatedAt,
+		"total_enrolled":      summary.TotalEnrolled,
+		"total_revenue_kobo":  summary.TotalRevenueKobo,
+		"courses_count":       summary.CoursesCount,
+	}})
 }
 
 // UpdateMyInstructorProfile handles PATCH /learn/university/instructor/me.
@@ -244,13 +272,11 @@ func (h *Handlers) GetPublicInstructor(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Also list the instructor's live marketplace tracks.
-	tracks, _ := h.service.store.ListTracksByInstructor(r.Context(), tenantID, instructorID)
-	live := make([]Track, 0, len(tracks))
-	for _, t := range tracks {
-		if t.IsPublishedToUniversity {
-			live = append(live, trackFromGetRow(t))
-		}
+	// List only live marketplace tracks, filtered at the DB level (BUG-017).
+	pubTracks, _ := h.service.store.ListPublishedTracksByInstructor(r.Context(), tenantID, instructorID)
+	live := make([]Track, 0, len(pubTracks))
+	for _, t := range pubTracks {
+		live = append(live, trackFromPublishedRow(t))
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
@@ -503,13 +529,45 @@ func (h *Handlers) GetMyTrackStats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Track-specific series + completion rate (BUG-007).
+	revSeries, _ := h.service.store.TrackRevenueSeries(r.Context(), tenantID, trackID)
+	enrollSeries, _ := h.service.store.TrackEnrollmentSeries(r.Context(), tenantID, trackID)
+	completion, _ := h.service.store.TrackCompletionRate(r.Context(), tenantID, trackID)
+
+	var completionRate float64
+	if completion.TotalEnrolled > 0 {
+		completionRate = float64(completion.Completed) / float64(completion.TotalEnrolled) * 100
+	}
+
+	revData := make([]map[string]any, 0, len(revSeries))
+	for _, s := range revSeries {
+		if s.RevDate.Valid {
+			revData = append(revData, map[string]any{
+				"date": s.RevDate.Time.Format("2006-01-02"),
+				"kobo": s.Kobo,
+			})
+		}
+	}
+
+	enrollData := make([]map[string]any, 0, len(enrollSeries))
+	for _, s := range enrollSeries {
+		if s.EnrollDate.Valid {
+			enrollData = append(enrollData, map[string]any{
+				"date":  s.EnrollDate.Time.Format("2006-01-02"),
+				"count": s.Count,
+			})
+		}
+	}
+
+	totalRevenue := summary.OpenKobo + summary.PaidKobo
 	writeJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
-			"track_id":       trackID.String(),
-			"total_enrolled": track.TotalEnrolled,
-			"open_kobo":      summary.OpenKobo,
-			"paid_kobo":      summary.PaidKobo,
-			"total_splits":   summary.TotalSplits,
+			"track_id":            trackID.String(),
+			"total_enrolled":      track.TotalEnrolled,
+			"completion_rate_pct": completionRate,
+			"total_revenue_kobo":  totalRevenue,
+			"revenue_series":      revData,
+			"enrollment_series":   enrollData,
 		},
 	})
 }
@@ -578,6 +636,8 @@ func (h *Handlers) GetCatalogTrack(w http.ResponseWriter, r *http.Request) {
 // ---------------------------------------------------------------------------
 
 // GetMyEarnings handles GET /learn/university/my/earnings.
+// Returns the earnings summary (open/paid/total) plus a daily revenue_series
+// for the LayerChart (BUG-005).
 func (h *Handlers) GetMyEarnings(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
@@ -599,10 +659,30 @@ func (h *Handlers) GetMyEarnings(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": summary})
+
+	series, _ := h.service.store.RevenueSeries(r.Context(), tenantID, prof.ID)
+	revenueSeries := make([]map[string]any, 0, len(series))
+	for _, s := range series {
+		if s.RevDate.Valid {
+			revenueSeries = append(revenueSeries, map[string]any{
+				"date": s.RevDate.Time.Format("2006-01-02"),
+				"kobo": s.Kobo,
+			})
+		}
+	}
+
+	totalEarned := summary.OpenKobo + summary.PaidKobo
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
+		"total_earned_kobo":   totalEarned,
+		"total_paid_out_kobo": summary.PaidKobo,
+		"pending_kobo":        summary.OpenKobo,
+		"revenue_series":      revenueSeries,
+	}})
 }
 
 // GetMyPayouts handles GET /learn/university/my/payouts.
+// Returns payouts mapped to a clean DTO with the fields the frontend expects
+// (amount_kobo, requested_at, processed_at, status) (BUG-006).
 func (h *Handlers) GetMyPayouts(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
@@ -625,7 +705,40 @@ func (h *Handlers) GetMyPayouts(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": payouts})
+
+	items := make([]payoutDTO, 0, len(payouts))
+	for _, p := range payouts {
+		items = append(items, payoutFromRow(p))
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": items})
+}
+
+// payoutDTO is the clean API-facing payout record (BUG-006).
+type payoutDTO struct {
+	ID           string     `json:"id"`
+	AmountKobo   int64      `json:"amount_kobo"`
+	Status       string     `json:"status"`
+	PeriodStart  string     `json:"period_start"`
+	PeriodEnd    string     `json:"period_end"`
+	RequestedAt  time.Time  `json:"requested_at"`
+	ProcessedAt  *time.Time `json:"processed_at,omitempty"`
+	Currency     string     `json:"currency"`
+}
+
+func payoutFromRow(p gen.InstructorPayout) payoutDTO {
+	d := payoutDTO{
+		ID:          p.ID.String(),
+		AmountKobo:  p.NetKobo,
+		Status:      p.Status,
+		PeriodStart: p.PeriodStart.Time.Format("2006-01-02"),
+		PeriodEnd:   p.PeriodEnd.Time.Format("2006-01-02"),
+		RequestedAt: p.CreatedAt.Time,
+		Currency:    p.Currency,
+	}
+	if p.ProcessedAt.Valid {
+		d.ProcessedAt = &p.ProcessedAt.Time
+	}
+	return d
 }
 
 // ---------------------------------------------------------------------------
@@ -955,8 +1068,12 @@ func trackFromGetRow(r gen.ListUniversityTracksByInstructorRow) Track {
 		ID: r.ID.String(), Title: r.Title, Slug: r.Slug, Description: r.Description,
 		Difficulty: r.Difficulty, Currency: r.Currency, Language: r.Language,
 		TotalEnrolled: r.TotalEnrolled, IsPublished: r.IsPublished,
-		IsPublishedToUniversity: r.IsPublishedToUniversity,
-		CreatedAt:               r.CreatedAt.Time, UpdatedAt: r.UpdatedAt.Time,
+		IsPublishedToUniversity:   r.IsPublishedToUniversity,
+		SubmissionStatus:          r.UniversitySubmissionStatus,
+		TotalRevenueKobo:          r.TotalRevenueKobo,
+		RejectionReason:           r.UniversityRejectionReason,
+		ThumbnailURL:              r.ThumbnailUrl,
+		CreatedAt:                 r.CreatedAt.Time, UpdatedAt: r.UpdatedAt.Time,
 	}
 	if r.CoverMediaID.Valid {
 		s := r.CoverMediaID.String()
@@ -973,5 +1090,205 @@ func trackFromGetRow(r gen.ListUniversityTracksByInstructorRow) Track {
 	if r.Category != nil {
 		t.Category = r.Category
 	}
+	if r.UniversitySubmittedAt.Valid {
+		tm := r.UniversitySubmittedAt.Time
+		t.SubmittedAt = &tm
+	}
+	if r.UniversityReviewedAt.Valid {
+		tm := r.UniversityReviewedAt.Time
+		t.ReviewedAt = &tm
+	}
 	return t
+}
+
+// trackFromPublishedRow maps a ListPublishedTracksByInstructorRow into the Track DTO.
+func trackFromPublishedRow(r gen.ListPublishedTracksByInstructorRow) Track {
+	t := Track{
+		ID: r.ID.String(), Title: r.Title, Slug: r.Slug, Description: r.Description,
+		Difficulty: r.Difficulty, Currency: r.Currency, Language: r.Language,
+		TotalEnrolled: r.TotalEnrolled, IsPublished: r.IsPublished,
+		IsPublishedToUniversity:   r.IsPublishedToUniversity,
+		SubmissionStatus:          r.UniversitySubmissionStatus,
+		RejectionReason:           r.UniversityRejectionReason,
+		ThumbnailURL:              r.ThumbnailUrl,
+		CreatedAt:                 r.CreatedAt.Time, UpdatedAt: r.UpdatedAt.Time,
+	}
+	if r.CoverMediaID.Valid {
+		s := r.CoverMediaID.String()
+		t.CoverMediaID = &s
+	}
+	if r.InstructorID.Valid {
+		s := r.InstructorID.String()
+		t.InstructorID = &s
+	}
+	if r.PriceKobo != nil {
+		v := *r.PriceKobo
+		t.PriceKobo = &v
+	}
+	if r.Category != nil {
+		t.Category = r.Category
+	}
+	if r.UniversitySubmittedAt.Valid {
+		tm := r.UniversitySubmittedAt.Time
+		t.SubmittedAt = &tm
+	}
+	if r.UniversityReviewedAt.Valid {
+		tm := r.UniversityReviewedAt.Time
+		t.ReviewedAt = &tm
+	}
+	return t
+}
+
+// ---------------------------------------------------------------------------
+// Admin — all tracks, reject track, fail payout, update instructor (BUG-002)
+// ---------------------------------------------------------------------------
+
+// AdminListAllTracks handles GET /admin/university/tracks.
+// Returns all marketplace tracks (not just pending), optionally filtered by
+// submission_status (BUG-002).
+func (h *Handlers) AdminListAllTracks(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+	limit, offset := parsePagination(r)
+	status := r.URL.Query().Get("status")
+
+	rows, err := h.service.store.ListAllTracks(r.Context(), tenantID, status, limit, offset)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	total, err := h.service.store.CountAllTracks(r.Context(), tenantID, status)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data": rows,
+		"meta": map[string]int64{"total": total, "limit": int64(limit), "offset": int64(offset)},
+	})
+}
+
+// AdminRejectTrack handles POST /admin/university/tracks/{id}/reject.
+// Rejects a submitted track with an optional reason (BUG-002, BUG-004).
+func (h *Handlers) AdminRejectTrack(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+	trackID, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	var body struct {
+		Reason *string `json:"reason"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&body)
+
+	track, err := h.service.store.RejectTrack(r.Context(), tenantID, trackID, body.Reason)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": track})
+}
+
+// AdminFailPayout handles POST /admin/university/payouts/{id}/fail.
+// Marks a payout as failed with an optional reason (BUG-002).
+func (h *Handlers) AdminFailPayout(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+	payoutID, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	var body struct {
+		Reason *string `json:"reason"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&body)
+
+	payout, err := h.service.store.UpdatePayoutStatus(r.Context(), tenantID, payoutID, "failed", nil, body.Reason)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": payout})
+}
+
+// AdminUpdateInstructor handles PATCH /admin/university/instructors/{id}.
+// Updates an instructor's tier and/or commission override (BUG-002).
+func (h *Handlers) AdminUpdateInstructor(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+	instructorID, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	var body struct {
+		Tier               string   `json:"tier"`
+		CommissionOverride *float64 `json:"commission_pct_override"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
+		return
+	}
+
+	var tier *string
+	if body.Tier != "" {
+		t := body.Tier
+		tier = &t
+	}
+	var commission *pgtype.Numeric
+	if body.CommissionOverride != nil {
+		var n pgtype.Numeric
+		if err := n.Scan(fmt.Sprintf("%f", *body.CommissionOverride)); err == nil {
+			commission = &n
+		}
+	}
+
+	prof, err := h.service.store.UpdateInstructorAdmin(r.Context(), tenantID, instructorID, tier, commission)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": profileFromRow(prof)})
+}
+
+// AdminFeatureTrack handles POST /admin/university/tracks/{id}/feature.
+// Toggles the featured flag on a marketplace track (BUG-012: wires the
+// university.course.feature RBAC node).
+func (h *Handlers) AdminFeatureTrack(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+	trackID, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	var body struct {
+		Featured *bool `json:"featured"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&body)
+
+	featured := true
+	if body.Featured != nil {
+		featured = *body.Featured
+	}
+
+	track, err := h.service.store.SetTrackFeatured(r.Context(), tenantID, trackID, featured)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": track})
 }

@@ -136,7 +136,7 @@ func (s *Service) broadcastPollResults(ctx context.Context, poll gen.ForumPoll) 
 	if err != nil {
 		return
 	}
-	s.broadcastSpace(thread.SpaceID, "forum.poll.updated", map[string]any{
+	s.broadcastSpace(thread.TenantID, thread.SpaceID, "forum.poll.updated", map[string]any{
 		"poll_id": poll.ID, "results": results,
 	})
 }

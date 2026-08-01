@@ -53,6 +53,7 @@ import (
 	"github.com/jedafe/japa/internal/mentorship"
 	"github.com/jedafe/japa/internal/menus"
 	"github.com/jedafe/japa/internal/mentions"
+	"github.com/jedafe/japa/internal/sidebars"
 	mw "github.com/jedafe/japa/internal/middleware"
 	"github.com/jedafe/japa/internal/newsletter"
 	"github.com/jedafe/japa/internal/notifications"
@@ -438,6 +439,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	feedService.SetEnqueuer(taskEnqueuer)
 	feedHandlers := feed.NewHandlers(feedService)
 	feedHandlers.SetSettings(settingsService)
+	feedHandlers.SetCache(vkClient.Valkey()) // BUG-006: explore feed caching
 
 	// Trending & Discovery subsystem (Phase 28).
 	trendingStore := trending.NewStore(database)
@@ -446,6 +448,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 	// Register trending processor with worker for background tasks.
 	trendingProc := trending.NewProcessor(database, slog.Default())
+	trendingProc.SetSettings(settingsService) // BUG-016: configurable scoring weights
 	trendingAdapter := trending.NewWorkerAdapter(trendingProc)
 	worker.RegisterTrendingProcessor(trendingAdapter)
 
@@ -561,6 +564,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Menus — Navigation menus with RBAC-gated items (ADR-054).
 	menusService := menus.NewService(database)
 	menusHandlers := menus.NewHandlers(menusService)
+
+	// Sidebars — Sidebar Management System (Section 59, ADR-066).
+	// Replaces the deprecated pagebuilder sidebar approach.
+	sidebarService := sidebars.NewService(database, vkClient.Redis())
+	sidebarHandlers := sidebars.NewHandlers(sidebarService)
 
 	// Email Templates — Tenant-customizable transactional emails (ADR-055).
 	emailTemplatesService := emailtemplates.NewService(database)
@@ -1510,6 +1518,19 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			wsDMService.AsynqClient = asynqClient
 			wsHandlers := websocket.NewHandlers(wsService, wsDMService, wsHub, vkClient, kr)
 			wsHandlers.SetSpamPipeline(spamPipeline)
+			wsHandlers.SetSessionChecker(func(userID string) bool {
+				var uid pgtype.UUID
+				if err := uid.Scan(userID); err != nil {
+					return false
+				}
+				ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+				defer cancel()
+				_, err := gen.New(database.Reader).GetUserBanExpiration(ctx, uid)
+				if err == nil {
+					return false
+				}
+				return true
+			})
 
 			// WebSocket + DM routes — gated by feature.dm (Section 10)
 			r.With(features.Gate(featureChecker, "feature.dm")).Group(func(r chi.Router) {
@@ -1519,15 +1540,16 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "dm.view")).Post("/auth/ws-ticket", wsHandlers.GetWSTicket)
 				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/ws/online", wsHandlers.GetOnlineUsers)
 
-				// Direct Messaging
-				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/dm/conversations", wsHandlers.ListConversations)
+				// Direct Messaging — dm.view enforced on all read routes (BUG-016).
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "dm.view")).Get("/dm/conversations", wsHandlers.ListConversations)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "dm.request")).Post("/dm/conversations", wsHandlers.InitiateConversation)
-				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/dm/conversations/{id}/messages", wsHandlers.ListMessages)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "dm.view")).Get("/dm/conversations/{id}/messages", wsHandlers.ListMessages)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "dm.send")).Post("/dm/conversations/{id}/messages", wsHandlers.SendMessage)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "dm.send")).Patch("/dm/conversations/{id}/messages/{mid}", wsHandlers.EditMessage)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "dm.delete")).Delete("/dm/conversations/{id}/messages/{mid}", wsHandlers.DeleteMessage)
-				r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/dm/conversations/{id}/read", wsHandlers.MarkAsRead)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "dm.view")).Post("/dm/conversations/{id}/read", wsHandlers.MarkAsRead)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "moderation.report")).Post("/dm/conversations/{id}/messages/{mid}/report", reportsHandlers.ReportDMMessage)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "dm.view")).Get("/dm/requests", wsHandlers.ListMessageRequests)
 				r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/dm/requests/{id}/accept", wsHandlers.AcceptMessageRequest)
 				r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/dm/requests/{id}/decline", wsHandlers.DeclineMessageRequest)
 				r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/dm/requests/{id}/block", wsHandlers.BlockMessageRequest)
@@ -2733,7 +2755,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/learn/lessons/{id}/complete", learningHandlers.CompleteLesson)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/learn/progress/{trackId}", learningHandlers.GetTrackProgress)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/certificates", learningHandlers.GetMyCertificates)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/enrollments", learningHandlers.ListMyEnrollments)
+			// BUG-012: wired university.enrollment.view_own RBAC node.
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "university.enrollment.view_own")).Get("/me/enrollments", learningHandlers.ListMyEnrollments)
 
 			// Quizzes
 			r.Get("/learn/quizzes/{id}", learningHandlers.GetQuiz)
@@ -2757,10 +2780,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.Get("/learn/university/instructors/{id}", universityHandlers.GetPublicInstructor)
 
 			// Creator track management
+			// AUDIT-FRESH-DEAD-NODES: wired university.course.create/submit RBAC gates (BUG-011).
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/learn/university/my/tracks", universityHandlers.ListMyTracks)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/learn/university/my/tracks", universityHandlers.CreateMyTrack)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "university.course.create")).Post("/learn/university/my/tracks", universityHandlers.CreateMyTrack)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Patch("/learn/university/my/tracks/{id}", universityHandlers.UpdateMyTrack)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/learn/university/my/tracks/{id}/submit", universityHandlers.SubmitMyTrack)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "university.course.submit")).Post("/learn/university/my/tracks/{id}/submit", universityHandlers.SubmitMyTrack)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/learn/university/my/tracks/{id}/stats", universityHandlers.GetMyTrackStats)
 
 			// Marketplace catalog
@@ -2768,8 +2792,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.Get("/learn/university/catalog/{slug}", universityHandlers.GetCatalogTrack)
 
 			// Earnings & payouts
-			// AUDIT-FRESH-DEAD-NODES: wired university.payout.view_own RBAC gate.
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/learn/university/my/earnings", universityHandlers.GetMyEarnings)
+			// AUDIT-FRESH-DEAD-NODES: wired university.payout.view_own RBAC gate on both endpoints (BUG-013).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "university.payout.view_own")).Get("/learn/university/my/earnings", universityHandlers.GetMyEarnings)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "university.payout.view_own")).Get("/learn/university/my/payouts", universityHandlers.GetMyPayouts)
 
 			// Content-country preference (ADR-064 geo personalization)
@@ -2788,16 +2812,33 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Post("/admin/university/instructors/{id}/reinstate", universityHandlers.AdminReinstateInstructor)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "university.instructor.manage")).
 				Delete("/admin/university/instructors/{id}", universityHandlers.AdminDeleteInstructor)
+			// BUG-002: PATCH instructor tier/commission override.
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "university.instructor.manage")).
+				Patch("/admin/university/instructors/{id}", universityHandlers.AdminUpdateInstructor)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "university.course.approve")).
 				Get("/admin/university/tracks/pending", universityHandlers.AdminListPendingTracks)
+			// BUG-002: GET all tracks (not just pending).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "university.course.approve")).
+				Get("/admin/university/tracks", universityHandlers.AdminListAllTracks)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "university.course.approve")).
 				Post("/admin/university/tracks/{id}/approve", universityHandlers.AdminApproveTrack)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "university.payout.process")).
+			// BUG-002: POST reject track.
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "university.course.approve")).
+				Post("/admin/university/tracks/{id}/reject", universityHandlers.AdminRejectTrack)
+			// BUG-012: POST feature/unfeature track (wires university.course.feature node).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "university.course.feature")).
+				Post("/admin/university/tracks/{id}/feature", universityHandlers.AdminFeatureTrack)
+			// BUG-014: read-only payout endpoints gated by view_all, not the write process node.
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "university.payout.view_all")).
 				Get("/admin/university/payouts", universityHandlers.AdminListPayouts)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "university.payout.process")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "university.payout.view_all")).
 				Get("/admin/university/payouts/{id}", universityHandlers.AdminGetPayout)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "university.payout.process")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "university.payout.process"),
+				mw.IdempotencyMiddleware(vkClient.Redis(), settingsService)).
 				Post("/admin/university/payouts/{id}/process", universityHandlers.AdminProcessPayout)
+			// BUG-002: POST fail payout.
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "university.payout.process")).
+				Post("/admin/university/payouts/{id}/fail", universityHandlers.AdminFailPayout)
 
 			// Admin: revenue-split audit viewer (ADR-063 §9, read-only)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "university.revenue.list")).
@@ -2895,16 +2936,39 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Public page endpoint (no auth required)
 			r.Get("/pages/{slug}", pagebuilderHandlers.GetPublishedPage)
 
-			// Public sidebar endpoints (no auth required) — sitewide sidebar blocks
-			r.Get("/sidebars/{position}", pagebuilderHandlers.GetPublishedSidebar)
+			// ── Sidebars — Sidebar Management System (Section 59, ADR-066) ──
+			// Replaces the deprecated pagebuilder sidebar routes.
 
-			// Admin sidebar management (requires pages.manage permission)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "pages.manage")).
-				Get("/admin/sidebars", pagebuilderHandlers.GetSidebarConfig)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "pages.manage")).
-				Get("/admin/sidebars/{position}", pagebuilderHandlers.GetSidebar)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "pages.manage")).
-				Patch("/admin/sidebars/{position}", pagebuilderHandlers.UpdateSidebar)
+			// Admin: sidebar CRUD (requires sidebars.manage permission)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "sidebars.manage")).
+				Get("/admin/sidebars", sidebarHandlers.ListSidebars)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "sidebars.manage")).
+				Post("/admin/sidebars", sidebarHandlers.CreateSidebar)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "sidebars.manage")).
+				Get("/admin/sidebars/{id}", sidebarHandlers.GetSidebar)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "sidebars.manage")).
+				Patch("/admin/sidebars/{id}", sidebarHandlers.UpdateSidebar)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "sidebars.manage")).
+				Delete("/admin/sidebars/{id}", sidebarHandlers.DeleteSidebar)
+			// Admin: sidebar widget CRUD
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "sidebars.manage")).
+				Post("/admin/sidebars/{id}/widgets", sidebarHandlers.CreateSidebarWidget)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "sidebars.manage")).
+				Patch("/admin/sidebars/{id}/widgets/{widgetId}", sidebarHandlers.UpdateSidebarWidget)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "sidebars.manage")).
+				Delete("/admin/sidebars/{id}/widgets/{widgetId}", sidebarHandlers.DeleteSidebarWidget)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "sidebars.manage")).
+				Post("/admin/sidebars/{id}/widgets/reorder", sidebarHandlers.ReorderSidebarWidgets)
+
+			// Public: sidebar widget type registry (no auth required).
+			r.Get("/sidebars/widget-types", sidebarHandlers.ListWidgetTypes)
+
+			// Public: resolve sidebar for current page. OptionalAuth enriches the
+			// request with the caller's identity when a Bearer token is present
+			// (it never rejects), so authenticated users see authenticated-visibility
+			// sidebars/widgets while guests still receive public ones.
+			r.With(auth.OptionalAuth(kr, vkClient.Redis())).
+				Get("/sidebars/resolve", sidebarHandlers.Resolve)
 
 			// Public page-templates endpoints (read-only, no auth required)
 			r.Get("/page-templates", pagebuilderHandlers.ListTemplates)
@@ -3287,9 +3351,6 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).
 				Get("/ai/conversations/{id}", aiHandlers.HandleGetConversation)
 
-			// Task 30: DM requests
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).
-				Get("/dm/requests", wsHandlers.ListMessageRequests)
 
 			// Task 33: Content public extras
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).
@@ -3320,9 +3381,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "follows.toggle"), mw.RateLimit(vkClient.Redis(), "moderate")).
 				Delete("/users/{id}/follow", followHandlers.ToggleFollow)
 
-			// Task 35: Suggestions/content (trending)
-			r.With(auth.OptionalAuth(kr, vkClient.Redis())).
-				Get("/suggestions/content", trendingHandlers.GetTrendingContent)
+			// Task 35: Suggestions/content — BUG-003: now uses pgvector similarity
+			// (Section 53 "You might also like") instead of returning trending content.
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).
+				Get("/suggestions/content", trendingHandlers.GetSuggestedContent)
 
 			// Task 11: Universities compare
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).
@@ -3646,8 +3708,8 @@ type forumSpaceBroadcaster struct {
 	hub *websocket.Hub
 }
 
-func (f *forumSpaceBroadcaster) BroadcastToSpace(spaceID string, event forum.WSEvent) {
-	f.hub.BroadcastToSpace(spaceID, websocket.WSEvent{Type: event.Type, Payload: event.Payload})
+func (f *forumSpaceBroadcaster) BroadcastToSpace(tenantID, spaceID string, event forum.WSEvent) {
+	f.hub.BroadcastToSpace(tenantID, spaceID, websocket.WSEvent{Type: event.Type, Payload: event.Payload})
 }
 
 // mediaURLResolver adapts media.Service to the users.MediaResolver

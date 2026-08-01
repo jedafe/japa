@@ -108,7 +108,7 @@
 		{ name: 'building', component: Building },
 		{ name: 'briefcase', component: Briefcase },
 		{ name: 'landmark', component: Landmark },
-		{ name: 'bookmark', component: BookMarked },
+		{ name: 'book-marked', component: BookMarked },
 		{ name: 'library', component: Library },
 		{ name: 'file-code', component: FileCode },
 		{ name: 'terminal', component: Terminal },

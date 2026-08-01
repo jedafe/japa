@@ -849,13 +849,7 @@ type DmMessage struct {
 	ReadAt         pgtype.Timestamptz `json:"read_at"`
 	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
 	EditedAt       pgtype.Timestamptz `json:"edited_at"`
-}
-
-type DmMessageRequest struct {
-	ID             pgtype.UUID        `json:"id"`
-	ConversationID pgtype.UUID        `json:"conversation_id"`
-	Status         string             `json:"status"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	TenantID       pgtype.UUID        `json:"tenant_id"`
 }
 
 type DmRequest struct {
@@ -1254,6 +1248,13 @@ type LearningTrack struct {
 	Language                string      `json:"language"`
 	TotalEnrolled           int32       `json:"total_enrolled"`
 	GeoSpaceID              pgtype.UUID `json:"geo_space_id"`
+	// Marketplace submission lifecycle: draft|pending|approved|rejected (ADR-063 §5).
+	UniversitySubmissionStatus string             `json:"university_submission_status"`
+	UniversitySubmittedAt      pgtype.Timestamptz `json:"university_submitted_at"`
+	UniversityReviewedAt       pgtype.Timestamptz `json:"university_reviewed_at"`
+	// Admin rejection reason; cleared on re-submit (ADR-063 §5).
+	UniversityRejectionReason *string `json:"university_rejection_reason"`
+	UniversityFeatured        bool    `json:"university_featured"`
 }
 
 type LessonProgress struct {
@@ -1671,6 +1672,7 @@ type Page struct {
 	CreatedBy   pgtype.UUID        `json:"created_by"`
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
+	PageType    string             `json:"page_type"`
 }
 
 type PageBuilderPage struct {
@@ -2060,6 +2062,37 @@ type SecurityScanResult struct {
 	CreatedAt  pgtype.Timestamptz `json:"created_at"`
 }
 
+type Sidebar struct {
+	ID               pgtype.UUID        `json:"id"`
+	TenantID         pgtype.UUID        `json:"tenant_id"`
+	App              string             `json:"app"`
+	Position         string             `json:"position"`
+	Slug             string             `json:"slug"`
+	Name             string             `json:"name"`
+	PagePattern      string             `json:"page_pattern"`
+	Visibility       string             `json:"visibility"`
+	RequiredGroupIds []byte             `json:"required_group_ids"`
+	Status           string             `json:"status"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+}
+
+type SidebarWidget struct {
+	ID               pgtype.UUID        `json:"id"`
+	TenantID         pgtype.UUID        `json:"tenant_id"`
+	SidebarID        pgtype.UUID        `json:"sidebar_id"`
+	WidgetType       string             `json:"widget_type"`
+	Label            string             `json:"label"`
+	Props            []byte             `json:"props"`
+	SortOrder        int32              `json:"sort_order"`
+	Visibility       string             `json:"visibility"`
+	RequiredGroupIds []byte             `json:"required_group_ids"`
+	PermissionNode   *string            `json:"permission_node"`
+	Status           string             `json:"status"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+}
+
 type SlugHistory struct {
 	ID         pgtype.UUID        `json:"id"`
 	EntityType string             `json:"entity_type"`
@@ -2415,6 +2448,7 @@ type UserDmSetting struct {
 	UserID    pgtype.UUID        `json:"user_id"`
 	DmPrivacy string             `json:"dm_privacy"`
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+	TenantID  pgtype.UUID        `json:"tenant_id"`
 }
 
 type UserGroup struct {

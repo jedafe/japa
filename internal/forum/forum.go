@@ -63,9 +63,11 @@ type webhookEmitter interface {
 }
 
 // spaceBroadcaster publishes a live update to a space's WebSocket room
-// (Section 10). Used for poll/vote count live updates. Ref: Section 08.
+// (Section 10). Used for poll/vote count live updates. The tenantID scopes
+// the subscription so cross-tenant space ID collisions cannot leak events
+// (Rule 4: tenant-scoped). Ref: Section 08.
 type spaceBroadcaster interface {
-	BroadcastToSpace(spaceID string, event WSEvent)
+	BroadcastToSpace(tenantID, spaceID string, event WSEvent)
 }
 
 // WSEvent is the minimal event shape the forum service emits. Kept local to
@@ -155,12 +157,17 @@ func (s *Service) emitWebhook(ctx context.Context, tenantID pgtype.UUID, eventTy
 }
 
 // broadcastSpace publishes a live update to a space's WS room. No-op when
-// the broadcaster is unset or the space id is empty.
-func (s *Service) broadcastSpace(spaceID pgtype.UUID, eventType string, payload any) {
+// the broadcaster is unset or the space id is empty. The tenantID scopes the
+// subscription (Rule 4: tenant-scoped).
+func (s *Service) broadcastSpace(tenantID, spaceID pgtype.UUID, eventType string, payload any) {
 	if s.broadcaster == nil || !spaceID.Valid {
 		return
 	}
-	s.broadcaster.BroadcastToSpace(spaceID.String(), WSEvent{Type: eventType, Payload: payload})
+	tenantStr := ""
+	if tenantID.Valid {
+		tenantStr = tenantID.String()
+	}
+	s.broadcaster.BroadcastToSpace(tenantStr, spaceID.String(), WSEvent{Type: eventType, Payload: payload})
 }
 
 // drainViewIncrements is the single background worker that processes

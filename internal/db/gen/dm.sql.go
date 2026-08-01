@@ -23,13 +23,21 @@ func (q *Queries) CleanupDeclinedDMRequests(ctx context.Context) error {
 }
 
 const createMessageRequest = `-- name: CreateMessageRequest :exec
-INSERT INTO dm_message_requests (conversation_id, status)
-VALUES ($1, 'pending')
-ON CONFLICT (conversation_id) DO NOTHING
+INSERT INTO dm_requests (tenant_id, requester_id, recipient_id, conversation_id, preview_message, status)
+SELECT $1, dc.participant_1_id, dc.participant_2_id, dc.id, $2, 'pending'
+FROM dm_conversations dc
+WHERE dc.id = $3
+ON CONFLICT (requester_id, recipient_id) DO NOTHING
 `
 
-func (q *Queries) CreateMessageRequest(ctx context.Context, conversationID pgtype.UUID) error {
-	_, err := q.db.Exec(ctx, createMessageRequest, conversationID)
+type CreateMessageRequestParams struct {
+	TenantID       pgtype.UUID `json:"tenant_id"`
+	PreviewMessage string      `json:"preview_message"`
+	ConversationID pgtype.UUID `json:"conversation_id"`
+}
+
+func (q *Queries) CreateMessageRequest(ctx context.Context, arg CreateMessageRequestParams) error {
+	_, err := q.db.Exec(ctx, createMessageRequest, arg.TenantID, arg.PreviewMessage, arg.ConversationID)
 	return err
 }
 
@@ -157,11 +165,11 @@ func (q *Queries) GetConversationByParticipants(ctx context.Context, arg GetConv
 }
 
 const getConversationMessages = `-- name: GetConversationMessages :many
-SELECT dm.id, dm.conversation_id, dm.sender_id, dm.body, dm.created_at, dm.read_at, dm.deleted_at, dm.edited_at, u.username AS sender_username, p.display_name AS sender_display_name
+SELECT dm.id, dm.conversation_id, dm.sender_id, dm.body, dm.created_at, dm.read_at, dm.deleted_at, dm.edited_at, dm.tenant_id, u.username AS sender_username, p.display_name AS sender_display_name
 FROM dm_messages dm
 JOIN users u ON u.id = dm.sender_id
 LEFT JOIN user_profiles p ON p.user_id = u.id AND p.tenant_id = $1
-WHERE dm.conversation_id = $2
+WHERE dm.conversation_id = $2 AND dm.tenant_id = $1
 ORDER BY dm.created_at DESC
 LIMIT $4 OFFSET $3
 `
@@ -182,6 +190,7 @@ type GetConversationMessagesRow struct {
 	ReadAt            pgtype.Timestamptz `json:"read_at"`
 	DeletedAt         pgtype.Timestamptz `json:"deleted_at"`
 	EditedAt          pgtype.Timestamptz `json:"edited_at"`
+	TenantID          pgtype.UUID        `json:"tenant_id"`
 	SenderUsername    string             `json:"sender_username"`
 	SenderDisplayName *string            `json:"sender_display_name"`
 }
@@ -209,6 +218,7 @@ func (q *Queries) GetConversationMessages(ctx context.Context, arg GetConversati
 			&i.ReadAt,
 			&i.DeletedAt,
 			&i.EditedAt,
+			&i.TenantID,
 			&i.SenderUsername,
 			&i.SenderDisplayName,
 		); err != nil {
@@ -223,7 +233,7 @@ func (q *Queries) GetConversationMessages(ctx context.Context, arg GetConversati
 }
 
 const getDMMessageByID = `-- name: GetDMMessageByID :one
-SELECT id, conversation_id, sender_id, body, created_at, read_at, deleted_at, edited_at FROM dm_messages WHERE id = $1 AND conversation_id = $2
+SELECT id, conversation_id, sender_id, body, created_at, read_at, deleted_at, edited_at, tenant_id FROM dm_messages WHERE id = $1 AND conversation_id = $2
 `
 
 type GetDMMessageByIDParams struct {
@@ -243,22 +253,29 @@ func (q *Queries) GetDMMessageByID(ctx context.Context, arg GetDMMessageByIDPara
 		&i.ReadAt,
 		&i.DeletedAt,
 		&i.EditedAt,
+		&i.TenantID,
 	)
 	return i, err
 }
 
 const getMessageRequest = `-- name: GetMessageRequest :one
-SELECT id, conversation_id, status, created_at FROM dm_message_requests WHERE conversation_id = $1
+SELECT id, tenant_id, requester_id, recipient_id, conversation_id, preview_message, status, created_at, updated_at, resolved_at FROM dm_requests WHERE conversation_id = $1
 `
 
-func (q *Queries) GetMessageRequest(ctx context.Context, conversationID pgtype.UUID) (DmMessageRequest, error) {
+func (q *Queries) GetMessageRequest(ctx context.Context, conversationID pgtype.UUID) (DmRequest, error) {
 	row := q.db.QueryRow(ctx, getMessageRequest, conversationID)
-	var i DmMessageRequest
+	var i DmRequest
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
+		&i.RequesterID,
+		&i.RecipientID,
 		&i.ConversationID,
+		&i.PreviewMessage,
 		&i.Status,
 		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.ResolvedAt,
 	)
 	return i, err
 }
@@ -296,6 +313,81 @@ func (q *Queries) GetOrCreateConversation(ctx context.Context, arg GetOrCreateCo
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const getPendingMessageRequests = `-- name: GetPendingMessageRequests :many
+SELECT dr.id, dr.tenant_id, dr.requester_id, dr.recipient_id, dr.conversation_id, dr.preview_message, dr.status, dr.created_at, dr.updated_at, dr.resolved_at, u.username AS requester_username, p.display_name AS requester_display_name, p.avatar_url AS requester_avatar_url
+FROM dm_requests dr
+JOIN users u ON u.id = dr.requester_id
+LEFT JOIN user_profiles p ON p.user_id = u.id AND p.tenant_id = dr.tenant_id
+WHERE dr.recipient_id = $1 AND dr.tenant_id = $2 AND dr.status = 'pending'
+ORDER BY dr.created_at DESC
+LIMIT $4 OFFSET $3
+`
+
+type GetPendingMessageRequestsParams struct {
+	RecipientID pgtype.UUID `json:"recipient_id"`
+	TenantID    pgtype.UUID `json:"tenant_id"`
+	PageOffset  int32       `json:"page_offset"`
+	PageLimit   int32       `json:"page_limit"`
+}
+
+type GetPendingMessageRequestsRow struct {
+	ID                   pgtype.UUID        `json:"id"`
+	TenantID             pgtype.UUID        `json:"tenant_id"`
+	RequesterID          pgtype.UUID        `json:"requester_id"`
+	RecipientID          pgtype.UUID        `json:"recipient_id"`
+	ConversationID       pgtype.UUID        `json:"conversation_id"`
+	PreviewMessage       string             `json:"preview_message"`
+	Status               string             `json:"status"`
+	CreatedAt            pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
+	ResolvedAt           pgtype.Timestamptz `json:"resolved_at"`
+	RequesterUsername    string             `json:"requester_username"`
+	RequesterDisplayName *string            `json:"requester_display_name"`
+	RequesterAvatarUrl   *string            `json:"requester_avatar_url"`
+}
+
+// Lists pending DM requests for a recipient (BUG-003). Filters by
+// recipient_id and status = 'pending' so the handler returns only
+// actionable requests, not all conversations.
+func (q *Queries) GetPendingMessageRequests(ctx context.Context, arg GetPendingMessageRequestsParams) ([]GetPendingMessageRequestsRow, error) {
+	rows, err := q.db.Query(ctx, getPendingMessageRequests,
+		arg.RecipientID,
+		arg.TenantID,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetPendingMessageRequestsRow
+	for rows.Next() {
+		var i GetPendingMessageRequestsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.RequesterID,
+			&i.RecipientID,
+			&i.ConversationID,
+			&i.PreviewMessage,
+			&i.Status,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.ResolvedAt,
+			&i.RequesterUsername,
+			&i.RequesterDisplayName,
+			&i.RequesterAvatarUrl,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const getUserConversations = `-- name: GetUserConversations :many
@@ -382,14 +474,41 @@ func (q *Queries) GetUserConversations(ctx context.Context, arg GetUserConversat
 }
 
 const getUserDMPrivacy = `-- name: GetUserDMPrivacy :one
-SELECT COALESCE(dm_privacy, 'everyone') AS dm_privacy FROM user_dm_settings WHERE user_id = $1
+SELECT COALESCE(dm_privacy, 'everyone') AS dm_privacy FROM user_dm_settings
+WHERE user_id = $1 AND tenant_id = $2
 `
 
-func (q *Queries) GetUserDMPrivacy(ctx context.Context, userID pgtype.UUID) (string, error) {
-	row := q.db.QueryRow(ctx, getUserDMPrivacy, userID)
+type GetUserDMPrivacyParams struct {
+	UserID   pgtype.UUID `json:"user_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+func (q *Queries) GetUserDMPrivacy(ctx context.Context, arg GetUserDMPrivacyParams) (string, error) {
+	row := q.db.QueryRow(ctx, getUserDMPrivacy, arg.UserID, arg.TenantID)
 	var dm_privacy string
 	err := row.Scan(&dm_privacy)
 	return dm_privacy, err
+}
+
+const getWSTicketForRedemption = `-- name: GetWSTicketForRedemption :one
+SELECT id, user_id, tenant_id, used, created_at, expires_at FROM ws_tickets
+WHERE id = $1 AND used = false AND expires_at > now()
+`
+
+// Resolves a ticket by ID when the Valkey cache misses, returning the
+// user_id and tenant_id needed to upgrade the WebSocket connection.
+func (q *Queries) GetWSTicketForRedemption(ctx context.Context, id pgtype.UUID) (WsTicket, error) {
+	row := q.db.QueryRow(ctx, getWSTicketForRedemption, id)
+	var i WsTicket
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.TenantID,
+		&i.Used,
+		&i.CreatedAt,
+		&i.ExpiresAt,
+	)
+	return i, err
 }
 
 const incrementUnreadCount = `-- name: IncrementUnreadCount :exec
@@ -410,33 +529,41 @@ func (q *Queries) IncrementUnreadCount(ctx context.Context, arg IncrementUnreadC
 }
 
 const insertDMMessage = `-- name: InsertDMMessage :exec
-INSERT INTO dm_messages (conversation_id, sender_id, body)
-VALUES ($1, $2, $3)
+INSERT INTO dm_messages (conversation_id, sender_id, tenant_id, body)
+VALUES ($1, $2, $3, $4)
 `
 
 type InsertDMMessageParams struct {
 	ConversationID pgtype.UUID `json:"conversation_id"`
 	SenderID       pgtype.UUID `json:"sender_id"`
+	TenantID       pgtype.UUID `json:"tenant_id"`
 	Body           string      `json:"body"`
 }
 
 func (q *Queries) InsertDMMessage(ctx context.Context, arg InsertDMMessageParams) error {
-	_, err := q.db.Exec(ctx, insertDMMessage, arg.ConversationID, arg.SenderID, arg.Body)
+	_, err := q.db.Exec(ctx, insertDMMessage,
+		arg.ConversationID,
+		arg.SenderID,
+		arg.TenantID,
+		arg.Body,
+	)
 	return err
 }
 
 const markMessagesRead = `-- name: MarkMessagesRead :exec
 UPDATE dm_messages SET read_at = now()
-WHERE conversation_id = $1 AND sender_id != $2 AND read_at IS NULL
+WHERE conversation_id = $1 AND tenant_id = $2
+  AND sender_id != $3 AND read_at IS NULL
 `
 
 type MarkMessagesReadParams struct {
 	ConversationID pgtype.UUID `json:"conversation_id"`
+	TenantID       pgtype.UUID `json:"tenant_id"`
 	UserID         pgtype.UUID `json:"user_id"`
 }
 
 func (q *Queries) MarkMessagesRead(ctx context.Context, arg MarkMessagesReadParams) error {
-	_, err := q.db.Exec(ctx, markMessagesRead, arg.ConversationID, arg.UserID)
+	_, err := q.db.Exec(ctx, markMessagesRead, arg.ConversationID, arg.TenantID, arg.UserID)
 	return err
 }
 
@@ -505,7 +632,8 @@ func (q *Queries) UpdateConversationLastMessage(ctx context.Context, arg UpdateC
 }
 
 const updateMessageRequestStatus = `-- name: UpdateMessageRequestStatus :exec
-UPDATE dm_message_requests SET status = $1 WHERE conversation_id = $2
+UPDATE dm_requests SET status = $1, resolved_at = now()
+WHERE conversation_id = $2
 `
 
 type UpdateMessageRequestStatusParams struct {
@@ -519,34 +647,36 @@ func (q *Queries) UpdateMessageRequestStatus(ctx context.Context, arg UpdateMess
 }
 
 const upsertUserDMPrivacy = `-- name: UpsertUserDMPrivacy :exec
-INSERT INTO user_dm_settings (user_id, dm_privacy, updated_at)
-VALUES ($1, $2, now())
-ON CONFLICT (user_id) DO UPDATE SET dm_privacy = EXCLUDED.dm_privacy, updated_at = now()
+INSERT INTO user_dm_settings (user_id, tenant_id, dm_privacy, updated_at)
+VALUES ($1, $2, $3, now())
+ON CONFLICT (tenant_id, user_id) DO UPDATE SET dm_privacy = EXCLUDED.dm_privacy, updated_at = now()
 `
 
 type UpsertUserDMPrivacyParams struct {
 	UserID    pgtype.UUID `json:"user_id"`
+	TenantID  pgtype.UUID `json:"tenant_id"`
 	DmPrivacy string      `json:"dm_privacy"`
 }
 
 func (q *Queries) UpsertUserDMPrivacy(ctx context.Context, arg UpsertUserDMPrivacyParams) error {
-	_, err := q.db.Exec(ctx, upsertUserDMPrivacy, arg.UserID, arg.DmPrivacy)
+	_, err := q.db.Exec(ctx, upsertUserDMPrivacy, arg.UserID, arg.TenantID, arg.DmPrivacy)
 	return err
 }
 
 const useWSTicket = `-- name: UseWSTicket :one
 UPDATE ws_tickets SET used = true
-WHERE id = $1 AND user_id = $2 AND used = false AND expires_at > now()
+WHERE id = $1 AND user_id = $2 AND tenant_id = $3 AND used = false AND expires_at > now()
 RETURNING id, user_id, tenant_id, used, created_at, expires_at
 `
 
 type UseWSTicketParams struct {
-	ID     pgtype.UUID `json:"id"`
-	UserID pgtype.UUID `json:"user_id"`
+	ID       pgtype.UUID `json:"id"`
+	UserID   pgtype.UUID `json:"user_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
 }
 
 func (q *Queries) UseWSTicket(ctx context.Context, arg UseWSTicketParams) (WsTicket, error) {
-	row := q.db.QueryRow(ctx, useWSTicket, arg.ID, arg.UserID)
+	row := q.db.QueryRow(ctx, useWSTicket, arg.ID, arg.UserID, arg.TenantID)
 	var i WsTicket
 	err := row.Scan(
 		&i.ID,

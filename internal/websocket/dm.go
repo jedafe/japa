@@ -46,12 +46,22 @@ func (s *Store) CreateWSTicket(ctx context.Context, userID, tenantID pgtype.UUID
 	})
 }
 
-// UseWSTicket marks a ticket as used and returns it if valid.
-func (s *Store) UseWSTicket(ctx context.Context, id, userID pgtype.UUID) (gen.WsTicket, error) {
+// UseWSTicket marks a ticket as used and returns it if valid. The tenant_id
+// is validated alongside the user_id so a ticket minted in tenant A cannot be
+// consumed in tenant B context (Rule 4: tenant-scoped validation).
+func (s *Store) UseWSTicket(ctx context.Context, id, userID, tenantID pgtype.UUID) (gen.WsTicket, error) {
 	return s.write.UseWSTicket(ctx, gen.UseWSTicketParams{
-		ID:     id,
-		UserID: userID,
+		ID:       id,
+		UserID:   userID,
+		TenantID: tenantID,
 	})
+}
+
+// GetWSTicketForRedemption resolves a ticket by ID when the Valkey cache
+// misses, returning the user_id and tenant_id needed to upgrade the WebSocket
+// connection.
+func (s *Store) GetWSTicketForRedemption(ctx context.Context, id pgtype.UUID) (gen.WsTicket, error) {
+	return s.read.GetWSTicketForRedemption(ctx, id)
 }
 
 // GetOrCreateConversation gets existing or creates new DM conversation.
@@ -102,10 +112,11 @@ func (s *DMStore) GetUserConversations(ctx context.Context, tenantID, userID pgt
 }
 
 // InsertDMMessage inserts a new message into a conversation.
-func (s *DMStore) InsertDMMessage(ctx context.Context, conversationID, senderID pgtype.UUID, body string) error {
+func (s *DMStore) InsertDMMessage(ctx context.Context, tenantID, conversationID, senderID pgtype.UUID, body string) error {
 	return s.write.InsertDMMessage(ctx, gen.InsertDMMessageParams{
 		ConversationID: conversationID,
 		SenderID:       senderID,
+		TenantID:       tenantID,
 		Body:           body,
 	})
 }
@@ -129,9 +140,10 @@ func (s *DMStore) GetConversationMessages(ctx context.Context, tenantID, convers
 }
 
 // MarkMessagesRead marks all unread messages from other participants as read.
-func (s *DMStore) MarkMessagesRead(ctx context.Context, conversationID, userID pgtype.UUID) error {
+func (s *DMStore) MarkMessagesRead(ctx context.Context, tenantID, conversationID, userID pgtype.UUID) error {
 	return s.write.MarkMessagesRead(ctx, gen.MarkMessagesReadParams{
 		ConversationID: conversationID,
+		TenantID:       tenantID,
 		UserID:         userID,
 	})
 }
@@ -162,13 +174,17 @@ func (s *DMStore) ResetUnreadCount(ctx context.Context, conversationID, userID p
 }
 
 // GetMessageRequest returns a message request for a conversation.
-func (s *DMStore) GetMessageRequest(ctx context.Context, conversationID pgtype.UUID) (gen.DmMessageRequest, error) {
+func (s *DMStore) GetMessageRequest(ctx context.Context, conversationID pgtype.UUID) (gen.DmRequest, error) {
 	return s.read.GetMessageRequest(ctx, conversationID)
 }
 
 // CreateMessageRequest creates a pending message request.
-func (s *DMStore) CreateMessageRequest(ctx context.Context, conversationID pgtype.UUID) error {
-	return s.write.CreateMessageRequest(ctx, conversationID)
+func (s *DMStore) CreateMessageRequest(ctx context.Context, tenantID, conversationID pgtype.UUID, previewMessage string) error {
+	return s.write.CreateMessageRequest(ctx, gen.CreateMessageRequestParams{
+		TenantID:       tenantID,
+		ConversationID: conversationID,
+		PreviewMessage: previewMessage,
+	})
 }
 
 // UpdateMessageRequestStatus updates the status of a message request.
@@ -179,9 +195,30 @@ func (s *DMStore) UpdateMessageRequestStatus(ctx context.Context, conversationID
 	})
 }
 
+// GetPendingMessageRequests returns pending DM requests for a recipient.
+func (s *DMStore) GetPendingMessageRequests(ctx context.Context, tenantID, recipientID pgtype.UUID, limit, offset int32) ([]gen.GetPendingMessageRequestsRow, error) {
+	if limit <= 0 || limit > MaxPageSize {
+		limit = DefaultPageSize
+	}
+
+	if offset < 0 {
+		offset = 0
+	}
+
+	return s.read.GetPendingMessageRequests(ctx, gen.GetPendingMessageRequestsParams{
+		TenantID:   tenantID,
+		RecipientID: recipientID,
+		PageLimit:  limit,
+		PageOffset: offset,
+	})
+}
+
 // GetUserDMPrivacy returns the DM privacy setting for a user.
-func (s *DMStore) GetUserDMPrivacy(ctx context.Context, userID pgtype.UUID) (string, error) {
-	return s.read.GetUserDMPrivacy(ctx, userID)
+func (s *DMStore) GetUserDMPrivacy(ctx context.Context, tenantID, userID pgtype.UUID) (string, error) {
+	return s.read.GetUserDMPrivacy(ctx, gen.GetUserDMPrivacyParams{
+		UserID:   userID,
+		TenantID: tenantID,
+	})
 }
 
 // IsBlocked returns true if either user has blocked the other (bidirectional
@@ -218,9 +255,10 @@ func (s *DMStore) IsMutualFollow(ctx context.Context, initiatorID, recipientID p
 }
 
 // UpsertUserDMPrivacy creates or updates the DM privacy setting.
-func (s *DMStore) UpsertUserDMPrivacy(ctx context.Context, userID pgtype.UUID, privacy string) error {
+func (s *DMStore) UpsertUserDMPrivacy(ctx context.Context, tenantID, userID pgtype.UUID, privacy string) error {
 	return s.write.UpsertUserDMPrivacy(ctx, gen.UpsertUserDMPrivacyParams{
 		UserID:    userID,
+		TenantID: tenantID,
 		DmPrivacy: privacy,
 	})
 }
@@ -340,7 +378,7 @@ func (s *DMService) GetOrCreateConversation(ctx context.Context, tenantID, sende
 	}
 
 	// Privacy check (Section 48) — only applies to NEW conversations.
-	privacy, err := s.store.GetUserDMPrivacy(ctx, recipientID)
+	privacy, err := s.store.GetUserDMPrivacy(ctx, tenantID, recipientID)
 	if err != nil {
 		return ConversationResult{}, fmt.Errorf("reading recipient dm_privacy: %w", err)
 	}
@@ -391,7 +429,7 @@ func (s *DMService) SendMessage(ctx context.Context, tenantID, conversationID, s
 	}
 
 	// Insert the message.
-	if err := s.store.InsertDMMessage(ctx, conversationID, senderID, body); err != nil {
+	if err := s.store.InsertDMMessage(ctx, tenantID, conversationID, senderID, body); err != nil {
 		return fmt.Errorf("inserting dm message: %w", err)
 	}
 
@@ -516,9 +554,11 @@ func (s *DMService) GetMessages(ctx context.Context, tenantID, conversationID, u
 	return msgs, nil
 }
 
-// MarkAsRead marks messages as read and resets unread count.
-func (s *DMService) MarkAsRead(ctx context.Context, conversationID, userID pgtype.UUID) error {
-	if err := s.store.MarkMessagesRead(ctx, conversationID, userID); err != nil {
+// MarkAsRead marks messages as read and resets unread count. The tenantID
+// scopes the update so a cross-tenant conversation ID cannot be modified
+// (BUG-009, Rule 4: tenant-scoped).
+func (s *DMService) MarkAsRead(ctx context.Context, tenantID, conversationID, userID pgtype.UUID) error {
+	if err := s.store.MarkMessagesRead(ctx, tenantID, conversationID, userID); err != nil {
 		return fmt.Errorf("marking messages read: %w", err)
 	}
 
@@ -553,19 +593,26 @@ func (s *DMService) HandleMessageRequest(ctx context.Context, tenantID, conversa
 	}
 }
 
+// GetPendingMessageRequests returns pending DM requests for a recipient
+// (BUG-003). Filters by recipient_id and status = 'pending' so only
+// actionable requests are returned.
+func (s *DMService) GetPendingMessageRequests(ctx context.Context, tenantID, recipientID pgtype.UUID, limit, offset int32) ([]gen.GetPendingMessageRequestsRow, error) {
+	return s.store.GetPendingMessageRequests(ctx, tenantID, recipientID, limit, offset)
+}
+
 // UpdateDMPrivacy updates user's DM privacy setting.
-func (s *DMService) UpdateDMPrivacy(ctx context.Context, userID pgtype.UUID, privacy string) error {
+func (s *DMService) UpdateDMPrivacy(ctx context.Context, tenantID, userID pgtype.UUID, privacy string) error {
 	switch privacy {
 	case DMPrivacyEveryone, DMPrivacyFollowersOnly, DMPrivacyNobody:
-		return s.store.UpsertUserDMPrivacy(ctx, userID, privacy)
+		return s.store.UpsertUserDMPrivacy(ctx, tenantID, userID, privacy)
 	default:
 		return fmt.Errorf("invalid privacy setting: %s", privacy)
 	}
 }
 
 // GetDMPrivacy returns user's DM privacy setting.
-func (s *DMService) GetDMPrivacy(ctx context.Context, userID pgtype.UUID) (string, error) {
-	privacy, err := s.store.GetUserDMPrivacy(ctx, userID)
+func (s *DMService) GetDMPrivacy(ctx context.Context, tenantID, userID pgtype.UUID) (string, error) {
+	privacy, err := s.store.GetUserDMPrivacy(ctx, tenantID, userID)
 	if err != nil {
 		return DMPrivacyEveryone, nil //nolint:nilerr // intentional: default privacy
 	}

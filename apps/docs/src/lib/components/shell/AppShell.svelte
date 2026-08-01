@@ -5,6 +5,7 @@
 	import TableOfContents from './TableOfContents.svelte';
 	import SearchLauncher from './SearchLauncher.svelte';
 	import UserDropdown from './UserDropdown.svelte';
+	import SidebarWidgetRenderer from './SidebarWidgetRenderer.svelte';
 	import GuestHeader from './GuestHeader.svelte';
 	import GuestFooter from './GuestFooter.svelte';
 	import { t } from '$lib/i18n';
@@ -32,6 +33,9 @@
 		logoUrl?: string;
 		/** Footer menu from GET /menus/docs_footer — ADR-054. */
 		footerMenu?: Menu | null;
+		/** Sidebar widgets from the Sidebar Management System (Section 59, ADR-066).
+		 *  Resolved via /sidebars/resolve and rendered by SidebarWidgetRenderer. */
+		rightSidebarWidgets?: unknown[];
 		children: Snippet;
 	}
 
@@ -47,8 +51,16 @@
 		apiPane,
 		logoUrl = '',
 		footerMenu = null,
+		rightSidebarWidgets = [],
 		children
 	}: Props = $props();
+
+	// Normalize incoming widgets to the SidebarWidget shape.
+	const sidebarWidgets = $derived(
+		(rightSidebarWidgets as { id: string; widget_type: string; label: string; props: Record<string, unknown>; sort_order: number }[]).filter(
+			(w) => w && typeof w.widget_type === 'string'
+		)
+	);
 
 	let mobileNavOpen = $state(false);
 	const navWidth = $derived(
@@ -74,16 +86,81 @@
 		</main>
 	</div>
 {:else if !user}
-	<!-- Guest layout: full-width top nav bar instead of the three-column shell. -->
-	<GuestHeader
-		{logoUrl}
-		{accessibleAudiences}
-		{activeAudience}
-	/>
-	<div class="guest-shell-content">
-		{@render children()}
+	<!-- Guest layout: same 3-column shell as authed users. The DocNavTree
+	     doesn't depend on user; the sidebar shows admin-managed widgets.
+	     UserDropdown is hidden for guests (no avatar to show). -->
+	<div
+		class="shell"
+		style="--current-nav-width: {navWidth}; --current-right-width: {rightWidth};"
+	>
+		<div class="shell-nav">
+			<DocNavTree
+				{nav}
+				{accessibleAudiences}
+				{activeAudience}
+				{collapsed}
+				{onToggleCollapse}
+			/>
+		</div>
+
+		<main class="shell-center">
+			<div class="mobile-topbar">
+				<button
+					type="button"
+					onclick={() => (mobileNavOpen = true)}
+					class="grid h-9 w-9 place-items-center rounded-[var(--radius)] text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
+					aria-label={t('a11y.open_menu')}
+				>
+					<MenuIcon size={20} />
+				</button>
+				<a href="/docs" class="flex items-center gap-2 font-medium text-[var(--color-text)]">
+					<span class="brand-mark">JC</span>
+					<span>{t('app.name')}</span>
+				</a>
+				<div class="ml-auto"><SearchLauncher /></div>
+			</div>
+			{@render children()}
+		</main>
+
+		<div class="shell-sidebar">
+			<div class="sidebar-topbar">
+				<SearchLauncher />
+			</div>
+			<div class="sidebar-body">
+				{#if variant === 'api' && apiPane}
+					{@render apiPane()}
+				{:else if sidebar}
+					{@render sidebar()}
+				{:else}
+					<div class="sidebar-empty"></div>
+				{/if}
+
+				{#each sidebarWidgets as widget (widget.id)}
+					<div class="mt-4">
+						<SidebarWidgetRenderer {widget} />
+					</div>
+				{/each}
+			</div>
+		</div>
 	</div>
-	<GuestFooter menu={footerMenu} />
+
+	{#if mobileNavOpen}
+		<button
+			type="button"
+			class="drawer-backdrop"
+			aria-label={t('a11y.close_menu')}
+			onclick={() => (mobileNavOpen = false)}
+		></button>
+		<div class="drawer">
+			<DocNavTree
+				{nav}
+				{accessibleAudiences}
+				{activeAudience}
+				collapsed={false}
+				onToggleCollapse={() => (mobileNavOpen = false)}
+			/>
+		</div>
+	{/if}
 {:else}
 	<div
 		class="shell"
@@ -134,6 +211,14 @@
 					stays consistent on landing/listing pages. -->
 					<div class="sidebar-empty"></div>
 				{/if}
+
+				<!-- Admin-managed sidebar widgets (Section 59, ADR-066).
+				     Rendered below the route-specific snippet (TOC). -->
+				{#each sidebarWidgets as widget (widget.id)}
+					<div class="mt-4">
+						<SidebarWidgetRenderer {widget} />
+					</div>
+				{/each}
 			</div>
 		</div>
 	</div>

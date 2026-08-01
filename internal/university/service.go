@@ -108,7 +108,7 @@ func (s *Service) UpdateMyProfile(ctx context.Context, tenantID, userID pgtype.U
 		return InstructorProfile{}, err
 	}
 	// AUDIT-BE-VALKEY-007: invalidate the cached profile on mutation.
-	s.invalidateInstructorProfileCache(ctx, userID)
+	s.invalidateInstructorProfileCache(ctx, tenantID, userID)
 	return profileFromRow(row), nil
 }
 
@@ -124,7 +124,7 @@ func (s *Service) ApproveInstructor(ctx context.Context, tenantID, instructorID,
 	}
 	// AUDIT-BE-VALKEY-007: invalidate the cached profile on status change.
 	if row.UserID.Valid {
-		s.invalidateInstructorProfileCache(ctx, row.UserID)
+		s.invalidateInstructorProfileCache(ctx, tenantID, row.UserID)
 	}
 	s.enqueueNotifyInstructorApproved(ctx, tenantID, row.ID)
 	return profileFromRow(row), nil
@@ -138,7 +138,7 @@ func (s *Service) RejectInstructor(ctx context.Context, tenantID, instructorID, 
 	}
 	// AUDIT-BE-VALKEY-007: invalidate the cached profile on status change.
 	if row.UserID.Valid {
-		s.invalidateInstructorProfileCache(ctx, row.UserID)
+		s.invalidateInstructorProfileCache(ctx, tenantID, row.UserID)
 	}
 	return profileFromRow(row), nil
 }
@@ -151,7 +151,7 @@ func (s *Service) SuspendInstructor(ctx context.Context, tenantID, instructorID,
 	}
 	// AUDIT-BE-VALKEY-007: invalidate the cached profile on status change.
 	if row.UserID.Valid {
-		s.invalidateInstructorProfileCache(ctx, row.UserID)
+		s.invalidateInstructorProfileCache(ctx, tenantID, row.UserID)
 	}
 	return profileFromRow(row), nil
 }
@@ -164,7 +164,7 @@ func (s *Service) ReinstateInstructor(ctx context.Context, tenantID, instructorI
 	}
 	// AUDIT-BE-VALKEY-007: invalidate the cached profile on status change.
 	if row.UserID.Valid {
-		s.invalidateInstructorProfileCache(ctx, row.UserID)
+		s.invalidateInstructorProfileCache(ctx, tenantID, row.UserID)
 	}
 	return profileFromRow(row), nil
 }
@@ -181,7 +181,7 @@ func (s *Service) DeleteInstructor(ctx context.Context, tenantID, instructorID p
 	}
 	// AUDIT-BE-VALKEY-007: invalidate the cached profile on deletion.
 	if row.UserID.Valid {
-		s.invalidateInstructorProfileCache(ctx, row.UserID)
+		s.invalidateInstructorProfileCache(ctx, tenantID, row.UserID)
 	}
 	return nil
 }
@@ -257,6 +257,8 @@ func (s *Service) ProcessEnrollment(ctx context.Context, tenantID, userID, track
 	}
 
 	// Idempotency: a paid enrollment is keyed on payment_id.
+	// Pro-stream enrollments have no payment_id, so they are keyed on
+	// (instructor_id, track_id, user_id, source='pro_stream') (BUG-008).
 	if source == "purchase" && paymentID.Valid {
 		already, err := s.store.HasSplitForPayment(ctx, tenantID, paymentID)
 		if err != nil {
@@ -266,6 +268,21 @@ func (s *Service) ProcessEnrollment(ctx context.Context, tenantID, userID, track
 			slog.Info("university: process_enrollment: split already recorded, skipping",
 				"payment_id", paymentID.String())
 			return nil
+		}
+	} else if source == "pro_stream" {
+		already, err := s.store.HasProStreamSplit(ctx, tenantID, track.InstructorID, trackID, userID)
+		if err != nil {
+			return fmt.Errorf("university: pro_stream idempotency check: %w", err)
+		}
+		if already {
+			slog.Info("university: process_enrollment: pro_stream split already recorded, skipping",
+				"track_id", trackID.String(), "user_id", userID.String())
+			return nil
+		}
+		// Read the configured per-stream rate from system_settings (BUG-008).
+		// Setting key: university.pro_stream_rate_kobo (default 100 = 1.00 NGN).
+		if s.settings != nil {
+			grossKobo = int64(s.settings.GetIntOr(ctx, tenantID, "university.pro_stream_rate_kobo", 100))
 		}
 	}
 
@@ -288,7 +305,7 @@ func (s *Service) ProcessEnrollment(ctx context.Context, tenantID, userID, track
 		slog.Warn("university: increment total_enrolled", "track_id", trackID.String(), "error", err)
 	}
 	// AUDIT-BE-VALKEY-008: increment the Valkey enrollment counter too.
-	s.incrementTrackEnrolledCache(ctx, trackID)
+	s.incrementTrackEnrolledCache(ctx, tenantID, trackID)
 
 	// Resolve the creator/platform split percentages.
 	creatorPct, platformPct := s.resolveSplit(ctx, tenantID, track.InstructorID)
@@ -579,14 +596,16 @@ func (s *Service) enqueue(ctx context.Context, taskType string, payload map[stri
 // Valkey cache helpers (AUDIT-BE-VALKEY-007/008/009)
 // ---------------------------------------------------------------------------
 
-// instructorProfileCacheKey builds jc:university:instructor:{user_id}:profile.
-func instructorProfileCacheKey(userID pgtype.UUID) string {
-	return "jc:university:instructor:" + userID.String() + ":profile"
+// instructorProfileCacheKey builds jc:university:{tenant_id}:instructor:{user_id}:profile.
+// Tenant-scoped to prevent cross-tenant data leakage in multi-tenant deployments (BUG-016).
+func instructorProfileCacheKey(tenantID, userID pgtype.UUID) string {
+	return "jc:university:" + tenantID.String() + ":instructor:" + userID.String() + ":profile"
 }
 
-// trackEnrolledCacheKey builds jc:university:track:{track_id}:enrolled.
-func trackEnrolledCacheKey(trackID pgtype.UUID) string {
-	return "jc:university:track:" + trackID.String() + ":enrolled"
+// trackEnrolledCacheKey builds jc:university:{tenant_id}:track:{track_id}:enrolled.
+// Tenant-scoped to prevent cross-tenant data leakage (BUG-016).
+func trackEnrolledCacheKey(tenantID, trackID pgtype.UUID) string {
+	return "jc:university:" + tenantID.String() + ":track:" + trackID.String() + ":enrolled"
 }
 
 // payoutAccumulatorCacheKey builds jc:university:payout:{tenant_id}:{period}:{instructor_id}.
@@ -599,7 +618,7 @@ func payoutAccumulatorCacheKey(tenantID, instructorID pgtype.UUID, period string
 // AUDIT-BE-VALKEY-007.
 func (s *Service) cachedInstructorProfile(ctx context.Context, tenantID, userID pgtype.UUID) (InstructorProfile, error) {
 	if s.rdb != nil {
-		key := instructorProfileCacheKey(userID)
+		key := instructorProfileCacheKey(tenantID, userID)
 		if cached, err := s.rdb.Get(ctx, key).Bytes(); err == nil && len(cached) > 0 {
 			var p InstructorProfile
 			if json.Unmarshal(cached, &p) == nil {
@@ -615,7 +634,7 @@ func (s *Service) cachedInstructorProfile(ctx context.Context, tenantID, userID 
 	p := profileFromRow(row)
 
 	if s.rdb != nil {
-		key := instructorProfileCacheKey(userID)
+		key := instructorProfileCacheKey(tenantID, userID)
 		if data, err := json.Marshal(p); err == nil {
 			if err := s.rdb.Set(ctx, key, data, instructorProfileTTL).Err(); err != nil {
 				slog.Warn("university: cache instructor profile", "user_id", userID.String(), "error", err)
@@ -627,11 +646,11 @@ func (s *Service) cachedInstructorProfile(ctx context.Context, tenantID, userID 
 
 // invalidateInstructorProfileCache deletes the cached instructor profile.
 // Called on approve/suspend/reinstate/update.
-func (s *Service) invalidateInstructorProfileCache(ctx context.Context, userID pgtype.UUID) {
+func (s *Service) invalidateInstructorProfileCache(ctx context.Context, tenantID, userID pgtype.UUID) {
 	if s.rdb == nil {
 		return
 	}
-	if err := s.rdb.Del(ctx, instructorProfileCacheKey(userID)).Err(); err != nil {
+	if err := s.rdb.Del(ctx, instructorProfileCacheKey(tenantID, userID)).Err(); err != nil {
 		slog.Warn("university: invalidate instructor profile cache", "user_id", userID.String(), "error", err)
 	}
 }
@@ -641,7 +660,7 @@ func (s *Service) invalidateInstructorProfileCache(ctx context.Context, userID p
 // AUDIT-BE-VALKEY-008.
 func (s *Service) cachedTrackEnrolled(ctx context.Context, tenantID, trackID pgtype.UUID) (int32, error) {
 	if s.rdb != nil {
-		key := trackEnrolledCacheKey(trackID)
+		key := trackEnrolledCacheKey(tenantID, trackID)
 		if cached, err := s.rdb.Get(ctx, key).Int(); err == nil {
 			return int32(cached), nil
 		}
@@ -654,7 +673,7 @@ func (s *Service) cachedTrackEnrolled(ctx context.Context, tenantID, trackID pgt
 	count := track.TotalEnrolled
 
 	if s.rdb != nil {
-		key := trackEnrolledCacheKey(trackID)
+		key := trackEnrolledCacheKey(tenantID, trackID)
 		if err := s.rdb.Set(ctx, key, count, trackEnrolledTTL).Err(); err != nil {
 			slog.Warn("university: cache track enrolled", "track_id", trackID.String(), "error", err)
 		}
@@ -664,11 +683,11 @@ func (s *Service) cachedTrackEnrolled(ctx context.Context, tenantID, trackID pgt
 
 // incrementTrackEnrolledCache increments the cached enrollment counter.
 // Called after a successful enrollment. Best-effort; non-fatal.
-func (s *Service) incrementTrackEnrolledCache(ctx context.Context, trackID pgtype.UUID) {
+func (s *Service) incrementTrackEnrolledCache(ctx context.Context, tenantID, trackID pgtype.UUID) {
 	if s.rdb == nil {
 		return
 	}
-	key := trackEnrolledCacheKey(trackID)
+	key := trackEnrolledCacheKey(tenantID, trackID)
 	if err := s.rdb.Incr(ctx, key).Err(); err != nil {
 		// Key may not exist yet — set it from DB on next read. Non-fatal.
 		slog.Warn("university: increment track enrolled cache", "track_id", trackID.String(), "error", err)
@@ -677,11 +696,11 @@ func (s *Service) incrementTrackEnrolledCache(ctx context.Context, trackID pgtyp
 
 // invalidateTrackEnrolledCache deletes the cached enrollment count.
 // Called when the track is deleted or the counter is recounted.
-func (s *Service) invalidateTrackEnrolledCache(ctx context.Context, trackID pgtype.UUID) {
+func (s *Service) invalidateTrackEnrolledCache(ctx context.Context, tenantID, trackID pgtype.UUID) {
 	if s.rdb == nil {
 		return
 	}
-	if err := s.rdb.Del(ctx, trackEnrolledCacheKey(trackID)).Err(); err != nil {
+	if err := s.rdb.Del(ctx, trackEnrolledCacheKey(tenantID, trackID)).Err(); err != nil {
 		slog.Warn("university: invalidate track enrolled cache", "track_id", trackID.String(), "error", err)
 	}
 }
