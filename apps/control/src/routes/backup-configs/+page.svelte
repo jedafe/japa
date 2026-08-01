@@ -32,9 +32,7 @@
 		description: string;
 	}
 
-	let backupTargets = $state<BackupTargetDef[]>([
-		{ key: 'database', label: 'Database', description: 'PostgreSQL full database dump' }
-	]);
+	let backupTargets = $state<BackupTargetDef[]>([]);
 
 	let configs = $state<BackupConfig[]>([]);
 	let loading = $state(true);

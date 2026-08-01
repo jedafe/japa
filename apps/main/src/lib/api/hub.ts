@@ -103,3 +103,4 @@ export const deleteContent = (id: string) => api.delete(`/content/${id}`);
 export const unfollowUser = (id: string) => api.delete(`/users/${id}/follow`);
 export const leaveSpace = (slug: string) => api.delete(`/spaces/${slug}/leave`);
 export const unfollowTag = (slug: string) => api.delete(`/tags/${slug}/follow`);
+export const unblockUser = (id: string) => api.delete(`/users/${id}/block`);

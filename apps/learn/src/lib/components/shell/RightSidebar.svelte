@@ -27,13 +27,19 @@
 		/** Sidebar widgets from the Sidebar Management System (Section 59, ADR-066).
 		 *  Resolved via /sidebars/resolve and rendered by SidebarWidgetRenderer. */
 		rightSidebarWidgets?: unknown[];
+		/** Suppress ad slots — ADR-060: "No ads on the lesson player". */
+		suppressAds?: boolean;
 	}
 
-	let { user, isUniversity = false, sidebar, rightSidebarWidgets = [] }: Props = $props();
+	let { user, isUniversity = false, sidebar, rightSidebarWidgets = [], suppressAds = false }: Props = $props();
 
-	// Normalize incoming widgets to the SidebarWidget shape.
+	// Normalize incoming widgets to the SidebarWidget shape. On the lesson
+	// player, ad_slot widgets are filtered out (ADR-060: no ads on the lesson
+	// player — focused reading/watching).
 	const widgets = $derived(
-		(rightSidebarWidgets as SidebarWidget[]).filter((w) => w && typeof w.widget_type === 'string')
+		(rightSidebarWidgets as SidebarWidget[])
+			.filter((w) => w && typeof w.widget_type === 'string')
+			.filter((w) => !(suppressAds && w.widget_type === 'ad_slot'))
 	);
 
 	// Only show the language toggle when more than one language is enabled.

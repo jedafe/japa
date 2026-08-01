@@ -31,6 +31,7 @@ export interface ListMeta {
 	total?: number;
 	page?: number;
 	limit?: number;
+	total_pages?: number;
 	next_cursor?: string | null;
 }
 
@@ -806,6 +807,21 @@ export interface MeAnalytics {
  * The backend returns the raw gen.Space row. Universities are spaces
  * with a university space_type; /universities returns the same shape.
  * ------------------------------------------------------------------ */
+
+/** GET /space-types — space type definition row. */
+export interface SpaceType {
+	id: string;
+	tenant_id: string;
+	name: string;
+	slug: string;
+	description: string | null;
+	icon: string | null;
+	field_group_id: string | null;
+	is_system: boolean;
+	is_university: boolean;
+	created_at: string;
+	updated_at: string;
+}
 
 /** GET /spaces/{slug} `space` field — full gen.Space row. */
 export interface Space {

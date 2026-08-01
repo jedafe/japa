@@ -22,7 +22,7 @@
 			<p class="text-sm text-[var(--color-muted)]">{t('org_admin.list_subtitle')}</p>
 		</div>
 		<a
-			href="/organizations/new"
+			href="/org/new"
 			class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-sm text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
 		>
 			<Plus class="h-4 w-4" />

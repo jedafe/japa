@@ -277,6 +277,48 @@ WHERE u.tenant_id = @tenant_id
   AND u.status = 'active'
 ORDER BY u.id;
 
+-- name: ListPublicUsers :many
+-- Public user directory at GET /users — PII-safe (no email/status/last_login/groups).
+-- Only active users who have not opted out of search indexability. Search filters
+-- by username or display_name. profile_type filter is optional (empty = all).
+-- Ordered by follower_count DESC then created_at DESC so the directory surfaces
+-- prominent users first.
+-- Ref: japaconnect-engineering/sections/02-authentication-sessions.md
+--      japaconnect-engineering/sections/19-privacy-gdpr.md (search_indexable opt-out)
+SELECT u.id AS user_id,
+       u.username,
+       u.profile_type,
+       u.follower_count,
+       up.display_name,
+       up.avatar_url,
+       up.bio,
+       up.cover_url,
+       COALESCE(up.created_at, u.created_at) AS created_at,
+       (SELECT COUNT(*)::int
+          FROM follows f
+         WHERE f.tenant_id = u.tenant_id AND f.follower_id = u.id) AS following_count
+FROM users u
+LEFT JOIN user_profiles up ON up.user_id = u.id AND up.tenant_id = u.tenant_id
+LEFT JOIN user_privacy_settings ups ON ups.user_id = u.id AND ups.tenant_id = u.tenant_id
+WHERE u.tenant_id = @tenant_id
+  AND u.status = 'active'
+  AND COALESCE(ups.search_indexable, true) = true
+  AND (@search::text = '' OR u.username ILIKE '%' || @search || '%' OR up.display_name ILIKE '%' || @search || '%')
+  AND (@profile_type::text = '' OR u.profile_type = @profile_type)
+ORDER BY u.follower_count DESC NULLS LAST, u.created_at DESC
+LIMIT @page_limit OFFSET @page_offset;
+
+-- name: CountPublicUsers :one
+SELECT COUNT(*)::int AS count
+FROM users u
+LEFT JOIN user_profiles up ON up.user_id = u.id AND up.tenant_id = u.tenant_id
+LEFT JOIN user_privacy_settings ups ON ups.user_id = u.id AND ups.tenant_id = u.tenant_id
+WHERE u.tenant_id = @tenant_id
+  AND u.status = 'active'
+  AND COALESCE(ups.search_indexable, true) = true
+  AND (@search::text = '' OR u.username ILIKE '%' || @search || '%' OR up.display_name ILIKE '%' || @search || '%')
+  AND (@profile_type::text = '' OR u.profile_type = @profile_type);
+
 -- name: ActiveUserExistsByID :one
 -- Existence check for the public profile gate: is there an ACTIVE user with
 -- this id in this tenant? Non-active (banned/suspended/deleted) or missing → false.

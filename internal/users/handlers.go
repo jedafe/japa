@@ -216,6 +216,44 @@ func (h *Handlers) ListUsers(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"data": result})
 }
 
+// ListPublicUsers handles GET /api/v1/users — public, tenant-scoped, PII-safe.
+// Returns active, search-indexable users with follower/following counts. No
+// email, status, last_login_at, or groups are exposed (Section 19 / ADR-014).
+// Query params: q (search by username or display_name), profile_type (optional
+// filter: personal/business/organisation), page_size (default 20, max 100),
+// page_offset (default 0). Returns {data: items, meta: {total, page, total_pages}}.
+// Ref: japaconnect-engineering/sections/02-authentication-sessions.md
+//      japaconnect-engineering/sections/19-privacy-gdpr.md (search_indexable opt-out)
+func (h *Handlers) ListPublicUsers(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	limit := parsePageSize(r)
+	offset := parsePageOffset(r)
+	search := strings.TrimSpace(r.URL.Query().Get("q"))
+	if search == "" {
+		search = strings.TrimSpace(r.URL.Query().Get("search"))
+	}
+	profileType := strings.TrimSpace(r.URL.Query().Get("profile_type"))
+
+	result, err := h.Service.ListPublicUsers(r.Context(), tenantID, search, profileType, limit, offset)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data": result.Items,
+		"meta": map[string]any{
+			"total":       result.Total,
+			"page":        result.Page,
+			"total_pages": result.TotalPages,
+		},
+	})
+}
+
 // UserModerationConfig is the API payload returned by
 // GET /admin/users/config. It surfaces the platform's valid user statuses,
 // profile types, violation types, restriction operations, and restriction

@@ -103,6 +103,57 @@ func FromContext(ctx context.Context) *RBAC {
 	return r
 }
 
+// OptionalPermission is middleware that checks if the authenticated user has
+// a specific permission, but allows unauthenticated (guest) requests to pass
+// through. This is used for public directory pages (GET /users, GET /spaces,
+// GET /tags, GET /organizations) where guests and authed users with the
+// permission may view the page, but authed users whose groups have had the
+// permission revoked are denied (403). Must be used after OptionalAuth.
+//
+// Behavior:
+//   - Guest (no user in context): allowed (preserves public/SEO access)
+//   - Authed user with permission: allowed
+//   - Authed user without permission: 403 forbidden
+//   - Super admin: always allowed
+//
+// Usage:
+//
+//	r.With(auth.OptionalAuth(kr, vk), rbac.OptionalPermission(rbacResolver, "directory.users.view")).
+//	    Get("/users", handler)
+//
+// Ref: japaconnect-engineering/sections/03-rbac.md (Directory visibility nodes)
+func OptionalPermission(resolver *RBAC, permKey string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			user := auth.FromContext(r.Context())
+			// Guests pass through — the directory is public for SEO and
+			// anonymous browsing. The permission only gates authed users
+			// whose groups have had the node revoked.
+			if user == nil {
+				next.ServeHTTP(w, r)
+				return
+			}
+
+			// Super admins bypass all permission checks.
+			if resolver.IsSuperAdmin(r.Context(), user.UserID, user.TenantID) {
+				ctx := context.WithValue(r.Context(), ResolverKey, resolver)
+				next.ServeHTTP(w, r.WithContext(ctx))
+				return
+			}
+
+			if !resolver.HasPermission(r.Context(), user.UserID, user.TenantID, permKey) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusForbidden)
+				_, _ = w.Write([]byte(`{"error":{"code":"forbidden","message":"You do not have permission to view this directory"}}`))
+				return
+			}
+
+			ctx := context.WithValue(r.Context(), ResolverKey, resolver)
+			next.ServeHTTP(w, r.WithContext(ctx))
+		})
+	}
+}
+
 // SpaceIDContextKey is the context key under which a resolved space's UUID
 // is stored by the spaces.SpaceResolver middleware. The rbac package reads
 // this to dynamically resolve space-scoped permissions (RBAC-001).

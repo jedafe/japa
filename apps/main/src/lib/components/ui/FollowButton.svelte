@@ -37,13 +37,16 @@
 	let following = $state(untrack(() => initiallyFollowing));
 	let pending = $state(false);
 
-	/** Resolve the follow endpoint base path for the entity type. */
+	/** Resolve the follow endpoint base path for the entity type.
+	 *  Org and user follow routes are keyed by UUID ({id}); space and tag
+	 *  follow routes are keyed by slug ({slug}). Sending the wrong identifier
+	 *  type causes a 400 invalid_id from the backend. */
 	function followPath(): string {
 		switch (entityType) {
 			case 'user':
 				return `/users/${entityId}/follow`;
 			case 'organization':
-				return `/organizations/${entitySlug ?? entityId}/follow`;
+				return `/organizations/${entityId}/follow`;
 			case 'profile':
 				return `/profiles/${entityId}/follow`;
 			case 'space':
