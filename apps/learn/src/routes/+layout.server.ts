@@ -25,11 +25,12 @@ export const load: LayoutServerLoad = async (event) => {
 	}
 
 	// Navigation menu — ADR-054 cross-app menu system. The Learn nav slug is
-	// `learn_nav` (Explore · My Learning · Paths · Certificates · Bookmarks).
-	// Degrades to null if unseeded; the LeftNav renders nothing in that case.
+	// `learn_sidebar` (seeded by migration 000213 — Explore · My Learning ·
+	// Certificates · Bookmarks · Instructor Dashboard). Degrades to null if
+	// unseeded; the LeftNav renders nothing in that case.
 	let menu: Menu | null = null;
 	try {
-		menu = await apiGet<Menu>(ctx, '/menus/learn_nav');
+		menu = await apiGet<Menu>(ctx, '/menus/learn_sidebar');
 	} catch {
 		menu = null;
 	}

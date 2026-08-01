@@ -8,8 +8,10 @@ import { loginUrl } from '$lib/appOrigins';
  */
 export const load: PageServerLoad = async (event) => {
 	if (!event.locals.user) {
-		// Login lives on the Main app (shared jc_token cookie).
-		throw redirect(302, loginUrl('/dashboard/instructor/apply'));
+		// Login lives on the Main app (shared jc_token cookie). The redirect
+		// must point back to THIS Learn app (event.url.origin), not the Main
+		// app, since /dashboard/instructor/apply only exists on Learn.
+		throw redirect(302, loginUrl(`${event.url.origin}/dashboard/instructor/apply`));
 	}
 	return {};
 };

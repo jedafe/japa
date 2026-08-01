@@ -320,9 +320,9 @@ func (h *Handlers) DeleteSpaceType(w http.ResponseWriter, r *http.Request) {
 // ---------------------------------------------------------------------------
 
 // ListSpaces handles GET /api/v1/spaces. Optional query params filter the
-// result set: level (by hierarchy level), type (by space_type_id), and
-// parent (by parent_id). With no filters, all spaces for the tenant are
-// returned.
+// result set: q (search by name/slug), level (by hierarchy level), type (by
+// space_type_id), parent (by parent_id). page_size/page_offset paginate the
+// result. With no filters, all visible spaces for the tenant are returned.
 func (h *Handlers) ListSpaces(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -338,9 +338,9 @@ func (h *Handlers) ListSpaces(w http.ResponseWriter, r *http.Request) {
 	}
 
 	q := r.URL.Query()
+	search := strings.TrimSpace(q.Get("q"))
 
 	var spaces []gen.Space
-
 	var err error
 
 	switch {
@@ -352,7 +352,6 @@ func (h *Handlers) ListSpaces(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, "invalid_id", "Invalid type filter format")
 			return
 		}
-
 		spaces, err = h.Service.ListSpacesByType(r.Context(), tenantID, spaceTypeID)
 	case q.Get("parent") != "":
 		var parentID pgtype.UUID
@@ -360,7 +359,6 @@ func (h *Handlers) ListSpaces(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, "invalid_id", "Invalid parent filter format")
 			return
 		}
-
 		spaces, err = h.Service.ListChildSpaces(r.Context(), tenantID, parentID)
 	default:
 		spaces, err = h.Service.ListSpaces(r.Context(), tenantID, viewerUserID)
@@ -371,7 +369,46 @@ func (h *Handlers) ListSpaces(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": spaces})
+	// Apply search filter (by name or slug) if provided.
+	if search != "" {
+		filtered := make([]gen.Space, 0, len(spaces))
+		for _, s := range spaces {
+			if strings.Contains(strings.ToLower(s.Name), strings.ToLower(search)) ||
+				strings.Contains(strings.ToLower(s.Slug), strings.ToLower(search)) {
+				filtered = append(filtered, s)
+			}
+		}
+		spaces = filtered
+	}
+
+	total := int32(len(spaces))
+
+	// Apply pagination.
+	limit := parsePageSize(r)
+	offset := parsePageSizeOffset(r)
+	if offset >= total {
+		spaces = []gen.Space{}
+	} else {
+		end := offset + limit
+		if end > total {
+			end = total
+		}
+		spaces = spaces[offset:end]
+	}
+
+	totalPages := total / limit
+	if total%limit > 0 {
+		totalPages++
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data": spaces,
+		"meta": map[string]any{
+			"total":       total,
+			"page":        offset / limit,
+			"total_pages": totalPages,
+		},
+	})
 }
 
 // AdminListSpaces handles GET /api/v1/admin/spaces — paginated spaces for the

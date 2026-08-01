@@ -32,6 +32,31 @@ func (q *Queries) ActiveUserExistsByID(ctx context.Context, arg ActiveUserExists
 	return exists, err
 }
 
+const countPublicUsers = `-- name: CountPublicUsers :one
+SELECT COUNT(*)::int AS count
+FROM users u
+LEFT JOIN user_profiles up ON up.user_id = u.id AND up.tenant_id = u.tenant_id
+LEFT JOIN user_privacy_settings ups ON ups.user_id = u.id AND ups.tenant_id = u.tenant_id
+WHERE u.tenant_id = $1
+  AND u.status = 'active'
+  AND COALESCE(ups.search_indexable, true) = true
+  AND ($2::text = '' OR u.username ILIKE '%' || $2 || '%' OR up.display_name ILIKE '%' || $2 || '%')
+  AND ($3::text = '' OR u.profile_type = $3)
+`
+
+type CountPublicUsersParams struct {
+	TenantID    pgtype.UUID `json:"tenant_id"`
+	Search      string      `json:"search"`
+	ProfileType string      `json:"profile_type"`
+}
+
+func (q *Queries) CountPublicUsers(ctx context.Context, arg CountPublicUsersParams) (int32, error) {
+	row := q.db.QueryRow(ctx, countPublicUsers, arg.TenantID, arg.Search, arg.ProfileType)
+	var count int32
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countUserActivity = `-- name: CountUserActivity :one
 SELECT (SELECT count(*) FROM contents c
         WHERE c.tenant_id = $1 AND c.author_id = $2 AND c.deleted_at IS NULL)
@@ -892,6 +917,97 @@ func (q *Queries) ListOAuthAccounts(ctx context.Context, arg ListOAuthAccountsPa
 			&i.Provider,
 			&i.ProviderUserID,
 			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listPublicUsers = `-- name: ListPublicUsers :many
+SELECT u.id AS user_id,
+       u.username,
+       u.profile_type,
+       u.follower_count,
+       up.display_name,
+       up.avatar_url,
+       up.bio,
+       up.cover_url,
+       COALESCE(up.created_at, u.created_at) AS created_at,
+       (SELECT COUNT(*)::int
+          FROM follows f
+         WHERE f.tenant_id = u.tenant_id AND f.follower_id = u.id) AS following_count
+FROM users u
+LEFT JOIN user_profiles up ON up.user_id = u.id AND up.tenant_id = u.tenant_id
+LEFT JOIN user_privacy_settings ups ON ups.user_id = u.id AND ups.tenant_id = u.tenant_id
+WHERE u.tenant_id = $1
+  AND u.status = 'active'
+  AND COALESCE(ups.search_indexable, true) = true
+  AND ($2::text = '' OR u.username ILIKE '%' || $2 || '%' OR up.display_name ILIKE '%' || $2 || '%')
+  AND ($3::text = '' OR u.profile_type = $3)
+ORDER BY u.follower_count DESC NULLS LAST, u.created_at DESC
+LIMIT $5 OFFSET $4
+`
+
+type ListPublicUsersParams struct {
+	TenantID    pgtype.UUID `json:"tenant_id"`
+	Search      string      `json:"search"`
+	ProfileType string      `json:"profile_type"`
+	PageOffset  int32       `json:"page_offset"`
+	PageLimit   int32       `json:"page_limit"`
+}
+
+type ListPublicUsersRow struct {
+	UserID         pgtype.UUID        `json:"user_id"`
+	Username       string             `json:"username"`
+	ProfileType    string             `json:"profile_type"`
+	FollowerCount  int32              `json:"follower_count"`
+	DisplayName    *string            `json:"display_name"`
+	AvatarUrl      *string            `json:"avatar_url"`
+	Bio            *string            `json:"bio"`
+	CoverUrl       *string            `json:"cover_url"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	FollowingCount int32              `json:"following_count"`
+}
+
+// Public user directory at GET /users — PII-safe (no email/status/last_login/groups).
+// Only active users who have not opted out of search indexability. Search filters
+// by username or display_name. profile_type filter is optional (empty = all).
+// Ordered by follower_count DESC then created_at DESC so the directory surfaces
+// prominent users first.
+// Ref: japaconnect-engineering/sections/02-authentication-sessions.md
+//
+//	japaconnect-engineering/sections/19-privacy-gdpr.md (search_indexable opt-out)
+func (q *Queries) ListPublicUsers(ctx context.Context, arg ListPublicUsersParams) ([]ListPublicUsersRow, error) {
+	rows, err := q.db.Query(ctx, listPublicUsers,
+		arg.TenantID,
+		arg.Search,
+		arg.ProfileType,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListPublicUsersRow
+	for rows.Next() {
+		var i ListPublicUsersRow
+		if err := rows.Scan(
+			&i.UserID,
+			&i.Username,
+			&i.ProfileType,
+			&i.FollowerCount,
+			&i.DisplayName,
+			&i.AvatarUrl,
+			&i.Bio,
+			&i.CoverUrl,
+			&i.CreatedAt,
+			&i.FollowingCount,
 		); err != nil {
 			return nil, err
 		}

@@ -316,6 +316,9 @@ type CatalogTrack struct {
 	Slug           string  `json:"slug"`
 	Description    *string `json:"description,omitempty"`
 	Difficulty     string  `json:"difficulty"`
+	/** Level is an alias for Difficulty, matching the frontend TrackSummary.level
+	 *  contract (ADR-060). Always equal to Difficulty. */
+	Level          string  `json:"level"`
 	PriceKobo      *int64  `json:"price_kobo,omitempty"`
 	Currency       string  `json:"currency"`
 	Category       *string `json:"category,omitempty"`
@@ -329,7 +332,7 @@ type CatalogTrack struct {
 func catalogTrackFromRow(r gen.ListUniversityCatalogRow) CatalogTrack {
 	c := CatalogTrack{
 		ID: r.ID.String(), Title: r.Title, Slug: r.Slug, Description: r.Description,
-		Difficulty: r.Difficulty, Currency: r.Currency, Language: r.Language,
+		Difficulty: r.Difficulty, Level: r.Difficulty, Currency: r.Currency, Language: r.Language,
 		TotalEnrolled: r.TotalEnrolled,
 	}
 	if r.PriceKobo != nil {
@@ -378,6 +381,53 @@ func (s *Store) GetCatalogTrackBySlug(ctx context.Context, tenantID pgtype.UUID,
 	return s.read.GetUniversityTrackBySlug(ctx, gen.GetUniversityTrackBySlugParams{
 		TenantID: tenantID, Slug: slug,
 	})
+}
+
+// CatalogTrackDetail is the flat DTO returned by GET /learn/university/catalog/{slug}.
+// It mirrors gen.GetUniversityTrackBySlugRow but adds a `level` JSON field as an
+// alias for `difficulty`, matching the frontend TrackDetail.level contract
+// (ADR-060). The sqlc-generated row type cannot carry extra fields, so we map
+// it through this struct in the handler.
+type CatalogTrackDetail struct {
+	ID                      pgtype.UUID        `json:"id"`
+	TenantID                pgtype.UUID        `json:"tenant_id"`
+	Title                   string             `json:"title"`
+	Slug                    string             `json:"slug"`
+	Description             *string            `json:"description,omitempty"`
+	Difficulty              string             `json:"difficulty"`
+	Level                   string             `json:"level"`
+	CoverMediaID            pgtype.UUID        `json:"cover_media_id,omitempty"`
+	InstructorID            pgtype.UUID        `json:"instructor_id,omitempty"`
+	PriceKobo               *int64             `json:"price_kobo,omitempty"`
+	Currency                string             `json:"currency"`
+	Category                *string            `json:"category,omitempty"`
+	Language                string             `json:"language"`
+	TotalEnrolled           int32              `json:"total_enrolled"`
+	IsPublished             bool               `json:"is_published"`
+	IsPublishedToUniversity bool               `json:"is_published_to_university"`
+	CreatedAt               pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt               pgtype.Timestamptz `json:"updated_at"`
+	InstructorName          *string            `json:"instructor_name,omitempty"`
+	InstructorHeadline      *string            `json:"instructor_headline,omitempty"`
+	InstructorTier          *string            `json:"instructor_tier,omitempty"`
+	AvgRating               pgtype.Numeric     `json:"avg_rating"`
+	ReviewCount             int32              `json:"review_count"`
+}
+
+// CatalogTrackDetailFromRow maps the sqlc row to the response DTO, setting
+// Level = Difficulty for the frontend contract.
+func CatalogTrackDetailFromRow(r gen.GetUniversityTrackBySlugRow) CatalogTrackDetail {
+	return CatalogTrackDetail{
+		ID: r.ID, TenantID: r.TenantID, Title: r.Title, Slug: r.Slug,
+		Description: r.Description, Difficulty: r.Difficulty, Level: r.Difficulty,
+		CoverMediaID: r.CoverMediaID, InstructorID: r.InstructorID,
+		PriceKobo: r.PriceKobo, Currency: r.Currency, Category: r.Category,
+		Language: r.Language, TotalEnrolled: r.TotalEnrolled,
+		IsPublished: r.IsPublished, IsPublishedToUniversity: r.IsPublishedToUniversity,
+		CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
+		InstructorName: r.InstructorName, InstructorHeadline: r.InstructorHeadline,
+		InstructorTier: r.InstructorTier, AvgRating: r.AvgRating, ReviewCount: r.ReviewCount,
+	}
 }
 
 // GetTrackByID returns a track by ID (any publish state).
