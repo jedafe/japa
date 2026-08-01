@@ -56,11 +56,17 @@ export class ComposerState {
 	}
 
 	setTags(next: string[]): void {
+		// Skip reconciliation when the tag list hasn't changed — onMount and
+		// the $effect both call setTags with the same value, and without this
+		// guard two concurrent #reconcileTags calls race to create the same
+		// tag, producing a spurious 400 on the duplicate insert.
+		if (this.desiredTags.length === next.length && this.desiredTags.every((t, i) => t === next[i])) return;
 		this.desiredTags = next;
 		if (this.contentId) void this.#reconcileTags();
 	}
 
 	setSeries(id: string | null): void {
+		if (this.desiredSeries === id) return;
 		this.desiredSeries = id;
 		if (this.contentId) void this.#reconcileSeries();
 	}

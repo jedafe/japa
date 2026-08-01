@@ -111,6 +111,7 @@
 		'/forms': 'forms.create',
 		'/onboarding': 'admin.settings.view',
 		'/custom-fields': 'custom_fields.group.view',
+		'/guide-categories': 'custom_fields.group.view',
 		'/widgets': 'pagebuilder.blocks.manage',
 		'/jsonld-templates': 'content.jsonld.manage',
 		'/page-builder': 'pagebuilder.blocks.manage',

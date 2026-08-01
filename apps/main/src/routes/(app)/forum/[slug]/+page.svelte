@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { page } from '$app/state';
+	import { goto } from '$app/navigation';
 	import { t } from '$lib/i18n';
 	import { ArrowLeft, CheckCircle2, Eye, MessageSquare, Bookmark, Share2, Flag } from 'lucide-svelte';
 	import { relativeTime } from '$lib/feed/time';
@@ -91,7 +92,7 @@
 	}
 
 	function reportThread() {
-		window.location.href = `/report?entity_type=forum_thread&entity_id=${thread.id}`;
+		goto(`/report?entity_type=forum_thread&entity_id=${thread.id}`);
 	}
 </script>
 

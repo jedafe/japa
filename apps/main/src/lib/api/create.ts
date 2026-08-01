@@ -22,6 +22,7 @@ export interface CreateContentInput {
 	publish_at?: string | null;
 	space_id?: string | null;
 	geo_space_id?: string | null;
+	guide_category?: string | null;
 }
 
 /** Map an HTTP status to a save-failure class (drives retry vs surface behavior). */
@@ -40,10 +41,16 @@ export const publishContent = (id: string) => api.post<ContentRecord>(`/content/
 export const scheduleContent = (id: string, publish_at: string) =>
 	api.post<ContentRecord>(`/content/${id}/schedule`, { publish_at });
 
-/* ---- tags (deferred linkage) ---- */
-export const attachTag = (id: string, tagId: string) =>
-	api.post(`/content/${id}/tags`, { tag_id: tagId });
-export const detachTag = (id: string, tagId: string) => api.delete(`/content/${id}/tags/${tagId}`);
+/* ---- tags (deferred linkage) ----
+ * The composer tracks tags as slugs (from TagInput), not UUIDs. The spec-
+ * compliant POST /content/{id}/tags accepts { tag_slugs: string[] } and
+ * resolves slugs → tag IDs server-side (Section 14). The DELETE endpoint
+ * accepts either a UUID or a slug in the {tagId} path segment (the handler
+ * tries UUID first, then falls back to slug resolution). */
+export const attachTag = (id: string, tagSlug: string) =>
+	api.post(`/content/${id}/tags`, { tag_slugs: [tagSlug] });
+export const detachTag = (id: string, tagSlug: string) =>
+	api.delete(`/content/${id}/tags/${encodeURIComponent(tagSlug)}`);
 
 /* ---- series (deferred linkage; standard form only) ---- */
 export const listSeries = () => api.get<BlogSeries[]>('/blog/series');

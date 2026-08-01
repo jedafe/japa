@@ -93,6 +93,8 @@
 		{ value: 'media', label: 'Media (File Upload)' },
 		{ value: 'platform_embed', label: 'Platform Embed' },
 		{ value: 'reference', label: 'Reference (Link to Entity)' },
+		{ value: 'repeater', label: 'Repeater (Add Multiple Items)' },
+		{ value: 'group', label: 'Group (Visual Container)' },
 	];
 
 	const fieldTypeLabel = (ft: string) => fieldTypes.find((f) => f.value === ft)?.label ?? ft;

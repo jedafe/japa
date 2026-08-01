@@ -269,7 +269,8 @@
 							<option value="draft">{t('app.blog.status_draft', 'Draft')}</option>
 							<option value="published">{t('app.blog.status_published', 'Published')}</option>
 							<option value="in_review">{t('app.blog.status_in_review', 'In Review')}</option>
-							<option value="removed">{t('app.blog.status_removed', 'Removed')}</option>
+							<option value="scheduled">{t('app.blog.status_scheduled', 'Scheduled')}</option>
+						<option value="archived">{t('app.blog.status_archived', 'Archived')}</option>
 						</select>
 					</div>
 					<div>
@@ -302,7 +303,7 @@
 						<XCircle class="mr-2 h-4 w-4" />
 						{t('app.blog.action_unpublish', 'Unpublish')}
 					</Button>
-				{:else if originalStatus === 'removed'}
+				{:else if originalStatus === 'archived'}
 					<Button type="button" variant="outline" onclick={async () => {
 						saving = true;
 						try {

@@ -1,4 +1,4 @@
-import type { ContentTypeMeta } from '$lib/types';
+import type { ContentTypeMeta, GuideCategory } from '$lib/types';
 
 export type FormKind = 'standard' | 'comparison';
 
@@ -10,6 +10,10 @@ export interface TypeEntry {
 	customFieldEntityType: 'content';
 	/** Flag that must be ON for this type to appear; null = always available. */
 	featureFlag: string | null;
+	/** True when this type requires a sub-category selection (e.g. guide). */
+	hasCategory?: boolean;
+	/** Admin-configured sub-categories (loaded from GET /content-types). */
+	categories?: GuideCategory[];
 }
 
 /**
@@ -27,19 +31,13 @@ export const COMPOSER_TYPES: Record<string, Omit<TypeEntry, 'label'>> = {
 		customFieldEntityType: 'content',
 		featureFlag: 'feature.blog'
 	},
-	article: {
-		value: 'article',
-		formKind: 'standard',
-		supportsSeries: true,
-		customFieldEntityType: 'content',
-		featureFlag: null
-	},
 	guide: {
 		value: 'guide',
 		formKind: 'standard',
 		supportsSeries: true,
 		customFieldEntityType: 'content',
-		featureFlag: null
+		featureFlag: null,
+		hasCategory: true
 	},
 	comparison: {
 		value: 'comparison',
@@ -51,7 +49,7 @@ export const COMPOSER_TYPES: Record<string, Omit<TypeEntry, 'label'>> = {
 };
 
 /** The order the selector presents composer types. */
-const COMPOSER_ORDER = ['blog_post', 'article', 'guide', 'comparison'];
+const COMPOSER_ORDER = ['blog_post', 'guide', 'comparison'];
 
 export function resolveType(value: string, backendLabel?: string): TypeEntry {
 	const meta = COMPOSER_TYPES[value] ?? COMPOSER_TYPES.blog_post;
@@ -63,13 +61,21 @@ export function resolveType(value: string, backendLabel?: string): TypeEntry {
  * tenant's feature flags. A gated type is shown only when its flag is truthy;
  * an ungated type (featureFlag === null) is always shown. The label comes
  * from the backend's ContentTypeMeta, not a hardcoded string (Rule 16).
+ * Guide categories are passed through from the backend response.
  */
 export function availableTypes(
 	types: ContentTypeMeta[],
 	flags: Record<string, boolean>
 ): TypeEntry[] {
-	const offered = new Map(types.map((t) => [t.value, t.label]));
+	const offered = new Map(types.map((t) => [t.value, t]));
 	return COMPOSER_ORDER.filter((v) => offered.has(v))
-		.map((v) => ({ ...COMPOSER_TYPES[v], label: offered.get(v) ?? v }))
+		.map((v) => {
+			const meta = offered.get(v)!;
+			return {
+				...COMPOSER_TYPES[v],
+				label: meta.label ?? v,
+				categories: meta.categories
+			};
+		})
 		.filter((entry) => entry.featureFlag === null || flags[entry.featureFlag] === true);
 }

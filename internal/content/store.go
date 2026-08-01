@@ -43,6 +43,7 @@ type CreateContentInput struct {
 	Status          string
 	Visibility      string
 	PublishAt       pgtype.Timestamptz
+	GuideCategory   *string
 }
 
 // CreateContent creates a new content row, ensuring slug uniqueness within
@@ -118,6 +119,7 @@ func (s *Service) CreateContent(ctx context.Context, tenantID pgtype.UUID, input
 		Visibility:      input.Visibility,
 		ReadTimeMinutes: ComputeReadTime(input.Body),
 		PublishAt:       input.PublishAt,
+		GuideCategory:   input.GuideCategory,
 	})
 	if err != nil {
 		var pgErr *pgconn.PgError
@@ -275,6 +277,7 @@ type UpdateContentInput struct {
 	IsLocked        bool
 	IsPinned        bool
 	OrganizationID  pgtype.UUID
+	GuideCategory   *string
 }
 
 // UpdateContent updates an existing content row, recording a revision and
@@ -380,6 +383,7 @@ func (s *Service) UpdateContent(ctx context.Context, id, tenantID, editedBy pgty
 		PublishAt:       input.PublishAt,
 		IsLocked:        input.IsLocked,
 		IsPinned:        input.IsPinned,
+		GuideCategory:   input.GuideCategory,
 		ID:              id,
 		TenantID:        tenantID,
 	})

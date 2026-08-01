@@ -112,6 +112,48 @@ func (s *Service) ResolveTagSlugMap(ctx context.Context, tenantID pgtype.UUID, s
 	return m, nil
 }
 
+// GetOrCreateTagSlugs resolves tag slugs to their IDs, creating any slug that
+// does not yet exist as a new tenant-scoped tag (name = slug, slug = slug).
+// This backs the spec-compliant POST /content/{id}/tags { tag_slugs: [] }
+// flow where the composer sends user-typed tag names that may not exist yet
+// (Section 14). Returns a slug→tagID map covering every input slug.
+//
+// Concurrent calls for the same slug are safe: if CreateTag fails with a
+// unique-violation (the tag was just created by a parallel request), the
+// slug is re-resolved instead of returning an error.
+func (s *Service) GetOrCreateTagSlugs(ctx context.Context, tenantID pgtype.UUID, slugs []string) (map[string]pgtype.UUID, error) {
+	rows, err := s.ResolveTagSlugs(ctx, tenantID, slugs)
+	if err != nil {
+		return nil, fmt.Errorf("resolving tag slugs: %w", err)
+	}
+	m := make(map[string]pgtype.UUID, len(slugs))
+	for _, row := range rows {
+		m[row.Slug] = row.ID
+	}
+	for _, slug := range slugs {
+		if _, exists := m[slug]; exists {
+			continue
+		}
+		tag, cerr := s.CreateTag(ctx, tenantID, CreateTagInput{
+			Name:     slug,
+			Slug:     slug,
+			IsSystem: false,
+		})
+		if cerr != nil {
+			// A concurrent call may have just created this tag. Re-resolve
+			// the single slug; if it now exists, use it. Otherwise propagate.
+			retry, rerr := s.ResolveTagSlugs(ctx, tenantID, []string{slug})
+			if rerr == nil && len(retry) > 0 {
+				m[slug] = retry[0].ID
+				continue
+			}
+			return nil, fmt.Errorf("creating tag %q: %w", slug, cerr)
+		}
+		m[slug] = tag.ID
+	}
+	return m, nil
+}
+
 // CountContentByTag returns the number of content items tagged with the given tag.
 func (s *Service) CountContentByTag(ctx context.Context, tagID pgtype.UUID) (int, error) {
 	count, err := s.read.CountContentByTag(ctx, tagID)

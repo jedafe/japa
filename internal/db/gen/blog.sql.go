@@ -51,6 +51,23 @@ func (q *Queries) BulkUpdateFeaturedOrder(ctx context.Context, arg BulkUpdateFea
 	return err
 }
 
+const countPublishedBlogPosts = `-- name: CountPublishedBlogPosts :one
+SELECT COUNT(*) FROM contents c
+WHERE c.tenant_id = $1
+  AND c.content_type = 'blog_post'
+  AND c.status = 'published'
+  AND c.deleted_at IS NULL
+  AND c.auto_hidden = false
+`
+
+// Returns the total number of published blog posts for pagination meta.
+func (q *Queries) CountPublishedBlogPosts(ctx context.Context, tenantID pgtype.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, countPublishedBlogPosts, tenantID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createBlogSeries = `-- name: CreateBlogSeries :one
 
 
@@ -254,8 +271,11 @@ SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type,
        c.geo_space_id, c.header_image_id, c.featured_image_id,
        c.canonical_url, c.meta_title, c.meta_description, c.og_image_url,
        c.seo_indexable, c.status, c.visibility, c.is_locked, c.is_pinned,
-       c.read_time_minutes, c.view_count, c.comment_count, c.share_count,
-       c.reshare_count, c.publish_at, c.published_at, c.created_at, c.updated_at,
+       c.read_time_minutes, c.view_count,
+       (SELECT COUNT(*) FROM comments WHERE content_id = c.id AND deleted_at IS NULL) AS comment_count,
+       c.share_count,
+       (SELECT COUNT(*) FROM reactions WHERE entity_id = c.id AND entity_type = 'content') AS reshare_count,
+       c.publish_at, c.published_at, c.created_at, c.updated_at,
        COALESCE(up.display_name, u.username, '') AS author_name,
        COALESCE(up.avatar_url, '') AS author_avatar_url,
        COALESCE(s.name, '') AS space_name,
@@ -297,7 +317,7 @@ WHERE c.slug = $1 AND c.tenant_id = $2
   AND c.content_type = 'blog_post'
   AND c.status = 'published'
   AND c.deleted_at IS NULL
-GROUP BY c.id, up.display_name, u.username, s.name,
+GROUP BY c.id, up.display_name, up.avatar_url, u.username, s.name,
          m.storage_bucket, m.storage_path,
          bs.id, bs.title, bsp.position,
          prev_c.slug, next_c.slug
@@ -334,9 +354,9 @@ type GetBlogPostDetailRow struct {
 	IsPinned              bool               `json:"is_pinned"`
 	ReadTimeMinutes       int32              `json:"read_time_minutes"`
 	ViewCount             int32              `json:"view_count"`
-	CommentCount          int32              `json:"comment_count"`
+	CommentCount          int64              `json:"comment_count"`
 	ShareCount            int32              `json:"share_count"`
-	ReshareCount          int32              `json:"reshare_count"`
+	ReshareCount          int64              `json:"reshare_count"`
 	PublishAt             pgtype.Timestamptz `json:"publish_at"`
 	PublishedAt           pgtype.Timestamptz `json:"published_at"`
 	CreatedAt             pgtype.Timestamptz `json:"created_at"`
@@ -515,6 +535,134 @@ func (q *Queries) GetContentTenantID(ctx context.Context, id pgtype.UUID) (pgtyp
 	return tenant_id, err
 }
 
+const listAdminBlogPosts = `-- name: ListAdminBlogPosts :many
+SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type,
+       c.title, c.slug, c.body, c.body_html, c.field_values, c.content_hash,
+       c.geo_space_id, c.header_image_id, c.featured_image_id,
+       c.canonical_url, c.meta_title, c.meta_description, c.og_image_url,
+       c.seo_indexable, c.status, c.visibility, c.is_locked, c.is_pinned,
+       c.read_time_minutes, c.view_count,
+       (SELECT COUNT(*) FROM comments WHERE content_id = c.id AND deleted_at IS NULL) AS comment_count,
+       c.share_count,
+       (SELECT COUNT(*) FROM reactions WHERE entity_id = c.id AND entity_type = 'content') AS reshare_count,
+       c.publish_at, c.published_at, c.created_at, c.updated_at,
+       COALESCE(up.display_name, u.username, '') AS author_name,
+       COALESCE(up.avatar_url, '') AS author_avatar_url,
+       COALESCE(LEFT(c.body, 200), '') AS excerpt
+FROM contents c
+LEFT JOIN users u ON u.id = c.author_id
+LEFT JOIN user_profiles up ON up.user_id = c.author_id
+WHERE c.tenant_id = $1
+  AND c.content_type = 'blog_post'
+  AND c.deleted_at IS NULL
+ORDER BY c.created_at DESC, c.id DESC
+LIMIT $3 OFFSET $2
+`
+
+type ListAdminBlogPostsParams struct {
+	TenantID   pgtype.UUID `json:"tenant_id"`
+	PageOffset int32       `json:"page_offset"`
+	PageLimit  int32       `json:"page_limit"`
+}
+
+type ListAdminBlogPostsRow struct {
+	ID              pgtype.UUID        `json:"id"`
+	TenantID        pgtype.UUID        `json:"tenant_id"`
+	AuthorID        pgtype.UUID        `json:"author_id"`
+	SpaceID         pgtype.UUID        `json:"space_id"`
+	ContentType     string             `json:"content_type"`
+	Title           string             `json:"title"`
+	Slug            string             `json:"slug"`
+	Body            string             `json:"body"`
+	BodyHtml        string             `json:"body_html"`
+	FieldValues     []byte             `json:"field_values"`
+	ContentHash     *string            `json:"content_hash"`
+	GeoSpaceID      pgtype.UUID        `json:"geo_space_id"`
+	HeaderImageID   pgtype.UUID        `json:"header_image_id"`
+	FeaturedImageID pgtype.UUID        `json:"featured_image_id"`
+	CanonicalUrl    *string            `json:"canonical_url"`
+	MetaTitle       *string            `json:"meta_title"`
+	MetaDescription *string            `json:"meta_description"`
+	OgImageUrl      *string            `json:"og_image_url"`
+	SeoIndexable    bool               `json:"seo_indexable"`
+	Status          string             `json:"status"`
+	Visibility      string             `json:"visibility"`
+	IsLocked        bool               `json:"is_locked"`
+	IsPinned        bool               `json:"is_pinned"`
+	ReadTimeMinutes int32              `json:"read_time_minutes"`
+	ViewCount       int32              `json:"view_count"`
+	CommentCount    int64              `json:"comment_count"`
+	ShareCount      int32              `json:"share_count"`
+	ReshareCount    int64              `json:"reshare_count"`
+	PublishAt       pgtype.Timestamptz `json:"publish_at"`
+	PublishedAt     pgtype.Timestamptz `json:"published_at"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+	AuthorName      string             `json:"author_name"`
+	AuthorAvatarUrl string             `json:"author_avatar_url"`
+	Excerpt         interface{}        `json:"excerpt"`
+}
+
+// BUG-B: enriched admin blog list with author_name (the generic
+// ListContentsByType returns no author join, so the admin /blog table
+// showed "—" for every author). Admin sees all statuses (not just
+// published); deleted_at filtered per Rule 11. Offset-paginated per Rule 5.
+func (q *Queries) ListAdminBlogPosts(ctx context.Context, arg ListAdminBlogPostsParams) ([]ListAdminBlogPostsRow, error) {
+	rows, err := q.db.Query(ctx, listAdminBlogPosts, arg.TenantID, arg.PageOffset, arg.PageLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListAdminBlogPostsRow
+	for rows.Next() {
+		var i ListAdminBlogPostsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.AuthorID,
+			&i.SpaceID,
+			&i.ContentType,
+			&i.Title,
+			&i.Slug,
+			&i.Body,
+			&i.BodyHtml,
+			&i.FieldValues,
+			&i.ContentHash,
+			&i.GeoSpaceID,
+			&i.HeaderImageID,
+			&i.FeaturedImageID,
+			&i.CanonicalUrl,
+			&i.MetaTitle,
+			&i.MetaDescription,
+			&i.OgImageUrl,
+			&i.SeoIndexable,
+			&i.Status,
+			&i.Visibility,
+			&i.IsLocked,
+			&i.IsPinned,
+			&i.ReadTimeMinutes,
+			&i.ViewCount,
+			&i.CommentCount,
+			&i.ShareCount,
+			&i.ReshareCount,
+			&i.PublishAt,
+			&i.PublishedAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.AuthorName,
+			&i.AuthorAvatarUrl,
+			&i.Excerpt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listBlogSeriesByAuthor = `-- name: ListBlogSeriesByAuthor :many
 SELECT id, tenant_id, title, slug, description, cover_image_id,
        author_user_id, status, created_at, updated_at, deleted_at
@@ -669,7 +817,9 @@ func (q *Queries) ListContentReviewsByContent(ctx context.Context, arg ListConte
 const listFeaturedBlogPostCards = `-- name: ListFeaturedBlogPostCards :many
 SELECT cf.id AS featured_id, cf.content_id, cf.featured_order, cf.featured_until,
        c.title, c.slug, c.body, c.body_html, c.read_time_minutes,
-       c.view_count, c.comment_count, c.reshare_count,
+       c.view_count,
+       (SELECT COUNT(*) FROM comments WHERE content_id = c.id AND deleted_at IS NULL) AS comment_count,
+       (SELECT COUNT(*) FROM reactions WHERE entity_id = c.id AND entity_type = 'content') AS reshare_count,
        c.author_id,
        COALESCE(up.display_name, u.username, '') AS author_name,
        m.storage_bucket AS featured_storage_bucket,
@@ -705,8 +855,8 @@ type ListFeaturedBlogPostCardsRow struct {
 	BodyHtml              string             `json:"body_html"`
 	ReadTimeMinutes       int32              `json:"read_time_minutes"`
 	ViewCount             int32              `json:"view_count"`
-	CommentCount          int32              `json:"comment_count"`
-	ReshareCount          int32              `json:"reshare_count"`
+	CommentCount          int64              `json:"comment_count"`
+	ReshareCount          int64              `json:"reshare_count"`
 	AuthorID              pgtype.UUID        `json:"author_id"`
 	AuthorName            string             `json:"author_name"`
 	FeaturedStorageBucket *string            `json:"featured_storage_bucket"`
@@ -978,8 +1128,11 @@ SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type,
        c.geo_space_id, c.header_image_id, c.featured_image_id,
        c.canonical_url, c.meta_title, c.meta_description, c.og_image_url,
        c.seo_indexable, c.status, c.visibility, c.is_locked, c.is_pinned,
-       c.read_time_minutes, c.view_count, c.comment_count, c.share_count,
-       c.reshare_count, c.publish_at, c.published_at, c.created_at, c.updated_at,
+       c.read_time_minutes, c.view_count,
+       (SELECT COUNT(*) FROM comments WHERE content_id = c.id AND deleted_at IS NULL) AS comment_count,
+       c.share_count,
+       (SELECT COUNT(*) FROM reactions WHERE entity_id = c.id AND entity_type = 'content') AS reshare_count,
+       c.publish_at, c.published_at, c.created_at, c.updated_at,
        COALESCE(up.display_name, u.username, '') AS author_name,
        m.storage_bucket AS featured_storage_bucket,
        m.storage_path AS featured_storage_path,
@@ -1029,9 +1182,9 @@ type ListPublishedBlogPostsRow struct {
 	IsPinned              bool               `json:"is_pinned"`
 	ReadTimeMinutes       int32              `json:"read_time_minutes"`
 	ViewCount             int32              `json:"view_count"`
-	CommentCount          int32              `json:"comment_count"`
+	CommentCount          int64              `json:"comment_count"`
 	ShareCount            int32              `json:"share_count"`
-	ReshareCount          int32              `json:"reshare_count"`
+	ReshareCount          int64              `json:"reshare_count"`
 	PublishAt             pgtype.Timestamptz `json:"publish_at"`
 	PublishedAt           pgtype.Timestamptz `json:"published_at"`
 	CreatedAt             pgtype.Timestamptz `json:"created_at"`

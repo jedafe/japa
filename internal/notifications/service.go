@@ -405,16 +405,20 @@ func SplitNames(names string) string {
 
 // CreateNotificationType inserts a new notification type definition (P5.6).
 // Hand-written SQL consolidated into sqlc (notifications.sql).
-func (s *Service) CreateNotificationType(ctx context.Context, key, label string, description *string, enabled bool) error {
+// Ref: japaconnect-engineering/sections/35-notification-system.md
+func (s *Service) CreateNotificationType(ctx context.Context, key, label string, description *string, enabled bool, defaultInApp, defaultEmail, defaultPush bool) error {
 	return s.store.upsertNotificationType(ctx, gen.UpsertNotificationTypeParams{
 		Key: key, Label: label, Description: description, Enabled: enabled,
+		DefaultInApp: defaultInApp, DefaultEmail: defaultEmail, DefaultPush: defaultPush,
 	})
 }
 
 // UpdateNotificationType updates an existing notification type (P5.6).
-func (s *Service) UpdateNotificationType(ctx context.Context, key, label string, description *string, enabled bool) error {
+// Ref: japaconnect-engineering/sections/35-notification-system.md
+func (s *Service) UpdateNotificationType(ctx context.Context, key, label string, description *string, enabled bool, defaultInApp, defaultEmail, defaultPush bool) error {
 	return s.store.updateNotificationType(ctx, gen.UpdateNotificationTypeParams{
 		Key: key, Label: label, Description: description, Enabled: enabled,
+		DefaultInApp: defaultInApp, DefaultEmail: defaultEmail, DefaultPush: defaultPush,
 	})
 }
 

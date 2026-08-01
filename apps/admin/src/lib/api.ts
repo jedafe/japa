@@ -932,6 +932,26 @@ export const entityTypesAdminApi = {
 		api<{ deleted: boolean }>(`/admin/custom-field-entity-types/${id}`, { method: 'DELETE' }),
 };
 
+// Guide Categories (Section 14 — Guide Content Type System)
+// Each category creates a custom_field_entity_types row + a field group +
+// assignment in one transaction. After creation, admins manage fields via
+// the existing custom field group editor at /custom-fields/{groupId}.
+export interface GuideCategory {
+	Slug: string;
+	Label: string;
+	is_system: boolean;
+	group_id?: string;
+	group_slug?: string;
+}
+
+export const guideCategoriesAdminApi = {
+	list: () => api<GuideCategory[]>('/admin/guide-categories'),
+	create: (body: { slug: string; label: string }) =>
+		api<GuideCategory>('/admin/guide-categories', { method: 'POST', body }),
+	delete: (slug: string) =>
+		api<{ status: string }>(`/admin/guide-categories/${slug}`, { method: 'DELETE' }),
+};
+
 export const formsAdminApi = {
 	list: (params?: string) => api<unknown>(`/forms${params ? `?${params}` : ''}`),
 	get: (id: string) => api<unknown>(`/forms/${id}`),
@@ -1288,7 +1308,7 @@ export const redirectsAdminApi = {
 	update: (id: string, body: Record<string, unknown>) =>
 		api<unknown>(`/admin/redirects/${id}`, { method: 'PATCH', body }),
 	delete: (id: string) => api<{ deleted: boolean }>(`/admin/redirects/${id}`, { method: 'DELETE' }),
-	bulkDelete: (body: { ids: string[] }) =>
+	bulkDelete: (body: { action: "activate" | "deactivate" | "delete"; ids: string[] }) =>
 		api<unknown>('/admin/redirects/bulk', { method: 'POST', body }),
 };
 
@@ -1342,4 +1362,14 @@ export const permissionPresetsApi = {
 	list: () => api<{ data: PermissionPreset[] }>('/space-permission-presets'),
 	update: (name: string, body: { visibility: string; posting_perm: string; replying_perm: string; commenting_perm: string; joining_perm: string }) =>
 		api<PermissionPreset>(`/space-permission-presets/${encodeURIComponent(name)}`, { method: 'PUT', body }),
+};
+
+export const sharePlatformsAdminApi = {
+	list: (params?: string) => api<unknown>(`/share-platforms${params ? `?${params}` : ''}`),
+	create: (body: { key: string; label: string; icon: string; url_template: string; color: string; enabled: boolean; position: number }) =>
+		api('/share-platforms', { method: 'POST', body }),
+	update: (key: string, body: { label: string; icon: string; url_template: string; color: string; enabled: boolean; position: number }) =>
+		api(`/share-platforms/${key}`, { method: 'PATCH', body }),
+	delete: (key: string) =>
+		api(`/share-platforms/${key}`, { method: 'DELETE' }),
 };

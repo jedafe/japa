@@ -509,6 +509,7 @@ type Content struct {
 	MetaDescription *string            `json:"meta_description"`
 	OgImageUrl      *string            `json:"og_image_url"`
 	SeoIndexable    bool               `json:"seo_indexable"`
+	GuideCategory   *string            `json:"guide_category"`
 }
 
 // Tracks affiliate links found in content that are not registered in affiliate_providers. Used for moderation and revenue tracking.
@@ -2060,6 +2061,20 @@ type SecurityScanResult struct {
 	Meta       []byte             `json:"meta"`
 	ResolvedAt pgtype.Timestamptz `json:"resolved_at"`
 	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+}
+
+type SharePlatform struct {
+	ID          pgtype.UUID        `json:"id"`
+	TenantID    pgtype.UUID        `json:"tenant_id"`
+	Key         string             `json:"key"`
+	Label       string             `json:"label"`
+	Icon        string             `json:"icon"`
+	UrlTemplate string             `json:"url_template"`
+	Color       string             `json:"color"`
+	Enabled     bool               `json:"enabled"`
+	Position    int32              `json:"position"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
 }
 
 type Sidebar struct {
