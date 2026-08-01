@@ -710,6 +710,30 @@ func (s *Service) IsModerator(ctx context.Context, spaceID, userID pgtype.UUID) 
 	return true, nil
 }
 
+// CanManageSpace returns true if the user may manage the space — i.e. is the
+// space owner (role='owner' in space_members) or an assigned moderator
+// (space_moderators). Used to gate the space analytics dashboard
+// (GET /spaces/{id}/analytics, [auth, space-admin] per JEOS §215) so guests
+// and non-admin members receive 403 analytics_forbidden.
+func (s *Service) CanManageSpace(ctx context.Context, spaceID, userID, tenantID pgtype.UUID) (bool, error) {
+	isOwner, err := s.read.CheckSpaceOwnership(ctx, gen.CheckSpaceOwnershipParams{
+		SpaceID:  spaceID,
+		UserID:   userID,
+		TenantID: tenantID,
+	})
+	if err != nil {
+		return false, fmt.Errorf("checking space ownership: %w", err)
+	}
+	if isOwner {
+		return true, nil
+	}
+	isMod, err := s.IsModerator(ctx, spaceID, userID)
+	if err != nil {
+		return false, err
+	}
+	return isMod, nil
+}
+
 // ---------------------------------------------------------------------------
 // Space Parent Spaces (Many-to-Many Hierarchy)
 // ---------------------------------------------------------------------------

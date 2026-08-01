@@ -163,6 +163,10 @@
 				authorName={article.author_name}
 				authorAvatarUrl={article.author_avatar_url}
 				spaceName={article.space_name}
+				authorId={article.author_id}
+				initiallyFollowing={data.initiallyFollowing}
+				authed={data.authed}
+				currentUserId={data.currentUserId}
 			/>
 			<!-- Admin-managed sidebar widgets (Section 59, ADR-066). -->
 			{#each sidebarWidgets as widget (widget.id)}

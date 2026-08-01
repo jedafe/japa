@@ -37,6 +37,7 @@
 <svelte:head>
 	<title>{data.isUniversity ? t('university.catalog') : t('learn.explore')} · {t('app.name')}</title>
 	<meta name="description" content="Browse courses on JapaConnect Learn." />
+	<link rel="canonical" href="https://learn.japaconnect.com/" />
 </svelte:head>
 
 <div class="px-4 py-6 md:px-6 lg:px-8">

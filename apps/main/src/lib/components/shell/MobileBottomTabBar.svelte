@@ -17,10 +17,15 @@
 	const profileHref = $derived(user ? `/u/${user.username}` : '/login');
 	const unread = $derived(realtime.unreadNotifications);
 
+	// Notifications tab is auth-gated — guests get a login link with returnTo
+	// instead of navigating to a 403. Compose is handled separately below
+	// (center elevated button) because it opens a modal for authed users.
 	const tabs = $derived([
 		{ href: '/', icon: Home, label: t('nav.home', 'Home'), active: page.url.pathname === '/' },
 		{ href: '/search', icon: Search, label: t('nav.search', 'Search'), active: page.url.pathname.startsWith('/search') },
-		{ href: '/notifications', icon: Bell, label: t('nav.notifications', 'Notifications'), active: page.url.pathname.startsWith('/notifications') },
+		...(user
+			? [{ href: '/notifications', icon: Bell, label: t('nav.notifications', 'Notifications'), active: page.url.pathname.startsWith('/notifications') }]
+			: [{ href: '/login?redirect=/notifications', icon: Bell, label: t('nav.notifications', 'Notifications'), active: false }]),
 		{ href: profileHref, icon: User, label: t('nav.profile', 'Profile'), active: page.url.pathname.startsWith('/u/') }
 	]);
 </script>
@@ -52,18 +57,34 @@
 		</a>
 	{/each}
 
-	<!-- Compose button (center, elevated) -->
-	<button
-		type="button"
-		onclick={() => (composeOpen = true)}
-		class="flex flex-1 flex-col items-center justify-center gap-0.5 py-2 text-[10px] text-[var(--color-primary)]"
-		aria-label={t('nav.compose', 'Compose')}
-	>
-		<span
-			class="grid h-9 w-9 place-items-center rounded-full bg-[var(--color-primary)] text-[var(--color-primary-contrast)] shadow-sm"
+	<!-- Compose button (center, elevated) — guests get a login link with
+	     returnTo instead of opening the auth-gated composer modal. -->
+	{#if user}
+		<button
+			type="button"
+			onclick={() => (composeOpen = true)}
+			class="flex flex-1 flex-col items-center justify-center gap-0.5 py-2 text-[10px] text-[var(--color-primary)]"
+			aria-label={t('nav.compose', 'Compose')}
 		>
-			<Plus size={20} />
-		</span>
-		<span class="leading-none">{t('nav.compose', 'Compose')}</span>
-	</button>
+			<span
+				class="grid h-9 w-9 place-items-center rounded-full bg-[var(--color-primary)] text-[var(--color-primary-contrast)] shadow-sm"
+			>
+				<Plus size={20} />
+			</span>
+			<span class="leading-none">{t('nav.compose', 'Compose')}</span>
+		</button>
+	{:else}
+		<a
+			href="/login?redirect=/create"
+			class="flex flex-1 flex-col items-center justify-center gap-0.5 py-2 text-[10px] text-[var(--color-primary)]"
+			aria-label={t('nav.compose', 'Compose')}
+		>
+			<span
+				class="grid h-9 w-9 place-items-center rounded-full bg-[var(--color-primary)] text-[var(--color-primary-contrast)] shadow-sm"
+			>
+				<Plus size={20} />
+			</span>
+			<span class="leading-none">{t('nav.compose', 'Compose')}</span>
+		</a>
+	{/if}
 </nav>

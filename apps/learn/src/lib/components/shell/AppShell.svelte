@@ -3,8 +3,6 @@
 	import { Menu as MenuIcon } from 'lucide-svelte';
 	import LeftNav from './LeftNav.svelte';
 	import RightSidebar from './RightSidebar.svelte';
-	import GuestHeader from './GuestHeader.svelte';
-	import GuestFooter from './GuestFooter.svelte';
 	import { t } from '$lib/i18n';
 	import type { Menu, SessionUser } from '$lib/types';
 

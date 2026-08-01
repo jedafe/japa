@@ -63,6 +63,18 @@ func (s *Service) CreateComment(ctx context.Context, tenantID, userID pgtype.UUI
 		return gen.Comment{}, fmt.Errorf("creating comment: %w", err)
 	}
 
+	// Increment the denormalized comment_count on the content row so feed
+	// cards (which read contents.comment_count) show accurate counts
+	// immediately, without waiting for the async scoring pipeline.
+	// Ref: Section 32, Guide §21.
+	if err := s.write.IncrementContentCommentCount(ctx, gen.IncrementContentCommentCountParams{
+		ID:       input.ContentID,
+		TenantID: tenantID,
+	}); err != nil {
+		slog.Warn("comments: failed to increment content comment_count",
+			"content_id", input.ContentID.String(), "error", err)
+	}
+
 	return comment, nil
 }
 

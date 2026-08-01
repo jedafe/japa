@@ -3,11 +3,19 @@
 	import AppShell from '$lib/components/shell/AppShell.svelte';
 	import { Search } from 'lucide-svelte';
 	import { t } from '$lib/i18n';
+	import { persistNavCollapse } from '$lib/nav-collapse';
 	import { AUDIENCE_LABEL_KEY, AUDIENCE_ORDER } from '$lib/types';
 	import type { DocAudience } from '$lib/types';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
+
+	let collapsed = $state(data.navCollapsed);
+
+	async function toggleCollapse() {
+		collapsed = !collapsed;
+		await persistNavCollapse(collapsed);
+	}
 
 	let query = $state('');
 	let selectedAudience = $state<DocAudience | null>(null);
@@ -52,8 +60,8 @@
 	rightSidebarWidgets={data.rightSidebarWidgets}
 	activeAudience={null}
 	user={data.user}
-	collapsed={data.navCollapsed}
-	onToggleCollapse={() => {}}
+	collapsed={collapsed}
+	onToggleCollapse={toggleCollapse}
 >
 	<section class="search-page">
 		<h1>{t('search.title')}</h1>

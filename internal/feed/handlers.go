@@ -161,7 +161,7 @@ func (h *Handlers) GetExploreFeed(w http.ResponseWriter, r *http.Request) {
 		geoCode = vc.ContentCountry
 	}
 	page := int(offset) / int(limit)
-	cacheKey := fmt.Sprintf("jc:explore:%s:%s:%d", tenantID.String(), geoCode, page)
+	cacheKey := fmt.Sprintf("jc:explore:%s:%s:%s:%d", tenantID.String(), geoCode, sort, page)
 
 	// Try Valkey cache.
 	if h.cache != nil {

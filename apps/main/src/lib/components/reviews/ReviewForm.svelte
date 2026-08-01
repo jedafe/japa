@@ -7,6 +7,7 @@
 	import { t } from '$lib/i18n';
 	import { api } from '$lib/api/client';
 	import { Star, Send } from 'lucide-svelte';
+	import { requireAuthOrRedirect } from '$lib/auth/guest';
 	import type { Review } from '$lib/types';
 
 	interface Props {
@@ -34,6 +35,8 @@
 			errorKey = 'reviews.errors.rating_required';
 			return;
 		}
+		// Guests can't submit reviews — redirect to login instead of a 401.
+		if (!(await requireAuthOrRedirect())) return;
 		submitting = true;
 		try {
 			const res = await api.post<Review>(

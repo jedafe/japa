@@ -13,6 +13,7 @@
 
 	const org = $derived(data.org);
 	const isOwner = $derived(data.isOwner);
+	const initiallyFollowing = $derived(data.initiallyFollowing ?? false);
 	const activeTab = $derived(page.url.searchParams.get('tab') ?? 'about');
 
 	const tabs = $derived([
@@ -54,7 +55,7 @@
 <OrgHeader {org} {isOwner}>
 	{#snippet children()}
 		{#if page.data.user}
-			<FollowButton entityType="organization" entityId={org.id} entitySlug={org.slug} />
+			<FollowButton entityType="organization" entityId={org.id} entitySlug={org.slug} {initiallyFollowing} />
 			{#if !org.verified}
 				<a
 					href="/claim-ownership?org={org.slug}"

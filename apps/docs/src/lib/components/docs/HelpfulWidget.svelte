@@ -1,22 +1,47 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import { ThumbsUp, ThumbsDown } from 'lucide-svelte';
 	import { t } from '$lib/i18n';
 
 	interface Props {
+		/** Page ID for localStorage persistence of the vote. */
+		pageId: string;
 		/** ISO timestamp of last review, or null. */
 		lastReviewedAt?: string | null;
 		lastReviewedBy?: string | null;
 	}
 
-	let { lastReviewedAt = null, lastReviewedBy = null }: Props = $props();
+	let { pageId, lastReviewedAt = null, lastReviewedBy = null }: Props = $props();
 
 	let vote = $state<'up' | 'down' | null>(null);
 
+	const storageKey = $derived(`jc:docs:vote:${pageId}`);
+
+	// Load saved vote from localStorage after hydration (browser-only).
+	onMount(() => {
+		try {
+			const saved = localStorage.getItem(storageKey);
+			if (saved === 'up' || saved === 'down') vote = saved;
+		} catch {
+			// localStorage unavailable (private browsing, etc.)
+		}
+	});
+
+	function persist(v: 'up' | 'down' | null) {
+		vote = v;
+		try {
+			if (v) localStorage.setItem(storageKey, v);
+			else localStorage.removeItem(storageKey);
+		} catch {
+			// localStorage unavailable
+		}
+	}
+
 	function voteUp() {
-		vote = vote === 'up' ? null : 'up';
+		persist(vote === 'up' ? null : 'up');
 	}
 	function voteDown() {
-		vote = vote === 'down' ? null : 'down';
+		persist(vote === 'down' ? null : 'down');
 	}
 
 	let reviewedLabel = $derived(
@@ -45,6 +70,7 @@
 				aria-pressed={vote === 'up'}
 			>
 				<ThumbsUp size={16} />
+				{#if vote === 'up'}<span class="vote-count">1</span>{/if}
 			</button>
 			<button
 				type="button"
@@ -55,6 +81,7 @@
 				aria-pressed={vote === 'down'}
 			>
 				<ThumbsDown size={16} />
+				{#if vote === 'down'}<span class="vote-count">1</span>{/if}
 			</button>
 		</div>
 	</div>
@@ -82,10 +109,11 @@
 	}
 	.helpful-buttons { display: flex; gap: 0.5rem; }
 	.vote-btn {
-		display: grid;
-		place-items: center;
+		display: inline-flex;
+		align-items: center;
+		gap: 0.25rem;
 		height: 2.25rem;
-		width: 2.25rem;
+		padding: 0 0.75rem;
 		border-radius: var(--radius);
 		border: 1px solid var(--color-border);
 		background: var(--color-surface);
@@ -97,6 +125,11 @@
 		border-color: var(--color-primary);
 		color: var(--color-primary);
 		background: color-mix(in srgb, var(--color-primary) 8%, transparent);
+	}
+	.vote-count {
+		font-size: 0.6875rem;
+		font-weight: 600;
+		margin-left: 0.125rem;
 	}
 	.reviewed {
 		margin: 0.75rem 0 0;

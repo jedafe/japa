@@ -75,7 +75,11 @@
 	<div class="shell-full">
 		<div class="full-topbar">
 			<a href="/docs" class="full-brand">
-				<span class="brand-mark">JC</span>
+				{#if logoUrl}
+					<img src={logoUrl} alt={t('app.name')} class="full-brand-logo" />
+				{:else}
+					<span class="brand-mark">JC</span>
+				{/if}
 				<span>{t('app.name')}</span>
 			</a>
 			<SearchLauncher />
@@ -100,6 +104,7 @@
 				{activeAudience}
 				{collapsed}
 				{onToggleCollapse}
+				{logoUrl}
 			/>
 		</div>
 
@@ -114,7 +119,11 @@
 					<MenuIcon size={20} />
 				</button>
 				<a href="/docs" class="flex items-center gap-2 font-medium text-[var(--color-text)]">
-					<span class="brand-mark">JC</span>
+					{#if logoUrl}
+						<img src={logoUrl} alt={t('app.name')} class="h-6 w-auto object-contain" />
+					{:else}
+						<span class="brand-mark">JC</span>
+					{/if}
 					<span>{t('app.name')}</span>
 				</a>
 				<div class="ml-auto"><SearchLauncher /></div>
@@ -125,6 +134,7 @@
 		<div class="shell-sidebar">
 			<div class="sidebar-topbar">
 				<SearchLauncher />
+				<UserDropdown {user} />
 			</div>
 			<div class="sidebar-body">
 				{#if variant === 'api' && apiPane}
@@ -158,6 +168,7 @@
 				{activeAudience}
 				collapsed={false}
 				onToggleCollapse={() => (mobileNavOpen = false)}
+				{logoUrl}
 			/>
 		</div>
 	{/if}
@@ -174,6 +185,7 @@
 				{activeAudience}
 				{collapsed}
 				{onToggleCollapse}
+				{logoUrl}
 			/>
 		</div>
 
@@ -188,7 +200,11 @@
 					<MenuIcon size={20} />
 				</button>
 				<a href="/docs" class="flex items-center gap-2 font-medium text-[var(--color-text)]">
-					<span class="brand-mark">JC</span>
+					{#if logoUrl}
+						<img src={logoUrl} alt={t('app.name')} class="h-6 w-auto object-contain" />
+					{:else}
+						<span class="brand-mark">JC</span>
+					{/if}
 					<span>{t('app.name')}</span>
 				</a>
 				<div class="ml-auto"><SearchLauncher /></div>
@@ -237,6 +253,7 @@
 				{activeAudience}
 				collapsed={false}
 				onToggleCollapse={() => (mobileNavOpen = false)}
+				{logoUrl}
 			/>
 		</div>
 	{/if}
@@ -354,6 +371,12 @@
 		gap: 0.5rem;
 		font-weight: 600;
 		color: var(--color-text);
+	}
+	.full-brand-logo {
+		height: 1.75rem;
+		width: auto;
+		max-width: 140px;
+		object-fit: contain;
 	}
 	.full-main {
 		min-width: 0;

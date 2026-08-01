@@ -25,7 +25,11 @@
 		{ key: 'media', labelKey: 'profile.tab.media', href: `?tab=media` },
 		{ key: 'likes', labelKey: 'profile.tab.likes', href: `?tab=likes` },
 		{ key: 'spaces', labelKey: 'profile.tab.spaces', href: `?tab=spaces` },
-		{ key: 'analytics', labelKey: 'profile.tab.analytics', href: `?tab=analytics` }
+		// Analytics is a self-dashboard — owner-only per JEOS §342 [auth, self].
+		// Hidden from guests and from other authenticated users.
+		...(isOwnProfile
+			? [{ key: 'analytics', labelKey: 'profile.tab.analytics', href: `?tab=analytics` }]
+			: [])
 	]);
 
 	const analytics = $derived(data.analytics as ProfileAnalytics | null);
