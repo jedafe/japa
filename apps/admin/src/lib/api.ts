@@ -1109,11 +1109,29 @@ export const pageBuilderAdminApiExtended = {
 	setDefaultTheme: (id: string) =>
 		api<unknown>(`/admin/pagebuilder/themes/${id}/default`, { method: 'POST', body: {} }),
 	deleteTheme: (id: string) => api<{ deleted: boolean }>(`/admin/pagebuilder/themes/${id}`, { method: 'DELETE' }),
-	// Sidebar management (sitewide left/right sidebar blocks)
-	getSidebarConfig: () => api<unknown>('/admin/sidebars'),
-	getSidebar: (position: string) => api<unknown>(`/admin/sidebars/${position}`),
-	updateSidebar: (position: string, body: Record<string, unknown>) =>
-		api<unknown>(`/admin/sidebars/${position}`, { method: 'PATCH', body }),
+};
+
+// Sidebar Management System (Section 59, ADR-066).
+// Replaces the old pageBuilderAdminApiExtended sidebar methods.
+// Sidebar widgets use a dedicated widget type registry (search, theme_toggle,
+// trending_tags, etc.) — NOT pagebuilder block types. Ref: Section 59, ADR-066.
+export const sidebarsAdminApi = {
+	list: (params?: string) => api<unknown>(`/admin/sidebars${params ? `?${params}` : ''}`),
+	get: (id: string) => api<unknown>(`/admin/sidebars/${id}`),
+	create: (body: Record<string, unknown>) => api<unknown>('/admin/sidebars', { method: 'POST', body }),
+	update: (id: string, body: Record<string, unknown>) =>
+		api<unknown>(`/admin/sidebars/${id}`, { method: 'PATCH', body }),
+	delete: (id: string) => api<{ deleted: boolean }>(`/admin/sidebars/${id}`, { method: 'DELETE' }),
+	addWidget: (id: string, body: Record<string, unknown>) =>
+		api<unknown>(`/admin/sidebars/${id}/widgets`, { method: 'POST', body }),
+	updateWidget: (id: string, widgetId: string, body: Record<string, unknown>) =>
+		api<unknown>(`/admin/sidebars/${id}/widgets/${widgetId}`, { method: 'PATCH', body }),
+	deleteWidget: (id: string, widgetId: string) =>
+		api<{ deleted: boolean }>(`/admin/sidebars/${id}/widgets/${widgetId}`, { method: 'DELETE' }),
+	reorderWidgets: (id: string, body: { items: { id: string; sort_order: number }[] }) =>
+		api<unknown>(`/admin/sidebars/${id}/widgets/reorder`, { method: 'POST', body }),
+	// Public: widget type registry (no auth required)
+	widgetTypes: () => api<{ widget_types: unknown[] }>('/sidebars/widget-types'),
 };
 
 export const pageTemplatesAdminApiExtended = {

@@ -36,6 +36,19 @@ export const load: LayoutServerLoad = async (event) => {
 		footerMenu = null;
 	}
 
+	// Sitewide sidebar widgets (Sidebar Management System, Section 59, ADR-066).
+	// Fetched SSR so the right sidebar paints during initial render. The resolve
+	// endpoint matches the current page path against sidebar page_pattern globs
+	// and filters widgets by the user's auth state and group membership.
+	let rightSidebarWidgets: unknown[] = [];
+	try {
+		const sidebarPath = event.url.pathname;
+		const rightRes = await apiGet<{ widgets?: unknown[] }>(ctx, `/sidebars/resolve?app=docs&position=right&path=${encodeURIComponent(sidebarPath)}`);
+		rightSidebarWidgets = rightRes.widgets ?? [];
+	} catch {
+		// sidebar endpoint not available — keep defaults
+	}
+
 	return {
 		user: event.locals.user,
 		theme: event.locals.theme,
@@ -44,6 +57,7 @@ export const load: LayoutServerLoad = async (event) => {
 		nav,
 		siteSettings,
 		footerMenu,
+		rightSidebarWidgets,
 		navCollapsed: event.locals.user?.ui?.nav_collapsed ?? false
 	};
 };

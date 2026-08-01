@@ -26,6 +26,8 @@
 		hideRightSidebar?: boolean;
 		/** Lesson player: collapse the left nav to 72px (ADR-060 reading exception). */
 		lessonPlayer?: boolean;
+		/** Sidebar widgets from the Sidebar Management System (Section 59, ADR-066). */
+		rightSidebarWidgets?: unknown[];
 	}
 
 	let {
@@ -39,7 +41,8 @@
 		children,
 		sidebar,
 		hideRightSidebar = false,
-		lessonPlayer = false
+		lessonPlayer = false,
+		rightSidebarWidgets = []
 	}: Props = $props();
 
 	let mobileNavOpen = $state(false);
@@ -55,16 +58,60 @@
 </script>
 
 {#if !user}
-	<!-- Guest layout: full-width top nav bar instead of the three-column shell. -->
-	<GuestHeader
-		{logoUrl}
-		{menu}
-		{isUniversity}
-	/>
-	<div class="guest-shell-content">
-		{@render children()}
+	<!-- Guest layout: same 3-column shell as authed users. LeftNav shows
+	     a Login button for guests; RightSidebar renders admin-managed widgets. -->
+	<div
+		class="shell"
+		class:university={isUniversity}
+		style="--current-nav-width: {navWidth}"
+	>
+		<div class="shell-nav">
+			<LeftNav {menu} {user} {collapsed} {logoUrl} {isUniversity} onToggle={onToggleCollapse} />
+		</div>
+
+		<main class="shell-center">
+			<div class="mobile-topbar">
+				<button
+					type="button"
+					onclick={() => (mobileNavOpen = true)}
+					class="grid h-9 w-9 place-items-center rounded-[var(--radius)] text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
+					aria-label={t('a11y.open_menu')}
+				>
+					<MenuIcon size={20} />
+				</button>
+				<a href="/" class="flex items-center gap-2 font-medium text-[var(--color-text)]">
+					{#if logoUrl}
+						<img src={logoUrl} alt={t('app.name')} class="h-7 w-auto max-w-[120px] object-contain" />
+					{:else}
+						<span
+							class="grid h-7 w-7 place-items-center rounded-[var(--radius)] bg-[var(--color-primary)] text-xs font-semibold text-[var(--color-primary-contrast)]"
+							>JC</span
+						>
+					{/if}
+					<span>{isUniversity ? t('university.name') : t('app.name')}</span>
+				</a>
+			</div>
+			{@render children()}
+		</main>
+
+		{#if !hideRightSidebar}
+			<div class="shell-sidebar">
+				<RightSidebar {user} {isUniversity} rightSidebarWidgets={rightSidebarWidgets} />
+			</div>
+		{/if}
 	</div>
-	<GuestFooter menu={footerMenu} />
+
+	{#if mobileNavOpen}
+		<button
+			type="button"
+			class="drawer-backdrop"
+			aria-label={t('a11y.close_menu')}
+			onclick={() => (mobileNavOpen = false)}
+		></button>
+		<div class="drawer">
+			<LeftNav {menu} {user} collapsed={false} {logoUrl} {isUniversity} onToggle={() => (mobileNavOpen = false)} />
+		</div>
+	{/if}
 {:else}
 	<div
 		class="shell"
@@ -103,7 +150,7 @@
 
 		{#if !hideRightSidebar}
 			<div class="shell-sidebar">
-				<RightSidebar {user} {isUniversity} {sidebar} />
+				<RightSidebar {user} {isUniversity} {sidebar} {rightSidebarWidgets} />
 			</div>
 		{/if}
 	</div>
@@ -207,8 +254,4 @@
 		}
 	}
 
-	.guest-shell-content {
-		min-height: calc(100vh - var(--nav-height));
-		background: var(--color-bg);
-	}
 </style>

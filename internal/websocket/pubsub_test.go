@@ -165,9 +165,10 @@ func TestDispatchToSpace(t *testing.T) {
 	hub.SubscribeToSpace(c2, "s-dispatch")
 
 	msg := PubSubMessage{
-		Type:          EventSpaceActivity,
-		TargetSpaceID: "s-dispatch",
-		Payload:       "space-data",
+		Type:           EventSpaceActivity,
+		TargetTenantID: "t1",
+		TargetSpaceID:  "s-dispatch",
+		Payload:        "space-data",
 	}
 	bridge.dispatch(msg)
 
@@ -299,9 +300,10 @@ func TestDispatchToSpaceDoesNotRepublish(t *testing.T) {
 	hub.SubscribeToSpace(c, "s-loop")
 
 	bridge.dispatch(PubSubMessage{
-		Type:          EventSpaceActivity,
-		TargetSpaceID: "s-loop",
-		Payload:       "x",
+		Type:           EventSpaceActivity,
+		TargetTenantID: "t1",
+		TargetSpaceID:  "s-loop",
+		Payload:        "x",
 	})
 
 	select {
@@ -427,7 +429,7 @@ func TestHubSpaceBroadcastTriggersPublish(t *testing.T) {
 	hub.SetPubSub(bridge)
 
 	event := WSEvent{Type: EventSpaceActivity, Payload: "space-data"}
-	hub.BroadcastToSpace("s-pub", event)
+	hub.BroadcastToSpace("t1", "s-pub", event)
 
 	select {
 	case <-client.Send:
@@ -471,15 +473,17 @@ func TestHubAllBroadcastTriggersPublish(t *testing.T) {
 // mockBridge is a lightweight stand-in for PubSubBridge that records the
 // last Publish call without requiring a real Valkey connection.
 type mockBridge struct {
-	hub         *Hub
-	lastEvent   WSEvent
-	lastUserID  string
-	lastSpaceID string
+	hub           *Hub
+	lastEvent     WSEvent
+	lastUserID    string
+	lastTenantID  string
+	lastSpaceID   string
 }
 
-func (m *mockBridge) Publish(event WSEvent, userID, spaceID string) {
+func (m *mockBridge) Publish(event WSEvent, userID, tenantID, spaceID string) {
 	m.lastEvent = event
 	m.lastUserID = userID
+	m.lastTenantID = tenantID
 	m.lastSpaceID = spaceID
 }
 

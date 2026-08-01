@@ -94,12 +94,12 @@
 	{:else if profile?.status === 'pending'}
 		<EmptyState
 			title={t('university.application_pending')}
-			description="You'll be notified when your application is reviewed."
+			description={t('university.application_pending_description')}
 		/>
 	{:else if profile?.status === 'rejected'}
 		<EmptyState
 			title={t('university.application_rejected')}
-			description={profile.rejected_reason ?? 'Your application was not approved.'}
+			description={t('university.application_rejected_description')}
 		>
 			{#snippet action()}
 				<a
@@ -113,7 +113,7 @@
 	{:else if !profile || profile.status !== 'approved'}
 		<EmptyState
 			title={t('university.become_instructor')}
-			description="Apply to become a Japa University instructor and publish your courses."
+			description={t('university.become_instructor_description')}
 		>
 			{#snippet action()}
 				<a

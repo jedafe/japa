@@ -6,7 +6,16 @@
 	import SearchAutocomplete from './SearchAutocomplete.svelte';
 	import UserDropdown from './UserDropdown.svelte';
 	import ContinueLearningCard from './ContinueLearningCard.svelte';
+	import SidebarWidgetRenderer from './SidebarWidgetRenderer.svelte';
 	import type { SessionUser } from '$lib/types';
+
+	interface SidebarWidget {
+		id: string;
+		widget_type: string;
+		label: string;
+		props: Record<string, unknown>;
+		sort_order: number;
+	}
 
 	interface Props {
 		user: SessionUser | null;
@@ -14,9 +23,17 @@
 		isUniversity?: boolean;
 		/** Route-specific widgets rendered above the global defaults. */
 		sidebar?: Snippet;
+		/** Sidebar widgets from the Sidebar Management System (Section 59, ADR-066).
+		 *  Resolved via /sidebars/resolve and rendered by SidebarWidgetRenderer. */
+		rightSidebarWidgets?: unknown[];
 	}
 
-	let { user, isUniversity = false, sidebar }: Props = $props();
+	let { user, isUniversity = false, sidebar, rightSidebarWidgets = [] }: Props = $props();
+
+	// Normalize incoming widgets to the SidebarWidget shape.
+	const widgets = $derived(
+		(rightSidebarWidgets as SidebarWidget[]).filter((w) => w && typeof w.widget_type === 'string')
+	);
 
 	// Only show the language toggle when more than one language is enabled.
 	// The enabled set is resolved server-side from i18n.enabled_languages; for
@@ -69,4 +86,10 @@
 	{#if user}
 		<ContinueLearningCard {user} {isUniversity} />
 	{/if}
+
+	<!-- Admin-managed sidebar widgets (Section 59, ADR-066).
+	     Rendered below the route-specific snippet and ContinueLearningCard. -->
+	{#each widgets as widget (widget.id)}
+		<SidebarWidgetRenderer {widget} />
+	{/each}
 </aside>

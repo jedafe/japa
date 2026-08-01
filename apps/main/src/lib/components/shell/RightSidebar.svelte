@@ -1,14 +1,16 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 	import { page } from '$app/state';
-	import { Search, Sun, Moon, Languages } from 'lucide-svelte';
-	import { theme } from '$lib/stores/theme.svelte';
-	import { t, i18n } from '$lib/i18n';
-	import SearchAutocomplete from './SearchAutocomplete.svelte';
-	import UserDropdown from './UserDropdown.svelte';
-	import { AdSlot } from '$lib/components/ui';
-	import SidebarBlocks from './SidebarBlocks.svelte';
+	import SidebarWidgetRenderer from './SidebarWidgetRenderer.svelte';
 	import type { SessionUser, TagSuggestion, SpaceSuggestion } from '$lib/types';
+
+	interface SidebarWidget {
+		id: string;
+		widget_type: string;
+		label: string;
+		props: Record<string, unknown>;
+		sort_order: number;
+	}
 
 	interface Props {
 		user: SessionUser | null;
@@ -18,115 +20,72 @@
 		enabledLanguages?: string;
 		/** Route-specific widgets rendered above the global defaults. */
 		sidebar?: Snippet;
-		/** Page Builder blocks for this sidebar (sitewide, from admin). */
-		rightSidebarBlocks?: unknown[];
+		/** Sidebar widgets from the Sidebar Management System (Section 59, ADR-066).
+		 *  Resolved via /sidebars/resolve and rendered by SidebarWidgetRenderer. */
+		rightSidebarWidgets?: unknown[];
 	}
 
-	let { user, trendingTags = [], suggestedSpaces = [], enabledLanguages = 'en,fr', sidebar, rightSidebarBlocks = [] }: Props = $props();
+	let {
+		user,
+		trendingTags = [],
+		suggestedSpaces = [],
+		enabledLanguages = 'en,fr',
+		sidebar,
+		rightSidebarWidgets = []
+	}: Props = $props();
 
-	// Only show the language toggle when more than one language is enabled.
-	// Ref: conventions/system-settings-catalog.md (i18n.enabled_languages)
-	let showLanguageToggle = $derived(enabledLanguages.split(',').filter(Boolean).length > 1);
+	// Normalize incoming widgets to the SidebarWidget shape.
+	const widgets = $derived(
+		(rightSidebarWidgets as SidebarWidget[]).filter((w) => w && typeof w.widget_type === 'string')
+	);
 
 	// ADR-060: Dashboard is private — no ad slots on /dashboard/* routes.
 	let isDashboard = $derived(page.url.pathname.startsWith('/dashboard'));
 
-	/** Current path without the leading slash, for the /fr /en redirect targets. */
-	function currentPath(): string {
-		if (typeof window === 'undefined') return '';
-		return window.location.pathname.slice(1);
-	}
+	// Split widgets into topbar (sticky) and content (scrollable) slots.
+	// Topbar widgets: search, theme_toggle, language_toggle, user_dropdown.
+	// Content widgets: everything else (ad_slot, trending_tags, suggested_spaces, etc.).
+	const topbarWidgetTypes = new Set(['search', 'theme_toggle', 'language_toggle', 'user_dropdown']);
+	let topbarWidgets = $derived(widgets.filter((w) => topbarWidgetTypes.has(w.widget_type)));
+	let contentWidgets = $derived(widgets.filter((w) => !topbarWidgetTypes.has(w.widget_type)));
 </script>
 
 <aside class="flex h-full flex-col gap-4 overflow-y-auto px-4 py-3">
-	<!-- Sticky top bar: search + avatar -->
-	<div
-		class="sticky top-0 z-10 -mx-4 flex items-center gap-2 bg-[var(--color-bg)]/90 px-4 py-2 backdrop-blur"
-	>
-		<SearchAutocomplete />
-
-		<button
-			type="button"
-			onclick={() => theme.toggle()}
-			class="grid h-9 w-9 shrink-0 place-items-center rounded-full text-[var(--color-muted)] hover:bg-[var(--color-surface-subtle)]"
-			aria-label={theme.current === 'dark' ? t('theme.toggle_light') : t('theme.toggle_dark')}
+	<!-- Sticky top bar: rendered from topbar-slot widgets (search, theme toggle,
+	     language toggle, user dropdown). These are managed via the Sidebar
+	     Management System (Section 59) and can be reordered/toggled from admin. -->
+	{#if topbarWidgets.length > 0}
+		<div
+			class="sticky top-0 z-10 -mx-4 flex items-center gap-2 bg-[var(--color-bg)]/90 px-4 py-2 backdrop-blur"
 		>
-			{#if theme.current === 'dark'}<Sun size={18} />{:else}<Moon size={18} />{/if}
-		</button>
+			{#each topbarWidgets as widget (widget.id)}
+				<SidebarWidgetRenderer
+					{widget}
+					{user}
+					{trendingTags}
+					{suggestedSpaces}
+					{enabledLanguages}
+					{isDashboard}
+				/>
+			{/each}
+		</div>
+	{/if}
 
-		{#if showLanguageToggle}
-			<a
-				href={i18n.locale === 'fr' ? `/en/${currentPath()}` : `/fr/${currentPath()}`}
-				class="grid h-9 w-9 shrink-0 place-items-center rounded-full text-[var(--color-muted)] hover:bg-[var(--color-surface-subtle)]"
-				aria-label={i18n.locale === 'fr' ? t('locale.switch_to_en') : t('locale.switch_to_fr')}
-				title={i18n.locale === 'fr' ? 'English' : 'Français'}
-			>
-				<Languages size={18} />
-			</a>
-		{/if}
-
-		<UserDropdown {user} />
-	</div>
-
-	<!-- Route-specific widgets -->
+	<!-- Route-specific widgets (via setSidebar snippet) -->
 	{#if sidebar}
 		{@render sidebar()}
 	{/if}
 
-	<!-- Page Builder sidebar blocks (managed from admin /page-builder/sidebars) -->
-	{#if rightSidebarBlocks.length > 0}
-		<SidebarBlocks blocks={rightSidebarBlocks} />
-	{/if}
-
-	<!-- Phase 24 — sidebar_top ad slot (above global widgets). Suppressed on
-	dashboard routes per ADR-060 (dashboard is private, no ad slots). -->
-	{#if !isDashboard}
-		<AdSlot slot="sidebar_top" format="square" />
-	{/if}
-
-	<!-- Global widget: trending tags -->
-	{#if trendingTags.length > 0}
-		<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-			<h2 class="mb-3 text-sm font-medium text-[var(--color-text)]">{t('sidebar.trending_tags')}</h2>
-			<ul class="flex flex-wrap gap-2">
-				{#each trendingTags as tag (tag.id)}
-					<li>
-						<a
-							href={`/tags/${tag.slug}`}
-							class="inline-block rounded-full bg-[var(--color-surface-subtle)] px-3 py-1 text-xs text-[var(--color-text-subtle)] hover:text-[var(--color-primary)]"
-							>#{tag.name}</a
-						>
-					</li>
-				{/each}
-			</ul>
-		</section>
-	{/if}
-
-	<!-- Global widget: suggested spaces -->
-	{#if suggestedSpaces.length > 0}
-		<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-			<h2 class="mb-3 text-sm font-medium text-[var(--color-text)]">{t('sidebar.suggested_spaces')}</h2>
-			<ul class="space-y-2">
-				{#each suggestedSpaces as space (space.id)}
-					<li>
-						<a href={`/spaces/${space.slug}`} class="flex items-center gap-2 rounded-[var(--radius)] p-1.5 hover:bg-[var(--color-surface-subtle)]">
-							<span class="grid h-8 w-8 shrink-0 place-items-center rounded-[var(--radius)] bg-[var(--color-surface-subtle)] text-xs font-medium text-[var(--color-text-subtle)]">{space.name.charAt(0).toUpperCase()}</span>
-							<span class="min-w-0 flex-1">
-								<span class="block truncate text-sm text-[var(--color-text)]">{space.name}</span>
-								{#if space.member_count != null}
-									<span class="block text-xs text-[var(--color-muted)]">{t('meta.members', '{n} members').replace('{n}', String(space.member_count))}</span>
-								{/if}
-							</span>
-						</a>
-					</li>
-				{/each}
-			</ul>
-		</section>
-	{/if}
-
-	<!-- Phase 24 — sidebar_bottom ad slot (after global widgets). Suppressed on
-	dashboard routes per ADR-060. -->
-	{#if !isDashboard}
-		<AdSlot slot="sidebar_bottom" format="banner" />
-	{/if}
+	<!-- Content-slot widgets (ad slots, trending tags, suggested spaces, etc.)
+	     managed via the Sidebar Management System (Section 59, ADR-066). -->
+	{#each contentWidgets as widget (widget.id)}
+		<SidebarWidgetRenderer
+			{widget}
+			{user}
+			{trendingTags}
+			{suggestedSpaces}
+			{enabledLanguages}
+			{isDashboard}
+		/>
+	{/each}
 </aside>

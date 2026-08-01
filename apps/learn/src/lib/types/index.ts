@@ -366,17 +366,20 @@ export type InstructorStatus = 'pending' | 'approved' | 'rejected' | 'suspended'
 
 export interface InstructorProfile {
 	id: string;
+	tenant_id: string;
 	user_id: string;
-	username: string;
-	displayName: string;
-	avatar_url?: string | null;
-	status: InstructorStatus;
+	display_name: string;
+	headline?: string | null;
 	bio?: string | null;
-	/** Payout account handle (e.g. Paystack recipient code). */
-	payout_handle?: string | null;
-	applied_at: string;
-	approved_at?: string | null;
-	rejected_reason?: string | null;
+	social_links?: Record<string, string>;
+	tier: string;
+	status: InstructorStatus;
+	commission_pct_override?: number | null;
+	kyc_status: string;
+	application_note?: string | null;
+	reviewed_at?: string | null;
+	created_at: string;
+	updated_at: string;
 	/** Aggregate stats for the instructor dashboard. */
 	total_enrolled?: number;
 	total_revenue_kobo?: number;
@@ -392,12 +395,13 @@ export interface UniversityCatalogTrack extends TrackSummary {
 /** Instructor's own track with marketplace status — GET /learn/university/my/tracks. */
 export interface InstructorTrack extends TrackSummary {
 	/** Marketplace submission status. */
-	submission_status: 'draft' | 'pending' | 'approved' | 'rejected' | 'suspended';
+	submission_status: 'draft' | 'pending' | 'approved' | 'rejected';
 	submitted_at?: string | null;
 	reviewed_at?: string | null;
 	rejection_reason?: string | null;
 	total_enrolled: number;
 	total_revenue_kobo: number;
+	thumbnail_url?: string | null;
 }
 
 export interface InstructorTrackStats {

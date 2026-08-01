@@ -59,6 +59,50 @@ func (q *Queries) AnonymizeComparisonItemsByAuthor(ctx context.Context, arg Anon
 	return result.RowsAffected(), nil
 }
 
+const anonymizeDMMessagesBySender = `-- name: AnonymizeDMMessagesBySender :exec
+UPDATE dm_messages
+SET body = '', sender_id = $1
+WHERE sender_id = $2 AND tenant_id = $3
+`
+
+type AnonymizeDMMessagesBySenderParams struct {
+	TargetUserID pgtype.UUID `json:"target_user_id"`
+	UserID       pgtype.UUID `json:"user_id"`
+	TenantID     pgtype.UUID `json:"tenant_id"`
+}
+
+// BUG-024: anonymize dm_messages authored by the user during GDPR erasure.
+// The message body is cleared and the sender_id is reassigned to the
+// placeholder so the row survives HardDeleteUser for the other participant.
+// Ref: japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md, ADR-014
+func (q *Queries) AnonymizeDMMessagesBySender(ctx context.Context, arg AnonymizeDMMessagesBySenderParams) error {
+	_, err := q.db.Exec(ctx, anonymizeDMMessagesBySender, arg.TargetUserID, arg.UserID, arg.TenantID)
+	return err
+}
+
+const anonymizeDMRequestsByUser = `-- name: AnonymizeDMRequestsByUser :exec
+UPDATE dm_requests
+SET preview_message = '',
+    requester_id = CASE WHEN requester_id = $1 THEN $2 ELSE requester_id END,
+    recipient_id = CASE WHEN recipient_id = $1 THEN $2 ELSE recipient_id END
+WHERE tenant_id = $3
+  AND (requester_id = $1 OR recipient_id = $1)
+`
+
+type AnonymizeDMRequestsByUserParams struct {
+	UserID       pgtype.UUID `json:"user_id"`
+	TargetUserID pgtype.UUID `json:"target_user_id"`
+	TenantID     pgtype.UUID `json:"tenant_id"`
+}
+
+// BUG-024: anonymize dm_requests where the user is requester or recipient
+// during GDPR erasure. The preview_message is cleared and the user_id
+// fields are reassigned to the placeholder.
+func (q *Queries) AnonymizeDMRequestsByUser(ctx context.Context, arg AnonymizeDMRequestsByUserParams) error {
+	_, err := q.db.Exec(ctx, anonymizeDMRequestsByUser, arg.UserID, arg.TargetUserID, arg.TenantID)
+	return err
+}
+
 const anonymizeFormSubmissionsByUser = `-- name: AnonymizeFormSubmissionsByUser :execrows
 UPDATE form_submissions
 SET user_id = NULL,
@@ -509,6 +553,34 @@ func (q *Queries) DeleteTicketCommentsByUser(ctx context.Context, userID pgtype.
 	return err
 }
 
+const deleteUserBlocksByUser = `-- name: DeleteUserBlocksByUser :exec
+DELETE FROM user_blocks
+WHERE blocker_id = $1 OR blocked_id = $1
+`
+
+// BUG-024: delete user_blocks where the user is blocker or blocked during
+// GDPR erasure. Block relationships are user-owned config.
+func (q *Queries) DeleteUserBlocksByUser(ctx context.Context, userID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteUserBlocksByUser, userID)
+	return err
+}
+
+const deleteUserDMSettingsByUser = `-- name: DeleteUserDMSettingsByUser :exec
+DELETE FROM user_dm_settings WHERE user_id = $1 AND tenant_id = $2
+`
+
+type DeleteUserDMSettingsByUserParams struct {
+	UserID   pgtype.UUID `json:"user_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+// BUG-024: delete user_dm_settings for the user during GDPR erasure.
+// dm_privacy is user-owned config with no PII in the row itself.
+func (q *Queries) DeleteUserDMSettingsByUser(ctx context.Context, arg DeleteUserDMSettingsByUserParams) error {
+	_, err := q.db.Exec(ctx, deleteUserDMSettingsByUser, arg.UserID, arg.TenantID)
+	return err
+}
+
 const deleteUserPreferences = `-- name: DeleteUserPreferences :exec
 DELETE FROM user_preferences WHERE user_id = $1 AND tenant_id = $2
 `
@@ -684,6 +756,26 @@ func (q *Queries) GdprExportUserApiKeys(ctx context.Context, arg GdprExportUserA
 	return data, err
 }
 
+const gdprExportUserBlocks = `-- name: GdprExportUserBlocks :one
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (
+    SELECT blocker_id, blocked_id, created_at
+    FROM user_blocks
+    WHERE blocker_id = $1 OR blocked_id = $1
+    ORDER BY created_at
+) t
+`
+
+// BUG-022: export user_blocks where the user is blocker or blocked so the
+// GDPR data export includes block relationships (PII-adjacent).
+// Ref: japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
+func (q *Queries) GdprExportUserBlocks(ctx context.Context, userID pgtype.UUID) (interface{}, error) {
+	row := q.db.QueryRow(ctx, gdprExportUserBlocks, userID)
+	var data interface{}
+	err := row.Scan(&data)
+	return data, err
+}
+
 const gdprExportUserBookmarks = `-- name: GdprExportUserBookmarks :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (SELECT id, tenant_id, user_id, entity_type, entity_id, folder, created_at, folder_id FROM bookmarks WHERE user_id = $1 AND tenant_id = $2) t
@@ -828,6 +920,111 @@ type GdprExportUserContentSharesParams struct {
 
 func (q *Queries) GdprExportUserContentShares(ctx context.Context, arg GdprExportUserContentSharesParams) (interface{}, error) {
 	row := q.db.QueryRow(ctx, gdprExportUserContentShares, arg.UserID, arg.TenantID)
+	var data interface{}
+	err := row.Scan(&data)
+	return data, err
+}
+
+const gdprExportUserDMConversations = `-- name: GdprExportUserDMConversations :one
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (
+    SELECT id, tenant_id, participant_1_id, participant_2_id,
+           last_message_at, last_message_preview,
+           p1_unread_count, p2_unread_count, created_at, updated_at
+    FROM dm_conversations
+    WHERE tenant_id = $1
+      AND (participant_1_id = $2 OR participant_2_id = $2)
+    ORDER BY created_at
+) t
+`
+
+type GdprExportUserDMConversationsParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	UserID   pgtype.UUID `json:"user_id"`
+}
+
+// BUG-022: export dm_conversations where the user is a participant so the
+// GDPR data export includes DM conversation metadata.
+// Ref: japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
+func (q *Queries) GdprExportUserDMConversations(ctx context.Context, arg GdprExportUserDMConversationsParams) (interface{}, error) {
+	row := q.db.QueryRow(ctx, gdprExportUserDMConversations, arg.TenantID, arg.UserID)
+	var data interface{}
+	err := row.Scan(&data)
+	return data, err
+}
+
+const gdprExportUserDMMessages = `-- name: GdprExportUserDMMessages :one
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (
+    SELECT dm.id, dm.conversation_id, dm.sender_id, dm.tenant_id,
+           dm.body, dm.created_at, dm.read_at, dm.edited_at, dm.deleted_at
+    FROM dm_messages dm
+    WHERE dm.tenant_id = $1 AND dm.sender_id = $2
+    ORDER BY dm.created_at
+) t
+`
+
+type GdprExportUserDMMessagesParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	UserID   pgtype.UUID `json:"user_id"`
+}
+
+// BUG-022: export dm_messages authored by the user so the GDPR data export
+// includes DM message content (PII: message bodies).
+// Ref: japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
+func (q *Queries) GdprExportUserDMMessages(ctx context.Context, arg GdprExportUserDMMessagesParams) (interface{}, error) {
+	row := q.db.QueryRow(ctx, gdprExportUserDMMessages, arg.TenantID, arg.UserID)
+	var data interface{}
+	err := row.Scan(&data)
+	return data, err
+}
+
+const gdprExportUserDMRequests = `-- name: GdprExportUserDMRequests :one
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (
+    SELECT id, tenant_id, requester_id, recipient_id, conversation_id,
+           preview_message, status, created_at, updated_at, resolved_at
+    FROM dm_requests
+    WHERE tenant_id = $1
+      AND (requester_id = $2 OR recipient_id = $2)
+    ORDER BY created_at
+) t
+`
+
+type GdprExportUserDMRequestsParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	UserID   pgtype.UUID `json:"user_id"`
+}
+
+// BUG-022: export dm_requests where the user is requester or recipient so
+// the GDPR data export includes DM request metadata and preview messages.
+// Ref: japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
+func (q *Queries) GdprExportUserDMRequests(ctx context.Context, arg GdprExportUserDMRequestsParams) (interface{}, error) {
+	row := q.db.QueryRow(ctx, gdprExportUserDMRequests, arg.TenantID, arg.UserID)
+	var data interface{}
+	err := row.Scan(&data)
+	return data, err
+}
+
+const gdprExportUserDMSettings = `-- name: GdprExportUserDMSettings :one
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (
+    SELECT user_id, tenant_id, dm_privacy, updated_at
+    FROM user_dm_settings
+    WHERE tenant_id = $1 AND user_id = $2
+) t
+`
+
+type GdprExportUserDMSettingsParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	UserID   pgtype.UUID `json:"user_id"`
+}
+
+// BUG-022: export user_dm_settings for the user so the GDPR data export
+// includes DM privacy preferences.
+// Ref: japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
+func (q *Queries) GdprExportUserDMSettings(ctx context.Context, arg GdprExportUserDMSettingsParams) (interface{}, error) {
+	row := q.db.QueryRow(ctx, gdprExportUserDMSettings, arg.TenantID, arg.UserID)
 	var data interface{}
 	err := row.Scan(&data)
 	return data, err
@@ -2069,6 +2266,44 @@ type ReassignContentReviewReviewerParams struct {
 // content_reviews.reviewer_user_id destroys all review records.
 func (q *Queries) ReassignContentReviewReviewer(ctx context.Context, arg ReassignContentReviewReviewerParams) error {
 	_, err := q.db.Exec(ctx, reassignContentReviewReviewer, arg.TargetUserID, arg.UserID, arg.TenantID)
+	return err
+}
+
+const reassignDMConversationParticipant1 = `-- name: ReassignDMConversationParticipant1 :exec
+UPDATE dm_conversations
+SET participant_1_id = $1
+WHERE participant_1_id = $2 AND tenant_id = $3
+`
+
+type ReassignDMConversationParticipant1Params struct {
+	TargetUserID pgtype.UUID `json:"target_user_id"`
+	UserID       pgtype.UUID `json:"user_id"`
+	TenantID     pgtype.UUID `json:"tenant_id"`
+}
+
+// BUG-024: reassign dm_conversations.participant_1_id to the placeholder
+// during GDPR erasure so the conversation survives for the other participant.
+func (q *Queries) ReassignDMConversationParticipant1(ctx context.Context, arg ReassignDMConversationParticipant1Params) error {
+	_, err := q.db.Exec(ctx, reassignDMConversationParticipant1, arg.TargetUserID, arg.UserID, arg.TenantID)
+	return err
+}
+
+const reassignDMConversationParticipant2 = `-- name: ReassignDMConversationParticipant2 :exec
+UPDATE dm_conversations
+SET participant_2_id = $1
+WHERE participant_2_id = $2 AND tenant_id = $3
+`
+
+type ReassignDMConversationParticipant2Params struct {
+	TargetUserID pgtype.UUID `json:"target_user_id"`
+	UserID       pgtype.UUID `json:"user_id"`
+	TenantID     pgtype.UUID `json:"tenant_id"`
+}
+
+// BUG-024: reassign dm_conversations.participant_2_id to the placeholder
+// during GDPR erasure so the conversation survives for the other participant.
+func (q *Queries) ReassignDMConversationParticipant2(ctx context.Context, arg ReassignDMConversationParticipant2Params) error {
+	_, err := q.db.Exec(ctx, reassignDMConversationParticipant2, arg.TargetUserID, arg.UserID, arg.TenantID)
 	return err
 }
 

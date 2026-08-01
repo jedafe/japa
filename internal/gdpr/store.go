@@ -304,6 +304,49 @@ func (s *Store) gdprExportPushTokens(ctx context.Context, userID, tenantID pgtyp
 	})
 }
 
+// BUG-022: GDPR export wrappers for DM tables. Each query returns a JSON
+// array; decodeJSONSlice normalizes the pgx-decoded value.
+// Ref: japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
+
+func (s *Store) gdprExportUserDMConversations(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {
+	return exportJSONSlice(ctx, s.read.GdprExportUserDMConversations, gen.GdprExportUserDMConversationsParams{
+		UserID:   userID,
+		TenantID: tenantID,
+	})
+}
+
+func (s *Store) gdprExportUserDMMessages(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {
+	return exportJSONSlice(ctx, s.read.GdprExportUserDMMessages, gen.GdprExportUserDMMessagesParams{
+		UserID:   userID,
+		TenantID: tenantID,
+	})
+}
+
+func (s *Store) gdprExportUserDMRequests(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {
+	return exportJSONSlice(ctx, s.read.GdprExportUserDMRequests, gen.GdprExportUserDMRequestsParams{
+		UserID:   userID,
+		TenantID: tenantID,
+	})
+}
+
+func (s *Store) gdprExportUserDMSettings(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {
+	return exportJSONSlice(ctx, s.read.GdprExportUserDMSettings, gen.GdprExportUserDMSettingsParams{
+		UserID:   userID,
+		TenantID: tenantID,
+	})
+}
+
+// gdprExportUserBlocks exports user_blocks where the user is blocker or
+// blocked. The user_blocks table has no tenant_id column; the query takes
+// only user_id.
+func (s *Store) gdprExportUserBlocks(ctx context.Context, userID pgtype.UUID) ([]map[string]interface{}, error) {
+	data, err := s.read.GdprExportUserBlocks(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	return decodeJSONSlice(data)
+}
+
 func (s *Store) hasConsent(ctx context.Context, userID pgtype.UUID, consentType string) (bool, error) {
 	granted, err := s.read.HasConsent(ctx, gen.HasConsentParams{
 		UserID:      userID,
