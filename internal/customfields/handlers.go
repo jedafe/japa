@@ -2159,3 +2159,72 @@ func (h *Handlers) DeleteEntityType(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
 }
+
+// ---------------------------------------------------------------------------
+// Guide Category Admin Handlers (Section 14 — Guide Content Type System)
+// ---------------------------------------------------------------------------
+
+// ListGuideCategoriesAdmin handles GET /admin/guide-categories.
+func (h *Handlers) ListGuideCategoriesAdmin(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+	cats, err := h.Service.ListGuideCategories(r.Context(), tenantID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": cats})
+}
+
+// CreateGuideCategoryAdmin handles POST /admin/guide-categories.
+// Creates a guide category (entity_type + field group + assignment) in one
+// transaction. After creation, the admin can add fields to the group via the
+// existing custom field group editor (/custom-fields/{groupId}).
+func (h *Handlers) CreateGuideCategoryAdmin(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+	var req struct {
+		Slug  string `json:"slug"`
+		Label string `json:"label"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
+		return
+	}
+	if req.Slug == "" || req.Label == "" {
+		writeError(w, http.StatusBadRequest, "invalid_body", "slug and label are required")
+		return
+	}
+	cat, err := h.Service.CreateGuideCategory(r.Context(), tenantID, CreateGuideCategoryInput{
+		Slug:  req.Slug,
+		Label: req.Label,
+	})
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{"data": cat})
+}
+
+// DeleteGuideCategoryAdmin handles DELETE /admin/guide-categories/{slug}.
+// System categories (seeded) cannot be deleted.
+func (h *Handlers) DeleteGuideCategoryAdmin(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+	slug := chi.URLParam(r, "slug")
+	if slug == "" {
+		writeError(w, http.StatusBadRequest, "invalid_slug", "Slug is required")
+		return
+	}
+	if err := h.Service.DeleteGuideCategory(r.Context(), tenantID, slug); err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
+}

@@ -358,6 +358,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	tagsHandlers := tags.NewHandlers(tagsService, contentService, followService)
 	// Wire the tag slug resolver so content handlers can accept bulk {tag_slugs} (BUG-006).
 	contentHandlers.SetTagResolver(tagSlugResolverAdapter{svc: tagsService})
+	// Wire the guide category lister so ListContentTypes returns admin-configured categories.
+	contentHandlers.SetGuideCategoryLister(guideCategoryListerAdapter{svc: cfService})
 
 	// Notification System subsystem (Section 35 — Notification System).
 	notificationService := notifications.NewService(database)
@@ -1072,6 +1074,13 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Patch("/admin/custom-field-entity-types/{id}", cfHandlers.UpdateEntityType)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "custom_fields.group.delete")).
 				Delete("/admin/custom-field-entity-types/{id}", cfHandlers.DeleteEntityType)
+			// Guide Category admin CRUD (Section 14 — Guide Content Type System)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "custom_fields.group.view")).
+				Get("/admin/guide-categories", cfHandlers.ListGuideCategoriesAdmin)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "custom_fields.group.create")).
+				Post("/admin/guide-categories", cfHandlers.CreateGuideCategoryAdmin)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "custom_fields.group.delete")).
+				Delete("/admin/guide-categories/{slug}", cfHandlers.DeleteGuideCategoryAdmin)
 			// Write (require auth + permission)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "custom_fields.group.create")).
 				Post("/custom-field-groups", cfHandlers.CreateFieldGroup)
@@ -1336,6 +1345,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.reactions.add")).Post("/content/{id}/reactions", contentHandlers.AddReaction)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.reactions.remove")).Delete("/content/{id}/reactions/{key}", contentHandlers.RemoveReaction)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/content/{id}/reactions", contentHandlers.ListReactions)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/content/{id}/reactions/me", contentHandlers.ListUserReactions)
 
 			// Reaction type routes (admin-configurable emoji set)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/reaction-types", contentHandlers.ListReactionTypes)
@@ -1345,6 +1355,17 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Patch("/reaction-types/{key}", contentHandlers.UpdateReactionType)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.reaction_types.manage")).
 				Delete("/reaction-types/{key}", contentHandlers.DeleteReactionType)
+
+			// Share platform routes (admin-configurable social media sharing)
+			// Public read for enabled platforms, admin CRUD for management.
+			r.Get("/share-platforms/enabled", contentHandlers.ListEnabledSharePlatforms)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/share-platforms", contentHandlers.ListSharePlatforms)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.reaction_types.manage")).
+				Post("/share-platforms", contentHandlers.CreateSharePlatform)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.reaction_types.manage")).
+				Patch("/share-platforms/{key}", contentHandlers.UpdateSharePlatform)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.reaction_types.manage")).
+				Delete("/share-platforms/{key}", contentHandlers.DeleteSharePlatform)
 
 			// JSON-LD template routes
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/content/jsonld-templates", contentHandlers.ListJSONLDTemplates)
@@ -1382,7 +1403,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 			// Comments (Section 49 — Unified Comment System)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/comments/{id}", commentsHandlers.GetComment)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/content/{id}/comments", commentsHandlers.ListComments)
+			r.Get("/content/{id}/comments", commentsHandlers.ListComments)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "comments.create")).Post("/content/{id}/comments", commentsHandlers.CreateComment)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "comments.edit_own")).Patch("/comments/{id}", commentsHandlers.UpdateComment)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "comments.delete_own")).Delete("/comments/{id}", commentsHandlers.DeleteComment)
@@ -3192,11 +3213,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Task 18: Blog review queue
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "blog.review.manage")).
 				Get("/admin/blog/review-queue", blogHandlers.ListReviews)
-			// NOTE: ApproveReview/RejectReview not yet implemented in blog.Handlers (pre-existing).
-			// r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "blog.review.manage")).
-			// 	Post("/admin/blog/review-queue/{id}/approve", blogHandlers.ApproveReview)
-			// r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "blog.review.manage")).
-			// 	Post("/admin/blog/review-queue/{id}/reject", blogHandlers.RejectReview)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "blog.review.manage")).
+				Post("/admin/blog/review-queue/{id}/approve", blogHandlers.ApproveReview)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "blog.review.manage")).
+				Post("/admin/blog/review-queue/{id}/reject", blogHandlers.RejectReview)
 			// Admin blog post management (Section 24 blog extension).
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "blog.review.manage")).
 				Get("/admin/blog", blogHandlers.AdminListPosts)
@@ -3640,6 +3660,29 @@ type tagSlugResolverAdapter struct {
 
 func (a tagSlugResolverAdapter) ResolveTagSlugs(ctx context.Context, tenantID pgtype.UUID, slugs []string) (map[string]pgtype.UUID, error) {
 	return a.svc.ResolveTagSlugMap(ctx, tenantID, slugs)
+}
+
+func (a tagSlugResolverAdapter) GetOrCreateTagSlugs(ctx context.Context, tenantID pgtype.UUID, slugs []string) (map[string]pgtype.UUID, error) {
+	return a.svc.GetOrCreateTagSlugs(ctx, tenantID, slugs)
+}
+
+// guideCategoryListerAdapter adapts customfields.Service.ListGuideCategories
+// to the content.GuideCategoryLister interface, avoiding an import cycle
+// (customfields cannot import content).
+type guideCategoryListerAdapter struct {
+	svc *customfields.Service
+}
+
+func (a guideCategoryListerAdapter) ListGuideCategories(ctx context.Context, tenantID pgtype.UUID) ([]content.GuideCategory, error) {
+	cats, err := a.svc.ListGuideCategories(ctx, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]content.GuideCategory, 0, len(cats))
+	for _, c := range cats {
+		out = append(out, content.GuideCategory{Slug: c.Slug, Label: c.Label})
+	}
+	return out, nil
 }
 
 // followNotificationAdapter adapts notifications.Service.DispatchNotification

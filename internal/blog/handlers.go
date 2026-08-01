@@ -246,13 +246,101 @@ func mediaURL(storageBucket, storagePath string) string {
 	return media.MediaURL(storageBucket, storagePath, media.ImageProxyOpts{})
 }
 
-// excerptFromBody returns a plain-text excerpt of up to 160 characters from
-// the post body, used as a fallback when no explicit excerpt is stored.
+// excerptMaxLen is the maximum length of an auto-generated excerpt.
+const excerptMaxLen = 160
+
+// excerptFromBody returns a plain-text excerpt from the post body, used as
+// a fallback when no explicit excerpt is stored. It handles three body
+// formats:
+//   - Tiptap/ProseMirror JSON (starts with `{`) — recursively extracts text
+//     from "text" nodes.
+//   - HTML (starts with `<`) — strips tags via a simple scanner.
+//   - Plain text — used as-is.
+//
+// The result is trimmed and truncated to excerptMaxLen characters with an
+// ellipsis. Empty/whitespace-only input returns "".
 func excerptFromBody(body string) string {
-	if len(body) <= 160 {
-		return body
+	plain := plainTextFromContent(body)
+	plain = strings.TrimSpace(plain)
+	if len(plain) <= excerptMaxLen {
+		return plain
 	}
-	return body[:160] + "…"
+	return plain[:excerptMaxLen] + "…"
+}
+
+// plainTextFromContent extracts readable text from a content body that may
+// be Tiptap JSON, HTML, or plain text.
+func plainTextFromContent(body string) string {
+	trimmed := strings.TrimSpace(body)
+	if trimmed == "" {
+		return ""
+	}
+
+	// Tiptap/ProseMirror JSON document.
+	if trimmed[0] == '{' {
+		if text, ok := extractTiptapText([]byte(trimmed)); ok {
+			return text
+		}
+		// Not valid Tiptap JSON — fall through to plain text.
+	}
+
+	// HTML — strip tags.
+	if trimmed[0] == '<' {
+		return stripHTMLTags(trimmed)
+	}
+
+	// Plain text.
+	return trimmed
+}
+
+// extractTiptapText recursively walks a Tiptap/ProseMirror JSON document and
+// concatenates the "text" field of all text nodes.
+func extractTiptapText(data []byte) (string, bool) {
+	var doc map[string]any
+	if err := json.Unmarshal(data, &doc); err != nil {
+		return "", false
+	}
+	if t, ok := doc["type"].(string); !ok || t != "doc" {
+		return "", false
+	}
+	var sb strings.Builder
+	walkTiptapNodes(doc, &sb)
+	return sb.String(), true
+}
+
+// walkTiptapNodes recursively traverses a Tiptap node, appending text from
+// "text" leaf nodes.
+func walkTiptapNodes(node any, sb *strings.Builder) {
+	m, ok := node.(map[string]any)
+	if !ok {
+		return
+	}
+	if text, ok := m["text"].(string); ok {
+		sb.WriteString(text)
+		sb.WriteByte(' ')
+	}
+	if content, ok := m["content"].([]any); ok {
+		for _, child := range content {
+			walkTiptapNodes(child, sb)
+		}
+	}
+}
+
+// stripHTMLTags removes HTML tags from a string, preserving the text content.
+func stripHTMLTags(s string) string {
+	var sb strings.Builder
+	inTag := false
+	for _, r := range s {
+		switch {
+		case r == '<':
+			inTag = true
+		case r == '>':
+			inTag = false
+		case !inTag:
+			sb.WriteRune(r)
+		}
+	}
+	return sb.String()
 }
 
 // ---------------------------------------------------------------------------
@@ -953,7 +1041,7 @@ func (h *Handlers) ListFeatured(w http.ResponseWriter, r *http.Request) {
 			"slug":           c.Slug,
 			"body":           c.Body,
 			"body_html":      c.BodyHtml,
-			"excerpt":        c.Excerpt,
+			"excerpt":        excerptFromBody(c.Body),
 			"read_time_minutes": c.ReadTimeMinutes,
 			"view_count":     c.ViewCount,
 			"comment_count":  c.CommentCount,
@@ -1030,10 +1118,26 @@ func (h *Handlers) ReorderFeatured(w http.ResponseWriter, r *http.Request) {
 // C6: serves the live feed from the Valkey cache (jc:cache:feed:rss:{tenant_id})
 // populated by the rss:regenerate worker task. Falls back to live DB generation
 // when the cache is empty or Redis is unavailable.
+// BUG-006: respects X-Forwarded-Host to generate public-facing URLs instead
+// of the internal backend port.
 func (h *Handlers) GetRSSFeed(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
+	}
+
+	// Resolve the public-facing site URL. Prefer X-Forwarded-Host (set by
+	// the frontend proxy) over the configured JC_SITE_URL so RSS links
+	// point to the frontend, not the internal backend port.
+	siteURL := h.siteURL
+	if fwdHost := strings.TrimSpace(r.Header.Get("X-Forwarded-Host")); fwdHost != "" {
+		scheme := "https"
+		if r.Header.Get("X-Forwarded-Proto") != "" {
+			scheme = r.Header.Get("X-Forwarded-Proto")
+		} else if r.TLS == nil {
+			scheme = "http"
+		}
+		siteURL = scheme + "://" + fwdHost
 	}
 
 	// C6: try the Valkey cache first.
@@ -1059,7 +1163,7 @@ func (h *Handlers) GetRSSFeed(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Cache", "MISS")
 	w.WriteHeader(http.StatusOK)
 
-	if err := generateRSSXML(w, posts, h.siteURL, h.siteName); err != nil {
+	if err := generateRSSXML(w, posts, siteURL, h.siteName); err != nil {
 		// Headers already sent, just log the error.
 		return
 	}
@@ -1085,7 +1189,12 @@ func (h *Handlers) GetPost(w http.ResponseWriter, r *http.Request) {
 
 	post, err := h.Service.GetBlogPostDetail(r.Context(), slug, tenantID)
 	if err != nil {
-		writeError(w, http.StatusNotFound, "not_found", "Post not found")
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "not_found", "Post not found")
+			return
+		}
+		slog.Error("blog: failed to get post detail", "slug", slug, "error", err)
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to load post")
 		return
 	}
 
@@ -1183,6 +1292,12 @@ func (h *Handlers) ListPosts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	total, err := h.Service.CountPublishedBlogPosts(r.Context(), tenantID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to count blog posts")
+		return
+	}
+
 	// Build enriched card DTOs with featured_image_url.
 	result := make([]map[string]any, 0, len(posts))
 	for _, p := range posts {
@@ -1220,7 +1335,7 @@ func (h *Handlers) ListPosts(w http.ResponseWriter, r *http.Request) {
 			"created_at":        p.CreatedAt,
 			"updated_at":        p.UpdatedAt,
 			"author_name":       p.AuthorName,
-			"excerpt":           p.Excerpt,
+			"excerpt":           excerptFromBody(p.Body),
 		}
 		if p.FeaturedStorageBucket != nil && p.FeaturedStoragePath != nil {
 			card["featured_image_url"] = mediaURL(*p.FeaturedStorageBucket, *p.FeaturedStoragePath)
@@ -1228,7 +1343,14 @@ func (h *Handlers) ListPosts(w http.ResponseWriter, r *http.Request) {
 		result = append(result, card)
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": result})
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data": result,
+		"meta": map[string]any{
+			"total":       total,
+			"page_size":   limit,
+			"page_offset": offset,
+		},
+	})
 }
 
 // AdminListPosts handles GET /api/v1/admin/blog — all blog posts
@@ -1242,16 +1364,13 @@ func (h *Handlers) AdminListPosts(w http.ResponseWriter, r *http.Request) {
 	}
 
 	limit := parsePageSize(r)
+	offset := parsePageSizeOffset(r)
 
-	var cursor pgtype.Timestamptz
-	if cs := r.URL.Query().Get("cursor"); cs != "" {
-		if err := cursor.Scan(cs); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_cursor", "Invalid cursor timestamp")
-			return
-		}
-	}
-
-	posts, err := h.content.ListContentsByType(r.Context(), tenantID, contentTypeBlogPost, cursor, limit)
+	// BUG-B: use the enriched ListAdminBlogPosts query (joins users +
+	// user_profiles) so the admin /blog table gets author_name. The
+	// generic ListContentsByType returned no author join, showing "—"
+	// for every author. Offset-paginated per Rule 5.
+	posts, err := h.Service.ListAdminBlogPosts(r.Context(), tenantID, limit, offset)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list blog posts")
 		return

@@ -58,12 +58,25 @@ func htmlToTextExcerpt(bodyHtml string, maxRunes int) string {
 
 // generateRSSXML writes an RSS 2.0 XML feed to the given writer.
 func generateRSSXML(w io.Writer, posts []gen.ListPublishedPostsForRSSRow, siteURL string, siteName string) error {
+	// Use the most recent post's published_at as lastBuildDate.
+	var lastBuild string
+	if len(posts) > 0 {
+		t := posts[0].PublishedAt.Time
+		if t.IsZero() {
+			t = posts[0].CreatedAt.Time
+		}
+		if !t.IsZero() {
+			lastBuild = t.Format(time.RFC1123Z)
+		}
+	}
+
 	channel := RSSChannel{
-		Title:       siteName + " Blog",
-		Link:        siteURL + "/blog",
-		Description: "Insights and stories from the Nigerian diaspora community",
-		Language:    "en-us",
-		Items:       make([]RSSItem, 0, len(posts)),
+		Title:         siteName + " Blog",
+		Link:          siteURL + "/blog",
+		Description:   "Insights and stories from the Nigerian diaspora community",
+		Language:      "en-us",
+		LastBuildDate: lastBuild,
+		Items:         make([]RSSItem, 0, len(posts)),
 	}
 
 	for _, p := range posts {
@@ -74,14 +87,21 @@ func generateRSSXML(w io.Writer, posts []gen.ListPublishedPostsForRSSRow, siteUR
 
 		guid := "urn:uuid:" + p.ID.String()
 
+		// M4: use a plain-text excerpt (HTML stripped, truncated to 300
+		// runes) instead of raw body_html — avoids XSS-in-feed and
+		// malformed-feeling feeds in RSS readers.
+		// Fall back to excerptFromBody for posts with no body_html (e.g.
+		// Tiptap JSON bodies that haven't been rendered yet).
+		desc := htmlToTextExcerpt(p.BodyHtml, 300)
+		if desc == "" && p.Body != "" {
+			desc = excerptFromBody(p.Body)
+		}
+
 		item := RSSItem{
 			Title:       p.Title,
 			Link:        siteURL + "/blog/" + p.Slug,
 			GUID:        guid,
-			// M4: use a plain-text excerpt (HTML stripped, truncated to 300
-			// runes) instead of raw body_html — avoids XSS-in-feed and
-			// malformed-feeling feeds in RSS readers.
-			Description: htmlToTextExcerpt(p.BodyHtml, 300),
+			Description: desc,
 			PubDate:     pubDate,
 		}
 		channel.Items = append(channel.Items, item)

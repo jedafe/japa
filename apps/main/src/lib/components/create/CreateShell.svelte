@@ -6,6 +6,7 @@
 	import { resolveType } from './contentTypeRegistry';
 	import * as createApi from '$lib/api/create';
 	import { classifyError } from '$lib/api/create';
+	import { api } from '$lib/api/client';
 	import type {
 		ContentRecord,
 		CustomFieldGroup,
@@ -14,7 +15,8 @@
 		ComposerStatus,
 		MediaAsset,
 		Visibility,
-		ComposerOrganization
+		ComposerOrganization,
+		GuideCategory
 	} from '$lib/types';
 	import type { TypeEntry } from './contentTypeRegistry';
 	import SaveBar from './SaveBar.svelte';
@@ -70,6 +72,12 @@
 	let items = $state<{ label: string }[]>([]);
 	let dimensions = $state<{ label: string }[]>([]);
 
+	// ---- Guide category state ----
+	let guideCategory = $state<string | null>(untrack(() => draft?.guide_category ?? null));
+	// Category-specific field groups loaded on-demand when a guide category is selected.
+	// These are merged with the base content field groups for rendering in the settings panel.
+	let categoryFieldGroups = $state<CustomFieldGroup[]>([]);
+
 	// ---- Guide panel: track which field is focused for contextual help ----
 	let focusedField = $state<'space' | 'tags' | 'series' | 'body' | null>(null);
 
@@ -91,11 +99,29 @@
 		organization_id: organizationId,
 		visibility,
 		publish_at: publishAt,
-		space_id: spaceId
+		space_id: spaceId,
+		guide_category: guideCategory
+	});
+
+	// Merge base content field groups with category-specific ones for the
+	// settings panel and required-field validation. Deduplicate by group ID
+	// because the base fetch (GET /custom-field-groups?entity_type=content)
+	// may already include guide category groups that the category-specific
+	// fetch also returns.
+	const allFieldGroups = $derived.by(() => {
+		const seen = new Set<string>();
+		const merged: CustomFieldGroup[] = [];
+		for (const g of [...fieldGroups, ...categoryFieldGroups]) {
+			if (!seen.has(g.id)) {
+				seen.add(g.id);
+				merged.push(g);
+			}
+		}
+		return merged;
 	});
 
 	const requiredFieldsFilled = $derived(
-		fieldGroups
+		allFieldGroups
 			.flatMap((g) => g.fields)
 			.every((f) => !f.is_required || fieldValues[f.key] != null)
 	);
@@ -148,6 +174,27 @@
 		composer?.setSeries(seriesId);
 	});
 
+	// Load category-specific custom field groups when a guide category is
+	// selected. The backend scopes field groups via entity_class =
+	// "content_type:guide:{category}" in custom_field_group_assignments.
+	// The GET /custom-field-groups?entity_class=... endpoint returns only
+	// groups assigned to that entity_class.
+	$effect(() => {
+		const cat = guideCategory;
+		if (!cat) {
+			categoryFieldGroups = [];
+			return;
+		}
+		void (async () => {
+			const res = await api.get<CustomFieldGroup[]>(
+				`/custom-field-groups?entity_class=${encodeURIComponent('content_type:guide:' + cat)}`
+			);
+			if (!res.error && res.data) {
+				categoryFieldGroups = res.data;
+			}
+		})();
+	});
+
 	function markDirty() {
 		composer?.markDirty();
 	}
@@ -190,6 +237,28 @@
 				{/each}
 			</select>
 		</div>
+
+		{#if selectedType.hasCategory && selectedType.categories?.length}
+			<div class="guide-category-selector">
+				<label for="guide-category" class="guide-category-label">
+					{t('create.guide.category_label')}
+				</label>
+				<select
+					id="guide-category"
+					class="guide-category-select"
+					value={guideCategory ?? ''}
+					onchange={(e) => {
+						guideCategory = e.currentTarget.value || null;
+						markDirty();
+					}}
+				>
+					<option value="">{t('create.guide.category_placeholder')}</option>
+					{#each selectedType.categories as cat (cat.Slug)}
+						<option value={cat.Slug}>{cat.Label}</option>
+					{/each}
+				</select>
+			</div>
+		{/if}
 
 		<TitleField {title} onTitle={handleTitle} />
 
@@ -244,7 +313,7 @@
 			{canonicalUrl}
 			{publishAt}
 			{fieldValues}
-			{fieldGroups}
+			fieldGroups={allFieldGroups}
 			bind:series
 			{seriesId}
 			{coverMediaId}
@@ -334,6 +403,31 @@
 		transition: border-color 0.15s, box-shadow 0.15s;
 	}
 	.composer-type-select:focus {
+		border-color: var(--color-primary);
+		box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 15%, transparent);
+	}
+	.guide-category-selector {
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+	}
+	.guide-category-label {
+		font-size: 0.75rem;
+		font-weight: 500;
+		color: var(--color-muted);
+	}
+	.guide-category-select {
+		width: 100%;
+		padding: 10px 14px;
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius);
+		background: var(--color-surface);
+		color: var(--color-text);
+		font-size: 1rem;
+		outline: none;
+		transition: border-color 0.15s, box-shadow 0.15s;
+	}
+	.guide-category-select:focus {
 		border-color: var(--color-primary);
 		box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 15%, transparent);
 	}

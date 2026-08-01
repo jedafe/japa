@@ -21,11 +21,11 @@
 
 <div class="flex min-h-[60vh] flex-col items-center justify-center px-4 text-center">
 	<div class="mb-6 flex items-center justify-center">
-		<meta.icon class="size-12 {isNotFound ? 'text-[var(--color-muted)]' : 'text-[var(--destructive)]'}" />
+		<meta.icon class="size-12 {isNotFound ? 'text-[var(--color-muted)]' : 'text-[var(--color-danger)]'}" />
 	</div>
 	<h1 class="text-foreground mb-2 text-5xl font-bold">{status}</h1>
 	<h2 class="text-foreground mb-3 text-xl font-semibold">{meta.title}</h2>
-	<p class="text-muted-foreground mb-8 max-w-md text-sm">{meta.body}</p>
+	<p class="text-muted mb-8 max-w-md text-sm">{meta.body}</p>
 	<a
 		href="/"
 		class="bg-foreground text-background hover:bg-foreground/90 inline-flex items-center gap-2 rounded-lg px-5 py-2 text-sm font-medium transition-colors"

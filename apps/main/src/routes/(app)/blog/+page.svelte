@@ -14,6 +14,14 @@
 
 	const title = $derived(t('blog.list_title', 'Blog — JapaConnect'));
 	const description = $derived(t('blog.list_description', 'Stories, guides, and insights from the Nigerian diaspora community.'));
+
+	// Pagination: use meta.total when available (accurate), fall back to
+	// the items-length heuristic (items < pageSize → last page).
+	const hasNext = $derived(
+		data.meta?.total != null
+			? data.page * data.pageSize < data.meta.total
+			: data.items.length >= data.pageSize
+	);
 </script>
 
 <svelte:head>
@@ -87,8 +95,8 @@
 					<span class="text-sm text-[var(--color-text-subtle)]">{data.page}</span>
 					<a
 						href="?tab={data.tab}&page={data.page + 1}"
-						class="rounded-lg border border-[var(--color-border)] px-4 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:border-[var(--color-primary)]/40 {data.items.length < data.pageSize ? 'pointer-events-none opacity-40' : ''}"
-						aria-disabled={data.items.length < data.pageSize}
+						class="rounded-lg border border-[var(--color-border)] px-4 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:border-[var(--color-primary)]/40 !hasNext ? 'pointer-events-none opacity-40' : ''}"
+						aria-disabled={!hasNext}
 					>
 						{t('blog.next_page', 'Next')}
 					</a>

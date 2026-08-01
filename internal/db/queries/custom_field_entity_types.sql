@@ -7,6 +7,12 @@ FROM custom_field_entity_types
 WHERE tenant_id = @tenant_id
 ORDER BY sort_order ASC, label ASC;
 
+-- name: ListCustomFieldEntityTypesByPrefix :many
+SELECT id, tenant_id, value, label, is_system, sort_order, created_at, updated_at
+FROM custom_field_entity_types
+WHERE tenant_id = @tenant_id AND value LIKE @prefix
+ORDER BY sort_order ASC, label ASC;
+
 -- name: GetCustomFieldEntityTypeByValue :one
 SELECT id, tenant_id, value, label, is_system, sort_order, created_at, updated_at
 FROM custom_field_entity_types

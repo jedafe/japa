@@ -30,6 +30,7 @@
      selectable = false,
      selectedIds = $bindable(new Set<string>()),
      onrowclick,
+     rowKey,
      emptyMessage = t("common.no_data", "No data available"),
      class: className,
      showPagination = true,
@@ -55,6 +56,7 @@
       selectable?: boolean;
       selectedIds?: Set<string>;
       onrowclick?: (row: any) => void;
+      rowKey?: (row: any) => string;
       emptyMessage?: string;
       class?: ClassValue;
       showPagination?: boolean;
@@ -295,7 +297,7 @@
         </tr>
       </thead>
       <tbody>
-        {#each paginatedData as row, i (row.id ?? i)}
+        {#each paginatedData as row, i (rowKey ? rowKey(row) : (row.id ?? i))}
           <tr
             class={clsx(
               "transition-colors hover:bg-black/[0.02] dark:hover:bg-white/[0.02]",
