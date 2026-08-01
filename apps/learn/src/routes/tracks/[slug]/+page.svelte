@@ -11,6 +11,7 @@
 	import StarRating from '$lib/components/learn/StarRating.svelte';
 	import { LoadingSkeleton } from '$lib/components/ui';
 	import { formatDuration, formatCount, formatPriceKobo, isFreeForUser } from '$lib/format';
+	import { loginUrl } from '$lib/appOrigins';
 	import { Star, Users, Clock, PlayCircle, CheckCircle, ChevronDown } from 'lucide-svelte';
 	import type { PageData } from './$types';
 	import type { Enrollment } from '$lib/types';
@@ -41,7 +42,7 @@
 	const isComplete = $derived(progressPct >= 100);
 
 	// Price label (university host only — ADR-063).
-	const priceLabel = $derived(() => {
+	const priceLabel = $derived.by(() => {
 		if (!data.isUniversity) return null;
 		if (isFreeForUser(track.price_kobo, data.user?.is_pro)) {
 			return data.user?.is_pro ? t('learn.included_pro') : t('learn.free');
@@ -51,7 +52,9 @@
 
 	async function enroll() {
 		if (!data.user) {
-			goto(`/login?redirect=/tracks/${track.slug}`);
+			// Login lives on the Main app (shared jc_token cookie). Send the user
+			// there with a redirect back to this track on Learn.
+			goto(loginUrl(`/tracks/${track.slug}`));
 			return;
 		}
 		enrolling = true;
@@ -105,9 +108,9 @@
 		<div class="flex-1">
 			<div class="mb-2 flex flex-wrap items-center gap-2">
 				<LevelBadge level={track.level} />
-				{#if data.isUniversity && priceLabel()}
+				{#if data.isUniversity && priceLabel}
 					<span class="rounded-full bg-[var(--color-surface-subtle)] px-2.5 py-0.5 text-xs font-semibold text-[var(--color-text)]">
-						{priceLabel()}
+						{priceLabel}
 					</span>
 				{/if}
 			</div>

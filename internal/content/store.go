@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -422,6 +423,20 @@ func (s *Service) UpdateContentStatus(ctx context.Context, id, tenantID pgtype.U
 		return gen.UpdateContentStatusRow{}, fmt.Errorf("updating content status: %w", err)
 	}
 
+	// Ensure a content_scores row exists when content is published. The feed
+	// queries (explore/top/rising/space/profile) INNER JOIN content_scores, so
+	// a missing row excludes the content from those feeds entirely. The row is
+	// created with zero defaults; the engagement worker increments it as
+	// views/votes/comments/bookmarks arrive. Ref: Section 32, Guide §21.
+	if status == StatusPublished {
+		if err := s.write.EnsureContentScore(ctx, content.ID); err != nil {
+			// Non-fatal: a missing score row degrades ranking but does not
+			// break the publish. Log and continue.
+			slog.Warn("content: failed to ensure content_scores row on publish",
+				"content_id", content.ID.String(), "error", err)
+		}
+	}
+
 	return content, nil
 }
 
@@ -449,6 +464,45 @@ func (s *Service) IncrementContentView(ctx context.Context, id, tenantID pgtype.
 		TenantID: tenantID,
 	}); err != nil {
 		return fmt.Errorf("incrementing content view: %w", err)
+	}
+
+	return nil
+}
+
+// IncrementContentCommentCount increments the denormalized comment_count on a
+// content row. Called when a comment is created so feed cards (which read
+// contents.comment_count) show accurate counts immediately. Ref: Section 32.
+func (s *Service) IncrementContentCommentCount(ctx context.Context, id, tenantID pgtype.UUID) error {
+	if err := s.write.IncrementContentCommentCount(ctx, gen.IncrementContentCommentCountParams{
+		ID:       id,
+		TenantID: tenantID,
+	}); err != nil {
+		return fmt.Errorf("incrementing content comment count: %w", err)
+	}
+
+	return nil
+}
+
+// DecrementContentCommentCount decrements the denormalized comment_count on a
+// content row (clamped at 0). Called when a comment is removed.
+func (s *Service) DecrementContentCommentCount(ctx context.Context, id, tenantID pgtype.UUID) error {
+	if err := s.write.DecrementContentCommentCount(ctx, gen.DecrementContentCommentCountParams{
+		ID:       id,
+		TenantID: tenantID,
+	}); err != nil {
+		return fmt.Errorf("decrementing content comment count: %w", err)
+	}
+
+	return nil
+}
+
+// EnsureContentScore creates a zero-default content_scores row if one does not
+// yet exist. Idempotent (ON CONFLICT DO NOTHING). Required so INNER JOIN feed
+// queries do not exclude content and so the engagement worker can increment
+// counts in place. Ref: Section 32, Guide §21.
+func (s *Service) EnsureContentScore(ctx context.Context, contentID pgtype.UUID) error {
+	if err := s.write.EnsureContentScore(ctx, contentID); err != nil {
+		return fmt.Errorf("ensuring content score: %w", err)
 	}
 
 	return nil

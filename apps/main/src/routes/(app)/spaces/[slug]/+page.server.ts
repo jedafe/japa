@@ -37,9 +37,18 @@ export const load: PageServerLoad = async (event) => {
 	const space = detail.space;
 	const spaceId = space.id;
 
+	// Hydrate the follow button's initial state. Best-effort: a failure
+	// degrades to `false` (not following). Only fetch when the viewer is
+	// authenticated — guests can't follow.
+	const initiallyFollowing = event.locals.user
+		? apiGet<{ following: boolean }>(ctx, `/users/${spaceId}/follow-status?entity_type=space`)
+				.then((r) => r.following)
+				.catch(() => false)
+		: Promise.resolve(false);
+
 	// Tab data — each degrades to an empty list on failure so a missing tab
 	// never blanks the whole space view.
-	const [content, members, forumThreads, analytics] = await Promise.all([
+	const [content, members, forumThreads, analytics, isFollowing] = await Promise.all([
 		apiList<SpaceContentItem>(ctx, `/spaces/${slug}/content?page_size=${PAGE_SIZE}`)
 			.then((r) => r.items)
 			.catch(() => []),
@@ -49,8 +58,14 @@ export const load: PageServerLoad = async (event) => {
 		apiList<ForumThread>(ctx, `/forum?page_size=${PAGE_SIZE}`)
 			.then((r) => r.items.filter((t) => t.space_slug === slug))
 			.catch(() => []),
-		// Phase 08.10 — space analytics (best-effort).
-		apiGet<unknown>(ctx, `/spaces/${spaceId}/analytics`).catch(() => null)
+		// Phase 08.10 — space analytics dashboard, space-admin only per JEOS
+		// §215 [auth, space-admin]. Only fetch for authenticated viewers; the
+		// route 403s for non-admins (degrades to null → tab hidden). Guests
+		// never see the tab and never trigger the request.
+		event.locals.user
+			? apiGet<unknown>(ctx, `/spaces/${spaceId}/analytics`).catch(() => null)
+			: Promise.resolve(null),
+		initiallyFollowing
 	]);
 
 	return {
@@ -60,6 +75,7 @@ export const load: PageServerLoad = async (event) => {
 		members,
 		forumThreads,
 		analytics,
-		pageSize: PAGE_SIZE
+		pageSize: PAGE_SIZE,
+		initiallyFollowing: isFollowing
 	};
 };

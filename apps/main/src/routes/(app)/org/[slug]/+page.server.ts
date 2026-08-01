@@ -27,14 +27,22 @@ export const load: PageServerLoad = async (event) => {
 		});
 	}
 
-	const [members, posts, media] = await Promise.all([
+	const [members, posts, media, isFollowing] = await Promise.all([
 		apiList<OrgMember>(ctx, `/organizations/${org.id}/members`).then((r) => r.items).catch(() => []),
 		apiList<ProfilePost>(ctx, `/organizations/${org.id}/content`).then((r) => r.items).catch(() => []),
-		apiList<OrgMedia>(ctx, `/organizations/${org.id}/media`).then((r) => r.items).catch(() => [])
+		apiList<OrgMedia>(ctx, `/organizations/${org.id}/media`).then((r) => r.items).catch(() => []),
+		// Hydrate the follow button's initial state. Best-effort: a failure
+		// degrades to `false` (not following). Only fetch when the viewer is
+		// authenticated — guests can't follow.
+		event.locals.user
+			? apiGet<{ following: boolean }>(ctx, `/users/${org.id}/follow-status?entity_type=organization`)
+					.then((r) => r.following)
+					.catch(() => false)
+			: Promise.resolve(false)
 	]);
 
 	// Owner = the current user appears in the member list with role 'owner'.
 	const isOwner = !!event.locals.user && members.some((m) => m.user.id === event.locals.user!.id && m.role === 'owner');
 
-	return { org, isOwner, members, posts, media };
+	return { org, isOwner, members, posts, media, initiallyFollowing: isFollowing };
 };

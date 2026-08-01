@@ -38,5 +38,15 @@ export const load: PageServerLoad = async (event) => {
 		posts = [];
 	}
 
-	return { profile, posts };
+	// Hydrate the follow button's initial state. Best-effort: a failure
+	// degrades to `false` (not following). The viewer is always authenticated
+	// here (the page is auth-gated above).
+	const initiallyFollowing = await apiGet<{ following: boolean }>(
+		ctx,
+		`/users/${profile.id}/follow-status?entity_type=profile`
+	)
+		.then((r) => r.following)
+		.catch(() => false);
+
+	return { profile, posts, initiallyFollowing };
 };

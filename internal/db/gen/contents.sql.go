@@ -415,6 +415,22 @@ func (q *Queries) CreateSlugHistory(ctx context.Context, arg CreateSlugHistoryPa
 	return i, err
 }
 
+const decrementContentCommentCount = `-- name: DecrementContentCommentCount :exec
+UPDATE contents SET comment_count = GREATEST(comment_count - 1, 0)
+WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
+`
+
+type DecrementContentCommentCountParams struct {
+	ID       pgtype.UUID `json:"id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+// Decrements comment_count when a comment is soft-deleted/removed.
+func (q *Queries) DecrementContentCommentCount(ctx context.Context, arg DecrementContentCommentCountParams) error {
+	_, err := q.db.Exec(ctx, decrementContentCommentCount, arg.ID, arg.TenantID)
+	return err
+}
+
 const deleteBookmark = `-- name: DeleteBookmark :exec
 DELETE FROM bookmarks
 WHERE user_id = $1 AND entity_type = $2 AND entity_id = $3
@@ -456,6 +472,22 @@ type DeleteJSONLDTemplateParams struct {
 
 func (q *Queries) DeleteJSONLDTemplate(ctx context.Context, arg DeleteJSONLDTemplateParams) error {
 	_, err := q.db.Exec(ctx, deleteJSONLDTemplate, arg.ID, arg.TenantID)
+	return err
+}
+
+const ensureContentScore = `-- name: EnsureContentScore :exec
+INSERT INTO content_scores (content_id)
+VALUES ($1)
+ON CONFLICT (content_id) DO NOTHING
+`
+
+// Creates a zero-default content_scores row if one does not yet exist.
+// Called on content publish and by the engagement worker so that INNER JOIN
+// feed queries (explore/top/rising/space/profile) never exclude content for
+// lacking a score row, and so the worker can increment counts in place.
+// ON CONFLICT DO NOTHING preserves any existing scores.
+func (q *Queries) EnsureContentScore(ctx context.Context, contentID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, ensureContentScore, contentID)
 	return err
 }
 
@@ -931,6 +963,25 @@ func (q *Queries) GetSlugRedirect(ctx context.Context, arg GetSlugRedirectParams
 	return i, err
 }
 
+const incrementContentCommentCount = `-- name: IncrementContentCommentCount :exec
+UPDATE contents SET comment_count = comment_count + 1
+WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
+`
+
+type IncrementContentCommentCountParams struct {
+	ID       pgtype.UUID `json:"id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+// Increments the denormalized comment_count on a content row. Called
+// synchronously when a comment is created so feed cards (which read
+// c.comment_count) show accurate counts without waiting for the async
+// scoring pipeline. Ref: Section 32 (feed reads contents.comment_count).
+func (q *Queries) IncrementContentCommentCount(ctx context.Context, arg IncrementContentCommentCountParams) error {
+	_, err := q.db.Exec(ctx, incrementContentCommentCount, arg.ID, arg.TenantID)
+	return err
+}
+
 const incrementContentView = `-- name: IncrementContentView :exec
 UPDATE contents SET view_count = view_count + 1 WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
 `
@@ -942,6 +993,76 @@ type IncrementContentViewParams struct {
 
 func (q *Queries) IncrementContentView(ctx context.Context, arg IncrementContentViewParams) error {
 	_, err := q.db.Exec(ctx, incrementContentView, arg.ID, arg.TenantID)
+	return err
+}
+
+const incrementScoreBookmark = `-- name: IncrementScoreBookmark :exec
+UPDATE content_scores
+SET bookmark_count = bookmark_count + $1, last_scored_at = now()
+WHERE content_id = $2
+`
+
+type IncrementScoreBookmarkParams struct {
+	Delta     int32       `json:"delta"`
+	ContentID pgtype.UUID `json:"content_id"`
+}
+
+// Atomically increments bookmark_count by delta.
+func (q *Queries) IncrementScoreBookmark(ctx context.Context, arg IncrementScoreBookmarkParams) error {
+	_, err := q.db.Exec(ctx, incrementScoreBookmark, arg.Delta, arg.ContentID)
+	return err
+}
+
+const incrementScoreComment = `-- name: IncrementScoreComment :exec
+UPDATE content_scores
+SET comment_count = comment_count + $1, last_scored_at = now()
+WHERE content_id = $2
+`
+
+type IncrementScoreCommentParams struct {
+	Delta     int32       `json:"delta"`
+	ContentID pgtype.UUID `json:"content_id"`
+}
+
+// Atomically increments comment_count by delta.
+func (q *Queries) IncrementScoreComment(ctx context.Context, arg IncrementScoreCommentParams) error {
+	_, err := q.db.Exec(ctx, incrementScoreComment, arg.Delta, arg.ContentID)
+	return err
+}
+
+const incrementScoreView = `-- name: IncrementScoreView :exec
+UPDATE content_scores
+SET view_count = view_count + $1, last_scored_at = now()
+WHERE content_id = $2
+`
+
+type IncrementScoreViewParams struct {
+	Delta     int32       `json:"delta"`
+	ContentID pgtype.UUID `json:"content_id"`
+}
+
+// Atomically increments view_count by delta.
+func (q *Queries) IncrementScoreView(ctx context.Context, arg IncrementScoreViewParams) error {
+	_, err := q.db.Exec(ctx, incrementScoreView, arg.Delta, arg.ContentID)
+	return err
+}
+
+const incrementScoreVote = `-- name: IncrementScoreVote :exec
+UPDATE content_scores
+SET vote_score = vote_score + $1, last_scored_at = now()
+WHERE content_id = $2
+`
+
+type IncrementScoreVoteParams struct {
+	Delta     int32       `json:"delta"`
+	ContentID pgtype.UUID `json:"content_id"`
+}
+
+// Atomically increments vote_score by delta. Used by the engagement worker
+// to avoid the read-modify-write race that loses deltas when concurrent
+// events (vote, comment, bookmark, view) overwrite each other's columns.
+func (q *Queries) IncrementScoreVote(ctx context.Context, arg IncrementScoreVoteParams) error {
+	_, err := q.db.Exec(ctx, incrementScoreVote, arg.Delta, arg.ContentID)
 	return err
 }
 

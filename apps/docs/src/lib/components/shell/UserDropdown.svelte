@@ -1,8 +1,16 @@
 <script lang="ts">
-	import { LogIn, BookOpen } from 'lucide-svelte';
+	import { DropdownMenu } from 'bits-ui';
+	import {
+		User,
+		LayoutDashboard,
+		Settings,
+		LogOut,
+		LogIn,
+		Moon,
+		Sun
+	} from 'lucide-svelte';
 	import { t } from '$lib/i18n';
 	import { theme } from '$lib/stores/theme.svelte';
-	import { Moon, Sun } from 'lucide-svelte';
 	import type { SessionUser } from '$lib/types';
 
 	interface Props {
@@ -21,13 +29,17 @@
 					.toUpperCase()
 			: ''
 	);
+
+	const itemClass =
+		'flex cursor-pointer items-center gap-2 rounded-[6px] px-3 py-2 text-sm text-[var(--color-text)] outline-none data-[highlighted]:bg-[var(--color-surface-subtle)]';
 </script>
 
 <div class="dropdown">
+	<!-- Theme toggle (separate from the avatar dropdown). -->
 	<button
 		type="button"
 		class="toggle"
-		onclick={() => (theme.toggle())}
+		onclick={() => theme.toggle()}
 		aria-label={theme.current === 'dark' ? t('theme.toggle_light') : t('theme.toggle_dark')}
 		title={theme.current === 'dark' ? t('theme.toggle_light') : t('theme.toggle_dark')}
 	>
@@ -38,19 +50,75 @@
 		{/if}
 	</button>
 
-	{#if user}
-		<a href="/docs" class="avatar" title={user.displayName}>
-			{#if user.avatar_url}
-				<img src={user.avatar_url} alt={user.displayName} class="avatar-img" />
+	<!-- Avatar dropdown menu (Bits UI — portals to body, keyboard accessible). -->
+	<DropdownMenu.Root>
+		<DropdownMenu.Trigger
+			class="grid h-9 w-9 shrink-0 place-items-center rounded-full overflow-hidden border border-[var(--color-border)] bg-[var(--color-surface-subtle)] text-sm font-medium text-[var(--color-text-subtle)] cursor-pointer hover:outline hover:outline-2 hover:outline-[var(--color-border)] hover:outline-offset-1"
+			aria-label={t('nav.account', 'Account')}
+		>
+			{#if user?.avatar_url}
+				<img src={user.avatar_url} alt={user.displayName} class="h-full w-full object-cover" />
+			{:else if user}
+				<span class="grid h-full w-full place-items-center text-xs font-semibold text-[var(--color-primary-contrast)] bg-[var(--color-primary)]">{initials}</span>
 			{:else}
-				<span class="avatar-initials">{initials}</span>
+				<User size={18} />
 			{/if}
-		</a>
-	{:else}
-		<a href="/login" class="signin" title={t('audience.no_access_signin')}>
-			<LogIn size={16} />
-		</a>
-	{/if}
+		</DropdownMenu.Trigger>
+		<DropdownMenu.Portal>
+			<DropdownMenu.Content
+				align="end"
+				sideOffset={8}
+				class="z-50 min-w-44 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-1 shadow-lg"
+			>
+				{#if user}
+					<DropdownMenu.Item class={itemClass}>
+						{#snippet child({ props })}
+							<a href="/u/{user.username}" {...props}>
+								<User size={16} /> {t('nav.profile', 'Profile')}
+							</a>
+						{/snippet}
+					</DropdownMenu.Item>
+					<DropdownMenu.Item class={itemClass}>
+						{#snippet child({ props })}
+							<a href="/dashboard" {...props}>
+								<LayoutDashboard size={16} /> {t('nav.dashboard', 'Dashboard')}
+							</a>
+						{/snippet}
+					</DropdownMenu.Item>
+					<DropdownMenu.Item class={itemClass}>
+						{#snippet child({ props })}
+							<a href="/settings/profile" {...props}>
+								<Settings size={16} /> {t('nav.settings', 'Settings')}
+							</a>
+						{/snippet}
+					</DropdownMenu.Item>
+					<DropdownMenu.Separator class="my-1 h-px bg-[var(--color-border)]" />
+					<DropdownMenu.Item class={itemClass}>
+						{#snippet child({ props })}
+							<a href="/logout" {...props}>
+								<LogOut size={16} /> {t('nav.logout', 'Logout')}
+							</a>
+						{/snippet}
+					</DropdownMenu.Item>
+				{:else}
+					<DropdownMenu.Item class={itemClass}>
+						{#snippet child({ props })}
+							<a href="/login" {...props}>
+								<LogIn size={16} /> {t('auth.login')}
+							</a>
+						{/snippet}
+					</DropdownMenu.Item>
+					<DropdownMenu.Item class={itemClass}>
+						{#snippet child({ props })}
+							<a href="/signup" {...props}>
+								<User size={16} /> {t('auth.signup')}
+							</a>
+						{/snippet}
+					</DropdownMenu.Item>
+				{/if}
+			</DropdownMenu.Content>
+		</DropdownMenu.Portal>
+	</DropdownMenu.Root>
 </div>
 
 <style>
@@ -59,7 +127,7 @@
 		align-items: center;
 		gap: 0.375rem;
 	}
-	.toggle, .signin {
+	.toggle {
 		display: grid;
 		place-items: center;
 		height: 2.25rem;
@@ -69,27 +137,9 @@
 		background: transparent;
 		border: 1px solid var(--color-border);
 		cursor: pointer;
-		text-decoration: none;
 	}
-	.toggle:hover, .signin:hover { color: var(--color-text); border-color: var(--color-border-input-hover); }
-	.avatar {
-		display: grid;
-		place-items: center;
-		height: 2.25rem;
-		width: 2.25rem;
-		border-radius: 9999px;
-		overflow: hidden;
-		border: 1px solid var(--color-border);
-	}
-	.avatar-img { height: 100%; width: 100%; object-fit: cover; }
-	.avatar-initials {
-		font-size: 0.75rem;
-		font-weight: 600;
-		color: var(--color-primary-contrast);
-		background: var(--color-primary);
-		height: 100%;
-		width: 100%;
-		display: grid;
-		place-items: center;
+	.toggle:hover {
+		color: var(--color-text);
+		border-color: var(--color-border-input-hover);
 	}
 </style>

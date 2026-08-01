@@ -119,3 +119,41 @@ export async function apiGetOrNull<T>(ctx: ApiContext, path: string): Promise<T 
 		throw err;
 	}
 }
+
+/**
+ * GET an endpoint whose response carries extra top-level fields alongside
+ * `data` (e.g. `GET /learn/tracks/{id}/reviews` returns `{ data, aggregate }`).
+ * Returns the full parsed body so callers can read both `data` and the sibling
+ * fields. Use only when the standard `{ data }` / `{ data, meta }` envelope is
+ * insufficient — prefer `apiGet`/`apiList` for plain resources.
+ */
+export async function apiGetBody<T extends Record<string, unknown>>(
+	ctx: ApiContext,
+	path: string
+): Promise<T> {
+	const headers: Record<string, string> = {
+		'content-type': 'application/json',
+		host: ctx.host,
+		'x-forwarded-host': ctx.host
+	};
+	if (ctx.token) headers.authorization = `Bearer ${ctx.token}`;
+
+	const res = await ctx.fetch(`${API_V1}${path}`, { method: 'GET', headers });
+
+	let payload: unknown = null;
+	try {
+		payload = await res.json();
+	} catch {
+		payload = null;
+	}
+
+	const isErrorEnvelope =
+		payload !== null && typeof payload === 'object' && 'error' in payload;
+
+	if (!res.ok || isErrorEnvelope) {
+		const err = (payload as ApiErr | null)?.error;
+		throw new ApiError(res.status, err?.code ?? 'api_error', err?.message ?? res.statusText);
+	}
+
+	return (payload ?? {}) as T;
+}

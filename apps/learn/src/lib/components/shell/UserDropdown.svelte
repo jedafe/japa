@@ -11,6 +11,7 @@
 		GraduationCap
 	} from 'lucide-svelte';
 	import { t } from '$lib/i18n';
+	import { loginUrl, profileUrl, MAIN_ORIGIN } from '$lib/appOrigins';
 	import type { SessionUser } from '$lib/types';
 
 	interface Props {
@@ -44,7 +45,7 @@
 			{#if user}
 				<DropdownMenu.Item class={itemClass}>
 					{#snippet child({ props })}
-						<a href="/u/{user.username}" {...props}>
+						<a href={profileUrl(user.username)} {...props}>
 							<User size={16} /> {t('nav.profile')}
 						</a>
 					{/snippet}
@@ -79,7 +80,7 @@
 				</DropdownMenu.Item>
 				<DropdownMenu.Item class={itemClass}>
 					{#snippet child({ props })}
-						<a href="/settings" {...props}>
+						<a href={`${MAIN_ORIGIN}/settings`} {...props}>
 							<Settings size={16} /> {t('nav.settings')}
 						</a>
 					{/snippet}
@@ -87,7 +88,7 @@
 				<DropdownMenu.Separator class="my-1 h-px bg-[var(--color-border)]" />
 				<DropdownMenu.Item class={itemClass}>
 					{#snippet child({ props })}
-						<a href="/logout" {...props}>
+						<a href={`${MAIN_ORIGIN}/logout`} {...props}>
 							<LogOut size={16} /> {t('nav.logout')}
 						</a>
 					{/snippet}
@@ -95,14 +96,14 @@
 			{:else}
 				<DropdownMenu.Item class={itemClass}>
 					{#snippet child({ props })}
-						<a href="/login" {...props}>
+						<a href={loginUrl()} {...props}>
 							<LogIn size={16} /> {t('nav.login')}
 						</a>
 					{/snippet}
 				</DropdownMenu.Item>
 				<DropdownMenu.Item class={itemClass}>
 					{#snippet child({ props })}
-						<a href="/signup" {...props}>
+						<a href={`${MAIN_ORIGIN}/signup`} {...props}>
 							<User size={16} /> {t('nav.signup')}
 						</a>
 					{/snippet}

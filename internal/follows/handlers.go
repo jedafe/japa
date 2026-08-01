@@ -101,9 +101,20 @@ func parsePageOffset(r *http.Request) int32 {
 // Follow Handlers
 // ---------------------------------------------------------------------------
 
-// ToggleFollow handles POST /api/v1/follows.
-// Request body: { "entity_type": "user", "entity_id": "..." }
+// ToggleFollow handles both follow registrations:
+//   - POST /api/v1/follows — generic polymorphic follow. The entity_type and
+//     entity_id are carried in the JSON body: { "entity_type", "entity_id" }.
+//   - POST/DELETE /api/v1/users/{id}/follow — user-specific follow. The target
+//     user id is the {id} path parameter and the entity type is implicitly
+//     "user"; no request body is sent by the frontend.
+//
+// The path-parameter form is resolved first so an empty body (sent by the
+// SvelteKit FollowButton via api.post/api.delete with no body) does not fail
+// with `invalid_body`. The body form is the fallback for the generic route.
 // Response: { "data": { "following": true } }.
+//
+// Ref: japaconnect-engineering/sections/31-follow-system.md
+//      conventions/api-routes-catalog.md (POST /follows, POST /users/{id}/follow)
 func (h *Handlers) ToggleFollow(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
 	if !ok {
@@ -115,33 +126,51 @@ func (h *Handlers) ToggleFollow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var input struct {
-		EntityType string `json:"entity_type"`
-		EntityID   string `json:"entity_id"`
-	}
-
-	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
-		return
-	}
-
-	if input.EntityType == "" {
-		writeError(w, http.StatusBadRequest, "missing_entity_type", "entity_type is required")
-		return
-	}
-
-	if input.EntityID == "" {
-		writeError(w, http.StatusBadRequest, "missing_entity_id", "entity_id is required")
-		return
-	}
-
+	var entityType string
 	var entityID pgtype.UUID
-	if err := entityID.Scan(input.EntityID); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_entity_id", "Invalid entity_id format")
-		return
+
+	// Entity-specific route: /users/{id}/follow carries the target id as a
+	// path parameter and implies entity_type "user". The frontend calls this
+	// route with no request body, so resolve from the path before attempting
+	// to decode a body.
+	if idStr := chi.URLParam(r, "id"); idStr != "" {
+		if err := entityID.Scan(idStr); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_entity_id", "Invalid entity_id format")
+			return
+		}
+		entityType = EntityTypeUser
+	} else {
+		// Generic route: POST /follows — entity_type and entity_id come from
+		// the JSON body.
+		var input struct {
+			EntityType string `json:"entity_type"`
+			EntityID   string `json:"entity_id"`
+		}
+
+		if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+			return
+		}
+
+		if input.EntityType == "" {
+			writeError(w, http.StatusBadRequest, "missing_entity_type", "entity_type is required")
+			return
+		}
+
+		if input.EntityID == "" {
+			writeError(w, http.StatusBadRequest, "missing_entity_id", "entity_id is required")
+			return
+		}
+
+		if err := entityID.Scan(input.EntityID); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_entity_id", "Invalid entity_id format")
+			return
+		}
+
+		entityType = input.EntityType
 	}
 
-	followed, err := h.service.ToggleFollow(r.Context(), tenantID, user.UserID, input.EntityType, entityID)
+	followed, err := h.service.ToggleFollow(r.Context(), tenantID, user.UserID, entityType, entityID)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "follow_error", err.Error())
 		return

@@ -163,11 +163,12 @@
 		{/each}
 	</ul>
 
-	<!-- Compose -->
+	<!-- Compose — guests are redirected to login with a returnTo so they land
+	     on the composer after authenticating instead of hitting a 403. -->
 	<div class="px-2 py-2">
 		{#if collapsed}
 			<a
-				href="/create"
+				href={user ? '/create' : '/login?redirect=/create'}
 				class="mx-auto grid h-11 w-11 place-items-center rounded-full bg-[var(--color-primary)] text-[var(--color-primary-contrast)] shadow-sm transition-colors hover:bg-[var(--color-primary-hover)]"
 				aria-label={t('nav.compose')}
 			>
@@ -175,7 +176,7 @@
 			</a>
 		{:else}
 			<a
-				href="/create"
+				href={user ? '/create' : '/login?redirect=/create'}
 				class="flex items-center justify-center gap-2 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2.5 text-sm font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)]"
 			>
 				<PenSquare size={18} />

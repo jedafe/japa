@@ -18,14 +18,15 @@
 	const authed = $derived(!!page.data.user);
 	const activeTab = $derived(page.url.searchParams.get('tab') ?? 'feed');
 
-	const tabs = $derived([
-		{ key: 'feed', labelKey: 'space.tab.feed', href: `?tab=feed` },
-		{ key: 'forum', labelKey: 'space.tab.forum', href: `?tab=forum` },
-		{ key: 'search', labelKey: 'space.tab.search', href: `?tab=search` },
-		{ key: 'members', labelKey: 'space.tab.members', href: `?tab=members` },
-		{ key: 'about', labelKey: 'space.tab.about', href: `?tab=about` },
-		{ key: 'analytics', labelKey: 'space.tab.analytics', href: `?tab=analytics` }
-	]);
+	// Hydrate the Join button's initial state: the caller is a member if the
+	// current space appears in their joined-spaces list (page.data.userSpaces,
+	// fetched SSR via GET /me/spaces in the root layout). This is the
+	// authoritative membership source; the toggle itself also reads the
+	// server response for the post-action state.
+	const initialJoined = $derived(
+		authed && !!page.data.userSpaces?.some((s: { id: string; slug: string }) => s.id === space.id || s.slug === space.slug)
+	);
+	const initiallyFollowing = $derived(data.initiallyFollowing ?? false);
 
 	const analytics = $derived(data.analytics as {
 		total_views?: number;
@@ -34,6 +35,21 @@
 		total_followers?: number;
 		posts_last_30d?: number;
 	} | null);
+
+	const tabs = $derived([
+		{ key: 'feed', labelKey: 'space.tab.feed', href: `?tab=feed` },
+		{ key: 'forum', labelKey: 'space.tab.forum', href: `?tab=forum` },
+		{ key: 'search', labelKey: 'space.tab.search', href: `?tab=search` },
+		{ key: 'members', labelKey: 'space.tab.members', href: `?tab=members` },
+		{ key: 'about', labelKey: 'space.tab.about', href: `?tab=about` },
+		// Analytics dashboard — space-admin only per JEOS §215 [auth,
+		// space-admin]. The server only returns analytics data to the space
+		// owner/moderators (403 → null otherwise), so the tab is hidden for
+		// guests and non-admin members.
+		...(authed && analytics
+			? [{ key: 'analytics', labelKey: 'space.tab.analytics', href: `?tab=analytics` }]
+			: [])
+	]);
 
 	// Search tab state (Phase 08.09).
 	let searchQuery = $state('');
@@ -90,7 +106,7 @@
 </svelte:head>
 
 <SetSidebar>
-	<SpaceSidebar {space} rules={data.rules} {authed} />
+	<SpaceSidebar {space} rules={data.rules} {authed} {initialJoined} {initiallyFollowing} />
 </SetSidebar>
 
 <!-- Space header -->

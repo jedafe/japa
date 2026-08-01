@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
 	import { t } from '$lib/i18n';
+	import { page } from '$app/state';
 	import { Users, FileText, ScrollText, LogIn } from 'lucide-svelte';
 	import { api } from '$lib/api/client';
 	import FollowButton from '$lib/components/ui/FollowButton.svelte';
@@ -10,25 +11,57 @@
 		space: Space;
 		rules: SpaceRule[];
 		authed: boolean;
+		/** Whether the caller is already a member (hydrated server-side from
+		 * the space members list). Best-effort for spaces with >20 members. */
+		initialJoined?: boolean;
+		/** Whether the caller is already following the space (hydrated
+		 * server-side via /users/{id}/follow-status?entity_type=space). */
+		initiallyFollowing?: boolean;
 	}
-	let { space, rules, authed }: Props = $props();
+	let { space, rules, authed, initialJoined = false, initiallyFollowing = false }: Props = $props();
 
-	// Join/follow state is seeded from the space's membership counts; the
-	// backend does not return the caller's join/follow flag on the space
-	// detail endpoint, so we start neutral and let the toggle reflect the
-	// optimistic action.
-	let joined = $state(false);
+	// Join state is hydrated from the server (initialJoined) so the button
+	// reflects the caller's actual membership on SSR load instead of always
+	// defaulting to "Join" — which previously caused the toggle to LEAVE when
+	// the user was already a member (e.g. auto-joined via follow, BL-010).
+	let joined = $state(untrack(() => initialJoined));
+	// pendingJoin is set when the space is request-only and the caller's join
+	// request is awaiting admin approval (POST /join returns 202 { pending: true }).
+	let pendingJoin = $state(false);
 	let pending = $state(untrack(() => false));
+
+	// Guest "Join" link — sends the guest to /login with a returnTo so they
+	// land back on this space after authenticating.
+	const loginHref = $derived(
+		`/login?redirect=${encodeURIComponent(page.url.pathname + page.url.search)}`
+	);
 
 	async function toggleJoin() {
 		if (!authed || pending) return;
 		const was = joined;
 		joined = !was;
 		pending = true;
-		const res = was
-			? await api.delete(`/spaces/${space.slug}/leave`)
-			: await api.post(`/spaces/${space.slug}/join`);
-		if (res.error) joined = was; // rollback
+		if (was) {
+			// Already a member → leave.
+			const res = await api.delete<{ left: boolean }>(`/spaces/${space.slug}/leave`);
+			if (res.error) {
+				joined = was; // rollback
+			} else {
+				joined = false;
+				pendingJoin = false;
+			}
+		} else {
+			// Not a member → join (or submit a pending request for request-only spaces).
+			const res = await api.post<{ joined: boolean; pending?: boolean }>(`/spaces/${space.slug}/join`);
+			if (res.error) {
+				joined = was; // rollback
+			} else if (res.data) {
+				// Authoritative state from the server: joined may be false with
+				// pending=true for request-only spaces (202 response).
+				joined = !!res.data.joined;
+				pendingJoin = !!res.data.pending && !res.data.joined;
+			}
+		}
 		pending = false;
 	}
 </script>
@@ -74,16 +107,18 @@
 			>
 				{#if joined}
 					<LogIn size={16} /> {t('space.joined', 'Joined')}
+				{:else if pendingJoin}
+					<LogIn size={16} /> {t('space.pending', 'Pending')}
 				{:else}
 					<LogIn size={16} /> {t('space.join', 'Join')}
 				{/if}
 			</button>
 			<div class="mt-2">
-				<FollowButton entityType="space" entityId={space.id} entitySlug={space.slug} compact={false} />
+				<FollowButton entityType="space" entityId={space.id} entitySlug={space.slug} compact={false} {initiallyFollowing} />
 			</div>
 		{:else}
 			<a
-				href="/login"
+				href={loginHref}
 				class="mt-4 flex w-full items-center justify-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-2 text-sm font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)]"
 			>
 				<LogIn size={16} /> {t('space.join', 'Join')}

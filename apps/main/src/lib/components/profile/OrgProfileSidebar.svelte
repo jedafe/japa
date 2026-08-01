@@ -40,7 +40,7 @@
 		>
 			{#if following}
 				<UserCheck size={16} />
-				{t('profile.following', 'Following')}
+				{t('profile.following_label', 'Following')}
 			{:else}
 				<UserPlus size={16} />
 				{t('profile.follow', 'Follow')}

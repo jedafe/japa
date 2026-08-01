@@ -43,6 +43,17 @@ export const load: PageServerLoad = async (event) => {
 	// actual permission; this flag only gates the UI control.
 	const canModerate = !!article.author_id && currentUserId === article.author_id;
 
+	// Hydrate the CreatorCard follow button's initial state. Best-effort:
+	// a failure degrades to `false` (not following). Skip when the viewer
+	// is the author (no self-follow) or the author is unknown.
+	const isOwnArticle = !!currentUserId && article.author_id === currentUserId;
+	const initiallyFollowing =
+		article.author_id && !isOwnArticle
+			? apiGet<{ following: boolean }>(ctx, `/users/${article.author_id}/follow-status`)
+					.then((r) => r.following)
+					.catch(() => false)
+			: Promise.resolve(false);
+
 	let comments: Comment[] = [];
 	let commentsLoadError = false;
 	try {
@@ -63,5 +74,7 @@ export const load: PageServerLoad = async (event) => {
 		// sidebar endpoint not available — keep defaults
 	}
 
-	return { article, authed: true, currentUserId, canModerate, comments, commentsLoadError, rightSidebarWidgets };
+	const isFollowing = await initiallyFollowing;
+
+	return { article, authed: true, currentUserId, canModerate, comments, commentsLoadError, rightSidebarWidgets, initiallyFollowing: isFollowing };
 };

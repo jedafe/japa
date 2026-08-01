@@ -1,11 +1,19 @@
 <script lang="ts">
 	import AppShell from '$lib/components/shell/AppShell.svelte';
 	import { t } from '$lib/i18n';
+	import { persistNavCollapse } from '$lib/nav-collapse';
 	import { AUDIENCE_LABEL_KEY } from '$lib/types';
 	import { Lock, LogIn, BookOpen } from 'lucide-svelte';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
+
+	let collapsed = $state(data.navCollapsed);
+
+	async function toggleCollapse() {
+		collapsed = !collapsed;
+		await persistNavCollapse(collapsed);
+	}
 </script>
 
 <svelte:head>
@@ -23,8 +31,8 @@
 	rightSidebarWidgets={data.rightSidebarWidgets}
 	activeAudience={null}
 	user={data.user}
-	collapsed={data.navCollapsed}
-	onToggleCollapse={() => {}}
+	collapsed={collapsed}
+	onToggleCollapse={toggleCollapse}
 >
 	<section class="denied">
 		<div class="denied-icon"><Lock size={32} /></div>

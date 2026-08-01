@@ -18,6 +18,7 @@ import (
 	"math"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -102,6 +103,75 @@ type Handlers struct {
 // NewHandlers creates Handlers with the given Service.
 func NewHandlers(service *Service) *Handlers {
 	return &Handlers{Service: service}
+}
+
+// ---------------------------------------------------------------------------
+// Public Handlers — Newsletter Subscribe
+// ---------------------------------------------------------------------------
+
+// Subscribe handles POST /api/v1/newsletter/subscribe — public, no auth
+// required. Allows guests and authenticated users to subscribe to the
+// newsletter. Gated by feature.newsletter at the route level.
+// Ref: conventions/api-routes-catalog.md (POST /newsletter/subscribe)
+func (h *Handlers) Subscribe(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	var input struct {
+		Email string `json:"email"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
+		return
+	}
+
+	email := strings.TrimSpace(input.Email)
+	if email == "" {
+		writeError(w, http.StatusBadRequest, "validation_error", "email is required")
+		return
+	}
+
+	if !isValidEmail(email) {
+		writeError(w, http.StatusBadRequest, "validation_error", "A valid email is required")
+		return
+	}
+
+	subscriber, err := h.Service.CreateSubscriber(r.Context(), tenantID, email)
+	if err != nil {
+		// Duplicate email on the unique (tenant_id, email) index → already subscribed.
+		if isDuplicateSubscriberErr(err) {
+			writeJSON(w, http.StatusOK, map[string]any{
+				"data": map[string]string{"status": "already_subscribed"},
+			})
+			return
+		}
+		slog.Error("creating newsletter subscriber (public)", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to subscribe")
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, map[string]any{"data": subscriber})
+}
+
+// isValidEmail performs a basic RFC-5321 email format check. The canonical
+// validation is the DB constraint on newsletter_subscribers.email; this guard
+// rejects obviously malformed input before hitting the store.
+func isValidEmail(s string) bool {
+	at := strings.IndexByte(s, '@')
+	if at <= 0 || at == len(s)-1 {
+		return false
+	}
+	dot := strings.IndexByte(s[at+1:], '.')
+	return dot > 0
+}
+
+// isDuplicateSubscriberErr reports whether err is a unique-violation from the
+// (tenant_id, email) index on newsletter_subscribers.
+func isDuplicateSubscriberErr(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "23505")
 }
 
 // ---------------------------------------------------------------------------

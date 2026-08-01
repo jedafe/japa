@@ -24,8 +24,8 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/config"
-	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/db/gen"
+	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/mentions"
 	"github.com/jedafe/japa/internal/spam"
 	"github.com/jedafe/japa/internal/tenant"
@@ -66,11 +66,11 @@ type Handlers struct {
 	AsynqClient         TaskEnqueueClient
 	SpamPipeline        *spam.SpamPipeline
 	settings            *config.Settings
-	notifier            MentionNotifier        // nil disables mention notifications (test-only)
-	spaceChecker        SpacePostChecker      // nil disables space posting-perm checks (BUG-003)
-	tagResolver         TagSlugResolver       // nil disables bulk tag_slugs resolution (BUG-006)
-	mentionCheckers     *mentions.DBCheckers  // nil disables privacy filtering (BUG-004)
-	guideCategoryLister GuideCategoryLister   // nil disables guide category listing
+	notifier            MentionNotifier      // nil disables mention notifications (test-only)
+	spaceChecker        SpacePostChecker     // nil disables space posting-perm checks (BUG-003)
+	tagResolver         TagSlugResolver      // nil disables bulk tag_slugs resolution (BUG-006)
+	mentionCheckers     *mentions.DBCheckers // nil disables privacy filtering (BUG-004)
+	guideCategoryLister GuideCategoryLister  // nil disables guide category listing
 }
 
 // TagSlugResolver resolves tag slugs to tag IDs within a tenant (Section 14).
@@ -1313,11 +1313,11 @@ func (h *Handlers) AddReaction(w http.ResponseWriter, r *http.Request) {
 		// this reaction — treat as idempotent success, not a 404.
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
-				"tenant_id":    tenantID,
-				"entity_type":  EntityContent,
-				"entity_id":    contentID,
-				"user_id":      user.UserID,
-				"reaction_key": input.ReactionKey,
+				"tenant_id":       tenantID,
+				"entity_type":     EntityContent,
+				"entity_id":       contentID,
+				"user_id":         user.UserID,
+				"reaction_key":    input.ReactionKey,
 				"already_reacted": true,
 			}})
 			return
@@ -1325,6 +1325,11 @@ func (h *Handlers) AddReaction(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
+	// A new reaction was created (not an idempotent duplicate) — update the
+	// content_scores.vote_score so feed cards show an accurate vote count.
+	// Fire-and-forget per Rule 8. Ref: Section 32, Guide §21.
+	h.enqueueEngagementUpdate("content", contentID, "vote", 1)
 
 	writeJSON(w, http.StatusCreated, map[string]any{"data": reaction})
 }
@@ -1357,6 +1362,10 @@ func (h *Handlers) RemoveReaction(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
+	// Decrement the vote_score to keep feed card counts accurate.
+	// Fire-and-forget per Rule 8. Ref: Section 32, Guide §21.
+	h.enqueueEngagementUpdate("content", contentID, "vote", -1)
 
 	writeJSON(w, http.StatusNoContent, nil)
 }
@@ -1511,6 +1520,10 @@ func (h *Handlers) AddBookmark(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Update content_scores.bookmark_count so feed cards show an accurate
+	// bookmark count. Fire-and-forget per Rule 8. Ref: Section 32, Guide §21.
+	h.enqueueEngagementUpdate("content", contentID, "bookmark", 1)
+
 	writeJSON(w, http.StatusCreated, map[string]any{"data": bm})
 }
 
@@ -1531,6 +1544,10 @@ func (h *Handlers) RemoveBookmark(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
+	// Decrement the bookmark_count to keep feed card counts accurate.
+	// Fire-and-forget per Rule 8. Ref: Section 32, Guide §21.
+	h.enqueueEngagementUpdate("content", contentID, "bookmark", -1)
 
 	writeJSON(w, http.StatusNoContent, nil)
 }

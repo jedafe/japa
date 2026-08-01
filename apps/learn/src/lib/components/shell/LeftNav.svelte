@@ -4,6 +4,7 @@
 	import { PanelLeftClose, PanelLeftOpen, LogIn, GraduationCap } from 'lucide-svelte';
 	import { resolveIcon } from '$lib/components/ui/icons';
 	import { t } from '$lib/i18n';
+	import { loginUrl, profileUrl } from '$lib/appOrigins';
 	import type { Menu, MenuItem, SessionUser } from '$lib/types';
 
 	interface Props {
@@ -117,7 +118,7 @@
 	<div class="border-t border-[var(--color-border)] p-2">
 		{#if user}
 			<a
-				href="/u/{user.username}"
+				href={profileUrl(user.username)}
 				title={collapsed ? user.displayName : undefined}
 				class={clsx('flex items-center gap-3 rounded-[var(--radius)] p-2 hover:bg-[var(--color-surface-subtle)]', collapsed && 'justify-center')}
 			>
@@ -138,7 +139,7 @@
 			</a>
 		{:else}
 			<a
-				href="/login"
+				href={loginUrl()}
 				class="flex items-center justify-center gap-2 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-2 text-sm font-medium text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
 			>
 				<LogIn size={18} />

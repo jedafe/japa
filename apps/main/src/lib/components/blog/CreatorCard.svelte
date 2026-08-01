@@ -1,19 +1,34 @@
 <script lang="ts">
 	import { t } from '$lib/i18n';
-	import { UserPlus } from 'lucide-svelte';
+	import { Pencil } from 'lucide-svelte';
+	import FollowButton from '$lib/components/ui/FollowButton.svelte';
 
 	interface Props {
 		authorName?: string;
 		authorAvatarUrl?: string | null;
 		spaceName?: string | null;
+		/** Author's user ID — required for the follow button to call the API.
+		 * When absent, the follow button is hidden (e.g. anonymous author). */
+		authorId?: string | null;
+		/** Whether the viewer is already following the author (hydrated SSR). */
+		initiallyFollowing?: boolean;
+		/** Whether the viewer is authenticated — guests see no follow button. */
+		authed?: boolean;
+		/** The viewer's user ID — when it matches authorId, the card shows an
+		 * "Edit profile" link instead of a follow button (self-author). */
+		currentUserId?: string | null;
 	}
-	let { authorName, authorAvatarUrl, spaceName }: Props = $props();
+	let {
+		authorName,
+		authorAvatarUrl,
+		spaceName,
+		authorId = null,
+		initiallyFollowing = false,
+		authed = false,
+		currentUserId = null
+	}: Props = $props();
 
-	let following = $state(false);
-
-	function toggleFollow() {
-		following = !following;
-	}
+	const isOwnContent = $derived(!!currentUserId && !!authorId && currentUserId === authorId);
 </script>
 
 <!-- ADR-058 Exception #1: CreatorCard REPLACES the search/avatar bar in the right sidebar. -->
@@ -32,16 +47,19 @@
 		{/if}
 	</div>
 
-	<button
-		type="button"
-		onclick={toggleFollow}
-		class="mt-4 flex w-full items-center justify-center gap-2 rounded-[var(--radius)] px-4 py-2 text-sm font-semibold transition-colors {following
-			? 'border border-[var(--color-border)] text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]'
-			: 'bg-[var(--color-primary)] text-[var(--color-primary-contrast)] hover:bg-[var(--color-primary-hover)]'}"
-	>
-		{#if !following}<UserPlus size={16} />{/if}
-		{following ? t('blog.following', 'Following') : t('blog.follow', 'Follow')}
-	</button>
+	{#if isOwnContent}
+		<a
+			href="/settings/profile"
+			class="mt-4 flex w-full items-center justify-center gap-2 rounded-[var(--radius)] border border-[var(--color-border)] px-4 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
+		>
+			<Pencil size={16} />
+			{t('profile.edit_profile', 'Edit profile')}
+		</a>
+	{:else if authed && authorId}
+		<div class="mt-4 flex justify-center">
+			<FollowButton entityType="user" entityId={authorId} {initiallyFollowing} />
+		</div>
+	{/if}
 
 	<!-- More from author placeholder — populated when author content API is available -->
 	<div class="mt-5 border-t border-[var(--color-border)] pt-4">

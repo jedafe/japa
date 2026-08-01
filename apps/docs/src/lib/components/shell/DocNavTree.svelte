@@ -12,9 +12,11 @@
 		activeAudience: DocAudience | null;
 		collapsed: boolean;
 		onToggleCollapse: () => void;
+		/** Platform logo URL from appearance.logo_url (control panel). */
+		logoUrl?: string;
 	}
 
-	let { nav, accessibleAudiences, activeAudience, collapsed, onToggleCollapse }: Props = $props();
+	let { nav, accessibleAudiences, activeAudience, collapsed, onToggleCollapse, logoUrl = '' }: Props = $props();
 
 	// Expand/collapse state per audience section (keyed by audience slug).
 	// Default: the active audience is expanded, others collapsed.
@@ -48,7 +50,11 @@
 <aside class="nav" class:collapsed>
 	<div class="nav-header">
 		<a href="/docs" class="nav-brand" class:hidden={collapsed}>
-			<span class="brand-mark">JC</span>
+			{#if logoUrl}
+				<img src={logoUrl} alt={t('app.name')} class="brand-logo" />
+			{:else}
+				<span class="brand-mark">JC</span>
+			{/if}
 			<span class="brand-name">{t('app.name')}</span>
 		</a>
 		<button
@@ -192,6 +198,13 @@
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
+	}
+	.brand-logo {
+		height: 2rem;
+		width: auto;
+		max-width: 160px;
+		object-fit: contain;
+		flex-shrink: 0;
 	}
 	.collapse-btn {
 		display: grid;
