@@ -8,6 +8,7 @@
 	import { realtime } from '$lib/realtime/realtime.svelte';
 	import { theme } from '$lib/stores/theme.svelte';
 	import { i18n } from '$lib/i18n';
+	import { seedCsrfToken } from '$lib/api/csrf.svelte';
 	import '../app.css';
 	import type { LayoutData } from './$types';
 
@@ -20,6 +21,14 @@
 	});
 	$effect(() => {
 		i18n.setLocale(data.locale);
+	});
+
+	// Seed the browser-side CSRF token from server-rendered page data so the
+	// first client mutation already carries X-CSRF-Token without a boot fetch.
+	// Re-seeds whenever navigation refreshes the layout data (token may rotate).
+	// Ref: japa-bugs-hunters.md §5.2 — audit finding C1.
+	$effect(() => {
+		seedCsrfToken(data.csrfToken ?? null);
 	});
 
 	// Seed from the server value once; thereafter this is user-controlled.

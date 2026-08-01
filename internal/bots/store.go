@@ -55,10 +55,12 @@ func (s *Store) getKnownBotByID(ctx context.Context, id, tenantID pgtype.UUID) (
 }
 
 //nolint:unused // reserved for future features
-func (s *Store) listKnownBots(ctx context.Context, tenantID pgtype.UUID, botType string) ([]gen.KnownBot, error) {
+func (s *Store) listKnownBots(ctx context.Context, tenantID pgtype.UUID, botType string, pageSize, offset int32) ([]gen.KnownBot, error) {
 	rows, err := s.read.ListKnownBots(ctx, gen.ListKnownBotsParams{
-		TenantID: tenantID,
-		BotType:  botType,
+		TenantID:   tenantID,
+		BotType:    botType,
+		PageSize:   pageSize,
+		PageOffset: offset,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("listing known bots: %w", err)
@@ -134,7 +136,7 @@ func matchBotsByUserAgent(bots []gen.KnownBot, userAgent string) []KnownBot {
 //
 //nolint:unused // reserved for future features
 func (s *Store) GetBotsByUserAgent(ctx context.Context, tenantID pgtype.UUID, userAgent string) ([]KnownBot, error) {
-	bots, err := s.listKnownBots(ctx, tenantID, "")
+	bots, err := s.listKnownBots(ctx, tenantID, "", MaxPageSize, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -147,8 +149,10 @@ func (s *Store) GetBotsByUserAgent(ctx context.Context, tenantID pgtype.UUID, us
 //nolint:unused // reserved for future features
 func (s *Store) GetAllBots(ctx context.Context, tenantID pgtype.UUID) ([]KnownBot, error) {
 	rows, err := s.read.ListKnownBots(ctx, gen.ListKnownBotsParams{
-		TenantID: tenantID,
-		BotType:  "",
+		TenantID:   tenantID,
+		BotType:    "",
+		PageSize:   MaxPageSize,
+		PageOffset: 0,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("getting all bots: %w", err)
@@ -167,4 +171,48 @@ func (s *Store) GetAllBots(ctx context.Context, tenantID pgtype.UUID) ([]KnownBo
 	}
 
 	return result, nil
+}
+
+// GetLLMsData fetches the data needed for llms-full.txt generation:
+// recent published posts, top tags, and active public spaces.
+// Ref: japaconnect-engineering/sections/43-bot-crawler-management.md
+func (s *Store) GetLLMsData(ctx context.Context, tenantID pgtype.UUID) (LLMsData, error) {
+	posts, err := s.read.ListPublishedContentForLLMsTxt(ctx, tenantID)
+	if err != nil {
+		return LLMsData{}, fmt.Errorf("listing posts for llms: %w", err)
+	}
+
+	recentPosts := make([]Link, 0, len(posts))
+	for _, p := range posts {
+		recentPosts = append(recentPosts, Link{Title: p.Title, URL: p.Slug})
+	}
+
+	tags, err := s.read.ListTagsByTenant(ctx, tenantID)
+	if err != nil {
+		return LLMsData{}, fmt.Errorf("listing tags for llms: %w", err)
+	}
+
+	tagLinks := make([]Link, 0, len(tags))
+	for _, tg := range tags {
+		tagLinks = append(tagLinks, Link{Title: tg.Name, URL: tg.Slug})
+	}
+
+	spaces, err := s.read.ListSpacesByTenant(ctx, gen.ListSpacesByTenantParams{
+		TenantID:      tenantID,
+		ViewerUserID:  pgtype.UUID{},
+	})
+	if err != nil {
+		return LLMsData{}, fmt.Errorf("listing spaces for llms: %w", err)
+	}
+
+	spaceLinks := make([]Link, 0, len(spaces))
+	for _, sp := range spaces {
+		spaceLinks = append(spaceLinks, Link{Title: sp.Name, URL: sp.Slug})
+	}
+
+	return LLMsData{
+		RecentPosts: recentPosts,
+		Tags:        tagLinks,
+		Spaces:      spaceLinks,
+	}, nil
 }

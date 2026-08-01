@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/pgvector/pgvector-go"
 )
@@ -464,6 +465,35 @@ func (s *Service) IncrementContentView(ctx context.Context, id, tenantID pgtype.
 		TenantID: tenantID,
 	}); err != nil {
 		return fmt.Errorf("incrementing content view: %w", err)
+	}
+
+	return nil
+}
+
+// RecordContentViewWithDetails increments the view count AND records a
+// deduplicated row in user_content_views with country_code and session_id
+// (Section 14 — view tracking). The user_content_views PK deduplicates
+// per user/session per day; ON CONFLICT DO NOTHING prevents duplicates.
+// For anonymous users, user_id is invalid and session_id is used for
+// deduplication.
+func (s *Service) RecordContentViewWithDetails(ctx context.Context, id, tenantID, userID pgtype.UUID, sessionID, countryCode *string) error {
+	if err := s.write.IncrementContentView(ctx, gen.IncrementContentViewParams{
+		ID:       id,
+		TenantID: tenantID,
+	}); err != nil {
+		return fmt.Errorf("incrementing content view: %w", err)
+	}
+
+	// Best-effort: a failure to record the detailed view row should not
+	// block the view count increment (the count is already updated above).
+	if err := s.write.RecordContentView(ctx, gen.RecordContentViewParams{
+		ContentID:   id,
+		UserID:      userID,
+		SessionID:   sessionID,
+		CountryCode: countryCode,
+	}); err != nil {
+		slog.Warn("recording detailed content view",
+			"error", err, "content_id", id.String())
 	}
 
 	return nil
@@ -1080,4 +1110,52 @@ func (s *Service) GetRelatedContent(ctx context.Context, tenantID, excludeID pgt
 	}
 
 	return contents, nil
+}
+
+// ---------------------------------------------------------------------------
+// Content Spaces (multi-space assignment — Section 14)
+// ---------------------------------------------------------------------------
+
+// UpdateContentSpaces replaces the full set of space assignments for a
+// content item. The primary space is set on the contents.geo_space_id
+// column for backward-compat query compatibility, and a content_spaces
+// row is inserted for each assigned space (exactly one with is_primary
+// = true). The entire operation runs in a transaction.
+func (s *Service) UpdateContentSpaces(ctx context.Context, contentID, primarySpaceID pgtype.UUID, additionalSpaceIDs []pgtype.UUID) error {
+	return db.WithTx(ctx, s.db.Writer, func(q *gen.Queries) error {
+		// Clear existing assignments.
+		if err := q.DeleteContentSpaces(ctx, contentID); err != nil {
+			return fmt.Errorf("deleting content_spaces: %w", err)
+		}
+
+		// Insert primary space.
+		if err := q.AddContentSpace(ctx, gen.AddContentSpaceParams{
+			ContentID: contentID,
+			SpaceID:   primarySpaceID,
+			IsPrimary: true,
+		}); err != nil {
+			return fmt.Errorf("adding primary content_space: %w", err)
+		}
+
+		// Insert additional spaces.
+		for _, sid := range additionalSpaceIDs {
+			if isSameUUID(sid, primarySpaceID) {
+				continue // don't duplicate the primary
+			}
+			if err := q.AddContentSpace(ctx, gen.AddContentSpaceParams{
+				ContentID: contentID,
+				SpaceID:   sid,
+				IsPrimary: false,
+			}); err != nil {
+				return fmt.Errorf("adding content_space: %w", err)
+			}
+		}
+
+		return nil
+	})
+}
+
+// isSameUUID returns true when two pgtype.UUID values are equal and valid.
+func isSameUUID(a, b pgtype.UUID) bool {
+	return a.Valid && b.Valid && a.Bytes == b.Bytes
 }

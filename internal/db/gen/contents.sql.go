@@ -11,6 +11,24 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const addContentSpace = `-- name: AddContentSpace :exec
+INSERT INTO content_spaces (content_id, space_id, is_primary)
+VALUES ($1, $2, $3)
+`
+
+type AddContentSpaceParams struct {
+	ContentID pgtype.UUID `json:"content_id"`
+	SpaceID   pgtype.UUID `json:"space_id"`
+	IsPrimary bool        `json:"is_primary"`
+}
+
+// Inserts a single space assignment for a content item (Section 14).
+// is_primary must be true for exactly one row per content item.
+func (q *Queries) AddContentSpace(ctx context.Context, arg AddContentSpaceParams) error {
+	_, err := q.db.Exec(ctx, addContentSpace, arg.ContentID, arg.SpaceID, arg.IsPrimary)
+	return err
+}
+
 const addContentTag = `-- name: AddContentTag :exec
 
 INSERT INTO content_tags (content_id, tag_id)
@@ -458,6 +476,17 @@ type DeleteContentParams struct {
 
 func (q *Queries) DeleteContent(ctx context.Context, arg DeleteContentParams) error {
 	_, err := q.db.Exec(ctx, deleteContent, arg.ID, arg.TenantID)
+	return err
+}
+
+const deleteContentSpaces = `-- name: DeleteContentSpaces :exec
+DELETE FROM content_spaces WHERE content_id = $1
+`
+
+// Removes all space assignments for a content item (Section 14).
+// Used by UpdateContentSpaces to replace the full assignment set.
+func (q *Queries) DeleteContentSpaces(ctx context.Context, contentID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteContentSpaces, contentID)
 	return err
 }
 
@@ -2475,6 +2504,32 @@ func (q *Queries) PublishScheduledContent(ctx context.Context, arg PublishSchedu
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const recordContentView = `-- name: RecordContentView :exec
+INSERT INTO user_content_views (content_id, user_id, session_id, country_code, viewed_at)
+VALUES ($1, $2, $3, $4, now())
+ON CONFLICT DO NOTHING
+`
+
+type RecordContentViewParams struct {
+	ContentID   pgtype.UUID `json:"content_id"`
+	UserID      pgtype.UUID `json:"user_id"`
+	SessionID   *string     `json:"session_id"`
+	CountryCode *string     `json:"country_code"`
+}
+
+// Inserts a deduplicated view record into user_content_views (Section 14).
+// The PK deduplicates per user/session per day; ON CONFLICT does nothing.
+// country_code is resolved server-side from the client IP via GeoIP.
+func (q *Queries) RecordContentView(ctx context.Context, arg RecordContentViewParams) error {
+	_, err := q.db.Exec(ctx, recordContentView,
+		arg.ContentID,
+		arg.UserID,
+		arg.SessionID,
+		arg.CountryCode,
+	)
+	return err
 }
 
 const removeContentTag = `-- name: RemoveContentTag :exec

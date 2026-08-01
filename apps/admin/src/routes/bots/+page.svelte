@@ -2,13 +2,12 @@
 	import { botsAdminApiExtended } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import PageHeader from '$lib/components/layout/page-header.svelte';
-	import { Card, CardContent, CardHeader } from '$lib/components/ui/card';
+	import { Card, CardContent } from '$lib/components/ui/card';
 	import { DataTable } from '$lib/components/ui/data-table';
-	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import { Modal } from '$lib/components/ui/modal';
 	import { Select } from '$lib/components/ui/select';
-	import { Bot, MessageSquare, Shield, Settings, Plus, RefreshCw, Pencil, Trash2, Eye } from 'lucide-svelte';
+	import { Plus, RefreshCw, Pencil, Trash2, Eye } from 'lucide-svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 
 	type Bot = {
@@ -19,9 +18,22 @@
 		policy: string;
 		is_system: boolean;
 		crawl_delay: number;
-		created_at: string;
-		updated_at: string;
 	};
+
+	const BOT_TYPES = [
+		{ value: 'search_engine', label: 'Search Engine' },
+		{ value: 'ai_llm', label: 'AI / LLM' },
+		{ value: 'social', label: 'Social' },
+		{ value: 'monitoring', label: 'Monitoring' },
+		{ value: 'scraper', label: 'Scraper' },
+		{ value: 'unknown', label: 'Unknown' }
+	];
+
+	const POLICIES = [
+		{ value: 'allow', label: 'Allow' },
+		{ value: 'block', label: 'Block' },
+		{ value: 'limit', label: 'Limit' }
+	];
 
 	let bots = $state<Bot[]>([]);
 	let loading = $state(true);
@@ -34,7 +46,13 @@
 	// Modal state
 	let showBotModal = $state(false);
 	let editingBot = $state<Bot | null>(null);
-	let botForm = $state({ name: '', type: 'chatbot', description: '', status: 'active' as 'active' | 'inactive' | 'error' });
+	let botForm = $state({
+		name: '',
+		user_agent_pattern: '',
+		bot_type: 'search_engine',
+		policy: 'allow',
+		crawl_delay: 0
+	});
 	let saving = $state(false);
 
 	// Delete confirmation
@@ -46,7 +64,31 @@
 	let viewBot = $state<Bot | null>(null);
 
 	// Backend gates bot mutations on bots.admin
-	const canManageBots = $derived(hasPermission("bots.admin"));
+	const canManageBots = $derived(hasPermission('bots.admin'));
+
+	const botTypeLabels: Record<string, string> = {
+		search_engine: 'Search Engine',
+		ai_llm: 'AI / LLM',
+		social: 'Social',
+		monitoring: 'Monitoring',
+		scraper: 'Scraper',
+		unknown: 'Unknown'
+	};
+
+	const policyClasses: Record<string, string> = {
+		allow: 'bg-success/15 text-success border-success',
+		block: 'bg-danger/15 text-danger border-danger',
+		limit: 'bg-warning/15 text-warning border-warning'
+	};
+
+	const botTypeClasses: Record<string, string> = {
+		search_engine: 'bg-primary-100 text-primary-800 border-primary-200',
+		ai_llm: 'bg-info-100 text-info-800 border-info-200',
+		social: 'bg-success/15 text-success border-success',
+		monitoring: 'bg-warning/15 text-warning border-warning',
+		scraper: 'bg-danger/15 text-danger border-danger',
+		unknown: 'bg-surface text-foreground border'
+	};
 
 	const botColumns = [
 		{
@@ -55,12 +97,9 @@
 			sortable: true,
 			render: (_: any, row: any) => `
 				<div class="flex items-center gap-3">
-					<div class="h-10 w-10 rounded-lg ${row.bot_type === 'chatbot' ? 'bg-primary-100' : row.bot_type === 'moderation' ? 'bg-warning/15' : 'bg-info-100'} flex items-center justify-center">
-						<svg class="h-5 w-5 ${row.bot_type === 'chatbot' ? 'text-primary-600' : row.bot_type === 'moderation' ? 'text-warning-600' : 'text-info-600'}" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path></svg>
-					</div>
 					<div>
-						<p class="font-medium text-foreground">${row.name}</p>
-						<p class="text-sm text-muted">${row.user_agent_pattern || t('app.bots.no_description', 'No description')}</p>
+						<p class="font-medium text-foreground">${row.name}${row.is_system ? ' <span class="text-xs text-muted">(system)</span>' : ''}</p>
+						<p class="text-sm text-muted">${row.user_agent_pattern}</p>
 					</div>
 				</div>
 			`
@@ -69,40 +108,19 @@
 			key: 'bot_type',
 			label: t('app.bots.column_type', 'Type'),
 			sortable: true,
-			render: (value: string) => {
-				const classes: Record<string, string> = {
-					chatbot: 'bg-primary-100 text-primary-800 border-primary-200',
-					moderation: 'bg-warning/15 text-warning border-warning',
-					utility: 'bg-info-100 text-info-800 border-info-200',
-					custom: 'bg-surface text-foreground border'
-				};
-				return `<span class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${classes[value] || 'bg-surface text-foreground border'}">${value}</span>`;
-			}
+			render: (value: string) => `<span class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${botTypeClasses[value] || botTypeClasses.unknown}">${botTypeLabels[value] || value}</span>`
 		},
 		{
 			key: 'policy',
-			label: t('app.bots.column_status', 'Policy'),
+			label: t('app.bots.column_policy', 'Policy'),
 			sortable: true,
-			render: (value: string) => {
-				const classes: Record<string, string> = {
-					allow: 'bg-success/15 text-success border-success',
-					deny: 'bg-danger/15 text-danger border-danger',
-					throttle: 'bg-warning/15 text-warning border-warning'
-				};
-				return `<span class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${classes[value] || 'bg-surface text-foreground border'}">${value}</span>`;
-			}
+			render: (value: string) => `<span class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${policyClasses[value] || 'bg-surface text-foreground border'}">${value}</span>`
 		},
 		{
-			key: 'updated_at',
-			label: t('app.bots.column_last_active', 'Last Updated'),
+			key: 'crawl_delay',
+			label: t('app.bots.column_crawl_delay', 'Crawl Delay'),
 			sortable: true,
-			render: (value: string) => `<span class="text-sm text-muted">${value ? new Date(value).toLocaleString() : t('app.bots.never', 'Never')}</span>`
-		},
-		{
-			key: 'created_at',
-			label: t('app.bots.column_created', 'Created'),
-			sortable: true,
-			render: (value: string) => `<span class="text-sm text-muted">${new Date(value).toLocaleDateString()}</span>`
+			render: (value: number) => `<span class="text-sm text-muted">${value > 0 ? value + 's' : '—'}</span>`
 		},
 		{
 			key: 'actions',
@@ -110,18 +128,6 @@
 			class: 'w-24',
 			componentSnippet: BotActionsCell
 		}
-	];
-
-	const botTypeOptions = [
-		{ value: 'chatbot', label: t('app.bots.type_chatbot', 'Chatbot') },
-		{ value: 'moderation', label: t('app.bots.type_moderation', 'Moderation') },
-		{ value: 'utility', label: t('app.bots.type_utility', 'Utility') },
-		{ value: 'custom', label: t('app.bots.type_custom', 'Custom') }
-	];
-
-	const botStatusOptions = [
-		{ value: 'active', label: t('app.bots.status_active', 'Active') },
-		{ value: 'inactive', label: t('app.bots.status_inactive', 'Inactive') }
 	];
 
 	async function load() {
@@ -133,7 +139,12 @@
 				let items = (Array.isArray(result.data) ? result.data : []) as Bot[];
 				if (searchQuery) {
 					const q = searchQuery.toLowerCase();
-					items = items.filter((b) => b.name.toLowerCase().includes(q) || b.bot_type.toLowerCase().includes(q));
+					items = items.filter(
+						(b) =>
+							b.name.toLowerCase().includes(q) ||
+							b.user_agent_pattern.toLowerCase().includes(q) ||
+							b.bot_type.toLowerCase().includes(q)
+					);
 				}
 				bots = items;
 			} else {
@@ -148,7 +159,7 @@
 
 	function openCreateBot() {
 		editingBot = null;
-		botForm = { name: '', type: 'chatbot', description: '', status: 'active' };
+		botForm = { name: '', user_agent_pattern: '', bot_type: 'search_engine', policy: 'allow', crawl_delay: 0 };
 		showBotModal = true;
 	}
 
@@ -158,9 +169,10 @@
 		editingBot = bot;
 		botForm = {
 			name: bot.name,
-			type: bot.bot_type,
-			description: '',
-			status: bot.policy as 'active' | 'inactive' | 'error'
+			user_agent_pattern: bot.user_agent_pattern,
+			bot_type: bot.bot_type,
+			policy: bot.policy,
+			crawl_delay: bot.crawl_delay
 		};
 		showBotModal = true;
 	}
@@ -171,18 +183,16 @@
 			if (editingBot) {
 				const result = await botsAdminApiExtended.update(editingBot.id, botForm);
 				if (result.ok) {
-					const updated = result.data as Bot;
-					const idx = bots.findIndex((b) => b.id === editingBot!.id);
-					if (idx !== -1) bots[idx] = updated;
-					bots = bots;
+					showBotModal = false;
+					await load();
 				}
 			} else {
 				const result = await botsAdminApiExtended.create(botForm);
 				if (result.ok) {
-					load();
+					showBotModal = false;
+					await load();
 				}
 			}
-			showBotModal = false;
 		} catch {
 			error = t('common.error');
 		} finally {
@@ -207,13 +217,12 @@
 		try {
 			const result = await botsAdminApiExtended.delete(deletingBot.id);
 			if (result.ok) {
-				bots = bots.filter((b) => b.id !== deletingBot!.id);
+				showDeleteModal = false;
+				deletingBot = null;
+				await load();
 			}
 		} catch {
 			error = t('common.error');
-		} finally {
-			showDeleteModal = false;
-			deletingBot = null;
 		}
 	}
 
@@ -225,7 +234,7 @@
 				await botsAdminApiExtended.delete(id);
 			}
 			selectedIds = new Set();
-			load();
+			await load();
 		} catch {
 			error = t('common.error');
 		}
@@ -242,8 +251,8 @@
 </svelte:head>
 
 <PageHeader
-	title={t('app.bots.title', 'Bots')}
-	description={t('app.bots.description', 'Manage chatbots, moderation bots, and automated agents')}
+	title={t('app.bots.title', 'Bot & Crawler Management')}
+	description={t('app.bots.description', 'Manage known crawlers, bots, and their access policies')}
 	actions={[
 		{ label: t('app.bots.refresh', 'Refresh'), icon: RefreshCw, variant: 'outline' as const, onclick: load },
 		...(canManageBots ? [{ label: t('app.bots.add_bot', 'Add Bot'), icon: Plus, variant: 'default' as const, onclick: openCreateBot }] : [])
@@ -260,7 +269,7 @@
 	{#if loading}
 		<p class="py-8 text-center text-sm text-muted">{t('common.loading')}</p>
 	{:else}
-			<Card>
+		<Card>
 			<CardContent class="p-0">
 				<DataTable
 					columns={botColumns}
@@ -268,7 +277,7 @@
 					pageSize={20}
 					emptyMessage={t('app.bots.no_bots_configured', 'No bots configured')}
 					searchable
-					onsearch={(q) => { searchQuery = q; load(); }}
+					onsearch={(q) => { searchQuery = q; }}
 					selectable
 					bind:selectedIds
 				>
@@ -288,37 +297,47 @@
 <Modal bind:open={showBotModal} title={editingBot ? t('app.bots.edit_bot', 'Edit Bot') : t('app.bots.create_bot', 'Create Bot')} size="lg">
 	<div class="space-y-4">
 		<div>
-			<label for="bot-name" class="mb-1 block text-sm font-medium text-foreground-alt">{t('bots.name')}</label>
+			<label for="bot-name" class="mb-1 block text-sm font-medium text-foreground-alt">{t('bots.name', 'Name')}</label>
 			<input
 				id="bot-name"
 				type="text"
 				class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
 				bind:value={botForm.name}
-				placeholder={t('app.bots.name_placeholder', 'e.g., Support Assistant')}
+				placeholder={t('app.bots.name_placeholder', 'e.g., Googlebot')}
 			/>
 		</div>
 		<div>
-			<label for="bot-type" class="mb-1 block text-sm font-medium text-foreground-alt">{t('bots.type')}</label>
-			<Select options={botTypeOptions} bind:value={botForm.type} />
-		</div>
-		<div>
-			<label for="bot-desc" class="mb-1 block text-sm font-medium text-foreground-alt">{t('bots.description_2')}</label>
+			<label for="bot-ua" class="mb-1 block text-sm font-medium text-foreground-alt">{t('app.bots.user_agent_pattern', 'User-Agent Pattern')}</label>
 			<input
-				id="bot-desc"
+				id="bot-ua"
 				type="text"
 				class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
-				bind:value={botForm.description}
-				placeholder={t('app.bots.description_placeholder', 'What this bot does')}
+				bind:value={botForm.user_agent_pattern}
+				placeholder={t('app.bots.ua_placeholder', 'e.g., Googlebot')}
 			/>
 		</div>
 		<div>
-			<label for="bot-status" class="mb-1 block text-sm font-medium text-foreground-alt">{t('bots.status')}</label>
-			<Select options={botStatusOptions} bind:value={botForm.status} />
+			<label for="bot-type" class="mb-1 block text-sm font-medium text-foreground-alt">{t('bots.type', 'Type')}</label>
+			<Select options={BOT_TYPES} bind:value={botForm.bot_type} />
+		</div>
+		<div>
+			<label for="bot-policy" class="mb-1 block text-sm font-medium text-foreground-alt">{t('app.bots.policy', 'Policy')}</label>
+			<Select options={POLICIES} bind:value={botForm.policy} />
+		</div>
+		<div>
+			<label for="bot-delay" class="mb-1 block text-sm font-medium text-foreground-alt">{t('app.bots.crawl_delay', 'Crawl Delay (seconds)')}</label>
+			<input
+				id="bot-delay"
+				type="number"
+				min="0"
+				class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
+				bind:value={botForm.crawl_delay}
+			/>
 		</div>
 	</div>
 	<div class="flex justify-end gap-3 pt-4">
-		<Button variant="outline" onclick={() => showBotModal = false}>{t('bots.cancel')}</Button>
-		<Button onclick={saveBot} disabled={saving || !botForm.name}>
+		<Button variant="outline" onclick={() => (showBotModal = false)}>{t('bots.cancel', 'Cancel')}</Button>
+		<Button onclick={saveBot} disabled={saving || !botForm.name || !botForm.user_agent_pattern}>
 			{saving ? t('app.bots.saving', 'Saving...') : editingBot ? t('app.bots.save_changes', 'Save Changes') : t('app.bots.create_bot', 'Create Bot')}
 		</Button>
 	</div>
@@ -329,21 +348,44 @@
 	{#if viewBot}
 		<div class="space-y-4">
 			<div>
-				<p class="text-xs font-medium uppercase tracking-wider text-muted">{t('bots.name')}</p>
+				<p class="text-xs font-medium uppercase tracking-wider text-muted">{t('bots.name', 'Name')}</p>
 				<p class="mt-1 text-sm font-medium text-foreground">{viewBot.name}</p>
 			</div>
 			<div>
-				<p class="text-xs font-medium uppercase tracking-wider text-muted">{t('bots.type')}</p>
-				<p class="mt-1 text-sm font-medium text-foreground">{viewBot.bot_type}</p>
+				<p class="text-xs font-medium uppercase tracking-wider text-muted">{t('app.bots.user_agent_pattern', 'User-Agent Pattern')}</p>
+				<p class="mt-1 text-sm font-medium text-foreground">{viewBot.user_agent_pattern}</p>
 			</div>
 			<div>
-				<p class="text-xs font-medium uppercase tracking-wider text-muted">{t('bots.status')}</p>
+				<p class="text-xs font-medium uppercase tracking-wider text-muted">{t('bots.type', 'Type')}</p>
+				<p class="mt-1 text-sm font-medium text-foreground">{botTypeLabels[viewBot.bot_type] || viewBot.bot_type}</p>
+			</div>
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider text-muted">{t('app.bots.policy', 'Policy')}</p>
 				<p class="mt-1 text-sm font-medium text-foreground">{viewBot.policy}</p>
+			</div>
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider text-muted">{t('app.bots.crawl_delay', 'Crawl Delay')}</p>
+				<p class="mt-1 text-sm font-medium text-foreground">{viewBot.crawl_delay > 0 ? viewBot.crawl_delay + 's' : '—'}</p>
+			</div>
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider text-muted">{t('app.bots.is_system', 'System')}</p>
+				<p class="mt-1 text-sm font-medium text-foreground">{viewBot.is_system ? 'Yes' : 'No'}</p>
 			</div>
 		</div>
 	{/if}
 	<div class="mt-6 flex justify-end">
-		<Button variant="outline" onclick={() => (showViewModal = false)}>{t('bots.cancel')}</Button>
+		<Button variant="outline" onclick={() => (showViewModal = false)}>{t('bots.cancel', 'Cancel')}</Button>
+	</div>
+</Modal>
+
+<!-- Delete Confirmation Modal -->
+<Modal bind:open={showDeleteModal} title={t('bots.delete_bot', 'Delete Bot')} size="sm">
+	<p class="text-sm text-muted">
+		{t('app.bots.delete_confirm', 'Delete this bot permanently?')}
+	</p>
+	<div class="mt-4 flex justify-end gap-2">
+		<Button variant="ghost" onclick={() => (showDeleteModal = false)}>{t('bots.cancel', 'Cancel')}</Button>
+		<Button variant="destructive" onclick={deleteBot}>{t('common.delete', 'Delete')}</Button>
 	</div>
 </Modal>
 
@@ -357,9 +399,11 @@
 			<Button variant="ghost" size="sm" onclick={() => openEditBot(row.id)}>
 				<Pencil class="h-3.5 w-3.5" />
 			</Button>
-			<Button variant="ghost" size="sm" onclick={() => confirmDelete(row.id)} style="color: var(--color-danger)">
-				<Trash2 class="h-3.5 w-3.5" />
-			</Button>
+			{#if !row.is_system}
+				<Button variant="ghost" size="sm" onclick={() => confirmDelete(row.id)} style="color: var(--color-danger)">
+					<Trash2 class="h-3.5 w-3.5" />
+				</Button>
+			{/if}
 		{/if}
 	</div>
 {/snippet}

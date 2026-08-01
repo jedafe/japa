@@ -153,15 +153,24 @@ FROM known_bots
 WHERE tenant_id = $1
   AND ($2 = '' OR bot_type = $2)
 ORDER BY name ASC
+LIMIT $4
+OFFSET $3
 `
 
 type ListKnownBotsParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	BotType  interface{} `json:"bot_type"`
+	TenantID   pgtype.UUID `json:"tenant_id"`
+	BotType    interface{} `json:"bot_type"`
+	PageOffset int32       `json:"page_offset"`
+	PageSize   int32       `json:"page_size"`
 }
 
 func (q *Queries) ListKnownBots(ctx context.Context, arg ListKnownBotsParams) ([]KnownBot, error) {
-	rows, err := q.db.Query(ctx, listKnownBots, arg.TenantID, arg.BotType)
+	rows, err := q.db.Query(ctx, listKnownBots,
+		arg.TenantID,
+		arg.BotType,
+		arg.PageOffset,
+		arg.PageSize,
+	)
 	if err != nil {
 		return nil, err
 	}

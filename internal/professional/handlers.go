@@ -20,7 +20,6 @@ import (
 	errpkg "github.com/jedafe/japa/internal/errors"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/rbac"
@@ -120,20 +119,10 @@ func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.Au
 // handleServiceError translates a Service-layer error into the appropriate HTTP response.
 func handleServiceError(w http.ResponseWriter, err error) {
 	switch {
-	case errors.Is(err, pgx.ErrNoRows):
-		writeError(w, http.StatusNotFound, "not_found", "Resource not found")
-	case errors.Is(err, errpkg.ErrAlreadyExists), errors.Is(err, errpkg.ErrDuplicate):
-		writeError(w, http.StatusConflict, "already_exists", "Resource already exists")
-	case errors.Is(err, errpkg.ErrForbidden):
-		writeError(w, http.StatusForbidden, "not_member", "User is not a member of this profile")
-	case errors.Is(err, errpkg.ErrNotFound):
-		writeError(w, http.StatusNotFound, "not_found", "Invalid or expired invitation")
-	case errors.Is(err, errpkg.ErrExpired):
-		writeError(w, http.StatusGone, "expired", "Invitation has expired")
 	case errors.Is(err, ErrUpgradeToBusinessRequired):
 		writeError(w, http.StatusForbidden, "upgrade_to_business_required", "You must upgrade to a business profile to create professional profiles")
 	default:
-		writeError(w, http.StatusInternalServerError, "internal_error", "Something went wrong")
+		errpkg.HandleServiceError(w, err)
 	}
 }
 

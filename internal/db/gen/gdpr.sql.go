@@ -612,6 +612,18 @@ func (q *Queries) DeleteUserTokens(ctx context.Context, arg DeleteUserTokensPara
 	return err
 }
 
+const gdprDeleteUserContentViews = `-- name: GdprDeleteUserContentViews :exec
+DELETE FROM user_content_views WHERE user_id = $1
+`
+
+// Deletes user_content_views rows for the user being erased (Section 14,
+// ADR-014). The table has no tenant_id column — deletion is by user_id
+// only, which is safe because user_ids are globally unique.
+func (q *Queries) GdprDeleteUserContentViews(ctx context.Context, userID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, gdprDeleteUserContentViews, userID)
+	return err
+}
+
 const gdprExportCustomFieldValues = `-- name: GdprExportCustomFieldValues :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (
@@ -920,6 +932,22 @@ type GdprExportUserContentSharesParams struct {
 
 func (q *Queries) GdprExportUserContentShares(ctx context.Context, arg GdprExportUserContentSharesParams) (interface{}, error) {
 	row := q.db.QueryRow(ctx, gdprExportUserContentShares, arg.UserID, arg.TenantID)
+	var data interface{}
+	err := row.Scan(&data)
+	return data, err
+}
+
+const gdprExportUserContentViews = `-- name: GdprExportUserContentViews :one
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (SELECT content_id, session_id, country_code, viewed_at
+      FROM user_content_views WHERE user_id = $1) t
+`
+
+// Exports user_content_views rows for GDPR data export (Section 14).
+// user_content_views contains user_id PII and must be included in the
+// right-to-access response and anonymized on erasure.
+func (q *Queries) GdprExportUserContentViews(ctx context.Context, userID pgtype.UUID) (interface{}, error) {
+	row := q.db.QueryRow(ctx, gdprExportUserContentViews, userID)
 	var data interface{}
 	err := row.Scan(&data)
 	return data, err

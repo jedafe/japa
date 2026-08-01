@@ -28,6 +28,7 @@ import (
 	"github.com/valkey-io/valkey-go/valkeycompat"
 
 	"github.com/jedafe/japa/internal/auth"
+	"github.com/jedafe/japa/internal/clientip"
 	errpkg "github.com/jedafe/japa/internal/errors"
 )
 
@@ -217,14 +218,16 @@ func IdempotencyMiddleware(rdb valkeycompat.Cmdable, settings idempotencySetting
 
 // idempotencyCallerID extracts a stable identifier for the current caller.
 // Authenticated users are identified by their UUID; anonymous callers
-// fall back to RemoteAddr so concurrent anonymous requests with the same
-// idempotency key are not falsely merged.
+// fall back to the client IP resolved by clientip.FromRequest so that
+// concurrent anonymous requests with the same idempotency key from the
+// same client are correctly deduplicated, while different clients behind
+// the same proxy are not falsely merged.
 func idempotencyCallerID(r *http.Request) string {
 	if user := auth.FromContext(r.Context()); user != nil && user.UserID.Valid {
 		return user.UserID.String()
 	}
 
-	return r.RemoteAddr
+	return clientip.FromRequest(r)
 }
 
 // idempotencyHash produces a deterministic hex-encoded SHA-256 digest from

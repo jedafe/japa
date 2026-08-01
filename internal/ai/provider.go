@@ -31,4 +31,13 @@ type Provider interface {
 	Send(ctx context.Context, req Request) (Response, error)
 	// VerifyWebhookSignature validates an incoming webhook callback.
 	VerifyWebhookSignature(payload []byte, sig string) error
+	// Models returns the model ids this provider serves, for the admin
+	// model picker (Rule 16: derived from registered providers, not hardcoded).
+	Models() []ModelInfo
+}
+
+// ModelInfo describes a single model exposed by a provider.
+type ModelInfo struct {
+	ID    string `json:"id"`
+	Label string `json:"label"`
 }

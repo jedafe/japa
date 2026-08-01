@@ -98,7 +98,7 @@ func handleServiceError(w http.ResponseWriter, err error) {
 	case errors.Is(err, errpkg.ErrRequired):
 		writeError(w, http.StatusBadRequest, "validation_error", err.Error())
 	default:
-		writeError(w, http.StatusInternalServerError, "internal_error", "Something went wrong")
+		errpkg.HandleServiceError(w, err)
 	}
 }
 

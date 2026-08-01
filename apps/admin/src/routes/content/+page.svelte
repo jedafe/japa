@@ -72,33 +72,53 @@
 
 	let selectedIds = $state<Set<string>>(new Set());
 
+	// Content types are admin-configurable (Section 14 — guide categories
+	// can be added at runtime). Fetch from GET /content-types instead of
+	// hardcoding (Rule 16).
+	let contentTypeOptions = $state<{ value: string; label: string }[]>([]);
+
+	$effect(() => {
+		(async () => {
+			const res = await contentAdminApi.listContentTypes();
+			if (res.ok) {
+				contentTypeOptions = res.data.map((ct) => ({
+					value: ct.value,
+					label: ct.label
+				}));
+			}
+		})();
+	});
+
 	function openView(item: ContentItem) {
 		viewTarget = item;
 		showViewModal = true;
 	}
 
-	const filterDefs = [
+	// Status values are a fixed enum from the contents table CHECK
+	// constraint (draft, in_review, scheduled, published, archived) —
+	// these are schema-defined, not admin-configurable.
+	const statusOptions = [
+		{ value: "published", label: t("content.status.published", "Published") },
+		{ value: "draft", label: t("content.status.draft", "Draft") },
+		{ value: "in_review", label: t("content.status.in_review", "In Review") },
+		{ value: "scheduled", label: t("content.status.scheduled", "Scheduled") },
+		{ value: "archived", label: t("content.status.archived", "Archived") },
+		{ value: "removed", label: t("content.status.removed", "Removed") }
+	];
+
+	// Build filterDefs dynamically from fetched content types (Rule 16).
+	const filterDefs = $derived([
 		{
 			key: "content_type",
 			label: t("content.type", "Type"),
-			options: [
-				{ value: "blog_post", label: t("content.type.blog_post", "Blog Post") },
-				{ value: "comparison", label: t("content.type.comparison", "Comparison") },
-				{ value: "discussion", label: t("content.type.discussion", "Discussion") },
-				{ value: "page", label: t("content.type.page", "Page") }
-			]
+			options: contentTypeOptions
 		},
 		{
 			key: "status",
 			label: t("common.status", "Status"),
-			options: [
-				{ value: "published", label: t("content.status.published", "Published") },
-				{ value: "draft", label: t("content.status.draft", "Draft") },
-				{ value: "removed", label: t("content.status.removed", "Removed") },
-				{ value: "archived", label: t("content.status.archived", "Archived") }
-			]
+			options: statusOptions
 		}
-	];
+	]);
 
 	const columns = [
 		{

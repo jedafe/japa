@@ -15,6 +15,7 @@ import (
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
+	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/rbac"
 	valkeycompat "github.com/valkey-io/valkey-go/valkeycompat"
 )
@@ -60,7 +61,6 @@ var (
 	ErrInvalidReason     = errors.New("invalid reason")
 	ErrInvalidStatus     = errors.New("invalid status")
 	ErrAlreadyReported   = errors.New("already reported by this user")
-	ErrNotFound          = errors.New("report not found")
 )
 
 // CreateReportInput holds parameters for submitting a report.
@@ -238,7 +238,7 @@ func (s *Service) ListReports(ctx context.Context, tenantID pgtype.UUID, status,
 func (s *Service) GetReport(ctx context.Context, id, tenantID pgtype.UUID) (gen.ContentReport, error) {
 	report, err := s.read.GetReport(ctx, gen.GetReportParams{ID: id, TenantID: tenantID})
 	if errors.Is(err, pgx.ErrNoRows) {
-		return gen.ContentReport{}, ErrNotFound
+		return gen.ContentReport{}, errpkg.ErrNotFound
 	}
 
 	if err != nil {
@@ -262,7 +262,7 @@ func (s *Service) UpdateReportStatus(ctx context.Context, id, tenantID, reviewed
 		TenantID:       tenantID,
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
-		return gen.ContentReport{}, ErrNotFound
+		return gen.ContentReport{}, errpkg.ErrNotFound
 	}
 
 	if err != nil {

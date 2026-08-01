@@ -10,6 +10,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
+	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/tenant"
 	"github.com/jedafe/japa/internal/worker"
 )
@@ -358,10 +359,10 @@ func writeServiceError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusBadRequest, "invalid_input", err.Error())
 	case errors.Is(err, ErrAlreadyReported):
 		writeError(w, http.StatusConflict, "already_reported", err.Error())
-	case errors.Is(err, ErrNotFound):
+	case errors.Is(err, errpkg.ErrNotFound):
 		writeError(w, http.StatusNotFound, "not_found", "Report not found")
 	default:
-		writeError(w, http.StatusInternalServerError, "internal_error", "Report operation failed")
+		errpkg.HandleServiceError(w, err)
 	}
 }
 

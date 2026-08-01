@@ -68,7 +68,42 @@ export const load: PageServerLoad = async (event) => {
 		// sidebar endpoint not available — keep defaults
 	}
 
+	// Related content (Section 14 — GET /content/{id}/related). Best-effort:
+	// a failure degrades to an empty list.
+	let relatedContent: ContentArticle[] = [];
+	try {
+		const relRes = await apiGet<ContentArticle[]>(ctx, `/content/${article.id}/related?limit=4`);
+		relatedContent = relRes ?? [];
+	} catch {
+		// related endpoint not available — keep empty
+	}
+
+	// JSON-LD structured data template (Section 14, Section 26 — SEO).
+	// Fetch the template for the content type and interpolate field values
+	// client-side. Best-effort: a failure degrades to no JSON-LD injection.
+	let jsonldTemplate: Record<string, unknown> | null = null;
+	try {
+		const templatesRes = await apiGet<{ templates?: Record<string, unknown>[] }>(ctx, `/content/jsonld-templates`);
+		const templates = templatesRes.templates ?? [];
+		if (Array.isArray(templates) && templates.length > 0) {
+			jsonldTemplate = templates[0] ?? null;
+		}
+	} catch {
+		// jsonld-templates endpoint not available — skip JSON-LD
+	}
+
 	const isFollowing = await initiallyFollowing;
 
-	return { article, authed, currentUserId, canModerate, comments, commentsLoadError, rightSidebarWidgets, initiallyFollowing: isFollowing };
+	return {
+		article,
+		authed,
+		currentUserId,
+		canModerate,
+		comments,
+		commentsLoadError,
+		rightSidebarWidgets,
+		relatedContent,
+		jsonldTemplate,
+		initiallyFollowing: isFollowing
+	};
 };

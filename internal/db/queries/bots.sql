@@ -20,7 +20,9 @@ SELECT id, tenant_id, name, user_agent_pattern, bot_type, policy, is_system, cra
 FROM known_bots
 WHERE tenant_id = $1
   AND (@bot_type = '' OR bot_type = @bot_type)
-ORDER BY name ASC;
+ORDER BY name ASC
+LIMIT @page_size
+OFFSET @page_offset;
 
 -- name: UpdateKnownBot :one
 UPDATE known_bots

@@ -2,6 +2,7 @@
 	import { page } from '$app/state';
 	import { t } from '$lib/i18n';
 	import { ArrowLeft, Clock, Eye } from 'lucide-svelte';
+	import { api } from '$lib/api/client';
 	import ReactionRail from '$lib/components/blog/ReactionRail.svelte';
 	import CreatorCard from '$lib/components/blog/CreatorCard.svelte';
 	import SidebarWidgetRenderer from '$lib/components/shell/SidebarWidgetRenderer.svelte';
@@ -21,17 +22,37 @@
 	const publishedDate = $derived(new Date(article.published_at || article.created_at).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' }));
 	const title = $derived(`${article.title} — ${t('app.name')}`);
 	const description = $derived(article.excerpt ?? article.body.slice(0, 160));
+
+	// JSON-LD structured data (Section 14, Section 26 — SEO). Uses the
+	// admin-configured template from GET /content/jsonld-templates when
+	// available; falls back to a basic BlogPosting schema.
 	const jsonLd = $derived(
-		JSON.stringify({
-			'@context': 'https://schema.org',
-			'@type': 'BlogPosting',
-			headline: article.title,
-			datePublished: article.published_at || article.created_at,
-			author: { '@type': 'Person', name: article.author_name ?? 'JapaConnect' },
-			url: page.url.href,
-			description
-		})
+		data.jsonldTemplate
+			? JSON.stringify({
+					...data.jsonldTemplate,
+					headline: article.title,
+					datePublished: article.published_at || article.created_at,
+					author: { '@type': 'Person', name: article.author_name ?? 'JapaConnect' },
+					url: page.url.href,
+					description
+				})
+			: JSON.stringify({
+					'@context': 'https://schema.org',
+					'@type': 'BlogPosting',
+					headline: article.title,
+					datePublished: article.published_at || article.created_at,
+					author: { '@type': 'Person', name: article.author_name ?? 'JapaConnect' },
+					url: page.url.href,
+					description
+				})
 	);
+
+	// View tracking (Section 14 — POST /content/{id}/view). Fire-and-forget
+	// on mount; the backend deduplicates per user/session per day.
+	$effect(() => {
+		if (!article.id) return;
+		api.post(`/content/${article.id}/view`, {});
+	});
 </script>
 
 <svelte:head>
@@ -153,6 +174,29 @@
 					</div>
 				</div>
 			</nav>
+		{/if}
+
+		<!-- Related content (Section 14 — GET /content/{id}/related). -->
+		{#if data.relatedContent && data.relatedContent.length > 0}
+			<section class="mt-8">
+				<h2 class="mb-4 text-lg font-semibold text-[var(--color-text)]">{t('blog.related', 'Related')}</h2>
+				<div class="grid gap-4 sm:grid-cols-2">
+					{#each data.relatedContent as rel (rel.id)}
+						<a
+							href={rel.content_type === 'blog_post' ? `/blog/${rel.slug}` : `/content/${rel.slug}`}
+							class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 transition-colors hover:border-[var(--color-primary)]/30"
+						>
+							{#if rel.featured_image_url}
+								<img src={rel.featured_image_url} alt="" class="mb-3 aspect-[16/9] w-full rounded-[var(--radius)] object-cover" />
+							{/if}
+							<h3 class="line-clamp-2 font-medium text-[var(--color-text)]">{rel.title}</h3>
+							{#if rel.author_name}
+								<p class="mt-1 text-xs text-[var(--color-text-subtle)]">{rel.author_name}</p>
+							{/if}
+						</a>
+					{/each}
+				</div>
+			</section>
 		{/if}
 	</article>
 
