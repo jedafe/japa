@@ -18,6 +18,6 @@ CREATE TABLE IF NOT EXISTS ai_usage_log (
     created_at      timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE INDEX idx_ai_usage_log_tenant_created ON ai_usage_log(tenant_id, created_at DESC);
-CREATE INDEX idx_ai_usage_log_tenant_task ON ai_usage_log(tenant_id, task_type, created_at DESC);
-CREATE INDEX idx_ai_usage_log_tenant_provider ON ai_usage_log(tenant_id, provider, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_ai_usage_log_tenant_created ON ai_usage_log(tenant_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_ai_usage_log_tenant_task ON ai_usage_log(tenant_id, task_type, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_ai_usage_log_tenant_provider ON ai_usage_log(tenant_id, provider, created_at DESC);
