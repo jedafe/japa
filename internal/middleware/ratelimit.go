@@ -14,6 +14,7 @@ package middleware
 import (
 	"encoding/json"
 	"log/slog"
+	"net"
 	"net/http"
 	"strconv"
 	"time"
@@ -75,6 +76,24 @@ func RateLimit(rdb valkeycompat.Cmdable, tier string) func(http.Handler) http.Ha
 			}
 
 			identifier := callerIdentifier(r)
+
+			// Exempt loopback callers from the rate limit. This lets the
+			// SSR frontend (which calls the API from 127.0.0.1/::1 with no
+			// X-Forwarded-For) fire the burst of parallel requests a page
+			// load requires without exhausting the shared per-IP counter.
+			//
+			// This is safe in production: when a reverse proxy fronts the
+			// API, clientip.FromRequest resolves the real client IP from
+			// X-Forwarded-For (the proxy is a trusted peer), so the
+			// identifier is the public client address — not loopback — and
+			// the limit still applies. Only direct loopback connections
+			// without a forwarding header (i.e. co-located SSR or local dev)
+			// are exempt.
+			if isLoopbackIdentifier(identifier) {
+				next.ServeHTTP(w, r)
+				return
+			}
+
 			bucket := time.Now().Unix() / windowSeconds
 			key := valkey.MustKey("ratelimit:%s:%s:%d", tier, identifier, bucket)
 
@@ -133,4 +152,24 @@ func callerIdentifier(r *http.Request) string {
 	}
 
 	return "ip:" + clientip.FromRequest(r)
+}
+
+// isLoopbackIdentifier reports whether the caller identifier refers to a
+// loopback IP address (127.0.0.0/8 or ::1). Authenticated users are never
+// loopback. Anonymous identifiers use the "ip:" prefix produced by
+// callerIdentifier; the address there is the client IP resolved by
+// clientip.FromRequest, which is loopback only for direct local connections
+// without a forwarding header.
+func isLoopbackIdentifier(identifier string) bool {
+	const ipPrefix = "ip:"
+	if len(identifier) <= len(ipPrefix) || identifier[:len(ipPrefix)] != ipPrefix {
+		return false
+	}
+
+	ip := net.ParseIP(identifier[len(ipPrefix):])
+	if ip == nil {
+		return false
+	}
+
+	return ip.IsLoopback()
 }
