@@ -11,6 +11,6 @@ CREATE TABLE IF NOT EXISTS search_analytics (
     created_at    timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE INDEX idx_search_analytics_query ON search_analytics (tenant_id, query, created_at DESC);
-CREATE INDEX idx_search_analytics_zero ON search_analytics (tenant_id, results_count, created_at DESC)
+CREATE INDEX IF NOT EXISTS idx_search_analytics_query ON search_analytics (tenant_id, query, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_search_analytics_zero ON search_analytics (tenant_id, results_count, created_at DESC)
     WHERE results_count = 0;
