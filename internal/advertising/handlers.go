@@ -1180,3 +1180,47 @@ func (h *Handlers) DeleteAdNetwork(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
 }
+
+// ---------------------------------------------------------------------------
+// Ad Network Config — public endpoint (no api_key exposed)
+// ---------------------------------------------------------------------------
+
+// GetAdNetworkConfig returns active ad networks for public consumption (no api_key exposed).
+func (h *Handlers) GetAdNetworkConfig(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	t := tenant.FromContext(ctx)
+	if t == nil {
+		writeError(w, http.StatusBadRequest, "missing_tenant", "tenant not found")
+		return
+	}
+	tenantID := t.ID
+
+	networks, err := h.Service.ListActiveAdNetworks(ctx, tenantID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	type safeNetwork struct {
+		Provider    string          `json:"provider"`
+		Name        string          `json:"name"`
+		ClientID    *string         `json:"client_id"`
+		SlotMapping json.RawMessage `json:"slot_mapping"`
+		Config      json.RawMessage `json:"config"`
+		Priority    int32           `json:"priority"`
+	}
+
+	safe := make([]safeNetwork, 0, len(networks))
+	for _, n := range networks {
+		safe = append(safe, safeNetwork{
+			Provider:    n.Provider,
+			Name:        n.Name,
+			ClientID:    n.ClientID,
+			SlotMapping: n.SlotMapping,
+			Config:      n.Config,
+			Priority:    n.Priority,
+		})
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": nonNilSlice(safe)})
+}
