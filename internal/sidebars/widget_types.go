@@ -382,7 +382,7 @@ var widgetRegistry = []WidgetType{
 	{
 		Type:        "upcoming_events",
 		Name:        "Upcoming Events",
-		Description: "Shows upcoming community events with dates. Fetched from /events?upcoming=true.",
+		Description: "Shows upcoming community events with dates. The /events endpoint is not yet implemented in JEOS; the widget renders an empty state until the events section is added.",
 		Icon:        "calendar",
 		Slot:        WidgetSlotContent,
 		Category:    WidgetCategorySocial,

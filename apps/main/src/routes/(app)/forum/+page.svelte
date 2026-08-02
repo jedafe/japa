@@ -20,7 +20,7 @@
 	<meta property="og:type" content="website" />
 </svelte:head>
 
-<div class="mx-auto w-full max-w-3xl">
+<div class="mx-auto w-full max-w-full">
 	<div class="flex items-center justify-between border-b border-[var(--color-border)] px-4 py-3">
 		<h1 class="text-lg font-semibold text-[var(--color-text)]">{t('forum.heading', 'Forum')}</h1>
 		{#if data.authed}

@@ -12,6 +12,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
+	vkcache "github.com/jedafe/japa/internal/valkey"
 	"github.com/jedafe/japa/internal/media"
 	"github.com/jedafe/japa/internal/worker"
 )
@@ -414,6 +415,7 @@ func primaryRowsToItems(rows []gen.GetPrimaryFeedRow) []FeedItem {
 			ViewCount:          r.ViewCount,
 			CommentCount:       r.CommentCount,
 			VoteScore:          derefInt32(r.VoteScore),
+			VelocityScore:      pgNumericToFloat64(r.VelocityScore),
 			AuthorName:         r.AuthorName,
 			AuthorAvatarURL:    r.AuthorAvatarUrl,
 			SpaceName:          r.SpaceName,
@@ -600,48 +602,49 @@ func (s *Service) GetForYouFeed(
 
 	key := forYouCacheKey(tenantID, userID, sortMode, contentCountry)
 
-	// Cache hit → slice and return.
-	if ranked, ok := s.readForYouCache(ctx, key); ok {
-		return pageSlice(ranked, offset, limit), nil
-	}
+	// Use the shared cache helper with distributed lock stampede protection
+	// (BUG-008). On cache miss, the lock holder loads affinity, fetches
+	// candidates, and ranks them; concurrent requests wait for the result.
+	ranked, err := vkcache.GetOrComputeCompat(ctx, s.vk, key, forYouCacheTTL, func(ctx context.Context) ([]FeedItem, error) {
+		authorIDs, spaceIDs, tagIDs, err := s.loadAffinity(ctx, tenantID, userID)
+		if err != nil {
+			return nil, err
+		}
 
-	// Miss → load affinity, fetch the bounded candidate pool.
-	authorIDs, spaceIDs, tagIDs, err := s.loadAffinity(ctx, tenantID, userID)
-	if err != nil {
-		return nil, err
-	}
+		var windowStart pgtype.Timestamptz
+		_ = windowStart.Scan(time.Now().Add(-forYouWindowDays * 24 * time.Hour))
 
-	var windowStart pgtype.Timestamptz
+		rows, err := s.store.getForYouCandidates(ctx, gen.GetForYouCandidatesParams{
+			TenantID:        tenantID,
+			WindowStart:     windowStart,
+			ExcludeAuthorID: userID,
+			AuthorIds:       authorIDs,
+			SpaceIds:        spaceIDs,
+			TagIds:          tagIDs,
+			AffinityLimit:   forYouAffinityCap,
+			VelocityLimit:   forYouVelocityCap,
+			CandidateCap:    forYouCandidateCap,
+		})
+		if err != nil {
+			return nil, err
+		}
 
-	_ = windowStart.Scan(time.Now().Add(-forYouWindowDays * 24 * time.Hour))
+		// Score + rank in pure Go.
+		cands := make([]Candidate, len(rows))
+		for i, r := range rows {
+			cands[i] = candidateFromRow(r)
+		}
 
-	rows, err := s.store.getForYouCandidates(ctx, gen.GetForYouCandidatesParams{
-		TenantID:        tenantID,
-		WindowStart:     windowStart,
-		ExcludeAuthorID: userID,
-		AuthorIds:       authorIDs,
-		SpaceIds:        spaceIDs,
-		TagIds:          tagIDs,
-		AffinityLimit:   forYouAffinityCap,
-		VelocityLimit:   forYouVelocityCap,
-		CandidateCap:    forYouCandidateCap,
+		result := make([]FeedItem, 0, len(cands))
+		for _, c := range rankCandidates(cands, sortMode, time.Now(), contentCountry) {
+			result = append(result, c.Item)
+		}
+
+		return result, nil
 	})
 	if err != nil {
 		return nil, err
 	}
-
-	// Score + rank in pure Go, then cache the ranked list (best-effort).
-	cands := make([]Candidate, len(rows))
-	for i, r := range rows {
-		cands[i] = candidateFromRow(r)
-	}
-
-	ranked := make([]FeedItem, 0, len(cands))
-	for _, c := range rankCandidates(cands, sortMode, time.Now(), contentCountry) {
-		ranked = append(ranked, c.Item)
-	}
-
-	s.writeForYouCache(ctx, key, ranked)
 
 	return pageSlice(ranked, offset, limit), nil
 }

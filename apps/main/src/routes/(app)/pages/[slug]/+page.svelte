@@ -47,7 +47,7 @@
 </svelte:head>
 
 {#if !hasBlocks}
-	<div class="mx-auto w-full max-w-2xl p-4">
+	<div class="mx-auto w-full max-w-full p-4">
 		<EmptyState icon={FileText} title={pageData.title} />
 	</div>
 {:else}

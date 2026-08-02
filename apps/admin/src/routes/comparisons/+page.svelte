@@ -27,8 +27,8 @@
 	let deleteTarget = $state<ComparisonEntry | null>(null);
 
 	const canCreateComparison = $derived(hasPermission('comparison.create'));
-	const canEditComparison = $derived(hasPermission('comparison.edit_own') || hasPermission('comparison.edit_any'));
-	const canDeleteComparison = $derived(hasPermission('comparison.delete_own') || hasPermission('comparison.delete_any'));
+	const canEditComparison = $derived(hasPermission('comparison.edit_any') || hasPermission('comparison.edit_own'));
+	const canDeleteComparison = $derived(hasPermission('comparison.delete_any') || hasPermission('comparison.delete_own'));
 
 	const visibilityOptions = [
 		{ value: 'public', label: t('comparisons.vis_public') },

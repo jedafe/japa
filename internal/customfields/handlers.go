@@ -247,6 +247,14 @@ func (h *Handlers) enrichFieldGroups(
 }
 
 // ListFieldGroups handles GET /api/v1/custom-field-groups.
+// It accepts two optional query params:
+//   - entity_class: exact match on the assignment entity_class column
+//   - entity_type:  simplified token (e.g. "content", "user_profile") that
+//     is matched against the derived EntityTypeFromClass value
+//
+// When both are provided, entity_class takes precedence. The entity_type
+// filter is applied post-enrichment so it works with the simplified tokens
+// the frontend dropdown uses (Section 06).
 func (h *Handlers) ListFieldGroups(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -254,6 +262,7 @@ func (h *Handlers) ListFieldGroups(w http.ResponseWriter, r *http.Request) {
 	}
 
 	entityClass := r.URL.Query().Get("entity_class")
+	entityType := r.URL.Query().Get("entity_type")
 
 	var groups []gen.CustomFieldGroup
 	var err error
@@ -269,6 +278,18 @@ func (h *Handlers) ListFieldGroups(w http.ResponseWriter, r *http.Request) {
 	}
 
 	enriched := h.enrichFieldGroups(r.Context(), tenantID, groups)
+
+	// Post-filter by simplified entity_type token when requested.
+	if entityType != "" {
+		filtered := enriched[:0]
+		for _, g := range enriched {
+			if g.EntityType == entityType {
+				filtered = append(filtered, g)
+			}
+		}
+		enriched = filtered
+	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": enriched})
 }
 
@@ -335,6 +356,96 @@ func (h *Handlers) CreateFieldGroup(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusCreated, map[string]any{"data": group})
+}
+
+// CreateFieldGroupAdmin handles POST /api/v1/admin/field-groups. Unlike the
+// public CreateFieldGroup handler, this accepts an optional entity_type and
+// slug, auto-generates the slug from the name when omitted, and creates a
+// custom_field_group_assignment row so the group is immediately attached to
+// the selected entity class (Section 06).
+func (h *Handlers) CreateFieldGroupAdmin(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Name        string  `json:"name"`
+		Slug        string  `json:"slug"`
+		Description *string `json:"description"`
+		EntityType  string  `json:"entity_type"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
+		return
+	}
+
+	if strings.TrimSpace(req.Name) == "" {
+		writeError(w, http.StatusBadRequest, "missing_fields", "Name is required")
+		return
+	}
+
+	// Auto-generate slug from name when not provided.
+	slug := strings.TrimSpace(req.Slug)
+	if slug == "" {
+		slug = slugify(req.Name)
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	group, err := h.Service.CreateFieldGroup(r.Context(), tenantID, req.Name, slug, req.Description, false)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	// Create the assignment row so the group is attached to the selected
+	// entity class. When entity_type is empty, skip the assignment — the
+	// admin can attach it later via the entity-types management page.
+	entityType := strings.TrimSpace(req.EntityType)
+	if entityType != "" {
+		entityClass := EntityClassFromType(entityType)
+		if _, err := h.Service.CreateAssignment(r.Context(), gen.CreateAssignmentParams{
+			GroupID:     group.ID,
+			EntityClass: entityClass,
+			EntityID:    pgtype.UUID{},
+			Position:    0,
+		}); err != nil {
+			slog.Error("creating field group assignment",
+				"group_id", group.ID,
+				"entity_class", entityClass,
+				"error", err)
+			// Don't fail the whole request — the group was created
+			// successfully; the assignment can be retried. Log and
+			// continue so the admin sees the group in the list.
+		}
+	}
+
+	writeJSON(w, http.StatusCreated, map[string]any{"data": group})
+}
+
+// slugify converts a display name into a URL-safe slug (lowercase, hyphen-
+// separated). Used by CreateFieldGroupAdmin when the client omits the slug.
+func slugify(name string) string {
+	s := strings.ToLower(strings.TrimSpace(name))
+	s = strings.ReplaceAll(s, " ", "-")
+	s = strings.ReplaceAll(s, "_", "-")
+	// Collapse non-alphanumeric runs into single hyphens.
+	var b strings.Builder
+	prevDash := false
+	for _, c := range s {
+		if (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') {
+			b.WriteRune(c)
+			prevDash = false
+		} else if !prevDash {
+			b.WriteRune('-')
+			prevDash = true
+		}
+	}
+	result := strings.Trim(b.String(), "-")
+	if result == "" {
+		return "group"
+	}
+	return result
 }
 
 // UpdateFieldGroup handles PATCH /api/v1/custom-field-groups/{id}.

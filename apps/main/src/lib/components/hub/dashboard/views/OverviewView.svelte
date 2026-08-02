@@ -5,27 +5,30 @@
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import { FileText, Wallet, Bell, Users } from 'lucide-svelte';
 
+	// Analytics fields match the backend MeAnalytics struct (§50):
+	// total_content, draft_content, published_content, total_bookmarks,
+	// total_followers, total_following.
 	interface Analytics {
-		content_count?: number;
-		draft_count?: number;
-		published_count?: number;
-		bookmark_count?: number;
+		total_content?: number;
+		draft_content?: number;
+		published_content?: number;
+		total_bookmarks?: number;
+		total_followers?: number;
+		total_following?: number;
 	}
 	interface RecentItem {
 		id: string;
 		title?: string;
-		type?: string;
+		slug?: string;
+		content_type?: string;
 		status?: string;
 		created_at?: string;
 	}
 	interface WalletSummary {
-		balance?: number;
-		currency?: string;
+		credits?: number;
+		points?: number;
 	}
 	interface UnreadSummary {
-		count?: number;
-	}
-	interface FollowerSummary {
 		count?: number;
 	}
 	interface OverviewData {
@@ -33,7 +36,6 @@
 		recent: RecentItem[];
 		wallet?: WalletSummary | null;
 		unread?: UnreadSummary | null;
-		followers?: FollowerSummary | null;
 	}
 
 	let { data }: { data: unknown } = $props();
@@ -42,16 +44,29 @@
 	const recent = $derived(overview?.recent ?? []);
 	const wallet = $derived(overview?.wallet ?? null);
 	const unread = $derived(overview?.unread ?? null);
-	const followers = $derived(overview?.followers ?? null);
+
+	// Build the canonical URL for a content item — blog posts use /blog/{slug},
+	// other content types use /content/{slug}. Falls back to /content/{id}.
+	function contentUrl(item: RecentItem): string {
+		const idOrSlug = item.slug ?? item.id;
+		if (item.content_type === 'blog_post') return `/blog/${idOrSlug}`;
+		return `/content/${idOrSlug}`;
+	}
+
+	function formatDate(iso: string | undefined): string {
+		if (!iso) return '';
+		const d = new Date(iso);
+		return isNaN(d.getTime()) ? '' : d.toLocaleDateString();
+	}
 </script>
 
 <section class="space-y-6">
 	<!-- Content metrics -->
 	<div class="grid grid-cols-2 gap-4 lg:grid-cols-4">
-		<MetricCard labelKey="dashboard.overview.content_count" value={analytics.content_count ?? 0} />
-		<MetricCard labelKey="dashboard.overview.draft_count" value={analytics.draft_count ?? 0} />
-		<MetricCard labelKey="dashboard.overview.published_count" value={analytics.published_count ?? 0} />
-		<MetricCard labelKey="dashboard.overview.bookmark_count" value={analytics.bookmark_count ?? 0} />
+		<MetricCard labelKey="dashboard.overview.content_count" value={analytics.total_content ?? 0} />
+		<MetricCard labelKey="dashboard.overview.draft_count" value={analytics.draft_content ?? 0} />
+		<MetricCard labelKey="dashboard.overview.published_count" value={analytics.published_content ?? 0} />
+		<MetricCard labelKey="dashboard.overview.bookmark_count" value={analytics.total_bookmarks ?? 0} />
 	</div>
 
 	<!-- Phase 18.01 — wallet / unread / follower summary cards -->
@@ -67,7 +82,7 @@
 				<span class="block text-xs text-[var(--color-muted)]">{t('dashboard.overview.wallet', 'Wallet')}</span>
 				<span class="block text-sm font-medium text-[var(--color-text)]">
 					{#if wallet}
-						{wallet.balance ?? 0} {wallet.currency ?? ''}
+						{wallet.credits ?? 0} {t('dashboard.overview.credits', 'credits')}
 					{:else}
 						—
 					{/if}
@@ -100,7 +115,7 @@
 			<span class="min-w-0 flex-1">
 				<span class="block text-xs text-[var(--color-muted)]">{t('dashboard.overview.followers', 'Followers')}</span>
 				<span class="block text-sm font-medium text-[var(--color-text)]">
-					{followers?.count ?? 0}
+					{analytics.total_followers ?? 0}
 				</span>
 			</span>
 		</a>
@@ -113,10 +128,10 @@
 			<ul class="space-y-2">
 				{#each recent as item (item.id)}
 					<li class="flex items-center justify-between rounded-[var(--radius)] bg-[var(--color-surface-subtle)] px-3 py-2">
-						<a href="/content/{item.id}" class="min-w-0 flex-1 truncate text-sm font-medium text-[var(--color-text)] hover:underline">
+						<a href={contentUrl(item)} class="min-w-0 flex-1 truncate text-sm font-medium text-[var(--color-text)] hover:underline">
 							{item.title ?? t('dashboard.overview.untitled')}
 						</a>
-						<span class="ml-3 shrink-0 text-xs text-[var(--color-muted)]">{item.type ?? '—'}</span>
+						<span class="ml-3 shrink-0 text-xs text-[var(--color-muted)]">{formatDate(item.created_at)}</span>
 					</li>
 				{/each}
 			</ul>

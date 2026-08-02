@@ -72,7 +72,7 @@
 <!-- ADR-058 Exception #1: dev.to reading layout.
      Left nav is auto-collapsed by the layout (isExceptionRoute handles /create,
      but blog single uses a bespoke 3-column grid here that works within the shell). -->
-<div class="mx-auto flex max-w-6xl gap-8 px-4 py-8">
+<div class="mx-auto flex max-w-full gap-8 px-4 py-8">
 	<!-- Left margin: borderless ReactionRail (distinct from the collapsed nav) -->
 	<div class="hidden w-14 shrink-0 lg:block">
 		<ReactionRail contentId={article.id} voteScore={article.reshare_count} commentCount={article.comment_count} authed={data.authed} />
@@ -128,16 +128,6 @@
 			<span class="text-sm text-[var(--color-text-subtle)]">{article.comment_count} comments</span>
 		</div>
 
-		<!-- Unified comment engine (Section 49) — Reddit-style nested comments. -->
-		<CommentThread
-			comments={data.comments}
-			contentId={article.id}
-			authed={data.authed}
-			currentUserId={data.currentUserId}
-			canModerate={data.canModerate}
-			loadError={data.commentsLoadError}
-		/>
-
 		<!-- Series navigation (Phase 06.10) — prev/next within a series. -->
 		{#if article.series_id && article.series_title}
 			<nav class="mt-8 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
@@ -175,6 +165,16 @@
 				</div>
 			</nav>
 		{/if}
+
+		<!-- Unified comment engine (Section 49) — Reddit-style nested comments. -->
+		<CommentThread
+			comments={data.comments}
+			contentId={article.id}
+			authed={data.authed}
+			currentUserId={data.currentUserId}
+			canModerate={data.canModerate}
+			loadError={data.commentsLoadError}
+		/>
 
 		<!-- Related content (Section 14 — GET /content/{id}/related). -->
 		{#if data.relatedContent && data.relatedContent.length > 0}

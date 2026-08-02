@@ -13,6 +13,7 @@
 		name: string;
 		entity_type: string;
 		field_count: number;
+		is_system: boolean;
 		created_at: string;
 	};
 
@@ -59,7 +60,9 @@
 
 	let searchQuery = $state('');
 
-	const canManageFields = $derived(hasPermission('custom_fields.group.create'));
+	const canCreateGroup = $derived(hasPermission('custom_fields.group.create'));
+	const canEditGroup = $derived(hasPermission('custom_fields.group.edit'));
+	const canDeleteGroup = $derived(hasPermission('custom_fields.group.delete'));
 
 	// Entity types are fetched from GET /custom-field-entity-types so the
 	// filter options always match the backend's supported entity classes
@@ -86,6 +89,11 @@
 		filterValues = {};
 	}
 
+	function entityTypeLabel(token: string): string {
+		const opt = entityTypeOptions.find((o) => o.value === token);
+		return opt ? opt.label : token;
+	}
+
 	const filteredGroups = $derived(
 		searchQuery
 			? groups.filter(
@@ -98,7 +106,7 @@
 
 	const columns = [
 		{ key: 'name', label: t('fieldGroups.name'), sortable: true },
-		{ key: 'entity_type', label: t('fieldGroups.entity_type'), sortable: true },
+		{ key: 'entity_type', label: t('fieldGroups.entity_type'), sortable: true, componentSnippet: EntityTypeCell },
 		{ key: 'field_count', label: t('fieldGroups.fields'), sortable: true },
 		{ key: 'actions', label: t('common.actions'), class: 'w-24', componentSnippet: FieldGroupActionsCell }
 	];
@@ -137,10 +145,6 @@
 			errorMessage = t('common.error');
 		}
 		bulkDeleting = false;
-	}
-
-	function handleSearch(q: string) {
-		searchQuery = q;
 	}
 
 	async function load() {
@@ -188,9 +192,12 @@
 		saving = true;
 		errorMessage = '';
 		try {
-			const result = await api('/admin/field-groups', {
-				method: 'POST',
-				body: { name: name.trim(), entity_type: entityType.trim() }
+			// POST /admin/field-groups auto-generates the slug from the name
+			// and creates the custom_field_group_assignment row for the
+			// selected entity_type (Section 06).
+			const result = await fieldGroupsAdminApiExtended.create({
+				name: name.trim(),
+				entity_type: entityType.trim()
 			});
 			if (result.ok) {
 				modalOpen = false;
@@ -256,10 +263,26 @@
 	async function setFieldPermission(fieldId: string, userGroupId: string, canView: boolean, canEdit: boolean) {
 		savingPermission = true;
 		try {
-			await api(`/custom-fields/${fieldId}/permissions`, {
+			const result = await api(`/custom-fields/${fieldId}/permissions`, {
 				method: 'PUT',
 				body: { user_group_id: userGroupId, can_view: canView, can_edit: canEdit }
 			});
+			if (result.ok) {
+				// Update local state so the checkbox reflects the saved
+				// value. Without this, the controlled `checked` binding
+				// snaps back to the stale permission on re-render.
+				const existing = permissions.findIndex(
+					(p) => p.field_id === fieldId && p.user_group_id === userGroupId
+				);
+				const updated: FieldPermission = { field_id: fieldId, user_group_id: userGroupId, can_view: canView, can_edit: canEdit };
+				if (existing >= 0) {
+					permissions = [...permissions.slice(0, existing), updated, ...permissions.slice(existing + 1)];
+				} else {
+					permissions = [...permissions, updated];
+				}
+			} else {
+				errorMessage = result.error;
+			}
 		} catch {
 			errorMessage = t('common.error');
 		} finally {
@@ -310,13 +333,17 @@
 
 {#if activeTab === 'groups'}
 	<div class="mb-4 flex justify-end">
-		<button class="btn btn-primary flex items-center gap-1.5 text-xs" onclick={openCreate}>
-			<Plus class="h-3 w-3" />
-			{t('fieldGroups.create')}
-		</button>
+		{#if canCreateGroup}
+			<button class="btn btn-primary flex items-center gap-1.5 text-xs" onclick={openCreate}>
+				<Plus class="h-3 w-3" />
+				{t('fieldGroups.create')}
+			</button>
+		{/if}
 	</div>
 
-	<FilterBar filters={filterDefs} onsearch={handleFilterSearch} onclear={handleFilterClear} />
+	<div class="mb-4">
+		<FilterBar filters={filterDefs} onsearch={handleFilterSearch} onclear={handleFilterClear} />
+	</div>
 
 	{#if loading}
 		<p class="py-8 text-center text-sm" style="color: var(--color-muted)">{t('common.loading')}</p>
@@ -326,9 +353,6 @@
 			data={filteredGroups}
 			pageSize={25}
 			emptyMessage={t('fieldGroups.empty')}
-			searchable
-			searchPlaceholder={t('common.search') + ' ' + t('fieldGroups.title').toLowerCase() + '...'}
-			onsearch={handleSearch}
 			selectable
 			bind:selectedIds
 		>
@@ -344,7 +368,7 @@
 {:else if activeTab === 'permissions'}
 	<!-- Group selector -->
 	<div class="mb-6 flex items-center gap-3">
-		<label for="perm-group-select" class="text-sm font-medium" style="color: var(--color-foreground)">Field Group:</label>
+		<label for="perm-group-select" class="text-sm font-medium" style="color: var(--color-foreground)">{t('fieldGroups.field_group')}:</label>
 		<select
 			id="perm-group-select"
 			class="rounded-lg border px-3 py-2 text-sm"
@@ -356,7 +380,7 @@
 				if (group) openPermissions(group);
 			}}
 		>
-			<option value="" disabled>Select a field group…</option>
+			<option value="" disabled>{t('fieldGroups.select_field_group')}</option>
 			{#each groups as g}
 				<option value={g.id}>{g.name}</option>
 			{/each}
@@ -364,18 +388,18 @@
 	</div>
 
 	{#if !selectedGroup}
-		<p class="py-8 text-center text-sm" style="color: var(--color-muted)">Select a field group above to manage its field permissions.</p>
+		<p class="py-8 text-center text-sm" style="color: var(--color-muted)">{t('fieldGroups.select_to_manage')}</p>
 	{:else if permissionsLoading}
 		<p class="py-8 text-center text-sm" style="color: var(--color-muted)">{t('common.loading')}</p>
 	{:else}
 		<p class="mb-4 text-sm" style="color: var(--color-muted)">
-			Permissions for: <strong>{selectedGroup.name}</strong>
+			{t('fieldGroups.permissions_for')} <strong>{selectedGroup.name}</strong>
 		</p>
 
 		{#if groupFields.length === 0}
-			<p class="py-8 text-center text-sm" style="color: var(--color-muted)">No fields in this group. Add fields first from the Field Groups tab.</p>
+			<p class="py-8 text-center text-sm" style="color: var(--color-muted)">{t('fieldGroups.no_fields_in_group')}</p>
 		{:else if userGroups.length === 0}
-			<p class="py-8 text-center text-sm" style="color: var(--color-muted)">No user groups found. Create user groups first from the User Management section.</p>
+			<p class="py-8 text-center text-sm" style="color: var(--color-muted)">{t('fieldGroups.no_user_groups')}</p>
 		{:else}
 			<div class="overflow-x-auto rounded-lg border" style="border-color: var(--color-border)">
 				<table class="w-full text-sm">
@@ -435,7 +459,7 @@
 		<div>
 			<label for="fg-entity" class="mb-1 block text-sm font-medium">{t('fieldGroups.entity_type')}</label>
 			<select id="fg-entity" bind:value={entityType} required class="w-full rounded-lg border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-background); color: var(--color-foreground)">
-				<option value="" disabled>Select…</option>
+				<option value="" disabled>{t('common.select')}</option>
 				{#each entityTypeOptions as opt}
 					<option value={opt.value}>{opt.label}</option>
 				{/each}
@@ -460,13 +484,20 @@
 		<Button variant="ghost" size="sm" onclick={() => openPermissions(row)} title={t('fieldGroups.permissions')}>
 			<Shield class="h-3.5 w-3.5" style="color: var(--color-primary)" />
 		</Button>
-		{#if canManageFields}
+		{#if canEditGroup && !row.is_system}
 			<Button variant="ghost" size="sm" onclick={() => openEdit(row)}>
 				<Pencil class="h-3.5 w-3.5" />
 			</Button>
+		{/if}
+		{#if canDeleteGroup && !row.is_system}
 			<Button variant="ghost" size="sm" onclick={() => confirmDelete(row)} style="color: var(--color-danger)">
 				<Trash2 class="h-3.5 w-3.5" />
 			</Button>
 		{/if}
 	</div>
+{/snippet}
+
+<!-- EntityTypeCell renders the human-readable label for the entity_type token -->
+{#snippet EntityTypeCell({ value }: { value: any })}
+	{entityTypeLabel(value)}
 {/snippet}

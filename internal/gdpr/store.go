@@ -584,6 +584,17 @@ func (s *Store) anonymizeUserProfile(ctx context.Context, p gen.AnonymizeUserPro
 	return nil
 }
 
+// anonymizeAffiliateLinkEvents scrubs ip_hash/user_agent_hash PII from
+// affiliate_link_events owned by the deleted user's affiliate links (Section
+// 56, ADR-014). Best-effort: callers log a warning on failure but do not
+// abort the erasure.
+func (s *Store) anonymizeAffiliateLinkEvents(ctx context.Context, p gen.AnonymizeAffiliateLinkEventsParams) error {
+	if err := s.write.AnonymizeAffiliateLinkEvents(ctx, p); err != nil {
+		return fmt.Errorf("anonymizing affiliate link events: %w", err)
+	}
+	return nil
+}
+
 func (s *Store) deleteUserTokens(ctx context.Context, p gen.DeleteUserTokensParams) error {
 	if err := s.write.DeleteUserTokens(ctx, p); err != nil {
 		return fmt.Errorf("deleting user tokens: %w", err)

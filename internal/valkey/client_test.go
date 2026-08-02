@@ -77,3 +77,40 @@ func TestClose_Idempotent(t *testing.T) {
 	// A second Close must not panic.
 	c.Close()
 }
+
+// TestMustKey_EmptyPatternPanics verifies that MustKey panics on an empty
+// pattern, preventing the construction of an invalid "jc:" key.
+func TestMustKey_EmptyPatternPanics(t *testing.T) {
+	t.Parallel()
+
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatal("expected MustKey(\"\") to panic")
+		}
+	}()
+	_ = MustKey("")
+}
+
+// TestMustKey_PrependsPrefix verifies that MustKey prepends the "jc:" prefix
+// when the pattern does not already start with it.
+func TestMustKey_PrependsPrefix(t *testing.T) {
+	t.Parallel()
+
+	got := MustKey("cache:page:%s:%s", "public", "getting-started")
+	want := "jc:cache:page:public:getting-started"
+	if got != want {
+		t.Fatalf("MustKey = %q, want %q", got, want)
+	}
+}
+
+// TestMustKey_DoesNotDoublePrefix verifies that MustKey does not double the
+// "jc:" prefix when the pattern already starts with it.
+func TestMustKey_DoesNotDoublePrefix(t *testing.T) {
+	t.Parallel()
+
+	got := MustKey("jc:cache:page:docs:nav")
+	want := "jc:cache:page:docs:nav"
+	if got != want {
+		t.Fatalf("MustKey = %q, want %q", got, want)
+	}
+}

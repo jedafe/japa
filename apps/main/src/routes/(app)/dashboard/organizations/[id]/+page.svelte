@@ -189,7 +189,7 @@
 
 	{#if activeTab === 'content'}
 		<!-- Content tab (Phase 29.04) -->
-		<div class="space-y-3 rounded-[12px] border border-[var(--color-border)] bg-[var(--color-surface)] p-5">
+		<div class="space-y-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5">
 			<h2 class="text-sm font-medium text-[var(--color-text)]">
 				{t('org_admin.content_section', 'Published content')} ({content.length})
 			</h2>
@@ -253,14 +253,14 @@
 		{/if}
 	{:else}
 	<!-- Edit org fields -->
-	<form onsubmit={saveOrg} class="space-y-4 rounded-[12px] border border-[var(--color-border)] bg-[var(--color-surface)] p-5" novalidate>
+	<form onsubmit={saveOrg} class="space-y-4 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5" novalidate>
 		<h2 class="text-sm font-medium text-[var(--color-text)]">{t('org_admin.edit_section')}</h2>
 
 		{#if errorKey}
-			<p class="rounded-[var(--radius)] bg-red-500/10 px-3 py-2 text-sm text-red-500" role="alert">{t(errorKey)}</p>
+			<p class="rounded-[var(--radius)] bg-[var(--color-danger)]/10 px-3 py-2 text-sm text-[var(--color-danger)]" role="alert">{t(errorKey)}</p>
 		{/if}
 		{#if savedKey}
-			<p class="rounded-[var(--radius)] bg-green-500/10 px-3 py-2 text-sm text-green-600" role="status">{t(savedKey)}</p>
+			<p class="rounded-[var(--radius)] bg-[var(--color-success)]/10 px-3 py-2 text-sm text-[var(--color-success)]" role="status">{t(savedKey)}</p>
 		{/if}
 
 		<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -307,10 +307,10 @@
 				type="button"
 				onclick={deleteOrg}
 				disabled={deleting}
-				class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-red-500/30 px-4 py-2 text-sm font-medium text-red-500 transition hover:bg-red-500/10 disabled:opacity-50"
+				class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-danger)]/30 px-4 py-2 text-sm font-medium text-[var(--color-danger)] transition hover:bg-[var(--color-danger)]/10 disabled:opacity-50"
 			>
 				<Trash2 class="h-4 w-4" />
-				{deleting ? '...' : t('org_admin.delete', 'Delete organization')}
+				{deleting ? t('common.loading') : t('org_admin.delete', 'Delete organization')}
 			</button>
 			<button
 				type="submit"
@@ -318,19 +318,19 @@
 				class="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-white transition hover:opacity-90 disabled:opacity-50"
 			>
 				<Save class="h-4 w-4" />
-				{saving ? '...' : t('org_admin.save')}
+				{saving ? t('common.loading') : t('org_admin.save')}
 			</button>
 		</div>
 	</form>
 
 	<!-- Invite member -->
-	<form onsubmit={inviteMember} class="space-y-3 rounded-[12px] border border-[var(--color-border)] bg-[var(--color-surface)] p-5" novalidate>
+	<form onsubmit={inviteMember} class="space-y-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5" novalidate>
 		<h2 class="flex items-center gap-2 text-sm font-medium text-[var(--color-text)]">
 			<UserPlus class="h-4 w-4" />
 			{t('org_admin.invite_section', 'Invite member')}
 		</h2>
 		{#if inviteErrorKey}
-			<p class="rounded-[var(--radius)] bg-red-500/10 px-3 py-2 text-sm text-red-500" role="alert">{t(inviteErrorKey)}</p>
+			<p class="rounded-[var(--radius)] bg-[var(--color-danger)]/10 px-3 py-2 text-sm text-[var(--color-danger)]" role="alert">{t(inviteErrorKey)}</p>
 		{/if}
 		<div class="flex flex-col gap-3 sm:flex-row sm:items-end">
 			<label class="flex flex-1 flex-col gap-1.5">
@@ -351,13 +351,13 @@
 				class="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-white transition hover:opacity-90 disabled:opacity-50"
 			>
 				<Send class="h-4 w-4" />
-				{inviting ? '...' : t('org_admin.invite_send', 'Send invite')}
+				{inviting ? t('common.loading') : t('org_admin.invite_send', 'Send invite')}
 			</button>
 		</div>
 	</form>
 
 	<!-- Members management -->
-	<div class="space-y-3 rounded-[12px] border border-[var(--color-border)] bg-[var(--color-surface)] p-5">
+	<div class="space-y-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5">
 		<h2 class="text-sm font-medium text-[var(--color-text)]">
 			{t('org_admin.members_section')} ({members.length})
 		</h2>
@@ -396,7 +396,7 @@
 							<button
 								type="button"
 								onclick={() => removeMember(m.user.id)}
-								class="rounded p-1 text-[var(--color-muted)] hover:bg-red-500/10 hover:text-red-500"
+								class="rounded p-1 text-[var(--color-muted)] hover:bg-[var(--color-danger)]/10 hover:text-[var(--color-danger)]"
 								aria-label={t('org_admin.remove_member')}
 							>
 								<Trash2 class="h-4 w-4" />
@@ -410,7 +410,7 @@
 
 	<!-- Invitations -->
 	{#if invitations.length > 0}
-		<div class="space-y-3 rounded-[12px] border border-[var(--color-border)] bg-[var(--color-surface)] p-5">
+		<div class="space-y-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5">
 			<h2 class="flex items-center gap-2 text-sm font-medium text-[var(--color-text)]">
 				<Mail class="h-4 w-4" />
 				{t('org_admin.invitations_section')} ({invitations.length})
@@ -427,20 +427,20 @@
 						</div>
 						{#if inv.status === 'pending'}
 							<div class="flex shrink-0 items-center gap-2">
-								<span class="rounded-full bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-600">
+								<span class="rounded-full bg-[var(--color-warning)]/10 px-2 py-0.5 text-xs font-medium text-[var(--color-warning)]">
 									{t('org_admin.invite_pending')}
 								</span>
 								<button
 									type="button"
 									onclick={() => revokeInvitation(inv.id)}
-									class="rounded p-1 text-[var(--color-muted)] hover:bg-red-500/10 hover:text-red-500"
+									class="rounded p-1 text-[var(--color-muted)] hover:bg-[var(--color-danger)]/10 hover:text-[var(--color-danger)]"
 									aria-label={t('org_admin.revoke_invite', 'Revoke invitation')}
 								>
 									<X class="h-4 w-4" />
 								</button>
 							</div>
 						{:else}
-							<Check class="h-4 w-4 shrink-0 text-green-600" />
+							<Check class="h-4 w-4 shrink-0 text-[var(--color-success)]" />
 						{/if}
 					</li>
 				{/each}

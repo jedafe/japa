@@ -105,18 +105,14 @@
 		loading = true;
 		error = '';
 		try {
-			// Load group info
-			const groupResult = await api<FieldGroup>(`/admin/field-groups/${fieldTypeId}`);
-			if (groupResult.ok) {
-				group = groupResult.data;
-			}
-
-			// Load fields in the group
-			const fieldsResult = await api<CustomField[]>(`/admin/field-groups/${fieldTypeId}/fields`);
-			if (fieldsResult.ok) {
-				fields = (Array.isArray(fieldsResult.data) ? fieldsResult.data : []) as CustomField[];
-			} else {
-				error = fieldsResult.error;
+			// Load group info + fields in a single round trip via the
+			// admin detail endpoint, which returns { group, fields }.
+			const groupResult = await api<{ group: FieldGroup; fields: CustomField[] }>(`/admin/field-groups/${fieldTypeId}`);
+			if (groupResult.ok && groupResult.data) {
+				group = groupResult.data.group;
+				fields = (Array.isArray(groupResult.data.fields) ? groupResult.data.fields : []) as CustomField[];
+			} else if (!groupResult.ok) {
+				error = groupResult.error || t('common.error');
 			}
 
 			// Load entity type labels (for display)
@@ -306,7 +302,7 @@
 				style="background-color: var(--color-primary)"
 			>
 				<Plus class="h-4 w-4" />
-				Add Field
+				{t('fieldGroups.add_field')}
 			</button>
 		{/if}
 	</div>
@@ -322,7 +318,7 @@
 	{:else if fields.length === 0}
 		<div class="rounded-lg border p-8 text-center" style="border-color: var(--color-border)">
 			<p class="text-sm" style="color: var(--color-muted)">
-				No fields in this group yet. Click "Add Field" to create one.
+				{t('fieldGroups.no_fields_yet')}
 			</p>
 		</div>
 	{:else}
@@ -332,12 +328,12 @@
 				<thead style="background-color: var(--color-muted-muted)">
 					<tr>
 						<th class="w-8 px-3 py-3"></th>
-						<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted)">Label</th>
-						<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted)">Key</th>
-						<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted)">Type</th>
-						<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted)">Required</th>
-						<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted)">Visible</th>
-						<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted)">System</th>
+						<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted)">{t('fieldGroups.label')}</th>
+						<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted)">{t('fieldGroups.key')}</th>
+						<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted)">{t('fieldGroups.field_type')}</th>
+						<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted)">{t('fieldGroups.required')}</th>
+						<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted)">{t('fieldGroups.visible')}</th>
+						<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted)">{t('fieldGroups.system')}</th>
 						<th class="w-20 px-4 py-3 text-left font-medium" style="color: var(--color-muted)">{t('common.actions')}</th>
 					</tr>
 				</thead>
@@ -356,21 +352,21 @@
 							</td>
 							<td class="px-4 py-3">
 								{#if f.is_required}
-									<span class="text-xs font-medium" style="color: var(--color-destructive)">Yes</span>
+									<span class="text-xs font-medium" style="color: var(--color-destructive)">{t('common.yes')}</span>
 								{:else}
 									<span class="text-xs" style="color: var(--color-muted)">—</span>
 								{/if}
 							</td>
 							<td class="px-4 py-3">
 								{#if f.show_in_frontend}
-									<span class="text-xs" style="color: var(--color-muted)">Yes</span>
+									<span class="text-xs" style="color: var(--color-muted)">{t('common.yes')}</span>
 								{:else}
 									<span class="text-xs" style="color: var(--color-muted)">—</span>
 								{/if}
 							</td>
 							<td class="px-4 py-3">
 								{#if f.is_system}
-									<span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium" style="background-color: var(--color-primary-muted); color: var(--color-primary)">System</span>
+									<span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium" style="background-color: var(--color-primary-muted); color: var(--color-primary)">{t('fieldGroups.system')}</span>
 								{:else}
 									<span class="text-xs" style="color: var(--color-muted)">—</span>
 								{/if}
@@ -398,17 +394,17 @@
 </div>
 
 <!-- Add/Edit Field Modal -->
-<Modal bind:open={modalOpen} title={editingField ? `Edit Field: ${editingField.label}` : 'Add Field'} confirmLabel={saving ? t('common.saving') : t('common.save')} onConfirm={saveField}>
+<Modal bind:open={modalOpen} title={editingField ? `${t('fieldGroups.edit_field')}: ${editingField.label}` : t('fieldGroups.add_field')} confirmLabel={saving ? t('common.saving') : t('common.save')} onConfirm={saveField}>
 	<div class="space-y-4">
 		<!-- Label -->
 		<div>
-			<label for="fld-label" class="mb-1 block text-sm font-medium">Label</label>
+			<label for="fld-label" class="mb-1 block text-sm font-medium">{t('fieldGroups.label')}</label>
 			<input
 				id="fld-label"
 				type="text"
 				bind:value={label}
 				onblur={autoKey}
-				placeholder="e.g. Phone Number, Bio, Profile Photo"
+				placeholder={t('fieldGroups.label_placeholder')}
 				required
 				class="w-full rounded-lg border px-3 py-2 text-sm"
 				style="border-color: var(--color-border); background-color: var(--color-background); color: var(--color-foreground)"
@@ -417,23 +413,23 @@
 
 		<!-- Key -->
 		<div>
-			<label for="fld-key" class="mb-1 block text-sm font-medium">Key</label>
+			<label for="fld-key" class="mb-1 block text-sm font-medium">{t('fieldGroups.key')}</label>
 			<input
 				id="fld-key"
 				type="text"
 				bind:value={key}
-				placeholder="e.g. phone_number, bio, profile_photo"
+				placeholder={t('fieldGroups.key_placeholder')}
 				required
 				disabled={!!editingField}
 				class="w-full rounded-lg border px-3 py-2 font-mono text-sm disabled:opacity-50"
 				style="border-color: var(--color-border); background-color: var(--color-background); color: var(--color-foreground)"
 			/>
-			<p class="mt-1 text-xs" style="color: var(--color-muted)">Machine-readable identifier (snake_case). {editingField ? 'Cannot be changed after creation.' : 'Auto-generated from label.'}</p>
+			<p class="mt-1 text-xs" style="color: var(--color-muted)">{t('fieldGroups.key_help')} {editingField ? t('fieldGroups.key_immutable') : t('fieldGroups.key_auto')}</p>
 		</div>
 
 		<!-- Field Type -->
 		<div>
-			<label for="fld-type" class="mb-1 block text-sm font-medium">Field Type</label>
+			<label for="fld-type" class="mb-1 block text-sm font-medium">{t('fieldGroups.field_type')}</label>
 			<select
 				id="fld-type"
 				bind:value={fieldType}
@@ -446,20 +442,20 @@
 				{/each}
 			</select>
 			{#if editingField}
-				<p class="mt-1 text-xs" style="color: var(--color-muted)">Field type cannot be changed after creation.</p>
+				<p class="mt-1 text-xs" style="color: var(--color-muted)">{t('fieldGroups.type_immutable')}</p>
 			{/if}
 		</div>
 
 		<!-- Options for select / multiselect -->
 		{#if needsOptions}
 			<div class="rounded-lg border p-4" style="border-color: var(--color-border)">
-				<span class="mb-2 block text-sm font-medium">Options</span>
+				<span class="mb-2 block text-sm font-medium">{t('fieldGroups.options')}</span>
 				<div class="flex gap-2">
 					<input
 						type="text"
 						class="w-32 rounded-md border px-3 py-2 text-sm"
 						style="border-color: var(--color-border); background-color: var(--color-background); color: var(--color-foreground)"
-						placeholder="Value"
+						placeholder={t('fieldGroups.option_value')}
 						bind:value={newOptionValue}
 						onkeydown={handleOptionKeydown}
 					/>
@@ -467,7 +463,7 @@
 						type="text"
 						class="flex-1 rounded-md border px-3 py-2 text-sm"
 						style="border-color: var(--color-border); background-color: var(--color-background); color: var(--color-foreground)"
-						placeholder="Label (displayed to users)"
+						placeholder={t('fieldGroups.option_label')}
 						bind:value={newOptionLabel}
 						onkeydown={handleOptionKeydown}
 					/>
@@ -524,8 +520,8 @@
 </Modal>
 
 <!-- Delete Field Confirmation -->
-<Modal bind:open={showDeleteConfirm} title="Delete Field" confirmLabel={t('common.delete')} onConfirm={executeDeleteField}>
+<Modal bind:open={showDeleteConfirm} title={t('fieldGroups.delete_field')} confirmLabel={t('common.delete')} onConfirm={executeDeleteField}>
 	<p class="text-sm" style="color: var(--color-muted)">
-		Delete <strong>{deleteTarget?.label}</strong>? All stored values for this field will be lost. This action cannot be undone.
+		{t('common.delete')} <strong>{deleteTarget?.label}</strong>? {t('fieldGroups.delete_field_confirm')}
 	</p>
 </Modal>

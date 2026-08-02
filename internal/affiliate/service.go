@@ -18,12 +18,17 @@ type Enqueuer interface {
 }
 
 // SettingsProvider abstracts system_settings access for affiliate config
-// (commission rates, link limits, min account age). *config.Settings satisfies
-// this structurally. When nil, the service falls back to compiled-in defaults
-// (Rule 3 / SETTING-002/003).
+// (commission rates, link limits, min account age, attribution window,
+// feature flag). *config.Settings satisfies this structurally. When nil, the
+// service falls back to compiled-in defaults (Rule 3 / SETTING-002/003).
 type SettingsProvider interface {
 	GetIntOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback int) int
 	GetFloatOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback float64) float64
+	// SetSetting upserts a setting (system_settings is the single source of
+	// truth for affiliate.commission.* per Section 56).
+	SetSetting(ctx context.Context, tenantID pgtype.UUID, key, value string) error
+	// GetSettingBool reads a boolean setting (feature.affiliate_program flag).
+	GetSettingBool(ctx context.Context, tenantID pgtype.UUID, key string) (bool, error)
 }
 
 type Service struct {
@@ -95,6 +100,48 @@ func (s *Service) GetProgramInfo(ctx context.Context) *ProgramInfo {
 	}
 }
 
+// AttributionWindowDays returns the click attribution window in days from
+// system_settings (affiliate.attribution_window_days, default 30). Used by the
+// redirect handler to TTL the jc:aff_click attribution key (Section 56).
+func (s *Service) AttributionWindowDays(ctx context.Context) int {
+	if s.settings != nil {
+		return s.settings.GetIntOr(ctx, pgtype.UUID{}, "affiliate.attribution_window_days", 30)
+	}
+	return 30
+}
+
+// MinAccountDays returns the minimum account age (days) required to enroll,
+// from system_settings affiliate.min_account_days (default 30).
+func (s *Service) MinAccountDays(ctx context.Context) int {
+	if s.settings != nil {
+		return s.settings.GetIntOr(ctx, pgtype.UUID{}, "affiliate.min_account_days", 30)
+	}
+	return 30
+}
+
+// lookupUsername returns the username for a user id (tenant-scoped), best
+// effort: returns nil when the user is gone (anonymized) so the admin UI can
+// fall back to the id.
+func (s *Service) lookupUsername(ctx context.Context, userID, tenantID pgtype.UUID) (*string, error) {
+	return s.store.lookupUsername(ctx, userID, tenantID)
+}
+
+// FeatureEnabled reports whether the affiliate program feature flag is on.
+// Reads feature.affiliate_program from system_settings (default false in V1,
+// per Section 56). When settings are unwired, the program is treated as
+// enabled to preserve existing behavior for deployments that opt in by
+// configuring the flag.
+func (s *Service) FeatureEnabled(ctx context.Context) bool {
+	if s.settings == nil {
+		return true
+	}
+	v, err := s.settings.GetSettingBool(ctx, pgtype.UUID{}, "feature.affiliate_program")
+	if err != nil {
+		return false
+	}
+	return v
+}
+
 // ── Member Operations ───────────────────────────────────────────────
 
 type EnrollInput struct {
@@ -103,9 +150,25 @@ type EnrollInput struct {
 }
 
 func (s *Service) Enroll(ctx context.Context, input EnrollInput) (gen.AffiliateProgramMember, error) {
+	// Feature flag gate (Section 56): affiliate program is opt-in.
+	if !s.FeatureEnabled(ctx) {
+		return gen.AffiliateProgramMember{}, ErrFeatureDisabled
+	}
 	existing, err := s.store.getMember(ctx, input.UserID, input.TenantID)
 	if err == nil && existing.UserID.Valid {
 		return gen.AffiliateProgramMember{}, ErrAlreadyEnrolled
+	}
+	// Minimum account age eligibility (Section 56): account age must be ≥
+	// affiliate.min_account_days (default 30).
+	createdAt, cerr := s.store.getUserCreatedAt(ctx, input.UserID, input.TenantID)
+	if cerr != nil {
+		return gen.AffiliateProgramMember{}, fmt.Errorf("checking account age: %w", cerr)
+	}
+	if createdAt.Valid {
+		minDays := s.MinAccountDays(ctx)
+		if time.Since(createdAt.Time) < time.Duration(minDays)*24*time.Hour {
+			return gen.AffiliateProgramMember{}, ErrAccountTooNew
+		}
 	}
 	return s.store.createMember(ctx, gen.CreateAffiliateMemberParams{
 		UserID: input.UserID, TenantID: input.TenantID, Status: string(MemberStatusActive),
@@ -401,50 +464,6 @@ func formatNumericPtr(n pgtype.Numeric) *string {
 	}
 	s := fmt.Sprintf("%.2f", f.Float64)
 	return &s
-}
-
-// ── Commission Credit ───────────────────────────────────────────────
-
-type CreditCommissionInput struct {
-	UserID, TenantID, PaymentID pgtype.UUID
-	ProductType                 string
-	Amount                      pgtype.Numeric
-}
-
-func (s *Service) CreditCommission(ctx context.Context, input CreditCommissionInput) error {
-	links, err := s.store.listLinksByUser(ctx, input.UserID, input.TenantID, true, 100, 0)
-	if err != nil {
-		return fmt.Errorf("listing affiliate links: %w", err)
-	}
-
-	if len(links) == 0 {
-		return nil
-	}
-	var matchedLink gen.UserAffiliateLink
-	for _, l := range links {
-		if l.ProductType == input.ProductType {
-			matchedLink = l
-			break
-		}
-	}
-	if !matchedLink.ID.Valid {
-		return nil
-	}
-	_, err = s.store.createEvent(ctx, gen.CreateAffiliateLinkEventParams{
-		TenantID: input.TenantID, LinkID: matchedLink.ID, EventType: string(EventTypeConversion),
-		ConvertedPaymentID: input.PaymentID, CommissionAmount: input.Amount,
-	})
-	if err != nil {
-		return fmt.Errorf("recording conversion: %w", err)
-	}
-	if err := s.store.incrementLinkConversions(ctx, matchedLink.ID, input.Amount); err != nil {
-		slog.Error("failed to increment link conversions", "link_id", matchedLink.ID, "error", err)
-	}
-
-	if err := s.store.incrementMemberConversions(ctx, matchedLink.UserID, input.Amount); err != nil {
-		slog.Error("failed to increment member conversions", "user_id", matchedLink.UserID, "error", err)
-	}
-	return nil
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────

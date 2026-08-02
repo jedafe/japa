@@ -196,6 +196,7 @@ WHERE ci.content_id = @content_id AND cv.tenant_id = @tenant_id;
 -- =====================
 
 -- name: ListComparisonsFiltered :many
+-- Offset-paginated per conventions/api-response-format.md (?page_size=N&page_offset=N).
 SELECT DISTINCT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type,
        c.title, c.slug, c.body, c.body_html, c.field_values, c.content_hash,
        c.geo_space_id, c.header_image_id, c.featured_image_id, c.canonical_url,
@@ -211,9 +212,8 @@ WHERE c.tenant_id = @tenant_id
   AND c.auto_hidden = false
   AND (sqlc.narg(space_id)::uuid IS NULL OR c.space_id = sqlc.narg(space_id))
   AND (sqlc.narg(type_id)::uuid IS NULL OR ci.type_id = sqlc.narg(type_id))
-  AND (c.created_at < sqlc.narg(cursor_created_at) OR sqlc.narg(cursor_created_at) IS NULL)
 ORDER BY c.created_at DESC, c.id DESC
-LIMIT @page_limit;
+LIMIT @page_limit OFFSET @page_offset;
 
 -- name: CountComparisonItemsByType :one
 SELECT count(*)::int FROM comparison_items WHERE type_id = @type_id AND tenant_id = @tenant_id;

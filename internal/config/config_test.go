@@ -12,6 +12,12 @@ func TestLoad_ReadsEnvironmentVariables(t *testing.T) {
 	//nolint:paralleltest // t.Setenv is incompatible with t.Parallel
 	t.Setenv("JC_DATABASE_URL", "postgresql://test:test@localhost:5432/testdb?sslmode=disable")
 	t.Setenv("JC_REDIS_ADDR", "test-redis:6380")
+	t.Setenv("JC_REDIS_PASSWORD", "test-pass")
+	t.Setenv("JC_REDIS_DB", "2")
+	t.Setenv("JC_REDIS_POOL_SIZE", "20")
+	t.Setenv("JC_REDIS_DIAL_TIMEOUT_MS", "5000")
+	t.Setenv("JC_REDIS_READ_TIMEOUT_MS", "3000")
+	t.Setenv("JC_REDIS_TLS_ENABLED", "true")
 	t.Setenv("JC_MEILISEARCH_URL", "http://test-meili:7700")
 	t.Setenv("JC_MEILISEARCH_KEY", "test-key")
 	t.Setenv("JC_GEOIP_DB_PATH", "/data/test.mmdb")
@@ -64,6 +70,26 @@ func TestLoad_ReadsEnvironmentVariables(t *testing.T) {
 				t.Errorf("%s = %q, want %q", tt.name, tt.got, tt.want)
 			}
 		})
+	}
+
+	// Verify non-string Redis config fields.
+	if cfg.RedisPassword != "test-pass" {
+		t.Errorf("RedisPassword = %q, want %q", cfg.RedisPassword, "test-pass")
+	}
+	if cfg.RedisDB != 2 {
+		t.Errorf("RedisDB = %d, want %d", cfg.RedisDB, 2)
+	}
+	if cfg.RedisPoolSize != 20 {
+		t.Errorf("RedisPoolSize = %d, want %d", cfg.RedisPoolSize, 20)
+	}
+	if cfg.RedisDialTimeoutMs != 5000 {
+		t.Errorf("RedisDialTimeoutMs = %d, want %d", cfg.RedisDialTimeoutMs, 5000)
+	}
+	if cfg.RedisReadTimeoutMs != 3000 {
+		t.Errorf("RedisReadTimeoutMs = %d, want %d", cfg.RedisReadTimeoutMs, 3000)
+	}
+	if !cfg.RedisTLSEnabled {
+		t.Errorf("RedisTLSEnabled = false, want true")
 	}
 }
 

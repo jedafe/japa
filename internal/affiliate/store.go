@@ -29,6 +29,27 @@ func (s *Store) getMember(ctx context.Context, userID, tenantID pgtype.UUID) (ge
 	return s.read.GetAffiliateMember(ctx, gen.GetAffiliateMemberParams{UserID: userID, TenantID: tenantID})
 }
 
+// getUserCreatedAt returns the user's created_at timestamp for the enrollment
+// minimum-account-age eligibility check (Section 56).
+func (s *Store) getUserCreatedAt(ctx context.Context, userID, tenantID pgtype.UUID) (pgtype.Timestamptz, error) {
+	row, err := s.read.GetUserByID(ctx, gen.GetUserByIDParams{UserID: userID, TenantID: tenantID})
+	if err != nil {
+		return pgtype.Timestamptz{}, err
+	}
+	return row.CreatedAt, nil
+}
+
+// lookupUsername returns the username for a user id (tenant-scoped). Returns
+// nil when the user no longer exists (e.g. anonymized) so the admin UI shows
+// the id fallback rather than erroring.
+func (s *Store) lookupUsername(ctx context.Context, userID, tenantID pgtype.UUID) (*string, error) {
+	row, err := s.read.GetUserByID(ctx, gen.GetUserByIDParams{UserID: userID, TenantID: tenantID})
+	if err != nil {
+		return nil, err
+	}
+	return &row.Username, nil
+}
+
 func (s *Store) listMembers(ctx context.Context, tenantID pgtype.UUID, status string, limit, offset int32) ([]gen.AffiliateProgramMember, error) {
 	return s.read.ListAffiliateMembers(ctx, gen.ListAffiliateMembersParams{
 		TenantID:   tenantID,
@@ -78,6 +99,29 @@ func (s *Store) listAllLinks(ctx context.Context, tenantID pgtype.UUID, limit, o
 		TenantID:   tenantID,
 		PageLimit:  limit,
 		PageOffset: offset,
+	})
+}
+
+// listMembersFiltered is the admin list with an optional status filter
+// (Section 56 / catalog ?status). Tenant-scoped, paginated.
+func (s *Store) listMembersFiltered(ctx context.Context, tenantID pgtype.UUID, status *string, limit, offset int32) ([]gen.AffiliateProgramMember, error) {
+	return s.read.ListAffiliateMembersFiltered(ctx, gen.ListAffiliateMembersFilteredParams{
+		TenantID: tenantID, Status: status, PageLimit: limit, PageOffset: offset,
+	})
+}
+
+// listAllLinksFiltered is the admin list with optional user_id / product_type
+// / is_active filters (Section 56 / catalog ?user_id&product_type&status).
+// Tenant-scoped, paginated, and joins users for the username column.
+func (s *Store) listAllLinksFiltered(ctx context.Context, params gen.ListAllAffiliateLinksFilteredParams) ([]gen.ListAllAffiliateLinksFilteredRow, error) {
+	return s.read.ListAllAffiliateLinksFiltered(ctx, params)
+}
+
+// deactivateLinkAdmin deactivates a link by id + tenant (admin scope, no
+// ownership check). Soft-delete only — retained for audit (Section 56).
+func (s *Store) deactivateLinkAdmin(ctx context.Context, id, tenantID pgtype.UUID) error {
+	return s.write.DeactivateAffiliateLinkAdmin(ctx, gen.DeactivateAffiliateLinkAdminParams{
+		ID: id, TenantID: tenantID,
 	})
 }
 

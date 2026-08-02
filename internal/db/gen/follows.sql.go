@@ -267,7 +267,14 @@ SELECT f.id, f.tenant_id, f.follower_id, f.entity_type, f.entity_id, f.created_a
         WHEN 'organization' THEN (SELECT name FROM organizations WHERE id = f.entity_id)
         WHEN 'professional_profile' THEN (SELECT name FROM professional_profiles WHERE id = f.entity_id)
         ELSE ''
-    END AS entity_name
+    END AS entity_name,
+    CASE f.entity_type
+        WHEN 'user' THEN (SELECT username FROM users WHERE id = f.entity_id)
+        WHEN 'space' THEN (SELECT slug FROM spaces WHERE id = f.entity_id)
+        WHEN 'tag' THEN (SELECT slug FROM tags WHERE id = f.entity_id)
+        WHEN 'organization' THEN (SELECT slug FROM organizations WHERE id = f.entity_id)
+        ELSE ''
+    END AS entity_slug
 FROM follows f
 WHERE f.tenant_id = $1 AND f.follower_id = $2
 ORDER BY f.created_at DESC
@@ -289,6 +296,7 @@ type GetFollowingByUserRow struct {
 	EntityID   pgtype.UUID        `json:"entity_id"`
 	CreatedAt  pgtype.Timestamptz `json:"created_at"`
 	EntityName string             `json:"entity_name"`
+	EntitySlug string             `json:"entity_slug"`
 }
 
 func (q *Queries) GetFollowingByUser(ctx context.Context, arg GetFollowingByUserParams) ([]GetFollowingByUserRow, error) {
@@ -313,6 +321,7 @@ func (q *Queries) GetFollowingByUser(ctx context.Context, arg GetFollowingByUser
 			&i.EntityID,
 			&i.CreatedAt,
 			&i.EntityName,
+			&i.EntitySlug,
 		); err != nil {
 			return nil, err
 		}
@@ -333,7 +342,14 @@ SELECT f.id, f.tenant_id, f.follower_id, f.entity_type, f.entity_id, f.created_a
         WHEN 'organization' THEN (SELECT name FROM organizations WHERE id = f.entity_id)
         WHEN 'professional_profile' THEN (SELECT name FROM professional_profiles WHERE id = f.entity_id)
         ELSE ''
-    END AS entity_name
+    END AS entity_name,
+    CASE f.entity_type
+        WHEN 'user' THEN (SELECT username FROM users WHERE id = f.entity_id)
+        WHEN 'space' THEN (SELECT slug FROM spaces WHERE id = f.entity_id)
+        WHEN 'tag' THEN (SELECT slug FROM tags WHERE id = f.entity_id)
+        WHEN 'organization' THEN (SELECT slug FROM organizations WHERE id = f.entity_id)
+        ELSE ''
+    END AS entity_slug
 FROM follows f
 WHERE f.tenant_id = $1 AND f.follower_id = $2 AND f.entity_type = $3
 ORDER BY f.created_at DESC
@@ -356,6 +372,7 @@ type GetFollowingByUserAndTypeRow struct {
 	EntityID   pgtype.UUID        `json:"entity_id"`
 	CreatedAt  pgtype.Timestamptz `json:"created_at"`
 	EntityName string             `json:"entity_name"`
+	EntitySlug string             `json:"entity_slug"`
 }
 
 func (q *Queries) GetFollowingByUserAndType(ctx context.Context, arg GetFollowingByUserAndTypeParams) ([]GetFollowingByUserAndTypeRow, error) {
@@ -381,6 +398,7 @@ func (q *Queries) GetFollowingByUserAndType(ctx context.Context, arg GetFollowin
 			&i.EntityID,
 			&i.CreatedAt,
 			&i.EntityName,
+			&i.EntitySlug,
 		); err != nil {
 			return nil, err
 		}

@@ -148,11 +148,13 @@ func (s *DMStore) MarkMessagesRead(ctx context.Context, tenantID, conversationID
 	})
 }
 
-// UpdateConversationLastMessage updates the last message metadata.
-func (s *DMStore) UpdateConversationLastMessage(ctx context.Context, conversationID pgtype.UUID, lastMessageAt pgtype.Timestamptz, preview *string) error {
+// UpdateConversationLastMessage updates the last message metadata. The
+// timestamp is set to now() in SQL (not passed from Go) so it is always
+// the actual current time. The tenant_id scopes the update (Rule 4).
+func (s *DMStore) UpdateConversationLastMessage(ctx context.Context, tenantID, conversationID pgtype.UUID, preview *string) error {
 	return s.write.UpdateConversationLastMessage(ctx, gen.UpdateConversationLastMessageParams{
 		ConversationID:     conversationID,
-		LastMessageAt:      lastMessageAt,
+		TenantID:           tenantID,
 		LastMessagePreview: preview,
 	})
 }
@@ -173,24 +175,34 @@ func (s *DMStore) ResetUnreadCount(ctx context.Context, conversationID, userID p
 	})
 }
 
-// GetMessageRequest returns a message request for a conversation.
-func (s *DMStore) GetMessageRequest(ctx context.Context, conversationID pgtype.UUID) (gen.DmRequest, error) {
-	return s.read.GetMessageRequest(ctx, conversationID)
+// GetMessageRequest returns a message request for a conversation, scoped
+// to the tenant (Rule 4).
+func (s *DMStore) GetMessageRequest(ctx context.Context, tenantID, conversationID pgtype.UUID) (gen.DmRequest, error) {
+	return s.read.GetMessageRequest(ctx, gen.GetMessageRequestParams{
+		ConversationID: conversationID,
+		TenantID:       tenantID,
+	})
 }
 
-// CreateMessageRequest creates a pending message request.
-func (s *DMStore) CreateMessageRequest(ctx context.Context, tenantID, conversationID pgtype.UUID, previewMessage string) error {
+// CreateMessageRequest creates a pending message request with the actual
+// requester and recipient IDs (not derived from conversation participant
+// ordering). Tenant-scoped (Rule 4).
+func (s *DMStore) CreateMessageRequest(ctx context.Context, tenantID, requesterID, recipientID, conversationID pgtype.UUID, previewMessage string) error {
 	return s.write.CreateMessageRequest(ctx, gen.CreateMessageRequestParams{
 		TenantID:       tenantID,
+		RequesterID:    requesterID,
+		RecipientID:    recipientID,
 		ConversationID: conversationID,
 		PreviewMessage: previewMessage,
 	})
 }
 
-// UpdateMessageRequestStatus updates the status of a message request.
-func (s *DMStore) UpdateMessageRequestStatus(ctx context.Context, conversationID pgtype.UUID, status string) error {
+// UpdateMessageRequestStatus updates the status of a message request,
+// scoped to the tenant (Rule 4).
+func (s *DMStore) UpdateMessageRequestStatus(ctx context.Context, tenantID, conversationID pgtype.UUID, status string) error {
 	return s.write.UpdateMessageRequestStatus(ctx, gen.UpdateMessageRequestStatusParams{
 		ConversationID: conversationID,
+		TenantID:       tenantID,
 		Status:         status,
 	})
 }
@@ -341,7 +353,8 @@ var (
 // Enforces the recipient's dm_privacy setting and the bidirectional block
 // check per Section 48 before creating a new conversation. Existing
 // conversations are returned unchanged (privacy settings do not retroactively
-// close already-active threads).
+// close already-active threads). Non-mutual-follow senders land as a message
+// request (pending state) instead of a direct conversation (Section 48).
 func (s *DMService) GetOrCreateConversation(ctx context.Context, tenantID, senderID, recipientID pgtype.UUID) (ConversationResult, error) {
 	// Ensure sender != recipient
 	if senderID == recipientID {
@@ -383,6 +396,8 @@ func (s *DMService) GetOrCreateConversation(ctx context.Context, tenantID, sende
 		return ConversationResult{}, fmt.Errorf("reading recipient dm_privacy: %w", err)
 	}
 
+	isMutualFollow := false
+
 	switch privacy {
 	case "nobody":
 		return ConversationResult{}, ErrDMPrivacyNobody
@@ -394,9 +409,14 @@ func (s *DMService) GetOrCreateConversation(ctx context.Context, tenantID, sende
 		if !mutualFollow {
 			return ConversationResult{}, ErrDMNotMutualFollower
 		}
+		isMutualFollow = true
 	case "everyone", "":
-		// Allowed; mutual follow still grants direct access, otherwise a
-		// message request is created by the store layer.
+		// Allowed; check mutual follow to decide direct vs request.
+		mutualFollow, mErr := s.store.IsMutualFollow(ctx, senderID, recipientID)
+		if mErr != nil {
+			return ConversationResult{}, fmt.Errorf("checking mutual follow: %w", mErr)
+		}
+		isMutualFollow = mutualFollow
 	default:
 		// Unknown privacy value — fail closed (treat as nobody).
 		slog.Warn("dm: unknown dm_privacy value, failing closed",
@@ -407,6 +427,21 @@ func (s *DMService) GetOrCreateConversation(ctx context.Context, tenantID, sende
 	conv, err := s.store.GetOrCreateConversation(ctx, tenantID, senderID, recipientID)
 	if err != nil {
 		return ConversationResult{}, fmt.Errorf("getting or creating conversation: %w", err)
+	}
+
+	// Non-mutual-follow → create a message request (Section 48). The
+	// conversation exists but the recipient must accept the request before
+	// it joins their main inbox. The requester's first message is the
+	// preview. (BUG-002: previously skipped, creating direct conversations
+	// for all non-mutual-follow senders.)
+	if !isMutualFollow {
+		previewMessage := "" // set by InitiateConversation which sends the first message
+		if err := s.store.CreateMessageRequest(ctx, tenantID, senderID, recipientID, conv.ID, previewMessage); err != nil {
+			slog.Warn("dm: failed to create message request",
+				"conversation_id", conv.ID.String(), "error", err)
+		}
+		// Enqueue push notification for the recipient (fire-and-forget).
+		s.enqueueDMNotifyRequest(ctx, tenantID, recipientID, senderID, conv.ID)
 	}
 
 	return ConversationResult{Conversation: conv, IsNew: true}, nil
@@ -454,9 +489,9 @@ func (s *DMService) SendMessage(ctx context.Context, tenantID, conversationID, s
 
 	previewPtr := &preview
 
-	// Update conversation last message.
-	now := pgtype.Timestamptz{Valid: true}
-	if err := s.store.UpdateConversationLastMessage(ctx, conversationID, now, previewPtr); err != nil {
+	// Update conversation last message. The timestamp is set to now() in
+	// SQL (BUG-001: previously passed a zero-time pgtype.Timestamptz).
+	if err := s.store.UpdateConversationLastMessage(ctx, tenantID, conversationID, previewPtr); err != nil {
 		return fmt.Errorf("updating conversation last message: %w", err)
 	}
 
@@ -569,35 +604,79 @@ func (s *DMService) MarkAsRead(ctx context.Context, tenantID, conversationID, us
 	return nil
 }
 
-// HandleMessageRequest accepts or declines a message request.
+// HandleMessageRequest accepts, declines, or blocks a message request.
+// Only the RECIPIENT of the request may take action — the requester cannot
+// accept their own outgoing request (BUG-005).
 func (s *DMService) HandleMessageRequest(ctx context.Context, tenantID, conversationID, userID pgtype.UUID, action string) error {
-	// Verify the conversation exists.
-	conv, err := s.store.GetConversationByID(ctx, conversationID, tenantID)
+	// Look up the message request, scoped to the tenant (Rule 4).
+	dmReq, err := s.store.GetMessageRequest(ctx, tenantID, conversationID)
 	if err != nil {
-		return fmt.Errorf("verifying conversation: %w", err)
+		return fmt.Errorf("looking up message request: %w", err)
 	}
 
-	if conv.Participant1ID != userID && conv.Participant2ID != userID {
-		return errors.New("user is not a participant in this conversation")
+	// Only the recipient may accept/decline/block — not the requester.
+	if dmReq.RecipientID != userID {
+		return errors.New("only the recipient can act on a message request")
 	}
 
 	switch action {
 	case MessageRequestAccepted:
-		return s.store.UpdateMessageRequestStatus(ctx, conversationID, MessageRequestAccepted)
+		return s.store.UpdateMessageRequestStatus(ctx, tenantID, conversationID, MessageRequestAccepted)
 	case MessageRequestDeclined:
-		return s.store.UpdateMessageRequestStatus(ctx, conversationID, MessageRequestDeclined)
+		return s.store.UpdateMessageRequestStatus(ctx, tenantID, conversationID, MessageRequestDeclined)
 	case MessageRequestBlocked:
-		return s.store.UpdateMessageRequestStatus(ctx, conversationID, MessageRequestBlocked)
+		return s.store.UpdateMessageRequestStatus(ctx, tenantID, conversationID, MessageRequestBlocked)
 	default:
 		return fmt.Errorf("invalid action: %s", action)
 	}
 }
 
+// MessageRequestInfo is the API response for a pending DM request item.
+type MessageRequestInfo struct {
+	ID                 string  `json:"id"`
+	ConversationID     *string `json:"conversation_id,omitempty"`
+	RequesterID        string  `json:"requester_id"`
+	RequesterUsername   string  `json:"requester_username"`
+	RequesterDisplayName string  `json:"requester_display_name"`
+	RequesterAvatarURL  *string `json:"requester_avatar_url,omitempty"`
+	PreviewMessage     string  `json:"preview_message"`
+	Status             string  `json:"status"`
+	CreatedAt          string  `json:"created_at"`
+}
+
 // GetPendingMessageRequests returns pending DM requests for a recipient
 // (BUG-003). Filters by recipient_id and status = 'pending' so only
-// actionable requests are returned.
-func (s *DMService) GetPendingMessageRequests(ctx context.Context, tenantID, recipientID pgtype.UUID, limit, offset int32) ([]gen.GetPendingMessageRequestsRow, error) {
-	return s.store.GetPendingMessageRequests(ctx, tenantID, recipientID, limit, offset)
+// actionable requests are returned. Wraps the raw sqlc rows in an API
+// response struct (BUG-014: previously leaked internal gen struct names).
+func (s *DMService) GetPendingMessageRequests(ctx context.Context, tenantID, recipientID pgtype.UUID, limit, offset int32) ([]MessageRequestInfo, error) {
+	rows, err := s.store.GetPendingMessageRequests(ctx, tenantID, recipientID, limit, offset)
+	if err != nil {
+		return nil, fmt.Errorf("getting pending message requests: %w", err)
+	}
+
+	infos := make([]MessageRequestInfo, len(rows))
+	for i, r := range rows {
+		infos[i] = MessageRequestInfo{
+			ID:                  r.ID.String(),
+			RequesterID:         r.RequesterID.String(),
+			RequesterUsername:   r.RequesterUsername,
+			PreviewMessage:      r.PreviewMessage,
+			Status:              r.Status,
+			CreatedAt:           r.CreatedAt.Time.String(),
+		}
+		if r.RequesterDisplayName != nil {
+			infos[i].RequesterDisplayName = *r.RequesterDisplayName
+		}
+		if r.ConversationID.Valid {
+			s := r.ConversationID.String()
+			infos[i].ConversationID = &s
+		}
+		if r.RequesterAvatarUrl != nil {
+			infos[i].RequesterAvatarURL = r.RequesterAvatarUrl
+		}
+	}
+
+	return infos, nil
 }
 
 // UpdateDMPrivacy updates user's DM privacy setting.

@@ -71,7 +71,7 @@
 
 <!-- ADR-058 Exception #1: dev.to reading layout (same as blog singles).
      Left nav is auto-collapsed by the layout (isExceptionRoute covers /content/[slug]). -->
-<div class="mx-auto flex max-w-6xl gap-8 px-4 py-8">
+<div class="mx-auto flex max-w-full gap-8 px-4 py-8">
 	<!-- Left margin: borderless ReactionRail (distinct from the collapsed nav) -->
 	<div class="hidden w-14 shrink-0 lg:block">
 		<ReactionRail contentId={article.id} voteScore={article.reshare_count} commentCount={article.comment_count} authed={data.authed} />
@@ -126,6 +126,44 @@
 			<span class="text-sm text-[var(--color-text-subtle)]">{article.reshare_count} reactions</span>
 			<span class="text-sm text-[var(--color-text-subtle)]">{article.comment_count} comments</span>
 		</div>
+
+		<!-- Series navigation (Phase 06.10) — prev/next within a series. -->
+		{#if article.series_id && article.series_title}
+			<nav class="mt-8 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+				<p class="mb-3 text-xs font-medium uppercase text-[var(--color-muted)]">
+					{article.series_title}
+					{#if article.series_part && article.series_total}
+						· {article.series_part} / {article.series_total}
+					{/if}
+				</p>
+				<div class="flex items-center justify-between gap-3">
+					<div class="flex-1">
+						{#if article.series_prev_slug}
+							<a
+								href="/content/{article.series_prev_slug}"
+								class="inline-flex items-center gap-1.5 text-sm text-[var(--color-text-subtle)] hover:text-[var(--color-primary)]"
+							>
+								← {t('content.series_prev', 'Previous')}
+							</a>
+						{:else}
+							<span class="text-sm text-[var(--color-muted)]">—</span>
+						{/if}
+					</div>
+					<div class="flex-1 text-right">
+						{#if article.series_next_slug}
+							<a
+								href="/content/{article.series_next_slug}"
+								class="inline-flex items-center gap-1.5 text-sm text-[var(--color-text-subtle)] hover:text-[var(--color-primary)]"
+							>
+								{t('content.series_next', 'Next')} →
+							</a>
+						{:else}
+							<span class="text-sm text-[var(--color-muted)]">—</span>
+						{/if}
+					</div>
+				</div>
+			</nav>
+		{/if}
 
 		<!-- Unified comment engine (Section 49) — Reddit-style nested comments. -->
 		<CommentThread
