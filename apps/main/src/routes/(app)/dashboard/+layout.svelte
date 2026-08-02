@@ -17,7 +17,7 @@
 	<meta name="robots" content="noindex, nofollow" />
 </svelte:head>
 
-<div class="grid grid-cols-1 gap-6 md:grid-cols-[220px_1fr]">
+<div class="mx-auto my-6 max-w-[1400px] grid grid-cols-1 gap-6 md:grid-cols-[220px_1fr] px-4">
 	<HubRail {groups} basePath="/dashboard" {active} labelKey="dashboard.nav.label" />
-	<div class="min-w-0 px-1 py-4">{@render children()}</div>
+	<div class="min-w-0 py-2">{@render children()}</div>
 </div>
