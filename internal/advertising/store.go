@@ -147,3 +147,48 @@ func (s *Store) listActiveCampaignsBySlot(ctx context.Context, tenantID, slotTyp
 // ---------------------------------------------------------------------------
 // Organization Boosts
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Ad Networks
+// ---------------------------------------------------------------------------
+
+type AdNetwork = gen.AdNetwork
+
+func (s *Store) createAdNetwork(ctx context.Context, tenantID pgtype.UUID, input gen.CreateAdNetworkParams) (AdNetwork, error) {
+	return s.queries.CreateAdNetwork(ctx, input)
+}
+
+func (s *Store) getAdNetworkByID(ctx context.Context, id, tenantID pgtype.UUID) (AdNetwork, error) {
+	return s.queries.GetAdNetworkByID(ctx, gen.GetAdNetworkByIDParams{ID: id, TenantID: tenantID})
+}
+
+func (s *Store) getAdNetworkByProvider(ctx context.Context, tenantID pgtype.UUID, provider string) (AdNetwork, error) {
+	return s.queries.GetAdNetworkByProvider(ctx, gen.GetAdNetworkByProviderParams{TenantID: tenantID, Provider: provider})
+}
+
+func (s *Store) listAdNetworks(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]AdNetwork, error) {
+	if limit <= 0 || limit > MaxPageSize {
+		limit = DefaultPageSize
+	}
+	return s.queries.ListAdNetworks(ctx, gen.ListAdNetworksParams{
+		TenantID:   tenantID,
+		PageOffset: offset,
+		PageLimit:  limit,
+	})
+}
+
+func (s *Store) listActiveAdNetworks(ctx context.Context, tenantID pgtype.UUID) ([]AdNetwork, error) {
+	return s.queries.ListActiveAdNetworks(ctx, tenantID)
+}
+
+func (s *Store) updateAdNetwork(ctx context.Context, id, tenantID pgtype.UUID, input gen.UpdateAdNetworkParams) (AdNetwork, error) {
+	return s.queries.UpdateAdNetwork(ctx, input)
+}
+
+func (s *Store) deleteAdNetwork(ctx context.Context, id, tenantID pgtype.UUID) error {
+	return s.queries.DeleteAdNetwork(ctx, gen.DeleteAdNetworkParams{ID: id, TenantID: tenantID})
+}
+
+func (s *Store) countAdNetworks(ctx context.Context, tenantID pgtype.UUID) (int32, error) {
+	return s.queries.CountAdNetworks(ctx, tenantID)
+}
