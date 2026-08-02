@@ -19,6 +19,17 @@ type BatchInsertAdEventsParams struct {
 	OccurredAt pgtype.Timestamptz `json:"occurred_at"`
 }
 
+const countAdNetworks = `-- name: CountAdNetworks :one
+SELECT COUNT(*)::int FROM ad_networks WHERE tenant_id = $1
+`
+
+func (q *Queries) CountAdNetworks(ctx context.Context, tenantID pgtype.UUID) (int32, error) {
+	row := q.db.QueryRow(ctx, countAdNetworks, tenantID)
+	var column_1 int32
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const countImpressionsForUserToday = `-- name: CountImpressionsForUserToday :one
 SELECT COUNT(*)::int FROM ad_events
 WHERE user_id = $1
@@ -111,6 +122,62 @@ func (q *Queries) CreateAdCampaign(ctx context.Context, arg CreateAdCampaignPara
 		&i.UpdatedAt,
 		&i.TargetGeo,
 		&i.TargetSpaceIds,
+	)
+	return i, err
+}
+
+const createAdNetwork = `-- name: CreateAdNetwork :one
+
+INSERT INTO ad_networks (
+    tenant_id, provider, name, client_id, api_key, slot_mapping, config, is_active, priority
+) VALUES (
+    $1, $2, $3, $4, $5,
+    $6, $7, $8, $9
+)
+RETURNING id, tenant_id, provider, name, client_id, api_key, slot_mapping, config, is_active, priority, created_at, updated_at
+`
+
+type CreateAdNetworkParams struct {
+	TenantID    pgtype.UUID `json:"tenant_id"`
+	Provider    string      `json:"provider"`
+	Name        string      `json:"name"`
+	ClientID    *string     `json:"client_id"`
+	ApiKey      *string     `json:"api_key"`
+	SlotMapping []byte      `json:"slot_mapping"`
+	Config      []byte      `json:"config"`
+	IsActive    bool        `json:"is_active"`
+	Priority    int32       `json:"priority"`
+}
+
+// =====================
+// Ad Networks (Section 25 — external ad network configuration)
+// =====================
+func (q *Queries) CreateAdNetwork(ctx context.Context, arg CreateAdNetworkParams) (AdNetwork, error) {
+	row := q.db.QueryRow(ctx, createAdNetwork,
+		arg.TenantID,
+		arg.Provider,
+		arg.Name,
+		arg.ClientID,
+		arg.ApiKey,
+		arg.SlotMapping,
+		arg.Config,
+		arg.IsActive,
+		arg.Priority,
+	)
+	var i AdNetwork
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.Provider,
+		&i.Name,
+		&i.ClientID,
+		&i.ApiKey,
+		&i.SlotMapping,
+		&i.Config,
+		&i.IsActive,
+		&i.Priority,
+		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
@@ -219,6 +286,20 @@ type DeleteAdCampaignParams struct {
 
 func (q *Queries) DeleteAdCampaign(ctx context.Context, arg DeleteAdCampaignParams) error {
 	_, err := q.db.Exec(ctx, deleteAdCampaign, arg.ID, arg.TenantID)
+	return err
+}
+
+const deleteAdNetwork = `-- name: DeleteAdNetwork :exec
+DELETE FROM ad_networks WHERE id = $1 AND tenant_id = $2
+`
+
+type DeleteAdNetworkParams struct {
+	ID       pgtype.UUID `json:"id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+func (q *Queries) DeleteAdNetwork(ctx context.Context, arg DeleteAdNetworkParams) error {
+	_, err := q.db.Exec(ctx, deleteAdNetwork, arg.ID, arg.TenantID)
 	return err
 }
 
@@ -408,6 +489,64 @@ func (q *Queries) GetAdCampaignByID(ctx context.Context, arg GetAdCampaignByIDPa
 	return i, err
 }
 
+const getAdNetworkByID = `-- name: GetAdNetworkByID :one
+SELECT id, tenant_id, provider, name, client_id, api_key, slot_mapping, config, is_active, priority, created_at, updated_at FROM ad_networks WHERE id = $1 AND tenant_id = $2
+`
+
+type GetAdNetworkByIDParams struct {
+	ID       pgtype.UUID `json:"id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+func (q *Queries) GetAdNetworkByID(ctx context.Context, arg GetAdNetworkByIDParams) (AdNetwork, error) {
+	row := q.db.QueryRow(ctx, getAdNetworkByID, arg.ID, arg.TenantID)
+	var i AdNetwork
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.Provider,
+		&i.Name,
+		&i.ClientID,
+		&i.ApiKey,
+		&i.SlotMapping,
+		&i.Config,
+		&i.IsActive,
+		&i.Priority,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getAdNetworkByProvider = `-- name: GetAdNetworkByProvider :one
+SELECT id, tenant_id, provider, name, client_id, api_key, slot_mapping, config, is_active, priority, created_at, updated_at FROM ad_networks WHERE tenant_id = $1 AND provider = $2
+`
+
+type GetAdNetworkByProviderParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	Provider string      `json:"provider"`
+}
+
+func (q *Queries) GetAdNetworkByProvider(ctx context.Context, arg GetAdNetworkByProviderParams) (AdNetwork, error) {
+	row := q.db.QueryRow(ctx, getAdNetworkByProvider, arg.TenantID, arg.Provider)
+	var i AdNetwork
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.Provider,
+		&i.Name,
+		&i.ClientID,
+		&i.ApiKey,
+		&i.SlotMapping,
+		&i.Config,
+		&i.IsActive,
+		&i.Priority,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const getAdSlotTypeByID = `-- name: GetAdSlotTypeByID :one
 SELECT id, tenant_id, slot_name, description, max_display_per_page, is_active, created_at FROM ad_slot_types
 WHERE id = $1 AND tenant_id = $2
@@ -578,6 +717,44 @@ func (q *Queries) InsertAdEvent(ctx context.Context, arg InsertAdEventParams) (A
 		&i.CreatedAt,
 	)
 	return i, err
+}
+
+const listActiveAdNetworks = `-- name: ListActiveAdNetworks :many
+SELECT id, tenant_id, provider, name, client_id, api_key, slot_mapping, config, is_active, priority, created_at, updated_at FROM ad_networks WHERE tenant_id = $1 AND is_active = true
+ORDER BY priority DESC, name
+`
+
+func (q *Queries) ListActiveAdNetworks(ctx context.Context, tenantID pgtype.UUID) ([]AdNetwork, error) {
+	rows, err := q.db.Query(ctx, listActiveAdNetworks, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []AdNetwork
+	for rows.Next() {
+		var i AdNetwork
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.Provider,
+			&i.Name,
+			&i.ClientID,
+			&i.ApiKey,
+			&i.SlotMapping,
+			&i.Config,
+			&i.IsActive,
+			&i.Priority,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listActiveAdSlotTypes = `-- name: ListActiveAdSlotTypes :many
@@ -795,6 +972,50 @@ func (q *Queries) ListAdEventsByCampaign(ctx context.Context, arg ListAdEventsBy
 			&i.EventType,
 			&i.OccurredAt,
 			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listAdNetworks = `-- name: ListAdNetworks :many
+SELECT id, tenant_id, provider, name, client_id, api_key, slot_mapping, config, is_active, priority, created_at, updated_at FROM ad_networks WHERE tenant_id = $1
+ORDER BY priority DESC, name LIMIT $3 OFFSET $2
+`
+
+type ListAdNetworksParams struct {
+	TenantID   pgtype.UUID `json:"tenant_id"`
+	PageOffset int32       `json:"page_offset"`
+	PageLimit  int32       `json:"page_limit"`
+}
+
+func (q *Queries) ListAdNetworks(ctx context.Context, arg ListAdNetworksParams) ([]AdNetwork, error) {
+	rows, err := q.db.Query(ctx, listAdNetworks, arg.TenantID, arg.PageOffset, arg.PageLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []AdNetwork
+	for rows.Next() {
+		var i AdNetwork
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.Provider,
+			&i.Name,
+			&i.ClientID,
+			&i.ApiKey,
+			&i.SlotMapping,
+			&i.Config,
+			&i.IsActive,
+			&i.Priority,
+			&i.CreatedAt,
+			&i.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -1041,6 +1262,55 @@ func (q *Queries) UpdateAdCampaignStatus(ctx context.Context, arg UpdateAdCampai
 		&i.UpdatedAt,
 		&i.TargetGeo,
 		&i.TargetSpaceIds,
+	)
+	return i, err
+}
+
+const updateAdNetwork = `-- name: UpdateAdNetwork :one
+UPDATE ad_networks
+SET name = $1, client_id = $2, api_key = $3,
+    slot_mapping = $4, config = $5, is_active = $6, priority = $7
+WHERE id = $8 AND tenant_id = $9 RETURNING id, tenant_id, provider, name, client_id, api_key, slot_mapping, config, is_active, priority, created_at, updated_at
+`
+
+type UpdateAdNetworkParams struct {
+	Name        string      `json:"name"`
+	ClientID    *string     `json:"client_id"`
+	ApiKey      *string     `json:"api_key"`
+	SlotMapping []byte      `json:"slot_mapping"`
+	Config      []byte      `json:"config"`
+	IsActive    bool        `json:"is_active"`
+	Priority    int32       `json:"priority"`
+	ID          pgtype.UUID `json:"id"`
+	TenantID    pgtype.UUID `json:"tenant_id"`
+}
+
+func (q *Queries) UpdateAdNetwork(ctx context.Context, arg UpdateAdNetworkParams) (AdNetwork, error) {
+	row := q.db.QueryRow(ctx, updateAdNetwork,
+		arg.Name,
+		arg.ClientID,
+		arg.ApiKey,
+		arg.SlotMapping,
+		arg.Config,
+		arg.IsActive,
+		arg.Priority,
+		arg.ID,
+		arg.TenantID,
+	)
+	var i AdNetwork
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.Provider,
+		&i.Name,
+		&i.ClientID,
+		&i.ApiKey,
+		&i.SlotMapping,
+		&i.Config,
+		&i.IsActive,
+		&i.Priority,
+		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
