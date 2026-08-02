@@ -7,6 +7,7 @@
 package config
 
 import (
+	"bufio"
 	"fmt"
 	"os"
 	"strconv"
@@ -78,6 +79,18 @@ type Config struct {
 // The error return is kept so callers can handle future validation needs
 // without changing the function signature.
 func Load() (Config, error) {
+	// In non-production environments, load a .env file from the working
+	// directory if present. This lets `japa-api` boot with the project's
+	// local secrets (JC_JWT_SECRET, JC_TOTP_ENCRYPTION_KEY, …) even when the
+	// process was not started through a wrapper that sourced .env. Variables
+	// already present in the real environment are never overridden, so
+	// explicit env vars and CI/production deployments always win. Production
+	// is skipped entirely: a production deployment must set its variables
+	// explicitly and must not rely on a checked-in .env file.
+	if os.Getenv("JC_ENV") != "production" {
+		loadDotEnv(".env")
+	}
+
 	cfg := Config{
 		DatabaseURL:              os.Getenv("JC_DATABASE_URL"),
 		RedisAddr:                os.Getenv("JC_REDIS_ADDR"),
@@ -302,4 +315,62 @@ func maskURL(rawURL string) string {
 	}
 
 	return rawURL[:schemeEnd+3] + "***@" + rawURL[schemeEnd+3+at+1:]
+}
+
+// loadDotEnv reads a dotenv-style file and populates the process environment
+// for any KEY=VALUE pair whose KEY is not already set. Existing environment
+// variables always take precedence, so explicit exports, CI configuration,
+// and production deployments are never overridden. Missing files and
+// unreadable files are silently ignored — a missing .env must never prevent
+// the app from booting.
+//
+// The parser supports:
+//   - KEY=VALUE and KEY="VALUE" (with surrounding quotes stripped)
+//   - single-line values containing spaces when quoted
+//   - # comments and blank lines
+//   - export KEY=VALUE (leading export is stripped)
+//
+// It does not interpret escapes or multi-line values; .env files in this
+// project use plain scalar values, and complex secrets are base64/hex blobs.
+func loadDotEnv(path string) {
+	f, err := os.Open(path)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+
+		// Strip an optional leading "export ".
+		line = strings.TrimPrefix(line, "export ")
+
+		eq := strings.IndexByte(line, '=')
+		if eq <= 0 {
+			continue
+		}
+
+		key := strings.TrimSpace(line[:eq])
+		value := strings.TrimSpace(line[eq+1:])
+		if key == "" {
+			continue
+		}
+
+		// Strip a single layer of surrounding double quotes so values
+		// containing spaces or # are preserved.
+		if len(value) >= 2 && value[0] == '"' && value[len(value)-1] == '"' {
+			value = value[1 : len(value)-1]
+		}
+
+		// Never override an explicitly-set environment variable.
+		if _, ok := os.LookupEnv(key); ok {
+			continue
+		}
+
+		_ = os.Setenv(key, value)
+	}
 }
