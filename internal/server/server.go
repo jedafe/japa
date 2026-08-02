@@ -145,8 +145,19 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 	// Valkey client for cache, rate limiting, edit locks, brute-force
 	// tracking, and space unread counters. Created with graceful fallback
-	// so the server boots even when Valkey is unreachable.
-	vkClient := valkey.NewWithFallback(cfg.RedisAddr)
+	// so the server boots even when Valkey is unreachable. Password, DB
+	// number, pool size, timeouts, and TLS are configurable via JC_ env
+	// vars (Rule 3) so the client can authenticate to a protected Valkey
+	// instance in production.
+	vkClient := valkey.NewWithFallbackConfig(valkey.ClientConfig{
+		Addr:          cfg.RedisAddr,
+		Password:      cfg.RedisPassword,
+		DB:            cfg.RedisDB,
+		PoolSize:      cfg.RedisPoolSize,
+		DialTimeoutMs: cfg.RedisDialTimeoutMs,
+		ReadTimeoutMs: cfg.RedisReadTimeoutMs,
+		TLSEnabled:    cfg.RedisTLSEnabled,
+	})
 	slog.Info("valkey client created", "addr", cfg.RedisAddr)
 
 	// Spam pipeline — multi-layer content safety checks (IP reputation,
@@ -480,6 +491,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 	// Organization system (Section 07).
 	orgService := organizations.NewServiceWithSettings(database, settingsService)
+	orgService.SetValkeyCache(vkClient.Redis()) // jc:org:profile / jc:org:list read-through cache
 	orgHandlers := organizations.NewHandlers(orgService, followService)
 
 	// Wallet & Credits subsystem (Section 28 — Wallet & Credits).
@@ -545,6 +557,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	affiliateService.SetSettings(settingsService) // SETTING-002/003: configurable commission/limits
 	affiliateHandlers := affiliate.NewHandlers(affiliateService)
 	affiliateHandlers.AsynqClient = asynqClient
+	affiliateHandlers.Cache = vkClient.Redis() // jc:aff_dedup + jc:aff_click (Section 56)
 
 	// i18n Translation System.
 	i18nService := i18n.NewService(database)
@@ -748,6 +761,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Cache flusher for admin-only cache invalidation.
 	cacheFlusher := analytics.NewCacheFlusher(vkClient)
 	analyticsHandlers.SetCacheFlusher(cacheFlusher)
+	analyticsHandlers.SetCache(vkClient.Redis()) // BUG-010: jc:cache:analytics:* read-through cache
 
 	// Register AI and moderation processor adapters so the ai:process_task
 	// and content:scan_moderation background handlers use real implementations
@@ -814,6 +828,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	searchHandlers := search.NewHandlers(meiliClient)
 	searchHandlers.SetQueries(gen.New(database.Reader))
 	searchHandlers.SetSettings(settingsService)
+	searchHandlers.SetCache(vkClient.Redis()) // BUG-010: jc:cache:search:* read-through cache
 
 	// Onboarding subsystem (Section 09).
 	onboardingService := onboarding.NewService(database, settingsService)
@@ -1163,8 +1178,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// from the tenant-scoped API the SPA consumes at the bare paths).
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "custom_fields.group.view")).
 				Get("/admin/field-groups", cfHandlers.ListFieldGroups)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "custom_fields.group.view")).
+				Get("/admin/field-groups/{id}", cfHandlers.GetFieldGroup)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "custom_fields.group.create")).
-				Post("/admin/field-groups", cfHandlers.CreateFieldGroup)
+				Post("/admin/field-groups", cfHandlers.CreateFieldGroupAdmin)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "custom_fields.group.edit")).
 				Patch("/admin/field-groups/{id}", cfHandlers.UpdateFieldGroup)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "custom_fields.group.delete")).
@@ -1571,7 +1588,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				// (10 connections per minute per IP, per ADR-022).
 				r.With(mw.RateLimit(vkClient.Redis(), "tight")).Get("/ws", wsHandlers.HandleWebSocket)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "dm.view")).Post("/auth/ws-ticket", wsHandlers.GetWSTicket)
-				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/ws/online", wsHandlers.GetOnlineUsers)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "dm.view")).Get("/ws/online", wsHandlers.GetOnlineUsers)
 
 				// Direct Messaging — dm.view enforced on all read routes (BUG-016).
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "dm.view")).Get("/dm/conversations", wsHandlers.ListConversations)
@@ -1583,9 +1600,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "dm.view")).Post("/dm/conversations/{id}/read", wsHandlers.MarkAsRead)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "moderation.report")).Post("/dm/conversations/{id}/messages/{mid}/report", reportsHandlers.ReportDMMessage)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "dm.view")).Get("/dm/requests", wsHandlers.ListMessageRequests)
-				r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/dm/requests/{id}/accept", wsHandlers.AcceptMessageRequest)
-				r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/dm/requests/{id}/decline", wsHandlers.DeclineMessageRequest)
-				r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/dm/requests/{id}/block", wsHandlers.BlockMessageRequest)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "dm.view")).Post("/dm/requests/{id}/accept", wsHandlers.AcceptMessageRequest)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "dm.view")).Post("/dm/requests/{id}/decline", wsHandlers.DeclineMessageRequest)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "dm.view")).Post("/dm/requests/{id}/block", wsHandlers.BlockMessageRequest)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "dm.view")).Get("/dm/privacy", wsHandlers.GetDMPrivacy)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "dm.manage_privacy")).Put("/dm/privacy", wsHandlers.UpdateDMPrivacy)
 			})
 
@@ -2055,7 +2073,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Get("/wallet/currencies", walletHandlers.ListCurrencies)
 				r.With(auth.RequireAuth(kr, vkClient.Redis())).
 					Get("/wallet/credit-packs", walletHandlers.ListCreditPacks)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wallet.credits.purchase")).
+				// Purchase credits — idempotency middleware prevents duplicate
+				// payment rows / double-charges when clients retry a failed POST.
+				// See AUDIT-BE-004 / Rule 9 (SET NX EX on financial endpoints).
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wallet.credits.purchase"),
+					mw.IdempotencyMiddleware(vkClient.Redis(), settingsService)).
 					Post("/wallet/purchase-credits", walletHandlers.PurchaseCredits)
 				r.With(auth.RequireAuth(kr, vkClient.Redis())).
 					Patch("/me/preferences/currency", walletHandlers.SetPreferredCurrency)
@@ -2123,6 +2145,17 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Patch("/admin/ads/boosts/{id}", adHandlers.UpdateBoost)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ad.campaign.manage")).
 				Delete("/admin/ads/boosts/{id}", adHandlers.DeleteBoost)
+			// Ad Networks (Section 25 — external ad network configuration)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ad.network.manage")).
+				Get("/admin/ads/networks", adHandlers.ListAdNetworks)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ad.network.manage")).
+				Post("/admin/ads/networks", adHandlers.CreateAdNetwork)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ad.network.manage")).
+				Get("/admin/ads/networks/{id}", adHandlers.GetAdNetwork)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ad.network.manage")).
+				Put("/admin/ads/networks/{id}", adHandlers.UpdateAdNetwork)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ad.network.manage")).
+				Delete("/admin/ads/networks/{id}", adHandlers.DeleteAdNetwork)
 
 			// Ticket System routes (Section 38 — Ticket System)
 			// User portal (catalog: /tickets, /me/tickets)
@@ -2709,24 +2742,24 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Public program info
 			r.Get("/affiliate-program", affiliateHandlers.GetProgramInfo)
 
-			// Enrollment (auth required)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).
+			// Enrollment (auth + affiliate.program.enroll — Section 56 RBAC)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "affiliate.program.enroll")).
 				Post("/affiliate-program/enroll", affiliateHandlers.Enroll)
 
-			// User's own affiliate links (auth required)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).
+			// User's own affiliate links (auth + affiliate.links.manage)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "affiliate.links.manage")).
 				Get("/me/affiliate-links", affiliateHandlers.ListMyLinks)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "affiliate.links.manage")).
 				Post("/me/affiliate-links", affiliateHandlers.CreateMyLink)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "affiliate.links.manage")).
 				Get("/me/affiliate-links/{id}", affiliateHandlers.GetMyLink)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "affiliate.links.manage")).
 				Patch("/me/affiliate-links/{id}", affiliateHandlers.UpdateMyLink)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "affiliate.links.manage")).
 				Delete("/me/affiliate-links/{id}", affiliateHandlers.DeleteMyLink)
 
-			// Earnings summary (auth required)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).
+			// Earnings summary (auth + affiliate.links.manage)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "affiliate.links.manage")).
 				Get("/me/affiliate-earnings", affiliateHandlers.GetMyEarnings)
 
 			// Affiliate redirect (public — no auth)
@@ -2739,6 +2772,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Patch("/admin/affiliate-program/members/{user_id}", affiliateHandlers.UpdateMemberStatusAdmin)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "affiliate.admin.view")).
 				Get("/admin/affiliate-links", affiliateHandlers.ListAllLinksAdmin)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "affiliate.admin.manage")).
+				Delete("/admin/affiliate-links/{id}", affiliateHandlers.DeleteLinkAdmin)
 
 			// Referral Program admin routes (Section 34 — Referral)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "referral.admin")).
@@ -3548,6 +3583,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 			// Task types catalog (drives cron job editor type dropdown)
 			r.Get("/task-types", controlHandlers.ListTaskTypes)
+
+			// Schedule presets + tier names (drives cron/backup-configs UI dropdowns)
+			r.Get("/cron/schedule-presets", controlHandlers.ListSchedulePresets)
 
 			// API scopes catalog (drives API key scope editor dropdown)
 			r.Get("/api-scopes", rbacHandlers.ListScopes)
