@@ -424,3 +424,139 @@ func (s *Service) DeleteBoost(ctx context.Context, id, tenantID pgtype.UUID) err
 		TenantID: tenantID,
 	})
 }
+
+// ---------------------------------------------------------------------------
+// Ad Networks
+// ---------------------------------------------------------------------------
+
+// CreateAdNetworkInput holds parameters for creating an ad network.
+type CreateAdNetworkInput struct {
+	Provider    string          `json:"provider"`
+	Name        string          `json:"name"`
+	ClientID    *string         `json:"client_id,omitempty"`
+	APIKey      *string         `json:"api_key,omitempty"`
+	SlotMapping json.RawMessage `json:"slot_mapping"`
+	Config      json.RawMessage `json:"config"`
+	IsActive    bool            `json:"is_active"`
+	Priority    int32           `json:"priority"`
+}
+
+// UpdateAdNetworkInput holds parameters for updating an ad network.
+type UpdateAdNetworkInput struct {
+	Name        *string         `json:"name,omitempty"`
+	ClientID    *string         `json:"client_id,omitempty"`
+	APIKey      *string         `json:"api_key,omitempty"`
+	SlotMapping json.RawMessage `json:"slot_mapping,omitempty"`
+	Config      json.RawMessage `json:"config,omitempty"`
+	IsActive    *bool           `json:"is_active,omitempty"`
+	Priority    *int32          `json:"priority,omitempty"`
+}
+
+// validProviders is the set of allowed ad network provider values.
+var validProviders = map[string]bool{
+	"adsense": true, "ezoic": true, "media_net": true, "custom": true,
+}
+
+func (s *Service) CreateAdNetwork(ctx context.Context, tenantID pgtype.UUID, input CreateAdNetworkInput) (AdNetwork, error) {
+	if input.Provider == "" {
+		return AdNetwork{}, errors.New("provider is required")
+	}
+	if !validProviders[input.Provider] {
+		return AdNetwork{}, fmt.Errorf("invalid provider: %s (allowed: adsense, ezoic, media_net, custom)", input.Provider)
+	}
+	if input.Name == "" {
+		return AdNetwork{}, errors.New("name is required")
+	}
+	slotMapping := input.SlotMapping
+	if slotMapping == nil {
+		slotMapping = json.RawMessage(`{}`)
+	}
+	config := input.Config
+	if config == nil {
+		config = json.RawMessage(`{}`)
+	}
+	return s.store.createAdNetwork(ctx, tenantID, gen.CreateAdNetworkParams{
+		TenantID:    tenantID,
+		Provider:    input.Provider,
+		Name:        input.Name,
+		ClientID:    input.ClientID,
+		ApiKey:      input.APIKey,
+		SlotMapping: slotMapping,
+		Config:      config,
+		IsActive:    input.IsActive,
+		Priority:    input.Priority,
+	})
+}
+
+func (s *Service) GetAdNetwork(ctx context.Context, tenantID, id pgtype.UUID) (AdNetwork, error) {
+	return s.store.getAdNetworkByID(ctx, id, tenantID)
+}
+
+func (s *Service) ListAdNetworks(ctx context.Context, tenantID pgtype.UUID, page, pageSize int32) ([]AdNetwork, error) {
+	if pageSize <= 0 {
+		pageSize = 20
+	}
+	offset := (page - 1) * pageSize
+	if offset < 0 {
+		offset = 0
+	}
+	return s.store.listAdNetworks(ctx, tenantID, pageSize, offset)
+}
+
+func (s *Service) ListActiveAdNetworks(ctx context.Context, tenantID pgtype.UUID) ([]AdNetwork, error) {
+	return s.store.listActiveAdNetworks(ctx, tenantID)
+}
+
+func (s *Service) UpdateAdNetwork(ctx context.Context, tenantID, id pgtype.UUID, input UpdateAdNetworkInput) (AdNetwork, error) {
+	existing, err := s.store.getAdNetworkByID(ctx, id, tenantID)
+	if err != nil {
+		return AdNetwork{}, fmt.Errorf("network not found: %w", err)
+	}
+	name := existing.Name
+	if input.Name != nil {
+		name = *input.Name
+	}
+	clientID := existing.ClientID
+	if input.ClientID != nil {
+		clientID = input.ClientID
+	}
+	apiKey := existing.ApiKey
+	if input.APIKey != nil {
+		apiKey = input.APIKey
+	}
+	slotMapping := existing.SlotMapping
+	if input.SlotMapping != nil {
+		slotMapping = input.SlotMapping
+	}
+	config := existing.Config
+	if input.Config != nil {
+		config = input.Config
+	}
+	isActive := existing.IsActive
+	if input.IsActive != nil {
+		isActive = *input.IsActive
+	}
+	priority := existing.Priority
+	if input.Priority != nil {
+		priority = *input.Priority
+	}
+	return s.store.updateAdNetwork(ctx, id, tenantID, gen.UpdateAdNetworkParams{
+		ID:          id,
+		TenantID:    tenantID,
+		Name:        name,
+		ClientID:    clientID,
+		ApiKey:      apiKey,
+		SlotMapping: slotMapping,
+		Config:      config,
+		IsActive:    isActive,
+		Priority:    priority,
+	})
+}
+
+func (s *Service) DeleteAdNetwork(ctx context.Context, tenantID, id pgtype.UUID) error {
+	return s.store.deleteAdNetwork(ctx, id, tenantID)
+}
+
+func (s *Service) CountAdNetworks(ctx context.Context, tenantID pgtype.UUID) (int32, error) {
+	return s.store.countAdNetworks(ctx, tenantID)
+}
