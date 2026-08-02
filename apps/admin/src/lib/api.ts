@@ -164,14 +164,37 @@ export const docsApi = {
 		api(`/admin/docs/pages/${id}`, { method: 'DELETE' }),
 };
 
+export type AdNetwork = {
+	id: string;
+	tenant_id: string;
+	provider: 'adsense' | 'ezoic' | 'media_net' | 'custom';
+	name: string;
+	client_id?: string;
+	api_key?: string;
+	slot_mapping?: Record<string, string>;
+	config?: Record<string, unknown>;
+	is_active: boolean;
+	priority: number;
+	created_at: string;
+	updated_at: string;
+};
+
 export const adSlotTypesApi = {
 	list: (params?: string) => api<unknown>(`/admin/ads/slot-types${params ? `?${params}` : ''}`),
-	create: (body: { name: string; slug: string; width: number; height: number; description?: string }) =>
+	create: (body: { name: string; description?: string; is_active?: boolean; max_display_per_page?: number }) =>
 		api('/admin/ads/slot-types', { method: 'POST', body }),
-	update: (id: string, body: { name?: string; slug?: string; width?: number; height?: number; description?: string }) =>
+	update: (id: string, body: { name?: string; description?: string; is_active?: boolean; max_display_per_page?: number }) =>
 		api(`/admin/ads/slot-types/${id}`, { method: 'PUT', body }),
 	delete: (id: string) =>
 		api(`/admin/ads/slot-types/${id}`, { method: 'DELETE' }),
+};
+
+export const adNetworksApi = {
+	list: (params?: string) => api<{ data: AdNetwork[] }>(`/admin/ads/networks${params ? `?${params}` : ''}`),
+	get: (id: string) => api<{ data: AdNetwork }>(`/admin/ads/networks/${id}`),
+	create: (body: Record<string, unknown>) => api<{ data: AdNetwork }>('/admin/ads/networks', { method: 'POST', body }),
+	update: (id: string, body: Record<string, unknown>) => api<{ data: AdNetwork }>(`/admin/ads/networks/${id}`, { method: 'PUT', body }),
+	delete: (id: string) => api<{ data: unknown }>(`/admin/ads/networks/${id}`, { method: 'DELETE' }),
 };
 
 export const adBoostsApi = {

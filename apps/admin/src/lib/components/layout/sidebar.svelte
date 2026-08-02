@@ -142,8 +142,10 @@
 			{ path: "/plans", label: t("nav.plans", "Subscription Plans"), icon: CreditCard, permission: "payments.plans.manage" },
 			{ path: "/affiliate", label: t("nav.affiliate", "Affiliate Links"), icon: Link, permission: "affiliate.admin.view" },
 			{ path: "/referral", label: t("nav.referral", "Referrals"), icon: Share2, permission: "referral.admin" },
-			{ path: "/ads", label: t("nav.ads", "Advertisements"), icon: Zap, permission: "ad.campaign.manage" }
-			]
+			{ path: "/ads", label: t("nav.ads", "Advertisements"), icon: Zap, permission: "ad.campaign.manage" },
+			{ path: "/ads/slot-types", label: t("nav.slot_types", "Slot Types"), icon: ListOrdered, permission: "ad.campaign.manage" },
+			{ path: "/ads/networks", label: t("nav.ad_networks", "Ad Networks"), icon: Globe, permission: "ad.network.manage" }
+		]
 		},
 		{
 			id: "automation",
