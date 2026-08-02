@@ -158,16 +158,22 @@ var SupportedEmbedPlatforms = []string{
 
 // EntityTypeFromClass derives a simplified entity_type token from a full
 // entity_class assignment string (Section 06). For example:
-//   - "content_type:blog_post" → "content"
-//   - "space_type:university"  → "space"
-//   - "user_profile"           → "user_profile"
-//   - "organization"           → "organization"
-//   - "form:{uuid}"            → "form"
-//   - "tag"                    → "tag"
-//   - "ticket_type:{uuid}"     → "ticket_type"
+//   - "content_type:blog_post"            → "content"
+//   - "content_type:discussion"           → "content"
+//   - "content_type:guide:health_insurance" → "guide_category:health_insurance"
+//   - "space_type:university"             → "space"
+//   - "space_type"                        → "space"
+//   - "user_profile"                      → "user_profile"
+//   - "organization"                      → "organization"
+//   - "form:{uuid}"                       → "form"
+//   - "tag"                               → "tag"
+//   - "ticket_type:{uuid}"                → "ticket_type"
 //
 // The simplified token is what the frontend uses to filter groups by entity
 // type (e.g. the content composer filters on entity_type === "content").
+// Guide sub-categories map to the "guide_category:{slug}" token so they
+// match the values in the custom_field_entity_types table and can be
+// filtered individually in the admin panel.
 func EntityTypeFromClass(entityClass string) string {
 	// Take the part before the first colon.
 	prefix := entityClass
@@ -177,6 +183,12 @@ func EntityTypeFromClass(entityClass string) string {
 	// Map the assignment prefix to the simplified entity_type token.
 	switch prefix {
 	case "content_type":
+		// Guide sub-categories (content_type:guide:{slug}) have their
+		// own entity_type tokens in the custom_field_entity_types table
+		// (guide_category:{slug}) so they can be filtered individually.
+		if rest := entityClass[len("content_type:"):]; strings.HasPrefix(rest, "guide:") {
+			return "guide_category:" + rest[len("guide:"):]
+		}
 		return "content"
 	case "space_type":
 		return "space"
@@ -185,6 +197,29 @@ func EntityTypeFromClass(entityClass string) string {
 	default:
 		return prefix
 	}
+}
+
+// EntityClassFromType is the reverse of EntityTypeFromClass: it maps a
+// simplified entity_type token back to the generic entity_class prefix
+// used in custom_field_group_assignments. When creating a group from the
+// admin panel, the admin selects an entity_type (e.g. "content") and this
+// function derives the entity_class ("content_type") for the assignment
+// row. entity_id is left NULL so the assignment applies to all entities of
+// that class.
+func EntityClassFromType(entityType string) string {
+	switch entityType {
+	case "content":
+		return "content_type"
+	case "space":
+		return "space_type"
+	}
+	// Guide sub-categories: "guide_category:visa" → "content_type:guide:visa"
+	if strings.HasPrefix(entityType, "guide_category:") {
+		return "content_type:guide:" + entityType[len("guide_category:"):]
+	}
+	// ticket_type, user_profile, organization, tag, form — the entity_type
+	// token IS the entity_class prefix (no colon-suffix mapping needed).
+	return entityType
 }
 
 // Service provides custom field operations with reader/writer pool

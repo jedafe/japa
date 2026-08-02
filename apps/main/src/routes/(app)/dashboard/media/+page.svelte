@@ -41,7 +41,7 @@
 	{:else}
 		<ul class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
 			{#each media as m (m.id)}
-				<li class="overflow-hidden rounded-[12px] border border-[var(--color-border)] bg-[var(--color-surface)]">
+				<li class="overflow-hidden rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)]">
 					<div class="flex aspect-square items-center justify-center bg-[var(--color-surface-subtle)]">
 						{#if isImage(m)}
 							<img src={m.url} alt={m.alt_text ?? m.filename ?? ''} class="h-full w-full object-cover" loading="lazy" />

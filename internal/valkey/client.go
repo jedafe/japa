@@ -23,8 +23,11 @@ package valkey
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
+	"net"
 	"strings"
+	"time"
 
 	"github.com/valkey-io/valkey-go"
 	"github.com/valkey-io/valkey-go/valkeycompat"
@@ -35,6 +38,20 @@ import (
 // so JapaConnect entries are easy to identify and never collide with any
 // other service sharing the same instance (Rule 4).
 const keyPrefix = "jc:"
+
+// ClientConfig holds the configurable parameters for connecting to a Valkey
+// server. All fields map to JC_ environment variables loaded by
+// internal/config. Zero values fall back to valkey-go's internal defaults
+// so local development works without a full environment.
+type ClientConfig struct {
+	Addr          string // host:port of the Valkey instance
+	Password      string // AUTH password (empty = no auth)
+	DB            int    // SELECT database number (0 default)
+	PoolSize      int    // connection pool size (0 = valkey-go default)
+	DialTimeoutMs int    // dial timeout in ms (0 = valkey-go default)
+	ReadTimeoutMs int    // read/write timeout in ms (0 = valkey-go default)
+	TLSEnabled    bool   // enable TLS connection
+}
 
 // MustKey constructs a Valkey key by prepending the mandatory "jc:" prefix
 // and joining the pattern with the given args using ":" as the separator.
@@ -47,6 +64,9 @@ const keyPrefix = "jc:"
 // This helper enforces Rule 4 (VALKEY-004): all keys must be namespaced
 // with "jc:". Callers should use this instead of manually constructing keys.
 func MustKey(pattern string, args ...any) string {
+	if pattern == "" {
+		panic("valkey: empty key pattern")
+	}
 	key := pattern
 	if len(args) > 0 {
 		key = fmt.Sprintf(pattern, args...)
@@ -66,25 +86,65 @@ type Client struct {
 	rdb valkeycompat.Cmdable
 }
 
+// buildOption constructs a valkey.ClientOption from a ClientConfig, applying
+// password auth, DB selection, pool size, timeouts, and TLS when configured.
+// Zero-value fields fall back to valkey-go's internal defaults.
+func buildOption(cc ClientConfig) valkey.ClientOption {
+	opt := valkey.ClientOption{
+		InitAddress:  []string{cc.Addr},
+		DisableCache: true,
+	}
+
+	if cc.Password != "" {
+		opt.Password = cc.Password
+	}
+	if cc.DB > 0 {
+		opt.SelectDB = cc.DB
+	}
+	if cc.PoolSize > 0 {
+		opt.BlockingPoolSize = cc.PoolSize
+	}
+	if cc.DialTimeoutMs > 0 {
+		opt.Dialer = net.Dialer{
+			Timeout: time.Duration(cc.DialTimeoutMs) * time.Millisecond,
+		}
+	}
+	if cc.ReadTimeoutMs > 0 {
+		opt.ConnWriteTimeout = time.Duration(cc.ReadTimeoutMs) * time.Millisecond
+	}
+	if cc.TLSEnabled {
+		opt.TLSConfig = &tls.Config{
+			MinVersion: tls.VersionTLS12,
+		}
+	}
+
+	return opt
+}
+
 // New connects to the Valkey server at addr and confirms the connection with
 // a Ping. If the connection or Ping fails, the returned error describes the
 // failure and the caller decides whether to degrade gracefully or abort.
 //
 // addr is the host:port of the Valkey instance (for example "localhost:6379").
 func New(ctx context.Context, addr string) (*Client, error) {
-	vk, err := valkey.NewClient(valkey.ClientOption{
-		InitAddress:  []string{addr},
-		DisableCache: true,
-	})
+	return NewWithConfig(ctx, ClientConfig{Addr: addr})
+}
+
+// NewWithConfig connects to the Valkey server using the full ClientConfig
+// (password, DB, pool size, timeouts, TLS) and confirms the connection with
+// a Ping. If the connection or Ping fails, the returned error describes the
+// failure and the caller decides whether to degrade gracefully or abort.
+func NewWithConfig(ctx context.Context, cc ClientConfig) (*Client, error) {
+	vk, err := valkey.NewClient(buildOption(cc))
 	if err != nil {
-		return nil, fmt.Errorf("valkey connect %s: %w", addr, err)
+		return nil, fmt.Errorf("valkey connect %s: %w", cc.Addr, err)
 	}
 
 	rdb := valkeycompat.NewAdapter(vk)
 
 	if err := rdb.Ping(ctx).Err(); err != nil {
 		vk.Close()
-		return nil, fmt.Errorf("valkey ping %s: %w", addr, err)
+		return nil, fmt.Errorf("valkey ping %s: %w", cc.Addr, err)
 	}
 
 	return &Client{vk: vk, rdb: rdb}, nil
@@ -96,10 +156,16 @@ func New(ctx context.Context, addr string) (*Client, error) {
 // operations return zero values and errors, following the same graceful-
 // degradation pattern used by the GeoIP reader in internal/geoip.
 func NewWithFallback(addr string) *Client {
-	vk, err := valkey.NewClient(valkey.ClientOption{
-		InitAddress:  []string{addr},
-		DisableCache: true,
-	})
+	return NewWithFallbackConfig(ClientConfig{Addr: addr})
+}
+
+// NewWithFallbackConfig returns a Client configured with the full ClientConfig
+// even when the Valkey server is unreachable at construction time. When the
+// server cannot be reached, the returned Client operates in a nil-safe
+// degraded mode: all operations return zero values and errors, following the
+// same graceful-degradation pattern used by the GeoIP reader in internal/geoip.
+func NewWithFallbackConfig(cc ClientConfig) *Client {
+	vk, err := valkey.NewClient(buildOption(cc))
 	if err != nil {
 		// Server unreachable — return a Client in degraded mode.
 		return &Client{}

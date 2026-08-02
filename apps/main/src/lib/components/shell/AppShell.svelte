@@ -49,7 +49,7 @@
 	);
 </script>
 
-<div class="shell" class:hide-sidebar={hideRightSidebar} style="--current-nav-width: {navWidth}">
+<div class="shell" class:hide-sidebar={hideRightSidebar} style="--current-nav-width: {navWidth}" data-nav-collapsed={collapsed}>
 	<div class="shell-nav">
 		<LeftNav {menu} {user} {collapsed} {userSpaces} {logoUrl} onToggle={onToggleCollapse} />
 	</div>

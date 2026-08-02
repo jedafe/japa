@@ -77,7 +77,7 @@
 	{@html `<script type="application/ld+json">${jsonLd}</script>`}
 </svelte:head>
 
-<div class="mx-auto w-full max-w-3xl">
+<div class="mx-auto w-full max-w-full">
 	<!-- Header: title + window selector -->
 	<div class="flex items-center justify-between gap-3 border-b border-[var(--color-border)] px-4 py-4">
 		<div class="min-w-0">

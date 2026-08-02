@@ -184,7 +184,7 @@
 </svelte:head>
 
 <div class="min-h-screen bg-[var(--color-bg)]">
-	<div class="mx-auto max-w-2xl px-6 py-12">
+	<div class="mx-auto max-w-full px-6 py-12">
 		<!-- Step indicator -->
 		<div class="mb-10 flex items-center justify-center gap-2">
 			{#each Array(totalSteps) as _, i (i)}

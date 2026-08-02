@@ -63,19 +63,14 @@
 		cron: string;
 	}
 
-	const schedulePresets: SchedulePreset[] = [
-		{ value: 'every_minute', label: 'Every minute', cron: '* * * * *' },
-		{ value: 'every_5min', label: 'Every 5 minutes', cron: '*/5 * * * *' },
-		{ value: 'every_15min', label: 'Every 15 minutes', cron: '*/15 * * * *' },
-		{ value: 'every_30min', label: 'Every 30 minutes', cron: '*/30 * * * *' },
-		{ value: 'hourly', label: 'Every hour', cron: '0 * * * *' },
-		{ value: 'every_6h', label: 'Every 6 hours', cron: '0 */6 * * *' },
-		{ value: 'daily_3am', label: 'Daily at 03:00', cron: '0 3 * * *' },
-		{ value: 'daily_midnight', label: 'Daily at 00:00', cron: '0 0 * * *' },
-		{ value: 'weekly_sun_2am', label: 'Weekly (Sun 02:00)', cron: '0 2 * * 0' },
-		{ value: 'monthly_1st_2am', label: 'Monthly (1st 02:00)', cron: '0 2 1 * *' },
-		{ value: 'custom', label: 'Custom cron expression...', cron: '' }
-	];
+	let schedulePresets = $state<SchedulePreset[]>([]);
+
+	async function loadSchedulePresets() {
+		const result = await api<{ presets: SchedulePreset[]; tiers: string[] }>("/control/cron/schedule-presets");
+		if (result.ok && result.data) {
+			schedulePresets = result.data.presets;
+		}
+	}
 
 	function onSchedulePresetChange(value: string) {
 		selectedSchedulePreset = value;
@@ -364,6 +359,7 @@
 	$effect(() => {
 		load();
 		loadBackupTargets();
+		loadSchedulePresets();
 		const interval = setInterval(() => {
 			load();
 		}, 30000);

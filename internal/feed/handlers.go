@@ -1,6 +1,7 @@
 package feed
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -13,6 +14,7 @@ import (
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/tenant"
+	vkcache "github.com/jedafe/japa/internal/valkey"
 	"github.com/jedafe/japa/internal/visitor"
 	"github.com/valkey-io/valkey-go"
 )
@@ -145,6 +147,7 @@ func parseSort(r *http.Request) string {
 
 // GetExploreFeed handles GET /api/v1/feed/explore — public, no auth required.
 // BUG-006: caches results in Valkey (jc:explore:{tenant}:{geo}:{page}, Section 53, TTL 15min).
+// Uses distributed lock stampede protection (BUG-008).
 func (h *Handlers) GetExploreFeed(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -163,28 +166,13 @@ func (h *Handlers) GetExploreFeed(w http.ResponseWriter, r *http.Request) {
 	page := int(offset) / int(limit)
 	cacheKey := fmt.Sprintf("jc:explore:%s:%s:%s:%d", tenantID.String(), geoCode, sort, page)
 
-	// Try Valkey cache.
-	if h.cache != nil {
-		if cached, err := h.cache.Do(r.Context(), h.cache.B().Get().Key(cacheKey).Build()).ToString(); err == nil {
-			var items []any
-			if json.Unmarshal([]byte(cached), &items) == nil {
-				writeJSON(w, http.StatusOK, map[string]any{"data": items})
-				return
-			}
-		}
-	}
-
-	items, err := h.service.GetFeed(r.Context(), tenantID, "explore", nil, nil, nil, sort, limit, offset)
+	items, err := vkcache.GetOrComputeNative(r.Context(), h.cache, cacheKey, exploreCacheTTL, func(ctx context.Context) ([]FeedItem, error) {
+		return h.service.GetFeed(ctx, tenantID, "explore", nil, nil, nil, sort, limit, offset)
+	})
 	if err != nil {
+		slog.Error("feed: get explore feed failed", "sort", sort, "geo", geoCode, "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to get explore feed")
 		return
-	}
-
-	// Cache the result (fire-and-forget; cache miss is acceptable).
-	if h.cache != nil {
-		if encoded, err := json.Marshal(items); err == nil {
-			_ = h.cache.Do(r.Context(), h.cache.B().Set().Key(cacheKey).Value(string(encoded)).Ex(exploreCacheTTL).Build()).Error()
-		}
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": items})
@@ -209,6 +197,7 @@ func (h *Handlers) GetPrimaryFeed(w http.ResponseWriter, r *http.Request) {
 
 	items, err := h.service.GetFeed(r.Context(), tenantID, "primary", &user.UserID, nil, nil, sort, limit, offset)
 	if err != nil {
+		slog.Error("feed: get primary feed failed", "user_id", user.UserID, "sort", sort, "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to get primary feed")
 		return
 	}
@@ -235,6 +224,7 @@ func (h *Handlers) GetForYouFeed(w http.ResponseWriter, r *http.Request) {
 
 	items, err := h.service.GetForYouFeed(r.Context(), tenantID, user.UserID, sortMode, limit, offset, visitor.FromContext(r.Context()).ContentCountry)
 	if err != nil {
+		slog.Error("feed: get for-you feed failed", "user_id", user.UserID, "sort", sortMode, "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to get For-You feed")
 		return
 	}
@@ -270,6 +260,7 @@ func (h *Handlers) GetSpaceFeed(w http.ResponseWriter, r *http.Request) {
 
 	items, err := h.service.GetFeed(r.Context(), tenantID, "space", nil, &spaceID, nil, sort, limit, offset)
 	if err != nil {
+		slog.Error("feed: get space feed failed", "space_id", spaceID, "sort", sort, "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to get space feed")
 		return
 	}
@@ -303,6 +294,7 @@ func (h *Handlers) GetProfileFeed(w http.ResponseWriter, r *http.Request) {
 
 	items, err := h.service.GetFeed(r.Context(), tenantID, "profile", nil, nil, &authorID, sort, limit, offset)
 	if err != nil {
+		slog.Error("feed: get profile feed failed", "author_id", authorID, "sort", sort, "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to get profile feed")
 		return
 	}

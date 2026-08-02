@@ -50,8 +50,15 @@ export const updateApiKey = (id: string, v: { name?: string; scopes?: string[] }
 export const revokeApiKey = (id: string) => api.delete(`/me/api-keys/${id}`);
 
 /* ---- affiliate ---- */
-export const createAffiliate = (v: { target_url: string; label?: string }) =>
-	api.post('/me/affiliate-links', v);
+// Ref: japaconnect-engineering/sections/56-user-affiliate-program.md.
+// The backend CreateLinkInput expects { product_type, destination_url,
+// description? } — NOT { target_url, label }. The previous mismatch caused
+// every create to 400 with missing_field (BUG-014).
+export const createAffiliate = (v: {
+	product_type: string;
+	destination_url: string;
+	description?: string;
+}) => api.post('/me/affiliate-links', v);
 export const deleteAffiliate = (id: string) => api.delete(`/me/affiliate-links/${id}`);
 
 /* ---- wallet / subscription ---- */

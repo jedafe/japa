@@ -7,10 +7,21 @@
 	import { Share2, MousePointerClick, TrendingUp, Wallet } from 'lucide-svelte';
 	import type { AffiliateEarnings } from '$lib/types';
 
+	// Ref: japaconnect-engineering/sections/56-user-affiliate-program.md.
+	// The backend UserAffiliateLink row returns { id, product_type, code,
+	// description, destination_url, click_count, conversion_count, is_active,
+	// created_at } — NOT { target_url, label }. The previous interface caused
+	// the create form to send the wrong fields (BUG-014) and the list to read
+	// non-existent fields.
 	interface AffiliateLink {
 		id: string;
-		target_url: string;
-		label?: string;
+		product_type: string;
+		code: string;
+		description?: string | null;
+		destination_url: string;
+		click_count?: number;
+		conversion_count?: number;
+		is_active?: boolean;
 		created_at?: string;
 	}
 
@@ -24,15 +35,26 @@
 	let links = $state<AffiliateLink[]>(untrack(() => sectionData.links ?? []));
 	const earnings = $derived(sectionData.earnings ?? null);
 	let newUrl = $state('');
-	let newLabel = $state('');
+	let newDescription = $state('');
+	let newProductType = $state('pro_subscription');
 	let creating = $state(false);
 	let error = $state<string | null>(null);
+
+	const productTypes = [
+		{ value: 'pro_subscription', label: 'Pro Subscription' },
+		{ value: 'course', label: 'Course' },
+		{ value: 'pro_annual', label: 'Pro Annual' }
+	];
 
 	async function doCreate() {
 		if (!newUrl.trim()) return;
 		creating = true;
 		error = null;
-		const res = await createAffiliate({ target_url: newUrl.trim(), label: newLabel.trim() || undefined });
+		const res = await createAffiliate({
+			product_type: newProductType,
+			destination_url: newUrl.trim(),
+			description: newDescription.trim() || undefined
+		});
 		creating = false;
 		if (res.error) {
 			error = res.error.message;
@@ -40,7 +62,7 @@
 		}
 		if (res.data) links = [res.data as AffiliateLink, ...links];
 		newUrl = '';
-		newLabel = '';
+		newDescription = '';
 	}
 
 	async function doDelete(id: string) {
@@ -124,6 +146,18 @@
 
 	<form class="mb-6 space-y-3" onsubmit={(e) => { e.preventDefault(); doCreate(); }}>
 		<label class="block">
+			<span class="mb-1 block text-sm text-[var(--color-muted)]">{t('settings.affiliate.product_type', 'Product type')}</span>
+			<select
+				class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]"
+				value={newProductType}
+				onchange={(e) => (newProductType = e.currentTarget.value)}
+			>
+				{#each productTypes as pt (pt.value)}
+					<option value={pt.value}>{pt.label}</option>
+				{/each}
+			</select>
+		</label>
+		<label class="block">
 			<span class="mb-1 block text-sm text-[var(--color-muted)]">{t('settings.affiliate.url')}</span>
 			<input
 				type="url"
@@ -138,8 +172,8 @@
 			<input
 				type="text"
 				class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]"
-				value={newLabel}
-				oninput={(e) => (newLabel = e.currentTarget.value)}
+				value={newDescription}
+				oninput={(e) => (newDescription = e.currentTarget.value)}
 			/>
 		</label>
 		{#if error}<p class="text-xs text-[var(--color-danger,#dc2626)]">{error}</p>{/if}
@@ -159,8 +193,9 @@
 			{#each links as link (link.id)}
 				<li class="flex items-center justify-between rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3">
 					<div class="min-w-0">
-						<p class="truncate text-sm font-medium text-[var(--color-text)]">{link.label ?? link.target_url}</p>
-						<p class="truncate text-xs text-[var(--color-muted)]">{link.target_url}</p>
+						<p class="truncate text-sm font-medium text-[var(--color-text)]">{link.description ?? link.destination_url}</p>
+						<p class="truncate text-xs text-[var(--color-muted)]">{link.destination_url}</p>
+						<p class="mt-0.5 text-xs text-[var(--color-muted)]">/{link.code} · {link.product_type.replace(/_/g, ' ')}</p>
 					</div>
 					<button
 						type="button"

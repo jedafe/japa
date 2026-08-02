@@ -7,24 +7,31 @@ import { buildContentQuery } from './contentQuery';
  *
  * Ref: japaconnect-engineering/sections/23-main-site-frontend.md (Dashboard hub)
  */
-export const DASHBOARD_LOADERS: Record<string, (ctx: ApiContext) => Promise<unknown>> = {
+export type DashboardLoaderParams = Record<string, string | undefined>;
+
+export const DASHBOARD_LOADERS: Record<string, (ctx: ApiContext, params?: DashboardLoaderParams) => Promise<unknown>> = {
 	overview: async (ctx) => ({
 		analytics: await apiGet<unknown>(ctx, '/me/analytics').catch(() => null),
 		recent: (await apiList<unknown>(ctx, '/me/content?page_size=5')).items,
-		// Phase 18.01 — wallet, unread, follower summary cards.
+		// Phase 18.01 — wallet + unread summary cards. Follower/following
+		// counts come from /me/analytics (total_followers/total_following),
+		// not a separate /me/followers/summary endpoint.
 		wallet: await apiGet<unknown>(ctx, '/me/wallet').catch(() => null),
-		unread: await apiGet<unknown>(ctx, '/me/notifications/unread-count').catch(() => null),
-		followers: await apiGet<unknown>(ctx, '/me/followers/summary').catch(() => null)
+		unread: await apiGet<unknown>(ctx, '/me/notifications/unread-count').catch(() => null)
 	}),
 	analytics: async (ctx) => ({
 		analytics: await apiGet<unknown>(ctx, '/me/analytics').catch(() => null)
 	}),
-	content: async (ctx) => (await apiList<unknown>(ctx, buildContentQuery({}))).items,
+	content: async (ctx, params) => ({
+		items: (await apiList<unknown>(ctx, buildContentQuery({ status: params?.status, type: params?.type }))).items,
+		// Rule 16 — content type options come from the API, not hardcoded.
+		contentTypes: (await apiList<unknown>(ctx, '/content-types').catch(() => ({ items: [] }))).items
+	}),
 	relationships: async (ctx) => ({
-		following: (await apiList<unknown>(ctx, '/me/following')).items,
-		spaces: (await apiList<unknown>(ctx, '/me/spaces')).items,
-		tags: (await apiList<unknown>(ctx, '/me/followed-tags')).items,
-		blocked: (await apiList<unknown>(ctx, '/me/blocked-users')).items
+		following: (await apiList<unknown>(ctx, '/me/following').catch(() => ({ items: [] }))).items,
+		spaces: (await apiList<unknown>(ctx, '/me/spaces').catch(() => ({ items: [] }))).items,
+		tags: (await apiList<unknown>(ctx, '/me/followed-tags').catch(() => ({ items: [] }))).items,
+		blocked: (await apiList<unknown>(ctx, '/me/blocked-users').catch(() => ({ items: [] }))).items
 	}),
 	learning: async (ctx) => (await apiList<unknown>(ctx, '/me/enrollments')).items,
 	certificates: async (ctx) => (await apiList<unknown>(ctx, '/me/certificates')).items,

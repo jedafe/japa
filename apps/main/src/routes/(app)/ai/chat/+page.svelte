@@ -40,7 +40,7 @@
 	<title>{t('ai.chat.title') ?? 'JapaBot Chat'} — JapaConnect</title>
 </svelte:head>
 
-<div class="mx-auto flex h-[calc(100vh-8rem)] max-w-3xl flex-col">
+<div class="mx-auto flex h-[calc(100vh-8rem)] max-w-full flex-col">
 	<header class="mb-4 flex items-center gap-3">
 		<div class="flex h-10 w-10 items-center justify-center rounded-full" style="background-color: var(--color-primary)">
 			<Sparkles class="h-5 w-5 text-white" />

@@ -13,6 +13,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/organizations"
 )
 
 // ModerationItem represents a moderation queue item.
@@ -760,6 +761,10 @@ func (h *Handlers) VerifyOrganization(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to verify organization")
 		return
 	}
+	// Invalidate org cache so the verified status is reflected immediately.
+	if tenantID, ok := requireTenant(w, r); ok {
+		organizations.InvalidateOrgCacheByCmdable(r.Context(), h.Valkey, tenantID)
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": orgID, "verified": true}})
 }
 
@@ -775,6 +780,10 @@ func (h *Handlers) UnverifyOrganization(w http.ResponseWriter, r *http.Request) 
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to unverify organization")
 		return
+	}
+	// Invalidate org cache so the unverified status is reflected immediately.
+	if tenantID, ok := requireTenant(w, r); ok {
+		organizations.InvalidateOrgCacheByCmdable(r.Context(), h.Valkey, tenantID)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": orgID, "verified": false}})
 }

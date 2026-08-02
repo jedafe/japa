@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
-	import { GitCompare, Table, Star, Check, X, ExternalLink } from 'lucide-svelte';
+	import { GitCompare, Table, Star, Check, X } from 'lucide-svelte';
 	import { EmptyState } from '$lib/components/ui';
 	import type { ComparisonMatrixDimensionValue } from '$lib/types';
 	import type { PageData } from './$types';
@@ -11,10 +11,10 @@
 	const comparison = $derived(data.comparison);
 	const matrix = $derived(data.matrix ?? []);
 
-	// Sort items + dimensions by sort_order for stable table rendering.
-	const items = $derived([...comparison.items].sort((a, b) => a.sort_order - b.sort_order));
+	// Sort items + dimensions by position for stable table rendering.
+	const items = $derived([...comparison.items].sort((a, b) => a.position - b.position));
 	const dimensions = $derived(
-		[...comparison.dimensions].sort((a, b) => a.sort_order - b.sort_order)
+		[...comparison.dimensions].sort((a, b) => a.position - b.position)
 	);
 
 	// Index the matrix by item ID for O(1) lookup of a row's dimension values.
@@ -39,16 +39,6 @@
 	const description = $derived(
 		t('compare.detail.description', 'Compare items across multiple dimensions.')
 	);
-
-	const jsonLd = $derived(
-		JSON.stringify({
-			'@context': 'https://schema.org',
-			'@type': 'WebPage',
-			name: t('compare.detail.heading', 'Comparison'),
-			description,
-			url: page.url.href
-		})
-	);
 </script>
 
 <svelte:head>
@@ -58,10 +48,9 @@
 	<meta property="og:description" content={description} />
 	<meta property="og:type" content="website" />
 	<meta property="og:url" content={page.url.href} />
-	{@html `<script type="application/ld+json">${jsonLd}</script>`}
 </svelte:head>
 
-<div class="mx-auto w-full max-w-4xl">
+<div class="mx-auto w-full max-w-full">
 	<!-- Header -->
 	<div class="border-b border-[var(--color-border)] px-4 py-3">
 		<h1 class="flex items-center gap-2 text-lg font-semibold text-[var(--color-text)]">
@@ -101,7 +90,7 @@
 							</th>
 							{#each items as item (item.id)}
 								<th class="p-3 text-left text-sm font-medium text-[var(--color-text)]">
-									{item.label}
+									{item.title}
 								</th>
 							{/each}
 						</tr>
@@ -132,22 +121,8 @@
 											{:else}
 												<span class="text-[var(--color-muted)]">—</span>
 											{/if}
-										{:else if dv.type === 'url'}
-											{#if dv.value}
-												<a
-													href={dv.value}
-													target="_blank"
-													rel="noopener noreferrer"
-													class="inline-flex items-center gap-1 text-[var(--color-primary)] hover:underline"
-												>
-													<ExternalLink size={12} />
-													{t('compare.detail.link', 'Link')}
-												</a>
-											{:else}
-												<span class="text-[var(--color-muted)]">—</span>
-											{/if}
 										{:else}
-											<!-- text, number, list — render the string value -->
+											<!-- text, number, currency — render the string value -->
 											{dv.value ?? '—'}
 										{/if}
 									</td>

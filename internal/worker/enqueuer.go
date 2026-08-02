@@ -119,6 +119,7 @@ var taskTier = func() map[string]string {
 		TypeNotificationDispatchBatch, TypeWebhookDelivery, TypePaymentWebhookProcess,
 		TypeTicketSendConfirmation, TypePushDelivery, TypeDMNotifyRequest, TypeDMNotifyMessage,
 		TypeUniversityProcessEnrollment, TypeUniversitySendInstructorPayout,
+		TypeAffiliateCreditCommission, // BUG-012: financial side effect → critical (§56)
 	} {
 		m[t] = QueueCritical
 	}
@@ -159,7 +160,7 @@ var taskTier = func() map[string]string {
 		TypeDMCleanupDeclinedRequests, TypeCouponTrackEvents,
 		TypeTenantCleanupData,
 		TypeCouponExpireCheck, TypeAffiliateRecordClick,
-		TypeAffiliateCreditCommission, TypeAffiliateExpireCheck,
+		TypeAffiliateExpireCheck,
 		TypeRedirectRecordHit,
 		TypeScheduledPublishSweep, TypeGdprRetentionSweep,
 		TypeUniversityCalculatePeriodPayouts, TypeUniversityFetchLogo,

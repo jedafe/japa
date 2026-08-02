@@ -977,6 +977,9 @@ func (h *Handlers) UpdateContent(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Capture previous status to detect draft→published transitions for fan-out.
+	prevContent, prevErr := h.Service.GetContent(r.Context(), id, tenantID)
+
 	content, err := h.Service.UpdateContent(r.Context(), id, tenantID, user.UserID, updateInput)
 	if err != nil {
 		if errors.Is(err, ErrOrgPostForbidden) {
@@ -1001,6 +1004,12 @@ func (h *Handlers) UpdateContent(w http.ResponseWriter, r *http.Request) {
 	// subject) so mentions that were already notified on create won't produce
 	// duplicate notifications — the existing batch window is extended instead.
 	h.dispatchMentionNotifications(r.Context(), tenantID, user.UserID, content.ID, content.SpaceID, content.Body)
+
+	// Enqueue feed fan-out when content transitions to published (BL-005).
+	// This covers the draft→published path that CreateContent doesn't handle.
+	if prevErr == nil && prevContent.Status != StatusPublished && content.Status == StatusPublished {
+		h.enqueueFeedFanOut(r.Context(), id, tenantID, content.AuthorID, content.SpaceID, content.ContentType)
+	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": content})
 }
@@ -1052,6 +1061,9 @@ func (h *Handlers) PublishContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Capture previous status to detect draft→published transitions for fan-out.
+	prevContent, prevErr := h.Service.GetContent(r.Context(), id, tenantID)
+
 	updated, err := h.Service.UpdateContentStatus(r.Context(), id, tenantID, StatusPublished)
 	if err != nil {
 		handleServiceError(w, err)
@@ -1062,6 +1074,12 @@ func (h *Handlers) PublishContent(w http.ResponseWriter, r *http.Request) {
 	// (Section 55 — fire-and-forget, low tier). The worker handler reads
 	// the affiliate.scan_on_publish system setting; if false, it exits early.
 	h.enqueueAffiliateLinkScan(id, tenantID)
+
+	// Enqueue feed fan-out when content transitions to published (BL-005).
+	// This covers the draft→published path that CreateContent doesn't handle.
+	if prevErr == nil && prevContent.Status != StatusPublished {
+		h.enqueueFeedFanOut(r.Context(), id, tenantID, updated.AuthorID, updated.SpaceID, updated.ContentType)
+	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": updated})
 }

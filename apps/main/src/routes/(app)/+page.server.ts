@@ -30,7 +30,8 @@ export const load: PageServerLoad = async (event) => {
 		try {
 			const { items } = await apiList<FeedItem>(ctx, feedPath(tab, sort, PAGE_SIZE, 0, geo));
 			return { items, tab, sort, authed, pageSize: PAGE_SIZE, loadError: false, landing: null, guestLanding: null };
-		} catch {
+		} catch (e) {
+			console.error('[HOME LOAD ERROR]', tab, sort, e);
 			return { items: [] as FeedItem[], tab, sort, authed, pageSize: PAGE_SIZE, loadError: true, landing: null, guestLanding: null };
 		}
 	}

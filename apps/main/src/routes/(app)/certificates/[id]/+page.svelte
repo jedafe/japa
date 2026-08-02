@@ -21,7 +21,7 @@
 	<meta property="og:url" content={page.url.href} />
 </svelte:head>
 
-<div class="mx-auto w-full max-w-2xl">
+<div class="mx-auto w-full max-w-full">
 	<div class="p-6">
 		<!-- Certificate card -->
 		<section class="overflow-hidden rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)]">

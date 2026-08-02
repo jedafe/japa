@@ -126,6 +126,43 @@ UPDATE user_affiliate_links
 SET is_active = false
 WHERE user_id = @user_id AND is_active = true;
 
+-- name: DeactivateAffiliateLinkAdmin :exec
+-- Admin-scoped link deactivation (Section 56 admin management). Deactivates
+-- by id + tenant_id without an ownership check (the admin has
+-- affiliate.admin.manage). Soft-delete only — the row is retained for audit.
+UPDATE user_affiliate_links
+SET is_active = false
+WHERE id = @id AND tenant_id = @tenant_id;
+
+-- name: ListAffiliateMembersFiltered :many
+-- Admin list with optional status filter (Section 56 / catalog
+-- ?status=active|inactive). Tenant-scoped. NULL status = no filter.
+SELECT user_id, tenant_id, enrolled_at, status, total_clicks,
+    total_conversions, total_earned_credits, payout_method, notes
+FROM affiliate_program_members
+WHERE tenant_id = @tenant_id
+    AND (sqlc.narg(status)::text IS NULL OR status = sqlc.narg(status))
+ORDER BY enrolled_at DESC
+LIMIT @page_limit OFFSET @page_offset;
+
+-- name: ListAllAffiliateLinksFiltered :many
+-- Admin list with optional user_id / product_type / is_active filters
+-- (Section 56 / catalog ?user_id&product_type&status=active|inactive).
+-- Tenant-scoped. Joins users for the admin UI's username column. NULL = no
+-- filter on that dimension.
+SELECT ual.id, ual.tenant_id, ual.user_id, ual.product_type, ual.product_id,
+    ual.code, ual.description, ual.destination_url, ual.click_count,
+    ual.conversion_count, ual.total_earned, ual.is_active, ual.created_at,
+    u.username
+FROM user_affiliate_links ual
+LEFT JOIN users u ON u.id = ual.user_id
+WHERE ual.tenant_id = @tenant_id
+    AND (sqlc.narg(user_id)::uuid IS NULL OR ual.user_id = sqlc.narg(user_id))
+    AND (sqlc.narg(product_type)::text IS NULL OR ual.product_type = sqlc.narg(product_type))
+    AND (sqlc.narg(is_active)::bool IS NULL OR ual.is_active = sqlc.narg(is_active))
+ORDER BY ual.created_at DESC
+LIMIT @page_limit OFFSET @page_offset;
+
 -- =====================
 -- Affiliate Link Events
 -- =====================
@@ -199,11 +236,6 @@ LIMIT @page_limit;
 -- Dedup check (for redirect handler)
 -- =====================
 
--- name: CheckAffiliateLinkExists :one
-SELECT id, code, destination_url, is_active, product_type, product_id, user_id
-FROM user_affiliate_links
-WHERE code = @code;
-
 -- =====================
 -- External Affiliate Commissions (Section 55 — Author Revenue Sharing)
 -- =====================
@@ -249,10 +281,26 @@ WHERE user_id = @user_id AND tenant_id = @tenant_id AND is_active = true
 LIMIT 1;
 
 -- name: GetAffiliateCommissionInfo :one
-SELECT apm.user_id, COALESCE(aps.commission_rates->>'pro_monthly', '0')::int AS commission_rate
+-- Resolves the affiliate member + commission rate for a link code, reading
+-- the rate from system_settings (affiliate.commission.*) per Section 56 —
+-- the single source of truth. Falls back to the catalog defaults (15/20/10)
+-- when a tenant has not configured the rate. pro_subscription maps to the
+-- pro_monthly rate (V1; annual vs monthly distinction is handled at the
+-- payment-purpose layer).
+SELECT apm.user_id, apm.tenant_id, ual.product_type,
+  (CASE ual.product_type
+    WHEN 'course' THEN COALESCE(
+      (SELECT value::numeric FROM system_settings WHERE tenant_id = apm.tenant_id AND key = 'affiliate.commission.course'),
+      10)
+    WHEN 'pro_subscription' THEN COALESCE(
+      (SELECT value::numeric FROM system_settings WHERE tenant_id = apm.tenant_id AND key = 'affiliate.commission.pro_monthly'),
+      15)
+    ELSE COALESCE(
+      (SELECT value::numeric FROM system_settings WHERE tenant_id = apm.tenant_id AND key = 'affiliate.commission.pro_annual'),
+      20)
+  END)::float8 AS commission_rate
 FROM affiliate_program_members apm
 JOIN user_affiliate_links ual ON ual.user_id = apm.user_id
-JOIN affiliate_program_settings aps ON aps.tenant_id = apm.tenant_id
 WHERE ual.code = @code AND apm.status = 'active' AND ual.is_active = true;
 
 -- name: GetAffiliateMemberTenant :one
