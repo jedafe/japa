@@ -18,9 +18,11 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/clientip"
+	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/tenant"
 	"github.com/jedafe/japa/internal/worker"
+	"github.com/valkey-io/valkey-go/valkeycompat"
 )
 
 // TaskEnqueueClient is the interface for enqueueing background tasks.
@@ -28,10 +30,19 @@ type TaskEnqueueClient interface {
 	Enqueue(task *asynq.Task, opts ...asynq.Option) (*asynq.TaskInfo, error)
 }
 
+// CacheClient is the subset of the Valkey (go-redis compatible) API used by
+// the affiliate redirect handler for click dedup (jc:aff_dedup) and the
+// attribution cookie (jc:aff_click). valkeycompat.Cmdable satisfies this.
+type CacheClient interface {
+	SetNX(ctx context.Context, key string, value any, expiration time.Duration) *valkeycompat.BoolCmd
+	Set(ctx context.Context, key string, value any, expiration time.Duration) *valkeycompat.StatusCmd
+}
+
 // Handlers provides HTTP handlers for the affiliate program.
 type Handlers struct {
 	Service     *Service
 	AsynqClient TaskEnqueueClient
+	Cache       CacheClient // jc:aff_dedup + jc:aff_click (Section 56)
 }
 
 // NewHandlers creates a Handlers backed by the given service.
@@ -132,6 +143,10 @@ func handleServiceError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, "too_many_links", err.Error())
 	case errors.Is(err, ErrFeatureDisabled):
 		writeError(w, http.StatusForbidden, "feature_disabled", err.Error())
+	case errors.Is(err, ErrAccountTooNew):
+		writeError(w, http.StatusForbidden, "account_too_new", err.Error())
+	case errors.Is(err, ErrLinkNotActive):
+		writeError(w, http.StatusNotFound, "link_not_active", err.Error())
 	case errors.Is(err, ErrInvalidProductType):
 		writeError(w, http.StatusBadRequest, "invalid_product_type", err.Error())
 	case errors.Is(err, errpkg.ErrRequired):
@@ -324,6 +339,12 @@ func (h *Handlers) GetMyEarnings(w http.ResponseWriter, r *http.Request) {
 // ── Redirect Handler ────────────────────────────────────────────────
 
 // Redirect handles GET /r/:code — public, no auth required.
+//
+// Ref: japaconnect-engineering/sections/56-user-affiliate-program.md
+// (Redirect Endpoint). Click dedup uses Valkey SET NX (jc:aff_dedup) and the
+// attribution cookie is stored in jc:aff_click for the configured
+// affiliate.attribution_window_days window. Click recording is fire-and-forget
+// via the affiliate:record_click Asynq task (Rule 8) — never inline.
 func (h *Handlers) Redirect(w http.ResponseWriter, r *http.Request) {
 	code := chi.URLParam(r, "code")
 
@@ -333,77 +354,103 @@ func (h *Handlers) Redirect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Deduplicate clicks: same IP + user_agent within 1 hour = same click
+	// Deduplicate clicks: same IP within 1 hour = same click.
+	// Uses Valkey SET NX (not GET-then-SET) per Section 56 / Rule 9 spirit.
 	ipHash := sha256Hex(clientip.FromRequest(r))
-	uaHash := sha256Hex(r.Header.Get("User-Agent"))
 
-	// Record click async (fire-and-forget)
 	tenantID := link.TenantID
-	referrer := r.Header.Get("Referer")
-	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		referrerURL := referrer
-		_ = h.Service.RecordClick(ctx, RecordClickInput{
-			LinkID:      link.ID,
-			IPHash:      ipHash,
-			UAHash:      uaHash,
-			ReferrerURL: &referrerURL,
-			TenantID:    tenantID,
-		})
-	}()
 
-	// Enqueue async affiliate click recording task — fire-and-forget.
+	// jc:aff_dedup:{link_id}:{ip_hash}:{hour_bucket} — 1h TTL.
+	dedupKey := fmt.Sprintf("jc:aff_dedup:%s:%s:%s",
+		link.ID.String(), ipHash, time.Now().Format("2006-01-02-15"))
+	if h.Cache != nil {
+		if set, derr := h.Cache.SetNX(r.Context(), dedupKey, "1", time.Hour).Result(); derr == nil && !set {
+			// Duplicate click within the hour — still redirect, but do not
+			// record or overwrite attribution.
+			dest := sanitizeRedirectURL(link.DestinationUrl)
+			http.Redirect(w, r, dest, http.StatusFound)
+			return
+		}
+	}
+
+	// Record click async (fire-and-forget) — affiliate:record_click. The
+	// worker persists the event and increments counters. Never record inline
+	// (BUG-001: previously both an inline goroutine and the Asynq task wrote,
+	// double-counting every click).
 	h.enqueueRecordClick(tenantID, link.ID, "", ipHash)
 
-	// Validate the destination scheme before redirecting to block
-	// javascript:/data: open-redirect vectors (SEC-004).
-	dest := link.DestinationUrl
-	if u, err := url.Parse(dest); err != nil || (u.Scheme != "http" && u.Scheme != "https") {
-		dest = "/"
+	// Store attribution cookie in Valkey so a future purchase by this viewer
+	// can be attributed to this affiliate link (Section 56 Attribution Model).
+	// Only authenticated viewers can be attributed; anonymous visitors have no
+	// stable id to key on in V1.
+	if viewer := auth.FromContext(r.Context()); viewer != nil && viewer.UserID.Valid && h.Cache != nil {
+		productID := "null"
+		if link.ProductID.Valid {
+			productID = link.ProductID.String()
+		}
+		attrKey := fmt.Sprintf("jc:aff_click:%s:%s:%s",
+			viewer.UserID.String(), link.ProductType, productID)
+		ttl := time.Duration(h.Service.AttributionWindowDays(r.Context())) * 24 * time.Hour
+		if ttl <= 0 {
+			ttl = 30 * 24 * time.Hour
+		}
+		if _, aerr := h.Cache.Set(r.Context(), attrKey, link.Code, ttl).Result(); aerr != nil {
+			slog.Warn("affiliate: failed to set attribution key",
+				"key", attrKey, "error", aerr)
+		}
 	}
+
+	dest := sanitizeRedirectURL(link.DestinationUrl)
 	http.Redirect(w, r, dest, http.StatusFound)
+}
+
+// sanitizeRedirectURL validates the destination scheme before redirecting to
+// block javascript:/data: open-redirect vectors (SEC-004). Falls back to "/"
+// for unsafe or unparseable destinations.
+func sanitizeRedirectURL(dest string) string {
+	if u, err := url.Parse(dest); err != nil || (u.Scheme != "http" && u.Scheme != "https") {
+		return "/"
+	}
+	return dest
 }
 
 // ── Admin Routes ────────────────────────────────────────────────────
 
 // ListMembersAdmin handles GET /api/v1/admin/affiliate-program/members
+//
+// Ref: japaconnect-engineering/sections/56-user-affiliate-program.md.
+// Tenant-scoped, paginated, with an optional ?status filter (catalog). Uses
+// the sqlc ListAffiliateMembersFiltered query (no raw SQL, no hardcoded
+// limit). Money is rendered via pgtype.Numeric → string (never float).
 func (h *Handlers) ListMembersAdmin(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
-	rows, err := h.Service.db.Reader.Query(r.Context(),
-		"SELECT apm.user_id, apm.tenant_id, apm.enrolled_at, apm.status, apm.total_clicks, "+
-			"apm.total_conversions, apm.total_earned_credits, apm.payout_method, apm.notes, u.username "+
-			"FROM affiliate_program_members apm "+
-			"LEFT JOIN users u ON u.id = apm.user_id "+
-			"WHERE apm.tenant_id = $1 ORDER BY apm.enrolled_at DESC LIMIT 50", tenantID)
+	page := int32(parseQueryInt(r, "page", 1))
+	pageSize := int32(parseQueryInt(r, "page_size", DefaultPageSize))
+	limit, offset := paginate(page, pageSize)
+
+	var statusFilter *string
+	if s := r.URL.Query().Get("status"); s != "" {
+		statusFilter = &s
+	}
+
+	members, err := h.Service.store.listMembersFiltered(r.Context(), tenantID, statusFilter, limit, offset)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "query_error", "Failed to query members")
 		return
 	}
-	defer rows.Close()
-	var results []map[string]any
-	for rows.Next() {
-		var userID, tid pgtype.UUID
-		var enrolledAt pgtype.Timestamptz
-		var status string
-		var clicks, conversions int32
-		var earnedCredits float64
-		var payoutMethod, notes, username *string
-		if err := rows.Scan(&userID, &tid, &enrolledAt, &status, &clicks,
-			&conversions, &earnedCredits, &payoutMethod, &notes, &username); err != nil {
-			continue
-		}
+	results := make([]map[string]any, 0, len(members))
+	for _, m := range members {
+		username, _ := h.Service.lookupUsername(r.Context(), m.UserID, tenantID)
 		results = append(results, map[string]any{
-			"id": userID.String(), "user_id": userID.String(), "username": username,
-			"status": status, "total_clicks": clicks, "total_conversions": conversions,
-			"total_earned_credits": earnedCredits, "enrolled_at": enrolledAt.Time,
+			"id": m.UserID.String(), "user_id": m.UserID.String(), "username": username,
+			"status": m.Status, "total_clicks": m.TotalClicks,
+			"total_conversions": m.TotalConversions,
+			"total_earned_credits": formatNumeric(m.TotalEarnedCredits),
+			"enrolled_at": m.EnrolledAt.Time,
 		})
-	}
-	if results == nil {
-		results = []map[string]any{}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"data": results})
 }
@@ -438,50 +485,76 @@ func (h *Handlers) UpdateMemberStatusAdmin(w http.ResponseWriter, r *http.Reques
 }
 
 // ListAllLinksAdmin handles GET /api/v1/admin/affiliate-links
+//
+// Ref: japaconnect-engineering/sections/56-user-affiliate-program.md.
+// Tenant-scoped, paginated, with optional ?user_id&product_type&status filters
+// (catalog). Uses the sqlc ListAllAffiliateLinksFiltered query (joins users
+// for the username column). Money is rendered via pgtype.Numeric → string.
 func (h *Handlers) ListAllLinksAdmin(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
-	rows, err := h.Service.db.Reader.Query(r.Context(),
-		"SELECT ual.id, ual.user_id, ual.product_type, ual.code, ual.description, "+
-			"ual.destination_url, ual.click_count, ual.conversion_count, ual.total_earned, "+
-			"ual.is_active, ual.created_at, u.username "+
-			"FROM user_affiliate_links ual "+
-			"LEFT JOIN users u ON u.id = ual.user_id "+
-			"WHERE ual.tenant_id = $1 ORDER BY ual.created_at DESC LIMIT 50", tenantID)
+	page := int32(parseQueryInt(r, "page", 1))
+	pageSize := int32(parseQueryInt(r, "page_size", DefaultPageSize))
+	limit, offset := paginate(page, pageSize)
+
+	params := gen.ListAllAffiliateLinksFilteredParams{
+		TenantID: tenantID, PageLimit: limit, PageOffset: offset,
+	}
+	if uid := r.URL.Query().Get("user_id"); uid != "" {
+		var u pgtype.UUID
+		if err := u.Scan(uid); err == nil {
+			params.UserID = u
+		}
+	}
+	if pt := r.URL.Query().Get("product_type"); pt != "" {
+		params.ProductType = &pt
+	}
+	if st := r.URL.Query().Get("status"); st != "" {
+		isActive := st == "active"
+		params.IsActive = &isActive
+	}
+
+	rows, err := h.Service.store.listAllLinksFiltered(r.Context(), params)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "query_error", "Failed to query links")
 		return
 	}
-	defer rows.Close()
-	var results []map[string]any
-	for rows.Next() {
-		var id, userID pgtype.UUID
-		var productType, code string
-		var description, username *string
-		var destinationURL string
-		var clickCount, conversionCount int32
-		var totalEarned float64
-		var isActive bool
-		var createdAt pgtype.Timestamptz
-		if err := rows.Scan(&id, &userID, &productType, &code, &description,
-			&destinationURL, &clickCount, &conversionCount, &totalEarned,
-			&isActive, &createdAt, &username); err != nil {
-			continue
-		}
+	results := make([]map[string]any, 0, len(rows))
+	for _, row := range rows {
 		results = append(results, map[string]any{
-			"id": id.String(), "user_id": userID.String(), "username": username,
-			"product_type": productType, "code": code, "description": description,
-			"destination_url": destinationURL, "click_count": clickCount,
-			"conversion_count": conversionCount, "total_earned": totalEarned,
-			"is_active": isActive, "created_at": createdAt.Time,
+			"id": row.ID.String(), "user_id": row.UserID.String(), "username": row.Username,
+			"product_type": row.ProductType, "code": row.Code, "description": row.Description,
+			"destination_url": row.DestinationUrl, "click_count": row.ClickCount,
+			"conversion_count": row.ConversionCount,
+			"total_earned": formatNumeric(row.TotalEarned),
+			"is_active": row.IsActive, "created_at": row.CreatedAt.Time,
 		})
 	}
-	if results == nil {
-		results = []map[string]any{}
-	}
 	writeJSON(w, http.StatusOK, map[string]any{"data": results})
+}
+
+// DeleteLinkAdmin handles DELETE /api/v1/admin/affiliate-links/:id
+//
+// Ref: japaconnect-engineering/sections/56-user-affiliate-program.md (admin
+// management). Admin-scoped soft-delete (deactivate) — the row is retained for
+// audit. Guarded by affiliate.admin.manage.
+func (h *Handlers) DeleteLinkAdmin(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+	id, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid link ID")
+		return
+	}
+	if err := h.Service.store.deactivateLinkAdmin(r.Context(), id, tenantID); err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusNoContent, nil)
 }
 
 // ── Internal helpers ────────────────────────────────────────────────
@@ -489,22 +562,6 @@ func (h *Handlers) ListAllLinksAdmin(w http.ResponseWriter, r *http.Request) {
 func sha256Hex(s string) string {
 	h := sha256.Sum256([]byte(s))
 	return hex.EncodeToString(h[:])
-}
-
-func referrerPtr(r *http.Request) *string {
-	ref := r.Referer()
-	if ref == "" {
-		return nil
-	}
-	return &ref
-}
-
-func parseQueryString(r *http.Request, key string) *string {
-	v := r.URL.Query().Get(key)
-	if v == "" {
-		return nil
-	}
-	return &v
 }
 
 // Unused but referenced to avoid compiler errors.
@@ -522,32 +579,49 @@ func (h *Handlers) GetCommissionRates(w http.ResponseWriter, r *http.Request) {
 }
 
 // UpdateCommissionRates handles PATCH /admin/affiliate-program/commission-rates.
+//
+// Ref: japaconnect-engineering/sections/56-user-affiliate-program.md.
+// Commission rates are stored in system_settings (affiliate.commission.*) —
+// the single source of truth. The previous implementation wrote to the
+// affiliate_program_settings JSONB column, which the user-facing
+// GetProgramInfo never read, so admin changes never reached users and the
+// worker credited at a different rate than displayed (BUG-004).
 func (h *Handlers) UpdateCommissionRates(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
-	_ = tenantID
 	var input struct {
-		ProMonthly *int `json:"pro_monthly"`
-		ProAnnual  *int `json:"pro_annual"`
-		Course     *int `json:"course"`
+		ProMonthly *float64 `json:"pro_monthly"`
+		ProAnnual  *float64 `json:"pro_annual"`
+		Course     *float64 `json:"course"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
-	// Commission rates are stored in program settings — update via raw SQL
-	if input.ProMonthly != nil || input.ProAnnual != nil || input.Course != nil {
-		_, _ = h.Service.db.Writer.Exec(r.Context(),
-			`INSERT INTO affiliate_program_settings (tenant_id, commission_rates, updated_at)
-			 VALUES ($1, jsonb_build_object('pro_monthly', COALESCE($2,0), 'pro_annual', COALESCE($3,0), 'course', COALESCE($4,0)), now())
-			 ON CONFLICT (tenant_id) DO UPDATE SET
-			   commission_rates = jsonb_build_object('pro_monthly', COALESCE($2, (affiliate_program_settings.commission_rates->>'pro_monthly')::int),
-			     'pro_annual', COALESCE($3, (affiliate_program_settings.commission_rates->>'pro_annual')::int),
-			     'course', COALESCE($4, (affiliate_program_settings.commission_rates->>'course')::int)),
-			   updated_at = now()`,
-			tenantID, input.ProMonthly, input.ProAnnual, input.Course)
+	if h.Service.settings == nil {
+		writeError(w, http.StatusServiceUnavailable, "settings_unavailable", "Settings provider not configured")
+		return
+	}
+	ctx := r.Context()
+	if input.ProMonthly != nil {
+		if err := h.Service.settings.SetSetting(ctx, tenantID, "affiliate.commission.pro_monthly", strconv.FormatFloat(*input.ProMonthly, 'f', -1, 64)); err != nil {
+			handleServiceError(w, err)
+			return
+		}
+	}
+	if input.ProAnnual != nil {
+		if err := h.Service.settings.SetSetting(ctx, tenantID, "affiliate.commission.pro_annual", strconv.FormatFloat(*input.ProAnnual, 'f', -1, 64)); err != nil {
+			handleServiceError(w, err)
+			return
+		}
+	}
+	if input.Course != nil {
+		if err := h.Service.settings.SetSetting(ctx, tenantID, "affiliate.commission.course", strconv.FormatFloat(*input.Course, 'f', -1, 64)); err != nil {
+			handleServiceError(w, err)
+			return
+		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"updated": true}})
 }

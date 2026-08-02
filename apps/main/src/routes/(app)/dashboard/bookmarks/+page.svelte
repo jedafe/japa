@@ -1,8 +1,9 @@
 <script lang="ts">
 	// Ref: japaconnect-engineering/sections/50-current-user.md (bookmarks)
 	// Lists the user's bookmarks with folder management. The backend returns
-	// thin records (entity_type + entity_id), so the page derives a link per
-	// entity_type and shows the folder + bookmarked date.
+	// bookmark records enriched with the entity's title + slug (joined
+	// server-side per entity_type), so the page shows the bookmarked item's
+	// title and links to its canonical URL.
 	// Folders are managed client-side via POST/PATCH/DELETE /me/bookmark-folders.
 	import { t } from '$lib/i18n';
 	import { api } from '$lib/api/client';
@@ -27,14 +28,16 @@
 	);
 
 	function entityUrl(b: Bookmark): string {
+		// Prefer the slug for content/blog posts (canonical, SEO-friendly URL).
+		const idOrSlug = b.slug || b.entity_id;
 		switch (b.entity_type) {
 			case 'content':
 			case 'blog_post':
-				return `/blog/${b.entity_id}`;
+				return `/blog/${idOrSlug}`;
 			case 'forum_thread':
-				return `/forum/${b.entity_id}`;
+				return `/forum/${idOrSlug}`;
 			case 'space':
-				return `/spaces/${b.entity_id}`;
+				return `/spaces/${idOrSlug}`;
 			case 'comment':
 				return `/content/${b.entity_id}`;
 			default:
@@ -42,9 +45,12 @@
 		}
 	}
 
-	function entityLabel(type: string): string {
-		const key = `bookmarks.type.${type}`;
-		return t(key, type);
+	function entityLabel(b: Bookmark): string {
+		// Show the bookmarked item's title when available; fall back to the
+		// localized type label + short id so the row is never blank.
+		if (b.title) return b.title;
+		const key = `bookmarks.type.${b.entity_type}`;
+		return `${t(key, b.entity_type)} #${b.entity_id.slice(0, 8)}`;
 	}
 
 	async function createFolder() {
@@ -103,7 +109,7 @@
 						type="button"
 						onclick={() => deleteFolder(folder.id)}
 						disabled={deletingFolderId === folder.id}
-						class="shrink-0 rounded p-1 text-[var(--color-muted)] opacity-0 transition-opacity hover:text-red-500 group-hover:opacity-100 disabled:opacity-50"
+						class="shrink-0 rounded p-1 text-[var(--color-muted)] opacity-0 transition-opacity hover:text-[var(--color-danger)] group-hover:opacity-100 disabled:opacity-50"
 						aria-label={t('bookmarks.delete_folder', 'Delete folder')}
 					>
 						{#if deletingFolderId === folder.id}
@@ -152,16 +158,15 @@
 						<li>
 							<a
 								href={entityUrl(b)}
-								class="group flex items-center justify-between gap-3 rounded-[12px] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 transition hover:border-[var(--color-primary)]/40"
+								class="group flex items-center justify-between gap-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 transition hover:border-[var(--color-primary)]/40"
 							>
 								<div class="min-w-0 flex-1">
 									<p class="text-sm font-medium text-[var(--color-text)]">
-										{entityLabel(b.entity_type)}
+										{entityLabel(b)}
 									</p>
 									<p class="mt-0.5 truncate text-xs text-[var(--color-muted)]">
-										#{b.entity_id.slice(0, 8)}
-										{#if b.folder}· {b.folder}{/if}
-										· {new Date(b.created_at).toLocaleDateString()}
+										{#if b.folder}{b.folder} · {/if}
+										{new Date(b.created_at).toLocaleDateString()}
 									</p>
 								</div>
 								<ExternalLink class="h-4 w-4 shrink-0 text-[var(--color-muted)] group-hover:text-[var(--color-primary)]" />

@@ -147,10 +147,11 @@
 			dataLoaded = { ...dataLoaded, leaderboard: true };
 		}
 		async function fetchEvents() {
-			// The events feature is not yet implemented in JEOS; the endpoint
-			// returns 404 until it is. Gracefully degrade to the empty state.
-			const res = await api.get<EventItem[]>(`/events?upcoming=true&limit=${limit}`);
-			events = res.data ?? [];
+			// The events feature is not yet implemented in JEOS (no section or
+			// route catalog entry for /events). Skip the network call to avoid
+			// console 404 errors on every page load; render the empty state
+			// directly. Restore the fetch once the events section is added.
+			events = [];
 			dataLoaded = { ...dataLoaded, upcoming_events: true };
 		}
 

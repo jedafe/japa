@@ -8,6 +8,8 @@ package search
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -19,8 +21,10 @@ import (
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/tenant"
+	vkcache "github.com/jedafe/japa/internal/valkey"
 	"github.com/jedafe/japa/internal/visitor"
 	"github.com/meilisearch/meilisearch-go"
+	"github.com/valkey-io/valkey-go/valkeycompat"
 )
 
 // defaultSearchLimit is the number of results returned per index when the
@@ -29,6 +33,11 @@ const defaultSearchLimit = 20
 
 // maxSearchLimit caps the per-request limit to prevent abuse.
 const maxSearchLimit = 100
+
+// searchCacheTTL is the TTL for jc:cache:search:* keys. Short enough that
+// new content appears quickly, long enough to absorb burst traffic on
+// popular queries (BUG-010).
+const searchCacheTTL = 2 * time.Minute
 
 // indexTypeByUID maps a Meilisearch index UID to the result type label
 // returned in the API response. Only indexes queried by the search endpoint
@@ -56,6 +65,7 @@ type Handlers struct {
 	client   meilisearch.ServiceManager
 	queries  *gen.Queries
 	settings searchSettingsReader
+	cache    valkeycompat.Cmdable // nil disables caching (tests)
 }
 
 // NewHandlers creates Handlers backed by the given Meilisearch client.
@@ -73,6 +83,21 @@ func (h *Handlers) SetQueries(q *gen.Queries) {
 // SetSettings injects the hot-reloadable settings reader (AUDIT-BE-009).
 func (h *Handlers) SetSettings(s searchSettingsReader) {
 	h.settings = s
+}
+
+// SetCache injects a Valkey client for read-through search result caching
+// (jc:cache:search:* per valkey-keys-catalog.md). nil disables caching.
+func (h *Handlers) SetCache(c valkeycompat.Cmdable) {
+	h.cache = c
+}
+
+// searchCacheKey builds jc:cache:search:{tenant_id}:{query_hash}:{type}:{limit}.
+// The query is SHA-256 hashed to keep keys short and avoid storing raw user
+// input in Valkey keys.
+func searchCacheKey(tenantID pgtype.UUID, query, typeFilter string, limit int) string {
+	h := sha256.Sum256([]byte(query))
+	queryHash := hex.EncodeToString(h[:16]) // 32-char hex, enough for uniqueness
+	return fmt.Sprintf("jc:cache:search:%s:%s:%s:%d", tenantID.String(), queryHash, typeFilter, limit)
 }
 
 // SearchResult represents a single search result.
@@ -149,7 +174,16 @@ func (h *Handlers) Search(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	results, err := h.runMultiSearchFiltered(r.Context(), query, limit, t.ID, typeFilter, geoCountry)
+	// Read-through Valkey cache (jc:cache:search:*, BUG-010). The cache key
+	// includes the tenant, query hash, type filter, and limit so identical
+	// queries from the same tenant are served from cache. Uses distributed
+	// lock stampede protection (BUG-008) to prevent thundering herd on
+	// popular queries.
+	cacheKey := searchCacheKey(t.ID, query, typeFilter, limit)
+
+	results, err := vkcache.GetOrComputeCompat(r.Context(), h.cache, cacheKey, searchCacheTTL, func(ctx context.Context) ([]SearchResult, error) {
+		return h.runMultiSearchFiltered(ctx, query, limit, t.ID, typeFilter, geoCountry)
+	})
 	if err != nil {
 		slog.Warn("search query failed", "query", query, "error", err)
 		writeError(w, http.StatusServiceUnavailable, "search_unavailable", "Search is temporarily unavailable")

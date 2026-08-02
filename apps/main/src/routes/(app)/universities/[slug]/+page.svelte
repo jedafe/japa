@@ -85,7 +85,7 @@
 	{@html `<script type="application/ld+json">${jsonLd}</script>`}
 </svelte:head>
 
-<div class="mx-auto w-full max-w-2xl">
+<div class="mx-auto w-full max-w-full">
 	<!-- University header -->
 	<div class="border-b border-[var(--color-border)] px-4 py-4">
 		<a

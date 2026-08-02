@@ -20,10 +20,10 @@
 	const canManage = $derived(hasPermission('custom_fields.group.create'));
 
 	const columns = [
-		{ key: 'value', label: 'Value', sortable: true },
-		{ key: 'label', label: 'Label', sortable: true },
-		{ key: 'sort_order', label: 'Sort Order', sortable: true },
-		{ key: 'is_system', label: 'System', sortable: true },
+		{ key: 'value', label: t('fieldGroups.option_value'), sortable: true },
+		{ key: 'label', label: t('fieldGroups.label'), sortable: true },
+		{ key: 'sort_order', label: t('fieldGroups.sort_order'), sortable: true },
+		{ key: 'is_system', label: t('fieldGroups.system'), sortable: true },
 		{ key: 'actions', label: t('common.actions'), class: 'w-24' }
 	];
 
@@ -125,9 +125,9 @@
 <div class="space-y-6">
 	<div class="flex items-center justify-between">
 		<div>
-			<h1 class="text-2xl font-bold" style="color: var(--color-foreground)">Entity Types</h1>
+			<h1 class="text-2xl font-bold" style="color: var(--color-foreground)">{t('fieldGroups.entity_types')}</h1>
 			<p class="mt-1 text-sm" style="color: var(--color-muted)">
-				Manage the entity types that custom field groups can be assigned to.
+				{t('fieldGroups.entity_types_desc')}
 			</p>
 		</div>
 		{#if canManage}
@@ -168,7 +168,7 @@
 							<td class="px-4 py-3" style="color: var(--color-foreground)">{et.sort_order}</td>
 							<td class="px-4 py-3">
 								{#if et.is_system}
-									<span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium" style="background-color: var(--color-primary-muted); color: var(--color-primary)">System</span>
+									<span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium" style="background-color: var(--color-primary-muted); color: var(--color-primary)">{t('fieldGroups.system')}</span>
 								{:else}
 									<span class="text-xs" style="color: var(--color-muted)">—</span>
 								{/if}
@@ -191,7 +191,7 @@
 					{:else}
 						<tr class="border-t" style="border-color: var(--color-border)">
 							<td colspan={columns.length} class="px-4 py-8 text-center" style="color: var(--color-muted)">
-								No entity types found.
+								{t('fieldGroups.no_entity_types')}
 							</td>
 						</tr>
 					{/each}
@@ -205,33 +205,33 @@
 	<div class="space-y-4">
 		{#if !editingType}
 			<div>
-				<label for="et-value" class="mb-1 block text-sm font-medium">Value</label>
+				<label for="et-value" class="mb-1 block text-sm font-medium">{t('fieldGroups.option_value')}</label>
 				<input
 					id="et-value"
 					type="text"
 					bind:value
-					placeholder="e.g. event, project, course"
+					placeholder={t('fieldGroups.value_placeholder')}
 					required
 					class="w-full rounded-lg border px-3 py-2 text-sm"
 					style="border-color: var(--color-border); background-color: var(--color-background); color: var(--color-foreground)"
 				/>
-				<p class="mt-1 text-xs" style="color: var(--color-muted)">Machine-readable token (snake_case). Cannot be changed after creation.</p>
+				<p class="mt-1 text-xs" style="color: var(--color-muted)">{t('fieldGroups.value_help')}</p>
 			</div>
 		{/if}
 		<div>
-			<label for="et-label" class="mb-1 block text-sm font-medium">Label</label>
+			<label for="et-label" class="mb-1 block text-sm font-medium">{t('fieldGroups.label')}</label>
 			<input
 				id="et-label"
 				type="text"
 				bind:value={label}
-				placeholder="e.g. Event, Project, Course"
+				placeholder={t('fieldGroups.label_placeholder_et')}
 				required
 				class="w-full rounded-lg border px-3 py-2 text-sm"
 				style="border-color: var(--color-border); background-color: var(--color-background); color: var(--color-foreground)"
 			/>
 		</div>
 		<div>
-			<label for="et-sort" class="mb-1 block text-sm font-medium">Sort Order</label>
+			<label for="et-sort" class="mb-1 block text-sm font-medium">{t('fieldGroups.sort_order')}</label>
 			<input
 				id="et-sort"
 				type="number"
@@ -247,8 +247,8 @@
 	</div>
 </Modal>
 
-<Modal bind:open={showDeleteConfirm} title="Delete Entity Type" confirmLabel={t('common.delete')} onConfirm={executeDelete}>
+<Modal bind:open={showDeleteConfirm} title={t('fieldGroups.delete_entity_type')} confirmLabel={t('common.delete')} onConfirm={executeDelete}>
 	<p class="text-sm" style="color: var(--color-muted)">
-		Delete <strong>{deleteTarget?.label}</strong>? Field groups assigned to this entity type will remain but will no longer appear in the entity type dropdown.
+		{t('common.delete')} <strong>{deleteTarget?.label}</strong>? {t('fieldGroups.delete_entity_type_confirm')}
 	</p>
 </Modal>

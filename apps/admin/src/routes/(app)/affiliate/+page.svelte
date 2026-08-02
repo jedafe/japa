@@ -132,7 +132,14 @@
 		{ value: 'false', label: t('affiliate.pending', 'Pending') }
 	]);
 
-	const canManageAffiliate = $derived(hasPermission('affiliate.manage'));
+	// Ref: japaconnect-engineering/sections/56-user-affiliate-program.md (RBAC).
+	// The legacy affiliate.manage node is not the gate for any affiliate
+	// admin route — provider CRUD requires affiliate.providers.manage and
+	// program/member management requires affiliate.admin.manage. Using the
+	// wrong node showed buttons that 403'd on click (BUG-008/017).
+	const canManageProviders = $derived(hasPermission('affiliate.providers.manage'));
+	const canManageProgram = $derived(hasPermission('affiliate.admin.manage'));
+	const canViewAffiliate = $derived(hasPermission('affiliate.admin.view'));
 
 	// Delete provider confirm
 	let showDeleteProviderConfirm = $state(false);
@@ -566,7 +573,7 @@
 <PageHeader
 	title={t('affiliate.title')}
 	description={t('affiliate.description')}
-	actions={activeTab === 'providers' && canManageAffiliate
+	actions={activeTab === 'providers' && canManageProviders
 		? [{ label: t('affiliate.add_provider'), icon: Plus, onclick: () => showCreateModal = true }]
 		: []}
 />
@@ -818,7 +825,7 @@
 <!-- ProviderActionsCell component -->
 {#snippet ProviderActionsCell({ value, row }: { value: any; row: AffiliateProvider })}
 	<div class="flex items-center gap-1">
-		{#if canManageAffiliate}
+		{#if canManageProviders}
 			<Button variant="ghost" size="sm" onclick={() => confirmDeleteProvider(row)} style="color: var(--color-danger)" title={t('common.delete')}>
 				<Trash2 class="h-3.5 w-3.5" />
 			</Button>
@@ -829,7 +836,7 @@
 <!-- MemberActionsCell component -->
 {#snippet MemberActionsCell({ value, row }: { value: any; row: AffiliateMember })}
 	<div class="flex items-center gap-1">
-		{#if canManageAffiliate}
+		{#if canManageProgram}
 			<Button variant="ghost" size="sm" onclick={() => confirmMemberStatus(row, row.status === 'active' ? 'suspended' : 'active')} style={row.status === 'active' ? 'color: var(--color-danger)' : 'color: var(--color-success)'} title={row.status === 'active' ? t('common.suspend') : t('common.activate')}>
 				{row.status === 'active' ? t('common.suspend') : t('common.activate')}
 			</Button>

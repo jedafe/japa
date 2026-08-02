@@ -67,6 +67,7 @@ FROM dm_messages dm
 JOIN users u ON u.id = dm.sender_id
 LEFT JOIN user_profiles p ON p.user_id = u.id AND p.tenant_id = @tenant_id
 WHERE dm.conversation_id = @conversation_id AND dm.tenant_id = @tenant_id
+  AND dm.deleted_at IS NULL
 ORDER BY dm.created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 
@@ -77,10 +78,10 @@ WHERE conversation_id = @conversation_id AND tenant_id = @tenant_id
 
 -- name: UpdateConversationLastMessage :exec
 UPDATE dm_conversations
-SET last_message_at = @last_message_at,
+SET last_message_at = now(),
     last_message_preview = @last_message_preview,
     updated_at = now()
-WHERE id = @conversation_id;
+WHERE id = @conversation_id AND tenant_id = @tenant_id;
 
 -- name: IncrementUnreadCount :exec
 UPDATE dm_conversations
@@ -95,18 +96,16 @@ SET p1_unread_count = CASE WHEN participant_1_id = @user_id THEN 0 ELSE p1_unrea
 WHERE id = @conversation_id;
 
 -- name: GetMessageRequest :one
-SELECT * FROM dm_requests WHERE conversation_id = @conversation_id;
+SELECT * FROM dm_requests WHERE conversation_id = @conversation_id AND tenant_id = @tenant_id;
 
 -- name: CreateMessageRequest :exec
 INSERT INTO dm_requests (tenant_id, requester_id, recipient_id, conversation_id, preview_message, status)
-SELECT @tenant_id, dc.participant_1_id, dc.participant_2_id, dc.id, @preview_message, 'pending'
-FROM dm_conversations dc
-WHERE dc.id = @conversation_id
+VALUES (@tenant_id, @requester_id, @recipient_id, @conversation_id, @preview_message, 'pending')
 ON CONFLICT (requester_id, recipient_id) DO NOTHING;
 
 -- name: UpdateMessageRequestStatus :exec
 UPDATE dm_requests SET status = @status, resolved_at = now()
-WHERE conversation_id = @conversation_id;
+WHERE conversation_id = @conversation_id AND tenant_id = @tenant_id;
 
 -- name: GetPendingMessageRequests :many
 -- Lists pending DM requests for a recipient (BUG-003). Filters by

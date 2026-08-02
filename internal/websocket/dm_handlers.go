@@ -104,8 +104,9 @@ func (h *Handlers) ListConversations(w http.ResponseWriter, r *http.Request) {
 
 // InitiateConversation handles POST /api/v1/dm/conversations.
 //
-// Creates or retrieves a conversation with the specified recipient.
-// Checks blocks and DM privacy settings per Section 48.
+// Creates or retrieves a conversation with the specified recipient and
+// sends the initial message. Checks blocks and DM privacy settings per
+// Section 48. Body: { recipient_id, message }.
 func (h *Handlers) InitiateConversation(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUserFromContext(r)
 	if !ok {
@@ -120,6 +121,7 @@ func (h *Handlers) InitiateConversation(w http.ResponseWriter, r *http.Request) 
 
 	var req struct {
 		RecipientID string `json:"recipient_id"`
+		Message     string `json:"message"`
 	}
 
 	if err := parseJSONBody(r, &req); err != nil {
@@ -129,6 +131,11 @@ func (h *Handlers) InitiateConversation(w http.ResponseWriter, r *http.Request) 
 
 	if req.RecipientID == "" {
 		writeError(w, http.StatusBadRequest, "missing_recipient_id", "recipient_id is required")
+		return
+	}
+
+	if req.Message == "" {
+		writeError(w, http.StatusBadRequest, "missing_message", "message is required")
 		return
 	}
 
@@ -153,6 +160,13 @@ func (h *Handlers) InitiateConversation(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to initiate conversation")
+		return
+	}
+
+	// Send the initial message (BUG-003: previously the handler created a
+	// conversation but never sent the first message).
+	if err := h.dmService.SendMessage(r.Context(), tenantID, result.Conversation.ID, user.UserID, req.Message); err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to send initial message")
 		return
 	}
 
@@ -378,6 +392,29 @@ func (h *Handlers) BlockMessageRequest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "ok"}})
+}
+
+// GetDMPrivacy handles GET /api/v1/dm/privacy.
+// Returns the current user's DM privacy setting.
+func (h *Handlers) GetDMPrivacy(w http.ResponseWriter, r *http.Request) {
+	user, ok := requireUserFromContext(r)
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		return
+	}
+
+	tenantID, ok := requireTenantFromContext(w, r)
+	if !ok {
+		return
+	}
+
+	privacy, err := h.dmService.GetDMPrivacy(r.Context(), tenantID, user.UserID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to get DM privacy")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": DMPrivacyResult{Privacy: privacy}})
 }
 
 // UpdateDMPrivacy handles PUT /api/v1/dm/privacy.

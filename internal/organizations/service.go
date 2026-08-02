@@ -141,6 +141,7 @@ func (s *Service) CreateOrganization(ctx context.Context, tenantID, userID pgtyp
 		return gen.Organization{}, fmt.Errorf("incrementing member count: %w", err)
 	}
 
+	s.InvalidateOrgCache(ctx, tenantID)
 	return org, nil
 }
 
@@ -218,7 +219,7 @@ func (s *Service) UpdateOrganization(ctx context.Context, id, tenantID, userID p
 		return fmt.Errorf("%w: insufficient permissions", errpkg.ErrForbidden)
 	}
 
-	return s.store.UpdateOrganization(ctx, gen.UpdateOrganizationParams{
+	if err := s.store.UpdateOrganization(ctx, gen.UpdateOrganizationParams{
 		ID:          id,
 		TenantID:    tenantID,
 		Name:        input.Name,
@@ -227,7 +228,11 @@ func (s *Service) UpdateOrganization(ctx context.Context, id, tenantID, userID p
 		WebsiteUrl:  strPtr(input.WebsiteURL),
 		CountryCode: strPtr(input.CountryCode),
 		OrgType:     input.OrgType,
-	})
+	}); err != nil {
+		return err
+	}
+	s.InvalidateOrgCache(ctx, tenantID)
+	return nil
 }
 
 // DeleteOrganization soft-deletes an organization. Only owner can delete.
@@ -241,7 +246,11 @@ func (s *Service) DeleteOrganization(ctx context.Context, id, tenantID, userID p
 		return fmt.Errorf("%w: only the owner can delete an organization", errpkg.ErrForbidden)
 	}
 
-	return s.store.SoftDeleteOrganization(ctx, id, tenantID)
+	if err := s.store.SoftDeleteOrganization(ctx, id, tenantID); err != nil {
+		return err
+	}
+	s.InvalidateOrgCache(ctx, tenantID)
+	return nil
 }
 
 // InviteMember invites a user to the organization. Only owner or admin can invite.
@@ -458,8 +467,11 @@ func (s *Service) ActiveOrgExists(ctx context.Context, tenantID, id pgtype.UUID)
 }
 
 // GetPublicOrganizationBySlug returns an active org for the public profile header.
+// Uses read-through Valkey cache (jc:org:profile:{tenant_id}:{slug}) when
+// a Valkey client is configured; falls back to direct DB on cache miss or
+// when caching is disabled.
 func (s *Service) GetPublicOrganizationBySlug(ctx context.Context, slug string, tenantID pgtype.UUID) (gen.Organization, error) {
-	return s.store.GetPublicOrganizationBySlug(ctx, slug, tenantID)
+	return s.getOrSetOrgProfile(ctx, tenantID, slug)
 }
 
 // ListPublicMembers returns the org's ACTIVE members for the public Members tab.
@@ -473,15 +485,7 @@ func (s *Service) ListPublicMembers(ctx context.Context, orgID, tenantID pgtype.
 // only). By default the handler passes verified="true" to preserve the original
 // behavior of only showing verified orgs.
 func (s *Service) ListPublicOrganizations(ctx context.Context, tenantID pgtype.UUID, search, orgType, verified string, limit, offset int32) ([]gen.ListPublicOrganizationsRow, int64, error) {
-	rows, err := s.store.ListPublicOrganizations(ctx, tenantID, search, orgType, verified, limit, offset)
-	if err != nil {
-		return nil, 0, err
-	}
-	total, err := s.store.CountPublicOrganizations(ctx, tenantID, search, orgType, verified)
-	if err != nil {
-		return nil, 0, err
-	}
-	return rows, total, nil
+	return s.getOrSetOrgList(ctx, tenantID, search, orgType, verified, limit, offset)
 }
 
 func strPtr(s string) *string {
@@ -537,7 +541,7 @@ func (s *Service) AdminUpdateOrganization(ctx context.Context, id, tenantID pgty
 	if err := validateOrgType(input.OrgType); err != nil {
 		return err
 	}
-	return s.store.UpdateOrganization(ctx, gen.UpdateOrganizationParams{
+	if err := s.store.UpdateOrganization(ctx, gen.UpdateOrganizationParams{
 		ID:          id,
 		TenantID:    tenantID,
 		Name:        input.Name,
@@ -546,12 +550,20 @@ func (s *Service) AdminUpdateOrganization(ctx context.Context, id, tenantID pgty
 		WebsiteUrl:  strPtr(input.WebsiteURL),
 		CountryCode: strPtr(input.CountryCode),
 		OrgType:     input.OrgType,
-	})
+	}); err != nil {
+		return err
+	}
+	s.InvalidateOrgCache(ctx, tenantID)
+	return nil
 }
 
 // AdminDeleteOrganization soft-deletes an organisation without checking ownership.
 func (s *Service) AdminDeleteOrganization(ctx context.Context, id, tenantID pgtype.UUID) error {
-	return s.store.SoftDeleteOrganization(ctx, id, tenantID)
+	if err := s.store.SoftDeleteOrganization(ctx, id, tenantID); err != nil {
+		return err
+	}
+	s.InvalidateOrgCache(ctx, tenantID)
+	return nil
 }
 
 // AdminListMembers lists members of an organisation (no membership check).

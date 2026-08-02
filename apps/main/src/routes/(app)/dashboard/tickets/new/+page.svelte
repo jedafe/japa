@@ -71,12 +71,12 @@
 	</header>
 
 	{#if errorKey}
-		<p class="rounded-[var(--radius)] bg-red-500/10 px-3 py-2 text-sm text-red-500" role="alert">
+		<p class="rounded-[var(--radius)] bg-[var(--color-danger)]/10 px-3 py-2 text-sm text-[var(--color-danger)]" role="alert">
 			{t(errorKey)}
 		</p>
 	{/if}
 
-	<form onsubmit={submit} class="space-y-4 rounded-[12px] border border-[var(--color-border)] bg-[var(--color-surface)] p-5" novalidate>
+	<form onsubmit={submit} class="space-y-4 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5" novalidate>
 		{#if types.length > 0}
 			<div class="flex flex-col gap-1.5">
 				<label for="ticket-type" class="text-sm font-medium text-[var(--color-text)]">
@@ -209,7 +209,7 @@
 				disabled={loading}
 				class="rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-white transition hover:opacity-90 disabled:opacity-50"
 			>
-				{loading ? '...' : t('tickets.submit')}
+				{loading ? t('common.loading') : t('tickets.submit')}
 			</button>
 		</div>
 	</form>

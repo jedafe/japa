@@ -120,7 +120,7 @@
 </SetSidebar>
 
 <!-- Center column: tag header + content grid -->
-<div class="mx-auto w-full max-w-4xl">
+<div class="mx-auto w-full max-w-full">
 	<div class="border-b border-[var(--color-border)] px-4 py-4">
 		<a
 			href="/discover?tab=tags"

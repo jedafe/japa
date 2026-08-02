@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
-	import { Bookmark, MessageCircle, Share2, Heart, Check } from 'lucide-svelte';
+	import { Bookmark, Heart, MessageCircle, Share2, Check } from 'lucide-svelte';
 	import { t } from '$lib/i18n';
 	import { api } from '$lib/api/client';
 	import { goto } from '$app/navigation';
@@ -224,52 +224,34 @@
 
 <!-- ADR-058 Exception #1: borderless, transparent vertical strip in the article's LEFT margin.
      Must read as distinct from the bordered 72px nav — separated by a clear gap. -->
-<div class="sticky top-24 flex flex-col items-center gap-4 py-4">
-	<!-- Render admin-configured reaction types (Section 14 — fetched from
-	     GET /reaction-types, not hardcoded). Falls back to 'like' with
-	     Heart icon when the API returns no types. -->
-	{#if reactionTypes.length > 0}
-		{#each reactionTypes as rt (rt.key)}
-			<button
-				type="button"
-				onclick={() => toggleReaction(rt.key)}
-				class="flex flex-col items-center gap-1 transition-colors"
-				aria-label={rt.label}
-				aria-pressed={activeReactions.has(rt.key)}
-				disabled={reactionPending !== null}
-			>
-				<span class="grid h-10 w-10 place-items-center rounded-full transition-colors {activeReactions.has(rt.key) ? 'bg-[var(--color-primary)]/10 text-[var(--color-primary)]' : 'text-[var(--color-text-subtle)] hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-primary)]'}">
-					<span class="text-xl" aria-hidden="true">{rt.emoji}</span>
-				</span>
-				<span class="text-xs font-medium text-[var(--color-text-subtle)] [font-variant-numeric:tabular-nums]">{reactionCounts[rt.key] ?? 0}</span>
-			</button>
-		{/each}
-	{:else}
-		<button
-			type="button"
-			onclick={() => toggleReaction('like')}
-			class="flex flex-col items-center gap-1 transition-colors"
-			aria-label={t('blog.react', 'React')}
-			aria-pressed={activeReactions.has('like')}
-			disabled={reactionPending !== null}
-		>
-			<span class="grid h-10 w-10 place-items-center rounded-full transition-colors {activeReactions.has('like') ? 'bg-[var(--color-primary)]/10 text-[var(--color-primary)]' : 'text-[var(--color-text-subtle)] hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-primary)]'}">
-				<Heart size={20} fill={activeReactions.has('like') ? 'currentColor' : 'none'} />
-			</span>
-			<span class="text-xs font-medium text-[var(--color-text-subtle)] [font-variant-numeric:tabular-nums]">{reactionCounts['like'] ?? voteScore}</span>
-		</button>
-	{/if}
+<div class="sticky top-24 flex flex-col items-center gap-1.5 py-4">
+	<button
+		type="button"
+		onclick={() => toggleReaction('like')}
+		class="flex flex-col items-center gap-1 transition-colors"
+		aria-label={t('blog.react', 'React')}
+		aria-pressed={activeReactions.has('like')}
+		disabled={reactionPending !== null}
+	>
+		<span class="grid h-9 w-9 place-items-center rounded-full transition-colors {activeReactions.has('like') ? 'bg-[var(--color-primary)]/10 text-[var(--color-primary)]' : 'text-[var(--color-text-subtle)] hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-primary)]'}">
+			<Heart size={18} fill={activeReactions.has('like') ? 'currentColor' : 'none'} />
+		</span>
+		<span class="text-[11px] font-medium text-[var(--color-text-subtle)] [font-variant-numeric:tabular-nums]">{reactionCounts['like'] ?? voteScore}</span>
+	</button>
 
 	<a
 		href="#comments"
 		class="flex flex-col items-center gap-1 text-[var(--color-text-subtle)] transition-colors hover:text-[var(--color-text)]"
 		aria-label={t('blog.comments', 'Comments')}
 	>
-		<span class="grid h-10 w-10 place-items-center rounded-full hover:bg-[var(--color-surface-subtle)]">
-			<MessageCircle size={20} />
+		<span class="grid h-9 w-9 place-items-center rounded-full hover:bg-[var(--color-surface-subtle)]">
+			<MessageCircle size={18} />
 		</span>
-		<span class="text-xs font-medium [font-variant-numeric:tabular-nums]">{commentCount}</span>
+		<span class="text-[11px] font-medium [font-variant-numeric:tabular-nums]">{commentCount}</span>
 	</a>
+
+	<!-- Subtle separator between content actions and utility actions -->
+	<div class="my-1 h-px w-5 bg-[var(--color-border)]"></div>
 
 	<button
 		type="button"
@@ -278,8 +260,8 @@
 		aria-label={t('blog.bookmark', 'Bookmark')}
 		aria-pressed={isBookmarked}
 	>
-		<span class="grid h-10 w-10 place-items-center rounded-full transition-colors {isBookmarked ? 'bg-[var(--color-primary)]/10 text-[var(--color-primary)]' : 'text-[var(--color-text-subtle)] hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-text)]'}">
-			<Bookmark size={20} fill={isBookmarked ? 'currentColor' : 'none'} />
+		<span class="grid h-9 w-9 place-items-center rounded-full transition-colors {isBookmarked ? 'bg-[var(--color-primary)]/10 text-[var(--color-primary)]' : 'text-[var(--color-text-subtle)] hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-text)]'}">
+			<Bookmark size={18} fill={isBookmarked ? 'currentColor' : 'none'} />
 		</span>
 	</button>
 
@@ -292,11 +274,11 @@
 			aria-label={t('blog.share', 'Share')}
 			aria-expanded={showShareMenu}
 		>
-			<span class="grid h-10 w-10 place-items-center rounded-full transition-colors hover:bg-[var(--color-surface-subtle)]">
+			<span class="grid h-9 w-9 place-items-center rounded-full transition-colors hover:bg-[var(--color-surface-subtle)]">
 				{#if shared}
-					<Check size={20} class="text-[var(--color-success)]" />
+					<Check size={18} class="text-[var(--color-success)]" />
 				{:else}
-					<Share2 size={20} />
+					<Share2 size={18} />
 				{/if}
 			</span>
 		</button>

@@ -7,6 +7,7 @@
 package trending
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -20,6 +21,7 @@ import (
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/tenant"
+	vkcache "github.com/jedafe/japa/internal/valkey"
 	"github.com/jedafe/japa/internal/visitor"
 	"github.com/valkey-io/valkey-go"
 )
@@ -205,61 +207,52 @@ func (h *Handlers) GetTrendingContent(w http.ResponseWriter, r *http.Request) {
 
 	// Try Valkey cache (jc:trending:content:{tenant}:{geo}:{window}, Section 53, TTL 30min).
 	// Include content_type in the cache key when filtering.
+	// Uses distributed lock stampede protection (BUG-008).
 	tenantStr := tenantID.String()
 	cacheKey := fmt.Sprintf("jc:trending:content:%s:%s:%s", tenantStr, geoCode, window)
 	if contentType != nil {
 		cacheKey += ":" + *contentType
 	}
-	if h.cache != nil {
-		if cached, err := h.cache.Do(r.Context(), h.cache.B().Get().Key(cacheKey).Build()).ToString(); err == nil {
-			var data []gen.GetTrendingContentRow
-			if json.Unmarshal([]byte(cached), &data) == nil {
-				writeJSON(w, http.StatusOK, map[string]any{"data": data})
-				return
+
+	data, err := vkcache.GetOrComputeNative(r.Context(), h.cache, cacheKey, trendingCacheTTL, func(ctx context.Context) ([]gen.GetTrendingContentRow, error) {
+		// Fetch a larger pool when filtering by type, then filter in Go.
+		fetchLimit := limit
+		if contentType != nil {
+			fetchLimit = maxLimit // fetch max, filter, then truncate
+		}
+
+		rows, err := h.Store.GetTrendingContent(ctx, tenantID, window, geoCode, fetchLimit)
+		if err != nil {
+			return nil, err
+		}
+
+		// Apply content_type filter in Go (BUG-007).
+		if contentType != nil {
+			filtered := make([]gen.GetTrendingContentRow, 0, len(rows))
+			for _, item := range rows {
+				if item.ContentType == *contentType {
+					filtered = append(filtered, item)
+				}
+			}
+			rows = filtered
+			if int32(len(rows)) > limit {
+				rows = rows[:limit]
 			}
 		}
-	}
 
-	// Fetch a larger pool when filtering by type, then filter in Go.
-	fetchLimit := limit
-	if contentType != nil {
-		fetchLimit = maxLimit // fetch max, filter, then truncate
-	}
-
-	data, err := h.Store.GetTrendingContent(r.Context(), tenantID, window, geoCode, fetchLimit)
+		return rows, nil
+	})
 	if err != nil {
 		handleServiceError(w, err)
 		return
-	}
-
-	// Apply content_type filter in Go (BUG-007).
-	if contentType != nil {
-		filtered := make([]gen.GetTrendingContentRow, 0, len(data))
-		for _, item := range data {
-			if item.ContentType == *contentType {
-				filtered = append(filtered, item)
-			}
-		}
-		data = filtered
-		if int32(len(data)) > limit {
-			data = data[:limit]
-		}
-	}
-
-	// Cache the result (fire-and-forget; cache miss is acceptable).
-	if h.cache != nil {
-		if encoded, err := json.Marshal(data); err == nil {
-			_ = h.cache.Do(r.Context(), h.cache.B().Set().Key(cacheKey).Value(string(encoded)).Ex(trendingCacheTTL).Build()).Error()
-		}
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": data})
 }
 
 // GetTrendingTags handles GET /api/v1/trending/tags.
-// BUG-013: uses a short Valkey lock (SET NX EX 5s) on cache miss to prevent
-// cache stampede — concurrent requests wait for the lock holder to populate
-// the cache rather than all hitting the DB simultaneously.
+// Uses distributed lock stampede protection (BUG-008/BUG-013) via the
+// shared vkcache.GetOrComputeNative helper.
 func (h *Handlers) GetTrendingTags(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -270,54 +263,16 @@ func (h *Handlers) GetTrendingTags(w http.ResponseWriter, r *http.Request) {
 	geoCode := parseGeoCode(r)
 	limit := parseLimit(r)
 
-	// Try Valkey cache first (jc:trending:tags:{tenant}:{geo}, Section 53, TTL 30min).
+	// Valkey cache (jc:trending:tags:{tenant}:{geo}, Section 53, TTL 30min).
 	tenantStr := tenantID.String()
 	cacheKey := fmt.Sprintf("jc:trending:tags:%s:%s", tenantStr, geoCode)
-	if h.cache != nil {
-		if cached, err := h.cache.Do(r.Context(), h.cache.B().Get().Key(cacheKey).Build()).ToString(); err == nil {
-			var data []gen.GetTrendingTagsRow
-			if json.Unmarshal([]byte(cached), &data) == nil {
-				writeJSON(w, http.StatusOK, map[string]any{"data": data})
-				return
-			}
-		}
-	}
 
-	// BUG-013: cache stampede protection — acquire a short lock; if another
-	// request holds it, briefly wait and re-check the cache.
-	lockKey := cacheKey + ":lock"
-	if h.cache != nil {
-		acquired, _ := h.cache.Do(r.Context(), h.cache.B().Set().Key(lockKey).Value("1").Nx().Ex(5*time.Second).Build()).ToString()
-		if acquired != "OK" {
-			// Another request is populating the cache; wait briefly and re-check.
-			time.Sleep(100 * time.Millisecond)
-			if cached, err := h.cache.Do(r.Context(), h.cache.B().Get().Key(cacheKey).Build()).ToString(); err == nil {
-				var data []gen.GetTrendingTagsRow
-				if json.Unmarshal([]byte(cached), &data) == nil {
-					writeJSON(w, http.StatusOK, map[string]any{"data": data})
-					return
-				}
-			}
-			// Lock wait expired; proceed to DB (rare).
-		}
-		defer func() {
-			if h.cache != nil {
-				_ = h.cache.Do(r.Context(), h.cache.B().Del().Key(lockKey).Build()).Error()
-			}
-		}()
-	}
-
-	data, err := h.Store.GetTrendingTags(r.Context(), tenantID, window, geoCode, limit)
+	data, err := vkcache.GetOrComputeNative(r.Context(), h.cache, cacheKey, trendingCacheTTL, func(ctx context.Context) ([]gen.GetTrendingTagsRow, error) {
+		return h.Store.GetTrendingTags(ctx, tenantID, window, geoCode, limit)
+	})
 	if err != nil {
 		handleServiceError(w, err)
 		return
-	}
-
-	// Cache the result (fire-and-forget; cache miss is acceptable).
-	if h.cache != nil {
-		if encoded, err := json.Marshal(data); err == nil {
-			_ = h.cache.Do(r.Context(), h.cache.B().Set().Key(cacheKey).Value(string(encoded)).Ex(trendingCacheTTL).Build()).Error()
-		}
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": data})
@@ -338,62 +293,53 @@ func (h *Handlers) GetTrendingSpaces(w http.ResponseWriter, r *http.Request) {
 
 	// Try Valkey cache (jc:trending:spaces:{tenant}:{geo}, Section 53, TTL 30min).
 	// Include level in the cache key when filtering.
+	// Uses distributed lock stampede protection (BUG-008).
 	tenantStr := tenantID.String()
 	cacheKey := fmt.Sprintf("jc:trending:spaces:%s:%s", tenantStr, geoCode)
 	if level != nil {
 		cacheKey += ":" + *level
 	}
-	if h.cache != nil {
-		if cached, err := h.cache.Do(r.Context(), h.cache.B().Get().Key(cacheKey).Build()).ToString(); err == nil {
-			var data []gen.GetTrendingSpacesRow
-			if json.Unmarshal([]byte(cached), &data) == nil {
-				writeJSON(w, http.StatusOK, map[string]any{"data": data})
-				return
+
+	data, err := vkcache.GetOrComputeNative(r.Context(), h.cache, cacheKey, trendingCacheTTL, func(ctx context.Context) ([]gen.GetTrendingSpacesRow, error) {
+		// Fetch a larger pool when filtering by level, then filter in Go.
+		fetchLimit := limit
+		if level != nil {
+			fetchLimit = maxLimit
+		}
+
+		rows, err := h.Store.GetTrendingSpaces(ctx, tenantID, window, geoCode, fetchLimit)
+		if err != nil {
+			return nil, err
+		}
+
+		// Apply level filter in Go (BUG-008). The row doesn't include level,
+		// so we fetch the levels for the returned space IDs and filter.
+		if level != nil {
+			ids := make([]pgtype.UUID, 0, len(rows))
+			for _, item := range rows {
+				ids = append(ids, item.ID_2)
+			}
+			levels, err := h.Store.GetSpaceLevels(ctx, tenantID, ids)
+			if err != nil {
+				return nil, err
+			}
+			filtered := make([]gen.GetTrendingSpacesRow, 0, len(rows))
+			for _, item := range rows {
+				if l, ok := levels[item.ID_2.Bytes]; ok && l == *level {
+					filtered = append(filtered, item)
+				}
+			}
+			rows = filtered
+			if int32(len(rows)) > limit {
+				rows = rows[:limit]
 			}
 		}
-	}
 
-	// Fetch a larger pool when filtering by level, then filter in Go.
-	fetchLimit := limit
-	if level != nil {
-		fetchLimit = maxLimit
-	}
-
-	data, err := h.Store.GetTrendingSpaces(r.Context(), tenantID, window, geoCode, fetchLimit)
+		return rows, nil
+	})
 	if err != nil {
 		handleServiceError(w, err)
 		return
-	}
-
-	// Apply level filter in Go (BUG-008). The row doesn't include level,
-	// so we fetch the levels for the returned space IDs and filter.
-	if level != nil {
-		ids := make([]pgtype.UUID, 0, len(data))
-		for _, item := range data {
-			ids = append(ids, item.ID_2)
-		}
-		levels, err := h.Store.GetSpaceLevels(r.Context(), tenantID, ids)
-		if err != nil {
-			handleServiceError(w, err)
-			return
-		}
-		filtered := make([]gen.GetTrendingSpacesRow, 0, len(data))
-		for _, item := range data {
-			if l, ok := levels[item.ID_2.Bytes]; ok && l == *level {
-				filtered = append(filtered, item)
-			}
-		}
-		data = filtered
-		if int32(len(data)) > limit {
-			data = data[:limit]
-		}
-	}
-
-	// Cache the result (fire-and-forget; cache miss is acceptable).
-	if h.cache != nil {
-		if encoded, err := json.Marshal(data); err == nil {
-			_ = h.cache.Do(r.Context(), h.cache.B().Set().Key(cacheKey).Value(string(encoded)).Ex(trendingCacheTTL).Build()).Error()
-		}
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": data})
@@ -440,30 +386,17 @@ func (h *Handlers) GetSuggestedUsers(w http.ResponseWriter, r *http.Request) {
 	limit := parseLimit(r)
 	geoCode := parseGeoCodePtr(r)
 
-	// Try Valkey cache (jc:suggestions:users:{user_id}, Section 53, TTL 1hr).
+	// Valkey cache (jc:suggestions:users:{user_id}, Section 53, TTL 1hr).
+	// Uses distributed lock stampede protection (BUG-008).
 	userStr := user.UserID.String()
 	cacheKey := fmt.Sprintf("jc:suggestions:users:%s", userStr)
-	if h.cache != nil {
-		if cached, err := h.cache.Do(r.Context(), h.cache.B().Get().Key(cacheKey).Build()).ToString(); err == nil {
-			var data []gen.GetSuggestedUsersRow
-			if json.Unmarshal([]byte(cached), &data) == nil {
-				writeJSON(w, http.StatusOK, map[string]any{"data": data})
-				return
-			}
-		}
-	}
 
-	data, err := h.Store.GetSuggestedUsers(r.Context(), user.UserID, tenantID, limit, geoCode)
+	data, err := vkcache.GetOrComputeNative(r.Context(), h.cache, cacheKey, suggestionsCacheTTL, func(ctx context.Context) ([]gen.GetSuggestedUsersRow, error) {
+		return h.Store.GetSuggestedUsers(ctx, user.UserID, tenantID, limit, geoCode)
+	})
 	if err != nil {
 		handleServiceError(w, err)
 		return
-	}
-
-	// Cache the result (fire-and-forget; cache miss is acceptable).
-	if h.cache != nil {
-		if encoded, err := json.Marshal(data); err == nil {
-			_ = h.cache.Do(r.Context(), h.cache.B().Set().Key(cacheKey).Value(string(encoded)).Ex(suggestionsCacheTTL).Build()).Error()
-		}
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": data})
@@ -486,30 +419,17 @@ func (h *Handlers) GetSuggestedSpaces(w http.ResponseWriter, r *http.Request) {
 	limit := parseLimit(r)
 	geoCode := parseGeoCodePtr(r)
 
-	// Try Valkey cache (jc:suggestions:spaces:{user_id}, Section 53, TTL 1hr).
+	// Valkey cache (jc:suggestions:spaces:{user_id}, Section 53, TTL 1hr).
+	// Uses distributed lock stampede protection (BUG-008).
 	userStr := user.UserID.String()
 	cacheKey := fmt.Sprintf("jc:suggestions:spaces:%s", userStr)
-	if h.cache != nil {
-		if cached, err := h.cache.Do(r.Context(), h.cache.B().Get().Key(cacheKey).Build()).ToString(); err == nil {
-			var data []gen.GetSuggestedSpacesRow
-			if json.Unmarshal([]byte(cached), &data) == nil {
-				writeJSON(w, http.StatusOK, map[string]any{"data": data})
-				return
-			}
-		}
-	}
 
-	data, err := h.Store.GetSuggestedSpaces(r.Context(), user.UserID, tenantID, limit, geoCode)
+	data, err := vkcache.GetOrComputeNative(r.Context(), h.cache, cacheKey, suggestionsCacheTTL, func(ctx context.Context) ([]gen.GetSuggestedSpacesRow, error) {
+		return h.Store.GetSuggestedSpaces(ctx, user.UserID, tenantID, limit, geoCode)
+	})
 	if err != nil {
 		handleServiceError(w, err)
 		return
-	}
-
-	// Cache the result (fire-and-forget; cache miss is acceptable).
-	if h.cache != nil {
-		if encoded, err := json.Marshal(data); err == nil {
-			_ = h.cache.Do(r.Context(), h.cache.B().Set().Key(cacheKey).Value(string(encoded)).Ex(suggestionsCacheTTL).Build()).Error()
-		}
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": data})

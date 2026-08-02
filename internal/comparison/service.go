@@ -899,23 +899,25 @@ func (s *Service) GetComparisonMatrix(ctx context.Context, contentID, tenantID p
 type ListComparisonsFilter struct {
 	TypeID  pgtype.UUID
 	SpaceID pgtype.UUID
-	Cursor  pgtype.Timestamptz
 	Limit   int32
+	Offset  int32
 }
 
 // ListComparisons returns a page of comparison content rows for the tenant,
 // optionally filtered by type_id and space_id (Section 30, BUG-007/BUG-008).
-// When no filters are supplied it falls back to the simpler ListContentsByType
-// query for backward compatibility.
+// Pagination is offset-based per conventions/api-response-format.md.
 func (s *Service) ListComparisons(ctx context.Context, tenantID pgtype.UUID, f ListComparisonsFilter) ([]gen.ListComparisonsFilteredRow, error) {
 	if f.Limit <= 0 || f.Limit > MaxPageSize {
 		f.Limit = DefaultPageSize
 	}
+	if f.Offset < 0 {
+		f.Offset = 0
+	}
 	return s.store.listComparisonsFiltered(ctx, gen.ListComparisonsFilteredParams{
-		TenantID:        tenantID,
-		SpaceID:         f.SpaceID,
-		TypeID:          f.TypeID,
-		CursorCreatedAt: f.Cursor,
-		PageLimit:       f.Limit,
+		TenantID:   tenantID,
+		SpaceID:    f.SpaceID,
+		TypeID:     f.TypeID,
+		PageOffset: f.Offset,
+		PageLimit:  f.Limit,
 	})
 }

@@ -646,8 +646,20 @@ func (s *Service) DisconnectAccount(ctx context.Context, tenantID, userID pgtype
 }
 
 // ListUserContent returns the user's content, optionally filtered by status.
+// ListUserContent returns the user's content, optionally filtered by status
+// and content_type. An empty status/contentType string means "no filter".
 func (s *Service) ListUserContent(ctx context.Context, tenantID, userID pgtype.UUID, status string, limit, offset int32) ([]ContentListItem, error) {
-	content, err := s.store.listUserContent(ctx, tenantID, userID, status, limit, offset)
+	return s.listUserContentInternal(ctx, tenantID, userID, status, "", limit, offset)
+}
+
+// ListUserContentByStatus returns the user's content filtered by both status
+// and content_type. Used by /me/content (published) and /me/drafts (draft).
+func (s *Service) ListUserContentByStatus(ctx context.Context, tenantID, userID pgtype.UUID, status, contentType string, limit, offset int32) ([]ContentListItem, error) {
+	return s.listUserContentInternal(ctx, tenantID, userID, status, contentType, limit, offset)
+}
+
+func (s *Service) listUserContentInternal(ctx context.Context, tenantID, userID pgtype.UUID, status, contentType string, limit, offset int32) ([]ContentListItem, error) {
+	content, err := s.store.listUserContent(ctx, tenantID, userID, status, contentType, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("listing user content: %w", err)
 	}
@@ -657,6 +669,7 @@ func (s *Service) ListUserContent(ctx context.Context, tenantID, userID pgtype.U
 		result[i] = ContentListItem{
 			ID:          c.ID.String(),
 			Title:       c.Title,
+			Slug:        c.Slug,
 			ContentType: c.ContentType,
 			Status:      c.Status,
 			CreatedAt:   c.CreatedAt.Time.Format(time.RFC3339),
@@ -729,7 +742,8 @@ func tsPtr(t pgtype.Timestamptz) *string {
 	return &s
 }
 
-// ListUserBookmarks returns the user's bookmarks.
+// ListUserBookmarks returns the user's bookmarks enriched with the
+// bookmarked entity's title + slug (joined server-side per entity_type).
 func (s *Service) ListUserBookmarks(ctx context.Context, userID pgtype.UUID, limit, offset int32) ([]BookmarkListItem, error) {
 	bookmarks, err := s.store.listUserBookmarks(ctx, userID, limit, offset)
 	if err != nil {
@@ -744,10 +758,31 @@ func (s *Service) ListUserBookmarks(ctx context.Context, userID pgtype.UUID, lim
 			EntityID:   b.EntityID.String(),
 			Folder:     b.Folder,
 			CreatedAt:  b.CreatedAt.Time.Format(time.RFC3339),
+			Title:      nullableString(b.Title),
+			Slug:       nullableString(b.Slug),
 		}
 	}
 
 	return result, nil
+}
+
+// nullableString coerces a sqlc interface{} column (from a LEFT JOIN CASE)
+// into a *string. Returns nil for NULL/empty/non-string values.
+func nullableString(v interface{}) *string {
+	if v == nil {
+		return nil
+	}
+	switch s := v.(type) {
+	case string:
+		if s == "" {
+			return nil
+		}
+		return &s
+	case *string:
+		return s
+	default:
+		return nil
+	}
 }
 
 // UserAnalytics represents aggregated user analytics.
@@ -756,6 +791,8 @@ type UserAnalytics struct {
 	DraftContent     int32 `json:"draft_content"`
 	PublishedContent int32 `json:"published_content"`
 	TotalBookmarks   int32 `json:"total_bookmarks"`
+	TotalFollowers   int32 `json:"total_followers"`
+	TotalFollowing   int32 `json:"total_following"`
 }
 
 // GetUserAnalytics returns aggregated analytics for the user.
@@ -772,11 +809,18 @@ func (s *Service) GetUserAnalytics(ctx context.Context, tenantID, userID pgtype.
 		return nil, fmt.Errorf("counting user bookmarks: %w", err)
 	}
 
+	followStats, err := s.store.countUserFollowStats(ctx, tenantID, userID)
+	if err != nil {
+		return nil, fmt.Errorf("counting user follow stats: %w", err)
+	}
+
 	return &UserAnalytics{
 		TotalContent:     contentCounts.Total,
 		DraftContent:     contentCounts.DraftCount,
 		PublishedContent: contentCounts.PublishedCount,
 		TotalBookmarks:   bookmarkCount,
+		TotalFollowers:   followStats.FollowerCount,
+		TotalFollowing:   followStats.FollowingCount,
 	}, nil
 }
 

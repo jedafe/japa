@@ -32,7 +32,7 @@
 	<meta property="og:url" content={page.url.href} />
 </svelte:head>
 
-<div class="mx-auto w-full max-w-2xl">
+<div class="mx-auto w-full max-w-full">
 	<!-- Header -->
 	<div class="border-b border-[var(--color-border)] px-4 py-4">
 		<div class="flex items-start gap-3">

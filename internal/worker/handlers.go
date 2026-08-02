@@ -13,6 +13,7 @@ import (
 	"html/template"
 	"log/slog"
 	"math"
+	"math/big"
 	"net/smtp"
 	"os"
 	"strings"
@@ -20,6 +21,7 @@ import (
 
 	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
@@ -91,6 +93,7 @@ func RegisterRedis(client redisCache) {
 type settingsReader interface {
 	GetIntOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback int) int
 	GetFloatOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback float64) float64
+	GetStringOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback string) string
 }
 
 // appSettings holds the injected settings reader. Nil until RegisterSettings is
@@ -369,13 +372,27 @@ func HandlePaymentWebhookProcess(ctx context.Context, t *asynq.Task) error {
 
 	// Enqueue affiliate commission BEFORE marking payment as succeeded
 	// so a failed enqueue doesn't lose the commission (AUDIT-BE-006).
+	//
+	// Attribution (Section 56): the link code is resolved from the Valkey
+	// jc:aff_click:{user_id}:{product_type}:{product_id} attribution key set
+	// by the redirect handler, NOT from the payer's first active link. The
+	// previous implementation used GetActiveAffiliateLinkByUser (LIMIT 1),
+	// which self-triggered commission on the payer's own first link for any
+	// payment they made (BUG-003). When no attribution key exists, no
+	// commission is credited — the user reached the purchase without an
+	// affiliate redirect.
 	if payload.Status == "succeeded" && taskEnqueuer != nil {
 		var linkCode string
-		rq := gen.New(dbPool.Reader)
-		if linkRow, lErr := rq.GetActiveAffiliateLinkByUser(ctx, gen.GetActiveAffiliateLinkByUserParams{
-			UserID: p.UserID, TenantID: tenantID,
-		}); lErr == nil {
-			linkCode = linkRow
+		productID := "null"
+		if p.PurposeID.Valid {
+			productID = p.PurposeID.String()
+		}
+		attrKey := fmt.Sprintf("jc:aff_click:%s:%s:%s",
+			p.UserID.String(), p.PurposeType, productID)
+		if rdb != nil {
+			if v, gErr := rdb.Get(ctx, attrKey).Result(); gErr == nil && v != "" {
+				linkCode = v
+			}
 		}
 
 		commissionPayload, _ := json.Marshal(map[string]any{
@@ -484,12 +501,18 @@ func reversePaymentSideEffects(ctx context.Context, tenantID pgtype.UUID, p gen.
 			}
 		}
 	case "course_access":
-		// Revoke the course access grant. The course_access_grants table
-		// may not exist yet (BUG-021 — migration pending), so we log and
-		// skip if the table is unavailable.
+		// Revoke the course access grant for this payment (refund/chargeback).
+		// The course_access_grants table was added in migration 000211.
 		slog.Info("task:payment:process_webhook: revoking course access grant",
 			"payment_id", p.ID)
-		// TODO: revoke course_access_grants row once table exists (BUG-021).
+		if p.PurposeID.Valid {
+			if _, err := dbPool.Writer.Exec(ctx,
+				`UPDATE course_access_grants SET revoked_at = now()
+				 WHERE payment_id = $1 AND revoked_at IS NULL`,
+				p.ID); err != nil {
+				return fmt.Errorf("revoking course access grant: %w", err)
+			}
+		}
 	case "org_boost":
 		// Expire the organization boost immediately (JEOS §17).
 		if p.PurposeID.Valid {
@@ -1380,6 +1403,13 @@ func HandleMediaScan(ctx context.Context, t *asynq.Task) error {
 	return mediaScanProcessor.ProcessMediaScan(ctx, payload.MediaID)
 }
 
+// defaultScore returns a valid pgtype.Numeric with value 0, suitable for
+// feed inserts where the score column is NOT NULL with DEFAULT 0. An
+// uninitialized pgtype.Numeric{} sends SQL NULL which violates the constraint.
+func defaultScore() pgtype.Numeric {
+	return pgtype.Numeric{Int: big.NewInt(0), Exp: 0, Valid: true}
+}
+
 // HandleContentFanOutToFeeds fans out a published content item to all relevant user feeds.
 func HandleContentFanOutToFeeds(ctx context.Context, t *asynq.Task) error {
 	slog.Info("task:content:fan_out_to_feeds")
@@ -1478,7 +1508,7 @@ func HandleContentFanOutToFeeds(ctx context.Context, t *asynq.Task) error {
 				ContentID:   contentID,
 				SpaceID:     spaceID,
 				ContentType: payload.ContentType,
-				Score:       pgtype.Numeric{},
+				Score:       defaultScore(),
 			}); err != nil {
 				slog.Error("task:content:fan_out_to_feeds: failed to insert feed item",
 					"user_id", f.FollowerID, "error", err)
@@ -1539,7 +1569,7 @@ func HandleContentFanOutToFeeds(ctx context.Context, t *asynq.Task) error {
 				ContentID:   contentID,
 				SpaceID:     spaceID,
 				ContentType: payload.ContentType,
-				Score:       pgtype.Numeric{},
+				Score:       defaultScore(),
 			}); err != nil {
 				slog.Error("task:content:fan_out_to_feeds: failed to insert feed item",
 					"user_id", userID, "error", err)
@@ -1596,7 +1626,7 @@ func HandleContentFanOutToFeeds(ctx context.Context, t *asynq.Task) error {
 							ContentID:   contentID,
 							SpaceID:     p.ParentSpaceID,
 							ContentType: payload.ContentType,
-							Score:       pgtype.Numeric{},
+							Score:       defaultScore(),
 						}); err != nil {
 							continue
 						}
@@ -1928,7 +1958,13 @@ func HandleVideoProcessing(ctx context.Context, t *asynq.Task) error {
 		}
 	case "thumbnail":
 		outputPath = inputPath + ".thumb.jpg"
-		if err := videoProcessor.GenerateThumbnail(ctx, inputPath, outputPath, "00:00:01"); err != nil {
+		// Thumbnail timestamp is configurable via system_settings
+		// (media.video_thumbnail_time, default "00:00:01").
+		thumbTime := "00:00:01"
+		if appSettings != nil {
+			thumbTime = appSettings.GetStringOr(ctx, tenantID, "media.video_thumbnail_time", "00:00:01")
+		}
+		if err := videoProcessor.GenerateThumbnail(ctx, inputPath, outputPath, thumbTime); err != nil {
 			slog.Error("task:content:process_video: thumbnail failed",
 				"media_id", payload.MediaID, "error", err)
 			return fmt.Errorf("task:content:process_video: thumbnail: %w", err)
@@ -2258,12 +2294,21 @@ func generateSitemapForTenant(ctx context.Context, tenantID pgtype.UUID, baseURL
 
 	sitemap.WriteString("</urlset>\n")
 
-	if err := os.WriteFile("sitemap.xml", []byte(sitemap.String()), 0o600); err != nil {
-		slog.Error("task:sitemap:generate: failed to write file", "tenant_id", tenantID.String(), "error", err)
+	// Write to a tenant-scoped path so multi-tenant deployments don't
+	// overwrite each other. The output directory is configurable via
+	// JC_SITEMAP_DIR (default: ./sitemaps).
+	sitemapDir := getEnv("JC_SITEMAP_DIR", "./sitemaps")
+	if err := os.MkdirAll(sitemapDir, 0o755); err != nil {
+		slog.Error("task:sitemap:generate: failed to create dir", "dir", sitemapDir, "error", err)
+		return
+	}
+	sitemapPath := fmt.Sprintf("%s/sitemap-%s.xml", sitemapDir, tenantID.String())
+	if err := os.WriteFile(sitemapPath, []byte(sitemap.String()), 0o600); err != nil {
+		slog.Error("task:sitemap:generate: failed to write file", "path", sitemapPath, "error", err)
 		return
 	}
 
-	slog.Info("task:sitemap:generate: sitemap written", "tenant_id", tenantID.String(), "url_count", urlCount)
+	slog.Info("task:sitemap:generate: sitemap written", "tenant_id", tenantID.String(), "path", sitemapPath, "url_count", urlCount)
 }
 
 // HandleRSSRegenerate regenerates the RSS feed for published content.
@@ -2920,7 +2965,9 @@ func HandleDBManualVacuum(ctx context.Context, t *asynq.Task) error {
 	return nil
 }
 
-// HandleNewsletterDigest compiles and sends a weekly newsletter digest.
+// HandleNewsletterDigest compiles and sends a weekly newsletter digest to all
+// active subscribers for the tenant. Fetches recently published content, builds
+// an HTML digest, and sends via the registered email gateway or SMTP fallback.
 func HandleNewsletterDigest(ctx context.Context, t *asynq.Task) error {
 	slog.Info("task:newsletter:digest")
 
@@ -2950,11 +2997,69 @@ func HandleNewsletterDigest(ctx context.Context, t *asynq.Task) error {
 		return err
 	}
 
-	itemCount := len(digestItems)
+	if len(digestItems) == 0 {
+		slog.Info("task:newsletter:digest: no recent content, skipping", "tenant_id", payload.TenantID)
+		return nil
+	}
 
-	slog.Info("task:newsletter:digest: digest prepared",
+	// Fetch active newsletter subscribers for this tenant.
+	rows, err := dbPool.Reader.Query(ctx,
+		`SELECT email FROM newsletter_subscribers WHERE tenant_id = $1 AND status = 'active'`,
+		tenantID)
+	if err != nil {
+		slog.Error("task:newsletter:digest: failed to list subscribers", "error", err)
+		return err
+	}
+
+	var subscribers []string
+	for rows.Next() {
+		var email string
+		if err := rows.Scan(&email); err != nil {
+			continue
+		}
+		subscribers = append(subscribers, email)
+	}
+	rows.Close()
+
+	if len(subscribers) == 0 {
+		slog.Info("task:newsletter:digest: no active subscribers, skipping", "tenant_id", payload.TenantID)
+		return nil
+	}
+
+	// Resolve the site name for the email subject.
+	name := siteName
+	if name == "" {
+		name = "JapaConnect"
+	}
+	subject := fmt.Sprintf("Weekly Digest — %s", name)
+
+	// Build the HTML digest body.
+	var body strings.Builder
+	body.WriteString("<div style=\"font-family: sans-serif; max-width: 600px; margin: 0 auto;\">\n")
+	body.WriteString(fmt.Sprintf("<h2>%s</h2>\n", subject))
+	body.WriteString("<p>Here's a roundup of recent content you might have missed:</p>\n<ul>\n")
+	for _, item := range digestItems {
+		body.WriteString(fmt.Sprintf("<li><a href=\"%s/%s\">%s</a></li>\n",
+			resolveBaseURL(ctx, tenantID), item.Slug, item.Title))
+	}
+	body.WriteString("</ul>\n</div>\n")
+
+	sent := 0
+	failed := 0
+	for _, recipient := range subscribers {
+		if err := sendEmail(recipient, subject, body.String(), true); err != nil {
+			slog.Error("task:newsletter:digest: email failed", "recipient", recipient, "error", err)
+			failed++
+			continue
+		}
+		sent++
+	}
+
+	slog.Info("task:newsletter:digest: digest sent",
 		"tenant_id", payload.TenantID,
-		"item_count", itemCount)
+		"item_count", len(digestItems),
+		"subscribers", len(subscribers),
+		"sent", sent, "failed", failed)
 
 	return nil
 }
@@ -3822,8 +3927,10 @@ func HandleAffiliateCreditCommission(ctx context.Context, t *asynq.Task) error {
 		IdempotencyKey:   &idempotencyKey,
 		Reason:           &reason,
 	}); err != nil {
-		// Unique violation means idempotency key already exists — treat as success.
-		if strings.Contains(err.Error(), "duplicate key") {
+		// Unique violation (SQLSTATE 23505) means idempotency key already
+		// exists — treat as success.
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
 			slog.Info("affiliate:credit_commission: already credited (idempotent)", "payment_id", payload.PaymentID)
 			return nil
 		}

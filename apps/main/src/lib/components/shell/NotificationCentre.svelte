@@ -106,7 +106,7 @@
 
 <DropdownMenu.Root bind:open>
 	<DropdownMenu.Trigger
-		class={klass}
+		class="w-full text-left {klass}"
 		aria-label={t('nav.notifications')}
 		onclick={loadOnOpen}
 	>

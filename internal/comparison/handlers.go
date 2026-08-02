@@ -130,7 +130,7 @@ func parsePageSizeOffset(r *http.Request) int32 {
 // Comparison Type Definition Handlers
 // ---------------------------------------------------------------------------
 
-// CreateComparisonType handles POST /api/v1/comparison/types.
+// CreateComparisonType handles POST /api/v1/comparisons/types.
 func (h *Handlers) CreateComparisonType(w http.ResponseWriter, r *http.Request) {
 	_, ok := h.requireUser(w, r)
 	if !ok {
@@ -195,7 +195,7 @@ func (h *Handlers) CreateComparisonType(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusCreated, map[string]any{"data": result})
 }
 
-// ListComparisonTypes handles GET /api/v1/comparison/types.
+// ListComparisonTypes handles GET /api/v1/comparisons/types.
 func (h *Handlers) ListComparisonTypes(w http.ResponseWriter, r *http.Request) {
 	_, ok := h.requireUser(w, r)
 	if !ok {
@@ -236,6 +236,7 @@ func (h *Handlers) ListComparisons(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	var filter ListComparisonsFilter
 	filter.Limit = parsePageSize(r)
+	filter.Offset = parsePageSizeOffset(r)
 
 	// type filter: accept either type_id (uuid) or type (slug) and resolve to id.
 	if v := q.Get("type_id"); v != "" {
@@ -259,13 +260,6 @@ func (h *Handlers) ListComparisons(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if v := q.Get("cursor"); v != "" {
-		if err := filter.Cursor.Scan(v); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_cursor", "Invalid cursor")
-			return
-		}
-	}
-
 	comparisons, err := h.Service.ListComparisons(r.Context(), tenantID, filter)
 	if err != nil {
 		handleServiceError(w, err)
@@ -275,7 +269,7 @@ func (h *Handlers) ListComparisons(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"data": comparisons})
 }
 
-// GetComparisonType handles GET /api/v1/comparison/types/{slug}.
+// GetComparisonType handles GET /api/v1/comparisons/types/{slug}.
 func (h *Handlers) GetComparisonType(w http.ResponseWriter, r *http.Request) {
 	_, ok := h.requireUser(w, r)
 	if !ok {
@@ -302,7 +296,7 @@ func (h *Handlers) GetComparisonType(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"data": result})
 }
 
-// UpdateComparisonType handles PATCH /api/v1/comparison/types/{id}.
+// UpdateComparisonType handles PATCH /api/v1/comparisons/types/{id}.
 func (h *Handlers) UpdateComparisonType(w http.ResponseWriter, r *http.Request) {
 	_, ok := h.requireUser(w, r)
 	if !ok {
@@ -353,7 +347,7 @@ func (h *Handlers) UpdateComparisonType(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, map[string]any{"data": result})
 }
 
-// DeleteComparisonType handles DELETE /api/v1/comparison/types/{id}.
+// DeleteComparisonType handles DELETE /api/v1/comparisons/types/{id}.
 func (h *Handlers) DeleteComparisonType(w http.ResponseWriter, r *http.Request) {
 	_, ok := h.requireUser(w, r)
 	if !ok {
@@ -383,7 +377,7 @@ func (h *Handlers) DeleteComparisonType(w http.ResponseWriter, r *http.Request) 
 // Comparison Type Access Handlers
 // ---------------------------------------------------------------------------
 
-// SetComparisonTypeAccess handles PUT /api/v1/comparison/types/{id}/access.
+// SetComparisonTypeAccess handles PUT /api/v1/comparisons/types/{id}/access.
 func (h *Handlers) SetComparisonTypeAccess(w http.ResponseWriter, r *http.Request) {
 	_, ok := h.requireUser(w, r)
 	if !ok {
@@ -436,7 +430,7 @@ func (h *Handlers) SetComparisonTypeAccess(w http.ResponseWriter, r *http.Reques
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "updated"}})
 }
 
-// ListComparisonTypeAccess handles GET /api/v1/comparison/types/{id}/access.
+// ListComparisonTypeAccess handles GET /api/v1/comparisons/types/{id}/access.
 func (h *Handlers) ListComparisonTypeAccess(w http.ResponseWriter, r *http.Request) {
 	_, ok := h.requireUser(w, r)
 	if !ok {
@@ -467,7 +461,7 @@ func (h *Handlers) ListComparisonTypeAccess(w http.ResponseWriter, r *http.Reque
 // Comparison CRUD Handlers
 // ---------------------------------------------------------------------------
 
-// CreateComparison handles POST /api/v1/comparison.
+// CreateComparison handles POST /api/v1/comparisons.
 func (h *Handlers) CreateComparison(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
 	if !ok {
@@ -543,7 +537,7 @@ func (h *Handlers) CreateComparison(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, map[string]any{"data": result})
 }
 
-// GetComparison handles GET /api/v1/comparison/{id}.
+// GetComparison handles GET /api/v1/comparisons/{id}.
 func (h *Handlers) GetComparison(w http.ResponseWriter, r *http.Request) {
 	_, ok := h.requireUser(w, r)
 	if !ok {
@@ -655,7 +649,7 @@ func (h *Handlers) DeleteComparison(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusNoContent, nil)
 }
 
-// GetComparisonMatrix handles GET /api/v1/comparison/{id}/matrix.
+// GetComparisonMatrix handles GET /api/v1/comparisons/{id}/matrix.
 func (h *Handlers) GetComparisonMatrix(w http.ResponseWriter, r *http.Request) {
 	_, ok := h.requireUser(w, r)
 	if !ok {
@@ -686,7 +680,7 @@ func (h *Handlers) GetComparisonMatrix(w http.ResponseWriter, r *http.Request) {
 // Comparison Item Handlers
 // ---------------------------------------------------------------------------
 
-// CreateComparisonItem handles POST /api/v1/comparison/{id}/items.
+// CreateComparisonItem handles POST /api/v1/comparisons/{id}/items.
 func (h *Handlers) CreateComparisonItem(w http.ResponseWriter, r *http.Request) {
 	_, ok := h.requireUser(w, r)
 	if !ok {
@@ -753,7 +747,7 @@ func (h *Handlers) CreateComparisonItem(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusCreated, map[string]any{"data": item})
 }
 
-// UpdateComparisonItem handles PATCH /api/v1/comparison/items/{id}.
+// UpdateComparisonItem handles PATCH /api/v1/comparisons/items/{id}.
 func (h *Handlers) UpdateComparisonItem(w http.ResponseWriter, r *http.Request) {
 	_, ok := h.requireUser(w, r)
 	if !ok {
@@ -819,7 +813,7 @@ func (h *Handlers) UpdateComparisonItem(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, map[string]any{"data": item})
 }
 
-// DeleteComparisonItem handles DELETE /api/v1/comparison/items/{id}.
+// DeleteComparisonItem handles DELETE /api/v1/comparisons/items/{id}.
 func (h *Handlers) DeleteComparisonItem(w http.ResponseWriter, r *http.Request) {
 	_, ok := h.requireUser(w, r)
 	if !ok {
@@ -849,7 +843,7 @@ func (h *Handlers) DeleteComparisonItem(w http.ResponseWriter, r *http.Request) 
 // Comparison Dimension Handlers
 // ---------------------------------------------------------------------------
 
-// CreateComparisonDimension handles POST /api/v1/comparison/{id}/dimensions.
+// CreateComparisonDimension handles POST /api/v1/comparisons/{id}/dimensions.
 func (h *Handlers) CreateComparisonDimension(w http.ResponseWriter, r *http.Request) {
 	_, ok := h.requireUser(w, r)
 	if !ok {
@@ -907,7 +901,7 @@ func (h *Handlers) CreateComparisonDimension(w http.ResponseWriter, r *http.Requ
 	writeJSON(w, http.StatusCreated, map[string]any{"data": dim})
 }
 
-// UpdateComparisonDimension handles PATCH /api/v1/comparison/dimensions/{id}.
+// UpdateComparisonDimension handles PATCH /api/v1/comparisons/dimensions/{id}.
 func (h *Handlers) UpdateComparisonDimension(w http.ResponseWriter, r *http.Request) {
 	_, ok := h.requireUser(w, r)
 	if !ok {
@@ -959,7 +953,7 @@ func (h *Handlers) UpdateComparisonDimension(w http.ResponseWriter, r *http.Requ
 	writeJSON(w, http.StatusOK, map[string]any{"data": dim})
 }
 
-// DeleteComparisonDimension handles DELETE /api/v1/comparison/dimensions/{id}.
+// DeleteComparisonDimension handles DELETE /api/v1/comparisons/dimensions/{id}.
 func (h *Handlers) DeleteComparisonDimension(w http.ResponseWriter, r *http.Request) {
 	_, ok := h.requireUser(w, r)
 	if !ok {
@@ -989,7 +983,7 @@ func (h *Handlers) DeleteComparisonDimension(w http.ResponseWriter, r *http.Requ
 // Comparison Value Handlers
 // ---------------------------------------------------------------------------
 
-// UpsertComparisonValues handles PUT /api/v1/comparison/dimensions/{id}/values.
+// UpsertComparisonValues handles PUT /api/v1/comparisons/dimensions/{id}/values.
 func (h *Handlers) UpsertComparisonValues(w http.ResponseWriter, r *http.Request) {
 	_, ok := h.requireUser(w, r)
 	if !ok {
@@ -1048,8 +1042,12 @@ func (h *Handlers) UpsertComparisonValues(w http.ResponseWriter, r *http.Request
 }
 
 // ReorderComparisonItems handles POST /api/v1/comparisons/{id}/items/reorder
-// — bulk position update across a comparison's items, one call per item to
-// the existing Service.ReorderComparisonItem (no new service logic).
+// — bulk position update across a comparison's items.
+//
+// Request body (Section 30 contract): { "ordered_item_ids": ["uuid", ...] }
+// The position of each item is derived from its index in the array (0-based).
+// The legacy { "items": [{ "id", "position" }] } shape is still accepted for
+// backward compatibility but is deprecated.
 func (h *Handlers) ReorderComparisonItems(w http.ResponseWriter, r *http.Request) {
 	_, ok := h.requireUser(w, r)
 	if !ok {
@@ -1067,8 +1065,11 @@ func (h *Handlers) ReorderComparisonItems(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	// Accept both the canonical Section 30 shape ({ordered_item_ids:[]}) and
+	// the legacy shape ({items:[{id,position}]}) for backward compatibility.
 	var input struct {
-		Items []struct {
+		OrderedItemIDs []string `json:"ordered_item_ids"`
+		Items          []struct {
 			ID       string `json:"id"`
 			Position int32  `json:"position"`
 		} `json:"items"`
@@ -1079,6 +1080,29 @@ func (h *Handlers) ReorderComparisonItems(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	if len(input.OrderedItemIDs) == 0 && len(input.Items) == 0 {
+		writeError(w, http.StatusBadRequest, "empty_reorder", "ordered_item_ids (or items) must not be empty")
+		return
+	}
+
+	// Canonical path: derive positions from array index.
+	if len(input.OrderedItemIDs) > 0 {
+		for idx, id := range input.OrderedItemIDs {
+			var itemID pgtype.UUID
+			if err := itemID.Scan(id); err != nil {
+				writeError(w, http.StatusBadRequest, "invalid_item_id", "Invalid item id: "+id)
+				return
+			}
+			if err := h.Service.ReorderComparisonItem(r.Context(), itemID, comparisonID, tenantID, int32(idx)); err != nil {
+				handleServiceError(w, err)
+				return
+			}
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"reordered": true}})
+		return
+	}
+
+	// Legacy path: explicit positions per item.
 	for _, item := range input.Items {
 		var itemID pgtype.UUID
 		if err := itemID.Scan(item.ID); err != nil {

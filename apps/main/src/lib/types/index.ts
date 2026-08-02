@@ -314,6 +314,8 @@ export interface Bookmark {
 	entity_id: string;
 	folder?: string | null;
 	created_at: string;
+	title?: string | null;
+	slug?: string | null;
 }
 
 /** GET /me/bookmark-folders — a user's bookmark folder. */
@@ -800,6 +802,8 @@ export interface MeAnalytics {
 	draft_content: number;
 	published_content: number;
 	total_bookmarks: number;
+	total_followers: number;
+	total_following: number;
 }
 
 /* ------------------------------------------------------------------ *
@@ -1199,12 +1203,20 @@ export interface Coupon {
 }
 
 /* ------------------------------------------------------------------ *
- * Comparisons — Section 16 (GET /comparisons/{id})
+ * Comparisons — Section 30 (GET /comparisons/{id})
  * ------------------------------------------------------------------ */
 
-/** GET /comparisons/{id} — comparison with items and dimensions. */
+/** GET /comparisons/{id} — comparison content metadata with items and dimensions. */
 export interface ComparisonDetail {
 	id: string;
+	tenant_id: string;
+	author_id: string;
+	title: string;
+	slug: string;
+	body: string;
+	visibility: string;
+	status: string;
+	space_id: string | null;
 	items: ComparisonItem[];
 	dimensions: ComparisonDimension[];
 }
@@ -1212,19 +1224,25 @@ export interface ComparisonDetail {
 /** A comparison item (entity being compared, e.g. a university). */
 export interface ComparisonItem {
 	id: string;
-	comparison_id: string;
-	entity_type: string;
-	entity_id: string;
-	label: string;
-	sort_order: number;
+	content_id: string;
+	tenant_id: string;
+	type_id: string | null;
+	title: string;
+	description: string | null;
+	image_id: string | null;
+	geo_space_id: string | null;
+	position: number;
 }
 
 /** A comparison dimension (criterion being evaluated). */
 export interface ComparisonDimension {
 	id: string;
-	comparison_id: string;
+	content_id: string;
+	tenant_id: string;
+	type_id: string | null;
 	label: string;
-	sort_order: number;
+	dimension_type: string;
+	position: number;
 }
 
 /** GET /comparisons/{id}/matrix — one item's row across all dimensions. */
@@ -1246,7 +1264,7 @@ export interface ComparisonMatrixItem {
 export interface ComparisonMatrixDimensionValue {
 	dimension_id: string;
 	label: string;
-	type: 'text' | 'number' | 'boolean' | 'rating' | 'url' | 'list';
+	type: 'text' | 'number' | 'boolean' | 'rating' | 'currency';
 	value?: string | null;
 	value_rating?: number | null;
 	value_boolean?: boolean | null;

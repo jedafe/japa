@@ -30,6 +30,7 @@ import (
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/clientip"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/valkey"
 )
 
 // idempotencyTTLDefault is the fallback TTL (in hours) when the system
@@ -135,7 +136,7 @@ func IdempotencyMiddleware(rdb valkeycompat.Cmdable, settings idempotencySetting
 
 			callerID := idempotencyCallerID(r)
 			hash := idempotencyHash(r.Method, r.URL.Path, key, callerID)
-			cacheKey := "jc:idempotency:" + hash
+			cacheKey := valkey.MustKey("idempotency:%s", hash)
 
 			ctx := r.Context()
 

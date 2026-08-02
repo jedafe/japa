@@ -19,7 +19,7 @@
 </script>
 
 {#if data.loadError}
-	<div class="mx-auto w-full max-w-2xl py-10">
+	<div class="mx-auto w-full max-w-full py-10">
 		<EmptyState
 			icon={PenSquare}
 			title={t('error.500_title')}

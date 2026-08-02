@@ -39,14 +39,14 @@
 	function statusClass(status: TicketStatus): string {
 		switch (status) {
 			case 'open':
-				return 'bg-blue-500/10 text-blue-600';
+				return 'bg-[var(--color-info)]/10 text-[var(--color-info)]';
 			case 'in_progress':
-				return 'bg-amber-500/10 text-amber-600';
+				return 'bg-[var(--color-warning)]/10 text-[var(--color-warning)]';
 			case 'waiting_on_user':
-				return 'bg-purple-500/10 text-purple-600';
+				return 'bg-[var(--color-primary)]/10 text-[var(--color-primary)]';
 			case 'resolved':
 			case 'closed':
-				return 'bg-green-500/10 text-green-600';
+				return 'bg-[var(--color-success)]/10 text-[var(--color-success)]';
 			default:
 				return 'bg-[var(--color-surface-subtle)] text-[var(--color-muted)]';
 		}
@@ -107,7 +107,7 @@
 	</header>
 
 	<!-- Original description as the first post -->
-	<article class="rounded-[12px] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+	<article class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 		<p class="mb-2 text-xs font-medium text-[var(--color-muted)]">{t('tickets.original_post')}</p>
 		<div class="whitespace-pre-wrap text-sm text-[var(--color-text)]">{ticket.description}</div>
 	</article>
@@ -124,7 +124,7 @@
 		{:else}
 			<ul class="space-y-2">
 				{#each comments as c (c.id)}
-					<li class="rounded-[12px] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
+					<li class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
 						<div class="mb-1 flex items-center justify-between text-xs text-[var(--color-muted)]">
 							<span>{new Date(c.created_at).toLocaleString()}</span>
 						</div>
@@ -137,7 +137,7 @@
 
 	<!-- Reply box -->
 	{#if ticket.status !== 'closed' && ticket.status !== 'spam'}
-		<form onsubmit={postReply} class="space-y-2 rounded-[12px] border border-[var(--color-border)] bg-[var(--color-surface)] p-3" novalidate>
+		<form onsubmit={postReply} class="space-y-2 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3" novalidate>
 			<label for="ticket-reply" class="text-sm font-medium text-[var(--color-text)]">
 				{t('tickets.reply_label')}
 			</label>
@@ -149,7 +149,7 @@
 				class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
 			></textarea>
 			{#if errorKey}
-				<p class="text-sm text-red-500" role="alert">{t(errorKey)}</p>
+				<p class="text-sm text-[var(--color-danger)]" role="alert">{t(errorKey)}</p>
 			{/if}
 			<div class="flex justify-end">
 				<button
@@ -158,7 +158,7 @@
 					class="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1.5 text-sm font-medium text-white transition hover:opacity-90 disabled:opacity-50"
 				>
 					<Send class="h-4 w-4" />
-					{posting ? '...' : t('tickets.reply_submit')}
+					{posting ? t('common.loading') : t('tickets.reply_submit')}
 				</button>
 			</div>
 		</form>

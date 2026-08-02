@@ -10,23 +10,31 @@
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import { Users } from 'lucide-svelte';
 
-	interface FollowedUser { id: string; username?: string; display_name?: string; }
+	// The backend returns a uniform FollowingInfo shape for /me/following and
+	// /me/followed-tags: { id, entity_type, entity_id, entity_name, entity_slug }.
+	// The dashboard maps these to type-specific display fields.
+	interface FollowedEntity {
+		id: string;
+		entity_type: string;
+		entity_id: string;
+		entity_name: string;
+		entity_slug: string;
+	}
 	interface Space { id: string; slug?: string; name?: string; }
-	interface FollowedTag { id: string; slug?: string; name?: string; }
 	interface BlockedUser { blocked_id: string; username?: string; display_name?: string; created_at?: string; }
 
 	interface RelationshipsData {
-		following: FollowedUser[];
+		following: FollowedEntity[];
 		spaces: Space[];
-		tags: FollowedTag[];
+		tags: FollowedEntity[];
 		blocked?: BlockedUser[];
 	}
 
 	let { data }: { data: unknown } = $props();
 	const rel = $derived(data as RelationshipsData | null);
-	let following = $state<FollowedUser[]>(untrack(() => rel?.following ?? []));
+	let following = $state<FollowedEntity[]>(untrack(() => rel?.following ?? []));
 	let spaces = $state<Space[]>(untrack(() => rel?.spaces ?? []));
-	let tags = $state<FollowedTag[]>(untrack(() => rel?.tags ?? []));
+	let tags = $state<FollowedEntity[]>(untrack(() => rel?.tags ?? []));
 	let blocked = $state<BlockedUser[]>(untrack(() => rel?.blocked ?? []));
 
 	const activeTab = $derived(page.url.searchParams.get('tab') ?? 'following');
@@ -42,11 +50,11 @@
 		goto(`/dashboard/relationships?tab=${key}`, { keepFocus: true, noScroll: true });
 	}
 
-	async function doUnfollowUser(id: string) {
+	async function doUnfollowUser(entityId: string) {
 		await optimisticAction({
-			apply: () => (following = following.filter((u) => u.id !== id)),
+			apply: () => (following = following.filter((u) => u.entity_id !== entityId)),
 			rollback: () => (following = rel?.following ?? []),
-			call: () => unfollowUser(id)
+			call: () => unfollowUser(entityId)
 		});
 		await invalidate('/api/v1/me/following');
 	}
@@ -62,7 +70,7 @@
 
 	async function doUnfollowTag(slug: string) {
 		await optimisticAction({
-			apply: () => (tags = tags.filter((t) => t.slug !== slug)),
+			apply: () => (tags = tags.filter((t) => t.entity_slug !== slug)),
 			rollback: () => (tags = rel?.tags ?? []),
 			call: () => unfollowTag(slug)
 		});
@@ -109,12 +117,12 @@
 			<EmptyState icon={Users} title={t('dashboard.relationships.following_empty')} />
 		{:else}
 			<ul class="space-y-2">
-				{#each following as user (user.id)}
+				{#each following as user (user.entity_id)}
 					<li class="flex items-center justify-between rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3">
-						<a href="/u/{user.username ?? user.id}" class="text-sm font-medium text-[var(--color-text)] hover:underline">
-							{user.display_name ?? user.username ?? user.id}
+						<a href="/u/{user.entity_slug || user.entity_id}" class="text-sm font-medium text-[var(--color-text)] hover:underline">
+							{user.entity_name || user.entity_id}
 						</a>
-						<button type="button" class="text-xs text-[var(--color-muted)] hover:text-[var(--color-danger)]" onclick={() => doUnfollowUser(user.id)}>
+						<button type="button" class="text-xs text-[var(--color-muted)] hover:text-[var(--color-danger)]" onclick={() => doUnfollowUser(user.entity_id)}>
 							{t('dashboard.relationships.unfollow')}
 						</button>
 					</li>
@@ -143,12 +151,12 @@
 			<EmptyState icon={Users} title={t('dashboard.relationships.tags_empty')} />
 		{:else}
 			<ul class="space-y-2">
-				{#each tags as tag (tag.id)}
+				{#each tags as tag (tag.entity_id)}
 					<li class="flex items-center justify-between rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3">
-						<a href="/tags/{tag.slug ?? tag.id}" class="text-sm font-medium text-[var(--color-text)] hover:underline">
-							#{tag.name ?? tag.slug ?? tag.id}
+						<a href="/tags/{tag.entity_slug || tag.entity_id}" class="text-sm font-medium text-[var(--color-text)] hover:underline">
+							#{tag.entity_name || tag.entity_id}
 						</a>
-						<button type="button" class="text-xs text-[var(--color-muted)] hover:text-[var(--color-danger)]" onclick={() => doUnfollowTag(tag.slug ?? tag.id)}>
+						<button type="button" class="text-xs text-[var(--color-muted)] hover:text-[var(--color-danger)]" onclick={() => doUnfollowTag(tag.entity_slug || tag.entity_id)}>
 							{t('dashboard.relationships.unfollow')}
 						</button>
 					</li>

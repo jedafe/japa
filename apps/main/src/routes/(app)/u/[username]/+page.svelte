@@ -78,7 +78,7 @@
 
 <ProfileTabs {tabs} active={activeTab} />
 
-<div class="mx-auto w-full max-w-2xl">
+<div class="mx-auto w-full max-w-full">
 	<div class="p-3">
 		{#if activeTab === 'posts'}
 			{#if data.posts.length === 0}

@@ -61,7 +61,7 @@
 	{@html `<script type="application/ld+json">${jsonLd}</script>`}
 </svelte:head>
 
-<div class="mx-auto w-full max-w-3xl">
+<div class="mx-auto w-full max-w-full">
 	<div class="border-b border-[var(--color-border)] px-4 py-4">
 		<h1 class="flex items-center gap-2 text-lg font-semibold text-[var(--color-text)]">
 			<Ticket size={20} /> {t('coupons.heading', 'Coupons')}
