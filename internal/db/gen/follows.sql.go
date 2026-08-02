@@ -265,7 +265,7 @@ SELECT f.id, f.tenant_id, f.follower_id, f.entity_type, f.entity_id, f.created_a
         WHEN 'space' THEN (SELECT name FROM spaces WHERE id = f.entity_id)
         WHEN 'tag' THEN (SELECT name FROM tags WHERE id = f.entity_id)
         WHEN 'organization' THEN (SELECT name FROM organizations WHERE id = f.entity_id)
-        WHEN 'professional_profile' THEN (SELECT display_name FROM professional_profiles WHERE id = f.entity_id)
+        WHEN 'professional_profile' THEN (SELECT name FROM professional_profiles WHERE id = f.entity_id)
         ELSE ''
     END AS entity_name
 FROM follows f
@@ -331,7 +331,7 @@ SELECT f.id, f.tenant_id, f.follower_id, f.entity_type, f.entity_id, f.created_a
         WHEN 'space' THEN (SELECT name FROM spaces WHERE id = f.entity_id)
         WHEN 'tag' THEN (SELECT name FROM tags WHERE id = f.entity_id)
         WHEN 'organization' THEN (SELECT name FROM organizations WHERE id = f.entity_id)
-        WHEN 'professional_profile' THEN (SELECT display_name FROM professional_profiles WHERE id = f.entity_id)
+        WHEN 'professional_profile' THEN (SELECT name FROM professional_profiles WHERE id = f.entity_id)
         ELSE ''
     END AS entity_name
 FROM follows f

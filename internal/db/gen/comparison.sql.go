@@ -782,17 +782,16 @@ WHERE c.tenant_id = $1
   AND c.auto_hidden = false
   AND ($2::uuid IS NULL OR c.space_id = $2)
   AND ($3::uuid IS NULL OR ci.type_id = $3)
-  AND (c.created_at < $4 OR $4 IS NULL)
 ORDER BY c.created_at DESC, c.id DESC
-LIMIT $5
+LIMIT $5 OFFSET $4
 `
 
 type ListComparisonsFilteredParams struct {
-	TenantID        pgtype.UUID        `json:"tenant_id"`
-	SpaceID         pgtype.UUID        `json:"space_id"`
-	TypeID          pgtype.UUID        `json:"type_id"`
-	CursorCreatedAt pgtype.Timestamptz `json:"cursor_created_at"`
-	PageLimit       int32              `json:"page_limit"`
+	TenantID   pgtype.UUID `json:"tenant_id"`
+	SpaceID    pgtype.UUID `json:"space_id"`
+	TypeID     pgtype.UUID `json:"type_id"`
+	PageOffset int32       `json:"page_offset"`
+	PageLimit  int32       `json:"page_limit"`
 }
 
 type ListComparisonsFilteredRow struct {
@@ -833,12 +832,13 @@ type ListComparisonsFilteredRow struct {
 // =====================
 // Comparison list with type + space filters (Section 30, BUG-007)
 // =====================
+// Offset-paginated per conventions/api-response-format.md (?page_size=N&page_offset=N).
 func (q *Queries) ListComparisonsFiltered(ctx context.Context, arg ListComparisonsFilteredParams) ([]ListComparisonsFilteredRow, error) {
 	rows, err := q.db.Query(ctx, listComparisonsFiltered,
 		arg.TenantID,
 		arg.SpaceID,
 		arg.TypeID,
-		arg.CursorCreatedAt,
+		arg.PageOffset,
 		arg.PageLimit,
 	)
 	if err != nil {

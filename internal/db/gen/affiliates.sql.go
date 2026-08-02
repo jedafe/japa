@@ -11,41 +11,6 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const checkAffiliateLinkExists = `-- name: CheckAffiliateLinkExists :one
-
-SELECT id, code, destination_url, is_active, product_type, product_id, user_id
-FROM user_affiliate_links
-WHERE code = $1
-`
-
-type CheckAffiliateLinkExistsRow struct {
-	ID             pgtype.UUID `json:"id"`
-	Code           string      `json:"code"`
-	DestinationUrl string      `json:"destination_url"`
-	IsActive       bool        `json:"is_active"`
-	ProductType    string      `json:"product_type"`
-	ProductID      pgtype.UUID `json:"product_id"`
-	UserID         pgtype.UUID `json:"user_id"`
-}
-
-// =====================
-// Dedup check (for redirect handler)
-// =====================
-func (q *Queries) CheckAffiliateLinkExists(ctx context.Context, code string) (CheckAffiliateLinkExistsRow, error) {
-	row := q.db.QueryRow(ctx, checkAffiliateLinkExists, code)
-	var i CheckAffiliateLinkExistsRow
-	err := row.Scan(
-		&i.ID,
-		&i.Code,
-		&i.DestinationUrl,
-		&i.IsActive,
-		&i.ProductType,
-		&i.ProductID,
-		&i.UserID,
-	)
-	return i, err
-}
-
 const countActiveLinksByUser = `-- name: CountActiveLinksByUser :one
 SELECT COUNT(*) AS count
 FROM user_affiliate_links
@@ -235,6 +200,25 @@ func (q *Queries) DeactivateAffiliateLink(ctx context.Context, arg DeactivateAff
 	return err
 }
 
+const deactivateAffiliateLinkAdmin = `-- name: DeactivateAffiliateLinkAdmin :exec
+UPDATE user_affiliate_links
+SET is_active = false
+WHERE id = $1 AND tenant_id = $2
+`
+
+type DeactivateAffiliateLinkAdminParams struct {
+	ID       pgtype.UUID `json:"id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+// Admin-scoped link deactivation (Section 56 admin management). Deactivates
+// by id + tenant_id without an ownership check (the admin has
+// affiliate.admin.manage). Soft-delete only — the row is retained for audit.
+func (q *Queries) DeactivateAffiliateLinkAdmin(ctx context.Context, arg DeactivateAffiliateLinkAdminParams) error {
+	_, err := q.db.Exec(ctx, deactivateAffiliateLinkAdmin, arg.ID, arg.TenantID)
+	return err
+}
+
 const deactivateLinksByMemberStatus = `-- name: DeactivateLinksByMemberStatus :exec
 UPDATE user_affiliate_links
 SET is_active = false
@@ -280,26 +264,50 @@ func (q *Queries) GetActiveAffiliateLinkByUser(ctx context.Context, arg GetActiv
 }
 
 const getAffiliateCommissionInfo = `-- name: GetAffiliateCommissionInfo :one
-SELECT apm.user_id, COALESCE(aps.commission_rates->>'pro_monthly', '0')::int AS commission_rate
+SELECT apm.user_id, apm.tenant_id, ual.product_type,
+  (CASE ual.product_type
+    WHEN 'course' THEN COALESCE(
+      (SELECT value::numeric FROM system_settings WHERE tenant_id = apm.tenant_id AND key = 'affiliate.commission.course'),
+      10)
+    WHEN 'pro_subscription' THEN COALESCE(
+      (SELECT value::numeric FROM system_settings WHERE tenant_id = apm.tenant_id AND key = 'affiliate.commission.pro_monthly'),
+      15)
+    ELSE COALESCE(
+      (SELECT value::numeric FROM system_settings WHERE tenant_id = apm.tenant_id AND key = 'affiliate.commission.pro_annual'),
+      20)
+  END)::float8 AS commission_rate
 FROM affiliate_program_members apm
 JOIN user_affiliate_links ual ON ual.user_id = apm.user_id
-JOIN affiliate_program_settings aps ON aps.tenant_id = apm.tenant_id
 WHERE ual.code = $1 AND apm.status = 'active' AND ual.is_active = true
 `
 
 type GetAffiliateCommissionInfoRow struct {
 	UserID         pgtype.UUID `json:"user_id"`
-	CommissionRate int32       `json:"commission_rate"`
+	TenantID       pgtype.UUID `json:"tenant_id"`
+	ProductType    string      `json:"product_type"`
+	CommissionRate float64     `json:"commission_rate"`
 }
 
+// Resolves the affiliate member + commission rate for a link code, reading
+// the rate from system_settings (affiliate.commission.*) per Section 56 —
+// the single source of truth. Falls back to the catalog defaults (15/20/10)
+// when a tenant has not configured the rate. pro_subscription maps to the
+// pro_monthly rate (V1; annual vs monthly distinction is handled at the
+// payment-purpose layer).
 func (q *Queries) GetAffiliateCommissionInfo(ctx context.Context, code string) (GetAffiliateCommissionInfoRow, error) {
 	row := q.db.QueryRow(ctx, getAffiliateCommissionInfo, code)
 	var i GetAffiliateCommissionInfoRow
-	err := row.Scan(&i.UserID, &i.CommissionRate)
+	err := row.Scan(
+		&i.UserID,
+		&i.TenantID,
+		&i.ProductType,
+		&i.CommissionRate,
+	)
 	return i, err
 }
 
 const getAffiliateContentCommissionForCredit = `-- name: GetAffiliateContentCommissionForCredit :one
+
 
 SELECT id, tenant_id, author_user_id, author_share, credited
 FROM affiliate_content_commissions
@@ -314,6 +322,9 @@ type GetAffiliateContentCommissionForCreditRow struct {
 	Credited     bool           `json:"credited"`
 }
 
+// =====================
+// Dedup check (for redirect handler)
+// =====================
 // =====================
 // External Affiliate Commissions (Section 55 — Author Revenue Sharing)
 // =====================
@@ -895,6 +906,60 @@ func (q *Queries) ListAffiliateMembers(ctx context.Context, arg ListAffiliateMem
 	return items, nil
 }
 
+const listAffiliateMembersFiltered = `-- name: ListAffiliateMembersFiltered :many
+SELECT user_id, tenant_id, enrolled_at, status, total_clicks,
+    total_conversions, total_earned_credits, payout_method, notes
+FROM affiliate_program_members
+WHERE tenant_id = $1
+    AND ($2::text IS NULL OR status = $2)
+ORDER BY enrolled_at DESC
+LIMIT $4 OFFSET $3
+`
+
+type ListAffiliateMembersFilteredParams struct {
+	TenantID   pgtype.UUID `json:"tenant_id"`
+	Status     *string     `json:"status"`
+	PageOffset int32       `json:"page_offset"`
+	PageLimit  int32       `json:"page_limit"`
+}
+
+// Admin list with optional status filter (Section 56 / catalog
+// ?status=active|inactive). Tenant-scoped. NULL status = no filter.
+func (q *Queries) ListAffiliateMembersFiltered(ctx context.Context, arg ListAffiliateMembersFilteredParams) ([]AffiliateProgramMember, error) {
+	rows, err := q.db.Query(ctx, listAffiliateMembersFiltered,
+		arg.TenantID,
+		arg.Status,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []AffiliateProgramMember
+	for rows.Next() {
+		var i AffiliateProgramMember
+		if err := rows.Scan(
+			&i.UserID,
+			&i.TenantID,
+			&i.EnrolledAt,
+			&i.Status,
+			&i.TotalClicks,
+			&i.TotalConversions,
+			&i.TotalEarnedCredits,
+			&i.PayoutMethod,
+			&i.Notes,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listAllAffiliateLinks = `-- name: ListAllAffiliateLinks :many
 SELECT id, tenant_id, user_id, product_type, product_id, code, description,
     destination_url, click_count, conversion_count, total_earned, is_active, created_at
@@ -933,6 +998,93 @@ func (q *Queries) ListAllAffiliateLinks(ctx context.Context, arg ListAllAffiliat
 			&i.TotalEarned,
 			&i.IsActive,
 			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listAllAffiliateLinksFiltered = `-- name: ListAllAffiliateLinksFiltered :many
+SELECT ual.id, ual.tenant_id, ual.user_id, ual.product_type, ual.product_id,
+    ual.code, ual.description, ual.destination_url, ual.click_count,
+    ual.conversion_count, ual.total_earned, ual.is_active, ual.created_at,
+    u.username
+FROM user_affiliate_links ual
+LEFT JOIN users u ON u.id = ual.user_id
+WHERE ual.tenant_id = $1
+    AND ($2::uuid IS NULL OR ual.user_id = $2)
+    AND ($3::text IS NULL OR ual.product_type = $3)
+    AND ($4::bool IS NULL OR ual.is_active = $4)
+ORDER BY ual.created_at DESC
+LIMIT $6 OFFSET $5
+`
+
+type ListAllAffiliateLinksFilteredParams struct {
+	TenantID    pgtype.UUID `json:"tenant_id"`
+	UserID      pgtype.UUID `json:"user_id"`
+	ProductType *string     `json:"product_type"`
+	IsActive    *bool       `json:"is_active"`
+	PageOffset  int32       `json:"page_offset"`
+	PageLimit   int32       `json:"page_limit"`
+}
+
+type ListAllAffiliateLinksFilteredRow struct {
+	ID              pgtype.UUID        `json:"id"`
+	TenantID        pgtype.UUID        `json:"tenant_id"`
+	UserID          pgtype.UUID        `json:"user_id"`
+	ProductType     string             `json:"product_type"`
+	ProductID       pgtype.UUID        `json:"product_id"`
+	Code            string             `json:"code"`
+	Description     *string            `json:"description"`
+	DestinationUrl  string             `json:"destination_url"`
+	ClickCount      int32              `json:"click_count"`
+	ConversionCount int32              `json:"conversion_count"`
+	TotalEarned     pgtype.Numeric     `json:"total_earned"`
+	IsActive        bool               `json:"is_active"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	Username        *string            `json:"username"`
+}
+
+// Admin list with optional user_id / product_type / is_active filters
+// (Section 56 / catalog ?user_id&product_type&status=active|inactive).
+// Tenant-scoped. Joins users for the admin UI's username column. NULL = no
+// filter on that dimension.
+func (q *Queries) ListAllAffiliateLinksFiltered(ctx context.Context, arg ListAllAffiliateLinksFilteredParams) ([]ListAllAffiliateLinksFilteredRow, error) {
+	rows, err := q.db.Query(ctx, listAllAffiliateLinksFiltered,
+		arg.TenantID,
+		arg.UserID,
+		arg.ProductType,
+		arg.IsActive,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListAllAffiliateLinksFilteredRow
+	for rows.Next() {
+		var i ListAllAffiliateLinksFilteredRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.UserID,
+			&i.ProductType,
+			&i.ProductID,
+			&i.Code,
+			&i.Description,
+			&i.DestinationUrl,
+			&i.ClickCount,
+			&i.ConversionCount,
+			&i.TotalEarned,
+			&i.IsActive,
+			&i.CreatedAt,
+			&i.Username,
 		); err != nil {
 			return nil, err
 		}

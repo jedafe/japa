@@ -12,6 +12,30 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const anonymizeAffiliateLinkEvents = `-- name: AnonymizeAffiliateLinkEvents :exec
+UPDATE affiliate_link_events
+SET ip_hash = NULL, user_agent_hash = NULL
+WHERE link_id IN (
+    SELECT ual.id FROM user_affiliate_links ual
+    WHERE ual.user_id = $1 AND ual.tenant_id = $2
+)
+`
+
+type AnonymizeAffiliateLinkEventsParams struct {
+	UserID   pgtype.UUID `json:"user_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+// Scrubs PII (ip_hash, user_agent_hash) from affiliate_link_events owned by
+// the deleted user's affiliate links during the GDPR retention window
+// (Section 56, ADR-014). The events themselves are retained for commission
+// audit; only the tracking hashes are cleared. Best-effort: a failure logs a
+// warning but does not abort the erasure.
+func (q *Queries) AnonymizeAffiliateLinkEvents(ctx context.Context, arg AnonymizeAffiliateLinkEventsParams) error {
+	_, err := q.db.Exec(ctx, anonymizeAffiliateLinkEvents, arg.UserID, arg.TenantID)
+	return err
+}
+
 const anonymizeAuditLogActor = `-- name: AnonymizeAuditLogActor :exec
 UPDATE audit_logs
 SET actor_user_id = $1,
