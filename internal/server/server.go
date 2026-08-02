@@ -2145,6 +2145,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Patch("/admin/ads/boosts/{id}", adHandlers.UpdateBoost)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ad.campaign.manage")).
 				Delete("/admin/ads/boosts/{id}", adHandlers.DeleteBoost)
+			// Ad Network Config (public — no auth required)
+			r.Get("/ads/networks/config", adHandlers.GetAdNetworkConfig)
 			// Ad Networks (Section 25 — external ad network configuration)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ad.network.manage")).
 				Get("/admin/ads/networks", adHandlers.ListAdNetworks)
