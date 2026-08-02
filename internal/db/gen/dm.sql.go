@@ -24,20 +24,26 @@ func (q *Queries) CleanupDeclinedDMRequests(ctx context.Context) error {
 
 const createMessageRequest = `-- name: CreateMessageRequest :exec
 INSERT INTO dm_requests (tenant_id, requester_id, recipient_id, conversation_id, preview_message, status)
-SELECT $1, dc.participant_1_id, dc.participant_2_id, dc.id, $2, 'pending'
-FROM dm_conversations dc
-WHERE dc.id = $3
+VALUES ($1, $2, $3, $4, $5, 'pending')
 ON CONFLICT (requester_id, recipient_id) DO NOTHING
 `
 
 type CreateMessageRequestParams struct {
 	TenantID       pgtype.UUID `json:"tenant_id"`
-	PreviewMessage string      `json:"preview_message"`
+	RequesterID    pgtype.UUID `json:"requester_id"`
+	RecipientID    pgtype.UUID `json:"recipient_id"`
 	ConversationID pgtype.UUID `json:"conversation_id"`
+	PreviewMessage string      `json:"preview_message"`
 }
 
 func (q *Queries) CreateMessageRequest(ctx context.Context, arg CreateMessageRequestParams) error {
-	_, err := q.db.Exec(ctx, createMessageRequest, arg.TenantID, arg.PreviewMessage, arg.ConversationID)
+	_, err := q.db.Exec(ctx, createMessageRequest,
+		arg.TenantID,
+		arg.RequesterID,
+		arg.RecipientID,
+		arg.ConversationID,
+		arg.PreviewMessage,
+	)
 	return err
 }
 
@@ -170,6 +176,7 @@ FROM dm_messages dm
 JOIN users u ON u.id = dm.sender_id
 LEFT JOIN user_profiles p ON p.user_id = u.id AND p.tenant_id = $1
 WHERE dm.conversation_id = $2 AND dm.tenant_id = $1
+  AND dm.deleted_at IS NULL
 ORDER BY dm.created_at DESC
 LIMIT $4 OFFSET $3
 `
@@ -259,11 +266,16 @@ func (q *Queries) GetDMMessageByID(ctx context.Context, arg GetDMMessageByIDPara
 }
 
 const getMessageRequest = `-- name: GetMessageRequest :one
-SELECT id, tenant_id, requester_id, recipient_id, conversation_id, preview_message, status, created_at, updated_at, resolved_at FROM dm_requests WHERE conversation_id = $1
+SELECT id, tenant_id, requester_id, recipient_id, conversation_id, preview_message, status, created_at, updated_at, resolved_at FROM dm_requests WHERE conversation_id = $1 AND tenant_id = $2
 `
 
-func (q *Queries) GetMessageRequest(ctx context.Context, conversationID pgtype.UUID) (DmRequest, error) {
-	row := q.db.QueryRow(ctx, getMessageRequest, conversationID)
+type GetMessageRequestParams struct {
+	ConversationID pgtype.UUID `json:"conversation_id"`
+	TenantID       pgtype.UUID `json:"tenant_id"`
+}
+
+func (q *Queries) GetMessageRequest(ctx context.Context, arg GetMessageRequestParams) (DmRequest, error) {
+	row := q.db.QueryRow(ctx, getMessageRequest, arg.ConversationID, arg.TenantID)
 	var i DmRequest
 	err := row.Scan(
 		&i.ID,
@@ -614,35 +626,36 @@ func (q *Queries) SoftDeleteDMMessageByID(ctx context.Context, id pgtype.UUID) e
 
 const updateConversationLastMessage = `-- name: UpdateConversationLastMessage :exec
 UPDATE dm_conversations
-SET last_message_at = $1,
-    last_message_preview = $2,
+SET last_message_at = now(),
+    last_message_preview = $1,
     updated_at = now()
-WHERE id = $3
+WHERE id = $2 AND tenant_id = $3
 `
 
 type UpdateConversationLastMessageParams struct {
-	LastMessageAt      pgtype.Timestamptz `json:"last_message_at"`
-	LastMessagePreview *string            `json:"last_message_preview"`
-	ConversationID     pgtype.UUID        `json:"conversation_id"`
+	LastMessagePreview *string     `json:"last_message_preview"`
+	ConversationID     pgtype.UUID `json:"conversation_id"`
+	TenantID           pgtype.UUID `json:"tenant_id"`
 }
 
 func (q *Queries) UpdateConversationLastMessage(ctx context.Context, arg UpdateConversationLastMessageParams) error {
-	_, err := q.db.Exec(ctx, updateConversationLastMessage, arg.LastMessageAt, arg.LastMessagePreview, arg.ConversationID)
+	_, err := q.db.Exec(ctx, updateConversationLastMessage, arg.LastMessagePreview, arg.ConversationID, arg.TenantID)
 	return err
 }
 
 const updateMessageRequestStatus = `-- name: UpdateMessageRequestStatus :exec
 UPDATE dm_requests SET status = $1, resolved_at = now()
-WHERE conversation_id = $2
+WHERE conversation_id = $2 AND tenant_id = $3
 `
 
 type UpdateMessageRequestStatusParams struct {
 	Status         string      `json:"status"`
 	ConversationID pgtype.UUID `json:"conversation_id"`
+	TenantID       pgtype.UUID `json:"tenant_id"`
 }
 
 func (q *Queries) UpdateMessageRequestStatus(ctx context.Context, arg UpdateMessageRequestStatusParams) error {
-	_, err := q.db.Exec(ctx, updateMessageRequestStatus, arg.Status, arg.ConversationID)
+	_, err := q.db.Exec(ctx, updateMessageRequestStatus, arg.Status, arg.ConversationID, arg.TenantID)
 	return err
 }
 

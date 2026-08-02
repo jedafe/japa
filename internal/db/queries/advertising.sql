@@ -242,3 +242,42 @@ RETURNING *;
 -- name: DeleteOrganizationBoost :exec
 DELETE FROM organization_boosts
 WHERE id = @id AND tenant_id = @tenant_id;
+
+-- =====================
+-- Ad Networks (Section 25 — external ad network configuration)
+-- =====================
+
+-- name: CreateAdNetwork :one
+INSERT INTO ad_networks (
+    tenant_id, provider, name, client_id, api_key, slot_mapping, config, is_active, priority
+) VALUES (
+    @tenant_id, @provider, @name, sqlc.narg(client_id), sqlc.narg(api_key),
+    @slot_mapping, @config, @is_active, @priority
+)
+RETURNING *;
+
+-- name: GetAdNetworkByID :one
+SELECT * FROM ad_networks WHERE id = @id AND tenant_id = @tenant_id;
+
+-- name: GetAdNetworkByProvider :one
+SELECT * FROM ad_networks WHERE tenant_id = @tenant_id AND provider = @provider;
+
+-- name: ListAdNetworks :many
+SELECT * FROM ad_networks WHERE tenant_id = @tenant_id
+ORDER BY priority DESC, name LIMIT @page_limit OFFSET @page_offset;
+
+-- name: ListActiveAdNetworks :many
+SELECT * FROM ad_networks WHERE tenant_id = @tenant_id AND is_active = true
+ORDER BY priority DESC, name;
+
+-- name: UpdateAdNetwork :one
+UPDATE ad_networks
+SET name = @name, client_id = sqlc.narg(client_id), api_key = sqlc.narg(api_key),
+    slot_mapping = @slot_mapping, config = @config, is_active = @is_active, priority = @priority
+WHERE id = @id AND tenant_id = @tenant_id RETURNING *;
+
+-- name: DeleteAdNetwork :exec
+DELETE FROM ad_networks WHERE id = @id AND tenant_id = @tenant_id;
+
+-- name: CountAdNetworks :one
+SELECT COUNT(*)::int FROM ad_networks WHERE tenant_id = @tenant_id;
