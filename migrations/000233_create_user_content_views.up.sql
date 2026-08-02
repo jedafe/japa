@@ -17,8 +17,10 @@ CREATE TABLE IF NOT EXISTS user_content_views (
 );
 
 -- Deduplicate per user/session per day (Section 14).
+-- date_trunc on timestamptz is not IMMUTABLE (timezone-dependent), so cast
+-- to timestamp via AT TIME ZONE 'UTC' first to make the expression immutable.
 CREATE UNIQUE INDEX IF NOT EXISTS idx_ucv_dedup
-  ON user_content_views (content_id, COALESCE(user_id::text, session_id), date_trunc('day', viewed_at));
+  ON user_content_views (content_id, COALESCE(user_id::text, session_id), date_trunc('day', viewed_at AT TIME ZONE 'UTC'));
 
 CREATE INDEX IF NOT EXISTS idx_ucv_content ON user_content_views (content_id, viewed_at DESC);
 
