@@ -127,6 +127,19 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	h := NewHandler(database)
 	tenantStore := tenant.NewDBStore(database)
 
+	// Resolve the default tenant ID once for boot-time system_settings reads
+	// that happen outside a request context (where tenant middleware would
+	// populate it). All system_settings are tenant-scoped; using a zero UUID
+	// would miss every row. Falls back to the well-known default tenant UUID
+	// if the lookup fails so the server still boots on a fresh database.
+	defaultTenantID := pgtype.UUID{Bytes: [16]byte{
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01,
+	}, Valid: true}
+	if dt, err := tenantStore.GetDefaultTenant(context.Background()); err == nil && dt != nil {
+		defaultTenantID = dt.ID
+	}
+
 	// JWT key rotation — use persistent secret from config when set,
 	// otherwise generate a random key for development (sessions won't survive restart).
 	var signingKey []byte
@@ -306,7 +319,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// at startup. The content sanitizer reads this list at render time under a
 	// read lock, so a later settings change requires a process restart or a
 	// dedicated reload hook. Empty/unset restores the compiled-in defaults.
-	iframeHostsCSV := settingsService.GetStringOr(context.Background(), pgtype.UUID{}, "content.sanitization.allowed_iframe_hosts", "")
+	iframeHostsCSV := settingsService.GetStringOr(context.Background(), defaultTenantID, "content.sanitization.allowed_iframe_hosts", "")
 	if iframeHostsCSV != "" {
 		content.SetAllowedIframeHosts(strings.Split(iframeHostsCSV, ","))
 	}
@@ -502,10 +515,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 	// Currency resolver for geo-aware currency resolution at checkout
 	// (Section 58, ADR-065). The default currency is read from
-	// system_settings wallet.default_currency (fallback NGN). A zero tenant
-	// UUID reads the global setting; the resolver also has SetDefaultCurrency
-	// for hot-reload when the setting changes.
-	defaultCurrency := settingsService.GetStringOr(context.Background(), pgtype.UUID{}, "wallet.default_currency", "NGN")
+	// system_settings wallet.default_currency (fallback NGN). The default
+	// tenant ID is used because this read happens at boot time, outside any
+	// request context. The resolver also has SetDefaultCurrency for
+	// hot-reload when the setting changes.
+	defaultCurrency := settingsService.GetStringOr(context.Background(), defaultTenantID, "wallet.default_currency", "NGN")
 	currencyResolver := wallet.NewCurrencyResolver(walletService.Store(), defaultCurrency)
 	walletService.SetCurrencyResolver(currencyResolver)
 
