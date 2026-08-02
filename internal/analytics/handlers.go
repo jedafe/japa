@@ -8,6 +8,7 @@
 package analytics
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -20,12 +21,20 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/tenant"
+	vkcache "github.com/jedafe/japa/internal/valkey"
+	"github.com/valkey-io/valkey-go/valkeycompat"
 )
+
+// analyticsCacheTTL is the TTL for jc:cache:analytics:* keys. Analytics
+// data changes slowly (aggregated from events), so a 5-minute TTL balances
+// freshness with DB load reduction (BUG-010).
+const analyticsCacheTTL = 5 * time.Minute
 
 // Handlers holds dependencies for analytics HTTP handlers.
 type Handlers struct {
 	Service      *Service
 	CacheFlusher *CacheFlusher
+	cache        valkeycompat.Cmdable // nil disables caching (tests)
 }
 
 // NewHandlers creates Handlers with the given Service.
@@ -36,6 +45,17 @@ func NewHandlers(service *Service) *Handlers {
 // SetCacheFlusher attaches a CacheFlusher for the admin cache flush endpoint.
 func (h *Handlers) SetCacheFlusher(flusher *CacheFlusher) {
 	h.CacheFlusher = flusher
+}
+
+// SetCache injects a Valkey client for read-through analytics caching
+// (jc:cache:analytics:* per valkey-keys-catalog.md). nil disables caching.
+func (h *Handlers) SetCache(c valkeycompat.Cmdable) {
+	h.cache = c
+}
+
+// analyticsCacheKey builds jc:cache:analytics:{tenant_id}:{endpoint}:{period}.
+func analyticsCacheKey(tenantID pgtype.UUID, endpoint, period string) string {
+	return fmt.Sprintf("jc:cache:analytics:%s:%s:%s", tenantID.String(), endpoint, period)
 }
 
 // ---------------------------------------------------------------------------
@@ -202,6 +222,9 @@ func (h *Handlers) GetUserDashboard(w http.ResponseWriter, r *http.Request) {
 // ---------------------------------------------------------------------------
 
 // GetAdminOverview handles GET /api/v1/admin/analytics/overview.
+// Uses read-through Valkey cache (jc:cache:analytics:*, BUG-010) with a 5-min
+// TTL. The cache key includes the tenant and time period so different windows
+// don't collide. Uses distributed lock stampede protection (BUG-008).
 func (h *Handlers) GetAdminOverview(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -214,7 +237,15 @@ func (h *Handlers) GetAdminOverview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	dashboard, err := h.Service.GetAdminDashboardData(r.Context(), tenantID, from, to)
+	period := r.URL.Query().Get("period")
+	if period == "" {
+		period = "30d"
+	}
+	cacheKey := analyticsCacheKey(tenantID, "overview", period)
+
+	dashboard, err := vkcache.GetOrComputeCompat(r.Context(), h.cache, cacheKey, analyticsCacheTTL, func(ctx context.Context) (any, error) {
+		return h.Service.GetAdminDashboardData(ctx, tenantID, from, to)
+	})
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -494,6 +525,8 @@ func (h *Handlers) GetRevenueAnalytics(w http.ResponseWriter, r *http.Request) {
 }
 
 // GetSearchAnalytics handles GET /admin/analytics/search (P5.6).
+// Uses read-through Valkey cache (jc:cache:analytics:*, BUG-010) with a 5-min
+// TTL. Uses distributed lock stampede protection (BUG-008).
 func (h *Handlers) GetSearchAnalytics(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -506,18 +539,11 @@ func (h *Handlers) GetSearchAnalytics(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	startDate := &from
-	var endDate *time.Time
-	if to != nil {
-		endDate = to
+	period := r.URL.Query().Get("period")
+	if period == "" {
+		period = "30d"
 	}
-
-	results, err := h.Service.store.GetSearchAnalytics(r.Context(), tenantID, startDate, endDate, 50)
-	if err != nil {
-		slog.Error("get search analytics", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to retrieve search analytics")
-		return
-	}
+	cacheKey := analyticsCacheKey(tenantID, "search", period)
 
 	// Convert to frontend-friendly format
 	type SearchResult struct {
@@ -525,13 +551,33 @@ func (h *Handlers) GetSearchAnalytics(w http.ResponseWriter, r *http.Request) {
 		Count      int64  `json:"count"`
 		AvgResults int32  `json:"avg_results"`
 	}
-	searchResults := make([]SearchResult, 0, len(results))
-	for _, r := range results {
-		searchResults = append(searchResults, SearchResult{
-			Query:      r.Query,
-			Count:      r.SearchCount,
-			AvgResults: r.AvgResults,
-		})
+
+	searchResults, err := vkcache.GetOrComputeCompat(r.Context(), h.cache, cacheKey, analyticsCacheTTL, func(ctx context.Context) ([]SearchResult, error) {
+		startDate := &from
+		var endDate *time.Time
+		if to != nil {
+			endDate = to
+		}
+
+		results, err := h.Service.store.GetSearchAnalytics(ctx, tenantID, startDate, endDate, 50)
+		if err != nil {
+			return nil, err
+		}
+
+		mapped := make([]SearchResult, 0, len(results))
+		for _, row := range results {
+			mapped = append(mapped, SearchResult{
+				Query:      row.Query,
+				Count:      row.SearchCount,
+				AvgResults: row.AvgResults,
+			})
+		}
+		return mapped, nil
+	})
+	if err != nil {
+		slog.Error("get search analytics", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to retrieve search analytics")
+		return
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": searchResults})

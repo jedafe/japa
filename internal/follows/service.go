@@ -18,10 +18,11 @@ type FollowerInfo struct {
 	AvatarURL   string `json:"avatar_url"`
 }
 
-// FollowingInfo extends a follow row with the entity's display name.
+// FollowingInfo extends a follow row with the entity's display name + slug.
 type FollowingInfo struct {
 	gen.Follow
 	EntityName string `json:"entity_name"`
+	EntitySlug string `json:"entity_slug"`
 }
 
 // joiningPermOpen is the joining_perm value that allows anyone to auto-join
@@ -227,6 +228,7 @@ func (s *Service) GetFollowing(ctx context.Context, tenantID, followerID pgtype.
 				CreatedAt:  r.CreatedAt,
 			},
 			EntityName: r.EntityName,
+			EntitySlug: r.EntitySlug,
 		}
 	}
 
@@ -253,6 +255,7 @@ func (s *Service) GetFollowingByType(ctx context.Context, tenantID, followerID p
 				CreatedAt:  r.CreatedAt,
 			},
 			EntityName: r.EntityName,
+			EntitySlug: r.EntitySlug,
 		}
 	}
 

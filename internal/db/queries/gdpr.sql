@@ -205,6 +205,19 @@ SET display_name = 'Deleted User',
     updated_at = now()
 WHERE user_id = @user_id AND tenant_id = @tenant_id;
 
+-- name: AnonymizeAffiliateLinkEvents :exec
+-- Scrubs PII (ip_hash, user_agent_hash) from affiliate_link_events owned by
+-- the deleted user's affiliate links during the GDPR retention window
+-- (Section 56, ADR-014). The events themselves are retained for commission
+-- audit; only the tracking hashes are cleared. Best-effort: a failure logs a
+-- warning but does not abort the erasure.
+UPDATE affiliate_link_events
+SET ip_hash = NULL, user_agent_hash = NULL
+WHERE link_id IN (
+    SELECT ual.id FROM user_affiliate_links ual
+    WHERE ual.user_id = @user_id AND ual.tenant_id = @tenant_id
+);
+
 -- name: DeleteUserTokens :exec
 UPDATE refresh_tokens
 SET revoked_at = now(), updated_at = now()

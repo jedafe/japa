@@ -13,15 +13,27 @@
 	interface ContentItem {
 		id: string;
 		title?: string;
-		type?: string;
+		content_type?: string;
 		status?: string;
 		created_at?: string;
 		views?: number;
 		comments?: number;
 	}
 
+	interface ContentTypeOption {
+		value: string;
+		label: string;
+	}
+
+	interface ContentManagerData {
+		items: ContentItem[];
+		contentTypes: ContentTypeOption[];
+	}
+
 	let { data }: { data: unknown } = $props();
-	let items = $state<ContentItem[]>(untrack(() => (data as ContentItem[] | null) ?? []));
+	const viewData = $derived(data as ContentManagerData | null);
+	let items = $state<ContentItem[]>(untrack(() => viewData?.items ?? []));
+	const contentTypes = $derived(viewData?.contentTypes ?? []);
 
 	const status = $derived(page.url.searchParams.get('status') ?? 'published');
 	const typeFilter = $derived(page.url.searchParams.get('type') ?? '');
@@ -46,12 +58,27 @@
 		goto(`/dashboard/content?${params.toString()}`, { keepFocus: true, noScroll: true });
 	}
 
+	// Format the content type for display — use the API label if available,
+	// otherwise fall back to the raw value.
+	function typeLabel(type: string | undefined): string {
+		if (!type) return t('dashboard.content.all_types');
+		const found = contentTypes.find((ct) => ct.value === type);
+		return found?.label ?? type;
+	}
+
+	// Format an ISO date string as a locale-aware date.
+	function formatDate(iso: string | undefined): string {
+		if (!iso) return '—';
+		const d = new Date(iso);
+		return isNaN(d.getTime()) ? '—' : d.toLocaleDateString();
+	}
+
 	let deleteTarget = $state<string | null>(null);
 
 	async function doPublish(id: string) {
 		await optimisticAction({
 			apply: () => (items = items.map((i) => (i.id === id ? { ...i, status: 'published' } : i))),
-			rollback: () => (items = (data as ContentItem[] | null) ?? []),
+			rollback: () => (items = viewData?.items ?? []),
 			call: () => publishContent(id)
 		});
 		await invalidate('/api/v1/me/content');
@@ -60,7 +87,7 @@
 	async function doArchive(id: string) {
 		await optimisticAction({
 			apply: () => (items = items.map((i) => (i.id === id ? { ...i, status: 'archived' } : i))),
-			rollback: () => (items = (data as ContentItem[] | null) ?? []),
+			rollback: () => (items = viewData?.items ?? []),
 			call: () => archiveContent(id)
 		});
 		await invalidate('/api/v1/me/content');
@@ -72,7 +99,7 @@
 		deleteTarget = null;
 		await optimisticAction({
 			apply: () => (items = items.filter((i) => i.id !== id)),
-			rollback: () => (items = (data as ContentItem[] | null) ?? []),
+			rollback: () => (items = viewData?.items ?? []),
 			call: () => deleteContent(id)
 		});
 		await invalidate('/api/v1/me/content');
@@ -102,9 +129,9 @@
 			onchange={(e) => setType(e.currentTarget.value)}
 		>
 			<option value="">{t('dashboard.content.all_types')}</option>
-			<option value="blog_post">{t('dashboard.content.type_blog_post')}</option>
-			<option value="comparison">{t('dashboard.content.type_comparison')}</option>
-			<option value="series">{t('dashboard.content.type_series')}</option>
+			{#each contentTypes as ct (ct.value)}
+				<option value={ct.value}>{ct.label}</option>
+			{/each}
 		</select>
 	</div>
 
@@ -117,7 +144,7 @@
 					<div class="min-w-0">
 						<p class="truncate text-sm font-medium text-[var(--color-text)]">{item.title ?? t('dashboard.content.untitled')}</p>
 						<p class="text-xs text-[var(--color-muted)]">
-							{item.type ?? '—'} · {item.status ?? '—'} · {item.created_at ?? '—'}
+							{typeLabel(item.content_type)} · {formatDate(item.created_at)}
 							{#if item.views !== undefined} · {item.views} {t('dashboard.content.views')}{/if}
 						</p>
 					</div>
@@ -133,7 +160,7 @@
 						<button type="button" class="text-xs text-[var(--color-muted)] hover:text-[var(--color-text)]" onclick={() => doArchive(item.id)}>
 							{t('dashboard.content.archive')}
 						</button>
-						<button type="button" class="text-xs text-[var(--color-muted)] hover:text-[var(--color-danger,#dc2626)]" onclick={() => (deleteTarget = item.id)}>
+						<button type="button" class="text-xs text-[var(--color-muted)] hover:text-[var(--color-danger)]" onclick={() => (deleteTarget = item.id)}>
 							{t('dashboard.content.delete')}
 						</button>
 					</div>
@@ -149,7 +176,7 @@
 				<Dialog.Description class="mb-4 text-sm text-[var(--color-muted)]">{t('dashboard.content.delete_confirm_body')}</Dialog.Description>
 				<div class="flex justify-end gap-2">
 					<Dialog.Close class="rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-sm text-[var(--color-text)]">{t('common.cancel')}</Dialog.Close>
-					<button type="button" class="rounded-[var(--radius)] bg-[var(--color-danger,#dc2626)] px-4 py-1.5 text-sm font-medium text-white" onclick={doDelete}>{t('dashboard.content.delete')}</button>
+					<button type="button" class="rounded-[var(--radius)] bg-[var(--color-danger)] px-4 py-1.5 text-sm font-medium text-white" onclick={doDelete}>{t('dashboard.content.delete')}</button>
 				</div>
 			</Dialog.Content>
 		</Dialog.Portal>

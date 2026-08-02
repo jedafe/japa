@@ -26,7 +26,7 @@
 	<meta name="description" content={t('pages_list.description', 'Browse all published pages on JapaConnect.')} />
 </svelte:head>
 
-<div class="mx-auto max-w-4xl px-4 py-6">
+<div class="mx-auto max-w-full px-4 py-6">
 	<h1 class="mb-1 text-2xl font-bold text-[var(--color-text)]">{t('pages_list.heading')}</h1>
 	<p class="mb-6 text-sm text-[var(--color-muted)]">{t('pages_list.description')}</p>
 

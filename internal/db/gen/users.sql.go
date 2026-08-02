@@ -129,6 +129,35 @@ func (q *Queries) CountUserContent(ctx context.Context, arg CountUserContentPara
 	return i, err
 }
 
+const countUserFollowStats = `-- name: CountUserFollowStats :one
+SELECT
+    COALESCE(u.follower_count, 0)::int AS follower_count,
+    (SELECT COUNT(*)::int FROM follows f
+       WHERE f.tenant_id = u.tenant_id AND f.follower_id = u.id) AS following_count
+FROM users u
+WHERE u.id = $1 AND u.tenant_id = $2
+`
+
+type CountUserFollowStatsParams struct {
+	UserID   pgtype.UUID `json:"user_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+type CountUserFollowStatsRow struct {
+	FollowerCount  int32 `json:"follower_count"`
+	FollowingCount int32 `json:"following_count"`
+}
+
+// Returns the follower_count (denormalized on users) and following_count
+// (computed from the follows table) for the user.
+// Ref: japaconnect-engineering/sections/31-follow-system.md (denormalized counts)
+func (q *Queries) CountUserFollowStats(ctx context.Context, arg CountUserFollowStatsParams) (CountUserFollowStatsRow, error) {
+	row := q.db.QueryRow(ctx, countUserFollowStats, arg.UserID, arg.TenantID)
+	var i CountUserFollowStatsRow
+	err := row.Scan(&i.FollowerCount, &i.FollowingCount)
+	return i, err
+}
+
 const countUsers = `-- name: CountUsers :one
 SELECT COUNT(*)::int AS count
 FROM users u
@@ -1070,8 +1099,29 @@ func (q *Queries) ListUserActivity(ctx context.Context, arg ListUserActivityPara
 }
 
 const listUserBookmarks = `-- name: ListUserBookmarks :many
-SELECT b.id, b.entity_type, b.entity_id, b.folder, b.created_at
+SELECT
+    b.id, b.entity_type, b.entity_id, b.folder, b.created_at,
+    CASE
+        WHEN b.entity_type IN ('content', 'blog_post') THEN c.title
+        WHEN b.entity_type = 'forum_thread'           THEN ft.title
+        WHEN b.entity_type = 'space'                   THEN s.name
+        WHEN b.entity_type = 'tag'                     THEN t.name
+    END AS title,
+    CASE
+        WHEN b.entity_type IN ('content', 'blog_post') THEN c.slug
+        WHEN b.entity_type = 'forum_thread'           THEN ft.slug
+        WHEN b.entity_type = 'space'                   THEN s.slug
+        WHEN b.entity_type = 'tag'                     THEN t.slug
+    END AS slug
 FROM bookmarks b
+LEFT JOIN contents c
+    ON b.entity_type IN ('content', 'blog_post') AND b.entity_id = c.id
+LEFT JOIN forum_threads ft
+    ON b.entity_type = 'forum_thread' AND b.entity_id = ft.id
+LEFT JOIN spaces s
+    ON b.entity_type = 'space' AND b.entity_id = s.id
+LEFT JOIN tags t
+    ON b.entity_type = 'tag' AND b.entity_id = t.id
 WHERE b.user_id = $1
 ORDER BY b.created_at DESC
 LIMIT $2 OFFSET $3
@@ -1089,8 +1139,14 @@ type ListUserBookmarksRow struct {
 	EntityID   pgtype.UUID        `json:"entity_id"`
 	Folder     string             `json:"folder"`
 	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+	Title      interface{}        `json:"title"`
+	Slug       interface{}        `json:"slug"`
 }
 
+// Enriches each bookmark with the title + slug of the bookmarked entity.
+// entity_type drives which table is joined (content/blog_post→contents,
+// forum_thread→forum_threads, space→spaces, tag→tags). Unknown types get
+// NULL title/slug; the frontend falls back to the entity_id.
 func (q *Queries) ListUserBookmarks(ctx context.Context, arg ListUserBookmarksParams) ([]ListUserBookmarksRow, error) {
 	rows, err := q.db.Query(ctx, listUserBookmarks, arg.UserID, arg.Limit, arg.Offset)
 	if err != nil {
@@ -1106,6 +1162,8 @@ func (q *Queries) ListUserBookmarks(ctx context.Context, arg ListUserBookmarksPa
 			&i.EntityID,
 			&i.Folder,
 			&i.CreatedAt,
+			&i.Title,
+			&i.Slug,
 		); err != nil {
 			return nil, err
 		}
@@ -1118,10 +1176,11 @@ func (q *Queries) ListUserBookmarks(ctx context.Context, arg ListUserBookmarksPa
 }
 
 const listUserContent = `-- name: ListUserContent :many
-SELECT c.id, c.title, c.content_type, c.status, c.created_at, c.updated_at
+SELECT c.id, c.title, c.slug, c.content_type, c.status, c.created_at, c.updated_at
 FROM contents c
 WHERE c.tenant_id = $1 AND c.author_id = $2 AND c.deleted_at IS NULL
   AND ($3::text = '' OR c.status = $3)
+  AND ($6::text = '' OR c.content_type = $6)
 ORDER BY c.created_at DESC
 LIMIT $4 OFFSET $5
 `
@@ -1132,11 +1191,13 @@ type ListUserContentParams struct {
 	Column3  string      `json:"column_3"`
 	Limit    int32       `json:"limit"`
 	Offset   int32       `json:"offset"`
+	Column6  string      `json:"column_6"`
 }
 
 type ListUserContentRow struct {
 	ID          pgtype.UUID        `json:"id"`
 	Title       string             `json:"title"`
+	Slug        string             `json:"slug"`
 	ContentType string             `json:"content_type"`
 	Status      string             `json:"status"`
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
@@ -1150,6 +1211,7 @@ func (q *Queries) ListUserContent(ctx context.Context, arg ListUserContentParams
 		arg.Column3,
 		arg.Limit,
 		arg.Offset,
+		arg.Column6,
 	)
 	if err != nil {
 		return nil, err
@@ -1161,6 +1223,7 @@ func (q *Queries) ListUserContent(ctx context.Context, arg ListUserContentParams
 		if err := rows.Scan(
 			&i.ID,
 			&i.Title,
+			&i.Slug,
 			&i.ContentType,
 			&i.Status,
 			&i.CreatedAt,

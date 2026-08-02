@@ -303,6 +303,7 @@ func (h *Handlers) DisconnectAccount(w http.ResponseWriter, r *http.Request) {
 type ContentListItem struct {
 	ID          string `json:"id"`
 	Title       string `json:"title"`
+	Slug        string `json:"slug"`
 	ContentType string `json:"content_type"`
 	Status      string `json:"status"`
 	CreatedAt   string `json:"created_at"`
@@ -310,6 +311,8 @@ type ContentListItem struct {
 }
 
 // ListMyContent handles GET /api/v1/me/content.
+// Returns the caller's published content. Drafts and scheduled posts have
+// their own endpoints (/me/drafts, /me/scheduled).
 func (h *Handlers) ListMyContent(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
 	if !ok {
@@ -324,7 +327,10 @@ func (h *Handlers) ListMyContent(w http.ResponseWriter, r *http.Request) {
 	limit := parsePageSize(r)
 	offset := parsePageOffset(r)
 
-	content, err := h.Service.ListUserContent(r.Context(), tenantID, user.UserID, "", limit, offset)
+	// §50: /me/content returns published content only. The ?type= query
+	// filters by content_type (blog_post, comparison, etc.).
+	contentType := r.URL.Query().Get("type")
+	content, err := h.Service.ListUserContentByStatus(r.Context(), tenantID, user.UserID, "published", contentType, limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -415,11 +421,13 @@ func (h *Handlers) ListMyScheduled(w http.ResponseWriter, r *http.Request) {
 
 // BookmarkListItem represents a bookmark in list responses.
 type BookmarkListItem struct {
-	ID         string `json:"id"`
-	EntityType string `json:"entity_type"`
-	EntityID   string `json:"entity_id"`
-	Folder     string `json:"folder"`
-	CreatedAt  string `json:"created_at"`
+	ID         string  `json:"id"`
+	EntityType string  `json:"entity_type"`
+	EntityID   string  `json:"entity_id"`
+	Folder     string  `json:"folder"`
+	CreatedAt  string  `json:"created_at"`
+	Title      *string `json:"title"`
+	Slug       *string `json:"slug"`
 }
 
 // ListMyBookmarks handles GET /api/v1/me/bookmarks.

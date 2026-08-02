@@ -72,7 +72,7 @@
 
 <ProfileTabs {tabs} active={activeTab} />
 
-<div class="mx-auto w-full max-w-2xl">
+<div class="mx-auto w-full max-w-full">
 	<div class="p-3">
 		{#if activeTab === 'about'}
 			<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">

@@ -9,10 +9,16 @@ package organizations
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
+	"log/slog"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/valkey"
+	"github.com/valkey-io/valkey-go/valkeycompat"
 )
 
 // Organization status values.
@@ -62,6 +68,12 @@ const (
 	MaxPageSize     int32 = 100
 )
 
+// Cache constants for org public profile/list caching (valkey-keys-catalog.md).
+const (
+	orgProfileCacheTTL = 60 * time.Second
+	orgListCacheTTL    = 60 * time.Second
+)
+
 // SettingsReader is the subset of config.Settings used by the org service.
 type SettingsReader interface {
 	GetSettingInt(ctx context.Context, tenantID pgtype.UUID, key string) (int, error)
@@ -72,6 +84,7 @@ type Service struct {
 	store    *Store
 	db       *db.DB
 	settings SettingsReader
+	vk       valkeycompat.Cmdable
 }
 
 // NewService creates a Service backed by the given database.
@@ -90,4 +103,171 @@ func NewServiceWithSettings(database *db.DB, settings SettingsReader) *Service {
 		db:       database,
 		settings: settings,
 	}
+}
+
+// SetValkeyCache injects a Valkey client for read-through caching of public
+// org profile and list endpoints (jc:org:profile, jc:org:list per
+// valkey-keys-catalog.md). nil disables caching (degraded mode).
+func (s *Service) SetValkeyCache(vk valkeycompat.Cmdable) {
+	s.vk = vk
+}
+
+// orgProfileCacheKey builds jc:org:profile:{tenant_id}:{slug}.
+func orgProfileCacheKey(tenantID pgtype.UUID, slug string) string {
+	return valkey.MustKey("org:profile:%s:%s", tenantID.String(), slug)
+}
+
+// orgListCacheKey builds jc:org:list:{tenant_id}:{page}.
+func orgListCacheKey(tenantID pgtype.UUID, page int32) string {
+	return valkey.MustKey("org:list:%s:%d", tenantID.String(), page)
+}
+
+// InvalidateOrgCache flushes all cached org entries for a tenant. Call after
+// any org CRUD mutation (create, update, delete, verify, unverify).
+func (s *Service) InvalidateOrgCache(ctx context.Context, tenantID pgtype.UUID) {
+	if s.vk == nil {
+		return
+	}
+	prefix := valkey.MustKey("org:*:%s:*", tenantID.String())
+	// Also flush the list cache for this tenant.
+	listPrefix := valkey.MustKey("org:list:%s:*", tenantID.String())
+
+	for _, pattern := range []string{prefix, listPrefix} {
+		var cursor uint64
+		for {
+			keys, nextCursor, err := s.vk.Scan(ctx, cursor, pattern, 100).Result()
+			if err != nil {
+				slog.Warn("org: failed to scan valkey for invalidation", "pattern", pattern, "error", err)
+				break
+			}
+			if len(keys) > 0 {
+				_ = s.vk.Del(ctx, keys...).Err()
+			}
+			cursor = nextCursor
+			if cursor == 0 {
+				break
+			}
+		}
+	}
+}
+
+// InvalidateOrgCacheByCmdable is a standalone invalidation function for
+// callers (e.g. admin handlers) that have a valkeycompat.Cmdable but not a
+// reference to the org Service. It flushes all jc:org:* keys for the tenant.
+func InvalidateOrgCacheByCmdable(ctx context.Context, vk valkeycompat.Cmdable, tenantID pgtype.UUID) {
+	if vk == nil {
+		return
+	}
+	for _, pattern := range []string{
+		valkey.MustKey("org:profile:%s:*", tenantID.String()),
+		valkey.MustKey("org:list:%s:*", tenantID.String()),
+	} {
+		var cursor uint64
+		for {
+			keys, nextCursor, err := vk.Scan(ctx, cursor, pattern, 100).Result()
+			if err != nil {
+				slog.Warn("org: failed to scan valkey for invalidation", "pattern", pattern, "error", err)
+				break
+			}
+			if len(keys) > 0 {
+				_ = vk.Del(ctx, keys...).Err()
+			}
+			cursor = nextCursor
+			if cursor == 0 {
+				break
+			}
+		}
+	}
+}
+
+// cachedPublicOrg wraps a cached public org profile for JSON round-trip.
+type cachedPublicOrg struct {
+	Org  gen.Organization `json:"org"`
+	Time time.Time        `json:"cached_at"`
+}
+
+// cachedPublicOrgList wraps a cached public org list response for JSON round-trip.
+type cachedPublicOrgList struct {
+	Rows  []gen.ListPublicOrganizationsRow `json:"rows"`
+	Total int64                            `json:"total"`
+	Time  time.Time                        `json:"cached_at"`
+}
+
+// getOrSetOrgProfile implements read-through cache for GetPublicOrganizationBySlug.
+// On cache miss, fetches from the store and populates the cache. On cache hit,
+// returns the cached org. Returns the org and a cache-hit flag for observability.
+func (s *Service) getOrSetOrgProfile(ctx context.Context, tenantID pgtype.UUID, slug string) (gen.Organization, error) {
+	if s.vk == nil {
+		return s.store.GetPublicOrganizationBySlug(ctx, slug, tenantID)
+	}
+
+	cacheKey := orgProfileCacheKey(tenantID, slug)
+	if cached, err := s.vk.Get(ctx, cacheKey).Result(); err == nil && cached != "" {
+		var entry cachedPublicOrg
+		if json.Unmarshal([]byte(cached), &entry) == nil {
+			return entry.Org, nil
+		}
+	}
+
+	org, err := s.store.GetPublicOrganizationBySlug(ctx, slug, tenantID)
+	if err != nil {
+		return org, err
+	}
+
+	entry := cachedPublicOrg{Org: org, Time: time.Now()}
+	if data, err := json.Marshal(entry); err == nil {
+		if err := s.vk.Set(ctx, cacheKey, data, orgProfileCacheTTL).Err(); err != nil {
+			slog.Warn("org: failed to cache profile", "slug", slug, "error", err)
+		}
+	}
+
+	return org, nil
+}
+
+// getOrSetOrgList implements read-through cache for ListPublicOrganizations.
+// The cache key includes the page number; filter variations (search, orgType,
+// verified) are part of the key to avoid returning stale filtered results.
+func (s *Service) getOrSetOrgList(ctx context.Context, tenantID pgtype.UUID, search, orgType, verified string, limit, offset int32) ([]gen.ListPublicOrganizationsRow, int64, error) {
+	if s.vk == nil {
+		return s.fetchOrgList(ctx, tenantID, search, orgType, verified, limit, offset)
+	}
+
+	page := offset / max(limit, 1)
+	cacheKey := orgListCacheKey(tenantID, page)
+	// Include filter params in the key to avoid cross-filter cache pollution.
+	cacheKey = fmt.Sprintf("%s:%s:%s:%s:%d:%d", cacheKey, search, orgType, verified, limit, offset)
+
+	if cached, err := s.vk.Get(ctx, cacheKey).Result(); err == nil && cached != "" {
+		var entry cachedPublicOrgList
+		if json.Unmarshal([]byte(cached), &entry) == nil {
+			return entry.Rows, entry.Total, nil
+		}
+	}
+
+	rows, total, err := s.fetchOrgList(ctx, tenantID, search, orgType, verified, limit, offset)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	entry := cachedPublicOrgList{Rows: rows, Total: total, Time: time.Now()}
+	if data, err := json.Marshal(entry); err == nil {
+		if err := s.vk.Set(ctx, cacheKey, data, orgListCacheTTL).Err(); err != nil {
+			slog.Warn("org: failed to cache list", "error", err)
+		}
+	}
+
+	return rows, total, nil
+}
+
+// fetchOrgList is the uncached DB fetch for ListPublicOrganizations.
+func (s *Service) fetchOrgList(ctx context.Context, tenantID pgtype.UUID, search, orgType, verified string, limit, offset int32) ([]gen.ListPublicOrganizationsRow, int64, error) {
+	rows, err := s.store.ListPublicOrganizations(ctx, tenantID, search, orgType, verified, limit, offset)
+	if err != nil {
+		return nil, 0, err
+	}
+	total, err := s.store.CountPublicOrganizations(ctx, tenantID, search, orgType, verified)
+	if err != nil {
+		return nil, 0, err
+	}
+	return rows, total, nil
 }

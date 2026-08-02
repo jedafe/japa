@@ -38,7 +38,7 @@
 				<li>
 					<a
 						href="/spaces/{s.slug}"
-						class="flex items-center justify-between gap-3 rounded-[12px] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 transition hover:border-[var(--color-primary)]/40"
+						class="flex items-center justify-between gap-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 transition hover:border-[var(--color-primary)]/40"
 					>
 						<div class="min-w-0 flex-1">
 							<p class="truncate text-sm font-medium text-[var(--color-text)]">{s.name}</p>

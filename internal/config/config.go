@@ -9,6 +9,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -18,6 +19,12 @@ import (
 type Config struct {
 	DatabaseURL              string // JC_DATABASE_URL — pgx connection string for PostgreSQL
 	RedisAddr                string // JC_REDIS_ADDR — Valkey/Redis address for cache and Asynq queues
+	RedisPassword            string // JC_REDIS_PASSWORD — optional auth password for Valkey/Redis
+	RedisDB                  int    // JC_REDIS_DB — Valkey/Redis database number (0 default)
+	RedisPoolSize            int    // JC_REDIS_POOL_SIZE — connection pool size (0 = valkey-go default)
+	RedisDialTimeoutMs       int    // JC_REDIS_DIAL_TIMEOUT_MS — dial timeout in milliseconds (0 = default)
+	RedisReadTimeoutMs       int    // JC_REDIS_READ_TIMEOUT_MS — read/write timeout in milliseconds (0 = default)
+	RedisTLSEnabled          bool   // JC_REDIS_TLS_ENABLED — enable TLS connection to Valkey/Redis
 	MeilisearchURL           string // JC_MEILISEARCH_URL — Meilisearch HTTP endpoint
 	MeilisearchKey           string // JC_MEILISEARCH_KEY — Meilisearch master key (empty for dev)
 	GeoIPDBPath              string // JC_GEOIP_DB_PATH — path to the MaxMind GeoLite2 database file
@@ -74,6 +81,12 @@ func Load() (Config, error) {
 	cfg := Config{
 		DatabaseURL:              os.Getenv("JC_DATABASE_URL"),
 		RedisAddr:                os.Getenv("JC_REDIS_ADDR"),
+		RedisPassword:            os.Getenv("JC_REDIS_PASSWORD"),
+		RedisDB:                  getEnvInt("JC_REDIS_DB", 0),
+		RedisPoolSize:            getEnvInt("JC_REDIS_POOL_SIZE", 0),
+		RedisDialTimeoutMs:       getEnvInt("JC_REDIS_DIAL_TIMEOUT_MS", 0),
+		RedisReadTimeoutMs:       getEnvInt("JC_REDIS_READ_TIMEOUT_MS", 0),
+		RedisTLSEnabled:          getEnvBool("JC_REDIS_TLS_ENABLED", false),
 		MeilisearchURL:           os.Getenv("JC_MEILISEARCH_URL"),
 		MeilisearchKey:           os.Getenv("JC_MEILISEARCH_KEY"),
 		GeoIPDBPath:              os.Getenv("JC_GEOIP_DB_PATH"),
@@ -225,6 +238,31 @@ func getEnvWithFallback(primary, fallback string) string {
 		return v
 	}
 	return os.Getenv(fallback)
+}
+
+// getEnvInt reads an environment variable as an integer and returns the
+// fallback if the variable is empty, unset, or not a valid integer.
+func getEnvInt(key string, fallback int) int {
+	v := os.Getenv(key)
+	if v == "" {
+		return fallback
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil {
+		return fallback
+	}
+	return n
+}
+
+// getEnvBool reads an environment variable as a boolean and returns the
+// fallback if the variable is empty, unset, or not a valid boolean.
+// Accepts "true", "1", "yes" (case-insensitive) as true.
+func getEnvBool(key string, fallback bool) bool {
+	v := strings.ToLower(strings.TrimSpace(os.Getenv(key)))
+	if v == "" {
+		return fallback
+	}
+	return v == "true" || v == "1" || v == "yes"
 }
 
 // IsDevelopment returns true when the environment is not production.

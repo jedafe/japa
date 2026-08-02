@@ -457,6 +457,17 @@ func (s *Service) ProcessAccountDeletion(ctx context.Context, requestID pgtype.U
 			slog.Warn("failed to anonymize user profile during deletion",
 				"user_id", request.UserID.String(), "error", err)
 		}
+		// Scrub PII (ip_hash, user_agent_hash) from affiliate_link_events
+		// owned by the user's affiliate links (Section 56, ADR-014). The
+		// events are retained for commission audit; only tracking hashes are
+		// cleared. Best-effort: a failure logs a warning but does not abort.
+		if err := s.store.anonymizeAffiliateLinkEvents(ctx, gen.AnonymizeAffiliateLinkEventsParams{
+			UserID:   request.UserID,
+			TenantID: request.TenantID,
+		}); err != nil {
+			slog.Warn("failed to anonymize affiliate link events during deletion",
+				"user_id", request.UserID.String(), "error", err)
+		}
 		if err := s.checkpoint(ctx, requestID, request.TenantID, deletionStepAnonymized); err != nil {
 			return err
 		}

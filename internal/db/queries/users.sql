@@ -184,10 +184,11 @@ DELETE FROM oauth_accounts WHERE tenant_id = $1 AND user_id = $2 AND provider = 
 SELECT EXISTS(SELECT 1 FROM users WHERE id = $1 AND tenant_id = $2 AND password_hash IS NOT NULL AND password_hash != '') AS has_password;
 
 -- name: ListUserContent :many
-SELECT c.id, c.title, c.content_type, c.status, c.created_at, c.updated_at
+SELECT c.id, c.title, c.slug, c.content_type, c.status, c.created_at, c.updated_at
 FROM contents c
 WHERE c.tenant_id = $1 AND c.author_id = $2 AND c.deleted_at IS NULL
   AND ($3::text = '' OR c.status = $3)
+  AND ($6::text = '' OR c.content_type = $6)
 ORDER BY c.created_at DESC
 LIMIT $4 OFFSET $5;
 
@@ -208,8 +209,33 @@ WHERE c.id = $1 AND c.tenant_id = $2 AND c.author_id = $3
   AND c.status = 'draft' AND c.deleted_at IS NULL;
 
 -- name: ListUserBookmarks :many
-SELECT b.id, b.entity_type, b.entity_id, b.folder, b.created_at
+-- Enriches each bookmark with the title + slug of the bookmarked entity.
+-- entity_type drives which table is joined (content/blog_post→contents,
+-- forum_thread→forum_threads, space→spaces, tag→tags). Unknown types get
+-- NULL title/slug; the frontend falls back to the entity_id.
+SELECT
+    b.id, b.entity_type, b.entity_id, b.folder, b.created_at,
+    CASE
+        WHEN b.entity_type IN ('content', 'blog_post') THEN c.title
+        WHEN b.entity_type = 'forum_thread'           THEN ft.title
+        WHEN b.entity_type = 'space'                   THEN s.name
+        WHEN b.entity_type = 'tag'                     THEN t.name
+    END AS title,
+    CASE
+        WHEN b.entity_type IN ('content', 'blog_post') THEN c.slug
+        WHEN b.entity_type = 'forum_thread'           THEN ft.slug
+        WHEN b.entity_type = 'space'                   THEN s.slug
+        WHEN b.entity_type = 'tag'                     THEN t.slug
+    END AS slug
 FROM bookmarks b
+LEFT JOIN contents c
+    ON b.entity_type IN ('content', 'blog_post') AND b.entity_id = c.id
+LEFT JOIN forum_threads ft
+    ON b.entity_type = 'forum_thread' AND b.entity_id = ft.id
+LEFT JOIN spaces s
+    ON b.entity_type = 'space' AND b.entity_id = s.id
+LEFT JOIN tags t
+    ON b.entity_type = 'tag' AND b.entity_id = t.id
 WHERE b.user_id = $1
 ORDER BY b.created_at DESC
 LIMIT $2 OFFSET $3;
@@ -429,3 +455,14 @@ WHERE tenant_id = @tenant_id AND author_id = @user_id
 SELECT COUNT(*)::int AS count
 FROM bookmarks
 WHERE user_id = @user_id AND tenant_id = @tenant_id;
+
+-- name: CountUserFollowStats :one
+-- Returns the follower_count (denormalized on users) and following_count
+-- (computed from the follows table) for the user.
+-- Ref: japaconnect-engineering/sections/31-follow-system.md (denormalized counts)
+SELECT
+    COALESCE(u.follower_count, 0)::int AS follower_count,
+    (SELECT COUNT(*)::int FROM follows f
+       WHERE f.tenant_id = u.tenant_id AND f.follower_id = u.id) AS following_count
+FROM users u
+WHERE u.id = @user_id AND u.tenant_id = @tenant_id;

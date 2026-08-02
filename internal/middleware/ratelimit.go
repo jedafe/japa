@@ -13,7 +13,6 @@ package middleware
 
 import (
 	"encoding/json"
-	"fmt"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -23,6 +22,7 @@ import (
 
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/clientip"
+	"github.com/jedafe/japa/internal/valkey"
 )
 
 // RateLimitTier defines the maximum number of requests allowed within a
@@ -76,7 +76,7 @@ func RateLimit(rdb valkeycompat.Cmdable, tier string) func(http.Handler) http.Ha
 
 			identifier := callerIdentifier(r)
 			bucket := time.Now().Unix() / windowSeconds
-			key := fmt.Sprintf("jc:ratelimit:%s:%s:%d", tier, identifier, bucket)
+			key := valkey.MustKey("ratelimit:%s:%s:%d", tier, identifier, bucket)
 
 			ctx := r.Context()
 

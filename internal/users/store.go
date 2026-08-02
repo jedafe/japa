@@ -295,13 +295,14 @@ func (s *Store) userHasPassword(ctx context.Context, tenantID, userID pgtype.UUI
 	})
 }
 
-func (s *Store) listUserContent(ctx context.Context, tenantID, userID pgtype.UUID, status string, limit, offset int32) ([]gen.ListUserContentRow, error) {
+func (s *Store) listUserContent(ctx context.Context, tenantID, userID pgtype.UUID, status, contentType string, limit, offset int32) ([]gen.ListUserContentRow, error) {
 	return s.read.ListUserContent(ctx, gen.ListUserContentParams{
 		TenantID: tenantID,
 		AuthorID: userID,
 		Column3:  status,
 		Limit:    limit,
 		Offset:   offset,
+		Column6:  contentType,
 	})
 }
 
@@ -443,6 +444,15 @@ func (s *Store) countUserContent(ctx context.Context, tenantID, userID pgtype.UU
 // countUserBookmarks returns the total bookmark count for the user.
 func (s *Store) countUserBookmarks(ctx context.Context, tenantID, userID pgtype.UUID) (int32, error) {
 	return s.read.CountUserBookmarks(ctx, gen.CountUserBookmarksParams{
+		UserID:   userID,
+		TenantID: tenantID,
+	})
+}
+
+// countUserFollowStats returns the follower and following counts for the user.
+// Ref: japaconnect-engineering/sections/31-follow-system.md (denormalized counts)
+func (s *Store) countUserFollowStats(ctx context.Context, tenantID, userID pgtype.UUID) (gen.CountUserFollowStatsRow, error) {
+	return s.read.CountUserFollowStats(ctx, gen.CountUserFollowStatsParams{
 		UserID:   userID,
 		TenantID: tenantID,
 	})

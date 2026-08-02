@@ -1,6 +1,7 @@
 import type { PageServerLoad } from './$types';
 import { apiContext, apiList } from '$lib/server/api';
 import type { ContentArticle } from '$lib/types/content';
+import type { BlogSeries } from '$lib/types';
 
 /**
  * Blog listing — GET /api/v1/blog (public, tenant-scoped).
@@ -14,12 +15,16 @@ export const load: PageServerLoad = async (event) => {
 	const tab = event.url.searchParams.get('tab') ?? 'latest';
 
 	try {
+		if (tab === 'series') {
+			const { items } = await apiList<BlogSeries>(ctx, '/blog/series');
+			return { items: [] as ContentArticle[], meta: null, series: items, page, pageSize, tab, loadError: false };
+		}
 		const path = tab === 'featured'
 			? `/blog/featured?page_size=${pageSize}&page_offset=${(page - 1) * pageSize}`
 			: `/blog?page_size=${pageSize}&page_offset=${(page - 1) * pageSize}`;
 		const { items, meta } = await apiList<ContentArticle>(ctx, path);
-		return { items, meta, page, pageSize, tab, loadError: false };
+		return { items, meta, series: [] as BlogSeries[], page, pageSize, tab, loadError: false };
 	} catch {
-		return { items: [] as ContentArticle[], meta: null, page, pageSize, tab, loadError: true };
+		return { items: [] as ContentArticle[], meta: null, series: [] as BlogSeries[], page, pageSize, tab, loadError: true };
 	}
 };

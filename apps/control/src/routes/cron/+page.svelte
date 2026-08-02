@@ -80,17 +80,16 @@
 		cron: string;
 	}
 
-	const schedulePresets: SchedulePreset[] = [
-		{ value: 'every_minute', label: 'Every minute', cron: '* * * * *' },
-		{ value: 'every_5min', label: 'Every 5 minutes', cron: '*/5 * * * *' },
-		{ value: 'every_15min', label: 'Every 15 minutes', cron: '*/15 * * * *' },
-		{ value: 'every_30min', label: 'Every 30 minutes', cron: '*/30 * * * *' },
-		{ value: 'hourly', label: 'Every hour', cron: '0 * * * *' },
-		{ value: 'every_6h', label: 'Every 6 hours', cron: '0 */6 * * *' },
-		{ value: 'daily_3am', label: 'Daily at 03:00', cron: '0 3 * * *' },
-		{ value: 'weekly_sun_2am', label: 'Weekly (Sun 02:00)', cron: '0 2 * * 0' },
-		{ value: 'custom', label: 'Custom cron expression...', cron: '' }
-	];
+	let schedulePresets = $state<SchedulePreset[]>([]);
+	let queueTiers = $state<string[]>(['critical', 'default', 'low']);
+
+	async function loadSchedulePresets() {
+		const result = await api<{ presets: SchedulePreset[]; tiers: string[] }>("/control/cron/schedule-presets");
+		if (result.ok && result.data) {
+			schedulePresets = result.data.presets;
+			queueTiers = result.data.tiers;
+		}
+	}
 
 	const columns: DataTableColumn[] = [
 		{
@@ -340,6 +339,7 @@
 	$effect(() => {
 		load();
 		loadTaskTypes();
+		loadSchedulePresets();
 	});
 
 	let filteredJobs = $derived(
@@ -564,9 +564,9 @@
 								sideOffset={4}
 							>
 								<Select.Viewport class="p-1">
-									{#each ['critical', 'default', 'low'] as tier}
+									{#each queueTiers as tier}
 										<div class="text-muted-foreground px-2 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wider">
-											{tier === 'critical' ? 'Critical' : tier === 'default' ? 'Default' : 'Low'} {t('cron.tier', 'Tier')}
+											{tier.charAt(0).toUpperCase() + tier.slice(1)} {t('cron.tier', 'Tier')}
 										</div>
 										{#each taskTypeOptions.filter((o) => o.tier === tier) as option}
 											<Select.Item

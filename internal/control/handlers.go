@@ -2463,6 +2463,32 @@ func (h *Handlers) ListTaskTypes(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"data": taskTypes})
 }
 
+// ListSchedulePresets handles GET /control/cron/schedule-presets — returns
+// the common cron schedule presets and queue tier names for the cron editor
+// and backup-configs UI, so the frontend does not hardcode them (Rule 16).
+func (h *Handlers) ListSchedulePresets(w http.ResponseWriter, r *http.Request) {
+	presets := []map[string]string{
+		{"value": "every_minute", "label": "Every minute", "cron": "* * * * *"},
+		{"value": "every_5min", "label": "Every 5 minutes", "cron": "*/5 * * * *"},
+		{"value": "every_15min", "label": "Every 15 minutes", "cron": "*/15 * * * *"},
+		{"value": "every_30min", "label": "Every 30 minutes", "cron": "*/30 * * * *"},
+		{"value": "hourly", "label": "Every hour", "cron": "0 * * * *"},
+		{"value": "every_6h", "label": "Every 6 hours", "cron": "0 */6 * * *"},
+		{"value": "daily_midnight", "label": "Daily at 00:00", "cron": "0 0 * * *"},
+		{"value": "daily_3am", "label": "Daily at 03:00", "cron": "0 3 * * *"},
+		{"value": "weekly_sun_2am", "label": "Weekly (Sun 02:00)", "cron": "0 2 * * 0"},
+		{"value": "monthly_1st_2am", "label": "Monthly (1st 02:00)", "cron": "0 2 1 * *"},
+		{"value": "custom", "label": "Custom cron expression...", "cron": ""},
+	}
+	tiers := []string{"critical", "default", "low"}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data": map[string]any{
+			"presets": presets,
+			"tiers":   tiers,
+		},
+	})
+}
+
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)

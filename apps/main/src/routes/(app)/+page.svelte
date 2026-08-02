@@ -67,7 +67,7 @@
 	/>
 {:else}
 	<!-- Authenticated home timeline in the app shell -->
-	<div class="mx-auto w-full max-w-2xl">
+	<div class="mx-auto w-full max-w-full">
 		<FeedTabs tab={data.tab} sort={data.sort} authed={data.authed} />
 		<FeedSortBar tab={data.tab} sort={data.sort} />
 		<!-- Phase 23 — live feed update pill (driven by WS feed_update events) -->

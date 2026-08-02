@@ -24,17 +24,25 @@
 	// room, but keep the right sidebar and let the user expand via the toggle.
 	const isSettings = $derived(page.route.id?.startsWith('/(app)/settings') ?? false);
 
+	// Dashboard hub: same treatment — the dashboard has its own HubRail
+	// (secondary left nav for the dashboard views), so collapsing the main
+	// LeftNav gives the dashboard content more room and avoids two stacked
+	// left rails. The user can still expand via the toggle.
+	const isDashboard = $derived(page.route.id?.startsWith('/(app)/dashboard') ?? false);
+
 	// Seed from the server value once; thereafter this is user-controlled.
 	let collapsed = $state(untrack(() => data.navCollapsed));
 
-	// Auto-collapse when entering settings (once per transition). The user
-	// can still expand via the toggle — we only collapse on entry, not force.
-	let prevWasSettings = $state(false);
+	// Auto-collapse when entering settings or dashboard (once per transition).
+	// The user can still expand via the toggle — we only collapse on entry,
+	// not force.
+	let prevWasCollapsedZone = $state(false);
 	$effect(() => {
-		if (isSettings && !prevWasSettings) {
+		const inCollapsedZone = isSettings || isDashboard;
+		if (inCollapsedZone && !prevWasCollapsedZone) {
 			collapsed = true;
 		}
-		prevWasSettings = isSettings;
+		prevWasCollapsedZone = inCollapsedZone;
 	});
 
 	// Route-specific right-sidebar snippet (set by child routes via setSidebar).

@@ -30,14 +30,14 @@
 	function statusClass(status: TicketStatus): string {
 		switch (status) {
 			case 'open':
-				return 'bg-blue-500/10 text-blue-600';
+				return 'bg-[var(--color-info)]/10 text-[var(--color-info)]';
 			case 'in_progress':
-				return 'bg-amber-500/10 text-amber-600';
+				return 'bg-[var(--color-warning)]/10 text-[var(--color-warning)]';
 			case 'waiting_on_user':
-				return 'bg-purple-500/10 text-purple-600';
+				return 'bg-[var(--color-primary)]/10 text-[var(--color-primary)]';
 			case 'resolved':
 			case 'closed':
-				return 'bg-green-500/10 text-green-600';
+				return 'bg-[var(--color-success)]/10 text-[var(--color-success)]';
 			default:
 				return 'bg-[var(--color-surface-subtle)] text-[var(--color-muted)]';
 		}
@@ -68,7 +68,7 @@
 				<li>
 					<a
 						href="/dashboard/tickets/{tk.id}"
-						class="block rounded-[12px] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 transition hover:border-[var(--color-primary)]/40"
+						class="block rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 transition hover:border-[var(--color-primary)]/40"
 					>
 						<div class="flex items-start justify-between gap-3">
 							<div class="min-w-0 flex-1">
