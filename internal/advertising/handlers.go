@@ -1031,3 +1031,152 @@ func (h *Handlers) GetSlotType(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"data": slotType})
 }
+
+// ---------------------------------------------------------------------------
+// Ad Networks — admin CRUD handlers (Section 25 extension)
+// ---------------------------------------------------------------------------
+
+// CreateAdNetwork creates a new ad network configuration.
+func (h *Handlers) CreateAdNetwork(w http.ResponseWriter, r *http.Request) {
+	_, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	var input CreateAdNetworkInput
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
+
+	network, err := h.Service.CreateAdNetwork(r.Context(), tenantID, input)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, map[string]any{"data": network})
+}
+
+// ListAdNetworks lists all ad networks for the tenant.
+func (h *Handlers) ListAdNetworks(w http.ResponseWriter, r *http.Request) {
+	_, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+	if page < 1 {
+		page = 1
+	}
+	pageSize := parsePageSize(r)
+
+	networks, err := h.Service.ListAdNetworks(r.Context(), tenantID, int32(page), pageSize)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	total, _ := h.Service.CountAdNetworks(r.Context(), tenantID)
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data": nonNilSlice(networks),
+		"meta": map[string]any{"total": total, "page": page, "page_size": pageSize},
+	})
+}
+
+// GetAdNetwork returns a single ad network by ID.
+func (h *Handlers) GetAdNetwork(w http.ResponseWriter, r *http.Request) {
+	_, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	id, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ad network ID")
+		return
+	}
+
+	network, err := h.Service.GetAdNetwork(r.Context(), tenantID, id)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": network})
+}
+
+// UpdateAdNetwork updates an existing ad network.
+func (h *Handlers) UpdateAdNetwork(w http.ResponseWriter, r *http.Request) {
+	_, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	id, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ad network ID")
+		return
+	}
+
+	var input UpdateAdNetworkInput
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
+
+	network, err := h.Service.UpdateAdNetwork(r.Context(), tenantID, id, input)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": network})
+}
+
+// DeleteAdNetwork deletes an ad network by ID.
+func (h *Handlers) DeleteAdNetwork(w http.ResponseWriter, r *http.Request) {
+	_, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	id, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ad network ID")
+		return
+	}
+
+	if err := h.Service.DeleteAdNetwork(r.Context(), tenantID, id); err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
+}
