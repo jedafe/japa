@@ -10,6 +10,7 @@ package search
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -126,11 +127,14 @@ func (ix *Indexer) resolveRelevantCountries(ctx context.Context, tenantID pgtype
 	return []string{}
 }
 
-// buildExcerpt collapses whitespace in the body and truncates to a
-// rune-counted preview so multi-byte text never splits a code point. The
-// ellipsis marks truncation so callers can tell a full body from a cut one.
+// buildExcerpt produces a plain-text preview from a content body that may be
+// Tiptap/ProseMirror JSON (object or array form), HTML, or plain text. It
+// collapses whitespace and truncates to a rune-counted length so multi-byte
+// text never splits a code point. The ellipsis marks truncation so callers
+// can tell a full body from a cut one.
 func buildExcerpt(body string) string {
-	cleaned := strings.Join(strings.Fields(body), " ")
+	plain := tiptapPlainText(body)
+	cleaned := strings.Join(strings.Fields(plain), " ")
 	if utf8.RuneCountInString(cleaned) <= maxExcerptRunes {
 		return cleaned
 	}
@@ -138,6 +142,110 @@ func buildExcerpt(body string) string {
 	runes := []rune(cleaned)
 
 	return string(runes[:maxExcerptRunes]) + "…"
+}
+
+// tiptapPlainText extracts readable text from a content body that may be
+// Tiptap/ProseMirror JSON, HTML, or plain text. It handles the two Tiptap
+// shapes stored in JapaConnect:
+//   - A full document object: {"type":"doc","content":[...]}
+//   - A bare array of nodes:  [{"type":"paragraph","content":[...]}]
+//
+// HTML bodies are tag-stripped; anything else is returned as-is so a plain
+// text body still works.
+func tiptapPlainText(body string) string {
+	trimmed := strings.TrimSpace(body)
+	if trimmed == "" {
+		return ""
+	}
+
+	switch trimmed[0] {
+	case '{':
+		// Tiptap document object — extract text from the "content" array.
+		if text, ok := extractTiptapDoc([]byte(trimmed)); ok {
+			return text
+		}
+	case '[':
+		// Bare array of Tiptap nodes (forum_threads.body shape).
+		if text, ok := extractTiptapNodes([]byte(trimmed)); ok {
+			return text
+		}
+	case '<':
+		// HTML — strip tags.
+		return stripHTMLTags(trimmed)
+	}
+
+	return trimmed
+}
+
+// extractTiptapDoc parses a Tiptap document object and returns the
+// concatenated text of all text nodes.
+func extractTiptapDoc(data []byte) (string, bool) {
+	var doc struct {
+		Type    string        `json:"type"`
+		Content []interface{} `json:"content"`
+	}
+	if err := json.Unmarshal(data, &doc); err != nil {
+		return "", false
+	}
+	if doc.Type != "doc" {
+		return "", false
+	}
+	var sb strings.Builder
+	for _, node := range doc.Content {
+		walkTiptapNode(node, &sb)
+	}
+	return strings.TrimSpace(sb.String()), true
+}
+
+// extractTiptapNodes parses a bare array of Tiptap nodes and returns the
+// concatenated text of all text nodes.
+func extractTiptapNodes(data []byte) (string, bool) {
+	var nodes []interface{}
+	if err := json.Unmarshal(data, &nodes); err != nil {
+		return "", false
+	}
+	var sb strings.Builder
+	for _, node := range nodes {
+		walkTiptapNode(node, &sb)
+	}
+	return strings.TrimSpace(sb.String()), true
+}
+
+// walkTiptapNode recursively traverses a Tiptap node, appending text from
+// "text" leaf nodes and recursing into "content" children.
+func walkTiptapNode(node interface{}, sb *strings.Builder) {
+	m, ok := node.(map[string]interface{})
+	if !ok {
+		return
+	}
+	if text, ok := m["text"].(string); ok {
+		sb.WriteString(text)
+		sb.WriteByte(' ')
+	}
+	if content, ok := m["content"].([]interface{}); ok {
+		for _, child := range content {
+			walkTiptapNode(child, sb)
+		}
+	}
+}
+
+// stripHTMLTags removes HTML markup from s, leaving only the visible text.
+// It is a deliberately simple scanner — search excerpts do not need full
+// HTML parsing, just tag removal.
+func stripHTMLTags(s string) string {
+	var sb strings.Builder
+	inTag := false
+	for _, r := range s {
+		switch {
+		case r == '<':
+			inTag = true
+		case r == '>':
+			inTag = false
+		case !inTag:
+			sb.WriteRune(r)
+		}
+	}
+	return sb.String()
 }
 
 // contentURL maps a content type and slug to the frontend route a result link
@@ -148,7 +256,7 @@ func contentURL(contentType, slug string) string {
 	case "blog_post":
 		return "/blog/" + slug
 	case "discussion":
-		return "/forum/t/" + slug
+		return "/forum/" + slug
 	case "page":
 		return "/" + slug
 	default:
@@ -199,7 +307,7 @@ func (ix *Indexer) IndexForumThread(ctx context.Context, threadID, tenantID [16]
 		SpaceID:      row.SpaceID.String(),
 		Solved:       row.Solved,
 		AuthorUserID: row.AuthorUserID.String(),
-		URL:          "/forum/t/" + row.Slug,
+		URL:          "/forum/" + row.Slug,
 	}
 
 	docs := []forumThreadDocument{doc}
@@ -384,6 +492,80 @@ func (ix *Indexer) IndexTag(ctx context.Context, tagID, tenantID [16]byte) error
 }
 
 // ---------------------------------------------------------------------------
+// Organization Indexer (Section 54)
+// ---------------------------------------------------------------------------
+
+// organizationDocument is the shape stored in the organizations index.
+// The title/excerpt/url field names match the shared searchAttributesToRetrieve
+// list so the multi-search result mapper works uniformly across indexes.
+type organizationDocument struct {
+	ID          string `json:"id"`
+	TenantID    string `json:"tenant_id"`
+	Name        string `json:"title"`
+	Slug        string `json:"slug"`
+	Description string `json:"excerpt"`
+	OrgType     string `json:"org_type"`
+	Verified    bool   `json:"verified"`
+	Status      string `json:"status"`
+	CountryCode string `json:"country_code"`
+	URL         string `json:"url"`
+}
+
+// IndexOrganization fetches an organization and upserts it into the
+// organizations index. Soft-deleted orgs (deleted_at IS NOT NULL) are removed
+// from the index so they never surface in search.
+func (ix *Indexer) IndexOrganization(ctx context.Context, orgID, tenantID [16]byte) error {
+	if ix.client == nil {
+		slog.Warn("search:index: no meilisearch client, skipping")
+		return nil
+	}
+
+	row, err := ix.read.GetOrganizationByID(ctx, gen.GetOrganizationByIDParams{
+		ID:       pgtype.UUID{Bytes: orgID, Valid: true},
+		TenantID: pgtype.UUID{Bytes: tenantID, Valid: true},
+	})
+	if err != nil {
+		return fmt.Errorf("fetching organization for index: %w", err)
+	}
+
+	// Soft-deleted orgs are removed from the index so they don't appear in
+	// search results (Rule 11 — soft-delete, and GDPR erasure safety).
+	if row.DeletedAt.Valid {
+		return ix.DeleteDocument(ctx, IndexOrganizations, orgID)
+	}
+
+	desc := ""
+	if row.Description != nil {
+		desc = *row.Description
+	}
+	country := ""
+	if row.CountryCode != nil {
+		country = *row.CountryCode
+	}
+
+	doc := organizationDocument{
+		ID:          row.ID.String(),
+		TenantID:    row.TenantID.String(),
+		Name:        row.Name,
+		Slug:        row.Slug,
+		Description: desc,
+		OrgType:     row.OrgType,
+		Verified:    row.Verified,
+		Status:      row.Status,
+		CountryCode: country,
+		URL:         "/org/" + row.Slug,
+	}
+
+	docs := []organizationDocument{doc}
+	if _, err := ix.client.Index(IndexOrganizations).AddDocumentsWithContext(ctx, &docs, nil); err != nil {
+		return fmt.Errorf("indexing organization %s: %w", doc.ID, err)
+	}
+
+	slog.Info("search:index: organization indexed", "org_id", doc.ID, "name", doc.Name)
+	return nil
+}
+
+// ---------------------------------------------------------------------------
 // DeleteDocument
 // ---------------------------------------------------------------------------
 
@@ -546,4 +728,230 @@ func (ix *Indexer) IndexDocPage(ctx context.Context, pageID, tenantID [16]byte) 
 
 	slog.Info("search:index: doc page indexed", "page_id", doc.ID, "title", doc.Title)
 	return nil
+}
+
+// ---------------------------------------------------------------------------
+// Bulk Reindex
+// ---------------------------------------------------------------------------
+
+// reindexBatchSize is the page size used when iterating tenant-wide entity
+// lists during a bulk reindex. Chosen large enough that a typical dev/staging
+// tenant completes in a handful of round-trips, small enough to keep each
+// query result set bounded.
+const reindexBatchSize = 500
+
+// ReindexSummary records the outcome of a bulk reindex run per entity type.
+type ReindexSummary struct {
+	Content      int `json:"content"`
+	ForumThread  int `json:"forum_thread"`
+	Space        int `json:"space"`
+	User         int `json:"user"`
+	Tag          int `json:"tag"`
+	DocPage      int `json:"doc_page"`
+	Organization int `json:"organization"`
+	Errors       int `json:"errors"`
+}
+
+// ReindexAll iterates every entity for the given tenant and upserts it into
+// the corresponding Meilisearch index. This is the bootstrap/backfill path
+// for indexes that were provisioned after data already existed — the
+// per-entity IndexXxx methods only fire on create/update events, so rows
+// that predate the indexer wiring are never indexed without this sweep.
+//
+// Each entity type is fetched in offset/cursor batches and delegated to the
+// existing per-entity IndexXxx method, which reuses the document-shaping
+// logic (excerpt, URL, relevant_countries, etc.).
+func (ix *Indexer) ReindexAll(ctx context.Context, tenantID pgtype.UUID) (*ReindexSummary, error) {
+	if ix.client == nil {
+		return nil, fmt.Errorf("search:reindex: no meilisearch client")
+	}
+	if ix.read == nil {
+		return nil, fmt.Errorf("search:reindex: no database queries")
+	}
+
+	summary := &ReindexSummary{}
+
+	// Contents — cursor-paginated by created_at.
+	contentCursor := pgtype.Timestamptz{}
+	for {
+		rows, err := ix.read.ListContentsByTenant(ctx, gen.ListContentsByTenantParams{
+			TenantID:        tenantID,
+			Q:               "",
+			CursorCreatedAt: contentCursor,
+			PageLimit:       reindexBatchSize,
+		})
+		if err != nil {
+			slog.Warn("search:reindex: listing contents failed", "error", err)
+			summary.Errors++
+			break
+		}
+		for _, row := range rows {
+			if err := ix.IndexContent(ctx, row.ID.Bytes, tenantID.Bytes); err != nil {
+				slog.Warn("search:reindex: content failed", "id", row.ID, "error", err)
+				summary.Errors++
+			} else {
+				summary.Content++
+			}
+		}
+		if len(rows) < reindexBatchSize {
+			break
+		}
+		// Advance cursor — the last row's created_at (if present) drives the
+		// next page. ListContentsByTenant orders by created_at DESC.
+		last := rows[len(rows)-1]
+		contentCursor = last.CreatedAt
+	}
+
+	// Forum threads — cursor-paginated by created_at.
+	threadCursor := pgtype.Timestamptz{}
+	for {
+		rows, err := ix.read.ListForumThreadsByTenant(ctx, gen.ListForumThreadsByTenantParams{
+			TenantID:        tenantID,
+			CursorCreatedAt: threadCursor,
+			PageLimit:       reindexBatchSize,
+		})
+		if err != nil {
+			slog.Warn("search:reindex: listing forum threads failed", "error", err)
+			summary.Errors++
+			break
+		}
+		for _, row := range rows {
+			if err := ix.IndexForumThread(ctx, row.ID.Bytes, tenantID.Bytes); err != nil {
+				slog.Warn("search:reindex: forum thread failed", "id", row.ID, "error", err)
+				summary.Errors++
+			} else {
+				summary.ForumThread++
+			}
+		}
+		if len(rows) < reindexBatchSize {
+			break
+		}
+		last := rows[len(rows)-1]
+		threadCursor = last.CreatedAt
+	}
+
+	// Forum tags — offset-paginated.
+	for offset := int32(0); ; offset += reindexBatchSize {
+		rows, err := ix.read.ListForumTags(ctx, gen.ListForumTagsParams{
+			TenantID:   tenantID,
+			PageOffset: offset,
+			PageLimit:  reindexBatchSize,
+		})
+		if err != nil {
+			slog.Warn("search:reindex: listing forum tags failed", "error", err)
+			summary.Errors++
+			break
+		}
+		for _, row := range rows {
+			if err := ix.IndexTag(ctx, row.ID.Bytes, tenantID.Bytes); err != nil {
+				slog.Warn("search:reindex: tag failed", "id", row.ID, "error", err)
+				summary.Errors++
+			} else {
+				summary.Tag++
+			}
+		}
+		if len(rows) < reindexBatchSize {
+			break
+		}
+	}
+
+	// Spaces — offset-paginated via the admin list query.
+	for offset := int32(0); ; offset += reindexBatchSize {
+		rows, err := ix.read.AdminListSpaces(ctx, gen.AdminListSpacesParams{
+			TenantID:  tenantID,
+			OffsetVal: offset,
+			LimitVal:  reindexBatchSize,
+		})
+		if err != nil {
+			slog.Warn("search:reindex: listing spaces failed", "error", err)
+			summary.Errors++
+			break
+		}
+		for _, row := range rows {
+			if err := ix.IndexSpace(ctx, row.ID.Bytes, tenantID.Bytes); err != nil {
+				slog.Warn("search:reindex: space failed", "id", row.ID, "error", err)
+				summary.Errors++
+			} else {
+				summary.Space++
+			}
+		}
+		if len(rows) < reindexBatchSize {
+			break
+		}
+	}
+
+	// Users — offset-paginated with empty filters (all users).
+	for offset := int32(0); ; offset += reindexBatchSize {
+		rows, err := ix.read.ListUsers(ctx, gen.ListUsersParams{
+			TenantID:   tenantID,
+			Search:     "",
+			Status:     "",
+			GroupSlug:  "",
+			PageOffset: offset,
+			PageLimit:  reindexBatchSize,
+		})
+		if err != nil {
+			slog.Warn("search:reindex: listing users failed", "error", err)
+			summary.Errors++
+			break
+		}
+		for _, row := range rows {
+			if err := ix.IndexUser(ctx, row.ID.Bytes, tenantID.Bytes); err != nil {
+				slog.Warn("search:reindex: user failed", "id", row.ID, "error", err)
+				summary.Errors++
+			} else {
+				summary.User++
+			}
+		}
+		if len(rows) < reindexBatchSize {
+			break
+		}
+	}
+
+	// Doc pages — single query returns all for the tenant.
+	docRows, err := ix.read.ListAllDocPages(ctx, tenantID)
+	if err != nil {
+		slog.Warn("search:reindex: listing doc pages failed", "error", err)
+		summary.Errors++
+	} else {
+		for _, row := range docRows {
+			if err := ix.IndexDocPage(ctx, row.ID.Bytes, tenantID.Bytes); err != nil {
+				slog.Warn("search:reindex: doc page failed", "id", row.ID, "error", err)
+				summary.Errors++
+			} else {
+				summary.DocPage++
+			}
+		}
+	}
+
+	// Organizations — offset-paginated via ListOrganizations with empty filters.
+	for offset := int32(0); ; offset += reindexBatchSize {
+		rows, err := ix.read.ListOrganizations(ctx, gen.ListOrganizationsParams{
+			TenantID: tenantID,
+			Column2:  "", // org_type filter (empty = all)
+			Column3:  "", // country_code filter (empty = all)
+			Column4:  "", // name search (empty = all)
+			Column5:  "", // verified filter (empty = all)
+			Limit:    reindexBatchSize,
+			Offset:   offset,
+		})
+		if err != nil {
+			slog.Warn("search:reindex: listing organizations failed", "error", err)
+			summary.Errors++
+			break
+		}
+		for _, row := range rows {
+			if err := ix.IndexOrganization(ctx, row.ID.Bytes, tenantID.Bytes); err != nil {
+				slog.Warn("search:reindex: organization failed", "id", row.ID, "error", err)
+				summary.Errors++
+			} else {
+				summary.Organization++
+			}
+		}
+		if len(rows) < reindexBatchSize {
+			break
+		}
+	}
+
+	return summary, nil
 }

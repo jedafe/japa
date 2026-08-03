@@ -1,0 +1,145 @@
+<script lang="ts">
+	/**
+	 * SpaceJoinButton — Join/Leave toggle for a space, with an independent
+	 * Follow/Unfollow control. Joining auto-follows the space (BL-010 mirror:
+	 * the follow service auto-joins on follow; here we do the reverse for the
+	 * spaces directory CTA). The user may unfollow a joined space without
+	 * leaving it.
+	 *
+	 * Ref: japaconnect-engineering/sections/08-spaces.md (join endpoint)
+	 *      japaconnect-engineering/sections/31-follow-system.md (follow endpoint)
+	 */
+	import { untrack } from 'svelte';
+	import { t } from '$lib/i18n';
+	import { LogIn, LogOut, UserPlus, UserCheck, Loader2 } from 'lucide-svelte';
+	import { api } from '$lib/api/client';
+	import { requireAuthOrRedirect } from '$lib/auth/guest';
+
+	interface Props {
+		entityId: string;
+		/** Slug for the space — join/follow endpoints are keyed by slug. */
+		entitySlug: string;
+		initiallyJoined?: boolean;
+		initiallyFollowing?: boolean;
+		/** Compact mode — smaller padding for card overlays. */
+		compact?: boolean;
+	}
+
+	let {
+		entityId,
+		entitySlug,
+		initiallyJoined = false,
+		initiallyFollowing = false,
+		compact = false
+	}: Props = $props();
+
+	let joined = $state(untrack(() => initiallyJoined));
+	let following = $state(untrack(() => initiallyFollowing));
+	let joinPending = $state(false);
+	let followPending = $state(false);
+
+	/** POST /spaces/{slug}/join toggles membership (join ↔ leave). */
+	async function toggleJoin() {
+		if (joinPending) return;
+		if (!(await requireAuthOrRedirect())) return;
+		const wasJoined = joined;
+		joined = !wasJoined; // optimistic
+		joinPending = true;
+
+		const res = await api.post<{ joined?: boolean; pending?: boolean }>(
+			`/spaces/${entitySlug}/join`
+		);
+
+		if (res.error) {
+			joined = wasJoined; // roll back
+		} else if (res.data) {
+			if (typeof res.data.joined === 'boolean') joined = res.data.joined;
+			// A pending join request (request-perm space) is not a real join.
+			if (res.data.pending) joined = false;
+		}
+
+		// Auto-follow on a successful join (best-effort — a follow failure
+		// does not roll back the join). Only follow when transitioning to
+		// joined and not already following.
+		if (joined && !following && !res.data?.pending) {
+			await doFollow(true);
+		}
+		joinPending = false;
+	}
+
+	/** POST /spaces/{slug}/follow toggles follow. Pass `want=true` to force
+	 *  follow (used by auto-follow on join); omit for a normal toggle. */
+	async function doFollow(want = false) {
+		if (followPending) return;
+		if (!(await requireAuthOrRedirect())) return;
+		const wasFollowing = following;
+		const next = want ? true : !wasFollowing;
+		if (next === wasFollowing) return;
+		following = next; // optimistic
+		followPending = true;
+
+		const path = `/spaces/${entitySlug}/follow`;
+		const res = next
+			? await api.post<{ following: boolean }>(path)
+			: await api.delete<{ following: boolean }>(path);
+
+		if (res.error) {
+			following = wasFollowing; // roll back
+		} else if (res.data && typeof res.data.following === 'boolean') {
+			following = res.data.following;
+		}
+		followPending = false;
+	}
+
+	const sizeClass = $derived(compact ? 'px-3 py-1 text-xs' : 'px-4 py-1.5 text-sm');
+	const iconSize = $derived(compact ? 12 : 16);
+</script>
+
+<div class="flex shrink-0 items-center gap-1.5">
+	<!-- Join / Joined (membership toggle) -->
+	<button
+		type="button"
+		onclick={toggleJoin}
+		disabled={joinPending}
+		aria-busy={joinPending}
+		class="flex items-center gap-1.5 rounded-full font-medium transition-colors disabled:opacity-50 {sizeClass} {joined
+			? 'border border-[var(--color-border)] text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]'
+			: 'bg-[var(--color-primary)] text-[var(--color-primary-contrast)] hover:bg-[var(--color-primary-hover)]'}"
+	>
+		{#if joinPending}
+			<Loader2 size={iconSize} class="animate-spin" />
+		{:else if joined}
+			<LogOut size={iconSize} />
+			{t('spaces.joined_label', 'Joined')}
+		{:else}
+			<LogIn size={iconSize} />
+			{t('spaces.join', 'Join')}
+		{/if}
+	</button>
+
+	<!-- Follow / Following — only shown once joined, so the user can
+	     unfollow without leaving. Hidden before joining (auto-follow on
+	     join handles the initial follow). -->
+	{#if joined}
+		<button
+			type="button"
+			onclick={() => doFollow(false)}
+			disabled={followPending}
+			aria-busy={followPending}
+			title={following
+				? t('spaces.unfollow_title', 'Unfollow this space')
+				: t('spaces.follow_title', 'Follow this space')}
+			class="flex items-center gap-1 rounded-full border border-[var(--color-border)] font-medium transition-colors disabled:opacity-50 {sizeClass} {following
+				? 'text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]'
+				: 'text-[var(--color-primary)] hover:border-[var(--color-primary)]/40'}"
+		>
+			{#if followPending}
+				<Loader2 size={iconSize} class="animate-spin" />
+			{:else if following}
+				<UserCheck size={iconSize} />
+			{:else}
+				<UserPlus size={iconSize} />
+			{/if}
+		</button>
+	{/if}
+</div>

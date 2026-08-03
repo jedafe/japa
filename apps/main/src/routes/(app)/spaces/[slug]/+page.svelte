@@ -2,14 +2,16 @@
 	import { untrack } from 'svelte';
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
-	import { Rss, MessageSquare, Users, Info, PenSquare, Search, BarChart3 } from 'lucide-svelte';
+	import { Rss, MessageSquare, Users, Info, PenSquare, Search, BarChart3, UserPlus, UserCheck, Loader2 } from 'lucide-svelte';
 	import SetSidebar from '$lib/components/shell/SetSidebar.svelte';
 	import ProfileTabs from '$lib/components/profile/ProfileTabs.svelte';
 	import SpaceSidebar from '$lib/components/profile/SpaceSidebar.svelte';
+	import SpaceSettings from '$lib/components/spaces/SpaceSettings.svelte';
 	import ForumList from '$lib/components/forum/ForumList.svelte';
 	import { EmptyState } from '$lib/components/ui';
 	import { api } from '$lib/api/client';
-	import type { SpaceContentItem } from '$lib/types';
+	import { requireAuthOrRedirect } from '$lib/auth/guest';
+	import type { SpaceContentItem, SpaceModerator } from '$lib/types';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -26,7 +28,29 @@
 	const initialJoined = $derived(
 		authed && !!page.data.userSpaces?.some((s: { id: string; slug: string }) => s.id === space.id || s.slug === space.slug)
 	);
-	const initiallyFollowing = $derived(data.initiallyFollowing ?? false);
+
+	// Shared follow state — lifted to the page so the sidebar's Join button
+	// (auto-follow on join) and the header Follow button stay in sync.
+	let following = $state(untrack(() => data.initiallyFollowing ?? false));
+	let followPending = $state(false);
+
+	async function toggleFollow() {
+		if (followPending) return;
+		if (!(await requireAuthOrRedirect())) return;
+		const was = following;
+		following = !was;
+		followPending = true;
+		const path = `/spaces/${space.slug}/follow`;
+		const res = was
+			? await api.delete<{ following: boolean }>(path)
+			: await api.post<{ following: boolean }>(path);
+		if (res.error) {
+			following = was;
+		} else if (res.data && typeof res.data.following === 'boolean') {
+			following = res.data.following;
+		}
+		followPending = false;
+	}
 
 	const analytics = $derived(data.analytics as {
 		total_views?: number;
@@ -48,6 +72,11 @@
 		// guests and non-admin members.
 		...(authed && analytics
 			? [{ key: 'analytics', labelKey: 'space.tab.analytics', href: `?tab=analytics` }]
+			: []),
+		// Settings — authed users only. The PATCH endpoint enforces
+		// space-admin/moderator permissions server-side.
+		...(authed
+			? [{ key: 'settings', labelKey: 'space.tab.settings', href: `?tab=settings` }]
 			: [])
 	]);
 
@@ -77,9 +106,15 @@
 	let feedLoading = $state(false);
 	let feedEnd = $derived(data.content.length < data.pageSize);
 
+	// Moderators list — seeded from SSR (only fetched for owner/moderator),
+	// then mutated client-side as the owner assigns/removes moderators in the
+	// Settings tab. Re-seeds when the slug changes.
+	let moderators = $state<SpaceModerator[]>(untrack(() => data.moderators));
+
 	$effect(() => {
 		// Re-seed on SSR payload change (slug change).
 		feedItems = data.content;
+		moderators = data.moderators;
 	});
 
 	async function loadMoreFeed() {
@@ -106,7 +141,7 @@
 </svelte:head>
 
 <SetSidebar>
-	<SpaceSidebar {space} rules={data.rules} {authed} {initialJoined} {initiallyFollowing} />
+	<SpaceSidebar {space} rules={data.rules} {authed} {initialJoined} bind:following />
 </SetSidebar>
 
 <!-- Space header -->
@@ -125,12 +160,33 @@
 			{/if}
 		</div>
 		{#if authed}
-			<a
-				href="/create?type=forum&space={space.slug}"
-				class="inline-flex shrink-0 items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1.5 text-xs font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)]"
-			>
-				<PenSquare size={14} /> {t('space.post', 'Post')}
-			</a>
+			<div class="flex shrink-0 items-center gap-2">
+				<button
+					type="button"
+					onclick={toggleFollow}
+					disabled={followPending}
+					aria-busy={followPending}
+					class="inline-flex shrink-0 items-center gap-1.5 rounded-[var(--radius)] px-3 py-1.5 text-xs font-medium transition-colors disabled:opacity-50 {following
+						? 'border border-[var(--color-border)] text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]'
+						: 'bg-[var(--color-primary)] text-[var(--color-primary-contrast)] hover:bg-[var(--color-primary-hover)]'}"
+				>
+					{#if followPending}
+						<Loader2 size={14} class="animate-spin" />
+					{:else if following}
+						<UserCheck size={14} />
+						{t('profile.following_label', 'Following')}
+					{:else}
+						<UserPlus size={14} />
+						{t('profile.follow', 'Follow')}
+					{/if}
+				</button>
+				<a
+					href="/create?type=forum&space={space.slug}"
+					class="inline-flex shrink-0 items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1.5 text-xs font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)]"
+				>
+					<PenSquare size={14} /> {t('space.post', 'Post')}
+				</a>
+			</div>
 		{/if}
 	</div>
 </div>
@@ -228,7 +284,7 @@
 						type="search"
 						bind:value={searchQuery}
 						placeholder={t('space.search_placeholder', 'Search this space…')}
-						class="w-full bg-transparent text-sm text-[var(--color-text)] outline-none placeholder:text-[var(--color-muted)]"
+						class="w-full appearance-none border-0 bg-transparent text-sm text-[var(--color-text)] outline-none ring-0 placeholder:text-[var(--color-muted)] [&::-webkit-search-cancel-button]:appearance-none [&::-webkit-search-cancel-button]:hidden"
 					/>
 				</div>
 			</form>
@@ -237,7 +293,7 @@
 			{:else if searchQuery.trim() && searchResults.length === 0}
 				<EmptyState icon={Search} title={t('space.no_search_results', 'No results found')} />
 			{:else if searchResults.length > 0}
-				<div class="divide-y divide-[var(--color-border)] overflow-hidden rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)]">
+				<div class="divide-y divide-[var(--color-border)] overflow-hidden rounded-[var(--radius-card)] bg-[var(--color-surface)]">
 					{#each searchResults as item (item.id)}
 						<a href="/content/{item.slug}" class="block p-4 transition-colors hover:bg-[var(--color-surface-subtle)]">
 							<h3 class="text-sm font-medium text-[var(--color-text)]">{item.title}</h3>
@@ -284,6 +340,15 @@
 			{:else}
 				<EmptyState icon={BarChart3} title={t('space.analytics.unavailable', 'Analytics unavailable')} />
 			{/if}
+		{:else if activeTab === 'settings'}
+			<SpaceSettings
+				{space}
+				keywords={data.keywords}
+				logoUrl={data.logoUrl}
+				isOwner={data.isOwner}
+				isModerator={data.isModerator}
+				bind:moderators
+			/>
 		{/if}
 	</div>
 </div>

@@ -5,10 +5,17 @@ import CreateGuidePanel from './CreateGuidePanel.svelte';
 const baseProps = {
 	series: [],
 	seriesId: null,
+	spaces: [],
+	spaceId: null,
+	tags: [],
 	coverMediaId: null,
 	coverPreviewUrl: null,
 	onseries: () => {},
 	onseriesfocus: () => {},
+	onspace: () => {},
+	onspacefocus: () => {},
+	ontags: () => {},
+	ontagsfocus: () => {},
 	oncoveruploaded: () => {},
 	oncoverremove: () => {},
 	onedit: () => {}

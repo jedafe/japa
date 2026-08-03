@@ -11,6 +11,75 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const getContentSEOByID = `-- name: GetContentSEOByID :one
+SELECT c.id, c.tenant_id,
+       c.title, c.slug, c.content_type, c.body, c.visibility, c.seo_indexable,
+       COALESCE(c.meta_title, '') AS meta_title,
+       COALESCE(c.meta_description, '') AS meta_description,
+       COALESCE(c.og_image_url, '') AS og_image_url,
+       COALESCE(c.canonical_url, '') AS canonical_url,
+       COALESCE(c.meta_title, c.title) AS og_title,
+       COALESCE(c.meta_description, '') AS og_description,
+       COALESCE(jt.template, '{}'::jsonb) AS jsonld_template
+FROM contents c
+LEFT JOIN content_type_jsonld_templates jt
+       ON jt.content_type = c.content_type
+      AND jt.tenant_id = c.tenant_id
+      AND jt.is_active = true
+WHERE c.id = $1 AND c.tenant_id = $2
+`
+
+type GetContentSEOByIDParams struct {
+	ContentID pgtype.UUID `json:"content_id"`
+	TenantID  pgtype.UUID `json:"tenant_id"`
+}
+
+type GetContentSEOByIDRow struct {
+	ID              pgtype.UUID `json:"id"`
+	TenantID        pgtype.UUID `json:"tenant_id"`
+	Title           string      `json:"title"`
+	Slug            string      `json:"slug"`
+	ContentType     string      `json:"content_type"`
+	Body            string      `json:"body"`
+	Visibility      string      `json:"visibility"`
+	SeoIndexable    bool        `json:"seo_indexable"`
+	MetaTitle       string      `json:"meta_title"`
+	MetaDescription string      `json:"meta_description"`
+	OgImageUrl      string      `json:"og_image_url"`
+	CanonicalUrl    string      `json:"canonical_url"`
+	OgTitle         string      `json:"og_title"`
+	OgDescription   string      `json:"og_description"`
+	JsonldTemplate  []byte      `json:"jsonld_template"`
+}
+
+// Admin SEO validation (Section 26): fetches a single content row by id with
+// the same render-time resolution as GetPageMetadataBySlug, plus the raw
+// title/slug/body/visibility the validator needs to compute issues and score.
+// Unlike GetPageMetadataBySlug this does NOT filter by status — admins must be
+// able to validate drafts too.
+func (q *Queries) GetContentSEOByID(ctx context.Context, arg GetContentSEOByIDParams) (GetContentSEOByIDRow, error) {
+	row := q.db.QueryRow(ctx, getContentSEOByID, arg.ContentID, arg.TenantID)
+	var i GetContentSEOByIDRow
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.Title,
+		&i.Slug,
+		&i.ContentType,
+		&i.Body,
+		&i.Visibility,
+		&i.SeoIndexable,
+		&i.MetaTitle,
+		&i.MetaDescription,
+		&i.OgImageUrl,
+		&i.CanonicalUrl,
+		&i.OgTitle,
+		&i.OgDescription,
+		&i.JsonldTemplate,
+	)
+	return i, err
+}
+
 const getPageMetadataBySlug = `-- name: GetPageMetadataBySlug :one
 SELECT c.id, c.tenant_id,
        COALESCE(c.meta_title, c.title) AS title,

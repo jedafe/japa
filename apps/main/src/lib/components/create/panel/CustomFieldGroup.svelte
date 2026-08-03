@@ -45,10 +45,26 @@
 	}
 
 	const label = (f: CustomFieldDef) => f.label + (f.is_required ? ' *' : '');
+
+	// Field types that should always span the full width of the grid,
+	// regardless of how many columns are available. These are complex or
+	// tall inputs that don't work well side-by-side.
+	const FULL_WIDTH_TYPES = new Set([
+		'textarea',
+		'rich_text',
+		'repeater',
+		'multiselect',
+		'group'
+	]);
+
+	function isFullWidth(field: CustomFieldDef): boolean {
+		return FULL_WIDTH_TYPES.has(field.field_type);
+	}
 </script>
 
+<div class="cf-grid">
 {#each fields as field (field.id)}
-	<div class="cf-field">
+	<div class="cf-field" class:cf-field-full={isFullWidth(field)}>
 		{#if field.field_type === 'boolean'}
 			<label class="cf-checkbox">
 				<input
@@ -207,12 +223,23 @@
 		{/if}
 	</div>
 {/each}
+</div>
 
 <style>
+	.cf-grid {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+		gap: 12px;
+	}
 	.cf-field {
 		display: flex;
 		flex-direction: column;
 		gap: 4px;
+		min-width: 0;
+	}
+	/* Full-width field types span all grid columns. */
+	.cf-field-full {
+		grid-column: 1 / -1;
 	}
 	.cf-label {
 		font-size: 0.75rem;

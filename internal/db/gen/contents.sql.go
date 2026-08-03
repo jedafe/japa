@@ -3135,3 +3135,18 @@ func (q *Queries) UpsertJSONLDTemplate(ctx context.Context, arg UpsertJSONLDTemp
 	)
 	return i, err
 }
+
+const setContentSpaceID = `-- name: SetContentSpaceID :exec
+UPDATE contents SET space_id = $1, updated_at = now()
+WHERE id = $2
+`
+
+type SetContentSpaceIDParams struct {
+	SpaceID   pgtype.UUID `json:"space_id"`
+	ContentID pgtype.UUID `json:"content_id"`
+}
+
+func (q *Queries) SetContentSpaceID(ctx context.Context, arg SetContentSpaceIDParams) error {
+	_, err := q.db.Exec(ctx, setContentSpaceID, arg.SpaceID, arg.ContentID)
+	return err
+}

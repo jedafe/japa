@@ -25,6 +25,17 @@ type PublicOrgResponse struct {
 	FollowerCount    int32              `json:"follower_count"`
 	MemberCount      int32              `json:"member_count"`
 	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	Owner            *OrgOwnerResponse  `json:"owner"`
+}
+
+// OrgOwnerResponse is the lean public shape for the org owner, embedded in the
+// public org response for the "Org Leader" sidebar widget. Unlike the public
+// members list, the owner is shown regardless of their account standing.
+type OrgOwnerResponse struct {
+	ID          pgtype.UUID `json:"id"`
+	Username    string      `json:"username"`
+	DisplayName *string     `json:"display_name"`
+	AvatarURL   *string     `json:"avatar_url"`
 }
 
 func toPublicOrg(o gen.Organization) PublicOrgResponse {

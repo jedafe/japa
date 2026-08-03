@@ -23,18 +23,27 @@ type TaskEnqueueClient interface {
 	Enqueue(task *asynq.Task, opts ...asynq.Option) (*asynq.TaskInfo, error)
 }
 
+// JSONLDResolver resolves admin-managed JSON-LD templates (Section 14 /
+// Section 26). The learning platform uses it to emit Course structured data
+// from the active template.
+type JSONLDResolver interface {
+	ResolveJSONLD(ctx context.Context, tenantID pgtype.UUID, contentType string, fields map[string]string) (json.RawMessage, error)
+}
+
 // Handlers exposes HTTP endpoints for the learning platform. Each handler
 // reads tenant context from the request, parses input, delegates to the
 // store, and writes a JSON response. Guard clauses at the top of every
 // handler keep the happy path un-indented.
 type Handlers struct {
-	store       *Store
-	AsynqClient TaskEnqueueClient
+	store          *Store
+	AsynqClient    TaskEnqueueClient
+	jsonldResolver JSONLDResolver
 }
 
-// NewHandlers creates a learning handler bound to the provided store.
-func NewHandlers(store *Store) *Handlers {
-	return &Handlers{store: store}
+// NewHandlers creates a learning handler bound to the provided store. A nil
+// resolver is acceptable — JSON-LD is simply omitted when unavailable.
+func NewHandlers(store *Store, resolver JSONLDResolver) *Handlers {
+	return &Handlers{store: store, jsonldResolver: resolver}
 }
 
 // enqueueTrackCompletionUpdate enqueues an async track completion update task.
@@ -108,7 +117,45 @@ func (h *Handlers) GetTrackDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": detail})
+	// JSON-LD structured data (Section 14 / Section 26). Resolve the
+	// admin-managed Course template, interpolating the track's field values.
+	// Best-effort: a missing template or resolution error degrades to no
+	// json_ld field. Emitted as a sibling of `data` for frontend consumption.
+	resp := map[string]any{"data": detail}
+	if h.jsonldResolver != nil {
+		if jsonLd, jErr := h.jsonldResolver.ResolveJSONLD(r.Context(), t.ID, "Course", trackJSONLDFields(detail)); jErr == nil && len(jsonLd) > 0 {
+			resp["json_ld"] = json.RawMessage(jsonLd)
+		} else if jErr != nil {
+			slog.Warn("learning: JSON-LD template resolution failed", "slug", slug, "error", jErr)
+		}
+	}
+
+	writeJSON(w, http.StatusOK, resp)
+}
+
+// trackJSONLDFields builds the {{field_key}} → value map for interpolating a
+// Course JSON-LD template from a track detail.
+func trackJSONLDFields(d *TrackDetail) map[string]string {
+	desc := ""
+	if d.Description != nil {
+		desc = *d.Description
+	}
+	coverURL := ""
+	if d.ThumbnailURL != nil {
+		coverURL = *d.ThumbnailURL
+	}
+	instructor := ""
+	if d.InstructorName != nil {
+		instructor = *d.InstructorName
+	}
+	return map[string]string{
+		"title":       d.Title,
+		"description": desc,
+		"cover_image_url": coverURL,
+		"language":    d.Language,
+		"duration":    d.DurationISO,
+		"instructor":  instructor,
+	}
 }
 
 // GetLesson returns a single lesson by its slug within the track/module hierarchy.

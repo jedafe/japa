@@ -21,8 +21,11 @@ export const load: PageServerLoad = async (event) => {
 		: `/learn/tracks/${slug}`;
 
 	let track: TrackDetail;
+	let backendJsonLd: unknown = null;
 	try {
-		track = await apiGet<TrackDetail>(ctx, detailPath);
+		const body = await apiGetBody<{ data: TrackDetail; json_ld?: unknown }>(ctx, detailPath);
+		track = body.data;
+		backendJsonLd = body.json_ld ?? null;
 	} catch (err) {
 		if (err instanceof ApiError && err.status === 404) {
 			throw error(404, { code: 'track_not_found', message: 'Track not found' });
@@ -49,9 +52,13 @@ export const load: PageServerLoad = async (event) => {
 		reviewAggregate = null;
 	}
 
-	// JSON-LD structured data (Course schema + Breadcrumb).
+	// JSON-LD structured data (Section 14 / Section 26). Prefer the
+	// admin-managed Course template resolved server-side (backend `json_ld`
+	// sidecar); fall back to the client-side courseJsonLd helper when absent.
+	// Breadcrumb is always emitted client-side (no template for it).
+	const courseJsonLdNode = backendJsonLd ?? courseJsonLd(track);
 	const jsonLd = [
-		courseJsonLd(track),
+		courseJsonLdNode,
 		breadcrumbJsonLd([
 			{ name: 'Explore', path: '/' },
 			{ name: track.title, path: `/tracks/${slug}` }

@@ -4,6 +4,7 @@ import { apiContext, apiGet, apiList } from '$lib/server/api';
 import type {
 	SpaceDetail,
 	SpaceMember,
+	SpaceModerator,
 	SpaceContentItem,
 	ForumThread
 } from '$lib/types';
@@ -37,6 +38,13 @@ export const load: PageServerLoad = async (event) => {
 	const space = detail.space;
 	const spaceId = space.id;
 
+	// Viewer-scoped management flags from the detail bundle (Ref: §05 lines
+	// 198-224). is_owner gates the moderator assignment UI; is_moderator is
+	// surfaced for future moderator-only controls. Both default to false for
+	// guests — the mutating routes re-check server-side.
+	const isOwner = detail.is_owner ?? false;
+	const isModerator = detail.is_moderator ?? false;
+
 	// Hydrate the follow button's initial state. Best-effort: a failure
 	// degrades to `false` (not following). Only fetch when the viewer is
 	// authenticated — guests can't follow.
@@ -48,7 +56,7 @@ export const load: PageServerLoad = async (event) => {
 
 	// Tab data — each degrades to an empty list on failure so a missing tab
 	// never blanks the whole space view.
-	const [content, members, forumThreads, analytics, isFollowing] = await Promise.all([
+	const [content, members, forumThreads, analytics, moderators, isFollowing] = await Promise.all([
 		apiList<SpaceContentItem>(ctx, `/spaces/${slug}/content?page_size=${PAGE_SIZE}`)
 			.then((r) => r.items)
 			.catch(() => []),
@@ -65,12 +73,25 @@ export const load: PageServerLoad = async (event) => {
 		event.locals.user
 			? apiGet<unknown>(ctx, `/spaces/${spaceId}/analytics`).catch(() => null)
 			: Promise.resolve(null),
+		// Moderators list — only fetched for the owner/moderator so the
+		// assignment panel has data to render. The GET route is public, but
+		// we avoid the extra request for viewers who can't manage moderators.
+		isOwner || isModerator
+			? apiList<SpaceModerator>(ctx, `/spaces/${slug}/moderators`)
+					.then((r) => r.items)
+					.catch(() => [])
+			: Promise.resolve([] as SpaceModerator[]),
 		initiallyFollowing
 	]);
 
 	return {
 		space,
 		rules: detail.rules,
+		keywords: detail.keywords ?? [],
+		logoUrl: detail.logo_url ?? '',
+		isOwner,
+		isModerator,
+		moderators,
 		content,
 		members,
 		forumThreads,

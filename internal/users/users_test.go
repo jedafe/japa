@@ -358,7 +358,7 @@ func TestNewHandlersNotNil(t *testing.T) {
 
 	svc := &Service{}
 
-	h := NewHandlers(svc)
+	h := NewHandlers(svc, nil)
 	if h == nil {
 		t.Fatal("NewHandlers returned nil")
 	}

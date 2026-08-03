@@ -563,12 +563,26 @@ export const aiApi = {
 		api<Array<{ id: string; label: string }>>('/admin/ai/models'),
 };
 
+export interface JsonLdTemplate {
+	id: string;
+	tenant_id: string;
+	content_type: string;
+	template: Record<string, unknown> | null;
+	is_active: boolean;
+	created_at: string;
+	updated_at: string;
+}
+
 export const jsonLdApi = {
-	getTemplates: () => api<Record<string, unknown>>('/content/jsonld-templates'),
-	updateTemplates: (templates: Record<string, unknown>) =>
-		api<{ updated: boolean }>('/content/jsonld-templates', {
+	listTemplates: () => api<JsonLdTemplate[]>('/content/jsonld-templates'),
+	upsertTemplate: (input: { content_type: string; template: Record<string, unknown>; is_active: boolean }) =>
+		api<JsonLdTemplate>('/content/jsonld-templates', {
 			method: 'PUT',
-			body: templates
+			body: input
+		}),
+	deleteTemplate: (id: string) =>
+		api<{ deleted: boolean }>(`/content/jsonld-templates/${id}`, {
+			method: 'DELETE'
 		}),
 };
 
@@ -1264,7 +1278,25 @@ export interface SeoValidationResult {
 
 export const seoAdminApi = {
 	validate: (id: string) =>
-		api<{ data: SeoValidationResult }>(`/admin/seo/validate/${id}`),
+		api<SeoValidationResult>(`/admin/seo/validate/${id}`),
+};
+
+// Content search row returned by GET /content?q= (authed admin search across
+// title, slug, and body; includes drafts). Used by the SEO validator's
+// search-and-paste-URL input to resolve a content item to validate.
+export interface ContentSearchItem {
+	id: string;
+	title: string;
+	slug: string;
+	content_type: string;
+	status: string;
+	visibility: string;
+	updated_at: string;
+}
+
+export const contentSearchApi = {
+	search: (q: string, pageSize = 10) =>
+		api<ContentSearchItem[]>(`/content?q=${encodeURIComponent(q)}&page_size=${pageSize}`),
 };
 
 export const fieldPermissionsApi = {

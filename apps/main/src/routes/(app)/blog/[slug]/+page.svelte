@@ -23,19 +23,13 @@
 	const title = $derived(`${article.title} — ${t('app.name')}`);
 	const description = $derived(article.excerpt ?? article.body.slice(0, 160));
 
-	// JSON-LD structured data (Section 14, Section 26 — SEO). Uses the
-	// admin-configured template from GET /content/jsonld-templates when
-	// available; falls back to a basic BlogPosting schema.
+	// JSON-LD structured data (Section 14, Section 26 — SEO). The backend
+	// resolves the admin-managed Article template server-side and returns it
+	// in the response envelope's `json_ld` sidecar. Fall back to a basic
+	// BlogPosting schema when the backend didn't emit one (no active template).
 	const jsonLd = $derived(
-		data.jsonldTemplate
-			? JSON.stringify({
-					...data.jsonldTemplate,
-					headline: article.title,
-					datePublished: article.published_at || article.created_at,
-					author: { '@type': 'Person', name: article.author_name ?? 'JapaConnect' },
-					url: page.url.href,
-					description
-				})
+		data.jsonLd
+			? JSON.stringify(data.jsonLd)
 			: JSON.stringify({
 					'@context': 'https://schema.org',
 					'@type': 'BlogPosting',

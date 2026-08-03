@@ -377,6 +377,27 @@ func (s *Service) UpdateSpace(ctx context.Context, params gen.UpdateSpaceParams)
 	return space, nil
 }
 
+// UpdateSpaceKeywords updates only the keywords array on a space.
+// Ref: sections/05-geo-first-space-system.md
+func (s *Service) UpdateSpaceKeywords(ctx context.Context, id, tenantID pgtype.UUID, keywords []string) error {
+	if err := s.write.UpdateSpaceKeywords(ctx, gen.UpdateSpaceKeywordsParams{
+		Keywords: keywords,
+		ID:       id,
+		TenantID: tenantID,
+	}); err != nil {
+		return fmt.Errorf("updating space keywords: %w", err)
+	}
+	return nil
+}
+
+// GetSpaceKeywords returns the keywords array for a space.
+func (s *Service) GetSpaceKeywords(ctx context.Context, id, tenantID pgtype.UUID) ([]string, error) {
+	return s.read.GetSpaceKeywords(ctx, gen.GetSpaceKeywordsParams{
+		ID:       id,
+		TenantID: tenantID,
+	})
+}
+
 // UpdateSpaceWikiContent updates only the wiki_content field of a space.
 func (s *Service) UpdateSpaceWikiContent(ctx context.Context, spaceID, tenantID pgtype.UUID, wikiContent []byte) (gen.Space, error) {
 	// Load current space to preserve all other fields.
@@ -674,7 +695,13 @@ func (s *Service) GetUserIDByUsername(ctx context.Context, tenantID pgtype.UUID,
 		}
 		return pgtype.UUID{}, fmt.Errorf("resolving username: %w", err)
 	}
-	return row.ID, nil
+	// GetUserByUsername selects `COALESCE(up.id, gen_random_uuid()) AS id`
+	// (the user_profiles row id — or a random UUID when no profile exists)
+	// alongside `u.id AS user_id`. The caller needs the USERS table id, which
+	// is row.UserID; returning row.ID here would insert a profile id (or a
+	// non-existent random UUID) into space_moderators.user_id and trip the
+	// FK-to-users(id) constraint.
+	return row.UserID, nil
 }
 
 // GetSpaceByID returns a space by its ID within the tenant.

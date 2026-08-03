@@ -1,20 +1,16 @@
 <script lang="ts">
 	import { t } from '$lib/i18n';
-	import type { CustomFieldGroup, Visibility } from '$lib/types';
-	import CustomFieldGroupCmp from './CustomFieldGroup.svelte';
+	import type { Visibility } from '$lib/types';
 
 	interface Props {
 		slug: string;
 		visibility: Visibility;
 		canonicalUrl: string;
 		publishAt: string | null;
-		fieldValues: Record<string, unknown>;
-		fieldGroups: CustomFieldGroup[];
 		onslug: (v: string) => void;
 		onvisibility: (v: Visibility) => void;
 		oncanonical: (v: string) => void;
 		onpublishat: (v: string | null) => void;
-		onfieldvalues: (v: Record<string, unknown>) => void;
 		onedit: () => void;
 	}
 
@@ -23,13 +19,10 @@
 		visibility,
 		canonicalUrl,
 		publishAt,
-		fieldValues,
-		fieldGroups,
 		onslug,
 		onvisibility,
 		oncanonical,
 		onpublishat,
-		onfieldvalues,
 		onedit
 	}: Props = $props();
 </script>
@@ -97,18 +90,6 @@
 			}}
 		/>
 	</div>
-
-	{#each fieldGroups as group (group.id)}
-		<div class="field-group">
-			<h4 class="field-group-title">{group.name}</h4>
-			<CustomFieldGroupCmp
-				fields={group.fields}
-				values={fieldValues}
-				onvalues={onfieldvalues}
-				{onedit}
-			/>
-		</div>
-	{/each}
 </div>
 
 <style>
@@ -148,17 +129,5 @@
 	.field-input:focus {
 		border-color: var(--color-primary);
 		box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 15%, transparent);
-	}
-
-	.field-group {
-		display: flex;
-		flex-direction: column;
-		gap: 8px;
-	}
-	.field-group-title {
-		margin: 0;
-		font-size: 0.875rem;
-		font-weight: 600;
-		color: var(--color-text);
 	}
 </style>

@@ -19,8 +19,9 @@ import (
 
 // Handlers provides HTTP handlers for organization management.
 type Handlers struct {
-	service *Service
-	follows FollowService
+	service        *Service
+	follows        FollowService
+	jsonldResolver JSONLDResolver
 }
 
 // FollowService is the subset of the follows.Service used by org handlers.
@@ -29,9 +30,16 @@ type FollowService interface {
 	ToggleFollow(ctx context.Context, tenantID, followerID pgtype.UUID, entityType string, entityID pgtype.UUID) (bool, error)
 }
 
-// NewHandlers creates a Handlers instance with the given Service.
-func NewHandlers(service *Service, follows FollowService) *Handlers {
-	return &Handlers{service: service, follows: follows}
+// JSONLDResolver resolves admin-managed JSON-LD templates (Section 14 /
+// Section 26). The org handlers use it to emit Organization structured data.
+type JSONLDResolver interface {
+	ResolveJSONLD(ctx context.Context, tenantID pgtype.UUID, contentType string, fields map[string]string) (json.RawMessage, error)
+}
+
+// NewHandlers creates a Handlers instance with the given Service. A nil
+// resolver is acceptable — JSON-LD is simply omitted when unavailable.
+func NewHandlers(service *Service, follows FollowService, resolver JSONLDResolver) *Handlers {
+	return &Handlers{service: service, follows: follows, jsonldResolver: resolver}
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
@@ -174,7 +182,49 @@ func (h *Handlers) GetOrganization(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": result})
+	// JSON-LD structured data (Section 14 / Section 26). Resolve the
+	// admin-managed Organization template, interpolating the org's field
+	// values. Best-effort: a missing template or resolution error degrades
+	// to no json_ld field. Emitted as a sibling of `data`.
+	resp := map[string]any{"data": result}
+	if h.jsonldResolver != nil {
+		if jsonLd, jErr := h.jsonldResolver.ResolveJSONLD(r.Context(), tenantID, "Organization", orgJSONLDFields(result)); jErr == nil && len(jsonLd) > 0 {
+			resp["json_ld"] = json.RawMessage(jsonLd)
+		} else if jErr != nil {
+			slog.Warn("organizations: JSON-LD template resolution failed", "slug", slug, "error", jErr)
+		}
+	}
+
+	writeJSON(w, http.StatusOK, resp)
+}
+
+// orgJSONLDFields builds the {{field_key}} → value map for interpolating an
+// Organization JSON-LD template from an organization row.
+func orgJSONLDFields(o gen.Organization) map[string]string {
+	desc := ""
+	if o.Description != nil {
+		desc = *o.Description
+	}
+	website := ""
+	if o.WebsiteUrl != nil {
+		website = *o.WebsiteUrl
+	}
+	country := ""
+	if o.CountryCode != nil {
+		country = *o.CountryCode
+	}
+	return map[string]string{
+		"name":        o.Name,
+		"description": desc,
+		"website":     website,
+		"country":     country,
+		"city":        "",
+		"logo_url":    "",
+		"twitter_url": "",
+		"linkedin_url": "",
+		"facebook_url": "",
+		"founded_at":  "",
+	}
 }
 
 // ListOrganizations handles GET /organizations.
