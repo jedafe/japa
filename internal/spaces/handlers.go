@@ -103,6 +103,20 @@ func (h *Handlers) resolveLogoURL(ctx context.Context, tenantID, logoMediaID pgt
 	return h.media.GetMediaURL(&m, media.ImageProxyOpts{Width: 128, Height: 128, Format: "webp"})
 }
 
+// resolveHeaderURL resolves a space's header_image_id to an imgproxy-signed
+// URL via the media service. Returns empty when no header is set, the media
+// resolver is not wired, or the media item cannot be loaded. Best-effort.
+func (h *Handlers) resolveHeaderURL(ctx context.Context, tenantID, headerMediaID pgtype.UUID) string {
+	if !headerMediaID.Valid || h.media == nil {
+		return ""
+	}
+	m, err := h.media.GetMedia(ctx, tenantID, headerMediaID)
+	if err != nil {
+		return ""
+	}
+	return h.media.GetMediaURL(&m, media.ImageProxyOpts{Width: 1280, Height: 320, Format: "webp"})
+}
+
 // invalidateTargetPermCache flushes the target user's permission cache after
 // a moderator assignment/removal. It is a no-op when no invalidator is wired
 // (graceful degradation). Errors are logged but never fail the request — the
@@ -152,7 +166,7 @@ func handleServiceError(w http.ResponseWriter, err error) {
 // spaceFromContext writes a 404 error and returns false when no resolved space
 // is present in the request context. Callers should abort when the boolean is
 // false.
-func spaceFromContext(w http.ResponseWriter, r *http.Request) (*gen.Space, bool) {
+func spaceFromContext(w http.ResponseWriter, r *http.Request) (*gen.GetSpaceBySlugRow, bool) {
 	space := FromContext(r.Context())
 	if space == nil {
 		writeError(w, http.StatusNotFound, "space_not_found", "Space not found")
@@ -360,7 +374,11 @@ func (h *Handlers) ListSpaces(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	search := strings.TrimSpace(q.Get("q"))
 
-	var spaces []gen.Space
+	// The different list branches return distinct sqlc-generated Row types
+	// (each structurally identical to gen.Space minus the Keywords column).
+	// Use any to hold the heterogeneous slice, then filter/paginate via the
+	// shared helpers below.
+	var spaces any
 	var err error
 
 	switch {
@@ -391,30 +409,15 @@ func (h *Handlers) ListSpaces(w http.ResponseWriter, r *http.Request) {
 
 	// Apply search filter (by name or slug) if provided.
 	if search != "" {
-		filtered := make([]gen.Space, 0, len(spaces))
-		for _, s := range spaces {
-			if strings.Contains(strings.ToLower(s.Name), strings.ToLower(search)) ||
-				strings.Contains(strings.ToLower(s.Slug), strings.ToLower(search)) {
-				filtered = append(filtered, s)
-			}
-		}
-		spaces = filtered
+		spaces = filterSpacesByNameSlug(spaces, search)
 	}
 
-	total := int32(len(spaces))
+	total := spacesLen(spaces)
 
 	// Apply pagination.
 	limit := parsePageSize(r)
 	offset := parsePageSizeOffset(r)
-	if offset >= total {
-		spaces = []gen.Space{}
-	} else {
-		end := offset + limit
-		if end > total {
-			end = total
-		}
-		spaces = spaces[offset:end]
-	}
+	spaces = paginateSpaces(spaces, offset, limit)
 
 	totalPages := total / limit
 	if total%limit > 0 {
@@ -429,6 +432,100 @@ func (h *Handlers) ListSpaces(w http.ResponseWriter, r *http.Request) {
 			"total_pages": totalPages,
 		},
 	})
+}
+
+// filterSpacesByNameSlug filters a slice of space Row types by name/slug
+// (case-insensitive substring match). It handles the heterogeneous Row types
+// returned by the different ListSpaces branches via a type switch.
+func filterSpacesByNameSlug(spaces any, search string) any {
+	lower := strings.ToLower(search)
+	switch s := spaces.(type) {
+	case []gen.ListSpacesByTenantRow:
+		filtered := make([]gen.ListSpacesByTenantRow, 0, len(s))
+		for _, sp := range s {
+			if strings.Contains(strings.ToLower(sp.Name), lower) ||
+				strings.Contains(strings.ToLower(sp.Slug), lower) {
+				filtered = append(filtered, sp)
+			}
+		}
+		return filtered
+	case []gen.ListSpacesByLevelRow:
+		filtered := make([]gen.ListSpacesByLevelRow, 0, len(s))
+		for _, sp := range s {
+			if strings.Contains(strings.ToLower(sp.Name), lower) ||
+				strings.Contains(strings.ToLower(sp.Slug), lower) {
+				filtered = append(filtered, sp)
+			}
+		}
+		return filtered
+	case []gen.ListSpacesByTypeRow:
+		filtered := make([]gen.ListSpacesByTypeRow, 0, len(s))
+		for _, sp := range s {
+			if strings.Contains(strings.ToLower(sp.Name), lower) ||
+				strings.Contains(strings.ToLower(sp.Slug), lower) {
+				filtered = append(filtered, sp)
+			}
+		}
+		return filtered
+	case []gen.ListChildSpacesRow:
+		filtered := make([]gen.ListChildSpacesRow, 0, len(s))
+		for _, sp := range s {
+			if strings.Contains(strings.ToLower(sp.Name), lower) ||
+				strings.Contains(strings.ToLower(sp.Slug), lower) {
+				filtered = append(filtered, sp)
+			}
+		}
+		return filtered
+	default:
+		return spaces
+	}
+}
+
+// spacesLen returns the length of a slice of space Row types held in an any.
+func spacesLen(spaces any) int32 {
+	switch s := spaces.(type) {
+	case []gen.ListSpacesByTenantRow:
+		return int32(len(s))
+	case []gen.ListSpacesByLevelRow:
+		return int32(len(s))
+	case []gen.ListSpacesByTypeRow:
+		return int32(len(s))
+	case []gen.ListChildSpacesRow:
+		return int32(len(s))
+	default:
+		return 0
+	}
+}
+
+// paginateSpaces applies offset/limit pagination to a slice of space Row types
+// held in an any.
+func paginateSpaces(spaces any, offset, limit int32) any {
+	switch s := spaces.(type) {
+	case []gen.ListSpacesByTenantRow:
+		return paginateSpaceSlice(s, offset, limit)
+	case []gen.ListSpacesByLevelRow:
+		return paginateSpaceSlice(s, offset, limit)
+	case []gen.ListSpacesByTypeRow:
+		return paginateSpaceSlice(s, offset, limit)
+	case []gen.ListChildSpacesRow:
+		return paginateSpaceSlice(s, offset, limit)
+	default:
+		return spaces
+	}
+}
+
+// paginateSpaceSlice is a generic helper that applies offset/limit pagination
+// to any slice type.
+func paginateSpaceSlice[T any](s []T, offset, limit int32) []T {
+	total := int32(len(s))
+	if offset >= total {
+		return []T{}
+	}
+	end := offset + limit
+	if end > total {
+		end = total
+	}
+	return s[offset:end]
 }
 
 // AdminListSpaces handles GET /api/v1/admin/spaces — paginated spaces for the
@@ -645,6 +742,8 @@ func (h *Handlers) GetSpace(w http.ResponseWriter, r *http.Request) {
 
 	// Resolve logo_media_id to an imgproxy-signed logo_url.
 	logoURL := h.resolveLogoURL(r.Context(), tenantID, space.LogoMediaID)
+	// Resolve header_image_id to an imgproxy-signed header_url.
+	headerURL := h.resolveHeaderURL(r.Context(), tenantID, space.HeaderImageID)
 
 	// Surface viewer-scoped management flags so the frontend can render the
 	// moderator assignment UI only for the space owner / an assigned
@@ -673,6 +772,7 @@ func (h *Handlers) GetSpace(w http.ResponseWriter, r *http.Request) {
 			"rules":        rules,
 			"keywords":     keywords,
 			"logo_url":     logoURL,
+			"header_url":   headerURL,
 			"is_owner":     isOwner,
 			"is_moderator": isModerator,
 		},
@@ -933,6 +1033,7 @@ func (h *Handlers) UpdateSpace(w http.ResponseWriter, r *http.Request) {
 		Status         string   `json:"status"`
 		Keywords       []string `json:"keywords"`
 		LogoMediaID    string   `json:"logo_media_id"`
+		HeaderImageID  *string  `json:"header_image_id"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -1036,6 +1137,12 @@ func (h *Handlers) UpdateSpace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Track the latest space row for the response. Each update query returns
+	// a distinct sqlc-generated Row type (structurally identical to gen.Space
+	// minus Keywords), so hold the response in any and track the ID separately.
+	var result any = space
+	spaceID := space.ID
+
 	// Update keywords separately if provided (nil = no change, [] = clear,
 	// ["a","b"] = set). Uses a dedicated query to avoid NULL on NOT NULL column.
 	if req.Keywords != nil {
@@ -1053,21 +1160,46 @@ func (h *Handlers) UpdateSpace(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, "invalid_logo_media_id", "Invalid logo_media_id format")
 			return
 		}
-		space, err = h.Service.UpdateSpaceLogoMediaID(r.Context(), gen.UpdateSpaceLogoMediaIDParams{
+		logoSpace, lErr := h.Service.UpdateSpaceLogoMediaID(r.Context(), gen.UpdateSpaceLogoMediaIDParams{
 			LogoMediaID: logoUUID,
 			ID:          id,
 			TenantID:    tenantID,
 		})
-		if err != nil {
+		if lErr != nil {
 			writeError(w, http.StatusInternalServerError, "logo_update_failed", "Failed to update logo")
 			return
 		}
+		result = logoSpace
+		spaceID = logoSpace.ID
+	}
+
+	// Update header image if provided. A nil pointer clears the field; a
+	// non-empty string sets it to the given media UUID.
+	if req.HeaderImageID != nil {
+		var headerUUID pgtype.UUID
+		if *req.HeaderImageID != "" {
+			if err := headerUUID.Scan(*req.HeaderImageID); err != nil {
+				writeError(w, http.StatusBadRequest, "invalid_header_image_id", "Invalid header_image_id format")
+				return
+			}
+		}
+		headerSpace, hErr := h.Service.UpdateSpaceHeaderImageID(r.Context(), gen.UpdateSpaceHeaderImageIDParams{
+			HeaderImageID: headerUUID,
+			ID:            id,
+			TenantID:      tenantID,
+		})
+		if hErr != nil {
+			writeError(w, http.StatusInternalServerError, "header_update_failed", "Failed to update header image")
+			return
+		}
+		result = headerSpace
+		spaceID = headerSpace.ID
 	}
 
 	// Re-sync the Meilisearch index so search reflects the update (BL-004).
-	h.Service.EnqueueSearchIndex(r.Context(), space.ID, tenantID, "index")
+	h.Service.EnqueueSearchIndex(r.Context(), spaceID, tenantID, "index")
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": space})
+	writeJSON(w, http.StatusOK, map[string]any{"data": result})
 }
 
 // DeleteSpace handles DELETE /api/v1/spaces/{id}.

@@ -136,7 +136,7 @@ func (s *Service) DeleteSpaceType(ctx context.Context, id, tenantID pgtype.UUID)
 // The viewerUserID filters by visibility: unauthenticated callers (zero UUID)
 // only see public spaces; authenticated callers also see members/private
 // spaces they belong to (Section 05 line 272, §9 multi-tenancy, BUG-007).
-func (s *Service) ListSpaces(ctx context.Context, tenantID, viewerUserID pgtype.UUID) ([]gen.Space, error) {
+func (s *Service) ListSpaces(ctx context.Context, tenantID, viewerUserID pgtype.UUID) ([]gen.ListSpacesByTenantRow, error) {
 	spaces, err := s.read.ListSpacesByTenant(ctx, gen.ListSpacesByTenantParams{
 		TenantID:     tenantID,
 		ViewerUserID: viewerUserID,
@@ -175,7 +175,7 @@ func (s *Service) AdminListSpacesCount(ctx context.Context, tenantID pgtype.UUID
 // recently joined first (catalog: GET /me/spaces). The search parameter
 // filters by name/slug (case-insensitive) at the SQL level — pass "" for
 // no filter.
-func (s *Service) ListSpacesByMember(ctx context.Context, tenantID, userID pgtype.UUID, search string) ([]gen.Space, error) {
+func (s *Service) ListSpacesByMember(ctx context.Context, tenantID, userID pgtype.UUID, search string) ([]gen.ListSpacesByMemberUserRow, error) {
 	spaces, err := s.read.ListSpacesByMemberUser(ctx, gen.ListSpacesByMemberUserParams{
 		UserID:   userID,
 		TenantID: tenantID,
@@ -190,7 +190,7 @@ func (s *Service) ListSpacesByMember(ctx context.Context, tenantID, userID pgtyp
 
 // ListSpacesByModerator returns every space the given user moderates
 // (catalog: GET /me/spaces/moderated).
-func (s *Service) ListSpacesByModerator(ctx context.Context, tenantID, userID pgtype.UUID) ([]gen.Space, error) {
+func (s *Service) ListSpacesByModerator(ctx context.Context, tenantID, userID pgtype.UUID) ([]gen.ListSpacesByModeratorUserRow, error) {
 	spaces, err := s.read.ListSpacesByModeratorUser(ctx, gen.ListSpacesByModeratorUserParams{
 		UserID:   userID,
 		TenantID: tenantID,
@@ -204,7 +204,7 @@ func (s *Service) ListSpacesByModerator(ctx context.Context, tenantID, userID pg
 
 // ListSpacesByOwner returns every space the given user owns
 // (space_members.role = 'owner') (catalog: GET /me/spaces/owned).
-func (s *Service) ListSpacesByOwner(ctx context.Context, tenantID, userID pgtype.UUID) ([]gen.Space, error) {
+func (s *Service) ListSpacesByOwner(ctx context.Context, tenantID, userID pgtype.UUID) ([]gen.ListSpacesByOwnerUserRow, error) {
 	spaces, err := s.read.ListSpacesByOwnerUser(ctx, gen.ListSpacesByOwnerUserParams{
 		UserID:   userID,
 		TenantID: tenantID,
@@ -261,7 +261,7 @@ func (s *Service) ListPublicByMemberUser(ctx context.Context, tenantID, userID p
 
 // ListStatesByCountryCode returns the state/province spaces parented to the
 // country with the given ISO geo_code (catalog: GET /geo/countries/:code/states).
-func (s *Service) ListStatesByCountryCode(ctx context.Context, tenantID pgtype.UUID, countryCode string) ([]gen.Space, error) {
+func (s *Service) ListStatesByCountryCode(ctx context.Context, tenantID pgtype.UUID, countryCode string) ([]gen.ListStatesByCountryGeoCodeRow, error) {
 	states, err := s.read.ListStatesByCountryGeoCode(ctx, gen.ListStatesByCountryGeoCodeParams{
 		TenantID:    tenantID,
 		CountryCode: &countryCode,
@@ -275,7 +275,7 @@ func (s *Service) ListStatesByCountryCode(ctx context.Context, tenantID pgtype.U
 
 // ListCitiesByState returns the city spaces parented to the given state
 // (catalog: GET /geo/states/:id/cities).
-func (s *Service) ListCitiesByState(ctx context.Context, tenantID, stateID pgtype.UUID) ([]gen.Space, error) {
+func (s *Service) ListCitiesByState(ctx context.Context, tenantID, stateID pgtype.UUID) ([]gen.ListCitiesByStateIDRow, error) {
 	cities, err := s.read.ListCitiesByStateID(ctx, gen.ListCitiesByStateIDParams{
 		StateID:  stateID,
 		TenantID: tenantID,
@@ -289,7 +289,7 @@ func (s *Service) ListCitiesByState(ctx context.Context, tenantID, stateID pgtyp
 
 // ListSpacesByLevel returns every space at the given hierarchy level for the
 // tenant, newest first.
-func (s *Service) ListSpacesByLevel(ctx context.Context, tenantID pgtype.UUID, level string) ([]gen.Space, error) {
+func (s *Service) ListSpacesByLevel(ctx context.Context, tenantID pgtype.UUID, level string) ([]gen.ListSpacesByLevelRow, error) {
 	spaces, err := s.read.ListSpacesByLevel(ctx, gen.ListSpacesByLevelParams{
 		TenantID: tenantID,
 		Level:    level,
@@ -303,7 +303,7 @@ func (s *Service) ListSpacesByLevel(ctx context.Context, tenantID pgtype.UUID, l
 
 // ListSpacesByType returns every space of the given type for the tenant,
 // newest first.
-func (s *Service) ListSpacesByType(ctx context.Context, tenantID, spaceTypeID pgtype.UUID) ([]gen.Space, error) {
+func (s *Service) ListSpacesByType(ctx context.Context, tenantID, spaceTypeID pgtype.UUID) ([]gen.ListSpacesByTypeRow, error) {
 	spaces, err := s.read.ListSpacesByType(ctx, gen.ListSpacesByTypeParams{
 		TenantID:    tenantID,
 		SpaceTypeID: spaceTypeID,
@@ -317,7 +317,7 @@ func (s *Service) ListSpacesByType(ctx context.Context, tenantID, spaceTypeID pg
 
 // ListChildSpaces returns every space whose parent is the given space,
 // scoped to the tenant, oldest first.
-func (s *Service) ListChildSpaces(ctx context.Context, tenantID, parentID pgtype.UUID) ([]gen.Space, error) {
+func (s *Service) ListChildSpaces(ctx context.Context, tenantID, parentID pgtype.UUID) ([]gen.ListChildSpacesRow, error) {
 	spaces, err := s.read.ListChildSpaces(ctx, gen.ListChildSpacesParams{
 		ParentID: parentID,
 		TenantID: tenantID,
@@ -330,13 +330,13 @@ func (s *Service) ListChildSpaces(ctx context.Context, tenantID, parentID pgtype
 }
 
 // GetSpace returns the space with the given ID, scoped to the tenant.
-func (s *Service) GetSpace(ctx context.Context, id, tenantID pgtype.UUID) (gen.Space, error) {
+func (s *Service) GetSpace(ctx context.Context, id, tenantID pgtype.UUID) (gen.GetSpaceByIDRow, error) {
 	space, err := s.read.GetSpaceByID(ctx, gen.GetSpaceByIDParams{
 		ID:       id,
 		TenantID: tenantID,
 	})
 	if err != nil {
-		return gen.Space{}, fmt.Errorf("getting space: %w", err)
+		return gen.GetSpaceByIDRow{}, fmt.Errorf("getting space: %w", err)
 	}
 
 	return space, nil
@@ -344,13 +344,13 @@ func (s *Service) GetSpace(ctx context.Context, id, tenantID pgtype.UUID) (gen.S
 
 // GetSpaceBySlug returns the space matching the given slug, scoped to the
 // tenant.
-func (s *Service) GetSpaceBySlug(ctx context.Context, slug string, tenantID pgtype.UUID) (gen.Space, error) {
+func (s *Service) GetSpaceBySlug(ctx context.Context, slug string, tenantID pgtype.UUID) (gen.GetSpaceBySlugRow, error) {
 	space, err := s.read.GetSpaceBySlug(ctx, gen.GetSpaceBySlugParams{
 		Slug:     slug,
 		TenantID: tenantID,
 	})
 	if err != nil {
-		return gen.Space{}, fmt.Errorf("getting space by slug: %w", err)
+		return gen.GetSpaceBySlugRow{}, fmt.Errorf("getting space by slug: %w", err)
 	}
 
 	return space, nil
@@ -358,20 +358,20 @@ func (s *Service) GetSpaceBySlug(ctx context.Context, slug string, tenantID pgty
 
 // CreateSpace creates a new space. The caller is responsible for validating
 // the level and permission axes before calling this method.
-func (s *Service) CreateSpace(ctx context.Context, params gen.CreateSpaceParams) (gen.Space, error) {
+func (s *Service) CreateSpace(ctx context.Context, params gen.CreateSpaceParams) (gen.CreateSpaceRow, error) {
 	space, err := s.write.CreateSpace(ctx, params)
 	if err != nil {
-		return gen.Space{}, fmt.Errorf("creating space: %w", err)
+		return gen.CreateSpaceRow{}, fmt.Errorf("creating space: %w", err)
 	}
 
 	return space, nil
 }
 
 // UpdateSpace updates the mutable fields of a space, scoped to the tenant.
-func (s *Service) UpdateSpace(ctx context.Context, params gen.UpdateSpaceParams) (gen.Space, error) {
+func (s *Service) UpdateSpace(ctx context.Context, params gen.UpdateSpaceParams) (gen.UpdateSpaceRow, error) {
 	space, err := s.write.UpdateSpace(ctx, params)
 	if err != nil {
-		return gen.Space{}, fmt.Errorf("updating space: %w", err)
+		return gen.UpdateSpaceRow{}, fmt.Errorf("updating space: %w", err)
 	}
 
 	return space, nil
@@ -399,11 +399,11 @@ func (s *Service) GetSpaceKeywords(ctx context.Context, id, tenantID pgtype.UUID
 }
 
 // UpdateSpaceWikiContent updates only the wiki_content field of a space.
-func (s *Service) UpdateSpaceWikiContent(ctx context.Context, spaceID, tenantID pgtype.UUID, wikiContent []byte) (gen.Space, error) {
+func (s *Service) UpdateSpaceWikiContent(ctx context.Context, spaceID, tenantID pgtype.UUID, wikiContent []byte) (gen.UpdateSpaceRow, error) {
 	// Load current space to preserve all other fields.
 	space, err := s.read.GetSpaceByID(ctx, gen.GetSpaceByIDParams{ID: spaceID, TenantID: tenantID})
 	if err != nil {
-		return gen.Space{}, fmt.Errorf("getting space for wiki update: %w", err)
+		return gen.UpdateSpaceRow{}, fmt.Errorf("getting space for wiki update: %w", err)
 	}
 
 	space.WikiContent = wikiContent
@@ -422,7 +422,7 @@ func (s *Service) UpdateSpaceWikiContent(ctx context.Context, spaceID, tenantID 
 		TenantID:       tenantID,
 	})
 	if err != nil {
-		return gen.Space{}, fmt.Errorf("updating wiki content: %w", err)
+		return gen.UpdateSpaceRow{}, fmt.Errorf("updating wiki content: %w", err)
 	}
 
 	return updated, nil
@@ -431,10 +431,20 @@ func (s *Service) UpdateSpaceWikiContent(ctx context.Context, spaceID, tenantID 
 // UpdateSpaceLogoMediaID updates only the logo_media_id field of a space.
 // Used by the university:fetch_logo task (Section 39) to attach a downloaded
 // university logo to its space.
-func (s *Service) UpdateSpaceLogoMediaID(ctx context.Context, params gen.UpdateSpaceLogoMediaIDParams) (gen.Space, error) {
+func (s *Service) UpdateSpaceLogoMediaID(ctx context.Context, params gen.UpdateSpaceLogoMediaIDParams) (gen.UpdateSpaceLogoMediaIDRow, error) {
 	space, err := s.write.UpdateSpaceLogoMediaID(ctx, params)
 	if err != nil {
-		return gen.Space{}, fmt.Errorf("updating space logo_media_id: %w", err)
+		return gen.UpdateSpaceLogoMediaIDRow{}, fmt.Errorf("updating space logo_media_id: %w", err)
+	}
+	return space, nil
+}
+
+// UpdateSpaceHeaderImageID updates only the header_image_id field of a space.
+// Used by the space settings UI to attach a banner image to a space.
+func (s *Service) UpdateSpaceHeaderImageID(ctx context.Context, params gen.UpdateSpaceHeaderImageIDParams) (gen.UpdateSpaceHeaderImageIDRow, error) {
+	space, err := s.write.UpdateSpaceHeaderImageID(ctx, params)
+	if err != nil {
+		return gen.UpdateSpaceHeaderImageIDRow{}, fmt.Errorf("updating space header_image_id: %w", err)
 	}
 	return space, nil
 }
@@ -705,7 +715,7 @@ func (s *Service) GetUserIDByUsername(ctx context.Context, tenantID pgtype.UUID,
 }
 
 // GetSpaceByID returns a space by its ID within the tenant.
-func (s *Service) GetSpaceByID(ctx context.Context, tenantID, id pgtype.UUID) (gen.Space, error) {
+func (s *Service) GetSpaceByID(ctx context.Context, tenantID, id pgtype.UUID) (gen.GetSpaceByIDRow, error) {
 	return s.read.GetSpaceByID(ctx, gen.GetSpaceByIDParams{TenantID: tenantID, ID: id})
 }
 
@@ -792,7 +802,7 @@ func (s *Service) RemoveParentSpace(ctx context.Context, spaceID, parentSpaceID 
 
 // GetParentSpaces returns every parent space for the given space, resolved
 // through the junction table and scoped to the tenant.
-func (s *Service) GetParentSpaces(ctx context.Context, spaceID, tenantID pgtype.UUID) ([]gen.Space, error) {
+func (s *Service) GetParentSpaces(ctx context.Context, spaceID, tenantID pgtype.UUID) ([]gen.GetParentSpacesBySpaceIDRow, error) {
 	spaces, err := s.read.GetParentSpacesBySpaceID(ctx, gen.GetParentSpacesBySpaceIDParams{
 		SpaceID:  spaceID,
 		TenantID: tenantID,
@@ -806,7 +816,7 @@ func (s *Service) GetParentSpaces(ctx context.Context, spaceID, tenantID pgtype.
 
 // GetChildSpaces returns every child space for the given space, resolved
 // through the junction table and scoped to the tenant.
-func (s *Service) GetChildSpaces(ctx context.Context, spaceID, tenantID pgtype.UUID) ([]gen.Space, error) {
+func (s *Service) GetChildSpaces(ctx context.Context, spaceID, tenantID pgtype.UUID) ([]gen.GetChildSpacesByParentIDRow, error) {
 	spaces, err := s.read.GetChildSpacesByParentID(ctx, gen.GetChildSpacesByParentIDParams{
 		ParentSpaceID: spaceID,
 		TenantID:      tenantID,

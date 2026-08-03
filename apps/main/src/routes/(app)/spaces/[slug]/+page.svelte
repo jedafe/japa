@@ -2,7 +2,12 @@
 	import { untrack } from 'svelte';
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
-	import { Rss, MessageSquare, Users, Info, PenSquare, Search, BarChart3, UserPlus, UserCheck, Loader2 } from 'lucide-svelte';
+	import {
+		Rss, MessageSquare, Users, Info, PenSquare, Search, BarChart3,
+		UserPlus, UserCheck, Loader2, BellOff, Bell, Flag, Pin, PinOff,
+		Check, X, Inbox
+	} from 'lucide-svelte';
+	import { Dialog } from 'bits-ui';
 	import SetSidebar from '$lib/components/shell/SetSidebar.svelte';
 	import ProfileTabs from '$lib/components/profile/ProfileTabs.svelte';
 	import SpaceSidebar from '$lib/components/profile/SpaceSidebar.svelte';
@@ -11,7 +16,10 @@
 	import { EmptyState } from '$lib/components/ui';
 	import { api } from '$lib/api/client';
 	import { requireAuthOrRedirect } from '$lib/auth/guest';
-	import type { SpaceContentItem, SpaceModerator } from '$lib/types';
+	import type {
+		Space, SpaceContentItem, SpaceModerator, SpaceRule,
+		SpacePermissionPreset, SpaceJoinRequest
+	} from '$lib/types';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -19,6 +27,7 @@
 	const space = $derived(data.space);
 	const authed = $derived(!!page.data.user);
 	const activeTab = $derived(page.url.searchParams.get('tab') ?? 'feed');
+	const canManage = $derived(data.isOwner || data.isModerator);
 
 	// Hydrate the Join button's initial state: the caller is a member if the
 	// current space appears in their joined-spaces list (page.data.userSpaces,
@@ -52,6 +61,61 @@
 		followPending = false;
 	}
 
+	// Mute state — SSR-seeded, toggled client-side.
+	let muted = $state(untrack(() => data.isMuted ?? false));
+	let mutePending = $state(false);
+
+	async function toggleMute() {
+		if (mutePending) return;
+		if (!(await requireAuthOrRedirect())) return;
+		const was = muted;
+		muted = !was;
+		mutePending = true;
+		const path = `/spaces/${space.slug}/mute`;
+		const res = was
+			? await api.delete<{ muted: boolean }>(path)
+			: await api.post<{ muted: boolean }>(path);
+		if (res.error) {
+			muted = was;
+		} else if (res.data && typeof res.data.muted === 'boolean') {
+			muted = res.data.muted;
+		}
+		mutePending = false;
+	}
+
+	// Report dialog state.
+	let reportOpen = $state(false);
+	let reportReason = $state('');
+	let reportNotes = $state('');
+	let reportSubmitting = $state(false);
+	let reportError = $state('');
+	let reportSubmitted = $state(false);
+
+	async function submitReport() {
+		if (!reportReason.trim() || reportSubmitting) return;
+		reportSubmitting = true;
+		reportError = '';
+		const res = await api.post<{ id: string }>(`/spaces/${space.id}/report`, {
+			reason: reportReason.trim(),
+			notes: reportNotes.trim() || null,
+			evidence_urls: []
+		});
+		if (res.error) {
+			reportError = res.error.message;
+		} else {
+			reportSubmitted = true;
+			reportReason = '';
+			reportNotes = '';
+		}
+		reportSubmitting = false;
+	}
+
+	function closeReport() {
+		reportOpen = false;
+		reportSubmitted = false;
+		reportError = '';
+	}
+
 	const analytics = $derived(data.analytics as {
 		total_views?: number;
 		total_posts?: number;
@@ -72,6 +136,11 @@
 		// guests and non-admin members.
 		...(authed && analytics
 			? [{ key: 'analytics', labelKey: 'space.tab.analytics', href: `?tab=analytics` }]
+			: []),
+		// Join requests — only shown for owner/moderator when joining_perm
+		// is 'request' (otherwise the tab is empty/irrelevant).
+		...(canManage && space.joining_perm === 'request'
+			? [{ key: 'requests', labelKey: 'space.tab.requests', href: `?tab=requests` }]
 			: []),
 		// Settings — authed users only. The PATCH endpoint enforces
 		// space-admin/moderator permissions server-side.
@@ -106,15 +175,18 @@
 	let feedLoading = $state(false);
 	let feedEnd = $derived(data.content.length < data.pageSize);
 
-	// Moderators list — seeded from SSR (only fetched for owner/moderator),
-	// then mutated client-side as the owner assigns/removes moderators in the
-	// Settings tab. Re-seeds when the slug changes.
+	// Moderators + rules + parent spaces — seeded from SSR, mutated client-side
+	// in the Settings tab. Re-seeds when the slug changes.
 	let moderators = $state<SpaceModerator[]>(untrack(() => data.moderators));
+	let rules = $state<SpaceRule[]>(untrack(() => data.rules));
+	let parentSpaces = $state<Space[]>(untrack(() => data.parentSpaces));
 
 	$effect(() => {
 		// Re-seed on SSR payload change (slug change).
 		feedItems = data.content;
 		moderators = data.moderators;
+		rules = data.rules;
+		parentSpaces = data.parentSpaces;
 	});
 
 	async function loadMoreFeed() {
@@ -129,6 +201,73 @@
 		}
 		feedLoading = false;
 	}
+
+	// --- Pinned post management (Ref: §05; POST/DELETE /spaces/{slug}/pinned) ---
+	let pinningId = $state<string | null>(null);
+
+	async function togglePin(item: SpaceContentItem) {
+		if (pinningId) return;
+		pinningId = item.id;
+		if (item.is_pinned) {
+			const res = await api.delete<{ unpinned: boolean }>(`/spaces/${space.slug}/pinned/${item.id}`);
+			if (!res.error) {
+				feedItems = feedItems.map((f) => f.id === item.id ? { ...f, is_pinned: false } : f);
+			}
+		} else {
+			const maxPos = feedItems.filter((f) => f.is_pinned).length;
+			const res = await api.post<{ id: string }>(`/spaces/${space.slug}/pinned`, {
+				content_id: item.id,
+				position: maxPos + 1
+			});
+			if (!res.error) {
+				feedItems = feedItems.map((f) => f.id === item.id ? { ...f, is_pinned: true } : f);
+			}
+		}
+		pinningId = null;
+	}
+
+	// --- Join request queue (Ref: §05; GET /admin/spaces/{id}/join-requests) ---
+	let joinRequests = $state<SpaceJoinRequest[]>([]);
+	let requestsLoading = $state(false);
+	let requestsLoaded = $state(false);
+	let requestActionId = $state<string | null>(null);
+	let requestError = $state('');
+
+	async function loadJoinRequests() {
+		if (requestsLoaded) return;
+		requestsLoading = true;
+		requestError = '';
+		const res = await api.get<SpaceJoinRequest[]>(`/admin/spaces/${space.id}/join-requests`);
+		if (res.error) {
+			requestError = res.error.message;
+		} else if (res.data) {
+			joinRequests = res.data;
+			requestsLoaded = true;
+		}
+		requestsLoading = false;
+	}
+
+	async function updateJoinRequest(userId: string, status: 'approved' | 'rejected') {
+		if (requestActionId) return;
+		requestActionId = userId;
+		requestError = '';
+		const res = await api.patch<{ status: string }>(
+			`/admin/spaces/${space.id}/join-requests/${userId}`, { status }
+		);
+		if (res.error) {
+			requestError = res.error.message;
+		} else {
+			joinRequests = joinRequests.filter((r) => r.user_id !== userId);
+		}
+		requestActionId = null;
+	}
+
+	// Load join requests when the requests tab becomes active.
+	$effect(() => {
+		if (activeTab === 'requests' && canManage) {
+			loadJoinRequests();
+		}
+	});
 </script>
 
 <svelte:head>
@@ -141,55 +280,108 @@
 </svelte:head>
 
 <SetSidebar>
-	<SpaceSidebar {space} rules={data.rules} {authed} {initialJoined} bind:following />
+	<SpaceSidebar {space} rules={data.rules} {authed} logoUrl={data.logoUrl} {initialJoined} bind:following />
 </SetSidebar>
 
-<!-- Space header -->
-<div class="border-b border-[var(--color-border)] px-4 py-4">
-	<div class="mx-auto flex w-full max-w-2xl items-start gap-3">
-		<span
-			class="grid h-14 w-14 shrink-0 place-items-center rounded-[var(--radius-card)] bg-[var(--color-surface-subtle)] text-lg font-semibold text-[var(--color-text-subtle)]"
-		>
-			{space.name.charAt(0).toUpperCase()}
-		</span>
-		<div class="min-w-0 flex-1">
-			<h1 class="truncate text-lg font-semibold text-[var(--color-text)]">{space.name}</h1>
-			<p class="text-xs capitalize text-[var(--color-muted)]">{space.level} · {space.visibility}</p>
-			{#if space.description}
-				<p class="mt-1 line-clamp-2 text-sm text-[var(--color-text-subtle)]">{space.description}</p>
+<!-- Space header — cover banner + overlapping logo, follows ProfileHeader pattern -->
+<header class="border-b border-[var(--color-border)] bg-[var(--color-surface)]">
+	<!-- Cover banner — image with dark fade at bottom, or gradient fallback.
+	     The dark fade at the bottom improves logo/title legibility. -->
+	<div class="relative h-32 overflow-hidden sm:h-40">
+		{#if data.headerUrl}
+			<img src={data.headerUrl} alt="" class="h-full w-full object-cover" />
+		{:else}
+			<!-- Visible gradient fallback — works in both light and dark mode -->
+			<div
+				class="h-full w-full"
+				style="background: linear-gradient(135deg, color-mix(in srgb, var(--color-primary) 30%, transparent) 0%, color-mix(in srgb, var(--color-primary) 8%, var(--color-surface-subtle)) 100%);"
+			></div>
+		{/if}
+		<!-- Dark fade at bottom — always applied, over both image and fallback -->
+		<div class="pointer-events-none absolute inset-x-0 bottom-0 h-2/3 bg-gradient-to-t from-black/70 via-black/30 to-transparent"></div>
+	</div>
+
+	<div class="relative px-4 pb-4">
+		<div class="-mt-12 flex flex-col gap-3 sm:-mt-16 sm:flex-row sm:items-end sm:gap-4">
+			<!-- Logo — overlaps the cover, falls back to first letter -->
+			{#if data.logoUrl}
+				<img
+					src={data.logoUrl}
+					alt={space.name}
+					class="h-24 w-24 shrink-0 rounded-[var(--radius-card)] border-4 border-[var(--color-surface)] bg-[var(--color-surface)] object-cover shadow-lg sm:h-28 sm:w-28"
+				/>
+			{:else}
+				<span
+					class="grid h-24 w-24 shrink-0 place-items-center rounded-[var(--radius-card)] border-4 border-[var(--color-surface)] bg-[var(--color-surface-subtle)] text-3xl font-bold text-[var(--color-primary)] shadow-lg sm:h-28 sm:w-28"
+				>
+					{space.name.charAt(0).toUpperCase()}
+				</span>
+			{/if}
+
+			<div class="flex-1 pb-1">
+				<h1 class="text-xl font-semibold text-[var(--color-text)]">{space.name}</h1>
+				<p class="text-sm capitalize text-[var(--color-muted)]">{space.level} · {space.visibility}</p>
+				{#if space.description}
+					<p class="mt-1 line-clamp-2 text-sm text-[var(--color-text-subtle)]">{space.description}</p>
+				{/if}
+			</div>
+
+			{#if authed}
+				<div class="flex shrink-0 items-center gap-2 pb-1">
+					<button
+						type="button"
+						onclick={toggleMute}
+						disabled={mutePending}
+						aria-busy={mutePending}
+						title={muted ? t('space.unmute', 'Unmute') : t('space.mute', 'Mute')}
+						class="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-[var(--color-border)] px-3 py-1.5 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)] disabled:opacity-50"
+					>
+						{#if mutePending}
+							<Loader2 size={16} class="animate-spin" />
+						{:else if muted}
+							<BellOff size={16} />
+						{:else}
+							<Bell size={16} />
+						{/if}
+					</button>
+					<button
+						type="button"
+						onclick={() => (reportOpen = true)}
+						title={t('space.report', 'Report')}
+						class="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-[var(--color-border)] px-3 py-1.5 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
+					>
+						<Flag size={16} />
+					</button>
+					<button
+						type="button"
+						onclick={toggleFollow}
+						disabled={followPending}
+						aria-busy={followPending}
+						class="inline-flex shrink-0 items-center gap-1.5 rounded-full px-4 py-1.5 text-sm font-medium transition-colors disabled:opacity-50 {following
+							? 'border border-[var(--color-border)] text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]'
+							: 'bg-[var(--color-primary)] text-[var(--color-primary-contrast)] hover:bg-[var(--color-primary-hover)]'}"
+					>
+						{#if followPending}
+							<Loader2 size={16} class="animate-spin" />
+						{:else if following}
+							<UserCheck size={16} />
+							{t('profile.following_label', 'Following')}
+						{:else}
+							<UserPlus size={16} />
+							{t('profile.follow', 'Follow')}
+						{/if}
+					</button>
+					<a
+						href="/create?type=forum&space={space.slug}"
+						class="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-[var(--color-primary)] px-4 py-1.5 text-sm font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)]"
+					>
+						<PenSquare size={16} /> {t('space.post', 'Post')}
+					</a>
+				</div>
 			{/if}
 		</div>
-		{#if authed}
-			<div class="flex shrink-0 items-center gap-2">
-				<button
-					type="button"
-					onclick={toggleFollow}
-					disabled={followPending}
-					aria-busy={followPending}
-					class="inline-flex shrink-0 items-center gap-1.5 rounded-[var(--radius)] px-3 py-1.5 text-xs font-medium transition-colors disabled:opacity-50 {following
-						? 'border border-[var(--color-border)] text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]'
-						: 'bg-[var(--color-primary)] text-[var(--color-primary-contrast)] hover:bg-[var(--color-primary-hover)]'}"
-				>
-					{#if followPending}
-						<Loader2 size={14} class="animate-spin" />
-					{:else if following}
-						<UserCheck size={14} />
-						{t('profile.following_label', 'Following')}
-					{:else}
-						<UserPlus size={14} />
-						{t('profile.follow', 'Follow')}
-					{/if}
-				</button>
-				<a
-					href="/create?type=forum&space={space.slug}"
-					class="inline-flex shrink-0 items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1.5 text-xs font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)]"
-				>
-					<PenSquare size={14} /> {t('space.post', 'Post')}
-				</a>
-			</div>
-		{/if}
 	</div>
-</div>
+</header>
 
 <ProfileTabs {tabs} active={activeTab} />
 
@@ -201,20 +393,42 @@
 			{:else}
 				<div class="divide-y divide-[var(--color-border)] overflow-hidden rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)]">
 					{#each feedItems as item (item.id)}
-						<a href="/content/{item.slug}" class="block p-4 transition-colors hover:bg-[var(--color-surface-subtle)]">
-							<div class="flex items-center gap-2 text-xs text-[var(--color-muted)]">
-								<span class="rounded-full bg-[var(--color-surface-subtle)] px-2 py-0.5 font-medium text-[var(--color-text-subtle)]">{item.content_type}</span>
-								{#if item.is_pinned}
-									<span class="font-medium text-[var(--color-primary)]">{t('space.pinned', 'Pinned')}</span>
-								{/if}
-								<span>· {item.read_time_minutes} {t('feed.min_read')}</span>
-							</div>
-							<h3 class="mt-1.5 text-sm font-medium text-[var(--color-text)]">{item.title}</h3>
-							<div class="mt-2 flex items-center gap-4 text-xs text-[var(--color-muted)]">
-								<span>{item.view_count} {t('profile.views', 'views')}</span>
-								<span>{item.comment_count} {t('profile.comments', 'comments')}</span>
-							</div>
-						</a>
+						<div class="group relative block transition-colors hover:bg-[var(--color-surface-subtle)]">
+							<a href="/content/{item.slug}" class="block p-4">
+								<div class="flex items-center gap-2 text-xs text-[var(--color-muted)]">
+									<span class="rounded-full bg-[var(--color-surface-subtle)] px-2 py-0.5 font-medium text-[var(--color-text-subtle)]">{item.content_type}</span>
+									{#if item.is_pinned}
+										<span class="flex items-center gap-0.5 font-medium text-[var(--color-primary)]">
+											<Pin size={10} /> {t('space.pinned', 'Pinned')}
+										</span>
+									{/if}
+									<span>· {item.read_time_minutes} {t('feed.min_read')}</span>
+								</div>
+								<h3 class="mt-1.5 text-sm font-medium text-[var(--color-text)]">{item.title}</h3>
+								<div class="mt-2 flex items-center gap-4 text-xs text-[var(--color-muted)]">
+									<span>{item.view_count} {t('profile.views', 'views')}</span>
+									<span>{item.comment_count} {t('profile.comments', 'comments')}</span>
+								</div>
+							</a>
+							{#if canManage}
+								<button
+									type="button"
+									disabled={pinningId === item.id}
+									onclick={() => togglePin(item)}
+									class="absolute right-3 top-3 grid h-7 w-7 place-items-center rounded-full text-[var(--color-muted)] opacity-0 transition-opacity hover:bg-[var(--color-surface)] group-hover:opacity-100 disabled:opacity-50"
+									title={item.is_pinned ? t('space.unpin', 'Unpin') : t('space.pin', 'Pin')}
+									aria-label={item.is_pinned ? t('space.unpin', 'Unpin') : t('space.pin', 'Pin')}
+								>
+									{#if pinningId === item.id}
+										<Loader2 size={13} class="animate-spin" />
+									{:else if item.is_pinned}
+										<PinOff size={13} />
+									{:else}
+										<Pin size={13} />
+									{/if}
+								</button>
+							{/if}
+						</div>
 					{/each}
 				</div>
 				{#if !feedEnd}
@@ -340,15 +554,158 @@
 			{:else}
 				<EmptyState icon={BarChart3} title={t('space.analytics.unavailable', 'Analytics unavailable')} />
 			{/if}
+		{:else if activeTab === 'requests'}
+			<!-- Join request queue — owner/moderator only (Ref: §05; GET /admin/spaces/{id}/join-requests) -->
+			<section>
+				<h2 class="mb-3 text-sm font-semibold text-[var(--color-text)]">
+					{t('space.requests.title', 'Pending join requests')}
+				</h2>
+				{#if requestError}
+					<p class="mb-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-950/30 dark:text-red-400">{requestError}</p>
+				{/if}
+				{#if requestsLoading}
+					<p class="py-8 text-center text-sm text-[var(--color-muted)]">{t('common.loading', 'Loading…')}</p>
+				{:else if joinRequests.length === 0}
+					<EmptyState icon={Inbox} title={t('space.requests.empty', 'No pending requests')} />
+				{:else}
+					<ul class="space-y-2">
+						{#each joinRequests as req (req.user_id)}
+							<li class="flex items-center gap-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
+								{#if req.avatar_url}
+									<img src={req.avatar_url} alt="" class="h-10 w-10 rounded-full object-cover" />
+								{:else}
+									<span class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[var(--color-surface-subtle)] text-sm font-medium text-[var(--color-text-subtle)]">
+										{(req.display_name ?? req.username).charAt(0).toUpperCase()}
+									</span>
+								{/if}
+								<a href="/u/{req.username}" class="min-w-0 flex-1">
+									<span class="block truncate text-sm font-medium text-[var(--color-text)]">{req.display_name ?? req.username}</span>
+									<span class="block text-xs text-[var(--color-muted)]">@{req.username}</span>
+								</a>
+								<div class="flex shrink-0 items-center gap-2">
+									<button
+										type="button"
+										disabled={requestActionId === req.user_id}
+										onclick={() => updateJoinRequest(req.user_id, 'approved')}
+										class="inline-flex items-center gap-1 rounded-lg bg-green-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-green-700 disabled:opacity-50"
+									>
+										{#if requestActionId === req.user_id}
+											<Loader2 size={12} class="animate-spin" />
+										{:else}
+											<Check size={12} />
+										{/if}
+										{t('space.requests.approve', 'Approve')}
+									</button>
+									<button
+										type="button"
+										disabled={requestActionId === req.user_id}
+										onclick={() => updateJoinRequest(req.user_id, 'rejected')}
+										class="inline-flex items-center gap-1 rounded-lg border border-[var(--color-border)] px-2.5 py-1.5 text-xs font-medium text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)] disabled:opacity-50"
+									>
+										<X size={12} />
+										{t('space.requests.reject', 'Reject')}
+									</button>
+								</div>
+							</li>
+						{/each}
+					</ul>
+				{/if}
+			</section>
 		{:else if activeTab === 'settings'}
 			<SpaceSettings
 				{space}
 				keywords={data.keywords}
 				logoUrl={data.logoUrl}
+				headerUrl={data.headerUrl}
 				isOwner={data.isOwner}
 				isModerator={data.isModerator}
+				presets={data.presets}
 				bind:moderators
+				bind:rules
+				bind:parentSpaces
 			/>
 		{/if}
 	</div>
 </div>
+
+<!-- Report space dialog -->
+{#if reportOpen}
+	<Dialog.Root open={reportOpen}>
+		<Dialog.Portal>
+			<Dialog.Overlay class="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm" />
+			<Dialog.Content class="fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-[12px] border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-xl">
+				<Dialog.Close class="absolute right-4 top-4 text-[var(--color-muted)] hover:text-[var(--color-text)]" onclick={closeReport}>
+					<X size={20} />
+				</Dialog.Close>
+				<div class="mb-4 flex items-center gap-2">
+					<Flag size={20} class="text-red-500" />
+					<h2 class="text-lg font-semibold text-[var(--color-text)]">{t('space.report_title', 'Report this space')}</h2>
+				</div>
+				{#if reportSubmitted}
+					<p class="rounded-lg bg-green-50 px-4 py-3 text-sm text-green-700 dark:bg-green-950/30 dark:text-green-400">
+						{t('space.report_submitted', 'Your report has been submitted. Our team will review it.')}
+					</p>
+					<button
+						type="button"
+						onclick={closeReport}
+						class="mt-4 rounded-lg bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-white hover:opacity-90"
+					>
+						{t('common.close', 'Close')}
+					</button>
+				{:else}
+					<form onsubmit={(e) => { e.preventDefault(); submitReport(); }} class="space-y-3">
+						{#if reportError}
+							<p class="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-950/30 dark:text-red-400">{reportError}</p>
+						{/if}
+						<div>
+							<label for="report-reason" class="mb-1 block text-xs font-medium text-[var(--color-muted)]">
+								{t('space.report_reason', 'Reason')}
+							</label>
+							<select
+								id="report-reason"
+								bind:value={reportReason}
+								class="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]"
+								required
+							>
+								<option value="">{t('space.report_reason_select', 'Select a reason…')}</option>
+								<option value="spam">{t('space.report_spam', 'Spam')}</option>
+								<option value="harassment">{t('space.report_harassment', 'Harassment or hate speech')}</option>
+								<option value="misinformation">{t('space.report_misinformation', 'Misinformation')}</option>
+								<option value="illegal">{t('space.report_illegal', 'Illegal content')}</option>
+								<option value="other">{t('space.report_other', 'Other')}</option>
+							</select>
+						</div>
+						<div>
+							<label for="report-notes" class="mb-1 block text-xs font-medium text-[var(--color-muted)]">
+								{t('space.report_notes', 'Additional notes (optional)')}
+							</label>
+							<textarea
+								id="report-notes"
+								bind:value={reportNotes}
+								rows="3"
+								class="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]"
+							></textarea>
+						</div>
+						<div class="flex items-center gap-2">
+							<button
+								type="submit"
+								disabled={reportSubmitting || !reportReason.trim()}
+								class="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
+							>
+								{#if reportSubmitting}<Loader2 size={14} class="animate-spin" />{:else}
+								{t('space.report_submit', 'Submit report')}{/if}
+							</button>
+							<button
+								type="button"
+								onclick={closeReport}
+								class="rounded-lg border border-[var(--color-border)] px-4 py-2 text-sm text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
+							>
+								{t('common.cancel', 'Cancel')}
+							</button>
+						</div>
+					</form>
+				{/if}
+			</Dialog.Content>
+		</Dialog.Portal>
+	</Dialog.Root>
+{/if}

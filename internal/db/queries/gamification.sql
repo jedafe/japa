@@ -1,0 +1,264 @@
+-- gamification.sql — Advanced Gamification queries (Section 64, ADR-082).
+-- Covers badge definitions, user badges, challenge definitions, progress,
+-- and leaderboard queries.
+-- Ref: japaconnect-engineering/sections/64-gamification.md
+--      japaconnect-engineering/adr/ADR-082-advanced-gamification.md
+
+-- =====================================================================
+-- Badge Definitions
+-- =====================================================================
+
+-- name: ListBadgeDefinitions :many
+SELECT * FROM badge_definitions
+WHERE tenant_id = @tenant_id
+  AND (@active_only::boolean = false OR is_active = true)
+ORDER BY display_order ASC, name ASC;
+
+-- name: ListBadgeDefinitionsPaginated :many
+SELECT * FROM badge_definitions
+WHERE tenant_id = @tenant_id
+  AND (@active_only::boolean = false OR is_active = true)
+ORDER BY display_order ASC, name ASC
+LIMIT @page_limit OFFSET @page_offset;
+
+-- name: CountBadgeDefinitions :one
+SELECT COUNT(*) AS count
+FROM badge_definitions
+WHERE tenant_id = @tenant_id
+  AND (@active_only::boolean = false OR is_active = true);
+
+-- name: GetBadgeDefinitionByID :one
+SELECT * FROM badge_definitions
+WHERE tenant_id = @tenant_id AND id = @id;
+
+-- name: CreateBadgeDefinition :one
+INSERT INTO badge_definitions (
+    tenant_id, slug, name, description, icon_media_id,
+    trigger_type, trigger_value, trigger_activity_key,
+    is_active, is_system, display_order
+)
+VALUES (
+    @tenant_id, @slug, @name, sqlc.narg(description), sqlc.narg(icon_media_id),
+    @trigger_type, sqlc.narg(trigger_value), sqlc.narg(trigger_activity_key),
+    @is_active, @is_system, @display_order
+)
+RETURNING *;
+
+-- name: UpdateBadgeDefinition :one
+UPDATE badge_definitions
+SET
+    name                  = COALESCE(sqlc.narg(name), name),
+    description           = COALESCE(sqlc.narg(description), description),
+    icon_media_id         = COALESCE(sqlc.narg(icon_media_id), icon_media_id),
+    trigger_type          = COALESCE(sqlc.narg(trigger_type), trigger_type),
+    trigger_value         = COALESCE(sqlc.narg(trigger_value), trigger_value),
+    trigger_activity_key  = COALESCE(sqlc.narg(trigger_activity_key), trigger_activity_key),
+    is_active             = COALESCE(sqlc.narg(is_active), is_active),
+    display_order         = COALESCE(sqlc.narg(display_order), display_order)
+WHERE tenant_id = @tenant_id AND id = @id
+RETURNING *;
+
+-- =====================================================================
+-- User Badges
+-- =====================================================================
+
+-- name: AwardBadge :one
+INSERT INTO user_badges (tenant_id, user_id, badge_id, awarded_by)
+VALUES (@tenant_id, @user_id, @badge_id, sqlc.narg(awarded_by))
+ON CONFLICT (tenant_id, user_id, badge_id) DO NOTHING
+RETURNING *;
+
+-- name: ListUserBadges :many
+SELECT
+    ub.*,
+    bd.name  AS badge_name,
+    bd.slug  AS badge_slug,
+    bd.description AS badge_description,
+    bd.icon_media_id AS badge_icon_media_id
+FROM user_badges ub
+JOIN badge_definitions bd ON bd.id = ub.badge_id
+WHERE ub.tenant_id = @tenant_id AND ub.user_id = @user_id
+ORDER BY ub.awarded_at DESC;
+
+-- name: ListUserBadgesByUsername :many
+SELECT
+    ub.*,
+    bd.name  AS badge_name,
+    bd.slug  AS badge_slug,
+    bd.description AS badge_description
+FROM user_badges ub
+JOIN badge_definitions bd ON bd.id = ub.badge_id
+JOIN users u ON u.id = ub.user_id
+WHERE ub.tenant_id = @tenant_id AND u.username = @username
+ORDER BY ub.awarded_at DESC;
+
+-- name: GetUserBadge :one
+SELECT * FROM user_badges
+WHERE tenant_id = @tenant_id AND user_id = @user_id AND badge_id = @badge_id;
+
+-- =====================================================================
+-- Challenge Definitions
+-- =====================================================================
+
+-- name: ListActiveChallenges :many
+SELECT * FROM challenge_definitions
+WHERE tenant_id = @tenant_id
+  AND is_active = true
+  AND starts_at <= now()
+  AND (ends_at IS NULL OR ends_at > now())
+ORDER BY created_at DESC;
+
+-- name: ListAllChallenges :many
+SELECT * FROM challenge_definitions
+WHERE tenant_id = @tenant_id
+ORDER BY created_at DESC
+LIMIT @page_limit OFFSET @page_offset;
+
+-- name: CountAllChallenges :one
+SELECT COUNT(*) AS count
+FROM challenge_definitions
+WHERE tenant_id = @tenant_id;
+
+-- name: GetChallengeByID :one
+SELECT * FROM challenge_definitions
+WHERE tenant_id = @tenant_id AND id = @id;
+
+-- name: CreateChallenge :one
+INSERT INTO challenge_definitions (
+    tenant_id, slug, name, description, image_media_id,
+    activity_key, target_count, reward_points, reward_badge_id,
+    starts_at, ends_at, is_active
+)
+VALUES (
+    @tenant_id, @slug, @name, sqlc.narg(description), sqlc.narg(image_media_id),
+    @activity_key, @target_count, @reward_points, sqlc.narg(reward_badge_id),
+    @starts_at, sqlc.narg(ends_at), @is_active
+)
+RETURNING *;
+
+-- name: ExpireChallengesPastEndDate :execrows
+UPDATE challenge_definitions
+SET is_active = false
+WHERE tenant_id = @tenant_id
+  AND is_active = true
+  AND ends_at IS NOT NULL
+  AND ends_at < now();
+
+-- =====================================================================
+-- User Challenge Progress
+-- =====================================================================
+
+-- name: UpsertChallengeProgress :one
+INSERT INTO user_challenge_progress (tenant_id, user_id, challenge_id, current_count)
+VALUES (@tenant_id, @user_id, @challenge_id, @current_count)
+ON CONFLICT (tenant_id, user_id, challenge_id)
+DO UPDATE SET
+    current_count = user_challenge_progress.current_count + EXCLUDED.current_count,
+    completed = CASE
+        WHEN user_challenge_progress.current_count + EXCLUDED.current_count >= (
+            SELECT target_count FROM challenge_definitions WHERE id = @challenge_id
+        ) THEN true
+        ELSE false
+    END,
+    completed_at = CASE
+        WHEN user_challenge_progress.current_count + EXCLUDED.current_count >= (
+            SELECT target_count FROM challenge_definitions WHERE id = @challenge_id
+        ) THEN now()
+        ELSE user_challenge_progress.completed_at
+    END
+RETURNING *;
+
+-- name: ListUserChallengeProgress :many
+SELECT
+    ucp.*,
+    cd.name  AS challenge_name,
+    cd.slug  AS challenge_slug,
+    cd.description AS challenge_description,
+    cd.target_count,
+    cd.reward_points,
+    cd.ends_at
+FROM user_challenge_progress ucp
+JOIN challenge_definitions cd ON cd.id = ucp.challenge_id
+WHERE ucp.tenant_id = @tenant_id AND ucp.user_id = @user_id
+ORDER BY ucp.completed ASC, cd.ends_at ASC NULLS FIRST;
+
+-- name: GetChallengeProgress :one
+SELECT * FROM user_challenge_progress
+WHERE tenant_id = @tenant_id AND user_id = @user_id AND challenge_id = @challenge_id;
+
+-- name: MarkChallengeRewardClaimed :exec
+UPDATE user_challenge_progress
+SET reward_claimed = true
+WHERE id = @id;
+
+-- =====================================================================
+-- Leaderboard — computed from wallet_ledger. The all_time leaderboard
+-- sums all credit operations on the 'points' ledger per user. The
+-- period leaderboard aggregates platform_events for weekly/monthly.
+-- =====================================================================
+
+-- name: LeaderboardAllTime :many
+SELECT
+    wl.user_id,
+    SUM(CASE WHEN wl.operation = 'credit' THEN wl.amount ELSE -wl.amount END) AS lifetime_points,
+    u.username,
+    u.profile_type
+FROM wallet_ledger wl
+JOIN users u ON u.id = wl.user_id
+WHERE wl.tenant_id = @tenant_id
+  AND wl.ledger_type = 'points'
+  AND u.is_bot = false
+  AND u.status = 'active'
+GROUP BY wl.user_id, u.username, u.profile_type
+ORDER BY lifetime_points DESC
+LIMIT @top_n;
+
+-- name: LeaderboardByPeriod :many
+SELECT
+    pe.user_id,
+    SUM((pe.meta->>'points')::int) AS period_points,
+    u.username,
+    u.profile_type
+FROM platform_events pe
+JOIN users u ON u.id = pe.user_id
+WHERE pe.tenant_id = @tenant_id
+  AND pe.event_type = 'wallet.points_earned'
+  AND pe.created_at >= @from_date
+  AND u.is_bot = false
+  AND u.status = 'active'
+GROUP BY pe.user_id, u.username, u.profile_type
+ORDER BY period_points DESC
+LIMIT @top_n;
+
+-- =====================================================================
+-- Badge evaluation helpers — used by wallet:process_activity_event task.
+-- =====================================================================
+
+-- name: GetBadgesByActivityTrigger :many
+SELECT * FROM badge_definitions
+WHERE tenant_id = @tenant_id
+  AND is_active = true
+  AND trigger_type = 'activity_count'
+  AND trigger_activity_key = @activity_key;
+
+-- name: GetBadgesByPointsTrigger :many
+SELECT * FROM badge_definitions
+WHERE tenant_id = @tenant_id
+  AND is_active = true
+  AND trigger_type = 'lifetime_points';
+
+-- name: CountUserActivityByKey :one
+SELECT COUNT(*) AS count
+FROM platform_events
+WHERE tenant_id = @tenant_id
+  AND user_id = @user_id
+  AND event_type = @activity_key
+  AND is_synthetic = false;
+
+-- name: GetChallengesByActivityKey :many
+SELECT * FROM challenge_definitions
+WHERE tenant_id = @tenant_id
+  AND is_active = true
+  AND activity_key = @activity_key
+  AND starts_at <= now()
+  AND (ends_at IS NULL OR ends_at > now());

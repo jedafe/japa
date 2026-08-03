@@ -15,6 +15,7 @@
 		spaces: MeSpace[];
 		spaceId: string | null;
 		tags: string[];
+		maxTags?: number;
 		coverMediaId: string | null;
 		coverPreviewUrl: string | null;
 		onseries: (id: string | null) => void;
@@ -35,6 +36,7 @@
 		spaces = $bindable(),
 		spaceId,
 		tags,
+		maxTags = 5,
 		coverMediaId,
 		coverPreviewUrl,
 		onseries,
@@ -91,6 +93,7 @@
 			<span class="footer-label">{t('create.label.tags')}</span>
 			<TagInput
 				{tags}
+				{maxTags}
 				onTags={(next) => { ontags(next); onedit(); }}
 				onfocus={ontagsfocus}
 			/>

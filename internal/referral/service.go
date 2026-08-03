@@ -1,15 +1,56 @@
-// Package referral — service.go provides business logic for referral program management.
+// Package referral provides business logic for the Referral System
+// (Section 60, ADR-078). Every user gets a unique referral code. Sharing
+// the code earns Credits when the referred user completes their first
+// paid action. Single-level, first-click 30-day attribution, fraud-controlled.
+//
+// The Service also manages the legacy referral_programs admin settings
+// (referrer/referee reward cents, max referrals, cookie days).
+//
+// Ref: japaconnect-engineering/sections/60-referral-system.md
+//      japaconnect-engineering/adr/ADR-078-referral-system.md
 package referral
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
+	"math/big"
+	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/db"
+	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/valkey-io/valkey-go/valkeycompat"
 )
+
+// Status constants for referral lifecycle.
+const (
+	StatusPending   = "pending"
+	StatusQualified = "qualified"
+	StatusCredited  = "credited"
+	StatusFlagged   = "flagged"
+	StatusRejected  = "rejected"
+)
+
+// Task name constants.
+const (
+	TaskRecordClick      = "referral:record_click"
+	TaskCheckConversion  = "referral:check_conversion"
+	TaskReviewFlagged    = "referral:review_flagged"
+	TaskAwardPoints      = "wallet:award_points"
+	TaskSendNotification = "notification:send"
+)
+
+// TaskEnqueuer enqueues Asynq tasks fire-and-forget (Rule 8).
+type TaskEnqueuer interface {
+	Enqueue(taskType string, payload []byte) error
+}
 
 // Program represents the referral program settings for a tenant.
 type Program struct {
@@ -25,27 +66,36 @@ type Program struct {
 	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
 }
 
-// Referral represents a single referral record.
-type Referral struct {
-	ID           pgtype.UUID         `json:"id"`
-	TenantID     pgtype.UUID         `json:"tenant_id"`
-	ReferrerID   pgtype.UUID         `json:"referrer_id"`
-	RefereeID    *pgtype.UUID        `json:"referee_id,omitempty"`
-	ReferralCode string              `json:"referral_code"`
-	Status       string              `json:"status"`
-	RewardPaidAt *pgtype.Timestamptz `json:"reward_paid_at,omitempty"`
-	CreatedAt    pgtype.Timestamptz  `json:"created_at"`
-}
-
-// Service coordinates referral program configuration and referral tracking.
+// Service coordinates referral program configuration, referral tracking,
+// referral codes, attribution, and fraud-controlled credit awards.
 type Service struct {
-	db *db.DB
+	db       *db.DB
+	queries  *gen.Queries
+	settings *config.Settings
+	valkey   valkeycompat.Cmdable
+	enqueuer TaskEnqueuer
 }
 
 // NewService creates a Service backed by the given database pool.
 func NewService(database *db.DB) *Service {
-	return &Service{db: database}
+	return &Service{
+		db:      database,
+		queries: gen.New(database.Reader),
+	}
 }
+
+// SetSettings injects the config.Settings provider.
+func (s *Service) SetSettings(settings *config.Settings) { s.settings = settings }
+
+// SetValkey injects the Valkey client for attribution caching.
+func (s *Service) SetValkey(vk valkeycompat.Cmdable) { s.valkey = vk }
+
+// SetEnqueuer injects the Asynq task enqueuer.
+func (s *Service) SetEnqueuer(e TaskEnqueuer) { s.enqueuer = e }
+
+// ---------------------------------------------------------------------------
+// Legacy: Referral Program admin settings (referral_programs table)
+// ---------------------------------------------------------------------------
 
 // GetProgram returns the referral program settings for the tenant. If no row
 // exists yet (first admin visit), it seeds a default row using the column
@@ -71,8 +121,6 @@ func (s *Service) GetProgram(ctx context.Context, tenantID pgtype.UUID) (Program
 		return Program{}, fmt.Errorf("fetching referral program: %w", err)
 	}
 
-	// Seed a default row (UNIQUE(tenant_id) makes this safe against races;
-	// a concurrent insert surfaces as a unique violation we re-read past).
 	return s.seedDefaultProgram(ctx, tenantID)
 }
 
@@ -99,7 +147,6 @@ func (s *Service) seedDefaultProgram(ctx context.Context, tenantID pgtype.UUID) 
 		return Program{}, fmt.Errorf("seeding referral program: %w", err)
 	}
 
-	// ON CONFLICT DO NOTHING returned no rows — another request won the race.
 	err = s.db.Reader.QueryRow(ctx, `
 		SELECT id, tenant_id, referrer_reward_cents, referee_reward_cents,
 		       max_referrals, cookie_days, is_active, description, created_at, updated_at
@@ -118,7 +165,6 @@ func (s *Service) seedDefaultProgram(ctx context.Context, tenantID pgtype.UUID) 
 
 // UpdateProgram updates the referral program settings for the tenant.
 func (s *Service) UpdateProgram(ctx context.Context, tenantID pgtype.UUID, referrerRewardCents, refereeRewardCents, maxReferrals, cookieDays *int32, isActive *bool, description *string) (Program, error) {
-	// Fetch current values for merge.
 	current, err := s.GetProgram(ctx, tenantID)
 	if err != nil {
 		return Program{}, err
@@ -176,7 +222,384 @@ func (s *Service) UpdateProgram(ctx context.Context, tenantID pgtype.UUID, refer
 	return updated, nil
 }
 
-// ListReferrals returns all referrals for the tenant.
+// ---------------------------------------------------------------------------
+// V2: Referral codes, attribution, and conversion tracking
+// ---------------------------------------------------------------------------
+
+// GenerateReferralCode generates a unique 8-character alphanumeric code.
+func GenerateReferralCode() (string, error) {
+	const charset = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+	code := make([]byte, 8)
+	for i := range code {
+		n, err := rand.Int(rand.Reader, big.NewInt(int64(len(charset))))
+		if err != nil {
+			return "", fmt.Errorf("referral: generate code: %w", err)
+		}
+		code[i] = charset[n.Int64()]
+	}
+	return string(code), nil
+}
+
+// GetOrCreateCode returns the user's referral code, creating one if it doesn't exist.
+func (s *Service) GetOrCreateCode(ctx context.Context, tenantID, userID pgtype.UUID) (gen.ReferralCode, error) {
+	code, err := s.queries.GetReferralCodeByUserID(ctx, gen.GetReferralCodeByUserIDParams{
+		TenantID: tenantID,
+		UserID:   userID,
+	})
+	if err == nil {
+		return code, nil
+	}
+
+	newCode, err := GenerateReferralCode()
+	if err != nil {
+		return gen.ReferralCode{}, err
+	}
+
+	code, err = s.queries.CreateReferralCode(ctx, gen.CreateReferralCodeParams{
+		TenantID: tenantID,
+		UserID:   userID,
+		Code:     newCode,
+	})
+	if err != nil {
+		return gen.ReferralCode{}, fmt.Errorf("referral: create code: %w", err)
+	}
+	return code, nil
+}
+
+// GetReferralStats returns the user's referral statistics.
+func (s *Service) GetReferralStats(ctx context.Context, tenantID, userID pgtype.UUID) (map[string]interface{}, error) {
+	code, err := s.GetOrCreateCode(ctx, tenantID, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	total, err := s.queries.CountReferralsByReferrer(ctx, gen.CountReferralsByReferrerParams{
+		TenantID:   tenantID,
+		ReferrerID: userID,
+		Status:     "",
+	})
+	if err != nil {
+		return nil, fmt.Errorf("referral: count total: %w", err)
+	}
+
+	credited, err := s.queries.CountReferralsByReferrer(ctx, gen.CountReferralsByReferrerParams{
+		TenantID:   tenantID,
+		ReferrerID: userID,
+		Status:     StatusCredited,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("referral: count credited: %w", err)
+	}
+
+	pending, err := s.queries.CountReferralsByReferrer(ctx, gen.CountReferralsByReferrerParams{
+		TenantID:   tenantID,
+		ReferrerID: userID,
+		Status:     StatusPending,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("referral: count pending: %w", err)
+	}
+
+	return map[string]interface{}{
+		"code":        code.Code,
+		"click_count": code.ClickCount,
+		"total":       total,
+		"credited":    credited,
+		"pending":     pending,
+	}, nil
+}
+
+// RecordClick increments the click count for a referral code and sets the
+// Valkey attribution key. Called by the referral:record_click task.
+func (s *Service) RecordClick(ctx context.Context, code, sessionID string) error {
+	if err := s.queries.IncrementReferralClickCount(ctx, code); err != nil {
+		return fmt.Errorf("referral: increment click: %w", err)
+	}
+
+	if s.valkey != nil {
+		ttlDays := 30
+		if s.settings != nil {
+			ttlDays = s.settings.GetIntOr(ctx, pgtype.UUID{}, "referral.attribution_window_days", 30)
+		}
+		ttl := time.Duration(ttlDays) * 24 * time.Hour
+		key := fmt.Sprintf("jc:referral_attr:%s", sessionID)
+		if err := s.valkey.Set(ctx, key, code, ttl).Err(); err != nil {
+			slog.Warn("referral: set attribution key failed", "error", err)
+		}
+	}
+
+	return nil
+}
+
+// GetAttribution retrieves the referral code from Valkey for a session.
+func (s *Service) GetAttribution(ctx context.Context, sessionID string) (string, error) {
+	if s.valkey == nil {
+		return "", errors.New("referral: valkey not configured")
+	}
+	key := fmt.Sprintf("jc:referral_attr:%s", sessionID)
+	code, err := s.valkey.Get(ctx, key).Result()
+	if err != nil {
+		return "", fmt.Errorf("referral: get attribution: %w", err)
+	}
+	return code, nil
+}
+
+// CreateReferral creates a pending referral record linking referrer to referee.
+func (s *Service) CreateReferral(ctx context.Context, tenantID, referrerID, refereeID pgtype.UUID, code string) (gen.Referral, error) {
+	referral, err := s.queries.CreateReferral(ctx, gen.CreateReferralParams{
+		TenantID:     tenantID,
+		ReferrerID:   referrerID,
+		RefereeID:    refereeID,
+		ReferralCode: code,
+	})
+	if err != nil {
+		return gen.Referral{}, fmt.Errorf("referral: create: %w", err)
+	}
+	return referral, nil
+}
+
+// CheckConversion is called on payment completion. It checks if the payer
+// has a referral attribution, runs fraud checks, and transitions the referral
+// status. Called by the referral:check_conversion task.
+func (s *Service) CheckConversion(ctx context.Context, tenantID, payerID, paymentID pgtype.UUID, sessionID string) error {
+	code, err := s.GetAttribution(ctx, sessionID)
+	if err != nil {
+		return nil // No attribution — not a referred user.
+	}
+
+	refCode, err := s.queries.GetReferralCodeByCode(ctx, code)
+	if err != nil {
+		return fmt.Errorf("referral: get code: %w", err)
+	}
+
+	// Self-referral check.
+	if refCode.UserID == payerID {
+		return s.flagReferral(ctx, tenantID, payerID, "self_referral")
+	}
+
+	referral, err := s.queries.GetReferralByReferee(ctx, gen.GetReferralByRefereeParams{
+		TenantID:  tenantID,
+		RefereeID: payerID,
+	})
+	if err != nil {
+		return nil // No referral record — nothing to do.
+	}
+
+	// Check monthly cap.
+	maxPerPeriod := 10
+	if s.settings != nil {
+		maxPerPeriod = s.settings.GetIntOr(ctx, tenantID, "referral.max_rewards_per_period", 10)
+	}
+	periodStart := time.Now().AddDate(0, -1, 0)
+	creditedThisPeriod, err := s.queries.CountCreditedReferralsByReferrerThisPeriod(ctx, gen.CountCreditedReferralsByReferrerThisPeriodParams{
+		TenantID:    tenantID,
+		ReferrerID:  referral.ReferrerID,
+		PeriodStart: pgtype.Timestamptz{Time: periodStart, Valid: true},
+	})
+	if err != nil {
+		return fmt.Errorf("referral: count credited this period: %w", err)
+	}
+	if creditedThisPeriod >= int64(maxPerPeriod) {
+		return s.flagReferralByID(ctx, tenantID, referral.ID, "monthly_cap_exceeded")
+	}
+
+	// Qualify the referral.
+	_, err = s.queries.QualifyReferral(ctx, gen.QualifyReferralParams{
+		TenantID:           tenantID,
+		ID:                 referral.ID,
+		QualifiedPaymentID: paymentID,
+	})
+	if err != nil {
+		return fmt.Errorf("referral: qualify: %w", err)
+	}
+
+	// Credit the referrer.
+	rewardCredits := 500
+	if s.settings != nil {
+		rewardCredits = s.settings.GetIntOr(ctx, tenantID, "referral.reward_credits", 500)
+	}
+	_, err = s.queries.CreditReferral(ctx, gen.CreditReferralParams{
+		TenantID:     tenantID,
+		ID:           referral.ID,
+		RewardAmount: pgtype.Numeric{Int: big.NewInt(int64(rewardCredits)), Exp: 0, Valid: true},
+	})
+	if err != nil {
+		return fmt.Errorf("referral: credit: %w", err)
+	}
+
+	// Award credits to referrer wallet (fire-and-forget per Rule 8).
+	if s.enqueuer != nil {
+		payload, _ := json.Marshal(map[string]interface{}{
+			"tenant_id": tenantID.String(),
+			"user_id":   referral.ReferrerID.String(),
+			"amount":    rewardCredits,
+			"reason":    "referral_reward",
+		})
+		if err := s.enqueuer.Enqueue(TaskAwardPoints, payload); err != nil {
+			slog.Warn("referral: enqueue award points failed", "error", err)
+		}
+	}
+
+	return nil
+}
+
+func (s *Service) flagReferral(ctx context.Context, tenantID, refereeID pgtype.UUID, reason string) error {
+	referral, err := s.queries.GetReferralByReferee(ctx, gen.GetReferralByRefereeParams{
+		TenantID:  tenantID,
+		RefereeID: refereeID,
+	})
+	if err != nil {
+		return nil
+	}
+	return s.flagReferralByID(ctx, tenantID, referral.ID, reason)
+}
+
+func (s *Service) flagReferralByID(ctx context.Context, tenantID, referralID pgtype.UUID, reason string) error {
+	_, err := s.queries.FlagReferral(ctx, gen.FlagReferralParams{
+		TenantID:      tenantID,
+		ID:            referralID,
+		FlaggedReason: &reason,
+	})
+	return err
+}
+
+// ListReferralHistory returns the referrer's referral list (status only, no PII).
+func (s *Service) ListReferralHistory(ctx context.Context, tenantID, referrerID pgtype.UUID, status string, page, limit int) ([]gen.Referral, int64, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 20
+	}
+	if page <= 0 {
+		page = 1
+	}
+	offset := int32((page - 1) * limit)
+
+	rows, err := s.queries.ListReferralsByReferrer(ctx, gen.ListReferralsByReferrerParams{
+		TenantID:   tenantID,
+		ReferrerID: referrerID,
+		Status:     status,
+		PageLimit:  int32(limit),
+		PageOffset: offset,
+	})
+	if err != nil {
+		return nil, 0, fmt.Errorf("referral: list history: %w", err)
+	}
+
+	total, err := s.queries.CountReferralsByReferrer(ctx, gen.CountReferralsByReferrerParams{
+		TenantID:   tenantID,
+		ReferrerID: referrerID,
+		Status:     status,
+	})
+	if err != nil {
+		return nil, 0, fmt.Errorf("referral: count history: %w", err)
+	}
+
+	return rows, total, nil
+}
+
+// AdminListReferrals returns all referrals for admin oversight.
+func (s *Service) AdminListReferrals(ctx context.Context, tenantID pgtype.UUID, status string, page, limit int) ([]gen.Referral, int64, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 20
+	}
+	if page <= 0 {
+		page = 1
+	}
+	offset := int32((page - 1) * limit)
+
+	rows, err := s.queries.AdminListReferrals(ctx, gen.AdminListReferralsParams{
+		TenantID:   tenantID,
+		Status:     status,
+		PageLimit:  int32(limit),
+		PageOffset: offset,
+	})
+	if err != nil {
+		return nil, 0, fmt.Errorf("referral: admin list: %w", err)
+	}
+
+	total, err := s.queries.AdminCountReferrals(ctx, gen.AdminCountReferralsParams{
+		TenantID: tenantID,
+		Status:   status,
+	})
+	if err != nil {
+		return nil, 0, fmt.Errorf("referral: admin count: %w", err)
+	}
+
+	return rows, total, nil
+}
+
+// AdminResolveFlagged resolves a flagged referral (credit or reject).
+func (s *Service) AdminResolveFlagged(ctx context.Context, tenantID, referralID pgtype.UUID, action string) error {
+	switch strings.ToLower(action) {
+	case "credit":
+		rewardCredits := 500
+		if s.settings != nil {
+			rewardCredits = s.settings.GetIntOr(ctx, tenantID, "referral.reward_credits", 500)
+		}
+		_, err := s.queries.CreditReferral(ctx, gen.CreditReferralParams{
+			TenantID:     tenantID,
+			ID:           referralID,
+			RewardAmount: pgtype.Numeric{Int: big.NewInt(int64(rewardCredits)), Exp: 0, Valid: true},
+		})
+		return err
+	case "reject":
+		return s.queries.RejectReferral(ctx, gen.RejectReferralParams{
+			TenantID: tenantID,
+			ID:       referralID,
+		})
+	default:
+		return fmt.Errorf("referral: invalid action: %s", action)
+	}
+}
+
+// AdminReferralStats returns totals by status.
+func (s *Service) AdminReferralStats(ctx context.Context, tenantID pgtype.UUID) ([]gen.AdminReferralStatsRow, error) {
+	return s.queries.AdminReferralStats(ctx, tenantID)
+}
+
+// AdminListFlagged returns the flagged referral queue.
+func (s *Service) AdminListFlagged(ctx context.Context, tenantID pgtype.UUID, page, limit int) ([]gen.Referral, int64, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 20
+	}
+	if page <= 0 {
+		page = 1
+	}
+	offset := int32((page - 1) * limit)
+
+	rows, err := s.queries.AdminListFlaggedReferrals(ctx, gen.AdminListFlaggedReferralsParams{
+		TenantID:   tenantID,
+		PageLimit:  int32(limit),
+		PageOffset: offset,
+	})
+	if err != nil {
+		return nil, 0, fmt.Errorf("referral: admin flagged list: %w", err)
+	}
+
+	total, err := s.queries.AdminCountFlaggedReferrals(ctx, tenantID)
+	if err != nil {
+		return nil, 0, fmt.Errorf("referral: admin flagged count: %w", err)
+	}
+
+	return rows, total, nil
+}
+
+// ---------------------------------------------------------------------------
+// Legacy: Direct pgx referral listing (old schema, kept for backward compat)
+// ---------------------------------------------------------------------------
+
+// Referral represents a single referral record (legacy struct for old routes).
+type Referral struct {
+	ID           pgtype.UUID         `json:"id"`
+	TenantID     pgtype.UUID         `json:"tenant_id"`
+	ReferrerID   pgtype.UUID         `json:"referrer_id"`
+	RefereeID    *pgtype.UUID        `json:"referee_id,omitempty"`
+	ReferralCode string              `json:"referral_code"`
+	Status       string              `json:"status"`
+	RewardPaidAt *pgtype.Timestamptz `json:"reward_paid_at,omitempty"`
+	CreatedAt    pgtype.Timestamptz  `json:"created_at"`
+}
+
+// ListReferrals returns all referrals for the tenant (legacy direct pgx).
 func (s *Service) ListReferrals(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]Referral, error) {
 	rows, err := s.db.Reader.Query(ctx, `
 		SELECT id, tenant_id, referrer_id, referee_id, referral_code, status, reward_paid_at, created_at
@@ -191,20 +614,18 @@ func (s *Service) ListReferrals(ctx context.Context, tenantID pgtype.UUID, limit
 	defer rows.Close()
 
 	var referrals []Referral
-
 	for rows.Next() {
 		var ref Referral
 		if err := rows.Scan(&ref.ID, &ref.TenantID, &ref.ReferrerID, &ref.RefereeID, &ref.ReferralCode, &ref.Status, &ref.RewardPaidAt, &ref.CreatedAt); err != nil {
 			return nil, fmt.Errorf("scanning referral: %w", err)
 		}
-
 		referrals = append(referrals, ref)
 	}
 
 	return referrals, rows.Err()
 }
 
-// GetReferral returns a single referral by ID.
+// GetReferral returns a single referral by ID (legacy direct pgx).
 func (s *Service) GetReferral(ctx context.Context, tenantID, id pgtype.UUID) (Referral, error) {
 	var ref Referral
 
@@ -220,14 +641,12 @@ func (s *Service) GetReferral(ctx context.Context, tenantID, id pgtype.UUID) (Re
 	return ref, nil
 }
 
-// DeleteReferral soft-deletes a referral by setting status to 'expired'
-// (Rule 11 — no hard-delete of user content in V1). The referrals table has
-// no deleted_at column, so the existing 'expired' status value (valid per the
-// CHECK constraint from migration 000056) is used to mark it inactive.
+// DeleteReferral soft-deletes a referral by setting status to 'rejected'
+// (the old 'expired' status is not in the V2 CHECK constraint).
 func (s *Service) DeleteReferral(ctx context.Context, tenantID, id pgtype.UUID) error {
 	cmd, err := s.db.Writer.Exec(ctx, `
 		UPDATE referrals
-		SET status = 'expired'
+		SET status = 'rejected'
 		WHERE tenant_id = $1 AND id = $2
 	`, tenantID, id)
 	if err != nil {

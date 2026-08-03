@@ -6,25 +6,12 @@
 BEGIN;
 
 -- ── Rename table: sidebar_blocks → sidebar_widgets ─────────────────────
--- Guarded with DO block so re-running is safe after the rename already
--- happened (the table was manually applied but not recorded).
-DO $$
-BEGIN
-    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'sidebar_blocks') THEN
-        ALTER TABLE sidebar_blocks RENAME TO sidebar_widgets;
-    END IF;
-END $$;
+-- ALTER TABLE IF EXISTS is idempotent: safe to re-run after the rename
+-- already happened (the table was manually applied but not recorded).
+ALTER TABLE IF EXISTS sidebar_blocks RENAME TO sidebar_widgets;
 
 -- ── Rename column: block_type → widget_type ────────────────────────────
-DO $$
-BEGIN
-    IF EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_name = 'sidebar_widgets' AND column_name = 'block_type'
-    ) THEN
-        ALTER TABLE sidebar_widgets RENAME COLUMN block_type TO widget_type;
-    END IF;
-END $$;
+ALTER TABLE IF EXISTS sidebar_widgets RENAME COLUMN block_type TO widget_type;
 
 -- ── Rename index ───────────────────────────────────────────────────────
 ALTER INDEX IF EXISTS idx_sidebar_blocks_sidebar RENAME TO idx_sidebar_widgets_sidebar;
