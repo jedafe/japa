@@ -142,11 +142,12 @@ func (h *Handlers) ListTags(w http.ResponseWriter, r *http.Request) {
 		totalPages = (int32(count) + limit - 1) / limit
 	}
 
-	// Enrich each tag with a resolved logo_url from the joined media columns.
+	// Enrich each tag with resolved logo_url and cover_url from the joined media columns.
 	enriched := make([]map[string]any, 0, len(tags))
 	for _, t := range tags {
 		row := structToMap(t)
 		row["logo_url"] = resolveLogoURL(t.LogoStoragePath, t.LogoStorageBucket)
+		row["cover_url"] = resolveLogoURL(t.CoverStoragePath, t.CoverStorageBucket)
 		enriched = append(enriched, row)
 	}
 
@@ -172,6 +173,7 @@ func (h *Handlers) GetTag(w http.ResponseWriter, r *http.Request) {
 
 	row := structToMap(tag)
 	row["logo_url"] = resolveLogoURL(tag.LogoStoragePath, tag.LogoStorageBucket)
+	row["cover_url"] = resolveLogoURL(tag.CoverStoragePath, tag.CoverStorageBucket)
 	writeJSON(w, http.StatusOK, map[string]any{"data": row})
 }
 
@@ -343,9 +345,11 @@ func structToMap(v any) map[string]any {
 	if err := json.Unmarshal(b, &m); err != nil {
 		return map[string]any{}
 	}
-	// Remove internal join columns — the API exposes logo_url, not raw storage paths.
+	// Remove internal join columns — the API exposes logo_url/cover_url, not raw storage paths.
 	delete(m, "logo_storage_path")
 	delete(m, "logo_storage_bucket")
+	delete(m, "cover_storage_path")
+	delete(m, "cover_storage_bucket")
 	return m
 }
 
@@ -357,12 +361,15 @@ func (h *Handlers) CreateTag(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var input struct {
-		Name        string  `json:"name"`
-		Slug        string  `json:"slug"`
-		Description *string `json:"description"`
-		Color       *string `json:"color"`
-		IsSystem    bool    `json:"is_system"`
-		LogoMediaID string  `json:"logo_media_id"`
+		Name         string  `json:"name"`
+		Slug         string  `json:"slug"`
+		Description  *string `json:"description"`
+		Rules        *string `json:"rules"`
+		CoverMediaID string  `json:"cover_media_id"`
+		Color        *string `json:"color"`
+		IsSystem     bool            `json:"is_system"`
+		LogoMediaID  string          `json:"logo_media_id"`
+		FieldValues  json.RawMessage `json:"field_values"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
@@ -385,6 +392,11 @@ func (h *Handlers) CreateTag(w http.ResponseWriter, r *http.Request) {
 		input.Description = &sanitized
 	}
 
+	if input.Rules != nil {
+		sanitized := content.SanitizeText(*input.Rules)
+		input.Rules = &sanitized
+	}
+
 	// Validate color format if provided (must be a valid hex color).
 	if input.Color != nil && *input.Color != "" {
 		if !isValidHexColor(*input.Color) {
@@ -401,13 +413,24 @@ func (h *Handlers) CreateTag(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	var coverMediaID pgtype.UUID
+	if input.CoverMediaID != "" {
+		if err := coverMediaID.Scan(input.CoverMediaID); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_cover_media_id", "cover_media_id must be a valid UUID")
+			return
+		}
+	}
+
 	tag, err := h.service.CreateTag(r.Context(), tenantID, CreateTagInput{
-		Name:        content.SanitizeText(input.Name),
-		Slug:        slug,
-		Description: input.Description,
-		Color:       input.Color,
-		IsSystem:    input.IsSystem,
-		LogoMediaID: logoMediaID,
+		Name:         content.SanitizeText(input.Name),
+		Slug:         slug,
+		Description:  input.Description,
+		Rules:        input.Rules,
+		CoverMediaID: coverMediaID,
+		Color:        input.Color,
+		IsSystem:     input.IsSystem,
+		LogoMediaID:  logoMediaID,
+		FieldValues:  input.FieldValues,
 	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to create tag")
@@ -431,10 +454,13 @@ func (h *Handlers) UpdateTag(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var input struct {
-		Name        string  `json:"name"`
-		Description *string `json:"description"`
-		Color       *string `json:"color"`
-		LogoMediaID *string `json:"logo_media_id"`
+		Name         string          `json:"name"`
+		Description  *string         `json:"description"`
+		Rules        *string         `json:"rules"`
+		CoverMediaID *string         `json:"cover_media_id"`
+		Color        *string         `json:"color"`
+		LogoMediaID  *string         `json:"logo_media_id"`
+		FieldValues  json.RawMessage `json:"field_values"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
@@ -452,6 +478,11 @@ func (h *Handlers) UpdateTag(w http.ResponseWriter, r *http.Request) {
 		input.Description = &sanitized
 	}
 
+	if input.Rules != nil {
+		sanitized := content.SanitizeText(*input.Rules)
+		input.Rules = &sanitized
+	}
+
 	if input.Color != nil && *input.Color != "" {
 		if !isValidHexColor(*input.Color) {
 			writeError(w, http.StatusBadRequest, "invalid_color", "color must be a valid hex color (e.g. #3b82f6)")
@@ -467,11 +498,22 @@ func (h *Handlers) UpdateTag(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	var coverMediaID pgtype.UUID
+	if input.CoverMediaID != nil && *input.CoverMediaID != "" {
+		if err := coverMediaID.Scan(*input.CoverMediaID); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_cover_media_id", "cover_media_id must be a valid UUID")
+			return
+		}
+	}
+
 	tag, err := h.service.UpdateTag(r.Context(), id, tenantID, UpdateTagInput{
-		Name:        content.SanitizeText(input.Name),
-		Description: input.Description,
-		Color:       input.Color,
-		LogoMediaID: logoMediaID,
+		Name:         content.SanitizeText(input.Name),
+		Description:  input.Description,
+		Rules:        input.Rules,
+		CoverMediaID: coverMediaID,
+		Color:        input.Color,
+		LogoMediaID:  logoMediaID,
+		FieldValues:  input.FieldValues,
 	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to update tag")

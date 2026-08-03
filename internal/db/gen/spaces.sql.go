@@ -370,7 +370,35 @@ type CreateSpaceParams struct {
 	Status         string      `json:"status"`
 }
 
-func (q *Queries) CreateSpace(ctx context.Context, arg CreateSpaceParams) (Space, error) {
+type CreateSpaceRow struct {
+	ID             pgtype.UUID        `json:"id"`
+	TenantID       pgtype.UUID        `json:"tenant_id"`
+	ParentID       pgtype.UUID        `json:"parent_id"`
+	SpaceTypeID    pgtype.UUID        `json:"space_type_id"`
+	Name           string             `json:"name"`
+	Slug           string             `json:"slug"`
+	Description    *string            `json:"description"`
+	WikiContent    []byte             `json:"wiki_content"`
+	LogoMediaID    pgtype.UUID        `json:"logo_media_id"`
+	HeaderImageID  pgtype.UUID        `json:"header_image_id"`
+	GeoCode        *string            `json:"geo_code"`
+	Level          string             `json:"level"`
+	MemberCount    int32              `json:"member_count"`
+	PostCount      int32              `json:"post_count"`
+	FollowerCount  int32              `json:"follower_count"`
+	Visibility     string             `json:"visibility"`
+	PostingPerm    string             `json:"posting_perm"`
+	ReplyingPerm   string             `json:"replying_perm"`
+	CommentingPerm string             `json:"commenting_perm"`
+	JoiningPerm    string             `json:"joining_perm"`
+	Status         string             `json:"status"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
+	CurrencyCode   *string            `json:"currency_code"`
+}
+
+func (q *Queries) CreateSpace(ctx context.Context, arg CreateSpaceParams) (CreateSpaceRow, error) {
 	row := q.db.QueryRow(ctx, createSpace,
 		arg.TenantID,
 		arg.ParentID,
@@ -388,7 +416,7 @@ func (q *Queries) CreateSpace(ctx context.Context, arg CreateSpaceParams) (Space
 		arg.JoiningPerm,
 		arg.Status,
 	)
-	var i Space
+	var i CreateSpaceRow
 	err := row.Scan(
 		&i.ID,
 		&i.TenantID,
@@ -559,6 +587,60 @@ func (q *Queries) DeleteSpaceType(ctx context.Context, arg DeleteSpaceTypeParams
 	return err
 }
 
+const findSpacesByKeywords = `-- name: FindSpacesByKeywords :many
+SELECT id, name, level
+FROM spaces
+WHERE tenant_id = $1
+  AND deleted_at IS NULL
+  AND visibility = 'public'
+  AND level IN ('country', 'state', 'city')
+  AND keywords && $2::text[]
+ORDER BY
+  CASE level
+    WHEN 'city' THEN 1
+    WHEN 'state' THEN 2
+    WHEN 'country' THEN 3
+  END,
+  name
+`
+
+type FindSpacesByKeywordsParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	Keywords []string    `json:"keywords"`
+}
+
+type FindSpacesByKeywordsRow struct {
+	ID    pgtype.UUID `json:"id"`
+	Name  string      `json:"name"`
+	Level string      `json:"level"`
+}
+
+// Find primary (country/state/city) and public spaces whose keywords overlap
+// with the given keyword list. Used for auto-assigning content to spaces
+// based on the content title. Only matches spaces with visibility='public'
+// and level IN ('country','state','city'). Returns only the fields needed
+// for auto-assignment (id, name, level) to avoid coupling to the full Space
+// model which doesn't include the keywords column.
+func (q *Queries) FindSpacesByKeywords(ctx context.Context, arg FindSpacesByKeywordsParams) ([]FindSpacesByKeywordsRow, error) {
+	rows, err := q.db.Query(ctx, findSpacesByKeywords, arg.TenantID, arg.Keywords)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []FindSpacesByKeywordsRow
+	for rows.Next() {
+		var i FindSpacesByKeywordsRow
+		if err := rows.Scan(&i.ID, &i.Name, &i.Level); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getChildSpacesByParentID = `-- name: GetChildSpacesByParentID :many
 SELECT s.id, s.tenant_id, s.parent_id, s.space_type_id, s.name, s.slug, s.description,
        s.wiki_content, s.logo_media_id, s.header_image_id, s.geo_code, s.level,
@@ -576,15 +658,43 @@ type GetChildSpacesByParentIDParams struct {
 	TenantID      pgtype.UUID `json:"tenant_id"`
 }
 
-func (q *Queries) GetChildSpacesByParentID(ctx context.Context, arg GetChildSpacesByParentIDParams) ([]Space, error) {
+type GetChildSpacesByParentIDRow struct {
+	ID             pgtype.UUID        `json:"id"`
+	TenantID       pgtype.UUID        `json:"tenant_id"`
+	ParentID       pgtype.UUID        `json:"parent_id"`
+	SpaceTypeID    pgtype.UUID        `json:"space_type_id"`
+	Name           string             `json:"name"`
+	Slug           string             `json:"slug"`
+	Description    *string            `json:"description"`
+	WikiContent    []byte             `json:"wiki_content"`
+	LogoMediaID    pgtype.UUID        `json:"logo_media_id"`
+	HeaderImageID  pgtype.UUID        `json:"header_image_id"`
+	GeoCode        *string            `json:"geo_code"`
+	Level          string             `json:"level"`
+	MemberCount    int32              `json:"member_count"`
+	PostCount      int32              `json:"post_count"`
+	FollowerCount  int32              `json:"follower_count"`
+	Visibility     string             `json:"visibility"`
+	PostingPerm    string             `json:"posting_perm"`
+	ReplyingPerm   string             `json:"replying_perm"`
+	CommentingPerm string             `json:"commenting_perm"`
+	JoiningPerm    string             `json:"joining_perm"`
+	Status         string             `json:"status"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
+	CurrencyCode   *string            `json:"currency_code"`
+}
+
+func (q *Queries) GetChildSpacesByParentID(ctx context.Context, arg GetChildSpacesByParentIDParams) ([]GetChildSpacesByParentIDRow, error) {
 	rows, err := q.db.Query(ctx, getChildSpacesByParentID, arg.ParentSpaceID, arg.TenantID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Space
+	var items []GetChildSpacesByParentIDRow
 	for rows.Next() {
-		var i Space
+		var i GetChildSpacesByParentIDRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.TenantID,
@@ -639,15 +749,43 @@ type GetParentSpacesBySpaceIDParams struct {
 	TenantID pgtype.UUID `json:"tenant_id"`
 }
 
-func (q *Queries) GetParentSpacesBySpaceID(ctx context.Context, arg GetParentSpacesBySpaceIDParams) ([]Space, error) {
+type GetParentSpacesBySpaceIDRow struct {
+	ID             pgtype.UUID        `json:"id"`
+	TenantID       pgtype.UUID        `json:"tenant_id"`
+	ParentID       pgtype.UUID        `json:"parent_id"`
+	SpaceTypeID    pgtype.UUID        `json:"space_type_id"`
+	Name           string             `json:"name"`
+	Slug           string             `json:"slug"`
+	Description    *string            `json:"description"`
+	WikiContent    []byte             `json:"wiki_content"`
+	LogoMediaID    pgtype.UUID        `json:"logo_media_id"`
+	HeaderImageID  pgtype.UUID        `json:"header_image_id"`
+	GeoCode        *string            `json:"geo_code"`
+	Level          string             `json:"level"`
+	MemberCount    int32              `json:"member_count"`
+	PostCount      int32              `json:"post_count"`
+	FollowerCount  int32              `json:"follower_count"`
+	Visibility     string             `json:"visibility"`
+	PostingPerm    string             `json:"posting_perm"`
+	ReplyingPerm   string             `json:"replying_perm"`
+	CommentingPerm string             `json:"commenting_perm"`
+	JoiningPerm    string             `json:"joining_perm"`
+	Status         string             `json:"status"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
+	CurrencyCode   *string            `json:"currency_code"`
+}
+
+func (q *Queries) GetParentSpacesBySpaceID(ctx context.Context, arg GetParentSpacesBySpaceIDParams) ([]GetParentSpacesBySpaceIDRow, error) {
 	rows, err := q.db.Query(ctx, getParentSpacesBySpaceID, arg.SpaceID, arg.TenantID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Space
+	var items []GetParentSpacesBySpaceIDRow
 	for rows.Next() {
-		var i Space
+		var i GetParentSpacesBySpaceIDRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.TenantID,
@@ -730,10 +868,38 @@ type GetSpaceByGeoCodeParams struct {
 	TenantID pgtype.UUID `json:"tenant_id"`
 }
 
+type GetSpaceByGeoCodeRow struct {
+	ID             pgtype.UUID        `json:"id"`
+	TenantID       pgtype.UUID        `json:"tenant_id"`
+	ParentID       pgtype.UUID        `json:"parent_id"`
+	SpaceTypeID    pgtype.UUID        `json:"space_type_id"`
+	Name           string             `json:"name"`
+	Slug           string             `json:"slug"`
+	Description    *string            `json:"description"`
+	WikiContent    []byte             `json:"wiki_content"`
+	LogoMediaID    pgtype.UUID        `json:"logo_media_id"`
+	HeaderImageID  pgtype.UUID        `json:"header_image_id"`
+	GeoCode        *string            `json:"geo_code"`
+	Level          string             `json:"level"`
+	MemberCount    int32              `json:"member_count"`
+	PostCount      int32              `json:"post_count"`
+	FollowerCount  int32              `json:"follower_count"`
+	Visibility     string             `json:"visibility"`
+	PostingPerm    string             `json:"posting_perm"`
+	ReplyingPerm   string             `json:"replying_perm"`
+	CommentingPerm string             `json:"commenting_perm"`
+	JoiningPerm    string             `json:"joining_perm"`
+	Status         string             `json:"status"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
+	CurrencyCode   *string            `json:"currency_code"`
+}
+
 // Finds a country-level space by its geo_code for primary space auto-join (Section 05, ADR-005).
-func (q *Queries) GetSpaceByGeoCode(ctx context.Context, arg GetSpaceByGeoCodeParams) (Space, error) {
+func (q *Queries) GetSpaceByGeoCode(ctx context.Context, arg GetSpaceByGeoCodeParams) (GetSpaceByGeoCodeRow, error) {
 	row := q.db.QueryRow(ctx, getSpaceByGeoCode, arg.GeoCode, arg.TenantID)
-	var i Space
+	var i GetSpaceByGeoCodeRow
 	err := row.Scan(
 		&i.ID,
 		&i.TenantID,
@@ -778,9 +944,37 @@ type GetSpaceByIDParams struct {
 	TenantID pgtype.UUID `json:"tenant_id"`
 }
 
-func (q *Queries) GetSpaceByID(ctx context.Context, arg GetSpaceByIDParams) (Space, error) {
+type GetSpaceByIDRow struct {
+	ID             pgtype.UUID        `json:"id"`
+	TenantID       pgtype.UUID        `json:"tenant_id"`
+	ParentID       pgtype.UUID        `json:"parent_id"`
+	SpaceTypeID    pgtype.UUID        `json:"space_type_id"`
+	Name           string             `json:"name"`
+	Slug           string             `json:"slug"`
+	Description    *string            `json:"description"`
+	WikiContent    []byte             `json:"wiki_content"`
+	LogoMediaID    pgtype.UUID        `json:"logo_media_id"`
+	HeaderImageID  pgtype.UUID        `json:"header_image_id"`
+	GeoCode        *string            `json:"geo_code"`
+	Level          string             `json:"level"`
+	MemberCount    int32              `json:"member_count"`
+	PostCount      int32              `json:"post_count"`
+	FollowerCount  int32              `json:"follower_count"`
+	Visibility     string             `json:"visibility"`
+	PostingPerm    string             `json:"posting_perm"`
+	ReplyingPerm   string             `json:"replying_perm"`
+	CommentingPerm string             `json:"commenting_perm"`
+	JoiningPerm    string             `json:"joining_perm"`
+	Status         string             `json:"status"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
+	CurrencyCode   *string            `json:"currency_code"`
+}
+
+func (q *Queries) GetSpaceByID(ctx context.Context, arg GetSpaceByIDParams) (GetSpaceByIDRow, error) {
 	row := q.db.QueryRow(ctx, getSpaceByID, arg.ID, arg.TenantID)
-	var i Space
+	var i GetSpaceByIDRow
 	err := row.Scan(
 		&i.ID,
 		&i.TenantID,
@@ -825,9 +1019,37 @@ type GetSpaceBySlugParams struct {
 	TenantID pgtype.UUID `json:"tenant_id"`
 }
 
-func (q *Queries) GetSpaceBySlug(ctx context.Context, arg GetSpaceBySlugParams) (Space, error) {
+type GetSpaceBySlugRow struct {
+	ID             pgtype.UUID        `json:"id"`
+	TenantID       pgtype.UUID        `json:"tenant_id"`
+	ParentID       pgtype.UUID        `json:"parent_id"`
+	SpaceTypeID    pgtype.UUID        `json:"space_type_id"`
+	Name           string             `json:"name"`
+	Slug           string             `json:"slug"`
+	Description    *string            `json:"description"`
+	WikiContent    []byte             `json:"wiki_content"`
+	LogoMediaID    pgtype.UUID        `json:"logo_media_id"`
+	HeaderImageID  pgtype.UUID        `json:"header_image_id"`
+	GeoCode        *string            `json:"geo_code"`
+	Level          string             `json:"level"`
+	MemberCount    int32              `json:"member_count"`
+	PostCount      int32              `json:"post_count"`
+	FollowerCount  int32              `json:"follower_count"`
+	Visibility     string             `json:"visibility"`
+	PostingPerm    string             `json:"posting_perm"`
+	ReplyingPerm   string             `json:"replying_perm"`
+	CommentingPerm string             `json:"commenting_perm"`
+	JoiningPerm    string             `json:"joining_perm"`
+	Status         string             `json:"status"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
+	CurrencyCode   *string            `json:"currency_code"`
+}
+
+func (q *Queries) GetSpaceBySlug(ctx context.Context, arg GetSpaceBySlugParams) (GetSpaceBySlugRow, error) {
 	row := q.db.QueryRow(ctx, getSpaceBySlug, arg.Slug, arg.TenantID)
-	var i Space
+	var i GetSpaceBySlugRow
 	err := row.Scan(
 		&i.ID,
 		&i.TenantID,
@@ -856,6 +1078,25 @@ func (q *Queries) GetSpaceBySlug(ctx context.Context, arg GetSpaceBySlugParams) 
 		&i.CurrencyCode,
 	)
 	return i, err
+}
+
+const getSpaceKeywords = `-- name: GetSpaceKeywords :one
+SELECT keywords FROM spaces
+WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
+`
+
+type GetSpaceKeywordsParams struct {
+	ID       pgtype.UUID `json:"id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+// Returns only the keywords array for a space. Used by GetSpace handler
+// to include keywords in the response without changing the Space struct.
+func (q *Queries) GetSpaceKeywords(ctx context.Context, arg GetSpaceKeywordsParams) ([]string, error) {
+	row := q.db.QueryRow(ctx, getSpaceKeywords, arg.ID, arg.TenantID)
+	var keywords []string
+	err := row.Scan(&keywords)
+	return keywords, err
 }
 
 const getSpaceModerator = `-- name: GetSpaceModerator :one
@@ -1067,15 +1308,43 @@ type ListChildSpacesParams struct {
 	TenantID pgtype.UUID `json:"tenant_id"`
 }
 
-func (q *Queries) ListChildSpaces(ctx context.Context, arg ListChildSpacesParams) ([]Space, error) {
+type ListChildSpacesRow struct {
+	ID             pgtype.UUID        `json:"id"`
+	TenantID       pgtype.UUID        `json:"tenant_id"`
+	ParentID       pgtype.UUID        `json:"parent_id"`
+	SpaceTypeID    pgtype.UUID        `json:"space_type_id"`
+	Name           string             `json:"name"`
+	Slug           string             `json:"slug"`
+	Description    *string            `json:"description"`
+	WikiContent    []byte             `json:"wiki_content"`
+	LogoMediaID    pgtype.UUID        `json:"logo_media_id"`
+	HeaderImageID  pgtype.UUID        `json:"header_image_id"`
+	GeoCode        *string            `json:"geo_code"`
+	Level          string             `json:"level"`
+	MemberCount    int32              `json:"member_count"`
+	PostCount      int32              `json:"post_count"`
+	FollowerCount  int32              `json:"follower_count"`
+	Visibility     string             `json:"visibility"`
+	PostingPerm    string             `json:"posting_perm"`
+	ReplyingPerm   string             `json:"replying_perm"`
+	CommentingPerm string             `json:"commenting_perm"`
+	JoiningPerm    string             `json:"joining_perm"`
+	Status         string             `json:"status"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
+	CurrencyCode   *string            `json:"currency_code"`
+}
+
+func (q *Queries) ListChildSpaces(ctx context.Context, arg ListChildSpacesParams) ([]ListChildSpacesRow, error) {
 	rows, err := q.db.Query(ctx, listChildSpaces, arg.ParentID, arg.TenantID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Space
+	var items []ListChildSpacesRow
 	for rows.Next() {
-		var i Space
+		var i ListChildSpacesRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.TenantID,
@@ -1131,18 +1400,46 @@ type ListCitiesByStateIDParams struct {
 	TenantID pgtype.UUID `json:"tenant_id"`
 }
 
+type ListCitiesByStateIDRow struct {
+	ID             pgtype.UUID        `json:"id"`
+	TenantID       pgtype.UUID        `json:"tenant_id"`
+	ParentID       pgtype.UUID        `json:"parent_id"`
+	SpaceTypeID    pgtype.UUID        `json:"space_type_id"`
+	Name           string             `json:"name"`
+	Slug           string             `json:"slug"`
+	Description    *string            `json:"description"`
+	WikiContent    []byte             `json:"wiki_content"`
+	LogoMediaID    pgtype.UUID        `json:"logo_media_id"`
+	HeaderImageID  pgtype.UUID        `json:"header_image_id"`
+	GeoCode        *string            `json:"geo_code"`
+	Level          string             `json:"level"`
+	MemberCount    int32              `json:"member_count"`
+	PostCount      int32              `json:"post_count"`
+	FollowerCount  int32              `json:"follower_count"`
+	Visibility     string             `json:"visibility"`
+	PostingPerm    string             `json:"posting_perm"`
+	ReplyingPerm   string             `json:"replying_perm"`
+	CommentingPerm string             `json:"commenting_perm"`
+	JoiningPerm    string             `json:"joining_perm"`
+	Status         string             `json:"status"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
+	CurrencyCode   *string            `json:"currency_code"`
+}
+
 // Geo hierarchy (catalog: GET /geo/states/:id/cities). Cities are
 // admin-created on demand (not bulk-seeded, per ADR-020) but follow the same
 // space_parent_spaces parenting as states.
-func (q *Queries) ListCitiesByStateID(ctx context.Context, arg ListCitiesByStateIDParams) ([]Space, error) {
+func (q *Queries) ListCitiesByStateID(ctx context.Context, arg ListCitiesByStateIDParams) ([]ListCitiesByStateIDRow, error) {
 	rows, err := q.db.Query(ctx, listCitiesByStateID, arg.StateID, arg.TenantID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Space
+	var items []ListCitiesByStateIDRow
 	for rows.Next() {
-		var i Space
+		var i ListCitiesByStateIDRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.TenantID,
@@ -1634,15 +1931,43 @@ type ListSpacesByLevelParams struct {
 	Level    string      `json:"level"`
 }
 
-func (q *Queries) ListSpacesByLevel(ctx context.Context, arg ListSpacesByLevelParams) ([]Space, error) {
+type ListSpacesByLevelRow struct {
+	ID             pgtype.UUID        `json:"id"`
+	TenantID       pgtype.UUID        `json:"tenant_id"`
+	ParentID       pgtype.UUID        `json:"parent_id"`
+	SpaceTypeID    pgtype.UUID        `json:"space_type_id"`
+	Name           string             `json:"name"`
+	Slug           string             `json:"slug"`
+	Description    *string            `json:"description"`
+	WikiContent    []byte             `json:"wiki_content"`
+	LogoMediaID    pgtype.UUID        `json:"logo_media_id"`
+	HeaderImageID  pgtype.UUID        `json:"header_image_id"`
+	GeoCode        *string            `json:"geo_code"`
+	Level          string             `json:"level"`
+	MemberCount    int32              `json:"member_count"`
+	PostCount      int32              `json:"post_count"`
+	FollowerCount  int32              `json:"follower_count"`
+	Visibility     string             `json:"visibility"`
+	PostingPerm    string             `json:"posting_perm"`
+	ReplyingPerm   string             `json:"replying_perm"`
+	CommentingPerm string             `json:"commenting_perm"`
+	JoiningPerm    string             `json:"joining_perm"`
+	Status         string             `json:"status"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
+	CurrencyCode   *string            `json:"currency_code"`
+}
+
+func (q *Queries) ListSpacesByLevel(ctx context.Context, arg ListSpacesByLevelParams) ([]ListSpacesByLevelRow, error) {
 	rows, err := q.db.Query(ctx, listSpacesByLevel, arg.TenantID, arg.Level)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Space
+	var items []ListSpacesByLevelRow
 	for rows.Next() {
-		var i Space
+		var i ListSpacesByLevelRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.TenantID,
@@ -1699,15 +2024,43 @@ type ListSpacesByMemberUserParams struct {
 	Search   string      `json:"search"`
 }
 
-func (q *Queries) ListSpacesByMemberUser(ctx context.Context, arg ListSpacesByMemberUserParams) ([]Space, error) {
+type ListSpacesByMemberUserRow struct {
+	ID             pgtype.UUID        `json:"id"`
+	TenantID       pgtype.UUID        `json:"tenant_id"`
+	ParentID       pgtype.UUID        `json:"parent_id"`
+	SpaceTypeID    pgtype.UUID        `json:"space_type_id"`
+	Name           string             `json:"name"`
+	Slug           string             `json:"slug"`
+	Description    *string            `json:"description"`
+	WikiContent    []byte             `json:"wiki_content"`
+	LogoMediaID    pgtype.UUID        `json:"logo_media_id"`
+	HeaderImageID  pgtype.UUID        `json:"header_image_id"`
+	GeoCode        *string            `json:"geo_code"`
+	Level          string             `json:"level"`
+	MemberCount    int32              `json:"member_count"`
+	PostCount      int32              `json:"post_count"`
+	FollowerCount  int32              `json:"follower_count"`
+	Visibility     string             `json:"visibility"`
+	PostingPerm    string             `json:"posting_perm"`
+	ReplyingPerm   string             `json:"replying_perm"`
+	CommentingPerm string             `json:"commenting_perm"`
+	JoiningPerm    string             `json:"joining_perm"`
+	Status         string             `json:"status"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
+	CurrencyCode   *string            `json:"currency_code"`
+}
+
+func (q *Queries) ListSpacesByMemberUser(ctx context.Context, arg ListSpacesByMemberUserParams) ([]ListSpacesByMemberUserRow, error) {
 	rows, err := q.db.Query(ctx, listSpacesByMemberUser, arg.UserID, arg.TenantID, arg.Search)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Space
+	var items []ListSpacesByMemberUserRow
 	for rows.Next() {
-		var i Space
+		var i ListSpacesByMemberUserRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.TenantID,
@@ -1762,15 +2115,43 @@ type ListSpacesByModeratorUserParams struct {
 	TenantID pgtype.UUID `json:"tenant_id"`
 }
 
-func (q *Queries) ListSpacesByModeratorUser(ctx context.Context, arg ListSpacesByModeratorUserParams) ([]Space, error) {
+type ListSpacesByModeratorUserRow struct {
+	ID             pgtype.UUID        `json:"id"`
+	TenantID       pgtype.UUID        `json:"tenant_id"`
+	ParentID       pgtype.UUID        `json:"parent_id"`
+	SpaceTypeID    pgtype.UUID        `json:"space_type_id"`
+	Name           string             `json:"name"`
+	Slug           string             `json:"slug"`
+	Description    *string            `json:"description"`
+	WikiContent    []byte             `json:"wiki_content"`
+	LogoMediaID    pgtype.UUID        `json:"logo_media_id"`
+	HeaderImageID  pgtype.UUID        `json:"header_image_id"`
+	GeoCode        *string            `json:"geo_code"`
+	Level          string             `json:"level"`
+	MemberCount    int32              `json:"member_count"`
+	PostCount      int32              `json:"post_count"`
+	FollowerCount  int32              `json:"follower_count"`
+	Visibility     string             `json:"visibility"`
+	PostingPerm    string             `json:"posting_perm"`
+	ReplyingPerm   string             `json:"replying_perm"`
+	CommentingPerm string             `json:"commenting_perm"`
+	JoiningPerm    string             `json:"joining_perm"`
+	Status         string             `json:"status"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
+	CurrencyCode   *string            `json:"currency_code"`
+}
+
+func (q *Queries) ListSpacesByModeratorUser(ctx context.Context, arg ListSpacesByModeratorUserParams) ([]ListSpacesByModeratorUserRow, error) {
 	rows, err := q.db.Query(ctx, listSpacesByModeratorUser, arg.UserID, arg.TenantID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Space
+	var items []ListSpacesByModeratorUserRow
 	for rows.Next() {
-		var i Space
+		var i ListSpacesByModeratorUserRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.TenantID,
@@ -1826,17 +2207,45 @@ type ListSpacesByOwnerUserParams struct {
 	TenantID pgtype.UUID `json:"tenant_id"`
 }
 
+type ListSpacesByOwnerUserRow struct {
+	ID             pgtype.UUID        `json:"id"`
+	TenantID       pgtype.UUID        `json:"tenant_id"`
+	ParentID       pgtype.UUID        `json:"parent_id"`
+	SpaceTypeID    pgtype.UUID        `json:"space_type_id"`
+	Name           string             `json:"name"`
+	Slug           string             `json:"slug"`
+	Description    *string            `json:"description"`
+	WikiContent    []byte             `json:"wiki_content"`
+	LogoMediaID    pgtype.UUID        `json:"logo_media_id"`
+	HeaderImageID  pgtype.UUID        `json:"header_image_id"`
+	GeoCode        *string            `json:"geo_code"`
+	Level          string             `json:"level"`
+	MemberCount    int32              `json:"member_count"`
+	PostCount      int32              `json:"post_count"`
+	FollowerCount  int32              `json:"follower_count"`
+	Visibility     string             `json:"visibility"`
+	PostingPerm    string             `json:"posting_perm"`
+	ReplyingPerm   string             `json:"replying_perm"`
+	CommentingPerm string             `json:"commenting_perm"`
+	JoiningPerm    string             `json:"joining_perm"`
+	Status         string             `json:"status"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
+	CurrencyCode   *string            `json:"currency_code"`
+}
+
 // Spaces the caller owns (space_members.role = 'owner').
 // Catalog: GET /me/spaces/owned.
-func (q *Queries) ListSpacesByOwnerUser(ctx context.Context, arg ListSpacesByOwnerUserParams) ([]Space, error) {
+func (q *Queries) ListSpacesByOwnerUser(ctx context.Context, arg ListSpacesByOwnerUserParams) ([]ListSpacesByOwnerUserRow, error) {
 	rows, err := q.db.Query(ctx, listSpacesByOwnerUser, arg.UserID, arg.TenantID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Space
+	var items []ListSpacesByOwnerUserRow
 	for rows.Next() {
-		var i Space
+		var i ListSpacesByOwnerUserRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.TenantID,
@@ -1902,6 +2311,34 @@ type ListSpacesByTenantParams struct {
 	ViewerUserID pgtype.UUID `json:"viewer_user_id"`
 }
 
+type ListSpacesByTenantRow struct {
+	ID             pgtype.UUID        `json:"id"`
+	TenantID       pgtype.UUID        `json:"tenant_id"`
+	ParentID       pgtype.UUID        `json:"parent_id"`
+	SpaceTypeID    pgtype.UUID        `json:"space_type_id"`
+	Name           string             `json:"name"`
+	Slug           string             `json:"slug"`
+	Description    *string            `json:"description"`
+	WikiContent    []byte             `json:"wiki_content"`
+	LogoMediaID    pgtype.UUID        `json:"logo_media_id"`
+	HeaderImageID  pgtype.UUID        `json:"header_image_id"`
+	GeoCode        *string            `json:"geo_code"`
+	Level          string             `json:"level"`
+	MemberCount    int32              `json:"member_count"`
+	PostCount      int32              `json:"post_count"`
+	FollowerCount  int32              `json:"follower_count"`
+	Visibility     string             `json:"visibility"`
+	PostingPerm    string             `json:"posting_perm"`
+	ReplyingPerm   string             `json:"replying_perm"`
+	CommentingPerm string             `json:"commenting_perm"`
+	JoiningPerm    string             `json:"joining_perm"`
+	Status         string             `json:"status"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
+	CurrencyCode   *string            `json:"currency_code"`
+}
+
 // =====================
 // Spaces
 // =====================
@@ -1909,15 +2346,15 @@ type ListSpacesByTenantParams struct {
 // only see public spaces; authenticated callers also see members/private
 // spaces they belong to (Section 05 line 272, §9 multi-tenancy).
 // Pass @viewer_user_id as NULL for unauthenticated requests.
-func (q *Queries) ListSpacesByTenant(ctx context.Context, arg ListSpacesByTenantParams) ([]Space, error) {
+func (q *Queries) ListSpacesByTenant(ctx context.Context, arg ListSpacesByTenantParams) ([]ListSpacesByTenantRow, error) {
 	rows, err := q.db.Query(ctx, listSpacesByTenant, arg.TenantID, arg.ViewerUserID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Space
+	var items []ListSpacesByTenantRow
 	for rows.Next() {
-		var i Space
+		var i ListSpacesByTenantRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.TenantID,
@@ -1970,15 +2407,43 @@ type ListSpacesByTypeParams struct {
 	SpaceTypeID pgtype.UUID `json:"space_type_id"`
 }
 
-func (q *Queries) ListSpacesByType(ctx context.Context, arg ListSpacesByTypeParams) ([]Space, error) {
+type ListSpacesByTypeRow struct {
+	ID             pgtype.UUID        `json:"id"`
+	TenantID       pgtype.UUID        `json:"tenant_id"`
+	ParentID       pgtype.UUID        `json:"parent_id"`
+	SpaceTypeID    pgtype.UUID        `json:"space_type_id"`
+	Name           string             `json:"name"`
+	Slug           string             `json:"slug"`
+	Description    *string            `json:"description"`
+	WikiContent    []byte             `json:"wiki_content"`
+	LogoMediaID    pgtype.UUID        `json:"logo_media_id"`
+	HeaderImageID  pgtype.UUID        `json:"header_image_id"`
+	GeoCode        *string            `json:"geo_code"`
+	Level          string             `json:"level"`
+	MemberCount    int32              `json:"member_count"`
+	PostCount      int32              `json:"post_count"`
+	FollowerCount  int32              `json:"follower_count"`
+	Visibility     string             `json:"visibility"`
+	PostingPerm    string             `json:"posting_perm"`
+	ReplyingPerm   string             `json:"replying_perm"`
+	CommentingPerm string             `json:"commenting_perm"`
+	JoiningPerm    string             `json:"joining_perm"`
+	Status         string             `json:"status"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
+	CurrencyCode   *string            `json:"currency_code"`
+}
+
+func (q *Queries) ListSpacesByType(ctx context.Context, arg ListSpacesByTypeParams) ([]ListSpacesByTypeRow, error) {
 	rows, err := q.db.Query(ctx, listSpacesByType, arg.TenantID, arg.SpaceTypeID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Space
+	var items []ListSpacesByTypeRow
 	for rows.Next() {
-		var i Space
+		var i ListSpacesByTypeRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.TenantID,
@@ -2036,18 +2501,46 @@ type ListStatesByCountryGeoCodeParams struct {
 	CountryCode *string     `json:"country_code"`
 }
 
+type ListStatesByCountryGeoCodeRow struct {
+	ID             pgtype.UUID        `json:"id"`
+	TenantID       pgtype.UUID        `json:"tenant_id"`
+	ParentID       pgtype.UUID        `json:"parent_id"`
+	SpaceTypeID    pgtype.UUID        `json:"space_type_id"`
+	Name           string             `json:"name"`
+	Slug           string             `json:"slug"`
+	Description    *string            `json:"description"`
+	WikiContent    []byte             `json:"wiki_content"`
+	LogoMediaID    pgtype.UUID        `json:"logo_media_id"`
+	HeaderImageID  pgtype.UUID        `json:"header_image_id"`
+	GeoCode        *string            `json:"geo_code"`
+	Level          string             `json:"level"`
+	MemberCount    int32              `json:"member_count"`
+	PostCount      int32              `json:"post_count"`
+	FollowerCount  int32              `json:"follower_count"`
+	Visibility     string             `json:"visibility"`
+	PostingPerm    string             `json:"posting_perm"`
+	ReplyingPerm   string             `json:"replying_perm"`
+	CommentingPerm string             `json:"commenting_perm"`
+	JoiningPerm    string             `json:"joining_perm"`
+	Status         string             `json:"status"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
+	CurrencyCode   *string            `json:"currency_code"`
+}
+
 // Geo hierarchy (catalog: GET /geo/countries/:code/states). Countries and
 // states are seeded as spaces (level='country'/'state') parented via the
 // space_parent_spaces join table (migrations/000100_seed_geo.up.sql).
-func (q *Queries) ListStatesByCountryGeoCode(ctx context.Context, arg ListStatesByCountryGeoCodeParams) ([]Space, error) {
+func (q *Queries) ListStatesByCountryGeoCode(ctx context.Context, arg ListStatesByCountryGeoCodeParams) ([]ListStatesByCountryGeoCodeRow, error) {
 	rows, err := q.db.Query(ctx, listStatesByCountryGeoCode, arg.TenantID, arg.CountryCode)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Space
+	var items []ListStatesByCountryGeoCodeRow
 	for rows.Next() {
-		var i Space
+		var i ListStatesByCountryGeoCodeRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.TenantID,
@@ -2259,7 +2752,35 @@ type UpdateSpaceParams struct {
 	TenantID       pgtype.UUID `json:"tenant_id"`
 }
 
-func (q *Queries) UpdateSpace(ctx context.Context, arg UpdateSpaceParams) (Space, error) {
+type UpdateSpaceRow struct {
+	ID             pgtype.UUID        `json:"id"`
+	TenantID       pgtype.UUID        `json:"tenant_id"`
+	ParentID       pgtype.UUID        `json:"parent_id"`
+	SpaceTypeID    pgtype.UUID        `json:"space_type_id"`
+	Name           string             `json:"name"`
+	Slug           string             `json:"slug"`
+	Description    *string            `json:"description"`
+	WikiContent    []byte             `json:"wiki_content"`
+	LogoMediaID    pgtype.UUID        `json:"logo_media_id"`
+	HeaderImageID  pgtype.UUID        `json:"header_image_id"`
+	GeoCode        *string            `json:"geo_code"`
+	Level          string             `json:"level"`
+	MemberCount    int32              `json:"member_count"`
+	PostCount      int32              `json:"post_count"`
+	FollowerCount  int32              `json:"follower_count"`
+	Visibility     string             `json:"visibility"`
+	PostingPerm    string             `json:"posting_perm"`
+	ReplyingPerm   string             `json:"replying_perm"`
+	CommentingPerm string             `json:"commenting_perm"`
+	JoiningPerm    string             `json:"joining_perm"`
+	Status         string             `json:"status"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
+	CurrencyCode   *string            `json:"currency_code"`
+}
+
+func (q *Queries) UpdateSpace(ctx context.Context, arg UpdateSpaceParams) (UpdateSpaceRow, error) {
 	row := q.db.QueryRow(ctx, updateSpace,
 		arg.Name,
 		arg.Description,
@@ -2274,7 +2795,85 @@ func (q *Queries) UpdateSpace(ctx context.Context, arg UpdateSpaceParams) (Space
 		arg.ID,
 		arg.TenantID,
 	)
-	var i Space
+	var i UpdateSpaceRow
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.ParentID,
+		&i.SpaceTypeID,
+		&i.Name,
+		&i.Slug,
+		&i.Description,
+		&i.WikiContent,
+		&i.LogoMediaID,
+		&i.HeaderImageID,
+		&i.GeoCode,
+		&i.Level,
+		&i.MemberCount,
+		&i.PostCount,
+		&i.FollowerCount,
+		&i.Visibility,
+		&i.PostingPerm,
+		&i.ReplyingPerm,
+		&i.CommentingPerm,
+		&i.JoiningPerm,
+		&i.Status,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.DeletedAt,
+		&i.CurrencyCode,
+	)
+	return i, err
+}
+
+const updateSpaceHeaderImageID = `-- name: UpdateSpaceHeaderImageID :one
+UPDATE spaces
+SET header_image_id = $1
+WHERE id = $2 AND tenant_id = $3 AND deleted_at IS NULL
+RETURNING id, tenant_id, parent_id, space_type_id, name, slug, description, wiki_content,
+          logo_media_id, header_image_id, geo_code, level, member_count, post_count,
+          follower_count, visibility, posting_perm, replying_perm, commenting_perm,
+          joining_perm, status, created_at, updated_at, deleted_at, currency_code
+`
+
+type UpdateSpaceHeaderImageIDParams struct {
+	HeaderImageID pgtype.UUID `json:"header_image_id"`
+	ID            pgtype.UUID `json:"id"`
+	TenantID      pgtype.UUID `json:"tenant_id"`
+}
+
+type UpdateSpaceHeaderImageIDRow struct {
+	ID             pgtype.UUID        `json:"id"`
+	TenantID       pgtype.UUID        `json:"tenant_id"`
+	ParentID       pgtype.UUID        `json:"parent_id"`
+	SpaceTypeID    pgtype.UUID        `json:"space_type_id"`
+	Name           string             `json:"name"`
+	Slug           string             `json:"slug"`
+	Description    *string            `json:"description"`
+	WikiContent    []byte             `json:"wiki_content"`
+	LogoMediaID    pgtype.UUID        `json:"logo_media_id"`
+	HeaderImageID  pgtype.UUID        `json:"header_image_id"`
+	GeoCode        *string            `json:"geo_code"`
+	Level          string             `json:"level"`
+	MemberCount    int32              `json:"member_count"`
+	PostCount      int32              `json:"post_count"`
+	FollowerCount  int32              `json:"follower_count"`
+	Visibility     string             `json:"visibility"`
+	PostingPerm    string             `json:"posting_perm"`
+	ReplyingPerm   string             `json:"replying_perm"`
+	CommentingPerm string             `json:"commenting_perm"`
+	JoiningPerm    string             `json:"joining_perm"`
+	Status         string             `json:"status"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
+	CurrencyCode   *string            `json:"currency_code"`
+}
+
+// Updates only the header_image_id on a space (banner image upload).
+func (q *Queries) UpdateSpaceHeaderImageID(ctx context.Context, arg UpdateSpaceHeaderImageIDParams) (UpdateSpaceHeaderImageIDRow, error) {
+	row := q.db.QueryRow(ctx, updateSpaceHeaderImageID, arg.HeaderImageID, arg.ID, arg.TenantID)
+	var i UpdateSpaceHeaderImageIDRow
 	err := row.Scan(
 		&i.ID,
 		&i.TenantID,
@@ -2328,11 +2927,32 @@ func (q *Queries) UpdateSpaceJoinRequest(ctx context.Context, arg UpdateSpaceJoi
 	return err
 }
 
+const updateSpaceKeywords = `-- name: UpdateSpaceKeywords :exec
+UPDATE spaces SET keywords = $1, updated_at = now()
+WHERE id = $2 AND tenant_id = $3 AND deleted_at IS NULL
+`
+
+type UpdateSpaceKeywordsParams struct {
+	Keywords []string    `json:"keywords"`
+	ID       pgtype.UUID `json:"id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+// Updates only the keywords array on a space. Separate from UpdateSpace so
+// that keywords can be updated independently without affecting other fields.
+func (q *Queries) UpdateSpaceKeywords(ctx context.Context, arg UpdateSpaceKeywordsParams) error {
+	_, err := q.db.Exec(ctx, updateSpaceKeywords, arg.Keywords, arg.ID, arg.TenantID)
+	return err
+}
+
 const updateSpaceLogoMediaID = `-- name: UpdateSpaceLogoMediaID :one
 UPDATE spaces
 SET logo_media_id = $1
 WHERE id = $2 AND tenant_id = $3 AND deleted_at IS NULL
-RETURNING id, tenant_id, parent_id, space_type_id, name, slug, description, wiki_content, logo_media_id, header_image_id, geo_code, level, member_count, post_count, follower_count, visibility, posting_perm, replying_perm, commenting_perm, joining_perm, status, created_at, updated_at, deleted_at, currency_code
+RETURNING id, tenant_id, parent_id, space_type_id, name, slug, description, wiki_content,
+          logo_media_id, header_image_id, geo_code, level, member_count, post_count,
+          follower_count, visibility, posting_perm, replying_perm, commenting_perm,
+          joining_perm, status, created_at, updated_at, deleted_at, currency_code
 `
 
 type UpdateSpaceLogoMediaIDParams struct {
@@ -2341,10 +2961,38 @@ type UpdateSpaceLogoMediaIDParams struct {
 	TenantID    pgtype.UUID `json:"tenant_id"`
 }
 
+type UpdateSpaceLogoMediaIDRow struct {
+	ID             pgtype.UUID        `json:"id"`
+	TenantID       pgtype.UUID        `json:"tenant_id"`
+	ParentID       pgtype.UUID        `json:"parent_id"`
+	SpaceTypeID    pgtype.UUID        `json:"space_type_id"`
+	Name           string             `json:"name"`
+	Slug           string             `json:"slug"`
+	Description    *string            `json:"description"`
+	WikiContent    []byte             `json:"wiki_content"`
+	LogoMediaID    pgtype.UUID        `json:"logo_media_id"`
+	HeaderImageID  pgtype.UUID        `json:"header_image_id"`
+	GeoCode        *string            `json:"geo_code"`
+	Level          string             `json:"level"`
+	MemberCount    int32              `json:"member_count"`
+	PostCount      int32              `json:"post_count"`
+	FollowerCount  int32              `json:"follower_count"`
+	Visibility     string             `json:"visibility"`
+	PostingPerm    string             `json:"posting_perm"`
+	ReplyingPerm   string             `json:"replying_perm"`
+	CommentingPerm string             `json:"commenting_perm"`
+	JoiningPerm    string             `json:"joining_perm"`
+	Status         string             `json:"status"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
+	CurrencyCode   *string            `json:"currency_code"`
+}
+
 // Updates only the logo_media_id on a space (used by university:fetch_logo task).
-func (q *Queries) UpdateSpaceLogoMediaID(ctx context.Context, arg UpdateSpaceLogoMediaIDParams) (Space, error) {
+func (q *Queries) UpdateSpaceLogoMediaID(ctx context.Context, arg UpdateSpaceLogoMediaIDParams) (UpdateSpaceLogoMediaIDRow, error) {
 	row := q.db.QueryRow(ctx, updateSpaceLogoMediaID, arg.LogoMediaID, arg.ID, arg.TenantID)
-	var i Space
+	var i UpdateSpaceLogoMediaIDRow
 	err := row.Scan(
 		&i.ID,
 		&i.TenantID,
@@ -2490,85 +3138,4 @@ func (q *Queries) UpdateSpaceType(ctx context.Context, arg UpdateSpaceTypeParams
 		&i.IsUniversity,
 	)
 	return i, err
-}
-
-const findSpacesByKeywords = `-- name: FindSpacesByKeywords :many
-SELECT id, name, level
-FROM spaces
-WHERE tenant_id = $1
-  AND deleted_at IS NULL
-  AND visibility = 'public'
-  AND level IN ('country', 'state', 'city')
-  AND keywords && $2::text[]
-ORDER BY
-  CASE level
-    WHEN 'city' THEN 1
-    WHEN 'state' THEN 2
-    WHEN 'country' THEN 3
-  END,
-  name
-`
-
-type FindSpacesByKeywordsParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	Keywords []string    `json:"keywords"`
-}
-
-type FindSpacesByKeywordsRow struct {
-	ID    pgtype.UUID `json:"id"`
-	Name  string      `json:"name"`
-	Level string      `json:"level"`
-}
-
-func (q *Queries) FindSpacesByKeywords(ctx context.Context, arg FindSpacesByKeywordsParams) ([]FindSpacesByKeywordsRow, error) {
-	rows, err := q.db.Query(ctx, findSpacesByKeywords, arg.TenantID, arg.Keywords)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []FindSpacesByKeywordsRow
-	for rows.Next() {
-		var i FindSpacesByKeywordsRow
-		if err := rows.Scan(&i.ID, &i.Name, &i.Level); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const updateSpaceKeywords = `-- name: UpdateSpaceKeywords :exec
-UPDATE spaces SET keywords = $1, updated_at = now()
-WHERE id = $2 AND tenant_id = $3 AND deleted_at IS NULL
-`
-
-type UpdateSpaceKeywordsParams struct {
-	Keywords []string    `json:"keywords"`
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) UpdateSpaceKeywords(ctx context.Context, arg UpdateSpaceKeywordsParams) error {
-	_, err := q.db.Exec(ctx, updateSpaceKeywords, arg.Keywords, arg.ID, arg.TenantID)
-	return err
-}
-
-const getSpaceKeywords = `-- name: GetSpaceKeywords :one
-SELECT keywords FROM spaces
-WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
-`
-
-type GetSpaceKeywordsParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) GetSpaceKeywords(ctx context.Context, arg GetSpaceKeywordsParams) ([]string, error) {
-	row := q.db.QueryRow(ctx, getSpaceKeywords, arg.ID, arg.TenantID)
-	var keywords []string
-	err := row.Scan(&keywords)
-	return keywords, err
 }

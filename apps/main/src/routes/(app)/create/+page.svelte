@@ -16,6 +16,15 @@
 			? (data.siteSettings['appearance.default_editor'] as EditorMode)
 			: 'block'
 	);
+
+	// Max tags per content item from the public site settings (content.max_tags).
+	// Falls back to 5 when unset or invalid. The backend enforces the same limit.
+	// Ref: conventions/system-settings-catalog.md (Content)
+	const maxTags: number = $derived(
+		Number.isFinite(Number(data.siteSettings?.['content.max_tags']))
+			? Number(data.siteSettings['content.max_tags'])
+			: 5
+	);
 </script>
 
 {#if data.loadError}
@@ -37,5 +46,6 @@
 		draft={data.draft}
 		user={data.user}
 		{defaultEditor}
+		{maxTags}
 	/>
 {/if}

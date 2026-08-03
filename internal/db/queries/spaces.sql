@@ -556,6 +556,16 @@ RETURNING id, tenant_id, parent_id, space_type_id, name, slug, description, wiki
           follower_count, visibility, posting_perm, replying_perm, commenting_perm,
           joining_perm, status, created_at, updated_at, deleted_at, currency_code;
 
+-- name: UpdateSpaceHeaderImageID :one
+-- Updates only the header_image_id on a space (banner image upload).
+UPDATE spaces
+SET header_image_id = @header_image_id
+WHERE id = @id AND tenant_id = @tenant_id AND deleted_at IS NULL
+RETURNING id, tenant_id, parent_id, space_type_id, name, slug, description, wiki_content,
+          logo_media_id, header_image_id, geo_code, level, member_count, post_count,
+          follower_count, visibility, posting_perm, replying_perm, commenting_perm,
+          joining_perm, status, created_at, updated_at, deleted_at, currency_code;
+
 -- name: FindSpacesByKeywords :many
 -- Find primary (country/state/city) and public spaces whose keywords overlap
 -- with the given keyword list. Used for auto-assigning content to spaces

@@ -2787,6 +2787,23 @@ func (q *Queries) SetBookmarkFolder(ctx context.Context, arg SetBookmarkFolderPa
 	return err
 }
 
+const setContentSpaceID = `-- name: SetContentSpaceID :exec
+UPDATE contents SET space_id = $1, updated_at = now()
+WHERE id = $2
+`
+
+type SetContentSpaceIDParams struct {
+	SpaceID   pgtype.UUID `json:"space_id"`
+	ContentID pgtype.UUID `json:"content_id"`
+}
+
+// Updates only the space_id column on a content item. Used by the auto-assign
+// feature to set the primary space after keyword matching.
+func (q *Queries) SetContentSpaceID(ctx context.Context, arg SetContentSpaceIDParams) error {
+	_, err := q.db.Exec(ctx, setContentSpaceID, arg.SpaceID, arg.ContentID)
+	return err
+}
+
 const unpinContentFromSpace = `-- name: UnpinContentFromSpace :exec
 DELETE FROM space_pinned_posts WHERE space_id = $1 AND content_id = $2
 `
@@ -3134,19 +3151,4 @@ func (q *Queries) UpsertJSONLDTemplate(ctx context.Context, arg UpsertJSONLDTemp
 		&i.UpdatedAt,
 	)
 	return i, err
-}
-
-const setContentSpaceID = `-- name: SetContentSpaceID :exec
-UPDATE contents SET space_id = $1, updated_at = now()
-WHERE id = $2
-`
-
-type SetContentSpaceIDParams struct {
-	SpaceID   pgtype.UUID `json:"space_id"`
-	ContentID pgtype.UUID `json:"content_id"`
-}
-
-func (q *Queries) SetContentSpaceID(ctx context.Context, arg SetContentSpaceIDParams) error {
-	_, err := q.db.Exec(ctx, setContentSpaceID, arg.SpaceID, arg.ContentID)
-	return err
 }

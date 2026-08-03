@@ -1,11 +1,21 @@
-// Package referral — handlers.go provides HTTP handlers for referral admin CRUD.
+// Package referral — handlers.go provides HTTP handlers for the Referral
+// System (Section 60, ADR-078). Covers both the legacy admin program CRUD
+// and the V2 referral code, attribution, and conversion tracking routes.
 //
 // Routes:
 //
 //	GET    /admin/referral/program          — get referral program settings
 //	PUT    /admin/referral/program          — update referral program settings
-//	GET    /admin/referral/referrals        — list all referrals
-//	GET    /admin/referral/referrals/{id}   — get referral by ID
+//	GET    /admin/referral/referrals        — list all referrals (legacy)
+//	GET    /admin/referral/referrals/{id}   — get referral by ID (legacy)
+//	DELETE /admin/referral/referrals/{id}   — soft-delete referral (legacy)
+//	GET    /me/referral                     — get/generate personal code + stats
+//	GET    /r/{code}                        — public redirect + click tracking
+//	GET    /me/referral/history             — referrer's referral list
+//	GET    /admin/referrals                 — all referrals ?status=
+//	PATCH  /admin/referrals/{id}/resolve    — resolve flagged (credit or reject)
+//	GET    /admin/referrals/stats           — totals by status, fraud rate
+//	GET    /admin/referrals/flagged         — flagged queue
 package referral
 
 import (
@@ -17,6 +27,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/tenant"
 )
 
@@ -25,7 +36,7 @@ const (
 	maxPageSize     int32 = 100
 )
 
-// Handlers holds dependencies for referral admin HTTP handlers.
+// Handlers holds dependencies for referral HTTP handlers.
 type Handlers struct {
 	Service *Service
 }
@@ -96,8 +107,22 @@ func parseOffset(r *http.Request) int32 {
 	return 0
 }
 
+func scanUUIDParam(w http.ResponseWriter, r *http.Request, param string) (pgtype.UUID, bool) {
+	raw := chi.URLParam(r, param)
+	if raw == "" {
+		writeError(w, http.StatusBadRequest, "missing_param", param+" is required")
+		return pgtype.UUID{}, false
+	}
+	var id pgtype.UUID
+	if err := id.Scan(raw); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_uuid", "Invalid "+param)
+		return pgtype.UUID{}, false
+	}
+	return id, true
+}
+
 // ---------------------------------------------------------------------------
-// Admin Handlers — Referral Program
+// Legacy Admin Handlers — Referral Program
 // ---------------------------------------------------------------------------
 
 // GetProgram returns the referral program settings for the tenant.
@@ -152,7 +177,7 @@ func (h *Handlers) UpdateProgram(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"data": program})
 }
 
-// ListReferrals returns all referrals for the tenant.
+// ListReferrals returns all referrals for the tenant (legacy).
 // GET /admin/referral/referrals.
 func (h *Handlers) ListReferrals(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
@@ -174,7 +199,7 @@ func (h *Handlers) ListReferrals(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"data": referrals})
 }
 
-// GetReferral returns a single referral by ID.
+// GetReferral returns a single referral by ID (legacy).
 // GET /admin/referral/referrals/{id}.
 func (h *Handlers) GetReferral(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
@@ -197,7 +222,7 @@ func (h *Handlers) GetReferral(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"data": referral})
 }
 
-// DeleteReferral soft-deletes a referral by setting status to 'expired'.
+// DeleteReferral soft-deletes a referral by setting status to 'rejected'.
 // DELETE /admin/referral/referrals/{id}.
 func (h *Handlers) DeleteReferral(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
@@ -218,4 +243,199 @@ func (h *Handlers) DeleteReferral(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusNoContent, nil)
+}
+
+// ---------------------------------------------------------------------------
+// V2 Handlers — Referral codes, attribution, and conversion tracking
+// ---------------------------------------------------------------------------
+
+// HandleGetMyCode returns the user's referral code and stats.
+// GET /me/referral
+func (h *Handlers) HandleGetMyCode(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+	u := auth.FromContext(r.Context())
+	if u == nil {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		return
+	}
+
+	stats, err := h.Service.GetReferralStats(r.Context(), tenantID, u.UserID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "stats_failed", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, stats)
+}
+
+// HandleRedirect handles the public /r/:code redirect with click tracking.
+// GET /r/{code}
+func (h *Handlers) HandleRedirect(w http.ResponseWriter, r *http.Request) {
+	code := chi.URLParam(r, "code")
+	if code == "" {
+		writeError(w, http.StatusBadRequest, "missing_param", "code is required")
+		return
+	}
+
+	sessionID := r.URL.Query().Get("sid")
+	if sessionID == "" {
+		sessionID = r.Header.Get("X-Device-Id")
+	}
+	if sessionID == "" {
+		sessionID = "anonymous"
+	}
+
+	// Record the click (fire-and-forget — don't block the redirect).
+	go func() {
+		_ = h.Service.RecordClick(r.Context(), code, sessionID)
+	}()
+
+	http.SetCookie(w, &http.Cookie{
+		Name:     "jc_ref",
+		Value:    code,
+		Path:     "/",
+		MaxAge:   30 * 24 * 60 * 60,
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+	})
+	http.Redirect(w, r, "/?ref="+code, http.StatusFound)
+}
+
+// HandleMyHistory returns the user's referral history.
+// GET /me/referral/history
+func (h *Handlers) HandleMyHistory(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+	u := auth.FromContext(r.Context())
+	if u == nil {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		return
+	}
+
+	status := r.URL.Query().Get("status")
+	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+
+	rows, total, err := h.Service.ListReferralHistory(r.Context(), tenantID, u.UserID, status, page, limit)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "list_failed", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"referrals": rows,
+		"total":     total,
+	})
+}
+
+// HandleAdminListReferrals returns all referrals for admin oversight.
+// GET /admin/referrals
+func (h *Handlers) HandleAdminListReferrals(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+	if auth.FromContext(r.Context()) == nil {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		return
+	}
+
+	status := r.URL.Query().Get("status")
+	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+
+	rows, total, err := h.Service.AdminListReferrals(r.Context(), tenantID, status, page, limit)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "list_failed", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"referrals": rows,
+		"total":     total,
+	})
+}
+
+// HandleAdminResolveFlagged resolves a flagged referral.
+// PATCH /admin/referrals/{id}/resolve
+func (h *Handlers) HandleAdminResolveFlagged(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+	if auth.FromContext(r.Context()) == nil {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		return
+	}
+
+	referralID, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	var body struct {
+		Action string `json:"action"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
+		return
+	}
+	if body.Action == "" {
+		writeError(w, http.StatusBadRequest, "missing_fields", "action is required (credit or reject)")
+		return
+	}
+
+	if err := h.Service.AdminResolveFlagged(r.Context(), tenantID, referralID, body.Action); err != nil {
+		writeError(w, http.StatusBadRequest, "resolve_failed", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"resolved": true})
+}
+
+// HandleAdminReferralStats returns referral stats by status.
+// GET /admin/referrals/stats
+func (h *Handlers) HandleAdminReferralStats(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+	if auth.FromContext(r.Context()) == nil {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		return
+	}
+
+	stats, err := h.Service.AdminReferralStats(r.Context(), tenantID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "stats_failed", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"stats": stats})
+}
+
+// HandleAdminFlagged returns the flagged referral queue.
+// GET /admin/referrals/flagged
+func (h *Handlers) HandleAdminFlagged(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+	if auth.FromContext(r.Context()) == nil {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		return
+	}
+
+	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+
+	rows, total, err := h.Service.AdminListFlagged(r.Context(), tenantID, page, limit)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "list_failed", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"flagged": rows,
+		"total":   total,
+	})
 }

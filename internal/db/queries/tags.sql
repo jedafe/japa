@@ -7,9 +7,11 @@
 SELECT t.id, t.tenant_id, t.name, t.slug, t.description, t.rules, t.cover_media_id,
        t.logo_media_id, t.color, t.follower_count, t.content_count, t.is_system,
        t.field_values, t.created_at, t.updated_at,
-       lm.storage_path AS logo_storage_path, lm.storage_bucket AS logo_storage_bucket
+       lm.storage_path AS logo_storage_path, lm.storage_bucket AS logo_storage_bucket,
+       cm.storage_path AS cover_storage_path, cm.storage_bucket AS cover_storage_bucket
 FROM tags t
 LEFT JOIN media lm ON lm.id = t.logo_media_id
+LEFT JOIN media cm ON cm.id = t.cover_media_id
 WHERE t.tenant_id = @tenant_id
 ORDER BY t.name;
 
@@ -18,9 +20,11 @@ ORDER BY t.name;
 SELECT t.id, t.tenant_id, t.name, t.slug, t.description, t.rules, t.cover_media_id,
        t.logo_media_id, t.color, t.follower_count, t.content_count, t.is_system,
        t.field_values, t.created_at, t.updated_at,
-       lm.storage_path AS logo_storage_path, lm.storage_bucket AS logo_storage_bucket
+       lm.storage_path AS logo_storage_path, lm.storage_bucket AS logo_storage_bucket,
+       cm.storage_path AS cover_storage_path, cm.storage_bucket AS cover_storage_bucket
 FROM tags t
 LEFT JOIN media lm ON lm.id = t.logo_media_id
+LEFT JOIN media cm ON cm.id = t.cover_media_id
 WHERE t.tenant_id = @tenant_id
   AND (@q::text = '' OR t.name ILIKE '%' || @q || '%' OR t.slug ILIKE '%' || @q || '%')
 ORDER BY
@@ -38,9 +42,11 @@ WHERE tenant_id = @tenant_id
 SELECT t.id, t.tenant_id, t.name, t.slug, t.description, t.rules, t.cover_media_id,
        t.logo_media_id, t.color, t.follower_count, t.content_count, t.is_system,
        t.field_values, t.created_at, t.updated_at,
-       lm.storage_path AS logo_storage_path, lm.storage_bucket AS logo_storage_bucket
+       lm.storage_path AS logo_storage_path, lm.storage_bucket AS logo_storage_bucket,
+       cm.storage_path AS cover_storage_path, cm.storage_bucket AS cover_storage_bucket
 FROM tags t
 LEFT JOIN media lm ON lm.id = t.logo_media_id
+LEFT JOIN media cm ON cm.id = t.cover_media_id
 WHERE t.tenant_id = @tenant_id AND t.slug = @slug;
 
 -- name: GetTagsBySlugs :many
@@ -54,9 +60,11 @@ WHERE tenant_id = @tenant_id AND slug = ANY(@slugs::text[]);
 SELECT t.id, t.tenant_id, t.name, t.slug, t.description, t.rules, t.cover_media_id,
        t.logo_media_id, t.color, t.follower_count, t.content_count, t.is_system,
        t.field_values, t.created_at, t.updated_at,
-       lm.storage_path AS logo_storage_path, lm.storage_bucket AS logo_storage_bucket
+       lm.storage_path AS logo_storage_path, lm.storage_bucket AS logo_storage_bucket,
+       cm.storage_path AS cover_storage_path, cm.storage_bucket AS cover_storage_bucket
 FROM tags t
 LEFT JOIN media lm ON lm.id = t.logo_media_id
+LEFT JOIN media cm ON cm.id = t.cover_media_id
 WHERE t.id = @id AND t.tenant_id = @tenant_id;
 
 -- name: CountContentByTag :one
@@ -70,9 +78,11 @@ WHERE tag_id = @tag_id;
 SELECT t.id, t.tenant_id, t.name, t.slug, t.description, t.rules, t.cover_media_id,
        t.logo_media_id, t.color, t.follower_count, t.content_count, t.is_system,
        t.field_values, t.created_at, t.updated_at,
-       lm.storage_path AS logo_storage_path, lm.storage_bucket AS logo_storage_bucket
+       lm.storage_path AS logo_storage_path, lm.storage_bucket AS logo_storage_bucket,
+       cm.storage_path AS cover_storage_path, cm.storage_bucket AS cover_storage_bucket
 FROM tags t
 LEFT JOIN media lm ON lm.id = t.logo_media_id
+LEFT JOIN media cm ON cm.id = t.cover_media_id
 WHERE t.tenant_id = @tenant_id
   AND (@q::text = '' OR t.name ILIKE '%' || @q || '%' OR t.slug ILIKE '%' || @q || '%')
   AND (@min_content_count::int = 0 OR t.content_count >= @min_content_count)
@@ -93,14 +103,15 @@ WHERE tenant_id = @tenant_id
 -- Admin CRUD (catalog: POST/PATCH/DELETE /admin/tags).
 
 -- name: CreateTag :one
-INSERT INTO tags (tenant_id, name, slug, description, color, is_system, logo_media_id)
-VALUES (@tenant_id, @name, @slug, @description, @color, @is_system, @logo_media_id)
+INSERT INTO tags (tenant_id, name, slug, description, rules, cover_media_id, color, is_system, logo_media_id, field_values)
+VALUES (@tenant_id, @name, @slug, @description, @rules, @cover_media_id, @color, @is_system, @logo_media_id, @field_values)
 RETURNING id, tenant_id, name, slug, description, rules, cover_media_id, logo_media_id, color,
           follower_count, content_count, is_system, field_values, created_at, updated_at;
 
 -- name: UpdateTag :one
 UPDATE tags
-SET name = @name, description = @description, color = @color, logo_media_id = @logo_media_id, updated_at = now()
+SET name = @name, description = @description, rules = @rules, cover_media_id = @cover_media_id,
+    color = @color, logo_media_id = @logo_media_id, field_values = @field_values, updated_at = now()
 WHERE id = @id AND tenant_id = @tenant_id
 RETURNING id, tenant_id, name, slug, description, rules, cover_media_id, logo_media_id, color,
           follower_count, content_count, is_system, field_values, created_at, updated_at;

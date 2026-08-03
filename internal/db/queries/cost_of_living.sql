@@ -1,0 +1,116 @@
+-- cost_of_living.sql — Cost of Living Calculator queries (Section 72, ADR-072).
+-- Queries the existing §30 comparison system for cost_of_living type data.
+-- Ref: japaconnect-engineering/sections/72-cost-of-living.md
+--      japaconnect-engineering/adr/ADR-072-cost-of-living-calculator.md
+
+-- =====================================================================
+-- Get the cost_of_living comparison type definition (with config JSONB
+-- containing the weighted cost index weights).
+-- =====================================================================
+
+-- name: GetCostOfLivingType :one
+SELECT * FROM comparison_type_definitions
+WHERE tenant_id = @tenant_id AND slug = 'cost_of_living' AND is_system = true;
+
+-- =====================================================================
+-- List cities (comparison_items) with cost_of_living data, paginated +
+-- searchable by title. Joins geo spaces for country/region context.
+-- =====================================================================
+
+-- name: ListCOLCities :many
+SELECT
+    ci.id,
+    ci.title,
+    ci.description,
+    ci.geo_space_id,
+    ci.is_baseline,
+    ci.last_updated_at,
+    ci.position,
+    s.name AS geo_space_name,
+    s.slug AS geo_space_slug
+FROM comparison_items ci
+LEFT JOIN spaces s ON s.id = ci.geo_space_id
+WHERE ci.tenant_id = @tenant_id
+  AND ci.type_id = @type_id
+  AND (@search::text = '' OR ci.title ILIKE '%' || @search || '%')
+ORDER BY ci.is_baseline DESC, ci.title ASC
+LIMIT @page_limit OFFSET @page_offset;
+
+-- name: CountCOLCities :one
+SELECT COUNT(*) AS count
+FROM comparison_items
+WHERE tenant_id = @tenant_id
+  AND type_id = @type_id
+  AND (@search::text = '' OR title ILIKE '%' || @search || '%');
+
+-- =====================================================================
+-- Get a single city (comparison_item) by ID with its geo space info.
+-- =====================================================================
+
+-- name: GetCOLCityByID :one
+SELECT
+    ci.*,
+    s.name AS geo_space_name,
+    s.slug AS geo_space_slug
+FROM comparison_items ci
+LEFT JOIN spaces s ON s.id = ci.geo_space_id
+WHERE ci.tenant_id = @tenant_id AND ci.id = @id;
+
+-- =====================================================================
+-- Get the baseline city for the cost_of_living type.
+-- =====================================================================
+
+-- name: GetCOLBaselineCity :one
+SELECT
+    ci.*,
+    s.name AS geo_space_name,
+    s.slug AS geo_space_slug
+FROM comparison_items ci
+LEFT JOIN spaces s ON s.id = ci.geo_space_id
+WHERE ci.tenant_id = @tenant_id
+  AND ci.type_id = @type_id
+  AND ci.is_baseline = true
+LIMIT 1;
+
+-- =====================================================================
+-- Get comparison values for a set of city items (the cost data matrix).
+-- Returns dimension_id, item_id, and the value fields for all specified
+-- city IDs. The service layer pivots these into a matrix.
+-- =====================================================================
+
+-- name: GetCOLValuesForCities :many
+SELECT
+    cv.dimension_id,
+    cv.item_id,
+    cv.value,
+    cv.value_rating,
+    cv.value_boolean,
+    cd.label AS dimension_label,
+    cd.dimension_type
+FROM comparison_values cv
+JOIN comparison_dimensions cd ON cd.id = cv.dimension_id
+WHERE cv.tenant_id = @tenant_id
+  AND cv.item_id = ANY(@item_ids::uuid[])
+ORDER BY cd.position, cv.item_id;
+
+-- =====================================================================
+-- Admin: data completeness + staleness report per city.
+-- Returns each city with: total dimensions, filled dimensions, and
+-- whether data is stale (last_updated_at older than threshold).
+-- =====================================================================
+
+-- name: AdminCOLStats :many
+SELECT
+    ci.id AS city_id,
+    ci.title AS city_name,
+    ci.is_baseline,
+    ci.last_updated_at,
+    COUNT(DISTINCT cd.id) AS total_dimensions,
+    COUNT(DISTINCT CASE WHEN cv.value IS NOT NULL AND cv.value != '' THEN cd.id END) AS filled_dimensions
+FROM comparison_items ci
+LEFT JOIN comparison_dimensions cd ON cd.content_id = ci.content_id
+LEFT JOIN comparison_values cv ON cv.dimension_id = cd.id AND cv.item_id = ci.id
+WHERE ci.tenant_id = @tenant_id AND ci.type_id = @type_id
+GROUP BY ci.id, ci.title, ci.is_baseline, ci.last_updated_at
+ORDER BY ci.is_baseline DESC, ci.title ASC
+LIMIT @page_limit OFFSET @page_offset;

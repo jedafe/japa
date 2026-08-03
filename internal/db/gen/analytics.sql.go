@@ -30,6 +30,19 @@ type CreatePlatformEventParams struct {
 	SessionID   *string     `json:"session_id"`
 }
 
+type CreatePlatformEventRow struct {
+	ID          int64              `json:"id"`
+	TenantID    pgtype.UUID        `json:"tenant_id"`
+	EventType   string             `json:"event_type"`
+	UserID      pgtype.UUID        `json:"user_id"`
+	EntityType  *string            `json:"entity_type"`
+	EntityID    pgtype.UUID        `json:"entity_id"`
+	Meta        []byte             `json:"meta"`
+	CountryCode *string            `json:"country_code"`
+	SessionID   *string            `json:"session_id"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+}
+
 // Platform Analytics & Site Reports (Section 40)
 // Dashboard queries using real database tables (users, contents, spaces, space_members).
 // platform_events and materialized views are kept for the events list and future
@@ -37,7 +50,7 @@ type CreatePlatformEventParams struct {
 // =====================
 // Platform Events (write-optimised, future use)
 // =====================
-func (q *Queries) CreatePlatformEvent(ctx context.Context, arg CreatePlatformEventParams) (PlatformEvent, error) {
+func (q *Queries) CreatePlatformEvent(ctx context.Context, arg CreatePlatformEventParams) (CreatePlatformEventRow, error) {
 	row := q.db.QueryRow(ctx, createPlatformEvent,
 		arg.TenantID,
 		arg.EventType,
@@ -48,7 +61,7 @@ func (q *Queries) CreatePlatformEvent(ctx context.Context, arg CreatePlatformEve
 		arg.CountryCode,
 		arg.SessionID,
 	)
-	var i PlatformEvent
+	var i CreatePlatformEventRow
 	err := row.Scan(
 		&i.ID,
 		&i.TenantID,
@@ -819,7 +832,20 @@ type ListPlatformEventsParams struct {
 	Offset   int32              `json:"offset"`
 }
 
-func (q *Queries) ListPlatformEvents(ctx context.Context, arg ListPlatformEventsParams) ([]PlatformEvent, error) {
+type ListPlatformEventsRow struct {
+	ID          int64              `json:"id"`
+	TenantID    pgtype.UUID        `json:"tenant_id"`
+	EventType   string             `json:"event_type"`
+	UserID      pgtype.UUID        `json:"user_id"`
+	EntityType  *string            `json:"entity_type"`
+	EntityID    pgtype.UUID        `json:"entity_id"`
+	Meta        []byte             `json:"meta"`
+	CountryCode *string            `json:"country_code"`
+	SessionID   *string            `json:"session_id"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+}
+
+func (q *Queries) ListPlatformEvents(ctx context.Context, arg ListPlatformEventsParams) ([]ListPlatformEventsRow, error) {
 	rows, err := q.db.Query(ctx, listPlatformEvents,
 		arg.TenantID,
 		arg.Column2,
@@ -834,9 +860,9 @@ func (q *Queries) ListPlatformEvents(ctx context.Context, arg ListPlatformEvents
 		return nil, err
 	}
 	defer rows.Close()
-	var items []PlatformEvent
+	var items []ListPlatformEventsRow
 	for rows.Next() {
-		var i PlatformEvent
+		var i ListPlatformEventsRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.TenantID,

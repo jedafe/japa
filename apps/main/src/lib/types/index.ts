@@ -116,9 +116,13 @@ export interface TagDetail {
 	slug: string;
 	name: string;
 	description?: string | null;
+	rules?: string | null;
 	color?: string | null;
 	logo_url?: string | null;
 	logo_media_id?: string | null;
+	cover_url?: string | null;
+	cover_media_id?: string | null;
+	field_values?: Record<string, unknown> | null;
 	follower_count: number;
 	created_at: string;
 	updated_at: string;
@@ -871,6 +875,7 @@ export interface SpaceDetail {
 	rules: SpaceRule[];
 	keywords?: string[];
 	logo_url?: string;
+	header_url?: string;
 	/** Viewer-scoped: true when the caller is the space owner (role='owner'). */
 	is_owner?: boolean;
 	/** Viewer-scoped: true when the caller is an assigned space moderator. */
@@ -908,6 +913,58 @@ export interface SpaceMember {
 	display_name: string | null;
 	avatar_url: string | null;
 	joined_at: string;
+}
+
+/** GET /space-permission-presets item — gen.SpacePermissionPreset row. */
+export interface SpacePermissionPreset {
+	id: string;
+	tenant_id: string;
+	name: string;
+	visibility: string;
+	posting_perm: string;
+	replying_perm: string;
+	commenting_perm: string;
+	joining_perm: string;
+	is_system: boolean;
+	created_at: string;
+	updated_at: string;
+}
+
+/** GET /spaces/{slug}/pinned item — pinned post row. */
+export interface SpacePinnedPost {
+	id: string;
+	space_id: string;
+	content_id: string;
+	pinned_by: string;
+	position: number;
+	created_at: string;
+}
+
+/** GET /admin/spaces/{id}/join-requests item — pending join request row. */
+export interface SpaceJoinRequest {
+	user_id: string;
+	username: string;
+	display_name: string | null;
+	avatar_url: string | null;
+	joined_at: string;
+	status: string;
+}
+
+/** POST /spaces/{id}/report response — gen.Report row. */
+export interface SpaceReport {
+	id: string;
+	tenant_id: string;
+	reporter_user_id: string;
+	entity_type: string;
+	entity_id: string;
+	reason: string;
+	notes: string | null;
+	evidence_urls: string[];
+	status: string;
+	reviewed_by: string | null;
+	resolution_note: string | null;
+	resolved_at: string | null;
+	created_at: string;
 }
 
 /** GET /spaces/{slug}/content item — ListContentsBySpaceRow (content cards). */

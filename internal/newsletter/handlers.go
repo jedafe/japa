@@ -1,14 +1,22 @@
-// Package newsletter — handlers.go provides HTTP handlers for newsletter admin CRUD.
+// Package newsletter — handlers.go provides HTTP handlers for the Newsletter
+// & Digest System (Section 62, ADR-080). Covers both legacy admin CRUD and
+// subscriber preferences, one-click unsubscribe, and campaign management.
 //
 // Routes:
 //
-//	GET    /admin/newsletter/subscribers    — list subscribers
+//	POST   /newsletter/subscribe             — subscribe (public)
+//	DELETE /newsletter/unsubscribe           — unsubscribe via token or email
+//	GET    /newsletter/preferences           — subscriber preferences
+//	PATCH  /newsletter/preferences           — update digest/campaign toggles
+//	GET    /admin/newsletter/subscribers     — list subscribers ?status=
 //	GET    /admin/newsletter/subscribers/{id} — get subscriber
 //	DELETE /admin/newsletter/subscribers/{id} — remove subscriber
-//	POST   /admin/newsletter/campaigns      — create campaign
-//	GET    /admin/newsletter/campaigns      — list campaigns
+//	POST   /admin/newsletter/campaigns       — create campaign
+//	GET    /admin/newsletter/campaigns       — list campaigns
 //	GET    /admin/newsletter/campaigns/{id} — get campaign
 //	PATCH  /admin/newsletter/campaigns/{id} — update campaign
+//	POST   /admin/newsletter/campaigns/{id}/send — send campaign
+//	GET    /admin/newsletter/stats           — totals, open/click rates
 package newsletter
 
 import (
@@ -19,9 +27,12 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/auth"
+	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/tenant"
 )
 
@@ -120,7 +131,8 @@ func (h *Handlers) Subscribe(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var input struct {
-		Email string `json:"email"`
+		Email  string `json:"email"`
+		Source string `json:"source"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
@@ -139,7 +151,13 @@ func (h *Handlers) Subscribe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	subscriber, err := h.Service.CreateSubscriber(r.Context(), tenantID, email)
+	// Link to user ID if authenticated.
+	var userID *pgtype.UUID
+	if u := auth.FromContext(r.Context()); u != nil {
+		userID = &u.UserID
+	}
+
+	subscriber, err := h.Service.CreateSubscriber(r.Context(), tenantID, email, userID, input.Source)
 	if err != nil {
 		// Duplicate email on the unique (tenant_id, email) index → already subscribed.
 		if isDuplicateSubscriberErr(err) {
@@ -248,7 +266,8 @@ func (h *Handlers) CreateSubscriber(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var input struct {
-		Email string `json:"email"`
+		Email  string `json:"email"`
+		Source string `json:"source"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
@@ -261,7 +280,12 @@ func (h *Handlers) CreateSubscriber(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	subscriber, err := h.Service.CreateSubscriber(r.Context(), tenantID, input.Email)
+	// Admin-created subscribers default to 'import' source.
+	if input.Source == "" {
+		input.Source = SourceImport
+	}
+
+	subscriber, err := h.Service.CreateSubscriber(r.Context(), tenantID, input.Email, nil, input.Source)
 	if err != nil {
 		slog.Error("creating newsletter subscriber", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to create subscriber")
@@ -351,13 +375,13 @@ func (h *Handlers) CreateCampaign(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	var input struct {
-		Name    string `json:"name"`
-		Subject string `json:"subject"`
-		HTML    string `json:"html"`
+	u := auth.FromContext(r.Context())
+	if u == nil {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		return
 	}
 
+	var input CreateCampaignInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
 		return
@@ -373,7 +397,11 @@ func (h *Handlers) CreateCampaign(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	campaign, err := h.Service.CreateCampaign(r.Context(), tenantID, input.Name, input.Subject, input.HTML)
+	if input.Segment == "" {
+		input.Segment = SegmentAll
+	}
+
+	campaign, err := h.Service.CreateCampaign(r.Context(), tenantID, u.UserID, input)
 	if err != nil {
 		slog.Error("creating newsletter campaign", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to create campaign")
@@ -492,4 +520,219 @@ func (h *Handlers) HandleSendCampaign(w http.ResponseWriter, r *http.Request) {
 			"recipients": len(emails),
 		},
 	})
+}
+
+// ---------------------------------------------------------------------------
+// Handlers — Unsubscribe, preferences, stats
+// ---------------------------------------------------------------------------
+
+// HandleUnsubscribe handles one-click unsubscribe via token or email.
+// DELETE /newsletter/unsubscribe
+func (h *Handlers) HandleUnsubscribe(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	token := r.URL.Query().Get("token")
+	if token != "" {
+		if err := h.Service.UnsubscribeByToken(r.Context(), tenantID, token); err != nil {
+			writeError(w, http.StatusBadRequest, "unsubscribe_failed", err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"unsubscribed": true}})
+		return
+	}
+
+	email := r.URL.Query().Get("email")
+	if email == "" {
+		writeError(w, http.StatusBadRequest, "validation_error", "token or email is required")
+		return
+	}
+
+	if err := h.Service.Unsubscribe(r.Context(), tenantID, email); err != nil {
+		writeError(w, http.StatusBadRequest, "unsubscribe_failed", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"unsubscribed": true}})
+}
+
+// HandleGetPreferences returns subscriber preferences.
+// GET /newsletter/preferences
+func (h *Handlers) HandleGetPreferences(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+	u := auth.FromContext(r.Context())
+	if u == nil {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		return
+	}
+
+	subscriber, err := h.Service.GetPreferencesByUserID(r.Context(), tenantID, u.UserID)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "not_found", "No subscription found")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": subscriber})
+}
+
+// HandleUpdatePreferences updates subscriber preferences.
+// PATCH /newsletter/preferences
+func (h *Handlers) HandleUpdatePreferences(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+	u := auth.FromContext(r.Context())
+	if u == nil {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		return
+	}
+
+	subscriber, err := h.Service.GetPreferencesByUserID(r.Context(), tenantID, u.UserID)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "not_found", "No subscription found")
+		return
+	}
+
+	var body struct {
+		DigestEnabled   *bool `json:"digest_enabled"`
+		CampaignEnabled *bool `json:"campaign_enabled"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
+		return
+	}
+
+	updated, err := h.Service.UpdatePreferences(r.Context(), tenantID, subscriber.ID, body.DigestEnabled, body.CampaignEnabled)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "update_failed", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": updated})
+}
+
+// HandleAdminStats returns newsletter stats.
+// GET /admin/newsletter/stats
+func (h *Handlers) HandleAdminStats(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+	if auth.FromContext(r.Context()) == nil {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		return
+	}
+
+	stats, err := h.Service.AdminSubscriberStats(r.Context(), tenantID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "stats_failed", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"stats": stats}})
+}
+
+// HandleAdminSendCampaign sends a campaign immediately.
+// POST /admin/newsletter/campaigns/{id}/send-v2
+func (h *Handlers) HandleAdminSendCampaign(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+	if auth.FromContext(r.Context()) == nil {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		return
+	}
+
+	var id pgtype.UUID
+	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid campaign ID")
+		return
+	}
+
+	if err := h.Service.SendCampaign(r.Context(), tenantID, id); err != nil {
+		writeError(w, http.StatusBadRequest, "send_failed", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusAccepted, map[string]any{"data": map[string]bool{"sent": true}})
+}
+
+// HandleAdminUpdateCampaign updates a campaign.
+// PATCH /admin/newsletter/campaigns/{id}/v2
+func (h *Handlers) HandleAdminUpdateCampaign(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+	if auth.FromContext(r.Context()) == nil {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		return
+	}
+
+	campaignID, ok := requireID(w, r, "id", "campaign")
+	if !ok {
+		return
+	}
+
+	var body struct {
+		Name        string          `json:"name"`
+		Subject     string          `json:"subject"`
+		PreviewText string          `json:"preview_text"`
+		Body        json.RawMessage `json:"body"`
+		Segment     string          `json:"segment"`
+		SegmentID   string          `json:"segment_id"`
+		Status      string          `json:"status"`
+		ScheduledAt *time.Time      `json:"scheduled_at"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
+		return
+	}
+
+	var name, subject, previewText, segment, status *string
+	if body.Name != "" {
+		name = &body.Name
+	}
+	if body.Subject != "" {
+		subject = &body.Subject
+	}
+	if body.PreviewText != "" {
+		previewText = &body.PreviewText
+	}
+	if body.Segment != "" {
+		segment = &body.Segment
+	}
+	if body.Status != "" {
+		status = &body.Status
+	}
+
+	var segmentID pgtype.UUID
+	if body.SegmentID != "" {
+		_ = segmentID.Scan(body.SegmentID)
+	}
+
+	var scheduledAt pgtype.Timestamptz
+	if body.ScheduledAt != nil {
+		scheduledAt = pgtype.Timestamptz{Time: *body.ScheduledAt, Valid: true}
+	}
+
+	campaign, err := h.Service.queries.UpdateCampaign(r.Context(), gen.UpdateCampaignParams{
+		TenantID:    tenantID,
+		ID:          campaignID,
+		Name:        name,
+		Subject:     subject,
+		PreviewText: previewText,
+		Body:        body.Body,
+		Segment:     segment,
+		SegmentID:   segmentID,
+		Status:      status,
+		ScheduledAt: scheduledAt,
+	})
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "update_failed", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": campaign})
 }

@@ -24,8 +24,8 @@ var SpaceContextKey = contextKey{"space"}
 // FromContext extracts the resolved space from the request context. It
 // returns nil when no space was set, which happens on routes that do not
 // run the SpaceResolver middleware.
-func FromContext(ctx context.Context) *gen.Space {
-	s, _ := ctx.Value(SpaceContextKey).(*gen.Space)
+func FromContext(ctx context.Context) *gen.GetSpaceBySlugRow {
+	s, _ := ctx.Value(SpaceContextKey).(*gen.GetSpaceBySlugRow)
 	return s
 }
 

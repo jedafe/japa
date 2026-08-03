@@ -68,9 +68,9 @@ type TrackEventInput struct {
 }
 
 // TrackEvent records a platform event in the write-optimised append-only table.
-func (s *Service) TrackEvent(ctx context.Context, tenantID pgtype.UUID, input TrackEventInput) (gen.PlatformEvent, error) {
+func (s *Service) TrackEvent(ctx context.Context, tenantID pgtype.UUID, input TrackEventInput) (gen.CreatePlatformEventRow, error) {
 	if input.EventType == "" {
-		return gen.PlatformEvent{}, errors.New("event_type is required")
+		return gen.CreatePlatformEventRow{}, errors.New("event_type is required")
 	}
 
 	metaBytes := []byte("{}")
@@ -78,7 +78,7 @@ func (s *Service) TrackEvent(ctx context.Context, tenantID pgtype.UUID, input Tr
 	if len(input.Meta) > 0 {
 		b, err := json.Marshal(input.Meta)
 		if err != nil {
-			return gen.PlatformEvent{}, fmt.Errorf("marshaling event meta: %w", err)
+			return gen.CreatePlatformEventRow{}, fmt.Errorf("marshaling event meta: %w", err)
 		}
 
 		metaBytes = b
@@ -117,7 +117,7 @@ func (s *Service) TrackEvent(ctx context.Context, tenantID pgtype.UUID, input Tr
 }
 
 // ListEvents returns platform events matching the given filters.
-func (s *Service) ListEvents(ctx context.Context, tenantID pgtype.UUID, filter EventFilter) ([]gen.PlatformEvent, error) {
+func (s *Service) ListEvents(ctx context.Context, tenantID pgtype.UUID, filter EventFilter) ([]gen.ListPlatformEventsRow, error) {
 	if filter.Limit <= 0 || filter.Limit > MaxPageSize {
 		filter.Limit = DefaultPageSize
 	}
