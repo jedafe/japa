@@ -80,6 +80,7 @@ import (
 	"github.com/jedafe/japa/internal/tickets"
 	"github.com/jedafe/japa/internal/trending"
 	"github.com/jedafe/japa/internal/universities"
+	"github.com/jedafe/japa/internal/rag"
 	"github.com/jedafe/japa/internal/university"
 	"github.com/jedafe/japa/internal/users"
 	"github.com/jedafe/japa/internal/valkey"
@@ -776,6 +777,21 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// the worker so the ai:generate_content_embedding handler can invoke it.
 	contentEmbedder := ai.NewContentEmbedder(aiDispatcher, database.Writer)
 	worker.RegisterContentEmbedder(contentEmbedder)
+
+	// RAG Knowledge Layer (Section 69, ADR-069) — chunked embedding storage
+	// in content_embeddings (pgvector HNSW) + cosine retrieval at chat time.
+	ragStore := rag.NewStore(database)
+	ragService := rag.NewService(ragStore, settingsService)
+	ragService.SetEmbedder(ai.NewRAGEmbedder(aiDispatcher))
+	ragService.SetEnqueuer(taskEnqueuer)
+	ragService.SetCache(vkClient.Redis())
+	ragHandlers := rag.NewHandlers(ragService, settingsService)
+	// Inject the RAG service into the AI handlers so HandleChat can run the
+	// retrieval step before the LLM call when rag.enabled is true.
+	aiHandlers.SetRAGService(ragService)
+	// Register the RAG indexer with the worker so content:generate_embedding
+	// also chunks and upserts into content_embeddings (Section 69, ADR-069).
+	worker.RegisterRAGIndexer(ragService)
 
 	// Cache flusher for admin-only cache invalidation.
 	cacheFlusher := analytics.NewCacheFlusher(vkClient)
@@ -2607,6 +2623,17 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// AI categories (public — for frontend AI category selection)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).
 				Get("/ai/categories", aiHandlers.HandleListCategories)
+
+			// RAG Knowledge Layer admin routes (Section 69, ADR-069).
+			// All gated by ai.rag.* permission nodes seeded in migration 000245.
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ai.rag.reindex")).
+				Post("/admin/rag/reindex", ragHandlers.HandleReindex)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ai.rag.manage")).
+				Get("/admin/rag/status", ragHandlers.HandleStatus)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ai.rag.manage")).
+				Delete("/admin/rag/entity/{type}/{id}", ragHandlers.HandlePurgeEntity)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ai.rag.manage")).
+				Get("/admin/settings/rag", ragHandlers.HandleGetSettings)
 
 			// Webhook admin CRUD routes (Section 23 — Integrations)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "integrations.webhooks.manage")).

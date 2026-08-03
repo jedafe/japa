@@ -165,24 +165,34 @@ func (s *Service) CountContentByTag(ctx context.Context, tagID pgtype.UUID) (int
 
 // CreateTagInput holds parameters for creating a tag (catalog: POST /admin/tags).
 type CreateTagInput struct {
-	Name        string
-	Slug        string
-	Description *string
-	Color       *string
-	IsSystem    bool
-	LogoMediaID pgtype.UUID
+	Name         string
+	Slug         string
+	Description  *string
+	Rules        *string
+	CoverMediaID pgtype.UUID
+	Color        *string
+	IsSystem     bool
+	LogoMediaID  pgtype.UUID
+	FieldValues  []byte
 }
 
 // CreateTag creates a new tag.
 func (s *Service) CreateTag(ctx context.Context, tenantID pgtype.UUID, input CreateTagInput) (gen.CreateTagRow, error) {
+	fieldValues := input.FieldValues
+	if len(fieldValues) == 0 {
+		fieldValues = []byte("{}")
+	}
 	tag, err := s.write.CreateTag(ctx, gen.CreateTagParams{
-		TenantID:    tenantID,
-		Name:        input.Name,
-		Slug:        input.Slug,
-		Description: input.Description,
-		Color:       input.Color,
-		IsSystem:    input.IsSystem,
-		LogoMediaID: input.LogoMediaID,
+		TenantID:     tenantID,
+		Name:         input.Name,
+		Slug:         input.Slug,
+		Description:  input.Description,
+		Rules:        input.Rules,
+		CoverMediaID: input.CoverMediaID,
+		Color:        input.Color,
+		IsSystem:     input.IsSystem,
+		LogoMediaID:  input.LogoMediaID,
+		FieldValues:  fieldValues,
 	})
 	if err != nil {
 		return gen.CreateTagRow{}, fmt.Errorf("creating tag: %w", err)
@@ -193,21 +203,32 @@ func (s *Service) CreateTag(ctx context.Context, tenantID pgtype.UUID, input Cre
 
 // UpdateTagInput holds parameters for updating a tag (catalog: PATCH /admin/tags/:id).
 type UpdateTagInput struct {
-	Name        string
-	Description *string
-	Color       *string
-	LogoMediaID pgtype.UUID
+	Name         string
+	Description  *string
+	Rules        *string
+	CoverMediaID pgtype.UUID
+	Color        *string
+	LogoMediaID  pgtype.UUID
+	FieldValues  []byte
 }
 
-// UpdateTag updates an existing tag's name/description/color/logo. Slug is immutable.
+// UpdateTag updates an existing tag's name/description/rules/cover/color/logo/fields.
+// Slug and is_system are immutable.
 func (s *Service) UpdateTag(ctx context.Context, id, tenantID pgtype.UUID, input UpdateTagInput) (gen.UpdateTagRow, error) {
+	fieldValues := input.FieldValues
+	if len(fieldValues) == 0 {
+		fieldValues = []byte("{}")
+	}
 	tag, err := s.write.UpdateTag(ctx, gen.UpdateTagParams{
-		ID:          id,
-		TenantID:    tenantID,
-		Name:        input.Name,
-		Description: input.Description,
-		Color:       input.Color,
-		LogoMediaID: input.LogoMediaID,
+		ID:           id,
+		TenantID:     tenantID,
+		Name:         input.Name,
+		Description:  input.Description,
+		Rules:        input.Rules,
+		CoverMediaID: input.CoverMediaID,
+		Color:        input.Color,
+		LogoMediaID:  input.LogoMediaID,
+		FieldValues:  fieldValues,
 	})
 	if err != nil {
 		return gen.UpdateTagRow{}, fmt.Errorf("updating tag: %w", err)

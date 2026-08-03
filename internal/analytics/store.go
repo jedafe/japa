@@ -31,12 +31,12 @@ func NewStoreWithReader(database *db.DB) *Store {
 }
 
 // CreatePlatformEvent records a new platform event.
-func (s *Store) CreatePlatformEvent(ctx context.Context, p gen.CreatePlatformEventParams) (gen.PlatformEvent, error) {
+func (s *Store) CreatePlatformEvent(ctx context.Context, p gen.CreatePlatformEventParams) (gen.CreatePlatformEventRow, error) {
 	return s.queries.CreatePlatformEvent(ctx, p)
 }
 
 // ListPlatformEvents returns events matching the given filters.
-func (s *Store) ListPlatformEvents(ctx context.Context, tenantID pgtype.UUID, filter EventFilter) ([]gen.PlatformEvent, error) {
+func (s *Store) ListPlatformEvents(ctx context.Context, tenantID pgtype.UUID, filter EventFilter) ([]gen.ListPlatformEventsRow, error) {
 	return s.queries.ListPlatformEvents(ctx, gen.ListPlatformEventsParams{
 		TenantID: tenantID,
 		Column2:  filter.EventType,

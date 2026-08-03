@@ -25,37 +25,37 @@ func NewStore(read, write *gen.Queries) *Store {
 // ---------------------------------------------------------------------------
 
 //nolint:unused // reserved for future features
-func (s *Store) createComparisonType(ctx context.Context, p gen.CreateComparisonTypeParams) (gen.ComparisonTypeDefinition, error) {
+func (s *Store) createComparisonType(ctx context.Context, p gen.CreateComparisonTypeParams) (gen.CreateComparisonTypeRow, error) {
 	row, err := s.write.CreateComparisonType(ctx, p)
 	if err != nil {
-		return gen.ComparisonTypeDefinition{}, fmt.Errorf("creating comparison type: %w", err)
+		return gen.CreateComparisonTypeRow{}, fmt.Errorf("creating comparison type: %w", err)
 	}
 
 	return row, nil
 }
 
 //nolint:unused // reserved for future features
-func (s *Store) getComparisonTypeByID(ctx context.Context, id, tenantID pgtype.UUID) (gen.ComparisonTypeDefinition, error) {
+func (s *Store) getComparisonTypeByID(ctx context.Context, id, tenantID pgtype.UUID) (gen.GetComparisonTypeByIDRow, error) {
 	row, err := s.read.GetComparisonTypeByID(ctx, gen.GetComparisonTypeByIDParams{ID: id, TenantID: tenantID})
 	if err != nil {
-		return gen.ComparisonTypeDefinition{}, fmt.Errorf("getting comparison type by ID: %w", err)
+		return gen.GetComparisonTypeByIDRow{}, fmt.Errorf("getting comparison type by ID: %w", err)
 	}
 
 	return row, nil
 }
 
 //nolint:unused // reserved for future features
-func (s *Store) getComparisonTypeBySlug(ctx context.Context, slug string, tenantID pgtype.UUID) (gen.ComparisonTypeDefinition, error) {
+func (s *Store) getComparisonTypeBySlug(ctx context.Context, slug string, tenantID pgtype.UUID) (gen.GetComparisonTypeBySlugRow, error) {
 	row, err := s.read.GetComparisonTypeBySlug(ctx, gen.GetComparisonTypeBySlugParams{Slug: slug, TenantID: tenantID})
 	if err != nil {
-		return gen.ComparisonTypeDefinition{}, fmt.Errorf("getting comparison type by slug: %w", err)
+		return gen.GetComparisonTypeBySlugRow{}, fmt.Errorf("getting comparison type by slug: %w", err)
 	}
 
 	return row, nil
 }
 
 //nolint:unused // reserved for future features
-func (s *Store) listComparisonTypesByTenant(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]gen.ComparisonTypeDefinition, error) {
+func (s *Store) listComparisonTypesByTenant(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]gen.ListComparisonTypesByTenantRow, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -73,10 +73,10 @@ func (s *Store) listComparisonTypesByTenant(ctx context.Context, tenantID pgtype
 }
 
 //nolint:unused // reserved for future features
-func (s *Store) updateComparisonType(ctx context.Context, p gen.UpdateComparisonTypeParams) (gen.ComparisonTypeDefinition, error) {
+func (s *Store) updateComparisonType(ctx context.Context, p gen.UpdateComparisonTypeParams) (gen.UpdateComparisonTypeRow, error) {
 	row, err := s.write.UpdateComparisonType(ctx, p)
 	if err != nil {
-		return gen.ComparisonTypeDefinition{}, fmt.Errorf("updating comparison type: %w", err)
+		return gen.UpdateComparisonTypeRow{}, fmt.Errorf("updating comparison type: %w", err)
 	}
 
 	return row, nil

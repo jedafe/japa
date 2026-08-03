@@ -8,9 +8,11 @@
 		tags: string[];
 		onTags: (next: string[]) => void;
 		onfocus?: () => void;
+		/** Max tags per content item, from system setting content.max_tags (default 5). */
+		maxTags?: number;
 	}
 
-	let { tags, onTags, onfocus }: Props = $props();
+	let { tags, onTags, onfocus, maxTags = 5 }: Props = $props();
 
 	let draft = $state('');
 	let suggestions = $state<SearchHit[]>([]);
@@ -25,7 +27,7 @@
 		// Enforce content.max_tags (default 5) client-side (Section 14).
 		// The backend also enforces this, but preventing the user from
 		// adding more than the limit avoids a wasted API round-trip.
-		if (v && !tags.includes(v) && tags.length < 5) onTags([...tags, v]);
+		if (v && !tags.includes(v) && tags.length < maxTags) onTags([...tags, v]);
 		draft = '';
 		suggestions = [];
 		activeIndex = -1;

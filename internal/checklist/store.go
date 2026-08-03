@@ -1,0 +1,188 @@
+// Package checklist implements the Visa Document Checklist Generator
+// (Section 70, ADR-070). Checklist items are extracted from the
+// required_documents custom field on published visa guides — no parallel
+// document data store. Per-user progress is persisted in checklist_progress.
+//
+// Ref: japaconnect-engineering/sections/70-visa-checklist.md
+//      japaconnect-engineering/adr/ADR-070-visa-document-checklist-generator.md
+package checklist
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
+
+	"github.com/jedafe/japa/internal/db"
+	"github.com/jedafe/japa/internal/db/gen"
+)
+
+// Store wraps the sqlc-generated Queries for checklist_progress operations
+// and provides direct pgx queries against contents + custom_field_values for
+// the visa-guide selector and item extraction. It is the data-access layer —
+// no business logic here.
+type Store struct {
+	queries *gen.Queries
+	pool    *db.DB
+}
+
+// NewStore creates a checklist store backed by the given database.
+func NewStore(database *db.DB) *Store {
+	return &Store{
+		queries: gen.New(database.Reader),
+		pool:    database,
+	}
+}
+
+// VisaGuideField holds a single field value extracted from a published visa
+// guide's custom_field_values row.
+type VisaGuideField struct {
+	GuideID  pgtype.UUID
+	FieldKey string
+	ValueText string
+	ValueJSON []byte
+}
+
+// ListPublishedVisaGuideFields queries published visa guides and their
+// custom_field_values for the requested field keys (e.g.
+// destination_country, visa_type, required_documents). The query joins
+// contents with custom_field_values + custom_fields so tenancy is enforced
+// transitively via custom_fields.tenant_id (BUG-014 pattern).
+func (s *Store) ListPublishedVisaGuideFields(ctx context.Context, tenantID pgtype.UUID, fieldKeys []string) ([]VisaGuideField, error) {
+	if len(fieldKeys) == 0 {
+		return nil, nil
+	}
+
+	const q = `
+SELECT c.id, cf.key, cfv.value_text, cfv.value_json
+FROM contents c
+JOIN custom_field_values cfv
+  ON cfv.entity_type = 'content' AND cfv.entity_id = c.id
+JOIN custom_fields cf
+  ON cf.id = cfv.field_id AND cf.tenant_id = c.tenant_id
+WHERE c.tenant_id = $1
+  AND c.content_type = 'guide'
+  AND c.guide_category = 'visa'
+  AND c.status = 'published'
+  AND c.deleted_at IS NULL
+  AND cf.key = ANY($2)
+ORDER BY c.id, cf.key
+`
+
+	rows, err := s.pool.Reader.Query(ctx, q, tenantID, fieldKeys)
+	if err != nil {
+		return nil, fmt.Errorf("checklist: list visa guide fields: %w", err)
+	}
+	defer rows.Close()
+
+	var out []VisaGuideField
+	for rows.Next() {
+		var f VisaGuideField
+		var valueText *string
+		if err := rows.Scan(&f.GuideID, &f.FieldKey, &valueText, &f.ValueJSON); err != nil {
+			return nil, fmt.Errorf("checklist: scan visa guide field: %w", err)
+		}
+		if valueText != nil {
+			f.ValueText = *valueText
+		}
+		out = append(out, f)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("checklist: iterate visa guide fields: %w", err)
+	}
+	return out, nil
+}
+
+// GetVisaGuideField returns a single field value for a specific guide + key.
+// Used by GetChecklistItems to fetch the required_documents field.
+func (s *Store) GetVisaGuideField(ctx context.Context, tenantID, guideID pgtype.UUID, fieldKey string) (VisaGuideField, error) {
+	const q = `
+SELECT c.id, cf.key, cfv.value_text, cfv.value_json
+FROM contents c
+JOIN custom_field_values cfv
+  ON cfv.entity_type = 'content' AND cfv.entity_id = c.id
+JOIN custom_fields cf
+  ON cf.id = cfv.field_id AND cf.tenant_id = c.tenant_id
+WHERE c.tenant_id = $1
+  AND c.id = $2
+  AND c.content_type = 'guide'
+  AND c.guide_category = 'visa'
+  AND c.status = 'published'
+  AND c.deleted_at IS NULL
+  AND cf.key = $3
+LIMIT 1
+`
+
+	row := s.pool.Reader.QueryRow(ctx, q, tenantID, guideID, fieldKey)
+	var f VisaGuideField
+	var valueText *string
+	if err := row.Scan(&f.GuideID, &f.FieldKey, &valueText, &f.ValueJSON); err != nil {
+		if err == pgx.ErrNoRows {
+			return VisaGuideField{}, pgx.ErrNoRows
+		}
+		return VisaGuideField{}, fmt.Errorf("checklist: get visa guide field: %w", err)
+	}
+	if valueText != nil {
+		f.ValueText = *valueText
+	}
+	return f, nil
+}
+
+// ListChecklistProgress returns all progress rows for a user + guide.
+func (s *Store) ListChecklistProgress(ctx context.Context, tenantID, userID, guideID pgtype.UUID) ([]gen.ChecklistProgress, error) {
+	return s.queries.ListChecklistProgressByUserGuide(ctx, gen.ListChecklistProgressByUserGuideParams{
+		TenantID: tenantID,
+		UserID:   userID,
+		GuideID:  guideID,
+	})
+}
+
+// UpsertChecklistProgress marks a single item complete/incomplete + note.
+func (s *Store) UpsertChecklistProgress(ctx context.Context, arg gen.UpsertChecklistProgressParams) (gen.ChecklistProgress, error) {
+	return s.queries.UpsertChecklistProgress(ctx, arg)
+}
+
+// DeleteChecklistProgress resets all progress for a user + guide.
+func (s *Store) DeleteChecklistProgress(ctx context.Context, tenantID, userID, guideID pgtype.UUID) error {
+	return s.queries.DeleteChecklistProgressByUserGuide(ctx, gen.DeleteChecklistProgressByUserGuideParams{
+		TenantID: tenantID,
+		UserID:   userID,
+		GuideID:  guideID,
+	})
+}
+
+// CountCompletedChecklistItems returns the number of completed items for a
+// user + guide (used for the full-completion check before awarding points).
+func (s *Store) CountCompletedChecklistItems(ctx context.Context, tenantID, userID, guideID pgtype.UUID) (int64, error) {
+	return s.queries.CountCompletedChecklistItems(ctx, gen.CountCompletedChecklistItemsParams{
+		TenantID: tenantID,
+		UserID:   userID,
+		GuideID:  guideID,
+	})
+}
+
+// AdminListChecklistProgress lists all users' progress rows (paginated,
+// filterable by guide_id and user_id). Admin-only.
+func (s *Store) AdminListChecklistProgress(ctx context.Context, arg gen.AdminListChecklistProgressParams) ([]gen.AdminListChecklistProgressRow, error) {
+	return s.queries.AdminListChecklistProgress(ctx, arg)
+}
+
+// AdminCountChecklistProgress returns the total count for the admin list
+// (with the same guide_id/user_id filters applied).
+func (s *Store) AdminCountChecklistProgress(ctx context.Context, tenantID, guideID, userID pgtype.UUID) (int64, error) {
+	return s.queries.AdminCountChecklistProgress(ctx, gen.AdminCountChecklistProgressParams{
+		TenantID: tenantID,
+		GuideID:  guideID,
+		UserID:   userID,
+	})
+}
+
+// AdminCompletionStats returns per-guide completion aggregates (admin).
+func (s *Store) AdminCompletionStats(ctx context.Context, tenantID pgtype.UUID, pageOffset, pageLimit int32) ([]gen.AdminChecklistCompletionStatsRow, error) {
+	return s.queries.AdminChecklistCompletionStats(ctx, gen.AdminChecklistCompletionStatsParams{
+		TenantID:   tenantID,
+		PageOffset: pageOffset,
+		PageLimit:  pageLimit,
+	})
+}

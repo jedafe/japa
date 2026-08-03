@@ -1708,7 +1708,34 @@ func HandleAIGenerateContentEmbedding(ctx context.Context, t *asynq.Task) error 
 		return nil
 	}
 
-	return contentEmbedder.EmbedContent(ctx, contentID.Bytes, tenantID.Bytes, text)
+	if err := contentEmbedder.EmbedContent(ctx, contentID.Bytes, tenantID.Bytes, text); err != nil {
+		return fmt.Errorf("task:content:generate_embedding: %w", err)
+	}
+
+	// RAG extension (Section 69, ADR-069): also chunk and upsert into
+	// content_embeddings. Best-effort — errors are logged, not propagated.
+	ragIndexAfterEmbed(ctx, tenantID.Bytes, contentID.Bytes, text)
+
+	return nil
+}
+
+// ragIndexAfterEmbed is called after the legacy content_scores embedding is
+// written. It extends the embedding task to also chunk and upsert into
+// content_embeddings (the RAG knowledge layer, Section 69, ADR-069). Errors
+// are logged but never propagated — RAG indexing is a best-effort extension
+// that must not break the legacy embedding pipeline.
+func ragIndexAfterEmbed(ctx context.Context, tenantID, contentID [16]byte, text string) {
+	if ragIndexer == nil {
+		return
+	}
+
+	tenantUUID := pgtype.UUID{Bytes: tenantID, Valid: true}
+	contentUUID := pgtype.UUID{Bytes: contentID, Valid: true}
+
+	if err := ragIndexer.IndexEntity(ctx, tenantUUID, "content", contentUUID, text, "en"); err != nil {
+		slog.Warn("task:content:generate_embedding: RAG index failed",
+			"content_id", contentUUID.String(), "error", err)
+	}
 }
 
 // HandleReviewAggregateRecalc recalculates the aggregate rating for a reviewable entity.

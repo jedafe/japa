@@ -171,7 +171,7 @@ type fieldSummary struct {
 
 // toFieldSummary converts a gen.CustomField to a fieldSummary, preserving
 // the Options JSONB as raw JSON instead of base64-encoded []byte.
-func toFieldSummary(f gen.CustomField) fieldSummary {
+func toFieldSummary(f gen.ListAllCustomFieldsByTenantRow) fieldSummary {
 	var opts json.RawMessage
 	if f.Options != nil {
 		opts = json.RawMessage(f.Options)

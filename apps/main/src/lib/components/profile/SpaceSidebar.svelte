@@ -10,6 +10,8 @@
 		space: Space;
 		rules: SpaceRule[];
 		authed: boolean;
+		/** Imgproxy-signed logo URL (from GET /spaces/{slug} logo_url field). */
+		logoUrl?: string;
 		/** Whether the caller is already a member (hydrated server-side from
 		 * the space members list). Best-effort for spaces with >20 members. */
 		initialJoined?: boolean;
@@ -18,7 +20,7 @@
 		 * in sync. */
 		following?: boolean;
 	}
-	let { space, rules, authed, initialJoined = false, following = $bindable(false) }: Props = $props();
+	let { space, rules, authed, logoUrl = '', initialJoined = false, following = $bindable(false) }: Props = $props();
 
 	// Join state is hydrated from the server (initialJoined) so the button
 	// reflects the caller's actual membership on SSR load instead of always
@@ -79,11 +81,19 @@
 <div class="space-y-4">
 	<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 		<div class="flex items-start gap-3">
-			<span
-				class="grid h-12 w-12 shrink-0 place-items-center rounded-[var(--radius)] bg-[var(--color-surface-subtle)] text-base font-medium text-[var(--color-text-subtle)]"
-			>
-				{space.name.charAt(0).toUpperCase()}
-			</span>
+			{#if logoUrl}
+				<img
+					src={logoUrl}
+					alt={space.name}
+					class="h-12 w-12 shrink-0 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] object-cover"
+				/>
+			{:else}
+				<span
+					class="grid h-12 w-12 shrink-0 place-items-center rounded-[var(--radius)] bg-[var(--color-surface-subtle)] text-base font-medium text-[var(--color-text-subtle)]"
+				>
+					{space.name.charAt(0).toUpperCase()}
+				</span>
+			{/if}
 			<div class="min-w-0 flex-1">
 				<h2 class="truncate text-sm font-semibold text-[var(--color-text)]">{space.name}</h2>
 				<p class="text-xs capitalize text-[var(--color-muted)]">{space.level} space</p>

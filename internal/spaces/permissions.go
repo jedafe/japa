@@ -30,7 +30,7 @@ type UserVerifiedChecker func(ctx context.Context, userID, tenantID pgtype.UUID)
 //   - "admins":     the user must hold the spaces.moderate.any permission.
 func (s *Service) CanPostInSpace(
 	ctx context.Context,
-	space gen.Space,
+	space gen.GetSpaceByIDRow,
 	userID, tenantID pgtype.UUID,
 	permChecker PermissionChecker,
 	verifiedChecker UserVerifiedChecker,

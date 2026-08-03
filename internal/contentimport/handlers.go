@@ -1,0 +1,419 @@
+// Package contentimport — handlers.go provides the HTTP handlers for the
+// content import routes (Section 65, ADR-083).
+//
+// Routes:
+//
+//	POST   /api/v1/me/imports              — start import { source_type, source_url }
+//	GET    /api/v1/me/imports              — list user's imports (paginated)
+//	GET    /api/v1/me/imports/:id          — import detail
+//	GET    /api/v1/admin/imports           — all imports (admin oversight)
+//	POST   /api/v1/admin/imports/:id/retry — retry failed import
+//
+// RBAC: import.use (all authenticated), import.manage (admin). Permission
+// checks are applied by the RBAC middleware at the route registration site.
+//
+// Ref: japaconnect-engineering/sections/65-content-import.md
+//      japaconnect-engineering/adr/ADR-083-content-import.md
+package contentimport
+
+import (
+	"encoding/json"
+	"log/slog"
+	"net/http"
+	"strconv"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5/pgtype"
+
+	"github.com/jedafe/japa/internal/auth"
+	"github.com/jedafe/japa/internal/config"
+	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/tenant"
+)
+
+// Handlers exposes the content import HTTP endpoints.
+type Handlers struct {
+	service  *Service
+	settings *config.Settings
+}
+
+// NewHandlers creates content-import handlers bound to the provided service.
+func NewHandlers(service *Service, settings *config.Settings) *Handlers {
+	return &Handlers{service: service, settings: settings}
+}
+
+// ---------------------------------------------------------------------------
+// Shared helpers (same pattern as rag/handlers.go)
+// ---------------------------------------------------------------------------
+
+func writeJSON(w http.ResponseWriter, status int, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	if err := json.NewEncoder(w).Encode(v); err != nil {
+		slog.Error("contentimport: encode response", "error", err)
+	}
+}
+
+func writeError(w http.ResponseWriter, status int, code, message string) {
+	writeJSON(w, status, map[string]any{
+		"error": map[string]string{"code": code, "message": message},
+	})
+}
+
+func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
+	t := tenant.FromContext(r.Context())
+	if t == nil {
+		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		return pgtype.UUID{}, false
+	}
+	return t.ID, true
+}
+
+func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
+	u := auth.FromContext(r.Context())
+	if u == nil {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		return nil, false
+	}
+	return u, true
+}
+
+func scanUUIDParam(w http.ResponseWriter, r *http.Request, name string) (pgtype.UUID, bool) {
+	var id pgtype.UUID
+	if err := id.Scan(chi.URLParam(r, name)); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid "+name)
+		return pgtype.UUID{}, false
+	}
+	return id, true
+}
+
+// parsePagination extracts page and limit from query parameters with sane
+// defaults. Page is 1-based; limit defaults to 20 and is clamped to 100.
+func parsePagination(r *http.Request) (int, int) {
+	page := 1
+	limit := 20
+
+	if q := r.URL.Query().Get("page"); q != "" {
+		if v, err := strconv.Atoi(q); err == nil && v > 0 {
+			page = v
+		}
+	}
+	if q := r.URL.Query().Get("limit"); q != "" {
+		if v, err := strconv.Atoi(q); err == nil && v > 0 {
+			limit = v
+		}
+	}
+	if limit > 100 {
+		limit = 100
+	}
+	return page, limit
+}
+
+// ---------------------------------------------------------------------------
+// Handlers
+// ---------------------------------------------------------------------------
+
+// startImportRequest is the JSON body for POST /me/imports.
+type startImportRequest struct {
+	SourceType string `json:"source_type"`
+	SourceURL  string `json:"source_url"`
+}
+
+// HandleStartImport handles POST /api/v1/me/imports — start a content
+// import. Gated by import.use permission (checked by RBAC middleware at
+// the route registration site). Enqueues import:process_source
+// fire-and-forget (Rule 8) and returns the import record immediately.
+func (h *Handlers) HandleStartImport(w http.ResponseWriter, r *http.Request) {
+	user, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	if h.service == nil {
+		writeError(w, http.StatusServiceUnavailable, "import_unavailable", "Import service not configured")
+		return
+	}
+
+	var req startImportRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
+
+	if !isValidSourceType(req.SourceType) {
+		writeError(w, http.StatusBadRequest, "invalid_source_type",
+			"source_type must be one of: medium, substack, rss, zip")
+		return
+	}
+
+	if req.SourceType != SourceTypeZIP && req.SourceURL == "" {
+		writeError(w, http.StatusBadRequest, "missing_source_url",
+			"source_url is required for RSS-based imports")
+		return
+	}
+
+	imp, err := h.service.StartImport(r.Context(), tenantID, user.UserID, req.SourceType, req.SourceURL)
+	if err != nil {
+		slog.Error("contentimport: start failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "import_start_failed", "Failed to start import")
+		return
+	}
+
+	writeJSON(w, http.StatusAccepted, map[string]any{
+		"data": serializeImport(imp),
+	})
+}
+
+// HandleListImports handles GET /api/v1/me/imports — list the authenticated
+// user's imports with pagination. Gated by import.use.
+func (h *Handlers) HandleListImports(w http.ResponseWriter, r *http.Request) {
+	user, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	if h.service == nil {
+		writeError(w, http.StatusServiceUnavailable, "import_unavailable", "Import service not configured")
+		return
+	}
+
+	page, limit := parsePagination(r)
+
+	imports, total, err := h.service.ListUserImports(r.Context(), tenantID, user.UserID, page, limit)
+	if err != nil {
+		slog.Error("contentimport: list failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "import_list_failed", "Failed to list imports")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data": serializeImports(imports),
+		"pagination": map[string]any{
+			"page":  page,
+			"limit": limit,
+			"total": total,
+		},
+	})
+}
+
+// HandleGetImport handles GET /api/v1/me/imports/:id — import detail.
+// Gated by import.use. Only returns the import if it belongs to the
+// authenticated user.
+func (h *Handlers) HandleGetImport(w http.ResponseWriter, r *http.Request) {
+	user, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	if h.service == nil {
+		writeError(w, http.StatusServiceUnavailable, "import_unavailable", "Import service not configured")
+		return
+	}
+
+	importID, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	imp, err := h.service.GetImport(r.Context(), tenantID, importID)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "import_not_found", "Import not found")
+		return
+	}
+
+	// Ensure the import belongs to the authenticated user.
+	if imp.UserID != user.UserID {
+		writeError(w, http.StatusNotFound, "import_not_found", "Import not found")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data": serializeImport(imp),
+	})
+}
+
+// HandleAdminListImports handles GET /api/v1/admin/imports — list all
+// imports for the tenant with optional status filter. Gated by
+// import.manage (admin).
+func (h *Handlers) HandleAdminListImports(w http.ResponseWriter, r *http.Request) {
+	if _, ok := requireUser(w, r); !ok {
+		return
+	}
+
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	if h.service == nil {
+		writeError(w, http.StatusServiceUnavailable, "import_unavailable", "Import service not configured")
+		return
+	}
+
+	page, limit := parsePagination(r)
+	status := r.URL.Query().Get("status")
+
+	imports, total, err := h.service.AdminListImports(r.Context(), tenantID, status, page, limit)
+	if err != nil {
+		slog.Error("contentimport: admin list failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "import_list_failed", "Failed to list imports")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data": serializeAdminImports(imports),
+		"pagination": map[string]any{
+			"page":   page,
+			"limit":  limit,
+			"total":  total,
+			"status": status,
+		},
+	})
+}
+
+// HandleAdminRetryImport handles POST /api/v1/admin/imports/:id/retry —
+// retry a failed or partial import. Gated by import.manage (admin).
+// Re-enqueues import:process_source fire-and-forget (Rule 8).
+func (h *Handlers) HandleAdminRetryImport(w http.ResponseWriter, r *http.Request) {
+	if _, ok := requireUser(w, r); !ok {
+		return
+	}
+
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	if h.service == nil {
+		writeError(w, http.StatusServiceUnavailable, "import_unavailable", "Import service not configured")
+		return
+	}
+
+	importID, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	imp, err := h.service.RetryImport(r.Context(), tenantID, importID)
+	if err != nil {
+		slog.Error("contentimport: retry failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "import_retry_failed", "Failed to retry import")
+		return
+	}
+
+	writeJSON(w, http.StatusAccepted, map[string]any{
+		"data": serializeImport(imp),
+	})
+}
+
+// ---------------------------------------------------------------------------
+// Serialization helpers — all timestamps RFC 3339 UTC, IDs as strings.
+// ---------------------------------------------------------------------------
+
+// importResponse is the JSON representation of a content_imports row.
+type importResponse struct {
+	ID            string   `json:"id"`
+	TenantID      string   `json:"tenant_id"`
+	UserID        string   `json:"user_id"`
+	SourceType    string   `json:"source_type"`
+	SourceURL     *string  `json:"source_url"`
+	Status        string   `json:"status"`
+	TotalItems    int32    `json:"total_items"`
+	ImportedCount int32    `json:"imported_count"`
+	FailedCount   int32    `json:"failed_count"`
+	ErrorLog      []byte   `json:"error_log"`
+	CreatedAt     string   `json:"created_at"`
+	CompletedAt   *string  `json:"completed_at"`
+}
+
+// adminImportResponse extends importResponse with the username of the
+// importing user (from the admin list JOIN).
+type adminImportResponse struct {
+	importResponse
+	Username string `json:"username"`
+}
+
+// serializeImport converts a gen.ContentImport to its JSON response form.
+func serializeImport(imp gen.ContentImport) importResponse {
+	resp := importResponse{
+		ID:            imp.ID.String(),
+		TenantID:      imp.TenantID.String(),
+		UserID:        imp.UserID.String(),
+		SourceType:    imp.SourceType,
+		SourceURL:     imp.SourceUrl,
+		Status:        imp.Status,
+		TotalItems:    imp.TotalItems,
+		ImportedCount: imp.ImportedCount,
+		FailedCount:   imp.FailedCount,
+		ErrorLog:      imp.ErrorLog,
+		CreatedAt:     formatTimestamptz(imp.CreatedAt),
+	}
+	if imp.CompletedAt.Valid {
+		s := formatTimestamptz(imp.CompletedAt)
+		resp.CompletedAt = &s
+	}
+	return resp
+}
+
+// serializeImports converts a slice of gen.ContentImport to response form.
+func serializeImports(imports []gen.ContentImport) []importResponse {
+	result := make([]importResponse, 0, len(imports))
+	for i := range imports {
+		result = append(result, serializeImport(imports[i]))
+	}
+	return result
+}
+
+// serializeAdminImports converts admin list rows (with username) to
+// response form.
+func serializeAdminImports(rows []gen.AdminListContentImportsRow) []adminImportResponse {
+	result := make([]adminImportResponse, 0, len(rows))
+	for _, row := range rows {
+		resp := adminImportResponse{
+			importResponse: importResponse{
+				ID:            row.ID.String(),
+				TenantID:      row.TenantID.String(),
+				UserID:        row.UserID.String(),
+				SourceType:    row.SourceType,
+				SourceURL:     row.SourceUrl,
+				Status:        row.Status,
+				TotalItems:    row.TotalItems,
+				ImportedCount: row.ImportedCount,
+				FailedCount:   row.FailedCount,
+				ErrorLog:      row.ErrorLog,
+				CreatedAt:     formatTimestamptz(row.CreatedAt),
+			},
+			Username: row.Username,
+		}
+		if row.CompletedAt.Valid {
+			s := formatTimestamptz(row.CompletedAt)
+			resp.CompletedAt = &s
+		}
+		result = append(result, resp)
+	}
+	return result
+}
+
+// formatTimestamptz formats a pgtype.Timestamptz as RFC 3339 UTC.
+// Returns empty string for invalid timestamps.
+func formatTimestamptz(ts pgtype.Timestamptz) string {
+	if !ts.Valid {
+		return ""
+	}
+	return ts.Time.UTC().Format("2006-01-02T15:04:05Z07:00")
+}

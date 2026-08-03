@@ -16,9 +16,9 @@ import (
 // need — countries/states/cities are seeded as spaces (catalog: "from seeded
 // country spaces"), not a separate table.
 type SpacesService interface {
-	ListSpacesByLevel(ctx context.Context, tenantID pgtype.UUID, level string) ([]gen.Space, error)
-	ListStatesByCountryCode(ctx context.Context, tenantID pgtype.UUID, countryCode string) ([]gen.Space, error)
-	ListCitiesByState(ctx context.Context, tenantID, stateID pgtype.UUID) ([]gen.Space, error)
+	ListSpacesByLevel(ctx context.Context, tenantID pgtype.UUID, level string) ([]gen.ListSpacesByLevelRow, error)
+	ListStatesByCountryCode(ctx context.Context, tenantID pgtype.UUID, countryCode string) ([]gen.ListStatesByCountryGeoCodeRow, error)
+	ListCitiesByState(ctx context.Context, tenantID, stateID pgtype.UUID) ([]gen.ListCitiesByStateIDRow, error)
 }
 
 // Handlers provides HTTP endpoints for geolocation.

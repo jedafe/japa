@@ -17,6 +17,7 @@
 		spaces: MeSpace[];
 		spaceId: string | null;
 		tags: string[];
+		maxTags?: number;
 		coverMediaId: string | null;
 		coverPreviewUrl: string | null;
 		metaTitle: string | null;
@@ -57,6 +58,7 @@
 		spaces = $bindable(),
 		spaceId,
 		tags,
+		maxTags = 5,
 		coverMediaId,
 		coverPreviewUrl,
 		metaTitle,
@@ -107,6 +109,7 @@
 			bind:spaces
 			{spaceId}
 			{tags}
+			{maxTags}
 			{coverMediaId}
 			{coverPreviewUrl}
 			{onseries}

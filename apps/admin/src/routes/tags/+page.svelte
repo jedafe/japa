@@ -10,7 +10,7 @@
 	import { Plus, Pencil, Trash2, RefreshCw, Eye, Shield, Image as ImageIcon, X } from "lucide-svelte";
 	import UserAutocomplete from "$lib/components/ui/UserAutocomplete.svelte";
 	import MediaPickerModal from "$lib/components/ui/MediaPickerModal.svelte";
-	import { tagsAdminApi, tagsModeratorsAdminApi } from "$lib/api";
+	import { tagsAdminApi, tagsModeratorsAdminApi, api } from "$lib/api";
 	import { t } from "$lib/stores/i18n.svelte";
 	import { hasPermission } from "$lib/stores/permissions.svelte";
 	import { page } from "$app/state";
@@ -21,14 +21,28 @@
 		name: string;
 		slug: string;
 		description?: string;
+		rules?: string;
 		color?: string;
 		logo_url?: string;
 		logo_media_id?: string;
+		cover_url?: string;
+		cover_media_id?: string;
+		field_values?: Record<string, unknown>;
 		content_count: number;
 		post_count: number;
 		follower_count: number;
 		is_system: boolean;
 		created_at: string;
+	};
+
+	type TagFieldDef = {
+		id: string;
+		key: string;
+		label: string;
+		field_type: string;
+		placeholder?: string;
+		default_value?: string;
+		is_required: boolean;
 	};
 
 	type TagModerator = {
@@ -61,7 +75,11 @@
 			is_system: raw.is_system ?? false,
 			follower_count: raw.follower_count ?? 0,
 			logo_url: raw.logo_url ?? '',
-			logo_media_id: raw.logo_media_id ?? ''
+			logo_media_id: raw.logo_media_id ?? '',
+			cover_url: raw.cover_url ?? '',
+			cover_media_id: raw.cover_media_id ?? '',
+			rules: raw.rules ?? '',
+			field_values: raw.field_values ?? {}
 		};
 	}
 
@@ -73,14 +91,49 @@
 	let formName = $state("");
 	let formSlug = $state("");
 	let formDescription = $state("");
+	let formRules = $state("");
 	let formColor = $state("");
 	let formIsSystem = $state(false);
 	let formLogoMediaId = $state("");
 	let formLogoUrl = $state("");
+	let formCoverMediaId = $state("");
+	let formCoverUrl = $state("");
+	let formFieldValues = $state<Record<string, string>>({});
 	let saving = $state(false);
 	let showMediaPicker = $state(false);
+	let showCoverPicker = $state(false);
 	let showDeleteConfirm = $state(false);
 	let deleteTarget = $state<Tag | null>(null);
+
+	// Tag custom field definitions — fetched from /custom-field-groups?entity_class=tag
+	// so the edit modal can render the spec-defined fields (Wiki Content, Related
+	// Tags, External Link) without hardcoding them (Rule 16).
+	let tagFieldDefs = $state<TagFieldDef[]>([]);
+
+	async function loadTagFieldDefs() {
+		try {
+			const res = await api<{ id: string; fields?: TagFieldDef[] }[]>('/custom-field-groups?entity_class=tag');
+			if (!res.ok) return;
+			const groups = res.data ?? [];
+			const fields: TagFieldDef[] = [];
+			for (const g of groups) {
+				for (const f of g.fields ?? []) {
+					fields.push({
+						id: f.id,
+						key: f.key,
+						label: f.label,
+						field_type: f.field_type,
+						placeholder: f.placeholder,
+						default_value: f.default_value,
+						is_required: f.is_required
+					});
+				}
+			}
+			tagFieldDefs = fields;
+		} catch {
+			tagFieldDefs = [];
+		}
+	}
 
 	const canManageTags = $derived(hasPermission("tags.manage"));
 
@@ -194,10 +247,14 @@
 		formName = "";
 		formSlug = "";
 		formDescription = "";
+		formRules = "";
 		formColor = "";
 		formIsSystem = false;
 		formLogoMediaId = "";
 		formLogoUrl = "";
+		formCoverMediaId = "";
+		formCoverUrl = "";
+		formFieldValues = {};
 		showModal = true;
 	}
 
@@ -206,10 +263,20 @@
 		formName = tag.name;
 		formSlug = tag.slug;
 		formDescription = tag.description ?? "";
+		formRules = tag.rules ?? "";
 		formColor = tag.color ?? "";
 		formIsSystem = tag.is_system ?? false;
 		formLogoMediaId = tag.logo_media_id ?? "";
 		formLogoUrl = tag.logo_url ?? "";
+		formCoverMediaId = tag.cover_media_id ?? "";
+		formCoverUrl = tag.cover_url ?? "";
+		// Convert field_values (which may have non-string values) to string form for editing.
+		const fv = tag.field_values ?? {};
+		const stringFv: Record<string, string> = {};
+		for (const [k, v] of Object.entries(fv)) {
+			stringFv[k] = v == null ? '' : String(v);
+		}
+		formFieldValues = stringFv;
 		showModal = true;
 	}
 
@@ -217,17 +284,29 @@
 		if (!formName.trim()) return;
 		saving = true;
 		error = "";
-		const body: { name: string; slug: string; description?: string; color?: string; is_system?: boolean; logo_media_id?: string } = {
+		const body: Record<string, unknown> = {
 			name: formName.trim(),
 			slug: formSlug.trim() || slugify(formName)
 		};
 		if (formDescription.trim()) body.description = formDescription.trim();
+		if (formRules.trim()) body.rules = formRules.trim();
 		if (formColor.trim()) body.color = formColor.trim();
 		if (formLogoMediaId) body.logo_media_id = formLogoMediaId;
+		if (formCoverMediaId) body.cover_media_id = formCoverMediaId;
 		if (!editingTag) body.is_system = formIsSystem;
+		// Only send field_values if there are custom field definitions and at least
+		// one field has a value — avoids overwriting existing values with {} on save.
+		if (tagFieldDefs.length > 0) {
+			const fv: Record<string, string> = {};
+			for (const def of tagFieldDefs) {
+				const val = formFieldValues[def.key]?.trim();
+				if (val) fv[def.key] = val;
+			}
+			body.field_values = fv;
+		}
 		const result = editingTag
-			? await tagsAdminApi.update(editingTag.id, body)
-			: await tagsAdminApi.create(body);
+			? await tagsAdminApi.update(editingTag.id, body as any)
+			: await tagsAdminApi.create(body as any);
 		if (result.ok) {
 			showModal = false;
 			success = editingTag ? t("tags.updated", "Tag updated") : t("tags.created", "Tag created");
@@ -343,12 +422,28 @@
 		formLogoUrl = "";
 	}
 
+	function handleCoverSelect(media: { id: string; url: string; filename: string }) {
+		formCoverMediaId = media.id;
+		formCoverUrl = media.url;
+	}
+
+	function clearCover() {
+		formCoverMediaId = "";
+		formCoverUrl = "";
+	}
+
 	$effect(() => {
 		void currentPage;
 		void pageSize;
 		void searchQuery;
 		void filterValues;
 		loadTags();
+	});
+
+	// Load tag custom field definitions once on mount so the edit modal
+	// can render the spec-defined fields (Section 06: tag_fields group).
+	$effect(() => {
+		void loadTagFieldDefs();
 	});
 </script>
 
@@ -423,6 +518,11 @@
 <Modal bind:open={showViewModal} title={t("tags.details", "Tag Details")} size="sm">
 	{#if viewTarget}
 		<div class="space-y-4">
+			{#if viewTarget.cover_url}
+				<div class="overflow-hidden rounded-lg border" style="border-color: var(--color-border)">
+					<img src={viewTarget.cover_url} alt={viewTarget.name} class="h-24 w-full object-cover" />
+				</div>
+			{/if}
 			{#if viewTarget.logo_url}
 				<div class="flex justify-center">
 					<img src={viewTarget.logo_url} alt={viewTarget.name} class="h-16 w-16 rounded-xl object-cover border" style="border-color: var(--color-border)" />
@@ -449,6 +549,18 @@
 					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('tags.created')}</p>
 					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{new Date(viewTarget.created_at).toLocaleString()}</p>
 				</div>
+				{#if viewTarget.description}
+					<div class="col-span-2">
+						<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('tags.description')}</p>
+						<p class="mt-1 text-sm" style="color: var(--color-foreground)">{viewTarget.description}</p>
+					</div>
+				{/if}
+				{#if viewTarget.rules}
+					<div class="col-span-2">
+						<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('tags.rules', 'Rules')}</p>
+						<p class="mt-1 whitespace-pre-line text-sm" style="color: var(--color-foreground)">{viewTarget.rules}</p>
+					</div>
+				{/if}
 			</div>
 		</div>
 	{/if}
@@ -473,10 +585,35 @@
 			<textarea id="tag-description" rows="2" class="mt-1 w-full rounded-lg border p-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" placeholder="Optional description..." bind:value={formDescription}></textarea>
 		</div>
 		<div>
+			<label for="tag-rules" class="block text-sm font-medium" style="color: var(--color-foreground)">{t("tags.rules", "Rules")}</label>
+			<textarea id="tag-rules" rows="3" class="mt-1 w-full rounded-lg border p-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" placeholder="Optional community rules/guidelines for this tag..." bind:value={formRules}></textarea>
+		</div>
+		<div>
 			<label for="tag-color" class="block text-sm font-medium" style="color: var(--color-foreground)">{t("tags.color", "Color")}</label>
 			<div class="mt-1 flex items-center gap-2">
 				<input id="tag-color" type="color" class="h-9 w-12 cursor-pointer rounded border" style="border-color: var(--color-border); background: var(--color-surface)" bind:value={formColor} />
 				<input type="text" class="w-full rounded-lg border p-2 text-sm font-mono" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" placeholder="#3b82f6" bind:value={formColor} />
+			</div>
+		</div>
+		<div>
+			<span class="block text-sm font-medium" style="color: var(--color-foreground)">{t("tags.cover", "Cover Image")}</span>
+			<div class="mt-1 flex items-center gap-3">
+				{#if formCoverUrl}
+					<div class="relative">
+						<img src={formCoverUrl} alt="Tag cover" class="h-12 w-20 rounded-lg border object-cover" style="border-color: var(--color-border)" />
+						<button type="button" onclick={clearCover} class="absolute -right-1 -top-1 rounded-full p-0.5" style="background: var(--color-danger); color: white" aria-label={t("common.remove", "Remove")}>
+							<X class="h-3 w-3" />
+						</button>
+					</div>
+				{:else}
+					<div class="grid h-12 w-20 place-items-center rounded-lg border" style="border-color: var(--color-border); background: var(--color-surface)">
+						<ImageIcon class="h-5 w-5" style="color: var(--color-muted)" />
+					</div>
+				{/if}
+				<Button type="button" variant="outline" size="sm" onclick={() => (showCoverPicker = true)}>
+					<ImageIcon class="mr-1 h-4 w-4" />
+					{t("tags.choose_cover", "Choose Cover")}
+				</Button>
 			</div>
 		</div>
 		<div>
@@ -500,6 +637,23 @@
 				</Button>
 			</div>
 		</div>
+		{#if tagFieldDefs.length > 0}
+			<div class="border-t pt-3" style="border-color: var(--color-border)">
+				<p class="mb-2 text-sm font-medium" style="color: var(--color-foreground)">{t("tags.custom_fields", "Custom Fields")}</p>
+				{#each tagFieldDefs as field (field.key)}
+					<div class="mb-3">
+						<label for="tag-field-{field.key}" class="block text-xs font-medium" style="color: var(--color-muted)">
+							{field.label}{#if field.is_required} <span style="color: var(--color-danger)">*</span>{/if}
+						</label>
+						{#if field.field_type === 'rich_text' || field.field_type === 'textarea'}
+							<textarea id="tag-field-{field.key}" rows="3" class="mt-1 w-full rounded-lg border p-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" placeholder={field.placeholder ?? ''} bind:value={formFieldValues[field.key]}></textarea>
+						{:else}
+							<input id="tag-field-{field.key}" type={field.field_type === 'url' ? 'url' : 'text'} class="mt-1 w-full rounded-lg border p-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" placeholder={field.placeholder ?? ''} bind:value={formFieldValues[field.key]} />
+						{/if}
+					</div>
+				{/each}
+			</div>
+		{/if}
 		{#if !editingTag}
 			<div class="flex items-center gap-2">
 				<input id="tag-is-system" type="checkbox" class="h-4 w-4 rounded" bind:checked={formIsSystem} />
@@ -620,3 +774,6 @@
 
 <!-- Media Picker Modal for logo selection -->
 <MediaPickerModal bind:open={showMediaPicker} onselect={handleLogoSelect} />
+
+<!-- Media Picker Modal for cover selection -->
+<MediaPickerModal bind:open={showCoverPicker} onselect={handleCoverSelect} />

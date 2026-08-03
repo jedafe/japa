@@ -38,9 +38,11 @@
 		draft: ContentRecord | null;
 		user: { id: string } | null;
 		defaultEditor?: EditorMode;
+		/** Max tags per content item, from system setting content.max_tags (default 5). */
+		maxTags?: number;
 	}
 
-	let { types, spaces, fieldGroups, series = $bindable(), organizations, draft, user, defaultEditor = 'block' }: Props = $props();
+	let { types, spaces, fieldGroups, series = $bindable(), organizations, draft, user, defaultEditor = 'block', maxTags = 5 }: Props = $props();
 
 	// ---- form state ----
 	let selectedType = $state<TypeEntry>(untrack(() => types[0] ?? resolveType('blog_post')));
@@ -323,6 +325,7 @@
 			bind:spaces
 			{spaceId}
 			{tags}
+			{maxTags}
 			{coverMediaId}
 			{coverPreviewUrl}
 			{metaTitle}

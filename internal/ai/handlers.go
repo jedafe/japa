@@ -36,6 +36,7 @@ import (
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/honcho"
+	"github.com/jedafe/japa/internal/rag"
 	"github.com/jedafe/japa/internal/tenant"
 	"github.com/jedafe/japa/internal/worker"
 )
@@ -61,6 +62,22 @@ type Handlers struct {
 	AsynqClient TaskEnqueueClient
 	Settings    *config.Settings // hot-reloadable system_settings (ai.japabot_enabled, etc.)
 	Perms       PermissionChecker
+	ragService  RAGRetriever // Section 69: RAG retrieval at chat time (nil = non-RAG fallback)
+}
+
+// RAGRetriever is the interface for the RAG retrieval step (Section 69,
+// ADR-069). The rag.Service satisfies this. When nil, HandleChat falls back
+// to a non-RAG LLM call.
+type RAGRetriever interface {
+	Retrieve(ctx context.Context, tenantID pgtype.UUID, query, language string) ([]rag.RetrievedChunk, error)
+	FormatContext(chunks []rag.RetrievedChunk) string
+}
+
+// SetRAGService injects the RAG service for retrieval-augmented chat
+// (Section 69, ADR-069). When set, HandleChat runs the retrieval step
+// before the LLM call if rag.enabled is true.
+func (h *Handlers) SetRAGService(r RAGRetriever) {
+	h.ragService = r
 }
 
 // enqueueAIProcessTask enqueues an async AI processing task.
@@ -439,6 +456,36 @@ func (h *Handlers) HandleChat(w http.ResponseWriter, r *http.Request) {
 	// context is merged at lowest precedence.
 	aiContext := h.buildUserAIContext(r.Context(), user.UserID, tenantID, input.Context)
 
+	// RAG retrieval step (Section 69, ADR-069): when rag.enabled is true and
+	// a RAG service is configured, embed the user's query and retrieve the
+	// top-k most similar content chunks from content_embeddings (pgvector
+	// HNSW). The retrieved passages are injected as sourced context into the
+	// LLM system prompt. If RAG is disabled or the retriever is nil, the
+	// chat falls back to a non-RAG LLM call.
+	var ragSources []map[string]any
+	if h.ragService != nil {
+		chunks, err := h.ragService.Retrieve(r.Context(), tenantID, input.Message, "")
+		if err != nil {
+			slog.Warn("ai chat: RAG retrieval failed, falling back to non-RAG",
+				"error", err)
+		} else if len(chunks) > 0 {
+			ragContext := h.ragService.FormatContext(chunks)
+			if ragContext != "" {
+				// Prepend RAG context to the prompt so the LLM grounds its
+				// answer in the retrieved passages.
+				input.Message = ragContext + "\n\nUser question: " + input.Message
+			}
+			for _, c := range chunks {
+				ragSources = append(ragSources, map[string]any{
+					"entity_type": c.EntityType,
+					"entity_id":   c.EntityID,
+					"similarity":  c.Similarity,
+					"tier":        c.Tier,
+				})
+			}
+		}
+	}
+
 	payload := map[string]any{
 		"prompt":           input.Message,
 		"context":          aiContext,
@@ -472,12 +519,29 @@ func (h *Handlers) HandleChat(w http.ResponseWriter, r *http.Request) {
 	// Fire-and-forget: errors are logged, never propagated (Rule 8 spirit).
 	h.persistChatTurn(r.Context(), user.UserID.String(), input.Message, reply, conversationID)
 
+	// Merge RAG sources with any provider-returned sources.
+	sources := resp.Raw["sources"]
+	if ragSources != nil {
+		if sources == nil {
+			sources = ragSources
+		} else if existing, ok := sources.([]any); ok {
+			merged := make([]any, 0, len(existing)+len(ragSources))
+			merged = append(merged, existing...)
+			for _, rs := range ragSources {
+				merged = append(merged, rs)
+			}
+			sources = merged
+		} else {
+			sources = ragSources
+		}
+	}
+
 	writeJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
 			"reply":           reply,
 			"conversation_id": conversationID,
 			"provider_ref":    resp.ProviderRef,
-			"sources":         resp.Raw["sources"],
+			"sources":         sources,
 		},
 	})
 }
