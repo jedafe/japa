@@ -36,17 +36,21 @@
 
 	const title = $derived(`${user.display_name} (@${user.username}) — ${t('app.name')}`);
 	const description = $derived(user.bio ?? `${user.display_name} on ${t('app.name')}`);
-	// JSON-LD: Person schema (H3 — audit finding).
+	// JSON-LD: Person schema (Section 14 / Section 26). The backend resolves
+	// the admin-managed Person template server-side and returns it in the
+	// `json_ld` sidecar. Fall back to a basic schema when absent.
 	const jsonLd = $derived(
-		JSON.stringify({
-			'@context': 'https://schema.org',
-			'@type': 'Person',
-			name: user.display_name,
-			alternateName: user.username ? `@${user.username}` : undefined,
-			url: page.url.href,
-			description: user.bio ?? '',
-			...(user.avatar_url ? { image: user.avatar_url } : {})
-		})
+		data.jsonLd
+			? JSON.stringify(data.jsonLd)
+			: JSON.stringify({
+					'@context': 'https://schema.org',
+					'@type': 'Person',
+					name: user.display_name,
+					alternateName: user.username ? `@${user.username}` : undefined,
+					url: page.url.href,
+					description: user.bio ?? '',
+					...(user.avatar_url ? { image: user.avatar_url } : {})
+				})
 	);
 </script>
 
@@ -62,9 +66,6 @@
 
 <SetSidebar>
 	<UserProfileSidebar
-		{user}
-		{isOwnProfile}
-		{initiallyFollowing}
 		certificates={data.certificates}
 		spaces={data.spaces}
 	/>

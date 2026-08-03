@@ -2,6 +2,7 @@ package content
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -13,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/seo"
 	"github.com/pgvector/pgvector-go"
 )
 
@@ -817,6 +819,27 @@ func (s *Service) GetJSONLDTemplate(ctx context.Context, tenantID pgtype.UUID, c
 	return tmpl, nil
 }
 
+// ResolveJSONLD fetches the active admin-managed JSON-LD template for the
+// given content type, interpolates the supplied field values into the
+// {{field_key}} placeholders, and returns the ready-to-emit JSON-LD. When no
+// active template exists for the content type, it returns (nil, nil) so the
+// caller can fall back to a hardcoded generator (Section 14, Section 26).
+func (s *Service) ResolveJSONLD(ctx context.Context, tenantID pgtype.UUID, contentType string, fields map[string]string) (json.RawMessage, error) {
+	tmpl, err := s.GetJSONLDTemplate(ctx, tenantID, contentType)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	body, err := seo.InterpolateJSONLD(tmpl.Template, fields)
+	if err != nil {
+		return nil, fmt.Errorf("interpolating JSON-LD template for %q: %w", contentType, err)
+	}
+	return body, nil
+}
+
 // ListJSONLDTemplates returns all JSON-LD templates for a tenant, optionally
 // filtered by q (matches content_type or template body).
 func (s *Service) ListJSONLDTemplates(ctx context.Context, tenantID pgtype.UUID, q pgtype.Text) ([]gen.ContentTypeJsonldTemplate, error) {
@@ -1158,4 +1181,14 @@ func (s *Service) UpdateContentSpaces(ctx context.Context, contentID, primarySpa
 // isSameUUID returns true when two pgtype.UUID values are equal and valid.
 func isSameUUID(a, b pgtype.UUID) bool {
 	return a.Valid && b.Valid && a.Bytes == b.Bytes
+}
+
+// SetContentSpaceID updates only the space_id column on a content item.
+// Used by the auto-assign feature to set the primary space after keyword
+// matching. Ref: sections/05-geo-first-space-system.md
+func (s *Service) SetContentSpaceID(ctx context.Context, contentID, spaceID pgtype.UUID) error {
+	return s.write.SetContentSpaceID(ctx, gen.SetContentSpaceIDParams{
+		ContentID: contentID,
+		SpaceID:   spaceID,
+	})
 }

@@ -54,7 +54,7 @@ func writeJSONBody(t *testing.T, v any) *bytes.Buffer {
 }
 
 func testHandlers() *Handlers {
-	return NewHandlers(&Service{}, nil)
+	return NewHandlers(&Service{}, nil, nil)
 }
 
 // ---------------------------------------------------------------------------

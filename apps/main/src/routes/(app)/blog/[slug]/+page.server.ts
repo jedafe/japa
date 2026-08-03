@@ -1,6 +1,6 @@
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGet, apiList, ApiError } from '$lib/server/api';
+import { apiContext, apiGet, apiGetEnvelope, apiList, ApiError } from '$lib/server/api';
 import type { ContentArticle } from '$lib/types/content';
 import type { Comment } from '$lib/types';
 
@@ -21,8 +21,11 @@ export const load: PageServerLoad = async (event) => {
 	const slug = event.params.slug;
 
 	let article: ContentArticle;
+	let jsonLd: unknown = null;
 	try {
-		article = await apiGet<ContentArticle>(ctx, `/blog/${slug}`);
+		const envelope = await apiGetEnvelope<ContentArticle>(ctx, `/blog/${slug}`);
+		article = envelope.data;
+		jsonLd = envelope.json_ld ?? null;
 	} catch (err) {
 		if (err instanceof ApiError && err.status === 404) {
 			throw error(404, { code: 'not_found', message: 'Post not found' });
@@ -78,19 +81,10 @@ export const load: PageServerLoad = async (event) => {
 		// related endpoint not available — keep empty
 	}
 
-	// JSON-LD structured data template (Section 14, Section 26 — SEO).
-	// Fetch the template for the content type and interpolate field values
-	// client-side. Best-effort: a failure degrades to no JSON-LD injection.
-	let jsonldTemplate: Record<string, unknown> | null = null;
-	try {
-		const templatesRes = await apiGet<{ templates?: Record<string, unknown>[] }>(ctx, `/content/jsonld-templates`);
-		const templates = templatesRes.templates ?? [];
-		if (Array.isArray(templates) && templates.length > 0) {
-			jsonldTemplate = templates[0] ?? null;
-		}
-	} catch {
-		// jsonld-templates endpoint not available — skip JSON-LD
-	}
+	// JSON-LD structured data is now resolved server-side by the backend
+	// (Section 14 / Section 26 — admin-managed Article template interpolated
+	// with the post's field values) and returned in the response envelope's
+	// `json_ld` sidecar. No separate template fetch is needed.
 
 	const isFollowing = await initiallyFollowing;
 
@@ -103,7 +97,7 @@ export const load: PageServerLoad = async (event) => {
 		commentsLoadError,
 		rightSidebarWidgets,
 		relatedContent,
-		jsonldTemplate,
+		jsonLd,
 		initiallyFollowing: isFollowing
 	};
 };

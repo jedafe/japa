@@ -88,3 +88,7 @@ screenshot/
 /test-*.cjs
 /inspect_*.cjs
 /debug_*.cjs
+
+# Generated build artifacts
+/reindex
+/sitemaps/

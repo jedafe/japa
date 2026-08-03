@@ -713,6 +713,16 @@ export interface PublicOrganization {
 	follower_count: number;
 	member_count: number;
 	created_at: string;
+	owner?: OrgOwner | null;
+}
+
+/** Org owner public profile, embedded in PublicOrganization for the "Org
+ * Leader" sidebar widget. Shown regardless of the owner's account standing. */
+export interface OrgOwner {
+	id: string;
+	username: string;
+	display_name?: string | null;
+	avatar_url?: string | null;
 }
 
 /** GET /organizations/{id} (authed member) — full gen.Organization row for the
@@ -852,12 +862,32 @@ export interface Space {
 	status: string;
 	created_at: string;
 	updated_at: string;
+	keywords?: string[];
 }
 
-/** GET /spaces/{slug} response — `{ space, rules }` bundle. */
+/** GET /spaces/{slug} response — `{ space, rules, keywords, logo_url }` bundle. */
 export interface SpaceDetail {
 	space: Space;
 	rules: SpaceRule[];
+	keywords?: string[];
+	logo_url?: string;
+	/** Viewer-scoped: true when the caller is the space owner (role='owner'). */
+	is_owner?: boolean;
+	/** Viewer-scoped: true when the caller is an assigned space moderator. */
+	is_moderator?: boolean;
+}
+
+/** GET /spaces/{slug}/moderators item — ListSpaceModeratorsRow. */
+export interface SpaceModerator {
+	id: string;
+	tenant_id: string;
+	space_id: string;
+	user_id: string;
+	assigned_by: 'site_admin' | 'space_owner';
+	assigned_by_user_id: string;
+	created_at: string;
+	user_username: string;
+	user_display_name: string | null;
 }
 
 /** GET /spaces/{slug}/rules item — gen.SpaceRule row. */

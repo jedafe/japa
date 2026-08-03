@@ -2491,3 +2491,84 @@ func (q *Queries) UpdateSpaceType(ctx context.Context, arg UpdateSpaceTypeParams
 	)
 	return i, err
 }
+
+const findSpacesByKeywords = `-- name: FindSpacesByKeywords :many
+SELECT id, name, level
+FROM spaces
+WHERE tenant_id = $1
+  AND deleted_at IS NULL
+  AND visibility = 'public'
+  AND level IN ('country', 'state', 'city')
+  AND keywords && $2::text[]
+ORDER BY
+  CASE level
+    WHEN 'city' THEN 1
+    WHEN 'state' THEN 2
+    WHEN 'country' THEN 3
+  END,
+  name
+`
+
+type FindSpacesByKeywordsParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	Keywords []string    `json:"keywords"`
+}
+
+type FindSpacesByKeywordsRow struct {
+	ID    pgtype.UUID `json:"id"`
+	Name  string      `json:"name"`
+	Level string      `json:"level"`
+}
+
+func (q *Queries) FindSpacesByKeywords(ctx context.Context, arg FindSpacesByKeywordsParams) ([]FindSpacesByKeywordsRow, error) {
+	rows, err := q.db.Query(ctx, findSpacesByKeywords, arg.TenantID, arg.Keywords)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []FindSpacesByKeywordsRow
+	for rows.Next() {
+		var i FindSpacesByKeywordsRow
+		if err := rows.Scan(&i.ID, &i.Name, &i.Level); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const updateSpaceKeywords = `-- name: UpdateSpaceKeywords :exec
+UPDATE spaces SET keywords = $1, updated_at = now()
+WHERE id = $2 AND tenant_id = $3 AND deleted_at IS NULL
+`
+
+type UpdateSpaceKeywordsParams struct {
+	Keywords []string    `json:"keywords"`
+	ID       pgtype.UUID `json:"id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+func (q *Queries) UpdateSpaceKeywords(ctx context.Context, arg UpdateSpaceKeywordsParams) error {
+	_, err := q.db.Exec(ctx, updateSpaceKeywords, arg.Keywords, arg.ID, arg.TenantID)
+	return err
+}
+
+const getSpaceKeywords = `-- name: GetSpaceKeywords :one
+SELECT keywords FROM spaces
+WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
+`
+
+type GetSpaceKeywordsParams struct {
+	ID       pgtype.UUID `json:"id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+func (q *Queries) GetSpaceKeywords(ctx context.Context, arg GetSpaceKeywordsParams) ([]string, error) {
+	row := q.db.QueryRow(ctx, getSpaceKeywords, arg.ID, arg.TenantID)
+	var keywords []string
+	err := row.Scan(&keywords)
+	return keywords, err
+}

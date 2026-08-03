@@ -10,6 +10,7 @@
 	import { theme } from '$lib/stores/theme.svelte';
 	import { t, i18n } from '$lib/i18n';
 	import { api } from '$lib/api/client';
+	import { page } from '$app/state';
 	import SearchAutocomplete from './SearchAutocomplete.svelte';
 	import UserDropdown from './UserDropdown.svelte';
 	import NotificationCentre from './NotificationCentre.svelte';
@@ -79,6 +80,12 @@
 	let leaderboard = $state<LeaderboardUser[]>([]);
 	let events = $state<EventItem[]>([]);
 	let dataLoaded = $state<Record<string, boolean>>({});
+
+	// --- Org-context widgets (user_card with source=org_owner, related_discussions on /org/*) ---
+	interface OrgOwnerUser { id: string; username: string; display_name?: string; avatar_url?: string; bio?: string; }
+	interface RelatedDiscussion { id: string; title: string; slug: string; reply_count?: number; }
+	let orgOwner = $state<OrgOwnerUser | null>(null);
+	let relatedDiscussions = $state<RelatedDiscussion[]>([]);
 
 	// Newsletter subscribe form state (Rule 16: calls POST /newsletter/subscribe).
 	let newsletterEmail = $state('');
@@ -154,6 +161,50 @@
 			events = [];
 			dataLoaded = { ...dataLoaded, upcoming_events: true };
 		}
+		// fetchOrgOwner resolves the org owner for the user_card widget when
+		// source=org_owner. It extracts the org slug from the current URL path
+		// (/org/[slug]) and reads the owner from the public org API response.
+		async function fetchOrgOwner() {
+			const source = widgetProps.source;
+			if (source !== 'org_owner') {
+				dataLoaded = { ...dataLoaded, user_card: true };
+				return;
+			}
+			const pathParts = page.url.pathname.split('/').filter(Boolean);
+			const orgSlug = pathParts[0] === 'org' ? pathParts[1] : null;
+			if (!orgSlug) {
+				dataLoaded = { ...dataLoaded, user_card: true };
+				return;
+			}
+			try {
+				const orgRes = await api.get<{ owner?: OrgOwnerUser }>(`/organizations/${orgSlug}`);
+				orgOwner = orgRes.data?.owner ?? null;
+			} catch {
+				orgOwner = null;
+			}
+			dataLoaded = { ...dataLoaded, user_card: true };
+		}
+		// fetchRelatedDiscussions fetches forum threads for the org's content
+		// when the widget is on an /org/* page.
+		async function fetchRelatedDiscussions() {
+			const pathParts = page.url.pathname.split('/').filter(Boolean);
+			const orgSlug = pathParts[0] === 'org' ? pathParts[1] : null;
+			if (!orgSlug) {
+				dataLoaded = { ...dataLoaded, related_discussions: true };
+				return;
+			}
+			try {
+				const orgRes = await api.get<{ id: string }>(`/organizations/${orgSlug}`);
+				if (!orgRes.data?.id) { dataLoaded = { ...dataLoaded, related_discussions: true }; return; }
+				const res = await api.get<RelatedDiscussion[]>(`/organizations/${orgRes.data.id}/content`);
+				relatedDiscussions = (res.data ?? [])
+					.filter((item) => (item as unknown as Record<string, unknown>).content_type === 'discussion')
+					.slice(0, limit);
+			} catch {
+				relatedDiscussions = [];
+			}
+			dataLoaded = { ...dataLoaded, related_discussions: true };
+		}
 
 		if (wt === 'featured_content') fetchFeatured();
 		else if (wt === 'space_list') fetchSpaces();
@@ -162,6 +213,8 @@
 		else if (wt === 'learning_enrollments' || wt === 'continue_learning') fetchEnrollments();
 		else if (wt === 'leaderboard') fetchLeaderboard();
 		else if (wt === 'upcoming_events') fetchEvents();
+		else if (wt === 'user_card') fetchOrgOwner();
+		else if (wt === 'related_discussions') fetchRelatedDiscussions();
 	});
 </script>
 
@@ -431,7 +484,17 @@
 			<MessageSquare size={18} class="text-[var(--color-text-subtle)]" />
 			<h2 class="text-sm font-medium text-[var(--color-text)]">{title || t('sidebar.related_discussions', 'Related Discussions')}</h2>
 		</div>
-		<p class="text-xs text-[var(--color-muted)]">{t('sidebar.no_discussions', 'No related discussions')}</p>
+		{#if relatedDiscussions.length === 0}
+			<p class="text-xs text-[var(--color-muted)]">{t('sidebar.no_discussions', 'No related discussions')}</p>
+		{:else}
+			<ul class="space-y-2">
+				{#each relatedDiscussions as disc (disc.id)}
+					<li>
+						<a href={`/forum/${disc.slug}`} class="block truncate text-sm text-[var(--color-text)] hover:text-[var(--color-primary)]">{disc.title}</a>
+					</li>
+				{/each}
+			</ul>
+		{/if}
 	</section>
 {:else if widget.widget_type === 'upcoming_events'}
 	<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
@@ -487,7 +550,23 @@
 			<UserCircle size={18} class="text-[var(--color-text-subtle)]" />
 			<h2 class="text-sm font-medium text-[var(--color-text)]">{title || t('sidebar.featured_user', 'Featured User')}</h2>
 		</div>
-		<p class="text-xs text-[var(--color-muted)]">{t('sidebar.no_user', 'No user to display')}</p>
+		{#if orgOwner}
+			<a href={`/u/${orgOwner.username}`} class="flex items-center gap-3 rounded-[var(--radius)] p-1.5 hover:bg-[var(--color-surface-subtle)]">
+				{#if orgOwner.avatar_url}
+					<img src={orgOwner.avatar_url} alt="" class="h-10 w-10 rounded-full object-cover" />
+				{:else}
+					<span class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[var(--color-surface-subtle)] text-sm font-medium text-[var(--color-text-subtle)]">
+						{orgOwner.display_name?.charAt(0)?.toUpperCase() ?? '?'}
+					</span>
+				{/if}
+				<span class="min-w-0 flex-1">
+					<span class="block truncate text-sm font-medium text-[var(--color-text)]">{orgOwner.display_name ?? orgOwner.username}</span>
+					<span class="block text-xs text-[var(--color-muted)]">@{orgOwner.username}</span>
+				</span>
+			</a>
+		{:else}
+			<p class="text-xs text-[var(--color-muted)]">{t('sidebar.no_user', 'No user to display')}</p>
+		{/if}
 	</section>
 {:else if widget.widget_type === 'space_categories'}
 	<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">

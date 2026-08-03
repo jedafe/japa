@@ -374,6 +374,12 @@ DELETE FROM content_spaces WHERE content_id = @content_id;
 INSERT INTO content_spaces (content_id, space_id, is_primary)
 VALUES (@content_id, @space_id, @is_primary);
 
+-- name: SetContentSpaceID :exec
+-- Updates only the space_id column on a content item. Used by the auto-assign
+-- feature to set the primary space after keyword matching.
+UPDATE contents SET space_id = @space_id, updated_at = now()
+WHERE id = @content_id;
+
 -- name: ListContentByTag :many
 SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c.body_html,
        c.field_values, c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,

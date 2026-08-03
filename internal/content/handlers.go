@@ -74,6 +74,7 @@ type Handlers struct {
 	settings            *config.Settings
 	notifier            MentionNotifier      // nil disables mention notifications (test-only)
 	spaceChecker        SpacePostChecker     // nil disables space posting-perm checks (BUG-003)
+	spaceMatcher        SpaceKeywordMatcher  // nil disables auto-assign by keyword matching
 	tagResolver         TagSlugResolver      // nil disables bulk tag_slugs resolution (BUG-006)
 	mentionCheckers     *mentions.DBCheckers // nil disables privacy filtering (BUG-004)
 	guideCategoryLister GuideCategoryLister  // nil disables guide category listing
@@ -96,10 +97,23 @@ type SpacePostChecker interface {
 	CanPostInSpace(ctx context.Context, spaceID, userID, tenantID pgtype.UUID) (bool, error)
 }
 
+// SpaceKeywordMatcher finds primary+public spaces whose keywords match the
+// content title, for auto-assigning content to spaces when the user didn't
+// select one. Implemented by spaces.Service.
+type SpaceKeywordMatcher interface {
+	FindSpacesByKeywords(ctx context.Context, tenantID pgtype.UUID, keywords []string) ([]gen.FindSpacesByKeywordsRow, error)
+}
+
 // SetSpacePostChecker injects the space posting-permission checker so the
 // content creation handler can enforce the space's posting_perm axis.
 func (h *Handlers) SetSpacePostChecker(c SpacePostChecker) {
 	h.spaceChecker = c
+}
+
+// SetSpaceMatcher injects the space keyword matcher for auto-assigning
+// content to spaces based on title keyword matching.
+func (h *Handlers) SetSpaceMatcher(m SpaceKeywordMatcher) {
+	h.spaceMatcher = m
 }
 
 // SetTagResolver injects the tag slug resolver for bulk tag_slugs support (BUG-006).
@@ -238,10 +252,64 @@ func parsePageSize(r *http.Request) int32 {
 	return int32(n) //nolint:gosec // G109: bounded by MaxPageSize check above
 }
 
-// enqueueContentEmbedding enqueues an async task to generate a vector embedding
-// for the given content. Payload contains only IDs — the worker handler re-fetches
-// fresh content text at processing time to avoid stale-on-edit issues.
-// Fire-and-forget: errors are logged but never propagated to the caller.
+// autoAssignSpaces finds primary+public spaces whose keywords appear in the
+// content title and links the content to those spaces via content_spaces.
+// The deepest match (city > state > country) becomes the primary space
+// (set on contents.space_id). This only runs when the user didn't explicitly
+// select a space. Errors are logged but never block content creation.
+func (h *Handlers) autoAssignSpaces(ctx context.Context, tenantID, contentID pgtype.UUID, title string) {
+	// Extract keywords from the title: lowercase, split on word boundaries,
+	// filter out very short words and common stopwords.
+	words := strings.Fields(strings.ToLower(title))
+	keywords := make([]string, 0, len(words))
+	for _, w := range words {
+		// Strip punctuation.
+		w = strings.Trim(w, ".,!?;:\"'()[]{}—–-")
+		if len(w) < 3 {
+			continue // skip very short words
+		}
+		keywords = append(keywords, w)
+	}
+	if len(keywords) == 0 {
+		return
+	}
+
+	matches, err := h.spaceMatcher.FindSpacesByKeywords(ctx, tenantID, keywords)
+	if err != nil {
+		slog.Warn("content: auto-assign space keyword match failed", "error", err)
+		return
+	}
+	if len(matches) == 0 {
+		return
+	}
+
+	// The first match is the deepest (city > state > country) due to ORDER BY.
+	// Set it as the primary space_id on the content, and link all matches
+	// via content_spaces.
+	primarySpaceID := matches[0].ID
+	var additionalIDs []pgtype.UUID
+	for _, m := range matches[1:] {
+		additionalIDs = append(additionalIDs, m.ID)
+	}
+
+	if err := h.Service.UpdateContentSpaces(ctx, contentID, primarySpaceID, additionalIDs); err != nil {
+		slog.Warn("content: auto-assign UpdateContentSpaces failed",
+			"content_id", contentID.String(), "error", err)
+		return
+	}
+
+	// Also update the content's space_id column for backward-compat queries.
+	if err := h.Service.SetContentSpaceID(ctx, contentID, primarySpaceID); err != nil {
+		slog.Warn("content: auto-assign SetContentSpaceID failed",
+			"content_id", contentID.String(), "error", err)
+	}
+
+	slog.Info("content: auto-assigned spaces",
+		"content_id", contentID.String(),
+		"primary_space", matches[0].Name,
+		"match_count", len(matches))
+}
+
 func (h *Handlers) enqueueContentEmbedding(contentID, tenantID pgtype.UUID) {
 	if h.AsynqClient == nil {
 		return
@@ -725,6 +793,15 @@ func (h *Handlers) CreateContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Auto-assign content to spaces based on keyword matching in the title.
+	// Only runs when no space_id was explicitly selected by the user and a
+	// space matcher is wired. Matches primary (country/state/city) and public
+	// spaces only — the deepest match (city > state > country) becomes the
+	// primary space, and all matches are linked via content_spaces.
+	if !createInput.SpaceID.Valid && h.spaceMatcher != nil {
+		h.autoAssignSpaces(r.Context(), tenantID, content.ID, input.Title)
+	}
+
 	// Enqueue async embedding generation — fire-and-forget.
 	h.enqueueContentEmbedding(content.ID, tenantID)
 
@@ -793,7 +870,53 @@ func (h *Handlers) GetContent(w http.ResponseWriter, r *http.Request) {
 		slog.Error("incrementing engagement view", "error", err, "content_id", content.ID.String())
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": content})
+	// JSON-LD structured data (Section 14 / Section 26). Resolve the
+	// admin-managed template matching the content's own content_type,
+	// interpolating the content's field values. Best-effort: a missing
+	// template or resolution error degrades to no json_ld field. Emitted as
+	// a sibling of `data` for frontend consumption.
+	resp := map[string]any{"data": content}
+	if jsonLd, jErr := h.Service.ResolveJSONLD(r.Context(), tenantID, content.ContentType, contentJSONLDFields(content)); jErr == nil && len(jsonLd) > 0 {
+		resp["json_ld"] = json.RawMessage(jsonLd)
+	} else if jErr != nil {
+		slog.Warn("content: JSON-LD template resolution failed", "slug", slug, "content_type", content.ContentType, "error", jErr)
+	}
+
+	writeJSON(w, http.StatusOK, resp)
+}
+
+// contentJSONLDFields builds the {{field_key}} → value map for interpolating
+// a JSON-LD template from a generic content row. The keys cover the common
+// placeholders used across Article, QAPage, Review, FAQPage, and JobPosting
+// templates; unused keys are simply ignored by the interpolator.
+func contentJSONLDFields(c gen.GetContentBySlugRow) map[string]string {
+	desc := ""
+	if c.MetaDescription != nil {
+		desc = *c.MetaDescription
+	}
+	canonical := ""
+	if c.CanonicalUrl != nil {
+		canonical = *c.CanonicalUrl
+	}
+	return map[string]string{
+		"title":           c.Title,
+		"description":     desc,
+		"body":            c.Body,
+		"canonical_url":   canonical,
+		"published_at":    tsFormat(c.PublishedAt),
+		"updated_at":      tsFormat(c.UpdatedAt),
+		"created_at":      tsFormat(c.CreatedAt),
+		"cover_image_url": "",
+		"author_name":     "",
+	}
+}
+
+// tsFormat renders a pgtype.Timestamptz as RFC3339 or empty.
+func tsFormat(t pgtype.Timestamptz) string {
+	if !t.Valid {
+		return ""
+	}
+	return t.Time.UTC().Format(time.RFC3339)
 }
 
 // ListContent handles GET /api/v1/content with optional type and space filters.
@@ -1515,6 +1638,39 @@ func (h *Handlers) ListUserReactions(w http.ResponseWriter, r *http.Request) {
 // JSON-LD Template Handlers
 // ---------------------------------------------------------------------------
 
+// jsonldTemplateResponse is the wire shape for a JSON-LD template. The sqlc
+// generated struct stores `template` as []byte, which encoding/json marshals
+// as a base64 string — not a JSON object. Re-mapping to json.RawMessage
+// preserves the raw JSON so clients receive a parsed object (§24 data types,
+// §3.3 contract drift).
+type jsonldTemplateResponse struct {
+	ID          string          `json:"id"`
+	TenantID    string          `json:"tenant_id"`
+	ContentType string          `json:"content_type"`
+	Template    json.RawMessage `json:"template"`
+	IsActive    bool            `json:"is_active"`
+	CreatedAt   string          `json:"created_at"`
+	UpdatedAt   string          `json:"updated_at"`
+}
+
+// toJSONLDResponse maps a sqlc-generated template row to the wire DTO. A nil
+// template body is normalised to `{}` so the field is always valid JSON.
+func toJSONLDResponse(t gen.ContentTypeJsonldTemplate) jsonldTemplateResponse {
+	body := json.RawMessage(t.Template)
+	if len(body) == 0 {
+		body = json.RawMessage("{}")
+	}
+	return jsonldTemplateResponse{
+		ID:          t.ID.String(),
+		TenantID:    t.TenantID.String(),
+		ContentType: t.ContentType,
+		Template:    body,
+		IsActive:    t.IsActive,
+		CreatedAt:   t.CreatedAt.Time.Format(time.RFC3339Nano),
+		UpdatedAt:   t.UpdatedAt.Time.Format(time.RFC3339Nano),
+	}
+}
+
 // ListJSONLDTemplates handles GET /api/v1/content/jsonld-templates.
 func (h *Handlers) ListJSONLDTemplates(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
@@ -1529,7 +1685,15 @@ func (h *Handlers) ListJSONLDTemplates(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": templates})
+	// A nil slice marshals to `null` in Go, which frontends interpret as "no
+	// key" rather than "empty list". Normalise to an empty array so the
+	// response is always a well-formed list (§6.2 nil-slice bug class).
+	out := make([]jsonldTemplateResponse, 0, len(templates))
+	for _, t := range templates {
+		out = append(out, toJSONLDResponse(t))
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": out})
 }
 
 // UpsertJSONLDTemplate handles PUT /api/v1/content/jsonld-templates.
@@ -1561,7 +1725,30 @@ func (h *Handlers) UpsertJSONLDTemplate(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": tmpl})
+	writeJSON(w, http.StatusOK, map[string]any{"data": toJSONLDResponse(tmpl)})
+}
+
+// DeleteJSONLDTemplate handles DELETE /api/v1/content/jsonld-templates/{id}.
+// It removes a single JSON-LD template by its primary key, scoped to the
+// caller's tenant (§21 missing CRUD leg, §26 RBAC CRUD completeness).
+func (h *Handlers) DeleteJSONLDTemplate(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	id, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		return
+	}
+
+	if err := h.Service.DeleteJSONLDTemplate(r.Context(), id, tenantID); err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"deleted": true}})
 }
 
 // ---------------------------------------------------------------------------

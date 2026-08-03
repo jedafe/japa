@@ -1,6 +1,6 @@
 ---
 name: jc-main-debug
-description: Use when reviewing or debugging code in the JapaConnect Main App (apps/main, SSR). Diagnoses SSR/hydration mismatches, Svelte 5 Runes violations, Bits UI lifecycle errors, app-shell/layout drift (ADR-058), profile learning hub and cross-app link defects (ADR-060), LayerChart rendering issues, and Rule 16 violations.Use when reviewing or debugging code in the JapaConnect Main App (apps/web, SSR). Diagnoses SSR/hydration mismatches, Svelte 5 Runes violations, Bits UI lifecycle errors, app-shell/layout drift (ADR-058), LayerChart rendering issues, and Rule 16 violations.
+description: Use when reviewing or debugging code in the JapaConnect Main App (apps/main, SSR). Diagnoses SSR/hydration mismatches, Svelte 5 Runes violations, Bits UI lifecycle errors, app-shell/layout drift (ADR-058), profile learning hub and cross-app link defects (ADR-060), LayerChart rendering issues, and Rule 16 violations.
 ---
 
 # JapaConnect Main App — Review & Debugging Skill
@@ -80,3 +80,31 @@ If the bug involves data not loading: verify the endpoint actually exists (`curl
 
 ## Output Protocol
 1. **Root cause** — one sentence · 2. **Broken code** · 3. **Fixed code** (surgical, minimal) · 4. **Secondary findings**
+**V2 main app phases (33–36):** Identity Tools UI (Phase 33) → Jobs/Gamification/Referral (Phase 34) → Newsletter/Import/Travel (Phase 35) → QA (Phase 36). See `ROADMAP-MAIN.md` for task breakdown.
+
+**V2 tool pages on main app (`/tools/*`):** Visa Checklist, Readiness Assessment, Cost of Living, Scholarship Finder, Remittance Rate Tracker, JapaBot (full-page). Each tool is also available at its own domain/subdomain via `apps/tools` (§78) — the main app renders these within the community layout; `apps/tools` renders them tool-first without community nav.
+
+## V2 Feature Areas (Implement Only After Corresponding Backend Phase Is Complete)
+
+| Feature | Backend phase | Key sections | Gates |
+|---|---|---|---|
+| JapaBot (RAG-grounded) | Phase 41 | §69 | `/ai/chat` amended |
+| AI Content Studio (admin) | Phase 42 | §75 | `studio.*` RBAC |
+| Participation queue (admin) | Phase 42 | §76 | `participation.review` RBAC |
+| Visa Checklist | Phase 43 | §70 | `checklist.use` RBAC |
+| Readiness Assessment | Phase 43 | §71 | `assessment.take` RBAC |
+| Cost of Living Calculator | Phase 43 | §72 | `col_calculator.use` RBAC |
+| Scholarship Finder | Phase 43 | §73 | `scholarship.browse` RBAC |
+| Remittance Rate Tracker | Phase 44 | §74 | `remittance.view` RBAC |
+| Referral system | Phase 45 | §60 | `referral.use` RBAC |
+| Self-serve ads | Phase 45 | §61 | `ads.self_serve.create` RBAC |
+| Newsletter | Phase 45 | §62 | `newsletter.subscribe` RBAC |
+| Jobs board | Phase 45 | §63 | `jobs.browse` RBAC |
+| Gamification | Phase 45 | §64 | `gamification.view` RBAC |
+| Content import | Phase 46 | §65 | `import.use` RBAC |
+| Advanced analytics | Phase 46 | §66 | `analytics.advanced` RBAC |
+| Travel search | Phase 46 | §67 | `travel.search` RBAC |
+
+**API-Readiness Gate applies to all v2 features.** Verify against `api-routes-catalog.md` — all v2 routes are marked as "V2 planned" in the catalog. Once the corresponding backend phase lands, the planned routes become available.
+
+**New surface in v2:** `apps/tools` (§78, ADR-086) — a sixth SvelteKit SSR app at `tools.japaconnect.com` (port 3005). Generate `jc-tools-*` skills before implementing this surface. Skills live at `.ai/skills/frontend/06-tools/`.

@@ -1,6 +1,8 @@
 package organizations
 
 import (
+	"encoding/json"
+	"log/slog"
 	"net/http"
 	"strings"
 
@@ -55,7 +57,33 @@ func (h *Handlers) GetPublicOrganization(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": toPublicOrg(org)})
+	// Build the public org DTO, then resolve the owner's public profile for
+	// the "Org Leader" sidebar widget. Best-effort: a missing/deleted owner
+	// degrades to a nil owner field (the widget shows its empty state).
+	orgDTO := toPublicOrg(org)
+	if ownerRow, oErr := h.service.GetOrgOwnerPublicProfile(r.Context(), org.ID, tenantID); oErr == nil {
+		orgDTO.Owner = &OrgOwnerResponse{
+			ID:          ownerRow.ID,
+			Username:    ownerRow.Username,
+			DisplayName: ownerRow.DisplayName,
+			AvatarURL:   ownerRow.AvatarUrl,
+		}
+	}
+
+	// JSON-LD structured data (Section 14 / Section 26). Resolve the
+	// admin-managed Organization template, interpolating the org's field
+	// values. Best-effort: a missing template or resolution error degrades
+	// to no json_ld field. Emitted as a sibling of `data`.
+	resp := map[string]any{"data": orgDTO}
+	if h.jsonldResolver != nil {
+		if jsonLd, jErr := h.jsonldResolver.ResolveJSONLD(r.Context(), tenantID, "Organization", orgJSONLDFields(org)); jErr == nil && len(jsonLd) > 0 {
+			resp["json_ld"] = json.RawMessage(jsonLd)
+		} else if jErr != nil {
+			slog.Warn("organizations: JSON-LD template resolution failed", "slug", param, "error", jErr)
+		}
+	}
+
+	writeJSON(w, http.StatusOK, resp)
 }
 
 // ListPublicMembers handles GET /organizations/{id}/members (public). The

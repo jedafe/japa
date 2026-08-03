@@ -26,6 +26,7 @@ const (
 	IndexKnowledgeArticles = "knowledge_articles" // learning platform articles
 	IndexLearningTracks    = "learning_tracks"    // Japa University marketplace courses (ADR-063)
 	IndexDocPages          = "doc_pages"          // documentation pages (SEARCH-001)
+	IndexOrganizations     = "organizations"      // verified orgs/businesses (Section 54)
 )
 
 // PrimaryKey is the primary key used by every Meilisearch index. All
@@ -42,6 +43,7 @@ var allIndexes = []string{
 	IndexKnowledgeArticles,
 	IndexLearningTracks,
 	IndexDocPages,
+	IndexOrganizations,
 }
 
 // filterableAttributesByIndex declares which attributes each index exposes
@@ -56,6 +58,7 @@ var filterableAttributesByIndex = map[string][]string{
 	IndexKnowledgeArticles: {"tenant_id", "status"},
 	IndexLearningTracks:    {"tenant_id", "difficulty", "category", "language", "relevant_countries", "is_free"},
 	IndexDocPages:          {"tenant_id", "audience", "review_status"},
+	IndexOrganizations:     {"tenant_id", "org_type", "verified", "status", "country_code"},
 }
 
 // NewClient creates a Meilisearch client and ensures every search index

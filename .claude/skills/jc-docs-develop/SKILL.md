@@ -46,3 +46,29 @@ Identical base to `jc-main-develop`: Svelte 5 Runes, Bits UI dot-notation, Tailw
 
 ## Deliverables Per Task
 1. Gate output · 2. surface built INSIDE `AppShell` (or the playground full-width exception, explicitly) · 3. `+page.server.ts` (audience-gated fetch) · 4. `+page.svelte` (nav tree + content + TOC, skeletons) · 5. components (LeftNav tree, TOC, CodeBlock, SearchPalette, AudienceSwitcher) · 6. JSON-LD · 7. types
+**V2 docs app:** No new pages in v2. Docs app requires stable API surface (OpenAPI spec from §47). The `japaconnect_core` Flutter package will use the same OpenAPI spec — ensure spec remains current when v2 backend phases land.
+
+## V2 Feature Areas (Implement Only After Corresponding Backend Phase Is Complete)
+
+| Feature | Backend phase | Key sections | Gates |
+|---|---|---|---|
+| JapaBot (RAG-grounded) | Phase 41 | §69 | `/ai/chat` amended |
+| AI Content Studio (admin) | Phase 42 | §75 | `studio.*` RBAC |
+| Participation queue (admin) | Phase 42 | §76 | `participation.review` RBAC |
+| Visa Checklist | Phase 43 | §70 | `checklist.use` RBAC |
+| Readiness Assessment | Phase 43 | §71 | `assessment.take` RBAC |
+| Cost of Living Calculator | Phase 43 | §72 | `col_calculator.use` RBAC |
+| Scholarship Finder | Phase 43 | §73 | `scholarship.browse` RBAC |
+| Remittance Rate Tracker | Phase 44 | §74 | `remittance.view` RBAC |
+| Referral system | Phase 45 | §60 | `referral.use` RBAC |
+| Self-serve ads | Phase 45 | §61 | `ads.self_serve.create` RBAC |
+| Newsletter | Phase 45 | §62 | `newsletter.subscribe` RBAC |
+| Jobs board | Phase 45 | §63 | `jobs.browse` RBAC |
+| Gamification | Phase 45 | §64 | `gamification.view` RBAC |
+| Content import | Phase 46 | §65 | `import.use` RBAC |
+| Advanced analytics | Phase 46 | §66 | `analytics.advanced` RBAC |
+| Travel search | Phase 46 | §67 | `travel.search` RBAC |
+
+**API-Readiness Gate applies to all v2 features.** Verify against `api-routes-catalog.md` — all v2 routes are marked as "V2 planned" in the catalog. Once the corresponding backend phase lands, the planned routes become available.
+
+**New surface in v2:** `apps/tools` (§78, ADR-086) — a sixth SvelteKit SSR app at `tools.japaconnect.com` (port 3005). Generate `jc-tools-*` skills before implementing this surface. Skills live at `.ai/skills/frontend/06-tools/`.

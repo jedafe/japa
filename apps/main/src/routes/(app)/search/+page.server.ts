@@ -23,8 +23,10 @@ export const load: PageServerLoad = async (event) => {
 
 	try {
 		const path = `/search?q=${encodeURIComponent(q)}&limit=${limit}${type ? `&type=${type}` : ''}`;
-		const results = await apiGet<SearchResult[]>(ctx, path);
-		return { query: q, results: results ?? [], authed: true };
+		// Backend returns { data: { results: SearchResult[] } }. apiGet
+		// unwraps the outer `data` envelope, leaving { results: [...] }.
+		const res = await apiGet<{ results: SearchResult[] }>(ctx, path);
+		return { query: q, results: res?.results ?? [], authed: true };
 	} catch {
 		return { query: q, results: [] as SearchResult[], authed: true, loadError: true };
 	}
