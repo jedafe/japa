@@ -256,6 +256,13 @@ func (s *Store) ListPublicMembers(ctx context.Context, orgID, tenantID pgtype.UU
 	return s.read.ListPublicOrganizationMembers(ctx, gen.ListPublicOrganizationMembersParams{OrganizationID: orgID, TenantID: tenantID})
 }
 
+// GetOrgOwnerPublicProfile returns the org owner's public identity for the
+// "Org Leader" sidebar widget. Unlike ListPublicMembers, this does NOT filter
+// by user.status — the owner is shown regardless of their account standing.
+func (s *Store) GetOrgOwnerPublicProfile(ctx context.Context, orgID, tenantID pgtype.UUID) (gen.GetOrgOwnerPublicProfileRow, error) {
+	return s.read.GetOrgOwnerPublicProfile(ctx, gen.GetOrgOwnerPublicProfileParams{OrganizationID: orgID, TenantID: tenantID})
+}
+
 func (s *Store) ListPublicOrganizations(ctx context.Context, tenantID pgtype.UUID, search, orgType, verified string, limit, offset int32) ([]gen.ListPublicOrganizationsRow, error) {
 	return s.read.ListPublicOrganizations(ctx, gen.ListPublicOrganizationsParams{
 		TenantID:   tenantID,

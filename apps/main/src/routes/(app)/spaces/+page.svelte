@@ -3,7 +3,7 @@
 	import { page } from '$app/state';
 	import { t } from '$lib/i18n';
 	import { Layers, Search, Users, MessageSquare, Plus, ShieldX, ChevronLeft, ChevronRight } from 'lucide-svelte';
-	import { EmptyState, FollowButton } from '$lib/components/ui';
+	import { EmptyState, SpaceJoinButton } from '$lib/components/ui';
 	import SpaceCreationModal from '$lib/components/spaces/SpaceCreationModal.svelte';
 	import type { PageData } from './$types';
 
@@ -189,7 +189,7 @@
 							</span>
 						</a>
 						{#if page.data.user}
-							<FollowButton entityType="space" entityId={space.id} entitySlug={space.slug} compact />
+							<SpaceJoinButton entityId={space.id} entitySlug={space.slug} compact />
 						{/if}
 					</div>
 				{/each}

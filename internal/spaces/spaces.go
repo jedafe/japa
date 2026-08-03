@@ -23,12 +23,14 @@ import (
 )
 
 // Space hierarchy levels. Country is the root, state and city nest under
-// it, and custom covers non-geographic communities (universities, clubs).
+// it, custom covers non-geographic communities (universities, clubs),
+// and global is for spaces not tied to any geo location at all.
 const (
 	LevelCountry = "country"
 	LevelState   = "state"
 	LevelCity    = "city"
 	LevelCustom  = "custom"
+	LevelGlobal  = "global"
 )
 
 // Visibility axis values. Public spaces are listed to everyone, members
@@ -78,7 +80,7 @@ type SpacePermAxes struct {
 
 // validLevels is the set of recognized space hierarchy levels.
 var validLevels = map[string]bool{
-	LevelCountry: true, LevelState: true, LevelCity: true, LevelCustom: true,
+	LevelCountry: true, LevelState: true, LevelCity: true, LevelCustom: true, LevelGlobal: true,
 }
 
 // IsValidLevel returns true if the given string is a recognized space level.
@@ -178,6 +180,17 @@ func (s *Service) EnqueueSearchIndex(ctx context.Context, spaceID, tenantID pgty
 		slog.Warn("spaces: failed to enqueue search:index_entity",
 			"space_id", spaceID.String(), "operation", operation, "error", err)
 	}
+}
+
+// FindSpacesByKeywords finds primary (country/state/city) and public spaces
+// whose keywords overlap with the given keyword list. Used by the content
+// auto-assign feature to link content to spaces based on title matching.
+// Ref: sections/05-geo-first-space-system.md
+func (s *Service) FindSpacesByKeywords(ctx context.Context, tenantID pgtype.UUID, keywords []string) ([]gen.FindSpacesByKeywordsRow, error) {
+	return s.read.FindSpacesByKeywords(ctx, gen.FindSpacesByKeywordsParams{
+		TenantID: tenantID,
+		Keywords: keywords,
+	})
 }
 
 // NewService creates a Service backed by the given database pool.

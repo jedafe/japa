@@ -25,16 +25,20 @@
 
 	const title = $derived(`${org.name} — ${t('app.name')}`);
 	const description = $derived(org.description ?? org.tagline ?? org.name);
-	// JSON-LD: Organization schema (H3 — audit finding).
+	// JSON-LD: Organization schema (Section 14 / Section 26). The backend
+	// resolves the admin-managed Organization template server-side and returns
+	// it in the `json_ld` sidecar. Fall back to a basic schema when absent.
 	const jsonLd = $derived(
-		JSON.stringify({
-			'@context': 'https://schema.org',
-			'@type': 'Organization',
-			name: org.name,
-			url: page.url.href,
-			description: org.description ?? org.tagline ?? '',
-			...(org.verified ? { sameAs: page.url.href } : {})
-		})
+		data.jsonLd
+			? JSON.stringify(data.jsonLd)
+			: JSON.stringify({
+					'@context': 'https://schema.org',
+					'@type': 'Organization',
+					name: org.name,
+					url: page.url.href,
+					description: org.description ?? org.tagline ?? '',
+					...(org.verified ? { sameAs: page.url.href } : {})
+				})
 	);
 </script>
 
@@ -49,7 +53,7 @@
 </svelte:head>
 
 <SetSidebar>
-	<OrgProfileSidebar {org} {isOwner} members={data.members} />
+	<OrgProfileSidebar members={data.members} />
 </SetSidebar>
 
 <OrgHeader {org} {isOwner}>

@@ -376,6 +376,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	spacePostChecker.PermChecker = rbacResolver
 	contentHandlers.SetSpacePostChecker(spacePostChecker)
 
+	// Wire the space keyword matcher for auto-assigning content to spaces
+	// based on title keyword matching (Section 05 — geo-first space system).
+	contentHandlers.SetSpaceMatcher(spaceService)
+
 	// General Tags subsystem (Sections 08, 49) — distinct from forum_tags.
 	// Composes contentService + followService directly.
 	tagsService := tags.NewService(database)
@@ -505,7 +509,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Organization system (Section 07).
 	orgService := organizations.NewServiceWithSettings(database, settingsService)
 	orgService.SetValkeyCache(vkClient.Redis()) // jc:org:profile / jc:org:list read-through cache
-	orgHandlers := organizations.NewHandlers(orgService, followService)
+	orgHandlers := organizations.NewHandlers(orgService, followService, contentService)
 
 	// Wallet & Credits subsystem (Section 28 — Wallet & Credits).
 	walletService := wallet.NewService(database)
@@ -616,8 +620,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	mediaService := media.NewService(database)
 	mediaHandlers := media.NewHandlers(mediaService)
 	// Resolve logo_media_id to an imgproxy-signed logo_url in university
-	// responses (Section 34 / ADR-039 — audit finding H5).
+	// and space responses (Section 34 / ADR-039 — audit finding H5).
 	universitiesHandlers.SetMediaResolver(mediaService)
+	spaceHandlers.SetMediaResolver(mediaService)
 
 	// Stock photo service — provider search and import (Unsplash, Pexels,
 	// Pixabay, Openverse). ReloadProviders seeds provider rows from env vars
@@ -704,7 +709,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 	// Learning Platform subsystem (Section 36).
 	learningStore := learning.NewStore(database)
-	learningHandlers := learning.NewHandlers(learningStore)
+	learningHandlers := learning.NewHandlers(learningStore, contentService)
 	learningHandlers.AsynqClient = asynqClient
 
 	// Register learning processor for the worker's learning tasks.
@@ -809,7 +814,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Wire the media resolver so PATCH /me/profile can accept
 	// avatar_media_id/header_media_id and resolve them to URLs (BUG-004).
 	usersService.MediaResolver = &mediaURLResolver{media: mediaService}
-	usersHandlers := users.NewHandlers(usersService)
+	usersHandlers := users.NewHandlers(usersService, contentService)
 
 	// BUG-003: wire the "verified" axis checker for CanPostInSpace. The
 	// "verified" posting_perm requires email_verified_at IS NOT NULL.
@@ -1414,6 +1419,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/content/jsonld-templates", contentHandlers.ListJSONLDTemplates)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.jsonld.manage")).
 				Put("/content/jsonld-templates", contentHandlers.UpsertJSONLDTemplate)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.jsonld.manage")).
+				Delete("/content/jsonld-templates/{id}", contentHandlers.DeleteJSONLDTemplate)
 
 			// Page builder block types (Section 16 — Page Builder).
 			// Any authenticated user can view the block registry; no
@@ -1681,7 +1688,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			forumService.SetPermCacheInvalidator(&forumPermCacheInvalidator{vk: vkClient.Redis()})
 			forumService.SetWebhookEmitter(&forumWebhookEmitter{svc: webhookService})
 			forumService.SetSpaceBroadcaster(&forumSpaceBroadcaster{hub: wsHub})
-			forumHandlers := forum.NewHandlers(forumService)
+			forumHandlers := forum.NewHandlers(forumService, contentService)
 
 			r.With(features.Gate(featureChecker, "feature.forum")).Group(func(r chi.Router) {
 				// Thread routes
@@ -3412,7 +3419,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Task 26: Moderation queue assign + SEO validate
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.moderation")).
 				Patch("/admin/moderation-queue/{id}/assign", adminHandlers.AssignModerationItem)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "pages.manage")).
+			// SEO validate is an admin utility (Section 26); gated by the same
+			// admin.settings node the admin sidebar uses for /seo (apps/admin
+			// +layout.svelte nav map), so the UI gate and backend gate agree.
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.settings")).
 				Get("/admin/seo/validate/{id}", sitemapHandler.ValidateSEO)
 
 			// Task 27: Pagebuilder admin extra + public pages

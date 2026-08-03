@@ -4,7 +4,7 @@
 	import CreateGuidePanel from './CreateGuidePanel.svelte';
 	import CreateSettingsPanel from './CreateSettingsPanel.svelte';
 	import CreateSeoPanel from './CreateSeoPanel.svelte';
-	import type { BlogSeries, CustomFieldGroup, MediaAsset, Visibility } from '$lib/types';
+	import type { BlogSeries, MediaAsset, MeSpace, Visibility } from '$lib/types';
 
 	interface Props {
 		focusedField: 'space' | 'tags' | 'series' | 'body' | null;
@@ -12,10 +12,11 @@
 		visibility: Visibility;
 		canonicalUrl: string;
 		publishAt: string | null;
-		fieldValues: Record<string, unknown>;
-		fieldGroups: CustomFieldGroup[];
 		series: BlogSeries[];
 		seriesId: string | null;
+		spaces: MeSpace[];
+		spaceId: string | null;
+		tags: string[];
 		coverMediaId: string | null;
 		coverPreviewUrl: string | null;
 		metaTitle: string | null;
@@ -23,13 +24,19 @@
 		ogImageUrl: string | null;
 		ogImagePreviewUrl: string | null;
 		seoIndexable: boolean;
+		title: string;
+		bodyHtml: string;
+		contentType: string;
 		onslug: (v: string) => void;
 		onvisibility: (v: Visibility) => void;
 		oncanonical: (v: string) => void;
 		onpublishat: (v: string | null) => void;
-		onfieldvalues: (v: Record<string, unknown>) => void;
 		onseries: (id: string | null) => void;
 		onseriesfocus: () => void;
+		onspace: (id: string) => void;
+		onspacefocus: () => void;
+		ontags: (next: string[]) => void;
+		ontagsfocus: () => void;
 		oncoveruploaded: (asset: MediaAsset) => void;
 		oncoverremove: () => void;
 		onmetatitle: (v: string | null) => void;
@@ -45,10 +52,11 @@
 		visibility,
 		canonicalUrl,
 		publishAt,
-		fieldValues,
-		fieldGroups,
 		series = $bindable(),
 		seriesId,
+		spaces = $bindable(),
+		spaceId,
+		tags,
 		coverMediaId,
 		coverPreviewUrl,
 		metaTitle,
@@ -56,13 +64,19 @@
 		ogImageUrl,
 		ogImagePreviewUrl,
 		seoIndexable,
+		title,
+		bodyHtml,
+		contentType,
 		onslug,
 		onvisibility,
 		oncanonical,
 		onpublishat,
-		onfieldvalues,
 		onseries,
 		onseriesfocus,
+		onspace,
+		onspacefocus,
+		ontags,
+		ontagsfocus,
 		oncoveruploaded,
 		oncoverremove,
 		onmetatitle,
@@ -90,10 +104,17 @@
 			{focusedField}
 			bind:series
 			{seriesId}
+			bind:spaces
+			{spaceId}
+			{tags}
 			{coverMediaId}
 			{coverPreviewUrl}
 			{onseries}
 			{onseriesfocus}
+			{onspace}
+			{onspacefocus}
+			{ontags}
+			{ontagsfocus}
 			{oncoveruploaded}
 			{oncoverremove}
 			{onedit}
@@ -105,13 +126,10 @@
 			{visibility}
 			{canonicalUrl}
 			{publishAt}
-			{fieldValues}
-			{fieldGroups}
 			{onslug}
 			{onvisibility}
 			{oncanonical}
 			{onpublishat}
-			{onfieldvalues}
 			{onedit}
 		/>
 	</Tabs.Content>
@@ -122,6 +140,12 @@
 			{ogImageUrl}
 			{ogImagePreviewUrl}
 			{seoIndexable}
+			{title}
+			{slug}
+			{canonicalUrl}
+			{visibility}
+			{bodyHtml}
+			{contentType}
 			{onmetatitle}
 			{onmetadescription}
 			{onogimageselect}

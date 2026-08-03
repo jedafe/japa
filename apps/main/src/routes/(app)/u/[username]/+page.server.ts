@@ -1,6 +1,6 @@
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGet, apiList } from '$lib/server/api';
+import { apiContext, apiGet, apiGetEnvelope, apiList } from '$lib/server/api';
 import type {
 	PublicUser,
 	ProfilePost,
@@ -31,8 +31,11 @@ export const load: PageServerLoad = async (event) => {
 
 	// Profile header — 404 propagates as a SvelteKit error (banned/suspended/deleted).
 	let user: PublicUser;
+	let jsonLd: unknown = null;
 	try {
-		user = await apiGet<PublicUser>(ctx, `/users/${username}`);
+		const envelope = await apiGetEnvelope<PublicUser>(ctx, `/users/${username}`);
+		user = envelope.data;
+		jsonLd = envelope.json_ld ?? null;
 	} catch (e) {
 		const status = e instanceof Error && 'status' in e ? (e as { status: number }).status : 500;
 		throw error(status === 404 ? 404 : 500, {
@@ -89,6 +92,7 @@ export const load: PageServerLoad = async (event) => {
 		certificates,
 		likes,
 		feed,
-		analytics
+		analytics,
+		jsonLd
 	};
 };

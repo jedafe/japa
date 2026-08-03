@@ -24,6 +24,7 @@ import (
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/media"
 	"github.com/jedafe/japa/internal/tenant"
 )
 
@@ -47,12 +48,20 @@ type PermCacheInvalidator interface {
 // Handlers holds dependencies for space HTTP handlers. The Service wraps the
 // reader/writer database pools; the UnreadCounter tracks per-user unread
 // post counts via Valkey (nil is safe — it degrades to no-op).
+// MediaResolver resolves a media ID to an imgproxy-signed URL for the space
+// logo. The media.Service satisfies this. Nil = logo_url omitted from responses.
+type MediaResolver interface {
+	GetMedia(ctx context.Context, tenantID, mediaID pgtype.UUID) (gen.Medium, error)
+	GetMediaURL(m *gen.Medium, opts media.ImageProxyOpts) string
+}
+
 type Handlers struct {
 	Service *Service
 	Unread  *UnreadCounter
 	content ContentService
 	follows FollowToggleService
 	permCache PermCacheInvalidator
+	media    MediaResolver // nil = logo_url omitted from responses
 }
 
 // FollowToggleService is the subset of the follows.Service used by the space
@@ -74,6 +83,24 @@ func (h *Handlers) SetFollowToggleService(s FollowToggleService) {
 // CALLER's cache; the target user's cache must be flushed here.
 func (h *Handlers) SetPermCacheInvalidator(p PermCacheInvalidator) {
 	h.permCache = p
+}
+
+// SetMediaResolver wires the media service used to resolve logo_media_id to a
+// signed imgproxy URL (returned as logo_url in space responses). Optional.
+func (h *Handlers) SetMediaResolver(m MediaResolver) { h.media = m }
+
+// resolveLogoURL resolves a space's logo_media_id to an imgproxy-signed URL
+// via the media service. Returns empty when no logo is set, the media
+// resolver is not wired, or the media item cannot be loaded. Best-effort.
+func (h *Handlers) resolveLogoURL(ctx context.Context, tenantID, logoMediaID pgtype.UUID) string {
+	if !logoMediaID.Valid || h.media == nil {
+		return ""
+	}
+	m, err := h.media.GetMedia(ctx, tenantID, logoMediaID)
+	if err != nil {
+		return ""
+	}
+	return h.media.GetMediaURL(&m, media.ImageProxyOpts{Width: 128, Height: 128, Format: "webp"})
 }
 
 // invalidateTargetPermCache flushes the target user's permission cache after
@@ -609,8 +636,46 @@ func (h *Handlers) GetSpace(w http.ResponseWriter, r *http.Request) {
 		rules = []gen.SpaceRule{}
 	}
 
+	// Include keywords in the space response for the settings page.
+	keywords, err := h.Service.GetSpaceKeywords(r.Context(), space.ID, tenantID)
+	if err != nil {
+		slog.Warn("spaces: failed to fetch keywords", "space_id", space.ID.String(), "error", err)
+		keywords = []string{}
+	}
+
+	// Resolve logo_media_id to an imgproxy-signed logo_url.
+	logoURL := h.resolveLogoURL(r.Context(), tenantID, space.LogoMediaID)
+
+	// Surface viewer-scoped management flags so the frontend can render the
+	// moderator assignment UI only for the space owner / an assigned
+	// moderator (Ref: japaconnect-engineering/sections/05-geo-first-space-system.md
+	// lines 198-224; sections/03-rbac.md spaces.moderator.assign). Guests and
+	// non-members get false; the mutating routes still enforce the permission
+	// server-side, so a stale/true client flag cannot grant access.
+	isOwner := false
+	isModerator := false
+	if user := auth.FromContext(r.Context()); user != nil && user.UserID.Valid {
+		isOwner, err = h.Service.IsOwner(r.Context(), space.ID, user.UserID, tenantID)
+		if err != nil {
+			slog.Warn("spaces: IsOwner check failed", "space_id", space.ID.String(), "error", err)
+			isOwner = false
+		}
+		isModerator, err = h.Service.IsModerator(r.Context(), space.ID, user.UserID)
+		if err != nil {
+			slog.Warn("spaces: IsModerator check failed", "space_id", space.ID.String(), "error", err)
+			isModerator = false
+		}
+	}
+
 	writeJSON(w, http.StatusOK, map[string]any{
-		"data": map[string]any{"space": space, "rules": rules},
+		"data": map[string]any{
+			"space":        space,
+			"rules":        rules,
+			"keywords":     keywords,
+			"logo_url":     logoURL,
+			"is_owner":     isOwner,
+			"is_moderator": isModerator,
+		},
 	})
 }
 
@@ -676,15 +741,15 @@ func (h *Handlers) CreateSpace(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !IsValidLevel(req.Level) {
-		writeError(w, http.StatusBadRequest, "invalid_level", "Level must be country, state, city, or custom")
+		writeError(w, http.StatusBadRequest, "invalid_level", "Level must be country, state, city, custom, or global")
 		return
 	}
 
 	// BUG-002: custom spaces must be linked to at least one primary space
 	// (country/state/city) via space_parent_spaces (Section 05 line 14, 190).
 	// Primary spaces (country/state/city) are themselves parents and need no
-	// parent linkage.
-	if req.Level == LevelCustom && len(req.ParentSpaceIDs) == 0 {
+	// parent linkage. Global spaces have no geo parent at all.
+	if req.Level == LevelCustom && len(req.ParentSpaceIDs) == 0 && req.ParentID == "" {
 		writeError(w, http.StatusBadRequest, "missing_parent",
 			"Custom spaces must belong to at least one primary space (country, state, or city)")
 		return
@@ -856,16 +921,18 @@ func (h *Handlers) UpdateSpace(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		Name           string  `json:"name"`
-		Description    *string `json:"description"`
-		WikiContent    string  `json:"wiki_content"`
-		GeoCode        *string `json:"geo_code"`
-		Visibility     string  `json:"visibility"`
-		PostingPerm    string  `json:"posting_perm"`
-		ReplyingPerm   string  `json:"replying_perm"`
-		CommentingPerm string  `json:"commenting_perm"`
-		JoiningPerm    string  `json:"joining_perm"`
-		Status         string  `json:"status"`
+		Name           string   `json:"name"`
+		Description    *string  `json:"description"`
+		WikiContent    string   `json:"wiki_content"`
+		GeoCode        *string  `json:"geo_code"`
+		Visibility     string   `json:"visibility"`
+		PostingPerm    string   `json:"posting_perm"`
+		ReplyingPerm   string   `json:"replying_perm"`
+		CommentingPerm string   `json:"commenting_perm"`
+		JoiningPerm    string   `json:"joining_perm"`
+		Status         string   `json:"status"`
+		Keywords       []string `json:"keywords"`
+		LogoMediaID    string   `json:"logo_media_id"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -967,6 +1034,34 @@ func (h *Handlers) UpdateSpace(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		handleServiceError(w, err)
 		return
+	}
+
+	// Update keywords separately if provided (nil = no change, [] = clear,
+	// ["a","b"] = set). Uses a dedicated query to avoid NULL on NOT NULL column.
+	if req.Keywords != nil {
+		if err := h.Service.UpdateSpaceKeywords(r.Context(), id, tenantID, req.Keywords); err != nil {
+			writeError(w, http.StatusInternalServerError, "keywords_update_failed", "Failed to update keywords")
+			return
+		}
+	}
+
+	// Update logo if provided. The frontend uploads via /media/upload flow
+	// and passes the resulting media_id here.
+	if req.LogoMediaID != "" {
+		var logoUUID pgtype.UUID
+		if err := logoUUID.Scan(req.LogoMediaID); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_logo_media_id", "Invalid logo_media_id format")
+			return
+		}
+		space, err = h.Service.UpdateSpaceLogoMediaID(r.Context(), gen.UpdateSpaceLogoMediaIDParams{
+			LogoMediaID: logoUUID,
+			ID:          id,
+			TenantID:    tenantID,
+		})
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "logo_update_failed", "Failed to update logo")
+			return
+		}
 	}
 
 	// Re-sync the Meilisearch index so search reflects the update (BL-004).
@@ -1323,7 +1418,8 @@ func (h *Handlers) AssignModerator(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		UserID string `json:"user_id"`
+		UserID   string `json:"user_id"`
+		Username string `json:"username"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -1331,14 +1427,34 @@ func (h *Handlers) AssignModerator(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if strings.TrimSpace(req.UserID) == "" {
-		writeError(w, http.StatusBadRequest, "missing_fields", "user_id is required")
-		return
-	}
-
 	var targetUserID pgtype.UUID
-	if err := targetUserID.Scan(req.UserID); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid user_id format")
+	switch {
+	case strings.TrimSpace(req.UserID) != "":
+		if err := targetUserID.Scan(req.UserID); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_id", "Invalid user_id format")
+			return
+		}
+	case strings.TrimSpace(req.Username) != "":
+		// Resolve username → user_id within the tenant (Rule 2 — sqlc query,
+		// no raw SQL). Lets the space owner assign a moderator by handle
+		// without first looking up the UUID.
+		var usernameErr error
+		targetUserID, usernameErr = h.Service.GetUserIDByUsername(r.Context(), tenantID, strings.TrimSpace(req.Username))
+		if usernameErr != nil {
+			// GetUserIDByUsername returns a plain "user not found" error for
+			// an unknown handle; map it to a 404 so the client gets a clear
+			// message instead of a generic 500 (HandleServiceError does not
+			// recognise the non-sentinel error).
+			if strings.Contains(usernameErr.Error(), "user not found") {
+				writeError(w, http.StatusNotFound, "user_not_found", "No user with that username was found")
+				return
+			}
+			slog.Error("spaces: AssignModerator username resolution failed", "username", req.Username, "error", usernameErr)
+			handleServiceError(w, usernameErr)
+			return
+		}
+	default:
+		writeError(w, http.StatusBadRequest, "missing_fields", "user_id or username is required")
 		return
 	}
 
@@ -1377,6 +1493,7 @@ func (h *Handlers) AssignModerator(w http.ResponseWriter, r *http.Request) {
 		AssignedBy:       assignedBy,
 		AssignedByUserID: assignedByID,
 	}); err != nil {
+		slog.Error("spaces: AssignModerator failed", "space_id", space.ID.String(), "target_user_id", targetUserID.String(), "assigned_by", assignedBy, "error", err)
 		handleServiceError(w, err)
 		return
 	}

@@ -43,12 +43,14 @@ const searchCacheTTL = 2 * time.Minute
 // returned in the API response. Only indexes queried by the search endpoint
 // appear here.
 var indexTypeByUID = map[string]string{
-	IndexPosts:        "content",
-	IndexForumThreads: "forum_thread",
-	IndexSpaces:       "space",
-	IndexUsers:        "user",
-	IndexTags:         "tag",
-	IndexDocPages:     "doc_page",
+	IndexPosts:          "content",
+	IndexForumThreads:   "forum_thread",
+	IndexSpaces:         "space",
+	IndexUsers:          "user",
+	IndexTags:           "tag",
+	IndexLearningTracks: "course",
+	IndexDocPages:       "doc_page",
+	IndexOrganizations:  "organization",
 }
 
 // searchAttributesToRetrieve limits each hit to the fields the response needs,
@@ -270,14 +272,29 @@ func (h *Handlers) runMultiSearchFiltered(ctx context.Context, query string, lim
 	tenantFilter := fmt.Sprintf(`tenant_id = "%s"`, tenantID.String())
 	indexes := searchTypeIndexes(typeFilter)
 
+	// A type filter with no backing index (e.g. "organization" before its
+	// Meilisearch index is provisioned) yields no queries. Short-circuit to
+	// empty results instead of issuing a zero-query multi-search, which
+	// Meilisearch rejects with a 400.
+	if len(indexes) == 0 {
+		return []SearchResult{}, nil
+	}
+
 	queries := make([]*meilisearch.SearchRequest, len(indexes))
 	for i, idx := range indexes {
 		filter := tenantFilter
 		// ADR-064: for the learning_tracks index, boost results relevant to
 		// the visitor's country. We use an OR filter so globally-relevant
 		// courses (empty relevant_countries) still appear.
+		//
+		// `relevant_countries` is an array of ISO codes. Meilisearch
+		// array-membership filtering uses the `=` operator (or `IN [...]`).
+		// Do NOT use `CONTAINS` — that is a substring operator on strings
+		// requiring the experimental "contains filter" feature; using it
+		// makes Meilisearch reject the entire multi-search with a 400,
+		// breaking search for every user with a non-empty ContentCountry.
 		if idx == IndexLearningTracks && geoCountry != "" {
-			filter = fmt.Sprintf(`%s AND (relevant_countries IS EMPTY OR relevant_countries CONTAINS "%s")`,
+			filter = fmt.Sprintf(`%s AND (relevant_countries IS EMPTY OR relevant_countries = "%s")`,
 				tenantFilter, geoCountry)
 		}
 		queries[i] = &meilisearch.SearchRequest{
@@ -759,9 +776,14 @@ func (h *Handlers) logSearchAsync(ctx context.Context, tenantID pgtype.UUID, que
 }
 
 // typeFromParam extracts and validates the type filter parameter.
+//
+// Recognized values must match the `?type=` keys the frontend filter bar
+// emits (apps/main /search: all, content, user, space, forum_thread,
+// organization) plus the backend-only surfaces (tag, course, doc).
+// An unrecognized value falls back to "" which means "all indexes".
 func typeFromParam(raw string) string {
 	switch raw {
-	case "content", "user", "space", "tag", "doc":
+	case "content", "user", "space", "tag", "doc", "course", "forum_thread", "organization":
 		return raw
 	default:
 		return ""
@@ -769,6 +791,11 @@ func typeFromParam(raw string) string {
 }
 
 // searchTypeIndexes maps a type filter to the indexes to query.
+//
+// Recognized values match the ?type= keys the frontend filter bar emits
+// (apps/main /search: all, content, user, space, forum_thread, organization)
+// plus the backend-only surfaces (tag, course, doc). An unrecognized value
+// falls back to "" which means "all indexes".
 func searchTypeIndexes(typeFilter string) []string {
 	switch typeFilter {
 	case "content":
@@ -783,7 +810,11 @@ func searchTypeIndexes(typeFilter string) []string {
 		return []string{IndexLearningTracks}
 	case "doc":
 		return []string{IndexDocPages}
+	case "forum_thread":
+		return []string{IndexForumThreads}
+	case "organization":
+		return []string{IndexOrganizations}
 	default:
-		return []string{IndexPosts, IndexForumThreads, IndexSpaces, IndexUsers, IndexTags, IndexLearningTracks, IndexDocPages}
+		return []string{IndexPosts, IndexForumThreads, IndexSpaces, IndexUsers, IndexTags, IndexLearningTracks, IndexDocPages, IndexOrganizations}
 	}
 }

@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/hibiken/asynq"
@@ -77,6 +78,10 @@ type ContentService interface {
 	UpdateContent(ctx context.Context, id, tenantID, editedBy pgtype.UUID, input content.UpdateContentInput) (gen.UpdateContentRow, error)
 	UpdateContentStatus(ctx context.Context, id, tenantID pgtype.UUID, status string) (gen.UpdateContentStatusRow, error)
 	DeleteContent(ctx context.Context, id, tenantID pgtype.UUID) error
+	// ResolveJSONLD resolves the admin-managed JSON-LD template for a content
+	// type (Section 14 / Section 26). Returns nil when no active template
+	// exists so the caller can fall back to a hardcoded generator.
+	ResolveJSONLD(ctx context.Context, tenantID pgtype.UUID, contentType string, fields map[string]string) (json.RawMessage, error)
 }
 
 // Handlers holds dependencies for blog HTTP handlers.
@@ -1261,7 +1266,55 @@ func (h *Handlers) GetPost(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": dto})
+	// JSON-LD structured data (Section 14 / Section 26). Resolve the
+	// admin-managed Article template, interpolating the post's field values
+	// into the {{field_key}} placeholders. Best-effort: a missing template or
+	// resolution error degrades to no json_ld field (the frontend falls back
+	// to its client-side generator). Emitted as a sibling of `data` so the
+	// frontend load function can read envelope.json_ld directly.
+	resp := map[string]any{"data": dto}
+	if jsonLd, jErr := h.content.ResolveJSONLD(r.Context(), tenantID, "Article", blogPostJSONLDFields(post, dto)); jErr == nil && len(jsonLd) > 0 {
+		resp["json_ld"] = json.RawMessage(jsonLd)
+	} else if jErr != nil {
+		slog.Warn("blog: JSON-LD template resolution failed", "slug", slug, "error", jErr)
+	}
+
+	writeJSON(w, http.StatusOK, resp)
+}
+
+// blogPostJSONLDFields builds the {{field_key}} → value map for interpolating
+// an Article JSON-LD template from a blog post detail row and the enriched DTO
+// (which carries the computed featured_image_url and excerpt).
+func blogPostJSONLDFields(post gen.GetBlogPostDetailRow, dto map[string]any) map[string]string {
+	desc := ""
+	if post.MetaDescription != nil && *post.MetaDescription != "" {
+		desc = *post.MetaDescription
+	} else if e, ok := dto["excerpt"].(string); ok {
+		desc = e
+	}
+	coverURL, _ := dto["featured_image_url"].(string)
+	canonical := ""
+	if post.CanonicalUrl != nil {
+		canonical = *post.CanonicalUrl
+	}
+	return map[string]string{
+		"title":               post.Title,
+		"description":         desc,
+		"cover_image_url":     coverURL,
+		"author_name":         post.AuthorName,
+		"author_profile_url":  "",
+		"published_at":        formatTimestamptz(post.PublishedAt),
+		"updated_at":          formatTimestamptz(post.UpdatedAt),
+		"canonical_url":       canonical,
+	}
+}
+
+// formatTimestamptz renders a pgtype.Timestamptz as RFC3339 or empty.
+func formatTimestamptz(t pgtype.Timestamptz) string {
+	if !t.Valid {
+		return ""
+	}
+	return t.Time.UTC().Format(time.RFC3339)
 }
 
 // ListPosts handles GET /api/v1/blog — published blog posts, newest first.

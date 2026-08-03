@@ -22,13 +22,12 @@
 	import SaveBar from './SaveBar.svelte';
 	import TitleField from './TitleField.svelte';
 	import { suggestSlug } from './slug';
-	import SpaceSelector from './SpaceSelector.svelte';
 	import OrgSelector from './OrgSelector.svelte';
-	import TagInput from './TagInput.svelte';
 	import PostEditor from './editors/PostEditor.svelte';
 	import type { EditorMode } from './editors/PostEditor.svelte';
 	import ComparisonBuilder from './editors/ComparisonBuilder.svelte';
 	import CreateRightPanel from './panel/CreateRightPanel.svelte';
+	import CustomFieldGroupCmp from './panel/CustomFieldGroup.svelte';
 
 	interface Props {
 		types: TypeEntry[];
@@ -112,7 +111,8 @@
 		const seen = new Set<string>();
 		const merged: CustomFieldGroup[] = [];
 		for (const g of [...fieldGroups, ...categoryFieldGroups]) {
-			if (!seen.has(g.id)) {
+			// Only include groups that have at least one field defined.
+			if (!seen.has(g.id) && g.fields && g.fields.length > 0) {
 				seen.add(g.id);
 				merged.push(g);
 			}
@@ -262,16 +262,6 @@
 
 		<TitleField {title} onTitle={handleTitle} />
 
-		<div class="row-pair">
-			<SpaceSelector
-				{spaces}
-				selectedId={spaceId}
-				onSelect={(id) => { spaceId = id; markDirty(); }}
-				onfocus={() => (focusedField = 'space')}
-			/>
-			<TagInput {tags} onTags={(next) => { tags = next; markDirty(); }} onfocus={() => (focusedField = 'tags')} />
-		</div>
-
 		<OrgSelector
 			orgs={organizations}
 			selectedId={organizationId}
@@ -295,6 +285,22 @@
 			/>
 		{/if}
 
+		{#if allFieldGroups.length > 0}
+			<div class="composer-field-groups">
+				{#each allFieldGroups as group (group.id)}
+					<div class="composer-field-group">
+						<h4 class="composer-field-group-title">{group.name}</h4>
+						<CustomFieldGroupCmp
+							fields={group.fields}
+							values={fieldValues}
+							onvalues={(v) => { fieldValues = v; markDirty(); }}
+							onedit={markDirty}
+						/>
+					</div>
+				{/each}
+			</div>
+		{/if}
+
 		<SaveBar
 			status={composer?.status ?? ('pristine' as ComposerStatus)}
 			savedAt={composer?.savedAt ?? null}
@@ -312,10 +318,11 @@
 			{visibility}
 			{canonicalUrl}
 			{publishAt}
-			{fieldValues}
-			fieldGroups={allFieldGroups}
 			bind:series
 			{seriesId}
+			bind:spaces
+			{spaceId}
+			{tags}
 			{coverMediaId}
 			{coverPreviewUrl}
 			{metaTitle}
@@ -323,13 +330,19 @@
 			{ogImageUrl}
 			{ogImagePreviewUrl}
 			{seoIndexable}
+			{title}
+			{bodyHtml}
+			contentType={selectedType.value}
 			onvisibility={(v) => { visibility = v; markDirty(); }}
 			oncanonical={(v) => { canonicalUrl = v; markDirty(); }}
 			onpublishat={(v) => { publishAt = v; markDirty(); }}
-			onfieldvalues={(v) => { fieldValues = v; markDirty(); }}
 			onslug={handleSlug}
 			onseries={(id) => { seriesId = id; markDirty(); }}
 			onseriesfocus={() => (focusedField = 'series')}
+			onspace={(id) => { spaceId = id; markDirty(); }}
+			onspacefocus={() => (focusedField = 'space')}
+			ontags={(next) => { tags = next; markDirty(); }}
+			ontagsfocus={() => (focusedField = 'tags')}
 			oncoveruploaded={(asset: MediaAsset) => {
 				coverMediaId = asset.id;
 				coverPreviewUrl = asset.url;
@@ -370,14 +383,25 @@
 		gap: 1rem;
 		min-width: 0;
 	}
-	.row-pair {
+	.composer-field-groups {
 		display: flex;
-		gap: 0.75rem;
-		min-width: 0;
+		flex-direction: column;
+		gap: 1rem;
+		padding: 1rem;
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius);
+		background: var(--color-surface);
 	}
-	.row-pair > :global(*) {
-		flex: 1 1 0;
-		min-width: 0;
+	.composer-field-group {
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+	}
+	.composer-field-group-title {
+		margin: 0;
+		font-size: 0.875rem;
+		font-weight: 600;
+		color: var(--color-text);
 	}
 	.composer-header {
 		display: flex;

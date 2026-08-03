@@ -878,6 +878,8 @@ func HandleSearchIndexSync(ctx context.Context, t *asynq.Task) error {
 			indexName = "learning_tracks"
 		} else if entityType == "doc_page" {
 			indexName = "doc_pages"
+		} else if entityType == "organization" {
+			indexName = "organizations"
 		}
 		return searchIndexer.DeleteDocument(ctx, indexName, entityID.Bytes)
 	}
@@ -897,6 +899,8 @@ func HandleSearchIndexSync(ctx context.Context, t *asynq.Task) error {
 		return searchIndexer.IndexLearningTrack(ctx, entityID.Bytes, tenantID.Bytes)
 	case "doc_page":
 		return searchIndexer.IndexDocPage(ctx, entityID.Bytes, tenantID.Bytes)
+	case "organization":
+		return searchIndexer.IndexOrganization(ctx, entityID.Bytes, tenantID.Bytes)
 	default:
 		slog.Warn("task:search:index_entity: unknown entity type, skipping", "entity_type", entityType)
 		return nil

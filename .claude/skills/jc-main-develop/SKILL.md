@@ -1,6 +1,6 @@
 ---
 name: jc-main-develop
-description: Use when building new pages or components for the JapaConnect Main App (apps/main, port 3000, SSR). Covers SvelteKit 2 + Svelte 5 Runes + Bits UI + Tailwind v4 + LayerChart 2.0.1, the unified X.com-style app shell (ADR-058) and its three exceptions, the profile learning hub and cross-app links into Learn and Docs (ADR-060), the full visual design language, the API-Readiness Gate, and Rule 16.Use when building new pages or components for the JapaConnect Main App (apps/web, port 3000, SSR). Covers SvelteKit 2 + Svelte 5 Runes + Bits UI + Tailwind v4 + LayerChart 2.0.1, the unified X.com-style app shell (ADR-058) and its three exceptions, the full visual design language, the API-Readiness Gate, and Rule 16.
+description: Use when building new pages or components for the JapaConnect Main App (apps/main, port 3000, SSR). Covers SvelteKit 2 + Svelte 5 Runes + Bits UI + Tailwind v4 + LayerChart 2.0.1, the unified X.com-style app shell (ADR-058) and its three exceptions, the profile learning hub and cross-app links into Learn and Docs (ADR-060), the full visual design language, the API-Readiness Gate, and Rule 16.
 ---
 
 # JapaConnect Main App — Development Skill
@@ -196,3 +196,31 @@ Every user-facing string: `$t('key')`; add keys to `en.json` AND `fr.json`.
 
 # Deliverables Per Task
 1. API-Readiness Gate output · 2. surface built INSIDE `AppShell` (or one of the three exceptions, explicitly) · 3. typed `+page.server.ts` `load()` · 4. `+page.svelte` (Runes, Bits UI, skeletons, dark mode) · 5. sub-components in `$lib/components/` · 6. types in `$lib/types/index.ts`.
+**V2 main app phases (33–36):** Identity Tools UI (Phase 33) → Jobs/Gamification/Referral (Phase 34) → Newsletter/Import/Travel (Phase 35) → QA (Phase 36). See `ROADMAP-MAIN.md` for task breakdown.
+
+**V2 tool pages on main app (`/tools/*`):** Visa Checklist, Readiness Assessment, Cost of Living, Scholarship Finder, Remittance Rate Tracker, JapaBot (full-page). Each tool is also available at its own domain/subdomain via `apps/tools` (§78) — the main app renders these within the community layout; `apps/tools` renders them tool-first without community nav.
+
+## V2 Feature Areas (Implement Only After Corresponding Backend Phase Is Complete)
+
+| Feature | Backend phase | Key sections | Gates |
+|---|---|---|---|
+| JapaBot (RAG-grounded) | Phase 41 | §69 | `/ai/chat` amended |
+| AI Content Studio (admin) | Phase 42 | §75 | `studio.*` RBAC |
+| Participation queue (admin) | Phase 42 | §76 | `participation.review` RBAC |
+| Visa Checklist | Phase 43 | §70 | `checklist.use` RBAC |
+| Readiness Assessment | Phase 43 | §71 | `assessment.take` RBAC |
+| Cost of Living Calculator | Phase 43 | §72 | `col_calculator.use` RBAC |
+| Scholarship Finder | Phase 43 | §73 | `scholarship.browse` RBAC |
+| Remittance Rate Tracker | Phase 44 | §74 | `remittance.view` RBAC |
+| Referral system | Phase 45 | §60 | `referral.use` RBAC |
+| Self-serve ads | Phase 45 | §61 | `ads.self_serve.create` RBAC |
+| Newsletter | Phase 45 | §62 | `newsletter.subscribe` RBAC |
+| Jobs board | Phase 45 | §63 | `jobs.browse` RBAC |
+| Gamification | Phase 45 | §64 | `gamification.view` RBAC |
+| Content import | Phase 46 | §65 | `import.use` RBAC |
+| Advanced analytics | Phase 46 | §66 | `analytics.advanced` RBAC |
+| Travel search | Phase 46 | §67 | `travel.search` RBAC |
+
+**API-Readiness Gate applies to all v2 features.** Verify against `api-routes-catalog.md` — all v2 routes are marked as "V2 planned" in the catalog. Once the corresponding backend phase lands, the planned routes become available.
+
+**New surface in v2:** `apps/tools` (§78, ADR-086) — a sixth SvelteKit SSR app at `tools.japaconnect.com` (port 3005). Generate `jc-tools-*` skills before implementing this surface. Skills live at `.ai/skills/frontend/06-tools/`.

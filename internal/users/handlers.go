@@ -1,6 +1,7 @@
 package users
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -18,6 +19,12 @@ import (
 	"github.com/valkey-io/valkey-go/valkeycompat"
 )
 
+// JSONLDResolver resolves admin-managed JSON-LD templates (Section 14 /
+// Section 26). The user handlers use it to emit Person structured data.
+type JSONLDResolver interface {
+	ResolveJSONLD(ctx context.Context, tenantID pgtype.UUID, contentType string, fields map[string]string) (json.RawMessage, error)
+}
+
 // Handlers holds dependencies for user HTTP handlers.
 type Handlers struct {
 	Service *Service
@@ -25,12 +32,14 @@ type Handlers struct {
 	// content_country_preference changes (ADR-064). Optional — when nil,
 	// cache invalidation is skipped (the 15-minute TTL will eventually
 	// expire the stale entry).
-	Redis valkeycompat.Cmdable
+	Redis          valkeycompat.Cmdable
+	jsonldResolver JSONLDResolver
 }
 
-// NewHandlers creates Handlers with the given Service.
-func NewHandlers(service *Service) *Handlers {
-	return &Handlers{Service: service}
+// NewHandlers creates Handlers with the given Service. A nil resolver is
+// acceptable — JSON-LD is simply omitted when unavailable.
+func NewHandlers(service *Service, resolver JSONLDResolver) *Handlers {
+	return &Handlers{Service: service, jsonldResolver: resolver}
 }
 
 // requireTenant resolves the tenant from the request context.
@@ -156,7 +165,49 @@ func (h *Handlers) GetUserByUsername(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": profile})
+	// JSON-LD structured data (Section 14 / Section 26). Resolve the
+	// admin-managed Person template, interpolating the profile's field
+	// values. Best-effort: a missing template or resolution error degrades
+	// to no json_ld field. Emitted as a sibling of `data`.
+	resp := map[string]any{"data": profile}
+	if h.jsonldResolver != nil {
+		if jsonLd, jErr := h.jsonldResolver.ResolveJSONLD(r.Context(), tenantID, "Person", profileJSONLDFields(profile)); jErr == nil && len(jsonLd) > 0 {
+			resp["json_ld"] = json.RawMessage(jsonLd)
+		} else if jErr != nil {
+			slog.Warn("users: JSON-LD template resolution failed", "username", username, "error", jErr)
+		}
+	}
+
+	writeJSON(w, http.StatusOK, resp)
+}
+
+// profileJSONLDFields builds the {{field_key}} → value map for interpolating
+// a Person JSON-LD template from a public profile response.
+func profileJSONLDFields(p *PublicProfileResponse) map[string]string {
+	fullName := p.Username
+	if p.DisplayName != nil && *p.DisplayName != "" {
+		fullName = *p.DisplayName
+	}
+	avatar := ""
+	if p.AvatarURL != nil {
+		avatar = *p.AvatarURL
+	}
+	bio := ""
+	if p.Bio != nil {
+		bio = *p.Bio
+	}
+	return map[string]string{
+		"full_name":    fullName,
+		"username":     p.Username,
+		"profile_url":  "",
+		"avatar_url":   avatar,
+		"bio":          bio,
+		"job_title":    "",
+		"company_name": "",
+		"country":      "",
+		"twitter_url":  "",
+		"linkedin_url": "",
+	}
 }
 
 // UpdateMyProfile handles PATCH /api/v1/users/me.

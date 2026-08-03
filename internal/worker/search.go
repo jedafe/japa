@@ -18,6 +18,7 @@ type SearchIndexer interface {
 	IndexTag(ctx context.Context, tagID, tenantID [16]byte) error
 	IndexLearningTrack(ctx context.Context, trackID, tenantID [16]byte) error
 	IndexDocPage(ctx context.Context, pageID, tenantID [16]byte) error
+	IndexOrganization(ctx context.Context, orgID, tenantID [16]byte) error
 	DeleteDocument(ctx context.Context, indexName string, id [16]byte) error
 }
 

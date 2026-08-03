@@ -2,19 +2,63 @@
 	import { untrack } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import { Search as SearchIcon, FileText, Users, MessageSquare, Building2, Hash, Layers } from 'lucide-svelte';
+	import { Search as SearchIcon, FileText, Users, MessageSquare, Building2, Hash, Layers, Loader2 } from 'lucide-svelte';
 	import { t } from '$lib/i18n';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
 
 	let query = $state(untrack(() => data.query));
+	let loading = $state(false);
 	const activeType = $derived(page.url.searchParams.get('type') ?? 'all');
+
+	// Live debounced search — updates the URL (and thus SSR results) as the
+	// user types, with a 300ms debounce to avoid hammering the backend.
+	let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+
+	function onInput() {
+		if (debounceTimer) clearTimeout(debounceTimer);
+		const q = query.trim();
+		// If the query hasn't changed from what's already in the URL, skip.
+		if (q === data.query && activeType === (page.url.searchParams.get('type') ?? 'all')) {
+			loading = false;
+			return;
+		}
+		if (!q) {
+			loading = false;
+			if (data.query) goto('/search', { keepFocus: true, noScroll: true });
+			return;
+		}
+		loading = true;
+		debounceTimer = setTimeout(() => {
+			const params = new URLSearchParams();
+			if (q) params.set('q', q);
+			if (activeType !== 'all') params.set('type', activeType);
+			goto(`/search?${params.toString()}`, { keepFocus: true, noScroll: true });
+		}, 300);
+	}
+
+	// Sync the input from the URL only when data.query changes externally
+	// (sidebar search → /search?q=foo, browser back/forward). We track the
+	// last-seen data.query so the effect only re-fires on data changes —
+	// NOT when the user types (which would clobber the input).
+	let lastDataQuery = $state(untrack(() => data.query));
+	$effect(() => {
+		if (data.query !== lastDataQuery) {
+			lastDataQuery = data.query;
+			query = data.query;
+		}
+		loading = false;
+	});
 
 	function submitSearch(e: SubmitEvent) {
 		e.preventDefault();
+		if (debounceTimer) clearTimeout(debounceTimer);
 		const q = query.trim();
-		if (q) goto(`/search?q=${encodeURIComponent(q)}`);
+		if (q) {
+			loading = true;
+			goto(`/search?q=${encodeURIComponent(q)}`, { keepFocus: true, noScroll: true });
+		}
 	}
 
 	function filterByType(type: string) {
@@ -22,7 +66,8 @@
 		const params = new URLSearchParams();
 		if (q) params.set('q', q);
 		if (type !== 'all') params.set('type', type);
-		goto(`/search?${params.toString()}`);
+		loading = true;
+		goto(`/search?${params.toString()}`, { keepFocus: true, noScroll: true });
 	}
 
 	// Filter types — driven by the backend search index types.
@@ -45,13 +90,19 @@
 		return groups;
 	});
 
-	const groupLabels: Record<string, string> = {
+	// Reactive label map so a locale switch re-resolves the type labels.
+	// Previously a plain const object computed once at init, which left the
+	// group headings stale after a language change.
+	const groupLabels = $derived<Record<string, string>>({
 		content: t('search.filter_content', 'Posts'),
 		user: t('search.filter_people', 'People'),
 		space: t('search.filter_spaces', 'Spaces'),
 		forum_thread: t('search.filter_discussions', 'Discussions'),
-		organization: t('search.filter_orgs', 'Organizations')
-	};
+		organization: t('search.filter_orgs', 'Organizations'),
+		course: t('search.filter_content', 'Courses'),
+		tag: t('search.filter_all', 'Tags'),
+		doc_page: t('search.filter_content', 'Docs')
+	});
 </script>
 
 <svelte:head>
@@ -69,9 +120,13 @@
 			<input
 				type="search"
 				bind:value={query}
+				oninput={onInput}
 				placeholder={t('search.placeholder', 'Search stories, spaces, people...')}
-				class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] py-2.5 pl-10 pr-4 text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none"
+				class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] py-2.5 pl-10 pr-10 text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none"
 			/>
+			{#if loading}
+				<Loader2 class="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 animate-spin text-[var(--color-muted)]" size={16} />
+			{/if}
 		</div>
 	</form>
 
@@ -96,7 +151,12 @@
 			{t('search.results_for', 'Results for')} "<span class="font-medium text-[var(--color-text)]">{data.query}</span>"
 		</p>
 
-		{#if data.results.length === 0}
+		{#if data.loadError}
+			<!-- The backend returned a non-2xx (e.g. 503 search_unavailable when
+			     Meilisearch is down). Distinguish this from a genuine empty result
+			     so the user knows to retry rather than assuming nothing exists. -->
+			<p class="py-12 text-center text-[var(--color-text-subtle)]">{t('search.search_unavailable', 'Search is temporarily unavailable. Please try again in a moment.')}</p>
+		{:else if data.results.length === 0}
 			<p class="py-12 text-center text-[var(--color-text-subtle)]">{t('search.no_results', 'No results found. Try a different query.')}</p>
 		{:else if activeType === 'all'}
 			<!-- Grouped results (Phase 10.01) -->
@@ -135,7 +195,7 @@
 				{#each data.results as result (result.id)}
 					<a href={result.url} class="block rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 transition-colors hover:bg-[var(--color-surface-subtle)]">
 						<div class="mb-1 flex items-center gap-2">
-							<span class="rounded-full bg-[var(--color-surface-subtle)] px-2 py-0.5 text-xs text-[var(--color-text-subtle)]">{result.type}</span>
+							<span class="rounded-full bg-[var(--color-surface-subtle)] px-2 py-0.5 text-xs text-[var(--color-text-subtle)]">{groupLabels[result.type] ?? result.type}</span>
 						</div>
 						<h3 class="font-medium text-[var(--color-text)]">{result.title}</h3>
 						{#if result.excerpt}
