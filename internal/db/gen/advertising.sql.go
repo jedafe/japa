@@ -62,7 +62,7 @@ INSERT INTO ad_campaigns (
     $10, $11, $12,
     $13, $14
 )
-RETURNING id, tenant_id, name, slot_type_id, content, target_url, budget, spent, status, priority, frequency_cap_per_user, start_date, end_date, created_by, created_at, updated_at, target_geo, target_space_ids
+RETURNING id, tenant_id, name, slot_type_id, content, target_url, budget, spent, status, priority, frequency_cap_per_user, start_date, end_date, created_by, created_at, updated_at, target_geo, target_space_ids, organization_id, flat_rate, budget_credits
 `
 
 type CreateAdCampaignParams struct {
@@ -122,6 +122,9 @@ func (q *Queries) CreateAdCampaign(ctx context.Context, arg CreateAdCampaignPara
 		&i.UpdatedAt,
 		&i.TargetGeo,
 		&i.TargetSpaceIds,
+		&i.OrganizationID,
+		&i.FlatRate,
+		&i.BudgetCredits,
 	)
 	return i, err
 }
@@ -190,7 +193,7 @@ INSERT INTO ad_slot_types (
 ) VALUES (
     $1, $2, $3, $4
 )
-RETURNING id, tenant_id, slot_name, description, max_display_per_page, is_active, created_at
+RETURNING id, tenant_id, slot_name, description, max_display_per_page, is_active, created_at, flat_rate
 `
 
 type CreateAdSlotTypeParams struct {
@@ -220,6 +223,7 @@ func (q *Queries) CreateAdSlotType(ctx context.Context, arg CreateAdSlotTypePara
 		&i.MaxDisplayPerPage,
 		&i.IsActive,
 		&i.CreatedAt,
+		&i.FlatRate,
 	)
 	return i, err
 }
@@ -454,7 +458,7 @@ func (q *Queries) GetAdAnalyticsBySlot(ctx context.Context, arg GetAdAnalyticsBy
 }
 
 const getAdCampaignByID = `-- name: GetAdCampaignByID :one
-SELECT id, tenant_id, name, slot_type_id, content, target_url, budget, spent, status, priority, frequency_cap_per_user, start_date, end_date, created_by, created_at, updated_at, target_geo, target_space_ids FROM ad_campaigns
+SELECT id, tenant_id, name, slot_type_id, content, target_url, budget, spent, status, priority, frequency_cap_per_user, start_date, end_date, created_by, created_at, updated_at, target_geo, target_space_ids, organization_id, flat_rate, budget_credits FROM ad_campaigns
 WHERE id = $1 AND tenant_id = $2
 `
 
@@ -485,6 +489,9 @@ func (q *Queries) GetAdCampaignByID(ctx context.Context, arg GetAdCampaignByIDPa
 		&i.UpdatedAt,
 		&i.TargetGeo,
 		&i.TargetSpaceIds,
+		&i.OrganizationID,
+		&i.FlatRate,
+		&i.BudgetCredits,
 	)
 	return i, err
 }
@@ -548,7 +555,7 @@ func (q *Queries) GetAdNetworkByProvider(ctx context.Context, arg GetAdNetworkBy
 }
 
 const getAdSlotTypeByID = `-- name: GetAdSlotTypeByID :one
-SELECT id, tenant_id, slot_name, description, max_display_per_page, is_active, created_at FROM ad_slot_types
+SELECT id, tenant_id, slot_name, description, max_display_per_page, is_active, created_at, flat_rate FROM ad_slot_types
 WHERE id = $1 AND tenant_id = $2
 `
 
@@ -568,12 +575,13 @@ func (q *Queries) GetAdSlotTypeByID(ctx context.Context, arg GetAdSlotTypeByIDPa
 		&i.MaxDisplayPerPage,
 		&i.IsActive,
 		&i.CreatedAt,
+		&i.FlatRate,
 	)
 	return i, err
 }
 
 const getAdSlotTypeByName = `-- name: GetAdSlotTypeByName :one
-SELECT id, tenant_id, slot_name, description, max_display_per_page, is_active, created_at FROM ad_slot_types
+SELECT id, tenant_id, slot_name, description, max_display_per_page, is_active, created_at, flat_rate FROM ad_slot_types
 WHERE tenant_id = $1 AND slot_name = $2
 `
 
@@ -593,6 +601,7 @@ func (q *Queries) GetAdSlotTypeByName(ctx context.Context, arg GetAdSlotTypeByNa
 		&i.MaxDisplayPerPage,
 		&i.IsActive,
 		&i.CreatedAt,
+		&i.FlatRate,
 	)
 	return i, err
 }
@@ -758,7 +767,7 @@ func (q *Queries) ListActiveAdNetworks(ctx context.Context, tenantID pgtype.UUID
 }
 
 const listActiveAdSlotTypes = `-- name: ListActiveAdSlotTypes :many
-SELECT id, tenant_id, slot_name, description, max_display_per_page, is_active, created_at FROM ad_slot_types
+SELECT id, tenant_id, slot_name, description, max_display_per_page, is_active, created_at, flat_rate FROM ad_slot_types
 WHERE tenant_id = $1 AND is_active = true
 ORDER BY slot_name
 `
@@ -780,6 +789,7 @@ func (q *Queries) ListActiveAdSlotTypes(ctx context.Context, tenantID pgtype.UUI
 			&i.MaxDisplayPerPage,
 			&i.IsActive,
 			&i.CreatedAt,
+			&i.FlatRate,
 		); err != nil {
 			return nil, err
 		}
@@ -829,7 +839,7 @@ func (q *Queries) ListActiveBoosts(ctx context.Context, tenantID pgtype.UUID) ([
 }
 
 const listActiveCampaignsBySlot = `-- name: ListActiveCampaignsBySlot :many
-SELECT id, tenant_id, name, slot_type_id, content, target_url, budget, spent, status, priority, frequency_cap_per_user, start_date, end_date, created_by, created_at, updated_at, target_geo, target_space_ids FROM ad_campaigns
+SELECT id, tenant_id, name, slot_type_id, content, target_url, budget, spent, status, priority, frequency_cap_per_user, start_date, end_date, created_by, created_at, updated_at, target_geo, target_space_ids, organization_id, flat_rate, budget_credits FROM ad_campaigns
 WHERE tenant_id = $1
   AND slot_type_id = $2
   AND status = 'active'
@@ -879,6 +889,9 @@ func (q *Queries) ListActiveCampaignsBySlot(ctx context.Context, arg ListActiveC
 			&i.UpdatedAt,
 			&i.TargetGeo,
 			&i.TargetSpaceIds,
+			&i.OrganizationID,
+			&i.FlatRate,
+			&i.BudgetCredits,
 		); err != nil {
 			return nil, err
 		}
@@ -891,7 +904,7 @@ func (q *Queries) ListActiveCampaignsBySlot(ctx context.Context, arg ListActiveC
 }
 
 const listAdCampaignsByTenant = `-- name: ListAdCampaignsByTenant :many
-SELECT id, tenant_id, name, slot_type_id, content, target_url, budget, spent, status, priority, frequency_cap_per_user, start_date, end_date, created_by, created_at, updated_at, target_geo, target_space_ids FROM ad_campaigns
+SELECT id, tenant_id, name, slot_type_id, content, target_url, budget, spent, status, priority, frequency_cap_per_user, start_date, end_date, created_by, created_at, updated_at, target_geo, target_space_ids, organization_id, flat_rate, budget_credits FROM ad_campaigns
 WHERE tenant_id = $1
 ORDER BY created_at DESC
 LIMIT $3 OFFSET $2
@@ -931,6 +944,9 @@ func (q *Queries) ListAdCampaignsByTenant(ctx context.Context, arg ListAdCampaig
 			&i.UpdatedAt,
 			&i.TargetGeo,
 			&i.TargetSpaceIds,
+			&i.OrganizationID,
+			&i.FlatRate,
+			&i.BudgetCredits,
 		); err != nil {
 			return nil, err
 		}
@@ -1028,7 +1044,7 @@ func (q *Queries) ListAdNetworks(ctx context.Context, arg ListAdNetworksParams) 
 }
 
 const listAdSlotTypes = `-- name: ListAdSlotTypes :many
-SELECT id, tenant_id, slot_name, description, max_display_per_page, is_active, created_at FROM ad_slot_types
+SELECT id, tenant_id, slot_name, description, max_display_per_page, is_active, created_at, flat_rate FROM ad_slot_types
 WHERE tenant_id = $1
 ORDER BY slot_name
 LIMIT $3 OFFSET $2
@@ -1057,6 +1073,7 @@ func (q *Queries) ListAdSlotTypes(ctx context.Context, arg ListAdSlotTypesParams
 			&i.MaxDisplayPerPage,
 			&i.IsActive,
 			&i.CreatedAt,
+			&i.FlatRate,
 		); err != nil {
 			return nil, err
 		}
@@ -1122,7 +1139,7 @@ SET name = $1,
     target_space_ids = $9,
     updated_at = now()
 WHERE id = $10 AND tenant_id = $11
-RETURNING id, tenant_id, name, slot_type_id, content, target_url, budget, spent, status, priority, frequency_cap_per_user, start_date, end_date, created_by, created_at, updated_at, target_geo, target_space_ids
+RETURNING id, tenant_id, name, slot_type_id, content, target_url, budget, spent, status, priority, frequency_cap_per_user, start_date, end_date, created_by, created_at, updated_at, target_geo, target_space_ids, organization_id, flat_rate, budget_credits
 `
 
 type UpdateAdCampaignParams struct {
@@ -1173,6 +1190,9 @@ func (q *Queries) UpdateAdCampaign(ctx context.Context, arg UpdateAdCampaignPara
 		&i.UpdatedAt,
 		&i.TargetGeo,
 		&i.TargetSpaceIds,
+		&i.OrganizationID,
+		&i.FlatRate,
+		&i.BudgetCredits,
 	)
 	return i, err
 }
@@ -1183,7 +1203,7 @@ SET name = COALESCE(NULLIF($1::text, ''), name),
     budget = COALESCE($2, budget),
     updated_at = now()
 WHERE id = $3 AND tenant_id = $4
-RETURNING id, tenant_id, name, slot_type_id, content, target_url, budget, spent, status, priority, frequency_cap_per_user, start_date, end_date, created_by, created_at, updated_at, target_geo, target_space_ids
+RETURNING id, tenant_id, name, slot_type_id, content, target_url, budget, spent, status, priority, frequency_cap_per_user, start_date, end_date, created_by, created_at, updated_at, target_geo, target_space_ids, organization_id, flat_rate, budget_credits
 `
 
 type UpdateAdCampaignDetailsParams struct {
@@ -1223,6 +1243,9 @@ func (q *Queries) UpdateAdCampaignDetails(ctx context.Context, arg UpdateAdCampa
 		&i.UpdatedAt,
 		&i.TargetGeo,
 		&i.TargetSpaceIds,
+		&i.OrganizationID,
+		&i.FlatRate,
+		&i.BudgetCredits,
 	)
 	return i, err
 }
@@ -1231,7 +1254,7 @@ const updateAdCampaignStatus = `-- name: UpdateAdCampaignStatus :one
 UPDATE ad_campaigns
 SET status = $1, updated_at = now()
 WHERE id = $2 AND tenant_id = $3
-RETURNING id, tenant_id, name, slot_type_id, content, target_url, budget, spent, status, priority, frequency_cap_per_user, start_date, end_date, created_by, created_at, updated_at, target_geo, target_space_ids
+RETURNING id, tenant_id, name, slot_type_id, content, target_url, budget, spent, status, priority, frequency_cap_per_user, start_date, end_date, created_by, created_at, updated_at, target_geo, target_space_ids, organization_id, flat_rate, budget_credits
 `
 
 type UpdateAdCampaignStatusParams struct {
@@ -1262,6 +1285,9 @@ func (q *Queries) UpdateAdCampaignStatus(ctx context.Context, arg UpdateAdCampai
 		&i.UpdatedAt,
 		&i.TargetGeo,
 		&i.TargetSpaceIds,
+		&i.OrganizationID,
+		&i.FlatRate,
+		&i.BudgetCredits,
 	)
 	return i, err
 }
@@ -1320,7 +1346,7 @@ UPDATE ad_slot_types
 SET max_display_per_page = $1,
     is_active = $2
 WHERE id = $3 AND tenant_id = $4
-RETURNING id, tenant_id, slot_name, description, max_display_per_page, is_active, created_at
+RETURNING id, tenant_id, slot_name, description, max_display_per_page, is_active, created_at, flat_rate
 `
 
 type UpdateAdSlotTypeParams struct {
@@ -1346,6 +1372,7 @@ func (q *Queries) UpdateAdSlotType(ctx context.Context, arg UpdateAdSlotTypePara
 		&i.MaxDisplayPerPage,
 		&i.IsActive,
 		&i.CreatedAt,
+		&i.FlatRate,
 	)
 	return i, err
 }
@@ -1354,7 +1381,7 @@ const updateAdSlotTypeDetails = `-- name: UpdateAdSlotTypeDetails :one
 UPDATE ad_slot_types
 SET slot_name = $1, description = $2
 WHERE id = $3 AND tenant_id = $4
-RETURNING id, tenant_id, slot_name, description, max_display_per_page, is_active, created_at
+RETURNING id, tenant_id, slot_name, description, max_display_per_page, is_active, created_at, flat_rate
 `
 
 type UpdateAdSlotTypeDetailsParams struct {
@@ -1380,6 +1407,7 @@ func (q *Queries) UpdateAdSlotTypeDetails(ctx context.Context, arg UpdateAdSlotT
 		&i.MaxDisplayPerPage,
 		&i.IsActive,
 		&i.CreatedAt,
+		&i.FlatRate,
 	)
 	return i, err
 }

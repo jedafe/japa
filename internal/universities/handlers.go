@@ -35,11 +35,11 @@ const customFieldEntityTypeSpace = "space"
 // SpacesService is the subset of spaces.Service the university handlers need.
 type SpacesService interface {
 	GetSpaceTypeBySlug(ctx context.Context, slug string, tenantID pgtype.UUID) (gen.SpaceType, error)
-	ListSpacesByType(ctx context.Context, tenantID, spaceTypeID pgtype.UUID) ([]gen.Space, error)
-	GetSpaceBySlug(ctx context.Context, slug string, tenantID pgtype.UUID) (gen.Space, error)
-	GetSpace(ctx context.Context, id, tenantID pgtype.UUID) (gen.Space, error)
-	CreateSpace(ctx context.Context, params gen.CreateSpaceParams) (gen.Space, error)
-	UpdateSpace(ctx context.Context, params gen.UpdateSpaceParams) (gen.Space, error)
+	ListSpacesByType(ctx context.Context, tenantID, spaceTypeID pgtype.UUID) ([]gen.ListSpacesByTypeRow, error)
+	GetSpaceBySlug(ctx context.Context, slug string, tenantID pgtype.UUID) (gen.GetSpaceBySlugRow, error)
+	GetSpace(ctx context.Context, id, tenantID pgtype.UUID) (gen.GetSpaceByIDRow, error)
+	CreateSpace(ctx context.Context, params gen.CreateSpaceParams) (gen.CreateSpaceRow, error)
+	UpdateSpace(ctx context.Context, params gen.UpdateSpaceParams) (gen.UpdateSpaceRow, error)
 	DeleteSpace(ctx context.Context, id, tenantID pgtype.UUID) error
 }
 
@@ -142,7 +142,7 @@ func (h *Handlers) resolveLogoURL(ctx context.Context, tenantID pgtype.UUID, log
 // for the university logo (resolved from logo_media_id); empty when no logo
 // is set or the media service is unavailable.
 type universityDetail struct {
-	gen.Space
+	gen.GetSpaceBySlugRow
 	Fields  []gen.CustomFieldValue `json:"fields"`
 	LogoURL string                 `json:"logo_url"`
 }
@@ -212,7 +212,7 @@ func (h *Handlers) GetUniversity(w http.ResponseWriter, r *http.Request) {
 	// logo_url, and the frontend falls back to the GraduationCap icon.
 	logoURL := h.resolveLogoURL(r.Context(), tenantID, space.LogoMediaID)
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": universityDetail{Space: space, Fields: fields, LogoURL: logoURL}})
+	writeJSON(w, http.StatusOK, map[string]any{"data": universityDetail{GetSpaceBySlugRow: space, Fields: fields, LogoURL: logoURL}})
 }
 
 // writeJSON serializes the given value as JSON and writes it to the response.

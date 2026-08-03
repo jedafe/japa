@@ -3,9 +3,11 @@ import type { PageServerLoad } from './$types';
 import { apiContext, apiGet, apiList } from '$lib/server/api';
 import type {
 	SpaceDetail,
+	Space,
 	SpaceMember,
 	SpaceModerator,
 	SpaceContentItem,
+	SpacePermissionPreset,
 	ForumThread
 } from '$lib/types';
 
@@ -23,7 +25,8 @@ export const load: PageServerLoad = async (event) => {
 	const ctx = apiContext(event);
 	const slug = event.params.slug;
 
-	// Space detail bundle: { space, rules }. 404 propagates as a SvelteKit error.
+	// Space detail bundle: { space, rules, keywords, logo_url, header_url }.
+	// 404 propagates as a SvelteKit error.
 	let detail: SpaceDetail;
 	try {
 		detail = await apiGet<SpaceDetail>(ctx, `/spaces/${slug}`);
@@ -54,9 +57,21 @@ export const load: PageServerLoad = async (event) => {
 				.catch(() => false)
 		: Promise.resolve(false);
 
+	// Mute status — only fetched for authed viewers (guests always get false).
+	const muteStatus = event.locals.user
+		? apiGet<{ muted: boolean }>(ctx, `/spaces/${slug}/mute-status`)
+				.then((r) => r.muted)
+				.catch(() => false)
+		: Promise.resolve(false);
+
 	// Tab data — each degrades to an empty list on failure so a missing tab
 	// never blanks the whole space view.
-	const [content, members, forumThreads, analytics, moderators, isFollowing] = await Promise.all([
+	const canManage = isOwner || isModerator;
+
+	const [
+		content, members, forumThreads, analytics, moderators, isFollowing,
+		isMuted, presets, parentSpaces
+	] = await Promise.all([
 		apiList<SpaceContentItem>(ctx, `/spaces/${slug}/content?page_size=${PAGE_SIZE}`)
 			.then((r) => r.items)
 			.catch(() => []),
@@ -76,12 +91,28 @@ export const load: PageServerLoad = async (event) => {
 		// Moderators list — only fetched for the owner/moderator so the
 		// assignment panel has data to render. The GET route is public, but
 		// we avoid the extra request for viewers who can't manage moderators.
-		isOwner || isModerator
+		canManage
 			? apiList<SpaceModerator>(ctx, `/spaces/${slug}/moderators`)
 					.then((r) => r.items)
 					.catch(() => [])
 			: Promise.resolve([] as SpaceModerator[]),
-		initiallyFollowing
+		initiallyFollowing,
+		muteStatus,
+		// Permission presets — only fetched for authed viewers (the route
+		// requires auth). Used in the Settings tab to show preset shortcuts.
+		event.locals.user
+			? apiList<SpacePermissionPreset>(ctx, `/space-permission-presets`)
+					.then((r) => r.items)
+					.catch(() => [])
+			: Promise.resolve([] as SpacePermissionPreset[]),
+		// Parent spaces — only fetched for custom spaces (primary spaces have
+		// no parents) and only when the viewer is the owner (who can manage
+		// parents). Non-owners don't need this data.
+		(isOwner && space.level === 'custom')
+			? apiList<Space>(ctx, `/spaces/${slug}/parents`)
+					.then((r) => r.items)
+					.catch(() => [])
+			: Promise.resolve([] as Space[])
 	]);
 
 	return {
@@ -89,13 +120,17 @@ export const load: PageServerLoad = async (event) => {
 		rules: detail.rules,
 		keywords: detail.keywords ?? [],
 		logoUrl: detail.logo_url ?? '',
+		headerUrl: detail.header_url ?? '',
 		isOwner,
 		isModerator,
 		moderators,
+		presets,
+		parentSpaces,
 		content,
 		members,
 		forumThreads,
 		analytics,
+		isMuted,
 		pageSize: PAGE_SIZE,
 		initiallyFollowing: isFollowing
 	};

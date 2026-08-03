@@ -111,7 +111,28 @@ type CreateCustomFieldParams struct {
 	Position       int32       `json:"position"`
 }
 
-func (q *Queries) CreateCustomField(ctx context.Context, arg CreateCustomFieldParams) (CustomField, error) {
+type CreateCustomFieldRow struct {
+	ID             pgtype.UUID        `json:"id"`
+	GroupID        pgtype.UUID        `json:"group_id"`
+	TenantID       pgtype.UUID        `json:"tenant_id"`
+	Label          string             `json:"label"`
+	Key            string             `json:"key"`
+	FieldType      string             `json:"field_type"`
+	Options        []byte             `json:"options"`
+	EmbedPlatforms []string           `json:"embed_platforms"`
+	Placeholder    *string            `json:"placeholder"`
+	DefaultValue   *string            `json:"default_value"`
+	IsRequired     bool               `json:"is_required"`
+	IsSystem       bool               `json:"is_system"`
+	ShowInFrontend bool               `json:"show_in_frontend"`
+	Filterable     bool               `json:"filterable"`
+	Sortable       bool               `json:"sortable"`
+	Searchable     bool               `json:"searchable"`
+	Position       int32              `json:"position"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+}
+
+func (q *Queries) CreateCustomField(ctx context.Context, arg CreateCustomFieldParams) (CreateCustomFieldRow, error) {
 	row := q.db.QueryRow(ctx, createCustomField,
 		arg.GroupID,
 		arg.TenantID,
@@ -130,7 +151,7 @@ func (q *Queries) CreateCustomField(ctx context.Context, arg CreateCustomFieldPa
 		arg.Searchable,
 		arg.Position,
 	)
-	var i CustomField
+	var i CreateCustomFieldRow
 	err := row.Scan(
 		&i.ID,
 		&i.GroupID,
@@ -313,9 +334,30 @@ type GetCustomFieldByIDParams struct {
 	TenantID pgtype.UUID `json:"tenant_id"`
 }
 
-func (q *Queries) GetCustomFieldByID(ctx context.Context, arg GetCustomFieldByIDParams) (CustomField, error) {
+type GetCustomFieldByIDRow struct {
+	ID             pgtype.UUID        `json:"id"`
+	GroupID        pgtype.UUID        `json:"group_id"`
+	TenantID       pgtype.UUID        `json:"tenant_id"`
+	Label          string             `json:"label"`
+	Key            string             `json:"key"`
+	FieldType      string             `json:"field_type"`
+	Options        []byte             `json:"options"`
+	EmbedPlatforms []string           `json:"embed_platforms"`
+	Placeholder    *string            `json:"placeholder"`
+	DefaultValue   *string            `json:"default_value"`
+	IsRequired     bool               `json:"is_required"`
+	IsSystem       bool               `json:"is_system"`
+	ShowInFrontend bool               `json:"show_in_frontend"`
+	Filterable     bool               `json:"filterable"`
+	Sortable       bool               `json:"sortable"`
+	Searchable     bool               `json:"searchable"`
+	Position       int32              `json:"position"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+}
+
+func (q *Queries) GetCustomFieldByID(ctx context.Context, arg GetCustomFieldByIDParams) (GetCustomFieldByIDRow, error) {
 	row := q.db.QueryRow(ctx, getCustomFieldByID, arg.ID, arg.TenantID)
-	var i CustomField
+	var i GetCustomFieldByIDRow
 	err := row.Scan(
 		&i.ID,
 		&i.GroupID,
@@ -448,17 +490,38 @@ WHERE tenant_id = $1
 ORDER BY group_id, position ASC, created_at ASC
 `
 
+type ListAllCustomFieldsByTenantRow struct {
+	ID             pgtype.UUID        `json:"id"`
+	GroupID        pgtype.UUID        `json:"group_id"`
+	TenantID       pgtype.UUID        `json:"tenant_id"`
+	Label          string             `json:"label"`
+	Key            string             `json:"key"`
+	FieldType      string             `json:"field_type"`
+	Options        []byte             `json:"options"`
+	EmbedPlatforms []string           `json:"embed_platforms"`
+	Placeholder    *string            `json:"placeholder"`
+	DefaultValue   *string            `json:"default_value"`
+	IsRequired     bool               `json:"is_required"`
+	IsSystem       bool               `json:"is_system"`
+	ShowInFrontend bool               `json:"show_in_frontend"`
+	Filterable     bool               `json:"filterable"`
+	Sortable       bool               `json:"sortable"`
+	Searchable     bool               `json:"searchable"`
+	Position       int32              `json:"position"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+}
+
 // All fields for all groups belonging to a tenant, used to enrich
 // ListFieldGroups with fields[] without N+1 per-group field lookups.
-func (q *Queries) ListAllCustomFieldsByTenant(ctx context.Context, tenantID pgtype.UUID) ([]CustomField, error) {
+func (q *Queries) ListAllCustomFieldsByTenant(ctx context.Context, tenantID pgtype.UUID) ([]ListAllCustomFieldsByTenantRow, error) {
 	rows, err := q.db.Query(ctx, listAllCustomFieldsByTenant, tenantID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []CustomField
+	var items []ListAllCustomFieldsByTenantRow
 	for rows.Next() {
-		var i CustomField
+		var i ListAllCustomFieldsByTenantRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.GroupID,
@@ -770,18 +833,39 @@ type ListCustomFieldsByGroupParams struct {
 	TenantID pgtype.UUID `json:"tenant_id"`
 }
 
+type ListCustomFieldsByGroupRow struct {
+	ID             pgtype.UUID        `json:"id"`
+	GroupID        pgtype.UUID        `json:"group_id"`
+	TenantID       pgtype.UUID        `json:"tenant_id"`
+	Label          string             `json:"label"`
+	Key            string             `json:"key"`
+	FieldType      string             `json:"field_type"`
+	Options        []byte             `json:"options"`
+	EmbedPlatforms []string           `json:"embed_platforms"`
+	Placeholder    *string            `json:"placeholder"`
+	DefaultValue   *string            `json:"default_value"`
+	IsRequired     bool               `json:"is_required"`
+	IsSystem       bool               `json:"is_system"`
+	ShowInFrontend bool               `json:"show_in_frontend"`
+	Filterable     bool               `json:"filterable"`
+	Sortable       bool               `json:"sortable"`
+	Searchable     bool               `json:"searchable"`
+	Position       int32              `json:"position"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+}
+
 // =====================
 // Custom Fields
 // =====================
-func (q *Queries) ListCustomFieldsByGroup(ctx context.Context, arg ListCustomFieldsByGroupParams) ([]CustomField, error) {
+func (q *Queries) ListCustomFieldsByGroup(ctx context.Context, arg ListCustomFieldsByGroupParams) ([]ListCustomFieldsByGroupRow, error) {
 	rows, err := q.db.Query(ctx, listCustomFieldsByGroup, arg.GroupID, arg.TenantID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []CustomField
+	var items []ListCustomFieldsByGroupRow
 	for rows.Next() {
-		var i CustomField
+		var i ListCustomFieldsByGroupRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.GroupID,
@@ -908,7 +992,28 @@ type UpdateCustomFieldParams struct {
 	TenantID       pgtype.UUID `json:"tenant_id"`
 }
 
-func (q *Queries) UpdateCustomField(ctx context.Context, arg UpdateCustomFieldParams) (CustomField, error) {
+type UpdateCustomFieldRow struct {
+	ID             pgtype.UUID        `json:"id"`
+	GroupID        pgtype.UUID        `json:"group_id"`
+	TenantID       pgtype.UUID        `json:"tenant_id"`
+	Label          string             `json:"label"`
+	Key            string             `json:"key"`
+	FieldType      string             `json:"field_type"`
+	Options        []byte             `json:"options"`
+	EmbedPlatforms []string           `json:"embed_platforms"`
+	Placeholder    *string            `json:"placeholder"`
+	DefaultValue   *string            `json:"default_value"`
+	IsRequired     bool               `json:"is_required"`
+	IsSystem       bool               `json:"is_system"`
+	ShowInFrontend bool               `json:"show_in_frontend"`
+	Filterable     bool               `json:"filterable"`
+	Sortable       bool               `json:"sortable"`
+	Searchable     bool               `json:"searchable"`
+	Position       int32              `json:"position"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+}
+
+func (q *Queries) UpdateCustomField(ctx context.Context, arg UpdateCustomFieldParams) (UpdateCustomFieldRow, error) {
 	row := q.db.QueryRow(ctx, updateCustomField,
 		arg.Label,
 		arg.FieldType,
@@ -925,7 +1030,7 @@ func (q *Queries) UpdateCustomField(ctx context.Context, arg UpdateCustomFieldPa
 		arg.ID,
 		arg.TenantID,
 	)
-	var i CustomField
+	var i UpdateCustomFieldRow
 	err := row.Scan(
 		&i.ID,
 		&i.GroupID,

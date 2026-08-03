@@ -57,7 +57,7 @@ func (s *Service) ListAllAssignmentsByTenant(ctx context.Context, tenantID pgtyp
 // ListAllFieldsByTenant returns every custom field for groups owned by the
 // given tenant. Used to enrich ListFieldGroups with fields[] without N+1
 // per-group field lookups.
-func (s *Service) ListAllFieldsByTenant(ctx context.Context, tenantID pgtype.UUID) ([]gen.CustomField, error) {
+func (s *Service) ListAllFieldsByTenant(ctx context.Context, tenantID pgtype.UUID) ([]gen.ListAllCustomFieldsByTenantRow, error) {
 	fields, err := s.read.ListAllCustomFieldsByTenant(ctx, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("listing all custom fields by tenant: %w", err)
@@ -145,7 +145,7 @@ func (s *Service) DeleteFieldGroup(ctx context.Context, id, tenantID pgtype.UUID
 
 // ListFieldsByGroup returns every custom field belonging to the given group,
 // ordered by position then creation time.
-func (s *Service) ListFieldsByGroup(ctx context.Context, groupID, tenantID pgtype.UUID) ([]gen.CustomField, error) {
+func (s *Service) ListFieldsByGroup(ctx context.Context, groupID, tenantID pgtype.UUID) ([]gen.ListCustomFieldsByGroupRow, error) {
 	fields, err := s.read.ListCustomFieldsByGroup(ctx, gen.ListCustomFieldsByGroupParams{
 		GroupID:  groupID,
 		TenantID: tenantID,
@@ -158,13 +158,13 @@ func (s *Service) ListFieldsByGroup(ctx context.Context, groupID, tenantID pgtyp
 }
 
 // GetField returns the custom field with the given ID, scoped to the tenant.
-func (s *Service) GetField(ctx context.Context, id, tenantID pgtype.UUID) (gen.CustomField, error) {
+func (s *Service) GetField(ctx context.Context, id, tenantID pgtype.UUID) (gen.GetCustomFieldByIDRow, error) {
 	field, err := s.read.GetCustomFieldByID(ctx, gen.GetCustomFieldByIDParams{
 		ID:       id,
 		TenantID: tenantID,
 	})
 	if err != nil {
-		return gen.CustomField{}, fmt.Errorf("getting custom field: %w", err)
+		return gen.GetCustomFieldByIDRow{}, fmt.Errorf("getting custom field: %w", err)
 	}
 
 	return field, nil
@@ -172,10 +172,10 @@ func (s *Service) GetField(ctx context.Context, id, tenantID pgtype.UUID) (gen.C
 
 // CreateField creates a new custom field. The caller is responsible for
 // validating the field type via IsValidFieldType before calling this method.
-func (s *Service) CreateField(ctx context.Context, params gen.CreateCustomFieldParams) (gen.CustomField, error) {
+func (s *Service) CreateField(ctx context.Context, params gen.CreateCustomFieldParams) (gen.CreateCustomFieldRow, error) {
 	field, err := s.write.CreateCustomField(ctx, params)
 	if err != nil {
-		return gen.CustomField{}, fmt.Errorf("creating custom field: %w", err)
+		return gen.CreateCustomFieldRow{}, fmt.Errorf("creating custom field: %w", err)
 	}
 
 	return field, nil
@@ -183,10 +183,10 @@ func (s *Service) CreateField(ctx context.Context, params gen.CreateCustomFieldP
 
 // UpdateField updates a non-system custom field. System fields are protected
 // at the database level.
-func (s *Service) UpdateField(ctx context.Context, params gen.UpdateCustomFieldParams) (gen.CustomField, error) {
+func (s *Service) UpdateField(ctx context.Context, params gen.UpdateCustomFieldParams) (gen.UpdateCustomFieldRow, error) {
 	field, err := s.write.UpdateCustomField(ctx, params)
 	if err != nil {
-		return gen.CustomField{}, fmt.Errorf("updating custom field: %w", err)
+		return gen.UpdateCustomFieldRow{}, fmt.Errorf("updating custom field: %w", err)
 	}
 
 	return field, nil
@@ -625,7 +625,7 @@ func (s *Service) CreateFormWithFields(ctx context.Context, tenantID, spaceID pg
 
 // GetFormFields returns the custom fields attached to a form via the
 // custom_field_group_assignments polymorphic link (entity_class = "form").
-func (s *Service) GetFormFields(ctx context.Context, formID, tenantID pgtype.UUID) ([]gen.CustomField, error) {
+func (s *Service) GetFormFields(ctx context.Context, formID, tenantID pgtype.UUID) ([]gen.ListCustomFieldsByGroupRow, error) {
 	assignment, err := s.read.GetAssignmentByEntity(ctx, gen.GetAssignmentByEntityParams{
 		EntityClass: "form",
 		EntityID:    formID,

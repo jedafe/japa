@@ -27,13 +27,13 @@ type CreateComparisonTypeInput struct {
 }
 
 // CreateComparisonType creates a new admin-defined comparison type.
-func (s *Service) CreateComparisonType(ctx context.Context, tenantID pgtype.UUID, input CreateComparisonTypeInput) (gen.ComparisonTypeDefinition, error) {
+func (s *Service) CreateComparisonType(ctx context.Context, tenantID pgtype.UUID, input CreateComparisonTypeInput) (gen.CreateComparisonTypeRow, error) {
 	if input.Name == "" {
-		return gen.ComparisonTypeDefinition{}, errors.New("name is required")
+		return gen.CreateComparisonTypeRow{}, errors.New("name is required")
 	}
 
 	if input.Slug == "" {
-		return gen.ComparisonTypeDefinition{}, errors.New("slug is required")
+		return gen.CreateComparisonTypeRow{}, errors.New("slug is required")
 	}
 
 	if input.ItemLabel == "" {
@@ -63,12 +63,12 @@ func (s *Service) CreateComparisonType(ctx context.Context, tenantID pgtype.UUID
 }
 
 // GetComparisonType retrieves a comparison type by ID.
-func (s *Service) GetComparisonType(ctx context.Context, id, tenantID pgtype.UUID) (gen.ComparisonTypeDefinition, error) {
+func (s *Service) GetComparisonType(ctx context.Context, id, tenantID pgtype.UUID) (gen.GetComparisonTypeByIDRow, error) {
 	return s.store.getComparisonTypeByID(ctx, id, tenantID)
 }
 
 // GetComparisonTypeBySlug retrieves a comparison type by slug.
-func (s *Service) GetComparisonTypeBySlug(ctx context.Context, slug string, tenantID pgtype.UUID) (gen.ComparisonTypeDefinition, error) {
+func (s *Service) GetComparisonTypeBySlug(ctx context.Context, slug string, tenantID pgtype.UUID) (gen.GetComparisonTypeBySlugRow, error) {
 	return s.store.getComparisonTypeBySlug(ctx, slug, tenantID)
 }
 
@@ -88,7 +88,7 @@ type ComparisonTypeDimension struct {
 // render real data instead of placeholders (Section 30 — "field count,
 // comparison count").
 type ComparisonTypeDetail struct {
-	gen.ComparisonTypeDefinition
+	gen.GetComparisonTypeBySlugRow
 	Dimensions []ComparisonTypeDimension `json:"dimensions"`
 	ItemCount  int32                     `json:"item_count"`
 }
@@ -126,9 +126,9 @@ func (s *Service) GetComparisonTypeDetail(ctx context.Context, slug string, tena
 	}
 
 	return ComparisonTypeDetail{
-		ComparisonTypeDefinition: typeDef,
-		Dimensions:               dimensions,
-		ItemCount:                itemCount,
+		GetComparisonTypeBySlugRow: typeDef,
+		Dimensions:                 dimensions,
+		ItemCount:                  itemCount,
 	}, nil
 }
 
@@ -136,7 +136,7 @@ func (s *Service) GetComparisonTypeDetail(ctx context.Context, slug string, tena
 // the admin list view (Section 30 — "name, slug, field count, comparison
 // count, enabled/disabled").
 type ComparisonTypeListItem struct {
-	gen.ComparisonTypeDefinition
+	gen.ListComparisonTypesByTenantRow
 	FieldCount int32 `json:"field_count"`
 	ItemCount  int32 `json:"item_count"`
 }
@@ -166,16 +166,16 @@ func (s *Service) ListComparisonTypesWithCounts(ctx context.Context, tenantID pg
 			return nil, fmt.Errorf("counting items for type %s: %w", td.Slug, err)
 		}
 		items = append(items, ComparisonTypeListItem{
-			ComparisonTypeDefinition: td,
-			FieldCount:               fieldCount,
-			ItemCount:                itemCount,
+			ListComparisonTypesByTenantRow: td,
+			FieldCount:                     fieldCount,
+			ItemCount:                      itemCount,
 		})
 	}
 	return items, nil
 }
 
 // ListComparisonTypes returns all comparison types for a tenant.
-func (s *Service) ListComparisonTypes(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]gen.ComparisonTypeDefinition, error) {
+func (s *Service) ListComparisonTypes(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]gen.ListComparisonTypesByTenantRow, error) {
 	return s.store.listComparisonTypesByTenant(ctx, tenantID, limit, offset)
 }
 
@@ -257,7 +257,7 @@ func (s *Service) CreateComparison(ctx context.Context, tenantID, userID pgtype.
 
 	// Resolve the comparison type (if supplied) so we can link items/dimensions
 	// to it and auto-generate dimensions from its field group (BUG-003/BUG-004).
-	var typeDef *gen.ComparisonTypeDefinition
+	var typeDef *gen.GetComparisonTypeByIDRow
 	if input.TypeID.Valid {
 		td, err := s.store.getComparisonTypeByID(ctx, input.TypeID, tenantID)
 		if err != nil {
@@ -447,9 +447,9 @@ type UpdateComparisonTypeInput struct {
 }
 
 // UpdateComparisonType updates an existing comparison type.
-func (s *Service) UpdateComparisonType(ctx context.Context, id, tenantID pgtype.UUID, input UpdateComparisonTypeInput) (gen.ComparisonTypeDefinition, error) {
+func (s *Service) UpdateComparisonType(ctx context.Context, id, tenantID pgtype.UUID, input UpdateComparisonTypeInput) (gen.UpdateComparisonTypeRow, error) {
 	if input.Name == "" {
-		return gen.ComparisonTypeDefinition{}, errors.New("name is required")
+		return gen.UpdateComparisonTypeRow{}, errors.New("name is required")
 	}
 
 	var description *string

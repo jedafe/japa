@@ -175,11 +175,24 @@ type CreateComparisonTypeParams struct {
 	IsSystem     bool        `json:"is_system"`
 }
 
+type CreateComparisonTypeRow struct {
+	ID           pgtype.UUID        `json:"id"`
+	TenantID     pgtype.UUID        `json:"tenant_id"`
+	Name         string             `json:"name"`
+	Slug         string             `json:"slug"`
+	Description  *string            `json:"description"`
+	Icon         *string            `json:"icon"`
+	FieldGroupID pgtype.UUID        `json:"field_group_id"`
+	ItemLabel    string             `json:"item_label"`
+	IsSystem     bool               `json:"is_system"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+}
+
 // Generic Comparison System — type definitions, items, dimensions, values.
 // =====================
 // Comparison Type Definitions CRUD
 // =====================
-func (q *Queries) CreateComparisonType(ctx context.Context, arg CreateComparisonTypeParams) (ComparisonTypeDefinition, error) {
+func (q *Queries) CreateComparisonType(ctx context.Context, arg CreateComparisonTypeParams) (CreateComparisonTypeRow, error) {
 	row := q.db.QueryRow(ctx, createComparisonType,
 		arg.TenantID,
 		arg.Name,
@@ -190,7 +203,7 @@ func (q *Queries) CreateComparisonType(ctx context.Context, arg CreateComparison
 		arg.ItemLabel,
 		arg.IsSystem,
 	)
-	var i ComparisonTypeDefinition
+	var i CreateComparisonTypeRow
 	err := row.Scan(
 		&i.ID,
 		&i.TenantID,
@@ -394,9 +407,22 @@ type GetComparisonTypeByIDParams struct {
 	TenantID pgtype.UUID `json:"tenant_id"`
 }
 
-func (q *Queries) GetComparisonTypeByID(ctx context.Context, arg GetComparisonTypeByIDParams) (ComparisonTypeDefinition, error) {
+type GetComparisonTypeByIDRow struct {
+	ID           pgtype.UUID        `json:"id"`
+	TenantID     pgtype.UUID        `json:"tenant_id"`
+	Name         string             `json:"name"`
+	Slug         string             `json:"slug"`
+	Description  *string            `json:"description"`
+	Icon         *string            `json:"icon"`
+	FieldGroupID pgtype.UUID        `json:"field_group_id"`
+	ItemLabel    string             `json:"item_label"`
+	IsSystem     bool               `json:"is_system"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+}
+
+func (q *Queries) GetComparisonTypeByID(ctx context.Context, arg GetComparisonTypeByIDParams) (GetComparisonTypeByIDRow, error) {
 	row := q.db.QueryRow(ctx, getComparisonTypeByID, arg.ID, arg.TenantID)
-	var i ComparisonTypeDefinition
+	var i GetComparisonTypeByIDRow
 	err := row.Scan(
 		&i.ID,
 		&i.TenantID,
@@ -423,9 +449,22 @@ type GetComparisonTypeBySlugParams struct {
 	TenantID pgtype.UUID `json:"tenant_id"`
 }
 
-func (q *Queries) GetComparisonTypeBySlug(ctx context.Context, arg GetComparisonTypeBySlugParams) (ComparisonTypeDefinition, error) {
+type GetComparisonTypeBySlugRow struct {
+	ID           pgtype.UUID        `json:"id"`
+	TenantID     pgtype.UUID        `json:"tenant_id"`
+	Name         string             `json:"name"`
+	Slug         string             `json:"slug"`
+	Description  *string            `json:"description"`
+	Icon         *string            `json:"icon"`
+	FieldGroupID pgtype.UUID        `json:"field_group_id"`
+	ItemLabel    string             `json:"item_label"`
+	IsSystem     bool               `json:"is_system"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+}
+
+func (q *Queries) GetComparisonTypeBySlug(ctx context.Context, arg GetComparisonTypeBySlugParams) (GetComparisonTypeBySlugRow, error) {
 	row := q.db.QueryRow(ctx, getComparisonTypeBySlug, arg.Slug, arg.TenantID)
-	var i ComparisonTypeDefinition
+	var i GetComparisonTypeBySlugRow
 	err := row.Scan(
 		&i.ID,
 		&i.TenantID,
@@ -680,15 +719,28 @@ type ListComparisonTypesByTenantParams struct {
 	PageLimit  int32       `json:"page_limit"`
 }
 
-func (q *Queries) ListComparisonTypesByTenant(ctx context.Context, arg ListComparisonTypesByTenantParams) ([]ComparisonTypeDefinition, error) {
+type ListComparisonTypesByTenantRow struct {
+	ID           pgtype.UUID        `json:"id"`
+	TenantID     pgtype.UUID        `json:"tenant_id"`
+	Name         string             `json:"name"`
+	Slug         string             `json:"slug"`
+	Description  *string            `json:"description"`
+	Icon         *string            `json:"icon"`
+	FieldGroupID pgtype.UUID        `json:"field_group_id"`
+	ItemLabel    string             `json:"item_label"`
+	IsSystem     bool               `json:"is_system"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+}
+
+func (q *Queries) ListComparisonTypesByTenant(ctx context.Context, arg ListComparisonTypesByTenantParams) ([]ListComparisonTypesByTenantRow, error) {
 	rows, err := q.db.Query(ctx, listComparisonTypesByTenant, arg.TenantID, arg.PageOffset, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ComparisonTypeDefinition
+	var items []ListComparisonTypesByTenantRow
 	for rows.Next() {
-		var i ComparisonTypeDefinition
+		var i ListComparisonTypesByTenantRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.TenantID,
@@ -1096,7 +1148,20 @@ type UpdateComparisonTypeParams struct {
 	TenantID    pgtype.UUID `json:"tenant_id"`
 }
 
-func (q *Queries) UpdateComparisonType(ctx context.Context, arg UpdateComparisonTypeParams) (ComparisonTypeDefinition, error) {
+type UpdateComparisonTypeRow struct {
+	ID           pgtype.UUID        `json:"id"`
+	TenantID     pgtype.UUID        `json:"tenant_id"`
+	Name         string             `json:"name"`
+	Slug         string             `json:"slug"`
+	Description  *string            `json:"description"`
+	Icon         *string            `json:"icon"`
+	FieldGroupID pgtype.UUID        `json:"field_group_id"`
+	ItemLabel    string             `json:"item_label"`
+	IsSystem     bool               `json:"is_system"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+}
+
+func (q *Queries) UpdateComparisonType(ctx context.Context, arg UpdateComparisonTypeParams) (UpdateComparisonTypeRow, error) {
 	row := q.db.QueryRow(ctx, updateComparisonType,
 		arg.Name,
 		arg.Slug,
@@ -1106,7 +1171,7 @@ func (q *Queries) UpdateComparisonType(ctx context.Context, arg UpdateComparison
 		arg.ID,
 		arg.TenantID,
 	)
-	var i ComparisonTypeDefinition
+	var i UpdateComparisonTypeRow
 	err := row.Scan(
 		&i.ID,
 		&i.TenantID,

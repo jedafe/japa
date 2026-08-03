@@ -81,7 +81,7 @@ func (a *ProcessorAdapter) AutoPopulateSpace(ctx context.Context, spaceID, tenan
 // populateGeoSpace fetches a Wikipedia summary for the space and stores it
 // as WikiContent. For countries, the geo_code (ISO 3166-1 alpha-2) is used
 // to construct the Wikipedia article title.
-func (a *ProcessorAdapter) populateGeoSpace(ctx context.Context, space *gen.Space, spaceType string, tenantID pgtype.UUID) error {
+func (a *ProcessorAdapter) populateGeoSpace(ctx context.Context, space *gen.GetSpaceByIDRow, spaceType string, tenantID pgtype.UUID) error {
 	// Build the Wikipedia article title from the space name.
 	// For countries, use the country name directly (e.g. "Nigeria").
 	// For states/cities, use "{name}, {parent}" pattern if available.
@@ -124,7 +124,7 @@ func (a *ProcessorAdapter) populateGeoSpace(ctx context.Context, space *gen.Spac
 // populateUniversitySpace fetches university data from Wikidata SPARQL and
 // stores it as WikiContent. Retrieves: description, country, founding year,
 // student count, official website, logo, and coordinates.
-func (a *ProcessorAdapter) populateUniversitySpace(ctx context.Context, space *gen.Space, tenantID pgtype.UUID) error {
+func (a *ProcessorAdapter) populateUniversitySpace(ctx context.Context, space *gen.GetSpaceByIDRow, tenantID pgtype.UUID) error {
 	uniData, err := fetchWikidataUniversity(ctx, space.Name)
 	if err != nil {
 		slog.Warn("space:auto_populate — Wikidata fetch failed, trying Wikipedia fallback",

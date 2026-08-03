@@ -33,7 +33,7 @@ type MediaUploader interface {
 // SpaceLogoUpdater updates a space's logo_media_id. The spaces.Service or the
 // generated Queries satisfy this via UpdateSpaceLogoMediaID.
 type SpaceLogoUpdater interface {
-	UpdateSpaceLogoMediaID(ctx context.Context, params gen.UpdateSpaceLogoMediaIDParams) (gen.Space, error)
+	UpdateSpaceLogoMediaID(ctx context.Context, params gen.UpdateSpaceLogoMediaIDParams) (gen.UpdateSpaceLogoMediaIDRow, error)
 }
 
 // Cache TTLs for the university Valkey keys (valkey-keys-catalog.md).

@@ -47,7 +47,7 @@ var settingsCatalog = map[string]settingMeta{
 	"content.edit_window_minutes":      {Type: "int", DefaultValue: "1440", Description: "Content edit window (24hr default).", Panel: "admin"},
 	"content.link_preview.blacklist":   {Type: "json", DefaultValue: "[]", Description: "JSON array of blocked domains for link previews.", Panel: "admin"},
 	"content.min_length":               {Type: "int", DefaultValue: "10", Description: "Minimum content body length.", Panel: "admin"},
-	"content.max_tags":                 {Type: "int", DefaultValue: "5", Description: "Max tags per content item.", Panel: "admin"},
+	"content.max_tags":                 {Type: "int", DefaultValue: "5", Description: "Max tags per content item.", Public: true, Panel: "admin"},
 	"content.edit_lock_ttl_seconds":    {Type: "int", DefaultValue: "120", Description: "Editor lock TTL in seconds.", Panel: "admin"},
 	"comments.edit_window_minutes":               {Type: "int", DefaultValue: "60", Description: "Comment edit window.", Panel: "admin"},
 	"forum.edit_window_minutes":                  {Type: "int", DefaultValue: "30", Description: "Editable window (minutes) after posting a forum thread/reply.", Panel: "admin"},
