@@ -8,11 +8,13 @@
 package forum
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"log/slog"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
@@ -26,14 +28,25 @@ import (
 
 const defaultPageSize int32 = 20
 
-// Handlers holds dependencies for forum HTTP handlers.
-type Handlers struct {
-	Service *Service
+// JSONLDResolver resolves admin-managed JSON-LD templates (Section 14 /
+// Section 26). The forum uses it to emit QAPage structured data from the
+// active template, falling back to the hardcoded generator when no template
+// exists.
+type JSONLDResolver interface {
+	ResolveJSONLD(ctx context.Context, tenantID pgtype.UUID, contentType string, fields map[string]string) (json.RawMessage, error)
 }
 
-// NewHandlers creates Handlers with the given Service.
-func NewHandlers(service *Service) *Handlers {
-	return &Handlers{Service: service}
+// Handlers holds dependencies for forum HTTP handlers.
+type Handlers struct {
+	Service        *Service
+	jsonldResolver JSONLDResolver
+}
+
+// NewHandlers creates Handlers with the given Service and optional JSON-LD
+// resolver. A nil resolver is acceptable — the forum falls back to its
+// hardcoded QAPage generator.
+func NewHandlers(service *Service, resolver JSONLDResolver) *Handlers {
+	return &Handlers{Service: service, jsonldResolver: resolver}
 }
 
 // ---------------------------------------------------------------------------
@@ -346,6 +359,11 @@ func (h *Handlers) GetThread(w http.ResponseWriter, r *http.Request) {
 	// a 5-minute TTL; on a cache miss we fetch the top reply, generate the
 	// JSON-LD, and store it. For unsolved threads we generate inline (no
 	// DB fetch needed).
+	//
+	// Section 14 / Section 26: prefer the admin-managed QAPage template
+	// (interpolated with the thread's field values) over the hardcoded
+	// generator. The generator remains the fallback when no active template
+	// exists or the resolver is unavailable.
 	var jsonLd any
 	if thread.Solved {
 		if cached, ok := h.Service.getJSONLDCache(thread.ID); ok {
@@ -357,20 +375,26 @@ func (h *Handlers) GetThread(w http.ResponseWriter, r *http.Request) {
 			}
 		} else {
 			var answerBody string
+			var answerAuthor string
+			var answerCreatedAt string
+			var answerUpvotes string
 			if top, topErr := h.Service.GetTopReplyForThread(r.Context(), thread.ID, tenantID); topErr == nil {
 				if len(top.Body) > 0 {
 					answerBody = string(top.Body)
 				}
+				answerAuthor = ifaceString(top.AuthorDisplayName, top.AuthorUsername)
+				answerCreatedAt = tsString(top.CreatedAt)
+				answerUpvotes = strconv.Itoa(int(top.VoteScore))
 			} else if !errors.Is(topErr, pgx.ErrNoRows) {
 				slog.Warn("QAPage JSON-LD: failed to fetch top reply", "thread_id", thread.ID, "error", topErr)
 			}
-			jsonLd = seo.GenerateQAPageJSONLD(thread.Title, questionBody, answerBody, authorName, thread.Solved)
+			jsonLd = h.resolveQAPageJSONLD(r, tenantID, thread, questionBody, authorName, answerBody, answerAuthor, answerCreatedAt, answerUpvotes)
 			if b, err := json.Marshal(jsonLd); err == nil {
 				h.Service.setJSONLDCache(thread.ID, string(b))
 			}
 		}
 	} else {
-		jsonLd = seo.GenerateQAPageJSONLD(thread.Title, questionBody, "", authorName, thread.Solved)
+		jsonLd = h.resolveQAPageJSONLD(r, tenantID, thread, questionBody, authorName, "", "", "", "")
 	}
 
 	response["json_ld"] = jsonLd
@@ -389,6 +413,65 @@ func (h *Handlers) GetThread(w http.ResponseWriter, r *http.Request) {
 	response["can_solve"] = canSolve
 
 	writeJSON(w, http.StatusOK, response)
+}
+
+// resolveQAPageJSONLD resolves the QAPage structured data for a forum thread.
+// It prefers the admin-managed JSON-LD template (Section 14 / Section 26),
+// interpolating the thread and accepted-answer field values into the
+// {{field_key}} placeholders. When no active template exists (or the resolver
+// is unavailable), it falls back to the hardcoded seo.GenerateQAPageJSONLD
+// generator so existing behaviour is preserved.
+func (h *Handlers) resolveQAPageJSONLD(
+	r *http.Request,
+	tenantID pgtype.UUID,
+	thread gen.GetForumThreadBySlugWithDetailsRow,
+	questionBody, authorName, answerBody, answerAuthor, answerCreatedAt, answerUpvotes string,
+) any {
+	isSolved := answerBody != ""
+	fields := map[string]string{
+		"title":                          thread.Title,
+		"body":                           questionBody,
+		"answer_count":                   strconv.Itoa(int(thread.ReplyCount)),
+		"accepted_answer_body":           answerBody,
+		"accepted_answer_author":         answerAuthor,
+		"accepted_answer_created_at":     answerCreatedAt,
+		"accepted_answer_upvotes":        answerUpvotes,
+		"author_name":                    authorName,
+		"created_at":                     tsString(thread.CreatedAt),
+	}
+
+	if h.jsonldResolver != nil {
+		if raw, err := h.jsonldResolver.ResolveJSONLD(r.Context(), tenantID, "QAPage", fields); err == nil && len(raw) > 0 {
+			var parsed any
+			if err := json.Unmarshal(raw, &parsed); err == nil {
+				return parsed
+			}
+			return string(raw)
+		} else if err != nil {
+			slog.Warn("QAPage JSON-LD: template resolution failed, falling back to generator", "thread_id", thread.ID, "error", err)
+		}
+	}
+
+	return seo.GenerateQAPageJSONLD(thread.Title, questionBody, answerBody, authorName, isSolved)
+}
+
+// ifaceString returns the first non-empty string representation of the given
+// interface{} values (used for author display name / username fallbacks).
+func ifaceString(values ...any) string {
+	for _, v := range values {
+		if s, ok := v.(string); ok && s != "" {
+			return s
+		}
+	}
+	return ""
+}
+
+// tsString renders a pgtype.Timestamptz as RFC3339 or empty.
+func tsString(t pgtype.Timestamptz) string {
+	if !t.Valid {
+		return ""
+	}
+	return t.Time.UTC().Format(time.RFC3339)
 }
 
 // UpdateThread handles PATCH /api/v1/forum/threads/{id}.

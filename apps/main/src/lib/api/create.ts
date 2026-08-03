@@ -1,5 +1,5 @@
 import { api } from '$lib/api/client';
-import type { ContentRecord, MediaAsset, MeSpace, SaveErrorClass, SearchHit, BlogSeries } from '$lib/types';
+import type { ContentRecord, MediaAsset, MeSpace, SaveErrorClass, SearchHit, BlogSeries, SpaceType, Space } from '$lib/types';
 import { searchPath, mapUserHits, mapContentHits, mapTagHits } from '$lib/tiptap/search';
 
 export interface CreateContentInput {
@@ -60,6 +60,16 @@ export const searchSeries = (q: string) =>
 /* ---- spaces (debounced autocomplete search) ---- */
 export const searchSpaces = (q: string) =>
 	api.get<MeSpace[]>(`/me/spaces?q=${encodeURIComponent(q)}`);
+export const listSpaceTypes = () =>
+	api.get<SpaceType[]>('/space-types');
+export const createSpace = (input: {
+	name: string;
+	slug: string;
+	space_type_id: string;
+	level: string;
+	description?: string;
+	parent_space_ids?: string[];
+}) => api.post<Space>('/spaces', input);
 export const createSeries = (input: {
 	title: string;
 	slug: string;

@@ -309,6 +309,12 @@ body {
 	border-radius: 4px;
 }
 
+/* Search inputs are wrapped in a bordered container with its own focus
+ * state. Suppress the global focus-visible outline to avoid double border. */
+input[type="search"]:focus-visible {
+	outline: none;
+}
+
 @keyframes jc-skeleton {
 	0% { opacity: 0.55; }
 	50% { opacity: 1; }

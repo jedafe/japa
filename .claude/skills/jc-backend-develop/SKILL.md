@@ -94,3 +94,35 @@ When building Japa University creator-economy features, the entity set is:
 
 ## Deliverables Per Task
 1. Gate 1 + Gate 2 output · 2. migration pair if schema changes (invoke `jc-backend-migrate`) · 3. sqlc queries + `sqlc generate` · 4. store/service/handler code · 5. routes registered + RBAC nodes seeded · 6. Asynq tasks (invoke `jc-backend-worker`) · 7. all catalogs updated · 8. tests · 9. `go build ./... && go vet ./...` clean (run locally via Claude Code — no Go toolchain in chat sessions).
+## V2 Mandatory Patterns (Phases 41–47)
+
+### AI Personas (§68, ADR-068)
+- Persona provisioning is **transactional**: create `users` (is_bot=true) + `professional_profiles` + `ai_personas` in one tx. Partial provision is a data integrity failure.
+- `disclosure_mode` controls public rendering only. `is_bot=true` is permanent — never flip it, never expose it publicly.
+- Every persona action writes `platform_events.is_synthetic = true`. This is non-negotiable and cannot be disabled by any setting.
+
+### RAG Layer (§69, ADR-069)
+- `content:generate_embedding` UPSERTS into `content_embeddings` (never raw INSERT — re-indexing a document must replace its chunks, not add duplicates).
+- Text extracted from TipTap JSON before embedding — strip block structure to plain text first (utility function, not inline in task).
+- Retrieval at `/ai/chat` is gated by `rag.enabled` system setting — fall back to non-RAG LLM call if false.
+- Persona-authored content is indexed exactly like human-authored content (it passed HITL review).
+
+### Content Studio (§75, ADR-076)
+- `content.generate_draft` with `studio_job_id` must be idempotent on that ID — guard against re-running an already-generated job.
+- AI-populated custom fields: if required fields are missing from model output, set `field_validation_warning = true` on the job. **Never block publish** — the human reviewer has final say.
+- `studio.auto_publish_types` is checked at routing time. Guide categories `visa`, `banking`, `grants`, `health_insurance`, `admission` are hardcoded to always require review — this check must be in code, not configurable.
+
+### Participation Orchestration (§76, ADR-077)
+- Orchestration actions are dispatched as the persona's backing account through **existing** action endpoints — no new action routes. The backing account must have the correct RBAC permission nodes to perform each action type.
+- Daily action counters: Valkey keys `jc:persona:daily:{persona_id}:{date}:{action_type}` with TTL until midnight UTC. Counter overflow (exceeding budget) = skip the action entirely, do not error.
+- Run-lock `jc:persona:lock:{persona_id}` (5-min TTL SET NX) prevents concurrent orchestration runs for the same persona.
+- High-stakes gate is in task code: check parent content's guide_category or system tags BEFORE generating action content — don't waste AI gateway tokens on content that will route to review anyway.
+
+### Remittance Tracker (§74, ADR-075)
+- `api_config` JSONB on `remittance_providers` contains API credentials — encrypt at application layer (same pattern as payment provider secrets, §17). Never log or expose in responses.
+- Rate history is append-only (new row per fetch). `remittance:prune_old_rates` is the cleanup mechanism — never delete rows inline in the fetch task.
+- Provider adapter interface (`RateProvider`) must have a timeout and return an error on rate-fetch failure — the main task catches errors per-provider and logs to GlitchTip, never fails the whole batch.
+
+### Newsletter (§62, ADR-080)
+- Unsubscribe is token-based (`newsletter_unsubscribe_tokens`) — no auth required. Token must be single-use (delete after use) and short-circuit on invalid/expired token (404, not error).
+- Bounce and complaint webhooks from the email provider MUST update `newsletter_subscribers.status` — undeliverable addresses that keep receiving email are a deliverability risk.

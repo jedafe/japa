@@ -66,7 +66,7 @@ func writeJSONBody(t *testing.T, v any) *bytes.Buffer {
 func TestChangePassword_MissingBody(t *testing.T) {
 	t.Parallel()
 
-	h := NewHandlers(testService())
+	h := NewHandlers(testService(), nil)
 	req := httptest.NewRequest(http.MethodPost, "/me/change-password", nil)
 	req = withAuthUser(req)
 	req = withTenant(req)
@@ -82,7 +82,7 @@ func TestChangePassword_MissingBody(t *testing.T) {
 func TestChangePassword_EmptyFields(t *testing.T) {
 	t.Parallel()
 
-	h := NewHandlers(testService())
+	h := NewHandlers(testService(), nil)
 	body := writeJSONBody(t, map[string]string{
 		"current_password": "",
 		"new_password":     "",
@@ -103,7 +103,7 @@ func TestChangePassword_EmptyFields(t *testing.T) {
 func TestChangePassword_ShortPassword(t *testing.T) {
 	t.Parallel()
 
-	h := NewHandlers(testService())
+	h := NewHandlers(testService(), nil)
 	body := writeJSONBody(t, map[string]string{
 		"current_password": "oldpassword",
 		"new_password":     "short",
@@ -128,7 +128,7 @@ func TestChangePassword_ShortPassword(t *testing.T) {
 func TestGetPrivacy_Unauthorized(t *testing.T) {
 	t.Parallel()
 
-	h := NewHandlers(testService())
+	h := NewHandlers(testService(), nil)
 	req := httptest.NewRequest(http.MethodGet, "/me/privacy", nil)
 
 	rr := httptest.NewRecorder()
@@ -142,7 +142,7 @@ func TestGetPrivacy_Unauthorized(t *testing.T) {
 func TestUpdatePrivacy_InvalidBody(t *testing.T) {
 	t.Parallel()
 
-	h := NewHandlers(testService())
+	h := NewHandlers(testService(), nil)
 	req := httptest.NewRequest(http.MethodPatch, "/me/privacy", bytes.NewBufferString("not json"))
 	req = withAuthUser(req)
 	req = withTenant(req)
@@ -162,7 +162,7 @@ func TestUpdatePrivacy_InvalidBody(t *testing.T) {
 func TestRevokeSession_InvalidID(t *testing.T) {
 	t.Parallel()
 
-	h := NewHandlers(testService())
+	h := NewHandlers(testService(), nil)
 
 	router := chi.NewRouter()
 	router.Delete("/me/sessions/{id}", h.RevokeSession)
@@ -186,7 +186,7 @@ func TestRevokeSession_InvalidID(t *testing.T) {
 func TestListMyContent_Unauthorized(t *testing.T) {
 	t.Parallel()
 
-	h := NewHandlers(testService())
+	h := NewHandlers(testService(), nil)
 	req := httptest.NewRequest(http.MethodGet, "/me/content", nil)
 
 	rr := httptest.NewRecorder()
@@ -204,7 +204,7 @@ func TestListMyContent_Unauthorized(t *testing.T) {
 func TestDeactivateAccount_MissingPassword(t *testing.T) {
 	t.Parallel()
 
-	h := NewHandlers(testService())
+	h := NewHandlers(testService(), nil)
 	body := writeJSONBody(t, map[string]string{})
 
 	req := httptest.NewRequest(http.MethodPost, "/me/deactivate", body)
@@ -226,7 +226,7 @@ func TestDeactivateAccount_MissingPassword(t *testing.T) {
 func TestGetMyDraft_Unauthorized(t *testing.T) {
 	t.Parallel()
 
-	h := NewHandlers(testService())
+	h := NewHandlers(testService(), nil)
 	req := httptest.NewRequest(http.MethodGet, "/me/drafts/22222222-2222-2222-2222-222222222222", nil)
 
 	rr := httptest.NewRecorder()
@@ -240,7 +240,7 @@ func TestGetMyDraft_Unauthorized(t *testing.T) {
 func TestGetMyDraft_NoTenant(t *testing.T) {
 	t.Parallel()
 
-	h := NewHandlers(testService())
+	h := NewHandlers(testService(), nil)
 	req := httptest.NewRequest(http.MethodGet, "/me/drafts/22222222-2222-2222-2222-222222222222", nil)
 	req = withAuthUser(req) // authenticated but no tenant in context
 
@@ -255,7 +255,7 @@ func TestGetMyDraft_NoTenant(t *testing.T) {
 func TestGetMyDraft_InvalidID(t *testing.T) {
 	t.Parallel()
 
-	h := NewHandlers(testService())
+	h := NewHandlers(testService(), nil)
 
 	router := chi.NewRouter()
 	router.Get("/me/drafts/{id}", h.GetMyDraft)

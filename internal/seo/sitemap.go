@@ -5,6 +5,7 @@ import (
 	"encoding/xml"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -196,7 +197,32 @@ func (h *SitemapHandler) writeXML(w http.ResponseWriter, entries []urlEntry) {
 	})
 }
 
-// ValidateSEO handles GET /admin/seo/validate/:id — validates SEO metadata for a page (P5.6).
+// ValidateSEO handles GET /admin/seo/validate/:id — validates SEO metadata for
+// a content item (Section 26: "validate JSON-LD output for a content item").
+//
+// Ref: japaconnect-engineering/sections/26-seo-performance.md
+//
+// The route validates a CONTENT item, not a pagebuilder page: the canonical
+// SEO metadata (meta_title, meta_description, og_image_url, canonical_url,
+// seo_indexable) lives on the `contents` table (migration 000165), and the
+// JSON-LD template is keyed by content_type via content_type_jsonld_templates.
+// The previous implementation queried the `pages` table and returned only
+// {id, valid, issues}, which did not match the admin SPA contract
+// (SeoValidationResult: type, title, slug, all meta fields, issues, score).
+//
+// Render-time resolution follows Section 26's ResolveMetadata:
+//   - meta_title  -> coalesce(meta_title, title)
+//   - og_title    -> coalesce(meta_title, title)   (no og_title column; falls back to title)
+//   - meta_description / og_description -> meta_description (or body excerpt)
+//   - og_image_url -> og_image_url (caller may resolve featured_image fallback)
+//   - canonical_url -> canonical_url (self-referencing fallback handled by caller)
+//   - robots_meta  -> "noindex,nofollow" for private visibility,
+//                     "noindex,follow" when seo_indexable = false,
+//                     "index,follow" otherwise
+//   - json_ld_type -> @type extracted from the active content_type_jsonld_templates row
+//
+// Score: 100 minus 12 points per issue (floor 0). The admin SPA renders the
+// score as a circular progress indicator and lists each issue.
 func (h *SitemapHandler) ValidateSEO(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	t := tenant.FromContext(r.Context())
@@ -204,23 +230,113 @@ func (h *SitemapHandler) ValidateSEO(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "tenant_unavailable", "No tenant available")
 		return
 	}
-	var title, slug string
-	var metaJSON []byte
-	err := h.reader.QueryRow(r.Context(),
-		`SELECT title, slug, COALESCE(meta, '{}'::jsonb) FROM pages WHERE id = $1 AND tenant_id = $2`, id, t.ID).
-		Scan(&title, &slug, &metaJSON)
+
+	// Query the contents row with render-time resolution (Section 26).
+	// Uses raw pgxpool (the handler's existing pattern) until the
+	// sidebar_widgets sqlc blocker is resolved; the equivalent sqlc query
+	// is documented in internal/db/queries/seo.sql (GetContentSEOByID).
+	const q = `
+		SELECT c.id, c.title, c.slug, c.content_type, c.body, c.visibility, c.seo_indexable,
+		       COALESCE(c.meta_title, '') AS meta_title,
+		       COALESCE(c.meta_description, '') AS meta_description,
+		       COALESCE(c.og_image_url, '') AS og_image_url,
+		       COALESCE(c.canonical_url, '') AS canonical_url,
+		       COALESCE(c.meta_title, c.title) AS og_title,
+		       COALESCE(c.meta_description, '') AS og_description,
+		       COALESCE(jt.template, '{}'::jsonb) AS jsonld_template
+		FROM contents c
+		LEFT JOIN content_type_jsonld_templates jt
+		       ON jt.content_type = c.content_type
+		      AND jt.tenant_id = c.tenant_id
+		      AND jt.is_active = true
+		WHERE c.id = $1 AND c.tenant_id = $2`
+
+	var (
+		contentID      string
+		title          string
+		slug           string
+		contentType    string
+		body           string
+		visibility     string
+		seoIndexable   bool
+		metaTitle      string
+		metaDesc       string
+		ogImageURL     string
+		canonicalURL   string
+		ogTitle        string
+		ogDescription  string
+		jsonldTemplate []byte
+	)
+	err := h.reader.QueryRow(r.Context(), q, id, t.ID).Scan(
+		&contentID, &title, &slug, &contentType, &body, &visibility, &seoIndexable,
+		&metaTitle, &metaDesc, &ogImageURL, &canonicalURL, &ogTitle, &ogDescription, &jsonldTemplate,
+	)
 	if err != nil {
-		writeError(w, http.StatusNotFound, "not_found", "Page not found")
+		writeError(w, http.StatusNotFound, "not_found", "Content not found")
 		return
 	}
-	// Parse the meta JSONB to extract canonical_url and meta_description.
-	var meta struct {
-		CanonicalURL    string `json:"canonical_url"`
-		MetaDescription string `json:"meta_description"`
-		OGTitle         string `json:"og_title"`
-	}
-	_ = json.Unmarshal(metaJSON, &meta)
 
+	// Resolve metadata per Section 26 ResolveMetadata.
+	resolvedMetaTitle := metaTitle
+	if resolvedMetaTitle == "" {
+		resolvedMetaTitle = title
+	}
+	resolvedMetaDesc := metaDesc
+	if resolvedMetaDesc == "" {
+		resolvedMetaDesc = excerpt(body, 160)
+	}
+	resolvedOGTitle := ogTitle
+	if resolvedOGTitle == "" {
+		resolvedOGTitle = title
+	}
+	resolvedOGDesc := ogDescription
+	if resolvedOGDesc == "" {
+		resolvedOGDesc = resolvedMetaDesc
+	}
+
+	// robots_meta per Section 26: private -> noindex,nofollow;
+	// seo_indexable false -> noindex,follow; otherwise index,follow.
+	var robotsMeta string
+	switch {
+	case visibility == "private":
+		robotsMeta = "noindex,nofollow"
+	case !seoIndexable:
+		robotsMeta = "noindex,follow"
+	default:
+		robotsMeta = "index,follow"
+	}
+
+	// json_ld_type: extract @type from the active template's top-level @type
+	// field. Templates are admin-defined per content type (Section 14).
+	jsonLDType := ""
+	if len(jsonldTemplate) > 0 {
+		var tpl struct {
+			Type string `json:"@type"`
+		}
+		if json.Unmarshal(jsonldTemplate, &tpl) == nil {
+			jsonLDType = tpl.Type
+		}
+	}
+	// Fallback to the Section 26 schema mapping when no admin template is set.
+	if jsonLDType == "" {
+		switch contentType {
+		case "blog_post":
+			jsonLDType = "BlogPosting"
+		case "discussion", "question":
+			jsonLDType = "QAPage"
+		default:
+			jsonLDType = "Article"
+		}
+	}
+
+	// Build the issues list. Each missing/empty SEO field is one issue,
+	// and each present-but-too-short or too-long field is a separate issue.
+	// Per Section 26 ResolveMetadata, canonical_url and og_image_url have
+	// platform-level fallbacks (self-referencing URL and default banner),
+	// so an empty value is NOT a "missing" issue — the platform auto-resolves
+	// them. Only fields without fallbacks are flagged as missing.
+	// Minimum/maximum lengths mirror the client-side computeSeoScore utility
+	// (apps/main/src/lib/utils/seo-score.ts) per common SEO best practices.
 	issues := []string{}
 	if title == "" {
 		issues = append(issues, "missing_title")
@@ -228,23 +344,98 @@ func (h *SitemapHandler) ValidateSEO(w http.ResponseWriter, r *http.Request) {
 	if slug == "" {
 		issues = append(issues, "missing_slug")
 	}
-	if meta.CanonicalURL == "" {
-		issues = append(issues, "missing_canonical_url")
+	if resolvedMetaTitle == "" {
+		issues = append(issues, "missing_meta_title")
 	}
-	if meta.MetaDescription == "" {
+	if resolvedMetaDesc == "" {
 		issues = append(issues, "missing_meta_description")
 	}
-	if meta.OGTitle == "" {
+	if resolvedOGTitle == "" {
 		issues = append(issues, "missing_og_title")
 	}
+	if resolvedOGDesc == "" {
+		issues = append(issues, "missing_og_description")
+	}
+	if jsonLDType == "" {
+		issues = append(issues, "missing_json_ld_type")
+	}
+	if robotsMeta == "noindex,nofollow" || robotsMeta == "noindex,follow" {
+		issues = append(issues, "not_indexable")
+	}
+
+	// Minimum length checks (only for present, non-empty fields).
+	if title != "" && len(title) < 10 {
+		issues = append(issues, "short_title")
+	}
+	if slug != "" && len(slug) < 3 {
+		issues = append(issues, "short_slug")
+	}
+	if resolvedMetaTitle != "" && len(resolvedMetaTitle) < 30 {
+		issues = append(issues, "short_meta_title")
+	}
+	if resolvedMetaDesc != "" && len(resolvedMetaDesc) < 70 {
+		issues = append(issues, "short_meta_description")
+	}
+	if resolvedOGTitle != "" && len(resolvedOGTitle) < 30 {
+		issues = append(issues, "short_og_title")
+	}
+	if resolvedOGDesc != "" && len(resolvedOGDesc) < 70 {
+		issues = append(issues, "short_og_description")
+	}
+
+	// Maximum length checks (over-limit fields).
+	if resolvedMetaTitle != "" && len(resolvedMetaTitle) > 60 {
+		issues = append(issues, "long_meta_title")
+	}
+	if resolvedMetaDesc != "" && len(resolvedMetaDesc) > 160 {
+		issues = append(issues, "long_meta_description")
+	}
+
+	// Score: 100 - 12 per issue, floored at 0.
+	score := 100 - len(issues)*12
+	if score < 0 {
+		score = 0
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"data": map[string]any{
-			"id":     id,
-			"valid":  len(issues) == 0,
-			"issues": issues,
+			"id":              contentID,
+			"type":             contentType,
+			"title":            title,
+			"slug":             slug,
+			"meta_title":       resolvedMetaTitle,
+			"meta_description": resolvedMetaDesc,
+			"og_title":         resolvedOGTitle,
+			"og_description":   resolvedOGDesc,
+			"og_image_url":     ogImageURL,
+			"canonical_url":    canonicalURL,
+			"json_ld_type":     jsonLDType,
+			"robots_meta":      robotsMeta,
+			"issues":           issues,
+			"score":            score,
 		},
 	})
+}
+
+// excerpt returns the first n characters of body with HTML/markdown noise
+// stripped, for meta_description fallback per Section 26 ResolveMetadata.
+func excerpt(body string, n int) string {
+	if body == "" {
+		return ""
+	}
+	// Strip common markdown markers and collapse whitespace. A full
+	// strip_markdown lives in internal/renderer; this is a lightweight
+	// fallback for the validator only.
+	s := body
+	for _, m := range []string{"#", "*", "_", "`", ">", "- "} {
+		s = strings.ReplaceAll(s, m, "")
+	}
+	s = strings.Join(strings.Fields(s), " ")
+	if len(s) > n {
+		s = s[:n]
+	}
+	return s
 }
 
 // writeError is defined in ogimage.go and shared across the seo package.

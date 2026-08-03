@@ -26,3 +26,25 @@ FROM contents c
 LEFT JOIN users u ON c.author_id = u.id
 LEFT JOIN user_profiles up ON u.id = up.user_id AND u.tenant_id = up.tenant_id
 WHERE c.slug = @slug AND c.tenant_id = @tenant_id AND c.status = 'published';
+
+-- name: GetContentSEOByID :one
+-- Admin SEO validation (Section 26): fetches a single content row by id with
+-- the same render-time resolution as GetPageMetadataBySlug, plus the raw
+-- title/slug/body/visibility the validator needs to compute issues and score.
+-- Unlike GetPageMetadataBySlug this does NOT filter by status — admins must be
+-- able to validate drafts too.
+SELECT c.id, c.tenant_id,
+       c.title, c.slug, c.content_type, c.body, c.visibility, c.seo_indexable,
+       COALESCE(c.meta_title, '') AS meta_title,
+       COALESCE(c.meta_description, '') AS meta_description,
+       COALESCE(c.og_image_url, '') AS og_image_url,
+       COALESCE(c.canonical_url, '') AS canonical_url,
+       COALESCE(c.meta_title, c.title) AS og_title,
+       COALESCE(c.meta_description, '') AS og_description,
+       COALESCE(jt.template, '{}'::jsonb) AS jsonld_template
+FROM contents c
+LEFT JOIN content_type_jsonld_templates jt
+       ON jt.content_type = c.content_type
+      AND jt.tenant_id = c.tenant_id
+      AND jt.is_active = true
+WHERE c.id = @content_id AND c.tenant_id = @tenant_id;

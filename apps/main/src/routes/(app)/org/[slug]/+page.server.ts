@@ -1,6 +1,6 @@
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGet, apiList } from '$lib/server/api';
+import { apiContext, apiGet, apiGetEnvelope, apiList } from '$lib/server/api';
 import type { PublicOrganization, OrgMember, ProfilePost, OrgMedia } from '$lib/types';
 
 /**
@@ -17,8 +17,11 @@ export const load: PageServerLoad = async (event) => {
 	const slug = event.params.slug;
 
 	let org: PublicOrganization;
+	let jsonLd: unknown = null;
 	try {
-		org = await apiGet<PublicOrganization>(ctx, `/organizations/${slug}`);
+		const envelope = await apiGetEnvelope<PublicOrganization>(ctx, `/organizations/${slug}`);
+		org = envelope.data;
+		jsonLd = envelope.json_ld ?? null;
 	} catch (e) {
 		const status = e instanceof Error && 'status' in e ? (e as { status: number }).status : 500;
 		throw error(status === 404 ? 404 : 500, {
@@ -44,5 +47,5 @@ export const load: PageServerLoad = async (event) => {
 	// Owner = the current user appears in the member list with role 'owner'.
 	const isOwner = !!event.locals.user && members.some((m) => m.user.id === event.locals.user!.id && m.role === 'owner');
 
-	return { org, isOwner, members, posts, media, initiallyFollowing: isFollowing };
+	return { org, isOwner, members, posts, media, initiallyFollowing: isFollowing, jsonLd };
 };

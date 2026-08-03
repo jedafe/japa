@@ -479,6 +479,12 @@ func (s *Service) ListPublicMembers(ctx context.Context, orgID, tenantID pgtype.
 	return s.store.ListPublicMembers(ctx, orgID, tenantID)
 }
 
+// GetOrgOwnerPublicProfile returns the org owner's public identity for the
+// "Org Leader" sidebar widget.
+func (s *Service) GetOrgOwnerPublicProfile(ctx context.Context, orgID, tenantID pgtype.UUID) (gen.GetOrgOwnerPublicProfileRow, error) {
+	return s.store.GetOrgOwnerPublicProfile(ctx, orgID, tenantID)
+}
+
 // ListPublicOrganizations returns active orgs for the public Discover list.
 // search filters by name/slug, orgType filters by org_type, verified filters
 // by verified status (empty = all, "true" = verified only, "false" = unverified

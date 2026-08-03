@@ -1,24 +1,18 @@
 <script lang="ts">
-	import { jsonLdApi } from '$lib/api';
+	import { jsonLdApi, type JsonLdTemplate } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import PageHeader from '$lib/components/layout/page-header.svelte';
 	import { Card, CardContent, CardHeader } from '$lib/components/ui/card';
 	import { DataTable } from '$lib/components/ui/data-table';
-	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
-	import { Select } from '$lib/components/ui/select';
 	import { Modal } from '$lib/components/ui/modal';
-	import { FileJson, Plus, RefreshCw, Pencil, Trash2, Download, Upload, Eye } from 'lucide-svelte';
+	import { Plus, RefreshCw, Pencil, Trash2, Download, Upload, Eye } from 'lucide-svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 
-	type JsonLdTemplate = {
-		id: string;
-		name: string;
-		type: string;
-		content: Record<string, unknown>;
+	type TemplateForm = {
+		content_type: string;
 		is_active: boolean;
-		created_at: string;
-		updated_at: string;
+		content: string;
 	};
 
 	let templates = $state<JsonLdTemplate[]>([]);
@@ -31,7 +25,7 @@
 	// Modal state
 	let showTemplateModal = $state(false);
 	let editingTemplate = $state<JsonLdTemplate | null>(null);
-	let templateForm = $state({ name: '', type: 'Article', content: '{}' });
+	let templateForm = $state<TemplateForm>({ content_type: '', is_active: true, content: '{}' });
 	let saving = $state(false);
 	let jsonError = $state('');
 
@@ -43,7 +37,26 @@
 	let showDeleteModal = $state(false);
 	let deletingTemplate = $state<JsonLdTemplate | null>(null);
 
-	const canManageTemplates = $derived(hasPermission("content.jsonld.manage"));
+	const canManageTemplates = $derived(hasPermission('content.jsonld.manage'));
+
+	// Header actions are permission-gated: Refresh/Export are read-only and
+	// available to any authenticated admin; Add/Import mutate and require
+	// the content.jsonld.manage node (§9 RBAC, §26 wiring).
+	const headerActions = $derived([
+		{ label: t('jsonld-templates.refresh'), icon: RefreshCw, variant: 'outline' as const, onclick: load },
+		{ label: t('jsonld-templates.export'), icon: Download, variant: 'outline' as const, onclick: exportTemplates },
+		...(canManageTemplates
+			? [
+					{ label: t('jsonld-templates.import'), icon: Upload, variant: 'outline' as const, onclick: handleImport },
+					{ label: t('jsonld-templates.create_title'), icon: Plus, variant: 'default' as const, onclick: openCreateTemplate }
+				]
+			: [])
+	]);
+
+	function schemaTypeOf(template: JsonLdTemplate): string {
+		const body = (template.template ?? {}) as Record<string, unknown>;
+		return (body['@type'] as string) ?? '—';
+	}
 
 	function openViewTemplate(template: JsonLdTemplate) {
 		viewTarget = template;
@@ -52,38 +65,40 @@
 
 	const templateColumns = [
 		{
-			key: 'name',
-			label: 'Template',
+			key: 'content_type',
+			label: t('jsonld-templates.content_type'),
 			sortable: true,
-			render: (_: any, row: any) => `
+			render: (_: any, row: JsonLdTemplate) => `
 				<div class="flex items-center gap-3">
 					<div class="h-10 w-10 rounded-lg bg-warning/15 flex items-center justify-center">
 						<svg class="h-5 w-5 text-warning-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"></path></svg>
 					</div>
 					<div>
-						<p class="font-medium text-foreground">${row.name}</p>
-						<p class="text-sm text-muted">${row.type}</p>
+						<p class="font-medium text-foreground">${row.content_type}</p>
 					</div>
 				</div>
 			`
 		},
 		{
-			key: 'type',
-			label: 'Schema Type',
-			sortable: true,
-			render: (value: string) => `<span class="font-mono text-sm text-foreground">${value}</span>`
+			key: 'template',
+			label: t('jsonld-templates.schema_type'),
+			sortable: false,
+			render: (_: any, row: JsonLdTemplate) =>
+				`<span class="font-mono text-sm text-foreground">${schemaTypeOf(row)}</span>`
 		},
 		{
 			key: 'is_active',
-			label: 'Status',
+			label: t('jsonld-templates.status'),
 			sortable: true,
-			render: (value: boolean) => `<span class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${value ? 'bg-success/15 text-success border-success' : 'bg-surface text-foreground border'}">${value ? 'Active' : 'Inactive'}</span>`
+			render: (value: boolean) =>
+				`<span class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${value ? 'bg-success/15 text-success border-success' : 'bg-surface text-foreground border'}">${value ? t('jsonld-templates.status_active') : t('jsonld-templates.status_inactive')}</span>`
 		},
 		{
 			key: 'updated_at',
-			label: 'Last Updated',
+			label: t('jsonld-templates.last_updated'),
 			sortable: true,
-			render: (value: string) => `<span class="text-sm text-muted">${new Date(value).toLocaleDateString()}</span>`
+			render: (value: string) =>
+				`<span class="text-sm text-muted">${new Date(value).toLocaleDateString()}</span>`
 		},
 		{
 			key: 'actions',
@@ -97,24 +112,9 @@
 		loading = true;
 		error = '';
 		try {
-			const result = await jsonLdApi.getTemplates();
+			const result = await jsonLdApi.listTemplates();
 			if (result.ok) {
-				const data = result.data as Record<string, unknown>;
-				// Transform the object-based templates into array format
-				const templateArray: JsonLdTemplate[] = [];
-				for (const [key, value] of Object.entries(data)) {
-					const template = value as any;
-					templateArray.push({
-						id: key,
-						name: template.name || key,
-						type: template['@type'] || 'Article',
-						content: template,
-						is_active: template.is_active !== false,
-						created_at: template.created_at || new Date().toISOString(),
-						updated_at: template.updated_at || new Date().toISOString()
-					});
-				}
-				templates = templateArray;
+				templates = result.data ?? [];
 			} else {
 				error = t('common.error');
 			}
@@ -127,19 +127,17 @@
 
 	function openCreateTemplate() {
 		editingTemplate = null;
-		templateForm = { name: '', type: 'Article', content: '{}' };
+		templateForm = { content_type: '', is_active: true, content: '{\n  "@context": "https://schema.org",\n  "@type": "Article"\n}' };
 		jsonError = '';
 		showTemplateModal = true;
 	}
 
-	function openEditTemplate(templateId: string) {
-		const template = templates.find((t) => t.id === templateId);
-		if (!template) return;
+	function openEditTemplate(template: JsonLdTemplate) {
 		editingTemplate = template;
 		templateForm = {
-			name: template.name,
-			type: template.type,
-			content: JSON.stringify(template.content, null, 2)
+			content_type: template.content_type,
+			is_active: template.is_active,
+			content: JSON.stringify(template.template ?? {}, null, 2)
 		};
 		jsonError = '';
 		showTemplateModal = true;
@@ -164,41 +162,22 @@
 
 	async function saveTemplate() {
 		if (!validateJson(templateForm.content)) return;
+		if (!templateForm.content_type.trim()) return;
 
 		saving = true;
 		try {
-			const content = JSON.parse(templateForm.content);
-			const templatesData: Record<string, unknown> = {};
-
-			// Build the templates object
-			for (const t of templates) {
-				templatesData[t.id] = t.content;
-			}
-
-			if (editingTemplate) {
-				templatesData[editingTemplate.id] = {
-					...content,
-					name: templateForm.name,
-					'@type': templateForm.type,
-					updated_at: new Date().toISOString()
-				};
-			} else {
-				const id = templateForm.name.toLowerCase().replace(/\s+/g, '-');
-				templatesData[id] = {
-					...content,
-					name: templateForm.name,
-					'@type': templateForm.type,
-					is_active: true,
-					created_at: new Date().toISOString(),
-					updated_at: new Date().toISOString()
-				};
-			}
-
-			const result = await jsonLdApi.updateTemplates(templatesData);
+			const templateBody = JSON.parse(templateForm.content) as Record<string, unknown>;
+			const result = await jsonLdApi.upsertTemplate({
+				content_type: templateForm.content_type.trim(),
+				template: templateBody,
+				is_active: templateForm.is_active
+			});
 			if (result.ok) {
-				success = editingTemplate ? 'Template updated successfully' : 'Template created successfully';
+				success = editingTemplate
+					? t('jsonld-templates.updated')
+					: t('jsonld-templates.created');
 				showTemplateModal = false;
-				load();
+				await load();
 			} else {
 				error = t('common.error');
 			}
@@ -209,9 +188,7 @@
 		}
 	}
 
-	function confirmDelete(templateId: string) {
-		const template = templates.find((t) => t.id === templateId);
-		if (!template) return;
+	function confirmDelete(template: JsonLdTemplate) {
 		deletingTemplate = template;
 		showDeleteModal = true;
 	}
@@ -219,17 +196,14 @@
 	async function deleteTemplate() {
 		if (!deletingTemplate) return;
 		try {
-			const templatesData: Record<string, unknown> = {};
-			for (const t of templates) {
-				if (t.id !== deletingTemplate.id) {
-					templatesData[t.id] = t.content;
-				}
-			}
-
-			const result = await jsonLdApi.updateTemplates(templatesData);
+			const result = await jsonLdApi.deleteTemplate(deletingTemplate.id);
 			if (result.ok) {
-				success = 'Template deleted successfully';
+				success = t('jsonld-templates.deleted');
 				templates = templates.filter((t) => t.id !== deletingTemplate!.id);
+				selectedIds.delete(deletingTemplate.id);
+				selectedIds = new Set(selectedIds);
+			} else {
+				error = t('common.error');
 			}
 		} catch {
 			error = t('common.error');
@@ -243,20 +217,18 @@
 		if (selectedIds.size === 0) return;
 		bulkDeleting = true;
 		try {
-			const templatesData: Record<string, unknown> = {};
-			for (const t of templates) {
-				if (!selectedIds.has(t.id)) {
-					templatesData[t.id] = t.content;
-				}
+			let failures = 0;
+			for (const id of selectedIds) {
+				const result = await jsonLdApi.deleteTemplate(id);
+				if (!result.ok) failures++;
 			}
-
-			const result = await jsonLdApi.updateTemplates(templatesData);
-			if (result.ok) {
-				success = `${selectedIds.size} template${selectedIds.size > 1 ? 's' : ''} deleted successfully`;
+			if (failures === 0) {
+				success = t('jsonld-templates.deleted');
 				selectedIds = new Set();
-				load();
+				await load();
 			} else {
 				error = t('common.error');
+				await load();
 			}
 		} catch {
 			error = t('common.error');
@@ -266,14 +238,7 @@
 	}
 
 	function exportTemplates() {
-		const data = JSON.stringify(
-			templates.reduce((acc, t) => {
-				acc[t.id] = t.content;
-				return acc;
-			}, {} as Record<string, unknown>),
-			null,
-			2
-		);
+		const data = JSON.stringify(templates, null, 2);
 		const blob = new Blob([data], { type: 'application/json' });
 		const url = URL.createObjectURL(blob);
 		const a = document.createElement('a');
@@ -292,37 +257,44 @@
 			if (!file) return;
 			try {
 				const text = await file.text();
-				const data = JSON.parse(text);
-				const result = await jsonLdApi.updateTemplates(data);
-				if (result.ok) {
-					success = 'Templates imported successfully';
-					load();
+				const parsed = JSON.parse(text);
+				// Accept either an array of {content_type, template, is_active}
+				// or the raw backend row shape ({id, content_type, template, ...}).
+				const list: any[] = Array.isArray(parsed) ? parsed : Object.values(parsed);
+				let imported = 0;
+				for (const item of list) {
+					const contentType = item.content_type;
+					const template = item.template;
+					if (!contentType || !template) continue;
+					const result = await jsonLdApi.upsertTemplate({
+						content_type: String(contentType),
+						template: template as Record<string, unknown>,
+						is_active: item.is_active !== false
+					});
+					if (result.ok) imported++;
 				}
+				success = t('jsonld-templates.imported');
+				await load();
 			} catch {
-				error = 'Failed to import templates. Invalid JSON file.';
+				error = t('jsonld-templates.import_failed');
 			}
 		};
 		input.click();
 	}
 
-  $effect(() => {
-    load();
-  });
+	$effect(() => {
+		load();
+	});
 </script>
 
 <svelte:head>
-	<title>JSON-LD Templates — JapaConnect Admin</title>
+	<title>{t('jsonld.title')} — JapaConnect Admin</title>
 </svelte:head>
 
 <PageHeader
-	title="JSON-LD Templates"
-	description="Manage structured data templates for SEO"
-	actions={[
-		{ label: 'Refresh', icon: RefreshCw, variant: 'outline', onclick: load },
-		{ label: 'Import', icon: Upload, variant: 'outline', onclick: handleImport },
-		{ label: 'Export', icon: Download, variant: 'outline', onclick: exportTemplates },
-		{ label: 'Add Template', icon: Plus, variant: 'default', onclick: openCreateTemplate }
-	]}
+	title={t('jsonld.title')}
+	description={t('jsonld.description')}
+	actions={headerActions}
 />
 
 <div class="space-y-6">
@@ -345,26 +317,27 @@
 			<CardHeader>
 				<h3 class="text-lg font-semibold text-foreground">{t('jsonld-templates.templates')}</h3>
 				<p class="text-sm text-muted">
-					{templates.length} template{templates.length !== 1 ? 's' : ''} configured
+					{templates.length} {t('jsonld-templates.templates_count')}
 				</p>
 			</CardHeader>
 			<CardContent class="p-0">
-				<!-- wire the search box to re-fetch templates; API ignores q today (see report) -->
 				<DataTable
 					columns={templateColumns}
 					data={templates}
 					pageSize={20}
-					emptyMessage="No JSON-LD templates configured"
+					emptyMessage={t('jsonld-templates.empty')}
 					searchable
 					onsearch={() => load()}
 					selectable
 					bind:selectedIds
 				>
 					{#snippet bulkActions()}
-						<Button variant="destructive" size="sm" onclick={bulkDelete} disabled={bulkDeleting || selectedIds.size === 0}>
-							<Trash2 class="h-3.5 w-3.5 mr-1" />
-							{bulkDeleting ? 'Deleting...' : 'Delete Selected'} ({selectedIds.size})
-						</Button>
+						{#if canManageTemplates}
+							<Button variant="destructive" size="sm" onclick={bulkDelete} disabled={bulkDeleting || selectedIds.size === 0}>
+								<Trash2 class="h-3.5 w-3.5 mr-1" />
+								{bulkDeleting ? t('jsonld-templates.deleting') : t('jsonld-templates.delete')} ({selectedIds.size})
+							</Button>
+						{/if}
 					{/snippet}
 				</DataTable>
 			</CardContent>
@@ -378,7 +351,7 @@
 			<CardContent>
 				{#if templates.length > 0}
 					<div class="rounded-lg border border bg-surface p-4">
-						<pre class="overflow-x-auto text-xs text-foreground-alt"><code>{JSON.stringify(templates[0]?.content || {}, null, 2)}</code></pre>
+						<pre class="overflow-x-auto text-xs text-foreground-alt"><code>{JSON.stringify(templates[0]?.template ?? {}, null, 2)}</code></pre>
 					</div>
 				{:else}
 					<p class="text-sm text-muted">{t('jsonld-templates.no_templates_to_preview')}</p>
@@ -389,43 +362,38 @@
 </div>
 
 <!-- Template Edit Modal -->
-<Modal bind:open={showTemplateModal} title={editingTemplate ? 'Edit Template' : 'Create Template'} size="xl">
+<Modal bind:open={showTemplateModal} title={editingTemplate ? t('jsonld-templates.edit_title') : t('jsonld-templates.create_title')} size="xl">
 	<div class="space-y-4">
 		<div class="grid grid-cols-2 gap-4">
 			<div>
-				<label for="template-name" class="mb-1 block text-sm font-medium text-foreground-alt">{t('jsonld-templates.name')}</label>
+				<label for="template-content-type" class="mb-1 block text-sm font-medium text-foreground-alt">{t('jsonld-templates.content_type')}</label>
 				<input
-					id="template-name"
+					id="template-content-type"
 					type="text"
 					class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
-					bind:value={templateForm.name}
-					placeholder="e.g., Article Template"
+					bind:value={templateForm.content_type}
+					disabled={!!editingTemplate}
+					placeholder="e.g., Article"
 				/>
 			</div>
 			<div>
-			<label for="template-type" class="mb-1 block text-sm font-medium text-foreground-alt">{t('jsonld-templates.schema_type')}</label>
-			<Select
-				options={[
-					{ value: 'Article', label: 'Article' },
-					{ value: 'Organization', label: 'Organization' },
-					{ value: 'Person', label: 'Person' },
-					{ value: 'Product', label: 'Product' },
-					{ value: 'Event', label: 'Event' },
-					{ value: 'FAQPage', label: 'FAQ Page' },
-					{ value: 'HowTo', label: 'How-To' },
-					{ value: 'LocalBusiness', label: 'Local Business' },
-					{ value: 'Course', label: 'Course' },
-					{ value: 'JobPosting', label: 'Job Posting' }
-				]}
-				bind:value={templateForm.type}
-			/>
+				<label for="template-is-active" class="mb-1 block text-sm font-medium text-foreground-alt">{t('jsonld-templates.status')}</label>
+				<label class="inline-flex items-center gap-2 pt-2">
+					<input
+						id="template-is-active"
+						type="checkbox"
+						class="h-4 w-4 rounded border"
+						bind:checked={templateForm.is_active}
+					/>
+					<span class="text-sm text-foreground-alt">{templateForm.is_active ? t('jsonld-templates.status_active') : t('jsonld-templates.status_inactive')}</span>
+				</label>
 			</div>
 		</div>
 		<div>
 			<label for="template-content" class="mb-1 block text-sm font-medium text-foreground-alt">
-				JSON-LD Content
+				{t('jsonld-templates.content')}
 				{#if jsonError}
-					<span class="text-danger-600 ml-2">({jsonError})</span>
+					<span class="text-danger-600 ml-2">({t('jsonld-templates.invalid_json')}: {jsonError})</span>
 				{/if}
 			</label>
 			<textarea
@@ -435,73 +403,73 @@
 				spellcheck="false"
 				value={templateForm.content}
 				oninput={handleContentInput}
-				placeholder={'{"@context": "https://schema.org", "@type": "Article", ...}'}
+				placeholder={t('jsonld-templates.placeholder')}
 			></textarea>
 		</div>
 	</div>
 	<div class="flex justify-end gap-3 pt-4">
-		<Button variant="outline" onclick={() => showTemplateModal = false}>{t('jsonld-templates.cancel')}</Button>
-		<Button onclick={saveTemplate} disabled={saving || !templateForm.name || !!jsonError}>
-			{saving ? 'Saving...' : editingTemplate ? 'Save Changes' : 'Create Template'}
+		<Button variant="outline" onclick={() => (showTemplateModal = false)}>{t('jsonld-templates.cancel')}</Button>
+		<Button onclick={saveTemplate} disabled={saving || !templateForm.content_type.trim() || !!jsonError}>
+			{saving ? t('jsonld-templates.saving') : editingTemplate ? t('jsonld-templates.save') : t('jsonld-templates.create_title')}
 		</Button>
 	</div>
 </Modal>
 
 <!-- View Modal -->
-<Modal bind:open={showViewModal} title="Template Details" size="lg">
+<Modal bind:open={showViewModal} title={t('jsonld-templates.view_title')} size="lg">
 	{#if viewTarget}
 		<div class="space-y-4">
 			<div class="grid grid-cols-2 gap-4">
 				<div>
-					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Name</p>
-					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.name}</p>
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('jsonld-templates.content_type')}</p>
+					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.content_type}</p>
 				</div>
 				<div>
-					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Schema Type</p>
-					<p class="mt-1 text-sm font-mono" style="color: var(--color-foreground)">{viewTarget.type}</p>
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('jsonld-templates.schema_type')}</p>
+					<p class="mt-1 text-sm font-mono" style="color: var(--color-foreground)">{schemaTypeOf(viewTarget)}</p>
 				</div>
 				<div>
-					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Status</p>
-					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.is_active ? 'Active' : 'Inactive'}</p>
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('jsonld-templates.status')}</p>
+					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.is_active ? t('jsonld-templates.status_active') : t('jsonld-templates.status_inactive')}</p>
 				</div>
 				<div>
-					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Last Updated</p>
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('jsonld-templates.last_updated')}</p>
 					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{new Date(viewTarget.updated_at).toLocaleDateString()}</p>
 				</div>
 			</div>
 			<div>
-				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Content</p>
-				<pre class="mt-1 overflow-x-auto rounded-lg border p-3 text-xs" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"><code>{JSON.stringify(viewTarget.content, null, 2)}</code></pre>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('jsonld-templates.content')}</p>
+				<pre class="mt-1 overflow-x-auto rounded-lg border p-3 text-xs" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"><code>{JSON.stringify(viewTarget.template ?? {}, null, 2)}</code></pre>
 			</div>
 		</div>
 	{/if}
 	<div class="mt-6 flex justify-end">
-		<Button variant="outline" onclick={() => (showViewModal = false)}>{t('jsonld-templates.close')}</Button>
+		<Button variant="outline" onclick={() => (showViewModal = false)}>{t('jsonld-templates.cancel')}</Button>
 	</div>
 </Modal>
 
 <!-- Delete Confirmation Modal -->
-<Modal bind:open={showDeleteModal} title="Delete Template" size="sm">
+<Modal bind:open={showDeleteModal} title={t('jsonld-templates.delete_title')} size="sm">
 	<p class="text-sm text-foreground-alt">
-		Are you sure you want to delete <strong>{deletingTemplate?.name}</strong>? This action cannot be undone.
+		{t('jsonld-templates.delete_confirm')}
 	</p>
 	<div class="flex justify-end gap-3 pt-4">
-		<Button variant="outline" onclick={() => showDeleteModal = false}>{t('jsonld-templates.cancel')}</Button>
+		<Button variant="outline" onclick={() => (showDeleteModal = false)}>{t('jsonld-templates.cancel')}</Button>
 		<Button variant="destructive" onclick={deleteTemplate}>{t('jsonld-templates.delete')}</Button>
 	</div>
 </Modal>
 
 <!-- TemplateActionsCell -->
-{#snippet TemplateActionsCell({ value, row }: { value: any; row: JsonLdTemplate })}
+{#snippet TemplateActionsCell({ row }: { value: any; row: JsonLdTemplate })}
 	<div class="flex items-center gap-1">
 		<Button variant="ghost" size="sm" onclick={() => openViewTemplate(row)}>
 			<Eye class="h-3.5 w-3.5" />
 		</Button>
 		{#if canManageTemplates}
-			<Button variant="ghost" size="sm" onclick={() => openEditTemplate(row.id)}>
+			<Button variant="ghost" size="sm" onclick={() => openEditTemplate(row)}>
 				<Pencil class="h-3.5 w-3.5" />
 			</Button>
-			<Button variant="ghost" size="sm" onclick={() => confirmDelete(row.id)} style="color: var(--color-danger)">
+			<Button variant="ghost" size="sm" onclick={() => confirmDelete(row)} style="color: var(--color-danger)">
 				<Trash2 class="h-3.5 w-3.5" />
 			</Button>
 		{/if}

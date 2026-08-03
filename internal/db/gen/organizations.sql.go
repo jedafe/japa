@@ -319,6 +319,44 @@ func (q *Queries) ExpireOrganizationBoosts(ctx context.Context) error {
 	return err
 }
 
+const getOrgOwnerPublicProfile = `-- name: GetOrgOwnerPublicProfile :one
+SELECT u.id, u.username, up.display_name, up.avatar_url
+FROM organizations o
+JOIN users u ON u.id = o.owner_user_id AND u.tenant_id = $1
+LEFT JOIN user_profiles up ON up.user_id = u.id AND up.tenant_id = u.tenant_id
+WHERE o.id = $2 AND o.tenant_id = $1 AND o.deleted_at IS NULL
+`
+
+type GetOrgOwnerPublicProfileParams struct {
+	TenantID       pgtype.UUID `json:"tenant_id"`
+	OrganizationID pgtype.UUID `json:"organization_id"`
+}
+
+type GetOrgOwnerPublicProfileRow struct {
+	ID          pgtype.UUID `json:"id"`
+	Username    string      `json:"username"`
+	DisplayName *string     `json:"display_name"`
+	AvatarUrl   *string     `json:"avatar_url"`
+}
+
+// Returns the org owner's public identity (username, display_name, avatar_url)
+// for the public org profile sidebar "Org Leader" widget. Unlike
+// ListPublicOrganizationMembers, this does NOT filter by user.status — the
+// owner is shown even if their account is restricted (they are the org's
+// leader regardless of their own account standing). Tenant-scoped for
+// defense-in-depth.
+func (q *Queries) GetOrgOwnerPublicProfile(ctx context.Context, arg GetOrgOwnerPublicProfileParams) (GetOrgOwnerPublicProfileRow, error) {
+	row := q.db.QueryRow(ctx, getOrgOwnerPublicProfile, arg.TenantID, arg.OrganizationID)
+	var i GetOrgOwnerPublicProfileRow
+	err := row.Scan(
+		&i.ID,
+		&i.Username,
+		&i.DisplayName,
+		&i.AvatarUrl,
+	)
+	return i, err
+}
+
 const getOrganizationAnalytics = `-- name: GetOrganizationAnalytics :one
 SELECT
   COALESCE(SUM(c.view_count), 0)::bigint AS total_views,

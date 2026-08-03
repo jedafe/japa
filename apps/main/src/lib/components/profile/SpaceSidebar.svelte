@@ -4,7 +4,6 @@
 	import { page } from '$app/state';
 	import { Users, FileText, ScrollText, LogIn } from 'lucide-svelte';
 	import { api } from '$lib/api/client';
-	import FollowButton from '$lib/components/ui/FollowButton.svelte';
 	import type { Space, SpaceRule } from '$lib/types';
 
 	interface Props {
@@ -14,11 +13,12 @@
 		/** Whether the caller is already a member (hydrated server-side from
 		 * the space members list). Best-effort for spaces with >20 members. */
 		initialJoined?: boolean;
-		/** Whether the caller is already following the space (hydrated
-		 * server-side via /users/{id}/follow-status?entity_type=space). */
-		initiallyFollowing?: boolean;
+		/** Bindable follow state — the sidebar sets this to true when auto-
+		 * following on join, so the parent page's header Follow button stays
+		 * in sync. */
+		following?: boolean;
 	}
-	let { space, rules, authed, initialJoined = false, initiallyFollowing = false }: Props = $props();
+	let { space, rules, authed, initialJoined = false, following = $bindable(false) }: Props = $props();
 
 	// Join state is hydrated from the server (initialJoined) so the button
 	// reflects the caller's actual membership on SSR load instead of always
@@ -60,6 +60,16 @@
 				// pending=true for request-only spaces (202 response).
 				joined = !!res.data.joined;
 				pendingJoin = !!res.data.pending && !res.data.joined;
+
+				// Auto-follow on a successful join (best-effort — a follow
+				// failure does not roll back the join). Mirrors the
+				// SpaceJoinButton behavior on the /spaces list page.
+				// Sets the bindable `following` prop so the parent page's
+				// header Follow button immediately reflects "Following".
+				if (joined && !res.data.pending) {
+					following = true;
+					void api.post<{ following: boolean }>(`/spaces/${space.slug}/follow`);
+				}
 			}
 		}
 		pending = false;
@@ -113,9 +123,6 @@
 					<LogIn size={16} /> {t('space.join', 'Join')}
 				{/if}
 			</button>
-			<div class="mt-2">
-				<FollowButton entityType="space" entityId={space.id} entitySlug={space.slug} compact={false} {initiallyFollowing} />
-			</div>
 		{:else}
 			<a
 				href={loginHref}

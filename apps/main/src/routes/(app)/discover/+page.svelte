@@ -39,7 +39,7 @@
 
 	<!-- Tab bar -->
 	<nav
-		class="sticky top-0 z-10 flex gap-1 overflow-x-auto border-b border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-bg)_90%,transparent)] px-3 backdrop-blur"
+		class="discover-tabs sticky top-0 z-10 flex gap-1 overflow-x-auto border-b border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-bg)_90%,transparent)] px-3 backdrop-blur"
 		style="min-height: var(--nav-height)"
 		aria-label={t('discover.tabs_label', 'Discover tabs')}
 	>
@@ -161,3 +161,12 @@
 		{/if}
 	</div>
 </div>
+
+<style>
+	.discover-tabs {
+		scrollbar-width: none;
+	}
+	.discover-tabs::-webkit-scrollbar {
+		display: none;
+	}
+</style>

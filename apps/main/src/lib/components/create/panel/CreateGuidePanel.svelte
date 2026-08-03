@@ -1,7 +1,9 @@
 <script lang="ts">
 	import { t } from '$lib/i18n';
-	import type { BlogSeries, MediaAsset } from '$lib/types';
+	import type { BlogSeries, MediaAsset, MeSpace } from '$lib/types';
 	import SeriesSelector from './SeriesSelector.svelte';
+	import SpaceSelector from '../SpaceSelector.svelte';
+	import TagInput from '../TagInput.svelte';
 	import CoverUploader from '../CoverUploader.svelte';
 
 	type FocusedField = 'space' | 'tags' | 'series' | 'body' | null;
@@ -10,10 +12,17 @@
 		focusedField: FocusedField;
 		series: BlogSeries[];
 		seriesId: string | null;
+		spaces: MeSpace[];
+		spaceId: string | null;
+		tags: string[];
 		coverMediaId: string | null;
 		coverPreviewUrl: string | null;
 		onseries: (id: string | null) => void;
 		onseriesfocus: () => void;
+		onspace: (id: string) => void;
+		onspacefocus: () => void;
+		ontags: (next: string[]) => void;
+		ontagsfocus: () => void;
 		oncoveruploaded: (asset: MediaAsset) => void;
 		oncoverremove: () => void;
 		onedit: () => void;
@@ -23,10 +32,17 @@
 		focusedField,
 		series = $bindable(),
 		seriesId,
+		spaces = $bindable(),
+		spaceId,
+		tags,
 		coverMediaId,
 		coverPreviewUrl,
 		onseries,
 		onseriesfocus,
+		onspace,
+		onspacefocus,
+		ontags,
+		ontagsfocus,
 		oncoveruploaded,
 		oncoverremove,
 		onedit
@@ -60,6 +76,23 @@
 				{seriesId}
 				onselect={(id) => { onseries(id); onedit(); }}
 				onfocus={onseriesfocus}
+			/>
+		</div>
+		<div class="footer-section">
+			<span class="footer-label">{t('create.label.space')}</span>
+			<SpaceSelector
+				bind:spaces
+				selectedId={spaceId}
+				onSelect={(id) => { onspace(id); onedit(); }}
+				onfocus={onspacefocus}
+			/>
+		</div>
+		<div class="footer-section">
+			<span class="footer-label">{t('create.label.tags')}</span>
+			<TagInput
+				{tags}
+				onTags={(next) => { ontags(next); onedit(); }}
+				onfocus={ontagsfocus}
 			/>
 		</div>
 	</div>

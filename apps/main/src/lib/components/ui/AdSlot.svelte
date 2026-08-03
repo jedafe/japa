@@ -46,7 +46,7 @@
 	async function fetchAds(): Promise<void> {
 		loading = true;
 		try {
-			const result = await api.get<AdCampaign[]>(`/api/v1/ads/serve?slot=${encodeURIComponent(slot)}`);
+			const result = await api.get<AdCampaign[]>(`/ads/serve?slot=${encodeURIComponent(slot)}`);
 			const campaigns = result.data;
 			if (!campaigns || campaigns.length === 0) {
 				campaign = null;
@@ -66,7 +66,7 @@
 		if (!campaign || impressionTracked) return;
 		impressionTracked = true;
 		try {
-			await api.post('/api/v1/ads/events', {
+			await api.post('/ads/events', {
 				campaign_id: campaign.id,
 				event_type: 'impression'
 			});
@@ -79,7 +79,7 @@
 		if (!campaign?.target_url) return;
 		e.preventDefault();
 		// Track click event (fire-and-forget).
-		api.post('/api/v1/ads/events', {
+		api.post('/ads/events', {
 			campaign_id: campaign.id,
 			event_type: 'click'
 		});

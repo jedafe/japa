@@ -274,6 +274,18 @@ RETURNING id, tenant_id, parent_id, space_type_id, name, slug, description, wiki
           follower_count, visibility, posting_perm, replying_perm, commenting_perm,
           joining_perm, status, created_at, updated_at, deleted_at, currency_code;
 
+-- name: UpdateSpaceKeywords :exec
+-- Updates only the keywords array on a space. Separate from UpdateSpace so
+-- that keywords can be updated independently without affecting other fields.
+UPDATE spaces SET keywords = @keywords, updated_at = now()
+WHERE id = @id AND tenant_id = @tenant_id AND deleted_at IS NULL;
+
+-- name: GetSpaceKeywords :one
+-- Returns only the keywords array for a space. Used by GetSpace handler
+-- to include keywords in the response without changing the Space struct.
+SELECT keywords FROM spaces
+WHERE id = @id AND tenant_id = @tenant_id AND deleted_at IS NULL;
+
 -- name: DeleteSpace :exec
 -- Soft-delete: set deleted_at instead of hard-deleting (Rule 11, ADR-014).
 -- The account:deletion_cleanup Asynq task may hard-delete after GDPR erasure.
@@ -539,4 +551,29 @@ LIMIT @limit_val;
 UPDATE spaces
 SET logo_media_id = @logo_media_id
 WHERE id = @id AND tenant_id = @tenant_id AND deleted_at IS NULL
-RETURNING *;
+RETURNING id, tenant_id, parent_id, space_type_id, name, slug, description, wiki_content,
+          logo_media_id, header_image_id, geo_code, level, member_count, post_count,
+          follower_count, visibility, posting_perm, replying_perm, commenting_perm,
+          joining_perm, status, created_at, updated_at, deleted_at, currency_code;
+
+-- name: FindSpacesByKeywords :many
+-- Find primary (country/state/city) and public spaces whose keywords overlap
+-- with the given keyword list. Used for auto-assigning content to spaces
+-- based on the content title. Only matches spaces with visibility='public'
+-- and level IN ('country','state','city'). Returns only the fields needed
+-- for auto-assignment (id, name, level) to avoid coupling to the full Space
+-- model which doesn't include the keywords column.
+SELECT id, name, level
+FROM spaces
+WHERE tenant_id = @tenant_id
+  AND deleted_at IS NULL
+  AND visibility = 'public'
+  AND level IN ('country', 'state', 'city')
+  AND keywords && @keywords::text[]
+ORDER BY
+  CASE level
+    WHEN 'city' THEN 1
+    WHEN 'state' THEN 2
+    WHEN 'country' THEN 3
+  END,
+  name;
