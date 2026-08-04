@@ -12,7 +12,10 @@ export const landingPalettes: Record<string, PaletteDefinition> = {
     label: 'Homepage',
     allowedBlocks: [
       'hero', 'carousel', 'card_grid', 'media_grid', 'entity_collection',
-      'entity_feature', 'accordion', 'cta_banner',
+      'entity_feature', 'accordion', 'cta_banner', 'video', 'icon', 'content',
+      'quote', 'spacer_divider', 'countdown', 'coming_soon', 'form_embed',
+      'timeline', 'map', 'table', 'advertisement', 'live_rate_ticker',
+      'tabs', 'media',
     ],
     defaultSeed: [
       {
@@ -80,6 +83,34 @@ export const landingPalettes: Record<string, PaletteDefinition> = {
         props: { entity_type: 'job', query: { limit: 6, geo: true }, layout: 'grid', card_variant: 'compact', columns: 3 },
       },
       {
+        type: 'timeline',
+        label: 'Japa Journey',
+        props: {
+          layout: 'horizontal',
+          steps: [
+            { icon: 'Plane', title: 'Plan', description: 'Research destinations and prepare your documents.' },
+            { icon: 'FileCheck', title: 'Apply', description: 'Submit visa, school, or job applications.' },
+            { icon: 'Plane', title: 'Move', description: 'Travel to your new country and settle in.' },
+            { icon: 'Home', title: 'Settle', description: 'Build your new life abroad with community support.' },
+          ],
+        },
+      },
+      {
+        type: 'map',
+        label: 'Diaspora Map',
+        props: {
+          mode: 'static',
+          geo_source: 'trending_spaces',
+          highlight_visitor_country: true,
+          pins: [],
+        },
+      },
+      {
+        type: 'live_rate_ticker',
+        label: 'Remittance Rates',
+        props: { limit: 10, geo_aware: true, layout: 'horizontal', speed: 30 },
+      },
+      {
         type: 'accordion',
         label: 'FAQ',
         props: {
@@ -92,6 +123,22 @@ export const landingPalettes: Record<string, PaletteDefinition> = {
         },
       },
       {
+        type: 'form_embed',
+        label: 'Newsletter Signup',
+        props: {
+          preset: 'newsletter',
+          title: 'Stay in the loop',
+          subtitle: 'Get the latest diaspora stories and guides in your inbox.',
+          fields: [
+            { name: 'email', label: 'Email', type: 'email', required: true, placeholder: 'you@example.com' },
+          ],
+          submit_endpoint: '/newsletter/subscribe',
+          submit_label: 'Subscribe',
+          success_message: 'You\'re subscribed! Check your inbox for a confirmation.',
+          error_message: 'Something went wrong. Please try again.',
+        },
+      },
+      {
         type: 'cta_banner',
         label: 'Join CTA',
         props: {
@@ -100,6 +147,30 @@ export const landingPalettes: Record<string, PaletteDefinition> = {
           ctas: [{ label: 'Create your account', href: '/signup', variant: 'primary' }],
           alignment: 'center',
         },
+      },
+      {
+        type: 'video',
+        label: 'Promo Video',
+        props: {
+          provider: 'youtube',
+          id: '',
+          aspect_ratio: '16:9',
+          autoplay: false, mute: true, captions: true, loop: false,
+          title: 'See how JapaConnect works',
+        },
+      },
+      {
+        type: 'content',
+        label: 'About Text',
+        props: {
+          html: '<p>JapaConnect is the community hub for the Nigerian diaspora. Share your journey, ask questions, compare destinations, and connect with fellow Nigerians abroad.</p>',
+          prose_style: 'article',
+        },
+      },
+      {
+        type: 'spacer_divider',
+        label: 'Footer Spacer',
+        props: { height: 64, divider_style: 'gradient' },
       },
     ],
   },
