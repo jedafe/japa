@@ -27,11 +27,12 @@
     const found = (LucideIcons as Record<string, unknown>)[name];
     return (found as Component) ?? null;
   }
+
+  const Icon = $derived(getIcon(props.icon));
 </script>
 
 <section class="px-6 py-8">
   <div class="mx-auto max-w-6xl flex items-center justify-center gap-3">
-    {@const Icon = getIcon(props.icon)}
     {#if props.href}
       <a href={props.href} class="inline-flex items-center gap-3">
         {#if Icon}
