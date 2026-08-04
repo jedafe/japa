@@ -1,9 +1,8 @@
 import type { PageServerLoad } from './$types';
-import { apiContext, apiList, apiGet, ApiError } from '$lib/server/api';
+import { apiContext, apiList, apiGet } from '$lib/server/api';
 import { feedPath, resolveTab, resolveSort, PAGE_SIZE } from '$lib/feed/endpoint';
 import type { FeedItem } from '$lib/types';
-import type { ContentArticle } from '$lib/types/content';
-import { resolveGeoCopy, getGeoTokens, type Block, type LandingPage as LandingPageData } from '@japaconnect/landing-blocks';
+import { resolveGeoCopy, getGeoTokens, landingPalettes, type Block, type LandingPage as LandingPageData } from '@japaconnect/landing-blocks';
 
 /**
  * Home route (/). Behavior splits by auth state per ADR-058 §5 Exception #3:
@@ -59,28 +58,39 @@ export const load: PageServerLoad = async (event) => {
 			contentCountry: geoCountry,
 		};
 	} catch (err) {
-		// No published "homepage" page — fall back to the default GuestLanding.
-		const geo = event.locals.user?.content_country_preference ?? undefined;
-		const geoParam = geo ? `&geo=${encodeURIComponent(geo)}` : '';
-		const [exploreItems, blogPosts, destinations] = await Promise.all([
-			apiList<FeedItem>(ctx, `/explore?page_size=5&page_offset=0${geoParam}`)
-				.then((r) => r.items)
-				.catch(() => [] as FeedItem[]),
-			apiList<ContentArticle>(ctx, '/blog?page_size=6&page_offset=0')
-				.then((r) => r.items)
-				.catch(() => [] as ContentArticle[]),
-			apiGet<Destination[]>(ctx, `/trending/spaces?limit=6${geoParam}`)
-				.then((r) => r ?? [])
-				.catch(() => [] as Destination[])
-		]);
-		return { authed: false, landing: null, guestLanding: { exploreItems, blogPosts, destinations } };
+		// No published "homepage" page — hydrate the default seed from the
+		// homepage palette so the new LandingRenderer shows immediately.
+		// Admins can later publish a custom page (slug "homepage") to override.
+		const geoCountry =
+			event.url.searchParams.get('geo') ??
+			event.locals.user?.content_country_preference ??
+			'global';
+		const tokens = getGeoTokens(geoCountry, 'en');
+		const seed = landingPalettes['homepage']?.defaultSeed ?? [];
+		const seedBlocks = seed.map((entry, i) => ({
+			id: `seed-${i}`,
+			type: entry.type,
+			visible: true,
+			label: entry.label,
+			props: entry.props as unknown as Block['props'],
+		})) as Block[];
+		const resolvedBlocks = resolveGeoCopy(seedBlocks, {
+			contentCountry: geoCountry,
+			tokens,
+			locale: 'en',
+		});
+		return {
+			authed: false,
+			landing: {
+				id: 'seed-homepage',
+				title: 'JapaConnect — The Nigerian Diaspora Community',
+				slug: 'homepage',
+				page_type: 'landing',
+				status: 'seed',
+				blocks: resolvedBlocks,
+			} as LandingPageData,
+			guestLanding: null,
+			contentCountry: geoCountry,
+		};
 	}
 };
-
-/** A trending space / destination for the landing grid. */
-interface Destination {
-	id: string;
-	name: string;
-	slug: string;
-	description?: string;
-}
