@@ -18,11 +18,12 @@ const TOKEN_RE = /\{\{(\w+)(?:\|([^}]+))?\}\}/g;
 
 /** Resolve all {{token}} placeholders in a single string. */
 export function resolveString(str: string, tokens: GeoCopyTokens): string {
-  return str.replace(TOKEN_RE, (match, tokenName: string, fallback?: string) => {
+  return str.replace(TOKEN_RE, (match: string, tokenName: string, fallback?: string): string => {
     const field = TOKEN_ALIASES[tokenName];
     if (!field) return match; // unknown token — leave as-is
     const value = tokens[field];
-    if (!value || value === '') return fallback ?? match;
+    // The `names` field is an object, not a string — skip it.
+    if (typeof value !== 'string' || value === '') return fallback ?? match;
     return value;
   });
 }
@@ -43,6 +44,6 @@ function resolveValue(value: unknown, tokens: GeoCopyTokens): unknown {
 export function resolveGeoCopy(blocks: Block[], ctx: GeoContext): Block[] {
   return blocks.map((block) => ({
     ...block,
-    props: resolveValue(block.props, ctx.tokens) as typeof block.props,
-  }));
+    props: resolveValue(block.props, ctx.tokens) as Block['props'],
+  })) as Block[];
 }
