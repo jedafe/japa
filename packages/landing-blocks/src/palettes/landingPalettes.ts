@@ -29,12 +29,12 @@ export const landingPalettes: Record<string, PaletteDefinition> = {
             { label: 'Join the community', href: '/signup', variant: 'primary' },
             { label: 'Explore content', href: '/explore', variant: 'outline' },
           ],
+          stats: [
+            { label: 'Members', value: '50K+' },
+            { label: 'Destinations', value: '12+' },
+            { label: 'Stories shared', value: '10K+' },
+          ],
         },
-      },
-      {
-        type: 'media_grid',
-        label: 'Partner Brands',
-        props: { items: [], card_style: 'logo', lightbox: false, columns: 6 },
       },
       {
         type: 'card_grid',
@@ -44,43 +44,22 @@ export const landingPalettes: Record<string, PaletteDefinition> = {
             { icon: 'MessageCircle', title: 'Community Discussions', description: 'Ask questions and share experiences with {{country_adjective}} diaspora.', cta: { label: 'Join discussions', href: '/forum', variant: 'link' } },
             { icon: 'GraduationCap', title: 'University Comparisons', description: 'Compare universities and programs for your destination.', cta: { label: 'Compare universities', href: '/universities', variant: 'link' } },
             { icon: 'Briefcase', title: 'Jobs & Opportunities', description: 'Find jobs with visa sponsorship in {{country}}.', cta: { label: 'Browse jobs', href: '/jobs', variant: 'link' } },
+            { icon: 'TrendingUp', title: 'Remittance Rates', description: 'Track live remittance rates across corridors.', cta: { label: 'Check rates', href: '/tools/remittance-tracker', variant: 'link' } },
+            { icon: 'Calculator', title: 'Cost of Living', description: 'Compare living costs across destination cities.', cta: { label: 'Compare costs', href: '/tools/cost-of-living', variant: 'link' } },
+            { icon: 'FileCheck', title: 'Visa Checklist', description: 'Generate your visa document checklist by destination.', cta: { label: 'Get checklist', href: '/tools/visa-checklist', variant: 'link' } },
           ],
           card_variant: 'feature', layout: 'grid', columns: 3,
         },
       },
       {
-        type: 'carousel',
-        label: 'Tools Slider',
-        props: {
-          slides: [],
-          autoplay: true, dots: true, arrows: true,
-          transition: 'slide', interval: 5000, pause_on_hover: true,
-        },
-      },
-      {
         type: 'entity_collection',
         label: 'Destinations',
-        props: { entity_type: 'space', query: { limit: 6, geo: true }, layout: 'grid', card_variant: 'compact', columns: 3 },
+        props: { entity_type: 'space', query: { limit: 6, geo: true, filters: { hide_if_empty: 'true' } }, layout: 'grid', card_variant: 'compact', columns: 3 },
       },
       {
         type: 'entity_collection',
         label: 'Trending Discussions',
-        props: { entity_type: 'thread', query: { limit: 5, geo: true }, layout: 'list', card_variant: 'minimal', columns: 1 },
-      },
-      {
-        type: 'entity_feature',
-        label: 'Featured University',
-        props: { entity_type: 'university', layout: 'split' },
-      },
-      {
-        type: 'entity_collection',
-        label: 'Latest Blog',
-        props: { entity_type: 'blog', query: { limit: 6 }, layout: 'grid', card_variant: 'feature', columns: 3 },
-      },
-      {
-        type: 'entity_collection',
-        label: 'Featured Jobs',
-        props: { entity_type: 'job', query: { limit: 6, geo: true }, layout: 'grid', card_variant: 'compact', columns: 3 },
+        props: { entity_type: 'thread', query: { limit: 5, geo: true, filters: { hide_if_empty: 'true' } }, layout: 'list', card_variant: 'minimal', columns: 1 },
       },
       {
         type: 'timeline',
@@ -96,28 +75,44 @@ export const landingPalettes: Record<string, PaletteDefinition> = {
         },
       },
       {
+        type: 'entity_collection',
+        label: 'Latest Blog Posts',
+        props: { entity_type: 'blog', query: { limit: 6, filters: { hide_if_empty: 'true' } }, layout: 'grid', card_variant: 'feature', columns: 3 },
+      },
+      {
+        type: 'entity_collection',
+        label: 'Featured Jobs',
+        props: { entity_type: 'job', query: { limit: 6, geo: true, filters: { hide_if_empty: 'true' } }, layout: 'grid', card_variant: 'compact', columns: 3 },
+      },
+      {
         type: 'map',
         label: 'Diaspora Map',
         props: {
           mode: 'static',
           geo_source: 'trending_spaces',
           highlight_visitor_country: true,
-          pins: [],
+          pins: [
+            { country: 'NG', label: 'Nigeria', href: '/explore' },
+            { country: 'GB', label: 'United Kingdom', href: '/explore?geo=GB' },
+            { country: 'US', label: 'United States', href: '/explore?geo=US' },
+            { country: 'CA', label: 'Canada', href: '/explore?geo=CA' },
+            { country: 'DE', label: 'Germany', href: '/explore?geo=DE' },
+            { country: 'AU', label: 'Australia', href: '/explore?geo=AU' },
+            { country: 'IE', label: 'Ireland', href: '/explore?geo=IE' },
+            { country: 'ZA', label: 'South Africa', href: '/explore?geo=ZA' },
+            { country: 'AE', label: 'UAE', href: '/explore?geo=AE' },
+          ],
         },
-      },
-      {
-        type: 'live_rate_ticker',
-        label: 'Remittance Rates',
-        props: { limit: 10, geo_aware: true, layout: 'horizontal', speed: 30 },
       },
       {
         type: 'accordion',
         label: 'FAQ',
         props: {
           items: [
-            { title: 'What is JapaConnect?', content_blocks: [] },
-            { title: 'Is it free to join?', content_blocks: [] },
-            { title: 'How does geo-aware content work?', content_blocks: [] },
+            { title: 'What is JapaConnect?', content_blocks: [{ id: 'faq-1', type: 'content', visible: true, props: { html: '<p>JapaConnect is the community hub for the Nigerian diaspora. Share your journey, ask questions, compare destinations, and connect with fellow Nigerians abroad.</p>', prose_style: 'default' } }] },
+            { title: 'Is it free to join?', content_blocks: [{ id: 'faq-2', type: 'content', visible: true, props: { html: '<p>Yes! JapaConnect is free to join. Create an account to participate in discussions, save content, and access our tools.</p>', prose_style: 'default' } }] },
+            { title: 'How does geo-aware content work?', content_blocks: [{ id: 'faq-3', type: 'content', visible: true, props: { html: '<p>We detect your country and tailor content to your diaspora community. You can also manually set your country using the geo selector.</p>', prose_style: 'default' } }] },
+            { title: 'What tools are available?', content_blocks: [{ id: 'faq-4', type: 'content', visible: true, props: { html: '<p>Visa checklist generator, japa readiness assessment, cost of living calculator, scholarship finder, remittance rate tracker, and more.</p>', prose_style: 'default' } }] },
           ],
           preset: 'faq', layout: 'accordion', searchable: true,
         },
@@ -146,25 +141,6 @@ export const landingPalettes: Record<string, PaletteDefinition> = {
           subhead: 'Create a free account and start sharing your journey, asking questions, and connecting with fellow Nigerians abroad.',
           ctas: [{ label: 'Create your account', href: '/signup', variant: 'primary' }],
           alignment: 'center',
-        },
-      },
-      {
-        type: 'video',
-        label: 'Promo Video',
-        props: {
-          provider: 'youtube',
-          id: '',
-          aspect_ratio: '16:9',
-          autoplay: false, mute: true, captions: true, loop: false,
-          title: 'See how JapaConnect works',
-        },
-      },
-      {
-        type: 'content',
-        label: 'About Text',
-        props: {
-          html: '<p>JapaConnect is the community hub for the Nigerian diaspora. Share your journey, ask questions, compare destinations, and connect with fellow Nigerians abroad.</p>',
-          prose_style: 'article',
         },
       },
       {

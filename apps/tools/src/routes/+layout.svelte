@@ -6,6 +6,7 @@
 	import Footer from '$lib/components/shell/Footer.svelte';
 	import { theme } from '$lib/stores/theme.svelte';
 	import { seedCsrfToken } from '$lib/api/csrf.svelte';
+	import { i18n } from '$lib/i18n';
 	import { getTool } from '$lib/tools/registry';
 	import type { ToolSurface } from '$lib/types';
 	import type { LayoutData } from './$types';
@@ -16,6 +17,12 @@
 	// Seed the client stores from the SSR-resolved values once, after hydration.
 	$effect(() => {
 		theme.init(data.theme);
+	});
+
+	// Seed the i18n locale from the SSR-resolved value (jc_locale cookie →
+	// i18n.default_language setting). Ref: §7 (i18n), ADR-013.
+	$effect(() => {
+		i18n.setLocale(data.locale);
 	});
 
 	// Seed the browser-side CSRF token from server-rendered page data so the
@@ -48,7 +55,10 @@
 </svelte:head>
 
 {#if isSingleTool && activeTool}
-	<div class="flex flex-col min-h-screen">
+	<div
+		class="flex flex-col min-h-screen"
+		style="--tool-accent: {activeTool.accent}; --tool-accent-hover: {activeTool.accentHover};"
+	>
 		<SingleToolHeader tool={activeTool} />
 		<main class="flex-1">
 			{@render children()}

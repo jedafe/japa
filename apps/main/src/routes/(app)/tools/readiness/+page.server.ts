@@ -1,16 +1,25 @@
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGet } from '$lib/server/api';
+import { apiContext, apiGet, apiList } from '$lib/server/api';
 import { ApiError } from '$lib/server/api';
 import type { AssessmentForm } from '$lib/types';
 
 /**
  * Readiness Assessment page at /tools/readiness (Section 71, ADR-071).
  * SSR-fetches the active assessment form so the multi-section form renders
- * without a client round-trip. Auth-gated routes (history) are fetched
- * client-side after hydration.
+ * without a client round-trip. For authenticated users, also fetches score
+ * history (/assessment/history) so the page can render the score history
+ * LineChart (Phase 33.02).
  *
  * Ref: japaconnect-engineering/sections/71-readiness-assessment.md
  */
+export interface AssessmentHistoryEntry {
+	id: string;
+	total_score: number;
+	max_score: number;
+	threshold_label?: string;
+	submitted_at: string;
+}
+
 export const load: PageServerLoad = async (event) => {
 	const ctx = apiContext(event);
 	const authed = !!event.locals.user;
@@ -25,5 +34,17 @@ export const load: PageServerLoad = async (event) => {
 		}
 	}
 
-	return { form, disabled, authed };
+	// Phase 33.02 — fetch the authenticated user's score history so the page
+	// can render the score history LineChart. Best-effort: guests and any
+	// backend error degrade to an empty list.
+	let history: AssessmentHistoryEntry[] = [];
+	if (authed) {
+		try {
+			history = (await apiList<AssessmentHistoryEntry>(ctx, '/assessment/history?limit=30')).items;
+		} catch {
+			history = [];
+		}
+	}
+
+	return { form, disabled, authed, history };
 };

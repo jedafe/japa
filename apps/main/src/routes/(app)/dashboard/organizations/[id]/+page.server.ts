@@ -3,14 +3,14 @@
 // for the admin view. Auth-gated; the backend self-403s non-members. The {id}
 // param is a UUID; GET /organizations/{id} is served by the slug handler's
 // UUID-detection path.
-import { error } from '@sveltejs/kit';
+import { error, redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext, apiGet, apiList } from '$lib/server/api';
 import type { OrganizationAdmin, OrgMember, ProfilePost } from '$lib/types';
 
 export const load: PageServerLoad = async (event) => {
 	if (!event.locals.user) {
-		throw error(403, { code: 'forbidden', message: 'Authentication required' });
+		throw redirect(307, `/login?redirect=${encodeURIComponent(event.url.pathname + event.url.search)}`);
 	}
 	const ctx = apiContext(event);
 	const id = event.params.id;

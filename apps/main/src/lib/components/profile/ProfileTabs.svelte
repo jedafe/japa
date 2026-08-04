@@ -5,6 +5,7 @@
 		key: string;
 		labelKey: string;
 		href: string;
+		labelFallback?: string;
 	}
 
 	interface Props {
@@ -28,7 +29,7 @@
 				? 'text-[var(--color-text)]'
 				: 'text-[var(--color-muted)] hover:text-[var(--color-text)]'}"
 		>
-			{t(tab.labelKey, tab.key)}
+			{t(tab.labelKey, tab.labelFallback ?? tab.key)}
 			{#if active === tab.key}
 				<span class="absolute inset-x-3 -bottom-px h-0.5 rounded-full bg-[var(--color-primary)]"></span>
 			{/if}

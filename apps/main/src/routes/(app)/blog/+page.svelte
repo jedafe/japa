@@ -129,7 +129,15 @@
 
 				<!-- Pagination (BUG-005: offset-based per Rule 5) -->
 				{#if data.pageSize > 0}
-					<div class="mt-8 flex items-center justify-center gap-4">
+					{#if data.meta?.total != null && data.meta.total > 0}
+						<p class="mt-6 text-center text-xs text-[var(--color-muted)]">
+							{t('common.showing', 'Showing {start}-{end} of {total}')
+								.replace('{start}', String((data.page - 1) * data.pageSize + 1))
+								.replace('{end}', String(Math.min(data.page * data.pageSize, data.meta.total)))
+								.replace('{total}', String(data.meta.total))}
+						</p>
+					{/if}
+					<div class="mt-2 flex items-center justify-center gap-4">
 						<a
 							href="?tab={data.tab}&page={Math.max(1, data.page - 1)}"
 							class="rounded-lg border border-[var(--color-border)] px-4 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:border-[var(--color-primary)]/40 disabled:pointer-events-none {data.page <= 1 ? 'pointer-events-none opacity-40' : ''}"

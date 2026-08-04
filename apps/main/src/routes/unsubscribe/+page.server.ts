@@ -1,5 +1,5 @@
 import type { PageServerLoad, Actions } from './$types';
-import { apiContext, API_V1 } from '$lib/server/api';
+import { apiContext, apiDelete, ApiError } from '$lib/server/api';
 
 /**
  * Newsletter unsubscribe page at /unsubscribe (Section 62, ADR-082).
@@ -26,24 +26,13 @@ export const actions: Actions = {
 		else if (email) params.set('email', email);
 		else return { error: 'missing_param' };
 
-		const headers: Record<string, string> = {
-			'content-type': 'application/json',
-			host: ctx.host,
-			'x-forwarded-host': ctx.host
-		};
-		if (ctx.token) headers.authorization = `Bearer ${ctx.token}`;
-
 		try {
-			const res = await ctx.fetch(`${API_V1}/newsletter/unsubscribe?${params.toString()}`, {
-				method: 'DELETE',
-				headers
-			});
-			if (!res.ok) {
-				const body = await res.json().catch(() => ({}));
-				return { error: body?.error?.code ?? 'unsubscribe_failed' };
-			}
+			await apiDelete(ctx, `/newsletter/unsubscribe?${params.toString()}`);
 			return { ok: true };
-		} catch {
+		} catch (err) {
+			if (err instanceof ApiError) {
+				return { error: err.code };
+			}
 			return { error: 'network_error' };
 		}
 	}

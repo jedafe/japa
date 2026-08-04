@@ -1,9 +1,11 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
 	import { page } from '$app/state';
+	import { goto } from '$app/navigation';
 	import { t } from '$lib/i18n';
 	import { Building2, Search, Users, BadgeCheck, ShieldX, ChevronLeft, ChevronRight } from 'lucide-svelte';
-	import { EmptyState, FollowButton } from '$lib/components/ui';
+	import { EmptyState, FollowButton, SearchInput, type SearchSuggestion } from '$lib/components/ui';
+	import { api } from '$lib/api/client';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -28,22 +30,22 @@
 	let selectedVerified = $state(untrack(() => data.verified));
 	const searchPlaceholder = $derived(t('organizations.search_placeholder', 'Search organizations…'));
 
-	const orgTypes = [
-		{ value: '', label: 'All' },
-		{ value: 'business', label: 'Business' },
-		{ value: 'ngo', label: 'NGO' },
-		{ value: 'government', label: 'Government' },
-		{ value: 'embassy', label: 'Embassy' },
-		{ value: 'university', label: 'University' },
-		{ value: 'media', label: 'Media' },
-		{ value: 'community', label: 'Community' }
-	];
+	const orgTypes = $derived([
+		{ value: '', label: t('organizations.filter_all', 'All') },
+		{ value: 'business', label: t('organizations.new.type_business', 'Business') },
+		{ value: 'ngo', label: t('organizations.new.type_ngo', 'NGO') },
+		{ value: 'government', label: t('organizations.new.type_government', 'Government') },
+		{ value: 'embassy', label: t('organizations.new.type_embassy', 'Embassy') },
+		{ value: 'university', label: t('organizations.new.type_university', 'University') },
+		{ value: 'media', label: t('organizations.new.type_media', 'Media') },
+		{ value: 'community', label: t('organizations.new.type_community', 'Community') }
+	]);
 
-	const verifiedOptions = [
-		{ value: '', label: 'All' },
-		{ value: 'true', label: 'Verified' },
-		{ value: 'false', label: 'Unverified' }
-	];
+	const verifiedOptions = $derived([
+		{ value: '', label: t('organizations.filter_all', 'All') },
+		{ value: 'true', label: t('organizations.verified', 'Verified') },
+		{ value: 'false', label: t('organizations.unverified', 'Unverified') }
+	]);
 
 	function buildHref(pageNum: number): string {
 		const params = new URLSearchParams();
@@ -61,7 +63,21 @@
 		if (selectedOrgType) params.set('org_type', selectedOrgType);
 		if (selectedVerified) params.set('verified', selectedVerified);
 		const qs = params.toString();
-		window.location.href = qs ? `/org?${qs}` : '/org';
+		goto(qs ? `/org?${qs}` : '/org');
+	}
+
+	async function orgSearchFetcher(q: string): Promise<SearchSuggestion[]> {
+		const res = await api.get<{ data: { results: { type: string; id: string; title: string; excerpt?: string; url: string }[] } }>(
+			`/search?q=${encodeURIComponent(q)}&type=organization&limit=8`
+		);
+		if (res.error || !res.data) return [];
+		return (res.data.data?.results ?? []).map((r) => ({
+			id: r.id,
+			title: r.title,
+			url: r.url,
+			excerpt: r.excerpt,
+			type: r.type
+		}));
 	}
 </script>
 
@@ -89,19 +105,12 @@
 		</p>
 
 		<form class="mt-3" action="/org" method="get" role="search">
-			<div
-				class="flex items-center gap-2 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 focus-within:border-[var(--color-primary)]"
-			>
-				<Search size={16} class="text-[var(--color-muted)]" />
-				<input
-					type="search"
-					name="q"
-					placeholder={searchPlaceholder}
-					aria-label={t('organizations.heading', 'Organizations')}
-					bind:value={query}
-					class="w-full bg-transparent text-sm text-[var(--color-text)] outline-none placeholder:text-[var(--color-muted)]"
-				/>
-			</div>
+			<SearchInput
+				bind:value={query}
+				placeholder={searchPlaceholder}
+				ariaLabel={t('organizations.heading', 'Organizations')}
+				fetcher={orgSearchFetcher}
+			/>
 			{#if selectedOrgType}
 				<input type="hidden" name="org_type" value={selectedOrgType} />
 			{/if}

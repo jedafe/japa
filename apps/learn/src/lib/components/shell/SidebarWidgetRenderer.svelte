@@ -10,6 +10,7 @@
 	import { Sun, Moon, Languages, Bell, Mail, Share2, Calendar, Trophy, Hash, Star, Bookmark, BarChart3, MousePointerClick, UserCircle, FolderTree, MessageSquare, PlayCircle, GraduationCap, BookOpen, CircleDashed, ThumbsUp, List } from 'lucide-svelte';
 	import { theme } from '$lib/stores/theme.svelte';
 	import { i18n } from '$lib/i18n';
+	import { switchLocale } from '$lib/appOrigins';
 	import SearchAutocomplete from './SearchAutocomplete.svelte';
 	import ContinueLearningCard from './ContinueLearningCard.svelte';
 
@@ -97,13 +98,15 @@
 		{#if theme.current === 'dark'}<Sun size={18} />{:else}<Moon size={18} />{/if}
 	</button>
 {:else if widget.widget_type === 'language_toggle'}
-	<a
-		href={i18n.locale === 'fr' ? `/en${typeof window !== 'undefined' ? window.location.pathname.slice(1) : ''}` : `/fr${typeof window !== 'undefined' ? window.location.pathname.slice(1) : ''}`}
+	<button
+		type="button"
+		onclick={() => switchLocale(i18n.locale === 'fr' ? 'en' : 'fr')}
 		class="grid h-9 w-9 shrink-0 place-items-center rounded-full text-[var(--color-muted)] hover:bg-[var(--color-surface-subtle)]"
 		aria-label={i18n.locale === 'fr' ? t('locale.switch_to_en') : t('locale.switch_to_fr')}
+		title={i18n.locale === 'fr' ? 'English' : 'Français'}
 	>
 		<Languages size={18} />
-	</a>
+	</button>
 {:else if widget.widget_type === 'continue_learning'}
 	<ContinueLearningCard user={null} />
 {:else if widget.widget_type === 'learning_enrollments'}

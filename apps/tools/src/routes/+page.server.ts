@@ -18,5 +18,10 @@ export const load: PageServerLoad = async ({ locals }) => {
 			throw redirect(307, tool.route);
 		}
 	}
-	return {};
+	return {
+		// Pass site settings so the hub grid can filter out disabled tools
+		// via the per-tool {tool}.enabled system_settings toggles.
+		// Ref: conventions/system-settings-catalog.md, Rule 3 / Rule 16.
+		siteSettings: locals.siteSettings
+	};
 };

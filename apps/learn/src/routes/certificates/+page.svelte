@@ -45,7 +45,7 @@
 	{:else if certificates.length === 0}
 		<EmptyState
 			title={t('learn.no_certificates')}
-			description="Complete a course to earn a certificate."
+			description={t('learn.no_certificates_description')}
 		>
 			{#snippet action()}
 				<a

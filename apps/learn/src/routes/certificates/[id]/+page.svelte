@@ -57,19 +57,19 @@
 		</div>
 
 		<p class="text-sm font-semibold uppercase tracking-wide text-[var(--color-muted)]">
-			Certificate of Completion
+			{t('learn.certificate_of_completion')}
 		</p>
 
-		<p class="mt-4 text-lg text-[var(--color-text-subtle)]">This certifies that</p>
+		<p class="mt-4 text-lg text-[var(--color-text-subtle)]">{t('learn.this_certifies_that')}</p>
 		<p class="mt-2 text-2xl font-bold text-[var(--color-text)]">{cert.recipient_name}</p>
 		<p class="text-sm text-[var(--color-muted)]">@{cert.recipient_username}</p>
 
-		<p class="mt-6 text-lg text-[var(--color-text-subtle)]">has successfully completed</p>
+		<p class="mt-6 text-lg text-[var(--color-text-subtle)]">{t('learn.has_successfully_completed')}</p>
 		<p class="mt-2 text-xl font-semibold text-[var(--color-text)]">{cert.track_title}</p>
 
 		<div class="mt-6 flex items-center justify-center gap-2 text-sm text-[var(--color-muted)]">
 			<GraduationCap size={16} />
-			<span>JapaConnect Learn</span>
+			<span>{t('app.name')}</span>
 		</div>
 
 		<div class="mt-8 flex items-center justify-center gap-4 border-t border-[var(--color-border)] pt-6 text-sm text-[var(--color-muted)]">

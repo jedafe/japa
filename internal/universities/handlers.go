@@ -148,7 +148,8 @@ type universityDetail struct {
 }
 
 // ListUniversities handles GET /api/v1/universities — every space of the
-// University space-type. [public]
+// University space-type. Supports optional ?country= filtering by geo_code
+// (ISO 3166-1 alpha-2). [public]
 func (h *Handlers) ListUniversities(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -165,6 +166,19 @@ func (h *Handlers) ListUniversities(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list universities")
 		return
+	}
+
+	// Optional country filter — applied in-memory since ListSpacesByType does
+	// not accept a geo_code parameter. The catalog is small so this is fine.
+	country := strings.TrimSpace(r.URL.Query().Get("country"))
+	if country != "" {
+		filtered := make([]gen.ListSpacesByTypeRow, 0, len(universities))
+		for _, u := range universities {
+			if u.GeoCode != nil && *u.GeoCode == country {
+				filtered = append(filtered, u)
+			}
+		}
+		universities = filtered
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": universities})

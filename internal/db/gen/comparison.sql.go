@@ -832,6 +832,8 @@ WHERE c.tenant_id = $1
   AND c.content_type = 'comparison'
   AND c.deleted_at IS NULL
   AND c.auto_hidden = false
+  AND c.status = 'published'
+  AND c.visibility = 'public'
   AND ($2::uuid IS NULL OR c.space_id = $2)
   AND ($3::uuid IS NULL OR ci.type_id = $3)
 ORDER BY c.created_at DESC, c.id DESC
@@ -885,6 +887,8 @@ type ListComparisonsFilteredRow struct {
 // Comparison list with type + space filters (Section 30, BUG-007)
 // =====================
 // Offset-paginated per conventions/api-response-format.md (?page_size=N&page_offset=N).
+// Public list: only published, publicly-visible comparisons are returned so the
+// /comparisons endpoint can be served to unauthenticated visitors (Section 30).
 func (q *Queries) ListComparisonsFiltered(ctx context.Context, arg ListComparisonsFilteredParams) ([]ListComparisonsFilteredRow, error) {
 	rows, err := q.db.Query(ctx, listComparisonsFiltered,
 		arg.TenantID,

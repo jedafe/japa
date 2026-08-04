@@ -2,10 +2,14 @@
 	import { goto } from '$app/navigation';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { blogAdminApi } from '$lib/api';
+	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import PageHeader from '$lib/components/layout/page-header.svelte';
 	import { Card, CardContent } from '$lib/components/ui/card';
 	import { Button } from '$lib/components/ui/button';
 	import { ArrowLeft } from 'lucide-svelte';
+
+	// Ref: jc-admin-develop — RBAC gate for blog creation
+	const canCreate = $derived(hasPermission('blog.post.create'));
 
 	let title = $state('');
 	let slug = $state('');
@@ -71,6 +75,12 @@
 	]}
 />
 
+{#if !canCreate}
+	<div class="rounded-lg border p-6 text-center" style="border-color: var(--color-danger); color: var(--color-danger)">
+		<p class="text-sm font-medium">{t('common.access_denied', 'Access denied')}</p>
+		<p class="mt-1 text-xs" style="color: var(--color-muted)">{t('common.no_permission', 'You do not have permission to perform this action.')}</p>
+	</div>
+{:else}
 <form onsubmit={handleSubmit} class="space-y-6">
 	{#if error}
 		<div class="rounded-lg p-3 text-sm" style="background: color-mix(in srgb, var(--color-danger) 10%, transparent); color: var(--color-danger)">
@@ -170,3 +180,4 @@
 		</Button>
 	</div>
 </form>
+{/if}

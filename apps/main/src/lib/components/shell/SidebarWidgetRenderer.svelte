@@ -81,10 +81,10 @@
 	let events = $state<EventItem[]>([]);
 	let dataLoaded = $state<Record<string, boolean>>({});
 
-	// --- Org-context widgets (user_card with source=org_owner, related_discussions on /org/*) ---
-	interface OrgOwnerUser { id: string; username: string; display_name?: string; avatar_url?: string; bio?: string; }
+	// --- Context widgets (user_card, related_discussions on /org/* and /u/* pages) ---
+	interface UserCardData { id: string; username: string; display_name?: string; avatar_url?: string; bio?: string; }
 	interface RelatedDiscussion { id: string; title: string; slug: string; reply_count?: number; }
-	let orgOwner = $state<OrgOwnerUser | null>(null);
+	let userCardData = $state<UserCardData | null>(null);
 	let relatedDiscussions = $state<RelatedDiscussion[]>([]);
 
 	// Newsletter subscribe form state (Rule 16: calls POST /newsletter/subscribe).
@@ -161,47 +161,75 @@
 			events = [];
 			dataLoaded = { ...dataLoaded, upcoming_events: true };
 		}
-		// fetchOrgOwner resolves the org owner for the user_card widget when
-		// source=org_owner. It extracts the org slug from the current URL path
-		// (/org/[slug]) and reads the owner from the public org API response.
-		async function fetchOrgOwner() {
+		// fetchUserCard resolves the user to display in the user_card widget.
+		// Two contexts:
+		//   1. source=org_owner on /org/[slug] — reads the owner from the org API.
+		//   2. /u/[username] profile page — fetches the profile user by username.
+		async function fetchUserCard() {
 			const source = widgetProps.source;
-			if (source !== 'org_owner') {
-				dataLoaded = { ...dataLoaded, user_card: true };
-				return;
-			}
 			const pathParts = page.url.pathname.split('/').filter(Boolean);
-			const orgSlug = pathParts[0] === 'org' ? pathParts[1] : null;
-			if (!orgSlug) {
+			if (source === 'org_owner') {
+				const orgSlug = pathParts[0] === 'org' ? pathParts[1] : null;
+				if (!orgSlug) {
+					dataLoaded = { ...dataLoaded, user_card: true };
+					return;
+				}
+				try {
+					const orgRes = await api.get<{ owner?: UserCardData }>(`/organizations/${orgSlug}`);
+					userCardData = orgRes.data?.owner ?? null;
+				} catch {
+					userCardData = null;
+				}
 				dataLoaded = { ...dataLoaded, user_card: true };
 				return;
 			}
-			try {
-				const orgRes = await api.get<{ owner?: OrgOwnerUser }>(`/organizations/${orgSlug}`);
-				orgOwner = orgRes.data?.owner ?? null;
-			} catch {
-				orgOwner = null;
+			// Profile page: /u/[username]
+			if (pathParts[0] === 'u' && pathParts[1]) {
+				try {
+					const res = await api.get<UserCardData>(`/users/${pathParts[1]}`);
+					userCardData = res.data ?? null;
+				} catch {
+					userCardData = null;
+				}
+				dataLoaded = { ...dataLoaded, user_card: true };
+				return;
 			}
 			dataLoaded = { ...dataLoaded, user_card: true };
 		}
-		// fetchRelatedDiscussions fetches forum threads for the org's content
-		// when the widget is on an /org/* page.
+		// fetchRelatedDiscussions fetches forum threads related to the current
+		// page context. On /org/[slug] it fetches the org's discussions; on
+		// /u/[username] it fetches the user's discussion-type content.
 		async function fetchRelatedDiscussions() {
 			const pathParts = page.url.pathname.split('/').filter(Boolean);
 			const orgSlug = pathParts[0] === 'org' ? pathParts[1] : null;
-			if (!orgSlug) {
+			const profileUsername = pathParts[0] === 'u' ? pathParts[1] : null;
+			if (orgSlug) {
+				try {
+					const orgRes = await api.get<{ id: string }>(`/organizations/${orgSlug}`);
+					if (!orgRes.data?.id) { dataLoaded = { ...dataLoaded, related_discussions: true }; return; }
+					const res = await api.get<RelatedDiscussion[]>(`/organizations/${orgRes.data.id}/content`);
+					relatedDiscussions = (res.data ?? [])
+						.filter((item) => (item as unknown as Record<string, unknown>).content_type === 'discussion')
+						.slice(0, limit);
+				} catch {
+					relatedDiscussions = [];
+				}
 				dataLoaded = { ...dataLoaded, related_discussions: true };
 				return;
 			}
-			try {
-				const orgRes = await api.get<{ id: string }>(`/organizations/${orgSlug}`);
-				if (!orgRes.data?.id) { dataLoaded = { ...dataLoaded, related_discussions: true }; return; }
-				const res = await api.get<RelatedDiscussion[]>(`/organizations/${orgRes.data.id}/content`);
-				relatedDiscussions = (res.data ?? [])
-					.filter((item) => (item as unknown as Record<string, unknown>).content_type === 'discussion')
-					.slice(0, limit);
-			} catch {
-				relatedDiscussions = [];
+			if (profileUsername) {
+				try {
+					const userRes = await api.get<{ id: string }>(`/users/${profileUsername}`);
+					if (!userRes.data?.id) { dataLoaded = { ...dataLoaded, related_discussions: true }; return; }
+					const res = await api.get<RelatedDiscussion[]>(`/users/${userRes.data.id}/content`);
+					relatedDiscussions = (res.data ?? [])
+						.filter((item) => (item as unknown as Record<string, unknown>).content_type === 'discussion')
+						.slice(0, limit);
+				} catch {
+					relatedDiscussions = [];
+				}
+				dataLoaded = { ...dataLoaded, related_discussions: true };
+				return;
 			}
 			dataLoaded = { ...dataLoaded, related_discussions: true };
 		}
@@ -213,7 +241,7 @@
 		else if (wt === 'learning_enrollments' || wt === 'continue_learning') fetchEnrollments();
 		else if (wt === 'leaderboard') fetchLeaderboard();
 		else if (wt === 'upcoming_events') fetchEvents();
-		else if (wt === 'user_card') fetchOrgOwner();
+		else if (wt === 'user_card') fetchUserCard();
 		else if (wt === 'related_discussions') fetchRelatedDiscussions();
 	});
 </script>
@@ -550,18 +578,18 @@
 			<UserCircle size={18} class="text-[var(--color-text-subtle)]" />
 			<h2 class="text-sm font-medium text-[var(--color-text)]">{title || t('sidebar.featured_user', 'Featured User')}</h2>
 		</div>
-		{#if orgOwner}
-			<a href={`/u/${orgOwner.username}`} class="flex items-center gap-3 rounded-[var(--radius)] p-1.5 hover:bg-[var(--color-surface-subtle)]">
-				{#if orgOwner.avatar_url}
-					<img src={orgOwner.avatar_url} alt="" class="h-10 w-10 rounded-full object-cover" />
+		{#if userCardData}
+			<a href={`/u/${userCardData.username}`} class="flex items-center gap-3 rounded-[var(--radius)] p-1.5 hover:bg-[var(--color-surface-subtle)]">
+				{#if userCardData.avatar_url}
+					<img src={userCardData.avatar_url} alt="" class="h-10 w-10 rounded-full object-cover" />
 				{:else}
 					<span class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[var(--color-surface-subtle)] text-sm font-medium text-[var(--color-text-subtle)]">
-						{orgOwner.display_name?.charAt(0)?.toUpperCase() ?? '?'}
+						{userCardData.display_name?.charAt(0)?.toUpperCase() ?? '?'}
 					</span>
 				{/if}
 				<span class="min-w-0 flex-1">
-					<span class="block truncate text-sm font-medium text-[var(--color-text)]">{orgOwner.display_name ?? orgOwner.username}</span>
-					<span class="block text-xs text-[var(--color-muted)]">@{orgOwner.username}</span>
+					<span class="block truncate text-sm font-medium text-[var(--color-text)]">{userCardData.display_name ?? userCardData.username}</span>
+					<span class="block text-xs text-[var(--color-muted)]">@{userCardData.username}</span>
 				</span>
 			</a>
 		{:else}

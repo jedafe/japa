@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import { blogAdminApi } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
@@ -86,7 +85,8 @@
 		}
 	}
 
-	onMount(() => {
+	// Ref: jc-admin-develop — reactive $effect so param changes re-fetch
+	$effect(() => {
 		refresh();
 	});
 

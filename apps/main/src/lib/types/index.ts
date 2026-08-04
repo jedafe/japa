@@ -1368,6 +1368,46 @@ export interface ComparisonCreated {
 	space_id: string | null;
 }
 
+/**
+ * GET /comparisons — list row. The backend returns content rows backing
+ * comparisons (Section 30); item count / type chip / author display are not
+ * joined by the list endpoint, so the card renders what the API provides.
+ */
+export interface ComparisonListItem {
+	id: string;
+	tenant_id: string;
+	author_id: string;
+	space_id: string | null;
+	content_type: string;
+	title: string;
+	slug: string;
+	body: string;
+	status: string;
+	visibility: string;
+	view_count: number;
+	comment_count: number;
+	share_count: number;
+	reshare_count: number;
+	published_at: string | null;
+	created_at: string;
+}
+
+/** GET /comparisons/types — a comparison type with field/item counts. */
+export interface ComparisonType {
+	id: string;
+	tenant_id: string;
+	name: string;
+	slug: string;
+	description: string | null;
+	icon: string | null;
+	field_group_id: string | null;
+	item_label: string;
+	is_system: boolean;
+	created_at: string;
+	field_count: number;
+	item_count: number;
+}
+
 /* ------------------------------------------------------------------ *
  * Professional Profiles — Section 12 (GET /profiles/{slug})
  * ------------------------------------------------------------------ */
@@ -2046,6 +2086,12 @@ export interface ContentImport {
 	error_log: number[];
 	created_at: string;
 	completed_at: string | null;
+}
+
+export interface ImportSource {
+	value: string;
+	label: string;
+	requires_url: boolean;
 }
 
 // --- Section 67: Travel Search ---

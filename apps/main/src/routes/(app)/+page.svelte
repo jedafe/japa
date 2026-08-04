@@ -51,7 +51,7 @@
 
 {#if data.landing}
 	<!-- ADR-058 §5 Exception #3: guest Page Builder landing page (or default seed) -->
-	<LandingRenderer blocks={data.landing.blocks} />
+	<LandingRenderer blocks={data.landing.blocks} geoCountry={data.contentCountry} />
 {:else}
 	<!-- Authenticated home timeline in the app shell -->
 	<div class="mx-auto w-full max-w-full">

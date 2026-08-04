@@ -9,13 +9,13 @@
 	let { data }: { data: PageData } = $props();
 
 	const title = $derived(t('jobs.my_applications', 'My Applications — JapaConnect'));
-	const applications = $state<JobApplication[]>(data.applications);
+	const applications = $derived<JobApplication[]>(data.applications);
 
 	const statusColor = (status: string): string => {
 		switch (status) {
-			case 'accepted': return 'text-green-600';
-			case 'rejected': return 'text-red-500';
-			case 'reviewing': return 'text-blue-500';
+			case 'accepted': return 'text-[var(--color-success)]';
+			case 'rejected': return 'text-[var(--color-danger)]';
+			case 'reviewing': return 'text-[var(--color-info)]';
 			default: return 'text-[var(--color-muted)]';
 		}
 	};

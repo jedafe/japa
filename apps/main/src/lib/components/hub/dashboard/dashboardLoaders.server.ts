@@ -20,7 +20,13 @@ export const DASHBOARD_LOADERS: Record<string, (ctx: ApiContext, params?: Dashbo
 		unread: await apiGet<unknown>(ctx, '/me/notifications/unread-count').catch(() => null)
 	}),
 	analytics: async (ctx) => ({
-		analytics: await apiGet<unknown>(ctx, '/me/analytics').catch(() => null)
+		analytics: await apiGet<unknown>(ctx, '/me/analytics').catch(() => null),
+		// Phase 18.01a — per-content breakdown for the top-posts BarChart and
+		// daily follower growth for the follower-growth LineChart. Each
+		// degrades gracefully so a missing endpoint never blanks the page.
+		// Ref: sections/40-platform-analytics-reports.md, ADR-059
+		contentAnalytics: (await apiList<unknown>(ctx, '/me/analytics/content?page_size=10').catch(() => ({ items: [] }))).items,
+		followerGrowth: (await apiList<unknown>(ctx, '/me/analytics/followers?days=30').catch(() => ({ items: [] }))).items
 	}),
 	content: async (ctx, params) => ({
 		items: (await apiList<unknown>(ctx, buildContentQuery({ status: params?.status, type: params?.type }))).items,

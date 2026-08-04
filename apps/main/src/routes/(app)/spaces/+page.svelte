@@ -1,9 +1,11 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
 	import { page } from '$app/state';
+	import { goto } from '$app/navigation';
 	import { t } from '$lib/i18n';
 	import { Layers, Search, Users, MessageSquare, Plus, ShieldX, ChevronLeft, ChevronRight } from 'lucide-svelte';
-	import { EmptyState, SpaceJoinButton } from '$lib/components/ui';
+	import { EmptyState, SpaceJoinButton, SearchInput, type SearchSuggestion } from '$lib/components/ui';
+	import { api } from '$lib/api/client';
 	import SpaceCreationModal from '$lib/components/spaces/SpaceCreationModal.svelte';
 	import type { PageData } from './$types';
 
@@ -44,13 +46,27 @@
 		if (query.trim()) params.set('q', query.trim());
 		if (selectedType) params.set('type', selectedType);
 		const qs = params.toString();
-		window.location.href = qs ? `/spaces?${qs}` : '/spaces';
+		goto(qs ? `/spaces?${qs}` : '/spaces');
 	}
 
 	// Look up the space type name by ID from the data-driven type list.
 	const spaceTypeMap = $derived(
 		data.spaceTypes.reduce((m, t) => { m[t.id] = t.name; return m; }, {} as Record<string, string>)
 	);
+
+	async function spaceSearchFetcher(q: string): Promise<SearchSuggestion[]> {
+		const res = await api.get<{ data: { results: { type: string; id: string; title: string; excerpt?: string; url: string }[] } }>(
+			`/search?q=${encodeURIComponent(q)}&type=space&limit=8`
+		);
+		if (res.error || !res.data) return [];
+		return (res.data.data?.results ?? []).map((r) => ({
+			id: r.id,
+			title: r.title,
+			url: r.url,
+			excerpt: r.excerpt,
+			type: r.type
+		}));
+	}
 </script>
 
 <svelte:head>
@@ -90,19 +106,12 @@
 		</div>
 
 		<form class="mt-3" action="/spaces" method="get" role="search">
-			<div
-				class="flex items-center gap-2 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 focus-within:border-[var(--color-primary)]"
-			>
-				<Search size={16} class="text-[var(--color-muted)]" />
-				<input
-					type="search"
-					name="q"
-					placeholder={searchPlaceholder}
-					aria-label={t('spaces.heading', 'Spaces')}
-					bind:value={query}
-					class="w-full bg-transparent text-sm text-[var(--color-text)] outline-none placeholder:text-[var(--color-muted)]"
-				/>
-			</div>
+			<SearchInput
+				bind:value={query}
+				placeholder={searchPlaceholder}
+				ariaLabel={t('spaces.heading', 'Spaces')}
+				fetcher={spaceSearchFetcher}
+			/>
 			{#if selectedType}
 				<input type="hidden" name="type" value={selectedType} />
 			{/if}

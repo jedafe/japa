@@ -1,61 +1,37 @@
 <script lang="ts">
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
-	import { GraduationCap, GitCompare, Loader2 } from 'lucide-svelte';
-	import { api } from '$lib/api/client';
+	import { GitCompare, Plus, MessageSquare, Eye, Lock, Globe, Link2 } from 'lucide-svelte';
 	import { EmptyState } from '$lib/components/ui';
-	import type { University, UniversityCompare } from '$lib/types';
+	import type { ComparisonListItem } from '$lib/types';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
 
-	let selected = $state<string[]>([]);
-	let comparing = $state(false);
-	let compareData = $state<Record<string, UniversityCompare>>({});
+	const user = $derived(page.data.user);
+	const comparisons = $derived<ComparisonListItem[]>(data.comparisons);
 
-	const title = $derived(t('compare.title', 'Compare universities — JapaConnect'));
+	const title = $derived(t('compare.title', 'Compare — JapaConnect'));
 	const description = $derived(
-		t('compare.description', 'Compare universities side by side to find the right fit.')
+		t('compare.description', 'Browse and create comparisons to evaluate items across dimensions.')
 	);
 
-	function toggle(id: string) {
-		if (selected.includes(id)) {
-			selected = selected.filter((s) => s !== id);
-		} else if (selected.length < 4) {
-			selected = [...selected, id];
-		}
+	function visibilityChip(v: string) {
+		if (v === 'private') return { icon: Lock, label: t('compare.visibility_private', 'Private') };
+		if (v === 'unlisted') return { icon: Link2, label: t('compare.visibility_unlisted', 'Unlisted') };
+		return { icon: Globe, label: t('compare.visibility_public', 'Public') };
 	}
 
-	async function runCompare() {
-		if (selected.length < 2 || comparing) return;
-		comparing = true;
-		compareData = {};
-		const results = await Promise.all(
-			selected.map(async (id) => {
-				const res = await api.get<UniversityCompare>(`/universities/${id}/compare`);
-				return [id, res.data] as const;
-			})
-		);
-		compareData = Object.fromEntries(
-			results.filter(([, v]) => v !== null) as [string, UniversityCompare][]
-		);
-		comparing = false;
+	function excerpt(body: string, max = 140) {
+		const text = body.replace(/<[^>]*>/g, '').trim();
+		return text.length > max ? text.slice(0, max) + '…' : text;
 	}
 
-	// Collect all unique field keys across selected universities for the table.
-	const fieldKeys = $derived(
-		Array.from(
-			new Set(
-				Object.values(compareData).flatMap((c) => (c ? Object.keys(c.fields) : []))
-			)
-		).sort()
-	);
-
-	const selectedUniversities = $derived(
-		selected
-			.map((id) => data.universities.find((u) => u.id === id))
-			.filter((u): u is University => !!u)
-	);
+	function formatDate(iso: string | null) {
+		if (!iso) return '';
+		const d = new Date(iso);
+		return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+	}
 </script>
 
 <svelte:head>
@@ -68,92 +44,71 @@
 </svelte:head>
 
 <div class="mx-auto w-full max-w-full">
-	<div class="border-b border-[var(--color-border)] px-4 py-3">
+	<!-- Header -->
+	<div class="flex items-center justify-between border-b border-[var(--color-border)] px-4 py-3">
 		<h1 class="flex items-center gap-2 text-lg font-semibold text-[var(--color-text)]">
-			<GitCompare size={20} /> {t('compare.heading', 'Compare universities')}
+			<GitCompare size={20} /> {t('compare.heading', 'Comparisons')}
 		</h1>
+		{#if user}
+			<a
+				href="/compare/new"
+				class="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1.5 text-sm font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)]"
+			>
+				<Plus size={16} /> {t('compare.new_short', 'New')}
+			</a>
+		{/if}
 	</div>
 
 	<div class="p-3">
-		{#if data.universities.length === 0}
-			<EmptyState icon={GraduationCap} title={t('compare.no_universities', 'No universities to compare')} />
+		{#if comparisons.length === 0}
+			<EmptyState
+				icon={GitCompare}
+				title={t('compare.empty_title', 'No comparisons yet')}
+				body={t(
+					'compare.empty_body',
+					'Comparisons help you evaluate items side by side across dimensions.'
+				)}
+				action={user
+					? { label: t('compare.new_heading', 'New comparison'), href: '/compare/new' }
+					: { label: t('common.sign_in', 'Sign in'), href: '/login?redirect=/compare' }}
+			/>
 		{:else}
-			<!-- Picker -->
-			<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-				<p class="mb-3 text-sm text-[var(--color-text-subtle)]">
-					{t('compare.select_hint', 'Select 2-4 universities to compare.')}
-				</p>
-				<div class="grid gap-2 sm:grid-cols-2">
-					{#each data.universities as uni (uni.id)}
-						{@const checked = selected.includes(uni.id)}
-						<label
-							class="flex cursor-pointer items-center gap-3 rounded-[var(--radius)] border p-3 transition-colors {checked ? 'border-[var(--color-primary)] bg-[color-mix(in_srgb,var(--color-primary)_5%,transparent)]' : 'border-[var(--color-border)] hover:bg-[var(--color-surface-subtle)]'}"
-						>
-							<input type="checkbox" checked={checked} onchange={() => toggle(uni.id)} class="h-4 w-4 accent-[var(--color-primary)]" />
-							<span class="grid h-9 w-9 shrink-0 place-items-center rounded-[var(--radius)] bg-[var(--color-surface-subtle)] text-[var(--color-text-subtle)]"><GraduationCap size={18} /></span>
-							<span class="min-w-0 flex-1">
-								<span class="block truncate text-sm font-medium text-[var(--color-text)]">{uni.name}</span>
-								<span class="block text-xs text-[var(--color-muted)]">{uni.member_count} {t('meta.members', 'members')}</span>
+			<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+				{#each comparisons as cmp (cmp.id)}
+					{@const chip = visibilityChip(cmp.visibility)}
+					<a
+						href="/compare/{cmp.id}"
+						class="group flex flex-col gap-2 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 transition-colors hover:border-[var(--color-primary)]"
+					>
+						<div class="flex items-start justify-between gap-2">
+							<h2 class="line-clamp-2 text-sm font-semibold text-[var(--color-text)] group-hover:text-[var(--color-primary)]">
+								{cmp.title}
+							</h2>
+							<span
+								class="inline-flex shrink-0 items-center gap-1 rounded-full border border-[var(--color-border)] px-2 py-0.5 text-[10px] font-medium uppercase text-[var(--color-muted)]"
+							>
+								<chip.icon size={11} /> {chip.label}
 							</span>
-						</label>
-					{/each}
-				</div>
-				<button
-					type="button"
-					onclick={runCompare}
-					disabled={selected.length < 2 || comparing}
-					class="mt-4 inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)] disabled:opacity-50"
-				>
-					{#if comparing}<Loader2 size={16} class="animate-spin" />{:else}<GitCompare size={16} />{/if}
-					{t('compare.action', 'Compare')}
-				</button>
-			</section>
+						</div>
 
-			<!-- Comparison table -->
-			{#if Object.keys(compareData).length >= 2}
-				<section class="mt-4 overflow-x-auto rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)]">
-					<table class="w-full text-sm">
-						<thead>
-							<tr class="border-b border-[var(--color-border)]">
-								<th class="p-3 text-left text-xs font-medium uppercase text-[var(--color-muted)]">{t('compare.attribute', 'Attribute')}</th>
-								{#each selectedUniversities as uni (uni.id)}
-									<th class="p-3 text-left text-sm font-medium text-[var(--color-text)]">
-										<a href="/spaces/{uni.slug}" class="hover:text-[var(--color-primary)]">{uni.name}</a>
-									</th>
-								{/each}
-							</tr>
-						</thead>
-						<tbody>
-							<tr class="border-b border-[var(--color-border)]">
-								<td class="p-3 text-[var(--color-muted)]">{t('compare.members', 'Members')}</td>
-								{#each selectedUniversities as uni (uni.id)}
-									<td class="p-3 text-[var(--color-text)]">{uni.member_count}</td>
-								{/each}
-							</tr>
-							<tr class="border-b border-[var(--color-border)]">
-								<td class="p-3 text-[var(--color-muted)]">{t('compare.posts', 'Posts')}</td>
-								{#each selectedUniversities as uni (uni.id)}
-									<td class="p-3 text-[var(--color-text)]">{uni.post_count}</td>
-								{/each}
-							</tr>
-							<tr class="border-b border-[var(--color-border)]">
-								<td class="p-3 text-[var(--color-muted)]">{t('compare.followers', 'Followers')}</td>
-								{#each selectedUniversities as uni (uni.id)}
-									<td class="p-3 text-[var(--color-text)]">{uni.follower_count}</td>
-								{/each}
-							</tr>
-							{#each fieldKeys as key (key)}
-								<tr class="border-b border-[var(--color-border)]">
-									<td class="p-3 capitalize text-[var(--color-muted)]">{key.replace(/_/g, ' ')}</td>
-									{#each selectedUniversities as uni (uni.id)}
-										<td class="p-3 text-[var(--color-text)]">{String(compareData[uni.id]?.fields[key] ?? '—')}</td>
-									{/each}
-								</tr>
-							{/each}
-						</tbody>
-					</table>
-				</section>
-			{/if}
+						{#if excerpt(cmp.body)}
+							<p class="line-clamp-2 text-xs text-[var(--color-text-subtle)]">{excerpt(cmp.body)}</p>
+						{/if}
+
+						<div class="mt-auto flex items-center gap-3 pt-2 text-xs text-[var(--color-muted)]">
+							<span class="inline-flex items-center gap-1">
+								<Eye size={12} /> {cmp.view_count}
+							</span>
+							<span class="inline-flex items-center gap-1">
+								<MessageSquare size={12} /> {cmp.comment_count}
+							</span>
+							{#if formatDate(cmp.published_at ?? cmp.created_at)}
+								<span class="ml-auto">{formatDate(cmp.published_at ?? cmp.created_at)}</span>
+							{/if}
+						</div>
+					</a>
+				{/each}
+			</div>
 		{/if}
 	</div>
 </div>

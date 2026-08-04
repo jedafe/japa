@@ -115,6 +115,21 @@ export interface DocPage {
 	position: number;
 	created_at: string;
 	updated_at: string;
+	/** Breadcrumb chain (audience → parents → current). Ref: §44. */
+	breadcrumb?: DocBreadcrumbItem[];
+	/** Previous page in the audience's nav order. Ref: §44. */
+	prev?: { title: string; slug: string } | null;
+	/** Next page in the audience's nav order. Ref: §44. */
+	next?: { title: string; slug: string } | null;
+	/** Content language code (e.g. 'en', 'fr'). Ref: §18 ROADMAP 08.03. */
+	content_lang?: string;
+}
+
+/** A single breadcrumb entry. Ref: §44. */
+export interface DocBreadcrumbItem {
+	title: string;
+	slug: string;
+	audience: DocAudience;
 }
 
 /** Lightweight listing item (no content body). GET /docs/{audience}. */
@@ -195,6 +210,30 @@ export interface OpenAPIRequestBody {
 	required?: boolean;
 	description?: string;
 	content?: Record<string, { schema?: unknown }>;
+}
+
+/* ------------------------------------------------------------------ *
+ * Developer API Keys (Section 47) — GET /me/api-keys
+ * ------------------------------------------------------------------ */
+
+/** Summary of a user's API key (full key only returned on creation). */
+export interface ApiKeySummary {
+	id: string;
+	app_name: string;
+	/** First 12 chars of the key — the full key is only returned on POST. */
+	key_prefix: string;
+	environment: 'live' | 'test';
+	scopes: string[];
+	rate_limit_tier: string;
+	last_used_at?: string | null;
+	status: 'active' | 'revoked';
+	created_at: string;
+}
+
+/** Full API key response from POST /me/api-keys (includes the full key once). */
+export interface ApiKeyCreated extends ApiKeySummary {
+	/** The full API key — shown once on creation, never again. */
+	key: string;
 }
 
 /* ------------------------------------------------------------------ *

@@ -2,9 +2,13 @@
 	import { page } from '$app/state';
 	import { api } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
+	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { RefreshCw, CheckCircle, XCircle } from 'lucide-svelte';
 	import { DataTable } from '$lib/components/ui/data-table';
 	import { Button } from '$lib/components/ui/button';
+
+	// Ref: jc-admin-develop — RBAC gate for join request management
+	const canManage = $derived(hasPermission('space.join_requests.manage'));
 
 	type JoinRequest = {
 		id: string;
@@ -77,7 +81,7 @@
 </script>
 
 {#snippet JoinRequestActionsCell({ value, row }: { value: any; row: JoinRequest })}
-	{#if row.status === 'pending'}
+	{#if canManage && row.status === 'pending'}
 		<div class="flex items-center justify-end gap-1">
 			<Button variant="ghost" size="sm" onclick={() => updateRequest(row.id, 'approved')}>
 				<CheckCircle class="h-3 w-3 inline mr-1" style="color: var(--color-success)" />

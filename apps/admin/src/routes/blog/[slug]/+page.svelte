@@ -1,12 +1,13 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
-	import { onMount } from 'svelte';
 	import { t } from '$lib/stores/i18n.svelte';
+	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { api, blogAdminApi } from '$lib/api';
 	import PageHeader from '$lib/components/layout/page-header.svelte';
 	import { Card, CardContent } from '$lib/components/ui/card';
 	import { Button } from '$lib/components/ui/button';
+	import { Modal } from '$lib/components/ui/modal';
 	import { TableSkeleton } from '$lib/components/ui/skeleton';
 	import { ArrowLeft, Save, Trash2, CheckCircle, XCircle, RefreshCw } from 'lucide-svelte';
 
@@ -26,6 +27,10 @@
 	// Original status for action buttons
 	let originalStatus = $state('');
 
+	// Delete confirmation dialog state (replaces window.confirm)
+	let showDeleteConfirm = $state(false);
+
+	const canManageBlog = $derived(hasPermission('blog.review.manage'));
 	const slugParam = $derived(page.params.slug);
 
 	function generateSlug(val: string) {
@@ -35,8 +40,10 @@
 			.replace(/^-|-$/g, '');
 	}
 
-	onMount(async () => {
-		await loadPost();
+	// Ref: jc-admin-develop — use $effect so param changes re-fetch (SPA architecture)
+	$effect(() => {
+		void slugParam;
+		loadPost();
 	});
 
 	async function loadPost() {
@@ -152,12 +159,16 @@
 	}
 
 	async function handleDelete() {
-		if (!confirm(t('app.blog.confirm_delete', 'Are you sure you want to delete this post?'))) return;
+		showDeleteConfirm = true;
+	}
+
+	async function confirmDelete() {
 		saving = true;
 		error = '';
 		try {
 			const result = await blogAdminApi.deletePost(postId);
 			if (result.ok) {
+				showDeleteConfirm = false;
 				goto('/blog');
 			} else {
 				error = result.error;
@@ -325,10 +336,12 @@
 						{t('app.blog.action_restore', 'Restore')}
 					</Button>
 				{/if}
-				<Button type="button" variant="destructive" onclick={handleDelete} disabled={saving}>
-					<Trash2 class="mr-2 h-4 w-4" />
-					{t('app.blog.delete', 'Delete')}
-				</Button>
+				{#if canManageBlog}
+					<Button type="button" variant="destructive" onclick={handleDelete} disabled={saving}>
+						<Trash2 class="mr-2 h-4 w-4" />
+						{t('app.blog.delete', 'Delete')}
+					</Button>
+				{/if}
 			</div>
 			<div class="flex gap-2">
 				<Button variant="ghost" onclick={() => goto('/blog')}>
@@ -342,3 +355,19 @@
 		</div>
 	</form>
 {/if}
+
+<!-- Delete confirmation dialog (replaces window.confirm per jc-admin-develop spec) -->
+<Modal bind:open={showDeleteConfirm} title={t('app.blog.confirm_delete', 'Delete Post')} size="sm">
+	<p class="text-sm" style="color: var(--color-foreground)">
+		{t('app.blog.confirm_delete_body', 'Are you sure you want to delete this post? This action cannot be undone.')}
+	</p>
+	<div class="mt-6 flex justify-end gap-2">
+		<Button variant="outline" onclick={() => (showDeleteConfirm = false)} disabled={saving}>
+			{t('common.cancel', 'Cancel')}
+		</Button>
+		<Button variant="destructive" onclick={confirmDelete} disabled={saving}>
+			<Trash2 class="mr-2 h-4 w-4" />
+			{t('app.blog.delete', 'Delete')}
+		</Button>
+	</div>
+</Modal>

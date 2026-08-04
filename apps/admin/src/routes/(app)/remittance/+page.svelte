@@ -4,7 +4,7 @@
 	import PageHeader from '$lib/components/layout/page-header.svelte';
 	import { DataTable } from '$lib/components/ui/data-table';
 	import { Button } from '$lib/components/ui/button';
-	import { Banknote, Plus, RefreshCw } from 'lucide-svelte';
+	import { Banknote, Plus, RefreshCw, Pencil, Download } from 'lucide-svelte';
 	import { api } from '$lib/api';
 
 	type RemittanceProvider = {
@@ -132,6 +132,11 @@
 		}
 	}
 
+	function openEdit(provider: RemittanceProvider) {
+		editingProvider = { ...provider };
+		editModalOpen = true;
+	}
+
 	const columns = $derived([
 		{
 			key: 'name',
@@ -169,6 +174,12 @@
 			label: t('remittance.order', 'Order'),
 			sortable: true,
 			render: (value: number) => `<span class="font-mono text-foreground">${value}</span>`
+		},
+		{
+			key: 'actions',
+			label: t('common.actions', 'Actions'),
+			class: 'w-28',
+			componentSnippet: RemittanceActionsCell
 		}
 	]);
 
@@ -298,3 +309,16 @@
 		</div>
 	</div>
 {/if}
+
+{#snippet RemittanceActionsCell({ value, row }: { value: any; row: RemittanceProvider })}
+	<div class="flex items-center gap-1">
+		{#if canManage}
+			<Button variant="ghost" size="sm" onclick={() => openEdit(row)} aria-label={t('common.edit', 'Edit')}>
+				<Pencil class="h-3.5 w-3.5" />
+			</Button>
+		{/if}
+		<Button variant="ghost" size="sm" onclick={() => triggerFetch(row.id)} disabled={fetchingId === row.id} aria-label={t('remittance.fetch', 'Fetch Rates')}>
+			<Download class="h-3.5 w-3.5" />
+		</Button>
+	</div>
+{/snippet}

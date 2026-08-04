@@ -140,11 +140,10 @@ func writeError(w http.ResponseWriter, status int, code, message string) {
 // scoped to the tenant. The optional type parameter filters which indexes
 // are queried. Results are logged to search_analytics asynchronously.
 func (h *Handlers) Search(w http.ResponseWriter, r *http.Request) {
+	// OptionalAuth: guests can search published content (Phase 10.01 public
+	// SSR search). A nil user is valid — user-scoped features (analytics
+	// logging) are skipped. Ref: sections/13-search.md
 	user := auth.FromContext(r.Context())
-	if user == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
-		return
-	}
 
 	t := tenant.FromContext(r.Context())
 	if t == nil {
@@ -197,9 +196,10 @@ func (h *Handlers) Search(w http.ResponseWriter, r *http.Request) {
 		"data": SearchResponse{Results: results},
 	})
 
-	// Log search analytics asynchronously (fire-and-forget).
+	// Log search analytics asynchronously (fire-and-forget). Guests have a
+	// zero UUID — the analytics row is still written for aggregate metrics.
 	var userID pgtype.UUID
-	if user.UserID != (pgtype.UUID{}) {
+	if user != nil && user.UserID != (pgtype.UUID{}) {
 		userID = user.UserID
 	}
 
