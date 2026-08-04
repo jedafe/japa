@@ -21,6 +21,7 @@ import (
 
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/worker"
 )
 
 // Direction constants for rate alerts.
@@ -791,7 +792,7 @@ func (s *Service) TriggerFetch(ctx context.Context, tenantID, providerID pgtype.
 		return fmt.Errorf("remittance: marshal fetch payload: %w", err)
 	}
 
-	if err := s.enqueuer.Enqueue("remittance:fetch_rates", payload); err != nil {
+	if err := s.enqueuer.Enqueue(worker.TypeRemittanceFetchRates, payload); err != nil {
 		return fmt.Errorf("remittance: enqueue fetch: %w", err)
 	}
 

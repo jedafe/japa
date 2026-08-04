@@ -3,7 +3,16 @@ import { render, screen, waitFor } from '@testing-library/svelte';
 import Page from './+page.svelte';
 
 vi.mock('$lib/api', () => ({
-	api: vi.fn().mockRejectedValue(new Error('not connected'))
+	api: vi.fn().mockRejectedValue(new Error('not connected')),
+	settingsAdminApi: {
+		list: vi.fn().mockRejectedValue(new Error('not connected')),
+		updateCategory: vi.fn().mockRejectedValue(new Error('not connected')),
+	}
+}));
+
+vi.mock('$app/navigation', () => ({
+	goto: vi.fn(),
+	beforeNavigate: vi.fn()
 }));
 
 describe('Settings +page.svelte', () => {
@@ -12,23 +21,15 @@ describe('Settings +page.svelte', () => {
 		expect(screen.getByText('Settings')).toBeTruthy();
 	});
 
-	it('shows all category tabs after load', async () => {
+	it('shows loading state initially', () => {
 		render(Page);
-		await waitFor(() => {
-			expect(screen.getByText('General')).toBeTruthy();
-		});
-		// Only categories still present in settingCategoryOrder (features, email,
-		// integrations, advanced, payment have been removed).
-		const tabs = ['Appearance', 'Users', 'Content', 'Media', 'Seo', 'Security', 'Ai'];
-		for (const tab of tabs) {
-			expect(screen.getByText(tab)).toBeTruthy();
-		}
+		expect(screen.getByText('Loading settings...')).toBeTruthy();
 	});
 
-	it('shows empty state when no settings loaded', async () => {
+	it('shows error state when API fails', async () => {
 		render(Page);
 		await waitFor(() => {
-			expect(screen.getByText('Settings API not implemented yet. This section will be available when the backend settings endpoint is ready.')).toBeTruthy();
+			expect(screen.getByText('not connected')).toBeTruthy();
 		});
 	});
 });

@@ -443,7 +443,7 @@
 					</p>
 				</div>
 				<div>
-					<label class="text-foreground mb-1 block text-sm font-medium">
+					<label for="webhook-events" class="text-foreground mb-1 block text-sm font-medium">
 						{t('webhooks.events', 'Events')}
 					</label>
 
@@ -467,6 +467,7 @@
 
 					<Popover.Root>
 						<Popover.Trigger
+							id="webhook-events"
 							class="border-border-input bg-background text-foreground hover:border-border-input-hover focus:border-border-input-hover focus:shadow-date-field-focus flex w-full items-center justify-between rounded-9px border px-3 py-2 text-sm transition-colors"
 							aria-label={t('webhooks.events', 'Events')}
 						>

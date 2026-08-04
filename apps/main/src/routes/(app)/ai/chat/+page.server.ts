@@ -8,8 +8,20 @@ import { apiContext, apiList, apiPost, ApiError } from '$lib/server/api';
  * and accepts new messages via a form action that POSTs to the backend
  * /ai/chat route.
  *
+ * Section 69 / ADR-069: RAG-grounded responses include source citations
+ * (entity_type, entity_id, similarity, tier) which the client renders
+ * beneath each assistant reply.
+ *
  * Ref: japaconnect-engineering/sections/20-ai-core.md
+ *      japaconnect-engineering/sections/69-rag-knowledge-layer.md
  */
+export interface AiChatSource {
+	entity_type?: string;
+	entity_id?: string;
+	similarity?: number;
+	tier?: string;
+}
+
 export const load: PageServerLoad = async (event) => {
 	if (!event.locals.user) {
 		throw redirect(307, '/login?redirect=/ai/chat');
@@ -49,14 +61,20 @@ export const actions: Actions = {
 		}
 
 		try {
-			const reply = await apiPost<{
+			const result = await apiPost<{
 				reply: string;
 				conversation_id: string;
 				provider_ref?: string;
-				sources?: unknown[];
+				sources?: AiChatSource[];
 			}>(ctx, '/ai/chat', { message, conversation_id: conversationId || undefined });
 
-			return { ok: true, reply, message };
+			return {
+				ok: true,
+				reply: result.reply,
+				conversation_id: result.conversation_id,
+				sources: result.sources ?? [],
+				message
+			};
 		} catch (err) {
 			if (err instanceof ApiError) {
 				return fail(err.status, { error: err.code, message });

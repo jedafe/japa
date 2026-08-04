@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -81,18 +80,36 @@ func (p *Processor) SendInstructorPayout(ctx context.Context, tenantID, payoutID
 
 // NotifyInstructorApproved handles university:notify_instructor_approved.
 // Payload: { tenant_id, instructor_id }
-// V1: log only. The notification service dispatch is wired in a follow-up
-// once the notification template catalog includes the university templates.
-func (p *Processor) NotifyInstructorApproved(_ context.Context, tenantID, instructorID string) error {
-	slog.Info("university:notify_instructor_approved", "tenant_id", tenantID, "instructor_id", instructorID)
-	return nil
+// Dispatches an in-app notification to the creator via the notifications
+// service (wired via Service.SetNotifier). If no notifier is wired, logs only.
+// Ref: japaconnect-engineering/sections/35-notification-system.md
+func (p *Processor) NotifyInstructorApproved(ctx context.Context, tenantID, instructorID string) error {
+	tID, err := scanUUID(tenantID)
+	if err != nil {
+		return fmt.Errorf("university: notify instructor approved: %w", err)
+	}
+	iID, err := scanUUID(instructorID)
+	if err != nil {
+		return fmt.Errorf("university: notify instructor approved: bad instructor_id: %w", err)
+	}
+	return p.service.NotifyInstructorApprovedDispatch(ctx, tID, iID)
 }
 
 // NotifyCourseApproved handles university:notify_course_approved.
 // Payload: { tenant_id, track_id }
-func (p *Processor) NotifyCourseApproved(_ context.Context, tenantID, trackID string) error {
-	slog.Info("university:notify_course_approved", "tenant_id", tenantID, "track_id", trackID)
-	return nil
+// Dispatches an in-app notification to the creator via the notifications
+// service (wired via Service.SetNotifier). If no notifier is wired, logs only.
+// Ref: japaconnect-engineering/sections/35-notification-system.md
+func (p *Processor) NotifyCourseApproved(ctx context.Context, tenantID, trackID string) error {
+	tID, err := scanUUID(tenantID)
+	if err != nil {
+		return fmt.Errorf("university: notify course approved: %w", err)
+	}
+	trID, err := scanUUID(trackID)
+	if err != nil {
+		return fmt.Errorf("university: notify course approved: bad track_id: %w", err)
+	}
+	return p.service.NotifyCourseApprovedDispatch(ctx, tID, trID)
 }
 
 // FetchLogo handles university:fetch_logo (Section 39, low tier).

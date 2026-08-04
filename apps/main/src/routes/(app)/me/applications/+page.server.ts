@@ -1,0 +1,27 @@
+import type { PageServerLoad } from './$types';
+import { apiContext, apiList } from '$lib/server/api';
+import { redirect } from '@sveltejs/kit';
+import type { JobApplication } from '$lib/types';
+
+/**
+ * My Applications at /me/applications (Section 63, ADR-079).
+ * Auth-gated list of the current user's job applications with status.
+ *
+ * Ref: japaconnect-engineering/sections/63-jobs-board.md
+ */
+export const load: PageServerLoad = async (event) => {
+	if (!event.locals.user) {
+		throw redirect(307, '/login?redirect=/me/applications');
+	}
+
+	const ctx = apiContext(event);
+
+	let applications: JobApplication[] = [];
+	try {
+		applications = (await apiList<JobApplication>(ctx, '/jobs/applications/me')).items;
+	} catch {
+		applications = [];
+	}
+
+	return { applications };
+};

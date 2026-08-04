@@ -1,0 +1,154 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Lora:ital,wght@0,400;0,500;1,400&display=swap');
+
+@import 'tailwindcss';
+
+/*
+ * JapaConnect Tools App — design tokens (ADR-058 / ADR-086 / §78).
+ * Dark mode is driven by [data-theme="dark"] on <html>, set server-side from the
+ * jc_theme cookie (never Tailwind `dark:`). Components read these via CSS custom
+ * properties so they switch automatically with the attribute.
+ *
+ * Tools-specific additions over the main app:
+ *   - Tool accent tokens (--tool-accent) — per-tool branding in single-tool shell
+ *   - Chart palette is shared with the main app (ADR-059 LayerChart)
+ */
+
+:root {
+	/* Semantic surface + text tokens */
+	--color-bg: #fafafa;
+	--color-surface: #ffffff;
+	--color-surface-subtle: #f4f4f5;
+	--color-border: #e4e4e7;
+	--color-muted: #71717a;
+	--color-primary: #3b49df;
+	--color-primary-hover: #2f3bc0;
+	--color-primary-contrast: #ffffff;
+	--color-text: #18181b;
+	--color-text-subtle: #52525b;
+
+	/* Data-viz palette (LayerChart — ADR-059) */
+	--chart-1: #3b49df;
+	--chart-2: #0ea5e9;
+	--chart-3: #22c55e;
+	--chart-4: #f59e0b;
+	--chart-5: #ec4899;
+
+	/* Tool accent — overridden per-tool in single-tool shell mode */
+	--tool-accent: var(--color-primary);
+	--tool-accent-hover: var(--color-primary-hover);
+
+	/* Shape + layout */
+	--radius: 8px;
+	--radius-card: 12px;
+	--header-height: 56px;
+	--max-width: 1200px;
+
+	/* Bits UI theme (light) */
+	--background: var(--color-bg);
+	--background-alt: var(--color-surface);
+	--foreground: var(--color-text);
+	--foreground-alt: var(--color-text-subtle);
+	--muted: var(--color-surface-subtle);
+	--muted-foreground: var(--color-muted);
+	--border-input: var(--color-border);
+	--border-input-hover: #d4d4d8;
+	--border-card: var(--color-border);
+	--dark: var(--color-text);
+	--accent: var(--color-surface-subtle);
+	--accent-foreground: var(--color-text);
+	--destructive: #dc2626;
+}
+
+:root[data-theme='dark'] {
+	--color-bg: #0a0a0a;
+	--color-surface: #161618;
+	--color-surface-subtle: #1f1f23;
+	--color-border: #27272a;
+	--color-muted: #a1a1aa;
+	--color-primary: #5865f2;
+	--color-primary-hover: #6b76f5;
+	--color-primary-contrast: #ffffff;
+	--color-text: #f4f4f5;
+	--color-text-subtle: #a1a1aa;
+
+	--chart-1: #6b76f5;
+	--chart-2: #38bdf8;
+	--chart-3: #4ade80;
+	--chart-4: #fbbf24;
+	--chart-5: #f472b6;
+
+	--border-input-hover: #3f3f46;
+	--destructive: #ef4444;
+}
+
+/* Expose the semantic tokens as Tailwind color utilities (bg-surface, text-muted, …). */
+@theme inline {
+	--color-bg: var(--color-bg);
+	--color-surface: var(--color-surface);
+	--color-surface-subtle: var(--color-surface-subtle);
+	--color-border: var(--color-border);
+	--color-muted: var(--color-muted);
+	--color-primary: var(--color-primary);
+	--color-primary-hover: var(--color-primary-hover);
+	--color-primary-contrast: var(--color-primary-contrast);
+	--color-text: var(--color-text);
+	--color-text-subtle: var(--color-text-subtle);
+
+	--color-background: var(--background);
+	--color-foreground: var(--foreground);
+	--color-muted-foreground: var(--muted-foreground);
+	--color-border-input: var(--border-input);
+	--color-border-card: var(--border-card);
+	--color-accent: var(--accent);
+	--color-destructive: var(--destructive);
+
+	--radius-card: 12px;
+
+	--color-tool-accent: var(--tool-accent);
+	--color-tool-accent-hover: var(--tool-accent-hover);
+
+	--font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
+	--font-serif: 'Lora', ui-serif, Georgia, serif;
+}
+
+html,
+body {
+	height: 100%;
+}
+
+body {
+	background-color: var(--color-bg);
+	color: var(--color-text);
+	font-family: var(--font-sans);
+	font-size: 16px;
+	line-height: 1.7;
+	-webkit-font-smoothing: antialiased;
+	text-rendering: optimizeLegibility;
+}
+
+*:focus-visible {
+	outline: 2px solid var(--color-primary);
+	outline-offset: 2px;
+	border-radius: 4px;
+}
+
+input[type='search']:focus-visible {
+	outline: none;
+}
+
+@keyframes jc-skeleton {
+	0% {
+		opacity: 0.55;
+	}
+	50% {
+		opacity: 1;
+	}
+	100% {
+		opacity: 0.55;
+	}
+}
+
+.jc-skeleton {
+	background: var(--color-surface-subtle);
+	animation: jc-skeleton 1.4s ease-in-out infinite;
+}

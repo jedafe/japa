@@ -15,24 +15,31 @@ import (
 	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/admin"
+	"github.com/jedafe/japa/internal/adsselfserve"
+	"github.com/jedafe/japa/internal/advancedanalytics"
 	"github.com/jedafe/japa/internal/advertising"
 	"github.com/jedafe/japa/internal/affiliate"
 	"github.com/jedafe/japa/internal/ai"
 	"github.com/jedafe/japa/internal/analytics"
+	"github.com/jedafe/japa/internal/assessment"
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/blog"
 	"github.com/jedafe/japa/internal/bookmarkfolders"
 	"github.com/jedafe/japa/internal/bots"
+	"github.com/jedafe/japa/internal/checklist"
 	"github.com/jedafe/japa/internal/comments"
 	"github.com/jedafe/japa/internal/comparison"
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/content"
+	"github.com/jedafe/japa/internal/contentimport"
 	"github.com/jedafe/japa/internal/control"
+	"github.com/jedafe/japa/internal/costofliving"
 	"github.com/jedafe/japa/internal/coupons"
 	"github.com/jedafe/japa/internal/csrf"
 	"github.com/jedafe/japa/internal/customfields"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/devices"
 	"github.com/jedafe/japa/internal/docs"
 	"github.com/jedafe/japa/internal/email"
 	emailtemplates "github.com/jedafe/japa/internal/email/templates"
@@ -41,12 +48,14 @@ import (
 	"github.com/jedafe/japa/internal/feed"
 	"github.com/jedafe/japa/internal/follows"
 	"github.com/jedafe/japa/internal/forum"
+	"github.com/jedafe/japa/internal/gamification"
 	"github.com/jedafe/japa/internal/gdpr"
 	"github.com/jedafe/japa/internal/geoip"
 	"github.com/jedafe/japa/internal/honcho"
 	"github.com/jedafe/japa/internal/i18n"
 	"github.com/jedafe/japa/internal/impersonation"
 	"github.com/jedafe/japa/internal/interactions"
+	"github.com/jedafe/japa/internal/jobs"
 	"github.com/jedafe/japa/internal/learning"
 	"github.com/jedafe/japa/internal/linkpreview"
 	"github.com/jedafe/japa/internal/media"
@@ -61,16 +70,19 @@ import (
 	"github.com/jedafe/japa/internal/organizations"
 	"github.com/jedafe/japa/internal/pagebuilder"
 	"github.com/jedafe/japa/internal/payments"
+	"github.com/jedafe/japa/internal/personas"
 	"github.com/jedafe/japa/internal/professional"
 	"github.com/jedafe/japa/internal/publicapi"
 	"github.com/jedafe/japa/internal/rbac"
 	"github.com/jedafe/japa/internal/redirects"
 	"github.com/jedafe/japa/internal/referral"
+	"github.com/jedafe/japa/internal/remittance"
 	"github.com/jedafe/japa/internal/renderer"
 	"github.com/jedafe/japa/internal/reports"
 	"github.com/jedafe/japa/internal/reviews"
 	rsspkg "github.com/jedafe/japa/internal/rss"
 	"github.com/jedafe/japa/internal/search"
+	"github.com/jedafe/japa/internal/scholarships"
 	"github.com/jedafe/japa/internal/seo"
 	"github.com/jedafe/japa/internal/spaces"
 	"github.com/jedafe/japa/internal/spam"
@@ -78,6 +90,7 @@ import (
 	"github.com/jedafe/japa/internal/tags"
 	"github.com/jedafe/japa/internal/tenant"
 	"github.com/jedafe/japa/internal/tickets"
+	"github.com/jedafe/japa/internal/travel"
 	"github.com/jedafe/japa/internal/trending"
 	"github.com/jedafe/japa/internal/universities"
 	"github.com/jedafe/japa/internal/rag"
@@ -88,7 +101,10 @@ import (
 	"github.com/jedafe/japa/internal/wallet"
 	"github.com/jedafe/japa/internal/webhooks"
 	"github.com/jedafe/japa/internal/websocket"
+	"github.com/jedafe/japa/internal/participation"
+	"github.com/jedafe/japa/internal/studio"
 	"github.com/jedafe/japa/internal/worker"
+	"github.com/jedafe/japa/internal/workerv2"
 	"github.com/valkey-io/valkey-go/valkeycompat"
 )
 
@@ -565,6 +581,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 	// Ticket System subsystem (Section 38 — Ticket System).
 	ticketService := tickets.NewServiceWithEnqueuer(database, taskEnqueuer)
+	ticketService.SetSettings(settingsService)
 	ticketHandlers := tickets.NewHandlers(ticketService)
 
 	// Coupons & External Affiliate Providers subsystem (Section 55).
@@ -725,6 +742,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	universityService.SetValkey(vkClient.Redis())
 	universityService.SetMediaUploader(mediaService)
 	universityService.SetSpaceLogoUpdater(spaceService)
+	universityService.SetNotifier(notificationService)
 	universityHandlers := university.NewHandlers(universityService)
 	// Register university processor for the worker's 5 university Asynq tasks.
 	universityProcessor := university.NewProcessor(universityService)
@@ -733,11 +751,112 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Newsletter subsystem (Section 33).
 	newsletterService := newsletter.NewService(database)
 	newsletterService.SetAsynqClient(asynqClient)
+	newsletterService.SetSettings(settingsService)
 	newsletterHandlers := newsletter.NewHandlers(newsletterService)
 
 	// Referral Program subsystem (Section 34).
 	referralService := referral.NewService(database)
+	referralService.SetSettings(settingsService)
 	referralHandlers := referral.NewHandlers(referralService)
+
+	// V2 feature subsystems (Sections 61–76, ADRs 079–085).
+	// Each follows the same Store→Service→Handlers layering as v1 packages.
+	// Ref: japaconnect-engineering/sections/63-jobs-board.md (ADR-081)
+	jobsStore := jobs.NewStore(database)
+	jobsService := jobs.NewService(jobsStore, settingsService)
+	jobsHandlers := jobs.NewHandlers(jobsService, settingsService)
+
+	// Ref: japaconnect-engineering/sections/64-gamification.md (ADR-082)
+	gamificationStore := gamification.NewStore(database)
+	gamificationService := gamification.NewService(gamificationStore, settingsService)
+	gamificationHandlers := gamification.NewHandlers(gamificationService, settingsService)
+
+	// Ref: japaconnect-engineering/sections/65-content-import.md (ADR-083)
+	contentImportStore := contentimport.NewStore(database)
+	contentImportService := contentimport.NewService(contentImportStore, settingsService)
+	contentImportHandlers := contentimport.NewHandlers(contentImportService, settingsService)
+
+	// Ref: japaconnect-engineering/sections/66-advanced-analytics.md (ADR-084)
+	advancedAnalyticsStore := advancedanalytics.NewStore(database)
+	advancedAnalyticsService := advancedanalytics.NewService(advancedAnalyticsStore, settingsService)
+	advancedAnalyticsHandlers := advancedanalytics.NewHandlers(advancedAnalyticsService)
+
+	// Ref: japaconnect-engineering/sections/67-travel-search.md (ADR-085)
+	travelStore := travel.NewStore(database)
+	travelService := travel.NewService(travelStore, settingsService)
+	travelHandlers := travel.NewHandlers(travelService, settingsService)
+
+	// Ref: japaconnect-engineering/sections/68-ai-personas.md (ADR-068)
+	personasStore := personas.NewStore(database)
+	personasService := personas.NewService(personasStore, settingsService, taskEnqueuer)
+	personasHandlers := personas.NewHandlers(personasService)
+
+	// Ref: japaconnect-engineering/sections/70-visa-checklist.md (ADR-070)
+	checklistStore := checklist.NewStore(database)
+	checklistService := checklist.NewService(checklistStore, settingsService)
+	checklistHandlers := checklist.NewHandlers(checklistService, settingsService)
+
+	// Ref: japaconnect-engineering/sections/71-readiness-assessment.md (ADR-071)
+	assessmentStore := assessment.NewStore(database)
+	assessmentService := assessment.NewService(assessmentStore, settingsService)
+	assessmentHandlers := assessment.NewHandlers(assessmentService, settingsService)
+
+	// Ref: japaconnect-engineering/sections/72-cost-of-living.md (ADR-072)
+	costOfLivingStore := costofliving.NewStore(database)
+	costOfLivingService := costofliving.NewService(costOfLivingStore, settingsService)
+	costOfLivingHandlers := costofliving.NewHandlers(costOfLivingService, settingsService)
+
+	// Ref: japaconnect-engineering/sections/73-scholarship-finder.md (ADR-073)
+	scholarshipsStore := scholarships.NewStore(database)
+	scholarshipsService := scholarships.NewService(scholarshipsStore, settingsService)
+	scholarshipsService.SetEnqueuer(taskEnqueuer)
+	scholarshipsHandlers := scholarships.NewHandlers(scholarshipsService)
+
+	// Ref: japaconnect-engineering/sections/74-remittance-tracker.md (ADR-075)
+	remittanceStore := remittance.NewStore(database)
+	remittanceService := remittance.NewService(remittanceStore, settingsService)
+	remittanceHandlers := remittance.NewHandlers(remittanceService, settingsService)
+
+	// Ref: japaconnect-engineering/sections/61-self-serve-ads.md (ADR-079)
+	adsSelfServeStore := adsselfserve.NewStore(database)
+	adsSelfServeService := adsselfserve.NewService(adsSelfServeStore, settingsService)
+	adsSelfServeService.SetEnqueuer(taskEnqueuer)
+	adsSelfServeHandlers := adsselfserve.NewHandlers(adsSelfServeService)
+
+	// Ref: japaconnect-engineering/sections/77-flutter-mobile-app.md (ADR-074)
+	// Mobile push device registration + admin push test.
+	devicesStore := devices.NewStore(database)
+	devicesService := devices.NewService(devicesStore, settingsService)
+	devicesService.SetEnqueuer(taskEnqueuer)
+	devicesHandlers := devices.NewHandlers(devicesService)
+
+	// Register all v2 background-task processors with the worker. Without
+	// this call every v2 Asynq task handler logs "no processor registered,
+	// skipping" and returns nil — all v2 background work is a silent no-op.
+	// Ref: sections 60-78, ADRs 061-086.
+	workerv2.RegisterV2Processors(database,
+		jobsService,
+		gamificationService,
+		contentImportService,
+		assessmentService,
+		scholarshipsService,
+		remittanceService,
+		referralService,
+		adsSelfServeService,
+		devicesService,
+	)
+
+	// AI Content Studio (Section 75, ADR-076).
+	studioStore := studio.NewStore(database)
+	studioService := studio.NewService(studioStore, settingsService)
+	studioService.SetEnqueuer(taskEnqueuer)
+	studioHandlers := studio.NewHandlers(studioService)
+	worker.RegisterStudioProcessor(studioService)
+
+	// Participation Orchestration Engine (Section 76, ADR-077).
+	participationService := participation.NewService(database, settingsService, vkClient.Redis())
+	participationService.SetEnqueuer(taskEnqueuer)
+	worker.RegisterPersonaProcessor(participationService)
 
 	// Mentorship subsystem (Section 35).
 	mentorshipService := mentorship.NewService(database)
@@ -900,6 +1019,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	controlHandlers.SetValkey(vkClient.Redis())
 	controlHandlers.SetMeiliSearch(meiliClient)
 	controlHandlers.SetHoncho(honcho.NewClient(cfg.HonchoURL)) // ADR-027: infra health
+	controlHandlers.SetAIStore(aiStore) // AI budget dashboard aggregation
 
 	// Infrastructure routes bypass tenant middleware
 	r.Get("/health", h.HealthCheck)
@@ -2607,7 +2727,13 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ai.tools.manage")).
 				Get("/admin/ai/tools/usage", aiToolHandlers.ListToolUsage)
 
-			// AI Context admin routes — view/delete user AI context via Honcho
+			// AI Context admin routes — view/delete user AI context via Honcho.
+			// Catalog lists two path forms (§20): /admin/ai/context/{user_id}
+			// (canonical) and /admin/users/{id}/ai-context (legacy alias).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ai.context.admin_view")).
+				Get("/admin/ai/context/{user_id}", aiHandlers.HandleGetUserContext)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ai.context.admin_delete_entry")).
+				Delete("/admin/ai/context/{user_id}/{entry_id}", aiHandlers.HandleDeleteUserContextEntry)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ai.context.admin_view")).
 				Get("/admin/users/{id}/ai-context", aiHandlers.HandleGetUserContext)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ai.context.admin_delete_entry")).
@@ -3526,6 +3652,282 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Task 11: Universities compare
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).
 				Get("/universities/{id}/compare", universitiesHandlers.CompareUniversities)
+
+			// ──────────────────────────────────────────────────────────────
+			// V2 feature routes (Sections 61–76, ADRs 068, 070–085).
+			// Each feature's settings toggle (e.g. jobs.enabled, remittance.enabled)
+			// is enforced inside the handler via settingsService, not via the
+			// feature.* flag gate, matching the RAG pattern (Section 69).
+			// ──────────────────────────────────────────────────────────────
+
+			// Section 63 — Jobs Board (ADR-081)
+			// Public browse + auth apply + org admin CRUD + admin moderation.
+			r.Get("/jobs", jobsHandlers.HandleFindJobs)
+			r.Get("/jobs/{id}", jobsHandlers.HandleJobDetail)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "jobs.apply")).
+				Post("/jobs/{id}/apply", jobsHandlers.HandleApply)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "jobs.apply")).
+				Get("/me/jobs/applications", jobsHandlers.HandleMyApplications)
+			// Org-scoped employer routes (Section 63).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "jobs.post")).
+				Get("/org/{org_id}/jobs", jobsHandlers.HandleListJobApplications)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "jobs.post")).
+				Post("/org/{org_id}/jobs", jobsHandlers.HandleListJobApplications)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "jobs.manage")).
+				Get("/org/{org_id}/jobs/{id}/applications", jobsHandlers.HandleListJobApplications)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "jobs.manage")).
+				Patch("/org/{org_id}/jobs/{id}/applications/{app_id}", jobsHandlers.HandleUpdateApplicationStatus)
+			// Admin moderation (Section 63).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "jobs.manage")).
+				Get("/admin/jobs", jobsHandlers.HandleAdminListApplications)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "jobs.manage")).
+				Patch("/admin/jobs/{id}/feature", jobsHandlers.HandleAdminToggleFeature)
+
+			// Section 64 — Advanced Gamification (ADR-082)
+			r.Get("/gamification/badges", gamificationHandlers.HandleListBadges)
+			r.Get("/gamification/challenges", gamificationHandlers.HandleListChallenges)
+			r.Get("/gamification/leaderboard", gamificationHandlers.HandleGetLeaderboard)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).
+				Get("/me/badges", gamificationHandlers.HandleMyBadges)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).
+				Get("/me/challenges", gamificationHandlers.HandleMyChallenges)
+			r.Get("/users/{username}/badges", gamificationHandlers.HandleUserBadges)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "gamification.manage_badges")).
+				Get("/admin/gamification/badges", gamificationHandlers.HandleAdminListBadges)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "gamification.manage_badges")).
+				Post("/admin/gamification/badges", gamificationHandlers.HandleAdminCreateBadge)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "gamification.manage_badges")).
+				Patch("/admin/gamification/badges/{id}", gamificationHandlers.HandleAdminUpdateBadge)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "gamification.award_badge")).
+				Post("/admin/gamification/badges/{id}/award", gamificationHandlers.HandleAdminAwardBadge)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "gamification.manage_challenges")).
+				Get("/admin/gamification/challenges", gamificationHandlers.HandleAdminListChallenges)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "gamification.manage_challenges")).
+				Post("/admin/gamification/challenges", gamificationHandlers.HandleAdminCreateChallenge)
+
+			// Section 65 — Content Import & Migration (ADR-083)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "import.use")).
+				Post("/me/imports", contentImportHandlers.HandleStartImport)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "import.use")).
+				Get("/me/imports", contentImportHandlers.HandleListImports)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "import.use")).
+				Get("/me/imports/{id}", contentImportHandlers.HandleGetImport)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "import.manage")).
+				Get("/admin/imports", contentImportHandlers.HandleAdminListImports)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "import.manage")).
+				Post("/admin/imports/{id}/retry", contentImportHandlers.HandleAdminRetryImport)
+
+			// Section 66 — Advanced Analytics Dashboard (ADR-084)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "analytics.advanced")).
+				Get("/admin/analytics/top-content", advancedAnalyticsHandlers.HandleTopContent)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "analytics.advanced")).
+				Get("/admin/analytics/revenue-streams", advancedAnalyticsHandlers.HandleRevenueStreams)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "analytics.advanced")).
+				Get("/admin/analytics/ads", advancedAnalyticsHandlers.HandleAdPerformance)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "analytics.advanced")).
+				Get("/admin/analytics/newsletter", advancedAnalyticsHandlers.HandleNewsletterEngagement)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "analytics.advanced")).
+				Get("/admin/analytics/retention", advancedAnalyticsHandlers.HandleRetention)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "analytics.export")).
+				Get("/admin/analytics/export", advancedAnalyticsHandlers.HandleExport)
+
+			// Section 67 — Travel Search & Compare (ADR-085)
+			r.Get("/travel/search/flights", travelHandlers.HandleSearchFlights)
+			r.Get("/travel/search/hotels", travelHandlers.HandleSearchHotels)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "travel.manage")).
+				Get("/admin/travel/providers", travelHandlers.HandleAdminListProviders)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "travel.manage")).
+				Post("/admin/travel/providers", travelHandlers.HandleAdminCreateProvider)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "travel.manage")).
+				Patch("/admin/travel/providers/{id}", travelHandlers.HandleAdminUpdateProvider)
+
+			// Section 68 — AI Persona System (ADR-068)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "persona.view")).
+				Get("/admin/personas", personasHandlers.HandleList)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "persona.manage")).
+				Post("/admin/personas", personasHandlers.HandleCreate)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "persona.view")).
+				Get("/admin/personas/{id}", personasHandlers.HandleGet)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "persona.manage")).
+				Patch("/admin/personas/{id}", personasHandlers.HandleUpdate)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "persona.view")).
+				Get("/admin/personas/{id}/activity", personasHandlers.HandleActivity)
+
+			// Section 75 — AI Content Studio (ADR-076)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "studio.view")).
+				Get("/admin/studio/jobs", studioHandlers.HandleListJobs)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "studio.create")).
+				Post("/admin/studio/jobs", studioHandlers.HandleCreateJob)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "studio.view")).
+				Get("/admin/studio/jobs/{id}", studioHandlers.HandleGetJob)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "studio.manage")).
+				Post("/admin/studio/jobs/{id}/retry", studioHandlers.HandleRetryJob)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "studio.manage")).
+				Delete("/admin/studio/jobs/{id}", studioHandlers.HandleCancelJob)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "studio.view")).
+				Get("/admin/studio/batches", studioHandlers.HandleListBatches)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "studio.create")).
+				Post("/admin/studio/batches", studioHandlers.HandleCreateBatch)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "studio.view")).
+				Get("/admin/studio/batches/{id}", studioHandlers.HandleGetBatch)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "studio.manage")).
+				Post("/admin/studio/batches/{id}/retry", studioHandlers.HandleRetryBatch)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "studio.view")).
+				Get("/admin/studio/personas", studioHandlers.HandlePersonas)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "studio.view")).
+				Get("/admin/studio/content-types", studioHandlers.HandleContentTypes)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "studio.view")).
+				Get("/admin/studio/stats", studioHandlers.HandleStats)
+
+			// Section 76 — Participation Orchestration (ADR-077)
+			// Admin queue/stats endpoints. Review approve/reject reuses
+			// PATCH /admin/moderation-queue/:id.
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "participation.view")).
+				Get("/admin/participation/queue", participation.HandleQueue(database))
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "participation.view")).
+				Get("/admin/participation/stats", participation.HandleStats(database))
+
+			// Section 70 — Visa Document Checklist Generator (ADR-070)
+			r.Get("/checklist/selector", checklistHandlers.HandleSelector)
+			r.Get("/checklist/{guide_id}", checklistHandlers.HandleGetItems)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "checklist.use")).
+				Get("/checklist/{guide_id}/progress", checklistHandlers.HandleGetProgress)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "checklist.use")).
+				Patch("/checklist/{guide_id}/progress/{item_key}", checklistHandlers.HandleUpdateProgress)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "checklist.use")).
+				Delete("/checklist/{guide_id}/progress", checklistHandlers.HandleResetProgress)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "checklist.manage")).
+				Get("/admin/checklist/progress", checklistHandlers.HandleAdminListProgress)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "checklist.manage")).
+				Get("/admin/checklist/completion-stats", checklistHandlers.HandleAdminCompletionStats)
+
+			// Section 71 — Japa Readiness Assessment (ADR-071)
+			r.Get("/assessment", assessmentHandlers.HandleGetAssessment)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "assessment.take")).
+				Post("/assessment/submit", assessmentHandlers.HandleSubmit)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "assessment.take")).
+				Get("/assessment/result/{id}", assessmentHandlers.HandleGetResult)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "assessment.take")).
+				Get("/assessment/history", assessmentHandlers.HandleHistory)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "assessment.manage")).
+				Get("/admin/assessment/form", assessmentHandlers.HandleAdminGetForm)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "assessment.manage")).
+				Patch("/admin/assessment/form", assessmentHandlers.HandleAdminUpdateForm)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "assessment.view_results")).
+				Get("/admin/assessment/results", assessmentHandlers.HandleAdminListResults)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "assessment.view_results")).
+				Get("/admin/assessment/stats", assessmentHandlers.HandleAdminStats)
+
+			// Section 72 — Cost of Living Calculator (ADR-072)
+			r.Get("/calculator/cost-of-living/cities", costOfLivingHandlers.HandleListCities)
+			r.Get("/calculator/cost-of-living/compare", costOfLivingHandlers.HandleCompare)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "col_calculator.manage")).
+				Get("/admin/calculator/cost-of-living/stats", costOfLivingHandlers.HandleAdminStats)
+
+			// Section 73 — Scholarship Finder (ADR-073)
+			r.Get("/scholarships", scholarshipsHandlers.HandleFindScholarships)
+			r.Get("/scholarships/{id}", scholarshipsHandlers.HandleScholarshipDetail)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "scholarship.save")).
+				Get("/scholarships/saved", scholarshipsHandlers.HandleListSavedScholarships)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "scholarship.save")).
+				Post("/scholarships/{id}/save", scholarshipsHandlers.HandleSaveScholarship)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "scholarship.save")).
+				Patch("/scholarships/{id}/save", scholarshipsHandlers.HandleUpdateSavedScholarship)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "scholarship.save")).
+				Delete("/scholarships/{id}/save", scholarshipsHandlers.HandleDeleteSavedScholarship)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "scholarship.manage")).
+				Get("/admin/scholarships/stats", scholarshipsHandlers.HandleAdminStatusDistribution)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "scholarship.manage")).
+				Get("/admin/scholarships/deadlines", scholarshipsHandlers.HandleAdminUpcomingDeadlines)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "scholarship.manage")).
+				Get("/admin/scholarships/reminder-log", scholarshipsHandlers.HandleAdminReminderLog)
+
+			// Section 74 — Remittance Rate Tracker (ADR-075)
+			r.Get("/remittance/rates", remittanceHandlers.HandleGetRates)
+			r.Get("/remittance/calculate", remittanceHandlers.HandleCalculate)
+			r.Get("/remittance/history", remittanceHandlers.HandleGetHistory)
+			r.Get("/remittance/providers", remittanceHandlers.HandleGetProviders)
+			r.Get("/remittance/corridors", remittanceHandlers.HandleGetCorridors)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "remittance.alert")).
+				Get("/remittance/alerts", remittanceHandlers.HandleListAlerts)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "remittance.alert")).
+				Post("/remittance/alerts", remittanceHandlers.HandleCreateAlert)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "remittance.alert")).
+				Patch("/remittance/alerts/{id}", remittanceHandlers.HandleUpdateAlert)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "remittance.alert")).
+				Delete("/remittance/alerts/{id}", remittanceHandlers.HandleDeleteAlert)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "remittance.manage")).
+				Get("/admin/remittance/providers", remittanceHandlers.HandleAdminListProviders)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "remittance.manage")).
+				Post("/admin/remittance/providers", remittanceHandlers.HandleAdminCreateProvider)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "remittance.manage")).
+				Patch("/admin/remittance/providers/{id}", remittanceHandlers.HandleAdminUpdateProvider)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "remittance.manage")).
+				Post("/admin/remittance/providers/{id}/rates", remittanceHandlers.HandleAdminInsertManualRate)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "remittance.fetch")).
+				Post("/admin/remittance/providers/{id}/fetch", remittanceHandlers.HandleAdminTriggerFetch)
+
+			// Section 61 — Self-Serve Advertising (ADR-079)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ads.self_serve.create")).
+				Get("/org/{org_id}/ads/slots", adsSelfServeHandlers.HandleListSlots)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ads.self_serve.create")).
+				Post("/org/{org_id}/ads/campaigns", adsSelfServeHandlers.HandleCreateCampaign)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ads.self_serve.manage")).
+				Get("/org/{org_id}/ads/campaigns", adsSelfServeHandlers.HandleListCampaigns)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ads.self_serve.manage")).
+				Get("/org/{org_id}/ads/campaigns/{id}", adsSelfServeHandlers.HandleGetCampaign)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ads.self_serve.manage")).
+				Patch("/org/{org_id}/ads/campaigns/{id}", adsSelfServeHandlers.HandleUpdateCampaign)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ads.self_serve.manage")).
+				Post("/org/{org_id}/ads/campaigns/{id}/pause", adsSelfServeHandlers.HandlePauseCampaign)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ads.self_serve.manage")).
+				Post("/org/{org_id}/ads/campaigns/{id}/resume", adsSelfServeHandlers.HandleResumeCampaign)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ads.self_serve.stats")).
+				Get("/org/{org_id}/ads/campaigns/{id}/stats", adsSelfServeHandlers.HandleGetStats)
+
+			// Section 77 — Mobile Push Devices (ADR-074)
+			// Device token registration for FCM/APNs push delivery.
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "devices.manage")).
+				Post("/me/devices", devicesHandlers.HandleRegisterDevice)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "devices.manage")).
+				Delete("/me/devices/{id}", devicesHandlers.HandleDeregisterDevice)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "devices.manage")).
+				Get("/me/devices", devicesHandlers.HandleListDevices)
+			// Admin push test (ADR-074).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "devices.admin")).
+				Post("/admin/push/test", devicesHandlers.HandleAdminTestPush)
+
+			// Newsletter public routes (Section 62 — ADR-080).
+			// Unsubscribe via token (no auth) + subscriber preferences.
+			r.Get("/newsletter/unsubscribe", newsletterHandlers.HandleUnsubscribe)
+			r.Get("/newsletter/preferences", newsletterHandlers.HandleGetPreferences)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).
+				Patch("/newsletter/preferences", newsletterHandlers.HandleUpdatePreferences)
+			// Admin newsletter stats (Section 62).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "newsletter.admin")).
+				Get("/admin/newsletter/stats", newsletterHandlers.HandleAdminStats)
+
+			// Section 60 — Referral System (ADR-078) public + me routes.
+			// Admin referral/program routes are wired above (referral.admin).
+			// /ref/{code} is public; click tracking enqueues referral:record_click.
+			// NOTE: /r/{code} is already used by the affiliate redirect (§56),
+			// so the referral system uses /ref/{code} to avoid a route collision.
+			// The JEOS catalog (§60) lists /r/:code; this is a documented
+			// deviation — see the comment in .jeos/sections/60-referral-system.md.
+			r.Get("/ref/{code}", referralHandlers.HandleRedirect)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "referral.use")).
+				Get("/me/referral", referralHandlers.HandleGetMyCode)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "referral.use")).
+				Get("/me/referral/history", referralHandlers.HandleMyHistory)
+			// V2 admin referral moderation routes (ADR-078).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "referral.admin")).
+				Get("/admin/referrals", referralHandlers.HandleAdminListReferrals)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "referral.admin")).
+				Get("/admin/referrals/stats", referralHandlers.HandleAdminReferralStats)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "referral.admin")).
+				Get("/admin/referrals/flagged", referralHandlers.HandleAdminFlagged)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "referral.admin")).
+				Patch("/admin/referrals/{id}/resolve", referralHandlers.HandleAdminResolveFlagged)
 		})
 	})
 

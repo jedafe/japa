@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { t } from '$lib/i18n';
-	import { Send, Sparkles, MessageSquare, Loader2, AlertCircle } from 'lucide-svelte';
+	import { Send, Sparkles, MessageSquare, Loader2, AlertCircle, BookOpen, ShieldCheck } from 'lucide-svelte';
 	import { enhance } from '$app/forms';
+	import type { AiChatSource } from './+page.server';
 
 	let { data } = $props();
 
@@ -9,6 +10,7 @@
 		role: 'user' | 'assistant';
 		content: string;
 		conversation_id?: string;
+		sources?: AiChatSource[];
 	};
 
 	// Seed the visible transcript with prior conversation entries (best-effort:
@@ -34,6 +36,12 @@
 			scrollEl.scrollTop = scrollEl.scrollHeight;
 		}
 	});
+
+	function sourceHref(s: AiChatSource): string {
+		if (!s.entity_id) return '#';
+		// RAG sources reference content entities; link to the content slug.
+		return `/content/${s.entity_id}`;
+	}
 </script>
 
 <svelte:head>
@@ -66,13 +74,42 @@
 			<div class="space-y-3">
 				{#each messages as m}
 					<div class="flex {m.role === 'user' ? 'justify-end' : 'justify-start'}">
-						<div
-							class="max-w-[80%] rounded-2xl px-4 py-2 text-sm whitespace-pre-wrap"
-							style={m.role === 'user'
-								? 'background-color: var(--color-primary); color: white'
-								: 'background-color: var(--color-muted-15); color: var(--color-text)'}
-						>
-							{m.content}
+						<div class="max-w-[80%]">
+							<div
+								class="rounded-2xl px-4 py-2 text-sm whitespace-pre-wrap"
+								style={m.role === 'user'
+									? 'background-color: var(--color-primary); color: white'
+									: 'background-color: var(--color-muted-15); color: var(--color-text)'}
+							>
+								{m.content}
+							</div>
+							<!-- RAG source citations (Section 69, ADR-069) -->
+							{#if m.role === 'assistant' && m.sources && m.sources.length > 0}
+								<div class="mt-1.5 flex flex-wrap items-center gap-1.5">
+									<span class="flex items-center gap-1 text-xs" style="color: var(--color-muted)">
+										<BookOpen size={12} /> {t('ai.chat.sources') ?? 'Sources'}:
+									</span>
+									{#each m.sources as s, i (i)}
+										<a
+											href={sourceHref(s)}
+											class="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs transition-colors hover:bg-[var(--color-surface-subtle)]"
+											style="border-color: var(--color-border); color: var(--color-muted)"
+										>
+											{s.entity_type ?? 'content'}
+											{#if s.similarity}
+												<span style="color: var(--color-muted)">{Math.round(s.similarity * 100)}%</span>
+											{/if}
+										</a>
+									{/each}
+								</div>
+							{/if}
+							<!-- Immigration/financial content disclaimer (Section 69) -->
+							{#if m.role === 'assistant'}
+								<p class="mt-1 flex items-center gap-1 text-xs" style="color: var(--color-muted)">
+									<ShieldCheck size={11} />
+									{t('ai.chat.disclaimer') ?? 'AI-generated. Verify immigration/financial details with official sources.'}
+								</p>
+							{/if}
 						</div>
 					</div>
 				{/each}
@@ -95,8 +132,13 @@
 			return async ({ result }) => {
 				sending = false;
 				if (result.type === 'success' && result.data?.ok) {
-					const data = result.data as { reply: string; conversation_id?: string };
-					messages = [...messages, { role: 'assistant', content: data.reply, conversation_id: data.conversation_id }];
+					const data = result.data as { reply: string; conversation_id?: string; sources?: AiChatSource[] };
+					messages = [...messages, {
+						role: 'assistant',
+						content: data.reply,
+						conversation_id: data.conversation_id,
+						sources: data.sources
+					}];
 					if (data.conversation_id) conversationId = data.conversation_id;
 					error = '';
 					input = '';

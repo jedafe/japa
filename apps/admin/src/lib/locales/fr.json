@@ -2764,5 +2764,12 @@
   "seo.validating": "Validation...",
   "seo.input_hint": "Collez un ID de contenu, une URL frontend (ex. /content/mon-article), ou saisissez un titre pour rechercher.",
   "seo.url_not_found": "Aucun contenu trouvé pour cette URL",
-  "seo.no_match": "Aucun contenu ne correspond à votre recherche"
+  "seo.no_match": "Aucun contenu ne correspond à votre recherche",
+  "nav.personas": "Personas IA",
+  "nav.studio": "Studio de Contenu",
+  "nav.rag": "Index RAG",
+  "nav.gamification": "Gamification",
+  "nav.jobs": "Offres d'emploi",
+  "nav.travel": "Fournisseurs Voyage",
+  "nav.remittance": "Fournisseurs Transfert"
 }

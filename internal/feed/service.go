@@ -528,11 +528,11 @@ func pgNumericToFloat64(n pgtype.Numeric) float64 {
 
 // For-You feed bounds and cache tuning (v1 constants).
 const (
-	forYouWindowDays   = 30
-	forYouAffinityCap  = 300
-	forYouVelocityCap  = 300
-	forYouCandidateCap = 600
-	forYouCacheTTL     = 90 * time.Second
+	forYouWindowDaysDefault = 30
+	forYouAffinityCap       = 300
+	forYouVelocityCap       = 300
+	forYouCandidateCap      = 600
+	forYouCacheTTLDefault   = 90 * time.Second
 )
 
 // loadAffinity fetches the user's followed authors, spaces (followed ∪ member),
@@ -605,14 +605,21 @@ func (s *Service) GetForYouFeed(
 	// Use the shared cache helper with distributed lock stampede protection
 	// (BUG-008). On cache miss, the lock holder loads affinity, fetches
 	// candidates, and ranks them; concurrent requests wait for the result.
-	ranked, err := vkcache.GetOrComputeCompat(ctx, s.vk, key, forYouCacheTTL, func(ctx context.Context) ([]FeedItem, error) {
+	// Read cache TTL and window days from system_settings (Rule 3).
+	cacheTTL := forYouCacheTTLDefault
+	windowDays := forYouWindowDaysDefault
+	if s.settings != nil {
+		windowDays = s.settings.GetIntOr(ctx, tenantID, "feed.for_you_window_days", forYouWindowDaysDefault)
+	}
+
+	ranked, err := vkcache.GetOrComputeCompat(ctx, s.vk, key, cacheTTL, func(ctx context.Context) ([]FeedItem, error) {
 		authorIDs, spaceIDs, tagIDs, err := s.loadAffinity(ctx, tenantID, userID)
 		if err != nil {
 			return nil, err
 		}
 
 		var windowStart pgtype.Timestamptz
-		_ = windowStart.Scan(time.Now().Add(-forYouWindowDays * 24 * time.Hour))
+		_ = windowStart.Scan(time.Now().Add(-time.Duration(windowDays) * 24 * time.Hour))
 
 		rows, err := s.store.getForYouCandidates(ctx, gen.GetForYouCandidatesParams{
 			TenantID:        tenantID,
@@ -669,7 +676,7 @@ func (s *Service) readForYouCache(ctx context.Context, key string) ([]FeedItem, 
 	return ranked, true
 }
 
-// writeForYouCache stores the ranked feed for forYouCacheTTL. Best-effort:
+// writeForYouCache stores the ranked feed. Best-effort:
 // cache write failures never fail the request.
 func (s *Service) writeForYouCache(ctx context.Context, key string, ranked []FeedItem) {
 	if s.vk == nil {
@@ -681,5 +688,5 @@ func (s *Service) writeForYouCache(ctx context.Context, key string, ranked []Fee
 		return
 	}
 
-	_ = s.vk.Set(ctx, key, data, forYouCacheTTL).Err()
+	_ = s.vk.Set(ctx, key, data, forYouCacheTTLDefault).Err()
 }

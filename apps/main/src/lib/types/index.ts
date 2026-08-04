@@ -1704,3 +1704,379 @@ export interface ContentCountryPreference {
 	content_country: string;
 }
 
+
+// ============================================================
+// V2 Feature Types (Phases 33–35, Sections 60–74)
+// ============================================================
+
+// --- Section 70: Visa Checklist ---
+export interface ChecklistCountryOption {
+	id: string;
+	name: string;
+	slug: string;
+	visa_types?: ChecklistVisaTypeOption[];
+}
+
+export interface ChecklistVisaTypeOption {
+	value: string;
+	label: string;
+	guide_id: string;
+}
+
+export interface ChecklistSelector {
+	origins: ChecklistCountryOption[];
+	destinations: ChecklistCountryOption[];
+}
+
+export interface ChecklistItem {
+	item_key: string;
+	label: string;
+	completed: boolean;
+	notes: string;
+}
+
+// --- Section 71: Readiness Assessment ---
+export interface AssessmentThreshold {
+	min: number;
+	max: number;
+	label: string;
+	color: string;
+}
+
+export interface AssessmentScoringConfig {
+	max_score: number;
+	thresholds: AssessmentThreshold[];
+	dimension_weights: Record<string, number>;
+}
+
+export interface AssessmentFieldScoringConfig {
+	weight: number;
+	dimension: string;
+	option_scores: Record<string, number>;
+}
+
+export interface AssessmentField {
+	id: string;
+	label: string;
+	key: string;
+	field_type: string;
+	is_required: boolean;
+	position: number;
+	config: AssessmentFieldScoringConfig;
+}
+
+export interface AssessmentForm {
+	id: string;
+	tenant_id: string;
+	name: string;
+	slug: string;
+	description: string;
+	is_multi_step: boolean;
+	submit_label: string;
+	status: string;
+	scoring_config: AssessmentScoringConfig;
+	fields: AssessmentField[];
+}
+
+export interface AssessmentRoadmapStep {
+	title: string;
+	description: string;
+	content_slug: string;
+	dimension: string;
+	priority: number;
+}
+
+export interface AssessmentResult {
+	total_score: number;
+	dimension_scores: Record<string, number>;
+	threshold_label: string;
+	roadmap: AssessmentRoadmapStep[];
+}
+
+// --- Section 72: Cost of Living Calculator ---
+export interface ColCity {
+	id: string;
+	title: string;
+	description: string;
+	geo_space_name: string;
+	geo_space_slug: string;
+	is_baseline: boolean;
+	last_updated: string;
+	position: number;
+}
+
+export interface ColCitiesListResponse {
+	cities: ColCity[];
+	total: number;
+	page: number;
+	limit: number;
+}
+
+export interface ColCityData {
+	id: string;
+	title: string;
+	geo_space_name: string;
+	is_baseline: boolean;
+	last_updated: string;
+	values: Record<string, string>;
+}
+
+export interface ColCategoryData {
+	key: string;
+	label: string;
+	values: Record<string, number>;
+	ratios: Record<string, number>;
+}
+
+export interface ColComparisonMatrix {
+	cities: ColCityData[];
+	categories: ColCategoryData[];
+	baseline_city_id: string;
+	overall_index: Record<string, number>;
+}
+
+// --- Section 73: Scholarship Finder ---
+export interface Scholarship {
+	guide_id: string;
+	title: string;
+	slug: string;
+	summary: string;
+	field_values: Record<string, string>;
+}
+
+export interface SavedScholarship {
+	id: string;
+	guide_id: string;
+	status: string;
+	notes: string;
+	remind_before_days: number;
+	last_reminded_at: string | null;
+	created_at: string;
+}
+
+// --- Section 74: Remittance Tracker ---
+export interface RemittanceProvider {
+	id: string;
+	name: string;
+	slug: string;
+	website_url?: string;
+	data_source: string;
+	is_active: boolean;
+	display_order: number;
+	created_at: string;
+}
+
+export interface RemittanceRate {
+	id: string;
+	provider_id: string;
+	provider_name: string;
+	provider_slug: string;
+	provider_website?: string;
+	send_currency: string;
+	receive_currency: string;
+	rate: number;
+	fee_flat?: number;
+	fee_pct?: number;
+	transfer_time?: string;
+	fetched_at: string;
+	is_manual: boolean;
+	source_url?: string;
+}
+
+export interface RemittanceBestRate {
+	provider_id: string;
+	provider_name: string;
+	rate: number;
+	receive_amount: number;
+}
+
+export interface RemittanceCalculation {
+	providers: RemittanceProviderCalc[];
+}
+
+export interface RemittanceProviderCalc {
+	provider_id: string;
+	provider_name: string;
+	rate: number;
+	receive_amount: number;
+	fee_flat: number;
+	total_cost: number;
+}
+
+export interface RemittanceHistoryPoint {
+	day: string;
+	max_rate: number;
+	min_rate: number;
+	avg_rate: number;
+}
+
+export interface RemittanceCorridor {
+	send_currency: string;
+	receive_currency: string;
+}
+
+export interface RemittanceAlert {
+	id: string;
+	send_currency: string;
+	receive_currency: string;
+	target_rate: number;
+	direction: string;
+	is_active: boolean;
+	last_triggered_at?: string;
+	created_at: string;
+}
+
+// --- Section 63: Jobs Board ---
+export interface JobListing {
+	id: string;
+	title: string;
+	slug: string;
+	summary: string;
+	field_values: Record<string, string>;
+	published_at: string;
+}
+
+export interface JobDetail {
+	id: string;
+	title: string;
+	slug: string;
+	summary: string;
+	body: string;
+	field_values: Record<string, string>;
+	published_at: string;
+}
+
+export interface JobApplication {
+	id: string;
+	job_id: string;
+	job_title?: string;
+	job_slug?: string;
+	applicant_id?: string;
+	applicant_username?: string;
+	applicant_email?: string;
+	status: string;
+	employer_notes?: string;
+	applied_at: string;
+	status_updated_at?: string;
+}
+
+// --- Section 64: Gamification ---
+export interface Badge {
+	id: string;
+	slug: string;
+	name: string;
+	description: string;
+	trigger_type: string;
+	trigger_value: number;
+	trigger_activity_key: string;
+	is_active: boolean;
+	is_system: boolean;
+	display_order: number;
+	created_at: string;
+}
+
+export interface EarnedBadge {
+	id: string;
+	slug: string;
+	name: string;
+	description: string;
+	icon_media_id: string | null;
+	awarded_at: string;
+}
+
+export interface Challenge {
+	id: string;
+	slug: string;
+	name: string;
+	description: string;
+	start_date: string;
+	end_date: string;
+	reward_points: number;
+	is_active: boolean;
+}
+
+export interface LeaderboardEntry {
+	user_id: string;
+	username: string;
+	points: number;
+	rank: number;
+}
+
+// --- Section 60: Referral System ---
+export interface ReferralStats {
+	code: string;
+	click_count: number;
+	total: number;
+	credited: number;
+	pending: number;
+}
+
+export interface ReferralHistoryEntry {
+	id: string;
+	referral_code: string;
+	status: string;
+	created_at: string;
+}
+
+// --- Section 62: Newsletter ---
+export interface NewsletterSubscriber {
+	id: string;
+	tenant_id: string;
+	email: string;
+	user_id: string | null;
+	status: string;
+	created_at: string;
+	digest_enabled: boolean;
+	campaign_enabled: boolean;
+	subscribed_at: string;
+	unsubscribe_token: string | null;
+}
+
+// --- Section 65: Content Import ---
+export interface ContentImport {
+	id: string;
+	tenant_id: string;
+	user_id: string;
+	source_type: string;
+	source_url: string | null;
+	status: string;
+	total_items: number;
+	imported_count: number;
+	failed_count: number;
+	error_log: number[];
+	created_at: string;
+	completed_at: string | null;
+}
+
+// --- Section 67: Travel Search ---
+export interface TravelFlightResult {
+	provider: string;
+	price: number;
+	currency: string;
+	departure_time: string;
+	arrival_time: string;
+	airline: string;
+	flight_number: string;
+	stops: number;
+	duration: string;
+	booking_url: string;
+}
+
+export interface TravelHotelResult {
+	provider: string;
+	name: string;
+	price: number;
+	currency: string;
+	check_in: string;
+	check_out: string;
+	star_rating: number;
+	address: string;
+	image_url: string;
+	booking_url: string;
+}
+
+export interface TravelSearchResponse {
+	results: TravelFlightResult[] | TravelHotelResult[];
+	cache_hit: boolean;
+	search_time_ms: number;
+}

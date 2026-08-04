@@ -21,6 +21,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/jedafe/japa/internal/config"
+	"github.com/jedafe/japa/internal/worker"
 )
 
 // EmbeddingGenerator is the interface for generating vector embeddings via
@@ -269,7 +270,7 @@ func (s *Service) QueueReindex(ctx context.Context, tenantID pgtype.UUID) error 
 				continue
 			}
 
-			if err := s.enqueuer.Enqueue("content:generate_embedding", payload); err != nil {
+			if err := s.enqueuer.Enqueue(worker.TypeAIGenerateContentEmbedding, payload); err != nil {
 				slog.Warn("rag: reindex: enqueue failed",
 					"content_id", id.ID.String(), "error", err)
 				continue

@@ -1,0 +1,180 @@
+import type { Handle } from '@sveltejs/kit';
+import { building } from '$app/environment';
+import { env } from '$env/dynamic/private';
+import { apiContext, apiGet, ApiError } from '$lib/server/api';
+import type { SessionUser, Locale, ToolSurface } from '$lib/types';
+
+/**
+ * ADR-086 / §78: detect which tool surface the request host maps to.
+ *
+ * The canonical hub host is `tools.japaconnect.com`. Each tool can have its own
+ * subdomain (e.g. `remittance.japaconnect.com`) or custom domain (e.g.
+ * `japacalculator.com`), configured via `system_settings` keys:
+ *   {tool}.subdomain  → {subdomain}.japaconnect.com
+ *   {tool}.custom_domain → exact host match
+ *
+ * The host→surface mapping is built from system_settings on each request. If no
+ * tool host matches, the surface defaults to 'hub'. Additional hub hosts can be
+ * configured via the JC_TOOLS_HUB_HOSTS env var (comma-separated).
+ *
+ * Ref: ADR-086 (multi-surface architecture), §78 (Tools Web Surface),
+ *      ADR-063 (Japa University host-detection precedent).
+ */
+
+/** system_settings keys that control per-tool domains (ADR-086). */
+const TOOL_SETTINGS_KEYS: Array<{ key: string; surface: ToolSurface }> = [
+	{ key: 'remittance', surface: 'remittance' },
+	{ key: 'scholarship_finder', surface: 'scholarships' },
+	{ key: 'col_calculator', surface: 'cost-of-living' },
+	{ key: 'checklist', surface: 'visa-checklist' },
+	{ key: 'assessment', surface: 'readiness' },
+	{ key: 'japabot', surface: 'japabot' }
+];
+
+/** Default subdomains per tool (from system-settings-catalog.md). */
+const DEFAULT_SUBDOMAINS: Record<string, string> = {
+	remittance: 'remittance',
+	scholarship_finder: 'scholarships',
+	col_calculator: 'cost-of-living',
+	checklist: 'visa-checklist',
+	assessment: 'readiness',
+	japabot: 'japabot'
+};
+
+/**
+ * Build the host→surface map from system_settings. Custom domains take
+ * precedence (exact match), then subdomains ({sub}.japaconnect.com).
+ *
+ * The settings are fetched from GET /site/settings/public — the same public
+ * endpoint used by the Learn/Main apps. Tool domain keys are included in the
+ * public settings payload because they only expose domain configuration, not
+ * secrets.
+ */
+async function resolveToolSurface(
+	host: string,
+	ctx: ReturnType<typeof apiContext>
+): Promise<ToolSurface> {
+	const canonicalHub = 'tools.japaconnect.com';
+	const extraHubHosts =
+		env.JC_TOOLS_HUB_HOSTS?.split(',')
+			.map((h) => h.trim().toLowerCase())
+			.filter(Boolean) ?? [];
+
+	if (host === canonicalHub || extraHubHosts.includes(host)) {
+		return 'hub';
+	}
+
+	let settings: Record<string, unknown> = {};
+	try {
+		settings = (await apiGet<Record<string, unknown>>(ctx, '/site/settings/public')) ?? {};
+	} catch {
+		// Backend unreachable — fall back to default subdomains.
+		settings = {};
+	}
+
+	for (const { key, surface } of TOOL_SETTINGS_KEYS) {
+		const customDomain = settings[`${key}.custom_domain`] as string | undefined;
+		if (customDomain && customDomain.toLowerCase() === host) {
+			return surface;
+		}
+	}
+
+	for (const { key, surface } of TOOL_SETTINGS_KEYS) {
+		const subdomain = (settings[`${key}.subdomain`] as string | undefined) ?? DEFAULT_SUBDOMAINS[key];
+		if (`${subdomain}.japaconnect.com` === host) {
+			return surface;
+		}
+	}
+
+	return 'hub';
+}
+
+export const handle: Handle = async ({ event, resolve }) => {
+	// Hostname excludes the port; the backend resolves the tenant from it.
+	event.locals.tenantHost = event.url.hostname;
+	event.locals.token = event.cookies.get('jc_token') ?? null;
+
+	// Theme: prefer the user's cookie, then fall back to the control panel
+	// appearance.dark_mode_default setting, then 'light'.
+	// Ref: conventions/system-settings-catalog.md (appearance.dark_mode_default)
+	const themeCookie = event.cookies.get('jc_theme');
+	if (themeCookie === 'dark' || themeCookie === 'light') {
+		event.locals.theme = themeCookie;
+	} else {
+		try {
+			const settings =
+				(await apiGet<Record<string, unknown>>(apiContext(event), '/site/settings/public')) ?? {};
+			event.locals.theme = settings['appearance.dark_mode_default'] === true ? 'dark' : 'light';
+		} catch {
+			event.locals.theme = 'light';
+		}
+	}
+
+	// Locale: prefer the user's cookie, then fall back to the control panel
+	// i18n.default_language setting, then 'en'.
+	const localeCookie = event.cookies.get('jc_locale');
+	if (localeCookie === 'fr' || localeCookie === 'en') {
+		event.locals.locale = localeCookie as Locale;
+	} else {
+		try {
+			const settings =
+				(await apiGet<Record<string, unknown>>(apiContext(event), '/site/settings/public')) ?? {};
+			const defaultLang = (settings['i18n.default_language'] as string | undefined) ?? 'en';
+			event.locals.locale = (defaultLang === 'fr' ? 'fr' : 'en') as Locale;
+		} catch {
+			event.locals.locale = 'en' as Locale;
+		}
+	}
+
+	event.locals.user = null;
+
+	// ADR-086 / §78: resolve the tool surface from the request host.
+	event.locals.toolSurface = await resolveToolSurface(event.url.hostname, apiContext(event));
+
+	// Resolve the session. The Tools app is public: an absent or invalid token
+	// simply means "guest" — never a redirect to login. Progress-saving and
+	// alert-creation gate behind auth (with registration prompts).
+	if (event.locals.token && !building) {
+		try {
+			event.locals.user = await apiGet<SessionUser>(apiContext(event), '/me');
+		} catch (err) {
+			if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
+				// Stale credential — drop it and continue as a guest.
+				event.cookies.delete('jc_token', { path: '/' });
+				event.locals.token = null;
+			}
+			// Any other failure (backend unreachable) also degrades to guest.
+		}
+	}
+
+	// Fetch the double-submit CSRF token for authenticated users so server-side
+	// mutations (form actions, apiPost/apiPatch/apiDelete) can attach the
+	// X-CSRF-Token header. Also mirror the csrf_token cookie onto the browser
+	// response so client-side CSR mutations can echo it back.
+	// Ref: japa-bugs-hunters.md §5.2 (CSRF) — audit finding C1.
+	event.locals.csrfToken = null;
+	if (event.locals.token && !building) {
+		try {
+			const csrf = await apiGet<{ csrfToken: string }>(apiContext(event), '/csrf');
+			event.locals.csrfToken = csrf?.csrfToken ?? null;
+			if (event.locals.csrfToken) {
+				event.cookies.set('csrf_token', event.locals.csrfToken, {
+					path: '/',
+					httpOnly: false,
+					secure: true,
+					sameSite: 'lax'
+				});
+			}
+		} catch {
+			event.locals.csrfToken = null;
+		}
+	}
+
+	return resolve(event, {
+		transformPageChunk: ({ html }) =>
+			html
+				.replace('%jc.theme%', event.locals.theme)
+				.replace('%jc.theme-color%', event.locals.theme === 'dark' ? '#0a0a0a' : '#3b49df')
+				.replace('lang="en"', `lang="${event.locals.locale}"`)
+	});
+};

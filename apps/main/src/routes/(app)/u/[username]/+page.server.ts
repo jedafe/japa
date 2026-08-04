@@ -10,7 +10,8 @@ import type {
 	ProfileMedia,
 	ProfileLike,
 	ProfileAnalytics,
-	FeedItem
+	FeedItem,
+	EarnedBadge
 } from '$lib/types';
 
 /**
@@ -63,7 +64,7 @@ export const load: PageServerLoad = async (event) => {
 	// /users/{id}/<tab> endpoint (JEOS api-routes-catalog §334–340). The
 	// profile timeline feed (/feed/profile/{id}) is fetched alongside the
 	// tabs so the profile can show a ranked/curated feed of the user's posts.
-	const [posts, replies, media, spaces, certificates, likes, feed, analytics, isFollowing] = await Promise.all([
+	const [posts, replies, media, spaces, certificates, likes, feed, analytics, isFollowing, badges] = await Promise.all([
 		apiList<ProfilePost>(ctx, `/users/${userId}/content`).then((r) => r.items).catch(() => []),
 		apiList<ProfileReply>(ctx, `/users/${userId}/replies`).then((r) => r.items).catch(() => []),
 		apiList<ProfileMedia>(ctx, `/users/${userId}/media`).then((r) => r.items).catch(() => []),
@@ -78,7 +79,9 @@ export const load: PageServerLoad = async (event) => {
 		isOwnProfile
 			? apiGet<ProfileAnalytics>(ctx, `/users/${userId}/analytics`).catch(() => null)
 			: Promise.resolve(null),
-		initiallyFollowing
+		initiallyFollowing,
+		// Phase 34.03 — earned badges (Section 64, ADR-080). Public route.
+		apiList<EarnedBadge>(ctx, `/users/${username}/badges`).then((r) => r.items).catch(() => [])
 	]);
 
 	return {
@@ -93,6 +96,7 @@ export const load: PageServerLoad = async (event) => {
 		likes,
 		feed,
 		analytics,
+		badges,
 		jsonLd
 	};
 };
