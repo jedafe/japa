@@ -5,7 +5,6 @@
 	import FeedList from '$lib/components/feed/FeedList.svelte';
 	import FeedUpdatePill from '$lib/components/feed/FeedUpdatePill.svelte';
 	import { LandingRenderer } from '@japaconnect/landing-blocks';
-	import GuestLanding from '$lib/components/pagebuilder/GuestLanding.svelte';
 	import { t } from '$lib/i18n';
 	import type { CardStyleConfig } from '$lib/feed/cardStyle';
 	import type { PageData } from './$types';
@@ -17,20 +16,15 @@
 
 	// SEO: title/description differ for the landing page vs the authed feed.
 	const isLanding = $derived(!!data.landing);
-	const isGuestLanding = $derived(!!data.guestLanding);
 	const title = $derived(
 		isLanding
 			? (data.landing?.title ?? t('app.name'))
-			: isGuestLanding
-				? t('landing.title', 'JapaConnect — The Nigerian Diaspora Community')
-				: t('home.title', 'JapaConnect — Explore')
+			: t('home.title', 'JapaConnect — Explore')
 	);
 	const description = $derived(
 		isLanding
 			? (data.landing?.description ?? t('landing.description', 'Stories, discussions, and guides for Nigerians abroad.'))
-			: isGuestLanding
-				? t('landing.description', 'Stories, discussions, comparisons, and guides for Nigerians navigating life abroad.')
-				: t('home.description', 'Explore the Nigerian diaspora community: stories, discussions, comparisons, and guides.')
+			: t('home.description', 'Explore the Nigerian diaspora community: stories, discussions, comparisons, and guides.')
 	);
 	const jsonLd = $derived(
 		JSON.stringify({
@@ -56,15 +50,8 @@
 </svelte:head>
 
 {#if data.landing}
-	<!-- ADR-058 §5 Exception #3: guest Page Builder landing page -->
+	<!-- ADR-058 §5 Exception #3: guest Page Builder landing page (or default seed) -->
 	<LandingRenderer blocks={data.landing.blocks} />
-{:else if data.guestLanding}
-	<!-- ADR-058 §5 fallback: default Hashnode-style guest landing -->
-	<GuestLanding
-		exploreItems={data.guestLanding.exploreItems}
-		blogPosts={data.guestLanding.blogPosts}
-		destinations={data.guestLanding.destinations}
-	/>
 {:else}
 	<!-- Authenticated home timeline in the app shell -->
 	<div class="mx-auto w-full max-w-full">
