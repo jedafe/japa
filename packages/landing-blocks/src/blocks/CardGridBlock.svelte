@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { CardGridProps } from '../types';
+  import type { Component } from 'svelte';
   import * as LucideIcons from 'lucide-svelte';
 
   interface Props {
@@ -16,10 +17,10 @@
   );
 
   // Resolve Lucide icon by name.
-  function getIcon(name?: string): LucideIcons.LucideIcon | null {
+  function getIcon(name?: string): Component | null {
     if (!name) return null;
     const found = (LucideIcons as Record<string, unknown>)[name];
-    return (found as LucideIcons.LucideIcon) ?? null;
+    return (found as Component) ?? null;
   }
 </script>
 

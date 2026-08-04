@@ -11,7 +11,8 @@ import EntityCollectionBlock from '../blocks/EntityCollectionBlock.svelte';
 import EntityFeatureBlock from '../blocks/EntityFeatureBlock.svelte';
 
 export interface BlockMeta {
-  component: Component;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  component: Component<any>;
   icon: string;
   label: string;
   category: string;

@@ -31,8 +31,10 @@
   });
 </script>
 
-<section
+<div
   class="relative overflow-hidden px-6 py-16"
+  role="region"
+  aria-label="Carousel"
   onmouseenter={() => (paused = props.pause_on_hover)}
   onmouseleave={() => (paused = false)}
 >
@@ -80,4 +82,4 @@
       </div>
     {/if}
   </div>
-</section>
+</div>
