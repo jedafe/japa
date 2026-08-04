@@ -20,3 +20,8 @@ export { fetchEntityCollection, fetchEntityFeature, fetchRemittanceRates, TOOL_R
 export type { FetchContext, JobSummary, ScholarshipSummary, UniversitySummary, SpaceSummary, BlogSummary, FeedItemSummary, RemittanceRate, ToolSummary } from './data/types';
 
 export { landingPalettes, type PaletteDefinition } from './palettes/landingPalettes';
+
+export { blockRegistry, type BlockMeta } from './render/blockRegistry';
+export { default as LandingRenderer } from './render/LandingRenderer.svelte';
+export { default as BlockShell } from './shell/BlockShell.svelte';
+export { default as Reveal } from './shell/Reveal.svelte';
