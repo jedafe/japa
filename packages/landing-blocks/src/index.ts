@@ -18,3 +18,5 @@ export { resolveString, resolveGeoCopy } from './geo/resolveGeoCopy';
 
 export { fetchEntityCollection, fetchEntityFeature, fetchRemittanceRates, TOOL_REGISTRY } from './data/entityFetchers';
 export type { FetchContext, JobSummary, ScholarshipSummary, UniversitySummary, SpaceSummary, BlogSummary, FeedItemSummary, RemittanceRate, ToolSummary } from './data/types';
+
+export { landingPalettes, type PaletteDefinition } from './palettes/landingPalettes';
