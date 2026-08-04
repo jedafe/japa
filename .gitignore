@@ -18,11 +18,11 @@
 .env.local
 .env.*.local
 
-# Docker data volumes
-data/
-postgres-data/
-valkey-data/
-meili-data/
+# Docker data volumes (anchored to repo root — don't match src/data directories)
+/data/
+/postgres-data/
+/valkey-data/
+/meili-data/
 
 # Node / SvelteKit (frontend apps)
 node_modules/
