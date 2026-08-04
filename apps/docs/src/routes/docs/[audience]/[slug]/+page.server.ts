@@ -24,7 +24,12 @@ export const load: PageServerLoad = async (event) => {
 	const ctx = apiContext(event);
 	let page: DocPage;
 	try {
-		page = await apiGet<DocPage>(ctx, `/docs/${audience}/${slug}`);
+		// Pass the user's locale as ?lang= so the backend can return a
+		// translated version if available (Ref: §18, §44 ROADMAP 08.03).
+		// If no translation exists, the API returns the English version
+		// with a content_lang flag.
+		const langParam = event.locals.locale === 'fr' ? '?lang=fr' : '';
+		page = await apiGet<DocPage>(ctx, `/docs/${audience}/${slug}${langParam}`);
 	} catch (err) {
 		if (err instanceof ApiError) {
 			if (err.status === 403) throw redirect(308, '/docs/access-denied');
@@ -49,12 +54,17 @@ export const load: PageServerLoad = async (event) => {
 		})
 	});
 
+	// Gated audiences get noindex (Ref: §26 ROADMAP 07.02).
+	const isGated = audience !== 'users' && audience !== 'api';
+
 	return {
 		page,
 		html,
 		toc,
 		audience,
 		audienceLabelKey: AUDIENCE_LABEL_KEY[audience],
+		isGated,
+		locale: event.locals.locale,
 		meta
 	};
 };

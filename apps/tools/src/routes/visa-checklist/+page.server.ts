@@ -1,5 +1,6 @@
 import type { PageServerLoad } from './$types';
 import { apiContext, apiGet, apiGetOrNull } from '$lib/server/api';
+import { getTool, isToolEnabled } from '$lib/tools/registry';
 import type { ChecklistSelector, ChecklistGuide, ChecklistProgress } from '$lib/types';
 
 /**
@@ -14,6 +15,13 @@ import type { ChecklistSelector, ChecklistGuide, ChecklistProgress } from '$lib/
  * Ref: §70 (Visa Document Checklist), ROADMAP-TOOLS 02.02.
  */
 export const load: PageServerLoad = async (event) => {
+	// Gate: skip all backend calls when checklist.enabled is false.
+	// Ref: conventions/system-settings-catalog.md, Rule 3.
+	const tool = getTool('visa-checklist')!;
+	if (!isToolEnabled(tool, event.locals.siteSettings)) {
+		return { enabled: false, tool, selector: null, guide: null, progress: null, user: event.locals.user };
+	}
+
 	const ctx = apiContext(event);
 
 	let selector: ChecklistSelector | null = null;
@@ -46,6 +54,8 @@ export const load: PageServerLoad = async (event) => {
 	}
 
 	return {
+		enabled: true,
+		tool,
 		selector,
 		guide,
 		progress,

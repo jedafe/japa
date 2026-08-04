@@ -1,9 +1,11 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
 	import { page } from '$app/state';
+	import { goto } from '$app/navigation';
 	import { t } from '$lib/i18n';
 	import { Users, Search, UserCheck, ShieldX, ChevronLeft, ChevronRight } from 'lucide-svelte';
-	import { EmptyState, FollowButton } from '$lib/components/ui';
+	import { EmptyState, FollowButton, SearchInput, type SearchSuggestion } from '$lib/components/ui';
+	import { api } from '$lib/api/client';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -27,12 +29,12 @@
 	let selectedProfileType = $state(untrack(() => data.profileType));
 	const searchPlaceholder = $derived(t('users.search_placeholder', 'Search people…'));
 
-	const profileTypes = [
-		{ value: '', label: 'All' },
-		{ value: 'personal', label: 'Personal' },
-		{ value: 'professional', label: 'Professional' },
-		{ value: 'business', label: 'Business' }
-	];
+	const profileTypes = $derived([
+		{ value: '', label: t('users.profile_type_all', 'All') },
+		{ value: 'personal', label: t('users.profile_type_personal', 'Personal') },
+		{ value: 'professional', label: t('users.profile_type_professional', 'Professional') },
+		{ value: 'business', label: t('users.profile_type_business', 'Business') }
+	]);
 
 	function buildHref(pageNum: number): string {
 		const params = new URLSearchParams();
@@ -48,7 +50,21 @@
 		if (query.trim()) params.set('q', query.trim());
 		if (selectedProfileType) params.set('profile_type', selectedProfileType);
 		const qs = params.toString();
-		window.location.href = qs ? `/users?${qs}` : '/users';
+		goto(qs ? `/users?${qs}` : '/users');
+	}
+
+	async function userSearchFetcher(q: string): Promise<SearchSuggestion[]> {
+		const res = await api.get<{ data: { results: { type: string; id: string; title: string; excerpt?: string; url: string }[] } }>(
+			`/search?q=${encodeURIComponent(q)}&type=user&limit=8`
+		);
+		if (res.error || !res.data) return [];
+		return (res.data.data?.results ?? []).map((r) => ({
+			id: r.id,
+			title: r.title,
+			url: r.url,
+			excerpt: r.excerpt,
+			type: r.type
+		}));
 	}
 </script>
 
@@ -76,19 +92,12 @@
 		</p>
 
 		<form class="mt-3" action="/users" method="get" role="search">
-			<div
-				class="flex items-center gap-2 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 focus-within:border-[var(--color-primary)]"
-			>
-				<Search size={16} class="text-[var(--color-muted)]" />
-				<input
-					type="search"
-					name="q"
-					placeholder={searchPlaceholder}
-					aria-label={t('users.heading', 'People')}
-					bind:value={query}
-					class="w-full bg-transparent text-sm text-[var(--color-text)] outline-none placeholder:text-[var(--color-muted)]"
-				/>
-			</div>
+			<SearchInput
+				bind:value={query}
+				placeholder={searchPlaceholder}
+				ariaLabel={t('users.heading', 'People')}
+				fetcher={userSearchFetcher}
+			/>
 			<!-- Hidden fields to preserve filters on submit -->
 			{#if selectedProfileType}
 				<input type="hidden" name="profile_type" value={selectedProfileType} />

@@ -8,5 +8,8 @@ export { default as FollowButton } from './FollowButton.svelte';
 export { default as SpaceJoinButton } from './SpaceJoinButton.svelte';
 export { default as PaginationControls } from './PaginationControls.svelte';
 export { default as EntityCard } from './EntityCard.svelte';
+export { default as SelectField } from './SelectField.svelte';
+export { default as SearchInput } from './SearchInput.svelte';
+export type { SearchSuggestion } from './SearchInput.svelte';
 export { resolveIcon } from './icons';
 export type { IconComponent } from './icons';

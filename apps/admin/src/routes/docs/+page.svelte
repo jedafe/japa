@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { t } from '$lib/stores/i18n.svelte';
+	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import FilterBar from '$lib/components/FilterBar.svelte';
 	import { Select } from '$lib/components/ui/select';
 	import { DataTable } from '$lib/components/ui/data-table';
@@ -7,6 +8,11 @@
 	import { docsApi } from '$lib/api';
 	import { Dialog } from 'bits-ui';
 	import { Pencil, Trash2, Send, FileDown } from 'lucide-svelte';
+
+	// Ref: jc-admin-develop — RBAC gates for docs management
+	const canEdit = $derived(hasPermission('docs.page.edit'));
+	const canDelete = $derived(hasPermission('docs.page.delete'));
+	const canPublish = $derived(hasPermission('docs.page.publish'));
 
 	type DocPage = {
 		id: string;
@@ -190,6 +196,7 @@
 
 <FilterBar filters={filterDefs} onApply={handleFilter} />
 
+{#if canEdit}
 <div class="mb-4 flex justify-end">
 	<button
 		class="rounded-md px-4 py-2 text-sm font-medium text-white transition-colors"
@@ -199,6 +206,7 @@
 		{t('docs.new_doc_page')}
 	</button>
 </div>
+{/if}
 
 {#if loading}
 	<p class="py-8 text-center text-sm" style="color: var(--color-muted)">{t('docs.loading')}</p>
@@ -286,24 +294,30 @@
 
 {#snippet DocActionsCell({ row }: { value: any; row: DocPage })}
 	<div class="flex items-center gap-1">
-		<Button variant="ghost" size="sm" onclick={() => openEdit(row)} style="color: var(--color-info)">
-			<Pencil class="h-3.5 w-3.5" />
-		</Button>
-		<Button
-			variant="ghost"
-			size="sm"
-			onclick={() => togglePublish(row)}
-			style={row.status === 'published' ? 'color: var(--color-warning)' : 'color: var(--color-success)'}
-		>
-			{#if row.status === 'published'}
-				<FileDown class="h-3.5 w-3.5" />
-			{:else}
-				<Send class="h-3.5 w-3.5" />
-			{/if}
-		</Button>
-		<Button variant="ghost" size="sm" onclick={() => confirmDelete(row.id)} style="color: var(--color-danger)">
-			<Trash2 class="h-3.5 w-3.5" />
-		</Button>
+		{#if canEdit}
+			<Button variant="ghost" size="sm" onclick={() => openEdit(row)} style="color: var(--color-info)">
+				<Pencil class="h-3.5 w-3.5" />
+			</Button>
+		{/if}
+		{#if canPublish}
+			<Button
+				variant="ghost"
+				size="sm"
+				onclick={() => togglePublish(row)}
+				style={row.status === 'published' ? 'color: var(--color-warning)' : 'color: var(--color-success)'}
+			>
+				{#if row.status === 'published'}
+					<FileDown class="h-3.5 w-3.5" />
+				{:else}
+					<Send class="h-3.5 w-3.5" />
+				{/if}
+			</Button>
+		{/if}
+		{#if canDelete}
+			<Button variant="ghost" size="sm" onclick={() => confirmDelete(row.id)} style="color: var(--color-danger)">
+				<Trash2 class="h-3.5 w-3.5" />
+			</Button>
+		{/if}
 	</div>
 {/snippet}
 

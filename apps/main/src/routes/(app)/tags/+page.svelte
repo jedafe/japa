@@ -1,9 +1,11 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
 	import { page } from '$app/state';
+	import { goto } from '$app/navigation';
 	import { t } from '$lib/i18n';
 	import { Hash, Search, Users, ShieldX, ChevronLeft, ChevronRight } from 'lucide-svelte';
-	import { EmptyState, FollowButton } from '$lib/components/ui';
+	import { EmptyState, FollowButton, SearchInput, type SearchSuggestion } from '$lib/components/ui';
+	import { api } from '$lib/api/client';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -27,12 +29,12 @@
 	let selectedSort = $state(untrack(() => data.sort));
 	const searchPlaceholder = $derived(t('tags.search_placeholder', 'Search tags…'));
 
-	const sortOptions = [
-		{ value: '', label: 'Newest' },
-		{ value: 'popular', label: 'Popular' },
-		{ value: 'followers', label: 'Most Followed' },
-		{ value: 'content', label: 'Most Content' }
-	];
+	const sortOptions = $derived([
+		{ value: '', label: t('tags.sort_newest', 'Newest') },
+		{ value: 'popular', label: t('tags.sort_popular', 'Popular') },
+		{ value: 'followers', label: t('tags.sort_followers', 'Most Followed') },
+		{ value: 'content', label: t('tags.sort_content', 'Most Content') }
+	]);
 
 	function buildHref(pageNum: number): string {
 		const params = new URLSearchParams();
@@ -48,7 +50,21 @@
 		if (query.trim()) params.set('q', query.trim());
 		if (selectedSort) params.set('sort', selectedSort);
 		const qs = params.toString();
-		window.location.href = qs ? `/tags?${qs}` : '/tags';
+		goto(qs ? `/tags?${qs}` : '/tags');
+	}
+
+	async function tagSearchFetcher(q: string): Promise<SearchSuggestion[]> {
+		const res = await api.get<{ data: { results: { type: string; id: string; title: string; excerpt?: string; url: string }[] } }>(
+			`/search?q=${encodeURIComponent(q)}&type=tag&limit=8`
+		);
+		if (res.error || !res.data) return [];
+		return (res.data.data?.results ?? []).map((r) => ({
+			id: r.id,
+			title: r.title,
+			url: r.url,
+			excerpt: r.excerpt,
+			type: r.type
+		}));
 	}
 </script>
 
@@ -76,19 +92,12 @@
 		</p>
 
 		<form class="mt-3" action="/tags" method="get" role="search">
-			<div
-				class="flex items-center gap-2 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 focus-within:border-[var(--color-primary)]"
-			>
-				<Search size={16} class="text-[var(--color-muted)]" />
-				<input
-					type="search"
-					name="q"
-					placeholder={searchPlaceholder}
-					aria-label={t('tags.heading', 'Tags')}
-					bind:value={query}
-					class="w-full bg-transparent text-sm text-[var(--color-text)] outline-none placeholder:text-[var(--color-muted)]"
-				/>
-			</div>
+			<SearchInput
+				bind:value={query}
+				placeholder={searchPlaceholder}
+				ariaLabel={t('tags.heading', 'Tags')}
+				fetcher={tagSearchFetcher}
+			/>
 			{#if selectedSort}
 				<input type="hidden" name="sort" value={selectedSort} />
 			{/if}

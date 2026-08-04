@@ -3,8 +3,12 @@
 	import Modal from '$lib/components/Modal.svelte';
 	import { api } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
+	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { DataTable } from '$lib/components/ui/data-table';
 	import { Button } from '$lib/components/ui/button';
+
+	// Ref: jc-admin-develop — RBAC gate for rule management
+	const canManage = $derived(hasPermission('space.rules.manage'));
 
 	type Rule = {
 		id: string;
@@ -160,6 +164,7 @@
 {/snippet}
 
 {#snippet RuleActionsCell({ value, row }: { value: any; row: Rule })}
+	{#if canManage}
 	<div class="flex items-center gap-1">
 		<Button variant="ghost" size="sm" onclick={() => openEdit(row)} style="color: var(--color-info)">
 			{t('common.edit')}
@@ -168,6 +173,7 @@
 			{t('common.delete')}
 		</Button>
 	</div>
+	{/if}
 {/snippet}
 
 <svelte:head>
@@ -179,6 +185,7 @@
 		<h1 class="text-2xl font-bold tracking-tight">{t('space_rules.title')}</h1>
 		<p class="mt-1 text-sm" style="color: var(--color-muted)">{t('space_rules.description')}</p>
 	</div>
+	{#if canManage}
 	<button
 		class="rounded-md px-4 py-2 text-sm font-medium text-white transition-colors"
 		style="background-color: var(--color-primary)"
@@ -186,6 +193,7 @@
 	>
 		{t('space_rules.add')}
 	</button>
+	{/if}
 </div>
 
 {#if errorMessage}

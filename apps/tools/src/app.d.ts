@@ -30,6 +30,12 @@ declare global {
 			 * X-CSRF-Token. Null for guests or when the backend is unreachable.
 			 */
 			csrfToken: string | null;
+			/**
+			 * Public site settings fetched once in hooks.server.ts and reused
+			 * by layout/page load functions to avoid redundant backend fetches.
+			 * Ref: §4.1 (performance — eliminate duplicate /site/settings/public).
+			 */
+			siteSettings: Record<string, unknown>;
 		}
 		interface PageData {
 			user: SessionUser | null;

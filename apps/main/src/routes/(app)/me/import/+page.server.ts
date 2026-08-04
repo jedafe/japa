@@ -1,7 +1,7 @@
 import type { PageServerLoad, Actions } from './$types';
 import { apiContext, apiList, apiPost, ApiError } from '$lib/server/api';
 import { redirect } from '@sveltejs/kit';
-import type { ContentImport } from '$lib/types';
+import type { ContentImport, ImportSource } from '$lib/types';
 
 /**
  * Content Import page at /me/import (Section 65, ADR-083).
@@ -24,7 +24,16 @@ export const load: PageServerLoad = async (event) => {
 		imports = [];
 	}
 
-	return { imports };
+	// Fetch the allowed source types from the backend so the frontend never
+	// hardcodes the enum (Rule 16). Degrades to an empty list on failure.
+	let sources: ImportSource[] = [];
+	try {
+		sources = (await apiList<ImportSource>(ctx, '/me/imports/sources')).items;
+	} catch {
+		sources = [];
+	}
+
+	return { imports, sources };
 };
 
 export const actions: Actions = {

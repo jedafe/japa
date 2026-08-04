@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { page } from '$app/state';
+	import { goto } from '$app/navigation';
 	import { t } from '$lib/i18n';
 	import { Select, Tabs } from 'bits-ui';
 	import {
@@ -95,7 +96,7 @@
 			value={data.window}
 			onValueChange={(v) => {
 				const w = v as TrendingWindow;
-				if (w) window.location.href = windowHref(w);
+				if (w) goto(windowHref(w));
 			}}
 		>
 			<Select.Trigger
@@ -125,7 +126,7 @@
 
 	<!-- Tab bar — Bits UI Tabs (audit H6) -->
 	<div class="border-b border-[var(--color-border)]">
-		<Tabs.Root value={data.tab} onValueChange={(v) => { if (v && v !== data.tab) window.location.href = tabHref(v); }}>
+		<Tabs.Root value={data.tab} onValueChange={(v) => { if (v && v !== data.tab) goto(tabHref(v)); }}>
 			<Tabs.List class="flex gap-1 px-4">
 				{#each tabs as tab (tab.id)}
 					<Tabs.Trigger

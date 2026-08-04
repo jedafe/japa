@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
-	import { Trophy, Lock, Calendar, Gift } from 'lucide-svelte';
+	import { Trophy, Lock, Calendar, Gift, CheckCircle2 } from 'lucide-svelte';
 	import { EmptyState } from '$lib/components/ui';
 	import { RelativeTime } from '$lib/components/ui';
 	import type { Challenge } from '$lib/types';
@@ -14,8 +14,19 @@
 		t('challenges.description', 'Compete in community challenges and earn rewards.')
 	);
 
-	const challenges = $state<Challenge[]>(data.challenges);
-	const disabled = $state(data.disabled);
+	const challenges = $derived<Challenge[]>(data.challenges);
+	const disabled = $derived(data.disabled);
+	const authed = $derived(data.authed);
+	const myProgress = $derived<Record<string, { target_count: number; current_count: number; completed: boolean }>>(
+		Object.fromEntries((data.myProgress ?? []).map((p) => [p.id, p]))
+	);
+
+	// Progress percentage for a challenge — 0 if no progress data yet.
+	function progressPct(ch: Challenge): number {
+		const p = myProgress[ch.id];
+		if (!p || p.target_count === 0) return 0;
+		return Math.min(100, Math.round((p.current_count / p.target_count) * 100));
+	}
 </script>
 
 <svelte:head>
@@ -55,10 +66,16 @@
 		<div class="p-4">
 			<div class="space-y-3">
 				{#each challenges as ch (ch.id)}
+					{@const prog = myProgress[ch.id]}
 					<div class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 						<div class="flex items-start justify-between gap-3">
 							<div class="min-w-0 flex-1">
-								<h3 class="text-sm font-medium text-[var(--color-text)]">{ch.name}</h3>
+								<div class="flex items-center gap-2">
+									<h3 class="text-sm font-medium text-[var(--color-text)]">{ch.name}</h3>
+									{#if prog?.completed}
+										<CheckCircle2 size={14} class="shrink-0 text-[var(--color-success)]" />
+									{/if}
+								</div>
 								{#if ch.description}
 									<p class="mt-1 text-xs text-[var(--color-muted)]">{ch.description}</p>
 								{/if}
@@ -74,6 +91,26 @@
 								{ch.reward_points} {t('gamification.points', 'pts')}
 							</span>
 						</div>
+
+						<!-- Phase 34.04 — progress bar for authenticated users -->
+						{#if authed && prog}
+							<div class="mt-3">
+								<div class="flex items-center justify-between text-xs text-[var(--color-muted)]">
+									<span>{t('challenges.progress', 'Progress')}</span>
+									<span>{prog.current_count} / {prog.target_count} ({progressPct(ch)}%)</span>
+								</div>
+								<div class="mt-1 h-2 overflow-hidden rounded-full bg-[var(--color-surface-subtle)]">
+									<div
+										class="h-full transition-all {prog.completed ? 'bg-[var(--color-success)]' : 'bg-[var(--color-primary)]'}"
+										style="width: {progressPct(ch)}%"
+									></div>
+								</div>
+							</div>
+						{:else if authed}
+							<div class="mt-3">
+								<p class="text-xs text-[var(--color-muted)]">{t('challenges.not_joined', 'Not started yet')}</p>
+							</div>
+						{/if}
 					</div>
 				{/each}
 			</div>

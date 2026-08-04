@@ -52,9 +52,12 @@
 		}
 	}
 
-	// Restore the in-progress query from the URL so the table matches the search box on reload.
-	searchQuery = page.url.searchParams.get("q") ?? "";
-	loadLogs();
+	// Ref: jc-admin-develop — reactive $effect so URL param changes re-fetch
+	$effect(() => {
+		// Restore the in-progress query from the URL so the table matches the search box on reload.
+		searchQuery = page.url.searchParams.get("q") ?? "";
+		loadLogs();
+	});
 </script>
 
 <svelte:head>

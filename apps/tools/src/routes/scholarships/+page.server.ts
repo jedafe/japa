@@ -1,5 +1,6 @@
 import type { PageServerLoad } from './$types';
 import { apiContext, apiList, apiGetOrNull } from '$lib/server/api';
+import { getTool, isToolEnabled } from '$lib/tools/registry';
 import type { Scholarship, SavedScholarship } from '$lib/types';
 
 /**
@@ -13,6 +14,13 @@ import type { Scholarship, SavedScholarship } from '$lib/types';
  * Ref: §73 (Scholarship Finder), ROADMAP-TOOLS 02.05.
  */
 export const load: PageServerLoad = async (event) => {
+	// Gate: skip all backend calls when scholarship_finder.enabled is false.
+	// Ref: conventions/system-settings-catalog.md, Rule 3.
+	const tool = getTool('scholarships')!;
+	if (!isToolEnabled(tool, event.locals.siteSettings)) {
+		return { enabled: false, tool, scholarships: [], saved: [], user: event.locals.user };
+	}
+
 	const ctx = apiContext(event);
 
 	// Pass through any filter params from the URL for SSR + shareability.
@@ -40,6 +48,8 @@ export const load: PageServerLoad = async (event) => {
 	}
 
 	return {
+		enabled: true,
+		tool,
 		scholarships,
 		saved,
 		user: event.locals.user

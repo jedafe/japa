@@ -10,7 +10,11 @@
 
 {#if members.length > 0}
 	<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-		<h2 class="mb-3 text-sm font-medium text-[var(--color-text)]">{t('profile.members', '{n} members').replace('{n}', String(members.length))}</h2>
+		<h2 class="mb-3 text-sm font-medium text-[var(--color-text)]">
+		{members.length === 1
+			? t('profile.members_one', '1 member')
+			: t('profile.members', '{n} members').replace('{n}', String(members.length))}
+	</h2>
 		<ul class="space-y-2">
 			{#each members.slice(0, 8) as member (member.user.id)}
 				<li>

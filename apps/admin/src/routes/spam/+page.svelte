@@ -12,7 +12,6 @@
 	import { spamApi } from "$lib/api";
 	import { t } from "$lib/stores/i18n.svelte";
 	import { hasPermission } from "$lib/stores/permissions.svelte";
-	import { onMount } from "svelte";
 	import { datetimeLocalToPostgresTimestamptz } from "$lib/utils/date";
 
 	type IpBlock = {
@@ -315,7 +314,13 @@
 		}
 	}
 
-	onMount(() => { loadIpBlocks(); });
+	// Ref: jc-admin-develop — reactive $effect so tab changes re-fetch
+	$effect(() => {
+		void activeTab;
+		if (activeTab === "ip-blocks") loadIpBlocks();
+		else if (activeTab === "censored-words") loadCensoredWords();
+		else loadUserBlocks();
+	});
 </script>
 
 <svelte:head>

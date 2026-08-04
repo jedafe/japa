@@ -11,7 +11,7 @@
 	import { Button } from "$lib/components/ui/button";
 	import { Modal } from "$lib/components/ui/modal";
 	import { Select } from "$lib/components/ui/select";
-	import { Mail, Plus, Send, Users, BarChart3, Trash2, Eye, Pencil } from "lucide-svelte";
+	import { Mail, Plus, Send, Users, BarChart3, Trash2, Eye, Pencil, Upload } from "lucide-svelte";
 	import { api } from "$lib/api";
 
 	type Subscriber = {
@@ -78,6 +78,12 @@
 	let editSubscriberStatus = $state("");
 	let showCampaignModal = $state(false);
 	let campaignTarget = $state<Campaign | null>(null);
+
+	// Import subscribers modal
+	let showImportModal = $state(false);
+	let importText = $state("");
+	let importing = $state(false);
+	let importResult = $state<{ success: number; failed: number; errors: string[] } | null>(null);
 
 	const tabs = [
 		{ value: "subscribers", label: t('app.newsletter.tab_subscribers', 'Subscribers'), icon: Users, count: stats.subscribers },
@@ -326,6 +332,41 @@
 			loadSubscribers();
 		}
 	});
+
+	function openImportModal() {
+		importText = "";
+		importResult = null;
+		showImportModal = true;
+	}
+
+	async function importSubscribers() {
+		const lines = importText.split('\n').map(l => l.trim()).filter(l => l && l.includes('@'));
+		if (lines.length === 0) return;
+		importing = true;
+		importResult = { success: 0, failed: 0, errors: [] };
+		for (const line of lines) {
+			const [email, name] = line.split(',').map(s => s.trim());
+			try {
+				const result = await api('/admin/newsletter/subscribers', {
+					method: 'POST',
+					body: { email, ...(name ? { name } : {}) }
+				});
+				if (result.ok) {
+					importResult.success++;
+				} else {
+					importResult.failed++;
+					importResult.errors.push(`${email}: ${result.error ?? 'failed'}`);
+				}
+			} catch (e) {
+				importResult.failed++;
+				importResult.errors.push(`${email}: ${e instanceof Error ? e.message : 'failed'}`);
+			}
+		}
+		importing = false;
+		if (importResult.success > 0) {
+			loadSubscribers();
+		}
+	}
 </script>
 
 <svelte:head>
@@ -337,7 +378,7 @@
 	description={t('app.newsletter.description', 'Manage email subscribers and campaigns')}
 	actions={canManageNewsletter ? [
 		{ label: t('app.newsletter.btn_new_campaign', 'New Campaign'), icon: Plus, onclick: () => (showCreateModal = true) },
-		{ label: t('app.newsletter.btn_import_subscribers', 'Import Subscribers'), icon: Users, variant: "outline" }
+		{ label: t('app.newsletter.btn_import_subscribers', 'Import Subscribers'), icon: Upload, variant: "outline", onclick: openImportModal }
 	] : []}
 />
 
@@ -601,3 +642,38 @@
 		{/if}
 	</div>
 {/snippet}
+
+<!-- Import Subscribers Modal -->
+<Modal bind:open={showImportModal} title={t('app.newsletter.modal_import_subscribers', 'Import Subscribers')} size="lg">
+	<div class="space-y-4">
+		<p class="text-sm" style="color: var(--color-muted)">
+			{t('app.newsletter.import_hint', 'Paste email addresses below, one per line. Optionally add a name after a comma: email@example.com, John Doe')}
+		</p>
+		<textarea
+			class="w-full rounded-lg border px-3 py-2 text-sm font-mono"
+			style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+			rows="10"
+			bind:value={importText}
+			placeholder={"user1@example.com\nuser2@example.com, Jane Doe\nuser3@example.com"}
+		></textarea>
+		{#if importResult}
+			<div class="rounded-lg border p-3 text-sm" style="border-color: var(--color-border); background: var(--color-surface)">
+				<p style="color: var(--color-success)">{t('app.newsletter.import_success', 'Imported')}: {importResult.success}</p>
+				{#if importResult.failed > 0}
+					<p style="color: var(--color-danger)">{t('app.newsletter.import_failed', 'Failed')}: {importResult.failed}</p>
+					<div class="mt-2 max-h-32 overflow-y-auto">
+						{#each importResult.errors as err}
+							<p class="text-xs" style="color: var(--color-muted)">{err}</p>
+						{/each}
+					</div>
+				{/if}
+			</div>
+		{/if}
+	</div>
+	<div class="mt-4 flex justify-end gap-2">
+		<Button variant="ghost" onclick={() => (showImportModal = false)}>{t('common.close', 'Close')}</Button>
+		<Button onclick={importSubscribers} disabled={importing || !importText.trim()}>
+			{importing ? t('common.saving', 'Importing...') : t('app.newsletter.btn_import', 'Import')}
+		</Button>
+	</div>
+</Modal>

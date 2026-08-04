@@ -14,7 +14,11 @@
   let loading = $state(true);
   let error = $state(false);
 
+  // Use pre-fetched data if provided (server-side injection), otherwise fetch client-side.
   $effect(() => {
+    // Pre-fetched data injected by the server (e.g. default seed).
+    const prefetched = (props as unknown as { _items?: unknown[] })._items;
+    if (prefetched) { items = prefetched; loading = false; return; }
     if (!fetchCtx) { loading = false; return; }
     loading = true;
     fetchEntityCollection(props.entity_type, props.query, fetchCtx, geoCountry)

@@ -4,6 +4,7 @@
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { DataTable } from '$lib/components/ui/data-table';
 	import { Button } from '$lib/components/ui/button';
+	import { Modal } from '$lib/components/ui/modal';
 	import { RefreshCw, Trash2, Play } from 'lucide-svelte';
 
 	type DeletionRequest = {
@@ -19,6 +20,9 @@
 	let loading = $state(true);
 	let errorMessage = $state('');
 	let searchQuery = $state('');
+	let showExecuteConfirm = $state(false);
+	let executeTarget = $state<DeletionRequest | null>(null);
+	let executing = $state(false);
 
 	const canManageDeletions = $derived(hasPermission('gdpr.deletions.view'));
 
@@ -53,13 +57,24 @@
 		}
 	}
 
-	async function executeDeletion(id: string) {
+	async function executeDeletion(req: DeletionRequest) {
+		executeTarget = req;
+		showExecuteConfirm = true;
+	}
+
+	async function confirmExecuteDeletion() {
+		if (!executeTarget) return;
+		executing = true;
 		errorMessage = '';
 		try {
-			await api(`/admin/gdpr/deletion-requests/${id}/execute`, { method: 'POST', body: {} });
+			await api(`/admin/gdpr/deletion-requests/${executeTarget.id}/execute`, { method: 'POST', body: {} });
+			showExecuteConfirm = false;
+			executeTarget = null;
 			load();
 		} catch {
 			errorMessage = t('common.error', 'Failed to execute deletion');
+		} finally {
+			executing = false;
 		}
 	}
 
@@ -103,9 +118,29 @@
 
 {#snippet DeletionActionsCell({ row }: { value: any; row: DeletionRequest })}
 	{#if row.status === 'pending' && canManageDeletions}
-		<Button variant="ghost" size="sm" onclick={() => executeDeletion(row.id)} style="color: var(--color-danger)">
+		<Button variant="ghost" size="sm" onclick={() => executeDeletion(row)} style="color: var(--color-danger)">
 			<Play class="h-3.5 w-3.5" />
 			{t('app.gdpr.erasure.execute', 'Execute')}
 		</Button>
 	{/if}
 {/snippet}
+
+<!-- Execute deletion confirmation (per jc-admin-develop: destructive actions behind Modal) -->
+<Modal bind:open={showExecuteConfirm} title={t('app.gdpr.erasure.execute_confirm_title', 'Confirm Data Erasure')} size="sm">
+	{#if executeTarget}
+		<p class="text-sm" style="color: var(--color-foreground)">
+			{t('app.gdpr.erasure.execute_confirm_body', 'This will permanently delete all personal data for user')}
+			<strong class="font-mono">{executeTarget.user_id}</strong>.
+			{t('app.gdpr.erasure.execute_confirm_warning', 'This action cannot be undone.')}
+		</p>
+	{/if}
+	<div class="mt-6 flex justify-end gap-2">
+		<Button variant="outline" onclick={() => (showExecuteConfirm = false)} disabled={executing}>
+			{t('common.cancel', 'Cancel')}
+		</Button>
+		<Button variant="destructive" onclick={confirmExecuteDeletion} disabled={executing}>
+			<Play class="mr-2 h-4 w-4" />
+			{executing ? t('common.processing', 'Processing...') : t('app.gdpr.erasure.execute', 'Execute')}
+		</Button>
+	</div>
+</Modal>

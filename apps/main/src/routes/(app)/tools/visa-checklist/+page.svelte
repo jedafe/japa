@@ -2,7 +2,7 @@
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
 	import { ClipboardCheck, Check, Lock } from 'lucide-svelte';
-	import { EmptyState, LoadingSkeleton } from '$lib/components/ui';
+	import { EmptyState, LoadingSkeleton, SelectField } from '$lib/components/ui';
 	import { api } from '$lib/api/client';
 	import type { ChecklistItem, ChecklistSelector } from '$lib/types';
 	import type { PageData } from './$types';
@@ -14,9 +14,9 @@
 		t('tools.visa_checklist_desc', 'Build a document checklist for your visa route.')
 	);
 
-	const selector = $state<ChecklistSelector | null>(data.selector);
-	const disabled = $state(data.disabled);
-	const authed = $state(data.authed);
+	const selector = $derived<ChecklistSelector | null>(data.selector);
+	const disabled = $derived(data.disabled);
+	const authed = $derived(data.authed);
 
 	// Selector state — 3 steps.
 	let selectedOrigin = $state('');
@@ -141,16 +141,15 @@
 			<label for="vc-origin" class="block text-xs font-medium uppercase tracking-wide text-[var(--color-muted)]">
 				{t('checklist.step1', '1. Where are you coming from?')}
 			</label>
-			<select
-				id="vc-origin"
-				bind:value={selectedOrigin}
-				class="mt-2 w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
-			>
-				<option value="">{t('checklist.select_origin', 'Select origin country')}</option>
-				{#each selector.origins as opt (opt.id)}
-					<option value={opt.id}>{opt.name}</option>
-				{/each}
-			</select>
+			<div class="mt-2">
+				<SelectField
+					id="vc-origin"
+					value={selectedOrigin}
+					options={selector.origins.map((o) => ({ value: o.id, label: o.name }))}
+					placeholder={t('checklist.select_origin', 'Select origin country')}
+					onValueChange={(v) => (selectedOrigin = v)}
+				/>
+			</div>
 		</div>
 
 		<!-- Step 2: Destination -->
@@ -159,17 +158,18 @@
 				<label for="vc-dest" class="block text-xs font-medium uppercase tracking-wide text-[var(--color-muted)]">
 					{t('checklist.step2', '2. Where are you going?')}
 				</label>
-				<select
-					id="vc-dest"
-					bind:value={selectedDestination}
-					onchange={onSelectDestination}
-					class="mt-2 w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
-				>
-					<option value="">{t('checklist.select_destination', 'Select destination country')}</option>
-					{#each destinations as opt (opt.id)}
-						<option value={opt.id}>{opt.name}</option>
-					{/each}
-				</select>
+				<div class="mt-2">
+					<SelectField
+						id="vc-dest"
+						value={selectedDestination}
+						options={destinations.map((d) => ({ value: d.id, label: d.name }))}
+						placeholder={t('checklist.select_destination', 'Select destination country')}
+						onValueChange={(v) => {
+							selectedDestination = v;
+							onSelectDestination();
+						}}
+					/>
+				</div>
 			</div>
 		{/if}
 
@@ -179,17 +179,18 @@
 				<label for="vc-visa" class="block text-xs font-medium uppercase tracking-wide text-[var(--color-muted)]">
 					{t('checklist.step3', '3. Visa type')}
 				</label>
-				<select
-					id="vc-visa"
-					bind:value={selectedVisaType}
-					onchange={(e) => onSelectVisaType((e.target as HTMLSelectElement).value)}
-					class="mt-2 w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
-				>
-					<option value="">{t('checklist.select_visa', 'Select visa type')}</option>
-					{#each visaTypes as vt (vt.value)}
-						<option value={vt.guide_id}>{vt.label}</option>
-					{/each}
-				</select>
+				<div class="mt-2">
+					<SelectField
+						id="vc-visa"
+						value={selectedVisaType}
+						options={visaTypes.map((vt) => ({ value: vt.guide_id, label: vt.label }))}
+						placeholder={t('checklist.select_visa', 'Select visa type')}
+						onValueChange={(v) => {
+							selectedVisaType = v;
+							onSelectVisaType(v);
+						}}
+					/>
+				</div>
 			</div>
 		{:else if selectedDestination && visaTypes.length === 0}
 			<div class="px-4 py-3 text-sm text-[var(--color-muted)]">

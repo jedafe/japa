@@ -2,6 +2,7 @@ import type { PageServerLoad } from './$types';
 import { apiContext, apiList, apiGet } from '$lib/server/api';
 import { feedPath, resolveTab, resolveSort, PAGE_SIZE } from '$lib/feed/endpoint';
 import type { FeedItem } from '$lib/types';
+import type { ContentArticle } from '$lib/types/content';
 import { resolveGeoCopy, getGeoTokens, landingPalettes, type Block, type LandingPage as LandingPageData } from '@japaconnect/landing-blocks';
 
 /**
@@ -38,13 +39,13 @@ export const load: PageServerLoad = async (event) => {
 
 	// Guests: check for an assigned homepage Page Builder landing page.
 	// Convention: the landing page has slug "homepage" (ADR-058 §5).
+	const geoCountry =
+		event.url.searchParams.get('geo') ??
+		event.locals.user?.content_country_preference ??
+		'global';
+	const geoParam = geoCountry !== 'global' ? `&geo=${encodeURIComponent(geoCountry)}` : '';
 	try {
 		const landing = await apiGet<LandingPageData>(ctx, '/pages/homepage');
-		// Resolve geo-aware copy server-side (ADR-064 — no client flicker).
-		const geoCountry =
-			event.url.searchParams.get('geo') ??
-			event.locals.user?.content_country_preference ??
-			'global';
 		const tokens = getGeoTokens(geoCountry, 'en');
 		const resolvedBlocks = resolveGeoCopy(landing.blocks as Block[], {
 			contentCountry: geoCountry,
@@ -58,22 +59,42 @@ export const load: PageServerLoad = async (event) => {
 			contentCountry: geoCountry,
 		};
 	} catch (err) {
-		// No published "homepage" page — hydrate the default seed from the
-		// homepage palette so the new LandingRenderer shows immediately.
-		// Admins can later publish a custom page (slug "homepage") to override.
-		const geoCountry =
-			event.url.searchParams.get('geo') ??
-			event.locals.user?.content_country_preference ??
-			'global';
+		// No published "homepage" page — hydrate the default seed and
+		// pre-fetch entity data server-side to inject into entity blocks.
 		const tokens = getGeoTokens(geoCountry, 'en');
+
+		// Pre-fetch entity data for the seed's entity_collection blocks.
+		const [exploreItems, blogPosts, destinations, jobs] = await Promise.all([
+			apiList<FeedItem>(ctx, `/explore?page_size=5&page_offset=0${geoParam}`)
+				.then((r) => r.items).catch(() => [] as FeedItem[]),
+			apiList<ContentArticle>(ctx, '/blog?page_size=6&page_offset=0')
+				.then((r) => r.items).catch(() => [] as ContentArticle[]),
+			apiGet<unknown[]>(ctx, `/trending/spaces?limit=6${geoParam}`)
+				.then((r) => r ?? []).catch(() => []),
+			apiList<unknown>(ctx, `/jobs?page_size=6&page_offset=0${geoParam}`)
+				.then((r) => r.items).catch(() => [] as unknown[]),
+		]);
+
 		const seed = landingPalettes['homepage']?.defaultSeed ?? [];
-		const seedBlocks = seed.map((entry, i) => ({
-			id: `seed-${i}`,
-			type: entry.type,
-			visible: true,
-			label: entry.label,
-			props: entry.props as unknown as Block['props'],
-		})) as Block[];
+		const seedBlocks = seed.map((entry, i) => {
+			const props = { ...entry.props } as Record<string, unknown>;
+			// Inject pre-fetched data into entity_collection blocks.
+			if (entry.type === 'entity_collection') {
+				const entityType = props.entity_type as string;
+				if (entityType === 'space') props._items = destinations;
+				else if (entityType === 'thread' || entityType === 'post') props._items = exploreItems;
+				else if (entityType === 'blog') props._items = blogPosts;
+				else if (entityType === 'job') props._items = jobs;
+			}
+			return {
+				id: `seed-${i}`,
+				type: entry.type,
+				visible: true,
+				label: entry.label,
+				props: props as unknown as Block['props'],
+			};
+		}) as Block[];
+
 		const resolvedBlocks = resolveGeoCopy(seedBlocks, {
 			contentCountry: geoCountry,
 			tokens,

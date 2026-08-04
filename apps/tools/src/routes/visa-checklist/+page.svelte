@@ -1,11 +1,15 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
+	import { replaceState } from '$app/navigation';
 	import { api } from '$lib/api/client';
-	import { mainAppUrl } from '$lib/seo';
 	import { buildSeoMeta } from '$lib/seo';
+	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
 	import Icon from '$lib/components/ui/Icon.svelte';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import LoadingSkeleton from '$lib/components/ui/LoadingSkeleton.svelte';
+	import RegistrationPrompt from '$lib/components/ui/RegistrationPrompt.svelte';
+	import ToolDisabled from '$lib/components/ui/ToolDisabled.svelte';
 	import type {
 		ChecklistSelector,
 		ChecklistGuide,
@@ -23,10 +27,10 @@
 	 */
 	let { data } = $props();
 
-	let selector = $state<ChecklistSelector | null>(data.selector);
-	let guide = $state<ChecklistGuide | null>(data.guide);
-	let progress = $state<ChecklistProgress | null>(data.progress);
-	let user = $state(data.user);
+	let selector = $state<ChecklistSelector | null>(untrack(() => data.selector));
+	let guide = $state<ChecklistGuide | null>(untrack(() => data.guide));
+	let progress = $state<ChecklistProgress | null>(untrack(() => data.progress));
+	let user = $state(untrack(() => data.user));
 
 	// Selector state
 	let selectedOrigin = $state<string>('');
@@ -53,9 +57,9 @@
 
 	const seo = $derived(
 		buildSeoMeta({
-			title: 'Visa Document Checklist — JapaConnect Tools',
+			title: t('checklist.seo_title', 'Visa Document Checklist — JapaConnect Tools'),
 			description:
-				'Select your origin, destination, and visa type to get a personalized, checkable document list with progress tracking.',
+				t('checklist.seo_description', 'Select your origin, destination, and visa type to get a personalized, checkable document list with progress tracking.'),
 			path: '/visa-checklist',
 			origin: page.url.origin
 		})
@@ -76,10 +80,10 @@
 			const progRes = await api.get<ChecklistProgress>(`/checklist/${guideId}/progress`);
 			if (!progRes.error) progress = progRes.data;
 		}
-		// Update URL for shareability
-		const url = new URL(window.location.href);
+		// Update URL for shareability (SvelteKit replaceState, not window.history)
+		const url = new URL(page.url);
 		url.searchParams.set('guide_id', guideId);
-		window.history.replaceState({}, '', url);
+		replaceState(url, {});
 	}
 
 	function onSelectVisaType(guideId: string, visaValue: string) {
@@ -159,12 +163,25 @@
 		}
 	}
 
+	/** Reset all progress for the current guide (§70: DELETE /checklist/:guide_id/progress). */
+	async function resetProgress() {
+		if (!guide || !user) return;
+		if (!confirm(t('checklist.reset_confirm', 'Reset all progress for this checklist? This cannot be undone.'))) return;
+		const res = await api.delete(`/checklist/${guide.guide_id}/progress`);
+		if (res.error) {
+			error = res.error.message;
+			return;
+		}
+		progress = null;
+		error = null;
+	}
+
 	// Group items by category
 	const groupedItems = $derived.by(() => {
 		if (!guide?.items) return [];
 		const groups: Record<string, ChecklistItem[]> = {};
 		for (const item of guide.items) {
-			const cat = item.category ?? 'General';
+			const cat = item.category ?? t('checklist.general_category', 'General');
 			if (!groups[cat]) groups[cat] = [];
 			groups[cat].push(item);
 		}
@@ -192,10 +209,13 @@
 </svelte:head>
 
 <div class="mx-auto max-w-3xl px-4 py-8">
+	{#if !data.enabled}
+		<ToolDisabled tool={data.tool} />
+	{:else}
 	<div class="mb-8">
-		<h1 class="text-2xl sm:text-3xl font-bold text-text">Visa Document Checklist</h1>
+		<h1 class="text-2xl sm:text-3xl font-bold text-text">{t('checklist.title', 'Visa Document Checklist')}</h1>
 		<p class="mt-2 text-text-subtle">
-			Select your origin, destination, and visa type to get a personalized document list.
+			{t('checklist.subtitle', 'Select your origin, destination, and visa type to get a personalized document list.')}
 		</p>
 	</div>
 
@@ -211,14 +231,14 @@
 			<!-- Step 1: Origin -->
 			<div>
 				<label for="origin" class="block text-sm font-medium text-text mb-2">
-					<span class="text-muted">1.</span> Your country (origin)
+					<span class="text-muted">1.</span> {t('checklist.step1_label', 'Your country (origin)')}
 				</label>
 				<select
 					id="origin"
 					bind:value={selectedOrigin}
 					class="w-full px-4 py-3 bg-surface border border-border rounded-lg text-text focus:border-primary focus:outline-none"
 				>
-					<option value="">Select your country</option>
+					<option value="">{t('checklist.step1_placeholder', 'Select your country')}</option>
 					{#each selector.origins as opt (opt.id)}
 						<option value={opt.id}>{opt.name}</option>
 					{/each}
@@ -228,7 +248,7 @@
 			<!-- Step 2: Destination -->
 			<div>
 				<label for="dest" class="block text-sm font-medium text-text mb-2">
-					<span class="text-muted">2.</span> Destination country
+					<span class="text-muted">2.</span> {t('checklist.step2_label', 'Destination country')}
 				</label>
 				<select
 					id="dest"
@@ -236,7 +256,7 @@
 					disabled={!selectedOrigin}
 					class="w-full px-4 py-3 bg-surface border border-border rounded-lg text-text focus:border-primary focus:outline-none disabled:opacity-50"
 				>
-					<option value="">Select destination</option>
+					<option value="">{t('checklist.step2_placeholder', 'Select destination')}</option>
 					{#each destinations as opt (opt.id)}
 						<option value={opt.id}>{opt.name}</option>
 					{/each}
@@ -247,7 +267,7 @@
 			{#if visaTypes.length > 0}
 				<div>
 					<span class="block text-sm font-medium text-text mb-2">
-						<span class="text-muted">3.</span> Visa type
+						<span class="text-muted">3.</span> {t('checklist.step3_label', 'Visa type')}
 					</span>
 					<div class="grid grid-cols-2 sm:grid-cols-3 gap-3">
 						{#each visaTypes as vt (vt.value)}
@@ -263,7 +283,7 @@
 			{/if}
 
 			{#if selectedDestination && visaTypes.length === 0}
-				<p class="text-sm text-muted">No visa guides found for this destination.</p>
+				<p class="text-sm text-muted">{t('checklist.no_guides', 'No visa guides found for this destination.')}</p>
 			{/if}
 		</div>
 	{:else}
@@ -274,17 +294,28 @@
 					<h2 class="text-xl font-semibold text-text">{guide.title}</h2>
 					{#if totalCount > 0}
 						<p class="text-sm text-muted mt-1">
-							{completedCount} of {totalCount} documents ready ({progressPct}%)
+							{t('checklist.progress_label', '{completed} of {total} documents ready ({pct}%)').replace('{completed}', String(completedCount)).replace('{total}', String(totalCount)).replace('{pct}', String(progressPct))}
 						</p>
 					{/if}
 				</div>
-				<button
-					onclick={() => { guide = null; progress = null; selectedVisaType = ''; }}
-					class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm text-muted hover:text-text transition-colors"
-				>
-					<Icon name="arrow-left" size={16} />
-					Change selection
-				</button>
+				<div class="flex items-center gap-3">
+					{#if user && progress && completedCount > 0}
+						<button
+							onclick={resetProgress}
+							class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm text-muted hover:text-red-500 transition-colors"
+						>
+							<Icon name="rotate-ccw" size={16} />
+							{t('checklist.reset_progress', 'Reset progress')}
+						</button>
+					{/if}
+					<button
+						onclick={() => { guide = null; progress = null; selectedVisaType = ''; }}
+						class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm text-muted hover:text-text transition-colors"
+					>
+						<Icon name="arrow-left" size={16} />
+						{t('checklist.change_selection', 'Change selection')}
+					</button>
+				</div>
 			</div>
 
 			{#if totalCount > 0}
@@ -305,15 +336,15 @@
 			{:else if groupedItems.length === 0}
 				<EmptyState
 					icon="file-question"
-					title="No documents found"
-					description="This visa guide doesn't have any checklist items configured yet."
+					title={t('checklist.no_documents', 'No documents found')}
+					description={t('checklist.no_documents_desc', "This visa guide doesn't have any checklist items configured yet.")}
 				/>
 			{:else}
 				<div class="space-y-6">
 					{#each groupedItems as [category, items] (category)}
 						<div>
 							<h3 class="text-sm font-semibold text-muted uppercase tracking-wide mb-3">
-								{category}
+								{category === 'General' ? t('checklist.general_category', 'General') : category}
 							</h3>
 							<div class="space-y-2">
 								{#each items as item (item.item_key)}
@@ -323,7 +354,7 @@
 										<button
 											onclick={() => toggleItem(item)}
 											class="flex-shrink-0 mt-0.5 w-5 h-5 rounded border-2 flex items-center justify-center transition-colors {isCompleted(item.item_key) ? 'bg-[var(--tool-accent)] border-[var(--tool-accent)]' : 'border-border hover:border-[var(--tool-accent)]'}"
-											aria-label={isCompleted(item.item_key) ? 'Mark incomplete' : 'Mark complete'}
+											aria-label={isCompleted(item.item_key) ? t('checklist.mark_incomplete', 'Mark incomplete') : t('checklist.mark_complete', 'Mark complete')}
 										>
 											{#if isCompleted(item.item_key)}
 												<Icon name="check" size={14} class="text-white" />
@@ -336,7 +367,7 @@
 												</span>
 												{#if item.required}
 													<span class="text-xs px-1.5 py-0.5 bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 rounded font-medium">
-														Required
+														{t('checklist.required', 'Required')}
 													</span>
 												{/if}
 											</div>
@@ -345,7 +376,7 @@
 											{/if}
 											{#if getProgressItem(item.item_key)?.notes}
 												<p class="text-sm text-muted mt-1 italic">
-													Note: {getProgressItem(item.item_key)?.notes}
+													{t('checklist.note_label', 'Note:')} {getProgressItem(item.item_key)?.notes}
 												</p>
 											{/if}
 											{#if editingNote === item.item_key}
@@ -353,7 +384,7 @@
 													<input
 														type="text"
 														bind:value={noteDraft}
-														placeholder="Add a note..."
+														placeholder={t('checklist.note_placeholder', 'Add a note...')}
 														class="flex-1 px-3 py-1.5 text-sm bg-surface border border-border rounded focus:border-primary focus:outline-none"
 													/>
 													<button
@@ -368,7 +399,7 @@
 													onclick={() => startEditNote(item.item_key)}
 													class="mt-1 text-xs text-muted hover:text-text transition-colors"
 												>
-													+ Add note
+													{t('checklist.add_note', '+ Add note')}
 												</button>
 											{/if}
 										</div>
@@ -383,45 +414,13 @@
 	{/if}
 
 	{#if showRegisterPrompt}
-		<div
-			class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-			onclick={() => (showRegisterPrompt = false)}
-			onkeydown={(e) => e.key === 'Escape' && (showRegisterPrompt = false)}
-			role="button"
-			tabindex="0"
-		>
-			<div
-				class="bg-surface rounded-[var(--radius-card)] p-6 max-w-sm w-full text-center"
-				onclick={(e) => e.stopPropagation()}
-				onkeydown={(e) => e.stopPropagation()}
-				role="button"
-				tabindex="0"
-			>
-				<div class="flex justify-center mb-4">
-					<div class="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
-						<Icon name="user-plus" size={24} class="text-primary" />
-					</div>
-				</div>
-				<h3 class="text-lg font-semibold text-text">Save your progress</h3>
-				<p class="mt-2 text-sm text-text-subtle">
-					Create a free account to save your checklist progress, add notes, and track
-					your documents across devices.
-				</p>
-				<div class="mt-5 flex flex-col gap-2">
-					<a
-						href={mainAppUrl('/signup')}
-						class="px-4 py-2.5 bg-primary text-primary-contrast rounded-lg text-sm font-medium hover:bg-primary-hover transition-colors"
-					>
-						Create free account
-					</a>
-					<a
-						href={mainAppUrl('/login')}
-						class="px-4 py-2.5 text-sm font-medium text-text hover:text-primary transition-colors"
-					>
-						Sign in
-					</a>
-				</div>
-			</div>
-		</div>
+		<RegistrationPrompt
+			open={showRegisterPrompt}
+			onClose={() => (showRegisterPrompt = false)}
+			icon="user-plus"
+			title={t('register.save_progress', 'Save your progress')}
+			description={t('common.create_account_desc', 'Create a free account to save your checklist progress, add notes, and track your documents across devices.')}
+		/>
+	{/if}
 	{/if}
 </div>

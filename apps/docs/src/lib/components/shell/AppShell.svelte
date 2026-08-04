@@ -407,9 +407,4 @@
 			display: flex;
 		}
 	}
-
-	.guest-shell-content {
-		min-height: calc(100vh - var(--nav-height));
-		background: var(--color-bg);
-	}
 </style>

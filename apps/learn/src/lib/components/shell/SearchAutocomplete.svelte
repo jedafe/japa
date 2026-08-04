@@ -51,7 +51,7 @@
 	function onKeydown(e: KeyboardEvent) {
 		if (!showDropdown) {
 			if (e.key === 'Enter' && query.trim()) {
-				goto(`/?q=${encodeURIComponent(query.trim())}`);
+				goto(`/search?q=${encodeURIComponent(query.trim())}`);
 			}
 			return;
 		}
@@ -66,7 +66,7 @@
 			if (activeIndex >= 0 && suggestions[activeIndex]) {
 				select(suggestions[activeIndex]);
 			} else {
-				goto(`/?q=${encodeURIComponent(query.trim())}`);
+				goto(`/search?q=${encodeURIComponent(query.trim())}`);
 			}
 		} else if (e.key === 'Escape') {
 			showDropdown = false;
@@ -81,13 +81,13 @@
 
 <div class="relative flex-1">
 	<form
-		action="/"
+		action="/search"
 		method="GET"
 		class="relative"
 		onsubmit={(e) => {
 			if (query.trim()) {
 				e.preventDefault();
-				goto(`/?q=${encodeURIComponent(query.trim())}`);
+				goto(`/search?q=${encodeURIComponent(query.trim())}`);
 			}
 		}}
 	>

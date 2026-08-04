@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import { t } from '$lib/stores/i18n.svelte';
   import { goto } from "$app/navigation";
   import PageHeader from "$lib/components/layout/page-header.svelte";
@@ -397,7 +396,8 @@
     }
   }
 
-  onMount(() => {
+  // Ref: jc-admin-develop — reactive $effect so param/filter changes re-fetch
+  $effect(() => {
     loadPosts();
   });
 </script>

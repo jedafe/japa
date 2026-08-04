@@ -2,7 +2,7 @@
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
 	import { Banknote, Lock, Bell, ArrowRight, TrendingUp } from 'lucide-svelte';
-	import { EmptyState, LoadingSkeleton } from '$lib/components/ui';
+	import { EmptyState, LoadingSkeleton, SelectField } from '$lib/components/ui';
 	import { api } from '$lib/api/client';
 	import { LineChart } from 'layerchart';
 	import type {
@@ -20,9 +20,9 @@
 		t('tools.remittance_desc', 'Compare provider rates and set alerts.')
 	);
 
-	const corridors = $state<RemittanceCorridor[]>(data.corridors);
-	const disabled = $state(data.disabled);
-	const authed = $state(data.authed);
+	const corridors = $derived<RemittanceCorridor[]>(data.corridors);
+	const disabled = $derived(data.disabled);
+	const authed = $derived(data.authed);
 
 	let sendCurrency = $state('');
 	let receiveCurrency = $state('');
@@ -133,34 +133,30 @@
 					<label for="rem-send" class="block text-xs font-medium uppercase tracking-wide text-[var(--color-muted)]">
 						{t('remittance.send', 'Send')}
 					</label>
-					<select
-						id="rem-send"
-						bind:value={sendCurrency}
-						onchange={onSelectCorridor}
-						class="mt-1 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
-					>
-						<option value="">—</option>
-						{#each corridors as c (c.send_currency + c.receive_currency)}
-							<option value={c.send_currency}>{c.send_currency}</option>
-						{/each}
-					</select>
+					<div class="mt-1">
+						<SelectField
+							id="rem-send"
+							value={sendCurrency}
+							options={corridors.map((c) => ({ value: c.send_currency, label: c.send_currency }))}
+							placeholder="—"
+							onValueChange={(v) => { sendCurrency = v; onSelectCorridor(); }}
+						/>
+					</div>
 				</div>
 				<ArrowRight size={16} class="pb-2 text-[var(--color-muted)]" />
 				<div>
 					<label for="rem-recv" class="block text-xs font-medium uppercase tracking-wide text-[var(--color-muted)]">
 						{t('remittance.receive', 'Receive')}
 					</label>
-					<select
-						id="rem-recv"
-						bind:value={receiveCurrency}
-						onchange={onSelectCorridor}
-						class="mt-1 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
-					>
-						<option value="">—</option>
-						{#each corridors as c (c.send_currency + c.receive_currency)}
-							<option value={c.receive_currency}>{c.receive_currency}</option>
-						{/each}
-					</select>
+					<div class="mt-1">
+						<SelectField
+							id="rem-recv"
+							value={receiveCurrency}
+							options={corridors.map((c) => ({ value: c.receive_currency, label: c.receive_currency }))}
+							placeholder="—"
+							onValueChange={(v) => { receiveCurrency = v; onSelectCorridor(); }}
+						/>
+					</div>
 				</div>
 			</div>
 		</div>
@@ -259,8 +255,9 @@
 							</h2>
 							<form onsubmit={(e) => { e.preventDefault(); createAlert(); }} class="mb-3 flex flex-wrap items-end gap-2">
 								<div>
-									<label class="block text-xs text-[var(--color-muted)]">{t('remittance.target_rate', 'Target rate')}</label>
+									<label for="alert-rate" class="block text-xs text-[var(--color-muted)]">{t('remittance.target_rate', 'Target rate')}</label>
 									<input
+										id="alert-rate"
 										type="number"
 										bind:value={alertRate}
 										step="0.01"
@@ -268,14 +265,19 @@
 									/>
 								</div>
 								<div>
-									<label class="block text-xs text-[var(--color-muted)]">{t('remittance.direction', 'Direction')}</label>
-									<select
-										bind:value={alertDirection}
-										class="mt-1 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
-									>
-										<option value="above">{t('remittance.above', 'Above')}</option>
-										<option value="below">{t('remittance.below', 'Below')}</option>
-									</select>
+									<label for="alert-direction" class="block text-xs text-[var(--color-muted)]">{t('remittance.direction', 'Direction')}</label>
+									<div class="mt-1">
+										<SelectField
+											id="alert-direction"
+											value={alertDirection}
+											options={[
+												{ value: 'above', label: t('remittance.above', 'Above') },
+												{ value: 'below', label: t('remittance.below', 'Below') }
+											]}
+											placeholder={t('remittance.direction', 'Direction')}
+											onValueChange={(v) => (alertDirection = v)}
+										/>
+									</div>
 								</div>
 								<button
 									type="submit"

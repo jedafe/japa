@@ -469,6 +469,8 @@ LIMIT @page_limit OFFSET @page_offset;
 -- Public profile Posts tab (GET /users/{id}/content): a user's PUBLISHED PUBLIC
 -- content, newest first, paginated. author_id is the user id (FK users.id).
 -- LEFT JOINs organizations so dual-surface posts carry the "on behalf of" badge.
+-- Pinned posts (is_pinned = true) are sorted to the top so the profile
+-- surfaces the author's featured/top content first.
 SELECT c.id, c.tenant_id, c.author_id, c.organization_id, c.space_id, c.content_type,
        c.title, c.slug, c.body, c.body_html, c.field_values, c.content_hash,
        c.geo_space_id, c.header_image_id, c.featured_image_id, c.canonical_url,
@@ -485,7 +487,7 @@ WHERE c.tenant_id = @tenant_id
   AND c.visibility = 'public'
   AND c.deleted_at IS NULL
   AND c.auto_hidden = false
-ORDER BY c.published_at DESC NULLS LAST, c.created_at DESC, c.id DESC
+ORDER BY c.is_pinned DESC, c.published_at DESC NULLS LAST, c.created_at DESC, c.id DESC
 LIMIT @page_limit OFFSET @page_offset;
 
 -- name: ListPublishedContentByOrganization :many

@@ -1,11 +1,15 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
+	import { replaceState } from '$app/navigation';
 	import { api } from '$lib/api/client';
-	import { mainAppUrl } from '$lib/seo';
 	import { buildSeoMeta } from '$lib/seo';
+	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
 	import Icon from '$lib/components/ui/Icon.svelte';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import LoadingSkeleton from '$lib/components/ui/LoadingSkeleton.svelte';
+	import RegistrationPrompt from '$lib/components/ui/RegistrationPrompt.svelte';
+	import ToolDisabled from '$lib/components/ui/ToolDisabled.svelte';
 	import type {
 		AssessmentForm,
 		AssessmentResult,
@@ -21,9 +25,10 @@
 	 */
 	let { data } = $props();
 
-	let form = $state<AssessmentForm | null>(data.form);
-	let result = $state<AssessmentResult | null>(data.result);
-	let user = $state(data.user);
+	let form = $state<AssessmentForm | null>(untrack(() => data.form));
+	let result = $state<AssessmentResult | null>(untrack(() => data.result));
+	let history = $state<AssessmentResult[]>(untrack(() => data.history));
+	let user = $state(untrack(() => data.user));
 
 	// Form state
 	let answers = $state<Record<string, string[] | string | number>>({});
@@ -37,9 +42,11 @@
 
 	const seo = $derived(
 		buildSeoMeta({
-			title: 'Japa Readiness Assessment — JapaConnect Tools',
-			description:
-				'A scored questionnaire across financial, logistical, and personal dimensions. Get a readiness score, threshold label, and a personalized roadmap.',
+			title: t('readiness.seo_title', 'Japa Readiness Assessment — JapaConnect Tools'),
+			description: t(
+				'readiness.seo_description',
+				'A scored questionnaire across financial, logistical, and personal dimensions. Get a readiness score, threshold label, and a personalized roadmap.'
+			),
 			path: '/readiness',
 			origin: page.url.origin
 		})
@@ -99,11 +106,21 @@
 			);
 			if (!resultRes.error && resultRes.data) {
 				result = resultRes.data;
-				const url = new URL(window.location.href);
+				// Prepend the new result to the history list (§71 persistent history).
+				history = [resultRes.data, ...history];
+				const url = new URL(page.url);
 				url.searchParams.set('result', resultRes.data.id);
-				window.history.replaceState({}, '', url);
+				replaceState(url, {});
 			}
 		}
+	}
+
+	/** Load a past result from history into the results view (§71). */
+	function viewHistoryResult(pastResult: AssessmentResult) {
+		result = pastResult;
+		const url = new URL(page.url);
+		url.searchParams.set('result', pastResult.id);
+		replaceState(url, {});
 	}
 
 	// Score gauge color based on threshold
@@ -135,10 +152,13 @@
 </svelte:head>
 
 <div class="mx-auto max-w-3xl px-4 py-8">
+	{#if !data.enabled}
+		<ToolDisabled tool={data.tool} />
+	{:else}
 	<div class="mb-8">
-		<h1 class="text-2xl sm:text-3xl font-bold text-text">Japa Readiness Assessment</h1>
+		<h1 class="text-2xl sm:text-3xl font-bold text-text">{t('readiness.title', 'Japa Readiness Assessment')}</h1>
 		<p class="mt-2 text-text-subtle">
-			Answer honestly to get an accurate readiness score and personalized roadmap.
+			{t('readiness.subtitle', 'Answer honestly to get an accurate readiness score and personalized roadmap.')}
 		</p>
 	</div>
 
@@ -176,7 +196,7 @@
 					</svg>
 					<div class="absolute inset-0 flex flex-col items-center justify-center">
 						<span class="text-3xl font-bold text-text">{result.total_score}</span>
-						<span class="text-xs text-muted">/ 100</span>
+						<span class="text-xs text-muted">{t('readiness.score_label', '/ 100')}</span>
 					</div>
 				</div>
 				<h2 class="mt-4 text-xl font-semibold" style="color: {gaugeColor};">
@@ -187,7 +207,7 @@
 			{#if Object.keys(result.dimension_scores).length > 0}
 				<div>
 					<h3 class="text-sm font-semibold text-muted uppercase tracking-wide mb-3">
-						Dimension breakdown
+						{t('readiness.dimension_breakdown', 'Dimension breakdown')}
 					</h3>
 					<div class="space-y-3">
 						{#each Object.entries(result.dimension_scores) as [dim, score] (dim)}
@@ -211,7 +231,7 @@
 			{#if result.roadmap.length > 0}
 				<div>
 					<h3 class="text-sm font-semibold text-muted uppercase tracking-wide mb-3">
-						Your personalized roadmap
+						{t('readiness.roadmap', 'Your personalized roadmap')}
 					</h3>
 					<div class="space-y-3">
 						{#each result.roadmap as step, i (i)}
@@ -250,15 +270,44 @@
 					onclick={() => { result = null; answers = {}; currentSection = 0; }}
 					class="px-4 py-2.5 bg-primary text-primary-contrast rounded-lg text-sm font-medium hover:bg-primary-hover transition-colors"
 				>
-					Retake assessment
+					{t('readiness.retake', 'Retake assessment')}
 				</button>
 				<a
 					href="/readiness"
 					class="px-4 py-2.5 border border-border rounded-lg text-sm font-medium text-text hover:bg-surface-subtle transition-colors"
 				>
-					Clear result
+					{t('readiness.clear_result', 'Clear result')}
 				</a>
 			</div>
+
+			{#if history.length > 1}
+				<!-- Past results history (§71 — persistent history for authenticated users) -->
+				<div>
+					<h3 class="text-sm font-semibold text-muted uppercase tracking-wide mb-3">
+						{t('readiness.past_results', 'Past results')}
+					</h3>
+					<div class="space-y-2">
+						{#each history as past (past.id)}
+							<button
+								onclick={() => viewHistoryResult(past)}
+								class="w-full flex items-center justify-between p-3 bg-surface border border-border rounded-lg hover:border-[var(--tool-accent)] transition-colors text-left"
+							>
+								<div>
+									<span class="text-sm font-medium text-text">{past.threshold_label}</span>
+									<p class="text-xs text-muted mt-0.5">
+										{new Date(past.created_at).toLocaleDateString('en-US', {
+											year: 'numeric',
+											month: 'short',
+											day: 'numeric'
+										})}
+									</p>
+								</div>
+								<span class="text-lg font-bold text-text">{past.total_score}</span>
+							</button>
+						{/each}
+					</div>
+				</div>
+			{/if}
 		</div>
 	{:else if form}
 		<!-- Assessment form -->
@@ -276,7 +325,7 @@
 				{/each}
 			</div>
 			<p class="text-sm text-muted">
-				Section {currentSection + 1} of {totalSections}
+				{t('readiness.section_progress', 'Section {current} of {total}').replace('{current}', String(currentSection + 1)).replace('{total}', String(totalSections))}
 			</p>
 
 			{#if currentSectionData}
@@ -289,10 +338,10 @@
 					<div class="space-y-6">
 						{#each currentSectionData.questions as q (q.id)}
 							<div>
-								<label class="block text-sm font-medium text-text mb-2">
+								<p class="block text-sm font-medium text-text mb-2">
 									{q.prompt}
 									{#if q.required}<span class="text-red-500">*</span>{/if}
-								</label>
+								</p>
 
 								{#if q.type === 'single' && q.options}
 									<div class="space-y-2">
@@ -374,7 +423,7 @@
 					class="inline-flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium text-text hover:bg-surface-subtle rounded-lg transition-colors disabled:opacity-50"
 				>
 					<Icon name="arrow-left" size={16} />
-					Previous
+					{t('readiness.previous', 'Previous')}
 				</button>
 
 				{#if currentSection < totalSections - 1}
@@ -383,7 +432,7 @@
 						disabled={!sectionComplete()}
 						class="inline-flex items-center gap-1.5 px-4 py-2.5 bg-primary text-primary-contrast rounded-lg text-sm font-medium hover:bg-primary-hover transition-colors disabled:opacity-50"
 					>
-						Next
+						{t('readiness.next', 'Next')}
 						<Icon name="arrow-right" size={16} />
 					</button>
 				{:else}
@@ -394,10 +443,10 @@
 					>
 						{#if submitting}
 							<Icon name="loader-2" size={16} class="animate-spin" />
-							Scoring...
+							{t('readiness.scoring', 'Scoring...')}
 						{:else}
 							<Icon name="check" size={16} />
-							Submit & get score
+							{t('readiness.submit', 'Submit & get score')}
 						{/if}
 					</button>
 				{/if}
@@ -406,51 +455,19 @@
 	{:else}
 		<EmptyState
 			icon="clipboard-x"
-			title="Assessment unavailable"
-			description="The readiness assessment is not configured yet. Please check back later."
+			title={t('readiness.unavailable', 'Assessment unavailable')}
+			description={t('readiness.unavailable_desc', 'The readiness assessment is not configured yet. Please check back later.')}
 		/>
 	{/if}
 
 	{#if showRegisterPrompt}
-		<div
-			class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-			onclick={() => (showRegisterPrompt = false)}
-			onkeydown={(e) => e.key === 'Escape' && (showRegisterPrompt = false)}
-			role="button"
-			tabindex="0"
-		>
-			<div
-				class="bg-surface rounded-[var(--radius-card)] p-6 max-w-sm w-full text-center"
-				onclick={(e) => e.stopPropagation()}
-				onkeydown={(e) => e.stopPropagation()}
-				role="button"
-				tabindex="0"
-			>
-				<div class="flex justify-center mb-4">
-					<div class="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
-						<Icon name="user-plus" size={24} class="text-primary" />
-					</div>
-				</div>
-				<h3 class="text-lg font-semibold text-text">Save your results</h3>
-				<p class="mt-2 text-sm text-text-subtle">
-					Create a free account to save your assessment results, track your progress over
-					time, and get your personalized roadmap.
-				</p>
-				<div class="mt-5 flex flex-col gap-2">
-					<a
-						href={mainAppUrl('/signup')}
-						class="px-4 py-2.5 bg-primary text-primary-contrast rounded-lg text-sm font-medium hover:bg-primary-hover transition-colors"
-					>
-						Create free account
-					</a>
-					<a
-						href={mainAppUrl('/login')}
-						class="px-4 py-2.5 text-sm font-medium text-text hover:text-primary transition-colors"
-					>
-						Sign in
-					</a>
-				</div>
-			</div>
-		</div>
+		<RegistrationPrompt
+			open={showRegisterPrompt}
+			onClose={() => (showRegisterPrompt = false)}
+			icon="user-plus"
+			title={t('register.save_results', 'Save your results')}
+			description={t('register.save_results_desc', 'Create a free account to save your assessment results, track your progress over time, and get your personalized roadmap.')}
+		/>
+	{/if}
 	{/if}
 </div>

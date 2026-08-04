@@ -14,7 +14,9 @@
   let error = $state(false);
 
   $effect(() => {
-    if (!fetchCtx) { loading = false; return; }
+    const prefetched = (props as unknown as { _entity?: Record<string, unknown> })._entity;
+    if (prefetched) { entity = prefetched; loading = false; return; }
+    if (!fetchCtx || !props.ref?.id) { loading = false; return; }
     loading = true;
     fetchEntityFeature(props.entity_type, props.ref, fetchCtx)
       .then((result) => { entity = result as Record<string, unknown> | null; error = false; })
@@ -35,9 +37,7 @@
     {#if loading}
       <div class="h-64 animate-pulse rounded-[var(--radius-card)] bg-[var(--color-surface-subtle)]"></div>
     {:else if error || !entity}
-      <div class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-8 text-center text-[var(--color-muted)]">
-        <p>Unable to load featured content.</p>
-      </div>
+      <!-- No entity data available — render nothing (seed fallback) -->
     {:else}
       <div class={layoutClass}>
         {#if props.layout === 'split' || props.layout === 'hero'}

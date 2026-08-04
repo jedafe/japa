@@ -134,7 +134,7 @@ func (h *Handlers) HandleFindJobs(w http.ResponseWriter, r *http.Request) {
 
 	filters := JobFilters{
 		Country:         q.Get("country"),
-		JobType:         q.Get("type"),
+		JobType:         q.Get("job_type"),
 		LocationType:    q.Get("remote"),
 		VisaSponsorship: parseBoolParam(r, "visa_sponsorship"),
 		Q:               q.Get("q"),
@@ -160,7 +160,7 @@ func (h *Handlers) HandleFindJobs(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"data": results,
-		"pagination": map[string]any{
+		"meta": map[string]any{
 			"page":  page,
 			"limit": limit,
 			"total": total,
@@ -266,7 +266,7 @@ func (h *Handlers) HandleMyApplications(w http.ResponseWriter, r *http.Request) 
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"data": results,
-		"pagination": map[string]any{
+		"meta": map[string]any{
 			"page":  page,
 			"limit": limit,
 			"total": total,
@@ -303,7 +303,7 @@ func (h *Handlers) HandleListJobApplications(w http.ResponseWriter, r *http.Requ
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"data": results,
-		"pagination": map[string]any{
+		"meta": map[string]any{
 			"page":  page,
 			"limit": limit,
 			"total": total,
@@ -390,7 +390,7 @@ func (h *Handlers) HandleAdminListApplications(w http.ResponseWriter, r *http.Re
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"data": results,
-		"pagination": map[string]any{
+		"meta": map[string]any{
 			"page":  page,
 			"limit": limit,
 			"total": total,

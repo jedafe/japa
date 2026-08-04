@@ -1,4 +1,4 @@
-import { error } from '@sveltejs/kit';
+import { error, redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext } from '$lib/server/api';
 import { resolveSection } from '$lib/components/hub/settings/settingsSections';
@@ -14,7 +14,7 @@ import { SETTINGS_LOADERS } from '$lib/components/hub/settings/settingsLoaders.s
 export const load: PageServerLoad = async (event) => {
 	// /settings is auth-gated — a guest has no profile/privacy to edit.
 	if (!event.locals.user) {
-		throw error(403, { code: 'forbidden', message: 'Authentication required to view settings' });
+		throw redirect(307, `/login?redirect=${encodeURIComponent(event.url.pathname + event.url.search)}`);
 	}
 
 	const meta = resolveSection(event.params.section);

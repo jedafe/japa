@@ -113,7 +113,7 @@
 
 		<!-- BarChart: lessons completed per track (real data from /me/enrollments) -->
 		<section class="mt-4 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-			<h2 class="mb-3 text-sm font-medium text-[var(--color-text)]">Lessons completed by course</h2>
+			<h2 class="mb-3 text-sm font-medium text-[var(--color-text)]">{t('learn.lessons_completed_by_course')}</h2>
 			<div class="h-64 w-full">
 				<BarChart
 					data={barData}

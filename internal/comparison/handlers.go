@@ -219,15 +219,12 @@ func (h *Handlers) ListComparisonTypes(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"data": types})
 }
 
-// ListComparisons handles GET /api/v1/comparisons — a page of comparison
-// content rows for the tenant, optionally filtered by type and space_id
-// (Section 30, BUG-007/BUG-008).
+// ListComparisons handles GET /api/v1/comparisons — a public page of
+// published, publicly-visible comparison content rows for the tenant,
+// optionally filtered by type and space_id (Section 30, BUG-007/BUG-008).
+// No authentication required; the SQL layer filters to status='published'
+// AND visibility='public' so drafts/private comparisons are never exposed.
 func (h *Handlers) ListComparisons(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
@@ -537,13 +534,10 @@ func (h *Handlers) CreateComparison(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, map[string]any{"data": result})
 }
 
-// GetComparison handles GET /api/v1/comparisons/{id}.
+// GetComparison handles GET /api/v1/comparisons/{id}. Public for published
+// and publicly-visible comparisons; unpublished or non-public comparisons
+// require the authenticated user to be the author (Section 30).
 func (h *Handlers) GetComparison(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
@@ -559,6 +553,16 @@ func (h *Handlers) GetComparison(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		handleServiceError(w, err)
 		return
+	}
+
+	// Enforce visibility: published+public is open to all; anything else
+	// requires the requester to be the author.
+	if detail.Status != "published" || detail.Visibility != "public" {
+		user := auth.FromContext(r.Context())
+		if user == nil || (detail.AuthorID.Valid && user.UserID != detail.AuthorID) {
+			writeError(w, http.StatusNotFound, "not_found", "Comparison not found")
+			return
+		}
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": detail})
@@ -649,13 +653,10 @@ func (h *Handlers) DeleteComparison(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusNoContent, nil)
 }
 
-// GetComparisonMatrix handles GET /api/v1/comparisons/{id}/matrix.
+// GetComparisonMatrix handles GET /api/v1/comparisons/{id}/matrix. Public for
+// published and publicly-visible comparisons; unpublished or non-public
+// comparisons require the authenticated user to be the author (Section 30).
 func (h *Handlers) GetComparisonMatrix(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
@@ -665,6 +666,21 @@ func (h *Handlers) GetComparisonMatrix(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid comparison ID")
 		return
+	}
+
+	// Verify visibility before returning the matrix. Fetching the detail is
+	// one extra query but avoids exposing private/draft matrices to guests.
+	detail, err := h.Service.GetComparisonDetail(r.Context(), contentID, tenantID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	if detail.Status != "published" || detail.Visibility != "public" {
+		user := auth.FromContext(r.Context())
+		if user == nil || (detail.AuthorID.Valid && user.UserID != detail.AuthorID) {
+			writeError(w, http.StatusNotFound, "not_found", "Comparison not found")
+			return
+		}
 	}
 
 	matrix, err := h.Service.GetComparisonMatrix(r.Context(), contentID, tenantID)

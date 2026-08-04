@@ -33,6 +33,9 @@ export const load: PageServerLoad = async (event) => {
 
 	const labelKey = AUDIENCE_LABEL_KEY[audience];
 	const title = `${audience[0].toUpperCase()}${audience.slice(1)} · JapaConnect Docs`;
+	// Gated audiences get noindex (Ref: §26 ROADMAP 07.02). Public audiences
+	// (users, api) are indexable.
+	const isGated = audience !== 'users' && audience !== 'api';
 	const meta = buildMeta({
 		title,
 		description: `Documentation for the ${audience} audience.`,
@@ -45,5 +48,5 @@ export const load: PageServerLoad = async (event) => {
 		})
 	});
 
-	return { audience, pages, labelKey, meta };
+	return { audience, pages, labelKey, meta, isGated };
 };

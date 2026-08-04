@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
-	import { Gauge, Lock, CheckCircle2, ArrowRight } from 'lucide-svelte';
+	import { Gauge, Lock, CheckCircle2, ArrowRight, TrendingUp } from 'lucide-svelte';
+	import { LineChart } from 'layerchart';
 	import { EmptyState, LoadingSkeleton } from '$lib/components/ui';
 	import { api } from '$lib/api/client';
 	import type {
@@ -10,6 +11,17 @@
 	} from '$lib/types';
 	import type { PageData } from './$types';
 
+	// AssessmentHistoryEntry is exported from +page.server.ts and inferred by
+	// $types via PageData, but we redeclare it here for direct use in
+	// component state typing.
+	interface AssessmentHistoryEntry {
+		id: string;
+		total_score: number;
+		max_score: number;
+		threshold_label?: string;
+		submitted_at: string;
+	}
+
 	let { data }: { data: PageData } = $props();
 
 	const title = $derived(t('tools.readiness', 'Readiness Assessment — JapaConnect'));
@@ -17,9 +29,10 @@
 		t('tools.readiness_desc', 'Score your japa readiness across key dimensions.')
 	);
 
-	const form = $state<AssessmentForm | null>(data.form);
-	const disabled = $state(data.disabled);
-	const authed = $state(data.authed);
+	const form = $derived<AssessmentForm | null>(data.form);
+	const disabled = $derived(data.disabled);
+	const authed = $derived(data.authed);
+	const history = $derived<AssessmentHistoryEntry[]>(data.history ?? []);
 
 	// Form state.
 	let answers = $state<Record<string, string>>({});
@@ -33,6 +46,19 @@
 
 	const scorePct = $derived(
 		result && form ? Math.round((result.total_score / Math.max(form.scoring_config.max_score, 1)) * 100) : 0
+	);
+
+	// Phase 33.02 — score history series for the LineChart. Each point is a
+	// past submission's percentage score over time.
+	const historySeries = $derived(
+		history
+			.slice()
+			.reverse()
+			.map((h, i) => ({
+				x: i,
+				y: h.max_score > 0 ? Math.round((h.total_score / h.max_score) * 100) : 0,
+				label: h.submitted_at
+			}))
 	);
 
 	async function submit() {
@@ -240,7 +266,7 @@
 				{/each}
 
 				{#if submitError}
-					<p class="text-sm text-red-500">{submitError}</p>
+					<p class="text-sm text-[var(--color-danger)]">{submitError}</p>
 				{/if}
 
 				<button
@@ -255,6 +281,30 @@
 					{/if}
 				</button>
 			</form>
+		</div>
+	{/if}
+
+	<!-- Score history chart — Phase 33.02 -->
+	{#if authed && historySeries.length > 0}
+		<div class="border-t border-[var(--color-border)] px-4 py-4">
+			<h2 class="mb-3 flex items-center gap-2 text-sm font-medium text-[var(--color-text)]">
+				<TrendingUp size={16} />
+				{t('assessment.history', 'Score history')}
+			</h2>
+			<div class="h-48">
+				<LineChart
+					data={historySeries}
+					x="x"
+					y="y"
+					props={{
+						line: { class: 'stroke-[var(--color-primary)]' },
+						area: { class: 'fill-[var(--color-primary)]/10' }
+					}}
+				/>
+			</div>
+			<p class="mt-2 text-xs text-[var(--color-muted)]">
+				{t('assessment.history_count', '{n} past submissions').replace('{n}', String(historySeries.length))}
+			</p>
 		</div>
 	{/if}
 </div>

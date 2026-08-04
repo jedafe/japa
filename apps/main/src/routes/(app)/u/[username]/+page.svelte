@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
-	import { FileText, MessageSquare, Image, Heart, Users, Info, BarChart3, Award } from 'lucide-svelte';
+	import { FileText, MessageSquare, Image, Heart, Users, Info, BarChart3, Award, Pin } from 'lucide-svelte';
 	import SetSidebar from '$lib/components/shell/SetSidebar.svelte';
 	import ProfileHeader from '$lib/components/profile/ProfileHeader.svelte';
 	import ProfileTabs from '$lib/components/profile/ProfileTabs.svelte';
@@ -18,6 +18,16 @@
 	const initiallyFollowing = $derived(data.initiallyFollowing);
 	const activeTab = $derived(page.url.searchParams.get('tab') ?? 'posts');
 
+	// Phase 34.03 — earned + unearned badges. On the own profile we also have
+	// the full catalog (data.allBadges); unearned badges surface a "how to earn"
+	// hint via their description. Earned badges are always shown (public route).
+	const earnedSlugs = $derived(new Set((data.badges ?? []).map((b) => b.slug)));
+	const unearnedBadges = $derived(
+		isOwnProfile
+			? (data.allBadges ?? []).filter((b) => b.is_active && !earnedSlugs.has(b.slug))
+			: []
+	);
+
 	const tabs = $derived([
 		{ key: 'posts', labelKey: 'profile.tab.posts', href: `?tab=posts` },
 		{ key: 'about', labelKey: 'profile.tab.about', href: `?tab=about` },
@@ -25,6 +35,13 @@
 		{ key: 'media', labelKey: 'profile.tab.media', href: `?tab=media` },
 		{ key: 'likes', labelKey: 'profile.tab.likes', href: `?tab=likes` },
 		{ key: 'spaces', labelKey: 'profile.tab.spaces', href: `?tab=spaces` },
+		// Phase 34.03 — Badges tab (Section 64, ADR-080). Shown when the user
+		// has earned badges (public) or when viewing own profile (unearned
+		// badges from the full catalog are also surfaced with "how to earn"
+		// hints).
+		...((data.badges && data.badges.length > 0) || unearnedBadges.length > 0
+			? [{ key: 'badges', labelKey: 'profile.tab.badges', href: `?tab=badges` }]
+			: []),
 		// Analytics is a self-dashboard — owner-only per JEOS §342 [auth, self].
 		// Hidden from guests and from other authenticated users.
 		...(isOwnProfile
@@ -77,22 +94,6 @@
 	{/if}
 </ProfileHeader>
 
-{#if data.badges && data.badges.length > 0}
-	<div class="mx-auto w-full max-w-full px-3 pb-1">
-		<div class="flex flex-wrap gap-2">
-			{#each data.badges as badge (badge.id)}
-				<span
-					class="inline-flex items-center gap-1.5 rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-2.5 py-1 text-xs text-[var(--color-text)]"
-					title={badge.description}
-				>
-					<Award size={12} class="text-[var(--color-primary)]" />
-					{badge.name}
-				</span>
-			{/each}
-		</div>
-	</div>
-{/if}
-
 <ProfileTabs {tabs} active={activeTab} />
 
 <div class="mx-auto w-full max-w-full">
@@ -106,8 +107,16 @@
 						<a href="/content/{post.slug}" class="block p-4 transition-colors hover:bg-[var(--color-surface-subtle)]">
 							<div class="flex items-center gap-2 text-xs text-[var(--color-muted)]">
 								<span class="rounded-full bg-[var(--color-surface-subtle)] px-2 py-0.5 font-medium text-[var(--color-text-subtle)]">{post.content_type}</span>
+								{#if post.is_pinned}
+									<span class="flex items-center gap-0.5 font-medium text-[var(--color-primary)]">
+										<Pin size={10} /> {t('profile.pinned', 'Pinned')}
+									</span>
+								{/if}
 								{#if post.organization}
 									<span class="text-[var(--color-primary)]">{post.organization.name}</span>
+								{/if}
+								{#if post.published_at}
+									<span>· {new Date(post.published_at).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })}</span>
 								{/if}
 								<span>· {post.read_time_minutes} {t('feed.min_read')}</span>
 							</div>
@@ -223,6 +232,64 @@
 						</li>
 					{/each}
 				</ul>
+			{/if}
+		{:else if activeTab === 'badges'}
+			<!-- Phase 34.03 — Badges tab (Section 64, ADR-080). Earned badges
+			are public; unearned badges with "how to earn" hints are shown only
+			on the own profile (data.allBadges is owner-only). -->
+			{#if (data.badges && data.badges.length > 0) || unearnedBadges.length > 0}
+				<div class="space-y-4">
+					{#if data.badges && data.badges.length > 0}
+						<div>
+							<h3 class="mb-2 flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-[var(--color-muted)]">
+								<Award size={12} /> {t('profile.earned', 'Earned')}
+							</h3>
+							<div class="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
+								{#each data.badges as badge (badge.id)}
+									<div
+										class="flex items-center gap-2 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-2.5 py-2"
+										title={badge.description}
+									>
+										<span class="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-[var(--color-surface-subtle)] text-[var(--color-primary)]">
+											<Award size={14} />
+										</span>
+										<span class="min-w-0 flex-1">
+											<span class="block truncate text-xs font-medium text-[var(--color-text)]">{badge.name}</span>
+											<span class="block text-[10px] text-[var(--color-muted)]">
+												{t('profile.earned', 'Earned')} {new Date(badge.awarded_at).toLocaleDateString(undefined, { year: 'numeric', month: 'short' })}
+											</span>
+										</span>
+									</div>
+								{/each}
+							</div>
+						</div>
+					{/if}
+					{#if unearnedBadges.length > 0}
+						<div>
+							<h3 class="mb-2 flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-[var(--color-muted)]">
+								<Award size={12} /> {t('profile.locked', 'Locked')}
+							</h3>
+							<div class="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
+								{#each unearnedBadges as badge (badge.id)}
+									<div
+										class="flex items-center gap-2 rounded-[var(--radius)] border border-dashed border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-2.5 py-2 opacity-70"
+										title={t('profile.how_to_earn', 'How to earn') + ': ' + badge.description}
+									>
+										<span class="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-[var(--color-surface)] text-[var(--color-muted)]">
+											<Award size={14} />
+										</span>
+										<span class="min-w-0 flex-1">
+											<span class="block truncate text-xs font-medium text-[var(--color-muted)]">{badge.name}</span>
+											<span class="block text-[10px] text-[var(--color-muted)]">{t('profile.locked', 'Locked')}</span>
+										</span>
+									</div>
+								{/each}
+							</div>
+						</div>
+					{/if}
+				</div>
+			{:else}
+				<EmptyState icon={Award} title={t('profile.badges', 'Badges')} />
 			{/if}
 		{:else if activeTab === 'analytics'}
 			<!-- Phase 11.07 — Analytics tab -->

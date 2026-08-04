@@ -1,5 +1,6 @@
 import type { PageServerLoad } from './$types';
 import { apiContext, apiList, apiGet } from '$lib/server/api';
+import { getTool, isToolEnabled } from '$lib/tools/registry';
 import type { ColCity, ColComparison } from '$lib/types';
 
 /**
@@ -13,6 +14,14 @@ import type { ColCity, ColComparison } from '$lib/types';
  * Ref: §72 (Cost of Living), ROADMAP-TOOLS 02.04.
  */
 export const load: PageServerLoad = async (event) => {
+	// Gate: skip all backend calls when col_calculator.enabled is false.
+	// Ref: conventions/system-settings-catalog.md, Rule 3.
+	const tool = getTool('cost-of-living')!;
+	const settings = event.locals.siteSettings;
+	if (!isToolEnabled(tool, settings)) {
+		return { enabled: false, tool, cities: [], comparison: null, maxCities: 3, staleDays: 180 };
+	}
+
 	const ctx = apiContext(event);
 
 	let cities: ColCity[] = [];
@@ -37,5 +46,18 @@ export const load: PageServerLoad = async (event) => {
 		}
 	}
 
-	return { cities, comparison };
+	// Tool config from system_settings (Rule 3 / Rule 16 — never hardcode config
+	// values). Reuses the public settings already fetched in hooks.server.ts
+	// (event.locals.siteSettings) to avoid a redundant backend round-trip.
+	// Ref: §72 (Cost of Living), conventions/system-settings-catalog.md.
+	let maxCities = 3;
+	let staleDays = 180;
+	if (typeof settings['col_calculator.max_cities'] === 'number') {
+		maxCities = settings['col_calculator.max_cities'] as number;
+	}
+	if (typeof settings['col_calculator.stale_days'] === 'number') {
+		staleDays = settings['col_calculator.stale_days'] as number;
+	}
+
+	return { enabled: true, tool, cities, comparison, maxCities, staleDays };
 };

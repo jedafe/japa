@@ -54,11 +54,11 @@
 		const id = await ensureComparison();
 		if (!id) return;
 		const res = await addComparisonDimension(id, {
-			label: 'New dimension',
+			label: t('compare.new_dimension', 'New dimension'),
 			dimension_type: 'text',
 			position: dimensions.length
 		});
-		if (res.data) dimensions = [...dimensions, { id: res.data.id, label: 'New dimension', dimension_type: 'text' }];
+		if (res.data) dimensions = [...dimensions, { id: res.data.id, label: t('compare.new_dimension', 'New dimension'), dimension_type: 'text' }];
 		onedit();
 	}
 

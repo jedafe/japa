@@ -10,8 +10,8 @@ import type {
 	ProfileMedia,
 	ProfileLike,
 	ProfileAnalytics,
-	FeedItem,
-	EarnedBadge
+	EarnedBadge,
+	Badge
 } from '$lib/types';
 
 /**
@@ -61,18 +61,14 @@ export const load: PageServerLoad = async (event) => {
 
 	// Tab data — each degrades to an empty list on failure (a missing tab must
 	// never blank the whole profile). Each tab fetches its dedicated
-	// /users/{id}/<tab> endpoint (JEOS api-routes-catalog §334–340). The
-	// profile timeline feed (/feed/profile/{id}) is fetched alongside the
-	// tabs so the profile can show a ranked/curated feed of the user's posts.
-	const [posts, replies, media, spaces, certificates, likes, feed, analytics, isFollowing, badges] = await Promise.all([
+	// /users/{id}/<tab> endpoint (JEOS api-routes-catalog §334–340).
+	const [posts, replies, media, spaces, certificates, likes, analytics, isFollowing, badges, allBadges] = await Promise.all([
 		apiList<ProfilePost>(ctx, `/users/${userId}/content`).then((r) => r.items).catch(() => []),
 		apiList<ProfileReply>(ctx, `/users/${userId}/replies`).then((r) => r.items).catch(() => []),
 		apiList<ProfileMedia>(ctx, `/users/${userId}/media`).then((r) => r.items).catch(() => []),
 		apiList<ProfileSpace>(ctx, `/users/${userId}/spaces`).then((r) => r.items).catch(() => []),
 		apiList<ProfileCertificate>(ctx, `/users/${userId}/certificates`).then((r) => r.items).catch(() => []),
 		apiList<ProfileLike>(ctx, `/users/${userId}/likes`).then((r) => r.items).catch(() => []),
-		// Profile timeline feed (Section 32) — ranked public posts by this user.
-		apiList<FeedItem>(ctx, `/feed/profile/${userId}?page_size=10`).then((r) => r.items).catch(() => []),
 		// Phase 11.07 — analytics dashboard, owner-only per JEOS §342 [auth,
 		// self]. Only fetch for the profile owner; for guests and other users
 		// the tab is hidden and the route would 403, so skip the request.
@@ -81,7 +77,12 @@ export const load: PageServerLoad = async (event) => {
 			: Promise.resolve(null),
 		initiallyFollowing,
 		// Phase 34.03 — earned badges (Section 64, ADR-080). Public route.
-		apiList<EarnedBadge>(ctx, `/users/${username}/badges`).then((r) => r.items).catch(() => [])
+		apiList<EarnedBadge>(ctx, `/users/${username}/badges`).then((r) => r.items).catch(() => []),
+		// Phase 34.03 — full badge catalog, owner-only. Used to surface
+		// unearned badges with "how to earn" hints on the own profile.
+		isOwnProfile
+			? apiList<Badge>(ctx, '/gamification/badges').then((r) => r.items).catch(() => [])
+			: Promise.resolve([] as Badge[])
 	]);
 
 	return {
@@ -94,9 +95,9 @@ export const load: PageServerLoad = async (event) => {
 		spaces,
 		certificates,
 		likes,
-		feed,
 		analytics,
 		badges,
+		allBadges,
 		jsonLd
 	};
 };
