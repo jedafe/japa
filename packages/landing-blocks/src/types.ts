@@ -222,7 +222,127 @@ export interface EntityFeatureProps {
   media_override?: MediaRef;
 }
 
-/** Discriminated union of all block types (core set for Plan 1). */
+export interface VideoProps {
+  provider: 'youtube' | 'facebook' | 'vimeo' | 'file';
+  url?: string;
+  id?: string;
+  aspect_ratio: '16:9' | '4:3' | '1:1' | '21:9';
+  autoplay: boolean;
+  mute: boolean;
+  captions: boolean;
+  loop: boolean;
+  thumbnail?: MediaRef;
+  title?: string;
+  description?: string;
+}
+
+export interface IconProps {
+  icon: string;
+  size: 'xs' | 'sm' | 'md' | 'lg' | 'xl' | '2xl' | number;
+  color: string;
+  background_color: string;
+  shape: 'none' | 'circle' | 'square' | 'rounded';
+  label?: string;
+  href?: string;
+}
+
+export interface ContentProps {
+  html: string;
+  prose_style: 'default' | 'minimal' | 'article' | 'documentation';
+}
+
+export interface QuoteProps {
+  quote: string;
+  author: string;
+  role?: string;
+  avatar?: MediaRef;
+  layout: 'centered' | 'inline' | 'large';
+}
+
+export interface SpacerDividerProps {
+  height: number;
+  divider_style: 'none' | 'line' | 'gradient' | 'dots';
+  divider_color?: string;
+}
+
+export interface CountdownProps {
+  target_date: string;
+  label?: string;
+  layout: 'inline' | 'stacked' | 'card';
+  show_days: boolean;
+  show_hours: boolean;
+  show_minutes: boolean;
+  show_seconds: boolean;
+  on_expire: 'hide' | 'show_message';
+  expired_message?: string;
+}
+
+export interface ComingSoonProps {
+  title: string;
+  description?: string;
+  icon?: string;
+  estimated_date?: string;
+  waitlist_form?: { enabled: boolean; cta_label: string; endpoint: string };
+  background?: BackgroundConfig;
+}
+
+export interface FormEmbedProps {
+  preset: 'newsletter' | 'waitlist' | 'contact' | 'custom';
+  fields: Array<{ name: string; label: string; type: 'text' | 'email' | 'textarea' | 'select'; required: boolean; placeholder?: string; options?: string[] }>;
+  submit_endpoint: string;
+  submit_label: string;
+  success_message: string;
+  error_message: string;
+  title?: string;
+  subtitle?: string;
+}
+
+export interface TimelineProps {
+  steps: Array<{ icon?: string; title: string; description?: string; media?: MediaRef }>;
+  layout: 'horizontal' | 'vertical' | 'zigzag';
+}
+
+export interface MapProps {
+  mode: 'static' | 'dynamic';
+  pins: Array<{ country: string; label: string; href?: string }>;
+  geo_source: 'manual' | 'trending_spaces';
+  highlight_visitor_country: boolean;
+}
+
+export interface TableProps {
+  columns: Array<{ key: string; label: string; align?: 'left' | 'center' | 'right' }>;
+  rows: Array<Record<string, string>>;
+  sortable: boolean;
+  striped: boolean;
+}
+
+export interface AdvertisementProps {
+  slot_key: string;
+}
+
+export interface LiveRateTickerProps {
+  corridors?: string[];
+  limit: number;
+  geo_aware: boolean;
+  layout: 'horizontal' | 'vertical';
+  speed?: number;
+}
+
+export interface TabsProps {
+  tabs: Array<{ label: string; icon?: string; content_blocks?: Block[] }>;
+  layout: 'underline' | 'pills' | 'boxed';
+  orientation: 'horizontal' | 'vertical';
+  initial_tab: number;
+}
+
+export interface MediaBlockProps {
+  media: MediaRef;
+  layout: 'full' | 'contained' | 'split';
+  caption?: string;
+  lightbox: boolean;
+}
+
+/** Discriminated union of all block types. */
 export type Block =
   | (BaseBlock & { type: 'hero'; props: HeroProps })
   | (BaseBlock & { type: 'cta_banner'; props: CtaBannerProps })
@@ -231,7 +351,22 @@ export type Block =
   | (BaseBlock & { type: 'accordion'; props: AccordionProps })
   | (BaseBlock & { type: 'carousel'; props: CarouselProps })
   | (BaseBlock & { type: 'entity_collection'; props: EntityCollectionProps })
-  | (BaseBlock & { type: 'entity_feature'; props: EntityFeatureProps });
+  | (BaseBlock & { type: 'entity_feature'; props: EntityFeatureProps })
+  | (BaseBlock & { type: 'video'; props: VideoProps })
+  | (BaseBlock & { type: 'icon'; props: IconProps })
+  | (BaseBlock & { type: 'content'; props: ContentProps })
+  | (BaseBlock & { type: 'quote'; props: QuoteProps })
+  | (BaseBlock & { type: 'spacer_divider'; props: SpacerDividerProps })
+  | (BaseBlock & { type: 'countdown'; props: CountdownProps })
+  | (BaseBlock & { type: 'coming_soon'; props: ComingSoonProps })
+  | (BaseBlock & { type: 'form_embed'; props: FormEmbedProps })
+  | (BaseBlock & { type: 'timeline'; props: TimelineProps })
+  | (BaseBlock & { type: 'map'; props: MapProps })
+  | (BaseBlock & { type: 'table'; props: TableProps })
+  | (BaseBlock & { type: 'advertisement'; props: AdvertisementProps })
+  | (BaseBlock & { type: 'live_rate_ticker'; props: LiveRateTickerProps })
+  | (BaseBlock & { type: 'tabs'; props: TabsProps })
+  | (BaseBlock & { type: 'media'; props: MediaBlockProps });
 
 /** A landing page as returned by GET /pages/{slug}. */
 export interface LandingPage {
