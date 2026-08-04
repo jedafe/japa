@@ -4,7 +4,7 @@
 	import FeedSortBar from '$lib/components/feed/FeedSortBar.svelte';
 	import FeedList from '$lib/components/feed/FeedList.svelte';
 	import FeedUpdatePill from '$lib/components/feed/FeedUpdatePill.svelte';
-	import LandingPage from '$lib/components/pagebuilder/LandingPage.svelte';
+	import { LandingRenderer } from '@japaconnect/landing-blocks';
 	import GuestLanding from '$lib/components/pagebuilder/GuestLanding.svelte';
 	import { t } from '$lib/i18n';
 	import type { CardStyleConfig } from '$lib/feed/cardStyle';
@@ -57,7 +57,7 @@
 
 {#if data.landing}
 	<!-- ADR-058 §5 Exception #3: guest Page Builder landing page -->
-	<LandingPage page={data.landing} />
+	<LandingRenderer blocks={data.landing.blocks} />
 {:else if data.guestLanding}
 	<!-- ADR-058 §5 fallback: default Hashnode-style guest landing -->
 	<GuestLanding
