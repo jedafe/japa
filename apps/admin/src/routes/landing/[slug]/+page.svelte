@@ -257,26 +257,98 @@
             />
           </Tabs.Content>
           <Tabs.Content value="settings" class="flex-1 overflow-y-auto p-3">
-            <div class="space-y-3">
+            <div class="space-y-4">
               <label class="flex items-center justify-between text-sm">
                 <span class="text-[var(--foreground)]">Visible</span>
                 <input type="checkbox" checked={selectedBlock.visible} onchange={() => toggleBlockVisibility(selectedBlock.id)} />
               </label>
-              <div>
-                <label class="mb-1 block text-xs text-[var(--muted)]">Motion preset</label>
-                <select class="w-full rounded border border-[var(--border-input)] px-2 py-1 text-sm" value={selectedBlock.motion?.preset ?? 'none'} onchange={(e) => { blocks = blocks.map((b) => b.id === selectedBlock.id ? { ...b, motion: { ...(b.motion ?? { delay: 0 }), preset: e.currentTarget.value as any } } : b); unsavedChanges = true; }}>
-                  <option value="none">None</option>
-                  <option value="fade-up">Fade Up</option>
-                  <option value="fade-in">Fade In</option>
-                  <option value="slide-in">Slide In</option>
-                  <option value="scale-in">Scale In</option>
-                </select>
+
+              <!-- Motion / Animation -->
+              <div class="space-y-3 rounded border border-[var(--border)] p-3">
+                <h4 class="text-xs font-semibold uppercase text-[var(--muted)]">Animation</h4>
+
+                <div>
+                  <label class="mb-1 block text-xs text-[var(--muted)]">Preset</label>
+                  <select class="w-full rounded border border-[var(--border-input)] px-2 py-1 text-sm" value={selectedBlock.motion?.preset ?? 'none'} onchange={(e) => { blocks = blocks.map((b) => b.id === selectedBlock.id ? { ...b, motion: { ...(b.motion ?? { delay: 0 }), preset: e.currentTarget.value as any } } : b); unsavedChanges = true; }}>
+                    <optgroup label="None">
+                      <option value="none">None</option>
+                    </optgroup>
+                    <optgroup label="Fade">
+                      <option value="fade-in">Fade In</option>
+                      <option value="fade-up">Fade Up</option>
+                      <option value="fade-down">Fade Down</option>
+                    </optgroup>
+                    <optgroup label="Fly In">
+                      <option value="fly-in-left">Fly In from Left</option>
+                      <option value="fly-in-right">Fly In from Right</option>
+                      <option value="fly-in-up">Fly In from Bottom</option>
+                      <option value="fly-in-down">Fly In from Top</option>
+                    </optgroup>
+                    <optgroup label="Slide">
+                      <option value="slide-in">Slide In</option>
+                      <option value="slide-in-left">Slide In from Left</option>
+                      <option value="slide-in-right">Slide In from Right</option>
+                    </optgroup>
+                    <optgroup label="Scale & Zoom">
+                      <option value="scale-in">Scale In</option>
+                      <option value="scale-out">Scale Out</option>
+                      <option value="zoom-in">Zoom In</option>
+                      <option value="zoom-out">Zoom Out</option>
+                    </optgroup>
+                    <optgroup label="Blur & Flip">
+                      <option value="blur-in">Blur In</option>
+                      <option value="blur-out">Blur Out</option>
+                      <option value="flip-up">Flip Up</option>
+                      <option value="flip-down">Flip Down</option>
+                    </optgroup>
+                    <optgroup label="Special">
+                      <option value="bounce-in">Bounce In</option>
+                    </optgroup>
+                  </select>
+                </div>
+
+                {#if (selectedBlock.motion?.preset ?? 'none') !== 'none'}
+                  <div class="grid grid-cols-2 gap-2">
+                    <div>
+                      <label class="mb-1 block text-xs text-[var(--muted)]">Delay (ms)</label>
+                      <input type="number" min="0" step="50" class="w-full rounded border border-[var(--border-input)] px-2 py-1 text-sm" value={selectedBlock.motion?.delay ?? 0} oninput={(e) => { blocks = blocks.map((b) => b.id === selectedBlock.id ? { ...b, motion: { ...(b.motion ?? { preset: 'none' }), delay: Number(e.currentTarget.value) } } : b); unsavedChanges = true; }} />
+                    </div>
+                    <div>
+                      <label class="mb-1 block text-xs text-[var(--muted)]">Duration (ms)</label>
+                      <input type="number" min="100" step="50" class="w-full rounded border border-[var(--border-input)] px-2 py-1 text-sm" value={selectedBlock.motion?.duration ?? 700} oninput={(e) => { blocks = blocks.map((b) => b.id === selectedBlock.id ? { ...b, motion: { ...(b.motion ?? { preset: 'none', delay: 0 }), duration: Number(e.currentTarget.value) } } : b); unsavedChanges = true; }} />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label class="mb-1 block text-xs text-[var(--muted)]">Easing</label>
+                    <select class="w-full rounded border border-[var(--border-input)] px-2 py-1 text-sm" value={selectedBlock.motion?.easing ?? 'cubic-bezier(0.16, 1, 0.3, 1)'} onchange={(e) => { blocks = blocks.map((b) => b.id === selectedBlock.id ? { ...b, motion: { ...(b.motion ?? { preset: 'none', delay: 0 }), easing: e.currentTarget.value } } : b); unsavedChanges = true; }}>
+                      <option value="cubic-bezier(0.16, 1, 0.3, 1)">Smooth (default)</option>
+                      <option value="ease-out">Ease Out</option>
+                      <option value="ease-in-out">Ease In Out</option>
+                      <option value="ease-in">Ease In</option>
+                      <option value="linear">Linear</option>
+                      <option value="cubic-bezier(0.34, 1.56, 0.64, 1)">Bounce</option>
+                      <option value="cubic-bezier(0.68, -0.55, 0.27, 1.55)">Elastic</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label class="mb-1 block text-xs text-[var(--muted)]">Viewport threshold: {selectedBlock.motion?.threshold ?? 0.1}</label>
+                    <input type="range" min="0" max="1" step="0.05" class="w-full" value={selectedBlock.motion?.threshold ?? 0.1} oninput={(e) => { blocks = blocks.map((b) => b.id === selectedBlock.id ? { ...b, motion: { ...(b.motion ?? { preset: 'none', delay: 0 }), threshold: Number(e.currentTarget.value) } } : b); unsavedChanges = true; }} />
+                  </div>
+
+                  <label class="flex items-center justify-between text-xs">
+                    <span class="text-[var(--foreground)]">Animate only once</span>
+                    <input type="checkbox" checked={selectedBlock.motion?.once ?? true} onchange={(e) => { blocks = blocks.map((b) => b.id === selectedBlock.id ? { ...b, motion: { ...(b.motion ?? { preset: 'none', delay: 0 }), once: e.currentTarget.checked } } : b); unsavedChanges = true; }} />
+                  </label>
+
+                  <button type="button" onclick={() => { blocks = blocks.map((b) => b.id === selectedBlock.id ? { ...b, motion: undefined } : b); unsavedChanges = true; }} class="w-full rounded border border-[var(--border)] px-2 py-1 text-xs text-[var(--muted)] hover:bg-[var(--surface)]">
+                    Reset animation
+                  </button>
+                {/if}
               </div>
-              <div>
-                <label class="mb-1 block text-xs text-[var(--muted)]">Motion delay (ms)</label>
-                <input type="number" class="w-full rounded border border-[var(--border-input)] px-2 py-1 text-sm" value={selectedBlock.motion?.delay ?? 0} oninput={(e) => { blocks = blocks.map((b) => b.id === selectedBlock.id ? { ...b, motion: { ...(b.motion ?? { preset: 'none' }), delay: Number(e.currentTarget.value) } } : b); unsavedChanges = true; }} />
-              </div>
-              <div class="flex gap-2 pt-4">
+
+              <div class="flex gap-2 pt-2">
                 <button onclick={() => duplicateBlock(selectedBlock.id)} class="flex-1 rounded border border-[var(--border)] px-2 py-1 text-xs">Duplicate</button>
                 <button onclick={() => removeBlock(selectedBlock.id)} class="flex-1 rounded border border-[var(--danger)] px-2 py-1 text-xs text-[var(--danger)]">Delete</button>
               </div>

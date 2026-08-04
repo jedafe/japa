@@ -12,6 +12,8 @@ export type {
   CountdownProps, ComingSoonProps, FormEmbedProps, TimelineProps,
   MapProps, TableProps, AdvertisementProps, LiveRateTickerProps,
   TabsProps, MediaBlockProps,
+  HeadingProps,
+  CtaButtonProps,
 } from './types';
 
 export { geoCopy, GLOBAL_TOKENS, getGeoTokens } from './geo/copyRegistry';

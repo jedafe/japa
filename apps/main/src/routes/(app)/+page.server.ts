@@ -92,6 +92,7 @@ export const load: PageServerLoad = async (event) => {
 				visible: true,
 				label: entry.label,
 				props: props as unknown as Block['props'],
+				motion: entry.motion,
 			};
 		}) as Block[];
 

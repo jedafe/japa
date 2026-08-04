@@ -23,9 +23,13 @@ import AdvertisementContentEditor from './AdvertisementContentEditor.svelte';
 import LiveRateTickerContentEditor from './LiveRateTickerContentEditor.svelte';
 import TabsContentEditor from './TabsContentEditor.svelte';
 import MediaContentEditor from './MediaContentEditor.svelte';
+import HeadingContentEditor from './HeadingContentEditor.svelte';
+import CtaButtonContentEditor from './CtaButtonContentEditor.svelte';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const contentEditorRegistry: Record<Block['type'], Component<any>> = {
+  heading: HeadingContentEditor,
+  cta_button: CtaButtonContentEditor,
   hero: HeroContentEditor,
   cta_banner: CtaBannerContentEditor,
   card_grid: CardGridContentEditor,
