@@ -35,7 +35,8 @@
 		"clsx": "^2.1.1",
 		"layerchart": "^2.0.1",
 		"lucide-svelte": "^1.0.1",
-		"mode-watcher": "^1.1.0"
+		"mode-watcher": "^1.1.0",
+		"@japaconnect/landing-blocks": "workspace:*"
 	},
 	"pnpm": {
 		"onlyBuiltDependencies": [
