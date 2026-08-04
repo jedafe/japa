@@ -18,11 +18,16 @@
   import * as LucideIcons from 'lucide-svelte';
   import type { Component } from 'svelte';
   import MediaPickerModal from '$lib/components/ui/MediaPickerModal.svelte';
+  // Cast for DI — the editors expect Component<any>, MediaPickerModal has bindable props
+  const MediaPicker = MediaPickerModal as unknown as Component;
 
   let { data }: { data: PageData } = $props();
 
   // State
-  let blocks = $state<Block[]>(data.page.blocks ?? []);
+  let blocks = $state<Block[]>(
+    Array.isArray(data.page.blocks) ? data.page.blocks as Block[] :
+    typeof data.page.blocks === 'string' ? JSON.parse(data.page.blocks) as Block[] : []
+  );
   let selectedBlockId = $state<string | null>(null);
   let previewCountry = $state('global');
   let unsavedChanges = $state(false);
@@ -94,8 +99,9 @@
     unsavedChanges = true;
   }
 
-  function updateBlockProps(id: string, props: Block['props']): void {
-    blocks = blocks.map((b) => (b.id === id ? { ...b, props } : b));
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  function updateBlockProps(id: string, props: any): void {
+    blocks = blocks.map((b) => (b.id === id ? { ...b, props } : b)) as Block[];
     unsavedChanges = true;
   }
 
@@ -204,7 +210,7 @@
             {#if Icon}<Icon size={14} />{/if}
           {/if}
           <span class="flex-1 truncate text-[var(--foreground)]">{meta?.label ?? block.type}</span>
-          {!block.visible && <span class="text-xs text-[var(--muted)]">hidden</span>}
+          {#if !block.visible}<span class="text-xs text-[var(--muted)]">hidden</span>{/if}
         </div>
       {/each}
       <button onclick={() => { addBlock('hero'); }} class="mt-2 w-full rounded border border-dashed border-[var(--border)] py-1.5 text-xs text-[var(--muted)] hover:bg-[var(--surface)]">
@@ -237,8 +243,8 @@
               {@const Editor = ContentEditor}
               <Editor
                 props={selectedBlock.props}
-                onchange={(v) => updateBlockProps(selectedBlock.id, v)}
-                mediaPickerComponent={MediaPickerModal}
+                onchange={(v: unknown) => updateBlockProps(selectedBlock.id, v)}
+                mediaPickerComponent={MediaPicker}
                 geoCtx={previewCtx}
               />
             {/if}
@@ -246,8 +252,8 @@
           <Tabs.Content value="style" class="flex-1 overflow-y-auto p-3">
             <BlockStylePanel
               value={selectedBlock.style}
-              onchange={(v) => updateBlockStyle(selectedBlock.id, v)}
-              mediaPickerComponent={MediaPickerModal}
+              onchange={(v: BlockStyle) => updateBlockStyle(selectedBlock.id, v)}
+              mediaPickerComponent={MediaPicker}
             />
           </Tabs.Content>
           <Tabs.Content value="settings" class="flex-1 overflow-y-auto p-3">

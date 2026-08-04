@@ -1,5 +1,8 @@
 <script lang="ts">
   import type { BackgroundConfig, MediaRef } from '../types';
+
+type ImageBg = NonNullable<BackgroundConfig['image']>;
+type VideoBg = NonNullable<BackgroundConfig['video']>;
   import type { Component } from 'svelte';
   import MediaPicker from './MediaPicker.svelte';
 
@@ -80,7 +83,7 @@
     <div class="space-y-2">
       <MediaPicker
         value={value?.image ? { media_id: value.image.media_id, url: value.image.url, alt: value.image.alt } : undefined}
-        onchange={(m) => update({ image: { ...(value?.image ?? { fit: 'cover' }), ...(m ? { media_id: m.media_id, url: m.url, alt: m.alt ?? '' } : {}) } })}
+        onchange={(m) => update({ image: { ...(value?.image ?? { fit: 'cover' }), ...(m ? { media_id: m.media_id, url: m.url, alt: m.alt ?? '' } : {}) } as ImageBg })}
         {mediaPickerComponent}
       />
       <div>
@@ -105,18 +108,18 @@
     <div class="space-y-2">
       <MediaPicker
         value={value?.video ? { media_id: value.video.media_id, url: value.video.url, alt: '' } : undefined}
-        onchange={(m) => update({ video: { ...(value?.video ?? { loop: false, muted: true, autoplay: false }), ...(m ? { media_id: m.media_id, url: m.url } : {}) } })}
+        onchange={(m) => update({ video: { ...(value?.video ?? { loop: false, muted: true, autoplay: false }), ...(m ? { media_id: m.media_id, url: m.url } : {}) } as VideoBg })}
         {mediaPickerComponent}
       />
       <div class="flex gap-4">
         <label class="flex items-center gap-1 text-xs text-[var(--color-muted)]">
-          <input type="checkbox" checked={value?.video?.loop ?? false} onchange={(e) => update({ video: { ...(value?.video ?? { media_id: '', url: '' }), loop: e.currentTarget.checked } })} /> Loop
+          <input type="checkbox" checked={value?.video?.loop ?? false} onchange={(e) => update({ video: { ...(value?.video ?? { media_id: '', url: '', loop: false, muted: true, autoplay: false }), loop: e.currentTarget.checked } as VideoBg })} /> Loop
         </label>
         <label class="flex items-center gap-1 text-xs text-[var(--color-muted)]">
-          <input type="checkbox" checked={value?.video?.muted ?? true} onchange={(e) => update({ video: { ...(value?.video ?? { media_id: '', url: '' }), muted: e.currentTarget.checked } })} /> Muted
+          <input type="checkbox" checked={value?.video?.muted ?? true} onchange={(e) => update({ video: { ...(value?.video ?? { media_id: '', url: '', loop: false, muted: true, autoplay: false }), muted: e.currentTarget.checked } as VideoBg })} /> Muted
         </label>
         <label class="flex items-center gap-1 text-xs text-[var(--color-muted)]">
-          <input type="checkbox" checked={value?.video?.autoplay ?? false} onchange={(e) => update({ video: { ...(value?.video ?? { media_id: '', url: '' }), autoplay: e.currentTarget.checked } })} /> Autoplay
+          <input type="checkbox" checked={value?.video?.autoplay ?? false} onchange={(e) => update({ video: { ...(value?.video ?? { media_id: '', url: '', loop: false, muted: true, autoplay: false }), autoplay: e.currentTarget.checked } as VideoBg })} /> Autoplay
         </label>
       </div>
     </div>

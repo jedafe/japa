@@ -96,12 +96,12 @@
           {#each allowedTypes as type}
             {@const meta = blockRegistry[type]}
             {#if meta}
+              {@const Icon = getIcon(meta.icon)}
               <button
                 type="button"
                 onclick={() => addBlock(type)}
                 class="flex items-center gap-2 rounded-[var(--radius)] border border-[var(--color-border)] p-3 text-left hover:bg-[var(--color-surface-subtle)]"
               >
-                {@const Icon = getIcon(meta.icon)}
                 {#if Icon}
                   <Icon size={16} />
                 {/if}
