@@ -130,6 +130,12 @@ func (h *Handlers) Subscribe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Global killswitch (newsletter.enabled, ADR-080 §62).
+	if !h.Service.Enabled(r.Context(), tenantID) {
+		writeError(w, http.StatusNotFound, "newsletter_disabled", "Newsletter is not available")
+		return
+	}
+
 	var input struct {
 		Email  string `json:"email"`
 		Source string `json:"source"`

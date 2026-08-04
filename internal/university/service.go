@@ -55,6 +55,13 @@ type Service struct {
 	rdb              valkeycompat.Cmdable // nil = caching disabled
 	mediaUploader    MediaUploader        // nil = fetch_logo task skips media storage
 	spaceLogoUpdater SpaceLogoUpdater     // nil = fetch_logo task skips space update
+	notifier         Notifier             // nil = notify tasks log only
+}
+
+// Notifier dispatches in-app notifications for university events. Implemented
+// by the notifications service; nil = the notify_* tasks log only (V1 stub).
+type Notifier interface {
+	CreateNotification(ctx context.Context, tenantID, recipientID pgtype.UUID, nType, actorType string, actorID pgtype.UUID, subjectType string, subjectID pgtype.UUID, title, body, actionURL string) error
 }
 
 // NewService creates a university service.
@@ -69,6 +76,11 @@ func (s *Service) SetValkey(rdb valkeycompat.Cmdable) { s.rdb = rdb }
 
 // SetEnqueuer wires (or rewires) the Asynq enqueuer after construction.
 func (s *Service) SetEnqueuer(e TaskEnqueuer) { s.enqueuer = e }
+
+// SetNotifier wires the notification dispatcher for the notify_* tasks.
+// Optional — if not called, notify_instructor_approved and
+// notify_course_approved log only (V1 behavior).
+func (s *Service) SetNotifier(n Notifier) { s.notifier = n }
 
 // SetMediaUploader wires the media uploader for the university:fetch_logo
 // task (Section 39). Optional — if not called, fetch_logo logs a warning
@@ -590,6 +602,86 @@ func (s *Service) enqueue(ctx context.Context, taskType string, payload map[stri
 	if err := s.enqueuer.Enqueue(taskType, body); err != nil {
 		slog.Warn("university: enqueue task", "task", taskType, "error", err)
 	}
+}
+
+// ---------------------------------------------------------------------------
+// Notification dispatch (called by the worker processor for notify_* tasks)
+// ---------------------------------------------------------------------------
+
+// NotifyInstructorApprovedDispatch creates an in-app notification for the
+// creator whose instructor application was approved. Called by the
+// university:notify_instructor_approved task handler.
+// Ref: japaconnect-engineering/sections/35-notification-system.md
+func (s *Service) NotifyInstructorApprovedDispatch(ctx context.Context, tenantID, instructorID pgtype.UUID) error {
+	if s.notifier == nil {
+		slog.Info("university:notify_instructor_approved: no notifier wired, logging only",
+			"tenant_id", tenantID, "instructor_id", instructorID)
+		return nil
+	}
+
+	// Load the instructor profile to get the user_id (notification recipient).
+	profile, err := s.store.GetByID(ctx, tenantID, instructorID)
+	if err != nil {
+		return fmt.Errorf("university: notify instructor approved: load profile: %w", err)
+	}
+	if !profile.UserID.Valid {
+		slog.Warn("university:notify_instructor_approved: instructor has no backing user",
+			"instructor_id", instructorID)
+		return nil
+	}
+
+	return s.notifier.CreateNotification(ctx,
+		tenantID, profile.UserID,
+		"university_instructor_approved", // notification type key
+		"system",                         // actor type
+		pgtype.UUID{},                    // actor ID (system)
+		"instructor",                     // subject type
+		instructorID,                     // subject ID
+		"Instructor Application Approved",
+		"Your instructor application has been approved. You can now publish tracks on Japa University.",
+		"/university/instructor/dashboard",
+	)
+}
+
+// NotifyCourseApprovedDispatch creates an in-app notification for the
+// creator whose track was approved to the marketplace. Called by the
+// university:notify_course_approved task handler.
+// Ref: japaconnect-engineering/sections/35-notification-system.md
+func (s *Service) NotifyCourseApprovedDispatch(ctx context.Context, tenantID, trackID pgtype.UUID) error {
+	if s.notifier == nil {
+		slog.Info("university:notify_course_approved: no notifier wired, logging only",
+			"tenant_id", tenantID, "track_id", trackID)
+		return nil
+	}
+
+	// Load the track to get the instructor (and thus the user_id).
+	track, err := s.store.GetTrackByID(ctx, tenantID, trackID)
+	if err != nil {
+		return fmt.Errorf("university: notify course approved: load track: %w", err)
+	}
+
+	// Load the instructor profile to get the user_id (notification recipient).
+	profile, err := s.store.GetByID(ctx, tenantID, track.InstructorID)
+	if err != nil {
+		return fmt.Errorf("university: notify course approved: load instructor: %w", err)
+	}
+	if !profile.UserID.Valid {
+		slog.Warn("university:notify_course_approved: instructor has no backing user",
+			"instructor_id", track.InstructorID)
+		return nil
+	}
+
+	return s.notifier.CreateNotification(ctx,
+		tenantID, profile.UserID,
+		"university_course_approved", // notification type key
+		"system",                     // actor type
+		pgtype.UUID{},                // actor ID (system)
+		"track",                      // subject type
+		trackID,                      // subject ID
+		"Track Approved",
+		"Your track \""+track.Title+"\" has been approved and is now live on the Japa University marketplace.",
+		"/university/tracks/"+trackID.String(),
+	)
 }
 
 // ---------------------------------------------------------------------------

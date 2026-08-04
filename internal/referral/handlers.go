@@ -75,6 +75,18 @@ func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype
 	return t.ID, true
 }
 
+// tenantID returns the tenant ID from the request context without writing an
+// error response. Used by handlers that need the tenant for a killswitch check
+// but must not produce an HTTP error when the tenant is absent (e.g. the public
+// redirect handler, which falls back to a plain redirect).
+func (h *Handlers) tenantID(r *http.Request) (pgtype.UUID, bool) {
+	t := tenant.FromContext(r.Context())
+	if t == nil {
+		return pgtype.UUID{}, false
+	}
+	return t.ID, true
+}
+
 func parsePageSize(r *http.Request) int32 {
 	s := r.URL.Query().Get("page_size")
 	if s == "" {
@@ -262,6 +274,12 @@ func (h *Handlers) HandleGetMyCode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Global killswitch (referral.enabled, ADR-078 §60).
+	if !h.Service.Enabled(r.Context(), tenantID) {
+		writeError(w, http.StatusNotFound, "referral_disabled", "Referral program is not available")
+		return
+	}
+
 	stats, err := h.Service.GetReferralStats(r.Context(), tenantID, u.UserID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "stats_failed", err.Error())
@@ -276,6 +294,14 @@ func (h *Handlers) HandleRedirect(w http.ResponseWriter, r *http.Request) {
 	code := chi.URLParam(r, "code")
 	if code == "" {
 		writeError(w, http.StatusBadRequest, "missing_param", "code is required")
+		return
+	}
+
+	// Global killswitch (referral.enabled, ADR-078 §60). When disabled, the
+	// redirect still resolves the code but does not track clicks or set the
+	// attribution cookie — the user is simply sent to the homepage.
+	if tenantID, ok := h.tenantID(r); ok && !h.Service.Enabled(r.Context(), tenantID) {
+		http.Redirect(w, r, "/?ref="+code, http.StatusFound)
 		return
 	}
 
@@ -313,6 +339,12 @@ func (h *Handlers) HandleMyHistory(w http.ResponseWriter, r *http.Request) {
 	u := auth.FromContext(r.Context())
 	if u == nil {
 		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		return
+	}
+
+	// Global killswitch (referral.enabled, ADR-078 §60).
+	if !h.Service.Enabled(r.Context(), tenantID) {
+		writeError(w, http.StatusNotFound, "referral_disabled", "Referral program is not available")
 		return
 	}
 

@@ -86,13 +86,16 @@ var settingsCatalog = map[string]settingMeta{
 	"ai.monthly_budget_usd":        {Type: "float", DefaultValue: "100", Description: "Alert threshold for AI spend (not hard cap).", Panel: "admin"},
 	"ai.japabot_enabled":           {Type: "bool", DefaultValue: "true", Description: "Global JapaBot toggle.", Panel: "admin"},
 	"ai.content_assist_enabled":    {Type: "bool", DefaultValue: "true", Description: "In-editor AI assist toggle.", Panel: "admin"},
-	// Media
-	"media.storage.provider":    {Type: "string", DefaultValue: "seaweedfs", Description: "Storage backend provider.", Options: `[{"value":"seaweedfs","label":"SeaweedFS"},{"value":"s3","label":"Amazon S3"},{"value":"r2","label":"Cloudflare R2"},{"value":"b2","label":"Backblaze B2"}]`, Panel: "control"},
-	"media.storage.endpoint":    {Type: "string", DefaultValue: "", Description: "S3-compatible endpoint URL.", Panel: "control"},
-	"media.storage.bucket":      {Type: "string", DefaultValue: "japaconnect", Description: "Default bucket name.", Panel: "control"},
-	"media.storage.region":      {Type: "string", DefaultValue: "us-east-1", Description: "S3 region (SeaweedFS ignores this).", Panel: "control"},
-	"media.storage.access_key":  {Type: "string", DefaultValue: "", Description: "S3 access key.", Sensitive: true, Panel: "control"},
-	"media.storage.secret_key":  {Type: "string", DefaultValue: "", Description: "S3 secret key.", Sensitive: true, Panel: "control"},
+	// Media — storage.* keys are env-only (read from JC_S3_* env vars in
+	// internal/media/s3.go). They are kept in the catalog for control-panel
+	// display but are NOT read from system_settings at runtime. Changing
+	// them requires updating the JC_S3_* environment variables and restarting.
+	"media.storage.provider":    {Type: "string", DefaultValue: "seaweedfs", Description: "Storage backend provider (env-only: JC_S3_ENDPOINT).", Options: `[{"value":"seaweedfs","label":"SeaweedFS"},{"value":"s3","label":"Amazon S3"},{"value":"r2","label":"Cloudflare R2"},{"value":"b2","label":"Backblaze B2"}]`, Panel: "control"},
+	"media.storage.endpoint":    {Type: "string", DefaultValue: "", Description: "S3-compatible endpoint URL (env-only: JC_S3_ENDPOINT).", Panel: "control"},
+	"media.storage.bucket":      {Type: "string", DefaultValue: "japaconnect", Description: "Default bucket name (env-only: JC_S3_BUCKET).", Panel: "control"},
+	"media.storage.region":      {Type: "string", DefaultValue: "us-east-1", Description: "S3 region (env-only: JC_S3_REGION; SeaweedFS ignores this).", Panel: "control"},
+	"media.storage.access_key":  {Type: "string", DefaultValue: "", Description: "S3 access key (env-only: JC_S3_ACCESS_KEY).", Sensitive: true, Panel: "control"},
+	"media.storage.secret_key":  {Type: "string", DefaultValue: "", Description: "S3 secret key (env-only: JC_S3_SECRET_KEY).", Sensitive: true, Panel: "control"},
 	"media.cdn.base_url":        {Type: "string", DefaultValue: "", Description: "CDN base URL (empty = use imgproxy directly).", Panel: "control"},
 	"media.max_upload_mb":       {Type: "int", DefaultValue: "50", Description: "Max file size in MB.", Panel: "admin"},
 	"media.allowed_video_types": {Type: "csv", DefaultValue: "mp4,webm,mov", Description: "Allowed video MIME extensions.", Panel: "admin"},
@@ -176,42 +179,18 @@ var settingsCatalog = map[string]settingMeta{
 	"appearance.favicon_url":         {Type: "string", DefaultValue: "", Description: "URL to the platform favicon image; empty = use default favicon.svg.", Public: true, Panel: "admin"},
 	"appearance.primary_color":       {Type: "string", DefaultValue: "#c615a6", Description: "Primary brand color (hex).", Public: true, Panel: "admin"},
 	"appearance.auth_brand_slides":   {Type: "json", DefaultValue: "[]", Description: "Carousel slides for the auth brand panel: [{image, headline, subheading}].", Public: true, Panel: "admin"},
-	// Advanced / operational.
-	// These are dead — log_level is a process-startup concern (JC_* env var,
-	// not hot-reloadable), and cache_ttl_seconds had no consumer.
-	// Marked Panel: "admin" so they never appear in the control panel.
-	"advanced.cache_ttl_seconds":     {Type: "int", DefaultValue: "20", Description: "Default Valkey cache TTL in seconds for non-explicit keys.", Panel: "admin"},
-	"advanced.log_level":             {Type: "string", DefaultValue: "info", Description: "Application log level.", Options: `[{"value":"debug","label":"Debug"},{"value":"info","label":"Info"},{"value":"warn","label":"Warn"},{"value":"error","label":"Error"}]`, Panel: "admin"},
-	// Content settings not yet in the JEOS catalog but present in the DB.
+	// Content settings (§14, content type system).
 	"content.allow_anonymous_posts":  {Type: "bool", DefaultValue: "false", Description: "Whether anonymous (logged-out) users can create posts.", Panel: "admin"},
 	"content.allowed_upload_types":   {Type: "csv", DefaultValue: "jpeg,png,jpg", Description: "Comma-separated allowed file extensions for content uploads.", Options: `[{"value":"jpeg","label":"JPEG"},{"value":"jpg","label":"JPG"},{"value":"png","label":"PNG"},{"value":"gif","label":"GIF"},{"value":"webp","label":"WebP"},{"value":"svg","label":"SVG"},{"value":"pdf","label":"PDF"},{"value":"doc","label":"DOC"},{"value":"docx","label":"DOCX"},{"value":"mp4","label":"MP4"},{"value":"webm","label":"WebM"},{"value":"mov","label":"MOV"}]`, Panel: "admin"},
 	"content.max_upload_size_mb":     {Type: "int", DefaultValue: "5", Description: "Maximum upload file size in MB for content attachments.", Panel: "admin"},
 	"content.posts_per_page":         {Type: "int", DefaultValue: "12", Description: "Number of posts per page in feed/list views.", Panel: "admin"},
 	"content.require_content_review": {Type: "bool", DefaultValue: "true", Description: "Whether new content requires admin review before publishing.", Panel: "admin"},
-	// Feature flags (platform-level toggles).
-	// These are dead — they duplicated the real feature_flags table managed
-	// via the Features admin page. Marked Panel: "admin" so they never appear
-	// in the control panel. Use the Features page to toggle modules.
-	"features.advertising_enabled":   {Type: "bool", DefaultValue: "true", Description: "Master toggle for the advertising module.", Panel: "admin"},
-	"features.blog_enabled":          {Type: "bool", DefaultValue: "true", Description: "Master toggle for the blog module.", Panel: "admin"},
-	"features.comparisons_enabled":   {Type: "bool", DefaultValue: "true", Description: "Master toggle for the comparison module.", Panel: "admin"},
-	"features.forum_enabled":         {Type: "bool", DefaultValue: "true", Description: "Master toggle for the forum module.", Panel: "admin"},
-	"features.reviews_enabled":       {Type: "bool", DefaultValue: "true", Description: "Master toggle for the reviews module.", Panel: "admin"},
-	// Security settings not in the JEOS catalog.
-	// security.lockout_duration_minutes is dead — bruteforce backoff is computed
-	// from max_login_attempts + fail_window_minutes (both in admin).
-	// security.require_email_verification is a duplicate of
-	// auth.email.verify_required (the consumed key, in admin).
-	// Both marked Panel: "admin" so they never appear in the control panel.
-	"security.lockout_duration_minutes":    {Type: "int", DefaultValue: "15", Description: "Account lockout duration in minutes after max login attempts.", Panel: "admin"},
-	"security.require_email_verification":  {Type: "bool", DefaultValue: "true", Description: "Whether email verification is required before posting.", Panel: "admin"},
+	// Security settings (§02, authentication).
+	// Note: security.lockout_duration_minutes and security.require_email_verification
+	// were removed as dead keys — bruteforce backoff is computed from
+	// max_login_attempts + fail_window_minutes, and email verification uses
+	// auth.email.verify_required (the consumed key).
 	// SEO settings.
-	// seo.enable_* toggles are dead (no consumer — sitemap & robots.txt are
-	// always served, JSON-LD is emitted by SSR). Marked Panel: "admin" so they
-	// never appear in the control panel.
-	"seo.enable_json_ld":     {Type: "bool", DefaultValue: "true", Description: "Generate JSON-LD structured data on content pages.", Panel: "admin"},
-	"seo.enable_robots_txt":  {Type: "bool", DefaultValue: "true", Description: "Serve a robots.txt file.", Panel: "admin"},
-	"seo.enable_sitemap":     {Type: "bool", DefaultValue: "true", Description: "Generate and serve an XML sitemap.", Panel: "admin"},
 	// SEO settings managed by the admin panel (not previously catalogued —
 	// adding them with Panel: "admin" prevents DB entries from leaking into
 	// the control panel).
@@ -227,6 +206,117 @@ var settingsCatalog = map[string]settingMeta{
 	"users.allow_social_login":           {Type: "bool", DefaultValue: "false", Description: "Whether OAuth social login providers are enabled.", Panel: "admin"},
 	"users.require_profile_completion":   {Type: "bool", DefaultValue: "false", Description: "Whether users must complete their profile before posting.", Panel: "admin"},
 	"users.max_avatar_size_mb":           {Type: "int", DefaultValue: "5", Description: "Max user avatar file size in MB.", Panel: "admin"},
+
+	// ---------------------------------------------------------------------------
+	// V2 Settings (JEOS §§60–78, ADRs 061–086)
+	// All v2 keys are Panel: "control" — they are infrastructure-level toggles,
+	// caps, schedules, and subdomain/domain configs managed by super admins.
+	// Ref: .jeos/conventions/system-settings-catalog.md (V2 Settings section)
+	// ---------------------------------------------------------------------------
+
+	// RAG / JapaBot Knowledge Layer (§69, ADR-069)
+	"rag.enabled":           {Type: "bool", DefaultValue: "true", Description: "Global RAG toggle — falls back to non-grounded LLM if false.", Panel: "control"},
+	"rag.embedding_model":   {Type: "string", DefaultValue: "text-embedding-3-small", Description: "Embedding model name (via AI gateway).", Panel: "control"},
+	"rag.retrieval_top_k":   {Type: "int", DefaultValue: "5", Description: "Number of chunks retrieved per query.", Panel: "control"},
+	"rag.chunk_max_tokens":  {Type: "int", DefaultValue: "400", Description: "Max tokens per chunk during indexing.", Panel: "control"},
+
+	// AI Content Studio (§75, ADR-076)
+	"studio.enabled":            {Type: "bool", DefaultValue: "true", Description: "Global studio toggle.", Panel: "control"},
+	"studio.max_concurrent_jobs": {Type: "int", DefaultValue: "3", Description: "Max parallel generation jobs (AI gateway throttle).", Panel: "control"},
+	"studio.auto_publish_types": {Type: "csv", DefaultValue: "", Description: "Content types that skip review (empty = all reviewed).", Panel: "control"},
+	"studio.default_persona_id": {Type: "string", DefaultValue: "", Description: "Pre-selected persona UUID in new-job form.", Panel: "control"},
+
+	// Participation Orchestration (§76, ADR-077)
+	"participation.enabled":            {Type: "bool", DefaultValue: "true", Description: "Global kill-switch for all persona activity.", Panel: "control"},
+	"participation.run_interval_minutes": {Type: "int", DefaultValue: "60", Description: "Orchestration loop schedule (minutes).", Panel: "control"},
+	"participation.global_daily_cap":   {Type: "int", DefaultValue: "500", Description: "Max total synthetic actions/day across all personas.", Panel: "control"},
+
+	// Visa Document Checklist (§70, ADR-070)
+	"checklist.enabled":           {Type: "bool", DefaultValue: "true", Description: "Global checklist tool toggle.", Panel: "control"},
+	"checklist.completion_points": {Type: "int", DefaultValue: "0", Description: "Points on full completion (0 = disabled).", Panel: "control"},
+	"checklist.subdomain":         {Type: "string", DefaultValue: "visa-checklist", Description: "Standalone subdomain (ADR-086).", Panel: "control"},
+	"checklist.custom_domain":     {Type: "string", DefaultValue: "", Description: "Optional custom domain (ADR-086).", Panel: "control"},
+
+	// Japa Readiness Assessment (§71, ADR-071)
+	"assessment.enabled":          {Type: "bool", DefaultValue: "true", Description: "Global assessment toggle.", Panel: "control"},
+	"assessment.ai_roadmap_enabled": {Type: "bool", DefaultValue: "true", Description: "AI-assisted roadmap generation.", Panel: "control"},
+	"assessment.completion_points": {Type: "int", DefaultValue: "50", Description: "Points on completion.", Panel: "control"},
+	"assessment.subdomain":        {Type: "string", DefaultValue: "readiness", Description: "Standalone subdomain (ADR-086).", Panel: "control"},
+	"assessment.custom_domain":    {Type: "string", DefaultValue: "", Description: "Optional custom domain (ADR-086).", Panel: "control"},
+
+	// Cost of Living Calculator (§72, ADR-072)
+	"col_calculator.enabled":       {Type: "bool", DefaultValue: "true", Description: "Global calculator toggle.", Panel: "control"},
+	"col_calculator.stale_days":    {Type: "int", DefaultValue: "180", Description: "Days before \"data may be outdated\" notice.", Panel: "control"},
+	"col_calculator.max_cities":    {Type: "int", DefaultValue: "3", Description: "Max destination cities per comparison.", Panel: "control"},
+	"col_calculator.subdomain":     {Type: "string", DefaultValue: "cost-of-living", Description: "Standalone subdomain (ADR-086).", Panel: "control"},
+	"col_calculator.custom_domain": {Type: "string", DefaultValue: "", Description: "Optional custom domain (ADR-086).", Panel: "control"},
+
+	// Scholarship Finder (§73, ADR-073)
+	"scholarship_finder.enabled":            {Type: "bool", DefaultValue: "true", Description: "Global finder toggle.", Panel: "control"},
+	"scholarship_finder.default_reminder_days": {Type: "int", DefaultValue: "14", Description: "Default days-before-deadline reminder.", Panel: "control"},
+	"scholarship_finder.completion_points":  {Type: "int", DefaultValue: "10", Description: "Points for saving first scholarship.", Panel: "control"},
+	"scholarship_finder.subdomain":          {Type: "string", DefaultValue: "scholarships", Description: "Standalone subdomain (ADR-086).", Panel: "control"},
+	"scholarship_finder.custom_domain":      {Type: "string", DefaultValue: "", Description: "Optional custom domain (ADR-086).", Panel: "control"},
+
+	// Remittance Rate Tracker (§74, ADR-075)
+	"remittance.enabled":              {Type: "bool", DefaultValue: "true", Description: "Global tracker toggle.", Panel: "control"},
+	"remittance.fetch_interval_minutes": {Type: "int", DefaultValue: "30", Description: "API rate-fetch schedule (minutes).", Panel: "control"},
+	"remittance.manual_stale_hours":   {Type: "int", DefaultValue: "24", Description: "Hours before manual rate staleness warning.", Panel: "control"},
+	"remittance.history_retention_days": {Type: "int", DefaultValue: "365", Description: "Days of rate history to retain.", Panel: "control"},
+	"remittance.default_send_currency": {Type: "string", DefaultValue: "GBP", Description: "Pre-selected send currency.", Panel: "control"},
+	"remittance.subdomain":            {Type: "string", DefaultValue: "remittance", Description: "Standalone subdomain (ADR-086).", Panel: "control"},
+	"remittance.custom_domain":        {Type: "string", DefaultValue: "", Description: "Optional custom domain (ADR-086).", Panel: "control"},
+
+	// Referral System (§60, ADR-078)
+	"referral.enabled":                {Type: "bool", DefaultValue: "true", Description: "Global toggle.", Panel: "control"},
+	"referral.reward_credits":         {Type: "int", DefaultValue: "500", Description: "Credits awarded to referrer on qualification.", Panel: "control"},
+	"referral.attribution_window_days": {Type: "int", DefaultValue: "30", Description: "Attribution TTL (days).", Panel: "control"},
+	"referral.max_rewards_per_period": {Type: "int", DefaultValue: "10", Description: "Monthly cap per referrer (fraud control).", Panel: "control"},
+
+	// Self-Serve Advertising (§61, ADR-079)
+	"ads.self_serve_enabled":    {Type: "bool", DefaultValue: "true", Description: "Global self-serve toggle.", Panel: "control"},
+	"ads.min_campaign_days":     {Type: "int", DefaultValue: "3", Description: "Minimum campaign duration (days).", Panel: "control"},
+	"ads.credit_refund_on_reject": {Type: "bool", DefaultValue: "true", Description: "Auto-refund credits on admin rejection.", Panel: "control"},
+
+	// Newsletter & Digest (§62, ADR-080)
+	"newsletter.enabled":        {Type: "bool", DefaultValue: "true", Description: "Global toggle.", Panel: "control"},
+	"newsletter.digest_enabled": {Type: "bool", DefaultValue: "true", Description: "Weekly digest toggle.", Panel: "control"},
+	"newsletter.digest_day":     {Type: "int", DefaultValue: "1", Description: "Day of week (1 = Monday).", Panel: "control"},
+	"newsletter.digest_hour_utc": {Type: "int", DefaultValue: "8", Description: "Hour UTC to send digest.", Panel: "control"},
+	"newsletter.batch_size":     {Type: "int", DefaultValue: "500", Description: "Subscribers per send batch.", Panel: "control"},
+
+	// Jobs Board (§63, ADR-081)
+	"jobs.enabled":         {Type: "bool", DefaultValue: "true", Description: "Global jobs board toggle.", Panel: "control"},
+	"jobs.featured_credits": {Type: "int", DefaultValue: "1000", Description: "Credits to feature a listing.", Panel: "control"},
+
+	// Gamification (§64, ADR-082)
+	"gamification.badges_enabled":     {Type: "bool", DefaultValue: "true", Description: "Badge system toggle.", Panel: "control"},
+	"gamification.challenges_enabled": {Type: "bool", DefaultValue: "true", Description: "Challenge system toggle.", Panel: "control"},
+	"gamification.leaderboard_enabled": {Type: "bool", DefaultValue: "true", Description: "Leaderboard visibility toggle.", Panel: "control"},
+
+	// Content Import (§65, ADR-083)
+	"import.max_items_per_run": {Type: "int", DefaultValue: "50", Description: "Max posts imported per batch.", Panel: "control"},
+
+	// Advanced Analytics (§66, ADR-084)
+	"analytics.export_enabled": {Type: "bool", DefaultValue: "true", Description: "Enable CSV export.", Panel: "control"},
+
+	// Travel Search (§67, ADR-085)
+	"travel.enabled":         {Type: "bool", DefaultValue: "false", Description: "Off until a provider is configured.", Panel: "control"},
+	"travel.cache_ttl_seconds": {Type: "int", DefaultValue: "300", Description: "Result cache TTL (seconds).", Panel: "control"},
+
+	// Mobile Push (§77, ADR-074) — seeded for forward compatibility; not yet
+	// consumed by Go code. Web push is gated by JC_VAPID_* env vars instead.
+	"push.enabled":         {Type: "bool", DefaultValue: "false", Description: "Global push notification toggle (not-yet-wired; web push is gated by VAPID env vars).", Panel: "control"},
+	"push.fcm_server_key":  {Type: "string", DefaultValue: "", Description: "FCM server key (encrypted at rest; not-yet-implemented).", Sensitive: true, Panel: "control"},
+	"push.apns_key_id":     {Type: "string", DefaultValue: "", Description: "APNs key ID (not-yet-implemented).", Sensitive: true, Panel: "control"},
+	"push.apns_team_id":    {Type: "string", DefaultValue: "", Description: "Apple Team ID (not-yet-implemented).", Sensitive: true, Panel: "control"},
+	"push.apns_private_key": {Type: "string", DefaultValue: "", Description: "APNs private key PEM (encrypted at rest; not-yet-implemented).", Sensitive: true, Panel: "control"},
+
+	// Tools Web Surface (§78, ADR-086)
+	"tools.subdomain":       {Type: "string", DefaultValue: "tools", Description: "Subdomain for the tools hub.", Panel: "control"},
+	"tools.custom_domain":   {Type: "string", DefaultValue: "", Description: "Custom domain for the tools hub.", Panel: "control"},
+	"japabot.subdomain":     {Type: "string", DefaultValue: "japabot", Description: "JapaBot standalone subdomain.", Panel: "control"},
+	"japabot.custom_domain": {Type: "string", DefaultValue: "", Description: "JapaBot custom domain.", Panel: "control"},
 }
 
 // IsPublicSetting reports whether the given dot-notation key is marked Public

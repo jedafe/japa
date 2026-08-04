@@ -36,12 +36,15 @@ const (
 	TypeMediaScan                     = "content:scan_media"
 	TypeContentFanOutToFeeds          = "content:fan_out_to_feeds"
 	TypeAIGenerateContentEmbedding    = "content:generate_embedding"
+	TypeContentGenerateDraft          = "content:generate_draft"
 	TypeReviewAggregateRecalc         = "content:recalc_review_aggregate"
 	TypeTicketSendStatusUpdate        = "ticket:send_status_update"
 	TypeLearningUpdateTrackCompletion = "learning:update_track_completion"
 	TypeVideoProcessing               = "content:process_video"
 	TypeWalletProcessActivityEvent    = "wallet:process_activity_event"
 	TypeWalletProcessCreditPurchase   = "wallet:process_credit_purchase"
+	TypeWalletAwardPoints             = "wallet:award_points"
+	TypeWalletDeductCredits           = "wallet:deduct_credits"
 	TypeNewsletterSend                = "newsletter:send"
 	TypeDocsGeneratePage              = "docs:generate_page"
 	TypeFormFireSubmissionTriggers    = "form:fire_submission_triggers"
@@ -126,12 +129,15 @@ func RegisterHandlers(mux *asynq.ServeMux) {
 	mux.HandleFunc(TypeMediaScan, HandleMediaScan)
 	mux.HandleFunc(TypeContentFanOutToFeeds, HandleContentFanOutToFeeds)
 	mux.HandleFunc(TypeAIGenerateContentEmbedding, HandleAIGenerateContentEmbedding)
+	mux.HandleFunc(TypeContentGenerateDraft, HandleContentGenerateDraft)
 	mux.HandleFunc(TypeReviewAggregateRecalc, HandleReviewAggregateRecalc)
 	mux.HandleFunc(TypeTicketSendStatusUpdate, HandleTicketSendStatusUpdate)
 	mux.HandleFunc(TypeLearningUpdateTrackCompletion, HandleLearningUpdateTrackCompletion)
 	mux.HandleFunc(TypeVideoProcessing, HandleVideoProcessing)
 	mux.HandleFunc(TypeWalletProcessActivityEvent, HandleWalletProcessActivityEvent)
 	mux.HandleFunc(TypeWalletProcessCreditPurchase, HandleWalletProcessCreditPurchase)
+	mux.HandleFunc(TypeWalletAwardPoints, HandleWalletAwardPoints)
+	mux.HandleFunc(TypeWalletDeductCredits, HandleWalletDeductCredits)
 	mux.HandleFunc(TypeNewsletterSend, HandleNewsletterSend)
 	mux.HandleFunc(TypeDocsGeneratePage, HandleDocsGeneratePage)
 	mux.HandleFunc(TypeFormFireSubmissionTriggers, HandleFormFireSubmissionTriggers)
@@ -185,4 +191,27 @@ func RegisterHandlers(mux *asynq.ServeMux) {
 	// Periodic sweep handlers
 	mux.HandleFunc(TypeScheduledPublishSweep, HandleScheduledPublishSweep)
 	mux.HandleFunc(TypeGdprRetentionSweep, HandleGdprRetentionSweep)
+
+	// V2 feature handlers (Sections 60–77, ADRs 068, 070–085).
+	// Each delegates to a registered processor; nil-safe if unregistered.
+	mux.HandleFunc(TypeJobsExpireListings, HandleJobsExpireListings)
+	mux.HandleFunc(TypeJobsNotifyApplicationStatus, HandleJobsNotifyApplicationStatus)
+	mux.HandleFunc(TypeGamificationExpireChallenges, HandleGamificationExpireChallenges)
+	mux.HandleFunc(TypeImportProcessSource, HandleImportProcessSource)
+	mux.HandleFunc(TypeImportFetchMedia, HandleImportFetchMedia)
+	mux.HandleFunc(TypeAssessmentScoreSubmission, HandleAssessmentScoreSubmission)
+	mux.HandleFunc(TypeScholarshipCheckDeadlines, HandleScholarshipCheckDeadlines)
+	mux.HandleFunc(TypeRemittanceFetchRates, HandleRemittanceFetchRates)
+	mux.HandleFunc(TypeRemittanceCheckAlerts, HandleRemittanceCheckAlerts)
+	mux.HandleFunc(TypeRemittancePruneOldRates, HandleRemittancePruneOldRates)
+	mux.HandleFunc(TypeReferralRecordClick, HandleReferralRecordClick)
+	mux.HandleFunc(TypeReferralCheckConversion, HandleReferralCheckConversion)
+	mux.HandleFunc(TypeReferralReviewFlagged, HandleReferralReviewFlagged)
+	mux.HandleFunc(TypeAdsRefundCampaignCredits, HandleAdsRefundCampaignCredits)
+	mux.HandleFunc(TypeAdsNotifyCampaignStatus, HandleAdsNotifyCampaignStatus)
+	mux.HandleFunc(TypeNotificationSendPush, HandleNotificationSendPush)
+	mux.HandleFunc(TypePersonaRunActivity, HandlePersonaRunActivity)
+	mux.HandleFunc(TypePersonaDispatchAction, HandlePersonaDispatchAction)
+	mux.HandleFunc(TypeStudioRunBatch, HandleStudioRunBatch)
+	mux.HandleFunc(TypeStudioRetryFailed, HandleStudioRetryFailed)
 }

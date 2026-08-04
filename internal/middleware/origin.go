@@ -74,7 +74,14 @@ func isDefaultProductionOrigin(origin, siteURL string) bool {
 		domain = domain[:idx]
 	}
 
-	for _, sub := range []string{"", "www.", "admin.", "control.", "docs.", "learn.", "api."} {
+	// Tool subdomains for the ADR-086 tools web surface (§78). These are the
+	// default subdomain prefixes; custom domains are handled via the
+	// JC_CORS_ORIGINS env var or cors.allowed_origins system setting.
+	for _, sub := range []string{
+		"", "www.", "admin.", "control.", "docs.", "learn.", "api.",
+		"tools.", "remittance.", "scholarships.", "cost-of-living.",
+		"visa-checklist.", "readiness.", "japabot.", "university.",
+	} {
 		if origin == "https://"+sub+domain {
 			return true
 		}

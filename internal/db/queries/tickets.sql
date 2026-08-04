@@ -262,3 +262,13 @@ WHERE tenant_id = @tenant_id
   AND sla_breach_at < now()
   AND status NOT IN ('resolved', 'closed')
 ORDER BY sla_breach_at ASC;
+
+-- name: AutoCloseResolvedTickets :execrows
+-- Closes resolved tickets older than the configured auto-close window.
+-- Called by maintenance:check_sla_breaches using tickets.auto_close_resolved_days.
+UPDATE tickets
+SET status = 'closed', closed_at = now(), updated_at = now()
+WHERE tenant_id = @tenant_id
+  AND status = 'resolved'
+  AND resolved_at IS NOT NULL
+  AND resolved_at < now() - (@days || ' days')::interval;

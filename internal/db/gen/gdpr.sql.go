@@ -2240,9 +2240,21 @@ func (q *Queries) NullifyTicketSubmitter(ctx context.Context, arg NullifyTicketS
 }
 
 const pruneAuditLogs = `-- name: PruneAuditLogs :exec
-DELETE FROM audit_logs WHERE created_at < now() - interval '90 days'
+DELETE FROM audit_logs a
+USING (
+  SELECT a2.tenant_id,
+         (COALESCE((SELECT s.value->>0
+                    FROM system_settings s
+                    WHERE s.tenant_id = a2.tenant_id AND s.key = 'audit.log_retention_days'),
+                   '365')::int || ' days')::interval AS retention
+  FROM (SELECT DISTINCT tenant_id FROM audit_logs) a2
+) cfg
+WHERE a.tenant_id = cfg.tenant_id
+  AND a.created_at < now() - cfg.retention
 `
 
+// Per-tenant retention via system_settings 'audit.log_retention_days'
+// (default 365 days). Tenants without the setting keep the catalog default.
 func (q *Queries) PruneAuditLogs(ctx context.Context) error {
 	_, err := q.db.Exec(ctx, pruneAuditLogs)
 	return err

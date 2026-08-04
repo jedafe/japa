@@ -184,6 +184,21 @@ services:
       - "3004:3004"
     restart: unless-stopped
 
+  # Tools — SvelteKit SSR identity tools surface, port 3005.
+  # Canonical host: tools.japaconnect.com (per-tool subdomains and custom
+  # domains render the single-tool shell — ADR-086, §78).
+  tools:
+    build:
+      context: ./apps/tools
+      dockerfile: Dockerfile
+    ports:
+      - "3005:3005"
+    environment:
+      - PRIVATE_API_BASE_URL=http://go-api:8080
+      - PUBLIC_JC_API_URL=/api/v1
+      - PUBLIC_MAIN_ORIGIN=http://nginx
+    restart: unless-stopped
+
 volumes:
   postgres-data:
   valkey-data:

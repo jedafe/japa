@@ -71,6 +71,7 @@ var idempotentTasks = map[string]bool{
 	TypeAffiliateCreditCommission:       true,
 	TypeAffiliateCreditAuthorCommission: true, // TASK-005: defense-in-depth for author commission
 	TypeWalletProcessActivityEvent:      true,
+	TypeWalletAwardPoints:               true,
 	TypePaymentWebhookProcess:           true,
 	TypeUniversityProcessEnrollment:     true, // AUDIT-BE-005: double-credit guard
 	TypeWalletProcessCreditPurchase:     true, // Section 58: double-credit guard
@@ -120,6 +121,7 @@ var taskTier = func() map[string]string {
 		TypeTicketSendConfirmation, TypePushDelivery, TypeDMNotifyRequest, TypeDMNotifyMessage,
 		TypeUniversityProcessEnrollment, TypeUniversitySendInstructorPayout,
 		TypeAffiliateCreditCommission, // BUG-012: financial side effect → critical (§56)
+		TypeNotificationSendPush,       // §77 V2 — push delivery is user-facing-critical
 	} {
 		m[t] = QueueCritical
 	}
@@ -132,6 +134,7 @@ var taskTier = func() map[string]string {
 		TypeAITaskProcessing, TypeEngagementCountUpdate, TypeModerationScan,
 		TypeScheduledPublish, TypeLinkPreviewFetch, TypeLanguagePackAITranslate,
 		TypeMediaScan, TypeContentFanOutToFeeds, TypeAIGenerateContentEmbedding,
+		TypeContentGenerateDraft,
 		TypeReviewAggregateRecalc, TypeTicketSendStatusUpdate,
 		TypeLearningUpdateTrackCompletion, TypeVideoProcessing,
 		TypeWalletProcessActivityEvent, TypeNewsletterSend,
@@ -139,7 +142,21 @@ var taskTier = func() map[string]string {
 		TypeDocsGeneratePage,
 		TypeFormFireSubmissionTriggers,
 		TypeWalletProcessCreditPurchase,
+		TypeWalletAwardPoints, TypeWalletDeductCredits,
 		TypeUniversityNotifyInstructorApproved, TypeUniversityNotifyCourseApproved,
+		// V2 default-tier tasks (§§60-76)
+		TypeAssessmentScoreSubmission,
+		TypeStudioRunBatch,
+		TypePersonaRunActivity,
+		TypePersonaDispatchAction,
+		TypeRemittanceFetchRates,
+		TypeRemittanceCheckAlerts,
+		TypeReferralRecordClick,
+		TypeReferralCheckConversion,
+		TypeAdsRefundCampaignCredits,
+		TypeAdsNotifyCampaignStatus,
+		TypeJobsNotifyApplicationStatus,
+		TypeImportProcessSource,
 	} {
 		m[t] = QueueDefault
 	}
@@ -165,6 +182,14 @@ var taskTier = func() map[string]string {
 		TypeScheduledPublishSweep, TypeGdprRetentionSweep,
 		TypeUniversityCalculatePeriodPayouts, TypeUniversityFetchLogo,
 		TypeContentScanAffiliateLinks,
+		// V2 low-tier tasks (§§60-76)
+		TypeStudioRetryFailed,
+		TypeRemittancePruneOldRates,
+		TypeReferralReviewFlagged,
+		TypeScholarshipCheckDeadlines,
+		TypeJobsExpireListings,
+		TypeGamificationExpireChallenges,
+		TypeImportFetchMedia,
 	} {
 		m[t] = QueueLow
 	}
@@ -218,6 +243,8 @@ func TaskTypeCatalog() []map[string]string {
 		{TypeVideoProcessing, "default", "Process uploaded video files"},
 		{TypeWalletProcessActivityEvent, "default", "Process wallet activity event"},
 		{TypeWalletProcessCreditPurchase, "default", "Credit wallet on credit purchase payment success"},
+		{TypeWalletAwardPoints, "default", "Award points or credits to a user wallet (checklist, referral, assessment, scholarship)"},
+		{TypeWalletDeductCredits, "default", "Deduct or refund credits for self-serve ad campaign funding"},
 		{TypeNewsletterSend, "default", "Send newsletter to subscribers"},
 		{TypeDocsGeneratePage, "default", "Generate a docs page via AI (fire-and-forget)"},
 		{TypeAffiliateCreditAuthorCommission, "default", "Credit author revenue share for an external affiliate commission earned on their content"},

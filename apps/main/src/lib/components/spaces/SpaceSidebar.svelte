@@ -31,6 +31,7 @@
 	// request is awaiting admin approval (POST /join returns 202 { pending: true }).
 	let pendingJoin = $state(false);
 	let pending = $state(untrack(() => false));
+	let joinError = $state('');
 
 	// Guest "Join" link — sends the guest to /login with a returnTo so they
 	// land back on this space after authenticating.
@@ -43,11 +44,13 @@
 		const was = joined;
 		joined = !was;
 		pending = true;
+		joinError = '';
 		if (was) {
 			// Already a member → leave.
 			const res = await api.delete<{ left: boolean }>(`/spaces/${space.slug}/leave`);
 			if (res.error) {
 				joined = was; // rollback
+				joinError = res.error.message || 'Failed to leave space. Please try again.';
 			} else {
 				joined = false;
 				pendingJoin = false;
@@ -57,6 +60,7 @@
 			const res = await api.post<{ joined: boolean; pending?: boolean }>(`/spaces/${space.slug}/join`);
 			if (res.error) {
 				joined = was; // rollback
+				joinError = res.error.message || 'Failed to join space. Please try again.';
 			} else if (res.data) {
 				// Authoritative state from the server: joined may be false with
 				// pending=true for request-only spaces (202 response).
@@ -116,6 +120,9 @@
 		</dl>
 
 		{#if authed}
+			{#if joinError}
+				<p class="mt-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-950/30 dark:text-red-400">{joinError}</p>
+			{/if}
 			<button
 				type="button"
 				onclick={toggleJoin}
