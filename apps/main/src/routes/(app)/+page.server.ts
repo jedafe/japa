@@ -3,6 +3,7 @@ import { apiContext, apiList, apiGet, ApiError } from '$lib/server/api';
 import { feedPath, resolveTab, resolveSort, PAGE_SIZE } from '$lib/feed/endpoint';
 import type { FeedItem } from '$lib/types';
 import type { ContentArticle } from '$lib/types/content';
+import { resolveGeoCopy, getGeoTokens, type Block, type LandingPage as LandingPageData } from '@japaconnect/landing-blocks';
 
 /**
  * Home route (/). Behavior splits by auth state per ADR-058 §5 Exception #3:
@@ -37,17 +38,28 @@ export const load: PageServerLoad = async (event) => {
 	}
 
 	// Guests: check for an assigned homepage Page Builder landing page.
-	// Convention: the landing page has slug "homepage" (ADR-058 §5 route-assignment
-	// key). If found, render it outside the shell.
+	// Convention: the landing page has slug "homepage" (ADR-058 §5).
 	try {
-		const landing = await apiGet<LandingPage>(ctx, '/pages/homepage');
-		return { authed: false, landing, guestLanding: null };
+		const landing = await apiGet<LandingPageData>(ctx, '/pages/homepage');
+		// Resolve geo-aware copy server-side (ADR-064 — no client flicker).
+		const geoCountry =
+			event.url.searchParams.get('geo') ??
+			event.locals.user?.content_country_preference ??
+			'global';
+		const tokens = getGeoTokens(geoCountry, 'en');
+		const resolvedBlocks = resolveGeoCopy(landing.blocks as Block[], {
+			contentCountry: geoCountry,
+			tokens,
+			locale: 'en',
+		});
+		return {
+			authed: false,
+			landing: { ...landing, blocks: resolvedBlocks },
+			guestLanding: null,
+			contentCountry: geoCountry,
+		};
 	} catch (err) {
 		// No published "homepage" page — fall back to the default GuestLanding.
-		// Fetch API data for the landing sections (Rule 16: no hardcoded data).
-		// L3 — ADR-064: forward the resolved geo country code into the
-		// explore/blog/trending API calls so guest homepage content is
-		// geo-targeted at SSR time (no client flicker).
 		const geo = event.locals.user?.content_country_preference ?? undefined;
 		const geoParam = geo ? `&geo=${encodeURIComponent(geo)}` : '';
 		const [exploreItems, blogPosts, destinations] = await Promise.all([
@@ -61,27 +73,9 @@ export const load: PageServerLoad = async (event) => {
 				.then((r) => r ?? [])
 				.catch(() => [] as Destination[])
 		]);
-
 		return { authed: false, landing: null, guestLanding: { exploreItems, blogPosts, destinations } };
 	}
 };
-
-/** A published Page Builder page (Section 16). */
-interface LandingPage {
-	id: string;
-	title: string;
-	slug: string;
-	description?: string | null;
-	blocks: LandingBlock[];
-	meta?: Record<string, unknown>;
-}
-
-/** A single block instance in a landing page's blocks array. */
-interface LandingBlock {
-	id?: string;
-	type: string;
-	props: Record<string, unknown>;
-}
 
 /** A trending space / destination for the landing grid. */
 interface Destination {
