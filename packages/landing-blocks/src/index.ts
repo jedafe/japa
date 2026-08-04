@@ -8,6 +8,10 @@ export type {
   HeroProps, CtaBannerProps, CardGridProps, MediaGridProps,
   AccordionProps, CarouselProps, EntityCollectionProps, EntityFeatureProps,
   EntityType,
+  VideoProps, IconProps, ContentProps, QuoteProps, SpacerDividerProps,
+  CountdownProps, ComingSoonProps, FormEmbedProps, TimelineProps,
+  MapProps, TableProps, AdvertisementProps, LiveRateTickerProps,
+  TabsProps, MediaBlockProps,
 } from './types';
 
 export { geoCopy, GLOBAL_TOKENS, getGeoTokens } from './geo/copyRegistry';
