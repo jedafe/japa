@@ -21,9 +21,29 @@ export interface BackgroundConfig {
 
 /** Motion configuration for scroll-triggered reveals. */
 export interface MotionConfig {
-  preset: 'none' | 'fade-up' | 'fade-in' | 'slide-in' | 'scale-in';
+  preset:
+    | 'none'
+    | 'fade-up' | 'fade-in' | 'fade-down'
+    | 'fly-in-left' | 'fly-in-right' | 'fly-in-up' | 'fly-in-down'
+    | 'slide-in' | 'slide-in-left' | 'slide-in-right'
+    | 'scale-in' | 'scale-out'
+    | 'zoom-in' | 'zoom-out'
+    | 'blur-in' | 'blur-out'
+    | 'flip-up' | 'flip-down'
+    | 'bounce-in';
   delay: number;
+  /** Duration in ms (default 700). */
+  duration?: number;
+  /** CSS easing function (default 'ease-out'). */
+  easing?: string;
+  /** Stagger child elements within the block. */
   stagger_children?: boolean;
+  /** Stagger delay between children in ms (default 80). */
+  stagger_delay?: number;
+  /** Viewport threshold (0–1) to trigger the animation (default 0.1). */
+  threshold?: number;
+  /** Only animate once (default true). */
+  once?: boolean;
 }
 
 /** Visibility rules for geo-targeted sections. */
@@ -342,8 +362,64 @@ export interface MediaBlockProps {
   lightbox: boolean;
 }
 
+/** Props for a standalone CTA Button block — a single prominent button link. */
+export interface CtaButtonProps {
+  /** Button label (supports {{geo}} tokens). */
+  label: string;
+  /** Destination URL. */
+  href: string;
+  /** Visual variant. */
+  variant: 'primary' | 'outline' | 'ghost' | 'link' | 'gradient';
+  /** Button size. */
+  size: 'sm' | 'md' | 'lg' | 'xl';
+  /** Optional icon name (lucide) shown before the label. */
+  icon?: string;
+  /** Optional icon shown after the label (e.g. arrow). */
+  icon_right?: string;
+  /** Alignment within the section. */
+  align: 'left' | 'center' | 'right';
+  /** Make the button full-width. */
+  full_width?: boolean;
+  /** Open link in new tab. */
+  new_tab?: boolean;
+  /** Optional subtext shown below the button. */
+  subtext?: string;
+  /** Gradient from color (for variant: 'gradient'). */
+  gradient_from?: string;
+  /** Gradient to color (for variant: 'gradient'). */
+  gradient_to?: string;
+}
+
+/** Props for the Heading block — a stylable section heading. */
+export interface HeadingProps {
+  /** The heading text (supports {{geo}} tokens). */
+  text: string;
+  /** Optional eyebrow/overline above the heading. */
+  eyebrow?: string;
+  /** Optional subheading/description below the heading. */
+  subheading?: string;
+  /** Heading level (h1–h6). */
+  level: 'h1' | 'h2' | 'h3' | 'h4' | 'h5' | 'h6';
+  /** Visual size preset (independent of semantic level). */
+  size: 'xs' | 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '3xl' | '4xl';
+  /** Text alignment. */
+  align: 'left' | 'center' | 'right';
+  /** Optional accent style for the heading. */
+  accent?: 'none' | 'underline' | 'highlight' | 'gradient';
+  /** Optional accent color (CSS value or var). */
+  accent_color?: string;
+  /** Optional icon name (lucide) shown before the eyebrow. */
+  icon?: string;
+  /** Optional CTA link shown on the right of the heading. */
+  cta?: { label: string; href: string };
+  /** Max width constraint: 'sm' | 'md' | 'lg' | 'xl' | 'full'. */
+  max_width?: 'sm' | 'md' | 'lg' | 'xl' | 'full';
+}
+
 /** Discriminated union of all block types. */
 export type Block =
+  | (BaseBlock & { type: 'heading'; props: HeadingProps })
+  | (BaseBlock & { type: 'cta_button'; props: CtaButtonProps })
   | (BaseBlock & { type: 'hero'; props: HeroProps })
   | (BaseBlock & { type: 'cta_banner'; props: CtaBannerProps })
   | (BaseBlock & { type: 'card_grid'; props: CardGridProps })

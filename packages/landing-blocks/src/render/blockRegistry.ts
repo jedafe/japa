@@ -24,6 +24,8 @@ import AdvertisementBlock from '../blocks/AdvertisementBlock.svelte';
 import LiveRateTickerBlock from '../blocks/LiveRateTickerBlock.svelte';
 import TabsBlock from '../blocks/TabsBlock.svelte';
 import MediaBlock from '../blocks/MediaBlock.svelte';
+import HeadingBlock from '../blocks/HeadingBlock.svelte';
+import CtaButtonBlock from '../blocks/CtaButtonBlock.svelte';
 
 export interface BlockMeta {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -34,6 +36,8 @@ export interface BlockMeta {
 }
 
 export const blockRegistry: Record<Block['type'], BlockMeta> = {
+  heading: { component: HeadingBlock, icon: 'Heading', label: 'Heading', category: 'layout' },
+  cta_button: { component: CtaButtonBlock, icon: 'MousePointerClick', label: 'CTA Button', category: 'action' },
   hero: { component: HeroBlock, icon: 'Sparkles', label: 'Hero', category: 'hero' },
   cta_banner: { component: CtaBannerBlock, icon: 'Megaphone', label: 'CTA Banner', category: 'action' },
   card_grid: { component: CardGridBlock, icon: 'LayoutGrid', label: 'Card Grid', category: 'content' },
