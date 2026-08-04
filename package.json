@@ -16,5 +16,6 @@
   },
   "dependencies": {
     "cline": "^3.0.49"
-  }
+  },
+  "workspaces": ["apps/*", "packages/*"]
 }

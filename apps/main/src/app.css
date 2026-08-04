@@ -2,6 +2,8 @@
 
 @import 'tailwindcss';
 
+@source '../../../packages/landing-blocks/src';
+
 /*
  * JapaConnect Main App — design tokens (ADR-058 / ADR-059).
  * Dark mode is driven by [data-theme="dark"] on <html>, set server-side from the
