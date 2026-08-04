@@ -29,3 +29,14 @@ export { blockRegistry, type BlockMeta } from './render/blockRegistry';
 export { default as LandingRenderer } from './render/LandingRenderer.svelte';
 export { default as BlockShell } from './shell/BlockShell.svelte';
 export { default as Reveal } from './shell/Reveal.svelte';
+
+// Editors (tree-shaken from production build — only used by admin)
+export { default as GeoText } from './editors/GeoText.svelte';
+export { default as MediaPicker } from './editors/MediaPicker.svelte';
+export { default as CTAEditor } from './editors/CTAEditor.svelte';
+export { default as BackgroundPicker } from './editors/BackgroundPicker.svelte';
+export { default as IconPicker } from './editors/IconPicker.svelte';
+export { default as EntityRefPicker } from './editors/EntityRefPicker.svelte';
+export { default as NestedBlocksEditor } from './editors/NestedBlocksEditor.svelte';
+export { default as BlockStylePanel } from './editors/BlockStylePanel.svelte';
+export { contentEditorRegistry } from './editors/content/index';
