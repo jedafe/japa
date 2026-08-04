@@ -7,7 +7,7 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Modal } from '$lib/components/ui/modal';
-	import { Bot, Plus, Trash2, Activity } from 'lucide-svelte';
+	import { Bot, Plus, Trash2, Activity, Pencil } from 'lucide-svelte';
 	import { api } from '$lib/api';
 
 	type Persona = {
@@ -42,6 +42,12 @@
 	let message = $state('');
 	let messageType = $state('');
 	let newPersonas = $state<PersonaInput[]>([{ disclosure_mode: 'always', autonomy_mode: 'supervised', voice_prompt: '' }]);
+
+	// Edit modal
+	let editModalOpen = $state(false);
+	let editingPersona = $state<Persona | null>(null);
+	let editForm = $state<PersonaInput>({ disclosure_mode: 'always', autonomy_mode: 'supervised', voice_prompt: '' });
+	let savingEdit = $state(false);
 
 	async function load() {
 		loading = true;
@@ -113,6 +119,40 @@
 		newPersonas = newPersonas.filter((_, i) => i !== idx);
 	}
 
+	function openEdit(persona: Persona) {
+		editingPersona = persona;
+		editForm = {
+			disclosure_mode: persona.disclosure_mode,
+			autonomy_mode: persona.autonomy_mode,
+			voice_prompt: persona.voice_prompt ?? ''
+		};
+		editModalOpen = true;
+	}
+
+	async function submitEdit() {
+		if (!editingPersona) return;
+		savingEdit = true;
+		message = '';
+		try {
+			const result = await api(`/admin/personas/${editingPersona.id}`, { method: 'PATCH', body: editForm });
+			if (result.ok) {
+				messageType = 'success';
+				message = t('personas.update_success', 'Persona updated.');
+				editModalOpen = false;
+				editingPersona = null;
+				load();
+			} else {
+				messageType = 'error';
+				message = result.error;
+			}
+		} catch (e) {
+			messageType = 'error';
+			message = e instanceof Error ? e.message : t('personas.update_error', 'Failed to update persona');
+		} finally {
+			savingEdit = false;
+		}
+	}
+
 	const columns = $derived([
 		{
 			key: 'id',
@@ -146,6 +186,12 @@
 			label: t('personas.created', 'Created'),
 			sortable: true,
 			render: (value: string) => `<span class="text-muted-foreground text-xs">${value ? new Date(value).toLocaleDateString() : '—'}</span>`
+		},
+		{
+			key: 'actions',
+			label: t('common.actions', 'Actions'),
+			class: 'w-24',
+			componentSnippet: PersonaActionsCell
 		}
 	]);
 
@@ -284,5 +330,77 @@
 				{/each}
 			</div>
 		{/if}
+	</Modal>
+{/if}
+
+{#snippet PersonaActionsCell({ value, row }: { value: any; row: Persona })}
+	<div class="flex items-center gap-1">
+		<Button variant="ghost" size="sm" onclick={() => viewActivity(row.id)} aria-label={t('personas.activity_log', 'Activity')}>
+			<Activity class="h-3.5 w-3.5" />
+		</Button>
+		{#if canManage}
+			<Button variant="ghost" size="sm" onclick={() => openEdit(row)} aria-label={t('common.edit', 'Edit')}>
+				<Pencil class="h-3.5 w-3.5" />
+			</Button>
+		{/if}
+	</div>
+{/snippet}
+
+{#if editModalOpen}
+	<Modal
+		open={editModalOpen}
+		onclose={() => (editModalOpen = false)}
+		title={t('personas.edit_title', 'Edit Persona')}
+	>
+		<div class="space-y-4">
+			<div>
+				<label for="edit-persona-id" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">ID</label>
+				<p class="font-mono text-xs" style="color: var(--color-foreground)">{editingPersona?.id}</p>
+			</div>
+			<div class="grid gap-3 sm:grid-cols-2">
+				<div>
+					<label for="edit-persona-disclosure" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('personas.disclosure', 'Disclosure Mode')}</label>
+					<select
+						id="edit-persona-disclosure"
+						class="w-full rounded-md border px-3 py-1.5 text-sm"
+						style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+						bind:value={editForm.disclosure_mode}
+					>
+						<option value="always">{t('personas.disclosure_always', 'Always disclose')}</option>
+						<option value="never">{t('personas.disclosure_never', 'Never disclose')}</option>
+						<option value="on_ask">{t('personas.disclosure_on_ask', 'Disclose on ask')}</option>
+					</select>
+				</div>
+				<div>
+					<label for="edit-persona-autonomy" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('personas.autonomy', 'Autonomy Mode')}</label>
+					<select
+						id="edit-persona-autonomy"
+						class="w-full rounded-md border px-3 py-1.5 text-sm"
+						style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+						bind:value={editForm.autonomy_mode}
+					>
+						<option value="supervised">{t('personas.autonomy_supervised', 'Supervised')}</option>
+						<option value="autonomous">{t('personas.autonomy_autonomous', 'Autonomous')}</option>
+					</select>
+				</div>
+			</div>
+			<div>
+				<label for="edit-persona-voice" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('personas.voice_prompt', 'Voice Prompt (optional)')}</label>
+				<textarea
+					id="edit-persona-voice"
+					class="w-full rounded-md border px-3 py-1.5 text-sm"
+					style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+					rows="2"
+					bind:value={editForm.voice_prompt}
+					placeholder={t('personas.voice_prompt_placeholder', "Describe the persona's voice and personality...")}
+				></textarea>
+			</div>
+		</div>
+		<div class="mt-6 flex justify-end gap-2">
+			<Button variant="outline" onclick={() => (editModalOpen = false)}>{t('common.cancel', 'Cancel')}</Button>
+			<Button onclick={submitEdit} disabled={savingEdit}>
+				{savingEdit ? t('common.saving', 'Saving...') : t('common.save', 'Save')}
+			</Button>
+		</div>
 	</Modal>
 {/if}

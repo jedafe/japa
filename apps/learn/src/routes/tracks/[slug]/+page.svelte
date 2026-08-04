@@ -217,7 +217,7 @@
 
 				{#if track.objectives?.length}
 					<section class="mt-6">
-						<h2 class="mb-3 text-lg font-semibold text-[var(--color-text)]">What you'll learn</h2>
+						<h2 class="mb-3 text-lg font-semibold text-[var(--color-text)]">{t('learn.what_youll_learn')}</h2>
 						<ul class="space-y-2">
 							{#each track.objectives as obj}
 								<li class="flex items-start gap-2 text-sm text-[var(--color-text-subtle)]">
@@ -231,7 +231,7 @@
 
 				{#if track.prerequisites?.length}
 					<section class="mt-6">
-						<h2 class="mb-3 text-lg font-semibold text-[var(--color-text)]">Prerequisites</h2>
+						<h2 class="mb-3 text-lg font-semibold text-[var(--color-text)]">{t('learn.prerequisites')}</h2>
 						<ul class="space-y-1">
 							{#each track.prerequisites as pre}
 								<li class="text-sm text-[var(--color-text-subtle)]">• {pre}</li>

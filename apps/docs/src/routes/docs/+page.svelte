@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import AppShell from '$lib/components/shell/AppShell.svelte';
 	import { t } from '$lib/i18n';
 	import { persistNavCollapse } from '$lib/nav-collapse';
@@ -9,7 +10,7 @@
 
 	let { data }: { data: PageData } = $props();
 
-	let collapsed = $state(data.navCollapsed);
+	let collapsed = $state(untrack(() => data.navCollapsed));
 
 	async function toggleCollapse() {
 		collapsed = !collapsed;

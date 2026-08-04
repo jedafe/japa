@@ -2,6 +2,7 @@
 	import Icon from '$lib/components/ui/Icon.svelte';
 	import { theme } from '$lib/stores/theme.svelte';
 	import { mainAppUrl } from '$lib/seo';
+	import { t } from '$lib/i18n';
 	import type { ToolMeta } from '$lib/tools/registry';
 
 	/**
@@ -25,14 +26,14 @@
 			>
 				<Icon name={tool.icon} size={18} />
 			</span>
-			<span class="text-base">{tool.name}</span>
+			<span class="text-base">{t(tool.nameKey, tool.name)}</span>
 		</a>
 
 		<div class="flex items-center gap-2">
 			<button
 				onclick={() => theme.toggle()}
 				class="p-2 rounded-lg text-muted hover:text-text hover:bg-surface-subtle transition-colors"
-				aria-label="Toggle theme"
+				aria-label={t('shell.toggle_theme', 'Toggle theme')}
 			>
 				<Icon name={theme.current === 'dark' ? 'sun' : 'moon'} size={18} />
 			</button>

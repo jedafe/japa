@@ -1,5 +1,4 @@
 import type { LayoutServerLoad } from './$types';
-import { apiContext, apiGet } from '$lib/server/api';
 
 /**
  * Shared shell data for every Tools route: the resolved session (from hooks),
@@ -10,18 +9,13 @@ import { apiContext, apiGet } from '$lib/server/api';
  * Ref: §78 (Tools Web Surface), ADR-086 (multi-surface architecture).
  */
 export const load: LayoutServerLoad = async (event) => {
-	const ctx = apiContext(event);
 	const user = event.locals.user;
 
-	// Public site settings (appearance/branding) — fetched SSR so the primary
-	// color and logo are available before hydration, preventing a flash of the
-	// default theme. Ref: conventions/system-settings-catalog.md (Appearance).
-	let siteSettings: Record<string, unknown> = {};
-	try {
-		siteSettings = (await apiGet<Record<string, unknown>>(ctx, '/site/settings/public')) ?? {};
-	} catch {
-		siteSettings = {};
-	}
+	// Public site settings (appearance/branding) — already fetched once in
+	// hooks.server.ts and stored in event.locals.siteSettings. Reusing it here
+	// avoids a redundant /site/settings/public fetch on every request.
+	// Ref: §4.1 (performance), conventions/system-settings-catalog.md.
+	const siteSettings = event.locals.siteSettings;
 
 	return {
 		user,

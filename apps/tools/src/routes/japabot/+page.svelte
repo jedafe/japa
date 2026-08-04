@@ -1,9 +1,12 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { api } from '$lib/api/client';
 	import { mainAppUrl } from '$lib/seo';
 	import { buildSeoMeta } from '$lib/seo';
 	import { page } from '$app/state';
 	import Icon from '$lib/components/ui/Icon.svelte';
+	import ToolDisabled from '$lib/components/ui/ToolDisabled.svelte';
+	import { t } from '$lib/i18n';
 	import type { ChatMessage, ChatConversation, ChatSource } from '$lib/types';
 
 	/**
@@ -14,8 +17,8 @@
 	 */
 	let { data } = $props();
 
-	let user = $state(data.user);
-	let conversations = $state<ChatConversation[]>(data.conversations);
+	let user = $state(untrack(() => data.user));
+	let conversations = $state<ChatConversation[]>(untrack(() => data.conversations));
 
 	let messages = $state<ChatMessage[]>([]);
 	let input = $state('');
@@ -24,9 +27,11 @@
 
 	const seo = $derived(
 		buildSeoMeta({
-			title: 'JapaBot — Your AI Japa Guide | JapaConnect Tools',
-			description:
-				'Chat with JapaBot — answers grounded in JapaConnect\'s published guides, forum threads, and community knowledge via RAG.',
+			title: t('japabot.seo_title', 'JapaBot — Your AI Japa Guide | JapaConnect Tools'),
+			description: t(
+				'japabot.seo_description',
+				'Chat with JapaBot — answers grounded in JapaConnect\'s published guides, forum threads, and community knowledge via RAG.'
+			),
 			path: '/japabot',
 			origin: page.url.origin
 		})
@@ -55,7 +60,7 @@
 			const errorMessage: ChatMessage = {
 				id: crypto.randomUUID(),
 				role: 'assistant',
-				content: `Sorry, I couldn't process your request. ${res.error.message}`,
+				content: t('japabot.error_msg', "Sorry, I couldn't process your request. {message}").replace('{message}', res.error.message),
 				created_at: new Date().toISOString()
 			};
 			messages = [...messages, errorMessage];
@@ -99,6 +104,16 @@
 			messagesContainer.scrollTop = messagesContainer.scrollHeight;
 		}
 	});
+
+	// $derived so the suggestions re-render when the locale changes (the t()
+	// calls read i18n.locale, a $state). A plain const would freeze the strings
+	// at first render in whatever locale was active then.
+	const suggestions = $derived([
+		t('japabot.suggestion_1', 'What documents do I need for a UK student visa?'),
+		t('japabot.suggestion_2', 'How do I find scholarships for masters?'),
+		t('japabot.suggestion_3', "What's the cost of living in Toronto vs Lagos?"),
+		t('japabot.suggestion_4', 'How do I send money home cheaply?')
+	]);
 </script>
 
 <svelte:head>
@@ -115,7 +130,9 @@
 </svelte:head>
 
 <div class="flex flex-col h-[calc(100vh-var(--header-height)-64px)]">
-	{#if !user}
+	{#if !data.enabled}
+		<ToolDisabled tool={data.tool} />
+	{:else if !user}
 		<!-- Sign-in required -->
 		<div class="flex-1 flex items-center justify-center p-4">
 			<div class="text-center max-w-sm">
@@ -124,23 +141,22 @@
 						<Icon name="bot" size={32} class="text-white" />
 					</div>
 				</div>
-				<h2 class="text-xl font-semibold text-text">JapaBot</h2>
+				<h2 class="text-xl font-semibold text-text">{t('japabot.title', 'JapaBot')}</h2>
 				<p class="mt-2 text-sm text-text-subtle">
-					Your AI guide for the japa journey. Ask about visas, scholarships, cost of living,
-					and more — answers are grounded in JapaConnect's published content.
+					{t('japabot.subtitle', "Your AI guide for the japa journey. Ask about visas, scholarships, cost of living, and more — answers are grounded in JapaConnect's published content.")}
 				</p>
 				<div class="mt-5 flex flex-col gap-2">
 					<a
 						href={mainAppUrl('/login')}
 						class="px-4 py-2.5 bg-[var(--tool-accent)] text-white rounded-lg text-sm font-medium hover:bg-[var(--tool-accent-hover)] transition-colors"
 					>
-						Sign in to chat
+						{t('japabot.sign_in_to_chat', 'Sign in to chat')}
 					</a>
 					<a
 						href={mainAppUrl('/signup')}
 						class="px-4 py-2.5 text-sm font-medium text-text hover:text-[var(--tool-accent)] transition-colors"
 					>
-						Create free account
+						{t('common.create_account', 'Create free account')}
 					</a>
 				</div>
 			</div>
@@ -156,7 +172,7 @@
 							class="w-full inline-flex items-center justify-center gap-2 px-3 py-2 bg-[var(--tool-accent)] text-white rounded-lg text-sm font-medium hover:bg-[var(--tool-accent-hover)] transition-colors"
 						>
 							<Icon name="plus" size={16} />
-							New chat
+							{t('japabot.new_chat', 'New chat')}
 						</button>
 					</div>
 					<div class="flex-1 overflow-y-auto p-2 space-y-1">
@@ -165,7 +181,7 @@
 								onclick={() => loadConversation(conv)}
 								class="w-full text-left px-3 py-2 text-sm rounded-lg transition-colors {activeConversationId === conv.id ? 'bg-surface-subtle text-text' : 'text-text-subtle hover:bg-surface-subtle'}"
 							>
-								{conv.title || 'New conversation'}
+								{conv.title || t('japabot.new_conversation', 'New conversation')}
 							</button>
 						{/each}
 					</div>
@@ -184,13 +200,12 @@
 										<Icon name="bot" size={28} class="text-white" />
 									</div>
 								</div>
-								<h2 class="text-lg font-semibold text-text">Ask JapaBot anything</h2>
+								<h2 class="text-lg font-semibold text-text">{t('japabot.ask_anything', 'Ask JapaBot anything')}</h2>
 								<p class="mt-1 text-sm text-text-subtle max-w-md mx-auto">
-									Answers are grounded in JapaConnect's published guides, forum threads, and
-									community knowledge.
+									{t('japabot.ask_desc', "Answers are grounded in JapaConnect's published guides, forum threads, and community knowledge.")}
 								</p>
 								<div class="mt-6 grid grid-cols-1 sm:grid-cols-2 gap-2 max-w-md mx-auto">
-									{#each ['What documents do I need for a UK student visa?', 'How do I find scholarships for masters?', 'What\'s the cost of living in Toronto vs Lagos?', 'How do I send money home cheaply?'] as suggestion (suggestion)}
+									{#each suggestions as suggestion (suggestion)}
 										<button
 											onclick={() => { input = suggestion; sendMessage(); }}
 											class="text-left p-3 text-sm bg-surface border border-border rounded-lg hover:border-[var(--tool-accent)] transition-colors text-text-subtle"
@@ -216,7 +231,7 @@
 										</div>
 										{#if msg.sources && msg.sources.length > 0}
 											<div class="mt-2 flex flex-wrap gap-1.5">
-												<span class="text-xs text-muted">Sources:</span>
+												<span class="text-xs text-muted">{t('japabot.sources', 'Sources:')}</span>
 												{#each msg.sources as src (src.entity_id)}
 													<a
 														href={src.url}
@@ -257,7 +272,7 @@
 						<textarea
 							bind:value={input}
 							onkeydown={onKeydown}
-							placeholder="Ask about visas, scholarships, cost of living..."
+							placeholder={t('japabot.input_placeholder', 'Ask about visas, scholarships, cost of living...')}
 							rows="1"
 							class="flex-1 px-4 py-3 bg-surface border border-border rounded-lg text-text resize-none focus:border-[var(--tool-accent)] focus:outline-none"
 							style="min-height: 48px; max-height: 120px;"
@@ -266,7 +281,7 @@
 							onclick={sendMessage}
 							disabled={!input.trim() || sending}
 							class="flex-shrink-0 w-12 h-12 flex items-center justify-center bg-[var(--tool-accent)] text-white rounded-lg hover:bg-[var(--tool-accent-hover)] transition-colors disabled:opacity-50"
-							aria-label="Send message"
+							aria-label={t('japabot.send', 'Send message')}
 						>
 							{#if sending}
 								<Icon name="loader-2" size={20} class="animate-spin" />

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import Icon from './Icon.svelte';
+	import { t } from '$lib/i18n';
 	import type { ToolMeta } from '$lib/tools/registry';
 
 	/**
@@ -23,12 +24,12 @@
 	</div>
 	<div class="flex-1">
 		<h3 class="text-base font-semibold text-text group-hover:text-[var(--tool-accent)] transition-colors">
-			{tool.name}
+			{t(tool.nameKey, tool.name)}
 		</h3>
-		<p class="mt-1 text-sm text-text-subtle">{tool.tagline}</p>
+		<p class="mt-1 text-sm text-text-subtle">{t(tool.taglineKey, tool.tagline)}</p>
 	</div>
 	<div class="flex items-center gap-1 text-sm font-medium text-[var(--tool-accent)]">
-		Open tool
+		{t('hub.tool.open', 'Open tool')}
 		<Icon name="arrow-right" size={16} />
 	</div>
 </a>

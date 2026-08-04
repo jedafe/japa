@@ -4,7 +4,7 @@
 	import PageHeader from '$lib/components/layout/page-header.svelte';
 	import { DataTable } from '$lib/components/ui/data-table';
 	import { Button } from '$lib/components/ui/button';
-	import { Plane, Plus, RefreshCw } from 'lucide-svelte';
+	import { Plane, Plus, RefreshCw, Pencil } from 'lucide-svelte';
 	import { api } from '$lib/api';
 
 	type TravelProvider = {
@@ -110,6 +110,11 @@
 		}
 	}
 
+	function openEdit(provider: TravelProvider) {
+		editingProvider = { ...provider };
+		editModalOpen = true;
+	}
+
 	const columns = $derived([
 		{
 			key: 'name',
@@ -142,6 +147,12 @@
 			label: t('travel.created', 'Created'),
 			sortable: true,
 			render: (value: string) => `<span class="text-muted-foreground text-xs">${value ? new Date(value).toLocaleDateString() : '—'}</span>`
+		},
+		{
+			key: 'actions',
+			label: t('common.actions', 'Actions'),
+			class: 'w-20',
+			componentSnippet: TravelActionsCell
 		}
 	]);
 
@@ -261,3 +272,13 @@
 		</div>
 	</div>
 {/if}
+
+{#snippet TravelActionsCell({ value, row }: { value: any; row: TravelProvider })}
+	<div class="flex items-center gap-1">
+		{#if canManage}
+			<Button variant="ghost" size="sm" onclick={() => openEdit(row)} aria-label={t('common.edit', 'Edit')}>
+				<Pencil class="h-3.5 w-3.5" />
+			</Button>
+		{/if}
+	</div>
+{/snippet}

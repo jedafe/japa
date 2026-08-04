@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { t } from '$lib/i18n';
+	import { untrack } from 'svelte';
 	import { Bell, Mail, CheckCircle2, AlertCircle } from 'lucide-svelte';
 	import { EmptyState } from '$lib/components/ui';
 	import { enhance } from '$app/forms';
@@ -8,10 +9,10 @@
 
 	let { data }: { data: PageData } = $props();
 
-	const subscriber = $state<NewsletterSubscriber | null>(data.subscriber);
+	const subscriber = $derived<NewsletterSubscriber | null>(data.subscriber);
 
-	let digestEnabled = $state(subscriber?.digest_enabled ?? false);
-	let campaignEnabled = $state(subscriber?.campaign_enabled ?? false);
+	let digestEnabled = $state(untrack(() => subscriber?.digest_enabled ?? false));
+	let campaignEnabled = $state(untrack(() => subscriber?.campaign_enabled ?? false));
 	let result = $state<{ ok?: boolean; error?: string; subscriber?: NewsletterSubscriber } | null>(null);
 	let saving = $state(false);
 </script>
@@ -37,11 +38,11 @@
 			/>
 		{:else}
 			{#if result?.ok}
-				<div class="mb-3 flex items-center gap-2 text-sm text-green-600">
+				<div class="mb-3 flex items-center gap-2 text-sm text-[var(--color-success)]">
 					<CheckCircle2 size={16} /> {t('notifications.saved', 'Preferences saved')}
 				</div>
 			{:else if result?.error}
-				<div class="mb-3 flex items-center gap-2 text-sm text-red-500">
+				<div class="mb-3 flex items-center gap-2 text-sm text-[var(--color-danger)]">
 					<AlertCircle size={16} /> {result.error}
 				</div>
 			{/if}

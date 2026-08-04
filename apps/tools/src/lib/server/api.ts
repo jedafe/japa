@@ -50,8 +50,8 @@ async function request<T>(
 	const headers: Record<string, string> = {
 		'content-type': 'application/json',
 		// The backend resolves the tenant from the host. X-Forwarded-Host is the
-		// portable channel; Host is set too for direct-fetch environments.
-		host: ctx.host,
+		// portable channel (the Fetch API silently ignores any `host` header set
+		// here, so we only send x-forwarded-host).
 		'x-forwarded-host': ctx.host
 	};
 	if (ctx.token) headers.authorization = `Bearer ${ctx.token}`;

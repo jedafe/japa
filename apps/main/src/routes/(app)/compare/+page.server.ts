@@ -1,26 +1,28 @@
 import type { PageServerLoad } from './$types';
 import { apiContext, apiList } from '$lib/server/api';
-import type { University } from '$lib/types';
+import type { ComparisonListItem } from '$lib/types';
 
 /**
- * Compare at /compare — public university comparison tool. SSR-fetches the
- * full university list so the picker renders immediately; the comparison
- * table is built client-side by fetching /universities/{id}/compare for each
- * selected university.
+ * Compare list at /compare — published comparisons (Section 30, Phase 16.01).
+ * SSR-fetches GET /comparisons so the list renders immediately. The endpoint
+ * is auth-gated on the backend, so guests degrade to an empty list with a
+ * login CTA (no hardcoded data — Rule 16).
  *
- * Ref: japaconnect-engineering/sections/39-universities.md
+ * Ref: japaconnect-engineering/sections/30-generic-comparison-system.md
  */
-const PAGE_SIZE = 50;
+const PAGE_SIZE = 24;
 
 export const load: PageServerLoad = async (event) => {
 	const ctx = apiContext(event);
 
-	let universities: University[] = [];
+	let comparisons: ComparisonListItem[] = [];
 	try {
-		universities = (await apiList<University>(ctx, `/universities?page_size=${PAGE_SIZE}`)).items;
+		comparisons = (await apiList<ComparisonListItem>(ctx, `/comparisons?page_size=${PAGE_SIZE}`))
+			.items;
 	} catch {
-		universities = [];
+		// 401 for guests or backend unavailable — render empty state.
+		comparisons = [];
 	}
 
-	return { universities };
+	return { comparisons };
 };

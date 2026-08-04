@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
+	import { t } from '$lib/i18n';
 	import { resolveView } from '$lib/components/hub/dashboard/dashboardViews';
 	let { data } = $props();
 	const meta = $derived(resolveView(data.view));
@@ -15,6 +16,10 @@
 		}
 	});
 </script>
+
+<svelte:head>
+	<title>{t(meta?.labelKey ?? 'dashboard.nav.label', 'Dashboard')} — {t('app.name', 'JapaConnect')}</title>
+</svelte:head>
 
 {#if ViewComponent && page.data.user}
 	<ViewComponent data={data.viewData} />

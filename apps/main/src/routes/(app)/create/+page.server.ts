@@ -1,4 +1,4 @@
-import { error } from '@sveltejs/kit';
+import { redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext, apiGet, apiList } from '$lib/server/api';
 import { availableTypes } from '$lib/components/create/contentTypeRegistry';
@@ -15,7 +15,7 @@ import type {
 export const load: PageServerLoad = async (event) => {
 	// /create is auth-gated — a guest has no spaces, drafts, or series to compose with.
 	if (!event.locals.user) {
-		throw error(403, { code: 'forbidden', message: 'Authentication required to create content' });
+		throw redirect(307, `/login?redirect=${encodeURIComponent(event.url.pathname + event.url.search)}`);
 	}
 
 	const ctx = apiContext(event);

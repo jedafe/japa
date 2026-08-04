@@ -1,4 +1,4 @@
-import { error } from '@sveltejs/kit';
+import { error, redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext } from '$lib/server/api';
 import { resolveView } from '$lib/components/hub/dashboard/dashboardViews';
@@ -13,7 +13,7 @@ import { DASHBOARD_LOADERS } from '$lib/components/hub/dashboard/dashboardLoader
  */
 export const load: PageServerLoad = async (event) => {
 	if (!event.locals.user) {
-		throw error(403, { code: 'forbidden', message: 'Authentication required to view dashboard' });
+		throw redirect(307, `/login?redirect=${encodeURIComponent(event.url.pathname + event.url.search)}`);
 	}
 
 	const meta = resolveView(event.params.view);

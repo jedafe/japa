@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { goto } from '$app/navigation';
 	import AppShell from '$lib/components/shell/AppShell.svelte';
 	import { Search } from 'lucide-svelte';
@@ -10,7 +11,7 @@
 
 	let { data }: { data: PageData } = $props();
 
-	let collapsed = $state(data.navCollapsed);
+	let collapsed = $state(untrack(() => data.navCollapsed));
 
 	async function toggleCollapse() {
 		collapsed = !collapsed;

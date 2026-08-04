@@ -1,3 +1,4 @@
+import { redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext, apiList } from '$lib/server/api';
 import type {
@@ -20,6 +21,10 @@ import type {
 const PAGE_SIZE = 24;
 
 export const load: PageServerLoad = async (event) => {
+	if (!event.locals.user) {
+		throw redirect(307, '/login?redirect=/discover');
+	}
+
 	const ctx = apiContext(event);
 	const tab = event.url.searchParams.get('tab') ?? 'spaces';
 

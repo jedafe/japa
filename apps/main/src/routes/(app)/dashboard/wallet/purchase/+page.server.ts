@@ -2,7 +2,7 @@
 // Server load for the credit purchase page. Fetches active currencies and
 // credit packs from the backend so the page can render pricing without
 // client-side waterfalls.
-import { error } from '@sveltejs/kit';
+import { redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext, apiList } from '$lib/server/api';
 
@@ -26,7 +26,7 @@ type CreditPack = {
 
 export const load: PageServerLoad = async (event) => {
 	if (!event.locals.user) {
-		throw error(403, { code: 'forbidden', message: 'Authentication required' });
+		throw redirect(307, `/login?redirect=${encodeURIComponent(event.url.pathname + event.url.search)}`);
 	}
 
 	const ctx = apiContext(event);

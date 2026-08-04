@@ -9,8 +9,8 @@
 
 	let { data }: { data: PageData } = $props();
 
-	const job = $state<JobDetail | null>(data.job);
-	const authed = $state(data.authed);
+	const job = $derived<JobDetail | null>(data.job);
+	const authed = $derived(data.authed);
 
 	let coverLetter = $state('');
 	let resumeUrl = $state('');
@@ -22,6 +22,29 @@
 	function field(key: string): string {
 		return job?.field_values?.[key] ?? '';
 	}
+
+	// JSON-LD JobPosting for SEO (Ref: Section 63, ROADMAP-MAIN 36.03).
+	const jsonLd = $derived(
+		job
+			? JSON.stringify({
+					'@context': 'https://schema.org',
+					'@type': 'JobPosting',
+					title: job.title,
+					description: job.summary || job.body,
+					datePublished: job.published_at,
+					url: page.url.href,
+					hiringOrganization: {
+						'@type': 'Organization',
+						name: field('company_name') || 'JapaConnect'
+					},
+					jobLocation: field('location')
+						? { '@type': 'Place', address: field('location') }
+						: undefined,
+					employmentType: field('job_type') || undefined,
+					estimatedSalary: field('salary_range') || undefined
+				})
+			: ''
+	);
 </script>
 
 <svelte:head>
@@ -32,6 +55,9 @@
 	<meta property="og:title" content={job?.title ?? 'Job'} />
 	<meta property="og:type" content="article" />
 	<meta property="og:url" content={page.url.href} />
+	{#if jsonLd}
+		{@html `<script type="application/ld+json">${jsonLd}</script>`}
+	{/if}
 </svelte:head>
 
 <div class="mx-auto w-full max-w-3xl">
@@ -85,7 +111,7 @@
 						{t('jobs.apply_auth_required', ' to apply for this job.')}
 					</p>
 				{:else if applyResult?.ok}
-					<div class="flex items-center gap-2 text-sm text-green-600">
+					<div class="flex items-center gap-2 text-sm text-[var(--color-success)]">
 						<CheckCircle2 size={16} />
 						{t('jobs.applied', 'Application submitted! Status')}: {applyResult.status}
 					</div>
@@ -105,7 +131,7 @@
 						class="space-y-3"
 					>
 						{#if applyResult?.error}
-							<div class="flex items-center gap-2 text-sm text-red-500">
+							<div class="flex items-center gap-2 text-sm text-[var(--color-danger)]">
 								<AlertCircle size={16} /> {applyResult.error}
 							</div>
 						{/if}
@@ -137,7 +163,7 @@
 						<button
 							type="submit"
 							disabled={applying}
-							class="rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-white transition-colors hover:opacity-90 disabled:opacity-50"
+							class="rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-[var(--color-primary-contrast)] transition-colors hover:opacity-90 disabled:opacity-50"
 						>
 							{applying ? t('common.submitting', 'Submitting…') : t('jobs.submit_application', 'Submit application')}
 						</button>

@@ -164,6 +164,13 @@
 		>
 			&larr; {t('common.back')}
 		</a>
+		<a
+			href="/forms/{formId}"
+			class="rounded-md border px-3 py-1.5 text-sm font-medium transition-colors hover:bg-black/5 dark:hover:bg-surface/10"
+			style="border-color: var(--color-border); color: var(--color-primary)"
+		>
+			{t('space_forms.open_full_editor', 'Open Full Editor')}
+		</a>
 		<button
 			class="rounded-md border px-3 py-1.5 text-sm font-medium transition-colors hover:bg-black/5 dark:hover:bg-surface/10"
 			style="border-color: var(--color-border); color: var(--color-danger)"
@@ -242,7 +249,16 @@
 		</div>
 
 		<div class="rounded-lg border p-5" style="border-color: var(--color-border); background-color: var(--color-surface)">
-			<h2 class="mb-4 text-sm font-semibold uppercase tracking-wider" style="color: var(--color-muted)">{t('space_forms.sections.fields')}</h2>
+			<div class="mb-4 flex items-center justify-between">
+				<h2 class="text-sm font-semibold uppercase tracking-wider" style="color: var(--color-muted)">{t('space_forms.sections.fields')}</h2>
+				<a
+					href="/forms/{formId}"
+					class="text-xs font-medium transition-colors hover:underline"
+					style="color: var(--color-primary)"
+				>
+					{t('space_forms.manage_fields', 'Manage fields in full editor →')}
+				</a>
+			</div>
 			{#if form?.fields && form.fields.length > 0}
 				<div class="space-y-3">
 					{#each form.fields as field}

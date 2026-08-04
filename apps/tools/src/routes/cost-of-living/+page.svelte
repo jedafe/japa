@@ -1,10 +1,14 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
+	import { replaceState } from '$app/navigation';
 	import { api } from '$lib/api/client';
 	import { buildSeoMeta } from '$lib/seo';
+	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
 	import Icon from '$lib/components/ui/Icon.svelte';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import LoadingSkeleton from '$lib/components/ui/LoadingSkeleton.svelte';
+	import ToolDisabled from '$lib/components/ui/ToolDisabled.svelte';
 	import type { ColCity, ColComparison, ColAttributeDef } from '$lib/types';
 
 	/**
@@ -14,21 +18,25 @@
 	 */
 	let { data } = $props();
 
-	let cities = $state<ColCity[]>(data.cities);
-	let comparison = $state<ColComparison | null>(data.comparison);
+	let cities = $state<ColCity[]>(untrack(() => data.cities));
+	let comparison = $state<ColComparison | null>(untrack(() => data.comparison));
 	let selectedCityIds = $state<string[]>([]);
 	let loading = $state(false);
 	let error = $state<string | null>(null);
 
-	// Max cities from system_settings (col_calculator.max_cities, default 3).
-	// This is a display constraint; the backend enforces the actual limit.
-	const maxCities = 3;
+	// Max cities and staleness threshold from system_settings (col_calculator.*
+	// keys), passed from the SSR load. Falls back to the spec defaults if the
+	// backend didn't return them. Ref: §72, Rule 3 / Rule 16.
+	const maxCities = untrack(() => data.maxCities) ?? 3;
+	const staleDays = untrack(() => data.staleDays) ?? 180;
 
 	const seo = $derived(
 		buildSeoMeta({
-			title: 'Cost of Living Calculator — JapaConnect Tools',
-			description:
-				'Compare cost of living between your destination cities and the Lagos baseline. Rent, groceries, transport, utilities, and more.',
+			title: t('col.seo_title', 'Cost of Living Calculator — JapaConnect Tools'),
+			description: t(
+				'col.seo_description',
+				'Compare cost of living between your destination cities and the Lagos baseline. Rent, groceries, transport, utilities, and more.'
+			),
 			path: '/cost-of-living',
 			origin: page.url.origin
 		})
@@ -48,10 +56,10 @@
 			return;
 		}
 		comparison = res.data;
-		// Update URL for shareability
-		const url = new URL(window.location.href);
+		// Update URL for shareability (SvelteKit replaceState, not window.history)
+		const url = new URL(page.url);
 		url.searchParams.set('city_ids', idsParam);
-		window.history.replaceState({}, '', url);
+		replaceState(url, {});
 	}
 
 	function toggleCity(cityId: string) {
@@ -74,7 +82,7 @@
 	function ratioLabel(ratio: number | null | undefined): string {
 		if (ratio === null || ratio === undefined) return '—';
 		const pct = Math.round((ratio - 1) * 100);
-		if (pct === 0) return 'Same';
+		if (pct === 0) return t('col.same', 'Same');
 		return pct > 0 ? `+${pct}%` : `${pct}%`;
 	}
 
@@ -91,17 +99,16 @@
 		if (!comparison?.attributes) return [];
 		const groups: Record<string, ColAttributeDef[]> = {};
 		for (const attr of comparison.attributes) {
-			const cat = attr.category ?? 'General';
+			const cat = attr.category ?? t('col.general_category', 'General');
 			if (!groups[cat]) groups[cat] = [];
 			groups[cat].push(attr);
 		}
 		return Object.entries(groups);
 	});
 
-	// Check if data is stale
+	// Check if data is stale (threshold from col_calculator.stale_days setting).
 	const isStale = $derived.by(() => {
 		if (!comparison) return false;
-		const staleDays = 180; // col_calculator.stale_days default
 		for (const city of comparison.cities) {
 			if (city.last_updated_at) {
 				const age = Date.now() - new Date(city.last_updated_at).getTime();
@@ -126,28 +133,31 @@
 </svelte:head>
 
 <div class="mx-auto max-w-4xl px-4 py-8">
+	{#if !data.enabled}
+		<ToolDisabled tool={data.tool} />
+	{:else}
 	<div class="mb-8">
-		<h1 class="text-2xl sm:text-3xl font-bold text-text">Cost of Living Calculator</h1>
+		<h1 class="text-2xl sm:text-3xl font-bold text-text">{t('col.title', 'Cost of Living Calculator')}</h1>
 		<p class="mt-2 text-text-subtle">
-			Compare cities against the Lagos baseline. Select up to {maxCities} cities.
+			{t('col.subtitle', 'Compare cities against the Lagos baseline. Select up to {max} cities.').replace('{max}', String(maxCities))}
 		</p>
 	</div>
 
 	{#if cities.length === 0}
 		<EmptyState
 			icon="map-pin-off"
-			title="No cities available"
-			description="City data hasn't been configured yet. Please check back later."
+			title={t('col.no_cities', 'No cities available')}
+			description={t('col.no_cities_desc', "City data hasn't been configured yet. Please check back later.")}
 		/>
 	{:else}
 		<!-- City selector -->
 		<div class="mb-6">
 			<div class="flex items-center justify-between mb-3">
 				<h2 class="text-sm font-semibold text-muted uppercase tracking-wide">
-					Select cities to compare
+					{t('col.select_cities', 'Select cities to compare')}
 				</h2>
 				<span class="text-sm text-muted">
-					{selectedCityIds.length}/{maxCities} selected
+					{t('col.selected_count', '{count}/{max} selected').replace('{count}', String(selectedCityIds.length)).replace('{max}', String(maxCities))}
 				</span>
 			</div>
 			<div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
@@ -160,7 +170,7 @@
 						<div class="flex items-center justify-between">
 							<span class="text-sm font-medium text-text">{city.name}</span>
 							{#if city.is_baseline}
-								<span class="text-xs px-1.5 py-0.5 bg-surface-subtle text-muted rounded">Baseline</span>
+								<span class="text-xs px-1.5 py-0.5 bg-surface-subtle text-muted rounded">{t('col.baseline_label', 'Baseline')}</span>
 							{/if}
 						</div>
 						<p class="text-xs text-muted mt-0.5">{city.country}</p>
@@ -174,10 +184,10 @@
 			>
 				{#if loading}
 					<Icon name="loader-2" size={16} class="animate-spin" />
-					Comparing...
+					{t('col.comparing', 'Comparing...')}
 				{:else}
 					<Icon name="git-compare" size={16} />
-					Compare cities
+					{t('col.compare', 'Compare cities')}
 				{/if}
 			</button>
 		</div>
@@ -196,7 +206,7 @@
 				<div class="mb-4 p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg flex items-center gap-2">
 					<Icon name="alert-triangle" size={18} class="text-yellow-600 dark:text-yellow-400 flex-shrink-0" />
 					<p class="text-sm text-yellow-700 dark:text-yellow-300">
-						Some city data may be outdated. Values are curated manually and updated periodically.
+						{t('col.stale_warning', 'Some city data may be outdated. Values are curated manually and updated periodically.')}
 					</p>
 				</div>
 			{/if}
@@ -212,10 +222,10 @@
 							<table class="w-full border-collapse">
 								<thead>
 									<tr class="border-b border-border">
-										<th class="text-left py-2 px-3 text-sm font-medium text-text">Attribute</th>
+										<th class="text-left py-2 px-3 text-sm font-medium text-text">{t('col.attribute_header', 'Attribute')}</th>
 										<th class="text-right py-2 px-3 text-sm font-medium text-text">
 											{comparison!.baseline.name}
-											<span class="block text-xs font-normal text-muted">Baseline</span>
+											<span class="block text-xs font-normal text-muted">{t('col.baseline_label', 'Baseline')}</span>
 										</th>
 										{#each comparison!.cities.filter((c) => c.id !== comparison!.baseline.id) as city (city.id)}
 											<th class="text-right py-2 px-3 text-sm font-medium text-text">
@@ -251,5 +261,6 @@
 				{/each}
 			</div>
 		{/if}
+	{/if}
 	{/if}
 </div>

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { t } from '$lib/i18n';
+	import { untrack } from 'svelte';
 	import { Send, Sparkles, MessageSquare, Loader2, AlertCircle, BookOpen, ShieldCheck } from 'lucide-svelte';
 	import { enhance } from '$app/forms';
 	import type { AiChatSource } from './+page.server';
@@ -17,11 +18,13 @@
 	// Honcho entries are flat context rows, so we render them as assistant
 	// memory unless they carry an explicit role).
 	let messages = $state<ChatMessage[]>(
-		(data.conversations ?? []).map((c: { content?: string; role?: string; id?: string }) => ({
-			role: (c.role as 'user' | 'assistant') ?? 'assistant',
-			content: c.content ?? '',
-			conversation_id: c.id
-		}))
+		untrack(() =>
+			(data.conversations ?? []).map((c: { content?: string; role?: string; id?: string }) => ({
+				role: (c.role as 'user' | 'assistant') ?? 'assistant',
+				content: c.content ?? '',
+				conversation_id: c.id
+			}))
+		)
 	);
 	let input = $state('');
 	let conversationId = $state<string>('');

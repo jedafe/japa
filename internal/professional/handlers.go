@@ -593,10 +593,9 @@ func (h *Handlers) ListProfessionalProfiles(w http.ResponseWriter, r *http.Reque
 
 // GetProfessionalProfile handles GET /api/v1/professional-profiles/{slug}.
 func (h *Handlers) GetProfessionalProfile(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
+	// OptionalAuth: guests can view public professional profiles (Phase 12.08
+	// public SSR). The profile is fetched by slug — no user context needed.
+	// Ref: sections/33-professional-profiles.md
 
 	slug := chi.URLParam(r, "slug")
 	if slug == "" {

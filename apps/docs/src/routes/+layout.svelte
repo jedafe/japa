@@ -35,6 +35,11 @@
 	Skip to content
 </a>
 
+<svelte:head>
+	<!-- Sitemap link (Ref: §26 ROADMAP 07.04) — Go backend serves /docs-sitemap.xml -->
+	<link rel="sitemap" href="/docs-sitemap.xml" />
+</svelte:head>
+
 <div id="main-content">
 	{@render children()}
 </div>

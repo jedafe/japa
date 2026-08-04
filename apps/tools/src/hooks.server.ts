@@ -45,15 +45,13 @@ const DEFAULT_SUBDOMAINS: Record<string, string> = {
  * Build the host→surface map from system_settings. Custom domains take
  * precedence (exact match), then subdomains ({sub}.japaconnect.com).
  *
- * The settings are fetched from GET /site/settings/public — the same public
- * endpoint used by the Learn/Main apps. Tool domain keys are included in the
- * public settings payload because they only expose domain configuration, not
- * secrets.
+ * Accepts the already-fetched public settings (shared with theme/locale
+ * resolution) to avoid a duplicate backend round-trip per request.
  */
-async function resolveToolSurface(
+function resolveToolSurfaceFromSettings(
 	host: string,
-	ctx: ReturnType<typeof apiContext>
-): Promise<ToolSurface> {
+	settings: Record<string, unknown>
+): ToolSurface {
 	const canonicalHub = 'tools.japaconnect.com';
 	const extraHubHosts =
 		env.JC_TOOLS_HUB_HOSTS?.split(',')
@@ -64,12 +62,13 @@ async function resolveToolSurface(
 		return 'hub';
 	}
 
-	let settings: Record<string, unknown> = {};
-	try {
-		settings = (await apiGet<Record<string, unknown>>(ctx, '/site/settings/public')) ?? {};
-	} catch {
-		// Backend unreachable — fall back to default subdomains.
-		settings = {};
+	// ADR-086 / §78: the tools hub itself may have a custom_domain setting
+	// (e.g. `japatools.com`). Match it before per-tool domains so a hub
+	// custom domain is never misread as a single-tool host.
+	// Ref: conventions/system-settings-catalog.md (tools.custom_domain).
+	const hubCustomDomain = settings['tools.custom_domain'] as string | undefined;
+	if (hubCustomDomain && hubCustomDomain.toLowerCase() === host) {
+		return 'hub';
 	}
 
 	for (const { key, surface } of TOOL_SETTINGS_KEYS) {
@@ -94,6 +93,20 @@ export const handle: Handle = async ({ event, resolve }) => {
 	event.locals.tenantHost = event.url.hostname;
 	event.locals.token = event.cookies.get('jc_token') ?? null;
 
+	// Fetch public site settings once per request and reuse for theme, locale,
+	// and tool-surface resolution. Previously these were three separate fetches
+	// to /site/settings/public on every request (§4.1 performance bug).
+	// Ref: conventions/system-settings-catalog.md
+	const ctx = apiContext(event);
+	let siteSettings: Record<string, unknown> = {};
+	if (!building) {
+		try {
+			siteSettings = (await apiGet<Record<string, unknown>>(ctx, '/site/settings/public')) ?? {};
+		} catch {
+			siteSettings = {};
+		}
+	}
+
 	// Theme: prefer the user's cookie, then fall back to the control panel
 	// appearance.dark_mode_default setting, then 'light'.
 	// Ref: conventions/system-settings-catalog.md (appearance.dark_mode_default)
@@ -101,13 +114,7 @@ export const handle: Handle = async ({ event, resolve }) => {
 	if (themeCookie === 'dark' || themeCookie === 'light') {
 		event.locals.theme = themeCookie;
 	} else {
-		try {
-			const settings =
-				(await apiGet<Record<string, unknown>>(apiContext(event), '/site/settings/public')) ?? {};
-			event.locals.theme = settings['appearance.dark_mode_default'] === true ? 'dark' : 'light';
-		} catch {
-			event.locals.theme = 'light';
-		}
+		event.locals.theme = siteSettings['appearance.dark_mode_default'] === true ? 'dark' : 'light';
 	}
 
 	// Locale: prefer the user's cookie, then fall back to the control panel
@@ -116,27 +123,29 @@ export const handle: Handle = async ({ event, resolve }) => {
 	if (localeCookie === 'fr' || localeCookie === 'en') {
 		event.locals.locale = localeCookie as Locale;
 	} else {
-		try {
-			const settings =
-				(await apiGet<Record<string, unknown>>(apiContext(event), '/site/settings/public')) ?? {};
-			const defaultLang = (settings['i18n.default_language'] as string | undefined) ?? 'en';
-			event.locals.locale = (defaultLang === 'fr' ? 'fr' : 'en') as Locale;
-		} catch {
-			event.locals.locale = 'en' as Locale;
-		}
+		const defaultLang = (siteSettings['i18n.default_language'] as string | undefined) ?? 'en';
+		event.locals.locale = (defaultLang === 'fr' ? 'fr' : 'en') as Locale;
 	}
 
 	event.locals.user = null;
 
 	// ADR-086 / §78: resolve the tool surface from the request host.
-	event.locals.toolSurface = await resolveToolSurface(event.url.hostname, apiContext(event));
+	// Uses the already-fetched siteSettings instead of a second fetch.
+	event.locals.toolSurface = resolveToolSurfaceFromSettings(
+		event.url.hostname,
+		siteSettings
+	);
+
+	// Store the settings for reuse by layout/page load functions (avoids
+	// redundant /site/settings/public fetches in +layout.server.ts etc.).
+	event.locals.siteSettings = siteSettings;
 
 	// Resolve the session. The Tools app is public: an absent or invalid token
 	// simply means "guest" — never a redirect to login. Progress-saving and
 	// alert-creation gate behind auth (with registration prompts).
 	if (event.locals.token && !building) {
 		try {
-			event.locals.user = await apiGet<SessionUser>(apiContext(event), '/me');
+			event.locals.user = await apiGet<SessionUser>(ctx, '/me');
 		} catch (err) {
 			if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
 				// Stale credential — drop it and continue as a guest.
@@ -155,7 +164,7 @@ export const handle: Handle = async ({ event, resolve }) => {
 	event.locals.csrfToken = null;
 	if (event.locals.token && !building) {
 		try {
-			const csrf = await apiGet<{ csrfToken: string }>(apiContext(event), '/csrf');
+			const csrf = await apiGet<{ csrfToken: string }>(ctx, '/csrf');
 			event.locals.csrfToken = csrf?.csrfToken ?? null;
 			if (event.locals.csrfToken) {
 				event.cookies.set('csrf_token', event.locals.csrfToken, {

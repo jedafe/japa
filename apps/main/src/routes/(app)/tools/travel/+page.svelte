@@ -12,7 +12,7 @@
 	const title = $derived(t('tools.travel', 'Travel Search — JapaConnect'));
 	const description = $derived(t('tools.travel_desc', 'Search flights and hotels for your move.'));
 
-	const authed = $state(data.authed);
+	const authed = $derived(data.authed);
 	let disabled = $state(false);
 
 	type Tab = 'flights' | 'hotels';

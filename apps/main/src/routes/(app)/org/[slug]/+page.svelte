@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
-	import { FileText, Users, Info, ShieldQuestion, Image as ImageIcon } from 'lucide-svelte';
+	import { FileText, Users, Info, ShieldQuestion, Image as ImageIcon, GitCompare, ArrowRight } from 'lucide-svelte';
 	import SetSidebar from '$lib/components/shell/SetSidebar.svelte';
 	import OrgHeader from '$lib/components/profile/OrgHeader.svelte';
 	import ProfileTabs from '$lib/components/profile/ProfileTabs.svelte';
@@ -16,12 +16,25 @@
 	const initiallyFollowing = $derived(data.initiallyFollowing ?? false);
 	const activeTab = $derived(page.url.searchParams.get('tab') ?? 'about');
 
+	// Section 39 — university-type orgs get a "Compare" tab that links to
+	// the Comparison System (Section 30) with this org pre-selected as
+	// item 1. Other org types omit the tab.
+	const isUniversity = $derived(org.org_type === 'university');
+
 	const tabs = $derived([
 		{ key: 'about', labelKey: 'profile.tab.about', href: `?tab=about` },
 		{ key: 'posts', labelKey: 'profile.tab.posts', href: `?tab=posts` },
 		{ key: 'media', labelKey: 'profile.tab.media', href: `?tab=media` },
-		{ key: 'members', labelKey: 'profile.tab.members', href: `?tab=members` }
+		{ key: 'members', labelKey: 'profile.tab.members', href: `?tab=members` },
+		...(isUniversity
+			? [{ key: 'compare', labelKey: 'profile.tab.compare', href: `?tab=compare`, labelFallback: 'Compare' }]
+			: [])
 	]);
+
+	// Pre-fill link to /compare/new with this org as item 1 (Section 39).
+	const compareNewHref = $derived(
+		`/compare/new?type=university&item1_name=${encodeURIComponent(org.name)}&item1_slug=${encodeURIComponent(org.slug)}`
+	);
 
 	const title = $derived(`${org.name} — ${t('app.name')}`);
 	const description = $derived(org.description ?? org.tagline ?? org.name);
@@ -164,6 +177,60 @@
 						</li>
 					{/each}
 				</ul>
+			{/if}
+		{:else if activeTab === 'compare'}
+			<!-- Section 39 — Compare tab for university-type orgs.
+			Links to the Comparison System (Section 30) with this org
+			pre-selected as item 1. Also lists existing comparisons
+			of this type if any were fetched server-side. -->
+			<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+				<div class="flex flex-col gap-3">
+					<div class="flex items-start gap-3">
+						<span class="grid h-10 w-10 shrink-0 place-items-center rounded-[var(--radius)] bg-[var(--color-primary)]/10 text-[var(--color-primary)]">
+							<GitCompare size={20} />
+						</span>
+						<div class="flex-1">
+							<h2 class="text-sm font-medium text-[var(--color-text)]">
+								{t('org.compare_title', 'Compare this university')}
+							</h2>
+							<p class="mt-1 text-xs text-[var(--color-text-subtle)]">
+								{t('org.compare_description', 'Start a side-by-side comparison with another university across dimensions like tuition, ranking, programs, and more.')}
+							</p>
+						</div>
+					</div>
+					<a
+						href={compareNewHref}
+						class="inline-flex w-fit items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)]"
+					>
+						{t('org.compare_start', 'Start a comparison')}
+						<ArrowRight size={15} />
+					</a>
+				</div>
+			</section>
+
+			{#if data.comparisons && data.comparisons.length > 0}
+				<div class="mt-4">
+					<h3 class="mb-2 text-xs font-medium uppercase text-[var(--color-muted)]">
+						{t('org.compare_existing', 'Existing comparisons')}
+					</h3>
+					<div class="space-y-2">
+						{#each data.comparisons as cmp (cmp.id)}
+							<a
+								href="/compare/{cmp.id}"
+								class="flex items-center justify-between rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3 transition-colors hover:border-[var(--color-primary)]/40 hover:bg-[var(--color-surface-subtle)]"
+							>
+								<span class="min-w-0 flex-1">
+									<span class="block truncate text-sm font-medium text-[var(--color-text)]">{cmp.title}</span>
+									<span class="block text-xs text-[var(--color-muted)]">
+										{cmp.view_count} {t('profile.views', 'views')}
+										· {cmp.comment_count} {t('profile.comments', 'comments')}
+									</span>
+								</span>
+								<ArrowRight size={15} class="shrink-0 text-[var(--color-muted)]" />
+							</a>
+						{/each}
+					</div>
+				</div>
 			{/if}
 		{/if}
 	</div>

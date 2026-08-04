@@ -5,6 +5,7 @@
 //
 //	POST   /api/v1/me/imports              — start import { source_type, source_url }
 //	GET    /api/v1/me/imports              — list user's imports (paginated)
+//	GET    /api/v1/me/imports/sources      — list allowed source types
 //	GET    /api/v1/me/imports/:id          — import detail
 //	GET    /api/v1/admin/imports           — all imports (admin oversight)
 //	POST   /api/v1/admin/imports/:id/retry — retry failed import
@@ -203,6 +204,36 @@ func (h *Handlers) HandleListImports(w http.ResponseWriter, r *http.Request) {
 			"limit": limit,
 			"total": total,
 		},
+	})
+}
+
+// sourceTypeResponse describes a single allowed import source type.
+type sourceTypeResponse struct {
+	Value        string `json:"value"`
+	Label        string `json:"label"`
+	RequiresURL  bool   `json:"requires_url"`
+}
+
+// allowedSourceTypes is the canonical list of import source types the
+// backend accepts. This is the single source of truth — the DB CHECK
+// constraint, isValidSourceType, and this list must all agree.
+// Ref: japaconnect-engineering/sections/65-content-import.md
+var allowedSourceTypes = []sourceTypeResponse{
+	{Value: SourceTypeMedium, Label: "Medium", RequiresURL: true},
+	{Value: SourceTypeSubstack, Label: "Substack", RequiresURL: true},
+	{Value: SourceTypeRSS, Label: "RSS Feed", RequiresURL: true},
+	{Value: SourceTypeZIP, Label: "ZIP File", RequiresURL: false},
+}
+
+// HandleListImportSources handles GET /api/v1/me/imports/sources — returns
+// the list of allowed import source types. Gated by import.use so only
+// authenticated users who can start imports see the options.
+func (h *Handlers) HandleListImportSources(w http.ResponseWriter, r *http.Request) {
+	if _, ok := requireUser(w, r); !ok {
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data": allowedSourceTypes,
 	})
 }
 

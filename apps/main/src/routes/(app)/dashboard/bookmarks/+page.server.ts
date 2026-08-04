@@ -4,14 +4,14 @@
 // page links to the entity by deriving the URL from the entity_type.
 // Folders are fetched from GET /me/bookmark-folders and managed client-side
 // via POST/PATCH/DELETE /me/bookmark-folders.
-import { error } from '@sveltejs/kit';
+import { redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext, apiList } from '$lib/server/api';
 import type { Bookmark, BookmarkFolder } from '$lib/types';
 
 export const load: PageServerLoad = async (event) => {
 	if (!event.locals.user) {
-		throw error(403, { code: 'forbidden', message: 'Authentication required to view bookmarks' });
+		throw redirect(307, `/login?redirect=${encodeURIComponent(event.url.pathname + event.url.search)}`);
 	}
 	const ctx = apiContext(event);
 	const [bookmarksRes, foldersRes] = await Promise.all([

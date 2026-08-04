@@ -4,7 +4,7 @@
 	import { createAffiliate, deleteAffiliate } from '$lib/api/hub';
 	import { optimisticAction } from '$lib/components/hub/optimisticAction';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
-	import { Share2, MousePointerClick, TrendingUp, Wallet } from 'lucide-svelte';
+	import { Share2, MousePointerClick, TrendingUp, Wallet, MessageCircle, AtSign, Link as LinkIcon, Copy, Check } from 'lucide-svelte';
 	import type { AffiliateEarnings } from '$lib/types';
 
 	// Ref: japaconnect-engineering/sections/56-user-affiliate-program.md.
@@ -40,11 +40,11 @@
 	let creating = $state(false);
 	let error = $state<string | null>(null);
 
-	const productTypes = [
-		{ value: 'pro_subscription', label: 'Pro Subscription' },
-		{ value: 'course', label: 'Course' },
-		{ value: 'pro_annual', label: 'Pro Annual' }
-	];
+	const productTypes = $derived([
+		{ value: 'pro_subscription', label: t('affiliate.product_type_pro_subscription', 'Pro Subscription') },
+		{ value: 'course', label: t('affiliate.product_type_course', 'Course') },
+		{ value: 'pro_annual', label: t('affiliate.product_type_pro_annual', 'Pro Annual') }
+	]);
 
 	async function doCreate() {
 		if (!newUrl.trim()) return;
@@ -74,6 +74,42 @@
 			rollback: () => (links = [...links.slice(0, idx), removed, ...links.slice(idx)]),
 			call: () => deleteAffiliate(id)
 		});
+	}
+
+	// Phase 34.06 — share buttons for referral links. Builds share URLs for
+	// WhatsApp, Twitter/X, and LinkedIn, plus a copy-to-clipboard fallback.
+	// Ref: sections/56-user-affiliate-program.md
+	function shareUrl(link: AffiliateLink): string {
+		return `${link.destination_url}?ref=${link.code}`;
+	}
+
+	function shareWhatsApp(link: AffiliateLink) {
+		const url = encodeURIComponent(shareUrl(link));
+		const text = encodeURIComponent(t('settings.affiliate.share_text', 'Check this out on JapaConnect'));
+		window.open(`https://wa.me/?text=${text}%20${url}`, '_blank', 'noopener,noreferrer');
+	}
+
+	function shareTwitter(link: AffiliateLink) {
+		const url = encodeURIComponent(shareUrl(link));
+		const text = encodeURIComponent(t('settings.affiliate.share_text', 'Check this out on JapaConnect'));
+		window.open(`https://twitter.com/intent/tweet?text=${text}&url=${url}`, '_blank', 'noopener,noreferrer');
+	}
+
+	function shareLinkedIn(link: AffiliateLink) {
+		const url = encodeURIComponent(shareUrl(link));
+		window.open(`https://www.linkedin.com/sharing/share-offsite/?url=${url}`, '_blank', 'noopener,noreferrer');
+	}
+
+	let copiedId = $state<string | null>(null);
+	async function copyLink(link: AffiliateLink) {
+		try {
+			await navigator.clipboard.writeText(shareUrl(link));
+			copiedId = link.id;
+			setTimeout(() => (copiedId = null), 2000);
+		} catch {
+			// Clipboard API may be unavailable (e.g. insecure context). No-op —
+			// the user can still manually copy from the displayed URL.
+		}
 	}
 </script>
 
@@ -191,19 +227,65 @@
 	{:else}
 		<ul class="space-y-2">
 			{#each links as link (link.id)}
-				<li class="flex items-center justify-between rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3">
-					<div class="min-w-0">
-						<p class="truncate text-sm font-medium text-[var(--color-text)]">{link.description ?? link.destination_url}</p>
-						<p class="truncate text-xs text-[var(--color-muted)]">{link.destination_url}</p>
-						<p class="mt-0.5 text-xs text-[var(--color-muted)]">/{link.code} · {link.product_type.replace(/_/g, ' ')}</p>
+				<li class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3">
+					<div class="flex items-center justify-between">
+						<div class="min-w-0">
+							<p class="truncate text-sm font-medium text-[var(--color-text)]">{link.description ?? link.destination_url}</p>
+							<p class="truncate text-xs text-[var(--color-muted)]">{link.destination_url}</p>
+							<p class="mt-0.5 text-xs text-[var(--color-muted)]">/{link.code} · {link.product_type.replace(/_/g, ' ')}</p>
+						</div>
+						<button
+							type="button"
+							class="ml-3 shrink-0 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-sm text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
+							onclick={() => doDelete(link.id)}
+						>
+							{t('settings.affiliate.delete')}
+						</button>
 					</div>
-					<button
-						type="button"
-						class="ml-3 shrink-0 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-sm text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
-						onclick={() => doDelete(link.id)}
-					>
-						{t('settings.affiliate.delete')}
-					</button>
+					<!-- Phase 34.06 — share buttons -->
+					<div class="mt-2 flex items-center gap-1.5 border-t border-[var(--color-border)] pt-2">
+						<span class="mr-1 text-xs text-[var(--color-muted)]">{t('settings.affiliate.share', 'Share')}:</span>
+						<button
+							type="button"
+							onclick={() => shareWhatsApp(link)}
+							class="rounded p-1.5 text-[var(--color-muted)] transition-colors hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-text)]"
+							aria-label={t('settings.affiliate.share_whatsapp', 'Share on WhatsApp')}
+							title="WhatsApp"
+						>
+							<MessageCircle size={15} />
+						</button>
+						<button
+							type="button"
+							onclick={() => shareTwitter(link)}
+							class="rounded p-1.5 text-[var(--color-muted)] transition-colors hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-text)]"
+							aria-label={t('settings.affiliate.share_twitter', 'Share on X')}
+							title="X"
+						>
+							<AtSign size={15} />
+						</button>
+						<button
+							type="button"
+							onclick={() => shareLinkedIn(link)}
+							class="rounded p-1.5 text-[var(--color-muted)] transition-colors hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-text)]"
+							aria-label={t('settings.affiliate.share_linkedin', 'Share on LinkedIn')}
+							title="LinkedIn"
+						>
+							<LinkIcon size={15} />
+						</button>
+						<button
+							type="button"
+							onclick={() => copyLink(link)}
+							class="rounded p-1.5 text-[var(--color-muted)] transition-colors hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-text)]"
+							aria-label={t('settings.affiliate.copy_link', 'Copy link')}
+							title={t('settings.affiliate.copy_link', 'Copy link')}
+						>
+							{#if copiedId === link.id}
+								<Check size={15} class="text-[var(--color-success)]" />
+							{:else}
+								<Copy size={15} />
+							{/if}
+						</button>
+					</div>
 				</li>
 			{/each}
 		</ul>

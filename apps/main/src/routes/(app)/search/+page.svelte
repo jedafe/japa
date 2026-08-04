@@ -4,6 +4,8 @@
 	import { page } from '$app/state';
 	import { Search as SearchIcon, FileText, Users, MessageSquare, Building2, Hash, Layers, Loader2 } from 'lucide-svelte';
 	import { t } from '$lib/i18n';
+	import { SearchInput, type SearchSuggestion } from '$lib/components/ui';
+	import { api } from '$lib/api/client';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -70,6 +72,20 @@
 		goto(`/search?${params.toString()}`, { keepFocus: true, noScroll: true });
 	}
 
+	async function autocompleteFetcher(q: string): Promise<SearchSuggestion[]> {
+		const res = await api.get<{ data: { suggestions: { type: string; id: string; title: string; excerpt?: string; url?: string; slug?: string }[] } }>(
+			`/search/autocomplete?q=${encodeURIComponent(q)}&limit=8`
+		);
+		if (res.error || !res.data) return [];
+		return (res.data.data?.suggestions ?? []).map((s) => ({
+			id: s.id,
+			title: s.title,
+			url: s.url ?? (s.slug ? `/${s.type === 'user' ? 'u' : s.type === 'space' ? 'spaces' : s.type}/${s.slug}` : '/search'),
+			excerpt: s.excerpt,
+			type: s.type
+		}));
+	}
+
 	// Filter types — driven by the backend search index types.
 	const filterTypes = $derived([
 		{ key: 'all', label: t('search.filter_all', 'All'), icon: Layers },
@@ -115,19 +131,15 @@
 	<h1 class="mb-6 text-2xl font-bold text-[var(--color-text)]">{t('search.heading', 'Search')}</h1>
 
 	<form onsubmit={submitSearch} class="mb-4">
-		<div class="relative">
-			<SearchIcon class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-text-subtle)]" size={18} />
-			<input
-				type="search"
-				bind:value={query}
-				oninput={onInput}
-				placeholder={t('search.placeholder', 'Search stories, spaces, people...')}
-				class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] py-2.5 pl-10 pr-10 text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none"
-			/>
-			{#if loading}
-				<Loader2 class="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 animate-spin text-[var(--color-muted)]" size={16} />
-			{/if}
-		</div>
+		<SearchInput
+			bind:value={query}
+			placeholder={t('search.placeholder', 'Search stories, spaces, people...')}
+			ariaLabel={t('search.heading', 'Search')}
+			fetcher={autocompleteFetcher}
+			debounceMs={300}
+			onInput={(v) => { query = v; onInput(); }}
+			inputClass="py-2.5"
+		/>
 	</form>
 
 	{#if data.query}
