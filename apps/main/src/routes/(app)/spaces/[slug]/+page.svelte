@@ -10,14 +10,15 @@
 	import { Dialog } from 'bits-ui';
 	import SetSidebar from '$lib/components/shell/SetSidebar.svelte';
 	import ProfileTabs from '$lib/components/profile/ProfileTabs.svelte';
-	import SpaceSidebar from '$lib/components/profile/SpaceSidebar.svelte';
+	import SpaceSidebar from '$lib/components/spaces/SpaceSidebar.svelte';
 	import SpaceSettings from '$lib/components/spaces/SpaceSettings.svelte';
 	import ForumList from '$lib/components/forum/ForumList.svelte';
 	import { EmptyState } from '$lib/components/ui';
 	import { api } from '$lib/api/client';
 	import { requireAuthOrRedirect } from '$lib/auth/guest';
+	import { tiptapToHtml } from '$lib/tiptap/serialize';
 	import type {
-		Space, SpaceContentItem, SpaceModerator, SpaceRule,
+		Space, SpaceContentItem, SpaceMember, SpaceModerator, SpaceRule,
 		SpacePermissionPreset, SpaceJoinRequest
 	} from '$lib/types';
 	import type { PageData } from './$types';
@@ -124,6 +125,8 @@
 		posts_last_30d?: number;
 	} | null);
 
+	const analyticsError = $derived(data.analyticsError as string | null);
+
 	const tabs = $derived([
 		{ key: 'feed', labelKey: 'space.tab.feed', href: `?tab=feed` },
 		{ key: 'forum', labelKey: 'space.tab.forum', href: `?tab=forum` },
@@ -174,6 +177,13 @@
 	let feedItems = $state<SpaceContentItem[]>(untrack(() => data.content));
 	let feedLoading = $state(false);
 	let feedEnd = $derived(data.content.length < data.pageSize);
+	let feedError = $state('');
+
+	// Client-side load-more for the members list (page-based paging).
+	let membersItems = $state(untrack(() => data.members));
+	let membersLoading = $state(false);
+	let membersPage = $state(1);
+	let membersEnd = $derived(data.members.length < data.pageSize);
 
 	// Moderators + rules + parent spaces — seeded from SSR, mutated client-side
 	// in the Settings tab. Re-seeds when the slug changes.
@@ -184,22 +194,45 @@
 	$effect(() => {
 		// Re-seed on SSR payload change (slug change).
 		feedItems = data.content;
+		membersItems = data.members;
 		moderators = data.moderators;
 		rules = data.rules;
 		parentSpaces = data.parentSpaces;
+		membersPage = 1;
+		membersEnd = data.members.length < data.pageSize;
 	});
 
 	async function loadMoreFeed() {
 		if (feedLoading || feedEnd) return;
 		feedLoading = true;
-		const res = await api.get<SpaceContentItem[]>(
-			`/spaces/${space.slug}/content?page_size=${data.pageSize}&page_offset=${feedItems.length}`
-		);
-		if (res.data) {
-			feedItems = [...feedItems, ...res.data];
-			if (res.data.length < data.pageSize) feedEnd = true;
+		feedError = '';
+		try {
+			const res = await api.get<SpaceContentItem[]>(
+				`/spaces/${space.slug}/content?page_size=${data.pageSize}&page_offset=${feedItems.length}`
+			);
+			if (res.data) {
+				feedItems = [...feedItems, ...res.data];
+				if (res.data.length < data.pageSize) feedEnd = true;
+			}
+		} catch {
+			feedError = 'Failed to load more content. Please try again.';
 		}
 		feedLoading = false;
+	}
+
+	async function loadMoreMembers() {
+		if (membersLoading || membersEnd) return;
+		membersLoading = true;
+		const nextPage = membersPage + 1;
+		const res = await api.get<SpaceMember[]>(
+			`/spaces/${space.slug}/members?page_size=${data.pageSize}&page=${nextPage}`
+		);
+		if (res.data) {
+			membersItems = [...membersItems, ...res.data];
+			membersPage = nextPage;
+			if (res.data.length < data.pageSize) membersEnd = true;
+		}
+		membersLoading = false;
 	}
 
 	// --- Pinned post management (Ref: §05; POST/DELETE /spaces/{slug}/pinned) ---
@@ -208,20 +241,22 @@
 	async function togglePin(item: SpaceContentItem) {
 		if (pinningId) return;
 		pinningId = item.id;
-		if (item.is_pinned) {
-			const res = await api.delete<{ unpinned: boolean }>(`/spaces/${space.slug}/pinned/${item.id}`);
-			if (!res.error) {
-				feedItems = feedItems.map((f) => f.id === item.id ? { ...f, is_pinned: false } : f);
+		const was = item.is_pinned;
+		// Optimistic update
+		feedItems = feedItems.map((f) => f.id === item.id ? { ...f, is_pinned: !was } : f);
+		try {
+			if (was) {
+				await api.delete<{ unpinned: boolean }>(`/spaces/${space.slug}/pinned/${item.id}`);
+			} else {
+				const maxPos = feedItems.filter((f) => f.is_pinned).length;
+				await api.post<{ id: string }>(`/spaces/${space.slug}/pinned`, {
+					content_id: item.id,
+					position: maxPos + 1
+				});
 			}
-		} else {
-			const maxPos = feedItems.filter((f) => f.is_pinned).length;
-			const res = await api.post<{ id: string }>(`/spaces/${space.slug}/pinned`, {
-				content_id: item.id,
-				position: maxPos + 1
-			});
-			if (!res.error) {
-				feedItems = feedItems.map((f) => f.id === item.id ? { ...f, is_pinned: true } : f);
-			}
+		} catch {
+			// Rollback on failure
+			feedItems = feedItems.map((f) => f.id === item.id ? { ...f, is_pinned: was } : f);
 		}
 		pinningId = null;
 	}
@@ -432,6 +467,9 @@
 					{/each}
 				</div>
 				{#if !feedEnd}
+					{#if feedError}
+						<p class="mx-auto mt-3 text-center text-sm text-red-600 dark:text-red-400">{feedError}</p>
+					{/if}
 					<button
 						type="button"
 						onclick={loadMoreFeed}
@@ -449,11 +487,11 @@
 				<ForumList threads={data.forumThreads} pageSize={data.pageSize} loadError={false} />
 			{/if}
 		{:else if activeTab === 'members'}
-			{#if data.members.length === 0}
+			{#if membersItems.length === 0}
 				<EmptyState icon={Users} title={t('space.members_empty', 'No members yet')} />
 			{:else}
 				<ul class="space-y-2">
-					{#each data.members as member (member.user_id)}
+					{#each membersItems as member (member.user_id)}
 						<li>
 							<a
 								href="/u/{member.username}"
@@ -474,6 +512,16 @@
 						</li>
 					{/each}
 				</ul>
+				{#if !membersEnd}
+					<button
+						type="button"
+						onclick={loadMoreMembers}
+						disabled={membersLoading}
+						class="mx-auto mt-3 block rounded-[var(--radius)] border border-[var(--color-border)] px-4 py-2 text-sm text-[var(--color-text-subtle)] hover:bg-[var(--color-surface-subtle)] disabled:opacity-50"
+					>
+						{membersLoading ? t('common.loading') : t('feed.load_more', 'Load more')}
+					</button>
+				{/if}
 			{/if}
 		{:else if activeTab === 'about'}
 			<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
@@ -483,10 +531,12 @@
 					<EmptyState icon={Info} title={t('space.no_about', 'No description yet')} />
 				{/if}
 				{#if space.wiki_content}
-					<div class="mt-4 border-t border-[var(--color-border)] pt-4">
-						<h2 class="mb-2 text-sm font-medium text-[var(--color-text)]">{t('space.wiki', 'Wiki')}</h2>
-						<p class="text-sm leading-relaxed text-[var(--color-text-subtle)]">{space.wiki_content}</p>
+				<div class="mt-4 border-t border-[var(--color-border)] pt-4">
+					<h2 class="mb-2 text-sm font-medium text-[var(--color-text)]">{t('space.wiki', 'Wiki')}</h2>
+					<div class="prose dark:prose-invert max-w-none text-sm leading-relaxed text-[var(--color-text-subtle)]">
+						{@html tiptapToHtml(typeof space.wiki_content === 'string' ? JSON.parse(space.wiki_content) : space.wiki_content)}
 					</div>
+				</div>
 				{/if}
 			</section>
 		{:else if activeTab === 'search'}
@@ -518,7 +568,11 @@
 			{/if}
 		{:else if activeTab === 'analytics'}
 			<!-- Analytics tab (Phase 08.10) -->
-			{#if analytics}
+			{#if analyticsError === 'permission_denied'}
+				<EmptyState icon={BarChart3} title={t('space.analytics.forbidden', 'You do not have permission to view analytics for this space.')} />
+			{:else if analyticsError === 'unavailable'}
+				<EmptyState icon={BarChart3} title={t('space.analytics.unavailable', 'Analytics unavailable')} />
+			{:else if analytics}
 				<div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
 					<div class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 						<div class="flex items-center gap-2 text-xs text-[var(--color-muted)]">

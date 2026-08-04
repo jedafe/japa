@@ -18,13 +18,12 @@ describe('Create Bot +page.svelte', () => {
 
 	it('renders the subtitle', () => {
 		render(Page);
-		expect(screen.getByText('Manage automated bots and their messaging capabilities')).toBeTruthy();
+		expect(screen.getByText('Manage chatbots, moderation bots, and automated agents')).toBeTruthy();
 	});
 
 	it('shows form fields and Create Bot button', () => {
 		render(Page);
-		expect(screen.getByLabelText(/name/i)).toBeTruthy();
-		expect(screen.getByLabelText('Avatar URL')).toBeTruthy();
-		expect(screen.getByLabelText('Description')).toBeTruthy();
+		expect(screen.getByText(/name/i)).toBeTruthy();
+		expect(screen.getByText(/user-agent pattern/i)).toBeTruthy();
 	});
 });

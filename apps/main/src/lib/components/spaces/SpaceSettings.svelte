@@ -8,6 +8,8 @@
 	} from 'lucide-svelte';
 	import MediaLibraryModal from '$lib/components/media/MediaLibraryModal.svelte';
 	import SpaceCombobox from '$lib/components/spaces/SpaceCombobox.svelte';
+	import PostEditor from '$lib/components/create/editors/PostEditor.svelte';
+	import { tiptapToHtml } from '$lib/tiptap/serialize';
 	import type {
 		Space, SpaceModerator, SpaceRule, SpacePermissionPreset, MediaAsset
 	} from '$lib/types';
@@ -40,7 +42,12 @@
 
 	let name = $state(space.name);
 	let description = $state(space.description ?? '');
-	let wikiContent = $state(space.wiki_content ?? '');
+	// Wiki content: initialize as HTML from TipTap JSON (or raw HTML string).
+	let wikiHtml = $state(
+		space.wiki_content
+			? tiptapToHtml(typeof space.wiki_content === 'string' ? JSON.parse(space.wiki_content) : space.wiki_content)
+			: ''
+	);
 	let logoUrl = $state(initialLogoUrl);
 	let logoMediaId = $state(space.logo_media_id ?? '');
 	let logoPickerOpen = $state(false);
@@ -119,11 +126,11 @@
 				.map((k) => k.trim().toLowerCase())
 				.filter((k) => k.length > 0);
 
-			const res = await api.patch<Space>(`/spaces/${space.id}`, {
-				name,
-				description: description || null,
-				wiki_content: wikiContent,
-				visibility,
+		const res = await api.patch<Space>(`/spaces/${space.id}`, {
+			name,
+			description: description || null,
+			wiki_content: wikiHtml,
+			visibility,
 				posting_perm: postingPerm,
 				replying_perm: replyingPerm,
 				commenting_perm: commentingPerm,
@@ -156,11 +163,15 @@
 		if (!handle || modAdding) return;
 		modAdding = true;
 		modError = '';
-		const res = await api.post<{ space_id: string; user_id: string; assigned_by: string }>(
-			`/spaces/${space.slug}/moderators`, { username: handle }
-		);
-		if (res.error) { modError = res.error.message; }
-		else if (res.data) { await refreshModerators(); modUsername = ''; }
+		try {
+			const res = await api.post<{ space_id: string; user_id: string; assigned_by: string }>(
+				`/spaces/${space.slug}/moderators`, { username: handle }
+			);
+			if (res.error) { modError = res.error.message; }
+			else if (res.data) { await refreshModerators(); modUsername = ''; }
+		} catch (err) {
+			modError = err instanceof Error ? err.message : 'Failed to add moderator. The user must be a member of this space.';
+		}
 		modAdding = false;
 	}
 
@@ -246,6 +257,8 @@
 		if (swapIdx < 0 || swapIdx >= sorted.length) return;
 		const rule = sorted[idx];
 		const swapRule = sorted[swapIdx];
+		// Save original for rollback
+		const originalRules = [...rules];
 		// Optimistically swap positions locally
 		rules = rules.map((r) => {
 			if (r.id === rule.id) return { ...r, position: swapRule.position };
@@ -254,12 +267,18 @@
 		});
 		// Persist both updates
 		ruleSavingId = ruleId;
-		await api.patch<SpaceRule>(`/spaces/${space.slug}/rules/${rule.id}`, {
-			title: rule.title, body: rule.body, position: swapRule.position
-		});
-		await api.patch<SpaceRule>(`/spaces/${space.slug}/rules/${swapRule.id}`, {
-			title: swapRule.title, body: swapRule.body, position: rule.position
-		});
+		try {
+			await api.patch<SpaceRule>(`/spaces/${space.slug}/rules/${rule.id}`, {
+				title: rule.title, body: rule.body, position: swapRule.position
+			});
+			await api.patch<SpaceRule>(`/spaces/${space.slug}/rules/${swapRule.id}`, {
+				title: swapRule.title, body: swapRule.body, position: rule.position
+			});
+		} catch {
+			// Rollback on failure
+			rules = originalRules;
+			ruleError = 'Failed to reorder rules. Changes have been reverted.';
+		}
 		ruleSavingId = null;
 	}
 
@@ -309,6 +328,9 @@
 	let applyingPreset = $state<string | null>(null);
 
 	async function applyPreset(preset: SpacePermissionPreset) {
+		if (!confirm(`Apply the "${preset.name}" preset? This will overwrite your current permission settings.`)) {
+			return;
+		}
 		applyingPreset = preset.name;
 		presetError = '';
 		// Apply the preset's axes to the local form state and save
@@ -331,6 +353,7 @@
 
 	// --- Delete space (Ref: §05; DELETE /spaces/{id}; creator-only, 0 members) ---
 	let deleteConfirm = $state(false);
+	let deleteConfirmName = $state('');
 	let deleting = $state(false);
 	let deleteError = $state('');
 
@@ -359,7 +382,7 @@
 
 	{#if saved}
 		<div class="mb-4 rounded-lg bg-green-50 px-4 py-3 text-sm text-green-700 dark:bg-green-950/30 dark:text-green-400">
-			Settings saved successfully.
+			{t('spaces.settings_saved', 'Settings saved successfully.')}
 		</div>
 	{/if}
 
@@ -465,26 +488,24 @@
 				<label for="space-description" class="mb-1 block text-xs text-[var(--color-muted)]">
 					{t('spaces.settings_description', 'Description')}
 				</label>
-				<textarea
-					id="space-description"
-					bind:value={description}
-					rows="3"
-					placeholder="A short description of this space"
-					class="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]"
-				></textarea>
+			<textarea
+				id="space-description"
+				bind:value={description}
+				rows="3"
+				placeholder={t('spaces.settings_description_placeholder', 'A short description of this space')}
+				class="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]"
+			></textarea>
 			</div>
-			<div>
-				<label for="space-wiki" class="mb-1 block text-xs text-[var(--color-muted)]">
-					{t('spaces.settings_wiki', 'About / Wiki')}
-				</label>
-				<textarea
-					id="space-wiki"
-					bind:value={wikiContent}
-					rows="6"
-					placeholder="Detailed information about this space (HTML)"
-					class="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 font-mono text-xs text-[var(--color-text)]"
-				></textarea>
-			</div>
+		<div>
+			<label class="mb-1 block text-xs text-[var(--color-muted)]">
+				{t('spaces.settings_wiki', 'About / Wiki')}
+			</label>
+			<PostEditor
+				html={wikiHtml}
+				onhtml={(html) => { wikiHtml = html; }}
+				onedit={() => {}}
+			/>
+		</div>
 		</fieldset>
 
 		<!-- Permission presets (Ref: §05 lines 122-133) -->
@@ -528,7 +549,7 @@
 				{t('spaces.settings_visibility', 'Who can view this space')}
 			</legend>
 			<p class="mb-3 text-xs text-[var(--color-muted)]">
-				Controls who can see this space and its content.
+				{t('spaces.settings_visibility_hint', 'Controls who can see this space and its content.')}
 			</p>
 			{#each visibilityOptions as opt}
 				<label class="mb-2 flex cursor-pointer items-start gap-2 text-sm text-[var(--color-text)]">
@@ -544,7 +565,7 @@
 				{t('spaces.settings_posting', 'Who can post')}
 			</legend>
 			<p class="mb-3 text-xs text-[var(--color-muted)]">
-				Minimum role required to create content in this space.
+				{t('spaces.settings_posting_hint', 'Minimum role required to create content in this space.')}
 			</p>
 			<select bind:value={postingPerm} class="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]">
 				{#each permOptions as opt}
@@ -597,9 +618,7 @@
 				{t('spaces.settings_keywords', 'Auto-assign keywords')}
 			</legend>
 			<p class="mb-3 text-xs text-[var(--color-muted)]">
-				When someone creates content without selecting a space, the system checks the title for these keywords.
-				If a keyword matches, the content is automatically assigned to this space. Separate keywords with commas.
-				Only applies to primary spaces (country, state, city) and public spaces.
+				{t('spaces.settings_keywords_hint', 'When someone creates content without selecting a space, the system checks the title for these keywords. If a keyword matches, the content is automatically assigned to this space. Separate keywords with commas. Only applies to primary spaces (country, state, city) and public spaces.')}
 			</p>
 			<input
 				type="text"
@@ -883,7 +902,7 @@
 				disabled={saving}
 				class="rounded-lg bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
 			>
-				{saving ? 'Saving…' : t('spaces.settings_save', 'Save settings')}
+				{saving ? t('common.saving', 'Saving…') : t('spaces.settings_save', 'Save settings')}
 			</button>
 		</div>
 	</form>
@@ -922,22 +941,33 @@
 					<p class="text-sm font-medium text-red-700 dark:text-red-400">
 						{t('space.delete_confirm', 'Are you absolutely sure? Type the space name to confirm.')}
 					</p>
-					<button
-						type="button"
-						disabled={deleting}
-						onclick={deleteSpace}
-						class="inline-flex items-center gap-1.5 rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
-					>
-						{#if deleting}<Loader2 size={14} class="animate-spin" />{:else}<Trash2 size={14} />{/if}
-						{t('space.delete_confirm_button', 'Yes, delete this space permanently')}
-					</button>
-					<button
-						type="button"
-						onclick={() => (deleteConfirm = false)}
-						class="ml-2 rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
-					>
-						{t('common.cancel', 'Cancel')}
-					</button>
+					<p class="text-xs text-[var(--color-muted)]">
+						{@html t('spaces.delete_confirm_hint', 'Type <strong>{name}</strong> to confirm deletion:').replace('{name}', space.name)}
+					</p>
+					<input
+						type="text"
+						bind:value={deleteConfirmName}
+						placeholder={space.name}
+						class="w-full rounded-lg border border-red-300 bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] dark:border-red-900"
+					/>
+					<div class="flex items-center gap-2">
+						<button
+							type="button"
+							disabled={deleting || deleteConfirmName !== space.name}
+							onclick={deleteSpace}
+							class="inline-flex items-center gap-1.5 rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
+						>
+							{#if deleting}<Loader2 size={14} class="animate-spin" />{:else}<Trash2 size={14} />{/if}
+							{t('space.delete_confirm_button', 'Yes, delete this space permanently')}
+						</button>
+						<button
+							type="button"
+							onclick={() => { deleteConfirm = false; deleteConfirmName = ''; }}
+							class="rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
+						>
+							{t('common.cancel', 'Cancel')}
+						</button>
+					</div>
 				</div>
 			{/if}
 		</fieldset>

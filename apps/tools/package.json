@@ -1,0 +1,34 @@
+{
+	"name": "@japaconnect/tools",
+	"private": true,
+	"version": "0.0.1",
+	"type": "module",
+	"scripts": {
+		"dev": "vite dev --port 3005",
+		"build": "vite build",
+		"preview": "vite preview --port 3005",
+		"start": "node build",
+		"test": "vitest run",
+		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
+		"prepare": "svelte-kit sync || echo ''"
+	},
+	"devDependencies": {
+		"@sveltejs/adapter-node": "^5.5.7",
+		"@sveltejs/kit": "^2.69.3",
+		"@sveltejs/vite-plugin-svelte": "^7.2.0",
+		"@tailwindcss/vite": "^4.3.3",
+		"@types/node": "^22.10.0",
+		"jsdom": "^29.1.1",
+		"svelte": "^5.56.6",
+		"svelte-check": "^4.7.3",
+		"tailwindcss": "^4.3.3",
+		"typescript": "^6.0.3",
+		"vite": "^8.1.5",
+		"vitest": "^4.1.10"
+	},
+	"dependencies": {
+		"bits-ui": "^2.18.1",
+		"layerchart": "2.0.1",
+		"lucide-svelte": "^1.0.1"
+	}
+}

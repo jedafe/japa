@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
-	import { FileText, MessageSquare, Image, Heart, Users, Info, BarChart3 } from 'lucide-svelte';
+	import { FileText, MessageSquare, Image, Heart, Users, Info, BarChart3, Award } from 'lucide-svelte';
 	import SetSidebar from '$lib/components/shell/SetSidebar.svelte';
 	import ProfileHeader from '$lib/components/profile/ProfileHeader.svelte';
 	import ProfileTabs from '$lib/components/profile/ProfileTabs.svelte';
@@ -76,6 +76,22 @@
 		<FollowButton entityType="user" entityId={user.id} {initiallyFollowing} />
 	{/if}
 </ProfileHeader>
+
+{#if data.badges && data.badges.length > 0}
+	<div class="mx-auto w-full max-w-full px-3 pb-1">
+		<div class="flex flex-wrap gap-2">
+			{#each data.badges as badge (badge.id)}
+				<span
+					class="inline-flex items-center gap-1.5 rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-2.5 py-1 text-xs text-[var(--color-text)]"
+					title={badge.description}
+				>
+					<Award size={12} class="text-[var(--color-primary)]" />
+					{badge.name}
+				</span>
+			{/each}
+		</div>
+	</div>
+{/if}
 
 <ProfileTabs {tabs} active={activeTab} />
 

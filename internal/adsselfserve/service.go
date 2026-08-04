@@ -41,7 +41,7 @@ const (
 
 // TaskEnqueuer enqueues Asynq tasks fire-and-forget (Rule 8).
 type TaskEnqueuer interface {
-	Enqueue(taskType string, payload []byte) error
+	Enqueue(taskType string, payload []byte, opts ...interface{}) error
 }
 
 // CreateCampaignInput is the request body for creating a self-serve campaign.

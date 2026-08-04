@@ -11,6 +11,8 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/go-chi/chi/v5"
+	"github.com/jedafe/japa/internal/auth"
+	"github.com/jedafe/japa/internal/tenant"
 )
 
 // Handlers exposes the scholarship finder HTTP routes.
@@ -26,6 +28,12 @@ func NewHandlers(svc *Service) *Handlers { return &Handlers{svc: svc} }
 func (h *Handlers) HandleFindScholarships(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
+		return
+	}
+
+	// Global killswitch (scholarship_finder.enabled, ADR-073 §73).
+	if !h.svc.Enabled(r.Context(), tenantID) {
+		writeError(w, http.StatusNotFound, "scholarship_finder_disabled", "Scholarship Finder is not available")
 		return
 	}
 
@@ -77,6 +85,13 @@ func (h *Handlers) HandleScholarshipDetail(w http.ResponseWriter, r *http.Reques
 	if !ok {
 		return
 	}
+
+	// Global killswitch (scholarship_finder.enabled, ADR-073 §73).
+	if !h.svc.Enabled(r.Context(), tenantID) {
+		writeError(w, http.StatusNotFound, "scholarship_finder_disabled", "Scholarship Finder is not available")
+		return
+	}
+
 	guideID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -101,6 +116,13 @@ func (h *Handlers) HandleSaveScholarship(w http.ResponseWriter, r *http.Request)
 	if !ok {
 		return
 	}
+
+	// Global killswitch (scholarship_finder.enabled, ADR-073 §73).
+	if !h.svc.Enabled(r.Context(), tenantID) {
+		writeError(w, http.StatusNotFound, "scholarship_finder_disabled", "Scholarship Finder is not available")
+		return
+	}
+
 	guideID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -305,31 +327,21 @@ type tenantCtxKey struct{}
 type userCtxKey struct{}
 
 func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
-	v := r.Context().Value(tenantCtxKey{})
-	if v == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Tenant context required")
-		return pgtype.UUID{}, false
-	}
-	id, ok := v.(pgtype.UUID)
-	if !ok || !id.Valid {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Invalid tenant context")
+	id := tenant.IDFromContext(r.Context())
+	if !id.Valid {
+		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
 	return id, true
 }
 
 func requireUser(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
-	v := r.Context().Value(userCtxKey{})
-	if v == nil {
+	u := auth.FromContext(r.Context())
+	if u == nil || !u.UserID.Valid {
 		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return pgtype.UUID{}, false
 	}
-	id, ok := v.(pgtype.UUID)
-	if !ok || !id.Valid {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Invalid user context")
-		return pgtype.UUID{}, false
-	}
-	return id, true
+	return u.UserID, true
 }
 
 func scanUUIDParam(w http.ResponseWriter, r *http.Request, param string) (pgtype.UUID, bool) {

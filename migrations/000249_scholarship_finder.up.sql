@@ -36,7 +36,7 @@ CREATE INDEX IF NOT EXISTS idx_saved_scholarships_deadline
 
 CREATE INDEX IF NOT EXISTS idx_saved_scholarships_remind
     ON saved_scholarships (tenant_id, last_reminded_at)
-    WHERE last_reminded_at IS NULL OR last_reminded_at < now() - interval '1 day';
+    WHERE last_reminded_at IS NULL;
 
 -- =====================================================================
 -- system_settings — 3 scholarship_finder.* keys (Section 73, ADR-073)

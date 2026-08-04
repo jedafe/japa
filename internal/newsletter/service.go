@@ -113,6 +113,15 @@ func (s *Service) SetAsynqClient(client *asynq.Client) {
 // SetSettings injects the config.Settings provider.
 func (s *Service) SetSettings(settings *config.Settings) { s.settings = settings }
 
+// Enabled reads the newsletter.enabled system_settings toggle (ADR-080, §62).
+// Defaults to true when unset or when settings are not injected.
+func (s *Service) Enabled(ctx context.Context, tenantID pgtype.UUID) bool {
+	if s.settings == nil {
+		return true
+	}
+	return s.settings.GetBoolOr(ctx, tenantID, "newsletter.enabled", true)
+}
+
 // GetAllSubscriberEmails returns all active subscriber emails for a tenant.
 func (s *Service) GetAllSubscriberEmails(ctx context.Context, tenantID pgtype.UUID) ([]string, error) {
 	rows, err := s.db.Reader.Query(ctx, `

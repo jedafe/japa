@@ -94,6 +94,44 @@ ORDER BY c.id, cf.key
 	return out, nil
 }
 
+// CountrySpace is a country-level Geo Space (§05) used as an origin selector
+// option. Only the fields needed by the selector are returned.
+type CountrySpace struct {
+	ID   pgtype.UUID
+	Name string
+	Slug string
+}
+
+// ListCountrySpaces returns all country-level Geo Spaces for the tenant,
+// ordered by name. Used to populate the origin selector (§70 step 1).
+func (s *Store) ListCountrySpaces(ctx context.Context, tenantID pgtype.UUID) ([]CountrySpace, error) {
+	const q = `
+SELECT id, name, slug
+FROM spaces
+WHERE tenant_id = $1 AND level = 'country' AND deleted_at IS NULL
+ORDER BY name ASC
+`
+
+	rows, err := s.pool.Reader.Query(ctx, q, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("checklist: list country spaces: %w", err)
+	}
+	defer rows.Close()
+
+	var out []CountrySpace
+	for rows.Next() {
+		var c CountrySpace
+		if err := rows.Scan(&c.ID, &c.Name, &c.Slug); err != nil {
+			return nil, fmt.Errorf("checklist: scan country space: %w", err)
+		}
+		out = append(out, c)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("checklist: iterate country spaces: %w", err)
+	}
+	return out, nil
+}
+
 // GetVisaGuideField returns a single field value for a specific guide + key.
 // Used by GetChecklistItems to fetch the required_documents field.
 func (s *Store) GetVisaGuideField(ctx context.Context, tenantID, guideID pgtype.UUID, fieldKey string) (VisaGuideField, error) {

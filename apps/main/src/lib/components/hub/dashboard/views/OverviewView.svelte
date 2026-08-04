@@ -4,6 +4,7 @@
 	import MetricCard from '$lib/components/hub/MetricCard.svelte';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import { FileText, Wallet, Bell, Users } from 'lucide-svelte';
+	import ReferralWidget from '$lib/components/referral/ReferralWidget.svelte';
 
 	// Analytics fields match the backend MeAnalytics struct (§50):
 	// total_content, draft_content, published_content, total_bookmarks,
@@ -137,6 +138,9 @@
 			</ul>
 		{/if}
 	</DashboardPanel>
+
+	<!-- Phase 34.06 — Referral share widget (Section 60, ADR-078) -->
+	<ReferralWidget />
 
 	<div class="flex flex-wrap gap-3">
 		<a href="/dashboard/content" class="rounded-[var(--radius)] border border-[var(--color-border)] px-4 py-2 text-sm text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]">

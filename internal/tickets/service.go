@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/worker"
@@ -24,6 +25,7 @@ type Service struct {
 	store    *Store
 	db       *db.DB
 	enqueuer Enqueuer
+	settings *config.Settings
 }
 
 // NewService creates a Service backed by the given database pool.
@@ -37,6 +39,10 @@ func NewService(database *db.DB) *Service {
 		enqueuer: &noopEnqueuer{},
 	}
 }
+
+// SetSettings injects the config.Settings provider for hot-reloadable ticket
+// settings (tickets.default_sla_hours, tickets.auto_close_resolved_days).
+func (s *Service) SetSettings(settings *config.Settings) { s.settings = settings }
 
 // NewServiceWithEnqueuer creates a Service with a custom enqueuer for background tasks.
 func NewServiceWithEnqueuer(database *db.DB, enqueuer Enqueuer) *Service {
@@ -196,11 +202,19 @@ func (s *Service) CreateTicket(ctx context.Context, tenantID pgtype.UUID, input 
 		priority = ticketType.DefaultPriority
 	}
 
-	// Compute SLA breach time.
+	// Compute SLA breach time. Fall back to tickets.default_sla_hours
+	// (system_settings, default 48) when the ticket type has no SLA configured.
 	var slaBreachAt pgtype.Timestamptz
 
+	slaHours := int32(0)
 	if ticketType.SlaHours != nil && *ticketType.SlaHours > 0 {
-		breachTime := time.Now().Add(time.Duration(*ticketType.SlaHours) * time.Hour)
+		slaHours = *ticketType.SlaHours
+	} else if s.settings != nil {
+		slaHours = int32(s.settings.GetIntOr(ctx, tenantID, "tickets.default_sla_hours", 48))
+	}
+
+	if slaHours > 0 {
+		breachTime := time.Now().Add(time.Duration(slaHours) * time.Hour)
 		slaBreachAt = pgtype.Timestamptz{Time: breachTime, Valid: true}
 	}
 

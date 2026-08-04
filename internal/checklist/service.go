@@ -22,6 +22,7 @@ import (
 
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/worker"
 )
 
 // Field keys on the visa guide custom field group (Section 14 amendment).
@@ -47,25 +48,33 @@ type ChecklistItem struct {
 	Notes     string `json:"notes"`
 }
 
-// CountryOption is a destination-country selector option derived from
-// published visa guides.
+// CountryOption is a selector option for either an origin country (Geo Space)
+// or a destination country (derived from published visa guides). Destinations
+// carry nested visa_types so the frontend can render the 3-step selector
+// without a second round-trip.
 type CountryOption struct {
-	Country string `json:"country"`
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	Slug string `json:"slug"`
+	// Visa types available for this destination (destinations only).
+	VisaTypes []VisaTypeOption `json:"visa_types,omitempty"`
 }
 
 // VisaTypeOption is a visa-type selector option. GuideID is the matching
 // published visa guide so the frontend can jump straight to its checklist.
 type VisaTypeOption struct {
-	VisaType string `json:"visa_type"`
+	// Value is the visa_type custom field value, e.g. "student", "work".
+	Value    string `json:"value"`
+	Label    string `json:"label"`
 	GuideID  string `json:"guide_id"`
 }
 
-// SelectorResult is the payload for GET /checklist/selector — the distinct
-// destination countries and visa types available across published visa
-// guides.
+// SelectorResult is the payload for GET /checklist/selector — origin country
+// Geo Spaces (§05) plus destination countries with nested visa types from
+// published visa guides. Matches the 3-step selector model in §70.
 type SelectorResult struct {
-	Countries []CountryOption   `json:"countries"`
-	VisaTypes []VisaTypeOption  `json:"visa_types"`
+	Origins      []CountryOption `json:"origins"`
+	Destinations []CountryOption `json:"destinations"`
 }
 
 // ProgressItem is a single persisted progress row, serialized for the API.
@@ -125,54 +134,137 @@ func (s *Service) Enabled(ctx context.Context, tenantID pgtype.UUID) bool {
 	return s.settings.GetBoolOr(ctx, tenantID, "checklist.enabled", true)
 }
 
-// GetSelector returns the distinct destination countries and visa types from
-// published visa guides. Anonymous-accessible (no auth required).
+// GetSelector returns origin country Geo Spaces (§05) and destination
+// countries with nested visa types from published visa guides. Follows the
+// 3-step selector model in §70: origin → destination → visa type.
+// Anonymous-accessible (no auth required).
 func (s *Service) GetSelector(ctx context.Context, tenantID pgtype.UUID) (SelectorResult, error) {
+	// Step 1: Origins — country-level Geo Spaces.
+	countrySpaces, err := s.store.ListCountrySpaces(ctx, tenantID)
+	if err != nil {
+		return SelectorResult{}, fmt.Errorf("checklist: selector origins: %w", err)
+	}
+	origins := make([]CountryOption, 0, len(countrySpaces))
+	for _, c := range countrySpaces {
+		origins = append(origins, CountryOption{
+			ID:   c.ID.String(),
+			Name: c.Name,
+			Slug: c.Slug,
+		})
+	}
+
+	// Steps 2+3: Destinations with nested visa types — from published visa
+	// guides' destination_country + visa_type custom fields.
 	fields, err := s.store.ListPublishedVisaGuideFields(ctx, tenantID, []string{
 		FieldDestinationCountry,
 		FieldVisaType,
 	})
 	if err != nil {
-		return SelectorResult{}, fmt.Errorf("checklist: selector: %w", err)
+		return SelectorResult{}, fmt.Errorf("checklist: selector destinations: %w", err)
 	}
 
-	countrySet := make(map[string]struct{})
-	visaTypeSet := make(map[string]VisaTypeOption)
+	// Group by destination country; each destination gets its visa types.
+	destMap := make(map[string]*CountryOption) // key = destination country name
+	destOrder := make([]string, 0)
+	guideVisaTypes := make(map[string]map[string]VisaTypeOption) // dest → visa_type → option
+
 	for _, f := range fields {
 		switch f.FieldKey {
 		case FieldDestinationCountry:
-			if v := strings.TrimSpace(f.ValueText); v != "" {
-				countrySet[v] = struct{}{}
+			v := strings.TrimSpace(f.ValueText)
+			if v == "" {
+				continue
+			}
+			if _, ok := destMap[v]; !ok {
+				destMap[v] = &CountryOption{Name: v, Slug: slugify(v)}
+				destOrder = append(destOrder, v)
+				guideVisaTypes[v] = make(map[string]VisaTypeOption)
 			}
 		case FieldVisaType:
 			v := strings.TrimSpace(f.ValueText)
 			if v == "" {
 				continue
 			}
-			// Keep the first guide encountered for each visa type so the
-			// frontend has a default guide to load.
-			if _, ok := visaTypeSet[v]; !ok {
-				visaTypeSet[v] = VisaTypeOption{
-					VisaType: v,
-					GuideID:  f.GuideID.String(),
+			// Find the destination this guide belongs to by scanning the
+			// fields list for the same guide_id's destination_country.
+			dest := findGuideDestination(fields, f.GuideID)
+			if dest == "" {
+				continue
+			}
+			if _, ok := guideVisaTypes[dest]; !ok {
+				guideVisaTypes[dest] = make(map[string]VisaTypeOption)
+			}
+			if _, exists := guideVisaTypes[dest][v]; !exists {
+				guideVisaTypes[dest][v] = VisaTypeOption{
+					Value:   v,
+					Label:   prettifyVisaType(v),
+					GuideID: f.GuideID.String(),
 				}
 			}
 		}
 	}
 
-	countries := make([]CountryOption, 0, len(countrySet))
-	for c := range countrySet {
-		countries = append(countries, CountryOption{Country: c})
+	destinations := make([]CountryOption, 0, len(destOrder))
+	for _, destName := range destOrder {
+		dest := destMap[destName]
+		vtMap := guideVisaTypes[destName]
+		vts := make([]VisaTypeOption, 0, len(vtMap))
+		for _, vt := range vtMap {
+			vts = append(vts, vt)
+		}
+		sort.Slice(vts, func(i, j int) bool { return vts[i].Value < vts[j].Value })
+		dest.VisaTypes = vts
+		destinations = append(destinations, *dest)
 	}
-	sort.Slice(countries, func(i, j int) bool { return countries[i].Country < countries[j].Country })
+	sort.Slice(destinations, func(i, j int) bool { return destinations[i].Name < destinations[j].Name })
 
-	visaTypes := make([]VisaTypeOption, 0, len(visaTypeSet))
-	for _, vt := range visaTypeSet {
-		visaTypes = append(visaTypes, vt)
+	return SelectorResult{Origins: origins, Destinations: destinations}, nil
+}
+
+// findGuideDestination scans the flat field list for the destination_country
+// value associated with the given guide_id.
+func findGuideDestination(fields []VisaGuideField, guideID pgtype.UUID) string {
+	for _, f := range fields {
+		if f.FieldKey == FieldDestinationCountry && f.GuideID == guideID {
+			return strings.TrimSpace(f.ValueText)
+		}
 	}
-	sort.Slice(visaTypes, func(i, j int) bool { return visaTypes[i].VisaType < visaTypes[j].VisaType })
+	return ""
+}
 
-	return SelectorResult{Countries: countries, VisaTypes: visaTypes}, nil
+// prettifyVisaType converts a raw visa_type field value (e.g. "student",
+// "work") into a human-readable label for the selector.
+func prettifyVisaType(v string) string {
+	switch v {
+	case "student":
+		return "Student"
+	case "work":
+		return "Work"
+	case "tourist":
+		return "Tourist"
+	case "business":
+		return "Business"
+	case "family":
+		return "Family Reunion"
+	case "transit":
+		return "Transit"
+	default:
+		// Title-case the first letter as a fallback.
+		if len(v) > 0 {
+			return strings.ToUpper(v[:1]) + v[1:]
+		}
+		return v
+	}
+}
+
+// slugify converts a country name into a URL-safe slug (e.g. "United Kingdom"
+// → "united-kingdom"). Used for destination options that don't have a Geo
+// Space ID.
+func slugify(s string) string {
+	s = strings.ToLower(strings.TrimSpace(s))
+	s = strings.ReplaceAll(s, " ", "-")
+	s = strings.ReplaceAll(s, "'", "")
+	return s
 }
 
 // GetChecklistItems extracts the required_documents field from a visa guide
@@ -302,7 +394,7 @@ func (s *Service) maybeAwardCompletionPoints(ctx context.Context, tenantID, user
 		return
 	}
 
-	if err := s.enqueuer.Enqueue("wallet:award_points", payload); err != nil {
+	if err := s.enqueuer.Enqueue(worker.TypeWalletAwardPoints, payload); err != nil {
 		slog.Warn("checklist: completion award: enqueue failed", "error", err)
 		return
 	}
