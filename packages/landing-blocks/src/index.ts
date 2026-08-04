@@ -11,3 +11,5 @@ export type {
 } from './types';
 
 export { geoCopy, GLOBAL_TOKENS, getGeoTokens } from './geo/copyRegistry';
+
+export { resolveString, resolveGeoCopy } from './geo/resolveGeoCopy';
