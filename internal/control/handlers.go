@@ -18,6 +18,7 @@ import (
 	"github.com/meilisearch/meilisearch-go"
 	"github.com/valkey-io/valkey-go/valkeycompat"
 
+	"github.com/jedafe/japa/internal/ai"
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/db"
@@ -53,6 +54,7 @@ type Handlers struct {
 	MeiliSearch      meilisearch.ServiceManager
 	WSHub            *websocket.Hub
 	Honcho           HonchoHealthChecker
+	AIStore          *ai.Store
 	StartTime        time.Time
 }
 
@@ -107,6 +109,12 @@ func (h *Handlers) SetWSHub(hub *websocket.Hub) {
 // group (ADR-027).
 func (h *Handlers) SetHoncho(hc HonchoHealthChecker) {
 	h.Honcho = hc
+}
+
+// SetAIStore injects the AI usage store for the AI budget dashboard
+// (GET/PATCH /control/ai-budget). When nil, spend defaults to 0.
+func (h *Handlers) SetAIStore(s *ai.Store) {
+	h.AIStore = s
 }
 
 // ---------------------------------------------------------------------------
@@ -1723,9 +1731,8 @@ func parseBudgetUSD(v string) float64 {
 // GetAIBudget handles GET /api/v1/control/ai-budget.
 // Returns the current AI budget summary. The monthly threshold is read from
 // system_settings (ai.monthly_budget_usd). Month-to-date spend and per-provider
-// / per-task breakdowns aggregate from the ai_usage_log table; that table is not
-// yet provisioned (see internal/ai/handlers.go), so spend defaults to 0 until
-// usage tracking ships. alert_triggered is derived from threshold vs spend.
+// / per-task breakdowns aggregate from the ai_usage_log table via the AI store.
+// alert_triggered is derived from threshold vs spend.
 func (h *Handlers) GetAIBudget(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
@@ -1739,18 +1746,45 @@ func (h *Handlers) GetAIBudget(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Spend aggregation requires the ai_usage_log table, which is not yet
-	// created. Report 0 spend and empty breakdowns until that lands.
-	const monthToDateCost = 0.0
+	// Aggregate month-to-date spend from ai_usage_log. When the AI store is
+	// not wired (e.g. tests), fall back to 0 spend with empty breakdowns.
+	monthToDateCost := 0.0
+	byProvider := []any{}
+	byTaskType := []any{}
+	if h.AIStore != nil {
+		summary, err := h.AIStore.GetAIUsageSummary(r.Context(), tenantID, 30, "")
+		if err != nil {
+			slog.Error("control: get ai budget: usage summary", "error", err)
+		} else {
+			monthToDateCost = summary.TotalCostUSD
+			for _, b := range summary.ByProvider {
+				byProvider = append(byProvider, map[string]any{
+					"provider":       b.Provider,
+					"tokens_used":    b.TokensUsed,
+					"total_cost_usd": b.TotalCostUSD,
+					"calls":          b.Calls,
+				})
+			}
+			for _, b := range summary.ByTaskType {
+				byTaskType = append(byTaskType, map[string]any{
+					"task_type":      b.TaskType,
+					"tokens_used":    b.TokensUsed,
+					"total_cost_usd": b.TotalCostUSD,
+					"calls":          b.Calls,
+				})
+			}
+		}
+	}
+
 	alertTriggered := threshold > 0 && monthToDateCost >= threshold
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
-			"month_to_date_cost":    monthToDateCost,
-			"budget_threshold_usd":  threshold,
-			"alert_triggered":       alertTriggered,
-			"by_provider":           []any{},
-			"by_task_type":          []any{},
+			"month_to_date_cost":   monthToDateCost,
+			"budget_threshold_usd": threshold,
+			"alert_triggered":      alertTriggered,
+			"by_provider":          byProvider,
+			"by_task_type":         byTaskType,
 		},
 	})
 }
@@ -1790,16 +1824,44 @@ func (h *Handlers) UpdateAIBudget(w http.ResponseWriter, r *http.Request) {
 		h.Settings.InvalidateSettings(r.Context(), tenantID)
 	}
 
-	const monthToDateCost = 0.0
+	// Re-aggregate spend so the response reflects the current state.
+	monthToDateCost := 0.0
+	byProvider := []any{}
+	byTaskType := []any{}
+	if h.AIStore != nil {
+		summary, err := h.AIStore.GetAIUsageSummary(r.Context(), tenantID, 30, "")
+		if err != nil {
+			slog.Error("control: update ai budget: usage summary", "error", err)
+		} else {
+			monthToDateCost = summary.TotalCostUSD
+			for _, b := range summary.ByProvider {
+				byProvider = append(byProvider, map[string]any{
+					"provider":       b.Provider,
+					"tokens_used":    b.TokensUsed,
+					"total_cost_usd": b.TotalCostUSD,
+					"calls":          b.Calls,
+				})
+			}
+			for _, b := range summary.ByTaskType {
+				byTaskType = append(byTaskType, map[string]any{
+					"task_type":      b.TaskType,
+					"tokens_used":    b.TokensUsed,
+					"total_cost_usd": b.TotalCostUSD,
+					"calls":          b.Calls,
+				})
+			}
+		}
+	}
+
 	alertTriggered := threshold > 0 && monthToDateCost >= threshold
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
-			"month_to_date_cost":    monthToDateCost,
-			"budget_threshold_usd":  threshold,
-			"alert_triggered":       alertTriggered,
-			"by_provider":           []any{},
-			"by_task_type":          []any{},
+			"month_to_date_cost":   monthToDateCost,
+			"budget_threshold_usd": threshold,
+			"alert_triggered":      alertTriggered,
+			"by_provider":          byProvider,
+			"by_task_type":         byTaskType,
 		},
 	})
 }

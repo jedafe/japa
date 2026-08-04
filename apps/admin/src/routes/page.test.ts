@@ -1,9 +1,33 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/svelte';
-import Page from './+page.svelte';
+import Page from './(app)/+page.svelte';
 
 vi.mock('$lib/api', () => ({
-	api: vi.fn().mockRejectedValue(new Error('not connected'))
+	api: vi.fn().mockRejectedValue(new Error('not connected')),
+	analyticsAdminApi: {
+		getOverview: vi.fn().mockRejectedValue(new Error('not connected')),
+		getUsers: vi.fn().mockRejectedValue(new Error('not connected')),
+	}
+}));
+
+vi.mock('$app/state', () => ({
+	page: {
+		params: {},
+		url: new URL('http://localhost/')
+	}
+}));
+
+vi.mock('$app/navigation', () => ({
+	goto: vi.fn()
+}));
+
+vi.mock('layerchart', () => ({
+	LineChart: vi.fn().mockImplementation(() => null),
+	AreaChart: vi.fn().mockImplementation(() => null)
+}));
+
+vi.mock('d3-shape', () => ({
+	curveMonotoneX: vi.fn()
 }));
 
 describe('Admin +page.svelte', () => {
@@ -15,21 +39,21 @@ describe('Admin +page.svelte', () => {
 	it('shows key metric labels after load', async () => {
 		render(Page);
 		await waitFor(() => {
-			expect(screen.getByText('Open Tickets')).toBeTruthy();
+			expect(screen.getByText('Total Users')).toBeTruthy();
 		});
 	});
 
-	it('shows community health section after load', async () => {
+	it('shows user growth section after load', async () => {
 		render(Page);
 		await waitFor(() => {
-			expect(screen.getByText('Community Health')).toBeTruthy();
+			expect(screen.getByText('User Growth')).toBeTruthy();
 		});
 	});
 
-	it('shows moderation snapshot section after load', async () => {
+	it('shows content activity section after load', async () => {
 		render(Page);
 		await waitFor(() => {
-			expect(screen.getByText('Moderation Snapshot')).toBeTruthy();
+			expect(screen.getByText('Content Activity')).toBeTruthy();
 		});
 	});
 });

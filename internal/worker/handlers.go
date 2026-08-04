@@ -1719,6 +1719,72 @@ func HandleAIGenerateContentEmbedding(ctx context.Context, t *asynq.Task) error 
 	return nil
 }
 
+// HandleContentGenerateDraft generates a content draft via the AI gateway
+// (Section 75, ADR-076). This is the extended content:generate_draft task
+// used by the AI Content Studio. It loads the persona voice prompt, content
+// type field schema, and topic brief from the studio_jobs row, calls the AI
+// gateway, and creates a contents row in 'draft' status.
+//
+// Until the full Studio package is implemented, this handler delegates to
+// the registered AIProcessor (same gateway used by ai:process_task). When a
+// StudioProcessor is registered, it takes precedence.
+func HandleContentGenerateDraft(ctx context.Context, t *asynq.Task) error {
+	slog.Info("task:content:generate_draft")
+
+	// If a studio processor is registered, delegate to it — it has the full
+	// pipeline (persona voice, field schema, review routing).
+	if studioProcessor != nil {
+		var p struct{ JobID string `json:"job_id"` }
+		if err := parsePayloadOrSkip(t, &p); err != nil {
+			return fmt.Errorf("task:content:generate_draft: invalid payload: %w", err)
+		}
+		var id pgtype.UUID
+		if err := id.Scan(p.JobID); err != nil {
+			return fmt.Errorf("task:content:generate_draft: bad job_id: %w", err)
+		}
+		if err := studioProcessor.RunBatch(ctx, id); err != nil {
+			return fmt.Errorf("task:content:generate_draft: %w", err)
+		}
+		return nil
+	}
+
+	// Fallback: use the generic AI processor to generate the draft.
+	if aiProcessor == nil {
+		slog.Warn("task:content:generate_draft: no studio or AI processor registered, skipping")
+		return nil
+	}
+
+	var payload struct {
+		JobID       string `json:"job_id"`
+		TenantID    string `json:"tenant_id"`
+		PersonaID   string `json:"persona_id"`
+		ContentType string `json:"content_type"`
+		TopicPrompt string `json:"topic_prompt"`
+	}
+
+	if err := parsePayloadOrSkip(t, &payload); err != nil {
+		return fmt.Errorf("task:content:generate_draft: invalid payload: %w", err)
+	}
+
+	if payload.TopicPrompt == "" {
+		slog.Warn("task:content:generate_draft: empty topic_prompt, skipping",
+			"job_id", payload.JobID)
+		return nil
+	}
+
+	// Build a structured prompt for the AI gateway.
+	prompt := fmt.Sprintf("Generate a %s draft about: %s", payload.ContentType, payload.TopicPrompt)
+
+	if err := aiProcessor.ProcessAITask(ctx, "content_generation", prompt, "", payload.JobID); err != nil {
+		return fmt.Errorf("task:content:generate_draft: AI processing failed: %w", err)
+	}
+
+	slog.Info("task:content:generate_draft: draft generation dispatched",
+		"job_id", payload.JobID, "content_type", payload.ContentType)
+
+	return nil
+}
+
 // ragIndexAfterEmbed is called after the legacy content_scores embedding is
 // written. It extends the embedding task to also chunk and upsert into
 // content_embeddings (the RAG knowledge layer, Section 69, ADR-069). Errors
@@ -2053,6 +2119,29 @@ func HandleWalletProcessCreditPurchase(ctx context.Context, t *asynq.Task) error
 	}
 
 	return walletProcessor.ProcessCreditPurchaseTask(ctx, t.Payload())
+}
+
+// HandleWalletAwardPoints awards points (or credits) to a user's wallet.
+// Enqueued fire-and-forget by checklist completion, referral conversion,
+// assessment scoring, and scholarship save (Sections 28, 60, 70, 71, 73).
+// Delegates to the wallet processor; nil-safe if no processor is registered.
+func HandleWalletAwardPoints(ctx context.Context, t *asynq.Task) error {
+	if walletProcessor == nil {
+		slog.Warn("task:wallet:award_points — no processor registered, skipping")
+		return nil
+	}
+	return walletProcessor.AwardPointsTask(ctx, t.Payload())
+}
+
+// HandleWalletDeductCredits deducts credits from a user's wallet for ad
+// campaign funding, or refunds credits on campaign rejection/early end
+// (Section 61 — Self-Serve Ads). Delegates to the wallet processor; nil-safe.
+func HandleWalletDeductCredits(ctx context.Context, t *asynq.Task) error {
+	if walletProcessor == nil {
+		slog.Warn("task:wallet:deduct_credits — no processor registered, skipping")
+		return nil
+	}
+	return walletProcessor.DeductCreditsTask(ctx, t.Payload())
 }
 
 // HandleNewsletterSend sends a newsletter campaign to all subscribers.
@@ -2693,6 +2782,7 @@ func HandleMaintenanceCheckSLABreaches(ctx context.Context, t *asynq.Task) error
 	}
 
 	breachCount := 0
+	autoClosedCount := 0
 
 	for _, tenantID := range tenantIDs {
 		// Find tickets where SLA has been breached.
@@ -2709,9 +2799,30 @@ func HandleMaintenanceCheckSLABreaches(ctx context.Context, t *asynq.Task) error
 				"sla_breach_at", b.SlaBreachAt.Time)
 			breachCount++
 		}
+
+		// Auto-close resolved tickets older than tickets.auto_close_resolved_days
+		// (system_settings, default 7). Ref: conventions/system-settings-catalog.md.
+		autoCloseDays := 7
+		if appSettings != nil {
+			autoCloseDays = appSettings.GetIntOr(ctx, tenantID, "tickets.auto_close_resolved_days", 7)
+		}
+		daysStr := fmt.Sprintf("%d", autoCloseDays)
+		closed, err := gen.New(dbPool.Writer).AutoCloseResolvedTickets(ctx, gen.AutoCloseResolvedTicketsParams{
+			TenantID: tenantID,
+			Days:     &daysStr,
+		})
+		if err != nil {
+			slog.Error("task:maintenance:check_sla_breaches: auto-close failed", "error", err, "tenant_id", tenantID.String())
+			continue
+		}
+		if closed > 0 {
+			slog.Info("task:maintenance:check_sla_breaches: auto-closed resolved tickets",
+				"count", closed, "tenant_id", tenantID.String(), "days_threshold", autoCloseDays)
+			autoClosedCount += int(closed)
+		}
 	}
 
-	slog.Info("task:maintenance:check_sla_breaches: complete", "breached_count", breachCount)
+	slog.Info("task:maintenance:check_sla_breaches: complete", "breached_count", breachCount, "auto_closed_count", autoClosedCount)
 	return nil
 }
 
@@ -3599,7 +3710,9 @@ func HandleMaintenancePruneOldFeeds(ctx context.Context, _ *asynq.Task) error {
 	return nil
 }
 
-// HandleMaintenancePruneAuditLogs deletes audit_logs rows older than 90 days.
+// HandleMaintenancePruneAuditLogs deletes audit_logs rows older than the
+// per-tenant 'audit.log_retention_days' system_settings value (default 365).
+// Ref: conventions/system-settings-catalog.md (audit.log_retention_days).
 func HandleMaintenancePruneAuditLogs(ctx context.Context, _ *asynq.Task) error {
 	slog.Info("maintenance:prune_audit_logs — pruning old audit logs")
 	if dbPool == nil {
@@ -3656,10 +3769,11 @@ func HandleModerationAutoHide(ctx context.Context, t *asynq.Task) error {
 		return fmt.Errorf("task:moderation:auto_hide: %w", err)
 	}
 
-	// Read the auto-hide threshold from system settings (default: 3 reports).
-	threshold := 3
+	// Read the auto-hide threshold from system settings.
+	// Default: 5 reports per system-settings-catalog.md.
+	threshold := 5
 	if appSettings != nil {
-		threshold = appSettings.GetIntOr(ctx, tenantID, "moderation.auto_hide_report_count", 3)
+		threshold = appSettings.GetIntOr(ctx, tenantID, "moderation.auto_hide_report_count", 5)
 	}
 
 	// Count pending reports for this entity.

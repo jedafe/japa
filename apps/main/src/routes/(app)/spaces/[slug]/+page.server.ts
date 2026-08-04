@@ -69,7 +69,7 @@ export const load: PageServerLoad = async (event) => {
 	const canManage = isOwner || isModerator;
 
 	const [
-		content, members, forumThreads, analytics, moderators, isFollowing,
+		content, members, forumThreads, moderators, isFollowing,
 		isMuted, presets, parentSpaces
 	] = await Promise.all([
 		apiList<SpaceContentItem>(ctx, `/spaces/${slug}/content?page_size=${PAGE_SIZE}`)
@@ -78,16 +78,9 @@ export const load: PageServerLoad = async (event) => {
 		apiList<SpaceMember>(ctx, `/spaces/${slug}/members?page_size=${PAGE_SIZE}`)
 			.then((r) => r.items)
 			.catch(() => []),
-		apiList<ForumThread>(ctx, `/forum?page_size=${PAGE_SIZE}`)
-			.then((r) => r.items.filter((t) => t.space_slug === slug))
+		apiList<ForumThread>(ctx, `/forum?space_id=${spaceId}&page_size=50`)
+			.then((r) => r.items)
 			.catch(() => []),
-		// Phase 08.10 — space analytics dashboard, space-admin only per JEOS
-		// §215 [auth, space-admin]. Only fetch for authenticated viewers; the
-		// route 403s for non-admins (degrades to null → tab hidden). Guests
-		// never see the tab and never trigger the request.
-		event.locals.user
-			? apiGet<unknown>(ctx, `/spaces/${spaceId}/analytics`).catch(() => null)
-			: Promise.resolve(null),
 		// Moderators list — only fetched for the owner/moderator so the
 		// assignment panel has data to render. The GET route is public, but
 		// we avoid the extra request for viewers who can't manage moderators.
@@ -115,6 +108,22 @@ export const load: PageServerLoad = async (event) => {
 			: Promise.resolve([] as Space[])
 	]);
 
+	// Phase 08.10 — space analytics dashboard, space-admin only per JEOS
+	// §215 [auth, space-admin]. Only fetch for authenticated viewers; the
+	// route 403s for non-admins (degrades to null → tab hidden). Guests
+	// never see the tab and never trigger the request.
+	type AnalyticsResult = { data: unknown } | { error: string };
+	const analyticsResult: AnalyticsResult = event.locals.user
+		? await apiGet<unknown>(ctx, `/spaces/${spaceId}/analytics`)
+				.then((data): AnalyticsResult => ({ data }))
+				.catch((err: any): AnalyticsResult => {
+					if (err?.status === 403 || err?.code === 'forbidden') {
+						return { error: 'permission_denied' };
+					}
+					return { error: 'unavailable' };
+				})
+		: { data: null };
+
 	return {
 		space,
 		rules: detail.rules,
@@ -129,7 +138,8 @@ export const load: PageServerLoad = async (event) => {
 		content,
 		members,
 		forumThreads,
-		analytics,
+		analytics: 'data' in analyticsResult ? analyticsResult.data : null,
+		analyticsError: 'error' in analyticsResult ? analyticsResult.error : null,
 		isMuted,
 		pageSize: PAGE_SIZE,
 		initiallyFollowing: isFollowing

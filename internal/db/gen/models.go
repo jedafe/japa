@@ -2510,6 +2510,36 @@ type StockProvider struct {
 	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
 }
 
+type StudioBatch struct {
+	ID          pgtype.UUID        `json:"id"`
+	TenantID    pgtype.UUID        `json:"tenant_id"`
+	Name        string             `json:"name"`
+	Description *string            `json:"description"`
+	CreatedBy   pgtype.UUID        `json:"created_by"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+}
+
+type StudioJob struct {
+	ID             pgtype.UUID        `json:"id"`
+	TenantID       pgtype.UUID        `json:"tenant_id"`
+	BatchID        pgtype.UUID        `json:"batch_id"`
+	PersonaID      pgtype.UUID        `json:"persona_id"`
+	ContentType    string             `json:"content_type"`
+	GuideCategory  *string            `json:"guide_category"`
+	TopicPrompt    string             `json:"topic_prompt"`
+	TargetSpaceID  pgtype.UUID        `json:"target_space_id"`
+	TargetTags     []string           `json:"target_tags"`
+	Status         string             `json:"status"`
+	DraftContentID pgtype.UUID        `json:"draft_content_id"`
+	ReviewID       pgtype.UUID        `json:"review_id"`
+	GeneratedAt    pgtype.Timestamptz `json:"generated_at"`
+	ReviewedAt     pgtype.Timestamptz `json:"reviewed_at"`
+	PublishedAt    pgtype.Timestamptz `json:"published_at"`
+	ErrorMessage   *string            `json:"error_message"`
+	CreatedBy      pgtype.UUID        `json:"created_by"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+}
+
 type Subscription struct {
 	ID                 pgtype.UUID        `json:"id"`
 	TenantID           pgtype.UUID        `json:"tenant_id"`

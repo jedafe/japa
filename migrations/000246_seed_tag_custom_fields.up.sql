@@ -7,28 +7,28 @@
 
 INSERT INTO custom_fields (id, group_id, tenant_id, label, key, field_type, is_system, is_required, show_in_frontend, position)
 VALUES
-    ('00000000-0000-0000-0000-000000000050',
+    ('00000000-0000-0000-0000-000000000053',
      '00000000-0000-0000-0000-000000000046',
      '00000000-0000-0000-0000-000000000001',
      'Wiki Content',
      'wiki_content',
      'rich_text',
      true, false, true, 0),
-    ('00000000-0000-0000-0000-000000000051',
+    ('00000000-0000-0000-0000-000000000054',
      '00000000-0000-0000-0000-000000000046',
      '00000000-0000-0000-0000-000000000001',
      'Related Tags',
      'related_tags',
      'text',
      true, false, true, 1),
-    ('00000000-0000-0000-0000-000000000052',
+    ('00000000-0000-0000-0000-000000000055',
      '00000000-0000-0000-0000-000000000046',
      '00000000-0000-0000-0000-000000000001',
      'External Link',
      'external_link',
      'url',
      true, false, true, 2)
-ON CONFLICT (group_id, key) DO NOTHING;
+ON CONFLICT (id) DO NOTHING;
 
 -- Mark content.max_tags as a public setting so the main-app composer can read
 -- it from GET /site/settings/public instead of hardcoding the limit (Rule 3/16).

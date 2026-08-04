@@ -2765,5 +2765,12 @@
   "widgets.name": "Name",
   "widgets.status": "Status",
   "widgets.title": "Widgets",
-  "widgets.type": "Type"
+  "widgets.type": "Type",
+  "nav.personas": "AI Personas",
+  "nav.studio": "Content Studio",
+  "nav.rag": "RAG Index",
+  "nav.gamification": "Gamification",
+  "nav.jobs": "Jobs Board",
+  "nav.travel": "Travel Providers",
+  "nav.remittance": "Remittance Providers"
 }

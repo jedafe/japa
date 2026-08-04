@@ -37,7 +37,7 @@ const (
 
 // TaskEnqueuer enqueues Asynq tasks fire-and-forget (Rule 8).
 type TaskEnqueuer interface {
-	Enqueue(taskType string, payload []byte) error
+	Enqueue(taskType string, payload []byte, opts ...interface{}) error
 }
 
 // ScholarshipFilters holds the finder query parameters.
@@ -85,6 +85,15 @@ func NewService(store *Store, settings *config.Settings) *Service {
 	return &Service{store: store, settings: settings}
 }
 
+// Enabled reads the scholarship_finder.enabled system_settings toggle
+// (ADR-073, §73). Defaults to true when unset.
+func (s *Service) Enabled(ctx context.Context, tenantID pgtype.UUID) bool {
+	if s.settings == nil {
+		return true
+	}
+	return s.settings.GetBoolOr(ctx, tenantID, "scholarship_finder.enabled", true)
+}
+
 // SetEnqueuer injects the Asynq task enqueuer.
 func (s *Service) SetEnqueuer(e TaskEnqueuer) { s.enqueuer = e }
 
@@ -120,8 +129,9 @@ func (s *Service) FindScholarships(ctx context.Context, tenantID pgtype.UUID, fi
 		conditions = append(conditions, fmt.Sprintf(`
 			EXISTS (
 				SELECT 1 FROM custom_field_values cfv
-				WHERE cfv.content_id = c.id
-				  AND cfv.field_key = 'countries_eligible'
+				JOIN custom_fields cf ON cf.id = cfv.field_id
+				WHERE cfv.entity_id = c.id
+				  AND cf.key = 'countries_eligible'
 				  AND cfv.value_text ILIKE '%%' || $%d || '%%'
 			)`, argIdx))
 		args = append(args, filters.Country)
@@ -132,8 +142,9 @@ func (s *Service) FindScholarships(ctx context.Context, tenantID pgtype.UUID, fi
 		conditions = append(conditions, fmt.Sprintf(`
 			EXISTS (
 				SELECT 1 FROM custom_field_values cfv
-				WHERE cfv.content_id = c.id
-				  AND cfv.field_key = 'level_of_study'
+				JOIN custom_fields cf ON cf.id = cfv.field_id
+				WHERE cfv.entity_id = c.id
+				  AND cf.key = 'level_of_study'
 				  AND cfv.value_text = $%d
 			)`, argIdx))
 		args = append(args, filters.Level)
@@ -144,9 +155,10 @@ func (s *Service) FindScholarships(ctx context.Context, tenantID pgtype.UUID, fi
 		conditions = append(conditions, fmt.Sprintf(`
 			EXISTS (
 				SELECT 1 FROM custom_field_values cfv
-				WHERE cfv.content_id = c.id
-				  AND cfv.field_key = 'is_renewable'
-				  AND cfv.value_boolean = $%d
+				JOIN custom_fields cf ON cf.id = cfv.field_id
+				WHERE cfv.entity_id = c.id
+				  AND cf.key = 'is_renewable'
+				  AND cfv.value_bool = $%d
 			)`, argIdx))
 		args = append(args, *filters.Renewable)
 		argIdx++
@@ -162,9 +174,9 @@ func (s *Service) FindScholarships(ctx context.Context, tenantID pgtype.UUID, fi
 	var orderBy string
 	switch filters.Sort {
 	case "deadline_asc":
-		orderBy = `(SELECT cfv.value_text FROM custom_field_values cfv WHERE cfv.content_id = c.id AND cfv.field_key = 'application_deadline') ASC NULLS LAST`
+		orderBy = `(SELECT cfv.value_text FROM custom_field_values cfv JOIN custom_fields cf ON cf.id = cfv.field_id WHERE cfv.entity_id = c.id AND cf.key = 'application_deadline') ASC NULLS LAST`
 	case "amount_desc":
-		orderBy = `(SELECT cfv.value_number FROM custom_field_values cfv WHERE cfv.content_id = c.id AND cfv.field_key = 'award_amount_usd') DESC NULLS LAST`
+		orderBy = `(SELECT cfv.value_number FROM custom_field_values cfv JOIN custom_fields cf ON cf.id = cfv.field_id WHERE cfv.entity_id = c.id AND cf.key = 'award_amount_usd') DESC NULLS LAST`
 	default:
 		orderBy = "c.created_at DESC"
 	}
@@ -175,11 +187,12 @@ func (s *Service) FindScholarships(ctx context.Context, tenantID pgtype.UUID, fi
 	countQuery := fmt.Sprintf(`SELECT COUNT(*) FROM contents c WHERE %s`, whereClause)
 	// Data query with field values extraction
 	dataQuery := fmt.Sprintf(`
-		SELECT c.id, c.title, c.slug, c.summary,
+		SELECT c.id, c.title, c.slug, c.meta_description,
 			COALESCE(
-				(SELECT json_object_agg(cfv.field_key, cfv.value_text)
+				(SELECT json_object_agg(cf.key, cfv.value_text)
 				 FROM custom_field_values cfv
-				 WHERE cfv.content_id = c.id
+				 JOIN custom_fields cf ON cf.id = cfv.field_id
+				 WHERE cfv.entity_id = c.id
 				   AND cfv.value_text IS NOT NULL AND cfv.value_text != ''
 				), '{}'::json
 			) AS field_values
@@ -228,11 +241,12 @@ func (s *Service) FindScholarships(ctx context.Context, tenantID pgtype.UUID, fi
 // GetScholarshipDetail returns a single scholarship guide with all field values.
 func (s *Service) GetScholarshipDetail(ctx context.Context, tenantID pgtype.UUID, guideID pgtype.UUID) (ScholarshipResult, error) {
 	query := `
-		SELECT c.id, c.title, c.slug, c.summary,
+		SELECT c.id, c.title, c.slug, c.meta_description,
 			COALESCE(
-				(SELECT json_object_agg(cfv.field_key, cfv.value_text)
+				(SELECT json_object_agg(cf.key, cfv.value_text)
 				 FROM custom_field_values cfv
-				 WHERE cfv.content_id = c.id
+				 JOIN custom_fields cf ON cf.id = cfv.field_id
+				 WHERE cfv.entity_id = c.id
 				   AND cfv.value_text IS NOT NULL AND cfv.value_text != ''
 				), '{}'::json
 			) AS field_values

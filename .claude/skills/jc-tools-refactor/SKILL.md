@@ -1,68 +1,114 @@
 ---
 name: jc-tools-refactor
-description: Use when refactoring the JapaConnect Tools Web Surface (apps/tools, port 3005, tools.japaconnect.com). Covers host-detection shell rendering, identity tool pages, and the standalone single-tool domain mode.
+description: Use when refactoring or modernizing existing JapaConnect Tools Web Surface code (apps/tools, port 3005, tools.japaconnect.com). Covers Svelte 5 Runes migration, shell consolidation, LayerChart upgrades, and removing hardcoded data per Rule 16.
 ---
 
 # JapaConnect Tools Surface — Refactor Skill
 
-> ⚠️ **V2 PLANNED SURFACE — NOT YET BUILT**
-> This surface (apps/tools, §78, ADR-086) is created during Backend Phases 43–44 and Tools Phases 01–04.
-> **Generate this full skill set from the existing surface skill template before implementing.**
-> See `ROADMAP-TOOLS.md` Phase 01.01 — scaffold step includes skill generation.
+Refactoring guide for `apps/tools/` (§78, ADR-086). Use when modernizing existing tool pages, consolidating shell components, or migrating patterns.
 
 ## Surface Overview
 
-SvelteKit SSR · Port 3005 · `tools.japaconnect.com` (configurable via `system_settings`)
-Sixth SvelteKit app in the JapaConnect monorepo (`apps/tools/`).
-Same Go backend, same `/api/v1`, no community navigation.
+SvelteKit SSR · Port 3005 · `tools.japaconnect.com`. Sixth SvelteKit app. Svelte 5 Runes, Bits UI, Tailwind v4, LayerChart 2.0.1, `lucide-svelte@^1.0.1`.
 
-## Host Detection (Core Mechanic — §78, ADR-086)
+## Refactor Scenarios
 
-`hooks.server.ts` reads `system_settings` per-tool domain keys and sets `event.locals.toolSurface`:
-- `'hub'` → full tools listing (default when host = `tools.japaconnect.com`)
-- `'remittance'` / `'scholarships'` / `'cost-of-living'` / `'visa-checklist'` / `'readiness'` / `'japabot'`
-  → single-tool shell (tool branding, no cross-tool nav)
+### 1. Migrate Svelte 4 Patterns to Svelte 5 Runes
 
-Root layout reads `toolSurface` and renders the appropriate shell. Every tool route works
-in both shell modes — the shell wrapping changes, the tool content does not.
+The Tools app was built with Svelte 5 Runes from the start, but if you encounter legacy patterns:
 
-## ⛔ GATE — API-READINESS (Run Before Any Implementation)
+| Svelte 4 | Svelte 5 Runes |
+|---|---|
+| `let count = 0` | `let count = $state(0)` |
+| `$: doubled = count * 2` | `const doubled = $derived(count * 2)` |
+| `$: { effect() }` | `$effect(() => { ... })` |
+| `export let prop` | `let { prop } = $props()` |
+| `createEventDispatcher` | callback props (`let { onclick } = $props()`) |
+| `<slot />` | `{@render children()}` (snippets) |
+| `on:click` | `onclick` |
+| `use:action` | `{@attach ...}` |
 
-Every tool page must verify its endpoints exist in `api-routes-catalog.md` before implementation.
-All v2 tool routes are marked "V2 planned" — they become available as backend phases land:
-- Visa Checklist → Backend Phase 43
-- Readiness Assessment → Backend Phase 43
-- Cost of Living → Backend Phase 43
-- Scholarship Finder → Backend Phase 43
-- Remittance Rate Tracker → Backend Phase 44
-- JapaBot (RAG-grounded) → Backend Phase 41
+### 2. Consolidate Shell Components
 
-## Stack
+If `HubHeader` and `SingleToolHeader` drift in structure, consolidate shared logic:
+- Both render: logo/brand, theme toggle, auth links
+- Difference: Hub shows "JapaConnect Tools" brand; Single-tool shows tool name + accent icon
+- Extract a `ShellHeader` base component with a `variant` prop if divergence is minimal
+- Keep them separate if the layouts diverge significantly (single-tool may have tool-specific nav)
 
-SvelteKit 2.57.x (SSR, adapter-auto) · Bun 1.3.x · Tailwind CSS v4 · Bits UI · Lucide Svelte ·
-LayerChart 2.0.1 (pinned exactly — for remittance trend charts, assessment score gauge) ·
-env vars `JC_` prefix (public: `PUBLIC_JC_*`) · Umami analytics (`PUBLIC_JC_UMAMI_SITE_ID_TOOLS`)
+### 3. Remove Hardcoded Data (Rule 16)
 
-## Conventions
+If a tool page contains hardcoded option lists, migrate to API-driven:
 
-Same as the main app: SSR load functions fetch via the Go API, Rule 16 (no hardcoded data),
-Rule 17 (no AI attribution). Public env var `PUBLIC_JC_API_BASE` for API calls.
-Cookie auth (`domain=.japaconnect.com`) works for subdomains; custom domains use OAuth flow
-back to `api.japaconnect.com` (see §78 auth section).
+```typescript
+// ❌ Before — hardcoded visa types
+const visaTypes = ['student', 'work', 'tourist', 'business'];
 
-## Tool Pages
+// ✅ After — from API selector
+const res = await apiGet<ChecklistSelector>(ctx, '/checklist/selector');
+const visaTypes = res.destinations.find(d => d.id === selectedDest)?.visa_types ?? [];
+```
 
-| Route | Tool | Backend phase | Refs |
-|---|---|---|---|
-| `/` | Tools hub (all tools listed) | Any | §78 |
-| `/visa-checklist` | Visa Document Checklist | 43 | §70, ADR-070 |
-| `/readiness` | Japa Readiness Assessment | 43 | §71, ADR-071 |
-| `/cost-of-living` | Cost of Living Calculator | 43 | §72, ADR-072 |
-| `/scholarships` | Scholarship Finder | 43 | §73, ADR-073 |
-| `/remittance` | Remittance Rate Tracker | 44 | §74, ADR-075 |
-| `/japabot` | JapaBot standalone | 41 | §69, §20 |
+Check for: country lists, currency lists, visa type lists, city lists, scholarship category lists, provider lists. All must come from the API.
+
+### 4. LayerChart Upgrades
+
+When upgrading LayerChart (currently pinned at 2.0.1):
+1. Check the changelog for breaking changes
+2. The remittance trend chart uses `LineChart` — verify the component API hasn't changed
+3. Colors must stay `var(--chart-*)` (dark-mode safe)
+4. Run the build after upgrade — LayerChart exports can change between minor versions
+5. If `LineChart` API changes, update the remittance page's chart section
+
+### 5. Migrate `$env/static/public` to `$env/dynamic/public`
+
+Optional env vars (Umami site ID, API base URL) should use `$env/dynamic/public` to avoid build failures when vars aren't set:
+
+```typescript
+// ❌ Before — build fails if var not set
+import { PUBLIC_JC_UMAMI_URL } from '$env/static/public';
+
+// ✅ After — runtime check, build always succeeds
+import { env } from '$env/dynamic/public';
+const umamiEnabled = $derived(!!env.PUBLIC_JC_UMAMI_URL);
+```
+
+### 6. Extract Shared Registration Prompt Modal
+
+The registration prompt modal is duplicated across visa-checklist, readiness, scholarships, and remittance. If it drifts, extract to a shared component:
+
+```svelte
+<!-- $lib/components/ui/RegisterPrompt.svelte -->
+<script lang="ts">
+  import { mainAppUrl } from '$lib/seo';
+  let { open, onClose } = $props();
+</script>
+{#if open}
+  <!-- modal markup -->
+{/if}
+```
+
+### 7. Consolidate API Client Patterns
+
+If tool pages duplicate API call patterns, extract helpers:
+- `apiGet`/`apiPost`/`apiPatch`/`apiDelete` already exist in `$lib/api/client`
+- Tool-specific helpers (e.g. `toggleChecklistItem`, `saveScholarship`) can be extracted to `$lib/tools/{tool}.ts`
+
+### 8. Type Consolidation
+
+If types are scattered or duplicated, consolidate in `src/lib/types/index.ts`:
+- All tool-specific types (ChecklistSelector, AssessmentForm, ColCity, Scholarship, RemittanceRate, ChatConversation) live here
+- Keep types aligned with the Go backend structs (check `api-routes-catalog.md` for response shapes)
+
+## Refactor Order
+
+1. **Read the section file** (§70-§74, §78) — understand the spec before refactoring
+2. **Run the audit skill** (`jc-tools-audit`) — identify what needs refactoring
+3. **Make changes incrementally** — one tool page at a time
+4. **Build after each change** — `bun run build` catches type and template errors
+5. **Verify both shell modes** — hub and single-tool — still render correctly
+6. **Check Rule 16 and Rule 17** — no hardcoded data, no AI attribution
 
 ## See Also
 
-ADR-086 (multi-surface architecture), §78 (Tools Web Surface section), `ROADMAP-TOOLS.md`,
-ADR-007 (subdomain principle), ADR-063 (Japa University — host-detection precedent).
+ADR-086, §78, `ROADMAP-TOOLS.md`, `jc-tools-develop`, `jc-tools-audit`, `jc-tools-debug`, `jc-main-refactor` (Svelte 4→5 migration patterns).

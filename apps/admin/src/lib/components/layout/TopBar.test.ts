@@ -15,7 +15,7 @@ vi.mock('$lib/api/client', () => ({
 }));
 
 vi.mock('$lib/stores/auth.svelte', () => ({
-	user: { display_name: 'Ada', avatar_url: '' },
+	user: { current: { username: 'Ada', avatar_url: '' } },
 	clearUser: clearUserMock
 }));
 

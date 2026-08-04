@@ -132,6 +132,12 @@ func NewScheduler(cfg *Config) *asynq.Scheduler {
 	// Weekly GeoIP database update — Sunday 03:00 UTC.
 	schedule("0 3 * * 0", TypeMaintenanceUpdateGeoIPDB, 7*24*time.Hour)
 
+	// Persona orchestration sweep — every 60 min (default).
+	// The actual interval is hot-reloadable via participation.run_interval_minutes
+	// (system_settings); the sweep handler skips if the interval hasn't elapsed.
+	// Ref: japaconnect-engineering/sections/76-participation-orchestration.md
+	schedule("0 * * * *", TypePersonaRunActivity, 1*time.Hour)
+
 	return scheduler
 }
 

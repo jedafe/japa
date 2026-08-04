@@ -1,0 +1,10 @@
+{
+	"name": "JapaConnect Tools",
+	"short_name": "Japa Tools",
+	"description": "JapaConnect identity tools — visa checklist, readiness assessment, cost of living, scholarships, remittance tracker, and JapaBot",
+	"start_url": "/",
+	"display": "standalone",
+	"background_color": "#ffffff",
+	"theme_color": "#3b49df",
+	"icons": [{ "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml" }]
+}

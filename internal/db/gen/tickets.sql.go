@@ -60,6 +60,30 @@ func (q *Queries) AssignTicket(ctx context.Context, arg AssignTicketParams) (Tic
 	return i, err
 }
 
+const autoCloseResolvedTickets = `-- name: AutoCloseResolvedTickets :execrows
+UPDATE tickets
+SET status = 'closed', closed_at = now(), updated_at = now()
+WHERE tenant_id = $1
+  AND status = 'resolved'
+  AND resolved_at IS NOT NULL
+  AND resolved_at < now() - ($2 || ' days')::interval
+`
+
+type AutoCloseResolvedTicketsParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	Days     *string     `json:"days"`
+}
+
+// Closes resolved tickets older than the configured auto-close window.
+// Called by maintenance:check_sla_breaches using tickets.auto_close_resolved_days.
+func (q *Queries) AutoCloseResolvedTickets(ctx context.Context, arg AutoCloseResolvedTicketsParams) (int64, error) {
+	result, err := q.db.Exec(ctx, autoCloseResolvedTickets, arg.TenantID, arg.Days)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const closeTicket = `-- name: CloseTicket :one
 UPDATE tickets
 SET status = 'closed', closed_at = now(), updated_at = now()

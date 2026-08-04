@@ -87,6 +87,15 @@ func NewService(database *db.DB) *Service {
 // SetSettings injects the config.Settings provider.
 func (s *Service) SetSettings(settings *config.Settings) { s.settings = settings }
 
+// Enabled reads the referral.enabled system_settings toggle (ADR-078, §60).
+// Defaults to true when unset or when settings are not injected.
+func (s *Service) Enabled(ctx context.Context, tenantID pgtype.UUID) bool {
+	if s.settings == nil {
+		return true
+	}
+	return s.settings.GetBoolOr(ctx, tenantID, "referral.enabled", true)
+}
+
 // SetValkey injects the Valkey client for attribution caching.
 func (s *Service) SetValkey(vk valkeycompat.Cmdable) { s.valkey = vk }
 
@@ -430,10 +439,11 @@ func (s *Service) CheckConversion(ctx context.Context, tenantID, payerID, paymen
 	// Award credits to referrer wallet (fire-and-forget per Rule 8).
 	if s.enqueuer != nil {
 		payload, _ := json.Marshal(map[string]interface{}{
-			"tenant_id": tenantID.String(),
-			"user_id":   referral.ReferrerID.String(),
-			"amount":    rewardCredits,
-			"reason":    "referral_reward",
+			"tenant_id":   tenantID.String(),
+			"user_id":     referral.ReferrerID.String(),
+			"amount":      rewardCredits,
+			"ledger_type": "credits",
+			"reason":      "referral_reward",
 		})
 		if err := s.enqueuer.Enqueue(TaskAwardPoints, payload); err != nil {
 			slog.Warn("referral: enqueue award points failed", "error", err)

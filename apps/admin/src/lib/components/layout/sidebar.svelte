@@ -16,7 +16,8 @@
 		Type, ListOrdered, GitCompare, Palette,
 		Clock, UserPlus, ChevronDown, ChevronRight,
 		Briefcase, Eye, X, Menu, ArrowRightLeft, CreditCard,
-		Package, Receipt, PanelLeft
+		Package, Receipt, PanelLeft,
+		Brain, Wand, Trophy, Plane, Banknote
 	} from "lucide-svelte";
 	import { clsx } from "clsx";
 
@@ -127,7 +128,9 @@
 			{ path: "/university/payouts", label: t("nav.university_payouts", "University Payouts"), icon: DollarSign, permission: "university.payout.process" },
 		{ path: "/university/revenue-splits", label: t("nav.university_revenue_splits", "Revenue Splits"), icon: DollarSign, permission: "university.revenue.list" },
 		{ path: "/mentorship", label: t("nav.mentorship", "Mentorship"), icon: Users2, permission: "mentorship.admin" },
-		{ path: "/onboarding", label: t("nav.onboarding", "Onboarding"), icon: UserPlus, permission: "admin.settings.view" }
+		{ path: "/onboarding", label: t("nav.onboarding", "Onboarding"), icon: UserPlus, permission: "admin.settings.view" },
+		{ path: "/gamification", label: t("nav.gamification", "Gamification"), icon: Trophy, permission: "gamification.view" },
+		{ path: "/jobs", label: t("nav.jobs", "Jobs Board"), icon: Briefcase, permission: "jobs.admin" }
 		]
 	},
 	{
@@ -144,7 +147,9 @@
 			{ path: "/referral", label: t("nav.referral", "Referrals"), icon: Share2, permission: "referral.admin" },
 			{ path: "/ads", label: t("nav.ads", "Advertisements"), icon: Zap, permission: "ad.campaign.manage" },
 			{ path: "/ads/slot-types", label: t("nav.slot_types", "Slot Types"), icon: ListOrdered, permission: "ad.campaign.manage" },
-			{ path: "/ads/networks", label: t("nav.ad_networks", "Ad Networks"), icon: Globe, permission: "ad.network.manage" }
+			{ path: "/ads/networks", label: t("nav.ad_networks", "Ad Networks"), icon: Globe, permission: "ad.network.manage" },
+		{ path: "/travel", label: t("nav.travel", "Travel Providers"), icon: Plane, permission: "travel.admin" },
+		{ path: "/remittance", label: t("nav.remittance", "Remittance Providers"), icon: Banknote, permission: "remittance.admin" }
 		]
 		},
 		{
@@ -152,6 +157,9 @@
 			label: t("nav.section.automation", "Automation"),
 			items: [
 				{ path: "/ai", label: t("nav.ai", "AI Tools"), icon: Bot, permission: "admin.ai.view" },
+				{ path: "/personas", label: t("nav.personas", "AI Personas"), icon: Bot, permission: "persona.view" },
+				{ path: "/studio", label: t("nav.studio", "Content Studio"), icon: Wand, permission: "studio.view" },
+				{ path: "/rag", label: t("nav.rag", "RAG Index"), icon: Brain, permission: "ai.rag.manage" },
 				{ path: "/bots", label: t("nav.bots", "Bots"), icon: Bot, permission: "bots.admin" },
 				{ path: "/webhooks", label: t("nav.webhooks", "Webhooks"), icon: Webhook, permission: "webhooks.manage" },
 				{ path: "/feature-flags", label: t("nav.feature_flags", "Feature Flags"), icon: Zap, permission: "admin.feature_flags.view" }

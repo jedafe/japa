@@ -102,7 +102,9 @@ func (s *Service) UpdateTenant(ctx context.Context, id pgtype.UUID, input Update
 // DeleteTenant soft-deletes a tenant (sets status='deleted', deleted_at=now()).
 // The default tenant (00000000-0000-0000-0000-000000000001) cannot be deleted.
 // Per Section 21, a 30-day grace period applies before the tenant:cleanup_data
-// Asynq task hard-deletes all associated data.
+// Asynq task hard-deletes all associated data. The task is enqueued by the
+// HTTP handler (Handlers.DeleteTenant) after this service call succeeds,
+// using a 30-day ProcessAt delay so the cleanup runs after the grace period.
 func (s *Service) DeleteTenant(ctx context.Context, id pgtype.UUID) (gen.DeleteTenantRow, error) {
 	if id.String() == DefaultTenantID {
 		return gen.DeleteTenantRow{}, fmt.Errorf("deleting tenant: cannot delete the default tenant")
@@ -111,12 +113,6 @@ func (s *Service) DeleteTenant(ctx context.Context, id pgtype.UUID) (gen.DeleteT
 	if err != nil {
 		return gen.DeleteTenantRow{}, fmt.Errorf("deleting tenant: %w", err)
 	}
-
-	// TODO: enqueue tenant:cleanup_data Asynq task for 30-day grace period.
-	// When the task type and handler are implemented, add:
-	//   payload, _ := json.Marshal(map[string]any{"tenant_id": t.ID.String()})
-	//   task := asynq.NewTask(worker.TypeTenantCleanupData, payload)
-	//   _, err = s.enqueuer.Enqueue(ctx, task, asynq.ProcessAt(time.Now().Add(30*24*time.Hour)), asynq.Queue(worker.QueueForTask(worker.TypeTenantCleanupData)))
 
 	return t, nil
 }
