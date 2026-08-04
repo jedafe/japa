@@ -9,3 +9,5 @@ export type {
   AccordionProps, CarouselProps, EntityCollectionProps, EntityFeatureProps,
   EntityType,
 } from './types';
+
+export { geoCopy, GLOBAL_TOKENS, getGeoTokens } from './geo/copyRegistry';
