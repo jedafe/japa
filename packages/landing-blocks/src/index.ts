@@ -12,4 +12,6 @@ export type {
 
 export { geoCopy, GLOBAL_TOKENS, getGeoTokens } from './geo/copyRegistry';
 
+export { styleToCss, type ResolvedStyle } from './shell/styleToCss';
+
 export { resolveString, resolveGeoCopy } from './geo/resolveGeoCopy';
