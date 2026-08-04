@@ -1,5 +1,6 @@
 @import "tailwindcss";
 @plugin "@tailwindcss/forms";
+@source "../../../packages/landing-blocks/src";
 
 @custom-variant dark (&:is(.dark *));
 
