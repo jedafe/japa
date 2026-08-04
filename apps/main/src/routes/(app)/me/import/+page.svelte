@@ -1,26 +1,33 @@
 <script lang="ts">
 	import { t } from '$lib/i18n';
+	import { untrack } from 'svelte';
 	import { Download, FileUp, CheckCircle2, AlertCircle, Loader2 } from 'lucide-svelte';
-	import { EmptyState, RelativeTime } from '$lib/components/ui';
+	import { EmptyState, RelativeTime, SelectField } from '$lib/components/ui';
 	import { enhance } from '$app/forms';
 	import { invalidate } from '$app/navigation';
-	import type { ContentImport } from '$lib/types';
+	import type { ContentImport, ImportSource } from '$lib/types';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
 
-	const imports = $state<ContentImport[]>(data.imports);
+	const imports = $derived<ContentImport[]>(data.imports);
+	const sources = $derived<ImportSource[]>(data.sources);
 
-	let sourceType = $state('medium');
+	let sourceType = $state(untrack(() => data.sources[0]?.value ?? 'medium'));
 	let sourceUrl = $state('');
 	let result = $state<{ ok?: boolean; error?: string; import?: ContentImport } | null>(null);
 	let submitting = $state(false);
 
+	// Whether the currently selected source type requires a URL. Drives the
+	// conditional URL input. Falls back to true when sources haven't loaded.
+	const currentSource = $derived(sources.find((s) => s.value === sourceType));
+	const requiresUrl = $derived(currentSource?.requires_url ?? true);
+
 	const statusColor = (status: string): string => {
 		switch (status) {
-			case 'completed': return 'text-green-600';
-			case 'failed': return 'text-red-500';
-			case 'processing': return 'text-blue-500';
+			case 'completed': return 'text-[var(--color-success)]';
+			case 'failed': return 'text-[var(--color-danger)]';
+			case 'processing': return 'text-[var(--color-info)]';
 			default: return 'text-[var(--color-muted)]';
 		}
 	};
@@ -49,11 +56,11 @@
 			</h2>
 
 			{#if result?.ok}
-				<div class="mb-3 flex items-center gap-2 text-sm text-green-600">
+				<div class="mb-3 flex items-center gap-2 text-sm text-[var(--color-success)]">
 					<CheckCircle2 size={16} /> {t('import.started', 'Import started. We will process it in the background.')}
 				</div>
 			{:else if result?.error}
-				<div class="mb-3 flex items-center gap-2 text-sm text-red-500">
+				<div class="mb-3 flex items-center gap-2 text-sm text-[var(--color-danger)]">
 					<AlertCircle size={16} /> {result.error}
 				</div>
 			{/if}
@@ -79,20 +86,18 @@
 					<label for="source_type" class="block text-xs font-medium text-[var(--color-muted)]">
 						{t('import.source_type', 'Source type')}
 					</label>
-					<select
+					<!-- Hidden field keeps the SvelteKit form action payload intact. -->
+					<input type="hidden" name="source_type" value={sourceType} />
+					<SelectField
 						id="source_type"
-						name="source_type"
-						bind:value={sourceType}
-						class="mt-1 w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
-					>
-						<option value="medium">Medium</option>
-						<option value="substack">Substack</option>
-						<option value="rss">RSS Feed</option>
-						<option value="zip">ZIP File</option>
-					</select>
+						value={sourceType}
+						options={sources.map((s) => ({ value: s.value, label: s.label }))}
+						placeholder={t('import.source_type', 'Source type')}
+						onValueChange={(v) => (sourceType = v)}
+					/>
 				</div>
 
-				{#if sourceType !== 'zip'}
+				{#if requiresUrl}
 					<div>
 						<label for="source_url" class="block text-xs font-medium text-[var(--color-muted)]">
 							{t('import.source_url', 'Source URL')}
@@ -110,7 +115,7 @@
 
 				<button
 					type="submit"
-					disabled={submitting || (sourceType !== 'zip' && !sourceUrl)}
+					disabled={submitting || (requiresUrl && !sourceUrl)}
 					class="rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-white transition-colors hover:opacity-90 disabled:opacity-50"
 				>
 					{submitting ? t('common.submitting', 'Submitting…') : t('import.start_btn', 'Start import')}

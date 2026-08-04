@@ -3,6 +3,7 @@
 	import Icon from '$lib/components/ui/Icon.svelte';
 	import { theme } from '$lib/stores/theme.svelte';
 	import { mainAppUrl } from '$lib/seo';
+	import { t } from '$lib/i18n';
 	import type { SessionUser } from '$lib/types';
 
 	/**
@@ -35,7 +36,7 @@
 						>
 							J
 						</span>
-						<span>JapaConnect <span class="text-muted font-normal">Tools</span></span>
+						<span>JapaConnect <span class="text-muted font-normal">{t('app.tagline', 'Tools')}</span></span>
 					</span>
 				{/if}
 			</a>
@@ -47,13 +48,13 @@
 				class="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 text-sm text-text-subtle hover:text-text transition-colors"
 			>
 				<Icon name="arrow-left" size={16} />
-				Back to JapaConnect
+				{t('shell.back_to_japaconnect', 'Back to JapaConnect')}
 			</a>
 
 			<button
 				onclick={() => theme.toggle()}
 				class="p-2 rounded-lg text-muted hover:text-text hover:bg-surface-subtle transition-colors"
-				aria-label="Toggle theme"
+				aria-label={t('shell.toggle_theme', 'Toggle theme')}
 			>
 				<Icon name={theme.current === 'dark' ? 'sun' : 'moon'} size={18} />
 			</button>
@@ -83,7 +84,7 @@
 					href={mainAppUrl('/login')}
 					class="inline-flex items-center px-3 py-1.5 text-sm font-medium text-primary hover:text-primary-hover transition-colors"
 				>
-					Sign in
+					{t('shell.sign_in', 'Sign in')}
 				</a>
 			{/if}
 		</div>

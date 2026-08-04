@@ -1,4 +1,4 @@
-import { error } from '@sveltejs/kit';
+import { error, redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext, apiGet, ApiError } from '$lib/server/api';
 import type { ComparisonDetail, ComparisonMatrixItem } from '$lib/types';
@@ -13,7 +13,7 @@ import type { ComparisonDetail, ComparisonMatrixItem } from '$lib/types';
  */
 export const load: PageServerLoad = async (event) => {
 	if (!event.locals.user) {
-		throw error(403, { code: 'forbidden', message: 'Authentication required' });
+		throw redirect(307, `/login?redirect=${encodeURIComponent(event.url.pathname + event.url.search)}`);
 	}
 
 	const ctx = apiContext(event);

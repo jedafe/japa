@@ -1,9 +1,11 @@
 <script lang="ts">
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
-	import { Briefcase, Lock, Search, MapPin, Clock, ArrowRight } from 'lucide-svelte';
-	import { EmptyState, LoadingSkeleton, PaginationControls } from '$lib/components/ui';
+	import { Briefcase, Lock, MapPin, Clock, ArrowRight } from 'lucide-svelte';
+	import { EmptyState, LoadingSkeleton, PaginationControls, SearchInput, type SearchSuggestion } from '$lib/components/ui';
+	import { api } from '$lib/api/client';
 	import { goto } from '$app/navigation';
+	import { navigating } from '$app/state';
 	import type { JobListing } from '$lib/types';
 	import type { PageData } from './$types';
 
@@ -14,9 +16,9 @@
 		t('jobs.description', 'Find jobs relevant to the Nigerian diaspora community.')
 	);
 
-	const jobs = $state<JobListing[]>(data.jobs);
-	const disabled = $state(data.disabled);
-	const authed = $state(data.authed);
+	const jobs = $derived<JobListing[]>(data.jobs);
+	const disabled = $derived(data.disabled);
+	const authed = $derived(data.authed);
 
 	let q = $state(page.url.searchParams.get('q') ?? '');
 	let country = $state(page.url.searchParams.get('country') ?? '');
@@ -32,8 +34,31 @@
 		goto(`/jobs?${params.toString()}`, { keepFocus: true });
 	}
 
+	function clearFilters() {
+		q = '';
+		country = '';
+		jobType = '';
+		remote = '';
+		goto('/jobs');
+	}
+
 	function field(job: JobListing, key: string): string {
 		return job.field_values?.[key] ?? '';
+	}
+
+	const hasActiveFilters = $derived(!!q || !!country || !!jobType || !!remote);
+	const showingStart = $derived((data.currentPage - 1) * data.pageSize + 1);
+	const showingEnd = $derived(Math.min(data.currentPage * data.pageSize, data.total));
+
+	async function jobSearchFetcher(query: string): Promise<SearchSuggestion[]> {
+		const res = await api.get<{ data: JobListing[] }>(`/jobs?q=${encodeURIComponent(query)}&limit=8`);
+		if (res.error || !res.data) return [];
+		return (res.data.data ?? []).map((j) => ({
+			id: j.id,
+			title: j.title,
+			url: `/jobs/${j.slug}`,
+			excerpt: j.summary
+		}));
 	}
 </script>
 
@@ -66,15 +91,13 @@
 		<!-- Filter panel -->
 		<div class="border-b border-[var(--color-border)] px-4 py-3">
 			<form onsubmit={(e) => { e.preventDefault(); applyFilters(); }} class="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-				<div class="relative">
-					<Search size={14} class="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--color-muted)]" />
-					<input
-						type="text"
-						placeholder={t('jobs.search', 'Search jobs…')}
-						bind:value={q}
-						class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] py-2 pl-8 pr-3 text-sm text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
-					/>
-				</div>
+				<SearchInput
+					bind:value={q}
+					placeholder={t('jobs.search', 'Search jobs…')}
+					ariaLabel={t('jobs.heading', 'Jobs')}
+					fetcher={jobSearchFetcher}
+					inputClass="focus:ring-2 focus:ring-[var(--color-primary)]"
+				/>
 				<input
 					type="text"
 					placeholder={t('jobs.country', 'Country')}
@@ -89,22 +112,38 @@
 				/>
 				<button
 					type="submit"
-					class="rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-white transition-colors hover:opacity-90"
+					class="rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-[var(--color-primary-contrast)] transition-colors hover:opacity-90"
 				>
 					{t('common.filter', 'Filter')}
 				</button>
 			</form>
+			{#if hasActiveFilters}
+				<button
+					type="button"
+					onclick={clearFilters}
+					class="mt-2 text-xs text-[var(--color-muted)] underline hover:text-[var(--color-text)]"
+				>
+					{t('common.clear_filters', 'Clear filters')}
+				</button>
+			{/if}
 		</div>
 
 		<!-- Results -->
 		<div class="p-4">
-			{#if jobs.length === 0}
+			{#if navigating.to}
+				<LoadingSkeleton variant="card" />
+			{:else if jobs.length === 0}
 				<EmptyState
 					icon={Briefcase}
 					title={t('jobs.empty', 'No jobs found')}
 					body={t('jobs.empty_body', 'Try adjusting your filters.')}
 				/>
 			{:else}
+				{#if data.total > 0}
+					<p class="mb-3 text-xs text-[var(--color-muted)]">
+						{t('common.showing', 'Showing {start}-{end} of {total}').replace('{start}', String(showingStart)).replace('{end}', String(showingEnd)).replace('{total}', String(data.total))}
+					</p>
+				{/if}
 				<div class="space-y-3">
 					{#each jobs as job (job.id)}
 						<a
@@ -143,7 +182,11 @@
 						<PaginationControls
 							page={data.currentPage}
 							totalPages={Math.ceil(data.total / data.pageSize)}
-							onPageChange={(p) => goto(`/jobs?page=${p}`)}
+							onPageChange={(p) => {
+						const params = new URLSearchParams(page.url.searchParams);
+						params.set('page', String(p));
+						goto(`/jobs?${params.toString()}`);
+					}}
 						/>
 					</div>
 				{/if}

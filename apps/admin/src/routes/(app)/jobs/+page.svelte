@@ -5,8 +5,9 @@
 	import { Card, CardContent, CardHeader } from '$lib/components/ui/card';
 	import { DataTable } from '$lib/components/ui/data-table';
 	import { Button } from '$lib/components/ui/button';
-	import { Badge } from '$lib/components/ui/badge';
-	import { Briefcase, RefreshCw } from 'lucide-svelte';
+	import { Modal } from '$lib/components/ui/modal';
+	import { TableSkeleton } from '$lib/components/ui/skeleton';
+	import { Star, RefreshCw } from 'lucide-svelte';
 	import { api } from '$lib/api';
 
 	type JobApplication = {
@@ -18,6 +19,7 @@
 		applicant_username: string;
 		applicant_email: string;
 		status: string;
+		is_featured?: boolean;
 		employer_notes: string | null;
 		applied_at: string;
 		status_updated_at: string;
@@ -34,6 +36,11 @@
 	let message = $state('');
 	let messageType = $state('');
 	let togglingId = $state('');
+	let searchQuery = $state('');
+
+	// Feature toggle confirmation dialog
+	let showFeatureConfirm = $state(false);
+	let featureTarget = $state<JobApplication | null>(null);
 
 	async function load() {
 		loading = true;
@@ -58,14 +65,22 @@
 		}
 	}
 
-	async function toggleFeature(id: string) {
-		togglingId = id;
+	function promptFeature(app: JobApplication) {
+		featureTarget = app;
+		showFeatureConfirm = true;
+	}
+
+	async function confirmToggleFeature() {
+		if (!featureTarget) return;
+		togglingId = featureTarget.id;
 		message = '';
 		try {
-			const result = await api(`/admin/jobs/${id}/feature`, { method: 'PATCH' });
+			const result = await api(`/admin/jobs/${featureTarget.id}/feature`, { method: 'PATCH' });
 			if (result.ok) {
 				messageType = 'success';
 				message = t('jobs.feature_toggled', 'Featured status toggled.');
+				showFeatureConfirm = false;
+				featureTarget = null;
 				load();
 			} else {
 				messageType = 'error';
@@ -117,15 +132,27 @@
 			label: t('jobs.applied', 'Applied'),
 			sortable: true,
 			render: (value: string) => `<span class="text-muted-foreground text-xs">${value ? new Date(value).toLocaleDateString() : '—'}</span>`
+		},
+		{
+			key: 'actions',
+			label: t('common.actions', 'Actions'),
+			class: 'w-24',
+			componentSnippet: JobActionsCell
 		}
 	]);
 
-	load();
+	// Ref: jc-admin-develop — reactive $effect so param changes re-fetch
+	$effect(() => {
+		load();
+	});
 </script>
 
 <PageHeader
 	title={t('jobs.title', 'Jobs Board')}
 	description={t('jobs.description', 'Manage job applications and featured listings.')}
+	actions={[
+		{ label: t('common.refresh', 'Refresh'), icon: RefreshCw, variant: 'ghost', onclick: load }
+	]}
 />
 
 {#if message}
@@ -140,10 +167,7 @@
 {/if}
 
 {#if loading}
-	<div class="flex items-center gap-2 p-8" style="color: var(--color-muted)">
-		<RefreshCw class="h-4 w-4 animate-spin" />
-		<span>{t('jobs.loading', 'Loading applications...')}</span>
-	</div>
+	<TableSkeleton rows={6} columns={6} />
 {:else if error}
 	<div class="rounded-lg border p-4" style="border-color: var(--color-danger); color: var(--color-danger)">
 		{error}
@@ -167,6 +191,43 @@
 	<DataTable
 		data={applications}
 		{columns}
+		searchable={true}
+		searchPlaceholder={t('jobs.search', 'Search by title, applicant, or email...')}
+		onsearch={(q: string) => { searchQuery = q; }}
+		pageSize={25}
 		emptyMessage={t('jobs.empty', 'No job applications found.')}
 	/>
 {/if}
+
+<!-- Feature toggle confirmation (per jc-admin-develop: state actions behind Modal) -->
+<Modal bind:open={showFeatureConfirm} title={t('jobs.toggle_feature', 'Toggle Featured Status')} size="sm">
+	{#if featureTarget}
+		<p class="text-sm" style="color: var(--color-foreground)">
+			{t('jobs.toggle_feature_confirm', 'Toggle featured status for')}
+			<strong>{featureTarget.job_title}</strong>?
+		</p>
+	{/if}
+	<div class="mt-6 flex justify-end gap-2">
+		<Button variant="outline" onclick={() => (showFeatureConfirm = false)} disabled={togglingId !== ''}>
+			{t('common.cancel', 'Cancel')}
+		</Button>
+		<Button onclick={confirmToggleFeature} disabled={togglingId !== ''}>
+			<Star class="mr-2 h-4 w-4" />
+			{togglingId !== '' ? t('common.processing', 'Processing...') : t('common.confirm', 'Confirm')}
+		</Button>
+	</div>
+</Modal>
+
+{#snippet JobActionsCell({ row }: { value: any; row: JobApplication })}
+	{#if canManage}
+		<Button
+			variant="ghost"
+			size="sm"
+			onclick={() => promptFeature(row)}
+			disabled={togglingId === row.id}
+			aria-label={t('jobs.toggle_feature', 'Toggle Featured')}
+		>
+			<Star class="h-3.5 w-3.5" />
+		</Button>
+	{/if}
+{/snippet}

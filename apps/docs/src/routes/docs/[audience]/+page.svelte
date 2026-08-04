@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import AppShell from '$lib/components/shell/AppShell.svelte';
 	import { t } from '$lib/i18n';
 	import { persistNavCollapse } from '$lib/nav-collapse';
@@ -6,7 +7,7 @@
 
 	let { data }: { data: PageData } = $props();
 
-	let collapsed = $state(data.navCollapsed);
+	let collapsed = $state(untrack(() => data.navCollapsed));
 
 	async function toggleCollapse() {
 		collapsed = !collapsed;
@@ -18,13 +19,28 @@
 	<title>{data.meta.title}</title>
 	<meta name="description" content={data.meta.description} />
 	<link rel="canonical" href={data.meta.ogUrl} />
+	{#if data.isGated}
+		<meta name="robots" content="noindex, nofollow" />
+	{:else}
+		<meta name="robots" content="index, follow" />
+		<!-- hreflang for public audiences (Ref: §18 ROADMAP 07.05) -->
+		<link rel="alternate" hreflang="en" href={data.meta.ogUrl} />
+		<link rel="alternate" hreflang="fr" href={data.meta.ogUrl.replace(/\/docs\//, '/fr/docs/')} />
+		<link rel="alternate" hreflang="x-default" href={data.meta.ogUrl} />
+	{/if}
 	<meta property="og:title" content={data.meta.title} />
 	<meta property="og:description" content={data.meta.description} />
 	<meta property="og:type" content={data.meta.ogType} />
 	<meta property="og:url" content={data.meta.ogUrl} />
+	{#if data.meta.ogImage}
+		<meta property="og:image" content={data.meta.ogImage} />
+	{/if}
 	<meta name="twitter:card" content={data.meta.twitterCard} />
 	<meta name="twitter:title" content={data.meta.twitterTitle} />
 	<meta name="twitter:description" content={data.meta.twitterDescription} />
+	{#if data.meta.twitterImage}
+		<meta name="twitter:image" content={data.meta.twitterImage} />
+	{/if}
 	{#if data.meta.jsonLdString}
 		{@html `<script type="application/ld+json">${data.meta.jsonLdString}</script>`}
 	{/if}

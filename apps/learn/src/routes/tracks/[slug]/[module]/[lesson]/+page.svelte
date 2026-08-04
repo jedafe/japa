@@ -200,7 +200,7 @@
 
 	<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 		<h2 class="mb-2 flex items-center gap-2 text-sm font-medium text-[var(--color-text)]">
-			<NotebookPen size={14} /> Notes
+			<NotebookPen size={14} /> {t('learn.notes')}
 		</h2>
 		<textarea
 			placeholder="Write your notes…"

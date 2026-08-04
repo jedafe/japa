@@ -4,20 +4,16 @@ import { apiContext, apiGet, apiList, ApiError } from '$lib/server/api';
 import type { ProfessionalProfile, ProfilePost } from '$lib/types';
 
 /**
- * Professional profile at /profiles/[slug] — auth-gated. Fetches the profile
- * header, the profile's published content (Posts tab), and renders name,
- * tagline, verified badge, description, website, follower count, custom
- * field_values, and a follow button.
+ * Professional profile at /profiles/[slug] — public SSR (Phase 12.08). Guests
+ * can view the profile header and published content; the follow button and
+ * follow-status are only hydrated for authenticated viewers.
  *
  * Ref: japaconnect-engineering/sections/33-professional-profiles.md
  */
 export const load: PageServerLoad = async (event) => {
-	if (!event.locals.user) {
-		throw error(403, { code: 'forbidden', message: 'Authentication required' });
-	}
-
 	const ctx = apiContext(event);
 	const slug = event.params.slug;
+	const authed = !!event.locals.user;
 
 	let profile: ProfessionalProfile;
 	try {
@@ -38,15 +34,17 @@ export const load: PageServerLoad = async (event) => {
 		posts = [];
 	}
 
-	// Hydrate the follow button's initial state. Best-effort: a failure
-	// degrades to `false` (not following). The viewer is always authenticated
-	// here (the page is auth-gated above).
-	const initiallyFollowing = await apiGet<{ following: boolean }>(
-		ctx,
-		`/users/${profile.id}/follow-status?entity_type=profile`
-	)
-		.then((r) => r.following)
-		.catch(() => false);
+	// Hydrate the follow button's initial state only for authenticated
+	// viewers. Guests see the follow button but it redirects to login.
+	let initiallyFollowing = false;
+	if (authed) {
+		initiallyFollowing = await apiGet<{ following: boolean }>(
+			ctx,
+			`/users/${profile.id}/follow-status?entity_type=profile`
+		)
+			.then((r) => r.following)
+			.catch(() => false);
+	}
 
-	return { profile, posts, initiallyFollowing };
+	return { profile, posts, initiallyFollowing, authed };
 };

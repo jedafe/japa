@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { t } from '$lib/i18n';
+	import { untrack } from 'svelte';
 	import { page } from '$app/state';
 	import { Calculator, Lock, Share2, X } from 'lucide-svelte';
 	import { EmptyState, LoadingSkeleton } from '$lib/components/ui';
@@ -14,11 +15,11 @@
 		t('tools.cost_of_living_desc', 'Compare living costs between cities.')
 	);
 
-	const cities = $state<ColCity[]>(data.cities);
-	const disabled = $state(data.disabled);
+	const cities = $derived<ColCity[]>(data.cities);
+	const disabled = $derived(data.disabled);
 
 	// Up to 3 selected city IDs (baseline always included).
-	let selectedIds = $state<string[]>(data.preselected.slice(0, 3));
+	let selectedIds = $state<string[]>(untrack(() => data.preselected.slice(0, 3)));
 	let matrix = $state<ColComparisonMatrix | null>(null);
 	let loading = $state(false);
 	let error = $state<string | null>(null);
@@ -86,6 +87,29 @@
 	function formatRatio(r: number): string {
 		return r.toFixed(2) + '×';
 	}
+
+	// JSON-LD for the shareable comparison result (Ref: Section 72, ROADMAP-MAIN 36.03).
+	// A cost-of-living comparison matrix maps most honestly to schema.org Dataset.
+	const jsonLd = $derived(
+		matrix
+			? JSON.stringify({
+					'@context': 'https://schema.org',
+					'@type': 'Dataset',
+					name: t('tools.cost_of_living', 'Cost of Living Comparison'),
+					description: `Cost of living comparison between ${selectedCities
+						.map((c) => c.title)
+						.join(', ')}`,
+					url: page.url.href,
+					variableMeasured: matrix.categories.map((cat) => ({
+						'@type': 'PropertyValue',
+						name: cat.label,
+						value: Object.entries(cat.ratios)
+							.map(([k, v]) => `${k}: ${formatRatio(v)}`)
+							.join('; ')
+					}))
+				})
+			: ''
+	);
 </script>
 
 <svelte:head>
@@ -95,6 +119,9 @@
 	<meta property="og:description" content={description} />
 	<meta property="og:type" content="website" />
 	<meta property="og:url" content={page.url.href} />
+	{#if jsonLd}
+		{@html `<script type="application/ld+json">${jsonLd}</script>`}
+	{/if}
 </svelte:head>
 
 <div class="mx-auto w-full max-w-4xl">

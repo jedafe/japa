@@ -2021,7 +2021,7 @@ WHERE c.tenant_id = $1
   AND c.visibility = 'public'
   AND c.deleted_at IS NULL
   AND c.auto_hidden = false
-ORDER BY c.published_at DESC NULLS LAST, c.created_at DESC, c.id DESC
+ORDER BY c.is_pinned DESC, c.published_at DESC NULLS LAST, c.created_at DESC, c.id DESC
 LIMIT $4 OFFSET $3
 `
 
@@ -2074,6 +2074,8 @@ type ListPublishedContentByAuthorRow struct {
 // Public profile Posts tab (GET /users/{id}/content): a user's PUBLISHED PUBLIC
 // content, newest first, paginated. author_id is the user id (FK users.id).
 // LEFT JOINs organizations so dual-surface posts carry the "on behalf of" badge.
+// Pinned posts (is_pinned = true) are sorted to the top so the profile
+// surfaces the author's featured/top content first.
 func (q *Queries) ListPublishedContentByAuthor(ctx context.Context, arg ListPublishedContentByAuthorParams) ([]ListPublishedContentByAuthorRow, error) {
 	rows, err := q.db.Query(ctx, listPublishedContentByAuthor,
 		arg.TenantID,

@@ -1,22 +1,32 @@
 <script lang="ts">
 	import { ToolCard } from '$lib/components/ui';
-	import { TOOLS } from '$lib/tools/registry';
-	import { buildSeoMeta } from '$lib/seo';
+	import EmptyState from '$lib/components/ui/EmptyState.svelte';
+	import { getEnabledTools } from '$lib/tools/registry';
+	import { buildSeoMeta, mainAppUrl } from '$lib/seo';
+	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
 
 	/**
 	 * Tools hub — the landing page showing all identity tools as cards.
 	 * Ref: §78 (Tools Web Surface), ROADMAP-TOOLS 02.01.
 	 *
-	 * The tool list comes from the registry (structural metadata — §78 defines
-	 * which tools exist). All dynamic tool data is fetched by each tool's own
-	 * page from the backend API (Rule 16).
+	 * The tool list comes from the registry filtered by the per-tool
+	 * `system_settings` enabled toggles (e.g. `checklist.enabled`).
+	 * Disabled tools are hidden from the hub grid. All dynamic tool data
+	 * is fetched by each tool's own page from the backend API (Rule 16).
+	 * Ref: conventions/system-settings-catalog.md ({tool}.enabled keys).
 	 */
+	let { data } = $props();
+
+	const enabledTools = $derived(getEnabledTools(data.siteSettings ?? {}));
+
 	const seo = $derived(
 		buildSeoMeta({
-			title: 'JapaConnect Tools — Identity tools for your japa journey',
-			description:
-				'Visa document checklist, readiness assessment, cost of living calculator, scholarship finder, remittance rate tracker, and JapaBot AI guide.',
+			title: t('hub.seo_title', 'JapaConnect Tools — Identity tools for your japa journey'),
+			description: t(
+				'hub.seo_description',
+				'Visa document checklist, readiness assessment, cost of living calculator, scholarship finder, remittance rate tracker, and JapaBot AI guide.'
+			),
 			path: '/',
 			origin: page.url.origin,
 			jsonLd: {
@@ -51,17 +61,25 @@
 <div class="mx-auto max-w-[var(--max-width)] px-4 py-12 sm:py-16">
 	<div class="text-center mb-12">
 		<h1 class="text-3xl sm:text-4xl font-bold text-text tracking-tight">
-			Tools for your japa journey
+			{t('hub.title', 'Tools for your japa journey')}
 		</h1>
 		<p class="mt-3 text-lg text-text-subtle max-w-2xl mx-auto">
-			Free identity tools to help you plan, prepare, and track your relocation from Nigeria.
-			No account required to explore — sign in to save your progress.
+			{t('hub.subtitle', 'Free identity tools to help you plan, prepare, and track your relocation from Nigeria. No account required to explore — sign in to save your progress.')}
 		</p>
 	</div>
 
-	<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-		{#each TOOLS as tool (tool.slug)}
-			<ToolCard {tool} />
-		{/each}
-	</div>
+	{#if enabledTools.length === 0}
+		<EmptyState
+			icon="wrench"
+			title={t('hub.no_tools', 'No tools available')}
+			description={t('hub.no_tools_desc', 'All tools are currently disabled. Please check back later.')}
+			action={{ label: t('shell.back_to_japaconnect', 'Back to JapaConnect'), href: mainAppUrl('/') }}
+		/>
+	{:else}
+		<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+			{#each enabledTools as tool (tool.slug)}
+				<ToolCard {tool} />
+			{/each}
+		</div>
+	{/if}
 </div>

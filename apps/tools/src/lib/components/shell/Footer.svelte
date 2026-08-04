@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { mainAppUrl } from '$lib/seo';
+	import { t } from '$lib/i18n';
 	import type { ToolMeta } from '$lib/tools/registry';
 
 	/**
@@ -22,7 +23,7 @@
 			href={mainAppUrl('/')}
 			class="text-sm text-muted hover:text-text transition-colors"
 		>
-			Powered by JapaConnect
+			{t('shell.footer.powered_by', 'Powered by JapaConnect')}
 		</a>
 	</footer>
 {:else}
@@ -34,12 +35,12 @@
 				>
 					J
 				</span>
-				<span>JapaConnect Tools</span>
+				<span>{t('app.name', 'JapaConnect Tools')}</span>
 			</div>
 			<div class="flex items-center gap-4 text-sm text-muted">
-				<a href={mainAppUrl('/')} class="hover:text-text transition-colors">JapaConnect</a>
-				<a href={mainAppUrl('/docs')} class="hover:text-text transition-colors">Docs</a>
-				<a href={mainAppUrl('/learn')} class="hover:text-text transition-colors">Learn</a>
+				<a href={mainAppUrl('/')} class="hover:text-text transition-colors">{t('shell.footer.japaconnect', 'JapaConnect')}</a>
+				<a href={mainAppUrl('/docs')} class="hover:text-text transition-colors">{t('shell.footer.docs', 'Docs')}</a>
+				<a href={mainAppUrl('/learn')} class="hover:text-text transition-colors">{t('shell.footer.learn', 'Learn')}</a>
 			</div>
 		</div>
 	</footer>

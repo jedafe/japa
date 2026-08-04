@@ -2,9 +2,13 @@
 	import { page } from '$app/state';
 	import { api } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
+	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { DataTable } from '$lib/components/ui/data-table';
 	import { Button } from '$lib/components/ui/button';
 	import { goto } from '$app/navigation';
+
+	// Ref: jc-admin-develop — RBAC gate for form management
+	const canManage = $derived(hasPermission('space.forms.manage'));
 
 	type FormDef = {
 		id: string;
@@ -74,6 +78,7 @@
 		<h1 class="text-2xl font-bold tracking-tight">{t('space_forms.title')}</h1>
 		<p class="mt-1 text-sm" style="color: var(--color-muted)">{t('space_forms.description')}</p>
 	</div>
+	{#if canManage}
 	<a
 		href="/spaces/{spaceId}/forms/new"
 		class="inline-flex items-center rounded-md px-4 py-2 text-sm font-medium text-white transition-colors"
@@ -81,6 +86,7 @@
 	>
 		{t('space_forms.create')}
 	</a>
+	{/if}
 </div>
 
 {#if errorMessage}

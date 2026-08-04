@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { api } from '$lib/api/client';
 	import { t } from '$lib/i18n';
+	import { untrack } from 'svelte';
 	import { goto } from '$app/navigation';
 	import {
 		Camera, Loader2, Image as ImageIcon, Shield, ShieldCheck, UserMinus, UserPlus,
@@ -40,51 +41,53 @@
 		presets = []
 	}: Props = $props();
 
-	let name = $state(space.name);
-	let description = $state(space.description ?? '');
+	let name = $state(untrack(() => space.name));
+	let description = $state(untrack(() => space.description ?? ''));
 	// Wiki content: initialize as HTML from TipTap JSON (or raw HTML string).
 	let wikiHtml = $state(
-		space.wiki_content
-			? tiptapToHtml(typeof space.wiki_content === 'string' ? JSON.parse(space.wiki_content) : space.wiki_content)
-			: ''
+		untrack(() =>
+			space.wiki_content
+				? tiptapToHtml(typeof space.wiki_content === 'string' ? JSON.parse(space.wiki_content) : space.wiki_content)
+				: ''
+		)
 	);
-	let logoUrl = $state(initialLogoUrl);
-	let logoMediaId = $state(space.logo_media_id ?? '');
+	let logoUrl = $state(untrack(() => initialLogoUrl));
+	let logoMediaId = $state(untrack(() => space.logo_media_id ?? ''));
 	let logoPickerOpen = $state(false);
 	let logoSaving = $state(false);
-	let headerUrl = $state(initialHeaderUrl);
-	let headerMediaId = $state(space.header_image_id ?? '');
+	let headerUrl = $state(untrack(() => initialHeaderUrl));
+	let headerMediaId = $state(untrack(() => space.header_image_id ?? ''));
 	let headerPickerOpen = $state(false);
 	let headerSaving = $state(false);
-	let visibility = $state(space.visibility);
-	let postingPerm = $state(space.posting_perm);
-	let replyingPerm = $state(space.replying_perm);
-	let commentingPerm = $state(space.commenting_perm);
-	let joiningPerm = $state(space.joining_perm);
-	let keywords = $state<string>(initialKeywords.join(', '));
+	let visibility = $state(untrack(() => space.visibility));
+	let postingPerm = $state(untrack(() => space.posting_perm));
+	let replyingPerm = $state(untrack(() => space.replying_perm));
+	let commentingPerm = $state(untrack(() => space.commenting_perm));
+	let joiningPerm = $state(untrack(() => space.joining_perm));
+	let keywords = $state<string>(untrack(() => initialKeywords.join(', ')));
 	let saving = $state(false);
 	let saved = $state(false);
 	let error = $state('');
 
-	const visibilityOptions = [
-		{ value: 'public', label: 'Public — visible to everyone' },
-		{ value: 'members', label: 'Members — visible to space members only' },
-		{ value: 'private', label: 'Private — visible to invited members only' }
-	];
+	const visibilityOptions = $derived([
+		{ value: 'public', label: t('spaces.visibility_public', 'Public — visible to everyone') },
+		{ value: 'members', label: t('spaces.visibility_members', 'Members — visible to space members only') },
+		{ value: 'private', label: t('spaces.visibility_private', 'Private — visible to invited members only') }
+	]);
 
-	const permOptions = [
-		{ value: 'open', label: 'Open — anyone can participate' },
-		{ value: 'members', label: 'Members — only space members' },
-		{ value: 'verified', label: 'Verified — only verified members' },
-		{ value: 'moderators', label: 'Moderators — only moderators' },
-		{ value: 'admins', label: 'Admins — only space admins' }
-	];
+	const permOptions = $derived([
+		{ value: 'open', label: t('spaces.perm_open', 'Open — anyone can participate') },
+		{ value: 'members', label: t('spaces.perm_members', 'Members — only space members') },
+		{ value: 'verified', label: t('spaces.perm_verified', 'Verified — only verified members') },
+		{ value: 'moderators', label: t('spaces.perm_moderators', 'Moderators — only moderators') },
+		{ value: 'admins', label: t('spaces.perm_admins', 'Admins — only space admins') }
+	]);
 
-	const joiningOptions = [
-		{ value: 'open', label: 'Open — anyone can join immediately' },
-		{ value: 'request', label: 'Request — requires moderator approval' },
-		{ value: 'invite', label: 'Invite — only invited users can join' }
-	];
+	const joiningOptions = $derived([
+		{ value: 'open', label: t('spaces.joining_open', 'Open — anyone can join immediately') },
+		{ value: 'request', label: t('spaces.joining_request', 'Request — requires moderator approval') },
+		{ value: 'invite', label: t('spaces.joining_invite', 'Invite — only invited users can join') }
+	]);
 
 	// --- Logo / Header image handlers ---
 	async function handleLogoSelect(asset: MediaAsset) {
@@ -497,9 +500,9 @@
 			></textarea>
 			</div>
 		<div>
-			<label class="mb-1 block text-xs text-[var(--color-muted)]">
+			<span class="mb-1 block text-xs text-[var(--color-muted)]">
 				{t('spaces.settings_wiki', 'About / Wiki')}
-			</label>
+			</span>
 			<PostEditor
 				html={wikiHtml}
 				onhtml={(html) => { wikiHtml = html; }}

@@ -1,18 +1,20 @@
-import { error, fail, redirect } from '@sveltejs/kit';
+import { fail, redirect } from '@sveltejs/kit';
 import type { PageServerLoad, Actions } from './$types';
 import { apiContext, apiList, apiPost, ApiError } from '$lib/server/api';
-import type { MeSpace, ComparisonCreated } from '$lib/types';
+import type { MeSpace, ComparisonCreated, ComparisonType } from '$lib/types';
 
 /**
  * Create-comparison form at /compare/new — auth-gated. Loads the user's spaces
- * for the space dropdown (degrades to [] on error). POST /comparisons creates
- * the comparison; on success we redirect to /compare/{id}.
+ * and the available comparison types (Section 30) for the type selector
+ * (Phase 16.04: select comparison type → add items → dimensions). Both
+ * degrade to [] on error. POST /comparisons creates the comparison; on
+ * success we redirect to /compare/{id}.
  *
- * Ref: japaconnect-engineering/sections/16-comparisons.md
+ * Ref: japaconnect-engineering/sections/30-generic-comparison-system.md
  */
 export const load: PageServerLoad = async (event) => {
 	if (!event.locals.user) {
-		throw error(403, { code: 'forbidden', message: 'Authentication required' });
+		throw redirect(307, `/login?redirect=${encodeURIComponent(event.url.pathname + event.url.search)}`);
 	}
 
 	const ctx = apiContext(event);
@@ -24,12 +26,32 @@ export const load: PageServerLoad = async (event) => {
 		spaces = [];
 	}
 
-	return { spaces };
+	let comparisonTypes: ComparisonType[] = [];
+	try {
+		comparisonTypes = (await apiList<ComparisonType>(ctx, '/comparisons/types?page_size=50'))
+			.items;
+	} catch {
+		comparisonTypes = [];
+	}
+
+	// Pre-fill from query params (Section 39 — university "Compare" button
+	// navigates here with ?type=university&item1_name=...&item1_slug=...).
+	const sp = event.url.searchParams;
+	const initialType = sp.get('type') ?? '';
+	const initialItem =
+		sp.get('item1_name') && sp.get('item1_slug')
+			? { name: sp.get('item1_name')!, slug: sp.get('item1_slug')! }
+			: null;
+
+	return { spaces, comparisonTypes, initialType, initialItem };
 };
 
 export const actions: Actions = {
 	default: async (event) => {
-		if (!event.locals.user) return fail(403, { message: 'Auth required' });
+		if (!event.locals.user) return fail(403, {
+			message: 'Auth required',
+			values: { title: '', body: '', visibility: 'public', space_id: '', type_id: '' }
+		});
 
 		const ctx = apiContext(event);
 		const form = await event.request.formData();
@@ -38,6 +60,7 @@ export const actions: Actions = {
 		const body = String(form.get('body') ?? '').trim();
 		const visibility = String(form.get('visibility') ?? 'public');
 		const spaceId = String(form.get('space_id') ?? '').trim();
+		const typeId = String(form.get('type_id') ?? '').trim();
 
 		// Multi-step form data (Phase 16.04): items + dimensions.
 		const itemNames = form.getAll('item_name[]').map((v) => String(v).trim()).filter(Boolean);
@@ -45,11 +68,12 @@ export const actions: Actions = {
 		const dimensions = form.getAll('dimension[]').map((v) => String(v).trim()).filter(Boolean);
 
 		if (!title) {
-			return fail(400, { message: 'Title is required', values: { title, body, visibility, space_id: spaceId } });
+			return fail(400, { message: 'Title is required', values: { title, body, visibility, space_id: spaceId, type_id: typeId } });
 		}
 
 		const payload: Record<string, unknown> = { title, body, visibility };
 		if (spaceId) payload.space_id = spaceId;
+		if (typeId) payload.type_id = typeId;
 		if (itemNames.length >= 2) {
 			payload.items = itemNames.map((name, i) => ({ name, slug: itemSlugs[i] ?? '' }));
 		}
@@ -64,7 +88,7 @@ export const actions: Actions = {
 			if (e instanceof ApiError) {
 				return fail(e.status >= 400 && e.status < 500 ? e.status : 500, {
 					message: e.message,
-					values: { title, body, visibility, space_id: spaceId }
+					values: { title, body, visibility, space_id: spaceId, type_id: typeId }
 				});
 			}
 			throw e;

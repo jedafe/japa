@@ -152,7 +152,9 @@
 		provider = network.provider;
 		networkName = network.name;
 		clientId = network.client_id ?? "";
-		apiKey = network.api_key ?? "";
+		// Ref: security — never pre-fill the API key on edit. The backend stores it
+		// and we only send a new value if the admin explicitly enters one.
+		apiKey = "";
 		priority = String(network.priority);
 		slotMapping = network.slot_mapping ? JSON.stringify(network.slot_mapping, null, 2) : "";
 		config = network.config ? JSON.stringify(network.config, null, 2) : "";
@@ -355,7 +357,9 @@
 					bind:value={apiKey}
 					class="mt-1 w-full rounded-lg border p-2 text-sm"
 					style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
-					placeholder={t("networks.api_key_placeholder", "Optional")}
+					placeholder={modalMode === "edit"
+						? t("networks.api_key_keep", "Leave empty to keep current key")
+						: t("networks.api_key_placeholder", "Optional")}
 				/>
 			</div>
 		</div>
