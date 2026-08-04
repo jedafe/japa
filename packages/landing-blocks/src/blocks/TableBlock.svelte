@@ -11,9 +11,10 @@
 
   const sortedRows = $derived(() => {
     if (!sortKey) return props.rows;
+    const key = sortKey;
     const sorted = [...props.rows].sort((a, b) => {
-      const av = a[sortKey] ?? '';
-      const bv = b[sortKey] ?? '';
+      const av = a[key] ?? '';
+      const bv = b[key] ?? '';
       return sortDir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av);
     });
     return sorted;
