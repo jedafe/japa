@@ -20,7 +20,7 @@
 
 	// Input types that map directly to a native <input type="..."> element.
 	const inputTypes = new Set([
-		'text', 'email', 'password', 'url', 'date', 'datetime-local', 'number'
+		'text', 'email', 'password', 'url', 'date', 'datetime-local', 'number', 'color'
 	]);
 
 	function handleSubmit(e: SubmitEvent) {
@@ -68,6 +68,16 @@
 					bind:checked={value[field.key]}
 					class="h-4 w-4 rounded disabled:cursor-not-allowed disabled:opacity-50"
 					style="accent-color: var(--color-primary)"
+				/>
+			{:else if field.type === 'color'}
+				<input
+					id={field.key}
+					type="color"
+					aria-label={field.label}
+					disabled={disabled}
+					bind:value={value[field.key]}
+					class="h-10 w-full cursor-pointer rounded-lg border p-1 focus:outline-none focus:ring-2 disabled:cursor-not-allowed disabled:opacity-50"
+					style="border-color: var(--color-border-input); background-color: var(--color-surface); color: var(--color-foreground)"
 				/>
 			{:else if inputTypes.has(field.type)}
 				<input

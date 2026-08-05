@@ -1,12 +1,12 @@
 export { default as EntityForm } from './entity-form.svelte';
 export { default as EntityPage } from './entity-page.svelte';
-export type { EntityPageConfig } from './entity-page.svelte';
+export type { EntityPageConfig, EntityPageController } from './entity-page.svelte';
 
 export type FieldDef =
 	| {
 			key: string;
 			label: string;
-			type: 'text' | 'textarea' | 'number' | 'email' | 'password' | 'date' | 'datetime-local' | 'url' | 'checkbox';
+			type: 'text' | 'textarea' | 'number' | 'email' | 'password' | 'date' | 'datetime-local' | 'url' | 'checkbox' | 'color';
 			placeholder?: string;
 			required?: boolean;
 			min?: number;

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { EntityPage, type EntityPageConfig, type FieldDef } from "$lib/components/entity";
+	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from "$lib/components/entity";
 	import { Modal } from "$lib/components/ui/modal";
 	import { Button } from "$lib/components/ui/button";
 	import { userManagementApi, impersonationApi } from "$lib/api";
@@ -119,8 +119,7 @@
 	});
 
 	// ── Bulk actions ────────────────────────────────────────────────────────
-	// EntityPage does not auto-reload after a bulk action, so a remount key forces refetch + clears selection.
-	let reloadKey = $state(0);
+	// EntityPage auto-reloads + clears selection after bulk handlers, so no remount key is needed.
 	let pageError = $state("");
 	let bulkDeleting = $state(false);
 
@@ -132,7 +131,6 @@
 		pageError = "";
 		try {
 			await Promise.all(idArr.map((id) => userManagementApi.deleteUser(id)));
-			reloadKey++;
 		} catch (e) {
 			pageError = e instanceof Error ? e.message : t("common.error", "Failed to delete users");
 		} finally {
@@ -142,7 +140,6 @@
 
 	// Bulk hard-delete only applies to already-soft-deleted users; the disabled predicate hides it when none of the selected rows are deleted.
 	async function bulkHardDelete(ids: Set<string>) {
-		// Attempt hard-delete on every selected id; the backend rejects non-deleted ones, matching legacy behaviour.
 		const idArr = Array.from(ids);
 		if (idArr.length === 0) return;
 		if (bulkDeleting) return; // in-flight guard
@@ -150,7 +147,6 @@
 		pageError = "";
 		try {
 			await Promise.all(idArr.map((id) => userManagementApi.hardDeleteUser(id)));
-			reloadKey++;
 		} catch (e) {
 			pageError = e instanceof Error ? e.message : t("common.error", "Failed to hard delete users");
 		} finally {
@@ -159,7 +155,8 @@
 	}
 
 	// ── State-action confirmation modals ────────────────────────────────────
-	// EntityPage's confirm Modal only covers default delete; state actions keep page-local Modals with richer copy, confirm calls API + bumps reloadKey.
+	// EntityPage's confirm Modal only covers default delete; state actions keep page-local Modals with richer copy, confirm calls API + controller.reload().
+	let entityController = $state<EntityPageController | undefined>(undefined);
 	let acting = $state(false);
 	let actionTarget = $state<User | null>(null);
 
@@ -190,7 +187,7 @@
 				: await userManagementApi.banUser(actionTarget.id);
 			if (result.ok) {
 				showBanConfirm = false;
-				reloadKey++;
+				entityController?.reload();
 			} else {
 				pageError = result.error ?? t("common.error", "Failed to update user status");
 			}
@@ -210,7 +207,7 @@
 			});
 			if (result.ok) {
 				showSuspendConfirm = false;
-				reloadKey++;
+				entityController?.reload();
 			} else {
 				pageError = result.error ?? t("common.error", "Failed to update user status");
 			}
@@ -228,7 +225,7 @@
 			const result = await userManagementApi.issueWarning(actionTarget.id, { reason: warnReason });
 			if (result.ok) {
 				showWarnModal = false;
-				reloadKey++;
+				entityController?.reload();
 			} else {
 				pageError = result.error ?? t("common.error", "Failed to issue warning");
 			}
@@ -246,7 +243,7 @@
 			const result = await userManagementApi.hardDeleteUser(actionTarget.id);
 			if (result.ok) {
 				showHardDeleteConfirm = false;
-				reloadKey++;
+				entityController?.reload();
 			} else {
 				pageError = result.error ?? t("common.error", "Failed to hard delete user");
 			}
@@ -264,7 +261,7 @@
 			const result = await userManagementApi.suspendUser(actionTarget.id, { status: "active" });
 			if (result.ok) {
 				showRestoreConfirm = false;
-				reloadKey++;
+				entityController?.reload();
 			} else {
 				pageError = result.error ?? t("common.error", "Failed to restore user");
 			}
@@ -282,7 +279,7 @@
 			const result = await userManagementApi.deleteUser(actionTarget.id);
 			if (result.ok) {
 				showDeleteConfirm = false;
-				reloadKey++;
+				entityController?.reload();
 			} else {
 				pageError = result.error ?? t("common.error", "Failed to delete user");
 			}
@@ -407,7 +404,7 @@
 				label: t("common.status", "Status"),
 				sortable: true,
 				render: (v: string) => {
-					const colors = v === "active" ? "bg-success/15 text-success dark:text-success" : v === "banned" ? "bg-danger/15 text-danger dark:text-danger" : v === "suspended" ? "bg-warning/15 text-warning dark:text-warning" : v === "deleted" ? "bg-muted/30 text-muted dark:text-muted" : v === "restricted" ? "bg-orange-500/15 text-orange-700 dark:text-orange-400" : "bg-info/15 text-info dark:text-info";
+					const colors = v === "active" ? "bg-success/15 text-success dark:text-success" : v === "banned" ? "bg-danger/15 text-danger dark:text-danger" : v === "suspended" ? "bg-warning/15 text-warning dark:text-warning" : v === "deleted" ? "bg-muted/30 text-muted dark:text-muted" : v === "restricted" ? "bg-warning/15 text-warning dark:text-warning" : "bg-info/15 text-info dark:text-info";
 					return `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium ${colors}">${v}</span>`;
 				}
 			},
@@ -447,7 +444,7 @@
 				icon: Trash as any,
 				variant: "destructive",
 				onclick: bulkHardDelete,
-				disabled: (ids: Set<string>) => ids.size === 0
+				disabled: (_ids: Set<string>, rows?: any[]) => !rows?.some((r) => r.status === "deleted")
 			}
 		],
 		fields,
@@ -517,9 +514,7 @@
 	</div>
 {/if}
 
-{#key reloadKey}
-	<EntityPage {config} />
-{/key}
+<EntityPage {config} bind:controller={entityController} />
 
 <!-- ── State-action confirmation modals ─────────────────────────────────── -->
 

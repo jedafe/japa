@@ -5,10 +5,12 @@
 
   let {
     selectedIds,
+    selectedRows = [],
     actions = [],
     onclear,
   }: {
     selectedIds: Set<string>;
+    selectedRows?: any[];
     actions?: BulkAction[];
     onclear?: () => void;
   } = $props();
@@ -30,7 +32,7 @@
       <Button
         size="sm"
         variant={action.variant === "destructive" ? "destructive" : "default"}
-        disabled={action.disabled?.(selectedIds) ?? false}
+        disabled={action.disabled?.(selectedIds, selectedRows) ?? false}
         onclick={() => action.onclick(selectedIds)}
       >
         {#if action.icon}<action.icon class="mr-1 h-3.5 w-3.5" />{/if}
