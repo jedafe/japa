@@ -1,4 +1,6 @@
 export { default as EntityForm } from './entity-form.svelte';
+export { default as EntityPage } from './entity-page.svelte';
+export type { EntityPageConfig } from './entity-page.svelte';
 
 export type FieldDef =
 	| {
