@@ -623,7 +623,7 @@ func (s *Store) GetPageBySlug(ctx context.Context, slug string, tenantID pgtype.
 		       COALESCE(meta, '{}'::jsonb),
 		       status, page_type, published_at, created_by, created_at, updated_at
 		FROM pages
-		WHERE slug = $1 AND tenant_id = $2 AND status = 'published' AND page_type = 'page'
+		WHERE slug = $1 AND tenant_id = $2 AND status = 'published' AND page_type IN ('page', 'landing')
 	`, slug, tenantID).Scan(
 		&p.ID, &p.TenantID, &p.Title, &p.Slug, &p.Description,
 		&p.TemplateID, &p.ThemeID, &p.Blocks, &p.Meta,

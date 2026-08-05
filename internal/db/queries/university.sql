@@ -39,16 +39,26 @@ SELECT * FROM instructor_profiles
 WHERE tenant_id = @tenant_id AND id = @id;
 
 -- name: ListInstructorProfilesByStatus :many
-SELECT * FROM instructor_profiles
-WHERE tenant_id = @tenant_id
-  AND (@status::text = '' OR status = @status)
-ORDER BY created_at DESC
+-- Optional @space_id (ADR-063 admin per-university view): when set, restricts
+-- to instructors who have at least one track targeted at that space.
+SELECT * FROM instructor_profiles ip
+WHERE ip.tenant_id = @tenant_id
+  AND (@status::text = '' OR ip.status = @status)
+  AND (@space_id::uuid IS NULL OR EXISTS (
+        SELECT 1 FROM learning_tracks lt
+        WHERE lt.instructor_id = ip.id
+          AND lt.geo_space_id = @space_id))
+ORDER BY ip.created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 
 -- name: CountInstructorProfilesByStatus :one
-SELECT COUNT(*) FROM instructor_profiles
-WHERE tenant_id = @tenant_id
-  AND (@status::text = '' OR status = @status);
+SELECT COUNT(*) FROM instructor_profiles ip
+WHERE ip.tenant_id = @tenant_id
+  AND (@status::text = '' OR ip.status = @status)
+  AND (@space_id::uuid IS NULL OR EXISTS (
+        SELECT 1 FROM learning_tracks lt
+        WHERE lt.instructor_id = ip.id
+          AND lt.geo_space_id = @space_id));
 
 -- name: UpdateInstructorProfileSelf :one
 -- Creator-editable fields only. tier/status/commission override are admin-only.
@@ -273,6 +283,7 @@ WHERE lt.tenant_id = @tenant_id
   AND lt.is_published_to_university = false
   AND lt.is_published = true
   AND ip.status = 'approved'
+  AND (@space_id::uuid IS NULL OR lt.geo_space_id = @space_id)
 ORDER BY lt.updated_at ASC
 LIMIT @page_limit OFFSET @page_offset;
 
@@ -409,29 +420,37 @@ WHERE tenant_id = @tenant_id AND id = @id;
 -- filters. All filters are optional (empty string / NULL = no filter). The
 -- date range is half-open [from, to). Ordered by created_at DESC so the most
 -- recent revenue events appear first.
-SELECT * FROM revenue_splits
-WHERE tenant_id = @tenant_id
-  AND (@instructor_id::uuid IS NULL OR instructor_id = @instructor_id)
-  AND (@track_id::uuid IS NULL OR track_id = @track_id)
-  AND (@source::text = '' OR source = @source)
-  AND (@payout_id::uuid IS NULL OR payout_id = @payout_id)
-  AND (@from_ts::timestamptz IS NULL OR created_at >= @from_ts)
-  AND (@to_ts::timestamptz IS NULL OR created_at < @to_ts)
-ORDER BY created_at DESC
+SELECT * FROM revenue_splits rs
+WHERE rs.tenant_id = @tenant_id
+  AND (@instructor_id::uuid IS NULL OR rs.instructor_id = @instructor_id)
+  AND (@track_id::uuid IS NULL OR rs.track_id = @track_id)
+  AND (@source::text = '' OR rs.source = @source)
+  AND (@payout_id::uuid IS NULL OR rs.payout_id = @payout_id)
+  AND (@from_ts::timestamptz IS NULL OR rs.created_at >= @from_ts)
+  AND (@to_ts::timestamptz IS NULL OR rs.created_at < @to_ts)
+  AND (@space_id::uuid IS NULL OR EXISTS (
+        SELECT 1 FROM learning_tracks lt
+        WHERE lt.id = rs.track_id
+          AND lt.geo_space_id = @space_id))
+ORDER BY rs.created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 
 -- name: CountRevenueSplits :one
 -- ADR-063 §9: total count for the same filter set as ListRevenueSplits, used
 -- for the pagination meta envelope.
 SELECT COUNT(*)::bigint AS total
-FROM revenue_splits
-WHERE tenant_id = @tenant_id
-  AND (@instructor_id::uuid IS NULL OR instructor_id = @instructor_id)
-  AND (@track_id::uuid IS NULL OR track_id = @track_id)
-  AND (@source::text = '' OR source = @source)
-  AND (@payout_id::uuid IS NULL OR payout_id = @payout_id)
-  AND (@from_ts::timestamptz IS NULL OR created_at >= @from_ts)
-  AND (@to_ts::timestamptz IS NULL OR created_at < @to_ts);
+FROM revenue_splits rs
+WHERE rs.tenant_id = @tenant_id
+  AND (@instructor_id::uuid IS NULL OR rs.instructor_id = @instructor_id)
+  AND (@track_id::uuid IS NULL OR rs.track_id = @track_id)
+  AND (@source::text = '' OR rs.source = @source)
+  AND (@payout_id::uuid IS NULL OR rs.payout_id = @payout_id)
+  AND (@from_ts::timestamptz IS NULL OR rs.created_at >= @from_ts)
+  AND (@to_ts::timestamptz IS NULL OR rs.created_at < @to_ts)
+  AND (@space_id::uuid IS NULL OR EXISTS (
+        SELECT 1 FROM learning_tracks lt
+        WHERE lt.id = rs.track_id
+          AND lt.geo_space_id = @space_id));
 
 -- =====================================================================
 -- Instructor payouts
@@ -461,10 +480,16 @@ ORDER BY period_start DESC
 LIMIT @page_limit OFFSET @page_offset;
 
 -- name: ListInstructorPayoutsByStatus :many
-SELECT * FROM instructor_payouts
-WHERE tenant_id = @tenant_id
-  AND (@status::text = '' OR status = @status)
-ORDER BY created_at ASC
+-- Optional @space_id (ADR-063 admin per-university view): when set, restricts
+-- to payouts for instructors who have a track targeted at that space.
+SELECT * FROM instructor_payouts p
+WHERE p.tenant_id = @tenant_id
+  AND (@status::text = '' OR p.status = @status)
+  AND (@space_id::uuid IS NULL OR EXISTS (
+        SELECT 1 FROM learning_tracks lt
+        WHERE lt.instructor_id = p.instructor_id
+          AND lt.geo_space_id = @space_id))
+ORDER BY p.created_at ASC
 LIMIT @page_limit OFFSET @page_offset;
 
 -- name: UpdatePayoutStatus :one
@@ -572,6 +597,7 @@ LEFT JOIN instructor_profiles ip ON ip.id = lt.instructor_id
 WHERE lt.tenant_id = @tenant_id
   AND lt.instructor_id IS NOT NULL
   AND (@status::text = '' OR lt.university_submission_status = @status)
+  AND (@space_id::uuid IS NULL OR lt.geo_space_id = @space_id)
 ORDER BY lt.created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 
@@ -579,7 +605,8 @@ LIMIT @page_limit OFFSET @page_offset;
 SELECT COUNT(*) FROM learning_tracks
 WHERE tenant_id = @tenant_id
   AND instructor_id IS NOT NULL
-  AND (@status::text = '' OR university_submission_status = @status);
+  AND (@status::text = '' OR university_submission_status = @status)
+  AND (@space_id::uuid IS NULL OR geo_space_id = @space_id);
 
 -- name: RejectUniversityTrack :one
 -- Admin rejects a submitted track. Sets submission_status to 'rejected'
