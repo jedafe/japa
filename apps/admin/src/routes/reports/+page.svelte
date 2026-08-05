@@ -16,6 +16,8 @@
 	type Report = {
 		id: string;
 		reporter_user_id: string;
+		reporter_username?: string;
+		reporter_display_name?: string;
 		entity_type: string;
 		entity_id: string;
 		reason: string;
@@ -81,10 +83,10 @@
 
 	const columns = [
 		{
-			key: "reporter_user_id",
+			key: "reporter_display_name",
 			label: t("reports.reporter", "Reporter"),
 			sortable: true,
-			render: (v: string) => `<span class="font-mono text-xs">${(v ?? "").slice(0, 12)}</span>`
+			render: (v: string, row: Report) => `<span class="text-sm">${v || row.reporter_username || 'anonymous'}</span>`
 		},
 		{
 			key: "entity_type",

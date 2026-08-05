@@ -523,7 +523,7 @@ func (s *Service) DeleteConsent(ctx context.Context, id, tenantID pgtype.UUID) (
 }
 
 // ListConsentsByTenantWithQuery lists consent records with an optional `q` filter.
-func (s *Service) ListConsentsByTenantWithQuery(ctx context.Context, tenantID pgtype.UUID, consentType, q string, limit, offset int32) ([]gen.ConsentRecord, error) {
+func (s *Service) ListConsentsByTenantWithQuery(ctx context.Context, tenantID pgtype.UUID, consentType, q string, limit, offset int32) ([]gen.ListConsentsByTenantRow, error) {
 	return s.store.listConsentsByTenantFiltered(ctx, tenantID, consentType, q, limit, offset)
 }
 

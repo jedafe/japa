@@ -58,27 +58,32 @@ type Track struct {
 	Category                *string      `json:"category,omitempty"`
 	Language                string       `json:"language,omitempty"`
 	TotalEnrolled           int32        `json:"total_enrolled,omitempty"`
+	SubscriptionEligible    bool         `json:"subscription_eligible,omitempty"`
 }
 
 // CreateTrackInput represents create track input.
 type CreateTrackInput struct {
-	Title        string      `json:"title"`
-	Slug         string      `json:"slug"`
-	Description  *string     `json:"description,omitempty"`
-	Difficulty   string      `json:"difficulty"`
-	CoverMediaID pgtype.UUID `json:"cover_media_id"`
-	IsPublished  bool        `json:"is_published"`
-	SortOrder    int32       `json:"sort_order"`
+	Title                string      `json:"title"`
+	Slug                 string      `json:"slug"`
+	Description          *string     `json:"description,omitempty"`
+	Difficulty           string      `json:"difficulty"`
+	CoverMediaID         pgtype.UUID `json:"cover_media_id"`
+	IsPublished          bool        `json:"is_published"`
+	SortOrder            int32       `json:"sort_order"`
+	Category             *string     `json:"category,omitempty"`
+	SubscriptionEligible bool        `json:"subscription_eligible,omitempty"`
 }
 
 // UpdateTrackInput represents update track input.
 type UpdateTrackInput struct {
-	Title        string      `json:"title"`
-	Description  *string     `json:"description,omitempty"`
-	Difficulty   string      `json:"difficulty"`
-	CoverMediaID pgtype.UUID `json:"cover_media_id"`
-	IsPublished  bool        `json:"is_published"`
-	SortOrder    int32       `json:"sort_order"`
+	Title                string      `json:"title"`
+	Description          *string     `json:"description,omitempty"`
+	Difficulty           string      `json:"difficulty"`
+	CoverMediaID         pgtype.UUID `json:"cover_media_id"`
+	IsPublished          bool        `json:"is_published"`
+	SortOrder            int32       `json:"sort_order"`
+	Category             *string     `json:"category,omitempty"`
+	SubscriptionEligible *bool       `json:"subscription_eligible,omitempty"`
 }
 
 // trackFromFields builds a Track DTO from the base learning_tracks columns
@@ -102,6 +107,7 @@ func trackFromFields(
 	category *string,
 	language string,
 	totalEnrolled int32,
+	subscriptionEligible bool,
 ) Track {
 	var cmID *pgtype.UUID
 	if coverMediaID.Valid {
@@ -132,6 +138,7 @@ func trackFromFields(
 		Category:                category,
 		Language:                language,
 		TotalEnrolled:           totalEnrolled,
+		SubscriptionEligible:    subscriptionEligible,
 	}
 }
 
@@ -145,7 +152,7 @@ func (s *Store) ListPublishedTracks(ctx context.Context, tenantID pgtype.UUID) (
 	tracks := make([]Track, 0, len(rows))
 
 	for _, r := range rows {
-		tracks = append(tracks, trackFromFields(r.ID, r.TenantID, r.Title, r.Slug, r.Description, r.Difficulty, r.CoverMediaID, r.IsPublished, r.SortOrder, r.CreatedAt, r.UpdatedAt, r.InstructorID, r.PriceKobo, r.Currency, r.IsPublishedToUniversity, r.Category, r.Language, r.TotalEnrolled))
+		tracks = append(tracks, trackFromFields(r.ID, r.TenantID, r.Title, r.Slug, r.Description, r.Difficulty, r.CoverMediaID, r.IsPublished, r.SortOrder, r.CreatedAt, r.UpdatedAt, r.InstructorID, r.PriceKobo, r.Currency, r.IsPublishedToUniversity, r.Category, r.Language, r.TotalEnrolled, r.SubscriptionEligible))
 	}
 
 	return tracks, nil
@@ -161,7 +168,7 @@ func (s *Store) GetTrackBySlug(ctx context.Context, tenantID pgtype.UUID, slug s
 		return nil, fmt.Errorf("get track by slug: %w", err)
 	}
 
-	t := trackFromFields(r.ID, r.TenantID, r.Title, r.Slug, r.Description, r.Difficulty, r.CoverMediaID, r.IsPublished, r.SortOrder, r.CreatedAt, r.UpdatedAt, r.InstructorID, r.PriceKobo, r.Currency, r.IsPublishedToUniversity, r.Category, r.Language, r.TotalEnrolled)
+	t := trackFromFields(r.ID, r.TenantID, r.Title, r.Slug, r.Description, r.Difficulty, r.CoverMediaID, r.IsPublished, r.SortOrder, r.CreatedAt, r.UpdatedAt, r.InstructorID, r.PriceKobo, r.Currency, r.IsPublishedToUniversity, r.Category, r.Language, r.TotalEnrolled, r.SubscriptionEligible)
 	return &t, nil
 }
 
@@ -175,47 +182,51 @@ func (s *Store) GetTrackByID(ctx context.Context, tenantID, id pgtype.UUID) (*Tr
 		return nil, fmt.Errorf("get track by id: %w", err)
 	}
 
-	t := trackFromFields(r.ID, r.TenantID, r.Title, r.Slug, r.Description, r.Difficulty, r.CoverMediaID, r.IsPublished, r.SortOrder, r.CreatedAt, r.UpdatedAt, r.InstructorID, r.PriceKobo, r.Currency, r.IsPublishedToUniversity, r.Category, r.Language, r.TotalEnrolled)
+	t := trackFromFields(r.ID, r.TenantID, r.Title, r.Slug, r.Description, r.Difficulty, r.CoverMediaID, r.IsPublished, r.SortOrder, r.CreatedAt, r.UpdatedAt, r.InstructorID, r.PriceKobo, r.Currency, r.IsPublishedToUniversity, r.Category, r.Language, r.TotalEnrolled, r.SubscriptionEligible)
 	return &t, nil
 }
 
 // CreateTrack creates a new learning track.
 func (s *Store) CreateTrack(ctx context.Context, tenantID pgtype.UUID, input CreateTrackInput) (*Track, error) {
 	r, err := s.write.CreateLearningTrack(ctx, gen.CreateLearningTrackParams{
-		TenantID:     tenantID,
-		Title:        input.Title,
-		Slug:         input.Slug,
-		Description:  input.Description,
-		Difficulty:   input.Difficulty,
-		CoverMediaID: input.CoverMediaID,
-		IsPublished:  input.IsPublished,
-		SortOrder:    input.SortOrder,
+		TenantID:             tenantID,
+		Title:                input.Title,
+		Slug:                 input.Slug,
+		Description:          input.Description,
+		Difficulty:           input.Difficulty,
+		CoverMediaID:         input.CoverMediaID,
+		IsPublished:          input.IsPublished,
+		SortOrder:            input.SortOrder,
+		Category:             input.Category,
+		SubscriptionEligible: input.SubscriptionEligible,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("create track: %w", err)
 	}
 
-	t := trackFromFields(r.ID, r.TenantID, r.Title, r.Slug, r.Description, r.Difficulty, r.CoverMediaID, r.IsPublished, r.SortOrder, r.CreatedAt, r.UpdatedAt, r.InstructorID, r.PriceKobo, r.Currency, r.IsPublishedToUniversity, r.Category, r.Language, r.TotalEnrolled)
+	t := trackFromFields(r.ID, r.TenantID, r.Title, r.Slug, r.Description, r.Difficulty, r.CoverMediaID, r.IsPublished, r.SortOrder, r.CreatedAt, r.UpdatedAt, r.InstructorID, r.PriceKobo, r.Currency, r.IsPublishedToUniversity, r.Category, r.Language, r.TotalEnrolled, r.SubscriptionEligible)
 	return &t, nil
 }
 
 // UpdateTrack updates an existing learning track.
 func (s *Store) UpdateTrack(ctx context.Context, tenantID, id pgtype.UUID, input UpdateTrackInput) (*Track, error) {
 	r, err := s.write.UpdateLearningTrack(ctx, gen.UpdateLearningTrackParams{
-		TenantID:     tenantID,
-		ID:           id,
-		Title:        input.Title,
-		Description:  input.Description,
-		Difficulty:   input.Difficulty,
-		CoverMediaID: input.CoverMediaID,
-		IsPublished:  input.IsPublished,
-		SortOrder:    input.SortOrder,
+		TenantID:             tenantID,
+		ID:                   id,
+		Title:                input.Title,
+		Description:          input.Description,
+		Difficulty:           input.Difficulty,
+		CoverMediaID:         input.CoverMediaID,
+		IsPublished:          input.IsPublished,
+		SortOrder:            input.SortOrder,
+		Category:             input.Category,
+		SubscriptionEligible: input.SubscriptionEligible,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("update track: %w", err)
 	}
 
-	t := trackFromFields(r.ID, r.TenantID, r.Title, r.Slug, r.Description, r.Difficulty, r.CoverMediaID, r.IsPublished, r.SortOrder, r.CreatedAt, r.UpdatedAt, r.InstructorID, r.PriceKobo, r.Currency, r.IsPublishedToUniversity, r.Category, r.Language, r.TotalEnrolled)
+	t := trackFromFields(r.ID, r.TenantID, r.Title, r.Slug, r.Description, r.Difficulty, r.CoverMediaID, r.IsPublished, r.SortOrder, r.CreatedAt, r.UpdatedAt, r.InstructorID, r.PriceKobo, r.Currency, r.IsPublishedToUniversity, r.Category, r.Language, r.TotalEnrolled, r.SubscriptionEligible)
 	return &t, nil
 }
 
@@ -261,7 +272,7 @@ func (s *Store) ListAllTracks(ctx context.Context, tenantID pgtype.UUID) ([]Trac
 	tracks := make([]Track, 0, len(rows))
 
 	for _, r := range rows {
-		tracks = append(tracks, trackFromFields(r.ID, r.TenantID, r.Title, r.Slug, r.Description, r.Difficulty, r.CoverMediaID, r.IsPublished, r.SortOrder, r.CreatedAt, r.UpdatedAt, r.InstructorID, r.PriceKobo, r.Currency, r.IsPublishedToUniversity, r.Category, r.Language, r.TotalEnrolled))
+		tracks = append(tracks, trackFromFields(r.ID, r.TenantID, r.Title, r.Slug, r.Description, r.Difficulty, r.CoverMediaID, r.IsPublished, r.SortOrder, r.CreatedAt, r.UpdatedAt, r.InstructorID, r.PriceKobo, r.Currency, r.IsPublishedToUniversity, r.Category, r.Language, r.TotalEnrolled, r.SubscriptionEligible))
 	}
 
 	return tracks, nil
@@ -435,7 +446,7 @@ func (s *Store) GetTrackDetail(ctx context.Context, tenantID pgtype.UUID, slug s
 	track := trackFromFields(row.ID, row.TenantID, row.Title, row.Slug, row.Description,
 		row.Difficulty, row.CoverMediaID, row.IsPublished, row.SortOrder, row.CreatedAt, row.UpdatedAt,
 		row.InstructorID, row.PriceKobo, row.Currency, row.IsPublishedToUniversity, row.Category,
-		row.Language, row.TotalEnrolled)
+		row.Language, row.TotalEnrolled, row.SubscriptionEligible)
 
 	modRows, err := s.read.ListLearningModulesByTrack(ctx, gen.ListLearningModulesByTrackParams{
 		TenantID: tenantID,
@@ -1742,4 +1753,69 @@ func trackReviewWithAuthorFromRow(r gen.ListReviewsByEntityWithAuthorRow) TrackR
 		CreatedAt:         r.CreatedAt.Time,
 		UpdatedAt:         r.UpdatedAt.Time,
 	}
+}
+
+// CheckSubscriptionAccess determines whether a user's active subscription
+// plan grants access to a specific track. Returns (true, planSlug) when:
+//   - the user has an active subscription, AND
+//   - the corresponding subscription_plan either has no entries in
+//     subscription_plan_tracks (meaning ALL tracks — backward compatible
+//     with the Pro = all model) OR explicitly includes the track.
+//
+// Returns (false, "") when the user has no active subscription or the plan
+// does not cover the track.
+func (s *Store) CheckSubscriptionAccess(ctx context.Context, tenantID, userID, trackID pgtype.UUID) (bool, string) {
+	// 1. Get the user's active subscription plan text (e.g. "pro_monthly").
+	var planText string
+	err := s.db.Reader.QueryRow(ctx, `
+		SELECT plan FROM subscriptions
+		WHERE tenant_id = $1 AND user_id = $2 AND status = 'active' AND current_period_end > now()
+		ORDER BY created_at DESC LIMIT 1
+	`, tenantID, userID).Scan(&planText)
+	if err != nil {
+		return false, ""
+	}
+
+	// 2. Extract the plan slug (e.g. "pro" from "pro_monthly").
+	slug := planText
+	if idx := strings.Index(planText, "_"); idx > 0 {
+		slug = planText[:idx]
+	}
+
+	// 3. Look up the subscription_plan by slug to get its ID.
+	var planID pgtype.UUID
+	err = s.db.Reader.QueryRow(ctx, `
+		SELECT id FROM subscription_plans
+		WHERE tenant_id = $1 AND slug = $2
+	`, tenantID, slug).Scan(&planID)
+	if err != nil {
+		return false, ""
+	}
+
+	// 4. Count how many tracks are explicitly attached to this plan.
+	var count int64
+	err = s.db.Reader.QueryRow(ctx, `
+		SELECT count(*) FROM subscription_plan_tracks
+		WHERE plan_id = $1 AND tenant_id = $2
+	`, planID, tenantID).Scan(&count)
+	if err != nil {
+		return false, ""
+	}
+
+	// 5. If the plan has no entries, it includes ALL tracks (Pro = all).
+	if count == 0 {
+		return true, slug
+	}
+
+	// 6. Otherwise, check if the specific track is in the plan.
+	var exists int32
+	err = s.db.Reader.QueryRow(ctx, `
+		SELECT 1 FROM subscription_plan_tracks
+		WHERE plan_id = $1 AND track_id = $2 AND tenant_id = $3
+		LIMIT 1
+	`, planID, trackID, tenantID).Scan(&exists)
+	if err != nil {
+		return false, slug
+	}
+	return true, slug
 }

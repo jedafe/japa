@@ -1886,13 +1886,16 @@ func (q *Queries) ListAuditLogs(ctx context.Context, arg ListAuditLogsParams) ([
 }
 
 const listConsentsByTenant = `-- name: ListConsentsByTenant :many
-SELECT id, tenant_id, user_id, consent_type, granted, policy_version,
-    ip_address, user_agent, created_at
-FROM consent_records
-WHERE tenant_id = $1
-  AND ($2::text = '' OR consent_type = $2::text)
-  AND ($3::text = '' OR consent_type ILIKE '%' || $3 || '%' OR ip_address::text ILIKE '%' || $3 || '%')
-ORDER BY created_at DESC
+SELECT cr.id, cr.tenant_id, cr.user_id, cr.consent_type, cr.granted, cr.policy_version,
+    cr.ip_address, cr.user_agent, cr.created_at,
+    u.username, up.display_name
+FROM consent_records cr
+LEFT JOIN users u ON u.id = cr.user_id
+LEFT JOIN user_profiles up ON up.user_id = cr.user_id
+WHERE cr.tenant_id = $1
+  AND ($2::text = '' OR cr.consent_type = $2::text)
+  AND ($3::text = '' OR cr.consent_type ILIKE '%' || $3 || '%' OR cr.ip_address::text ILIKE '%' || $3 || '%')
+ORDER BY cr.created_at DESC
 LIMIT $5 OFFSET $4
 `
 
@@ -1904,7 +1907,21 @@ type ListConsentsByTenantParams struct {
 	PageLimit   int32       `json:"page_limit"`
 }
 
-func (q *Queries) ListConsentsByTenant(ctx context.Context, arg ListConsentsByTenantParams) ([]ConsentRecord, error) {
+type ListConsentsByTenantRow struct {
+	ID            pgtype.UUID        `json:"id"`
+	TenantID      pgtype.UUID        `json:"tenant_id"`
+	UserID        pgtype.UUID        `json:"user_id"`
+	ConsentType   string             `json:"consent_type"`
+	Granted       bool               `json:"granted"`
+	PolicyVersion string             `json:"policy_version"`
+	IpAddress     *netip.Addr        `json:"ip_address"`
+	UserAgent     *string            `json:"user_agent"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+	Username      *string            `json:"username"`
+	DisplayName   *string            `json:"display_name"`
+}
+
+func (q *Queries) ListConsentsByTenant(ctx context.Context, arg ListConsentsByTenantParams) ([]ListConsentsByTenantRow, error) {
 	rows, err := q.db.Query(ctx, listConsentsByTenant,
 		arg.TenantID,
 		arg.ConsentType,
@@ -1916,9 +1933,9 @@ func (q *Queries) ListConsentsByTenant(ctx context.Context, arg ListConsentsByTe
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ConsentRecord
+	var items []ListConsentsByTenantRow
 	for rows.Next() {
-		var i ConsentRecord
+		var i ListConsentsByTenantRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.TenantID,
@@ -1929,6 +1946,8 @@ func (q *Queries) ListConsentsByTenant(ctx context.Context, arg ListConsentsByTe
 			&i.IpAddress,
 			&i.UserAgent,
 			&i.CreatedAt,
+			&i.Username,
+			&i.DisplayName,
 		); err != nil {
 			return nil, err
 		}
@@ -1979,22 +1998,38 @@ func (q *Queries) ListPendingDataExportRequests(ctx context.Context, pageLimit i
 }
 
 const listPendingDeletionRequests = `-- name: ListPendingDeletionRequests :many
-SELECT id, tenant_id, user_id, status, reason, completed_at, created_at, progress_step
-FROM account_deletion_requests
-WHERE status = 'pending'
-ORDER BY created_at ASC
+SELECT adr.id, adr.tenant_id, adr.user_id, adr.status, adr.reason, adr.completed_at, adr.created_at, adr.progress_step,
+       u.username, up.display_name
+FROM account_deletion_requests adr
+LEFT JOIN users u ON u.id = adr.user_id
+LEFT JOIN user_profiles up ON up.user_id = adr.user_id
+WHERE adr.status = 'pending'
+ORDER BY adr.created_at ASC
 LIMIT $1
 `
 
-func (q *Queries) ListPendingDeletionRequests(ctx context.Context, pageLimit int32) ([]AccountDeletionRequest, error) {
+type ListPendingDeletionRequestsRow struct {
+	ID           pgtype.UUID        `json:"id"`
+	TenantID     pgtype.UUID        `json:"tenant_id"`
+	UserID       pgtype.UUID        `json:"user_id"`
+	Status       string             `json:"status"`
+	Reason       *string            `json:"reason"`
+	CompletedAt  pgtype.Timestamptz `json:"completed_at"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	ProgressStep int32              `json:"progress_step"`
+	Username     *string            `json:"username"`
+	DisplayName  *string            `json:"display_name"`
+}
+
+func (q *Queries) ListPendingDeletionRequests(ctx context.Context, pageLimit int32) ([]ListPendingDeletionRequestsRow, error) {
 	rows, err := q.db.Query(ctx, listPendingDeletionRequests, pageLimit)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []AccountDeletionRequest
+	var items []ListPendingDeletionRequestsRow
 	for rows.Next() {
-		var i AccountDeletionRequest
+		var i ListPendingDeletionRequestsRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.TenantID,
@@ -2004,6 +2039,8 @@ func (q *Queries) ListPendingDeletionRequests(ctx context.Context, pageLimit int
 			&i.CompletedAt,
 			&i.CreatedAt,
 			&i.ProgressStep,
+			&i.Username,
+			&i.DisplayName,
 		); err != nil {
 			return nil, err
 		}

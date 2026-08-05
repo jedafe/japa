@@ -391,7 +391,7 @@ func (s *Store) revokeConsent(ctx context.Context, p gen.RevokeConsentParams) er
 	return nil
 }
 
-func (s *Store) listConsentsByTenant(ctx context.Context, tenantID pgtype.UUID, consentType string, limit, offset int32) ([]gen.ConsentRecord, error) {
+func (s *Store) listConsentsByTenant(ctx context.Context, tenantID pgtype.UUID, consentType string, limit, offset int32) ([]gen.ListConsentsByTenantRow, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -410,7 +410,7 @@ func (s *Store) listConsentsByTenant(ctx context.Context, tenantID pgtype.UUID, 
 	return rows, nil
 }
 
-func (s *Store) listConsentsByTenantFiltered(ctx context.Context, tenantID pgtype.UUID, consentType, q string, limit, offset int32) ([]gen.ConsentRecord, error) {
+func (s *Store) listConsentsByTenantFiltered(ctx context.Context, tenantID pgtype.UUID, consentType, q string, limit, offset int32) ([]gen.ListConsentsByTenantRow, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -550,7 +550,7 @@ func (s *Store) updateAccountDeletionRequestProgress(ctx context.Context, id, te
 	return nil
 }
 
-func (s *Store) listPendingDeletionRequests(ctx context.Context, limit int32) ([]gen.AccountDeletionRequest, error) {
+func (s *Store) listPendingDeletionRequests(ctx context.Context, limit int32) ([]gen.ListPendingDeletionRequestsRow, error) {
 	if limit <= 0 {
 		limit = DefaultPageSize
 	}

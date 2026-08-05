@@ -22,32 +22,32 @@
 </script>
 
 <div class="space-y-3">
-  <div>
-    <label class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Quote</label>
+  <label class="block">
+    <span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Quote</span>
     <GeoText value={props.quote} onchange={(v) => update('quote', v)} {geoCtx} />
-  </div>
+  </label>
 
-  <div>
-    <label class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Author</label>
+  <label class="block">
+    <span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Author</span>
     <input type="text" value={props.author} oninput={(e) => update('author', e.currentTarget.value)} class={inputClass} />
-  </div>
+  </label>
 
-  <div>
-    <label class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Role</label>
+  <label class="block">
+    <span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Role</span>
     <input type="text" value={props.role ?? ''} oninput={(e) => update('role', e.currentTarget.value)} class={inputClass} />
-  </div>
+  </label>
 
-  <div>
-    <label class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Avatar</label>
+  <label class="block">
+    <span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Avatar</span>
     <MediaPicker value={props.avatar} onchange={(v) => update('avatar', v)} {mediaPickerComponent} />
-  </div>
+  </label>
 
-  <div>
-    <label class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Layout</label>
+  <label class="block">
+    <span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Layout</span>
     <select value={props.layout} onchange={(e) => update('layout', e.currentTarget.value as QuoteProps['layout'])} class={inputClass}>
       <option value="centered">Centered</option>
       <option value="inline">Inline</option>
       <option value="large">Large</option>
     </select>
-  </div>
+  </label>
 </div>

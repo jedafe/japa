@@ -99,6 +99,11 @@ export const plansApi = {
 		currency?: string; highlighted?: boolean; sort_order?: number; status?: string;
 	}) => api(`/admin/plans/${id}`, { method: 'PATCH', body }),
 	delete: (id: string) => api(`/admin/plans/${id}`, { method: 'DELETE' }),
+	// Plan ↔ Track management (migration 000273)
+	listTracks: (planId: string) => api<{ track_id: string }[]>(`/admin/plans/${planId}/tracks`),
+	setTracks: (planId: string, trackIds: string[]) => api(`/admin/plans/${planId}/tracks`, { method: 'PUT', body: { track_ids: trackIds } }),
+	addTrack: (planId: string, trackId: string) => api(`/admin/plans/${planId}/tracks/${trackId}`, { method: 'POST', body: {} }),
+	removeTrack: (planId: string, trackId: string) => api(`/admin/plans/${planId}/tracks/${trackId}`, { method: 'DELETE' }),
 };
 
 export interface AdminPage {
@@ -671,10 +676,22 @@ export const organisationsAdminApi = {
 		api(`/admin/organizations/${id}/verify`, { method: 'POST', body }),
 	unverify: (id: string) =>
 		api(`/admin/organizations/${id}/verify`, { method: 'DELETE' }),
-	claim: (id: string, body: { note?: string }) =>
+	claim: (id: string, body: { action: 'approve' | 'reject'; note?: string }) =>
 		api(`/admin/organizations/${id}/claim`, { method: 'POST', body }),
 	pendingClaims: () =>
-		api<{ id: string; organization_id: string; claimant_username: string; org_name: string; evidence_url?: string; notes?: string; created_at: string }[]>('/admin/organizations/pending-claims'),
+		api<{
+			id: string;
+			organization_id: string;
+			claimant_user_id: string;
+			claimant_username: string;
+			claimant_email: string;
+			org_name: string;
+			org_slug: string;
+			status: string;
+			evidence_url?: string | null;
+			notes?: string | null;
+			created_at: string;
+		}[]>('/admin/organizations/pending-claims'),
 };
 
 export const reactionsAdminApi = {
@@ -743,6 +760,17 @@ export const universityAdminApi = {
 		api<unknown>(`/admin/university/instructors/${id}`, { method: 'PATCH', body }),
 	featureTrack: (id: string, featured: boolean) =>
 		api<unknown>(`/admin/university/tracks/${id}/feature`, { method: 'POST', body: { featured } }),
+	// Track categories (ADR-063 §9.1)
+	listCategories: (params?: string) =>
+		api<unknown>(`/admin/university/categories${params ? `?${params}` : ''}`),
+	createCategory: (body: { slug: string; name: string; sort_order?: number; is_active?: boolean }) =>
+		api<unknown>(`/admin/university/categories`, { method: 'POST', body }),
+	getCategory: (id: string) =>
+		api<unknown>(`/admin/university/categories/${id}`),
+	updateCategory: (id: string, body: { slug?: string; name?: string; sort_order?: number; is_active?: boolean }) =>
+		api<unknown>(`/admin/university/categories/${id}`, { method: 'PATCH', body }),
+	deleteCategory: (id: string) =>
+		api<unknown>(`/admin/university/categories/${id}`, { method: 'DELETE' }),
 };
 
 // --- Geo IP (public hierarchy + admin lookup) ---

@@ -218,7 +218,7 @@ func (s *Service) CountReports(ctx context.Context, tenantID pgtype.UUID, status
 
 // ListReports returns all reports for the tenant (admin), optionally
 // filtered by status and/or entity_type.
-func (s *Service) ListReports(ctx context.Context, tenantID pgtype.UUID, status, entityType, q *string, limit, offset int32) ([]gen.ContentReport, error) {
+func (s *Service) ListReports(ctx context.Context, tenantID pgtype.UUID, status, entityType, q *string, limit, offset int32) ([]gen.ListReportsRow, error) {
 	reports, err := s.read.ListReports(ctx, gen.ListReportsParams{
 		TenantID:   tenantID,
 		Status:     status,

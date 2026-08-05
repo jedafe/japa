@@ -38,14 +38,14 @@ ORDER BY count DESC;
 -- =====================
 
 -- name: GetDailyContentStats :many
-SELECT date_trunc('day', created_at)::date AS day, tenant_id, id AS content_id,
-       view_count AS views, comment_count AS reactions, share_count AS comments, view_count AS unique_viewers
-FROM contents
-WHERE tenant_id = $1
-  AND status != 'draft'
-  AND ($2::date IS NULL OR created_at::date >= $2)
-  AND ($3::date IS NULL OR created_at::date <= $3)
-  AND ($4::uuid = '00000000-0000-0000-0000-000000000000'::uuid OR id = $4)
+SELECT date_trunc('day', c.created_at)::date AS day, c.tenant_id, c.id AS content_id, c.title AS content_title,
+       c.view_count AS views, c.comment_count AS reactions, c.share_count AS comments, c.view_count AS unique_viewers
+FROM contents c
+WHERE c.tenant_id = $1
+  AND c.status != 'draft'
+  AND ($2::date IS NULL OR c.created_at::date >= $2)
+  AND ($3::date IS NULL OR c.created_at::date <= $3)
+  AND ($4::uuid = '00000000-0000-0000-0000-000000000000'::uuid OR c.id = $4)
 ORDER BY day DESC, views DESC;
 
 -- name: GetTopContentByViews :many

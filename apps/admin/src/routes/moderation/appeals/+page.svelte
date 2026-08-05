@@ -11,6 +11,8 @@
 	type Appeal = {
 		id: string;
 		user_id: string;
+		username?: string;
+		display_name?: string;
 		entity_type: string;
 		entity_id: string;
 		reason: string;
@@ -61,10 +63,10 @@
 
 	const columns = [
 		{
-			key: 'user_id',
+			key: 'display_name',
 			label: t('moderation.user', 'User'),
 			sortable: true,
-			render: (v: string) => `<p class="font-mono text-xs">${v.slice(0, 12)}</p>`
+			render: (v: string, row: Appeal) => `<span class="text-sm">${v || row.username || 'anonymous'}</span>`
 		},
 		{
 			key: 'entity_type',

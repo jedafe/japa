@@ -28,25 +28,25 @@
 </script>
 
 <div class="space-y-3">
-  <div>
-    <label class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Title</label>
+  <label class="block">
+    <span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Title</span>
     <GeoText value={props.title} onchange={(v) => update('title', v)} {geoCtx} />
-  </div>
+  </label>
 
-  <div>
-    <label class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Description</label>
+  <label class="block">
+    <span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Description</span>
     <GeoText value={props.description ?? ''} onchange={(v) => update('description', v)} {geoCtx} />
-  </div>
+  </label>
 
-  <div>
-    <label class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Icon</label>
+  <label class="block">
+    <span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Icon</span>
     <IconPicker value={props.icon} onchange={(v) => update('icon', v)} />
-  </div>
+  </label>
 
-  <div>
-    <label class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Estimated date</label>
+  <label class="block">
+    <span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Estimated date</span>
     <input type="date" value={props.estimated_date ?? ''} oninput={(e) => update('estimated_date', e.currentTarget.value)} class={inputClass} />
-  </div>
+  </label>
 
   <div class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
     <label class="flex items-center gap-2 text-sm text-[var(--color-text)]">
@@ -56,20 +56,20 @@
 
     {#if props.waitlist_form?.enabled}
       <div class="mt-3 space-y-2">
-        <div>
-          <label class="mb-1 block text-xs font-medium text-[var(--color-muted)]">CTA label</label>
+        <label class="block">
+          <span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">CTA label</span>
           <input type="text" value={props.waitlist_form.cta_label} oninput={(e) => updateWaitlist({ cta_label: e.currentTarget.value })} class={inputClass} />
-        </div>
-        <div>
-          <label class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Endpoint</label>
+        </label>
+        <label class="block">
+          <span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Endpoint</span>
           <input type="text" value={props.waitlist_form.endpoint} oninput={(e) => updateWaitlist({ endpoint: e.currentTarget.value })} class={inputClass} />
-        </div>
+        </label>
       </div>
     {/if}
   </div>
 
-  <div>
-    <label class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Background</label>
+  <label class="block">
+    <span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Background</span>
     <BackgroundPicker value={props.background} onchange={(v) => update('background', v)} {mediaPickerComponent} />
-  </div>
+  </label>
 </div>

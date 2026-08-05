@@ -199,8 +199,15 @@ func (c *Client) DeleteEntry(ctx context.Context, userID, entryID string) error 
 // Panel infrastructure health group (ADR-027). Returns nil when the service
 // responds with any 2xx/4xx status (reachable), and an error only when the
 // HTTP call itself fails (unreachable).
+//
+// A 5-second timeout is enforced so that an unreachable Honcho service does
+// not stall the entire /control/health endpoint (the default httpClient timeout
+// is 30s, which would delay all infrastructure health results).
 func (c *Client) Health(ctx context.Context) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/health", nil)
+	healthCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(healthCtx, http.MethodGet, c.baseURL+"/health", nil)
 	if err != nil {
 		return fmt.Errorf("honcho: creating health request: %w", err)
 	}

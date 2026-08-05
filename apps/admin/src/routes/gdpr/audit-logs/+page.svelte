@@ -31,7 +31,8 @@
 		{ key: "actor", label: t("gdpr.actor", "Actor"), sortable: true },
 		{ key: "action", label: t("gdpr.action", "Action"), sortable: true },
 		{ key: "entity_type", label: t("gdpr.entity_type", "Entity Type"), sortable: true },
-		{ key: "entity_id", label: t("gdpr.entity_id", "Entity ID"), sortable: true },
+		{ key: "entity_id", label: t("gdpr.entity_id", "Entity ID"), sortable: true,
+			render: (v: string) => `<span class="font-mono text-xs" style="color: var(--color-muted)">${v ? v.slice(0, 8) + "..." : "—"}</span>` },
 		{ key: "ip_address", label: t("gdpr.ip", "IP Address"), sortable: true }
 	];
 

@@ -391,7 +391,7 @@ func (s *Service) ListBoosts(ctx context.Context, tenantID, organizationID pgtyp
 }
 
 // ListActiveBoosts returns all currently active boosts for a tenant.
-func (s *Service) ListActiveBoosts(ctx context.Context, tenantID pgtype.UUID) ([]OrganizationBoost, error) {
+func (s *Service) ListActiveBoosts(ctx context.Context, tenantID pgtype.UUID) ([]gen.ListActiveBoostsRow, error) {
 	return s.store.Queries().ListActiveBoosts(ctx, tenantID)
 }
 

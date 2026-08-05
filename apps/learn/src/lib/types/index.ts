@@ -138,6 +138,8 @@ export interface TrackSummary {
 	currency?: string | null;
 	/** True when the course is published to the Japa University marketplace. */
 	is_published_to_university?: boolean;
+	/** True when the course can be accessed via subscription plans. */
+	subscription_eligible?: boolean;
 	tags?: string[];
 }
 

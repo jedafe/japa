@@ -40,7 +40,9 @@
 	type ActiveBoost = {
 		id: string;
 		organization_id: string;
+		organization_name?: string;
 		space_id: string;
+		space_name?: string;
 		boost_type: string;
 		start_date: string;
 		end_date: string;
@@ -155,14 +157,16 @@
 			render: (value: string) => `<span class="text-xs font-medium">${value}</span>`
 		},
 		{
-			key: 'space_id',
+			key: 'space_name',
 			label: t('ads.col_space', 'Space'),
-			render: (value: string) => `<span class="font-mono text-xs text-muted">${(value ?? '').slice(0, 12)}</span>`
+			sortable: true,
+			render: (v: string, row: ActiveBoost) => `<span class="text-sm">${v || (row.space_id ? row.space_id.slice(0, 8) + '...' : '—')}</span>`
 		},
 		{
-			key: 'organization_id',
+			key: 'organization_name',
 			label: t('ads.col_organization', 'Organization'),
-			render: (value: string) => `<span class="font-mono text-xs text-muted">${(value ?? '').slice(0, 12)}</span>`
+			sortable: true,
+			render: (v: string, row: ActiveBoost) => `<span class="text-sm">${v || (row.organization_id ? row.organization_id.slice(0, 8) + '...' : '—')}</span>`
 		},
 		{
 			key: 'start_date',

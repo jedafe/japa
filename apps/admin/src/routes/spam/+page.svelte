@@ -31,7 +31,11 @@
 	};
 	type UserBlock = {
 		blocker_id: string;
+		blocker_username?: string;
+		blocker_display_name?: string;
 		blocked_id: string;
+		blocked_username?: string;
+		blocked_display_name?: string;
 		created_at?: string;
 	};
 
@@ -149,8 +153,10 @@
 	];
 
 	const ubColumns = [
-		{ key: "blocker_id", label: t("spam.blocker", "Blocker"), sortable: true },
-		{ key: "blocked_id", label: t("spam.blocked", "Blocked"), sortable: true },
+		{ key: "blocker_display_name", label: t("spam.blocker", "Blocker"), sortable: true,
+			render: (v: string, row: UserBlock) => v || row.blocker_username || 'anonymous' },
+		{ key: "blocked_display_name", label: t("spam.blocked", "Blocked"), sortable: true,
+			render: (v: string, row: UserBlock) => v || row.blocked_username || 'anonymous' },
 		{ key: "created_at", label: t("common.created", "Created"), sortable: true, render: (v: string) => v ? new Date(v).toLocaleDateString() : "—" },
 		{ key: "actions", label: t("common.actions", "Actions"), class: "w-24", componentSnippet: UbActionsCell }
 	];

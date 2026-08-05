@@ -5,6 +5,7 @@
 	import { api } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { PieChart, BarChart, Spline } from 'layerchart';
+	import { curveMonotoneX } from 'd3-shape';
 	import { RotateCw } from 'lucide-svelte';
 
 	type ServiceStatus = {
@@ -153,7 +154,7 @@
 				data={healthHistory}
 				x="time"
 				y="healthy"
-				curve="monotoneX"
+				curve={curveMonotoneX}
 				stroke="var(--color-accent-foreground)"
 			/>
 		</div>

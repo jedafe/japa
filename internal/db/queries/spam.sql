@@ -75,9 +75,15 @@ WHERE blocker_id = $1
 ORDER BY created_at DESC;
 
 -- name: ListAllUserBlocks :many
-SELECT blocker_id, blocked_id, created_at
-FROM user_blocks
-ORDER BY created_at DESC
+SELECT ub.blocker_id, ub.blocked_id, ub.created_at,
+       bu.username AS blocker_username, bp.display_name AS blocker_display_name,
+       buu.username AS blocked_username, bpp.display_name AS blocked_display_name
+FROM user_blocks ub
+LEFT JOIN users bu ON bu.id = ub.blocker_id
+LEFT JOIN user_profiles bp ON bp.user_id = ub.blocker_id AND bp.tenant_id = bu.tenant_id
+LEFT JOIN users buu ON buu.id = ub.blocked_id
+LEFT JOIN user_profiles bpp ON bpp.user_id = ub.blocked_id AND bpp.tenant_id = buu.tenant_id
+ORDER BY ub.created_at DESC
 LIMIT $1;
 
 -- name: IsBlocked :one

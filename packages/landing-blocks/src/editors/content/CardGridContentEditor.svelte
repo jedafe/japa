@@ -40,8 +40,8 @@
 </script>
 
 <div class="space-y-4">
-  <div>
-    <label class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Card variant</label>
+  <label class="block">
+    <span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Card variant</span>
     <select
       value={props.card_variant}
       onchange={(e) => update('card_variant', e.currentTarget.value as CardGridProps['card_variant'])}
@@ -52,10 +52,10 @@
       <option value="stat">Stat</option>
       <option value="custom">Custom</option>
     </select>
-  </div>
+  </label>
 
-  <div>
-    <label class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Layout</label>
+  <label class="block">
+    <span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Layout</span>
     <select
       value={props.layout}
       onchange={(e) => update('layout', e.currentTarget.value as CardGridProps['layout'])}
@@ -67,10 +67,10 @@
       <option value="carousel">Carousel</option>
       <option value="marquee">Marquee</option>
     </select>
-  </div>
+  </label>
 
-  <div>
-    <label class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Columns: {props.columns}</label>
+  <label class="block">
+    <span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Columns: {props.columns}</span>
     <input
       type="range"
       min="1"
@@ -79,11 +79,11 @@
       oninput={(e) => update('columns', Number(e.currentTarget.value))}
       class="w-full"
     />
-  </div>
+  </label>
 
   <div>
     <div class="mb-2 flex items-center justify-between">
-      <label class="text-xs font-medium text-[var(--color-muted)]">Cards</label>
+      <span class="text-xs font-medium text-[var(--color-muted)]">Cards</span>
       <button type="button" onclick={addCard} class="text-xs text-[var(--color-primary)] hover:underline">+ Add Card</button>
     </div>
     <div class="space-y-4">
@@ -94,36 +94,36 @@
             <button type="button" onclick={() => removeCard(i)} class="text-xs text-[var(--color-danger)] hover:underline">Remove</button>
           </div>
 
-          <div>
-            <label class="mb-1 block text-xs text-[var(--color-muted)]">Icon</label>
+          <label class="block">
+            <span class="mb-1 block text-xs text-[var(--color-muted)]">Icon</span>
             <IconPicker value={card.icon} onchange={(v) => updateCard(i, 'icon', v)} />
-          </div>
+          </label>
 
-          <div>
-            <label class="mb-1 block text-xs text-[var(--color-muted)]">Title</label>
+          <label class="block">
+            <span class="mb-1 block text-xs text-[var(--color-muted)]">Title</span>
             <GeoText value={card.title} onchange={(v) => updateCard(i, 'title', v)} {geoCtx} />
-          </div>
+          </label>
 
-          <div>
-            <label class="mb-1 block text-xs text-[var(--color-muted)]">Description</label>
+          <label class="block">
+            <span class="mb-1 block text-xs text-[var(--color-muted)]">Description</span>
             <GeoText value={card.description ?? ''} onchange={(v) => updateCard(i, 'description', v)} {geoCtx} />
-          </div>
+          </label>
 
-          <div>
-            <label class="mb-1 block text-xs text-[var(--color-muted)]">Media</label>
+          <label class="block">
+            <span class="mb-1 block text-xs text-[var(--color-muted)]">Media</span>
             <MediaPicker value={card.media} onchange={(v) => updateCard(i, 'media', v)} {mediaPickerComponent} />
-          </div>
+          </label>
 
-          <div>
-            <label class="mb-1 block text-xs text-[var(--color-muted)]">CTA</label>
+          <label class="block">
+            <span class="mb-1 block text-xs text-[var(--color-muted)]">CTA</span>
             <CTAEditor
               value={card.cta ?? { label: '', href: '', variant: 'primary' }}
               onchange={updateCardCta.bind(null, i)}
             />
-          </div>
+          </label>
 
-          <div>
-            <label class="mb-1 block text-xs text-[var(--color-muted)]">Rating</label>
+          <label class="block">
+            <span class="mb-1 block text-xs text-[var(--color-muted)]">Rating</span>
             <input
               type="number"
               min="0"
@@ -133,27 +133,27 @@
               oninput={(e) => updateCard(i, 'rating', Number(e.currentTarget.value))}
               class={inputClass}
             />
-          </div>
+          </label>
 
           <div class="grid grid-cols-2 gap-2">
-            <div>
-              <label class="mb-1 block text-xs text-[var(--color-muted)]">Stat value</label>
+            <label class="block">
+              <span class="mb-1 block text-xs text-[var(--color-muted)]">Stat value</span>
               <input
                 type="text"
                 value={card.stat_value ?? ''}
                 oninput={(e) => updateCard(i, 'stat_value', e.currentTarget.value)}
                 class={inputClass}
               />
-            </div>
-            <div>
-              <label class="mb-1 block text-xs text-[var(--color-muted)]">Stat label</label>
+            </label>
+            <label class="block">
+              <span class="mb-1 block text-xs text-[var(--color-muted)]">Stat label</span>
               <input
                 type="text"
                 value={card.stat_label ?? ''}
                 oninput={(e) => updateCard(i, 'stat_label', e.currentTarget.value)}
                 class={inputClass}
               />
-            </div>
+            </label>
           </div>
         </div>
       {/each}

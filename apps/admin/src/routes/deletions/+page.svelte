@@ -7,6 +7,8 @@
 	type Deletion = {
 		id: string;
 		user_id: string;
+		username?: string;
+		display_name?: string;
 		content_type: string;
 		content_id: string;
 		reason: string;
@@ -20,7 +22,7 @@
 	let searchQuery = $state('');
 
 	const columns = [
-		{ key: 'user_id', label: t('deletions.user'), render: (v: string) => `<span class="font-mono text-xs">${v}</span>` },
+		{ key: 'display_name', label: t('deletions.user'), render: (v: string, row: Deletion) => `<span class="text-sm">${v || row.username || 'anonymous'}</span>` },
 		{ key: 'content_type', label: t('deletions.type'), render: (v: string) => `<span class="text-xs">${v}</span>` },
 		{ key: 'reason', label: t('deletions.reason'), render: (v: string) => `<span class="text-xs" style="color: var(--color-muted)">${v || '—'}</span>` },
 		{
@@ -40,7 +42,7 @@
 		let items = deletions;
 		if (searchQuery) {
 			const q = searchQuery.toLowerCase();
-			items = items.filter((d) => d.user_id.toLowerCase().includes(q) || d.content_type.toLowerCase().includes(q) || d.reason?.toLowerCase().includes(q));
+			items = items.filter((d) => (d.display_name || d.username || '').toLowerCase().includes(q) || d.content_type.toLowerCase().includes(q) || d.reason?.toLowerCase().includes(q));
 		}
 		return items;
 	});

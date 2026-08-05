@@ -478,25 +478,30 @@ func (q *Queries) ListFlaggedReviews(ctx context.Context, arg ListFlaggedReviews
 
 const listModerationAppeals = `-- name: ListModerationAppeals :many
 
-SELECT id, user_id, entity_type, entity_id, reason, status, created_at
-FROM moderation_appeals
+SELECT ma.id, ma.user_id, ma.entity_type, ma.entity_id, ma.reason, ma.status, ma.created_at,
+       u.username, up.display_name
+FROM moderation_appeals ma
+LEFT JOIN users u ON u.id = ma.user_id
+LEFT JOIN user_profiles up ON up.user_id = ma.user_id
 WHERE ($1::text IS NULL OR (
-        entity_id::text ILIKE '%' || $1 || '%'
-     OR reason ILIKE '%' || $1 || '%'
-     OR entity_type ILIKE '%' || $1 || '%'
+        ma.entity_id::text ILIKE '%' || $1 || '%'
+     OR ma.reason ILIKE '%' || $1 || '%'
+     OR ma.entity_type ILIKE '%' || $1 || '%'
   ))
-ORDER BY created_at DESC
+ORDER BY ma.created_at DESC
 LIMIT 50
 `
 
 type ListModerationAppealsRow struct {
-	ID         pgtype.UUID        `json:"id"`
-	UserID     pgtype.UUID        `json:"user_id"`
-	EntityType string             `json:"entity_type"`
-	EntityID   pgtype.UUID        `json:"entity_id"`
-	Reason     string             `json:"reason"`
-	Status     string             `json:"status"`
-	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+	ID          pgtype.UUID        `json:"id"`
+	UserID      pgtype.UUID        `json:"user_id"`
+	EntityType  string             `json:"entity_type"`
+	EntityID    pgtype.UUID        `json:"entity_id"`
+	Reason      string             `json:"reason"`
+	Status      string             `json:"status"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	Username    *string            `json:"username"`
+	DisplayName *string            `json:"display_name"`
 }
 
 // =====================
@@ -519,6 +524,8 @@ func (q *Queries) ListModerationAppeals(ctx context.Context, search *string) ([]
 			&i.Reason,
 			&i.Status,
 			&i.CreatedAt,
+			&i.Username,
+			&i.DisplayName,
 		); err != nil {
 			return nil, err
 		}

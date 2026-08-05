@@ -18,6 +18,7 @@
 		name: string;
 		slug: string;
 		space_id?: string;
+		space_name?: string;
 		description?: string;
 		status: 'active' | 'draft';
 		is_multi_step?: boolean;
@@ -90,10 +91,10 @@
 		`
 		},
 		{
-			key: "space_id",
+			key: "space_name",
 			label: t('forms.columnSpace', 'Space'),
 			sortable: true,
-			render: (value: any, row: any) => `<span class="text-sm text-foreground-alt">${row.space_id ? 'Space-specific' : t('forms.global', 'Global')}</span>`
+			render: (value: any, row: any) => `<span class="text-sm text-foreground-alt">${row.space_name || (row.space_id ? row.space_id.substring(0, 8) + '...' : t('forms.global', 'Global'))}</span>`
 		},
 		{
 			key: "is_system",

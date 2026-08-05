@@ -22,18 +22,21 @@ ORDER BY created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 
 -- name: ListReports :many
-SELECT id, tenant_id, reporter_user_id, entity_type, entity_id, reason, notes, evidence_urls,
-    status, reviewed_by, resolution_note, resolved_at, created_at
-FROM content_reports
-WHERE tenant_id = @tenant_id
-  AND (sqlc.narg(status)::text IS NULL OR status = sqlc.narg(status))
-  AND (sqlc.narg(entity_type)::text IS NULL OR entity_type = sqlc.narg(entity_type))
+SELECT cr.id, cr.tenant_id, cr.reporter_user_id, cr.entity_type, cr.entity_id, cr.reason, cr.notes, cr.evidence_urls,
+    cr.status, cr.reviewed_by, cr.resolution_note, cr.resolved_at, cr.created_at,
+    u.username AS reporter_username, up.display_name AS reporter_display_name
+FROM content_reports cr
+LEFT JOIN users u ON u.id = cr.reporter_user_id AND u.tenant_id = cr.tenant_id
+LEFT JOIN user_profiles up ON up.user_id = cr.reporter_user_id AND up.tenant_id = cr.tenant_id
+WHERE cr.tenant_id = @tenant_id
+  AND (sqlc.narg(status)::text IS NULL OR cr.status = sqlc.narg(status))
+  AND (sqlc.narg(entity_type)::text IS NULL OR cr.entity_type = sqlc.narg(entity_type))
   AND (sqlc.narg(q)::text IS NULL OR (
-        entity_id::text ILIKE '%' || sqlc.narg(q) || '%'
-     OR entity_type ILIKE '%' || sqlc.narg(q) || '%'
-     OR reporter_user_id::text ILIKE '%' || sqlc.narg(q) || '%'
+        cr.entity_id::text ILIKE '%' || sqlc.narg(q) || '%'
+     OR cr.entity_type ILIKE '%' || sqlc.narg(q) || '%'
+     OR cr.reporter_user_id::text ILIKE '%' || sqlc.narg(q) || '%'
   ))
-ORDER BY created_at DESC
+ORDER BY cr.created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 
 -- name: UpdateReportStatus :one

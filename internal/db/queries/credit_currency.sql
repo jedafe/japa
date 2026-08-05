@@ -111,8 +111,11 @@ LIMIT 1;
 
 -- name: ListCreditPurchases :many
 SELECT p.id, p.tenant_id, p.user_id, p.provider, p.amount, p.currency, p.status,
-       p.created_at, p.updated_at
+       p.created_at, p.updated_at,
+       u.username, up.display_name
 FROM payments p
+LEFT JOIN users u ON u.id = p.user_id
+LEFT JOIN user_profiles up ON up.user_id = p.user_id
 WHERE p.tenant_id = @tenant_id
   AND p.purpose_type = 'credit_purchase'
   AND (sqlc.narg(user_id)::uuid IS NULL OR p.user_id = sqlc.narg(user_id))

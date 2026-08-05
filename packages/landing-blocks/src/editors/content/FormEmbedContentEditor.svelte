@@ -35,28 +35,28 @@
 </script>
 
 <div class="space-y-3">
-  <div>
-    <label class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Preset</label>
+  <label class="block">
+    <span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Preset</span>
     <select value={props.preset} onchange={(e) => update('preset', e.currentTarget.value as FormEmbedProps['preset'])} class={inputClass}>
       <option value="newsletter">Newsletter</option>
       <option value="waitlist">Waitlist</option>
       <option value="contact">Contact</option>
       <option value="custom">Custom</option>
     </select>
-  </div>
+  </label>
 
-  <div>
-    <label class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Title</label>
+  <label class="block">
+    <span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Title</span>
     <GeoText value={props.title ?? ''} onchange={(v) => update('title', v)} {geoCtx} />
-  </div>
+  </label>
 
-  <div>
-    <label class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Subtitle</label>
+  <label class="block">
+    <span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Subtitle</span>
     <GeoText value={props.subtitle ?? ''} onchange={(v) => update('subtitle', v)} {geoCtx} />
-  </div>
+  </label>
 
   <div class="space-y-2">
-    <label class="block text-xs font-medium text-[var(--color-muted)]">Fields</label>
+    <span class="block text-xs font-medium text-[var(--color-muted)]">Fields</span>
     {#each props.fields as field, i (i)}
       <div class="space-y-2 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-2">
         <div class="flex items-center justify-between">
@@ -87,23 +87,23 @@
     <button type="button" onclick={addField} class="w-full rounded-[var(--radius)] border border-dashed border-[var(--color-border)] py-1.5 text-sm text-[var(--color-muted)] hover:bg-[var(--color-surface-subtle)]">+ Add field</button>
   </div>
 
-  <div>
-    <label class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Submit endpoint</label>
+  <label class="block">
+    <span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Submit endpoint</span>
     <input type="text" value={props.submit_endpoint} oninput={(e) => update('submit_endpoint', e.currentTarget.value)} class={inputClass} />
-  </div>
+  </label>
 
-  <div>
-    <label class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Submit label</label>
+  <label class="block">
+    <span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Submit label</span>
     <input type="text" value={props.submit_label} oninput={(e) => update('submit_label', e.currentTarget.value)} class={inputClass} />
-  </div>
+  </label>
 
-  <div>
-    <label class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Success message</label>
+  <label class="block">
+    <span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Success message</span>
     <GeoText value={props.success_message} onchange={(v) => update('success_message', v)} {geoCtx} />
-  </div>
+  </label>
 
-  <div>
-    <label class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Error message</label>
+  <label class="block">
+    <span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Error message</span>
     <GeoText value={props.error_message} onchange={(v) => update('error_message', v)} {geoCtx} />
-  </div>
+  </label>
 </div>
