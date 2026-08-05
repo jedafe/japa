@@ -689,6 +689,7 @@ export const reactionsAdminApi = {
 
 export const universitiesAdminApi = {
 	list: (params?: string) => api<unknown>(`/universities${params ? `?${params}` : ''}`),
+	getBySlug: (slug: string) => api<unknown>(`/universities/${encodeURIComponent(slug)}`),
 	create: (body: { name: string; slug: string; verified: boolean }) =>
 		api('/admin/universities', { method: 'POST', body }),
 	update: (id: string, body: { name?: string; slug?: string; verified?: boolean }) =>
@@ -740,6 +741,8 @@ export const universityAdminApi = {
 		api<unknown>(`/admin/university/instructors/${id}`, { method: 'DELETE' }),
 	updateInstructor: (id: string, body: { tier?: string; commission_pct_override?: number }) =>
 		api<unknown>(`/admin/university/instructors/${id}`, { method: 'PATCH', body }),
+	featureTrack: (id: string, featured: boolean) =>
+		api<unknown>(`/admin/university/tracks/${id}/feature`, { method: 'POST', body: { featured } }),
 };
 
 // --- Geo IP (public hierarchy + admin lookup) ---
