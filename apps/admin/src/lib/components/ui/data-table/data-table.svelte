@@ -1,13 +1,17 @@
 <script lang="ts">
 	import { t } from '$lib/stores/i18n.svelte';
-  import { page } from '$app/state';
+  import { page as sveltekitPage } from '$app/state';
   import { goto } from '$app/navigation';
-  import { ChevronUp, ChevronDown, ChevronsUpDown } from "lucide-svelte";
+  import { ChevronUp, ChevronDown, ChevronsUpDown, Plus } from "lucide-svelte";
   import { clsx, type ClassValue } from "clsx";
   import type { Component, Snippet } from "svelte";
   import { Button } from "$lib/components/ui/button";
   import Pagination from "$lib/components/ui/Pagination.svelte";
   import { sanitizeHtml } from "$lib/utils/html";
+  import ActionMenu from "./action-menu.svelte";
+  import FilterPanel from "./filter-panel.svelte";
+  import BulkBar from "./bulk-bar.svelte";
+  import type { ActionItem, FilterDef, BulkAction } from "./types";
 
   function extractId(row: any): string {
     return String(row?.id ?? '').split('::')[0] || String(row ?? '');
@@ -47,9 +51,34 @@
       searchParam = "q",
       onsearch,
       // Optional URL-persisted single filter value (opt-in via `filterParam`).
+      // NOTE: the legacy single-filter string state is kept internally so the
+      // `filterParam`/`onfilterchange` props continue to work for pages that
+      // use them. The bindable `filterValue` prop below is the NEW multi-filter
+      // Record used by the built-in <FilterPanel>.
       filterParam = "",
-      filterValue = $bindable(""),
-      onfilterchange
+      onfilterchange,
+      // ── NEW props (all optional, additive) ──────────────────────────────
+      // Server-side pagination mode.
+      serverSide = false,
+      totalRows,
+      totalPages,
+      page = $bindable(0),
+      onpagechange,
+      onpagesizechange,
+      pageSizeOptions = [10, 25, 50, 100],
+      // Built-in action column.
+      actions,
+      actionsLabel = t("common.actions", "Actions"),
+      // Built-in filter panel (multi-filter).
+      filters,
+      filterValue = $bindable({} as Record<string, string>),
+      onfilterapply,
+      onfilterclear,
+      // Typed bulk actions.
+      bulkActionsList,
+      // Create button slot.
+      createLabel,
+      onCreate
     }: {
       columns: Column[];
       data?: any[];
@@ -72,8 +101,24 @@
       searchParam?: string;
       onsearch?: (q: string) => void;
       filterParam?: string;
-      filterValue?: string;
       onfilterchange?: (v: string) => void;
+      // NEW
+      serverSide?: boolean;
+      totalRows?: number;
+      totalPages?: number;
+      page?: number;
+      onpagechange?: (page: number) => void;
+      onpagesizechange?: (size: number) => void;
+      pageSizeOptions?: number[];
+      actions?: ActionItem[];
+      actionsLabel?: string;
+      filters?: FilterDef[];
+      filterValue?: Record<string, string>;
+      onfilterapply?: () => void;
+      onfilterclear?: () => void;
+      bulkActionsList?: BulkAction[];
+      createLabel?: string;
+      onCreate?: () => void;
     } = $props();
 
    // Bulk actions can be provided either as a `bulkActions` snippet prop or as a
@@ -81,11 +126,11 @@
    const bulkActionsSnippet = $derived(bulkActions);
 
   // URL-driven sort (opt-in). Reads initial ?sort=/?dir= and writes back via goto.
-  const urlParams = $derived(page.url.searchParams);
+  const urlParams = $derived(sveltekitPage.url.searchParams);
   let sortColumn = $state<string | null>(null);
   let sortDirection = $state<"asc" | "desc">("asc");
 
-  // Client-side pagination state
+  // Client-side pagination state (used only when serverSide is false).
   let currentPage = $state(0);
 
   $effect(() => {
@@ -113,20 +158,41 @@
     return sorted;
   });
 
-  // Client-side pagination derived state (must come after sortedData)
-  const totalRows = $derived(sortedData.length);
-  const totalPages = $derived(Math.max(1, Math.ceil(totalRows / pageSize)));
+  // Client-side totals (renamed to avoid shadowing the new totalRows/totalPages props).
+  const clientTotalRows = $derived(sortedData.length);
+  const clientTotalPages = $derived(Math.max(1, Math.ceil(clientTotalRows / pageSize)));
+
+  // Effective totals: server-side uses the API-provided props; client-side uses
+  // the sorted data length.
+  const effectiveTotalRows = $derived(serverSide ? (totalRows ?? 0) : clientTotalRows);
+  const effectiveTotalPages = $derived(serverSide ? (totalPages ?? 1) : clientTotalPages);
+
+  // Paginated data: server-side renders rows as-is (the API already returned the
+  // page); client-side slices the sorted data.
   const paginatedData = $derived(
-    showPagination
-      ? sortedData.slice(currentPage * pageSize, (currentPage + 1) * pageSize)
-      : sortedData
+    serverSide
+      ? sortedData
+      : showPagination
+        ? sortedData.slice(currentPage * pageSize, (currentPage + 1) * pageSize)
+        : sortedData
   );
 
-  // Reset to first page when data or page size changes
+  // Reset to first page when data or page size changes (client-side only).
   $effect(() => {
-    void totalRows;
+    if (serverSide) return;
+    void clientTotalRows;
     void pageSize;
-    if (currentPage >= totalPages) currentPage = 0;
+    if (currentPage >= clientTotalPages) currentPage = 0;
+  });
+
+  // Server-side: emit onpagechange when the bound `page` prop changes (skip the
+  // initial run so we don't fire on mount).
+  let pageChangeReady = false;
+  $effect(() => {
+    if (!serverSide) return;
+    const p = page; // track reactivity
+    if (!pageChangeReady) { pageChangeReady = true; return; }
+    onpagechange?.(p);
   });
 
   function handleSort(column: string) {
@@ -138,7 +204,7 @@
     }
     onsortchange?.({ key: sortColumn, dir: sortDirection });
     if (urlSync) {
-      const params = new URLSearchParams(page.url.searchParams.toString());
+      const params = new URLSearchParams(sveltekitPage.url.searchParams.toString());
       if (sortColumn) {
         params.set("sort", sortColumn);
         params.set("dir", sortDirection);
@@ -181,7 +247,7 @@
    $effect(() => {
      // Seed the search box from the URL once so a reload restores the query.
      if (searchable && !searchSeeded) {
-       searchInput = page.url.searchParams.get(searchParam) ?? "";
+       searchInput = sveltekitPage.url.searchParams.get(searchParam) ?? "";
        searchSeeded = true;
      }
    });
@@ -192,7 +258,7 @@
    }
    function applySearch() {
      const q = searchInput.trim();
-     const params = new URLSearchParams(page.url.searchParams.toString());
+     const params = new URLSearchParams(sveltekitPage.url.searchParams.toString());
      if (q) params.set(searchParam, q); else params.delete(searchParam);
      goto(`?${params.toString()}`, { keepFocus: true, noScroll: true });
      onsearch?.(q);
@@ -203,51 +269,89 @@
      applySearch();
    }
 
-   // Optional URL-persisted filter value — seeded from and written to `?{filterParam}=`.
+   // Optional URL-persisted single filter value — seeded from and written to
+   // `?{filterParam}=`. Uses internal state so the bindable `filterValue` prop
+   // (Record, for the built-in FilterPanel) is not disturbed.
+   let singleFilterValue = $state("");
    let filterSeeded = false;
    $effect(() => {
      if (filterParam && !filterSeeded) {
-       const v = page.url.searchParams.get(filterParam) ?? "";
-       if (v) filterValue = v;
+       const v = sveltekitPage.url.searchParams.get(filterParam) ?? "";
+       if (v) singleFilterValue = v;
        filterSeeded = true;
      }
    });
    let filterPersistReady = false;
    $effect(() => {
-     // Persist filterValue to the URL on change (opt-in); skip the initial pass.
+     // Persist singleFilterValue to the URL on change (opt-in); skip initial pass.
      if (!filterParam) return;
-     const v = filterValue; // track reactivity
+     const v = singleFilterValue; // track reactivity
      if (!filterPersistReady) { filterPersistReady = true; return; }
-     const params = new URLSearchParams(page.url.searchParams.toString());
+     const params = new URLSearchParams(sveltekitPage.url.searchParams.toString());
      if (v) params.set(filterParam, v); else params.delete(filterParam);
      goto(`?${params.toString()}`, { keepFocus: true, noScroll: true });
      onfilterchange?.(v);
    });
+
+   // Server-side page-size change handler — emits onpagesizechange after the
+   // Pagination component updates the bound pageSize.
+   function handlePageSizeChange() {
+     if (serverSide) onpagesizechange?.(pageSize);
+   }
+   let lastPageSize = $state(pageSize);
+   $effect(() => {
+     if (!serverSide) return;
+     const s = pageSize; // track reactivity
+     if (s !== lastPageSize) {
+       lastPageSize = s;
+       handlePageSizeChange();
+     }
+   });
+
+   // Whether to show the built-in BulkBar (typed bulkActionsList path).
+   const showBulkBar = $derived(!!bulkActionsList && selectable);
+   // Whether to show the legacy inline bulk bar (snippet path).
+   const showLegacyBulkBar = $derived(selectable && !bulkActionsList && (bulkActionsSnippet || defaultBulkActions));
  </script>
 
 <div class={clsx("w-full", className)} aria-live="polite" aria-busy={loading}>
-  {#if searchable}
-    <!-- Optional debounced search box that persists the query to the URL. -->
-    <div class="relative mb-3">
-      <input
-        type="search"
-        placeholder={searchPlaceholder}
-        bind:value={searchInput}
-        oninput={handleSearchInput}
-        aria-label={searchPlaceholder}
-        class="w-full rounded-lg border p-2 pr-10 text-sm outline-none focus:ring-2"
-        style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground); --tw-ring-color: var(--color-primary)"
-      />
-      {#if searchInput}
-        <button
-          type="button"
-          onclick={clearSearch}
-          aria-label={t("common.clearSelection", "Clear search")}
-          class="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1"
-          style="color: var(--color-muted)"
-        >
-          ✕
-        </button>
+  {#if filters}
+    <div class="mb-3">
+      <FilterPanel {filters} bind:value={filterValue} onapply={onfilterapply} onclear={onfilterclear} />
+    </div>
+  {/if}
+  {#if searchable || (createLabel && onCreate)}
+    <div class="mb-3 flex items-center gap-3">
+      {#if searchable}
+        <!-- Optional debounced search box that persists the query to the URL. -->
+        <div class="relative flex-1">
+          <input
+            type="search"
+            placeholder={searchPlaceholder}
+            bind:value={searchInput}
+            oninput={handleSearchInput}
+            aria-label={searchPlaceholder}
+            class="w-full rounded-lg border p-2 pr-10 text-sm outline-none focus:ring-2"
+            style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground); --tw-ring-color: var(--color-primary)"
+          />
+          {#if searchInput}
+            <button
+              type="button"
+              onclick={clearSearch}
+              aria-label={t("common.clearSelection", "Clear search")}
+              class="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1"
+              style="color: var(--color-muted)"
+            >
+              ✕
+            </button>
+          {/if}
+        </div>
+      {/if}
+      {#if createLabel && onCreate}
+        <Button onclick={onCreate}>
+          <Plus class="mr-1 h-4 w-4" />
+          {createLabel}
+        </Button>
       {/if}
     </div>
   {/if}
@@ -294,6 +398,11 @@
               </div>
             </th>
           {/each}
+          {#if actions}
+            <th class="h-12 w-12 px-4 text-left align-middle font-medium" style="color: var(--color-foreground-alt); background-color: var(--color-surface)" scope="col">
+              {actionsLabel}
+            </th>
+          {/if}
         </tr>
       </thead>
       <tbody>
@@ -333,10 +442,15 @@
                 {/if}
               </td>
             {/each}
+            {#if actions}
+              <td class="w-12 p-4 align-middle" style="border-color: var(--color-border)" onclick={(e) => e.stopPropagation()}>
+                <ActionMenu {actions} {row} />
+              </td>
+            {/if}
           </tr>
         {:else}
           <tr>
-            <td colspan={columns.length + (selectable ? 1 : 0)} class="h-24 text-center">
+            <td colspan={columns.length + (selectable ? 1 : 0) + (actions ? 1 : 0)} class="h-24 text-center">
               <div class="flex flex-col items-center justify-center" style="color: var(--color-muted)">
                 <p>{emptyMessage}</p>
               </div>
@@ -346,16 +460,31 @@
       </tbody>
     </table>
   </div>
-  {#if showPagination && totalRows > pageSize}
-    <Pagination
-      bind:page={currentPage}
-      {totalPages}
-      totalItems={totalRows}
-      bind:pageSize
-      urlSync={false}
-    />
+  {#if showPagination && effectiveTotalRows > pageSize}
+    {#if serverSide}
+      <Pagination
+        bind:page
+        totalPages={effectiveTotalPages}
+        totalItems={effectiveTotalRows}
+        bind:pageSize
+        {pageSizeOptions}
+        urlSync={false}
+      />
+    {:else}
+      <Pagination
+        bind:page={currentPage}
+        totalPages={effectiveTotalPages}
+        totalItems={effectiveTotalRows}
+        bind:pageSize
+        {pageSizeOptions}
+        urlSync={false}
+      />
+    {/if}
   {/if}
-  {#if selectable && (bulkActionsSnippet || defaultBulkActions)}
+  {#if showBulkBar}
+    <BulkBar {selectedIds} actions={bulkActionsList ?? []} onclear={clearSelection} />
+  {/if}
+  {#if showLegacyBulkBar}
     <div class="mt-3 flex flex-wrap items-center gap-3 rounded-lg p-3" style="background: color-mix(in srgb, var(--color-primary) 12%, transparent); opacity: {selectedIds.size > 0 ? '1' : '0.5'}">
       <span class="text-sm font-medium" style="color: var(--color-foreground)">{t('common.selected', '{count} selected').replace('{count}', String(selectedIds.size))}</span>
       {#if bulkActionsSnippet}
