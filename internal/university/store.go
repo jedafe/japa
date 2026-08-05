@@ -161,16 +161,20 @@ func (s *Store) GetPublic(ctx context.Context, tenantID, id pgtype.UUID) (gen.Ge
 }
 
 // ListByStatus lists instructor profiles filtered by status (empty = all).
-func (s *Store) ListByStatus(ctx context.Context, tenantID pgtype.UUID, status string, limit, offset int32) ([]gen.InstructorProfile, error) {
+// spaceID, when Valid, restricts to instructors with a track targeted at that
+// space (ADR-063 admin per-university view).
+func (s *Store) ListByStatus(ctx context.Context, tenantID pgtype.UUID, status string, spaceID pgtype.UUID, limit, offset int32) ([]gen.InstructorProfile, error) {
 	return s.read.ListInstructorProfilesByStatus(ctx, gen.ListInstructorProfilesByStatusParams{
-		TenantID: tenantID, Status: status, PageLimit: limit, PageOffset: offset,
+		TenantID: tenantID, Status: status, SpaceID: spaceID, PageLimit: limit, PageOffset: offset,
 	})
 }
 
 // CountByStatus counts instructor profiles filtered by status (empty = all).
-func (s *Store) CountByStatus(ctx context.Context, tenantID pgtype.UUID, status string) (int64, error) {
+// spaceID, when Valid, restricts to instructors with a track targeted at that
+// space (ADR-063 admin per-university view).
+func (s *Store) CountByStatus(ctx context.Context, tenantID pgtype.UUID, status string, spaceID pgtype.UUID) (int64, error) {
 	return s.read.CountInstructorProfilesByStatus(ctx, gen.CountInstructorProfilesByStatusParams{
-		TenantID: tenantID, Status: status,
+		TenantID: tenantID, Status: status, SpaceID: spaceID,
 	})
 }
 
@@ -539,9 +543,10 @@ func (s *Store) ListTracksByInstructor(ctx context.Context, tenantID, instructor
 }
 
 // ListPendingTracks returns tracks awaiting marketplace approval.
-func (s *Store) ListPendingTracks(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]gen.ListPendingUniversityTracksRow, error) {
+// spaceID, when Valid, restricts to tracks targeted at that space.
+func (s *Store) ListPendingTracks(ctx context.Context, tenantID, spaceID pgtype.UUID, limit, offset int32) ([]gen.ListPendingUniversityTracksRow, error) {
 	return s.read.ListPendingUniversityTracks(ctx, gen.ListPendingUniversityTracksParams{
-		TenantID: tenantID, PageLimit: limit, PageOffset: offset,
+		TenantID: tenantID, SpaceID: spaceID, PageLimit: limit, PageOffset: offset,
 	})
 }
 
@@ -625,6 +630,7 @@ type ListRevenueSplitsFilter struct {
 	PayoutID     pgtype.UUID // empty = both open and stamped splits
 	FromTs       pgtype.Timestamptz // zero = no lower bound
 	ToTs         pgtype.Timestamptz // zero = no upper bound
+	SpaceID      pgtype.UUID // empty = all spaces (ADR-063 per-university view)
 }
 
 // ListRevenueSplits returns a tenant-wide paginated list of immutable
@@ -638,6 +644,7 @@ func (s *Store) ListRevenueSplits(ctx context.Context, tenantID pgtype.UUID, f L
 		PayoutID:     f.PayoutID,
 		FromTs:       f.FromTs,
 		ToTs:         f.ToTs,
+		SpaceID:      f.SpaceID,
 		PageLimit:    limit,
 		PageOffset:   offset,
 	})
@@ -654,6 +661,7 @@ func (s *Store) CountRevenueSplits(ctx context.Context, tenantID pgtype.UUID, f 
 		PayoutID:     f.PayoutID,
 		FromTs:       f.FromTs,
 		ToTs:         f.ToTs,
+		SpaceID:      f.SpaceID,
 	})
 }
 
@@ -706,9 +714,11 @@ func (s *Store) ListPayoutsByInstructor(ctx context.Context, tenantID, instructo
 }
 
 // ListPayoutsByStatus returns the payout queue (optionally filtered by status).
-func (s *Store) ListPayoutsByStatus(ctx context.Context, tenantID pgtype.UUID, status string, limit, offset int32) ([]gen.InstructorPayout, error) {
+// spaceID, when Valid, restricts to payouts for instructors with a track
+// targeted at that space.
+func (s *Store) ListPayoutsByStatus(ctx context.Context, tenantID, spaceID pgtype.UUID, status string, limit, offset int32) ([]gen.InstructorPayout, error) {
 	return s.read.ListInstructorPayoutsByStatus(ctx, gen.ListInstructorPayoutsByStatusParams{
-		TenantID: tenantID, Status: status, PageLimit: limit, PageOffset: offset,
+		TenantID: tenantID, Status: status, SpaceID: spaceID, PageLimit: limit, PageOffset: offset,
 	})
 }
 
@@ -772,16 +782,17 @@ func (s *Store) HasProStreamSplit(ctx context.Context, tenantID, instructorID, t
 }
 
 // ListAllTracks returns all marketplace tracks (admin view, BUG-002).
-func (s *Store) ListAllTracks(ctx context.Context, tenantID pgtype.UUID, status string, limit, offset int32) ([]gen.ListAllUniversityTracksRow, error) {
+func (s *Store) ListAllTracks(ctx context.Context, tenantID, spaceID pgtype.UUID, status string, limit, offset int32) ([]gen.ListAllUniversityTracksRow, error) {
 	return s.read.ListAllUniversityTracks(ctx, gen.ListAllUniversityTracksParams{
-		TenantID: tenantID, Status: status, PageLimit: limit, PageOffset: offset,
+		TenantID: tenantID, Status: status, SpaceID: spaceID, PageLimit: limit, PageOffset: offset,
 	})
 }
 
 // CountAllTracks returns the total count of marketplace tracks (BUG-002).
-func (s *Store) CountAllTracks(ctx context.Context, tenantID pgtype.UUID, status string) (int64, error) {
+// spaceID, when Valid, restricts to tracks targeted at that space.
+func (s *Store) CountAllTracks(ctx context.Context, tenantID, spaceID pgtype.UUID, status string) (int64, error) {
 	return s.read.CountAllUniversityTracks(ctx, gen.CountAllUniversityTracksParams{
-		TenantID: tenantID, Status: status,
+		TenantID: tenantID, Status: status, SpaceID: spaceID,
 	})
 }
 

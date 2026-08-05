@@ -6,7 +6,8 @@
 	import Modal from '$lib/components/Modal.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { DataTable } from '$lib/components/ui/data-table';
-	import { Pencil } from 'lucide-svelte';
+	import { Pencil, Rocket } from 'lucide-svelte';
+	import { landingPalettes, type Block } from '@japaconnect/landing-blocks';
 
 	const canManagePages = $derived(hasPermission('pages.manage'));
 	const canPublishPages = $derived(hasPermission('pages.publish'));
@@ -125,6 +126,45 @@
 			error = t('common.error');
 		} finally {
 			creating = false;
+		}
+	}
+
+	// seedHomepage creates the editable guest default homepage as a real
+	// `pages` row (slug='homepage', page_type='landing', status='published')
+	// seeded from landingPalettes['homepage'].defaultSeed. Once it exists it
+	// shows up in this list and is editable at /page-builder/pages/[id].
+	// Ref: Section 16 (Landing consolidation) + ADR-058 §5 (guest homepage).
+	async function seedHomepage() {
+		// If a homepage page already exists, jump straight to editing it.
+		const existing = pages.find((p) => p.slug === 'homepage');
+		if (existing) { goto(`/page-builder/pages/${existing.id}`); return; }
+		const seed = landingPalettes['homepage']?.defaultSeed ?? [];
+		const seedBlocks = seed.map((entry, i) => ({
+			id: `seed-${i}`,
+			type: entry.type,
+			visible: true,
+			label: entry.label,
+			props: entry.props,
+			motion: entry.motion,
+		})) as unknown as Block[];
+		try {
+			const result = await api<{ id: string }>('/admin/pages', {
+				method: 'POST',
+				body: {
+					title: 'Homepage',
+					slug: 'homepage',
+					page_type: 'landing',
+					status: 'published',
+					blocks: JSON.stringify(seedBlocks),
+				},
+			});
+			if (!result.ok) {
+				error = result.error ?? t('common.error', 'Failed to seed homepage');
+				return;
+			}
+			goto(`/page-builder/pages/${result.data.id}`);
+		} catch {
+			error = t('common.error', 'Failed to seed homepage');
 		}
 	}
 
@@ -290,6 +330,16 @@
 			<option value="event">Event</option>
 			<option value="custom">Custom</option>
 		</select>
+		{#if canManagePages}
+		<button
+			class="flex items-center gap-1.5 rounded-md border px-3 py-2 text-sm font-medium transition-colors hover:bg-[var(--surface)]"
+			style="border-color: var(--color-border); color: var(--color-foreground)"
+			onclick={seedHomepage}
+			title={t('page_builder.seed_homepage_hint', 'Create the editable guest default homepage from the homepage palette')}
+		>
+			<Rocket class="h-3.5 w-3.5" />{t('page_builder.seed_homepage', 'Create Default Homepage')}
+		</button>
+		{/if}
 		{#if canManagePages}
 		<button
 			class="rounded-md px-4 py-2 text-sm font-medium text-white transition-colors"
