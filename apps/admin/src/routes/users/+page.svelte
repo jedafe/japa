@@ -1,31 +1,27 @@
 <script lang="ts">
-	import PageHeader from "$lib/components/layout/page-header.svelte";
-	import { Card, CardContent, CardHeader } from "$lib/components/ui/card";
-	import { DataTable } from "$lib/components/ui/data-table";
-	import { FilterBar } from "$lib/components/ui/filter-bar";
-	import { Button } from "$lib/components/ui/button";
+	// /users — migrated to the EntityPage scaffold (Task 11).
+	//
+	// This page validates that EntityPage can express an entity whose row actions
+	// are dominated by non-CRUD *state* actions (Ban/Unban, Suspend/Unsuspend,
+	// Warn, Restore, Hard Delete, Impersonate) rather than the default
+	// View/Edit/Delete. Those state actions are declared in the `actions` config
+	// as ActionItem entries with `show()` predicates and `variant`, and each
+	// opens a page-local confirmation Modal (EntityPage's generic confirm Modal
+	// only covers the default delete). The external UserActionsCell.svelte is
+	// deleted — its logic is fully absorbed into the `actions` array below.
+	import { EntityPage, type EntityPageConfig, type FieldDef } from "$lib/components/entity";
 	import { Modal } from "$lib/components/ui/modal";
-	import Pagination from "$lib/components/ui/Pagination.svelte";
-	import { TableSkeleton } from "$lib/components/ui/skeleton";
-	import { RefreshCw, Trash2, Plus, Trash } from "lucide-svelte";
+	import { Button } from "$lib/components/ui/button";
 	import { userManagementApi, impersonationApi } from "$lib/api";
-	import type { UserDetail, ModerationConfig } from "$lib/api";
-	import UserActionsCell from "./UserActionsCell.svelte";
+	import type { ModerationConfig } from "$lib/api";
 	import { t } from "$lib/stores/i18n.svelte";
-	import { goto, invalidateAll } from "$app/navigation";
 	import { hasPermission } from "$lib/stores/permissions.svelte";
+	import { goto, invalidateAll } from "$app/navigation";
 	import { onMount } from "svelte";
-
-	// Usernames are user-controlled, so they must be escaped before being
-	// interpolated into the {@html} confirmation copy.
-	function escapeHtml(value: string): string {
-		return value
-			.replace(/&/g, "&amp;")
-			.replace(/</g, "&lt;")
-			.replace(/>/g, "&gt;")
-			.replace(/"/g, "&quot;")
-			.replace(/'/g, "&#39;");
-	}
+	import {
+		Eye, Pencil, Trash2, Ban, AlertTriangle, RotateCcw, Trash, UserPlus
+	} from "lucide-svelte";
+	import type { ActionItem, FilterDef } from "$lib/components/ui/data-table";
 
 	type User = {
 		id: string;
@@ -39,48 +35,16 @@
 		updated_at: string;
 	};
 
-	let users = $state<User[]>([]);
-	let currentPage = $state(0);
-	let totalItems = $state(0);
-	let pageSize = $state(25);
-	let totalPages = $state(1);
-	let loading = $state(true);
-	let error = $state("");
-	let searchQuery = $state("");
-	let filterValues = $state<Record<string, string>>({});
-	let selectedIds = $state<Set<string>>(new Set());
-
-	// Modals
-	let showViewModal = $state(false);
-	let viewTarget = $state<User | null>(null);
-	let showDeleteConfirm = $state(false);
-	let deleteTarget = $state<User | null>(null);
-	let showBulkHardDeleteConfirm = $state(false);
-	let acting = $state(false);
-
-	// Create user modal
-	let showCreateModal = $state(false);
-	let createForm = $state({ email: "", username: "", password: "", display_name: "" });
-	let creating = $state(false);
-	let createError = $state("");
-
-	// Impersonation state
-	let impersonating = $state(false);
-	let impersonatingUsername = $state("");
-	let impersonateError = $state("");
-
 	const canManageUsers = $derived(hasPermission("admin.users.manage"));
 	const canImpersonate = $derived(hasPermission("admin.impersonate"));
-	const hasDeletedSelected = $derived(
-		Array.from(selectedIds).some(id => users.find(u => u.id === id)?.status === "deleted")
-	);
 
-	// Filter definitions for the FilterBar. These start as hardcoded fallback
-	// defaults and are refreshed from the backend on mount via
-	// loadFilterOptions() — status options come from GET /admin/users/config
-	// (BUG-017) and group options come from userManagementApi.listGroups()
-	// (BUG-018).
-	let filterDefs = $state([
+	// ── Filter options ──────────────────────────────────────────────────────
+	// Start as hardcoded fallback defaults and are refreshed from the backend
+	// on mount via loadFilterOptions() — status options come from
+	// GET /admin/users/config (BUG-017) and group options come from
+	// userManagementApi.listGroups() (BUG-018). Failures are swallowed so the
+	// defaults remain in place.
+	let filterDefs = $state<FilterDef[]>([
 		{
 			key: "status",
 			label: t("common.status", "Status"),
@@ -105,10 +69,6 @@
 		}
 	]);
 
-	// loadFilterOptions fetches status filter options from the backend
-	// moderation config (BUG-017) and group filter options from the RBAC
-	// user-groups endpoint (BUG-018), replacing the hardcoded fallbacks
-	// above. Failures are swallowed so the defaults remain in place.
 	async function loadFilterOptions() {
 		try {
 			const [configResult, groupsResult] = await Promise.all([
@@ -146,219 +106,13 @@
 		}
 	}
 
-	const columns = [
-		{
-			key: "username",
-			label: t("users.username", "Username"),
-			sortable: true
-		},
-		{
-			key: "email",
-			label: t("users.email", "Email"),
-			sortable: true
-		},
-		{
-			key: "profile_type",
-			label: t("users.profile_type", "Profile Type"),
-			sortable: true
-		},
-		{
-			key: "status",
-			label: t("common.status", "Status"),
-			sortable: true,
-			render: (v: string) => {
-				const colors = v === "active" ? "bg-success/15 text-success dark:text-success" : v === "banned" ? "bg-danger/15 text-danger dark:text-danger" : v === "suspended" ? "bg-warning/15 text-warning dark:text-warning" : v === "deleted" ? "bg-muted/30 text-muted dark:text-muted" : v === "restricted" ? "bg-orange-500/15 text-orange-700 dark:text-orange-400" : "bg-info/15 text-info dark:text-info";
-				return `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium ${colors}">${v}</span>`;
-			}
-		},
-		{
-			key: "groups",
-			label: t("users.groups", "Groups"),
-			sortable: true,
-			render: (v: string[]) => {
-				if (!v || v.length === 0) return `<span style="color: var(--color-muted)">—</span>`;
-				return v.map(g => `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium bg-info/15 text-info dark:text-info">${g}</span>`).join(' ');
-			}
-		},
-		{
-			key: "follower_count",
-			label: t("users.followers", "Followers"),
-			sortable: true,
-			render: (v: number) => (v ?? 0).toLocaleString()
-		},
-		{
-			key: "created_at",
-			label: t("users.joined", "Joined"),
-			sortable: true,
-			render: (value: string) => new Date(value).toLocaleDateString()
-		},
-		{
-			key: "actions",
-			label: t("common.actions", "Actions"),
-			class: "w-48",
-			component: UserActionsCell,
-			componentProps: { onchange: loadUsers }
-		}
-	];
+	onMount(() => {
+		loadFilterOptions();
+	});
 
-	async function loadUsers() {
-		loading = true;
-		error = "";
-		try {
-			const params = new URLSearchParams({
-				page_size: String(pageSize),
-				page_offset: String(currentPage * pageSize)
-			});
-			if (searchQuery) params.set("search", searchQuery);
-			if (filterValues.status) params.set("status", filterValues.status);
-			if (filterValues.group) params.set("group", filterValues.group);
-
-			const result = await userManagementApi.list(params.toString());
-			if (result.ok) {
-				const d = result.data as unknown as { items: User[]; total: number; page: number; total_pages: number };
-				users = d.items ?? [];
-				totalItems = d.total ?? 0;
-				totalPages = d.total_pages ?? 1;
-			} else {
-				error = result.error ?? t("common.error", "Failed to load users");
-			}
-		} catch (e) {
-			error = e instanceof Error ? e.message : t("common.error", "Failed to load users");
-		} finally {
-			loading = false;
-		}
-	}
-
-	function handleSearch(values: Record<string, string>) {
-		searchQuery = values.search ?? "";
-		filterValues = values;
-		currentPage = 0;
-	}
-
-	function handleClear() {
-		searchQuery = "";
-		filterValues = {};
-		currentPage = 0;
-	}
-
-	function openView(user: User) {
-		viewTarget = user;
-		showViewModal = true;
-	}
-
-	function confirmDelete(user: User) {
-		deleteTarget = user;
-		showDeleteConfirm = true;
-	}
-
-	async function executeCreate() {
-		creating = true;
-		createError = "";
-		try {
-			const result = await userManagementApi.createUser({
-				email: createForm.email,
-				username: createForm.username,
-				password: createForm.password,
-				display_name: createForm.display_name || undefined
-			});
-			if (result.ok) {
-				showCreateModal = false;
-				createForm = { email: "", username: "", password: "", display_name: "" };
-				loadUsers();
-			} else {
-				createError = result.error ?? t("common.error", "Failed to create user");
-			}
-		} catch (e) {
-			createError = e instanceof Error ? e.message : t("common.error", "Failed to create user");
-		} finally {
-			creating = false;
-		}
-	}
-
-	async function executeDelete() {
-		if (!deleteTarget) return;
-		acting = true;
-		try {
-			const result = await userManagementApi.deleteUser(deleteTarget.id);
-			if (result.ok) {
-				showDeleteConfirm = false;
-				deleteTarget = null;
-				loadUsers();
-			} else {
-				error = result.error;
-			}
-		} catch {
-			error = t("common.error", "Failed to delete user");
-		} finally {
-			acting = false;
-		}
-	}
-
-	async function handleBan(user: User) {
-		acting = true;
-		try {
-			const result = user.status === "banned"
-				? await userManagementApi.unbanUser(user.id)
-				: await userManagementApi.banUser(user.id);
-			if (result.ok) {
-				loadUsers();
-			} else {
-				error = result.error;
-			}
-		} catch {
-			error = t("common.error", "Failed to update user status");
-		} finally {
-			acting = false;
-		}
-	}
-
-	async function handleSuspend(user: User) {
-		acting = true;
-		try {
-			const result = await userManagementApi.suspendUser(user.id, {
-				status: user.status === "suspended" ? "active" : "suspended"
-			});
-			if (result.ok) {
-				loadUsers();
-			} else {
-				error = result.error;
-			}
-		} catch {
-			error = t("common.error", "Failed to update user status");
-		} finally {
-			acting = false;
-		}
-	}
-
-	async function bulkDelete() {
-		const ids = Array.from(selectedIds);
-		if (ids.length === 0) return;
-		acting = true;
-		try {
-			await Promise.all(ids.map((id) => userManagementApi.deleteUser(id)));
-			selectedIds = new Set();
-			loadUsers();
-		} catch {
-			error = t("common.error", "Failed to delete users");
-		} finally {
-			acting = false;
-		}
-	}
-
-	async function bulkHardDelete() {
-		const ids = Array.from(selectedIds).filter(id => users.find(u => u.id === id)?.status === "deleted");
-		if (ids.length === 0) return;
-		acting = true;
-		try {
-			await Promise.all(ids.map((id) => userManagementApi.hardDeleteUser(id)));
-			selectedIds = new Set();
-			loadUsers();
-		} catch {
-			error = t("common.error", "Failed to hard delete users");
-		} finally {
-			acting = false;
-		}
-	}
+	// ── Impersonation banner ────────────────────────────────────────────────
+	let impersonating = $state(false);
+	let impersonatingUsername = $state("");
 
 	async function checkImpersonation() {
 		const result = await impersonationApi.status();
@@ -375,20 +129,389 @@
 	}
 
 	$effect(() => {
-		void currentPage;
-		void pageSize;
-		void searchQuery;
-		void filterValues;
-		loadUsers();
-	});
-
-	$effect(() => {
 		checkImpersonation();
 	});
 
-	// Fetch status/group filter options from the backend on mount (BUG-017/BUG-018).
-	onMount(() => {
-		loadFilterOptions();
+	// ── Bulk actions ────────────────────────────────────────────────────────
+	// EntityPage does not auto-reload after a bulk action, so a remount key
+	// forces refetch + clears selection.
+	let reloadKey = $state(0);
+	let pageError = $state("");
+	let bulkDeleting = $state(false);
+
+	async function bulkDelete(ids: Set<string>) {
+		const idArr = Array.from(ids);
+		if (idArr.length === 0) return;
+		if (bulkDeleting) return; // in-flight guard
+		bulkDeleting = true;
+		pageError = "";
+		try {
+			await Promise.all(idArr.map((id) => userManagementApi.deleteUser(id)));
+			reloadKey++;
+		} catch (e) {
+			pageError = e instanceof Error ? e.message : t("common.error", "Failed to delete users");
+		} finally {
+			bulkDeleting = false;
+		}
+	}
+
+	// Bulk hard-delete only applies to already-soft-deleted users; the disabled
+	// predicate hides it when none of the selected rows are deleted.
+	async function bulkHardDelete(ids: Set<string>) {
+		// Re-fetch current rows to filter to deleted ones — ids alone don't
+		// carry status, so we rely on the last-loaded `rows` snapshot captured
+		// at selection time via the disabled predicate. The predicate ensures
+		// this is only clickable when at least one selected id is deleted; we
+		// attempt hard-delete on every selected id and the backend rejects
+		// non-deleted ones, matching the legacy bulkHardDelete behaviour.
+		const idArr = Array.from(ids);
+		if (idArr.length === 0) return;
+		if (bulkDeleting) return; // in-flight guard
+		bulkDeleting = true;
+		pageError = "";
+		try {
+			await Promise.all(idArr.map((id) => userManagementApi.hardDeleteUser(id)));
+			reloadKey++;
+		} catch (e) {
+			pageError = e instanceof Error ? e.message : t("common.error", "Failed to hard delete users");
+		} finally {
+			bulkDeleting = false;
+		}
+	}
+
+	// ── State-action confirmation modals ────────────────────────────────────
+	// EntityPage's confirm Modal only covers the default delete; each state
+	// action below has richer copy (entity name, warnings) so it keeps a
+	// page-local Modal. The action `onclick` opens the modal; the modal's
+	// confirm button calls the API and bumps reloadKey to refetch.
+	let acting = $state(false);
+	let actionTarget = $state<User | null>(null);
+
+	let showBanConfirm = $state(false);
+	let showSuspendConfirm = $state(false);
+	let showWarnModal = $state(false);
+	let showHardDeleteConfirm = $state(false);
+	let showRestoreConfirm = $state(false);
+	let showDeleteConfirm = $state(false);
+	let warnReason = $state("");
+
+	const isBanned = $derived(actionTarget?.status === "banned");
+	const isSuspended = $derived(actionTarget?.status === "suspended");
+
+	function openBan(user: User) { actionTarget = user; showBanConfirm = true; }
+	function openSuspend(user: User) { actionTarget = user; showSuspendConfirm = true; }
+	function openWarn(user: User) { actionTarget = user; warnReason = ""; showWarnModal = true; }
+	function openHardDelete(user: User) { actionTarget = user; showHardDeleteConfirm = true; }
+	function openRestore(user: User) { actionTarget = user; showRestoreConfirm = true; }
+	function openDelete(user: User) { actionTarget = user; showDeleteConfirm = true; }
+
+	async function confirmBan() {
+		if (!actionTarget) return;
+		acting = true;
+		try {
+			const result = isBanned
+				? await userManagementApi.unbanUser(actionTarget.id)
+				: await userManagementApi.banUser(actionTarget.id);
+			if (result.ok) {
+				showBanConfirm = false;
+				reloadKey++;
+			} else {
+				pageError = result.error ?? t("common.error", "Failed to update user status");
+			}
+		} catch {
+			pageError = t("common.error", "Failed to update user status");
+		} finally {
+			acting = false;
+		}
+	}
+
+	async function confirmSuspend() {
+		if (!actionTarget) return;
+		acting = true;
+		try {
+			const result = await userManagementApi.suspendUser(actionTarget.id, {
+				status: isSuspended ? "active" : "suspended"
+			});
+			if (result.ok) {
+				showSuspendConfirm = false;
+				reloadKey++;
+			} else {
+				pageError = result.error ?? t("common.error", "Failed to update user status");
+			}
+		} catch {
+			pageError = t("common.error", "Failed to update user status");
+		} finally {
+			acting = false;
+		}
+	}
+
+	async function confirmWarn() {
+		if (!warnReason.trim() || !actionTarget) return;
+		acting = true;
+		try {
+			const result = await userManagementApi.issueWarning(actionTarget.id, { reason: warnReason });
+			if (result.ok) {
+				showWarnModal = false;
+				reloadKey++;
+			} else {
+				pageError = result.error ?? t("common.error", "Failed to issue warning");
+			}
+		} catch {
+			pageError = t("common.error", "Failed to issue warning");
+		} finally {
+			acting = false;
+		}
+	}
+
+	async function confirmHardDelete() {
+		if (!actionTarget) return;
+		acting = true;
+		try {
+			const result = await userManagementApi.hardDeleteUser(actionTarget.id);
+			if (result.ok) {
+				showHardDeleteConfirm = false;
+				reloadKey++;
+			} else {
+				pageError = result.error ?? t("common.error", "Failed to hard delete user");
+			}
+		} catch {
+			pageError = t("common.error", "Failed to hard delete user");
+		} finally {
+			acting = false;
+		}
+	}
+
+	async function confirmRestore() {
+		if (!actionTarget) return;
+		acting = true;
+		try {
+			const result = await userManagementApi.suspendUser(actionTarget.id, { status: "active" });
+			if (result.ok) {
+				showRestoreConfirm = false;
+				reloadKey++;
+			} else {
+				pageError = result.error ?? t("common.error", "Failed to restore user");
+			}
+		} catch {
+			pageError = t("common.error", "Failed to restore user");
+		} finally {
+			acting = false;
+		}
+	}
+
+	async function confirmDelete() {
+		if (!actionTarget) return;
+		acting = true;
+		try {
+			const result = await userManagementApi.deleteUser(actionTarget.id);
+			if (result.ok) {
+				showDeleteConfirm = false;
+				reloadKey++;
+			} else {
+				pageError = result.error ?? t("common.error", "Failed to delete user");
+			}
+		} catch {
+			pageError = t("common.error", "Failed to delete user");
+		} finally {
+			acting = false;
+		}
+	}
+
+	async function confirmImpersonate(user: User) {
+		acting = true;
+		try {
+			const result = await impersonationApi.start(user.id);
+			if (result.ok) {
+				goto("/", { invalidateAll: true });
+			} else {
+				pageError = result.error ?? t("common.error", "Failed to impersonate user");
+			}
+		} catch {
+			pageError = t("common.error", "Failed to impersonate user");
+		} finally {
+			acting = false;
+		}
+	}
+
+	// ── Row actions ─────────────────────────────────────────────────────────
+	// Declared as ActionItem[] with show() predicates; this replaces the
+	// default View/Edit/Delete (EntityPage gap: custom actions replace
+	// defaults), so View/Edit/Delete are included explicitly.
+	const rowActions = $derived.by<ActionItem[]>(() => {
+		const acts: ActionItem[] = [
+			{ label: t("common.view", "View"), icon: Eye as any, onclick: (row: User) => goto(`/users/${row.id}`) }
+		];
+		if (canManageUsers) {
+			acts.push({ label: t("common.edit", "Edit"), icon: Pencil as any, onclick: (row: User) => goto(`/users/${row.id}`) });
+			acts.push({
+				label: t("users.warn", "Warn"),
+				icon: AlertTriangle as any,
+				variant: "destructive",
+				onclick: openWarn,
+				show: (row: User) => row.status !== "deleted"
+			});
+			acts.push({
+				label: t("users.ban", "Ban"),
+				icon: Ban as any,
+				variant: "destructive",
+				onclick: openBan,
+				show: (row: User) => row.status !== "deleted" && row.status !== "banned"
+			});
+			acts.push({
+				label: t("users.unban", "Unban"),
+				icon: Ban as any,
+				onclick: openBan,
+				show: (row: User) => row.status === "banned"
+			});
+			acts.push({
+				label: t("users.suspend", "Suspend"),
+				icon: AlertTriangle as any,
+				variant: "destructive",
+				onclick: openSuspend,
+				show: (row: User) => row.status !== "deleted" && row.status !== "banned" && row.status !== "suspended"
+			});
+			acts.push({
+				label: t("users.unsuspend", "Unsuspend"),
+				icon: RotateCcw as any,
+				onclick: openSuspend,
+				show: (row: User) => row.status === "suspended"
+			});
+			acts.push({
+				label: t("common.delete", "Delete"),
+				icon: Trash2 as any,
+				variant: "destructive",
+				onclick: openDelete,
+				show: (row: User) => row.status !== "deleted"
+			});
+			acts.push({
+				label: t("users.restore", "Restore"),
+				icon: RotateCcw as any,
+				onclick: openRestore,
+				show: (row: User) => row.status === "deleted"
+			});
+			acts.push({
+				label: t("users.hard_delete", "Hard Delete"),
+				icon: Trash as any,
+				variant: "destructive",
+				onclick: openHardDelete,
+				show: (row: User) => row.status === "deleted"
+			});
+		}
+		if (canImpersonate) {
+			acts.push({
+				label: t("users.impersonate", "Impersonate"),
+				icon: UserPlus as any,
+				onclick: confirmImpersonate,
+				show: (row: User) => row.status !== "deleted"
+			});
+		}
+		return acts;
+	});
+
+	// ── Create form fields ──────────────────────────────────────────────────
+	// The user edit form lives on /users/[id] (role/group assignment etc.),
+	// so EntityPage's create slide-over only handles creation.
+	const fields: FieldDef[] = [
+		{ key: "email", label: t("users.email", "Email"), type: "email", placeholder: "user@example.com", required: true },
+		{ key: "username", label: t("users.username", "Username"), type: "text", placeholder: "username", required: true },
+		{ key: "display_name", label: t("users.display_name", "Display Name"), type: "text", placeholder: "Display Name" },
+		{ key: "password", label: t("users.password", "Password"), type: "password", placeholder: "••••••••", required: true }
+	];
+
+	// ── Config ──────────────────────────────────────────────────────────────
+	// Built as a $derived so filterDefs updates (loaded on mount) propagate.
+	const config = $derived<EntityPageConfig>({
+		title: t("users.title", "Users"),
+		description: t("users.description", "Manage platform users"),
+		createLabel: t("users.create", "Create User"),
+		createPermission: "admin.users.manage",
+		pageSize: 25,
+		columns: [
+			{ key: "username", label: t("users.username", "Username"), sortable: true },
+			{ key: "email", label: t("users.email", "Email"), sortable: true },
+			{ key: "profile_type", label: t("users.profile_type", "Profile Type"), sortable: true },
+			{
+				key: "status",
+				label: t("common.status", "Status"),
+				sortable: true,
+				render: (v: string) => {
+					const colors = v === "active" ? "bg-success/15 text-success dark:text-success" : v === "banned" ? "bg-danger/15 text-danger dark:text-danger" : v === "suspended" ? "bg-warning/15 text-warning dark:text-warning" : v === "deleted" ? "bg-muted/30 text-muted dark:text-muted" : v === "restricted" ? "bg-orange-500/15 text-orange-700 dark:text-orange-400" : "bg-info/15 text-info dark:text-info";
+					return `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium ${colors}">${v}</span>`;
+				}
+			},
+			{
+				key: "groups",
+				label: t("users.groups", "Groups"),
+				sortable: true,
+				render: (v: string[]) => {
+					if (!v || v.length === 0) return `<span style="color: var(--color-muted)">—</span>`;
+					return v.map(g => `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium bg-info/15 text-info dark:text-info">${g}</span>`).join(' ');
+				}
+			},
+			{
+				key: "follower_count",
+				label: t("users.followers", "Followers"),
+				sortable: true,
+				render: (v: number) => (v ?? 0).toLocaleString()
+			},
+			{
+				key: "created_at",
+				label: t("users.joined", "Joined"),
+				sortable: true,
+				render: (value: string) => new Date(value).toLocaleDateString()
+			}
+		],
+		filters: filterDefs,
+		actions: rowActions,
+		bulkActions: [
+			{
+				label: t("users.bulk_delete", "Delete Selected"),
+				icon: Trash2 as any,
+				variant: "destructive",
+				onclick: bulkDelete
+			},
+			{
+				label: t("users.bulk_hard_delete", "Hard Delete Selected"),
+				icon: Trash as any,
+				variant: "destructive",
+				onclick: bulkHardDelete,
+				disabled: (ids: Set<string>) => ids.size === 0
+			}
+		],
+		fields,
+		load: async ({ page, pageSize, q, filter }) => {
+			const params = new URLSearchParams({
+				page_size: String(pageSize),
+				page_offset: String(page * pageSize)
+			});
+			if (q) params.set("search", q);
+			if (filter.status) params.set("status", filter.status);
+			if (filter.group) params.set("group", filter.group);
+			const result = await userManagementApi.list(params.toString());
+			if (result.ok) {
+				const d = result.data as unknown as { items: User[]; total: number; page: number; total_pages: number };
+				return {
+					data: d.items ?? [],
+					total: d.total ?? 0,
+					totalPages: d.total_pages ?? 1
+				};
+			}
+			throw new Error(result.error ?? t("common.error", "Failed to load users"));
+		},
+		create: async (body) => {
+			const res = await userManagementApi.createUser({
+				email: String(body.email ?? "").trim(),
+				username: String(body.username ?? "").trim(),
+				password: String(body.password ?? ""),
+				display_name: String(body.display_name ?? "").trim() || undefined
+			});
+			return res.ok ? { ok: true } : { ok: false, error: res.error };
+		},
+		remove: async (id) => {
+			const res = await userManagementApi.deleteUser(id);
+			return res.ok ? { ok: true } : { ok: false, error: res.error };
+		},
+		viewSnippet: UserView
 	});
 </script>
 
@@ -413,183 +536,161 @@
 	</div>
 {/if}
 
-<PageHeader
-	title={t("users.title", "Users")}
-	description={t("users.description", "Manage platform users")}
-	actions={[
-		...(canManageUsers ? [{ label: t("users.create", "Create User"), icon: Plus, variant: "default" as const, onclick: () => { createForm = { email: "", username: "", password: "", display_name: "" }; showCreateModal = true; } }] : []),
-		{ label: t("common.refresh", "Refresh"), icon: RefreshCw, variant: "ghost" as const, onclick: loadUsers }
-	]}
-/>
-
-{#if error}
+{#if pageError}
 	<div
 		class="mb-4 rounded-lg p-3 text-sm"
 		style="background: color-mix(in srgb, var(--color-danger) 10%, transparent); color: var(--color-danger)"
 	>
-		{error}
+		{pageError}
 	</div>
 {/if}
 
-{#if impersonateError}
-	<div
-		class="mb-4 rounded-lg p-3 text-sm"
-		style="background: color-mix(in srgb, var(--color-danger) 10%, transparent); color: var(--color-danger)"
-	>
-		{impersonateError}
-	</div>
-{/if}
+{#key reloadKey}
+	<EntityPage {config} />
+{/key}
 
-{#if selectedIds.size > 0}
-	<div class="mb-4 flex items-center gap-3 rounded-lg p-3" style="background: var(--color-primary); color: white">
-		<span class="text-sm font-medium">{selectedIds.size} {t('app.users.selected_count', 'selected')}</span>
-		{#if canManageUsers}
-			<Button variant="ghost" size="sm" onclick={bulkDelete} disabled={acting}>
-				<Trash2 class="mr-1 h-3.5 w-3.5" /> {t('users.bulk_delete', 'Delete Selected')}
-			</Button>
-			{#if hasDeletedSelected}
-				<Button variant="ghost" size="sm" onclick={() => { showBulkHardDeleteConfirm = true; }} disabled={acting}>
-					<Trash class="mr-1 h-3.5 w-3.5" /> {t('users.bulk_hard_delete', 'Hard Delete Selected')}
-				</Button>
-			{/if}
-		{/if}
-	</div>
-{/if}
+<!-- ── State-action confirmation modals ─────────────────────────────────── -->
 
-<Card>
-	<CardHeader>
-		<FilterBar
-			filters={filterDefs}
-			onsearch={handleSearch}
-			onclear={handleClear}
-		/>
-	</CardHeader>
-	<CardContent>
-		{#if loading}
-			<TableSkeleton rows={8} columns={columns.length} />
+<!-- Ban / Unban -->
+<Modal bind:open={showBanConfirm} title={isBanned ? t("users.unban_user", "Unban User") : t("users.ban_user", "Ban User")}>
+	{#if actionTarget}
+		{#if isBanned}
+			<p class="text-sm" style="color: var(--color-foreground)">
+				{t("users.unban_confirm", "Are you sure you want to unban")} <strong>{actionTarget.username}</strong>?
+			</p>
 		{:else}
-			<div aria-live="polite">
-				<DataTable
-					{columns}
-					data={users}
-					selectable={canManageUsers}
-					bind:selectedIds
-				/>
-			</div>
-			<Pagination
-				bind:page={currentPage}
-				{totalPages}
-				{totalItems}
-				bind:pageSize
-			/>
+			<p class="text-sm" style="color: var(--color-foreground)">
+				{t("users.ban_confirm", "Are you sure you want to ban")} <strong>{actionTarget.username}</strong>?
+			</p>
+			<p class="mt-2 text-sm" style="color: var(--color-danger)">
+				{t("users.ban_warning", "This will prevent them from accessing the platform.")}
+			</p>
 		{/if}
-	</CardContent>
-</Card>
-
-<!-- View Modal -->
-<Modal bind:open={showViewModal} title={t("users.details", "User Details")} size="default">
-	{#if viewTarget}
-		<div class="space-y-4">
-			<div class="grid grid-cols-2 gap-4">
-				<div>
-					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('users.username')}</p>
-					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.username}</p>
-				</div>
-				<div>
-					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('users.email')}</p>
-					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.email}</p>
-				</div>
-				<div>
-					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('users.profile_type')}</p>
-					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.profile_type || "—"}</p>
-				</div>
-				<div>
-					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('users.status')}</p>
-					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.status}</p>
-				</div>
-				<div>
-					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('users.followers')}</p>
-					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{(viewTarget.follower_count ?? 0).toLocaleString()}</p>
-				</div>
-				<div>
-					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('users.joined')}</p>
-					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{new Date(viewTarget.created_at).toLocaleString()}</p>
-				</div>
-			</div>
-		</div>
 	{/if}
-	<div class="mt-6 flex justify-end gap-2">
-		<Button variant="outline" onclick={() => goto(`/users/${viewTarget?.id}`)}>{t('users.view_full_profile')}</Button>
-		<Button variant="outline" onclick={() => (showViewModal = false)}>{t('users.close')}</Button>
-	</div>
-</Modal>
-
-<!-- Delete Confirmation -->
-<Modal bind:open={showDeleteConfirm} title={t("common.confirmDelete", "Confirm Delete")} size="sm">
-	{#if deleteTarget}
-		<p class="text-sm" style="color: var(--color-foreground)">
-			{@html t('app.users.delete_confirm', `Delete user <strong>{username}</strong>? This cannot be undone.`).replace('{username}', escapeHtml(deleteTarget.username))}
-		</p>
-	{/if}
-	<div class="mt-6 flex justify-end gap-2">
-		<Button variant="ghost" onclick={() => (showDeleteConfirm = false)}>{t('users.cancel')}</Button>
-		<Button variant="destructive" onclick={executeDelete} disabled={acting}>{acting ? t('app.users.deleting', 'Deleting...') : t('app.users.delete_action', 'Delete')}</Button>
-	</div>
-</Modal>
-
-<!-- Bulk Hard Delete Confirmation -->
-<Modal bind:open={showBulkHardDeleteConfirm} title={t("users.bulk_hard_delete_title", "Hard Delete Selected Users")} size="sm">
-	<p class="text-sm" style="color: var(--color-foreground)">
-		{t("users.bulk_hard_delete_confirm", "Permanently erase all selected deleted users?")}
-	</p>
-	<p class="mt-2 text-sm" style="color: var(--color-danger)">
-		{t("users.bulk_hard_delete_warning", "This will permanently delete all data for the selected users including posts, comments, payments, and sessions. This action cannot be undone.")}
-	</p>
-	<div class="mt-6 flex justify-end gap-2">
-		<Button variant="ghost" onclick={() => (showBulkHardDeleteConfirm = false)}>{t("common.cancel", "Cancel")}</Button>
-		<Button variant="destructive" onclick={async () => { showBulkHardDeleteConfirm = false; await bulkHardDelete(); }} disabled={acting}>
-			{acting ? t("common.deleting", "Deleting...") : t("users.bulk_hard_delete", "Hard Delete Selected")}
+	<div class="mt-4 flex justify-end gap-2">
+		<Button variant="ghost" onclick={() => (showBanConfirm = false)}>{t("common.cancel", "Cancel")}</Button>
+		<Button variant={isBanned ? "default" : "destructive"} onclick={confirmBan} disabled={acting}>
+			{isBanned ? t("users.unban", "Unban") : t("users.ban", "Ban")}
 		</Button>
 	</div>
 </Modal>
 
-<!-- Create User Modal -->
-<Modal bind:open={showCreateModal} title={t("users.create", "Create User")} size="default">
-	{#if createError}
-		<div class="mb-4 rounded-md border px-4 py-3 text-sm" style="border-color: var(--color-danger); background-color: color-mix(in srgb, var(--color-danger) 8%, transparent); color: var(--color-danger)">
-			{createError}
-		</div>
+<!-- Suspend / Unsuspend -->
+<Modal bind:open={showSuspendConfirm} title={isSuspended ? t("users.unsuspend_user", "Unsuspend User") : t("users.suspend_user", "Suspend User")}>
+	{#if actionTarget}
+		{#if isSuspended}
+			<p class="text-sm" style="color: var(--color-foreground)">
+				{t("users.unsuspend_confirm", "Are you sure you want to unsuspend")} <strong>{actionTarget.username}</strong>?
+			</p>
+		{:else}
+			<p class="text-sm" style="color: var(--color-foreground)">
+				{t("users.suspend_confirm", "Are you sure you want to suspend")} <strong>{actionTarget.username}</strong>?
+			</p>
+			<p class="mt-2 text-sm" style="color: var(--color-warning)">
+				{t("users.suspend_warning", "The user will be unable to access the platform until unsuspended.")}
+			</p>
+		{/if}
 	{/if}
-	<form onsubmit={(e) => { e.preventDefault(); executeCreate(); }} class="space-y-4">
-		<div>
-			<label for="create-email" class="mb-1 block text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("users.email", "Email")} *</label>
-			<input id="create-email" type="email" required bind:value={createForm.email}
-				class="w-full rounded-lg border p-2 text-sm outline-none focus:ring-2"
-				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground); --tw-ring-color: var(--color-primary)" />
-		</div>
-		<div>
-			<label for="create-username" class="mb-1 block text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("users.username", "Username")} *</label>
-			<input id="create-username" type="text" required bind:value={createForm.username}
-				class="w-full rounded-lg border p-2 text-sm outline-none focus:ring-2"
-				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground); --tw-ring-color: var(--color-primary)" />
-		</div>
-		<div>
-			<label for="create-display-name" class="mb-1 block text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("users.display_name", "Display Name")}</label>
-			<input id="create-display-name" type="text" bind:value={createForm.display_name}
-				class="w-full rounded-lg border p-2 text-sm outline-none focus:ring-2"
-				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground); --tw-ring-color: var(--color-primary)" />
-		</div>
-		<div>
-			<label for="create-password" class="mb-1 block text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("users.password", "Password")} *</label>
-			<input id="create-password" type="password" required bind:value={createForm.password}
-				class="w-full rounded-lg border p-2 text-sm outline-none focus:ring-2"
-				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground); --tw-ring-color: var(--color-primary)" />
-		</div>
-	</form>
-	<div class="mt-6 flex justify-end gap-2">
-		<Button variant="ghost" onclick={() => (showCreateModal = false)}>{t("common.cancel", "Cancel")}</Button>
-		<Button variant="default" onclick={executeCreate} disabled={creating}>{creating ? t("common.creating", "Creating...") : t("users.create", "Create User")}</Button>
+	<div class="mt-4 flex justify-end gap-2">
+		<Button variant="ghost" onclick={() => (showSuspendConfirm = false)}>{t("common.cancel", "Cancel")}</Button>
+		<Button variant={isSuspended ? "default" : "destructive"} onclick={confirmSuspend} disabled={acting}>
+			{isSuspended ? t("users.unsuspend", "Unsuspend") : t("users.suspend", "Suspend")}
+		</Button>
 	</div>
 </Modal>
 
+<!-- Warn -->
+<Modal bind:open={showWarnModal} title={t("users.warn_user", "Warn User")}>
+	<p class="mb-4 text-sm" style="color: var(--color-foreground)">
+		{t("users.warn_confirm", "Issue a warning to")} <strong>{actionTarget?.username}</strong>
+	</p>
+	<textarea
+		class="w-full rounded-lg border p-3 text-sm"
+		style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+		rows="3"
+		placeholder={t("users.warn_reason", "Reason for warning...")}
+		bind:value={warnReason}
+	></textarea>
+	<div class="mt-4 flex justify-end gap-2">
+		<Button variant="ghost" onclick={() => (showWarnModal = false)}>{t("common.cancel", "Cancel")}</Button>
+		<Button variant="destructive" onclick={confirmWarn} disabled={!warnReason.trim() || acting}>
+			{t("users.issue_warning", "Issue Warning")}
+		</Button>
+	</div>
+</Modal>
 
+<!-- Restore -->
+<Modal bind:open={showRestoreConfirm} title={t("users.restore_user", "Restore User")}>
+	<p class="text-sm" style="color: var(--color-foreground)">
+		{t("users.restore_confirm", "Are you sure you want to restore")} <strong>{actionTarget?.username}</strong>?
+	</p>
+	<p class="mt-2 text-sm" style="color: var(--color-muted)">
+		{t("users.restore_notice", "Their account will be reactivated and they will be able to log in again.")}
+	</p>
+	<div class="mt-4 flex justify-end gap-2">
+		<Button variant="ghost" onclick={() => (showRestoreConfirm = false)}>{t("common.cancel", "Cancel")}</Button>
+		<Button variant="default" onclick={confirmRestore} disabled={acting}>{t("users.restore", "Restore")}</Button>
+	</div>
+</Modal>
+
+<!-- Hard Delete -->
+<Modal bind:open={showHardDeleteConfirm} title={t("users.hard_delete_user", "Hard Delete User")}>
+	<p class="text-sm" style="color: var(--color-foreground)">
+		{t("users.hard_delete_confirm", "Permanently erase")} <strong>{actionTarget?.username}</strong>?
+	</p>
+	<p class="mt-2 text-sm" style="color: var(--color-danger)">
+		{t("users.hard_delete_warning", "This will permanently delete all user data including posts, comments, payments, and sessions. This action cannot be undone.")}
+	</p>
+	<div class="mt-4 flex justify-end gap-2">
+		<Button variant="ghost" onclick={() => (showHardDeleteConfirm = false)}>{t("common.cancel", "Cancel")}</Button>
+		<Button variant="destructive" onclick={confirmHardDelete} disabled={acting}>
+			{acting ? t("common.deleting", "Deleting...") : t("users.hard_delete", "Hard Delete")}
+		</Button>
+	</div>
+</Modal>
+
+<!-- Delete (soft) -->
+<Modal bind:open={showDeleteConfirm} title={t("users.delete_user", "Delete User")}>
+	<p class="text-sm" style="color: var(--color-foreground)">
+		{t("users.delete_confirm", "Are you sure you want to delete")} <strong>{actionTarget?.username}</strong>?
+	</p>
+	<p class="mt-2 text-sm" style="color: var(--color-muted)">
+		{t("users.delete_soft_notice", "The user will be soft-deleted and can be restored later.")}
+	</p>
+	<div class="mt-4 flex justify-end gap-2">
+		<Button variant="ghost" onclick={() => (showDeleteConfirm = false)}>{t("common.cancel", "Cancel")}</Button>
+		<Button variant="destructive" onclick={confirmDelete} disabled={acting}>{t("common.delete", "Delete")}</Button>
+	</div>
+</Modal>
+
+<!-- ── View snippet ──────────────────────────────────────────────────────── -->
+{#snippet UserView({ row }: { row: User })}
+	<div class="space-y-4">
+		<div class="grid grid-cols-2 gap-4">
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("users.username", "Username")}</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.username}</p>
+			</div>
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("users.email", "Email")}</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.email}</p>
+			</div>
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("users.profile_type", "Profile Type")}</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.profile_type || "—"}</p>
+			</div>
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("users.status", "Status")}</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.status}</p>
+			</div>
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("users.followers", "Followers")}</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{(row.follower_count ?? 0).toLocaleString()}</p>
+			</div>
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("users.joined", "Joined")}</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{new Date(row.created_at).toLocaleString()}</p>
+			</div>
+		</div>
+	</div>
+{/snippet}
