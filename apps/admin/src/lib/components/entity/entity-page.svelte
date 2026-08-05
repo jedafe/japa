@@ -11,10 +11,17 @@
 	import { Eye, Pencil, Trash2, RefreshCw, Plus } from 'lucide-svelte';
 	import EntityForm from './entity-form.svelte';
 	import type { FieldDef } from './index';
-	import type { Column, ActionItem, FilterDef, BulkAction } from '$lib/components/ui/data-table';
+	import type { Column, ActionItem, ActionContext, FilterDef, BulkAction } from '$lib/components/ui/data-table';
 	import type { Snippet } from 'svelte';
 
 	// EntityPageConfig — declarative config the scaffold turns into a full CRUD page.
+	export interface EntityPageController {
+		reload: () => void;
+		openView: (row: any) => void;
+		openEdit: (row: any) => void;
+		openDelete: (row: any) => void;
+	}
+
 	export interface EntityPageConfig {
 		title: string;
 		description?: string;
@@ -44,7 +51,7 @@
 		formSnippet?: Snippet<[{ value: Record<string, any>; editing: any | null }]>;
 	}
 
-	let { config }: { config: EntityPageConfig } = $props();
+	let { config, controller = $bindable() }: { config: EntityPageConfig; controller?: EntityPageController } = $props();
 
 	// ── Owned UI state ──────────────────────────────────────────────────────
 	let loading = $state(true);
@@ -135,9 +142,15 @@
 		if (ps && ps !== pageSize) pageSize = ps;
 	});
 
-	// ── Row actions: default View/Edit/Delete open the slide-overs when config.actions is omitted ──
+	// ── Row actions: custom actions get an ActionContext; defaults open the slide-overs ──
+	const actionCtx = $derived.by<ActionContext>(() => ({ openView, openEdit, openDelete, reload }));
 	const rowActions = $derived.by<ActionItem[]>(() => {
-		if (config.actions) return config.actions;
+		if (config.actions) {
+			return config.actions.map((a) => ({
+				...a,
+				onclick: (row: any) => a.onclick(row, actionCtx)
+			}));
+		}
 		const acts: ActionItem[] = [
 			{ label: t('common.view', 'View'), icon: Eye, onclick: openView }
 		];
@@ -153,6 +166,24 @@
 			});
 		}
 		return acts;
+	});
+
+	// Wrap bulk actions to auto-reload + clear selection after completion.
+	const wiredBulkActions = $derived.by<BulkAction[]>(() => {
+		if (!config.bulkActions) return [];
+		return config.bulkActions.map((a) => ({
+			...a,
+			onclick: async (ids: Set<string>) => {
+				await a.onclick(ids);
+				selectedIds = new Set();
+				await reload();
+			}
+		}));
+	});
+
+	// Expose controller so page-local code (modals, etc.) can trigger reload/view/edit/delete.
+	$effect(() => {
+		controller = { reload, openView, openEdit, openDelete };
 	});
 
 	function openView(row: any) {
@@ -300,7 +331,7 @@
 				onfilterapply={handleFilterApply}
 				onfilterclear={handleFilterClear}
 				actions={rowActions}
-				bulkActionsList={config.bulkActions}
+				bulkActionsList={wiredBulkActions}
 				selectable={!!config.bulkActions}
 				bind:selectedIds
 				urlSync={false}
