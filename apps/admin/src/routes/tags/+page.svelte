@@ -4,7 +4,7 @@
 	// The rich tag form (logo/cover media pickers, custom field definitions) and
 	// the tag-moderators sub-flow cannot be expressed by the basic EntityForm, so
 	// they are rendered via the `formSnippet` escape hatch and page-local state.
-	import { EntityPage, type EntityPageConfig, type FieldDef } from "$lib/components/entity";
+	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from "$lib/components/entity";
 	import { SlideOver } from "$lib/components/ui/slide-over";
 	import { Modal } from "$lib/components/ui/modal";
 	import { Button } from "$lib/components/ui/button";
@@ -170,9 +170,8 @@
 	}
 
 	// ── Bulk delete ─────────────────────────────────────────────────────────
-	// EntityPage does not auto-reload after a bulk action, so a remount key forces
-	// the scaffold to refetch (and clears the row selection) once deletion done.
-	let reloadKey = $state(0);
+	// EntityPage auto-reloads + clears selection after a bulk action handler completes.
+	let entityController = $state<EntityPageController | undefined>(undefined);
 	let pageError = $state("");
 	let bulkDeleting = $state(false);
 
@@ -184,7 +183,6 @@
 		pageError = "";
 		try {
 			await Promise.all(idArr.map((id) => tagsAdminApi.delete(id)));
-			reloadKey++;
 		} catch (e) {
 			pageError = e instanceof Error ? e.message : t("common.error", "Failed to delete tags");
 		} finally {
@@ -347,9 +345,7 @@
 	</div>
 {/if}
 
-{#key reloadKey}
-	<EntityPage {config} />
-{/key}
+<EntityPage {config} bind:controller={entityController} />
 
 <!-- Tag Moderators SlideOver (page-local sub-flow) -->
 <SlideOver bind:open={showModeratorsModal} title={t("tags.moderators", "Tag Moderators")} size="lg">
