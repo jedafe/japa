@@ -1,9 +1,5 @@
 <script lang="ts">
-	// /share-platforms — migrated to the EntityPage scaffold (Task 10).
-	//
-	// This is the "simple path" validation: a straightforward CRUD entity with no
-	// media, no sub-flows, and no rich form — so it uses `formFields` (EntityForm)
-	// rather than the `formSnippet` escape hatch used by /tags.
+	// /share-platforms — migrated to the EntityPage scaffold (Task 10); simple CRUD entity using `formFields` (EntityForm).
 	import { EntityPage, type EntityPageConfig, type FieldDef } from '$lib/components/entity';
 	import { sharePlatformsAdminApi } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
@@ -21,15 +17,12 @@
 		created_at: string;
 	};
 
-	// Normalize an API row: copy `key` into `id` so the scaffold's id-based
-	// mutations (update/remove) and the DataTable's bulk selection both work.
+	// Normalize an API row: copy `key` into `id` so the scaffold's id-based mutations and bulk selection work.
 	function mapPlatform(raw: any): SharePlatform {
 		return { ...raw, id: raw.key };
 	}
 
-	// ── Bulk delete ─────────────────────────────────────────────────────────
-	// EntityPage does not auto-reload after a bulk action, so a remount key
-	// forces the scaffold to refetch (and clears the row selection) once done.
+	// ── Bulk delete ───── EntityPage does not auto-reload after a bulk action, so a remount key forces refetch + clears selection.
 	let reloadKey = $state(0);
 	let pageError = $state('');
 	let bulkDeleting = $state(false);
@@ -50,9 +43,7 @@
 		}
 	}
 
-	// `fields` drives both EntityForm rendering and the edit-form seeding.
-	// The color field uses a plain text input (EntityForm has no native color
-	// picker); the hex string is preserved so behavior is unchanged.
+	// `fields` drives EntityForm rendering and edit-form seeding; color uses a plain text input (no native color picker), hex string preserved.
 	const fields: FieldDef[] = [
 		{ key: 'key', label: t('share_platforms.key', 'Key'), type: 'text', placeholder: 'twitter', required: true },
 		{ key: 'label', label: t('share_platforms.label', 'Label'), type: 'text', placeholder: 'Twitter', required: true },
@@ -132,7 +123,7 @@
 				icon: String(body.icon ?? '').trim(),
 				url_template: String(body.url_template ?? '').trim(),
 				color: String(body.color ?? '#3b82f6'),
-				enabled: !!body.enabled,
+				enabled: body.enabled === undefined ? true : !!body.enabled,
 				position: Number(body.position ?? 0)
 			});
 			return res.ok ? { ok: true } : { ok: false, error: res.error };
