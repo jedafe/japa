@@ -32,6 +32,27 @@ WHERE tenant_id = @tenant_id
 ORDER BY created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 
+-- name: ListReviewsByEntityWithAuthor :many
+-- Reviews joined to users + user_profiles so the learning track reviews list
+-- (GET /learn/tracks/{id}/reviews) can render author username, display name,
+-- and avatar without N+1 lookups. Mirrors the polymorphic reviews table
+-- (entity_type/entity_id) — the caller filters by entity_type='learning_track'.
+-- Ref: ADR-060 (Track Detail — Reviews tab), Section 29 (polymorphic reviews).
+SELECT r.id, r.tenant_id, r.entity_type, r.entity_id, r.reviewer_user_id,
+       r.rating, r.title, r.body, r.status, r.created_at, r.updated_at,
+       u.username AS author_username,
+       up.display_name AS author_display_name,
+       up.avatar_url AS author_avatar_url
+FROM reviews r
+LEFT JOIN users u ON u.id = r.reviewer_user_id
+LEFT JOIN user_profiles up ON up.user_id = u.id
+WHERE r.tenant_id = @tenant_id
+  AND r.entity_type = @entity_type
+  AND r.entity_id = @entity_id
+  AND r.status = 'published'
+ORDER BY r.created_at DESC
+LIMIT @page_limit OFFSET @page_offset;
+
 -- name: ListReviewsByReviewer :many
 SELECT id, tenant_id, entity_type, entity_id, reviewer_user_id,
        rating, title, body, status, created_at, updated_at

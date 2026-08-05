@@ -1378,6 +1378,8 @@ type LearningLesson struct {
 	IsPublished     bool               `json:"is_published"`
 	CreatedAt       pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+	// True when the lesson can be previewed without enrollment (ADR-060 access gate).
+	IsPreview bool `json:"is_preview"`
 }
 
 type LearningModule struct {
