@@ -1,6 +1,6 @@
 <script lang="ts">
 	// /share-platforms — migrated to the EntityPage scaffold (Task 10); simple CRUD entity using `formFields` (EntityForm).
-	import { EntityPage, type EntityPageConfig, type FieldDef } from '$lib/components/entity';
+	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
 	import { sharePlatformsAdminApi } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { Trash2 } from 'lucide-svelte';
@@ -22,8 +22,8 @@
 		return { ...raw, id: raw.key };
 	}
 
-	// ── Bulk delete ───── EntityPage does not auto-reload after a bulk action, so a remount key forces refetch + clears selection.
-	let reloadKey = $state(0);
+	// ── Bulk delete ───── EntityPage auto-reloads + clears selection after a bulk action handler completes.
+	let entityController = $state<EntityPageController | undefined>(undefined);
 	let pageError = $state('');
 	let bulkDeleting = $state(false);
 
@@ -35,7 +35,6 @@
 		pageError = '';
 		try {
 			await Promise.all(idArr.map((id) => sharePlatformsAdminApi.delete(id)));
-			reloadKey++;
 		} catch (e) {
 			pageError = e instanceof Error ? e.message : t('common.error', 'Failed to delete share platforms');
 		} finally {
@@ -161,9 +160,7 @@
 	</div>
 {/if}
 
-{#key reloadKey}
-	<EntityPage {config} />
-{/key}
+<EntityPage {config} bind:controller={entityController} />
 
 <!-- ── Snippets ─────────────────────────────────────────────────────────── -->
 
