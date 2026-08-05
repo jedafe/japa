@@ -50,11 +50,7 @@
       searchPlaceholder = t("common.search", "Search"),
       searchParam = "q",
       onsearch,
-      // Optional URL-persisted single filter value (opt-in via `filterParam`).
-      // NOTE: the legacy single-filter string state is kept internally so the
-      // `filterParam`/`onfilterchange` props continue to work for pages that
-      // use them. The bindable `filterValue` prop below is the NEW multi-filter
-      // Record used by the built-in <FilterPanel>.
+      // Optional URL-persisted single filter value (opt-in via `filterParam`); legacy single-filter string state is kept internally so `filterParam`/`onfilterchange` keep working, while the bindable `filterValue` below is the NEW multi-filter Record for the built-in <FilterPanel>.
       filterParam = "",
       onfilterchange,
       // ── NEW props (all optional, additive) ──────────────────────────────
@@ -162,16 +158,14 @@
   const clientTotalRows = $derived(sortedData.length);
   const clientTotalPages = $derived(Math.max(1, Math.ceil(clientTotalRows / pageSize)));
 
-  // Effective totals: server-side uses the API-provided props; client-side uses
-  // the sorted data length.
+  // Effective totals: server-side uses the API-provided props; client-side uses the sorted data length.
   const effectiveTotalRows = $derived(serverSide ? (totalRows ?? 0) : clientTotalRows);
   const effectiveTotalPages = $derived(serverSide ? (totalPages ?? 1) : clientTotalPages);
 
-  // Paginated data: server-side renders rows as-is (the API already returned the
-  // page); client-side slices the sorted data.
+  // Paginated data: server-side renders rows as-is (the API already returned the page); client-side slices the sorted data.
   const paginatedData = $derived(
     serverSide
-      ? sortedData
+      ? data
       : showPagination
         ? sortedData.slice(currentPage * pageSize, (currentPage + 1) * pageSize)
         : sortedData
@@ -185,8 +179,7 @@
     if (currentPage >= clientTotalPages) currentPage = 0;
   });
 
-  // Server-side: emit onpagechange when the bound `page` prop changes (skip the
-  // initial run so we don't fire on mount).
+  // Server-side: emit onpagechange when the bound `page` prop changes (skip the initial run so we don't fire on mount).
   let pageChangeReady = false;
   $effect(() => {
     if (!serverSide) return;
@@ -269,9 +262,7 @@
      applySearch();
    }
 
-   // Optional URL-persisted single filter value — seeded from and written to
-   // `?{filterParam}=`. Uses internal state so the bindable `filterValue` prop
-   // (Record, for the built-in FilterPanel) is not disturbed.
+   // Optional URL-persisted single filter value — seeded from and written to `?{filterParam}=`; uses internal state so the bindable `filterValue` prop (Record, for the built-in FilterPanel) is not disturbed.
    let singleFilterValue = $state("");
    let filterSeeded = false;
    $effect(() => {
@@ -293,8 +284,7 @@
      onfilterchange?.(v);
    });
 
-   // Server-side page-size change handler — emits onpagesizechange after the
-   // Pagination component updates the bound pageSize.
+   // Server-side page-size change handler — emits onpagesizechange after the Pagination component updates the bound pageSize.
    function handlePageSizeChange() {
      if (serverSide) onpagesizechange?.(pageSize);
    }
