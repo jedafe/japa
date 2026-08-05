@@ -29,6 +29,7 @@
 		title: string;
 		slug: string;
 		status: string;
+		page_type?: string;
 		created_at: string;
 		updated_at: string;
 	};
@@ -38,8 +39,11 @@
 	let error = $state('');
 
 	let searchQuery = $state('');
+	// page_type filter — '' = all. Landing pages are page_type='landing'.
+	// Ref: Section 16 (Landing consolidation) — landing is a page_type within the Page Builder.
+	let pageTypeFilter = $state('');
 	let showCreateModal = $state(false);
-	let newPage = $state({ title: '', slug: '', template_id: '', theme_id: '' });
+	let newPage = $state({ title: '', slug: '', page_type: 'landing', template_id: '', theme_id: '' });
 	let creating = $state(false);
 	let templates = $state<{ id: string; name: string }[]>([]);
 	let themes = $state<{ id: string; name: string; is_default: boolean }[]>([]);
@@ -56,6 +60,7 @@
 	const columns = [
 		{ key: 'title', label: t('page_builder.title'), sortable: true },
 		{ key: 'slug', label: t('page_builder.slug'), sortable: true, class: 'text-xs', render: (v: string) => `<span style="color: var(--color-muted)">/${v}</span>` },
+		{ key: 'page_type', label: t('page_builder.page_type', 'Type'), sortable: true, class: 'text-xs', render: (v: string) => `<span class="rounded-full px-2 py-0.5 text-xs font-medium" style="background: var(--color-surface); color: var(--color-muted)">${v ?? 'custom'}</span>` },
 		{ key: 'status', label: t('page_builder.status'), sortable: true, render: (v: string) => `<span class="rounded-full px-2 py-0.5 text-xs font-medium ${statusBadge(v)}">${v}</span>` },
 		{ key: 'updated_at', label: t('page_builder.updated'), sortable: true, render: (v: string) => new Date(v).toLocaleDateString() },
 		{ key: 'actions', label: t('common.actions'), class: 'w-64 text-right', componentSnippet: PageActionsCell }
@@ -81,6 +86,7 @@
 	}
 
 	$effect(() => {
+		void pageTypeFilter;
 		load();
 	});
 
@@ -88,7 +94,8 @@
 		loading = true;
 		error = '';
 		try {
-			const result = await api<Page[]>('/admin/pages');
+			const path = pageTypeFilter ? `/admin/pages?page_type=${encodeURIComponent(pageTypeFilter)}` : '/admin/pages';
+			const result = await api<Page[]>(path);
 			if (result.ok) {
 				pages = result.data ?? [];
 			} else {
@@ -105,13 +112,13 @@
 		if (!newPage.title) return;
 		creating = true;
 		try {
-			const body: Record<string, unknown> = { title: newPage.title, slug: newPage.slug || slugify(newPage.title) };
+			const body: Record<string, unknown> = { title: newPage.title, slug: newPage.slug || slugify(newPage.title), page_type: newPage.page_type || 'custom' };
 			if (newPage.template_id) body.template_id = newPage.template_id;
 			if (newPage.theme_id) body.theme_id = newPage.theme_id;
 			const result = await api<{ id: string }>('/admin/pages', { method: 'POST', body });
 			if (result.ok && result.data) {
 				showCreateModal = false;
-				newPage = { title: '', slug: '', template_id: '', theme_id: '' };
+				newPage = { title: '', slug: '', page_type: 'landing', template_id: '', theme_id: '' };
 				goto(`/page-builder/pages/${result.data.id}`);
 			}
 		} catch {
@@ -131,7 +138,7 @@
 	}
 
 	function openCreateModal() {
-		newPage = { title: '', slug: '', template_id: '', theme_id: '' };
+		newPage = { title: '', slug: '', page_type: pageTypeFilter || 'landing', template_id: '', theme_id: '' };
 		loadTemplatesAndThemes();
 		showCreateModal = true;
 	}
@@ -275,6 +282,14 @@
 		<p class="text-sm" style="color: var(--color-muted)">{t('page_builder.pages_description')}</p>
 	</div>
 	<div class="flex items-center gap-2">
+		<select bind:value={pageTypeFilter} class="rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-background); color: var(--color-foreground)" aria-label={t('page_builder.page_type', 'Page type')}>
+			<option value="">{t('page_builder.all_types', 'All types')}</option>
+			<option value="landing">{t('page_builder.landing', 'Landing')}</option>
+			<option value="about">About</option>
+			<option value="service">Service</option>
+			<option value="event">Event</option>
+			<option value="custom">Custom</option>
+		</select>
 		{#if canManagePages}
 		<button
 			class="rounded-md px-4 py-2 text-sm font-medium text-white transition-colors"
@@ -328,6 +343,17 @@
 					bind:value={newPage.slug}
 				/>
 			</div>
+		<div>
+			<label for="page-type" class="mb-1 block text-sm font-medium">{t('page_builder.page_type', 'Page type')}</label>
+			<select id="page-type" bind:value={newPage.page_type} class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-background)">
+				<option value="landing">{t('page_builder.landing', 'Landing')}</option>
+				<option value="about">About</option>
+				<option value="service">Service</option>
+				<option value="event">Event</option>
+				<option value="custom">Custom</option>
+			</select>
+			<p class="mt-1 text-xs" style="color: var(--color-muted)">{t('page_builder.page_type_hint', 'Landing pages use the full block library with geo-targeting and motion')}</p>
+		</div>
 		<div>
 			<label for="page-template" class="mb-1 block text-sm font-medium">{t('page_builder.template', 'Template')}</label>
 			<select id="page-template" bind:value={newPage.template_id} class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-background)">
