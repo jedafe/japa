@@ -157,6 +157,14 @@ JOIN learning_modules lm ON lm.id = ll.module_id AND lm.tenant_id = ll.tenant_id
 JOIN learning_tracks lt ON lt.id = lm.track_id AND lt.tenant_id = lm.tenant_id
 WHERE ll.tenant_id = @tenant_id AND ll.module_id = @module_id AND ll.slug = @slug;
 
+-- name: GetLessonCompletionStatus :one
+-- Checks whether a user has completed a specific lesson. Used by GetLessonDetail
+-- to populate is_completed for authenticated users so the lesson player can
+-- show the "Completed" state on SSR render without waiting for CSR.
+SELECT (lp.status = 'completed') AS is_completed
+FROM lesson_progress lp
+WHERE lp.user_id = @user_id AND lp.lesson_id = @lesson_id;
+
 -- name: ListTrackLessonsForNav :many
 -- Lists all published lessons in a track (across modules) ordered by module
 -- sort_order then lesson sort_order, so the handler can compute prev/next
@@ -216,6 +224,30 @@ JOIN learning_modules lm ON lm.id = ll.module_id
 LEFT JOIN lesson_progress lp ON lp.lesson_id = ll.id AND lp.user_id = @user_id
 WHERE lm.track_id = @track_id AND ll.is_published = true;
 
+-- name: ListCompletedLessonIDsByUserAndTrack :many
+-- Returns the IDs of all lessons the user has completed (status = 'completed')
+-- in a track. Used by GET /learn/progress/{trackId} to populate the
+-- completed_lesson_ids array so the curriculum rail can restore completion
+-- state on page refresh without checking each lesson individually.
+SELECT ll.id
+FROM learning_lessons ll
+JOIN learning_modules lm ON lm.id = ll.module_id
+JOIN lesson_progress lp ON lp.lesson_id = ll.id AND lp.user_id = @user_id
+WHERE lm.track_id = @track_id AND ll.is_published = true AND lp.status = 'completed';
+
+-- name: GetNextIncompleteLessonByTrack :one
+-- Finds the first published lesson in a track that the user has NOT completed
+-- (status != 'completed' or no progress row). Used to populate the
+-- next_lesson field on enriched enrollments for the Continue Learning card.
+SELECT ll.id, ll.slug, ll.title, lm.slug AS module_slug
+FROM learning_lessons ll
+JOIN learning_modules lm ON lm.id = ll.module_id
+LEFT JOIN lesson_progress lp ON lp.lesson_id = ll.id AND lp.user_id = @user_id
+WHERE lm.track_id = @track_id AND ll.is_published = true
+  AND (lp.status IS NULL OR lp.status != 'completed')
+ORDER BY lm.sort_order ASC, ll.sort_order ASC
+LIMIT 1;
+
 -- =====================
 -- Certificate Operations
 -- =====================
@@ -233,16 +265,26 @@ RETURNING id, tenant_id, user_id, track_id, certificate_number, media_id, issued
 
 -- name: ListLearningCertificatesByUser :many
 SELECT lc.id, lc.tenant_id, lc.user_id, lc.track_id, lc.certificate_number, lc.media_id, lc.issued_at,
-       lt.title AS track_title, lt.slug AS track_slug
+       lt.title AS track_title, lt.slug AS track_slug,
+       u.username AS recipient_username,
+       COALESCE(up.display_name, u.username) AS recipient_name
 FROM learning_certificates lc
 LEFT JOIN learning_tracks lt ON lt.id = lc.track_id AND lt.tenant_id = lc.tenant_id
+LEFT JOIN users u ON u.id = lc.user_id
+LEFT JOIN user_profiles up ON up.user_id = lc.user_id AND up.tenant_id = lc.tenant_id
 WHERE lc.tenant_id = @tenant_id AND lc.user_id = @user_id
 ORDER BY lc.issued_at DESC;
 
 -- name: GetLearningCertificateByID :one
-SELECT id, tenant_id, user_id, track_id, certificate_number, media_id, issued_at
-FROM learning_certificates
-WHERE id = @id;
+SELECT lc.id, lc.tenant_id, lc.user_id, lc.track_id, lc.certificate_number, lc.media_id, lc.issued_at,
+       lt.title AS track_title, lt.slug AS track_slug,
+       u.username AS recipient_username,
+       COALESCE(up.display_name, u.username) AS recipient_name
+FROM learning_certificates lc
+LEFT JOIN learning_tracks lt ON lt.id = lc.track_id AND lt.tenant_id = lc.tenant_id
+LEFT JOIN users u ON u.id = lc.user_id
+LEFT JOIN user_profiles up ON up.user_id = lc.user_id AND up.tenant_id = lc.tenant_id
+WHERE lc.id = @id;
 
 -- =====================
 -- Enrollment Operations
@@ -260,6 +302,35 @@ FROM enrollments
 WHERE user_id = @user_id AND tenant_id = @tenant_id
 ORDER BY enrolled_at DESC;
 
+-- name: ListEnrollmentsByUserIDWithDetails :many
+-- Enriched enrollment list for GET /me/enrollments — joins learning_tracks
+-- for slug/title/thumbnail/level and computes lessons_completed/lessons_total
+-- + last_activity_at via a LATERAL subquery on lesson_progress. The frontend
+-- Enrollment type (apps/learn/src/lib/types) expects all these fields so the
+-- Continue Learning card and lesson player progress ring render correctly.
+SELECT e.id, e.tenant_id, e.user_id, e.track_id, e.access_type, e.progress_pct,
+       e.enrolled_at, e.completed_at,
+       lt.slug AS track_slug, lt.title AS track_title, lt.difficulty AS level,
+       m.storage_path AS thumbnail_url,
+       COALESCE(lp_stats.lessons_completed, 0) AS lessons_completed,
+       COALESCE(lp_stats.lessons_total, 0) AS lessons_total,
+       lp_stats.last_activity_at
+FROM enrollments e
+JOIN learning_tracks lt ON lt.id = e.track_id
+LEFT JOIN media m ON m.id = lt.cover_media_id
+LEFT JOIN LATERAL (
+    SELECT
+        COUNT(*) FILTER (WHERE lp.status = 'completed') AS lessons_completed,
+        COUNT(*) AS lessons_total,
+        MAX(lp.completed_at) AS last_activity_at
+    FROM learning_lessons ll
+    JOIN learning_modules lm ON lm.id = ll.module_id
+    LEFT JOIN lesson_progress lp ON lp.lesson_id = ll.id AND lp.user_id = e.user_id
+    WHERE lm.track_id = e.track_id AND ll.is_published = true
+) lp_stats ON true
+WHERE e.user_id = @user_id AND e.tenant_id = @tenant_id
+ORDER BY e.enrolled_at DESC;
+
 -- name: GetEnrollmentByUserAndTrack :one
 SELECT id, tenant_id, user_id, track_id, access_type, progress_pct, enrolled_at, completed_at
 FROM enrollments
@@ -268,7 +339,7 @@ WHERE user_id = @user_id AND track_id = @track_id AND tenant_id = @tenant_id;
 -- name: UpdateEnrollmentProgress :exec
 UPDATE enrollments
 SET progress_pct = @progress_pct,
-    completed_at = CASE WHEN @progress_pct >= 100 THEN now() ELSE completed_at END
+    completed_at = CASE WHEN @progress_pct::numeric >= 100 THEN now() ELSE completed_at END
 WHERE user_id = @user_id AND track_id = @track_id;
 
 -- name: ListEnrollmentsByTrackID :many

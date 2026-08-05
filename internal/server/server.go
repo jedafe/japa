@@ -1744,7 +1744,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				// WebSocket — tight rate limit on upgrade to prevent abuse
 				// (10 connections per minute per IP, per ADR-022).
 				r.With(mw.RateLimit(vkClient.Redis(), "tight")).Get("/ws", wsHandlers.HandleWebSocket)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "dm.view")).Post("/auth/ws-ticket", wsHandlers.GetWSTicket)
+				// /auth/ws-ticket: any authenticated user needs a WebSocket
+				// ticket for real-time notifications — not just DM users. The
+				// previous dm.view gate caused 403 for users without DM
+				// permission, breaking notification delivery on the Learn app.
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/auth/ws-ticket", wsHandlers.GetWSTicket)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "dm.view")).Get("/ws/online", wsHandlers.GetOnlineUsers)
 
 				// Direct Messaging — dm.view enforced on all read routes (BUG-016).
@@ -3027,8 +3031,12 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/learn/lessons/{id}/complete", learningHandlers.CompleteLesson)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/learn/progress/{trackId}", learningHandlers.GetTrackProgress)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/certificates", learningHandlers.GetMyCertificates)
-			// BUG-012: wired university.enrollment.view_own RBAC node.
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "university.enrollment.view_own")).Get("/me/enrollments", learningHandlers.ListMyEnrollments)
+			// /me/enrollments: any authenticated user can list their own
+			// enrollments — the handler filters by user.UserID, so no
+			// university-specific RBAC node is needed. The previous
+			// university.enrollment.view_own gate caused 403 for regular
+			// Learn users, breaking the track-detail enrollment state fetch.
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/enrollments", learningHandlers.ListMyEnrollments)
 
 			// Quizzes
 			r.Get("/learn/quizzes/{id}", learningHandlers.GetQuiz)
@@ -3062,6 +3070,21 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Marketplace catalog
 			r.Get("/learn/university/catalog", universityHandlers.ListCatalog)
 			r.Get("/learn/university/catalog/{slug}", universityHandlers.GetCatalogTrack)
+
+			// Consolidated learner routes (ADR-063 consolidation: /learn/tracks/*
+			// moved under /learn/university/*). These point to the same handlers as
+			// the legacy /learn/tracks/* routes, which remain for backward compat.
+			r.Get("/learn/university/tracks/{slug}", learningHandlers.GetTrackDetail)
+			r.Get("/learn/university/tracks/{trackSlug}/modules/{moduleSlug}/lessons/{lessonSlug}", learningHandlers.GetLesson)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/learn/university/tracks/{id}/enroll", learningHandlers.EnrollInTrack)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/learn/university/lessons/{id}", learningHandlers.GetLessonByID)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/learn/university/lessons/{id}/progress", learningHandlers.UpdateProgress)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/learn/university/lessons/{id}/complete", learningHandlers.CompleteLesson)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/learn/university/progress/{trackId}", learningHandlers.GetTrackProgress)
+			r.Get("/learn/university/quizzes/{id}", learningHandlers.GetQuiz)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/learn/university/quizzes/{id}/submit", learningHandlers.SubmitQuiz)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "university.review.create")).Post("/learn/university/tracks/{id}/reviews", learningHandlers.CreateTrackReview)
+			r.Get("/learn/university/tracks/{id}/reviews", learningHandlers.ListTrackReviews)
 
 			// Earnings & payouts
 			// AUDIT-FRESH-DEAD-NODES: wired university.payout.view_own RBAC gate on both endpoints (BUG-013).

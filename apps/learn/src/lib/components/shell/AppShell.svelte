@@ -15,8 +15,6 @@
 		onToggleCollapse: () => void;
 		/** Platform logo URL from appearance.logo_url (control panel). */
 		logoUrl?: string;
-		/** True on the Japa University host → branded header variant (ADR-063). */
-		isUniversity?: boolean;
 		children: Snippet;
 		/** Route-specific right-sidebar widgets. */
 		sidebar?: Snippet;
@@ -35,7 +33,6 @@
 		collapsed,
 		onToggleCollapse,
 		logoUrl = '',
-		isUniversity = false,
 		children,
 		sidebar,
 		hideRightSidebar = false,
@@ -72,13 +69,12 @@
 	<!-- Guest layout: same 3-column shell as authed users. LeftNav shows
 	     a Login button for guests; RightSidebar renders admin-managed widgets. -->
 	<div
-		class="shell"
+		class="shell university"
 		class:hide-sidebar={hideRightSidebar}
-		class:university={isUniversity}
 		style="--current-nav-width: {navWidth}"
 	>
 		<div class="shell-nav">
-			<LeftNav {menu} {user} collapsed={effectiveCollapsed} {logoUrl} {isUniversity} onToggle={onNavToggle} />
+			<LeftNav {menu} {user} collapsed={effectiveCollapsed} {logoUrl} onToggle={onNavToggle} />
 		</div>
 
 		<main class="shell-center">
@@ -93,14 +89,14 @@
 				</button>
 				<a href="/" class="flex items-center gap-2 font-medium text-[var(--color-text)]">
 					{#if logoUrl}
-						<img src={logoUrl} alt={t('app.name')} class="h-7 w-auto max-w-[120px] object-contain" />
+						<img src={logoUrl} alt={t('university.name')} class="h-7 w-auto max-w-[120px] object-contain" />
 					{:else}
 						<span
 							class="grid h-7 w-7 place-items-center rounded-[var(--radius)] bg-[var(--color-primary)] text-xs font-semibold text-[var(--color-primary-contrast)]"
 							>JC</span
 						>
 					{/if}
-					<span>{isUniversity ? t('university.name') : t('app.name')}</span>
+					<span>{t('university.name')}</span>
 				</a>
 			</div>
 			{@render children()}
@@ -108,7 +104,7 @@
 
 		{#if !hideRightSidebar}
 			<div class="shell-sidebar">
-				<RightSidebar {user} {isUniversity} rightSidebarWidgets={rightSidebarWidgets} suppressAds={lessonPlayer} />
+				<RightSidebar {user} rightSidebarWidgets={rightSidebarWidgets} suppressAds={lessonPlayer} />
 			</div>
 		{/if}
 	</div>
@@ -121,18 +117,17 @@
 			onclick={() => (mobileNavOpen = false)}
 		></button>
 		<div class="drawer">
-			<LeftNav {menu} {user} collapsed={false} {logoUrl} {isUniversity} onToggle={() => (mobileNavOpen = false)} />
+			<LeftNav {menu} {user} collapsed={false} {logoUrl} onToggle={() => (mobileNavOpen = false)} />
 		</div>
 	{/if}
 {:else}
 	<div
-		class="shell"
+		class="shell university"
 		class:hide-sidebar={hideRightSidebar}
-		class:university={isUniversity}
 		style="--current-nav-width: {navWidth}"
 	>
 		<div class="shell-nav">
-			<LeftNav {menu} {user} collapsed={effectiveCollapsed} {logoUrl} {isUniversity} onToggle={onNavToggle} />
+			<LeftNav {menu} {user} collapsed={effectiveCollapsed} {logoUrl} onToggle={onNavToggle} />
 		</div>
 
 		<main class="shell-center">
@@ -147,14 +142,14 @@
 				</button>
 				<a href="/" class="flex items-center gap-2 font-medium text-[var(--color-text)]">
 					{#if logoUrl}
-						<img src={logoUrl} alt={t('app.name')} class="h-7 w-auto max-w-[120px] object-contain" />
+						<img src={logoUrl} alt={t('university.name')} class="h-7 w-auto max-w-[120px] object-contain" />
 					{:else}
 						<span
 							class="grid h-7 w-7 place-items-center rounded-[var(--radius)] bg-[var(--color-primary)] text-xs font-semibold text-[var(--color-primary-contrast)]"
 							>JC</span
 						>
 					{/if}
-					<span>{isUniversity ? t('university.name') : t('app.name')}</span>
+					<span>{t('university.name')}</span>
 				</a>
 			</div>
 			{@render children()}
@@ -162,7 +157,7 @@
 
 		{#if !hideRightSidebar}
 			<div class="shell-sidebar">
-				<RightSidebar {user} {isUniversity} {sidebar} {rightSidebarWidgets} suppressAds={lessonPlayer} />
+				<RightSidebar {user} {sidebar} {rightSidebarWidgets} suppressAds={lessonPlayer} />
 			</div>
 		{/if}
 	</div>
@@ -175,7 +170,7 @@
 			onclick={() => (mobileNavOpen = false)}
 		></button>
 		<div class="drawer">
-			<LeftNav {menu} {user} collapsed={false} {logoUrl} {isUniversity} onToggle={() => (mobileNavOpen = false)} />
+			<LeftNav {menu} {user} collapsed={false} {logoUrl} onToggle={() => (mobileNavOpen = false)} />
 		</div>
 	{/if}
 {/if}

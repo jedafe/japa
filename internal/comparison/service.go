@@ -190,6 +190,7 @@ type CreateComparisonInput struct {
 	Title      string
 	Body       string
 	Visibility string
+	Status     string // 'draft' or 'published' (default 'published')
 	SpaceID    pgtype.UUID
 	TypeID     pgtype.UUID // optional: links the comparison to a comparison_type_definition
 	Items      []ComparisonItemInput
@@ -241,6 +242,14 @@ func (s *Service) CreateComparison(ctx context.Context, tenantID, userID pgtype.
 		visibility = content.VisibilityMembers
 	}
 
+	// Default to published for backward compat; the /compare/new wizard
+	// passes 'draft' so the user can fill cell values in the /create editor
+	// before publishing (Section 30 — "Publish (standard content publish flow)").
+	status := input.Status
+	if status == "" {
+		status = content.StatusPublished
+	}
+
 	contentRow, err := s.contentSvc.CreateContent(ctx, tenantID, content.CreateContentInput{
 		AuthorID:     userID,
 		SpaceID:      input.SpaceID,
@@ -248,7 +257,7 @@ func (s *Service) CreateComparison(ctx context.Context, tenantID, userID pgtype.
 		Title:        input.Title,
 		Body:         input.Body,
 		SeoIndexable: true, // default: indexable — matches the column DEFAULT
-		Status:       content.StatusPublished,
+		Status:       status,
 		Visibility:   visibility,
 	})
 	if err != nil {
@@ -435,6 +444,29 @@ func (s *Service) GetComparisonDetail(ctx context.Context, id, tenantID pgtype.U
 		Items:      items,
 		Dimensions: dimensions,
 	}, nil
+}
+
+// ResolveComparisonContentID resolves a comparison identifier that may be
+// either a content UUID or a slug into the backing content UUID. UUIDs are
+// tried first (fast path); if the input is not a valid UUID it is treated as
+// a slug and looked up via the content service (Section 30 —
+// GET /api/v1/comparisons/:slug).
+//
+// Ref: japaconnect-engineering/sections/30-generic-comparison-system.md
+func (s *Service) ResolveComparisonContentID(ctx context.Context, identifier string, tenantID pgtype.UUID) (pgtype.UUID, error) {
+	// Fast path: identifier is a UUID.
+	var id pgtype.UUID
+	if err := id.Scan(identifier); err == nil {
+		return id, nil
+	}
+
+	// Slug path: look up the content row by slug, scoped to the tenant.
+	content, err := s.contentSvc.GetContentBySlug(ctx, identifier, tenantID)
+	if err != nil {
+		return pgtype.UUID{}, fmt.Errorf("resolving comparison identifier %q: %w", identifier, err)
+	}
+
+	return content.ID, nil
 }
 
 // UpdateComparisonTypeInput holds parameters for updating a comparison type.

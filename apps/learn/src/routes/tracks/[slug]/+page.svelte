@@ -9,49 +9,50 @@
 	import { goto } from '$app/navigation';
 	import LevelBadge from '$lib/components/learn/LevelBadge.svelte';
 	import StarRating from '$lib/components/learn/StarRating.svelte';
+	import CheckoutModal from '$lib/components/learn/CheckoutModal.svelte';
 	import { LoadingSkeleton } from '$lib/components/ui';
 	import { formatDuration, formatCount, formatPriceKobo, isFreeForUser } from '$lib/format';
 	import { loginUrl } from '$lib/appOrigins';
-	import { Star, Users, Clock, PlayCircle, CheckCircle, ChevronDown } from 'lucide-svelte';
+	import { Star, Users, Clock, PlayCircle, CheckCircle, ChevronDown, Lock } from 'lucide-svelte';
+	import { enrollmentsStore } from '$lib/stores/enrollments.svelte';
 	import type { PageData } from './$types';
 	import type { Enrollment } from '$lib/types';
 
 	let { data }: { data: PageData } = $props();
 	const track = $derived(data.track);
 
-	// CSR ONLY — enrollment state.
-	let enrollment = $state<Enrollment | null>(null);
-	let loadingEnrollment = $state(true);
+	// CSR ONLY — enrollment state. Uses the shared enrollmentsStore so sidebar
+	// widgets (Continue Learning, My Progress, My Learning) stay in sync after
+	// enrolling. The store deduplicates fetches across components.
 	let enrolling = $state(false);
 	let enrollError = $state<string | null>(null);
+	let checkoutOpen = $state(false);
+
+	// Whether this is a paid course that requires checkout.
+	const isPaid = $derived(track.price_kobo != null && track.price_kobo > 0);
+	const isFreeOrPro = $derived(isFreeForUser(track.price_kobo, data.user?.is_pro));
 
 	$effect(() => {
 		if (!data.user) {
-			loadingEnrollment = false;
 			return;
 		}
-		// Guard against stale fetches when the user navigates between tracks:
-		// the effect re-runs whenever data.track changes, and an in-flight
-		// request from the previous track must not overwrite the new state.
-		let cancelled = false;
-		(async () => {
-			const r = await api.get<Enrollment[]>('/me/enrollments');
-			if (cancelled) return;
-			loadingEnrollment = false;
-			if (r.data) enrollment = r.data.find((e) => e.track_id === track.id) ?? null;
-		})();
-		return () => {
-			cancelled = true;
-		};
+		// Trigger the shared fetch (deduplicated — if a sidebar widget already
+		// fetched, this is a no-op).
+		enrollmentsStore.fetch();
 	});
+
+	// Derive the enrollment for this track from the shared store.
+	const enrollment = $derived(
+		enrollmentsStore.enrollments?.find((e) => e.track_id === track.id) ?? null
+	);
+	const loadingEnrollment = $derived(enrollmentsStore.loading && !enrollmentsStore.enrollments);
 
 	const isEnrolled = $derived(!!enrollment);
 	const progressPct = $derived(enrollment?.progress_pct ?? 0);
 	const isComplete = $derived(progressPct >= 100);
 
-	// Price label (university host only — ADR-063).
+	// Price label — always shown on the unified University surface.
 	const priceLabel = $derived.by(() => {
-		if (!data.isUniversity) return null;
 		if (isFreeForUser(track.price_kobo, data.user?.is_pro)) {
 			return data.user?.is_pro ? t('learn.included_pro') : t('learn.free');
 		}
@@ -61,18 +62,24 @@
 	async function enroll() {
 		if (!data.user) {
 			// Login lives on the Main app (shared jc_token cookie). Send the user
-			// there with a redirect back to this track on Learn. Use
-			// window.location.href (not goto) because the login URL is
-			// cross-origin — goto only handles internal SvelteKit navigation.
+			// there with a redirect back to this track. Use window.location.href
+			// (not goto) because the login URL is cross-origin.
 			window.location.href = loginUrl(`/tracks/${track.slug}`);
+			return;
+		}
+		// Paid course: open checkout modal (unless Pro subscriber).
+		if (isPaid && !isFreeOrPro) {
+			checkoutOpen = true;
 			return;
 		}
 		enrolling = true;
 		enrollError = null;
-		const r = await api.post<Enrollment>(`/learn/tracks/${track.id}/enroll`);
+		const r = await api.post<Enrollment>(`/learn/university/tracks/${track.id}/enroll`);
 		enrolling = false;
 		if (r.data) {
-			enrollment = r.data;
+			// Refresh the shared store so sidebar widgets reflect the new
+			// enrollment immediately (Continue Learning, My Progress, etc.).
+			enrollmentsStore.refresh();
 			// Navigate to the first lesson.
 			const firstModule = track.modules[0];
 			const firstLesson = firstModule?.lessons[0];
@@ -80,17 +87,32 @@
 				goto(`/tracks/${track.slug}/${firstModule.slug}/${firstLesson.slug}`);
 			}
 		} else if (r.error) {
-			enrollError = r.error.message;
+			// 402 payment_required — open checkout modal as fallback.
+			if (r.error.status === 402) {
+				checkoutOpen = true;
+			} else {
+				enrollError = r.error.message;
+			}
+		}
+	}
+
+	function onCheckoutSuccess() {
+		checkoutOpen = false;
+		enrollmentsStore.refresh();
+		const firstModule = track.modules[0];
+		const firstLesson = firstModule?.lessons[0];
+		if (firstModule && firstLesson) {
+			goto(`/tracks/${track.slug}/${firstModule.slug}/${firstLesson.slug}`);
 		}
 	}
 </script>
 
 <svelte:head>
-	<title>{track.title} · {t('app.name')}</title>
+	<title>{track.title} · {t('university.name')}</title>
 	{#if track.description}
 		<meta name="description" content={track.description.slice(0, 160)} />
 	{/if}
-	<link rel="canonical" href={`https://learn.japaconnect.com/tracks/${track.slug}`} />
+	<link rel="canonical" href={`https://university.japaconnect.com/tracks/${track.slug}`} />
 	{#if data.jsonLd}
 		<script type="application/ld+json">
 			{JSON.stringify(data.jsonLd)}
@@ -118,7 +140,7 @@
 		<div class="flex-1">
 			<div class="mb-2 flex flex-wrap items-center gap-2">
 				<LevelBadge level={track.level} />
-				{#if data.isUniversity && priceLabel}
+				{#if priceLabel}
 					<span class="rounded-full bg-[var(--color-surface-subtle)] px-2.5 py-0.5 text-xs font-semibold text-[var(--color-text)]">
 						{priceLabel}
 					</span>
@@ -178,6 +200,8 @@
 					>
 						{#if enrolling}
 							{t('common.loading')}
+						{:else if isPaid && !isFreeOrPro}
+							<Lock size={18} /> {t('university.buy_for', 'Buy for {price}').replace('{price}', formatPriceKobo(track.price_kobo))}
 						{:else}
 							{t('learn.enroll')}
 						{/if}
@@ -359,3 +383,12 @@
 		</Tabs.Content>
 	</Tabs.Root>
 </div>
+
+<!-- Checkout modal for paid courses -->
+<CheckoutModal
+	{track}
+	user={data.user}
+	open={checkoutOpen}
+	onClose={() => (checkoutOpen = false)}
+	onSuccess={onCheckoutSuccess}
+/>

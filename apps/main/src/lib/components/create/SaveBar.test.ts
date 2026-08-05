@@ -7,7 +7,9 @@ describe('SaveBar', () => {
 		const { getByRole, getByText } = render(SaveBar, {
 			props: {
 				status: 'saved', savedAt: Date.now(), canPublish: false,
-				publishReason: 'create.gate.space', onSaveDraft: () => {}, onPublish: () => {}
+				publishReason: 'create.gate.space',
+				orgs: [], selectedOrgId: null, onSelectOrg: () => {},
+				onSaveDraft: () => {}, onPublish: () => {}
 			}
 		});
 		expect((getByRole('button', { name: /publish/i }) as HTMLButtonElement).disabled).toBe(true);
@@ -16,7 +18,11 @@ describe('SaveBar', () => {
 	});
 	it('enables Publish when canPublish is true', () => {
 		const { getByRole } = render(SaveBar, {
-			props: { status: 'saved', savedAt: Date.now(), canPublish: true, publishReason: null, onSaveDraft: () => {}, onPublish: () => {} }
+			props: {
+				status: 'saved', savedAt: Date.now(), canPublish: true, publishReason: null,
+				orgs: [], selectedOrgId: null, onSelectOrg: () => {},
+				onSaveDraft: () => {}, onPublish: () => {}
+			}
 		});
 		expect((getByRole('button', { name: /publish/i }) as HTMLButtonElement).disabled).toBe(false);
 	});

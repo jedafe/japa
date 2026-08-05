@@ -16,13 +16,14 @@
 		MediaAsset,
 		Visibility,
 		ComposerOrganization,
-		GuideCategory
+		GuideCategory,
+		ComparisonDetail,
+		ComparisonType
 	} from '$lib/types';
 	import type { TypeEntry } from './contentTypeRegistry';
 	import SaveBar from './SaveBar.svelte';
 	import TitleField from './TitleField.svelte';
 	import { suggestSlug } from './slug';
-	import OrgSelector from './OrgSelector.svelte';
 	import PostEditor from './editors/PostEditor.svelte';
 	import type { EditorMode } from './editors/PostEditor.svelte';
 	import ComparisonBuilder from './editors/ComparisonBuilder.svelte';
@@ -36,16 +37,29 @@
 		series: BlogSeries[];
 		organizations: ComposerOrganization[];
 		draft: ContentRecord | null;
+		/** Comparison items+dimensions when restoring a comparison draft
+		 *  (loaded from GET /comparisons/{id} in +page.server.ts). */
+		comparisonDetail?: ComparisonDetail | null;
+		/** Admin-defined comparison types (Section 30) for the type selector. */
+		comparisonTypes?: ComparisonType[];
 		user: { id: string } | null;
 		defaultEditor?: EditorMode;
 		/** Max tags per content item, from system setting content.max_tags (default 5). */
 		maxTags?: number;
 	}
 
-	let { types, spaces, fieldGroups, series = $bindable(), organizations, draft, user, defaultEditor = 'block', maxTags = 5 }: Props = $props();
+	let { types, spaces, fieldGroups, series = $bindable(), organizations, draft, comparisonDetail = null, comparisonTypes = [], user, defaultEditor = 'block', maxTags = 5 }: Props = $props();
 
 	// ---- form state ----
-	let selectedType = $state<TypeEntry>(untrack(() => types[0] ?? resolveType('blog_post')));
+	let selectedType = $state<TypeEntry>(
+		untrack(() => {
+			if (draft?.content_type) {
+				const found = types.find((t) => t.value === draft.content_type);
+				if (found) return found;
+			}
+			return types[0] ?? resolveType('blog_post');
+		})
+	);
 	let title = $state(untrack(() => draft?.title ?? ''));
 	let slug = $state(untrack(() => draft?.slug ?? ''));
 	let slugTouched = $state(untrack(() => Boolean(draft?.slug)));
@@ -158,6 +172,12 @@
 			canSave: () => title.trim().length > 0,
 			getPublishAt: () => publishAt
 		});
+		// When restoring a draft, seed the composer with the existing content
+		// ID so it PATCHes instead of creating a duplicate content row.
+		if (draft?.id) {
+			composer.contentId = draft.id;
+			composer.status = 'saved';
+		}
 		// Replay the current tags/series into the freshly-created composer so
 		// they are reconciled after the first create. (Fix: wire tags + series.)
 		composer.setTags(tags);
@@ -220,6 +240,17 @@
 	async function publish() {
 		await composer?.publish();
 	}
+
+	/** Ensure the composer has created its content row (POST /content) and
+	 *  return the resulting content ID. Used by ComparisonBuilder before
+	 *  adding items/dimensions — the items must attach to the same content
+	 *  row the composer manages, not a separate one (Section 30). */
+	async function ensureContentId(): Promise<string | null> {
+		if (!composer) return null;
+		if (composer.contentId) return composer.contentId;
+		await composer.flush();
+		return composer.contentId;
+	}
 </script>
 
 <div class="composer-grid">
@@ -264,16 +295,16 @@
 
 		<TitleField {title} onTitle={handleTitle} />
 
-		<OrgSelector
-			orgs={organizations}
-			selectedId={organizationId}
-			onSelect={(id) => { organizationId = id; markDirty(); }}
-		/>
-
 		{#if selectedType.formKind === 'comparison'}
 			<ComparisonBuilder
-				{title}
-				{spaceId}
+				contentId={composer?.contentId ?? null}
+				onEnsureContent={ensureContentId}
+				initialItems={comparisonDetail?.items ?? []}
+				initialDimensions={comparisonDetail?.dimensions ?? []}
+				comparisonTypes={comparisonTypes}
+				{bodyHtml}
+				onhtml={(v) => { bodyHtml = v; }}
+				{defaultEditor}
 				oncounts={(n, d) => { items = new Array(n).fill({ label: '' }); dimensions = new Array(d).fill({ label: '' }); }}
 				onedit={markDirty}
 			/>
@@ -308,6 +339,9 @@
 			savedAt={composer?.savedAt ?? null}
 			canPublish={gate.ok}
 			publishReason={gate.reason}
+			orgs={organizations}
+			selectedOrgId={organizationId}
+			onSelectOrg={(id) => { organizationId = id; markDirty(); }}
 			onSaveDraft={saveDraft}
 			onPublish={publish}
 		/>

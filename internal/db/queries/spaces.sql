@@ -148,6 +148,20 @@ WHERE sm.user_id = @user_id AND sm.tenant_id = @tenant_id AND s.deleted_at IS NU
   AND (@search::text = '' OR s.name ILIKE '%' || @search || '%' OR s.slug ILIKE '%' || @search || '%')
 ORDER BY sm.joined_at DESC, s.id DESC;
 
+-- name: ListAllSpacesForAdmin :many
+-- Returns every active space in the tenant with no visibility or membership
+-- filter. Used by GET /me/spaces when the caller is a super_admin so they can
+-- post to any space without joining it first (Section 03 — admin override).
+SELECT s.id, s.tenant_id, s.parent_id, s.space_type_id, s.name, s.slug, s.description,
+       s.wiki_content, s.logo_media_id, s.header_image_id, s.geo_code, s.level,
+       s.member_count, s.post_count, s.follower_count, s.visibility, s.posting_perm,
+       s.replying_perm, s.commenting_perm, s.joining_perm, s.status, s.created_at,
+       s.updated_at, s.deleted_at, s.currency_code
+FROM spaces s
+WHERE s.tenant_id = @tenant_id AND s.deleted_at IS NULL
+  AND (@search::text = '' OR s.name ILIKE '%' || @search || '%' OR s.slug ILIKE '%' || @search || '%')
+ORDER BY s.created_at DESC, s.id DESC;
+
 -- name: ListSpacesByModeratorUser :many
 SELECT s.id, s.tenant_id, s.parent_id, s.space_type_id, s.name, s.slug, s.description,
        s.wiki_content, s.logo_media_id, s.header_image_id, s.geo_code, s.level,
