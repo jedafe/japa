@@ -119,10 +119,13 @@
 			<p class="mt-3 text-sm text-[var(--color-text-subtle)]">{university.description}</p>
 		{/if}
 
-		<!-- Compare button (Phase 15.07) — opens builder with this university pre-selected as Item 1 -->
+		<!-- Compare button (Section 39) — opens the university comparison picker
+		     with this university pre-selected as Item 1 (Section 30 Comparison
+		     System). Links to /compare/universities?item1_slug=... per the spec
+		     rather than the generic /compare/new wizard. -->
 		<div class="mt-3 flex flex-wrap gap-2">
 			<a
-				href="/compare/new?type=university&item1_name={encodeURIComponent(university.name)}&item1_slug={university.slug}"
+				href="/compare/universities?item1_slug={university.slug}"
 				class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
 			>
 				<GitCompare size={15} />
@@ -316,10 +319,11 @@
 				</ul>
 			{/if}
 		{:else if activeTab === 'compare'}
-			<!-- Compare tab — opens builder with this university pre-selected as Item 1 -->
+			<!-- Compare tab — opens the university comparison picker with this
+			     university pre-selected as Item 1 (Section 39 / Section 30). -->
 			<div class="mt-3">
 				<a
-					href="/compare/new?type=university&item1_name={encodeURIComponent(university.name)}&item1_slug={university.slug}"
+					href="/compare/universities?item1_slug={university.slug}"
 					class="flex items-center justify-between rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 transition-colors hover:bg-[var(--color-surface-subtle)]"
 				>
 					<span class="flex items-center gap-2.5">
