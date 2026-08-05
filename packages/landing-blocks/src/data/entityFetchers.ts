@@ -5,13 +5,13 @@ import type { FetchContext, ToolSummary, RemittanceRate } from './types';
 /** Curated tool registry — deep links to live tool routes (no hardcoded content data). */
 export const TOOL_REGISTRY: ToolSummary[] = [
   { id: 'visa-checklist', name: 'Visa Checklist', slug: 'visa-checklist', description: 'Generate your visa document checklist by destination.', href: '/tools/visa-checklist', icon: 'FileCheck', accent: 'var(--chart-1)' },
-  { id: 'readiness-assessment', name: 'Japa Readiness Assessment', slug: 'readiness-assessment', description: 'Assess your readiness to relocate abroad.', href: '/tools/readiness-assessment', icon: 'ClipboardCheck', accent: 'var(--chart-2)' },
+  { id: 'readiness-assessment', name: 'Japa Readiness Assessment', slug: 'readiness-assessment', description: 'Assess your readiness to relocate abroad.', href: '/tools/readiness', icon: 'ClipboardCheck', accent: 'var(--chart-2)' },
   { id: 'cost-of-living', name: 'Cost of Living Calculator', slug: 'cost-of-living', description: 'Compare living costs across destination cities.', href: '/tools/cost-of-living', icon: 'Calculator', accent: 'var(--chart-3)' },
-  { id: 'scholarship-finder', name: 'Scholarship Finder', slug: 'scholarship-finder', description: 'Find scholarships for your destination and level.', href: '/tools/scholarship-finder', icon: 'GraduationCap', accent: 'var(--chart-4)' },
-  { id: 'remittance-tracker', name: 'Remittance Rate Tracker', slug: 'remittance-tracker', description: 'Track live remittance rates across corridors.', href: '/tools/remittance-tracker', icon: 'TrendingUp', accent: 'var(--chart-5)' },
+  { id: 'scholarship-finder', name: 'Scholarship Finder', slug: 'scholarship-finder', description: 'Find scholarships for your destination and level.', href: '/scholarships', icon: 'GraduationCap', accent: 'var(--chart-4)' },
+  { id: 'remittance-tracker', name: 'Remittance Rate Tracker', slug: 'remittance-tracker', description: 'Track live remittance rates across corridors.', href: '/tools/remittance', icon: 'TrendingUp', accent: 'var(--chart-5)' },
   { id: 'japabot', name: 'JapaBot', slug: 'japabot', description: 'AI assistant for your relocation questions.', href: '/ai/chat', icon: 'Bot', badge: 'AI', accent: 'var(--color-primary)' },
   { id: 'jobs', name: 'Jobs Board', slug: 'jobs', description: 'Browse jobs with visa sponsorship options.', href: '/jobs', icon: 'Briefcase', accent: 'var(--chart-1)' },
-  { id: 'travel-search', name: 'Travel Search', slug: 'travel-search', description: 'Search and compare flights and hotels.', href: '/travel/search/flights', icon: 'Plane', accent: 'var(--chart-2)' },
+  { id: 'travel-search', name: 'Travel Search', slug: 'travel-search', description: 'Search and compare flights and hotels.', href: '/tools/travel', icon: 'Plane', accent: 'var(--chart-2)' },
 ];
 
 /** Build query string from a filters object. */
@@ -40,9 +40,14 @@ export async function fetchEntityCollection(
   const pathMap: Record<EntityType, string> = {
     post: `/explore${qs(query.filters, { page_size: limit, ...sortParam, ...geoParam })}`,
     blog: `/blog${qs(query.filters, { page_size: limit, ...sortParam })}`,
-    thread: `/explore${qs(query.filters, { page_size: limit, ...sortParam, ...geoParam })}`,
-    space: `/trending/spaces${qs(query.filters, { limit, ...geoParam })}`,
-    organization: `/trending/spaces${qs(query.filters, { limit, ...geoParam })}`,
+    // thread → /forum (forum threads), NOT /explore (mixed feed). The forum
+    // endpoint lists threads by created_at desc; sort/geo params are ignored.
+    thread: `/forum${qs(query.filters, { page_size: limit })}`,
+    // space/organization → /spaces (the /trending/spaces endpoint is cataloged
+    // but currently returns null — a backend stub bug; /spaces returns real
+    // destination data so the "Popular destinations" heading is not empty).
+    space: `/spaces${qs(query.filters, { page_size: limit, ...geoParam })}`,
+    organization: `/spaces${qs(query.filters, { page_size: limit, ...geoParam })}`,
     university: `/universities${qs(query.filters, { page_size: limit, ...sortParam, ...geoParam })}`,
     job: `/jobs${qs(query.filters, { page_size: limit, ...sortParam, ...geoParam })}`,
     scholarship: `/scholarships${qs(query.filters, { page_size: limit, ...sortParam, ...geoParam })}`,

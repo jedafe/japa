@@ -3,6 +3,7 @@ import { apiContext, apiList, apiGet } from '$lib/server/api';
 import { feedPath, resolveTab, resolveSort, PAGE_SIZE } from '$lib/feed/endpoint';
 import type { FeedItem } from '$lib/types';
 import type { ContentArticle } from '$lib/types/content';
+import type { ForumThread } from '$lib/types';
 import { resolveGeoCopy, getGeoTokens, landingPalettes, type Block, type LandingPage as LandingPageData } from '@japaconnect/landing-blocks';
 
 /**
@@ -64,15 +65,23 @@ export const load: PageServerLoad = async (event) => {
 		const tokens = getGeoTokens(geoCountry, 'en');
 
 		// Pre-fetch entity data for the seed's entity_collection blocks.
-		const [exploreItems, blogPosts, destinations, jobs] = await Promise.all([
+		// Each entity_type maps to its canonical source so the data matches the
+		// section heading: "Trending discussions" (thread) → /forum threads,
+		// NOT the mixed /explore feed (which returns stories/guides/posts).
+		// "Popular destinations" (space) → /spaces (the /trending/spaces endpoint
+		// is cataloged but currently returns null — a backend stub bug; /spaces
+		// returns real destination data so the heading is not left empty).
+		const [exploreItems, blogPosts, destinations, jobs, forumThreads] = await Promise.all([
 			apiList<FeedItem>(ctx, `/explore?page_size=5&page_offset=0${geoParam}`)
 				.then((r) => r.items).catch(() => [] as FeedItem[]),
 			apiList<ContentArticle>(ctx, '/blog?page_size=6&page_offset=0')
 				.then((r) => r.items).catch(() => [] as ContentArticle[]),
-			apiGet<unknown[]>(ctx, `/trending/spaces?limit=6${geoParam}`)
-				.then((r) => r ?? []).catch(() => []),
+			apiList<unknown>(ctx, `/spaces?page_size=6&page_offset=0${geoParam ? `&geo=${encodeURIComponent(geoCountry)}` : ''}`)
+				.then((r) => r.items).catch(() => [] as unknown[]),
 			apiList<unknown>(ctx, `/jobs?page_size=6&page_offset=0${geoParam}`)
 				.then((r) => r.items).catch(() => [] as unknown[]),
+			apiList<ForumThread>(ctx, '/forum?page_size=5')
+				.then((r) => r.items).catch(() => [] as ForumThread[]),
 		]);
 
 		const seed = landingPalettes['homepage']?.defaultSeed ?? [];
@@ -82,7 +91,8 @@ export const load: PageServerLoad = async (event) => {
 			if (entry.type === 'entity_collection') {
 				const entityType = props.entity_type as string;
 				if (entityType === 'space') props._items = destinations;
-				else if (entityType === 'thread' || entityType === 'post') props._items = exploreItems;
+				else if (entityType === 'thread') props._items = forumThreads;
+				else if (entityType === 'post') props._items = exploreItems;
 				else if (entityType === 'blog') props._items = blogPosts;
 				else if (entityType === 'job') props._items = jobs;
 			}
