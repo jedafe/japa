@@ -8,9 +8,9 @@
 	import { getNotifications, getUnreadCount, markRead, markAllRead } from '$lib/stores/notifications.svelte';
 	import { goto, invalidateAll } from '$app/navigation';
 	import Avatar from '$lib/components/ui/Avatar.svelte';
-	import { Bell, Sun, Moon, Check, Menu } from 'lucide-svelte';
+	import { Bell, Sun, Moon, Check, Menu, PanelLeft } from 'lucide-svelte';
 
-	let { onMenuClick }: { onMenuClick?: () => void } = $props();
+	let { onMenuClick, onCollapseToggle }: { onMenuClick?: () => void; onCollapseToggle?: () => void } = $props();
 
 	let showDropdown = $state(false);
 	let showNotifications = $state(false);
@@ -51,6 +51,16 @@
 			aria-label={t('lib.components.layout.TopBar.svelte.toggle_sidebar', 'Toggle sidebar')}
 		>
 			<Menu class="h-5 w-5" />
+		</button>
+		<button
+			type="button"
+			data-sidebar-collapse
+			class="hidden rounded-md p-1.5 transition-colors hover:bg-black/5 dark:hover:bg-white/10 md:inline-flex"
+			style="color: var(--color-foreground)"
+			onclick={onCollapseToggle}
+			aria-label={t('lib.components.layout.TopBar.svelte.toggle_sidebar', 'Toggle sidebar')}
+		>
+			<PanelLeft class="h-5 w-5" />
 		</button>
 		<a href="/" class="text-sm font-semibold" style="color: var(--color-foreground)">{t('lib.components.layout.TopBar.svelte.japaconnect_admin')}</a>
 		{#if PUBLIC_JC_ENV === 'production'}

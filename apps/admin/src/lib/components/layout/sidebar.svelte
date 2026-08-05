@@ -20,6 +20,7 @@
 		Brain, Wand, Trophy, Plane, Banknote
 	} from "lucide-svelte";
 	import { clsx } from "clsx";
+	import { sidebarCollapsed } from "$lib/stores/sidebar.svelte";
 
 	let {
 		collapsed = $bindable(false),
@@ -32,6 +33,12 @@
 		onclose?: () => void;
 		permissions?: string[];
 	} = $props();
+
+	// Effective collapsed state: prefer an explicitly-bound `collapsed` prop,
+	// otherwise read from the shared sidebar store. The root layout passes
+	// `collapsed={sidebarCollapsed()}` so the store drives reactivity; this
+	// fallback keeps the sidebar correct when rendered without that binding.
+	let effectiveCollapsed = $derived(collapsed ?? sidebarCollapsed());
 
 	let expandedSections = $state(new Set(["dashboard", "users", "content", "moderation"]));
 	let searchQuery = $state("");
@@ -249,21 +256,21 @@
 		"flex h-full flex-col border-r transition-transform duration-200",
 		"fixed inset-y-0 left-0 z-50 w-64 md:static md:translate-x-0",
 		!mobileOpen && "-translate-x-full md:translate-x-0",
-		collapsed && "md:w-16"
+		effectiveCollapsed && "md:w-16"
 	)}
 	style="border-color: var(--color-border); background-color: var(--color-surface)"
 >
 	<!-- Logo -->
 	<div class="flex h-14 items-center border-b px-4" style="border-color: var(--color-border)">
 		<a href="/" class="flex items-center gap-2">
-			{#if !collapsed}
+			{#if !effectiveCollapsed}
 				<span class="text-lg font-semibold" style="color: var(--color-foreground)">{t('lib.components.Sidebar.svelte.admin')}</span>
 			{/if}
 		</a>
 	</div>
 
 	<!-- Search input (expanded mode only) -->
-	{#if !collapsed}
+	{#if !effectiveCollapsed}
 		<div class="px-3 pt-3">
 			<div class="relative">
 				<Search class="absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2" style="color: var(--color-muted)" />
@@ -281,7 +288,7 @@
 	<!-- Navigation -->
 	<nav class="flex-1 overflow-y-auto p-2 scrollbar-thin">
 		{#each filterSections(searchQuery) as section}
-			{#if !collapsed}
+			{#if !effectiveCollapsed}
 				<div class="mb-1">
 					<button
 						type="button"
@@ -345,7 +352,7 @@
 	</nav>
 
 	<!-- User Menu -->
-	{#if !collapsed}
+	{#if !effectiveCollapsed}
 		<div class="border-t p-4" style="border-color: var(--color-border)">
 			<div class="flex items-center gap-3">
 				<div class="flex h-8 w-8 items-center justify-center rounded-full" style="background-color: color-mix(in srgb, var(--color-primary) 15%, transparent)">
