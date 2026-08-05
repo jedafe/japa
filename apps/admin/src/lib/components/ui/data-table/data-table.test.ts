@@ -43,23 +43,20 @@ describe('DataTable server-side mode', () => {
 
   it('emits onpagesizechange when page size changes', async () => {
     const onpagesize = vi.fn();
-    const { container } = render(DataTable, {
+    const { rerender } = render(DataTable, {
       columns: [{ key: 'name', label: 'Name' }],
       data: rows,
       serverSide: true,
       totalRows: 100,
       totalPages: 10,
       page: 0,
+      pageSize: 10,
       onpagesizechange: onpagesize,
       showPagination: true
     });
-    // The Pagination page-size Select trigger
-    const selectTrigger = container.querySelector('[data-select-trigger]') as HTMLElement | null;
-    if (selectTrigger) {
-      await fireEvent.click(selectTrigger);
-    }
-    // We only assert the callback is wired; exact value depends on Select impl.
-    expect(onpagesize).toBeDefined();
+    // Re-render with a new pageSize to trigger the server-side page-size effect.
+    await rerender({ pageSize: 25 });
+    expect(onpagesize).toHaveBeenCalledWith(25);
   });
 });
 
