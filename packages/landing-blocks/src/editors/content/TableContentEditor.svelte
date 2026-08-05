@@ -48,8 +48,8 @@
 </script>
 
 <div class="space-y-3">
-  <div class="space-y-2">
-    <label class="block text-xs font-medium text-[var(--color-muted)]">Columns</label>
+  <label class="block space-y-2">
+    <span class="block text-xs font-medium text-[var(--color-muted)]">Columns</span>
     {#each props.columns as col, i (i)}
       <div class="space-y-2 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-2">
         <div class="flex items-center justify-between">
@@ -68,7 +68,7 @@
       </div>
     {/each}
     <button type="button" onclick={addColumn} class="w-full rounded-[var(--radius)] border border-dashed border-[var(--color-border)] py-1.5 text-sm text-[var(--color-muted)] hover:bg-[var(--color-surface-subtle)]">+ Add column</button>
-  </div>
+  </label>
 
   <div class="flex gap-4">
     <label class="flex items-center gap-1 text-xs text-[var(--color-muted)]">
@@ -79,8 +79,8 @@
     </label>
   </div>
 
-  <div class="space-y-2">
-    <label class="block text-xs font-medium text-[var(--color-muted)]">Rows</label>
+  <label class="block space-y-2">
+    <span class="block text-xs font-medium text-[var(--color-muted)]">Rows</span>
     {#each props.rows as row, i (i)}
       <div class="space-y-2 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-2">
         <div class="flex items-center justify-between">
@@ -93,5 +93,5 @@
       </div>
     {/each}
     <button type="button" onclick={addRow} class="w-full rounded-[var(--radius)] border border-dashed border-[var(--color-border)] py-1.5 text-sm text-[var(--color-muted)] hover:bg-[var(--color-surface-subtle)]">+ Add row</button>
-  </div>
+  </label>
 </div>

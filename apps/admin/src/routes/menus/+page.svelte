@@ -617,12 +617,12 @@
 			<label for="item-label" class="block text-sm font-medium" style="color: var(--color-foreground)">{t("menus.item_label", "Label")}</label>
 			<input id="item-label" type="text" bind:value={itemLabel} class="mt-1 w-full rounded-lg border p-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" placeholder="Home" />
 		</div>
-		<div>
-			<label class="block text-sm font-medium" style="color: var(--color-foreground)">{t("menus.icon", "Icon")}</label>
+		<label class="block">
+			<span class="block text-sm font-medium" style="color: var(--color-foreground)">{t("menus.icon", "Icon")}</span>
 			<div class="mt-1">
 				<IconPicker bind:value={itemIcon} />
 			</div>
-		</div>
+		</label>
 		<div class="col-span-2">
 			<label for="item-url" class="block text-sm font-medium" style="color: var(--color-foreground)">{t("menus.item_url", "URL")}</label>
 			<div class="relative mt-1">
@@ -689,8 +689,8 @@
 				onchange={(val) => (itemTarget = val)}
 			/>
 		</div>
-		<div class="col-span-2">
-			<label class="block text-sm font-medium" style="color: var(--color-foreground)">{t("menus.required_groups", "Required User Groups")}</label>
+		<label class="block col-span-2">
+			<span class="block text-sm font-medium" style="color: var(--color-foreground)">{t("menus.required_groups", "Required User Groups")}</span>
 			<p class="mt-0.5 text-xs" style="color: var(--color-muted)">{t("menus.required_groups_hint", "Item is visible only to users in at least one selected group. Leave empty for everyone.")}</p>
 			<div class="relative mt-1">
 				<div
@@ -752,7 +752,7 @@
 					</ul>
 				{/if}
 			</div>
-		</div>
+		</label>
 	</div>
 	<div class="mt-4 flex justify-end gap-2">
 		<Button variant="ghost" onclick={() => showItemModal = false}>{t("common.cancel", "Cancel")}</Button>

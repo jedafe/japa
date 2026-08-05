@@ -108,37 +108,37 @@
 </script>
 
 {#snippet sel(label: string, group: keyof BlockStyle, field: string, options: Opt[], current: unknown)}
-  <div>
-    <label class={labelClass}>{label}</label>
+  <label class="block">
+    <span class={labelClass}>{label}</span>
     <select class={inputClass} value={(current as string) ?? ''} onchange={(e) => updateGroup(group, { [field]: e.currentTarget.value || undefined })}>
       <option value="">—</option>
       {#each options as opt}<option value={opt.value}>{opt.label}</option>{/each}
     </select>
-  </div>
+  </label>
 {/snippet}
 
 {#snippet col(label: string, group: keyof BlockStyle, field: string, current: unknown)}
-  <div>
-    <label class={labelClass}>{label}</label>
+  <label class="block">
+    <span class={labelClass}>{label}</span>
     <div class="flex gap-2">
       <input type="color" value={(current as string) ?? '#000000'} oninput={(e) => updateGroup(group, { [field]: e.currentTarget.value })} class="h-8 w-12 shrink-0 rounded border border-[var(--color-border)]" />
       <input type="text" value={(current as string) ?? ''} oninput={(e) => updateGroup(group, { [field]: e.currentTarget.value })} placeholder="#000000" class={inputClass} />
     </div>
-  </div>
+  </label>
 {/snippet}
 
 {#snippet num(label: string, group: keyof BlockStyle, field: string, current: unknown, placeholder?: string)}
-  <div>
-    <label class={labelClass}>{label}</label>
+  <label class="block">
+    <span class={labelClass}>{label}</span>
     <input type="number" value={(current as number) ?? ''} oninput={(e) => updateGroup(group, { [field]: e.currentTarget.value ? Number(e.currentTarget.value) : undefined })} {placeholder} class={inputClass} />
-  </div>
+  </label>
 {/snippet}
 
 {#snippet rng(label: string, group: keyof BlockStyle, field: string, min: number, max: number, current: unknown, suffix?: string)}
-  <div>
-    <label class={labelClass}>{label}: {current ?? min}{suffix ?? ''}</label>
+  <label class="block">
+    <span class={labelClass}>{label}: {current ?? min}{suffix ?? ''}</span>
     <input type="range" {min} {max} value={(current as number) ?? min} oninput={(e) => updateGroup(group, { [field]: Number(e.currentTarget.value) })} class="w-full" />
-  </div>
+  </label>
 {/snippet}
 
 {#snippet resetBtn(label: string, groups: (keyof BlockStyle)[])}
@@ -188,10 +188,10 @@
       {@render col('Text Color', 'color', 'text', g('color')['text'])}
       {@render col('Heading Color', 'color', 'heading', g('color')['heading'])}
       {@render col('Accent Color', 'color', 'accent', g('color')['accent'])}
-      <div>
-        <label class={labelClass}>Background</label>
+      <label class="block">
+        <span class={labelClass}>Background</span>
         <BackgroundPicker value={value?.background} onchange={(v) => onchange({ ...value, background: v })} {mediaPickerComponent} />
-      </div>
+      </label>
       {@render resetBtn('Colors', ['color', 'background'])}
     </Accordion.Content>
   </Accordion.Item>
@@ -283,10 +283,10 @@
       </Accordion.Trigger>
     </Accordion.Header>
     <Accordion.Content class={contentClass}>
-      <div>
-        <label class={labelClass}>Icon</label>
+      <label class="block">
+        <span class={labelClass}>Icon</span>
         <IconPicker value={g('icon')['name'] as string} onchange={(v) => updateGroup('icon', { name: v })} />
-      </div>
+      </label>
       {#each iconSelects as f}{@render sel(f.label, 'icon', f.key, f.options, g('icon')[f.key])}{/each}
       {@render col('Icon Color', 'icon', 'color', g('icon')['color'])}
       {@render col('Icon Background', 'icon', 'background_color', g('icon')['background_color'])}

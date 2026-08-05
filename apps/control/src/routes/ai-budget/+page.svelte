@@ -7,6 +7,7 @@
 	import { t } from '$lib/stores/i18n.svelte';
 	import { DollarSign, RefreshCw, AlertTriangle, Pencil } from 'lucide-svelte';
 	import { BarChart, Spline } from 'layerchart';
+	import { curveMonotoneX } from 'd3-shape';
 
 	let {} = $props();
 
@@ -188,7 +189,7 @@
 								data={cumulativeData}
 								x="x"
 								y="y"
-								curve="monotoneX"
+								curve={curveMonotoneX}
 								stroke="var(--color-accent-foreground)"
 							/>
 						</div>

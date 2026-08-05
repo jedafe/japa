@@ -48,6 +48,7 @@ func (m *mockProvider) VerifyWebhookSignature(payload []byte, sig string) error 
 }
 
 func (m *mockProvider) Models() []ModelInfo { return nil }
+func (m *mockProvider) FetchModels(_ context.Context) ([]ModelInfo, error) { return nil, nil }
 
 // ---------------------------------------------------------------------------
 // Provider Interface Compliance

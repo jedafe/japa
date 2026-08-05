@@ -30,8 +30,8 @@
 </script>
 
 <div class="space-y-4">
-  <div>
-    <label class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Entity type</label>
+  <label class="block">
+    <span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Entity type</span>
     <select
       value={props.entity_type}
       onchange={(e) => update('entity_type', e.currentTarget.value as EntityType)}
@@ -41,10 +41,10 @@
         <option value={et}>{et}</option>
       {/each}
     </select>
-  </div>
+  </label>
 
-  <div>
-    <label class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Layout</label>
+  <label class="block">
+    <span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Layout</span>
     <select
       value={props.layout}
       onchange={(e) => update('layout', e.currentTarget.value as EntityCollectionProps['layout'])}
@@ -55,10 +55,10 @@
       <option value="slider">Slider</option>
       <option value="marquee">Marquee</option>
     </select>
-  </div>
+  </label>
 
-  <div>
-    <label class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Card variant</label>
+  <label class="block">
+    <span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Card variant</span>
     <select
       value={props.card_variant}
       onchange={(e) => update('card_variant', e.currentTarget.value as EntityCollectionProps['card_variant'])}
@@ -68,10 +68,10 @@
       <option value="compact">Compact</option>
       <option value="minimal">Minimal</option>
     </select>
-  </div>
+  </label>
 
-  <div>
-    <label class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Columns: {props.columns}</label>
+  <label class="block">
+    <span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Columns: {props.columns}</span>
     <input
       type="range"
       min="1"
@@ -80,13 +80,13 @@
       oninput={(e) => update('columns', Number(e.currentTarget.value))}
       class="w-full"
     />
-  </div>
+  </label>
 
   <div class="space-y-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
     <p class="text-xs font-medium text-[var(--color-muted)]">Query</p>
 
-    <div>
-      <label class="mb-1 block text-xs text-[var(--color-muted)]">Limit</label>
+    <label class="block">
+      <span class="mb-1 block text-xs text-[var(--color-muted)]">Limit</span>
       <input
         type="number"
         min="1"
@@ -94,10 +94,10 @@
         oninput={(e) => updateQuery('limit', Number(e.currentTarget.value))}
         class={inputClass}
       />
-    </div>
+    </label>
 
-    <div>
-      <label class="mb-1 block text-xs text-[var(--color-muted)]">Sort</label>
+    <label class="block">
+      <span class="mb-1 block text-xs text-[var(--color-muted)]">Sort</span>
       <select
         value={props.query?.sort ?? ''}
         onchange={(e) => updateQuery('sort', e.currentTarget.value)}
@@ -109,7 +109,7 @@
         <option value="title">Title</option>
         <option value="popularity">Popularity</option>
       </select>
-    </div>
+    </label>
 
     <div class="flex items-center gap-2">
       <input

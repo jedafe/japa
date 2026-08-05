@@ -34,6 +34,30 @@ func (d *Dispatcher) RegisterProvider(category string, p Provider) {
 	d.providersByCategory[category] = append(d.providersByCategory[category], p)
 }
 
+// ClearCategory removes all providers registered for the given category.
+// Used by ReloadProviders to hot-swap the provider list at runtime.
+func (d *Dispatcher) ClearCategory(category string) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	delete(d.providersByCategory, category)
+}
+
+// ClearAll removes all providers from all categories. Used when reloading
+// the entire provider configuration from the database.
+func (d *Dispatcher) ClearAll() {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.providersByCategory = make(map[string][]Provider)
+}
+
+// HasCategory reports whether any provider is registered for the category.
+func (d *Dispatcher) HasCategory(category string) bool {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	_, ok := d.providersByCategory[category]
+	return ok && len(d.providersByCategory[category]) > 0
+}
+
 // RegisteredModels returns the union of models exposed by every registered
 // provider across all categories. Used by the admin model picker so the list
 // reflects the providers actually wired at startup (Rule 16).

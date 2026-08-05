@@ -1,6 +1,7 @@
 <script lang="ts">
 	import PageHeader from "$lib/components/layout/page-header.svelte";
 	import { DataTable } from "$lib/components/ui/data-table";
+	import { FilterBar } from "$lib/components/ui/filter-bar";
 	import { Button } from "$lib/components/ui/button";
 	import { Modal } from "$lib/components/ui/modal";
 	import { TableSkeleton } from "$lib/components/ui/skeleton";
@@ -8,6 +9,7 @@
 	import { universityAdminApi } from "$lib/api";
 	import { t } from "$lib/stores/i18n.svelte";
 	import { hasPermission } from "$lib/stores/permissions.svelte";
+	import { onMount } from "svelte";
 
 	type PendingTrack = {
 		id: string;
@@ -34,6 +36,7 @@
 	let errorMessage = $state("");
 	let successMessage = $state("");
 	let searchQuery = $state("");
+	let filterValues = $state<Record<string, string>>({});
 
 	let showApproveModal = $state(false);
 	let showRejectModal = $state(false);
@@ -44,6 +47,24 @@
 	let showAllTracks = $state(false);
 
 	const canApprove = $derived(hasPermission("university.course.approve"));
+
+	const difficultyFilters = [
+		{ key: "difficulty", label: t("university.difficulty", "Difficulty"), options: [
+			{ value: "beginner", label: t("university.beginner", "Beginner") },
+			{ value: "intermediate", label: t("university.intermediate", "Intermediate") },
+			{ value: "advanced", label: t("university.advanced", "Advanced") }
+		]}
+	];
+
+	const statusFilters = [
+		{ key: "status", label: t("university.status", "Status"), options: [
+			{ value: "pending", label: t("university.pending", "Pending") },
+			{ value: "approved", label: t("university.approved", "Approved") },
+			{ value: "rejected", label: t("university.rejected", "Rejected") }
+		]}
+	];
+
+	const activeFilters = $derived(showAllTracks ? [...difficultyFilters, ...statusFilters] : difficultyFilters);
 
 	function formatPrice(kobo: number | null | undefined, currency: string): string {
 		if (kobo == null) return t("university.free", "Free");
@@ -64,21 +85,30 @@
 	];
 
 	const filtered = $derived(
-		searchQuery
-			? tracks.filter((tr) => tr.title.toLowerCase().includes(searchQuery.toLowerCase()) || tr.instructor_name.toLowerCase().includes(searchQuery.toLowerCase()) || (tr.category ?? "").toLowerCase().includes(searchQuery.toLowerCase()))
-			: tracks
+		tracks.filter((tr) => {
+			const matchesSearch = !searchQuery
+				|| tr.title.toLowerCase().includes(searchQuery.toLowerCase())
+				|| tr.instructor_name.toLowerCase().includes(searchQuery.toLowerCase())
+				|| (tr.category ?? "").toLowerCase().includes(searchQuery.toLowerCase());
+			const matchesDifficulty = !filterValues.difficulty
+				|| tr.difficulty === filterValues.difficulty;
+			return matchesSearch && matchesDifficulty;
+		})
 	);
 
 	async function load() {
 		loading = true;
 		errorMessage = "";
 		try {
+			const params = new URLSearchParams();
+			if (showAllTracks && filterValues.status) params.set("status", filterValues.status);
+			const qs = params.toString() || undefined;
 			const result = showAllTracks
-				? await universityAdminApi.listAllTracks()
-				: await universityAdminApi.listPendingTracks();
+				? await universityAdminApi.listAllTracks(qs)
+				: await universityAdminApi.listPendingTracks(qs);
 			if (result.ok) {
-				const data = result.data as { data: PendingTrack[] };
-				tracks = data.data ?? [];
+				const data = result.data as { data?: PendingTrack[] } | null | undefined;
+				tracks = data?.data ?? [];
 			} else {
 				errorMessage = result.error;
 			}
@@ -87,6 +117,18 @@
 		} finally {
 			loading = false;
 		}
+	}
+
+	function handleSearch(values: Record<string, string>) {
+		searchQuery = values.search ?? "";
+		filterValues = values;
+		load();
+	}
+
+	function handleClear() {
+		searchQuery = "";
+		filterValues = {};
+		load();
 	}
 
 	function openApprove(tr: PendingTrack) { target = tr; showApproveModal = true; }
@@ -125,12 +167,12 @@
 
 	function toggleAllTracks() {
 		showAllTracks = !showAllTracks;
+		filterValues = {};
+		searchQuery = "";
 		load();
 	}
 
-	$effect(() => {
-		load();
-	});
+	onMount(load);
 </script>
 
 <svelte:head>
@@ -164,19 +206,25 @@
 	</Button>
 </div>
 
+<FilterBar
+	filters={activeFilters}
+	searchPlaceholder={t("university.search_tracks", "Search tracks...")}
+	onsearch={handleSearch}
+	onclear={handleClear}
+/>
+
+<div class="mt-4">
 {#if loading}
 	<TableSkeleton rows={5} />
 {:else}
 	<DataTable
 		{columns}
 		data={filtered}
-		searchable={true}
-		searchPlaceholder={t("university.search_tracks", "Search tracks...")}
-		onsearch={(q: string) => { searchQuery = q; }}
 		pageSize={25}
 		emptyMessage={t("university.no_pending_tracks", "No tracks pending approval")}
 	/>
 {/if}
+</div>
 
 <!-- View Modal -->
 <Modal open={showViewModal} onclose={() => { showViewModal = false; }} title={t("university.track_details", "Track Details")}>

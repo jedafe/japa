@@ -22,24 +22,24 @@
 </script>
 
 <div class="space-y-3">
-  <div>
-    <label class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Media</label>
+  <label class="block">
+    <span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Media</span>
     <MediaPicker value={props.media} onchange={(v) => update('media', v as MediaBlockProps['media'])} {mediaPickerComponent} />
-  </div>
+  </label>
 
-  <div>
-    <label class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Layout</label>
+  <label class="block">
+    <span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Layout</span>
     <select value={props.layout} onchange={(e) => update('layout', e.currentTarget.value as MediaBlockProps['layout'])} class={inputClass}>
       <option value="full">Full</option>
       <option value="contained">Contained</option>
       <option value="split">Split</option>
     </select>
-  </div>
+  </label>
 
-  <div>
-    <label class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Caption</label>
+  <label class="block">
+    <span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Caption</span>
     <GeoText value={props.caption ?? ''} onchange={(v) => update('caption', v)} {geoCtx} />
-  </div>
+  </label>
 
   <label class="flex items-center gap-1 text-xs text-[var(--color-muted)]">
     <input type="checkbox" checked={props.lightbox} onchange={(e) => update('lightbox', e.currentTarget.checked)} /> Lightbox

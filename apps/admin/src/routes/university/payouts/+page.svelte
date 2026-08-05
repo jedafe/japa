@@ -9,10 +9,12 @@
 	import { universityAdminApi } from "$lib/api";
 	import { t } from "$lib/stores/i18n.svelte";
 	import { hasPermission } from "$lib/stores/permissions.svelte";
+	import { onMount } from "svelte";
 
 	type Payout = {
 		id: string;
 		instructor_id: string;
+		instructor_name?: string;
 		period_start: string;
 		period_end: string;
 		gross_kobo: number;
@@ -57,7 +59,7 @@
 	}
 
 	const columns = [
-		{ key: "instructor_id", label: t("university.instructor_id", "Instructor ID"), render: (v: string) => `<span class="font-mono text-xs" style="color: var(--color-muted)">${v.slice(0, 8)}...</span>` },
+		{ key: "instructor_name", label: t("university.instructor", "Instructor"), sortable: true, render: (v: string, row: Payout) => `<span class="text-sm">${v || (row.instructor_id ? row.instructor_id.slice(0, 8) + "..." : "—")}</span>` },
 		{ key: "period_start", label: t("university.period", "Period"), sortable: true, render: (_: any, row: Payout) => `<span class="text-xs" style="color: var(--color-muted)">${row.period_start} → ${row.period_end}</span>` },
 		{ key: "gross_kobo", label: t("university.gross", "Gross"), sortable: true, render: (v: number, row: Payout) => `<span class="text-sm font-medium">${formatKobo(v, row.currency)}</span>` },
 		{ key: "platform_commission_kobo", label: t("university.commission", "Commission"), render: (v: number, row: Payout) => `<span class="text-xs" style="color: var(--color-muted)">${formatKobo(v, row.currency)}</span>` },
@@ -81,8 +83,8 @@
 			if (filterValues.status) params.set("status", filterValues.status);
 			const result = await universityAdminApi.listPayouts(params.toString() || undefined);
 			if (result.ok) {
-				const data = result.data as { data: Payout[] };
-				payouts = data.data ?? [];
+				const data = result.data as { data?: Payout[] } | null | undefined;
+				payouts = data?.data ?? [];
 			} else {
 				errorMessage = result.error;
 			}
@@ -96,6 +98,7 @@
 	function handleSearch(values: Record<string, string>) {
 		searchQuery = values.search ?? "";
 		filterValues = values;
+		load();
 	}
 
 	function openProcess(p: Payout) { target = p; showProcessModal = true; }
@@ -132,9 +135,7 @@
 		actionLoading = false;
 	}
 
-	$effect(() => {
-		load();
-	});
+	onMount(load);
 </script>
 
 <svelte:head>
@@ -165,21 +166,20 @@
 	</Button>
 </div>
 
-<FilterBar filters={statusFilters} onsearch={handleSearch} onclear={() => { searchQuery = ""; filterValues = {}; }} />
+<FilterBar filters={statusFilters} onsearch={handleSearch} onclear={() => { searchQuery = ""; filterValues = {}; load(); }} />
 
+<div class="mt-4">
 {#if loading}
 	<TableSkeleton rows={5} />
 {:else}
 	<DataTable
 		{columns}
 		data={filtered}
-		searchable={true}
-		searchPlaceholder={t("university.search_payouts", "Search by instructor or reference...")}
-		onsearch={(q: string) => { searchQuery = q; }}
 		pageSize={25}
 		emptyMessage={t("university.no_payouts", "No payouts found")}
 	/>
 {/if}
+</div>
 
 <!-- Process Modal -->
 <Modal open={showProcessModal} onclose={() => { showProcessModal = false; }} title={t("university.process_payout", "Process Payout")}>

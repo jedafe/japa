@@ -4,9 +4,9 @@
 	import { DataTable } from '$lib/components/ui/data-table';
 	import { Button } from '$lib/components/ui/button';
 	import { Select } from '$lib/components/ui/select';
-	import { plansApi, walletApi, type SubscriptionPlan, type PlanFeature } from '$lib/api';
+	import { plansApi, walletApi, type SubscriptionPlan, type PlanFeature, api } from '$lib/api';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
-	import { Pencil, Trash2, Plus, X, Check, Star } from 'lucide-svelte';
+	import { Pencil, Trash2, Plus, X, Check, Star, ListChecks } from 'lucide-svelte';
 
 	type Plan = SubscriptionPlan;
 
@@ -37,6 +37,15 @@
 
 	let newFeatureText = $state('');
 	let newFeatureIncluded = $state(true);
+
+	// Manage tracks modal state
+	let showTracksModal = $state(false);
+	let tracksPlanId = $state<string | null>(null);
+	let tracksPlanName = $state('');
+	let allTracks = $state<{ id: string; title: string; slug: string }[]>([]);
+	let selectedTrackIds = $state<Set<string>>(new Set());
+	let loadingTracks = $state(false);
+	let savingTracks = $state(false);
 
 	const canManage = $derived(hasPermission('payments.plans.manage'));
 
@@ -105,6 +114,47 @@
 			currencies = currResult.data;
 		}
 		loading = false;
+	}
+
+	async function openManageTracks(plan: Plan) {
+		tracksPlanId = plan.id;
+		tracksPlanName = plan.name;
+		showTracksModal = true;
+		loadingTracks = true;
+		selectedTrackIds = new Set();
+
+		// Fetch all learning tracks and the plan's current track list in parallel.
+		const [tracksRes, planTracksRes] = await Promise.all([
+			api<{ id: string; title: string; slug: string }[]>('/admin/learn/tracks'),
+			plansApi.listTracks(plan.id)
+		]);
+		if (tracksRes.ok && tracksRes.data) {
+			allTracks = tracksRes.data;
+		}
+		if (planTracksRes.ok && planTracksRes.data) {
+			selectedTrackIds = new Set(planTracksRes.data.map((t) => t.track_id));
+		}
+		loadingTracks = false;
+	}
+
+	function toggleTrackSelection(trackId: string) {
+		const next = new Set(selectedTrackIds);
+		if (next.has(trackId)) {
+			next.delete(trackId);
+		} else {
+			next.add(trackId);
+		}
+		selectedTrackIds = next;
+	}
+
+	async function saveTracks() {
+		if (!tracksPlanId || savingTracks) return;
+		savingTracks = true;
+		const result = await plansApi.setTracks(tracksPlanId, Array.from(selectedTrackIds));
+		savingTracks = false;
+		if (result.ok) {
+			showTracksModal = false;
+		}
 	}
 
 	function openCreate() {
@@ -370,9 +420,45 @@
 	<p class="text-sm" style="color: var(--color-muted)">Are you sure you want to delete this plan? This cannot be undone.</p>
 </Modal>
 
+<!-- Manage Tracks Modal -->
+<Modal bind:open={showTracksModal} title={`Manage Tracks — ${tracksPlanName}`} onConfirm={saveTracks} confirmLabel={savingTracks ? 'Saving...' : 'Save Tracks'}>
+	<div class="space-y-3">
+		<p class="text-xs" style="color: var(--color-muted)">
+			Select which courses are included in this subscription plan. When no tracks are selected, the plan includes ALL tracks (Pro = all).
+		</p>
+		{#if loadingTracks}
+			<p class="text-sm" style="color: var(--color-muted)">Loading tracks...</p>
+		{:else}
+			<div class="max-h-80 space-y-1 overflow-y-auto">
+				{#each allTracks as track (track.id)}
+					<label class="flex cursor-pointer items-center gap-2 rounded-md border px-3 py-2 text-sm hover:bg-surface-hover" style="border-color: var(--color-border)">
+						<input
+							type="checkbox"
+							checked={selectedTrackIds.has(track.id)}
+							onchange={() => toggleTrackSelection(track.id)}
+							class="h-4 w-4 rounded"
+						/>
+						<span class="flex-1">{track.title}</span>
+						<span class="font-mono text-xs" style="color: var(--color-muted)">{track.slug}</span>
+					</label>
+				{/each}
+				{#if allTracks.length === 0}
+					<p class="text-sm" style="color: var(--color-muted)">No tracks available.</p>
+				{/if}
+			</div>
+			<p class="text-xs" style="color: var(--color-muted)">
+				{selectedTrackIds.size === 0 ? 'All tracks included (no filter)' : `${selectedTrackIds.size} track(s) selected`}
+			</p>
+		{/if}
+	</div>
+</Modal>
+
 {#snippet PlanActionsCell({ row }: { value: any; row: Plan })}
 	{#if canManage}
 		<div class="flex items-center gap-1">
+			<Button variant="ghost" size="sm" onclick={() => openManageTracks(row)} aria-label="Manage Tracks" title="Manage Tracks">
+				<ListChecks class="h-3.5 w-3.5" />
+			</Button>
 			<Button variant="ghost" size="sm" onclick={() => openEdit(row)} aria-label="Edit">
 				<Pencil class="h-3.5 w-3.5" />
 			</Button>

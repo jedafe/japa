@@ -23,19 +23,19 @@
 </script>
 
 <div class="space-y-3">
-  <div>
-    <label class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Label</label>
+  <label class="block">
+    <span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Label</span>
     <GeoText value={props.label} onchange={(v) => update('label', v)} {geoCtx} />
-  </div>
+  </label>
 
-  <div>
-    <label class="mb-1 block text-xs font-medium text-[var(--color-muted)]">URL</label>
+  <label class="block">
+    <span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">URL</span>
     <input type="text" value={props.href} oninput={(e) => update('href', e.currentTarget.value)} placeholder="/explore" class={inputClass} />
-  </div>
+  </label>
 
   <div class="grid grid-cols-2 gap-2">
-    <div>
-      <label class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Variant</label>
+    <label class="block">
+      <span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Variant</span>
       <select class={inputClass} value={props.variant ?? 'primary'} onchange={(e) => update('variant', e.currentTarget.value as CtaButtonProps['variant'])}>
         <option value="primary">Primary</option>
         <option value="outline">Outline</option>
@@ -43,58 +43,58 @@
         <option value="link">Link</option>
         <option value="gradient">Gradient</option>
       </select>
-    </div>
-    <div>
-      <label class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Size</label>
+    </label>
+    <label class="block">
+      <span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Size</span>
       <select class={inputClass} value={props.size ?? 'lg'} onchange={(e) => update('size', e.currentTarget.value as CtaButtonProps['size'])}>
         <option value="sm">Small</option>
         <option value="md">Medium</option>
         <option value="lg">Large</option>
         <option value="xl">Extra Large</option>
       </select>
-    </div>
+    </label>
   </div>
 
-  <div>
-    <label class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Alignment</label>
+  <label class="block">
+    <span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Alignment</span>
     <select class={inputClass} value={props.align ?? 'center'} onchange={(e) => update('align', e.currentTarget.value as CtaButtonProps['align'])}>
       <option value="left">Left</option>
       <option value="center">Center</option>
       <option value="right">Right</option>
     </select>
-  </div>
+  </label>
 
-  <div>
-    <label class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Icon (left, optional)</label>
+  <label class="block">
+    <span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Icon (left, optional)</span>
     <IconPicker value={props.icon} onchange={(v) => update('icon', v)} />
-  </div>
+  </label>
 
-  <div>
-    <label class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Icon (right, optional)</label>
+  <label class="block">
+    <span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Icon (right, optional)</span>
     <IconPicker value={props.icon_right} onchange={(v) => update('icon_right', v)} />
-  </div>
+  </label>
 
-  <div>
-    <label class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Subtext (optional)</label>
+  <label class="block">
+    <span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Subtext (optional)</span>
     <GeoText value={props.subtext ?? ''} onchange={(v) => update('subtext', v)} {geoCtx} />
-  </div>
+  </label>
 
   {#if props.variant === 'gradient'}
     <div class="grid grid-cols-2 gap-2">
-      <div>
-        <label class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Gradient from</label>
+      <label class="block">
+        <span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Gradient from</span>
         <div class="flex items-center gap-2">
           <input type="color" value={props.gradient_from ?? '#f97316'} oninput={(e) => update('gradient_from', e.currentTarget.value)} class="h-8 w-12 rounded border border-[var(--color-border)]" />
           <input type="text" value={props.gradient_from ?? ''} oninput={(e) => update('gradient_from', e.currentTarget.value)} placeholder="#f97316" class={inputClass} />
         </div>
-      </div>
-      <div>
-        <label class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Gradient to</label>
+      </label>
+      <label class="block">
+        <span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Gradient to</span>
         <div class="flex items-center gap-2">
           <input type="color" value={props.gradient_to ?? '#a855f7'} oninput={(e) => update('gradient_to', e.currentTarget.value)} class="h-8 w-12 rounded border border-[var(--color-border)]" />
           <input type="text" value={props.gradient_to ?? ''} oninput={(e) => update('gradient_to', e.currentTarget.value)} placeholder="#a855f7" class={inputClass} />
         </div>
-      </div>
+      </label>
     </div>
   {/if}
 

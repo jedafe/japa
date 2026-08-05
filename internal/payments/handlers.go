@@ -1644,3 +1644,168 @@ func (h *Handlers) GetAdminPayment(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": toPaymentAPIResponse(payment, "")})
 }
+
+// ─── Subscription Plan ↔ Track management (migration 000273) ──────────────
+
+// PlanTrackResponse is the DTO for a track listed under a plan.
+type PlanTrackResponse struct {
+	TrackID string `json:"track_id"`
+}
+
+// AdminListPlanTracks handles GET /api/v1/admin/plans/{id}/tracks.
+func (h *Handlers) AdminListPlanTracks(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+	planID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid plan ID")
+		return
+	}
+	trackIDs, err := gen.New(h.Service.db.Reader).ListTrackIDsForPlan(r.Context(), gen.ListTrackIDsForPlanParams{
+		PlanID:   planID,
+		TenantID: tenantID,
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list plan tracks")
+		return
+	}
+	resp := make([]PlanTrackResponse, 0, len(trackIDs))
+	for _, tid := range trackIDs {
+		resp = append(resp, PlanTrackResponse{TrackID: tid.String()})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": resp})
+}
+
+// AdminSetPlanTracks handles PUT /api/v1/admin/plans/{id}/tracks.
+// Replaces the entire track list for a plan.
+func (h *Handlers) AdminSetPlanTracks(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+	planID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid plan ID")
+		return
+	}
+	var input struct {
+		TrackIDs []string `json:"track_ids"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
+
+	wr := gen.New(h.Service.db.Writer)
+	// Clear existing entries, then insert the new set.
+	if err := wr.RemoveAllTracksFromPlan(r.Context(), gen.RemoveAllTracksFromPlanParams{
+		PlanID:   planID,
+		TenantID: tenantID,
+	}); err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to clear plan tracks")
+		return
+	}
+	for _, tidStr := range input.TrackIDs {
+		var tid pgtype.UUID
+		if err := tid.Scan(tidStr); err != nil {
+			continue // skip invalid IDs
+		}
+		_ = wr.AddTrackToPlan(r.Context(), gen.AddTrackToPlanParams{
+			PlanID:   planID,
+			TrackID:  tid,
+			TenantID: tenantID,
+		})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]int{"count": len(input.TrackIDs)}})
+}
+
+// AdminAddTrackToPlan handles POST /api/v1/admin/plans/{id}/tracks/{trackId}.
+func (h *Handlers) AdminAddTrackToPlan(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+	planID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid plan ID")
+		return
+	}
+	trackID, err := parseUUIDParam(r, "trackId")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid track ID")
+		return
+	}
+	if err := gen.New(h.Service.db.Writer).AddTrackToPlan(r.Context(), gen.AddTrackToPlanParams{
+		PlanID:   planID,
+		TrackID:  trackID,
+		TenantID: tenantID,
+	}); err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to add track to plan")
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{"data": map[string]bool{"added": true}})
+}
+
+// AdminRemoveTrackFromPlan handles DELETE /api/v1/admin/plans/{id}/tracks/{trackId}.
+func (h *Handlers) AdminRemoveTrackFromPlan(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+	planID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid plan ID")
+		return
+	}
+	trackID, err := parseUUIDParam(r, "trackId")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid track ID")
+		return
+	}
+	if err := gen.New(h.Service.db.Writer).RemoveTrackFromPlan(r.Context(), gen.RemoveTrackFromPlanParams{
+		PlanID:   planID,
+		TrackID:  trackID,
+		TenantID: tenantID,
+	}); err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to remove track from plan")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"removed": true}})
+}
+
+// PublicListPlanTracks handles GET /api/v1/pricing/plans/{slug}/tracks.
+// Returns the track IDs included in a plan (empty = all tracks).
+func (h *Handlers) PublicListPlanTracks(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+	slug := chi.URLParam(r, "slug")
+	if slug == "" {
+		writeError(w, http.StatusBadRequest, "missing_slug", "Plan slug is required")
+		return
+	}
+	plan, err := gen.New(h.Service.db.Reader).GetSubscriptionPlanBySlug(r.Context(), gen.GetSubscriptionPlanBySlugParams{
+		TenantID: tenantID,
+		Slug:     slug,
+	})
+	if err != nil {
+		writeError(w, http.StatusNotFound, "plan_not_found", "Plan not found")
+		return
+	}
+	trackIDs, err := gen.New(h.Service.db.Reader).ListTrackIDsForPlan(r.Context(), gen.ListTrackIDsForPlanParams{
+		PlanID:   plan.ID,
+		TenantID: tenantID,
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list plan tracks")
+		return
+	}
+	resp := make([]string, 0, len(trackIDs))
+	for _, tid := range trackIDs {
+		resp = append(resp, tid.String())
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": resp})
+}

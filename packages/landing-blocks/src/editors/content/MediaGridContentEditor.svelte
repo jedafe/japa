@@ -34,8 +34,8 @@
 </script>
 
 <div class="space-y-4">
-  <div>
-    <label class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Card style</label>
+  <label class="block">
+    <span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Card style</span>
     <select
       value={props.card_style}
       onchange={(e) => update('card_style', e.currentTarget.value as MediaGridProps['card_style'])}
@@ -45,7 +45,7 @@
       <option value="logo">Logo</option>
       <option value="overlay">Overlay</option>
     </select>
-  </div>
+  </label>
 
   <div class="flex items-center gap-2">
     <input
@@ -58,8 +58,8 @@
     <label for="mg-lightbox" class="text-xs font-medium text-[var(--color-muted)]">Lightbox</label>
   </div>
 
-  <div>
-    <label class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Columns: {props.columns}</label>
+  <label class="block">
+    <span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Columns: {props.columns}</span>
     <input
       type="range"
       min="1"
@@ -68,11 +68,11 @@
       oninput={(e) => update('columns', Number(e.currentTarget.value))}
       class="w-full"
     />
-  </div>
+  </label>
 
-  <div>
+  <label class="block">
     <div class="mb-2 flex items-center justify-between">
-      <label class="text-xs font-medium text-[var(--color-muted)]">Items</label>
+      <span class="text-xs font-medium text-[var(--color-muted)]">Items</span>
       <button type="button" onclick={addItem} class="text-xs text-[var(--color-primary)] hover:underline">+ Add Item</button>
     </div>
     <div class="space-y-4">
@@ -83,32 +83,32 @@
             <button type="button" onclick={() => removeItem(i)} class="text-xs text-[var(--color-danger)] hover:underline">Remove</button>
           </div>
 
-          <div>
-            <label class="mb-1 block text-xs text-[var(--color-muted)]">Media</label>
+          <label class="block">
+            <span class="mb-1 block text-xs text-[var(--color-muted)]">Media</span>
             <MediaPicker value={item.media} onchange={(v) => updateItem(i, 'media', v)} {mediaPickerComponent} />
-          </div>
+          </label>
 
-          <div>
-            <label class="mb-1 block text-xs text-[var(--color-muted)]">Caption</label>
+          <label class="block">
+            <span class="mb-1 block text-xs text-[var(--color-muted)]">Caption</span>
             <input
               type="text"
               value={item.caption ?? ''}
               oninput={(e) => updateItem(i, 'caption', e.currentTarget.value)}
               class={inputClass}
             />
-          </div>
+          </label>
 
-          <div>
-            <label class="mb-1 block text-xs text-[var(--color-muted)]">Href</label>
+          <label class="block">
+            <span class="mb-1 block text-xs text-[var(--color-muted)]">Href</span>
             <input
               type="text"
               value={item.href ?? ''}
               oninput={(e) => updateItem(i, 'href', e.currentTarget.value)}
               class={inputClass}
             />
-          </div>
+          </label>
         </div>
       {/each}
     </div>
-  </div>
+  </label>
 </div>

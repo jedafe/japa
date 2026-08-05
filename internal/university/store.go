@@ -315,29 +315,30 @@ func trackFromRow(r gen.GetUniversityTrackByIDRow) Track {
 
 // CatalogTrack is a marketplace catalog row with instructor + rating.
 type CatalogTrack struct {
-	ID             string  `json:"id"`
-	Title          string  `json:"title"`
-	Slug           string  `json:"slug"`
-	Description    *string `json:"description,omitempty"`
-	Difficulty     string  `json:"difficulty"`
+	ID                   string  `json:"id"`
+	Title                string  `json:"title"`
+	Slug                 string  `json:"slug"`
+	Description          *string `json:"description,omitempty"`
+	Difficulty           string  `json:"difficulty"`
 	/** Level is an alias for Difficulty, matching the frontend TrackSummary.level
 	 *  contract (ADR-060). Always equal to Difficulty. */
-	Level          string  `json:"level"`
-	PriceKobo      *int64  `json:"price_kobo,omitempty"`
-	Currency       string  `json:"currency"`
-	Category       *string `json:"category,omitempty"`
-	Language       string  `json:"language"`
-	TotalEnrolled  int32   `json:"total_enrolled"`
-	InstructorName *string `json:"instructor_name,omitempty"`
-	AvgRating      float64 `json:"avg_rating"`
-	ReviewCount    int32   `json:"review_count"`
+	Level                string  `json:"level"`
+	PriceKobo            *int64  `json:"price_kobo,omitempty"`
+	Currency             string  `json:"currency"`
+	Category             *string `json:"category,omitempty"`
+	Language             string  `json:"language"`
+	TotalEnrolled        int32   `json:"total_enrolled"`
+	SubscriptionEligible bool    `json:"subscription_eligible"`
+	InstructorName       *string `json:"instructor_name,omitempty"`
+	AvgRating            float64 `json:"avg_rating"`
+	ReviewCount          int32   `json:"review_count"`
 }
 
 func catalogTrackFromRow(r gen.ListUniversityCatalogRow) CatalogTrack {
 	c := CatalogTrack{
 		ID: r.ID.String(), Title: r.Title, Slug: r.Slug, Description: r.Description,
 		Difficulty: r.Difficulty, Level: r.Difficulty, Currency: r.Currency, Language: r.Language,
-		TotalEnrolled: r.TotalEnrolled,
+		TotalEnrolled: r.TotalEnrolled, SubscriptionEligible: r.SubscriptionEligible,
 	}
 	if r.PriceKobo != nil {
 		v := *r.PriceKobo
@@ -407,6 +408,7 @@ type CatalogTrackDetail struct {
 	Category                *string            `json:"category,omitempty"`
 	Language                string             `json:"language"`
 	TotalEnrolled           int32              `json:"total_enrolled"`
+	SubscriptionEligible    bool               `json:"subscription_eligible"`
 	IsPublished             bool               `json:"is_published"`
 	IsPublishedToUniversity bool               `json:"is_published_to_university"`
 	CreatedAt               pgtype.Timestamptz `json:"created_at"`
@@ -427,6 +429,7 @@ func CatalogTrackDetailFromRow(r gen.GetUniversityTrackBySlugRow) CatalogTrackDe
 		CoverMediaID: r.CoverMediaID, InstructorID: r.InstructorID,
 		PriceKobo: r.PriceKobo, Currency: r.Currency, Category: r.Category,
 		Language: r.Language, TotalEnrolled: r.TotalEnrolled,
+		SubscriptionEligible: r.SubscriptionEligible,
 		IsPublished: r.IsPublished, IsPublishedToUniversity: r.IsPublishedToUniversity,
 		CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
 		InstructorName: r.InstructorName, InstructorHeadline: r.InstructorHeadline,
@@ -443,17 +446,18 @@ func (s *Store) GetTrackByID(ctx context.Context, tenantID, id pgtype.UUID) (gen
 
 // CreateTrackInput holds the body for POST /learn/university/my/tracks.
 type CreateTrackInput struct {
-	Title        string
-	Slug         string
-	Description  *string
-	Difficulty   string
-	CoverMediaID *pgtype.UUID
-	InstructorID *pgtype.UUID
-	PriceKobo    *int64
-	Currency     *string
-	Category     *string
-	Language     *string
-	GeoSpaceID   *pgtype.UUID
+	Title                string
+	Slug                 string
+	Description          *string
+	Difficulty           string
+	CoverMediaID         *pgtype.UUID
+	InstructorID         *pgtype.UUID
+	PriceKobo            *int64
+	Currency             *string
+	Category             *string
+	Language             *string
+	GeoSpaceID           *pgtype.UUID
+	SubscriptionEligible *bool
 }
 
 // CreateTrack creates a new marketplace track owned by the instructor.
@@ -482,20 +486,24 @@ func (s *Store) CreateTrack(ctx context.Context, tenantID pgtype.UUID, in Create
 	if in.GeoSpaceID != nil {
 		params.GeoSpaceID = *in.GeoSpaceID
 	}
+	if in.SubscriptionEligible != nil {
+		params.SubscriptionEligible = in.SubscriptionEligible
+	}
 	return s.write.CreateUniversityTrack(ctx, params)
 }
 
 // UpdateTrackInput holds the body for PATCH /learn/university/my/tracks/{id}.
 type UpdateTrackInput struct {
-	Title        *string
-	Description  *string
-	Difficulty   *string
-	CoverMediaID *pgtype.UUID
-	PriceKobo    *int64
-	Currency     *string
-	Category     *string
-	Language     *string
-	GeoSpaceID   *pgtype.UUID
+	Title                *string
+	Description          *string
+	Difficulty           *string
+	CoverMediaID         *pgtype.UUID
+	PriceKobo            *int64
+	Currency             *string
+	Category             *string
+	Language             *string
+	GeoSpaceID           *pgtype.UUID
+	SubscriptionEligible *bool
 }
 
 // UpdateTrack updates a creator's own track.
@@ -524,6 +532,9 @@ func (s *Store) UpdateTrack(ctx context.Context, tenantID, trackID, instructorID
 	params.Language = in.Language
 	if in.GeoSpaceID != nil {
 		params.GeoSpaceID = *in.GeoSpaceID
+	}
+	if in.SubscriptionEligible != nil {
+		params.SubscriptionEligible = in.SubscriptionEligible
 	}
 	return s.write.UpdateUniversityTrack(ctx, params)
 }
@@ -635,7 +646,7 @@ type ListRevenueSplitsFilter struct {
 
 // ListRevenueSplits returns a tenant-wide paginated list of immutable
 // revenue-split audit records with optional filters (ADR-063 §9).
-func (s *Store) ListRevenueSplits(ctx context.Context, tenantID pgtype.UUID, f ListRevenueSplitsFilter, limit, offset int32) ([]gen.RevenueSplit, error) {
+func (s *Store) ListRevenueSplits(ctx context.Context, tenantID pgtype.UUID, f ListRevenueSplitsFilter, limit, offset int32) ([]gen.ListRevenueSplitsRow, error) {
 	return s.read.ListRevenueSplits(ctx, gen.ListRevenueSplitsParams{
 		TenantID:     tenantID,
 		InstructorID: f.InstructorID,
@@ -716,7 +727,7 @@ func (s *Store) ListPayoutsByInstructor(ctx context.Context, tenantID, instructo
 // ListPayoutsByStatus returns the payout queue (optionally filtered by status).
 // spaceID, when Valid, restricts to payouts for instructors with a track
 // targeted at that space.
-func (s *Store) ListPayoutsByStatus(ctx context.Context, tenantID, spaceID pgtype.UUID, status string, limit, offset int32) ([]gen.InstructorPayout, error) {
+func (s *Store) ListPayoutsByStatus(ctx context.Context, tenantID, spaceID pgtype.UUID, status string, limit, offset int32) ([]gen.ListInstructorPayoutsByStatusRow, error) {
 	return s.read.ListInstructorPayoutsByStatus(ctx, gen.ListInstructorPayoutsByStatusParams{
 		TenantID: tenantID, Status: status, SpaceID: spaceID, PageLimit: limit, PageOffset: offset,
 	})
@@ -826,5 +837,65 @@ func (s *Store) ListPublishedTracksByInstructor(ctx context.Context, tenantID, i
 func (s *Store) SetTrackFeatured(ctx context.Context, tenantID, trackID pgtype.UUID, featured bool) (gen.SetUniversityTrackFeaturedRow, error) {
 	return s.write.SetUniversityTrackFeatured(ctx, gen.SetUniversityTrackFeaturedParams{
 		TenantID: tenantID, ID: trackID, Featured: featured,
+	})
+}
+
+// ---------------------------------------------------------------------------
+// Track categories (ADR-063 §9.1)
+// Ref: japaconnect-engineering/sections/36-learning-platform.md (Track categories)
+// ---------------------------------------------------------------------------
+
+// CreateTrackCategory inserts a new university_track_categories row.
+func (s *Store) CreateTrackCategory(ctx context.Context, tenantID pgtype.UUID, slug, name string, sortOrder int32, isActive bool) (gen.UniversityTrackCategory, error) {
+	return s.write.CreateUniversityTrackCategory(ctx, gen.CreateUniversityTrackCategoryParams{
+		TenantID: tenantID, Slug: slug, Name: name, SortOrder: sortOrder, IsActive: isActive,
+	})
+}
+
+// GetTrackCategory fetches a single category by ID (tenant-scoped).
+func (s *Store) GetTrackCategory(ctx context.Context, tenantID, id pgtype.UUID) (gen.UniversityTrackCategory, error) {
+	return s.read.GetUniversityTrackCategory(ctx, gen.GetUniversityTrackCategoryParams{
+		TenantID: tenantID, ID: id,
+	})
+}
+
+// ListTrackCategories returns paginated categories with optional active/search filters.
+func (s *Store) ListTrackCategories(ctx context.Context, tenantID pgtype.UUID, active, search string, limit, offset int32) ([]gen.UniversityTrackCategory, error) {
+	return s.read.ListUniversityTrackCategories(ctx, gen.ListUniversityTrackCategoriesParams{
+		TenantID: tenantID, Active: active, Search: search, PageLimit: limit, PageOffset: offset,
+	})
+}
+
+// CountTrackCategories returns the total count for the same filter set.
+func (s *Store) CountTrackCategories(ctx context.Context, tenantID pgtype.UUID, active, search string) (int64, error) {
+	return s.read.CountUniversityTrackCategories(ctx, gen.CountUniversityTrackCategoriesParams{
+		TenantID: tenantID, Active: active, Search: search,
+	})
+}
+
+// ListActiveTrackCategories returns only active categories for the public catalog dropdown.
+func (s *Store) ListActiveTrackCategories(ctx context.Context, tenantID pgtype.UUID) ([]gen.ListActiveUniversityTrackCategoriesRow, error) {
+	return s.read.ListActiveUniversityTrackCategories(ctx, tenantID)
+}
+
+// UpdateTrackCategory partially updates a category (nil fields are preserved via COALESCE).
+func (s *Store) UpdateTrackCategory(ctx context.Context, tenantID, id pgtype.UUID, name, slug *string, sortOrder *int32, isActive *bool) (gen.UniversityTrackCategory, error) {
+	return s.write.UpdateUniversityTrackCategory(ctx, gen.UpdateUniversityTrackCategoryParams{
+		TenantID: tenantID, ID: id, Name: name, Slug: slug, SortOrder: sortOrder, IsActive: isActive,
+	})
+}
+
+// DeleteTrackCategory removes a category row (caller must check CountTracksByCategory first).
+func (s *Store) DeleteTrackCategory(ctx context.Context, tenantID, id pgtype.UUID) error {
+	return s.write.DeleteUniversityTrackCategory(ctx, gen.DeleteUniversityTrackCategoryParams{
+		TenantID: tenantID, ID: id,
+	})
+}
+
+// CountTracksByCategory returns the number of learning_tracks whose category matches
+// the given slug. Used by the delete handler to block removal when tracks reference it.
+func (s *Store) CountTracksByCategory(ctx context.Context, tenantID pgtype.UUID, category string) (int64, error) {
+	return s.read.CountTracksByCategory(ctx, gen.CountTracksByCategoryParams{
+		TenantID: tenantID, Category: &category,
 	})
 }

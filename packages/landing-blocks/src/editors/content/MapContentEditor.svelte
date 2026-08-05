@@ -34,28 +34,28 @@
 </script>
 
 <div class="space-y-3">
-  <div>
-    <label class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Mode</label>
+  <label class="block">
+    <span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Mode</span>
     <select value={props.mode} onchange={(e) => update('mode', e.currentTarget.value as MapProps['mode'])} class={inputClass}>
       <option value="static">Static</option>
       <option value="dynamic">Dynamic</option>
     </select>
-  </div>
+  </label>
 
-  <div>
-    <label class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Geo source</label>
+  <label class="block">
+    <span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Geo source</span>
     <select value={props.geo_source} onchange={(e) => update('geo_source', e.currentTarget.value as MapProps['geo_source'])} class={inputClass}>
       <option value="manual">Manual</option>
       <option value="trending_spaces">Trending spaces</option>
     </select>
-  </div>
+  </label>
 
   <label class="flex items-center gap-1 text-xs text-[var(--color-muted)]">
     <input type="checkbox" checked={props.highlight_visitor_country} onchange={(e) => update('highlight_visitor_country', e.currentTarget.checked)} /> Highlight visitor country
   </label>
 
-  <div class="space-y-2">
-    <label class="block text-xs font-medium text-[var(--color-muted)]">Pins</label>
+  <label class="block space-y-2">
+    <span class="block text-xs font-medium text-[var(--color-muted)]">Pins</span>
     {#each props.pins as pin, i (i)}
       <div class="space-y-2 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-2">
         <div class="flex items-center justify-between">
@@ -68,5 +68,5 @@
       </div>
     {/each}
     <button type="button" onclick={addPin} class="w-full rounded-[var(--radius)] border border-dashed border-[var(--color-border)] py-1.5 text-sm text-[var(--color-muted)] hover:bg-[var(--color-surface-subtle)]">+ Add pin</button>
-  </div>
+  </label>
 </div>

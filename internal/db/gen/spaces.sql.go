@@ -1244,10 +1244,12 @@ func (q *Queries) IncrementSpaceFollowerCount(ctx context.Context, arg Increment
 }
 
 const listAllSpaceJoinRequests = `-- name: ListAllSpaceJoinRequests :many
-SELECT sm.space_id, sm.user_id, u.username, up.display_name, up.avatar_url, sm.joined_at, sm.status
+SELECT sm.space_id, sm.user_id, u.username, up.display_name, up.avatar_url, sm.joined_at, sm.status,
+       s.name AS space_name
 FROM space_members sm
 JOIN users u ON u.id = sm.user_id AND u.tenant_id = sm.tenant_id
 LEFT JOIN user_profiles up ON up.user_id = sm.user_id AND up.tenant_id = sm.tenant_id
+LEFT JOIN spaces s ON s.id = sm.space_id AND s.tenant_id = sm.tenant_id
 WHERE sm.tenant_id = $1 AND sm.status = 'pending'
 ORDER BY sm.joined_at ASC
 `
@@ -1260,6 +1262,7 @@ type ListAllSpaceJoinRequestsRow struct {
 	AvatarUrl   *string            `json:"avatar_url"`
 	JoinedAt    pgtype.Timestamptz `json:"joined_at"`
 	Status      string             `json:"status"`
+	SpaceName   *string            `json:"space_name"`
 }
 
 // Admin-wide pending join requests across every space in the admin's tenant.
@@ -1282,6 +1285,7 @@ func (q *Queries) ListAllSpaceJoinRequests(ctx context.Context, tenantID pgtype.
 			&i.AvatarUrl,
 			&i.JoinedAt,
 			&i.Status,
+			&i.SpaceName,
 		); err != nil {
 			return nil, err
 		}

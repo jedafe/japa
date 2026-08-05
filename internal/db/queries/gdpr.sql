@@ -38,13 +38,16 @@ INSERT INTO consent_records (
 );
 
 -- name: ListConsentsByTenant :many
-SELECT id, tenant_id, user_id, consent_type, granted, policy_version,
-    ip_address, user_agent, created_at
-FROM consent_records
-WHERE tenant_id = @tenant_id
-  AND (@consent_type::text = '' OR consent_type = @consent_type::text)
-  AND (@q::text = '' OR consent_type ILIKE '%' || @q || '%' OR ip_address::text ILIKE '%' || @q || '%')
-ORDER BY created_at DESC
+SELECT cr.id, cr.tenant_id, cr.user_id, cr.consent_type, cr.granted, cr.policy_version,
+    cr.ip_address, cr.user_agent, cr.created_at,
+    u.username, up.display_name
+FROM consent_records cr
+LEFT JOIN users u ON u.id = cr.user_id
+LEFT JOIN user_profiles up ON up.user_id = cr.user_id
+WHERE cr.tenant_id = @tenant_id
+  AND (@consent_type::text = '' OR cr.consent_type = @consent_type::text)
+  AND (@q::text = '' OR cr.consent_type ILIKE '%' || @q || '%' OR cr.ip_address::text ILIKE '%' || @q || '%')
+ORDER BY cr.created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 
 -- name: DeleteAuditLog :exec
@@ -168,10 +171,13 @@ SET progress_step = @progress_step
 WHERE id = @id AND tenant_id = @tenant_id;
 
 -- name: ListPendingDeletionRequests :many
-SELECT id, tenant_id, user_id, status, reason, completed_at, created_at, progress_step
-FROM account_deletion_requests
-WHERE status = 'pending'
-ORDER BY created_at ASC
+SELECT adr.id, adr.tenant_id, adr.user_id, adr.status, adr.reason, adr.completed_at, adr.created_at, adr.progress_step,
+       u.username, up.display_name
+FROM account_deletion_requests adr
+LEFT JOIN users u ON u.id = adr.user_id
+LEFT JOIN user_profiles up ON up.user_id = adr.user_id
+WHERE adr.status = 'pending'
+ORDER BY adr.created_at ASC
 LIMIT @page_limit;
 
 -- name: AnonymizeUser :exec

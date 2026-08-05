@@ -213,7 +213,7 @@ func (s *Store) GetUserBlocks(ctx context.Context, blockerID pgtype.UUID) ([]gen
 }
 
 // ListAllUserBlocks returns paginated user blocks across all users.
-func (s *Store) ListAllUserBlocks(ctx context.Context, limit int32) ([]gen.UserBlock, error) {
+func (s *Store) ListAllUserBlocks(ctx context.Context, limit int32) ([]gen.ListAllUserBlocksRow, error) {
 	return s.queries.ListAllUserBlocks(ctx, limit)
 }
 

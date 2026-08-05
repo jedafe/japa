@@ -66,16 +66,20 @@ type VideoBg = NonNullable<BackgroundConfig['video']>;
   {#if currentType === 'gradient'}
     <div class="space-y-2">
       <div class="flex items-center gap-2">
-        <label class="text-xs text-[var(--color-muted)]">From</label>
-        <input type="color" value={value?.gradient?.from ?? '#000000'} oninput={(e) => update({ gradient: { ...(value?.gradient ?? { from: '#000000', to: '#ffffff', angle: 90 }), from: e.currentTarget.value } })} class="h-8 w-12 rounded border border-[var(--color-border)]" />
-        <label class="text-xs text-[var(--color-muted)]">To</label>
-        <input type="color" value={value?.gradient?.to ?? '#ffffff'} oninput={(e) => update({ gradient: { ...(value?.gradient ?? { from: '#000000', to: '#ffffff', angle: 90 }), to: e.currentTarget.value } })} class="h-8 w-12 rounded border border-[var(--color-border)]" />
+        <label class="flex items-center gap-2 text-xs text-[var(--color-muted)]">
+          <span>From</span>
+          <input type="color" value={value?.gradient?.from ?? '#000000'} oninput={(e) => update({ gradient: { ...(value?.gradient ?? { from: '#000000', to: '#ffffff', angle: 90 }), from: e.currentTarget.value } })} class="h-8 w-12 rounded border border-[var(--color-border)]" />
+        </label>
+        <label class="flex items-center gap-2 text-xs text-[var(--color-muted)]">
+          <span>To</span>
+          <input type="color" value={value?.gradient?.to ?? '#ffffff'} oninput={(e) => update({ gradient: { ...(value?.gradient ?? { from: '#000000', to: '#ffffff', angle: 90 }), to: e.currentTarget.value } })} class="h-8 w-12 rounded border border-[var(--color-border)]" />
+        </label>
       </div>
-      <div class="flex items-center gap-2">
-        <label class="text-xs text-[var(--color-muted)]">Angle</label>
+      <label class="flex items-center gap-2 text-xs text-[var(--color-muted)]">
+        <span>Angle</span>
         <input type="range" min="0" max="360" value={value?.gradient?.angle ?? 90} oninput={(e) => update({ gradient: { ...(value?.gradient ?? { from: '#000000', to: '#ffffff', angle: 90 }), angle: Number(e.currentTarget.value) } })} class="flex-1" />
-        <span class="text-xs text-[var(--color-muted)]">{value?.gradient?.angle ?? 90}°</span>
-      </div>
+        <span>{value?.gradient?.angle ?? 90}°</span>
+      </label>
     </div>
   {/if}
 
@@ -86,21 +90,21 @@ type VideoBg = NonNullable<BackgroundConfig['video']>;
         onchange={(m) => update({ image: { ...(value?.image ?? { fit: 'cover' }), ...(m ? { media_id: m.media_id, url: m.url, alt: m.alt ?? '' } : {}) } as ImageBg })}
         {mediaPickerComponent}
       />
-      <div>
-        <label class="mb-1 block text-xs text-[var(--color-muted)]">Fit</label>
+      <label class="block">
+        <span class="mb-1 block text-xs text-[var(--color-muted)]">Fit</span>
         <select value={value?.image?.fit ?? 'cover'} onchange={(e) => update({ image: { ...(value?.image ?? { media_id: '', url: '', alt: '' }), fit: e.currentTarget.value as 'cover' | 'contain' | 'repeat' | 'fixed' } })} class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 text-sm text-[var(--color-text)]">
           <option value="cover">Cover</option>
           <option value="contain">Contain</option>
           <option value="repeat">Repeat</option>
           <option value="fixed">Fixed</option>
         </select>
-      </div>
-      <div class="flex items-center gap-2">
-        <label class="text-xs text-[var(--color-muted)]">Overlay</label>
+      </label>
+      <label class="flex items-center gap-2 text-xs text-[var(--color-muted)]">
+        <span>Overlay</span>
         <input type="color" value={value?.image?.overlay?.color ?? '#000000'} oninput={(e) => update({ image: { ...(value?.image ?? { media_id: '', url: '', alt: '', fit: 'cover' }), overlay: { color: e.currentTarget.value, opacity: value?.image?.overlay?.opacity ?? 50 } } })} class="h-8 w-12 rounded border border-[var(--color-border)]" />
         <input type="range" min="0" max="100" value={value?.image?.overlay?.opacity ?? 50} oninput={(e) => update({ image: { ...(value?.image ?? { media_id: '', url: '', alt: '', fit: 'cover' }), overlay: { color: value?.image?.overlay?.color ?? '#000000', opacity: Number(e.currentTarget.value) } } })} class="flex-1" />
-        <span class="text-xs text-[var(--color-muted)]">{value?.image?.overlay?.opacity ?? 50}%</span>
-      </div>
+        <span>{value?.image?.overlay?.opacity ?? 50}%</span>
+      </label>
     </div>
   {/if}
 

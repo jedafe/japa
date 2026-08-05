@@ -650,9 +650,17 @@ func (h *Handlers) DeleteLesson(w http.ResponseWriter, r *http.Request) {
 // ---------------------------------------------------------------------------
 
 // EnrollInTrack handles POST /learn/university/tracks/:id/enroll (and legacy
-// POST /learn/tracks/:id/enroll). For free tracks (price_kobo is null/0) or
-// Pro subscribers, enrollment is immediate. For paid tracks, returns 402
-// payment_required with the track price so the frontend can initiate checkout.
+// POST /learn/tracks/:id/enroll). Enrollment logic:
+//   - Free tracks (price_kobo = 0/null, not subscription_eligible): immediate
+//     enrollment with access_type="free".
+//   - Subscription-eligible tracks: check the user's active subscription plan.
+//     If the plan covers the track (either explicitly via
+//     subscription_plan_tracks or implicitly because the plan has no entries =
+//     all tracks), enroll with access_type="subscription" and enqueue a
+//     pro_stream revenue split for the creator. If no active subscription or
+//     the plan doesn't cover it, fall through to the paid check.
+//   - Paid tracks (price_kobo > 0): return 402 payment_required so the
+//     frontend can show the checkout modal.
 func (h *Handlers) EnrollInTrack(w http.ResponseWriter, r *http.Request) {
 	user := auth.FromContext(r.Context())
 	if user == nil {
@@ -684,10 +692,34 @@ func (h *Handlers) EnrollInTrack(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Subscription-eligible tracks: check if the user's plan covers this track.
+	if track.SubscriptionEligible {
+		hasAccess, planSlug := h.store.CheckSubscriptionAccess(r.Context(), t.ID, user.UserID, trackID)
+		if hasAccess {
+			enrollment, err := h.store.EnrollUser(r.Context(), t.ID, user.UserID, trackID, "subscription")
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, "db_error", "Failed to enroll")
+				return
+			}
+			// Enqueue a pro_stream revenue split for the creator (async,
+			// fire-and-forget per Rule 8). The university:process_enrollment
+			// task handles the revenue split with source='pro_stream'.
+			if h.AsynqClient != nil {
+				payload := fmt.Sprintf(`{"tenant_id":"%s","user_id":"%s","track_id":"%s","source":"pro_stream"}`, t.ID.String(), user.UserID.String(), trackIDStr)
+				task := asynq.NewTask("university:process_enrollment", []byte(payload))
+				if _, err := h.AsynqClient.Enqueue(task); err != nil {
+					slog.Warn("learning: enqueue pro_stream enrollment task", "track_id", trackIDStr, "error", err)
+				}
+			}
+			_ = planSlug // planSlug reserved for future logging/metrics
+			writeJSON(w, http.StatusCreated, map[string]any{"data": enrollment})
+			return
+		}
+		// No subscription access — fall through to paid check below.
+	}
+
 	// Paid course check: if the track has a price > 0, return 402 so the
-	// frontend can show the checkout modal. Pro subscribers are handled on the
-	// client side (is_pro flag on the session) — the client skips the enroll
-	// call and navigates directly for Pro users.
+	// frontend can show the checkout modal.
 	if track.PriceKobo != nil && *track.PriceKobo > 0 {
 		writeJSON(w, http.StatusPaymentRequired, map[string]any{
 			"error": map[string]any{
@@ -695,20 +727,16 @@ func (h *Handlers) EnrollInTrack(w http.ResponseWriter, r *http.Request) {
 				"message": "Payment required to enroll in this course",
 				"status":  http.StatusPaymentRequired,
 			},
-			"track_id":   trackIDStr,
-			"price_kobo": *track.PriceKobo,
-			"currency":   track.Currency,
+			"track_id":             trackIDStr,
+			"price_kobo":           *track.PriceKobo,
+			"currency":             track.Currency,
+			"subscription_eligible": track.SubscriptionEligible,
 		})
 		return
 	}
 
+	// Free track, not subscription-eligible (or no active subscription).
 	accessType := "free"
-	if track.PriceKobo != nil && *track.PriceKobo > 0 {
-		accessType = "paid"
-	} else if track.Difficulty == "" {
-		accessType = "subscription"
-	}
-
 	enrollment, err := h.store.EnrollUser(r.Context(), t.ID, user.UserID, trackID, accessType)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "db_error", "Failed to enroll")

@@ -21,6 +21,9 @@
 		status: string;
 		author_id?: string;
 		space_id?: string;
+		author_username?: string;
+		author_display_name?: string;
+		space_name?: string;
 		created_at: string;
 		removed_at?: string;
 		view_count?: number;
@@ -139,16 +142,16 @@
 			render: (v: string) => v ? v.charAt(0).toUpperCase() + v.slice(1) : "—"
 		},
 		{
-			key: "author_id",
+			key: "author_display_name",
 			label: t("content.author", "Author"),
 			sortable: true,
-			render: (v: string) => v ? v.substring(0, 8) + "..." : "—"
+			render: (v: string, row: ContentItem) => v || row.author_username || 'anonymous'
 		},
 		{
-			key: "space_id",
+			key: "space_name",
 			label: t("content.space", "Space"),
 			sortable: true,
-			render: (v: string) => v ? v.substring(0, 8) + "..." : "—"
+			render: (v: string, row: ContentItem) => v || (row.space_id ? row.space_id.substring(0, 8) + "..." : "—")
 		},
 		{
 			key: "view_count",

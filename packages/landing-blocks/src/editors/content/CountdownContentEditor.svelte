@@ -21,24 +21,24 @@
 </script>
 
 <div class="space-y-3">
-  <div>
-    <label class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Target date</label>
+  <label class="block">
+    <span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Target date</span>
     <input type="datetime-local" value={props.target_date} oninput={(e) => update('target_date', e.currentTarget.value)} class={inputClass} />
-  </div>
+  </label>
 
-  <div>
-    <label class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Label</label>
+  <label class="block">
+    <span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Label</span>
     <GeoText value={props.label ?? ''} onchange={(v) => update('label', v)} {geoCtx} />
-  </div>
+  </label>
 
-  <div>
-    <label class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Layout</label>
+  <label class="block">
+    <span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Layout</span>
     <select value={props.layout} onchange={(e) => update('layout', e.currentTarget.value as CountdownProps['layout'])} class={inputClass}>
       <option value="inline">Inline</option>
       <option value="stacked">Stacked</option>
       <option value="card">Card</option>
     </select>
-  </div>
+  </label>
 
   <div class="flex flex-wrap gap-4">
     <label class="flex items-center gap-1 text-xs text-[var(--color-muted)]">
@@ -55,18 +55,18 @@
     </label>
   </div>
 
-  <div>
-    <label class="mb-1 block text-xs font-medium text-[var(--color-muted)]">On expire</label>
+  <label class="block">
+    <span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">On expire</span>
     <select value={props.on_expire} onchange={(e) => update('on_expire', e.currentTarget.value as CountdownProps['on_expire'])} class={inputClass}>
       <option value="hide">Hide</option>
       <option value="show_message">Show message</option>
     </select>
-  </div>
+  </label>
 
   {#if props.on_expire === 'show_message'}
-    <div>
-      <label class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Expired message</label>
+    <label class="block">
+      <span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Expired message</span>
       <GeoText value={props.expired_message ?? ''} onchange={(v) => update('expired_message', v)} {geoCtx} />
-    </div>
+    </label>
   {/if}
 </div>

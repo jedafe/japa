@@ -20,23 +20,23 @@
 </script>
 
 <div class="space-y-3">
-  <div>
-    <label class="mb-1 block text-xs font-medium text-[var(--color-muted)]">HTML content</label>
+  <label class="block">
+    <span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">HTML content</span>
     <textarea
       value={props.html}
       oninput={(e) => update('html', e.currentTarget.value)}
       rows="8"
       class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-2 font-mono text-sm text-[var(--color-text)]"
     ></textarea>
-  </div>
+  </label>
 
-  <div>
-    <label class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Prose style</label>
+  <label class="block">
+    <span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Prose style</span>
     <select value={props.prose_style} onchange={(e) => update('prose_style', e.currentTarget.value as ContentProps['prose_style'])} class={inputClass}>
       <option value="default">Default</option>
       <option value="minimal">Minimal</option>
       <option value="article">Article</option>
       <option value="documentation">Documentation</option>
     </select>
-  </div>
+  </label>
 </div>

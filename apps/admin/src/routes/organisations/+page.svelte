@@ -32,8 +32,8 @@
 		organization_id: string;
 		claimant_username: string;
 		org_name: string;
-		evidence_url?: string;
-		notes?: string;
+		evidence_url?: string | null;
+		notes?: string | null;
 		created_at: string;
 	};
 

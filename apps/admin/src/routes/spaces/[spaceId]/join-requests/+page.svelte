@@ -17,6 +17,8 @@
 		status: string;
 		message?: string;
 		requested_at: string;
+		username?: string;
+		display_name?: string;
 	};
 
 	let requests = $state<JoinRequest[]>([]);
@@ -28,7 +30,8 @@
 	let spaceId = $derived(page.params.id);
 
 	const columns = [
-		{ key: 'user_id', label: t('joinRequests.user'), sortable: true, class: 'font-mono text-xs' },
+		{ key: 'display_name', label: t('joinRequests.user'), sortable: true,
+			render: (v: string, row: JoinRequest) => v || row.username || 'anonymous' },
 		{ key: 'message', label: t('joinRequests.message'), sortable: true, class: 'text-xs', render: (v: string) => `<span style="color: var(--color-muted)">${v || '—'}</span>` },
 		{ key: 'status', label: t('joinRequests.status'), sortable: true, render: (v: string) => `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium ${v === 'approved' ? 'bg-success/15 text-success dark:text-success' : v === 'rejected' ? 'bg-danger/15 text-danger dark:text-danger' : 'bg-warning/15 text-warning dark:text-warning'}">${v}</span>` },
 		{ key: 'requested_at', label: t('joinRequests.requested'), sortable: true, class: 'text-xs', render: (v: string) => `<span style="color: var(--color-muted)">${new Date(v).toLocaleDateString()}</span>` },
@@ -39,7 +42,7 @@
 		const q = searchQuery.toLowerCase().trim();
 		if (!q) return requests;
 		return requests.filter(r =>
-			r.user_id.toLowerCase().includes(q) ||
+			(r.display_name || r.username || '').toLowerCase().includes(q) ||
 			r.status.toLowerCase().includes(q) ||
 			(r.message ?? '').toLowerCase().includes(q)
 		);
