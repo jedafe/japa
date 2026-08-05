@@ -456,6 +456,40 @@ func (q *Queries) GetAssessmentResultByID(ctx context.Context, arg GetAssessment
 	return i, err
 }
 
+const getAssessmentResultBySubmission = `-- name: GetAssessmentResultBySubmission :one
+
+SELECT id, tenant_id, user_id, submission_id, total_score, dimension_scores, threshold_label, roadmap_content, created_at FROM assessment_results
+WHERE tenant_id = $1 AND submission_id = $2
+`
+
+type GetAssessmentResultBySubmissionParams struct {
+	TenantID     pgtype.UUID `json:"tenant_id"`
+	SubmissionID pgtype.UUID `json:"submission_id"`
+}
+
+// =====================================================================
+// Get a single assessment result by submission_id. Used by the public
+// polling endpoint after an async submit (the client receives the
+// submission_id and polls until the Asynq scoring task writes the result).
+// Returns at most one row (there is a unique link submission_id -> result).
+// =====================================================================
+func (q *Queries) GetAssessmentResultBySubmission(ctx context.Context, arg GetAssessmentResultBySubmissionParams) (AssessmentResult, error) {
+	row := q.db.QueryRow(ctx, getAssessmentResultBySubmission, arg.TenantID, arg.SubmissionID)
+	var i AssessmentResult
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.UserID,
+		&i.SubmissionID,
+		&i.TotalScore,
+		&i.DimensionScores,
+		&i.ThresholdLabel,
+		&i.RoadmapContent,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const listUserAssessmentResults = `-- name: ListUserAssessmentResults :many
 
 SELECT id, tenant_id, user_id, submission_id, total_score, dimension_scores, threshold_label, roadmap_content, created_at FROM assessment_results

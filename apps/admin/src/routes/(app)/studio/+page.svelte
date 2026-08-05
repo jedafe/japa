@@ -7,7 +7,8 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Tabs } from '$lib/components/ui/tabs';
-	import { Wand, Plus, RefreshCw, BarChart3 } from 'lucide-svelte';
+	import { Modal } from '$lib/components/ui/modal';
+	import { Wand, Plus, RefreshCw, BarChart3, RotateCcw, X, Eye } from 'lucide-svelte';
 	import { api } from '$lib/api';
 
 	type StudioJob = {
@@ -40,6 +41,13 @@
 		published: number;
 	};
 
+	type ContentTypeOption = {
+		type: string;
+		label: string;
+		guide_categories?: string[];
+		can_auto_publish: boolean;
+	};
+
 	const canManage = $derived(hasPermission('studio.manage'));
 
 	let activeTab = $state('jobs');
@@ -53,7 +61,7 @@
 	let message = $state('');
 	let messageType = $state('');
 	let personas = $state<{ id: string; label: string }[]>([]);
-	let contentTypes = $state<string[]>([]);
+	let contentTypes = $state<ContentTypeOption[]>([]);
 
 	let newJob = $state({
 		persona_id: '',
@@ -99,7 +107,7 @@
 		try {
 			const [personasRes, typesRes] = await Promise.all([
 				api<{ id: string; label: string }[]>('/admin/studio/personas'),
-				api<string[]>('/admin/studio/content-types')
+				api<ContentTypeOption[]>('/admin/studio/content-types')
 			]);
 			if (personasRes.ok) {
 				personas = personasRes.data ?? [];
@@ -126,6 +134,21 @@
 		} catch (e) {
 			messageType = 'error';
 			message = e instanceof Error ? e.message : t('studio.retry_error', 'Failed to retry job');
+		}
+	}
+
+	let viewingJob = $state<StudioJob | null>(null);
+	let viewJobModalOpen = $state(false);
+
+	async function viewJob(id: string) {
+		try {
+			const result = await api<StudioJob>(`/admin/studio/jobs/${id}`);
+			if (result.ok && result.data) {
+				viewingJob = result.data;
+				viewJobModalOpen = true;
+			}
+		} catch {
+			// silent
 		}
 	}
 
@@ -218,6 +241,12 @@
 			label: t('studio.created', 'Created'),
 			sortable: true,
 			render: (value: string) => `<span class="text-muted-foreground text-xs">${value ? new Date(value).toLocaleDateString() : '—'}</span>`
+		},
+		{
+			key: 'actions',
+			label: t('common.actions', 'Actions'),
+			class: 'w-28',
+			componentSnippet: JobActionsCell
 		}
 	]);
 
@@ -348,51 +377,107 @@
 {/if}
 
 {#if createJobModalOpen}
-	<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
-		role="dialog"
-		aria-modal="true"
-		tabindex="-1"
-		onclick={() => (createJobModalOpen = false)}
-		onkeydown={(e) => e.key === 'Escape' && (createJobModalOpen = false)}>
-		<div role="presentation" class="w-full max-w-lg rounded-lg border p-6" style="border-color: var(--color-border); background: var(--color-surface)" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()}>
-			<h2 class="mb-4 text-lg font-semibold" style="color: var(--color-foreground)">{t('studio.create_job_title', 'Create Studio Job')}</h2>
-			<div class="space-y-3">
-				<div>
-					<label for="studio-persona" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('studio.persona', 'Persona')}</label>
-					<select id="studio-persona" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={newJob.persona_id}>
-						<option value="">{t('studio.select_persona', 'Select a persona...')}</option>
-						{#each personas as p}
-							<option value={p.id}>{p.label}</option>
-						{/each}
-					</select>
-				</div>
-				<div>
-					<label for="studio-content-type" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('studio.content_type', 'Content Type')}</label>
-					<select id="studio-content-type" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={newJob.content_type}>
-						{#each contentTypes as ct}
-							<option value={ct}>{ct}</option>
-						{/each}
-						{#if contentTypes.length === 0}
-							<option value="blog">blog</option>
-							<option value="guide">guide</option>
-						{/if}
-					</select>
-				</div>
-				<div>
-					<label for="studio-topic" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('studio.topic_prompt', 'Topic Prompt')}</label>
-					<textarea id="studio-topic" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" rows="3" bind:value={newJob.topic_prompt} placeholder={t('studio.topic_placeholder', 'Describe what the AI should write about...')}></textarea>
-				</div>
-				<div>
-					<label for="studio-tags" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('studio.target_tags', 'Target Tags (comma-separated)')}</label>
-					<input id="studio-tags" type="text" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={newJob.target_tags} placeholder="tech, ai, tutorial" />
-				</div>
+	<Modal
+		open={createJobModalOpen}
+		onclose={() => (createJobModalOpen = false)}
+		title={t('studio.create_job_title', 'Create Studio Job')}
+	>
+		<div class="space-y-3">
+			<div>
+				<label for="studio-persona" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('studio.persona', 'Persona')}</label>
+				<select id="studio-persona" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={newJob.persona_id}>
+					<option value="">{t('studio.select_persona', 'Select a persona...')}</option>
+					{#each personas as p}
+						<option value={p.id}>{p.label}</option>
+					{/each}
+				</select>
 			</div>
-			<div class="mt-6 flex justify-end gap-2">
-				<Button variant="outline" onclick={() => (createJobModalOpen = false)}>{t('common.cancel', 'Cancel')}</Button>
-				<Button onclick={createJob} disabled={saving || !newJob.persona_id || !newJob.topic_prompt}>
-					{saving ? t('common.saving', 'Saving...') : t('studio.create', 'Create Job')}
-				</Button>
+			<div>
+				<label for="studio-content-type" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('studio.content_type', 'Content Type')}</label>
+				<select id="studio-content-type" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={newJob.content_type}>
+					{#each contentTypes as ct}
+						<option value={ct.type}>{ct.label}</option>
+					{/each}
+					{#if contentTypes.length === 0}
+						<option value="blog">Blog Post</option>
+						<option value="guide">Guide</option>
+					{/if}
+				</select>
+			</div>
+			<div>
+				<label for="studio-topic" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('studio.topic_prompt', 'Topic Prompt')}</label>
+				<textarea id="studio-topic" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" rows="3" bind:value={newJob.topic_prompt} placeholder={t('studio.topic_placeholder', 'Describe what the AI should write about...')}></textarea>
+			</div>
+			<div>
+				<label for="studio-tags" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('studio.target_tags', 'Target Tags (comma-separated)')}</label>
+				<input id="studio-tags" type="text" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={newJob.target_tags} placeholder="tech, ai, tutorial" />
 			</div>
 		</div>
-	</div>
+		<div class="mt-6 flex justify-end gap-2">
+			<Button variant="outline" onclick={() => (createJobModalOpen = false)}>{t('common.cancel', 'Cancel')}</Button>
+			<Button onclick={createJob} disabled={saving || !newJob.persona_id || !newJob.topic_prompt}>
+				{saving ? t('common.saving', 'Saving...') : t('studio.create', 'Create Job')}
+			</Button>
+		</div>
+	</Modal>
 {/if}
+
+{#if viewJobModalOpen && viewingJob}
+	<Modal
+		open={viewJobModalOpen}
+		onclose={() => { viewJobModalOpen = false; viewingJob = null; }}
+		title={t('studio.job_detail', 'Job Detail')}
+	>
+		<div class="space-y-3 text-sm">
+			<div class="grid gap-2 sm:grid-cols-2">
+				<div>
+					<span class="text-xs font-medium" style="color: var(--color-muted)">{t('studio.job_id', 'Job ID')}</span>
+					<p class="font-mono text-xs" style="color: var(--color-foreground)">{viewingJob.id}</p>
+				</div>
+				<div>
+					<span class="text-xs font-medium" style="color: var(--color-muted)">{t('studio.status', 'Status')}</span>
+					<p><Badge variant="outline">{viewingJob.status}</Badge></p>
+				</div>
+				<div>
+					<span class="text-xs font-medium" style="color: var(--color-muted)">{t('studio.content_type', 'Content Type')}</span>
+					<p style="color: var(--color-foreground)">{viewingJob.content_type}</p>
+				</div>
+				<div>
+					<span class="text-xs font-medium" style="color: var(--color-muted)">{t('studio.created', 'Created')}</span>
+					<p style="color: var(--color-foreground)">{viewingJob.created_at ? new Date(viewingJob.created_at).toLocaleString() : '—'}</p>
+				</div>
+			</div>
+			<div>
+				<span class="text-xs font-medium" style="color: var(--color-muted)">{t('studio.topic', 'Topic')}</span>
+				<p class="mt-1 rounded-md border p-2 text-xs" style="border-color: var(--color-border); color: var(--color-foreground)">{viewingJob.topic_prompt || '—'}</p>
+			</div>
+		</div>
+		<div class="mt-6 flex justify-end gap-2">
+			{#if canManage && (viewingJob.status === 'failed' || viewingJob.status === 'draft_ready')}
+				<Button variant="outline" onclick={() => { retryJob(viewingJob!.id); viewJobModalOpen = false; }}>
+					<RotateCcw class="h-4 w-4" />
+					{t('studio.retry', 'Retry')}
+				</Button>
+			{/if}
+			<Button onclick={() => { viewJobModalOpen = false; viewingJob = null; }}>{t('common.close', 'Close')}</Button>
+		</div>
+	</Modal>
+{/if}
+
+{#snippet JobActionsCell({ row }: { value: any; row: StudioJob })}
+	<div class="flex items-center gap-1">
+		<Button variant="ghost" size="sm" onclick={() => viewJob(row.id)} aria-label={t('common.view', 'View')}>
+			<Eye class="h-3.5 w-3.5" />
+		</Button>
+		{#if canManage && (row.status === 'failed' || row.status === 'draft_ready')}
+			<Button variant="ghost" size="sm" onclick={() => retryJob(row.id)} aria-label={t('studio.retry', 'Retry')}>
+				<RotateCcw class="h-3.5 w-3.5" />
+			</Button>
+		{/if}
+		{#if canManage && (row.status === 'queued' || row.status === 'generating')}
+			<Button variant="ghost" size="sm" onclick={() => cancelJob(row.id)} aria-label={t('common.cancel', 'Cancel')}>
+				<X class="h-3.5 w-3.5" />
+			</Button>
+		{/if}
+	</div>
+{/snippet}

@@ -1,10 +1,10 @@
 <script lang="ts">
-	import { aiApi, aiAdminApi, aiModelsAdminApi, type HitlReview, type GenerateResult } from '$lib/api';
+	import { aiApi, aiAdminApi, aiModelsAdminApi, type HitlReview, type GenerateResult, type AiTool, type AiUsageSummary, type AiToolUsageStats } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { Modal } from '$lib/components/ui/modal';
 	import { Button } from '$lib/components/ui/button';
 	import { DataTable } from '$lib/components/ui/data-table';
-	import { Loader2, Copy, Check, Clock, CheckCircle2, XCircle, Eye, Sparkles, AlertTriangle, Wrench, BarChart3, Activity, Settings } from 'lucide-svelte';
+	import { Loader2, Copy, Check, Clock, CheckCircle2, XCircle, Eye, Sparkles, AlertTriangle, Wrench, BarChart3, Activity, Settings, Trash2 } from 'lucide-svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { Select } from '$lib/components/ui/select';
 	import { page as pageState } from '$app/state';
@@ -53,15 +53,6 @@
 	});
 
 	// ─── AI Tools State ──────────────────────────────────────────
-	type AiTool = {
-		id: string;
-		name: string;
-		description?: string;
-		is_enabled: boolean;
-		config?: Record<string, unknown>;
-		created_at: string;
-	};
-
 	let tools = $state<AiTool[]>([]);
 	let toolsLoading = $state(false);
 	let toolsError = $state('');
@@ -75,23 +66,8 @@
 	let toolSaving = $state(false);
 
 	// ─── AI Usage State ──────────────────────────────────────────
-	type AiUsage = {
-		total_requests: number;
-		total_tokens: number;
-		total_cost: number;
-		models_used: Array<{ model: string; requests: number; tokens: number; cost: number }>;
-	};
-
-	type ToolUsage = {
-		tool_id: string;
-		tool_name: string;
-		invocations: number;
-		avg_latency_ms: number;
-		errors: number;
-	};
-
-	let aiUsage = $state<AiUsage | null>(null);
-	let toolUsage = $state<ToolUsage[]>([]);
+	let aiUsage = $state<AiUsageSummary | null>(null);
+	let toolUsage = $state<AiToolUsageStats[]>([]);
 	let usageLoading = $state(false);
 
 	// ─── HITL Queue State ─────────────────────────────────────────
@@ -138,23 +114,22 @@
 	];
 
 	const modelUsageColumns = [
-		{ key: 'model', label: t('ai.usage.model'), render: (v: string) => `<span class="font-medium">${v}</span>` },
-		{ key: 'requests', label: t('ai.usage.requests'), render: (v: number) => v.toLocaleString() },
-		{ key: 'tokens', label: t('ai.usage.tokens'), render: (v: number) => v.toLocaleString() },
-		{ key: 'cost', label: t('ai.usage.cost'), render: (v: number) => `$${v.toFixed(2)}` }
+		{ key: 'task_type', label: t('ai.usage.model', 'Task Type'), render: (v: string) => `<span class="font-medium">${v}</span>` },
+		{ key: 'calls', label: t('ai.usage.requests'), render: (v: number) => v.toLocaleString() },
+		{ key: 'tokens_used', label: t('ai.usage.tokens'), render: (v: number) => v.toLocaleString() },
+		{ key: 'total_cost_usd', label: t('ai.usage.cost'), render: (v: number) => `$${(v ?? 0).toFixed(2)}` }
 	];
 
 	const toolUsageColumns = [
 		{ key: 'tool_name', label: t('ai.tools.name'), render: (v: string) => `<span class="font-medium">${v}</span>` },
 		{ key: 'invocations', label: t('ai.tools.invocations'), render: (v: number) => v.toLocaleString() },
-		{ key: 'avg_latency_ms', label: t('ai.tools.avg_latency'), render: (v: number) => `${v.toFixed(0)}ms` },
-		{ key: 'errors', label: t('ai.tools.errors'), render: (v: number) => `<span class="${v > 0 ? 'text-danger dark:text-danger' : ''}">${v}</span>` }
+		{ key: 'tokens_used', label: t('ai.usage.tokens'), render: (v: number) => v.toLocaleString() },
+		{ key: 'total_cost_usd', label: t('ai.usage.cost'), render: (v: number) => `$${(v ?? 0).toFixed(2)}` }
 	];
 
 	const modelsColumns = [
-		{ key: 'label', label: t('ai.models.name', 'Name'), render: (_: any, row: any) => row.label || row.name },
-		{ key: 'id', label: t('ai.models.id', 'ID'), render: (v: string) => `<span class="font-mono text-xs">${v}</span>` },
-		{ key: 'is_active', label: t('ai.models.status', 'Status'), render: (v: boolean) => v ? `<span class="inline-block rounded-full bg-success/15 px-2 py-0.5 text-xs text-success dark:text-success">${t('common.active', 'Active')}</span>` : `<span class="inline-block rounded-full bg-muted/15 px-2 py-0.5 text-xs text-muted dark:text-muted">${t('common.inactive', 'Inactive')}</span>` }
+		{ key: 'label', label: t('ai.models.name', 'Name'), render: (v: string) => `<span class="font-medium">${v}</span>` },
+		{ key: 'id', label: t('ai.models.id', 'ID'), render: (v: string) => v ? `<span class="font-mono text-xs">${v}</span>` : `<span class="text-xs" style="color: var(--color-muted)">auto</span>` }
 	];
 
 	const filteredHitlReviews = $derived(
@@ -171,8 +146,8 @@
 
 	const filteredModelUsage = $derived(
 		usageSearchQuery
-			? (aiUsage?.models_used ?? []).filter((m) => m.model.toLowerCase().includes(usageSearchQuery.toLowerCase()))
-			: (aiUsage?.models_used ?? [])
+			? (aiUsage?.by_task_type ?? []).filter((m) => m.task_type.toLowerCase().includes(usageSearchQuery.toLowerCase()))
+			: (aiUsage?.by_task_type ?? [])
 	);
 
 	const filteredToolUsage = $derived(
@@ -181,11 +156,11 @@
 			: toolUsage
 	);
 
-	let aiModels = $state<{ id: string; name: string; label: string; is_active: boolean }[]>([]);
+	let aiModels = $state<{ id: string; label: string }[]>([]);
 
 	const filteredModels = $derived(
 		modelsSearchQuery
-			? aiModels.filter((m) => (m.label || m.name).toLowerCase().includes(modelsSearchQuery.toLowerCase()))
+			? aiModels.filter((m) => (m.label || m.id).toLowerCase().includes(modelsSearchQuery.toLowerCase()))
 			: aiModels
 	);
 
@@ -318,7 +293,7 @@
 		try {
 			const result = await aiAdminApi.listTools();
 			if (result.ok) {
-				tools = (result.data as AiTool[]) ?? [];
+				tools = result.data ?? [];
 			} else {
 				toolsError = result.error;
 			}
@@ -360,6 +335,36 @@
 		}
 	}
 
+	// Delete tool state
+	let showDeleteConfirm = $state(false);
+	let deletingTool = $state<AiTool | null>(null);
+	let toolDeleting = $state(false);
+
+	function confirmDeleteTool(tool: AiTool) {
+		deletingTool = tool;
+		showDeleteConfirm = true;
+	}
+
+	async function deleteTool() {
+		if (!deletingTool) return;
+		toolDeleting = true;
+		toolsError = '';
+		try {
+			const result = await aiAdminApi.deleteTool(deletingTool.id);
+			if (result.ok) {
+				showDeleteConfirm = false;
+				deletingTool = null;
+				loadTools();
+			} else {
+				toolsError = result.error;
+			}
+		} catch {
+			toolsError = t('common.error');
+		} finally {
+			toolDeleting = false;
+		}
+	}
+
 	// ─── AI Usage Functions ──────────────────────────────────────
 	async function loadUsage() {
 		usageLoading = true;
@@ -369,10 +374,10 @@
 				aiAdminApi.getToolsUsage()
 			]);
 			if (usageResult.ok) {
-				aiUsage = usageResult.data as AiUsage;
+				aiUsage = usageResult.data;
 			}
 			if (toolsResult.ok) {
-				toolUsage = (toolsResult.data as ToolUsage[]) ?? [];
+				toolUsage = toolsResult.data ?? [];
 			}
 		} catch {
 			// silent
@@ -387,7 +392,7 @@
 		try {
 			const res = await aiModelsAdminApi.list();
 			if (res.ok) {
-				aiModels = (res.data as { id: string; name: string; label: string; is_active: boolean }[]) ?? [];
+				aiModels = res.data ?? [];
 			}
 		} catch {
 			// silent
@@ -400,8 +405,8 @@
 		(async () => {
 			try {
 				const cats = await aiApi.listCategories();
-				if (Array.isArray(cats) && cats.length > 0) {
-					categories = cats;
+				if (cats.ok && Array.isArray(cats.data) && cats.data.length > 0) {
+					categories = cats.data;
 				}
 			} catch {
 				// Keep default categories
@@ -413,12 +418,8 @@
 					models = res.data.map((m) => ({ value: m.id, label: m.label }));
 				}
 			} catch {
-				models = [
-					{ value: '', label: 'Default' },
-					{ value: 'gpt-4', label: t('ai.model.gpt4') },
-					{ value: 'gpt-3.5-turbo', label: t('ai.model.gpt35') },
-					{ value: 'claude-3', label: t('ai.model.claude3') }
-				];
+				// Rule 16: no hardcoded model fallback. If the API fails,
+				// keep the initial "Default"-only entry (set at init).
 			}
 
 			loadReviews();
@@ -447,6 +448,7 @@
 		href="/ai/tools"
 		class="flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-colors"
 		style={activeTab === 'tools' ? 'background-color: var(--color-primary); color: white' : ''}
+		onclick={() => { loadTools(); }}
 	>
 		<Wrench class="h-4 w-4" />
 		{t('ai.tools.title')}
@@ -683,23 +685,23 @@
 				<div class="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
 					<div class="rounded-lg border p-4" style="border-color: var(--color-border); background-color: var(--color-surface)">
 						<p class="text-xs" style="color: var(--color-muted)">{t('ai.usage.total_requests')}</p>
-						<p class="mt-1 text-2xl font-bold">{aiUsage.total_requests.toLocaleString()}</p>
+						<p class="mt-1 text-2xl font-bold">{(aiUsage.by_task_type ?? []).reduce((s, r) => s + (r.calls ?? 0), 0).toLocaleString()}</p>
 					</div>
 					<div class="rounded-lg border p-4" style="border-color: var(--color-border); background-color: var(--color-surface)">
 						<p class="text-xs" style="color: var(--color-muted)">{t('ai.usage.total_tokens')}</p>
-						<p class="mt-1 text-2xl font-bold">{aiUsage.total_tokens.toLocaleString()}</p>
+						<p class="mt-1 text-2xl font-bold">{(aiUsage.tokens_used ?? 0).toLocaleString()}</p>
 					</div>
 					<div class="rounded-lg border p-4" style="border-color: var(--color-border); background-color: var(--color-surface)">
 						<p class="text-xs" style="color: var(--color-muted)">{t('ai.usage.total_cost')}</p>
-						<p class="mt-1 text-2xl font-bold">${aiUsage.total_cost.toFixed(2)}</p>
+						<p class="mt-1 text-2xl font-bold">${(aiUsage.total_cost_usd ?? 0).toFixed(2)}</p>
 					</div>
 					<div class="rounded-lg border p-4" style="border-color: var(--color-border); background-color: var(--color-surface)">
 						<p class="text-xs" style="color: var(--color-muted)">{t('ai.usage.models_used')}</p>
-						<p class="mt-1 text-2xl font-bold">{aiUsage.models_used?.length ?? 0}</p>
+						<p class="mt-1 text-2xl font-bold">{(aiUsage.by_task_type ?? []).length}</p>
 					</div>
 				</div>
 
-				{#if aiUsage.models_used?.length}
+				{#if aiUsage.by_task_type?.length}
 					<h3 class="mb-3 text-sm font-medium">{t('ai.usage.by_model')}</h3>
 					<div class="mb-6">
 						<DataTable
@@ -860,6 +862,36 @@
 	</div>
 </Modal>
 
+<!-- ═══ Tool Delete Confirmation Modal ═══ -->
+<Modal bind:open={showDeleteConfirm} title={t('ai.tools.delete_title', 'Delete Tool')}>
+	{#if deletingTool}
+		<p class="text-sm" style="color: var(--color-foreground-alt)">
+			{t('ai.tools.delete_confirm', 'Are you sure you want to delete')} <strong>{deletingTool.name}</strong>?
+		</p>
+		<p class="mt-2 text-xs" style="color: var(--color-muted)">
+			{t('ai.tools.delete_warning', 'This action cannot be undone. All usage history for this tool will also be removed.')}
+		</p>
+		{#if toolsError}
+			<div class="mt-3 rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-danger); color: var(--color-danger)">
+				{toolsError}
+			</div>
+		{/if}
+		<div class="mt-6 flex justify-end gap-3">
+			<Button variant="outline" onclick={() => { showDeleteConfirm = false; deletingTool = null; }}>
+				{t('common.cancel', 'Cancel')}
+			</Button>
+			<Button variant="destructive" onclick={deleteTool} disabled={toolDeleting}>
+				{#if toolDeleting}
+					<Loader2 class="h-3.5 w-3.5 animate-spin" />
+				{:else}
+					<Trash2 class="h-3.5 w-3.5" />
+				{/if}
+				{t('common.delete', 'Delete')}
+			</Button>
+		</div>
+	{/if}
+</Modal>
+
 {#snippet HitlActionsCell({ row }: { value: any; row: HitlReview })}
 	<Button variant="ghost" size="sm" onclick={() => openReview(row)} style="color: var(--color-info)">
 		<Eye class="h-3.5 w-3.5" />
@@ -868,8 +900,12 @@
 {/snippet}
 
 {#snippet ToolMgmtActionsCell({ row }: { value: any; row: AiTool })}
-	<Button variant="ghost" size="sm" onclick={() => openEditTool(row)} style="color: var(--color-primary)">
-		<Settings class="h-3.5 w-3.5" />
-		{t('common.configure', 'Configure')}
-	</Button>
+	<div class="flex items-center gap-1">
+		<Button variant="ghost" size="sm" onclick={() => openEditTool(row)} style="color: var(--color-primary)" aria-label={t('common.configure', 'Configure')}>
+			<Settings class="h-3.5 w-3.5" />
+		</Button>
+		<Button variant="ghost" size="sm" onclick={() => confirmDeleteTool(row)} style="color: var(--color-danger)" aria-label={t('common.delete', 'Delete')}>
+			<Trash2 class="h-3.5 w-3.5" />
+		</Button>
+	</div>
 {/snippet}

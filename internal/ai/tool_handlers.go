@@ -174,23 +174,13 @@ func (h *ToolHandlers) DeleteTool(w http.ResponseWriter, r *http.Request) {
 	toolWriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
 }
 
-// ListToolUsage returns usage statistics for a tool.
-// GET /admin/ai/tools/usage?tool_id=...&days=30.
+// ListToolUsage returns usage statistics. When tool_id is provided, returns
+// single-tool stats. When tool_id is omitted, returns per-tool aggregated
+// usage for ALL tools (used by the admin /ai usage tab).
+// GET /admin/ai/tools/usage?tool_id=...&days=30
 func (h *ToolHandlers) ListToolUsage(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
-		return
-	}
-
-	toolIDStr := r.URL.Query().Get("tool_id")
-	if toolIDStr == "" {
-		toolWriteError(w, http.StatusBadRequest, "validation_error", "tool_id query parameter is required")
-		return
-	}
-
-	var toolID pgtype.UUID
-	if err := toolID.Scan(toolIDStr); err != nil {
-		toolWriteError(w, http.StatusBadRequest, "invalid_id", "Invalid tool_id")
 		return
 	}
 
@@ -203,6 +193,31 @@ func (h *ToolHandlers) ListToolUsage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	since := time.Now().AddDate(0, 0, -days)
+
+	toolIDStr := r.URL.Query().Get("tool_id")
+
+	// All-tools mode: return per-tool aggregated usage.
+	if toolIDStr == "" {
+		stats, err := h.Registry.GetAllToolUsageStats(r.Context(), tenantID, since)
+		if err != nil {
+			slog.Error("fetching all tool usage stats", "error", err)
+			toolWriteError(w, http.StatusInternalServerError, "internal_error", "Failed to fetch usage stats")
+			return
+		}
+
+		toolWriteJSON(w, http.StatusOK, map[string]any{
+			"data":        stats,
+			"period_days": days,
+		})
+		return
+	}
+
+	// Single-tool mode.
+	var toolID pgtype.UUID
+	if err := toolID.Scan(toolIDStr); err != nil {
+		toolWriteError(w, http.StatusBadRequest, "invalid_id", "Invalid tool_id")
+		return
+	}
 
 	stats, err := h.Registry.GetToolUsageStats(r.Context(), tenantID, toolID, since)
 	if err != nil {

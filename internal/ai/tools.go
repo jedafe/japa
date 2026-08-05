@@ -24,7 +24,7 @@ type AITool struct { //nolint:revive // stuttering type name preserved for API c
 	Category           string             `json:"category"`
 	Config             json.RawMessage    `json:"config"`
 	IsEnabled          bool               `json:"is_enabled"`
-	RequiredPermission string             `json:"required_permission,omitempty"`
+	RequiredPermission *string            `json:"required_permission,omitempty"`
 	CreatedAt          pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
 }
@@ -149,7 +149,7 @@ func (r *ToolRegistry) UpdateTool(ctx context.Context, tenantID, id pgtype.UUID,
 
 	requiredPermission := current.RequiredPermission
 	if input.RequiredPermission != nil {
-		requiredPermission = *input.RequiredPermission
+		requiredPermission = input.RequiredPermission
 	}
 
 	var updated AITool
@@ -257,6 +257,51 @@ func (r *ToolRegistry) ListToolUsage(ctx context.Context, tenantID, toolID pgtyp
 	}
 
 	return usage, rows.Err()
+}
+
+// AllToolUsageStats holds per-tool aggregated usage for the admin dashboard.
+type AllToolUsageStats struct {
+	ToolID       string `json:"tool_id"`
+	ToolName     string `json:"tool_name"`
+	Invocations  int64  `json:"invocations"`
+	TokensUsed   int64  `json:"tokens_used"`
+	TotalCostUSD int64  `json:"total_cost_usd"`
+}
+
+// GetAllToolUsageStats returns per-tool usage aggregated across all tools for
+// a tenant within the given period. Used by the admin /ai usage tab when no
+// specific tool_id is selected.
+func (r *ToolRegistry) GetAllToolUsageStats(ctx context.Context, tenantID pgtype.UUID, since time.Time) ([]AllToolUsageStats, error) {
+	rows, err := r.db.Reader.Query(ctx, `
+		SELECT
+			t.id::text,
+			t.name,
+			COUNT(u.*) AS invocations,
+			COALESCE(SUM(u.tokens_used), 0) AS tokens_used,
+			COALESCE(SUM(u.cost_cents), 0) AS total_cost_cents
+		FROM ai_tools t
+		LEFT JOIN ai_tool_usage u ON u.tool_id = t.id AND u.tenant_id = $1 AND u.created_at >= $2
+		WHERE t.tenant_id = $1
+		GROUP BY t.id, t.name
+		ORDER BY invocations DESC
+	`, tenantID, since)
+	if err != nil {
+		return nil, fmt.Errorf("fetching all tool usage stats: %w", err)
+	}
+	defer rows.Close()
+
+	var stats []AllToolUsageStats
+	for rows.Next() {
+		var s AllToolUsageStats
+		var totalCostCents int64
+		if err := rows.Scan(&s.ToolID, &s.ToolName, &s.Invocations, &s.TokensUsed, &totalCostCents); err != nil {
+			return nil, fmt.Errorf("scanning all tool usage stats: %w", err)
+		}
+		s.TotalCostUSD = totalCostCents / 100
+		stats = append(stats, s)
+	}
+
+	return stats, rows.Err()
 }
 
 // RecordUsage records a single usage event for an AI tool.

@@ -73,6 +73,8 @@
 	"checklist.change_selection": "Change selection",
 	"checklist.no_documents": "No documents found",
 	"checklist.no_documents_desc": "This visa guide doesn't have any checklist items configured yet.",
+	"checklist.unavailable": "Checklist unavailable",
+	"checklist.unavailable_desc": "The visa checklist service isn't configured yet. Please check back later.",
 	"checklist.required": "Required",
 	"checklist.add_note": "+ Add note",
 	"checklist.note_label": "Note:",
@@ -99,6 +101,9 @@
 	"readiness.past_results": "Past results",
 	"readiness.unavailable": "Assessment unavailable",
 	"readiness.unavailable_desc": "The readiness assessment is not configured yet. Please check back later.",
+	"readiness.error_submit": "Submission failed. Please try again.",
+	"readiness.scoring_timeout": "Scoring is taking longer than expected. Please check back shortly.",
+	"readiness.read_more": "Read more",
 	"readiness.required_marker": "*",
 
 	"col.title": "Cost of Living Calculator",

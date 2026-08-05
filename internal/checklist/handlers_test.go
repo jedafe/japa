@@ -169,37 +169,59 @@ func TestSlugifyItemKey_Stability(t *testing.T) {
 // extractDocumentLabels tests.
 // ---------------------------------------------------------------------------
 
-// TestExtractDocumentLabels_JSONArray verifies parsing a JSON array value.
+// TestExtractDocumentItems_JSONArray verifies parsing a JSON array of strings.
 func TestExtractDocumentLabels_JSONArray(t *testing.T) {
 	field := VisaGuideField{
-		FieldKey:   FieldRequiredDocuments,
-		ValueJSON:  []byte(`["Bank Statement","Passport Copy","Medical Exam Report"]`),
+		FieldKey:  FieldRequiredDocuments,
+		ValueJSON: []byte(`["Bank Statement","Passport Copy","Medical Exam Report"]`),
 	}
-	got := extractDocumentLabels(field)
+	got := extractDocumentItems(field)
 	if len(got) != 3 {
-		t.Fatalf("extractDocumentLabels JSON array: got %d labels, want 3", len(got))
+		t.Fatalf("extractDocumentItems JSON array: got %d labels, want 3", len(got))
 	}
-	if got[0] != "Bank Statement" {
-		t.Errorf("extractDocumentLabels[0] = %q, want %q", got[0], "Bank Statement")
+	if got[0].Label != "Bank Statement" {
+		t.Errorf("extractDocumentItems[0].Label = %q, want %q", got[0].Label, "Bank Statement")
 	}
 }
 
-// TestExtractDocumentLabels_Text verifies parsing a comma-separated text value.
+// TestExtractDocumentItems_JSONObjects verifies parsing a JSON array of
+// objects with label/required/category/description metadata.
+func TestExtractDocumentItems_JSONObjects(t *testing.T) {
+	field := VisaGuideField{
+		FieldKey: FieldRequiredDocuments,
+		ValueJSON: []byte(`[
+			{"label":"Passport Copy","required":true,"category":"Identity","description":"Valid for 6+ months"},
+			{"label":"Bank Statement","required":true,"category":"Financial"}
+		]`),
+	}
+	got := extractDocumentItems(field)
+	if len(got) != 2 {
+		t.Fatalf("extractDocumentItems JSON objects: got %d items, want 2", len(got))
+	}
+	if got[0].Label != "Passport Copy" || !got[0].Required || got[0].Category != "Identity" {
+		t.Errorf("extractDocumentItems[0] = %+v, want label=Passport Copy required=true category=Identity", got[0])
+	}
+	if got[0].Description != "Valid for 6+ months" {
+		t.Errorf("extractDocumentItems[0].Description = %q, want %q", got[0].Description, "Valid for 6+ months")
+	}
+}
+
+// TestExtractDocumentItems_Text verifies parsing a comma-separated text value.
 func TestExtractDocumentLabels_Text(t *testing.T) {
 	field := VisaGuideField{
 		FieldKey:  FieldRequiredDocuments,
 		ValueText: "Bank Statement, Passport Copy, Medical Exam Report",
 	}
-	got := extractDocumentLabels(field)
+	got := extractDocumentItems(field)
 	if len(got) != 3 {
-		t.Fatalf("extractDocumentLabels text: got %d labels, want 3", len(got))
+		t.Fatalf("extractDocumentItems text: got %d labels, want 3", len(got))
 	}
 }
 
-// TestExtractDocumentLabels_Empty verifies an empty field returns no labels.
+// TestExtractDocumentItems_Empty verifies an empty field returns no items.
 func TestExtractDocumentLabels_Empty(t *testing.T) {
 	field := VisaGuideField{FieldKey: FieldRequiredDocuments}
-	if got := extractDocumentLabels(field); len(got) != 0 {
-		t.Errorf("extractDocumentLabels empty = %v, want nil", got)
+	if got := extractDocumentItems(field); len(got) != 0 {
+		t.Errorf("extractDocumentItems empty = %v, want nil", got)
 	}
 }
