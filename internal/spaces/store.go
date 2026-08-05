@@ -188,6 +188,31 @@ func (s *Service) ListSpacesByMember(ctx context.Context, tenantID, userID pgtyp
 	return spaces, nil
 }
 
+// ListAllSpacesForAdmin returns every active space in the tenant with no
+// visibility or membership filter. Used by GET /me/spaces when the caller is
+// a super_admin so they can post to any space without joining it first
+// (Section 03 — admin override).
+func (s *Service) ListAllSpacesForAdmin(ctx context.Context, tenantID pgtype.UUID, search string) ([]gen.ListAllSpacesForAdminRow, error) {
+	spaces, err := s.read.ListAllSpacesForAdmin(ctx, gen.ListAllSpacesForAdminParams{
+		TenantID: tenantID,
+		Search:   search,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("listing all spaces for admin: %w", err)
+	}
+	return spaces, nil
+}
+
+// IsSuperAdmin reports whether the user belongs to the super_admin user group
+// for the given tenant. Used to gate admin-only space listing.
+func (s *Service) IsSuperAdmin(ctx context.Context, tenantID, userID pgtype.UUID) (bool, error) {
+	return s.read.IsUserInGroup(ctx, gen.IsUserInGroupParams{
+		TenantID:  tenantID,
+		UserID:    userID,
+		GroupSlug: "super_admin",
+	})
+}
+
 // ListSpacesByModerator returns every space the given user moderates
 // (catalog: GET /me/spaces/moderated).
 func (s *Service) ListSpacesByModerator(ctx context.Context, tenantID, userID pgtype.UUID) ([]gen.ListSpacesByModeratorUserRow, error) {

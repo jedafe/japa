@@ -7,6 +7,7 @@
 	// boundary). The card receives the public track data via props; the parent page
 	// passes the enrollment state down after fetching it client-side.
 	import { t } from '$lib/i18n';
+	import { goto } from '$app/navigation';
 	import { formatDuration, formatCount, formatPriceKobo, isFreeForUser } from '$lib/format';
 	import { Star, Users, Clock, PlayCircle, CheckCircle } from 'lucide-svelte';
 	import LevelBadge from './LevelBadge.svelte';
@@ -20,22 +21,18 @@
 		enrolled?: boolean;
 		/** Progress pct if enrolled (0–100). */
 		progressPct?: number;
-		/** True on the Japa University host → show price badge (ADR-063). */
-		isUniversity?: boolean;
 	}
 	let {
 		track,
 		user = null,
 		enrolled = false,
-		progressPct = 0,
-		isUniversity = false
+		progressPct = 0
 	}: Props = $props();
 
 	const href = $derived(`/tracks/${track.slug}`);
 
-	// Price badge for the university marketplace (ADR-063).
+	// Price badge — always shown on the unified University surface.
 	const priceLabel = $derived(() => {
-		if (!isUniversity) return null;
 		if (isFreeForUser(track.price_kobo, user?.is_pro)) {
 			return user?.is_pro ? t('learn.included_pro') : t('learn.free');
 		}
@@ -65,8 +62,8 @@
 		<div class="absolute left-3 top-3">
 			<LevelBadge level={track.level} />
 		</div>
-		<!-- Price badge (top-right, university only) -->
-		{#if isUniversity && priceLabel()}
+		<!-- Price badge (top-right) -->
+		{#if priceLabel()}
 			<span
 				class="absolute right-3 top-3 rounded-full bg-[var(--color-surface)]/90 px-2.5 py-0.5 text-xs font-semibold text-[var(--color-text)] backdrop-blur"
 			>
@@ -84,7 +81,19 @@
 
 		<!-- Instructor -->
 		{#if track.instructor_name}
-			<p class="text-xs text-[var(--color-text-subtle)]">{track.instructor_name}</p>
+			<p class="text-xs text-[var(--color-text-subtle)]">
+				{#if track.instructor_id}
+					<span
+						role="link"
+						tabindex="0"
+						class="cursor-pointer hover:text-[var(--color-primary)] hover:underline"
+						onclick={(e) => { e.stopPropagation(); e.preventDefault(); goto(`/instructors/${track.instructor_id}`); }}
+						onkeydown={(e) => { if (e.key === 'Enter') { e.stopPropagation(); e.preventDefault(); goto(`/instructors/${track.instructor_id}`); } }}
+					>{track.instructor_name}</span>
+				{:else}
+					{track.instructor_name}
+				{/if}
+			</p>
 		{/if}
 
 		<!-- Stats row -->

@@ -28,7 +28,7 @@
 			loading = true;
 			try {
 				const res = await api.get<{ items: TrackSummary[] } | TrackSummary[]>(
-					`/learn/tracks?q=${encodeURIComponent(value.trim())}&limit=8`
+					`/learn/university/catalog?q=${encodeURIComponent(value.trim())}&limit=8`
 				);
 				// The list endpoint returns either { items: [...] } or a bare array.
 				suggestions = Array.isArray(res.data) ? res.data : (res.data?.items ?? []);

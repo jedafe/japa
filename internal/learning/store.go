@@ -712,6 +712,9 @@ type Lesson struct {
 	IsPreview       bool         `json:"is_preview"`
 	CreatedAt       time.Time    `json:"created_at"`
 	UpdatedAt       time.Time    `json:"updated_at"`
+	// IsCompleted is populated for authenticated users by GetLessonDetail
+	// (queries lesson_progress). Always false for guests/unauthed requests.
+	IsCompleted bool `json:"is_completed,omitempty"`
 }
 
 // CreateLessonInput represents create lesson input.
@@ -883,8 +886,10 @@ type LessonDetail struct {
 }
 
 // GetLessonDetail retrieves a lesson by slug with track/module context and
-// prev/next navigation, suitable for the lesson player (ADR-060).
-func (s *Store) GetLessonDetail(ctx context.Context, tenantID, moduleID pgtype.UUID, slug string) (*LessonDetail, error) {
+// prev/next navigation, suitable for the lesson player (ADR-060). When userID
+// is valid, it also queries lesson_progress to populate IsCompleted so the
+// lesson player can show the "Completed" state on SSR render.
+func (s *Store) GetLessonDetail(ctx context.Context, tenantID, moduleID pgtype.UUID, slug string, userID ...pgtype.UUID) (*LessonDetail, error) {
 	r, err := s.read.GetLearningLessonDetailBySlug(ctx, gen.GetLearningLessonDetailBySlugParams{
 		TenantID: tenantID,
 		ModuleID: moduleID,
@@ -922,6 +927,18 @@ func (s *Store) GetLessonDetail(ctx context.Context, tenantID, moduleID pgtype.U
 		TrackSlug:   r.TrackSlug,
 		TrackTitle:  r.TrackTitle,
 		ContentHTML: renderLessonContentHTML(r.Content),
+	}
+
+	// Populate IsCompleted for authenticated users. pgx.ErrNoRows means no
+	// progress row exists — the lesson is not completed.
+	if len(userID) > 0 && userID[0].Valid {
+		isCompleted, err := s.read.GetLessonCompletionStatus(ctx, gen.GetLessonCompletionStatusParams{
+			UserID:   userID[0],
+			LessonID: r.ID,
+		})
+		if err == nil {
+			detail.IsCompleted = isCompleted
+		}
 	}
 
 	// Compute prev/next lesson navigation across the whole track.
@@ -1167,6 +1184,20 @@ func (s *Store) GetUserTrackProgress(ctx context.Context, userID, trackID pgtype
 	return int(r.Count), int(r.Count_2), nil
 }
 
+// ListCompletedLessonIDsByUserAndTrack returns the IDs of all lessons the user
+// has completed in a track. Used to populate the curriculum rail's completion
+// state on page refresh.
+func (s *Store) ListCompletedLessonIDsByUserAndTrack(ctx context.Context, userID, trackID pgtype.UUID) ([]pgtype.UUID, error) {
+	rows, err := s.read.ListCompletedLessonIDsByUserAndTrack(ctx, gen.ListCompletedLessonIDsByUserAndTrackParams{
+		UserID:  userID,
+		TrackID: trackID,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("list completed lesson ids: %w", err)
+	}
+	return rows, nil
+}
+
 // ---------------------------------------------------------------------------
 // Certificate operations
 // ---------------------------------------------------------------------------
@@ -1182,6 +1213,11 @@ type Certificate struct {
 	IssuedAt          time.Time    `json:"issued_at"`
 	Title             *string      `json:"title,omitempty"`
 	TrackSlug         *string      `json:"track_slug,omitempty"`
+	// RecipientName is the display name (falls back to username when no
+	// display_name is set). Populated by the list/detail queries that JOIN
+	// users + user_profiles; empty when issued via IssueCertificate.
+	RecipientName     string `json:"recipient_name,omitempty"`
+	RecipientUsername string `json:"recipient_username,omitempty"`
 }
 
 func certFromRow(r gen.LearningCertificate) Certificate {
@@ -1210,6 +1246,11 @@ func certFromListRow(r gen.ListLearningCertificatesByUserRow) Certificate {
 		mediaID = &r.MediaID
 	}
 
+	recipientUsername := ""
+	if r.RecipientUsername != nil {
+		recipientUsername = *r.RecipientUsername
+	}
+
 	return Certificate{
 		ID:                r.ID,
 		TenantID:          r.TenantID,
@@ -1220,6 +1261,8 @@ func certFromListRow(r gen.ListLearningCertificatesByUserRow) Certificate {
 		IssuedAt:          r.IssuedAt.Time,
 		Title:             r.TrackTitle,
 		TrackSlug:         r.TrackSlug,
+		RecipientName:     r.RecipientName,
+		RecipientUsername: recipientUsername,
 	}
 }
 
@@ -1279,7 +1322,29 @@ func (s *Store) GetCertificateByID(ctx context.Context, certID pgtype.UUID) (*Ce
 		return nil, fmt.Errorf("get certificate by id: %w", err)
 	}
 
-	c := certFromRow(r)
+	var mediaID *pgtype.UUID
+	if r.MediaID.Valid {
+		mediaID = &r.MediaID
+	}
+
+	recipientUsername := ""
+	if r.RecipientUsername != nil {
+		recipientUsername = *r.RecipientUsername
+	}
+
+	c := Certificate{
+		ID:                r.ID,
+		TenantID:          r.TenantID,
+		UserID:            r.UserID,
+		TrackID:           r.TrackID,
+		CertificateNumber: r.CertificateNumber,
+		MediaID:           mediaID,
+		IssuedAt:          r.IssuedAt.Time,
+		Title:             r.TrackTitle,
+		TrackSlug:         r.TrackSlug,
+		RecipientName:     r.RecipientName,
+		RecipientUsername: recipientUsername,
+	}
 	return &c, nil
 }
 
@@ -1287,7 +1352,13 @@ func (s *Store) GetCertificateByID(ctx context.Context, certID pgtype.UUID) (*Ce
 // Enrollment operations
 // ---------------------------------------------------------------------------
 
-// Enrollment represents a user's enrollment in a learning track.
+// Enrollment represents a user's enrollment in a learning track. The basic
+// fields (ID, UserID, TrackID, AccessType, ProgressPct, EnrolledAt,
+// CompletedAt) are always populated. The enriched fields (TrackSlug,
+// TrackTitle, ThumbnailURL, Level, LessonsCompleted, LessonsTotal,
+// LastActivityAt, NextLesson) are only populated when the enrollment is
+// loaded via ListEnrollmentsByUser — the /me/enrollments endpoint that feeds
+// the Continue Learning card and lesson player progress ring.
 type Enrollment struct {
 	ID          pgtype.UUID `json:"id"`
 	UserID      pgtype.UUID `json:"user_id"`
@@ -1296,11 +1367,24 @@ type Enrollment struct {
 	ProgressPct float64     `json:"progress_pct"`
 	EnrolledAt  time.Time   `json:"enrolled_at"`
 	CompletedAt *time.Time  `json:"completed_at,omitempty"`
+	// Enriched fields — populated by ListEnrollmentsByUser.
+	TrackSlug        string       `json:"track_slug,omitempty"`
+	TrackTitle       string       `json:"track_title,omitempty"`
+	ThumbnailURL     *string      `json:"thumbnail_url,omitempty"`
+	Level            string       `json:"level,omitempty"`
+	LessonsCompleted int32        `json:"lessons_completed,omitempty"`
+	LessonsTotal     int32        `json:"lessons_total,omitempty"`
+	LastActivityAt   *time.Time   `json:"last_activity_at,omitempty"`
+	NextLesson       *LessonNavRef `json:"next_lesson,omitempty"`
 }
 
-// EnrollUser creates an enrollment for a user in a track.
-func (s *Store) EnrollUser(ctx context.Context, userID, trackID pgtype.UUID, accessType string) (*Enrollment, error) {
+// EnrollUser creates an enrollment for a user in a track. The tenant_id is
+// required by the enrollments table FK constraint — omitting it leaves a
+// zero-value UUID that violates enrollments_tenant_id_fkey and surfaces as a
+// 500 db_error.
+func (s *Store) EnrollUser(ctx context.Context, tenantID, userID, trackID pgtype.UUID, accessType string) (*Enrollment, error) {
 	r, err := s.write.CreateEnrollment(ctx, gen.CreateEnrollmentParams{
+		TenantID:   tenantID,
 		UserID:     userID,
 		TrackID:    trackID,
 		AccessType: accessType,
@@ -1321,9 +1405,13 @@ func (s *Store) EnrollUser(ctx context.Context, userID, trackID pgtype.UUID, acc
 	}, nil
 }
 
-// ListEnrollmentsByUser lists all enrollments for a user.
+// ListEnrollmentsByUser lists all enrollments for a user with enriched track
+// metadata (slug, title, thumbnail, level) and computed progress fields
+// (lessons_completed, lessons_total, last_activity_at, next_lesson). This
+// feeds GET /me/enrollments, which the Continue Learning card and lesson
+// player progress ring consume (ADR-060 CSR boundary).
 func (s *Store) ListEnrollmentsByUser(ctx context.Context, tenantID, userID pgtype.UUID) ([]Enrollment, error) {
-	rows, err := s.read.ListEnrollmentsByUserID(ctx, gen.ListEnrollmentsByUserIDParams{
+	rows, err := s.read.ListEnrollmentsByUserIDWithDetails(ctx, gen.ListEnrollmentsByUserIDWithDetailsParams{
 		UserID:   userID,
 		TenantID: tenantID,
 	})
@@ -1335,15 +1423,46 @@ func (s *Store) ListEnrollmentsByUser(ctx context.Context, tenantID, userID pgty
 
 	for _, r := range rows {
 		progressPct, _ := r.ProgressPct.Float64Value()
-		enrollments = append(enrollments, Enrollment{
-			ID:          r.ID,
-			UserID:      r.UserID,
-			TrackID:     r.TrackID,
-			AccessType:  r.AccessType,
-			ProgressPct: progressPct.Float64,
-			EnrolledAt:  r.EnrolledAt.Time,
-			CompletedAt: completedAtFromTimestamptz(r.CompletedAt),
+
+		var lastActivityAt *time.Time
+		if r.LastActivityAt != nil {
+			if ts, ok := r.LastActivityAt.(time.Time); ok {
+				lastActivityAt = &ts
+			}
+		}
+
+		e := Enrollment{
+			ID:               r.ID,
+			UserID:           r.UserID,
+			TrackID:          r.TrackID,
+			AccessType:       r.AccessType,
+			ProgressPct:      progressPct.Float64,
+			EnrolledAt:       r.EnrolledAt.Time,
+			CompletedAt:      completedAtFromTimestamptz(r.CompletedAt),
+			TrackSlug:        r.TrackSlug,
+			TrackTitle:       r.TrackTitle,
+			ThumbnailURL:     r.ThumbnailUrl,
+			Level:            r.Level,
+			LessonsCompleted: int32(r.LessonsCompleted),
+			LessonsTotal:     int32(r.LessonsTotal),
+			LastActivityAt:   lastActivityAt,
+		}
+
+		// Fetch the next incomplete lesson for the Continue Learning card.
+		// pgx.ErrNoRows means all lessons are completed — leave NextLesson nil.
+		nextRow, err := s.read.GetNextIncompleteLessonByTrack(ctx, gen.GetNextIncompleteLessonByTrackParams{
+			UserID:  userID,
+			TrackID: r.TrackID,
 		})
+		if err == nil {
+			e.NextLesson = &LessonNavRef{
+				Slug:       nextRow.Slug,
+				Title:      nextRow.Title,
+				ModuleSlug: nextRow.ModuleSlug,
+			}
+		}
+
+		enrollments = append(enrollments, e)
 	}
 
 	return enrollments, nil

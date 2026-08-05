@@ -1,28 +1,15 @@
 import type { Handle } from '@sveltejs/kit';
 import { building } from '$app/environment';
-import { env } from '$env/dynamic/private';
 import { apiContext, apiGet, ApiError } from '$lib/server/api';
 import type { SessionUser, Locale } from '$lib/types';
 
 /**
- * ADR-063: detect whether the request host is the Japa University branded
- * surface. The canonical host is university.japaconnect.com; additional custom
- * domains (e.g. japauni.com) can be configured via the JC_UNIVERSITY_HOSTS env
- * var as a comma-separated list.
- *
- * On the Learn app, the default shell is the Learn shell (ADR-060); the
- * university host swaps to the Japa University shell variant.
+ * Japa University — the single learning surface (ADR-063 consolidation).
+ * The former dual-shell (Learn vs University) has been unified: the app
+ * always renders the Japa University shell with the creator-economy
+ * marketplace. The canonical host is university.japaconnect.com; the
+ * learn.japaconnect.com host redirects to it (handled by the edge/proxy).
  */
-function isUniversitySurface(host: string): boolean {
-	const canonical = 'university.japaconnect.com';
-	const configured =
-		env.JC_UNIVERSITY_HOSTS?.split(',')
-			.map((h) => h.trim().toLowerCase())
-			.filter(Boolean) ?? [];
-	const hosts = [canonical, ...configured];
-	return hosts.includes(host.toLowerCase());
-}
-
 export const handle: Handle = async ({ event, resolve }) => {
 	// Hostname excludes the port; the backend resolves the tenant from it.
 	event.locals.tenantHost = event.url.hostname;
@@ -61,10 +48,7 @@ export const handle: Handle = async ({ event, resolve }) => {
 	}
 	event.locals.user = null;
 
-	// ADR-063: detect the Japa University branded surface by host.
-	event.locals.isUniversityHost = isUniversitySurface(event.url.hostname);
-
-	// Resolve the session. The Learn app is public: an absent or invalid token
+	// Resolve the session. The app is public: an absent or invalid token
 	// simply means "guest" — never a redirect to login. Enrollment and progress
 	// are CSR-only (ADR-060 SSR/CSR boundary).
 	if (event.locals.token && !building) {

@@ -12,7 +12,7 @@ import type { University, ComparisonCreated, ComparisonType } from '$lib/types';
  * Comparison System with this university pre-selected as Item 1").
  *
  * POST creates the comparison (type_id + items[{name,slug}] + auto-generated
- * dimensions) and redirects to /compare/{id}, mirroring /compare/new but
+ * dimensions) and redirects to /compare/{slug}, mirroring /compare/new but
  * constrained to the university type and a picker UI.
  *
  * Ref: japaconnect-engineering/sections/30-generic-comparison-system.md,
@@ -99,7 +99,7 @@ export const actions: Actions = {
 
 		try {
 			const created = await apiPost<ComparisonCreated>(ctx, '/comparisons', payload);
-			throw redirect(303, `/compare/${created.id}`);
+			throw redirect(303, `/compare/${created.slug}`);
 		} catch (e) {
 			if (e instanceof ApiError) {
 				return fail(e.status >= 400 && e.status < 500 ? e.status : 500, {

@@ -1,4 +1,4 @@
-import type { PageServerLoad } from './$types';
+import type { PageLoad } from './$types';
 import { apiFetch } from '$lib/api/client';
 import { landingPalettes, type Block } from '@japaconnect/landing-blocks';
 
@@ -19,6 +19,12 @@ interface Theme {
 	slug: string;
 }
 
+interface GeoCountry {
+	id: string;
+	name: string;
+	geo_code: string;
+}
+
 // parseBlocks normalises the blocks payload which may be stored as a JSON
 // string or as a parsed array, into a typed Block[].
 function parseBlocks(raw: LandingPage['blocks']): Block[] {
@@ -34,7 +40,7 @@ function parseBlocks(raw: LandingPage['blocks']): Block[] {
 	return [];
 }
 
-export const load: PageServerLoad = async ({ params, fetch }) => {
+export const load: PageLoad = async ({ params, fetch }) => {
 	const { slug } = params;
 
 	// Fetch the page by slug. The admin pages endpoint returns an array when
@@ -84,6 +90,11 @@ export const load: PageServerLoad = async ({ params, fetch }) => {
 	const themesResult = await apiFetch<Theme[]>('/admin/pagebuilder/themes', {}, fetch);
 	const themes = themesResult.data ?? [];
 
+	// Fetch supported geo countries for the preview-country selector.
+	// Ref: Rule 16 — no hardcoded country lists; countries come from the API.
+	const countriesResult = await apiFetch<GeoCountry[]>('/geo/countries', {}, fetch);
+	const countries = countriesResult.data ?? [];
+
 	// Determine palette (default to homepage, fall back to first available).
 	const palette =
 		landingPalettes['homepage'] ?? landingPalettes[Object.keys(landingPalettes)[0]];
@@ -92,5 +103,6 @@ export const load: PageServerLoad = async ({ params, fetch }) => {
 		page,
 		palette,
 		themes,
+		countries,
 	};
 };

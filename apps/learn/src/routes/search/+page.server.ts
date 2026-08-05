@@ -4,19 +4,15 @@ import type { TrackSummary } from '$lib/types';
 
 /**
  * Search results page — Phase 10 (ROADMAP-LEARN.md).
- * SSR: calls GET /learn/tracks?q=... with level filter, scoped to learning
- * tracks. On the Japa University host, uses /learn/university/catalog.
+ * SSR: calls GET /learn/university/catalog?q=... with level filter.
  * No-results state fetches suggested tracks (popular, limit 4).
  *
- * Ref: Section 54 (search), Section 36 (GET /learn/tracks), ADR-060 SSR/CSR boundary.
+ * Ref: Section 54 (search), ADR-060 SSR/CSR boundary.
  */
 export const load: PageServerLoad = async (event) => {
 	const ctx = apiContext(event);
-	const isUniversity = event.locals.isUniversityHost;
 	const q = event.url.searchParams.get('q') ?? '';
 	const level = event.url.searchParams.get('level') ?? '';
-
-	const catalogPath = isUniversity ? '/learn/university/catalog' : '/learn/tracks';
 
 	// Build query string for the search request.
 	const params = new URLSearchParams();
@@ -28,7 +24,7 @@ export const load: PageServerLoad = async (event) => {
 	let results: TrackSummary[] = [];
 	let total = 0;
 	try {
-		const res = await apiList<TrackSummary>(ctx, `${catalogPath}${qs}`);
+		const res = await apiList<TrackSummary>(ctx, `/learn/university/catalog${qs}`);
 		results = res.items;
 		total = res.meta?.total ?? res.items.length;
 	} catch {
@@ -42,7 +38,7 @@ export const load: PageServerLoad = async (event) => {
 			const sugParams = new URLSearchParams();
 			sugParams.set('sort', 'popular');
 			sugParams.set('limit', '4');
-			const res = await apiList<TrackSummary>(ctx, `${catalogPath}?${sugParams.toString()}`);
+			const res = await apiList<TrackSummary>(ctx, `/learn/university/catalog?${sugParams.toString()}`);
 			suggested = res.items;
 		} catch {
 			suggested = [];
@@ -53,7 +49,6 @@ export const load: PageServerLoad = async (event) => {
 		results,
 		total,
 		suggested,
-		isUniversity,
 		query: q,
 		levelFilter: level
 	};

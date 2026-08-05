@@ -18,8 +18,6 @@ declare global {
 			tenantHost: string;
 			/** Resolved UI locale, from the jc_locale cookie ('en' | 'fr'). */
 			locale: Locale;
-			/** True when the request host is the Japa University surface (ADR-063). */
-			isUniversityHost: boolean;
 			/**
 			 * Double-submit CSRF token fetched from GET /csrf (Ref: §5.2).
 			 * Threaded through ApiContext so server-side mutations attach
@@ -31,7 +29,6 @@ declare global {
 			user: SessionUser | null;
 			theme: ThemeName;
 			locale: Locale;
-			isUniversityHost: boolean;
 			/** CSRF token for client-side mutations (echoed as X-CSRF-Token). */
 			csrfToken: string | null;
 		}

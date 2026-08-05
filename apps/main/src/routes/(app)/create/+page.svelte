@@ -44,6 +44,8 @@
 		series={data.series}
 		organizations={data.organizations}
 		draft={data.draft}
+		comparisonDetail={data.comparisonDetail}
+		comparisonTypes={data.comparisonTypes}
 		user={data.user}
 		{defaultEditor}
 		{maxTags}

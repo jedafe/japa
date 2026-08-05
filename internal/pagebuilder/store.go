@@ -509,8 +509,17 @@ func (s *Store) SetDefaultTheme(ctx context.Context, id, tenantID pgtype.UUID) e
 // Pages CRUD
 // ---------------------------------------------------------------------------
 
-// ListPages returns all pages for a tenant, ordered by created_at DESC.
-func (s *Store) ListPages(ctx context.Context, tenantID pgtype.UUID, q string) ([]Page, error) {
+// PageListFilter narrows a ListPages query. Empty fields are ignored.
+type PageListFilter struct {
+	Q        string // free-text match on title/slug/description
+	PageType string // exact match on page_type (e.g. "landing")
+	Slug     string // exact match on slug
+	Status   string // exact match on status
+}
+
+// ListPages returns all pages for a tenant, ordered by created_at DESC,
+// optionally narrowed by the supplied filter.
+func (s *Store) ListPages(ctx context.Context, tenantID pgtype.UUID, f PageListFilter) ([]Page, error) {
 	rows, err := s.reader.Query(ctx, `
 		SELECT id, tenant_id, title, slug, description, template_id, theme_id,
 		       COALESCE(blocks, '[]'::jsonb),
@@ -519,8 +528,11 @@ func (s *Store) ListPages(ctx context.Context, tenantID pgtype.UUID, q string) (
 		FROM pages
 		WHERE tenant_id = $1
 		  AND ($2 = '' OR title ILIKE '%' || $2 || '%' OR slug ILIKE '%' || $2 || '%' OR description ILIKE '%' || $2 || '%')
+		  AND ($3 = '' OR page_type = $3)
+		  AND ($4 = '' OR slug = $4)
+		  AND ($5 = '' OR status = $5)
 		ORDER BY created_at DESC
-	`, tenantID, q)
+	`, tenantID, f.Q, f.PageType, f.Slug, f.Status)
 	if err != nil {
 		return nil, fmt.Errorf("listing pages: %w", err)
 	}
@@ -687,8 +699,13 @@ func (s *Store) UpdatePage(ctx context.Context, id, tenantID pgtype.UUID, input 
 	err := s.writer.QueryRow(
 		ctx, `
 		UPDATE pages
-		SET title = $3, slug = $4, description = $5, template_id = $6,
-		    theme_id = $7, blocks = $8, meta = $9, status = $10, page_type = $11, updated_at = now()
+		SET title = $3,
+		    slug = COALESCE(NULLIF($4, ''), slug),
+		    description = $5, template_id = $6,
+		    theme_id = $7, blocks = $8, meta = $9,
+		    status = COALESCE(NULLIF($10, ''), status),
+		    page_type = COALESCE(NULLIF($11, ''), page_type),
+		    updated_at = now()
 		WHERE id = $1 AND tenant_id = $2
 		RETURNING id, tenant_id, title, slug, description, template_id, theme_id,
 		          COALESCE(blocks, '[]'::jsonb),

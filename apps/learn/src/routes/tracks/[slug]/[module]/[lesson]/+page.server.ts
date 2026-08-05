@@ -19,7 +19,7 @@ export const load: PageServerLoad = async (event) => {
 	// Fetch the track detail (for the curriculum rail + progress context).
 	let track: TrackDetail;
 	try {
-		track = await apiGet<TrackDetail>(ctx, `/learn/tracks/${slug}`);
+		track = await apiGet<TrackDetail>(ctx, `/learn/university/tracks/${slug}`);
 	} catch (err) {
 		if (err instanceof ApiError && err.status === 404) {
 			throw error(404, { code: 'track_not_found', message: 'Track not found' });
@@ -32,7 +32,7 @@ export const load: PageServerLoad = async (event) => {
 	try {
 		lesson = await apiGet<Lesson>(
 			ctx,
-			`/learn/tracks/${slug}/modules/${moduleSlug}/lessons/${lessonSlug}`
+			`/learn/university/tracks/${slug}/modules/${moduleSlug}/lessons/${lessonSlug}`
 		);
 	} catch (err) {
 		if (err instanceof ApiError) {

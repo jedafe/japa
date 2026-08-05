@@ -69,6 +69,9 @@
 	const canProceedStep1 = $derived(title.trim().length > 0);
 	const canProceedStep2 = $derived(items.filter((i) => i.name.trim()).length >= 2);
 	const canAddItem = $derived(items.length < MAX_ITEMS);
+	// Step 3 submit gate: at least 1 dimension is required (matches the
+	// /create publish gate — gate.ts requires dimensionCount >= 1).
+	const canSubmit = $derived(dimensions.filter((d) => d.trim()).length >= 1);
 
 	function addItem() {
 		if (items.length >= MAX_ITEMS) return;
@@ -338,6 +341,11 @@
 					{#if dimError}
 						<p class="text-sm text-red-500" role="alert">{dimError}</p>
 					{/if}
+					{#if !generating && !canSubmit}
+						<p class="text-sm text-[var(--color-muted)]" role="alert">
+							{t('compare.new.dimensions_min', 'Add at least 1 dimension')}
+						</p>
+					{/if}
 					{#if generating}
 						<div class="flex items-center gap-2 text-sm text-[var(--color-muted)]">
 							<Loader2 size={15} class="animate-spin" />
@@ -402,7 +410,7 @@
 				{:else}
 					<button
 						type="submit"
-						disabled={submitting || generating}
+						disabled={submitting || generating || !canSubmit}
 						class="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)] disabled:opacity-50"
 					>
 						{#if submitting}

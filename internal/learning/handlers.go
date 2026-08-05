@@ -3,6 +3,7 @@ package learning
 
 import (
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -189,7 +190,14 @@ func (h *Handlers) GetLesson(w http.ResponseWriter, r *http.Request) {
 
 	// Use the enriched LessonDetail (ADR-060) so the frontend receives
 	// module_title, track context, content_html, and prev/next navigation.
-	lesson, err := h.store.GetLessonDetail(r.Context(), t.ID, module.ID, lessonSlug)
+	// Pass the authenticated user's ID (if any) so IsCompleted is populated
+	// from lesson_progress — the lesson player shows the "Completed" state
+	// on SSR render without waiting for CSR.
+	var userID pgtype.UUID
+	if user := auth.FromContext(r.Context()); user != nil {
+		userID = user.UserID
+	}
+	lesson, err := h.store.GetLessonDetail(r.Context(), t.ID, module.ID, lessonSlug, userID)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "lesson_not_found", "Lesson not found")
 		return
@@ -251,8 +259,21 @@ func (h *Handlers) UpdateProgress(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Auto-issue certificate when all lessons in a track are completed.
+	// When a lesson is marked completed, synchronously update the enrollment's
+	// progress_pct (same rationale as CompleteLesson — the async worker may
+	// not be running).
 	if input.Status == "completed" {
+		mod, merr := h.store.GetModuleByID(r.Context(), t.ID, lesson.ModuleID)
+		if merr == nil {
+			completed, total, perr := h.store.GetUserTrackProgress(r.Context(), user.UserID, mod.TrackID)
+			if perr == nil && total > 0 {
+				pct := float64(completed) / float64(total) * 100
+				if uerr := h.store.UpdateEnrollmentProgress(r.Context(), user.UserID, mod.TrackID, pct); uerr != nil {
+					slog.Warn("learning: update_progress — enrollment progress update failed",
+						"user_id", user.UserID.String(), "track_id", mod.TrackID.String(), "error", uerr)
+				}
+			}
+		}
 		h.maybeIssueCertificate(r.Context(), t.ID, user.UserID, lesson.ModuleID)
 	}
 
@@ -628,7 +649,10 @@ func (h *Handlers) DeleteLesson(w http.ResponseWriter, r *http.Request) {
 // Enrollment handlers
 // ---------------------------------------------------------------------------
 
-// EnrollInTrack handles POST /learn/tracks/:id/enroll.
+// EnrollInTrack handles POST /learn/university/tracks/:id/enroll (and legacy
+// POST /learn/tracks/:id/enroll). For free tracks (price_kobo is null/0) or
+// Pro subscribers, enrollment is immediate. For paid tracks, returns 402
+// payment_required with the track price so the frontend can initiate checkout.
 func (h *Handlers) EnrollInTrack(w http.ResponseWriter, r *http.Request) {
 	user := auth.FromContext(r.Context())
 	if user == nil {
@@ -660,24 +684,40 @@ func (h *Handlers) EnrollInTrack(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	accessType := "subscription"
-	if track.Difficulty != "" {
-		accessType = "free"
+	// Paid course check: if the track has a price > 0, return 402 so the
+	// frontend can show the checkout modal. Pro subscribers are handled on the
+	// client side (is_pro flag on the session) — the client skips the enroll
+	// call and navigates directly for Pro users.
+	if track.PriceKobo != nil && *track.PriceKobo > 0 {
+		writeJSON(w, http.StatusPaymentRequired, map[string]any{
+			"error": map[string]any{
+				"code":    "payment_required",
+				"message": "Payment required to enroll in this course",
+				"status":  http.StatusPaymentRequired,
+			},
+			"track_id":   trackIDStr,
+			"price_kobo": *track.PriceKobo,
+			"currency":   track.Currency,
+		})
+		return
 	}
 
-	enrollment, err := h.store.EnrollUser(r.Context(), user.UserID, trackID, accessType)
+	accessType := "free"
+	if track.PriceKobo != nil && *track.PriceKobo > 0 {
+		accessType = "paid"
+	} else if track.Difficulty == "" {
+		accessType = "subscription"
+	}
+
+	enrollment, err := h.store.EnrollUser(r.Context(), t.ID, user.UserID, trackID, accessType)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "db_error", "Failed to enroll")
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{
-		"data": map[string]any{
-			"enrolled":    true,
-			"access_type": enrollment.AccessType,
-			"enrollment":  enrollment,
-		},
-	})
+	// Return the enrollment directly as `data` so the frontend api.post<Enrollment>
+	// unwraps it correctly (the client reads body.data).
+	writeJSON(w, http.StatusCreated, map[string]any{"data": enrollment})
 }
 
 // ListMyEnrollments handles GET /me/enrollments.
@@ -775,9 +815,23 @@ func (h *Handlers) CompleteLesson(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Synchronously update the enrollment's progress_pct. The async worker
+	// (enqueueTrackCompletionUpdate) may not be running in all environments,
+	// so we compute the percentage here to guarantee the enrollment record
+	// reflects the latest completion state. This is a cheap COUNT query.
+	completed, total, perr := h.store.GetUserTrackProgress(r.Context(), user.UserID, mod.TrackID)
+	if perr == nil && total > 0 {
+		pct := float64(completed) / float64(total) * 100
+		if uerr := h.store.UpdateEnrollmentProgress(r.Context(), user.UserID, mod.TrackID, pct); uerr != nil {
+			slog.Warn("learning: complete_lesson — enrollment progress update failed",
+				"user_id", user.UserID.String(), "track_id", mod.TrackID.String(), "error", uerr)
+		}
+	}
+
 	h.maybeIssueCertificate(r.Context(), t.ID, user.UserID, lesson.ModuleID)
 
-	// Enqueue async track completion update — fire-and-forget.
+	// Enqueue async track completion update — fire-and-forget (best-effort
+	// backup for environments where the worker is running).
 	h.enqueueTrackCompletionUpdate(user.UserID, mod.TrackID, t.ID)
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": progress})
@@ -949,11 +1003,22 @@ func (h *Handlers) GetTrackProgress(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Fetch the completed lesson IDs so the curriculum rail can restore
+	// completion state on page refresh without checking each lesson.
+	completedLessonIDs, _ := h.store.ListCompletedLessonIDsByUserAndTrack(r.Context(), user.UserID, trackID)
+	completedIDs := make([]string, 0, len(completedLessonIDs))
+	for _, id := range completedLessonIDs {
+		if id.Valid {
+			completedIDs = append(completedIDs, id.String())
+		}
+	}
+
 	writeJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
-			"completed": completed,
-			"total":     total,
-			"percent":   calculatePercent(completed, total),
+			"completed":           completed,
+			"total":               total,
+			"percent":             calculatePercent(completed, total),
+			"completed_lesson_ids": completedIDs,
 		},
 	})
 }
@@ -977,8 +1042,10 @@ func (h *Handlers) maybeIssueCertificate(ctx context.Context, tenantID, userID, 
 		return
 	}
 
-	// Generate a unique certificate number.
-	certNumber := fmt.Sprintf("JC-%d-%s", time.Now().Unix(), userID.Bytes[:8])
+	// Generate a unique certificate number. Use the UUID's hex string
+	// representation (not raw bytes) — raw UUID bytes contain invalid UTF-8
+	// sequences that PostgreSQL's text column rejects (SQLSTATE 22021).
+	certNumber := fmt.Sprintf("JC-%d-%s", time.Now().Unix(), hex.EncodeToString(userID.Bytes[:8]))
 
 	if _, err := h.store.IssueCertificate(ctx, tenantID, userID, mod.TrackID, certNumber); err != nil {
 		slog.Error("issue certificate", "user_id", userID, "track_id", mod.TrackID, "error", err)
