@@ -55,7 +55,7 @@ type ImportProcessor interface {
 
 // AssessmentProcessor handles assessment background tasks (§71, ADR-071).
 type AssessmentProcessor interface {
-	ScoreSubmission(ctx context.Context, resultID pgtype.UUID) error
+	ScoreSubmission(ctx context.Context, submissionID, tenantID pgtype.UUID) error
 }
 
 // ScholarshipProcessor handles scholarship background tasks (§73, ADR-073).
@@ -253,20 +253,29 @@ func HandleImportFetchMedia(ctx context.Context, t *asynq.Task) error {
 }
 
 // HandleAssessmentScoreSubmission scores an assessment submission (§71).
+// The payload is enqueued by assessment.Service.SubmitAssessment and carries
+// the submission_id + tenant_id (the result row does not exist yet — scoring
+// creates it).
 func HandleAssessmentScoreSubmission(ctx context.Context, t *asynq.Task) error {
 	if assessmentProcessor == nil {
 		slog.Warn("task:assessment:score_submission: no processor registered, skipping")
 		return nil
 	}
-	var p struct{ ResultID string `json:"result_id"` }
+	var p struct {
+		SubmissionID string `json:"submission_id"`
+		TenantID     string `json:"tenant_id"`
+	}
 	if err := json.Unmarshal(t.Payload(), &p); err != nil {
 		return fmt.Errorf("task:assessment:score_submission: invalid payload: %w", err)
 	}
-	var id pgtype.UUID
-	if err := id.Scan(p.ResultID); err != nil {
-		return fmt.Errorf("task:assessment:score_submission: bad result_id: %w", err)
+	var submissionID, tenantID pgtype.UUID
+	if err := submissionID.Scan(p.SubmissionID); err != nil {
+		return fmt.Errorf("task:assessment:score_submission: bad submission_id: %w", err)
 	}
-	if err := assessmentProcessor.ScoreSubmission(ctx, id); err != nil {
+	if err := tenantID.Scan(p.TenantID); err != nil {
+		return fmt.Errorf("task:assessment:score_submission: bad tenant_id: %w", err)
+	}
+	if err := assessmentProcessor.ScoreSubmission(ctx, submissionID, tenantID); err != nil {
 		return fmt.Errorf("task:assessment:score_submission: %w", err)
 	}
 	return nil

@@ -42,10 +42,40 @@ type TaskEnqueuer interface {
 // item. ItemKey is a stable slug derived from the label so that rewording a
 // guide's document label does not orphan saved progress.
 type ChecklistItem struct {
-	ItemKey   string `json:"item_key"`
-	Label     string `json:"label"`
-	Completed bool   `json:"completed"`
-	Notes     string `json:"notes"`
+	ItemKey     string `json:"item_key"`
+	Label       string `json:"label"`
+	Description string `json:"description,omitempty"`
+	Required    bool   `json:"required,omitempty"`
+	Category    string `json:"category,omitempty"`
+	Completed   bool   `json:"completed"`
+	Notes       string `json:"notes"`
+}
+
+// ChecklistGuideResult is the payload for GET /checklist/:guide_id — the
+// guide's identity plus its checklist items. Matches the frontend
+// ChecklistGuide type (§70 contract).
+type ChecklistGuideResult struct {
+	GuideID string          `json:"guide_id"`
+	Title   string          `json:"title"`
+	Items   []ChecklistItem `json:"items"`
+}
+
+// ProgressItem is a single persisted progress row, serialized for the API.
+type ProgressItem struct {
+	ItemKey     string `json:"item_key"`
+	Completed   bool   `json:"completed"`
+	CompletedAt string `json:"completed_at,omitempty"`
+	Notes       string `json:"notes,omitempty"`
+}
+
+// ProgressResult is the payload for GET /checklist/:guide_id/progress — the
+// user's per-item progress merged with the guide's checklist items. Matches
+// the frontend ChecklistProgress type (§70 contract).
+type ProgressResult struct {
+	GuideID        string         `json:"guide_id"`
+	Items          []ProgressItem `json:"items"`
+	CompletedCount int            `json:"completed_count"`
+	TotalCount     int            `json:"total_count"`
 }
 
 // CountryOption is a selector option for either an origin country (Geo Space)
@@ -75,17 +105,6 @@ type VisaTypeOption struct {
 type SelectorResult struct {
 	Origins      []CountryOption `json:"origins"`
 	Destinations []CountryOption `json:"destinations"`
-}
-
-// ProgressItem is a single persisted progress row, serialized for the API.
-type ProgressItem struct {
-	ID          string `json:"id"`
-	GuideID     string `json:"guide_id"`
-	ItemKey     string `json:"item_key"`
-	Completed   bool   `json:"completed"`
-	CompletedAt string `json:"completed_at"`
-	Notes       string `json:"notes"`
-	UpdatedAt   string `json:"updated_at"`
 }
 
 // AdminProgressRow is a single admin-list progress row with the username join.
@@ -267,10 +286,33 @@ func slugify(s string) string {
 	return s
 }
 
+// GetGuide returns the checklist guide result (guide_id + title + items) for
+// GET /checklist/:guide_id. Anonymous-accessible (no auth required).
+func (s *Service) GetGuide(ctx context.Context, tenantID, guideID pgtype.UUID) (ChecklistGuideResult, error) {
+	title, err := s.store.GetVisaGuideTitle(ctx, tenantID, guideID)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return ChecklistGuideResult{}, pgx.ErrNoRows
+		}
+		return ChecklistGuideResult{}, fmt.Errorf("checklist: get guide title: %w", err)
+	}
+
+	items, err := s.GetChecklistItems(ctx, tenantID, guideID)
+	if err != nil {
+		return ChecklistGuideResult{}, err
+	}
+
+	return ChecklistGuideResult{
+		GuideID: guideID.String(),
+		Title:   title,
+		Items:   items,
+	}, nil
+}
+
 // GetChecklistItems extracts the required_documents field from a visa guide
-// and returns the document labels as checklist items with stable item_key
-// slugs. Anonymous-accessible (no auth required) — progress is left empty
-// for anonymous users.
+// and returns the document items with stable item_key slugs plus optional
+// required/category/description metadata. Anonymous-accessible (no auth
+// required) — progress is left empty for anonymous users.
 func (s *Service) GetChecklistItems(ctx context.Context, tenantID, guideID pgtype.UUID) ([]ChecklistItem, error) {
 	field, err := s.store.GetVisaGuideField(ctx, tenantID, guideID, FieldRequiredDocuments)
 	if err != nil {
@@ -280,33 +322,37 @@ func (s *Service) GetChecklistItems(ctx context.Context, tenantID, guideID pgtyp
 		return nil, fmt.Errorf("checklist: get items: %w", err)
 	}
 
-	labels := extractDocumentLabels(field)
-	items := make([]ChecklistItem, 0, len(labels))
-	for _, label := range labels {
-		label = strings.TrimSpace(label)
+	rawItems := extractDocumentItems(field)
+	items := make([]ChecklistItem, 0, len(rawItems))
+	for _, ri := range rawItems {
+		label := strings.TrimSpace(ri.Label)
 		if label == "" {
 			continue
 		}
 		items = append(items, ChecklistItem{
-			ItemKey: slugifyItemKey(label),
-			Label:   label,
+			ItemKey:     slugifyItemKey(label),
+			Label:       label,
+			Description: ri.Description,
+			Required:    ri.Required,
+			Category:    ri.Category,
 		})
 	}
 	return items, nil
 }
 
-// GetProgress returns the user's saved progress for a guide, merged with the
+// GetProgress returns the user's saved progress for a guide as a
+// ProgressResult — per-item completed/completed_at/notes merged with the
 // guide's checklist items so every item is present (unchecked items without
-// a progress row still appear).
-func (s *Service) GetProgress(ctx context.Context, tenantID, userID, guideID pgtype.UUID) ([]ChecklistItem, error) {
+// a progress row still appear). Matches the frontend ChecklistProgress type.
+func (s *Service) GetProgress(ctx context.Context, tenantID, userID, guideID pgtype.UUID) (ProgressResult, error) {
 	items, err := s.GetChecklistItems(ctx, tenantID, guideID)
 	if err != nil {
-		return nil, err
+		return ProgressResult{}, err
 	}
 
 	rows, err := s.store.ListChecklistProgress(ctx, tenantID, userID, guideID)
 	if err != nil {
-		return nil, fmt.Errorf("checklist: get progress: %w", err)
+		return ProgressResult{}, fmt.Errorf("checklist: get progress: %w", err)
 	}
 
 	progMap := make(map[string]gen.ChecklistProgress, len(rows))
@@ -314,24 +360,53 @@ func (s *Service) GetProgress(ctx context.Context, tenantID, userID, guideID pgt
 		progMap[r.ItemKey] = r
 	}
 
-	for i := range items {
-		if p, ok := progMap[items[i].ItemKey]; ok {
-			items[i].Completed = p.Completed
+	progressItems := make([]ProgressItem, 0, len(items))
+	completedCount := 0
+	for _, item := range items {
+		pi := ProgressItem{ItemKey: item.ItemKey}
+		if p, ok := progMap[item.ItemKey]; ok {
+			pi.Completed = p.Completed
+			pi.CompletedAt = formatTs(p.CompletedAt)
 			if p.Notes != nil {
-				items[i].Notes = *p.Notes
+				pi.Notes = *p.Notes
+			}
+			if p.Completed {
+				completedCount++
 			}
 		}
+		progressItems = append(progressItems, pi)
 	}
-	return items, nil
+
+	return ProgressResult{
+		GuideID:        guideID.String(),
+		Items:          progressItems,
+		CompletedCount: completedCount,
+		TotalCount:     len(items),
+	}, nil
 }
 
 // UpsertProgress marks a single item complete/incomplete (with an optional
-// note) for the authenticated user. When the item is the final one needed
-// for full completion and checklist.completion_points > 0, a
-// wallet:award_points task is enqueued fire-and-forget (Rule 8).
-func (s *Service) UpsertProgress(ctx context.Context, tenantID, userID, guideID pgtype.UUID, itemKey string, completed bool, notes *string) (gen.ChecklistProgress, error) {
+// note) for the authenticated user. A nil completed preserves the existing
+// completed state (note-only update) by fetching the current row first; a
+// nil notes preserves the existing notes via SQL COALESCE. When the item is
+// the final one needed for full completion and checklist.completion_points >
+// 0, a wallet:award_points task is enqueued fire-and-forget (Rule 8).
+func (s *Service) UpsertProgress(ctx context.Context, tenantID, userID, guideID pgtype.UUID, itemKey string, completed *bool, notes *string) (gen.ChecklistProgress, error) {
+	// Resolve nil completed: a note-only PATCH must preserve the existing
+	// completion state. Fetch the current row; if none exists, default to
+	// false (new item, not yet checked).
+	resolvedCompleted := false
+	if completed != nil {
+		resolvedCompleted = *completed
+	} else {
+		existing, err := s.store.GetSingleProgress(ctx, tenantID, userID, guideID, itemKey)
+		if err == nil {
+			resolvedCompleted = existing.Completed
+		}
+	}
+
 	var completedAt pgtype.Timestamptz
-	if completed {
+	if resolvedCompleted {
 		completedAt = pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true}
 	}
 
@@ -340,7 +415,7 @@ func (s *Service) UpsertProgress(ctx context.Context, tenantID, userID, guideID 
 		UserID:      userID,
 		GuideID:     guideID,
 		ItemKey:     itemKey,
-		Completed:   completed,
+		Completed:   resolvedCompleted,
 		CompletedAt: completedAt,
 		Notes:       notes,
 	})
@@ -349,8 +424,8 @@ func (s *Service) UpsertProgress(ctx context.Context, tenantID, userID, guideID 
 	}
 
 	// Full-completion reward (Section 28 integration). Only when the item was
-	// just marked complete — avoids re-awarding on no-op updates.
-	if completed && s.enqueuer != nil && s.settings != nil {
+	// just marked complete — avoids re-awarding on no-op or note-only updates.
+	if completed != nil && *completed && s.enqueuer != nil && s.settings != nil {
 		points := s.settings.GetIntOr(ctx, tenantID, "checklist.completion_points", 0)
 		if points > 0 {
 			s.maybeAwardCompletionPoints(ctx, tenantID, userID, guideID, points)
@@ -480,23 +555,46 @@ func (s *Service) AdminCompletionStats(ctx context.Context, tenantID pgtype.UUID
 	return out, nil
 }
 
-// extractDocumentLabels parses the required_documents field value into a list
-// of document labels. The field may be stored as a JSON array (multi_select)
-// or as a comma/newline-separated text value.
-func extractDocumentLabels(field VisaGuideField) []string {
+// rawDocumentItem is the intermediate representation of a single document
+// requirement parsed from the required_documents field. Only Label is
+// required; the other fields are optional metadata.
+type rawDocumentItem struct {
+	Label       string `json:"label"`
+	Description string `json:"description"`
+	Required    bool   `json:"required"`
+	Category    string `json:"category"`
+}
+
+// extractDocumentItems parses the required_documents field value into a list
+// of rawDocumentItems. The field supports three storage formats:
+//  1. JSON array of objects: [{"label":"Passport","required":true,"category":"Identity"}, ...]
+//  2. JSON array of strings: ["Bank Statement","Passport Copy", ...] (metadata defaults)
+//  3. Comma/newline/semicolon-separated text: "Bank Statement, Passport Copy"
+//
+// Objects with an "items"/"values"/"options" key wrapping an array are also
+// handled (some multi_select custom fields use this shape).
+func extractDocumentItems(field VisaGuideField) []rawDocumentItem {
 	if len(field.ValueJSON) > 0 {
-		var arr []string
-		if err := json.Unmarshal(field.ValueJSON, &arr); err == nil && len(arr) > 0 {
-			return arr
+		// Try array of objects first (richest format).
+		var objArr []rawDocumentItem
+		if err := json.Unmarshal(field.ValueJSON, &objArr); err == nil && len(objArr) > 0 {
+			return objArr
 		}
-		// Some multi_select values are stored as a JSON object with an
-		// "items" / "values" key — try the common shapes.
+		// Try array of strings (plain labels).
+		var strArr []string
+		if err := json.Unmarshal(field.ValueJSON, &strArr); err == nil && len(strArr) > 0 {
+			return labelsToRawItems(strArr)
+		}
+		// Try object with items/values/options key.
 		var obj map[string]json.RawMessage
 		if err := json.Unmarshal(field.ValueJSON, &obj); err == nil {
 			for _, key := range []string{"items", "values", "options"} {
 				if raw, ok := obj[key]; ok {
-					if err := json.Unmarshal(raw, &arr); err == nil && len(arr) > 0 {
-						return arr
+					if err := json.Unmarshal(raw, &objArr); err == nil && len(objArr) > 0 {
+						return objArr
+					}
+					if err := json.Unmarshal(raw, &strArr); err == nil && len(strArr) > 0 {
+						return labelsToRawItems(strArr)
 					}
 				}
 			}
@@ -506,9 +604,19 @@ func extractDocumentLabels(field VisaGuideField) []string {
 		parts := strings.FieldsFunc(field.ValueText, func(r rune) bool {
 			return r == ',' || r == '\n' || r == ';'
 		})
-		return parts
+		return labelsToRawItems(parts)
 	}
 	return nil
+}
+
+// labelsToRawItems converts a slice of plain label strings into rawDocumentItems
+// with default metadata (not required, no category, no description).
+func labelsToRawItems(labels []string) []rawDocumentItem {
+	out := make([]rawDocumentItem, 0, len(labels))
+	for _, l := range labels {
+		out = append(out, rawDocumentItem{Label: l})
+	}
+	return out
 }
 
 // slugifyItemKey converts a document label to a stable lowercase slug:

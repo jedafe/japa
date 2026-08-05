@@ -220,11 +220,11 @@
 	</div>
 
 	{#if !selector}
-		<div class="space-y-3">
-			<LoadingSkeleton height="48px" />
-			<LoadingSkeleton height="48px" />
-			<LoadingSkeleton height="48px" />
-		</div>
+		<EmptyState
+			icon="file-question"
+			title={t('checklist.unavailable', 'Checklist unavailable')}
+			description={t('checklist.unavailable_desc', "The visa checklist service isn't configured yet. Please check back later.")}
+		/>
 	{:else if !guide}
 		<!-- Three-step selector -->
 		<div class="space-y-6">
@@ -282,7 +282,9 @@
 				</div>
 			{/if}
 
-			{#if selectedDestination && visaTypes.length === 0}
+			{#if selectedOrigin && destinations.length === 0}
+				<p class="text-sm text-muted">{t('checklist.no_destinations', 'No visa guides have been published yet. Please check back later.')}</p>
+			{:else if selectedDestination && visaTypes.length === 0}
 				<p class="text-sm text-muted">{t('checklist.no_guides', 'No visa guides found for this destination.')}</p>
 			{/if}
 		</div>

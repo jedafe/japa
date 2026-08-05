@@ -7,4 +7,4 @@
 --   subscription only: price_kobo = 0/null, subscription_eligible = true
 --   both:              price_kobo > 0,       subscription_eligible = true
 
-ALTER TABLE learning_tracks ADD COLUMN subscription_eligible boolean NOT NULL DEFAULT false;
+ALTER TABLE learning_tracks ADD COLUMN IF NOT EXISTS subscription_eligible boolean NOT NULL DEFAULT false;

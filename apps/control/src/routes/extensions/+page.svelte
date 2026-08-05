@@ -11,7 +11,8 @@
 		RefreshCw,
 		AlertTriangle,
 		Loader2,
-		Package
+		Package,
+		Settings
 	} from 'lucide-svelte';
 
 	interface Extension {
@@ -20,6 +21,8 @@
 		description: string;
 		enabled: boolean;
 		version: string;
+		setting_key: string;
+		settings_category: string;
 	}
 
 	let extensions = $state<Extension[]>([]);
@@ -51,7 +54,9 @@
 				name: e.name,
 				description: e.description,
 				enabled: !!e.enabled,
-				version: e.version
+				version: e.version,
+				setting_key: e.setting_key ?? '',
+				settings_category: e.settings_category ?? ''
 			}));
 		} else {
 			error = result.error || t('extensions.load_error', 'Failed to load extensions.');
@@ -152,8 +157,8 @@
 <!-- RBAC CRUD: Extensions management -->
 
 <PageHeader
-	title={t('extensions.title', 'Extensions')}
-	description={t('extensions.description', 'Manage platform extensions and integrations')}
+	title={t('extensions.title', 'Extensions & Tools')}
+	description={t('extensions.description', 'Enable or disable platform extensions and tools — click a title to configure its settings')}
 />
 
 <div class="mb-4 flex items-center gap-3">
@@ -199,7 +204,7 @@
 {:else if loading && extensions.length === 0}
 	<!-- Skeleton cards while the initial load is in flight. -->
 	<div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-		{#each Array(6) as _, i}
+		{#each Array(12) as _, i}
 			<div
 				class="border-border-card bg-background-alt rounded-9px border p-5"
 				aria-hidden="true"
@@ -241,7 +246,17 @@
 							/>
 						</div>
 						<div class="min-w-0">
+							{#if ext.settings_category}
+							<a
+								href="/settings?category={ext.settings_category}"
+								class="text-foreground hover:text-primary truncate block text-sm font-semibold transition-colors"
+								title={t('extensions.configure', 'Configure {name} settings').replace('{name}', ext.name)}
+							>
+								{ext.name}
+							</a>
+						{:else}
 							<h3 class="text-foreground truncate text-sm font-semibold">{ext.name}</h3>
+						{/if}
 							<p class="text-muted-foreground font-mono text-xs">{ext.key}</p>
 						</div>
 					</div>
@@ -257,17 +272,28 @@
 				</p>
 
 				<div class="mt-4 flex items-center justify-between border-t border-border-card pt-4">
-					<span
-						class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium {ext.enabled ? 'bg-emerald-500/10 text-emerald-600' : 'bg-muted text-muted-foreground'}"
-					>
-						{#if ext.enabled}
-							<ToggleRight class="size-3.5" />
-							{t('extensions.status_enabled', 'Enabled')}
-						{:else}
-							<ToggleLeft class="size-3.5" />
-							{t('extensions.status_disabled', 'Disabled')}
+					<div class="flex items-center gap-2">
+						<span
+							class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium {ext.enabled ? 'bg-emerald-500/10 text-emerald-600' : 'bg-muted text-muted-foreground'}"
+						>
+							{#if ext.enabled}
+								<ToggleRight class="size-3.5" />
+								{t('extensions.status_enabled', 'Enabled')}
+							{:else}
+								<ToggleLeft class="size-3.5" />
+								{t('extensions.status_disabled', 'Disabled')}
+							{/if}
+						</span>
+						{#if ext.settings_category}
+							<a
+								href="/settings?category={ext.settings_category}"
+								class="text-muted-foreground hover:text-primary inline-flex items-center gap-1 text-xs font-medium transition-colors"
+							>
+								<Settings class="size-3.5" />
+								{t('extensions.configure_short', 'Configure')}
+							</a>
 						{/if}
-					</span>
+					</div>
 
 					<div class="flex items-center gap-2">
 						{#if isToggling}

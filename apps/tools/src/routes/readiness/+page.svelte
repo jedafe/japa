@@ -7,38 +7,66 @@
 	import { page } from '$app/state';
 	import Icon from '$lib/components/ui/Icon.svelte';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
-	import LoadingSkeleton from '$lib/components/ui/LoadingSkeleton.svelte';
 	import RegistrationPrompt from '$lib/components/ui/RegistrationPrompt.svelte';
 	import ToolDisabled from '$lib/components/ui/ToolDisabled.svelte';
 	import type {
 		AssessmentForm,
 		AssessmentResult,
-		AssessmentSubmission,
-		AssessmentQuestion
+		AssessmentHistoryItem,
+		AssessmentField,
+		AssessmentSubmitResponse,
+		AssessmentResultPending
 	} from '$lib/types';
 
 	/**
 	 * Japa Readiness Assessment tool — §71, ADR-071.
-	 * Scored questionnaire → server-side scoring (Asynq) → results page with
-	 * score gauge, dimension breakdown, threshold label, and roadmap.
-	 * Anonymous users can take the assessment but must sign in to save results.
+	 * Scored questionnaire built on the §06 Form Builder: a flat list of
+	 * custom_fields, each carrying a dimension + option_scores. Scoring runs
+	 * server-side in an Asynq task; submit returns a submission_id and the
+	 * client polls /result/by-submission/:id until the result is written.
+	 * Anonymous users can take the assessment (§71); authenticated users get
+	 * persistent history.
 	 */
 	let { data } = $props();
 
 	let form = $state<AssessmentForm | null>(untrack(() => data.form));
 	let result = $state<AssessmentResult | null>(untrack(() => data.result));
-	let history = $state<AssessmentResult[]>(untrack(() => data.history));
+	let history = $state<AssessmentHistoryItem[]>(untrack(() => data.history));
 	let user = $state(untrack(() => data.user));
 
-	// Form state
-	let answers = $state<Record<string, string[] | string | number>>({});
-	let currentSection = $state(0);
+	// Form state — answers keyed by field.key (matches field_values contract).
+	let answers = $state<Record<string, string | string[] | number>>({});
+	let currentStep = $state(0);
 	let submitting = $state(false);
+	let polling = $state(false);
 	let error = $state<string | null>(null);
 	let showRegisterPrompt = $state(false);
 
-	const totalSections = $derived(form?.sections.length ?? 0);
-	const currentSectionData = $derived(form?.sections[currentSection] ?? null);
+	// Polling handle — cleared on destroy to avoid a leak (§4.3).
+	let pollTimer: ReturnType<typeof setTimeout> | null = null;
+
+	/**
+	 * Group the flat field list by dimension for the multi-step UX. Dimensions
+	 * are ordered by the position of their first field. Fields without a
+	 * dimension fall into a final "General" step.
+	 */
+	const steps = $derived.by(() => {
+		if (!form) return [] as { name: string; fields: AssessmentField[] }[];
+		const order: string[] = [];
+		const map = new Map<string, AssessmentField[]>();
+		for (const f of form.fields) {
+			const dim = f.config?.dimension || 'general';
+			if (!map.has(dim)) {
+				map.set(dim, []);
+				order.push(dim);
+			}
+			map.get(dim)!.push(f);
+		}
+		return order.map((name) => ({ name, fields: map.get(name)! }));
+	});
+
+	const totalSteps = $derived(steps.length);
+	const currentStepData = $derived(steps[currentStep] ?? null);
 
 	const seo = $derived(
 		buildSeoMeta({
@@ -52,78 +80,156 @@
 		})
 	);
 
-	function setAnswer(questionId: string, value: string[] | string | number) {
-		answers = { ...answers, [questionId]: value };
+	function setAnswer(key: string, value: string | string[] | number) {
+		answers = { ...answers, [key]: value };
 	}
 
-	function isQuestionAnswered(q: AssessmentQuestion): boolean {
-		const a = answers[q.id];
+	function isFieldAnswered(f: AssessmentField): boolean {
+		const a = answers[f.key];
 		if (a === undefined || a === null) return false;
 		if (Array.isArray(a)) return a.length > 0;
 		if (typeof a === 'string') return a.trim().length > 0;
 		return a !== undefined;
 	}
 
-	function sectionComplete(): boolean {
-		if (!currentSectionData) return false;
-		return currentSectionData.questions.every(
-			(q) => !q.required || isQuestionAnswered(q)
-		);
+	function stepComplete(): boolean {
+		if (!currentStepData) return false;
+		return currentStepData.fields.every((f) => !f.is_required || isFieldAnswered(f));
 	}
 
-	function nextSection() {
-		if (currentSection < totalSections - 1) currentSection++;
+	function nextStep() {
+		if (currentStep < totalSteps - 1) currentStep++;
 	}
 
-	function prevSection() {
-		if (currentSection > 0) currentSection--;
+	function prevStep() {
+		if (currentStep > 0) currentStep--;
+	}
+
+	/** Build the field_values map the backend scoring engine expects. */
+	function buildFieldValues(): Record<string, unknown> {
+		const out: Record<string, unknown> = {};
+		for (const f of form?.fields ?? []) {
+			const a = answers[f.key];
+			if (a !== undefined && a !== null) out[f.key] = a;
+		}
+		return out;
 	}
 
 	async function submitAssessment() {
 		if (!form) return;
-		if (!user) {
-			showRegisterPrompt = true;
-			return;
-		}
 		submitting = true;
+		polling = false;
 		error = null;
-		const submissions: AssessmentSubmission[] = Object.entries(answers).map(
-			([question_id, answer]) => ({ question_id, answer })
-		);
-		const res = await api.post<{ result_id: string }>('/assessment/submit', {
-			form_id: form.id,
-			answers: submissions
+		const res = await api.post<AssessmentSubmitResponse>('/assessment/submit', {
+			field_values: buildFieldValues()
 		});
 		submitting = false;
 		if (res.error) {
 			error = res.error.message;
 			return;
 		}
-		if (res.data) {
-			// Fetch the result
-			const resultRes = await api.get<AssessmentResult>(
-				`/assessment/result/${res.data.result_id}`
+		if (!res.data?.submission_id) {
+			error = t('readiness.error_submit', 'Submission failed. Please try again.');
+			return;
+		}
+		// Scoring is async (Asynq) — poll until the result is written.
+		await pollForResult(res.data.submission_id);
+	}
+
+	/**
+	 * Poll GET /assessment/result/by-submission/:id until the worker writes the
+	 * result (200) or the retry budget is exhausted. 202 = still pending.
+	 */
+	async function pollForResult(submissionId: string) {
+		polling = true;
+		const maxAttempts = 30; // ~45s at 1.5s intervals
+		const interval = 1500;
+		for (let attempt = 0; attempt < maxAttempts; attempt++) {
+			const res = await api.get<AssessmentResult | AssessmentResultPending>(
+				`/assessment/result/by-submission/${submissionId}`
 			);
-			if (!resultRes.error && resultRes.data) {
-				result = resultRes.data;
-				// Prepend the new result to the history list (§71 persistent history).
-				history = [resultRes.data, ...history];
-				const url = new URL(page.url);
-				url.searchParams.set('result', resultRes.data.id);
-				replaceState(url, {});
+			if (res.error) {
+				polling = false;
+				error = res.error.message;
+				return;
 			}
+			const d = res.data as AssessmentResult | AssessmentResultPending | null;
+			if (d && (d as AssessmentResult).id) {
+				// Scored result arrived.
+				result = d as AssessmentResult;
+				polling = false;
+				const url = new URL(page.url);
+				url.searchParams.set('result', (d as AssessmentResult).id);
+				replaceState(url, {});
+				// Authenticated users get persistent history; prepend the new
+				// summary locally so the list updates without a refetch.
+				if (user) {
+					history = [
+						{
+							id: (d as AssessmentResult).id,
+							total_score: (d as AssessmentResult).total_score,
+							threshold_label: (d as AssessmentResult).threshold_label,
+							submission_id: (d as AssessmentResult).submission_id,
+							created_at: (d as AssessmentResult).created_at
+						},
+						...history
+					];
+				} else {
+					// Anonymous user — offer registration to save results (§71).
+					showRegisterPrompt = true;
+				}
+				return;
+			}
+			// Still pending — wait and retry. Store the timer so it can be
+			// cleared on destroy.
+			await new Promise<void>((resolve) => {
+				pollTimer = setTimeout(resolve, interval);
+			});
+		}
+		polling = false;
+		error = t(
+			'readiness.scoring_timeout',
+			'Scoring is taking longer than expected. Please check back shortly.'
+		);
+	}
+
+	/** Load a past result from history — fetch the full result by id. */
+	async function viewHistoryResult(item: AssessmentHistoryItem) {
+		error = null;
+		const res = await api.get<AssessmentResult>(`/assessment/result/${item.id}`);
+		if (res.error) {
+			error = res.error.message;
+			return;
+		}
+		if (res.data) {
+			result = res.data;
+			const url = new URL(page.url);
+			url.searchParams.set('result', res.data.id);
+			replaceState(url, {});
 		}
 	}
 
-	/** Load a past result from history into the results view (§71). */
-	function viewHistoryResult(pastResult: AssessmentResult) {
-		result = pastResult;
+	function retake() {
+		result = null;
+		answers = {};
+		currentStep = 0;
+		error = null;
 		const url = new URL(page.url);
-		url.searchParams.set('result', pastResult.id);
+		url.searchParams.delete('result');
 		replaceState(url, {});
 	}
 
-	// Score gauge color based on threshold
+	$effect(() => {
+		// Cleanup polling timer on destroy (§4.3 — no polling leaks).
+		return () => {
+			if (pollTimer) {
+				clearTimeout(pollTimer);
+				pollTimer = null;
+			}
+		};
+	});
+
+	// Score gauge color based on threshold.
 	const gaugeColor = $derived.by(() => {
 		if (!result) return 'var(--color-muted)';
 		const pct = result.total_score;
@@ -134,8 +240,18 @@
 
 	const gaugeCircumference = 2 * Math.PI * 52;
 	const gaugeOffset = $derived(
-		result ? gaugeCircumference - (result.total_score / 100) * gaugeCircumference : gaugeCircumference
+		result
+			? gaugeCircumference - (result.total_score / 100) * gaugeCircumference
+			: gaugeCircumference
 	);
+
+	/** Resolve a roadmap step's content_slug into a platform link. */
+	function stepHref(slug?: string): string | null {
+		if (!slug) return null;
+		// Content slugs are relative to the main app origin; link absolutely.
+		if (slug.startsWith('http')) return slug;
+		return `/${slug}`;
+	}
 </script>
 
 <svelte:head>
@@ -162,12 +278,7 @@
 		</p>
 	</div>
 
-	{#if !form && !result}
-		<div class="space-y-3">
-			<LoadingSkeleton height="120px" />
-			<LoadingSkeleton height="200px" />
-		</div>
-	{:else if result}
+	{#if result}
 		<!-- Results view -->
 		<div class="space-y-8">
 			<div class="text-center">
@@ -246,17 +357,13 @@
 									{#if step.description}
 										<p class="text-sm text-text-subtle mt-1">{step.description}</p>
 									{/if}
-									{#if step.links?.length}
-										<div class="mt-2 flex flex-wrap gap-2">
-											{#each step.links as link (link.url)}
-												<a
-													href={link.url}
-													class="text-xs text-primary hover:text-primary-hover underline"
-												>
-													{link.label}
-												</a>
-											{/each}
-										</div>
+									{#if stepHref(step.content_slug)}
+										<a
+											href={stepHref(step.content_slug)}
+											class="mt-2 inline-block text-xs text-primary hover:text-primary-hover underline"
+										>
+											{t('readiness.read_more', 'Read more')}
+										</a>
 									{/if}
 								</div>
 							</div>
@@ -267,7 +374,7 @@
 
 			<div class="flex gap-3">
 				<button
-					onclick={() => { result = null; answers = {}; currentSection = 0; }}
+					onclick={retake}
 					class="px-4 py-2.5 bg-primary text-primary-contrast rounded-lg text-sm font-medium hover:bg-primary-hover transition-colors"
 				>
 					{t('readiness.retake', 'Retake assessment')}
@@ -280,7 +387,7 @@
 				</a>
 			</div>
 
-			{#if history.length > 1}
+			{#if user && history.length > 1}
 				<!-- Past results history (§71 — persistent history for authenticated users) -->
 				<div>
 					<h3 class="text-sm font-semibold text-muted uppercase tracking-wide mb-3">
@@ -316,67 +423,66 @@
 				<p class="text-text-subtle">{form.description}</p>
 			{/if}
 
-			<!-- Section progress -->
-			<div class="flex items-center gap-2">
-				{#each form.sections as _, i (i)}
-					<div
-						class="flex-1 h-1.5 rounded-full transition-colors {i <= currentSection ? 'bg-[var(--tool-accent)]' : 'bg-surface-subtle'}"
-					></div>
-				{/each}
-			</div>
-			<p class="text-sm text-muted">
-				{t('readiness.section_progress', 'Section {current} of {total}').replace('{current}', String(currentSection + 1)).replace('{total}', String(totalSections))}
-			</p>
+			<!-- Step progress -->
+			{#if totalSteps > 1}
+				<div class="flex items-center gap-2">
+					{#each steps as _, i (i)}
+						<div
+							class="flex-1 h-1.5 rounded-full transition-colors {i <= currentStep ? 'bg-[var(--tool-accent)]' : 'bg-surface-subtle'}"
+						></div>
+					{/each}
+				</div>
+				<p class="text-sm text-muted capitalize">
+					{t('readiness.section_progress', 'Section {current} of {total}').replace('{current}', String(currentStep + 1)).replace('{total}', String(totalSteps))} — {currentStepData?.name}
+				</p>
+			{/if}
 
-			{#if currentSectionData}
+			{#if currentStepData}
 				<div>
-					<h2 class="text-xl font-semibold text-text mb-1">{currentSectionData.title}</h2>
-					{#if currentSectionData.description}
-						<p class="text-sm text-text-subtle mb-4">{currentSectionData.description}</p>
-					{/if}
+					<h2 class="text-xl font-semibold text-text mb-1 capitalize">{currentStepData.name}</h2>
 
 					<div class="space-y-6">
-						{#each currentSectionData.questions as q (q.id)}
+						{#each currentStepData.fields as f (f.key)}
 							<div>
 								<p class="block text-sm font-medium text-text mb-2">
-									{q.prompt}
-									{#if q.required}<span class="text-red-500">*</span>{/if}
+									{f.label}
+									{#if f.is_required}<span class="text-red-500">*</span>{/if}
 								</p>
 
-								{#if q.type === 'single' && q.options}
+								{#if f.field_type === 'select' && f.options.length > 0}
 									<div class="space-y-2">
-										{#each q.options as opt (opt.id)}
+										{#each f.options as opt (opt.value)}
 											<label
 												class="flex items-center gap-3 p-3 border border-border rounded-lg cursor-pointer hover:border-[var(--tool-accent)] transition-colors"
 											>
 												<input
 													type="radio"
-													name={q.id}
-													value={opt.id}
-													checked={answers[q.id] === opt.id}
-													onchange={() => setAnswer(q.id, opt.id)}
+													name={f.key}
+													value={opt.value}
+													checked={answers[f.key] === opt.value}
+													onchange={() => setAnswer(f.key, opt.value)}
 													class="accent-[var(--tool-accent)]"
 												/>
 												<span class="text-sm text-text">{opt.label}</span>
 											</label>
 										{/each}
 									</div>
-								{:else if q.type === 'multiple' && q.options}
+								{:else if f.field_type === 'multiselect' && f.options.length > 0}
 									<div class="space-y-2">
-										{#each q.options as opt (opt.id)}
+										{#each f.options as opt (opt.value)}
 											<label
 												class="flex items-center gap-3 p-3 border border-border rounded-lg cursor-pointer hover:border-[var(--tool-accent)] transition-colors"
 											>
 												<input
 													type="checkbox"
-													value={opt.id}
-													checked={Array.isArray(answers[q.id]) && (answers[q.id] as string[]).includes(opt.id)}
+													value={opt.value}
+													checked={Array.isArray(answers[f.key]) && (answers[f.key] as string[]).includes(opt.value)}
 													onchange={(e) => {
-														const current = Array.isArray(answers[q.id]) ? answers[q.id] as string[] : [];
+														const current = Array.isArray(answers[f.key]) ? answers[f.key] as string[] : [];
 														const next = e.currentTarget.checked
-															? [...current, opt.id]
-															: current.filter((v) => v !== opt.id);
-														setAnswer(q.id, next);
+															? [...current, opt.value]
+															: current.filter((v) => v !== opt.value);
+														setAnswer(f.key, next);
 													}}
 													class="accent-[var(--tool-accent)]"
 												/>
@@ -384,25 +490,26 @@
 											</label>
 										{/each}
 									</div>
-								{:else if q.type === 'scale'}
+								{:else if f.field_type === 'number' || f.field_type === 'rating'}
 									<div class="flex items-center gap-3">
 										<input
 											type="range"
-											min={q.scale_min ?? 1}
-											max={q.scale_max ?? 10}
-											value={(answers[q.id] as number) ?? q.scale_min ?? 1}
-											oninput={(e) => setAnswer(q.id, parseInt(e.currentTarget.value))}
+											min={0}
+											max={100}
+											value={(answers[f.key] as number) ?? 0}
+											oninput={(e) => setAnswer(f.key, parseInt(e.currentTarget.value))}
 											class="flex-1 accent-[var(--tool-accent)]"
 										/>
 										<span class="text-sm font-medium text-text w-8 text-center">
-											{(answers[q.id] as number) ?? q.scale_min ?? 1}
+											{(answers[f.key] as number) ?? 0}
 										</span>
 									</div>
 								{:else}
 									<input
 										type="text"
-										value={(answers[q.id] as string) ?? ''}
-										oninput={(e) => setAnswer(q.id, e.currentTarget.value)}
+										value={(answers[f.key] as string) ?? ''}
+										placeholder={f.placeholder || ''}
+										oninput={(e) => setAnswer(f.key, e.currentTarget.value)}
 										class="w-full px-4 py-2.5 bg-surface border border-border rounded-lg text-text focus:border-primary focus:outline-none"
 									/>
 								{/if}
@@ -418,18 +525,18 @@
 
 			<div class="flex items-center justify-between">
 				<button
-					onclick={prevSection}
-					disabled={currentSection === 0}
+					onclick={prevStep}
+					disabled={currentStep === 0}
 					class="inline-flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium text-text hover:bg-surface-subtle rounded-lg transition-colors disabled:opacity-50"
 				>
 					<Icon name="arrow-left" size={16} />
 					{t('readiness.previous', 'Previous')}
 				</button>
 
-				{#if currentSection < totalSections - 1}
+				{#if currentStep < totalSteps - 1}
 					<button
-						onclick={nextSection}
-						disabled={!sectionComplete()}
+						onclick={nextStep}
+						disabled={!stepComplete()}
 						class="inline-flex items-center gap-1.5 px-4 py-2.5 bg-primary text-primary-contrast rounded-lg text-sm font-medium hover:bg-primary-hover transition-colors disabled:opacity-50"
 					>
 						{t('readiness.next', 'Next')}
@@ -438,15 +545,15 @@
 				{:else}
 					<button
 						onclick={submitAssessment}
-						disabled={submitting || !sectionComplete()}
+						disabled={submitting || polling || !stepComplete()}
 						class="inline-flex items-center gap-2 px-4 py-2.5 bg-[var(--tool-accent)] text-white rounded-lg text-sm font-medium hover:bg-[var(--tool-accent-hover)] transition-colors disabled:opacity-50"
 					>
-						{#if submitting}
+						{#if submitting || polling}
 							<Icon name="loader-2" size={16} class="animate-spin" />
 							{t('readiness.scoring', 'Scoring...')}
 						{:else}
 							<Icon name="check" size={16} />
-							{t('readiness.submit', 'Submit & get score')}
+							{form.submit_label || t('readiness.submit', 'Submit & get score')}
 						{/if}
 					</button>
 				{/if}

@@ -2877,22 +2877,46 @@ func (h *Handlers) saveOAuthClients(r *http.Request, clients []oauthClientEntry)
 // ---------------------------------------------------------------------------
 
 type extensionEntry struct {
-	Key         string `json:"key"`
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	Enabled     bool   `json:"enabled"`
-	Version     string `json:"version"`
+	Key              string `json:"key"`
+	Name             string `json:"name"`
+	Description      string `json:"description"`
+	Enabled          bool   `json:"enabled"`
+	Version          string `json:"version"`
+	SettingKey       string `json:"setting_key"`
+	SettingsCategory string `json:"settings_category"`
 }
 
-// knownExtensions is the static catalog of extensions recognized by the
-// control panel. Each extension's enabled/disabled state is persisted in
-// system_settings under the key "extensions.<key>.enabled".
+// knownExtensions is the unified catalog of all extensions and tools
+// recognized by the control panel. Each entry's enabled/disabled state is
+// persisted in system_settings under the key specified by SettingKey.
+// SettingsCategory is the control-panel settings category the entry's title
+// links to (empty = no settings page). This catalog is the single source of
+// truth for all extension/tool on/off switches.
 var knownExtensions = []extensionEntry{
-	{Key: "blog", Name: "Blog", Description: "Blog series, content reviews, and featured posts", Enabled: false, Version: "1.0.0"},
-	{Key: "webhooks", Name: "Webhooks", Description: "Outgoing webhook delivery system", Enabled: false, Version: "1.0.0"},
-	{Key: "newsletter", Name: "Newsletter", Description: "Email newsletter subscriber management", Enabled: false, Version: "1.0.0"},
-	{Key: "ai", Name: "AI Assistant", Description: "AI-powered content assistance and moderation", Enabled: false, Version: "1.0.0"},
-	{Key: "affiliate", Name: "Affiliate Program", Description: "Affiliate tracking and commission management", Enabled: false, Version: "1.0.0"},
+	// Legacy extensions (stored under extensions.<key>.enabled)
+	{Key: "blog", Name: "Blog", Description: "Blog series, content reviews, and featured posts", Version: "1.0.0", SettingKey: "extensions.blog.enabled", SettingsCategory: "content"},
+	{Key: "webhooks", Name: "Webhooks", Description: "Outgoing webhook delivery system", Version: "1.0.0", SettingKey: "extensions.webhooks.enabled", SettingsCategory: ""},
+	{Key: "ai", Name: "AI Assistant", Description: "AI-powered content assistance and moderation", Version: "1.0.0", SettingKey: "extensions.ai.enabled", SettingsCategory: "rag"},
+	{Key: "affiliate", Name: "Affiliate Program", Description: "Affiliate tracking and commission management", Version: "1.0.0", SettingKey: "extensions.affiliate.enabled", SettingsCategory: ""},
+
+	// V2 tools — each uses its own catalogued system_settings key
+	// (JEOS §§60–78, ADRs 061–086)
+	{Key: "rag", Name: "RAG / JapaBot Knowledge", Description: "Retrieval-augmented generation knowledge layer for JapaBot grounding", Version: "2.0.0", SettingKey: "rag.enabled", SettingsCategory: "rag"},
+	{Key: "studio", Name: "AI Content Studio", Description: "AI-powered content generation studio with persona-driven jobs", Version: "2.0.0", SettingKey: "studio.enabled", SettingsCategory: "studio"},
+	{Key: "participation", Name: "Participation Orchestration", Description: "Persona-driven participation orchestration engine", Version: "2.0.0", SettingKey: "participation.enabled", SettingsCategory: "participation"},
+	{Key: "checklist", Name: "Visa Document Checklist", Description: "Interactive visa document checklist tool for immigrants", Version: "2.0.0", SettingKey: "checklist.enabled", SettingsCategory: "checklist"},
+	{Key: "assessment", Name: "Japa Readiness Assessment", Description: "AI-assisted readiness assessment with personalized roadmap", Version: "2.0.0", SettingKey: "assessment.enabled", SettingsCategory: "assessment"},
+	{Key: "col_calculator", Name: "Cost of Living Calculator", Description: "Compare cost of living across destination cities", Version: "2.0.0", SettingKey: "col_calculator.enabled", SettingsCategory: "col_calculator"},
+	{Key: "scholarship_finder", Name: "Scholarship Finder", Description: "Search and track scholarships with deadline reminders", Version: "2.0.0", SettingKey: "scholarship_finder.enabled", SettingsCategory: "scholarship_finder"},
+	{Key: "remittance", Name: "Remittance Rate Tracker", Description: "Track and compare remittance exchange rates over time", Version: "2.0.0", SettingKey: "remittance.enabled", SettingsCategory: "remittance"},
+	{Key: "referral", Name: "Referral System", Description: "User referral program with credit rewards and attribution tracking", Version: "2.0.0", SettingKey: "referral.enabled", SettingsCategory: "referral"},
+	{Key: "ads", Name: "Self-Serve Advertising", Description: "Self-serve ad campaign creation and management platform", Version: "2.0.0", SettingKey: "ads.self_serve_enabled", SettingsCategory: "ads"},
+	{Key: "newsletter", Name: "Newsletter & Digest", Description: "Email newsletter subscriber management with weekly digests", Version: "2.0.0", SettingKey: "newsletter.enabled", SettingsCategory: "newsletter"},
+	{Key: "jobs", Name: "Jobs Board", Description: "Job listings board with featured placement and credit-based promotion", Version: "2.0.0", SettingKey: "jobs.enabled", SettingsCategory: "jobs"},
+	{Key: "gamification", Name: "Gamification", Description: "Badges, challenges, and leaderboards for user engagement", Version: "2.0.0", SettingKey: "gamification.badges_enabled", SettingsCategory: "gamification"},
+	{Key: "travel", Name: "Travel Search", Description: "Travel search and booking integration for immigration journeys", Version: "2.0.0", SettingKey: "travel.enabled", SettingsCategory: "travel"},
+	{Key: "push", Name: "Mobile Push Notifications", Description: "FCM and APNs push notification delivery for mobile apps", Version: "2.0.0", SettingKey: "push.enabled", SettingsCategory: "push"},
+	{Key: "geo_personalization", Name: "Geo Personalization", Description: "Geo-aware feed, search, and discovery ranking based on user location", Version: "2.0.0", SettingKey: "geo_personalization.enabled", SettingsCategory: "geo_personalization"},
 }
 
 func (h *Handlers) ListExtensions(w http.ResponseWriter, r *http.Request) {
@@ -2902,10 +2926,16 @@ func (h *Handlers) ListExtensions(w http.ResponseWriter, r *http.Request) {
 	}
 	result := make([]extensionEntry, 0, len(knownExtensions))
 	for _, ext := range knownExtensions {
-		settingKey := "extensions." + ext.Key + ".enabled"
-		enabled := false
+		settingKey := ext.SettingKey
+		if settingKey == "" {
+			settingKey = "extensions." + ext.Key + ".enabled"
+		}
+		// V2 tools default to enabled (per the settings catalog); legacy
+		// extensions default to disabled.
+		defaultEnabled := ext.Version == "2.0.0"
+		enabled := defaultEnabled
 		if h.Settings != nil {
-			enabled = h.Settings.GetBoolOr(r.Context(), tenantID, settingKey, false)
+			enabled = h.Settings.GetBoolOr(r.Context(), tenantID, settingKey, defaultEnabled)
 		}
 		ext.Enabled = enabled
 		result = append(result, ext)
@@ -2917,6 +2947,11 @@ func (h *Handlers) UpdateExtension(w http.ResponseWriter, r *http.Request) {
 	key := chi.URLParam(r, "key")
 	if key == "" {
 		writeError(w, http.StatusBadRequest, "missing_key", "Extension key is required")
+		return
+	}
+	ext := findExtension(key)
+	if ext == nil {
+		writeError(w, http.StatusNotFound, "extension_not_found", "Unknown extension or tool")
 		return
 	}
 	tenantID, ok := requireTenant(w, r)
@@ -2932,7 +2967,7 @@ func (h *Handlers) UpdateExtension(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if input.Enabled != nil {
-		settingKey := "extensions." + key + ".enabled"
+		settingKey := extensionSettingKey(ext)
 		val := "false"
 		if *input.Enabled {
 			val = "true"
@@ -2957,11 +2992,16 @@ func (h *Handlers) EnableExtension(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "missing_key", "Extension key is required")
 		return
 	}
+	ext := findExtension(key)
+	if ext == nil {
+		writeError(w, http.StatusNotFound, "extension_not_found", "Unknown extension or tool")
+		return
+	}
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
-	settingKey := "extensions." + key + ".enabled"
+	settingKey := extensionSettingKey(ext)
 	if _, err := h.DB.Writer.Exec(r.Context(),
 		`INSERT INTO system_settings (tenant_id, key, value, updated_at) VALUES ($1, $2, 'true', NOW()) ON CONFLICT (tenant_id, key) DO UPDATE SET value = 'true', updated_at = NOW()`,
 		tenantID, settingKey); err != nil {
@@ -2980,11 +3020,16 @@ func (h *Handlers) DisableExtension(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "missing_key", "Extension key is required")
 		return
 	}
+	ext := findExtension(key)
+	if ext == nil {
+		writeError(w, http.StatusNotFound, "extension_not_found", "Unknown extension or tool")
+		return
+	}
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
-	settingKey := "extensions." + key + ".enabled"
+	settingKey := extensionSettingKey(ext)
 	if _, err := h.DB.Writer.Exec(r.Context(),
 		`INSERT INTO system_settings (tenant_id, key, value, updated_at) VALUES ($1, $2, 'false', NOW()) ON CONFLICT (tenant_id, key) DO UPDATE SET value = 'false', updated_at = NOW()`,
 		tenantID, settingKey); err != nil {
@@ -2995,6 +3040,25 @@ func (h *Handlers) DisableExtension(w http.ResponseWriter, r *http.Request) {
 		h.Settings.InvalidateSettings(r.Context(), tenantID)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"key": key, "status": "disabled"}})
+}
+
+// findExtension returns the knownExtensions entry for the given key, or nil.
+func findExtension(key string) *extensionEntry {
+	for i := range knownExtensions {
+		if knownExtensions[i].Key == key {
+			return &knownExtensions[i]
+		}
+	}
+	return nil
+}
+
+// extensionSettingKey returns the system_settings key that controls the
+// enabled/disabled state for the given extension entry.
+func extensionSettingKey(ext *extensionEntry) string {
+	if ext.SettingKey != "" {
+		return ext.SettingKey
+	}
+	return "extensions." + ext.Key + ".enabled"
 }
 
 // ---------------------------------------------------------------------------

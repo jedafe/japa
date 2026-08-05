@@ -10,6 +10,11 @@
 -- =====================================================================
 
 -- name: UpsertChecklistProgress :one
+-- completed is NOT NULL (always provided by the service layer, which
+-- resolves a nil completed from the PATCH body to the existing value before
+-- calling). completed_at and notes are nullable so a toggle-only update
+-- preserves the existing notes (COALESCE) and a note-only update preserves
+-- the existing completed_at.
 INSERT INTO checklist_progress (
     tenant_id, user_id, guide_id, item_key, completed, completed_at, notes
 )
@@ -17,7 +22,7 @@ VALUES (@tenant_id, @user_id, @guide_id, @item_key, @completed, sqlc.narg(comple
 ON CONFLICT (tenant_id, user_id, guide_id, item_key)
 DO UPDATE SET
     completed    = EXCLUDED.completed,
-    completed_at = EXCLUDED.completed_at,
+    completed_at = COALESCE(EXCLUDED.completed_at, checklist_progress.completed_at),
     notes        = COALESCE(EXCLUDED.notes, checklist_progress.notes),
     updated_at   = now()
 RETURNING *;

@@ -1,37 +1,25 @@
 <script lang="ts">
-	import { api } from '$lib/api';
+	import { aiAdminApi, type AiTool, type AiUsageSummary } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
-	import Modal from '$lib/components/Modal.svelte';
-	import { DataTable } from '$lib/components/ui/data-table';
+	import { Modal } from '$lib/components/ui/modal';
 	import { Button } from '$lib/components/ui/button';
-	import { Pencil } from 'lucide-svelte';
+	import { DataTable } from '$lib/components/ui/data-table';
+	import { Pencil, Trash2, Loader2 } from 'lucide-svelte';
 
-	type AITool = {
-		id: string;
-		name: string;
-		description: string;
-		category: string;
-		is_enabled: boolean;
-		required_permission?: string;
-		created_at: string;
-	};
-
-	type AIUsageSummary = {
-		total_cost_usd: number;
-		tokens_used: number;
-		by_task_type: Array<{ task_type: string; tokens_used: number; total_cost_usd: number; calls: number }>;
-		by_provider?: Array<{ provider: string; tokens_used: number; total_cost_usd: number; calls: number }>;
-	};
-
-	let tools = $state<AITool[]>([]);
-	let usage = $state<AIUsageSummary | null>(null);
+	let tools = $state<AiTool[]>([]);
+	let usage = $state<AiUsageSummary | null>(null);
 	let loading = $state(true);
 	let error = $state('');
 	let activeTab = $state<'tools' | 'usage'>('tools');
 	let showEditModal = $state(false);
-	let editingTool = $state<AITool | null>(null);
+	let editingTool = $state<AiTool | null>(null);
 	let saving = $state(false);
 	let searchQuery = $state('');
+
+	// Delete state
+	let showDeleteConfirm = $state(false);
+	let deletingTool = $state<AiTool | null>(null);
+	let deleting = $state(false);
 
 	const toolColumns = [
 		{ key: 'name', label: t('ai.tool_name'), sortable: true },
@@ -63,14 +51,14 @@
 		error = '';
 		try {
 			if (activeTab === 'tools') {
-				const result = await api<AITool[]>('/admin/ai/tools');
+				const result = await aiAdminApi.listTools();
 				if (result.ok) {
 					tools = result.data ?? [];
 				} else {
 					error = result.error;
 				}
 			} else {
-				const result = await api<AIUsageSummary>('/admin/ai/usage');
+				const result = await aiAdminApi.getAiUsage();
 				if (result.ok) {
 					usage = result.data;
 				} else {
@@ -84,7 +72,7 @@
 		}
 	}
 
-	function editTool(tool: AITool) {
+	function editTool(tool: AiTool) {
 		editingTool = { ...tool };
 		showEditModal = true;
 	}
@@ -96,20 +84,46 @@
 			// Send only the fields the backend UpdateTool accepts
 			// (description, is_enabled, required_permission). Name and
 			// category are not editable here.
-			await api(`/admin/ai/tools/${editingTool.id}`, {
-				method: 'PUT',
-				body: {
-					description: editingTool.description,
-					is_enabled: editingTool.is_enabled,
-					required_permission: editingTool.required_permission ?? null
-				}
+			const result = await aiAdminApi.updateTool(editingTool.id, {
+				description: editingTool.description,
+				is_enabled: editingTool.is_enabled,
+				required_permission: editingTool.required_permission ?? null
 			});
-			showEditModal = false;
-			load();
+			if (result.ok) {
+				showEditModal = false;
+				load();
+			} else {
+				error = result.error;
+			}
 		} catch {
 			error = t('common.error');
 		} finally {
 			saving = false;
+		}
+	}
+
+	function confirmDeleteTool(tool: AiTool) {
+		deletingTool = tool;
+		showDeleteConfirm = true;
+	}
+
+	async function deleteTool() {
+		if (!deletingTool) return;
+		deleting = true;
+		error = '';
+		try {
+			const result = await aiAdminApi.deleteTool(deletingTool.id);
+			if (result.ok) {
+				showDeleteConfirm = false;
+				deletingTool = null;
+				load();
+			} else {
+				error = result.error;
+			}
+		} catch {
+			error = t('common.error');
+		} finally {
+			deleting = false;
 		}
 	}
 </script>
@@ -184,17 +198,24 @@
 {/if}
 
 {#if showEditModal && editingTool}
-	<Modal title={t('ai.edit_tool')} onclose={() => { showEditModal = false; }}>
+	<Modal
+		open={showEditModal}
+		onclose={() => { showEditModal = false; }}
+		title={t('ai.edit_tool')}
+	>
 		<div class="space-y-4">
 			<div>
 				<label for="tool-name" class="mb-1 block text-sm font-medium">{t('ai.tool_name')}</label>
 				<input
 					id="tool-name"
 					type="text"
-					class="w-full rounded-md border px-3 py-2 text-sm"
+					class="w-full rounded-md border px-3 py-2 text-sm opacity-60"
 					style="border-color: var(--color-border); background-color: var(--color-background)"
-					bind:value={editingTool.name}
+					value={editingTool.name}
+					disabled
+					aria-label={t('ai.tool_name')}
 				/>
+				<p class="mt-1 text-xs" style="color: var(--color-muted)">{t('ai.tools.name_readonly', 'Tool name cannot be changed after creation.')}</p>
 			</div>
 			<div>
 				<label for="tool-desc" class="mb-1 block text-sm font-medium">{t('ai.description')}</label>
@@ -227,28 +248,57 @@
 				<label for="tool-enabled" class="text-sm">{t('ai.enabled')}</label>
 			</div>
 			<div class="flex justify-end gap-2">
-				<button
-					class="rounded-md px-4 py-2 text-sm font-medium"
-					style="border: 1px solid var(--color-border)"
-					onclick={() => { showEditModal = false; }}
-				>
+				<Button variant="outline" onclick={() => { showEditModal = false; }}>
 					{t('common.cancel')}
-				</button>
-				<button
-					class="rounded-md px-4 py-2 text-sm font-medium text-white transition-colors disabled:opacity-50"
-					style="background-color: var(--color-primary)"
-					disabled={saving}
-					onclick={saveTool}
-				>
+				</Button>
+				<Button onclick={saveTool} disabled={saving}>
 					{saving ? t('common.saving') : t('common.save')}
-				</button>
+				</Button>
 			</div>
 		</div>
 	</Modal>
 {/if}
 
-{#snippet ToolActionsCell({ row }: { value: any; row: AITool })}
-	<Button variant="ghost" size="sm" onclick={() => editTool(row)} aria-label={t('common.edit', 'Edit')}>
-		<Pencil class="h-3.5 w-3.5" />
-	</Button>
+{#if showDeleteConfirm && deletingTool}
+	<Modal
+		open={showDeleteConfirm}
+		onclose={() => { showDeleteConfirm = false; deletingTool = null; }}
+		title={t('ai.tools.delete_title', 'Delete Tool')}
+	>
+		<p class="text-sm" style="color: var(--color-foreground-alt)">
+			{t('ai.tools.delete_confirm', 'Are you sure you want to delete')} <strong>{deletingTool.name}</strong>?
+		</p>
+		<p class="mt-2 text-xs" style="color: var(--color-muted)">
+			{t('ai.tools.delete_warning', 'This action cannot be undone.')}
+		</p>
+		{#if error}
+			<div class="mt-3 rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-danger); color: var(--color-danger)">
+				{error}
+			</div>
+		{/if}
+		<div class="mt-6 flex justify-end gap-2">
+			<Button variant="outline" onclick={() => { showDeleteConfirm = false; deletingTool = null; }}>
+				{t('common.cancel')}
+			</Button>
+			<Button variant="destructive" onclick={deleteTool} disabled={deleting}>
+				{#if deleting}
+					<Loader2 class="h-3.5 w-3.5 animate-spin" />
+				{:else}
+					<Trash2 class="h-3.5 w-3.5" />
+				{/if}
+				{t('common.delete', 'Delete')}
+			</Button>
+		</div>
+	</Modal>
+{/if}
+
+{#snippet ToolActionsCell({ row }: { value: any; row: AiTool })}
+	<div class="flex items-center gap-1">
+		<Button variant="ghost" size="sm" onclick={() => editTool(row)} aria-label={t('common.edit', 'Edit')}>
+			<Pencil class="h-3.5 w-3.5" />
+		</Button>
+		<Button variant="ghost" size="sm" onclick={() => confirmDeleteTool(row)} style="color: var(--color-danger)" aria-label={t('common.delete', 'Delete')}>
+			<Trash2 class="h-3.5 w-3.5" />
+		</Button>
+	</div>
 {/snippet}

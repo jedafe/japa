@@ -799,12 +799,40 @@ export const adsAdminApi = {
 	endBoost: (id: string) => api<unknown>(`/admin/ads/boosts/${id}/end`, { method: 'POST', body: {} }),
 };
 
+export interface AiTool {
+	id: string;
+	name: string;
+	description: string;
+	category: string;
+	config?: Record<string, unknown>;
+	is_enabled: boolean;
+	required_permission?: string;
+	created_at: string;
+	updated_at: string;
+}
+
+export interface AiUsageSummary {
+	total_cost_usd: number;
+	tokens_used: number;
+	by_task_type: Array<{ task_type: string; tokens_used: number; total_cost_usd: number; calls: number }>;
+	by_provider?: Array<{ provider: string; tokens_used: number; total_cost_usd: number; calls: number }>;
+}
+
+export interface AiToolUsageStats {
+	tool_id: string;
+	tool_name: string;
+	invocations: number;
+	tokens_used: number;
+	total_cost_usd: number;
+}
+
 export const aiAdminApi = {
-	listTools: (params?: string) => api<unknown>(`/admin/ai/tools${params ? `?${params}` : ''}`),
-	getTool: (id: string) => api<unknown>(`/admin/ai/tools/${id}`),
-	getToolsUsage: () => api<unknown>('/admin/ai/tools/usage'),
-	getAiUsage: () => api<unknown>('/admin/ai/usage'),
-	updateTool: (id: string, body: Record<string, unknown>) => api<unknown>(`/admin/ai/tools/${id}`, { method: 'PUT', body }),
+	listTools: (params?: string) => api<AiTool[]>(`/admin/ai/tools${params ? `?${params}` : ''}`),
+	getTool: (id: string) => api<AiTool>(`/admin/ai/tools/${id}`),
+	getToolsUsage: () => api<AiToolUsageStats[]>('/admin/ai/tools/usage'),
+	getAiUsage: () => api<AiUsageSummary>('/admin/ai/usage'),
+	updateTool: (id: string, body: Record<string, unknown>) => api<AiTool>(`/admin/ai/tools/${id}`, { method: 'PUT', body }),
+	deleteTool: (id: string) => api<{ deleted: boolean }>(`/admin/ai/tools/${id}`, { method: 'DELETE' }),
 	getUserAiContext: (userId: string) => api<unknown>(`/admin/users/${userId}/ai-context`),
 	deleteAiContextEntry: (userId: string, entryId: string) =>
 		api<{ deleted: boolean }>(`/admin/users/${userId}/ai-context/${entryId}`, { method: 'DELETE' }),
@@ -1453,8 +1481,13 @@ export const gdprAdminApiExtendedV2 = {
 	deleteConsent: (id: string) => api<unknown>(`/admin/consents/${id}`, { method: 'DELETE' }),
 };
 
+export interface AiModel {
+	id: string;
+	label: string;
+}
+
 export const aiModelsAdminApi = {
-	list: (params?: string) => api<unknown>(`/admin/ai/models${params ? `?${params}` : ''}`),
+	list: (params?: string) => api<AiModel[]>(`/admin/ai/models${params ? `?${params}` : ''}`),
 };
 
 export const spacesModeratorsAdminApi = {

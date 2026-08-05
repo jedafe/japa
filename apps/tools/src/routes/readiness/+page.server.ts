@@ -1,18 +1,19 @@
 import type { PageServerLoad } from './$types';
 import { apiContext, apiGet, apiGetOrNull, apiList } from '$lib/server/api';
 import { getTool, isToolEnabled } from '$lib/tools/registry';
-import type { AssessmentForm, AssessmentResult } from '$lib/types';
+import type { AssessmentForm, AssessmentResult, AssessmentHistoryItem } from '$lib/types';
 
 /**
  * Japa Readiness Assessment — §71, ADR-071.
  * SSR loads the active assessment form + scoring metadata. If a result ID is
- * in the URL (shareable link), load the result directly. For authenticated
+ * in the URL (shareable link), load the full result directly. For authenticated
  * users, also load their past results history (§71: "authenticated users get
- * persistent history").
+ * persistent history"). History items are summaries; the full result is
+ * fetched client-side when a user opens one.
  *
  * API: GET /assessment — active form + scoring metadata.
- *      GET /assessment/result/:id — result + roadmap.
- *      GET /assessment/history — user's past results (auth only).
+ *      GET /assessment/result/:id — full result + roadmap.
+ *      GET /assessment/history — user's past result summaries (auth only).
  *
  * Ref: §71 (Readiness Assessment), ROADMAP-TOOLS 02.03.
  */
@@ -46,10 +47,10 @@ export const load: PageServerLoad = async (event) => {
 
 	// Load the authenticated user's past results (§71 history).
 	// Ref: §71 — "authenticated users get persistent history".
-	let history: AssessmentResult[] = [];
+	let history: AssessmentHistoryItem[] = [];
 	if (event.locals.user) {
 		try {
-			const res = await apiList<AssessmentResult>(ctx, '/assessment/history');
+			const res = await apiList<AssessmentHistoryItem>(ctx, '/assessment/history');
 			history = res.items;
 		} catch {
 			history = [];
