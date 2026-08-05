@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { beforeNavigate } from '$app/navigation';
+	import { beforeNavigate, goto } from '$app/navigation';
+	import { page } from '$app/state';
 	import ConfirmModal from '$lib/components/ui/ConfirmModal.svelte';
 	import { Switch, Tooltip, Label, Select } from 'bits-ui';
 	import { api, getToken } from '$lib/api';
@@ -498,6 +499,29 @@
 		}
 	});
 
+	// Deep-link support: read ?category= from the URL on load and whenever it
+	// changes, so other pages (e.g. /extensions) can link directly to a
+	// specific settings category.
+	$effect(() => {
+		const cat = page.url.searchParams.get('category');
+		if (cat && cat !== activeCategory) {
+			activeCategory = cat;
+		}
+	});
+
+	// selectCategory sets the active category and updates the URL so the
+	// selection is shareable and survives navigation.
+	function selectCategory(cat: string) {
+		activeCategory = cat;
+		const url = new URL(page.url);
+		if (cat === 'all') {
+			url.searchParams.delete('category');
+		} else {
+			url.searchParams.set('category', cat);
+		}
+		goto(url.pathname + url.search, { replaceState: true, noScroll: true });
+	}
+
 	load();
 
 	let categories = $derived(
@@ -708,7 +732,7 @@
 					class="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors {activeCategory === 'all'
 						? 'bg-accent text-foreground font-medium'
 						: 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'}"
-					onclick={() => (activeCategory = 'all')}
+					onclick={() => selectCategory('all')}
 				>
 					<Settings class="size-4 shrink-0" />
 					<span class="flex-1 text-left">{t('settings.all', 'All')}</span>
@@ -720,7 +744,7 @@
 						class="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors {activeCategory === category
 							? 'bg-accent text-foreground font-medium'
 							: 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'}"
-						onclick={() => (activeCategory = category)}
+						onclick={() => selectCategory(category)}
 					>
 						<Icon class="size-4 shrink-0" />
 						<span class="flex-1 text-left">{formatNamespace(category)}</span>
@@ -739,7 +763,7 @@
 				type="single"
 				value={activeCategory}
 				onValueChange={(v) => {
-					if (v !== undefined) activeCategory = v;
+					if (v !== undefined) selectCategory(v);
 				}}
 			>
 				<Select.Trigger
@@ -1271,7 +1295,7 @@ if (isHidden) {
 							{/if}
 							<button
 								class="text-muted-foreground hover:text-foreground text-xs font-medium transition-colors"
-								onclick={() => (activeCategory = category)}
+								onclick={() => selectCategory(category)}
 							>
 								{t('settings.view_all', 'View all')} →
 							</button>
@@ -1561,7 +1585,7 @@ if (isHidden) {
 							{#if catSettings.length > 5}
 								<button
 									class="text-accent-foreground hover:bg-muted/50 w-full px-5 py-2.5 text-left text-xs font-medium transition-colors"
-									onclick={() => (activeCategory = category)}
+									onclick={() => selectCategory(category)}
 								>
 									{t('settings.view_all_count', 'View all {count} settings').replace('{count}', String(catSettings.length))} →
 								</button>

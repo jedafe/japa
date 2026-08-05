@@ -15,11 +15,9 @@ const (
 )
 
 // CreateHITLReview inserts a new HITL review, validating required fields.
+// content_id is optional (nullable per migration 000275) — admin-generated
+// reviews may not have a backing content row.
 func CreateHITLReview(ctx context.Context, store *Store, review HITLReview) (HITLReview, error) {
-	if review.ContentID == (pgtype.UUID{}) {
-		return HITLReview{}, errors.New("content_id is required")
-	}
-
 	if review.ContentType == "" {
 		return HITLReview{}, errors.New("content_type is required")
 	}
@@ -72,4 +70,14 @@ func ListPendingReviews(ctx context.Context, store *Store, tenantID pgtype.UUID,
 	}
 
 	return store.ListPendingHITLReviews(ctx, tenantID, limit, offset)
+}
+
+// CountPendingReviews returns the total count of pending HITL reviews for
+// pagination metadata.
+func CountPendingReviews(ctx context.Context, store *Store, tenantID pgtype.UUID) (int64, error) {
+	if tenantID == (pgtype.UUID{}) {
+		return 0, errors.New("tenant_id is required")
+	}
+
+	return store.CountPendingHITLReviews(ctx, tenantID)
 }

@@ -66,6 +66,17 @@ SELECT * FROM assessment_results
 WHERE tenant_id = @tenant_id AND id = @id;
 
 -- =====================================================================
+-- Get a single assessment result by submission_id. Used by the public
+-- polling endpoint after an async submit (the client receives the
+-- submission_id and polls until the Asynq scoring task writes the result).
+-- Returns at most one row (there is a unique link submission_id -> result).
+-- =====================================================================
+
+-- name: GetAssessmentResultBySubmission :one
+SELECT * FROM assessment_results
+WHERE tenant_id = @tenant_id AND submission_id = @submission_id;
+
+-- =====================================================================
 -- List a user's assessment results (history).
 -- =====================================================================
 

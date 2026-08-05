@@ -134,9 +134,10 @@ func (h *Handlers) HandleSelector(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"data": result})
 }
 
-// HandleGetItems handles GET /checklist/{guide_id} — checklist items for a
-// guide (extracts required_documents). Public, no auth required (anonymous
-// browse). Progress is left empty for anonymous users.
+// HandleGetItems handles GET /checklist/{guide_id} — the checklist guide
+// (guide_id + title + items extracted from required_documents). Public, no
+// auth required (anonymous browse). Returns the ChecklistGuideResult shape
+// that matches the frontend ChecklistGuide type (§70 contract).
 func (h *Handlers) HandleGetItems(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
@@ -158,14 +159,14 @@ func (h *Handlers) HandleGetItems(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	items, err := h.service.GetChecklistItems(r.Context(), tenantID, guideID)
+	guide, err := h.service.GetGuide(r.Context(), tenantID, guideID)
 	if err != nil {
-		slog.Error("checklist: get items failed", "error", err)
+		slog.Error("checklist: get guide failed", "error", err)
 		writeError(w, http.StatusInternalServerError, "items_failed", "Failed to get checklist items")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": items})
+	writeJSON(w, http.StatusOK, map[string]any{"data": guide})
 }
 
 // ---------------------------------------------------------------------------
@@ -203,15 +204,19 @@ func (h *Handlers) HandleGetProgress(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"data": items})
 }
 
-// updateProgressBody is the PATCH request body for marking an item.
+// updateProgressBody is the PATCH request body for marking an item. Both
+// fields are pointers so a note-only update (completed omitted) preserves the
+// existing completed state, and a toggle-only update (notes omitted) preserves
+// the existing notes.
 type updateProgressBody struct {
-	Completed bool   `json:"completed"`
-	Notes     string `json:"notes"`
+	Completed *bool   `json:"completed"`
+	Notes     *string `json:"notes"`
 }
 
 // HandleUpdateProgress handles PATCH
 // /checklist/{guide_id}/progress/{item_key} — mark an item complete/incomplete
-// with an optional note. Auth required.
+// with an optional note. Auth required. A nil completed preserves the existing
+// completion state (note-only update); a nil notes preserves existing notes.
 func (h *Handlers) HandleUpdateProgress(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
 	if !ok {
@@ -243,12 +248,7 @@ func (h *Handlers) HandleUpdateProgress(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	var notes *string
-	if body.Notes != "" {
-		notes = &body.Notes
-	}
-
-	row, err := h.service.UpsertProgress(r.Context(), tenantID, user.UserID, guideID, itemKey, body.Completed, notes)
+	row, err := h.service.UpsertProgress(r.Context(), tenantID, user.UserID, guideID, itemKey, body.Completed, body.Notes)
 	if err != nil {
 		slog.Error("checklist: update progress failed", "error", err)
 		writeError(w, http.StatusInternalServerError, "update_failed", "Failed to update progress")

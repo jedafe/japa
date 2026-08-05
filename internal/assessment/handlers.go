@@ -3,10 +3,11 @@
 //
 // Routes:
 //
-//	GET   /api/v1/assessment                   — active assessment form + scoring metadata
-//	POST  /api/v1/assessment/submit            — submit answers (anonymous allowed)
-//	GET   /api/v1/assessment/result/:id        — result + roadmap
-//	GET   /api/v1/assessment/history           — user's past results (auth required)
+//	GET   /api/v1/assessment                                — active assessment form + scoring metadata
+//	POST  /api/v1/assessment/submit                         — submit answers (anonymous allowed)
+//	GET   /api/v1/assessment/result/:id                     — result + roadmap (anonymous results public)
+//	GET   /api/v1/assessment/result/by-submission/:submission_id — poll for result after async submit
+//	GET   /api/v1/assessment/history                        — user's past results (auth required)
 //	GET   /api/v1/admin/assessment/form        — get form config (admin)
 //	PATCH /api/v1/admin/assessment/form        — update form/scoring/thresholds (admin)
 //	GET   /api/v1/admin/assessment/results     — all users' results (admin)
@@ -18,15 +19,18 @@ package assessment
 
 import (
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/config"
+	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/tenant"
 )
 
@@ -177,6 +181,10 @@ func (h *Handlers) HandleGetAssessment(w http.ResponseWriter, r *http.Request) {
 			"max_score":     form.ScoringConfig.MaxScore,
 			"thresholds":    thresholds,
 			"fields":        form.Fields,
+			"scoring_config": map[string]any{
+				"max_score":   form.ScoringConfig.MaxScore,
+				"thresholds":  thresholds,
+			},
 		},
 	})
 }
@@ -293,14 +301,81 @@ func (h *Handlers) HandleGetResult(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Parse dimension_scores and roadmap_content for the response.
+	writeJSON(w, http.StatusOK, map[string]any{"data": shapeResult(result)})
+}
+
+// HandleGetResultBySubmission handles GET
+// /api/v1/assessment/result/by-submission/:submission_id — polls for the
+// assessment result linked to a submission. The submit endpoint is async
+// (Asynq scoring task, §71): it returns a submission_id immediately, and the
+// client polls this endpoint until the worker writes the result.
+//
+// Returns 200 with the result once scored, 202 with {"status":"pending"} while
+// the scoring task is still in flight, and 404 if the submission has no result
+// and no in-flight scoring is expected (treated as pending here — the caller
+// distinguishes via retry budget on the client).
+func (h *Handlers) HandleGetResultBySubmission(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	if h.service == nil {
+		writeError(w, http.StatusServiceUnavailable, "assessment_unavailable", "Assessment service not configured")
+		return
+	}
+
+	submissionID, ok := scanUUIDParam(w, r, "submission_id")
+	if !ok {
+		return
+	}
+
+	result, err := h.service.GetResultBySubmission(r.Context(), tenantID, submissionID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			// Not scored yet — tell the client to keep polling.
+			writeJSON(w, http.StatusAccepted, map[string]any{
+				"data": map[string]any{"status": "pending"},
+			})
+			return
+		}
+		slog.Error("assessment: get result by submission failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "result_lookup_failed", "Failed to look up result")
+		return
+	}
+
+	// Ownership: same rule as HandleGetResult. Anonymous results are public;
+	// user results require the owner (or an admin via the admin routes).
+	if result.UserID.Valid {
+		u, ok := requireUser(w, r)
+		if !ok {
+			return
+		}
+		if u.UserID.Bytes != result.UserID.Bytes {
+			writeError(w, http.StatusForbidden, "forbidden", "You do not have access to this result")
+			return
+		}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": shapeResult(result)})
+}
+
+// shapeResult builds the public JSON shape for an assessment result, parsing
+// the dimension_scores and roadmap_content JSONB columns.
+func shapeResult(result gen.AssessmentResult) map[string]any {
 	var dimensionScores map[string]int
 	if len(result.DimensionScores) > 0 {
 		_ = json.Unmarshal(result.DimensionScores, &dimensionScores)
 	}
+	if dimensionScores == nil {
+		dimensionScores = map[string]int{}
+	}
 	var roadmap []RoadmapStep
 	if len(result.RoadmapContent) > 0 {
 		_ = json.Unmarshal(result.RoadmapContent, &roadmap)
+	}
+	if roadmap == nil {
+		roadmap = []RoadmapStep{}
 	}
 
 	userIDStr := ""
@@ -308,18 +383,16 @@ func (h *Handlers) HandleGetResult(w http.ResponseWriter, r *http.Request) {
 		userIDStr = result.UserID.String()
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
-		"data": map[string]any{
-			"id":               result.ID.String(),
-			"total_score":      result.TotalScore,
-			"dimension_scores": dimensionScores,
-			"threshold_label":  result.ThresholdLabel,
-			"roadmap":          roadmap,
-			"user_id":          userIDStr,
-			"submission_id":    result.SubmissionID.String(),
-			"created_at":       formatTimestamp(result.CreatedAt),
-		},
-	})
+	return map[string]any{
+		"id":               result.ID.String(),
+		"total_score":      result.TotalScore,
+		"dimension_scores": dimensionScores,
+		"threshold_label":  result.ThresholdLabel,
+		"roadmap":          roadmap,
+		"user_id":          userIDStr,
+		"submission_id":    result.SubmissionID.String(),
+		"created_at":       formatTimestamp(result.CreatedAt),
+	}
 }
 
 // HandleHistory handles GET /api/v1/assessment/history — returns the

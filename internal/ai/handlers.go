@@ -399,9 +399,60 @@ func (h *Handlers) HandleGenerate(w http.ResponseWriter, r *http.Request) {
 	// Enqueue async AI process task for background logging/analytics — fire-and-forget.
 	h.enqueueAIProcessTask(input.Category, input.Prompt, "", "")
 
+	// Map the provider Response to the frontend GenerateResult contract.
+	// The provider returns raw data in Response.Raw; we extract the fields
+	// the admin UI needs (generated_text, model, tokens_used).
+	genResult := mapGenerateResult(resp)
+
 	writeJSON(w, http.StatusOK, map[string]any{
-		"data": resp,
+		"data": genResult,
 	})
+}
+
+// mapGenerateResult extracts the frontend-expected fields from a provider
+// Response. The provider stores the raw API response in Response.Raw; this
+// function normalizes the OpenAI-compatible structure (choices[0].message.content,
+// model, usage.total_tokens) into the {generated_text, model, tokens_used}
+// contract that the admin GenerateResult TypeScript interface expects.
+func mapGenerateResult(resp Response) map[string]any {
+	result := map[string]any{
+		"generated_text": "",
+		"model":          "",
+		"tokens_used":    0,
+	}
+
+	if resp.Raw == nil {
+		return result
+	}
+
+	// Extract model.
+	if model, ok := resp.Raw["model"].(string); ok {
+		result["model"] = model
+	}
+
+	// Extract generated_text from choices[0].message.content.
+	if choices, ok := resp.Raw["choices"].([]mimoChoice); ok && len(choices) > 0 {
+		result["generated_text"] = choices[0].Message.Content
+	} else if choicesRaw, ok := resp.Raw["choices"].([]any); ok && len(choicesRaw) > 0 {
+		if choice, ok := choicesRaw[0].(map[string]any); ok {
+			if msg, ok := choice["message"].(map[string]any); ok {
+				if content, ok := msg["content"].(string); ok {
+					result["generated_text"] = content
+				}
+			}
+		}
+	}
+
+	// Extract tokens_used from usage.total_tokens.
+	if usage, ok := resp.Raw["usage"].(mimoUsage); ok {
+		result["tokens_used"] = usage.TotalTokens
+	} else if usageRaw, ok := resp.Raw["usage"].(map[string]any); ok {
+		if total, ok := usageRaw["total_tokens"].(float64); ok {
+			result["tokens_used"] = int(total)
+		}
+	}
+
+	return result
 }
 
 // ---------------------------------------------------------------------------
@@ -861,7 +912,31 @@ func (h *Handlers) HandleGenerateOG(w http.ResponseWriter, r *http.Request) {
 // HITL Handlers
 // ---------------------------------------------------------------------------
 
-// HandleCreateHITL creates a new HITL review for AI output.
+// decodeAIOutput converts a JSONB ai_output blob to a display string. If the
+// blob is a JSON string literal (e.g. "some text"), the unquoted string is
+// returned. Otherwise the raw JSON is returned as a string.
+func decodeAIOutput(raw []byte) string {
+	if len(raw) == 0 {
+		return ""
+	}
+
+	// Try to unwrap a JSON string literal first.
+	var s string
+	if err := json.Unmarshal(raw, &s); err == nil {
+		return s
+	}
+
+	// Not a string literal — return the raw JSON text.
+	return string(raw)
+}
+
+// HandleCreateHITL creates a new HITL review for AI output. Accepts two
+// request formats:
+//   - Legacy: {content_id, content_type, ai_output} — used when a content row
+//     already exists.
+//   - Admin generator: {content, content_type, source} — used by the admin
+//     "Send to Review" feature which submits generated text directly without
+//     a backing content row (content_id is nullable per migration 000275).
 func (h *Handlers) HandleCreateHITL(w http.ResponseWriter, r *http.Request) {
 	_, ok := requireUser(w, r)
 	if !ok {
@@ -877,6 +952,9 @@ func (h *Handlers) HandleCreateHITL(w http.ResponseWriter, r *http.Request) {
 		ContentID   string `json:"content_id"`
 		ContentType string `json:"content_type"`
 		AIOutput    any    `json:"ai_output"`
+		// Admin generator fields (frontend aiApi.createHitlReview).
+		Content string `json:"content"`
+		Source  string `json:"source"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
@@ -885,16 +963,39 @@ func (h *Handlers) HandleCreateHITL(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var contentID pgtype.UUID
-	if err := contentID.Scan(input.ContentID); err != nil {
-		writeError(w, http.StatusBadRequest, "validation_error", "invalid content_id")
+	if input.ContentType == "" {
+		writeError(w, http.StatusBadRequest, "validation_error", "content_type is required")
 
 		return
 	}
 
-	aiOutputBytes, err := json.Marshal(input.AIOutput)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "validation_error", "invalid ai_output")
+	// Resolve the content_id — optional when using the admin generator format.
+	var contentID pgtype.UUID
+	if input.ContentID != "" {
+		if err := contentID.Scan(input.ContentID); err != nil {
+			writeError(w, http.StatusBadRequest, "validation_error", "invalid content_id")
+
+			return
+		}
+	}
+
+	// Resolve ai_output: prefer the explicit ai_output field, fall back to
+	// the content string from the admin generator format.
+	var aiOutputBytes []byte
+	if input.AIOutput != nil {
+		var err error
+		aiOutputBytes, err = json.Marshal(input.AIOutput)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "validation_error", "invalid ai_output")
+
+			return
+		}
+	} else if input.Content != "" {
+		aiOutputBytes, _ = json.Marshal(input.Content)
+	}
+
+	if len(aiOutputBytes) == 0 {
+		writeError(w, http.StatusBadRequest, "validation_error", "either ai_output or content is required")
 
 		return
 	}
@@ -938,7 +1039,58 @@ func (h *Handlers) HandleListPendingHITL(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": reviews})
+	total, err := CountPendingReviews(r.Context(), h.Store, tenantID)
+	if err != nil {
+		slog.Error("counting pending HITL reviews", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to count reviews")
+
+		return
+	}
+
+	// Map to the frontend-friendly DTO. The frontend HitlReview interface
+	// expects {id, content, content_type, source, status, created_at, ...}.
+	// The backend stores the AI output in ai_output (JSONB); decode it to a
+	// string for the content field.
+	type hitlReviewDTO struct {
+		ID           string `json:"id"`
+		Content      string `json:"content"`
+		ContentType  string `json:"content_type"`
+		Source       string `json:"source"`
+		Status       string `json:"status"`
+		CreatedAt    string `json:"created_at"`
+		ReviewedAt   string `json:"reviewed_at,omitempty"`
+		ReviewerID   string `json:"reviewer_id,omitempty"`
+		Reason       string `json:"reason,omitempty"`
+	}
+
+	dtos := make([]hitlReviewDTO, 0, len(reviews))
+	for _, rev := range reviews {
+		dto := hitlReviewDTO{
+			ID:          rev.ID.String(),
+			Content:     decodeAIOutput(rev.AIOutput),
+			ContentType: rev.ContentType,
+			Source:      "ai_hitl",
+			Status:      rev.Status,
+			CreatedAt:   rev.CreatedAt.Format(time.RFC3339),
+		}
+		if rev.ReviewedAt != nil {
+			dto.ReviewedAt = rev.ReviewedAt.Format(time.RFC3339)
+		}
+		if rev.ReviewerID.Valid {
+			dto.ReviewerID = rev.ReviewerID.String()
+		}
+		if rev.Reason != "" {
+			dto.Reason = rev.Reason
+		}
+		dtos = append(dtos, dto)
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data": map[string]any{
+			"reviews": dtos,
+			"total":   total,
+		},
+	})
 }
 
 // HandleApproveHITL approves a pending HITL review. The review is scoped to
@@ -1324,14 +1476,32 @@ func (h *Handlers) HandleGetConversation(w http.ResponseWriter, r *http.Request)
 // HandleListCategories handles GET /ai/categories — returns available AI
 // categories derived from the providers actually registered with the
 // dispatcher (Rule 16: no hardcoded/mock data).
+// categoryMeta holds human-friendly labels and descriptions for the AI
+// generation categories. The keys match the dispatcher category strings.
+var categoryMeta = map[string]struct{ Label, Description string }{
+	"blog_post":    {"Blog Post", "Long-form articles and blog posts"},
+	"forum_reply":  {"Forum Reply", "Contextual replies for forum discussions"},
+	"social_media": {"Social Media", "Short posts for social platforms"},
+	"email":        {"Email", "Professional and transactional emails"},
+	"summary":      {"Summary", "Condensed summaries of longer content"},
+	"translation":  {"Translation", "Translate content between languages"},
+	"docs":         {"Documentation", "Generate documentation pages"},
+}
+
 func (h *Handlers) HandleListCategories(w http.ResponseWriter, _ *http.Request) {
 	categories := []map[string]string{}
 
 	if h.Dispatcher != nil {
 		for _, cat := range h.Dispatcher.RegisteredCategories() {
+			meta, ok := categoryMeta[cat]
+			if !ok {
+				// Unknown category — use the raw string as label.
+				meta = struct{ Label, Description string }{cat, cat}
+			}
 			categories = append(categories, map[string]string{
-				"value": cat,
-				"label": cat,
+				"value":       cat,
+				"label":       meta.Label,
+				"description": meta.Description,
 			})
 		}
 	}

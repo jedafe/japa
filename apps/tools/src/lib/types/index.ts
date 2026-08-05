@@ -136,62 +136,78 @@ export interface ChecklistProgressItem {
 /* ------------------------------------------------------------------ *
  * §71 — Japa Readiness Assessment
  *   GET /assessment, POST /assessment/submit,
- *   GET /assessment/result/:id, GET /assessment/history
+ *   GET /assessment/result/:id, GET /assessment/result/by-submission/:id,
+ *   GET /assessment/history
+ *
+ * The assessment is built on the §06 Form Builder: a forms row
+ * (form_type='assessment') with a flat list of custom_fields. Scoring runs
+ * server-side in an Asynq task; submit returns a submission_id and the
+ * client polls /result/by-submission/:id until the result is written.
  * ------------------------------------------------------------------ */
 
 export interface AssessmentForm {
 	id: string;
-	title: string;
+	name: string;
+	slug: string;
 	description?: string | null;
-	/** Scoring metadata exposed to the client for display. */
-	scoring_config: AssessmentScoringConfig;
-	sections: AssessmentSection[];
-}
-
-export interface AssessmentScoringConfig {
+	is_multi_step: boolean;
+	submit_label: string;
+	status: string;
 	max_score: number;
 	thresholds: AssessmentThreshold[];
+	fields: AssessmentField[];
+	scoring_config: {
+		max_score: number;
+		thresholds: AssessmentThreshold[];
+	};
 }
 
 export interface AssessmentThreshold {
+	min: number;
+	max: number;
 	label: string;
-	min_score: number;
 	/** Optional CSS color for the gauge / badge. */
 	color?: string | null;
 }
 
-export interface AssessmentSection {
-	id: string;
-	title: string;
-	description?: string | null;
-	questions: AssessmentQuestion[];
-}
-
-export interface AssessmentQuestion {
-	id: string;
-	prompt: string;
-	/** Question type — single-choice, multiple-choice, or scale. */
-	type: 'single' | 'multiple' | 'scale' | 'text';
-	required?: boolean;
-	options?: AssessmentOption[];
-	/** For scale questions: min and max values. */
-	scale_min?: number;
-	scale_max?: number;
-	/** Dimension this question contributes to (e.g. "financial", "logistical"). */
-	dimension?: string | null;
-}
-
-export interface AssessmentOption {
+/** A single scored question, backed by a custom_field row. */
+export interface AssessmentField {
 	id: string;
 	label: string;
-	/** Score value for this option. */
-	value: number;
+	/** Field key — the field_values map is keyed by this. */
+	key: string;
+	/** Custom-field type: 'select' | 'multiselect' | 'number' | 'rating' | 'text' ... */
+	field_type: string;
+	is_required: boolean;
+	position: number;
+	placeholder: string;
+	/** Options for select/multiselect fields: [{value, label}]. */
+	options: AssessmentFieldOption[];
+	/** Per-field scoring metadata (weight, dimension, option_scores). */
+	config: AssessmentFieldConfig;
 }
 
-export interface AssessmentSubmission {
-	question_id: string;
-	/** Option IDs (single/multiple) or numeric/text value. */
-	answer: string[] | string | number;
+export interface AssessmentFieldOption {
+	value: string;
+	label: string;
+}
+
+export interface AssessmentFieldConfig {
+	weight: number;
+	dimension: string;
+	/** Maps option value -> raw score (keys match options[].value). */
+	option_scores: Record<string, number>;
+}
+
+/** POST /assessment/submit response — the result is produced async. */
+export interface AssessmentSubmitResponse {
+	submission_id: string;
+	status: string;
+}
+
+/** GET /assessment/result/by-submission/:id while scoring is in flight. */
+export interface AssessmentResultPending {
+	status: 'pending';
 }
 
 export interface AssessmentResult {
@@ -200,16 +216,27 @@ export interface AssessmentResult {
 	threshold_label: string;
 	dimension_scores: Record<string, number>;
 	roadmap: AssessmentRoadmapStep[];
+	user_id: string;
+	submission_id: string;
 	created_at: string;
 }
 
 export interface AssessmentRoadmapStep {
 	title: string;
 	description?: string | null;
-	priority?: number;
+	/** Platform content slug the step links to (guide/tool/track). */
+	content_slug?: string;
 	dimension?: string | null;
-	/** Optional links to platform resources (guides, tools, tracks). */
-	links?: Array<{ label: string; url: string }>;
+	priority?: number;
+}
+
+/** History list items are summaries — fetch the full result by id to render. */
+export interface AssessmentHistoryItem {
+	id: string;
+	total_score: number;
+	threshold_label: string;
+	submission_id: string;
+	created_at: string;
 }
 
 /* ------------------------------------------------------------------ *

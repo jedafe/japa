@@ -799,6 +799,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Ref: japaconnect-engineering/sections/71-readiness-assessment.md (ADR-071)
 	assessmentStore := assessment.NewStore(database)
 	assessmentService := assessment.NewService(assessmentStore, settingsService)
+	assessmentService.SetEnqueuer(taskEnqueuer)
 	assessmentHandlers := assessment.NewHandlers(assessmentService, settingsService)
 
 	// Ref: japaconnect-engineering/sections/72-cost-of-living.md (ADR-072)
@@ -851,6 +852,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	studioService := studio.NewService(studioStore, settingsService)
 	studioService.SetEnqueuer(taskEnqueuer)
 	studioHandlers := studio.NewHandlers(studioService)
+	studioHandlers.SetPersonaService(personasService)
 	worker.RegisterStudioProcessor(studioService)
 
 	// Participation Orchestration Engine (Section 76, ADR-077).
@@ -877,13 +879,23 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// The "chat" category is required by HandleChat (JapaBot) — without it,
 	// every /ai/chat request fails with "no providers registered for category
 	// \"chat\"". The same Xiaomi provider serves both categories.
+	// "moderation" is used by the spam pipeline's AI classification layer
+	// (checkAIClassification) for semantic spam detection.
 	if cfg.XiaomiAPIKey != "" {
 		xiaomiProvider := ai.NewXiaomiProvider(cfg.XiaomiAPIKey, "")
 		aiDispatcher.RegisterProvider("content_generation", xiaomiProvider)
 		aiDispatcher.RegisterProvider("chat", xiaomiProvider)
+		aiDispatcher.RegisterProvider("moderation", xiaomiProvider)
 		slog.Info("ai: registered xiaomi provider", "model", ai.XiaomiModelFlash,
-			"categories", []string{"content_generation", "chat"})
+			"categories", []string{"content_generation", "chat", "moderation"})
 	}
+
+	// Wire the AI classifier into the spam pipeline so the
+	// checkAIClassification layer can call the moderation category for
+	// semantic spam detection. When no moderation provider is registered,
+	// the classifier returns a zero result and the pipeline degrades to
+	// rule-only mode.
+	spamPipeline.SetClassifier(spam.NewAIClassifier(aiDispatcher))
 
 	aiStore := ai.NewStore(database.Reader, database.Writer)
 	aiHandlers := ai.NewHandlers(aiDispatcher, aiStore)
@@ -3889,11 +3901,16 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Get("/admin/checklist/completion-stats", checklistHandlers.HandleAdminCompletionStats)
 
 			// Section 71 — Japa Readiness Assessment (ADR-071)
+			// GET /assessment is public (active form + scoring metadata).
+			// POST /assessment/submit and GET /assessment/result/* are public:
+			// §71 allows anonymous users to take the assessment; the handlers
+			// do optional auth + ownership checks internally. Anonymous results
+			// (user_id null) are publicly viewable; user results require the
+			// owner (enforced in the handler).
 			r.Get("/assessment", assessmentHandlers.HandleGetAssessment)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "assessment.take")).
-				Post("/assessment/submit", assessmentHandlers.HandleSubmit)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "assessment.take")).
-				Get("/assessment/result/{id}", assessmentHandlers.HandleGetResult)
+			r.Post("/assessment/submit", assessmentHandlers.HandleSubmit)
+			r.Get("/assessment/result/by-submission/{submission_id}", assessmentHandlers.HandleGetResultBySubmission)
+			r.Get("/assessment/result/{id}", assessmentHandlers.HandleGetResult)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "assessment.take")).
 				Get("/assessment/history", assessmentHandlers.HandleHistory)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "assessment.manage")).

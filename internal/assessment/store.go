@@ -116,6 +116,20 @@ func (s *Store) GetAssessmentResultByID(ctx context.Context, tenantID, id pgtype
 	return result, nil
 }
 
+// GetAssessmentResultBySubmission returns the assessment result linked to a
+// submission, if the Asynq scoring task has written it yet. Used by the
+// public polling endpoint after an async submit.
+func (s *Store) GetAssessmentResultBySubmission(ctx context.Context, tenantID, submissionID pgtype.UUID) (gen.AssessmentResult, error) {
+	result, err := s.queries.GetAssessmentResultBySubmission(ctx, gen.GetAssessmentResultBySubmissionParams{
+		TenantID:     tenantID,
+		SubmissionID: submissionID,
+	})
+	if err != nil {
+		return gen.AssessmentResult{}, fmt.Errorf("assessment: get result by submission: %w", err)
+	}
+	return result, nil
+}
+
 // ListUserAssessmentResults returns a user's assessment results (history),
 // paginated by offset/limit, newest first.
 func (s *Store) ListUserAssessmentResults(ctx context.Context, tenantID, userID pgtype.UUID, pageOffset, pageLimit int32) ([]gen.AssessmentResult, error) {

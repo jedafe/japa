@@ -5,6 +5,7 @@
 package studio
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"strconv"
@@ -13,18 +14,30 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
+	"github.com/jedafe/japa/internal/personas"
 	"github.com/jedafe/japa/internal/tenant"
 )
 
+// personaLister is the subset of the personas service that studio needs to
+// populate the persona dropdown in the create-job modal.
+type personaLister interface {
+	ListPersonas(ctx context.Context, tenantID pgtype.UUID, status string, limit, offset int32) ([]personas.PersonaListItem, int64, error)
+}
+
 // Handlers holds the HTTP handlers for the studio admin API.
 type Handlers struct {
-	svc *Service
+	svc      *Service
+	personas personaLister
 }
 
 // NewHandlers creates Handlers wrapping the given service.
 func NewHandlers(svc *Service) *Handlers {
 	return &Handlers{svc: svc}
 }
+
+// SetPersonaService injects the personas service for the studio persona
+// dropdown endpoint (called at server wiring time).
+func (h *Handlers) SetPersonaService(p personaLister) { h.personas = p }
 
 func (h *Handlers) writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
@@ -117,7 +130,10 @@ func (h *Handlers) HandleListJobs(w http.ResponseWriter, r *http.Request) {
 		h.writeError(w, http.StatusInternalServerError, "studio_list_failed", err.Error())
 		return
 	}
-	h.writeJSON(w, http.StatusOK, map[string]any{"items": jobs, "total": total})
+	h.writeJSON(w, http.StatusOK, map[string]any{
+		"data": jobs,
+		"meta": map[string]int64{"total": total, "limit": int64(limit), "offset": int64(offset)},
+	})
 }
 
 // HandleCreateJob — POST /api/v1/admin/studio/jobs
@@ -142,7 +158,7 @@ func (h *Handlers) HandleCreateJob(w http.ResponseWriter, r *http.Request) {
 		h.writeError(w, http.StatusBadRequest, "studio_create_failed", err.Error())
 		return
 	}
-	h.writeJSON(w, http.StatusCreated, job)
+	h.writeJSON(w, http.StatusCreated, map[string]any{"data": job})
 }
 
 // HandleGetJob — GET /api/v1/admin/studio/jobs/:id
@@ -160,7 +176,7 @@ func (h *Handlers) HandleGetJob(w http.ResponseWriter, r *http.Request) {
 		h.writeError(w, http.StatusNotFound, "job_not_found", "studio job not found")
 		return
 	}
-	h.writeJSON(w, http.StatusOK, job)
+	h.writeJSON(w, http.StatusOK, map[string]any{"data": job})
 }
 
 // HandleRetryJob — POST /api/v1/admin/studio/jobs/:id/retry
@@ -209,7 +225,10 @@ func (h *Handlers) HandleListBatches(w http.ResponseWriter, r *http.Request) {
 		h.writeError(w, http.StatusInternalServerError, "batch_list_failed", err.Error())
 		return
 	}
-	h.writeJSON(w, http.StatusOK, map[string]any{"items": batches, "total": total})
+	h.writeJSON(w, http.StatusOK, map[string]any{
+		"data": batches,
+		"meta": map[string]int64{"total": total, "limit": int64(limit), "offset": int64(offset)},
+	})
 }
 
 // HandleCreateBatch — POST /api/v1/admin/studio/batches
@@ -252,7 +271,7 @@ func (h *Handlers) HandleGetBatch(w http.ResponseWriter, r *http.Request) {
 		h.writeError(w, http.StatusNotFound, "batch_not_found", "studio batch not found")
 		return
 	}
-	h.writeJSON(w, http.StatusOK, map[string]any{"batch": batch, "stats": stats})
+	h.writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"batch": batch, "stats": stats}})
 }
 
 // HandleRetryBatch — POST /api/v1/admin/studio/batches/:id/retry
@@ -280,7 +299,7 @@ func (h *Handlers) HandleContentTypes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	types := h.svc.ListContentTypes(r.Context(), tenantID)
-	h.writeJSON(w, http.StatusOK, map[string]any{"items": types})
+	h.writeJSON(w, http.StatusOK, map[string]any{"data": types})
 }
 
 // HandleStats — GET /api/v1/admin/studio/stats
@@ -294,14 +313,48 @@ func (h *Handlers) HandleStats(w http.ResponseWriter, r *http.Request) {
 		h.writeError(w, http.StatusInternalServerError, "stats_failed", err.Error())
 		return
 	}
-	h.writeJSON(w, http.StatusOK, stats)
+	h.writeJSON(w, http.StatusOK, map[string]any{"data": stats})
 }
 
 // HandlePersonas — GET /api/v1/admin/studio/personas
-// This is a passthrough to the personas service; the server wires the actual
-// personas handler at this route. This handler exists as a fallback.
+// Returns active personas in {id, label} format for the create-job dropdown.
+// Delegates to the injected personas service.
 func (h *Handlers) HandlePersonas(w http.ResponseWriter, r *http.Request) {
-	h.writeJSON(w, http.StatusOK, map[string]any{"items": []any{}})
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	if h.personas == nil {
+		h.writeError(w, http.StatusServiceUnavailable, "personas_unavailable", "Persona service not configured")
+		return
+	}
+
+	// Fetch active personas only — studio jobs require an active persona.
+	items, _, err := h.personas.ListPersonas(r.Context(), tenantID, "active", 100, 0)
+	if err != nil {
+		h.writeError(w, http.StatusInternalServerError, "personas_list_failed", "Failed to list personas")
+		return
+	}
+
+	// Map to the {id, label} shape the frontend dropdown expects.
+	type personaOption struct {
+		ID    string `json:"id"`
+		Label string `json:"label"`
+	}
+	opts := make([]personaOption, 0, len(items))
+	for _, p := range items {
+		label := p.ProfileName
+		if label == "" {
+			label = p.BackingUsername
+		}
+		if label == "" {
+			label = p.ID[:8]
+		}
+		opts = append(opts, personaOption{ID: p.ID, Label: label})
+	}
+
+	h.writeJSON(w, http.StatusOK, map[string]any{"data": opts})
 }
 
 // _ prevents unused import warning for strings.
