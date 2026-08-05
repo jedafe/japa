@@ -3,6 +3,7 @@
   import { MoreVertical } from 'lucide-svelte';
   import { clsx } from 'clsx';
   import type { ActionItem } from './types';
+  import { t } from '$lib/stores/i18n.svelte';
 
   let { actions, row }: { actions: ActionItem[]; row: any } = $props();
 
@@ -14,7 +15,7 @@
     data-action-menu-trigger
     class="inline-flex h-8 w-8 items-center justify-center rounded-md transition-colors hover:bg-black/5 dark:hover:bg-white/10"
     style="color: var(--color-muted)"
-    aria-label="Row actions"
+    aria-label={t('dataTable.rowActions', 'Row actions')}
   >
     <MoreVertical class="h-4 w-4" />
   </DropdownMenu.Trigger>
