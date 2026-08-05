@@ -2,7 +2,7 @@
 
 This document captures the conventions for the `apps/admin` SvelteKit 2 + Svelte 5 Runes SPA.
 It is the single source of truth for the shared UI components introduced by the
-admin-panel refactor foundation (Tasks 1–12) and the recipe for migrating the
+admin-panel shared-component refactor and the recipe for migrating the
 remaining ~55 legacy entity pages to the new scaffold.
 
 ---
@@ -107,7 +107,7 @@ interface EntityPageConfig {
 }
 ```
 
-### When to use `formFields` vs `formSnippet`
+### When to use `fields` vs `formSnippet`
 
 - **`fields` only (declarative `EntityForm`)** — use when the form is a flat set
   of standard inputs (text, textarea, number, email, password, date,
@@ -161,7 +161,7 @@ interface ActionItem {
 
 ## Known `EntityPage` gaps + workarounds
 
-These are acknowledged limitations of the foundation pass. Use the workarounds
+These are acknowledged limitations of the initial shared-component release. Use the workarounds
 until a follow-up task closes them.
 
 1. **No `openView`/`openEdit`/`openDelete` exposed for custom actions.**
@@ -181,7 +181,7 @@ until a follow-up task closes them.
 
 3. **No URL-sync for sort/filter.** `EntityPage` sets `urlSync={false}` on the
      DataTable, so sort/filter state is not reflected in the URL.
-   - *Status:* minor regression, acceptable for the foundation pass.
+   - *Status:* minor regression, acceptable for the initial release.
 
 4. **Generic confirm modal (no entity name).** The built-in delete confirm
      shows a generic "Confirm Delete. This cannot be undone." message without
@@ -199,7 +199,7 @@ until a follow-up task closes them.
 
 ## Bulk-delete in-flight guard pattern
 
-Learned from Task 9 (`/tags`): without a guard, a user can trigger bulk delete
+Learned during the `/tags` migration: without a guard, a user can trigger bulk delete
 twice (e.g. double-click) and fire duplicate API calls. Every bulk-action
 handler in an `EntityPage` page MUST include an in-flight guard:
 
