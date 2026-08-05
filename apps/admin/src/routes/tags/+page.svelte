@@ -174,16 +174,21 @@
 	// the scaffold to refetch (and clears the row selection) once deletion done.
 	let reloadKey = $state(0);
 	let pageError = $state("");
+	let bulkDeleting = $state(false);
 
 	async function bulkDelete(ids: Set<string>) {
 		const idArr = Array.from(ids);
 		if (idArr.length === 0) return;
+		if (bulkDeleting) return;
+		bulkDeleting = true;
 		pageError = "";
 		try {
 			await Promise.all(idArr.map((id) => tagsAdminApi.delete(id)));
 			reloadKey++;
 		} catch (e) {
 			pageError = e instanceof Error ? e.message : t("common.error", "Failed to delete tags");
+		} finally {
+			bulkDeleting = false;
 		}
 	}
 
