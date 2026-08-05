@@ -1,14 +1,4 @@
 <script lang="ts">
-	// /users — migrated to the EntityPage scaffold (Task 11).
-	//
-	// This page validates that EntityPage can express an entity whose row actions
-	// are dominated by non-CRUD *state* actions (Ban/Unban, Suspend/Unsuspend,
-	// Warn, Restore, Hard Delete, Impersonate) rather than the default
-	// View/Edit/Delete. Those state actions are declared in the `actions` config
-	// as ActionItem entries with `show()` predicates and `variant`, and each
-	// opens a page-local confirmation Modal (EntityPage's generic confirm Modal
-	// only covers the default delete). The external UserActionsCell.svelte is
-	// deleted — its logic is fully absorbed into the `actions` array below.
 	import { EntityPage, type EntityPageConfig, type FieldDef } from "$lib/components/entity";
 	import { Modal } from "$lib/components/ui/modal";
 	import { Button } from "$lib/components/ui/button";
@@ -39,11 +29,7 @@
 	const canImpersonate = $derived(hasPermission("admin.impersonate"));
 
 	// ── Filter options ──────────────────────────────────────────────────────
-	// Start as hardcoded fallback defaults and are refreshed from the backend
-	// on mount via loadFilterOptions() — status options come from
-	// GET /admin/users/config (BUG-017) and group options come from
-	// userManagementApi.listGroups() (BUG-018). Failures are swallowed so the
-	// defaults remain in place.
+	// Hardcoded fallback defaults, refreshed from backend on mount (status via getModerationConfig, groups via listGroups); failures keep defaults.
 	let filterDefs = $state<FilterDef[]>([
 		{
 			key: "status",
@@ -133,8 +119,7 @@
 	});
 
 	// ── Bulk actions ────────────────────────────────────────────────────────
-	// EntityPage does not auto-reload after a bulk action, so a remount key
-	// forces refetch + clears selection.
+	// EntityPage does not auto-reload after a bulk action, so a remount key forces refetch + clears selection.
 	let reloadKey = $state(0);
 	let pageError = $state("");
 	let bulkDeleting = $state(false);
@@ -155,15 +140,9 @@
 		}
 	}
 
-	// Bulk hard-delete only applies to already-soft-deleted users; the disabled
-	// predicate hides it when none of the selected rows are deleted.
+	// Bulk hard-delete only applies to already-soft-deleted users; the disabled predicate hides it when none of the selected rows are deleted.
 	async function bulkHardDelete(ids: Set<string>) {
-		// Re-fetch current rows to filter to deleted ones — ids alone don't
-		// carry status, so we rely on the last-loaded `rows` snapshot captured
-		// at selection time via the disabled predicate. The predicate ensures
-		// this is only clickable when at least one selected id is deleted; we
-		// attempt hard-delete on every selected id and the backend rejects
-		// non-deleted ones, matching the legacy bulkHardDelete behaviour.
+		// Attempt hard-delete on every selected id; the backend rejects non-deleted ones, matching legacy behaviour.
 		const idArr = Array.from(ids);
 		if (idArr.length === 0) return;
 		if (bulkDeleting) return; // in-flight guard
@@ -180,10 +159,7 @@
 	}
 
 	// ── State-action confirmation modals ────────────────────────────────────
-	// EntityPage's confirm Modal only covers the default delete; each state
-	// action below has richer copy (entity name, warnings) so it keeps a
-	// page-local Modal. The action `onclick` opens the modal; the modal's
-	// confirm button calls the API and bumps reloadKey to refetch.
+	// EntityPage's confirm Modal only covers default delete; state actions keep page-local Modals with richer copy, confirm calls API + bumps reloadKey.
 	let acting = $state(false);
 	let actionTarget = $state<User | null>(null);
 
@@ -334,9 +310,7 @@
 	}
 
 	// ── Row actions ─────────────────────────────────────────────────────────
-	// Declared as ActionItem[] with show() predicates; this replaces the
-	// default View/Edit/Delete (EntityPage gap: custom actions replace
-	// defaults), so View/Edit/Delete are included explicitly.
+	// ActionItem[] with show() predicates; custom actions replace defaults, so View/Edit/Delete are included explicitly.
 	const rowActions = $derived.by<ActionItem[]>(() => {
 		const acts: ActionItem[] = [
 			{ label: t("common.view", "View"), icon: Eye as any, onclick: (row: User) => goto(`/users/${row.id}`) }
@@ -409,8 +383,7 @@
 	});
 
 	// ── Create form fields ──────────────────────────────────────────────────
-	// The user edit form lives on /users/[id] (role/group assignment etc.),
-	// so EntityPage's create slide-over only handles creation.
+	// Edit form lives on /users/[id]; EntityPage's create slide-over only handles creation.
 	const fields: FieldDef[] = [
 		{ key: "email", label: t("users.email", "Email"), type: "email", placeholder: "user@example.com", required: true },
 		{ key: "username", label: t("users.username", "Username"), type: "text", placeholder: "username", required: true },
@@ -418,8 +391,7 @@
 		{ key: "password", label: t("users.password", "Password"), type: "password", placeholder: "••••••••", required: true }
 	];
 
-	// ── Config ──────────────────────────────────────────────────────────────
-	// Built as a $derived so filterDefs updates (loaded on mount) propagate.
+	// Config built as a $derived so filterDefs updates (loaded on mount) propagate.
 	const config = $derived<EntityPageConfig>({
 		title: t("users.title", "Users"),
 		description: t("users.description", "Manage platform users"),
