@@ -3,4 +3,4 @@ export { default as ActionCell } from "./action-cell.svelte";
 export { default as ActionMenu } from "./action-menu.svelte";
 export { default as FilterPanel } from "./filter-panel.svelte";
 export { default as BulkBar } from "./bulk-bar.svelte";
-export type { Column, ActionItem, FilterDef, BulkAction, SortDir } from "./types";
+export type { Column, ActionItem, ActionContext, FilterDef, BulkAction, SortDir } from "./types";
