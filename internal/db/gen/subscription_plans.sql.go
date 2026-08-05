@@ -11,6 +11,42 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const addTrackToPlan = `-- name: AddTrackToPlan :exec
+
+INSERT INTO subscription_plan_tracks (plan_id, track_id, tenant_id)
+VALUES ($1, $2, $3)
+ON CONFLICT (plan_id, track_id) DO NOTHING
+`
+
+type AddTrackToPlanParams struct {
+	PlanID   pgtype.UUID `json:"plan_id"`
+	TrackID  pgtype.UUID `json:"track_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+// ─── Subscription Plan ↔ Track junction (migration 000273) ───────────────
+func (q *Queries) AddTrackToPlan(ctx context.Context, arg AddTrackToPlanParams) error {
+	_, err := q.db.Exec(ctx, addTrackToPlan, arg.PlanID, arg.TrackID, arg.TenantID)
+	return err
+}
+
+const countTracksForPlan = `-- name: CountTracksForPlan :one
+SELECT count(*) FROM subscription_plan_tracks
+WHERE plan_id = $1 AND tenant_id = $2
+`
+
+type CountTracksForPlanParams struct {
+	PlanID   pgtype.UUID `json:"plan_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+func (q *Queries) CountTracksForPlan(ctx context.Context, arg CountTracksForPlanParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countTracksForPlan, arg.PlanID, arg.TenantID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createSubscriptionPlan = `-- name: CreateSubscriptionPlan :one
 INSERT INTO subscription_plans (
     tenant_id, slug, name, description, features,
@@ -151,6 +187,25 @@ func (q *Queries) GetSubscriptionPlanBySlug(ctx context.Context, arg GetSubscrip
 	return i, err
 }
 
+const isTrackInPlan = `-- name: IsTrackInPlan :one
+SELECT 1 FROM subscription_plan_tracks
+WHERE plan_id = $1 AND track_id = $2 AND tenant_id = $3
+LIMIT 1
+`
+
+type IsTrackInPlanParams struct {
+	PlanID   pgtype.UUID `json:"plan_id"`
+	TrackID  pgtype.UUID `json:"track_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+func (q *Queries) IsTrackInPlan(ctx context.Context, arg IsTrackInPlanParams) (int32, error) {
+	row := q.db.QueryRow(ctx, isTrackInPlan, arg.PlanID, arg.TrackID, arg.TenantID)
+	var column_1 int32
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const listActiveSubscriptionPlans = `-- name: ListActiveSubscriptionPlans :many
 SELECT id, tenant_id, slug, name, description, features, monthly_amount, yearly_amount, currency, highlighted, sort_order, status, created_at, updated_at FROM subscription_plans
 WHERE tenant_id = $1 AND status = 'active'
@@ -231,6 +286,68 @@ func (q *Queries) ListSubscriptionPlans(ctx context.Context, tenantID pgtype.UUI
 		return nil, err
 	}
 	return items, nil
+}
+
+const listTrackIDsForPlan = `-- name: ListTrackIDsForPlan :many
+SELECT track_id FROM subscription_plan_tracks
+WHERE plan_id = $1 AND tenant_id = $2
+ORDER BY created_at ASC
+`
+
+type ListTrackIDsForPlanParams struct {
+	PlanID   pgtype.UUID `json:"plan_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+func (q *Queries) ListTrackIDsForPlan(ctx context.Context, arg ListTrackIDsForPlanParams) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, listTrackIDsForPlan, arg.PlanID, arg.TenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []pgtype.UUID
+	for rows.Next() {
+		var track_id pgtype.UUID
+		if err := rows.Scan(&track_id); err != nil {
+			return nil, err
+		}
+		items = append(items, track_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const removeAllTracksFromPlan = `-- name: RemoveAllTracksFromPlan :exec
+DELETE FROM subscription_plan_tracks
+WHERE plan_id = $1 AND tenant_id = $2
+`
+
+type RemoveAllTracksFromPlanParams struct {
+	PlanID   pgtype.UUID `json:"plan_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+func (q *Queries) RemoveAllTracksFromPlan(ctx context.Context, arg RemoveAllTracksFromPlanParams) error {
+	_, err := q.db.Exec(ctx, removeAllTracksFromPlan, arg.PlanID, arg.TenantID)
+	return err
+}
+
+const removeTrackFromPlan = `-- name: RemoveTrackFromPlan :exec
+DELETE FROM subscription_plan_tracks
+WHERE plan_id = $1 AND track_id = $2 AND tenant_id = $3
+`
+
+type RemoveTrackFromPlanParams struct {
+	PlanID   pgtype.UUID `json:"plan_id"`
+	TrackID  pgtype.UUID `json:"track_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+func (q *Queries) RemoveTrackFromPlan(ctx context.Context, arg RemoveTrackFromPlanParams) error {
+	_, err := q.db.Exec(ctx, removeTrackFromPlan, arg.PlanID, arg.TrackID, arg.TenantID)
+	return err
 }
 
 const updateSubscriptionPlan = `-- name: UpdateSubscriptionPlan :one

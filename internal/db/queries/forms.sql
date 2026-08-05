@@ -5,11 +5,13 @@
 -- =====================
 
 -- name: ListFormsByTenant :many
-SELECT id, tenant_id, space_id, name, slug, description, is_multi_step,
-       submit_label, success_message, status, is_system, created_at
-FROM forms
-WHERE tenant_id = @tenant_id
-ORDER BY created_at DESC, id DESC;
+SELECT f.id, f.tenant_id, f.space_id, f.name, f.slug, f.description, f.is_multi_step,
+       f.submit_label, f.success_message, f.status, f.is_system, f.created_at,
+       s.name AS space_name
+FROM forms f
+LEFT JOIN spaces s ON s.id = f.space_id AND s.tenant_id = f.tenant_id
+WHERE f.tenant_id = @tenant_id
+ORDER BY f.created_at DESC, f.id DESC;
 
 -- name: ListFormsBySpace :many
 SELECT f.id, f.tenant_id, f.space_id, f.name, f.slug, f.description,

@@ -34,6 +34,12 @@ type Provider interface {
 	// Models returns the model ids this provider serves, for the admin
 	// model picker (Rule 16: derived from registered providers, not hardcoded).
 	Models() []ModelInfo
+	// FetchModels queries the provider's /v1/models endpoint (or equivalent)
+	// to discover available models at runtime. Used by the AI Providers
+	// management page so the admin can pick from a dropdown instead of
+	// typing model names manually. Returns an empty list if the provider
+	// does not expose a models endpoint (e.g. Devin).
+	FetchModels(ctx context.Context) ([]ModelInfo, error)
 }
 
 // ModelInfo describes a single model exposed by a provider.

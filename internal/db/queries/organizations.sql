@@ -149,8 +149,9 @@ DELETE FROM ownership_claims
 WHERE id = $1 AND tenant_id = $2 AND claimant_user_id = $3 AND status = 'pending';
 
 -- name: GetPendingOwnershipClaims :many
-SELECT oc.id, oc.organization_id, oc.claimant_user_id, oc.evidence_url, oc.notes, oc.created_at,
-       u.username AS claimant_username, o.name AS org_name
+SELECT oc.id, oc.organization_id, oc.claimant_user_id, oc.evidence_url, oc.notes, oc.created_at, oc.status,
+       u.username AS claimant_username, u.email AS claimant_email,
+       o.name AS org_name, o.slug AS org_slug
 FROM ownership_claims oc
 JOIN users u ON u.id = oc.claimant_user_id
 JOIN organizations o ON o.id = oc.organization_id

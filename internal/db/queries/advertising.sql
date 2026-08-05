@@ -222,10 +222,13 @@ WHERE tenant_id = @tenant_id AND organization_id = @organization_id
 ORDER BY created_at DESC;
 
 -- name: ListActiveBoosts :many
-SELECT * FROM organization_boosts
-WHERE tenant_id = @tenant_id AND status = 'active'
-  AND (end_date IS NULL OR end_date >= now())
-ORDER BY start_date DESC;
+SELECT ob.*, s.name AS space_name, o.name AS organization_name
+FROM organization_boosts ob
+LEFT JOIN spaces s ON s.id = ob.space_id
+LEFT JOIN organizations o ON o.id = ob.organization_id
+WHERE ob.tenant_id = @tenant_id AND ob.status = 'active'
+  AND (ob.end_date IS NULL OR ob.end_date >= now())
+ORDER BY ob.start_date DESC;
 
 -- name: EndOrganizationBoost :one
 UPDATE organization_boosts

@@ -118,6 +118,12 @@ func (p *XiaomiProvider) Name() string {
 	return p.name
 }
 
+// SetName overrides the provider name so DB-backed providers can use the
+// admin-supplied display name in logs and dashboards.
+func (p *XiaomiProvider) SetName(name string) {
+	p.name = name
+}
+
 // Send dispatches a chat completion request to the MiMo API.
 // It extracts "prompt" and optional "context" from req.Payload,
 // builds an OpenAI-compatible request, and parses the response.
@@ -226,6 +232,55 @@ func (p *XiaomiProvider) Models() []ModelInfo {
 		{ID: XiaomiModelV25Pro, Label: "MiMo v2.5 Pro (Xiaomi)"},
 		{ID: XiaomiModelOmni, Label: "MiMo Omni (Xiaomi)"},
 	}
+}
+
+// FetchModels queries the Xiaomi MiMo /v1/models endpoint to discover
+// available models at runtime. Xiaomi exposes an OpenAI-compatible models
+// endpoint, so this reuses the same parsing format.
+func (p *XiaomiProvider) FetchModels(ctx context.Context) ([]ModelInfo, error) {
+	if p.apiKey == "" {
+		return nil, errors.New("xiaomi: API key not configured")
+	}
+
+	endpoint := p.baseURL + "/models"
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, fmt.Errorf("xiaomi: creating models request: %w", err)
+	}
+
+	httpReq.Header.Set("api-key", p.apiKey)
+
+	resp, err := p.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("xiaomi: models request failed: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("xiaomi: reading models response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("xiaomi: models API error (status %d): %s", resp.StatusCode, truncate(string(respBody), 500))
+	}
+
+	// Xiaomi uses the OpenAI-compatible models response format.
+	var modelsResp struct {
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(respBody, &modelsResp); err != nil {
+		return nil, fmt.Errorf("xiaomi: parsing models response: %w", err)
+	}
+
+	var models []ModelInfo
+	for _, m := range modelsResp.Data {
+		models = append(models, ModelInfo{ID: m.ID, Label: m.ID})
+	}
+
+	return models, nil
 }
 
 // truncate shortens s to maxLen characters, appending "..." if truncated.

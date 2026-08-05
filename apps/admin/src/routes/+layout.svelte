@@ -83,6 +83,7 @@
 		'/universities': 'admin.settings',
 		'/university/instructors': 'university.instructor.approve',
 		'/university/tracks': 'university.course.approve',
+		'/university/categories': 'university.category.manage',
 		'/university/payouts': 'university.payout.process',
 		'/university/revenue-splits': 'university.revenue.list',
 		'/organisations': 'admin.moderation',

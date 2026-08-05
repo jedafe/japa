@@ -22,35 +22,35 @@
 </script>
 
 <div class="space-y-3">
-  <div>
-    <label class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Provider</label>
+  <label class="block">
+    <span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Provider</span>
     <select value={props.provider} onchange={(e) => update('provider', e.currentTarget.value as VideoProps['provider'])} class={inputClass}>
       <option value="youtube">YouTube</option>
       <option value="facebook">Facebook</option>
       <option value="vimeo">Vimeo</option>
       <option value="file">File</option>
     </select>
-  </div>
+  </label>
 
-  <div>
-    <label class="mb-1 block text-xs font-medium text-[var(--color-muted)]">URL</label>
+  <label class="block">
+    <span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">URL</span>
     <input type="text" value={props.url ?? ''} oninput={(e) => update('url', e.currentTarget.value)} class={inputClass} />
-  </div>
+  </label>
 
-  <div>
-    <label class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Video ID</label>
+  <label class="block">
+    <span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Video ID</span>
     <input type="text" value={props.id ?? ''} oninput={(e) => update('id', e.currentTarget.value)} class={inputClass} />
-  </div>
+  </label>
 
-  <div>
-    <label class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Aspect ratio</label>
+  <label class="block">
+    <span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Aspect ratio</span>
     <select value={props.aspect_ratio} onchange={(e) => update('aspect_ratio', e.currentTarget.value as VideoProps['aspect_ratio'])} class={inputClass}>
       <option value="16:9">16:9</option>
       <option value="4:3">4:3</option>
       <option value="1:1">1:1</option>
       <option value="21:9">21:9</option>
     </select>
-  </div>
+  </label>
 
   <div class="flex flex-wrap gap-4">
     <label class="flex items-center gap-1 text-xs text-[var(--color-muted)]">
@@ -67,18 +67,18 @@
     </label>
   </div>
 
-  <div>
-    <label class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Thumbnail</label>
+  <label class="block">
+    <span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Thumbnail</span>
     <MediaPicker value={props.thumbnail} onchange={(v) => update('thumbnail', v)} {mediaPickerComponent} />
-  </div>
+  </label>
 
-  <div>
-    <label class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Title</label>
+  <label class="block">
+    <span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Title</span>
     <GeoText value={props.title ?? ''} onchange={(v) => update('title', v)} {geoCtx} />
-  </div>
+  </label>
 
-  <div>
-    <label class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Description</label>
+  <label class="block">
+    <span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Description</span>
     <GeoText value={props.description ?? ''} onchange={(v) => update('description', v)} {geoCtx} />
-  </div>
+  </label>
 </div>

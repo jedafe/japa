@@ -125,6 +125,7 @@
 			{ path: "/learning", label: t("nav.learning", "Learning"), icon: GraduationCap, permission: "learning.admin.manage" },
 			{ path: "/university/instructors", label: t("nav.university_instructors", "University Instructors"), icon: GraduationCap, permission: "university.instructor.approve" },
 			{ path: "/university/tracks", label: t("nav.university_tracks", "University Tracks"), icon: BookOpen, permission: "university.course.approve" },
+		{ path: "/university/categories", label: t("nav.university_categories", "Track Categories"), icon: Tag, permission: "university.category.manage" },
 			{ path: "/university/payouts", label: t("nav.university_payouts", "University Payouts"), icon: DollarSign, permission: "university.payout.process" },
 		{ path: "/university/revenue-splits", label: t("nav.university_revenue_splits", "Revenue Splits"), icon: DollarSign, permission: "university.revenue.list" },
 		{ path: "/mentorship", label: t("nav.mentorship", "Mentorship"), icon: Users2, permission: "mentorship.admin" },

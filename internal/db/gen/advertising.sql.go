@@ -802,21 +802,38 @@ func (q *Queries) ListActiveAdSlotTypes(ctx context.Context, tenantID pgtype.UUI
 }
 
 const listActiveBoosts = `-- name: ListActiveBoosts :many
-SELECT id, tenant_id, organization_id, campaign_id, boost_type, status, start_date, end_date, created_at FROM organization_boosts
-WHERE tenant_id = $1 AND status = 'active'
-  AND (end_date IS NULL OR end_date >= now())
-ORDER BY start_date DESC
+SELECT ob.id, ob.tenant_id, ob.organization_id, ob.campaign_id, ob.boost_type, ob.status, ob.start_date, ob.end_date, ob.created_at, s.name AS space_name, o.name AS organization_name
+FROM organization_boosts ob
+LEFT JOIN spaces s ON s.id = ob.space_id
+LEFT JOIN organizations o ON o.id = ob.organization_id
+WHERE ob.tenant_id = $1 AND ob.status = 'active'
+  AND (ob.end_date IS NULL OR ob.end_date >= now())
+ORDER BY ob.start_date DESC
 `
 
-func (q *Queries) ListActiveBoosts(ctx context.Context, tenantID pgtype.UUID) ([]OrganizationBoost, error) {
+type ListActiveBoostsRow struct {
+	ID               pgtype.UUID        `json:"id"`
+	TenantID         pgtype.UUID        `json:"tenant_id"`
+	OrganizationID   pgtype.UUID        `json:"organization_id"`
+	CampaignID       pgtype.UUID        `json:"campaign_id"`
+	BoostType        string             `json:"boost_type"`
+	Status           string             `json:"status"`
+	StartDate        pgtype.Timestamptz `json:"start_date"`
+	EndDate          pgtype.Timestamptz `json:"end_date"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	SpaceName        *string            `json:"space_name"`
+	OrganizationName *string            `json:"organization_name"`
+}
+
+func (q *Queries) ListActiveBoosts(ctx context.Context, tenantID pgtype.UUID) ([]ListActiveBoostsRow, error) {
 	rows, err := q.db.Query(ctx, listActiveBoosts, tenantID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []OrganizationBoost
+	var items []ListActiveBoostsRow
 	for rows.Next() {
-		var i OrganizationBoost
+		var i ListActiveBoostsRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.TenantID,
@@ -827,6 +844,8 @@ func (q *Queries) ListActiveBoosts(ctx context.Context, tenantID pgtype.UUID) ([
 			&i.StartDate,
 			&i.EndDate,
 			&i.CreatedAt,
+			&i.SpaceName,
+			&i.OrganizationName,
 		); err != nil {
 			return nil, err
 		}

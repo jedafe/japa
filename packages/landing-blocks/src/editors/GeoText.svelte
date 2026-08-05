@@ -34,35 +34,65 @@
 
 <div>
   {#if label}
-    <label class="mb-1 block text-xs font-medium text-[var(--color-muted)]">{label}</label>
+    <label class="block">
+      <span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">{label}</span>
+      <div class="flex gap-2">
+        <textarea
+          bind:this={textareaEl}
+          bind:value
+          oninput={() => onchange(value)}
+          rows="2"
+          class="flex-1 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-2 text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none"
+        ></textarea>
+        <DropdownMenu.Root>
+          <DropdownMenu.Trigger class="flex items-center rounded-[var(--radius)] border border-[var(--color-border)] px-2 text-xs text-[var(--color-muted)] hover:bg-[var(--color-surface-subtle)]">
+            + Insert
+          </DropdownMenu.Trigger>
+          <DropdownMenu.Portal>
+            <DropdownMenu.Content class="z-50 min-w-[160px] rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-1 shadow-lg">
+              {#each placeholders as p}
+                <DropdownMenu.Item
+                  class="cursor-pointer rounded px-2 py-1.5 text-sm text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
+                  onSelect={() => insertPlaceholder(p.token)}
+                >
+                  <span class="font-mono text-xs">{p.token}</span>
+                  <span class="ml-2 text-xs text-[var(--color-muted)]">{p.label}</span>
+                </DropdownMenu.Item>
+              {/each}
+            </DropdownMenu.Content>
+          </DropdownMenu.Portal>
+        </DropdownMenu.Root>
+      </div>
+    </label>
+  {:else}
+    <div class="flex gap-2">
+      <textarea
+        bind:this={textareaEl}
+        bind:value
+        oninput={() => onchange(value)}
+        rows="2"
+        class="flex-1 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-2 text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none"
+      ></textarea>
+      <DropdownMenu.Root>
+        <DropdownMenu.Trigger class="flex items-center rounded-[var(--radius)] border border-[var(--color-border)] px-2 text-xs text-[var(--color-muted)] hover:bg-[var(--color-surface-subtle)]">
+          + Insert
+        </DropdownMenu.Trigger>
+        <DropdownMenu.Portal>
+          <DropdownMenu.Content class="z-50 min-w-[160px] rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-1 shadow-lg">
+            {#each placeholders as p}
+              <DropdownMenu.Item
+                class="cursor-pointer rounded px-2 py-1.5 text-sm text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
+                onSelect={() => insertPlaceholder(p.token)}
+              >
+                <span class="font-mono text-xs">{p.token}</span>
+                <span class="ml-2 text-xs text-[var(--color-muted)]">{p.label}</span>
+              </DropdownMenu.Item>
+            {/each}
+          </DropdownMenu.Content>
+        </DropdownMenu.Portal>
+      </DropdownMenu.Root>
+    </div>
   {/if}
-  <div class="flex gap-2">
-    <textarea
-      bind:this={textareaEl}
-      bind:value
-      oninput={() => onchange(value)}
-      rows="2"
-      class="flex-1 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-2 text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none"
-    ></textarea>
-    <DropdownMenu.Root>
-      <DropdownMenu.Trigger class="flex items-center rounded-[var(--radius)] border border-[var(--color-border)] px-2 text-xs text-[var(--color-muted)] hover:bg-[var(--color-surface-subtle)]">
-        + Insert
-      </DropdownMenu.Trigger>
-      <DropdownMenu.Portal>
-        <DropdownMenu.Content class="z-50 min-w-[160px] rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-1 shadow-lg">
-          {#each placeholders as p}
-            <DropdownMenu.Item
-              class="cursor-pointer rounded px-2 py-1.5 text-sm text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
-              onSelect={() => insertPlaceholder(p.token)}
-            >
-              <span class="font-mono text-xs">{p.token}</span>
-              <span class="ml-2 text-xs text-[var(--color-muted)]">{p.label}</span>
-            </DropdownMenu.Item>
-          {/each}
-        </DropdownMenu.Content>
-      </DropdownMenu.Portal>
-    </DropdownMenu.Root>
-  </div>
   {#if geoCtx}
     <p class="mt-1 text-xs text-[var(--color-muted)]">Preview: {preview}</p>
   {/if}

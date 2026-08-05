@@ -136,7 +136,7 @@ WHERE tenant_id = @tenant_id AND id = @id AND status = 'approved';
 -- name: ListUniversityCatalog :many
 SELECT lt.id, lt.tenant_id, lt.title, lt.slug, lt.description,
        lt.difficulty, lt.cover_media_id, lt.instructor_id, lt.price_kobo,
-       lt.currency, lt.category, lt.language, lt.geo_space_id, lt.total_enrolled,
+       lt.currency, lt.category, lt.language, lt.geo_space_id, lt.total_enrolled, lt.subscription_eligible,
        lt.created_at, lt.updated_at,
        ip.display_name AS instructor_name,
        COALESCE(ra.average_rating, 0)  AS avg_rating,
@@ -165,7 +165,7 @@ WHERE tenant_id = @tenant_id
 -- name: GetUniversityTrackBySlug :one
 SELECT lt.id, lt.tenant_id, lt.title, lt.slug, lt.description,
        lt.difficulty, lt.cover_media_id, lt.instructor_id, lt.price_kobo,
-       lt.currency, lt.category, lt.language, lt.geo_space_id, lt.total_enrolled,
+       lt.currency, lt.category, lt.language, lt.geo_space_id, lt.total_enrolled, lt.subscription_eligible,
        lt.is_published, lt.is_published_to_university,
        lt.created_at, lt.updated_at,
        ip.display_name  AS instructor_name,
@@ -185,16 +185,18 @@ WHERE lt.tenant_id = @tenant_id AND lt.slug = @slug
 INSERT INTO learning_tracks (
     tenant_id, title, slug, description, difficulty, cover_media_id,
     is_published, sort_order, instructor_id, price_kobo, currency,
-    is_published_to_university, category, language, geo_space_id
+    is_published_to_university, category, language, geo_space_id, subscription_eligible
 )
 VALUES (
     @tenant_id, @title, @slug, sqlc.narg(description), @difficulty, sqlc.narg(cover_media_id),
     false, 0, sqlc.narg(instructor_id), sqlc.narg(price_kobo), COALESCE(sqlc.narg(currency), 'NGN'),
-    false, sqlc.narg(category), COALESCE(sqlc.narg(language), 'en'), sqlc.narg(geo_space_id)
+    false, sqlc.narg(category), COALESCE(sqlc.narg(language), 'en'), sqlc.narg(geo_space_id),
+    COALESCE(sqlc.narg(subscription_eligible), false)
 )
 RETURNING id, tenant_id, title, slug, description, difficulty, cover_media_id,
           is_published, sort_order, instructor_id, price_kobo, currency,
           is_published_to_university, category, language, geo_space_id, total_enrolled,
+          subscription_eligible,
           university_submission_status, university_submitted_at,
           university_reviewed_at, university_rejection_reason,
           created_at, updated_at;
@@ -212,11 +214,13 @@ SET title       = COALESCE(@title, title),
     category    = COALESCE(sqlc.narg(category), category),
     language    = COALESCE(sqlc.narg(language), language),
     geo_space_id = COALESCE(sqlc.narg(geo_space_id), geo_space_id),
+    subscription_eligible = COALESCE(sqlc.narg(subscription_eligible), subscription_eligible),
     updated_at  = now()
 WHERE tenant_id = @tenant_id AND id = @id AND instructor_id = @instructor_id
 RETURNING id, tenant_id, title, slug, description, difficulty, cover_media_id,
           is_published, sort_order, instructor_id, price_kobo, currency,
           is_published_to_university, category, language, geo_space_id, total_enrolled,
+          subscription_eligible,
           university_submission_status, university_submitted_at,
           university_reviewed_at, university_rejection_reason,
           created_at, updated_at;
@@ -247,6 +251,7 @@ SELECT lt.id, lt.tenant_id, lt.title, lt.slug, lt.description, lt.difficulty,
        lt.cover_media_id, lt.is_published, lt.sort_order, lt.instructor_id,
        lt.price_kobo, lt.currency, lt.is_published_to_university, lt.category,
        lt.language, lt.geo_space_id, lt.total_enrolled,
+       lt.subscription_eligible,
        lt.university_submission_status, lt.university_submitted_at,
        lt.university_reviewed_at, lt.university_rejection_reason,
        lt.created_at, lt.updated_at,
@@ -270,7 +275,7 @@ ORDER BY lt.created_at DESC;
 -- gate is the only thing pending).
 SELECT lt.id, lt.tenant_id, lt.title, lt.slug, lt.description,
        lt.difficulty, lt.cover_media_id, lt.instructor_id, lt.price_kobo,
-       lt.currency, lt.category, lt.language, lt.geo_space_id, lt.total_enrolled,
+       lt.currency, lt.category, lt.language, lt.geo_space_id, lt.total_enrolled, lt.subscription_eligible,
        lt.is_published, lt.is_published_to_university,
        lt.university_submission_status, lt.university_submitted_at,
        lt.university_reviewed_at, lt.university_rejection_reason,
@@ -310,6 +315,7 @@ RETURNING id, tenant_id, title, slug, description, difficulty, cover_media_id,
 SELECT id, tenant_id, title, slug, description, difficulty, cover_media_id,
        is_published, sort_order, instructor_id, price_kobo, currency,
        is_published_to_university, category, language, geo_space_id, total_enrolled,
+       subscription_eligible,
        university_submission_status, university_submitted_at,
        university_reviewed_at, university_rejection_reason,
        created_at, updated_at
@@ -420,7 +426,9 @@ WHERE tenant_id = @tenant_id AND id = @id;
 -- filters. All filters are optional (empty string / NULL = no filter). The
 -- date range is half-open [from, to). Ordered by created_at DESC so the most
 -- recent revenue events appear first.
-SELECT * FROM revenue_splits rs
+SELECT rs.*, ip.display_name AS instructor_name
+FROM revenue_splits rs
+LEFT JOIN instructor_profiles ip ON ip.id = rs.instructor_id
 WHERE rs.tenant_id = @tenant_id
   AND (@instructor_id::uuid IS NULL OR rs.instructor_id = @instructor_id)
   AND (@track_id::uuid IS NULL OR rs.track_id = @track_id)
@@ -482,7 +490,9 @@ LIMIT @page_limit OFFSET @page_offset;
 -- name: ListInstructorPayoutsByStatus :many
 -- Optional @space_id (ADR-063 admin per-university view): when set, restricts
 -- to payouts for instructors who have a track targeted at that space.
-SELECT * FROM instructor_payouts p
+SELECT p.*, ip.display_name AS instructor_name
+FROM instructor_payouts p
+LEFT JOIN instructor_profiles ip ON ip.id = p.instructor_id
 WHERE p.tenant_id = @tenant_id
   AND (@status::text = '' OR p.status = @status)
   AND (@space_id::uuid IS NULL OR EXISTS (
@@ -586,7 +596,7 @@ SELECT EXISTS (
 -- instructor name and submission status.
 SELECT lt.id, lt.tenant_id, lt.title, lt.slug, lt.description,
        lt.difficulty, lt.cover_media_id, lt.instructor_id, lt.price_kobo,
-       lt.currency, lt.category, lt.language, lt.geo_space_id, lt.total_enrolled,
+       lt.currency, lt.category, lt.language, lt.geo_space_id, lt.total_enrolled, lt.subscription_eligible,
        lt.is_published, lt.is_published_to_university,
        lt.university_submission_status, lt.university_submitted_at,
        lt.university_reviewed_at, lt.university_rejection_reason,
@@ -660,6 +670,7 @@ SELECT lt.id, lt.tenant_id, lt.title, lt.slug, lt.description, lt.difficulty,
        lt.cover_media_id, lt.is_published, lt.sort_order, lt.instructor_id,
        lt.price_kobo, lt.currency, lt.is_published_to_university, lt.category,
        lt.language, lt.geo_space_id, lt.total_enrolled,
+       lt.subscription_eligible,
        lt.university_submission_status, lt.university_submitted_at,
        lt.university_reviewed_at, lt.university_rejection_reason,
        lt.created_at, lt.updated_at,
@@ -700,3 +711,57 @@ UPDATE user_profiles
 SET content_country_preference = sqlc.narg(content_country_preference),
     updated_at = now()
 WHERE tenant_id = @tenant_id AND user_id = @user_id;
+
+-- =====================================================================
+-- University track categories (ADR-063 §9.1)
+-- Ref: japaconnect-engineering/sections/36-learning-platform.md (Track categories)
+-- =====================================================================
+
+-- name: CreateUniversityTrackCategory :one
+INSERT INTO university_track_categories (tenant_id, slug, name, sort_order, is_active)
+VALUES (@tenant_id, @slug, @name, @sort_order, @is_active)
+RETURNING *;
+
+-- name: GetUniversityTrackCategory :one
+SELECT * FROM university_track_categories
+WHERE tenant_id = @tenant_id AND id = @id;
+
+-- name: ListUniversityTrackCategories :many
+SELECT * FROM university_track_categories
+WHERE tenant_id = @tenant_id
+  AND (@active::text = '' OR is_active = (@active::text = 'true'))
+  AND (@search::text = '' OR name ILIKE '%' || @search || '%' OR slug ILIKE '%' || @search || '%')
+ORDER BY sort_order ASC, name ASC
+LIMIT @page_limit OFFSET @page_offset;
+
+-- name: CountUniversityTrackCategories :one
+SELECT count(*) FROM university_track_categories
+WHERE tenant_id = @tenant_id
+  AND (@active::text = '' OR is_active = (@active::text = 'true'))
+  AND (@search::text = '' OR name ILIKE '%' || @search || '%' OR slug ILIKE '%' || @search || '%');
+
+-- name: ListActiveUniversityTrackCategories :many
+-- Public catalog endpoint — no auth required, returns only active rows.
+SELECT id, slug, name, sort_order
+FROM university_track_categories
+WHERE tenant_id = @tenant_id AND is_active = true
+ORDER BY sort_order ASC, name ASC;
+
+-- name: UpdateUniversityTrackCategory :one
+UPDATE university_track_categories
+SET name       = COALESCE(sqlc.narg(name), name),
+    slug       = COALESCE(sqlc.narg(slug), slug),
+    sort_order = COALESCE(sqlc.narg(sort_order), sort_order),
+    is_active  = COALESCE(sqlc.narg(is_active), is_active),
+    updated_at = now()
+WHERE tenant_id = @tenant_id AND id = @id
+RETURNING *;
+
+-- name: DeleteUniversityTrackCategory :exec
+DELETE FROM university_track_categories
+WHERE tenant_id = @tenant_id AND id = @id;
+
+-- name: CountTracksByCategory :one
+-- Used by the delete handler to block removal when tracks still reference the slug.
+SELECT count(*) FROM learning_tracks
+WHERE tenant_id = @tenant_id AND category = @category;

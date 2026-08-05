@@ -21,13 +21,13 @@
 </script>
 
 <div class="space-y-3">
-  <div>
-    <label class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Icon</label>
+  <label class="block">
+    <span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Icon</span>
     <IconPicker value={props.icon} onchange={(v) => update('icon', v ?? '')} />
-  </div>
+  </label>
 
-  <div>
-    <label class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Size</label>
+  <label class="block">
+    <span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Size</span>
     <select value={props.size} onchange={(e) => update('size', e.currentTarget.value as IconProps['size'])} class={inputClass}>
       <option value="xs">xs</option>
       <option value="sm">sm</option>
@@ -36,36 +36,36 @@
       <option value="xl">xl</option>
       <option value="2xl">2xl</option>
     </select>
-  </div>
+  </label>
 
   <div class="grid grid-cols-2 gap-2">
-    <div>
-      <label class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Color</label>
+    <label class="block">
+      <span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Color</span>
       <input type="color" value={props.color ?? '#000000'} oninput={(e) => update('color', e.currentTarget.value)} class="h-8 w-full rounded border border-[var(--color-border)]" />
-    </div>
-    <div>
-      <label class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Background</label>
+    </label>
+    <label class="block">
+      <span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Background</span>
       <input type="color" value={props.background_color ?? '#ffffff'} oninput={(e) => update('background_color', e.currentTarget.value)} class="h-8 w-full rounded border border-[var(--color-border)]" />
-    </div>
+    </label>
   </div>
 
-  <div>
-    <label class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Shape</label>
+  <label class="block">
+    <span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Shape</span>
     <select value={props.shape} onchange={(e) => update('shape', e.currentTarget.value as IconProps['shape'])} class={inputClass}>
       <option value="none">None</option>
       <option value="circle">Circle</option>
       <option value="square">Square</option>
       <option value="rounded">Rounded</option>
     </select>
-  </div>
+  </label>
 
-  <div>
-    <label class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Label</label>
+  <label class="block">
+    <span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Label</span>
     <input type="text" value={props.label ?? ''} oninput={(e) => update('label', e.currentTarget.value)} class={inputClass} />
-  </div>
+  </label>
 
-  <div>
-    <label class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Href</label>
+  <label class="block">
+    <span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Href</span>
     <input type="text" value={props.href ?? ''} oninput={(e) => update('href', e.currentTarget.value)} class={inputClass} />
-  </div>
+  </label>
 </div>

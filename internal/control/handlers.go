@@ -55,6 +55,8 @@ type Handlers struct {
 	WSHub            *websocket.Hub
 	Honcho           HonchoHealthChecker
 	AIStore          *ai.Store
+	ProviderStore    *ai.ProviderStore
+	AIDispatcher     *ai.Dispatcher
 	StartTime        time.Time
 }
 
@@ -115,6 +117,20 @@ func (h *Handlers) SetHoncho(hc HonchoHealthChecker) {
 // (GET/PATCH /control/ai-budget). When nil, spend defaults to 0.
 func (h *Handlers) SetAIStore(s *ai.Store) {
 	h.AIStore = s
+}
+
+// SetProviderStore injects the AI provider config store for the AI Providers
+// management page (CRUD /control/ai-providers). When nil, the list endpoint
+// returns an empty array.
+func (h *Handlers) SetProviderStore(s *ai.ProviderStore) {
+	h.ProviderStore = s
+}
+
+// SetAIDispatcher injects the AI dispatcher so provider config changes can
+// hot-reload the dispatcher at runtime (create/update/delete operations
+// call reloadAIProviders which re-reads configs from the DB).
+func (h *Handlers) SetAIDispatcher(d *ai.Dispatcher) {
+	h.AIDispatcher = d
 }
 
 // ---------------------------------------------------------------------------
@@ -1759,18 +1775,18 @@ func (h *Handlers) GetAIBudget(w http.ResponseWriter, r *http.Request) {
 			monthToDateCost = summary.TotalCostUSD
 			for _, b := range summary.ByProvider {
 				byProvider = append(byProvider, map[string]any{
-					"provider":       b.Provider,
-					"tokens_used":    b.TokensUsed,
-					"total_cost_usd": b.TotalCostUSD,
-					"calls":          b.Calls,
+					"provider":    b.Provider,
+					"tokens_used": b.TokensUsed,
+					"cost_usd":    b.TotalCostUSD,
+					"calls":       b.Calls,
 				})
 			}
 			for _, b := range summary.ByTaskType {
 				byTaskType = append(byTaskType, map[string]any{
-					"task_type":      b.TaskType,
-					"tokens_used":    b.TokensUsed,
-					"total_cost_usd": b.TotalCostUSD,
-					"calls":          b.Calls,
+					"task_type":   b.TaskType,
+					"tokens_used": b.TokensUsed,
+					"cost_usd":    b.TotalCostUSD,
+					"call_count":  b.Calls,
 				})
 			}
 		}
@@ -1836,18 +1852,18 @@ func (h *Handlers) UpdateAIBudget(w http.ResponseWriter, r *http.Request) {
 			monthToDateCost = summary.TotalCostUSD
 			for _, b := range summary.ByProvider {
 				byProvider = append(byProvider, map[string]any{
-					"provider":       b.Provider,
-					"tokens_used":    b.TokensUsed,
-					"total_cost_usd": b.TotalCostUSD,
-					"calls":          b.Calls,
+					"provider":    b.Provider,
+					"tokens_used": b.TokensUsed,
+					"cost_usd":    b.TotalCostUSD,
+					"calls":       b.Calls,
 				})
 			}
 			for _, b := range summary.ByTaskType {
 				byTaskType = append(byTaskType, map[string]any{
-					"task_type":      b.TaskType,
-					"tokens_used":    b.TokensUsed,
-					"total_cost_usd": b.TotalCostUSD,
-					"calls":          b.Calls,
+					"task_type":   b.TaskType,
+					"tokens_used": b.TokensUsed,
+					"cost_usd":    b.TotalCostUSD,
+					"call_count":  b.Calls,
 				})
 			}
 		}

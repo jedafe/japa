@@ -8,6 +8,7 @@
 	import { Button } from "$lib/components/ui/button";
 	import { Modal } from "$lib/components/ui/modal";
 	import { Plus, GraduationCap, Layers, FileText, Trash2, Send, Pencil, Users } from "lucide-svelte";
+	import { onMount } from "svelte";
 	import { api } from "$lib/api";
 	import { hasPermission } from "$lib/stores/permissions.svelte";
 
@@ -21,9 +22,12 @@
 		difficulty: string;
 		is_published: boolean;
 		sort_order: number;
+		category?: string;
 		created_at: string;
 		updated_at: string;
 	};
+
+	type Category = { id: string; slug: string; name: string; sort_order: number };
 
 	type Module = {
 		id: string;
@@ -75,7 +79,7 @@
 	// Create modal
 	let showCreateModal = $state(false);
 	let creating = $state(false);
-	let newTrack = $state({ title: "", slug: "", description: "", difficulty: "" });
+	let newTrack = $state({ title: "", slug: "", description: "", difficulty: "", category: "", subscription_eligible: false });
 	let newModule = $state({ track_id: "", title: "", slug: "", description: "" });
 	let newLesson = $state({
 		selectedTrackId: "",
@@ -112,6 +116,9 @@
 
 	// Modules for lesson create dropdown
 	let modulesForLesson = $state<Module[]>([]);
+
+	// Categories from the public API (Rule 16 — no hardcoded option lists)
+	let categories = $state<Category[]>([]);
 
 	const canManageLearning = $derived(hasPermission("learning.admin.manage"));
 
@@ -159,6 +166,23 @@
 			label: t('app.learning.col_difficulty', 'Difficulty'),
 			sortable: true,
 			render: (value: string) => `<span class="text-sm text-foreground-alt">${value || "—"}</span>`
+		},
+		{
+			key: "category",
+			label: t('app.learning.col_category', 'Category'),
+			sortable: true,
+			render: (value: string) => `<span class="text-sm text-foreground-alt">${value || "—"}</span>`
+		},
+		{
+			key: "subscription_eligible",
+			label: t('app.learning.col_sub_eligible', 'Sub.'),
+			sortable: true,
+			render: (value: boolean) => {
+				if (value) {
+					return `<span class="inline-flex items-center rounded-full border bg-primary/15 text-primary border-primary px-2 py-0.5 text-xs font-semibold">Sub</span>`;
+				}
+				return `<span class="text-sm text-muted">—</span>`;
+			}
 		},
 		{
 			key: "is_published",
@@ -321,6 +345,13 @@
 		}
 	}
 
+	async function fetchCategories() {
+		const result = await api<Category[]>("/learn/university/categories");
+		if (result.ok) {
+			categories = result.data ?? [];
+		}
+	}
+
 	function handleFilter(values: Record<string, string>) {
 		filters = values;
 	}
@@ -343,12 +374,14 @@
 					title: newTrack.title.trim(),
 					slug,
 					description: newTrack.description.trim(),
-					difficulty: newTrack.difficulty
+					difficulty: newTrack.difficulty,
+					category: newTrack.category || undefined,
+					subscription_eligible: newTrack.subscription_eligible
 				}
 			});
 			if (result.ok) {
 				showCreateModal = false;
-				newTrack = { title: "", slug: "", description: "", difficulty: "" };
+				newTrack = { title: "", slug: "", description: "", difficulty: "", category: "", subscription_eligible: false };
 				await refresh();
 			} else {
 				error = result.error || t('app.learning.error_create_track', 'Failed to create track');
@@ -468,7 +501,9 @@
 				description: item.description || "",
 				difficulty: item.difficulty || "",
 				is_published: item.is_published,
-				sort_order: item.sort_order ?? 0
+				sort_order: item.sort_order ?? 0,
+				category: item.category || "",
+				subscription_eligible: item.subscription_eligible ?? false
 			};
 		} else if (type === "module") {
 			editForm = {
@@ -497,9 +532,10 @@
 			const { _type, id } = editingItem;
 			let result;
 			if (_type === "track") {
+				const { category, ...rest } = editForm;
 				result = await api(`/admin/learn/tracks/${id}`, {
 					method: "PATCH",
-					body: editForm
+					body: { ...rest, category: category || undefined }
 				});
 			} else if (_type === "module") {
 				result = await api(`/admin/learn/modules/${id}`, {
@@ -606,6 +642,10 @@
 	}
 
 	// ── Effects ────────────────────────────────────────────────────────────
+
+	onMount(() => {
+		fetchCategories();
+	});
 
 	$effect(() => {
 		refresh();
@@ -751,6 +791,24 @@
 						<option value={opt.value}>{opt.label}</option>
 					{/each}
 				</select>
+			</div>
+			<div>
+				<label for="track-category" class="mb-1 block text-sm font-medium text-foreground">{t('app.learning.col_category', 'Category')}</label>
+				<select
+					id="track-category"
+					class="h-10 w-full rounded-lg border border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
+					bind:value={newTrack.category}
+				>
+					<option value="">—</option>
+					{#each categories as cat (cat.id)}
+						<option value={cat.slug}>{cat.name}</option>
+					{/each}
+				</select>
+			</div>
+			<div class="flex items-center gap-2 pt-2">
+				<input id="track-subscription-eligible" type="checkbox" bind:checked={newTrack.subscription_eligible} class="h-4 w-4 rounded" />
+				<label for="track-subscription-eligible" class="text-sm text-foreground">{t('app.learning.subscription_eligible', 'Subscription eligible')}</label>
+				<span class="text-xs text-muted">{t('app.learning.subscription_eligible_hint', '(included in subscription packages)')}</span>
 			</div>
 		</div>
 	{:else if activeTab === "modules"}
@@ -958,6 +1016,24 @@
 							<option value={opt.value}>{opt.label}</option>
 						{/each}
 					</select>
+				</div>
+				<div>
+					<label for="edit-track-category" class="mb-1 block text-sm font-medium text-foreground">{t('app.learning.col_category', 'Category')}</label>
+					<select
+						id="edit-track-category"
+						class="h-10 w-full rounded-lg border border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
+						bind:value={editForm.category}
+					>
+						<option value="">—</option>
+						{#each categories as cat (cat.id)}
+							<option value={cat.slug}>{cat.name}</option>
+						{/each}
+					</select>
+				</div>
+				<div class="flex items-center gap-2">
+					<input id="edit-track-subscription-eligible" type="checkbox" bind:checked={editForm.subscription_eligible} class="h-4 w-4 rounded" />
+					<label for="edit-track-subscription-eligible" class="text-sm text-foreground">{t('app.learning.subscription_eligible', 'Subscription eligible')}</label>
+					<span class="text-xs text-muted">{t('app.learning.subscription_eligible_hint', '(included in subscription packages)')}</span>
 				</div>
 				<div class="grid grid-cols-2 gap-4">
 					<div>

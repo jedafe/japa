@@ -61,49 +61,64 @@ FROM contents c
 WHERE c.slug = @slug AND c.tenant_id = @tenant_id AND c.deleted_at IS NULL;
 
 -- name: ListContentsByTenant :many
-SELECT id, tenant_id, author_id, space_id, content_type, title, slug, body, body_html,
-       field_values, content_hash, geo_space_id, header_image_id, featured_image_id,
-       canonical_url, meta_title, meta_description, og_image_url, seo_indexable,
-       status, visibility, is_locked, is_pinned, read_time_minutes,
-       view_count, comment_count, share_count, reshare_count, publish_at, published_at,
-       created_at, updated_at, guide_category
-FROM contents
-WHERE tenant_id = @tenant_id
-  AND deleted_at IS NULL
-  AND auto_hidden = false
-  AND (@q::text IS NULL OR title ILIKE '%' || @q || '%' OR slug ILIKE '%' || @q || '%' OR body ILIKE '%' || @q || '%')
-  AND (created_at < @cursor_created_at OR (@cursor_created_at IS NULL))
-ORDER BY created_at DESC, id DESC
+SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c.body_html,
+       c.field_values, c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,
+       c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
+       c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
+       c.view_count, c.comment_count, c.share_count, c.reshare_count, c.publish_at, c.published_at,
+       c.created_at, c.updated_at, c.guide_category,
+       u.username AS author_username, up.display_name AS author_display_name,
+       s.name AS space_name
+FROM contents c
+LEFT JOIN users u ON u.id = c.author_id AND u.tenant_id = c.tenant_id
+LEFT JOIN user_profiles up ON up.user_id = c.author_id AND up.tenant_id = c.tenant_id
+LEFT JOIN spaces s ON s.id = c.space_id AND s.tenant_id = c.tenant_id
+WHERE c.tenant_id = @tenant_id
+  AND c.deleted_at IS NULL
+  AND c.auto_hidden = false
+  AND (@q::text IS NULL OR c.title ILIKE '%' || @q || '%' OR c.slug ILIKE '%' || @q || '%' OR c.body ILIKE '%' || @q || '%')
+  AND (c.created_at < @cursor_created_at OR (@cursor_created_at IS NULL))
+ORDER BY c.created_at DESC, c.id DESC
 LIMIT @page_limit;
 
 -- name: ListContentsByType :many
-SELECT id, tenant_id, author_id, space_id, content_type, title, slug, body, body_html,
-       field_values, content_hash, geo_space_id, header_image_id, featured_image_id,
-       canonical_url, meta_title, meta_description, og_image_url, seo_indexable,
-       status, visibility, is_locked, is_pinned, read_time_minutes,
-       view_count, comment_count, share_count, reshare_count, publish_at, published_at,
-       created_at, updated_at, guide_category
-FROM contents
-WHERE tenant_id = @tenant_id AND content_type = @content_type
-  AND deleted_at IS NULL
-  AND auto_hidden = false
-  AND (created_at < @cursor_created_at OR (@cursor_created_at IS NULL))
-ORDER BY created_at DESC, id DESC
+SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c.body_html,
+       c.field_values, c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,
+       c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
+       c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
+       c.view_count, c.comment_count, c.share_count, c.reshare_count, c.publish_at, c.published_at,
+       c.created_at, c.updated_at, c.guide_category,
+       u.username AS author_username, up.display_name AS author_display_name,
+       s.name AS space_name
+FROM contents c
+LEFT JOIN users u ON u.id = c.author_id AND u.tenant_id = c.tenant_id
+LEFT JOIN user_profiles up ON up.user_id = c.author_id AND up.tenant_id = c.tenant_id
+LEFT JOIN spaces s ON s.id = c.space_id AND s.tenant_id = c.tenant_id
+WHERE c.tenant_id = @tenant_id AND c.content_type = @content_type
+  AND c.deleted_at IS NULL
+  AND c.auto_hidden = false
+  AND (c.created_at < @cursor_created_at OR (@cursor_created_at IS NULL))
+ORDER BY c.created_at DESC, c.id DESC
 LIMIT @page_limit;
 
 -- name: ListContentsBySpace :many
-SELECT id, tenant_id, author_id, space_id, content_type, title, slug, body, body_html,
-       field_values, content_hash, geo_space_id, header_image_id, featured_image_id,
-       canonical_url, meta_title, meta_description, og_image_url, seo_indexable,
-       status, visibility, is_locked, is_pinned, read_time_minutes,
-       view_count, comment_count, share_count, reshare_count, publish_at, published_at,
-       created_at, updated_at, guide_category
-FROM contents
-WHERE tenant_id = @tenant_id AND space_id = @space_id
-  AND deleted_at IS NULL
-  AND auto_hidden = false
-  AND (created_at < @cursor_created_at OR (@cursor_created_at IS NULL))
-ORDER BY created_at DESC, id DESC
+SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c.body_html,
+       c.field_values, c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,
+       c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
+       c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
+       c.view_count, c.comment_count, c.share_count, c.reshare_count, c.publish_at, c.published_at,
+       c.created_at, c.updated_at, c.guide_category,
+       u.username AS author_username, up.display_name AS author_display_name,
+       s.name AS space_name
+FROM contents c
+LEFT JOIN users u ON u.id = c.author_id AND u.tenant_id = c.tenant_id
+LEFT JOIN user_profiles up ON up.user_id = c.author_id AND up.tenant_id = c.tenant_id
+LEFT JOIN spaces s ON s.id = c.space_id AND s.tenant_id = c.tenant_id
+WHERE c.tenant_id = @tenant_id AND c.space_id = @space_id
+  AND c.deleted_at IS NULL
+  AND c.auto_hidden = false
+  AND (c.created_at < @cursor_created_at OR (@cursor_created_at IS NULL))
+ORDER BY c.created_at DESC, c.id DESC
 LIMIT @page_limit;
 
 -- name: SearchContentsBySpace :many

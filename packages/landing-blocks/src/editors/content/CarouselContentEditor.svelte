@@ -62,8 +62,8 @@
     <label for="car-arrows" class="text-xs font-medium text-[var(--color-muted)]">Arrows</label>
   </div>
 
-  <div>
-    <label class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Transition</label>
+  <label class="block">
+    <span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Transition</span>
     <select
       value={props.transition}
       onchange={(e) => update('transition', e.currentTarget.value as CarouselProps['transition'])}
@@ -72,10 +72,10 @@
       <option value="slide">Slide</option>
       <option value="fade">Fade</option>
     </select>
-  </div>
+  </label>
 
-  <div>
-    <label class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Interval (ms)</label>
+  <label class="block">
+    <span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Interval (ms)</span>
     <input
       type="number"
       min="0"
@@ -84,7 +84,7 @@
       oninput={(e) => update('interval', Number(e.currentTarget.value))}
       class={inputClass}
     />
-  </div>
+  </label>
 
   <div class="flex items-center gap-2">
     <input
@@ -97,8 +97,8 @@
     <label for="car-pause" class="text-xs font-medium text-[var(--color-muted)]">Pause on hover</label>
   </div>
 
-  <div>
-    <label class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Slides</label>
+  <label class="block">
+    <span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Slides</span>
     <NestedBlocksEditor
       blocks={props.slides ?? []}
       onchange={(v) => update('slides', v)}
@@ -106,5 +106,5 @@
       {mediaPickerComponent}
       {geoCtx}
     />
-  </div>
+  </label>
 </div>

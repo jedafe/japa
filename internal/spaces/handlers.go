@@ -2605,7 +2605,7 @@ func (h *Handlers) AdminListJoinRequests(w http.ResponseWriter, r *http.Request)
 	requests := make([]map[string]any, 0, len(rows))
 	for _, row := range rows {
 		compositeID := row.SpaceID.String() + "::" + row.UserID.String()
-		requests = append(requests, map[string]any{
+		entry := map[string]any{
 			"id":           compositeID,
 			"space_id":     row.SpaceID,
 			"user_id":      row.UserID,
@@ -2614,7 +2614,11 @@ func (h *Handlers) AdminListJoinRequests(w http.ResponseWriter, r *http.Request)
 			"avatar_url":   row.AvatarUrl,
 			"joined_at":    row.JoinedAt,
 			"status":       row.Status,
-		})
+		}
+		if row.SpaceName != nil {
+			entry["space_name"] = *row.SpaceName
+		}
+		requests = append(requests, entry)
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": requests})

@@ -627,8 +627,9 @@ func (q *Queries) GetPendingOwnershipClaim(ctx context.Context, arg GetPendingOw
 }
 
 const getPendingOwnershipClaims = `-- name: GetPendingOwnershipClaims :many
-SELECT oc.id, oc.organization_id, oc.claimant_user_id, oc.evidence_url, oc.notes, oc.created_at,
-       u.username AS claimant_username, o.name AS org_name
+SELECT oc.id, oc.organization_id, oc.claimant_user_id, oc.evidence_url, oc.notes, oc.created_at, oc.status,
+       u.username AS claimant_username, u.email AS claimant_email,
+       o.name AS org_name, o.slug AS org_slug
 FROM ownership_claims oc
 JOIN users u ON u.id = oc.claimant_user_id
 JOIN organizations o ON o.id = oc.organization_id
@@ -643,8 +644,11 @@ type GetPendingOwnershipClaimsRow struct {
 	EvidenceUrl      *string            `json:"evidence_url"`
 	Notes            *string            `json:"notes"`
 	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	Status           string             `json:"status"`
 	ClaimantUsername string             `json:"claimant_username"`
+	ClaimantEmail    string             `json:"claimant_email"`
 	OrgName          string             `json:"org_name"`
+	OrgSlug          string             `json:"org_slug"`
 }
 
 func (q *Queries) GetPendingOwnershipClaims(ctx context.Context, tenantID pgtype.UUID) ([]GetPendingOwnershipClaimsRow, error) {
@@ -663,8 +667,11 @@ func (q *Queries) GetPendingOwnershipClaims(ctx context.Context, tenantID pgtype
 			&i.EvidenceUrl,
 			&i.Notes,
 			&i.CreatedAt,
+			&i.Status,
 			&i.ClaimantUsername,
+			&i.ClaimantEmail,
 			&i.OrgName,
+			&i.OrgSlug,
 		); err != nil {
 			return nil, err
 		}

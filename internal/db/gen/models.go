@@ -273,6 +273,21 @@ type AiPersona struct {
 	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
 }
 
+type AiProvider struct {
+	ID              pgtype.UUID        `json:"id"`
+	TenantID        pgtype.UUID        `json:"tenant_id"`
+	Name            string             `json:"name"`
+	ProviderType    string             `json:"provider_type"`
+	ApiKeyEncrypted string             `json:"api_key_encrypted"`
+	BaseUrl         string             `json:"base_url"`
+	Model           string             `json:"model"`
+	Categories      []byte             `json:"categories"`
+	Priority        int32              `json:"priority"`
+	Enabled         bool               `json:"enabled"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+}
+
 type AiTool struct {
 	ID                 pgtype.UUID        `json:"id"`
 	TenantID           pgtype.UUID        `json:"tenant_id"`
@@ -1424,6 +1439,7 @@ type LearningTrack struct {
 	// Admin rejection reason; cleared on re-submit (ADR-063 §5).
 	UniversityRejectionReason *string `json:"university_rejection_reason"`
 	UniversityFeatured        bool    `json:"university_featured"`
+	SubscriptionEligible      bool    `json:"subscription_eligible"`
 }
 
 type LessonProgress struct {
@@ -2577,6 +2593,13 @@ type SubscriptionPlan struct {
 	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
 }
 
+type SubscriptionPlanTrack struct {
+	PlanID    pgtype.UUID        `json:"plan_id"`
+	TrackID   pgtype.UUID        `json:"track_id"`
+	TenantID  pgtype.UUID        `json:"tenant_id"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
 type SystemSetting struct {
 	ID        pgtype.UUID        `json:"id"`
 	TenantID  pgtype.UUID        `json:"tenant_id"`
@@ -2736,6 +2759,17 @@ type TrendingSnapshot struct {
 	ComputedAt pgtype.Timestamptz `json:"computed_at"`
 	ExpiresAt  pgtype.Timestamptz `json:"expires_at"`
 	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+}
+
+type UniversityTrackCategory struct {
+	ID        pgtype.UUID        `json:"id"`
+	TenantID  pgtype.UUID        `json:"tenant_id"`
+	Slug      string             `json:"slug"`
+	Name      string             `json:"name"`
+	SortOrder int32              `json:"sort_order"`
+	IsActive  bool               `json:"is_active"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
 
 type User struct {

@@ -107,14 +107,17 @@ UPDATE organizations SET verified = false, updated_at = now() WHERE id = $1;
 -- =====================
 
 -- name: ListModerationAppeals :many
-SELECT id, user_id, entity_type, entity_id, reason, status, created_at
-FROM moderation_appeals
+SELECT ma.id, ma.user_id, ma.entity_type, ma.entity_id, ma.reason, ma.status, ma.created_at,
+       u.username, up.display_name
+FROM moderation_appeals ma
+LEFT JOIN users u ON u.id = ma.user_id
+LEFT JOIN user_profiles up ON up.user_id = ma.user_id
 WHERE (sqlc.narg(search)::text IS NULL OR (
-        entity_id::text ILIKE '%' || sqlc.narg(search) || '%'
-     OR reason ILIKE '%' || sqlc.narg(search) || '%'
-     OR entity_type ILIKE '%' || sqlc.narg(search) || '%'
+        ma.entity_id::text ILIKE '%' || sqlc.narg(search) || '%'
+     OR ma.reason ILIKE '%' || sqlc.narg(search) || '%'
+     OR ma.entity_type ILIKE '%' || sqlc.narg(search) || '%'
   ))
-ORDER BY created_at DESC
+ORDER BY ma.created_at DESC
 LIMIT 50;
 
 -- name: GetModerationAppeal :one

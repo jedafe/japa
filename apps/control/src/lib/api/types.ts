@@ -163,6 +163,21 @@ export interface AiBudget {
 	by_task_type: { task_type: string; call_count: number; tokens_used: number; cost_usd: number }[];
 }
 
+export interface AiProvider {
+	id: string;
+	tenant_id: string;
+	name: string;
+	provider_type: string;
+	api_key_masked: string;
+	base_url: string;
+	model: string;
+	categories: string[];
+	priority: number;
+	enabled: boolean;
+	created_at: string;
+	updated_at: string;
+}
+
 export interface AuditLogEntry {
 	id: string;
 	timestamp: string;

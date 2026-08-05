@@ -10,6 +10,8 @@
 	type DeletionRequest = {
 		id: string;
 		user_id: string;
+		username?: string;
+		display_name?: string;
 		status: string;
 		reason: string;
 		requested_at: string;
@@ -27,7 +29,8 @@
 	const canManageDeletions = $derived(hasPermission('gdpr.deletions.view'));
 
 	const columns = [
-		{ key: 'user_id', label: t('app.gdpr.erasure.user', 'User ID'), sortable: true, render: (v: string) => `<span class="font-mono text-xs">${v}</span>` },
+		{ key: 'display_name', label: t('app.gdpr.erasure.user', 'User'), sortable: true,
+			render: (v: string, row: DeletionRequest) => `<span class="text-sm">${v || row.username || 'anonymous'}</span>` },
 		{ key: 'reason', label: t('app.gdpr.erasure.reason', 'Reason'), render: (v: string) => `<span class="text-xs" style="color: var(--color-muted)">${v || '—'}</span>` },
 		{ key: 'status', label: t('app.gdpr.erasure.status', 'Status'), render: (v: string) => `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium ${v === 'executed' ? 'bg-success/15 text-success dark:text-success' : v === 'pending' ? 'bg-warning/15 text-warning dark:text-warning' : 'bg-muted/15 text-muted dark:text-muted'}">${v}</span>` },
 		{ key: 'requested_at', label: t('app.gdpr.erasure.requested_at', 'Requested At'), render: (v: string) => `<span class="text-xs" style="color: var(--color-muted)">${new Date(v).toLocaleString()}</span>` },
@@ -36,7 +39,7 @@
 
 	const filteredRequests = $derived(
 		searchQuery
-			? requests.filter((r) => r.user_id.toLowerCase().includes(searchQuery.toLowerCase()) || (r.reason || '').toLowerCase().includes(searchQuery.toLowerCase()))
+			? requests.filter((r) => (r.display_name || r.username || '').toLowerCase().includes(searchQuery.toLowerCase()) || (r.reason || '').toLowerCase().includes(searchQuery.toLowerCase()))
 			: requests
 	);
 

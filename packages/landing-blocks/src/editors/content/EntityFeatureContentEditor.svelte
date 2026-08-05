@@ -28,8 +28,8 @@
 </script>
 
 <div class="space-y-4">
-  <div>
-    <label class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Entity type</label>
+  <label class="block">
+    <span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Entity type</span>
     <select
       value={props.entity_type}
       onchange={(e) => update('entity_type', e.currentTarget.value as EntityType)}
@@ -39,10 +39,10 @@
         <option value={et}>{et}</option>
       {/each}
     </select>
-  </div>
+  </label>
 
-  <div>
-    <label class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Layout</label>
+  <label class="block">
+    <span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Layout</span>
     <select
       value={props.layout}
       onchange={(e) => update('layout', e.currentTarget.value as EntityFeatureProps['layout'])}
@@ -53,24 +53,24 @@
       <option value="split">Split</option>
       <option value="banner">Banner</option>
     </select>
-  </div>
+  </label>
 
-  <div>
-    <label class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Reference</label>
+  <label class="block">
+    <span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Reference</span>
     <EntityRefPicker
       entityType={props.entity_type}
       value={props.ref}
       onchange={(v) => update('ref', v)}
       {fetchCtx}
     />
-  </div>
+  </label>
 
-  <div>
-    <label class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Media override</label>
+  <label class="block">
+    <span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Media override</span>
     <MediaPicker
       value={props.media_override}
       onchange={(v) => update('media_override', v)}
       {mediaPickerComponent}
     />
-  </div>
+  </label>
 </div>

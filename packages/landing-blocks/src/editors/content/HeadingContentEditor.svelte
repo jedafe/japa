@@ -23,24 +23,24 @@
 </script>
 
 <div class="space-y-3">
-  <div>
-    <label class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Heading text</label>
+  <label class="block">
+    <span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Heading text</span>
     <GeoText value={props.text} onchange={(v) => update('text', v)} {geoCtx} />
-  </div>
+  </label>
 
-  <div>
-    <label class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Eyebrow (optional)</label>
+  <label class="block">
+    <span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Eyebrow (optional)</span>
     <GeoText value={props.eyebrow ?? ''} onchange={(v) => update('eyebrow', v)} {geoCtx} />
-  </div>
+  </label>
 
-  <div>
-    <label class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Subheading (optional)</label>
+  <label class="block">
+    <span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Subheading (optional)</span>
     <GeoText value={props.subheading ?? ''} onchange={(v) => update('subheading', v)} {geoCtx} />
-  </div>
+  </label>
 
   <div class="grid grid-cols-2 gap-2">
-    <div>
-      <label class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Heading level</label>
+    <label class="block">
+      <span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Heading level</span>
       <select class={inputClass} value={props.level ?? 'h2'} onchange={(e) => update('level', e.currentTarget.value as HeadingProps['level'])}>
         <option value="h1">H1</option>
         <option value="h2">H2</option>
@@ -49,9 +49,9 @@
         <option value="h5">H5</option>
         <option value="h6">H6</option>
       </select>
-    </div>
-    <div>
-      <label class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Visual size</label>
+    </label>
+    <label class="block">
+      <span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Visual size</span>
       <select class={inputClass} value={props.size ?? 'xl'} onchange={(e) => update('size', e.currentTarget.value as HeadingProps['size'])}>
         <option value="xs">XS</option>
         <option value="sm">SM</option>
@@ -62,20 +62,20 @@
         <option value="3xl">3XL</option>
         <option value="4xl">4XL</option>
       </select>
-    </div>
+    </label>
   </div>
 
   <div class="grid grid-cols-2 gap-2">
-    <div>
-      <label class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Alignment</label>
+    <label class="block">
+      <span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Alignment</span>
       <select class={inputClass} value={props.align ?? 'left'} onchange={(e) => update('align', e.currentTarget.value as HeadingProps['align'])}>
         <option value="left">Left</option>
         <option value="center">Center</option>
         <option value="right">Right</option>
       </select>
-    </div>
-    <div>
-      <label class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Max width</label>
+    </label>
+    <label class="block">
+      <span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Max width</span>
       <select class={inputClass} value={props.max_width ?? 'xl'} onchange={(e) => update('max_width', e.currentTarget.value as HeadingProps['max_width'])}>
         <option value="sm">Small</option>
         <option value="md">Medium</option>
@@ -83,39 +83,39 @@
         <option value="xl">Extra Large</option>
         <option value="full">Full</option>
       </select>
-    </div>
+    </label>
   </div>
 
-  <div>
-    <label class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Accent style</label>
+  <label class="block">
+    <span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Accent style</span>
     <select class={inputClass} value={props.accent ?? 'none'} onchange={(e) => update('accent', e.currentTarget.value as HeadingProps['accent'])}>
       <option value="none">None</option>
       <option value="underline">Underline</option>
       <option value="highlight">Highlight</option>
       <option value="gradient">Gradient</option>
     </select>
-  </div>
+  </label>
 
   {#if props.accent && props.accent !== 'none'}
-    <div>
-      <label class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Accent color</label>
+    <label class="block">
+      <span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Accent color</span>
       <div class="flex items-center gap-2">
         <input type="color" value={props.accent_color ?? '#f97316'} oninput={(e) => update('accent_color', e.currentTarget.value)} class="h-8 w-12 rounded border border-[var(--color-border)]" />
         <input type="text" value={props.accent_color ?? ''} oninput={(e) => update('accent_color', e.currentTarget.value)} placeholder="var(--color-primary)" class={inputClass} />
       </div>
-    </div>
+    </label>
   {/if}
 
-  <div>
-    <label class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Icon (optional)</label>
+  <label class="block">
+    <span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Icon (optional)</span>
     <IconPicker value={props.icon} onchange={(v) => update('icon', v)} />
-  </div>
+  </label>
 
-  <div class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
-    <label class="mb-2 block text-xs font-medium text-[var(--color-muted)]">CTA link (optional)</label>
+  <label class="block rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
+    <span class="mb-2 block text-xs font-medium text-[var(--color-muted)]">CTA link (optional)</span>
     <div class="space-y-2">
       <input type="text" value={props.cta?.label ?? ''} oninput={(e) => update('cta', { ...(props.cta ?? { href: '' }), label: e.currentTarget.value })} placeholder="Label" class={inputClass} />
       <input type="text" value={props.cta?.href ?? ''} oninput={(e) => update('cta', { ...(props.cta ?? { label: '' }), href: e.currentTarget.value })} placeholder="/explore" class={inputClass} />
     </div>
-  </div>
+  </label>
 </div>

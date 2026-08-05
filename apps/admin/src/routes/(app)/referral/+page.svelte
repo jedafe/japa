@@ -27,7 +27,11 @@
 		id: string;
 		tenant_id: string;
 		referrer_id: string;
+		referrer_username?: string;
+		referrer_display_name?: string;
 		referee_id: string | null;
+		referee_username?: string;
+		referee_display_name?: string;
 		referral_code: string;
 		status: string;
 		reward_paid_at: string | null;
@@ -57,15 +61,16 @@
 			render: (value: string) => `<span class="font-mono text-xs font-medium text-foreground">${value}</span>`
 		},
 		{
-			key: 'referrer_id',
+			key: 'referrer_display_name',
 			label: t('referral.referrer'),
 			sortable: true,
-			render: (value: string) => `<span class="font-medium text-foreground">${value ? value.slice(0, 8) : '—'}</span>`
+			render: (v: string, row: Referral) => `<span class="font-medium text-foreground">${v || row.referrer_username || 'anonymous'}</span>`
 		},
 		{
-			key: 'referee_id',
+			key: 'referee_display_name',
 			label: t('referral.referred'),
-			render: (value: string | null) => `<span class="text-foreground-alt">${value ? value.slice(0, 8) : '—'}</span>`
+			sortable: true,
+			render: (v: string, row: Referral) => `<span class="text-foreground-alt">${v || row.referee_username || (row.referee_id ? row.referee_id.slice(0, 8) + '...' : '—')}</span>`
 		},
 		{
 			key: 'status',

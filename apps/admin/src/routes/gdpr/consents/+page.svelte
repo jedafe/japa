@@ -15,6 +15,8 @@
 	type Consent = {
 		id: string;
 		user_id: string;
+		username?: string;
+		display_name?: string;
 		consent_type: string;
 		granted: boolean;
 		granted_at?: string;
@@ -105,7 +107,8 @@
 	}
 
 	const columns = [
-		{ key: "user_id", label: t("gdpr.user", "User ID"), sortable: true },
+		{ key: "display_name", label: t("gdpr.user", "User"), sortable: true,
+			render: (v: string, row: Consent) => v || row.username || 'anonymous' },
 		{ key: "consent_type", label: t("gdpr.consent_type", "Consent Type"), sortable: true },
 		{ key: "granted", label: t("gdpr.granted", "Granted"), sortable: true,
 			render: (v: boolean) => v ? t("common.yes", "Yes") : t("common.no", "No")

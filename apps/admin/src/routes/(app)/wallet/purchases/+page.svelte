@@ -11,6 +11,8 @@
 	type CreditPurchase = {
 		id: string;
 		user_id: string;
+		username?: string;
+		display_name?: string;
 		provider: string;
 		amount: number;
 		currency: string;
@@ -63,8 +65,8 @@
 	const purchaseColumns = [
 		{ key: 'created_at', label: 'Date', sortable: true,
 			render: (v: string) => formatDate(v) },
-		{ key: 'user_id', label: t('app.wallet.filter_user', 'User ID'),
-			render: (v: string) => `<span class="font-mono text-xs">${v.slice(0, 8)}...</span>` },
+		{ key: 'display_name', label: t('app.wallet.filter_user', 'User'),
+			render: (v: string, row: CreditPurchase) => `<span class="text-sm">${v || row.username || 'anonymous'}</span>` },
 		{ key: 'amount', label: t('app.wallet.fiat_amount', 'Fiat Amount'), sortable: true,
 			render: (_: number, row: CreditPurchase) => formatAmount(row.amount, row.currency) },
 		{ key: 'currency', label: t('app.wallet.filter_currency', 'Currency'),

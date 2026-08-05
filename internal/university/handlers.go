@@ -336,16 +336,17 @@ func (h *Handlers) CreateMyTrack(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var body struct {
-		Title        string  `json:"title"`
-		Slug         string  `json:"slug"`
-		Description  *string `json:"description"`
-		Difficulty   *string `json:"difficulty"`
-		CoverMediaID *string `json:"cover_media_id"`
-		PriceKobo    *int64  `json:"price_kobo"`
-		Currency     *string `json:"currency"`
-		Category     *string `json:"category"`
-		Language     *string `json:"language"`
-		GeoSpaceID   *string `json:"geo_space_id"`
+		Title                string  `json:"title"`
+		Slug                 string  `json:"slug"`
+		Description          *string `json:"description"`
+		Difficulty           *string `json:"difficulty"`
+		CoverMediaID         *string `json:"cover_media_id"`
+		PriceKobo            *int64  `json:"price_kobo"`
+		Currency             *string `json:"currency"`
+		Category             *string `json:"category"`
+		Language             *string `json:"language"`
+		GeoSpaceID           *string `json:"geo_space_id"`
+		SubscriptionEligible *bool   `json:"subscription_eligible"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
@@ -361,7 +362,7 @@ func (h *Handlers) CreateMyTrack(w http.ResponseWriter, r *http.Request) {
 	in := CreateTrackInput{
 		Title: body.Title, Slug: body.Slug, Description: body.Description,
 		Category: body.Category, Currency: body.Currency, Language: body.Language,
-		PriceKobo: body.PriceKobo,
+		PriceKobo: body.PriceKobo, SubscriptionEligible: body.SubscriptionEligible,
 	}
 	if body.Difficulty != nil {
 		in.Difficulty = *body.Difficulty
@@ -409,15 +410,16 @@ func (h *Handlers) UpdateMyTrack(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var body struct {
-		Title        *string `json:"title"`
-		Description  *string `json:"description"`
-		Difficulty   *string `json:"difficulty"`
-		CoverMediaID *string `json:"cover_media_id"`
-		PriceKobo    *int64  `json:"price_kobo"`
-		Currency     *string `json:"currency"`
-		Category     *string `json:"category"`
-		Language     *string `json:"language"`
-		GeoSpaceID   *string `json:"geo_space_id"`
+		Title                *string `json:"title"`
+		Description          *string `json:"description"`
+		Difficulty           *string `json:"difficulty"`
+		CoverMediaID         *string `json:"cover_media_id"`
+		PriceKobo            *int64  `json:"price_kobo"`
+		Currency             *string `json:"currency"`
+		Category             *string `json:"category"`
+		Language             *string `json:"language"`
+		GeoSpaceID           *string `json:"geo_space_id"`
+		SubscriptionEligible *bool   `json:"subscription_eligible"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
@@ -433,7 +435,7 @@ func (h *Handlers) UpdateMyTrack(w http.ResponseWriter, r *http.Request) {
 	in := UpdateTrackInput{
 		Title: body.Title, Description: body.Description, Difficulty: body.Difficulty,
 		Category: body.Category, Currency: body.Currency, Language: body.Language,
-		PriceKobo: body.PriceKobo,
+		PriceKobo: body.PriceKobo, SubscriptionEligible: body.SubscriptionEligible,
 	}
 	if body.CoverMediaID != nil {
 		var cm pgtype.UUID
@@ -909,6 +911,9 @@ func (h *Handlers) AdminListPendingTracks(w http.ResponseWriter, r *http.Request
 		handleServiceError(w, err)
 		return
 	}
+	if rows == nil {
+		rows = []gen.ListPendingUniversityTracksRow{}
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"data": rows})
 }
 
@@ -947,6 +952,9 @@ func (h *Handlers) AdminListPayouts(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		handleServiceError(w, err)
 		return
+	}
+	if payouts == nil {
+		payouts = []gen.ListInstructorPayoutsByStatusRow{}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"data": payouts})
 }
@@ -1031,6 +1039,9 @@ func (h *Handlers) AdminListRevenueSplits(w http.ResponseWriter, r *http.Request
 	if err != nil {
 		handleServiceError(w, err)
 		return
+	}
+	if splits == nil {
+		splits = []gen.ListRevenueSplitsRow{}
 	}
 	total, err := h.service.store.CountRevenueSplits(r.Context(), tenantID, f)
 	if err != nil {
@@ -1167,6 +1178,9 @@ func (h *Handlers) AdminListAllTracks(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+	if rows == nil {
+		rows = []gen.ListAllUniversityTracksRow{}
+	}
 	total, err := h.service.store.CountAllTracks(r.Context(), tenantID, spaceID, status)
 	if err != nil {
 		handleServiceError(w, err)
@@ -1299,4 +1313,177 @@ func (h *Handlers) AdminFeatureTrack(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"data": track})
+}
+
+// ---------------------------------------------------------------------------
+// Track categories (ADR-063 §9.1)
+// Ref: japaconnect-engineering/sections/36-learning-platform.md (Track categories)
+// ---------------------------------------------------------------------------
+
+// AdminListCategories handles GET /admin/university/categories.
+// Supports ?active=true|false and ?search= filters plus ?page=&limit= pagination.
+func (h *Handlers) AdminListCategories(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+	limit, offset := parsePagination(r)
+	active := r.URL.Query().Get("active")
+	search := r.URL.Query().Get("search")
+
+	rows, err := h.service.store.ListTrackCategories(r.Context(), tenantID, active, search, limit, offset)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	if rows == nil {
+		rows = []gen.UniversityTrackCategory{}
+	}
+	total, err := h.service.store.CountTrackCategories(r.Context(), tenantID, active, search)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	page := int32(0)
+	if limit > 0 {
+		page = offset/limit + 1
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data":  rows,
+		"meta":  map[string]any{"total": total, "page": page, "limit": limit},
+	})
+}
+
+// AdminCreateCategory handles POST /admin/university/categories.
+func (h *Handlers) AdminCreateCategory(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+	var body struct {
+		Slug      string `json:"slug"`
+		Name      string `json:"name"`
+		SortOrder *int32 `json:"sort_order"`
+		IsActive  *bool  `json:"is_active"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		return
+	}
+	if body.Slug == "" || body.Name == "" {
+		writeError(w, http.StatusBadRequest, "missing_fields", "slug and name are required")
+		return
+	}
+	sortOrder := int32(0)
+	if body.SortOrder != nil {
+		sortOrder = *body.SortOrder
+	}
+	isActive := true
+	if body.IsActive != nil {
+		isActive = *body.IsActive
+	}
+	cat, err := h.service.store.CreateTrackCategory(r.Context(), tenantID, body.Slug, body.Name, sortOrder, isActive)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{"data": cat})
+}
+
+// AdminGetCategory handles GET /admin/university/categories/{id}.
+func (h *Handlers) AdminGetCategory(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+	id, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+	cat, err := h.service.store.GetTrackCategory(r.Context(), tenantID, id)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": cat})
+}
+
+// AdminUpdateCategory handles PATCH /admin/university/categories/{id}.
+func (h *Handlers) AdminUpdateCategory(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+	id, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+	var body struct {
+		Slug      *string `json:"slug"`
+		Name      *string `json:"name"`
+		SortOrder *int32  `json:"sort_order"`
+		IsActive  *bool   `json:"is_active"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		return
+	}
+	cat, err := h.service.store.UpdateTrackCategory(r.Context(), tenantID, id, body.Name, body.Slug, body.SortOrder, body.IsActive)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": cat})
+}
+
+// AdminDeleteCategory handles DELETE /admin/university/categories/{id}.
+// Blocked if any learning_tracks still reference the category slug.
+func (h *Handlers) AdminDeleteCategory(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+	id, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+	// Fetch the category first to get the slug for the track reference check.
+	cat, err := h.service.store.GetTrackCategory(r.Context(), tenantID, id)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	count, err := h.service.store.CountTracksByCategory(r.Context(), tenantID, cat.Slug)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	if count > 0 {
+		writeError(w, http.StatusConflict, "category_in_use",
+			fmt.Sprintf("Cannot delete category '%s': %d track(s) still reference it. Reassign or clear those tracks first.", cat.Slug, count))
+		return
+	}
+	if err := h.service.store.DeleteTrackCategory(r.Context(), tenantID, id); err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"deleted": true, "id": id}})
+}
+
+// PublicListActiveCategories handles GET /learn/university/categories.
+// No auth required — returns only active categories for the catalog dropdown.
+func (h *Handlers) PublicListActiveCategories(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+	rows, err := h.service.store.ListActiveTrackCategories(r.Context(), tenantID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	if rows == nil {
+		rows = []gen.ListActiveUniversityTrackCategoriesRow{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": rows})
 }
