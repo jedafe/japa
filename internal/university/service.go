@@ -423,8 +423,9 @@ func (s *Service) CalculatePeriodPayouts(ctx context.Context, tenantID pgtype.UU
 		minPayout = int64(s.settings.GetIntOr(ctx, tenantID, "university.min_payout_kobo", 500000))
 	}
 
-	// List all approved instructors via the status filter.
-	profiles, err := s.store.ListByStatus(ctx, tenantID, "approved", 1000, 0)
+	// List all approved instructors via the status filter (no space scope —
+	// the periodic payout run is tenant-wide, not per-university).
+	profiles, err := s.store.ListByStatus(ctx, tenantID, "approved", pgtype.UUID{}, 1000, 0)
 	if err != nil {
 		return fmt.Errorf("university: list instructors for payout: %w", err)
 	}

@@ -741,6 +741,8 @@ func payoutFromRow(p gen.InstructorPayout) payoutDTO {
 // ---------------------------------------------------------------------------
 
 // AdminListInstructors handles GET /admin/university/instructors.
+// Optional ?space_id= scopes the list to instructors with a track targeted at
+// that space (ADR-063 admin per-university view).
 func (h *Handlers) AdminListInstructors(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
@@ -748,13 +750,14 @@ func (h *Handlers) AdminListInstructors(w http.ResponseWriter, r *http.Request) 
 	}
 	limit, offset := parsePagination(r)
 	status := r.URL.Query().Get("status")
+	spaceID, _ := scanOptionalUUIDParam(r, "space_id")
 
-	rows, err := h.service.store.ListByStatus(r.Context(), tenantID, status, limit, offset)
+	rows, err := h.service.store.ListByStatus(r.Context(), tenantID, status, spaceID, limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
-	total, err := h.service.store.CountByStatus(r.Context(), tenantID, status)
+	total, err := h.service.store.CountByStatus(r.Context(), tenantID, status, spaceID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -892,14 +895,16 @@ func (h *Handlers) AdminDeleteInstructor(w http.ResponseWriter, r *http.Request)
 // ---------------------------------------------------------------------------
 
 // AdminListPendingTracks handles GET /admin/university/tracks/pending.
+// Optional ?space_id= scopes the list to tracks targeted at that space.
 func (h *Handlers) AdminListPendingTracks(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
 	limit, offset := parsePagination(r)
+	spaceID, _ := scanOptionalUUIDParam(r, "space_id")
 
-	rows, err := h.service.store.ListPendingTracks(r.Context(), tenantID, limit, offset)
+	rows, err := h.service.store.ListPendingTracks(r.Context(), tenantID, spaceID, limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -927,6 +932,8 @@ func (h *Handlers) AdminApproveTrack(w http.ResponseWriter, r *http.Request) {
 }
 
 // AdminListPayouts handles GET /admin/university/payouts.
+// Optional ?space_id= scopes the list to payouts for instructors with a track
+// targeted at that space.
 func (h *Handlers) AdminListPayouts(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
@@ -934,8 +941,9 @@ func (h *Handlers) AdminListPayouts(w http.ResponseWriter, r *http.Request) {
 	}
 	limit, offset := parsePagination(r)
 	status := r.URL.Query().Get("status")
+	spaceID, _ := scanOptionalUUIDParam(r, "space_id")
 
-	payouts, err := h.service.store.ListPayoutsByStatus(r.Context(), tenantID, status, limit, offset)
+	payouts, err := h.service.store.ListPayoutsByStatus(r.Context(), tenantID, spaceID, status, limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -1008,6 +1016,9 @@ func (h *Handlers) AdminListRevenueSplits(w http.ResponseWriter, r *http.Request
 	}
 	if id, ok := scanOptionalUUIDParam(r, "payout_id"); ok {
 		f.PayoutID = id
+	}
+	if id, ok := scanOptionalUUIDParam(r, "space_id"); ok {
+		f.SpaceID = id
 	}
 	if ts, ok := parseOptionalTime(r, "from"); ok {
 		f.FromTs = ts
@@ -1140,7 +1151,8 @@ func trackFromPublishedRow(r gen.ListPublishedTracksByInstructorRow) Track {
 
 // AdminListAllTracks handles GET /admin/university/tracks.
 // Returns all marketplace tracks (not just pending), optionally filtered by
-// submission_status (BUG-002).
+// submission_status (BUG-002). Optional ?space_id= scopes to tracks targeted
+// at that space.
 func (h *Handlers) AdminListAllTracks(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
@@ -1148,13 +1160,14 @@ func (h *Handlers) AdminListAllTracks(w http.ResponseWriter, r *http.Request) {
 	}
 	limit, offset := parsePagination(r)
 	status := r.URL.Query().Get("status")
+	spaceID, _ := scanOptionalUUIDParam(r, "space_id")
 
-	rows, err := h.service.store.ListAllTracks(r.Context(), tenantID, status, limit, offset)
+	rows, err := h.service.store.ListAllTracks(r.Context(), tenantID, spaceID, status, limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
-	total, err := h.service.store.CountAllTracks(r.Context(), tenantID, status)
+	total, err := h.service.store.CountAllTracks(r.Context(), tenantID, spaceID, status)
 	if err != nil {
 		handleServiceError(w, err)
 		return
