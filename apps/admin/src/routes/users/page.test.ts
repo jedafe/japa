@@ -1,13 +1,19 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen } from '@testing-library/svelte';
+import { render, screen, waitFor } from '@testing-library/svelte';
 import Page from './+page.svelte';
 
 vi.mock('$lib/api', () => ({
 	userManagementApi: {
 		list: vi.fn().mockResolvedValue({ ok: true, data: { items: [], total: 0, page: 1, total_pages: 1 } }),
+		getModerationConfig: vi.fn().mockResolvedValue({ ok: true, data: { statuses: [] } }),
+		listGroups: vi.fn().mockResolvedValue({ ok: true, data: { groups: [] } }),
 		issueWarning: vi.fn(),
 		banUser: vi.fn(),
+		unbanUser: vi.fn(),
+		suspendUser: vi.fn(),
 		deleteUser: vi.fn(),
+		hardDeleteUser: vi.fn(),
+		createUser: vi.fn(),
 	},
 	impersonationApi: {
 		status: vi.fn().mockResolvedValue({ ok: true, data: { impersonating: false } }),
@@ -18,6 +24,7 @@ vi.mock('$lib/api', () => ({
 
 vi.mock('$app/navigation', () => ({
 	goto: vi.fn(),
+	invalidateAll: vi.fn(),
 }));
 
 vi.mock('$lib/stores/permissions.svelte', () => ({
@@ -34,13 +41,35 @@ describe('Users +page.svelte', () => {
 		expect(screen.getByText('Users')).toBeTruthy();
 	});
 
-	it('shows filter controls', () => {
+	it('shows filter controls', async () => {
 		render(Page);
-		expect(screen.getByText('Search')).toBeTruthy();
+		// EntityPage renders the DataTable FilterPanel (accordion trigger labelled "Filters").
+		await waitFor(() => {
+			expect(screen.getByText('Filters')).toBeTruthy();
+		});
 	});
 
-	it('has search input', () => {
+	it('has search input', async () => {
 		render(Page);
-		expect(screen.getByPlaceholderText('Search...')).toBeTruthy();
+		// DataTable's search box uses the i18n fallback "Search" as its placeholder.
+		await waitFor(() => {
+			expect(screen.getByPlaceholderText('Search')).toBeTruthy();
+		});
+	});
+
+	it('renders an action menu trigger per row when rows are present', async () => {
+		// Override the list mock for this test to return one row.
+		const { userManagementApi } = await import('$lib/api');
+		const listMock = userManagementApi.list as ReturnType<typeof vi.fn>;
+		listMock.mockResolvedValue({
+			ok: true,
+			data: { items: [{ id: 'u1', username: 'alice', email: 'a@x.io', profile_type: 'user', status: 'active', follower_count: 0, groups: [], created_at: '2024-01-01T00:00:00Z', updated_at: '2024-01-01T00:00:00Z' }], total: 1, page: 1, total_pages: 1 },
+		});
+		const { container } = render(Page);
+		await waitFor(() => {
+			expect(container.querySelectorAll('[data-action-menu-trigger]').length).toBeGreaterThan(0);
+		});
+		// Restore the default empty-list mock for subsequent tests.
+		listMock.mockResolvedValue({ ok: true, data: { items: [], total: 0, page: 1, total_pages: 1 } });
 	});
 });
