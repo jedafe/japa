@@ -464,6 +464,94 @@ func (q *Queries) ListReviewsByEntity(ctx context.Context, arg ListReviewsByEnti
 	return items, nil
 }
 
+const listReviewsByEntityWithAuthor = `-- name: ListReviewsByEntityWithAuthor :many
+SELECT r.id, r.tenant_id, r.entity_type, r.entity_id, r.reviewer_user_id,
+       r.rating, r.title, r.body, r.status, r.created_at, r.updated_at,
+       u.username AS author_username,
+       up.display_name AS author_display_name,
+       up.avatar_url AS author_avatar_url
+FROM reviews r
+LEFT JOIN users u ON u.id = r.reviewer_user_id
+LEFT JOIN user_profiles up ON up.user_id = u.id
+WHERE r.tenant_id = $1
+  AND r.entity_type = $2
+  AND r.entity_id = $3
+  AND r.status = 'published'
+ORDER BY r.created_at DESC
+LIMIT $5 OFFSET $4
+`
+
+type ListReviewsByEntityWithAuthorParams struct {
+	TenantID   pgtype.UUID `json:"tenant_id"`
+	EntityType string      `json:"entity_type"`
+	EntityID   pgtype.UUID `json:"entity_id"`
+	PageOffset int32       `json:"page_offset"`
+	PageLimit  int32       `json:"page_limit"`
+}
+
+type ListReviewsByEntityWithAuthorRow struct {
+	ID                pgtype.UUID        `json:"id"`
+	TenantID          pgtype.UUID        `json:"tenant_id"`
+	EntityType        string             `json:"entity_type"`
+	EntityID          pgtype.UUID        `json:"entity_id"`
+	ReviewerUserID    pgtype.UUID        `json:"reviewer_user_id"`
+	Rating            int16              `json:"rating"`
+	Title             *string            `json:"title"`
+	Body              *string            `json:"body"`
+	Status            string             `json:"status"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+	AuthorUsername    *string            `json:"author_username"`
+	AuthorDisplayName *string            `json:"author_display_name"`
+	AuthorAvatarUrl   *string            `json:"author_avatar_url"`
+}
+
+// Reviews joined to users + user_profiles so the learning track reviews list
+// (GET /learn/tracks/{id}/reviews) can render author username, display name,
+// and avatar without N+1 lookups. Mirrors the polymorphic reviews table
+// (entity_type/entity_id) — the caller filters by entity_type='learning_track'.
+// Ref: ADR-060 (Track Detail — Reviews tab), Section 29 (polymorphic reviews).
+func (q *Queries) ListReviewsByEntityWithAuthor(ctx context.Context, arg ListReviewsByEntityWithAuthorParams) ([]ListReviewsByEntityWithAuthorRow, error) {
+	rows, err := q.db.Query(ctx, listReviewsByEntityWithAuthor,
+		arg.TenantID,
+		arg.EntityType,
+		arg.EntityID,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListReviewsByEntityWithAuthorRow
+	for rows.Next() {
+		var i ListReviewsByEntityWithAuthorRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.EntityType,
+			&i.EntityID,
+			&i.ReviewerUserID,
+			&i.Rating,
+			&i.Title,
+			&i.Body,
+			&i.Status,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.AuthorUsername,
+			&i.AuthorDisplayName,
+			&i.AuthorAvatarUrl,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listReviewsByReviewer = `-- name: ListReviewsByReviewer :many
 SELECT id, tenant_id, entity_type, entity_id, reviewer_user_id,
        rating, title, body, status, created_at, updated_at

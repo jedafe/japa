@@ -295,6 +295,12 @@ type LessonSummary struct {
 	DurationMinutes *int32      `json:"duration_minutes,omitempty"`
 	SortOrder       int32       `json:"sort_order"`
 	IsPreview       bool        `json:"is_preview"`
+	// DurationLabel/DurationsISO are derived from DurationMinutes so the
+	// frontend curriculum accordion (ADR-060) can render per-lesson durations
+	// via the same {#if lesson.duration_label ?? lesson.duration_iso} guard
+	// used for the track-level duration. Empty when duration_minutes is null/0.
+	DurationLabel string `json:"duration_label,omitempty"`
+	DurationISO   string `json:"duration_iso,omitempty"`
 }
 
 // ModuleWithLessons is a module with its nested lessons, used in the track-detail
@@ -310,15 +316,26 @@ type ModuleWithLessons struct {
 	Lessons     []LessonSummary `json:"lessons"`
 }
 
+// InstructorRef is the instructor view embedded in TrackDetail for the hero
+// stat and the instructor card (ADR-060). Mirrors the frontend InstructorRef
+// type. Populated from the joined instructor_profiles + users + user_profiles
+// row in GetLearningTrackDetailBySlug; nil for platform/staff-authored courses.
+type InstructorRef struct {
+	ID          string  `json:"id"`
+	Username    string  `json:"username"`
+	DisplayName string  `json:"displayName"`
+	AvatarURL   *string `json:"avatar_url,omitempty"`
+	Bio         *string `json:"bio,omitempty"`
+}
+
 // TrackDetail is the flat DTO returned by GET /learn/tracks/:slug. Per Section 36
 // the route returns "track detail: modules, lessons, instructor" in one response.
 // The frontend TrackDetail type (ADR-060) expects a flat object with a `modules`
 // array where each module carries its `lessons` — NOT the legacy `{track, modules}`
 // envelope. `Level` aliases `Difficulty` for the frontend contract.
-// Fields not yet backed by DB columns (thumbnail_url, subtitle, overview_html,
-// objectives, prerequisites, duration_iso) are included as optional JSON keys
-// so the frontend contract is stable; they serialize as null/omitted until the
-// corresponding migrations land.
+// Fields not yet backed by DB columns (subtitle, overview_html, objectives,
+// prerequisites) are included as optional JSON keys so the frontend contract is
+// stable; they serialize as null/omitted until the corresponding migrations land.
 type TrackDetail struct {
 	ID           pgtype.UUID        `json:"id"`
 	TenantID     pgtype.UUID        `json:"tenant_id"`
@@ -345,9 +362,10 @@ type TrackDetail struct {
 	DurationISO   string `json:"duration_iso,omitempty"`
 	// Optional fields the frontend reads with {#if} guards — omitted from JSON
 	// when absent so they're undefined on the client (falsy).
-	ThumbnailURL   *string `json:"thumbnail_url,omitempty"`
-	Subtitle       *string `json:"subtitle,omitempty"`
-	InstructorName *string `json:"instructor_name,omitempty"`
+	ThumbnailURL   *string        `json:"thumbnail_url,omitempty"`
+	Subtitle       *string        `json:"subtitle,omitempty"`
+	InstructorName *string        `json:"instructor_name,omitempty"`
+	Instructor     *InstructorRef `json:"instructor,omitempty"`
 }
 
 // CreateModuleInput represents create module input.
@@ -400,15 +418,24 @@ func (s *Store) ListModulesByTrack(ctx context.Context, tenantID, trackID pgtype
 
 // GetTrackDetail builds the flat track-detail DTO (Section 36: "track detail:
 // modules, lessons, instructor") for GET /learn/tracks/:slug. It fetches the
-// track by slug, its modules, and each module's lessons, then assembles them
-// into a single TrackDetail response with nested ModuleWithLessons. This
-// matches the frontend TrackDetail contract (ADR-060) — NOT the legacy
-// `{track, modules}` envelope.
+// track by slug joined to media (thumbnail_url) and instructor_profiles +
+// users + user_profiles (instructor name/bio/username/avatar), its modules,
+// and each module's lessons, then assembles them into a single TrackDetail
+// response with nested ModuleWithLessons. This matches the frontend
+// TrackDetail contract (ADR-060) — NOT the legacy `{track, modules}` envelope.
 func (s *Store) GetTrackDetail(ctx context.Context, tenantID pgtype.UUID, slug string) (*TrackDetail, error) {
-	track, err := s.GetTrackBySlug(ctx, tenantID, slug)
+	row, err := s.read.GetLearningTrackDetailBySlug(ctx, gen.GetLearningTrackDetailBySlugParams{
+		TenantID: tenantID,
+		Slug:     slug,
+	})
 	if err != nil {
-		return nil, fmt.Errorf("get track by slug: %w", err)
+		return nil, fmt.Errorf("get track detail by slug: %w", err)
 	}
+
+	track := trackFromFields(row.ID, row.TenantID, row.Title, row.Slug, row.Description,
+		row.Difficulty, row.CoverMediaID, row.IsPublished, row.SortOrder, row.CreatedAt, row.UpdatedAt,
+		row.InstructorID, row.PriceKobo, row.Currency, row.IsPublishedToUniversity, row.Category,
+		row.Language, row.TotalEnrolled)
 
 	modRows, err := s.read.ListLearningModulesByTrack(ctx, gen.ListLearningModulesByTrackParams{
 		TenantID: tenantID,
@@ -434,6 +461,10 @@ func (s *Store) GetTrackDetail(ctx context.Context, tenantID pgtype.UUID, slug s
 			if !l.IsPublished {
 				continue
 			}
+			var lLabel, lISO string
+			if l.DurationMinutes != nil {
+				lLabel, lISO = formatTrackDuration(int(*l.DurationMinutes))
+			}
 			lessons = append(lessons, LessonSummary{
 				ID:              l.ID,
 				Slug:            l.Slug,
@@ -441,9 +472,9 @@ func (s *Store) GetTrackDetail(ctx context.Context, tenantID pgtype.UUID, slug s
 				LessonType:      l.LessonType,
 				DurationMinutes: l.DurationMinutes,
 				SortOrder:       l.SortOrder,
-				// is_preview column not yet migrated (Section 36 spec calls for
-				// it); default to false until migration 000NNN adds it.
-				IsPreview: false,
+				IsPreview:       l.IsPreview,
+				DurationLabel:   lLabel,
+				DurationISO:     lISO,
 			})
 		}
 
@@ -468,7 +499,7 @@ func (s *Store) GetTrackDetail(ctx context.Context, tenantID pgtype.UUID, slug s
 	}
 	durationLabel, durationISO := formatTrackDuration(totalMinutes)
 
-	return &TrackDetail{
+	detail := &TrackDetail{
 		ID:                      track.ID,
 		TenantID:                track.TenantID,
 		Title:                   track.Title,
@@ -490,7 +521,35 @@ func (s *Store) GetTrackDetail(ctx context.Context, tenantID pgtype.UUID, slug s
 		Language:                track.Language,
 		DurationLabel:           durationLabel,
 		DurationISO:             durationISO,
-	}, nil
+		ThumbnailURL:            row.ThumbnailUrl,
+		InstructorName:          row.InstructorName,
+	}
+
+	// Build the InstructorRef from the joined profile/user columns. The join
+	// is LEFT, so a platform/staff-authored course (no instructor_id) leaves
+	// InstructorProfileID invalid → Instructor stays nil and the frontend
+	// {#if track.instructor} guard hides the instructor card.
+	if row.InstructorProfileID.Valid && row.InstructorName != nil {
+		detail.Instructor = &InstructorRef{
+			ID:          row.InstructorProfileID.String(),
+			Username:    strOrEmpty(row.InstructorUsername),
+			DisplayName: *row.InstructorName,
+			AvatarURL:   row.InstructorAvatarUrl,
+			Bio:         row.InstructorBio,
+		}
+	}
+
+	return detail, nil
+}
+
+// strOrEmpty dereferences a nullable string pointer, returning "" for nil so
+// instructor_username serializes as an empty string (not null) when the join
+// found a profile but no user row (defensive — should not normally happen).
+func strOrEmpty(p *string) string {
+	if p == nil {
+		return ""
+	}
+	return *p
 }
 
 // formatTrackDuration converts a total minutes value into a human-readable
@@ -650,6 +709,7 @@ type Lesson struct {
 	DurationMinutes *int32       `json:"duration_minutes,omitempty"`
 	SortOrder       int32        `json:"sort_order"`
 	IsPublished     bool         `json:"is_published"`
+	IsPreview       bool         `json:"is_preview"`
 	CreatedAt       time.Time    `json:"created_at"`
 	UpdatedAt       time.Time    `json:"updated_at"`
 }
@@ -664,6 +724,7 @@ type CreateLessonInput struct {
 	DurationMinutes *int32       `json:"duration_minutes,omitempty"`
 	SortOrder       int32        `json:"sort_order"`
 	IsPublished     bool         `json:"is_published"`
+	IsPreview       bool         `json:"is_preview"`
 }
 
 // UpdateLessonInput represents update lesson input.
@@ -675,29 +736,67 @@ type UpdateLessonInput struct {
 	DurationMinutes *int32       `json:"duration_minutes,omitempty"`
 	SortOrder       int32        `json:"sort_order"`
 	IsPublished     bool         `json:"is_published"`
+	IsPreview       *bool        `json:"is_preview,omitempty"`
 }
 
-func lessonFromRow(r gen.LearningLesson) Lesson {
-	var mediaID *pgtype.UUID
-	if r.MediaID.Valid {
-		mediaID = &r.MediaID
+// buildLesson assembles a Lesson from the individual learning_lessons column
+// values. All sqlc lesson row types select the same columns (plus is_preview
+// after migration 000267), so the per-query mappers delegate here to avoid
+// drift. mediaID is the raw pgtype.UUID (nullable); a valid zero value is
+// treated as no media.
+func buildLesson(
+	id, tenantID, moduleID pgtype.UUID,
+	title, slug, lessonType string,
+	content *string,
+	mediaID pgtype.UUID,
+	durationMinutes *int32,
+	sortOrder int32,
+	isPublished, isPreview bool,
+	createdAt, updatedAt pgtype.Timestamptz,
+) Lesson {
+	var mid *pgtype.UUID
+	if mediaID.Valid {
+		mid = &mediaID
 	}
-
 	return Lesson{
-		ID:              r.ID,
-		TenantID:        r.TenantID,
-		ModuleID:        r.ModuleID,
-		Title:           r.Title,
-		Slug:            r.Slug,
-		LessonType:      r.LessonType,
-		Content:         r.Content,
-		MediaID:         mediaID,
-		DurationMinutes: r.DurationMinutes,
-		SortOrder:       r.SortOrder,
-		IsPublished:     r.IsPublished,
-		CreatedAt:       r.CreatedAt.Time,
-		UpdatedAt:       r.UpdatedAt.Time,
+		ID:              id,
+		TenantID:        tenantID,
+		ModuleID:        moduleID,
+		Title:           title,
+		Slug:            slug,
+		LessonType:      lessonType,
+		Content:         content,
+		MediaID:         mid,
+		DurationMinutes: durationMinutes,
+		SortOrder:       sortOrder,
+		IsPublished:     isPublished,
+		IsPreview:       isPreview,
+		CreatedAt:       createdAt.Time,
+		UpdatedAt:       updatedAt.Time,
 	}
+}
+
+// lessonFromRow maps any of the sqlc lesson row types (which all select the
+// same learning_lessons columns) into a Lesson. sqlc emits a distinct row
+// type per query after migration 000267 added is_preview, so we accept any
+// and type-switch. gen.LearningLesson (the table model) is retained for
+// callers that still hold the base model.
+func lessonFromRow(r any) Lesson {
+	switch r := r.(type) {
+	case gen.LearningLesson:
+		return buildLesson(r.ID, r.TenantID, r.ModuleID, r.Title, r.Slug, r.LessonType, r.Content, r.MediaID, r.DurationMinutes, r.SortOrder, r.IsPublished, r.IsPreview, r.CreatedAt, r.UpdatedAt)
+	case gen.ListLearningLessonsByModuleRow:
+		return buildLesson(r.ID, r.TenantID, r.ModuleID, r.Title, r.Slug, r.LessonType, r.Content, r.MediaID, r.DurationMinutes, r.SortOrder, r.IsPublished, r.IsPreview, r.CreatedAt, r.UpdatedAt)
+	case gen.GetLearningLessonBySlugRow:
+		return buildLesson(r.ID, r.TenantID, r.ModuleID, r.Title, r.Slug, r.LessonType, r.Content, r.MediaID, r.DurationMinutes, r.SortOrder, r.IsPublished, r.IsPreview, r.CreatedAt, r.UpdatedAt)
+	case gen.GetLearningLessonByIDRow:
+		return buildLesson(r.ID, r.TenantID, r.ModuleID, r.Title, r.Slug, r.LessonType, r.Content, r.MediaID, r.DurationMinutes, r.SortOrder, r.IsPublished, r.IsPreview, r.CreatedAt, r.UpdatedAt)
+	case gen.CreateLearningLessonRow:
+		return buildLesson(r.ID, r.TenantID, r.ModuleID, r.Title, r.Slug, r.LessonType, r.Content, r.MediaID, r.DurationMinutes, r.SortOrder, r.IsPublished, r.IsPreview, r.CreatedAt, r.UpdatedAt)
+	case gen.UpdateLearningLessonRow:
+		return buildLesson(r.ID, r.TenantID, r.ModuleID, r.Title, r.Slug, r.LessonType, r.Content, r.MediaID, r.DurationMinutes, r.SortOrder, r.IsPublished, r.IsPreview, r.CreatedAt, r.UpdatedAt)
+	}
+	return Lesson{}
 }
 
 // lessonFromListRow maps a ListAllLearningLessonsRow (with JOIN) to a Lesson.
@@ -779,7 +878,6 @@ type LessonDetail struct {
 	TrackSlug   string        `json:"track_slug"`
 	TrackTitle  string        `json:"track_title"`
 	ContentHTML string        `json:"content_html,omitempty"`
-	IsPreview   bool          `json:"is_preview"`
 	PrevLesson  *LessonNavRef `json:"prev_lesson,omitempty"`
 	NextLesson  *LessonNavRef `json:"next_lesson,omitempty"`
 }
@@ -814,6 +912,7 @@ func (s *Store) GetLessonDetail(ctx context.Context, tenantID, moduleID pgtype.U
 			DurationMinutes: r.DurationMinutes,
 			SortOrder:       r.SortOrder,
 			IsPublished:     r.IsPublished,
+			IsPreview:       r.IsPreview,
 			CreatedAt:       r.CreatedAt.Time,
 			UpdatedAt:       r.UpdatedAt.Time,
 		},
@@ -822,7 +921,6 @@ func (s *Store) GetLessonDetail(ctx context.Context, tenantID, moduleID pgtype.U
 		TrackID:     r.TrackID,
 		TrackSlug:   r.TrackSlug,
 		TrackTitle:  r.TrackTitle,
-		IsPreview:   false, // no is_preview column in V1 (migration 000039)
 		ContentHTML: renderLessonContentHTML(r.Content),
 	}
 
@@ -931,6 +1029,7 @@ func (s *Store) CreateLesson(ctx context.Context, tenantID, moduleID pgtype.UUID
 		DurationMinutes: input.DurationMinutes,
 		SortOrder:       input.SortOrder,
 		IsPublished:     input.IsPublished,
+		IsPreview:       input.IsPreview,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("create lesson: %w", err)
@@ -952,6 +1051,7 @@ func (s *Store) UpdateLesson(ctx context.Context, tenantID, id pgtype.UUID, inpu
 		DurationMinutes: input.DurationMinutes,
 		SortOrder:       input.SortOrder,
 		IsPublished:     input.IsPublished,
+		IsPreview:       input.IsPreview,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("update lesson: %w", err)
@@ -1396,25 +1496,32 @@ func (s *Store) GetQuizQuestionsWithAnswers(ctx context.Context, tenantID, lesso
 // Reuse Section 29 reviews with entity_type=learning_track.
 // ---------------------------------------------------------------------------
 
-// TrackReview is the API-facing review record for a learning track.
+// TrackReview is the API-facing review record for a learning track. Field
+// names mirror the frontend TrackReview type (ADR-060): track_id (the reviewed
+// track), author_id/author_username/author_displayName/author_avatar_url (the
+// reviewer, resolved via ListReviewsByEntityWithAuthor). The create path
+// (CreateTrackReview) returns author_* empty since the just-inserted row has
+// not been re-joined — callers that need author info should re-fetch the list.
 type TrackReview struct {
-	ID         string    `json:"id"`
-	TenantID   string    `json:"tenant_id"`
-	EntityType string    `json:"entity_type"`
-	EntityID   string    `json:"entity_id"`
-	ReviewerID string    `json:"reviewer_user_id"`
-	Rating     int16     `json:"rating"`
-	Title      *string   `json:"title,omitempty"`
-	Body       *string   `json:"body,omitempty"`
-	Status     string    `json:"status"`
-	CreatedAt  time.Time `json:"created_at"`
-	UpdatedAt  time.Time `json:"updated_at"`
+	ID                string    `json:"id"`
+	TrackID           string    `json:"track_id"`
+	AuthorID          string    `json:"author_id"`
+	AuthorUsername    string    `json:"author_username"`
+	AuthorDisplayName *string   `json:"author_displayName,omitempty"`
+	AuthorAvatarURL   *string   `json:"author_avatar_url,omitempty"`
+	Rating            int16     `json:"rating"`
+	Title             *string   `json:"title,omitempty"`
+	Body              *string   `json:"body,omitempty"`
+	CreatedAt         time.Time `json:"created_at"`
+	UpdatedAt         time.Time `json:"updated_at"`
 }
 
-// TrackReviewAggregate holds the aggregate rating for a track.
+// TrackReviewAggregate holds the aggregate rating for a track. JSON keys
+// `count`/`avg` match the frontend ReviewAggregate type (ADR-060) so the hero
+// rating and the Reviews tab aggregate render without a field-name mismatch.
 type TrackReviewAggregate struct {
-	TotalReviews int32   `json:"total_reviews"`
-	AverageRating float64 `json:"average_rating"`
+	Count int32   `json:"count"`
+	Avg   float64 `json:"avg"`
 }
 
 // CreateTrackReview inserts a review for a learning track.
@@ -1435,9 +1542,11 @@ func (s *Store) CreateTrackReview(ctx context.Context, tenantID, trackID, review
 	return trackReviewFromRow(row), nil
 }
 
-// ListTrackReviews lists approved reviews for a learning track.
+// ListTrackReviews lists approved reviews for a learning track, joined to
+// users + user_profiles so author username/display name/avatar are populated
+// for the Reviews tab (ADR-060). Ref: Section 29 polymorphic reviews.
 func (s *Store) ListTrackReviews(ctx context.Context, tenantID, trackID pgtype.UUID, limit, offset int32) ([]TrackReview, error) {
-	rows, err := s.read.ListReviewsByEntity(ctx, gen.ListReviewsByEntityParams{
+	rows, err := s.read.ListReviewsByEntityWithAuthor(ctx, gen.ListReviewsByEntityWithAuthorParams{
 		TenantID:   tenantID,
 		EntityType: "learning_track",
 		EntityID:   trackID,
@@ -1449,7 +1558,7 @@ func (s *Store) ListTrackReviews(ctx context.Context, tenantID, trackID pgtype.U
 	}
 	reviews := make([]TrackReview, 0, len(rows))
 	for _, r := range rows {
-		reviews = append(reviews, trackReviewFromRow(r))
+		reviews = append(reviews, trackReviewWithAuthorFromRow(r))
 	}
 	return reviews, nil
 }
@@ -1475,23 +1584,43 @@ func (s *Store) GetTrackReviewAggregate(ctx context.Context, tenantID, trackID p
 		sum += float64(r.Rating)
 	}
 	return TrackReviewAggregate{
-		TotalReviews:  int32(len(rows)),
-		AverageRating: sum / float64(len(rows)),
+		Count: int32(len(rows)),
+		Avg:   sum / float64(len(rows)),
 	}, nil
 }
 
+// trackReviewFromRow maps a base gen.Review (no author join) into the
+// frontend-facing TrackReview. Author fields are left empty; the list path
+// uses trackReviewWithAuthorFromRow instead.
 func trackReviewFromRow(r gen.Review) TrackReview {
 	return TrackReview{
-		ID:         r.ID.String(),
-		TenantID:   r.TenantID.String(),
-		EntityType: r.EntityType,
-		EntityID:   r.EntityID.String(),
-		ReviewerID: r.ReviewerUserID.String(),
-		Rating:     r.Rating,
-		Title:      r.Title,
-		Body:       r.Body,
-		Status:     r.Status,
-		CreatedAt:  r.CreatedAt.Time,
-		UpdatedAt:  r.UpdatedAt.Time,
+		ID:             r.ID.String(),
+		TrackID:        r.EntityID.String(),
+		AuthorID:       r.ReviewerUserID.String(),
+		AuthorUsername: "",
+		Rating:         r.Rating,
+		Title:          r.Title,
+		Body:           r.Body,
+		CreatedAt:      r.CreatedAt.Time,
+		UpdatedAt:      r.UpdatedAt.Time,
+	}
+}
+
+// trackReviewWithAuthorFromRow maps a ListReviewsByEntityWithAuthorRow (joined
+// to users + user_profiles) into the frontend-facing TrackReview, populating
+// author_username, author_displayName, and author_avatar_url.
+func trackReviewWithAuthorFromRow(r gen.ListReviewsByEntityWithAuthorRow) TrackReview {
+	return TrackReview{
+		ID:                r.ID.String(),
+		TrackID:           r.EntityID.String(),
+		AuthorID:          r.ReviewerUserID.String(),
+		AuthorUsername:    strOrEmpty(r.AuthorUsername),
+		AuthorDisplayName: r.AuthorDisplayName,
+		AuthorAvatarURL:   r.AuthorAvatarUrl,
+		Rating:            r.Rating,
+		Title:             r.Title,
+		Body:              r.Body,
+		CreatedAt:         r.CreatedAt.Time,
+		UpdatedAt:         r.UpdatedAt.Time,
 	}
 }

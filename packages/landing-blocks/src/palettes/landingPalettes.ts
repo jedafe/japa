@@ -57,7 +57,7 @@ export const landingPalettes: Record<string, PaletteDefinition> = {
             { icon: 'MessageCircle', title: 'Community Discussions', description: 'Ask questions and share experiences with {{country_adjective}} diaspora.', cta: { label: 'Join discussions', href: '/forum', variant: 'link' } },
             { icon: 'GraduationCap', title: 'University Comparisons', description: 'Compare universities and programs for your destination.', cta: { label: 'Compare universities', href: '/universities', variant: 'link' } },
             { icon: 'Briefcase', title: 'Jobs & Opportunities', description: 'Find jobs with visa sponsorship in {{country}}.', cta: { label: 'Browse jobs', href: '/jobs', variant: 'link' } },
-            { icon: 'TrendingUp', title: 'Remittance Rates', description: 'Track live remittance rates across corridors.', cta: { label: 'Check rates', href: '/tools/remittance-tracker', variant: 'link' } },
+            { icon: 'TrendingUp', title: 'Remittance Rates', description: 'Track live remittance rates across corridors.', cta: { label: 'Check rates', href: '/tools/remittance', variant: 'link' } },
             { icon: 'Calculator', title: 'Cost of Living', description: 'Compare living costs across destination cities.', cta: { label: 'Compare costs', href: '/tools/cost-of-living', variant: 'link' } },
             { icon: 'FileCheck', title: 'Visa Checklist', description: 'Generate your visa document checklist by destination.', cta: { label: 'Get checklist', href: '/tools/visa-checklist', variant: 'link' } },
           ],
@@ -222,7 +222,7 @@ export const landingPalettes: Record<string, PaletteDefinition> = {
           fields: [
             { name: 'email', label: 'Email', type: 'email', required: true, placeholder: 'you@example.com' },
           ],
-          submit_endpoint: '/newsletter/subscribe',
+          submit_endpoint: '/api/v1/newsletter/subscribe',
           submit_label: 'Subscribe',
           success_message: 'You\'re subscribed! Check your inbox for a confirmation.',
           error_message: 'Something went wrong. Please try again.',
