@@ -7,6 +7,7 @@
 
 	import { initNotifications, addNotification } from '$lib/stores/notifications.svelte';
 	import { wsClient } from '$lib/websocket';
+	import { initSidebarFromStorage, toggleSidebar, sidebarCollapsed } from '$lib/stores/sidebar.svelte';
 	import Sidebar from '$lib/components/layout/sidebar.svelte';
 	import TopBar from '$lib/components/layout/TopBar.svelte';
 	import Breadcrumb from '$lib/components/layout/Breadcrumb.svelte';
@@ -25,6 +26,7 @@
 
 	onMount(async () => {
 		fetchCsrfToken().catch(() => {});
+		initSidebarFromStorage();
 
 		if (!getAccessToken()) {
 			const refreshRes = await apiFetch<{ access_token: string }>('/auth/refresh', {
@@ -203,14 +205,23 @@
 	<title>JapaConnect Admin</title>
 </svelte:head>
 
+<svelte:window
+	onkeydown={(e) => {
+		if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'b') {
+			e.preventDefault();
+			toggleSidebar();
+		}
+	}}
+/>
+
 {#if isAuthPage}
 	{@render children()}
 {:else}
 	<div class="flex h-screen overflow-hidden" style="background-color: var(--color-background); color: var(--color-foreground)">
-		<Sidebar bind:mobileOpen={sidebarMobileOpen} permissions={currentPermissions} />
+		<Sidebar bind:mobileOpen={sidebarMobileOpen} collapsed={sidebarCollapsed()} permissions={currentPermissions} />
 
 		<div class="flex flex-1 flex-col overflow-hidden">
-			<TopBar onMenuClick={() => sidebarMobileOpen = !sidebarMobileOpen} />
+			<TopBar onMenuClick={() => sidebarMobileOpen = !sidebarMobileOpen} onCollapseToggle={toggleSidebar} />
 			<main class="flex-1 overflow-y-auto" style="background-color: var(--color-background)">
 				<div class="mx-auto max-w-screen-2xl px-4 py-6 sm:px-6 md:px-8">
 					<Breadcrumb />
