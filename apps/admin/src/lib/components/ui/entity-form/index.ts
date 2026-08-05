@@ -1,0 +1,25 @@
+export { default as EntityForm } from './entity-form.svelte';
+
+export type FieldDef =
+	| {
+			key: string;
+			label: string;
+			type: 'text' | 'textarea' | 'number' | 'email' | 'password' | 'date' | 'datetime-local' | 'url' | 'checkbox';
+			placeholder?: string;
+			required?: boolean;
+			min?: number;
+			max?: number;
+			step?: number;
+			help?: string;
+			class?: string;
+	  }
+	| {
+			key: string;
+			label: string;
+			type: 'select';
+			options: Array<{ value: string; label: string }>;
+			placeholder?: string;
+			required?: boolean;
+			help?: string;
+			class?: string;
+	  };
