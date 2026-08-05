@@ -14,12 +14,7 @@
 	import type { Column, ActionItem, FilterDef, BulkAction } from '$lib/components/ui/data-table';
 	import type { Snippet } from 'svelte';
 
-	// EntityPageConfig — a single declarative config object that the scaffold
-	// turns into a full list/create/edit/view/delete page. The scaffold owns all
-	// UI state (loading/error/success, pagination, selection, sort, filter, the
-	// create/edit/view slide-overs and the delete-confirm modal) and wires the
-	// DataTable's row actions to open them. Parents only supply data accessors
-	// (`load`/`create`/`update`/`remove`) and field/column metadata.
+	// EntityPageConfig — declarative config the scaffold turns into a full CRUD page.
 	export interface EntityPageConfig {
 		title: string;
 		description?: string;
@@ -81,10 +76,7 @@
 	let confirmOpen = $state(false);
 	let deleteTarget = $state<any | null>(null);
 
-	// ── Permission derivation ───────────────────────────────────────────────
-	// When a permission key is omitted, default to allowed so the scaffold works
-	// for entities that aren't permission-gated. edit/delete fall back to the
-	// create permission key when their own key isn't supplied (per the brief).
+	// ── Permission derivation: omitted keys default to allowed; edit/delete fall back to createPermission ──
 	const canCreate = $derived(
 		!config.readonly && (!config.createPermission || hasPermission(config.createPermission))
 	);
@@ -137,16 +129,13 @@
 		void reload();
 	});
 
-	// Honour a parent-supplied default page size (read once, then parent owns it
-	// via the bound DataTable control).
+	// Honour a parent-supplied default page size (read once; DataTable owns it after).
 	$effect(() => {
 		const ps = config.pageSize;
 		if (ps && ps !== pageSize) pageSize = ps;
 	});
 
-	// ── Row actions ─────────────────────────────────────────────────────────
-	// When config.actions is supplied the parent owns the wiring; otherwise the
-	// scaffold builds default View/Edit/Delete actions that open the slide-overs.
+	// ── Row actions: default View/Edit/Delete open the slide-overs when config.actions is omitted ──
 	const rowActions = $derived.by<ActionItem[]>(() => {
 		if (config.actions) return config.actions;
 		const acts: ActionItem[] = [
