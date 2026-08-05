@@ -196,6 +196,9 @@ func TestListRevenueSplitsFilterDefaults(t *testing.T) {
 	if f.PayoutID.Valid {
 		t.Errorf("PayoutID should be zero/invalid, got %+v", f.PayoutID)
 	}
+	if f.SpaceID.Valid {
+		t.Errorf("SpaceID should be zero/invalid, got %+v", f.SpaceID)
+	}
 	if f.FromTs.Valid {
 		t.Errorf("FromTs should be zero/invalid, got %+v", f.FromTs)
 	}
@@ -214,6 +217,7 @@ func TestListRevenueSplitsFilterAllSet(t *testing.T) {
 	q := "?instructor_id=00000000-0000-0000-0000-000000000001" +
 		"&track_id=00000000-0000-0000-0000-000000000002" +
 		"&payout_id=00000000-0000-0000-0000-000000000003" +
+		"&space_id=00000000-0000-0000-0000-000000000004" +
 		"&source=pro_stream" +
 		"&from=2026-01-01T00:00:00Z" +
 		"&to=2026-12-31T23:59:59Z"
@@ -234,6 +238,11 @@ func TestListRevenueSplitsFilterAllSet(t *testing.T) {
 		t.Error("payout_id not parsed")
 	} else {
 		f.PayoutID = id
+	}
+	if id, ok := scanOptionalUUIDParam(req, "space_id"); !ok || !id.Valid {
+		t.Error("space_id not parsed")
+	} else {
+		f.SpaceID = id
 	}
 	if ts, ok := parseOptionalTime(req, "from"); !ok || !ts.Valid {
 		t.Error("from not parsed")

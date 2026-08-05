@@ -149,33 +149,40 @@ SELECT COUNT(*) FROM learning_tracks
 WHERE tenant_id = $1
   AND instructor_id IS NOT NULL
   AND ($2::text = '' OR university_submission_status = $2)
+  AND ($3::uuid IS NULL OR geo_space_id = $3)
 `
 
 type CountAllUniversityTracksParams struct {
 	TenantID pgtype.UUID `json:"tenant_id"`
 	Status   string      `json:"status"`
+	SpaceID  pgtype.UUID `json:"space_id"`
 }
 
 func (q *Queries) CountAllUniversityTracks(ctx context.Context, arg CountAllUniversityTracksParams) (int64, error) {
-	row := q.db.QueryRow(ctx, countAllUniversityTracks, arg.TenantID, arg.Status)
+	row := q.db.QueryRow(ctx, countAllUniversityTracks, arg.TenantID, arg.Status, arg.SpaceID)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
 }
 
 const countInstructorProfilesByStatus = `-- name: CountInstructorProfilesByStatus :one
-SELECT COUNT(*) FROM instructor_profiles
-WHERE tenant_id = $1
-  AND ($2::text = '' OR status = $2)
+SELECT COUNT(*) FROM instructor_profiles ip
+WHERE ip.tenant_id = $1
+  AND ($2::text = '' OR ip.status = $2)
+  AND ($3::uuid IS NULL OR EXISTS (
+        SELECT 1 FROM learning_tracks lt
+        WHERE lt.instructor_id = ip.id
+          AND lt.geo_space_id = $3))
 `
 
 type CountInstructorProfilesByStatusParams struct {
 	TenantID pgtype.UUID `json:"tenant_id"`
 	Status   string      `json:"status"`
+	SpaceID  pgtype.UUID `json:"space_id"`
 }
 
 func (q *Queries) CountInstructorProfilesByStatus(ctx context.Context, arg CountInstructorProfilesByStatusParams) (int64, error) {
-	row := q.db.QueryRow(ctx, countInstructorProfilesByStatus, arg.TenantID, arg.Status)
+	row := q.db.QueryRow(ctx, countInstructorProfilesByStatus, arg.TenantID, arg.Status, arg.SpaceID)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -183,14 +190,18 @@ func (q *Queries) CountInstructorProfilesByStatus(ctx context.Context, arg Count
 
 const countRevenueSplits = `-- name: CountRevenueSplits :one
 SELECT COUNT(*)::bigint AS total
-FROM revenue_splits
-WHERE tenant_id = $1
-  AND ($2::uuid IS NULL OR instructor_id = $2)
-  AND ($3::uuid IS NULL OR track_id = $3)
-  AND ($4::text = '' OR source = $4)
-  AND ($5::uuid IS NULL OR payout_id = $5)
-  AND ($6::timestamptz IS NULL OR created_at >= $6)
-  AND ($7::timestamptz IS NULL OR created_at < $7)
+FROM revenue_splits rs
+WHERE rs.tenant_id = $1
+  AND ($2::uuid IS NULL OR rs.instructor_id = $2)
+  AND ($3::uuid IS NULL OR rs.track_id = $3)
+  AND ($4::text = '' OR rs.source = $4)
+  AND ($5::uuid IS NULL OR rs.payout_id = $5)
+  AND ($6::timestamptz IS NULL OR rs.created_at >= $6)
+  AND ($7::timestamptz IS NULL OR rs.created_at < $7)
+  AND ($8::uuid IS NULL OR EXISTS (
+        SELECT 1 FROM learning_tracks lt
+        WHERE lt.id = rs.track_id
+          AND lt.geo_space_id = $8))
 `
 
 type CountRevenueSplitsParams struct {
@@ -201,6 +212,7 @@ type CountRevenueSplitsParams struct {
 	PayoutID     pgtype.UUID        `json:"payout_id"`
 	FromTs       pgtype.Timestamptz `json:"from_ts"`
 	ToTs         pgtype.Timestamptz `json:"to_ts"`
+	SpaceID      pgtype.UUID        `json:"space_id"`
 }
 
 // ADR-063 §9: total count for the same filter set as ListRevenueSplits, used
@@ -214,6 +226,7 @@ func (q *Queries) CountRevenueSplits(ctx context.Context, arg CountRevenueSplits
 		arg.PayoutID,
 		arg.FromTs,
 		arg.ToTs,
+		arg.SpaceID,
 	)
 	var total int64
 	err := row.Scan(&total)
@@ -1247,13 +1260,15 @@ LEFT JOIN instructor_profiles ip ON ip.id = lt.instructor_id
 WHERE lt.tenant_id = $1
   AND lt.instructor_id IS NOT NULL
   AND ($2::text = '' OR lt.university_submission_status = $2)
+  AND ($3::uuid IS NULL OR lt.geo_space_id = $3)
 ORDER BY lt.created_at DESC
-LIMIT $4 OFFSET $3
+LIMIT $5 OFFSET $4
 `
 
 type ListAllUniversityTracksParams struct {
 	TenantID   pgtype.UUID `json:"tenant_id"`
 	Status     string      `json:"status"`
+	SpaceID    pgtype.UUID `json:"space_id"`
 	PageOffset int32       `json:"page_offset"`
 	PageLimit  int32       `json:"page_limit"`
 }
@@ -1293,6 +1308,7 @@ func (q *Queries) ListAllUniversityTracks(ctx context.Context, arg ListAllUniver
 	rows, err := q.db.Query(ctx, listAllUniversityTracks,
 		arg.TenantID,
 		arg.Status,
+		arg.SpaceID,
 		arg.PageOffset,
 		arg.PageLimit,
 	)
@@ -1393,24 +1409,32 @@ func (q *Queries) ListInstructorPayoutsByInstructor(ctx context.Context, arg Lis
 }
 
 const listInstructorPayoutsByStatus = `-- name: ListInstructorPayoutsByStatus :many
-SELECT id, tenant_id, instructor_id, period_start, period_end, gross_kobo, platform_commission_kobo, net_kobo, currency, status, payout_reference, failure_reason, processed_at, created_at FROM instructor_payouts
-WHERE tenant_id = $1
-  AND ($2::text = '' OR status = $2)
-ORDER BY created_at ASC
-LIMIT $4 OFFSET $3
+SELECT id, tenant_id, instructor_id, period_start, period_end, gross_kobo, platform_commission_kobo, net_kobo, currency, status, payout_reference, failure_reason, processed_at, created_at FROM instructor_payouts p
+WHERE p.tenant_id = $1
+  AND ($2::text = '' OR p.status = $2)
+  AND ($3::uuid IS NULL OR EXISTS (
+        SELECT 1 FROM learning_tracks lt
+        WHERE lt.instructor_id = p.instructor_id
+          AND lt.geo_space_id = $3))
+ORDER BY p.created_at ASC
+LIMIT $5 OFFSET $4
 `
 
 type ListInstructorPayoutsByStatusParams struct {
 	TenantID   pgtype.UUID `json:"tenant_id"`
 	Status     string      `json:"status"`
+	SpaceID    pgtype.UUID `json:"space_id"`
 	PageOffset int32       `json:"page_offset"`
 	PageLimit  int32       `json:"page_limit"`
 }
 
+// Optional @space_id (ADR-063 admin per-university view): when set, restricts
+// to payouts for instructors who have a track targeted at that space.
 func (q *Queries) ListInstructorPayoutsByStatus(ctx context.Context, arg ListInstructorPayoutsByStatusParams) ([]InstructorPayout, error) {
 	rows, err := q.db.Query(ctx, listInstructorPayoutsByStatus,
 		arg.TenantID,
 		arg.Status,
+		arg.SpaceID,
 		arg.PageOffset,
 		arg.PageLimit,
 	)
@@ -1448,24 +1472,32 @@ func (q *Queries) ListInstructorPayoutsByStatus(ctx context.Context, arg ListIns
 }
 
 const listInstructorProfilesByStatus = `-- name: ListInstructorProfilesByStatus :many
-SELECT id, tenant_id, user_id, display_name, headline, bio, social_links, tier, status, commission_pct_override, payout_method, kyc_status, application_note, reviewed_by, reviewed_at, created_at, updated_at FROM instructor_profiles
-WHERE tenant_id = $1
-  AND ($2::text = '' OR status = $2)
-ORDER BY created_at DESC
-LIMIT $4 OFFSET $3
+SELECT id, tenant_id, user_id, display_name, headline, bio, social_links, tier, status, commission_pct_override, payout_method, kyc_status, application_note, reviewed_by, reviewed_at, created_at, updated_at FROM instructor_profiles ip
+WHERE ip.tenant_id = $1
+  AND ($2::text = '' OR ip.status = $2)
+  AND ($3::uuid IS NULL OR EXISTS (
+        SELECT 1 FROM learning_tracks lt
+        WHERE lt.instructor_id = ip.id
+          AND lt.geo_space_id = $3))
+ORDER BY ip.created_at DESC
+LIMIT $5 OFFSET $4
 `
 
 type ListInstructorProfilesByStatusParams struct {
 	TenantID   pgtype.UUID `json:"tenant_id"`
 	Status     string      `json:"status"`
+	SpaceID    pgtype.UUID `json:"space_id"`
 	PageOffset int32       `json:"page_offset"`
 	PageLimit  int32       `json:"page_limit"`
 }
 
+// Optional @space_id (ADR-063 admin per-university view): when set, restricts
+// to instructors who have at least one track targeted at that space.
 func (q *Queries) ListInstructorProfilesByStatus(ctx context.Context, arg ListInstructorProfilesByStatusParams) ([]InstructorProfile, error) {
 	rows, err := q.db.Query(ctx, listInstructorProfilesByStatus,
 		arg.TenantID,
 		arg.Status,
+		arg.SpaceID,
 		arg.PageOffset,
 		arg.PageLimit,
 	)
@@ -1568,12 +1600,14 @@ WHERE lt.tenant_id = $1
   AND lt.is_published_to_university = false
   AND lt.is_published = true
   AND ip.status = 'approved'
+  AND ($2::uuid IS NULL OR lt.geo_space_id = $2)
 ORDER BY lt.updated_at ASC
-LIMIT $3 OFFSET $2
+LIMIT $4 OFFSET $3
 `
 
 type ListPendingUniversityTracksParams struct {
 	TenantID   pgtype.UUID `json:"tenant_id"`
+	SpaceID    pgtype.UUID `json:"space_id"`
 	PageOffset int32       `json:"page_offset"`
 	PageLimit  int32       `json:"page_limit"`
 }
@@ -1609,7 +1643,12 @@ type ListPendingUniversityTracksRow struct {
 // (the creator has published the underlying track content; the marketplace
 // gate is the only thing pending).
 func (q *Queries) ListPendingUniversityTracks(ctx context.Context, arg ListPendingUniversityTracksParams) ([]ListPendingUniversityTracksRow, error) {
-	rows, err := q.db.Query(ctx, listPendingUniversityTracks, arg.TenantID, arg.PageOffset, arg.PageLimit)
+	rows, err := q.db.Query(ctx, listPendingUniversityTracks,
+		arg.TenantID,
+		arg.SpaceID,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -1749,16 +1788,20 @@ func (q *Queries) ListPublishedTracksByInstructor(ctx context.Context, arg ListP
 }
 
 const listRevenueSplits = `-- name: ListRevenueSplits :many
-SELECT id, tenant_id, instructor_id, track_id, enrollment_id, payment_id, payout_id, source, gross_kobo, creator_pct, platform_pct, creator_kobo, platform_kobo, currency, created_at FROM revenue_splits
-WHERE tenant_id = $1
-  AND ($2::uuid IS NULL OR instructor_id = $2)
-  AND ($3::uuid IS NULL OR track_id = $3)
-  AND ($4::text = '' OR source = $4)
-  AND ($5::uuid IS NULL OR payout_id = $5)
-  AND ($6::timestamptz IS NULL OR created_at >= $6)
-  AND ($7::timestamptz IS NULL OR created_at < $7)
-ORDER BY created_at DESC
-LIMIT $9 OFFSET $8
+SELECT id, tenant_id, instructor_id, track_id, enrollment_id, payment_id, payout_id, source, gross_kobo, creator_pct, platform_pct, creator_kobo, platform_kobo, currency, created_at FROM revenue_splits rs
+WHERE rs.tenant_id = $1
+  AND ($2::uuid IS NULL OR rs.instructor_id = $2)
+  AND ($3::uuid IS NULL OR rs.track_id = $3)
+  AND ($4::text = '' OR rs.source = $4)
+  AND ($5::uuid IS NULL OR rs.payout_id = $5)
+  AND ($6::timestamptz IS NULL OR rs.created_at >= $6)
+  AND ($7::timestamptz IS NULL OR rs.created_at < $7)
+  AND ($8::uuid IS NULL OR EXISTS (
+        SELECT 1 FROM learning_tracks lt
+        WHERE lt.id = rs.track_id
+          AND lt.geo_space_id = $8))
+ORDER BY rs.created_at DESC
+LIMIT $10 OFFSET $9
 `
 
 type ListRevenueSplitsParams struct {
@@ -1769,6 +1812,7 @@ type ListRevenueSplitsParams struct {
 	PayoutID     pgtype.UUID        `json:"payout_id"`
 	FromTs       pgtype.Timestamptz `json:"from_ts"`
 	ToTs         pgtype.Timestamptz `json:"to_ts"`
+	SpaceID      pgtype.UUID        `json:"space_id"`
 	PageOffset   int32              `json:"page_offset"`
 	PageLimit    int32              `json:"page_limit"`
 }
@@ -1786,6 +1830,7 @@ func (q *Queries) ListRevenueSplits(ctx context.Context, arg ListRevenueSplitsPa
 		arg.PayoutID,
 		arg.FromTs,
 		arg.ToTs,
+		arg.SpaceID,
 		arg.PageOffset,
 		arg.PageLimit,
 	)
