@@ -302,6 +302,8 @@
    const showBulkBar = $derived(!!bulkActionsList && selectable);
    // Whether to show the legacy inline bulk bar (snippet path).
    const showLegacyBulkBar = $derived(selectable && !bulkActionsList && (bulkActionsSnippet || defaultBulkActions));
+   // Rows matching the current selection — passed to BulkBar for disabled predicates.
+   const selectedRows = $derived(sortedData.filter((r) => selectedIds.has(extractId(r))));
  </script>
 
 <div class={clsx("w-full", className)} aria-live="polite" aria-busy={loading}>
@@ -472,7 +474,7 @@
     {/if}
   {/if}
   {#if showBulkBar}
-    <BulkBar {selectedIds} actions={bulkActionsList ?? []} onclear={clearSelection} />
+    <BulkBar {selectedIds} {selectedRows} actions={bulkActionsList ?? []} onclear={clearSelection} />
   {/if}
   {#if showLegacyBulkBar}
     <div class="mt-3 flex flex-wrap items-center gap-3 rounded-lg p-3" style="background: color-mix(in srgb, var(--color-primary) 12%, transparent); opacity: {selectedIds.size > 0 ? '1' : '0.5'}">

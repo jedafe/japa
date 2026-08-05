@@ -49,7 +49,11 @@ and use the `formSnippet` / `viewSnippet` escape hatches plus page-local state.
    pagination, search, sort, filter, and bulk selection state internally.
 3. **Replace the hand-rolled bulk bar with `<BulkBar>` / `bulkActionsList`.**
    Pass a `BulkAction[]` to `config.bulkActions`; `EntityPage` wires
-   `selectable` and `selectedIds` automatically.
+   `selectable` and `selectedIds` automatically. The `disabled` predicate
+   receives `(ids: Set<string>, selectedRows: any[])` so it can filter by
+   row data (e.g. disable "Hard Delete" unless a deleted row is selected).
+   `EntityPage` auto-reloads and clears the selection after each bulk
+   handler completes.
 4. **Replace inline action buttons with `<ActionMenu>` `actions` config.** Row
    actions render in the ⋮ dropdown. Use `show()` predicates to filter actions
    per-row and `variant: 'destructive'` for dangerous actions.
@@ -125,8 +129,8 @@ interface EntityPageConfig {
 
 Defined in `src/lib/components/entity/index.ts`. Supported `type` values:
 `text`, `textarea`, `number`, `email`, `password`, `date`, `datetime-local`,
-`url`, `checkbox`, `select` (requires `options: Array<{ value; label }>`).
-There is **no `color` input type** — see "Known gaps".
+`url`, `checkbox`, `color` (native color picker), `select` (requires
+`options: Array<{ value; label }>`).
 
 ---
 
@@ -135,10 +139,17 @@ There is **no `color` input type** — see "Known gaps".
 Defined in `src/lib/components/ui/data-table/types.ts`:
 
 ```ts
+interface ActionContext {
+  openView: (row: any) => void;
+  openEdit: (row: any) => void;
+  openDelete: (row: any) => void;
+  reload: () => void;
+}
+
 interface ActionItem {
   label: string;
   icon?: Component;
-  onclick: (row: any) => void;
+  onclick: (row: any, ctx?: ActionContext) => void;
   variant?: 'default' | 'destructive';
   show?: (row: any) => boolean;   // omit → always shown
 }
@@ -153,47 +164,57 @@ interface ActionItem {
   `row.status === 'banned'`).
 - Use `variant: 'destructive'` for dangerous actions so they render in the
   danger color.
+- The second argument `ctx` gives custom action handlers access to the
+  scaffold's built-in `openView`/`openEdit`/`openDelete`/`reload` functions,
+  so a custom action can trigger a slide-over or refetch without a page-local
+  workaround.
 - State actions that need a confirmation dialog keep a page-local `<Modal>`
   (EntityPage's built-in confirm only covers the default delete). After the
-  API call succeeds, bump `reloadKey++` to refetch.
+  API call succeeds, call `entityController?.reload()` to refetch (see
+  "EntityPage controller" below).
+
+## EntityPage controller
+
+`<EntityPage>` exposes a `bind:controller` prop of type `EntityPageController`:
+
+```ts
+interface EntityPageController {
+  reload: () => void;
+  openView: (row: any) => void;
+  openEdit: (row: any) => void;
+  openDelete: (row: any) => void;
+}
+```
+
+Page-local code (modals, sub-flows, external buttons) can call
+`controller.reload()` to trigger a refetch without remounting the component:
+
+```svelte
+let entityController = $state<EntityPageController | undefined>(undefined);
+// ... in a modal confirm handler:
+entityController?.reload();
+
+<EntityPage {config} bind:controller={entityController} />
+```
+
+`EntityPage` also auto-reloads and clears the row selection after every
+`bulkActions` handler completes — no `{#key reloadKey}` remount is needed.
 
 ---
 
 ## Known `EntityPage` gaps + workarounds
 
-These are acknowledged limitations of the initial shared-component release. Use the workarounds
-until a follow-up task closes them.
+These are acknowledged limitations of the initial shared-component release.
 
-1. **No `openView`/`openEdit`/`openDelete` exposed for custom actions.**
-   When you supply a custom `actions` array, you cannot trigger the scaffold's
-   built-in slide-overs from a custom action handler.
-   - *Workaround:* either omit custom actions to get the defaults, or include
-     View/Edit/Delete explicitly in the `actions` array (wiring `onclick` to
-     your own handlers or to `goto` for detail pages). For sub-flows that are
-     not view/edit/delete (e.g. "Manage Moderators"), render them as a custom
-     `componentSnippet` column with a button, as `/tags` does.
-
-2. **No auto-reload after bulk actions.** `EntityPage` does not refetch after a
-   `bulkActions` handler runs.
-   - *Workaround:* wrap `<EntityPage>` in `{#key reloadKey}` and bump
-     `reloadKey++` at the end of the bulk handler. The remount refetches data
-     and clears the row selection. All three reference pages do this.
-
-3. **No URL-sync for sort/filter.** `EntityPage` sets `urlSync={false}` on the
+1. **No URL-sync for sort/filter.** `EntityPage` sets `urlSync={false}` on the
      DataTable, so sort/filter state is not reflected in the URL.
    - *Status:* minor regression, acceptable for the initial release.
 
-4. **Generic confirm modal (no entity name).** The built-in delete confirm
+2. **Generic confirm modal (no entity name).** The built-in delete confirm
      shows a generic "Confirm Delete. This cannot be undone." message without
      the entity name.
    - *Status:* acceptable. Pages needing richer copy keep a page-local
      `<Modal>` (as `/users` does for its state actions).
-
-5. **`EntityForm` has no `color` input type.** There is no native color picker
-     field.
-   - *Workaround:* use `formSnippet` for color pickers, or use a `text` input
-     for hex strings (`/share-platforms` uses `type: 'text'` for the color
-     field and renders a swatch via `componentSnippet` in the table column).
 
 ---
 
@@ -204,7 +225,6 @@ twice (e.g. double-click) and fire duplicate API calls. Every bulk-action
 handler in an `EntityPage` page MUST include an in-flight guard:
 
 ```ts
-let reloadKey = $state(0);
 let pageError = $state('');
 let bulkDeleting = $state(false);
 
@@ -216,7 +236,7 @@ async function bulkDelete(ids: Set<string>) {
   pageError = '';
   try {
     await Promise.all(idArr.map((id) => someApi.delete(id)));
-    reloadKey++;                   // ← remount to refetch + clear selection
+    // EntityPage auto-reloads + clears selection after this returns.
   } catch (e) {
     pageError = e instanceof Error ? e.message : t('common.error', 'Failed to delete');
   } finally {
@@ -234,13 +254,11 @@ Then in the template:
   </div>
 {/if}
 
-{#key reloadKey}
-  <EntityPage {config} />
-{/key}
+<EntityPage {config} bind:controller={entityController} />
 ```
 
 All three reference migrations (`/tags`, `/share-platforms`, `/users`) use this
-exact pattern.
+pattern.
 
 ---
 

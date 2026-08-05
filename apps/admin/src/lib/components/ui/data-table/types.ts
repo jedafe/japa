@@ -13,10 +13,17 @@ export interface Column {
   componentProps?: Record<string, any>;
 }
 
+export interface ActionContext {
+  openView: (row: any) => void;
+  openEdit: (row: any) => void;
+  openDelete: (row: any) => void;
+  reload: () => void;
+}
+
 export interface ActionItem {
   label: string;
   icon?: Component;
-  onclick: (row: any) => void;
+  onclick: (row: any, ctx?: ActionContext) => void;
   variant?: 'default' | 'destructive';
   show?: (row: any) => boolean;
 }
@@ -32,5 +39,5 @@ export interface BulkAction {
   icon?: Component;
   onclick: (ids: Set<string>) => void | Promise<void>;
   variant?: 'default' | 'destructive';
-  disabled?: (ids: Set<string>) => boolean;
+  disabled?: (ids: Set<string>, selectedRows?: any[]) => boolean;
 }
