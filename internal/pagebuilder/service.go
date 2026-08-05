@@ -180,9 +180,9 @@ func (s *Service) SetDefaultTheme(ctx context.Context, id, tenantID pgtype.UUID)
 // Page operations
 // ---------------------------------------------------------------------------
 
-// ListPages returns all pages for a tenant, optionally filtered by q.
-func (s *Service) ListPages(ctx context.Context, tenantID pgtype.UUID, q string) ([]Page, error) {
-	return s.store.ListPages(ctx, tenantID, q)
+// ListPages returns all pages for a tenant, optionally narrowed by f.
+func (s *Service) ListPages(ctx context.Context, tenantID pgtype.UUID, f PageListFilter) ([]Page, error) {
+	return s.store.ListPages(ctx, tenantID, f)
 }
 
 // ListPublishedPages returns only published pages for public consumption.
@@ -237,9 +237,10 @@ func (s *Service) UpdatePage(ctx context.Context, id, tenantID pgtype.UUID, inpu
 		return Page{}, validationError("title is required")
 	}
 
-	if input.Slug == "" {
-		input.Slug = slugify(input.Title)
-	}
+	// NOTE: unlike CreatePage, we do NOT auto-derive the slug from the title
+	// here. Auto-deriving on every save would overwrite a user's custom slug
+	// whenever the client omits the slug field (the editor only sends title +
+	// blocks). The store preserves the existing slug when input.Slug is empty.
 
 	input.Blocks = sanitizeBlocksJSON(input.Blocks)
 

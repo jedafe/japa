@@ -18,6 +18,7 @@ const TOKEN_RE = /\{\{(\w+)(?:\|([^}]+))?\}\}/g;
 
 /** Resolve all {{token}} placeholders in a single string. */
 export function resolveString(str: string, tokens: GeoCopyTokens): string {
+  if (typeof str !== 'string') return str as unknown as string;
   return str.replace(TOKEN_RE, (match: string, tokenName: string, fallback?: string): string => {
     const field = TOKEN_ALIASES[tokenName];
     if (!field) return match; // unknown token — leave as-is

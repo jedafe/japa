@@ -12,12 +12,10 @@
 		user: SessionUser | null;
 		collapsed: boolean;
 		logoUrl?: string;
-		/** True on the Japa University host → branded header variant (ADR-063). */
-		isUniversity?: boolean;
 		onToggle: () => void;
 	}
 
-	let { menu, user, collapsed, logoUrl = '', isUniversity = false, onToggle }: Props = $props();
+	let { menu, user, collapsed, logoUrl = '', onToggle }: Props = $props();
 
 	// The API already filters by auth/permissions, but guard against visibility
 	// drift so an 'authenticated' item never leaks to a guest and vice-versa.
@@ -44,7 +42,7 @@
 		);
 	}
 
-	const brandLabel = $derived(isUniversity ? t('university.name') : t('app.name'));
+	const brandLabel = $derived(t('university.name'));
 </script>
 
 <nav
@@ -60,11 +58,7 @@
 				<span
 					class="grid h-8 w-8 shrink-0 place-items-center rounded-[var(--radius)] bg-[var(--color-primary)] text-[var(--color-primary-contrast)]"
 				>
-					{#if isUniversity}
-						<GraduationCap size={18} />
-					{:else}
-						<span class="text-sm font-semibold">JC</span>
-					{/if}
+					<GraduationCap size={18} />
 				</span>
 			{/if}
 			{#if !collapsed && !logoUrl}<span>{brandLabel}</span>{/if}

@@ -80,7 +80,6 @@
 	{collapsed}
 	onToggleCollapse={toggleCollapse}
 	logoUrl={data.logoUrl}
-	isUniversity={data.isUniversityHost}
 	sidebar={routeSidebar ?? undefined}
 	rightSidebarWidgets={data.rightSidebarWidgets}
 	lessonPlayer={isLessonPlayer}

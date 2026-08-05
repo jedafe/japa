@@ -6,19 +6,15 @@ import { courseJsonLd, breadcrumbJsonLd } from '$lib/seo';
 
 /**
  * Track Detail — SSR public content only (ADR-060 SSR/CSR boundary).
- * Fetches the track, its curriculum (modules/lessons), and public reviews.
+ * Fetches the track, its curriculum (modules/lessons), and public reviews
+ * from the marketplace catalog endpoint.
  * Enrollment state is NEVER fetched here — CSR-only via /me/enrollments.
- *
- * On the university host, fetches the marketplace catalog detail instead.
  */
 export const load: PageServerLoad = async (event) => {
 	const ctx = apiContext(event);
 	const slug = event.params.slug;
-	const isUniversity = event.locals.isUniversityHost;
 
-	const detailPath = isUniversity
-		? `/learn/university/catalog/${slug}`
-		: `/learn/tracks/${slug}`;
+	const detailPath = `/learn/university/tracks/${slug}`;
 
 	let track: TrackDetail;
 	let backendJsonLd: unknown = null;
@@ -44,7 +40,7 @@ export const load: PageServerLoad = async (event) => {
 		const body = await apiGetBody<{
 			data?: TrackReview[];
 			aggregate?: ReviewAggregate;
-		}>(ctx, `/learn/tracks/${track.id}/reviews?limit=10`);
+		}>(ctx, `/learn/university/tracks/${track.id}/reviews?limit=10`);
 		reviews = body.data ?? [];
 		reviewAggregate = body.aggregate ?? null;
 	} catch {
@@ -69,7 +65,6 @@ export const load: PageServerLoad = async (event) => {
 		track,
 		reviews,
 		reviewAggregate,
-		isUniversity,
 		jsonLd
 	};
 };

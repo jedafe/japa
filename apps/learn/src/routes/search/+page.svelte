@@ -106,7 +106,6 @@
 								user={data.user}
 								enrolled={!!en}
 								progressPct={en?.progress_pct ?? 0}
-								isUniversity={data.isUniversity}
 							/>
 						{/if}
 					{/each}
@@ -132,7 +131,6 @@
 						user={data.user}
 						enrolled={!!en}
 						progressPct={en?.progress_pct ?? 0}
-						isUniversity={data.isUniversity}
 					/>
 				{/if}
 			{/each}

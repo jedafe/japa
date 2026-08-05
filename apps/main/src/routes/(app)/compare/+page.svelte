@@ -77,7 +77,7 @@
 				{#each comparisons as cmp (cmp.id)}
 					{@const chip = visibilityChip(cmp.visibility)}
 					<a
-						href="/compare/{cmp.id}"
+						href="/compare/{cmp.slug}"
 						class="group flex flex-col gap-2 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 transition-colors hover:border-[var(--color-primary)]"
 					>
 						<div class="flex items-start justify-between gap-2">

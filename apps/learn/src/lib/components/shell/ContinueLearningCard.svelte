@@ -1,32 +1,26 @@
 <script lang="ts">
 	import { t } from '$lib/i18n';
-	import { api } from '$lib/api/client';
 	import { formatDuration } from '$lib/format';
 	import { PlayCircle, Flame } from 'lucide-svelte';
 	import type { Enrollment, SessionUser } from '$lib/types';
+	import { enrollmentsStore } from '$lib/stores/enrollments.svelte';
 
 	interface Props {
 		user: SessionUser | null;
-		isUniversity?: boolean;
 	}
-	let { user, isUniversity = false }: Props = $props();
+	let { user }: Props = $props();
 
-	// CSR ONLY — never fetch enrollments in +page.server.ts (ADR-060 SSR/CSR boundary).
-	let enrollments = $state<Enrollment[]>([]);
-	let loading = $state(true);
-
+	// Use the shared enrollments store so all widgets stay in sync after
+	// mutations (enroll, mark-complete). The store deduplicates fetches —
+	// multiple widgets mounting at the same time share a single request.
 	$effect(() => {
-		if (!user) {
-			loading = false;
-			return;
+		if (user) {
+			enrollmentsStore.fetch();
 		}
-		// Svelte 5 effects can't be async — wrap the fetch in an IIFE.
-		(async () => {
-			const r = await api.get<Enrollment[]>('/me/enrollments');
-			loading = false;
-			if (r.data) enrollments = r.data;
-		})();
 	});
+
+	const enrollments = $derived(enrollmentsStore.enrollments ?? []);
+	const loading = $derived(enrollmentsStore.loading && enrollments.length === 0);
 
 	// The most recently active enrollment is the "continue" target.
 	const continueItem = $derived(
@@ -45,7 +39,7 @@
 {:else if continueItem}
 	<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 		<h2 class="mb-3 text-sm font-medium text-[var(--color-text)]">
-			{isUniversity ? t('university.dashboard') : t('learn.continue_learning')}
+			{t('university.dashboard')}
 		</h2>
 		<a
 			href="/tracks/{continueItem.track_slug}"

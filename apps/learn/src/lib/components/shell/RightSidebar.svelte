@@ -20,8 +20,6 @@
 
 	interface Props {
 		user: SessionUser | null;
-		/** True on the Japa University host → creator-focused copy (ADR-063). */
-		isUniversity?: boolean;
 		/** Route-specific widgets rendered above the global defaults. */
 		sidebar?: Snippet;
 		/** Sidebar widgets from the Sidebar Management System (Section 59, ADR-066).
@@ -31,7 +29,7 @@
 		suppressAds?: boolean;
 	}
 
-	let { user, isUniversity = false, sidebar, rightSidebarWidgets = [], suppressAds = false }: Props = $props();
+	let { user, sidebar, rightSidebarWidgets = [], suppressAds = false }: Props = $props();
 
 	// Normalize incoming widgets to the SidebarWidget shape. On the lesson
 	// player, ad_slot widgets are filtered out (ADR-060: no ads on the lesson
@@ -86,7 +84,7 @@
 
 	<!-- Global widget: continue-learning (CSR, session-guarded) -->
 	{#if user}
-		<ContinueLearningCard {user} {isUniversity} />
+		<ContinueLearningCard {user} />
 	{/if}
 
 	<!-- Admin-managed sidebar widgets (Section 59, ADR-066).

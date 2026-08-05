@@ -101,6 +101,36 @@ export const plansApi = {
 	delete: (id: string) => api(`/admin/plans/${id}`, { method: 'DELETE' }),
 };
 
+export interface AdminPage {
+	id: string;
+	title: string;
+	slug: string;
+	page_type: string;
+	status: string;
+	updated_at: string;
+	blocks?: unknown;
+}
+
+// pagesApi wraps the /admin/pages endpoints (page builder). List supports
+// server-side filtering by page_type/slug/status/q.
+export const pagesApi = {
+	list: (params?: string) =>
+		api<AdminPage[]>(`/admin/pages${params ? `?${params}` : ''}`),
+	get: (id: string) => api<AdminPage>(`/admin/pages/${id}`),
+	create: (body: {
+		title: string;
+		slug: string;
+		page_type?: string;
+		blocks?: unknown;
+		theme_id?: string;
+	}) => api<AdminPage>('/admin/pages', { method: 'POST', body }),
+	update: (id: string, body: Record<string, unknown>) =>
+		api<AdminPage>(`/admin/pages/${id}`, { method: 'PATCH', body }),
+	delete: (id: string) => api(`/admin/pages/${id}`, { method: 'DELETE' }),
+	publish: (id: string) => api<AdminPage>(`/admin/pages/${id}/publish`, { method: 'POST', body: {} }),
+	archive: (id: string) => api<AdminPage>(`/admin/pages/${id}/archive`, { method: 'POST', body: {} }),
+};
+
 export const walletApi = {
 	getRules: (params?: string) => api<unknown>(`/admin/wallet/rules${params ? `?${params}` : ''}`),
 	createRule: (body: { activity_key: string; point_value: number; is_enabled: boolean; description?: string }) =>

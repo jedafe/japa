@@ -8,7 +8,7 @@ import type { MeSpace, ComparisonCreated, ComparisonType } from '$lib/types';
  * and the available comparison types (Section 30) for the type selector
  * (Phase 16.04: select comparison type → add items → dimensions). Both
  * degrade to [] on error. POST /comparisons creates the comparison; on
- * success we redirect to /compare/{id}.
+ * success we redirect to /compare/{slug}.
  *
  * Ref: japaconnect-engineering/sections/30-generic-comparison-system.md
  */
@@ -71,7 +71,7 @@ export const actions: Actions = {
 			return fail(400, { message: 'Title is required', values: { title, body, visibility, space_id: spaceId, type_id: typeId } });
 		}
 
-		const payload: Record<string, unknown> = { title, body, visibility };
+		const payload: Record<string, unknown> = { title, body, visibility, status: 'draft' };
 		if (spaceId) payload.space_id = spaceId;
 		if (typeId) payload.type_id = typeId;
 		if (itemNames.length >= 2) {
@@ -83,7 +83,11 @@ export const actions: Actions = {
 
 		try {
 			const created = await apiPost<ComparisonCreated>(ctx, '/comparisons', payload);
-			throw redirect(303, `/compare/${created.id}`);
+			// Redirect to the /create editor with the draft ID so the user can
+			// fill cell values and publish via the standard composer flow
+			// (Section 30 — "Publish (standard content publish flow)"). The
+			// comparison is created as a draft, not auto-published.
+			throw redirect(303, `/create?draft=${created.id}`);
 		} catch (e) {
 			if (e instanceof ApiError) {
 				return fail(e.status >= 400 && e.status < 500 ? e.status : 500, {

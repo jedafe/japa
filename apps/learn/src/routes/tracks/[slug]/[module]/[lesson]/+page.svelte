@@ -11,6 +11,7 @@
 	import CurriculumRail from '$lib/components/learn/CurriculumRail.svelte';
 	import ProgressRing from '$lib/components/learn/ProgressRing.svelte';
 	import { CheckCircle, ArrowRight, ArrowLeft, NotebookPen } from 'lucide-svelte';
+	import { enrollmentsStore } from '$lib/stores/enrollments.svelte';
 	import type { PageData } from './$types';
 	import type { Enrollment, Quiz, QuizQuestion, QuizResult, QuizSubmission } from '$lib/types';
 
@@ -19,29 +20,37 @@
 	const lesson = $derived(data.lesson);
 
 	// CSR ONLY — completed-lessons set + enrollment (ADR-060 SSR/CSR boundary).
+	// Uses the shared enrollmentsStore so sidebar widgets (Continue Learning,
+	// My Progress, My Learning) stay in sync after mark-complete.
 	let completedLessonIds = $state<Set<string>>(new Set());
-	let enrollment = $state<Enrollment | null>(null);
-	let loadingState = $state(true);
 	let marking = $state(false);
 
 	$effect(() => {
 		if (!data.user) {
-			loadingState = false;
 			return;
 		}
 		(async () => {
-			// Fetch enrollments to get the completed-lessons set + progress.
-			const r = await api.get<Enrollment[]>('/me/enrollments');
-			loadingState = false;
-			if (r.data) {
-				enrollment = r.data.find((e) => e.track_id === track.id) ?? null;
-			}
-			// Seed the completed set from the SSR lesson's is_completed flag.
-			if (lesson.is_completed) {
+			await enrollmentsStore.fetch();
+			// Fetch the full set of completed lesson IDs for this track so the
+			// curriculum rail restores completion state on page refresh.
+			// The SSR lesson's is_completed flag only covers the current lesson.
+			const pr = await api.get<{ completed_lesson_ids?: string[] }>(
+				`/learn/university/progress/${track.id}`
+			);
+			if (pr.data?.completed_lesson_ids) {
+				completedLessonIds = new Set(pr.data.completed_lesson_ids);
+			} else if (lesson.is_completed) {
+				// Fallback: seed from the SSR flag if the progress endpoint fails.
 				completedLessonIds = new Set([lesson.id]);
 			}
 		})();
 	});
+
+	// Derive the enrollment for this track from the shared store.
+	const enrollment = $derived(
+		enrollmentsStore.enrollments?.find((e) => e.track_id === track.id) ?? null
+	);
+	const loadingState = $derived(enrollmentsStore.loading && !enrollmentsStore.enrollments);
 
 	const isEnrolled = $derived(!!enrollment || !!lesson.is_preview);
 	const isCompleted = $derived(completedLessonIds.has(lesson.id));
@@ -49,19 +58,31 @@
 	const totalLessons = $derived(track.modules.reduce((n, m) => n + m.lessons.length, 0));
 
 	// Mark complete — optimistic Set, marking guard, rollback, auto-next.
+	// After success, refresh the shared enrollments store so all sidebar
+	// widgets (Continue Learning, My Progress, My Learning) update reactively.
 	async function markComplete() {
 		if (marking || isCompleted) return;
 		marking = true;
 		// Optimistic: add to the set immediately.
 		const prev = new Set(completedLessonIds);
 		completedLessonIds = new Set([...completedLessonIds, lesson.id]);
-		const r = await api.post<{ ok: boolean }>(`/learn/lessons/${lesson.id}/complete`);
+		const r = await api.post<{ ok: boolean }>(`/learn/university/lessons/${lesson.id}/complete`);
 		marking = false;
 		if (r.error) {
 			// Rollback on failure.
 			completedLessonIds = prev;
 			return;
 		}
+		// Refresh the shared store so sidebar widgets reflect the new progress.
+		enrollmentsStore.refresh();
+		// Re-fetch the completed lesson IDs so the curriculum rail stays in
+		// sync (the optimistic set already has this lesson, but the re-fetch
+		// catches any other changes from other tabs/devices).
+		api.get<{ completed_lesson_ids?: string[] }>(`/learn/university/progress/${track.id}`).then((pr) => {
+			if (pr.data?.completed_lesson_ids) {
+				completedLessonIds = new Set(pr.data.completed_lesson_ids);
+			}
+		});
 		// Auto-next: navigate to the next lesson if one exists.
 		if (lesson.next_lesson) {
 			goto(`/tracks/${track.slug}/${lesson.next_lesson.module_slug}/${lesson.next_lesson.slug}`);
@@ -77,7 +98,7 @@
 		// Save progress every 15 seconds.
 		if (now - lastProgressSave >= 15) {
 			lastProgressSave = now;
-			api.post(`/learn/lessons/${lesson.id}/progress`, { progress_secs: now });
+			api.post(`/learn/university/lessons/${lesson.id}/progress`, { progress_secs: now });
 		}
 	}
 
@@ -136,7 +157,7 @@
 					? (quizTextAnswers[question.id] ?? '')
 					: (quizAnswers[question.id] ?? [])
 		}));
-		const r = await api.post<QuizResult>(`/learn/quizzes/${q.id}/submit`, { answers: payload });
+		const r = await api.post<QuizResult>(`/learn/university/quizzes/${q.id}/submit`, { answers: payload });
 		quizSubmitting = false;
 		if (r.data) {
 			quizResult = r.data;

@@ -13,6 +13,9 @@
 	import { switchLocale } from '$lib/appOrigins';
 	import SearchAutocomplete from './SearchAutocomplete.svelte';
 	import ContinueLearningCard from './ContinueLearningCard.svelte';
+	import ProgressRingWidget from './ProgressRingWidget.svelte';
+	import LearningEnrollmentsWidget from './LearningEnrollmentsWidget.svelte';
+	import TrackCardWidget from './TrackCardWidget.svelte';
 
 	interface SidebarWidget {
 		id: string;
@@ -108,31 +111,14 @@
 		<Languages size={18} />
 	</button>
 {:else if widget.widget_type === 'continue_learning'}
-	<ContinueLearningCard user={null} />
+	<!-- continue_learning is rendered globally by RightSidebar (ContinueLearningCard).
+	     The admin-managed widget is a no-op here to avoid a duplicate with user=null. -->
 {:else if widget.widget_type === 'learning_enrollments'}
-	<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-		<div class="mb-3 flex items-center gap-2">
-			<GraduationCap size={18} class="text-[var(--color-primary)]" />
-			<h2 class="text-sm font-medium text-[var(--color-text)]">{title || 'My Learning'}</h2>
-		</div>
-		<p class="text-xs text-[var(--color-muted)]">Loading enrollments…</p>
-	</section>
+	<LearningEnrollmentsWidget {title} limit={typeof widgetProps.limit === 'number' ? widgetProps.limit : 3} />
 {:else if widget.widget_type === 'progress_ring'}
-	<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 text-center">
-		<h2 class="mb-3 text-sm font-medium text-[var(--color-text)]">{title || 'My Progress'}</h2>
-		<div class="mx-auto grid h-20 w-20 place-items-center">
-			<CircleDashed size={64} class="text-[var(--color-border)]" />
-		</div>
-		<p class="mt-2 text-xs text-[var(--color-muted)]">Loading progress…</p>
-	</section>
+	<ProgressRingWidget {title} />
 {:else if widget.widget_type === 'track_card'}
-	<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-		<div class="mb-3 flex items-center gap-2">
-			<BookOpen size={18} class="text-[var(--color-primary)]" />
-			<h2 class="text-sm font-medium text-[var(--color-text)]">{title || 'Featured Track'}</h2>
-		</div>
-		<p class="text-xs text-[var(--color-muted)]">Loading track…</p>
-	</section>
+	<TrackCardWidget {title} trackSlug={typeof widgetProps.track_slug === 'string' ? widgetProps.track_slug : ''} />
 {:else if widget.widget_type === 'curriculum_rail'}
 	<!-- Curriculum rail is rendered by the lesson player route snippet, not the widget renderer. -->
 {:else if widget.widget_type === 'metric_card'}
