@@ -461,7 +461,13 @@ func (h *Handlers) ListPages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	pages, err := h.Service.ListPages(r.Context(), tenantID, r.URL.Query().Get("q"))
+	q := r.URL.Query()
+	pages, err := h.Service.ListPages(r.Context(), tenantID, PageListFilter{
+		Q:        q.Get("q"),
+		PageType: q.Get("page_type"),
+		Slug:     q.Get("slug"),
+		Status:   q.Get("status"),
+	})
 	if err != nil {
 		handleServiceError(w, err)
 		return

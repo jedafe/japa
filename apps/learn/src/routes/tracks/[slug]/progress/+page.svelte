@@ -36,7 +36,7 @@
 		progress = null;
 		(async () => {
 			// 1. Resolve the track by slug to get its UUID.
-			const trackRes = await api.get<TrackDetail>(`/learn/tracks/${trackSlug}`);
+			const trackRes = await api.get<TrackDetail>(`/learn/university/tracks/${trackSlug}`);
 			if (!trackRes.data) {
 				loading = false;
 				if (trackRes.status === 404) notFound = true;
@@ -46,7 +46,7 @@
 			track = trackRes.data;
 
 			// 2. Fetch progress using the track's UUID.
-			const progRes = await api.get<TrackProgress>(`/learn/progress/${track.id}`);
+			const progRes = await api.get<TrackProgress>(`/learn/university/progress/${track.id}`);
 			loading = false;
 			if (progRes.data) {
 				progress = progRes.data;

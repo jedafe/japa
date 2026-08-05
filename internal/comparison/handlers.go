@@ -474,6 +474,7 @@ func (h *Handlers) CreateComparison(w http.ResponseWriter, r *http.Request) {
 		Title      string `json:"title"`
 		Body       string `json:"body"`
 		Visibility string `json:"visibility"`
+		Status     string `json:"status"`
 		SpaceID    string `json:"space_id"`
 		TypeID     string `json:"type_id"`
 		Items      []struct {
@@ -521,6 +522,7 @@ func (h *Handlers) CreateComparison(w http.ResponseWriter, r *http.Request) {
 		Title:      input.Title,
 		Body:       input.Body,
 		Visibility: input.Visibility,
+		Status:     input.Status,
 		SpaceID:    spaceID,
 		TypeID:     typeID,
 		Items:      items,
@@ -534,18 +536,20 @@ func (h *Handlers) CreateComparison(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, map[string]any{"data": result})
 }
 
-// GetComparison handles GET /api/v1/comparisons/{id}. Public for published
-// and publicly-visible comparisons; unpublished or non-public comparisons
-// require the authenticated user to be the author (Section 30).
+// GetComparison handles GET /api/v1/comparisons/{id}. The {id} segment may
+// be either a content UUID or a slug (Section 30 —
+// GET /api/v1/comparisons/:slug). Public for published and publicly-visible
+// comparisons; unpublished or non-public comparisons require the authenticated
+// user to be the author.
 func (h *Handlers) GetComparison(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	contentID, err := parseUUIDParam(r, "id")
+	contentID, err := h.Service.ResolveComparisonContentID(r.Context(), chi.URLParam(r, "id"), tenantID)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid comparison ID")
+		handleServiceError(w, err)
 		return
 	}
 
@@ -653,18 +657,19 @@ func (h *Handlers) DeleteComparison(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusNoContent, nil)
 }
 
-// GetComparisonMatrix handles GET /api/v1/comparisons/{id}/matrix. Public for
+// GetComparisonMatrix handles GET /api/v1/comparisons/{id}/matrix. The {id}
+// segment may be either a content UUID or a slug (Section 30). Public for
 // published and publicly-visible comparisons; unpublished or non-public
-// comparisons require the authenticated user to be the author (Section 30).
+// comparisons require the authenticated user to be the author.
 func (h *Handlers) GetComparisonMatrix(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	contentID, err := parseUUIDParam(r, "id")
+	contentID, err := h.Service.ResolveComparisonContentID(r.Context(), chi.URLParam(r, "id"), tenantID)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid comparison ID")
+		handleServiceError(w, err)
 		return
 	}
 

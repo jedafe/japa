@@ -8,7 +8,9 @@ import type {
 	CustomFieldGroup,
 	BlogSeries,
 	ContentRecord,
-	ComposerOrganization
+	ComposerOrganization,
+	ComparisonDetail,
+	ComparisonType
 } from '$lib/types';
 
 /** Load everything the composer needs; every fetch degrades independently. */
@@ -21,16 +23,20 @@ export const load: PageServerLoad = async (event) => {
 	const ctx = apiContext(event);
 	const draftId = event.url.searchParams.get('draft');
 
-	const [typesRes, flagsRes, spacesRes, groupsRes, seriesRes, orgsRes] = await Promise.allSettled([
-		apiList<ContentTypeMeta>(ctx, '/content-types'),
-		apiGet<Record<string, boolean>>(ctx, '/feature-flags'),
-		apiList<MeSpace>(ctx, '/me/spaces'),
-		apiList<CustomFieldGroup>(ctx, '/custom-field-groups'),
-		apiList<BlogSeries>(ctx, '/blog/series'),
-		// Post-as-org (ADR-062): the caller's org memberships, used by the
-		// "post on behalf of" selector. Empty list = personal posts only.
-		apiList<ComposerOrganization>(ctx, '/me/organizations')
-	]);
+	const [typesRes, flagsRes, spacesRes, groupsRes, seriesRes, orgsRes, compTypesRes] =
+		await Promise.allSettled([
+			apiList<ContentTypeMeta>(ctx, '/content-types'),
+			apiGet<Record<string, boolean>>(ctx, '/feature-flags'),
+			apiList<MeSpace>(ctx, '/me/spaces'),
+			apiList<CustomFieldGroup>(ctx, '/custom-field-groups'),
+			apiList<BlogSeries>(ctx, '/blog/series'),
+			// Post-as-org (ADR-062): the caller's org memberships, used by the
+			// "post on behalf of" selector. Empty list = personal posts only.
+			apiList<ComposerOrganization>(ctx, '/me/organizations'),
+			// Comparison types (Section 30) — for the type selector in the
+			// comparison editor. Empty list = "General (no type)" only.
+			apiList<ComparisonType>(ctx, '/comparisons/types?page_size=50')
+		]);
 
 	const rawTypes = typesRes.status === 'fulfilled' ? typesRes.value.items : [];
 	const flags = flagsRes.status === 'fulfilled' ? flagsRes.value : {};
@@ -48,8 +54,10 @@ export const load: PageServerLoad = async (event) => {
 			: [];
 	const series = seriesRes.status === 'fulfilled' ? seriesRes.value.items : [];
 	const organizations = orgsRes.status === 'fulfilled' ? orgsRes.value.items : [];
+	const comparisonTypes = compTypesRes.status === 'fulfilled' ? compTypesRes.value.items : [];
 
 	let draft: ContentRecord | null = null;
+	let comparisonDetail: ComparisonDetail | null = null;
 	if (draftId) {
 		try {
 			// Ownership-scoped: GET /me/drafts/{id} returns the caller's own
@@ -57,6 +65,16 @@ export const load: PageServerLoad = async (event) => {
 			// The public GET /content/{slug} resolves by slug and is not
 			// ownership-scoped, so it cannot safely serve the editor restore.
 			draft = await apiGet<ContentRecord>(ctx, `/me/drafts/${draftId}`);
+			// When the draft is a comparison, also fetch its items/dimensions
+			// so the ComparisonBuilder can render them (Section 30). The
+			// /compare/new wizard creates a draft and redirects here.
+			if (draft?.content_type === 'comparison') {
+				try {
+					comparisonDetail = await apiGet<ComparisonDetail>(ctx, `/comparisons/${draft.id}`);
+				} catch {
+					comparisonDetail = null;
+				}
+			}
 		} catch {
 			draft = null;
 		}
@@ -69,6 +87,8 @@ export const load: PageServerLoad = async (event) => {
 		series,
 		organizations,
 		draft,
+		comparisonDetail,
+		comparisonTypes,
 		loadError: typesRes.status === 'rejected'
 	};
 };

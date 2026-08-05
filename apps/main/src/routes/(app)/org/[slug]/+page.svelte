@@ -216,7 +216,7 @@
 					<div class="space-y-2">
 						{#each data.comparisons as cmp (cmp.id)}
 							<a
-								href="/compare/{cmp.id}"
+								href="/compare/{cmp.slug}"
 								class="flex items-center justify-between rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3 transition-colors hover:border-[var(--color-primary)]/40 hover:bg-[var(--color-surface-subtle)]"
 							>
 								<span class="min-w-0 flex-1">

@@ -357,14 +357,34 @@ func (q *Queries) GetLearningCertificate(ctx context.Context, arg GetLearningCer
 }
 
 const getLearningCertificateByID = `-- name: GetLearningCertificateByID :one
-SELECT id, tenant_id, user_id, track_id, certificate_number, media_id, issued_at
-FROM learning_certificates
-WHERE id = $1
+SELECT lc.id, lc.tenant_id, lc.user_id, lc.track_id, lc.certificate_number, lc.media_id, lc.issued_at,
+       lt.title AS track_title, lt.slug AS track_slug,
+       u.username AS recipient_username,
+       COALESCE(up.display_name, u.username) AS recipient_name
+FROM learning_certificates lc
+LEFT JOIN learning_tracks lt ON lt.id = lc.track_id AND lt.tenant_id = lc.tenant_id
+LEFT JOIN users u ON u.id = lc.user_id
+LEFT JOIN user_profiles up ON up.user_id = lc.user_id AND up.tenant_id = lc.tenant_id
+WHERE lc.id = $1
 `
 
-func (q *Queries) GetLearningCertificateByID(ctx context.Context, id pgtype.UUID) (LearningCertificate, error) {
+type GetLearningCertificateByIDRow struct {
+	ID                pgtype.UUID        `json:"id"`
+	TenantID          pgtype.UUID        `json:"tenant_id"`
+	UserID            pgtype.UUID        `json:"user_id"`
+	TrackID           pgtype.UUID        `json:"track_id"`
+	CertificateNumber string             `json:"certificate_number"`
+	MediaID           pgtype.UUID        `json:"media_id"`
+	IssuedAt          pgtype.Timestamptz `json:"issued_at"`
+	TrackTitle        *string            `json:"track_title"`
+	TrackSlug         *string            `json:"track_slug"`
+	RecipientUsername *string            `json:"recipient_username"`
+	RecipientName     string             `json:"recipient_name"`
+}
+
+func (q *Queries) GetLearningCertificateByID(ctx context.Context, id pgtype.UUID) (GetLearningCertificateByIDRow, error) {
 	row := q.db.QueryRow(ctx, getLearningCertificateByID, id)
-	var i LearningCertificate
+	var i GetLearningCertificateByIDRow
 	err := row.Scan(
 		&i.ID,
 		&i.TenantID,
@@ -373,6 +393,10 @@ func (q *Queries) GetLearningCertificateByID(ctx context.Context, id pgtype.UUID
 		&i.CertificateNumber,
 		&i.MediaID,
 		&i.IssuedAt,
+		&i.TrackTitle,
+		&i.TrackSlug,
+		&i.RecipientUsername,
+		&i.RecipientName,
 	)
 	return i, err
 }
@@ -817,6 +841,27 @@ func (q *Queries) GetLearningTrackDetailBySlug(ctx context.Context, arg GetLearn
 	return i, err
 }
 
+const getLessonCompletionStatus = `-- name: GetLessonCompletionStatus :one
+SELECT (lp.status = 'completed') AS is_completed
+FROM lesson_progress lp
+WHERE lp.user_id = $1 AND lp.lesson_id = $2
+`
+
+type GetLessonCompletionStatusParams struct {
+	UserID   pgtype.UUID `json:"user_id"`
+	LessonID pgtype.UUID `json:"lesson_id"`
+}
+
+// Checks whether a user has completed a specific lesson. Used by GetLessonDetail
+// to populate is_completed for authenticated users so the lesson player can
+// show the "Completed" state on SSR render without waiting for CSR.
+func (q *Queries) GetLessonCompletionStatus(ctx context.Context, arg GetLessonCompletionStatusParams) (bool, error) {
+	row := q.db.QueryRow(ctx, getLessonCompletionStatus, arg.UserID, arg.LessonID)
+	var is_completed bool
+	err := row.Scan(&is_completed)
+	return is_completed, err
+}
+
 const getLessonProgress = `-- name: GetLessonProgress :one
 
 SELECT id, tenant_id, user_id, lesson_id, status, completed_at, created_at
@@ -843,6 +888,44 @@ func (q *Queries) GetLessonProgress(ctx context.Context, arg GetLessonProgressPa
 		&i.Status,
 		&i.CompletedAt,
 		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getNextIncompleteLessonByTrack = `-- name: GetNextIncompleteLessonByTrack :one
+SELECT ll.id, ll.slug, ll.title, lm.slug AS module_slug
+FROM learning_lessons ll
+JOIN learning_modules lm ON lm.id = ll.module_id
+LEFT JOIN lesson_progress lp ON lp.lesson_id = ll.id AND lp.user_id = $1
+WHERE lm.track_id = $2 AND ll.is_published = true
+  AND (lp.status IS NULL OR lp.status != 'completed')
+ORDER BY lm.sort_order ASC, ll.sort_order ASC
+LIMIT 1
+`
+
+type GetNextIncompleteLessonByTrackParams struct {
+	UserID  pgtype.UUID `json:"user_id"`
+	TrackID pgtype.UUID `json:"track_id"`
+}
+
+type GetNextIncompleteLessonByTrackRow struct {
+	ID         pgtype.UUID `json:"id"`
+	Slug       string      `json:"slug"`
+	Title      string      `json:"title"`
+	ModuleSlug string      `json:"module_slug"`
+}
+
+// Finds the first published lesson in a track that the user has NOT completed
+// (status != 'completed' or no progress row). Used to populate the
+// next_lesson field on enriched enrollments for the Continue Learning card.
+func (q *Queries) GetNextIncompleteLessonByTrack(ctx context.Context, arg GetNextIncompleteLessonByTrackParams) (GetNextIncompleteLessonByTrackRow, error) {
+	row := q.db.QueryRow(ctx, getNextIncompleteLessonByTrack, arg.UserID, arg.TrackID)
+	var i GetNextIncompleteLessonByTrackRow
+	err := row.Scan(
+		&i.ID,
+		&i.Slug,
+		&i.Title,
+		&i.ModuleSlug,
 	)
 	return i, err
 }
@@ -1127,6 +1210,43 @@ func (q *Queries) ListAllLearningTracks(ctx context.Context, tenantID pgtype.UUI
 	return items, nil
 }
 
+const listCompletedLessonIDsByUserAndTrack = `-- name: ListCompletedLessonIDsByUserAndTrack :many
+SELECT ll.id
+FROM learning_lessons ll
+JOIN learning_modules lm ON lm.id = ll.module_id
+JOIN lesson_progress lp ON lp.lesson_id = ll.id AND lp.user_id = $1
+WHERE lm.track_id = $2 AND ll.is_published = true AND lp.status = 'completed'
+`
+
+type ListCompletedLessonIDsByUserAndTrackParams struct {
+	UserID  pgtype.UUID `json:"user_id"`
+	TrackID pgtype.UUID `json:"track_id"`
+}
+
+// Returns the IDs of all lessons the user has completed (status = 'completed')
+// in a track. Used by GET /learn/progress/{trackId} to populate the
+// completed_lesson_ids array so the curriculum rail can restore completion
+// state on page refresh without checking each lesson individually.
+func (q *Queries) ListCompletedLessonIDsByUserAndTrack(ctx context.Context, arg ListCompletedLessonIDsByUserAndTrackParams) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, listCompletedLessonIDsByUserAndTrack, arg.UserID, arg.TrackID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []pgtype.UUID
+	for rows.Next() {
+		var id pgtype.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listEnrollmentsByTrackID = `-- name: ListEnrollmentsByTrackID :many
 SELECT e.id, e.tenant_id, e.user_id, e.track_id, e.access_type, e.progress_pct, e.enrolled_at, e.completed_at,
        u.username,
@@ -1247,11 +1367,104 @@ func (q *Queries) ListEnrollmentsByUserID(ctx context.Context, arg ListEnrollmen
 	return items, nil
 }
 
+const listEnrollmentsByUserIDWithDetails = `-- name: ListEnrollmentsByUserIDWithDetails :many
+SELECT e.id, e.tenant_id, e.user_id, e.track_id, e.access_type, e.progress_pct,
+       e.enrolled_at, e.completed_at,
+       lt.slug AS track_slug, lt.title AS track_title, lt.difficulty AS level,
+       m.storage_path AS thumbnail_url,
+       COALESCE(lp_stats.lessons_completed, 0) AS lessons_completed,
+       COALESCE(lp_stats.lessons_total, 0) AS lessons_total,
+       lp_stats.last_activity_at
+FROM enrollments e
+JOIN learning_tracks lt ON lt.id = e.track_id
+LEFT JOIN media m ON m.id = lt.cover_media_id
+LEFT JOIN LATERAL (
+    SELECT
+        COUNT(*) FILTER (WHERE lp.status = 'completed') AS lessons_completed,
+        COUNT(*) AS lessons_total,
+        MAX(lp.completed_at) AS last_activity_at
+    FROM learning_lessons ll
+    JOIN learning_modules lm ON lm.id = ll.module_id
+    LEFT JOIN lesson_progress lp ON lp.lesson_id = ll.id AND lp.user_id = e.user_id
+    WHERE lm.track_id = e.track_id AND ll.is_published = true
+) lp_stats ON true
+WHERE e.user_id = $1 AND e.tenant_id = $2
+ORDER BY e.enrolled_at DESC
+`
+
+type ListEnrollmentsByUserIDWithDetailsParams struct {
+	UserID   pgtype.UUID `json:"user_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+type ListEnrollmentsByUserIDWithDetailsRow struct {
+	ID               pgtype.UUID        `json:"id"`
+	TenantID         pgtype.UUID        `json:"tenant_id"`
+	UserID           pgtype.UUID        `json:"user_id"`
+	TrackID          pgtype.UUID        `json:"track_id"`
+	AccessType       string             `json:"access_type"`
+	ProgressPct      pgtype.Numeric     `json:"progress_pct"`
+	EnrolledAt       pgtype.Timestamptz `json:"enrolled_at"`
+	CompletedAt      pgtype.Timestamptz `json:"completed_at"`
+	TrackSlug        string             `json:"track_slug"`
+	TrackTitle       string             `json:"track_title"`
+	Level            string             `json:"level"`
+	ThumbnailUrl     *string            `json:"thumbnail_url"`
+	LessonsCompleted int64              `json:"lessons_completed"`
+	LessonsTotal     int64              `json:"lessons_total"`
+	LastActivityAt   interface{}        `json:"last_activity_at"`
+}
+
+// Enriched enrollment list for GET /me/enrollments — joins learning_tracks
+// for slug/title/thumbnail/level and computes lessons_completed/lessons_total
+// + last_activity_at via a LATERAL subquery on lesson_progress. The frontend
+// Enrollment type (apps/learn/src/lib/types) expects all these fields so the
+// Continue Learning card and lesson player progress ring render correctly.
+func (q *Queries) ListEnrollmentsByUserIDWithDetails(ctx context.Context, arg ListEnrollmentsByUserIDWithDetailsParams) ([]ListEnrollmentsByUserIDWithDetailsRow, error) {
+	rows, err := q.db.Query(ctx, listEnrollmentsByUserIDWithDetails, arg.UserID, arg.TenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListEnrollmentsByUserIDWithDetailsRow
+	for rows.Next() {
+		var i ListEnrollmentsByUserIDWithDetailsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.UserID,
+			&i.TrackID,
+			&i.AccessType,
+			&i.ProgressPct,
+			&i.EnrolledAt,
+			&i.CompletedAt,
+			&i.TrackSlug,
+			&i.TrackTitle,
+			&i.Level,
+			&i.ThumbnailUrl,
+			&i.LessonsCompleted,
+			&i.LessonsTotal,
+			&i.LastActivityAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listLearningCertificatesByUser = `-- name: ListLearningCertificatesByUser :many
 SELECT lc.id, lc.tenant_id, lc.user_id, lc.track_id, lc.certificate_number, lc.media_id, lc.issued_at,
-       lt.title AS track_title, lt.slug AS track_slug
+       lt.title AS track_title, lt.slug AS track_slug,
+       u.username AS recipient_username,
+       COALESCE(up.display_name, u.username) AS recipient_name
 FROM learning_certificates lc
 LEFT JOIN learning_tracks lt ON lt.id = lc.track_id AND lt.tenant_id = lc.tenant_id
+LEFT JOIN users u ON u.id = lc.user_id
+LEFT JOIN user_profiles up ON up.user_id = lc.user_id AND up.tenant_id = lc.tenant_id
 WHERE lc.tenant_id = $1 AND lc.user_id = $2
 ORDER BY lc.issued_at DESC
 `
@@ -1271,6 +1484,8 @@ type ListLearningCertificatesByUserRow struct {
 	IssuedAt          pgtype.Timestamptz `json:"issued_at"`
 	TrackTitle        *string            `json:"track_title"`
 	TrackSlug         *string            `json:"track_slug"`
+	RecipientUsername *string            `json:"recipient_username"`
+	RecipientName     string             `json:"recipient_name"`
 }
 
 func (q *Queries) ListLearningCertificatesByUser(ctx context.Context, arg ListLearningCertificatesByUserParams) ([]ListLearningCertificatesByUserRow, error) {
@@ -1292,6 +1507,8 @@ func (q *Queries) ListLearningCertificatesByUser(ctx context.Context, arg ListLe
 			&i.IssuedAt,
 			&i.TrackTitle,
 			&i.TrackSlug,
+			&i.RecipientUsername,
+			&i.RecipientName,
 		); err != nil {
 			return nil, err
 		}
@@ -1552,7 +1769,7 @@ func (q *Queries) ListTrackLessonsForNav(ctx context.Context, arg ListTrackLesso
 const updateEnrollmentProgress = `-- name: UpdateEnrollmentProgress :exec
 UPDATE enrollments
 SET progress_pct = $1,
-    completed_at = CASE WHEN $1 >= 100 THEN now() ELSE completed_at END
+    completed_at = CASE WHEN $1::numeric >= 100 THEN now() ELSE completed_at END
 WHERE user_id = $2 AND track_id = $3
 `
 

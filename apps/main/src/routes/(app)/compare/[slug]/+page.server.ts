@@ -5,11 +5,12 @@ import type { ComparisonDetail, ComparisonMatrixItem } from '$lib/types';
 
 /**
  * Comparison detail at /compare/[slug] — auth-gated. The `slug` param is the
- * comparison ID (UUID); it is passed directly to GET /comparisons/{id}.
- * Also fetches the matrix (GET /comparisons/{id}/matrix) for type-aware cell
+ * comparison slug (human-readable); the backend GET /comparisons/{id} accepts
+ * either a UUID or a slug (Section 30 — GET /api/v1/comparisons/:slug). Also
+ * fetches the matrix (GET /comparisons/{id}/matrix) for type-aware cell
  * rendering — stars for rating, ✓/✗ for boolean, plain text otherwise.
  *
- * Ref: japaconnect-engineering/sections/16-comparisons.md
+ * Ref: japaconnect-engineering/sections/30-generic-comparison-system.md
  */
 export const load: PageServerLoad = async (event) => {
 	if (!event.locals.user) {
@@ -17,11 +18,11 @@ export const load: PageServerLoad = async (event) => {
 	}
 
 	const ctx = apiContext(event);
-	const id = event.params.slug;
+	const slug = event.params.slug;
 
 	let comparison: ComparisonDetail;
 	try {
-		comparison = await apiGet<ComparisonDetail>(ctx, `/comparisons/${id}`);
+		comparison = await apiGet<ComparisonDetail>(ctx, `/comparisons/${slug}`);
 	} catch (e) {
 		const status = e instanceof ApiError ? e.status : 500;
 		throw error(status === 404 ? 404 : 500, {
@@ -35,7 +36,7 @@ export const load: PageServerLoad = async (event) => {
 	// no cell data populated).
 	let matrix: ComparisonMatrixItem[] = [];
 	try {
-		matrix = (await apiGet<ComparisonMatrixItem[]>(ctx, `/comparisons/${id}/matrix`)) ?? [];
+		matrix = (await apiGet<ComparisonMatrixItem[]>(ctx, `/comparisons/${slug}/matrix`)) ?? [];
 	} catch {
 		matrix = [];
 	}

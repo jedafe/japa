@@ -134,6 +134,8 @@ export interface TrackSummary {
 	enrolled_count?: number;
 	/** Marketplace price in kobo (ADR-063). Null/0 = free. */
 	price_kobo?: number | null;
+	/** Currency code for the price (e.g. 'NGN'). Defaults to NGN if absent. */
+	currency?: string | null;
 	/** True when the course is published to the Japa University marketplace. */
 	is_published_to_university?: boolean;
 	tags?: string[];

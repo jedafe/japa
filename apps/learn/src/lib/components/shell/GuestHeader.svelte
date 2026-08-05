@@ -13,11 +13,9 @@
 	interface Props {
 		logoUrl?: string;
 		menu: Menu | null;
-		/** True on the Japa University host → branded header variant (ADR-063). */
-		isUniversity?: boolean;
 	}
 
-	let { logoUrl = '', menu, isUniversity = false }: Props = $props();
+	let { logoUrl = '', menu }: Props = $props();
 
 	const guestItems = $derived(
 		(menu?.items ?? []).filter((item: MenuItem) => {
@@ -26,7 +24,7 @@
 		})
 	);
 
-	const brandLabel = $derived(isUniversity ? t('university.name') : t('app.name'));
+	const brandLabel = $derived(t('university.name'));
 </script>
 
 <header class="guest-header">
@@ -36,11 +34,7 @@
 				<img src={logoUrl} alt={brandLabel} class="guest-logo" />
 			{:else}
 				<span class="guest-brand-mark">
-					{#if isUniversity}
-						<GraduationCap size={18} />
-					{:else}
-						JC
-					{/if}
+					<GraduationCap size={18} />
 				</span>
 			{/if}
 			<span class="guest-brand-name">{brandLabel}</span>

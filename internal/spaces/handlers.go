@@ -565,7 +565,9 @@ func (h *Handlers) AdminListSpaces(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// ListMySpaces handles GET /api/v1/me/spaces — every space the caller belongs to.
+// ListMySpaces handles GET /api/v1/me/spaces — every space the caller belongs
+// to. Super admins see every active space in the tenant so they can post to
+// any space without joining it first (Section 03 — admin override).
 func (h *Handlers) ListMySpaces(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -582,6 +584,22 @@ func (h *Handlers) ListMySpaces(w http.ResponseWriter, r *http.Request) {
 	// level by name/slug (case-insensitive ILIKE). Used by the /create
 	// composer's space selector.
 	q := strings.TrimSpace(r.URL.Query().Get("q"))
+
+	// Super admins bypass the membership requirement — they can post to any
+	// space without joining it first (Section 03 — admin override).
+	isSuperAdmin, err := h.Service.IsSuperAdmin(r.Context(), tenantID, user.UserID)
+	if err != nil {
+		slog.Warn("check super admin group", "error", err, "user_id", user.UserID)
+	}
+	if isSuperAdmin {
+		spaces, lerr := h.Service.ListAllSpacesForAdmin(r.Context(), tenantID, q)
+		if lerr != nil {
+			handleServiceError(w, lerr)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"data": spaces})
+		return
+	}
 
 	spaces, err := h.Service.ListSpacesByMember(r.Context(), tenantID, user.UserID, q)
 	if err != nil {
