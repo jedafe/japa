@@ -96,15 +96,19 @@ type AssessmentFormDTO struct {
 }
 
 // AssessmentField is a single field on the assessment form, with its scoring
-// config resolved from the config JSONB column.
+// config resolved from the config JSONB column. Options (for select/multiselect
+// fields) and Placeholder are exposed so the frontend can render the form
+// controls without a second round-trip (Rule 16 — no hardcoded option lists).
 type AssessmentField struct {
-	ID        string             `json:"id"`
-	Label     string             `json:"label"`
-	Key       string             `json:"key"`
-	FieldType string             `json:"field_type"`
-	Required  bool               `json:"is_required"`
-	Position  int32              `json:"position"`
-	Config    FieldScoringConfig `json:"config"`
+	ID          string             `json:"id"`
+	Label       string             `json:"label"`
+	Key         string             `json:"key"`
+	FieldType   string             `json:"field_type"`
+	Required    bool               `json:"is_required"`
+	Position    int32              `json:"position"`
+	Placeholder string             `json:"placeholder"`
+	Options     json.RawMessage    `json:"options"`
+	Config      FieldScoringConfig `json:"config"`
 }
 
 // Service holds the business logic for the Japa Readiness Assessment.
@@ -258,6 +262,13 @@ func (s *Service) ScoreSubmission(ctx context.Context, tenantID pgtype.UUID, inp
 // GetResult returns a single assessment result with its roadmap.
 func (s *Service) GetResult(ctx context.Context, tenantID, resultID pgtype.UUID) (gen.AssessmentResult, error) {
 	return s.store.GetAssessmentResultByID(ctx, tenantID, resultID)
+}
+
+// GetResultBySubmission returns the assessment result linked to a submission.
+// Callers use this to poll for the result after the async scoring task is
+// enqueued. Returns pgx.ErrNoRows when the result is not yet written.
+func (s *Service) GetResultBySubmission(ctx context.Context, tenantID, submissionID pgtype.UUID) (gen.AssessmentResult, error) {
+	return s.store.GetAssessmentResultBySubmission(ctx, tenantID, submissionID)
 }
 
 // ListHistory returns a user's past assessment results, paginated.
@@ -607,14 +618,24 @@ func formToDTO(form gen.Form, fields []gen.CustomField) *AssessmentFormDTO {
 
 	fieldDTOs := make([]AssessmentField, 0, len(fields))
 	for _, f := range fields {
+		placeholder := ""
+		if f.Placeholder != nil {
+			placeholder = *f.Placeholder
+		}
+		opts := f.Options
+		if opts == nil {
+			opts = json.RawMessage("[]")
+		}
 		fieldDTOs = append(fieldDTOs, AssessmentField{
-			ID:        f.ID.String(),
-			Label:     f.Label,
-			Key:       f.Key,
-			FieldType: f.FieldType,
-			Required:  f.IsRequired,
-			Position:  f.Position,
-			Config:    parseFieldScoringConfig(f.Config),
+			ID:          f.ID.String(),
+			Label:       f.Label,
+			Key:         f.Key,
+			FieldType:   f.FieldType,
+			Required:    f.IsRequired,
+			Position:    f.Position,
+			Placeholder: placeholder,
+			Options:     opts,
+			Config:      parseFieldScoringConfig(f.Config),
 		})
 	}
 

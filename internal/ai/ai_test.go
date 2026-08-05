@@ -466,15 +466,26 @@ func TestHITLStatusConstants(t *testing.T) {
 // Validation errors are returned before the store is called, so they work
 // with any *Store value — even nil won't be reached.
 
-func TestCreateHITLReview_MissingContentID(t *testing.T) {
+func TestCreateHITLReview_OptionalContentID(t *testing.T) {
 	t.Parallel()
+
+	// content_id is now optional (migration 000275). A review without
+	// content_id should pass validation — the function will proceed to the
+	// store call. With a nil store it panics, so we recover and verify the
+	// validation did not reject the missing content_id.
+	defer func() {
+		if r := recover(); r == nil {
+			t.Errorf("expected panic from nil store, got none — validation may have rejected missing content_id")
+		}
+	}()
 
 	_, err := CreateHITLReview(t.Context(), nil, HITLReview{
 		ContentType: "blog_post",
 		AIOutput:    []byte(`{"text":"hello"}`),
 	})
-	if err == nil || err.Error() != "content_id is required" {
-		t.Errorf("expected content_id error, got: %v", err)
+	// If we get here without panicking, the error should NOT be about content_id.
+	if err != nil && err.Error() == "content_id is required" {
+		t.Errorf("content_id should be optional, but got: %v", err)
 	}
 }
 

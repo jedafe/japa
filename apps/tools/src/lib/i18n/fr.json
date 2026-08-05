@@ -73,6 +73,8 @@
 	"checklist.change_selection": "Changer la sélection",
 	"checklist.no_documents": "Aucun document trouvé",
 	"checklist.no_documents_desc": "Ce guide de visa n'a pas encore d'éléments de liste de contrôle configurés.",
+	"checklist.unavailable": "Liste de contrôle indisponible",
+	"checklist.unavailable_desc": "Le service de liste de contrôle des visas n'est pas encore configuré. Veuillez revenir plus tard.",
 	"checklist.required": "Requis",
 	"checklist.add_note": "+ Ajouter une note",
 	"checklist.note_label": "Note :",
@@ -99,6 +101,9 @@
 	"readiness.past_results": "Résultats précédents",
 	"readiness.unavailable": "Évaluation indisponible",
 	"readiness.unavailable_desc": "L'évaluation de préparation n'est pas encore configurée. Veuillez revenir plus tard.",
+	"readiness.error_submit": "Échec de la soumission. Veuillez réessayer.",
+	"readiness.scoring_timeout": "Le calcul du score prend plus de temps que prévu. Veuillez revenir bientôt.",
+	"readiness.read_more": "Lire la suite",
 	"readiness.required_marker": "*",
 
 	"col.title": "Calculateur de coût de la vie",

@@ -394,7 +394,7 @@ const searchDocPages = `-- name: SearchDocPages :many
 SELECT id, title, slug, audience, content, parent_id, position, created_at
 FROM doc_pages
 WHERE tenant_id = $1 AND review_status = 'published'
-  AND audience IS NOT DISTINCT FROM $2
+  AND ($2::text IS NULL OR audience = $2)
   AND (title ILIKE '%' || $3::text || '%' OR content::text ILIKE '%' || $3::text || '%')
 ORDER BY position ASC, title ASC
 LIMIT $4

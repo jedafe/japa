@@ -51,24 +51,32 @@ const (
 // A weight of 1.0 means the layer's score is added directly; 0.5 means it
 // contributes half, etc. Weights are normalised so the worst-case score
 // across all layers sums to 1.0.
+//
+// ai_classification was added at 0.20 weight; the rule-based layers were
+// rebalanced down proportionally to keep the total at 1.0. When no AI
+// classifier is wired, the layer returns 0.0 and the effective max score
+// drops to 0.80 — content that only triggers rules will not be blocked
+// unless the rule signals are strong enough on their own.
 var DefaultWeights = map[string]float64{
-	"ip_reputation":  0.25,
-	"rate_limit":     0.20,
-	"content_hash":   0.20,
-	"censored_words": 0.15,
-	"link_analysis":  0.10,
-	"user_age":       0.05,
-	"content_length": 0.05,
+	"ip_reputation":   0.20,
+	"rate_limit":      0.15,
+	"content_hash":    0.15,
+	"censored_words":  0.10,
+	"link_analysis":   0.10,
+	"user_age":        0.05,
+	"content_length":  0.05,
+	"ai_classification": 0.20,
 }
 
 // --- Pipeline ---
 
 // SpamPipeline chains multiple detection layers and returns a single score.
 type SpamPipeline struct { //nolint:revive // stuttering type name preserved for API compatibility
-	store    *Store
-	rdb      *valkey.Client
-	db       *db.DB
-	settings spamSettingsReader
+	store      *Store
+	rdb        *valkey.Client
+	db         *db.DB
+	settings   spamSettingsReader
+	classifier SpamClassifier
 }
 
 // spamSettingsReader is the subset of config.Settings the spam pipeline uses
@@ -79,6 +87,11 @@ type spamSettingsReader interface {
 
 // SetSettings injects the hot-reloadable settings reader for spam thresholds.
 func (p *SpamPipeline) SetSettings(s spamSettingsReader) { p.settings = s }
+
+// SetClassifier injects the AI-powered spam classifier. When nil (the
+// default), the ai_classification layer is skipped and the pipeline operates
+// in rule-only mode.
+func (p *SpamPipeline) SetClassifier(c SpamClassifier) { p.classifier = c }
 
 // NewPipeline creates a pipeline backed by the given dependencies.
 func NewPipeline(store *Store, rdb *valkey.Client, database *db.DB) *SpamPipeline {
@@ -108,6 +121,7 @@ func (p *SpamPipeline) Check(ctx context.Context, tenantID pgtype.UUID, req Spam
 		p.checkLinkAnalysis,
 		p.checkUserAge,
 		p.checkContentLength,
+		p.checkAIClassification,
 	}
 
 	var results []layerResult
@@ -406,4 +420,65 @@ func (p *SpamPipeline) checkContentLength(ctx context.Context, tenantID pgtype.U
 	}
 
 	return name, 0.0, nil
+}
+
+// aiFlagThreshold is the default AI confidence score at which the AI layer's
+// contribution is considered high-confidence. Read from the
+// moderation.ai_auto_flag_threshold setting at runtime when available.
+const aiFlagThreshold = 0.85
+
+// checkAIClassification calls the AI gateway's moderation category to get a
+// semantic spam score for the content. This catches spam that rule-based
+// layers miss (e.g. natural-language scam pitches, social engineering).
+//
+// When no classifier is wired (SetClassifier not called or nil), the layer
+// returns 0.0 — the pipeline degrades to rule-only mode. When the AI
+// gateway is unavailable or returns an error, the layer also returns 0.0
+// rather than blocking content publication on an infrastructure failure.
+func (p *SpamPipeline) checkAIClassification(ctx context.Context, tenantID pgtype.UUID, req SpamCheckRequest) (string, float64, []string) {
+	const name = "ai_classification"
+
+	if p.classifier == nil {
+		return name, 0.0, nil
+	}
+
+	if strings.TrimSpace(req.Content) == "" {
+		return name, 0.0, nil
+	}
+
+	result, err := p.classifier.ClassifySpam(ctx, req.Content)
+	if err != nil {
+		slog.Warn("spam: ai classification failed, degrading to rules-only", "error", err)
+		return name, 0.0, nil
+	}
+
+	if result.Score <= 0 {
+		return name, 0.0, nil
+	}
+
+	threshold := aiFlagThreshold
+	if p.settings != nil {
+		// The setting is stored as int*100 in some configs; use the raw
+		// float setting if available. GetIntOr returns cents (e.g. 85 for
+		// 0.85), so divide by 100.
+		cents := p.settings.GetIntOr(ctx, tenantID, "moderation.ai_auto_flag_threshold", 85)
+		if cents > 0 {
+			threshold = float64(cents) / 100.0
+		}
+	}
+
+	var reasons []string
+	if result.Score >= threshold {
+		reasons = append(reasons, fmt.Sprintf("ai classifier: high-confidence spam (%.2f)", result.Score))
+	} else {
+		reasons = append(reasons, fmt.Sprintf("ai classifier: spam signal (%.2f)", result.Score))
+	}
+	for _, r := range result.Reasons {
+		if len(reasons) >= 4 {
+			break
+		}
+		reasons = append(reasons, "ai: "+r)
+	}
+
+	return name, result.Score, reasons
 }

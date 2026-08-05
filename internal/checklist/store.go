@@ -167,6 +167,31 @@ LIMIT 1
 	return f, nil
 }
 
+// GetVisaGuideTitle returns the title of a published visa guide. Used by
+// GetGuide to populate the ChecklistGuideResult title (§70 contract).
+func (s *Store) GetVisaGuideTitle(ctx context.Context, tenantID, guideID pgtype.UUID) (string, error) {
+	const q = `
+SELECT c.title
+FROM contents c
+WHERE c.tenant_id = $1
+  AND c.id = $2
+  AND c.content_type = 'guide'
+  AND c.guide_category = 'visa'
+  AND c.status = 'published'
+  AND c.deleted_at IS NULL
+LIMIT 1
+`
+
+	var title string
+	if err := s.pool.Reader.QueryRow(ctx, q, tenantID, guideID).Scan(&title); err != nil {
+		if err == pgx.ErrNoRows {
+			return "", pgx.ErrNoRows
+		}
+		return "", fmt.Errorf("checklist: get visa guide title: %w", err)
+	}
+	return title, nil
+}
+
 // ListChecklistProgress returns all progress rows for a user + guide.
 func (s *Store) ListChecklistProgress(ctx context.Context, tenantID, userID, guideID pgtype.UUID) ([]gen.ChecklistProgress, error) {
 	return s.queries.ListChecklistProgressByUserGuide(ctx, gen.ListChecklistProgressByUserGuideParams{
@@ -174,6 +199,24 @@ func (s *Store) ListChecklistProgress(ctx context.Context, tenantID, userID, gui
 		UserID:   userID,
 		GuideID:  guideID,
 	})
+}
+// GetSingleProgress returns a single progress row for a user + guide +
+// item_key. Used by UpsertProgress to resolve the existing completed state
+// for a note-only PATCH (where completed is nil in the request body).
+func (s *Store) GetSingleProgress(ctx context.Context, tenantID, userID, guideID pgtype.UUID, itemKey string) (gen.ChecklistProgress, error) {
+	const q = `
+SELECT * FROM checklist_progress
+WHERE tenant_id = $1 AND user_id = $2 AND guide_id = $3 AND item_key = $4
+LIMIT 1
+`
+	var row gen.ChecklistProgress
+	if err := s.pool.Reader.QueryRow(ctx, q, tenantID, userID, guideID, itemKey).Scan(
+		&row.ID, &row.TenantID, &row.UserID, &row.GuideID, &row.ItemKey,
+		&row.Completed, &row.CompletedAt, &row.Notes, &row.CreatedAt, &row.UpdatedAt,
+	); err != nil {
+		return gen.ChecklistProgress{}, err
+	}
+	return row, nil
 }
 
 // UpsertChecklistProgress marks a single item complete/incomplete + note.

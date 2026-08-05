@@ -260,7 +260,7 @@ VALUES ($1, $2, $3, $4, $5, $6, $7)
 ON CONFLICT (tenant_id, user_id, guide_id, item_key)
 DO UPDATE SET
     completed    = EXCLUDED.completed,
-    completed_at = EXCLUDED.completed_at,
+    completed_at = COALESCE(EXCLUDED.completed_at, checklist_progress.completed_at),
     notes        = COALESCE(EXCLUDED.notes, checklist_progress.notes),
     updated_at   = now()
 RETURNING id, tenant_id, user_id, guide_id, item_key, completed, completed_at, notes, created_at, updated_at
@@ -287,6 +287,11 @@ type UpsertChecklistProgressParams struct {
 // Upsert a single checklist progress item (mark complete/incomplete + note).
 // The ON CONFLICT clause handles both insert and update in one statement.
 // =====================================================================
+// completed is NOT NULL (always provided by the service layer, which
+// resolves a nil completed from the PATCH body to the existing value before
+// calling). completed_at and notes are nullable so a toggle-only update
+// preserves the existing notes (COALESCE) and a note-only update preserves
+// the existing completed_at.
 func (q *Queries) UpsertChecklistProgress(ctx context.Context, arg UpsertChecklistProgressParams) (ChecklistProgress, error) {
 	row := q.db.QueryRow(ctx, upsertChecklistProgress,
 		arg.TenantID,

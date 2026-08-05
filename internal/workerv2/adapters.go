@@ -226,20 +226,21 @@ func NewAssessmentAdapter(svc *assessment.Service, database *db.DB) *AssessmentA
 	return &AssessmentAdapter{svc: svc, db: database}
 }
 
-// ScoreSubmission resolves the result's tenant and scores the submission.
-// The assessment service's ScoreSubmission requires SubmissionID, UserID, and
-// FieldValues — these are looked up from the assessment_results row.
-func (a *AssessmentAdapter) ScoreSubmission(ctx context.Context, resultID pgtype.UUID) error {
-	var tid, submissionID, userID pgtype.UUID
+// ScoreSubmission resolves the submission's tenant, user, and field_values
+// from form_submissions, then runs the scoring engine which writes the
+// assessment_results row. The result does not exist yet at enqueue time —
+// scoring creates it (§71).
+func (a *AssessmentAdapter) ScoreSubmission(ctx context.Context, submissionID, tenantID pgtype.UUID) error {
+	var userID pgtype.UUID
 	var fieldValues []byte
 	err := a.db.Reader.QueryRow(ctx,
-		"SELECT tenant_id, submission_id, user_id, field_values FROM assessment_results WHERE id = $1",
-		resultID,
-	).Scan(&tid, &submissionID, &userID, &fieldValues)
+		"SELECT user_id, field_values FROM form_submissions WHERE id = $1 AND tenant_id = $2",
+		submissionID, tenantID,
+	).Scan(&userID, &fieldValues)
 	if err != nil {
-		return fmt.Errorf("looking up assessment_result: %w", err)
+		return fmt.Errorf("looking up form_submission: %w", err)
 	}
-	_, err = a.svc.ScoreSubmission(ctx, tid, assessment.ScoreSubmissionInput{
+	_, err = a.svc.ScoreSubmission(ctx, tenantID, assessment.ScoreSubmissionInput{
 		SubmissionID: submissionID,
 		UserID:       userID,
 		FieldValues:  fieldValues,

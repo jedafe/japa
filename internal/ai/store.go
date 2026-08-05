@@ -29,17 +29,17 @@ func NewStore(read, write *pgxpool.Pool) *Store {
 
 // HITLReview represents a human-in-the-loop review record.
 type HITLReview struct {
-	ID            pgtype.UUID
-	TenantID      pgtype.UUID
-	ContentID     pgtype.UUID
-	ContentType   string
-	AIOutput      []byte // JSONB
-	HumanFeedback []byte // JSONB, nullable
-	Status        string
-	ReviewerID    pgtype.UUID // nullable
-	Reason        string      // nullable
-	CreatedAt     time.Time
-	ReviewedAt    *time.Time
+	ID            pgtype.UUID  `json:"id"`
+	TenantID      pgtype.UUID  `json:"tenant_id"`
+	ContentID     pgtype.UUID  `json:"content_id"`
+	ContentType   string       `json:"content_type"`
+	AIOutput      []byte       `json:"ai_output"`        // JSONB
+	HumanFeedback []byte       `json:"human_feedback"`   // JSONB, nullable
+	Status        string       `json:"status"`
+	ReviewerID    pgtype.UUID  `json:"reviewer_id"`      // nullable
+	Reason        string       `json:"reason,omitempty"` // nullable
+	CreatedAt     time.Time    `json:"created_at"`
+	ReviewedAt    *time.Time   `json:"reviewed_at,omitempty"`
 }
 
 // CreateHITLReview inserts a new HITL review record and returns it.
@@ -134,11 +134,28 @@ func (s *Store) ListPendingHITLReviews(ctx context.Context, tenantID pgtype.UUID
 	return reviews, nil
 }
 
+// CountPendingHITLReviews returns the total count of pending reviews for a
+// tenant (used for pagination metadata in the admin HITL queue).
+func (s *Store) CountPendingHITLReviews(ctx context.Context, tenantID pgtype.UUID) (int64, error) {
+	if tenantID == (pgtype.UUID{}) {
+		return 0, errors.New("tenant_id is required")
+	}
+
+	var total int64
+	err := s.read.QueryRow(ctx, `
+		SELECT COUNT(*) FROM ai_hitl_reviews
+		WHERE tenant_id = $1 AND status = 'pending'
+	`, tenantID).Scan(&total)
+	if err != nil {
+		return 0, fmt.Errorf("counting pending HITL reviews: %w", err)
+	}
+
+	return total, nil
+}
+
 // ---------------------------------------------------------------------------
 // AI Usage Log (Section 20 — admin AI usage monitoring)
 // ---------------------------------------------------------------------------
-
-// AIUsageSummary is the aggregated usage response for GET /admin/ai/usage.
 // Matches the Section 20 contract: { total_cost_usd, tokens_used, by_task_type }.
 type AIUsageSummary struct {
 	TotalCostUSD float64                  `json:"total_cost_usd"`
