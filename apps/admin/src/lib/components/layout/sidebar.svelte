@@ -34,10 +34,7 @@
 		permissions?: string[];
 	} = $props();
 
-	// Effective collapsed state: prefer an explicitly-bound `collapsed` prop,
-	// otherwise read from the shared sidebar store. The root layout passes
-	// `collapsed={sidebarCollapsed()}` so the store drives reactivity; this
-	// fallback keeps the sidebar correct when rendered without that binding.
+	// Prefer bound collapsed prop, fall back to shared sidebar store.
 	let effectiveCollapsed = $derived(collapsed ?? sidebarCollapsed());
 
 	let expandedSections = $state(new Set(["dashboard", "users", "content", "moderation"]));
