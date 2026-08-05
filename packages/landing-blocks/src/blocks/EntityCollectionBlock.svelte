@@ -33,6 +33,35 @@
     props.columns === 4 ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-4' :
     'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3'
   );
+
+  // Resolve a per-entity deep link to the correct detail route.
+  // Mirrors the canonical FeedCard link logic (apps/main FeedCard.svelte)
+  // and the actual SvelteKit route shapes — there is NO /explore/[slug]
+  // detail route, so space/thread/post must NOT link to /explore/{slug}.
+  function entityHref(type: typeof props.entity_type, entity: Record<string, unknown>): string {
+    const slug = (entity.slug ?? entity.id) as string | undefined;
+    // Tools carry their own deep link (TOOL_REGISTRY href).
+    if (type === 'tool') return (entity.href as string | undefined) ?? '#';
+    if (!slug) return '#';
+    switch (type) {
+      case 'blog': return `/blog/${slug}`;
+      case 'job': return `/jobs/${slug}`;
+      case 'university': return `/universities/${slug}`;
+      case 'space':
+      case 'organization': return `/spaces/${slug}`;
+      case 'thread': return `/forum/${slug}`;
+      case 'post': {
+        // Mixed feed items link by content_type (blog_post/forum_thread/other).
+        const ct = entity.content_type as string | undefined;
+        if (ct === 'blog_post') return `/blog/${slug}`;
+        if (ct === 'forum_thread') return `/forum/${slug}`;
+        return `/content/${slug}`;
+      }
+      // No per-item detail route exists yet — link to the section list.
+      case 'scholarship': return `/scholarships`;
+      default: return '#';
+    }
+  }
 </script>
 
 <section class="px-6 py-16">
@@ -58,7 +87,7 @@
         {#each items as item}
           {@const entity = item as Record<string, unknown>}
           <a
-            href={entity.slug ? `/${props.entity_type === 'blog' ? 'blog' : props.entity_type === 'job' ? 'jobs' : props.entity_type === 'scholarship' ? 'scholarships' : props.entity_type === 'university' ? 'universities' : 'explore'}/${entity.slug ?? entity.id}` : '#'}
+            href={entityHref(props.entity_type, entity)}
             class="group block rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5 transition-all hover:shadow-lg hover:-translate-y-1"
           >
             {#if entity.cover_image_url || entity.logo_url}

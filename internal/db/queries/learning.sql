@@ -29,6 +29,29 @@ SELECT id, tenant_id, title, slug, description, difficulty, cover_media_id,
 FROM learning_tracks
 WHERE tenant_id = @tenant_id AND id = @id;
 
+-- name: GetLearningTrackDetailBySlug :one
+-- Track detail joined to media (thumbnail_url from cover_media_id) and
+-- instructor_profiles + users + user_profiles (instructor name/bio/username/
+-- avatar) so GET /learn/tracks/:slug can populate the hero and instructor card
+-- (ADR-060) without extra round-trips. Mirrors the university catalog join
+-- pattern (university.sql: m.storage_path AS thumbnail_url). All joins are
+-- LEFT so platform/staff-authored courses (no instructor) still resolve.
+SELECT lt.id, lt.tenant_id, lt.title, lt.slug, lt.description, lt.difficulty,
+       lt.cover_media_id, lt.is_published, lt.sort_order, lt.created_at, lt.updated_at,
+       lt.instructor_id, lt.price_kobo, lt.currency, lt.is_published_to_university,
+       lt.category, lt.language, lt.total_enrolled,
+       m.storage_path AS thumbnail_url,
+       ip.id AS instructor_profile_id, ip.display_name AS instructor_name,
+       ip.bio AS instructor_bio,
+       u.username AS instructor_username,
+       up.avatar_url AS instructor_avatar_url
+FROM learning_tracks lt
+LEFT JOIN media m ON m.id = lt.cover_media_id
+LEFT JOIN instructor_profiles ip ON ip.id = lt.instructor_id
+LEFT JOIN users u ON u.id = ip.user_id
+LEFT JOIN user_profiles up ON up.user_id = u.id
+WHERE lt.tenant_id = @tenant_id AND lt.slug = @slug;
+
 -- name: CreateLearningTrack :one
 INSERT INTO learning_tracks (tenant_id, title, slug, description, difficulty, cover_media_id, is_published, sort_order)
 VALUES (@tenant_id, @title, @slug, sqlc.narg(description), @difficulty, sqlc.narg(cover_media_id), @is_published, @sort_order)
@@ -103,20 +126,20 @@ DELETE FROM learning_modules WHERE tenant_id = @tenant_id AND id = @id;
 
 -- name: ListLearningLessonsByModule :many
 SELECT id, tenant_id, module_id, title, slug, lesson_type, content, media_id,
-       duration_minutes, sort_order, is_published, created_at, updated_at
+       duration_minutes, sort_order, is_published, is_preview, created_at, updated_at
 FROM learning_lessons
 WHERE tenant_id = @tenant_id AND module_id = @module_id
 ORDER BY sort_order ASC, created_at DESC;
 
 -- name: GetLearningLessonBySlug :one
 SELECT id, tenant_id, module_id, title, slug, lesson_type, content, media_id,
-       duration_minutes, sort_order, is_published, created_at, updated_at
+       duration_minutes, sort_order, is_published, is_preview, created_at, updated_at
 FROM learning_lessons
 WHERE tenant_id = @tenant_id AND module_id = @module_id AND slug = @slug;
 
 -- name: GetLearningLessonByID :one
 SELECT id, tenant_id, module_id, title, slug, lesson_type, content, media_id,
-       duration_minutes, sort_order, is_published, created_at, updated_at
+       duration_minutes, sort_order, is_published, is_preview, created_at, updated_at
 FROM learning_lessons
 WHERE tenant_id = @tenant_id AND id = @id;
 
@@ -126,7 +149,7 @@ WHERE tenant_id = @tenant_id AND id = @id;
 -- frontend can build breadcrumbs, the curriculum rail, and prev/next nav.
 SELECT ll.id, ll.tenant_id, ll.module_id, ll.title, ll.slug, ll.lesson_type,
        ll.content, ll.media_id, ll.duration_minutes, ll.sort_order,
-       ll.is_published, ll.created_at, ll.updated_at,
+       ll.is_published, ll.is_preview, ll.created_at, ll.updated_at,
        lm.title AS module_title, lm.slug AS module_slug,
        lt.id AS track_id, lt.slug AS track_slug, lt.title AS track_title
 FROM learning_lessons ll
@@ -146,9 +169,9 @@ WHERE lm.track_id = @track_id AND ll.tenant_id = @tenant_id AND ll.is_published 
 ORDER BY lm.sort_order ASC, ll.sort_order ASC, ll.created_at DESC;
 
 -- name: CreateLearningLesson :one
-INSERT INTO learning_lessons (tenant_id, module_id, title, slug, lesson_type, content, media_id, duration_minutes, sort_order, is_published)
-VALUES (@tenant_id, @module_id, @title, @slug, @lesson_type, sqlc.narg(content), sqlc.narg(media_id), sqlc.narg(duration_minutes), @sort_order, @is_published)
-RETURNING id, tenant_id, module_id, title, slug, lesson_type, content, media_id, duration_minutes, sort_order, is_published, created_at, updated_at;
+INSERT INTO learning_lessons (tenant_id, module_id, title, slug, lesson_type, content, media_id, duration_minutes, sort_order, is_published, is_preview)
+VALUES (@tenant_id, @module_id, @title, @slug, @lesson_type, sqlc.narg(content), sqlc.narg(media_id), sqlc.narg(duration_minutes), @sort_order, @is_published, @is_preview)
+RETURNING id, tenant_id, module_id, title, slug, lesson_type, content, media_id, duration_minutes, sort_order, is_published, is_preview, created_at, updated_at;
 
 -- name: UpdateLearningLesson :one
 UPDATE learning_lessons
@@ -159,9 +182,10 @@ SET title = COALESCE(@title, title),
     duration_minutes = COALESCE(sqlc.narg(duration_minutes), duration_minutes),
     sort_order = COALESCE(@sort_order, sort_order),
     is_published = COALESCE(@is_published, is_published),
+    is_preview = COALESCE(sqlc.narg(is_preview), is_preview),
     updated_at = now()
 WHERE tenant_id = @tenant_id AND id = @id
-RETURNING id, tenant_id, module_id, title, slug, lesson_type, content, media_id, duration_minutes, sort_order, is_published, created_at, updated_at;
+RETURNING id, tenant_id, module_id, title, slug, lesson_type, content, media_id, duration_minutes, sort_order, is_published, is_preview, created_at, updated_at;
 
 -- name: DeleteLearningLesson :exec
 DELETE FROM learning_lessons WHERE tenant_id = @tenant_id AND id = @id;

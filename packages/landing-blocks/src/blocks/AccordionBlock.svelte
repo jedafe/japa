@@ -1,6 +1,8 @@
 <script lang="ts">
   import type { AccordionProps } from '../types';
   import { Accordion } from 'bits-ui';
+  import { blockRegistry } from '../render/blockRegistry';
+  import BlockShell from '../shell/BlockShell.svelte';
 
   interface Props {
     props: AccordionProps;
@@ -36,7 +38,17 @@
             <h3 class="text-lg font-semibold text-[var(--color-text)]">{item.title}</h3>
             <div class="mt-2 text-sm text-[var(--color-text-subtle)]">
               {#if item.content_blocks}
-                <!-- Nested blocks would render here via BlockRenderer -->
+                {#each item.content_blocks as block (block.id)}
+                  {#if block.visible}
+                    {@const meta = blockRegistry[block.type]}
+                    {#if meta}
+                      <BlockShell style={block.style} motion={block.motion} background={block.style?.background}>
+                        {@const Component = meta.component}
+                        <Component props={block.props} />
+                      </BlockShell>
+                    {/if}
+                  {/if}
+                {/each}
               {/if}
             </div>
           </div>
@@ -54,7 +66,17 @@
             </Accordion.Header>
             <Accordion.Content class="px-4 pb-3 text-sm text-[var(--color-text-subtle)]">
               {#if item.content_blocks}
-                <!-- Nested blocks render here -->
+                {#each item.content_blocks as block (block.id)}
+                  {#if block.visible}
+                    {@const meta = blockRegistry[block.type]}
+                    {#if meta}
+                      <BlockShell style={block.style} motion={block.motion} background={block.style?.background}>
+                        {@const Component = meta.component}
+                        <Component props={block.props} />
+                      </BlockShell>
+                    {/if}
+                  {/if}
+                {/each}
               {/if}
             </Accordion.Content>
           </Accordion.Item>

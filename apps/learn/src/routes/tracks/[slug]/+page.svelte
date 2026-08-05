@@ -30,11 +30,19 @@
 			loadingEnrollment = false;
 			return;
 		}
+		// Guard against stale fetches when the user navigates between tracks:
+		// the effect re-runs whenever data.track changes, and an in-flight
+		// request from the previous track must not overwrite the new state.
+		let cancelled = false;
 		(async () => {
 			const r = await api.get<Enrollment[]>('/me/enrollments');
+			if (cancelled) return;
 			loadingEnrollment = false;
 			if (r.data) enrollment = r.data.find((e) => e.track_id === track.id) ?? null;
 		})();
+		return () => {
+			cancelled = true;
+		};
 	});
 
 	const isEnrolled = $derived(!!enrollment);
