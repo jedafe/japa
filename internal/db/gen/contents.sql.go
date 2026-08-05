@@ -1566,18 +1566,23 @@ func (q *Queries) ListContentsByAuthorProfile(ctx context.Context, arg ListConte
 }
 
 const listContentsBySpace = `-- name: ListContentsBySpace :many
-SELECT id, tenant_id, author_id, space_id, content_type, title, slug, body, body_html,
-       field_values, content_hash, geo_space_id, header_image_id, featured_image_id,
-       canonical_url, meta_title, meta_description, og_image_url, seo_indexable,
-       status, visibility, is_locked, is_pinned, read_time_minutes,
-       view_count, comment_count, share_count, reshare_count, publish_at, published_at,
-       created_at, updated_at, guide_category
-FROM contents
-WHERE tenant_id = $1 AND space_id = $2
-  AND deleted_at IS NULL
-  AND auto_hidden = false
-  AND (created_at < $3 OR ($3 IS NULL))
-ORDER BY created_at DESC, id DESC
+SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c.body_html,
+       c.field_values, c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,
+       c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
+       c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
+       c.view_count, c.comment_count, c.share_count, c.reshare_count, c.publish_at, c.published_at,
+       c.created_at, c.updated_at, c.guide_category,
+       u.username AS author_username, up.display_name AS author_display_name,
+       s.name AS space_name
+FROM contents c
+LEFT JOIN users u ON u.id = c.author_id AND u.tenant_id = c.tenant_id
+LEFT JOIN user_profiles up ON up.user_id = c.author_id AND up.tenant_id = c.tenant_id
+LEFT JOIN spaces s ON s.id = c.space_id AND s.tenant_id = c.tenant_id
+WHERE c.tenant_id = $1 AND c.space_id = $2
+  AND c.deleted_at IS NULL
+  AND c.auto_hidden = false
+  AND (c.created_at < $3 OR ($3 IS NULL))
+ORDER BY c.created_at DESC, c.id DESC
 LIMIT $4
 `
 
@@ -1589,39 +1594,42 @@ type ListContentsBySpaceParams struct {
 }
 
 type ListContentsBySpaceRow struct {
-	ID              pgtype.UUID        `json:"id"`
-	TenantID        pgtype.UUID        `json:"tenant_id"`
-	AuthorID        pgtype.UUID        `json:"author_id"`
-	SpaceID         pgtype.UUID        `json:"space_id"`
-	ContentType     string             `json:"content_type"`
-	Title           string             `json:"title"`
-	Slug            string             `json:"slug"`
-	Body            string             `json:"body"`
-	BodyHtml        string             `json:"body_html"`
-	FieldValues     []byte             `json:"field_values"`
-	ContentHash     *string            `json:"content_hash"`
-	GeoSpaceID      pgtype.UUID        `json:"geo_space_id"`
-	HeaderImageID   pgtype.UUID        `json:"header_image_id"`
-	FeaturedImageID pgtype.UUID        `json:"featured_image_id"`
-	CanonicalUrl    *string            `json:"canonical_url"`
-	MetaTitle       *string            `json:"meta_title"`
-	MetaDescription *string            `json:"meta_description"`
-	OgImageUrl      *string            `json:"og_image_url"`
-	SeoIndexable    bool               `json:"seo_indexable"`
-	Status          string             `json:"status"`
-	Visibility      string             `json:"visibility"`
-	IsLocked        bool               `json:"is_locked"`
-	IsPinned        bool               `json:"is_pinned"`
-	ReadTimeMinutes int32              `json:"read_time_minutes"`
-	ViewCount       int32              `json:"view_count"`
-	CommentCount    int32              `json:"comment_count"`
-	ShareCount      int32              `json:"share_count"`
-	ReshareCount    int32              `json:"reshare_count"`
-	PublishAt       pgtype.Timestamptz `json:"publish_at"`
-	PublishedAt     pgtype.Timestamptz `json:"published_at"`
-	CreatedAt       pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
-	GuideCategory   *string            `json:"guide_category"`
+	ID                pgtype.UUID        `json:"id"`
+	TenantID          pgtype.UUID        `json:"tenant_id"`
+	AuthorID          pgtype.UUID        `json:"author_id"`
+	SpaceID           pgtype.UUID        `json:"space_id"`
+	ContentType       string             `json:"content_type"`
+	Title             string             `json:"title"`
+	Slug              string             `json:"slug"`
+	Body              string             `json:"body"`
+	BodyHtml          string             `json:"body_html"`
+	FieldValues       []byte             `json:"field_values"`
+	ContentHash       *string            `json:"content_hash"`
+	GeoSpaceID        pgtype.UUID        `json:"geo_space_id"`
+	HeaderImageID     pgtype.UUID        `json:"header_image_id"`
+	FeaturedImageID   pgtype.UUID        `json:"featured_image_id"`
+	CanonicalUrl      *string            `json:"canonical_url"`
+	MetaTitle         *string            `json:"meta_title"`
+	MetaDescription   *string            `json:"meta_description"`
+	OgImageUrl        *string            `json:"og_image_url"`
+	SeoIndexable      bool               `json:"seo_indexable"`
+	Status            string             `json:"status"`
+	Visibility        string             `json:"visibility"`
+	IsLocked          bool               `json:"is_locked"`
+	IsPinned          bool               `json:"is_pinned"`
+	ReadTimeMinutes   int32              `json:"read_time_minutes"`
+	ViewCount         int32              `json:"view_count"`
+	CommentCount      int32              `json:"comment_count"`
+	ShareCount        int32              `json:"share_count"`
+	ReshareCount      int32              `json:"reshare_count"`
+	PublishAt         pgtype.Timestamptz `json:"publish_at"`
+	PublishedAt       pgtype.Timestamptz `json:"published_at"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+	GuideCategory     *string            `json:"guide_category"`
+	AuthorUsername    *string            `json:"author_username"`
+	AuthorDisplayName *string            `json:"author_display_name"`
+	SpaceName         *string            `json:"space_name"`
 }
 
 func (q *Queries) ListContentsBySpace(ctx context.Context, arg ListContentsBySpaceParams) ([]ListContentsBySpaceRow, error) {
@@ -1672,6 +1680,9 @@ func (q *Queries) ListContentsBySpace(ctx context.Context, arg ListContentsBySpa
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.GuideCategory,
+			&i.AuthorUsername,
+			&i.AuthorDisplayName,
+			&i.SpaceName,
 		); err != nil {
 			return nil, err
 		}
@@ -1684,19 +1695,24 @@ func (q *Queries) ListContentsBySpace(ctx context.Context, arg ListContentsBySpa
 }
 
 const listContentsByTenant = `-- name: ListContentsByTenant :many
-SELECT id, tenant_id, author_id, space_id, content_type, title, slug, body, body_html,
-       field_values, content_hash, geo_space_id, header_image_id, featured_image_id,
-       canonical_url, meta_title, meta_description, og_image_url, seo_indexable,
-       status, visibility, is_locked, is_pinned, read_time_minutes,
-       view_count, comment_count, share_count, reshare_count, publish_at, published_at,
-       created_at, updated_at, guide_category
-FROM contents
-WHERE tenant_id = $1
-  AND deleted_at IS NULL
-  AND auto_hidden = false
-  AND ($2::text IS NULL OR title ILIKE '%' || $2 || '%' OR slug ILIKE '%' || $2 || '%' OR body ILIKE '%' || $2 || '%')
-  AND (created_at < $3 OR ($3 IS NULL))
-ORDER BY created_at DESC, id DESC
+SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c.body_html,
+       c.field_values, c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,
+       c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
+       c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
+       c.view_count, c.comment_count, c.share_count, c.reshare_count, c.publish_at, c.published_at,
+       c.created_at, c.updated_at, c.guide_category,
+       u.username AS author_username, up.display_name AS author_display_name,
+       s.name AS space_name
+FROM contents c
+LEFT JOIN users u ON u.id = c.author_id AND u.tenant_id = c.tenant_id
+LEFT JOIN user_profiles up ON up.user_id = c.author_id AND up.tenant_id = c.tenant_id
+LEFT JOIN spaces s ON s.id = c.space_id AND s.tenant_id = c.tenant_id
+WHERE c.tenant_id = $1
+  AND c.deleted_at IS NULL
+  AND c.auto_hidden = false
+  AND ($2::text IS NULL OR c.title ILIKE '%' || $2 || '%' OR c.slug ILIKE '%' || $2 || '%' OR c.body ILIKE '%' || $2 || '%')
+  AND (c.created_at < $3 OR ($3 IS NULL))
+ORDER BY c.created_at DESC, c.id DESC
 LIMIT $4
 `
 
@@ -1708,39 +1724,42 @@ type ListContentsByTenantParams struct {
 }
 
 type ListContentsByTenantRow struct {
-	ID              pgtype.UUID        `json:"id"`
-	TenantID        pgtype.UUID        `json:"tenant_id"`
-	AuthorID        pgtype.UUID        `json:"author_id"`
-	SpaceID         pgtype.UUID        `json:"space_id"`
-	ContentType     string             `json:"content_type"`
-	Title           string             `json:"title"`
-	Slug            string             `json:"slug"`
-	Body            string             `json:"body"`
-	BodyHtml        string             `json:"body_html"`
-	FieldValues     []byte             `json:"field_values"`
-	ContentHash     *string            `json:"content_hash"`
-	GeoSpaceID      pgtype.UUID        `json:"geo_space_id"`
-	HeaderImageID   pgtype.UUID        `json:"header_image_id"`
-	FeaturedImageID pgtype.UUID        `json:"featured_image_id"`
-	CanonicalUrl    *string            `json:"canonical_url"`
-	MetaTitle       *string            `json:"meta_title"`
-	MetaDescription *string            `json:"meta_description"`
-	OgImageUrl      *string            `json:"og_image_url"`
-	SeoIndexable    bool               `json:"seo_indexable"`
-	Status          string             `json:"status"`
-	Visibility      string             `json:"visibility"`
-	IsLocked        bool               `json:"is_locked"`
-	IsPinned        bool               `json:"is_pinned"`
-	ReadTimeMinutes int32              `json:"read_time_minutes"`
-	ViewCount       int32              `json:"view_count"`
-	CommentCount    int32              `json:"comment_count"`
-	ShareCount      int32              `json:"share_count"`
-	ReshareCount    int32              `json:"reshare_count"`
-	PublishAt       pgtype.Timestamptz `json:"publish_at"`
-	PublishedAt     pgtype.Timestamptz `json:"published_at"`
-	CreatedAt       pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
-	GuideCategory   *string            `json:"guide_category"`
+	ID                pgtype.UUID        `json:"id"`
+	TenantID          pgtype.UUID        `json:"tenant_id"`
+	AuthorID          pgtype.UUID        `json:"author_id"`
+	SpaceID           pgtype.UUID        `json:"space_id"`
+	ContentType       string             `json:"content_type"`
+	Title             string             `json:"title"`
+	Slug              string             `json:"slug"`
+	Body              string             `json:"body"`
+	BodyHtml          string             `json:"body_html"`
+	FieldValues       []byte             `json:"field_values"`
+	ContentHash       *string            `json:"content_hash"`
+	GeoSpaceID        pgtype.UUID        `json:"geo_space_id"`
+	HeaderImageID     pgtype.UUID        `json:"header_image_id"`
+	FeaturedImageID   pgtype.UUID        `json:"featured_image_id"`
+	CanonicalUrl      *string            `json:"canonical_url"`
+	MetaTitle         *string            `json:"meta_title"`
+	MetaDescription   *string            `json:"meta_description"`
+	OgImageUrl        *string            `json:"og_image_url"`
+	SeoIndexable      bool               `json:"seo_indexable"`
+	Status            string             `json:"status"`
+	Visibility        string             `json:"visibility"`
+	IsLocked          bool               `json:"is_locked"`
+	IsPinned          bool               `json:"is_pinned"`
+	ReadTimeMinutes   int32              `json:"read_time_minutes"`
+	ViewCount         int32              `json:"view_count"`
+	CommentCount      int32              `json:"comment_count"`
+	ShareCount        int32              `json:"share_count"`
+	ReshareCount      int32              `json:"reshare_count"`
+	PublishAt         pgtype.Timestamptz `json:"publish_at"`
+	PublishedAt       pgtype.Timestamptz `json:"published_at"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+	GuideCategory     *string            `json:"guide_category"`
+	AuthorUsername    *string            `json:"author_username"`
+	AuthorDisplayName *string            `json:"author_display_name"`
+	SpaceName         *string            `json:"space_name"`
 }
 
 func (q *Queries) ListContentsByTenant(ctx context.Context, arg ListContentsByTenantParams) ([]ListContentsByTenantRow, error) {
@@ -1791,6 +1810,9 @@ func (q *Queries) ListContentsByTenant(ctx context.Context, arg ListContentsByTe
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.GuideCategory,
+			&i.AuthorUsername,
+			&i.AuthorDisplayName,
+			&i.SpaceName,
 		); err != nil {
 			return nil, err
 		}
@@ -1803,18 +1825,23 @@ func (q *Queries) ListContentsByTenant(ctx context.Context, arg ListContentsByTe
 }
 
 const listContentsByType = `-- name: ListContentsByType :many
-SELECT id, tenant_id, author_id, space_id, content_type, title, slug, body, body_html,
-       field_values, content_hash, geo_space_id, header_image_id, featured_image_id,
-       canonical_url, meta_title, meta_description, og_image_url, seo_indexable,
-       status, visibility, is_locked, is_pinned, read_time_minutes,
-       view_count, comment_count, share_count, reshare_count, publish_at, published_at,
-       created_at, updated_at, guide_category
-FROM contents
-WHERE tenant_id = $1 AND content_type = $2
-  AND deleted_at IS NULL
-  AND auto_hidden = false
-  AND (created_at < $3 OR ($3 IS NULL))
-ORDER BY created_at DESC, id DESC
+SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c.body_html,
+       c.field_values, c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,
+       c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
+       c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
+       c.view_count, c.comment_count, c.share_count, c.reshare_count, c.publish_at, c.published_at,
+       c.created_at, c.updated_at, c.guide_category,
+       u.username AS author_username, up.display_name AS author_display_name,
+       s.name AS space_name
+FROM contents c
+LEFT JOIN users u ON u.id = c.author_id AND u.tenant_id = c.tenant_id
+LEFT JOIN user_profiles up ON up.user_id = c.author_id AND up.tenant_id = c.tenant_id
+LEFT JOIN spaces s ON s.id = c.space_id AND s.tenant_id = c.tenant_id
+WHERE c.tenant_id = $1 AND c.content_type = $2
+  AND c.deleted_at IS NULL
+  AND c.auto_hidden = false
+  AND (c.created_at < $3 OR ($3 IS NULL))
+ORDER BY c.created_at DESC, c.id DESC
 LIMIT $4
 `
 
@@ -1826,39 +1853,42 @@ type ListContentsByTypeParams struct {
 }
 
 type ListContentsByTypeRow struct {
-	ID              pgtype.UUID        `json:"id"`
-	TenantID        pgtype.UUID        `json:"tenant_id"`
-	AuthorID        pgtype.UUID        `json:"author_id"`
-	SpaceID         pgtype.UUID        `json:"space_id"`
-	ContentType     string             `json:"content_type"`
-	Title           string             `json:"title"`
-	Slug            string             `json:"slug"`
-	Body            string             `json:"body"`
-	BodyHtml        string             `json:"body_html"`
-	FieldValues     []byte             `json:"field_values"`
-	ContentHash     *string            `json:"content_hash"`
-	GeoSpaceID      pgtype.UUID        `json:"geo_space_id"`
-	HeaderImageID   pgtype.UUID        `json:"header_image_id"`
-	FeaturedImageID pgtype.UUID        `json:"featured_image_id"`
-	CanonicalUrl    *string            `json:"canonical_url"`
-	MetaTitle       *string            `json:"meta_title"`
-	MetaDescription *string            `json:"meta_description"`
-	OgImageUrl      *string            `json:"og_image_url"`
-	SeoIndexable    bool               `json:"seo_indexable"`
-	Status          string             `json:"status"`
-	Visibility      string             `json:"visibility"`
-	IsLocked        bool               `json:"is_locked"`
-	IsPinned        bool               `json:"is_pinned"`
-	ReadTimeMinutes int32              `json:"read_time_minutes"`
-	ViewCount       int32              `json:"view_count"`
-	CommentCount    int32              `json:"comment_count"`
-	ShareCount      int32              `json:"share_count"`
-	ReshareCount    int32              `json:"reshare_count"`
-	PublishAt       pgtype.Timestamptz `json:"publish_at"`
-	PublishedAt     pgtype.Timestamptz `json:"published_at"`
-	CreatedAt       pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
-	GuideCategory   *string            `json:"guide_category"`
+	ID                pgtype.UUID        `json:"id"`
+	TenantID          pgtype.UUID        `json:"tenant_id"`
+	AuthorID          pgtype.UUID        `json:"author_id"`
+	SpaceID           pgtype.UUID        `json:"space_id"`
+	ContentType       string             `json:"content_type"`
+	Title             string             `json:"title"`
+	Slug              string             `json:"slug"`
+	Body              string             `json:"body"`
+	BodyHtml          string             `json:"body_html"`
+	FieldValues       []byte             `json:"field_values"`
+	ContentHash       *string            `json:"content_hash"`
+	GeoSpaceID        pgtype.UUID        `json:"geo_space_id"`
+	HeaderImageID     pgtype.UUID        `json:"header_image_id"`
+	FeaturedImageID   pgtype.UUID        `json:"featured_image_id"`
+	CanonicalUrl      *string            `json:"canonical_url"`
+	MetaTitle         *string            `json:"meta_title"`
+	MetaDescription   *string            `json:"meta_description"`
+	OgImageUrl        *string            `json:"og_image_url"`
+	SeoIndexable      bool               `json:"seo_indexable"`
+	Status            string             `json:"status"`
+	Visibility        string             `json:"visibility"`
+	IsLocked          bool               `json:"is_locked"`
+	IsPinned          bool               `json:"is_pinned"`
+	ReadTimeMinutes   int32              `json:"read_time_minutes"`
+	ViewCount         int32              `json:"view_count"`
+	CommentCount      int32              `json:"comment_count"`
+	ShareCount        int32              `json:"share_count"`
+	ReshareCount      int32              `json:"reshare_count"`
+	PublishAt         pgtype.Timestamptz `json:"publish_at"`
+	PublishedAt       pgtype.Timestamptz `json:"published_at"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+	GuideCategory     *string            `json:"guide_category"`
+	AuthorUsername    *string            `json:"author_username"`
+	AuthorDisplayName *string            `json:"author_display_name"`
+	SpaceName         *string            `json:"space_name"`
 }
 
 func (q *Queries) ListContentsByType(ctx context.Context, arg ListContentsByTypeParams) ([]ListContentsByTypeRow, error) {
@@ -1909,6 +1939,9 @@ func (q *Queries) ListContentsByType(ctx context.Context, arg ListContentsByType
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.GuideCategory,
+			&i.AuthorUsername,
+			&i.AuthorDisplayName,
+			&i.SpaceName,
 		); err != nil {
 			return nil, err
 		}

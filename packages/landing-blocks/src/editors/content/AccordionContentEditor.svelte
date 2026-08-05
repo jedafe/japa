@@ -42,8 +42,8 @@
 </script>
 
 <div class="space-y-4">
-  <div>
-    <label class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Preset</label>
+  <label class="block">
+    <span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Preset</span>
     <select
       value={props.preset}
       onchange={(e) => update('preset', e.currentTarget.value as AccordionProps['preset'])}
@@ -52,10 +52,10 @@
       <option value="faq">FAQ</option>
       <option value="generic">Generic</option>
     </select>
-  </div>
+  </label>
 
-  <div>
-    <label class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Layout</label>
+  <label class="block">
+    <span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Layout</span>
     <select
       value={props.layout}
       onchange={(e) => update('layout', e.currentTarget.value as AccordionProps['layout'])}
@@ -64,7 +64,7 @@
       <option value="accordion">Accordion</option>
       <option value="expanded">Expanded</option>
     </select>
-  </div>
+  </label>
 
   <div class="flex items-center gap-2">
     <input
@@ -77,9 +77,9 @@
     <label for="acc-searchable" class="text-xs font-medium text-[var(--color-muted)]">Searchable</label>
   </div>
 
-  <div>
+  <label class="block">
     <div class="mb-2 flex items-center justify-between">
-      <label class="text-xs font-medium text-[var(--color-muted)]">Items</label>
+      <span class="text-xs font-medium text-[var(--color-muted)]">Items</span>
       <button type="button" onclick={addItem} class="text-xs text-[var(--color-primary)] hover:underline">+ Add Item</button>
     </div>
     <div class="space-y-4">
@@ -90,13 +90,13 @@
             <button type="button" onclick={() => removeItem(i)} class="text-xs text-[var(--color-danger)] hover:underline">Remove</button>
           </div>
 
-          <div>
-            <label class="mb-1 block text-xs text-[var(--color-muted)]">Title</label>
+          <label class="block">
+            <span class="mb-1 block text-xs text-[var(--color-muted)]">Title</span>
             <GeoText value={item.title} onchange={(v) => updateItem(i, 'title', v)} {geoCtx} />
-          </div>
+          </label>
 
-          <div>
-            <label class="mb-1 block text-xs text-[var(--color-muted)]">Content blocks</label>
+          <label class="block">
+            <span class="mb-1 block text-xs text-[var(--color-muted)]">Content blocks</span>
             <NestedBlocksEditor
               blocks={item.content_blocks ?? []}
               onchange={(v) => updateItem(i, 'content_blocks', v)}
@@ -104,9 +104,9 @@
               {mediaPickerComponent}
               {geoCtx}
             />
-          </div>
+          </label>
         </div>
       {/each}
     </div>
-  </div>
+  </label>
 </div>

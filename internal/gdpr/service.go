@@ -208,7 +208,7 @@ func (s *Service) RevokeConsent(ctx context.Context, tenantID, userID pgtype.UUI
 }
 
 // ListConsentsByTenant returns consent records for admin compliance reports.
-func (s *Service) ListConsentsByTenant(ctx context.Context, tenantID pgtype.UUID, consentType string, limit, offset int32) ([]gen.ConsentRecord, error) {
+func (s *Service) ListConsentsByTenant(ctx context.Context, tenantID pgtype.UUID, consentType string, limit, offset int32) ([]gen.ListConsentsByTenantRow, error) {
 	return s.store.listConsentsByTenant(ctx, tenantID, consentType, limit, offset)
 }
 
@@ -1038,7 +1038,7 @@ func (s *Service) HardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 }
 
 // ListPendingDeletionRequests returns pending deletion requests for the worker.
-func (s *Service) ListPendingDeletionRequests(ctx context.Context, limit int32) ([]gen.AccountDeletionRequest, error) {
+func (s *Service) ListPendingDeletionRequests(ctx context.Context, limit int32) ([]gen.ListPendingDeletionRequestsRow, error) {
 	return s.store.listPendingDeletionRequests(ctx, limit)
 }
 

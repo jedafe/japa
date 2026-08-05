@@ -6,21 +6,22 @@
 	import { Modal } from "$lib/components/ui/modal";
 	import { TableSkeleton } from "$lib/components/ui/skeleton";
 	import { Check, X, Eye, RefreshCw } from "lucide-svelte";
-	import { api, organisationsAdminApi } from "$lib/api";
+	import { organisationsAdminApi } from "$lib/api";
 	import { t } from "$lib/stores/i18n.svelte";
 	import { hasPermission } from "$lib/stores/permissions.svelte";
 
 	type PendingClaim = {
 		id: string;
 		organization_id: string;
-		organization_name: string;
-		organization_slug: string;
-		claimant_id: string;
+		claimant_user_id: string;
 		claimant_username: string;
 		claimant_email: string;
-		status: string; // 'pending' | 'approved' | 'rejected'
-		evidence?: string | null;
-		submitted_at: string;
+		org_name: string;
+		org_slug: string;
+		status: string; // 'pending' | 'approved' | 'rejected' | 'withdrawn'
+		evidence_url?: string | null;
+		notes?: string | null;
+		created_at: string;
 	};
 
 	let claims = $state<PendingClaim[]>([]);
@@ -28,7 +29,7 @@
 	let errorMessage = $state("");
 	let successMessage = $state("");
 	let searchQuery = $state("");
-	let filterValues = $state<Record<string, string>>({});
+	let statusFilter = $state("");
 
 	let showViewModal = $state(false);
 	let showApproveModal = $state(false);
@@ -52,13 +53,13 @@
 
 	const columns = [
 		{
-			key: "organization_name",
+			key: "org_name",
 			label: t("organisations.name", "Organization"),
 			sortable: true,
 			render: (v: string, row: PendingClaim) =>
 				`<span class="text-sm font-medium">${v}</span>` +
-				(row.organization_slug
-					? `<span class="ml-2 font-mono text-xs" style="color: var(--color-muted)">${row.organization_slug}</span>`
+				(row.org_slug
+					? `<span class="ml-2 font-mono text-xs" style="color: var(--color-muted)">${row.org_slug}</span>`
 					: "")
 		},
 		{
@@ -79,7 +80,7 @@
 			componentSnippet: ClaimStatusBadge
 		},
 		{
-			key: "submitted_at",
+			key: "created_at",
 			label: t("organisations.submitted_at", "Submitted"),
 			sortable: true,
 			render: (v: string) =>
@@ -93,16 +94,22 @@
 		}
 	];
 
-	const filtered = $derived(
-		searchQuery
-			? claims.filter(
-					(c) =>
-						c.organization_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-						c.claimant_username.toLowerCase().includes(searchQuery.toLowerCase()) ||
-						c.claimant_email.toLowerCase().includes(searchQuery.toLowerCase())
-				)
-			: claims
-	);
+	const filtered = $derived.by(() => {
+		let out = claims;
+		const q = searchQuery.trim().toLowerCase();
+		if (q) {
+			out = out.filter(
+				(c) =>
+					c.org_name.toLowerCase().includes(q) ||
+					c.claimant_username.toLowerCase().includes(q) ||
+					c.claimant_email.toLowerCase().includes(q)
+			);
+		}
+		if (statusFilter) {
+			out = out.filter((c) => c.status === statusFilter);
+		}
+		return out;
+	});
 
 	async function load() {
 		loading = true;
@@ -110,8 +117,7 @@
 		try {
 			const result = await organisationsAdminApi.pendingClaims();
 			if (result.ok) {
-				const data = result.data as unknown as PendingClaim[] | { data: PendingClaim[] };
-				claims = Array.isArray(data) ? data : (data?.data ?? []);
+				claims = result.data as unknown as PendingClaim[];
 			} else {
 				errorMessage = result.error ?? t("organisations.claims_load_error", "Failed to load claims");
 			}
@@ -124,7 +130,7 @@
 
 	function handleSearch(values: Record<string, string>) {
 		searchQuery = values.search ?? "";
-		filterValues = values;
+		statusFilter = values.status ?? "";
 	}
 
 	function openView(c: PendingClaim) {
@@ -144,10 +150,7 @@
 		if (!target) return;
 		actionLoading = true;
 		errorMessage = "";
-		const result = await api(`/admin/organizations/${target.organization_id}/claim`, {
-			method: "POST",
-			body: { action: "approve" }
-		});
+		const result = await organisationsAdminApi.claim(target.organization_id, { action: "approve" });
 		if (result.ok) {
 			showApproveModal = false;
 			successMessage = t("organisations.claim_approved", "Claim approved");
@@ -162,10 +165,7 @@
 		if (!target) return;
 		actionLoading = true;
 		errorMessage = "";
-		const result = await api(`/admin/organizations/${target.organization_id}/claim`, {
-			method: "POST",
-			body: { action: "reject" }
-		});
+		const result = await organisationsAdminApi.claim(target.organization_id, { action: "reject" });
 		if (result.ok) {
 			showRejectModal = false;
 			successMessage = t("organisations.claim_rejected", "Claim rejected");
@@ -220,9 +220,11 @@
 	onsearch={handleSearch}
 	onclear={() => {
 		searchQuery = "";
-		filterValues = {};
+		statusFilter = "";
 	}}
 />
+
+<div class="mb-4"></div>
 
 {#if loading}
 	<TableSkeleton rows={5} />
@@ -230,11 +232,6 @@
 	<DataTable
 		{columns}
 		data={filtered}
-		searchable={true}
-		searchPlaceholder={t("organisations.search_claims", "Search by organization or claimant...")}
-		onsearch={(q: string) => {
-			searchQuery = q;
-		}}
 		pageSize={25}
 		emptyMessage={t("organisations.no_claims", "No claims found")}
 	/>
@@ -256,7 +253,7 @@
 						{t("organisations.name", "Organization")}
 					</p>
 					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">
-						{target.organization_name}
+						{target.org_name}
 					</p>
 				</div>
 				<div>
@@ -264,7 +261,7 @@
 						{t("organisations.slug", "Slug")}
 					</p>
 					<p class="mt-1 text-sm font-mono" style="color: var(--color-foreground)">
-						{target.organization_slug || "—"}
+						{target.org_slug || "—"}
 					</p>
 				</div>
 				<div>
@@ -292,22 +289,30 @@
 						{t("organisations.submitted_at", "Submitted")}
 					</p>
 					<p class="mt-1 text-sm" style="color: var(--color-foreground)">
-						{new Date(target.submitted_at).toLocaleString()}
+						{new Date(target.created_at).toLocaleString()}
 					</p>
 				</div>
 			</div>
-			{#if target.evidence}
+			{#if target.evidence_url}
 				<div>
 					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">
 						{t("organisations.evidence", "Evidence")}
 					</p>
 					<div class="mt-1 rounded-lg border p-3 text-sm" style="border-color: var(--color-border); background-color: var(--color-surface); color: var(--color-foreground)">
-						{#if target.evidence.startsWith("http")}
-							<a href={target.evidence} target="_blank" rel="noopener noreferrer" class="text-sm underline" style="color: var(--color-primary)">{target.evidence}</a>
+						{#if target.evidence_url.startsWith("http")}
+							<a href={target.evidence_url} target="_blank" rel="noopener noreferrer" class="text-sm underline" style="color: var(--color-primary)">{target.evidence_url}</a>
 						{:else}
-							{target.evidence}
+							{target.evidence_url}
 						{/if}
 					</div>
+				</div>
+			{/if}
+			{#if target.notes}
+				<div>
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">
+						{t("organisations.notes", "Notes")}
+					</p>
+					<p class="mt-1 text-sm" style="color: var(--color-foreground)">{target.notes}</p>
 				</div>
 			{/if}
 		</div>
@@ -344,7 +349,7 @@
 			<div class="rounded-lg border p-4 space-y-2" style="border-color: var(--color-border); background-color: var(--color-surface)">
 				<div class="flex justify-between text-sm">
 					<span style="color: var(--color-muted)">{t("organisations.name", "Organization")}</span>
-					<span class="font-medium">{target.organization_name}</span>
+					<span class="font-medium">{target.org_name}</span>
 				</div>
 				<div class="flex justify-between text-sm">
 					<span style="color: var(--color-muted)">{t("organisations.claimant", "Claimant")}</span>
@@ -382,7 +387,7 @@
 			<div class="rounded-lg border p-4 space-y-2" style="border-color: var(--color-border); background-color: var(--color-surface)">
 				<div class="flex justify-between text-sm">
 					<span style="color: var(--color-muted)">{t("organisations.name", "Organization")}</span>
-					<span class="font-medium">{target.organization_name}</span>
+					<span class="font-medium">{target.org_name}</span>
 				</div>
 				<div class="flex justify-between text-sm">
 					<span style="color: var(--color-muted)">{t("organisations.claimant", "Claimant")}</span>
@@ -402,10 +407,12 @@
 
 {#snippet ClaimStatusBadge({ value }: { value: string; row: PendingClaim })}
 	<span
-		class="inline-block rounded-full px-2 py-0.5 text-xs font-medium
-		{value === 'approved' ? 'bg-success/15 text-success' :
-		 value === 'rejected' ? 'bg-danger/15 text-danger' :
-		 'bg-warning/15 text-warning'}"
+		class="inline-block rounded-full px-2 py-0.5 text-xs font-medium"
+		style={value === 'approved'
+			? 'background-color: color-mix(in srgb, var(--color-success) 15%, transparent); color: var(--color-success)'
+			: value === 'rejected'
+				? 'background-color: color-mix(in srgb, var(--color-danger) 15%, transparent); color: var(--color-danger)'
+				: 'background-color: color-mix(in srgb, var(--color-warning) 15%, transparent); color: var(--color-warning)'}
 	>
 		{value}
 	</span>

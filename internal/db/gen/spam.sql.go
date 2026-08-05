@@ -398,22 +398,46 @@ func (q *Queries) IsIPBlocked(ctx context.Context, arg IsIPBlockedParams) (bool,
 }
 
 const listAllUserBlocks = `-- name: ListAllUserBlocks :many
-SELECT blocker_id, blocked_id, created_at
-FROM user_blocks
-ORDER BY created_at DESC
+SELECT ub.blocker_id, ub.blocked_id, ub.created_at,
+       bu.username AS blocker_username, bp.display_name AS blocker_display_name,
+       buu.username AS blocked_username, bpp.display_name AS blocked_display_name
+FROM user_blocks ub
+LEFT JOIN users bu ON bu.id = ub.blocker_id
+LEFT JOIN user_profiles bp ON bp.user_id = ub.blocker_id AND bp.tenant_id = bu.tenant_id
+LEFT JOIN users buu ON buu.id = ub.blocked_id
+LEFT JOIN user_profiles bpp ON bpp.user_id = ub.blocked_id AND bpp.tenant_id = buu.tenant_id
+ORDER BY ub.created_at DESC
 LIMIT $1
 `
 
-func (q *Queries) ListAllUserBlocks(ctx context.Context, limit int32) ([]UserBlock, error) {
+type ListAllUserBlocksRow struct {
+	BlockerID          pgtype.UUID        `json:"blocker_id"`
+	BlockedID          pgtype.UUID        `json:"blocked_id"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	BlockerUsername    *string            `json:"blocker_username"`
+	BlockerDisplayName *string            `json:"blocker_display_name"`
+	BlockedUsername    *string            `json:"blocked_username"`
+	BlockedDisplayName *string            `json:"blocked_display_name"`
+}
+
+func (q *Queries) ListAllUserBlocks(ctx context.Context, limit int32) ([]ListAllUserBlocksRow, error) {
 	rows, err := q.db.Query(ctx, listAllUserBlocks, limit)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []UserBlock
+	var items []ListAllUserBlocksRow
 	for rows.Next() {
-		var i UserBlock
-		if err := rows.Scan(&i.BlockerID, &i.BlockedID, &i.CreatedAt); err != nil {
+		var i ListAllUserBlocksRow
+		if err := rows.Scan(
+			&i.BlockerID,
+			&i.BlockedID,
+			&i.CreatedAt,
+			&i.BlockerUsername,
+			&i.BlockerDisplayName,
+			&i.BlockedUsername,
+			&i.BlockedDisplayName,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

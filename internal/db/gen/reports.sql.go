@@ -222,18 +222,21 @@ func (q *Queries) GetReport(ctx context.Context, arg GetReportParams) (ContentRe
 }
 
 const listReports = `-- name: ListReports :many
-SELECT id, tenant_id, reporter_user_id, entity_type, entity_id, reason, notes, evidence_urls,
-    status, reviewed_by, resolution_note, resolved_at, created_at
-FROM content_reports
-WHERE tenant_id = $1
-  AND ($2::text IS NULL OR status = $2)
-  AND ($3::text IS NULL OR entity_type = $3)
+SELECT cr.id, cr.tenant_id, cr.reporter_user_id, cr.entity_type, cr.entity_id, cr.reason, cr.notes, cr.evidence_urls,
+    cr.status, cr.reviewed_by, cr.resolution_note, cr.resolved_at, cr.created_at,
+    u.username AS reporter_username, up.display_name AS reporter_display_name
+FROM content_reports cr
+LEFT JOIN users u ON u.id = cr.reporter_user_id AND u.tenant_id = cr.tenant_id
+LEFT JOIN user_profiles up ON up.user_id = cr.reporter_user_id AND up.tenant_id = cr.tenant_id
+WHERE cr.tenant_id = $1
+  AND ($2::text IS NULL OR cr.status = $2)
+  AND ($3::text IS NULL OR cr.entity_type = $3)
   AND ($4::text IS NULL OR (
-        entity_id::text ILIKE '%' || $4 || '%'
-     OR entity_type ILIKE '%' || $4 || '%'
-     OR reporter_user_id::text ILIKE '%' || $4 || '%'
+        cr.entity_id::text ILIKE '%' || $4 || '%'
+     OR cr.entity_type ILIKE '%' || $4 || '%'
+     OR cr.reporter_user_id::text ILIKE '%' || $4 || '%'
   ))
-ORDER BY created_at DESC
+ORDER BY cr.created_at DESC
 LIMIT $6 OFFSET $5
 `
 
@@ -246,7 +249,25 @@ type ListReportsParams struct {
 	PageLimit  int32       `json:"page_limit"`
 }
 
-func (q *Queries) ListReports(ctx context.Context, arg ListReportsParams) ([]ContentReport, error) {
+type ListReportsRow struct {
+	ID                  pgtype.UUID        `json:"id"`
+	TenantID            pgtype.UUID        `json:"tenant_id"`
+	ReporterUserID      pgtype.UUID        `json:"reporter_user_id"`
+	EntityType          string             `json:"entity_type"`
+	EntityID            pgtype.UUID        `json:"entity_id"`
+	Reason              string             `json:"reason"`
+	Notes               *string            `json:"notes"`
+	EvidenceUrls        []string           `json:"evidence_urls"`
+	Status              string             `json:"status"`
+	ReviewedBy          pgtype.UUID        `json:"reviewed_by"`
+	ResolutionNote      *string            `json:"resolution_note"`
+	ResolvedAt          pgtype.Timestamptz `json:"resolved_at"`
+	CreatedAt           pgtype.Timestamptz `json:"created_at"`
+	ReporterUsername    *string            `json:"reporter_username"`
+	ReporterDisplayName *string            `json:"reporter_display_name"`
+}
+
+func (q *Queries) ListReports(ctx context.Context, arg ListReportsParams) ([]ListReportsRow, error) {
 	rows, err := q.db.Query(ctx, listReports,
 		arg.TenantID,
 		arg.Status,
@@ -259,9 +280,9 @@ func (q *Queries) ListReports(ctx context.Context, arg ListReportsParams) ([]Con
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ContentReport
+	var items []ListReportsRow
 	for rows.Next() {
-		var i ContentReport
+		var i ListReportsRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.TenantID,
@@ -276,6 +297,8 @@ func (q *Queries) ListReports(ctx context.Context, arg ListReportsParams) ([]Con
 			&i.ResolutionNote,
 			&i.ResolvedAt,
 			&i.CreatedAt,
+			&i.ReporterUsername,
+			&i.ReporterDisplayName,
 		); err != nil {
 			return nil, err
 		}

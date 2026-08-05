@@ -531,7 +531,7 @@
 				<DataTable
 					columns={[
 						{ key: "day", label: t('analytics.day', 'Day'), sortable: true, render: (v: string) => v ? new Date(v).toLocaleDateString() : '—' },
-						{ key: "content_id", label: t('analytics.content_id', 'Content ID'), sortable: true },
+						{ key: "content_title", label: t('analytics.content_title', 'Content Title'), sortable: true, render: (v: string) => v ? `<span class="font-medium">${v}</span>` : '—' },
 						{ key: "views", label: t('analytics.views', 'Views'), sortable: true },
 						{ key: "reactions", label: t('analytics.reactions', 'Reactions'), sortable: true },
 						{ key: "comments", label: t('analytics.comments', 'Comments'), sortable: true },

@@ -7,17 +7,21 @@
 	import { api } from '$lib/api/client';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
+	import { onMount } from 'svelte';
 	import { LoadingSkeleton, EmptyState } from '$lib/components/ui';
 	import { Save, ArrowLeft } from 'lucide-svelte';
 	import type { InstructorTrack, TrackLevel } from '$lib/types';
 
 	const trackId = page.params.id;
 
+	type Category = { id: string; slug: string; name: string; sort_order: number };
+
 	let track = $state<InstructorTrack | null>(null);
 	let loading = $state(true);
 	let saving = $state(false);
 	let error = $state<string | null>(null);
 	let success = $state<string | null>(null);
+	let categories = $state<Category[]>([]);
 
 	// Form fields
 	let title = $state('');
@@ -27,6 +31,15 @@
 	let currency = $state('NGN');
 	let category = $state('');
 	let language = $state('en');
+	let subscriptionEligible = $state(false);
+
+	// Fetch active categories from the public API (Rule 16 — no hardcoded option lists).
+	onMount(async () => {
+		const r = await api.get<Category[]>('/learn/university/categories');
+		if (!r.error && r.data) {
+			categories = r.data;
+		}
+	});
 
 	$effect(() => {
 		(async () => {
@@ -43,6 +56,7 @@
 					currency = (found as InstructorTrack & { currency?: string }).currency ?? 'NGN';
 					category = (found as InstructorTrack & { category?: string }).category ?? '';
 					language = (found as InstructorTrack & { language?: string }).language ?? 'en';
+					subscriptionEligible = (found as InstructorTrack & { subscription_eligible?: boolean }).subscription_eligible ?? false;
 				}
 			}
 		})();
@@ -62,7 +76,8 @@
 			price_kobo: Math.round(priceNaira * 100),
 			currency: currency || undefined,
 			category: category || undefined,
-			language: language || undefined
+			language: language || undefined,
+			subscription_eligible: subscriptionEligible
 		};
 
 		const r = await api.patch<InstructorTrack>(`/learn/university/my/tracks/${trackId}`, body);
@@ -190,18 +205,21 @@
 				/>
 			</div>
 
-			<!-- Category -->
+			<!-- Category (from API) -->
 			<div>
 				<label for="category" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 					{t('university.category_label', 'Category')}
 				</label>
-				<input
+				<select
 					id="category"
-					type="text"
 					bind:value={category}
-					placeholder={t('university.category_placeholder', 'e.g. Software Engineering')}
-					class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-3 text-sm text-[var(--color-text)] placeholder:text-[var(--color-muted)] focus:border-[var(--color-primary)] focus:outline-none"
-				/>
+					class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-3 text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none"
+				>
+					<option value="">—</option>
+					{#each categories as c (c.id)}
+						<option value={c.slug}>{c.name}</option>
+					{/each}
+				</select>
 			</div>
 
 			<!-- Language -->
@@ -216,6 +234,19 @@
 					placeholder="en"
 					class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-3 text-sm text-[var(--color-text)] placeholder:text-[var(--color-muted)] focus:border-[var(--color-primary)] focus:outline-none"
 				/>
+			</div>
+
+			<!-- Subscription eligible -->
+			<div class="flex items-start gap-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-4">
+				<input id="subscription-eligible" type="checkbox" bind:checked={subscriptionEligible} class="mt-0.5 h-4 w-4 rounded" />
+				<div>
+					<label for="subscription-eligible" class="block text-sm font-medium text-[var(--color-text)]">
+						{t('university.track_subscription_eligible_label', 'Subscription eligible')}
+					</label>
+					<p class="mt-0.5 text-xs text-[var(--color-muted)]">
+						{t('university.track_subscription_eligible_hint', 'Allow subscribers to access this course as part of their plan. You earn a stream-rate revenue share when they enroll.')}
+					</p>
+				</div>
 			</div>
 
 			{#if error}

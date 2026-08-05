@@ -7,10 +7,12 @@
 	import { RefreshCw } from "lucide-svelte";
 	import { universityAdminApi } from "$lib/api";
 	import { t } from "$lib/stores/i18n.svelte";
+	import { onMount } from "svelte";
 
 	type RevenueSplit = {
 		id: string;
 		instructor_id: string;
+		instructor_name?: string;
 		track_id: string;
 		track_title?: string;
 		source: "purchase" | "pro_stream";
@@ -47,10 +49,11 @@
 
 	const columns = [
 		{
-			key: "instructor_id",
-			label: t("university.instructor_id", "Instructor ID"),
-			render: (v: string) =>
-				`<span class="font-mono text-xs" style="color: var(--color-muted)">${v.slice(0, 8)}...</span>`
+			key: "instructor_name",
+			label: t("university.instructor", "Instructor"),
+			sortable: true,
+			render: (v: string, row: RevenueSplit) =>
+				`<span class="text-sm">${v || (row.instructor_id ? row.instructor_id.slice(0, 8) + "..." : "—")}</span>`
 		},
 		{
 			key: "track_title",
@@ -121,8 +124,8 @@
 			if (dateTo) params.set("to", dateTo);
 			const result = await universityAdminApi.listRevenueSplits(params.toString() || undefined);
 			if (result.ok) {
-				const data = result.data as { data: RevenueSplit[] };
-				splits = data.data ?? [];
+				const data = result.data as { data?: RevenueSplit[] } | null | undefined;
+				splits = data?.data ?? [];
 			} else {
 				errorMessage = result.error;
 			}
@@ -151,9 +154,7 @@
 		load();
 	}
 
-	$effect(() => {
-		load();
-	});
+	onMount(load);
 </script>
 
 <svelte:head>
@@ -175,7 +176,35 @@
 	</div>
 {/if}
 
-<div class="mb-4 flex justify-end">
+<div class="mb-4 flex flex-wrap items-center justify-between gap-3">
+	<div class="flex flex-wrap items-center gap-3">
+		<div class="flex items-center gap-2">
+			<label for="date-from" class="text-sm" style="color: var(--color-muted)">
+				{t("common.from", "From")}
+			</label>
+			<input
+				id="date-from"
+				type="date"
+				bind:value={dateFrom}
+				onchange={applyDateFilter}
+				class="h-9 rounded-lg border px-3 text-sm"
+				style="border-color: var(--color-border); background-color: var(--color-surface); color: var(--color-foreground)"
+			/>
+		</div>
+		<div class="flex items-center gap-2">
+			<label for="date-to" class="text-sm" style="color: var(--color-muted)">
+				{t("common.to", "To")}
+			</label>
+			<input
+				id="date-to"
+				type="date"
+				bind:value={dateTo}
+				onchange={applyDateFilter}
+				class="h-9 rounded-lg border px-3 text-sm"
+				style="border-color: var(--color-border); background-color: var(--color-surface); color: var(--color-foreground)"
+			/>
+		</div>
+	</div>
 	<Button variant="outline" size="sm" onclick={load}>
 		<RefreshCw class="h-3.5 w-3.5" />
 		{t("common.refresh", "Refresh")}
@@ -188,51 +217,18 @@
 	onclear={handleClear}
 />
 
-<!-- Date range filters -->
-<div class="mb-4 flex flex-wrap items-center gap-3">
-	<div class="flex items-center gap-2">
-		<label for="date-from" class="text-sm" style="color: var(--color-muted)">
-			{t("common.from", "From")}
-		</label>
-		<input
-			id="date-from"
-			type="date"
-			bind:value={dateFrom}
-			onchange={applyDateFilter}
-			class="h-10 rounded-lg border px-3 text-sm"
-			style="border-color: var(--color-border); background-color: var(--color-surface); color: var(--color-foreground)"
-		/>
-	</div>
-	<div class="flex items-center gap-2">
-		<label for="date-to" class="text-sm" style="color: var(--color-muted)">
-			{t("common.to", "To")}
-		</label>
-		<input
-			id="date-to"
-			type="date"
-			bind:value={dateTo}
-			onchange={applyDateFilter}
-			class="h-10 rounded-lg border px-3 text-sm"
-			style="border-color: var(--color-border); background-color: var(--color-surface); color: var(--color-foreground)"
-		/>
-	</div>
-</div>
-
+<div class="mt-4">
 {#if loading}
 	<TableSkeleton rows={5} />
 {:else}
 	<DataTable
 		{columns}
 		data={filtered}
-		searchable={true}
-		searchPlaceholder={t("university.search_revenue_splits", "Search by instructor, track or payout...")}
-		onsearch={(q: string) => {
-			searchQuery = q;
-		}}
 		pageSize={25}
 		emptyMessage={t("university.no_revenue_splits", "No revenue split records found")}
 	/>
 {/if}
+</div>
 
 {#snippet SourceBadge({ value }: { value: string; row: RevenueSplit })}
 	<span

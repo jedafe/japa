@@ -8,7 +8,7 @@
 SELECT id, tenant_id, title, slug, description, difficulty, cover_media_id,
        is_published, sort_order, created_at, updated_at,
        instructor_id, price_kobo, currency, is_published_to_university,
-       category, language, total_enrolled
+       category, language, total_enrolled, subscription_eligible
 FROM learning_tracks
 WHERE tenant_id = @tenant_id AND is_published = true
 ORDER BY sort_order ASC, created_at DESC;
@@ -17,7 +17,7 @@ ORDER BY sort_order ASC, created_at DESC;
 SELECT id, tenant_id, title, slug, description, difficulty, cover_media_id,
        is_published, sort_order, created_at, updated_at,
        instructor_id, price_kobo, currency, is_published_to_university,
-       category, language, total_enrolled
+       category, language, total_enrolled, subscription_eligible
 FROM learning_tracks
 WHERE tenant_id = @tenant_id AND slug = @slug;
 
@@ -25,7 +25,7 @@ WHERE tenant_id = @tenant_id AND slug = @slug;
 SELECT id, tenant_id, title, slug, description, difficulty, cover_media_id,
        is_published, sort_order, created_at, updated_at,
        instructor_id, price_kobo, currency, is_published_to_university,
-       category, language, total_enrolled
+       category, language, total_enrolled, subscription_eligible
 FROM learning_tracks
 WHERE tenant_id = @tenant_id AND id = @id;
 
@@ -39,7 +39,7 @@ WHERE tenant_id = @tenant_id AND id = @id;
 SELECT lt.id, lt.tenant_id, lt.title, lt.slug, lt.description, lt.difficulty,
        lt.cover_media_id, lt.is_published, lt.sort_order, lt.created_at, lt.updated_at,
        lt.instructor_id, lt.price_kobo, lt.currency, lt.is_published_to_university,
-       lt.category, lt.language, lt.total_enrolled,
+       lt.category, lt.language, lt.total_enrolled, lt.subscription_eligible,
        m.storage_path AS thumbnail_url,
        ip.id AS instructor_profile_id, ip.display_name AS instructor_name,
        ip.bio AS instructor_bio,
@@ -53,10 +53,10 @@ LEFT JOIN user_profiles up ON up.user_id = u.id
 WHERE lt.tenant_id = @tenant_id AND lt.slug = @slug;
 
 -- name: CreateLearningTrack :one
-INSERT INTO learning_tracks (tenant_id, title, slug, description, difficulty, cover_media_id, is_published, sort_order)
-VALUES (@tenant_id, @title, @slug, sqlc.narg(description), @difficulty, sqlc.narg(cover_media_id), @is_published, @sort_order)
+INSERT INTO learning_tracks (tenant_id, title, slug, description, difficulty, cover_media_id, is_published, sort_order, category, subscription_eligible)
+VALUES (@tenant_id, @title, @slug, sqlc.narg(description), @difficulty, sqlc.narg(cover_media_id), @is_published, @sort_order, sqlc.narg(category), @subscription_eligible)
 RETURNING id, tenant_id, title, slug, description, difficulty, cover_media_id, is_published, sort_order, created_at, updated_at,
-          instructor_id, price_kobo, currency, is_published_to_university, category, language, total_enrolled;
+          instructor_id, price_kobo, currency, is_published_to_university, category, language, total_enrolled, subscription_eligible;
 
 -- name: UpdateLearningTrack :one
 UPDATE learning_tracks
@@ -66,10 +66,12 @@ SET title = COALESCE(@title, title),
     cover_media_id = COALESCE(sqlc.narg(cover_media_id), cover_media_id),
     is_published = COALESCE(@is_published, is_published),
     sort_order = COALESCE(@sort_order, sort_order),
+    category = COALESCE(sqlc.narg(category), category),
+    subscription_eligible = COALESCE(sqlc.narg(subscription_eligible), subscription_eligible),
     updated_at = now()
 WHERE tenant_id = @tenant_id AND id = @id
 RETURNING id, tenant_id, title, slug, description, difficulty, cover_media_id, is_published, sort_order, created_at, updated_at,
-          instructor_id, price_kobo, currency, is_published_to_university, category, language, total_enrolled;
+          instructor_id, price_kobo, currency, is_published_to_university, category, language, total_enrolled, subscription_eligible;
 
 -- name: DeleteLearningTrack :exec
 DELETE FROM learning_tracks WHERE tenant_id = @tenant_id AND id = @id;
@@ -78,7 +80,7 @@ DELETE FROM learning_tracks WHERE tenant_id = @tenant_id AND id = @id;
 SELECT id, tenant_id, title, slug, description, difficulty, cover_media_id,
        is_published, sort_order, created_at, updated_at,
        instructor_id, price_kobo, currency, is_published_to_university,
-       category, language, total_enrolled
+       category, language, total_enrolled, subscription_eligible
 FROM learning_tracks
 WHERE tenant_id = @tenant_id
 ORDER BY sort_order ASC, created_at DESC;

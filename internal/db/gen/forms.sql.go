@@ -575,11 +575,13 @@ func (q *Queries) ListFormsBySpace(ctx context.Context, arg ListFormsBySpacePara
 const listFormsByTenant = `-- name: ListFormsByTenant :many
 
 
-SELECT id, tenant_id, space_id, name, slug, description, is_multi_step,
-       submit_label, success_message, status, is_system, created_at
-FROM forms
-WHERE tenant_id = $1
-ORDER BY created_at DESC, id DESC
+SELECT f.id, f.tenant_id, f.space_id, f.name, f.slug, f.description, f.is_multi_step,
+       f.submit_label, f.success_message, f.status, f.is_system, f.created_at,
+       s.name AS space_name
+FROM forms f
+LEFT JOIN spaces s ON s.id = f.space_id AND s.tenant_id = f.tenant_id
+WHERE f.tenant_id = $1
+ORDER BY f.created_at DESC, f.id DESC
 `
 
 type ListFormsByTenantRow struct {
@@ -595,6 +597,7 @@ type ListFormsByTenantRow struct {
 	Status         string             `json:"status"`
 	IsSystem       bool               `json:"is_system"`
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	SpaceName      *string            `json:"space_name"`
 }
 
 // Form, form step, and form submission queries.
@@ -623,6 +626,7 @@ func (q *Queries) ListFormsByTenant(ctx context.Context, tenantID pgtype.UUID) (
 			&i.Status,
 			&i.IsSystem,
 			&i.CreatedAt,
+			&i.SpaceName,
 		); err != nil {
 			return nil, err
 		}

@@ -393,8 +393,11 @@ func (q *Queries) ListAllCurrencies(ctx context.Context) ([]Currency, error) {
 const listCreditPurchases = `-- name: ListCreditPurchases :many
 
 SELECT p.id, p.tenant_id, p.user_id, p.provider, p.amount, p.currency, p.status,
-       p.created_at, p.updated_at
+       p.created_at, p.updated_at,
+       u.username, up.display_name
 FROM payments p
+LEFT JOIN users u ON u.id = p.user_id
+LEFT JOIN user_profiles up ON up.user_id = p.user_id
 WHERE p.tenant_id = $1
   AND p.purpose_type = 'credit_purchase'
   AND ($2::uuid IS NULL OR p.user_id = $2)
@@ -416,15 +419,17 @@ type ListCreditPurchasesParams struct {
 }
 
 type ListCreditPurchasesRow struct {
-	ID        pgtype.UUID        `json:"id"`
-	TenantID  pgtype.UUID        `json:"tenant_id"`
-	UserID    pgtype.UUID        `json:"user_id"`
-	Provider  string             `json:"provider"`
-	Amount    int64              `json:"amount"`
-	Currency  string             `json:"currency"`
-	Status    string             `json:"status"`
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+	ID          pgtype.UUID        `json:"id"`
+	TenantID    pgtype.UUID        `json:"tenant_id"`
+	UserID      pgtype.UUID        `json:"user_id"`
+	Provider    string             `json:"provider"`
+	Amount      int64              `json:"amount"`
+	Currency    string             `json:"currency"`
+	Status      string             `json:"status"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
+	Username    *string            `json:"username"`
+	DisplayName *string            `json:"display_name"`
 }
 
 // =====================
@@ -457,6 +462,8 @@ func (q *Queries) ListCreditPurchases(ctx context.Context, arg ListCreditPurchas
 			&i.Status,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.Username,
+			&i.DisplayName,
 		); err != nil {
 			return nil, err
 		}

@@ -9,6 +9,7 @@
 	import { universityAdminApi } from "$lib/api";
 	import { t } from "$lib/stores/i18n.svelte";
 	import { hasPermission } from "$lib/stores/permissions.svelte";
+	import { onMount } from "svelte";
 
 	type InstructorProfile = {
 		id: string;
@@ -96,9 +97,9 @@
 			if (filterValues.status) params.set("status", filterValues.status);
 			const result = await universityAdminApi.listInstructors(params.toString());
 			if (result.ok) {
-				const data = result.data as { data: InstructorProfile[]; meta: typeof meta };
-				instructors = data.data ?? [];
-				meta = data.meta ?? { total: instructors.length, limit: pageSize, offset: 0 };
+				const data = result.data as { data?: InstructorProfile[]; meta?: typeof meta } | null | undefined;
+				instructors = data?.data ?? [];
+				meta = data?.meta ?? { total: instructors.length, limit: pageSize, offset: 0 };
 			} else {
 				errorMessage = result.error;
 			}
@@ -113,6 +114,7 @@
 		searchQuery = values.search ?? "";
 		filterValues = values;
 		currentPage = 0;
+		load();
 	}
 
 	function openApprove(i: InstructorProfile) {
@@ -234,9 +236,7 @@
 
 	const totalPages = $derived(Math.max(1, Math.ceil(meta.total / pageSize)));
 
-	$effect(() => {
-		load();
-	});
+	onMount(load);
 </script>
 
 <svelte:head>
@@ -267,33 +267,32 @@
 	</Button>
 </div>
 
-<FilterBar filters={statusFilters} onsearch={handleSearch} onclear={() => { searchQuery = ""; filterValues = {}; currentPage = 0; }} />
+<FilterBar filters={statusFilters} onsearch={handleSearch} onclear={() => { searchQuery = ""; filterValues = {}; currentPage = 0; load(); }} />
 
+<div class="mt-4">
 {#if loading}
 	<TableSkeleton rows={5} />
 {:else}
 	<DataTable
 		{columns}
 		data={filtered}
-		searchable={true}
-		searchPlaceholder={t("university.search_instructors", "Search instructors...")}
-		onsearch={(q: string) => { searchQuery = q; }}
 		pageSize={pageSize}
 		emptyMessage={t("university.no_instructors", "No instructors found")}
 	/>
 	<div class="mt-4 flex items-center justify-between text-xs" style="color: var(--color-muted)">
 		<span>{meta.total} {t("common.total", "total")}</span>
 		<div class="flex items-center gap-2">
-			<Button variant="ghost" size="sm" disabled={currentPage === 0} onclick={() => { currentPage = Math.max(0, currentPage - 1); }}>
+			<Button variant="ghost" size="sm" disabled={currentPage === 0} onclick={() => { currentPage = Math.max(0, currentPage - 1); load(); }}>
 				{t("common.prev", "Prev")}
 			</Button>
 			<span>{currentPage + 1} / {totalPages}</span>
-			<Button variant="ghost" size="sm" disabled={currentPage >= totalPages - 1} onclick={() => { currentPage = Math.min(totalPages - 1, currentPage + 1); }}>
+			<Button variant="ghost" size="sm" disabled={currentPage >= totalPages - 1} onclick={() => { currentPage = Math.min(totalPages - 1, currentPage + 1); load(); }}>
 				{t("common.next", "Next")}
 			</Button>
 		</div>
 	</div>
 {/if}
+</div>
 
 <!-- View Modal -->
 <Modal open={showViewModal} onclose={() => { showViewModal = false; }} title={t("university.instructor_details", "Instructor Details")}>

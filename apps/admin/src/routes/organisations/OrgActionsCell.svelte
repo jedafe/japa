@@ -74,7 +74,7 @@
 		if (!row?.id) return;
 		acting = true;
 		try {
-			const result = await organisationsAdminApi.claim(row.id, { note: claimNote.trim() || undefined });
+			const result = await organisationsAdminApi.claim(row.id, { action: "approve", note: claimNote.trim() || undefined });
 			if (result.ok) { showClaimModal = false; onchange?.(); }
 		} finally { acting = false; }
 	}

@@ -873,11 +873,16 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// AI Core subsystem (Section 20 — AI Core).
 	aiDispatcher := ai.NewDispatcher()
 
-	// Register Xiaomi MiMo as the primary content generation provider.
+	// Register Xiaomi MiMo as the primary content generation + chat provider.
+	// The "chat" category is required by HandleChat (JapaBot) — without it,
+	// every /ai/chat request fails with "no providers registered for category
+	// \"chat\"". The same Xiaomi provider serves both categories.
 	if cfg.XiaomiAPIKey != "" {
 		xiaomiProvider := ai.NewXiaomiProvider(cfg.XiaomiAPIKey, "")
 		aiDispatcher.RegisterProvider("content_generation", xiaomiProvider)
-		slog.Info("ai: registered xiaomi provider", "model", ai.XiaomiModelFlash)
+		aiDispatcher.RegisterProvider("chat", xiaomiProvider)
+		slog.Info("ai: registered xiaomi provider", "model", ai.XiaomiModelFlash,
+			"categories", []string{"content_generation", "chat"})
 	}
 
 	aiStore := ai.NewStore(database.Reader, database.Writer)
@@ -1020,6 +1025,25 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	controlHandlers.SetMeiliSearch(meiliClient)
 	controlHandlers.SetHoncho(honcho.NewClient(cfg.HonchoURL)) // ADR-027: infra health
 	controlHandlers.SetAIStore(aiStore) // AI budget dashboard aggregation
+
+	// AI Provider management — DB-backed provider configs with hot-reload.
+	// The ProviderStore reads/writes the ai_providers table (migration 000269);
+	// the AIDispatcher is injected so create/update/delete operations can
+	// re-register providers at runtime without a server restart.
+	providerStore := ai.NewProviderStore(database.Reader, database.Writer)
+	controlHandlers.SetProviderStore(providerStore)
+	controlHandlers.SetAIDispatcher(aiDispatcher)
+
+	// Load DB-backed provider configs and register them with the dispatcher.
+	// This runs AFTER env-var providers are registered above, so DB configs
+	// take priority (LoadAndRegisterProviders clears and re-registers
+	// categories that have DB-backed providers). The default tenant is used
+	// for the initial load; per-tenant reload happens on config changes.
+	if defaultTenant, err := tenantStore.GetDefaultTenant(context.Background()); err == nil && defaultTenant != nil {
+		if err := ai.LoadAndRegisterProviders(context.Background(), providerStore, aiDispatcher, defaultTenant.ID); err != nil {
+			slog.Warn("ai: loading db-backed providers at startup", "error", err)
+		}
+	}
 
 	// Infrastructure routes bypass tenant middleware
 	r.Get("/health", h.HealthCheck)
@@ -2195,6 +2219,19 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "payments.plans.manage")).
 				Delete("/admin/plans/{id}", paymentHandlers.DeleteAdminPlan)
 
+			// Admin: Subscription Plan ↔ Track management (migration 000273).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "payments.plans.manage")).
+				Get("/admin/plans/{id}/tracks", paymentHandlers.AdminListPlanTracks)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "payments.plans.manage")).
+				Put("/admin/plans/{id}/tracks", paymentHandlers.AdminSetPlanTracks)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "payments.plans.manage")).
+				Post("/admin/plans/{id}/tracks/{trackId}", paymentHandlers.AdminAddTrackToPlan)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "payments.plans.manage")).
+				Delete("/admin/plans/{id}/tracks/{trackId}", paymentHandlers.AdminRemoveTrackFromPlan)
+
+			// Public: list tracks included in a plan (catalog: /pricing/plans/{slug}/tracks).
+			r.Get("/pricing/plans/{slug}/tracks", paymentHandlers.PublicListPlanTracks)
+
 			// Wallet & Credits routes — gated by feature.wallet (Section 28)
 			r.With(features.Gate(featureChecker, "feature.wallet")).Group(func(r chi.Router) {
 				// Balance and ledger (catalog: /me/wallet)
@@ -3141,6 +3178,22 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "university.revenue.view")).
 				Get("/admin/university/revenue-splits/{id}", universityHandlers.AdminGetRevenueSplit)
 
+			// Admin: track categories CRUD (ADR-063 §9.1)
+			// Ref: japaconnect-engineering/sections/36-learning-platform.md (Track categories)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "university.category.manage")).
+				Get("/admin/university/categories", universityHandlers.AdminListCategories)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "university.category.manage")).
+				Post("/admin/university/categories", universityHandlers.AdminCreateCategory)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "university.category.manage")).
+				Get("/admin/university/categories/{id}", universityHandlers.AdminGetCategory)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "university.category.manage")).
+				Patch("/admin/university/categories/{id}", universityHandlers.AdminUpdateCategory)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "university.category.manage")).
+				Delete("/admin/university/categories/{id}", universityHandlers.AdminDeleteCategory)
+
+			// Public: active track categories for catalog dropdown (no auth required)
+			r.Get("/learn/university/categories", universityHandlers.PublicListActiveCategories)
+
 			// Admin: CRUD for tracks, modules, lessons
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "learning.admin.manage")).
 				Get("/admin/learn/tracks", learningHandlers.ListAllTracks)
@@ -4064,6 +4117,16 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// AI Budget
 			r.Get("/ai-budget", controlHandlers.GetAIBudget)
 			r.Patch("/ai-budget", controlHandlers.UpdateAIBudget)
+
+			// AI Providers — super-admin CRUD for runtime-managed AI provider
+			// configs (migration 000269). Changes hot-reload the dispatcher.
+			r.Get("/ai-providers", controlHandlers.ListAIProviders)
+			r.Post("/ai-providers", controlHandlers.CreateAIProvider)
+			r.Post("/ai-providers/fetch-models", controlHandlers.FetchAIModels)
+			r.Get("/ai-providers/{id}", controlHandlers.GetAIProvider)
+			r.Patch("/ai-providers/{id}", controlHandlers.UpdateAIProvider)
+			r.Delete("/ai-providers/{id}", controlHandlers.DeleteAIProvider)
+			r.Post("/ai-providers/{id}/test", controlHandlers.TestAIProvider)
 
 			// Audit Log (full cross-tenant view)
 			r.Get("/audit-logs", controlHandlers.ListAuditLogs)

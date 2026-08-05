@@ -31,6 +31,8 @@
 	// Whether this is a paid course that requires checkout.
 	const isPaid = $derived(track.price_kobo != null && track.price_kobo > 0);
 	const isFreeOrPro = $derived(isFreeForUser(track.price_kobo, data.user?.is_pro));
+	// Subscription-eligible tracks can be enrolled via the user's subscription plan.
+	const isSubscriptionEligible = $derived(!!track.subscription_eligible);
 
 	$effect(() => {
 		if (!data.user) {
@@ -56,6 +58,9 @@
 		if (isFreeForUser(track.price_kobo, data.user?.is_pro)) {
 			return data.user?.is_pro ? t('learn.included_pro') : t('learn.free');
 		}
+		if (isSubscriptionEligible) {
+			return t('learn.subscription_or_purchase', 'Subscription / {price}').replace('{price}', formatPriceKobo(track.price_kobo));
+		}
 		return formatPriceKobo(track.price_kobo);
 	});
 
@@ -67,8 +72,9 @@
 			window.location.href = loginUrl(`/tracks/${track.slug}`);
 			return;
 		}
-		// Paid course: open checkout modal (unless Pro subscriber).
-		if (isPaid && !isFreeOrPro) {
+		// Paid course: open checkout modal (unless Pro subscriber or
+		// subscription-eligible — the backend will check plan access first).
+		if (isPaid && !isFreeOrPro && !isSubscriptionEligible) {
 			checkoutOpen = true;
 			return;
 		}
@@ -88,6 +94,8 @@
 			}
 		} else if (r.error) {
 			// 402 payment_required — open checkout modal as fallback.
+			// This happens when a subscription-eligible track isn't covered
+			// by the user's plan and has a price > 0.
 			if (r.error.status === 402) {
 				checkoutOpen = true;
 			} else {
@@ -200,7 +208,7 @@
 					>
 						{#if enrolling}
 							{t('common.loading')}
-						{:else if isPaid && !isFreeOrPro}
+						{:else if isPaid && !isFreeOrPro && !isSubscriptionEligible}
 							<Lock size={18} /> {t('university.buy_for', 'Buy for {price}').replace('{price}', formatPriceKobo(track.price_kobo))}
 						{:else}
 							{t('learn.enroll')}

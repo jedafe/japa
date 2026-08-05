@@ -804,10 +804,17 @@ func (h *Handlers) ListAppeals(w http.ResponseWriter, r *http.Request) {
 	}
 	appeals := make([]map[string]any, 0, len(rows))
 	for _, a := range rows {
-		appeals = append(appeals, map[string]any{
+		entry := map[string]any{
 			"id": a.ID.String(), "user_id": a.UserID.String(), "entity_type": a.EntityType,
 			"entity_id": a.EntityID, "reason": a.Reason, "status": a.Status, "created_at": a.CreatedAt.Time.Format(time.RFC3339),
-		})
+		}
+		if a.Username != nil {
+			entry["username"] = *a.Username
+		}
+		if a.DisplayName != nil {
+			entry["display_name"] = *a.DisplayName
+		}
+		appeals = append(appeals, entry)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"data": appeals})
 }

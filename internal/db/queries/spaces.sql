@@ -480,10 +480,12 @@ ORDER BY sm.joined_at ASC;
 -- Admin-wide pending join requests across every space in the admin's tenant.
 -- space_id is included so the admin panel can build a composite request id
 -- (space_id::user_id) for the approve/reject endpoints.
-SELECT sm.space_id, sm.user_id, u.username, up.display_name, up.avatar_url, sm.joined_at, sm.status
+SELECT sm.space_id, sm.user_id, u.username, up.display_name, up.avatar_url, sm.joined_at, sm.status,
+       s.name AS space_name
 FROM space_members sm
 JOIN users u ON u.id = sm.user_id AND u.tenant_id = sm.tenant_id
 LEFT JOIN user_profiles up ON up.user_id = sm.user_id AND up.tenant_id = sm.tenant_id
+LEFT JOIN spaces s ON s.id = sm.space_id AND s.tenant_id = sm.tenant_id
 WHERE sm.tenant_id = @tenant_id AND sm.status = 'pending'
 ORDER BY sm.joined_at ASC;
 

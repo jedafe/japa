@@ -599,23 +599,33 @@ func (s *Service) AdminListFlagged(ctx context.Context, tenantID pgtype.UUID, pa
 
 // Referral represents a single referral record (legacy struct for old routes).
 type Referral struct {
-	ID           pgtype.UUID         `json:"id"`
-	TenantID     pgtype.UUID         `json:"tenant_id"`
-	ReferrerID   pgtype.UUID         `json:"referrer_id"`
-	RefereeID    *pgtype.UUID        `json:"referee_id,omitempty"`
-	ReferralCode string              `json:"referral_code"`
-	Status       string              `json:"status"`
-	RewardPaidAt *pgtype.Timestamptz `json:"reward_paid_at,omitempty"`
-	CreatedAt    pgtype.Timestamptz  `json:"created_at"`
+	ID                  pgtype.UUID         `json:"id"`
+	TenantID            pgtype.UUID         `json:"tenant_id"`
+	ReferrerID          pgtype.UUID         `json:"referrer_id"`
+	RefereeID           *pgtype.UUID        `json:"referee_id,omitempty"`
+	ReferralCode        string              `json:"referral_code"`
+	Status              string              `json:"status"`
+	RewardPaidAt        *pgtype.Timestamptz `json:"reward_paid_at,omitempty"`
+	CreatedAt           pgtype.Timestamptz  `json:"created_at"`
+	ReferrerUsername    *string             `json:"referrer_username,omitempty"`
+	ReferrerDisplayName *string             `json:"referrer_display_name,omitempty"`
+	RefereeUsername     *string             `json:"referee_username,omitempty"`
+	RefereeDisplayName  *string             `json:"referee_display_name,omitempty"`
 }
 
 // ListReferrals returns all referrals for the tenant (legacy direct pgx).
 func (s *Service) ListReferrals(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]Referral, error) {
 	rows, err := s.db.Reader.Query(ctx, `
-		SELECT id, tenant_id, referrer_id, referee_id, referral_code, status, reward_paid_at, created_at
-		FROM referrals
-		WHERE tenant_id = $1
-		ORDER BY created_at DESC
+		SELECT r.id, r.tenant_id, r.referrer_id, r.referee_id, r.referral_code, r.status, r.reward_paid_at, r.created_at,
+		       ru.username, rp.display_name,
+		       reu.username, rep.display_name
+		FROM referrals r
+		LEFT JOIN users ru ON ru.id = r.referrer_id
+		LEFT JOIN user_profiles rp ON rp.user_id = r.referrer_id AND rp.tenant_id = r.tenant_id
+		LEFT JOIN users reu ON reu.id = r.referee_id
+		LEFT JOIN user_profiles rep ON rep.user_id = r.referee_id AND rep.tenant_id = r.tenant_id
+		WHERE r.tenant_id = $1
+		ORDER BY r.created_at DESC
 		LIMIT $2 OFFSET $3
 	`, tenantID, limit, offset)
 	if err != nil {
@@ -626,7 +636,7 @@ func (s *Service) ListReferrals(ctx context.Context, tenantID pgtype.UUID, limit
 	var referrals []Referral
 	for rows.Next() {
 		var ref Referral
-		if err := rows.Scan(&ref.ID, &ref.TenantID, &ref.ReferrerID, &ref.RefereeID, &ref.ReferralCode, &ref.Status, &ref.RewardPaidAt, &ref.CreatedAt); err != nil {
+		if err := rows.Scan(&ref.ID, &ref.TenantID, &ref.ReferrerID, &ref.RefereeID, &ref.ReferralCode, &ref.Status, &ref.RewardPaidAt, &ref.CreatedAt, &ref.ReferrerUsername, &ref.ReferrerDisplayName, &ref.RefereeUsername, &ref.RefereeDisplayName); err != nil {
 			return nil, fmt.Errorf("scanning referral: %w", err)
 		}
 		referrals = append(referrals, ref)

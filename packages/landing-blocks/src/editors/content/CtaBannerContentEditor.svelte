@@ -35,18 +35,18 @@
 </script>
 
 <div class="space-y-4">
-  <div>
-    <label class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Headline</label>
+  <label class="block">
+    <span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Headline</span>
     <GeoText value={props.headline} onchange={(v) => update('headline', v)} {geoCtx} />
-  </div>
+  </label>
 
-  <div>
-    <label class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Subhead</label>
+  <label class="block">
+    <span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Subhead</span>
     <GeoText value={props.subhead ?? ''} onchange={(v) => update('subhead', v)} {geoCtx} />
-  </div>
+  </label>
 
-  <div>
-    <label class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Alignment</label>
+  <label class="block">
+    <span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Alignment</span>
     <select
       value={props.alignment ?? 'center'}
       onchange={(e) => update('alignment', e.currentTarget.value as CtaBannerProps['alignment'])}
@@ -56,11 +56,11 @@
       <option value="center">Center</option>
       <option value="right">Right</option>
     </select>
-  </div>
+  </label>
 
-  <div>
+  <label class="block">
     <div class="mb-2 flex items-center justify-between">
-      <label class="text-xs font-medium text-[var(--color-muted)]">CTAs</label>
+      <span class="text-xs font-medium text-[var(--color-muted)]">CTAs</span>
       <button type="button" onclick={addCta} class="text-xs text-[var(--color-primary)] hover:underline">+ Add CTA</button>
     </div>
     <div class="space-y-3">
@@ -75,5 +75,5 @@
         </div>
       {/each}
     </div>
-  </div>
+  </label>
 </div>

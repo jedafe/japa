@@ -123,8 +123,11 @@ func scanUUIDParam(r *http.Request, param string) (pgtype.UUID, error) {
 }
 
 // ClaimOrganization handles POST /api/v1/admin/organizations/{id}/claim.
-// Approves the most recent pending ownership claim for the organization on
-// behalf of the admin (audit A20 — admin "claim queue" action).
+// Approves or rejects the most recent pending ownership claim for the
+// organization on behalf of the admin (audit A20 — admin "claim queue" action).
+// Body: { action: "approve" | "reject", note?: string }. When `action` is
+// omitted it defaults to "approve" for backwards compatibility. Rejecting a
+// claim sets its status to "rejected" via ReviewOwnershipClaim.
 func (h *Handlers) ClaimOrganization(w http.ResponseWriter, r *http.Request) {
 	user := auth.FromContext(r.Context())
 	if user == nil {
@@ -142,12 +145,19 @@ func (h *Handlers) ClaimOrganization(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var note string
+	var (
+		note   string
+		action = "approve"
+	)
 	if r.Body != nil {
 		var body struct {
-			Note string `json:"note"`
+			Action string `json:"action"`
+			Note   string `json:"note"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err == nil {
+			if body.Action == "approve" || body.Action == "reject" {
+				action = body.Action
+			}
 			note = body.Note
 		}
 	}
@@ -159,6 +169,22 @@ func (h *Handlers) ClaimOrganization(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		writeError(w, http.StatusNotFound, "no_pending_claim", "No pending ownership claim for this organization")
+		return
+	}
+
+	if action == "reject" {
+		rejected := "rejected"
+		if err := h.Queries.ReviewOwnershipClaim(ctx, gen.ReviewOwnershipClaimParams{
+			ID:             claimID,
+			TenantID:       tenantID,
+			Status:         rejected,
+			ReviewedBy:     user.UserID,
+			ResolutionNote: &note,
+		}); err != nil {
+			writeError(w, http.StatusInternalServerError, "db_error", "Failed to reject ownership claim")
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"claim_id": claimID.String(), "status": "rejected"}})
 		return
 	}
 
@@ -194,7 +220,10 @@ func (h *Handlers) ListPendingOwnershipClaims(w http.ResponseWriter, r *http.Req
 		OrganizationID   string  `json:"organization_id"`
 		ClaimantUserID   string  `json:"claimant_user_id"`
 		ClaimantUsername string  `json:"claimant_username"`
+		ClaimantEmail    string  `json:"claimant_email"`
 		OrgName          string  `json:"org_name"`
+		OrgSlug          string  `json:"org_slug"`
+		Status           string  `json:"status"`
 		EvidenceURL      *string `json:"evidence_url"`
 		Notes            *string `json:"notes"`
 		CreatedAt        string  `json:"created_at"`
@@ -207,7 +236,10 @@ func (h *Handlers) ListPendingOwnershipClaims(w http.ResponseWriter, r *http.Req
 			OrganizationID:   c.OrganizationID.String(),
 			ClaimantUserID:   c.ClaimantUserID.String(),
 			ClaimantUsername: c.ClaimantUsername,
+			ClaimantEmail:    c.ClaimantEmail,
 			OrgName:          c.OrgName,
+			OrgSlug:          c.OrgSlug,
+			Status:           c.Status,
 			EvidenceURL:      c.EvidenceUrl,
 			Notes:            c.Notes,
 			CreatedAt:        c.CreatedAt.Time.Format("2006-01-02T15:04:05Z"),

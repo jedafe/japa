@@ -20,8 +20,8 @@
 </script>
 
 <div class="space-y-3">
-  <div>
-    <label class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Slot key</label>
+  <label class="block">
+    <span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Slot key</span>
     <input type="text" value={props.slot_key} oninput={(e) => update('slot_key', e.currentTarget.value)} placeholder="e.g. sidebar_leaderboard" class={inputClass} />
-  </div>
+  </label>
 </div>

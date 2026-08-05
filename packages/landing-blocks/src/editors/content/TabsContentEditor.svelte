@@ -36,46 +36,46 @@
 </script>
 
 <div class="space-y-3">
-  <div>
-    <label class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Layout</label>
+  <label class="block">
+    <span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Layout</span>
     <select value={props.layout} onchange={(e) => update('layout', e.currentTarget.value as TabsProps['layout'])} class={inputClass}>
       <option value="underline">Underline</option>
       <option value="pills">Pills</option>
       <option value="boxed">Boxed</option>
     </select>
-  </div>
+  </label>
 
-  <div>
-    <label class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Orientation</label>
+  <label class="block">
+    <span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Orientation</span>
     <select value={props.orientation} onchange={(e) => update('orientation', e.currentTarget.value as TabsProps['orientation'])} class={inputClass}>
       <option value="horizontal">Horizontal</option>
       <option value="vertical">Vertical</option>
     </select>
-  </div>
+  </label>
 
-  <div>
-    <label class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Initial tab index</label>
+  <label class="block">
+    <span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Initial tab index</span>
     <input type="number" min="0" value={props.initial_tab} oninput={(e) => update('initial_tab', Number(e.currentTarget.value))} class={inputClass} />
-  </div>
+  </label>
 
   <div class="space-y-2">
-    <label class="block text-xs font-medium text-[var(--color-muted)]">Tabs</label>
+    <span class="block text-xs font-medium text-[var(--color-muted)]">Tabs</span>
     {#each props.tabs as tab, i (i)}
       <div class="space-y-2 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-2">
         <div class="flex items-center justify-between">
           <span class="text-xs text-[var(--color-muted)]">Tab {i + 1}</span>
           <button type="button" onclick={() => removeTab(i)} class="text-xs text-[var(--color-danger)] hover:underline">Remove</button>
         </div>
-        <div>
-          <label class="mb-1 block text-xs text-[var(--color-muted)]">Label</label>
+        <label class="block">
+          <span class="mb-1 block text-xs text-[var(--color-muted)]">Label</span>
           <input type="text" value={tab.label} oninput={(e) => updateTab(i, { label: e.currentTarget.value })} class={inputClass} />
-        </div>
-        <div>
-          <label class="mb-1 block text-xs text-[var(--color-muted)]">Icon</label>
+        </label>
+        <label class="block">
+          <span class="mb-1 block text-xs text-[var(--color-muted)]">Icon</span>
           <IconPicker value={tab.icon} onchange={(v) => updateTab(i, { icon: v })} />
-        </div>
-        <div>
-          <label class="mb-1 block text-xs text-[var(--color-muted)]">Content blocks</label>
+        </label>
+        <label class="block">
+          <span class="mb-1 block text-xs text-[var(--color-muted)]">Content blocks</span>
           <NestedBlocksEditor
             blocks={tab.content_blocks ?? []}
             onchange={(v: Block[]) => updateTab(i, { content_blocks: v })}
@@ -83,7 +83,7 @@
             {mediaPickerComponent}
             {geoCtx}
           />
-        </div>
+        </label>
       </div>
     {/each}
     <button type="button" onclick={addTab} class="w-full rounded-[var(--radius)] border border-dashed border-[var(--color-border)] py-1.5 text-sm text-[var(--color-muted)] hover:bg-[var(--color-surface-subtle)]">+ Add tab</button>

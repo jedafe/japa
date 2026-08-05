@@ -40,6 +40,7 @@
 		DatabaseBackup,
 		ShieldCheck,
 		Coins,
+		Cpu,
 	} from 'lucide-svelte';
 	type LucideIcon = typeof LayoutDashboard;
 
@@ -182,6 +183,7 @@
 		{ href: '/feature-flags', icon: Flag },
 		{ href: '/tenants', icon: Building2 },
 		{ href: '/ai-budget', icon: DollarSign },
+		{ href: '/ai-providers', icon: Cpu },
 		{ href: '/cron', icon: Clock },
 		{ href: '/deployments', icon: Rocket },
 		{ href: '/currencies', icon: Coins }
@@ -200,6 +202,7 @@
 		'/feature-flags': { label: 'nav.feature_flags', tooltip: 'nav.feature_flags_tooltip', defaultLabel: 'Feature Flags', defaultTooltip: 'Feature flag management' },
 		'/tenants': { label: 'nav.tenants', tooltip: 'nav.tenants_tooltip', defaultLabel: 'Tenants', defaultTooltip: 'Multi-tenant management' },
 		'/ai-budget': { label: 'nav.ai_budget', tooltip: 'nav.ai_budget_tooltip', defaultLabel: 'AI Budget', defaultTooltip: 'AI cost tracking & limits' },
+		'/ai-providers': { label: 'nav.ai_providers', tooltip: 'nav.ai_providers_tooltip', defaultLabel: 'AI Providers', defaultTooltip: 'Manage AI provider configurations' },
 		'/cron': { label: 'nav.cron', tooltip: 'nav.cron_tooltip', defaultLabel: 'Cron Jobs', defaultTooltip: 'Scheduled job management' },
 		'/deployments': { label: 'nav.deployments', tooltip: 'nav.deployments_tooltip', defaultLabel: 'Deployments', defaultTooltip: 'Deployment version history' },
 		'/oauth-clients': { label: 'nav.oauth_clients', tooltip: 'nav.oauth_clients_tooltip', defaultLabel: 'OAuth Clients', defaultTooltip: 'OAuth provider client management' },

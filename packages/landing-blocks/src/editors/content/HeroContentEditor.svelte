@@ -47,24 +47,24 @@
 </script>
 
 <div class="space-y-4">
-  <div>
-    <label class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Eyebrow</label>
+  <label class="block">
+    <span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Eyebrow</span>
     <GeoText value={props.eyebrow ?? ''} onchange={(v) => update('eyebrow', v)} {geoCtx} />
-  </div>
+  </label>
 
-  <div>
-    <label class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Headline</label>
+  <label class="block">
+    <span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Headline</span>
     <GeoText value={props.headline} onchange={(v) => update('headline', v)} {geoCtx} />
-  </div>
+  </label>
 
-  <div>
-    <label class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Subhead</label>
+  <label class="block">
+    <span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Subhead</span>
     <GeoText value={props.subhead ?? ''} onchange={(v) => update('subhead', v)} {geoCtx} />
-  </div>
+  </label>
 
-  <div>
+  <label class="block">
     <div class="mb-2 flex items-center justify-between">
-      <label class="text-xs font-medium text-[var(--color-muted)]">CTAs</label>
+      <span class="text-xs font-medium text-[var(--color-muted)]">CTAs</span>
       <button type="button" onclick={addCta} class="text-xs text-[var(--color-primary)] hover:underline">+ Add CTA</button>
     </div>
     <div class="space-y-3">
@@ -79,11 +79,11 @@
         </div>
       {/each}
     </div>
-  </div>
+  </label>
 
-  <div>
+  <label class="block">
     <div class="mb-2 flex items-center justify-between">
-      <label class="text-xs font-medium text-[var(--color-muted)]">Stats</label>
+      <span class="text-xs font-medium text-[var(--color-muted)]">Stats</span>
       <button type="button" onclick={addStat} class="text-xs text-[var(--color-primary)] hover:underline">+ Add Stat</button>
     </div>
     <div class="space-y-2">
@@ -107,5 +107,5 @@
         </div>
       {/each}
     </div>
-  </div>
+  </label>
 </div>
