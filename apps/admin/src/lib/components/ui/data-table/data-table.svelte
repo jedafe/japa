@@ -4,6 +4,7 @@
   import { replaceState } from '$app/navigation';
   import { ChevronUp, ChevronDown, ChevronsUpDown, Plus, Columns3 } from "lucide-svelte";
   import { clsx, type ClassValue } from "clsx";
+  import { untrack } from "svelte";
   import type { Component, Snippet } from "svelte";
   import { DropdownMenu } from "bits-ui";
   import { Button } from "$lib/components/ui/button";
@@ -170,8 +171,10 @@
 
   // ── Column visibility (hide/unhide) ─────────────────────────────────────
   // Seeded from `defaultHidden` at init; user toggles modify the set thereafter.
+  // untrack() makes the "initial value only" intent explicit (columns may be a
+  // reactive prop, but we deliberately only read it once here).
   let hiddenColumns = $state<Set<string>>(
-    new Set(columns.filter((c) => c.defaultHidden).map((c) => c.key))
+    untrack(() => new Set(columns.filter((c) => c.defaultHidden).map((c) => c.key)))
   );
 
   const hideableColumns = $derived(columns.filter((c) => c.hideable !== false));

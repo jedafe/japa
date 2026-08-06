@@ -67,7 +67,6 @@ __pycache__/
 .obsidian/
 .claudian/
 .commandcode/
-.mimocode/
 .opencode/
 Untitled.md
 Prompts/* (Copy).md
@@ -83,9 +82,12 @@ bin/japa-api
 
 # Agent/tool artifacts — never commit
 .playwright-cli/
+.playwright-mcp/
 .devin/
+.superpowers/
 .commandcode/
 .mimocode/
+.kilo/
 screenshot/
 /test-*.cjs
 /inspect_*.cjs

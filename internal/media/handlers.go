@@ -603,13 +603,30 @@ func (h *Handlers) ListMedia(w http.ResponseWriter, r *http.Request) {
 		query = &q
 	}
 
-	items, err := h.service.ListMedia(r.Context(), tenantID, uploaderID, mimeType, query, limit, offset)
+	var status *string
+	if st := r.URL.Query().Get("status"); st != "" {
+		status = &st
+	}
+
+	items, total, err := h.service.ListMedia(r.Context(), tenantID, uploaderID, mimeType, query, status, limit, offset)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "list_error", "Failed to load media")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": toMediaResponses(items, h.service)})
+	totalPages := int32(1)
+	if limit > 0 {
+		totalPages = (total + limit - 1) / limit
+		if totalPages < 1 {
+			totalPages = 1
+		}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data":        toMediaResponses(items, h.service),
+		"total":       total,
+		"total_pages": totalPages,
+	})
 }
 
 // ListMyMedia handles GET /api/v1/me/media — the caller's own uploaded media,
@@ -638,13 +655,30 @@ func (h *Handlers) ListMyMedia(w http.ResponseWriter, r *http.Request) {
 		query = &q
 	}
 
-	items, err := h.service.ListMedia(r.Context(), tenantID, &user.UserID, mimeType, query, limit, offset)
+	var status *string
+	if st := r.URL.Query().Get("status"); st != "" {
+		status = &st
+	}
+
+	items, total, err := h.service.ListMedia(r.Context(), tenantID, &user.UserID, mimeType, query, status, limit, offset)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "list_error", "Failed to load media")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": toMediaResponses(items, h.service)})
+	totalPages := int32(1)
+	if limit > 0 {
+		totalPages = (total + limit - 1) / limit
+		if totalPages < 1 {
+			totalPages = 1
+		}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data":        toMediaResponses(items, h.service),
+		"total":       total,
+		"total_pages": totalPages,
+	})
 }
 
 // ListByUser handles GET /users/{id}/media — the public profile Media tab.

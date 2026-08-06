@@ -72,14 +72,14 @@ SET quarantine_reason = NULL,
     reviewed_by = @reviewed_by,
     reviewed_at = now(),
     confirmed = true
-WHERE id = @id AND tenant_id = @tenant_id AND quarantine_reason IS NOT NULL AND deleted_at IS NULL;
+WHERE id = @id AND tenant_id = @tenant_id AND confirmed = false AND deleted_at IS NULL;
 
 -- name: RejectQuarantinedMedia :exec
 UPDATE media
 SET deleted_at = now(),
     reviewed_by = @reviewed_by,
     reviewed_at = now()
-WHERE id = @id AND tenant_id = @tenant_id AND quarantine_reason IS NOT NULL AND deleted_at IS NULL;
+WHERE id = @id AND tenant_id = @tenant_id AND confirmed = false AND deleted_at IS NULL;
 
 -- name: ListQuarantinedMedia :many
 SELECT id, tenant_id, uploader_user_id, original_filename, mime_type,
@@ -133,6 +133,64 @@ LIMIT @page_limit OFFSET @page_offset;
 -- name: CountMediaByUploader :one
 SELECT COUNT(*)::int AS count FROM media
 WHERE tenant_id = @tenant_id AND uploader_user_id = @uploader_user_id AND deleted_at IS NULL;
+
+-- name: CountMediaByTenant :one
+SELECT COUNT(*)::int AS count FROM media
+WHERE tenant_id = @tenant_id AND deleted_at IS NULL;
+
+-- name: CountMediaByType :one
+SELECT COUNT(*)::int AS count FROM media
+WHERE tenant_id = @tenant_id AND mime_type LIKE @mime_pattern || '%' AND deleted_at IS NULL;
+
+-- name: CountSearchMedia :one
+SELECT COUNT(*)::int AS count FROM media
+WHERE tenant_id = @tenant_id
+  AND deleted_at IS NULL
+  AND (original_filename ILIKE '%' || @query || '%'
+       OR alt_text ILIKE '%' || @query || '%'
+       OR caption ILIKE '%' || @query || '%');
+
+-- =====================
+-- Unified filtered list (admin) — combines uploader, type, search, and status
+-- filters in a single query. All filter params are nullable; a NULL param
+-- means "no filter on this field". Used by the admin media list endpoint.
+-- =====================
+
+-- name: ListMediaFiltered :many
+SELECT * FROM media
+WHERE tenant_id = @tenant_id
+  AND deleted_at IS NULL
+  AND (@uploader_user_id::uuid IS NULL OR uploader_user_id = @uploader_user_id)
+  AND (@mime_pattern::text = '' OR mime_type LIKE @mime_pattern || '%')
+  AND (@query::text = ''
+       OR original_filename ILIKE '%' || @query || '%'
+       OR alt_text ILIKE '%' || @query || '%'
+       OR caption ILIKE '%' || @query || '%')
+  AND (
+    @status::text = '' OR
+    (@status = 'approved' AND confirmed = true) OR
+    (@status = 'pending' AND confirmed = false AND (quarantine_reason IS NULL OR quarantine_reason = '')) OR
+    (@status = 'quarantined' AND confirmed = false AND quarantine_reason IS NOT NULL AND quarantine_reason != '')
+  )
+ORDER BY created_at DESC
+LIMIT @page_limit OFFSET @page_offset;
+
+-- name: CountMediaFiltered :one
+SELECT COUNT(*)::int AS count FROM media
+WHERE tenant_id = @tenant_id
+  AND deleted_at IS NULL
+  AND (@uploader_user_id::uuid IS NULL OR uploader_user_id = @uploader_user_id)
+  AND (@mime_pattern::text = '' OR mime_type LIKE @mime_pattern || '%')
+  AND (@query::text = ''
+       OR original_filename ILIKE '%' || @query || '%'
+       OR alt_text ILIKE '%' || @query || '%'
+       OR caption ILIKE '%' || @query || '%')
+  AND (
+    @status::text = '' OR
+    (@status = 'approved' AND confirmed = true) OR
+    (@status = 'pending' AND confirmed = false AND (quarantine_reason IS NULL OR quarantine_reason = '')) OR
+    (@status = 'quarantined' AND confirmed = false AND quarantine_reason IS NOT NULL AND quarantine_reason != '')
+  );
 
 -- name: ListMediaFromPublicPostsByUser :many
 -- Public profile Media tab: all confirmed, non-group-restricted IMAGE media

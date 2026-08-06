@@ -25,6 +25,8 @@
 			class="mb-3 h-32 w-full rounded-[var(--radius)] object-cover"
 			loading="lazy"
 		/>
+	{:else}
+		<div class="mb-3 h-32 w-full rounded-[var(--radius)] bg-gradient-to-br from-[var(--color-primary)]/12 via-[var(--color-surface-subtle)] to-[var(--color-surface-subtle)]"></div>
 	{/if}
 
 	<div class="flex items-center gap-2">

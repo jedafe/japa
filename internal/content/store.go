@@ -287,7 +287,7 @@ type UpdateContentInput struct {
 // UpdateContent updates an existing content row, recording a revision and
 // tracking slug changes in slug_history. The old slug is preserved for
 // 301 redirects.
-func (s *Service) UpdateContent(ctx context.Context, id, tenantID, editedBy pgtype.UUID, input UpdateContentInput) (gen.UpdateContentRow, error) {
+func (s *Service) UpdateContent(ctx context.Context, id, tenantID, editedBy pgtype.UUID, input UpdateContentInput, bypassEditWindow bool) (gen.UpdateContentRow, error) {
 	existing, err := s.read.GetContentByID(ctx, gen.GetContentByIDParams{
 		ID:       id,
 		TenantID: tenantID,
@@ -299,8 +299,9 @@ func (s *Service) UpdateContent(ctx context.Context, id, tenantID, editedBy pgty
 	// Edit-window enforcement (BL-008 / Section 49): the original author may
 	// only edit within `content.edit_window_minutes` of creation. Moderators
 	// and admins editing someone else's post bypass this check because they
-	// are not the author. A zero/missing created_at is treated as "no limit".
-	if existing.AuthorID.Valid && existing.CreatedAt.Valid &&
+	// are not the author. Super admins bypass even on their own content.
+	// A zero/missing created_at is treated as "no limit".
+	if !bypassEditWindow && existing.AuthorID.Valid && existing.CreatedAt.Valid &&
 		existing.AuthorID.Bytes == editedBy.Bytes {
 		windowMinutes := defaultEditWindowMinutes
 		if s.settings != nil {

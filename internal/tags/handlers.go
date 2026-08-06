@@ -210,7 +210,54 @@ func (h *Handlers) GetTagContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": items})
+	// Enrich each item with featured_image_url resolved from the media JOIN
+	// so the frontend card can render the cover image without a second
+	// round-trip to /media/{id}.
+	result := make([]map[string]any, 0, len(items))
+	for _, c := range items {
+		row := map[string]any{
+			"id":                  c.ID,
+			"tenant_id":           c.TenantID,
+			"author_id":           c.AuthorID,
+			"space_id":            c.SpaceID,
+			"content_type":        c.ContentType,
+			"title":               c.Title,
+			"slug":                c.Slug,
+			"body":                c.Body,
+			"body_html":           c.BodyHtml,
+			"field_values":        c.FieldValues,
+			"content_hash":        c.ContentHash,
+			"geo_space_id":        c.GeoSpaceID,
+			"header_image_id":     c.HeaderImageID,
+			"featured_image_id":   c.FeaturedImageID,
+			"canonical_url":       c.CanonicalUrl,
+			"meta_title":          c.MetaTitle,
+			"meta_description":    c.MetaDescription,
+			"og_image_url":        c.OgImageUrl,
+			"seo_indexable":       c.SeoIndexable,
+			"status":              c.Status,
+			"visibility":          c.Visibility,
+			"is_locked":           c.IsLocked,
+			"is_pinned":           c.IsPinned,
+			"read_time_minutes":   c.ReadTimeMinutes,
+			"view_count":          c.ViewCount,
+			"comment_count":       c.CommentCount,
+			"share_count":         c.ShareCount,
+			"reshare_count":       c.ReshareCount,
+			"publish_at":          c.PublishAt,
+			"published_at":        c.PublishedAt,
+			"created_at":          c.CreatedAt,
+			"updated_at":          c.UpdatedAt,
+			"featured_image_url":  "",
+		}
+		if c.CoverStorageBucket != nil && c.CoverStoragePath != nil &&
+			*c.CoverStorageBucket != "" && *c.CoverStoragePath != "" {
+			row["featured_image_url"] = media.MediaURL(*c.CoverStorageBucket, *c.CoverStoragePath, media.ImageProxyOpts{})
+		}
+		result = append(result, row)
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": result})
 }
 
 // ToggleTagFollow handles POST/DELETE /api/v1/tags/{slug}/follow.

@@ -3,7 +3,7 @@
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from "$lib/components/entity";
 	import { Modal } from "$lib/components/ui/modal";
 	import { Button } from "$lib/components/ui/button";
-	import { organisationsAdminApi } from "$lib/api";
+	import { organisationsAdminApi, apiRaw } from "$lib/api";
 	import { t } from "$lib/stores/i18n.svelte";
 	import { hasPermission } from "$lib/stores/permissions.svelte";
 	import { Eye, Pencil, Trash2, ShieldCheck, ShieldOff } from "lucide-svelte";
@@ -184,29 +184,20 @@
 		],
 		fields,
 		load: async ({ page, pageSize, q, filter }) => {
-			const params = new URLSearchParams({ page: String(page), limit: String(pageSize) });
+			const params = new URLSearchParams({ page_size: String(pageSize), page_offset: String(page * pageSize) });
 			if (q) params.set("q", q);
 			if (filter.verified) params.set("verified", filter.verified);
 			const [orgResult, claimsResult] = await Promise.all([
-				organisationsAdminApi.list(params.toString()),
+				apiRaw<{ data?: Organisation[]; items?: Organisation[]; total?: number; total_pages?: number }>(`/admin/organizations?${params.toString()}`),
 				organisationsAdminApi.pendingClaims()
 			]);
 			if (!orgResult.ok) {
 				throw new Error(orgResult.error ?? t("common.error", "Failed to load"));
 			}
-			const d = orgResult.data as Organisation[] | { items: Organisation[]; total: number; total_pages: number; page: number };
-			let data: Organisation[];
-			let total: number;
-			let totalPages: number;
-			if (Array.isArray(d)) {
-				data = d;
-				total = d.length;
-				totalPages = 1;
-			} else {
-				data = d.items ?? [];
-				total = d.total ?? d.items?.length ?? 0;
-				totalPages = d.total_pages ?? 1;
-			}
+			const d = orgResult.data;
+			const data = d?.data ?? d?.items ?? [];
+			const total = d?.total ?? data.length;
+			const totalPages = d?.total_pages ?? 1;
 			// Side effect: update pending claims map for the "Approve Claim" action show() predicate.
 			if (claimsResult.ok && Array.isArray(claimsResult.data)) {
 				const map: Record<string, PendingClaim> = {};

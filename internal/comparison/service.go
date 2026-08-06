@@ -379,7 +379,7 @@ func (s *Service) UpdateComparison(ctx context.Context, id, tenantID pgtype.UUID
 		Slug:       input.Slug,
 		Body:       body,
 		Visibility: visibility,
-	})
+	}, false)
 }
 
 // DeleteComparison soft-deletes the content row backing a comparison

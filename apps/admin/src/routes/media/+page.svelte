@@ -5,10 +5,11 @@
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
 	import { Modal } from '$lib/components/ui/modal';
 	import { Button } from '$lib/components/ui/button';
-	import { mediaAdminApi, api, apiFetch } from '$lib/api';
+	import { Card, CardContent } from '$lib/components/ui/card';
+	import { mediaAdminApi, api, apiFetch, apiRaw, stockAdminApi, type StockPhoto } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
-	import { Eye, CheckCircle, XCircle, Shield, Trash2, Upload, Image, FileText, Film, Music } from 'lucide-svelte';
+	import { Eye, CheckCircle, XCircle, Shield, Trash2, Upload, Image, FileText, Film, Music, Search, Download, Loader2, Check } from 'lucide-svelte';
 	import type { ActionItem } from '$lib/components/ui/data-table';
 
 	type MediaItem = {
@@ -231,6 +232,17 @@
 		readonly: true,
 		deletePermission: 'media.delete_any',
 		pageSize: 25,
+		pageSizeOptions: [10, 25, 50, 100],
+		headerActions: canManageMedia
+			? [
+					{
+						label: t('app.media.upload', 'Upload'),
+						icon: Upload,
+						variant: 'default',
+						onclick: openUploadModal
+					}
+				]
+			: undefined,
 		columns: [
 			{
 				key: 'filename',
@@ -299,16 +311,7 @@
 				options: [
 					{ value: 'approved', label: t('app.media.status_approved', 'Approved') },
 					{ value: 'pending', label: t('app.media.status_pending', 'Pending') },
-					{ value: 'quarantined', label: t('app.media.status_quarantined', 'Quarantined') },
-					{ value: 'rejected', label: t('app.media.status_rejected', 'Rejected') }
-				]
-			},
-			{
-				key: 'flagged',
-				label: t('app.media.col_flagged', 'Flagged'),
-				options: [
-					{ value: 'true', label: t('app.media.flagged_yes', 'Flagged') },
-					{ value: 'false', label: t('app.media.flagged_no', 'Not Flagged') }
+					{ value: 'quarantined', label: t('app.media.status_quarantined', 'Quarantined') }
 				]
 			}
 		],
@@ -321,6 +324,8 @@
 				]
 			: undefined,
 		fields,
+		defaultViewMode: 'grid',
+		gridSnippet: MediaGridCard,
 		remove: async (id) => {
 			const res = await mediaAdminApi.delete(id);
 			return res.ok ? { ok: true } : { ok: false, error: res.error };
@@ -331,18 +336,12 @@
 			params.set('page_offset', String(page * pageSize));
 			if (q) params.set('q', q);
 			if (filter.status) params.set('status', filter.status);
-			if (filter.mime_type) params.set('mime_type', filter.mime_type);
-			if (filter.flagged) params.set('flagged', filter.flagged);
-			const result = await mediaAdminApi.list(params.toString());
+			if (filter.mime_type) params.set('type', filter.mime_type);
+			// Use apiRaw to access top-level total/total_pages alongside data.
+			const result = await apiRaw<{ data?: MediaItem[]; items?: MediaItem[]; total?: number; total_pages?: number }>(`/admin/media?${params.toString()}`);
 			if (result.ok) {
-				const data = result.data;
-				// Backend may return a paginated shape ({ items, total, total_pages }) or a plain array.
-				if (Array.isArray(data)) {
-					const items = data as MediaItem[];
-					return { data: items, total: items.length, totalPages: 1 };
-				}
-				const d = data as unknown as { items?: MediaItem[]; total?: number; total_pages?: number; media?: MediaItem[] };
-				const items = d.items ?? d.media ?? [];
+				const d = result.data;
+				const items = d.data ?? d.items ?? [];
 				return {
 					data: items,
 					total: d.total ?? items.length,
@@ -363,6 +362,23 @@
 	let uploadProgress = $state<{ current: number; total: number; filename: string } | null>(null);
 	let userGroups = $state<Array<{ id: string; name: string; slug: string }>>([]);
 
+	// Upload modal sub-tab: "upload" (file picker) or "stock" (provider search)
+	let uploadModalTab = $state<'upload' | 'stock'>('upload');
+
+	// Stock search state (inside upload modal)
+	let stockModalProviders = $state<{ name: string; display_name: string }[]>([]);
+	let stockModalProvidersLoaded = $state(false);
+	let stockModalQuery = $state('');
+	let stockModalResults = $state<StockPhoto[]>([]);
+	let stockModalLoading = $state(false);
+	let stockModalHasMore = $state(false);
+	let stockModalPage = $state(1);
+	let stockModalProviderFilter = $state('');
+	let stockModalImporting = $state<Set<string>>(new Set());
+	let stockModalImported = $state<Set<string>>(new Set());
+	let stockModalError = $state('');
+	let stockModalTimer: ReturnType<typeof setTimeout> | undefined;
+
 	async function loadUserGroups() {
 		try {
 			const result = await api<{ groups: Array<{ id: string; name: string; slug: string }>; total: number }>('/admin/user-groups');
@@ -379,8 +395,90 @@
 		uploadUserGroupId = '';
 		uploadAltText = '';
 		uploadProgress = null;
+		uploadModalTab = 'upload';
+		stockModalQuery = '';
+		stockModalResults = [];
+		stockModalError = '';
+		stockModalImported = new Set();
+		stockModalImporting = new Set();
 		showUploadModal = true;
 		loadUserGroups();
+		loadStockModalProviders();
+	}
+
+	// ── Stock search inside upload modal ──────────────────────────────────
+
+	async function loadStockModalProviders() {
+		if (stockModalProvidersLoaded) return;
+		const result = await stockAdminApi.listAvailableProviders();
+		if (result.ok) {
+			stockModalProviders = result.data.providers ?? [];
+		}
+		stockModalProvidersLoaded = true;
+	}
+
+	function runStockModalSearch(q: string) {
+		stockModalQuery = q;
+		stockModalPage = 1;
+		if (stockModalTimer) clearTimeout(stockModalTimer);
+		if (!q.trim()) {
+			stockModalResults = [];
+			stockModalHasMore = false;
+			return;
+		}
+		stockModalTimer = setTimeout(async () => {
+			stockModalLoading = true;
+			stockModalError = '';
+			const result = await stockAdminApi.search({
+				q: q.trim(),
+				provider: stockModalProviderFilter || undefined,
+				page: stockModalPage,
+				per_page: 20
+			});
+			if (result.ok) {
+				stockModalResults = result.data.photos ?? [];
+				stockModalHasMore = result.data.has_next_page ?? false;
+			} else {
+				stockModalError = result.error ?? 'Search failed';
+				stockModalResults = [];
+				stockModalHasMore = false;
+			}
+			stockModalLoading = false;
+		}, 350);
+	}
+
+	async function loadMoreStockModal() {
+		stockModalPage++;
+		stockModalLoading = true;
+		const result = await stockAdminApi.search({
+			q: stockModalQuery.trim(),
+			provider: stockModalProviderFilter || undefined,
+			page: stockModalPage,
+			per_page: 20
+		});
+		if (result.ok) {
+			stockModalResults = [...stockModalResults, ...(result.data.photos ?? [])];
+			stockModalHasMore = result.data.has_next_page ?? false;
+		}
+		stockModalLoading = false;
+	}
+
+	function setStockModalProvider(name: string) {
+		stockModalProviderFilter = name;
+		if (stockModalQuery.trim()) runStockModalSearch(stockModalQuery);
+	}
+
+	async function importStockModalPhoto(photo: StockPhoto) {
+		const pkey = `${photo.provider}:${photo.id}`;
+		stockModalImporting = new Set([...stockModalImporting, pkey]);
+		const result = await stockAdminApi.import(photo.provider, photo.id);
+		stockModalImporting = new Set([...stockModalImporting].filter((k) => k !== pkey));
+		if (result.ok) {
+			stockModalImported = new Set([...stockModalImported, pkey]);
+			entityController?.reload();
+		} else {
+			stockModalError = result.error ?? 'Import failed';
+		}
 	}
 
 	async function handleUpload() {
@@ -443,15 +541,6 @@
 	</div>
 {/if}
 
-<div class="mb-4 flex justify-end">
-	{#if canManageMedia}
-		<Button variant="default" size="sm" onclick={openUploadModal}>
-			<Upload class="mr-1 h-4 w-4" />
-			{t('app.media.upload', 'Upload')}
-		</Button>
-	{/if}
-</div>
-
 <EntityPage {config} bind:controller={entityController} />
 
 <!-- ── State-action confirmation modals ─────────────────────────────────── -->
@@ -506,76 +595,221 @@
 
 <!-- Upload Modal (page-local, preserved from legacy) -->
 <Modal bind:open={showUploadModal} title={t('app.media.modal_upload_title', 'Upload Media')}>
-	<div class="space-y-4">
-		<div>
-			<label for="media-upload-files" class="mb-1 block text-sm font-medium text-foreground">{t('app.media.upload_files', 'Files')}</label>
-			<input
-				id="media-upload-files"
-				type="file"
-				multiple
-				accept="image/*,video/*,audio/*,application/pdf,.doc,.docx"
-				onchange={(e) => {
-					const files = e.currentTarget.files;
-					if (files) uploadFiles = [...uploadFiles, ...Array.from(files)];
-				}}
-				class="block w-full text-sm text-foreground file:mr-4 file:rounded-lg file:border-0 file:bg-primary file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white hover:file:bg-primary/80"
-			/>
+	<!-- Sub-tab switcher: Upload files vs Stock photos -->
+	<div class="mb-4 inline-flex h-10 items-center justify-center rounded-lg p-1" style="background-color: var(--color-surface); color: var(--color-muted)">
+		<button
+			type="button"
+			class="inline-flex items-center justify-center whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium transition-all"
+			style={uploadModalTab === 'upload'
+				? 'background-color: var(--color-surface); color: var(--color-foreground); box-shadow: 0 1px 2px rgba(0,0,0,0.05)'
+				: 'color: var(--color-muted)'}
+			onclick={() => (uploadModalTab = 'upload')}
+		>
+			<Upload class="mr-2 h-4 w-4" />
+			Upload
+		</button>
+		<button
+			type="button"
+			class="inline-flex items-center justify-center whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium transition-all"
+			style={uploadModalTab === 'stock'
+				? 'background-color: var(--color-surface); color: var(--color-foreground); box-shadow: 0 1px 2px rgba(0,0,0,0.05)'
+				: 'color: var(--color-muted)'}
+			onclick={() => (uploadModalTab = 'stock')}
+		>
+			<Search class="mr-2 h-4 w-4" />
+			Stock Photos
+		</button>
+	</div>
+
+	{#if uploadModalTab === 'upload'}
+		<div class="space-y-4">
+			<div>
+				<label for="media-upload-files" class="mb-1 block text-sm font-medium text-foreground">{t('app.media.upload_files', 'Files')}</label>
+				<input
+					id="media-upload-files"
+					type="file"
+					multiple
+					accept="image/*,video/*,audio/*,application/pdf,.doc,.docx"
+					onchange={(e) => {
+						const files = e.currentTarget.files;
+						if (files) uploadFiles = [...uploadFiles, ...Array.from(files)];
+					}}
+					class="block w-full text-sm text-foreground file:mr-4 file:rounded-lg file:border-0 file:bg-primary file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white hover:file:bg-primary/80"
+				/>
+			</div>
+			{#if uploadFiles.length > 0}
+				<div class="max-h-40 space-y-1 overflow-y-auto">
+					{#each uploadFiles as file, i}
+						<div class="flex items-center justify-between rounded-lg bg-surface px-3 py-1.5 text-sm">
+							<span class="truncate text-foreground">{file.name}</span>
+							<span class="ml-2 shrink-0 text-xs text-muted">{formatFileSize(file.size)}</span>
+							<button
+								type="button"
+								class="ml-2 shrink-0 text-muted hover:text-danger"
+								onclick={() => { uploadFiles = uploadFiles.filter((_, j) => j !== i); }}
+							>
+								✕
+							</button>
+						</div>
+					{/each}
+				</div>
+			{/if}
+			<div>
+				<label for="media-upload-group" class="mb-1 block text-sm font-medium text-foreground">{t('app.media.upload_user_group', 'User Group (optional)')}</label>
+				<select
+					id="media-upload-group"
+					bind:value={uploadUserGroupId}
+					class="w-full rounded-lg border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+				>
+					<option value="">{t('app.media.upload_universal', 'Universal (all users)')}</option>
+					{#each userGroups as group}
+						<option value={group.id}>{group.name}</option>
+					{/each}
+				</select>
+			</div>
+			<div>
+				<label for="media-upload-alt" class="mb-1 block text-sm font-medium text-foreground">{t('app.media.upload_alt_text', 'Alt Text (optional)')}</label>
+				<input
+					id="media-upload-alt"
+					type="text"
+					bind:value={uploadAltText}
+					placeholder={t('app.media.upload_alt_placeholder', 'Describe the media...')}
+					class="w-full rounded-lg border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+				/>
+			</div>
+			{#if uploadProgress}
+				<div class="text-sm text-muted">
+					{t('app.media.upload_progress', 'Uploading {current} of {total}...').replace('{current}', String(uploadProgress.current)).replace('{total}', String(uploadProgress.total))}
+					<span class="text-foreground-alt">— {uploadProgress.filename}</span>
+				</div>
+			{/if}
 		</div>
-		{#if uploadFiles.length > 0}
-			<div class="max-h-40 space-y-1 overflow-y-auto">
-				{#each uploadFiles as file, i}
-					<div class="flex items-center justify-between rounded-lg bg-surface px-3 py-1.5 text-sm">
-						<span class="truncate text-foreground">{file.name}</span>
-						<span class="ml-2 shrink-0 text-xs text-muted">{formatFileSize(file.size)}</span>
+		<div class="mt-4 flex justify-end gap-2">
+			<Button variant="ghost" onclick={() => (showUploadModal = false)}>{t('common.cancel', 'Cancel')}</Button>
+			<Button variant="default" onclick={handleUpload} disabled={!uploadFiles.length || uploadSubmitting}>
+				{uploadSubmitting
+					? t('app.media.uploading', 'Uploading...')
+					: t('app.media.upload_n_files', 'Upload {n} files').replace('{n}', String(uploadFiles.length))}
+			</Button>
+		</div>
+	{:else}
+		<!-- Stock photo search + import -->
+		<div class="space-y-3">
+			{#if !stockModalProvidersLoaded}
+				<div class="flex items-center justify-center py-8">
+					<Loader2 class="h-5 w-5 animate-spin" style="color: var(--color-muted)" />
+					<span class="ml-2 text-sm" style="color: var(--color-muted)">Loading providers...</span>
+				</div>
+			{:else if stockModalProviders.length === 0}
+				<div class="py-8 text-center text-sm" style="color: var(--color-muted)">
+					No stock providers available. Enable providers in the Stock Providers admin tab.
+				</div>
+			{:else}
+				<!-- Search bar -->
+				<div class="relative">
+					<Search class="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2" style="color: var(--color-muted)" />
+					<input
+						type="text"
+						placeholder="Search stock photos..."
+						class="w-full rounded-lg border py-2 pl-9 pr-3 text-sm"
+						style="border-color: var(--color-border); background-color: var(--color-surface); color: var(--color-foreground)"
+						value={stockModalQuery}
+						oninput={(e) => runStockModalSearch(e.currentTarget.value)}
+					/>
+				</div>
+
+				<!-- Provider filter chips -->
+				<div class="flex flex-wrap gap-2">
+					<button
+						type="button"
+						class="rounded-full px-3 py-1 text-xs font-medium transition-colors"
+						style={stockModalProviderFilter === ''
+							? 'background-color: var(--color-primary); color: var(--color-primary-contrast, white)'
+							: 'background-color: var(--color-surface); color: var(--color-muted); border: 1px solid var(--color-border)'}
+						onclick={() => setStockModalProvider('')}
+					>All</button>
+					{#each stockModalProviders as p (p.name)}
 						<button
 							type="button"
-							class="ml-2 shrink-0 text-muted hover:text-danger"
-							onclick={() => { uploadFiles = uploadFiles.filter((_, j) => j !== i); }}
-						>
-							✕
-						</button>
+							class="rounded-full px-3 py-1 text-xs font-medium transition-colors"
+							style={stockModalProviderFilter === p.name
+								? 'background-color: var(--color-primary); color: var(--color-primary-contrast, white)'
+								: 'background-color: var(--color-surface); color: var(--color-muted); border: 1px solid var(--color-border)'}
+							onclick={() => setStockModalProvider(p.name)}
+						>{p.display_name}</button>
+					{/each}
+				</div>
+
+				{#if stockModalError}
+					<div class="rounded-lg border px-3 py-2 text-sm" style="border-color: var(--color-danger); color: var(--color-danger)">
+						{stockModalError}
 					</div>
-				{/each}
-			</div>
-		{/if}
-		<div>
-			<label for="media-upload-group" class="mb-1 block text-sm font-medium text-foreground">{t('app.media.upload_user_group', 'User Group (optional)')}</label>
-			<select
-				id="media-upload-group"
-				bind:value={uploadUserGroupId}
-				class="w-full rounded-lg border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-			>
-				<option value="">{t('app.media.upload_universal', 'Universal (all users)')}</option>
-				{#each userGroups as group}
-					<option value={group.id}>{group.name}</option>
-				{/each}
-			</select>
+				{/if}
+
+				<!-- Results -->
+				<div class="max-h-[400px] overflow-y-auto">
+					{#if stockModalLoading && stockModalResults.length === 0}
+						<div class="flex items-center justify-center py-8">
+							<Loader2 class="h-5 w-5 animate-spin" style="color: var(--color-muted)" />
+							<span class="ml-2 text-sm" style="color: var(--color-muted)">Searching...</span>
+						</div>
+					{:else if stockModalResults.length === 0 && stockModalQuery}
+						<div class="py-8 text-center text-sm" style="color: var(--color-muted)">
+							No results found for "{stockModalQuery}"
+						</div>
+					{:else if stockModalResults.length === 0}
+						<div class="py-8 text-center text-sm" style="color: var(--color-muted)">
+							Search for photos to import into your media library.
+						</div>
+					{:else}
+						<div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
+							{#each stockModalResults as photo (photo.provider + ':' + photo.id)}
+								{@const pkey = photo.provider + ':' + photo.id}
+								<div class="group relative overflow-hidden rounded-lg border" style="border-color: var(--color-border)">
+									<img src={photo.thumbnail_url} alt={photo.description ?? ''} loading="lazy" class="aspect-square w-full object-cover" />
+									<div class="absolute inset-0 flex flex-col justify-between bg-gradient-to-t from-black/60 via-transparent to-transparent p-2">
+										<span class="truncate text-xs text-white/90">{photo.photographer}</span>
+										<div class="flex items-center justify-between">
+											{#if photo.license && (photo.license === 'cc-by' || photo.license === 'cc-by-sa' || photo.license === 'cc0')}
+												<span class="rounded bg-white/20 px-1.5 py-0.5 text-[10px] font-medium text-white">{photo.license.toUpperCase()}</span>
+											{:else}
+												<span></span>
+											{/if}
+											{#if stockModalImported.has(pkey)}
+												<span class="inline-flex items-center gap-1 rounded bg-green-500/80 px-2 py-1 text-xs text-white">
+													<Check class="h-3 w-3" /> Imported
+												</span>
+											{:else if stockModalImporting.has(pkey)}
+												<Loader2 class="h-4 w-4 animate-spin text-white" />
+											{:else}
+												<button
+													type="button"
+													class="inline-flex items-center gap-1 rounded bg-primary px-2 py-1 text-xs text-white hover:bg-primary/90"
+													onclick={() => importStockModalPhoto(photo)}
+												>
+													<Download class="h-3 w-3" /> Import
+												</button>
+											{/if}
+										</div>
+									</div>
+								</div>
+							{/each}
+						</div>
+						{#if stockModalHasMore}
+							<div class="mt-3 flex justify-center">
+								<Button variant="ghost" size="sm" onclick={loadMoreStockModal} disabled={stockModalLoading}>
+									{stockModalLoading ? 'Loading...' : 'Load more'}
+								</Button>
+							</div>
+						{/if}
+					{/if}
+				</div>
+			{/if}
 		</div>
-		<div>
-			<label for="media-upload-alt" class="mb-1 block text-sm font-medium text-foreground">{t('app.media.upload_alt_text', 'Alt Text (optional)')}</label>
-			<input
-				id="media-upload-alt"
-				type="text"
-				bind:value={uploadAltText}
-				placeholder={t('app.media.upload_alt_placeholder', 'Describe the media...')}
-				class="w-full rounded-lg border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-			/>
+		<div class="mt-4 flex justify-end">
+			<Button variant="ghost" onclick={() => (showUploadModal = false)}>Close</Button>
 		</div>
-		{#if uploadProgress}
-			<div class="text-sm text-muted">
-				{t('app.media.upload_progress', 'Uploading {current} of {total}...').replace('{current}', String(uploadProgress.current)).replace('{total}', String(uploadProgress.total))}
-				<span class="text-foreground-alt">— {uploadProgress.filename}</span>
-			</div>
-		{/if}
-	</div>
-	<div class="mt-4 flex justify-end gap-2">
-		<Button variant="ghost" onclick={() => (showUploadModal = false)}>{t('common.cancel', 'Cancel')}</Button>
-		<Button variant="default" onclick={handleUpload} disabled={!uploadFiles.length || uploadSubmitting}>
-			{uploadSubmitting
-				? t('app.media.uploading', 'Uploading...')
-				: t('app.media.upload_n_files', 'Upload {n} files').replace('{n}', String(uploadFiles.length))}
-		</Button>
-	</div>
+	{/if}
 </Modal>
 
 <!-- ── Snippets ─────────────────────────────────────────────────────────── -->
@@ -605,6 +839,48 @@
 	{:else}
 		<span style="color: var(--color-muted)">—</span>
 	{/if}
+{/snippet}
+
+<!-- Grid/card view: image thumbnail + hover action overlay + filename/status footer. -->
+{#snippet MediaGridCard({ row }: { row: MediaItem })}
+	<Card class="group relative cursor-pointer overflow-hidden transition-shadow hover:shadow-md">
+		<div class="relative flex aspect-square items-center justify-center bg-surface">
+			{#if row.mime_type?.startsWith('image/') && row.url}
+				<img src={row.url} alt={row.alt_text || row.filename} class="h-full w-full object-cover" />
+			{:else}
+				{@const Icon = getIcon(row.mime_type)}
+				<Icon class="h-8 w-8 text-muted" />
+			{/if}
+			<!-- Hover action overlay -->
+			<div class="absolute inset-0 flex items-center justify-center gap-2 bg-black/50 opacity-0 transition-opacity group-hover:opacity-100">
+				<Button variant="secondary" size="sm" class="h-8 w-8 p-0" onclick={() => entityController?.openView(row)}>
+					<Eye class="h-4 w-4" />
+				</Button>
+				{#if canManageMedia}
+					{#if row.status === 'quarantined' || row.status === 'pending'}
+						<Button variant="secondary" size="sm" class="h-8 w-8 p-0" onclick={() => openApprove(row)} style="color: var(--color-success)">
+							<CheckCircle class="h-4 w-4" />
+						</Button>
+						<Button variant="secondary" size="sm" class="h-8 w-8 p-0" onclick={() => openReject(row)} style="color: var(--color-warning)">
+							<XCircle class="h-4 w-4" />
+						</Button>
+					{/if}
+					<Button variant="secondary" size="sm" class="h-8 w-8 p-0" onclick={() => entityController?.openDelete(row)} style="color: var(--color-danger)">
+						<Trash2 class="h-4 w-4" />
+					</Button>
+				{/if}
+			</div>
+		</div>
+		<CardContent class="p-3">
+			<p class="truncate text-sm font-medium text-foreground">{row.filename}</p>
+			<div class="mt-1 flex items-center justify-between">
+				<p class="text-xs text-muted">{formatFileSize(row.file_size)}</p>
+				<span class="inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium {row.status === 'approved' ? 'bg-success/15 text-success' : row.status === 'pending' ? 'bg-warning/15 text-warning' : row.status === 'quarantined' ? 'bg-danger/15 text-danger' : 'bg-surface text-foreground-alt'}">
+					{row.status || 'pending'}
+				</span>
+			</div>
+		</CardContent>
+	</Card>
 {/snippet}
 
 <!-- View slide-over body (mirrors the legacy view modal) -->

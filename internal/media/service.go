@@ -317,30 +317,47 @@ func (s *Service) DeleteMedia(ctx context.Context, tenantID, mediaID pgtype.UUID
 	return s.store.SoftDeleteMedia(ctx, mediaID, tenantID)
 }
 
-// ListMedia returns paginated media, optionally filtered by uploader, type, or search query.
-func (s *Service) ListMedia(ctx context.Context, tenantID pgtype.UUID, uploaderID *pgtype.UUID, mimeType, query *string, limit, offset int32) ([]gen.Medium, error) {
+// ListMedia returns paginated media, optionally filtered by uploader, type,
+// search query, and status, along with the total count matching the filter.
+// The total is used by callers to compute total_pages. Empty/zero filter
+// values mean "no filter on this field".
+func (s *Service) ListMedia(ctx context.Context, tenantID pgtype.UUID, uploaderID *pgtype.UUID, mimeType, query, status *string, limit, offset int32) ([]gen.Medium, int32, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
-
 	if offset < 0 {
 		offset = 0
 	}
 
-	// Search query takes precedence over type filter.
-	if query != nil && *query != "" {
-		return s.store.SearchMedia(ctx, tenantID, *query, limit, offset)
-	}
-
-	if mimeType != nil && *mimeType != "" {
-		return s.store.ListMediaByType(ctx, tenantID, *mimeType, limit, offset)
-	}
-
+	var uploader pgtype.UUID
 	if uploaderID != nil {
-		return s.store.ListMediaByUploader(ctx, tenantID, *uploaderID, limit, offset)
+		uploader = *uploaderID
 	}
 
-	return s.store.ListMediaByTenant(ctx, tenantID, limit, offset)
+	mimePattern := ""
+	if mimeType != nil {
+		mimePattern = *mimeType
+	}
+
+	searchQuery := ""
+	if query != nil {
+		searchQuery = *query
+	}
+
+	statusFilter := ""
+	if status != nil {
+		statusFilter = *status
+	}
+
+	items, err := s.store.ListMediaFiltered(ctx, tenantID, uploader, mimePattern, searchQuery, statusFilter, limit, offset)
+	if err != nil {
+		return nil, 0, err
+	}
+	total, err := s.store.CountMediaFiltered(ctx, tenantID, uploader, mimePattern, searchQuery, statusFilter)
+	if err != nil {
+		return nil, 0, err
+	}
+	return items, total, nil
 }
 
 // ListByUser returns the media on the user's published public posts (featured/

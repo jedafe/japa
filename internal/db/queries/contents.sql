@@ -401,9 +401,12 @@ SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type, c.title, c.sl
        c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
        c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
        c.view_count, c.comment_count, c.share_count, c.reshare_count, c.publish_at, c.published_at,
-       c.created_at, c.updated_at
+       c.created_at, c.updated_at,
+       m.storage_bucket AS cover_storage_bucket,
+       m.storage_path   AS cover_storage_path
 FROM contents c
 JOIN content_tags ct ON ct.content_id = c.id
+LEFT JOIN media m ON m.id = COALESCE(c.featured_image_id, c.header_image_id) AND m.deleted_at IS NULL
 WHERE ct.tag_id = @tag_id AND c.tenant_id = @tenant_id AND c.status = 'published'
   AND c.deleted_at IS NULL
   AND c.auto_hidden = false
