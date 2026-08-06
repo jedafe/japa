@@ -147,6 +147,13 @@ func (s *Store) getContentTenantID(ctx context.Context, contentID pgtype.UUID) (
 	return s.read.GetContentTenantID(ctx, contentID)
 }
 
+// getSeriesForContent returns the series_id for a given content_id, or
+// pg.ErrNoRows if the content is not part of any series. Used by the editor
+// load to restore the series selector when editing existing content.
+func (s *Store) getSeriesForContent(ctx context.Context, contentID pgtype.UUID) (pgtype.UUID, error) {
+	return s.read.GetSeriesForContent(ctx, contentID)
+}
+
 func (s *Store) reorderSeriesPosts(ctx context.Context, seriesID, contentID pgtype.UUID, position int32) error {
 	if err := s.write.ReorderSeriesPosts(ctx, gen.ReorderSeriesPostsParams{
 		SeriesID:  seriesID,

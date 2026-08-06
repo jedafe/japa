@@ -1,15 +1,19 @@
 <script lang="ts">
+	// /docs — migrated to shared components (ActionMenu, FilterPanel, Modal,
+	// SlideOver). Replaces the legacy FilterBar.svelte and hand-rolled bits-ui
+	// Dialog with shared Modal/SlideOver. State action: toggle publish.
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
-	import FilterBar from '$lib/components/FilterBar.svelte';
+	import PageHeader from '$lib/components/layout/page-header.svelte';
 	import { Select } from '$lib/components/ui/select';
 	import { DataTable } from '$lib/components/ui/data-table';
 	import { Button } from '$lib/components/ui/button';
+	import { Modal } from '$lib/components/ui/modal';
+	import { SlideOver } from '$lib/components/ui/slide-over';
+	import type { ActionItem } from '$lib/components/ui/data-table';
 	import { docsApi } from '$lib/api';
-	import { Dialog } from 'bits-ui';
-	import { Pencil, Trash2, Send, FileDown } from 'lucide-svelte';
+	import { Pencil, Trash2, Send, FileDown, Plus } from 'lucide-svelte';
 
-	// Ref: jc-admin-develop — RBAC gates for docs management
 	const canEdit = $derived(hasPermission('docs.page.edit'));
 	const canDelete = $derived(hasPermission('docs.page.delete'));
 	const canPublish = $derived(hasPermission('docs.page.publish'));
@@ -27,119 +31,114 @@
 	let docs = $state<DocPage[]>([]);
 	let loading = $state(true);
 	let errorMessage = $state('');
-	let filterAudience = $state('');
+	let filterValue = $state<Record<string, string>>({});
 	let searchQuery = $state('');
 
-	let showModal = $state(false);
+	// Create/Edit SlideOver
+	let showFormSlideOver = $state(false);
 	let editingId = $state<string | null>(null);
 	let saving = $state(false);
+	let form = $state({ title: '', slug: '', audience: 'users', status: 'draft' as string, body: '' });
+
+	// Delete confirmation Modal
 	let showDeleteConfirm = $state(false);
 	let deleteTargetId = $state<string | null>(null);
 
-	let form = $state({
-		title: '',
-		slug: '',
-		audience: 'users',
-		status: 'draft' as string,
-		body: ''
-	});
-
 	const audiences = ['users', 'premium', 'organizations', 'moderators', 'api', 'admin', 'superadmin'];
-	
+
 	const statusOptions = $derived([
 		{ value: 'draft', label: 'Draft' },
 		{ value: 'published', label: 'Published' }
 	]);
 
-	const filterDefs = [
-		{ key: 'audience', label: t('docs.audience'), type: 'select' as const, options: audiences }
-	];
+	const audienceOptions = audiences.map((a) => ({ value: a, label: a }));
 
 	const columns = [
 		{ key: 'title', label: t('docs.title_2'), sortable: true },
 		{ key: 'slug', label: t('docs.slug'), render: (v: string) => `<span class="font-mono text-xs" style="color: var(--color-muted)">${v}</span>` },
 		{ key: 'audience', label: t('docs.audience'), render: (v: string) => `<span class="inline-block rounded-full bg-black/5 px-2 py-0.5 text-xs dark:bg-surface/10">${v}</span>` },
 		{ key: 'status', label: t('docs.status'), render: (v: string) => `<span class="inline-block rounded-full px-2 py-0.5 text-xs ${v === 'published' ? 'bg-success/15 text-success dark:text-success' : 'bg-warning/15 text-warning dark:text-warning'}">${v}</span>` },
-		{ key: 'updated_at', label: t('docs.updated'), render: (v: string) => `<span class="text-xs" style="color: var(--color-muted)">${v}</span>` },
-		{ key: 'actions', label: '', class: 'w-48', componentSnippet: DocActionsCell }
+		{ key: 'updated_at', label: t('docs.updated'), render: (v: string) => `<span class="text-xs" style="color: var(--color-muted)">${v}</span>` }
 	];
 
-	const filteredDocs = $derived(
-		searchQuery
-			? docs.filter((d) => d.title.toLowerCase().includes(searchQuery.toLowerCase()) || d.slug.toLowerCase().includes(searchQuery.toLowerCase()))
-			: docs
-	);
+	const rowActions: ActionItem[] = [
+		{
+			label: t('common.edit', 'Edit'),
+			icon: Pencil,
+			onclick: (row) => openEdit(row),
+			show: () => canEdit
+		},
+		{
+			label: t('docs.publish', 'Publish'),
+			icon: Send,
+			onclick: (row) => togglePublish(row),
+			show: (row: DocPage) => canPublish && row.status !== 'published'
+		},
+		{
+			label: t('docs.unpublish', 'Unpublish'),
+			icon: FileDown,
+			onclick: (row) => togglePublish(row),
+			show: (row: DocPage) => canPublish && row.status === 'published'
+		},
+		{
+			label: t('common.delete', 'Delete'),
+			icon: Trash2,
+			variant: 'destructive',
+			onclick: (row) => confirmDelete(row.id),
+			show: () => canDelete
+		}
+	];
+
+	const filteredDocs = $derived.by(() => {
+		const source = docs;
+		const q = searchQuery.toLowerCase().trim();
+		let result = source;
+		if (filterValue.audience) result = result.filter((d) => d.audience === filterValue.audience);
+		if (q) result = result.filter((d) => d.title.toLowerCase().includes(q) || d.slug.toLowerCase().includes(q));
+		return result;
+	});
 
 	function slugify(text: string): string {
-		return text
-			.toLowerCase()
-			.replace(/[^a-z0-9]+/g, '-')
-			.replace(/^-|-$/g, '');
+		return text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 	}
 
 	async function loadDocs() {
 		loading = true;
 		errorMessage = '';
 		const params = new URLSearchParams();
-		if (filterAudience) params.set('audience', filterAudience);
+		if (filterValue.audience) params.set('audience', filterValue.audience);
 		const result = await docsApi.list(params.toString());
 		if (result.ok) {
 			const raw = result.data as any[] | { data: any[] };
 			const rows = Array.isArray(raw) ? raw : (raw?.data ?? []);
-			docs = rows.map((d: any) => ({
-				...d,
-				status: d.review_status ?? d.status ?? 'draft',
-				body: d.body ?? d.content ?? ''
-			}));
+			docs = rows.map((d: any) => ({ ...d, status: d.review_status ?? d.status ?? 'draft', body: d.body ?? d.content ?? '' }));
 		} else {
 			errorMessage = result.error;
 		}
 		loading = false;
 	}
 
-	function handleFilter(values: Record<string, string>) {
-		filterAudience = values.audience ?? '';
-		loadDocs();
-	}
-
 	function openCreate() {
 		editingId = null;
 		form = { title: '', slug: '', audience: 'users', status: 'draft', body: '' };
-		showModal = true;
+		showFormSlideOver = true;
 	}
 
 	function openEdit(item: DocPage) {
 		editingId = item.id;
-		form = {
-			title: item.title,
-			slug: item.slug,
-			audience: item.audience,
-			status: item.status,
-			body: item.body ?? ''
-		};
-		showModal = true;
+		form = { title: item.title, slug: item.slug, audience: item.audience, status: item.status, body: item.body ?? '' };
+		showFormSlideOver = true;
 	}
 
 	async function submit() {
 		if (!form.title.trim()) return;
 		saving = true;
 		errorMessage = '';
-
 		const slug = form.slug.trim() || slugify(form.title);
-		const payload = {
-			title: form.title.trim(),
-			slug,
-			audience: form.audience,
-			review_status: form.status,
-			content: form.body
-		};
-
-		const result = editingId
-			? await docsApi.update(editingId, payload)
-			: await docsApi.create(payload);
-
+		const payload = { title: form.title.trim(), slug, audience: form.audience, review_status: form.status, content: form.body };
+		const result = editingId ? await docsApi.update(editingId, payload) : await docsApi.create(payload);
 		if (result.ok) {
-			showModal = false;
+			showFormSlideOver = false;
 			loadDocs();
 		} else {
 			errorMessage = result.error;
@@ -151,11 +150,8 @@
 		errorMessage = '';
 		const newStatus = item.status === 'published' ? 'draft' : 'published';
 		const result = await docsApi.update(item.id, { title: item.title, review_status: newStatus });
-		if (result.ok) {
-			loadDocs();
-		} else {
-			errorMessage = result.error;
-		}
+		if (result.ok) loadDocs();
+		else errorMessage = result.error;
 	}
 
 	function confirmDelete(id: string) {
@@ -185,8 +181,11 @@
 	<title>{t('docs.documentation')} — JapaConnect Admin</title>
 </svelte:head>
 
-<h1 class="mb-1 text-2xl font-bold tracking-tight">{t('docs.documentation')}</h1>
-<p class="mb-4 text-sm" style="color: var(--color-muted)">{t('docs.manage_documentation_pages_for_developer')}</p>
+<PageHeader
+	title={t('docs.documentation')}
+	description={t('docs.manage_documentation_pages_for_developer')}
+	actions={canEdit ? [{ label: t('docs.new_doc_page'), icon: Plus, onclick: openCreate }] : []}
+/>
 
 {#if errorMessage}
 	<div class="mb-4 rounded-md border px-4 py-3 text-sm" style="border-color: var(--color-danger); background-color: color-mix(in srgb, var(--color-danger) 8%, transparent); color: var(--color-danger)">
@@ -194,160 +193,65 @@
 	</div>
 {/if}
 
-<FilterBar filters={filterDefs} onApply={handleFilter} />
+<DataTable
+	columns={columns}
+	data={filteredDocs}
+	{loading}
+	searchable
+	onsearch={(q: string) => { searchQuery = q; }}
+	filters={[{ key: 'audience', label: t('docs.audience'), options: audienceOptions }]}
+	bind:filterValue
+	onfilterapply={loadDocs}
+	onrowclick={(row: DocPage) => openEdit(row)}
+	pageSize={25}
+	emptyMessage={t('docs.no_documentation_pages_found')}
+	showPagination={false}
+	actions={rowActions}
+/>
 
-{#if canEdit}
-<div class="mb-4 flex justify-end">
-	<button
-		class="rounded-md px-4 py-2 text-sm font-medium text-white transition-colors"
-		style="background-color: var(--color-primary)"
-		onclick={openCreate}
-	>
-		{t('docs.new_doc_page')}
-	</button>
-</div>
-{/if}
-
-{#if loading}
-	<p class="py-8 text-center text-sm" style="color: var(--color-muted)">{t('docs.loading')}</p>
-{:else}
-	<DataTable
-		columns={columns}
-		data={filteredDocs}
-		searchable={true}
-		onsearch={(q: string) => { searchQuery = q; }}
-		onrowclick={(row: DocPage) => openEdit(row)}
-		pageSize={25}
-		emptyMessage={t('docs.no_documentation_pages_found')}
-		showPagination={false}
-	/>
-{/if}
-
-<!-- Create/Edit Modal -->
-{#if showModal}
-<Dialog.Root open={true}>
-	<Dialog.Portal>
-		<Dialog.Overlay class="fixed inset-0 z-50 bg-black/50 data-[state=open]:animate-in data-[state=open]:fade-in data-[state=closed]:animate-out data-[state=closed]:fade-out" />
-		<Dialog.Content class="fixed left-1/2 top-1/2 z-50 w-full max-w-2xl -translate-x-1/2 -translate-y-1/2 rounded-lg border p-6 shadow-lg data-[state=open]:animate-in data-[state=open]:fade-in data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out data-[state=closed]:zoom-out-95" style="border-color: var(--color-border); background-color: var(--color-background)" onInteractOutside={() => { showModal = false; }}>
-			<Dialog.Title class="text-lg font-semibold">{editingId ? t('docs.edit_doc_page') : t('docs.new_doc_page')}</Dialog.Title>
-			<div class="mt-4 space-y-3">
-				<div class="grid gap-3 sm:grid-cols-2">
-					<div>
-						<label for="doc-title" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('docs.title_2')}</label>
-						<input id="doc-title" type="text" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-surface)" bind:value={form.title} oninput={() => { if (!editingId) form.slug = slugify(form.title); }} />
-					</div>
-					<div>
-						<label for="doc-slug" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('docs.slug')}</label>
-						<input id="doc-slug" type="text" class="w-full rounded-md border px-3 py-2 text-sm font-mono" style="border-color: var(--color-border); background-color: var(--color-surface)" bind:value={form.slug} />
-					</div>
-				</div>
-				<div class="grid gap-3 sm:grid-cols-2">
-					<div>
-						<label for="doc-audience" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('docs.audience')}</label>
-						<Select
-							options={audiences.map(a => ({ value: a, label: a }))}
-							bind:value={form.audience}
-						/>
-					</div>
-					<div>
-						<label for="doc-status" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('docs.status')}</label>
-						<Select
-							options={statusOptions}
-							bind:value={form.status}
-						/>
-					</div>
-				</div>
-				<div>
-					<label for="doc-body" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('docs.body_markdown')}</label>
-					<textarea id="doc-body" class="w-full rounded-md border px-3 py-2 text-sm font-mono" style="border-color: var(--color-border); background-color: var(--color-surface)" rows="12" bind:value={form.body}></textarea>
-				</div>
+<!-- Create/Edit SlideOver -->
+<SlideOver bind:open={showFormSlideOver} title={editingId ? t('docs.edit_doc_page') : t('docs.new_doc_page')} size="lg">
+	<div class="space-y-3">
+		<div class="grid gap-3 sm:grid-cols-2">
+			<div>
+				<label for="doc-title" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('docs.title_2')}</label>
+				<input id="doc-title" type="text" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-surface)" bind:value={form.title} oninput={() => { if (!editingId) form.slug = slugify(form.title); }} />
 			</div>
-			<div class="mt-6 flex justify-end gap-2">
-				<button
-					class="rounded-md border px-3 py-1.5 text-sm font-medium transition-colors hover:bg-black/5 dark:hover:bg-surface/10"
-					style="border-color: var(--color-border)"
-					onclick={() => { showModal = false; }}
-				>
-					{t('docs.cancel')}
-				</button>
-				<button
-					class="rounded-md px-3 py-1.5 text-sm font-medium text-white transition-colors disabled:opacity-50"
-					style="background-color: var(--color-primary)"
-					disabled={saving}
-					onclick={submit}
-				>
-					{saving ? t('docs.saving') : (editingId ? t('docs.update') : t('docs.create'))}
-				</button>
+			<div>
+				<label for="doc-slug" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('docs.slug')}</label>
+				<input id="doc-slug" type="text" class="w-full rounded-md border px-3 py-2 text-sm font-mono" style="border-color: var(--color-border); background-color: var(--color-surface)" bind:value={form.slug} />
 			</div>
-			<button
-				class="absolute right-4 top-4 rounded-md p-1 hover:bg-black/5 dark:hover:bg-surface/10"
-				style="color: var(--color-muted)"
-				aria-label={t('common.close')}
-				onclick={() => { showModal = false; }}
-			>
-				×
-			</button>
-	</Dialog.Content>
-	</Dialog.Portal>
-</Dialog.Root>
-{/if}
-
-{#snippet DocActionsCell({ row }: { value: any; row: DocPage })}
-	<div class="flex items-center gap-1">
-		{#if canEdit}
-			<Button variant="ghost" size="sm" onclick={() => openEdit(row)} style="color: var(--color-info)">
-				<Pencil class="h-3.5 w-3.5" />
-			</Button>
-		{/if}
-		{#if canPublish}
-			<Button
-				variant="ghost"
-				size="sm"
-				onclick={() => togglePublish(row)}
-				style={row.status === 'published' ? 'color: var(--color-warning)' : 'color: var(--color-success)'}
-			>
-				{#if row.status === 'published'}
-					<FileDown class="h-3.5 w-3.5" />
-				{:else}
-					<Send class="h-3.5 w-3.5" />
-				{/if}
-			</Button>
-		{/if}
-		{#if canDelete}
-			<Button variant="ghost" size="sm" onclick={() => confirmDelete(row.id)} style="color: var(--color-danger)">
-				<Trash2 class="h-3.5 w-3.5" />
-			</Button>
-		{/if}
-	</div>
-{/snippet}
-
-<!-- Delete Confirmation -->
-{#if showDeleteConfirm}
-<Dialog.Root open={true}>
-	<Dialog.Portal>
-		<Dialog.Overlay class="fixed inset-0 z-50 bg-black/50 data-[state=open]:animate-in data-[state=open]:fade-in data-[state=closed]:animate-out data-[state=closed]:fade-out" />
-		<Dialog.Content class="fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-lg border p-6 shadow-lg data-[state=open]:animate-in data-[state=open]:fade-in data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out data-[state=closed]:zoom-out-95" style="border-color: var(--color-border); background-color: var(--color-background)">
-			<Dialog.Title class="text-lg font-semibold">{t('docs.confirm_delete')}</Dialog.Title>
-			<div class="mt-4">
-				<p class="text-sm" style="color: var(--color-muted)">{t('docs.are_you_sure_you_want_to_delete_this_doc')}</p>
-			</div>
-			<div class="mt-6 flex justify-end gap-2">
-				<button
-					class="rounded-md border px-3 py-1.5 text-sm font-medium transition-colors hover:bg-black/5 dark:hover:bg-surface/10"
-					style="border-color: var(--color-border)"
-					onclick={() => { showDeleteConfirm = false; }}
-				>
-					{t('docs.cancel')}
-				</button>
-				<button
-					class="rounded-md px-3 py-1.5 text-sm font-medium text-white transition-colors disabled:opacity-50"
-					style="background-color: var(--color-danger)"
-					onclick={executeDelete}
-				>
-				{t('docs.confirm_delete')}
-			</button>
 		</div>
-	</Dialog.Content>
-</Dialog.Portal>
-</Dialog.Root>
-{/if}
+		<div class="grid gap-3 sm:grid-cols-2">
+			<div>
+				<label for="doc-audience" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('docs.audience')}</label>
+				<Select options={audienceOptions} bind:value={form.audience} />
+			</div>
+			<div>
+				<label for="doc-status" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('docs.status')}</label>
+				<Select options={statusOptions} bind:value={form.status} />
+			</div>
+		</div>
+		<div>
+			<label for="doc-body" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('docs.body_markdown')}</label>
+			<textarea id="doc-body" class="w-full rounded-md border px-3 py-2 text-sm font-mono" style="border-color: var(--color-border); background-color: var(--color-surface)" rows="12" bind:value={form.body}></textarea>
+		</div>
+	</div>
+	{#snippet footer()}
+		<div class="flex justify-end gap-2">
+			<Button variant="outline" onclick={() => { showFormSlideOver = false; }}>{t('docs.cancel')}</Button>
+			<Button onclick={submit} disabled={saving}>
+				{saving ? t('docs.saving') : (editingId ? t('docs.update') : t('docs.create'))}
+			</Button>
+		</div>
+	{/snippet}
+</SlideOver>
+
+<!-- Delete Confirmation Modal -->
+<Modal bind:open={showDeleteConfirm} title={t('docs.confirm_delete')} size="sm">
+	<p class="text-sm" style="color: var(--color-muted)">{t('docs.are_you_sure_you_want_to_delete_this_doc')}</p>
+	<div class="mt-6 flex justify-end gap-2">
+		<Button variant="outline" onclick={() => { showDeleteConfirm = false; }}>{t('docs.cancel')}</Button>
+		<Button variant="destructive" onclick={executeDelete}>{t('docs.confirm_delete')}</Button>
+	</div>
+</Modal>

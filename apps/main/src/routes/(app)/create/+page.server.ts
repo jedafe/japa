@@ -10,7 +10,9 @@ import type {
 	ContentRecord,
 	ComposerOrganization,
 	ComparisonDetail,
-	ComparisonType
+	ComparisonType,
+	ContentTag,
+	MediaAsset
 } from '$lib/types';
 
 /** Load everything the composer needs; every fetch degrades independently. */
@@ -58,13 +60,21 @@ export const load: PageServerLoad = async (event) => {
 
 	let draft: ContentRecord | null = null;
 	let comparisonDetail: ComparisonDetail | null = null;
+	let draftTags: string[] = [];
+	let coverMedia: MediaAsset | null = null;
+	let draftSeriesId: string | null = null;
 	if (draftId) {
 		try {
-			// Ownership-scoped: GET /me/drafts/{id} returns the caller's own
-			// draft only (tenant + author + status='draft'); 404 otherwise.
-			// The public GET /content/{slug} resolves by slug and is not
-			// ownership-scoped, so it cannot safely serve the editor restore.
-			draft = await apiGet<ContentRecord>(ctx, `/me/drafts/${draftId}`);
+			// Ownership-scoped: GET /me/content/{id} returns the caller's own
+			// content by ID (any status — published, scheduled, or draft),
+			// tenant + author scoped. The public GET /content/{slug} resolves
+			// by slug and is not ownership-scoped, so it cannot safely serve
+			// the editor restore. The status='draft'-scoped /me/drafts/{id}
+			// only covers drafts; /me/content/{id} covers the rest so the
+			// Edit button on published content detail pages works too.
+			// For non-owners (super-admin or `content.edit` RBAC holder), the
+			// backend falls back to a tenant-scoped fetch — see GetMyContent.
+			draft = await apiGet<ContentRecord>(ctx, `/me/content/${draftId}`);
 			// When the draft is a comparison, also fetch its items/dimensions
 			// so the ComparisonBuilder can render them (Section 30). The
 			// /compare/new wizard creates a draft and redirects here.
@@ -74,6 +84,45 @@ export const load: PageServerLoad = async (event) => {
 				} catch {
 					comparisonDetail = null;
 				}
+			}
+			// Restore the tag chips — GET /content/{id}/tags returns the tags
+			// joined via content_tags. The composer consumes tag names.
+			// Deduplicate by name — the join can return the same tag name
+			// multiple times if a tag was attached more than once (data bug
+			// in older content). Duplicate names also crash Svelte's keyed
+			// each block in TagInput.
+			try {
+				const tagsRes = await apiList<ContentTag>(ctx, `/content/${draft.id}/tags`);
+				const seen = new Set<string>();
+				draftTags = tagsRes.items
+					.map((t) => t.name)
+					.filter((name) => {
+						const key = name.toLowerCase();
+						if (seen.has(key)) return false;
+						seen.add(key);
+						return true;
+					});
+			} catch {
+				draftTags = [];
+			}
+			// Fetch the cover image (featured_image_id) so the CoverUploader
+			// can show the preview. GET /media/{id} returns the MediaAsset
+			// with its URL. Falls back to null if the media was deleted.
+			if (draft?.featured_image_id) {
+				try {
+					coverMedia = await apiGet<MediaAsset>(ctx, `/media/${draft.featured_image_id}`);
+				} catch {
+					coverMedia = null;
+				}
+			}
+			// Fetch the series_id for this content so the series selector
+			// restores when editing. GET /content/{id}/series returns the
+			// series_id or null if the content is not part of any series.
+			try {
+				const seriesRes = await apiGet<{ series_id: string | null }>(ctx, `/content/${draft.id}/series`);
+				draftSeriesId = seriesRes.series_id ?? null;
+			} catch {
+				draftSeriesId = null;
 			}
 		} catch {
 			draft = null;
@@ -87,8 +136,11 @@ export const load: PageServerLoad = async (event) => {
 		series,
 		organizations,
 		draft,
+		draftTags,
 		comparisonDetail,
 		comparisonTypes,
+		coverMedia,
+		draftSeriesId,
 		loadError: typesRes.status === 'rejected'
 	};
 };

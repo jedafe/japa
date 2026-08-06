@@ -1,8 +1,9 @@
 <script lang="ts">
+	// /deletions — migrated to the EntityPage scaffold; READ-ONLY audit log of soft-deleted content.
+	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
 	import { api } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
-	import { RefreshCw } from 'lucide-svelte';
-	import { DataTable } from '$lib/components/ui/data-table';
+	import { Eye } from 'lucide-svelte';
 
 	type Deletion = {
 		id: string;
@@ -16,88 +17,144 @@
 		hard_deleted: boolean;
 	};
 
-	let deletions = $state<Deletion[]>([]);
-	let loading = $state(true);
-	let errorMessage = $state('');
-	let searchQuery = $state('');
+	let entityController = $state<EntityPageController | undefined>(undefined);
+	let pageError = $state('');
 
-	const columns = [
-		{ key: 'display_name', label: t('deletions.user'), render: (v: string, row: Deletion) => `<span class="text-sm">${v || row.username || 'anonymous'}</span>` },
-		{ key: 'content_type', label: t('deletions.type'), render: (v: string) => `<span class="text-xs">${v}</span>` },
-		{ key: 'reason', label: t('deletions.reason'), render: (v: string) => `<span class="text-xs" style="color: var(--color-muted)">${v || '—'}</span>` },
-		{
-			key: 'hard_deleted',
-			label: t('deletions.hard'),
-			render: (v: boolean) => `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium ${v ? 'bg-danger/15 text-danger dark:text-danger' : 'bg-warning/15 text-warning dark:text-warning'}">${v ? t('deletions.yes') : t('deletions.no')}</span>`
-		},
-		{
-			key: 'deleted_at',
-			label: t('deletions.date'),
-			sortable: true,
-			render: (v: string) => `<span class="text-xs" style="color: var(--color-muted)">${new Date(v).toLocaleString()}</span>`
-		}
-	];
+	// Read-only audit log: no create/edit/delete form. `fields` is required by
+	// EntityPageConfig but unused because `readonly: true` hides the form flows.
+	const fields: FieldDef[] = [];
 
-	const filteredDeletions = $derived.by(() => {
-		let items = deletions;
-		if (searchQuery) {
-			const q = searchQuery.toLowerCase();
-			items = items.filter((d) => (d.display_name || d.username || '').toLowerCase().includes(q) || d.content_type.toLowerCase().includes(q) || d.reason?.toLowerCase().includes(q));
-		}
-		return items;
-	});
-
-	async function load() {
-		loading = true;
-		errorMessage = '';
-		try {
-			const result = await api<Deletion[]>('/admin/deletions');
-			if (result.ok) {
-				deletions = result.data ?? [];
-			} else {
-				errorMessage = result.error;
+	const config: EntityPageConfig = {
+		title: t('deletions.title', 'Deletions'),
+		description: t('deletions.description', 'GDPR data deletion requests'),
+		readonly: true,
+		createPermission: 'content.moderate',
+		pageSize: 25,
+		columns: [
+			{
+				key: 'display_name',
+				label: t('deletions.user', 'User'),
+				render: (v: string, row: Deletion) =>
+					`<span class="text-sm">${v || row.username || 'anonymous'}</span>`
+			},
+			{
+				key: 'content_type',
+				label: t('deletions.type', 'Type'),
+				render: (v: string) => `<span class="text-xs">${v}</span>`
+			},
+			{
+				key: 'reason',
+				label: t('deletions.reason', 'Reason'),
+				render: (v: string) =>
+					`<span class="text-xs" style="color: var(--color-muted)">${v || '—'}</span>`
+			},
+			{
+				key: 'hard_deleted',
+				label: t('deletions.hard', 'Hard Delete'),
+				render: (v: boolean) =>
+					`<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium ${v ? 'bg-danger/15 text-danger dark:text-danger' : 'bg-warning/15 text-warning dark:text-warning'}">${v ? t('deletions.yes', 'Yes') : t('deletions.no', 'No')}</span>`
+			},
+			{
+				key: 'deleted_at',
+				label: t('deletions.date', 'Date'),
+				sortable: true,
+				render: (v: string) =>
+					`<span class="text-xs" style="color: var(--color-muted)">${new Date(v).toLocaleString()}</span>`
 			}
-		} catch {
-			errorMessage = t('common.error');
-		} finally {
-			loading = false;
-		}
-	}
-
-	$effect(() => {
-		load();
-	});
+		],
+		// Read-only: only a View action (opens the view slide-over). No Edit/Delete/Create.
+		actions: [
+			{
+				label: t('common.view', 'View'),
+				icon: Eye,
+				onclick: (_row: Deletion, ctx) => ctx?.openView(_row)
+			}
+		],
+		fields,
+		load: async ({ q }) => {
+			try {
+				const result = await api<Deletion[]>('/admin/deletions');
+				if (result.ok) {
+					let data = result.data ?? [];
+					// Client-side search (legacy filtered on display_name/username/content_type/reason).
+					if (q) {
+						const query = q.toLowerCase();
+						data = data.filter(
+							(d) =>
+								(d.display_name || d.username || '').toLowerCase().includes(query) ||
+								d.content_type.toLowerCase().includes(query) ||
+								(d.reason || '').toLowerCase().includes(query)
+						);
+					}
+					return { data, total: data.length, totalPages: 1 };
+				}
+				throw new Error(result.error ?? t('common.error', 'Failed to load deletions'));
+			} catch (e) {
+				pageError = e instanceof Error ? e.message : t('common.error', 'Failed to load deletions');
+				throw e;
+			}
+		},
+		viewSnippet: DeletionView
+	};
 </script>
 
 <svelte:head>
-	<title>{t('deletions.title')} — JapaConnect Admin</title>
+	<title>{t('deletions.title', 'Deletions')} — JapaConnect Admin</title>
 </svelte:head>
 
-<h1 class="mb-1 text-2xl font-bold tracking-tight">{t('deletions.title')}</h1>
-<p class="mb-4 text-sm" style="color: var(--color-muted)">{t('deletions.description')}</p>
-
-{#if errorMessage}
-	<div class="mb-4 rounded-md border px-4 py-3 text-sm" style="border-color: var(--color-danger); background-color: color-mix(in srgb, var(--color-danger) 8%, transparent); color: var(--color-danger)">
-		{errorMessage}
+{#if pageError}
+	<div
+		class="mb-4 rounded-lg p-3 text-sm"
+		style="background: color-mix(in srgb, var(--color-danger) 10%, transparent); color: var(--color-danger)"
+	>
+		{pageError}
 	</div>
 {/if}
 
-<div class="mb-4 flex justify-end">
-	<button class="btn btn-secondary flex items-center gap-1.5 text-xs" onclick={load}>
-		<RefreshCw class="h-3 w-3" />
-		{t('common.refresh')}
-	</button>
-</div>
+<EntityPage {config} bind:controller={entityController} />
 
-{#if loading}
-	<p class="py-8 text-center text-sm" style="color: var(--color-muted)">{t('common.loading')}</p>
-{:else}
-	<DataTable
-		columns={columns}
-		data={filteredDeletions}
-		pageSize={25}
-		emptyMessage={t('deletions.empty')}
-		searchable
-		onsearch={(q) => { searchQuery = q; }}
-	/>
-{/if}
+<!-- View slide-over body: full deletion record -->
+{#snippet DeletionView({ row }: { row: Deletion })}
+	<div class="space-y-4">
+		<div>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">
+				{t('deletions.user', 'User')}
+			</p>
+			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">
+				{row.display_name || row.username || 'anonymous'}
+			</p>
+		</div>
+		<div>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">
+				{t('deletions.type', 'Type')}
+			</p>
+			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.content_type}</p>
+		</div>
+		<div>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">
+				Content ID
+			</p>
+			<p class="mt-1 break-all text-sm font-mono" style="color: var(--color-foreground)">{row.content_id}</p>
+		</div>
+		<div>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">
+				{t('deletions.reason', 'Reason')}
+			</p>
+			<p class="mt-1 text-sm" style="color: var(--color-foreground)">{row.reason || '—'}</p>
+		</div>
+		<div>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">
+				{t('deletions.date', 'Date')}
+			</p>
+			<p class="mt-1 text-sm" style="color: var(--color-foreground)">{new Date(row.deleted_at).toLocaleString()}</p>
+		</div>
+		<div>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">
+				{t('deletions.hard', 'Hard Delete')}
+			</p>
+			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">
+				{row.hard_deleted ? t('deletions.yes', 'Yes') : t('deletions.no', 'No')}
+			</p>
+		</div>
+	</div>
+{/snippet}

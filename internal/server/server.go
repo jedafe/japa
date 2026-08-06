@@ -967,6 +967,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// avatar_media_id/header_media_id and resolve them to URLs (BUG-004).
 	usersService.MediaResolver = &mediaURLResolver{media: mediaService}
 	usersHandlers := users.NewHandlers(usersService, contentService)
+	// Wire the RBAC resolver so GetMyContent can fall back to a
+	// tenant-scoped (non-author-scoped) fetch for super-admins and users
+	// with the `content.edit` permission node.
+	usersHandlers.SetPermissionResolver(rbacResolver)
 
 	// BUG-003: wire the "verified" axis checker for CanPostInSpace. The
 	// "verified" posting_perm requires email_verified_at IS NOT NULL.
@@ -1363,6 +1367,20 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forms.edit")).
 				Post("/forms/{id}/triggers/reorder", cfHandlers.ReorderFormTriggers)
 
+			// Form steps (multi-step forms, Section 06). Steps are owned by a
+			// form; viewing requires forms.submissions.view (same as the form
+			// detail), mutation requires forms.edit / forms.delete.
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forms.submissions.view")).
+				Get("/forms/{id}/steps", cfHandlers.ListFormSteps)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forms.edit")).
+				Post("/forms/{id}/steps", cfHandlers.CreateFormStep)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forms.edit")).
+				Patch("/forms/{id}/steps/{stepId}", cfHandlers.UpdateFormStep)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forms.delete")).
+				Delete("/forms/{id}/steps/{stepId}", cfHandlers.DeleteFormStep)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forms.edit")).
+				Post("/forms/{id}/steps/reorder", cfHandlers.ReorderFormSteps)
+
 			// Admin field-group routes — the same underlying handlers as the
 			// /custom-field-groups block above, mounted a second time under
 			// /admin per catalog (an admin-facing management surface distinct
@@ -1566,6 +1584,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.reactions.remove")).Delete("/content/{id}/reactions/{key}", contentHandlers.RemoveReaction)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/content/{id}/reactions", contentHandlers.ListReactions)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/content/{id}/reactions/me", contentHandlers.ListUserReactions)
+			// Content → series lookup (auth-required). Returns the series_id
+			// for a content item so the editor can restore the series selector.
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/content/{id}/series", blogHandlers.GetContentSeries)
 
 			// Reaction type routes (admin-configurable emoji set)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/reaction-types", contentHandlers.ListReactionTypes)
@@ -2622,6 +2643,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/me/totp/confirm", totpHandlers.HandleVerify)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Delete("/me/totp", totpHandlers.HandleDisable)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/content", usersHandlers.ListMyContent)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/content/{id}", usersHandlers.GetMyContent)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/drafts", usersHandlers.ListMyDrafts)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/drafts/{id}", usersHandlers.GetMyDraft)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/scheduled", usersHandlers.ListMyScheduled)

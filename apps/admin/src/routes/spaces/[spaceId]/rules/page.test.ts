@@ -6,13 +6,17 @@ vi.mock('$lib/api', () => ({
 	api: vi.fn().mockRejectedValue(new Error('not connected'))
 }));
 
-vi.mock('$app/stores', () => ({
+vi.mock('$app/state', () => ({
 	page: {
-		subscribe: (fn: Function) => {
-			fn({ params: { spaceId: 'test-space' } });
-			return () => {};
-		}
+		params: { spaceId: 'test-space' },
+		url: new URL('http://localhost/')
 	}
+}));
+
+vi.mock('$lib/stores/permissions.svelte', () => ({
+	hasPermission: () => true,
+	permissions: [],
+	getPermissionState: () => ({})
 }));
 
 vi.mock('$lib/components/Modal.svelte', async () => {

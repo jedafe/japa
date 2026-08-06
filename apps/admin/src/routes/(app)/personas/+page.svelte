@@ -6,7 +6,8 @@
 	import { DataTable } from '$lib/components/ui/data-table';
 	import { Button } from '$lib/components/ui/button';
 	import { Badge } from '$lib/components/ui/badge';
-	import { Modal } from '$lib/components/ui/modal';
+	import { SlideOver } from '$lib/components/ui/slide-over';
+	import type { ActionItem } from '$lib/components/ui/data-table';
 	import { Bot, Plus, Trash2, Activity, Pencil } from 'lucide-svelte';
 	import { api } from '$lib/api';
 
@@ -34,8 +35,8 @@
 	let personas = $state<Persona[]>([]);
 	let loading = $state(true);
 	let error = $state('');
-	let createModalOpen = $state(false);
-	let activityModalOpen = $state(false);
+	let createSlideOverOpen = $state(false);
+	let activitySlideOverOpen = $state(false);
 	let activityLog = $state<unknown[]>([]);
 	let activityLoading = $state(false);
 	let saving = $state(false);
@@ -43,8 +44,8 @@
 	let messageType = $state('');
 	let newPersonas = $state<PersonaInput[]>([{ disclosure_mode: 'always', autonomy_mode: 'supervised', voice_prompt: '' }]);
 
-	// Edit modal
-	let editModalOpen = $state(false);
+	// Edit SlideOver
+	let editSlideOverOpen = $state(false);
 	let editingPersona = $state<Persona | null>(null);
 	let editForm = $state<PersonaInput>({ disclosure_mode: 'always', autonomy_mode: 'supervised', voice_prompt: '' });
 	let savingEdit = $state(false);
@@ -67,7 +68,7 @@
 	}
 
 	async function viewActivity(id: string) {
-		activityModalOpen = true;
+		activitySlideOverOpen = true;
 		activityLoading = true;
 		try {
 			const result = await api<unknown[]>(`/admin/personas/${id}/activity`);
@@ -96,7 +97,7 @@
 			if (result.ok) {
 				messageType = 'success';
 				message = t('personas.create_success', '{count} persona(s) provisioned.').replace('{count}', String(inputs.length));
-				createModalOpen = false;
+				createSlideOverOpen = false;
 				newPersonas = [{ disclosure_mode: 'always', autonomy_mode: 'supervised', voice_prompt: '' }];
 				load();
 			} else {
@@ -126,7 +127,7 @@
 			autonomy_mode: persona.autonomy_mode,
 			voice_prompt: persona.voice_prompt ?? ''
 		};
-		editModalOpen = true;
+		editSlideOverOpen = true;
 	}
 
 	async function submitEdit() {
@@ -138,7 +139,7 @@
 			if (result.ok) {
 				messageType = 'success';
 				message = t('personas.update_success', 'Persona updated.');
-				editModalOpen = false;
+				editSlideOverOpen = false;
 				editingPersona = null;
 				load();
 			} else {
@@ -186,14 +187,18 @@
 			label: t('personas.created', 'Created'),
 			sortable: true,
 			render: (value: string) => `<span class="text-muted-foreground text-xs">${value ? new Date(value).toLocaleDateString() : '—'}</span>`
-		},
-		{
-			key: 'actions',
-			label: t('common.actions', 'Actions'),
-			class: 'w-24',
-			componentSnippet: PersonaActionsCell
 		}
 	]);
+
+	const rowActions: ActionItem[] = [
+		{ label: t('personas.activity_log', 'Activity'), icon: Activity, onclick: (row: Persona) => viewActivity(row.id) },
+		{
+			label: t('common.edit', 'Edit'),
+			icon: Pencil,
+			onclick: (row: Persona) => openEdit(row),
+			show: () => canManage
+		}
+	];
 
 	load();
 </script>
@@ -202,7 +207,7 @@
 	title={t('personas.title', 'AI Personas')}
 	description={t('personas.description', 'Manage AI persona accounts for content generation and participation.')}
 	actions={canManage ? [
-		{ label: t('personas.create', 'Create Personas'), icon: Plus, onclick: () => (createModalOpen = true) }
+		{ label: t('personas.create', 'Create Personas'), icon: Plus, onclick: () => (createSlideOverOpen = true) }
 	] : []}
 />
 
@@ -230,14 +235,14 @@
 	<DataTable
 		data={personas}
 		{columns}
+		actions={rowActions}
 		emptyMessage={t('personas.empty', 'No personas found. Create some to get started.')}
 	/>
 {/if}
 
-{#if createModalOpen}
-	<Modal
-		open={createModalOpen}
-		onclose={() => (createModalOpen = false)}
+{#if createSlideOverOpen}
+	<SlideOver
+		bind:open={createSlideOverOpen}
 		title={t('personas.create_title', 'Create AI Personas')}
 	>
 		<div class="space-y-4">
@@ -299,19 +304,20 @@
 				{t('personas.add_row', 'Add another persona')}
 			</Button>
 		</div>
-		<div class="mt-6 flex justify-end gap-2">
-			<Button variant="outline" onclick={() => (createModalOpen = false)}>{t('common.cancel', 'Cancel')}</Button>
-			<Button onclick={createPersonas} disabled={saving}>
-				{saving ? t('common.saving', 'Saving...') : t('personas.provision', 'Provision Personas')}
-			</Button>
-		</div>
-	</Modal>
+		{#snippet footer()}
+			<div class="flex justify-end gap-2">
+				<Button variant="outline" onclick={() => (createSlideOverOpen = false)}>{t('common.cancel', 'Cancel')}</Button>
+				<Button onclick={createPersonas} disabled={saving}>
+					{saving ? t('common.saving', 'Saving...') : t('personas.provision', 'Provision Personas')}
+				</Button>
+			</div>
+		{/snippet}
+	</SlideOver>
 {/if}
 
-{#if activityModalOpen}
-	<Modal
-		open={activityModalOpen}
-		onclose={() => (activityModalOpen = false)}
+{#if activitySlideOverOpen}
+	<SlideOver
+		bind:open={activitySlideOverOpen}
 		title={t('personas.activity_log', 'Persona Activity Log')}
 	>
 		{#if activityLoading}
@@ -330,26 +336,12 @@
 				{/each}
 			</div>
 		{/if}
-	</Modal>
+	</SlideOver>
 {/if}
 
-{#snippet PersonaActionsCell({ value, row }: { value: any; row: Persona })}
-	<div class="flex items-center gap-1">
-		<Button variant="ghost" size="sm" onclick={() => viewActivity(row.id)} aria-label={t('personas.activity_log', 'Activity')}>
-			<Activity class="h-3.5 w-3.5" />
-		</Button>
-		{#if canManage}
-			<Button variant="ghost" size="sm" onclick={() => openEdit(row)} aria-label={t('common.edit', 'Edit')}>
-				<Pencil class="h-3.5 w-3.5" />
-			</Button>
-		{/if}
-	</div>
-{/snippet}
-
-{#if editModalOpen}
-	<Modal
-		open={editModalOpen}
-		onclose={() => (editModalOpen = false)}
+{#if editSlideOverOpen}
+	<SlideOver
+		bind:open={editSlideOverOpen}
 		title={t('personas.edit_title', 'Edit Persona')}
 	>
 		<div class="space-y-4">
@@ -396,11 +388,13 @@
 				></textarea>
 			</div>
 		</div>
-		<div class="mt-6 flex justify-end gap-2">
-			<Button variant="outline" onclick={() => (editModalOpen = false)}>{t('common.cancel', 'Cancel')}</Button>
-			<Button onclick={submitEdit} disabled={savingEdit}>
-				{savingEdit ? t('common.saving', 'Saving...') : t('common.save', 'Save')}
-			</Button>
-		</div>
-	</Modal>
+		{#snippet footer()}
+			<div class="flex justify-end gap-2">
+				<Button variant="outline" onclick={() => (editSlideOverOpen = false)}>{t('common.cancel', 'Cancel')}</Button>
+				<Button onclick={submitEdit} disabled={savingEdit}>
+					{savingEdit ? t('common.saving', 'Saving...') : t('common.save', 'Save')}
+				</Button>
+			</div>
+		{/snippet}
+	</SlideOver>
 {/if}

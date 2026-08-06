@@ -134,6 +134,13 @@ func (s *Service) ListPostsInSeries(ctx context.Context, seriesID, tenantID pgty
 	return s.store.listPostsInSeries(ctx, seriesID, tenantID)
 }
 
+// GetSeriesForContent returns the series_id for a given content_id, or
+// pgx.ErrNoRows if the content is not part of any series. Used by the
+// editor load to restore the series selector.
+func (s *Service) GetSeriesForContent(ctx context.Context, contentID pgtype.UUID) (pgtype.UUID, error) {
+	return s.store.getSeriesForContent(ctx, contentID)
+}
+
 // ReorderPostsInSeries updates the position of a post within a series.
 func (s *Service) ReorderPostsInSeries(ctx context.Context, seriesID, contentID pgtype.UUID, position int32) error {
 	return s.store.reorderSeriesPosts(ctx, seriesID, contentID, position)

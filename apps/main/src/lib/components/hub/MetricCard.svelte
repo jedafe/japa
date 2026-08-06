@@ -16,7 +16,7 @@
 	<p class="text-xs text-[var(--color-muted)]">{t(labelKey)}</p>
 	<p class="text-2xl font-medium text-[var(--color-text)]">{displayValue}</p>
 	{#if delta !== undefined}
-		<p class="mt-1 text-xs {delta >= 0 ? 'text-green-600' : 'text-[var(--color-danger,#dc2626)]'}">
+		<p class="mt-1 text-xs {delta >= 0 ? 'text-[var(--color-success)]' : 'text-[var(--color-danger)]'}">
 			{deltaSign}{Math.round(delta)}
 		</p>
 	{/if}

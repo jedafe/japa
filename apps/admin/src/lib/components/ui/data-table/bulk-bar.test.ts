@@ -6,7 +6,7 @@ import { Trash2 } from "lucide-svelte";
 describe("BulkBar", () => {
   it("renders nothing when no ids selected", () => {
     const { container } = render(BulkBar, {
-      selectedIds: new Set(),
+      selectedIds: new Set<string>(),
       actions: [],
       onclear: () => {},
     });

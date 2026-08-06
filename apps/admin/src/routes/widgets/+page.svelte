@@ -1,10 +1,8 @@
 <script lang="ts">
-	import { api, widgetsAdminApiExtended } from '$lib/api';
+	// /widgets — migrated to the EntityPage scaffold; simple CRUD entity using `fields` (EntityForm).
+	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
+	import { widgetsAdminApiExtended } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
-	import { Plus, Pencil, Trash2 } from 'lucide-svelte';
-	import Modal from '$lib/components/Modal.svelte';
-	import { DataTable } from '$lib/components/ui/data-table';
-	import { FilterBar } from '$lib/components/ui/filter-bar';
 
 	type Widget = {
 		id: string;
@@ -15,222 +13,118 @@
 		created_at: string;
 	};
 
-	let widgets = $state<Widget[]>([]);
-	let loading = $state(true);
-	let errorMessage = $state('');
-	let searchQuery = $state('');
-	let filterValues = $state<Record<string, string>>({});
-	let editingWidget = $state<Widget | null>(null);
-	let saving = $state(false);
+	let entityController = $state<EntityPageController | undefined>(undefined);
+	let pageError = $state('');
 
-	let showWidgetModal = $state(false);
-	let name = $state('');
-	let widgetType = $state('');
-	let isActive = $state(true);
-
-	const columns = [
-		{ key: 'name', label: t('widgets.name'), sortable: true },
-		{ key: 'widget_type', label: t('widgets.type'), sortable: true, render: (v: string) => `<span class="text-xs" style="color: var(--color-muted)">${v}</span>` },
-		{
-			key: 'is_active',
-			label: t('widgets.status'),
-			render: (v: boolean) => `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium ${v ? 'bg-success/15 text-success dark:text-success' : 'bg-muted/15 text-muted dark:text-muted'}">${v ? t('widgets.active') : t('widgets.inactive')}</span>`
-		},
-		{
-			key: 'actions',
-			label: t('common.actions'),
-			componentSnippet: WidgetActionsCell
-		}
+	// `fields` drives EntityForm rendering and edit-form seeding.
+	const fields: FieldDef[] = [
+		{ key: 'name', label: t('widgets.name', 'Name'), type: 'text', required: true },
+		{ key: 'widget_type', label: t('widgets.type', 'Type'), type: 'text', required: true },
+		{ key: 'is_active', label: t('widgets.active', 'Active'), type: 'checkbox' }
 	];
 
-	const filteredWidgets = $derived.by(() => {
-		let items = widgets;
-		if (searchQuery) {
-			const q = searchQuery.toLowerCase();
-			items = items.filter((w) => w.name.toLowerCase().includes(q) || w.widget_type.toLowerCase().includes(q));
-		}
-		return items;
-	});
-
-	const filterDefs = [
-		{
-			key: 'is_active',
-			label: t('widgets.status', 'Status'),
-			options: [
-				{ value: 'true', label: t('widgets.active', 'Active') },
-				{ value: 'false', label: t('widgets.inactive', 'Inactive') }
-			]
-		}
-	];
-
-	async function load() {
-		loading = true;
-		errorMessage = '';
-		try {
+	const config: EntityPageConfig = {
+		title: t('widgets.title', 'Widgets'),
+		description: t('widgets.description', 'Manage widgets available across the platform.'),
+		createLabel: t('widgets.create', 'Create'),
+		pageSize: 25,
+		columns: [
+			{ key: 'name', label: t('widgets.name', 'Name'), sortable: true },
+			{
+				key: 'widget_type',
+				label: t('widgets.type', 'Type'),
+				sortable: true,
+				render: (v: string) => `<span class="text-xs" style="color: var(--color-muted)">${v}</span>`
+			},
+			{ key: 'is_active', label: t('widgets.status', 'Status'), componentSnippet: StatusCell }
+		],
+		filters: [
+			{
+				key: 'is_active',
+				label: t('widgets.status', 'Status'),
+				options: [
+					{ value: 'true', label: t('widgets.active', 'Active') },
+					{ value: 'false', label: t('widgets.inactive', 'Inactive') }
+				]
+			}
+		],
+		fields,
+		load: async ({ q, filter }) => {
 			const params = new URLSearchParams();
-			if (filterValues.is_active) params.set('is_active', filterValues.is_active);
-			if (searchQuery) params.set('q', searchQuery);
-			const result = await api<Widget[]>(`/admin/widgets${params.toString() ? `?${params.toString()}` : ''}`);
+			if (filter.is_active) params.set('is_active', filter.is_active);
+			if (q) params.set('q', q);
+			const result = await widgetsAdminApiExtended.list(params.toString() || undefined);
 			if (result.ok) {
-				widgets = result.data ?? [];
-			} else {
-				errorMessage = result.error as string;
+				const data = (result.data as Widget[]) ?? [];
+				return { data, total: data.length, totalPages: 1 };
 			}
-		} catch {
-			errorMessage = t('common.error');
-		} finally {
-			loading = false;
-		}
-	}
-
-	function handleSearch(values: Record<string, string>) {
-		searchQuery = values.search ?? '';
-		filterValues = values;
-		load();
-	}
-
-	function handleClear() {
-		searchQuery = '';
-		filterValues = {};
-		load();
-	}
-
-	function openCreate() {
-		editingWidget = null;
-		name = '';
-		widgetType = '';
-		isActive = true;
-		showWidgetModal = true;
-	}
-
-	function openEdit(widget: Widget) {
-		editingWidget = widget;
-		name = widget.name;
-		widgetType = widget.widget_type;
-		isActive = widget.is_active;
-		showWidgetModal = true;
-	}
-
-	async function createWidget() {
-		if (!name.trim() || !widgetType.trim()) return;
-		saving = true;
-		errorMessage = '';
-		try {
-			const result = await api('/admin/widgets', {
-				method: 'POST',
-				body: { name: name.trim(), widget_type: widgetType.trim(), is_active: isActive }
+			throw new Error(result.error ?? t('common.error', 'Failed to load widgets'));
+		},
+		create: async (body) => {
+			const res = await widgetsAdminApiExtended.create({
+				name: String(body.name ?? '').trim(),
+				widget_type: String(body.widget_type ?? '').trim(),
+				is_active: body.is_active === undefined ? true : !!body.is_active
 			});
-			if (result.ok) {
-				showWidgetModal = false;
-				load();
-			} else {
-				errorMessage = result.error;
-			}
-		} catch {
-			errorMessage = t('common.error');
-		} finally {
-			saving = false;
-		}
-	}
-
-	async function updateWidget() {
-		if (!editingWidget || !name.trim() || !widgetType.trim()) return;
-		saving = true;
-		errorMessage = '';
-		try {
-			const result = await api(`/admin/widgets/${editingWidget.id}`, {
-				method: 'PATCH',
-				body: { name: name.trim(), widget_type: widgetType.trim(), is_active: isActive }
+			return res.ok ? { ok: true } : { ok: false, error: res.error };
+		},
+		update: async (id, body) => {
+			const res = await widgetsAdminApiExtended.update(id, {
+				name: String(body.name ?? '').trim(),
+				widget_type: String(body.widget_type ?? '').trim(),
+				is_active: !!body.is_active
 			});
-			if (result.ok) {
-				showWidgetModal = false;
-				editingWidget = null;
-				load();
-			} else {
-				errorMessage = result.error;
-			}
-		} catch {
-			errorMessage = t('common.error');
-		} finally {
-			saving = false;
-		}
-	}
-
-	async function deleteWidget(id: string) {
-		errorMessage = '';
-		try {
-			await api(`/admin/widgets/${id}`, { method: 'DELETE' });
-			widgets = widgets.filter((w) => w.id !== id);
-		} catch {
-			errorMessage = t('common.error');
-		}
-	}
-
-	$effect(() => {
-		load();
-	});
+			return res.ok ? { ok: true } : { ok: false, error: res.error };
+		},
+		remove: async (id) => {
+			const res = await widgetsAdminApiExtended.delete(id);
+			return res.ok ? { ok: true } : { ok: false, error: res.error };
+		},
+		viewSnippet: WidgetView
+	};
 </script>
 
 <svelte:head>
-	<title>{t('widgets.title')} — JapaConnect Admin</title>
+	<title>{t('widgets.title', 'Widgets')} — JapaConnect Admin</title>
 </svelte:head>
 
-<h1 class="mb-1 text-2xl font-bold tracking-tight">{t('widgets.title')}</h1>
-<p class="mb-4 text-sm" style="color: var(--color-muted)">{t('widgets.description')}</p>
-
-{#if errorMessage}
-	<div class="mb-4 rounded-md border px-4 py-3 text-sm" style="border-color: var(--color-danger); background-color: color-mix(in srgb, var(--color-danger) 8%, transparent); color: var(--color-danger)">
-		{errorMessage}
+{#if pageError}
+	<div
+		class="mb-4 rounded-lg p-3 text-sm"
+		style="background: color-mix(in srgb, var(--color-danger) 10%, transparent); color: var(--color-danger)"
+	>
+		{pageError}
 	</div>
 {/if}
 
-<div class="mb-4 flex justify-end">
-	<button class="btn btn-primary flex items-center gap-1.5 text-xs" onclick={openCreate}>
-		<Plus class="h-3 w-3" />
-		{t('widgets.create')}
-	</button>
-</div>
+<EntityPage {config} bind:controller={entityController} />
 
-<FilterBar filters={filterDefs} onsearch={handleSearch} onclear={handleClear} />
+<!-- ── Snippets ─────────────────────────────────────────────────────────── -->
 
-{#if loading}
-	<p class="py-8 text-center text-sm" style="color: var(--color-muted)">{t('common.loading')}</p>
-{:else}
-	<DataTable
-		columns={columns}
-		data={filteredWidgets}
-		pageSize={25}
-		emptyMessage={t('widgets.empty')}
-		searchable
-		onsearch={(q) => { searchQuery = q; }}
-	/>
-{/if}
+{#snippet StatusCell({ value }: { value: boolean; row: Widget })}
+	<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium {value ? 'bg-success/15 text-success' : 'bg-muted/15 text-muted'}">
+		{value ? t('widgets.active', 'Active') : t('widgets.inactive', 'Inactive')}
+	</span>
+{/snippet}
 
-<!-- Create/Edit Modal -->
-<Modal bind:open={showWidgetModal} title={editingWidget ? t('widgets.edit') : t('widgets.create')} onConfirm={editingWidget ? updateWidget : createWidget} confirmLabel={saving ? t('common.saving') : editingWidget ? t('common.save') : t('common.create')}>
+<!-- View slide-over body -->
+{#snippet WidgetView({ row }: { row: Widget })}
 	<div class="space-y-4">
 		<div>
-			<label for="wd-name" class="mb-1 block text-sm font-medium">{t('widgets.name')}</label>
-			<input id="wd-name" type="text" bind:value={name} required class="w-full rounded-lg border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-background); color: var(--color-foreground)" />
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('widgets.name', 'Name')}</p>
+			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.name}</p>
 		</div>
 		<div>
-			<label for="wd-type" class="mb-1 block text-sm font-medium">{t('widgets.type')}</label>
-			<input id="wd-type" type="text" bind:value={widgetType} required class="w-full rounded-lg border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-background); color: var(--color-foreground)" />
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('widgets.type', 'Type')}</p>
+			<p class="mt-1 text-sm font-mono" style="color: var(--color-foreground)">{row.widget_type}</p>
 		</div>
-		<div class="flex items-center gap-2">
-			<input id="wd-active" type="checkbox" bind:checked={isActive} class="rounded" />
-			<label for="wd-active" class="text-sm">{t('widgets.active')}</label>
+		<div>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('widgets.status', 'Status')}</p>
+			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.is_active ? t('widgets.active', 'Active') : t('widgets.inactive', 'Inactive')}</p>
 		</div>
-	</div>
-</Modal>
-
-{#snippet WidgetActionsCell({ value, row }: { value: any; row: Widget })}
-	<div class="flex items-center justify-end gap-1">
-		<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10" onclick={() => openEdit(row)}>
-			<Pencil class="h-3 w-3" style="color: var(--color-primary)" />
-		</button>
-		<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10" onclick={() => deleteWidget(row.id)}>
-			<Trash2 class="h-3 w-3" style="color: var(--color-danger)" />
-		</button>
+		<div>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('common.created_at', 'Created')}</p>
+			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.created_at ?? '—'}</p>
+		</div>
 	</div>
 {/snippet}

@@ -91,25 +91,73 @@ interface EntityPageConfig {
   description?: string;
   columns: Column[];              // data-table/types.ts
   filters?: FilterDef[];          // data-table/types.ts
-  actions?: ActionItem[];         // omit → default View/Edit/Delete (permission-gated)
+  actions?: ActionItem[];         // omit → default View/Edit/Delete/Restore/HardDelete (permission-gated)
   bulkActions?: BulkAction[];     // presence enables row selection + BulkBar
   createLabel?: string;
   createPermission?: string;      // edit/delete fall back to this when omitted
   editPermission?: string;
-  deletePermission?: string;
+  deletePermission?: string;      // also fallback for hardDeletePermission/restorePermission
+  hardDeletePermission?: string;  // defaults to deletePermission → createPermission
+  restorePermission?: string;     // defaults to deletePermission → createPermission
   fields: FieldDef[];             // drives EntityForm + edit-form value seeding
   readonly?: boolean;             // hides create/edit/delete
   pageSize?: number;
-  pageSizeOptions?: number[];
+  pageSizeOptions?: number[];     // default [10, 25, 50, 100]
   load: (params: { page; pageSize; q; sort; filter }) =>
     Promise<{ data: any[]; total: number; totalPages: number } | any[]>;
   create?: (body) => Promise<{ ok: boolean; error?: string }>;
   update?: (id, body) => Promise<{ ok: boolean; error?: string }>;
-  remove?: (id) => Promise<{ ok: boolean; error?: string }>;
+  remove?: (id) => Promise<{ ok: boolean; error?: string }>;       // soft delete
+  hardRemove?: (id) => Promise<{ ok: boolean; error?: string }>;   // permanent delete (opt-in)
+  restore?: (id) => Promise<{ ok: boolean; error?: string }>;      // restore soft-deleted (opt-in)
+  isDeleted?: (row: any) => boolean;  // default: row.status==='deleted' || row.deleted_at!=null
+  exportable?: boolean;           // show Export CSV button (opt-in)
+  exportFilename?: string;        // default: `${title}-export`
   viewSnippet?: Snippet<[{ row: any }]>;   // custom view slide-over body
   formSnippet?: Snippet<[{ value; editing }]>; // custom create/edit form body
 }
 ```
+
+### Soft delete, Hard delete, and Restore
+
+When `hardRemove` and/or `restore` are provided in the config, the default row
+actions (when `config.actions` is omitted) automatically include:
+
+- **Delete** (soft) — shown when `isDeleted(row)` is false
+- **Restore** — shown when `isDeleted(row)` is true and `config.restore` is set
+- **Hard Delete** — shown when `isDeleted(row)` is true and `config.hardRemove`
+  is set; opens a separate confirm modal with a stronger warning
+
+The `isDeleted` predicate defaults to `row.status === 'deleted' || row.deleted_at != null`
+to cover both backend patterns. Override it for entities that use a different
+soft-delete signal.
+
+Pages that supply custom `config.actions` must include these actions explicitly
+(as `/users` does).
+
+### Export (CSV)
+
+Set `exportable: true` to show an "Export" button in the page header. On click,
+`EntityPage` paginates through all filtered rows (using the current
+search/sort/filter state) via `config.load`, builds a CSV from the configured
+columns, and triggers a browser download. The filename defaults to
+`${title}-export.csv` or can be customized via `exportFilename`.
+
+### Resizable and hideable columns
+
+The `Column` type (in `data-table/types.ts`) now supports:
+
+- `resizable?: boolean` — default `true`; set `false` to disable the resize
+  handle on a column. Drag the handle to resize; double-click to reset to
+  auto-width.
+- `hideable?: boolean` — default `true`; set `false` to exclude a column from
+  the hide/unhide toggle (e.g. the actions column).
+- `width?: number` — initial column width in pixels.
+- `defaultHidden?: boolean` — hide the column by default; the user can toggle
+  it on via the "Columns" dropdown in the table toolbar.
+
+A "Columns" dropdown button appears in the DataTable toolbar whenever there are
+hideable columns. It lists each toggleable column with a checkbox.
 
 ### When to use `fields` vs `formSnippet`
 
@@ -206,15 +254,29 @@ entityController?.reload();
 
 These are acknowledged limitations of the initial shared-component release.
 
-1. **No URL-sync for sort/filter.** `EntityPage` sets `urlSync={false}` on the
-     DataTable, so sort/filter state is not reflected in the URL.
-   - *Status:* minor regression, acceptable for the initial release.
-
-2. **Generic confirm modal (no entity name).** The built-in delete confirm
+1. **Generic confirm modal (no entity name).** The built-in delete confirm
      shows a generic "Confirm Delete. This cannot be undone." message without
      the entity name.
    - *Status:* acceptable. Pages needing richer copy keep a page-local
      `<Modal>` (as `/users` does for its state actions).
+
+## URL-sync (sort/filter/page)
+
+`EntityPage` reflects its full state in the URL so list views are
+shareable/bookmarkable and a reload restores the exact view:
+
+- **`sort` / `dir`** and **`q`** (search) are written by the `DataTable`
+  (`urlSync` is enabled on the scaffold). The sort icon and search box are
+  restored from the URL on load.
+- **`page`** (1-based), **`pageSize`** (only when != the configured default),
+  and **filters** are written by `EntityPage` via `history.replaceState`
+  (matching `Pagination.svelte`). Each filter key becomes its own query param
+  (e.g. `?status=active&tier=partner`); the reserved names `page`, `pageSize`,
+  `q`, `sort`, `dir` are never treated as filter keys.
+- All state is seeded from the URL once at init (via `$state` initializers),
+  so the first `load` call uses the restored params — no double-fetch.
+
+No per-page work is needed; the scaffold handles this for every `<EntityPage>`.
 
 ---
 

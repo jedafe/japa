@@ -284,3 +284,68 @@ func TestGetMyDraft_InvalidID(t *testing.T) {
 	}
 }
 
+// ---------------------------------------------------------------------------
+// GetMyContent (GET /me/content/{id}) — auth + input validation
+// ---------------------------------------------------------------------------
+
+func TestGetMyContent_Unauthorized(t *testing.T) {
+	t.Parallel()
+
+	h := NewHandlers(testService(), nil)
+	req := httptest.NewRequest(http.MethodGet, "/me/content/22222222-2222-2222-2222-222222222222", nil)
+
+	rr := httptest.NewRecorder()
+	h.GetMyContent(rr, req)
+
+	if rr.Code != http.StatusUnauthorized {
+		t.Errorf("status = %d, want %d", rr.Code, http.StatusUnauthorized)
+	}
+}
+
+func TestGetMyContent_NoTenant(t *testing.T) {
+	t.Parallel()
+
+	h := NewHandlers(testService(), nil)
+	req := httptest.NewRequest(http.MethodGet, "/me/content/22222222-2222-2222-2222-222222222222", nil)
+	req = withAuthUser(req) // authenticated but no tenant in context
+
+	rr := httptest.NewRecorder()
+	h.GetMyContent(rr, req)
+
+	if rr.Code != http.StatusServiceUnavailable {
+		t.Errorf("status = %d, want %d", rr.Code, http.StatusServiceUnavailable)
+	}
+}
+
+func TestGetMyContent_InvalidID(t *testing.T) {
+	t.Parallel()
+
+	h := NewHandlers(testService(), nil)
+
+	router := chi.NewRouter()
+	router.Get("/me/content/{id}", h.GetMyContent)
+
+	req := httptest.NewRequest(http.MethodGet, "/me/content/not-a-uuid", nil)
+	req = withAuthUser(req)
+	req = withTenant(req)
+
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want %d", rr.Code, http.StatusBadRequest)
+	}
+
+	var body map[string]any
+	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal body: %v", err)
+	}
+	errObj, ok := body["error"].(map[string]any)
+	if !ok {
+		t.Fatalf("response missing error envelope: %v", body)
+	}
+	if errObj["code"] != "invalid_id" {
+		t.Errorf("error code = %v, want invalid_id", errObj["code"])
+	}
+}
+

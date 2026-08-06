@@ -1114,6 +1114,18 @@ export interface SuggestedTag {
 	follower_count: number;
 }
 
+/** GET /content/{id}/tags item — ContentTag. Mirrors the ListContentTags
+ * SQL row (tags joined via content_tags). Used by the /create composer to
+ * restore the tag chips when editing existing content. */
+export interface ContentTag {
+	id: string;
+	name: string;
+	slug: string;
+	description?: string | null;
+	color?: string | null;
+	follower_count: number;
+}
+
 /** GET /organizations (public list) item — PublicOrgListItem. */
 export interface PublicOrgListItem {
 	id: string;

@@ -2,6 +2,7 @@
 	import { Dialog } from 'bits-ui';
 	import { untrack } from 'svelte';
 	import { t } from '$lib/i18n';
+	import { i18n } from '$lib/i18n';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { publishContent, archiveContent, deleteContent } from '$lib/api/hub';
@@ -70,7 +71,7 @@
 	function formatDate(iso: string | undefined): string {
 		if (!iso) return '—';
 		const d = new Date(iso);
-		return isNaN(d.getTime()) ? '—' : d.toLocaleDateString();
+		return isNaN(d.getTime()) ? '—' : d.toLocaleDateString(i18n.locale);
 	}
 
 	let deleteTarget = $state<string | null>(null);

@@ -70,7 +70,7 @@
 
 	// M1 — Map ForumThread → FeedItem so forum threads render through FeedCard
 	// (ADR-058 single FeedCard rule). The mapping is lossless: all forum-specific
-	// fields (solved, is_anonymous) are preserved via the excerpt/space_name.
+	// fields (solved, is_anonymous) are preserved via the title/tags.
 	function toFeedItem(thread: ForumThread): FeedItem {
 		return {
 			id: thread.id,
@@ -85,13 +85,13 @@
 			space_id: thread.space_id,
 			space_name: thread.space_name,
 			space_slug: thread.space_slug,
-			excerpt: thread.solved ? t('forum.solved', 'Solved') : undefined,
+			excerpt: undefined,
 			created_at: thread.created_at,
 			view_count: thread.view_count,
 			comment_count: thread.reply_count,
 			vote_score: thread.vote_score,
 			bookmark_count: thread.bookmark_count,
-			tags: []
+			tags: thread.solved ? [t('forum.solved', 'Solved')] : []
 		};
 	}
 

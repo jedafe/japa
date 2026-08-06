@@ -1,13 +1,13 @@
 <script lang="ts">
 	import PageHeader from "$lib/components/layout/page-header.svelte";
-	import { Card, CardContent, CardHeader } from "$lib/components/ui/card";
+	import { Card, CardContent } from "$lib/components/ui/card";
 	import { DataTable } from "$lib/components/ui/data-table";
-	import { FilterBar } from "$lib/components/ui/filter-bar";
 	import { Button } from "$lib/components/ui/button";
 	import { Modal } from "$lib/components/ui/modal";
-	import Pagination from "$lib/components/ui/Pagination.svelte";
+	import { SlideOver } from "$lib/components/ui/slide-over";
 	import { TableSkeleton } from "$lib/components/ui/skeleton";
-	import { Plus, RefreshCw, Eye, Pencil, Trash2, BadgeCheck, XCircle, Upload, Archive, FileEdit, Send } from "lucide-svelte";
+	import type { ActionItem, BulkAction } from "$lib/components/ui/data-table";
+	import { Plus, RefreshCw, Eye, Pencil, Trash2, BadgeCheck, XCircle, Upload, FileEdit } from "lucide-svelte";
 	import { universitiesAdminApi } from "$lib/api";
 	import { t } from "$lib/stores/i18n.svelte";
 	import { hasPermission } from "$lib/stores/permissions.svelte";
@@ -39,10 +39,10 @@
 	let filterValues = $state<Record<string, string>>({});
 	let selectedIds = $state<Set<string>>(new Set());
 
-	let showViewModal = $state(false);
+	let showViewSlideOver = $state(false);
 	let viewTarget = $state<University | null>(null);
-	let showCreateModal = $state(false);
-	let showEditModal = $state(false);
+	let showCreateSlideOver = $state(false);
+	let showEditSlideOver = $state(false);
 	let editTarget = $state<University | null>(null);
 	let showDeleteConfirm = $state(false);
 	let deleteTarget = $state<University | null>(null);
@@ -83,9 +83,48 @@
 			}
 		},
 		{ key: "member_count", label: t("universities.students", "Members"), sortable: true, render: (v: number) => (v ?? 0).toLocaleString() },
-		{ key: "created_at", label: t("universities.created", "Created"), sortable: true, render: (v: string) => new Date(v).toLocaleDateString() },
-		{ key: "actions", label: t("common.actions", "Actions"), class: "w-32", componentSnippet: ActionsCell }
+		{ key: "created_at", label: t("universities.created", "Created"), sortable: true, render: (v: string) => new Date(v).toLocaleDateString() }
 	];
+
+	const rowActions: ActionItem[] = [
+		{ label: t("common.view", "View"), icon: Eye, onclick: (row) => openView(row) },
+		{
+			label: t("universities.verify", "Verify"),
+			icon: BadgeCheck,
+			onclick: (row) => toggleVerify(row),
+			show: (row: University) => canManage && !row.verified
+		},
+		{
+			label: t("universities.unverify", "Unverify"),
+			icon: XCircle,
+			variant: "destructive",
+			onclick: (row) => toggleVerify(row),
+			show: (row: University) => canManage && row.verified
+		},
+		{
+			label: t("universities.changeStatus", "Change Status"),
+			icon: FileEdit,
+			onclick: (row) => openStatusModal(row),
+			show: () => canManage
+		},
+		{
+			label: t("common.edit", "Edit"),
+			icon: Pencil,
+			onclick: (row) => openEdit(row),
+			show: () => canManage
+		},
+		{
+			label: t("common.delete", "Delete"),
+			icon: Trash2,
+			variant: "destructive",
+			onclick: (row) => confirmDelete(row),
+			show: () => canManage
+		}
+	];
+
+	const bulkActions: BulkAction[] = $derived(canManage
+		? [{ label: t("universities.deleteSelected", "Delete Selected"), icon: Trash2, variant: "destructive", onclick: bulkDelete }]
+		: []);
 
 	let allUniversities = $state<University[]>([]);
 
@@ -144,17 +183,17 @@
 		applyFilters();
 	}
 
-	function openView(uni: University) { viewTarget = uni; showViewModal = true; }
+	function openView(uni: University) { viewTarget = uni; showViewSlideOver = true; }
 
 	function openCreate() {
 		formName = ""; formSlug = ""; formVerified = false;
-		showCreateModal = true;
+		showCreateSlideOver = true;
 	}
 
 	function openEdit(uni: University) {
 		editTarget = uni;
 		formName = uni.name; formSlug = uni.slug; formVerified = uni.status === "active";
-		showEditModal = true;
+		showEditSlideOver = true;
 	}
 
 	async function submitCreate() {
@@ -162,7 +201,7 @@
 		acting = true;
 		try {
 			const result = await universitiesAdminApi.create({ name: formName.trim(), slug: formSlug.trim(), verified: formVerified });
-			if (result.ok) { showCreateModal = false; load(); } else { error = result.error; }
+			if (result.ok) { showCreateSlideOver = false; load(); } else { error = result.error; }
 		} catch { error = t("common.error", "Failed to create"); } finally { acting = false; }
 	}
 
@@ -171,7 +210,7 @@
 		acting = true;
 		try {
 			const result = await universitiesAdminApi.update(editTarget.id, { name: formName.trim(), slug: formSlug.trim(), verified: formVerified });
-			if (result.ok) { showEditModal = false; load(); } else { error = result.error; }
+			if (result.ok) { showEditSlideOver = false; load(); } else { error = result.error; }
 		} catch { error = t("common.error", "Failed to update"); } finally { acting = false; }
 	}
 
@@ -186,13 +225,13 @@
 		} catch { error = t("common.error", "Failed to delete"); } finally { acting = false; }
 	}
 
-	async function bulkDelete() {
-		const ids = Array.from(selectedIds);
-		if (ids.length === 0) return;
+	async function bulkDelete(ids: Set<string>) {
+		const idArr = Array.from(ids);
+		if (idArr.length === 0 || acting) return;
 		acting = true;
 		try {
-			await Promise.all(ids.map((id) => universitiesAdminApi.delete(id)));
-			selectedIds = new Set(); load();
+			await Promise.all(idArr.map((id) => universitiesAdminApi.delete(id)));
+			load();
 		} catch { error = t("common.error", "Failed to delete"); } finally { acting = false; }
 	}
 
@@ -274,32 +313,38 @@
 	</div>
 {/if}
 
-{#if selectedIds.size > 0}
-	<div class="mb-4 flex items-center gap-3 rounded-lg p-3" style="background: var(--color-primary); color: white">
-		<span class="text-sm font-medium">{selectedIds.size} {t("common.selected", "selected")}</span>
-		{#if canManage}
-			<Button variant="ghost" size="sm" onclick={bulkDelete} disabled={acting}>
-				<Trash2 class="mr-1 h-3.5 w-3.5" /> {t("universities.deleteSelected", "Delete Selected")}
-			</Button>
-		{/if}
-	</div>
-{/if}
-
 <Card>
-	<CardHeader><FilterBar filters={filterDefs} onsearch={handleSearch} onclear={handleClear} /></CardHeader>
 	<CardContent>
 		{#if loading}
 			<TableSkeleton rows={8} columns={columns.length} />
 		{:else}
 			<div aria-live="polite">
-				<DataTable {columns} data={universities} selectable={canManage} bind:selectedIds />
+				<DataTable
+					{columns}
+					data={universities}
+					page={currentPage}
+					{pageSize}
+					totalRows={totalItems}
+					{totalPages}
+					onpagechange={(p) => { currentPage = p; }}
+					onpagesizechange={(s) => { pageSize = s; currentPage = 0; }}
+					searchable
+					onsearch={(q) => { searchQuery = q; currentPage = 0; applyFilters(); }}
+					filters={filterDefs}
+					bind:filterValue={filterValues}
+					onfilterapply={() => { currentPage = 0; applyFilters(); }}
+					onfilterclear={() => { currentPage = 0; applyFilters(); }}
+					selectable={canManage}
+					bind:selectedIds
+					actions={rowActions}
+					bulkActionsList={bulkActions}
+				/>
 			</div>
-			<Pagination bind:page={currentPage} {totalPages} {totalItems} bind:pageSize />
 		{/if}
 	</CardContent>
 </Card>
 
-<Modal bind:open={showViewModal} title={t("universities.details", "University Details")} size="default">
+<SlideOver bind:open={showViewSlideOver} title={t("universities.details", "University Details")}>
 	{#if viewTarget}
 		<div class="grid grid-cols-2 gap-4">
 			<div><p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("universities.name", "Name")}</p><p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.name}</p></div>
@@ -309,22 +354,26 @@
 			<div><p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("universities.created", "Created")}</p><p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{new Date(viewTarget.created_at).toLocaleString()}</p></div>
 		</div>
 	{/if}
-	<div class="mt-6 flex justify-end"><Button variant="outline" onclick={() => (showViewModal = false)}>{t("common.close", "Close")}</Button></div>
-</Modal>
+	{#snippet footer()}
+		<div class="flex justify-end"><Button variant="outline" onclick={() => (showViewSlideOver = false)}>{t("common.close", "Close")}</Button></div>
+	{/snippet}
+</SlideOver>
 
-<Modal bind:open={showCreateModal} title={t("universities.create", "Create University")} size="default">
+<SlideOver bind:open={showCreateSlideOver} title={t("universities.create", "Create University")}>
 	<div class="space-y-3">
 		<div><label for="uni-name" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t("universities.name", "Name")}</label><input id="uni-name" type="text" class="w-full rounded-lg border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={formName} /></div>
 		<div><label for="uni-domain" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t("universities.domain_slug", "Domain")}</label><input id="uni-domain" type="text" class="w-full rounded-lg border px-3 py-2 text-sm font-mono" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" placeholder="mit.edu" bind:value={formSlug} /></div>
 		<div class="flex items-center gap-2"><input id="uni-verified" type="checkbox" bind:checked={formVerified} /><label for="uni-verified" class="text-sm">{t("universities.verified", "Verified")}</label></div>
 	</div>
-	<div class="mt-6 flex justify-end gap-2">
-		<Button variant="ghost" onclick={() => (showCreateModal = false)}>{t("common.cancel", "Cancel")}</Button>
-		<Button onclick={submitCreate} disabled={acting || !formName.trim()}>{acting ? t("common.creating", "Creating...") : t("common.create", "Create")}</Button>
-	</div>
-</Modal>
+	{#snippet footer()}
+		<div class="flex justify-end gap-2">
+			<Button variant="outline" onclick={() => (showCreateSlideOver = false)}>{t("common.cancel", "Cancel")}</Button>
+			<Button onclick={submitCreate} disabled={acting || !formName.trim()}>{acting ? t("common.creating", "Creating...") : t("common.create", "Create")}</Button>
+		</div>
+	{/snippet}
+</SlideOver>
 
-<Modal bind:open={showEditModal} title={t("universities.edit", "Edit University")} size="default">
+<SlideOver bind:open={showEditSlideOver} title={t("universities.edit", "Edit University")}>
 	{#if editTarget}
 		<div class="space-y-3">
 			<div><label for="edit-uni-name" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t("universities.name", "Name")}</label><input id="edit-uni-name" type="text" class="w-full rounded-lg border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={formName} /></div>
@@ -332,11 +381,13 @@
 			<div class="flex items-center gap-2"><input id="edit-uni-verified" type="checkbox" bind:checked={formVerified} /><label for="edit-uni-verified" class="text-sm">{t("universities.verified", "Verified")}</label></div>
 		</div>
 	{/if}
-	<div class="mt-6 flex justify-end gap-2">
-		<Button variant="ghost" onclick={() => (showEditModal = false)}>{t("common.cancel", "Cancel")}</Button>
-		<Button onclick={submitEdit} disabled={acting}>{acting ? t("common.saving", "Saving...") : t("common.save", "Save")}</Button>
-	</div>
-</Modal>
+	{#snippet footer()}
+		<div class="flex justify-end gap-2">
+			<Button variant="outline" onclick={() => (showEditSlideOver = false)}>{t("common.cancel", "Cancel")}</Button>
+			<Button onclick={submitEdit} disabled={acting}>{acting ? t("common.saving", "Saving...") : t("common.save", "Save")}</Button>
+		</div>
+	{/snippet}
+</SlideOver>
 
 <Modal bind:open={showDeleteConfirm} title={t("common.confirmDelete", "Confirm Delete")} size="sm">
 	{#if deleteTarget}
@@ -380,22 +431,3 @@
 	</div>
 </Modal>
 
-{#snippet ActionsCell({ value, row }: { value: any; row: University })}
-	<div class="flex items-center gap-1">
-		<Button variant="ghost" size="sm" onclick={() => openView(row)} title={t("common.view", "View")}><Eye class="h-3.5 w-3.5" /></Button>
-		{#if canManage}
-			<Button variant="ghost" size="sm" onclick={() => toggleVerify(row)} title={row.verified ? t("universities.unverify", "Unverify") : t("universities.verify", "Verify")} disabled={acting}>
-				{#if row.verified}
-					<XCircle class="h-3.5 w-3.5" style="color: var(--color-danger)" />
-				{:else}
-					<BadgeCheck class="h-3.5 w-3.5" style="color: var(--color-success)" />
-				{/if}
-			</Button>
-			<Button variant="ghost" size="sm" onclick={() => openStatusModal(row)} title={t("universities.changeStatus", "Change Status")} disabled={acting}>
-				<FileEdit class="h-3.5 w-3.5" />
-			</Button>
-			<Button variant="ghost" size="sm" onclick={() => openEdit(row)} title={t("common.edit", "Edit")}><Pencil class="h-3.5 w-3.5" /></Button>
-			<Button variant="ghost" size="sm" onclick={() => confirmDelete(row)} title={t("common.delete", "Delete")} style="color: var(--color-danger)"><Trash2 class="h-3.5 w-3.5" /></Button>
-		{/if}
-	</div>
-{/snippet}

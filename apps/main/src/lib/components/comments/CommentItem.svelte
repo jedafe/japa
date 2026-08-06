@@ -2,7 +2,7 @@
 	import { ChevronDown, ChevronRight, CornerUpLeft, Pin, ArrowUp, ArrowDown, Pencil, Trash2 } from 'lucide-svelte';
 	import { relativeTime } from '$lib/feed/time';
 	import { api } from '$lib/api/client';
-	import { t } from '$lib/i18n';
+	import { t, i18n } from '$lib/i18n';
 	import type { Comment } from '$lib/types';
 	// Self-import replaces the deprecated <svelte:self> for recursive nesting.
 	import CommentItem from './CommentItem.svelte';
@@ -23,7 +23,7 @@
 	let { comment, contentId, depth, authed, currentUserId, canModerate }: Props = $props();
 
 	const MAX_DEPTH = 3;
-	const time = $derived(relativeTime(comment.created_at));
+	const time = $derived(relativeTime(comment.created_at, new Date(), i18n.locale));
 	const authorLabel = $derived(comment.display_name || comment.username || t('forum.member', 'Member'));
 	const isAuthor = $derived(!!currentUserId && currentUserId === comment.author_user_id);
 	const beyondMaxDepth = $derived(depth >= MAX_DEPTH);

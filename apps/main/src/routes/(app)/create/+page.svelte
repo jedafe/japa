@@ -44,8 +44,11 @@
 		series={data.series}
 		organizations={data.organizations}
 		draft={data.draft}
+		draftTags={data.draftTags}
 		comparisonDetail={data.comparisonDetail}
 		comparisonTypes={data.comparisonTypes}
+		coverMedia={data.coverMedia}
+		draftSeriesId={data.draftSeriesId}
 		user={data.user}
 		{defaultEditor}
 		{maxTags}

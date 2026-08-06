@@ -17,9 +17,11 @@
     onapply?: () => void;
     onclear?: () => void;
   } = $props();
+
+  let accordionValue = $state("");
 </script>
 
-<Accordion.Root type="single" collapsible>
+<Accordion.Root type="single" bind:value={accordionValue}>
   <Accordion.Item value="filters">
     <Accordion.Trigger
       class="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium"

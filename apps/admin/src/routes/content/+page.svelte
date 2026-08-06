@@ -1,18 +1,16 @@
 <script lang="ts">
-	import PageHeader from "$lib/components/layout/page-header.svelte";
-	import { Card, CardContent, CardHeader } from "$lib/components/ui/card";
-	import { DataTable } from "$lib/components/ui/data-table";
-	import { FilterBar } from "$lib/components/ui/filter-bar";
-	import { Badge } from "$lib/components/ui/badge";
-	import { Button } from "$lib/components/ui/button";
+	// /content — migrated to the EntityPage scaffold; read-only moderation list
+	// (content is created by users, not from this page) with Remove/Restore/Feature
+	// state actions driven by a custom `actions` array + page-local confirm Modals.
+	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from "$lib/components/entity";
 	import { Modal } from "$lib/components/ui/modal";
-	import { Select } from "$lib/components/ui/select";
-	import Pagination from "$lib/components/ui/Pagination.svelte";
-	import { TableSkeleton } from "$lib/components/ui/skeleton";
-	import { RefreshCw, Eye, RotateCcw, Trash2, Pencil, Star, Archive } from "lucide-svelte";
+	import { Button } from "$lib/components/ui/button";
 	import { contentAdminApi } from "$lib/api";
 	import { t } from "$lib/stores/i18n.svelte";
 	import { hasPermission } from "$lib/stores/permissions.svelte";
+	import { onMount } from "svelte";
+	import { Eye, Trash2, RotateCcw, Star } from "lucide-svelte";
+	import type { ActionItem, FilterDef } from "$lib/components/ui/data-table";
 
 	type ContentItem = {
 		id: string;
@@ -30,76 +28,18 @@
 		url?: string;
 		slug?: string;
 		body?: string;
+		is_featured?: boolean;
 	};
 
-	let items = $state<ContentItem[]>([]);
-	let currentPage = $state(0);
-	let totalItems = $state(0);
-	let serverTotal = $state(0);
-	let pageSize = $state(25);
-	let loading = $state(true);
-	let error = $state("");
-	let success = $state("");
-	let searchQuery = $state("");
-	let filterValues = $state<Record<string, string>>({});
-
-	// View modal
-	let showViewModal = $state(false);
-	let viewTarget = $state<ContentItem | null>(null);
-
-	// Remove modal
-	let showRemoveModal = $state(false);
-	let removeTarget = $state<ContentItem | null>(null);
-	let removeReason = $state("");
-
-	// Restore modal
-	let showRestoreModal = $state(false);
-	let restoreTarget = $state<ContentItem | null>(null);
-
-	// Edit modal (PATCH /admin/content/{id})
-	let showEditModal = $state(false);
-	let editTarget = $state<ContentItem | null>(null);
-	let editTitle = $state("");
-	let editSlug = $state("");
-	let editStatus = $state("");
-	let editBody = $state("");
-
-	// Feature/Archive state
-	let showArchiveModal = $state(false);
-	let archiveTarget = $state<ContentItem | null>(null);
-
-	// Backend gates content mutations on content.delete (list/restore/delete)
-	const canManageContent = $derived(hasPermission("content.delete"));
-	// PATCH /admin/content/{id} is gated on content.edit
+	// Backend gates content mutations on content.moderate (remove/restore) and
+	// content.edit (feature/unfeature metadata). Content types are admin-configurable
+	// (Section 14) so the Type filter options are fetched from GET /content-types.
+	const canModerate = $derived(hasPermission("content.moderate"));
 	const canEditContent = $derived(hasPermission("content.edit"));
 
-	let selectedIds = $state<Set<string>>(new Set());
-
-	// Content types are admin-configurable (Section 14 — guide categories
-	// can be added at runtime). Fetch from GET /content-types instead of
-	// hardcoding (Rule 16).
-	let contentTypeOptions = $state<{ value: string; label: string }[]>([]);
-
-	$effect(() => {
-		(async () => {
-			const res = await contentAdminApi.listContentTypes();
-			if (res.ok) {
-				contentTypeOptions = res.data.map((ct) => ({
-					value: ct.value,
-					label: ct.label
-				}));
-			}
-		})();
-	});
-
-	function openView(item: ContentItem) {
-		viewTarget = item;
-		showViewModal = true;
-	}
-
-	// Status values are a fixed enum from the contents table CHECK
-	// constraint (draft, in_review, scheduled, published, archived) —
-	// these are schema-defined, not admin-configurable.
+	// ── Filter options ──────────────────────────────────────────────────────
+	// Status values are a fixed enum from the contents table CHECK constraint
+	// (draft, in_review, scheduled, published, archived, removed) — schema-defined.
 	const statusOptions = [
 		{ value: "published", label: t("content.status.published", "Published") },
 		{ value: "draft", label: t("content.status.draft", "Draft") },
@@ -109,310 +49,293 @@
 		{ value: "removed", label: t("content.status.removed", "Removed") }
 	];
 
-	// Build filterDefs dynamically from fetched content types (Rule 16).
-	const filterDefs = $derived([
-		{
-			key: "content_type",
-			label: t("content.type", "Type"),
-			options: contentTypeOptions
-		},
-		{
-			key: "status",
-			label: t("common.status", "Status"),
-			options: statusOptions
-		}
+	// Content types are admin-configurable — fetch from GET /content-types (Rule 16).
+	let contentTypeOptions = $state<{ value: string; label: string }[]>([]);
+	let filterDefs = $state<FilterDef[]>([
+		{ key: "content_type", label: t("content.type", "Type"), options: [] },
+		{ key: "status", label: t("common.status", "Status"), options: statusOptions }
 	]);
 
-	const columns = [
-		{
-			key: "title",
-			label: t("content.column.title", "Title"),
-			sortable: true
-		},
-		{
-			key: "content_type",
-			label: t("content.type", "Type"),
-			sortable: true,
-			render: (v: string) => v ? v.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) : "—"
-		},
-		{
-			key: "status",
-			label: t("common.status", "Status"),
-			sortable: true,
-			render: (v: string) => v ? v.charAt(0).toUpperCase() + v.slice(1) : "—"
-		},
-		{
-			key: "author_display_name",
-			label: t("content.author", "Author"),
-			sortable: true,
-			render: (v: string, row: ContentItem) => v || row.author_username || 'anonymous'
-		},
-		{
-			key: "space_name",
-			label: t("content.space", "Space"),
-			sortable: true,
-			render: (v: string, row: ContentItem) => v || (row.space_id ? row.space_id.substring(0, 8) + "..." : "—")
-		},
-		{
-			key: "view_count",
-			label: t("content.views", "Views"),
-			sortable: true,
-			render: (v: number) => (v ?? 0).toLocaleString()
-		},
-		{
-			key: "created_at",
-			label: t("common.created", "Created"),
-			sortable: true,
-			render: (v: string) => new Date(v).toLocaleDateString()
-		},
-		{ key: "actions", label: t("common.actions", "Actions"),
-			componentSnippet: ContentActionsCell
-		}
-	];
-
-	async function loadItems() {
-		loading = true;
-		error = "";
+	onMount(async () => {
 		try {
-			const params = new URLSearchParams({
-				page: String(currentPage + 1),
-				limit: String(pageSize)
-			});
-			if (searchQuery) params.set("q", searchQuery);
-			if (filterValues.content_type) params.set("type", filterValues.content_type);
-			if (filterValues.status) params.set("status", filterValues.status);
-
-			const result = await contentAdminApi.list(params.toString());
-			if (result.ok) {
-				const d = result.data as any;
-				// API returns null when no items match the filter
-				const allItems = d?.items ?? (Array.isArray(d) ? d : []) ?? [];
-				// Backend doesn't filter by status. Filter client-side:
-				// - If status filter is set, show only that status
-				// - If no status filter, show all except removed
-				if (filterValues.status) {
-					items = allItems.filter((i: ContentItem) => i.status === filterValues.status);
-				} else {
-					items = allItems.filter((i: ContentItem) => i.status !== "removed");
-				}
-				// Use server-side total when available, fallback to client count
-				serverTotal = d?.total ?? allItems.length;
-				totalItems = filterValues.status
-					? items.length
-					: serverTotal;
-			} else {
-				error = result.error ?? t("common.error", "Failed to load content");
+			const res = await contentAdminApi.listContentTypes();
+			if (res.ok) {
+				contentTypeOptions = (res.data as { value: string; label: string }[]).map((ct) => ({
+					value: ct.value,
+					label: ct.label
+				}));
+				filterDefs = filterDefs.map((def) =>
+					def.key === "content_type" ? { ...def, options: contentTypeOptions } : def
+				);
 			}
-		} catch (e) {
-			error = e instanceof Error ? e.message : t("common.error", "Failed to load content");
-		} finally {
-			loading = false;
+		} catch {
+			// Keep empty fallback on failure.
 		}
-	}
-
-	function handleSearch(values: Record<string, string>) {
-		searchQuery = values.search ?? "";
-		filterValues = values;
-		currentPage = 0;
-		loadItems();
-	}
-
-	function handleClear() {
-		searchQuery = "";
-		filterValues = {};
-		currentPage = 0;
-		loadItems();
-	}
-
-	function openRemove(item: ContentItem) {
-		removeTarget = item;
-		removeReason = "";
-		showRemoveModal = true;
-	}
-
-	async function confirmRemove() {
-		if (!removeTarget) return;
-		try {
-			const result = await contentAdminApi.remove(removeTarget.id, { reason: removeReason || undefined });
-			if (result.ok) {
-				showRemoveModal = false;
-				success = t("content.removed", "Content removed successfully");
-				loadItems();
-			} else {
-				error = result.error ?? t("common.error", "Failed to remove content");
-			}
-		} catch (e) {
-			error = e instanceof Error ? e.message : t("common.error", "Failed to remove content");
-		}
-	}
-
-	function openRestore(item: ContentItem) {
-		restoreTarget = item;
-		showRestoreModal = true;
-	}
-
-	async function confirmRestore() {
-		if (!restoreTarget) return;
-		try {
-			const result = await contentAdminApi.restore(restoreTarget.id);
-			if (result.ok) {
-				showRestoreModal = false;
-				success = t("content.restored", "Content restored successfully");
-				loadItems();
-			} else {
-				error = result.error ?? t("common.error", "Failed to restore content");
-			}
-		} catch (e) {
-			error = e instanceof Error ? e.message : t("common.error", "Failed to restore content");
-		}
-	}
-
-	function openEdit(item: ContentItem) {
-		editTarget = item;
-		editTitle = item.title ?? "";
-		editSlug = item.slug ?? "";
-		editStatus = item.status ?? "draft";
-		editBody = item.body ?? "";
-		showEditModal = true;
-	}
-
-	async function confirmEdit() {
-		if (!editTarget) return;
-		const body: Record<string, unknown> = {};
-		if (editTitle.trim() && editTitle.trim() !== editTarget.title) body.title = editTitle.trim();
-		if (editSlug.trim() && editSlug.trim() !== editTarget.slug) body.slug = editSlug.trim();
-		if (editStatus && editStatus !== editTarget.status) body.status = editStatus;
-		if (editBody.trim() && editBody.trim() !== (editTarget.body ?? "")) body.body = editBody.trim();
-		if (Object.keys(body).length === 0) {
-			showEditModal = false;
-			return;
-		}
-		try {
-			const result = await contentAdminApi.update(editTarget.id, body);
-			if (result.ok) {
-				showEditModal = false;
-				success = t("content.updated", "Content updated successfully");
-				loadItems();
-			} else {
-				error = result.error ?? t("common.error", "Failed to update content");
-			}
-		} catch (e) {
-			error = e instanceof Error ? e.message : t("common.error", "Failed to update content");
-		}
-	}
-
-	async function toggleFeature(item: ContentItem) {
-		try {
-			const isFeatured = (item as any).is_featured === true;
-			const result = isFeatured
-				? await contentAdminApi.unfeature(item.id)
-				: await contentAdminApi.feature(item.id);
-			if (result.ok) {
-				success = isFeatured ? t("content.unfeatured", "Content unfeatured") : t("content.featured", "Content featured");
-				loadItems();
-			} else {
-				error = result.error ?? t("common.error", "Failed to toggle feature");
-			}
-		} catch (e) {
-			error = e instanceof Error ? e.message : t("common.error", "Failed to toggle feature");
-		}
-	}
-
-	function openArchive(item: ContentItem) {
-		archiveTarget = item;
-		showArchiveModal = true;
-	}
-
-	async function confirmArchive() {
-		if (!archiveTarget) return;
-		try {
-			const result = await contentAdminApi.archive(archiveTarget.id);
-			if (result.ok) {
-				showArchiveModal = false;
-				success = t("content.archived", "Content archived successfully");
-				loadItems();
-			} else {
-				error = result.error ?? t("common.error", "Failed to archive content");
-			}
-		} catch (e) {
-			error = e instanceof Error ? e.message : t("common.error", "Failed to archive content");
-		}
-	}
-
-	// Load initial data on mount
-	$effect(() => {
-		loadItems();
 	});
 
+	// ── Bulk remove ───── EntityPage auto-reloads + clears selection after a bulk action handler completes.
+	let entityController = $state<EntityPageController | undefined>(undefined);
+	let pageError = $state("");
 	let bulkRemoving = $state(false);
-	async function bulkRemove() {
-		const ids = Array.from(selectedIds);
-		if (ids.length === 0) return;
+
+	async function bulkRemove(ids: Set<string>) {
+		const idArr = Array.from(ids);
+		if (idArr.length === 0) return;
+		if (bulkRemoving) return; // in-flight guard
 		bulkRemoving = true;
-		error = "";
+		pageError = "";
 		try {
-			await Promise.all(ids.map((id) => contentAdminApi.remove(id)));
-			selectedIds = new Set();
-			success = t("content.removed", "Content removed successfully");
-			loadItems();
-		} catch {
-			error = t("common.error", "Failed to remove content");
+			await Promise.all(idArr.map((id) => contentAdminApi.remove(id)));
+		} catch (e) {
+			pageError = e instanceof Error ? e.message : t("common.error", "Failed to remove content");
 		} finally {
 			bulkRemoving = false;
 		}
 	}
 
+	// ── State-action confirmation modals ────────────────────────────────────
+	// EntityPage's confirm Modal only covers default delete; state actions keep
+	// page-local Modals with richer copy, confirm calls API + controller.reload().
+	let acting = $state(false);
+	let actionTarget = $state<ContentItem | null>(null);
+
+	let showRemoveModal = $state(false);
+	let removeReason = $state("");
+	let showRestoreModal = $state(false);
+
+	function openRemove(item: ContentItem) {
+		actionTarget = item;
+		removeReason = "";
+		showRemoveModal = true;
+	}
+
+	function openRestore(item: ContentItem) {
+		actionTarget = item;
+		showRestoreModal = true;
+	}
+
+	async function confirmRemove() {
+		if (!actionTarget) return;
+		acting = true;
+		try {
+			const result = await contentAdminApi.remove(actionTarget.id, { reason: removeReason || undefined });
+			if (result.ok) {
+				showRemoveModal = false;
+				entityController?.reload();
+			} else {
+				pageError = result.error ?? t("common.error", "Failed to remove content");
+			}
+		} catch (e) {
+			pageError = e instanceof Error ? e.message : t("common.error", "Failed to remove content");
+		} finally {
+			acting = false;
+		}
+	}
+
+	async function confirmRestore() {
+		if (!actionTarget) return;
+		acting = true;
+		try {
+			const result = await contentAdminApi.restore(actionTarget.id);
+			if (result.ok) {
+				showRestoreModal = false;
+				entityController?.reload();
+			} else {
+				pageError = result.error ?? t("common.error", "Failed to restore content");
+			}
+		} catch (e) {
+			pageError = e instanceof Error ? e.message : t("common.error", "Failed to restore content");
+		} finally {
+			acting = false;
+		}
+	}
+
+	async function toggleFeature(item: ContentItem) {
+		acting = true;
+		try {
+			const isFeatured = item.is_featured === true;
+			const result = isFeatured
+				? await contentAdminApi.unfeature(item.id)
+				: await contentAdminApi.feature(item.id);
+			if (result.ok) {
+				entityController?.reload();
+			} else {
+				pageError = result.error ?? t("common.error", "Failed to toggle feature");
+			}
+		} catch (e) {
+			pageError = e instanceof Error ? e.message : t("common.error", "Failed to toggle feature");
+		} finally {
+			acting = false;
+		}
+	}
+
+	// ── Row actions ─────────────────────────────────────────────────────────
+	// Custom actions replace defaults, so View is included explicitly. Remove/Restore
+	// are gated by content.moderate; Feature/Unfeature by content.edit (blog content only).
+	const rowActions = $derived.by<ActionItem[]>(() => {
+		const acts: ActionItem[] = [
+			{ label: t("common.view", "View"), icon: Eye, onclick: (_row, ctx) => ctx?.openView(_row) }
+		];
+		if (canEditContent) {
+			acts.push({
+				label: t("content.feature", "Feature"),
+				icon: Star,
+				onclick: (row: ContentItem) => toggleFeature(row),
+				show: (row: ContentItem) => row.content_type === "blog_post" && row.is_featured !== true
+			});
+			acts.push({
+				label: t("content.unfeature", "Unfeature"),
+				icon: Star,
+				onclick: (row: ContentItem) => toggleFeature(row),
+				show: (row: ContentItem) => row.content_type === "blog_post" && row.is_featured === true
+			});
+		}
+		if (canModerate) {
+			acts.push({
+				label: t("content.remove", "Remove"),
+				icon: Trash2,
+				variant: "destructive",
+				onclick: openRemove,
+				show: (row: ContentItem) => row.status !== "removed" && !row.removed_at
+			});
+			acts.push({
+				label: t("content.restore", "Restore"),
+				icon: RotateCcw,
+				onclick: openRestore,
+				show: (row: ContentItem) => row.status === "removed" || !!row.removed_at
+			});
+		}
+		return acts;
+	});
+
+	// `fields` is required by EntityPageConfig even on read-only pages (used to seed
+	// the edit form); this page is read-only so the form is never opened.
+	const fields: FieldDef[] = [
+		{ key: "title", label: t("content.title", "Title"), type: "text" },
+		{ key: "slug", label: t("content.slug", "Slug"), type: "text" },
+		{ key: "status", label: t("common.status", "Status"), type: "text" },
+		{ key: "body", label: t("content.body", "Body"), type: "textarea" }
+	];
+
+	// Config built as a $derived so filterDefs updates (loaded on mount) propagate.
+	const config = $derived<EntityPageConfig>({
+		title: t("content.all", "All Content"),
+		description: t("content.manage", "Manage all platform content"),
+		readonly: true,
+		pageSize: 25,
+		columns: [
+			{ key: "title", label: t("content.column.title", "Title"), sortable: true },
+			{
+				key: "content_type",
+				label: t("content.type", "Type"),
+				sortable: true,
+				render: (v: string) => (v ? v.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()) : "—")
+			},
+			{
+				key: "author_display_name",
+				label: t("content.author", "Author"),
+				sortable: true,
+				render: (v: string, row: ContentItem) => v || row.author_username || "anonymous"
+			},
+			{
+				key: "space_name",
+				label: t("content.space", "Space"),
+				sortable: true,
+				render: (v: string, row: ContentItem) =>
+					v || (row.space_id ? row.space_id.substring(0, 8) + "..." : "—")
+			},
+			{
+				key: "status",
+				label: t("common.status", "Status"),
+				sortable: true,
+				render: (v: string) => {
+					if (!v) return "—";
+					const colors =
+						v === "published"
+							? "bg-success/15 text-success dark:text-success"
+							: v === "removed"
+								? "bg-danger/15 text-danger dark:text-danger"
+								: v === "archived"
+									? "bg-muted/30 text-muted dark:text-muted"
+									: v === "in_review"
+										? "bg-warning/15 text-warning dark:text-warning"
+										: "bg-info/15 text-info dark:text-info";
+					return `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium ${colors}">${v.charAt(0).toUpperCase() + v.slice(1)}</span>`;
+				}
+			},
+			{
+				key: "view_count",
+				label: t("content.views", "Views"),
+				sortable: true,
+				render: (v: number) => (v ?? 0).toLocaleString()
+			},
+			{
+				key: "created_at",
+				label: t("common.created", "Created"),
+				sortable: true,
+				render: (v: string) => new Date(v).toLocaleDateString()
+			}
+		],
+		filters: filterDefs,
+		actions: rowActions,
+		bulkActions: canModerate
+			? [
+					{
+						label: t("content.remove_selected", "Remove Selected"),
+						icon: Trash2,
+						variant: "destructive",
+						onclick: bulkRemove
+					}
+				]
+			: undefined,
+		fields,
+		load: async ({ page, pageSize, q, filter }) => {
+			const params = new URLSearchParams({
+				page: String(page + 1),
+				limit: String(pageSize)
+			});
+			if (q) params.set("q", q);
+			if (filter.content_type) params.set("type", filter.content_type);
+			if (filter.status) params.set("status", filter.status);
+			const result = await contentAdminApi.list(params.toString());
+			if (result.ok) {
+				const d = result.data as any;
+				// API returns null when no items match the filter.
+				const allItems = d?.items ?? (Array.isArray(d) ? d : []) ?? [];
+				return {
+					data: allItems as ContentItem[],
+					total: d?.total ?? allItems.length,
+					totalPages: d?.total_pages ?? Math.max(1, Math.ceil((d?.total ?? allItems.length) / pageSize))
+				};
+			}
+			throw new Error(result.error ?? t("common.error", "Failed to load content"));
+		},
+		viewSnippet: ContentView
+	});
 </script>
 
 <svelte:head>
 	<title>{t("content.title", "Content")} — JapaConnect Admin</title>
 </svelte:head>
 
-<PageHeader
-	title={t("content.all", "All Content")}
-	description={t("content.manage", "Manage all platform content")}
-	actions={[
-		{ label: t("common.refresh", "Refresh"), icon: RefreshCw, variant: "ghost", onclick: loadItems }
-	]}
-/>
-
-{#if error}
-	<div class="mb-4 rounded-lg p-3 text-sm" style="background: color-mix(in srgb, var(--color-danger) 10%, transparent); color: var(--color-danger)">
-		{error}
-	</div>
-{/if}
-{#if success}
-	<div class="mb-4 rounded-lg p-3 text-sm" style="background: color-mix(in srgb, var(--color-success) 10%, transparent); color: var(--color-success)">
-		{success}
+{#if pageError}
+	<div
+		class="mb-4 rounded-lg p-3 text-sm"
+		style="background: color-mix(in srgb, var(--color-danger) 10%, transparent); color: var(--color-danger)"
+	>
+		{pageError}
 	</div>
 {/if}
 
-<Card>
-	<CardHeader>
-		<FilterBar filters={filterDefs} bind:value={filterValues} onsearch={handleSearch} onclear={handleClear} />
-	</CardHeader>
-	<CardContent>
-		{#if loading}
-			<TableSkeleton rows={8} columns={columns.length} />
-		{:else}
-			<DataTable {columns} data={items} selectable bind:selectedIds emptyMessage={t("content.empty", "No content found")}>
-				{#snippet bulkActions()}
-					<Button variant="destructive" size="sm" onclick={bulkRemove} disabled={bulkRemoving}>
-						<Trash2 class="mr-1 h-3.5 w-3.5" />
-						{bulkRemoving ? t("common.removing", "Removing...") : `${t("content.remove_selected", "Remove Selected")} (${selectedIds.size})`}
-					</Button>
-				{/snippet}
-			</DataTable>
-			<Pagination bind:page={currentPage} totalPages={Math.ceil(totalItems / pageSize)} {totalItems} bind:pageSize />
-		{/if}
-	</CardContent>
-</Card>
+<EntityPage {config} bind:controller={entityController} />
 
-<!-- Remove Modal -->
+<!-- ── State-action confirmation modals ─────────────────────────────────── -->
+
+<!-- Remove (with optional reason) -->
 <Modal bind:open={showRemoveModal} title={t("content.remove_title", "Remove Content")}>
-	{#if removeTarget}
+	{#if actionTarget}
 		<p class="mb-2 text-sm" style="color: var(--color-foreground)">
-			{t("content.remove_confirm", "Remove this content?")} <strong>{removeTarget.title || "Untitled"}</strong>
+			{t("content.remove_confirm", "Remove this content?")} <strong>{actionTarget.title || "Untitled"}</strong>
 		</p>
 		<textarea
 			class="w-full rounded-lg border p-3 text-sm"
@@ -423,150 +346,76 @@
 		></textarea>
 	{/if}
 	<div class="mt-4 flex justify-end gap-2">
-		<Button variant="ghost" onclick={() => showRemoveModal = false}>{t("common.cancel", "Cancel")}</Button>
-		<Button variant="destructive" onclick={confirmRemove}>{t("content.remove", "Remove")}</Button>
+		<Button variant="ghost" onclick={() => (showRemoveModal = false)}>{t("common.cancel", "Cancel")}</Button>
+		<Button variant="destructive" onclick={confirmRemove} disabled={acting}>{t("content.remove", "Remove")}</Button>
 	</div>
 </Modal>
 
-<!-- Restore Modal -->
+<!-- Restore -->
 <Modal bind:open={showRestoreModal} title={t("content.restore_title", "Restore Content")}>
-	{#if restoreTarget}
+	{#if actionTarget}
 		<p class="mb-2 text-sm" style="color: var(--color-foreground)">
-			{t("content.restore_confirm", "Restore this content?")} <strong>{restoreTarget.title || "Untitled"}</strong>
+			{t("content.restore_confirm", "Restore this content?")} <strong>{actionTarget.title || "Untitled"}</strong>
 		</p>
 	{/if}
 	<div class="mt-4 flex justify-end gap-2">
-		<Button variant="ghost" onclick={() => showRestoreModal = false}>{t("common.cancel", "Cancel")}</Button>
-		<Button variant="default" onclick={confirmRestore}>{t("content.restore", "Restore")}</Button>
+		<Button variant="ghost" onclick={() => (showRestoreModal = false)}>{t("common.cancel", "Cancel")}</Button>
+		<Button variant="default" onclick={confirmRestore} disabled={acting}>{t("content.restore", "Restore")}</Button>
 	</div>
 </Modal>
 
-<!-- View Modal -->
-<Modal bind:open={showViewModal} title={t("content.details", "Content Details")} size="lg">
-	{#if viewTarget}
-		<div class="space-y-4">
-			<div class="grid grid-cols-2 gap-4">
-				<div>
-					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("content.column.title", "Title")}</p>
-					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.title || "Untitled"}</p>
-				</div>
-				<div>
-					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("content.type", "Type")}</p>
-					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.content_type ? viewTarget.content_type.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) : "—"}</p>
-				</div>
-				<div>
-					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("content.author", "Author")}</p>
-					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.author_id ? viewTarget.author_id.substring(0, 8) + "..." : "—"}</p>
-				</div>
-				<div>
-					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("common.status", "Status")}</p>
-					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.status ? viewTarget.status.charAt(0).toUpperCase() + viewTarget.status.slice(1) : "—"}</p>
-				</div>
-				<div>
-					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("content.views", "Views")}</p>
-					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{(viewTarget.view_count ?? 0).toLocaleString()}</p>
-				</div>
-				<div>
-					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("common.created", "Created")}</p>
-					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{new Date(viewTarget.created_at).toLocaleString()}</p>
-				</div>
-				{#if viewTarget.slug}
-					<div class="col-span-2">
-						<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("content.slug", "Slug")}</p>
-						<p class="mt-1 text-sm font-mono" style="color: var(--color-foreground)">{viewTarget.slug}</p>
-					</div>
-				{/if}
-				{#if viewTarget.body}
-					<div class="col-span-2">
-						<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("content.body", "Body")}</p>
-						<p class="mt-1 text-sm" style="color: var(--color-foreground)">{viewTarget.body.substring(0, 200)}{viewTarget.body.length > 200 ? "..." : ""}</p>
-					</div>
-				{/if}
+<!-- ── Snippets ─────────────────────────────────────────────────────────── -->
+
+<!-- View slide-over body (mirrors the legacy view modal) -->
+{#snippet ContentView({ row }: { row: ContentItem })}
+	<div class="space-y-4">
+		<div class="grid grid-cols-2 gap-4">
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("content.column.title", "Title")}</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.title || "Untitled"}</p>
 			</div>
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("content.type", "Type")}</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.content_type ? row.content_type.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()) : "—"}</p>
+			</div>
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("content.author", "Author")}</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.author_display_name || row.author_username || (row.author_id ? row.author_id.substring(0, 8) + "..." : "—")}</p>
+			</div>
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("content.space", "Space")}</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.space_name || (row.space_id ? row.space_id.substring(0, 8) + "..." : "—")}</p>
+			</div>
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("common.status", "Status")}</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.status ? row.status.charAt(0).toUpperCase() + row.status.slice(1) : "—"}</p>
+			</div>
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("content.views", "Views")}</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{(row.view_count ?? 0).toLocaleString()}</p>
+			</div>
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("common.created", "Created")}</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{new Date(row.created_at).toLocaleString()}</p>
+			</div>
+			{#if row.removed_at}
+				<div>
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("content.removed_at", "Removed")}</p>
+					<p class="mt-1 text-sm font-medium" style="color: var(--color-danger)">{new Date(row.removed_at).toLocaleString()}</p>
+				</div>
+			{/if}
+			{#if row.slug}
+				<div class="col-span-2">
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("content.slug", "Slug")}</p>
+					<p class="mt-1 text-sm font-mono" style="color: var(--color-foreground)">{row.slug}</p>
+				</div>
+			{/if}
+			{#if row.body}
+				<div class="col-span-2">
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("content.body", "Body")}</p>
+					<p class="mt-1 text-sm" style="color: var(--color-foreground)">{row.body.substring(0, 200)}{row.body.length > 200 ? "..." : ""}</p>
+				</div>
+			{/if}
 		</div>
-	{/if}
-	<div class="mt-6 flex justify-end">
-		<Button variant="outline" onclick={() => (showViewModal = false)}>{t("common.close", "Close")}</Button>
-	</div>
-</Modal>
-
-<!-- Edit Modal -->
-<Modal bind:open={showEditModal} title={t("content.edit_title", "Edit Content")}>
-	{#if editTarget}
-		<div class="space-y-4">
-			<div>
-				<label class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)" for="edit-title">{t("content.title", "Title")}</label>
-				<input id="edit-title" class="mt-1 w-full rounded-lg border p-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={editTitle} />
-			</div>
-			<div>
-				<label class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)" for="edit-slug">{t("content.slug", "Slug")}</label>
-				<input id="edit-slug" class="mt-1 w-full rounded-lg border p-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={editSlug} />
-			</div>
-			<div>
-				<label class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)" for="edit-status">{t("common.status", "Status")}</label>
-				<Select
-					options={[
-						{ value: "published", label: t("content.status.published", "Published") },
-						{ value: "draft", label: t("content.status.draft", "Draft") },
-						{ value: "removed", label: t("content.status.removed", "Removed") },
-						{ value: "archived", label: t("content.status.archived", "Archived") }
-					]}
-					value={editStatus}
-					onchange={(val: string) => (editStatus = val)}
-				/>
-			</div>
-			<div>
-				<label class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)" for="edit-body">{t("content.body", "Body")}</label>
-				<textarea id="edit-body" class="mt-1 w-full rounded-lg border p-3 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" rows="6" bind:value={editBody}></textarea>
-			</div>
-		</div>
-	{/if}
-	<div class="mt-4 flex justify-end gap-2">
-		<Button variant="ghost" onclick={() => (showEditModal = false)}>{t("common.cancel", "Cancel")}</Button>
-		<Button variant="default" onclick={confirmEdit}>{t("common.save", "Save")}</Button>
-	</div>
-</Modal>
-
-<!-- Archive Modal -->
-<Modal bind:open={showArchiveModal} title={t("content.archive_title", "Archive Content")} size="sm">
-	{#if archiveTarget}
-		<p class="text-sm" style="color: var(--color-foreground)">
-			{t("content.archive_confirm", "Archive this content?")} <strong>{archiveTarget.title || "Untitled"}</strong>
-		</p>
-	{/if}
-	<div class="mt-4 flex justify-end gap-2">
-		<Button variant="ghost" onclick={() => showArchiveModal = false}>{t("common.cancel", "Cancel")}</Button>
-		<Button variant="default" onclick={confirmArchive}>{t("content.archive", "Archive")}</Button>
-	</div>
-</Modal>
-
-<!-- ContentActionsCell -->
-{#snippet ContentActionsCell({ value, row }: { value: any; row: ContentItem })}
-	<div class="flex items-center gap-1 whitespace-nowrap">
-		<button class="inline-flex items-center justify-center rounded-md p-1.5 hover:bg-black/5 dark:hover:bg-white/5" onclick={() => openView(row)} title={t("common.view", "View")}>
-			<Eye class="h-4 w-4" />
-		</button>
-		<button class="inline-flex items-center justify-center rounded-md p-1.5 hover:bg-black/5 dark:hover:bg-white/5" onclick={() => openEdit(row)} title={t("common.edit", "Edit")}>
-			<Pencil class="h-4 w-4" />
-		</button>
-		{#if canEditContent && row.content_type === "blog_post"}
-			<button class="inline-flex items-center justify-center rounded-md p-1.5 hover:bg-black/5 dark:hover:bg-white/5" onclick={() => toggleFeature(row)} title={t("content.feature", "Feature")} style="color: var(--color-warning)">
-				<Star class="h-4 w-4" />
-			</button>
-		{/if}
-		{#if canManageContent && row.status !== "removed" && row.status !== "archived"}
-			<button class="inline-flex items-center justify-center rounded-md p-1.5 hover:bg-black/5 dark:hover:bg-white/5" onclick={() => openArchive(row)} title={t("content.archive", "Archive")}>
-				<Archive class="h-4 w-4" />
-			</button>
-		{/if}
-		{#if row.status === "removed" || !!row.removed_at}
-			<button class="inline-flex items-center justify-center rounded-md p-1.5 hover:bg-black/5 dark:hover:bg-white/5" onclick={() => openRestore(row)} style="color: var(--color-success)" title={t("content.restore", "Restore")}>
-				<RotateCcw class="h-4 w-4" />
-			</button>
-		{:else}
-			<button class="inline-flex items-center justify-center rounded-md p-1.5 hover:bg-black/5 dark:hover:bg-white/5" onclick={() => openRemove(row)} style="color: var(--color-danger)" title={t("content.remove", "Remove")}>
-				<Trash2 class="h-4 w-4" />
-			</button>
-		{/if}
 	</div>
 {/snippet}

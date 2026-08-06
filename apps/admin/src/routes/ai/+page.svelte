@@ -2,8 +2,10 @@
 	import { aiApi, aiAdminApi, aiModelsAdminApi, type HitlReview, type GenerateResult, type AiTool, type AiUsageSummary, type AiToolUsageStats } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { Modal } from '$lib/components/ui/modal';
+	import { SlideOver } from '$lib/components/ui/slide-over';
 	import { Button } from '$lib/components/ui/button';
 	import { DataTable } from '$lib/components/ui/data-table';
+	import type { ActionItem } from '$lib/components/ui/data-table';
 	import { Loader2, Copy, Check, Clock, CheckCircle2, XCircle, Eye, Sparkles, AlertTriangle, Wrench, BarChart3, Activity, Settings, Trash2 } from 'lucide-svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { Select } from '$lib/components/ui/select';
@@ -57,8 +59,8 @@
 	let toolsLoading = $state(false);
 	let toolsError = $state('');
 
-	// Tool edit modal
-	let showToolModal = $state(false);
+	// Tool edit slide-over
+	let showToolSlideOver = $state(false);
 	let editingTool = $state<AiTool | null>(null);
 	let toolName = $state('');
 	let toolDescription = $state('');
@@ -101,16 +103,23 @@
 		{ key: 'content', label: t('ai.content'), render: (v: string) => `<span class="text-xs" style="color: var(--color-muted)">${truncate(v, 80)}</span>` },
 		{ key: 'content_type', label: t('ai.type'), render: (v: string) => `<span class="inline-block rounded-full bg-info/15 px-2 py-0.5 text-xs text-info dark:text-info">${v}</span>` },
 		{ key: 'source', label: t('ai.source'), render: (v: string) => `<span class="text-xs">${v}</span>` },
-		{ key: 'created_at', label: t('ai.created'), render: (v: string) => `<span class="text-xs" style="color: var(--color-muted)">${new Date(v).toLocaleDateString()}</span>` },
-		{ key: 'actions', label: t('ai.actions'), class: 'w-24', componentSnippet: HitlActionsCell }
+		{ key: 'created_at', label: t('ai.created'), render: (v: string) => `<span class="text-xs" style="color: var(--color-muted)">${new Date(v).toLocaleDateString()}</span>` }
+	];
+
+	const hitlRowActions: ActionItem[] = [
+		{ label: t('ai.review'), icon: Eye, onclick: (row: HitlReview) => openReview(row) }
 	];
 
 	const toolsMgmtColumns = [
 		{ key: 'name', label: t('ai.tools.name'), sortable: true },
 		{ key: 'description', label: t('ai.tools.description'), render: (v: string) => `<span class="text-xs" style="color: var(--color-muted)">${v || '—'}</span>` },
 		{ key: 'is_enabled', label: t('ai.tools.status'), render: (v: boolean) => `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium ${v ? 'bg-success/15 text-success dark:text-success' : 'bg-muted/15 text-muted dark:text-muted'}">${v ? t('ai.tools.enabled') : t('ai.tools.disabled')}</span>` },
-		{ key: 'created_at', label: t('ai.tools.created'), render: (v: string) => `<span class="text-xs" style="color: var(--color-muted)">${new Date(v).toLocaleDateString()}</span>` },
-		{ key: 'actions', label: t('common.actions'), class: 'w-32', componentSnippet: ToolMgmtActionsCell }
+		{ key: 'created_at', label: t('ai.tools.created'), render: (v: string) => `<span class="text-xs" style="color: var(--color-muted)">${new Date(v).toLocaleDateString()}</span>` }
+	];
+
+	const toolsMgmtRowActions: ActionItem[] = [
+		{ label: t('common.configure', 'Configure'), icon: Settings, onclick: (row: AiTool) => openEditTool(row) },
+		{ label: t('common.delete', 'Delete'), icon: Trash2, variant: 'destructive', onclick: (row: AiTool) => confirmDeleteTool(row) }
 	];
 
 	const modelUsageColumns = [
@@ -309,7 +318,7 @@
 		toolName = tool.name;
 		toolDescription = tool.description || '';
 		toolEnabled = tool.is_enabled;
-		showToolModal = true;
+		showToolSlideOver = true;
 	}
 
 	async function saveTool() {
@@ -323,7 +332,7 @@
 				is_enabled: toolEnabled
 			});
 			if (result.ok) {
-				showToolModal = false;
+				showToolSlideOver = false;
 				loadTools();
 			} else {
 				toolsError = result.error;
@@ -625,6 +634,7 @@
 				searchable={true}
 				onsearch={(q: string) => { hitlSearchQuery = q; }}
 				pageSize={10}
+				actions={hitlRowActions}
 				emptyMessage={t('ai.no_pending')}
 			/>
 
@@ -664,6 +674,7 @@
 				searchable={true}
 				onsearch={(q: string) => { toolsSearchQuery = q; }}
 				pageSize={25}
+				actions={toolsMgmtRowActions}
 				emptyMessage={t('ai.tools.empty')}
 			/>
 		{/if}
@@ -828,8 +839,8 @@
 	{/if}
 </Modal>
 
-<!-- ═══ Tool Edit Modal ═══ -->
-<Modal bind:open={showToolModal} title={t('ai.tools.configure')} size="lg">
+<!-- ═══ Tool Edit SlideOver ═══ -->
+<SlideOver bind:open={showToolSlideOver} title={t('ai.tools.configure')}>
 	<div class="space-y-4">
 		<div>
 			<label for="tool-name" class="mb-1 block text-sm font-medium text-foreground-alt">{t('ai.tools.name')}</label>
@@ -854,13 +865,15 @@
 			<span class="text-sm font-medium text-foreground-alt">{t('ai.tools.enabled')}</span>
 		</div>
 	</div>
-	<div class="flex justify-end gap-3 pt-4">
-		<Button variant="outline" onclick={() => showToolModal = false}>{t('ai.cancel')}</Button>
-		<Button onclick={saveTool} disabled={toolSaving}>
-			{toolSaving ? 'Saving...' : 'Save Changes'}
-		</Button>
-	</div>
-</Modal>
+	{#snippet footer()}
+		<div class="flex justify-end gap-3 pt-4">
+			<Button variant="outline" onclick={() => showToolSlideOver = false}>{t('ai.cancel')}</Button>
+			<Button onclick={saveTool} disabled={toolSaving}>
+				{toolSaving ? 'Saving...' : 'Save Changes'}
+			</Button>
+		</div>
+	{/snippet}
+</SlideOver>
 
 <!-- ═══ Tool Delete Confirmation Modal ═══ -->
 <Modal bind:open={showDeleteConfirm} title={t('ai.tools.delete_title', 'Delete Tool')}>
@@ -891,21 +904,3 @@
 		</div>
 	{/if}
 </Modal>
-
-{#snippet HitlActionsCell({ row }: { value: any; row: HitlReview })}
-	<Button variant="ghost" size="sm" onclick={() => openReview(row)} style="color: var(--color-info)">
-		<Eye class="h-3.5 w-3.5" />
-		{t('ai.review')}
-	</Button>
-{/snippet}
-
-{#snippet ToolMgmtActionsCell({ row }: { value: any; row: AiTool })}
-	<div class="flex items-center gap-1">
-		<Button variant="ghost" size="sm" onclick={() => openEditTool(row)} style="color: var(--color-primary)" aria-label={t('common.configure', 'Configure')}>
-			<Settings class="h-3.5 w-3.5" />
-		</Button>
-		<Button variant="ghost" size="sm" onclick={() => confirmDeleteTool(row)} style="color: var(--color-danger)" aria-label={t('common.delete', 'Delete')}>
-			<Trash2 class="h-3.5 w-3.5" />
-		</Button>
-	</div>
-{/snippet}

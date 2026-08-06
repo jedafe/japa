@@ -1,10 +1,11 @@
 <script lang="ts">
 	import PageHeader from "$lib/components/layout/page-header.svelte";
 	import { DataTable } from "$lib/components/ui/data-table";
-	import { FilterBar } from "$lib/components/ui/filter-bar";
 	import { Button } from "$lib/components/ui/button";
 	import { Modal } from "$lib/components/ui/modal";
+	import { SlideOver } from "$lib/components/ui/slide-over";
 	import { TableSkeleton } from "$lib/components/ui/skeleton";
+	import type { ActionItem } from "$lib/components/ui/data-table";
 	import { Check, Eye, RefreshCw, X } from "lucide-svelte";
 	import { universityAdminApi } from "$lib/api";
 	import { t } from "$lib/stores/i18n.svelte";
@@ -40,7 +41,7 @@
 
 	let showApproveModal = $state(false);
 	let showRejectModal = $state(false);
-	let showViewModal = $state(false);
+	let showViewSlideOver = $state(false);
 	let target = $state<PendingTrack | null>(null);
 	let actionLoading = $state(false);
 	let rejectReason = $state("");
@@ -80,8 +81,24 @@
 		{ key: "category", label: t("university.category", "Category"), render: (v: string | null) => `<span class="text-xs" style="color: var(--color-muted)">${v ?? "—"}</span>` },
 		{ key: "language", label: t("university.language", "Language"), sortable: true, render: (v: string) => `<span class="text-xs">${v}</span>` },
 		{ key: "total_enrolled", label: t("university.enrolled", "Enrolled"), sortable: true, render: (v: number) => `<span class="text-xs">${v}</span>` },
-		{ key: "created_at", label: t("common.submitted", "Submitted"), sortable: true, render: (v: string) => `<span class="text-xs" style="color: var(--color-muted)">${new Date(v).toLocaleDateString()}</span>` },
-		{ key: "actions", label: t("common.actions", "Actions"), class: "w-32", componentSnippet: TrackActionsCell }
+		{ key: "created_at", label: t("common.submitted", "Submitted"), sortable: true, render: (v: string) => `<span class="text-xs" style="color: var(--color-muted)">${new Date(v).toLocaleDateString()}</span>` }
+	];
+
+	const rowActions: ActionItem[] = [
+		{ label: t("common.view", "View"), icon: Eye, onclick: (row) => openView(row) },
+		{
+			label: t("common.approve", "Approve"),
+			icon: Check,
+			onclick: (row) => openApprove(row),
+			show: () => canApprove
+		},
+		{
+			label: t("common.reject", "Reject"),
+			icon: X,
+			variant: "destructive",
+			onclick: (row) => openReject(row),
+			show: () => canApprove
+		}
 	];
 
 	const filtered = $derived(
@@ -133,7 +150,7 @@
 
 	function openApprove(tr: PendingTrack) { target = tr; showApproveModal = true; }
 	function openReject(tr: PendingTrack) { target = tr; rejectReason = ""; showRejectModal = true; }
-	function openView(tr: PendingTrack) { target = tr; showViewModal = true; }
+	function openView(tr: PendingTrack) { target = tr; showViewSlideOver = true; }
 
 	async function doApprove() {
 		if (!target) return;
@@ -182,6 +199,10 @@
 <PageHeader
 	title={t("university.tracks_title", "University Track Approvals")}
 	description={t("university.tracks_desc", "Review and approve instructor-submitted tracks for the Japa University marketplace")}
+	actions={[
+		{ label: showAllTracks ? t("university.showPending", "Show Pending Only") : t("university.showAll", "Show All Tracks"), variant: "outline" as const, onclick: toggleAllTracks },
+		{ label: t("common.refresh", "Refresh"), icon: RefreshCw, variant: "ghost" as const, onclick: load }
+	]}
 />
 
 {#if errorMessage}
@@ -196,23 +217,6 @@
 	</div>
 {/if}
 
-<div class="mb-4 flex items-center justify-between">
-	<Button variant="outline" size="sm" onclick={toggleAllTracks}>
-		{showAllTracks ? t("university.showPending", "Show Pending Only") : t("university.showAll", "Show All Tracks")}
-	</Button>
-	<Button variant="outline" size="sm" onclick={load}>
-		<RefreshCw class="h-3.5 w-3.5" />
-		{t("common.refresh", "Refresh")}
-	</Button>
-</div>
-
-<FilterBar
-	filters={activeFilters}
-	searchPlaceholder={t("university.search_tracks", "Search tracks...")}
-	onsearch={handleSearch}
-	onclear={handleClear}
-/>
-
 <div class="mt-4">
 {#if loading}
 	<TableSkeleton rows={5} />
@@ -222,12 +226,19 @@
 		data={filtered}
 		pageSize={25}
 		emptyMessage={t("university.no_pending_tracks", "No tracks pending approval")}
+		searchable
+		onsearch={(q) => { searchQuery = q; load(); }}
+		filters={activeFilters}
+		bind:filterValue={filterValues}
+		onfilterapply={() => { load(); }}
+		onfilterclear={() => { load(); }}
+		actions={rowActions}
 	/>
 {/if}
 </div>
 
-<!-- View Modal -->
-<Modal open={showViewModal} onclose={() => { showViewModal = false; }} title={t("university.track_details", "Track Details")}>
+<!-- View SlideOver -->
+<SlideOver bind:open={showViewSlideOver} title={t("university.track_details", "Track Details")}>
 	{#if target}
 		<div class="space-y-3">
 			<div><p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("university.track_title", "Track")}</p><p class="mt-1 text-sm font-medium">{target.title}</p></div>
@@ -245,10 +256,12 @@
 			<div><p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("university.enrolled", "Enrolled")}</p><p class="mt-1 text-sm">{target.total_enrolled}</p></div>
 		</div>
 	{/if}
-	<div class="mt-6 flex justify-end">
-		<Button variant="outline" onclick={() => { showViewModal = false; }}>{t("common.close", "Close")}</Button>
-	</div>
-</Modal>
+	{#snippet footer()}
+		<div class="flex justify-end">
+			<Button variant="outline" onclick={() => { showViewSlideOver = false; }}>{t("common.close", "Close")}</Button>
+		</div>
+	{/snippet}
+</SlideOver>
 
 <!-- Approve Modal -->
 <Modal open={showApproveModal} onclose={() => { showApproveModal = false; }} title={t("university.approve_track", "Approve Track")}>
@@ -280,18 +293,3 @@
 	</div>
 </Modal>
 
-{#snippet TrackActionsCell({ row }: { value: any; row: PendingTrack })}
-	<div class="flex items-center gap-1">
-		<Button variant="ghost" size="sm" onclick={() => openView(row)} aria-label={t("common.view", "View")}>
-			<Eye class="h-3.5 w-3.5" />
-		</Button>
-		{#if canApprove}
-			<Button variant="ghost" size="sm" onclick={() => openApprove(row)} style="color: var(--color-success)" aria-label={t("common.approve", "Approve")}>
-				<Check class="h-3.5 w-3.5" />
-			</Button>
-			<Button variant="ghost" size="sm" onclick={() => openReject(row)} style="color: var(--color-danger)" aria-label={t("common.reject", "Reject")}>
-				<X class="h-3.5 w-3.5" />
-			</Button>
-		{/if}
-	</div>
-{/snippet}

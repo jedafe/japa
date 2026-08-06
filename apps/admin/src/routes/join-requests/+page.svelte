@@ -1,11 +1,11 @@
 <script lang="ts">
+	// /join-requests — migrated to the EntityPage scaffold; read-only list with state actions (approve/reject) + bulk delete.
+	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
 	import { api } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
-	import { DataTable } from '$lib/components/ui/data-table';
-	import { Button } from '$lib/components/ui/button';
-	import { Modal } from '$lib/components/ui/modal';
-	import { RefreshCw, CheckCircle, XCircle } from 'lucide-svelte';
+	import { Eye, CheckCircle, XCircle, Trash2 } from 'lucide-svelte';
+	import type { ActionItem } from '$lib/components/ui/data-table';
 
 	type JoinRequest = {
 		id: string;
@@ -19,178 +19,186 @@
 		space_name?: string;
 	};
 
-	let requests = $state<JoinRequest[]>([]);
-	let loading = $state(true);
-	let errorMessage = $state('');
-	let searchQuery = $state('');
-	let selectedRequest = $state<JoinRequest | null>(null);
-	let showDetailModal = $state(false);
-	let selectedIds = $state<Set<string>>(new Set());
-	let bulkDeleting = $state(false);
-
 	const canModerateJoins = $derived(hasPermission('spaces.moderate'));
 
-	const columns = [
-		{ key: 'display_name', label: t('joinRequests.user', 'User'), sortable: true,
-			render: (v: string, row: JoinRequest) => v || row.username || 'anonymous' },
-		{ key: 'space_name', label: t('joinRequests.space', 'Space'), sortable: true,
-			render: (v: string, row: JoinRequest) => v || (row.space_id ? row.space_id.substring(0, 8) + '...' : '—') },
-		{ key: 'message', label: t('joinRequests.message', 'Message'), sortable: false,
-			render: (v: string) => v || '—'
-		},
-		{ key: 'status', label: t('joinRequests.status', 'Status'), sortable: true,
-			render: (v: string) => {
-				const cls = v === 'approved' ? 'bg-success/15 text-success' : v === 'rejected' ? 'bg-danger/15 text-danger' : 'bg-warning/15 text-warning';
-				return `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium ${cls}">${v}</span>`;
-			}
-		},
-		{ key: 'requested_at', label: t('joinRequests.requested', 'Requested'), sortable: true,
-			render: (v: string) => new Date(v).toLocaleDateString()
+	// ── Bulk delete ───── EntityPage auto-reloads + clears selection after a bulk action handler completes.
+	let entityController = $state<EntityPageController | undefined>(undefined);
+	let pageError = $state('');
+	let bulkDeleting = $state(false);
+
+	async function bulkDelete(ids: Set<string>) {
+		const idArr = Array.from(ids);
+		if (idArr.length === 0) return;
+		if (bulkDeleting) return; // in-flight guard
+		bulkDeleting = true;
+		pageError = '';
+		try {
+			await Promise.all(idArr.map((id) => api(`/admin/join-requests/${id}`, { method: 'DELETE' })));
+		} catch (e) {
+			pageError = e instanceof Error ? e.message : t('common.error', 'Failed to delete join requests');
+		} finally {
+			bulkDeleting = false;
 		}
+	}
+
+	// ── State actions ───── approve/reject call the API directly then reload via ctx.
+	async function approveRequest(row: JoinRequest, ctx?: any) {
+		try {
+			await api(`/admin/join-requests/${row.id}/approve`, { method: 'POST', body: {} });
+			ctx?.reload();
+		} catch (e) {
+			pageError = e instanceof Error ? e.message : t('common.error', 'Failed to approve request');
+		}
+	}
+
+	async function rejectRequest(row: JoinRequest, ctx?: any) {
+		try {
+			await api(`/admin/join-requests/${row.id}/reject`, { method: 'POST', body: {} });
+			ctx?.reload();
+		} catch (e) {
+			pageError = e instanceof Error ? e.message : t('common.error', 'Failed to reject request');
+		}
+	}
+
+	// `fields` is required by EntityPageConfig; the page is read-only so the form never opens.
+	const fields: FieldDef[] = [
+		{ key: 'display_name', label: t('joinRequests.user', 'User'), type: 'text' },
+		{ key: 'space_name', label: t('joinRequests.space', 'Space'), type: 'text' },
+		{ key: 'message', label: t('joinRequests.message', 'Message'), type: 'textarea' },
+		{ key: 'status', label: t('joinRequests.status', 'Status'), type: 'text' }
 	];
 
-	async function load() {
-		loading = true;
-		errorMessage = '';
-		try {
+	// Row actions: custom array replaces defaults, so View is included explicitly.
+	const rowActions = $derived.by<ActionItem[]>(() => {
+		const acts: ActionItem[] = [
+			{ label: t('common.view', 'View'), icon: Eye, onclick: (row: JoinRequest, ctx?: any) => ctx?.openView(row) }
+		];
+		if (canModerateJoins) {
+			acts.push({
+				label: t('joinRequests.approve', 'Approve'),
+				icon: CheckCircle,
+				onclick: approveRequest,
+				show: (row: JoinRequest) => row.status === 'pending'
+			});
+			acts.push({
+				label: t('joinRequests.reject', 'Reject'),
+				icon: XCircle,
+				variant: 'destructive',
+				onclick: rejectRequest,
+				show: (row: JoinRequest) => row.status === 'pending'
+			});
+		}
+		return acts;
+	});
+
+	const config = $derived<EntityPageConfig>({
+		title: t('joinRequests.title', 'Join Requests'),
+		description: t('joinRequests.description', 'Review and moderate space join requests.'),
+		pageSize: 25,
+		readonly: true,
+		columns: [
+			{
+				key: 'display_name',
+				label: t('joinRequests.user', 'User'),
+				sortable: true,
+				render: (v: string, row: JoinRequest) => v || row.username || 'anonymous'
+			},
+			{
+				key: 'space_name',
+				label: t('joinRequests.space', 'Space'),
+				sortable: true,
+				render: (v: string, row: JoinRequest) => v || (row.space_id ? row.space_id.substring(0, 8) + '...' : '—')
+			},
+			{
+				key: 'message',
+				label: t('joinRequests.message', 'Message'),
+				sortable: false,
+				render: (v: string) => v || '—'
+			},
+			{
+				key: 'status',
+				label: t('joinRequests.status', 'Status'),
+				sortable: true,
+				render: (v: string) => {
+					const cls = v === 'approved' ? 'bg-success/15 text-success' : v === 'rejected' ? 'bg-danger/15 text-danger' : 'bg-warning/15 text-warning';
+					return `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium ${cls}">${v}</span>`;
+				}
+			},
+			{
+				key: 'requested_at',
+				label: t('joinRequests.requested', 'Requested'),
+				sortable: true,
+				render: (v: string) => new Date(v).toLocaleDateString()
+			}
+		],
+		actions: rowActions,
+		bulkActions: [
+			{
+				label: t('common.deleteSelected', 'Delete Selected'),
+				icon: Trash2,
+				variant: 'destructive',
+				onclick: bulkDelete
+			}
+		],
+		fields,
+		load: async ({ q }) => {
 			const params = new URLSearchParams();
-			if (searchQuery.trim()) params.set('q', searchQuery.trim());
+			if (q) params.set('q', q);
 			const qs = params.toString();
 			const result = await api<JoinRequest[]>(`/admin/join-requests${qs ? `?${qs}` : ''}`);
 			if (result.ok) {
-				requests = result.data ?? [];
-			} else {
-				errorMessage = result.error;
+				const data = result.data ?? [];
+				return { data, total: data.length, totalPages: 1 };
 			}
-		} catch {
-			errorMessage = t('common.error');
-		} finally {
-			loading = false;
-		}
-	}
-
-	async function approveRequest(id: string) {
-		errorMessage = '';
-		try {
-			await api(`/admin/join-requests/${id}/approve`, { method: 'POST', body: {} });
-			load();
-		} catch {
-			errorMessage = t('common.error');
-		}
-	}
-
-	async function rejectRequest(id: string) {
-		errorMessage = '';
-		try {
-			await api(`/admin/join-requests/${id}/reject`, { method: 'POST', body: {} });
-			load();
-		} catch {
-			errorMessage = t('common.error');
-		}
-	}
-
-	async function bulkDelete() {
-		if (selectedIds.size === 0) return;
-		bulkDeleting = true;
-		errorMessage = '';
-		try {
-			for (const id of selectedIds) {
-				await api(`/admin/join-requests/${id}`, { method: 'DELETE' });
-			}
-			selectedIds = new Set();
-			load();
-		} catch {
-			errorMessage = t('common.error');
-		}
-		bulkDeleting = false;
-	}
-
-	$effect(() => {
-		load();
+			throw new Error(result.error ?? t('common.error', 'Failed to load join requests'));
+		},
+		remove: async (id) => {
+			const res = await api(`/admin/join-requests/${id}`, { method: 'DELETE' });
+			return res.ok ? { ok: true } : { ok: false, error: res.error };
+		},
+		viewSnippet: JoinRequestView
 	});
 </script>
 
 <svelte:head>
-	<title>{t('joinRequests.title')} — JapaConnect Admin</title>
+	<title>{t('joinRequests.title', 'Join Requests')} — JapaConnect Admin</title>
 </svelte:head>
 
-<h1 class="mb-1 text-2xl font-bold tracking-tight">{t('joinRequests.title')}</h1>
-<p class="mb-4 text-sm" style="color: var(--color-muted)">{t('joinRequests.description')}</p>
-
-{#if errorMessage}
-	<div class="mb-4 rounded-md border px-4 py-3 text-sm" style="border-color: var(--color-danger); background-color: color-mix(in srgb, var(--color-danger) 8%, transparent); color: var(--color-danger)">
-		{errorMessage}
+{#if pageError}
+	<div
+		class="mb-4 rounded-lg p-3 text-sm"
+		style="background: color-mix(in srgb, var(--color-danger) 10%, transparent); color: var(--color-danger)"
+	>
+		{pageError}
 	</div>
 {/if}
 
-<div class="mb-4 flex items-center justify-end">
-	<Button variant="ghost" size="sm" onclick={load}>
-		<RefreshCw class="mr-1.5 h-3.5 w-3.5" />
-		{t('common.refresh')}
-	</Button>
-</div>
+<EntityPage {config} bind:controller={entityController} />
 
-{#if loading}
-	<p class="py-8 text-center text-sm" style="color: var(--color-muted)">{t('common.loading')}</p>
-{:else}
-	<DataTable
-		{columns}
-		data={requests}
-		pageSize={25}
-		searchable
-		searchPlaceholder={t('joinRequests.search', 'Search by user or space...')}
-		onsearch={(q) => { searchQuery = q; load(); }}
-		onrowclick={(row) => { selectedRequest = row; showDetailModal = true; }}
-		emptyMessage={t('joinRequests.empty', 'No join requests found')}
-		selectable
-		bind:selectedIds
-	>
-		{#snippet bulkActions()}
-			<Button variant="destructive" size="sm" onclick={bulkDelete} disabled={bulkDeleting || selectedIds.size === 0}>
-				<XCircle class="h-3.5 w-3.5 mr-1" />
-				{bulkDeleting ? t('common.deleting', 'Deleting...') : t('common.deleteSelected', 'Delete Selected')} ({selectedIds.size})
-			</Button>
-		{/snippet}
-	</DataTable>
-{/if}
-
-<Modal bind:open={showDetailModal} title={t('joinRequests.details', 'Join Request Details')}>
-	{#if selectedRequest}
-		<div class="space-y-4">
-			<div class="grid grid-cols-2 gap-4">
-				<div>
-					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('joinRequests.user')}</p>
-					<p class="mt-1 text-sm" style="color: var(--color-foreground)">{selectedRequest.display_name || selectedRequest.username || 'anonymous'}</p>
-				</div>
-				<div>
-					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('joinRequests.space')}</p>
-					<p class="mt-1 text-sm" style="color: var(--color-foreground)">{selectedRequest.space_name || (selectedRequest.space_id ? selectedRequest.space_id.substring(0, 8) + '...' : '—')}</p>
-				</div>
+<!-- ── View snippet ──────────────────────────────────────────────────────── -->
+{#snippet JoinRequestView({ row }: { row: JoinRequest })}
+	<div class="space-y-4">
+		<div class="grid grid-cols-2 gap-4">
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('joinRequests.user', 'User')}</p>
+				<p class="mt-1 text-sm" style="color: var(--color-foreground)">{row.display_name || row.username || 'anonymous'}</p>
 			</div>
 			<div>
-				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('joinRequests.message')}</p>
-				<p class="mt-1 text-sm" style="color: var(--color-foreground)">{selectedRequest.message || '—'}</p>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('joinRequests.space', 'Space')}</p>
+				<p class="mt-1 text-sm" style="color: var(--color-foreground)">{row.space_name || (row.space_id ? row.space_id.substring(0, 8) + '...' : '—')}</p>
 			</div>
-			<div>
-				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('joinRequests.status')}</p>
-				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{selectedRequest.status}</p>
-			</div>
-			<div>
-				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('joinRequests.requested')}</p>
-				<p class="mt-1 text-sm" style="color: var(--color-foreground)">{new Date(selectedRequest.requested_at).toLocaleString()}</p>
-			</div>
-			{#if selectedRequest.status === 'pending' && canModerateJoins}
-				<div class="flex gap-2 pt-4 border-t" style="border-color: var(--color-border)">
-					<Button variant="default" size="sm" onclick={() => { const id = selectedRequest!.id; showDetailModal = false; selectedRequest = null; approveRequest(id); }}>
-						<CheckCircle class="mr-1.5 h-4 w-4" />
-						{t('joinRequests.approve')}
-					</Button>
-					<Button variant="destructive" size="sm" onclick={() => { const id = selectedRequest!.id; showDetailModal = false; selectedRequest = null; rejectRequest(id); }}>
-						<XCircle class="mr-1.5 h-4 w-4" />
-						{t('joinRequests.reject')}
-					</Button>
-				</div>
-			{/if}
 		</div>
-	{/if}
-</Modal>
+		<div>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('joinRequests.message', 'Message')}</p>
+			<p class="mt-1 text-sm" style="color: var(--color-foreground)">{row.message || '—'}</p>
+		</div>
+		<div>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('joinRequests.status', 'Status')}</p>
+			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.status}</p>
+		</div>
+		<div>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('joinRequests.requested', 'Requested')}</p>
+			<p class="mt-1 text-sm" style="color: var(--color-foreground)">{new Date(row.requested_at).toLocaleString()}</p>
+		</div>
+	</div>
+{/snippet}

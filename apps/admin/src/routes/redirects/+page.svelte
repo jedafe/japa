@@ -1,19 +1,13 @@
 <script lang="ts">
-	import PageHeader from "$lib/components/layout/page-header.svelte";
-	import { Card, CardContent, CardHeader } from "$lib/components/ui/card";
-	import { DataTable } from "$lib/components/ui/data-table";
-	import { FilterBar } from "$lib/components/ui/filter-bar";
-	import { Button } from "$lib/components/ui/button";
-	import { Modal } from "$lib/components/ui/modal";
-	import { TableSkeleton } from "$lib/components/ui/skeleton";
-	import { Plus, Pencil, Trash2, RefreshCw } from "lucide-svelte";
-	import { redirectsAdminApi } from "$lib/api";
-	import { t } from "$lib/stores/i18n.svelte";
-	import { hasPermission } from "$lib/stores/permissions.svelte";
-
+	// /redirects — migrated to the EntityPage scaffold; simple CRUD entity using declarative `fields` (EntityForm).
 	// Ref: japaconnect-engineering/adr/ADR-056-url-redirects.md
 	// Field names mirror the backend gen.Redirect JSON contract:
 	// source_path, target_url, http_status, is_active, notes, hit_count, last_hit_at.
+	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
+	import { redirectsAdminApi } from '$lib/api';
+	import { t } from '$lib/stores/i18n.svelte';
+	import { Trash2 } from 'lucide-svelte';
+
 	type Redirect = {
 		id: string;
 		tenant_id: string;
@@ -28,410 +22,238 @@
 		updated_at: string;
 	};
 
-	let redirects = $state<Redirect[]>([]);
-	let loading = $state(true);
-	let error = $state("");
-	let success = $state("");
-	let searchQuery = $state("");
+	// ── Bulk delete ───── EntityPage auto-reloads + clears selection after a bulk action handler completes.
+	let entityController = $state<EntityPageController | undefined>(undefined);
+	let pageError = $state('');
+	let bulkDeleting = $state(false);
 
-	// Modal state
-	let showModal = $state(false);
-	let modalMode = $state<"create" | "edit">("create");
-	let editingRedirect = $state<Redirect | null>(null);
-	let saving = $state(false);
-
-	// Form — names match the backend create/update payload (ADR-056).
-	let sourcePath = $state("");
-	let targetUrl = $state("");
-	let httpStatus = $state(301);
-	let isActive = $state(true);
-	let notes = $state("");
-
-	// Delete
-	let showDeleteConfirm = $state(false);
-	let deleteTarget = $state<Redirect | null>(null);
-	let bulkDeleteIds = $state<Set<string>>(new Set());
-	let filterValues = $state<Record<string, string>>({});
-
-	const canManageRedirects = $derived(hasPermission("redirects.manage"));
-
-	// Backend list route expects ?status=active|inactive (ADR-056), not is_active.
-	const filterDefs = [
-		{
-			key: "status",
-			label: t("common.status", "Status"),
-			options: [
-				{ value: "active", label: t("common.active", "Active") },
-				{ value: "inactive", label: t("common.inactive", "Inactive") }
-			]
-		}
-	];
-
-	const columns = [
-		{ key: "source_path", label: t("redirects.from", "From"), sortable: true },
-		{ key: "target_url", label: t("redirects.to", "To"), sortable: true },
-		{ key: "http_status", label: t("redirects.code", "Code"), sortable: true },
-		{
-			key: "is_active",
-			label: t("common.status", "Status"),
-			sortable: true,
-			render: (v: boolean) => (v ? t("common.active", "Active") : t("common.inactive", "Inactive"))
-		},
-		{ key: "hit_count", label: t("redirects.hits", "Hits"), sortable: true },
-		{
-			key: "actions",
-			label: t("common.actions", "Actions"),
-			class: "w-32",
-			componentSnippet: RedirectActionsCell
-		}
-	];
-
-	async function loadRedirects() {
-		loading = true;
-		error = "";
+	async function bulkDelete(ids: Set<string>) {
+		const idArr = Array.from(ids);
+		if (idArr.length === 0) return;
+		if (bulkDeleting) return; // in-flight guard
+		bulkDeleting = true;
+		pageError = '';
 		try {
+			await Promise.all(idArr.map((id) => redirectsAdminApi.delete(id)));
+		} catch (e) {
+			pageError = e instanceof Error ? e.message : t('common.error', 'Failed to delete redirects');
+		} finally {
+			bulkDeleting = false;
+		}
+	}
+
+	// `fields` drives EntityForm rendering and edit-form seeding.
+	const fields: FieldDef[] = [
+		{
+			key: 'source_path',
+			label: t('redirects.from', 'From Path'),
+			type: 'text',
+			placeholder: '/old-page',
+			required: true,
+			help: t('redirects.invalid_source', 'From path must start with /')
+		},
+		{
+			key: 'target_url',
+			label: t('redirects.to', 'To URL'),
+			type: 'text',
+			placeholder: '/new-page or https://example.com/path',
+			required: true,
+			help: t('redirects.invalid_target', 'To URL must be a root-relative path or an absolute http/https URL')
+		},
+		{
+			key: 'http_status',
+			label: t('redirects.code', 'Status Code'),
+			type: 'select',
+			options: [
+				{ value: '301', label: `301 ${t('redirects.permanent', 'Permanent')}` },
+				{ value: '302', label: `302 ${t('redirects.temporary', 'Temporary')}` },
+				{ value: '307', label: `307 ${t('redirects.temp_redirect', 'Temporary Redirect')}` }
+			]
+		},
+		{ key: 'is_active', label: t('common.active', 'Active'), type: 'checkbox' },
+		{
+			key: 'notes',
+			label: t('redirects.notes', 'Notes'),
+			type: 'text',
+			placeholder: t('redirects.notes_placeholder', 'Optional internal note')
+		}
+	];
+
+	const config: EntityPageConfig = {
+		title: t('redirects.title', 'Redirects'),
+		description: t('redirects.description', 'Manage URL redirects'),
+		createLabel: t('redirects.create', 'Create Redirect'),
+		createPermission: 'redirects.manage',
+		pageSize: 25,
+		columns: [
+			{
+				key: 'source_path',
+				label: t('redirects.from', 'From'),
+				sortable: true,
+				render: (v: string) => `<span class="font-mono text-xs" style="color: var(--color-muted)">${v}</span>`
+			},
+			{
+				key: 'target_url',
+				label: t('redirects.to', 'To'),
+				sortable: true,
+				render: (v: string) => `<span class="font-mono text-xs truncate" style="color: var(--color-muted)">${v}</span>`
+			},
+			{ key: 'http_status', label: t('redirects.code', 'Code'), sortable: true },
+			{
+				key: 'is_active',
+				label: t('common.status', 'Status'),
+				sortable: true,
+				componentSnippet: StatusCell
+			},
+			{ key: 'hit_count', label: t('redirects.hits', 'Hits'), sortable: true }
+		],
+		filters: [
+			{
+				key: 'status',
+				label: t('common.status', 'Status'),
+				options: [
+					{ value: 'active', label: t('common.active', 'Active') },
+					{ value: 'inactive', label: t('common.inactive', 'Inactive') }
+				]
+			}
+		],
+		bulkActions: [
+			{
+				label: t('common.deleteSelected', 'Delete Selected'),
+				icon: Trash2,
+				variant: 'destructive',
+				onclick: bulkDelete
+			}
+		],
+		fields,
+		load: async ({ q, filter, page, pageSize }) => {
 			const params = new URLSearchParams();
-			if (filterValues.status) params.set("status", filterValues.status);
-			if (searchQuery.trim()) params.set("q", searchQuery.trim());
+			if (filter.status) params.set('status', filter.status);
+			if (q) params.set('q', q);
+			params.set('page_size', String(pageSize));
+			params.set('page_offset', String(page * pageSize));
 			const result = await redirectsAdminApi.list(params.toString() || undefined);
 			if (result.ok) {
-				redirects = ((result.data as { items: Redirect[] })?.items) ?? [];
-			} else {
-				error = result.error ?? t("common.error", "Failed to load redirects");
+				const payload = result.data as { items: Redirect[]; total?: number } | Redirect[] | undefined;
+				const items = Array.isArray(payload) ? payload : (payload?.items ?? []);
+				const total = Array.isArray(payload) ? payload.length : (payload?.total ?? items.length);
+				const totalPages = Math.max(1, Math.ceil(total / pageSize));
+				return { data: items, total, totalPages };
 			}
-		} catch (e) {
-			error = e instanceof Error ? e.message : t("common.error", "Failed to load redirects");
-		} finally {
-			loading = false;
-		}
-	}
-
-	function openCreate() {
-		modalMode = "create";
-		editingRedirect = null;
-		sourcePath = "";
-		targetUrl = "";
-		httpStatus = 301;
-		isActive = true;
-		notes = "";
-		showModal = true;
-	}
-
-	function openEdit(redirect: Redirect | null) {
-		if (!redirect) return;
-		modalMode = "edit";
-		editingRedirect = redirect;
-		sourcePath = redirect.source_path;
-		targetUrl = redirect.target_url;
-		httpStatus = redirect.http_status;
-		isActive = redirect.is_active;
-		notes = redirect.notes ?? "";
-		showModal = true;
-	}
-
-	// ADR-056: source_path must start with "/"; target_url must be a root-relative
-	// path or an absolute http/https URL (protocol-relative "//" and other schemes
-	// are rejected by the backend validateTargetURL to prevent open-redirect).
-	function isValidSourcePath(p: string): boolean {
-		return p.startsWith("/") && !p.startsWith("//");
-	}
-
-	function isValidTargetUrl(u: string): boolean {
-		if (u.startsWith("/")) return !u.startsWith("//"); // root-relative
-		try {
-			const parsed = new URL(u);
-			return (parsed.protocol === "http:" || parsed.protocol === "https:") && parsed.host !== "";
-		} catch {
-			return false;
-		}
-	}
-
-	async function saveRedirect() {
-		const src = sourcePath.trim();
-		const tgt = targetUrl.trim();
-		if (!src || !tgt) return;
-		if (!isValidSourcePath(src)) {
-			error = t("redirects.invalid_source", "From path must start with /");
-			return;
-		}
-		if (!isValidTargetUrl(tgt)) {
-			error = t("redirects.invalid_target", "To URL must be a root-relative path or an absolute http/https URL");
-			return;
-		}
-		saving = true;
-		error = "";
-		try {
-			// Create payload omits is_active (DB defaults to true); update includes it.
-			const body: Record<string, unknown> = {
-				source_path: src,
-				target_url: tgt,
-				http_status: httpStatus,
-				notes: notes.trim() || null
-			};
-			if (editingRedirect) body.is_active = isActive;
-
-			const result = editingRedirect
-				? await redirectsAdminApi.update(editingRedirect.id, body)
-				: await redirectsAdminApi.create(body);
-
-			if (result.ok) {
-				showModal = false;
-				success = editingRedirect
-					? t("redirects.updated", "Redirect updated")
-					: t("redirects.created", "Redirect created");
-				loadRedirects();
-			} else {
-				error = result.error ?? t("common.error", "Failed to save redirect");
-			}
-		} catch (e) {
-			error = e instanceof Error ? e.message : t("common.error", "Failed to save redirect");
-		} finally {
-			saving = false;
-		}
-	}
-
-	function openDelete(redirect: Redirect | null) {
-		if (!redirect) return;
-		deleteTarget = redirect;
-		showDeleteConfirm = true;
-	}
-
-	async function confirmDelete() {
-		if (!deleteTarget) return;
-		const result = await redirectsAdminApi.delete(deleteTarget.id);
-		if (result.ok) {
-			showDeleteConfirm = false;
-			deleteTarget = null;
-			success = t("redirects.deleted", "Redirect deleted");
-			loadRedirects();
-		} else {
-			error = result.error ?? t("common.error", "Failed to delete redirect");
-		}
-	}
-
-	// ADR-056 bulk route: { action: "activate"|"deactivate"|"delete", ids: [...] }.
-	async function bulkDelete() {
-		if (bulkDeleteIds.size === 0) return;
-		const ids = Array.from(bulkDeleteIds);
-		const result = await redirectsAdminApi.bulkDelete({ action: "delete", ids });
-		if (result.ok) {
-			success = t("redirects.bulk_deleted", "Redirects deleted");
-			bulkDeleteIds = new Set();
-			loadRedirects();
-		} else {
-			error = result.error ?? t("common.error", "Failed to delete redirects");
-		}
-	}
-
-	function handleSearch(values: Record<string, string>) {
-		filterValues = values;
-		loadRedirects();
-	}
-
-	function handleClear() {
-		filterValues = {};
-		loadRedirects();
-	}
-
-	function handleTableSearch(q: string) {
-		searchQuery = q;
-		loadRedirects();
-	}
-
-	$effect(() => {
-		loadRedirects();
-	});
+			throw new Error(result.error ?? t('common.error', 'Failed to load redirects'));
+		},
+		create: async (body) => {
+			// Create payload omits is_active (DB defaults to true); mirrors the legacy submit().
+			const res = await redirectsAdminApi.create({
+				source_path: String(body.source_path ?? '').trim(),
+				target_url: String(body.target_url ?? '').trim(),
+				http_status: Number(body.http_status ?? 301),
+				notes: String(body.notes ?? '').trim() || null
+			});
+			return res.ok ? { ok: true } : { ok: false, error: res.error };
+		},
+		update: async (id, body) => {
+			// Update includes is_active (mirrors the legacy submit()).
+			const res = await redirectsAdminApi.update(id, {
+				source_path: String(body.source_path ?? '').trim(),
+				target_url: String(body.target_url ?? '').trim(),
+				http_status: Number(body.http_status ?? 301),
+				is_active: !!body.is_active,
+				notes: String(body.notes ?? '').trim() || null
+			});
+			return res.ok ? { ok: true } : { ok: false, error: res.error };
+		},
+		remove: async (id) => {
+			const res = await redirectsAdminApi.delete(id);
+			return res.ok ? { ok: true } : { ok: false, error: res.error };
+		},
+		viewSnippet: RedirectView
+	};
 </script>
 
 <svelte:head>
-	<title>{t("redirects.title", "Redirects")} — JapaConnect Admin</title>
+	<title>{t('redirects.title', 'Redirects')} — JapaConnect Admin</title>
 </svelte:head>
 
-<PageHeader
-	title={t("redirects.title", "Redirects")}
-	description={t("redirects.description", "Manage URL redirects")}
-	actions={[
-		...(canManageRedirects
-			? [{ label: t("redirects.create", "Create Redirect"), icon: Plus, onclick: openCreate }]
-			: []),
-		{ label: t("common.refresh", "Refresh"), icon: RefreshCw, variant: "ghost", onclick: loadRedirects }
-	]}
-/>
-
-{#if error}
+{#if pageError}
 	<div
 		class="mb-4 rounded-lg p-3 text-sm"
 		style="background: color-mix(in srgb, var(--color-danger) 10%, transparent); color: var(--color-danger)"
 	>
-		{error}
+		{pageError}
 	</div>
 {/if}
-{#if success}
-	<div
-		class="mb-4 rounded-lg p-3 text-sm"
-		style="background: color-mix(in srgb, var(--color-success) 10%, transparent); color: var(--color-success)"
+
+<EntityPage {config} bind:controller={entityController} />
+
+<!-- ── Snippets ─────────────────────────────────────────────────────────── -->
+
+{#snippet StatusCell({ value }: { value: boolean; row: Redirect })}
+	<span
+		class="inline-block rounded-full px-2 py-0.5 text-xs font-medium {value
+			? 'bg-success/15 text-success'
+			: 'bg-muted/15 text-muted'}"
 	>
-		{success}
-	</div>
-{/if}
+		{value ? t('common.active', 'Active') : t('common.inactive', 'Inactive')}
+	</span>
+{/snippet}
 
-{#if bulkDeleteIds.size > 0}
-	<div
-		class="mb-4 flex items-center justify-between rounded-lg border p-3"
-		style="border-color: var(--color-border)"
-	>
-		<span class="text-sm" style="color: var(--color-foreground)"
-			>{bulkDeleteIds.size} {t("redirects.selected", "selected")}</span
-		>
-		<Button variant="destructive" onclick={bulkDelete}
-			>{t("redirects.bulk_delete", "Delete Selected")}</Button
-		>
-	</div>
-{/if}
-
-<Card>
-	<CardHeader>
-		<FilterBar filters={filterDefs} onsearch={handleSearch} onclear={handleClear} />
-	</CardHeader>
-	<CardContent>
-		{#if loading}
-			<TableSkeleton rows={8} columns={columns.length} />
-		{:else if redirects.length === 0}
-			<div class="py-12 text-center text-sm" style="color: var(--color-muted)">
-				{t("redirects.empty", "No redirects found")}
-			</div>
-		{:else}
-			<DataTable
-				{columns}
-				data={redirects}
-				pageSize={10}
-				selectable
-				bind:selectedIds={bulkDeleteIds}
-				searchable
-				onsearch={handleTableSearch}
-			/>
-		{/if}
-	</CardContent>
-</Card>
-
-<!-- Create/Edit Modal -->
-<Modal
-	bind:open={showModal}
-	title={modalMode === "create" ? t("redirects.create", "Create Redirect") : t("redirects.edit", "Edit Redirect")}
->
+<!-- View slide-over body (mirrors the legacy view) -->
+{#snippet RedirectView({ row }: { row: Redirect })}
 	<div class="space-y-4">
 		<div>
-			<label for="redir-from" class="block text-sm font-medium" style="color: var(--color-foreground)"
-				>{t("redirects.from", "From Path")}</label
-			>
-			<input
-				id="redir-from"
-				type="text"
-				bind:value={sourcePath}
-				class="mt-1 w-full rounded-lg border p-2 text-sm font-mono"
-				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
-				placeholder="/old-page"
-			/>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">
+				{t('redirects.from', 'From Path')}
+			</p>
+			<p class="mt-1 break-all text-sm font-mono" style="color: var(--color-foreground)">{row.source_path}</p>
 		</div>
 		<div>
-			<label for="redir-to" class="block text-sm font-medium" style="color: var(--color-foreground)"
-				>{t("redirects.to", "To URL")}</label
-			>
-			<input
-				id="redir-to"
-				type="text"
-				bind:value={targetUrl}
-				class="mt-1 w-full rounded-lg border p-2 text-sm font-mono"
-				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
-				placeholder="/new-page or https://example.com/path"
-			/>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">
+				{t('redirects.to', 'To URL')}
+			</p>
+			<p class="mt-1 break-all text-sm font-mono" style="color: var(--color-foreground)">{row.target_url}</p>
 		</div>
-		<div class="grid grid-cols-2 gap-4">
+		<div>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">
+				{t('redirects.code', 'Status Code')}
+			</p>
+			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.http_status}</p>
+		</div>
+		<div>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">
+				{t('common.status', 'Status')}
+			</p>
+			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">
+				{row.is_active ? t('common.active', 'Active') : t('common.inactive', 'Inactive')}
+			</p>
+		</div>
+		<div>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">
+				{t('redirects.hits', 'Hits')}
+			</p>
+			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.hit_count}</p>
+		</div>
+		{#if row.notes}
 			<div>
-				<label for="redir-code" class="block text-sm font-medium" style="color: var(--color-foreground)"
-					>{t("redirects.code", "Status Code")}</label
-				>
-				<select
-					id="redir-code"
-					bind:value={httpStatus}
-					class="mt-1 w-full rounded-lg border p-2 text-sm"
-					style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
-				>
-					<option value={301}>301 {t("redirects.permanent", "Permanent")}</option>
-					<option value={302}>302 {t("redirects.temporary", "Temporary")}</option>
-					<option value={307}>307 {t("redirects.temp_redirect", "Temporary Redirect")}</option>
-				</select>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">
+					{t('redirects.notes', 'Notes')}
+				</p>
+				<p class="mt-1 text-sm" style="color: var(--color-foreground)">{row.notes}</p>
 			</div>
-			<div class="flex items-center gap-2 pt-6">
-				<input
-					id="redir-active"
-					type="checkbox"
-					bind:checked={isActive}
-					class="h-4 w-4 rounded"
-					style="accent-color: var(--color-primary)"
-				/>
-				<label for="redir-active" class="text-sm font-medium" style="color: var(--color-foreground)"
-					>{t("common.active", "Active")}</label
-				>
-			</div>
-		</div>
-		<div>
-			<label for="redir-notes" class="block text-sm font-medium" style="color: var(--color-foreground)"
-				>{t("redirects.notes", "Notes")}</label
-			>
-			<input
-				id="redir-notes"
-				type="text"
-				bind:value={notes}
-				class="mt-1 w-full rounded-lg border p-2 text-sm"
-				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
-				placeholder={t("redirects.notes_placeholder", "Optional internal note")}
-			/>
-		</div>
-	</div>
-	<div class="mt-4 flex justify-end gap-2">
-		<Button variant="ghost" onclick={() => (showModal = false)}>{t("common.cancel", "Cancel")}</Button>
-		<Button onclick={saveRedirect} disabled={saving || !sourcePath.trim() || !targetUrl.trim()}>
-			{saving ? t("common.saving", "Saving...") : t("common.save", "Save")}
-		</Button>
-	</div>
-</Modal>
-
-<!-- Delete Confirmation -->
-{#if showDeleteConfirm && deleteTarget}
-	<Modal bind:open={showDeleteConfirm} title={t("redirects.delete_title", "Delete Redirect")}>
-		<p class="text-sm" style="color: var(--color-foreground)">
-			{t("redirects.delete_confirm", "Delete redirect from")}
-			<code class="font-mono">{deleteTarget.source_path}</code>
-			{t("redirects.delete_to", "to")}
-			<code class="font-mono">{deleteTarget.target_url}</code>?
-		</p>
-		<div class="mt-4 flex justify-end gap-2">
-			<Button variant="ghost" onclick={() => (showDeleteConfirm = false)}
-				>{t("common.cancel", "Cancel")}</Button
-			>
-			<Button variant="destructive" onclick={confirmDelete}
-				>{t("common.delete", "Delete")}</Button
-			>
-		</div>
-	</Modal>
-{/if}
-
-<!-- RedirectActionsCell -->
-{#snippet RedirectActionsCell({ row }: { value: any; row: Redirect })}
-	<div class="flex items-center gap-1">
-		{#if canManageRedirects}
-			<Button variant="ghost" size="sm" onclick={() => openEdit(row)}>
-				<Pencil class="h-3.5 w-3.5" />
-			</Button>
-			<Button
-				variant="ghost"
-				size="sm"
-				onclick={() => openDelete(row)}
-				style="color: var(--color-danger)"
-			>
-				<Trash2 class="h-3.5 w-3.5" />
-			</Button>
 		{/if}
+		{#if row.last_hit_at}
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">
+					{t('redirects.last_hit', 'Last Hit')}
+				</p>
+				<p class="mt-1 text-sm" style="color: var(--color-foreground)">{row.last_hit_at}</p>
+			</div>
+		{/if}
+		<div>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">
+				{t('common.created_at', 'Created')}
+			</p>
+			<p class="mt-1 text-sm" style="color: var(--color-foreground)">{row.created_at}</p>
+		</div>
 	</div>
 {/snippet}

@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 	import { t } from '$lib/i18n';
+	import { i18n } from '$lib/i18n';
 	import { BadgeCheck, Calendar } from 'lucide-svelte';
 	import type { PublicUser } from '$lib/types';
 
@@ -12,7 +13,7 @@
 	let { user, isOwnProfile = false, children }: Props = $props();
 
 	const joinDate = $derived(
-		new Date(user.created_at).toLocaleDateString(undefined, {
+		new Date(user.created_at).toLocaleDateString(i18n.locale, {
 			year: 'numeric',
 			month: 'long'
 		})

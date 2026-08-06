@@ -1,18 +1,23 @@
 <script lang="ts">
-	import PageHeader from "$lib/components/layout/page-header.svelte";
-	import { Card, CardContent, CardHeader } from "$lib/components/ui/card";
-	import { DataTable } from "$lib/components/ui/data-table";
-	import { Badge } from "$lib/components/ui/badge";
-	import { Button } from "$lib/components/ui/button";
-	import { Modal } from "$lib/components/ui/modal";
-	import { TableSkeleton } from "$lib/components/ui/skeleton";
-	import { Plus, Pencil, Trash2, RefreshCw, ArrowUp, ArrowDown, Menu as MenuIcon } from "lucide-svelte";
+	// /menus — migrated to the EntityPage scaffold.
+	//
+	// The menu list + menu CRUD use the shared EntityPage scaffold (declarative
+	// `fields`). The rich menu-ITEM editor (add/edit/delete/reorder items with
+	// icon picker, route suggestions, permission node, group selection, nesting,
+	// visibility, target) is kept as a page-local `<SlideOver>` sub-flow that
+	// mirrors the tags moderators SlideOver pattern.
+	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
+	import { SlideOver } from '$lib/components/ui/slide-over';
+	import { Modal } from '$lib/components/ui/modal';
+	import { Button } from '$lib/components/ui/button';
+	import { Badge } from '$lib/components/ui/badge';
 	import { Select } from '$lib/components/ui/select';
 	import IconPicker from '$lib/components/ui/icon-picker.svelte';
-	import { menusAdminApi, userManagementApi, type UserGroup } from "$lib/api";
-	import { suggestRoutes } from "$lib/data/routes";
-	import { t } from "$lib/stores/i18n.svelte";
-	import { hasPermission } from "$lib/stores/permissions.svelte";
+	import { menusAdminApi, userManagementApi, type UserGroup } from '$lib/api';
+	import { suggestRoutes } from '$lib/data/routes';
+	import { t } from '$lib/stores/i18n.svelte';
+	import { hasPermission } from '$lib/stores/permissions.svelte';
+	import { Eye, Pencil, Trash2, ListTree, ArrowUp, ArrowDown, Plus } from 'lucide-svelte';
 
 	type MenuItem = {
 		id: string;
@@ -45,76 +50,204 @@
 		items?: MenuItem[];
 	};
 
-	let menus = $state<Menu[]>([]);
-	let loading = $state(true);
-	let error = $state("");
-	let success = $state("");
+	const canManageMenus = $derived(hasPermission('menus.manage'));
 
-	// Menu modal state
-	let showMenuModal = $state(false);
-	let menuModalMode = $state<"create" | "edit">("create");
-	let editingMenu = $state<Menu | null>(null);
-	let savingMenu = $state(false);
-	let menuName = $state("");
-	let menuSlug = $state("");
-	let menuPlacement = $state<string>("sidebar");
+	// ── Placement / status option sets (mirror the legacy form) ───────────────
+	const placementOptions = [
+		{ value: 'sidebar', label: t('menus.placement_sidebar', 'Sidebar') },
+		{ value: 'bottom_bar', label: t('menus.placement_bottom_bar', 'Bottom Bar') },
+		{ value: 'dropdown', label: t('menus.placement_dropdown', 'Dropdown') },
+		{ value: 'footer', label: t('menus.placement_footer', 'Footer') },
+		{ value: 'header', label: t('menus.placement_header', 'Header') }
+	];
 
-	// Item modal state
+	const statusOptions = [
+		{ value: 'active', label: t('common.status_active', 'Active') },
+		{ value: 'inactive', label: t('common.status_inactive', 'Inactive') }
+	];
+
+	// ── Bulk delete (in-flight guard) ─────────────────────────────────────────
+	let entityController = $state<EntityPageController | undefined>(undefined);
+	let pageError = $state('');
+	let bulkDeleting = $state(false);
+
+	async function bulkDelete(ids: Set<string>) {
+		const idArr = Array.from(ids);
+		if (idArr.length === 0) return;
+		if (bulkDeleting) return; // in-flight guard
+		bulkDeleting = true;
+		pageError = '';
+		try {
+			await Promise.all(idArr.map((id) => menusAdminApi.delete(id)));
+		} catch (e) {
+			pageError = e instanceof Error ? e.message : t('common.error', 'Failed to delete menus');
+		} finally {
+			bulkDeleting = false;
+		}
+	}
+
+	// `fields` drives EntityForm rendering + edit-form seeding for the MENU entity.
+	const fields: FieldDef[] = [
+		{ key: 'name', label: t('menus.name', 'Name'), type: 'text', placeholder: 'e.g., Primary Nav', required: true },
+		{ key: 'slug', label: t('menus.slug', 'Slug'), type: 'text', placeholder: 'primary-nav', required: true },
+		{ key: 'placement', label: t('menus.placement', 'Placement'), type: 'select', options: placementOptions },
+		{ key: 'status', label: t('common.status', 'Status'), type: 'select', options: statusOptions }
+	];
+
+	const config: EntityPageConfig = {
+		title: t('menus.title', 'Menus'),
+		description: t('menus.description', 'Manage navigation menus and their items'),
+		createLabel: t('menus.create', 'Create Menu'),
+		createPermission: 'menus.manage',
+		pageSize: 25,
+		columns: [
+			{ key: 'name', label: t('menus.name', 'Name'), sortable: true },
+			{ key: 'slug', label: t('menus.slug', 'Slug'), sortable: true },
+			{
+				key: 'placement',
+				label: t('menus.placement', 'Placement'),
+				sortable: true,
+				render: (v: string) =>
+					`<span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium" style="background: color-mix(in srgb, var(--color-primary) 12%, transparent); color: var(--color-foreground)">${t('menus.placement_' + v, v)}</span>`
+			},
+			{
+				key: 'status',
+				label: t('common.status', 'Status'),
+				sortable: true,
+				render: (v: string) => {
+					const active = v === 'active';
+					return `<span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${active ? 'bg-success/15 text-success' : 'bg-muted/15 text-muted'}">${t('common.status_' + v, v)}</span>`;
+				}
+			},
+			{
+				key: 'items',
+				label: t('menus.items', 'Items'),
+				sortable: false,
+				render: (_v: any, row: Menu) => String(row.items?.length ?? 0)
+			},
+			{
+				key: 'updated_at',
+				label: t('common.updated', 'Updated'),
+				sortable: true,
+				render: (v: string) => (v ? new Date(v).toLocaleDateString() : '—')
+			}
+		],
+		filters: [
+			{
+				key: 'placement',
+				label: t('menus.placement', 'Placement'),
+				options: placementOptions
+			},
+			{
+				key: 'status',
+				label: t('common.status', 'Status'),
+				options: statusOptions
+			}
+		],
+		actions: [
+			{ label: t('common.view', 'View'), icon: Eye, onclick: (_row, ctx) => ctx?.openView(_row) },
+			{ label: t('menus.manage_items', 'Manage Items'), icon: ListTree, onclick: (row) => openItems(row) },
+			{
+				label: t('common.edit', 'Edit'),
+				icon: Pencil,
+				onclick: (row, ctx) => ctx?.openEdit(row),
+				show: () => canManageMenus
+			},
+			{
+				label: t('common.delete', 'Delete'),
+				icon: Trash2,
+				variant: 'destructive',
+				onclick: (row, ctx) => ctx?.openDelete(row),
+				show: () => canManageMenus
+			}
+		],
+		bulkActions: [
+			{
+				label: t('common.deleteSelected', 'Delete Selected'),
+				icon: Trash2,
+				variant: 'destructive',
+				onclick: bulkDelete
+			}
+		],
+		fields,
+		load: async ({ q, sort, filter }) => {
+			const params = new URLSearchParams();
+			if (q) params.set('q', q);
+			if (filter.placement) params.set('placement', filter.placement);
+			if (filter.status) params.set('status', filter.status);
+			// EntityPage emits sort as "key:dir"; the legacy API expects the bare key.
+			const sortKey = sort ? sort.split(':')[0] : '';
+			if (sortKey) params.set('sort', sortKey);
+			const result = await menusAdminApi.list(params.toString() || undefined);
+			if (result.ok) {
+				const data = (result.data as { items: Menu[] })?.items ?? [];
+				return { data, total: data.length, totalPages: 1 };
+			}
+			throw new Error(result.error ?? t('common.error', 'Failed to load menus'));
+		},
+		create: async (body) => {
+			const res = await menusAdminApi.create({
+				name: String(body.name ?? '').trim(),
+				slug: String(body.slug ?? '').trim().toLowerCase().replace(/\s+/g, '-'),
+				placement: String(body.placement ?? 'sidebar'),
+				status: String(body.status ?? 'active')
+			});
+			return res.ok ? { ok: true } : { ok: false, error: res.error };
+		},
+		update: async (id, body) => {
+			const res = await menusAdminApi.update(id, {
+				name: String(body.name ?? '').trim(),
+				slug: String(body.slug ?? '').trim().toLowerCase().replace(/\s+/g, '-'),
+				placement: String(body.placement ?? 'sidebar'),
+				status: String(body.status ?? 'active')
+			});
+			return res.ok ? { ok: true } : { ok: false, error: res.error };
+		},
+		remove: async (id) => {
+			const res = await menusAdminApi.delete(id);
+			return res.ok ? { ok: true } : { ok: false, error: res.error };
+		},
+		viewSnippet: MenuView
+	};
+
+	// ── Menu-ITEM editor (page-local SlideOver sub-flow) ──────────────────────
+	// Mirrors the tags moderators SlideOver pattern. Loads the full items tree via
+	// `menusAdminApi.get(id)` and supports add/edit/delete/reorder through the
+	// item endpoints, calling `entityController?.reload()` after every mutation.
+	let showItemsModal = $state(false);
+	let itemsMenu = $state<Menu | null>(null);
+	let menuItems = $state<MenuItem[]>([]);
+	let loadingItems = $state(false);
+	let itemsError = $state('');
+
+	// Item create/edit modal state
 	let showItemModal = $state(false);
 	let editingItem = $state<MenuItem | null>(null);
 	let savingItem = $state(false);
-	let itemLabel = $state("");
-	let itemUrl = $state("");
-	let itemParent = $state("");
-	let itemVisibility = $state<string>("all");
-	let itemTarget = $state<string>("_self");
-	let itemIcon = $state("");
-	let itemPermissionNode = $state("");
+	let itemLabel = $state('');
+	let itemUrl = $state('');
+	let itemParent = $state('');
+	let itemVisibility = $state<string>('all');
+	let itemTarget = $state<string>('_self');
+	let itemIcon = $state('');
+	let itemPermissionNode = $state('');
 	let itemRequiredGroupIds = $state<Set<string>>(new Set());
-	let activeMenuForItems = $state<Menu | null>(null);
 
 	// User groups for the required_group_ids multi-select
 	let userGroups = $state<UserGroup[]>([]);
 
 	// Group autocomplete state
-	let groupSearch = $state("");
+	let groupSearch = $state('');
 	let groupDropdownOpen = $state(false);
 	let groupDebounce: ReturnType<typeof setTimeout> | null = null;
 
 	// URL combobox state
-	let urlSearch = $state("");
+	let urlSearch = $state('');
 	let urlDropdownOpen = $state(false);
 
-	// Selected menu for viewing items
-	let selectedMenu = $state<Menu | null>(null);
-
-	let selectedMenuIds = $state<Set<string>>(new Set());
-	let selectedItemIds = $state<Set<string>>(new Set());
-	let bulkDeleting = $state(false);
-
-	const canManageMenus = $derived(hasPermission("menus.manage"));
-
-	// Collect all existing URLs from loaded menus' items (to merge with route list)
-	const existingUrlSet = $derived.by(() => {
-		const urls = new Set<string>();
-		for (const item of selectedMenu?.items ?? []) {
-			if (item.url) urls.add(item.url);
-		}
-		for (const m of menus) {
-			for (const item of m.items ?? []) {
-				if (item.url) urls.add(item.url);
-			}
-		}
-		return urls;
-	});
-
-	// URL suggestions: all JapaConnect routes + any custom URLs from existing items
-	const urlSuggestions = $derived(
-		suggestRoutes(urlSearch, new Set([itemUrl]))
-			// Also include custom URLs from existing items that aren't in the routes list
-			.concat([...existingUrlSet].filter((u) => !suggestRoutes('', new Set()).includes(u) && u !== itemUrl && (!urlSearch || u.toLowerCase().includes(urlSearch.toLowerCase()))))
-			.slice(0, 20)
-	);
+	// Delete item confirm state
+	let deleteItemTarget = $state<string | null>(null);
+	let showDeleteItemConfirm = $state(false);
 
 	async function loadUserGroups() {
 		try {
@@ -128,20 +261,43 @@
 	}
 
 	// Selected group objects for chip rendering
-	const selectedGroupObjs = $derived(
-		userGroups.filter((g) => itemRequiredGroupIds.has(g.id))
-	);
+	const selectedGroupObjs = $derived(userGroups.filter((g) => itemRequiredGroupIds.has(g.id)));
 
 	// Filtered suggestions for the autocomplete dropdown (excludes already-selected)
 	const groupSuggestions = $derived(
 		groupSearch.trim()
-			? userGroups.filter(
-					(g) =>
-						!itemRequiredGroupIds.has(g.id) &&
-						(g.name.toLowerCase().includes(groupSearch.toLowerCase()) ||
-							g.slug.toLowerCase().includes(groupSearch.toLowerCase()))
-				).slice(0, 10)
+			? userGroups
+					.filter(
+						(g) =>
+							!itemRequiredGroupIds.has(g.id) &&
+							(g.name.toLowerCase().includes(groupSearch.toLowerCase()) ||
+								g.slug.toLowerCase().includes(groupSearch.toLowerCase()))
+					)
+					.slice(0, 10)
 			: userGroups.filter((g) => !itemRequiredGroupIds.has(g.id)).slice(0, 10)
+	);
+
+	// Collect all existing URLs from the managed menu's items (to merge with route list)
+	const existingUrlSet = $derived.by(() => {
+		const urls = new Set<string>();
+		for (const item of menuItems) {
+			if (item.url) urls.add(item.url);
+		}
+		return urls;
+	});
+
+	// URL suggestions: all JapaConnect routes + any custom URLs from existing items
+	const urlSuggestions = $derived(
+		suggestRoutes(urlSearch, new Set([itemUrl]))
+			.concat(
+				[...existingUrlSet].filter(
+					(u) =>
+						!suggestRoutes('', new Set()).includes(u) &&
+						u !== itemUrl &&
+						(!urlSearch || u.toLowerCase().includes(urlSearch.toLowerCase()))
+				)
+			)
+			.slice(0, 20)
 	);
 
 	function handleGroupInput(e: Event) {
@@ -157,7 +313,7 @@
 		const next = new Set(itemRequiredGroupIds);
 		next.add(groupId);
 		itemRequiredGroupIds = next;
-		groupSearch = "";
+		groupSearch = '';
 	}
 
 	function removeGroup(groupId: string) {
@@ -166,184 +322,78 @@
 		itemRequiredGroupIds = next;
 	}
 
-	const menuColumns = $derived([
-		{ key: "name", label: t("menus.name", "Name"), sortable: true },
-		{ key: "slug", label: t("menus.slug", "Slug"), sortable: true },
-		{ key: "placement", label: t("menus.placement", "Placement"), sortable: true,
-			render: (v: string) => t(`menus.placement_${v}`, v)
-		},
-		{ key: "status", label: t("common.status", "Status"), sortable: true,
-			render: (v: string) => t(`common.status_${v}`, v)
-		},
-		{ key: "actions", label: t("common.actions", "Actions"), class: "w-40",
-			componentSnippet: MenuActionsCell
-		}
-	]);
+	async function openItems(menu: Menu) {
+		itemsMenu = menu;
+		showItemsModal = true;
+		itemsError = '';
+		await reloadItems();
+	}
 
-	const itemColumns = $derived([
-		{ key: "label", label: t("menus.item_label", "Label"), sortable: true },
-		{ key: "url", label: t("menus.item_url", "URL"), sortable: true },
-		{ key: "visibility", label: t("menus.visibility", "Visibility"), sortable: true,
-			render: (v: string) => t(`menus.visibility_${v}`, v)
-		},
-		{ key: "target", label: t("menus.target", "Target"), sortable: true,
-			render: (v: string) => v === "_blank" ? t("menus.target_blank", "New tab") : t("menus.target_self", "Same tab")
-		},
-		{ key: "actions", label: t("common.actions", "Actions"), class: "w-48",
-			componentSnippet: ItemActionsCell
-		}
-	]);
-
-	async function loadMenus(searchQuery?: string) {
-		loading = true;
-		error = "";
+	async function reloadItems() {
+		if (!itemsMenu) return;
+		loadingItems = true;
+		itemsError = '';
 		try {
-			const params = searchQuery ? `q=${encodeURIComponent(searchQuery)}` : undefined;
-			const result = await menusAdminApi.list(params);
+			const result = await menusAdminApi.get(itemsMenu.id);
 			if (result.ok) {
-				menus = ((result.data as { items: Menu[] })?.items) ?? [];
+				const full = result.data as Menu;
+				menuItems = full.items ?? [];
+				itemsMenu = { ...itemsMenu, items: menuItems };
 			} else {
-				error = result.error ?? t("common.error", "Failed to load menus");
+				itemsError = result.error ?? t('common.error', 'Failed to load menu items');
+				menuItems = itemsMenu.items ?? [];
 			}
 		} catch (e) {
-			error = e instanceof Error ? e.message : t("common.error", "Failed to load menus");
+			itemsError = e instanceof Error ? e.message : t('common.error', 'Failed to load menu items');
+			menuItems = itemsMenu.items ?? [];
 		} finally {
-			loading = false;
+			loadingItems = false;
 		}
 	}
 
-	async function viewMenuItems(menu: Menu) {
-		loading = true;
-		error = "";
-		try {
-			const result = await menusAdminApi.get(menu.id);
-			if (result.ok) {
-				selectedMenu = result.data as Menu;
-			} else {
-				selectedMenu = menu;
-				error = result.error ?? t("common.error", "Failed to load menu items");
-			}
-		} catch (e) {
-			selectedMenu = menu;
-			error = e instanceof Error ? e.message : t("common.error", "Failed to load menu items");
-		} finally {
-			loading = false;
-		}
-	}
-
-	// Menu CRUD
-	function openCreateMenu() {
-		menuModalMode = "create";
-		editingMenu = null;
-		menuName = "";
-		menuSlug = "";
-		menuPlacement = "sidebar";
-		showMenuModal = true;
-	}
-
-	function openEditMenu(menu: Menu | null) {
-		if (!menu) return;
-		menuModalMode = "edit";
-		editingMenu = menu;
-		menuName = menu.name;
-		menuSlug = menu.slug;
-		menuPlacement = menu.placement || "sidebar";
-		showMenuModal = true;
-	}
-
-	async function saveMenu() {
-		if (!menuName.trim() || !menuSlug.trim()) return;
-		savingMenu = true;
-		error = "";
-		try {
-			const body = {
-				name: menuName.trim(),
-				slug: menuSlug.trim().toLowerCase().replace(/\s+/g, "-"),
-				placement: menuPlacement
-			};
-			const result = editingMenu
-				? await menusAdminApi.update(editingMenu.id, body)
-				: await menusAdminApi.create(body);
-
-			if (result.ok) {
-				showMenuModal = false;
-				success = editingMenu ? t("menus.updated", "Menu updated") : t("menus.created", "Menu created");
-				loadMenus();
-			} else {
-				error = result.error ?? t("common.error", "Failed to save menu");
-			}
-		} catch (e) {
-			error = e instanceof Error ? e.message : t("common.error", "Failed to save menu");
-		} finally {
-			savingMenu = false;
-		}
-	}
-
-	let deleteMenuTarget = $state<Menu | null>(null);
-	let showDeleteMenuConfirm = $state(false);
-	function openDeleteMenu(menu: Menu | null) {
-		if (!menu) return;
-		deleteMenuTarget = menu;
-		showDeleteMenuConfirm = true;
-	}
-	async function confirmDeleteMenu() {
-		if (!deleteMenuTarget) return;
-		const deletedId = deleteMenuTarget.id;
-		const result = await menusAdminApi.delete(deletedId);
-		if (result.ok) {
-			showDeleteMenuConfirm = false;
-			deleteMenuTarget = null;
-			success = t("menus.deleted", "Menu deleted");
-			if (selectedMenu?.id === deletedId) selectedMenu = null;
-			loadMenus();
-		} else {
-			error = result.error ?? t("common.error", "Failed to delete menu");
-		}
-	}
+	// Sorted flat list of items for display + reorder
+	const sortedItems = $derived([...menuItems].sort((a, b) => a.sort_order - b.sort_order));
 
 	// Item CRUD
 	function openCreateItem() {
-		if (!selectedMenu) return;
-		activeMenuForItems = selectedMenu;
+		if (!itemsMenu) return;
 		editingItem = null;
-		itemLabel = "";
-		itemUrl = "";
-		urlSearch = "";
-		itemParent = "";
-		itemVisibility = "all";
-		itemTarget = "_self";
-		itemIcon = "";
-		itemPermissionNode = "";
+		itemLabel = '';
+		itemUrl = '';
+		urlSearch = '';
+		itemParent = '';
+		itemVisibility = 'all';
+		itemTarget = '_self';
+		itemIcon = '';
+		itemPermissionNode = '';
 		itemRequiredGroupIds = new Set();
-		groupSearch = "";
+		groupSearch = '';
 		groupDropdownOpen = false;
 		showItemModal = true;
 	}
 
-	async function openEditItem(itemId: string) {
-		if (!selectedMenu) return;
-		const item = (selectedMenu.items ?? []).find((i) => i.id === itemId);
+	function openEditItem(itemId: string) {
+		const item = menuItems.find((i) => i.id === itemId);
 		if (!item) return;
-		activeMenuForItems = selectedMenu;
 		editingItem = item;
 		itemLabel = item.label;
 		itemUrl = item.url;
-		urlSearch = "";
-		itemParent = item.parent_id ?? "";
-		itemVisibility = item.visibility || "all";
-		itemTarget = item.target || "_self";
-		itemIcon = item.icon ?? "";
-		itemPermissionNode = item.permission_node ?? "";
+		urlSearch = '';
+		itemParent = item.parent_id ?? '';
+		itemVisibility = item.visibility || 'all';
+		itemTarget = item.target || '_self';
+		itemIcon = item.icon ?? '';
+		itemPermissionNode = item.permission_node ?? '';
 		itemRequiredGroupIds = new Set(item.required_group_ids ?? []);
-		groupSearch = "";
+		groupSearch = '';
 		groupDropdownOpen = false;
 		showItemModal = true;
 	}
 
 	async function saveItem() {
-		if (!itemLabel.trim() || !itemUrl.trim() || !activeMenuForItems) return;
+		if (!itemLabel.trim() || !itemUrl.trim() || !itemsMenu) return;
 		savingItem = true;
-		error = "";
+		itemsError = '';
 		try {
 			const body: Record<string, unknown> = {
 				label: itemLabel.trim(),
@@ -357,61 +407,50 @@
 				// Preserve fields with no UI control on edit so the backend
 				// doesn't overwrite them with zero values (status="" violates
 				// the menu_items.status CHECK constraint → 500).
-				status: editingItem?.status ?? "active",
+				status: editingItem?.status ?? 'active',
 				sort_order: editingItem?.sort_order ?? 0,
 				is_ad_slot: editingItem?.is_ad_slot ?? false,
 				ad_slot_config: editingItem?.ad_slot_config ?? null
 			};
 			const result = editingItem
-				? await menusAdminApi.updateItem(activeMenuForItems.id, editingItem.id, body)
-				: await menusAdminApi.addItem(activeMenuForItems.id, body);
+				? await menusAdminApi.updateItem(itemsMenu.id, editingItem.id, body)
+				: await menusAdminApi.addItem(itemsMenu.id, body);
 
 			if (result.ok) {
 				showItemModal = false;
-				success = editingItem ? t("menus.item_updated", "Item updated") : t("menus.item_created", "Item created");
-				// Re-fetch the selected menu to get the updated items tree
-				const refreshed = await menusAdminApi.get(activeMenuForItems.id);
-				if (refreshed.ok) {
-					selectedMenu = refreshed.data as Menu;
-				}
-				await loadMenus();
+				await reloadItems();
+				entityController?.reload();
 			} else {
-				error = result.error ?? t("common.error", "Failed to save item");
+				itemsError = result.error ?? t('common.error', 'Failed to save item');
 			}
 		} catch (e) {
-			error = e instanceof Error ? e.message : t("common.error", "Failed to save item");
+			itemsError = e instanceof Error ? e.message : t('common.error', 'Failed to save item');
 		} finally {
 			savingItem = false;
 		}
 	}
 
-	let deleteItemTarget = $state<string | null>(null);
-	let showDeleteItemConfirm = $state(false);
 	function openDeleteItem(itemId: string) {
 		deleteItemTarget = itemId;
 		showDeleteItemConfirm = true;
 	}
+
 	async function confirmDeleteItem() {
-		if (!deleteItemTarget || !selectedMenu) return;
-		const result = await menusAdminApi.deleteItem(selectedMenu.id, deleteItemTarget);
+		if (!deleteItemTarget || !itemsMenu) return;
+		const result = await menusAdminApi.deleteItem(itemsMenu.id, deleteItemTarget);
 		if (result.ok) {
 			showDeleteItemConfirm = false;
 			deleteItemTarget = null;
-			success = t("menus.item_deleted", "Item deleted");
-			// Re-fetch the selected menu to get the updated items tree
-			const refreshed = await menusAdminApi.get(selectedMenu.id);
-			if (refreshed.ok) {
-				selectedMenu = refreshed.data as Menu;
-			}
-			await loadMenus();
+			await reloadItems();
+			entityController?.reload();
 		} else {
-			error = result.error ?? t("common.error", "Failed to delete item");
+			itemsError = result.error ?? t('common.error', 'Failed to delete item');
 		}
 	}
 
 	async function moveItem(itemId: string, direction: number) {
-		if (!selectedMenu) return;
-		const items = [...(selectedMenu.items ?? [])].sort((a, b) => a.sort_order - b.sort_order);
+		if (!itemsMenu) return;
+		const items = [...sortedItems];
 		const idx = items.findIndex((i) => i.id === itemId);
 		const swapIdx = idx + direction;
 		if (idx === -1 || swapIdx < 0 || swapIdx >= items.length) return;
@@ -420,211 +459,161 @@
 		[reordered[idx], reordered[swapIdx]] = [reordered[swapIdx], reordered[idx]];
 		const reorderItems = reordered.map((i, sortIdx) => ({ id: i.id, sort_order: sortIdx }));
 
-		const result = await menusAdminApi.reorderItems(selectedMenu.id, { items: reorderItems });
+		const result = await menusAdminApi.reorderItems(itemsMenu.id, { items: reorderItems });
 		if (result.ok) {
-			// Re-fetch the selected menu to get the updated items tree
-			const refreshed = await menusAdminApi.get(selectedMenu.id);
-			if (refreshed.ok) {
-				selectedMenu = refreshed.data as Menu;
-			}
-			await loadMenus();
+			await reloadItems();
+			entityController?.reload();
 		} else {
-			error = result.error ?? t("common.error", "Failed to reorder items");
+			itemsError = result.error ?? t('common.error', 'Failed to reorder items');
 		}
 	}
 
-	function backToMenus() {
-		selectedMenu = null;
-		selectedItemIds = new Set();
-	}
-
-	async function refreshPage() {
-		if (selectedMenu) {
-			// In items view: re-fetch the selected menu's items tree, then the list
-			loading = true;
-			error = "";
-			try {
-				const result = await menusAdminApi.get(selectedMenu.id);
-				if (result.ok) {
-					selectedMenu = result.data as Menu;
-				} else {
-					error = result.error ?? t("common.error", "Failed to load menu items");
-				}
-				await loadMenus();
-			} catch (e) {
-				error = e instanceof Error ? e.message : t("common.error", "Failed to load menu items");
-			} finally {
-				loading = false;
+	// Build a nested tree from the flat items list for the read-only view snippet.
+	function buildItemTree(items: MenuItem[]): MenuItem[] {
+		const byId = new Map<string, MenuItem & { children: MenuItem[] }>();
+		for (const it of items) byId.set(it.id, { ...it, children: [] });
+		const roots: MenuItem[] = [];
+		for (const it of byId.values()) {
+			if (it.parent_id && byId.has(it.parent_id)) {
+				byId.get(it.parent_id)!.children.push(it);
+			} else {
+				roots.push(it);
 			}
-		} else {
-			await loadMenus();
 		}
+		return roots;
 	}
 
-	async function bulkDeleteMenus() {
-		if (selectedMenuIds.size === 0) return;
-		bulkDeleting = true;
-		error = "";
-		try {
-			for (const id of selectedMenuIds) {
-				await menusAdminApi.delete(id);
-			}
-			selectedMenuIds = new Set();
-			loadMenus();
-		} catch {
-			error = t("common.error", "Failed to delete menus");
-		}
-		bulkDeleting = false;
-	}
-
-	async function bulkDeleteItems() {
-		if (selectedItemIds.size === 0 || !selectedMenu) return;
-		bulkDeleting = true;
-		error = "";
-		try {
-			for (const itemId of selectedItemIds) {
-				await menusAdminApi.deleteItem(selectedMenu.id, itemId);
-			}
-			selectedItemIds = new Set();
-			// Re-fetch the selected menu to get the updated items tree
-			const refreshed = await menusAdminApi.get(selectedMenu.id);
-			if (refreshed.ok) {
-				selectedMenu = refreshed.data as Menu;
-			}
-			await loadMenus();
-		} catch {
-			error = t("common.error", "Failed to delete items");
-		}
-		bulkDeleting = false;
-	}
-
-	loadMenus();
 	loadUserGroups();
 </script>
 
 <svelte:head>
-	<title>{t("menus.title", "Menus")} — JapaConnect Admin</title>
+	<title>{t('menus.title', 'Menus')} — JapaConnect Admin</title>
 </svelte:head>
 
-<PageHeader
-	title={t("menus.title", "Menus")}
-	description={t("menus.description", "Manage navigation menus and their items")}
-	actions={[
-		...(selectedMenu ? [{ label: t("menus.back", "Back to Menus"), icon: MenuIcon, variant: "ghost" as const, onclick: backToMenus }] : []),
-		...(canManageMenus ? [{ label: selectedMenu ? t("menus.add_item", "Add Item") : t("menus.create", "Create Menu"), icon: Plus, onclick: selectedMenu ? openCreateItem : openCreateMenu }] : []),
-		{ label: t("common.refresh", "Refresh"), icon: RefreshCw, variant: "ghost" as const, onclick: refreshPage }
-	]}
-/>
-
-{#if error}
-	<div class="mb-4 rounded-lg p-3 text-sm" style="background: color-mix(in srgb, var(--color-danger) 10%, transparent); color: var(--color-danger)">
-		{error}
-	</div>
-{/if}
-{#if success}
-	<div class="mb-4 rounded-lg p-3 text-sm" style="background: color-mix(in srgb, var(--color-success) 10%, transparent); color: var(--color-success)">
-		{success}
+{#if pageError}
+	<div
+		class="mb-4 rounded-lg p-3 text-sm"
+		style="background: color-mix(in srgb, var(--color-danger) 10%, transparent); color: var(--color-danger)"
+	>
+		{pageError}
 	</div>
 {/if}
 
-{#if !selectedMenu}
-	<Card>
-		<CardContent>
-			{#if loading}
-				<TableSkeleton rows={6} columns={menuColumns.length} />
-			{:else if menus.length === 0}
-				<div class="py-12 text-center text-sm" style="color: var(--color-muted)">
-					{t("menus.empty", "No menus found")}
+<EntityPage {config} bind:controller={entityController} />
+
+<!-- Menu Items editor (page-local SlideOver) -->
+<SlideOver bind:open={showItemsModal} title={t('menus.items', 'Items')} size="lg">
+	{#if itemsMenu}
+		<div class="space-y-4">
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">
+					{t('menus.title', 'Menus')}
+				</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">
+					{itemsMenu.name}
+				</p>
+			</div>
+
+			{#if itemsError}
+				<div
+					class="rounded-lg p-2 text-sm"
+					style="background: color-mix(in srgb, var(--color-danger) 10%, transparent); color: var(--color-danger)"
+				>
+					{itemsError}
+				</div>
+			{/if}
+
+			{#if canManageMenus}
+				<Button onclick={openCreateItem} disabled={loadingItems}>
+					<Plus class="mr-1 h-3.5 w-3.5" />
+					{t('menus.add_item', 'Add Item')}
+				</Button>
+			{/if}
+
+			{#if loadingItems}
+				<div class="py-8 text-center text-sm" style="color: var(--color-muted)">
+					{t('common.loading', 'Loading...')}
+				</div>
+			{:else if sortedItems.length === 0}
+				<div class="py-8 text-center text-sm" style="color: var(--color-muted)">
+					{t('menus.no_items', 'No items in this menu')}
 				</div>
 			{:else}
-				<DataTable columns={menuColumns} data={menus} pageSize={10} searchable onsearch={(q) => loadMenus(q)} selectable bind:selectedIds={selectedMenuIds}>
-					{#snippet bulkActions()}
-						<Button variant="destructive" size="sm" onclick={bulkDeleteMenus} disabled={bulkDeleting || selectedMenuIds.size === 0}>
-							<Trash2 class="h-3.5 w-3.5 mr-1" />
-							{bulkDeleting ? t("common.deleting", "Deleting...") : t("common.deleteSelected", "Delete Selected")} ({selectedMenuIds.size})
-						</Button>
-					{/snippet}
-				</DataTable>
-			{/if}
-		</CardContent>
-	</Card>
-{:else}
-	<Card>
-		<CardHeader>
-			<h3 class="text-lg font-medium" style="color: var(--color-foreground)">
-				{selectedMenu.name} — {t("menus.items", "Items")}
-			</h3>
-		</CardHeader>
-		<CardContent>
-			{#if loading}
-				<TableSkeleton rows={6} columns={itemColumns.length} />
-			{:else if (selectedMenu.items ?? []).length === 0}
-				<div class="py-12 text-center text-sm" style="color: var(--color-muted)">
-					{t("menus.no_items", "No items in this menu")}
+				<div class="space-y-2">
+					{#each sortedItems as item (item.id)}
+						<div
+							class="flex items-center justify-between rounded-lg border p-3"
+							style="border-color: var(--color-border)"
+						>
+							<div class="min-w-0 flex-1">
+								<div class="flex items-center gap-2">
+									{#if item.icon}
+										<span class="text-xs" style="color: var(--color-muted)">{item.icon}</span>
+									{/if}
+									<span class="truncate text-sm font-medium" style="color: var(--color-foreground)">
+										{item.label}
+									</span>
+									{#if item.parent_id}
+										<span class="text-xs" style="color: var(--color-muted)">
+											↳ {t('menus.parent', 'Parent')}: {menuItems.find((p) => p.id === item.parent_id)?.label ?? '—'}
+										</span>
+									{/if}
+								</div>
+								<p class="mt-0.5 truncate text-xs font-mono" style="color: var(--color-muted)">
+									{item.url}
+								</p>
+							</div>
+							{#if canManageMenus}
+								<div class="flex items-center gap-1">
+									<Button variant="ghost" size="sm" onclick={() => moveItem(item.id, -1)} aria-label={t('common.move_up', 'Move up')}>
+										<ArrowUp class="h-3.5 w-3.5" />
+									</Button>
+									<Button variant="ghost" size="sm" onclick={() => moveItem(item.id, 1)} aria-label={t('common.move_down', 'Move down')}>
+										<ArrowDown class="h-3.5 w-3.5" />
+									</Button>
+									<Button variant="ghost" size="sm" onclick={() => openEditItem(item.id)} aria-label={t('common.edit', 'Edit')}>
+										<Pencil class="h-3.5 w-3.5" />
+									</Button>
+									<Button
+										variant="ghost"
+										size="sm"
+										onclick={() => openDeleteItem(item.id)}
+										style="color: var(--color-danger)"
+										aria-label={t('common.delete', 'Delete')}
+									>
+										<Trash2 class="h-3.5 w-3.5" />
+									</Button>
+								</div>
+							{/if}
+						</div>
+					{/each}
 				</div>
-			{:else}
-				<DataTable columns={itemColumns} data={[...(selectedMenu.items ?? [])].sort((a, b) => a.sort_order - b.sort_order)} pageSize={(selectedMenu.items ?? []).length} selectable bind:selectedIds={selectedItemIds}>
-					{#snippet bulkActions()}
-						<Button variant="destructive" size="sm" onclick={bulkDeleteItems} disabled={bulkDeleting || selectedItemIds.size === 0}>
-							<Trash2 class="h-3.5 w-3.5 mr-1" />
-							{bulkDeleting ? t("common.deleting", "Deleting...") : t("common.deleteSelected", "Delete Selected")} ({selectedItemIds.size})
-						</Button>
-					{/snippet}
-				</DataTable>
 			{/if}
-		</CardContent>
-	</Card>
-{/if}
+		</div>
+	{/if}
 
-<!-- Menu Create/Edit Modal -->
-<Modal bind:open={showMenuModal} title={menuModalMode === "create" ? t("menus.create", "Create Menu") : t("menus.edit", "Edit Menu")}>
-	<div class="space-y-4">
-		<div>
-			<label for="menu-name" class="block text-sm font-medium" style="color: var(--color-foreground)">{t("menus.name", "Name")}</label>
-			<input id="menu-name" type="text" bind:value={menuName} class="mt-1 w-full rounded-lg border p-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" placeholder="e.g., Primary Nav" />
-		</div>
-		<div>
-			<label for="menu-slug" class="block text-sm font-medium" style="color: var(--color-foreground)">{t("menus.slug", "Slug")}</label>
-			<input id="menu-slug" type="text" bind:value={menuSlug} class="mt-1 w-full rounded-lg border p-2 text-sm font-mono" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" placeholder="primary-nav" />
-		</div>
-		<div>
-			<label for="menu-placement" class="block text-sm font-medium" style="color: var(--color-foreground)">{t("menus.placement", "Placement")}</label>
-			<Select
-				options={[
-					{ value: "sidebar", label: t("menus.placement_sidebar", "Sidebar") },
-					{ value: "bottom_bar", label: t("menus.placement_bottom_bar", "Bottom Bar") },
-					{ value: "dropdown", label: t("menus.placement_dropdown", "Dropdown") },
-					{ value: "footer", label: t("menus.placement_footer", "Footer") },
-					{ value: "header", label: t("menus.placement_header", "Header") }
-				]}
-				value={menuPlacement}
-				onchange={(val) => (menuPlacement = val)}
-			/>
-		</div>
-	</div>
-	<div class="mt-4 flex justify-end gap-2">
-		<Button variant="ghost" onclick={() => showMenuModal = false}>{t("common.cancel", "Cancel")}</Button>
-		<Button onclick={saveMenu} disabled={savingMenu || !menuName.trim() || !menuSlug.trim()}>
-			{savingMenu ? t("common.saving", "Saving...") : t("common.save", "Save")}
+	{#snippet footer()}
+		<Button variant="outline" onclick={() => (showItemsModal = false)}>
+			{t('common.close', 'Close')}
 		</Button>
-	</div>
-</Modal>
+	{/snippet}
+</SlideOver>
 
 <!-- Item Create/Edit Modal -->
-<Modal bind:open={showItemModal} title={editingItem ? t("menus.edit_item", "Edit Item") : t("menus.add_item", "Add Item")}>
+<Modal bind:open={showItemModal} title={editingItem ? t('menus.edit_item', 'Edit Item') : t('menus.add_item', 'Add Item')}>
 	<div class="grid grid-cols-2 gap-4">
 		<div>
-			<label for="item-label" class="block text-sm font-medium" style="color: var(--color-foreground)">{t("menus.item_label", "Label")}</label>
+			<label for="item-label" class="block text-sm font-medium" style="color: var(--color-foreground)">{t('menus.item_label', 'Label')}</label>
 			<input id="item-label" type="text" bind:value={itemLabel} class="mt-1 w-full rounded-lg border p-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" placeholder="Home" />
 		</div>
 		<label class="block">
-			<span class="block text-sm font-medium" style="color: var(--color-foreground)">{t("menus.icon", "Icon")}</span>
+			<span class="block text-sm font-medium" style="color: var(--color-foreground)">{t('menus.icon', 'Icon')}</span>
 			<div class="mt-1">
 				<IconPicker bind:value={itemIcon} />
 			</div>
 		</label>
 		<div class="col-span-2">
-			<label for="item-url" class="block text-sm font-medium" style="color: var(--color-foreground)">{t("menus.item_url", "URL")}</label>
+			<label for="item-url" class="block text-sm font-medium" style="color: var(--color-foreground)">{t('menus.item_url', 'URL')}</label>
 			<div class="relative mt-1">
 				<input
 					id="item-url"
@@ -650,13 +639,18 @@
 				{/if}
 			</div>
 		</div>
-		{#if selectedMenu && (selectedMenu.items ?? []).length > 0}
+		<div class="col-span-2">
+			<label for="item-permission-node" class="block text-sm font-medium" style="color: var(--color-foreground)">{t('menus.permission_node', 'Permission Node')}</label>
+			<input id="item-permission-node" type="text" bind:value={itemPermissionNode} class="mt-1 w-full rounded-lg border p-2 text-sm font-mono" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" placeholder="content.view" />
+			<p class="mt-0.5 text-xs" style="color: var(--color-muted)">{t('menus.permission_node_hint', 'Optional. Restrict this item to users with the given permission node.')}</p>
+		</div>
+		{#if menuItems.length > 0}
 			<div class="col-span-2">
-				<label for="item-parent" class="block text-sm font-medium" style="color: var(--color-foreground)">{t("menus.parent", "Parent")}</label>
+				<label for="item-parent" class="block text-sm font-medium" style="color: var(--color-foreground)">{t('menus.parent', 'Parent')}</label>
 				<Select
 					options={[
-						{ value: "", label: t("menus.no_parent", "No parent") },
-						...(selectedMenu?.items ?? []).filter((i) => !editingItem || i.id !== editingItem.id).map((item) => ({
+						{ value: '', label: t('menus.no_parent', 'No parent') },
+						...menuItems.filter((i) => !editingItem || i.id !== editingItem.id).map((item) => ({
 							value: item.id,
 							label: item.label
 						}))
@@ -667,31 +661,31 @@
 			</div>
 		{/if}
 		<div>
-			<label for="item-visibility" class="block text-sm font-medium" style="color: var(--color-foreground)">{t("menus.visibility", "Visibility")}</label>
+			<label for="item-visibility" class="block text-sm font-medium" style="color: var(--color-foreground)">{t('menus.visibility', 'Visibility')}</label>
 			<Select
 				options={[
-					{ value: "all", label: t("menus.visibility_all", "All") },
-					{ value: "authenticated", label: t("menus.visibility_authenticated", "Authenticated") },
-					{ value: "guest", label: t("menus.visibility_guest", "Guest") }
+					{ value: 'all', label: t('menus.visibility_all', 'All') },
+					{ value: 'authenticated', label: t('menus.visibility_authenticated', 'Authenticated') },
+					{ value: 'guest', label: t('menus.visibility_guest', 'Guest') }
 				]}
 				value={itemVisibility}
 				onchange={(val) => (itemVisibility = val)}
 			/>
 		</div>
 		<div>
-			<label for="item-target" class="block text-sm font-medium" style="color: var(--color-foreground)">{t("menus.target", "Target")}</label>
+			<label for="item-target" class="block text-sm font-medium" style="color: var(--color-foreground)">{t('menus.target', 'Target')}</label>
 			<Select
 				options={[
-					{ value: "_self", label: t("menus.target_self", "Same tab") },
-					{ value: "_blank", label: t("menus.target_blank", "New tab") }
+					{ value: '_self', label: t('menus.target_self', 'Same tab') },
+					{ value: '_blank', label: t('menus.target_blank', 'New tab') }
 				]}
 				value={itemTarget}
 				onchange={(val) => (itemTarget = val)}
 			/>
 		</div>
 		<label class="block col-span-2">
-			<span class="block text-sm font-medium" style="color: var(--color-foreground)">{t("menus.required_groups", "Required User Groups")}</span>
-			<p class="mt-0.5 text-xs" style="color: var(--color-muted)">{t("menus.required_groups_hint", "Item is visible only to users in at least one selected group. Leave empty for everyone.")}</p>
+			<span class="block text-sm font-medium" style="color: var(--color-foreground)">{t('menus.required_groups', 'Required User Groups')}</span>
+			<p class="mt-0.5 text-xs" style="color: var(--color-muted)">{t('menus.required_groups_hint', 'Item is visible only to users in at least one selected group. Leave empty for everyone.')}</p>
 			<div class="relative mt-1">
 				<div
 					class="flex flex-wrap items-center gap-1 w-full rounded-lg border p-1.5 min-h-[2.5rem]"
@@ -705,7 +699,7 @@
 								class="ml-0.5 opacity-60 hover:opacity-100"
 								style="color: var(--color-foreground)"
 								onclick={() => removeGroup(group.id)}
-								aria-label={t("common.remove", "Remove")}
+								aria-label={t('common.remove', 'Remove')}
 							>
 								&times;
 							</button>
@@ -718,17 +712,17 @@
 						onfocus={() => { groupDropdownOpen = true; }}
 						onblur={() => setTimeout(() => (groupDropdownOpen = false), 200)}
 						onkeydown={(e) => {
-							if (e.key === "Escape") groupDropdownOpen = false;
-							else if (e.key === "Enter" && groupSuggestions.length > 0) {
+							if (e.key === 'Escape') groupDropdownOpen = false;
+							else if (e.key === 'Enter' && groupSuggestions.length > 0) {
 								e.preventDefault();
 								addGroup(groupSuggestions[0].id);
-							} else if (e.key === "Backspace" && !groupSearch && selectedGroupObjs.length > 0) {
+							} else if (e.key === 'Backspace' && !groupSearch && selectedGroupObjs.length > 0) {
 								removeGroup(selectedGroupObjs[selectedGroupObjs.length - 1].id);
 							}
 						}}
 						class="flex-1 min-w-[8rem] bg-transparent border-0 outline-none text-sm py-1 px-1"
 						style="color: var(--color-foreground)"
-						placeholder={itemRequiredGroupIds.size === 0 ? t("menus.search_groups", "Search groups...") : ""}
+						placeholder={itemRequiredGroupIds.size === 0 ? t('menus.search_groups', 'Search groups...') : ''}
 					/>
 				</div>
 				{#if groupDropdownOpen && groupSuggestions.length > 0}
@@ -755,70 +749,88 @@
 		</label>
 	</div>
 	<div class="mt-4 flex justify-end gap-2">
-		<Button variant="ghost" onclick={() => showItemModal = false}>{t("common.cancel", "Cancel")}</Button>
+		<Button variant="ghost" onclick={() => (showItemModal = false)}>{t('common.cancel', 'Cancel')}</Button>
 		<Button onclick={saveItem} disabled={savingItem || !itemLabel.trim() || !itemUrl.trim()}>
-			{savingItem ? t("common.saving", "Saving...") : t("common.save", "Save")}
+			{savingItem ? t('common.saving', 'Saving...') : t('common.save', 'Save')}
 		</Button>
-	</div>
-</Modal>
-
-<!-- Delete Menu Confirm -->
-<Modal bind:open={showDeleteMenuConfirm} title={t("common.confirmDelete", "Confirm Delete")}>
-	{#if deleteMenuTarget}
-		<p class="text-sm" style="color: var(--color-foreground)">
-			{t("menus.delete_confirm", "Delete menu")} <strong>{deleteMenuTarget.name}</strong>?
-		</p>
-		<p class="mt-2 text-sm" style="color: var(--color-danger)">{t("common.cannotUndo", "This action cannot be undone.")}</p>
-	{/if}
-	<div class="mt-4 flex justify-end gap-2">
-		<Button variant="ghost" onclick={() => showDeleteMenuConfirm = false}>{t("common.cancel", "Cancel")}</Button>
-		<Button variant="destructive" onclick={confirmDeleteMenu}>{t("common.delete", "Delete")}</Button>
 	</div>
 </Modal>
 
 <!-- Delete Item Confirm -->
-<Modal bind:open={showDeleteItemConfirm} title={t("common.confirmDelete", "Confirm Delete")}>
-	<p class="text-sm" style="color: var(--color-foreground)">{t("menus.delete_item_confirm", "Delete this menu item?")}</p>
-	<p class="mt-2 text-sm" style="color: var(--color-danger)">{t("common.cannotUndo", "This action cannot be undone.")}</p>
+<Modal bind:open={showDeleteItemConfirm} title={t('common.confirmDelete', 'Confirm Delete')}>
+	<p class="text-sm" style="color: var(--color-foreground)">{t('menus.delete_item_confirm', 'Delete this menu item?')}</p>
+	<p class="mt-2 text-sm" style="color: var(--color-danger)">{t('common.cannotUndo', 'This action cannot be undone.')}</p>
 	<div class="mt-4 flex justify-end gap-2">
-		<Button variant="ghost" onclick={() => showDeleteItemConfirm = false}>{t("common.cancel", "Cancel")}</Button>
-		<Button variant="destructive" onclick={confirmDeleteItem}>{t("common.delete", "Delete")}</Button>
+		<Button variant="ghost" onclick={() => (showDeleteItemConfirm = false)}>{t('common.cancel', 'Cancel')}</Button>
+		<Button variant="destructive" onclick={confirmDeleteItem}>{t('common.delete', 'Delete')}</Button>
 	</div>
 </Modal>
 
-<!-- MenuActionsCell -->
-{#snippet MenuActionsCell({ value, row }: { value: any; row: Menu })}
-	<div class="flex items-center gap-1">
-		<Button variant="ghost" size="sm" onclick={() => viewMenuItems(row)} style="color: var(--color-primary)">
-			{t("menus.items", "Items")}
-		</Button>
-		{#if canManageMenus}
-			<Button variant="ghost" size="sm" onclick={() => openEditMenu(row)}>
-				<Pencil class="h-3.5 w-3.5" />
-			</Button>
-			<Button variant="ghost" size="sm" onclick={() => openDeleteMenu(row)} style="color: var(--color-danger)">
-				<Trash2 class="h-3.5 w-3.5" />
-			</Button>
-		{/if}
+<!-- ── Snippets ─────────────────────────────────────────────────────────── -->
+
+<!-- View slide-over body: menu basic fields + read-only tree of its items -->
+{#snippet MenuView({ row }: { row: Menu })}
+	<div class="space-y-4">
+		<div class="grid grid-cols-2 gap-4">
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('menus.name', 'Name')}</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.name}</p>
+			</div>
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('menus.slug', 'Slug')}</p>
+				<p class="mt-1 text-sm font-mono" style="color: var(--color-foreground)">{row.slug}</p>
+			</div>
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('menus.placement', 'Placement')}</p>
+				<div class="mt-1">
+					<Badge>{t(`menus.placement_${row.placement}`, row.placement)}</Badge>
+				</div>
+			</div>
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('common.status', 'Status')}</p>
+				<div class="mt-1">
+					<Badge variant={row.status === 'active' ? 'default' : 'secondary'}>{t(`common.status_${row.status}`, row.status)}</Badge>
+				</div>
+			</div>
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('menus.items', 'Items')}</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.items?.length ?? 0}</p>
+			</div>
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('common.updated', 'Updated')}</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.updated_at ? new Date(row.updated_at).toLocaleString() : '—'}</p>
+			</div>
+		</div>
+
+		<div>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('menus.items', 'Items')}</p>
+			<div class="mt-2">
+				{#if (row.items ?? []).length === 0}
+					<p class="text-sm" style="color: var(--color-muted)">{t('menus.no_items', 'No items in this menu')}</p>
+				{:else}
+					{@render ItemTree({ nodes: buildItemTree(row.items ?? []), depth: 0 })}
+				{/if}
+			</div>
+		</div>
 	</div>
 {/snippet}
 
-<!-- ItemActionsCell -->
-{#snippet ItemActionsCell({ value, row }: { value: any; row: MenuItem })}
-	<div class="flex items-center gap-1">
-		{#if canManageMenus}
-			<Button variant="ghost" size="sm" onclick={() => moveItem(row.id, -1)}>
-				<ArrowUp class="h-3.5 w-3.5" />
-			</Button>
-			<Button variant="ghost" size="sm" onclick={() => moveItem(row.id, 1)}>
-				<ArrowDown class="h-3.5 w-3.5" />
-			</Button>
-			<Button variant="ghost" size="sm" onclick={() => openEditItem(row.id)}>
-				<Pencil class="h-3.5 w-3.5" />
-			</Button>
-			<Button variant="ghost" size="sm" onclick={() => openDeleteItem(row.id)} style="color: var(--color-danger)">
-				<Trash2 class="h-3.5 w-3.5" />
-			</Button>
-		{/if}
-	</div>
+<!-- Recursive read-only item tree -->
+{#snippet ItemTree({ nodes, depth }: { nodes: MenuItem[]; depth: number })}
+	<ul class="space-y-1">
+		{#each nodes.sort((a, b) => a.sort_order - b.sort_order) as node (node.id)}
+			<li>
+				<div class="flex items-center gap-2 rounded px-2 py-1" style="margin-left: {depth * 1}rem">
+					{#if node.icon}
+						<span class="text-xs" style="color: var(--color-muted)">{node.icon}</span>
+					{/if}
+					<span class="text-sm font-medium" style="color: var(--color-foreground)">{node.label}</span>
+					<span class="truncate text-xs font-mono" style="color: var(--color-muted)">{node.url}</span>
+				</div>
+				{#if node.children && node.children.length > 0}
+					{@render ItemTree({ nodes: node.children, depth: depth + 1 })}
+				{/if}
+			</li>
+		{/each}
+	</ul>
 {/snippet}

@@ -4,8 +4,10 @@
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { DataTable } from '$lib/components/ui/data-table';
-	import { Button } from '$lib/components/ui/button';
+	import type { ActionItem } from '$lib/components/ui/data-table';
 	import { goto } from '$app/navigation';
+	import PageHeader from '$lib/components/layout/page-header.svelte';
+	import { Plus } from 'lucide-svelte';
 
 	// Ref: jc-admin-develop — RBAC gate for form management
 	const canManage = $derived(hasPermission('space.forms.manage'));
@@ -30,8 +32,11 @@
 		{ key: 'name', label: t('space_forms.name'), sortable: true },
 		{ key: 'description', label: t('space_forms.description_label'), sortable: true, class: 'text-xs max-w-xs truncate', render: (v: string) => `<span style="color: var(--color-muted)">${v || '—'}</span>` },
 		{ key: 'submission_count', label: t('space_forms.submissions'), sortable: true, render: (v: number) => `<span class="inline-block rounded-full px-2 py-0.5 text-xs bg-black/5 dark:bg-surface/10">${v}</span>` },
-		{ key: 'created_at', label: t('space_forms.created'), sortable: true, class: 'text-xs', render: (v: string) => `<span style="color: var(--color-muted)">${v}</span>` },
-		{ key: 'actions', label: '', class: 'w-20', componentSnippet: FormActionsCell }
+		{ key: 'created_at', label: t('space_forms.created'), sortable: true, class: 'text-xs', render: (v: string) => `<span style="color: var(--color-muted)">${v}</span>` }
+	];
+
+	const rowActions: ActionItem[] = [
+		{ label: t('common.view', 'View'), onclick: (row: FormDef) => goto(`/spaces/${spaceId}/forms/${row.id}`) }
 	];
 
 	function filteredForms(): FormDef[] {
@@ -63,31 +68,15 @@
 	});
 </script>
 
-{#snippet FormActionsCell({ value, row }: { value: any; row: FormDef })}
-	<Button variant="ghost" size="sm" onclick={() => goto(`/spaces/${spaceId}/forms/${row.id}`)} style="color: var(--color-info)">
-		View
-	</Button>
-{/snippet}
-
 <svelte:head>
 	<title>Space Forms — JapaConnect Admin</title>
 </svelte:head>
 
-<div class="mb-4 flex items-center justify-between">
-	<div>
-		<h1 class="text-2xl font-bold tracking-tight">{t('space_forms.title')}</h1>
-		<p class="mt-1 text-sm" style="color: var(--color-muted)">{t('space_forms.description')}</p>
-	</div>
-	{#if canManage}
-	<a
-		href="/spaces/{spaceId}/forms/new"
-		class="inline-flex items-center rounded-md px-4 py-2 text-sm font-medium text-white transition-colors"
-		style="background-color: var(--color-primary)"
-	>
-		{t('space_forms.create')}
-	</a>
-	{/if}
-</div>
+<PageHeader
+	title={t('space_forms.title')}
+	description={t('space_forms.description')}
+	actions={canManage ? [{ label: t('space_forms.create'), icon: Plus, onclick: () => goto(`/spaces/${spaceId}/forms/new`) }] : []}
+/>
 
 {#if errorMessage}
 	<div class="mb-4 rounded-md border px-4 py-3 text-sm" style="border-color: var(--color-danger); background-color: color-mix(in srgb, var(--color-danger) 8%, transparent); color: var(--color-danger)">
@@ -104,4 +93,5 @@
 	searchable
 	searchPlaceholder={t('common.search')}
 	onsearch={(q) => { searchQuery = q; }}
+	actions={rowActions}
 />

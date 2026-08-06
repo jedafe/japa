@@ -318,6 +318,31 @@ func (s *Store) getUserDraft(ctx context.Context, tenantID, userID, contentID pg
 	})
 }
 
+// getUserContent returns the caller's own content by ID, scoped to the
+// tenant and author with no status filter (covers published, scheduled, and
+// draft). Used by GET /me/content/{id} so the /create composer can restore
+// any of the caller's own content for editing. Returns pgx.ErrNoRows when
+// the content is missing or owned by another user/tenant → 404.
+func (s *Store) getUserContent(ctx context.Context, tenantID, userID, contentID pgtype.UUID) (gen.GetUserContentRow, error) {
+	return s.read.GetUserContent(ctx, gen.GetUserContentParams{
+		ID:       contentID,
+		TenantID: tenantID,
+		AuthorID: userID,
+	})
+}
+
+// getContentByIDForEditor returns any content by ID within the tenant (no
+// author filter). Used by GET /me/content/{id} as a fallback when the caller
+// is a super-admin or holds the RBAC `content.edit` permission but is not
+// the content owner. Returns pgx.ErrNoRows when the content is missing or
+// belongs to a different tenant → 404.
+func (s *Store) getContentByIDForEditor(ctx context.Context, tenantID, contentID pgtype.UUID) (gen.GetContentByIDForEditorRow, error) {
+	return s.read.GetContentByIDForEditor(ctx, gen.GetContentByIDForEditorParams{
+		ID:       contentID,
+		TenantID: tenantID,
+	})
+}
+
 func (s *Store) listUserBookmarks(ctx context.Context, userID pgtype.UUID, limit, offset int32) ([]gen.ListUserBookmarksRow, error) {
 	return s.read.ListUserBookmarks(ctx, gen.ListUserBookmarksParams{
 		UserID: userID,

@@ -36,7 +36,7 @@ describe('Bot Management +page.svelte', () => {
 	it('shows empty state when no bots', async () => {
 		render(Page);
 		await waitFor(() => {
-			expect(screen.getByText('No bots configured')).toBeTruthy();
+			expect(screen.getByText('No data available')).toBeTruthy();
 		});
 	});
 });

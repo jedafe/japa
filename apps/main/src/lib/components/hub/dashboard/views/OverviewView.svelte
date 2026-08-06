@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { t } from '$lib/i18n';
+	import { i18n } from '$lib/i18n';
 	import DashboardPanel from '$lib/components/hub/DashboardPanel.svelte';
 	import MetricCard from '$lib/components/hub/MetricCard.svelte';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
@@ -57,7 +58,7 @@
 	function formatDate(iso: string | undefined): string {
 		if (!iso) return '';
 		const d = new Date(iso);
-		return isNaN(d.getTime()) ? '' : d.toLocaleDateString();
+		return isNaN(d.getTime()) ? '' : d.toLocaleDateString(i18n.locale);
 	}
 </script>
 

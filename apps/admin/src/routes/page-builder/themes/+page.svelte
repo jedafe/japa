@@ -1,15 +1,16 @@
 <script lang="ts">
-	import PageHeader from "$lib/components/layout/page-header.svelte";
-	import { Card, CardContent, CardHeader } from "$lib/components/ui/card";
-	import { DataTable } from "$lib/components/ui/data-table";
-	import { Badge } from "$lib/components/ui/badge";
-	import { Button } from "$lib/components/ui/button";
-	import { Modal } from "$lib/components/ui/modal";
-	import { TableSkeleton } from "$lib/components/ui/skeleton";
-	import { Plus, Pencil, Trash2, RefreshCw, Star } from "lucide-svelte";
-	import { pageBuilderAdminApiExtended } from "$lib/api";
-	import { t } from "$lib/stores/i18n.svelte";
-	import { hasPermission } from "$lib/stores/permissions.svelte";
+	// /page-builder/themes — migrated to the EntityPage scaffold.
+	// Simple CRUD entity using declarative `fields` (EntityForm) plus a custom
+	// `actions` array with a "Set Default" state action backed by a page-local
+	// confirm Modal (EntityPage's built-in confirm only covers delete).
+	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
+	import { Modal } from '$lib/components/ui/modal';
+	import { Button } from '$lib/components/ui/button';
+	import { pageBuilderAdminApiExtended } from '$lib/api';
+	import { t } from '$lib/stores/i18n.svelte';
+	import { hasPermission } from '$lib/stores/permissions.svelte';
+	import { Eye, Pencil, Trash2, Star } from 'lucide-svelte';
+	import type { ActionItem } from '$lib/components/ui/data-table';
 
 	type PageTheme = {
 		id: string;
@@ -20,284 +21,241 @@
 		updated_at: string;
 	};
 
+	const canManageThemes = $derived(hasPermission('pagebuilder.themes.manage'));
+
 	// slugify derives a URL-safe slug from a free-form name so the backend
 	// (CreateThemeInput.Slug — required) always receives a valid value even
-	// when the admin leaves the Slug field blank.
+	// when the admin leaves the Slug field blank. Mirrors the legacy submit().
 	function slugify(value: string): string {
-		return value.toLowerCase().trim()
-			.replace(/[^a-z0-9]+/g, "-")
-			.replace(/^-+|-+$/g, "");
+		return value
+			.toLowerCase()
+			.trim()
+			.replace(/[^a-z0-9]+/g, '-')
+			.replace(/^-+|-+$/g, '');
 	}
 
-	let themes = $state<PageTheme[]>([]);
-	let loading = $state(true);
-	let error = $state("");
-	let success = $state("");
-	let selectedIds = $state<Set<string>>(new Set());
+	// ── Bulk delete ───── EntityPage auto-reloads + clears selection after a bulk action handler completes.
+	let entityController = $state<EntityPageController | undefined>(undefined);
+	let pageError = $state('');
 	let bulkDeleting = $state(false);
 
-	// Search term wired into the themes load via the DataTable search box
-	let searchTerm = $state("");
+	async function bulkDelete(ids: Set<string>) {
+		const idArr = Array.from(ids);
+		if (idArr.length === 0) return;
+		if (bulkDeleting) return; // in-flight guard
+		bulkDeleting = true;
+		pageError = '';
+		try {
+			await Promise.all(idArr.map((id) => pageBuilderAdminApiExtended.deleteTheme(id)));
+		} catch (e) {
+			pageError = e instanceof Error ? e.message : t('common.error', 'Failed to delete themes');
+		} finally {
+			bulkDeleting = false;
+		}
+	}
 
-	// Modal
-	let showModal = $state(false);
-	let modalMode = $state<"create" | "edit">("create");
-	let editingTheme = $state<PageTheme | null>(null);
-	let saving = $state(false);
-	let themeName = $state("");
-	let themeSlug = $state("");
-
-	// Set Default confirmation
+	// ── Set Default state action ────────────────────────────────────────────
+	// EntityPage's confirm Modal only covers default delete; state actions keep
+	// a page-local Modal with richer copy, confirm calls API + controller.reload().
 	let showSetDefaultConfirm = $state(false);
 	let setDefaultTarget = $state<PageTheme | null>(null);
+	let settingDefault = $state(false);
 
-	// Delete confirmation
-	let showDeleteConfirm = $state(false);
-	let deleteTarget = $state<PageTheme | null>(null);
-
-	const canManageThemes = $derived(hasPermission("pagebuilder.themes.manage"));
-
-	function confirmSetDefault(theme: PageTheme) {
+	function openSetDefault(theme: PageTheme) {
 		setDefaultTarget = theme;
 		showSetDefaultConfirm = true;
 	}
 
-	async function executeSetDefault() {
+	async function confirmSetDefault() {
 		if (!setDefaultTarget) return;
-		const result = await pageBuilderAdminApiExtended.setDefaultTheme(setDefaultTarget.id);
-		if (result.ok) {
-			showSetDefaultConfirm = false;
-			setDefaultTarget = null;
-			success = t("themes.default_set", "Default theme updated");
-			loadThemes();
-		} else {
-			error = result.error ?? t("common.error", "Failed to set default theme");
+		settingDefault = true;
+		pageError = '';
+		try {
+			const result = await pageBuilderAdminApiExtended.setDefaultTheme(setDefaultTarget.id);
+			if (result.ok) {
+				showSetDefaultConfirm = false;
+				setDefaultTarget = null;
+				entityController?.reload();
+			} else {
+				pageError = result.error ?? t('common.error', 'Failed to set default theme');
+			}
+		} catch (e) {
+			pageError = e instanceof Error ? e.message : t('common.error', 'Failed to set default theme');
+		} finally {
+			settingDefault = false;
 		}
 	}
 
-	const columns = [
-		{ key: "name", label: t("themes.name", "Name"), sortable: true },
-		{ key: "is_default", label: t("themes.default", "Default"), sortable: true,
-			render: (v: boolean) => v ? t("common.yes", "Yes") : t("common.no", "No")
-		},
-		{ key: "created_at", label: t("themes.created", "Created"), sortable: true,
-			render: (v: string) => new Date(v).toLocaleDateString()
-		},
-		{ key: "actions", label: t("common.actions", "Actions"), class: "w-48",
-			componentSnippet: ThemeActionsCell
+	// `fields` drives EntityForm rendering and edit-form seeding. Mirrors the
+	// legacy form exactly: name (required) + slug (auto-generated when blank).
+	const fields: FieldDef[] = [
+		{ key: 'name', label: t('themes.name', 'Name'), type: 'text', placeholder: 'e.g., Dark Theme', required: true },
+		{
+			key: 'slug',
+			label: t('themes.slug', 'Slug'),
+			type: 'text',
+			placeholder: t('themes.slug_placeholder', 'auto-generated-from-name'),
+			help: t('themes.slug_hint', 'Leave blank to auto-generate from the name.')
 		}
 	];
 
-	async function loadThemes() {
-		loading = true;
-		error = "";
-		try {
+	// Custom `actions` replace the defaults, so View/Edit/Delete are included
+	// explicitly alongside the Set Default state action. show() predicates
+	// mirror the legacy ThemeActionsCell (Set Default + Delete hidden when the
+	// row is already the default theme).
+	const rowActions = $derived.by<ActionItem[]>(() => {
+		const acts: ActionItem[] = [
+			{ label: t('common.view', 'View'), icon: Eye, onclick: (_row, ctx) => ctx?.openView(_row) }
+		];
+		if (canManageThemes) {
+			acts.push({ label: t('common.edit', 'Edit'), icon: Pencil, onclick: (_row, ctx) => ctx?.openEdit(_row) });
+			acts.push({
+				label: t('themes.set_default', 'Set Default'),
+				icon: Star,
+				onclick: (row: PageTheme) => openSetDefault(row),
+				show: (row: PageTheme) => !row.is_default
+			});
+			acts.push({
+				label: t('common.delete', 'Delete'),
+				icon: Trash2,
+				variant: 'destructive',
+				onclick: (_row, ctx) => ctx?.openDelete(_row),
+				show: (row: PageTheme) => !row.is_default
+			});
+		}
+		return acts;
+	});
+
+	// Config built as a $derived so rowActions updates (permission-gated) propagate.
+	const config = $derived<EntityPageConfig>({
+		title: t('themes.title', 'Page Themes'),
+		description: t('themes.description', 'Manage page builder themes'),
+		createLabel: t('themes.create', 'Create Theme'),
+		createPermission: 'pagebuilder.themes.manage',
+		pageSize: 25,
+		columns: [
+			{ key: 'name', label: t('themes.name', 'Name'), sortable: true },
+			{ key: 'slug', label: t('themes.slug', 'Slug'), sortable: true },
+			{
+				key: 'is_default',
+				label: t('themes.default', 'Default'),
+				sortable: true,
+				render: (v: boolean) =>
+					v
+						? `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium bg-primary/15 text-primary dark:text-primary">${t('common.yes', 'Yes')}</span>`
+						: `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium bg-muted/15 text-muted dark:text-muted">${t('common.no', 'No')}</span>`
+			},
+			{
+				key: 'updated_at',
+				label: t('themes.updated', 'Updated'),
+				sortable: true,
+				render: (v: string) => (v ? new Date(v).toLocaleDateString() : '—')
+			}
+		],
+		actions: rowActions,
+		bulkActions: [
+			{
+				label: t('common.deleteSelected', 'Delete Selected'),
+				icon: Trash2,
+				variant: 'destructive',
+				onclick: bulkDelete
+			}
+		],
+		fields,
+		load: async ({ q }) => {
 			const params = new URLSearchParams();
-			if (searchTerm.trim()) params.set("q", searchTerm.trim());
-			const qs = params.toString();
-			const result = await pageBuilderAdminApiExtended.listThemes(qs);
+			if (q) params.set('q', q);
+			const result = await pageBuilderAdminApiExtended.listThemes(params.toString() || undefined);
 			if (result.ok) {
-				themes = (result.data as PageTheme[]) ?? [];
-			} else {
-				error = result.error ?? t("common.error", "Failed to load themes");
+				const data = (result.data as PageTheme[]) ?? [];
+				return { data, total: data.length, totalPages: 1 };
 			}
-		} catch (e) {
-			error = e instanceof Error ? e.message : t("common.error", "Failed to load themes");
-		} finally {
-			loading = false;
-		}
-	}
-
-	function openCreate() {
-		modalMode = "create";
-		editingTheme = null;
-		themeName = "";
-		themeSlug = "";
-		showModal = true;
-	}
-
-	function openEdit(theme: PageTheme | null) {
-		if (!theme) return;
-		modalMode = "edit";
-		editingTheme = theme;
-		themeName = theme.name;
-		themeSlug = theme.slug;
-		showModal = true;
-	}
-
-	async function saveTheme() {
-		if (!themeName.trim()) return;
-		saving = true;
-		error = "";
-		try {
-			const payload = {
-				name: themeName.trim(),
-				slug: themeSlug.trim() || slugify(themeName)
-			};
-			const result = editingTheme
-				? await pageBuilderAdminApiExtended.updateTheme(editingTheme.id, payload)
-				: await pageBuilderAdminApiExtended.createTheme(payload);
-
-			if (result.ok) {
-				showModal = false;
-				success = editingTheme ? t("themes.updated", "Theme updated") : t("themes.created", "Theme created");
-				loadThemes();
-			} else {
-				error = result.error ?? t("common.error", "Failed to save theme");
-			}
-		} catch (e) {
-			error = e instanceof Error ? e.message : t("common.error", "Failed to save theme");
-		} finally {
-			saving = false;
-		}
-	}
-
-	function openDelete(theme: PageTheme | null) {
-		if (!theme) return;
-		deleteTarget = theme;
-		showDeleteConfirm = true;
-	}
-
-	async function confirmDelete() {
-		if (!deleteTarget) return;
-		const result = await pageBuilderAdminApiExtended.deleteTheme(deleteTarget.id);
-		if (result.ok) {
-			showDeleteConfirm = false;
-			deleteTarget = null;
-			success = t("themes.deleted", "Theme deleted");
-			loadThemes();
-		} else {
-			error = result.error ?? t("common.error", "Failed to delete theme");
-		}
-	}
-
-	async function bulkDelete() {
-		if (selectedIds.size === 0) return;
-		bulkDeleting = true;
-		error = "";
-		try {
-			for (const id of selectedIds) {
-				await pageBuilderAdminApiExtended.deleteTheme(id);
-			}
-			selectedIds = new Set();
-			success = t("themes.bulk_deleted", "Selected themes deleted");
-			loadThemes();
-		} catch {
-			error = t("common.error", "Failed to delete selected themes");
-		}
-		bulkDeleting = false;
-	}
-
-	loadThemes();
+			throw new Error(result.error ?? t('common.error', 'Failed to load themes'));
+		},
+		create: async (body) => {
+			const name = String(body.name ?? '').trim();
+			const res = await pageBuilderAdminApiExtended.createTheme({
+				name,
+				slug: String(body.slug ?? '').trim() || slugify(name)
+			});
+			return res.ok ? { ok: true } : { ok: false, error: res.error };
+		},
+		update: async (id, body) => {
+			const name = String(body.name ?? '').trim();
+			const res = await pageBuilderAdminApiExtended.updateTheme(id, {
+				name,
+				slug: String(body.slug ?? '').trim() || slugify(name)
+			});
+			return res.ok ? { ok: true } : { ok: false, error: res.error };
+		},
+		remove: async (id) => {
+			const res = await pageBuilderAdminApiExtended.deleteTheme(id);
+			return res.ok ? { ok: true } : { ok: false, error: res.error };
+		},
+		viewSnippet: ThemeView
+	});
 </script>
 
 <svelte:head>
-	<title>{t("themes.title", "Page Themes")} — JapaConnect Admin</title>
+	<title>{t('themes.title', 'Page Themes')} — JapaConnect Admin</title>
 </svelte:head>
 
-<PageHeader
-	title={t("themes.title", "Page Themes")}
-	description={t("themes.description", "Manage page builder themes")}
-	actions={[
-		...(canManageThemes ? [{ label: t("themes.create", "Create Theme"), icon: Plus, onclick: openCreate }] : []),
-		{ label: t("common.refresh", "Refresh"), icon: RefreshCw, variant: "ghost", onclick: loadThemes }
-	]}
-/>
-
-{#if error}
-	<div class="mb-4 rounded-lg p-3 text-sm" style="background: color-mix(in srgb, var(--color-danger) 10%, transparent); color: var(--color-danger)">
-		{error}
-	</div>
-{/if}
-{#if success}
-	<div class="mb-4 rounded-lg p-3 text-sm" style="background: color-mix(in srgb, var(--color-success) 10%, transparent); color: var(--color-success)">
-		{success}
+{#if pageError}
+	<div
+		class="mb-4 rounded-lg p-3 text-sm"
+		style="background: color-mix(in srgb, var(--color-danger) 10%, transparent); color: var(--color-danger)"
+	>
+		{pageError}
 	</div>
 {/if}
 
-<Card>
-	<CardContent>
-		{#if loading}
-			<TableSkeleton rows={6} columns={columns.length} />
-		{:else if themes.length === 0}
-			<div class="py-12 text-center text-sm" style="color: var(--color-muted)">
-				{t("themes.empty", "No themes found")}
-			</div>
-		{:else}
-			<DataTable {columns} data={themes} pageSize={10} searchable onsearch={(q) => { searchTerm = q; loadThemes(); }} selectable bind:selectedIds>
-				{#snippet bulkActions()}
-					<Button variant="destructive" size="sm" onclick={bulkDelete} disabled={bulkDeleting || selectedIds.size === 0}>
-						<Trash2 class="h-3.5 w-3.5 mr-1" />
-						{bulkDeleting ? t("common.deleting", "Deleting...") : t("common.deleteSelected", "Delete Selected")} ({selectedIds.size})
-					</Button>
-				{/snippet}
-			</DataTable>
-		{/if}
-	</CardContent>
-</Card>
+<EntityPage {config} bind:controller={entityController} />
 
-<!-- Create/Edit Modal -->
-<Modal bind:open={showModal} title={modalMode === "create" ? t("themes.create", "Create Theme") : t("themes.edit", "Edit Theme")}>
-	<div>
-		<label for="theme-name" class="block text-sm font-medium" style="color: var(--color-foreground)">{t("themes.name", "Name")}</label>
-		<input id="theme-name" type="text" bind:value={themeName} class="mt-1 w-full rounded-lg border p-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" placeholder="e.g., Dark Theme" />
-	</div>
-	<div class="mt-4">
-		<label for="theme-slug" class="block text-sm font-medium" style="color: var(--color-foreground)">{t("themes.slug", "Slug")}</label>
-		<input id="theme-slug" type="text" bind:value={themeSlug} class="mt-1 w-full rounded-lg border p-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" placeholder={t("themes.slug_placeholder", "auto-generated-from-name")} />
-	</div>
+<!-- ── Set Default confirmation modal ─────────────────────────────────────── -->
+<Modal bind:open={showSetDefaultConfirm} title={t('themes.set_default', 'Set Default Theme')}>
+	{#if setDefaultTarget}
+		<p class="text-sm" style="color: var(--color-foreground)">
+			{t('themes.set_default_confirm', 'Set')} <strong>{setDefaultTarget.name}</strong> {t('themes.as_default', 'as the default theme?')}
+		</p>
+	{/if}
 	<div class="mt-4 flex justify-end gap-2">
-		<Button variant="ghost" onclick={() => showModal = false}>{t("common.cancel", "Cancel")}</Button>
-		<Button onclick={saveTheme} disabled={saving || !themeName.trim()}>
-			{saving ? t("common.saving", "Saving...") : t("common.save", "Save")}
+		<Button variant="ghost" onclick={() => (showSetDefaultConfirm = false)}>{t('common.cancel', 'Cancel')}</Button>
+		<Button onclick={confirmSetDefault} disabled={settingDefault}>
+			{settingDefault ? t('common.saving', 'Saving...') : t('themes.set_default', 'Set Default')}
 		</Button>
 	</div>
 </Modal>
 
-<!-- Set Default Confirm -->
-<Modal bind:open={showSetDefaultConfirm} title={t("themes.set_default", "Set Default Theme")}>
-	{#if setDefaultTarget}
-		<p class="text-sm" style="color: var(--color-foreground)">
-			{t("themes.set_default_confirm", "Set")} <strong>{setDefaultTarget.name}</strong> {t("themes.as_default", "as the default theme?")}
-		</p>
-	{/if}
-	<div class="mt-4 flex justify-end gap-2">
-		<Button variant="ghost" onclick={() => showSetDefaultConfirm = false}>{t("common.cancel", "Cancel")}</Button>
-		<Button onclick={executeSetDefault}>{t("themes.set_default", "Set Default")}</Button>
-	</div>
-</Modal>
+<!-- ── Snippets ─────────────────────────────────────────────────────────── -->
 
-<!-- Delete Confirm -->
-<Modal bind:open={showDeleteConfirm} title={t("common.confirmDelete", "Confirm Delete")}>
-	{#if deleteTarget}
-		<p class="text-sm" style="color: var(--color-foreground)">
-			{t("themes.delete_confirm", "Delete theme")} <strong>{deleteTarget.name}</strong>?
-		</p>
-		<p class="mt-2 text-sm" style="color: var(--color-danger)">{t("common.cannotUndo", "This action cannot be undone.")}</p>
-	{/if}
-	<div class="mt-4 flex justify-end gap-2">
-		<Button variant="ghost" onclick={() => (showDeleteConfirm = false)}>{t("common.cancel", "Cancel")}</Button>
-		<Button variant="destructive" onclick={confirmDelete}>{t("common.delete", "Delete")}</Button>
-	</div>
-</Modal>
-
-<!-- ThemeActionsCell -->
-{#snippet ThemeActionsCell({ value, row }: { value: any; row: PageTheme })}
-	<div class="flex items-center gap-1">
-		{#if canManageThemes}
-			{#if !row.is_default}
-				<Button variant="ghost" size="sm" onclick={() => confirmSetDefault(row)} style="color: var(--color-primary)">
-					<Star class="h-3.5 w-3.5" />
-				</Button>
-			{/if}
-			<Button variant="ghost" size="sm" onclick={() => openEdit(row)}>
-				<Pencil class="h-3.5 w-3.5" />
-			</Button>
-			{#if !row.is_default}
-				<Button variant="ghost" size="sm" onclick={() => openDelete(row)} style="color: var(--color-danger)">
-					<Trash2 class="h-3.5 w-3.5" />
-				</Button>
-			{/if}
+<!-- View slide-over body (mirrors the legacy view) -->
+{#snippet ThemeView({ row }: { row: PageTheme })}
+	<div class="space-y-4">
+		<div>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('themes.name', 'Name')}</p>
+			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.name}</p>
+		</div>
+		<div>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('themes.slug', 'Slug')}</p>
+			<p class="mt-1 text-sm font-mono" style="color: var(--color-foreground)">{row.slug}</p>
+		</div>
+		<div>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('themes.default', 'Default')}</p>
+			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">
+				{row.is_default ? t('common.yes', 'Yes') : t('common.no', 'No')}
+			</p>
+		</div>
+		{#if row.created_at}
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('themes.created', 'Created')}</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{new Date(row.created_at).toLocaleDateString()}</p>
+			</div>
+		{/if}
+		{#if row.updated_at}
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('themes.updated', 'Updated')}</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{new Date(row.updated_at).toLocaleDateString()}</p>
+			</div>
 		{/if}
 	</div>
 {/snippet}

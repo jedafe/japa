@@ -1,17 +1,20 @@
 <script lang="ts">
+	// /broadcasts — migrated to shared components (ActionMenu, FilterPanel,
+	// SlideOver, bulkActionsList). Tabbed page (all/drafts/sent); keeps
+	// page-local Modals for create broadcast (form) and send confirmation.
+	// View detail opens in a SlideOver.
 	import { t } from '$lib/stores/i18n.svelte';
-	import { page } from "$app/state";
-	import PageHeader from "$lib/components/layout/page-header.svelte";
-	import { Card, CardContent, CardHeader } from "$lib/components/ui/card";
-	import { Tabs } from "$lib/components/ui/tabs";
-	import { DataTable } from "$lib/components/ui/data-table";
-	import { FilterBar } from "$lib/components/ui/filter-bar";
-	import { Badge } from "$lib/components/ui/badge";
-	import { Button } from "$lib/components/ui/button";
-	import { Modal } from "$lib/components/ui/modal";
-	import { Send, Plus, Radio, Clock, CheckCircle, Eye } from "lucide-svelte";
+	import PageHeader from '$lib/components/layout/page-header.svelte';
+	import { Card, CardContent } from '$lib/components/ui/card';
+	import { Tabs } from '$lib/components/ui/tabs';
+	import { DataTable } from '$lib/components/ui/data-table';
+	import { Button } from '$lib/components/ui/button';
+	import { Modal } from '$lib/components/ui/modal';
+	import { SlideOver } from '$lib/components/ui/slide-over';
 	import { Select } from '$lib/components/ui/select';
-	import { api } from "$lib/api";
+	import type { ActionItem, BulkAction } from '$lib/components/ui/data-table';
+	import { Send, Plus, Radio, Clock, CheckCircle, Trash2, Eye } from 'lucide-svelte';
+	import { api } from '$lib/api';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 
 	const canManage = $derived(hasPermission('admin.broadcast'));
@@ -29,89 +32,32 @@
 		created_at: string;
 	};
 
-	let { data } = $props();
-
-	let activeTab = $state("all");
+	let activeTab = $state('all');
 	let broadcasts = $state<Broadcast[]>([]);
 	let loading = $state(true);
-	let filters = $state<Record<string, string>>({});
+	let filterValue = $state<Record<string, string>>({});
+	let searchQuery = $state('');
+	let selectedIds = $state<Set<string>>(new Set());
+	let bulkDeleting = $state(false);
 
-	// Create modal
+	// Create Modal (page-local — form)
 	let showCreateModal = $state(false);
-	let newBroadcast = $state({ title: "", body: "", target_audience: "all" });
+	let newBroadcast = $state({ title: '', body: '', target_audience: 'all' });
 	let creating = $state(false);
 
-	// Send confirmation
+	// Send confirmation Modal
 	let showSendModal = $state(false);
 	let sendTarget = $state<Broadcast | null>(null);
 	let sending = $state(false);
 
-	// View modal
-	let showViewModal = $state(false);
+	// View SlideOver
+	let showViewSlideOver = $state(false);
 	let viewTarget = $state<Broadcast | null>(null);
 
-	let selectedIds = $state<Set<string>>(new Set());
-
 	const tabs = [
-		{ value: "all", label: t('broadcasts.tab_all', 'All'), icon: Radio },
-		{ value: "draft", label: t('broadcasts.tab_drafts', 'Drafts'), icon: Clock },
-		{ value: "sent", label: t('broadcasts.tab_sent', 'Sent'), icon: CheckCircle }
-	];
-
-	const columns = [
-		{
-			key: "title",
-			label: t('broadcasts.column_title', 'Title'),
-			sortable: true,
-			render: (_: any, row: any) => `
-				<div>
-					<p class="font-medium text-foreground">${row.title}</p>
-					<p class="text-sm text-muted line-clamp-1">${row.body || ""}</p>
-				</div>
-			`
-		},
-		{
-			key: "target_audience",
-			label: t('broadcasts.column_audience', 'Audience'),
-			sortable: true,
-			render: (value: string) => {
-				const labels: Record<string, string> = { all: t('broadcasts.all_users', 'All Users'), active: t('broadcasts.active_users', 'Active Users'), premium: t('broadcasts.premium_users', 'Premium Users') };
-				return `<span class="text-sm text-foreground-alt">${labels[value] || value}</span>`;
-			}
-		},
-		{
-			key: "status",
-			label: t('common.status', 'Status'),
-			sortable: true,
-			render: (value: string) => {
-				const variant = value === "sent" ? "success" : value === "scheduled" ? "info" : value === "failed" ? "destructive" : "secondary";
-				const classes: Record<string, string> = {
-					success: "bg-success/15 text-success border-success",
-					info: "bg-info-100 text-info-800 border-info-200",
-					destructive: "bg-danger/15 text-danger border-danger",
-					secondary: "bg-surface text-foreground border"
-				};
-				return `<span class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${classes[variant]}">${value}</span>`;
-			}
-		},
-		{
-			key: "recipient_count",
-			label: t('broadcasts.column_recipients', 'Recipients'),
-			sortable: true,
-			render: (value: number) => `<span class="text-sm font-medium">${(value ?? 0).toLocaleString()}</span>`
-		},
-		{
-			key: "sent_at",
-			label: t('broadcasts.column_sent', 'Sent'),
-			sortable: true,
-			render: (value: string) => value ? new Date(value).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" }) : '<span class="text-muted">—</span>'
-		},
-		{
-			key: "actions",
-			label: "",
-			class: "w-24",
-			componentSnippet: BroadcastActionsCell
-		}
+		{ value: 'all', label: t('broadcasts.tab_all', 'All'), icon: Radio },
+		{ value: 'draft', label: t('broadcasts.tab_drafts', 'Drafts'), icon: Clock },
+		{ value: 'sent', label: t('broadcasts.tab_sent', 'Sent'), icon: CheckCircle }
 	];
 
 	const audienceOptions = [
@@ -120,21 +66,71 @@
 		{ value: 'premium', label: t('broadcasts.premium_users', 'Premium Users') }
 	];
 
+	const columns = [
+		{
+			key: 'title',
+			label: t('broadcasts.column_title', 'Title'),
+			sortable: true,
+			render: (_: any, row: any) => `
+				<div>
+					<p class="font-medium text-foreground">${row.title}</p>
+					<p class="text-sm text-muted line-clamp-1">${row.body || ''}</p>
+				</div>
+			`
+		},
+		{
+			key: 'target_audience',
+			label: t('broadcasts.column_audience', 'Audience'),
+			sortable: true,
+			render: (v: string) => {
+				const labels: Record<string, string> = { all: t('broadcasts.all_users', 'All Users'), active: t('broadcasts.active_users', 'Active Users'), premium: t('broadcasts.premium_users', 'Premium Users') };
+				return `<span class="text-sm text-foreground-alt">${labels[v] || v}</span>`;
+			}
+		},
+		{
+			key: 'status',
+			label: t('common.status', 'Status'),
+			sortable: true,
+			render: (v: string) => {
+				const cls = v === 'sent' ? 'bg-success/15 text-success border-success' : v === 'scheduled' ? 'bg-info-100 text-info-800 border-info-200' : v === 'failed' ? 'bg-danger/15 text-danger border-danger' : 'bg-surface text-foreground border';
+				return `<span class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${cls}">${v}</span>`;
+			}
+		},
+		{
+			key: 'recipient_count',
+			label: t('broadcasts.column_recipients', 'Recipients'),
+			sortable: true,
+			render: (v: number) => `<span class="text-sm font-medium">${(v ?? 0).toLocaleString()}</span>`
+		},
+		{
+			key: 'sent_at',
+			label: t('broadcasts.column_sent', 'Sent'),
+			sortable: true,
+			render: (v: string) => (v ? new Date(v).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : '<span class="text-muted">—</span>')
+		}
+	];
+
+	const rowActions: ActionItem[] = [
+		{ label: t('common.view', 'View'), icon: Eye, onclick: (row) => openView(row) },
+		{
+			label: t('common.send', 'Send'),
+			icon: Send,
+			onclick: (row) => confirmSend(row),
+			show: (row: Broadcast) => canManage && row.status === 'draft'
+		}
+	];
+
+	const bulkActions: BulkAction[] = $derived(canManage
+		? [{ label: t('broadcasts.delete_selected', 'Delete Selected'), icon: Trash2, variant: 'destructive', onclick: bulkDelete }]
+		: []);
+
 	let filteredBroadcasts = $derived.by(() => {
 		let result = [...broadcasts];
-		if (activeTab !== "all") {
-			result = result.filter((b) => b.status === activeTab);
-		}
-		// Apply the FilterBar audience filter (previously a no-op).
-		if (filters.audience) {
-			result = result.filter((b) => b.target_audience === filters.audience);
-		}
-		// Apply the FilterBar free-text search (previously a no-op).
-		if (filters.search) {
-			const q = filters.search.toLowerCase();
-			result = result.filter(
-				(b) => b.title.toLowerCase().includes(q) || (b.body ?? "").toLowerCase().includes(q)
-			);
+		if (activeTab !== 'all') result = result.filter((b) => b.status === activeTab);
+		if (filterValue.audience) result = result.filter((b) => b.target_audience === filterValue.audience);
+		if (searchQuery) {
+			const q = searchQuery.toLowerCase();
+			result = result.filter((b) => b.title.toLowerCase().includes(q) || (b.body ?? '').toLowerCase().includes(q));
 		}
 		return result;
 	});
@@ -142,36 +138,29 @@
 	async function loadBroadcasts() {
 		loading = true;
 		try {
-			const result = await api<Broadcast[]>("/admin/broadcasts");
-			if (result.ok) {
-				broadcasts = result.data ?? [];
-			}
-		} catch {
-			// API not available
-		} finally {
+			const result = await api<Broadcast[]>('/admin/broadcasts');
+			if (result.ok) broadcasts = result.data ?? [];
+		} catch { /* API not available */ } finally {
 			loading = false;
 		}
 	}
 
-	async function bulkDelete() {
-		if (!selectedIds.size) return;
-		for (const id of selectedIds) {
-			await api(`/admin/broadcasts/${id}`, { method: "DELETE" });
+	async function bulkDelete(ids: Set<string>) {
+		if (ids.size === 0 || bulkDeleting) return;
+		bulkDeleting = true;
+		try {
+			await Promise.all(Array.from(ids).map((id) => api(`/admin/broadcasts/${id}`, { method: 'DELETE' })));
+		} catch { /* API not available */ } finally {
+			bulkDeleting = false;
 		}
-		selectedIds = new Set();
-		loadBroadcasts();
-	}
-
-	function handleFilter(values: Record<string, string>) {
-		filters = values;
 	}
 
 	async function createBroadcast() {
 		if (!newBroadcast.title.trim() || !newBroadcast.body.trim()) return;
 		creating = true;
 		try {
-			const result = await api("/admin/broadcasts", {
-				method: "POST",
+			const result = await api('/admin/broadcasts', {
+				method: 'POST',
 				body: {
 					title: newBroadcast.title.trim(),
 					body: newBroadcast.body.trim(),
@@ -180,12 +169,10 @@
 			});
 			if (result.ok) {
 				showCreateModal = false;
-				newBroadcast = { title: "", body: "", target_audience: "all" };
+				newBroadcast = { title: '', body: '', target_audience: 'all' };
 				loadBroadcasts();
 			}
-		} catch {
-			// API not available
-		} finally {
+		} catch { /* API not available */ } finally {
 			creating = false;
 		}
 	}
@@ -199,20 +186,18 @@
 		if (!sendTarget) return;
 		sending = true;
 		try {
-			await api(`/admin/broadcasts/${sendTarget.id}/send`, { method: "POST", body: {} });
+			await api(`/admin/broadcasts/${sendTarget.id}/send`, { method: 'POST', body: {} });
 			showSendModal = false;
 			sendTarget = null;
 			loadBroadcasts();
-		} catch {
-			// API not available
-		} finally {
+		} catch { /* API not available */ } finally {
 			sending = false;
 		}
 	}
 
 	function openView(broadcast: Broadcast) {
 		viewTarget = broadcast;
-		showViewModal = true;
+		showViewSlideOver = true;
 	}
 
 	let initialized = false;
@@ -231,79 +216,43 @@
 <PageHeader
 	title={t('broadcasts.title', 'Broadcasts')}
 	description={t('broadcasts.description', 'Send targeted messages to platform users')}
-		actions={[
-		...(canManage ? [{ label: t('broadcasts.new_broadcast', 'New Broadcast'), icon: Plus, onclick: () => (showCreateModal = true) }] : [])
-	]}
+	actions={canManage ? [{ label: t('broadcasts.new_broadcast', 'New Broadcast'), icon: Plus, onclick: () => (showCreateModal = true) }] : []}
 />
 
 <div class="space-y-6">
 	<Tabs {tabs} bind:value={activeTab} />
 
-	<FilterBar
-		bind:value={filters}
-		filters={[
-			{
-				key: "audience",
-				label: t('broadcasts.filter_audience', 'Audience'),
-				options: [
-					{ value: "all", label: t('broadcasts.all_users', 'All Users') },
-					{ value: "active", label: t('broadcasts.active_users', 'Active Users') },
-					{ value: "premium", label: t('broadcasts.premium_users', 'Premium Users') }
-				]
-			}
-		]}
-		onsearch={handleFilter}
-		onclear={() => { filters = {}; }}
-	/>
-
 	<Card>
 		<CardContent class="p-0">
-			{#if loading}
-				<p class="py-8 text-center text-sm text-muted">{t('broadcasts.loading_broadcasts', 'Loading broadcasts...')}</p>
-			{:else}
-				<DataTable
-					columns={columns}
-					data={filteredBroadcasts}
-					pageSize={15}
-					emptyMessage={t('broadcasts.no_broadcasts_found', 'No broadcasts found')}
-					selectable={canManage}
-					bind:selectedIds
-				>
-					{#snippet bulkActions()}
-						{#if canManage && selectedIds.size > 0}
-							<Button variant="destructive" size="sm" onclick={bulkDelete}>
-								{t('broadcasts.delete_selected', 'Delete Selected')} ({selectedIds.size})
-							</Button>
-						{/if}
-					{/snippet}
-				</DataTable>
-			{/if}
+			<DataTable
+				columns={columns}
+				data={filteredBroadcasts}
+				{loading}
+				pageSize={15}
+				emptyMessage={t('broadcasts.no_broadcasts_found', 'No broadcasts found')}
+				searchable
+				onsearch={(q) => { searchQuery = q; }}
+				filters={[{ key: 'audience', label: t('broadcasts.filter_audience', 'Audience'), options: audienceOptions }]}
+				bind:filterValue
+				selectable={canManage}
+				bind:selectedIds
+				actions={rowActions}
+				bulkActionsList={bulkActions}
+			/>
 		</CardContent>
 	</Card>
 </div>
 
-<!-- Create Broadcast Modal -->
+<!-- Create Broadcast Modal (page-local — form) -->
 <Modal bind:open={showCreateModal} title={t('broadcasts.new_broadcast', 'New Broadcast')} description={t('broadcasts.create_description', 'Create and send a broadcast message')} size="lg">
 	<div class="space-y-4">
 		<div>
 			<label for="bc-title" class="mb-1 block text-sm font-medium text-foreground">{t('broadcasts.title_label', 'Title')}</label>
-			<input
-				id="bc-title"
-				type="text"
-				class="h-10 w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
-				placeholder={t('broadcasts.placeholder_title', 'e.g. Platform Maintenance Notice')}
-				bind:value={newBroadcast.title}
-			/>
+			<input id="bc-title" type="text" class="h-10 w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" placeholder={t('broadcasts.placeholder_title', 'e.g. Platform Maintenance Notice')} bind:value={newBroadcast.title} />
 		</div>
 		<div>
 			<label for="bc-body" class="mb-1 block text-sm font-medium text-foreground">{t('broadcasts.message_label', 'Message')}</label>
-			<textarea
-				id="bc-body"
-				class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
-				rows="5"
-				placeholder={t('broadcasts.placeholder_message', 'Write your broadcast message...')}
-				bind:value={newBroadcast.body}
-			></textarea>
+			<textarea id="bc-body" class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" rows="5" placeholder={t('broadcasts.placeholder_message', 'Write your broadcast message...')} bind:value={newBroadcast.body}></textarea>
 		</div>
 		<div>
 			<label for="bc-audience" class="mb-1 block text-sm font-medium text-foreground">{t('broadcasts.target_audience_label', 'Target Audience')}</label>
@@ -311,13 +260,9 @@
 		</div>
 		<div class="flex justify-end gap-3 pt-2">
 			<Button variant="outline" onclick={() => (showCreateModal = false)}>{t('broadcasts.cancel', 'Cancel')}</Button>
-			{#if canManage}<Button onclick={createBroadcast} disabled={creating || !newBroadcast.title.trim() || !newBroadcast.body.trim()}>
-			{#if creating}
-				{t('broadcasts.creating', 'Creating...')}
-			{:else}
-				{t('broadcasts.create_broadcast', 'Create Broadcast')}
-				{/if}
-			</Button>{/if}
+			<Button onclick={createBroadcast} disabled={creating || !newBroadcast.title.trim() || !newBroadcast.body.trim()}>
+				{creating ? t('broadcasts.creating', 'Creating...') : t('broadcasts.create_broadcast', 'Create Broadcast')}
+			</Button>
 		</div>
 	</div>
 </Modal>
@@ -327,25 +272,20 @@
 	{#if sendTarget}
 		<div class="rounded-lg bg-surface p-4">
 			<p class="text-sm font-medium text-foreground">{sendTarget.title}</p>
-			<p class="mt-1 text-sm text-muted">{t('broadcasts.audience_prefix', 'Audience')}: {sendTarget.target_audience === "all" ? t('broadcasts.all_users', 'All Users') : sendTarget.target_audience === "active" ? t('broadcasts.active_users', 'Active Users') : t('broadcasts.premium_users', 'Premium Users')}</p>
+			<p class="mt-1 text-sm text-muted">{t('broadcasts.audience_prefix', 'Audience')}: {sendTarget.target_audience === 'all' ? t('broadcasts.all_users', 'All Users') : sendTarget.target_audience === 'active' ? t('broadcasts.active_users', 'Active Users') : t('broadcasts.premium_users', 'Premium Users')}</p>
 		</div>
 	{/if}
 	<div class="flex justify-end gap-3 pt-4">
 		<Button variant="outline" onclick={() => (showSendModal = false)}>{t('broadcasts.cancel', 'Cancel')}</Button>
-		{#if canManage}<Button onclick={sendBroadcast} disabled={sending}>
-		{#if sending}
-			<Send class="h-4 w-4 mr-2 animate-spin" />
-			{t('broadcasts.sending', 'Sending...')}
-		{:else}
-				<Send class="h-4 w-4 mr-2" />
-				{t('broadcasts.send_now', 'Send Now')}
-			{/if}
-		</Button>{/if}
+		<Button onclick={sendBroadcast} disabled={sending}>
+			<Send class="mr-2 h-4 w-4" />
+			{sending ? t('broadcasts.sending', 'Sending...') : t('broadcasts.send_now', 'Send Now')}
+		</Button>
 	</div>
 </Modal>
 
-<!-- View Broadcast Modal -->
-<Modal bind:open={showViewModal} title={t('broadcasts.broadcast_details', 'Broadcast Details')} size="lg">
+<!-- View Broadcast SlideOver -->
+<SlideOver bind:open={showViewSlideOver} title={t('broadcasts.broadcast_details', 'Broadcast Details')} size="lg">
 	{#if viewTarget}
 		<div class="space-y-4">
 			<div>
@@ -367,27 +307,16 @@
 				</div>
 			</div>
 		</div>
-		<div class="mt-6 flex justify-end gap-2">
-			{#if canManage && viewTarget.status === 'draft'}
+	{/if}
+	{#snippet footer()}
+		<div class="flex justify-end gap-2">
+			{#if canManage && viewTarget?.status === 'draft'}
 				{@const bt = viewTarget}
-				<Button onclick={() => { showViewModal = false; confirmSend(bt); }}>
+				<Button onclick={() => { showViewSlideOver = false; confirmSend(bt); }}>
 					<Send class="mr-1 h-3.5 w-3.5" /> {t('common.send', 'Send')}
 				</Button>
 			{/if}
-			<Button variant="outline" onclick={() => (showViewModal = false)}>{t('common.close', 'Close')}</Button>
+			<Button variant="outline" onclick={() => (showViewSlideOver = false)}>{t('common.close', 'Close')}</Button>
 		</div>
-	{/if}
-</Modal>
-
-{#snippet BroadcastActionsCell({ value, row }: { value: any; row: Broadcast })}
-	<div class="flex items-center gap-1">
-		<Button variant="ghost" size="sm" onclick={() => openView(row)}>
-			<Eye class="h-3.5 w-3.5" />
-		</Button>
-		{#if canManage && row.status === 'draft'}
-			<Button variant="ghost" size="sm" onclick={() => confirmSend(row)} style="color: var(--color-primary)">
-				<Send class="h-3.5 w-3.5" />
-			</Button>
-		{/if}
-	</div>
-{/snippet}
+	{/snippet}
+</SlideOver>

@@ -1,4 +1,4 @@
-import type { Component, Snippet } from 'svelte';
+import type { Component, ComponentType, Snippet, SvelteComponent } from 'svelte';
 
 export type SortDir = 'asc' | 'desc';
 
@@ -11,6 +11,14 @@ export interface Column {
   component?: Component<any>;
   componentSnippet?: Snippet<[{ value: any; row: any; [k: string]: any }]>;
   componentProps?: Record<string, any>;
+  /** Set to false to disable the resize handle on this column. Default: true. */
+  resizable?: boolean;
+  /** Set to false to exclude this column from the hide/unhide toggle. Default: true. */
+  hideable?: boolean;
+  /** Initial column width in pixels. */
+  width?: number;
+  /** Hide this column by default (user can toggle it on). */
+  defaultHidden?: boolean;
 }
 
 export interface ActionContext {
@@ -22,7 +30,7 @@ export interface ActionContext {
 
 export interface ActionItem {
   label: string;
-  icon?: Component;
+  icon?: ComponentType<SvelteComponent>;
   onclick: (row: any, ctx?: ActionContext) => void;
   variant?: 'default' | 'destructive';
   show?: (row: any) => boolean;
@@ -36,7 +44,7 @@ export interface FilterDef {
 
 export interface BulkAction {
   label: string;
-  icon?: Component;
+  icon?: ComponentType<SvelteComponent>;
   onclick: (ids: Set<string>) => void | Promise<void>;
   variant?: 'default' | 'destructive';
   disabled?: (ids: Set<string>, selectedRows?: any[]) => boolean;

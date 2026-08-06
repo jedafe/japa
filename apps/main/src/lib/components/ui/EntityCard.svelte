@@ -1,5 +1,6 @@
 <script lang="ts">
 	import RelativeTime from './RelativeTime.svelte';
+	import { t } from '$lib/i18n';
 
 	interface Props {
 		title: string;
@@ -20,7 +21,7 @@
 	{#if thumbnail}
 		<img
 			src={thumbnail}
-			alt=""
+			alt={title}
 			class="mb-3 h-32 w-full rounded-[var(--radius)] object-cover"
 			loading="lazy"
 		/>
@@ -31,7 +32,7 @@
 			<span
 				class="rounded-full bg-[var(--color-surface-subtle)] px-2 py-0.5 text-xs font-medium text-[var(--color-text-subtle)]"
 			>
-				{type}
+				{t(`content_type.${type}`, type)}
 			</span>
 		{/if}
 		{#if date}

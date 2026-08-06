@@ -9,6 +9,7 @@
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import { Modal } from '$lib/components/ui/modal';
+	import { SlideOver } from '$lib/components/ui/slide-over';
 	import { ArrowLeft, Pause, Play, StopCircle, BarChart3 } from 'lucide-svelte';
 
 	// Ref: japaconnect-engineering/sections/25-ad-placement.md — backend
@@ -64,7 +65,7 @@
 	// Stats
 	let stats = $state<CampaignStats | null>(null);
 	let statsLoading = $state(false);
-	let showStatsModal = $state(false);
+	let showStatsSlideOver = $state(false);
 
 	// End campaign confirm
 	let showEndConfirm = $state(false);
@@ -163,7 +164,7 @@
 	async function viewStats() {
 		if (!campaign) return;
 		statsLoading = true;
-		showStatsModal = true;
+		showStatsSlideOver = true;
 		stats = null;
 		try {
 			const result = await adsAdminApi.getCampaignStats(campaign.id);
@@ -379,8 +380,8 @@
 	</div>
 {/if}
 
-<!-- Stats Modal -->
-<Modal bind:open={showStatsModal} title={campaign ? `${t('ads.stats', 'Statistics')}: ${campaign.name}` : t('ads.stats', 'Statistics')}>
+<!-- Stats SlideOver (view-detail) -->
+<SlideOver bind:open={showStatsSlideOver} title={campaign ? `${t('ads.stats', 'Statistics')}: ${campaign.name}` : t('ads.stats', 'Statistics')} size="lg">
 	{#if statsLoading}
 		<p class="py-8 text-center text-sm text-muted">{t('common.loading')}</p>
 	{:else if stats}
@@ -414,7 +415,7 @@
 			{#if stats.daily_stats?.length}
 				<div>
 					<h3 class="mb-2 text-sm font-medium text-foreground">{t('ads.daily_breakdown', 'Daily Breakdown')}</h3>
-					<div class="max-h-48 overflow-y-auto rounded-lg border border-border">
+					<div class="max-h-64 overflow-y-auto rounded-lg border border-border">
 						<table class="w-full text-xs">
 							<thead>
 								<tr class="border-b border-border bg-surface">
@@ -442,10 +443,12 @@
 	{:else}
 		<p class="py-8 text-center text-sm text-muted">{t('common.no_data', 'No data available')}</p>
 	{/if}
-	<div class="flex justify-end pt-4">
-		<Button variant="outline" onclick={() => showStatsModal = false}>{t('common.close', 'Close')}</Button>
-	</div>
-</Modal>
+	{#snippet footer()}
+		<div class="flex justify-end">
+			<Button variant="outline" onclick={() => (showStatsSlideOver = false)}>{t('common.close', 'Close')}</Button>
+		</div>
+	{/snippet}
+</SlideOver>
 
 <!-- End Campaign Confirm -->
 <Modal bind:open={showEndConfirm} title={t('common.confirmDelete', 'Confirm End')}>

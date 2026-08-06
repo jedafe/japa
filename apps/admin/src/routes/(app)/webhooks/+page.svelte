@@ -2,7 +2,8 @@
 	import PageHeader from "$lib/components/layout/page-header.svelte";
 	import { Card, CardContent, CardHeader } from "$lib/components/ui/card";
 	import { DataTable } from "$lib/components/ui/data-table";
-	import { FilterBar } from "$lib/components/ui/filter-bar";
+	import type { ActionItem } from "$lib/components/ui/data-table";
+	import { SlideOver } from "$lib/components/ui/slide-over";
 	import { Badge } from "$lib/components/ui/badge";
 	import { Button } from "$lib/components/ui/button";
 	import { Modal } from "$lib/components/ui/modal";
@@ -33,7 +34,7 @@
 	const canManageWebhooks = $derived(hasPermission("webhooks.manage"));
 
 	// Modal state
-	let showModal = $state(false);
+	let showSlideOver = $state(false);
 	let modalMode = $state<"create" | "edit">("create");
 	let editingEndpoint = $state<WebhookEndpoint | null>(null);
 	let saving = $state(false);
@@ -69,9 +70,28 @@
 			label: t("webhooks.last_triggered", "Last Triggered"),
 			sortable: true,
 			render: (v: string) => v ? new Date(v).toLocaleDateString() : t("webhooks.never", "Never")
+		}
+	];
+
+	const rowActions: ActionItem[] = [
+		{
+			label: t("webhooks.test", "Test"),
+			icon: Play,
+			onclick: (row: WebhookEndpoint) => openTest(row),
+			show: () => canManageWebhooks
 		},
-		{ key: "actions", label: t("common.actions", "Actions"), class: "w-32",
-			componentSnippet: WebhookActionsCell
+		{
+			label: t("common.edit", "Edit"),
+			icon: Pencil,
+			onclick: (row: WebhookEndpoint) => openEdit(row),
+			show: () => canManageWebhooks
+		},
+		{
+			label: t("common.delete", "Delete"),
+			icon: Trash2,
+			variant: 'destructive',
+			onclick: (row: WebhookEndpoint) => openDelete(row),
+			show: () => canManageWebhooks
 		}
 	];
 
@@ -99,7 +119,7 @@
 		formUrl = "";
 		formEvents = [];
 		formActive = true;
-		showModal = true;
+		showSlideOver = true;
 	}
 
 	function openEdit(ep: WebhookEndpoint) {
@@ -109,7 +129,7 @@
 		formUrl = ep.url;
 		formEvents = [...(ep.events ?? [])];
 		formActive = ep.is_active;
-		showModal = true;
+		showSlideOver = true;
 	}
 
 	function toggleEvent(event: string) {
@@ -131,7 +151,7 @@
 				: await webhooksAdminApiExtended.create(body);
 
 			if (result.ok) {
-				showModal = false;
+				showSlideOver = false;
 				success = editingEndpoint ? t("webhooks.updated", "Webhook updated") : t("webhooks.created", "Webhook created");
 				loadEndpoints();
 			} else {
@@ -248,7 +268,7 @@
 		{#if loading}
 			<TableSkeleton rows={8} columns={columns.length} />
 		{:else}
-			<DataTable {columns} data={endpoints} pageSize={10} selectable bind:selectedIds>
+			<DataTable {columns} data={endpoints} actions={rowActions} pageSize={10} selectable bind:selectedIds>
 				{#snippet bulkActions()}
 					<Button variant="destructive" size="sm" onclick={bulkDelete} disabled={bulkDeleting || selectedIds.size === 0}>
 						<Trash2 class="h-3.5 w-3.5 mr-1" />
@@ -260,8 +280,8 @@
 	</CardContent>
 </Card>
 
-<!-- Create/Edit Modal -->
-<Modal bind:open={showModal} title={modalMode === "create" ? t("webhooks.add", "Add Endpoint") : t("webhooks.edit", "Edit Endpoint")}>
+<!-- Create/Edit SlideOver -->
+<SlideOver bind:open={showSlideOver} title={modalMode === "create" ? t("webhooks.add", "Add Endpoint") : t("webhooks.edit", "Edit Endpoint")}>
 	<div class="space-y-4">
 		<div>
 			<label for="wh-name" class="block text-sm font-medium" style="color: var(--color-foreground)">{t("webhooks.name", "Name")}</label>
@@ -286,13 +306,15 @@
 			<label for="wh-active" class="text-sm font-medium" style="color: var(--color-foreground)">{t("webhooks.active", "Active")}</label>
 		</div>
 	</div>
-	<div class="mt-4 flex justify-end gap-2">
-		<Button variant="ghost" onclick={() => showModal = false}>{t("common.cancel", "Cancel")}</Button>
-		<Button onclick={saveEndpoint} disabled={saving || !formName.trim() || !formUrl.trim()}>
-			{saving ? t("common.saving", "Saving...") : t("common.save", "Save")}
-		</Button>
-	</div>
-</Modal>
+	{#snippet footer()}
+		<div class="mt-4 flex justify-end gap-2">
+			<Button variant="ghost" onclick={() => showSlideOver = false}>{t("common.cancel", "Cancel")}</Button>
+			<Button onclick={saveEndpoint} disabled={saving || !formName.trim() || !formUrl.trim()}>
+				{saving ? t("common.saving", "Saving...") : t("common.save", "Save")}
+			</Button>
+		</div>
+	{/snippet}
+</SlideOver>
 
 <!-- Test Modal -->
 <Modal bind:open={showTestModal} title={t("webhooks.test_title", "Test Webhook")}>
@@ -320,20 +342,3 @@
 		<Button variant="destructive" onclick={confirmDelete}>{t("common.delete", "Delete")}</Button>
 	</div>
 </Modal>
-
-<!-- WebhookActionsCell component -->
-{#snippet WebhookActionsCell({ value, row }: { value: any; row: WebhookEndpoint })}
-	<div class="flex items-center gap-1">
-		{#if canManageWebhooks}
-			<Button variant="ghost" size="sm" onclick={() => openTest(row)} style="color: var(--color-primary)" title={t("webhooks.test", "Test")}>
-				<Play class="h-3.5 w-3.5" />
-			</Button>
-			<Button variant="ghost" size="sm" onclick={() => openEdit(row)}>
-				<Pencil class="h-3.5 w-3.5" />
-			</Button>
-			<Button variant="ghost" size="sm" onclick={() => openDelete(row)} style="color: var(--color-danger)" title={t("common.delete")}>
-				<Trash2 class="h-3.5 w-3.5" />
-			</Button>
-		{/if}
-	</div>
-{/snippet}

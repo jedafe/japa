@@ -395,6 +395,68 @@ func (h *Handlers) GetMyDraft(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"data": draft})
 }
 
+// GetMyContent handles GET /api/v1/me/content/{id}. It returns the caller's
+// own content by ID (any status — published, scheduled, or draft) so the
+// /create composer can restore it for editing. The /me/drafts/{id} route is
+// restricted to status='draft'; this route covers the rest.
+//
+// For non-owners, the handler falls back to a tenant-scoped (non-author-
+// scoped) fetch when the caller is a super-admin or holds the RBAC
+// `content.edit` permission node. This lets editors fix content they don't
+// own. The backend still enforces the actual permission on PATCH /content/{id}.
+func (h *Handlers) GetMyContent(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	idStr := chi.URLParam(r, "id")
+	var contentID pgtype.UUID
+	if err := contentID.Scan(idStr); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid content ID format")
+		return
+	}
+
+	// Try the author-scoped fetch first — the common case (owner editing
+	// their own content). pgx.ErrNoRows means the content is missing, not
+	// owned by the caller, or soft-deleted.
+	content, err := h.Service.GetUserContent(r.Context(), tenantID, user.UserID, contentID)
+	if err == nil {
+		writeJSON(w, http.StatusOK, map[string]any{"data": content})
+		return
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		handleServiceError(w, err)
+		return
+	}
+
+	// Author-scoped fetch returned 404. Fall back to the tenant-scoped
+	// fetch only for super-admins or users with the `content.edit`
+	// permission node. Without a permResolver, fail closed (404).
+	if h.permResolver == nil {
+		handleServiceError(w, err)
+		return
+	}
+	canEditAny := h.permResolver.IsSuperAdmin(r.Context(), user.UserID, tenantID) ||
+		h.permResolver.HasPermission(r.Context(), user.UserID, tenantID, "content.edit")
+	if !canEditAny {
+		handleServiceError(w, err)
+		return
+	}
+
+	editorContent, err := h.Service.GetContentForEditor(r.Context(), tenantID, contentID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": editorContent})
+}
+
 // ListMyScheduled handles GET /api/v1/me/scheduled.
 func (h *Handlers) ListMyScheduled(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)

@@ -4,6 +4,7 @@
 	// title, body, and a relative date. The list is fetched by the parent
 	// (server load) and passed in — this component is presentational only.
 	import { t } from '$lib/i18n';
+	import { i18n } from '$lib/i18n';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import { Star, MessageSquare } from 'lucide-svelte';
 	import type { Review } from '$lib/types';
@@ -19,7 +20,7 @@
 
 	function formatDate(iso: string): string {
 		try {
-			return new Date(iso).toLocaleDateString(undefined, {
+			return new Date(iso).toLocaleDateString(i18n.locale, {
 				year: 'numeric',
 				month: 'short',
 				day: 'numeric'
@@ -39,12 +40,12 @@
 {:else}
 	<ul class="space-y-3">
 		{#each reviews as r (r.id)}
-			<li class="rounded-[12px] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+			<li class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 				<div class="mb-1.5 flex items-center justify-between gap-2">
 					<div class="flex items-center gap-1" aria-label={`${t('reviews.rating_aria')}: ${r.rating}`}>
 						{#each Array(5) as _, i (i)}
 							<Star
-								class="h-3.5 w-3.5 {i < r.rating ? 'fill-amber-400 text-amber-400' : 'text-[var(--color-muted)]'}"
+								class="h-3.5 w-3.5 {i < r.rating ? 'fill-[var(--color-warning)] text-[var(--color-warning)]' : 'text-[var(--color-muted)]'}"
 								aria-hidden="true"
 							/>
 						{/each}
@@ -55,7 +56,7 @@
 							<button
 								type="button"
 								onclick={() => onDelete(r.id)}
-								class="text-xs text-[var(--color-muted)] hover:text-red-500"
+								class="text-xs text-[var(--color-muted)] hover:text-[var(--color-danger)]"
 								aria-label={t('reviews.delete')}
 							>
 								{t('reviews.delete')}

@@ -27,7 +27,7 @@ LEFT JOIN user_profiles up ON up.user_id = c.author_id
 LEFT JOIN spaces s ON s.id = c.space_id
 LEFT JOIN content_tags ct ON ct.content_id = c.id
 LEFT JOIN tags t ON t.id = ct.tag_id
-LEFT JOIN media m ON m.id = c.header_image_id AND m.deleted_at IS NULL
+LEFT JOIN media m ON m.id = COALESCE(c.featured_image_id, c.header_image_id) AND m.deleted_at IS NULL
 WHERE c.tenant_id = @tenant_id
   AND c.status = 'published'
   AND c.deleted_at IS NULL
@@ -64,7 +64,7 @@ LEFT JOIN user_profiles up ON up.user_id = c.author_id
 LEFT JOIN spaces s ON s.id = c.space_id
 LEFT JOIN content_tags ct ON ct.content_id = c.id
 LEFT JOIN tags t ON t.id = ct.tag_id
-LEFT JOIN media m ON m.id = c.header_image_id AND m.deleted_at IS NULL
+LEFT JOIN media m ON m.id = COALESCE(c.featured_image_id, c.header_image_id) AND m.deleted_at IS NULL
 WHERE f.tenant_id = @tenant_id AND f.user_id = @user_id
   AND c.status = 'published'
   AND c.deleted_at IS NULL
@@ -104,7 +104,7 @@ LEFT JOIN user_profiles up ON up.user_id = c.author_id
 LEFT JOIN spaces s ON s.id = c.space_id
 LEFT JOIN content_tags ct ON ct.content_id = c.id
 LEFT JOIN tags t ON t.id = ct.tag_id
-LEFT JOIN media m ON m.id = c.header_image_id AND m.deleted_at IS NULL
+LEFT JOIN media m ON m.id = COALESCE(c.featured_image_id, c.header_image_id) AND m.deleted_at IS NULL
 WHERE c.tenant_id = @tenant_id AND c.space_id = @space_id
   AND c.status = 'published'
   AND c.deleted_at IS NULL
@@ -142,7 +142,7 @@ LEFT JOIN user_profiles up ON up.user_id = c.author_id
 LEFT JOIN spaces s ON s.id = c.space_id
 LEFT JOIN content_tags ct ON ct.content_id = c.id
 LEFT JOIN tags t ON t.id = ct.tag_id
-LEFT JOIN media m ON m.id = c.header_image_id AND m.deleted_at IS NULL
+LEFT JOIN media m ON m.id = COALESCE(c.featured_image_id, c.header_image_id) AND m.deleted_at IS NULL
 WHERE c.tenant_id = @tenant_id AND c.author_id = @author_id
   AND c.status = 'published'
   AND c.deleted_at IS NULL
@@ -179,7 +179,7 @@ LEFT JOIN user_profiles up ON up.user_id = c.author_id
 LEFT JOIN spaces s ON s.id = c.space_id
 LEFT JOIN content_tags ct ON ct.content_id = c.id
 LEFT JOIN tags t ON t.id = ct.tag_id
-LEFT JOIN media m ON m.id = c.header_image_id AND m.deleted_at IS NULL
+LEFT JOIN media m ON m.id = COALESCE(c.featured_image_id, c.header_image_id) AND m.deleted_at IS NULL
 WHERE c.tenant_id = @tenant_id
   AND c.status = 'published'
   AND c.deleted_at IS NULL
@@ -214,7 +214,7 @@ LEFT JOIN user_profiles up ON up.user_id = c.author_id
 LEFT JOIN spaces s ON s.id = c.space_id
 LEFT JOIN content_tags ct ON ct.content_id = c.id
 LEFT JOIN tags t ON t.id = ct.tag_id
-LEFT JOIN media m ON m.id = c.header_image_id AND m.deleted_at IS NULL
+LEFT JOIN media m ON m.id = COALESCE(c.featured_image_id, c.header_image_id) AND m.deleted_at IS NULL
 WHERE c.tenant_id = @tenant_id
   AND c.status = 'published'
   AND c.deleted_at IS NULL
@@ -351,7 +351,7 @@ LEFT JOIN user_profiles up ON up.user_id = c.author_id
 LEFT JOIN spaces s ON s.id = c.space_id
 LEFT JOIN content_tags ct ON ct.content_id = c.id
 LEFT JOIN tags t ON t.id = ct.tag_id
-LEFT JOIN media m ON m.id = c.header_image_id AND m.deleted_at IS NULL
+LEFT JOIN media m ON m.id = COALESCE(c.featured_image_id, c.header_image_id) AND m.deleted_at IS NULL
 GROUP BY c.id, cs.vote_score, cs.velocity_score, cs.bookmark_count,
          u.username, up.display_name, up.avatar_url,
          s.name, s.slug, s.geo_code,

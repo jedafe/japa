@@ -131,6 +131,15 @@ body {
 	text-rendering: optimizeLegibility;
 }
 
+/* Hide scrollbars globally while keeping scroll behavior intact.
+   Firefox: scrollbar-width: none; Chrome/Safari/Edge: ::-webkit-scrollbar { display: none } */
+* {
+	scrollbar-width: none;
+}
+*::-webkit-scrollbar {
+	display: none;
+}
+
 /* Reading surfaces (blog single / CPT) may opt into a serif body via .prose.
  * Since @tailwindcss/typography is not installed, we define prose styles here
  * following the dev.to / Ghost.org reading aesthetic. */

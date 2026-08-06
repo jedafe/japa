@@ -535,6 +535,23 @@ func (q *Queries) GetContentTenantID(ctx context.Context, id pgtype.UUID) (pgtyp
 	return tenant_id, err
 }
 
+const getSeriesForContent = `-- name: GetSeriesForContent :one
+SELECT bsp.series_id
+FROM blog_series_posts bsp
+JOIN blog_series bs ON bs.id = bsp.series_id AND bs.deleted_at IS NULL
+WHERE bsp.content_id = $1
+`
+
+// Returns the series_id for a given content_id, or no rows if the content
+// is not part of any series. Used by the editor load to restore the series
+// selector when editing existing content.
+func (q *Queries) GetSeriesForContent(ctx context.Context, contentID pgtype.UUID) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, getSeriesForContent, contentID)
+	var series_id pgtype.UUID
+	err := row.Scan(&series_id)
+	return series_id, err
+}
+
 const listAdminBlogPosts = `-- name: ListAdminBlogPosts :many
 SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type,
        c.title, c.slug, c.body, c.body_html, c.field_values, c.content_hash,
