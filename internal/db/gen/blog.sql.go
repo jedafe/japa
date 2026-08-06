@@ -14,22 +14,29 @@ import (
 const addPostToSeries = `-- name: AddPostToSeries :exec
 
 INSERT INTO blog_series_posts (series_id, content_id, position)
-VALUES ($1, $2, $3)
-ON CONFLICT (series_id, content_id) DO UPDATE
-    SET position = $3
+VALUES (
+    $1,
+    $2,
+    COALESCE((SELECT MAX(position) + 1 FROM blog_series_posts WHERE series_id = $1), 0)
+)
+ON CONFLICT (series_id, content_id) DO NOTHING
 `
 
 type AddPostToSeriesParams struct {
 	SeriesID  pgtype.UUID `json:"series_id"`
 	ContentID pgtype.UUID `json:"content_id"`
-	Position  int32       `json:"position"`
 }
 
 // =====================
 // Blog Series Posts
 // =====================
+// Auto-appends at the next available position (MAX+1, or 0 for the first
+// post). This avoids colliding with the unique constraint
+// idx_blog_series_posts_position on (series_id, position) when another
+// content already occupies the client-supplied position. Reordering is
+// handled by the dedicated ReorderSeriesPosts endpoint.
 func (q *Queries) AddPostToSeries(ctx context.Context, arg AddPostToSeriesParams) error {
-	_, err := q.db.Exec(ctx, addPostToSeries, arg.SeriesID, arg.ContentID, arg.Position)
+	_, err := q.db.Exec(ctx, addPostToSeries, arg.SeriesID, arg.ContentID)
 	return err
 }
 
@@ -550,6 +557,27 @@ func (q *Queries) GetSeriesForContent(ctx context.Context, contentID pgtype.UUID
 	var series_id pgtype.UUID
 	err := row.Scan(&series_id)
 	return series_id, err
+}
+
+const insertSeriesPostWithPosition = `-- name: InsertSeriesPostWithPosition :exec
+INSERT INTO blog_series_posts (series_id, content_id, position)
+VALUES ($1, $2, $3)
+ON CONFLICT (series_id, content_id) DO UPDATE
+    SET position = $3
+`
+
+type InsertSeriesPostWithPositionParams struct {
+	SeriesID  pgtype.UUID `json:"series_id"`
+	ContentID pgtype.UUID `json:"content_id"`
+	Position  int32       `json:"position"`
+}
+
+// Used by BulkReorderSeriesPosts after deleting all existing posts, so
+// there is no risk of colliding with the (series_id, position) unique
+// constraint — the caller controls the full position sequence.
+func (q *Queries) InsertSeriesPostWithPosition(ctx context.Context, arg InsertSeriesPostWithPositionParams) error {
+	_, err := q.db.Exec(ctx, insertSeriesPostWithPosition, arg.SeriesID, arg.ContentID, arg.Position)
+	return err
 }
 
 const listAdminBlogPosts = `-- name: ListAdminBlogPosts :many

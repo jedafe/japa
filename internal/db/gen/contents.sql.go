@@ -1259,9 +1259,12 @@ SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type, c.title, c.sl
        c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
        c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
        c.view_count, c.comment_count, c.share_count, c.reshare_count, c.publish_at, c.published_at,
-       c.created_at, c.updated_at
+       c.created_at, c.updated_at,
+       m.storage_bucket AS cover_storage_bucket,
+       m.storage_path   AS cover_storage_path
 FROM contents c
 JOIN content_tags ct ON ct.content_id = c.id
+LEFT JOIN media m ON m.id = COALESCE(c.featured_image_id, c.header_image_id) AND m.deleted_at IS NULL
 WHERE ct.tag_id = $1 AND c.tenant_id = $2 AND c.status = 'published'
   AND c.deleted_at IS NULL
   AND c.auto_hidden = false
@@ -1278,38 +1281,40 @@ type ListContentByTagParams struct {
 }
 
 type ListContentByTagRow struct {
-	ID              pgtype.UUID        `json:"id"`
-	TenantID        pgtype.UUID        `json:"tenant_id"`
-	AuthorID        pgtype.UUID        `json:"author_id"`
-	SpaceID         pgtype.UUID        `json:"space_id"`
-	ContentType     string             `json:"content_type"`
-	Title           string             `json:"title"`
-	Slug            string             `json:"slug"`
-	Body            string             `json:"body"`
-	BodyHtml        string             `json:"body_html"`
-	FieldValues     []byte             `json:"field_values"`
-	ContentHash     *string            `json:"content_hash"`
-	GeoSpaceID      pgtype.UUID        `json:"geo_space_id"`
-	HeaderImageID   pgtype.UUID        `json:"header_image_id"`
-	FeaturedImageID pgtype.UUID        `json:"featured_image_id"`
-	CanonicalUrl    *string            `json:"canonical_url"`
-	MetaTitle       *string            `json:"meta_title"`
-	MetaDescription *string            `json:"meta_description"`
-	OgImageUrl      *string            `json:"og_image_url"`
-	SeoIndexable    bool               `json:"seo_indexable"`
-	Status          string             `json:"status"`
-	Visibility      string             `json:"visibility"`
-	IsLocked        bool               `json:"is_locked"`
-	IsPinned        bool               `json:"is_pinned"`
-	ReadTimeMinutes int32              `json:"read_time_minutes"`
-	ViewCount       int32              `json:"view_count"`
-	CommentCount    int32              `json:"comment_count"`
-	ShareCount      int32              `json:"share_count"`
-	ReshareCount    int32              `json:"reshare_count"`
-	PublishAt       pgtype.Timestamptz `json:"publish_at"`
-	PublishedAt     pgtype.Timestamptz `json:"published_at"`
-	CreatedAt       pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+	ID                 pgtype.UUID        `json:"id"`
+	TenantID           pgtype.UUID        `json:"tenant_id"`
+	AuthorID           pgtype.UUID        `json:"author_id"`
+	SpaceID            pgtype.UUID        `json:"space_id"`
+	ContentType        string             `json:"content_type"`
+	Title              string             `json:"title"`
+	Slug               string             `json:"slug"`
+	Body               string             `json:"body"`
+	BodyHtml           string             `json:"body_html"`
+	FieldValues        []byte             `json:"field_values"`
+	ContentHash        *string            `json:"content_hash"`
+	GeoSpaceID         pgtype.UUID        `json:"geo_space_id"`
+	HeaderImageID      pgtype.UUID        `json:"header_image_id"`
+	FeaturedImageID    pgtype.UUID        `json:"featured_image_id"`
+	CanonicalUrl       *string            `json:"canonical_url"`
+	MetaTitle          *string            `json:"meta_title"`
+	MetaDescription    *string            `json:"meta_description"`
+	OgImageUrl         *string            `json:"og_image_url"`
+	SeoIndexable       bool               `json:"seo_indexable"`
+	Status             string             `json:"status"`
+	Visibility         string             `json:"visibility"`
+	IsLocked           bool               `json:"is_locked"`
+	IsPinned           bool               `json:"is_pinned"`
+	ReadTimeMinutes    int32              `json:"read_time_minutes"`
+	ViewCount          int32              `json:"view_count"`
+	CommentCount       int32              `json:"comment_count"`
+	ShareCount         int32              `json:"share_count"`
+	ReshareCount       int32              `json:"reshare_count"`
+	PublishAt          pgtype.Timestamptz `json:"publish_at"`
+	PublishedAt        pgtype.Timestamptz `json:"published_at"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+	CoverStorageBucket *string            `json:"cover_storage_bucket"`
+	CoverStoragePath   *string            `json:"cover_storage_path"`
 }
 
 func (q *Queries) ListContentByTag(ctx context.Context, arg ListContentByTagParams) ([]ListContentByTagRow, error) {
@@ -1359,6 +1364,8 @@ func (q *Queries) ListContentByTag(ctx context.Context, arg ListContentByTagPara
 			&i.PublishedAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.CoverStorageBucket,
+			&i.CoverStoragePath,
 		); err != nil {
 			return nil, err
 		}

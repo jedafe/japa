@@ -5,7 +5,7 @@
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from "$lib/components/entity";
 	import { Modal } from "$lib/components/ui/modal";
 	import { Button } from "$lib/components/ui/button";
-	import { contentAdminApi } from "$lib/api";
+	import { contentAdminApi, apiRaw } from "$lib/api";
 	import { t } from "$lib/stores/i18n.svelte";
 	import { hasPermission } from "$lib/stores/permissions.svelte";
 	import { onMount } from "svelte";
@@ -291,17 +291,18 @@
 		fields,
 		load: async ({ page, pageSize, q, filter }) => {
 			const params = new URLSearchParams({
-				page: String(page + 1),
-				limit: String(pageSize)
+				page_size: String(pageSize),
+				page_offset: String(page * pageSize)
 			});
 			if (q) params.set("q", q);
 			if (filter.content_type) params.set("type", filter.content_type);
 			if (filter.status) params.set("status", filter.status);
-			const result = await contentAdminApi.list(params.toString());
+			// Use apiRaw to access top-level total/total_pages alongside data.
+			const result = await apiRaw<{ data?: ContentItem[]; items?: ContentItem[]; total?: number; total_pages?: number }>(`/admin/content?${params.toString()}`);
 			if (result.ok) {
-				const d = result.data as any;
+				const d = result.data;
 				// API returns null when no items match the filter.
-				const allItems = d?.items ?? (Array.isArray(d) ? d : []) ?? [];
+				const allItems = d?.data ?? d?.items ?? [];
 				return {
 					data: allItems as ContentItem[],
 					total: d?.total ?? allItems.length,

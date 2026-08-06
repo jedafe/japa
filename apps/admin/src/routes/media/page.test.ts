@@ -11,6 +11,12 @@ vi.mock('$lib/api', () => ({
 		updateStatus: vi.fn().mockResolvedValue({ ok: true }),
 		delete: vi.fn().mockResolvedValue({ ok: true }),
 	},
+	apiRaw: vi.fn().mockResolvedValue({ ok: true, data: { data: [], total: 0, total_pages: 1 } }),
+	stockAdminApi: {
+		listAvailableProviders: vi.fn().mockResolvedValue({ ok: true, data: { providers: [] } }),
+		search: vi.fn().mockResolvedValue({ ok: true, data: { photos: [], has_next_page: false } }),
+		import: vi.fn().mockResolvedValue({ ok: true }),
+	},
 }));
 vi.mock('$app/state', () => ({
 	page: { params: {}, url: new URL('http://localhost/') },
@@ -31,7 +37,7 @@ describe('/media', () => {
 	it('shows empty state when no media', async () => {
 		render(Page);
 		await waitFor(() => {
-			expect(screen.getByText('No data available')).toBeTruthy();
+			expect(screen.getByText('No data')).toBeTruthy();
 		});
 	});
 });

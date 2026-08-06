@@ -29,6 +29,7 @@ import (
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/geoip"
 	"github.com/jedafe/japa/internal/mentions"
+	"github.com/jedafe/japa/internal/rbac"
 	"github.com/jedafe/japa/internal/spam"
 	"github.com/jedafe/japa/internal/tenant"
 	"github.com/jedafe/japa/internal/worker"
@@ -1103,7 +1104,15 @@ func (h *Handlers) UpdateContent(w http.ResponseWriter, r *http.Request) {
 	// Capture previous status to detect draft→published transitions for fan-out.
 	prevContent, prevErr := h.Service.GetContent(r.Context(), id, tenantID)
 
-	content, err := h.Service.UpdateContent(r.Context(), id, tenantID, user.UserID, updateInput)
+	// Super admins bypass the edit-window restriction even on their own
+	// content — without this, a super_admin who authored a post more than
+	// content.edit_window_minutes ago is locked out of editing it (BL-008).
+	bypassEditWindow := false
+	if resolver := rbac.FromContext(r.Context()); resolver != nil {
+		bypassEditWindow = resolver.IsSuperAdmin(r.Context(), user.UserID, user.TenantID)
+	}
+
+	content, err := h.Service.UpdateContent(r.Context(), id, tenantID, user.UserID, updateInput, bypassEditWindow)
 	if err != nil {
 		if errors.Is(err, ErrOrgPostForbidden) {
 			writeError(w, http.StatusForbidden, "org_post_forbidden", "You are not authorized to edit as this organization")

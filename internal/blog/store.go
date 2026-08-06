@@ -187,7 +187,7 @@ func (s *Store) bulkReorderSeriesPosts(ctx context.Context, seriesID pgtype.UUID
 	}
 
 	for _, p := range posts {
-		if err := q.AddPostToSeries(ctx, gen.AddPostToSeriesParams{
+		if err := q.InsertSeriesPostWithPosition(ctx, gen.InsertSeriesPostWithPositionParams{
 			SeriesID:  seriesID,
 			ContentID: p.ContentID,
 			Position:  p.Position,

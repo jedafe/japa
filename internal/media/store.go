@@ -179,6 +179,80 @@ func (s *Store) CountMediaByUploader(ctx context.Context, tenantID, uploaderID p
 	return count, nil
 }
 
+// CountMediaByTenant returns the count of all non-deleted media for a tenant.
+func (s *Store) CountMediaByTenant(ctx context.Context, tenantID pgtype.UUID) (int32, error) {
+	count, err := s.read.CountMediaByTenant(ctx, tenantID)
+	if err != nil {
+		return 0, fmt.Errorf("counting media by tenant: %w", err)
+	}
+
+	return count, nil
+}
+
+// CountMediaByType returns the count of non-deleted media matching a MIME type prefix.
+func (s *Store) CountMediaByType(ctx context.Context, tenantID pgtype.UUID, mimePattern string) (int32, error) {
+	count, err := s.read.CountMediaByType(ctx, gen.CountMediaByTypeParams{
+		TenantID:    tenantID,
+		MimePattern: &mimePattern,
+	})
+	if err != nil {
+		return 0, fmt.Errorf("counting media by type: %w", err)
+	}
+
+	return count, nil
+}
+
+// CountSearchMedia returns the count of non-deleted media matching a search query.
+func (s *Store) CountSearchMedia(ctx context.Context, tenantID pgtype.UUID, query string) (int32, error) {
+	count, err := s.read.CountSearchMedia(ctx, gen.CountSearchMediaParams{
+		TenantID: tenantID,
+		Query:    &query,
+	})
+	if err != nil {
+		return 0, fmt.Errorf("counting search media: %w", err)
+	}
+
+	return count, nil
+}
+
+// ListMediaFiltered returns paginated media matching the given filters
+// (uploader, mime type, search query, status). Empty/zero values mean
+// "no filter on this field". Used by the admin media list endpoint.
+func (s *Store) ListMediaFiltered(ctx context.Context, tenantID, uploaderID pgtype.UUID, mimePattern, query, status string, limit, offset int32) ([]gen.Medium, error) {
+	if limit <= 0 || limit > MaxPageSize {
+		limit = DefaultPageSize
+	}
+	items, err := s.read.ListMediaFiltered(ctx, gen.ListMediaFilteredParams{
+		TenantID:       tenantID,
+		UploaderUserID: uploaderID,
+		MimePattern:    mimePattern,
+		Query:          query,
+		Status:         status,
+		PageOffset:     offset,
+		PageLimit:      limit,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("listing filtered media: %w", err)
+	}
+	return items, nil
+}
+
+// CountMediaFiltered returns the count of media matching the given filters,
+// ignoring limit/offset. Used to compute total_pages for the admin list.
+func (s *Store) CountMediaFiltered(ctx context.Context, tenantID, uploaderID pgtype.UUID, mimePattern, query, status string) (int32, error) {
+	count, err := s.read.CountMediaFiltered(ctx, gen.CountMediaFilteredParams{
+		TenantID:       tenantID,
+		UploaderUserID: uploaderID,
+		MimePattern:    mimePattern,
+		Query:          query,
+		Status:         status,
+	})
+	if err != nil {
+		return 0, fmt.Errorf("counting filtered media: %w", err)
+	}
+	return count, nil
+}
+
 // ListMediaFromPublicPostsByUser returns paginated media that is the
 // featured/header image of the user's published, public posts. Public-safe:
 // excludes unconfirmed media, group-restricted media, and draft/private-post
