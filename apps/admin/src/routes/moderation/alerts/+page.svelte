@@ -2,7 +2,7 @@
 	// /moderation/alerts — migrated to the EntityPage scaffold; read-only list with
 	// state actions (Acknowledge / Resolve) wired through the `actions` config.
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
-	import { moderationAdminApi } from '$lib/api';
+	import { moderationAdminApi, apiRaw } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { Eye, AlertCircle, CheckCircle } from 'lucide-svelte';
@@ -133,22 +133,20 @@
 		fields,
 		load: async ({ page, pageSize, q, filter }) => {
 			const params = new URLSearchParams();
-			if (page) params.set('page', String(page));
-			if (pageSize) params.set('per_page', String(pageSize));
+			params.set('page_size', String(pageSize));
+			params.set('page_offset', String(page * pageSize));
 			if (filter.severity) params.set('severity', filter.severity);
 			if (filter.status) params.set('status', filter.status);
 			if (q) params.set('q', q);
-			const result = await moderationAdminApi.getAlerts(params.toString() || undefined);
+			// Use apiRaw to access top-level total/total_pages alongside data.
+			const result = await apiRaw<{ data?: ModerationAlert[]; alerts?: ModerationAlert[]; items?: ModerationAlert[]; total?: number; total_pages?: number }>(`/admin/moderation/alerts${params.toString() ? `?${params.toString()}` : ''}`);
 			if (result.ok) {
-				const d = result.data as any;
-				if (Array.isArray(d)) {
-					return { data: d as ModerationAlert[], total: d.length, totalPages: 1 };
-				}
-				const arr = (d?.alerts ?? d?.items ?? d?.data ?? []) as ModerationAlert[];
+				const d = result.data;
+				const arr = (d?.data ?? d?.alerts ?? d?.items ?? []) as ModerationAlert[];
 				return {
 					data: arr,
 					total: d?.total ?? arr.length,
-					totalPages: d?.total_pages ?? d?.totalPages ?? 1
+					totalPages: d?.total_pages ?? 1
 				};
 			}
 			throw new Error(result.error ?? t('common.error', 'Failed to load moderation alerts'));

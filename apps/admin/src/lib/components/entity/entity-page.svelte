@@ -10,10 +10,14 @@
 	import { Modal } from '$lib/components/ui/modal';
 	import { Button } from '$lib/components/ui/button';
 	import { TableSkeleton } from '$lib/components/ui/skeleton';
-	import { Eye, Pencil, Trash2, RefreshCw, Plus, Download, RotateCcw, Trash } from 'lucide-svelte';
+	import Pagination from '$lib/components/ui/Pagination.svelte';
+	import FilterPanel from '$lib/components/ui/data-table/filter-panel.svelte';
+	import { Search } from 'lucide-svelte';
+	import { Eye, Pencil, Trash2, RefreshCw, Plus, Download, RotateCcw, Trash, Grid, List } from 'lucide-svelte';
 	import EntityForm from './entity-form.svelte';
 	import type { FieldDef } from './index';
 	import type { Column, ActionItem, ActionContext, FilterDef, BulkAction } from '$lib/components/ui/data-table';
+	import { untrack } from 'svelte';
 	import type { Snippet } from 'svelte';
 
 	// URL params reserved for non-filter state (page/pageSize/q/sort/dir).
@@ -77,6 +81,12 @@
 		onCreated?: (id: string) => void;
 		viewSnippet?: Snippet<[{ row: any }]>;
 		formSnippet?: Snippet<[{ value: Record<string, any>; editing: any | null }]>;
+		/** When provided, a grid/list view toggle appears in the header and the
+		 *  grid snippet is rendered instead of the DataTable when grid mode is
+		 *  active. The snippet receives each row and should render a card. */
+		gridSnippet?: Snippet<[{ row: any }]>;
+		/** Default view mode when gridSnippet is provided ('list' | 'grid'). Default: 'list'. */
+		defaultViewMode?: 'list' | 'grid';
 	}
 
 	let { config, controller = $bindable() }: { config: EntityPageConfig; controller?: EntityPageController } = $props();
@@ -109,6 +119,10 @@
 		initialParams.get('dir') === 'desc' ? 'desc' : 'asc'
 	);
 	let selectedIds = $state<Set<string>>(new Set());
+
+	// Grid/list view mode — only relevant when config.gridSnippet is provided.
+	// untrack: we deliberately only read the initial defaultViewMode once.
+	let viewMode = $state<'list' | 'grid'>(untrack(() => config.defaultViewMode ?? 'list'));
 
 	// Create/edit slide-over
 	let formOpen = $state(false);
@@ -514,7 +528,7 @@
 		currentPage = 0;
 	}
 
-	// PageHeader actions: Create (when permitted) + Export (when enabled) + custom header actions + Refresh.
+	// PageHeader actions: Create (when permitted) + Export (when enabled) + view toggle (when gridSnippet) + custom header actions + Refresh.
 	const headerActions = $derived.by(() => {
 		const acts: Array<{
 			label: string;
@@ -531,6 +545,21 @@
 				icon: Download,
 				variant: 'outline',
 				onclick: exportCsv
+			});
+		}
+		// Grid/list view toggle — only when a gridSnippet is provided.
+		if (config.gridSnippet) {
+			acts.push({
+				label: 'Grid',
+				icon: Grid,
+				variant: viewMode === 'grid' ? 'default' : 'ghost',
+				onclick: () => (viewMode = 'grid')
+			});
+			acts.push({
+				label: 'List',
+				icon: List,
+				variant: viewMode === 'list' ? 'default' : 'ghost',
+				onclick: () => (viewMode = 'list')
 			});
 		}
 		if (config.headerActions) {
@@ -565,7 +594,7 @@
 <Card>
 	<CardContent class="p-4">
 		<!-- Only show skeleton on initial load (no data yet). On subsequent reloads
-		     (search/sort/filter/pagination), keep the DataTable mounted so its
+		     (search/sort/filter/pagination), keep the view mounted so its
 		     internal state (search text, column widths, visibility, sort) is
 		     preserved — showing stale-while-revalidate UX instead of unmounting. -->
 		{#if loading && rows.length === 0}
@@ -577,28 +606,88 @@
 					{t('common.loading', 'Loading…')}
 				</div>
 			{/if}
-			<DataTable
-				columns={config.columns}
-				data={rows}
-				serverSide
-				totalRows={totalRows}
-				totalPages={totalPages}
-				bind:page={currentPage}
-				bind:pageSize
-				pageSizeOptions={config.pageSizeOptions ?? [10, 25, 50, 100]}
-				searchable
-				onsortchange={handleSort}
-				onsearch={handleSearch}
-				filters={config.filters}
-				bind:filterValue
-				onfilterapply={handleFilterApply}
-				onfilterclear={handleFilterClear}
-				actions={rowActions}
-				bulkActionsList={wiredBulkActions}
-				selectable={!!config.bulkActions}
-				bind:selectedIds
-				urlSync
-			/>
+			{#if viewMode === 'grid' && config.gridSnippet}
+				<!-- Grid/card view: filter bar on top, then search bar, then grid of cards + pagination.
+				     Mirrors the DataTable layout where FilterPanel sits above the search row. -->
+				{#if config.filters && config.filters.length > 0}
+					<div class="mb-3">
+						<FilterPanel
+							filters={config.filters}
+							bind:value={filterValue}
+							onapply={handleFilterApply}
+							onclear={handleFilterClear}
+						/>
+					</div>
+				{/if}
+				<div class="mb-4 flex items-center gap-3">
+					<div class="relative flex-1">
+						<Search class="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2" style="color: var(--color-muted)" />
+						<input
+							type="text"
+							placeholder={t('common.search', 'Search…')}
+							value={searchQuery}
+							oninput={(e) => handleSearch(e.currentTarget.value)}
+							class="w-full rounded-lg border bg-surface py-2 pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+							style="border-color: var(--color-border); color: var(--color-foreground)"
+						/>
+						{#if searchQuery}
+							<button
+								type="button"
+								onclick={() => handleSearch('')}
+								aria-label={t('common.clearSelection', 'Clear search')}
+								class="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1"
+								style="color: var(--color-muted)"
+							>
+								✕
+							</button>
+						{/if}
+					</div>
+				</div>
+				{#if rows.length === 0}
+					<div class="py-12 text-center text-sm" style="color: var(--color-muted)">
+						{t('common.noData', 'No data')}
+					</div>
+				{:else}
+					<div class="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
+						{#each rows as row (row.id)}
+							{@render config.gridSnippet({ row })}
+						{/each}
+					</div>
+					<div class="mt-4">
+						<Pagination
+							bind:page={currentPage}
+							{totalPages}
+							totalItems={totalRows}
+							bind:pageSize
+							pageSizeOptions={config.pageSizeOptions ?? [10, 25, 50, 100]}
+							urlSync={false}
+						/>
+					</div>
+				{/if}
+			{:else}
+				<DataTable
+					columns={config.columns}
+					data={rows}
+					serverSide
+					totalRows={totalRows}
+					totalPages={totalPages}
+					bind:page={currentPage}
+					bind:pageSize
+					pageSizeOptions={config.pageSizeOptions ?? [10, 25, 50, 100]}
+					searchable
+					onsortchange={handleSort}
+					onsearch={handleSearch}
+					filters={config.filters}
+					bind:filterValue
+					onfilterapply={handleFilterApply}
+					onfilterclear={handleFilterClear}
+					actions={rowActions}
+					bulkActionsList={wiredBulkActions}
+					selectable={!!config.bulkActions}
+					bind:selectedIds
+					urlSync
+				/>
+			{/if}
 		{/if}
 	</CardContent>
 </Card>

@@ -12,6 +12,10 @@ export interface ApiErr {
 
 export interface ApiResult<T> {
 	data: T | null;
+	// Full parsed JSON response body. Present on success only; useful for
+	// accessing top-level pagination metadata (total, total_pages) that some
+	// backends put alongside `data` instead of nesting it inside `data`.
+	body?: any;
 	error: ApiErr['error'] | null;
 	status: number;
 }
@@ -99,7 +103,7 @@ async function dispatch<T>(
 			});
 			if (retryRes.ok) {
 				const body = await retryRes.json();
-				return { data: (body as ApiOk<T>).data, error: null, status: retryRes.status };
+				return { data: (body as ApiOk<T>).data, body, error: null, status: retryRes.status };
 			}
 		}
 		clearAccessToken();
@@ -127,7 +131,7 @@ async function dispatch<T>(
 		return { data: null, error: err, status: res.status };
 	}
 
-	return { data: (body as ApiOk<T>).data, error: null, status: res.status };
+	return { data: (body as ApiOk<T>).data, body, error: null, status: res.status };
 }
 
 // retryAfterCsrfRefresh re-issues a fresh CSRF token and retries the request

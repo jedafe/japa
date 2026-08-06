@@ -11,7 +11,7 @@
 	import { TableSkeleton } from "$lib/components/ui/skeleton";
 	import UserAutocomplete from "$lib/components/ui/UserAutocomplete.svelte";
 	import MediaPickerModal from "$lib/components/ui/MediaPickerModal.svelte";
-	import { tagsAdminApi, tagsModeratorsAdminApi, api } from "$lib/api";
+	import { tagsAdminApi, tagsModeratorsAdminApi, api, apiRaw } from "$lib/api";
 	import { t } from "$lib/stores/i18n.svelte";
 	import { hasPermission } from "$lib/stores/permissions.svelte";
 	import { Shield, Trash2, Image as ImageIcon, X } from "lucide-svelte";
@@ -289,29 +289,24 @@
 		fields,
 		load: async ({ page, pageSize, q, sort, filter }) => {
 			const params = new URLSearchParams({
-				page: String(page),
-				limit: String(pageSize),
+				page_size: String(pageSize),
+				page_offset: String(page * pageSize),
 			});
 			if (q) params.set("q", q);
 			if (filter.post_count) params.set("min_content_count", filter.post_count);
 			// EntityPage emits sort as "key:dir"; the legacy API expects the bare key.
 			const sortKey = sort ? sort.split(":")[0] : "";
 			if (sortKey) params.set("sort", sortKey);
-			const result = await tagsAdminApi.list(params.toString());
+			// Use apiRaw to access top-level total/total_pages alongside data.
+			const result = await apiRaw<{ data: Tag[]; total: number; total_pages: number }>(`/admin/tags?${params.toString()}`);
 			if (result.ok) {
-				const d = result.data as
-					| { data: Tag[]; total: number; total_pages: number }
-					| Tag[];
-				if (Array.isArray(d)) {
-					return { data: d.map(mapTag), total: d.length, totalPages: 1 };
-				} else if (d.data) {
-					return {
-						data: d.data.map(mapTag),
-						total: d.total ?? d.data.length,
-						totalPages: d.total_pages ?? 1,
-					};
-				}
-				return { data: [], total: 0, totalPages: 1 };
+				const d = result.data;
+				const items = d.data ?? [];
+				return {
+					data: items.map(mapTag),
+					total: d.total ?? items.length,
+					totalPages: d.total_pages ?? 1,
+				};
 			}
 			throw new Error(result.error ?? t("common.error", "Failed to load tags"));
 		},

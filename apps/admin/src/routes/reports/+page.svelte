@@ -7,7 +7,7 @@
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from "$lib/components/entity";
 	import { Modal } from "$lib/components/ui/modal";
 	import { Button } from "$lib/components/ui/button";
-	import { reportsAdminApiExtended } from "$lib/api";
+	import { reportsAdminApiExtended, apiRaw } from "$lib/api";
 	import { t } from "$lib/stores/i18n.svelte";
 	import { Eye, Gavel, Ban, Trash2 } from "lucide-svelte";
 	import type { ActionItem } from "$lib/components/ui/data-table";
@@ -223,21 +223,20 @@
 		fields,
 		load: async ({ page, pageSize, q, filter }) => {
 			const params = new URLSearchParams({
-				page: String(page),
-				limit: String(pageSize)
+				page_size: String(pageSize),
+				page_offset: String(page * pageSize)
 			});
 			if (q) params.set("q", q);
 			if (filter.status) params.set("status", filter.status);
 			if (filter.entity_type) params.set("entity_type", filter.entity_type);
-			const result = await reportsAdminApiExtended.list(params.toString());
+			// Use apiRaw to access top-level total/total_pages alongside data.
+			const result = await apiRaw<{ data?: Report[]; items?: Report[]; total?: number; total_pages?: number }>(`/admin/reports?${params.toString()}`);
 			if (result.ok) {
-				const d = result.data as { items: Report[]; page: number; total_pages: number } | Report[];
-				if (Array.isArray(d)) {
-					return { data: d, total: d.length, totalPages: 1 };
-				}
+				const d = result.data;
+				const items = d.data ?? d.items ?? [];
 				return {
-					data: d.items ?? [],
-					total: d.items?.length ?? 0,
+					data: items,
+					total: d.total ?? items.length,
 					totalPages: d.total_pages ?? 1
 				};
 			}

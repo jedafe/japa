@@ -32,6 +32,27 @@ export async function api<T>(path: string, opts: FetchOptions = {}): Promise<Api
 	return { ok: true, data: result.data as T };
 }
 
+// apiRaw returns the FULL response body (not just body.data), so callers can
+// access top-level pagination metadata like { total, total_pages } that some
+// backends put alongside `data` instead of nesting it inside `data`.
+export async function apiRaw<T = any>(path: string, opts: FetchOptions = {}): Promise<ApiResult<T>> {
+	const headers: Record<string, string> = {};
+
+	const isFormData = typeof FormData !== 'undefined' && opts.body instanceof FormData;
+	const result = await _apiFetch<any>(path, {
+		method: opts.method ?? 'GET',
+		headers,
+		body: opts.body ? (isFormData ? (opts.body as BodyInit) : JSON.stringify(opts.body)) : undefined,
+		signal: opts.signal,
+	});
+
+	if (result.error) {
+		return { ok: false, error: result.error.message };
+	}
+	// `body` is the full JSON response body; `data` is just body.data.
+	return { ok: true, data: result.body as T };
+}
+
 export const spamApi = {
 	getIpBlocks: (params?: string) => api<unknown>(`/admin/spam/ip-blocks${params ? `?${params}` : ''}`),
 	createIpBlock: (body: { cidr: string; block_type: string; reason?: string; expires_at?: string }) =>

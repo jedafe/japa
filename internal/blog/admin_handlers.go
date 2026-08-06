@@ -70,8 +70,8 @@ func (h *Handlers) AdminCreatePost(w http.ResponseWriter, r *http.Request) {
 }
 
 // AdminUpdatePost handles PATCH /api/v1/admin/blog/{id} — updates a blog
-// post with admin-level permissions. The content service bypasses the
-// edit-window check when the editor is not the original author.
+// post with admin-level permissions. Admins bypass the edit-window check
+// regardless of authorship.
 func (h *Handlers) AdminUpdatePost(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
 	if !ok {
@@ -123,7 +123,7 @@ func (h *Handlers) AdminUpdatePost(w http.ResponseWriter, r *http.Request) {
 		updateInput.Visibility = *input.Visibility
 	}
 
-	post, err := h.content.UpdateContent(r.Context(), id, tenantID, user.UserID, updateInput)
+	post, err := h.content.UpdateContent(r.Context(), id, tenantID, user.UserID, updateInput, true)
 	if err != nil {
 		slog.Error("failed to update blog post (admin)", "error", err, "id", id)
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to update blog post")

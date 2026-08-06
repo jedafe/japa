@@ -87,11 +87,11 @@ func TestUpdateContent_OrgAttribution_Permission(t *testing.T) {
 	}
 
 	// admin may attribute the post to the org
-	if _, err := svc.UpdateContent(context.Background(), postID, tenantID, admin, base); err != nil {
+	if _, err := svc.UpdateContent(context.Background(), postID, tenantID, admin, base, false); err != nil {
 		t.Fatalf("admin UpdateContent: %v", err)
 	}
 	// member may not
-	if _, err := svc.UpdateContent(context.Background(), postID, tenantID, member, base); !errors.Is(err, ErrOrgPostForbidden) {
+	if _, err := svc.UpdateContent(context.Background(), postID, tenantID, member, base, false); !errors.Is(err, ErrOrgPostForbidden) {
 		t.Fatalf("member update: err=%v want ErrOrgPostForbidden", err)
 	}
 }

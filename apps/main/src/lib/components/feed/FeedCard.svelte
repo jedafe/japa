@@ -84,6 +84,8 @@
 	<a href={href(item)} class="flex flex-col overflow-hidden {layout === 'grid-cell' ? 'rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)]' : ''} hover:bg-[color-mix(in_srgb,var(--color-surface-subtle)_45%,transparent)]">
 		{#if item.cover_image_url}
 			<img src={item.cover_image_url} alt={item.title} loading="lazy" class="aspect-video w-full object-cover" />
+		{:else}
+			<div class="aspect-video w-full bg-gradient-to-br from-[var(--color-primary)]/12 via-[var(--color-surface-subtle)] to-[var(--color-surface-subtle)]"></div>
 		{/if}
 		<div class="flex flex-1 flex-col gap-2 p-3">
 			{@render badge()}
@@ -119,6 +121,8 @@
 		</div>
 		{#if item.cover_image_url}
 			<img src={item.cover_image_url} alt={item.title} loading="lazy" class="mb-3.5 aspect-video w-full rounded-[var(--radius-card)] border border-[var(--color-border)] object-cover" />
+		{:else}
+			<div class="mb-3.5 aspect-video w-full rounded-[var(--radius-card)] border border-[var(--color-border)] bg-gradient-to-br from-[var(--color-primary)]/12 via-[var(--color-surface-subtle)] to-[var(--color-surface-subtle)]"></div>
 		{/if}
 		{@render badge()}
 		<h2 class="mt-2 mb-2 text-balance font-serif text-[25px] font-medium leading-tight tracking-tight text-[var(--color-text)]">{item.title}</h2>

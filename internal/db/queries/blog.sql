@@ -65,14 +65,31 @@ WHERE id = @id AND tenant_id = @tenant_id AND deleted_at IS NULL;
 -- =====================
 
 -- name: AddPostToSeries :exec
+-- Auto-appends at the next available position (MAX+1, or 0 for the first
+-- post). This avoids colliding with the unique constraint
+-- idx_blog_series_posts_position on (series_id, position) when another
+-- content already occupies the client-supplied position. Reordering is
+-- handled by the dedicated ReorderSeriesPosts endpoint.
 INSERT INTO blog_series_posts (series_id, content_id, position)
-VALUES (@series_id, @content_id, @position)
-ON CONFLICT (series_id, content_id) DO UPDATE
-    SET position = @position;
+VALUES (
+    @series_id,
+    @content_id,
+    COALESCE((SELECT MAX(position) + 1 FROM blog_series_posts WHERE series_id = @series_id), 0)
+)
+ON CONFLICT (series_id, content_id) DO NOTHING;
 
 -- name: RemovePostFromSeries :exec
 DELETE FROM blog_series_posts
 WHERE series_id = @series_id AND content_id = @content_id;
+
+-- name: InsertSeriesPostWithPosition :exec
+-- Used by BulkReorderSeriesPosts after deleting all existing posts, so
+-- there is no risk of colliding with the (series_id, position) unique
+-- constraint — the caller controls the full position sequence.
+INSERT INTO blog_series_posts (series_id, content_id, position)
+VALUES (@series_id, @content_id, @position)
+ON CONFLICT (series_id, content_id) DO UPDATE
+    SET position = @position;
 
 -- name: ListPostsInSeries :many
 -- H5: filter deleted_at on contents; tenant-scoped via series ownership.

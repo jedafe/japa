@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/jackc/pgx/v5/pgtype"
+	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/db/gen"
 )
 
@@ -103,9 +104,11 @@ func (s *Service) DeleteSeries(ctx context.Context, id, tenantID pgtype.UUID) er
 // Series Posts
 // ---------------------------------------------------------------------------
 
-// AddPostToSeries adds a post to a series at the given position. H7: verifies
-// the content belongs to the same tenant before linking to prevent
-// cross-tenant content linkage.
+// AddPostToSeries adds a post to a series, auto-appending at the next
+// available position. H7: verifies the content belongs to the same tenant
+// before linking to prevent cross-tenant content linkage. The position is
+// computed server-side (MAX+1) to avoid colliding with the unique constraint
+// on (series_id, position); use ReorderPostsInSeries for reordering.
 func (s *Service) AddPostToSeries(ctx context.Context, seriesID, contentID, tenantID pgtype.UUID, position int32) error {
 	contentTenant, err := s.store.getContentTenantID(ctx, contentID)
 	if err != nil {
@@ -113,13 +116,12 @@ func (s *Service) AddPostToSeries(ctx context.Context, seriesID, contentID, tena
 	}
 
 	if contentTenant != tenantID {
-		return errors.New("content does not belong to this tenant")
+		return fmt.Errorf("%w: content does not belong to this tenant", errpkg.ErrBelongsToAnother)
 	}
 
 	return s.store.addPostToSeries(ctx, gen.AddPostToSeriesParams{
 		SeriesID:  seriesID,
 		ContentID: contentID,
-		Position:  position,
 	})
 }
 
