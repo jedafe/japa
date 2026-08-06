@@ -17,7 +17,8 @@
 		Clock, UserPlus, ChevronDown, ChevronRight,
 		Briefcase, Eye, X, Menu, ArrowRightLeft, CreditCard,
 		Package, Receipt, PanelLeft,
-		Brain, Wand, Trophy, Plane, Banknote
+		Brain, Wand, Trophy, Plane, Banknote,
+		FileUp
 	} from "lucide-svelte";
 	import { clsx } from "clsx";
 	import { sidebarCollapsed } from "$lib/stores/sidebar.svelte";
@@ -92,7 +93,8 @@
 			{ path: "/space-types", label: t("nav.space_types", "Space Types"), icon: Layout, permission: "space_types.create" },
 			{ path: "/tags", label: t("nav.tags", "Tags"), icon: Tag, permission: "tags.manage" },
 			{ path: "/reactions", label: t("nav.reactions", "Reactions"), icon: Star, permission: "content.reaction_types.manage" },
-		{ path: "/share-platforms", label: t("nav.share_platforms", "Share Platforms"), icon: Share2, permission: "content.reaction_types.manage" }
+		{ path: "/share-platforms", label: t("nav.share_platforms", "Share Platforms"), icon: Share2, permission: "content.reaction_types.manage" },
+	{ path: "/imports", label: t("nav.imports", "Content Imports"), icon: FileUp, permission: "import.manage" }
 			]
 		},
 		{
@@ -199,6 +201,7 @@
 			{ path: "/email-templates", label: t("nav.email_templates", "Email Templates"), icon: Mail, permission: "email.templates.manage" },
 			{ path: "/redirects", label: t("nav.redirects", "Redirects"), icon: ArrowRightLeft, permission: "redirects.manage" },
 			{ path: "/data-exports", label: t("nav.data_exports", "Data Exports"), icon: Download, permission: "gdpr.data_exports.view" },
+			{ path: "/data-imports", label: t("nav.data_imports", "Data Imports"), icon: FileUp, permission: "gdpr.data_exports.view" },
 				{ path: "/deletions", label: t("nav.deletions", "Account Deletions"), icon: Trash2, permission: "gdpr.deletions.view" },
 				{ path: "/gdpr", label: t("nav.gdpr", "GDPR Compliance"), icon: Accessibility, permission: "gdpr.deletions.view" }
 			]

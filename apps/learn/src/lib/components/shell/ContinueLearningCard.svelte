@@ -48,7 +48,7 @@
 			{#if continueItem.thumbnail_url}
 				<img
 					src={continueItem.thumbnail_url}
-					alt=""
+					alt={continueItem.track_title}
 					class="mb-2 h-20 w-full rounded-[var(--radius)] object-cover"
 				/>
 			{/if}

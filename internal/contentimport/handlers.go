@@ -120,6 +120,15 @@ type startImportRequest struct {
 	SourceURL  string `json:"source_url"`
 }
 
+// adminStartImportRequest is the JSON body for POST /admin/imports.
+// It extends the user-facing request with a target user_id — the admin
+// starts the import on behalf of that user.
+type adminStartImportRequest struct {
+	UserID     string `json:"user_id"`
+	SourceType string `json:"source_type"`
+	SourceURL  string `json:"source_url"`
+}
+
 // HandleStartImport handles POST /api/v1/me/imports — start a content
 // import. Gated by import.use permission (checked by RBAC middleware at
 // the route registration site). Enqueues import:process_source
@@ -274,6 +283,66 @@ func (h *Handlers) HandleGetImport(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
+		"data": serializeImport(imp),
+	})
+}
+
+// HandleAdminStartImport handles POST /api/v1/admin/imports — an admin
+// starts a content import on behalf of a user. Gated by import.manage.
+// Enqueues import:process_source fire-and-forget (Rule 8) and returns the
+// import record immediately.
+func (h *Handlers) HandleAdminStartImport(w http.ResponseWriter, r *http.Request) {
+	if _, ok := requireUser(w, r); !ok {
+		return
+	}
+
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	if h.service == nil {
+		writeError(w, http.StatusServiceUnavailable, "import_unavailable", "Import service not configured")
+		return
+	}
+
+	var req adminStartImportRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
+
+	if req.UserID == "" {
+		writeError(w, http.StatusBadRequest, "missing_user_id", "user_id is required")
+		return
+	}
+
+	var targetUserID pgtype.UUID
+	if err := targetUserID.Scan(req.UserID); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_user_id", "user_id must be a valid UUID")
+		return
+	}
+
+	if !isValidSourceType(req.SourceType) {
+		writeError(w, http.StatusBadRequest, "invalid_source_type",
+			"source_type must be one of: medium, substack, rss, zip")
+		return
+	}
+
+	if req.SourceType != SourceTypeZIP && req.SourceURL == "" {
+		writeError(w, http.StatusBadRequest, "missing_source_url",
+			"source_url is required for RSS-based imports")
+		return
+	}
+
+	imp, err := h.service.StartImport(r.Context(), tenantID, targetUserID, req.SourceType, req.SourceURL)
+	if err != nil {
+		slog.Error("contentimport: admin start failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "import_start_failed", "Failed to start import")
+		return
+	}
+
+	writeJSON(w, http.StatusAccepted, map[string]any{
 		"data": serializeImport(imp),
 	})
 }

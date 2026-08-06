@@ -216,9 +216,9 @@ func (s *Store) CountSearchMedia(ctx context.Context, tenantID pgtype.UUID, quer
 }
 
 // ListMediaFiltered returns paginated media matching the given filters
-// (uploader, mime type, search query, status). Empty/zero values mean
+// (uploader, mime type, search query, status, flagged). Empty/zero values mean
 // "no filter on this field". Used by the admin media list endpoint.
-func (s *Store) ListMediaFiltered(ctx context.Context, tenantID, uploaderID pgtype.UUID, mimePattern, query, status string, limit, offset int32) ([]gen.Medium, error) {
+func (s *Store) ListMediaFiltered(ctx context.Context, tenantID, uploaderID pgtype.UUID, mimePattern, query, status, flagged string, limit, offset int32) ([]gen.Medium, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -228,6 +228,7 @@ func (s *Store) ListMediaFiltered(ctx context.Context, tenantID, uploaderID pgty
 		MimePattern:    mimePattern,
 		Query:          query,
 		Status:         status,
+		Flagged:        flagged,
 		PageOffset:     offset,
 		PageLimit:      limit,
 	})
@@ -239,13 +240,14 @@ func (s *Store) ListMediaFiltered(ctx context.Context, tenantID, uploaderID pgty
 
 // CountMediaFiltered returns the count of media matching the given filters,
 // ignoring limit/offset. Used to compute total_pages for the admin list.
-func (s *Store) CountMediaFiltered(ctx context.Context, tenantID, uploaderID pgtype.UUID, mimePattern, query, status string) (int32, error) {
+func (s *Store) CountMediaFiltered(ctx context.Context, tenantID, uploaderID pgtype.UUID, mimePattern, query, status, flagged string) (int32, error) {
 	count, err := s.read.CountMediaFiltered(ctx, gen.CountMediaFilteredParams{
 		TenantID:       tenantID,
 		UploaderUserID: uploaderID,
 		MimePattern:    mimePattern,
 		Query:          query,
 		Status:         status,
+		Flagged:        flagged,
 	})
 	if err != nil {
 		return 0, fmt.Errorf("counting filtered media: %w", err)

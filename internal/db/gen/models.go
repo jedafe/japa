@@ -1497,7 +1497,9 @@ type Medium struct {
 	// Link to license deed
 	SourceLicenseUrl *string `json:"source_license_url"`
 	// Provider-specific photo ID for dedup
-	SourcePhotoID *string `json:"source_photo_id"`
+	SourcePhotoID *string            `json:"source_photo_id"`
+	RejectedAt    pgtype.Timestamptz `json:"rejected_at"`
+	Flagged       bool               `json:"flagged"`
 }
 
 type MentorReview struct {
@@ -2018,6 +2020,40 @@ type Permission struct {
 	Key         string             `json:"key"`
 	Description *string            `json:"description"`
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+}
+
+type PlatformDataExport struct {
+	ID              pgtype.UUID        `json:"id"`
+	TenantID        pgtype.UUID        `json:"tenant_id"`
+	Name            string             `json:"name"`
+	ExportType      string             `json:"export_type"`
+	Format          string             `json:"format"`
+	Status          string             `json:"status"`
+	FileUrl         *string            `json:"file_url"`
+	FileSize        *int64             `json:"file_size"`
+	IncludeMetadata bool               `json:"include_metadata"`
+	ErrorMessage    *string            `json:"error_message"`
+	CreatedBy       pgtype.UUID        `json:"created_by"`
+	CompletedAt     pgtype.Timestamptz `json:"completed_at"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+}
+
+type PlatformDataImport struct {
+	ID           pgtype.UUID        `json:"id"`
+	TenantID     pgtype.UUID        `json:"tenant_id"`
+	Name         string             `json:"name"`
+	ImportType   string             `json:"import_type"`
+	Format       string             `json:"format"`
+	Status       string             `json:"status"`
+	FileUrl      string             `json:"file_url"`
+	TotalRows    int32              `json:"total_rows"`
+	ImportedRows int32              `json:"imported_rows"`
+	FailedRows   int32              `json:"failed_rows"`
+	ErrorLog     []byte             `json:"error_log"`
+	Mode         string             `json:"mode"`
+	CreatedBy    pgtype.UUID        `json:"created_by"`
+	CompletedAt  pgtype.Timestamptz `json:"completed_at"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
 }
 
 type PlatformEvent struct {

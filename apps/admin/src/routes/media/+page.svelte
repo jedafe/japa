@@ -6,10 +6,10 @@
 	import { Modal } from '$lib/components/ui/modal';
 	import { Button } from '$lib/components/ui/button';
 	import { Card, CardContent } from '$lib/components/ui/card';
-	import { mediaAdminApi, api, apiFetch, apiRaw, stockAdminApi, type StockPhoto } from '$lib/api';
+	import { mediaAdminApi, api, apiFetch, apiRaw, stockAdminApi, type StockPhoto, type StockProviderAdmin } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
-	import { Eye, CheckCircle, XCircle, Shield, Trash2, Upload, Image, FileText, Film, Music, Search, Download, Loader2, Check } from 'lucide-svelte';
+	import { Eye, CheckCircle, XCircle, Shield, Trash2, Upload, Image as ImageIcon, FileText, Film, Music, Search, Download, Loader2, Check, RefreshCw, ZoomIn, ZoomOut, Maximize, Pencil, Save, X } from 'lucide-svelte';
 	import type { ActionItem } from '$lib/components/ui/data-table';
 
 	type MediaItem = {
@@ -18,6 +18,9 @@
 		mime_type: string;
 		file_size: number;
 		alt_text?: string;
+		caption?: string;
+		width?: number;
+		height?: number;
 		status: string;
 		flagged?: boolean;
 		uploader?: string;
@@ -31,6 +34,7 @@
 	// Backend gates approve/reject/quarantine on media.quarantine.manage and hard-delete on media.delete_any.
 	const canManageMedia = $derived(hasPermission('media.quarantine.manage') || hasPermission('media.delete_any'));
 	const canDeleteMedia = $derived(hasPermission('media.delete_any'));
+	const canEditMedia = $derived(hasPermission('media.edit_any'));
 
 	// ── EntityPage controller + page error ─────────────────────────────────
 	let entityController = $state<EntityPageController | undefined>(undefined);
@@ -171,6 +175,13 @@
 		const acts: ActionItem[] = [
 			{ label: t('common.view', 'View'), icon: Eye, onclick: (_row, ctx) => ctx?.openView(_row) }
 		];
+		if (canEditMedia) {
+			acts.push({
+				label: t('common.edit', 'Edit'),
+				icon: Pencil,
+				onclick: (row: MediaItem) => openEditModal(row)
+			});
+		}
 		if (canManageMedia) {
 			acts.push({
 				label: t('app.media.action_approve', 'Approve'),
@@ -220,7 +231,7 @@
 	}
 
 	function getIcon(mimeType: string) {
-		if (mimeType?.startsWith('image/')) return Image;
+		if (mimeType?.startsWith('image/')) return ImageIcon;
 		if (mimeType?.startsWith('video/')) return Film;
 		if (mimeType?.startsWith('audio/')) return Music;
 		return FileText;
@@ -311,7 +322,16 @@
 				options: [
 					{ value: 'approved', label: t('app.media.status_approved', 'Approved') },
 					{ value: 'pending', label: t('app.media.status_pending', 'Pending') },
-					{ value: 'quarantined', label: t('app.media.status_quarantined', 'Quarantined') }
+					{ value: 'quarantined', label: t('app.media.status_quarantined', 'Quarantined') },
+					{ value: 'rejected', label: t('app.media.status_rejected', 'Rejected') }
+				]
+			},
+			{
+				key: 'flagged',
+				label: t('app.media.col_flagged', 'Flagged'),
+				options: [
+					{ value: 'true', label: t('app.media.flagged_yes', 'Flagged') },
+					{ value: 'false', label: t('app.media.flagged_no', 'Not Flagged') }
 				]
 			}
 		],
@@ -337,6 +357,7 @@
 			if (q) params.set('q', q);
 			if (filter.status) params.set('status', filter.status);
 			if (filter.mime_type) params.set('type', filter.mime_type);
+			if (filter.flagged) params.set('flagged', filter.flagged);
 			// Use apiRaw to access top-level total/total_pages alongside data.
 			const result = await apiRaw<{ data?: MediaItem[]; items?: MediaItem[]; total?: number; total_pages?: number }>(`/admin/media?${params.toString()}`);
 			if (result.ok) {
@@ -352,6 +373,219 @@
 		},
 		viewSnippet: MediaView
 	});
+
+	// ── Edit metadata (alt_text + caption/title) ──────────────────────────
+	let showEditModal = $state(false);
+	let editTarget = $state<MediaItem | null>(null);
+	let editAltText = $state('');
+	let editCaption = $state('');
+	let editSaving = $state(false);
+
+	function openEditModal(row: MediaItem) {
+		editTarget = row;
+		editAltText = row.alt_text ?? '';
+		editCaption = row.caption ?? '';
+		editSaving = false;
+		showEditModal = true;
+	}
+
+	async function saveEdit() {
+		if (!editTarget) return;
+		editSaving = true;
+		pageError = '';
+		try {
+			const result = await mediaAdminApi.update(editTarget.id, {
+				alt_text: editAltText,
+				caption: editCaption
+			});
+			if (result.ok) {
+				showEditModal = false;
+				editTarget = null;
+				entityController?.reload();
+			} else {
+				pageError = result.error ?? t('common.error', 'Failed to update media');
+			}
+		} catch {
+			pageError = t('common.error', 'Failed to update media');
+		} finally {
+			editSaving = false;
+		}
+	}
+
+	// ── Image viewer (fullscreen lightbox with zoom/pan) ──────────────────
+	let showViewer = $state(false);
+	let viewerItem = $state<MediaItem | null>(null);
+	let viewerZoom = $state(1);
+	let viewerPanX = $state(0);
+	let viewerPanY = $state(0);
+	let viewerPanning = $state(false);
+	let viewerPanStart = $state({ x: 0, y: 0, panX: 0, panY: 0 });
+
+	function openViewer(row: MediaItem) {
+		viewerItem = row;
+		viewerZoom = 1;
+		viewerPanX = 0;
+		viewerPanY = 0;
+		showViewer = true;
+	}
+
+	function closeViewer() {
+		showViewer = false;
+		viewerItem = null;
+	}
+
+	function zoomIn() {
+		viewerZoom = Math.min(viewerZoom * 1.25, 8);
+	}
+	function zoomOut() {
+		viewerZoom = Math.max(viewerZoom / 1.25, 0.25);
+		if (viewerZoom <= 1) {
+			viewerPanX = 0;
+			viewerPanY = 0;
+		}
+	}
+	function resetZoom() {
+		viewerZoom = 1;
+		viewerPanX = 0;
+		viewerPanY = 0;
+	}
+
+	function onViewerWheel(e: WheelEvent) {
+		if (e.deltaY < 0) zoomIn();
+		else zoomOut();
+	}
+
+	function onViewerPointerDown(e: PointerEvent) {
+		if (viewerZoom <= 1) return;
+		viewerPanning = true;
+		viewerPanStart = { x: e.clientX, y: e.clientY, panX: viewerPanX, panY: viewerPanY };
+	}
+	function onViewerPointerMove(e: PointerEvent) {
+		if (!viewerPanning) return;
+		viewerPanX = viewerPanStart.panX + (e.clientX - viewerPanStart.x);
+		viewerPanY = viewerPanStart.panY + (e.clientY - viewerPanStart.y);
+	}
+	function onViewerPointerUp() {
+		viewerPanning = false;
+	}
+
+	// ── Image resizer (client-side canvas, preview + download) ────────────
+	let showResizer = $state(false);
+	let resizerItem = $state<MediaItem | null>(null);
+	let resizerOriginal = $state<{ w: number; h: number } | null>(null);
+	let resizerWidth = $state(0);
+	let resizerHeight = $state(0);
+	let resizerMaintainAspect = $state(true);
+	let resizerQuality = $state(0.9);
+	let resizerFormat = $state<'jpeg' | 'png' | 'webp'>('jpeg');
+	let resizerPreviewUrl = $state('');
+	let resizerError = $state('');
+	let resizerCanvas = $state<HTMLCanvasElement | null>(null);
+
+	function openResizer(row: MediaItem) {
+		if (!row.mime_type?.startsWith('image/') || !row.url) return;
+		resizerItem = row;
+		resizerError = '';
+		resizerPreviewUrl = '';
+		resizerMaintainAspect = true;
+		resizerQuality = 0.9;
+		resizerFormat = 'jpeg';
+		showResizer = true;
+		// Load the image to get original dimensions
+		const img = new Image();
+		img.crossOrigin = 'anonymous';
+		img.onload = () => {
+			resizerOriginal = { w: img.naturalWidth, h: img.naturalHeight };
+			resizerWidth = img.naturalWidth;
+			resizerHeight = img.naturalHeight;
+			renderResizerPreview(img);
+		};
+		img.onerror = () => {
+			resizerError = 'Failed to load image for resizing';
+		};
+		img.src = row.url;
+	}
+
+	function onResizerWidthChange() {
+		if (resizerMaintainAspect && resizerOriginal && resizerWidth > 0) {
+			resizerHeight = Math.round((resizerWidth / resizerOriginal.w) * resizerOriginal.h);
+		}
+		renderResizerFromSource();
+	}
+	function onResizerHeightChange() {
+		if (resizerMaintainAspect && resizerOriginal && resizerHeight > 0) {
+			resizerWidth = Math.round((resizerHeight / resizerOriginal.h) * resizerOriginal.w);
+		}
+		renderResizerFromSource();
+	}
+
+	let resizerSourceImg: HTMLImageElement | null = null;
+
+	function renderResizerFromSource() {
+		if (!resizerSourceImg || !resizerItem) {
+			// Re-load from URL
+			if (!resizerItem) return;
+			const img = new Image();
+			img.crossOrigin = 'anonymous';
+			img.onload = () => {
+				resizerSourceImg = img;
+				renderResizerPreview(img);
+			};
+			img.src = resizerItem.url ?? '';
+			return;
+		}
+		renderResizerPreview(resizerSourceImg);
+	}
+
+	function renderResizerPreview(img: HTMLImageElement) {
+		resizerSourceImg = img;
+		const w = Math.max(1, resizerWidth);
+		const h = Math.max(1, resizerHeight);
+		const canvas = document.createElement('canvas');
+		canvas.width = w;
+		canvas.height = h;
+		const ctx = canvas.getContext('2d');
+		if (!ctx) {
+			resizerError = 'Canvas not supported';
+			return;
+		}
+		ctx.imageSmoothingEnabled = true;
+		ctx.imageSmoothingQuality = 'high';
+		ctx.drawImage(img, 0, 0, w, h);
+		resizerCanvas = canvas;
+		const mime = resizerFormat === 'png' ? 'image/png' : resizerFormat === 'webp' ? 'image/webp' : 'image/jpeg';
+		resizerPreviewUrl = canvas.toDataURL(mime, resizerQuality);
+	}
+
+	function downloadResized() {
+		if (!resizerCanvas || !resizerItem) return;
+		const mime = resizerFormat === 'png' ? 'image/png' : resizerFormat === 'webp' ? 'image/webp' : 'image/jpeg';
+		const ext = resizerFormat === 'png' ? 'png' : resizerFormat === 'webp' ? 'webp' : 'jpg';
+		resizerCanvas.toBlob(
+			(blob) => {
+				if (!blob) return;
+				const url = URL.createObjectURL(blob);
+				const a = document.createElement('a');
+				a.href = url;
+				const baseName = resizerItem!.filename.replace(/\.[^/.]+$/, '');
+				a.download = `${baseName}_${resizerWidth}x${resizerHeight}.${ext}`;
+				a.click();
+				URL.revokeObjectURL(url);
+			},
+			mime,
+			resizerQuality
+		);
+	}
+
+	function closeResizer() {
+		showResizer = false;
+		resizerItem = null;
+		resizerOriginal = null;
+		resizerSourceImg = null;
+		resizerCanvas = null;
+		resizerPreviewUrl = '';
+		resizerError = '';
+	}
 
 	// ── Page-local upload flow (preserved from legacy) ────────────────────
 	let showUploadModal = $state(false);
@@ -526,6 +760,60 @@
 			uploadProgress = null;
 		}
 	}
+
+	// ── Stock Providers management tab ────────────────────────────────────
+	let activeTab = $state<'media' | 'stock-providers'>('media');
+	let stockProviders = $state<StockProviderAdmin[]>([]);
+	let stockProvidersLoading = $state(false);
+	let stockProvidersError = $state('');
+	let stockProvidersLoaded = $state(false);
+	let updatingProvider = $state<string | null>(null);
+
+	async function loadStockProviders() {
+		stockProvidersLoading = true;
+		stockProvidersError = '';
+		try {
+			const result = await stockAdminApi.listProviders();
+			if (result.ok) {
+				stockProviders = result.data?.providers ?? [];
+				stockProvidersLoaded = true;
+			} else {
+				stockProvidersError = result.error ?? t('app.media.err_providers', 'Failed to load providers');
+			}
+		} catch (err) {
+			stockProvidersError = err instanceof Error ? err.message : t('app.media.err_providers', 'Failed to load providers');
+		}
+		stockProvidersLoading = false;
+	}
+
+	async function toggleStockProvider(name: string, enabled: boolean) {
+		updatingProvider = name;
+		const result = await stockAdminApi.patchProvider(name, { enabled });
+		if (result.ok) {
+			await loadStockProviders();
+		} else {
+			stockProvidersError = result.error ?? t('app.media.err_provider_update', 'Failed to update provider');
+		}
+		updatingProvider = null;
+	}
+
+	async function updateProviderKey(name: string, apiKey: string) {
+		if (!apiKey.trim()) return;
+		updatingProvider = name;
+		const result = await stockAdminApi.patchProvider(name, { api_key: apiKey.trim() });
+		if (result.ok) {
+			await loadStockProviders();
+		} else {
+			stockProvidersError = result.error ?? t('app.media.err_api_key', 'Failed to update API key');
+		}
+		updatingProvider = null;
+	}
+
+	$effect(() => {
+		if (activeTab === 'stock-providers' && !stockProvidersLoaded) {
+			loadStockProviders();
+		}
+	});
 </script>
 
 <svelte:head>
@@ -541,7 +829,113 @@
 	</div>
 {/if}
 
-<EntityPage {config} bind:controller={entityController} />
+<!-- Tab switcher: Media Library vs Stock Providers -->
+<div class="mb-4 inline-flex h-10 items-center justify-center rounded-lg p-1" style="background-color: var(--color-surface); color: var(--color-muted)">
+	<button
+		type="button"
+		class="inline-flex items-center justify-center whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium transition-all"
+		style={activeTab === 'media'
+			? 'background-color: var(--color-surface); color: var(--color-foreground); box-shadow: 0 1px 2px rgba(0,0,0,0.05)'
+			: 'color: var(--color-muted)'}
+		onclick={() => (activeTab = 'media')}
+	>
+		<ImageIcon class="mr-2 h-4 w-4" />
+		{t('app.media.tab_all', 'All Media')}
+	</button>
+	<button
+		type="button"
+		class="inline-flex items-center justify-center whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium transition-all"
+		style={activeTab === 'stock-providers'
+			? 'background-color: var(--color-surface); color: var(--color-foreground); box-shadow: 0 1px 2px rgba(0,0,0,0.05)'
+			: 'color: var(--color-muted)'}
+		onclick={() => (activeTab = 'stock-providers')}
+	>
+		<Search class="mr-2 h-4 w-4" />
+		{t('app.media.tab_stock_providers', 'Stock Providers')}
+	</button>
+</div>
+
+{#if activeTab === 'media'}
+	<EntityPage {config} bind:controller={entityController} />
+{:else if activeTab === 'stock-providers'}
+	<!-- Stock Providers management tab -->
+	<Card>
+		<CardContent class="p-0">
+			{#if stockProvidersLoading}
+				<div class="flex items-center justify-center py-12">
+					<RefreshCw class="h-5 w-5 animate-spin" style="color: var(--color-muted)" />
+					<span class="ml-2 text-sm" style="color: var(--color-muted)">Loading...</span>
+				</div>
+			{:else if stockProvidersError}
+				<div class="rounded-lg border px-4 py-3 text-sm" style="border-color: var(--color-danger); color: var(--color-danger)">
+					{stockProvidersError}
+				</div>
+			{:else}
+				<div class="overflow-x-auto">
+					<table class="w-full text-sm">
+						<thead class="border-b bg-surface text-left text-xs uppercase" style="color: var(--color-muted)">
+							<tr>
+								<th class="px-4 py-3 font-medium">{t('app.media.provider', 'Provider')}</th>
+								<th class="px-4 py-3 font-medium">{t('app.media.enabled', 'Enabled')}</th>
+								<th class="px-4 py-3 font-medium">{t('app.media.api_key', 'API Key')}</th>
+								<th class="px-4 py-3 font-medium">{t('app.media.rbac_permission', 'RBAC Permission')}</th>
+							</tr>
+						</thead>
+						<tbody class="divide-y" style="border-color: var(--color-border)">
+							{#each stockProviders as p (p.provider_name)}
+								<tr class="hover:bg-surface/50">
+									<td class="px-4 py-3 font-medium" style="color: var(--color-foreground)">{p.display_name}</td>
+									<td class="px-4 py-3">
+										<label class="inline-flex cursor-pointer items-center gap-2">
+											<input
+												type="checkbox"
+												checked={p.enabled}
+												disabled={updatingProvider === p.provider_name}
+												onchange={(e) => toggleStockProvider(p.provider_name, e.currentTarget.checked)}
+											/>
+											<span class="text-xs" style="color: var(--color-muted)">
+												{updatingProvider === p.provider_name
+													? t('common.saving', 'Saving...')
+													: p.enabled
+														? t('app.media.on', 'On')
+														: t('app.media.off', 'Off')}
+											</span>
+										</label>
+									</td>
+									<td class="px-4 py-3">
+										{#if p.provider_name === 'openverse'}
+											<span class="text-xs" style="color: var(--color-muted)">{t('app.media.no_key_required', 'No key required')}</span>
+										{:else}
+											<input
+												type="password"
+												class="w-full max-w-xs rounded border px-2 py-1 text-xs"
+												style="border-color: var(--color-border); background-color: var(--color-surface); color: var(--color-foreground)"
+												placeholder={p.has_api_key ? '•••••••• (enter new key to replace)' : t('app.media.paste_api_key', 'Paste API key...')}
+												onkeydown={(e) => {
+													if (e.key === 'Enter' && e.currentTarget.value.trim()) {
+														updateProviderKey(p.provider_name, e.currentTarget.value);
+														e.currentTarget.value = '';
+													}
+												}}
+											/>
+										{/if}
+									</td>
+									<td class="px-4 py-3">
+										{#if p.provider_name === 'openverse'}
+											<span class="inline-flex items-center rounded-full bg-surface px-2.5 py-0.5 text-xs font-medium" style="color: var(--color-foreground)">media.stock.search</span>
+										{:else}
+											<span class="inline-flex items-center rounded-full bg-surface px-2.5 py-0.5 text-xs font-medium" style="color: var(--color-foreground)">media.stock.search.{p.provider_name}</span>
+										{/if}
+									</td>
+								</tr>
+							{/each}
+						</tbody>
+					</table>
+				</div>
+			{/if}
+		</CardContent>
+	</Card>
+{/if}
 
 <!-- ── State-action confirmation modals ─────────────────────────────────── -->
 
@@ -812,6 +1206,223 @@
 	{/if}
 </Modal>
 
+<!-- ── Edit metadata modal (alt_text + caption/title) ─────────────────────── -->
+<Modal bind:open={showEditModal} title={t('app.media.modal_edit_title', 'Edit Media Details')}>
+	{#if editTarget}
+		<div class="space-y-4">
+			{#if editTarget.mime_type?.startsWith('image/') && editTarget.url}
+				<div class="flex h-32 items-center justify-center overflow-hidden rounded-lg" style="background: var(--color-surface)">
+					<img src={editTarget.url} alt={editTarget.alt_text || editTarget.filename} class="max-h-full object-contain" />
+				</div>
+			{/if}
+			<div>
+				<label for="edit-caption" class="mb-1 block text-sm font-medium text-foreground">
+					{t('app.media.field_title', 'Title / Caption')}
+				</label>
+				<input
+					id="edit-caption"
+					type="text"
+					bind:value={editCaption}
+					placeholder={t('app.media.title_placeholder', 'Descriptive title for this media...')}
+					class="w-full rounded-lg border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+				/>
+			</div>
+			<div>
+				<label for="edit-alt" class="mb-1 block text-sm font-medium text-foreground">
+					{t('app.media.field_alt_text', 'Alt Text')}
+				</label>
+				<textarea
+					id="edit-alt"
+					bind:value={editAltText}
+					rows="3"
+					placeholder={t('app.media.alt_placeholder', 'Accessibility description for screen readers...')}
+					class="w-full rounded-lg border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+				></textarea>
+				<p class="mt-1 text-xs text-muted">{t('app.media.alt_hint', 'Used by screen readers and SEO. Describe the image content.')}</p>
+			</div>
+		</div>
+		<div class="mt-4 flex justify-end gap-2">
+			<Button variant="ghost" onclick={() => (showEditModal = false)}>{t('common.cancel', 'Cancel')}</Button>
+			<Button variant="default" onclick={saveEdit} disabled={editSaving}>
+				{#if editSaving}
+					<Loader2 class="mr-2 h-4 w-4 animate-spin" />
+				{:else}
+					<Save class="mr-2 h-4 w-4" />
+				{/if}
+				{editSaving ? t('common.saving', 'Saving...') : t('common.save', 'Save')}
+			</Button>
+		</div>
+	{/if}
+</Modal>
+
+<!-- ── Image viewer (fullscreen lightbox) ─────────────────────────────────── -->
+<svelte:window onkeydown={(e) => { if (e.key === 'Escape' && showViewer) closeViewer(); }} />
+{#if showViewer && viewerItem}
+	<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+	<div
+		class="fixed inset-0 z-50 flex items-center justify-center bg-black/90"
+		role="dialog"
+		aria-modal="true"
+		tabindex="-1"
+		aria-label={t('app.media.viewer_aria', 'Image viewer')}
+		onclick={closeViewer}
+		onwheel={onViewerWheel}
+	>
+		<!-- Toolbar -->
+		<div class="absolute top-0 left-0 right-0 flex items-center justify-between p-4 text-white" onclick={(e) => e.stopPropagation()}>
+			<div class="flex items-center gap-2">
+				<Button variant="ghost" size="sm" class="text-white hover:bg-white/10" onclick={closeViewer}>
+					<X class="h-5 w-5" />
+				</Button>
+				<span class="truncate text-sm font-medium">{viewerItem.filename}</span>
+			</div>
+			<div class="flex items-center gap-1">
+				<Button variant="ghost" size="sm" class="text-white hover:bg-white/10" onclick={zoomOut}>
+					<ZoomOut class="h-5 w-5" />
+				</Button>
+				<span class="min-w-[3.5rem] text-center text-sm tabular-nums">{Math.round(viewerZoom * 100)}%</span>
+				<Button variant="ghost" size="sm" class="text-white hover:bg-white/10" onclick={zoomIn}>
+					<ZoomIn class="h-5 w-5" />
+				</Button>
+				<Button variant="ghost" size="sm" class="text-white hover:bg-white/10" onclick={resetZoom}>
+					<Maximize class="h-5 w-5" />
+				</Button>
+			</div>
+		</div>
+
+		<!-- Image -->
+		<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+		<div
+			class="flex max-h-full max-w-full items-center justify-center overflow-hidden"
+			style="cursor: {viewerZoom > 1 ? (viewerPanning ? 'grabbing' : 'grab') : 'default'}"
+			onclick={(e) => e.stopPropagation()}
+			onpointerdown={onViewerPointerDown}
+			onpointermove={onViewerPointerMove}
+			onpointerup={onViewerPointerUp}
+			onpointerleave={onViewerPointerUp}
+		>
+			{#if viewerItem.mime_type?.startsWith('image/') && viewerItem.url}
+				<img
+					src={viewerItem.url}
+					alt={viewerItem.alt_text || viewerItem.filename}
+					class="max-h-[90vh] max-w-[90vw] select-none object-contain transition-transform"
+					style="transform: scale({viewerZoom}) translate({viewerPanX / viewerZoom}px, {viewerPanY / viewerZoom}px);"
+					draggable="false"
+				/>
+			{:else if viewerItem.mime_type?.startsWith('video/') && viewerItem.url}
+				<video
+					src={viewerItem.url}
+					controls
+					autoplay
+					class="max-h-[90vh] max-w-[90vw]"
+				>
+					<track kind="captions" />
+				</video>
+			{:else}
+				<div class="text-center text-white/70">
+					<FileText class="mx-auto mb-2 h-16 w-16" />
+					<p class="text-sm">{t('app.media.no_preview', 'No preview available')}</p>
+					<a href={viewerItem.url} download class="mt-2 inline-block text-sm text-primary underline">{t('common.download', 'Download')}</a>
+				</div>
+			{/if}
+		</div>
+	</div>
+{/if}
+
+<!-- ── Image resizer modal ───────────────────────────────────────────────── -->
+<Modal bind:open={showResizer} title={t('app.media.modal_resizer_title', 'Resize Image')}>
+	{#if resizerItem}
+		<div class="space-y-4">
+			{#if resizerError}
+				<div class="rounded-lg border px-3 py-2 text-sm" style="border-color: var(--color-danger); color: var(--color-danger)">
+					{resizerError}
+				</div>
+			{/if}
+
+			{#if resizerOriginal}
+				<div class="text-xs text-muted">
+					{t('app.media.original_size', 'Original')}: {resizerOriginal.w} × {resizerOriginal.h}px
+				</div>
+			{/if}
+
+			<!-- Dimension inputs -->
+			<div class="grid grid-cols-2 gap-3">
+				<div>
+					<label for="resize-width" class="mb-1 block text-sm font-medium text-foreground">{t('app.media.width', 'Width (px)')}</label>
+					<input
+						id="resize-width"
+						type="number"
+						min="1"
+						bind:value={resizerWidth}
+						onchange={onResizerWidthChange}
+						oninput={onResizerWidthChange}
+						class="w-full rounded-lg border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+					/>
+				</div>
+				<div>
+					<label for="resize-height" class="mb-1 block text-sm font-medium text-foreground">{t('app.media.height', 'Height (px)')}</label>
+					<input
+						id="resize-height"
+						type="number"
+						min="1"
+						bind:value={resizerHeight}
+						onchange={onResizerHeightChange}
+						oninput={onResizerHeightChange}
+						class="w-full rounded-lg border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+					/>
+				</div>
+			</div>
+
+			<!-- Options row -->
+			<div class="flex flex-wrap items-center gap-4">
+				<label class="inline-flex cursor-pointer items-center gap-2 text-sm text-foreground">
+					<input type="checkbox" bind:checked={resizerMaintainAspect} />
+					{t('app.media.maintain_aspect', 'Maintain aspect ratio')}
+				</label>
+				<div class="flex items-center gap-2 text-sm text-foreground">
+					<label for="resize-format">{t('app.media.format', 'Format')}</label>
+					<select id="resize-format" bind:value={resizerFormat} onchange={renderResizerFromSource} class="rounded-lg border bg-surface px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-primary">
+						<option value="jpeg">JPEG</option>
+						<option value="png">PNG</option>
+						<option value="webp">WebP</option>
+					</select>
+				</div>
+				<div class="flex items-center gap-2 text-sm text-foreground">
+					<label for="resize-quality">{t('app.media.quality', 'Quality')}</label>
+					<input id="resize-quality" type="range" min="0.1" max="1" step="0.05" bind:value={resizerQuality} onchange={renderResizerFromSource} />
+					<span class="tabular-nums text-xs text-muted">{Math.round(resizerQuality * 100)}%</span>
+				</div>
+			</div>
+
+			<!-- Preview -->
+			{#if resizerPreviewUrl}
+				<div>
+					<p class="mb-1 text-xs font-medium uppercase tracking-wider text-muted">{t('app.media.preview', 'Preview')}</p>
+					<div class="flex max-h-48 items-center justify-center overflow-hidden rounded-lg border" style="border-color: var(--color-border); background: var(--color-surface)">
+						<img src={resizerPreviewUrl} alt="Resize preview" class="max-h-48 object-contain" />
+					</div>
+					<p class="mt-1 text-xs text-muted">
+						{resizerWidth} × {resizerHeight}px
+					</p>
+				</div>
+			{:else if !resizerError}
+				<div class="flex items-center justify-center py-8">
+					<Loader2 class="h-5 w-5 animate-spin" style="color: var(--color-muted)" />
+					<span class="ml-2 text-sm" style="color: var(--color-muted)">{t('common.loading', 'Loading...')}</span>
+				</div>
+			{/if}
+		</div>
+
+		<div class="mt-4 flex justify-end gap-2">
+			<Button variant="ghost" onclick={closeResizer}>{t('common.cancel', 'Cancel')}</Button>
+			<Button variant="default" onclick={downloadResized} disabled={!resizerCanvas}>
+				<Download class="mr-2 h-4 w-4" />
+				{t('app.media.download_resized', 'Download Resized')}
+			</Button>
+		</div>
+	{/if}
+</Modal>
+
 <!-- ── Snippets ─────────────────────────────────────────────────────────── -->
 
 {#snippet PreviewCell({ row }: { value: any; row: MediaItem })}
@@ -853,9 +1464,24 @@
 			{/if}
 			<!-- Hover action overlay -->
 			<div class="absolute inset-0 flex items-center justify-center gap-2 bg-black/50 opacity-0 transition-opacity group-hover:opacity-100">
-				<Button variant="secondary" size="sm" class="h-8 w-8 p-0" onclick={() => entityController?.openView(row)}>
+				{#if row.mime_type?.startsWith('image/') || row.mime_type?.startsWith('video/')}
+					<Button variant="secondary" size="sm" class="h-8 w-8 p-0" onclick={() => openViewer(row)} title={t('app.media.view_full', 'View full image')}>
+						<Maximize class="h-4 w-4" />
+					</Button>
+				{/if}
+				<Button variant="secondary" size="sm" class="h-8 w-8 p-0" onclick={() => entityController?.openView(row)} title={t('common.view', 'View')}>
 					<Eye class="h-4 w-4" />
 				</Button>
+				{#if row.mime_type?.startsWith('image/')}
+					<Button variant="secondary" size="sm" class="h-8 w-8 p-0" onclick={() => openResizer(row)} title={t('app.media.resize', 'Resize')}>
+						<Maximize class="h-4 w-4" />
+					</Button>
+				{/if}
+				{#if canEditMedia}
+					<Button variant="secondary" size="sm" class="h-8 w-8 p-0" onclick={() => openEditModal(row)} title={t('common.edit', 'Edit')}>
+						<Pencil class="h-4 w-4" />
+					</Button>
+				{/if}
 				{#if canManageMedia}
 					{#if row.status === 'quarantined' || row.status === 'pending'}
 						<Button variant="secondary" size="sm" class="h-8 w-8 p-0" onclick={() => openApprove(row)} style="color: var(--color-success)">
@@ -886,14 +1512,59 @@
 <!-- View slide-over body (mirrors the legacy view modal) -->
 {#snippet MediaView({ row }: { row: MediaItem })}
 	<div class="space-y-4">
-		<div class="flex aspect-video items-center justify-center rounded-lg" style="background: var(--color-surface)">
+		<div class="relative flex aspect-video items-center justify-center rounded-lg" style="background: var(--color-surface)">
 			{#if row.mime_type?.startsWith('image/') && row.url}
 				<img src={row.url} alt={row.alt_text || row.filename} class="max-h-full rounded-lg object-contain" />
+				<!-- Fullscreen viewer button overlay -->
+				<button
+					type="button"
+					class="absolute right-2 top-2 inline-flex h-8 w-8 items-center justify-center rounded-lg bg-black/50 text-white opacity-0 transition-opacity hover:bg-black/70 focus:opacity-100"
+					onclick={() => openViewer(row)}
+					title={t('app.media.view_full', 'View full image')}
+					aria-label={t('app.media.view_full', 'View full image')}
+				>
+					<Maximize class="h-4 w-4" />
+				</button>
+			{:else if row.mime_type?.startsWith('video/') && row.url}
+				<video src={row.url} controls class="max-h-full rounded-lg">
+					<track kind="captions" />
+				</video>
 			{:else}
 				{@const Icon = getIcon(row.mime_type)}
 				<Icon class="h-12 w-12" style="color: var(--color-muted)" />
 			{/if}
 		</div>
+
+		<!-- Action buttons -->
+		<div class="flex flex-wrap gap-2">
+			{#if row.mime_type?.startsWith('image/') || row.mime_type?.startsWith('video/')}
+				<Button variant="secondary" size="sm" onclick={() => openViewer(row)}>
+					<Maximize class="mr-2 h-4 w-4" />
+					{t('app.media.view_full', 'View Full')}
+				</Button>
+			{/if}
+			{#if row.mime_type?.startsWith('image/')}
+				<Button variant="secondary" size="sm" onclick={() => openResizer(row)}>
+					<Maximize class="mr-2 h-4 w-4" />
+					{t('app.media.resize', 'Resize')}
+				</Button>
+			{/if}
+			{#if canEditMedia}
+				<Button variant="secondary" size="sm" onclick={() => openEditModal(row)}>
+					<Pencil class="mr-2 h-4 w-4" />
+					{t('common.edit', 'Edit')}
+				</Button>
+			{/if}
+			{#if row.url}
+				<a href={row.url} download={row.filename} target="_blank" rel="noopener">
+					<Button variant="secondary" size="sm">
+						<Download class="mr-2 h-4 w-4" />
+						{t('common.download', 'Download')}
+					</Button>
+				</a>
+			{/if}
+		</div>
+
 		<div class="grid grid-cols-2 gap-4">
 			<div>
 				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.media.field_filename', 'Filename')}</p>
@@ -911,6 +1582,12 @@
 				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.media.col_uploader', 'Uploader')}</p>
 				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.uploader_username || row.uploader || '—'}</p>
 			</div>
+			{#if row.width || row.height}
+				<div>
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.media.dimensions', 'Dimensions')}</p>
+					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.width ?? '—'} × {row.height ?? '—'}px</p>
+				</div>
+			{/if}
 			<div>
 				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.media.field_status', 'Status')}</p>
 				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.status}</p>
@@ -928,6 +1605,10 @@
 			<div>
 				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.media.col_references', 'References')}</p>
 				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.references ?? '—'}</p>
+			</div>
+			<div class="col-span-2">
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.media.field_title', 'Title / Caption')}</p>
+				<p class="mt-1 text-sm" style="color: var(--color-foreground)">{row.caption || '—'}</p>
 			</div>
 			<div class="col-span-2">
 				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.media.field_alt_text', 'Alt Text')}</p>

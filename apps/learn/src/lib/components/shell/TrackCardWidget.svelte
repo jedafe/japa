@@ -67,7 +67,7 @@
 			{#if track.thumbnail_url}
 				<img
 					src={track.thumbnail_url}
-					alt=""
+					alt={track.title}
 					class="mb-2 h-20 w-full rounded-[var(--radius)] object-cover"
 				/>
 			{/if}

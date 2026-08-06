@@ -196,18 +196,11 @@ func (a *ImportAdapter) ProcessSource(ctx context.Context, importID pgtype.UUID)
 	return a.svc.ProcessSource(ctx, r.TenantID, importID, r.SourceType, r.SourceURL)
 }
 
-// FetchMedia resolves the import's tenant and fetches media for the import.
-// The contentimport service does not expose a separate FetchMedia method;
-// ProcessSource handles both source processing and media fetching. We log
-// the request and delegate to ProcessSource so the task is not silently
-// dropped.
-func (a *ImportAdapter) FetchMedia(ctx context.Context, importID pgtype.UUID) error {
-	r, err := a.lookupImport(ctx, importID)
-	if err != nil {
-		return err
-	}
-	slog.Info("task:import:fetch_media: delegating to ProcessSource", "import_id", importID, "tenant_id", r.TenantID)
-	return a.svc.ProcessSource(ctx, r.TenantID, importID, r.SourceType, r.SourceURL)
+// FetchMedia delegates to the contentimport service's FetchMedia method,
+// which downloads external images from the imported content's body and
+// replaces their URLs with stored media URLs (Section 34).
+func (a *ImportAdapter) FetchMedia(ctx context.Context, tenantID, userID, contentID pgtype.UUID) error {
+	return a.svc.FetchMedia(ctx, tenantID, userID, contentID)
 }
 
 // ---------------------------------------------------------------------------

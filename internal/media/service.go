@@ -318,10 +318,10 @@ func (s *Service) DeleteMedia(ctx context.Context, tenantID, mediaID pgtype.UUID
 }
 
 // ListMedia returns paginated media, optionally filtered by uploader, type,
-// search query, and status, along with the total count matching the filter.
-// The total is used by callers to compute total_pages. Empty/zero filter
-// values mean "no filter on this field".
-func (s *Service) ListMedia(ctx context.Context, tenantID pgtype.UUID, uploaderID *pgtype.UUID, mimeType, query, status *string, limit, offset int32) ([]gen.Medium, int32, error) {
+// search query, status, and flagged state, along with the total count matching
+// the filter. The total is used by callers to compute total_pages. Empty/zero
+// filter values mean "no filter on this field".
+func (s *Service) ListMedia(ctx context.Context, tenantID pgtype.UUID, uploaderID *pgtype.UUID, mimeType, query, status, flagged *string, limit, offset int32) ([]gen.Medium, int32, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -349,11 +349,16 @@ func (s *Service) ListMedia(ctx context.Context, tenantID pgtype.UUID, uploaderI
 		statusFilter = *status
 	}
 
-	items, err := s.store.ListMediaFiltered(ctx, tenantID, uploader, mimePattern, searchQuery, statusFilter, limit, offset)
+	flaggedFilter := ""
+	if flagged != nil {
+		flaggedFilter = *flagged
+	}
+
+	items, err := s.store.ListMediaFiltered(ctx, tenantID, uploader, mimePattern, searchQuery, statusFilter, flaggedFilter, limit, offset)
 	if err != nil {
 		return nil, 0, err
 	}
-	total, err := s.store.CountMediaFiltered(ctx, tenantID, uploader, mimePattern, searchQuery, statusFilter)
+	total, err := s.store.CountMediaFiltered(ctx, tenantID, uploader, mimePattern, searchQuery, statusFilter, flaggedFilter)
 	if err != nil {
 		return nil, 0, err
 	}

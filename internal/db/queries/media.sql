@@ -169,9 +169,11 @@ WHERE tenant_id = @tenant_id
   AND (
     @status::text = '' OR
     (@status = 'approved' AND confirmed = true) OR
-    (@status = 'pending' AND confirmed = false AND (quarantine_reason IS NULL OR quarantine_reason = '')) OR
-    (@status = 'quarantined' AND confirmed = false AND quarantine_reason IS NOT NULL AND quarantine_reason != '')
+    (@status = 'pending' AND confirmed = false AND (quarantine_reason IS NULL OR quarantine_reason = '') AND rejected_at IS NULL) OR
+    (@status = 'quarantined' AND confirmed = false AND quarantine_reason IS NOT NULL AND quarantine_reason != '') OR
+    (@status = 'rejected' AND confirmed = false AND (quarantine_reason IS NULL OR quarantine_reason = '') AND rejected_at IS NOT NULL)
   )
+  AND (@flagged::text = '' OR flagged = (@flagged = 'true'))
 ORDER BY created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 
@@ -188,9 +190,11 @@ WHERE tenant_id = @tenant_id
   AND (
     @status::text = '' OR
     (@status = 'approved' AND confirmed = true) OR
-    (@status = 'pending' AND confirmed = false AND (quarantine_reason IS NULL OR quarantine_reason = '')) OR
-    (@status = 'quarantined' AND confirmed = false AND quarantine_reason IS NOT NULL AND quarantine_reason != '')
-  );
+    (@status = 'pending' AND confirmed = false AND (quarantine_reason IS NULL OR quarantine_reason = '') AND rejected_at IS NULL) OR
+    (@status = 'quarantined' AND confirmed = false AND quarantine_reason IS NOT NULL AND quarantine_reason != '') OR
+    (@status = 'rejected' AND confirmed = false AND (quarantine_reason IS NULL OR quarantine_reason = '') AND rejected_at IS NOT NULL)
+  )
+  AND (@flagged::text = '' OR flagged = (@flagged = 'true'));
 
 -- name: ListMediaFromPublicPostsByUser :many
 -- Public profile Media tab: all confirmed, non-group-restricted IMAGE media
@@ -263,11 +267,13 @@ UPDATE media
 SET confirmed = @confirmed,
     quarantine_reason = @quarantine_reason::text,
     reviewed_by = @reviewed_by,
-    reviewed_at = CASE WHEN @quarantine_reason IS NULL AND @confirmed THEN now() ELSE reviewed_at END
+    reviewed_at = CASE WHEN @quarantine_reason IS NULL AND @confirmed THEN now() ELSE reviewed_at END,
+    rejected_at = CASE WHEN @quarantine_reason IS NULL AND NOT @confirmed THEN now() ELSE rejected_at END,
+    quarantined_at = CASE WHEN @quarantine_reason IS NOT NULL AND @quarantine_reason != '' THEN now() ELSE quarantined_at END
 WHERE id = @id AND tenant_id = @tenant_id AND deleted_at IS NULL;
 
 -- name: ListMediaForScanning :many
 SELECT id, storage_path FROM media
-WHERE tenant_id = @tenant_id AND confirmed = false AND deleted_at IS NULL AND quarantined_at IS NULL
+WHERE tenant_id = @tenant_id AND confirmed = false AND deleted_at IS NULL AND quarantined_at IS NULL AND rejected_at IS NULL
 ORDER BY created_at ASC
 LIMIT 50;

@@ -2,7 +2,17 @@
 	import { apiFetch } from "$lib/api";
 	import { onMount } from "svelte";
 
-	let { value = $bindable(""), placeholder = "Username", onSelect = (v: string) => {} } = $props();
+	let {
+		value = $bindable(""),
+		placeholder = "Username",
+		onSelect = (v: string) => {},
+		onSelectUser = (_u: { id: string; username: string }) => {}
+	}: {
+		value?: string;
+		placeholder?: string;
+		onSelect?: (v: string) => void;
+		onSelectUser?: (u: { id: string; username: string }) => void;
+	} = $props();
 
 	let suggestions = $state<{ id: string; username: string }[]>([]);
 	let showDropdown = $state(false);
@@ -46,6 +56,8 @@
 		value = username;
 		showDropdown = false;
 		onSelect(username);
+		const user = suggestions.find((s) => s.username === username);
+		if (user) onSelectUser(user);
 	}
 
 	function handleKeydown(e: KeyboardEvent) {
