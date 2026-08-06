@@ -1,13 +1,10 @@
 <script lang="ts">
+	// /wallet/credit-packs — migrated to the EntityPage scaffold; declarative CRUD entity.
 	// Ref: japaconnect-engineering/sections/58-credit-currency-system.md
-	import { t } from '$lib/stores/i18n.svelte';
+	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
 	import { walletApi } from '$lib/api';
-	import PageHeader from '$lib/components/layout/page-header.svelte';
-	import { Card, CardContent } from '$lib/components/ui/card';
-	import { DataTable } from '$lib/components/ui/data-table';
-	import { Button } from '$lib/components/ui/button';
-	import { Modal } from '$lib/components/ui/modal';
-	import { Plus, Pencil, Trash2, X } from 'lucide-svelte';
+	import { t } from '$lib/stores/i18n.svelte';
+	import { Trash2 } from 'lucide-svelte';
 
 	type CreditPack = {
 		id: string;
@@ -20,306 +17,169 @@
 		position: number;
 	};
 
-	let packs = $state<CreditPack[]>([]);
-	let loading = $state(true);
-	let showForm = $state(false);
-	let editingPack = $state<CreditPack | null>(null);
-	let saving = $state(false);
-	let errorMessage = $state('');
-	let successMessage = $state('');
-	let deleteTarget = $state<CreditPack | null>(null);
-	let deleteModalOpen = $state(false);
-	let deleting = $state(false);
+	let entityController = $state<EntityPageController | undefined>(undefined);
+	let pageError = $state('');
+	let bulkDeleting = $state(false);
 
-	let formData = $state({
-		name: '',
-		description: '',
-		credit_amount: 0,
-		bonus_credits: 0,
-		min_user_level: '',
-		position: 0
-	});
-
-	async function loadPacks() {
-		loading = true;
-		errorMessage = '';
+	async function bulkDelete(ids: Set<string>) {
+		const idArr = Array.from(ids);
+		if (idArr.length === 0) return;
+		if (bulkDeleting) return; // in-flight guard
+		bulkDeleting = true;
+		pageError = '';
 		try {
-			const res = await walletApi.listCreditPacks();
-			packs = (res as { data: CreditPack[] }).data ?? [];
+			await Promise.all(idArr.map((id) => walletApi.deleteCreditPack(id)));
 		} catch (e) {
-			errorMessage = e instanceof Error ? e.message : 'Failed to load credit packs';
+			pageError = e instanceof Error ? e.message : t('app.wallet.error_delete_packs', 'Failed to delete selected packs');
 		} finally {
-			loading = false;
+			bulkDeleting = false;
 		}
 	}
 
-	function openCreate() {
-		editingPack = null;
-		formData = { name: '', description: '', credit_amount: 0, bonus_credits: 0, min_user_level: '', position: 0 };
-		showForm = true;
-	}
-
-	function openEdit(pack: CreditPack) {
-		editingPack = pack;
-		formData = {
-			name: pack.name,
-			description: pack.description ?? '',
-			credit_amount: pack.credit_amount,
-			bonus_credits: pack.bonus_credits,
-			min_user_level: pack.min_user_level ?? '',
-			position: pack.position
-		};
-		showForm = true;
-	}
-
-	async function savePack() {
-		saving = true;
-		errorMessage = '';
-		successMessage = '';
-		try {
-			const body = {
-				name: formData.name,
-				description: formData.description || undefined,
-				credit_amount: formData.credit_amount,
-				bonus_credits: formData.bonus_credits,
-				min_user_level: formData.min_user_level || undefined,
-				position: formData.position
-			};
-			if (editingPack) {
-				await walletApi.updateCreditPack(editingPack.id, { ...body, is_active: editingPack.is_active });
-				successMessage = 'Pack updated successfully';
-			} else {
-				await walletApi.createCreditPack(body);
-				successMessage = 'Pack created successfully';
-			}
-			showForm = false;
-			await loadPacks();
-		} catch (e) {
-			errorMessage = e instanceof Error ? e.message : 'Failed to save pack';
-		} finally {
-			saving = false;
-		}
-	}
-
-	async function confirmDelete() {
-		if (!deleteTarget) return;
-		deleting = true;
-		errorMessage = '';
-		try {
-			await walletApi.deleteCreditPack(deleteTarget.id);
-			successMessage = 'Pack deactivated successfully';
-			deleteTarget = null;
-			deleteModalOpen = false;
-			await loadPacks();
-		} catch (e) {
-			errorMessage = e instanceof Error ? e.message : 'Failed to deactivate pack';
-		} finally {
-			deleting = false;
-		}
-	}
-
-	const packColumns = [
-		{ key: 'name', label: t('app.wallet.pack_name', 'Pack Name'), sortable: true,
-			render: (v: string) => `<span class="font-medium">${v}</span>` },
-		{ key: 'credit_amount', label: t('app.wallet.credit_amount', 'Credit Amount'), sortable: true,
-			render: (v: number) => v.toLocaleString() },
-		{ key: 'bonus_credits', label: t('app.wallet.bonus_credits', 'Bonus Credits'),
-			render: (v: number) =>
-				v > 0
-					? `<span class="text-success font-semibold">+${v.toLocaleString()}</span>`
-					: '<span class="text-muted">—</span>' },
-		{ key: 'total', label: t('app.wallet.total_credits', 'Total Credits'),
-			render: (_: unknown, row: CreditPack) => (row.credit_amount + row.bonus_credits).toLocaleString() },
-		{ key: 'min_user_level', label: t('app.wallet.min_user_level', 'Min User Level'),
-			render: (v: string | null) => v ?? '<span class="text-muted">—</span>' },
-		{ key: 'position', label: t('app.wallet.position', 'Position'), sortable: true,
-			render: (v: number) => String(v) },
-		{ key: 'is_active', label: 'Status',
-			render: (_: unknown, row: CreditPack) => {
-				const label = row.is_active ? 'Active' : 'Inactive';
-				const cls = row.is_active
-					? 'bg-success/15 text-success border-success'
-					: 'bg-surface text-foreground border';
-				return `<span class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${cls}">${label}</span>`;
-			} },
-		{ key: '_actions', label: t('common.actions', 'Actions'),
-			render: (_: unknown, row: CreditPack) => {
-				const editBtn = `<button class="p-1 hover:text-primary" data-action="edit" data-id="${row.id}">✏</button>`;
-				const delBtn = row.is_active
-					? `<button class="p-1 hover:text-danger" data-action="delete" data-id="${row.id}">🗑</button>`
-					: '';
-				return `<div class="flex gap-1">${editBtn}${delBtn}</div>`;
-			} }
+	const fields: FieldDef[] = [
+		{ key: 'name', label: t('app.wallet.pack_name', 'Pack Name'), type: 'text', placeholder: 'e.g. Starter Pack', required: true },
+		{ key: 'description', label: t('app.wallet.pack_description', 'Description'), type: 'textarea', placeholder: 'Optional description shown to users' },
+		{ key: 'credit_amount', label: t('app.wallet.credit_amount', 'Credit Amount'), type: 'number', min: 1, required: true },
+		{ key: 'bonus_credits', label: t('app.wallet.bonus_credits', 'Bonus Credits'), type: 'number', min: 0 },
+		{ key: 'min_user_level', label: t('app.wallet.min_user_level', 'Min User Level'), type: 'text', placeholder: 'e.g. pro (optional)' },
+		{ key: 'position', label: t('app.wallet.position', 'Position'), type: 'number', min: 0 }
 	];
 
-	function handleTableClick(e: MouseEvent) {
-		const target = e.target as HTMLElement;
-		const actionEl = target.closest('[data-action]') as HTMLElement | null;
-		if (!actionEl) return;
-		const id = actionEl.dataset.id;
-		const action = actionEl.dataset.action;
-		const pack = packs.find((p) => p.id === id);
-		if (!pack) return;
-		if (action === 'edit') openEdit(pack);
-		else if (action === 'delete') { deleteTarget = pack; deleteModalOpen = true; }
-	}
-
-	loadPacks();
+	const config: EntityPageConfig = {
+		title: t('app.wallet.credit_packs_title', 'Credit Pack Management'),
+		description: t('app.wallet.credit_packs_desc', 'Create and manage credit bundles with optional bonus credits'),
+		createLabel: t('app.wallet.add_pack', 'Add Pack'),
+		pageSize: 25,
+		columns: [
+			{ key: 'name', label: t('app.wallet.pack_name', 'Pack Name'), sortable: true, render: (v: string) => `<span class="font-medium">${v}</span>` },
+			{ key: 'credit_amount', label: t('app.wallet.credit_amount', 'Credit Amount'), sortable: true, render: (v: number) => (v ?? 0).toLocaleString() },
+			{
+				key: 'bonus_credits',
+				label: t('app.wallet.bonus_credits', 'Bonus Credits'),
+				render: (v: number) => (v > 0 ? `<span class="text-success font-semibold">+${v.toLocaleString()}</span>` : '<span class="text-muted">—</span>')
+			},
+			{
+				key: 'total',
+				label: t('app.wallet.total_credits', 'Total Credits'),
+				render: (_: unknown, row: CreditPack) => (row.credit_amount + row.bonus_credits).toLocaleString()
+			},
+			{ key: 'min_user_level', label: t('app.wallet.min_user_level', 'Min User Level'), render: (v: string | null) => v ?? '<span class="text-muted">—</span>' },
+			{ key: 'position', label: t('app.wallet.position', 'Position'), sortable: true, render: (v: number) => String(v) },
+			{
+				key: 'is_active',
+				label: t('common.status', 'Status'),
+				render: (_: unknown, row: CreditPack) => {
+					const label = row.is_active ? t('common.active', 'Active') : t('common.inactive', 'Inactive');
+					const cls = row.is_active ? 'bg-success/15 text-success border-success' : 'bg-surface text-foreground border';
+					return `<span class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${cls}">${label}</span>`;
+				}
+			}
+		],
+		filters: [
+			{
+				key: 'is_active',
+				label: t('common.status', 'Status'),
+				options: [
+					{ value: 'true', label: t('common.active', 'Active') },
+					{ value: 'false', label: t('common.inactive', 'Inactive') }
+				]
+			}
+		],
+		bulkActions: [
+			{ label: t('common.deleteSelected', 'Delete Selected'), icon: Trash2, variant: 'destructive', onclick: bulkDelete }
+		],
+		fields,
+		load: async ({ q, filter }) => {
+			const result = await walletApi.listCreditPacks();
+			if (result.ok) {
+				let data = (result.data as CreditPack[] | { data: CreditPack[] }) as any;
+				if (!Array.isArray(data)) data = (data as any)?.data ?? [];
+				if (filter.is_active) data = data.filter((p: CreditPack) => String(p.is_active) === filter.is_active);
+				if (q) {
+					const lq = q.toLowerCase();
+					data = data.filter((p: CreditPack) => p.name?.toLowerCase().includes(lq) || (p.description ?? '').toLowerCase().includes(lq));
+				}
+				return { data, total: data.length, totalPages: 1 };
+			}
+			throw new Error(result.error ?? t('app.wallet.error_load_packs', 'Failed to load credit packs'));
+		},
+		create: async (body) => {
+			const payload: Record<string, unknown> = {
+				name: String(body.name ?? '').trim(),
+				credit_amount: Number(body.credit_amount ?? 0),
+				bonus_credits: Number(body.bonus_credits ?? 0),
+				position: Number(body.position ?? 0)
+			};
+			if (body.description) payload.description = String(body.description).trim();
+			if (body.min_user_level) payload.min_user_level = String(body.min_user_level).trim();
+			const res = await walletApi.createCreditPack(payload as any);
+			return res.ok ? { ok: true } : { ok: false, error: res.error };
+		},
+		update: async (id, body) => {
+			const payload: Record<string, unknown> = {
+				name: String(body.name ?? '').trim(),
+				credit_amount: Number(body.credit_amount ?? 0),
+				bonus_credits: Number(body.bonus_credits ?? 0),
+				position: Number(body.position ?? 0)
+			};
+			if (body.description) payload.description = String(body.description).trim();
+			if (body.min_user_level) payload.min_user_level = String(body.min_user_level).trim();
+			const res = await walletApi.updateCreditPack(id, payload as any);
+			return res.ok ? { ok: true } : { ok: false, error: res.error };
+		},
+		remove: async (id) => {
+			const res = await walletApi.deleteCreditPack(id);
+			return res.ok ? { ok: true } : { ok: false, error: res.error };
+		},
+		viewSnippet: PackView
+	};
 </script>
 
 <svelte:head>
 	<title>{t('app.wallet.credit_packs_title', 'Credit Pack Management')} — Admin</title>
 </svelte:head>
 
-<PageHeader
-	title={t('app.wallet.credit_packs_title', 'Credit Pack Management')}
-	description={t('app.wallet.credit_packs_desc', 'Create and manage credit bundles with optional bonus credits')}
-	actions={[
-		{ label: t('app.wallet.add_pack', 'Add Pack'), icon: Plus, variant: 'default', onclick: openCreate }
-	]}
-/>
+{#if pageError}
+	<div class="mb-4 rounded-lg p-3 text-sm" style="background: color-mix(in srgb, var(--color-danger) 10%, transparent); color: var(--color-danger)">
+		{pageError}
+	</div>
+{/if}
 
-<div class="space-y-6">
-	{#if errorMessage}
-		<div class="rounded-lg border border-danger bg-danger-50 px-4 py-3 text-sm text-danger-700">
-			{errorMessage}
-		</div>
-	{/if}
-	{#if successMessage}
-		<div class="rounded-lg border border-success bg-success-50 px-4 py-3 text-sm text-success-700">
-			{successMessage}
-		</div>
-	{/if}
+<EntityPage {config} bind:controller={entityController} />
 
-	<Card>
-		<CardContent>
-			{#if loading}
-				<div class="flex items-center justify-center py-12 text-muted">
-					Loading...
-				</div>
-			{:else if packs.length === 0}
-				<div class="flex flex-col items-center justify-center py-12 text-muted">
-					<p>No credit packs yet. Create one to get started.</p>
-				</div>
-			{:else}
-				<!-- svelte-ignore a11y_click_events_have_key_events -->
-				<div role="presentation" onclick={handleTableClick}>
-					<DataTable columns={packColumns} data={packs} pageSize={20} searchable
-						emptyMessage="No credit packs found" />
-				</div>
-			{/if}
-		</CardContent>
-	</Card>
-</div>
-
-<!-- Create/Edit Modal -->
-<Modal bind:open={showForm} title={editingPack ? t('app.wallet.edit_pack', 'Edit Pack') : t('app.wallet.add_pack', 'Add Pack')}>
+{#snippet PackView({ row }: { row: CreditPack })}
 	<div class="space-y-4">
 		<div>
-			<label class="mb-1 block text-sm font-medium" for="pack-name">
-				{t('app.wallet.pack_name', 'Pack Name')}
-			</label>
-			<input
-				id="pack-name"
-				type="text"
-				bind:value={formData.name}
-				class="w-full rounded-md border border-input bg-surface px-3 py-2 text-sm"
-				placeholder="e.g. Starter Pack"
-			/>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.wallet.pack_name', 'Pack Name')}</p>
+			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.name}</p>
 		</div>
 		<div>
-			<label class="mb-1 block text-sm font-medium" for="pack-desc">
-				{t('app.wallet.pack_description', 'Description')}
-			</label>
-			<textarea
-				id="pack-desc"
-				bind:value={formData.description}
-				class="w-full rounded-md border border-input bg-surface px-3 py-2 text-sm"
-				rows="2"
-				placeholder="Optional description shown to users"
-			></textarea>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.wallet.pack_description', 'Description')}</p>
+			<p class="mt-1 text-sm" style="color: var(--color-foreground)">{row.description ?? '—'}</p>
 		</div>
 		<div class="grid grid-cols-2 gap-4">
 			<div>
-				<label class="mb-1 block text-sm font-medium" for="pack-credits">
-					{t('app.wallet.credit_amount', 'Credit Amount')}
-				</label>
-				<input
-					id="pack-credits"
-					type="number"
-					min="1"
-					bind:value={formData.credit_amount}
-					class="w-full rounded-md border border-input bg-surface px-3 py-2 text-sm"
-				/>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.wallet.credit_amount', 'Credit Amount')}</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.credit_amount.toLocaleString()}</p>
 			</div>
 			<div>
-				<label class="mb-1 block text-sm font-medium" for="pack-bonus">
-					{t('app.wallet.bonus_credits', 'Bonus Credits')}
-				</label>
-				<input
-					id="pack-bonus"
-					type="number"
-					min="0"
-					bind:value={formData.bonus_credits}
-					class="w-full rounded-md border border-input bg-surface px-3 py-2 text-sm"
-				/>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.wallet.bonus_credits', 'Bonus Credits')}</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.bonus_credits > 0 ? `+${row.bonus_credits.toLocaleString()}` : '—'}</p>
 			</div>
 		</div>
 		<div class="grid grid-cols-2 gap-4">
 			<div>
-				<label class="mb-1 block text-sm font-medium" for="pack-level">
-					{t('app.wallet.min_user_level', 'Min User Level')}
-				</label>
-				<input
-					id="pack-level"
-					type="text"
-					bind:value={formData.min_user_level}
-					class="w-full rounded-md border border-input bg-surface px-3 py-2 text-sm"
-					placeholder="e.g. pro (optional)"
-				/>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.wallet.min_user_level', 'Min User Level')}</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.min_user_level ?? '—'}</p>
 			</div>
 			<div>
-				<label class="mb-1 block text-sm font-medium" for="pack-pos">
-					{t('app.wallet.position', 'Position')}
-				</label>
-				<input
-					id="pack-pos"
-					type="number"
-					min="0"
-					bind:value={formData.position}
-					class="w-full rounded-md border border-input bg-surface px-3 py-2 text-sm"
-				/>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.wallet.position', 'Position')}</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.position}</p>
 			</div>
 		</div>
-		{#if errorMessage}
-			<p class="text-sm text-danger">{errorMessage}</p>
-		{/if}
-		<div class="flex justify-end gap-2 pt-2">
-			<Button variant="outline" onclick={() => (showForm = false)}>
-				<X class="size-4" />
-				Cancel
-			</Button>
-			<Button onclick={savePack} disabled={saving || formData.credit_amount <= 0 || !formData.name}>
-				{saving ? 'Saving...' : 'Save'}
-			</Button>
+		<div>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('common.status', 'Status')}</p>
+			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.is_active ? t('common.active', 'Active') : t('common.inactive', 'Inactive')}</p>
 		</div>
 	</div>
-</Modal>
-
-<!-- Delete Confirmation Modal -->
-<Modal bind:open={deleteModalOpen} title={t('app.wallet.deactivate_pack', 'Deactivate Pack')}>
-	<div class="space-y-4">
-		<p class="text-sm text-muted">
-			{t('app.wallet.deactivate_pack_confirm', 'Are you sure you want to deactivate this credit pack?')}
-		</p>
-		<p class="rounded-md bg-muted p-3 text-sm font-medium">
-			{deleteTarget?.name} — {deleteTarget ? (deleteTarget.credit_amount + deleteTarget.bonus_credits).toLocaleString() : ''} credits
-		</p>
-		<div class="flex justify-end gap-2">
-			<Button variant="outline" onclick={() => { deleteTarget = null; deleteModalOpen = false; }}>Cancel</Button>
-			<Button variant="destructive" onclick={confirmDelete} disabled={deleting}>
-				{deleting ? 'Deactivating...' : 'Deactivate'}
-			</Button>
-		</div>
-	</div>
-</Modal>
+{/snippet}

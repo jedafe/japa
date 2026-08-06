@@ -1,4 +1,8 @@
 <script lang="ts">
+	// /ads — migrated to shared components (ActionMenu, BulkBar, SlideOver).
+	// Tabbed page (campaigns + boosts) — not an EntityPage candidate; keeps the
+	// tab structure but uses the shared DataTable `actions`/`bulkActionsList` props
+	// and SlideOver for the stats view-detail.
 	import { adsAdminApi, api } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
@@ -6,17 +10,15 @@
 	import { Card, CardContent } from '$lib/components/ui/card';
 	import { Tabs } from '$lib/components/ui/tabs';
 	import { DataTable } from '$lib/components/ui/data-table';
-	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import { Modal } from '$lib/components/ui/modal';
+	import { SlideOver } from '$lib/components/ui/slide-over';
+	import type { ActionItem, BulkAction } from '$lib/components/ui/data-table';
 	import { BarChart3, Zap, Pause, Play, StopCircle, Plus, Eye, Trash2 } from 'lucide-svelte';
 
 	type Campaign = {
 		id: string;
 		name: string;
-		// Ref: sections/25-ad-placement.md — backend statuses are
-		// pending_review | active | paused | ended | rejected (plus the legacy
-		// `completed`/`draft` aliases the UI previously assumed).
 		status: 'active' | 'paused' | 'draft' | 'completed' | 'ended' | 'pending_review' | 'rejected';
 		impressions: number;
 		clicks: number;
@@ -55,25 +57,21 @@
 	let errorMessage = $state('');
 	let activeTab = $state('campaigns');
 
-	// Ref: japaconnect-engineering/sections/03-rbac.md — the enforced node is
-	// `ad.campaign.manage` (seeded in migration 000109). The previous `ads.manage`
-	// was an unseeded typo that only worked for super_admin via the `*` wildcard.
 	const canManageAds = $derived(hasPermission('ad.campaign.manage'));
 
-	// Stats modal
-	let showStatsModal = $state(false);
+	// Stats slide-over (view-detail)
+	let showStatsSlideOver = $state(false);
 	let statsCampaign = $state<Campaign | null>(null);
 	let stats = $state<CampaignStats | null>(null);
 	let statsLoading = $state(false);
 
-	// End campaign confirm
+	// End campaign/boost confirm modals (short confirmations — kept as Modal per recipe)
 	let showEndCampaignConfirm = $state(false);
 	let endCampaignTarget = $state<Campaign | null>(null);
-
-	// End boost confirm
 	let showEndBoostConfirm = $state(false);
 	let endBoostTarget = $state<ActiveBoost | null>(null);
-	let searchQuery = $state("");
+
+	let searchQuery = $state('');
 
 	let selectedCampaignIds = $state<Set<string>>(new Set());
 	let selectedBoostIds = $state<Set<string>>(new Set());
@@ -84,9 +82,6 @@
 		{ value: 'boosts', label: t('ads.tab_boosts', 'Boosts'), icon: Zap, count: activeBoosts.length }
 	]);
 
-	// Ref: japaconnect-engineering/conventions/svelte-component-patterns.md —
-	// status badges use semantic token classes (success/warning/info), never
-	// raw hex or non-token shades like `info-100`/`info-800`.
 	const statusBadge = (value: string) => {
 		const classes: Record<string, string> = {
 			active: 'bg-success/15 text-success border-success',
@@ -112,80 +107,73 @@
 				</div>
 			`
 		},
-		{
-			key: 'status',
-			label: t('ads.col_status', 'Status'),
-			sortable: true,
-			render: (value: string) => statusBadge(value)
-		},
-		{
-			key: 'impressions',
-			label: t('ads.col_impressions', 'Impressions'),
-			sortable: true,
-			render: (value: number) => `<span class="font-medium">${(value ?? 0).toLocaleString()}</span>`
-		},
-		{
-			key: 'clicks',
-			label: t('ads.col_clicks', 'Clicks'),
-			sortable: true,
-			render: (value: number) => `<span class="font-medium">${(value ?? 0).toLocaleString()}</span>`
-		},
-		{
-			key: 'ctr',
-			label: t('ads.col_ctr', 'CTR'),
-			render: (_: any, row: any) => `<span class="text-sm">${row.impressions > 0 ? ((row.clicks / row.impressions) * 100).toFixed(1) : '0.0'}%</span>`
-		},
-		{
-			key: 'budget',
-			label: t('ads.col_budget', 'Budget'),
-			sortable: true,
-			render: (value: number) => `<span class="text-sm font-medium">${(value ?? 0).toLocaleString()}</span>`
-		},
-		{
-			key: 'actions',
-			label: '',
-			class: 'w-24',
-			componentSnippet: CampaignActionsCell
-		}
+		{ key: 'status', label: t('ads.col_status', 'Status'), sortable: true, render: (value: string) => statusBadge(value) },
+		{ key: 'impressions', label: t('ads.col_impressions', 'Impressions'), sortable: true, render: (value: number) => `<span class="font-medium">${(value ?? 0).toLocaleString()}</span>` },
+		{ key: 'clicks', label: t('ads.col_clicks', 'Clicks'), sortable: true, render: (value: number) => `<span class="font-medium">${(value ?? 0).toLocaleString()}</span>` },
+		{ key: 'ctr', label: t('ads.col_ctr', 'CTR'), render: (_: any, row: any) => `<span class="text-sm">${row.impressions > 0 ? ((row.clicks / row.impressions) * 100).toFixed(1) : '0.0'}%</span>` },
+		{ key: 'budget', label: t('ads.col_budget', 'Budget'), sortable: true, render: (value: number) => `<span class="text-sm font-medium">${(value ?? 0).toLocaleString()}</span>` }
 	]);
 
 	const boostColumns = $derived([
-		{
-			key: 'boost_type',
-			label: t('ads.col_boost_type', 'Boost Type'),
-			sortable: true,
-			render: (value: string) => `<span class="text-xs font-medium">${value}</span>`
-		},
-		{
-			key: 'space_name',
-			label: t('ads.col_space', 'Space'),
-			sortable: true,
-			render: (v: string, row: ActiveBoost) => `<span class="text-sm">${v || (row.space_id ? row.space_id.slice(0, 8) + '...' : '—')}</span>`
-		},
-		{
-			key: 'organization_name',
-			label: t('ads.col_organization', 'Organization'),
-			sortable: true,
-			render: (v: string, row: ActiveBoost) => `<span class="text-sm">${v || (row.organization_id ? row.organization_id.slice(0, 8) + '...' : '—')}</span>`
-		},
-		{
-			key: 'start_date',
-			label: t('ads.col_period', 'Period'),
-			render: (_: any, row: any) => `<span class="text-xs text-muted">${row.start_date ?? ''} — ${row.end_date ?? ''}</span>`
-		},
-		{
-			key: 'status',
-			label: t('ads.col_status', 'Status'),
-			sortable: true,
-			render: (value: string) => statusBadge(value)
-		},
-		{
-			key: 'actions',
-			label: '',
-			class: 'w-24',
-			componentSnippet: BoostActionsCell
-		}
+		{ key: 'boost_type', label: t('ads.col_boost_type', 'Boost Type'), sortable: true, render: (value: string) => `<span class="text-xs font-medium">${value}</span>` },
+		{ key: 'space_name', label: t('ads.col_space', 'Space'), sortable: true, render: (v: string, row: ActiveBoost) => `<span class="text-sm">${v || (row.space_id ? row.space_id.slice(0, 8) + '...' : '—')}</span>` },
+		{ key: 'organization_name', label: t('ads.col_organization', 'Organization'), sortable: true, render: (v: string, row: ActiveBoost) => `<span class="text-sm">${v || (row.organization_id ? row.organization_id.slice(0, 8) + '...' : '—')}</span>` },
+		{ key: 'start_date', label: t('ads.col_period', 'Period'), render: (_: any, row: any) => `<span class="text-xs text-muted">${row.start_date ?? ''} — ${row.end_date ?? ''}</span>` },
+		{ key: 'status', label: t('ads.col_status', 'Status'), sortable: true, render: (value: string) => statusBadge(value) }
 	]);
+
+	// ── Row actions via ActionMenu ──────────────────────────────────────────
+	const campaignActions: ActionItem[] = [
+		{ label: t('ads.stats', 'Stats'), icon: Eye, onclick: (row) => viewStats(row.id) },
+		{
+			label: t('ads.pause', 'Pause'),
+			icon: Pause,
+			show: (row) => canManageAds && row.status === 'active',
+			onclick: (row) => toggleCampaign(row.id)
+		},
+		{
+			label: t('ads.activate', 'Activate'),
+			icon: Play,
+			show: (row) => canManageAds && row.status === 'paused',
+			onclick: (row) => toggleCampaign(row.id)
+		},
+		{
+			label: t('ads.end', 'End'),
+			icon: StopCircle,
+			variant: 'destructive',
+			show: (row) => canManageAds && row.status !== 'completed' && row.status !== 'ended',
+			onclick: (row) => confirmEndCampaign(row)
+		}
+	];
+
+	const boostActions: ActionItem[] = [
+		{
+			label: t('ads.end', 'End'),
+			icon: StopCircle,
+			variant: 'destructive',
+			show: (row) => canManageAds && row.status === 'active',
+			onclick: (row) => confirmEndBoost(row)
+		}
+	];
+
+	// ── Bulk actions via BulkBar ────────────────────────────────────────────
+	const campaignBulkActions: BulkAction[] = [
+		{
+			label: t('ads.delete_selected', 'Delete Selected'),
+			icon: Trash2,
+			variant: 'destructive',
+			onclick: bulkDeleteCampaigns
+		}
+	];
+
+	const boostBulkActions: BulkAction[] = [
+		{
+			label: t('ads.delete_selected', 'Delete Selected'),
+			icon: Trash2,
+			variant: 'destructive',
+			onclick: bulkDeleteBoosts
+		}
+	];
 
 	async function load() {
 		loading = true;
@@ -194,8 +182,6 @@
 			if (activeTab === 'campaigns') {
 				const result = await adsAdminApi.listCampaigns();
 				if (result.ok) {
-					// §6.2: backend may historically return null for an empty list;
-					// guard so a null `data` never throws on `.items` access.
 					const data = (result.data ?? []) as { items?: Campaign[]; campaigns?: Campaign[] } | Campaign[];
 					let list = Array.isArray(data) ? data : (data.items ?? data.campaigns ?? []);
 					if (searchQuery) {
@@ -227,9 +213,6 @@
 		}
 	}
 
-	// Ref: AGENTS.md Rule 16 — after a successful mutation, re-fetch from the
-	// server instead of patching local state, so the UI never diverges from
-	// truth on a partial/failed write.
 	async function toggleCampaign(campaignId: string) {
 		const campaign = campaigns.find((c) => c.id === campaignId);
 		if (!campaign) return;
@@ -278,7 +261,7 @@
 		if (!campaign) return;
 		statsCampaign = campaign;
 		statsLoading = true;
-		showStatsModal = true;
+		showStatsSlideOver = true;
 		stats = null;
 		try {
 			const result = await adsAdminApi.getCampaignStats(campaign.id);
@@ -318,40 +301,32 @@
 		endBoostTarget = null;
 	}
 
-	async function bulkDeleteCampaigns() {
-		if (selectedCampaignIds.size === 0) return;
+	async function bulkDeleteCampaigns(ids: Set<string>) {
+		if (ids.size === 0) return;
+		if (bulkDeleting) return; // in-flight guard
 		bulkDeleting = true;
 		try {
-			for (const id of selectedCampaignIds) {
-				await api(`/admin/ads/campaigns/${id}`, { method: 'DELETE' });
-			}
-			selectedCampaignIds = new Set();
-			await load();
+			await Promise.all(Array.from(ids).map((id) => api(`/admin/ads/campaigns/${id}`, { method: 'DELETE' })));
 		} catch {
 			errorMessage = t('ads.load_error');
+		} finally {
+			bulkDeleting = false;
 		}
-		bulkDeleting = false;
 	}
 
-	async function bulkDeleteBoosts() {
-		if (selectedBoostIds.size === 0) return;
+	async function bulkDeleteBoosts(ids: Set<string>) {
+		if (ids.size === 0) return;
+		if (bulkDeleting) return; // in-flight guard
 		bulkDeleting = true;
 		try {
-			for (const id of selectedBoostIds) {
-				await api(`/admin/ads/boosts/${id}`, { method: 'DELETE' });
-			}
-			selectedBoostIds = new Set();
-			await load();
+			await Promise.all(Array.from(ids).map((id) => api(`/admin/ads/boosts/${id}`, { method: 'DELETE' })));
 		} catch {
 			errorMessage = t('ads.load_error');
+		} finally {
+			bulkDeleting = false;
 		}
-		bulkDeleting = false;
 	}
 
-	// The $effect tracks `activeTab` and `searchQuery` (both read inside
-	// load), so tab switches and search-box changes automatically re-fetch.
-	// The DataTable `onsearch` callback only sets `searchQuery` — it must NOT
-	// also call load() or the effect fires a second fetch (double-load bug).
 	$effect(() => {
 		load();
 	});
@@ -383,52 +358,42 @@
 	{:else if activeTab === 'campaigns'}
 		<Card>
 			<CardContent class="p-0">
-			<DataTable
-				columns={campaignColumns}
-				data={campaigns}
-				pageSize={20}
-				emptyMessage={t('ads.empty')}
-				searchable
-				onsearch={(q) => { searchQuery = q; }}
-				selectable
-				bind:selectedIds={selectedCampaignIds}
-			>
-				{#snippet bulkActions()}
-					<Button variant="destructive" size="sm" onclick={bulkDeleteCampaigns} disabled={bulkDeleting || selectedCampaignIds.size === 0}>
-						<Trash2 class="h-3.5 w-3.5 mr-1" />
-						{bulkDeleting ? t('ads.deleting', 'Deleting...') : t('ads.delete_selected', 'Delete Selected')} ({selectedCampaignIds.size})
-					</Button>
-				{/snippet}
-			</DataTable>
+				<DataTable
+					columns={campaignColumns}
+					data={campaigns}
+					pageSize={20}
+					emptyMessage={t('ads.empty')}
+					searchable
+					onsearch={(q) => { searchQuery = q; }}
+					selectable
+					bind:selectedIds={selectedCampaignIds}
+					actions={campaignActions}
+					bulkActionsList={campaignBulkActions}
+				/>
 			</CardContent>
 		</Card>
 	{:else if activeTab === 'boosts'}
 		<Card>
 			<CardContent class="p-0">
-			<DataTable
-				columns={boostColumns}
-				data={activeBoosts}
-				pageSize={20}
-				emptyMessage={t('ads.no_boosts')}
-				searchable
-				onsearch={(q) => { searchQuery = q; }}
-				selectable
-				bind:selectedIds={selectedBoostIds}
-			>
-				{#snippet bulkActions()}
-					<Button variant="destructive" size="sm" onclick={bulkDeleteBoosts} disabled={bulkDeleting || selectedBoostIds.size === 0}>
-						<Trash2 class="h-3.5 w-3.5 mr-1" />
-						{bulkDeleting ? t('ads.deleting', 'Deleting...') : t('ads.delete_selected', 'Delete Selected')} ({selectedBoostIds.size})
-					</Button>
-				{/snippet}
-			</DataTable>
+				<DataTable
+					columns={boostColumns}
+					data={activeBoosts}
+					pageSize={20}
+					emptyMessage={t('ads.no_boosts')}
+					searchable
+					onsearch={(q) => { searchQuery = q; }}
+					selectable
+					bind:selectedIds={selectedBoostIds}
+					actions={boostActions}
+					bulkActionsList={boostBulkActions}
+				/>
 			</CardContent>
 		</Card>
 	{/if}
 </div>
 
-<!-- Stats Modal -->
-<Modal bind:open={showStatsModal} title={statsCampaign ? `${t('ads.stats')}: ${statsCampaign.name}` : t('ads.stats')}>
+<!-- Stats SlideOver (view-detail) -->
+<SlideOver bind:open={showStatsSlideOver} title={statsCampaign ? `${t('ads.stats')}: ${statsCampaign.name}` : t('ads.stats')} size="lg">
 	{#if statsLoading}
 		<p class="py-8 text-center text-sm text-muted">{t('common.loading')}</p>
 	{:else if stats}
@@ -462,7 +427,7 @@
 			{#if stats.daily_stats?.length}
 				<div>
 					<h3 class="mb-2 text-sm font-medium text-foreground">{t('ads.daily_breakdown')}</h3>
-					<div class="max-h-48 overflow-y-auto rounded-lg border border-border">
+					<div class="max-h-64 overflow-y-auto rounded-lg border border-border">
 						<table class="w-full text-xs">
 							<thead>
 								<tr class="border-b border-border bg-surface">
@@ -490,10 +455,12 @@
 	{:else}
 		<p class="py-8 text-center text-sm text-muted">{t('common.no_data')}</p>
 	{/if}
-	<div class="flex justify-end pt-4">
-		<Button variant="outline" onclick={() => showStatsModal = false}>{t('common.close')}</Button>
-	</div>
-</Modal>
+	{#snippet footer()}
+		<div class="flex justify-end">
+			<Button variant="outline" onclick={() => showStatsSlideOver = false}>{t('common.close')}</Button>
+		</div>
+	{/snippet}
+</SlideOver>
 
 <!-- End Campaign Confirm -->
 <Modal bind:open={showEndCampaignConfirm} title={t('common.confirmDelete', 'Confirm End')}>
@@ -522,31 +489,3 @@
 		<Button variant="destructive" onclick={executeEndBoost}>{t('ads.end', 'End')}</Button>
 	</div>
 </Modal>
-
-<!-- CampaignActionsCell component -->
-{#snippet CampaignActionsCell({ value, row }: { value: any; row: Campaign })}
-	<div class="flex items-center gap-1">
-		<Button variant="ghost" size="sm" onclick={() => viewStats(row.id)} title={t('ads.stats')}>
-			<Eye class="h-3.5 w-3.5" />
-		</Button>
-		{#if canManageAds && row.status !== 'completed' && row.status !== 'ended'}
-			<Button variant="ghost" size="sm" onclick={() => toggleCampaign(row.id)} style={row.status === 'active' ? 'color: var(--color-warning)' : 'color: var(--color-success)'}>
-				{#if row.status === 'active'}<Pause class="h-3.5 w-3.5" />{:else}<Play class="h-3.5 w-3.5" />{/if}
-			</Button>
-			<Button variant="ghost" size="sm" onclick={() => confirmEndCampaign(row)} style="color: var(--color-danger)">
-				<StopCircle class="h-3.5 w-3.5" />
-			</Button>
-		{/if}
-	</div>
-{/snippet}
-
-<!-- BoostActionsCell component -->
-{#snippet BoostActionsCell({ value, row }: { value: any; row: ActiveBoost })}
-	<div class="flex items-center gap-1">
-		{#if canManageAds && row.status === 'active'}
-			<Button variant="ghost" size="sm" onclick={() => confirmEndBoost(row)} style="color: var(--color-danger)" title={t('ads.end', 'End')}>
-				<StopCircle class="h-3.5 w-3.5" />
-			</Button>
-		{/if}
-	</div>
-{/snippet}

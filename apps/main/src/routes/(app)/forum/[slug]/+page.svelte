@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
-	import { t } from '$lib/i18n';
+	import { t, i18n } from '$lib/i18n';
 	import { ArrowLeft, CheckCircle2, Eye, MessageSquare, Bookmark, Share2, Flag } from 'lucide-svelte';
 	import { relativeTime } from '$lib/feed/time';
 	import { tiptapBodyToHtml, tiptapExcerpt } from '$lib/tiptap/serialize';
@@ -15,7 +15,7 @@
 
 	const thread = $derived(data.thread);
 	const bodyHtml = $derived(tiptapBodyToHtml(thread.body));
-	const time = $derived(relativeTime(thread.created_at));
+	const time = $derived(relativeTime(thread.created_at, new Date(), i18n.locale));
 	const authorLabel = $derived(
 		thread.is_anonymous
 			? t('forum.anonymous', 'Anonymous')

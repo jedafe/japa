@@ -5,6 +5,7 @@
 	import { Button } from "$lib/components/ui/button";
 	import { Modal } from "$lib/components/ui/modal";
 	import { TableSkeleton } from "$lib/components/ui/skeleton";
+	import type { ActionItem, BulkAction } from "$lib/components/ui/data-table";
 	import { Plus, Trash2, RefreshCw, ArrowLeft, Shield } from "lucide-svelte";
 	import UserAutocomplete from "$lib/components/ui/UserAutocomplete.svelte";
 	import { page } from "$app/state";
@@ -67,11 +68,22 @@
 				const d = new Date(v);
 				return isNaN(d.getTime()) ? "—" : d.toLocaleDateString();
 			}
-		},
-		{ key: "actions", label: t("common.actions", "Actions"), class: "w-32",
-			componentSnippet: ModeratorActionsCell
 		}
 	];
+
+	const rowActions: ActionItem[] = [
+		{
+			label: t("common.remove", "Remove"),
+			icon: Trash2,
+			variant: "destructive",
+			onclick: (row: Moderator) => { removeTarget = row; showRemoveConfirm = true; },
+			show: () => canManageModerators
+		}
+	];
+
+	const bulkActions: BulkAction[] = $derived(canManageModerators
+		? [{ label: t("common.delete_selected", "Remove Selected"), icon: Trash2, variant: "destructive", onclick: bulkDelete }]
+		: []);
 
 	async function loadSpace() {
 		loading = true;
@@ -145,19 +157,18 @@
 		}
 	}
 
-	async function bulkDelete() {
-		if (selectedIds.size === 0) return;
+	async function bulkDelete(ids: Set<string>) {
+		const idArr = Array.from(ids);
+		if (idArr.length === 0 || bulkDeleting) return;
 		bulkDeleting = true;
 		error = "";
 		try {
-			const ids = Array.from(selectedIds);
 			// Map moderator record IDs to user IDs
-			const userIds = ids.map((modId) => {
+			const userIds = idArr.map((modId) => {
 				const mod = moderators.find((m) => m.id === modId);
 				return mod ? mod.user_id : modId;
 			});
 			await Promise.all(userIds.map((userId) => spacesModeratorsAdminApi.remove(spaceId, userId)));
-			selectedIds = new Set();
 			success = t("spaces.moderators_removed", "Moderators removed");
 			await loadModerators();
 		} catch {
@@ -243,14 +254,7 @@
 				{t("spaces.no_moderators", "No moderators assigned")}
 			</div>
 		{:else}
-			<DataTable {columns} data={moderators} pageSize={10} searchable onsearch={(q) => { searchQuery = q; loadModerators(); }} selectable bind:selectedIds>
-				{#snippet bulkActions()}
-					<Button variant="destructive" size="sm" onclick={bulkDelete} disabled={bulkDeleting || selectedIds.size === 0}>
-						<Trash2 class="h-3.5 w-3.5 mr-1" />
-						{bulkDeleting ? t("common.deleting", "Removing...") : t("common.delete_selected", "Remove Selected")} ({selectedIds.size})
-					</Button>
-				{/snippet}
-			</DataTable>
+			<DataTable {columns} data={moderators} pageSize={10} searchable onsearch={(q) => { searchQuery = q; loadModerators(); }} selectable bind:selectedIds actions={rowActions} bulkActionsList={bulkActions} />
 		{/if}
 	</CardContent>
 </Card>
@@ -284,12 +288,3 @@
 	</div>
 </Modal>
 
-{#snippet ModeratorActionsCell({ value, row }: { value: any; row: Moderator })}
-	<div class="flex items-center gap-1">
-		{#if canManageModerators}
-			<Button variant="ghost" size="sm" onclick={() => { removeTarget = row; showRemoveConfirm = true; }} style="color: var(--color-danger)">
-				<Trash2 class="h-3.5 w-3.5" />
-			</Button>
-		{/if}
-	</div>
-{/snippet}

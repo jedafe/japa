@@ -86,7 +86,7 @@
 								{/if}
 							{:else if dv.type === 'boolean'}
 								{#if dv.value_boolean === true}
-									<Check size={16} class="text-green-600" aria-label={t('compare.detail.yes', 'Yes')} />
+									<Check size={16} class="text-[var(--color-success)]" aria-label={t('compare.detail.yes', 'Yes')} />
 								{:else if dv.value_boolean === false}
 									<X size={16} class="text-[var(--color-muted)]" aria-label={t('compare.detail.no', 'No')} />
 								{:else}

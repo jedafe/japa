@@ -2,7 +2,7 @@
 	import { ArrowUp, ArrowDown, MessageSquare, Eye, Bookmark } from 'lucide-svelte';
 	import { goto } from '$app/navigation';
 	import { relativeTime } from '$lib/feed/time';
-	import { t } from '$lib/i18n';
+	import { t, i18n } from '$lib/i18n';
 	import type { CardStyle } from '$lib/feed/cardStyle';
 	import type { FeedItem } from '$lib/types';
 
@@ -23,7 +23,7 @@
 			: i.content_type === 'forum_thread'
 				? `/forum/${i.slug}`
 				: `/content/${i.slug}`;
-	const time = $derived(relativeTime(item.created_at));
+	const time = $derived(relativeTime(item.created_at, new Date(), i18n.locale));
 	const initials = $derived((item.author_name ?? '?').slice(0, 2).toUpperCase());
 </script>
 

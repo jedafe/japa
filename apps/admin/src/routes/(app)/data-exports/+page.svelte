@@ -6,7 +6,8 @@
 	import { Card, CardContent } from "$lib/components/ui/card";
 	import { Tabs } from "$lib/components/ui/tabs";
 	import { DataTable } from "$lib/components/ui/data-table";
-	import { FilterBar } from "$lib/components/ui/filter-bar";
+	import type { ActionItem, FilterDef } from "$lib/components/ui/data-table";
+	import { SlideOver } from "$lib/components/ui/slide-over";
 	import { Badge } from "$lib/components/ui/badge";
 	import { Button } from "$lib/components/ui/button";
 	import { Modal } from "$lib/components/ui/modal";
@@ -29,15 +30,14 @@
 	let exports = $state<DataExport[]>([]);
 	let loading = $state(true);
 	let activeTab = $state("all");
-	let filters = $state<Record<string, string>>({});
-	let createModalOpen = $state(false);
+	let createSlideOverOpen = $state(false);
 	let deleteConfirmOpen = $state(false);
 	let deletingId = $state<string | null>(null);
 	let saving = $state(false);
 	let errorMessage = $state("");
 	let successMessage = $state("");
 
-	let showViewModal = $state(false);
+	let showViewSlideOver = $state(false);
 	let viewTarget = $state<DataExport | null>(null);
 	let selectedIds = $state<Set<string>>(new Set());
 
@@ -78,9 +78,16 @@
 		if (activeTab === "active") result = result.filter((e) => e.status === "pending" || e.status === "processing");
 		if (activeTab === "completed") result = result.filter((e) => e.status === "completed");
 		if (activeTab === "failed") result = result.filter((e) => e.status === "failed");
-		if (filters.type) result = result.filter((e) => e.type === filters.type);
 		return result;
 	});
+
+	const exportFilters: FilterDef[] = $derived([
+		{
+			key: "type",
+			label: t('app.data_exports.filter_export_type', 'Export Type'),
+			options: exportTypes
+		}
+	]);
 
 	function formatFileSize(bytes: number | null): string {
 		if (!bytes) return "—";
@@ -144,12 +151,17 @@
 			label: t('app.data_exports.col_completed', 'Completed'),
 			sortable: true,
 			render: (value: string | null) => value ? `<span class="text-sm text-foreground-alt">${new Date(value).toLocaleString()}</span>` : `<span class="text-sm text-muted">—</span>`
-		},
+		}
+	];
+
+	const exportRowActions: ActionItem[] = [
+		{ label: t('common.view', 'View'), icon: Eye, onclick: (row: DataExport) => openView(row) },
 		{
-			key: "actions",
-			label: "",
-			class: "w-24",
-			componentSnippet: ExportActionsCell
+			label: t('common.delete', 'Delete'),
+			icon: Trash2,
+			variant: 'destructive',
+			onclick: (row: DataExport) => openDeleteConfirm(row.id),
+			show: () => canManageExports
 		}
 	];
 
@@ -176,7 +188,7 @@
 			}
 		});
 		if (result.ok) {
-			createModalOpen = false;
+			createSlideOverOpen = false;
 			resetForm();
 			successMessage = t('app.data_exports.msg_queued', 'Export job queued successfully');
 			loadExports();
@@ -188,7 +200,7 @@
 
 	function openView(ex: DataExport) {
 		viewTarget = ex;
-		showViewModal = true;
+		showViewSlideOver = true;
 	}
 
 	function openDeleteConfirm(id: string) {
@@ -241,7 +253,7 @@
 	title={t('app.data_exports.title', 'Data Exports')}
 	description={t('app.data_exports.description', 'Export platform data in various formats')}
 	actions={[
-		{ label: t('app.data_exports.action_new', 'New Export'), icon: Plus, onclick: () => (createModalOpen = true) },
+		{ label: t('app.data_exports.action_new', 'New Export'), icon: Plus, onclick: () => (createSlideOverOpen = true) },
 		{ label: t('app.data_exports.action_refresh', 'Refresh'), icon: RefreshCw, variant: "ghost", onclick: loadExports }
 	]}
 />
@@ -318,17 +330,6 @@
 
 	<Tabs {tabs} bind:value={activeTab} />
 
-	<FilterBar
-		bind:value={filters}
-		filters={[
-			{
-				key: "type",
-				label: t('app.data_exports.filter_export_type', 'Export Type'),
-				options: exportTypes
-			}
-		]}
-	/>
-
 	<Card>
 		<CardContent class="p-0">
 			{#if loading}
@@ -337,6 +338,8 @@
 				<DataTable
 					columns={exportColumns}
 					data={filteredExports}
+					filters={exportFilters}
+					actions={exportRowActions}
 					pageSize={20}
 					emptyMessage={t('app.data_exports.empty', 'No data exports found')}
 					selectable
@@ -356,8 +359,8 @@
 	</Card>
 </div>
 
-<!-- Create Export Modal -->
-<Modal bind:open={createModalOpen} title={t('app.data_exports.modal_new_title', 'New Data Export')} description={t('app.data_exports.modal_new_description', 'Queue a new data export job')}>
+<!-- Create Export SlideOver -->
+<SlideOver bind:open={createSlideOverOpen} title={t('app.data_exports.modal_new_title', 'New Data Export')}>
 	<div class="space-y-4">
 		<div>
 			<label for="export-name" class="mb-1 block text-sm font-medium text-foreground-alt">{t('app.data-exports.export_name')}</label>
@@ -388,17 +391,19 @@
 			/>
 			<label for="export-metadata" class="text-sm font-medium text-foreground-alt">{t('app.data-exports.include_metadata_timestamps_ids')}</label>
 		</div>
+	</div>
+	{#snippet footer()}
 		<div class="flex justify-end gap-3 pt-2">
-			<Button variant="outline" onclick={() => { createModalOpen = false; resetForm(); }}>{t('app.data-exports.cancel')}</Button>
+			<Button variant="outline" onclick={() => { createSlideOverOpen = false; resetForm(); }}>{t('app.data-exports.cancel')}</Button>
 			<Button onclick={submitExport} disabled={saving || !form.name.trim()}>
 				{saving ? t('app.data_exports.btn_queuing', 'Queuing...') : t('app.data_exports.btn_start', 'Start Export')}
 			</Button>
 		</div>
-	</div>
-</Modal>
+	{/snippet}
+</SlideOver>
 
-<!-- View Modal -->
-<Modal bind:open={showViewModal} title={t('app.data_exports.modal_details_title', 'Export Details')}>
+<!-- View SlideOver -->
+<SlideOver bind:open={showViewSlideOver} title={t('app.data_exports.modal_details_title', 'Export Details')}>
 	{#if viewTarget}
 		<div class="space-y-4">
 			<div class="grid grid-cols-2 gap-4">
@@ -431,11 +436,13 @@
 				{/if}
 			</div>
 		</div>
-		<div class="mt-6 flex justify-end">
-			<Button variant="outline" onclick={() => (showViewModal = false)}>{t('app.data_exports.btn_close', 'Close')}</Button>
-		</div>
 	{/if}
-</Modal>
+	{#snippet footer()}
+		<div class="flex justify-end">
+			<Button variant="outline" onclick={() => (showViewSlideOver = false)}>{t('app.data_exports.btn_close', 'Close')}</Button>
+		</div>
+	{/snippet}
+</SlideOver>
 
 <!-- Delete Confirmation Modal -->
 <Modal bind:open={deleteConfirmOpen} title={t('app.data_exports.modal_delete_title', 'Confirm Delete')} description={t('app.data_exports.modal_delete_description', 'This action cannot be undone')}>
@@ -451,16 +458,3 @@
 		</div>
 	</div>
 </Modal>
-
-{#snippet ExportActionsCell({ value, row }: { value: any; row: DataExport })}
-	<div class="flex items-center gap-1">
-		<Button variant="ghost" size="sm" onclick={() => openView(row)}>
-			<Eye class="h-3.5 w-3.5" />
-		</Button>
-		{#if canManageExports}
-			<Button variant="ghost" size="sm" onclick={() => openDeleteConfirm(row.id)} style="color: var(--color-danger)">
-				<Trash2 class="h-3.5 w-3.5" />
-			</Button>
-		{/if}
-	</div>
-{/snippet}

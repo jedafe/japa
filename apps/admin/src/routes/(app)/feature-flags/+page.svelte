@@ -10,7 +10,8 @@
 	import { Card, CardContent } from "$lib/components/ui/card";
 	import { Tabs } from "$lib/components/ui/tabs";
 	import { DataTable } from "$lib/components/ui/data-table";
-	import { FilterBar } from "$lib/components/ui/filter-bar";
+	import type { ActionItem, FilterDef } from "$lib/components/ui/data-table";
+	import { SlideOver } from "$lib/components/ui/slide-over";
 	import { Badge } from "$lib/components/ui/badge";
 	import { Button } from "$lib/components/ui/button";
 	import { Modal } from "$lib/components/ui/modal";
@@ -32,9 +33,8 @@
 	let flags = $state<FeatureFlag[]>([]);
 	let loading = $state(true);
 	let activeTab = $state("all");
-	let filters = $state<Record<string, string>>({});
-	let createModalOpen = $state(false);
-	let editModalOpen = $state(false);
+	let createSlideOverOpen = $state(false);
+	let editSlideOverOpen = $state(false);
 	let editingFlag = $state<FeatureFlag | null>(null);
 	let deleteConfirmOpen = $state(false);
 	let deletingId = $state<string | null>(null);
@@ -42,7 +42,7 @@
 	let errorMessage = $state("");
 	let successMessage = $state("");
 
-	let showViewModal = $state(false);
+	let showViewSlideOver = $state(false);
 	let viewTarget = $state<FeatureFlag | null>(null);
 	let selectedIds = $state<Set<string>>(new Set());
 
@@ -66,9 +66,20 @@
 		let result = [...flags];
 		if (activeTab === "enabled") result = result.filter((f) => f.isEnabled);
 		if (activeTab === "disabled") result = result.filter((f) => !f.isEnabled);
-		if (filters.environment) result = result.filter((f) => f.environment === filters.environment);
 		return result;
 	});
+
+	const flagFilters: FilterDef[] = [
+		{
+			key: "environment",
+			label: t('app.feature-flags.filter_environment', 'Environment'),
+			options: [
+				{ value: "production", label: t('app.feature-flags.option_production', 'Production') },
+				{ value: "staging", label: t('app.feature-flags.option_staging', 'Staging') },
+				{ value: "development", label: t('app.feature-flags.option_development', 'Development') }
+			]
+		}
+	];
 
 	const flagColumns = [
 		{
@@ -125,12 +136,35 @@
 				const label = value ? t('app.feature-flags.status_enabled', 'Enabled') : t('app.feature-flags.status_disabled', 'Disabled');
 				return `<span class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${cls}">${label}</span>`;
 			}
+		}
+	];
+
+	const flagRowActions: ActionItem[] = [
+		{ label: t('common.view', 'View'), icon: Eye, onclick: (row: FeatureFlag) => openView(row) },
+		{
+			label: t('app.feature-flags.disable', 'Disable'),
+			icon: ToggleRight,
+			onclick: (row: FeatureFlag) => toggleFlag(row.id),
+			show: (row: FeatureFlag) => canManageFlags && row.isEnabled
 		},
 		{
-			key: "actions",
-			label: "",
-			class: "w-24",
-			componentSnippet: FlagActionsCell
+			label: t('app.feature-flags.enable', 'Enable'),
+			icon: ToggleLeft,
+			onclick: (row: FeatureFlag) => toggleFlag(row.id),
+			show: (row: FeatureFlag) => canManageFlags && !row.isEnabled
+		},
+		{
+			label: t('common.edit', 'Edit'),
+			icon: Pencil,
+			onclick: (row: FeatureFlag) => openEditModal(row.id),
+			show: () => canManageFlags
+		},
+		{
+			label: t('common.delete', 'Delete'),
+			icon: Trash2,
+			variant: 'destructive',
+			onclick: (row: FeatureFlag) => openDeleteConfirm(row.id),
+			show: () => canManageFlags
 		}
 	];
 
@@ -145,7 +179,7 @@
 
 	function openView(flag: FeatureFlag) {
 		viewTarget = flag;
-		showViewModal = true;
+		showViewSlideOver = true;
 	}
 
 	async function submitFlag() {
@@ -164,7 +198,7 @@
 			}
 		});
 		if (result.ok) {
-			createModalOpen = false;
+			createSlideOverOpen = false;
 			resetForm();
 			successMessage = t('app.feature-flags.created_successfully', 'Feature flag created successfully');
 			loadFlags();
@@ -185,7 +219,7 @@
 				environment: flag.environment,
 				rolloutPercentage: flag.rolloutPercentage
 			};
-			editModalOpen = true;
+			editSlideOverOpen = true;
 		}
 	}
 
@@ -204,7 +238,7 @@
 			}
 		});
 		if (result.ok) {
-			editModalOpen = false;
+			editSlideOverOpen = false;
 			editingFlag = null;
 			resetForm();
 			successMessage = t('app.feature-flags.updated_successfully', 'Feature flag updated successfully');
@@ -296,7 +330,7 @@
 	title={t('app.feature-flags.title', 'Feature Flags')}
 	description={t('app.feature-flags.manage_description', 'Manage feature flags and rollout percentages')}
 	actions={[
-		{ label: t('app.feature-flags.create_flag', 'Create Flag'), icon: Plus, onclick: () => (createModalOpen = true) },
+		{ label: t('app.feature-flags.create_flag', 'Create Flag'), icon: Plus, onclick: () => (createSlideOverOpen = true) },
 		{ label: t('app.feature-flags.refresh', 'Refresh'), icon: RefreshCw, variant: "ghost", onclick: loadFlags }
 	]}
 />
@@ -358,21 +392,6 @@
 
 	<Tabs {tabs} bind:value={activeTab} />
 
-	<FilterBar
-		bind:value={filters}
-		filters={[
-			{
-				key: "environment",
-				label: t('app.feature-flags.filter_environment', 'Environment'),
-				options: [
-					{ value: "production", label: t('app.feature-flags.option_production', 'Production') },
-					{ value: "staging", label: t('app.feature-flags.option_staging', 'Staging') },
-					{ value: "development", label: t('app.feature-flags.option_development', 'Development') }
-				]
-			}
-		]}
-	/>
-
 	<Card>
 		<CardContent class="p-0">
 			{#if loading}
@@ -381,6 +400,8 @@
 				<DataTable
 					columns={flagColumns}
 					data={filteredFlags}
+					filters={flagFilters}
+					actions={flagRowActions}
 					pageSize={20}
 					emptyMessage={t('app.feature-flags.no_flags_found', 'No feature flags found')}
 					selectable
@@ -400,8 +421,8 @@
 	</Card>
 </div>
 
-<!-- Create Flag Modal -->
-<Modal bind:open={createModalOpen} title={t('app.feature-flags.create_title', 'Create Feature Flag')} description={t('app.feature-flags.create_description', 'Add a new feature flag to control feature rollouts')}>
+<!-- Create Flag SlideOver -->
+<SlideOver bind:open={createSlideOverOpen} title={t('app.feature-flags.create_title', 'Create Feature Flag')}>
 	<div class="space-y-4">
 		<div>
 			<label for="flag-name" class="mb-1 block text-sm font-medium text-foreground-alt">{t('app.feature-flags.name', 'Name')}</label>
@@ -457,17 +478,19 @@
 				/>
 			</div>
 		</div>
+	</div>
+	{#snippet footer()}
 		<div class="flex justify-end gap-3 pt-2">
-			<Button variant="outline" onclick={() => { createModalOpen = false; resetForm(); }}>{t('app.feature-flags.cancel', 'Cancel')}</Button>
+			<Button variant="outline" onclick={() => { createSlideOverOpen = false; resetForm(); }}>{t('app.feature-flags.cancel', 'Cancel')}</Button>
 			<Button onclick={submitFlag} disabled={saving || !form.name.trim() || !form.key.trim()}>
 				{saving ? t('app.feature-flags.creating', 'Creating...') : t('app.feature-flags.create_flag', 'Create Flag')}
 			</Button>
 		</div>
-	</div>
-</Modal>
+	{/snippet}
+</SlideOver>
 
-<!-- Edit Flag Modal -->
-<Modal bind:open={editModalOpen} title={t('app.feature-flags.edit_title', 'Edit Feature Flag')} description={t('app.feature-flags.edit_description', 'Update feature flag configuration')}>
+<!-- Edit Flag SlideOver -->
+<SlideOver bind:open={editSlideOverOpen} title={t('app.feature-flags.edit_title', 'Edit Feature Flag')}>
 	<div class="space-y-4">
 		<div>
 			<label for="edit-flag-key" class="mb-1 block text-sm font-medium text-foreground-alt">{t('app.feature-flags.key', 'Key')}</label>
@@ -523,17 +546,19 @@
 				/>
 			</div>
 		</div>
+	</div>
+	{#snippet footer()}
 		<div class="flex justify-end gap-3 pt-2">
-			<Button variant="outline" onclick={() => { editModalOpen = false; editingFlag = null; resetForm(); }}>{t('app.feature-flags.cancel', 'Cancel')}</Button>
+			<Button variant="outline" onclick={() => { editSlideOverOpen = false; editingFlag = null; resetForm(); }}>{t('app.feature-flags.cancel', 'Cancel')}</Button>
 			<Button onclick={submitEditFlag} disabled={saving || !form.name.trim()}>
 				{saving ? t('app.feature-flags.saving', 'Saving...') : t('app.feature-flags.save_changes', 'Save Changes')}
 			</Button>
 		</div>
-	</div>
-</Modal>
+	{/snippet}
+</SlideOver>
 
-<!-- View Modal -->
-<Modal bind:open={showViewModal} title={t('app.feature-flags.details_title', 'Feature Flag Details')}>
+<!-- View SlideOver -->
+<SlideOver bind:open={showViewSlideOver} title={t('app.feature-flags.details_title', 'Feature Flag Details')}>
 	{#if viewTarget}
 		<div class="space-y-4">
 			<div class="grid grid-cols-2 gap-4">
@@ -563,11 +588,13 @@
 				</div>
 			</div>
 		</div>
-		<div class="mt-6 flex justify-end">
-			<Button variant="outline" onclick={() => (showViewModal = false)}>{t('app.feature-flags.close', 'Close')}</Button>
-		</div>
 	{/if}
-</Modal>
+	{#snippet footer()}
+		<div class="flex justify-end">
+			<Button variant="outline" onclick={() => (showViewSlideOver = false)}>{t('app.feature-flags.close', 'Close')}</Button>
+		</div>
+	{/snippet}
+</SlideOver>
 
 <!-- Delete Confirmation Modal -->
 <Modal bind:open={deleteConfirmOpen} title={t('app.feature-flags.confirm_delete_title', 'Confirm Delete')} description={t('app.feature-flags.confirm_delete_description', 'This action cannot be undone')}>
@@ -583,31 +610,3 @@
 		</div>
 	</div>
 </Modal>
-
-{#snippet FlagActionsCell({ value, row }: { value: any; row: FeatureFlag })}
-	<div class="flex items-center gap-1">
-		<Button variant="ghost" size="sm" onclick={() => openView(row)}>
-			<Eye class="h-3.5 w-3.5" />
-		</Button>
-		{#if canManageFlags}
-			<Button
-				variant="ghost"
-				size="sm"
-				onclick={() => toggleFlag(row.id)}
-				title={row.isEnabled ? t('app.feature-flags.disable', 'Disable') : t('app.feature-flags.enable', 'Enable')}
-			>
-				{#if row.isEnabled}
-					<ToggleRight class="h-3.5 w-3.5 text-success" />
-				{:else}
-					<ToggleLeft class="h-3.5 w-3.5" />
-				{/if}
-			</Button>
-			<Button variant="ghost" size="sm" onclick={() => openEditModal(row.id)}>
-				<Pencil class="h-3.5 w-3.5" />
-			</Button>
-			<Button variant="ghost" size="sm" onclick={() => openDeleteConfirm(row.id)} style="color: var(--color-danger)">
-				<Trash2 class="h-3.5 w-3.5" />
-			</Button>
-		{/if}
-	</div>
-{/snippet}

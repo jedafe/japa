@@ -147,6 +147,15 @@ body {
 	text-rendering: optimizeLegibility;
 }
 
+/* Hide scrollbars globally while keeping scroll behavior intact.
+   Firefox: scrollbar-width: none; Chrome/Safari/Edge: ::-webkit-scrollbar { display: none } */
+* {
+	scrollbar-width: none;
+}
+*::-webkit-scrollbar {
+	display: none;
+}
+
 /* ===================== Prose (lesson article type) =====================
  * Lesson player renders TipTap JSON → HTML server-side; this styles the
  * resulting .prose block following the dev.to / Ghost.org reading aesthetic.

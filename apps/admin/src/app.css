@@ -173,6 +173,15 @@
     -moz-osx-font-smoothing: grayscale;
   }
 
+  /* Hide scrollbars globally while keeping scroll behavior intact.
+     Firefox: scrollbar-width: none; Chrome/Safari/Edge: ::-webkit-scrollbar { display: none } */
+  * {
+    scrollbar-width: none;
+  }
+  *::-webkit-scrollbar {
+    display: none;
+  }
+
   h1, h2, h3, h4, h5, h6 {
     font-weight: 600;
     letter-spacing: -0.025em;
@@ -185,27 +194,6 @@
       outline: none;
       box-shadow: 0 0 0 2px var(--color-primary);
     }
-  }
-
-  .scrollbar-thin {
-    scrollbar-width: thin;
-  }
-
-  .scrollbar-thin::-webkit-scrollbar {
-    width: 6px;
-  }
-
-  .scrollbar-thin::-webkit-scrollbar-track {
-    background: transparent;
-  }
-
-  .scrollbar-thin::-webkit-scrollbar-thumb {
-    background-color: var(--color-border);
-    border-radius: 9999px;
-  }
-
-  .scrollbar-thin::-webkit-scrollbar-thumb:hover {
-    background-color: var(--color-muted);
   }
 }
 

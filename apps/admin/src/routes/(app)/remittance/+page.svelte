@@ -3,6 +3,8 @@
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import PageHeader from '$lib/components/layout/page-header.svelte';
 	import { DataTable } from '$lib/components/ui/data-table';
+	import type { ActionItem } from "$lib/components/ui/data-table";
+	import { SlideOver } from "$lib/components/ui/slide-over";
 	import { Button } from '$lib/components/ui/button';
 	import { Banknote, Plus, RefreshCw, Pencil, Download } from 'lucide-svelte';
 	import { api } from '$lib/api';
@@ -23,8 +25,8 @@
 	let providers = $state<RemittanceProvider[]>([]);
 	let loading = $state(true);
 	let error = $state('');
-	let createModalOpen = $state(false);
-	let editModalOpen = $state(false);
+	let createSlideOverOpen = $state(false);
+	let editSlideOverOpen = $state(false);
 	let editingProvider = $state<RemittanceProvider | null>(null);
 	let saving = $state(false);
 	let fetchingId = $state('');
@@ -65,7 +67,7 @@
 			if (result.ok) {
 				messageType = 'success';
 				message = t('remittance.create_success', 'Remittance provider created.');
-				createModalOpen = false;
+				createSlideOverOpen = false;
 				newProvider = { name: '', slug: '', website_url: '', data_source: 'manual', is_active: true, display_order: 0 };
 				load();
 			} else {
@@ -97,7 +99,7 @@
 			if (result.ok) {
 				messageType = 'success';
 				message = t('remittance.update_success', 'Remittance provider updated.');
-				editModalOpen = false;
+				editSlideOverOpen = false;
 				editingProvider = null;
 				load();
 			} else {
@@ -134,7 +136,7 @@
 
 	function openEdit(provider: RemittanceProvider) {
 		editingProvider = { ...provider };
-		editModalOpen = true;
+		editSlideOverOpen = true;
 	}
 
 	const columns = $derived([
@@ -174,14 +176,22 @@
 			label: t('remittance.order', 'Order'),
 			sortable: true,
 			render: (value: number) => `<span class="font-mono text-foreground">${value}</span>`
-		},
-		{
-			key: 'actions',
-			label: t('common.actions', 'Actions'),
-			class: 'w-28',
-			componentSnippet: RemittanceActionsCell
 		}
 	]);
+
+	const rowActions: ActionItem[] = [
+		{
+			label: t('common.edit', 'Edit'),
+			icon: Pencil,
+			onclick: (row: RemittanceProvider) => openEdit(row),
+			show: () => canManage
+		},
+		{
+			label: t('remittance.fetch', 'Fetch Rates'),
+			icon: Download,
+			onclick: (row: RemittanceProvider) => triggerFetch(row.id)
+		}
+	];
 
 	load();
 </script>
@@ -190,7 +200,7 @@
 	title={t('remittance.title', 'Remittance Rate Tracker')}
 	description={t('remittance.description', 'Manage remittance providers and trigger rate fetches.')}
 	actions={canManage ? [
-		{ label: t('remittance.create', 'Add Provider'), icon: Plus, onclick: () => (createModalOpen = true) }
+		{ label: t('remittance.create', 'Add Provider'), icon: Plus, onclick: () => (createSlideOverOpen = true) }
 	] : []}
 />
 
@@ -218,107 +228,83 @@
 	<DataTable
 		data={providers}
 		{columns}
+		actions={rowActions}
 		emptyMessage={t('remittance.empty', 'No remittance providers configured. Add one to enable rate tracking.')}
 	/>
 {/if}
 
-{#if createModalOpen}
-	<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
-		role="dialog"
-		aria-modal="true"
-		tabindex="-1"
-		onclick={() => (createModalOpen = false)}
-		onkeydown={(e) => e.key === 'Escape' && (createModalOpen = false)}>
-		<div role="presentation" class="w-full max-w-lg rounded-lg border p-6" style="border-color: var(--color-border); background: var(--color-surface)" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()}>
-			<h2 class="mb-4 text-lg font-semibold" style="color: var(--color-foreground)">{t('remittance.create_title', 'Add Remittance Provider')}</h2>
-			<div class="space-y-3">
-				<div>
-					<label for="remittance-name" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('remittance.name', 'Name')}</label>
-					<input id="remittance-name" type="text" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={newProvider.name} placeholder="Wise" />
-				</div>
-				<div>
-					<label for="remittance-slug" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('remittance.slug', 'Slug')}</label>
-					<input id="remittance-slug" type="text" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={newProvider.slug} placeholder="wise" />
-				</div>
-				<div>
-					<label for="remittance-website" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('remittance.website', 'Website URL')}</label>
-					<input id="remittance-website" type="text" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={newProvider.website_url} placeholder="https://wise.com" />
-				</div>
-				<div class="grid grid-cols-2 gap-3">
-					<div>
-						<label for="remittance-data-source" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('remittance.data_source', 'Data Source')}</label>
-						<select id="remittance-data-source" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={newProvider.data_source}>
-							<option value="manual">Manual</option>
-							<option value="api">API</option>
-							<option value="scraper">Scraper</option>
-						</select>
-					</div>
-					<div>
-						<label for="remittance-order" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('remittance.order', 'Display Order')}</label>
-						<input id="remittance-order" type="number" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={newProvider.display_order} />
-					</div>
-				</div>
-				<div class="flex items-center gap-2">
-					<input type="checkbox" id="remittance-active" bind:checked={newProvider.is_active} />
-					<label for="remittance-active" class="text-sm" style="color: var(--color-foreground)">{t('remittance.active', 'Active')}</label>
-				</div>
+<!-- Create SlideOver -->
+<SlideOver bind:open={createSlideOverOpen} title={t('remittance.create_title', 'Add Remittance Provider')}>
+	<div class="space-y-3">
+		<div>
+			<label for="remittance-name" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('remittance.name', 'Name')}</label>
+			<input id="remittance-name" type="text" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={newProvider.name} placeholder="Wise" />
+		</div>
+		<div>
+			<label for="remittance-slug" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('remittance.slug', 'Slug')}</label>
+			<input id="remittance-slug" type="text" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={newProvider.slug} placeholder="wise" />
+		</div>
+		<div>
+			<label for="remittance-website" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('remittance.website', 'Website URL')}</label>
+			<input id="remittance-website" type="text" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={newProvider.website_url} placeholder="https://wise.com" />
+		</div>
+		<div class="grid grid-cols-2 gap-3">
+			<div>
+				<label for="remittance-data-source" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('remittance.data_source', 'Data Source')}</label>
+				<select id="remittance-data-source" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={newProvider.data_source}>
+					<option value="manual">Manual</option>
+					<option value="api">API</option>
+					<option value="scraper">Scraper</option>
+				</select>
 			</div>
-			<div class="mt-6 flex justify-end gap-2">
-				<Button variant="outline" onclick={() => (createModalOpen = false)}>{t('common.cancel', 'Cancel')}</Button>
-				<Button onclick={createProvider} disabled={saving || !newProvider.name || !newProvider.slug}>
-					{saving ? t('common.saving', 'Saving...') : t('common.create', 'Create')}
-				</Button>
+			<div>
+				<label for="remittance-order" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('remittance.order', 'Display Order')}</label>
+				<input id="remittance-order" type="number" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={newProvider.display_order} />
 			</div>
 		</div>
-	</div>
-{/if}
-
-{#if editModalOpen && editingProvider}
-	<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
-		role="dialog"
-		aria-modal="true"
-		tabindex="-1"
-		onclick={() => (editModalOpen = false)}
-		onkeydown={(e) => e.key === 'Escape' && (editModalOpen = false)}>
-		<div role="presentation" class="w-full max-w-lg rounded-lg border p-6" style="border-color: var(--color-border); background: var(--color-surface)" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()}>
-			<h2 class="mb-4 text-lg font-semibold" style="color: var(--color-foreground)">{t('remittance.edit_title', 'Edit Remittance Provider')}</h2>
-			<div class="space-y-3">
-				<div>
-					<label for="remittance-edit-name" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('remittance.name', 'Name')}</label>
-					<input id="remittance-edit-name" type="text" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={editingProvider.name} />
-				</div>
-				<div>
-					<label for="remittance-edit-website" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('remittance.website', 'Website URL')}</label>
-					<input id="remittance-edit-website" type="text" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={editingProvider.website_url} />
-				</div>
-				<div>
-					<label for="remittance-edit-order" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('remittance.order', 'Display Order')}</label>
-					<input id="remittance-edit-order" type="number" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={editingProvider.display_order} />
-				</div>
-				<div class="flex items-center gap-2">
-					<input type="checkbox" id="remittance-edit-active" bind:checked={editingProvider.is_active} />
-					<label for="remittance-edit-active" class="text-sm" style="color: var(--color-foreground)">{t('remittance.active', 'Active')}</label>
-				</div>
-			</div>
-			<div class="mt-6 flex justify-end gap-2">
-				<Button variant="outline" onclick={() => (editModalOpen = false)}>{t('common.cancel', 'Cancel')}</Button>
-				<Button onclick={updateProvider} disabled={saving}>
-					{saving ? t('common.saving', 'Saving...') : t('common.save', 'Save')}
-				</Button>
-			</div>
+		<div class="flex items-center gap-2">
+			<input type="checkbox" id="remittance-active" bind:checked={newProvider.is_active} />
+			<label for="remittance-active" class="text-sm" style="color: var(--color-foreground)">{t('remittance.active', 'Active')}</label>
 		</div>
 	</div>
-{/if}
-
-{#snippet RemittanceActionsCell({ value, row }: { value: any; row: RemittanceProvider })}
-	<div class="flex items-center gap-1">
-		{#if canManage}
-			<Button variant="ghost" size="sm" onclick={() => openEdit(row)} aria-label={t('common.edit', 'Edit')}>
-				<Pencil class="h-3.5 w-3.5" />
+	{#snippet footer()}
+		<div class="mt-6 flex justify-end gap-2">
+			<Button variant="outline" onclick={() => (createSlideOverOpen = false)}>{t('common.cancel', 'Cancel')}</Button>
+			<Button onclick={createProvider} disabled={saving || !newProvider.name || !newProvider.slug}>
+				{saving ? t('common.saving', 'Saving...') : t('common.create', 'Create')}
 			</Button>
-		{/if}
-		<Button variant="ghost" size="sm" onclick={() => triggerFetch(row.id)} disabled={fetchingId === row.id} aria-label={t('remittance.fetch', 'Fetch Rates')}>
-			<Download class="h-3.5 w-3.5" />
-		</Button>
-	</div>
-{/snippet}
+		</div>
+	{/snippet}
+</SlideOver>
+
+<!-- Edit SlideOver -->
+<SlideOver bind:open={editSlideOverOpen} title={t('remittance.edit_title', 'Edit Remittance Provider')}>
+	{#if editingProvider}
+		<div class="space-y-3">
+			<div>
+				<label for="remittance-edit-name" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('remittance.name', 'Name')}</label>
+				<input id="remittance-edit-name" type="text" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={editingProvider.name} />
+			</div>
+			<div>
+				<label for="remittance-edit-website" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('remittance.website', 'Website URL')}</label>
+				<input id="remittance-edit-website" type="text" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={editingProvider.website_url} />
+			</div>
+			<div>
+				<label for="remittance-edit-order" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('remittance.order', 'Display Order')}</label>
+				<input id="remittance-edit-order" type="number" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={editingProvider.display_order} />
+			</div>
+			<div class="flex items-center gap-2">
+				<input type="checkbox" id="remittance-edit-active" bind:checked={editingProvider.is_active} />
+				<label for="remittance-edit-active" class="text-sm" style="color: var(--color-foreground)">{t('remittance.active', 'Active')}</label>
+			</div>
+		</div>
+	{/if}
+	{#snippet footer()}
+		<div class="mt-6 flex justify-end gap-2">
+			<Button variant="outline" onclick={() => (editSlideOverOpen = false)}>{t('common.cancel', 'Cancel')}</Button>
+			<Button onclick={updateProvider} disabled={saving}>
+				{saving ? t('common.saving', 'Saving...') : t('common.save', 'Save')}
+			</Button>
+		</div>
+	{/snippet}
+</SlideOver>

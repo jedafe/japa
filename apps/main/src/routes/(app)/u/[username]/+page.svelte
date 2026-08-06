@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { t } from '$lib/i18n';
+	import { t, i18n } from '$lib/i18n';
 	import { page } from '$app/state';
 	import { FileText, MessageSquare, Image, Heart, Users, Info, BarChart3, Award, Pin } from 'lucide-svelte';
 	import SetSidebar from '$lib/components/shell/SetSidebar.svelte';
@@ -116,7 +116,7 @@
 									<span class="text-[var(--color-primary)]">{post.organization.name}</span>
 								{/if}
 								{#if post.published_at}
-									<span>· {new Date(post.published_at).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })}</span>
+									<span>· {new Date(post.published_at).toLocaleDateString(i18n.locale, { year: 'numeric', month: 'short', day: 'numeric' })}</span>
 								{/if}
 								<span>· {post.read_time_minutes} {t('feed.min_read')}</span>
 							</div>

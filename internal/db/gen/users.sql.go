@@ -246,6 +246,106 @@ func (q *Queries) EmailExistsForTenant(ctx context.Context, arg EmailExistsForTe
 	return count, err
 }
 
+const getContentByIDForEditor = `-- name: GetContentByIDForEditor :one
+SELECT c.id, c.tenant_id, c.author_id, c.organization_id, c.space_id,
+       c.content_type, c.title, c.slug, c.body, c.body_html, c.field_values,
+       c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,
+       c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
+       c.status, c.visibility, c.is_locked, c.is_pinned,
+       c.read_time_minutes, c.view_count, c.comment_count, c.share_count,
+       c.reshare_count, c.publish_at, c.published_at, c.created_at, c.updated_at
+FROM contents c
+WHERE c.id = $1 AND c.tenant_id = $2
+  AND c.deleted_at IS NULL
+`
+
+type GetContentByIDForEditorParams struct {
+	ID       pgtype.UUID `json:"id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+type GetContentByIDForEditorRow struct {
+	ID              pgtype.UUID        `json:"id"`
+	TenantID        pgtype.UUID        `json:"tenant_id"`
+	AuthorID        pgtype.UUID        `json:"author_id"`
+	OrganizationID  pgtype.UUID        `json:"organization_id"`
+	SpaceID         pgtype.UUID        `json:"space_id"`
+	ContentType     string             `json:"content_type"`
+	Title           string             `json:"title"`
+	Slug            string             `json:"slug"`
+	Body            string             `json:"body"`
+	BodyHtml        string             `json:"body_html"`
+	FieldValues     []byte             `json:"field_values"`
+	ContentHash     *string            `json:"content_hash"`
+	GeoSpaceID      pgtype.UUID        `json:"geo_space_id"`
+	HeaderImageID   pgtype.UUID        `json:"header_image_id"`
+	FeaturedImageID pgtype.UUID        `json:"featured_image_id"`
+	CanonicalUrl    *string            `json:"canonical_url"`
+	MetaTitle       *string            `json:"meta_title"`
+	MetaDescription *string            `json:"meta_description"`
+	OgImageUrl      *string            `json:"og_image_url"`
+	SeoIndexable    bool               `json:"seo_indexable"`
+	Status          string             `json:"status"`
+	Visibility      string             `json:"visibility"`
+	IsLocked        bool               `json:"is_locked"`
+	IsPinned        bool               `json:"is_pinned"`
+	ReadTimeMinutes int32              `json:"read_time_minutes"`
+	ViewCount       int32              `json:"view_count"`
+	CommentCount    int32              `json:"comment_count"`
+	ShareCount      int32              `json:"share_count"`
+	ReshareCount    int32              `json:"reshare_count"`
+	PublishAt       pgtype.Timestamptz `json:"publish_at"`
+	PublishedAt     pgtype.Timestamptz `json:"published_at"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+}
+
+// Returns any content by ID within the tenant (no author filter). Used by
+// GET /api/v1/me/content/{id} as a fallback when the caller is a super-admin
+// or holds the RBAC `content.edit` permission but is not the content owner.
+// Mirrors the GetUserContent column set so the response shape is identical.
+// A missing row or a different tenant's content resolves to pgx.ErrNoRows → 404.
+func (q *Queries) GetContentByIDForEditor(ctx context.Context, arg GetContentByIDForEditorParams) (GetContentByIDForEditorRow, error) {
+	row := q.db.QueryRow(ctx, getContentByIDForEditor, arg.ID, arg.TenantID)
+	var i GetContentByIDForEditorRow
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.AuthorID,
+		&i.OrganizationID,
+		&i.SpaceID,
+		&i.ContentType,
+		&i.Title,
+		&i.Slug,
+		&i.Body,
+		&i.BodyHtml,
+		&i.FieldValues,
+		&i.ContentHash,
+		&i.GeoSpaceID,
+		&i.HeaderImageID,
+		&i.FeaturedImageID,
+		&i.CanonicalUrl,
+		&i.MetaTitle,
+		&i.MetaDescription,
+		&i.OgImageUrl,
+		&i.SeoIndexable,
+		&i.Status,
+		&i.Visibility,
+		&i.IsLocked,
+		&i.IsPinned,
+		&i.ReadTimeMinutes,
+		&i.ViewCount,
+		&i.CommentCount,
+		&i.ShareCount,
+		&i.ReshareCount,
+		&i.PublishAt,
+		&i.PublishedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const getPublicProfileByUsername = `-- name: GetPublicProfileByUsername :one
 SELECT DISTINCT ON (u.id)
        u.id AS user_id,
@@ -452,6 +552,108 @@ func (q *Queries) GetUserByUsername(ctx context.Context, arg GetUserByUsernamePa
 		&i.Status,
 		&i.FollowerCount,
 		&i.UserGroupName,
+	)
+	return i, err
+}
+
+const getUserContent = `-- name: GetUserContent :one
+SELECT c.id, c.tenant_id, c.author_id, c.organization_id, c.space_id,
+       c.content_type, c.title, c.slug, c.body, c.body_html, c.field_values,
+       c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,
+       c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
+       c.status, c.visibility, c.is_locked, c.is_pinned,
+       c.read_time_minutes, c.view_count, c.comment_count, c.share_count,
+       c.reshare_count, c.publish_at, c.published_at, c.created_at, c.updated_at
+FROM contents c
+WHERE c.id = $1 AND c.tenant_id = $2 AND c.author_id = $3
+  AND c.deleted_at IS NULL
+`
+
+type GetUserContentParams struct {
+	ID       pgtype.UUID `json:"id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+	AuthorID pgtype.UUID `json:"author_id"`
+}
+
+type GetUserContentRow struct {
+	ID              pgtype.UUID        `json:"id"`
+	TenantID        pgtype.UUID        `json:"tenant_id"`
+	AuthorID        pgtype.UUID        `json:"author_id"`
+	OrganizationID  pgtype.UUID        `json:"organization_id"`
+	SpaceID         pgtype.UUID        `json:"space_id"`
+	ContentType     string             `json:"content_type"`
+	Title           string             `json:"title"`
+	Slug            string             `json:"slug"`
+	Body            string             `json:"body"`
+	BodyHtml        string             `json:"body_html"`
+	FieldValues     []byte             `json:"field_values"`
+	ContentHash     *string            `json:"content_hash"`
+	GeoSpaceID      pgtype.UUID        `json:"geo_space_id"`
+	HeaderImageID   pgtype.UUID        `json:"header_image_id"`
+	FeaturedImageID pgtype.UUID        `json:"featured_image_id"`
+	CanonicalUrl    *string            `json:"canonical_url"`
+	MetaTitle       *string            `json:"meta_title"`
+	MetaDescription *string            `json:"meta_description"`
+	OgImageUrl      *string            `json:"og_image_url"`
+	SeoIndexable    bool               `json:"seo_indexable"`
+	Status          string             `json:"status"`
+	Visibility      string             `json:"visibility"`
+	IsLocked        bool               `json:"is_locked"`
+	IsPinned        bool               `json:"is_pinned"`
+	ReadTimeMinutes int32              `json:"read_time_minutes"`
+	ViewCount       int32              `json:"view_count"`
+	CommentCount    int32              `json:"comment_count"`
+	ShareCount      int32              `json:"share_count"`
+	ReshareCount    int32              `json:"reshare_count"`
+	PublishAt       pgtype.Timestamptz `json:"publish_at"`
+	PublishedAt     pgtype.Timestamptz `json:"published_at"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+}
+
+// Returns the caller's own content by ID (tenant + author scoped, any
+// status). Used by GET /api/v1/me/content/{id} so the /create composer can
+// restore published, scheduled, or draft content for editing — the
+// status='draft'-scoped /me/drafts/{id} route only covers drafts. Mirrors
+// the GetUserDraft column set so the response shape is identical. A missing
+// row or content owned by another user/tenant resolves to pgx.ErrNoRows → 404.
+func (q *Queries) GetUserContent(ctx context.Context, arg GetUserContentParams) (GetUserContentRow, error) {
+	row := q.db.QueryRow(ctx, getUserContent, arg.ID, arg.TenantID, arg.AuthorID)
+	var i GetUserContentRow
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.AuthorID,
+		&i.OrganizationID,
+		&i.SpaceID,
+		&i.ContentType,
+		&i.Title,
+		&i.Slug,
+		&i.Body,
+		&i.BodyHtml,
+		&i.FieldValues,
+		&i.ContentHash,
+		&i.GeoSpaceID,
+		&i.HeaderImageID,
+		&i.FeaturedImageID,
+		&i.CanonicalUrl,
+		&i.MetaTitle,
+		&i.MetaDescription,
+		&i.OgImageUrl,
+		&i.SeoIndexable,
+		&i.Status,
+		&i.Visibility,
+		&i.IsLocked,
+		&i.IsPinned,
+		&i.ReadTimeMinutes,
+		&i.ViewCount,
+		&i.CommentCount,
+		&i.ShareCount,
+		&i.ReshareCount,
+		&i.PublishAt,
+		&i.PublishedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }

@@ -19,7 +19,7 @@ vi.mock('$lib/api', () => ({
 vi.mock('$app/state', () => ({
 	page: { params: {}, url: new URL('http://localhost/') },
 }));
-vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
+vi.mock('$app/navigation', () => ({ goto: vi.fn(), replaceState: vi.fn(), pushState: vi.fn() }));
 vi.mock('$lib/stores/permissions.svelte', () => ({
 	hasPermission: () => true,
 	getPermissions: () => ['*'],

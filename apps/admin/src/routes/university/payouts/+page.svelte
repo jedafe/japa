@@ -1,10 +1,11 @@
 <script lang="ts">
 	import PageHeader from "$lib/components/layout/page-header.svelte";
 	import { DataTable } from "$lib/components/ui/data-table";
-	import { FilterBar } from "$lib/components/ui/filter-bar";
 	import { Button } from "$lib/components/ui/button";
 	import { Modal } from "$lib/components/ui/modal";
+	import { SlideOver } from "$lib/components/ui/slide-over";
 	import { TableSkeleton } from "$lib/components/ui/skeleton";
+	import type { ActionItem } from "$lib/components/ui/data-table";
 	import { DollarSign, RefreshCw, AlertTriangle, Eye } from "lucide-svelte";
 	import { universityAdminApi } from "$lib/api";
 	import { t } from "$lib/stores/i18n.svelte";
@@ -37,7 +38,7 @@
 
 	let showProcessModal = $state(false);
 	let showFailModal = $state(false);
-	let showViewModal = $state(false);
+	let showViewSlideOver = $state(false);
 	let target = $state<Payout | null>(null);
 	let actionLoading = $state(false);
 	let failReason = $state("");
@@ -65,8 +66,24 @@
 		{ key: "platform_commission_kobo", label: t("university.commission", "Commission"), render: (v: number, row: Payout) => `<span class="text-xs" style="color: var(--color-muted)">${formatKobo(v, row.currency)}</span>` },
 		{ key: "net_kobo", label: t("university.net", "Net"), sortable: true, render: (v: number, row: Payout) => `<span class="text-sm font-semibold" style="color: var(--color-success)">${formatKobo(v, row.currency)}</span>` },
 		{ key: "status", label: t("university.status", "Status"), sortable: true, componentSnippet: PayoutStatusBadge },
-		{ key: "created_at", label: t("common.created", "Created"), sortable: true, render: (v: string) => `<span class="text-xs" style="color: var(--color-muted)">${new Date(v).toLocaleDateString()}</span>` },
-		{ key: "actions", label: t("common.actions", "Actions"), class: "w-32", componentSnippet: PayoutActionsCell }
+		{ key: "created_at", label: t("common.created", "Created"), sortable: true, render: (v: string) => `<span class="text-xs" style="color: var(--color-muted)">${new Date(v).toLocaleDateString()}</span>` }
+	];
+
+	const rowActions: ActionItem[] = [
+		{ label: t("common.view", "View"), icon: Eye, onclick: (row) => openView(row) },
+		{
+			label: t("university.process", "Process"),
+			icon: DollarSign,
+			onclick: (row) => openProcess(row),
+			show: (row: Payout) => canProcess && (row.status === "pending" || row.status === "failed")
+		},
+		{
+			label: t("university.mark_failed", "Mark Failed"),
+			icon: AlertTriangle,
+			variant: "destructive",
+			onclick: (row) => openFail(row),
+			show: (row: Payout) => canProcess && (row.status === "pending" || row.status === "processing")
+		}
 	];
 
 	const filtered = $derived(
@@ -103,7 +120,7 @@
 
 	function openProcess(p: Payout) { target = p; showProcessModal = true; }
 	function openFail(p: Payout) { target = p; failReason = p.failure_reason ?? ""; showFailModal = true; }
-	function openView(p: Payout) { target = p; showViewModal = true; }
+	function openView(p: Payout) { target = p; showViewSlideOver = true; }
 
 	async function doProcess() {
 		if (!target) return;
@@ -145,6 +162,9 @@
 <PageHeader
 	title={t("university.payouts_title", "University Payouts")}
 	description={t("university.payouts_desc", "Process instructor payout transfers for the Japa University creator economy")}
+	actions={[
+		{ label: t("common.refresh", "Refresh"), icon: RefreshCw, variant: "outline" as const, onclick: load }
+	]}
 />
 
 {#if errorMessage}
@@ -159,15 +179,6 @@
 	</div>
 {/if}
 
-<div class="mb-4 flex justify-end">
-	<Button variant="outline" size="sm" onclick={load}>
-		<RefreshCw class="h-3.5 w-3.5" />
-		{t("common.refresh", "Refresh")}
-	</Button>
-</div>
-
-<FilterBar filters={statusFilters} onsearch={handleSearch} onclear={() => { searchQuery = ""; filterValues = {}; load(); }} />
-
 <div class="mt-4">
 {#if loading}
 	<TableSkeleton rows={5} />
@@ -177,6 +188,13 @@
 		data={filtered}
 		pageSize={25}
 		emptyMessage={t("university.no_payouts", "No payouts found")}
+		searchable
+		onsearch={(q) => { searchQuery = q; load(); }}
+		filters={statusFilters}
+		bind:filterValue={filterValues}
+		onfilterapply={() => { load(); }}
+		onfilterclear={() => { load(); }}
+		actions={rowActions}
 	/>
 {/if}
 </div>
@@ -232,8 +250,8 @@
 	</div>
 </Modal>
 
-<!-- View Modal -->
-<Modal open={showViewModal} onclose={() => { showViewModal = false; }} title={t("university.payout_details", "Payout Details")}>
+<!-- View SlideOver -->
+<SlideOver bind:open={showViewSlideOver} title={t("university.payout_details", "Payout Details")}>
 	{#if target}
 		<div class="grid grid-cols-2 gap-4">
 			<div><p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("university.instructor_id", "Instructor ID")}</p><p class="mt-1 text-sm font-mono">{target.instructor_id}</p></div>
@@ -253,10 +271,12 @@
 			{/if}
 		</div>
 	{/if}
-	<div class="mt-6 flex justify-end">
-		<Button variant="outline" onclick={() => { showViewModal = false; }}>{t("common.close", "Close")}</Button>
-	</div>
-</Modal>
+	{#snippet footer()}
+		<div class="flex justify-end">
+			<Button variant="outline" onclick={() => { showViewSlideOver = false; }}>{t("common.close", "Close")}</Button>
+		</div>
+	{/snippet}
+</SlideOver>
 
 {#snippet PayoutStatusBadge({ value }: { value: string; row: Payout })}
 	<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium
@@ -266,22 +286,4 @@
 		 'bg-warning/15 text-warning'}">
 		{value}
 	</span>
-{/snippet}
-
-{#snippet PayoutActionsCell({ row }: { value: any; row: Payout })}
-	<div class="flex items-center gap-1">
-		<Button variant="ghost" size="sm" onclick={() => openView(row)} aria-label={t("common.view", "View")}>
-			<Eye class="h-3.5 w-3.5" />
-		</Button>
-		{#if canProcess && (row.status === 'pending' || row.status === 'failed')}
-			<Button variant="ghost" size="sm" onclick={() => openProcess(row)} style="color: var(--color-primary)" aria-label={t("university.process", "Process")}>
-				<DollarSign class="h-3.5 w-3.5" />
-			</Button>
-		{/if}
-		{#if canProcess && (row.status === 'pending' || row.status === 'processing')}
-			<Button variant="ghost" size="sm" onclick={() => openFail(row)} style="color: var(--color-danger)" aria-label={t("university.mark_failed", "Mark Failed")}>
-				<AlertTriangle class="h-3.5 w-3.5" />
-			</Button>
-		{/if}
-	</div>
 {/snippet}

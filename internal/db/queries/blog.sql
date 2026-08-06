@@ -95,6 +95,15 @@ WHERE series_id = @series_id AND content_id = @content_id;
 DELETE FROM blog_series_posts
 WHERE series_id = @series_id;
 
+-- name: GetSeriesForContent :one
+-- Returns the series_id for a given content_id, or no rows if the content
+-- is not part of any series. Used by the editor load to restore the series
+-- selector when editing existing content.
+SELECT bsp.series_id
+FROM blog_series_posts bsp
+JOIN blog_series bs ON bs.id = bsp.series_id AND bs.deleted_at IS NULL
+WHERE bsp.content_id = @content_id;
+
 -- name: GetContentTenantID :one
 -- H7: verify a content_id belongs to the same tenant before linking to a series.
 SELECT tenant_id FROM contents WHERE id = @id AND deleted_at IS NULL;

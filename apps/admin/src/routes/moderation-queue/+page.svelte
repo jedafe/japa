@@ -1,15 +1,15 @@
 <script lang="ts">
-	import PageHeader from '$lib/components/layout/page-header.svelte';
-	import { Card, CardContent } from '$lib/components/ui/card';
-	import { DataTable } from '$lib/components/ui/data-table';
-	import { Button } from '$lib/components/ui/button';
-	import Modal from '$lib/components/Modal.svelte';
-	import { TableSkeleton } from '$lib/components/ui/skeleton';
-	import { RefreshCw, CheckCircle, XCircle, ShieldAlert, Users, MessageSquare, AlertTriangle } from 'lucide-svelte';
+	// /moderation-queue — migrated to the EntityPage scaffold.
+	// This page has two distinct entity types behind tabs (queue items + alerts),
+	// so it renders two separate `<EntityPage>` instances conditionally rather
+	// than a single scaffold.
+	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
 	import { moderationAdminApi } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
-	import FilterBar from '$lib/components/FilterBar.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
+	import { user } from '$lib/stores/auth.svelte';
+	import { Eye, UserPlus, CheckCircle, XCircle, MessageSquare, AlertTriangle } from 'lucide-svelte';
+	import type { ActionItem, FilterDef } from '$lib/components/ui/data-table';
 
 	type ModerationQueueItem = {
 		id: string;
@@ -34,277 +34,324 @@
 		created_at: string;
 	};
 
-	let items = $state<ModerationQueueItem[]>([]);
-	let alerts = $state<ModerationAlert[]>([]);
-	let loading = $state(true);
-	let errorMessage = $state('');
-	let activeTab = $state<'queue' | 'alerts'>('queue');
-
-	let selectedIds = $state<Set<string>>(new Set());
-	let bulkLoading = $state(false);
-
-	let showAssignModal = $state(false);
-	let assignItemId = $state('');
-	let assigneeId = $state('');
-	let assignLoading = $state(false);
-
-	let showAppealModal = $state(false);
-	let appealItemId = $state('');
-	let appealReason = $state('');
-	let appealLoading = $state(false);
-
-	let currentPage = $state(0);
-	let itemsPerPage = $state(20);
-	let totalPages = $state(0);
-
+	// Permission gate — the legacy page guarded on `admin.moderation` (the seeded
+	// RBAC node for moderation handlers). The task brief named
+	// `moderation.review_queue`, but that node is not seeded in sections/03-rbac.md
+	// and would brick the page for non-super-admins, so the real legacy node is kept.
 	const canModerate = $derived(hasPermission('admin.moderation'));
 
-	const filterDefs: { key: string; label: string; type: 'select' | 'text'; options?: { value: string; label: string }[] }[] = [
-		{ key: 'status', label: t('common.status', 'Status'), type: 'select', options: [
-			{ value: 'flagged', label: t('app.moderation.queue.flagged', 'Flagged') },
-			{ value: 'published', label: t('app.moderation.queue.published', 'Published') },
-			{ value: 'removed', label: t('app.moderation.queue.removed', 'Removed') }
-		]},
-		{ key: 'content_type', label: t('moderation.content_type', 'Content Type'), type: 'select', options: [
-			{ value: 'organization', label: t('app.moderation.queue.organization', 'Organization') },
-			{ value: 'service', label: t('app.moderation.queue.service', 'Service') },
-			{ value: 'mentor', label: t('app.moderation.queue.mentor', 'Mentor') },
-			{ value: 'university', label: t('app.moderation.queue.university', 'University') }
-		]},
-		{ key: 'q', label: t('common.search', 'Search'), type: 'text' }
-	];
+	let activeTab = $state<'queue' | 'alerts'>('queue');
 
-	let filterValues = $state<Record<string, string>>({});
+	// ── Controllers + page-local error state ─────────────────────────────────
+	let queueController = $state<EntityPageController | undefined>(undefined);
+	let alertController = $state<EntityPageController | undefined>(undefined);
+	let pageError = $state('');
+	let bulkActing = $state(false);
 
-	function handleApplyFilters(values: Record<string, string>) {
-		filterValues = values;
-		currentPage = 0;
-	}
-
-	const queueColumns = [
+	// ── Queue tab ────────────────────────────────────────────────────────────
+	const queueFilters: FilterDef[] = [
 		{
 			key: 'status',
 			label: t('common.status', 'Status'),
-			sortable: true,
-			render: (v: string) => {
-				const colors = v === 'pending' ? 'bg-warning/15 text-warning dark:text-warning' : v === 'approved' ? 'bg-success/15 text-success dark:text-success' : v === 'rejected' ? 'bg-danger/15 text-danger dark:text-danger' : v === 'flagged' ? 'bg-warning/15 text-warning dark:text-warning' : 'bg-info/15 text-info dark:text-info';
-				return `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium ${colors}">${v}</span>`;
-			}
+			options: [
+				{ value: 'flagged', label: t('app.moderation.queue.flagged', 'Flagged') },
+				{ value: 'published', label: t('app.moderation.queue.published', 'Published') },
+				{ value: 'removed', label: t('app.moderation.queue.removed', 'Removed') }
+			]
 		},
 		{
-			key: 'type',
+			key: 'content_type',
 			label: t('moderation.content_type', 'Content Type'),
-			sortable: true,
-			render: (v: string) => `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium bg-info/15 text-info dark:text-info">${v}</span>`
-		},
-		{
-			key: 'content',
-			label: t('moderation.content_preview', 'Content'),
-			render: (v: string) => v ? `<span class="text-xs max-w-xs truncate block">${v}</span>` : '<span style="color: var(--color-muted)">—</span>'
-		},
-		{
-			key: 'reporter',
-			label: t('moderation.reporter', 'Reporter'),
-			render: (v: string) => v || '—'
-		},
-		{
-			key: 'created_at',
-			label: t('moderationQueue.reported', 'Reported'),
-			sortable: true,
-			render: (v: string) => new Date(v).toLocaleDateString()
-		},
-		{
-			key: 'actions',
-			label: t('common.actions', 'Actions'),
-			class: 'w-32',
-			componentSnippet: QueueActionsCell
+			options: [
+				{ value: 'organization', label: t('app.moderation.queue.organization', 'Organization') },
+				{ value: 'service', label: t('app.moderation.queue.service', 'Service') },
+				{ value: 'mentor', label: t('app.moderation.queue.mentor', 'Mentor') },
+				{ value: 'university', label: t('app.moderation.queue.university', 'University') }
+			]
 		}
 	];
 
-	const alertColumns = [
-		{
-			key: 'alert_type',
-			label: t('moderationQueue.alert_type', 'Alert Type'),
-			sortable: true,
-			render: (v: string) => `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium bg-info/15 text-info dark:text-info">${v.replace(/_/g, ' ')}</span>`
-		},
-		{
-			key: 'title',
-			label: t('moderationQueue.message', 'Message'),
-			render: (v: string, row: ModerationAlert) => {
-				const desc = row.description ? `<br><span class="text-xs" style="color: var(--color-muted)">${row.description}</span>` : '';
-				return `<span class="text-sm">${v}</span>${desc}`;
-			}
-		},
-		{
-			key: 'severity',
-			label: t('moderationQueue.severity', 'Severity'),
-			sortable: true,
-			render: (v: string) => {
-				const cls = v === 'high' ? 'bg-danger/15 text-danger dark:text-danger' : v === 'medium' ? 'bg-warning/15 text-warning dark:text-warning' : 'bg-muted/15 text-muted dark:text-muted';
-				return `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium ${cls}">${v}</span>`;
-			}
-		},
-		{
-			key: 'created_at',
-			label: t('moderationQueue.created', 'Created'),
-			sortable: true,
-			render: (v: string) => new Date(v).toLocaleDateString()
-		},
-		{
-			key: 'actions',
-			label: t('common.actions', 'Actions'),
-			class: 'w-32',
-			componentSnippet: AlertActionsCell
+	// "Assign to Me" uses the current admin user's id as the assignee.
+	async function assignToMe(row: ModerationQueueItem, ctx?: { reload?: () => void }) {
+		const assigneeId = user.current?.id;
+		if (!assigneeId) {
+			pageError = t('moderationQueue.assign_self_unavailable', 'Unable to determine your user id');
+			return;
 		}
-	];
-
-	async function fetchData() {
-		loading = true;
-		errorMessage = '';
+		pageError = '';
 		try {
-			if (activeTab === 'queue') {
-				const params = new URLSearchParams({
-					page_size: String(itemsPerPage),
-					page_offset: String(currentPage * itemsPerPage)
-				});
-				Object.entries(filterValues).forEach(([key, value]) => {
-					if (value) params.set(key, value);
-				});
-				const result = await moderationAdminApi.getQueue(params.toString());
-				if (result.ok) {
-					const d = result.data as { items: ModerationQueueItem[]; total: number; total_pages: number };
-					items = d?.items ?? [];
-					totalPages = d?.total_pages ?? 0;
-				} else {
-					errorMessage = result.error;
-				}
+			const res = await moderationAdminApi.assignItem(row.id, { assignee_id: assigneeId });
+			if (!res.ok) {
+				pageError = res.error ?? t('common.error', 'An error occurred');
 			} else {
-				const result = await moderationAdminApi.getAlerts();
-				if (result.ok) {
-					alerts = Array.isArray(result.data) ? result.data : ((result.data as { alerts: ModerationAlert[] })?.alerts) ?? [];
-				} else {
-					errorMessage = result.error;
-				}
+				ctx?.reload?.();
 			}
-		} catch {
-			errorMessage = t('common.error', 'An error occurred');
+		} catch (e) {
+			pageError = e instanceof Error ? e.message : t('common.error', 'An error occurred');
+		}
+	}
+
+	async function bulkDismiss(ids: Set<string>) {
+		const idArr = Array.from(ids);
+		if (idArr.length === 0) return;
+		if (bulkActing) return; // in-flight guard
+		bulkActing = true;
+		pageError = '';
+		try {
+			const res = await moderationAdminApi.bulkAction({ ids: idArr, action: 'dismiss' });
+			if (!res.ok) pageError = res.error ?? t('common.error', 'An error occurred');
+		} catch (e) {
+			pageError = e instanceof Error ? e.message : t('common.error', 'An error occurred');
 		} finally {
-			loading = false;
+			bulkActing = false;
 		}
 	}
 
-	async function approveItem(id: string) {
-		errorMessage = '';
+	async function bulkAssignToMe(ids: Set<string>) {
+		const idArr = Array.from(ids);
+		if (idArr.length === 0) return;
+		if (bulkActing) return; // in-flight guard
+		const assigneeId = user.current?.id;
+		if (!assigneeId) {
+			pageError = t('moderationQueue.assign_self_unavailable', 'Unable to determine your user id');
+			return;
+		}
+		bulkActing = true;
+		pageError = '';
 		try {
-			await moderationAdminApi.updateItem(id, { action: 'approve' });
-			fetchData();
-		} catch {
-			errorMessage = t('common.error');
+			const res = await moderationAdminApi.bulkAction({ ids: idArr, action: 'assign', assignee_id: assigneeId });
+			if (!res.ok) pageError = res.error ?? t('common.error', 'An error occurred');
+		} catch (e) {
+			pageError = e instanceof Error ? e.message : t('common.error', 'An error occurred');
+		} finally {
+			bulkActing = false;
 		}
 	}
 
-	async function rejectItem(id: string) {
-		errorMessage = '';
-		try {
-			await moderationAdminApi.updateItem(id, { action: 'reject' });
-			fetchData();
-		} catch {
-			errorMessage = t('common.error');
+	const queueActions: ActionItem[] = [
+		{ label: t('common.view', 'View'), icon: Eye, onclick: (row: any, ctx?: any) => ctx?.openView(row) },
+		{
+			label: t('moderationQueue.assign_to_me', 'Assign to Me'),
+			icon: UserPlus,
+			onclick: (row: ModerationQueueItem, ctx?: any) => assignToMe(row, ctx)
 		}
-	}
+	];
 
-	async function bulkAction(action: 'approve' | 'reject') {
-		if (selectedIds.size === 0) return;
-		bulkLoading = true;
-		errorMessage = '';
-		try {
-			await moderationAdminApi.bulkAction({
-				ids: Array.from(selectedIds),
-				action
+	const queueConfig: EntityPageConfig = {
+		title: t('moderationQueue.title', 'Moderation Queue'),
+		description: t('moderationQueue.description', 'Unified moderation queue for reports and alerts'),
+		readonly: true,
+		pageSize: 20,
+		columns: [
+			{
+				key: 'type',
+				label: t('moderation.content_type', 'Content Type'),
+				sortable: true,
+				render: (v: string) =>
+					`<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium bg-info/15 text-info dark:text-info">${v}</span>`
+			},
+			{
+				key: 'status',
+				label: t('common.status', 'Status'),
+				sortable: true,
+				render: (v: string) => {
+					const colors =
+						v === 'pending'
+							? 'bg-warning/15 text-warning dark:text-warning'
+							: v === 'approved'
+								? 'bg-success/15 text-success dark:text-success'
+								: v === 'rejected'
+									? 'bg-danger/15 text-danger dark:text-danger'
+									: v === 'flagged'
+										? 'bg-warning/15 text-warning dark:text-warning'
+										: 'bg-info/15 text-info dark:text-info';
+					return `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium ${colors}">${v}</span>`;
+				}
+			},
+			{
+				key: 'content',
+				label: t('moderation.content_preview', 'Content'),
+				render: (v: string) =>
+					v
+						? `<span class="text-xs max-w-xs truncate block">${v}</span>`
+						: '<span style="color: var(--color-muted)">—</span>'
+			},
+			{
+				key: 'reporter',
+				label: t('moderation.reporter', 'Reporter'),
+				render: (v: string, row: ModerationQueueItem) => v || row.author_id || '—'
+			},
+			{
+				key: 'created_at',
+				label: t('moderationQueue.reported', 'Reported'),
+				sortable: true,
+				render: (v: string) => new Date(v).toLocaleDateString()
+			}
+		],
+		filters: queueFilters,
+		actions: queueActions,
+		bulkActions: [
+			{
+				label: t('moderationQueue.bulk_dismiss', 'Dismiss Selected'),
+				icon: XCircle,
+				variant: 'destructive',
+				onclick: bulkDismiss
+			},
+			{
+				label: t('moderationQueue.bulk_assign', 'Assign Selected to Me'),
+				icon: UserPlus,
+				onclick: bulkAssignToMe
+			}
+		],
+		fields: [] as FieldDef[],
+		load: async ({ page, pageSize, q, filter }) => {
+			const params = new URLSearchParams({
+				page_size: String(pageSize),
+				page_offset: String(page * pageSize)
 			});
-			selectedIds = new Set();
-			fetchData();
-		} catch {
-			errorMessage = t('common.error');
-		} finally {
-			bulkLoading = false;
-		}
-	}
+			if (q) params.set('q', q);
+			if (filter.status) params.set('status', filter.status);
+			if (filter.content_type) params.set('content_type', filter.content_type);
+			const result = await moderationAdminApi.getQueue(params.toString());
+			if (result.ok) {
+				const d = result.data as { items: ModerationQueueItem[]; total: number; total_pages: number };
+				return {
+					data: d?.items ?? [],
+					total: d?.total ?? 0,
+					totalPages: d?.total_pages ?? 1
+				};
+			}
+			throw new Error(result.error ?? t('common.error', 'Failed to load moderation queue'));
+		},
+		viewSnippet: QueueItemView
+	};
 
-	function openAssignModal(id: string) {
-		assignItemId = id;
-		assigneeId = '';
-		showAssignModal = true;
-	}
-
-	async function assignModerator() {
-		if (!assigneeId.trim()) return;
-		assignLoading = true;
-		errorMessage = '';
+	// ── Alerts tab ───────────────────────────────────────────────────────────
+	async function acknowledgeAlert(row: ModerationAlert, ctx?: { reload?: () => void }) {
+		pageError = '';
 		try {
-			await moderationAdminApi.assignItem(assignItemId, { assignee_id: assigneeId.trim() });
-			showAssignModal = false;
-			fetchData();
-		} catch {
-			errorMessage = t('common.error');
-		} finally {
-			assignLoading = false;
+			const res = await moderationAdminApi.acknowledgeAlert(row.id);
+			if (!res.ok) {
+				pageError = res.error ?? t('common.error', 'An error occurred');
+			} else {
+				ctx?.reload?.();
+			}
+		} catch (e) {
+			pageError = e instanceof Error ? e.message : t('common.error', 'An error occurred');
 		}
 	}
 
-	function openAppealModal(id: string) {
-		appealItemId = id;
-		appealReason = '';
-		showAppealModal = true;
-	}
-
-	async function submitAppeal() {
-		if (!appealReason.trim()) return;
-		appealLoading = true;
-		errorMessage = '';
+	async function resolveAlert(row: ModerationAlert, ctx?: { reload?: () => void }) {
+		pageError = '';
 		try {
-			await moderationAdminApi.appealItem(appealItemId, { reason: appealReason.trim() });
-			showAppealModal = false;
-			fetchData();
-		} catch {
-			errorMessage = t('common.error');
-		} finally {
-			appealLoading = false;
+			const res = await moderationAdminApi.resolveAlert(row.id, { resolution: 'resolved' });
+			if (!res.ok) {
+				pageError = res.error ?? t('common.error', 'An error occurred');
+			} else {
+				ctx?.reload?.();
+			}
+		} catch (e) {
+			pageError = e instanceof Error ? e.message : t('common.error', 'An error occurred');
 		}
 	}
 
-	async function acknowledgeAlert(id: string) {
-		errorMessage = '';
-		try {
-			await moderationAdminApi.acknowledgeAlert(id);
-			fetchData();
-		} catch {
-			errorMessage = t('common.error');
+	const alertActions: ActionItem[] = [
+		{ label: t('common.view', 'View'), icon: Eye, onclick: (row: any, ctx?: any) => ctx?.openView(row) },
+		{
+			label: t('moderationQueue.acknowledge', 'Acknowledge'),
+			icon: CheckCircle,
+			onclick: (row: ModerationAlert, ctx?: any) => acknowledgeAlert(row, ctx),
+			show: (row: ModerationAlert) => !row.acknowledged_at
+		},
+		{
+			label: t('moderationQueue.resolve', 'Resolve'),
+			icon: CheckCircle,
+			onclick: (row: ModerationAlert, ctx?: any) => resolveAlert(row, ctx),
+			show: (row: ModerationAlert) => !row.resolved_at
 		}
+	];
+
+	function alertStatusBadge(row: ModerationAlert): string {
+		const label = row.resolved_at
+			? t('moderationQueue.resolve', 'Resolved')
+			: row.acknowledged_at
+				? t('moderationQueue.acknowledge', 'Acknowledged')
+				: t('moderationQueue.tab_alerts', 'Open');
+		const cls = row.resolved_at
+			? 'bg-success/15 text-success dark:text-success'
+			: row.acknowledged_at
+				? 'bg-info/15 text-info dark:text-info'
+				: 'bg-warning/15 text-warning dark:text-warning';
+		return `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium ${cls}">${label}</span>`;
 	}
 
-	async function resolveAlert(id: string) {
-		errorMessage = '';
-		try {
-			await moderationAdminApi.resolveAlert(id, { resolution: 'resolved' });
-			fetchData();
-		} catch {
-			errorMessage = t('common.error');
-		}
-	}
-
-	$effect(() => {
-		void activeTab;
-		void currentPage;
-		void itemsPerPage;
-		void filterValues;
-		fetchData();
-	});
+	const alertConfig: EntityPageConfig = {
+		title: t('moderationQueue.tab_alerts', 'Alerts'),
+		description: t('moderationQueue.description', 'Unified moderation queue for reports and alerts'),
+		readonly: true,
+		pageSize: 20,
+		columns: [
+			{
+				key: 'alert_type',
+				label: t('moderationQueue.alert_type', 'Alert Type'),
+				sortable: true,
+				render: (v: string) =>
+					`<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium bg-info/15 text-info dark:text-info">${v.replace(/_/g, ' ')}</span>`
+			},
+			{
+				key: 'title',
+				label: t('moderationQueue.message', 'Message'),
+				render: (v: string, row: ModerationAlert) => {
+					const desc = row.description
+						? `<br><span class="text-xs" style="color: var(--color-muted)">${row.description}</span>`
+						: '';
+					return `<span class="text-sm">${v}</span>${desc}`;
+				}
+			},
+			{
+				key: 'severity',
+				label: t('moderationQueue.severity', 'Severity'),
+				sortable: true,
+				render: (v: string) => {
+					const cls =
+						v === 'high'
+							? 'bg-danger/15 text-danger dark:text-danger'
+							: v === 'medium'
+								? 'bg-warning/15 text-warning dark:text-warning'
+								: 'bg-muted/15 text-muted dark:text-muted';
+					return `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium ${cls}">${v}</span>`;
+				}
+			},
+			{
+				key: 'status',
+				label: t('common.status', 'Status'),
+				render: (_v: string, row: ModerationAlert) => alertStatusBadge(row)
+			},
+			{
+				key: 'created_at',
+				label: t('moderationQueue.created', 'Created'),
+				sortable: true,
+				render: (v: string) => new Date(v).toLocaleDateString()
+			}
+		],
+		actions: alertActions,
+		fields: [] as FieldDef[],
+		load: async () => {
+			const result = await moderationAdminApi.getAlerts();
+			if (result.ok) {
+				const alerts = Array.isArray(result.data)
+					? (result.data as ModerationAlert[])
+					: ((result.data as { alerts?: ModerationAlert[] })?.alerts) ?? [];
+				return { data: alerts, total: alerts.length, totalPages: 1 };
+			}
+			throw new Error(result.error ?? t('common.error', 'Failed to load moderation alerts'));
+		},
+		viewSnippet: AlertView
+	};
 </script>
 
 <svelte:head>
-	<title>{t('moderationQueue.title')} — JapaConnect Admin</title>
+	<title>{t('moderationQueue.title', 'Moderation Queue')} — JapaConnect Admin</title>
 </svelte:head>
 
 {#if !canModerate}
@@ -312,19 +359,12 @@
 		<p>{t('moderationQueue.no_permission', "You don't have permission to access moderation.")}</p>
 	</div>
 {:else}
-	<PageHeader
-		title={t('moderationQueue.title')}
-		description={t('moderationQueue.description')}
-		actions={[
-			{ label: t('common.refresh'), icon: RefreshCw, onclick: fetchData }
-		]}
-	/>
-
-	<FilterBar filters={filterDefs} values={filterValues} onApply={handleApplyFilters} />
-
-	{#if errorMessage}
-		<div class="mb-4 rounded-lg p-3 text-sm" style="background: color-mix(in srgb, var(--color-danger) 10%, transparent); color: var(--color-danger)">
-			{errorMessage}
+	{#if pageError}
+		<div
+			class="mb-4 rounded-lg p-3 text-sm"
+			style="background: color-mix(in srgb, var(--color-danger) 10%, transparent); color: var(--color-danger)"
+		>
+			{pageError}
 		</div>
 	{/if}
 
@@ -332,116 +372,145 @@
 	<div class="mb-6 flex gap-1 rounded-lg p-1" style="background: var(--color-surface)">
 		<button
 			class="inline-flex items-center whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium transition-all"
-			style={activeTab === 'queue' ? 'background: var(--color-background); color: var(--color-foreground); box-shadow: 0 1px 2px rgba(0,0,0,0.05)' : 'color: var(--color-muted)'}
-			onclick={() => { activeTab = 'queue'; selectedIds = new Set(); currentPage = 0; }}
+			style={activeTab === 'queue'
+				? 'background: var(--color-background); color: var(--color-foreground); box-shadow: 0 1px 2px rgba(0,0,0,0.05)'
+				: 'color: var(--color-muted)'}
+			onclick={() => (activeTab = 'queue')}
 		>
 			<MessageSquare class="mr-2 h-4 w-4" />
-			{t('moderationQueue.tab_queue')}
+			{t('moderationQueue.tab_queue', 'Queue')}
 		</button>
 		<button
 			class="inline-flex items-center whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium transition-all"
-			style={activeTab === 'alerts' ? 'background: var(--color-background); color: var(--color-foreground); box-shadow: 0 1px 2px rgba(0,0,0,0.05)' : 'color: var(--color-muted)'}
-			onclick={() => { activeTab = 'alerts'; currentPage = 0; }}
+			style={activeTab === 'alerts'
+				? 'background: var(--color-background); color: var(--color-foreground); box-shadow: 0 1px 2px rgba(0,0,0,0.05)'
+				: 'color: var(--color-muted)'}
+			onclick={() => (activeTab = 'alerts')}
 		>
 			<AlertTriangle class="mr-2 h-4 w-4" />
-			{t('moderationQueue.tab_alerts')}
+			{t('moderationQueue.tab_alerts', 'Alerts')}
 		</button>
 	</div>
 
-	<Card>
-		<CardContent>
-			{#if loading}
-				<TableSkeleton rows={8} columns={activeTab === 'queue' ? queueColumns.length : alertColumns.length} />
-			{:else if activeTab === 'queue'}
-				<DataTable
-					columns={queueColumns}
-					data={items}
-					selectable={true}
-					bind:selectedIds
-					pageSize={itemsPerPage}
-					emptyMessage={t('moderationQueue.empty', 'No items in moderation queue')}
-				>
-					{#snippet bulkActions()}
-						<Button variant="ghost" size="sm" onclick={() => bulkAction('approve')} disabled={bulkLoading} style="color: var(--color-success)">
-							<CheckCircle class="mr-1 h-3.5 w-3.5" />
-							{t('moderationQueue.bulk_approve')}
-						</Button>
-						<Button variant="ghost" size="sm" onclick={() => bulkAction('reject')} disabled={bulkLoading} style="color: var(--color-danger)">
-							<XCircle class="mr-1 h-3.5 w-3.5" />
-							{t('moderationQueue.bulk_reject')}
-						</Button>
-					{/snippet}
-				</DataTable>
-			{:else}
-				<DataTable
-					columns={alertColumns}
-					data={alerts}
-					pageSize={itemsPerPage}
-					emptyMessage={t('moderationQueue.no_alerts', 'No alerts')}
-				/>
-			{/if}
-		</CardContent>
-	</Card>
+	{#if activeTab === 'queue'}
+		<EntityPage config={queueConfig} bind:controller={queueController} />
+	{:else}
+		<EntityPage config={alertConfig} bind:controller={alertController} />
+	{/if}
 {/if}
 
-<!-- Assign Moderator Modal -->
-<Modal bind:open={showAssignModal} title={t('moderationQueue.assign_moderator')}>
+<!-- ── View snippets ─────────────────────────────────────────────────────── -->
+
+{#snippet QueueItemView({ row }: { row: ModerationQueueItem })}
 	<div class="space-y-4">
 		<div>
-			<label for="assignee-id" class="mb-1 block text-sm font-medium">{t('moderationQueue.assignee_id')}</label>
-			<input id="assignee-id" type="text" bind:value={assigneeId} placeholder={t('moderationQueue.user_id_placeholder', 'User ID')} class="w-full rounded-lg border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-background); color: var(--color-foreground)" />
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">
+				{t('moderation.content_type', 'Content Type')}
+			</p>
+			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.type}</p>
 		</div>
-	</div>
-	<div class="mt-4 flex justify-end gap-2">
-		<Button variant="outline" onclick={() => (showAssignModal = false)}>{t('common.cancel')}</Button>
-		<Button onclick={assignModerator} disabled={assignLoading}>{assignLoading ? t('common.saving') : t('common.confirm')}</Button>
-	</div>
-</Modal>
-
-<!-- Appeal Modal -->
-<Modal bind:open={showAppealModal} title={t('moderationQueue.handle_appeal')}>
-	<div class="space-y-4">
 		<div>
-			<label for="appeal-reason" class="mb-1 block text-sm font-medium">{t('moderationQueue.appeal_reason')}</label>
-			<textarea id="appeal-reason" bind:value={appealReason} rows="3" class="w-full rounded-lg border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-background); color: var(--color-foreground)" placeholder={t('moderationQueue.appeal_reason_placeholder')}></textarea>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">
+				{t('common.status', 'Status')}
+			</p>
+			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.status}</p>
 		</div>
-	</div>
-	<div class="mt-4 flex justify-end gap-2">
-		<Button variant="outline" onclick={() => (showAppealModal = false)}>{t('common.cancel')}</Button>
-		<Button onclick={submitAppeal} disabled={appealLoading}>{appealLoading ? t('common.saving') : t('common.confirm')}</Button>
-	</div>
-</Modal>
-
-<!-- Queue Action Cell Snippet -->
-{#snippet QueueActionsCell({ value, row }: { value: any; row: ModerationQueueItem })}
-	<div class="flex items-center gap-1">
-		<Button variant="ghost" size="sm" onclick={() => approveItem(row.id)} title={t('moderationQueue.approve')} style="color: var(--color-success)">
-			<CheckCircle class="h-3.5 w-3.5" />
-		</Button>
-		<Button variant="ghost" size="sm" onclick={() => rejectItem(row.id)} title={t('moderationQueue.reject')} style="color: var(--color-danger)">
-			<XCircle class="h-3.5 w-3.5" />
-		</Button>
-		<Button variant="ghost" size="sm" onclick={() => openAssignModal(row.id)} title={t('moderationQueue.assign')} style="color: var(--color-info)">
-			<Users class="h-3.5 w-3.5" />
-		</Button>
-		<Button variant="ghost" size="sm" onclick={() => openAppealModal(row.id)} title={t('moderationQueue.appeal')} style="color: var(--color-warning)">
-			<ShieldAlert class="h-3.5 w-3.5" />
-		</Button>
+		{#if row.entity_ref}
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">
+					{t('moderationQueue.content_id', 'Content ID')}
+				</p>
+				<p class="mt-1 break-all text-sm font-mono" style="color: var(--color-foreground)">{row.entity_ref}</p>
+			</div>
+		{/if}
+		<div>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">
+				{t('moderation.content_preview', 'Content')}
+			</p>
+			<p class="mt-1 text-sm" style="color: var(--color-foreground)">{row.content ?? '—'}</p>
+		</div>
+		<div>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">
+				{t('moderation.reporter', 'Reporter')}
+			</p>
+			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">
+				{row.reporter || row.author_id || '—'}
+			</p>
+		</div>
+		<div>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">
+				{t('moderationQueue.reported', 'Reported')}
+			</p>
+			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">
+				{new Date(row.created_at).toLocaleString()}
+			</p>
+		</div>
 	</div>
 {/snippet}
 
-<!-- Alert Action Cell Snippet -->
-{#snippet AlertActionsCell({ value, row }: { value: any; row: ModerationAlert })}
-	<div class="flex items-center gap-1">
-		{#if !row.acknowledged_at}
-			<Button variant="ghost" size="sm" onclick={() => acknowledgeAlert(row.id)} style="color: var(--color-info)">
-				{t('moderationQueue.acknowledge')}
-			</Button>
+{#snippet AlertView({ row }: { row: ModerationAlert })}
+	<div class="space-y-4">
+		<div>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">
+				{t('moderationQueue.alert_type', 'Alert Type')}
+			</p>
+			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">
+				{row.alert_type.replace(/_/g, ' ')}
+			</p>
+		</div>
+		<div>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">
+				{t('moderationQueue.message', 'Message')}
+			</p>
+			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.title}</p>
+		</div>
+		{#if row.description}
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">
+					{t('moderationQueue.reason', 'Reason')}
+				</p>
+				<p class="mt-1 text-sm" style="color: var(--color-foreground)">{row.description}</p>
+			</div>
 		{/if}
-		{#if !row.resolved_at}
-			<Button variant="ghost" size="sm" onclick={() => resolveAlert(row.id)} style="color: var(--color-success)">
-				{t('moderationQueue.resolve')}
-			</Button>
+		<div>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">
+				{t('moderationQueue.severity', 'Severity')}
+			</p>
+			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.severity}</p>
+		</div>
+		<div>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">
+				{t('common.status', 'Status')}
+			</p>
+			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.status}</p>
+		</div>
+		{#if row.acknowledged_at}
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">
+					{t('moderationQueue.acknowledge', 'Acknowledged')}
+				</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">
+					{new Date(row.acknowledged_at).toLocaleString()}
+				</p>
+			</div>
 		{/if}
+		{#if row.resolved_at}
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">
+					{t('moderationQueue.resolve', 'Resolved')}
+				</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">
+					{new Date(row.resolved_at).toLocaleString()}
+				</p>
+			</div>
+		{/if}
+		<div>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">
+				{t('moderationQueue.created', 'Created')}
+			</p>
+			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">
+				{new Date(row.created_at).toLocaleString()}
+			</p>
+		</div>
 	</div>
 {/snippet}

@@ -310,59 +310,59 @@
 	// ActionItem[] with show() predicates; custom actions replace defaults, so View/Edit/Delete are included explicitly.
 	const rowActions = $derived.by<ActionItem[]>(() => {
 		const acts: ActionItem[] = [
-			{ label: t("common.view", "View"), icon: Eye as any, onclick: (row: User) => goto(`/users/${row.id}`) }
+			{ label: t("common.view", "View"), icon: Eye, onclick: (row: User) => goto(`/users/${row.id}`) }
 		];
 		if (canManageUsers) {
-			acts.push({ label: t("common.edit", "Edit"), icon: Pencil as any, onclick: (row: User) => goto(`/users/${row.id}`) });
+			acts.push({ label: t("common.edit", "Edit"), icon: Pencil, onclick: (row: User) => goto(`/users/${row.id}`) });
 			acts.push({
 				label: t("users.warn", "Warn"),
-				icon: AlertTriangle as any,
+				icon: AlertTriangle,
 				variant: "destructive",
 				onclick: openWarn,
 				show: (row: User) => row.status !== "deleted"
 			});
 			acts.push({
 				label: t("users.ban", "Ban"),
-				icon: Ban as any,
+				icon: Ban,
 				variant: "destructive",
 				onclick: openBan,
 				show: (row: User) => row.status !== "deleted" && row.status !== "banned"
 			});
 			acts.push({
 				label: t("users.unban", "Unban"),
-				icon: Ban as any,
+				icon: Ban,
 				onclick: openBan,
 				show: (row: User) => row.status === "banned"
 			});
 			acts.push({
 				label: t("users.suspend", "Suspend"),
-				icon: AlertTriangle as any,
+				icon: AlertTriangle,
 				variant: "destructive",
 				onclick: openSuspend,
 				show: (row: User) => row.status !== "deleted" && row.status !== "banned" && row.status !== "suspended"
 			});
 			acts.push({
 				label: t("users.unsuspend", "Unsuspend"),
-				icon: RotateCcw as any,
+				icon: RotateCcw,
 				onclick: openSuspend,
 				show: (row: User) => row.status === "suspended"
 			});
 			acts.push({
 				label: t("common.delete", "Delete"),
-				icon: Trash2 as any,
+				icon: Trash2,
 				variant: "destructive",
 				onclick: openDelete,
 				show: (row: User) => row.status !== "deleted"
 			});
 			acts.push({
 				label: t("users.restore", "Restore"),
-				icon: RotateCcw as any,
+				icon: RotateCcw,
 				onclick: openRestore,
 				show: (row: User) => row.status === "deleted"
 			});
 			acts.push({
 				label: t("users.hard_delete", "Hard Delete"),
-				icon: Trash as any,
+				icon: Trash,
 				variant: "destructive",
 				onclick: openHardDelete,
 				show: (row: User) => row.status === "deleted"
@@ -371,7 +371,7 @@
 		if (canImpersonate) {
 			acts.push({
 				label: t("users.impersonate", "Impersonate"),
-				icon: UserPlus as any,
+				icon: UserPlus,
 				onclick: confirmImpersonate,
 				show: (row: User) => row.status !== "deleted"
 			});
@@ -435,13 +435,13 @@
 		bulkActions: [
 			{
 				label: t("users.bulk_delete", "Delete Selected"),
-				icon: Trash2 as any,
+				icon: Trash2,
 				variant: "destructive",
 				onclick: bulkDelete
 			},
 			{
 				label: t("users.bulk_hard_delete", "Hard Delete Selected"),
-				icon: Trash as any,
+				icon: Trash,
 				variant: "destructive",
 				onclick: bulkHardDelete,
 				disabled: (_ids: Set<string>, rows?: any[]) => !rows?.some((r) => r.status === "deleted")

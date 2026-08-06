@@ -1,16 +1,15 @@
 <script lang="ts">
-	import PageHeader from "$lib/components/layout/page-header.svelte";
-	import { Card, CardContent, CardHeader } from "$lib/components/ui/card";
-	import { DataTable } from "$lib/components/ui/data-table";
-	import FilterBar from "$lib/components/FilterBar.svelte";
+	// /moderation — migrated to the EntityPage scaffold; moderation queue with
+	// state actions (approve/reject/delete) via a custom `actions` array and a
+	// page-local confirm Modal (reason textarea), plus bulk approve/reject.
+	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from "$lib/components/entity";
+	import { Modal } from "$lib/components/ui/modal";
 	import { Button } from "$lib/components/ui/button";
-	import Modal from "$lib/components/Modal.svelte";
-	import Pagination from "$lib/components/ui/Pagination.svelte";
-	import { TableSkeleton } from "$lib/components/ui/skeleton";
-	import { RefreshCw, Check, X, Eye, AlertTriangle, Trash2 } from "lucide-svelte";
 	import { moderationAdminApi } from "$lib/api";
 	import { t } from "$lib/stores/i18n.svelte";
 	import { hasPermission } from "$lib/stores/permissions.svelte";
+	import { Eye, Check, X, Trash2 } from "lucide-svelte";
+	import type { ActionItem, FilterDef } from "$lib/components/ui/data-table";
 
 	type ModItem = {
 		id: string;
@@ -23,35 +22,13 @@
 		entity_ref?: string;
 	};
 
-	let items = $state<ModItem[]>([]);
-	let currentPage = $state(0);
-	let totalItems = $state(0);
-	let pageSize = $state(25);
-	let totalPages = $state(1);
-	let loading = $state(true);
-	let error = $state("");
-	let searchQuery = $state("");
-	let filterValues = $state<Record<string, string>>({});
-
-	// Modals
-	let showViewModal = $state(false);
-	let viewTarget = $state<ModItem | null>(null);
-	let showActionModal = $state(false);
-	let actionItem = $state<ModItem | null>(null);
-	let actionType = $state<"approve" | "reject" | "delete">("approve");
-	let actionReason = $state("");
-	let acting = $state(false);
-
-	// Bulk selection
-	let selectedIds = $state<Set<string>>(new Set());
-
 	const canModerate = $derived(hasPermission("admin.moderation"));
 
-	const filterDefs = [
+	// ── Filters ─────────────────────────────────────────────────────────────
+	const filters: FilterDef[] = [
 		{
 			key: "status",
 			label: t("common.status", "Status"),
-			type: 'select' as const,
 			options: [
 				{ value: "flagged", label: t("app.moderation.queue.flagged", "Flagged") },
 				{ value: "published", label: t("app.moderation.queue.published", "Published") },
@@ -61,7 +38,6 @@
 		{
 			key: "content_type",
 			label: t("moderation.content_type", "Content Type"),
-			type: 'select' as const,
 			options: [
 				{ value: "organization", label: t("app.moderation.queue.organization", "Organization") },
 				{ value: "service", label: t("app.moderation.queue.service", "Service") },
@@ -71,144 +47,198 @@
 		}
 	];
 
-	const columns = [
-		{
-			key: "type",
-			label: t("moderation.source", "Source"),
-			sortable: true,
-			render: (v: string) => {
-				const colors = v === "ai_flag" ? "bg-info/15 text-info dark:text-info" : "bg-warning/15 text-warning dark:text-warning";
-				const label = v === "ai_flag" ? t('app.moderation.queue.ai_flag', 'AI Flag') : t('app.moderation.queue.user_report', 'User Report');
-				return `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium ${colors}">${v}</span>`;
-			}
-		},
-		{
-			key: "content",
-			label: t("moderation.content_preview", "Content"),
-			render: (v: string) => v ? `<span class="text-xs max-w-xs truncate block">${v}</span>` : '<span style="color: var(--color-muted)">—</span>'
-		},
-		{
-			key: "status",
-			label: t("common.status", "Status"),
-			sortable: true,
-			render: (v: string) => {
-				const colors = v === "pending" ? "bg-warning/15 text-warning dark:text-warning" : v === "resolved" ? "bg-success/15 text-success dark:text-success" : v === "dismissed" ? "bg-muted/15 text-muted dark:text-muted" : v === "flagged" ? "bg-warning/15 text-warning dark:text-warning" : "bg-info/15 text-info dark:text-info";
-				return `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium ${colors}">${v}</span>`;
-			}
-		},
-		{
-			key: "reporter",
-			label: t("moderation.reporter", "Reporter"),
-			render: (v: string) => v || "—"
-		},
-		{
-			key: "created_at",
-			label: t("common.created", "Created"),
-			sortable: true,
-			render: (v: string) => new Date(v).toLocaleDateString()
-		},
-		{
-			key: "actions",
-			label: t("common.actions", "Actions"),
-			class: "w-40",
-			componentSnippet: ModActionsCell
-		}
-	];
+	// ── Bulk actions ────────────────────────────────────────────────────────
+	// EntityPage auto-reloads + clears selection after bulk handlers complete.
+	let pageError = $state("");
+	let bulkActing = $state(false);
 
-	async function loadItems() {
-		loading = true;
-		error = "";
+	async function bulkApprove(ids: Set<string>) {
+		const idArr = Array.from(ids);
+		if (idArr.length === 0) return;
+		if (bulkActing) return; // in-flight guard
+		bulkActing = true;
+		pageError = "";
 		try {
-			const params = new URLSearchParams({
-				page_size: String(pageSize),
-				page_offset: String(currentPage * pageSize)
-			});
-			if (searchQuery) params.set("q", searchQuery);
-			if (filterValues.type) params.set("type", filterValues.type);
-			if (filterValues.content_type) params.set("content_type", filterValues.content_type);
-			if (filterValues.status) params.set("status", filterValues.status);
-
-			const result = await moderationAdminApi.getQueue(params.toString());
-			if (result.ok) {
-				const d = result.data as { items: ModItem[]; total?: number; page: number; total_pages: number } | null;
-				items = d?.items ?? [];
-				totalItems = d?.total ?? items.length;
-				totalPages = d?.total_pages ?? 1;
-			} else {
-				error = result.error ?? t("common.error", "Failed to load moderation queue");
-			}
+			await moderationAdminApi.bulkAction({ ids: idArr, action: "approve" });
 		} catch (e) {
-			error = e instanceof Error ? e.message : t("common.error", "Failed to load moderation queue");
+			pageError = e instanceof Error ? e.message : t("common.error", "Bulk action failed");
 		} finally {
-			loading = false;
+			bulkActing = false;
 		}
 	}
 
-	function handleSearch(values: Record<string, string>) {
-		searchQuery = values.search ?? "";
-		filterValues = values;
-		currentPage = 0;
+	async function bulkReject(ids: Set<string>) {
+		const idArr = Array.from(ids);
+		if (idArr.length === 0) return;
+		if (bulkActing) return; // in-flight guard
+		bulkActing = true;
+		pageError = "";
+		try {
+			await moderationAdminApi.bulkAction({ ids: idArr, action: "reject" });
+		} catch (e) {
+			pageError = e instanceof Error ? e.message : t("common.error", "Bulk action failed");
+		} finally {
+			bulkActing = false;
+		}
 	}
 
-	function handleClear() {
-		searchQuery = "";
-		filterValues = {};
-		currentPage = 0;
-	}
-
-	function openView(item: ModItem) {
-		viewTarget = item;
-		showViewModal = true;
-	}
+	// ── State-action confirmation modal ─────────────────────────────────────
+	// EntityPage's confirm Modal only covers default delete; the moderation
+	// approve/reject/delete actions need an optional reason, so they keep a
+	// page-local Modal. After the API call succeeds, controller.reload() refetches.
+	let entityController = $state<EntityPageController | undefined>(undefined);
+	let acting = $state(false);
+	let actionTarget = $state<ModItem | null>(null);
+	let actionType = $state<"approve" | "reject" | "delete">("approve");
+	let actionReason = $state("");
+	let showActionModal = $state(false);
 
 	function openAction(item: ModItem, action: "approve" | "reject" | "delete") {
-		actionItem = item;
+		actionTarget = item;
 		actionType = action;
 		actionReason = "";
 		showActionModal = true;
 	}
 
 	async function executeAction() {
-		if (!actionItem) return;
+		if (!actionTarget) return;
 		acting = true;
 		try {
 			const body: Record<string, unknown> = { action: actionType };
 			if (actionReason.trim()) body.reason = actionReason.trim();
-			const result = await moderationAdminApi.updateItem(actionItem.id, body);
+			const result = await moderationAdminApi.updateItem(actionTarget.id, body);
 			if (result.ok) {
 				showActionModal = false;
-				loadItems();
+				entityController?.reload();
 			} else {
-				error = result.error ?? t("common.error", "Action failed");
+				pageError = result.error ?? t("common.error", "Action failed");
 			}
 		} catch {
-			error = t("common.error", "Action failed");
+			pageError = t("common.error", "Action failed");
 		} finally {
 			acting = false;
 		}
 	}
 
-	async function bulkAction(action: "approve" | "reject") {
-		const ids = Array.from(selectedIds);
-		if (ids.length === 0) return;
-		acting = true;
-		try {
-			await moderationAdminApi.bulkAction({ ids, action });
-			selectedIds = new Set();
-			loadItems();
-		} catch {
-			error = t("common.error", "Bulk action failed");
-		} finally {
-			acting = false;
+	// ── Row actions ─────────────────────────────────────────────────────────
+	// Custom actions replace defaults, so View is included explicitly.
+	const rowActions = $derived.by<ActionItem[]>(() => {
+		const acts: ActionItem[] = [
+			{
+				label: t("common.view", "View"),
+				icon: Eye,
+				onclick: (row: ModItem, ctx) => ctx?.openView(row)
+			}
+		];
+		if (canModerate) {
+			acts.push({
+				label: t("moderation.approve", "Approve"),
+				icon: Check,
+				onclick: (row: ModItem) => openAction(row, "approve"),
+				show: (row: ModItem) => row.status === "pending"
+			});
+			acts.push({
+				label: t("moderation.reject", "Reject"),
+				icon: X,
+				variant: "destructive",
+				onclick: (row: ModItem) => openAction(row, "reject"),
+				show: (row: ModItem) => row.status === "pending"
+			});
+			acts.push({
+				label: t("common.delete", "Delete"),
+				icon: Trash2,
+				variant: "destructive",
+				onclick: (row: ModItem) => openAction(row, "delete")
+			});
 		}
-	}
+		return acts;
+	});
 
-	$effect(() => {
-		void currentPage;
-		void pageSize;
-		void searchQuery;
-		void filterValues;
-		loadItems();
+	// `fields` is required by EntityPageConfig but this page is readonly (no
+	// create/edit form), so an empty array suffices.
+	const fields: FieldDef[] = [];
+
+	// Config built as a $derived so canModerate / rowActions updates propagate.
+	const config = $derived<EntityPageConfig>({
+		title: t("moderation.title", "Moderation"),
+		description: t("moderation.description", "Review and moderate platform content"),
+		readonly: true,
+		pageSize: 25,
+		columns: [
+			{
+				key: "type",
+				label: t("moderation.source", "Source"),
+				sortable: true,
+				render: (v: string) => {
+					const colors = v === "ai_flag" ? "bg-info/15 text-info dark:text-info" : "bg-warning/15 text-warning dark:text-warning";
+					const label = v === "ai_flag" ? t("app.moderation.queue.ai_flag", "AI Flag") : t("app.moderation.queue.user_report", "User Report");
+					return `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium ${colors}">${label}</span>`;
+				}
+			},
+			{
+				key: "content",
+				label: t("moderation.content_preview", "Content"),
+				render: (v: string) => v ? `<span class="text-xs max-w-xs truncate block">${v}</span>` : '<span style="color: var(--color-muted)">—</span>'
+			},
+			{
+				key: "status",
+				label: t("common.status", "Status"),
+				sortable: true,
+				render: (v: string) => {
+					const colors = v === "pending" ? "bg-warning/15 text-warning dark:text-warning" : v === "resolved" ? "bg-success/15 text-success dark:text-success" : v === "dismissed" ? "bg-muted/15 text-muted dark:text-muted" : v === "flagged" ? "bg-warning/15 text-warning dark:text-warning" : "bg-info/15 text-info dark:text-info";
+					return `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium ${colors}">${v}</span>`;
+				}
+			},
+			{
+				key: "reporter",
+				label: t("moderation.reporter", "Reporter"),
+				render: (v: string) => v || "—"
+			},
+			{
+				key: "created_at",
+				label: t("common.created", "Created"),
+				sortable: true,
+				render: (v: string) => new Date(v).toLocaleDateString()
+			}
+		],
+		filters,
+		actions: rowActions,
+		bulkActions: canModerate
+			? [
+					{
+						label: t("moderation.approve", "Approve"),
+						icon: Check,
+						onclick: bulkApprove
+					},
+					{
+						label: t("moderation.reject", "Reject"),
+						icon: X,
+						variant: "destructive",
+						onclick: bulkReject
+					}
+				]
+			: undefined,
+		fields,
+		load: async ({ page, pageSize, q, filter }) => {
+			const params = new URLSearchParams({
+				page_size: String(pageSize),
+				page_offset: String(page * pageSize)
+			});
+			if (q) params.set("q", q);
+			if (filter.status) params.set("status", filter.status);
+			if (filter.content_type) params.set("content_type", filter.content_type);
+			const result = await moderationAdminApi.getQueue(params.toString());
+			if (result.ok) {
+				const d = result.data as { items: ModItem[]; total?: number; page: number; total_pages: number } | null;
+				return {
+					data: d?.items ?? [],
+					total: d?.total ?? (d?.items ?? []).length,
+					totalPages: d?.total_pages ?? 1
+				};
+			}
+			throw new Error(result.error ?? t("common.error", "Failed to load moderation queue"));
+		},
+		viewSnippet: ModItemView
 	});
 </script>
 
@@ -216,102 +246,30 @@
 	<title>{t("moderation.title", "Moderation")} — JapaConnect Admin</title>
 </svelte:head>
 
-<PageHeader
-	title={t("moderation.title", "Moderation")}
-	description={t("moderation.description", "Review and moderate platform content")}
-	actions={[
-		{ label: t("common.refresh", "Refresh"), icon: RefreshCw, variant: "ghost", onclick: loadItems }
-	]}
-/>
-
-{#if error}
-	<div class="mb-4 rounded-lg p-3 text-sm" style="background: color-mix(in srgb, var(--color-danger) 10%, transparent); color: var(--color-danger)">
-		{error}
+{#if pageError}
+	<div
+		class="mb-4 rounded-lg p-3 text-sm"
+		style="background: color-mix(in srgb, var(--color-danger) 10%, transparent); color: var(--color-danger)"
+	>
+		{pageError}
 	</div>
 {/if}
 
-{#if selectedIds.size > 0}
-	<div class="mb-4 flex items-center gap-3 rounded-lg p-3" style="background: var(--color-primary); color: white">
-		<span class="text-sm font-medium">{selectedIds.size} {t('app.moderation.queue.selected_count', 'selected')}</span>
-		<Button variant="ghost" size="sm" onclick={() => bulkAction("approve")} disabled={acting}>
-			<Check class="mr-1 h-3.5 w-3.5" /> {t("moderation.approve", "Approve")}
-		</Button>
-		<Button variant="ghost" size="sm" onclick={() => bulkAction("reject")} disabled={acting}>
-			<X class="mr-1 h-3.5 w-3.5" /> {t("moderation.reject", "Reject")}
-		</Button>
-	</div>
-{/if}
+<EntityPage {config} bind:controller={entityController} />
 
-<Card>
-	<CardHeader>
-		<FilterBar filters={filterDefs} onApply={(vals) => { filterValues = vals; currentPage = 0; loadItems(); }} />
-	</CardHeader>
-	<CardContent>
-		{#if loading}
-			<TableSkeleton rows={8} columns={columns.length} />
-		{:else}
-			<div aria-live="polite">
-				<DataTable
-					{columns}
-					data={items}
-					selectable={canModerate}
-					bind:selectedIds
-				/>
-			</div>
-			<Pagination bind:page={currentPage} {totalPages} {totalItems} bind:pageSize />
-		{/if}
-	</CardContent>
-</Card>
-
-<!-- View Modal -->
-<Modal bind:open={showViewModal} title={t("moderation.details", "Moderation Details")}>
-	{#if viewTarget}
-		<div class="space-y-4">
-			<div class="grid grid-cols-2 gap-4">
-				<div>
-					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('moderation.source', 'Source')}</p>
-					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.type}</p>
-				</div>
-				<div>
-					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('common.status', 'Status')}</p>
-					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.status}</p>
-				</div>
-				<div>
-					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('moderation.reporter', 'Reporter')}</p>
-					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.reporter || "—"}</p>
-				</div>
-				<div>
-					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('common.created', 'Created')}</p>
-					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{new Date(viewTarget.created_at).toLocaleString()}</p>
-				</div>
-				{#if viewTarget.content}
-					<div class="col-span-2">
-						<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('moderation.content_preview', 'Content Preview')}</p>
-						<p class="mt-1 text-sm rounded-lg p-3" style="background: var(--color-surface); color: var(--color-foreground)">{viewTarget.content}</p>
-					</div>
-				{/if}
-			</div>
-		</div>
-	{/if}
-	<div class="mt-6 flex justify-end gap-2">
-		{#if viewTarget && canModerate}
-			<Button variant="outline" onclick={() => { showViewModal = false; openAction(viewTarget!, "approve"); }}>
-				<Check class="mr-1 h-3.5 w-3.5" /> {t("app.moderation.queue.approve_action", "Approve")}
-			</Button>
-			<Button variant="destructive" onclick={() => { showViewModal = false; openAction(viewTarget!, "reject"); }}>
-				<X class="mr-1 h-3.5 w-3.5" /> {t("app.moderation.queue.reject_action", "Reject")}
-			</Button>
-		{/if}
-		<Button variant="outline" onclick={() => (showViewModal = false)}>{t('common.close', 'Close')}</Button>
-	</div>
-</Modal>
-
-<!-- Action Modal -->
-<Modal bind:open={showActionModal} title={actionType === "approve" ? t("moderation.approve_title", "Approve Content") : actionType === "reject" ? t("moderation.reject_title", "Reject Content") : t("moderation.delete_title", "Delete Content")}>
-	{#if actionItem}
+<!-- ── State-action confirmation modal (approve/reject/delete with optional reason) ── -->
+<Modal
+	bind:open={showActionModal}
+	title={actionType === "approve"
+		? t("moderation.approve_title", "Approve Content")
+		: actionType === "reject"
+			? t("moderation.reject_title", "Reject Content")
+			: t("moderation.delete_title", "Delete Content")}
+>
+	{#if actionTarget}
 		<div class="mb-3 rounded-lg p-3 text-sm" style="background: var(--color-surface); border: 1px solid var(--color-border)">
-			<p class="font-medium" style="color: var(--color-foreground)">{actionItem.type}</p>
-			<p style="color: var(--color-muted)">{actionItem.content || "—"}</p>
+			<p class="font-medium" style="color: var(--color-foreground)">{actionTarget.type}</p>
+			<p style="color: var(--color-muted)">{actionTarget.content || "—"}</p>
 		</div>
 	{/if}
 	{#if actionType !== "approve"}
@@ -324,31 +282,45 @@
 		></textarea>
 	{/if}
 	<div class="mt-4 flex justify-end gap-2">
-		<Button variant="ghost" onclick={() => showActionModal = false}>{t("common.cancel", "Cancel")}</Button>
+		<Button variant="ghost" onclick={() => (showActionModal = false)}>{t("common.cancel", "Cancel")}</Button>
 		<Button variant={actionType === "approve" ? "default" : "destructive"} onclick={executeAction} disabled={acting}>
-			{acting ? t("app.moderation.queue.processing", "Processing...") : actionType === "approve" ? t("moderation.approve", "Approve") : actionType === "reject" ? t("moderation.reject", "Reject") : t("common.delete", "Delete")}
+			{acting
+				? t("app.moderation.queue.processing", "Processing...")
+				: actionType === "approve"
+					? t("moderation.approve", "Approve")
+					: actionType === "reject"
+						? t("moderation.reject", "Reject")
+						: t("common.delete", "Delete")}
 		</Button>
 	</div>
 </Modal>
 
-<!-- ModActionsCell component -->
-{#snippet ModActionsCell({ value, row }: { value: any; row: ModItem })}
-	<div class="flex items-center gap-1">
-		<Button variant="ghost" size="sm" onclick={() => openView(row)}>
-			<Eye class="h-3.5 w-3.5" />
-		</Button>
-		{#if canModerate}
-			{#if row.status === "pending"}
-				<Button variant="ghost" size="sm" onclick={() => openAction(row, "approve")} style="color: var(--color-success)">
-					<Check class="h-3.5 w-3.5" />
-				</Button>
-				<Button variant="ghost" size="sm" onclick={() => openAction(row, "reject")} style="color: var(--color-danger)">
-					<X class="h-3.5 w-3.5" />
-				</Button>
+<!-- ── View slide-over body (mirrors the legacy view modal) ──────────────── -->
+{#snippet ModItemView({ row }: { row: ModItem })}
+	<div class="space-y-4">
+		<div class="grid grid-cols-2 gap-4">
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("moderation.source", "Source")}</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.type}</p>
+			</div>
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("common.status", "Status")}</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.status}</p>
+			</div>
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("moderation.reporter", "Reporter")}</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.reporter || "—"}</p>
+			</div>
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("common.created", "Created")}</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{new Date(row.created_at).toLocaleString()}</p>
+			</div>
+			{#if row.content}
+				<div class="col-span-2">
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("moderation.content_preview", "Content Preview")}</p>
+					<p class="mt-1 rounded-lg p-3 text-sm" style="background: var(--color-surface); color: var(--color-foreground)">{row.content}</p>
+				</div>
 			{/if}
-			<Button variant="ghost" size="sm" onclick={() => openAction(row, "delete")} style="color: var(--color-danger)">
-				<Trash2 class="h-3.5 w-3.5" />
-			</Button>
-		{/if}
+		</div>
 	</div>
 {/snippet}

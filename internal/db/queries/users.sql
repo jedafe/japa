@@ -208,6 +208,41 @@ FROM contents c
 WHERE c.id = $1 AND c.tenant_id = $2 AND c.author_id = $3
   AND c.status = 'draft' AND c.deleted_at IS NULL;
 
+-- name: GetUserContent :one
+-- Returns the caller's own content by ID (tenant + author scoped, any
+-- status). Used by GET /api/v1/me/content/{id} so the /create composer can
+-- restore published, scheduled, or draft content for editing — the
+-- status='draft'-scoped /me/drafts/{id} route only covers drafts. Mirrors
+-- the GetUserDraft column set so the response shape is identical. A missing
+-- row or content owned by another user/tenant resolves to pgx.ErrNoRows → 404.
+SELECT c.id, c.tenant_id, c.author_id, c.organization_id, c.space_id,
+       c.content_type, c.title, c.slug, c.body, c.body_html, c.field_values,
+       c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,
+       c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
+       c.status, c.visibility, c.is_locked, c.is_pinned,
+       c.read_time_minutes, c.view_count, c.comment_count, c.share_count,
+       c.reshare_count, c.publish_at, c.published_at, c.created_at, c.updated_at
+FROM contents c
+WHERE c.id = $1 AND c.tenant_id = $2 AND c.author_id = $3
+  AND c.deleted_at IS NULL;
+
+-- name: GetContentByIDForEditor :one
+-- Returns any content by ID within the tenant (no author filter). Used by
+-- GET /api/v1/me/content/{id} as a fallback when the caller is a super-admin
+-- or holds the RBAC `content.edit` permission but is not the content owner.
+-- Mirrors the GetUserContent column set so the response shape is identical.
+-- A missing row or a different tenant's content resolves to pgx.ErrNoRows → 404.
+SELECT c.id, c.tenant_id, c.author_id, c.organization_id, c.space_id,
+       c.content_type, c.title, c.slug, c.body, c.body_html, c.field_values,
+       c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,
+       c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
+       c.status, c.visibility, c.is_locked, c.is_pinned,
+       c.read_time_minutes, c.view_count, c.comment_count, c.share_count,
+       c.reshare_count, c.publish_at, c.published_at, c.created_at, c.updated_at
+FROM contents c
+WHERE c.id = $1 AND c.tenant_id = $2
+  AND c.deleted_at IS NULL;
+
 -- name: ListUserBookmarks :many
 -- Enriches each bookmark with the title + slug of the bookmarked entity.
 -- entity_type drives which table is joined (content/blog_post→contents,

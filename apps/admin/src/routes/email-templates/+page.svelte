@@ -1,349 +1,486 @@
 <script lang="ts">
-	import PageHeader from "$lib/components/layout/page-header.svelte";
-	import { Card, CardContent, CardHeader } from "$lib/components/ui/card";
-	import { DataTable } from "$lib/components/ui/data-table";
-	import Pagination from "$lib/components/ui/Pagination.svelte";
-	import { Badge } from "$lib/components/ui/badge";
-	import { Button } from "$lib/components/ui/button";
-	import { Modal } from "$lib/components/ui/modal";
-	import { TableSkeleton } from "$lib/components/ui/skeleton";
-	import { Tabs } from "$lib/components/ui/tabs";
-	import { Tabs as BitsTabs } from "bits-ui";
-	import { RefreshCw, Eye, RotateCcw, Send, Pencil } from "lucide-svelte";
-	import { emailTemplatesAdminApi } from "$lib/api";
-	import { t } from "$lib/stores/i18n.svelte";
-	import { hasPermission } from "$lib/stores/permissions.svelte";
+	// /email-templates — migrated to the EntityPage scaffold.
+	//
+	// Email templates are predefined (no create/delete). The page is READ + EDIT
+	// with two page-local sub-flows: Reset (reset to default) and Test Send.
+	// `readonly: true` hides the Create button in the header; a custom `actions`
+	// array (View + Edit) renders regardless of readonly. Reset/Test buttons live
+	// inside the `formSnippet` and trigger page-local confirm/test Modals.
+	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
+	import { Modal } from '$lib/components/ui/modal';
+	import { Button } from '$lib/components/ui/button';
+	import { Tabs } from '$lib/components/ui/tabs';
+	import { Tabs as BitsTabs } from 'bits-ui';
+	import { emailTemplatesAdminApi } from '$lib/api';
+	import { t } from '$lib/stores/i18n.svelte';
+	import { hasPermission } from '$lib/stores/permissions.svelte';
+	import { Eye, Pencil, RotateCcw, Send } from 'lucide-svelte';
 
 	type EmailTemplate = {
 		id: string;
 		name: string;
 		slug: string;
 		subject: string;
+		html_body?: string;
+		plain_text_body?: string;
 		is_active: boolean;
 		updated_at: string;
 	};
 
-	let templates = $state<EmailTemplate[]>([]);
-	let currentPage = $state(0);
-	let totalItems = $state(0);
-	let pageSize = $state(25);
-	let totalPages = $state(1);
-	let loading = $state(true);
-	let error = $state("");
-	let success = $state("");
-	let searchQuery = $state("");
+	const canManageTemplates = $derived(hasPermission('email.templates.manage'));
 
-	// View/Edit modal
-	let showViewModal = $state(false);
-	let viewingTemplate = $state<EmailTemplate | null>(null);
-	let editName = $state("");
-	let editSubject = $state("");
-	let editBody = $state("");
-	let bodyTab = $state("edit");
-	let saving = $state(false);
-	let formError = $state("");
-	let modalLoading = $state(false);
+	// ── EntityPage controller (for page-local reload after reset/test) ───────
+	let entityController = $state<EntityPageController | undefined>(undefined);
+	let pageError = $state('');
 
-	const bodyTabs = [
-		{ value: "edit", label: t("email_templates.tab_edit", "Edit") },
-		{ value: "preview", label: t("email_templates.tab_preview", "Preview") }
-	];
-
-	// Reset modal
-	let showResetModal = $state(false);
-	let resetTarget = $state<EmailTemplate | null>(null);
-
-	// Test modal
-	let showTestModal = $state(false);
-	let testTarget = $state<EmailTemplate | null>(null);
-	let testEmail = $state("");
-	let testing = $state(false);
-
-	const canManageTemplates = $derived(hasPermission("email.templates.manage"));
-
+	// ── Preview helpers (mirror legacy sample-variable substitution) ────────
 	const templateSampleValues: Record<string, string> = {
-		SiteName: "JapaConnect",
-		SiteURL: "https://japaconnect.com",
-		UserName: "Test User",
-		ActionURL: "https://japaconnect.com/reset-password?token=abc123",
-		Expiry: "1 hour",
-		SupportURL: "https://japaconnect.com/support",
+		SiteName: 'JapaConnect',
+		SiteURL: 'https://japaconnect.com',
+		UserName: 'Test User',
+		ActionURL: 'https://japaconnect.com/reset-password?token=abc123',
+		Expiry: '1 hour',
+		SupportURL: 'https://japaconnect.com/support',
 	};
 
-	const previewBody = $derived.by(() => {
-		if (!editBody) return "";
-		let body = editBody;
+	function renderPreview(html: string): string {
+		if (!html) return '';
+		let body = html;
 		for (const [variable, value] of Object.entries(templateSampleValues)) {
-			const pattern = new RegExp(`{{\\s*\\.${variable}\\s*}}`, "g");
+			const pattern = new RegExp(`{{\\s*\\.${variable}\\s*}}`, 'g');
 			body = body.replace(pattern, value);
 		}
-		return body.replace(/\{\{\s*(?:if|else|range|end)\b[^}]*\}\}/g, "");
-	});
-
-	const columns = [
-		{ key: "name", label: t("email_templates.name", "Name"), sortable: true },
-		{ key: "slug", label: t("email_templates.slug", "Slug"), sortable: true },
-		{ key: "subject", label: t("email_templates.subject", "Subject"), sortable: true },
-		{ key: "is_active", label: t("common.status", "Status"), sortable: true,
-			render: (v: boolean) => v ? t("common.active", "Active") : t("common.inactive", "Inactive")
-		},
-		{ key: "actions", label: t("common.actions", "Actions"), class: "w-48",
-			componentSnippet: TemplateActionsCell
-		}
-	];
-
-	async function loadTemplates() {
-		loading = true;
-		error = "";
-		try {
-			const params = new URLSearchParams({
-				page_size: String(pageSize),
-				page_offset: String(currentPage * pageSize)
-			});
-			const result = await emailTemplatesAdminApi.list(params.toString());
-			if (result.ok) {
-				const d = result.data as unknown as { items: EmailTemplate[]; total?: number; page: number; total_pages: number };
-				templates = d.items ?? [];
-				totalItems = d.total ?? (d.items?.length ?? 0) + (d.total_pages > 1 ? (d.total_pages - 1) * pageSize : 0);
-				totalPages = d.total_pages ?? 1;
-			} else {
-				error = result.error ?? t("common.error", "Failed to load email templates");
-			}
-		} catch (e) {
-			error = e instanceof Error ? e.message : t("common.error", "Failed to load email templates");
-		} finally {
-			loading = false;
-		}
+		return body.replace(/\{\{\s*(?:if|else|range|end)\b[^}]*\}\}/g, '');
 	}
 
-	async function openView(id: string, defaultTab: string = "edit") {
-		let template = templates.find((tpl) => tpl.id === id);
-		if (!template) return;
-		bodyTab = defaultTab;
-		viewingTemplate = template;
-		formError = "";
-		editName = template.name;
-		modalLoading = true;
-		try {
-			const result = await emailTemplatesAdminApi.get(id);
-			if (result.ok && result.data) {
-				const data = result.data as { subject?: string; html_body?: string; plain_text_body?: string };
-				editSubject = data.subject ?? template.subject;
-				editBody = data.html_body || data.plain_text_body || "";
-			}
-		} catch (e) {
-			error = e instanceof Error ? e.message : t("common.error", "Failed to load template");
-		} finally {
-			modalLoading = false;
-			showViewModal = true;
-		}
-	}
+	// ── Reset sub-flow (page-local Modal) ────────────────────────────────────
+	let showResetModal = $state(false);
+	let resetTarget = $state<EmailTemplate | null>(null);
+	let resetting = $state(false);
 
-	async function saveTemplate() {
-		if (!viewingTemplate) return;
-		if (!editName.trim()) {
-			formError = t("email_templates.name_required", "Name cannot be empty");
-			return;
-		}
-		if (!editSubject.trim()) {
-			formError = t("email_templates.subject_required", "Subject cannot be empty");
-			return;
-		}
-		if (!editBody.trim()) {
-			formError = t("email_templates.body_required", "Body cannot be empty");
-			return;
-		}
-		formError = "";
-		saving = true;
-		error = "";
-		try {
-			const result = await emailTemplatesAdminApi.update(viewingTemplate.id, {
-				name: editName.trim(),
-				subject: editSubject,
-				html_body: editBody
-			});
-			if (result.ok) {
-				showViewModal = false;
-				success = t("email_templates.updated", "Template updated");
-				loadTemplates();
-			} else {
-				error = result.error ?? t("common.error", "Failed to save template");
-			}
-		} catch (e) {
-			error = e instanceof Error ? e.message : t("common.error", "Failed to save template");
-		} finally {
-			saving = false;
-		}
+	function openReset(row: EmailTemplate) {
+		resetTarget = row;
+		showResetModal = true;
 	}
 
 	async function confirmReset() {
 		if (!resetTarget) return;
-		const result = await emailTemplatesAdminApi.reset(resetTarget.id);
-		if (result.ok) {
-			showResetModal = false;
-			resetTarget = null;
-			success = t("email_templates.reset_done", "Template reset to default");
-			loadTemplates();
-		} else {
-			error = result.error ?? t("common.error", "Failed to reset template");
+		if (resetting) return;
+		resetting = true;
+		pageError = '';
+		try {
+			const result = await emailTemplatesAdminApi.reset(resetTarget.id);
+			if (result.ok) {
+				showResetModal = false;
+				resetTarget = null;
+				entityController?.reload();
+			} else {
+				pageError = result.error ?? t('common.error', 'Failed to reset template');
+			}
+		} catch (e) {
+			pageError = e instanceof Error ? e.message : t('common.error', 'Failed to reset template');
+		} finally {
+			resetting = false;
 		}
+	}
+
+	// ── Test send sub-flow (page-local Modal) ────────────────────────────────
+	let showTestModal = $state(false);
+	let testTarget = $state<EmailTemplate | null>(null);
+	let testEmail = $state('');
+	let testing = $state(false);
+
+	function openTest(row: EmailTemplate) {
+		testTarget = row;
+		testEmail = '';
+		showTestModal = true;
 	}
 
 	async function sendTest() {
 		if (!testTarget || !testEmail.trim()) return;
+		if (testing) return;
 		testing = true;
+		pageError = '';
 		try {
 			const result = await emailTemplatesAdminApi.test(testTarget.id, { email: testEmail.trim() });
 			if (result.ok) {
 				showTestModal = false;
 				testTarget = null;
-				success = t("email_templates.test_sent", "Test email sent");
 			} else {
-				error = result.error ?? t("common.error", "Failed to send test");
+				pageError = result.error ?? t('common.error', 'Failed to send test');
 			}
 		} catch (e) {
-			error = e instanceof Error ? e.message : t("common.error", "Failed to send test");
+			pageError = e instanceof Error ? e.message : t('common.error', 'Failed to send test');
 		} finally {
 			testing = false;
 		}
 	}
 
-	$effect(() => {
-		void currentPage;
-		void pageSize;
-		void searchQuery;
-		loadTemplates();
-	});
+	// ── Body tab state for the edit/preview tabs in the form ─────────────────
+	let bodyTab = $state('edit');
+
+	// `fields` seeds the edit-form value; the actual inputs are in `formSnippet`.
+	const fields: FieldDef[] = [
+		{ key: 'subject', label: t('email_templates.subject', 'Subject'), type: 'text' },
+		{ key: 'html_body', label: t('email_templates.body', 'Body (HTML)'), type: 'textarea' },
+		{ key: 'plain_text_body', label: t('email_templates.plain_text', 'Plain Text Body'), type: 'textarea' },
+		{ key: 'is_active', label: t('common.status', 'Status'), type: 'checkbox' },
+	];
+
+	// Fetch full template detail (list returns summary only) then open edit/view.
+	async function fetchDetail(row: EmailTemplate): Promise<EmailTemplate> {
+		try {
+			const res = await emailTemplatesAdminApi.get(row.id);
+			if (res.ok && res.data) {
+				const d = res.data as Record<string, any>;
+				return {
+					...row,
+					subject: d.subject ?? row.subject,
+					html_body: d.html_body ?? '',
+					plain_text_body: d.plain_text_body ?? '',
+					is_active: d.is_active ?? row.is_active,
+				};
+			}
+		} catch {
+			// fall through with original row
+		}
+		return row;
+	}
+
+	const config: EntityPageConfig = {
+		title: t('email_templates.title', 'Email Templates'),
+		description: t('email_templates.description', 'Manage system email templates'),
+		// readonly hides the Create button (no create API); custom actions below
+		// still render because `config.actions` replaces the defaults entirely.
+		readonly: true,
+		editPermission: 'email.templates.manage',
+		pageSize: 25,
+		columns: [
+			{ key: 'name', label: t('email_templates.name', 'Name'), sortable: true },
+			{ key: 'slug', label: t('email_templates.slug', 'Slug'), sortable: true },
+			{ key: 'subject', label: t('email_templates.subject', 'Subject'), sortable: true },
+			{ key: 'is_active', label: t('common.status', 'Status'), sortable: true, componentSnippet: StatusCell },
+			{
+				key: 'updated_at',
+				label: t('common.updated', 'Updated'),
+				sortable: true,
+				render: (v: string) => (v ? new Date(v).toLocaleDateString() : '—'),
+			},
+		],
+		filters: [
+			{
+				key: 'is_active',
+				label: t('common.status', 'Status'),
+				options: [
+					{ value: 'true', label: t('common.active', 'Active') },
+					{ value: 'false', label: t('common.inactive', 'Inactive') },
+				],
+			},
+		],
+		actions: [
+			{
+				label: t('common.view', 'View'),
+				icon: Eye,
+				onclick: async (row: EmailTemplate, ctx) => {
+					const enriched = await fetchDetail(row);
+					ctx?.openView(enriched);
+				},
+			},
+			{
+				label: t('common.edit', 'Edit'),
+				icon: Pencil,
+				onclick: async (row: EmailTemplate, ctx) => {
+					if (!canManageTemplates) return;
+					bodyTab = 'edit';
+					const enriched = await fetchDetail(row);
+					ctx?.openEdit(enriched);
+				},
+				show: () => canManageTemplates,
+			},
+		],
+		fields,
+		load: async ({ page, pageSize, filter }) => {
+			const params = new URLSearchParams({
+				page_size: String(pageSize),
+				page_offset: String(page * pageSize),
+			});
+			if (filter.is_active) params.set('is_active', filter.is_active);
+			const result = await emailTemplatesAdminApi.list(params.toString());
+			if (result.ok) {
+				const d = result.data as
+					| { items: EmailTemplate[]; total?: number; total_pages: number }
+					| EmailTemplate[];
+				if (Array.isArray(d)) {
+					return { data: d, total: d.length, totalPages: 1 };
+				}
+				const items = d.items ?? [];
+				return {
+					data: items,
+					total: d.total ?? items.length,
+					totalPages: d.total_pages ?? 1,
+				};
+			}
+			throw new Error(result.error ?? t('common.error', 'Failed to load email templates'));
+		},
+		update: async (id, body) => {
+			const res = await emailTemplatesAdminApi.update(id, {
+				subject: String(body.subject ?? '').trim(),
+				html_body: String(body.html_body ?? ''),
+				plain_text_body: String(body.plain_text_body ?? ''),
+				is_active: !!body.is_active,
+			});
+			return res.ok ? { ok: true } : { ok: false, error: res.error };
+		},
+		viewSnippet: TemplateView,
+		formSnippet: TemplateForm,
+	};
 </script>
 
 <svelte:head>
-	<title>{t("email_templates.title", "Email Templates")} — JapaConnect Admin</title>
+	<title>{t('email_templates.title', 'Email Templates')} — JapaConnect Admin</title>
 </svelte:head>
 
-<PageHeader
-	title={t("email_templates.title", "Email Templates")}
-	description={t("email_templates.description", "Manage system email templates")}
-	actions={[
-		{ label: t("common.refresh", "Refresh"), icon: RefreshCw, variant: "ghost", onclick: loadTemplates }
-	]}
-/>
-
-{#if error}
-	<div class="mb-4 rounded-lg p-3 text-sm" style="background: color-mix(in srgb, var(--color-danger) 10%, transparent); color: var(--color-danger)">
-		{error}
-	</div>
-{/if}
-{#if success}
-	<div class="mb-4 rounded-lg p-3 text-sm" style="background: color-mix(in srgb, var(--color-success) 10%, transparent); color: var(--color-success)">
-		{success}
+{#if pageError}
+	<div
+		class="mb-4 rounded-lg p-3 text-sm"
+		style="background: color-mix(in srgb, var(--color-danger) 10%, transparent); color: var(--color-danger)"
+	>
+		{pageError}
 	</div>
 {/if}
 
-<Card>
-	<CardContent>
-		{#if loading}
-			<TableSkeleton rows={8} columns={columns.length} />
-		{:else if templates.length === 0}
-			<div class="py-12 text-center text-sm" style="color: var(--color-muted)">
-				{t("email_templates.empty", "No email templates found")}
-			</div>
-		{:else}
-			<DataTable {columns} data={templates} showPagination={false} />
-			<Pagination
-				bind:page={currentPage}
-				{totalPages}
-				{totalItems}
-				bind:pageSize
-			/>
-		{/if}
-	</CardContent>
-</Card>
+<EntityPage {config} bind:controller={entityController} />
 
-<!-- View/Edit Modal -->
-<Modal bind:open={showViewModal} title={t("email_templates.view", "Email Template")}>
-	{#if viewingTemplate}
-		<div class="space-y-4">
-			{#if formError}
-				<div class="rounded-lg p-3 text-sm" style="background: color-mix(in srgb, var(--color-danger) 10%, transparent); color: var(--color-danger)">
-					{formError}
-				</div>
-			{/if}
-			<div>
-				<label for="et-name" class="block text-sm font-medium" style="color: var(--color-foreground)">{t("email_templates.name", "Name")}</label>
-				<input id="et-name" type="text" bind:value={editName} class="mt-1 w-full rounded-lg border p-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" />
-			</div>
-			<div>
-				<p class="text-xs font-mono" style="color: var(--color-muted)">{viewingTemplate.slug}</p>
-			</div>
-			<div>
-				<label for="et-subject" class="block text-sm font-medium" style="color: var(--color-foreground)">{t("email_templates.subject", "Subject")}</label>
-				<input id="et-subject" type="text" bind:value={editSubject} class="mt-1 w-full rounded-lg border p-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" />
-			</div>
-			<div>
-				<label for="et-body" class="block text-sm font-medium" style="color: var(--color-foreground)">{t("email_templates.body", "Body (HTML)")}</label>
-				<Tabs tabs={bodyTabs} bind:value={bodyTab} class="mt-1">
-					{#snippet children()}
-						<BitsTabs.Content value="edit">
-							<textarea id="et-body" bind:value={editBody} rows="12" class="w-full rounded-lg border p-2 text-sm font-mono" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"></textarea>
-						</BitsTabs.Content>
-						<BitsTabs.Content value="preview">
-							<iframe srcdoc={previewBody} title="Email body preview" class="w-full rounded-lg border" style="border-color: var(--color-border); min-height: 300px;"></iframe>
-						</BitsTabs.Content>
-					{/snippet}
-				</Tabs>
-			</div>
-		</div>
-		<div class="mt-4 flex justify-end gap-2">
-			<Button variant="ghost" onclick={() => showViewModal = false}>{t("common.cancel", "Cancel")}</Button>
-			<Button onclick={saveTemplate} disabled={saving}>{saving ? t("common.saving", "Saving...") : t("common.save", "Save")}</Button>
-		</div>
-	{/if}
-</Modal>
-
-<!-- Reset Confirm -->
-<Modal bind:open={showResetModal} title={t("email_templates.reset", "Reset Template")}>
+<!-- Reset confirm Modal (page-local) -->
+<Modal bind:open={showResetModal} title={t('email_templates.reset', 'Reset Template')}>
 	{#if resetTarget}
 		<p class="text-sm" style="color: var(--color-foreground)">
-			{t("email_templates.reset_confirm", "Reset template")} <strong>{resetTarget.name}</strong> {t("email_templates.reset_to_default", "to its default content?")}
+			{t('email_templates.reset_confirm', 'Reset template')} <strong>{resetTarget.name}</strong>
+			{t('email_templates.reset_to_default', 'to its default content?')}
 		</p>
-		<p class="mt-2 text-sm" style="color: var(--color-danger)">{t("common.cannotUndo", "This action cannot be undone.")}</p>
+		<p class="mt-2 text-sm" style="color: var(--color-danger)">
+			{t('common.cannotUndo', 'This action cannot be undone.')}
+		</p>
 	{/if}
 	<div class="mt-4 flex justify-end gap-2">
-		<Button variant="ghost" onclick={() => showResetModal = false}>{t("common.cancel", "Cancel")}</Button>
-		<Button variant="destructive" onclick={confirmReset}>{t("email_templates.reset", "Reset")}</Button>
+		<Button variant="ghost" onclick={() => (showResetModal = false)}>
+			{t('common.cancel', 'Cancel')}
+		</Button>
+		<Button variant="destructive" onclick={confirmReset} disabled={resetting}>
+			{resetting ? t('common.saving', 'Resetting...') : t('email_templates.reset', 'Reset')}
+		</Button>
 	</div>
 </Modal>
 
-<!-- Test Modal -->
-<Modal bind:open={showTestModal} title={t("email_templates.test", "Send Test Email")}>
+<!-- Test send Modal (page-local) -->
+<Modal bind:open={showTestModal} title={t('email_templates.test', 'Send Test Email')}>
 	{#if testTarget}
-		<p class="text-sm" style="color: var(--color-foreground)">{t("email_templates.test_to", "Send a test of")} <strong>{testTarget.name}</strong>:</p>
+		<p class="text-sm" style="color: var(--color-foreground)">
+			{t('email_templates.test_to', 'Send a test of')} <strong>{testTarget.name}</strong>:
+		</p>
 		<div class="mt-4">
-			<label for="et-test-email" class="block text-sm font-medium" style="color: var(--color-foreground)">{t("email_templates.test_email", "Test Email Address")}</label>
-			<input id="et-test-email" type="email" bind:value={testEmail} class="mt-1 w-full rounded-lg border p-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" placeholder="admin@example.com" />
+			<label for="et-test-email" class="block text-sm font-medium" style="color: var(--color-foreground)">
+				{t('email_templates.test_email', 'Test Email Address')}
+			</label>
+			<input
+				id="et-test-email"
+				type="email"
+				bind:value={testEmail}
+				class="mt-1 w-full rounded-lg border p-2 text-sm"
+				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+				placeholder="admin@example.com"
+			/>
 		</div>
 	{/if}
 	<div class="mt-4 flex justify-end gap-2">
-		<Button variant="ghost" onclick={() => showTestModal = false}>{t("common.cancel", "Cancel")}</Button>
-		<Button onclick={sendTest} disabled={testing || !testEmail.trim()}>{testing ? t("common.sending", "Sending...") : t("email_templates.send_test", "Send Test")}</Button>
+		<Button variant="ghost" onclick={() => (showTestModal = false)}>
+			{t('common.cancel', 'Cancel')}
+		</Button>
+		<Button onclick={sendTest} disabled={testing || !testEmail.trim()}>
+			{testing ? t('common.sending', 'Sending...') : t('email_templates.send_test', 'Send Test')}
+		</Button>
 	</div>
 </Modal>
 
-{#snippet TemplateActionsCell({ value, row }: { value: any; row: EmailTemplate })}
-	<div class="flex items-center gap-1">
-		<Button variant="ghost" size="sm" onclick={() => openView(row.id, "preview")}>
-			<Eye class="h-3.5 w-3.5" />
-		</Button>
-		{#if canManageTemplates}
-			<Button variant="ghost" size="sm" onclick={() => openView(row.id, "edit")} style="color: var(--color-primary)">
-				<Pencil class="h-3.5 w-3.5" />
-			</Button>
-			<Button variant="ghost" size="sm" onclick={() => { resetTarget = row; showResetModal = true; }} style="color: var(--color-foreground)">
-				<RotateCcw class="h-3.5 w-3.5" />
-			</Button>
-			<Button variant="ghost" size="sm" onclick={() => { testTarget = row; testEmail = ""; showTestModal = true; }}>
-				<Send class="h-3.5 w-3.5" />
-			</Button>
+<!-- ── Snippets ─────────────────────────────────────────────────────────── -->
+
+<!-- is_active badge column -->
+{#snippet StatusCell({ value }: { value: any; row: EmailTemplate })}
+	<span
+		class="inline-block rounded-full px-2 py-0.5 text-xs font-medium {value
+			? 'bg-success/15 text-success'
+			: 'bg-muted/15 text-muted'}"
+	>
+		{value ? t('common.active', 'Active') : t('common.inactive', 'Inactive')}
+	</span>
+{/snippet}
+
+<!-- View slide-over body -->
+{#snippet TemplateView({ row }: { row: EmailTemplate })}
+	<div class="space-y-4">
+		<div class="grid grid-cols-2 gap-4">
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">
+					{t('email_templates.name', 'Name')}
+				</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.name}</p>
+			</div>
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">
+					{t('email_templates.slug', 'Slug')}
+				</p>
+				<p class="mt-1 text-sm font-mono" style="color: var(--color-foreground)">{row.slug}</p>
+			</div>
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">
+					{t('email_templates.subject', 'Subject')}
+				</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.subject}</p>
+			</div>
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">
+					{t('common.status', 'Status')}
+				</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">
+					{row.is_active ? t('common.active', 'Active') : t('common.inactive', 'Inactive')}
+				</p>
+			</div>
+			<div class="col-span-2">
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">
+					{t('common.updated', 'Updated')}
+				</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">
+					{row.updated_at ? new Date(row.updated_at).toLocaleString() : '—'}
+				</p>
+			</div>
+		</div>
+		{#if row.html_body}
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">
+					{t('email_templates.body', 'Body (HTML)')}
+				</p>
+				<iframe
+					srcdoc={renderPreview(row.html_body)}
+					title="Email body preview"
+					class="mt-1 w-full rounded-lg border"
+					style="border-color: var(--color-border); min-height: 300px;"
+				></iframe>
+			</div>
+		{/if}
+		{#if row.plain_text_body}
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">
+					{t('email_templates.plain_text', 'Plain Text Body')}
+				</p>
+				<pre class="mt-1 whitespace-pre-wrap rounded-lg border p-3 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)">{row.plain_text_body}</pre>
+			</div>
+		{/if}
+	</div>
+{/snippet}
+
+<!-- Edit form body (rich form: subject + html body with edit/preview tabs + plain text + is_active + Reset/Test) -->
+{#snippet TemplateForm({ value, editing }: { value: Record<string, any>; editing: any | null })}
+	<div class="space-y-4">
+		{#if editing}
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">
+					{t('email_templates.name', 'Name')}
+				</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{editing.name}</p>
+				<p class="mt-0.5 text-xs font-mono" style="color: var(--color-muted)">{editing.slug}</p>
+			</div>
+		{/if}
+
+		<div>
+			<label for="et-subject" class="block text-sm font-medium" style="color: var(--color-foreground)">
+				{t('email_templates.subject', 'Subject')}
+			</label>
+			<input
+				id="et-subject"
+				type="text"
+				class="mt-1 w-full rounded-lg border p-2 text-sm"
+				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+				bind:value={value.subject}
+			/>
+		</div>
+
+		<div>
+			<label for="et-body" class="block text-sm font-medium" style="color: var(--color-foreground)">
+				{t('email_templates.body', 'Body (HTML)')}
+			</label>
+			<Tabs
+				tabs={[
+					{ value: 'edit', label: t('email_templates.tab_edit', 'Edit') },
+					{ value: 'preview', label: t('email_templates.tab_preview', 'Preview') },
+				]}
+				bind:value={bodyTab}
+				class="mt-1"
+			>
+				{#snippet children()}
+					<BitsTabs.Content value="edit">
+						<textarea
+							id="et-body"
+							bind:value={value.html_body}
+							rows="12"
+							class="w-full rounded-lg border p-2 text-sm font-mono"
+							style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+						></textarea>
+					</BitsTabs.Content>
+					<BitsTabs.Content value="preview">
+						<iframe
+							srcdoc={renderPreview(value.html_body ?? '')}
+							title="Email body preview"
+							class="w-full rounded-lg border"
+							style="border-color: var(--color-border); min-height: 300px;"
+						></iframe>
+					</BitsTabs.Content>
+				{/snippet}
+			</Tabs>
+		</div>
+
+		<div>
+			<label for="et-plain" class="block text-sm font-medium" style="color: var(--color-foreground)">
+				{t('email_templates.plain_text', 'Plain Text Body')}
+			</label>
+			<textarea
+				id="et-plain"
+				bind:value={value.plain_text_body}
+				rows="6"
+				class="mt-1 w-full rounded-lg border p-2 text-sm font-mono"
+				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+			></textarea>
+		</div>
+
+		<div class="flex items-center gap-2">
+			<input
+				id="et-active"
+				type="checkbox"
+				bind:checked={value.is_active}
+				class="h-4 w-4 rounded"
+				style="border-color: var(--color-border)"
+			/>
+			<label for="et-active" class="text-sm font-medium" style="color: var(--color-foreground)">
+				{t('common.active', 'Active')}
+			</label>
+		</div>
+
+		{#if editing && canManageTemplates}
+			<div class="flex gap-2 border-t pt-4" style="border-color: var(--color-border)">
+				<Button
+					variant="outline"
+					onclick={() => openReset(editing as EmailTemplate)}
+				>
+					<RotateCcw class="mr-1 h-4 w-4" />
+					{t('email_templates.reset', 'Reset to Default')}
+				</Button>
+				<Button
+					variant="outline"
+					onclick={() => openTest(editing as EmailTemplate)}
+				>
+					<Send class="mr-1 h-4 w-4" />
+					{t('email_templates.send_test', 'Send Test')}
+				</Button>
+			</div>
 		{/if}
 	</div>
 {/snippet}

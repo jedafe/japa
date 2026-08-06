@@ -74,6 +74,17 @@ INSERT INTO form_steps (form_id, title, position)
 VALUES (@form_id, @title, @position)
 RETURNING id, form_id, title, position;
 
+-- name: UpdateFormStep :one
+UPDATE form_steps
+SET title = @title, position = @position
+WHERE id = @id AND form_id = @form_id
+RETURNING id, form_id, title, position;
+
+-- name: UpdateFormStepPosition :exec
+UPDATE form_steps
+SET position = @position
+WHERE id = @id AND form_id = @form_id;
+
 -- name: DeleteFormStep :exec
 DELETE FROM form_steps
 WHERE id = @id AND form_id = @form_id;

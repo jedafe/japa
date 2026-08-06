@@ -1,13 +1,9 @@
 <script lang="ts">
-	import PageHeader from "$lib/components/layout/page-header.svelte";
-	import { DataTable } from "$lib/components/ui/data-table";
-	import { FilterBar } from "$lib/components/ui/filter-bar";
-	import { Button } from "$lib/components/ui/button";
-	import { TableSkeleton } from "$lib/components/ui/skeleton";
-	import { RefreshCw } from "lucide-svelte";
-	import { universityAdminApi } from "$lib/api";
-	import { t } from "$lib/stores/i18n.svelte";
-	import { onMount } from "svelte";
+	// /university/revenue-splits — read-only audit viewer migrated to EntityPage scaffold.
+	import { EntityPage, type EntityPageConfig, type EntityPageController } from '$lib/components/entity';
+	import { universityAdminApi } from '$lib/api';
+	import { t } from '$lib/stores/i18n.svelte';
+	import { Eye } from 'lucide-svelte';
 
 	type RevenueSplit = {
 		id: string;
@@ -15,7 +11,7 @@
 		instructor_name?: string;
 		track_id: string;
 		track_title?: string;
-		source: "purchase" | "pro_stream";
+		source: 'purchase' | 'pro_stream';
 		gross_kobo: number;
 		platform_commission_kobo: number;
 		instructor_net_kobo: number;
@@ -23,212 +19,173 @@
 		created_at: string;
 	};
 
-	let splits = $state<RevenueSplit[]>([]);
-	let loading = $state(true);
-	let errorMessage = $state("");
-	let searchQuery = $state("");
-	let filterValues = $state<Record<string, string>>({});
-	let dateFrom = $state("");
-	let dateTo = $state("");
-
-	const sourceFilters = [
-		{
-			key: "source",
-			label: t("university.source", "Source"),
-			options: [
-				{ value: "purchase", label: t("university.source_purchase", "Purchase") },
-				{ value: "pro_stream", label: t("university.source_pro_stream", "Pro Stream") }
-			]
-		}
-	];
+	// Page-local date-range filter (EntityPage FilterDef only supports select dropdowns).
+	let dateFrom = $state('');
+	let dateTo = $state('');
+	let entityController = $state<EntityPageController | undefined>(undefined);
 
 	function formatKobo(kobo: number): string {
 		const major = kobo / 100;
 		return `₦ ${major.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 	}
 
-	const columns = [
-		{
-			key: "instructor_name",
-			label: t("university.instructor", "Instructor"),
-			sortable: true,
-			render: (v: string, row: RevenueSplit) =>
-				`<span class="text-sm">${v || (row.instructor_id ? row.instructor_id.slice(0, 8) + "..." : "—")}</span>`
-		},
-		{
-			key: "track_title",
-			label: t("university.track_title", "Track"),
-			render: (v: string) => `<span class="text-sm">${v ?? "—"}</span>`
-		},
-		{
-			key: "source",
-			label: t("university.source", "Source"),
-			sortable: true,
-			componentSnippet: SourceBadge
-		},
-		{
-			key: "gross_kobo",
-			label: t("university.gross", "Gross"),
-			sortable: true,
-			render: (v: number) =>
-				`<span class="text-sm font-medium">${formatKobo(v)}</span>`
-		},
-		{
-			key: "platform_commission_kobo",
-			label: t("university.commission", "Commission"),
-			render: (v: number) =>
-				`<span class="text-xs" style="color: var(--color-muted)">${formatKobo(v)}</span>`
-		},
-		{
-			key: "instructor_net_kobo",
-			label: t("university.net", "Instructor Net"),
-			sortable: true,
-			render: (v: number) =>
-				`<span class="text-sm font-semibold" style="color: var(--color-success)">${formatKobo(v)}</span>`
-		},
-		{
-			key: "payout_id",
-			label: t("university.payout_id", "Payout ID"),
-			render: (v: string | null | undefined) =>
-				v
-					? `<span class="font-mono text-xs" style="color: var(--color-muted)">${v.slice(0, 8)}...</span>`
-					: `<span class="text-xs" style="color: var(--color-muted)">—</span>`
-		},
-		{
-			key: "created_at",
-			label: t("common.created", "Created"),
-			sortable: true,
-			render: (v: string) =>
-				`<span class="text-xs" style="color: var(--color-muted)">${new Date(v).toLocaleDateString()}</span>`
-		}
-	];
-
-	const filtered = $derived(
-		searchQuery
-			? splits.filter(
-					(s) =>
-						s.instructor_id.toLowerCase().includes(searchQuery.toLowerCase()) ||
-						(s.track_title ?? "").toLowerCase().includes(searchQuery.toLowerCase()) ||
-						(s.payout_id ?? "").toLowerCase().includes(searchQuery.toLowerCase())
-				)
-			: splits
-	);
-
-	async function load() {
-		loading = true;
-		errorMessage = "";
-		try {
-			const params = new URLSearchParams();
-			if (filterValues.source) params.set("source", filterValues.source);
-			if (dateFrom) params.set("from", dateFrom);
-			if (dateTo) params.set("to", dateTo);
-			const result = await universityAdminApi.listRevenueSplits(params.toString() || undefined);
-			if (result.ok) {
-				const data = result.data as { data?: RevenueSplit[] } | null | undefined;
-				splits = data?.data ?? [];
-			} else {
-				errorMessage = result.error;
-			}
-		} catch {
-			errorMessage = t("university.revenue_splits_load_error", "Failed to load revenue splits");
-		} finally {
-			loading = false;
-		}
-	}
-
-	function handleSearch(values: Record<string, string>) {
-		searchQuery = values.search ?? "";
-		filterValues = values;
-		load();
-	}
-
-	function handleClear() {
-		searchQuery = "";
-		filterValues = {};
-		dateFrom = "";
-		dateTo = "";
-		load();
-	}
-
 	function applyDateFilter() {
-		load();
+		entityController?.reload();
 	}
 
-	onMount(load);
+	const config: EntityPageConfig = {
+		title: t('university.revenue_splits_title', 'Revenue Splits'),
+		description: t('university.revenue_splits_desc', 'Read-only audit viewer for per-event revenue split records'),
+		readonly: true,
+		pageSize: 25,
+		columns: [
+			{
+				key: 'instructor_name',
+				label: t('university.instructor', 'Instructor'),
+				sortable: true,
+				render: (v: string, row: RevenueSplit) =>
+					`<span class="text-sm">${v || (row.instructor_id ? row.instructor_id.slice(0, 8) + '...' : '—')}</span>`
+			},
+			{
+				key: 'track_title',
+				label: t('university.track_title', 'Track'),
+				render: (v: string) => `<span class="text-sm">${v ?? '—'}</span>`
+			},
+			{
+				key: 'source',
+				label: t('university.source', 'Source'),
+				sortable: true,
+				componentSnippet: SourceBadge
+			},
+			{
+				key: 'gross_kobo',
+				label: t('university.gross', 'Gross'),
+				sortable: true,
+				render: (v: number) => `<span class="text-sm font-medium">${formatKobo(v)}</span>`
+			},
+			{
+				key: 'platform_commission_kobo',
+				label: t('university.commission', 'Commission'),
+				render: (v: number) =>
+					`<span class="text-xs" style="color: var(--color-muted)">${formatKobo(v)}</span>`
+			},
+			{
+				key: 'instructor_net_kobo',
+				label: t('university.net', 'Instructor Net'),
+				sortable: true,
+				render: (v: number) =>
+					`<span class="text-sm font-semibold" style="color: var(--color-success)">${formatKobo(v)}</span>`
+			},
+			{
+				key: 'payout_id',
+				label: t('university.payout_id', 'Payout ID'),
+				render: (v: string | null | undefined) =>
+					v
+						? `<span class="font-mono text-xs" style="color: var(--color-muted)">${v.slice(0, 8)}...</span>`
+						: `<span class="text-xs" style="color: var(--color-muted)">—</span>`
+			},
+			{
+				key: 'created_at',
+				label: t('common.created', 'Created'),
+				sortable: true,
+				render: (v: string) =>
+					`<span class="text-xs" style="color: var(--color-muted)">${new Date(v).toLocaleDateString()}</span>`
+			}
+		],
+		filters: [
+			{
+				key: 'source',
+				label: t('university.source', 'Source'),
+				options: [
+					{ value: 'purchase', label: t('university.source_purchase', 'Purchase') },
+					{ value: 'pro_stream', label: t('university.source_pro_stream', 'Pro Stream') }
+				]
+			}
+		],
+		actions: [
+			{ label: t('common.view', 'View'), icon: Eye, onclick: (row: RevenueSplit, ctx) => ctx?.openView(row) }
+		],
+		fields: [],
+		load: async ({ page, pageSize, q, sort, filter }) => {
+			const params = new URLSearchParams();
+			if (filter.source) params.set('source', filter.source);
+			if (dateFrom) params.set('from', dateFrom);
+			if (dateTo) params.set('to', dateTo);
+			const result = await universityAdminApi.listRevenueSplits(params.toString() || undefined);
+			if (!result.ok) {
+				throw new Error(result.error ?? t('university.revenue_splits_load_error', 'Failed to load revenue splits'));
+			}
+			const raw = (result.data as { data?: RevenueSplit[] } | null | undefined)?.data ?? [];
+
+			// Client-side search (API has no q param).
+			let filtered = raw;
+			if (q) {
+				const ql = q.toLowerCase();
+				filtered = filtered.filter(
+					(s) =>
+						s.instructor_id.toLowerCase().includes(ql) ||
+						(s.track_title ?? '').toLowerCase().includes(ql) ||
+						(s.payout_id ?? '').toLowerCase().includes(ql)
+				);
+			}
+
+			// Client-side sort (API has no sort param).
+			if (sort) {
+				const [key, dir] = sort.split(':');
+				filtered = [...filtered].sort((a, b) => {
+					const av = a[key as keyof RevenueSplit] as any;
+					const bv = b[key as keyof RevenueSplit] as any;
+					if (av < bv) return dir === 'asc' ? -1 : 1;
+					if (av > bv) return dir === 'asc' ? 1 : -1;
+					return 0;
+				});
+			}
+
+			const total = filtered.length;
+			const totalPages = Math.max(1, Math.ceil(total / pageSize));
+			const start = page * pageSize;
+			const paged = filtered.slice(start, start + pageSize);
+			return { data: paged, total, totalPages };
+		},
+		viewSnippet: SplitView
+	};
 </script>
 
 <svelte:head>
-	<title>{t("university.revenue_splits_title", "Revenue Splits")} — JapaConnect Admin</title>
+	<title>{t('university.revenue_splits_title', 'Revenue Splits')} — JapaConnect Admin</title>
 </svelte:head>
 
-<PageHeader
-	title={t("university.revenue_splits_title", "Revenue Splits")}
-	description={t("university.revenue_splits_desc", "Read-only audit viewer for per-event revenue split records")}
-/>
-
-{#if errorMessage}
-	<div
-		class="mb-4 flex items-center justify-between rounded-md border px-4 py-3 text-sm"
-		style="border-color: var(--color-danger); background-color: color-mix(in srgb, var(--color-danger) 8%, transparent); color: var(--color-danger)"
-	>
-		<span>{errorMessage}</span>
-		<Button variant="outline" size="sm" onclick={load}>{t("common.retry", "Retry")}</Button>
+<!-- Page-local date-range filter (EntityPage FilterDef only supports select dropdowns) -->
+<div class="mb-4 flex flex-wrap items-center gap-3">
+	<div class="flex items-center gap-2">
+		<label for="date-from" class="text-sm" style="color: var(--color-muted)">
+			{t('common.from', 'From')}
+		</label>
+		<input
+			id="date-from"
+			type="date"
+			bind:value={dateFrom}
+			onchange={applyDateFilter}
+			class="h-9 rounded-lg border px-3 text-sm"
+			style="border-color: var(--color-border); background-color: var(--color-surface); color: var(--color-foreground)"
+		/>
 	</div>
-{/if}
-
-<div class="mb-4 flex flex-wrap items-center justify-between gap-3">
-	<div class="flex flex-wrap items-center gap-3">
-		<div class="flex items-center gap-2">
-			<label for="date-from" class="text-sm" style="color: var(--color-muted)">
-				{t("common.from", "From")}
-			</label>
-			<input
-				id="date-from"
-				type="date"
-				bind:value={dateFrom}
-				onchange={applyDateFilter}
-				class="h-9 rounded-lg border px-3 text-sm"
-				style="border-color: var(--color-border); background-color: var(--color-surface); color: var(--color-foreground)"
-			/>
-		</div>
-		<div class="flex items-center gap-2">
-			<label for="date-to" class="text-sm" style="color: var(--color-muted)">
-				{t("common.to", "To")}
-			</label>
-			<input
-				id="date-to"
-				type="date"
-				bind:value={dateTo}
-				onchange={applyDateFilter}
-				class="h-9 rounded-lg border px-3 text-sm"
-				style="border-color: var(--color-border); background-color: var(--color-surface); color: var(--color-foreground)"
-			/>
-		</div>
+	<div class="flex items-center gap-2">
+		<label for="date-to" class="text-sm" style="color: var(--color-muted)">
+			{t('common.to', 'To')}
+		</label>
+		<input
+			id="date-to"
+			type="date"
+			bind:value={dateTo}
+			onchange={applyDateFilter}
+			class="h-9 rounded-lg border px-3 text-sm"
+			style="border-color: var(--color-border); background-color: var(--color-surface); color: var(--color-foreground)"
+		/>
 	</div>
-	<Button variant="outline" size="sm" onclick={load}>
-		<RefreshCw class="h-3.5 w-3.5" />
-		{t("common.refresh", "Refresh")}
-	</Button>
 </div>
 
-<FilterBar
-	filters={sourceFilters}
-	onsearch={handleSearch}
-	onclear={handleClear}
-/>
-
-<div class="mt-4">
-{#if loading}
-	<TableSkeleton rows={5} />
-{:else}
-	<DataTable
-		{columns}
-		data={filtered}
-		pageSize={25}
-		emptyMessage={t("university.no_revenue_splits", "No revenue split records found")}
-	/>
-{/if}
-</div>
+<EntityPage {config} bind:controller={entityController} />
 
 {#snippet SourceBadge({ value }: { value: string; row: RevenueSplit })}
 	<span
@@ -237,4 +194,41 @@
 	>
 		{value}
 	</span>
+{/snippet}
+
+{#snippet SplitView({ row }: { row: RevenueSplit })}
+	<div class="space-y-4">
+		<div>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('university.instructor', 'Instructor')}</p>
+			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.instructor_name || row.instructor_id}</p>
+		</div>
+		<div>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('university.track_title', 'Track')}</p>
+			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.track_title ?? '—'}</p>
+		</div>
+		<div>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('university.source', 'Source')}</p>
+			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.source}</p>
+		</div>
+		<div>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('university.gross', 'Gross')}</p>
+			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{formatKobo(row.gross_kobo)}</p>
+		</div>
+		<div>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('university.commission', 'Commission')}</p>
+			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{formatKobo(row.platform_commission_kobo)}</p>
+		</div>
+		<div>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('university.net', 'Instructor Net')}</p>
+			<p class="mt-1 text-sm font-semibold" style="color: var(--color-success)">{formatKobo(row.instructor_net_kobo)}</p>
+		</div>
+		<div>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('university.payout_id', 'Payout ID')}</p>
+			<p class="mt-1 text-sm font-mono" style="color: var(--color-foreground)">{row.payout_id ?? '—'}</p>
+		</div>
+		<div>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('common.created', 'Created')}</p>
+			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{new Date(row.created_at).toLocaleDateString()}</p>
+		</div>
+	</div>
 {/snippet}

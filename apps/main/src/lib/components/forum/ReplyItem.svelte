@@ -3,7 +3,7 @@
 	import { relativeTime } from '$lib/feed/time';
 	import { tiptapBodyToHtml, encodeReplyBody } from '$lib/tiptap/serialize';
 	import { api } from '$lib/api/client';
-	import { t } from '$lib/i18n';
+	import { t, i18n } from '$lib/i18n';
 	import type { ForumReply } from '$lib/types';
 	import VoteRail from './VoteRail.svelte';
 	// Self-import replaces the deprecated <svelte:self> for recursive nesting.
@@ -33,7 +33,7 @@
 
 	const MAX_DEPTH = 6;
 	const bodyHtml = $derived(tiptapBodyToHtml(reply.body));
-	const time = $derived(relativeTime(reply.created_at));
+	const time = $derived(relativeTime(reply.created_at, new Date(), i18n.locale));
 	const authorLabel = $derived(
 		reply.is_anonymous
 			? t('forum.anonymous', 'Anonymous')

@@ -1,11 +1,13 @@
 <script lang="ts">
+	// /gdpr — migrated to the EntityPage scaffold; read-only deletion-request list with an "Execute" state action.
+	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
+	import { Modal } from '$lib/components/ui/modal';
+	import { Button } from '$lib/components/ui/button';
 	import { api, gdprAdminApiExtended } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
-	import { DataTable } from '$lib/components/ui/data-table';
-	import { Button } from '$lib/components/ui/button';
-	import { Modal } from '$lib/components/ui/modal';
-	import { RefreshCw, Trash2, Play } from 'lucide-svelte';
+	import { Eye, Play } from 'lucide-svelte';
+	import type { ActionItem } from '$lib/components/ui/data-table';
 
 	type DeletionRequest = {
 		id: string;
@@ -18,117 +20,136 @@
 		executed_at?: string;
 	};
 
-	let requests = $state<DeletionRequest[]>([]);
-	let loading = $state(true);
-	let errorMessage = $state('');
-	let searchQuery = $state('');
+	const canManageDeletions = $derived(hasPermission('gdpr.deletions.view'));
+
+	// ── State-action confirmation modal ─────────────────────────────────────
+	// EntityPage's confirm Modal only covers default delete; the Execute action keeps a page-local Modal with richer copy.
+	let entityController = $state<EntityPageController | undefined>(undefined);
+	let pageError = $state('');
 	let showExecuteConfirm = $state(false);
 	let executeTarget = $state<DeletionRequest | null>(null);
 	let executing = $state(false);
 
-	const canManageDeletions = $derived(hasPermission('gdpr.deletions.view'));
-
-	const columns = [
-		{ key: 'display_name', label: t('app.gdpr.erasure.user', 'User'), sortable: true,
-			render: (v: string, row: DeletionRequest) => `<span class="text-sm">${v || row.username || 'anonymous'}</span>` },
-		{ key: 'reason', label: t('app.gdpr.erasure.reason', 'Reason'), render: (v: string) => `<span class="text-xs" style="color: var(--color-muted)">${v || '—'}</span>` },
-		{ key: 'status', label: t('app.gdpr.erasure.status', 'Status'), render: (v: string) => `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium ${v === 'executed' ? 'bg-success/15 text-success dark:text-success' : v === 'pending' ? 'bg-warning/15 text-warning dark:text-warning' : 'bg-muted/15 text-muted dark:text-muted'}">${v}</span>` },
-		{ key: 'requested_at', label: t('app.gdpr.erasure.requested_at', 'Requested At'), render: (v: string) => `<span class="text-xs" style="color: var(--color-muted)">${new Date(v).toLocaleString()}</span>` },
-		{ key: 'actions', label: t('common.actions', 'Actions'), class: 'w-24', componentSnippet: DeletionActionsCell }
-	];
-
-	const filteredRequests = $derived(
-		searchQuery
-			? requests.filter((r) => (r.display_name || r.username || '').toLowerCase().includes(searchQuery.toLowerCase()) || (r.reason || '').toLowerCase().includes(searchQuery.toLowerCase()))
-			: requests
-	);
-
-	async function load() {
-		loading = true;
-		errorMessage = '';
-		try {
-			const result = await api<DeletionRequest[]>('/admin/gdpr/deletion-requests');
-			if (result.ok) {
-				requests = result.data ?? [];
-			} else {
-				errorMessage = result.error ?? t('common.error', 'Failed to load deletion requests');
-			}
-		} catch {
-			errorMessage = t('common.error', 'Failed to load deletion requests');
-		} finally {
-			loading = false;
-		}
-	}
-
-	async function executeDeletion(req: DeletionRequest) {
+	function openExecute(req: DeletionRequest) {
 		executeTarget = req;
 		showExecuteConfirm = true;
 	}
 
 	async function confirmExecuteDeletion() {
 		if (!executeTarget) return;
+		if (executing) return; // in-flight guard
 		executing = true;
-		errorMessage = '';
+		pageError = '';
 		try {
-			await api(`/admin/gdpr/deletion-requests/${executeTarget.id}/execute`, { method: 'POST', body: {} });
-			showExecuteConfirm = false;
-			executeTarget = null;
-			load();
+			const result = await api(`/admin/gdpr/deletion-requests/${executeTarget.id}/execute`, { method: 'POST', body: {} });
+			if (result.ok) {
+				showExecuteConfirm = false;
+				executeTarget = null;
+				entityController?.reload();
+			} else {
+				pageError = result.error ?? t('common.error', 'Failed to execute deletion');
+			}
 		} catch {
-			errorMessage = t('common.error', 'Failed to execute deletion');
+			pageError = t('common.error', 'Failed to execute deletion');
 		} finally {
 			executing = false;
 		}
 	}
 
-	$effect(() => {
-		load();
+	// ── Row actions ─────────────────────────────────────────────────────────
+	// Custom actions replace defaults, so View is included explicitly; Execute only shows for pending requests when permitted.
+	const rowActions = $derived.by<ActionItem[]>(() => {
+		const acts: ActionItem[] = [
+			{ label: t('common.view', 'View'), icon: Eye, onclick: (row: DeletionRequest, ctx) => ctx?.openView(row) }
+		];
+		if (canManageDeletions) {
+			acts.push({
+				label: t('app.gdpr.erasure.execute', 'Execute'),
+				icon: Play,
+				variant: 'destructive',
+				onclick: openExecute,
+				show: (row: DeletionRequest) => row.status === 'pending'
+			});
+		}
+		return acts;
 	});
+
+	// `fields` is required by EntityPageConfig but unused (readonly page); provided as an empty array.
+	const fields: FieldDef[] = [];
+
+	const config = $derived<EntityPageConfig>({
+		title: t('app.gdpr.erasure.title', 'Data Erasure Requests'),
+		description: t('app.gdpr.erasure.description', 'Manage user data deletion requests for GDPR compliance'),
+		readonly: true,
+		pageSize: 25,
+		columns: [
+			{
+				key: 'display_name',
+				label: t('app.gdpr.erasure.user', 'User'),
+				sortable: true,
+				render: (v: string, row: DeletionRequest) => `<span class="text-sm">${v || row.username || 'anonymous'}</span>`
+			},
+			{
+				key: 'reason',
+				label: t('app.gdpr.erasure.reason', 'Reason'),
+				render: (v: string) => `<span class="text-xs" style="color: var(--color-muted)">${v || '—'}</span>`
+			},
+			{
+				key: 'status',
+				label: t('app.gdpr.erasure.status', 'Status'),
+				render: (v: string) => {
+					const colors = v === 'executed' ? 'bg-success/15 text-success dark:text-success' : v === 'pending' ? 'bg-warning/15 text-warning dark:text-warning' : 'bg-muted/15 text-muted dark:text-muted';
+					return `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium ${colors}">${v}</span>`;
+				}
+			},
+			{
+				key: 'requested_at',
+				label: t('app.gdpr.erasure.requested_at', 'Requested At'),
+				render: (v: string) => `<span class="text-xs" style="color: var(--color-muted)">${new Date(v).toLocaleString()}</span>`
+			}
+		],
+		actions: rowActions,
+		fields,
+		load: async ({ q }) => {
+			// The endpoint returns a flat array; search is filtered client-side to preserve legacy behavior.
+			const result = await api<DeletionRequest[]>('/admin/gdpr/deletion-requests');
+			if (result.ok) {
+				let data = (result.data as DeletionRequest[]) ?? [];
+				if (q) {
+					const lower = q.toLowerCase();
+					data = data.filter(
+						(r) =>
+							(r.display_name || r.username || '').toLowerCase().includes(lower) ||
+							(r.reason || '').toLowerCase().includes(lower)
+					);
+				}
+				return { data, total: data.length, totalPages: 1 };
+			}
+			throw new Error(result.error ?? t('common.error', 'Failed to load deletion requests'));
+		},
+		viewSnippet: DeletionRequestView
+	});
+
+	// Keep gdprAdminApiExtended referenced (re-exported API module) — do not delete imported API modules.
+	void gdprAdminApiExtended;
 </script>
 
 <svelte:head>
 	<title>{t('app.gdpr.erasure.title', 'Data Erasure Requests')} — JapaConnect Admin</title>
 </svelte:head>
 
-<h1 class="mb-1 text-2xl font-bold tracking-tight">{t('app.gdpr.erasure.title', 'Data Erasure Requests')}</h1>
-<p class="mb-4 text-sm" style="color: var(--color-muted)">{t('app.gdpr.erasure.description', 'Manage user data deletion requests for GDPR compliance')}</p>
-
-{#if errorMessage}
-	<div class="mb-4 rounded-md border px-4 py-3 text-sm" style="border-color: var(--color-danger); background-color: color-mix(in srgb, var(--color-danger) 8%, transparent); color: var(--color-danger)">
-		{errorMessage}
+{#if pageError}
+	<div
+		class="mb-4 rounded-lg p-3 text-sm"
+		style="background: color-mix(in srgb, var(--color-danger) 10%, transparent); color: var(--color-danger)"
+	>
+		{pageError}
 	</div>
 {/if}
 
-<div class="mb-4 flex justify-end">
-	<button class="btn btn-secondary flex items-center gap-1.5 text-xs" onclick={load}>
-		<RefreshCw class="h-3 w-3" />
-		{t('common.refresh', 'Refresh')}
-	</button>
-</div>
+<EntityPage {config} bind:controller={entityController} />
 
-{#if loading}
-	<p class="py-8 text-center text-sm" style="color: var(--color-muted)">{t('common.loading', 'Loading...')}</p>
-{:else}
-	<DataTable
-		columns={columns}
-		data={filteredRequests}
-		searchable={true}
-		onsearch={(q: string) => { searchQuery = q; }}
-		pageSize={25}
-		emptyMessage={t('app.gdpr.erasure.empty', 'No deletion requests found')}
-	/>
-{/if}
-
-{#snippet DeletionActionsCell({ row }: { value: any; row: DeletionRequest })}
-	{#if row.status === 'pending' && canManageDeletions}
-		<Button variant="ghost" size="sm" onclick={() => executeDeletion(row)} style="color: var(--color-danger)">
-			<Play class="h-3.5 w-3.5" />
-			{t('app.gdpr.erasure.execute', 'Execute')}
-		</Button>
-	{/if}
-{/snippet}
-
-<!-- Execute deletion confirmation (per jc-admin-develop: destructive actions behind Modal) -->
+<!-- Execute deletion confirmation (destructive action behind Modal) -->
 <Modal bind:open={showExecuteConfirm} title={t('app.gdpr.erasure.execute_confirm_title', 'Confirm Data Erasure')} size="sm">
 	{#if executeTarget}
 		<p class="text-sm" style="color: var(--color-foreground)">
@@ -147,3 +168,37 @@
 		</Button>
 	</div>
 </Modal>
+
+<!-- ── Snippets ─────────────────────────────────────────────────────────── -->
+
+<!-- View slide-over body (mirrors the legacy row details) -->
+{#snippet DeletionRequestView({ row }: { row: DeletionRequest })}
+	<div class="space-y-4">
+		<div>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.gdpr.erasure.user', 'User')}</p>
+			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.display_name || row.username || 'anonymous'}</p>
+		</div>
+		<div>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">User ID</p>
+			<p class="mt-1 text-sm font-mono" style="color: var(--color-foreground)">{row.user_id}</p>
+		</div>
+		<div>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.gdpr.erasure.reason', 'Reason')}</p>
+			<p class="mt-1 text-sm" style="color: var(--color-foreground)">{row.reason || '—'}</p>
+		</div>
+		<div>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.gdpr.erasure.status', 'Status')}</p>
+			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.status}</p>
+		</div>
+		<div>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.gdpr.erasure.requested_at', 'Requested At')}</p>
+			<p class="mt-1 text-sm" style="color: var(--color-foreground)">{new Date(row.requested_at).toLocaleString()}</p>
+		</div>
+		{#if row.executed_at}
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Executed At</p>
+				<p class="mt-1 text-sm" style="color: var(--color-foreground)">{new Date(row.executed_at).toLocaleString()}</p>
+			</div>
+		{/if}
+	</div>
+{/snippet}

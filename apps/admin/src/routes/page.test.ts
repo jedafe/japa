@@ -18,7 +18,8 @@ vi.mock('$app/state', () => ({
 }));
 
 vi.mock('$app/navigation', () => ({
-	goto: vi.fn()
+	goto: vi.fn(),
+	replaceState: vi.fn(),
 }));
 
 vi.mock('layerchart', () => ({

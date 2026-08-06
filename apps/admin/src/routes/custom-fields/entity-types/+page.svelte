@@ -1,254 +1,207 @@
 <script lang="ts">
+	// /custom-fields/entity-types — migrated to the EntityPage scaffold.
+	// Simple CRUD entity using declarative `fields` (EntityForm). System entity
+	// types are protected from edit/delete via `show()` predicates; bulk delete
+	// is disabled when any selected row is a system type.
+	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
 	import { entityTypesAdminApi, type CustomFieldEntityType } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
-	import { hasPermission } from '$lib/stores/permissions.svelte';
-	import { Plus, Pencil, Trash2 } from 'lucide-svelte';
-	import Modal from '$lib/components/Modal.svelte';
+	import { Eye, Pencil, Trash2 } from 'lucide-svelte';
+	import type { ActionItem } from '$lib/components/ui/data-table';
 
-	let entityTypes = $state<CustomFieldEntityType[]>([]);
-	let loading = $state(false);
-	let errorMessage = $state('');
-	let modalOpen = $state(false);
-	let editingType = $state<CustomFieldEntityType | null>(null);
-	let value = $state('');
-	let label = $state('');
-	let sortOrder = $state(0);
-	let saving = $state(false);
-	let showDeleteConfirm = $state(false);
-	let deleteTarget = $state<CustomFieldEntityType | null>(null);
+	// ── Bulk delete ───── EntityPage auto-reloads + clears selection after a bulk action handler completes.
+	let entityController = $state<EntityPageController | undefined>(undefined);
+	let pageError = $state('');
+	let bulkDeleting = $state(false);
 
-	const canManage = $derived(hasPermission('custom_fields.group.create'));
+	async function bulkDelete(ids: Set<string>) {
+		const idArr = Array.from(ids);
+		if (idArr.length === 0) return;
+		if (bulkDeleting) return; // in-flight guard
+		bulkDeleting = true;
+		pageError = '';
+		try {
+			await Promise.all(idArr.map((id) => entityTypesAdminApi.delete(id)));
+		} catch (e) {
+			pageError = e instanceof Error ? e.message : t('common.error', 'Failed to delete entity types');
+		} finally {
+			bulkDeleting = false;
+		}
+	}
 
-	const columns = [
-		{ key: 'value', label: t('fieldGroups.option_value'), sortable: true },
-		{ key: 'label', label: t('fieldGroups.label'), sortable: true },
-		{ key: 'sort_order', label: t('fieldGroups.sort_order'), sortable: true },
-		{ key: 'is_system', label: t('fieldGroups.system'), sortable: true },
-		{ key: 'actions', label: t('common.actions'), class: 'w-24' }
+	// `fields` drives EntityForm rendering and edit-form seeding. `value` is
+	// immutable after creation (legacy page only sent it on create), so it is
+	// included here for edit-form seeding but the API update omits it.
+	const fields: FieldDef[] = [
+		{
+			key: 'value',
+			label: t('fieldGroups.option_value', 'Value'),
+			type: 'text',
+			placeholder: t('fieldGroups.value_placeholder', 'e.g. event, project, course'),
+			required: true,
+			help: t('fieldGroups.value_help', 'Machine-readable token (snake_case). Cannot be changed after creation.')
+		},
+		{
+			key: 'label',
+			label: t('fieldGroups.label', 'Label'),
+			type: 'text',
+			placeholder: t('fieldGroups.label_placeholder_et', 'e.g. Event, Project, Course'),
+			required: true
+		},
+		{ key: 'sort_order', label: t('fieldGroups.sort_order', 'Sort Order'), type: 'number' }
 	];
 
-	async function load() {
-		loading = true;
-		errorMessage = '';
-		try {
+	// Custom row actions: View/Edit/Delete with system-type protection.
+	// Providing `actions` replaces the defaults entirely, so View/Edit/Delete
+	// are included explicitly. Edit/Delete are hidden for system rows.
+	const actions: ActionItem[] = [
+		{ label: t('common.view', 'View'), icon: Eye, onclick: (_row, ctx) => ctx?.openView(_row) },
+		{
+			label: t('common.edit', 'Edit'),
+			icon: Pencil,
+			onclick: (row, ctx) => ctx?.openEdit(row),
+			show: (row: CustomFieldEntityType) => !row.is_system
+		},
+		{
+			label: t('common.delete', 'Delete'),
+			icon: Trash2,
+			variant: 'destructive',
+			onclick: (row, ctx) => ctx?.openDelete(row),
+			show: (row: CustomFieldEntityType) => !row.is_system
+		}
+	];
+
+	const config: EntityPageConfig = {
+		title: t('fieldGroups.entity_types', 'Entity Types'),
+		description: t(
+			'fieldGroups.entity_types_desc',
+			'Manage the entity types that custom field groups can be assigned to.'
+		),
+		createLabel: t('common.create', 'Create'),
+		createPermission: 'custom_fields.group.create',
+		pageSize: 25,
+		columns: [
+			{
+				key: 'value',
+				label: t('fieldGroups.option_value', 'Value'),
+				sortable: true,
+				render: (v: string) =>
+					`<span class="font-mono text-xs" style="color: var(--color-muted)">${v}</span>`
+			},
+			{ key: 'label', label: t('fieldGroups.label', 'Label'), sortable: true },
+			{ key: 'sort_order', label: t('fieldGroups.sort_order', 'Sort Order'), sortable: true },
+			{
+				key: 'is_system',
+				label: t('fieldGroups.system', 'System'),
+				sortable: true,
+				componentSnippet: SystemCell
+			}
+		],
+		actions,
+		bulkActions: [
+			{
+				label: t('common.deleteSelected', 'Delete Selected'),
+				icon: Trash2,
+				variant: 'destructive',
+				onclick: bulkDelete,
+				disabled: (_ids: Set<string>, selectedRows?: CustomFieldEntityType[]) =>
+					!!selectedRows?.some((r) => r.is_system)
+			}
+		],
+		fields,
+		load: async () => {
 			const result = await entityTypesAdminApi.list();
 			if (result.ok) {
-				entityTypes = (Array.isArray(result.data) ? result.data : []) as CustomFieldEntityType[];
-			} else {
-				errorMessage = result.error;
+				const data = (result.data as CustomFieldEntityType[]) ?? [];
+				return { data, total: data.length, totalPages: 1 };
 			}
-		} catch {
-			errorMessage = t('common.error');
-		} finally {
-			loading = false;
-		}
-	}
-
-	function openCreate() {
-		editingType = null;
-		value = '';
-		label = '';
-		sortOrder = entityTypes.length;
-		modalOpen = true;
-	}
-
-	function openEdit(et: CustomFieldEntityType) {
-		editingType = et;
-		value = et.value;
-		label = et.label;
-		sortOrder = et.sort_order;
-		modalOpen = true;
-	}
-
-	async function save() {
-		if (!label.trim()) return;
-		saving = true;
-		errorMessage = '';
-		try {
-			if (editingType) {
-				const result = await entityTypesAdminApi.update(editingType.id, {
-					label: label.trim(),
-					sort_order: sortOrder
-				});
-				if (!result.ok) {
-					errorMessage = result.error;
-					saving = false;
-					return;
-				}
-			} else {
-				if (!value.trim()) {
-					errorMessage = 'Value is required';
-					saving = false;
-					return;
-				}
-				const result = await entityTypesAdminApi.create({
-					value: value.trim().toLowerCase().replace(/\s+/g, '_'),
-					label: label.trim(),
-					sort_order: sortOrder
-				});
-				if (!result.ok) {
-					errorMessage = result.error;
-					saving = false;
-					return;
-				}
-			}
-			modalOpen = false;
-			await load();
-		} catch {
-			errorMessage = t('common.error');
-		} finally {
-			saving = false;
-		}
-	}
-
-	function confirmDelete(et: CustomFieldEntityType) {
-		deleteTarget = et;
-		showDeleteConfirm = true;
-	}
-
-	async function executeDelete() {
-		if (!deleteTarget) return;
-		errorMessage = '';
-		try {
-			await entityTypesAdminApi.delete(deleteTarget.id);
-			showDeleteConfirm = false;
-			deleteTarget = null;
-			await load();
-		} catch {
-			errorMessage = t('common.error');
-		}
-	}
-
-	load();
+			throw new Error(result.error ?? t('common.error', 'Failed to load entity types'));
+		},
+		create: async (body) => {
+			const res = await entityTypesAdminApi.create({
+				value: String(body.value ?? '')
+					.trim()
+					.toLowerCase()
+					.replace(/\s+/g, '_'),
+				label: String(body.label ?? '').trim(),
+				sort_order: Number(body.sort_order ?? 0)
+			});
+			return res.ok ? { ok: true } : { ok: false, error: res.error };
+		},
+		update: async (id, body) => {
+			// `value` is immutable — update omits it (mirrors the legacy save()).
+			const res = await entityTypesAdminApi.update(id, {
+				label: String(body.label ?? '').trim(),
+				sort_order: Number(body.sort_order ?? 0)
+			});
+			return res.ok ? { ok: true } : { ok: false, error: res.error };
+		},
+		remove: async (id) => {
+			const res = await entityTypesAdminApi.delete(id);
+			return res.ok ? { ok: true } : { ok: false, error: res.error };
+		},
+		viewSnippet: EntityTypeView
+	};
 </script>
 
-<div class="space-y-6">
-	<div class="flex items-center justify-between">
+<svelte:head>
+	<title>{t('fieldGroups.entity_types', 'Entity Types')} — JapaConnect Admin</title>
+</svelte:head>
+
+{#if pageError}
+	<div
+		class="mb-4 rounded-lg p-3 text-sm"
+		style="background: color-mix(in srgb, var(--color-danger) 10%, transparent); color: var(--color-danger)"
+	>
+		{pageError}
+	</div>
+{/if}
+
+<EntityPage {config} bind:controller={entityController} />
+
+<!-- ── Snippets ─────────────────────────────────────────────────────────── -->
+
+{#snippet SystemCell({ value }: { value: boolean; row: CustomFieldEntityType })}
+	{#if value}
+		<span
+			class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium"
+			style="background-color: var(--color-primary-muted); color: var(--color-primary)"
+		>
+			{t('fieldGroups.system', 'System')}
+		</span>
+	{:else}
+		<span class="text-xs" style="color: var(--color-muted)">—</span>
+	{/if}
+{/snippet}
+
+<!-- View slide-over body (mirrors the legacy view) -->
+{#snippet EntityTypeView({ row }: { row: CustomFieldEntityType })}
+	<div class="space-y-4">
 		<div>
-			<h1 class="text-2xl font-bold" style="color: var(--color-foreground)">{t('fieldGroups.entity_types')}</h1>
-			<p class="mt-1 text-sm" style="color: var(--color-muted)">
-				{t('fieldGroups.entity_types_desc')}
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">
+				{t('fieldGroups.option_value', 'Value')}
+			</p>
+			<p class="mt-1 text-sm font-mono" style="color: var(--color-foreground)">{row.value}</p>
+		</div>
+		<div>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">
+				{t('fieldGroups.label', 'Label')}
+			</p>
+			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.label}</p>
+		</div>
+		<div>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">
+				{t('fieldGroups.sort_order', 'Sort Order')}
+			</p>
+			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.sort_order}</p>
+		</div>
+		<div>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">
+				{t('fieldGroups.system', 'System')}
+			</p>
+			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">
+				{row.is_system ? t('fieldGroups.system', 'System') : t('common.custom', 'Custom')}
 			</p>
 		</div>
-		{#if canManage}
-			<button
-				onclick={openCreate}
-				class="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-white"
-				style="background-color: var(--color-primary)"
-			>
-				<Plus class="h-4 w-4" />
-				{t('common.create')}
-			</button>
-		{/if}
 	</div>
-
-	{#if errorMessage}
-		<div class="rounded-lg p-3 text-sm" style="background-color: var(--color-destructive-muted); color: var(--color-destructive)">
-			{errorMessage}
-		</div>
-	{/if}
-
-	{#if loading}
-		<p class="text-sm" style="color: var(--color-muted)">{t('common.loading')}…</p>
-	{:else}
-		<div class="overflow-x-auto rounded-lg border" style="border-color: var(--color-border)">
-			<table class="w-full text-sm">
-				<thead style="background-color: var(--color-muted-muted)">
-					<tr>
-						{#each columns as col}
-							<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted)">{col.label}</th>
-						{/each}
-					</tr>
-				</thead>
-				<tbody>
-					{#each entityTypes as et (et.id)}
-						<tr class="border-t" style="border-color: var(--color-border)">
-							<td class="px-4 py-3 font-mono text-xs" style="color: var(--color-foreground)">{et.value}</td>
-							<td class="px-4 py-3" style="color: var(--color-foreground)">{et.label}</td>
-							<td class="px-4 py-3" style="color: var(--color-foreground)">{et.sort_order}</td>
-							<td class="px-4 py-3">
-								{#if et.is_system}
-									<span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium" style="background-color: var(--color-primary-muted); color: var(--color-primary)">{t('fieldGroups.system')}</span>
-								{:else}
-									<span class="text-xs" style="color: var(--color-muted)">—</span>
-								{/if}
-							</td>
-							<td class="px-4 py-3">
-								<div class="flex items-center gap-2">
-									{#if canManage}
-										<button onclick={() => openEdit(et)} class="p-1 rounded hover:opacity-70" title={t('common.edit')}>
-											<Pencil class="h-4 w-4" style="color: var(--color-muted)" />
-										</button>
-										{#if !et.is_system}
-											<button onclick={() => confirmDelete(et)} class="p-1 rounded hover:opacity-70" title={t('common.delete')}>
-												<Trash2 class="h-4 w-4" style="color: var(--color-destructive)" />
-											</button>
-										{/if}
-									{/if}
-								</div>
-							</td>
-						</tr>
-					{:else}
-						<tr class="border-t" style="border-color: var(--color-border)">
-							<td colspan={columns.length} class="px-4 py-8 text-center" style="color: var(--color-muted)">
-								{t('fieldGroups.no_entity_types')}
-							</td>
-						</tr>
-					{/each}
-				</tbody>
-			</table>
-		</div>
-	{/if}
-</div>
-
-<Modal bind:open={modalOpen} title={editingType ? t('common.edit') : t('common.create')} confirmLabel={t('common.save')} onConfirm={save}>
-	<div class="space-y-4">
-		{#if !editingType}
-			<div>
-				<label for="et-value" class="mb-1 block text-sm font-medium">{t('fieldGroups.option_value')}</label>
-				<input
-					id="et-value"
-					type="text"
-					bind:value
-					placeholder={t('fieldGroups.value_placeholder')}
-					required
-					class="w-full rounded-lg border px-3 py-2 text-sm"
-					style="border-color: var(--color-border); background-color: var(--color-background); color: var(--color-foreground)"
-				/>
-				<p class="mt-1 text-xs" style="color: var(--color-muted)">{t('fieldGroups.value_help')}</p>
-			</div>
-		{/if}
-		<div>
-			<label for="et-label" class="mb-1 block text-sm font-medium">{t('fieldGroups.label')}</label>
-			<input
-				id="et-label"
-				type="text"
-				bind:value={label}
-				placeholder={t('fieldGroups.label_placeholder_et')}
-				required
-				class="w-full rounded-lg border px-3 py-2 text-sm"
-				style="border-color: var(--color-border); background-color: var(--color-background); color: var(--color-foreground)"
-			/>
-		</div>
-		<div>
-			<label for="et-sort" class="mb-1 block text-sm font-medium">{t('fieldGroups.sort_order')}</label>
-			<input
-				id="et-sort"
-				type="number"
-				bind:value={sortOrder}
-				min="0"
-				class="w-full rounded-lg border px-3 py-2 text-sm"
-				style="border-color: var(--color-border); background-color: var(--color-background); color: var(--color-foreground)"
-			/>
-		</div>
-		{#if errorMessage}
-			<p class="text-sm" style="color: var(--color-destructive)">{errorMessage}</p>
-		{/if}
-	</div>
-</Modal>
-
-<Modal bind:open={showDeleteConfirm} title={t('fieldGroups.delete_entity_type')} confirmLabel={t('common.delete')} onConfirm={executeDelete}>
-	<p class="text-sm" style="color: var(--color-muted)">
-		{t('common.delete')} <strong>{deleteTarget?.label}</strong>? {t('fieldGroups.delete_entity_type_confirm')}
-	</p>
-</Modal>
+{/snippet}

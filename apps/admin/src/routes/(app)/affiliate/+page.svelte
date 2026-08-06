@@ -1,4 +1,7 @@
 <script lang="ts">
+	// /affiliate — migrated to shared components (ActionMenu, BulkBar, SlideOver, FilterPanel).
+	// Tabbed page (6 tabs) — not an EntityPage candidate; keeps the tab structure but
+	// uses DataTable `actions`/`bulkActionsList`/`filters` props and SlideOver for create.
 	import { api, affiliateProvidersAdminApi, affiliateProgramAdminApi, affiliateLinksAdminApi, affiliateEnhancementsAdminApi } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
@@ -6,10 +9,10 @@
 	import { Card, CardContent } from '$lib/components/ui/card';
 	import { Tabs } from '$lib/components/ui/tabs';
 	import { DataTable } from '$lib/components/ui/data-table';
-	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import { Modal } from '$lib/components/ui/modal';
-	import { Select } from '$lib/components/ui/select';
+	import { SlideOver } from '$lib/components/ui/slide-over';
+	import type { ActionItem, BulkAction, FilterDef } from '$lib/components/ui/data-table';
 	import { Plus, Trash2, Link2, Users, Percent, DollarSign } from 'lucide-svelte';
 
 	type AffiliateProvider = {
@@ -28,11 +31,7 @@
 		updated_at: string;
 	};
 
-	type CommissionRates = {
-		pro_monthly: number;
-		pro_annual: number;
-		course: number;
-	};
+	type CommissionRates = { pro_monthly: number; pro_annual: number; course: number };
 
 	type AffiliateMember = {
 		id: string;
@@ -97,55 +96,27 @@
 	let commissions = $state<AuthorCommission[]>([]);
 	let loading = $state(true);
 	let error = $state('');
-	let showCreateModal = $state(false);
+	let showCreateSlideOver = $state(false);
 	let newProvider = $state({ name: '', base_url: '', commission_rate: 0 });
 	let saving = $state(false);
-	let searchQuery = $state("");
+	let searchQuery = $state('');
 
 	let selectedProviderIds = $state<Set<string>>(new Set());
 	let selectedMemberIds = $state<Set<string>>(new Set());
 	let selectedLinkIds = $state<Set<string>>(new Set());
 	let bulkDeleting = $state(false);
 
-	// Filters
-	let memberStatusFilter = $state('');
-	let scannerActionFilter = $state('');
-	let commissionCreditedFilter = $state('');
+	// Filters (FilterPanel)
+	let memberFilterValue = $state<Record<string, string>>({});
+	let scanFilterValue = $state<Record<string, string>>({});
+	let commissionFilterValue = $state<Record<string, string>>({});
 
-	const memberStatusOptions = $derived([
-		{ value: '', label: t('common.all', 'All') },
-		{ value: 'active', label: t('affiliate.active') },
-		{ value: 'suspended', label: t('affiliate.suspended', 'Suspended') },
-		{ value: 'banned', label: t('affiliate.banned', 'Banned') }
-	]);
-
-	const scannerActionOptions = $derived([
-		{ value: '', label: t('common.all', 'All') },
-		{ value: 'flagged', label: t('affiliate.flagged', 'Flagged') },
-		{ value: 'blocked', label: t('affiliate.blocked', 'Blocked') },
-		{ value: 'approved', label: t('affiliate.approved', 'Approved') }
-	]);
-
-	const creditedOptions = $derived([
-		{ value: '', label: t('common.all', 'All') },
-		{ value: 'true', label: t('affiliate.credited', 'Credited') },
-		{ value: 'false', label: t('affiliate.pending', 'Pending') }
-	]);
-
-	// Ref: japaconnect-engineering/sections/56-user-affiliate-program.md (RBAC).
-	// The legacy affiliate.manage node is not the gate for any affiliate
-	// admin route — provider CRUD requires affiliate.providers.manage and
-	// program/member management requires affiliate.admin.manage. Using the
-	// wrong node showed buttons that 403'd on click (BUG-008/017).
 	const canManageProviders = $derived(hasPermission('affiliate.providers.manage'));
 	const canManageProgram = $derived(hasPermission('affiliate.admin.manage'));
-	const canViewAffiliate = $derived(hasPermission('affiliate.admin.view'));
 
-	// Delete provider confirm
+	// Confirm modals (short confirmations — kept as Modal per recipe)
 	let showDeleteProviderConfirm = $state(false);
 	let deleteProviderTarget = $state<AffiliateProvider | null>(null);
-
-	// Member status confirm
 	let showMemberStatusConfirm = $state(false);
 	let memberStatusTarget = $state<{ member: AffiliateMember; status: string } | null>(null);
 
@@ -158,24 +129,45 @@
 		{ value: 'author_commissions', label: t('affiliate.author_commissions', 'Author Commissions'), icon: DollarSign }
 	]);
 
+	const memberFilters: FilterDef[] = [
+		{
+			key: 'status',
+			label: t('affiliate.status'),
+			options: [
+				{ value: 'active', label: t('affiliate.active') },
+				{ value: 'suspended', label: t('affiliate.suspended', 'Suspended') },
+				{ value: 'banned', label: t('affiliate.banned', 'Banned') }
+			]
+		}
+	];
+
+	const scanFilters: FilterDef[] = [
+		{
+			key: 'action_taken',
+			label: t('affiliate.action', 'Action'),
+			options: [
+				{ value: 'flagged', label: t('affiliate.flagged', 'Flagged') },
+				{ value: 'blocked', label: t('affiliate.blocked', 'Blocked') },
+				{ value: 'approved', label: t('affiliate.approved', 'Approved') }
+			]
+		}
+	];
+
+	const commissionFilters: FilterDef[] = [
+		{
+			key: 'credited',
+			label: t('affiliate.credited', 'Credited'),
+			options: [
+				{ value: 'true', label: t('affiliate.credited', 'Credited') },
+				{ value: 'false', label: t('affiliate.pending', 'Pending') }
+			]
+		}
+	];
+
 	const providerColumns = $derived([
-		{
-			key: 'name',
-			label: t('affiliate.name'),
-			sortable: true,
-			render: (value: string) => `<span class="font-medium text-foreground">${value ?? '—'}</span>`
-		},
-		{
-			key: 'base_url',
-			label: t('affiliate.base_url'),
-			render: (value: string | null) => value ? `<span class="font-mono text-xs text-muted">${value}</span>` : '<span class="text-xs text-muted">—</span>'
-		},
-		{
-			key: 'commission_rate',
-			label: t('affiliate.commission_rate'),
-			sortable: true,
-			render: (value: number | null) => value != null ? `<span class="font-medium">${value}%</span>` : '<span class="text-xs text-muted">—</span>'
-		},
+		{ key: 'name', label: t('affiliate.name'), sortable: true, render: (value: string) => `<span class="font-medium text-foreground">${value ?? '—'}</span>` },
+		{ key: 'base_url', label: t('affiliate.base_url'), render: (value: string | null) => value ? `<span class="font-mono text-xs text-muted">${value}</span>` : '<span class="text-xs text-muted">—</span>' },
+		{ key: 'commission_rate', label: t('affiliate.commission_rate'), sortable: true, render: (value: number | null) => value != null ? `<span class="font-medium">${value}%</span>` : '<span class="text-xs text-muted">—</span>' },
 		{
 			key: 'is_active',
 			label: t('affiliate.status'),
@@ -184,157 +176,53 @@
 				const inactiveLabel = t('affiliate.inactive');
 				return `<span class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${row.is_active ? 'bg-success/15 text-success border-success' : 'bg-surface text-foreground border'}">${row.is_active ? activeLabel : inactiveLabel}</span>`;
 			}
-		},
-		{
-			key: 'actions',
-			label: '',
-			class: 'w-24',
-			componentSnippet: ProviderActionsCell
 		}
 	]);
 
 	const memberColumns = $derived([
-		{
-			key: 'username',
-			label: t('affiliate.username'),
-			sortable: true,
-			render: (value: string | null, row: any) => `<span class="font-medium">${value ?? row.user_id ?? '—'}</span>`
-		},
+		{ key: 'username', label: t('affiliate.username'), sortable: true, render: (value: string | null, row: any) => `<span class="font-medium">${value ?? row.user_id ?? '—'}</span>` },
 		{
 			key: 'status',
 			label: t('affiliate.status'),
 			render: (value: string) => {
-				const classes: Record<string, string> = {
-					active: 'bg-success/15 text-success border-success',
-					suspended: 'bg-danger/15 text-danger border-danger',
-					banned: 'bg-danger/15 text-danger border-danger'
-				};
+				const classes: Record<string, string> = { active: 'bg-success/15 text-success border-success', suspended: 'bg-danger/15 text-danger border-danger', banned: 'bg-danger/15 text-danger border-danger' };
 				return `<span class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${classes[value] || 'bg-surface text-foreground border'}">${value}</span>`;
 			}
 		},
-		{
-			key: 'total_earned_credits',
-			label: t('affiliate.earnings'),
-			sortable: true,
-			render: (value: number) => `<span class="font-medium">${(value ?? 0).toFixed(2)}</span>`
-		},
-		{
-			key: 'total_conversions',
-			label: t('affiliate.conversions'),
-			sortable: true,
-			render: (value: number) => `<span>${value ?? 0}</span>`
-		},
-		{
-			key: 'actions',
-			label: '',
-			class: 'w-24',
-			componentSnippet: MemberActionsCell
-		}
+		{ key: 'total_earned_credits', label: t('affiliate.earnings'), sortable: true, render: (value: number) => `<span class="font-medium">${(value ?? 0).toFixed(2)}</span>` },
+		{ key: 'total_conversions', label: t('affiliate.conversions'), sortable: true, render: (value: number) => `<span>${value ?? 0}</span>` }
 	]);
 
 	const linkColumns = $derived([
-		{
-			key: 'username',
-			label: t('affiliate.user'),
-			sortable: true,
-			render: (value: string | null, row: any) => `<span class="font-medium">${value ?? row.user_id ?? '—'}</span>`
-		},
-		{
-			key: 'code',
-			label: t('affiliate.code'),
-			sortable: true,
-			render: (value: string) => `<span class="font-mono text-xs font-medium text-foreground">${value}</span>`
-		},
-		{
-			key: 'destination_url',
-			label: t('affiliate.url'),
-			render: (value: string) => `<span class="text-xs text-muted truncate max-w-[200px] block">${value}</span>`
-		},
-		{
-			key: 'click_count',
-			label: t('affiliate.clicks'),
-			sortable: true,
-			render: (value: number) => `<span class="font-medium">${(value ?? 0).toLocaleString()}</span>`
-		},
-		{
-			key: 'conversion_count',
-			label: t('affiliate.conversions'),
-			sortable: true,
-			render: (value: number) => `<span class="font-medium">${value ?? 0}</span>`
-		},
-		{
-			key: 'created_at',
-			label: t('affiliate.created'),
-			sortable: true,
-			render: (value: string) => `<span class="text-sm">${new Date(value).toLocaleDateString()}</span>`
-		}
+		{ key: 'username', label: t('affiliate.user'), sortable: true, render: (value: string | null, row: any) => `<span class="font-medium">${value ?? row.user_id ?? '—'}</span>` },
+		{ key: 'code', label: t('affiliate.code'), sortable: true, render: (value: string) => `<span class="font-mono text-xs font-medium text-foreground">${value}</span>` },
+		{ key: 'destination_url', label: t('affiliate.url'), render: (value: string) => `<span class="text-xs text-muted truncate max-w-[200px] block">${value}</span>` },
+		{ key: 'click_count', label: t('affiliate.clicks'), sortable: true, render: (value: number) => `<span class="font-medium">${(value ?? 0).toLocaleString()}</span>` },
+		{ key: 'conversion_count', label: t('affiliate.conversions'), sortable: true, render: (value: number) => `<span class="font-medium">${value ?? 0}</span>` },
+		{ key: 'created_at', label: t('affiliate.created'), sortable: true, render: (value: string) => `<span class="text-sm">${new Date(value).toLocaleDateString()}</span>` }
 	]);
 
 	const scanColumns = $derived([
-		{
-			key: 'url',
-			label: t('affiliate.url', 'URL'),
-			render: (value: string) => `<span class="font-mono text-xs truncate max-w-[300px] block">${value}</span>`
-		},
-		{
-			key: 'domain',
-			label: t('affiliate.domain', 'Domain'),
-			sortable: true,
-			render: (value: string) => `<span class="text-sm font-medium">${value}</span>`
-		},
-		{
-			key: 'detection_method',
-			label: t('affiliate.detection', 'Detection'),
-			render: (value: string) => `<span class="inline-flex items-center rounded-full border px-2 py-0.5 text-xs" style="border-color: var(--color-border); color: var(--color-muted)">${value}</span>`
-		},
+		{ key: 'url', label: t('affiliate.url', 'URL'), render: (value: string) => `<span class="font-mono text-xs truncate max-w-[300px] block">${value}</span>` },
+		{ key: 'domain', label: t('affiliate.domain', 'Domain'), sortable: true, render: (value: string) => `<span class="text-sm font-medium">${value}</span>` },
+		{ key: 'detection_method', label: t('affiliate.detection', 'Detection'), render: (value: string) => `<span class="inline-flex items-center rounded-full border px-2 py-0.5 text-xs" style="border-color: var(--color-border); color: var(--color-muted)">${value}</span>` },
 		{
 			key: 'action_taken',
 			label: t('affiliate.action', 'Action'),
 			render: (value: string) => {
-				const cls = value === 'approved' ? 'bg-success/15 text-success border-success' :
-					value === 'blocked' ? 'bg-danger/15 text-danger border-danger' :
-					'bg-warning/15 text-warning border-warning';
+				const cls = value === 'approved' ? 'bg-success/15 text-success border-success' : value === 'blocked' ? 'bg-danger/15 text-danger border-danger' : 'bg-warning/15 text-warning border-warning';
 				return `<span class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${cls}">${value}</span>`;
 			}
 		},
-		{
-			key: 'created_at',
-			label: t('affiliate.created'),
-			sortable: true,
-			render: (value: string) => `<span class="text-xs">${new Date(value).toLocaleDateString()}</span>`
-		}
+		{ key: 'created_at', label: t('affiliate.created'), sortable: true, render: (value: string) => `<span class="text-xs">${new Date(value).toLocaleDateString()}</span>` }
 	]);
 
 	const commissionColumns = $derived([
-		{
-			key: 'provider_name',
-			label: t('affiliate.provider', 'Provider'),
-			sortable: true,
-			render: (value: string | null) => `<span class="font-medium">${value ?? '—'}</span>`
-		},
-		{
-			key: 'author_username',
-			label: t('affiliate.author', 'Author'),
-			sortable: true,
-			render: (value: string | null, row: any) => `<span class="font-medium">${value ?? row.author_user_id ?? '—'}</span>`
-		},
-		{
-			key: 'external_commission',
-			label: t('affiliate.external_commission', 'External Comm.'),
-			sortable: true,
-			render: (value: number) => `<span class="font-medium">${(value ?? 0).toFixed(2)}</span>`
-		},
-		{
-			key: 'author_share',
-			label: t('affiliate.author_share', 'Author Share'),
-			sortable: true,
-			render: (value: number) => `<span class="font-medium" style="color: var(--color-success)">${(value ?? 0).toFixed(2)}</span>`
-		},
-		{
-			key: 'author_commission_pct',
-			label: t('affiliate.rate', 'Rate'),
-			render: (value: number) => `<span>${value ?? 0}%</span>`
-		},
+		{ key: 'provider_name', label: t('affiliate.provider', 'Provider'), sortable: true, render: (value: string | null) => `<span class="font-medium">${value ?? '—'}</span>` },
+		{ key: 'author_username', label: t('affiliate.author', 'Author'), sortable: true, render: (value: string | null, row: any) => `<span class="font-medium">${value ?? row.author_user_id ?? '—'}</span>` },
+		{ key: 'external_commission', label: t('affiliate.external_commission', 'External Comm.'), sortable: true, render: (value: number) => `<span class="font-medium">${(value ?? 0).toFixed(2)}</span>` },
+		{ key: 'author_share', label: t('affiliate.author_share', 'Author Share'), sortable: true, render: (value: number) => `<span class="font-medium" style="color: var(--color-success)">${(value ?? 0).toFixed(2)}</span>` },
+		{ key: 'author_commission_pct', label: t('affiliate.rate', 'Rate'), render: (value: number) => `<span>${value ?? 0}%</span>` },
 		{
 			key: 'credited',
 			label: t('affiliate.credited', 'Credited'),
@@ -344,28 +232,52 @@
 				return `<span class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${cls}">${label}</span>`;
 			}
 		},
-		{
-			key: 'created_at',
-			label: t('affiliate.created'),
-			sortable: true,
-			render: (value: string) => `<span class="text-xs">${new Date(value).toLocaleDateString()}</span>`
-		}
+		{ key: 'created_at', label: t('affiliate.created'), sortable: true, render: (value: string) => `<span class="text-xs">${new Date(value).toLocaleDateString()}</span>` }
 	]);
+
+	// ── Row actions via ActionMenu ──────────────────────────────────────────
+	const providerActions: ActionItem[] = [
+		{
+			label: t('common.delete', 'Delete'),
+			icon: Trash2,
+			variant: 'destructive',
+			show: () => canManageProviders,
+			onclick: (row) => confirmDeleteProvider(row)
+		}
+	];
+
+	const memberActions: ActionItem[] = [
+		{
+			label: t('common.suspend', 'Suspend'),
+			show: (row) => canManageProgram && row.status === 'active',
+			onclick: (row) => confirmMemberStatus(row, 'suspended')
+		},
+		{
+			label: t('common.activate', 'Activate'),
+			show: (row) => canManageProgram && row.status !== 'active',
+			onclick: (row) => confirmMemberStatus(row, 'active')
+		}
+	];
+
+	// ── Bulk actions via BulkBar ────────────────────────────────────────────
+	const providerBulkActions: BulkAction[] = [
+		{ label: t('common.delete_selected', 'Delete Selected'), icon: Trash2, variant: 'destructive', onclick: bulkDeleteProviders }
+	];
+	const memberBulkActions: BulkAction[] = [
+		{ label: t('affiliate.suspend', 'Suspend Selected'), icon: Trash2, variant: 'destructive', onclick: bulkDeleteMembers }
+	];
+	const linkBulkActions: BulkAction[] = [
+		{ label: t('common.delete_selected', 'Delete Selected'), icon: Trash2, variant: 'destructive', onclick: bulkDeleteLinks }
+	];
+
+	// Filtered data for tabs with filters
+	const filteredMembers = $derived(memberFilterValue.status ? members.filter((m) => m.status === memberFilterValue.status) : members);
+	const filteredScanResults = $derived(scanFilterValue.action_taken ? scanResults.filter((s) => s.action_taken === scanFilterValue.action_taken) : scanResults);
+	const filteredCommissions = $derived(commissionFilterValue.credited ? commissions.filter((c) => String(c.credited) === commissionFilterValue.credited) : commissions);
 
 	$effect(() => {
 		load();
 	});
-
-	// Filtered data for tabs with filters
-	const filteredMembers = $derived(
-		memberStatusFilter ? members.filter(m => m.status === memberStatusFilter) : members
-	);
-	const filteredScanResults = $derived(
-		scannerActionFilter ? scanResults.filter(s => s.action_taken === scannerActionFilter) : scanResults
-	);
-	const filteredCommissions = $derived(
-		commissionCreditedFilter ? commissions.filter(c => String(c.credited) === commissionCreditedFilter) : commissions
-	);
 
 	async function load() {
 		loading = true;
@@ -379,9 +291,7 @@
 						const q = searchQuery.toLowerCase();
 						providers = providers.filter((p) => p.name?.toLowerCase().includes(q) || (p.is_active ? 'active' : 'inactive').includes(q));
 					}
-				} else {
-					error = result.error;
-				}
+				} else { error = result.error; }
 			} else if (activeTab === 'members') {
 				const result = await affiliateProgramAdminApi.members();
 				if (result.ok) {
@@ -390,9 +300,7 @@
 						const q = searchQuery.toLowerCase();
 						members = members.filter((m) => m.username?.toLowerCase().includes(q) || m.user_id?.toLowerCase().includes(q) || m.status?.toLowerCase().includes(q));
 					}
-				} else {
-					error = result.error;
-				}
+				} else { error = result.error; }
 			} else if (activeTab === 'links') {
 				const result = await affiliateLinksAdminApi.list();
 				if (result.ok) {
@@ -401,33 +309,25 @@
 						const q = searchQuery.toLowerCase();
 						links = links.filter((l) => l.username?.toLowerCase().includes(q) || l.code?.toLowerCase().includes(q) || l.destination_url?.toLowerCase().includes(q) || l.user_id?.toLowerCase().includes(q));
 					}
-				} else {
-					error = result.error;
-				}
+				} else { error = result.error; }
 			} else if (activeTab === 'rates') {
 				const result = await affiliateProgramAdminApi.commissionRates();
 				if (result.ok) {
 					const data = result.data as any;
 					rates = data?.rates ?? rates;
-				} else {
-					error = result.error;
-				}
+				} else { error = result.error; }
 			} else if (activeTab === 'scanner') {
 				const result = await affiliateEnhancementsAdminApi.scanResults();
 				if (result.ok) {
 					const data = result.data as any;
 					scanResults = (Array.isArray(data) ? data : []) as ScanResult[];
-				} else {
-					error = result.error;
-				}
+				} else { error = result.error; }
 			} else if (activeTab === 'author_commissions') {
 				const result = await affiliateEnhancementsAdminApi.commissions();
 				if (result.ok) {
 					const data = result.data as any;
 					commissions = (Array.isArray(data) ? data : []) as AuthorCommission[];
-				} else {
-					error = result.error;
-				}
+				} else { error = result.error; }
 			}
 		} catch {
 			error = t('common.error');
@@ -443,7 +343,7 @@
 			const slug = newProvider.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 			const result = await affiliateProvidersAdminApi.create({ ...newProvider, slug });
 			if (result.ok) {
-				showCreateModal = false;
+				showCreateSlideOver = false;
 				newProvider = { name: '', base_url: '', commission_rate: 0 };
 				load();
 			} else {
@@ -520,49 +420,43 @@
 		memberStatusTarget = null;
 	}
 
-	async function bulkDeleteProviders() {
-		if (selectedProviderIds.size === 0) return;
+	async function bulkDeleteProviders(ids: Set<string>) {
+		if (ids.size === 0) return;
+		if (bulkDeleting) return; // in-flight guard
 		bulkDeleting = true;
 		try {
-			for (const id of selectedProviderIds) {
-				await affiliateProvidersAdminApi.delete(id);
-			}
-			selectedProviderIds = new Set();
-			load();
+			await Promise.all(Array.from(ids).map((id) => affiliateProvidersAdminApi.delete(id)));
 		} catch {
 			error = t('common.error');
+		} finally {
+			bulkDeleting = false;
 		}
-		bulkDeleting = false;
 	}
 
-	async function bulkDeleteMembers() {
-		if (selectedMemberIds.size === 0) return;
+	async function bulkDeleteMembers(ids: Set<string>) {
+		if (ids.size === 0) return;
+		if (bulkDeleting) return;
 		bulkDeleting = true;
 		try {
-			for (const userId of selectedMemberIds) {
-				await updateMemberStatus(userId, 'suspended');
-			}
-			selectedMemberIds = new Set();
-			load();
+			await Promise.all(Array.from(ids).map((userId) => updateMemberStatus(userId, 'suspended')));
 		} catch {
 			error = t('common.error');
+		} finally {
+			bulkDeleting = false;
 		}
-		bulkDeleting = false;
 	}
 
-	async function bulkDeleteLinks() {
-		if (selectedLinkIds.size === 0) return;
+	async function bulkDeleteLinks(ids: Set<string>) {
+		if (ids.size === 0) return;
+		if (bulkDeleting) return;
 		bulkDeleting = true;
 		try {
-			for (const id of selectedLinkIds) {
-				await api(`/admin/affiliate-links/${id}`, { method: 'DELETE' });
-			}
-			selectedLinkIds = new Set();
-			load();
+			await Promise.all(Array.from(ids).map((id) => api(`/admin/affiliate-links/${id}`, { method: 'DELETE' })));
 		} catch {
 			error = t('common.error');
+		} finally {
+			bulkDeleting = false;
 		}
-		bulkDeleting = false;
 	}
 </script>
 
@@ -574,7 +468,7 @@
 	title={t('affiliate.title')}
 	description={t('affiliate.description')}
 	actions={activeTab === 'providers' && canManageProviders
-		? [{ label: t('affiliate.add_provider'), icon: Plus, onclick: () => showCreateModal = true }]
+		? [{ label: t('affiliate.add_provider'), icon: Plus, onclick: () => showCreateSlideOver = true }]
 		: []}
 />
 
@@ -592,70 +486,53 @@
 	{:else if activeTab === 'providers'}
 		<Card>
 			<CardContent class="p-0">
-			<DataTable
-				columns={providerColumns}
-				data={providers}
-				pageSize={20}
-				emptyMessage={t('affiliate.no_providers')}
-				searchable
-				onsearch={(q) => { searchQuery = q; load(); }}
-				selectable
-				bind:selectedIds={selectedProviderIds}
-			>
-				{#snippet bulkActions()}
-					<Button variant="destructive" size="sm" onclick={bulkDeleteProviders} disabled={bulkDeleting || selectedProviderIds.size === 0}>
-						<Trash2 class="h-3.5 w-3.5 mr-1" />
-						{bulkDeleting ? t('common.deleting') : t('common.delete_selected')} ({selectedProviderIds.size})
-					</Button>
-				{/snippet}
-			</DataTable>
+				<DataTable
+					columns={providerColumns}
+					data={providers}
+					pageSize={20}
+					emptyMessage={t('affiliate.no_providers')}
+					searchable
+					onsearch={(q) => { searchQuery = q; load(); }}
+					selectable
+					bind:selectedIds={selectedProviderIds}
+					actions={providerActions}
+					bulkActionsList={providerBulkActions}
+				/>
 			</CardContent>
 		</Card>
 	{:else if activeTab === 'members'}
-		<div class="flex items-center gap-3">
-			<Select options={memberStatusOptions} bind:value={memberStatusFilter} />
-		</div>
 		<Card>
 			<CardContent class="p-0">
-			<DataTable
-				columns={memberColumns}
-				data={filteredMembers}
-				pageSize={20}
-				emptyMessage={t('affiliate.no_members')}
-				searchable
-				onsearch={(q) => { searchQuery = q; load(); }}
-				selectable
-				bind:selectedIds={selectedMemberIds}
-			>
-				{#snippet bulkActions()}
-					<Button variant="destructive" size="sm" onclick={bulkDeleteMembers} disabled={bulkDeleting || selectedMemberIds.size === 0}>
-						<Trash2 class="h-3.5 w-3.5 mr-1" />
-						{bulkDeleting ? t('common.deleting') : t('affiliate.suspend')} ({selectedMemberIds.size})
-					</Button>
-				{/snippet}
-			</DataTable>
+				<DataTable
+					columns={memberColumns}
+					data={filteredMembers}
+					pageSize={20}
+					emptyMessage={t('affiliate.no_members')}
+					searchable
+					onsearch={(q) => { searchQuery = q; load(); }}
+					selectable
+					bind:selectedIds={selectedMemberIds}
+					actions={memberActions}
+					bulkActionsList={memberBulkActions}
+					filters={memberFilters}
+					bind:filterValue={memberFilterValue}
+				/>
 			</CardContent>
 		</Card>
 	{:else if activeTab === 'links'}
 		<Card>
 			<CardContent class="p-0">
-			<DataTable
-				columns={linkColumns}
-				data={links}
-				pageSize={20}
-				emptyMessage={t('affiliate.no_links')}
-				searchable
-				onsearch={(q) => { searchQuery = q; load(); }}
-				selectable
-				bind:selectedIds={selectedLinkIds}
-			>
-				{#snippet bulkActions()}
-					<Button variant="destructive" size="sm" onclick={bulkDeleteLinks} disabled={bulkDeleting || selectedLinkIds.size === 0}>
-						<Trash2 class="h-3.5 w-3.5 mr-1" />
-						{bulkDeleting ? t('common.deleting') : t('common.delete_selected')} ({selectedLinkIds.size})
-					</Button>
-				{/snippet}
-			</DataTable>
+				<DataTable
+					columns={linkColumns}
+					data={links}
+					pageSize={20}
+					emptyMessage={t('affiliate.no_links')}
+					searchable
+					onsearch={(q) => { searchQuery = q; load(); }}
+					selectable
+					bind:selectedIds={selectedLinkIds}
+					bulkActionsList={linkBulkActions}
+				/>
 			</CardContent>
 		</Card>
 	{:else if activeTab === 'rates'}
@@ -666,45 +543,21 @@
 					<div>
 						<label for="rate-monthly" class="mb-1 block text-sm font-medium text-foreground-alt">{t('affiliate.pro_monthly')}</label>
 						<div class="flex items-center gap-2">
-							<input
-								id="rate-monthly"
-								type="number"
-								min="0"
-								max="100"
-								step="0.1"
-								class="w-24 rounded-lg border border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
-								bind:value={rates.pro_monthly}
-							/>
+							<input id="rate-monthly" type="number" min="0" max="100" step="0.1" class="w-24 rounded-lg border border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" bind:value={rates.pro_monthly} />
 							<span class="text-sm text-muted">%</span>
 						</div>
 					</div>
 					<div>
 						<label for="rate-annual" class="mb-1 block text-sm font-medium text-foreground-alt">{t('affiliate.pro_annual')}</label>
 						<div class="flex items-center gap-2">
-							<input
-								id="rate-annual"
-								type="number"
-								min="0"
-								max="100"
-								step="0.1"
-								class="w-24 rounded-lg border border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
-								bind:value={rates.pro_annual}
-							/>
+							<input id="rate-annual" type="number" min="0" max="100" step="0.1" class="w-24 rounded-lg border border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" bind:value={rates.pro_annual} />
 							<span class="text-sm text-muted">%</span>
 						</div>
 					</div>
 					<div>
 						<label for="rate-course" class="mb-1 block text-sm font-medium text-foreground-alt">{t('affiliate.course')}</label>
 						<div class="flex items-center gap-2">
-							<input
-								id="rate-course"
-								type="number"
-								min="0"
-								max="100"
-								step="0.1"
-								class="w-24 rounded-lg border border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
-								bind:value={rates.course}
-							/>
+							<input id="rate-course" type="number" min="0" max="100" step="0.1" class="w-24 rounded-lg border border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" bind:value={rates.course} />
 							<span class="text-sm text-muted">%</span>
 						</div>
 					</div>
@@ -715,9 +568,6 @@
 			</CardContent>
 		</Card>
 	{:else if activeTab === 'scanner'}
-		<div class="flex items-center gap-3">
-			<Select options={scannerActionOptions} bind:value={scannerActionFilter} />
-		</div>
 		<Card>
 			<CardContent class="p-0">
 				<DataTable
@@ -727,13 +577,12 @@
 					emptyMessage={t('affiliate.no_scan_results', 'No unregistered affiliate links detected')}
 					searchable
 					onsearch={(q) => { searchQuery = q; }}
+					filters={scanFilters}
+					bind:filterValue={scanFilterValue}
 				/>
 			</CardContent>
 		</Card>
 	{:else if activeTab === 'author_commissions'}
-		<div class="flex items-center gap-3">
-			<Select options={creditedOptions} bind:value={commissionCreditedFilter} />
-		</div>
 		<Card>
 			<CardContent class="p-0">
 				<DataTable
@@ -743,57 +592,42 @@
 					emptyMessage={t('affiliate.no_commissions', 'No author commissions recorded yet')}
 					searchable
 					onsearch={(q) => { searchQuery = q; }}
+					filters={commissionFilters}
+					bind:filterValue={commissionFilterValue}
 				/>
 			</CardContent>
 		</Card>
 	{/if}
 </div>
 
-<!-- Add Provider Modal -->
-<Modal bind:open={showCreateModal} title={t('affiliate.add_provider')}>
+<!-- Add Provider SlideOver -->
+<SlideOver bind:open={showCreateSlideOver} title={t('affiliate.add_provider')}>
 	<div class="space-y-4">
 		<div>
 			<label for="provider-name" class="mb-1 block text-sm font-medium text-foreground-alt">{t('affiliate.name')}</label>
-			<input
-				id="provider-name"
-				type="text"
-				class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
-				bind:value={newProvider.name}
-			/>
+			<input id="provider-name" type="text" class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" bind:value={newProvider.name} />
 		</div>
 		<div>
 			<label for="provider-url" class="mb-1 block text-sm font-medium text-foreground-alt">{t('affiliate.base_url')}</label>
-			<input
-				id="provider-url"
-				type="url"
-				class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
-				placeholder="https://example.com"
-				bind:value={newProvider.base_url}
-			/>
+			<input id="provider-url" type="url" class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" placeholder="https://example.com" bind:value={newProvider.base_url} />
 		</div>
 		<div>
 			<label for="provider-rate" class="mb-1 block text-sm font-medium text-foreground-alt">{t('affiliate.commission_rate')}</label>
 			<div class="flex items-center gap-2">
-				<input
-					id="provider-rate"
-					type="number"
-					min="0"
-					max="100"
-					step="0.1"
-					class="w-24 rounded-lg border border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
-					bind:value={newProvider.commission_rate}
-				/>
+				<input id="provider-rate" type="number" min="0" max="100" step="0.1" class="w-24 rounded-lg border border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" bind:value={newProvider.commission_rate} />
 				<span class="text-sm text-muted">%</span>
 			</div>
 		</div>
-		<div class="flex justify-end gap-2 pt-2">
-			<Button variant="outline" onclick={() => showCreateModal = false}>{t('common.cancel')}</Button>
+	</div>
+	{#snippet footer()}
+		<div class="flex justify-end gap-2">
+			<Button variant="outline" onclick={() => showCreateSlideOver = false}>{t('common.cancel')}</Button>
 			<Button onclick={createProvider} disabled={saving || !newProvider.name || !newProvider.base_url}>
 				{saving ? t('common.creating') : t('common.create')}
 			</Button>
 		</div>
-	</div>
-</Modal>
+	{/snippet}
+</SlideOver>
 
 <!-- Delete Provider Confirm -->
 <Modal bind:open={showDeleteProviderConfirm} title={t('common.confirmDelete', 'Confirm Delete')}>
@@ -821,25 +655,3 @@
 		<Button onclick={executeMemberStatus}>{t('common.confirm', 'Confirm')}</Button>
 	</div>
 </Modal>
-
-<!-- ProviderActionsCell component -->
-{#snippet ProviderActionsCell({ value, row }: { value: any; row: AffiliateProvider })}
-	<div class="flex items-center gap-1">
-		{#if canManageProviders}
-			<Button variant="ghost" size="sm" onclick={() => confirmDeleteProvider(row)} style="color: var(--color-danger)" title={t('common.delete')}>
-				<Trash2 class="h-3.5 w-3.5" />
-			</Button>
-		{/if}
-	</div>
-{/snippet}
-
-<!-- MemberActionsCell component -->
-{#snippet MemberActionsCell({ value, row }: { value: any; row: AffiliateMember })}
-	<div class="flex items-center gap-1">
-		{#if canManageProgram}
-			<Button variant="ghost" size="sm" onclick={() => confirmMemberStatus(row, row.status === 'active' ? 'suspended' : 'active')} style={row.status === 'active' ? 'color: var(--color-danger)' : 'color: var(--color-success)'} title={row.status === 'active' ? t('common.suspend') : t('common.activate')}>
-				{row.status === 'active' ? t('common.suspend') : t('common.activate')}
-			</Button>
-		{/if}
-	</div>
-{/snippet}

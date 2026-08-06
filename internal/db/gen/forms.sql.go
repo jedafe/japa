@@ -702,6 +702,54 @@ func (q *Queries) UpdateForm(ctx context.Context, arg UpdateFormParams) (UpdateF
 	return i, err
 }
 
+const updateFormStep = `-- name: UpdateFormStep :one
+UPDATE form_steps
+SET title = $1, position = $2
+WHERE id = $3 AND form_id = $4
+RETURNING id, form_id, title, position
+`
+
+type UpdateFormStepParams struct {
+	Title    string      `json:"title"`
+	Position int32       `json:"position"`
+	ID       pgtype.UUID `json:"id"`
+	FormID   pgtype.UUID `json:"form_id"`
+}
+
+func (q *Queries) UpdateFormStep(ctx context.Context, arg UpdateFormStepParams) (FormStep, error) {
+	row := q.db.QueryRow(ctx, updateFormStep,
+		arg.Title,
+		arg.Position,
+		arg.ID,
+		arg.FormID,
+	)
+	var i FormStep
+	err := row.Scan(
+		&i.ID,
+		&i.FormID,
+		&i.Title,
+		&i.Position,
+	)
+	return i, err
+}
+
+const updateFormStepPosition = `-- name: UpdateFormStepPosition :exec
+UPDATE form_steps
+SET position = $1
+WHERE id = $2 AND form_id = $3
+`
+
+type UpdateFormStepPositionParams struct {
+	Position int32       `json:"position"`
+	ID       pgtype.UUID `json:"id"`
+	FormID   pgtype.UUID `json:"form_id"`
+}
+
+func (q *Queries) UpdateFormStepPosition(ctx context.Context, arg UpdateFormStepPositionParams) error {
+	_, err := q.db.Exec(ctx, updateFormStepPosition, arg.Position, arg.ID, arg.FormID)
+	return err
+}
+
 const updateFormSubmissionStatus = `-- name: UpdateFormSubmissionStatus :exec
 UPDATE form_submissions
 SET status = $1

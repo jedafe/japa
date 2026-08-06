@@ -8,7 +8,9 @@
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { Plus, Pencil, Trash2, Eye } from 'lucide-svelte';
 	import Modal from '$lib/components/Modal.svelte';
+	import { SlideOver } from '$lib/components/ui/slide-over';
 	import { DataTable } from '$lib/components/ui/data-table';
+	import type { ActionItem } from '$lib/components/ui/data-table';
 
 	let comparisons = $state<ComparisonEntry[]>([]);
 	let types = $state<ComparisonType[]>([]);
@@ -16,12 +18,12 @@
 	let errorMessage = $state('');
 	let searchQuery = $state('');
 
-	let showCreateModal = $state(false);
-	let showEditModal = $state(false);
+	let showCreateSlideOver = $state(false);
+	let showEditSlideOver = $state(false);
 	let editingEntry = $state<ComparisonEntry | null>(null);
 	let saving = $state(false);
 
-	let showViewModal = $state(false);
+	let showViewSlideOver = $state(false);
 	let viewTarget = $state<ComparisonEntry | null>(null);
 	let showDeleteConfirm = $state(false);
 	let deleteTarget = $state<ComparisonEntry | null>(null);
@@ -54,12 +56,13 @@
 			label: t('comparisons.col_created'),
 			sortable: true,
 			render: (v: string) => `<span class="text-xs" style="color: var(--color-muted)">${v ? new Date(v).toLocaleDateString() : '—'}</span>`
-		},
-		{
-			key: 'actions',
-			label: t('common.actions'),
-			componentSnippet: ComparisonActionsCell
 		}
+	];
+
+	const rowActions: ActionItem[] = [
+		{ label: t('common.view'), icon: Eye, onclick: (row: ComparisonEntry) => openView(row) },
+		{ label: t('common.edit'), icon: Pencil, onclick: (row: ComparisonEntry) => openEdit(row), show: () => canEditComparison },
+		{ label: t('common.delete'), icon: Trash2, variant: 'destructive', onclick: (row: ComparisonEntry) => confirmDelete(row), show: () => canDeleteComparison }
 	];
 
 	const filteredComparisons = $derived.by(() => {
@@ -73,7 +76,7 @@
 
 	function openView(c: ComparisonEntry) {
 		viewTarget = c;
-		showViewModal = true;
+		showViewSlideOver = true;
 	}
 
 	function confirmDelete(c: ComparisonEntry) {
@@ -140,7 +143,7 @@
 		body = '';
 		visibility = 'members';
 		typeId = '';
-		showCreateModal = true;
+		showCreateSlideOver = true;
 	}
 
 	function openEdit(c: ComparisonEntry) {
@@ -150,7 +153,7 @@
 		body = c.body || '';
 		visibility = c.visibility || 'members';
 		typeId = '';
-		showEditModal = true;
+		showEditSlideOver = true;
 	}
 
 	async function createComparison() {
@@ -166,7 +169,7 @@
 				type_id: typeId || undefined
 			});
 			if (result.ok) {
-				showCreateModal = false;
+				showCreateSlideOver = false;
 				load();
 			} else {
 				errorMessage = result.error;
@@ -190,7 +193,7 @@
 				visibility
 			});
 			if (result.ok) {
-				showEditModal = false;
+				showEditSlideOver = false;
 				editingEntry = null;
 				load();
 			} else {
@@ -236,6 +239,7 @@
 	<DataTable
 		columns={columns}
 		data={filteredComparisons}
+		actions={rowActions}
 		pageSize={25}
 		emptyMessage={t('comparisons.empty')}
 		searchable
@@ -243,8 +247,8 @@
 	/>
 {/if}
 
-<!-- View Modal -->
-<Modal bind:open={showViewModal} title={t('comparisons.view')}>
+<!-- View SlideOver -->
+<SlideOver bind:open={showViewSlideOver} title={t('comparisons.view')}>
 	{#if viewTarget}
 		<div class="space-y-4">
 			<div>
@@ -271,10 +275,12 @@
 			{/if}
 		</div>
 	{/if}
-	<div class="mt-6 flex justify-end">
-		<button class="rounded-md px-4 py-2 text-sm font-medium transition-colors" style="border: 1px solid var(--color-border)" onclick={() => (showViewModal = false)}>{t('common.close')}</button>
-	</div>
-</Modal>
+	{#snippet footer()}
+		<div class="mt-6 flex justify-end">
+			<button class="rounded-md px-4 py-2 text-sm font-medium transition-colors" style="border: 1px solid var(--color-border)" onclick={() => (showViewSlideOver = false)}>{t('common.close')}</button>
+		</div>
+	{/snippet}
+</SlideOver>
 
 <!-- Delete Confirmation -->
 <Modal bind:open={showDeleteConfirm} title={t('common.confirm')} confirmLabel={t('common.delete')} onConfirm={executeDelete}>
@@ -283,8 +289,8 @@
 	</p>
 </Modal>
 
-<!-- Create Modal -->
-<Modal bind:open={showCreateModal} title={t('comparisons.create')} onConfirm={createComparison} confirmLabel={saving ? t('common.saving') : t('common.create')}>
+<!-- Create SlideOver -->
+<SlideOver bind:open={showCreateSlideOver} title={t('comparisons.create')}>
 	<div class="space-y-4">
 		<div>
 			<label for="cmp-title" class="mb-1 block text-sm font-medium">{t('comparisons.col_title')}</label>
@@ -316,10 +322,16 @@
 			<textarea id="cmp-body" bind:value={body} rows="3" class="w-full rounded-lg border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-background); color: var(--color-foreground)"></textarea>
 		</div>
 	</div>
-</Modal>
+	{#snippet footer()}
+		<div class="mt-6 flex justify-end gap-2">
+			<button class="rounded-md px-4 py-2 text-sm font-medium transition-colors" style="border: 1px solid var(--color-border)" onclick={() => (showCreateSlideOver = false)}>{t('common.cancel')}</button>
+			<button class="rounded-md px-4 py-2 text-sm font-medium transition-colors" style="background: var(--color-primary); color: var(--color-primary-foreground)" onclick={createComparison} disabled={saving}>{saving ? t('common.saving') : t('common.create')}</button>
+		</div>
+	{/snippet}
+</SlideOver>
 
-<!-- Edit Modal -->
-<Modal bind:open={showEditModal} title={t('comparisons.edit')} onConfirm={updateComparison} confirmLabel={saving ? t('common.saving') : t('common.save')}>
+<!-- Edit SlideOver -->
+<SlideOver bind:open={showEditSlideOver} title={t('comparisons.edit')}>
 	<div class="space-y-4">
 		<div>
 			<label for="cmp-edit-title" class="mb-1 block text-sm font-medium">{t('comparisons.col_title')}</label>
@@ -342,22 +354,10 @@
 			<textarea id="cmp-edit-body" bind:value={body} rows="3" class="w-full rounded-lg border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-background); color: var(--color-foreground)"></textarea>
 		</div>
 	</div>
-</Modal>
-
-{#snippet ComparisonActionsCell({ value, row }: { value: any; row: ComparisonEntry })}
-	<div class="flex items-center justify-end gap-1">
-		<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10" onclick={() => openView(row)}>
-			<Eye class="h-3 w-3" style="color: var(--color-muted)" />
-		</button>
-		{#if canEditComparison}
-			<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10" onclick={() => openEdit(row)}>
-				<Pencil class="h-3 w-3" style="color: var(--color-primary)" />
-			</button>
-		{/if}
-		{#if canDeleteComparison}
-			<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10" onclick={() => confirmDelete(row)}>
-				<Trash2 class="h-3 w-3" style="color: var(--color-danger)" />
-			</button>
-		{/if}
-	</div>
-{/snippet}
+	{#snippet footer()}
+		<div class="mt-6 flex justify-end gap-2">
+			<button class="rounded-md px-4 py-2 text-sm font-medium transition-colors" style="border: 1px solid var(--color-border)" onclick={() => (showEditSlideOver = false)}>{t('common.cancel')}</button>
+			<button class="rounded-md px-4 py-2 text-sm font-medium transition-colors" style="background: var(--color-primary); color: var(--color-primary-foreground)" onclick={updateComparison} disabled={saving}>{saving ? t('common.saving') : t('common.save')}</button>
+		</div>
+	{/snippet}
+</SlideOver>

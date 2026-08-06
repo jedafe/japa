@@ -1,4 +1,8 @@
 <script lang="ts">
+	// /wallet — migrated to shared components (ActionMenu, BulkBar, SlideOver).
+	// Tabbed page (rules + settings + adjust) — not an EntityPage candidate; keeps
+	// the tab structure but uses DataTable `actions`/`bulkActionsList` props and
+	// SlideOver for the rule create/edit form.
 	import { t } from '$lib/stores/i18n.svelte';
 	import { walletApi, userManagementApi } from '$lib/api';
 	import PageHeader from '$lib/components/layout/page-header.svelte';
@@ -6,10 +10,10 @@
 	import { Tabs } from '$lib/components/ui/tabs';
 	import { DataTable } from '$lib/components/ui/data-table';
 	import { Button } from '$lib/components/ui/button';
-	import { Modal } from '$lib/components/ui/modal';
+	import { SlideOver } from '$lib/components/ui/slide-over';
 	import { Select } from '$lib/components/ui/select';
-	import { Wallet, DollarSign, Download, Plus, Settings, Trash2, X } from 'lucide-svelte';
-	import RuleActions from './rule-actions.svelte';
+	import type { ActionItem, BulkAction } from '$lib/components/ui/data-table';
+	import { Wallet, DollarSign, Download, Plus, Settings, Trash2, X, Pencil, ToggleLeft } from 'lucide-svelte';
 
 	type ActivityRule = {
 		id: string;
@@ -37,7 +41,7 @@
 	let searchQuery = $state('');
 	let selectedIds = $state<Set<string>>(new Set());
 	let bulkDeleting = $state(false);
-	let showRuleModal = $state(false);
+	let showRuleSlideOver = $state(false);
 	let editingRule = $state<ActivityRule | null>(null);
 	let ruleForm = $state({ activity_key: '', point_value: 1, description: '', is_enabled: true });
 	let ruleSaving = $state(false);
@@ -72,43 +76,49 @@
 		{ value: 'credits', label: t('app.wallet.credits', 'Credits') }
 	];
 
-	// Predefined activity keys from Section 28 / internal/wallet/wallet.go.
-	// Activity key options derived from existing rules (Rule 16 — no
-	// hardcoded data). The rules table is the source of truth for which
-	// activity keys exist. New keys can still be entered via "Custom key".
+	// Activity key options derived from existing rules (Rule 16 — no hardcoded data).
 	const activityKeyOptions = $derived([
 		...rules
 			.map((r) => r.activity_key)
-			.filter((k, i, arr) => k && arr.indexOf(k) === i) // unique
+			.filter((k, i, arr) => k && arr.indexOf(k) === i)
 			.map((k) => ({ value: k, label: k })),
 		{ value: '_custom', label: '— Custom key —' }
 	]);
 	let activityKeyMode = $state<'select' | 'custom'>('select');
 
 	const ruleColumns = [
-		{ key: 'activity_key', label: t('app.wallet.col_activity_key', 'Activity Key'), sortable: true,
-			render: (v: string) => `<span class="font-mono text-xs font-medium text-foreground">${v}</span>`
-		},
-		{ key: 'point_value', label: t('app.wallet.col_points', 'Points'), sortable: true,
-			render: (v: number) => `<span class="font-semibold">${v}</span>`
-		},
-		{ key: 'description', label: t('app.wallet.col_description', 'Description'),
-			render: (v: string) => `<span class="text-sm text-muted">${v || '—'}</span>`
-		},
-		{ key: 'is_enabled', label: t('app.wallet.col_status', 'Status'),
+		{ key: 'activity_key', label: t('app.wallet.col_activity_key', 'Activity Key'), sortable: true, render: (v: string) => `<span class="font-mono text-xs font-medium text-foreground">${v}</span>` },
+		{ key: 'point_value', label: t('app.wallet.col_points', 'Points'), sortable: true, render: (v: number) => `<span class="font-semibold">${v}</span>` },
+		{ key: 'description', label: t('app.wallet.col_description', 'Description'), render: (v: string) => `<span class="text-sm text-muted">${v || '—'}</span>` },
+		{
+			key: 'is_enabled',
+			label: t('app.wallet.col_status', 'Status'),
 			render: (_: any, row: any) => {
 				const label = row.is_enabled ? t('app.wallet.active', 'Active') : t('common.inactive', 'Inactive');
 				return `<span class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${row.is_enabled ? 'bg-success/15 text-success border-success' : 'bg-surface text-foreground border'}">${label}</span>`;
 			}
-		},
-		{ key: '_actions', label: t('common.actions', 'Actions'),
-			component: RuleActions,
-			componentProps: {
-				onEdit: (row: any) => openEditRuleModal(row),
-				onToggle: (row: any) => toggleRule(row),
-				onDelete: (row: any) => deleteRule(row)
-			}
 		}
+	];
+
+	// ── Row actions via ActionMenu ──────────────────────────────────────────
+	const ruleActions: ActionItem[] = [
+		{ label: t('common.edit', 'Edit'), icon: Pencil, onclick: (row) => openEditRuleModal(row) },
+		{
+			label: t('app.wallet.toggle', 'Toggle'),
+			icon: ToggleLeft,
+			onclick: (row) => toggleRule(row)
+		},
+		{
+			label: t('common.delete', 'Delete'),
+			icon: Trash2,
+			variant: 'destructive',
+			onclick: (row) => deleteRule(row)
+		}
+	];
+
+	// ── Bulk actions via BulkBar ────────────────────────────────────────────
+	const ruleBulkActions: BulkAction[] = [
+		{ label: t('common.delete_selected', 'Delete Selected'), icon: Trash2, variant: 'destructive', onclick: bulkDelete }
 	];
 
 	async function loadRules() {
@@ -116,7 +126,7 @@
 		const result = await walletApi.getRules();
 		if (result.ok) {
 			const data = result.data;
-			let items: ActivityRule[] = Array.isArray(data) ? data as ActivityRule[] : (data as any)?.items ?? [];
+			let items: ActivityRule[] = Array.isArray(data) ? (data as ActivityRule[]) : (data as any)?.items ?? [];
 			if (searchQuery) {
 				const q = searchQuery.toLowerCase();
 				items = items.filter((r: any) => r.activity_key?.toLowerCase().includes(q) || r.description?.toLowerCase().includes(q));
@@ -134,7 +144,6 @@
 			const data = result.data as WalletSettings;
 			if (data) settings = data;
 		} else {
-			// 404 = no settings row yet — use defaults (not an error to the user).
 			if (!result.error.includes('not_found')) {
 				settingsError = result.error;
 			}
@@ -146,12 +155,12 @@
 		editingRule = null;
 		ruleForm = { activity_key: '', point_value: 1, description: '', is_enabled: true };
 		activityKeyMode = 'select';
-		showRuleModal = true;
+		showRuleSlideOver = true;
 	}
 
 	function openEditRuleModal(rule: ActivityRule) {
 		editingRule = rule;
-		const isKnown = activityKeyOptions.some(o => o.value === rule.activity_key && o.value !== '_custom');
+		const isKnown = activityKeyOptions.some((o) => o.value === rule.activity_key && o.value !== '_custom');
 		activityKeyMode = isKnown ? 'select' : 'custom';
 		ruleForm = {
 			activity_key: rule.activity_key,
@@ -159,7 +168,7 @@
 			description: rule.description || '',
 			is_enabled: rule.is_enabled
 		};
-		showRuleModal = true;
+		showRuleSlideOver = true;
 	}
 
 	function handleActivityKeySelect(val: string) {
@@ -191,7 +200,7 @@
 			});
 
 		if (result.ok) {
-			showRuleModal = false;
+			showRuleSlideOver = false;
 			editingRule = null;
 			ruleForm = { activity_key: '', point_value: 1, description: '', is_enabled: true };
 			loadRules();
@@ -221,20 +230,18 @@
 		}
 	}
 
-	async function bulkDelete() {
-		if (selectedIds.size === 0) return;
+	async function bulkDelete(ids: Set<string>) {
+		if (ids.size === 0) return;
+		if (bulkDeleting) return; // in-flight guard
 		bulkDeleting = true;
 		errorMessage = '';
 		try {
-			for (const id of selectedIds) {
-				await walletApi.deleteRule(id);
-			}
-			selectedIds = new Set();
-			loadRules();
+			await Promise.all(Array.from(ids).map((id) => walletApi.deleteRule(id)));
 		} catch {
 			errorMessage = t('app.wallet.error_delete_rules', 'Failed to delete selected rules');
+		} finally {
+			bulkDeleting = false;
 		}
-		bulkDeleting = false;
 	}
 
 	async function saveSettings() {
@@ -250,7 +257,6 @@
 		settingsSaving = false;
 	}
 
-	// Debounced user search for autocomplete suggestions.
 	function onUserSearchInput() {
 		if (userSearchTimer) clearTimeout(userSearchTimer);
 		const q = userSearch.trim();
@@ -264,11 +270,7 @@
 			const result = await userManagementApi.list(`search=${encodeURIComponent(q)}&page_size=5`);
 			if (result.ok) {
 				const data = result.data as any;
-				userSuggestions = (data?.items ?? []).map((u: any) => ({
-					id: u.id ?? u.user_id ?? '',
-					username: u.username ?? '',
-					email: u.email ?? ''
-				}));
+				userSuggestions = (data?.items ?? []).map((u: any) => ({ id: u.id ?? u.user_id ?? '', username: u.username ?? '', email: u.email ?? '' }));
 				showSuggestions = userSuggestions.length > 0;
 			}
 			userSearchLoading = false;
@@ -302,24 +304,17 @@
 		balanceLoading = false;
 	}
 
-	// Resolve a search term to a user ID, then fetch balance.
-	// Accepts a UUID (direct) or a username/email (looked up via /admin/users).
 	async function searchUser() {
 		const q = userSearch.trim();
 		if (!q) return;
-
-		// If input looks like a UUID (contains hyphens and is long enough), try direct.
 		if (q.length >= 36 && q.includes('-')) {
 			fetchBalance(q);
 			return;
 		}
-
-		// Otherwise resolve username/email → UUID via the admin users list.
 		balanceLoading = true;
 		userBalance = null;
 		errorMessage = '';
 		showSuggestions = false;
-
 		const result = await userManagementApi.list(`search=${encodeURIComponent(q)}&page_size=1`);
 		if (result.ok) {
 			const data = result.data as any;
@@ -392,35 +387,39 @@
 		<Card>
 			<CardContent class="p-6">
 				<div class="mb-4 flex items-center justify-between">
-				<h3 class="text-lg font-semibold text-foreground">{t('app.wallet.activity_point_rules', 'Activity Point Rules')}</h3>
-				<Button onclick={openAddRuleModal}>
-					<Plus class="h-4 w-4 mr-2" />
-					{t('app.wallet.add_rule', 'Add Rule')}
-				</Button>
-				</div>
-			{#if rulesLoading}
-				<p class="py-8 text-center text-sm text-muted">{t('common.loading', 'Loading...')}</p>
-			{:else}
-				<DataTable columns={ruleColumns} data={rules} pageSize={20} emptyMessage={t('app.wallet.empty_rules', 'No rules configured')} searchable onsearch={(q) => { searchQuery = q; loadRules(); }} selectable bind:selectedIds>
-				{#snippet bulkActions()}
-					<Button variant="destructive" size="sm" onclick={bulkDelete} disabled={bulkDeleting || selectedIds.size === 0}>
-						<Trash2 class="h-3.5 w-3.5 mr-1" />
-						{bulkDeleting ? t('common.deleting', 'Deleting...') : t('common.delete_selected', 'Delete Selected')} ({selectedIds.size})
+					<h3 class="text-lg font-semibold text-foreground">{t('app.wallet.activity_point_rules', 'Activity Point Rules')}</h3>
+					<Button onclick={openAddRuleModal}>
+						<Plus class="h-4 w-4 mr-2" />
+						{t('app.wallet.add_rule', 'Add Rule')}
 					</Button>
-				{/snippet}
-			</DataTable>
+				</div>
+				{#if rulesLoading}
+					<p class="py-8 text-center text-sm text-muted">{t('common.loading', 'Loading...')}</p>
+				{:else}
+					<DataTable
+						columns={ruleColumns}
+						data={rules}
+						pageSize={20}
+						emptyMessage={t('app.wallet.empty_rules', 'No rules configured')}
+						searchable
+						onsearch={(q) => { searchQuery = q; loadRules(); }}
+						selectable
+						bind:selectedIds
+						actions={ruleActions}
+						bulkActionsList={ruleBulkActions}
+					/>
 				{/if}
 			</CardContent>
 		</Card>
 	{:else if activeTab === 'settings'}
 		<Card>
 			<CardContent class="p-6">
-			<h3 class="mb-4 text-lg font-semibold text-foreground">{t('app.wallet.wallet_settings', 'Wallet Settings')}</h3>
-			{#if settingsError}
-				<div class="mb-4 rounded-lg border border-danger bg-danger-50 px-4 py-3 text-sm text-danger-700">{settingsError}</div>
-			{/if}
-			{#if settingsLoading}
-				<p class="py-8 text-center text-sm text-muted">{t('common.loading', 'Loading...')}</p>
+				<h3 class="mb-4 text-lg font-semibold text-foreground">{t('app.wallet.wallet_settings', 'Wallet Settings')}</h3>
+				{#if settingsError}
+					<div class="mb-4 rounded-lg border border-danger bg-danger-50 px-4 py-3 text-sm text-danger-700">{settingsError}</div>
+				{/if}
+				{#if settingsLoading}
+					<p class="py-8 text-center text-sm text-muted">{t('common.loading', 'Loading...')}</p>
 				{:else}
 					<div class="max-w-md space-y-4">
 						<div>
@@ -447,31 +446,31 @@
 	{:else if activeTab === 'adjust'}
 		<Card>
 			<CardContent class="p-6">
-			<h3 class="mb-4 text-lg font-semibold text-foreground">{t('app.wallet.user_balance_adjustment', 'User Balance Adjustment')}</h3>
-			<div class="relative mb-4 flex gap-2">
-				<div class="relative flex-1">
-					<input type="text" class="w-full rounded-lg border bg-surface px-3 py-2 text-sm" placeholder={t('app.wallet.search_placeholder', 'Search by username or UUID...')} bind:value={userSearch} oninput={onUserSearchInput} onfocus={() => { if (userSuggestions.length > 0) showSuggestions = true; }} onblur={() => { setTimeout(() => showSuggestions = false, 200); }} onkeydown={(e) => { if (e.key === 'Enter') { showSuggestions = false; searchUser(); } }} />
-					{#if userSearch && !userSearchLoading}
-						<button class="absolute right-2 top-1/2 -translate-y-1/2 text-muted hover:text-foreground" onclick={clearUserSearch} type="button"><X class="h-4 w-4" /></button>
-					{/if}
-					{#if userSearchLoading}
-						<span class="absolute right-8 top-1/2 -translate-y-1/2 text-xs text-muted">{t('common.searching', 'Searching...')}</span>
-					{/if}
-					{#if showSuggestions && userSuggestions.length > 0}
-						<div class="absolute left-0 right-0 top-full z-50 mt-1 rounded-lg border bg-surface shadow-lg">
-							{#each userSuggestions as user}
-								<button type="button" class="flex w-full items-center gap-3 px-3 py-2 text-left text-sm hover:bg-accent" onmousedown={() => selectSuggestion(user)}>
-									<span class="font-medium text-foreground">{user.username}</span>
-									<span class="text-xs text-muted">{user.email}</span>
-								</button>
-							{/each}
-						</div>
-					{/if}
+				<h3 class="mb-4 text-lg font-semibold text-foreground">{t('app.wallet.user_balance_adjustment', 'User Balance Adjustment')}</h3>
+				<div class="relative mb-4 flex gap-2">
+					<div class="relative flex-1">
+						<input type="text" class="w-full rounded-lg border bg-surface px-3 py-2 text-sm" placeholder={t('app.wallet.search_placeholder', 'Search by username or UUID...')} bind:value={userSearch} oninput={onUserSearchInput} onfocus={() => { if (userSuggestions.length > 0) showSuggestions = true; }} onblur={() => { setTimeout(() => showSuggestions = false, 200); }} onkeydown={(e) => { if (e.key === 'Enter') { showSuggestions = false; searchUser(); } }} />
+						{#if userSearch && !userSearchLoading}
+							<button class="absolute right-2 top-1/2 -translate-y-1/2 text-muted hover:text-foreground" onclick={clearUserSearch} type="button"><X class="h-4 w-4" /></button>
+						{/if}
+						{#if userSearchLoading}
+							<span class="absolute right-8 top-1/2 -translate-y-1/2 text-xs text-muted">{t('common.searching', 'Searching...')}</span>
+						{/if}
+						{#if showSuggestions && userSuggestions.length > 0}
+							<div class="absolute left-0 right-0 top-full z-50 mt-1 rounded-lg border bg-surface shadow-lg">
+								{#each userSuggestions as user}
+									<button type="button" class="flex w-full items-center gap-3 px-3 py-2 text-left text-sm hover:bg-accent" onmousedown={() => selectSuggestion(user)}>
+										<span class="font-medium text-foreground">{user.username}</span>
+										<span class="text-xs text-muted">{user.email}</span>
+									</button>
+								{/each}
+							</div>
+						{/if}
+					</div>
+					<Button onclick={searchUser} disabled={balanceLoading}>{balanceLoading ? t('common.searching', 'Searching...') : t('common.search', 'Search')}</Button>
 				</div>
-				<Button onclick={searchUser} disabled={balanceLoading}>{balanceLoading ? t('common.searching', 'Searching...') : t('common.search', 'Search')}</Button>
-			</div>
-			{#if balanceLoading}
-				<p class="py-8 text-center text-sm text-muted">{t('common.searching', 'Searching...')}</p>
+				{#if balanceLoading}
+					<p class="py-8 text-center text-sm text-muted">{t('common.searching', 'Searching...')}</p>
 				{:else if userBalance}
 					<div class="mb-4 grid gap-3 sm:grid-cols-3">
 						<div class="rounded-lg border bg-surface p-3"><p class="text-xs font-medium text-muted">{t('app.wallet.user', 'User')}</p><p class="text-sm font-semibold">{userBalance.username}</p></div>
@@ -488,8 +487,8 @@
 							<Select options={adjTypeOptions} bind:value={adjustForm.ledger_type} />
 						</div>
 						<div>
-						<label for="adj-reason" class="mb-1 block text-sm font-medium">{t('app.wallet.reason', 'Reason')}</label>
-						<input id="adj-reason" type="text" class="w-full rounded-lg border bg-surface px-3 py-2 text-sm" placeholder={t('app.wallet.reason_placeholder', 'Admin adjustment')} bind:value={adjustForm.reason} />
+							<label for="adj-reason" class="mb-1 block text-sm font-medium">{t('app.wallet.reason', 'Reason')}</label>
+							<input id="adj-reason" type="text" class="w-full rounded-lg border bg-surface px-3 py-2 text-sm" placeholder={t('app.wallet.reason_placeholder', 'Admin adjustment')} bind:value={adjustForm.reason} />
 						</div>
 					</div>
 					<div class="mt-4 flex justify-end">
@@ -503,7 +502,8 @@
 	{/if}
 </div>
 
-<Modal bind:open={showRuleModal} title={editingRule ? t('app.wallet.edit_rule', 'Edit Activity Rule') : t('app.wallet.modal_add_rule', 'Add Activity Rule')}>
+<!-- Rule Create/Edit SlideOver -->
+<SlideOver bind:open={showRuleSlideOver} title={editingRule ? t('app.wallet.edit_rule', 'Edit Activity Rule') : t('app.wallet.modal_add_rule', 'Add Activity Rule')}>
 	<div class="space-y-4">
 		<div>
 			<label for="rule-key" class="mb-1 block text-sm font-medium">{t('app.wallet.activity_key', 'Activity Key')}</label>
@@ -530,9 +530,11 @@
 			<input id="rule-active" type="checkbox" bind:checked={ruleForm.is_enabled} class="h-4 w-4 rounded border" />
 			<label for="rule-active" class="text-sm font-medium">{t('app.wallet.active', 'Active')}</label>
 		</div>
-		<div class="flex justify-end gap-2 pt-2">
-			<Button variant="outline" onclick={() => showRuleModal = false}>{t('common.cancel', 'Cancel')}</Button>
+	</div>
+	{#snippet footer()}
+		<div class="flex justify-end gap-2">
+			<Button variant="outline" onclick={() => (showRuleSlideOver = false)}>{t('common.cancel', 'Cancel')}</Button>
 			<Button onclick={submitRule} disabled={ruleSaving}>{ruleSaving ? t('common.saving', 'Saving...') : editingRule ? t('common.save', 'Save') : t('app.wallet.add_rule', 'Add Rule')}</Button>
 		</div>
-	</div>
-</Modal>
+	{/snippet}
+</SlideOver>

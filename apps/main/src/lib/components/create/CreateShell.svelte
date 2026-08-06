@@ -7,6 +7,7 @@
 	import * as createApi from '$lib/api/create';
 	import { classifyError } from '$lib/api/create';
 	import { api } from '$lib/api/client';
+	import { excerpt } from '$lib/utils/seo-score';
 	import type {
 		ContentRecord,
 		CustomFieldGroup,
@@ -37,18 +38,27 @@
 		series: BlogSeries[];
 		organizations: ComposerOrganization[];
 		draft: ContentRecord | null;
+		/** Tag names restored from GET /content/{id}/tags so the tag chips
+		 *  reappear when editing existing content. Empty for new content. */
+		draftTags?: string[];
 		/** Comparison items+dimensions when restoring a comparison draft
 		 *  (loaded from GET /comparisons/{id} in +page.server.ts). */
 		comparisonDetail?: ComparisonDetail | null;
 		/** Admin-defined comparison types (Section 30) for the type selector. */
 		comparisonTypes?: ComparisonType[];
+		/** Cover image media asset restored from GET /media/{featured_image_id}
+		 *  so the CoverUploader shows the preview when editing existing content. */
+		coverMedia?: MediaAsset | null;
+		/** Series ID restored from GET /content/{id}/series so the series
+		 *  selector restores when editing existing content. */
+		draftSeriesId?: string | null;
 		user: { id: string } | null;
 		defaultEditor?: EditorMode;
 		/** Max tags per content item, from system setting content.max_tags (default 5). */
 		maxTags?: number;
 	}
 
-	let { types, spaces, fieldGroups, series = $bindable(), organizations, draft, comparisonDetail = null, comparisonTypes = [], user, defaultEditor = 'block', maxTags = 5 }: Props = $props();
+	let { types, spaces, fieldGroups, series = $bindable(), organizations, draft, draftTags = [], comparisonDetail = null, comparisonTypes = [], coverMedia = null, draftSeriesId = null, user, defaultEditor = 'block', maxTags = 5 }: Props = $props();
 
 	// ---- form state ----
 	let selectedType = $state<TypeEntry>(
@@ -63,7 +73,7 @@
 	let title = $state(untrack(() => draft?.title ?? ''));
 	let slug = $state(untrack(() => draft?.slug ?? ''));
 	let slugTouched = $state(untrack(() => Boolean(draft?.slug)));
-	let bodyHtml = $state(untrack(() => draft?.body_html ?? ''));
+	let bodyHtml = $state(untrack(() => draft?.body_html || draft?.body || ''));
 	let spaceId = $state<string | null>(untrack(() => draft?.space_id ?? spaces.find((s) => s.is_primary)?.id ?? null));
 	// Post-as-org (ADR-062): null = personal post; an org id = post on behalf of
 	// that org. Restored from draft so edit-as-org round-trips the assignment.
@@ -71,17 +81,30 @@
 	let visibility = $state<Visibility>(untrack(() => (draft?.visibility as Visibility) ?? 'public'));
 	let canonicalUrl = $state(untrack(() => draft?.canonical_url ?? ''));
 	let publishAt = $state(untrack(() => draft?.publish_at ?? null));
-	let tags = $state<string[]>([]);
-	let seriesId = $state<string | null>(null);
+	let tags = $state<string[]>(untrack(() => draftTags ?? []));
+	let seriesId = $state<string | null>(untrack(() => draftSeriesId ?? null));
 	let fieldValues = $state<Record<string, unknown>>(untrack(() => draft?.field_values ?? {}));
-	let coverMediaId = $state<string | null>(null);
-	let coverPreviewUrl = $state<string | null>(null);
-	// SEO + feature image fields (migration 000165)
+	let coverMediaId = $state<string | null>(untrack(() => coverMedia?.id ?? null));
+	let coverPreviewUrl = $state<string | null>(untrack(() => coverMedia?.url ?? null));
+	// SEO + feature image fields (migration 000165).
+	// Per Section 26 ResolveMetadata, empty SEO fields fall back to the
+	// content's own title / body excerpt / cover image at render time.
+	// Pre-fill the editor inputs with these fallbacks so the user sees
+	// what search engines and social scrapers will actually use, and can
+	// edit them directly rather than starting from empty fields.
 	let featuredImageId = $state<string | null>(untrack(() => draft?.featured_image_id ?? null));
-	let metaTitle = $state<string | null>(untrack(() => draft?.meta_title ?? null));
-	let metaDescription = $state<string | null>(untrack(() => draft?.meta_description ?? null));
-	let ogImageUrl = $state<string | null>(untrack(() => draft?.og_image_url ?? null));
-	let ogImagePreviewUrl = $state<string | null>(null);
+	let metaTitle = $state<string | null>(
+		untrack(() => draft?.meta_title?.trim() || draft?.title?.trim() || null)
+	);
+	let metaDescription = $state<string | null>(
+		untrack(() => draft?.meta_description?.trim() || excerpt(draft?.body_html || draft?.body || '', 160) || null)
+	);
+	let ogImageUrl = $state<string | null>(
+		untrack(() => draft?.og_image_url?.trim() || coverMedia?.url?.trim() || null)
+	);
+	let ogImagePreviewUrl = $state<string | null>(
+		untrack(() => draft?.og_image_url?.trim() || coverMedia?.url?.trim() || null)
+	);
 	let seoIndexable = $state<boolean>(untrack(() => draft?.seo_indexable ?? true));
 	// comparison-only
 	let items = $state<{ label: string }[]>([]);
@@ -113,7 +136,16 @@
 		seo_indexable: seoIndexable,
 		organization_id: organizationId,
 		visibility,
-		publish_at: publishAt,
+		// Preserve the existing status so PATCH doesn't overwrite it with
+		// an empty string (which clears the published/scheduled state).
+		// New content defaults to 'draft' via the create handler.
+		status: draft?.status ?? 'draft',
+		// For already-published content, don't send publish_at — it's the
+		// original publish time (in the past) and the PATCH handler rejects
+		// past dates with 400 "publish_at_in_past". Only send it when the
+		// user is actively scheduling (draft/scheduled content with a
+		// future date set via the settings panel).
+		publish_at: draft?.status === 'published' ? null : publishAt,
 		space_id: spaceId,
 		guide_category: guideCategory
 	});
@@ -344,6 +376,7 @@
 			onSelectOrg={(id) => { organizationId = id; markDirty(); }}
 			onSaveDraft={saveDraft}
 			onPublish={publish}
+			isPublished={draft?.status === 'published'}
 		/>
 	</div>
 

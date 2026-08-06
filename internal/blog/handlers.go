@@ -634,6 +634,40 @@ func (h *Handlers) RemovePostFromSeries(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusNoContent, nil)
 }
 
+// GetContentSeries handles GET /api/v1/content/{id}/series.
+// Returns the series_id for a given content item, or null if the content is
+// not part of any series. Used by the editor load to restore the series
+// selector when editing existing content.
+// Note: the route param is named "id" but chi requires it to match the
+// existing /content/{slug} route's param name at the same path level.
+// The route is registered as /content/{id}/series which works because chi
+// allows different param names for sub-paths (the {slug} route only matches
+// exactly one segment, while {id}/series matches two).
+func (h *Handlers) GetContentSeries(w http.ResponseWriter, r *http.Request) {
+	_, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	contentID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_content_id", "Invalid content ID")
+		return
+	}
+
+	seriesID, err := h.Service.GetSeriesForContent(r.Context(), contentID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"series_id": nil}})
+			return
+		}
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"series_id": seriesID.String()}})
+}
+
 // ReorderSeriesPosts handles PATCH /api/v1/blog/series/{id}/posts/reorder.
 func (h *Handlers) ReorderSeriesPosts(w http.ResponseWriter, r *http.Request) {
 	_, ok := h.requireUser(w, r)

@@ -34,8 +34,8 @@
 		showSuggestions = false;
 	}
 
-	function removeTag(tag: string) {
-		onTags(tags.filter((t) => t !== tag));
+	function removeTag(index: number) {
+		onTags(tags.filter((_, i) => i !== index));
 	}
 
 	function onInput(v: string) {
@@ -104,10 +104,10 @@
 
 <div class="tag-field" bind:this={boxEl}>
 	<div class="tag-box" class:has-tags={tags.length > 0}>
-		{#each tags as tag (tag)}
+		{#each tags as tag, i (i)}
 			<span class="tag-chip">
 				#{tag}
-				<button type="button" onclick={() => removeTag(tag)} aria-label={t('create.action.remove_tag')}>
+				<button type="button" onclick={() => removeTag(i)} aria-label={t('create.action.remove_tag')}>
 					<X size={12} />
 				</button>
 			</span>

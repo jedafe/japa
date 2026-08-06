@@ -1,11 +1,11 @@
 <script lang="ts">
-	import { api, pageBuilderApi } from '$lib/api';
+	// /page-builder — migrated to the EntityPage scaffold; CRUD list of pagebuilder blocks.
+	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
+	import { pageBuilderAdminApiExtended, pageBuilderApi } from '$lib/api';
+	import type { BlockType } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
-	import { hasPermission } from '$lib/stores/permissions.svelte';
-	import { Plus, Pencil, Trash2, Eye } from 'lucide-svelte';
-	import Modal from '$lib/components/Modal.svelte';
-	import { DataTable } from '$lib/components/ui/data-table';
-	import { Button } from '$lib/components/ui/button';
+	import { Trash2 } from 'lucide-svelte';
+	import { onMount } from 'svelte';
 
 	type Block = {
 		id: string;
@@ -22,13 +22,6 @@
 		updated_at: string;
 	};
 
-	type BlockTypeOption = {
-		type: string;
-		name: string;
-		description: string;
-		category: string;
-	};
-
 	// slugify derives a URL-safe slug from a free-form name so the backend
 	// (CreateBlockInput.Slug — required) always receives a valid value even
 	// when the admin leaves the Slug field blank.
@@ -38,379 +31,229 @@
 			.replace(/^-+|-+$/g, '');
 	}
 
-	let blocks = $state<Block[]>([]);
-	let loading = $state(true);
-	let errorMessage = $state('');
-
-	let searchQuery = $state('');
-
-	let showCreateModal = $state(false);
-	let showEditModal = $state(false);
-	let editingBlock = $state<Block | null>(null);
-	let saving = $state(false);
-
-	let modalOpen = $state(false);
-
-	let name = $state('');
-	let slug = $state('');
-	let component = $state('');
-	let category = $state('');
-	let isEnabled = $state(true);
-
-	// Delete confirmation state
-	let showDeleteConfirm = $state(false);
-	let deleteTarget = $state<Block | null>(null);
-	let deleting = $state(false);
-
-	// Preview modal state
-	let showPreviewModal = $state(false);
-	let previewBlock = $state<Block | null>(null);
-
-	const canManageBlocks = $derived(hasPermission('pagebuilder.blocks.manage'));
-
 	// Block type options fetched from the API registry (Rule 16 — no hardcoded data).
-	// The /page-builder/block-types endpoint returns the static block template
-	// registry defined in internal/content/block_templates.go.
-	let blockTypeOptions = $state<BlockTypeOption[]>([]);
+	// The /page-builder/block-types endpoint returns the static block template registry.
+	let blockTypeOptions = $state<BlockType[]>([]);
 
 	// Derive categories dynamically from the fetched block types.
 	const blockCategories = $derived(
 		[...new Set(blockTypeOptions.map((bt) => bt.category))].filter(Boolean).sort()
 	);
 
-	const columns = [
-		{ key: 'name', label: t('pageBuilder.name'), sortable: true },
-		{ key: 'component', label: t('pageBuilder.type'), sortable: true, class: 'text-xs', render: (v: string) => `<span style="color: var(--color-muted)">${v}</span>` },
-		{ key: 'category', label: t('pageBuilder.category'), sortable: true, class: 'text-xs', render: (v: string) => v || '—' },
-		{ key: 'is_enabled', label: t('pageBuilder.status'), sortable: true, render: (v: boolean) => `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium ${v ? 'bg-success/15 text-success dark:text-success' : 'bg-muted/15 text-muted dark:text-muted'}">${v ? t('pageBuilder.enabled') : t('pageBuilder.disabled')}</span>` },
-		{ key: 'actions', label: t('common.actions'), class: 'w-32 text-right', componentSnippet: BlockActionsCell }
-	];
-
-	function filteredBlocks(): Block[] {
-		const q = searchQuery.toLowerCase().trim();
-		if (!q) return blocks;
-		return blocks.filter(b =>
-			b.name.toLowerCase().includes(q) ||
-			b.component.toLowerCase().includes(q) ||
-			(b.category ?? '').toLowerCase().includes(q)
-		);
-	}
-
-	async function load() {
-		loading = true;
-		errorMessage = '';
+	onMount(async () => {
 		try {
-			// Fetch both the CRUD blocks and the static block type registry in parallel.
-			const [blocksResult, typesResult] = await Promise.all([
-				api<Block[]>('/admin/pagebuilder/blocks'),
-				pageBuilderApi.getBlockTypes(),
-			]);
-			if (blocksResult.ok) {
-				blocks = blocksResult.data ?? [];
-			} else {
-				errorMessage = blocksResult.error;
-			}
-			if (typesResult.ok) {
-				blockTypeOptions = typesResult.data?.block_types ?? [];
+			const result = await pageBuilderApi.getBlockTypes();
+			if (result.ok) {
+				blockTypeOptions = result.data?.block_types ?? [];
 			}
 		} catch {
-			errorMessage = t('common.error');
+			// Keep empty options on failure; form selects will just have no options.
+		}
+	});
+
+	// ── Bulk delete ───── EntityPage auto-reloads + clears selection after a bulk action handler completes.
+	let entityController = $state<EntityPageController | undefined>(undefined);
+	let pageError = $state('');
+	let bulkDeleting = $state(false);
+
+	async function bulkDelete(ids: Set<string>) {
+		const idArr = Array.from(ids);
+		if (idArr.length === 0) return;
+		if (bulkDeleting) return; // in-flight guard
+		bulkDeleting = true;
+		pageError = '';
+		try {
+			await Promise.all(idArr.map((id) => pageBuilderAdminApiExtended.deleteBlock(id)));
+		} catch (e) {
+			pageError = e instanceof Error ? e.message : t('common.error', 'Failed to delete blocks');
 		} finally {
-			loading = false;
+			bulkDeleting = false;
 		}
 	}
 
-	function openCreate() {
-		name = '';
-		slug = '';
-		component = '';
-		category = '';
-		isEnabled = true;
-		modalOpen = true;
-	}
+	// `fields` drives EntityForm rendering and edit-form seeding. Component and
+	// category are select fields whose options are populated from the fetched
+	// block type registry. Config is built as a $derived so option updates
+	// propagate once the registry loads.
+	const fields = $derived<FieldDef[]>([
+		{ key: 'name', label: t('pageBuilder.name', 'Name'), type: 'text', required: true },
+		{ key: 'slug', label: t('pageBuilder.slug', 'Slug'), type: 'text', placeholder: t('pageBuilder.slug_placeholder', 'auto-generated from name') },
+		{
+			key: 'component',
+			label: t('pageBuilder.type', 'Type'),
+			type: 'select',
+			options: blockTypeOptions.map((bt) => ({ value: bt.type, label: bt.name })),
+			placeholder: t('pageBuilder.select_type', 'Select a block type'),
+			required: true
+		},
+		{
+			key: 'category',
+			label: t('pageBuilder.category', 'Category'),
+			type: 'select',
+			options: blockCategories.map((cat) => ({ value: cat, label: cat })),
+			placeholder: t('pageBuilder.select_category', 'Select a category')
+		},
+		{ key: 'is_enabled', label: t('pageBuilder.enabled', 'Enabled'), type: 'checkbox' }
+	]);
 
-	function openEdit(block: Block) {
-		editingBlock = block;
-		name = block.name;
-		slug = block.slug;
-		component = block.component;
-		category = block.category;
-		isEnabled = block.is_enabled;
-		modalOpen = true;
-	}
-
-	async function createBlock() {
-		if (!name.trim() || !component.trim()) return;
-		saving = true;
-		errorMessage = '';
-		try {
-			const result = await api('/admin/pagebuilder/blocks', {
-				method: 'POST',
-				body: {
-					name: name.trim(),
-					slug: slug.trim() || slugify(name),
-					component: component.trim(),
-					category: category.trim() || undefined,
-					is_enabled: isEnabled
-				}
+	const config = $derived<EntityPageConfig>({
+		title: t('pageBuilder.blocks_title', 'Blocks'),
+		description: t('pageBuilder.blocks_description', 'Manage page builder blocks.'),
+		createLabel: t('pageBuilder.create_block', 'Create Block'),
+		createPermission: 'pagebuilder.blocks.manage',
+		editPermission: 'pagebuilder.blocks.manage',
+		deletePermission: 'pagebuilder.blocks.manage',
+		pageSize: 25,
+		columns: [
+			{ key: 'name', label: t('pageBuilder.name', 'Name'), sortable: true },
+			{
+				key: 'component',
+				label: t('pageBuilder.type', 'Type'),
+				sortable: true,
+				render: (v: string) => `<span class="text-xs" style="color: var(--color-muted)">${v}</span>`
+			},
+			{
+				key: 'category',
+				label: t('pageBuilder.category', 'Category'),
+				sortable: true,
+				render: (v: string) => v || '—'
+			},
+			{
+				key: 'is_enabled',
+				label: t('pageBuilder.status', 'Status'),
+				sortable: true,
+				render: (v: boolean) => `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium ${v ? 'bg-success/15 text-success dark:text-success' : 'bg-muted/15 text-muted dark:text-muted'}">${v ? t('pageBuilder.enabled', 'Enabled') : t('pageBuilder.disabled', 'Disabled')}</span>`
+			}
+		],
+		bulkActions: [
+			{
+				label: t('common.deleteSelected', 'Delete Selected'),
+				icon: Trash2,
+				variant: 'destructive',
+				onclick: bulkDelete
+			}
+		],
+		fields,
+		load: async ({ q }) => {
+			const params = new URLSearchParams();
+			if (q) params.set('q', q);
+			const result = await pageBuilderAdminApiExtended.listBlocks(params.toString() || undefined);
+			if (result.ok) {
+				const data = (result.data as Block[]) ?? [];
+				return { data, total: data.length, totalPages: 1 };
+			}
+			throw new Error(result.error ?? t('common.error', 'Failed to load blocks'));
+		},
+		create: async (body) => {
+			const name = String(body.name ?? '').trim();
+			const res = await pageBuilderAdminApiExtended.createBlock({
+				name,
+				slug: String(body.slug ?? '').trim() || slugify(name),
+				component: String(body.component ?? '').trim(),
+				category: String(body.category ?? '').trim() || undefined,
+				is_enabled: body.is_enabled === undefined ? true : !!body.is_enabled
 			});
-			if (result.ok) {
-				modalOpen = false;
-				load();
-			} else {
-				errorMessage = result.error;
-			}
-		} catch {
-			errorMessage = t('common.error');
-		} finally {
-			saving = false;
-		}
-	}
-
-	async function updateBlock() {
-		if (!editingBlock || !name.trim() || !component.trim()) return;
-		saving = true;
-		errorMessage = '';
-		try {
-			const result = await api(`/admin/pagebuilder/blocks/${editingBlock.id}`, {
-				method: 'PATCH',
-				body: {
-					name: name.trim(),
-					slug: slug.trim() || slugify(name),
-					component: component.trim(),
-					category: category.trim() || undefined,
-					is_enabled: isEnabled
-				}
+			return res.ok ? { ok: true } : { ok: false, error: res.error };
+		},
+		update: async (id, body) => {
+			const name = String(body.name ?? '').trim();
+			const res = await pageBuilderAdminApiExtended.updateBlock(id, {
+				name,
+				slug: String(body.slug ?? '').trim() || slugify(name),
+				component: String(body.component ?? '').trim(),
+				category: String(body.category ?? '').trim() || undefined,
+				is_enabled: !!body.is_enabled
 			});
-			if (result.ok) {
-				modalOpen = false;
-				editingBlock = null;
-				load();
-			} else {
-				errorMessage = result.error;
-			}
-		} catch {
-			errorMessage = t('common.error');
-		} finally {
-			saving = false;
-		}
-	}
-
-	async function deleteBlock(id: string) {
-		errorMessage = '';
-		const target = blocks.find((b) => b.id === id);
-		if (!target) return;
-		deleteTarget = target;
-		showDeleteConfirm = true;
-	}
-
-	async function executeDelete() {
-		if (!deleteTarget) return;
-		const targetId = deleteTarget.id;
-		deleting = true;
-		errorMessage = '';
-		try {
-			const result = await api(`/admin/pagebuilder/blocks/${targetId}`, { method: 'DELETE' });
-			if (result.ok) {
-				blocks = blocks.filter((b) => b.id !== targetId);
-				showDeleteConfirm = false;
-				deleteTarget = null;
-			} else {
-				errorMessage = result.error;
-			}
-		} catch {
-			errorMessage = t('common.error');
-		} finally {
-			deleting = false;
-		}
-	}
-
-	function openPreview(block: Block) {
-		previewBlock = block;
-		showPreviewModal = true;
-	}
-
-	$effect(() => {
-		load();
+			return res.ok ? { ok: true } : { ok: false, error: res.error };
+		},
+		remove: async (id) => {
+			const res = await pageBuilderAdminApiExtended.deleteBlock(id);
+			return res.ok ? { ok: true } : { ok: false, error: res.error };
+		},
+		viewSnippet: BlockView
 	});
 </script>
 
-{#snippet BlockActionsCell({ value, row }: { value: any; row: Block })}
-	<div class="flex items-center justify-end gap-1">
-		<Button variant="ghost" size="sm" onclick={() => openPreview(row)}>
-			<Eye class="h-3 w-3" style="color: var(--color-muted)" />
-		</Button>
-		{#if canManageBlocks}
-			<Button variant="ghost" size="sm" onclick={() => openEdit(row)}>
-				<Pencil class="h-3 w-3" style="color: var(--color-primary)" />
-			</Button>
-			<Button variant="ghost" size="sm" onclick={() => deleteBlock(row.id)}>
-				<Trash2 class="h-3 w-3" style="color: var(--color-danger)" />
-			</Button>
+<svelte:head>
+	<title>{t('pageBuilder.blocks_title', 'Blocks')} — JapaConnect Admin</title>
+</svelte:head>
+
+{#if pageError}
+	<div
+		class="mb-4 rounded-lg p-3 text-sm"
+		style="background: color-mix(in srgb, var(--color-danger) 10%, transparent); color: var(--color-danger)"
+	>
+		{pageError}
+	</div>
+{/if}
+
+<EntityPage {config} bind:controller={entityController} />
+
+<!-- ── Snippets ─────────────────────────────────────────────────────────── -->
+
+<!-- View slide-over body (mirrors the legacy preview modal) -->
+{#snippet BlockView({ row }: { row: Block })}
+	<div class="space-y-4">
+		<!-- Preview header -->
+		<div class="flex items-center gap-3">
+			<div class="flex h-12 w-12 items-center justify-center rounded-lg border" style="border-color: var(--color-border); background: var(--color-surface)">
+				<span class="text-lg font-bold" style="color: var(--color-primary)">{row.component.charAt(0).toUpperCase()}</span>
+			</div>
+			<div>
+				<p class="text-sm font-semibold" style="color: var(--color-foreground)">{row.name}</p>
+				<p class="text-xs" style="color: var(--color-muted)">{row.component}</p>
+			</div>
+			<div class="ml-auto">
+				{#if row.is_enabled}
+					<span class="inline-block rounded-full bg-success/15 px-2 py-0.5 text-xs font-medium text-success">{t('pageBuilder.enabled', 'Enabled')}</span>
+				{:else}
+					<span class="inline-block rounded-full bg-muted/15 px-2 py-0.5 text-xs font-medium text-muted">{t('pageBuilder.disabled', 'Disabled')}</span>
+				{/if}
+			</div>
+		</div>
+
+		<!-- Details grid -->
+		<div class="grid grid-cols-2 gap-3">
+			<div>
+				<p class="mb-0.5 text-xs font-medium" style="color: var(--color-muted)">{t('pageBuilder.name', 'Name')}</p>
+				<p class="text-sm" style="color: var(--color-foreground)">{row.name}</p>
+			</div>
+			<div>
+				<p class="mb-0.5 text-xs font-medium" style="color: var(--color-muted)">{t('pageBuilder.slug', 'Slug')}</p>
+				<p class="font-mono text-xs" style="color: var(--color-foreground)">{row.slug}</p>
+			</div>
+			<div>
+				<p class="mb-0.5 text-xs font-medium" style="color: var(--color-muted)">{t('pageBuilder.type', 'Type')}</p>
+				<p class="font-mono text-xs" style="color: var(--color-foreground)">{row.component}</p>
+			</div>
+			<div>
+				<p class="mb-0.5 text-xs font-medium" style="color: var(--color-muted)">{t('pageBuilder.category', 'Category')}</p>
+				<p class="text-sm" style="color: var(--color-foreground)">{row.category || '—'}</p>
+			</div>
+			<div>
+				<p class="mb-0.5 text-xs font-medium" style="color: var(--color-muted)">{t('pageBuilder.created', 'Created')}</p>
+				<p class="text-xs" style="color: var(--color-foreground)">{new Date(row.created_at).toLocaleDateString()}</p>
+			</div>
+			<div>
+				<p class="mb-0.5 text-xs font-medium" style="color: var(--color-muted)">{t('pageBuilder.updated', 'Updated')}</p>
+				<p class="text-xs" style="color: var(--color-foreground)">{new Date(row.updated_at).toLocaleDateString()}</p>
+			</div>
+		</div>
+
+		<!-- Default config -->
+		{#if row.default_config && Object.keys(row.default_config).length > 0}
+			<div>
+				<p class="mb-1 text-xs font-medium" style="color: var(--color-muted)">{t('pageBuilder.default_config', 'Default Config')}</p>
+				<pre class="overflow-x-auto rounded-lg border p-3 text-xs" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)">{JSON.stringify(row.default_config, null, 2)}</pre>
+			</div>
+		{/if}
+
+		<!-- Config schema -->
+		{#if row.config_schema && Object.keys(row.config_schema).length > 0}
+			<div>
+				<p class="mb-1 text-xs font-medium" style="color: var(--color-muted)">{t('pageBuilder.config_schema', 'Config Schema')}</p>
+				<pre class="overflow-x-auto rounded-lg border p-3 text-xs" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)">{JSON.stringify(row.config_schema, null, 2)}</pre>
+			</div>
 		{/if}
 	</div>
 {/snippet}
-
-<svelte:head>
-	<title>{t('pageBuilder.blocks_title')} — JapaConnect Admin</title>
-</svelte:head>
-
-<h1 class="mb-1 text-2xl font-bold tracking-tight">{t('pageBuilder.blocks_title')}</h1>
-<p class="mb-4 text-sm" style="color: var(--color-muted)">{t('pageBuilder.blocks_description')}</p>
-
-{#if errorMessage}
-	<div class="mb-4 rounded-md border px-4 py-3 text-sm" style="border-color: var(--color-danger); background-color: color-mix(in srgb, var(--color-danger) 8%, transparent); color: var(--color-danger)">
-		{errorMessage}
-	</div>
-{/if}
-
-<div class="mb-4 flex items-center justify-end">
-	{#if canManageBlocks}
-		<button class="btn btn-primary flex items-center gap-1.5 text-xs" onclick={openCreate}>
-			<Plus class="h-3 w-3" />
-			{t('pageBuilder.create_block')}
-		</button>
-	{/if}
-</div>
-
-<DataTable
-	columns={columns}
-	data={filteredBlocks()}
-	{loading}
-	pageSize={25}
-	emptyMessage={t('pageBuilder.empty')}
-	searchable
-	searchPlaceholder={t('common.search')}
-	onsearch={(q) => { searchQuery = q; }}
-/>
-
-<!-- Create/Edit Modal -->
-<Modal bind:open={modalOpen} title={editingBlock ? t('pageBuilder.edit_block') : t('pageBuilder.create_block')} onConfirm={editingBlock ? updateBlock : createBlock} confirmLabel={saving ? t('common.saving') : editingBlock ? t('common.save') : t('common.create')}>
-	<div class="space-y-4">
-		<div>
-			<label for="pb-name" class="mb-1 block text-sm font-medium">{t('pageBuilder.name')}</label>
-			<input id="pb-name" type="text" bind:value={name} required class="w-full rounded-lg border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-background); color: var(--color-foreground)" />
-		</div>
-		<div>
-			<label for="pb-slug" class="mb-1 block text-sm font-medium">{t('pageBuilder.slug')}</label>
-			<input id="pb-slug" type="text" bind:value={slug} placeholder={t('pageBuilder.slug_placeholder')} class="w-full rounded-lg border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-background); color: var(--color-foreground)" />
-		</div>
-		<div>
-			<label for="pb-type" class="mb-1 block text-sm font-medium">{t('pageBuilder.type')}</label>
-			<select id="pb-type" bind:value={component} required class="w-full rounded-lg border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-background); color: var(--color-foreground)">
-				<option value="" disabled>{t('pageBuilder.select_type', 'Select a block type')}</option>
-				{#each blockTypeOptions as bt}
-					<option value={bt.type}>{bt.name}</option>
-				{/each}
-			</select>
-		</div>
-		<div>
-			<label for="pb-cat" class="mb-1 block text-sm font-medium">{t('pageBuilder.category')}</label>
-			<select id="pb-cat" bind:value={category} class="w-full rounded-lg border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-background); color: var(--color-foreground)">
-				<option value="">{t('pageBuilder.select_category', 'Select a category')}</option>
-				{#each blockCategories as cat}
-					<option value={cat}>{cat}</option>
-				{/each}
-			</select>
-		</div>
-		<div class="flex items-center gap-2">
-			<input id="pb-enabled" type="checkbox" bind:checked={isEnabled} class="rounded" />
-			<label for="pb-enabled" class="text-sm">{t('pageBuilder.enabled')}</label>
-		</div>
-	</div>
-</Modal>
-
-<!-- Delete Confirmation Modal -->
-<Modal bind:open={showDeleteConfirm} title={t('pageBuilder.confirm_delete', 'Delete Block Type')}>
-	{#if deleteTarget}
-		<p class="text-sm" style="color: var(--color-foreground)">
-			{t('pageBuilder.delete_warning', 'Delete block type')} <strong>{deleteTarget.name}</strong>?
-		</p>
-		<p class="mt-2 text-sm" style="color: var(--color-danger)">{t('common.cannotUndo', 'This action cannot be undone.')}</p>
-	{/if}
-	<div class="mt-4 flex justify-end gap-2">
-		<Button variant="ghost" onclick={() => (showDeleteConfirm = false)}>{t('common.cancel', 'Cancel')}</Button>
-		<Button variant="destructive" onclick={executeDelete} disabled={deleting}>
-			{deleting ? t('common.deleting', 'Deleting...') : t('common.delete', 'Delete')}
-		</Button>
-	</div>
-</Modal>
-
-<!-- Preview Modal -->
-{#if showPreviewModal && previewBlock}
-	<Modal bind:open={showPreviewModal} title={t('pageBuilder.preview_title', 'Block Type Preview')}>
-		<div class="space-y-4">
-			<!-- Preview header -->
-			<div class="flex items-center gap-3">
-				<div class="flex h-12 w-12 items-center justify-center rounded-lg border" style="border-color: var(--color-border); background: var(--color-surface)">
-					<span class="text-lg font-bold" style="color: var(--color-primary)">{previewBlock.component.charAt(0).toUpperCase()}</span>
-				</div>
-				<div>
-					<p class="text-sm font-semibold" style="color: var(--color-foreground)">{previewBlock.name}</p>
-					<p class="text-xs" style="color: var(--color-muted)">{previewBlock.component}</p>
-				</div>
-				<div class="ml-auto">
-					{#if previewBlock.is_enabled}
-						<span class="inline-block rounded-full bg-success/15 px-2 py-0.5 text-xs font-medium text-success">{t('pageBuilder.enabled')}</span>
-					{:else}
-						<span class="inline-block rounded-full bg-muted/15 px-2 py-0.5 text-xs font-medium text-muted">{t('pageBuilder.disabled')}</span>
-					{/if}
-				</div>
-			</div>
-
-			<!-- Details grid -->
-			<div class="grid grid-cols-2 gap-3">
-				<div>
-					<p class="mb-0.5 text-xs font-medium" style="color: var(--color-muted)">{t('pageBuilder.name')}</p>
-					<p class="text-sm" style="color: var(--color-foreground)">{previewBlock.name}</p>
-				</div>
-				<div>
-					<p class="mb-0.5 text-xs font-medium" style="color: var(--color-muted)">{t('pageBuilder.slug')}</p>
-					<p class="font-mono text-xs" style="color: var(--color-foreground)">{previewBlock.slug}</p>
-				</div>
-				<div>
-					<p class="mb-0.5 text-xs font-medium" style="color: var(--color-muted)">{t('pageBuilder.type')}</p>
-					<p class="font-mono text-xs" style="color: var(--color-foreground)">{previewBlock.component}</p>
-				</div>
-				<div>
-					<p class="mb-0.5 text-xs font-medium" style="color: var(--color-muted)">{t('pageBuilder.category')}</p>
-					<p class="text-sm" style="color: var(--color-foreground)">{previewBlock.category || '—'}</p>
-				</div>
-				<div>
-					<p class="mb-0.5 text-xs font-medium" style="color: var(--color-muted)">{t('pageBuilder.created', 'Created')}</p>
-					<p class="text-xs" style="color: var(--color-foreground)">{new Date(previewBlock.created_at).toLocaleDateString()}</p>
-				</div>
-				<div>
-					<p class="mb-0.5 text-xs font-medium" style="color: var(--color-muted)">{t('pageBuilder.updated', 'Updated')}</p>
-					<p class="text-xs" style="color: var(--color-foreground)">{new Date(previewBlock.updated_at).toLocaleDateString()}</p>
-				</div>
-			</div>
-
-			<!-- Default config -->
-			{#if previewBlock.default_config && Object.keys(previewBlock.default_config).length > 0}
-				<div>
-					<p class="mb-1 text-xs font-medium" style="color: var(--color-muted)">{t('pageBuilder.default_config', 'Default Config')}</p>
-					<pre class="overflow-x-auto rounded-lg border p-3 text-xs" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)">{JSON.stringify(previewBlock.default_config, null, 2)}</pre>
-				</div>
-			{/if}
-
-			<!-- Config schema -->
-			{#if previewBlock.config_schema && Object.keys(previewBlock.config_schema).length > 0}
-				<div>
-					<p class="mb-1 text-xs font-medium" style="color: var(--color-muted)">{t('pageBuilder.config_schema', 'Config Schema')}</p>
-					<pre class="overflow-x-auto rounded-lg border p-3 text-xs" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)">{JSON.stringify(previewBlock.config_schema, null, 2)}</pre>
-				</div>
-			{/if}
-
-			<!-- Manage actions -->
-			{#if canManageBlocks}
-				<div class="flex justify-end gap-2 border-t pt-3" style="border-color: var(--color-border)">
-					<Button variant="ghost" size="sm" onclick={() => { if (previewBlock) { showPreviewModal = false; openEdit(previewBlock); } }}>
-						<Pencil class="h-3 w-3" />
-						{t('pageBuilder.edit_block')}
-					</Button>
-				</div>
-			{/if}
-		</div>
-	</Modal>
-{/if}

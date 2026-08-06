@@ -8,8 +8,10 @@
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import { Modal } from '$lib/components/ui/modal';
+	import { SlideOver } from '$lib/components/ui/slide-over';
 	import { DataTable } from '$lib/components/ui/data-table';
 	import { Select } from '$lib/components/ui/select';
+	import type { ActionItem } from '$lib/components/ui/data-table';
 	import { ArrowUp, ArrowDown, Plus, Trash2, Pencil, Eye } from 'lucide-svelte';
 	import { formsAdminApi, fieldGroupsAdminApiExtended } from '$lib/api';
 	import { PUBLIC_JC_SITE_URL } from '$env/static/public';
@@ -49,6 +51,8 @@
 		id: string;
 		title: string;
 		position: number;
+		field_group_id?: string;
+		fields?: FieldDef[];
 	};
 
 	type Submission = {
@@ -99,6 +103,10 @@
 	let newFieldRequired = $state(false);
 	let newFieldPlaceholder = $state('');
 	let savingField = $state(false);
+	// For multi-step forms: which step are we adding a field to?
+	let selectedStepForField = $state<FormStep | null>(null);
+	// For multi-step forms: which step's field are we editing/deleting/moving?
+	let editingFieldStepGroupId = $state('');
 
 	let showEditFieldModal = $state(false);
 	let editingField = $state<FieldDef | null>(null);
@@ -111,8 +119,12 @@
 
 	let submissions = $state<Submission[]>([]);
 	let loadingSubmissions = $state(false);
-	let showSubmissionModal = $state(false);
+	let showSubmissionSlideOver = $state(false);
 	let selectedSubmission = $state<Submission | null>(null);
+
+	const submissionActions: ActionItem[] = [
+		{ label: t('common.view', 'View'), icon: Eye, onclick: (row: Submission) => { selectedSubmission = row; showSubmissionSlideOver = true; } }
+	];
 
 	// --- Triggers Tab ---
 
@@ -155,6 +167,14 @@
 
 	let steps = $state<FormStep[]>([]);
 	let loadingSteps = $state(false);
+	let showAddStepModal = $state(false);
+	let newStepTitle = $state('');
+	let savingStep = $state(false);
+	let stepError = $state('');
+
+	let showEditStepModal = $state(false);
+	let editingStep = $state<FormStep | null>(null);
+	let editStepTitle = $state('');
 
 	// --- Loaded Flags (prevent infinite retry loops) ---
 
@@ -218,6 +238,13 @@
 					// Extract field_group_id for field operations
 					if (form.field_group_id) {
 						fieldGroupId = form.field_group_id;
+					}
+					// Seed steps from the form response (GetForm returns steps[] for
+					// multi-step forms) so the metadata tab renders without a second
+					// round-trip.
+					if (Array.isArray((form as any).steps)) {
+						steps = (form as any).steps;
+						stepsLoaded = true;
 					}
 				}
 			}
@@ -384,12 +411,104 @@
 		loadingSteps = true;
 		try {
 			if (form?.is_multi_step) {
+				const result = await formsAdminApi.listSteps(formId);
+				if (result.ok) {
+					const raw = result.data;
+					steps = Array.isArray(raw) ? raw : (raw as any)?.data ?? [];
+				} else {
+					steps = [];
+				}
+			} else {
 				steps = [];
 			}
 		} catch {
-			// ignore
+			steps = [];
 		} finally {
 			loadingSteps = false;
+		}
+	}
+
+	async function addStep() {
+		if (!newStepTitle.trim()) return;
+		savingStep = true;
+		stepError = '';
+		try {
+			const result = await formsAdminApi.createStep(formId, {
+				title: newStepTitle.trim(),
+				position: steps.length,
+			});
+			if (result.ok) {
+				showAddStepModal = false;
+				newStepTitle = '';
+				await loadSteps();
+			} else {
+				stepError = result.error;
+			}
+		} catch (e) {
+			stepError = e instanceof Error ? e.message : 'Failed to create step';
+		} finally {
+			savingStep = false;
+		}
+	}
+
+	function openEditStep(step: FormStep) {
+		editingStep = step;
+		editStepTitle = step.title;
+		showEditStepModal = true;
+	}
+
+	async function updateStep() {
+		if (!editingStep || !editStepTitle.trim()) return;
+		savingStep = true;
+		stepError = '';
+		try {
+			const result = await formsAdminApi.updateStep(formId, editingStep.id, {
+				title: editStepTitle.trim(),
+				position: editingStep.position,
+			});
+			if (result.ok) {
+				showEditStepModal = false;
+				editingStep = null;
+				await loadSteps();
+			} else {
+				stepError = result.error;
+			}
+		} catch (e) {
+			stepError = e instanceof Error ? e.message : 'Failed to update step';
+		} finally {
+			savingStep = false;
+		}
+	}
+
+	async function deleteStep(stepId: string) {
+		try {
+			await formsAdminApi.deleteStep(formId, stepId);
+			await loadSteps();
+		} catch {
+			// ignore
+		}
+	}
+
+	async function moveStep(stepId: string, direction: -1 | 1) {
+		const idx = steps.findIndex((s) => s.id === stepId);
+		if (idx < 0) return;
+		const newIdx = idx + direction;
+		if (newIdx < 0 || newIdx >= steps.length) return;
+		const reordered = [...steps];
+		[reordered[idx], reordered[newIdx]] = [reordered[newIdx], reordered[idx]];
+		// Update position fields in-place so downstream edits (which send
+		// editingStep.position) use the new index, not the stale pre-swap value.
+		reordered.forEach((s, i) => (s.position = i));
+		steps = reordered;
+		try {
+			await formsAdminApi.reorderSteps(formId, {
+				step_ids: steps.map((s) => s.id),
+			});
+			// Reload to confirm the reorder persisted server-side.
+			await loadSteps();
+		} catch {
+			// Reload to undo optimistic reorder on failure
+			await loadSteps();
 		}
 	}
 
@@ -440,27 +559,46 @@
 			.replace(/^_|_$/g, '');
 	}
 
+	// Returns the field group ID to use for field CRUD:
+	// - For multi-step forms: the selected step's field_group_id
+	// - For non-multi-step forms: the form's field_group_id
+	function activeFieldGroupId(): string {
+		if (form?.is_multi_step && selectedStepForField?.field_group_id) {
+			return selectedStepForField.field_group_id;
+		}
+		return fieldGroupId;
+	}
+
 	async function addField() {
 		if (!newFieldLabel.trim()) return;
 		savingField = true;
 		try {
-			// Ensure form has a field group
-			if (!fieldGroupId) {
+			let groupId = activeFieldGroupId();
+			// For non-multi-step forms, ensure the form has a field group.
+			if (!form?.is_multi_step && !groupId) {
 				const ensureResult = await formsAdminApi.ensureFieldGroup(formId);
 				if (ensureResult.ok) {
 					const data = (ensureResult.data as any)?.data ?? ensureResult.data;
 					fieldGroupId = data?.field_group_id;
+					groupId = fieldGroupId;
 				}
-				if (!fieldGroupId) return;
+				if (!groupId) return;
 			}
+			if (!groupId) return;
+
+			// For multi-step forms, position is relative to the step's fields.
+			const positionBase = form?.is_multi_step && selectedStepForField?.fields
+				? selectedStepForField.fields.length
+				: fields.length;
+
 			const key = toKey(newFieldLabel.trim());
-			const result = await fieldGroupsAdminApiExtended.addField(fieldGroupId, {
+			const result = await fieldGroupsAdminApiExtended.addField(groupId, {
 				label: newFieldLabel.trim(),
 				key,
 				field_type: newFieldType,
 				is_required: newFieldRequired,
 				placeholder: newFieldPlaceholder.trim() || undefined,
-				position: fields.length,
+				position: positionBase,
 			});
 			if (result.ok) {
 				showAddFieldModal = false;
@@ -468,6 +606,7 @@
 				newFieldType = 'text';
 				newFieldRequired = false;
 				newFieldPlaceholder = '';
+				selectedStepForField = null;
 				await loadForm();
 				if (form?.fields) {
 					fields = form.fields;
@@ -480,20 +619,23 @@
 		}
 	}
 
-	function openEditField(field: FieldDef) {
+	function openEditField(field: FieldDef, stepGroupId?: string) {
 		editingField = field;
 		editFieldLabel = field.label;
 		editFieldType = field.type;
 		editFieldPlaceholder = field.placeholder ?? '';
 		editFieldRequired = field.required ?? false;
+		// For multi-step forms, remember which step's field group this field belongs to.
+		editingFieldStepGroupId = stepGroupId ?? '';
 		showEditFieldModal = true;
 	}
 
 	async function updateField() {
-		if (!fieldGroupId || !editingField) return;
+		const groupId = editingFieldStepGroupId || fieldGroupId;
+		if (!groupId || !editingField) return;
 		savingField = true;
 		try {
-			const result = await fieldGroupsAdminApiExtended.updateField(fieldGroupId, editingField.id, {
+			const result = await fieldGroupsAdminApiExtended.updateField(groupId, editingField.id, {
 				label: editFieldLabel.trim(),
 				field_type: editFieldType,
 				is_required: editFieldRequired,
@@ -502,6 +644,7 @@
 			if (result.ok) {
 				showEditFieldModal = false;
 				editingField = null;
+				editingFieldStepGroupId = '';
 				await loadForm();
 				if (form?.fields) {
 					fields = form.fields;
@@ -514,10 +657,11 @@
 		}
 	}
 
-	async function deleteField(fieldId: string) {
-		if (!fieldGroupId) return;
+	async function deleteField(fieldId: string, stepGroupId?: string) {
+		const groupId = stepGroupId || fieldGroupId;
+		if (!groupId) return;
 		try {
-			await fieldGroupsAdminApiExtended.deleteField(fieldGroupId, fieldId);
+			await fieldGroupsAdminApiExtended.deleteField(groupId, fieldId);
 			await loadForm();
 			if (form?.fields) {
 				fields = form.fields;
@@ -527,18 +671,28 @@
 		}
 	}
 
-	async function moveField(fieldId: string, direction: -1 | 1) {
-		if (!fieldGroupId) return;
-		const idx = fields.findIndex((f) => f.id === fieldId);
+	async function moveField(fieldId: string, direction: -1 | 1, stepFields?: FieldDef[], stepGroupId?: string) {
+		const groupId = stepGroupId || fieldGroupId;
+		if (!groupId) return;
+		// For multi-step forms, reorder within the step's field list.
+		const fieldList = stepFields ?? fields;
+		const idx = fieldList.findIndex((f) => f.id === fieldId);
 		if (idx < 0) return;
 		const newIdx = idx + direction;
-		if (newIdx < 0 || newIdx >= fields.length) return;
-		const newFields = [...fields];
-		[newFields[idx], newFields[newIdx]] = [newFields[newIdx], newFields[idx]];
-		fields = newFields;
+		if (newIdx < 0 || newIdx >= fieldList.length) return;
+		const newFieldArr = [...fieldList];
+		[newFieldArr[idx], newFieldArr[newIdx]] = [newFieldArr[newIdx], newFieldArr[idx]];
+		if (stepFields) {
+			// Optimistically update the step's fields in the steps array
+			steps = steps.map((s) =>
+				s.id === (selectedStepForField?.id ?? '') ? { ...s, fields: newFieldArr } : s
+			);
+		} else {
+			fields = newFieldArr;
+		}
 		try {
-			await fieldGroupsAdminApiExtended.reorderFields(fieldGroupId, {
-				field_ids: fields.map((f) => f.id),
+			await fieldGroupsAdminApiExtended.reorderFields(groupId, {
+				field_ids: newFieldArr.map((f) => f.id),
 			});
 			// Reload form to confirm reorder persisted
 			await loadForm();
@@ -560,7 +714,7 @@
 		try {
 			await formsAdminApi.updateSubmission(formId, subId, { status });
 			loadSubmissions();
-			showSubmissionModal = false;
+			showSubmissionSlideOver = false;
 		} catch {
 			// ignore
 		}
@@ -570,7 +724,7 @@
 		try {
 			await formsAdminApi.deleteSubmission(formId, subId);
 			loadSubmissions();
-			showSubmissionModal = false;
+			showSubmissionSlideOver = false;
 		} catch {
 			// ignore
 		}
@@ -609,12 +763,6 @@
 		else if (tab === 'metadata' && form?.is_multi_step && !stepsLoaded && !loadingSteps) { stepsLoaded = true; loadSteps(); }
 	});
 </script>
-
-{#snippet SubmissionActionsCell({ value, row }: { value: any; row: Submission })}
-	<Button variant="ghost" size="sm" onclick={() => { selectedSubmission = row; showSubmissionModal = true; }}>
-		<Eye class="h-3.5 w-3.5" />
-	</Button>
-{/snippet}
 
 <svelte:head>
 	<title>{form?.name ?? 'Form'} — JapaConnect Admin</title>
@@ -706,7 +854,14 @@
 		{#if form?.is_multi_step}
 			<Card class="mt-4">
 				<CardContent class="p-6">
-					<h3 class="mb-4 text-sm font-semibold text-foreground">{t('forms.steps', 'Form Steps')}</h3>
+					<div class="mb-4 flex items-center justify-between">
+						<h3 class="text-sm font-semibold text-foreground">{t('forms.steps', 'Form Steps')}</h3>
+						{#if canManage}
+							<Button onclick={() => { stepError = ''; newStepTitle = ''; showAddStepModal = true; }}>
+								<Plus class="mr-1 h-4 w-4" /> {t('forms.addStep', 'Add Step')}
+							</Button>
+						{/if}
+					</div>
 					{#if loadingSteps}
 						<TableSkeleton />
 					{:else if steps.length === 0}
@@ -719,6 +874,22 @@
 										<span class="flex h-6 w-6 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">{idx + 1}</span>
 										<span class="text-sm font-medium">{step.title}</span>
 									</div>
+									{#if canManage}
+										<div class="flex items-center gap-1">
+											<Button variant="ghost" size="sm" onclick={() => openEditStep(step)}>
+												<Pencil class="h-3.5 w-3.5" />
+											</Button>
+											<Button variant="ghost" size="sm" disabled={idx === 0} onclick={() => moveStep(step.id, -1)}>
+												<ArrowUp class="h-3.5 w-3.5" />
+											</Button>
+											<Button variant="ghost" size="sm" disabled={idx === steps.length - 1} onclick={() => moveStep(step.id, 1)}>
+												<ArrowDown class="h-3.5 w-3.5" />
+											</Button>
+											<Button variant="ghost" size="sm" style="color: var(--color-danger)" onclick={() => deleteStep(step.id)}>
+												<Trash2 class="h-3.5 w-3.5" />
+											</Button>
+										</div>
+									{/if}
 								</div>
 							{/each}
 						</div>
@@ -726,6 +897,44 @@
 				</CardContent>
 			</Card>
 		{/if}
+
+		<!-- Add Step Modal -->
+		<Modal bind:open={showAddStepModal} title={t('forms.addStep', 'Add Step')} size="sm">
+			<div class="space-y-4">
+				{#if stepError}
+					<div class="rounded-md border px-4 py-3 text-sm" style="border-color: var(--color-danger); background-color: color-mix(in srgb, var(--color-danger) 8%, transparent); color: var(--color-danger)">{stepError}</div>
+				{/if}
+				<div>
+					<label for="new-step-title" class="mb-1 block text-sm font-medium text-foreground-alt">{t('forms.stepTitle', 'Step Title')} *</label>
+					<input id="new-step-title" type="text" class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" bind:value={newStepTitle} placeholder={t('forms.stepTitlePlaceholder', 'e.g., Personal Information')} />
+				</div>
+			</div>
+			<div class="mt-6 flex justify-end gap-3">
+				<Button variant="outline" onclick={() => (showAddStepModal = false)}>{t('common.cancel', 'Cancel')}</Button>
+				<Button onclick={addStep} disabled={savingStep || !newStepTitle.trim()}>
+					{savingStep ? t('common.creating', 'Adding...') : t('forms.addStep', 'Add Step')}
+				</Button>
+			</div>
+		</Modal>
+
+		<!-- Edit Step Modal -->
+		<Modal bind:open={showEditStepModal} title={t('forms.editStep', 'Edit Step')} size="sm">
+			<div class="space-y-4">
+				{#if stepError}
+					<div class="rounded-md border px-4 py-3 text-sm" style="border-color: var(--color-danger); background-color: color-mix(in srgb, var(--color-danger) 8%, transparent); color: var(--color-danger)">{stepError}</div>
+				{/if}
+				<div>
+					<label for="edit-step-title" class="mb-1 block text-sm font-medium text-foreground-alt">{t('forms.stepTitle', 'Step Title')} *</label>
+					<input id="edit-step-title" type="text" class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" bind:value={editStepTitle} />
+				</div>
+			</div>
+			<div class="mt-6 flex justify-end gap-3">
+				<Button variant="outline" onclick={() => (showEditStepModal = false)}>{t('common.cancel', 'Cancel')}</Button>
+				<Button onclick={updateStep} disabled={savingStep || !editStepTitle.trim()}>
+					{savingStep ? t('common.saving', 'Saving...') : t('common.save', 'Save')}
+				</Button>
+			</div>
+		</Modal>
 
 		<!-- Embed & Share -->
 		{#if form}
@@ -765,11 +974,72 @@
 	{:else if activeTab === 'fields'}
 		{#if loadingFields}
 			<TableSkeleton />
+		{:else if form?.is_multi_step}
+			<!-- Multi-step: fields grouped per step -->
+			{#if steps.length === 0}
+				<Card class="mt-4">
+					<CardContent class="p-4">
+						<p class="py-8 text-center text-sm text-muted">{t('forms.addStepsFirst', 'Add steps first, then add fields to each step.')}</p>
+					</CardContent>
+				</Card>
+			{:else}
+				{#each steps as step, stepIdx}
+					<Card class="mt-4">
+						<CardContent class="p-4">
+							<div class="mb-4 flex items-center justify-between">
+								<div class="flex items-center gap-2">
+									<span class="flex h-6 w-6 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">{stepIdx + 1}</span>
+									<h4 class="text-sm font-semibold text-foreground">{step.title}</h4>
+								</div>
+								{#if canManage}
+									<Button size="sm" onclick={() => { selectedStepForField = step; newFieldLabel = ''; newFieldType = 'text'; newFieldRequired = false; newFieldPlaceholder = ''; showAddFieldModal = true; }}>
+										<Plus class="mr-1 h-4 w-4" /> {t('forms.addFieldToStep', 'Add Field to Step')}
+									</Button>
+								{/if}
+							</div>
+							{#if !step.fields || step.fields.length === 0}
+								<p class="py-4 text-center text-sm text-muted">{t('forms.noFieldsInStep', 'No fields in this step yet')}</p>
+							{:else}
+								<div class="space-y-2">
+									{#each step.fields as field, idx}
+										<div class="flex items-center justify-between rounded-md border border-border bg-surface px-4 py-3">
+											<div class="flex items-center gap-3">
+												<span class="text-sm font-medium">{field.label}</span>
+												<Badge variant="secondary">{field.type}</Badge>
+												{#if field.required}
+													<Badge variant="destructive">{t('forms.required', 'Required')}</Badge>
+												{/if}
+											</div>
+											{#if canManage}
+												<div class="flex items-center gap-1">
+													<Button variant="ghost" size="sm" onclick={() => openEditField(field, step.field_group_id)}>
+														<Pencil class="h-3.5 w-3.5" />
+													</Button>
+													<Button variant="ghost" size="sm" disabled={idx === 0} onclick={() => { selectedStepForField = step; moveField(field.id, -1, step.fields, step.field_group_id); }}>
+														<ArrowUp class="h-3.5 w-3.5" />
+													</Button>
+													<Button variant="ghost" size="sm" disabled={idx === step.fields.length - 1} onclick={() => { selectedStepForField = step; moveField(field.id, 1, step.fields, step.field_group_id); }}>
+														<ArrowDown class="h-3.5 w-3.5" />
+													</Button>
+													<Button variant="ghost" size="sm" style="color: var(--color-danger)" onclick={() => deleteField(field.id, step.field_group_id)}>
+														<Trash2 class="h-3.5 w-3.5" />
+													</Button>
+												</div>
+											{/if}
+										</div>
+									{/each}
+								</div>
+							{/if}
+						</CardContent>
+					</Card>
+				{/each}
+			{/if}
 		{:else}
+			<!-- Non-multi-step: flat field list -->
 			<Card class="mt-4">
 				<CardContent class="p-4">
 					<div class="mb-4 flex justify-end">
-						<Button onclick={() => (showAddFieldModal = true)}>
+						<Button onclick={() => { selectedStepForField = null; (showAddFieldModal = true); }}>
 							<Plus class="mr-1 h-4 w-4" /> {t('forms.addField', 'Add Field')}
 						</Button>
 					</div>
@@ -806,63 +1076,69 @@
 					{/if}
 				</CardContent>
 			</Card>
-
-			<!-- Add Field Modal -->
-			<Modal bind:open={showAddFieldModal} title={t('forms.addField', 'Add Field')} size="sm">
-				<div class="space-y-4">
-					<div>
-						<label for="new-field-label" class="mb-1 block text-sm font-medium text-foreground-alt">{t('forms.fieldLabel', 'Label')} *</label>
-						<input id="new-field-label" type="text" class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" bind:value={newFieldLabel} placeholder={t('forms.fieldLabelPlaceholder', 'e.g., Your Name')} />
-					</div>
-					<div>
-						<label for="new-field-type" class="mb-1 block text-sm font-medium text-foreground-alt">{t('forms.fieldType', 'Type')}</label>
-						<Select options={fieldTypes} bind:value={newFieldType} />
-					</div>
-					<div>
-						<label for="new-field-placeholder" class="mb-1 block text-sm font-medium text-foreground-alt">{t('forms.fieldPlaceholder', 'Placeholder')}</label>
-						<input id="new-field-placeholder" type="text" class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" bind:value={newFieldPlaceholder} />
-					</div>
-					<div class="flex items-center gap-2">
-						<input id="new-field-required" type="checkbox" bind:checked={newFieldRequired} class="rounded" />
-						<label for="new-field-required" class="text-sm text-foreground-alt">{t('forms.fieldRequired', 'Required')}</label>
-					</div>
-				</div>
-				<div class="mt-6 flex justify-end gap-3">
-					<Button variant="outline" onclick={() => (showAddFieldModal = false)}>{t('common.cancel', 'Cancel')}</Button>
-					<Button onclick={addField} disabled={savingField || !newFieldLabel.trim()}>
-						{savingField ? t('common.creating', 'Adding...') : t('forms.addField', 'Add Field')}
-					</Button>
-				</div>
-			</Modal>
-
-			<!-- Edit Field Modal -->
-			<Modal bind:open={showEditFieldModal} title={t('forms.editField', 'Edit Field')} size="sm">
-				<div class="space-y-4">
-					<div>
-						<label for="edit-field-label" class="mb-1 block text-sm font-medium text-foreground-alt">{t('forms.fieldLabel', 'Label')} *</label>
-						<input id="edit-field-label" type="text" class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" bind:value={editFieldLabel} />
-					</div>
-					<div>
-						<label for="edit-field-type" class="mb-1 block text-sm font-medium text-foreground-alt">{t('forms.fieldType', 'Type')}</label>
-						<Select options={fieldTypes} bind:value={editFieldType} />
-					</div>
-					<div>
-						<label for="edit-field-placeholder" class="mb-1 block text-sm font-medium text-foreground-alt">{t('forms.fieldPlaceholder', 'Placeholder')}</label>
-						<input id="edit-field-placeholder" type="text" class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" bind:value={editFieldPlaceholder} />
-					</div>
-					<div class="flex items-center gap-2">
-						<input id="edit-field-required" type="checkbox" bind:checked={editFieldRequired} class="rounded" />
-						<label for="edit-field-required" class="text-sm text-foreground-alt">{t('forms.fieldRequired', 'Required')}</label>
-					</div>
-				</div>
-				<div class="mt-6 flex justify-end gap-3">
-					<Button variant="outline" onclick={() => (showEditFieldModal = false)}>{t('common.cancel', 'Cancel')}</Button>
-					<Button onclick={updateField} disabled={savingField || !editFieldLabel.trim()}>
-						{savingField ? t('common.saving', 'Saving...') : t('common.save', 'Save')}
-					</Button>
-				</div>
-			</Modal>
 		{/if}
+
+		<!-- Field Modals (shared by multi-step and non-multi-step Fields tabs) -->
+		<!-- Add Field Modal -->
+		<Modal bind:open={showAddFieldModal} title={t('forms.addField', 'Add Field')} size="sm">
+			<div class="space-y-4">
+				{#if form?.is_multi_step && selectedStepForField}
+					<div class="rounded-md border border-border bg-surface px-3 py-2 text-sm text-muted">
+						{t('forms.addingToStep', 'Adding to step')}: <strong>{selectedStepForField.title}</strong>
+					</div>
+				{/if}
+				<div>
+					<label for="new-field-label" class="mb-1 block text-sm font-medium text-foreground-alt">{t('forms.fieldLabel', 'Label')} *</label>
+					<input id="new-field-label" type="text" class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" bind:value={newFieldLabel} placeholder={t('forms.fieldLabelPlaceholder', 'e.g., Your Name')} />
+				</div>
+				<div>
+					<label for="new-field-type" class="mb-1 block text-sm font-medium text-foreground-alt">{t('forms.fieldType', 'Type')}</label>
+					<Select options={fieldTypes} bind:value={newFieldType} />
+				</div>
+				<div>
+					<label for="new-field-placeholder" class="mb-1 block text-sm font-medium text-foreground-alt">{t('forms.fieldPlaceholder', 'Placeholder')}</label>
+					<input id="new-field-placeholder" type="text" class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" bind:value={newFieldPlaceholder} />
+				</div>
+				<div class="flex items-center gap-2">
+					<input id="new-field-required" type="checkbox" bind:checked={newFieldRequired} class="rounded" />
+					<label for="new-field-required" class="text-sm text-foreground-alt">{t('forms.fieldRequired', 'Required')}</label>
+				</div>
+			</div>
+			<div class="mt-6 flex justify-end gap-3">
+				<Button variant="outline" onclick={() => (showAddFieldModal = false)}>{t('common.cancel', 'Cancel')}</Button>
+				<Button onclick={addField} disabled={savingField || !newFieldLabel.trim()}>
+					{savingField ? t('common.creating', 'Adding...') : t('forms.addField', 'Add Field')}
+				</Button>
+			</div>
+		</Modal>
+
+		<!-- Edit Field Modal -->
+		<Modal bind:open={showEditFieldModal} title={t('forms.editField', 'Edit Field')} size="sm">
+			<div class="space-y-4">
+				<div>
+					<label for="edit-field-label" class="mb-1 block text-sm font-medium text-foreground-alt">{t('forms.fieldLabel', 'Label')} *</label>
+					<input id="edit-field-label" type="text" class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" bind:value={editFieldLabel} />
+				</div>
+				<div>
+					<label for="edit-field-type" class="mb-1 block text-sm font-medium text-foreground-alt">{t('forms.fieldType', 'Type')}</label>
+					<Select options={fieldTypes} bind:value={editFieldType} />
+				</div>
+				<div>
+					<label for="edit-field-placeholder" class="mb-1 block text-sm font-medium text-foreground-alt">{t('forms.fieldPlaceholder', 'Placeholder')}</label>
+					<input id="edit-field-placeholder" type="text" class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" bind:value={editFieldPlaceholder} />
+				</div>
+				<div class="flex items-center gap-2">
+					<input id="edit-field-required" type="checkbox" bind:checked={editFieldRequired} class="rounded" />
+					<label for="edit-field-required" class="text-sm text-foreground-alt">{t('forms.fieldRequired', 'Required')}</label>
+				</div>
+			</div>
+			<div class="mt-6 flex justify-end gap-3">
+				<Button variant="outline" onclick={() => (showEditFieldModal = false)}>{t('common.cancel', 'Cancel')}</Button>
+				<Button onclick={updateField} disabled={savingField || !editFieldLabel.trim()}>
+					{savingField ? t('common.saving', 'Saving...') : t('common.save', 'Save')}
+				</Button>
+			</div>
+		</Modal>
 	{:else if activeTab === 'submissions'}
 		{#if loadingSubmissions}
 			<TableSkeleton />
@@ -873,17 +1149,17 @@
 						columns={[
 							{ key: 'created_at', label: t('forms.submitted', 'Submitted'), sortable: true, render: (v: string) => new Date(v).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) },
 							{ key: 'status', label: t('forms.status', 'Status'), sortable: true, render: (v: string) => `<span class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold">${v}</span>` },
-							{ key: 'actions', label: '', componentSnippet: SubmissionActionsCell },
 						]}
 						data={submissions}
 						pageSize={20}
 						emptyMessage={t('forms.noSubmissions', 'No submissions yet')}
+						actions={submissionActions}
 					/>
 				</CardContent>
 			</Card>
 
-			<!-- Submission Detail Modal -->
-			<Modal bind:open={showSubmissionModal} title={t('forms.submissionDetail', 'Submission Detail')} size="lg">
+			<!-- Submission Detail SlideOver -->
+			<SlideOver bind:open={showSubmissionSlideOver} title={t('forms.submissionDetail', 'Submission Detail')} size="lg">
 				{#if selectedSubmission}
 					<div class="space-y-4">
 						<div class="grid grid-cols-2 gap-4">
@@ -910,21 +1186,25 @@
 							</div>
 						</div>
 					</div>
-					<div class="mt-6 flex justify-end gap-3">
-						<Button variant="outline" onclick={() => (showSubmissionModal = false)}>{t('common.close', 'Close')}</Button>
-						{#if selectedSubmission.status !== 'reviewed'}
+				{/if}
+				{#snippet footer()}
+					<div class="flex flex-wrap justify-end gap-3">
+						<Button variant="outline" onclick={() => (showSubmissionSlideOver = false)}>{t('common.close', 'Close')}</Button>
+						{#if selectedSubmission && selectedSubmission.status !== 'reviewed'}
 							<Button variant="outline" onclick={() => updateSubmissionStatus(selectedSubmission!.id, 'reviewed')}>{t('forms.markReviewed', 'Mark Reviewed')}</Button>
 						{/if}
-						{#if selectedSubmission.status !== 'actioned'}
+						{#if selectedSubmission && selectedSubmission.status !== 'actioned'}
 							<Button variant="outline" onclick={() => updateSubmissionStatus(selectedSubmission!.id, 'actioned')}>{t('forms.markActioned', 'Mark Actioned')}</Button>
 						{/if}
-						{#if selectedSubmission.status !== 'spam'}
+						{#if selectedSubmission && selectedSubmission.status !== 'spam'}
 							<Button variant="destructive" onclick={() => updateSubmissionStatus(selectedSubmission!.id, 'spam')}>{t('forms.markSpam', 'Mark Spam')}</Button>
 						{/if}
-						<Button variant="destructive" onclick={() => deleteSubmission(selectedSubmission!.id)}>{t('common.delete', 'Delete')}</Button>
+						{#if selectedSubmission}
+							<Button variant="destructive" onclick={() => deleteSubmission(selectedSubmission!.id)}>{t('common.delete', 'Delete')}</Button>
+						{/if}
 					</div>
-				{/if}
-			</Modal>
+				{/snippet}
+			</SlideOver>
 		{/if}
 
 	<!-- Triggers Tab -->

@@ -3,23 +3,26 @@ import { render, screen, waitFor } from '@testing-library/svelte';
 import Page from './+page.svelte';
 
 vi.mock('$lib/api', () => ({
-	api: vi.fn().mockRejectedValue(new Error('not connected')),
 	moderationAdminApi: {
-		getQueue: vi.fn().mockRejectedValue(new Error('not connected')),
-		updateItem: vi.fn().mockRejectedValue(new Error('not connected')),
-		bulkAction: vi.fn().mockRejectedValue(new Error('not connected')),
-	}
+		getQueue: vi.fn().mockResolvedValue({ ok: true, data: { items: [], total: 0, total_pages: 1 } }),
+		updateItem: vi.fn().mockResolvedValue({ ok: true }),
+		bulkAction: vi.fn().mockResolvedValue({ ok: true }),
+	},
+}));
+vi.mock('$app/state', () => ({
+	page: { params: {}, url: new URL('http://localhost/') },
+}));
+vi.mock('$app/navigation', () => ({ goto: vi.fn(), replaceState: vi.fn(), pushState: vi.fn() }));
+vi.mock('$lib/stores/permissions.svelte', () => ({
+	hasPermission: () => true,
+	getPermissions: () => ['*'],
+	getPermissionState: () => ({}),
 }));
 
-describe('Moderation +page.svelte', () => {
-	it('renders the moderation heading', () => {
+describe('/moderation', () => {
+	it('renders the Moderation heading', () => {
 		render(Page);
 		expect(screen.getByText('Content Moderation')).toBeTruthy();
-	});
-
-	it('shows filter controls', () => {
-		render(Page);
-		expect(screen.getByText('Apply')).toBeTruthy();
 	});
 
 	it('shows empty state when no items', async () => {

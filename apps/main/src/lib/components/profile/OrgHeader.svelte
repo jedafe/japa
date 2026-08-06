@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 	import { t } from '$lib/i18n';
+	import { i18n } from '$lib/i18n';
 	import { BadgeCheck, Globe, Users, Calendar } from 'lucide-svelte';
 	import type { PublicOrganization } from '$lib/types';
 
@@ -12,7 +13,7 @@
 	let { org, isOwner, children }: Props = $props();
 
 	const joinDate = $derived(
-		new Date(org.created_at).toLocaleDateString(undefined, {
+		new Date(org.created_at).toLocaleDateString(i18n.locale, {
 			year: 'numeric',
 			month: 'long'
 		})
