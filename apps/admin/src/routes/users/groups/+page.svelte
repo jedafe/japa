@@ -3,15 +3,15 @@
 	import { Card, CardContent } from '$lib/components/ui/card';
 	import { DataTable } from '$lib/components/ui/data-table';
 	import { Button } from '$lib/components/ui/button';
-	import Pagination from '$lib/components/ui/Pagination.svelte';
 	import { TableSkeleton } from '$lib/components/ui/skeleton';
-	import Modal from '$lib/components/Modal.svelte';
-	import { Plus, RefreshCw, Trash2 } from 'lucide-svelte';
+	import { Modal } from '$lib/components/ui/modal';
+	import { SlideOver } from '$lib/components/ui/slide-over';
+	import type { ActionItem, BulkAction } from '$lib/components/ui/data-table';
+	import { Plus, RefreshCw, Trash2, Pencil } from 'lucide-svelte';
 	import { userManagementApi, permissionsApi } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import type { UserGroup } from '$lib/api';
-	import GroupActionsCell from './GroupActionsCell.svelte';
 
 	let groups = $state<UserGroup[]>([]);
 	let loading = $state(true);
@@ -20,20 +20,24 @@
 	let pageSize = $state(25);
 	let totalPages = $state(1);
 
-	let showModal = $state(false);
+	let showSlideOver = $state(false);
+	let editingGroup = $state<UserGroup | null>(null);
 	let formName = $state('');
 	let formDescription = $state('');
 	let formPermissions = $state<string[]>([]);
 	let saveError = $state('');
 	let saving = $state(false);
 
-	let selectedIds = $state<Set<string>>(new Set());
+	let showDeleteConfirm = $state(false);
+	let deleteTarget = $state<UserGroup | null>(null);
 	let bulkDeleting = $state(false);
+
+	let selectedIds = $state<Set<string>>(new Set());
 
 	let allPermissions = $state<string[]>([]);
 	let permSearch = $state('');
 	let permCategory = $state('');
-	let searchQuery = $state("");
+	let searchQuery = $state('');
 
 	const canManageGroups = $derived(hasPermission('admin.rbac.manage'));
 
@@ -80,13 +84,25 @@
 	}
 
 	function openCreate() {
+		editingGroup = null;
 		formName = '';
 		formDescription = '';
 		formPermissions = [];
 		saveError = '';
 		permSearch = '';
 		permCategory = '';
-		showModal = true;
+		showSlideOver = true;
+	}
+
+	function openEdit(group: UserGroup) {
+		editingGroup = group;
+		formName = group.name;
+		formDescription = group.description;
+		formPermissions = [...(group.permissions ?? [])];
+		saveError = '';
+		permSearch = '';
+		permCategory = '';
+		showSlideOver = true;
 	}
 
 	async function handleSave() {
@@ -94,22 +110,39 @@
 		saving = true;
 		saveError = '';
 		const body = { name: formName, description: formDescription, permissions: formPermissions };
-		const result = await userManagementApi.createGroup(body);
+		const result = editingGroup
+			? await userManagementApi.updateGroup(editingGroup.id, body)
+			: await userManagementApi.createGroup(body);
 		saving = false;
 		if (result.ok) {
-			showModal = false;
+			showSlideOver = false;
 			load();
 		} else {
 			saveError = result.error ?? t('users.groups.save_error', 'Failed to save group');
 		}
 	}
 
-	async function bulkDelete() {
-		if (selectedIds.size === 0) return;
+	function confirmDelete(group: UserGroup) {
+		deleteTarget = group;
+		showDeleteConfirm = true;
+	}
+
+	async function handleDelete() {
+		if (!deleteTarget) return;
+		const result = await userManagementApi.deleteGroup(deleteTarget.id);
+		if (result.ok) {
+			showDeleteConfirm = false;
+			deleteTarget = null;
+			load();
+		}
+	}
+
+	async function bulkDelete(ids: Set<string>) {
+		const idArr = Array.from(ids);
+		if (idArr.length === 0 || bulkDeleting) return;
 		bulkDeleting = true;
 		try {
-			await Promise.all([...selectedIds].map((id) => userManagementApi.deleteGroup(id)));
-			selectedIds = new Set();
+			await Promise.all(idArr.map((id) => userManagementApi.deleteGroup(id)));
 			load();
 		} catch (e) {
 			console.error('Bulk delete failed:', e);
@@ -135,15 +168,28 @@
 				const rest = v.length > 3 ? `<span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs" style="background-color: var(--color-surface); color: var(--color-muted)">+${v.length - 3}</span>` : '';
 				return `<div class="flex flex-wrap gap-1">${shown.map((p) => `<span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs" style="background-color: var(--color-surface); color: var(--color-muted)">${p}</span>`).join('')}${rest}</div>`;
 			}
-		},
-		{
-			key: 'actions',
-			label: t('common.actions', 'Actions'),
-			class: 'w-24',
-			component: GroupActionsCell,
-			componentProps: { onchange: load }
 		}
 	];
+
+	const rowActions: ActionItem[] = [
+		{
+			label: t('common.edit', 'Edit'),
+			icon: Pencil,
+			onclick: (row: UserGroup) => openEdit(row),
+			show: () => canManageGroups
+		},
+		{
+			label: t('common.delete', 'Delete'),
+			icon: Trash2,
+			variant: 'destructive',
+			onclick: (row: UserGroup) => confirmDelete(row),
+			show: () => canManageGroups
+		}
+	];
+
+	const bulkActions: BulkAction[] = $derived(canManageGroups
+		? [{ label: t('users.groups.delete_selected', 'Delete Selected'), icon: Trash2, variant: 'destructive', onclick: bulkDelete }]
+		: []);
 
 	$effect(() => {
 		void currentPage;
@@ -174,31 +220,26 @@
 			<DataTable
 				{columns}
 				data={groups}
+				page={currentPage}
+				{pageSize}
+				totalRows={totalItems}
+				{totalPages}
+				onpagechange={(p) => { currentPage = p; }}
+				onpagesizechange={(s) => { pageSize = s; currentPage = 0; }}
 				emptyMessage={t('users.groups.empty', 'No groups found')}
 				searchable
 				onsearch={(q) => { searchQuery = q; currentPage = 0; }}
-				selectable
+				selectable={canManageGroups}
 				bind:selectedIds
-			>
-				{#snippet bulkActions()}
-					<Button variant="destructive" size="sm" onclick={bulkDelete} disabled={bulkDeleting || selectedIds.size === 0}>
-						<Trash2 class="h-3.5 w-3.5 mr-1" />
-						{bulkDeleting ? t('common.deleting', 'Deleting...') : t('users.groups.delete_selected', 'Delete Selected')} ({selectedIds.size})
-					</Button>
-				{/snippet}
-			</DataTable>
-			<Pagination
-				bind:page={currentPage}
-				{totalPages}
-				{totalItems}
-				bind:pageSize
+				actions={rowActions}
+				bulkActionsList={bulkActions}
 			/>
 		{/if}
 	</CardContent>
 </Card>
 
-<!-- Create Modal -->
-<Modal bind:open={showModal} title={t('users.groups.create_title', 'Create Group')} onConfirm={handleSave} confirmLabel={saving ? t('common.saving', 'Saving...') : t('common.save', 'Save')}>
+<!-- Create / Edit SlideOver -->
+<SlideOver bind:open={showSlideOver} title={editingGroup ? t('users.groups.edit_title', 'Edit Group') : t('users.groups.create_title', 'Create Group')}>
 	{#if saveError}
 		<div class="mb-3 rounded-md border px-3 py-2 text-xs" style="border-color: var(--color-danger); color: var(--color-danger)">{saveError}</div>
 	{/if}
@@ -256,5 +297,26 @@
 				{/each}
 			</div>
 		</div>
+	</div>
+	{#snippet footer()}
+		<div class="flex justify-end gap-2">
+			<Button variant="outline" onclick={() => { showSlideOver = false; }}>{t('common.cancel', 'Cancel')}</Button>
+			<Button onclick={handleSave} disabled={saving}>{saving ? t('common.saving', 'Saving...') : t('common.save', 'Save')}</Button>
+		</div>
+	{/snippet}
+</SlideOver>
+
+<!-- Delete Confirmation -->
+<Modal bind:open={showDeleteConfirm} title={t('common.delete', 'Delete')} size="sm">
+	<p class="text-sm" style="color: var(--color-foreground)">
+		{t('users.groups.delete_confirm', 'Are you sure you want to delete this group?')}
+	</p>
+	<p class="mt-2 text-sm font-medium" style="color: var(--color-foreground)">{deleteTarget?.name}</p>
+	<p class="mt-1 text-sm" style="color: var(--color-danger)">
+		{t('common.cannotUndo', 'This action cannot be undone.')}
+	</p>
+	<div class="mt-4 flex justify-end gap-2">
+		<Button variant="outline" onclick={() => { showDeleteConfirm = false; }}>{t('common.cancel', 'Cancel')}</Button>
+		<Button variant="destructive" onclick={handleDelete}>{t('common.delete', 'Delete')}</Button>
 	</div>
 </Modal>

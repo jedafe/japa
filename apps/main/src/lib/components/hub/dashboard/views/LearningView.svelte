@@ -95,7 +95,7 @@
 						</div>
 						<a
 							href="https://learn.japaconnect.com/tracks/{en.track_slug ?? en.id}"
-							class="shrink-0 rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1.5 text-xs font-medium text-white"
+							class="shrink-0 rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1.5 text-xs font-medium text-[var(--color-primary-contrast)]"
 						>
 							{t('dashboard.learning.resume')}
 						</a>

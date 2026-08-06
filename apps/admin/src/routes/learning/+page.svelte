@@ -4,9 +4,10 @@
 	import { Card, CardContent } from "$lib/components/ui/card";
 	import { Tabs } from "$lib/components/ui/tabs";
 	import { DataTable } from "$lib/components/ui/data-table";
-	import { FilterBar } from "$lib/components/ui/filter-bar";
 	import { Button } from "$lib/components/ui/button";
 	import { Modal } from "$lib/components/ui/modal";
+	import { SlideOver } from "$lib/components/ui/slide-over";
+	import type { ActionItem, BulkAction } from "$lib/components/ui/data-table";
 	import { Plus, GraduationCap, Layers, FileText, Trash2, Send, Pencil, Users } from "lucide-svelte";
 	import { onMount } from "svelte";
 	import { api } from "$lib/api";
@@ -72,12 +73,12 @@
 	let lessons = $state<Lesson[]>([]);
 	let loading = $state(true);
 	let error = $state("");
-	let filters = $state<Record<string, string>>({});
+	let searchQuery = $state('');
 	let selectedIds = $state<Set<string>>(new Set());
 	let bulkDeleting = $state(false);
 
-	// Create modal
-	let showCreateModal = $state(false);
+	// Create SlideOver
+	let showCreateSlideOver = $state(false);
 	let creating = $state(false);
 	let newTrack = $state({ title: "", slug: "", description: "", difficulty: "", category: "", subscription_eligible: false });
 	let newModule = $state({ track_id: "", title: "", slug: "", description: "" });
@@ -92,8 +93,8 @@
 		sort_order: 0
 	});
 
-	// Edit modal
-	let showEditModal = $state(false);
+	// Edit SlideOver
+	let showEditSlideOver = $state(false);
 	let editingItem = $state<any>(null);
 	let editForm = $state<Record<string, any>>({});
 	let savingEdit = $state(false);
@@ -198,12 +199,6 @@
 				};
 				return `<span class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${classes[variant]}">${label}</span>`;
 			}
-		},
-		{
-			key: "actions",
-			label: "",
-			class: "w-48",
-			componentSnippet: TrackActionsCell
 		}
 	];
 
@@ -230,12 +225,6 @@
 			label: t('app.learning.col_order', 'Order'),
 			sortable: true,
 			render: (value: number) => `<span class="text-sm text-foreground-alt">${value}</span>`
-		},
-		{
-			key: "actions",
-			label: "",
-			class: "w-24",
-			componentSnippet: ModuleActionsCell
 		}
 	];
 
@@ -268,22 +257,41 @@
 			label: t('app.learning.col_order', 'Order'),
 			sortable: true,
 			render: (value: number) => `<span class="text-sm text-foreground-alt">${value}</span>`
-		},
-		{
-			key: "actions",
-			label: "",
-			class: "w-24",
-			componentSnippet: LessonActionsCell
 		}
+	];
+
+	const trackActions: ActionItem[] = [
+		{ label: t('app.learning.publish', 'Publish'), icon: Send, onclick: (row) => openPublish(row.id, row.title), show: (row) => canManageLearning && row.is_published === false },
+		{ label: t('common.edit', 'Edit'), icon: Pencil, onclick: (row) => openEdit("track", row), show: () => canManageLearning },
+		{ label: t('app.learning.enrollments', 'Enrollments'), icon: Users, onclick: (row) => openEnrollments(row.id, row.title), show: () => canManageLearning },
+		{ label: t('common.delete', 'Delete'), icon: Trash2, variant: 'destructive', onclick: (row) => confirmDelete("track", row.id, row.title), show: () => canManageLearning }
+	];
+
+	const moduleActions: ActionItem[] = [
+		{ label: t('common.edit', 'Edit'), icon: Pencil, onclick: (row) => openEdit("module", row), show: () => canManageLearning },
+		{ label: t('common.delete', 'Delete'), icon: Trash2, variant: 'destructive', onclick: (row) => confirmDelete("module", row.id, row.title), show: () => canManageLearning }
+	];
+
+	const lessonActions: ActionItem[] = [
+		{ label: t('common.edit', 'Edit'), icon: Pencil, onclick: (row) => openEdit("lesson", row), show: () => canManageLearning },
+		{ label: t('common.delete', 'Delete'), icon: Trash2, variant: 'destructive', onclick: (row) => confirmDelete("lesson", row.id, row.title), show: () => canManageLearning }
 	];
 
 	let currentColumns = $derived(
 		activeTab === "tracks" ? trackColumns : activeTab === "modules" ? moduleColumns : lessonColumns
 	);
 
+	let currentActions = $derived(
+		activeTab === "tracks" ? trackActions : activeTab === "modules" ? moduleActions : lessonActions
+	);
+
+	const bulkActions: BulkAction[] = $derived(canManageLearning
+		? [{ label: t('app.learning.delete_selected', 'Delete Selected'), icon: Trash2, variant: 'destructive', onclick: bulkDelete }]
+		: []);
+
 	let currentData = $derived.by(() => {
 		const source = activeTab === "tracks" ? tracks : activeTab === "modules" ? modules : lessons;
-		const q = (filters.search || "").toLowerCase().trim();
+		const q = searchQuery.toLowerCase().trim();
 		if (!q) return source;
 		return source.filter((item: any) => {
 			const searchable = [item.title, item.description, item.slug, item.track_title, item.module_title]
@@ -352,14 +360,14 @@
 		}
 	}
 
-	function handleFilter(values: Record<string, string>) {
-		filters = values;
+	function handleFilter(_values: Record<string, string>) {
+		// search handled via DataTable onsearch; kept for compatibility
 	}
 
 	// ── Create ─────────────────────────────────────────────────────────────
 
 	function openCreate() {
-		showCreateModal = true;
+		showCreateSlideOver = true;
 	}
 
 	async function createTrack() {
@@ -380,7 +388,7 @@
 				}
 			});
 			if (result.ok) {
-				showCreateModal = false;
+				showCreateSlideOver = false;
 				newTrack = { title: "", slug: "", description: "", difficulty: "", category: "", subscription_eligible: false };
 				await refresh();
 			} else {
@@ -408,7 +416,7 @@
 				}
 			});
 			if (result.ok) {
-				showCreateModal = false;
+				showCreateSlideOver = false;
 				newModule = { track_id: "", title: "", slug: "", description: "" };
 				await refresh();
 			} else {
@@ -439,7 +447,7 @@
 				}
 			});
 			if (result.ok) {
-				showCreateModal = false;
+				showCreateSlideOver = false;
 				newLesson = {
 					selectedTrackId: "",
 					module_id: "",
@@ -521,7 +529,7 @@
 				sort_order: item.sort_order ?? 0
 			};
 		}
-		showEditModal = true;
+		showEditSlideOver = true;
 	}
 
 	async function saveEdit() {
@@ -549,7 +557,7 @@
 				});
 			}
 			if (result.ok) {
-				showEditModal = false;
+				showEditSlideOver = false;
 				editingItem = null;
 				await refresh();
 			} else {
@@ -658,14 +666,14 @@
 
 	// When lesson create modal opens and we're on the lessons tab, pre-fetch tracks
 	$effect(() => {
-		if (showCreateModal && activeTab === "lessons") {
+		if (showCreateSlideOver && activeTab === "lessons") {
 			fetchTracks();
 		}
 	});
 
 	// When module create modal opens, pre-fetch tracks
 	$effect(() => {
-		if (showCreateModal && activeTab === "modules") {
+		if (showCreateSlideOver && activeTab === "modules") {
 			fetchTracks();
 		}
 	});
@@ -701,39 +709,22 @@
 
 	<Tabs {tabs} bind:value={activeTab} />
 
-	<FilterBar
-		bind:value={filters}
-		filters={[]}
-		searchPlaceholder={t('app.learning.search_placeholder', 'Search learning content...')}
-		onsearch={handleFilter}
-		onclear={() => { filters = {}; }}
-	/>
-
 	<Card>
 		<CardContent class="p-0">
-			{#if loading}
-				<div class="space-y-3 p-4">
-					{#each Array(5) as _}
-						<div class="h-14 animate-pulse rounded-lg bg-surface"></div>
-					{/each}
-				</div>
-			{:else}
-				<DataTable
-					columns={currentColumns}
-					data={currentData}
-					pageSize={15}
-					emptyMessage={t(`app.learning.empty_${activeTab}`, `No ${activeTab} found`)}
-					selectable={canManageLearning}
-					bind:selectedIds
-				>
-					{#snippet bulkActions()}
-						<Button variant="destructive" size="sm" onclick={bulkDelete} disabled={bulkDeleting}>
-							<Trash2 class="h-3.5 w-3.5" />
-							{bulkDeleting ? t('app.learning.deleting', 'Deleting...') : t('app.learning.delete_selected', 'Delete Selected')}
-						</Button>
-					{/snippet}
-				</DataTable>
-			{/if}
+			<DataTable
+				columns={currentColumns}
+				data={currentData}
+				{loading}
+				pageSize={15}
+				emptyMessage={t(`app.learning.empty_${activeTab}`, `No ${activeTab} found`)}
+				searchable
+				searchPlaceholder={t('app.learning.search_placeholder', 'Search learning content...')}
+				onsearch={(q) => { searchQuery = q; }}
+				selectable={canManageLearning}
+				bind:selectedIds
+				actions={currentActions}
+				bulkActionsList={bulkActions}
+			/>
 		</CardContent>
 	</Card>
 </div>
@@ -741,10 +732,9 @@
 <!-- ══════════════════════════════════════════════════════════════════════════
      CREATE MODAL
      ══════════════════════════════════════════════════════════════════════════ -->
-<Modal
-	bind:open={showCreateModal}
+<SlideOver
+	bind:open={showCreateSlideOver}
 	title={`${t('app.learning.create_prefix', 'Create')} ${activeTab === "tracks" ? t('app.learning.track', 'Track') : activeTab === "modules" ? t('app.learning.module', 'Module') : t('app.learning.lesson', 'Lesson')}`}
-	description={`${t('app.learning.add_new_prefix', 'Add a new')} ${activeTab.slice(0, -1)} ${t('app.learning.add_new_suffix', 'to the learning platform')}`}
 	size="lg"
 >
 	{#if activeTab === "tracks"}
@@ -957,26 +947,28 @@
 		</div>
 	{/if}
 
-	<div class="flex justify-end gap-3 pt-4">
-		<Button variant="outline" onclick={() => (showCreateModal = false)}>{t('learning.cancel')}</Button>
-		<Button
-			onclick={activeTab === "tracks" ? createTrack : activeTab === "modules" ? createModule : createLesson}
-			disabled={creating}
-		>
-			{#if creating}
-				{t('app.learning.creating', 'Creating...')}
-			{:else}
-				{t('app.learning.create', 'Create')}
-			{/if}
-		</Button>
-	</div>
-</Modal>
+	{#snippet footer()}
+		<div class="flex justify-end gap-3">
+			<Button variant="outline" onclick={() => (showCreateSlideOver = false)}>{t('learning.cancel')}</Button>
+			<Button
+				onclick={activeTab === "tracks" ? createTrack : activeTab === "modules" ? createModule : createLesson}
+				disabled={creating}
+			>
+				{#if creating}
+					{t('app.learning.creating', 'Creating...')}
+				{:else}
+					{t('app.learning.create', 'Create')}
+				{/if}
+			</Button>
+		</div>
+	{/snippet}
+</SlideOver>
 
 <!-- ══════════════════════════════════════════════════════════════════════════
      EDIT MODAL
      ══════════════════════════════════════════════════════════════════════════ -->
-<Modal
-	bind:open={showEditModal}
+<SlideOver
+	bind:open={showEditSlideOver}
 	title={editingItem?._type === "track"
 		? t('app.learning.edit_track', 'Edit Track')
 		: editingItem?._type === "module"
@@ -1149,17 +1141,19 @@
 		{/if}
 	{/if}
 
-	<div class="flex justify-end gap-3 pt-4">
-		<Button variant="outline" onclick={() => (showEditModal = false)}>{t('learning.cancel')}</Button>
-		<Button onclick={saveEdit} disabled={savingEdit}>
-			{#if savingEdit}
-				{t('app.learning.saving', 'Saving...')}
-			{:else}
-				{t('app.learning.save', 'Save')}
-			{/if}
-		</Button>
-	</div>
-</Modal>
+	{#snippet footer()}
+		<div class="flex justify-end gap-3">
+			<Button variant="outline" onclick={() => (showEditSlideOver = false)}>{t('learning.cancel')}</Button>
+			<Button onclick={saveEdit} disabled={savingEdit}>
+				{#if savingEdit}
+					{t('app.learning.saving', 'Saving...')}
+				{:else}
+					{t('app.learning.save', 'Save')}
+				{/if}
+			</Button>
+		</div>
+	{/snippet}
+</SlideOver>
 
 <!-- ══════════════════════════════════════════════════════════════════════════
      DELETE CONFIRMATION MODAL
@@ -1262,52 +1256,3 @@
 	</div>
 </Modal>
 
-<!-- ══════════════════════════════════════════════════════════════════════════
-     ACTION CELLS
-     ══════════════════════════════════════════════════════════════════════════ -->
-{#snippet TrackActionsCell({ value, row }: { value: any; row: any })}
-	<div class="flex items-center gap-1">
-		{#if canManageLearning && row.is_published === false}
-			<Button variant="ghost" size="sm" onclick={() => openPublish(row.id, row.title)} style="color: var(--color-success)">
-				<Send class="h-3.5 w-3.5" />
-			</Button>
-		{/if}
-		{#if canManageLearning}
-			<Button variant="ghost" size="sm" onclick={() => openEdit("track", row)} style="color: var(--color-info)">
-				<Pencil class="h-3.5 w-3.5" />
-			</Button>
-			<Button variant="ghost" size="sm" onclick={() => openEnrollments(row.id, row.title)} style="color: var(--color-primary)">
-				<Users class="h-3.5 w-3.5" />
-			</Button>
-			<Button variant="ghost" size="sm" onclick={() => confirmDelete("track", row.id, row.title)} style="color: var(--color-danger)">
-				<Trash2 class="h-3.5 w-3.5" />
-			</Button>
-		{/if}
-	</div>
-{/snippet}
-
-{#snippet ModuleActionsCell({ value, row }: { value: any; row: any })}
-	<div class="flex items-center gap-1">
-		{#if canManageLearning}
-			<Button variant="ghost" size="sm" onclick={() => openEdit("module", row)} style="color: var(--color-info)">
-				<Pencil class="h-3.5 w-3.5" />
-			</Button>
-			<Button variant="ghost" size="sm" onclick={() => confirmDelete("module", row.id, row.title)} style="color: var(--color-danger)">
-				<Trash2 class="h-3.5 w-3.5" />
-			</Button>
-		{/if}
-	</div>
-{/snippet}
-
-{#snippet LessonActionsCell({ value, row }: { value: any; row: any })}
-	<div class="flex items-center gap-1">
-		{#if canManageLearning}
-			<Button variant="ghost" size="sm" onclick={() => openEdit("lesson", row)} style="color: var(--color-info)">
-				<Pencil class="h-3.5 w-3.5" />
-			</Button>
-			<Button variant="ghost" size="sm" onclick={() => confirmDelete("lesson", row.id, row.title)} style="color: var(--color-danger)">
-				<Trash2 class="h-3.5 w-3.5" />
-			</Button>
-		{/if}
-	</div>
-{/snippet}

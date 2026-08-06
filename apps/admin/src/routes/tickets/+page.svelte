@@ -2,7 +2,8 @@
 	import PageHeader from "$lib/components/layout/page-header.svelte";
 	import { Card, CardContent, CardHeader } from "$lib/components/ui/card";
 	import { DataTable } from "$lib/components/ui/data-table";
-	import { FilterBar } from "$lib/components/ui/filter-bar";
+	import type { ActionItem, FilterDef } from "$lib/components/ui/data-table";
+	import { SlideOver } from "$lib/components/ui/slide-over";
 	import { Badge } from "$lib/components/ui/badge";
 	import { Button } from "$lib/components/ui/button";
 	import { Modal } from "$lib/components/ui/modal";
@@ -44,8 +45,8 @@
 	let statusFilter = $state("");
 	let selectedIds = $state<Set<string>>(new Set());
 
-	// View modal
-	let showViewModal = $state(false);
+	// View SlideOver
+	let showViewSlideOver = $state(false);
 	let viewTarget = $state<TicketItem | null>(null);
 	let loadingView = $state(false);
 	let ticketEvents = $state<any[]>([]);
@@ -54,8 +55,8 @@
 	let addingComment = $state(false);
 	let addingNote = $state(false);
 
-	// Edit modal
-	let showEditModal = $state(false);
+	// Edit SlideOver
+	let showEditSlideOver = $state(false);
 	let editingTicket = $state<TicketItem | null>(null);
 	let editForm = $state({ subject: "", status: "", priority: "", assigned_to: "" });
 	let savingEdit = $state(false);
@@ -74,7 +75,7 @@
 		{ value: "resolved", label: t("tickets.resolved", "Resolved"), icon: CheckCircle }
 	];
 
-	const filterDefs = [
+	const filterDefs: FilterDef[] = [
 		{
 			key: "priority",
 			label: t("tickets.priority", "Priority"),
@@ -85,6 +86,12 @@
 				{ value: "urgent", label: "Urgent" }
 			]
 		}
+	];
+
+	const rowActions: ActionItem[] = [
+		{ label: t("common.view", "View"), icon: Eye, onclick: (row: TicketItem) => openView(row) },
+		{ label: t("common.edit", "Edit"), icon: Pencil, onclick: (row: TicketItem) => openEdit(row), show: () => canManageTickets },
+		{ label: t("common.delete", "Delete"), icon: Trash2, variant: "destructive", onclick: (row: TicketItem) => confirmDelete(row), show: () => canManageTickets }
 	];
 
 	const columns = [
@@ -118,13 +125,12 @@
 			label: t("common.created", "Created"),
 			sortable: true,
 			render: (v: string) => new Date(v).toLocaleDateString()
-		},
-		{ key: "actions", label: t("common.actions", "Actions"), class: "w-32", componentSnippet: TicketActionsCell }
+		}
 	];
 
 	async function openView(ticket: TicketItem) {
 		viewTarget = ticket;
-		showViewModal = true;
+		showViewSlideOver = true;
 		loadingView = true;
 		ticketEvents = [];
 		newComment = "";
@@ -190,7 +196,7 @@
 			priority: ticket.priority,
 			assigned_to: ticket.assigned_to ?? ""
 		};
-		showEditModal = true;
+		showEditSlideOver = true;
 	}
 
 	async function submitEdit() {
@@ -205,7 +211,7 @@
 				assigned_to: editForm.assigned_to
 			});
 			if (result.ok) {
-				showEditModal = false;
+				showEditSlideOver = false;
 				loadTickets();
 			} else {
 				error = result.error ?? t("common.error", "Failed to update ticket");
@@ -344,13 +350,13 @@
 
 <Card>
 	<CardHeader>
-		<FilterBar filters={filterDefs} onsearch={handleSearch} onclear={handleClear} />
+		<!-- FilterBar replaced by DataTable filters below -->
 	</CardHeader>
 	<CardContent>
 		{#if loading}
 			<TableSkeleton rows={8} columns={columns.length} />
 		{:else}
-			<DataTable {columns} data={tickets} pageSize={10} selectable bind:selectedIds>
+			<DataTable {columns} data={tickets} pageSize={10} selectable bind:selectedIds filters={filterDefs} bind:filterValue={filterValues} onfilterapply={() => { currentPage = 0; loadTickets(); }} onfilterclear={() => { filterValues = {}; currentPage = 0; loadTickets(); }} actions={rowActions}>
 				{#snippet bulkActions()}
 					<Button variant="destructive" size="sm" onclick={bulkDelete} disabled={bulkDeleting}>
 						<Trash2 class="mr-1 h-3.5 w-3.5" />
@@ -363,8 +369,8 @@
 	</CardContent>
 </Card>
 
-<!-- View Modal -->
-<Modal bind:open={showViewModal} title={t("tickets.details", "Ticket Details")} size="lg">
+<!-- View SlideOver -->
+<SlideOver bind:open={showViewSlideOver} title={t("tickets.details", "Ticket Details")}>
 	{#if loadingView}
 		<p class="text-sm" style="color: var(--color-muted)">{t("common.loading", "Loading...")}</p>
 	{:else if viewTarget}
@@ -448,13 +454,15 @@
 			{/if}
 		</div>
 	{/if}
-	<div class="mt-6 flex justify-end">
-		<Button variant="outline" onclick={() => (showViewModal = false)}>{t("common.close", "Close")}</Button>
-	</div>
-</Modal>
+	{#snippet footer()}
+		<div class="mt-6 flex justify-end">
+			<Button variant="outline" onclick={() => (showViewSlideOver = false)}>{t("common.close", "Close")}</Button>
+		</div>
+	{/snippet}
+</SlideOver>
 
-<!-- Edit Modal -->
-<Modal bind:open={showEditModal} title={t("tickets.edit", "Edit Ticket")}>
+<!-- Edit SlideOver -->
+<SlideOver bind:open={showEditSlideOver} title={t("tickets.edit", "Edit Ticket")}>
 	<div class="space-y-4">
 		<div>
 			<label for="tk-subject" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t("tickets.subject", "Subject")}</label>
@@ -493,11 +501,13 @@
 			<input id="tk-assignee" type="text" bind:value={editForm.assigned_to} class="w-full rounded-lg border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" />
 		</div>
 	</div>
-	<div class="mt-4 flex justify-end gap-2">
-		<Button variant="ghost" onclick={() => (showEditModal = false)}>{t("common.cancel", "Cancel")}</Button>
-		<Button onclick={submitEdit} disabled={savingEdit}>{savingEdit ? t("common.saving", "Saving...") : t("common.save", "Save")}</Button>
-	</div>
-</Modal>
+	{#snippet footer()}
+		<div class="mt-4 flex justify-end gap-2">
+			<Button variant="ghost" onclick={() => (showEditSlideOver = false)}>{t("common.cancel", "Cancel")}</Button>
+			<Button onclick={submitEdit} disabled={savingEdit}>{savingEdit ? t("common.saving", "Saving...") : t("common.save", "Save")}</Button>
+		</div>
+	{/snippet}
+</SlideOver>
 
 <!-- Delete Confirmation -->
 <Modal bind:open={showDeleteConfirm} title={t("common.confirmDelete", "Confirm Delete")}>
@@ -512,20 +522,3 @@
 		<Button variant="destructive" onclick={executeDelete}>{t("common.delete", "Delete")}</Button>
 	</div>
 </Modal>
-
-<!-- TicketActionsCell -->
-{#snippet TicketActionsCell({ value, row }: { value: any; row: TicketItem })}
-	<div class="flex items-center gap-1">
-		<Button variant="ghost" size="sm" onclick={() => openView(row)}>
-			<Eye class="h-3.5 w-3.5" />
-		</Button>
-		{#if canManageTickets}
-			<Button variant="ghost" size="sm" onclick={() => openEdit(row)}>
-				<Pencil class="h-3.5 w-3.5" />
-			</Button>
-			<Button variant="ghost" size="sm" onclick={() => confirmDelete(row)} style="color: var(--color-danger)">
-				<Trash2 class="h-3.5 w-3.5" />
-			</Button>
-		{/if}
-	</div>
-{/snippet}

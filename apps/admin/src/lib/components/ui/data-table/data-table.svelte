@@ -1,10 +1,11 @@
 <script lang="ts">
 	import { t } from '$lib/stores/i18n.svelte';
   import { page as sveltekitPage } from '$app/state';
-  import { goto } from '$app/navigation';
-  import { ChevronUp, ChevronDown, ChevronsUpDown, Plus } from "lucide-svelte";
+  import { replaceState } from '$app/navigation';
+  import { ChevronUp, ChevronDown, ChevronsUpDown, Plus, Columns3 } from "lucide-svelte";
   import { clsx, type ClassValue } from "clsx";
   import type { Component, Snippet } from "svelte";
+  import { DropdownMenu } from "bits-ui";
   import { Button } from "$lib/components/ui/button";
   import Pagination from "$lib/components/ui/Pagination.svelte";
   import { sanitizeHtml } from "$lib/utils/html";
@@ -17,6 +18,21 @@
     return String(row?.id ?? '').split('::')[0] || String(row ?? '');
   }
 
+  // Write query params to the URL without triggering a SvelteKit navigation.
+  // Prefers SvelteKit's replaceState (which updates $app/state's page.url so
+  // seed effects see the new params), falling back to window.history.replaceState
+  // if the SvelteKit router isn't initialized (e.g. in test environments).
+  function replaceUrl(params: URLSearchParams) {
+    if (typeof window === 'undefined') return;
+    const qs = params.toString();
+    const url = `${window.location.pathname}${qs ? `?${qs}` : ''}`;
+    try {
+      replaceState(url, {});
+    } catch {
+      window.history.replaceState({}, '', url);
+    }
+  }
+
   type Column = {
     key: string;
     label: string;
@@ -26,6 +42,10 @@
     component?: Component<any> | ((...args: any[]) => any);
     componentSnippet?: Snippet<[{ value: any; row: any; [key: string]: any }]>;
     componentProps?: Record<string, any>;
+    resizable?: boolean;
+    hideable?: boolean;
+    width?: number;
+    defaultHidden?: boolean;
   };
 
    let {
@@ -121,7 +141,50 @@
    // child `{#snippet bulkActions()}`. Normalise to a renderable snippet.
    const bulkActionsSnippet = $derived(bulkActions);
 
-  // URL-driven sort (opt-in). Reads initial ?sort=/?dir= and writes back via goto.
+  // ── Column widths (resizable columns) ───────────────────────────────────
+  // Seeded from each column's `width` field at init; updated by dragging resize handles.
+  // Double-click a resize handle to reset a column to auto-width.
+  let columnWidths = $state<Record<string, number>>({});
+
+  function startResize(e: MouseEvent, colKey: string) {
+    e.preventDefault();
+    e.stopPropagation();
+    const th = (e.currentTarget as HTMLElement).parentElement as HTMLElement;
+    const startX = e.clientX;
+    const startWidth = th.offsetWidth;
+    function onMove(ev: MouseEvent) {
+      const delta = ev.clientX - startX;
+      columnWidths = { ...columnWidths, [colKey]: Math.max(60, startWidth + delta) };
+    }
+    function onUp() {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    }
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  }
+
+  // ── Column visibility (hide/unhide) ─────────────────────────────────────
+  // Seeded from `defaultHidden` at init; user toggles modify the set thereafter.
+  let hiddenColumns = $state<Set<string>>(
+    new Set(columns.filter((c) => c.defaultHidden).map((c) => c.key))
+  );
+
+  const hideableColumns = $derived(columns.filter((c) => c.hideable !== false));
+  const visibleColumns = $derived(columns.filter((c) => !hiddenColumns.has(c.key)));
+
+  function toggleColumn(key: string) {
+    const next = new Set(hiddenColumns);
+    if (next.has(key)) next.delete(key);
+    else next.add(key);
+    hiddenColumns = next;
+  }
+
+  // URL-driven sort (opt-in). Reads initial ?sort=/?dir= and writes back via replaceState.
   const urlParams = $derived(sveltekitPage.url.searchParams);
   let sortColumn = $state<string | null>(null);
   let sortDirection = $state<"asc" | "desc">("asc");
@@ -205,7 +268,7 @@
         params.delete("sort");
         params.delete("dir");
       }
-      goto(`?${params.toString()}`, { keepFocus: true, noScroll: true });
+      replaceUrl(params);
     }
   }
 
@@ -253,7 +316,7 @@
      const q = searchInput.trim();
      const params = new URLSearchParams(sveltekitPage.url.searchParams.toString());
      if (q) params.set(searchParam, q); else params.delete(searchParam);
-     goto(`?${params.toString()}`, { keepFocus: true, noScroll: true });
+     replaceUrl(params);
      onsearch?.(q);
    }
    function clearSearch() {
@@ -280,7 +343,7 @@
      if (!filterPersistReady) { filterPersistReady = true; return; }
      const params = new URLSearchParams(sveltekitPage.url.searchParams.toString());
      if (v) params.set(filterParam, v); else params.delete(filterParam);
-     goto(`?${params.toString()}`, { keepFocus: true, noScroll: true });
+     replaceUrl(params);
      onfilterchange?.(v);
    });
 
@@ -312,7 +375,7 @@
       <FilterPanel {filters} bind:value={filterValue} onapply={onfilterapply} onclear={onfilterclear} />
     </div>
   {/if}
-  {#if searchable || (createLabel && onCreate)}
+  {#if searchable || (createLabel && onCreate) || hideableColumns.length > 0}
     <div class="mb-3 flex items-center gap-3">
       {#if searchable}
         <!-- Optional debounced search box that persists the query to the URL. -->
@@ -339,6 +402,42 @@
           {/if}
         </div>
       {/if}
+      {#if hideableColumns.length > 0}
+        <DropdownMenu.Root>
+          <DropdownMenu.Trigger
+            class="inline-flex h-9 items-center gap-1.5 rounded-lg border px-3 text-sm font-medium transition-colors hover:bg-black/5 dark:hover:bg-white/10"
+            style="border-color: var(--color-border); color: var(--color-foreground)"
+            aria-label={t('dataTable.columns', 'Columns')}
+          >
+            <Columns3 class="h-4 w-4" />
+            <span class="hidden sm:inline">{t('dataTable.columns', 'Columns')}</span>
+          </DropdownMenu.Trigger>
+          <DropdownMenu.Portal>
+            <DropdownMenu.Content
+              class="z-50 min-w-[180px] rounded-md border p-1 shadow-lg"
+              style="border-color: var(--color-border); background-color: var(--color-surface)"
+              sideOffset={4}
+            >
+              {#each hideableColumns as col (col.key)}
+                <DropdownMenu.Item
+                  class="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm outline-none transition-colors hover:bg-black/5 dark:hover:bg-white/10"
+                  style="color: var(--color-foreground)"
+                  onSelect={(e) => { e.preventDefault(); toggleColumn(col.key); }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={!hiddenColumns.has(col.key)}
+                    readonly
+                    class="h-4 w-4 rounded border-gray-300 pointer-events-none"
+                    aria-label={col.label}
+                  />
+                  {col.label}
+                </DropdownMenu.Item>
+              {/each}
+            </DropdownMenu.Content>
+          </DropdownMenu.Portal>
+        </DropdownMenu.Root>
+      {/if}
       {#if createLabel && onCreate}
         <Button onclick={onCreate}>
           <Plus class="mr-1 h-4 w-4" />
@@ -362,19 +461,19 @@
               />
             </th>
           {/if}
-          {#each columns as column}
+          {#each visibleColumns as column}
             <th
               class={clsx(
-                "h-12 px-4 text-left align-middle font-medium",
+                "relative h-12 px-4 text-left align-middle font-medium",
                 column.sortable && "cursor-pointer select-none",
                 column.class
               )}
-              style="color: var(--color-foreground-alt); background-color: var(--color-surface)"
+              style={`color: var(--color-foreground-alt); background-color: var(--color-surface)${columnWidths[column.key] ? `; width: ${columnWidths[column.key]}px; min-width: ${columnWidths[column.key]}px` : ''}`}
               scope="col"
               aria-sort={column.sortable ? (sortColumn === column.key ? (sortDirection === "asc" ? "ascending" : "descending") : "none") : undefined}
               onclick={() => column.sortable && handleSort(column.key)}
             >
-              <div class="flex items-center gap-2">
+              <div class="flex items-center gap-2 pr-2">
                 {column.label}
                 {#if column.sortable}
                   {#if sortColumn === column.key}
@@ -388,6 +487,16 @@
                   {/if}
                 {/if}
               </div>
+              {#if column.resizable !== false}
+                <button
+                  type="button"
+                  class="absolute right-0 top-0 h-full w-1.5 cursor-col-resize touch-none border-none bg-transparent"
+                  onmousedown={(e) => startResize(e, column.key)}
+                  onclick={(e) => e.stopPropagation()}
+                  ondblclick={(e) => { e.stopPropagation(); if (columnWidths[column.key]) { const next = { ...columnWidths }; delete next[column.key]; columnWidths = next; } }}
+                  aria-label={t('dataTable.resizeColumn', 'Resize {label}').replace('{label}', column.label)}
+                ></button>
+              {/if}
             </th>
           {/each}
           {#if actions}
@@ -420,7 +529,7 @@
                 />
               </td>
             {/if}
-            {#each columns as column}
+            {#each visibleColumns as column}
               <td class="p-4 align-middle" style="border-color: var(--color-border)">
                 {#if column.componentSnippet}
                   {@render column.componentSnippet({ value: row[column.key], row, ...column.componentProps })}
@@ -442,7 +551,7 @@
           </tr>
         {:else}
           <tr>
-            <td colspan={columns.length + (selectable ? 1 : 0) + (actions ? 1 : 0)} class="h-24 text-center">
+            <td colspan={visibleColumns.length + (selectable ? 1 : 0) + (actions ? 1 : 0)} class="h-24 text-center">
               <div class="flex flex-col items-center justify-center" style="color: var(--color-muted)">
                 <p>{emptyMessage}</p>
               </div>
@@ -452,7 +561,7 @@
       </tbody>
     </table>
   </div>
-  {#if showPagination && effectiveTotalRows > pageSize}
+  {#if showPagination && effectiveTotalRows > 0}
     {#if serverSide}
       <Pagination
         bind:page

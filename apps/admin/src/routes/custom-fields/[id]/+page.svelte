@@ -5,6 +5,9 @@
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { Plus, Pencil, Trash2, ArrowLeft, GripVertical } from 'lucide-svelte';
 	import Modal from '$lib/components/Modal.svelte';
+	import { SlideOver } from '$lib/components/ui/slide-over';
+	import { DataTable } from '$lib/components/ui/data-table';
+	import type { ActionItem, Column } from '$lib/components/ui/data-table';
 
 	type FieldOption = { value: string; label: string };
 
@@ -46,7 +49,7 @@
 	const canDelete = $derived(hasPermission('custom_fields.field.delete'));
 
 	// --- Add/Edit field modal ---
-	let modalOpen = $state(false);
+	let slideOverOpen = $state(false);
 	let editingField = $state<CustomField | null>(null);
 	let saving = $state(false);
 	let fieldError = $state('');
@@ -101,6 +104,47 @@
 
 	const needsOptions = $derived(fieldType === 'select' || fieldType === 'multiselect');
 
+	const columns: Column[] = [
+		{
+			key: 'label',
+			label: t('fieldGroups.label'),
+			sortable: true,
+			render: (v: string) => `<span class="font-medium" style="color: var(--color-foreground)">${v}</span>`
+		},
+		{
+			key: 'key',
+			label: t('fieldGroups.key'),
+			sortable: true,
+			render: (v: string) => `<span class="font-mono text-xs" style="color: var(--color-muted)">${v}</span>`
+		},
+		{
+			key: 'field_type',
+			label: t('fieldGroups.field_type'),
+			sortable: true,
+			render: (v: string) => `<span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium" style="background-color: var(--color-muted-muted); color: var(--color-muted)">${fieldTypeLabel(v)}</span>`
+		},
+		{
+			key: 'is_required',
+			label: t('fieldGroups.required'),
+			render: (v: boolean) => v ? `<span class="text-xs font-medium" style="color: var(--color-destructive)">${t('common.yes')}</span>` : `<span class="text-xs" style="color: var(--color-muted)">—</span>`
+		},
+		{
+			key: 'show_in_frontend',
+			label: t('fieldGroups.visible'),
+			render: (v: boolean) => v ? `<span class="text-xs" style="color: var(--color-muted)">${t('common.yes')}</span>` : `<span class="text-xs" style="color: var(--color-muted)">—</span>`
+		},
+		{
+			key: 'is_system',
+			label: t('fieldGroups.system'),
+			render: (v: boolean) => v ? `<span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium" style="background-color: var(--color-primary-muted); color: var(--color-primary)">${t('fieldGroups.system')}</span>` : `<span class="text-xs" style="color: var(--color-muted)">—</span>`
+		}
+	];
+
+	const rowActions: ActionItem[] = [
+		{ label: t('common.edit'), icon: Pencil, onclick: (row: CustomField) => openEditField(row), show: () => canEdit },
+		{ label: t('common.delete'), icon: Trash2, variant: 'destructive', onclick: (row: CustomField) => confirmDeleteField(row), show: (row: CustomField) => canDelete && !row.is_system }
+	];
+
 	async function load() {
 		loading = true;
 		error = '';
@@ -147,7 +191,7 @@
 		newOptionValue = '';
 		newOptionLabel = '';
 		fieldError = '';
-		modalOpen = true;
+		slideOverOpen = true;
 	}
 
 	function openEditField(f: CustomField) {
@@ -164,7 +208,7 @@
 		newOptionValue = '';
 		newOptionLabel = '';
 		fieldError = '';
-		modalOpen = true;
+		slideOverOpen = true;
 	}
 
 	function autoKey() {
@@ -240,7 +284,7 @@
 					return;
 				}
 			}
-			modalOpen = false;
+			slideOverOpen = false;
 			await load();
 		} catch {
 			fieldError = t('common.error');
@@ -323,78 +367,12 @@
 		</div>
 	{:else}
 		<!-- Fields table -->
-		<div class="overflow-x-auto rounded-lg border" style="border-color: var(--color-border)">
-			<table class="w-full text-sm">
-				<thead style="background-color: var(--color-muted-muted)">
-					<tr>
-						<th class="w-8 px-3 py-3"></th>
-						<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted)">{t('fieldGroups.label')}</th>
-						<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted)">{t('fieldGroups.key')}</th>
-						<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted)">{t('fieldGroups.field_type')}</th>
-						<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted)">{t('fieldGroups.required')}</th>
-						<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted)">{t('fieldGroups.visible')}</th>
-						<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted)">{t('fieldGroups.system')}</th>
-						<th class="w-20 px-4 py-3 text-left font-medium" style="color: var(--color-muted)">{t('common.actions')}</th>
-					</tr>
-				</thead>
-				<tbody>
-					{#each fields as f (f.id)}
-						<tr class="border-t" style="border-color: var(--color-border)">
-							<td class="px-3 py-3 text-center" style="color: var(--color-muted)">
-								<GripVertical class="h-4 w-4 inline" />
-							</td>
-							<td class="px-4 py-3 font-medium" style="color: var(--color-foreground)">{f.label}</td>
-							<td class="px-4 py-3 font-mono text-xs" style="color: var(--color-muted)">{f.key}</td>
-							<td class="px-4 py-3">
-								<span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium" style="background-color: var(--color-muted-muted); color: var(--color-muted)">
-									{fieldTypeLabel(f.field_type)}
-								</span>
-							</td>
-							<td class="px-4 py-3">
-								{#if f.is_required}
-									<span class="text-xs font-medium" style="color: var(--color-destructive)">{t('common.yes')}</span>
-								{:else}
-									<span class="text-xs" style="color: var(--color-muted)">—</span>
-								{/if}
-							</td>
-							<td class="px-4 py-3">
-								{#if f.show_in_frontend}
-									<span class="text-xs" style="color: var(--color-muted)">{t('common.yes')}</span>
-								{:else}
-									<span class="text-xs" style="color: var(--color-muted)">—</span>
-								{/if}
-							</td>
-							<td class="px-4 py-3">
-								{#if f.is_system}
-									<span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium" style="background-color: var(--color-primary-muted); color: var(--color-primary)">{t('fieldGroups.system')}</span>
-								{:else}
-									<span class="text-xs" style="color: var(--color-muted)">—</span>
-								{/if}
-							</td>
-							<td class="px-4 py-3">
-								<div class="flex items-center gap-1">
-									{#if canEdit}
-										<button onclick={() => openEditField(f)} class="p-1 rounded hover:opacity-70" title={t('common.edit')}>
-											<Pencil class="h-4 w-4" style="color: var(--color-muted)" />
-										</button>
-									{/if}
-									{#if canDelete && !f.is_system}
-										<button onclick={() => confirmDeleteField(f)} class="p-1 rounded hover:opacity-70" title={t('common.delete')}>
-											<Trash2 class="h-4 w-4" style="color: var(--color-destructive)" />
-										</button>
-									{/if}
-								</div>
-							</td>
-						</tr>
-					{/each}
-				</tbody>
-			</table>
-		</div>
+		<DataTable {columns} data={fields} actions={rowActions} pageSize={50} emptyMessage={t('fieldGroups.no_fields_yet')} />
 	{/if}
 </div>
 
-<!-- Add/Edit Field Modal -->
-<Modal bind:open={modalOpen} title={editingField ? `${t('fieldGroups.edit_field')}: ${editingField.label}` : t('fieldGroups.add_field')} confirmLabel={saving ? t('common.saving') : t('common.save')} onConfirm={saveField}>
+<!-- Add/Edit Field SlideOver -->
+<SlideOver bind:open={slideOverOpen} title={editingField ? `${t('fieldGroups.edit_field')}: ${editingField.label}` : t('fieldGroups.add_field')}>
 	<div class="space-y-4">
 		<!-- Label -->
 		<div>
@@ -517,7 +495,13 @@
 			<p class="text-sm" style="color: var(--color-destructive)">{fieldError}</p>
 		{/if}
 	</div>
-</Modal>
+	{#snippet footer()}
+		<div class="mt-6 flex justify-end gap-2">
+			<button class="rounded-md px-4 py-2 text-sm font-medium transition-colors" style="border: 1px solid var(--color-border)" onclick={() => (slideOverOpen = false)}>{t('common.cancel')}</button>
+			<button class="rounded-md px-4 py-2 text-sm font-medium transition-colors" style="background: var(--color-primary); color: var(--color-primary-foreground)" onclick={saveField} disabled={saving}>{saving ? t('common.saving') : t('common.save')}</button>
+		</div>
+	{/snippet}
+</SlideOver>
 
 <!-- Delete Field Confirmation -->
 <Modal bind:open={showDeleteConfirm} title={t('fieldGroups.delete_field')} confirmLabel={t('common.delete')} onConfirm={executeDeleteField}>

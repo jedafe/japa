@@ -35,9 +35,29 @@ export const load: PageServerLoad = async (event) => {
 
 	const currentUserId = event.locals.user?.id ?? null;
 	const authed = !!event.locals.user;
+	const userGroups = event.locals.user?.groups ?? [];
+
+	// Edit affordance: the viewer may edit if they are the content owner,
+	// a super-admin, or have the RBAC `content.edit` permission node. The
+	// backend enforces the actual permission on PATCH /content/{id}; this
+	// flag only gates the UI Edit button.
+	const isOwner = authed && !!article.author_id && currentUserId === article.author_id;
+	const isSuperAdmin = userGroups.some((g) => g === 'super_admin' || g === 'Super Admin');
+
+	let hasContentEditPermission = false;
+	if (!isOwner && !isSuperAdmin && event.locals.user) {
+		try {
+			const permRes = await apiGet<{ permissions: string[] }>(ctx, '/me/permissions');
+			hasContentEditPermission = (permRes?.permissions ?? []).includes('content.edit');
+		} catch {
+			hasContentEditPermission = false;
+		}
+	}
+	const canEdit = isOwner || isSuperAdmin || hasContentEditPermission;
+
 	// Pin affordance: content author or moderator. The backend enforces the
 	// actual permission; this flag only gates the UI control.
-	const canModerate = authed && !!article.author_id && currentUserId === article.author_id;
+	const canModerate = isOwner;
 
 	// Hydrate the CreatorCard follow button's initial state. Best-effort:
 	// a failure degrades to `false` (not following). Skip when the viewer
@@ -93,6 +113,7 @@ export const load: PageServerLoad = async (event) => {
 		authed,
 		currentUserId,
 		canModerate,
+		canEdit,
 		comments,
 		commentsLoadError,
 		rightSidebarWidgets,

@@ -7,7 +7,8 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Tabs } from '$lib/components/ui/tabs';
-	import { Modal } from '$lib/components/ui/modal';
+	import { SlideOver } from '$lib/components/ui/slide-over';
+	import type { ActionItem } from '$lib/components/ui/data-table';
 	import { Wand, Plus, RefreshCw, BarChart3, RotateCcw, X, Eye } from 'lucide-svelte';
 	import { api } from '$lib/api';
 
@@ -56,7 +57,7 @@
 	let stats = $state<StudioStats | null>(null);
 	let loading = $state(true);
 	let error = $state('');
-	let createJobModalOpen = $state(false);
+	let createJobSlideOverOpen = $state(false);
 	let saving = $state(false);
 	let message = $state('');
 	let messageType = $state('');
@@ -138,14 +139,14 @@
 	}
 
 	let viewingJob = $state<StudioJob | null>(null);
-	let viewJobModalOpen = $state(false);
+	let viewJobSlideOverOpen = $state(false);
 
 	async function viewJob(id: string) {
 		try {
 			const result = await api<StudioJob>(`/admin/studio/jobs/${id}`);
 			if (result.ok && result.data) {
 				viewingJob = result.data;
-				viewJobModalOpen = true;
+				viewJobSlideOverOpen = true;
 			}
 		} catch {
 			// silent
@@ -185,7 +186,7 @@
 			if (result.ok) {
 				messageType = 'success';
 				message = t('studio.create_success', 'Studio job created.');
-				createJobModalOpen = false;
+				createJobSlideOverOpen = false;
 				newJob = { persona_id: '', content_type: 'blog', topic_prompt: '', guide_category: '', target_space_id: '', target_tags: '' };
 				load();
 			} else {
@@ -241,14 +242,24 @@
 			label: t('studio.created', 'Created'),
 			sortable: true,
 			render: (value: string) => `<span class="text-muted-foreground text-xs">${value ? new Date(value).toLocaleDateString() : '—'}</span>`
-		},
-		{
-			key: 'actions',
-			label: t('common.actions', 'Actions'),
-			class: 'w-28',
-			componentSnippet: JobActionsCell
 		}
 	]);
+
+	const jobRowActions: ActionItem[] = [
+		{ label: t('common.view', 'View'), icon: Eye, onclick: (row: StudioJob) => viewJob(row.id) },
+		{
+			label: t('studio.retry', 'Retry'),
+			icon: RotateCcw,
+			onclick: (row: StudioJob) => retryJob(row.id),
+			show: (row: StudioJob) => canManage && (row.status === 'failed' || row.status === 'draft_ready')
+		},
+		{
+			label: t('common.cancel', 'Cancel'),
+			icon: X,
+			onclick: (row: StudioJob) => cancelJob(row.id),
+			show: (row: StudioJob) => canManage && (row.status === 'queued' || row.status === 'generating')
+		}
+	];
 
 	const batchColumns = $derived([
 		{
@@ -283,7 +294,7 @@
 	title={t('studio.title', 'AI Content Studio')}
 	description={t('studio.description', 'Manage AI-generated content jobs and batches.')}
 	actions={canManage ? [
-		{ label: t('studio.create_job', 'Create Job'), icon: Plus, onclick: () => { loadCreateOptions(); createJobModalOpen = true; } }
+		{ label: t('studio.create_job', 'Create Job'), icon: Plus, onclick: () => { loadCreateOptions(); createJobSlideOverOpen = true; } }
 	] : []}
 />
 
@@ -314,6 +325,7 @@
 		<DataTable
 			data={jobs}
 			columns={jobColumns}
+			actions={jobRowActions}
 			emptyMessage={t('studio.no_jobs', 'No studio jobs found.')}
 		/>
 	{:else if activeTab === 'batches'}
@@ -376,10 +388,9 @@
 	{/if}
 {/if}
 
-{#if createJobModalOpen}
-	<Modal
-		open={createJobModalOpen}
-		onclose={() => (createJobModalOpen = false)}
+{#if createJobSlideOverOpen}
+	<SlideOver
+		bind:open={createJobSlideOverOpen}
 		title={t('studio.create_job_title', 'Create Studio Job')}
 	>
 		<div class="space-y-3">
@@ -413,19 +424,20 @@
 				<input id="studio-tags" type="text" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={newJob.target_tags} placeholder="tech, ai, tutorial" />
 			</div>
 		</div>
-		<div class="mt-6 flex justify-end gap-2">
-			<Button variant="outline" onclick={() => (createJobModalOpen = false)}>{t('common.cancel', 'Cancel')}</Button>
-			<Button onclick={createJob} disabled={saving || !newJob.persona_id || !newJob.topic_prompt}>
-				{saving ? t('common.saving', 'Saving...') : t('studio.create', 'Create Job')}
-			</Button>
-		</div>
-	</Modal>
+		{#snippet footer()}
+			<div class="flex justify-end gap-2">
+				<Button variant="outline" onclick={() => (createJobSlideOverOpen = false)}>{t('common.cancel', 'Cancel')}</Button>
+				<Button onclick={createJob} disabled={saving || !newJob.persona_id || !newJob.topic_prompt}>
+					{saving ? t('common.saving', 'Saving...') : t('studio.create', 'Create Job')}
+				</Button>
+			</div>
+		{/snippet}
+	</SlideOver>
 {/if}
 
-{#if viewJobModalOpen && viewingJob}
-	<Modal
-		open={viewJobModalOpen}
-		onclose={() => { viewJobModalOpen = false; viewingJob = null; }}
+{#if viewJobSlideOverOpen && viewingJob}
+	<SlideOver
+		bind:open={viewJobSlideOverOpen}
 		title={t('studio.job_detail', 'Job Detail')}
 	>
 		<div class="space-y-3 text-sm">
@@ -452,32 +464,16 @@
 				<p class="mt-1 rounded-md border p-2 text-xs" style="border-color: var(--color-border); color: var(--color-foreground)">{viewingJob.topic_prompt || '—'}</p>
 			</div>
 		</div>
-		<div class="mt-6 flex justify-end gap-2">
-			{#if canManage && (viewingJob.status === 'failed' || viewingJob.status === 'draft_ready')}
-				<Button variant="outline" onclick={() => { retryJob(viewingJob!.id); viewJobModalOpen = false; }}>
-					<RotateCcw class="h-4 w-4" />
-					{t('studio.retry', 'Retry')}
-				</Button>
-			{/if}
-			<Button onclick={() => { viewJobModalOpen = false; viewingJob = null; }}>{t('common.close', 'Close')}</Button>
-		</div>
-	</Modal>
+		{#snippet footer()}
+			<div class="flex justify-end gap-2">
+				{#if viewingJob && canManage && (viewingJob.status === 'failed' || viewingJob.status === 'draft_ready')}
+					<Button variant="outline" onclick={() => { retryJob(viewingJob!.id); viewJobSlideOverOpen = false; }}>
+						<RotateCcw class="h-4 w-4" />
+						{t('studio.retry', 'Retry')}
+					</Button>
+				{/if}
+				<Button onclick={() => { viewJobSlideOverOpen = false; viewingJob = null; }}>{t('common.close', 'Close')}</Button>
+			</div>
+		{/snippet}
+	</SlideOver>
 {/if}
-
-{#snippet JobActionsCell({ row }: { value: any; row: StudioJob })}
-	<div class="flex items-center gap-1">
-		<Button variant="ghost" size="sm" onclick={() => viewJob(row.id)} aria-label={t('common.view', 'View')}>
-			<Eye class="h-3.5 w-3.5" />
-		</Button>
-		{#if canManage && (row.status === 'failed' || row.status === 'draft_ready')}
-			<Button variant="ghost" size="sm" onclick={() => retryJob(row.id)} aria-label={t('studio.retry', 'Retry')}>
-				<RotateCcw class="h-3.5 w-3.5" />
-			</Button>
-		{/if}
-		{#if canManage && (row.status === 'queued' || row.status === 'generating')}
-			<Button variant="ghost" size="sm" onclick={() => cancelJob(row.id)} aria-label={t('common.cancel', 'Cancel')}>
-				<X class="h-3.5 w-3.5" />
-			</Button>
-		{/if}
-	</div>
-{/snippet}

@@ -88,12 +88,48 @@
 	];
 
 	onMount(() => {
+		// Determine whether the initial content is HTML or plain text/markdown.
+		// When body_html is empty in the database (some content was saved with
+		// only the markdown body), CreateShell falls back to draft.body — which
+		// is markdown, not HTML. The Tiptap Markdown extension can parse it via
+		// setContent(..., { contentType: 'markdown' }).
+		const isHTML = html.trim().startsWith('<');
+		// Initialize with empty content and set it in onCreate — the editor's
+		// view isn't always ready to render when setContent is called
+		// immediately after construction in Tiptap 3.x. Using onCreate ensures
+		// the ProseMirror view is fully mounted before we inject content.
 		editor = new Editor({
 			element: element,
 			extensions: buildExtensions({
 				placeholder: t('create.editor.placeholder')
 			}),
-			content: html,
+			content: '',
+			onCreate: () => {
+				if (!html) return;
+				// Defer to the next animation frame so the view has finished
+				// its initial layout pass before we replace the document.
+				// Without this, ProseMirror can leave the DOM empty even
+				// though the editor state contains the content.
+				requestAnimationFrame(() => {
+					if (!editor || editor.isDestroyed) return;
+					if (isHTML) {
+						editor.commands.setContent(html, { emitUpdate: false });
+					} else {
+						editor.commands.setContent(html, { contentType: 'markdown', emitUpdate: false });
+					}
+					// When the editor starts in markdown mode, the Tiptap
+					// surface is hidden (display:none) and the markdown
+					// textarea is shown instead. The textarea reads from
+					// markdownSource, which is only populated on mode switch.
+					// Without this, the textarea is empty even though the
+					// ProseMirror document has the content. Serialize the
+					// editor's document to markdown for the textarea.
+					if (mode === 'markdown') {
+						markdownSource = editor.getMarkdown();
+						markdownDirty = false;
+					}
+				});
+			},
 			onUpdate: () => {
 				// Sync the editor's HTML back to the parent so the autosave
 				// snapshot includes the current body — without this the body

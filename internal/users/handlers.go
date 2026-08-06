@@ -25,6 +25,15 @@ type JSONLDResolver interface {
 	ResolveJSONLD(ctx context.Context, tenantID pgtype.UUID, contentType string, fields map[string]string) (json.RawMessage, error)
 }
 
+// PermissionResolver checks RBAC permissions and super-admin status. The
+// /me/content/{id} handler uses it to decide whether a non-owner viewer
+// (super-admin or a user with the `content.edit` permission node) may
+// fetch content they don't own for editing.
+type PermissionResolver interface {
+	IsSuperAdmin(ctx context.Context, userID, tenantID pgtype.UUID) bool
+	HasPermission(ctx context.Context, userID, tenantID pgtype.UUID, permKey string) bool
+}
+
 // Handlers holds dependencies for user HTTP handlers.
 type Handlers struct {
 	Service *Service
@@ -34,12 +43,23 @@ type Handlers struct {
 	// expire the stale entry).
 	Redis          valkeycompat.Cmdable
 	jsonldResolver JSONLDResolver
+	// permResolver is an optional RBAC resolver used by GetMyContent to
+	// allow super-admins and `content.edit` permission holders to fetch
+	// content they don't own for editing. When nil, only the author can
+	// restore content via /me/content/{id}.
+	permResolver PermissionResolver
 }
 
 // NewHandlers creates Handlers with the given Service. A nil resolver is
 // acceptable — JSON-LD is simply omitted when unavailable.
 func NewHandlers(service *Service, resolver JSONLDResolver) *Handlers {
 	return &Handlers{Service: service, jsonldResolver: resolver}
+}
+
+// SetPermissionResolver wires the RBAC resolver. Called once during server
+// setup after the RBAC resolver is constructed.
+func (h *Handlers) SetPermissionResolver(r PermissionResolver) {
+	h.permResolver = r
 }
 
 // requireTenant resolves the tenant from the request context.

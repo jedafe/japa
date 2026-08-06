@@ -18,9 +18,14 @@
 		onSelectOrg: (id: string | null) => void;
 		onSaveDraft: () => void;
 		onPublish: () => void;
+		/** When true, the content is already published — the primary action
+		 *  becomes "Save" (flush/PATCH) instead of "Publish" (POST .../publish).
+		 *  Re-publishing already-published content is semantically wrong UX
+		 *  even though the backend endpoint is idempotent. */
+		isPublished?: boolean;
 	}
 
-	let { status, canPublish, publishReason, orgs, selectedOrgId, onSelectOrg, onSaveDraft, onPublish }: Props = $props();
+	let { status, canPublish, publishReason, orgs, selectedOrgId, onSelectOrg, onSaveDraft, onPublish, isPublished = false }: Props = $props();
 
 	const selectedOrg = $derived(orgs.find((o) => o.id === selectedOrgId) ?? null);
 	const currentValue = $derived(selectedOrgId ?? '');
@@ -85,20 +90,43 @@
 
 	<!-- Right: publish gate reason + action buttons -->
 	<div class="actions">
-		{#if !canPublish && publishReason}
+		{#if !canPublish && publishReason && !isPublished}
 			<span class="gate-reason">{t(publishReason)}</span>
 		{/if}
-		<button type="button" class="btn-secondary" onclick={onSaveDraft}>
-			{t('create.action.save_draft')}
-		</button>
-		<button
-			type="button"
-			class="btn-primary"
-			disabled={!canPublish}
-			onclick={onPublish}
-		>
-			{t('create.action.publish')}
-		</button>
+		{#if isPublished}
+			<!-- Already-published content: the primary action is "Save" (flush/PATCH).
+			     The "Save draft" secondary button is hidden because the content is
+			     not a draft — showing both "Save draft" and "Save" is confusing.
+			     The button is disabled when the composer status is 'saved' (nothing
+			     to flush) or 'saving' (flush in flight), and re-enables when the
+			     user makes an edit (status transitions to 'dirty'). -->
+			<button
+				type="button"
+				class="btn-primary"
+				disabled={status === 'saved' || status === 'saving' || status === 'pristine'}
+				onclick={onSaveDraft}
+			>
+				{#if status === 'saving'}
+					{t('create.status.saving', 'Saving…')}
+				{:else if status === 'saved'}
+					{t('create.status.saved', 'Saved')}
+				{:else}
+					{t('create.action.save')}
+				{/if}
+			</button>
+		{:else}
+			<button type="button" class="btn-secondary" onclick={onSaveDraft}>
+				{t('create.action.save_draft')}
+			</button>
+			<button
+				type="button"
+				class="btn-primary"
+				disabled={!canPublish}
+				onclick={onPublish}
+			>
+				{t('create.action.publish')}
+			</button>
+		{/if}
 	</div>
 </div>
 

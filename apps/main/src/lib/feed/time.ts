@@ -16,8 +16,10 @@ function parseTimestamp(raw: string): Date | null {
 	return Number.isNaN(built.getTime()) ? null : built;
 }
 
-/** Compact relative time ("now", "5m", "2h", "3d", "2w") or a short date; '' if unparseable. */
-export function relativeTime(raw: string, now: Date = new Date()): string {
+/** Compact relative time ("now", "5m", "2h", "3d", "2w") or a short date; '' if unparseable.
+ * Pass the active i18n locale so the fallback date respects the user's language
+ * and SSR/client render identically (avoids hydration mismatch, §16). */
+export function relativeTime(raw: string, now: Date = new Date(), locale: string = 'en'): string {
 	const d = parseTimestamp(raw);
 	if (!d) return '';
 
@@ -31,5 +33,5 @@ export function relativeTime(raw: string, now: Date = new Date()): string {
 	if (days < 7) return `${days}d`;
 	const weeks = Math.floor(days / 7);
 	if (weeks < 5) return `${weeks}w`;
-	return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+	return d.toLocaleDateString(locale, { month: 'short', day: 'numeric' });
 }

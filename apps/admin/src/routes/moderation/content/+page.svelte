@@ -1,10 +1,16 @@
 <script lang="ts">
-	import FilterBar from '$lib/components/FilterBar.svelte';
-	import Modal from '$lib/components/Modal.svelte';
-	import { DataTable } from '$lib/components/ui/data-table';
+	// /moderation/content — migrated to the EntityPage scaffold.
+	// Distinct moderation-focused view of platform content (reports count,
+	// featured badge, type/status filters) with read-only list + Remove/Restore
+	// state actions. Uses `contentAdminApi` and the `content.moderate` permission.
+	import { EntityPage, type EntityPageConfig, type EntityPageController } from '$lib/components/entity';
+	import { Modal } from '$lib/components/ui/modal';
+	import { Button } from '$lib/components/ui/button';
 	import { contentAdminApi } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
+	import { Eye, Trash2, RotateCcw } from 'lucide-svelte';
+	import type { ActionItem } from '$lib/components/ui/data-table';
 
 	type ContentItem = {
 		id: string;
@@ -19,34 +25,90 @@
 		body_preview?: string;
 	};
 
-	let items = $state<ContentItem[]>([]);
-	let loading = $state(true);
-	let filterType = $state('');
-	let filterStatus = $state('');
-	let searchQuery = $state('');
-	let errorMessage = $state('');
-
-	let expandedId = $state<string | null>(null);
-
-	let showDeleteModal = $state(false);
-	let deleteTarget = $state<ContentItem | null>(null);
-
 	const canModerateContent = $derived(hasPermission('content.moderate'));
 
-	const filterDefs = [
-		{ key: 'type', label: t('moderation.content_type', 'Content Type'), type: 'select' as const, options: [
-			{ value: 'post', label: t('app.moderation.queue.post', 'Post') },
-			{ value: 'comment', label: t('app.moderation.queue.comment', 'Comment') },
-			{ value: 'blog', label: t('app.moderation.queue.blog', 'Blog') },
-			{ value: 'forum', label: t('app.moderation.queue.forum', 'Forum') }
-		] },
-		{ key: 'status', label: t('moderation.status', 'Status'), type: 'select' as const, options: [
-			{ value: 'published', label: t('moderation.content.published', 'Published') },
-			{ value: 'draft', label: t('moderation.content.draft', 'Draft') },
-			{ value: 'archived', label: t('moderation.content.archived', 'Archived') },
-			{ value: 'flagged', label: t('moderation.content.flagged', 'Flagged') }
-		] }
-	];
+	// ── State-action confirmation modals ───────────────────────────────────
+	// EntityPage's confirm Modal only covers the default delete; state actions
+	// keep page-local Modals, confirm calls the API + controller.reload().
+	let entityController = $state<EntityPageController | undefined>(undefined);
+	let acting = $state(false);
+	let actionTarget = $state<ContentItem | null>(null);
+
+	let showRemoveModal = $state(false);
+	let showRestoreModal = $state(false);
+
+	function openRemove(item: ContentItem) {
+		actionTarget = item;
+		showRemoveModal = true;
+	}
+
+	function openRestore(item: ContentItem) {
+		actionTarget = item;
+		showRestoreModal = true;
+	}
+
+	async function confirmRemove() {
+		if (!actionTarget) return;
+		acting = true;
+		try {
+			const result = await contentAdminApi.remove(actionTarget.id);
+			if (result.ok) {
+				showRemoveModal = false;
+				entityController?.reload();
+			} else {
+				pageError = result.error ?? t('common.error', 'Failed to remove content');
+			}
+		} catch {
+			pageError = t('common.error', 'Failed to remove content');
+		} finally {
+			acting = false;
+		}
+	}
+
+	async function confirmRestore() {
+		if (!actionTarget) return;
+		acting = true;
+		try {
+			const result = await contentAdminApi.restore(actionTarget.id);
+			if (result.ok) {
+				showRestoreModal = false;
+				entityController?.reload();
+			} else {
+				pageError = result.error ?? t('common.error', 'Failed to restore content');
+			}
+		} catch {
+			pageError = t('common.error', 'Failed to restore content');
+		} finally {
+			acting = false;
+		}
+	}
+
+	let pageError = $state('');
+
+	// ── Row actions ────────────────────────────────────────────────────────
+	// Custom actions replace the defaults, so View is included explicitly.
+	// Remove/Restore are gated on `content.moderate` and filtered per-row via show().
+	const rowActions = $derived.by<ActionItem[]>(() => {
+		const acts: ActionItem[] = [
+			{ label: t('common.view', 'View'), icon: Eye, onclick: (_row, ctx) => ctx?.openView(_row) }
+		];
+		if (canModerateContent) {
+			acts.push({
+				label: t('common.delete', 'Delete'),
+				icon: Trash2,
+				variant: 'destructive',
+				onclick: openRemove,
+				show: (row: ContentItem) => row.status !== 'removed'
+			});
+			acts.push({
+				label: t('moderation.content.restore', 'Restore'),
+				icon: RotateCcw,
+				onclick: openRestore,
+				show: (row: ContentItem) => row.status === 'removed'
+			});
+		}
+		return acts;
+	});
 
 	function typeBadge(type: string) {
 		switch (type) {
@@ -63,192 +125,176 @@
 			case 'published': return 'bg-success/15 text-success dark:text-success';
 			case 'draft': return 'bg-muted/15 text-muted dark:text-muted';
 			case 'flagged': return 'bg-danger/15 text-danger dark:text-danger';
+			case 'removed': return 'bg-muted/30 text-muted dark:text-muted';
 			default: return 'bg-warning/15 text-warning dark:text-warning';
 		}
 	}
 
-	const columns = [
-		{
-			key: 'title',
-			label: t('moderation.title', 'Title'),
-			sortable: true,
-			render: (_: any, row: ContentItem) => `<div><p class="font-medium">${row.title}</p>${row.is_featured ? '<span class="inline-block rounded-full bg-warning/15 px-2 py-0.5 text-xs text-warning dark:text-warning">' + t('moderation.content.featured', 'Featured') + '</span>' : ''}</div>`
-		},
-		{
-			key: 'author',
-			label: t('moderation.author', 'Author'),
-			sortable: true,
-			render: (v: string) => `<span class="text-xs" style="color: var(--color-muted)">${v}</span>`
-		},
-		{
-			key: 'type',
-			label: t('moderation.content_type', 'Content Type'),
-			sortable: true,
-			render: (v: string) => `<span class="inline-block rounded-full px-2 py-0.5 text-xs ${typeBadge(v)}">${v}</span>`
-		},
-		{
-			key: 'status',
-			label: t('moderation.status', 'Status'),
-			sortable: true,
-			render: (v: string) => `<span class="inline-block rounded-full px-2 py-0.5 text-xs ${statusBadge(v)}">${v}</span>`
-		},
-		{
-			key: 'reports_count',
-			label: t('moderation.reports', 'Reports'),
-			sortable: true,
-			render: (v: number) => v > 0 ? `<span class="inline-block rounded-full bg-danger/15 px-2 py-0.5 text-xs text-danger dark:text-danger">${v}</span>` : `<span class="text-xs" style="color: var(--color-muted)">0</span>`
-		},
-		{
-			key: 'created_at',
-			label: t('moderation.date', 'Date'),
-			sortable: true,
-			render: (v: string) => `<span class="text-xs" style="color: var(--color-muted)">${new Date(v).toLocaleDateString()}</span>`
-		},
-		{
-			key: 'actions',
-			label: '',
-			class: 'w-24',
-			componentSnippet: ContentActionsCell
-		}
-	];
-
-	async function load() {
-		loading = true;
-		errorMessage = '';
-		const params = new URLSearchParams();
-		if (filterType) params.set('type', filterType);
-		if (filterStatus) params.set('status', filterStatus);
-		if (searchQuery) params.set('q', searchQuery);
-		try {
-			const result = await contentAdminApi.list(params.toString());
-			if (result.ok) {
-				const d = result.data as { items: ContentItem[] };
-				items = d?.items ?? [];
-			} else {
-				errorMessage = result.error;
+	const config = $derived<EntityPageConfig>({
+		title: t('moderation.content_admin', 'Content Moderation'),
+		description: t('moderation.content.description', 'Browse and manage platform content across all types.'),
+		readonly: true,
+		pageSize: 25,
+		columns: [
+			{
+				key: 'title',
+				label: t('moderation.title', 'Title'),
+				sortable: true,
+				render: (_: any, row: ContentItem) =>
+					`<div><p class="font-medium">${row.title}</p>${row.is_featured ? '<span class="inline-block rounded-full bg-warning/15 px-2 py-0.5 text-xs text-warning dark:text-warning">' + t('moderation.content.featured', 'Featured') + '</span>' : ''}</div>`
+			},
+			{
+				key: 'author',
+				label: t('moderation.author', 'Author'),
+				sortable: true,
+				render: (v: string) => `<span class="text-xs" style="color: var(--color-muted)">${v}</span>`
+			},
+			{
+				key: 'type',
+				label: t('moderation.content_type', 'Content Type'),
+				sortable: true,
+				render: (v: string) => `<span class="inline-block rounded-full px-2 py-0.5 text-xs ${typeBadge(v)}">${v}</span>`
+			},
+			{
+				key: 'status',
+				label: t('moderation.status', 'Status'),
+				sortable: true,
+				render: (v: string) => `<span class="inline-block rounded-full px-2 py-0.5 text-xs ${statusBadge(v)}">${v}</span>`
+			},
+			{
+				key: 'reports_count',
+				label: t('moderation.reports', 'Reports'),
+				sortable: true,
+				render: (v: number) =>
+					v > 0
+						? `<span class="inline-block rounded-full bg-danger/15 px-2 py-0.5 text-xs text-danger dark:text-danger">${v}</span>`
+						: `<span class="text-xs" style="color: var(--color-muted)">0</span>`
+			},
+			{
+				key: 'created_at',
+				label: t('moderation.date', 'Date'),
+				sortable: true,
+				render: (v: string) => `<span class="text-xs" style="color: var(--color-muted)">${new Date(v).toLocaleDateString()}</span>`
 			}
-		} catch {
-			errorMessage = t('common.error');
-		} finally {
-			loading = false;
-		}
-	}
-
-	function handleFilter(values: Record<string, string>) {
-		searchQuery = values.search ?? '';
-		filterType = values.type ?? '';
-		filterStatus = values.status ?? '';
-		load();
-	}
-
-	function toggleExpand(id: string) {
-		expandedId = expandedId === id ? null : id;
-	}
-
-	function confirmDelete(item: ContentItem) {
-		deleteTarget = item;
-		showDeleteModal = true;
-	}
-
-	async function executeDelete() {
-		if (!deleteTarget) return;
-		errorMessage = '';
-		try {
-			const result = await contentAdminApi.remove(deleteTarget.id);
-			if (result.ok) {
-				showDeleteModal = false;
-				load();
-			} else {
-				errorMessage = result.error;
+		],
+		filters: [
+			{
+				key: 'type',
+				label: t('moderation.content_type', 'Content Type'),
+				options: [
+					{ value: 'post', label: t('app.moderation.queue.post', 'Post') },
+					{ value: 'comment', label: t('app.moderation.queue.comment', 'Comment') },
+					{ value: 'blog', label: t('app.moderation.queue.blog', 'Blog') },
+					{ value: 'forum', label: t('app.moderation.queue.forum', 'Forum') }
+				]
+			},
+			{
+				key: 'status',
+				label: t('moderation.status', 'Status'),
+				options: [
+					{ value: 'published', label: t('moderation.content.published', 'Published') },
+					{ value: 'draft', label: t('moderation.content.draft', 'Draft') },
+					{ value: 'archived', label: t('moderation.content.archived', 'Archived') },
+					{ value: 'flagged', label: t('moderation.content.flagged', 'Flagged') },
+					{ value: 'removed', label: t('moderation.content.removed', 'Removed') }
+				]
 			}
-		} catch {
-			errorMessage = t('common.error');
-		}
-	}
-
-	$effect(() => {
-		load();
+		],
+		actions: rowActions,
+		fields: [],
+		load: async ({ q, filter }) => {
+			const params = new URLSearchParams();
+			if (filter.type) params.set('type', filter.type);
+			if (filter.status) params.set('status', filter.status);
+			if (q) params.set('q', q);
+			const result = await contentAdminApi.list(params.toString() || undefined);
+			if (result.ok) {
+				const d = result.data as { items: ContentItem[] } | ContentItem[];
+				const items = Array.isArray(d) ? d : (d?.items ?? []);
+				return { data: items, total: items.length, totalPages: 1 };
+			}
+			throw new Error(result.error ?? t('common.error', 'Failed to load content'));
+		},
+		viewSnippet: ContentView
 	});
 </script>
 
-{#snippet ContentActionsCell({ value, row }: { value: any; row: ContentItem })}
-	{#if canModerateContent}
-		<button
-			class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10"
-			style="color: var(--color-danger)"
-			onclick={(e: MouseEvent) => { e.stopPropagation(); confirmDelete(row); }}
-		>
-			{t('common.delete')}
-		</button>
-	{/if}
-{/snippet}
-
 <svelte:head>
-	<title>{t('moderation.content_admin')} — JapaConnect Admin</title>
+	<title>{t('moderation.content_admin', 'Content Moderation')} — JapaConnect Admin</title>
 </svelte:head>
 
-<div class="mb-4">
-	<a href="/moderation" class="text-xs hover:underline" style="color: var(--color-muted)">&larr; {t('moderation.back')}</a>
-</div>
-
-<h1 class="mb-1 text-2xl font-bold tracking-tight">{t('moderation.content_admin')}</h1>
-
-{#if errorMessage}
-	<div class="mb-4 rounded-md border px-4 py-3 text-sm" style="border-color: var(--color-danger); background-color: color-mix(in srgb, var(--color-danger) 8%, transparent); color: var(--color-danger)">
-		{errorMessage}
+{#if pageError}
+	<div
+		class="mb-4 rounded-lg p-3 text-sm"
+		style="background: color-mix(in srgb, var(--color-danger) 10%, transparent); color: var(--color-danger)"
+	>
+		{pageError}
 	</div>
 {/if}
-<p class="mb-4 text-sm" style="color: var(--color-muted)">{t('moderation.content.description', 'Browse and manage platform content across all types.')}</p>
 
-<FilterBar filters={filterDefs} onApply={handleFilter} />
+<EntityPage {config} bind:controller={entityController} />
 
-{#if loading}
-	<p class="py-8 text-center text-sm" style="color: var(--color-muted)">{t('common.loading')}</p>
-{:else}
-	<DataTable {columns} data={items} pageSize={25} searchable emptyMessage={t('app.moderation.content.empty_message', 'No content found')} onrowclick={(row) => toggleExpand(row.id)} />
+<!-- ── State-action confirmation modals ─────────────────────────────────── -->
 
-	{#if expandedId}
-		{@const expanded = items.find((i) => i.id === expandedId)}
-		{#if expanded}
-			<div class="mt-3 rounded-lg border px-4 py-4" style="border-color: var(--color-border); background-color: var(--color-surface)">
-				<div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
-					<div>
-						<p class="text-xs font-medium" style="color: var(--color-muted)">{t('moderation.title', 'Title')}</p>
-						<p class="mt-1 text-sm font-medium">{expanded.title}</p>
-					</div>
-					<div>
-						<p class="text-xs font-medium" style="color: var(--color-muted)">{t('moderation.author', 'Author')}</p>
-						<p class="mt-1 text-sm">{expanded.author}</p>
-						<p class="text-xs font-mono" style="color: var(--color-muted)">{expanded.author_id.slice(0, 12)}</p>
-					</div>
-					<div>
-						<p class="text-xs font-medium" style="color: var(--color-muted)">{t('moderation.created', 'Created')}</p>
-						<p class="mt-1 text-sm">{new Date(expanded.created_at).toLocaleDateString()}</p>
-					</div>
-				</div>
-				{#if expanded.body_preview}
-					<div class="mt-3 rounded-md border p-3 text-sm" style="border-color: var(--color-border); background-color: var(--color-background)">
-						<p class="text-xs font-medium mb-1" style="color: var(--color-muted)">{t('moderation.content_preview', 'Content Preview')}</p>
-						{expanded.body_preview}
-					</div>
-				{/if}
-				<div class="mt-3 flex gap-2">
-					{#if canModerateContent}
-						<button
-							class="rounded-md px-3 py-1.5 text-xs font-medium text-white"
-							style="background-color: var(--color-danger)"
-							onclick={() => confirmDelete(expanded)}
-						>
-							{t('common.delete')}
-						</button>
-					{/if}
-				</div>
+<!-- Remove -->
+<Modal bind:open={showRemoveModal} title={t('app.moderation.content.confirm_delete', 'Confirm Delete')}>
+	{#if actionTarget}
+		<p class="text-sm" style="color: var(--color-muted)">
+			{t('moderation.content.are_you_sure_you_want_to_delete_this_con', 'Are you sure you want to delete this content?')}
+		</p>
+	{/if}
+	<div class="mt-4 flex justify-end gap-2">
+		<Button variant="ghost" onclick={() => (showRemoveModal = false)}>{t('common.cancel', 'Cancel')}</Button>
+		<Button variant="destructive" onclick={confirmRemove} disabled={acting}>{t('common.delete', 'Delete')}</Button>
+	</div>
+</Modal>
+
+<!-- Restore -->
+<Modal bind:open={showRestoreModal} title={t('moderation.content.restore_title', 'Restore Content')}>
+	{#if actionTarget}
+		<p class="text-sm" style="color: var(--color-muted)">
+			{t('moderation.content.restore_confirm', 'Restore this content?')}
+		</p>
+	{/if}
+	<div class="mt-4 flex justify-end gap-2">
+		<Button variant="ghost" onclick={() => (showRestoreModal = false)}>{t('common.cancel', 'Cancel')}</Button>
+		<Button variant="default" onclick={confirmRestore} disabled={acting}>
+			{t('moderation.content.restore', 'Restore')}
+		</Button>
+	</div>
+</Modal>
+
+<!-- ── View snippet (mirrors the legacy expanded detail panel) ──────────── -->
+{#snippet ContentView({ row }: { row: ContentItem })}
+	<div class="space-y-4">
+		<div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">
+					{t('moderation.title', 'Title')}
+				</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.title}</p>
+			</div>
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">
+					{t('moderation.author', 'Author')}
+				</p>
+				<p class="mt-1 text-sm" style="color: var(--color-foreground)">{row.author}</p>
+				<p class="text-xs font-mono" style="color: var(--color-muted)">{row.author_id?.slice(0, 12)}</p>
+			</div>
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">
+					{t('moderation.created', 'Created')}
+				</p>
+				<p class="mt-1 text-sm" style="color: var(--color-foreground)">{new Date(row.created_at).toLocaleDateString()}</p>
+			</div>
+		</div>
+		{#if row.body_preview}
+			<div class="rounded-md border p-3 text-sm" style="border-color: var(--color-border); background-color: var(--color-background)">
+				<p class="mb-1 text-xs font-medium" style="color: var(--color-muted)">
+					{t('moderation.content_preview', 'Content Preview')}
+				</p>
+				{row.body_preview}
 			</div>
 		{/if}
-	{/if}
-{/if}
-
-<!-- Delete Confirmation -->
-<Modal bind:open={showDeleteModal} title={t('app.moderation.content.confirm_delete', 'Confirm Delete')} onConfirm={executeDelete} confirmLabel={t('common.delete')}>
-	<p class="text-sm" style="color: var(--color-muted)">{t('moderation.content.are_you_sure_you_want_to_delete_this_con')}</p>
-</Modal>
+	</div>
+{/snippet}

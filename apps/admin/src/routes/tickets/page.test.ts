@@ -23,7 +23,7 @@ describe('Tickets +page.svelte', () => {
 
 	it('shows filter controls', () => {
 		render(Page);
-		expect(screen.getByText('Search')).toBeTruthy();
+		expect(screen.getByText('All')).toBeTruthy();
 	});
 
 	it('shows empty state when no tickets', async () => {

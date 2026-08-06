@@ -2,8 +2,10 @@
 	import { aiAdminApi, type AiTool, type AiUsageSummary } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { Modal } from '$lib/components/ui/modal';
+	import { SlideOver } from '$lib/components/ui/slide-over';
 	import { Button } from '$lib/components/ui/button';
 	import { DataTable } from '$lib/components/ui/data-table';
+	import type { ActionItem } from '$lib/components/ui/data-table';
 	import { Pencil, Trash2, Loader2 } from 'lucide-svelte';
 
 	let tools = $state<AiTool[]>([]);
@@ -11,7 +13,7 @@
 	let loading = $state(true);
 	let error = $state('');
 	let activeTab = $state<'tools' | 'usage'>('tools');
-	let showEditModal = $state(false);
+	let showEditSlideOver = $state(false);
 	let editingTool = $state<AiTool | null>(null);
 	let saving = $state(false);
 	let searchQuery = $state('');
@@ -25,8 +27,12 @@
 		{ key: 'name', label: t('ai.tool_name'), sortable: true },
 		{ key: 'description', label: t('ai.description'), render: (v: string) => v || '-' },
 		{ key: 'category', label: t('ai.category'), render: (v: string) => `<span class="font-mono text-xs">${v}</span>` },
-		{ key: 'is_enabled', label: t('ai.status'), render: (v: boolean) => `<span class="rounded-full px-2 py-0.5 text-xs font-medium ${v ? 'bg-success/15 text-success dark:text-success' : 'bg-muted/15 text-muted dark:text-muted'}">${v ? t('ai.enabled') : t('ai.disabled')}</span>` },
-		{ key: 'actions', label: t('common.actions'), class: 'w-24', componentSnippet: ToolActionsCell }
+		{ key: 'is_enabled', label: t('ai.status'), render: (v: boolean) => `<span class="rounded-full px-2 py-0.5 text-xs font-medium ${v ? 'bg-success/15 text-success dark:text-success' : 'bg-muted/15 text-muted dark:text-muted'}">${v ? t('ai.enabled') : t('ai.disabled')}</span>` }
+	];
+
+	const rowActions: ActionItem[] = [
+		{ label: t('common.edit', 'Edit'), icon: Pencil, onclick: (row: AiTool) => editTool(row) },
+		{ label: t('common.delete', 'Delete'), icon: Trash2, variant: 'destructive', onclick: (row: AiTool) => confirmDeleteTool(row) }
 	];
 
 	const usageColumns = [
@@ -74,7 +80,7 @@
 
 	function editTool(tool: AiTool) {
 		editingTool = { ...tool };
-		showEditModal = true;
+		showEditSlideOver = true;
 	}
 
 	async function saveTool() {
@@ -90,7 +96,7 @@
 				required_permission: editingTool.required_permission ?? null
 			});
 			if (result.ok) {
-				showEditModal = false;
+				showEditSlideOver = false;
 				load();
 			} else {
 				error = result.error;
@@ -168,6 +174,7 @@
 		searchable={true}
 		onsearch={(q: string) => { searchQuery = q; }}
 		pageSize={25}
+		actions={rowActions}
 		emptyMessage={t('ai.no_tools')}
 	/>
 {:else if activeTab === 'usage' && usage}
@@ -197,10 +204,9 @@
 	<p class="text-sm" style="color: var(--color-muted)">{t('ai.no_usage_data')}</p>
 {/if}
 
-{#if showEditModal && editingTool}
-	<Modal
-		open={showEditModal}
-		onclose={() => { showEditModal = false; }}
+{#if showEditSlideOver && editingTool}
+	<SlideOver
+		bind:open={showEditSlideOver}
 		title={t('ai.edit_tool')}
 	>
 		<div class="space-y-4">
@@ -247,16 +253,18 @@
 				/>
 				<label for="tool-enabled" class="text-sm">{t('ai.enabled')}</label>
 			</div>
+		</div>
+		{#snippet footer()}
 			<div class="flex justify-end gap-2">
-				<Button variant="outline" onclick={() => { showEditModal = false; }}>
+				<Button variant="outline" onclick={() => { showEditSlideOver = false; }}>
 					{t('common.cancel')}
 				</Button>
 				<Button onclick={saveTool} disabled={saving}>
 					{saving ? t('common.saving') : t('common.save')}
 				</Button>
 			</div>
-		</div>
-	</Modal>
+		{/snippet}
+	</SlideOver>
 {/if}
 
 {#if showDeleteConfirm && deletingTool}
@@ -292,13 +300,3 @@
 	</Modal>
 {/if}
 
-{#snippet ToolActionsCell({ row }: { value: any; row: AiTool })}
-	<div class="flex items-center gap-1">
-		<Button variant="ghost" size="sm" onclick={() => editTool(row)} aria-label={t('common.edit', 'Edit')}>
-			<Pencil class="h-3.5 w-3.5" />
-		</Button>
-		<Button variant="ghost" size="sm" onclick={() => confirmDeleteTool(row)} style="color: var(--color-danger)" aria-label={t('common.delete', 'Delete')}>
-			<Trash2 class="h-3.5 w-3.5" />
-		</Button>
-	</div>
-{/snippet}

@@ -60,10 +60,4 @@
 			<FollowButton entityType="user" entityId={authorId} {initiallyFollowing} />
 		</div>
 	{/if}
-
-	<!-- More from author placeholder — populated when author content API is available -->
-	<div class="mt-5 border-t border-[var(--color-border)] pt-4">
-		<h4 class="mb-3 text-xs font-semibold uppercase tracking-wide text-[var(--color-muted)]">{t('blog.more_from', 'More from author')}</h4>
-		<p class="text-sm text-[var(--color-text-subtle)]">{t('blog.no_more_posts', 'No more posts yet.')}</p>
-	</div>
 </div>

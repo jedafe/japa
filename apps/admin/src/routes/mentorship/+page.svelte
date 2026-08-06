@@ -4,7 +4,8 @@
 	import { Card, CardContent, CardHeader } from "$lib/components/ui/card";
 	import { Tabs } from "$lib/components/ui/tabs";
 	import { DataTable } from "$lib/components/ui/data-table";
-	import { FilterBar } from "$lib/components/ui/filter-bar";
+	import type { ActionItem } from "$lib/components/ui/data-table";
+	import { SlideOver } from "$lib/components/ui/slide-over";
 	import { Badge } from "$lib/components/ui/badge";
 	import { Button } from "$lib/components/ui/button";
 	import { Modal } from "$lib/components/ui/modal";
@@ -29,11 +30,10 @@
 	let activeTab = $state("all");
 	let programs = $state<Program[]>([]);
 	let loading = $state(true);
-	let filters = $state<Record<string, string>>({});
 	let selectedIds = $state<Set<string>>(new Set());
 
 	// Create/Edit modal
-	let showModal = $state(false);
+	let showSlideOver = $state(false);
 	let editingProgram = $state<Program | null>(null);
 	let saving = $state(false);
 	let name = $state("");
@@ -46,7 +46,7 @@
 	let deleting = $state(false);
 
 	// View modal
-	let showViewModal = $state(false);
+	let showViewSlideOver = $state(false);
 	let viewTarget = $state<Program | null>(null);
 
 	// Backend gates mentorship mutations on mentorship.admin
@@ -103,12 +103,23 @@
 			label: t('app.mentorship.columns.created', 'Created'),
 			sortable: true,
 			render: (value: string) => new Date(value).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" })
+		}
+	];
+
+	const rowActions: ActionItem[] = [
+		{ label: t('common.view', 'View'), icon: Eye, onclick: (row: Program) => openView(row) },
+		{
+			label: t('common.edit', 'Edit'),
+			icon: Pencil,
+			onclick: (row: Program) => openEdit(row),
+			show: () => canManageMentorship
 		},
 		{
-			key: "actions",
-			label: "",
-			class: "w-24",
-			componentSnippet: ProgramActionsCell
+			label: t('common.delete', 'Delete'),
+			icon: Trash2,
+			variant: 'destructive',
+			onclick: (row: Program) => confirmDelete(row),
+			show: () => canManageMentorship
 		}
 	];
 
@@ -133,13 +144,9 @@
 		}
 	}
 
-	function handleFilter(values: Record<string, string>) {
-		filters = values;
-	}
-
 	function openView(program: Program) {
 		viewTarget = program;
-		showViewModal = true;
+		showViewSlideOver = true;
 	}
 
 	function openCreate() {
@@ -147,7 +154,7 @@
 		name = "";
 		description = "";
 		isActive = true;
-		showModal = true;
+		showSlideOver = true;
 	}
 
 	function openEdit(program: Program) {
@@ -155,7 +162,7 @@
 		name = program.name;
 		description = program.description || "";
 		isActive = program.is_active;
-		showModal = true;
+		showSlideOver = true;
 	}
 
 	async function saveProgram() {
@@ -168,7 +175,7 @@
 					body: { name: name.trim(), description: description.trim() || undefined, is_active: isActive }
 				});
 				if (result.ok) {
-					showModal = false;
+					showSlideOver = false;
 					editingProgram = null;
 					loadPrograms();
 				}
@@ -178,7 +185,7 @@
 					body: { name: name.trim(), description: description.trim() || undefined, is_active: isActive }
 				});
 				if (result.ok) {
-					showModal = false;
+					showSlideOver = false;
 					loadPrograms();
 				}
 			}
@@ -249,14 +256,6 @@
 <div class="space-y-6">
 	<Tabs {tabs} bind:value={activeTab} />
 
-	<FilterBar
-		bind:value={filters}
-		filters={[]}
-		searchPlaceholder={t('app.mentorship.search_placeholder', 'Search programs...')}
-		onsearch={handleFilter}
-		onclear={() => { filters = {}; }}
-	/>
-
 	<Card>
 		<CardContent class="p-0">
 			{#if loading}
@@ -265,6 +264,9 @@
 				<DataTable
 					columns={columns}
 					data={filteredPrograms}
+					actions={rowActions}
+					searchable
+					searchPlaceholder={t('app.mentorship.search_placeholder', 'Search programs...')}
 					selectable
 					bind:selectedIds
 					pageSize={15}
@@ -310,12 +312,10 @@
 	</div>
 </div>
 
-<!-- Create/Edit Modal -->
-<Modal
-	bind:open={showModal}
+<!-- Create/Edit SlideOver -->
+<SlideOver
+	bind:open={showSlideOver}
 	title={editingProgram ? t('app.mentorship.modal.edit_program', 'Edit Program') : t('app.mentorship.modal.new_program', 'New Program')}
-	description={editingProgram ? t('app.mentorship.modal.update_description', 'Update the mentorship program details') : t('app.mentorship.modal.create_description', 'Create a new mentorship program')}
-	size="lg"
 >
 	<div class="space-y-4">
 		<div>
@@ -353,18 +353,19 @@
 			<span class="text-sm text-foreground-alt">{isActive ? t('app.mentorship.status.active', 'Active') : t('app.mentorship.status.inactive', 'Inactive')}</span>
 		</div>
 	</div>
-
-	<div class="flex justify-end gap-3 pt-4">
-		<Button variant="outline" onclick={() => (showModal = false)}>{t('app.mentorship.actions.cancel', 'Cancel')}</Button>
-		<Button onclick={saveProgram} disabled={saving || !name.trim()}>
-		{#if saving}
-			{t('app.mentorship.actions.saving', 'Saving...')}
-		{:else}
-			{editingProgram ? t('app.mentorship.actions.save_changes', 'Save Changes') : t('app.mentorship.actions.create_program', 'Create Program')}
-			{/if}
-		</Button>
-	</div>
-</Modal>
+	{#snippet footer()}
+		<div class="flex justify-end gap-3 pt-4">
+			<Button variant="outline" onclick={() => (showSlideOver = false)}>{t('app.mentorship.actions.cancel', 'Cancel')}</Button>
+			<Button onclick={saveProgram} disabled={saving || !name.trim()}>
+			{#if saving}
+				{t('app.mentorship.actions.saving', 'Saving...')}
+			{:else}
+				{editingProgram ? t('app.mentorship.actions.save_changes', 'Save Changes') : t('app.mentorship.actions.create_program', 'Create Program')}
+				{/if}
+			</Button>
+		</div>
+	{/snippet}
+</SlideOver>
 
 <!-- Delete Confirmation Modal -->
 <Modal bind:open={showDeleteModal} title={t('app.mentorship.modal.delete_program', 'Delete Program')} description={t('app.mentorship.modal.delete_cannot_undo', 'This action cannot be undone.')} size="sm">
@@ -390,8 +391,8 @@
 	</div>
 </Modal>
 
-<!-- View Modal -->
-<Modal bind:open={showViewModal} title={t('app.mentorship.modal.program_details', 'Program Details')} size="sm">
+<!-- View SlideOver -->
+<SlideOver bind:open={showViewSlideOver} title={t('app.mentorship.modal.program_details', 'Program Details')}>
 	{#if viewTarget}
 		<div class="space-y-4">
 			<div>
@@ -420,24 +421,9 @@
 			</div>
 		</div>
 	{/if}
-	<div class="mt-6 flex justify-end">
-		<Button variant="outline" onclick={() => (showViewModal = false)}>{t('app.mentorship.actions.close', 'Close')}</Button>
-	</div>
-</Modal>
-
-<!-- Action Cell -->
-{#snippet ProgramActionsCell({ value, row }: { value: any; row: Program })}
-	<div class="flex items-center gap-1">
-		<Button variant="ghost" size="sm" onclick={() => openView(row)}>
-			<Eye class="h-3.5 w-3.5" />
-		</Button>
-		{#if canManageMentorship}
-			<Button variant="ghost" size="sm" onclick={() => openEdit(row)}>
-				<Pencil class="h-3.5 w-3.5" />
-			</Button>
-			<Button variant="ghost" size="sm" onclick={() => confirmDelete(row)} style="color: var(--color-danger)">
-				<Trash2 class="h-3.5 w-3.5" />
-			</Button>
-		{/if}
-	</div>
-{/snippet}
+	{#snippet footer()}
+		<div class="flex justify-end">
+			<Button variant="outline" onclick={() => (showViewSlideOver = false)}>{t('app.mentorship.actions.close', 'Close')}</Button>
+		</div>
+	{/snippet}
+</SlideOver>

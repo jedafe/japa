@@ -24,6 +24,7 @@ vi.mock('$lib/api', () => ({
 
 vi.mock('$app/navigation', () => ({
 	goto: vi.fn(),
+	replaceState: vi.fn(),
 	invalidateAll: vi.fn(),
 }));
 

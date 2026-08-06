@@ -43,7 +43,9 @@ export const SEO_MAX_LENGTHS: Record<string, number> = {
 
 // excerpt strips HTML tags and returns the first n characters of body text,
 // matching the backend's excerpt() fallback for meta_description.
-function excerpt(body: string, n: number): string {
+// Exported so the editor can pre-fill meta_description with a body excerpt
+// when the stored field is empty (Section 26 ResolveMetadata fallback).
+export function excerpt(body: string, n: number): string {
 	if (!body) return '';
 	// Strip HTML tags (body_html is the rendered HTML from the editor).
 	const text = body

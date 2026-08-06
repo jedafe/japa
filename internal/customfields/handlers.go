@@ -1198,6 +1198,70 @@ func (h *Handlers) GetForm(w http.ResponseWriter, r *http.Request) {
 	// Also return field_group_id for frontend field management.
 	fieldGroupID := h.Service.GetFormGroupID(r.Context(), id)
 
+	// Return the form's steps for multi-step forms, each with its own
+	// field_group_id and fields[] so the frontend can render and manage
+	// fields per step without extra round-trips.
+	type stepFieldJSON struct {
+		ID        string   `json:"id"`
+		Label     string   `json:"label"`
+		Type      string   `json:"type"`
+		Required  bool     `json:"required"`
+		SortOrder int32    `json:"sort_order"`
+		Options   []string `json:"options"`
+	}
+	type stepJSON struct {
+		ID            string          `json:"id"`
+		Title         string          `json:"title"`
+		Position      int32           `json:"position"`
+		FieldGroupID  *string         `json:"field_group_id"`
+		Fields        []stepFieldJSON `json:"fields"`
+	}
+	stepList := []stepJSON{}
+	if form.IsMultiStep {
+		steps, stepErr := h.Service.ListFormSteps(r.Context(), id)
+		if stepErr == nil {
+			stepList = make([]stepJSON, 0, len(steps))
+			for _, st := range steps {
+				fgid := h.Service.GetStepFormGroupID(r.Context(), st.ID)
+				var stepFields []stepFieldJSON
+				if fgid != nil {
+					rawFields, _ := h.Service.GetStepFields(r.Context(), st.ID, tenantID)
+					stepFields = make([]stepFieldJSON, 0, len(rawFields))
+					for _, f := range rawFields {
+						var options []string
+						if f.Options != nil {
+							var raw []struct {
+								Value string `json:"value"`
+								Label string `json:"label"`
+							}
+							if json.Unmarshal(f.Options, &raw) == nil && len(raw) > 0 {
+								options = make([]string, len(raw))
+								for i, o := range raw {
+									options[i] = o.Label
+								}
+							}
+						}
+						stepFields = append(stepFields, stepFieldJSON{
+							ID:        f.ID.String(),
+							Label:     f.Label,
+							Type:      f.FieldType,
+							Required:  f.IsRequired,
+							SortOrder: f.Position,
+							Options:   options,
+						})
+					}
+				}
+				stepList = append(stepList, stepJSON{
+					ID:           st.ID.String(),
+					Title:        st.Title,
+					Position:     st.Position,
+					FieldGroupID: fgid,
+					Fields:       stepFields,
+				})
+			}
+		}
+	}
+
 	// Return all form fields including slug, status etc.
 	writeJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
@@ -1213,6 +1277,7 @@ func (h *Handlers) GetForm(w http.ResponseWriter, r *http.Request) {
 			"fields":          fieldList,
 			"field_group_id":  fieldGroupID,
 			"space_id":        form.SpaceID,
+			"steps":           stepList,
 			"created_at":      form.CreatedAt,
 		},
 	})
@@ -1506,6 +1571,12 @@ func (h *Handlers) EnsureFormGroup(w http.ResponseWriter, r *http.Request) {
 // Returns form definition data (including fields + success message) suitable
 // for rendering an embedded form publicly. Fields are returned so a public
 // form (e.g. /feedback) can be rendered without authentication.
+//
+// For multi-step forms, the response includes a `steps` array where each step
+// has its own `fields[]` list (fields are scoped to the step's field group).
+// The flat `fields` array is still returned (as the concatenation of all step
+// fields) for backward compatibility with embeds that don't yet understand
+// steps.
 func (h *Handlers) GetFormEmbed(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -1541,8 +1612,7 @@ func (h *Handlers) GetFormEmbed(w http.ResponseWriter, r *http.Request) {
 		Options   []string `json:"options"`
 	}
 
-	fieldList := make([]fieldJSON, 0, len(fields))
-	for _, f := range fields {
+	toFieldJSON := func(f gen.ListCustomFieldsByGroupRow) fieldJSON {
 		var options []string
 		if f.Options != nil {
 			var raw []struct {
@@ -1556,14 +1626,58 @@ func (h *Handlers) GetFormEmbed(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 		}
-		fieldList = append(fieldList, fieldJSON{
+		return fieldJSON{
 			ID:        f.ID.String(),
 			Label:     f.Label,
 			Type:      f.FieldType,
 			Required:  f.IsRequired,
 			SortOrder: f.Position,
 			Options:   options,
-		})
+		}
+	}
+
+	fieldList := make([]fieldJSON, 0, len(fields))
+	for _, f := range fields {
+		fieldList = append(fieldList, toFieldJSON(f))
+	}
+
+	// For multi-step forms, build a steps[] array with per-step fields.
+	type stepJSON struct {
+		ID            string      `json:"id"`
+		Title         string      `json:"title"`
+		Position      int32       `json:"position"`
+		FieldGroupID  *string     `json:"field_group_id"`
+		Fields        []fieldJSON `json:"fields"`
+	}
+	stepList := []stepJSON{}
+	if form.IsMultiStep {
+		steps, stepErr := h.Service.ListFormSteps(r.Context(), form.ID)
+		if stepErr != nil {
+			slog.Warn("get form embed steps", "slug", slug, "error", stepErr)
+		} else {
+			stepList = make([]stepJSON, 0, len(steps))
+			for _, st := range steps {
+				fgid := h.Service.GetStepFormGroupID(r.Context(), st.ID)
+				var stepFields []fieldJSON
+				if fgid != nil {
+					rawFields, sfErr := h.Service.GetStepFields(r.Context(), st.ID, tenantID)
+					if sfErr != nil {
+						slog.Warn("get form embed step fields", "slug", slug, "step_id", st.ID, "error", sfErr)
+					}
+					stepFields = make([]fieldJSON, 0, len(rawFields))
+					for _, f := range rawFields {
+						stepFields = append(stepFields, toFieldJSON(f))
+					}
+				}
+				stepList = append(stepList, stepJSON{
+					ID:           st.ID.String(),
+					Title:        st.Title,
+					Position:     st.Position,
+					FieldGroupID: fgid,
+					Fields:       stepFields,
+				})
+			}
+		}
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
@@ -1577,6 +1691,7 @@ func (h *Handlers) GetFormEmbed(w http.ResponseWriter, r *http.Request) {
 			"submit_label":    form.SubmitLabel,
 			"success_message": form.SuccessMessage,
 			"fields":          fieldList,
+			"steps":           stepList,
 		},
 	})
 }
@@ -2076,6 +2191,213 @@ func (h *Handlers) ReorderFormTriggers(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.Service.ReorderFormTriggers(r.Context(), formID, triggerIDs); err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "reordered"}})
+}
+
+// ListFormSteps handles GET /forms/{id}/steps — returns the steps configured on
+// a multi-step form, ordered by position. Each step includes its field_group_id
+// so the frontend can manage fields per step.
+func (h *Handlers) ListFormSteps(w http.ResponseWriter, r *http.Request) {
+	formID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		return
+	}
+
+	steps, err := h.Service.ListFormSteps(r.Context(), formID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	type stepJSON struct {
+		ID            string  `json:"id"`
+		FormID        string  `json:"form_id"`
+		Title         string  `json:"title"`
+		Position      int32   `json:"position"`
+		FieldGroupID  *string `json:"field_group_id"`
+	}
+
+	result := make([]stepJSON, 0, len(steps))
+	for _, st := range steps {
+		fgid := h.Service.GetStepFormGroupID(r.Context(), st.ID)
+		result = append(result, stepJSON{
+			ID:           st.ID.String(),
+			FormID:       st.FormID.String(),
+			Title:        st.Title,
+			Position:     st.Position,
+			FieldGroupID: fgid,
+		})
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": result})
+}
+
+// CreateFormStep handles POST /forms/{id}/steps — adds a new step to a
+// multi-step form and provisions a backing field group for the step.
+func (h *Handlers) CreateFormStep(w http.ResponseWriter, r *http.Request) {
+	formID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	// Fetch the form to get its slug for the field group naming.
+	form, err := h.Service.GetForm(r.Context(), formID, tenantID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	var req struct {
+		Title    string `json:"title"`
+		Position int32  `json:"position"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
+		return
+	}
+
+	if strings.TrimSpace(req.Title) == "" {
+		writeError(w, http.StatusBadRequest, "invalid_body", "title must not be empty")
+		return
+	}
+
+	step, err := h.Service.CreateFormStep(r.Context(), tenantID, form.Slug, gen.CreateFormStepParams{
+		FormID:   formID,
+		Title:    req.Title,
+		Position: req.Position,
+	})
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	// Return the step together with its field_group_id so the frontend can
+	// immediately add fields to it via the existing field-group endpoints.
+	fieldGroupID := h.Service.GetStepFormGroupID(r.Context(), step.ID)
+
+	writeJSON(w, http.StatusCreated, map[string]any{
+		"data": map[string]any{
+			"id":             step.ID,
+			"form_id":        step.FormID,
+			"title":          step.Title,
+			"position":       step.Position,
+			"field_group_id": fieldGroupID,
+		},
+	})
+}
+
+// UpdateFormStep handles PATCH /forms/{id}/steps/{stepId} — updates a step's
+// title and position.
+func (h *Handlers) UpdateFormStep(w http.ResponseWriter, r *http.Request) {
+	formID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		return
+	}
+
+	stepID, err := parseUUIDParam(r, "stepId")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		return
+	}
+
+	var req struct {
+		Title    string `json:"title"`
+		Position int32  `json:"position"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
+		return
+	}
+
+	if strings.TrimSpace(req.Title) == "" {
+		writeError(w, http.StatusBadRequest, "invalid_body", "title must not be empty")
+		return
+	}
+
+	step, err := h.Service.UpdateFormStep(r.Context(), gen.UpdateFormStepParams{
+		ID:       stepID,
+		FormID:   formID,
+		Title:    req.Title,
+		Position: req.Position,
+	})
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": step})
+}
+
+// DeleteFormStep handles DELETE /forms/{id}/steps/{stepId}.
+func (h *Handlers) DeleteFormStep(w http.ResponseWriter, r *http.Request) {
+	formID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		return
+	}
+
+	stepID, err := parseUUIDParam(r, "stepId")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		return
+	}
+
+	if err := h.Service.DeleteFormStep(r.Context(), stepID, formID); err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
+}
+
+// ReorderFormSteps handles POST /forms/{id}/steps/reorder — updates the
+// position of each step by index in the step_ids array.
+func (h *Handlers) ReorderFormSteps(w http.ResponseWriter, r *http.Request) {
+	formID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		return
+	}
+
+	var req struct {
+		StepIDs []string `json:"step_ids"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
+		return
+	}
+
+	if len(req.StepIDs) == 0 {
+		writeError(w, http.StatusBadRequest, "invalid_body", "step_ids must not be empty")
+		return
+	}
+
+	stepIDs := make([]pgtype.UUID, 0, len(req.StepIDs))
+	for _, idStr := range req.StepIDs {
+		var id pgtype.UUID
+		if err := id.Scan(idStr); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_id", "Invalid step ID format")
+			return
+		}
+		stepIDs = append(stepIDs, id)
+	}
+
+	if err := h.Service.ReorderFormSteps(r.Context(), formID, stepIDs); err != nil {
 		handleServiceError(w, err)
 		return
 	}

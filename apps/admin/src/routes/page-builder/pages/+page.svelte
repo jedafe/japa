@@ -1,29 +1,20 @@
 <script lang="ts">
-	import { api, pageTemplatesAdminApiExtended, pageBuilderAdminApiExtended } from '$lib/api';
+	// /page-builder/pages — migrated to the EntityPage scaffold.
+	// List + page metadata CRUD via EntityPage; state actions (publish/archive)
+	// keep page-local confirm Modals and refetch via entityController.reload().
+	// The block-editor detail page lives at /page-builder/pages/[id] (untouched):
+	// Edit navigates there rather than opening a SlideOver form.
+	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
+	import { Modal } from '$lib/components/ui/modal';
+	import { Button } from '$lib/components/ui/button';
+	import { pagesApi, pageTemplatesAdminApiExtended, pageBuilderAdminApiExtended, api } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
+	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
-	import Modal from '$lib/components/Modal.svelte';
-	import { Button } from '$lib/components/ui/button';
-	import { DataTable } from '$lib/components/ui/data-table';
-	import { Pencil, Rocket } from 'lucide-svelte';
+	import { Eye, Pencil, Trash2, Send, Archive, Rocket } from 'lucide-svelte';
 	import { landingPalettes, type Block } from '@japaconnect/landing-blocks';
-
-	const canManagePages = $derived(hasPermission('pages.manage'));
-	const canPublishPages = $derived(hasPermission('pages.publish'));
-
-	// slugify derives a URL-safe slug from a free-form title so the backend
-	// (CreatePageInput.Slug — optional) always receives a valid value even
-	// when the admin leaves the Slug field blank. Mirrors the blocks page.
-	function slugify(value: string): string {
-		return value.toLowerCase().trim()
-			.replace(/[^a-z0-9]+/g, '-')
-			.replace(/^-+|-+$/g, '');
-	}
-
-	let showDeleteConfirm = $state(false);
-	let deleteTarget = $state<Page | null>(null);
-	let deleting = $state(false);
+	import type { ActionItem } from '$lib/components/ui/data-table';
 
 	type Page = {
 		id: string;
@@ -31,101 +22,79 @@
 		slug: string;
 		status: string;
 		page_type?: string;
+		template_id?: string;
+		theme_id?: string;
 		created_at: string;
 		updated_at: string;
 	};
 
-	let pages = $state<Page[]>([]);
-	let loading = $state(true);
-	let error = $state('');
+	const canManagePages = $derived(hasPermission('pages.manage'));
+	const canPublishPages = $derived(hasPermission('pages.publish'));
 
-	let searchQuery = $state('');
-	// page_type filter — '' = all. Landing pages are page_type='landing'.
-	// Ref: Section 16 (Landing consolidation) — landing is a page_type within the Page Builder.
-	let pageTypeFilter = $state('');
-	let showCreateModal = $state(false);
-	let newPage = $state({ title: '', slug: '', page_type: 'landing', template_id: '', theme_id: '' });
-	let creating = $state(false);
-	let templates = $state<{ id: string; name: string }[]>([]);
-	let themes = $state<{ id: string; name: string; is_default: boolean }[]>([]);
+	// slugify derives a URL-safe slug from a free-form title so the backend
+	// (CreatePageInput.Slug — optional) always receives a valid value even
+	// when the admin leaves the Slug field blank. Mirrors the legacy page.
+	function slugify(value: string): string {
+		return value
+			.toLowerCase()
+			.trim()
+			.replace(/[^a-z0-9]+/g, '-')
+			.replace(/^-+|-+$/g, '');
+	}
 
-	let showTemplateModal = $state(false);
-	let templatePageId = $state('');
-	let templateName = $state('');
-	let savingTemplate = $state(false);
+	// ── Template / theme options loaded on mount (failures keep blank-only selects) ──
+	let templateOptions = $state<Array<{ value: string; label: string }>>([
+		{ value: '', label: t('page_builder.blank_template', 'Blank (no template)') }
+	]);
+	let themeOptions = $state<Array<{ value: string; label: string }>>([
+		{ value: '', label: t('page_builder.default_theme', 'Default') }
+	]);
 
-	let showSeoModal = $state(false);
-	let seoIssues = $state<string[]>([]);
-	let seoLoading = $state(false);
-
-	const columns = [
-		{ key: 'title', label: t('page_builder.title'), sortable: true },
-		{ key: 'slug', label: t('page_builder.slug'), sortable: true, class: 'text-xs', render: (v: string) => `<span style="color: var(--color-muted)">/${v}</span>` },
-		{ key: 'page_type', label: t('page_builder.page_type', 'Type'), sortable: true, class: 'text-xs', render: (v: string) => `<span class="rounded-full px-2 py-0.5 text-xs font-medium" style="background: var(--color-surface); color: var(--color-muted)">${v ?? 'custom'}</span>` },
-		{ key: 'status', label: t('page_builder.status'), sortable: true, render: (v: string) => `<span class="rounded-full px-2 py-0.5 text-xs font-medium ${statusBadge(v)}">${v}</span>` },
-		{ key: 'updated_at', label: t('page_builder.updated'), sortable: true, render: (v: string) => new Date(v).toLocaleDateString() },
-		{ key: 'actions', label: t('common.actions'), class: 'w-64 text-right', componentSnippet: PageActionsCell }
-	];
-
-	function statusBadge(status: string) {
-		switch (status) {
-			case 'published': return 'bg-success/15 text-success dark:text-success';
-			case 'draft': return 'bg-muted/15 text-muted dark:text-muted';
-			case 'archived': return 'bg-warning/15 text-warning dark:text-warning';
-			default: return 'bg-muted/15 text-muted dark:text-muted';
+	async function loadTemplatesAndThemes() {
+		const [tplRes, themeRes] = await Promise.all([
+			pageTemplatesAdminApiExtended.list(),
+			pageBuilderAdminApiExtended.listThemes()
+		]);
+		if (tplRes.ok) {
+			const tpls = (tplRes.data as any[]) ?? [];
+			templateOptions = [
+				{ value: '', label: t('page_builder.blank_template', 'Blank (no template)') },
+				...tpls.map((tpl) => ({ value: String(tpl.id), label: String(tpl.name) }))
+			];
+		}
+		if (themeRes.ok) {
+			const themes = (themeRes.data as any[]) ?? [];
+			themeOptions = [
+				{ value: '', label: t('page_builder.default_theme', 'Default') },
+				...themes.map((th) => ({
+					value: String(th.id),
+					label: th.is_default ? `${String(th.name)} (default)` : String(th.name)
+				}))
+			];
 		}
 	}
 
-	function filteredPages(): Page[] {
-		const q = searchQuery.toLowerCase().trim();
-		if (!q) return pages;
-		return pages.filter(p =>
-			p.title.toLowerCase().includes(q) ||
-			p.slug.toLowerCase().includes(q) ||
-			p.status.toLowerCase().includes(q)
-		);
-	}
-
-	$effect(() => {
-		void pageTypeFilter;
-		load();
+	onMount(() => {
+		loadTemplatesAndThemes();
 	});
 
-	async function load() {
-		loading = true;
-		error = '';
-		try {
-			const path = pageTypeFilter ? `/admin/pages?page_type=${encodeURIComponent(pageTypeFilter)}` : '/admin/pages';
-			const result = await api<Page[]>(path);
-			if (result.ok) {
-				pages = result.data ?? [];
-			} else {
-				error = result.error;
-			}
-		} catch {
-			error = t('common.error');
-		} finally {
-			loading = false;
-		}
-	}
+	// ── Bulk delete ───── EntityPage auto-reloads + clears selection after a bulk action handler completes.
+	let entityController = $state<EntityPageController | undefined>(undefined);
+	let pageError = $state('');
+	let bulkDeleting = $state(false);
 
-	async function createPage() {
-		if (!newPage.title) return;
-		creating = true;
+	async function bulkDelete(ids: Set<string>) {
+		const idArr = Array.from(ids);
+		if (idArr.length === 0) return;
+		if (bulkDeleting) return; // in-flight guard
+		bulkDeleting = true;
+		pageError = '';
 		try {
-			const body: Record<string, unknown> = { title: newPage.title, slug: newPage.slug || slugify(newPage.title), page_type: newPage.page_type || 'custom' };
-			if (newPage.template_id) body.template_id = newPage.template_id;
-			if (newPage.theme_id) body.theme_id = newPage.theme_id;
-			const result = await api<{ id: string }>('/admin/pages', { method: 'POST', body });
-			if (result.ok && result.data) {
-				showCreateModal = false;
-				newPage = { title: '', slug: '', page_type: 'landing', template_id: '', theme_id: '' };
-				goto(`/page-builder/pages/${result.data.id}`);
-			}
-		} catch {
-			error = t('common.error');
+			await Promise.all(idArr.map((id) => pagesApi.delete(id)));
+		} catch (e) {
+			pageError = e instanceof Error ? e.message : t('common.error', 'Failed to delete pages');
 		} finally {
-			creating = false;
+			bulkDeleting = false;
 		}
 	}
 
@@ -136,8 +105,11 @@
 	// Ref: Section 16 (Landing consolidation) + ADR-058 §5 (guest homepage).
 	async function seedHomepage() {
 		// If a homepage page already exists, jump straight to editing it.
-		const existing = pages.find((p) => p.slug === 'homepage');
-		if (existing) { goto(`/page-builder/pages/${existing.id}`); return; }
+		const result = await pagesApi.list();
+		if (result.ok) {
+			const existing = (result.data as Page[])?.find((p) => p.slug === 'homepage');
+			if (existing) { goto(`/page-builder/pages/${existing.id}`); return; }
+		}
 		const seed = landingPalettes['homepage']?.defaultSeed ?? [];
 		const seedBlocks = seed.map((entry, i) => ({
 			id: `seed-${i}`,
@@ -148,7 +120,7 @@
 			motion: entry.motion,
 		})) as unknown as Block[];
 		try {
-			const result = await api<{ id: string }>('/admin/pages', {
+			const res = await api<{ id: string }>('/admin/pages', {
 				method: 'POST',
 				body: {
 					title: 'Homepage',
@@ -158,354 +130,352 @@
 					blocks: JSON.stringify(seedBlocks),
 				},
 			});
-			if (!result.ok) {
-				error = result.error ?? t('common.error', 'Failed to seed homepage');
+			if (!res.ok) {
+				pageError = res.error ?? t('common.error', 'Failed to seed homepage');
 				return;
 			}
-			goto(`/page-builder/pages/${result.data.id}`);
+			goto(`/page-builder/pages/${res.data.id}`);
 		} catch {
-			error = t('common.error', 'Failed to seed homepage');
+			pageError = t('common.error', 'Failed to seed homepage');
 		}
 	}
 
-	async function loadTemplatesAndThemes() {
-		const [tplRes, themeRes] = await Promise.all([
-			pageTemplatesAdminApiExtended.list(),
-			pageBuilderAdminApiExtended.listThemes()
-		]);
-		if (tplRes.ok) templates = (tplRes.data as any[])?.map((t) => ({ id: t.id, name: t.name })) ?? [];
-		if (themeRes.ok) themes = (themeRes.data as any[])?.map((t) => ({ id: t.id, name: t.name, is_default: t.is_default })) ?? [];
+	// ── State-action confirmation modals (publish / archive) ────────────────
+	// EntityPage's confirm Modal only covers default delete; state actions keep
+	// page-local Modals with richer copy, confirm calls API + controller.reload().
+	let acting = $state(false);
+	let actionTarget = $state<Page | null>(null);
+	let showPublishConfirm = $state(false);
+	let showArchiveConfirm = $state(false);
+
+	function openPublish(row: Page) {
+		actionTarget = row;
+		showPublishConfirm = true;
+	}
+	function openArchive(row: Page) {
+		actionTarget = row;
+		showArchiveConfirm = true;
 	}
 
-	function openCreateModal() {
-		newPage = { title: '', slug: '', page_type: pageTypeFilter || 'landing', template_id: '', theme_id: '' };
-		loadTemplatesAndThemes();
-		showCreateModal = true;
-	}
-
-	async function publishPage(id: string) {
-		error = '';
+	async function confirmPublish() {
+		if (!actionTarget) return;
+		acting = true;
 		try {
-			const result = await api(`/admin/pages/${id}/publish`, { method: 'POST' });
+			const result = await pagesApi.publish(actionTarget.id);
 			if (result.ok) {
-				load();
+				showPublishConfirm = false;
+				entityController?.reload();
 			} else {
-				error = result.error;
+				pageError = result.error ?? t('common.error', 'Failed to publish page');
 			}
 		} catch {
-			error = t('common.error');
-		}
-	}
-
-	async function archivePage(id: string) {
-		error = '';
-		try {
-			const result = await api(`/admin/pages/${id}/archive`, { method: 'POST' });
-			if (result.ok) {
-				load();
-			} else {
-				error = result.error;
-			}
-		} catch {
-			error = t('common.error');
-		}
-	}
-
-	function confirmDelete(page: Page) {
-		deleteTarget = page;
-		showDeleteConfirm = true;
-	}
-
-	async function executeDelete() {
-		if (!deleteTarget || deleting) return;
-		error = '';
-		deleting = true;
-		try {
-			const result = await api(`/admin/pages/${deleteTarget.id}`, { method: 'DELETE' });
-			if (result.ok) {
-				load();
-			} else {
-				error = result.error;
-			}
-		} catch {
-			error = t('common.error');
+			pageError = t('common.error', 'Failed to publish page');
 		} finally {
-			showDeleteConfirm = false;
-			deleteTarget = null;
-			deleting = false;
+			acting = false;
 		}
 	}
 
-	function openSaveAsTemplate(pageId: string, pageTitle: string) {
-		templatePageId = pageId;
-		templateName = `${pageTitle} Template`;
-		showTemplateModal = true;
-	}
-
-	async function saveAsTemplate() {
-		if (!templatePageId || !templateName.trim()) return;
-		savingTemplate = true;
+	async function confirmArchive() {
+		if (!actionTarget) return;
+		acting = true;
 		try {
-			const result = await api(`/admin/pages/${templatePageId}/save-as-template`, {
-				method: 'POST',
-				body: { name: templateName.trim() }
-			});
+			const result = await pagesApi.archive(actionTarget.id);
 			if (result.ok) {
-				showTemplateModal = false;
+				showArchiveConfirm = false;
+				entityController?.reload();
 			} else {
-				error = result.error;
+				pageError = result.error ?? t('common.error', 'Failed to archive page');
 			}
 		} catch {
-			error = t('common.error');
+			pageError = t('common.error', 'Failed to archive page');
 		} finally {
-			savingTemplate = false;
+			acting = false;
 		}
 	}
 
-	async function validateSeo(id: string) {
-		showSeoModal = true;
-		seoLoading = true;
-		seoIssues = [];
-		try {
-			const result = await api<{ issues: string[] }>(`/admin/seo/validate/${id}`);
-			if (result.ok) {
-				seoIssues = result.data?.issues ?? [];
-			} else {
-				seoIssues = [result.error];
-			}
-		} catch {
-			seoIssues = [t('common.error')];
-		} finally {
-			seoLoading = false;
+	function statusBadge(status: string) {
+		switch (status) {
+			case 'published':
+				return 'bg-success/15 text-success dark:text-success';
+			case 'draft':
+				return 'bg-muted/15 text-muted dark:text-muted';
+			case 'archived':
+				return 'bg-warning/15 text-warning dark:text-warning';
+			default:
+				return 'bg-muted/15 text-muted dark:text-muted';
 		}
 	}
+
+	// ── Row actions ─────────────────────────────────────────────────────────
+	// Custom actions replace defaults. Edit navigates to the dnd-kit block
+	// editor at /page-builder/pages/[id] rather than opening a SlideOver form.
+	const rowActions = $derived.by<ActionItem[]>(() => {
+		const acts: ActionItem[] = [
+			{ label: t('common.view', 'View'), icon: Eye, onclick: (row: Page, ctx) => ctx?.openView(row) },
+			{ label: t('common.edit', 'Edit'), icon: Pencil, onclick: (row: Page) => goto(`/page-builder/pages/${row.id}`), show: () => canManagePages },
+			{
+				label: t('page_builder.publish', 'Publish'),
+				icon: Send,
+				onclick: openPublish,
+				show: (row: Page) => row.status === 'draft' && canPublishPages
+			},
+			{
+				label: t('page_builder.archive', 'Archive'),
+				icon: Archive,
+				onclick: openArchive,
+				show: (row: Page) => row.status === 'published' && canManagePages
+			},
+			{
+				label: t('common.delete', 'Delete'),
+				icon: Trash2,
+				variant: 'destructive',
+				onclick: (row: Page, ctx) => ctx?.openDelete(row),
+				show: () => canManagePages
+			}
+		];
+		return acts;
+	});
+
+	// ── Form fields ── `fields` drives EntityForm rendering + edit-form seeding.
+	const fields = $derived.by<FieldDef[]>(() => [
+		{ key: 'title', label: t('page_builder.title', 'Title'), type: 'text', required: true },
+		{
+			key: 'slug',
+			label: t('page_builder.slug', 'Slug'),
+			type: 'text',
+			placeholder: t('page_builder.slug_hint', 'Auto-generated from title')
+		},
+		{
+			key: 'page_type',
+			label: t('page_builder.page_type', 'Page type'),
+			type: 'select',
+			options: [
+				{ value: 'landing', label: t('page_builder.landing', 'Landing') },
+				{ value: 'about', label: 'About' },
+				{ value: 'service', label: 'Service' },
+				{ value: 'event', label: 'Event' },
+				{ value: 'custom', label: 'Custom' }
+			],
+			help: t('page_builder.page_type_hint', 'Landing pages use the full block library with geo-targeting and motion')
+		},
+		{
+			key: 'status',
+			label: t('page_builder.status', 'Status'),
+			type: 'select',
+			options: [
+				{ value: 'draft', label: t('page_builder.status_draft', 'Draft') },
+				{ value: 'published', label: t('page_builder.status_published', 'Published') },
+				{ value: 'archived', label: t('page_builder.status_archived', 'Archived') }
+			]
+		},
+		{
+			key: 'template_id',
+			label: t('page_builder.template', 'Template'),
+			type: 'select',
+			options: templateOptions,
+			help: t('page_builder.template_hint', 'Start from a pre-built template')
+		},
+		{
+			key: 'theme_id',
+			label: t('page_builder.theme', 'Theme'),
+			type: 'select',
+			options: themeOptions
+		}
+	]);
+
+	// Config built as a $derived so template/theme option updates (loaded on mount) propagate.
+	const config = $derived<EntityPageConfig>({
+		title: t('page_builder.pages_title', 'Pages'),
+		description: t('page_builder.pages_description', 'Manage pages for the page builder'),
+		createLabel: t('page_builder.create_page', 'Create Page'),
+		createPermission: 'pages.manage',
+		pageSize: 25,
+		headerActions: canManagePages
+			? [{
+					label: t('page_builder.seed_homepage', 'Create Default Homepage'),
+					icon: Rocket,
+					onclick: seedHomepage,
+					variant: 'outline'
+				}]
+			: undefined,
+		columns: [
+			{ key: 'title', label: t('page_builder.title', 'Title'), sortable: true },
+			{
+				key: 'slug',
+				label: t('page_builder.slug', 'Slug'),
+				sortable: true,
+				render: (v: string) => `<span style="color: var(--color-muted)">/${v}</span>`
+			},
+			{
+				key: 'status',
+				label: t('page_builder.status', 'Status'),
+				sortable: true,
+				render: (v: string) =>
+					`<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium ${statusBadge(v)}">${v}</span>`
+			},
+			{
+				key: 'template_id',
+				label: t('page_builder.template', 'Template'),
+				render: (v: string) =>
+					v
+						? `<span class="font-mono text-xs" style="color: var(--color-muted)">${v}</span>`
+						: `<span style="color: var(--color-muted)">—</span>`
+			},
+			{
+				key: 'updated_at',
+				label: t('page_builder.updated', 'Updated'),
+				sortable: true,
+				render: (v: string) => new Date(v).toLocaleDateString()
+			}
+		],
+		filters: [
+			{
+				key: 'status',
+				label: t('page_builder.status', 'Status'),
+				options: [
+					{ value: 'draft', label: t('page_builder.status_draft', 'Draft') },
+					{ value: 'published', label: t('page_builder.status_published', 'Published') },
+					{ value: 'archived', label: t('page_builder.status_archived', 'Archived') }
+				]
+			}
+		],
+		actions: rowActions,
+		bulkActions: [
+			{
+				label: t('common.deleteSelected', 'Delete Selected'),
+				icon: Trash2,
+				variant: 'destructive',
+				onclick: bulkDelete
+			}
+		],
+		fields,
+		load: async ({ q, filter }) => {
+			const params = new URLSearchParams();
+			if (filter.status) params.set('status', filter.status);
+			if (q) params.set('q', q);
+			const result = await pagesApi.list(params.toString() || undefined);
+			if (result.ok) {
+				const data = (result.data as Page[]) ?? [];
+				return { data, total: data.length, totalPages: 1 };
+			}
+			throw new Error(result.error ?? t('common.error', 'Failed to load pages'));
+		},
+		create: async (body) => {
+			const payload: Record<string, unknown> = {
+				title: String(body.title ?? '').trim(),
+				slug: String(body.slug ?? '').trim() || slugify(String(body.title ?? '')),
+				page_type: String(body.page_type ?? 'custom')
+			};
+			if (body.status) payload.status = String(body.status);
+			if (body.template_id) payload.template_id = String(body.template_id);
+			if (body.theme_id) payload.theme_id = String(body.theme_id);
+			const res = await pagesApi.create(payload as any);
+			return res.ok ? { ok: true, id: (res.data as any)?.id } : { ok: false, error: res.error };
+		},
+		onCreated: (id: string) => goto(`/page-builder/pages/${id}`),
+		remove: async (id) => {
+			const res = await pagesApi.delete(id);
+			return res.ok ? { ok: true } : { ok: false, error: res.error };
+		},
+		viewSnippet: PageView
+	});
 </script>
 
-{#snippet PageActionsCell({ value, row }: { value: any; row: Page })}
-	<div class="flex items-center justify-end gap-2">
-		<Button variant="ghost" size="sm" onclick={() => goto(`/page-builder/pages/${row.id}`)}>
-			<Pencil class="mr-1 h-3 w-3" />{t('common.edit', 'Edit')}
-		</Button>
-		<Button variant="ghost" size="sm" onclick={() => validateSeo(row.id)}>
-			{t('page_builder.seo_button', 'SEO')}
-		</Button>
-		{#if canManagePages}
-			<Button variant="ghost" size="sm" onclick={() => openSaveAsTemplate(row.id, row.title)}>
-				{t('page_builder.save_as_template')}
-			</Button>
-		{/if}
-		{#if row.status !== 'published' && canPublishPages}
-			<Button variant="ghost" size="sm" onclick={() => publishPage(row.id)} style="color: var(--color-success)">
-				{t('page_builder.publish')}
-			</Button>
-		{/if}
-		{#if row.status === 'published' && canManagePages}
-			<Button variant="ghost" size="sm" onclick={() => archivePage(row.id)} style="color: var(--color-warning)">
-				{t('page_builder.archive')}
-			</Button>
-		{/if}
-		{#if canManagePages}
-			<Button variant="ghost" size="sm" onclick={() => confirmDelete(row)} style="color: var(--color-danger)">
-				{t('common.delete')}
-			</Button>
-		{/if}
-	</div>
-{/snippet}
-
 <svelte:head>
-	<title>{t('page_builder.pages_title')} — JapaConnect Admin</title>
+	<title>{t('page_builder.pages_title', 'Pages')} — JapaConnect Admin</title>
 </svelte:head>
 
-<div class="mb-6 flex items-center justify-between gap-2">
-	<div>
-		<h1 class="text-2xl font-bold tracking-tight">{t('page_builder.pages_title')}</h1>
-		<p class="text-sm" style="color: var(--color-muted)">{t('page_builder.pages_description')}</p>
-	</div>
-	<div class="flex items-center gap-2">
-		<select bind:value={pageTypeFilter} class="rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-background); color: var(--color-foreground)" aria-label={t('page_builder.page_type', 'Page type')}>
-			<option value="">{t('page_builder.all_types', 'All types')}</option>
-			<option value="landing">{t('page_builder.landing', 'Landing')}</option>
-			<option value="about">About</option>
-			<option value="service">Service</option>
-			<option value="event">Event</option>
-			<option value="custom">Custom</option>
-		</select>
-		{#if canManagePages}
-		<button
-			class="flex items-center gap-1.5 rounded-md border px-3 py-2 text-sm font-medium transition-colors hover:bg-[var(--surface)]"
-			style="border-color: var(--color-border); color: var(--color-foreground)"
-			onclick={seedHomepage}
-			title={t('page_builder.seed_homepage_hint', 'Create the editable guest default homepage from the homepage palette')}
-		>
-			<Rocket class="h-3.5 w-3.5" />{t('page_builder.seed_homepage', 'Create Default Homepage')}
-		</button>
-		{/if}
-		{#if canManagePages}
-		<button
-			class="rounded-md px-4 py-2 text-sm font-medium text-white transition-colors"
-			style="background-color: var(--color-primary)"
-			onclick={() => { openCreateModal(); }}
-		>
-			{t('page_builder.create_page')}
-		</button>
-		{/if}
-	</div>
-</div>
-
-{#if error}
-	<div class="mb-4 rounded-md border p-3 text-sm" style="border-color: var(--color-danger); background-color: var(--color-danger-bg)">
-		{error}
+{#if pageError}
+	<div
+		class="mb-4 rounded-lg p-3 text-sm"
+		style="background: color-mix(in srgb, var(--color-danger) 10%, transparent); color: var(--color-danger)"
+	>
+		{pageError}
 	</div>
 {/if}
 
-<DataTable
-	columns={columns}
-	data={filteredPages()}
-	{loading}
-	pageSize={25}
-	emptyMessage={t('page_builder.no_pages')}
-	searchable
-	searchPlaceholder={t('common.search')}
-	onsearch={(q) => { searchQuery = q; }}
-/>
+<EntityPage {config} bind:controller={entityController} />
 
-{#if showCreateModal}
-	<Modal bind:open={showCreateModal} title={t('page_builder.create_page')} onclose={() => { showCreateModal = false; }}>
-		<div class="space-y-4">
-			<div>
-				<label for="page-title" class="mb-1 block text-sm font-medium">{t('page_builder.title')}</label>
-				<input
-					id="page-title"
-					type="text"
-					class="w-full rounded-md border px-3 py-2 text-sm"
-					style="border-color: var(--color-border); background-color: var(--color-background)"
-					bind:value={newPage.title}
-				/>
-			</div>
-			<div>
-				<label for="page-slug" class="mb-1 block text-sm font-medium">{t('page_builder.slug')}</label>
-				<input
-					id="page-slug"
-					type="text"
-					class="w-full rounded-md border px-3 py-2 text-sm"
-					style="border-color: var(--color-border); background-color: var(--color-background)"
-					placeholder="auto-generated from title"
-					bind:value={newPage.slug}
-				/>
-			</div>
-		<div>
-			<label for="page-type" class="mb-1 block text-sm font-medium">{t('page_builder.page_type', 'Page type')}</label>
-			<select id="page-type" bind:value={newPage.page_type} class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-background)">
-				<option value="landing">{t('page_builder.landing', 'Landing')}</option>
-				<option value="about">About</option>
-				<option value="service">Service</option>
-				<option value="event">Event</option>
-				<option value="custom">Custom</option>
-			</select>
-			<p class="mt-1 text-xs" style="color: var(--color-muted)">{t('page_builder.page_type_hint', 'Landing pages use the full block library with geo-targeting and motion')}</p>
-		</div>
-		<div>
-			<label for="page-template" class="mb-1 block text-sm font-medium">{t('page_builder.template', 'Template')}</label>
-			<select id="page-template" bind:value={newPage.template_id} class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-background)">
-				<option value="">{t('page_builder.blank_template', 'Blank (no template)')}</option>
-				{#each templates as tpl}<option value={tpl.id}>{tpl.name}</option>{/each}
-			</select>
-			<p class="mt-1 text-xs" style="color: var(--color-muted)">{t('page_builder.template_hint', 'Start from a pre-built template')}</p>
-		</div>
-		<div>
-			<label for="page-theme" class="mb-1 block text-sm font-medium">{t('page_builder.theme', 'Theme')}</label>
-			<select id="page-theme" bind:value={newPage.theme_id} class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-background)">
-				<option value="">{t('page_builder.default_theme', 'Default')}</option>
-				{#each themes as thm}<option value={thm.id}>{thm.name}{thm.is_default ? ' (default)' : ''}</option>{/each}
-			</select>
-		</div>
-			<div class="flex justify-end gap-2">
-				<button
-					class="rounded-md px-4 py-2 text-sm font-medium"
-					style="border: 1px solid var(--color-border)"
-					onclick={() => { showCreateModal = false; }}
-				>
-					{t('common.cancel')}
-				</button>
-				<button
-					class="rounded-md px-4 py-2 text-sm font-medium text-white transition-colors disabled:opacity-50"
-					style="background-color: var(--color-primary)"
-					disabled={creating || !newPage.title}
-					onclick={createPage}
-				>
-					{creating ? t('common.creating') : t('common.create')}
-				</button>
-			</div>
-		</div>
-	</Modal>
-{/if}
+<!-- ── State-action confirmation modals ─────────────────────────────────── -->
 
-{#if showTemplateModal}
-	<Modal bind:open={showTemplateModal} title={t('page_builder.save_as_template')} onclose={() => { showTemplateModal = false; }}>
-		<div class="space-y-4">
-			<div>
-				<label for="template-name" class="mb-1 block text-sm font-medium">{t('page_builder.template_name')}</label>
-				<input
-					id="template-name"
-					type="text"
-					class="w-full rounded-md border px-3 py-2 text-sm"
-					style="border-color: var(--color-border); background-color: var(--color-background)"
-					bind:value={templateName}
-				/>
-			</div>
-			<div class="flex justify-end gap-2">
-				<button
-					class="rounded-md px-4 py-2 text-sm font-medium"
-					style="border: 1px solid var(--color-border)"
-					onclick={() => { showTemplateModal = false; }}
-				>
-					{t('common.cancel')}
-				</button>
-				<button
-					class="rounded-md px-4 py-2 text-sm font-medium text-white transition-colors disabled:opacity-50"
-					style="background-color: var(--color-primary)"
-					disabled={savingTemplate || !templateName.trim()}
-					onclick={saveAsTemplate}
-				>
-					{savingTemplate ? t('common.saving') : t('common.save')}
-				</button>
-			</div>
-		</div>
-	</Modal>
-{/if}
-
-{#if showSeoModal}
-	<Modal bind:open={showSeoModal} title={t('page_builder.seo_validation', 'SEO Validation')} onclose={() => { showSeoModal = false; }}>
-		{#if seoLoading}
-			<p class="text-sm" style="color: var(--color-muted)">{t('common.loading')}</p>
-		{:else if seoIssues.length === 0}
-			<div class="rounded-md border p-4 text-sm" style="border-color: var(--color-success); background: color-mix(in srgb, var(--color-success) 10%, transparent); color: var(--color-success)">
-				{t('page_builder.seo_no_issues', 'No SEO issues found.')}
-			</div>
-		{:else}
-			<ul class="space-y-2">
-				{#each seoIssues as issue}
-					<li class="rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-warning); background: color-mix(in srgb, var(--color-warning) 10%, transparent); color: var(--color-warning)">
-						{issue}
-					</li>
-				{/each}
-			</ul>
-		{/if}
-	</Modal>
-{/if}
-
-<!-- Delete Confirmation -->
-<Modal bind:open={showDeleteConfirm} title={t('common.confirmDelete', 'Confirm Delete')}>
-	{#if deleteTarget}
+<!-- Publish -->
+<Modal bind:open={showPublishConfirm} title={t('page_builder.publish', 'Publish')}>
+	{#if actionTarget}
 		<p class="text-sm" style="color: var(--color-foreground)">
-			{t('page_builder.confirm_delete', 'Delete page')} <strong>{deleteTarget.title}</strong>?
+			{t('page_builder.publish_confirm', 'Publish page')} <strong>{actionTarget.title}</strong>?
 		</p>
-		<p class="mt-2 text-sm" style="color: var(--color-danger)">{t('common.cannotUndo', 'This action cannot be undone.')}</p>
+		<p class="mt-2 text-sm" style="color: var(--color-muted)">
+			{t('page_builder.publish_hint', 'This will make the page publicly visible.')}
+		</p>
 	{/if}
 	<div class="mt-4 flex justify-end gap-2">
-		<Button variant="ghost" onclick={() => (showDeleteConfirm = false)}>{t('common.cancel', 'Cancel')}</Button>
-		<Button variant="destructive" onclick={executeDelete} disabled={deleting}>
-			{deleting ? t('common.deleting', 'Deleting...') : t('common.delete', 'Delete')}
+		<Button variant="ghost" onclick={() => (showPublishConfirm = false)}>{t('common.cancel', 'Cancel')}</Button>
+		<Button onclick={confirmPublish} disabled={acting}>
+			{acting ? t('common.saving', 'Saving...') : t('page_builder.publish', 'Publish')}
 		</Button>
 	</div>
 </Modal>
+
+<!-- Archive -->
+<Modal bind:open={showArchiveConfirm} title={t('page_builder.archive', 'Archive')}>
+	{#if actionTarget}
+		<p class="text-sm" style="color: var(--color-foreground)">
+			{t('page_builder.archive_confirm', 'Archive page')} <strong>{actionTarget.title}</strong>?
+		</p>
+		<p class="mt-2 text-sm" style="color: var(--color-warning)">
+			{t('page_builder.archive_hint', 'Archived pages are hidden from the public site.')}
+		</p>
+	{/if}
+	<div class="mt-4 flex justify-end gap-2">
+		<Button variant="ghost" onclick={() => (showArchiveConfirm = false)}>{t('common.cancel', 'Cancel')}</Button>
+		<Button variant="destructive" onclick={confirmArchive} disabled={acting}>
+			{acting ? t('common.saving', 'Saving...') : t('page_builder.archive', 'Archive')}
+		</Button>
+	</div>
+</Modal>
+
+<!-- ── Snippets ─────────────────────────────────────────────────────────── -->
+
+<!-- View slide-over body (mirrors the legacy view) -->
+{#snippet PageView({ row }: { row: Page })}
+	<div class="space-y-4">
+		<div>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">
+				{t('page_builder.title', 'Title')}
+			</p>
+			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.title}</p>
+		</div>
+		<div>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">
+				{t('page_builder.slug', 'Slug')}
+			</p>
+			<p class="mt-1 text-sm font-mono" style="color: var(--color-foreground)">/{row.slug}</p>
+		</div>
+		<div>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">
+				{t('page_builder.page_type', 'Page type')}
+			</p>
+			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.page_type ?? 'custom'}</p>
+		</div>
+		<div>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">
+				{t('page_builder.status', 'Status')}
+			</p>
+			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.status}</p>
+		</div>
+		<div>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">
+				{t('page_builder.template', 'Template')}
+			</p>
+			<p class="mt-1 text-sm font-mono" style="color: var(--color-foreground)">{row.template_id ?? '—'}</p>
+		</div>
+		<div>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">
+				{t('page_builder.updated', 'Updated')}
+			</p>
+			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">
+				{new Date(row.updated_at).toLocaleString()}
+			</p>
+		</div>
+	</div>
+{/snippet}

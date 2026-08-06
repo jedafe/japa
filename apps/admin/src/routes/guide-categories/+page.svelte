@@ -1,226 +1,148 @@
 <script lang="ts">
+	// /guide-categories — migrated to the EntityPage scaffold.
+	// Create + delete only (no update API); custom `actions` array omits Edit.
+	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
 	import { guideCategoriesAdminApi, type GuideCategory } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
-	import { hasPermission } from '$lib/stores/permissions.svelte';
-	import { Plus, Trash2, List, ExternalLink } from 'lucide-svelte';
-	import Modal from '$lib/components/Modal.svelte';
+	import { Trash2, Eye } from 'lucide-svelte';
 
-	let categories = $state<GuideCategory[]>([]);
-	let loading = $state(false);
-	let errorMessage = $state('');
-	let modalOpen = $state(false);
-	let slug = $state('');
-	let label = $state('');
-	let saving = $state(false);
-	let showDeleteConfirm = $state(false);
-	let deleteTarget = $state<GuideCategory | null>(null);
+	// Normalize an API row: copy `Slug` into `id` so the scaffold's id-based remove + bulk selection work.
+	function mapCategory(raw: any): GuideCategory & { id: string } {
+		return { ...raw, id: raw.Slug };
+	}
 
-	const canManage = $derived(hasPermission('custom_fields.group.create'));
-	const canDelete = $derived(hasPermission('custom_fields.group.delete'));
+	// ── Bulk delete ───── EntityPage auto-reloads + clears selection after a bulk action handler completes.
+	let entityController = $state<EntityPageController | undefined>(undefined);
+	let pageError = $state('');
+	let bulkDeleting = $state(false);
 
-	async function load() {
-		loading = true;
-		errorMessage = '';
+	async function bulkDelete(ids: Set<string>) {
+		const idArr = Array.from(ids);
+		if (idArr.length === 0) return;
+		if (bulkDeleting) return; // in-flight guard
+		bulkDeleting = true;
+		pageError = '';
 		try {
+			await Promise.all(idArr.map((id) => guideCategoriesAdminApi.delete(id)));
+		} catch (e) {
+			pageError = e instanceof Error ? e.message : t('common.error', 'Failed to delete guide categories');
+		} finally {
+			bulkDeleting = false;
+		}
+	}
+
+	// `fields` drives EntityForm rendering (create only — no update API).
+	const fields: FieldDef[] = [
+		{
+			key: 'slug',
+			label: t('guide_categories.slug', 'Slug'),
+			type: 'text',
+			placeholder: 'visa',
+			required: true,
+			help: t('guide_categories.slug_hint', 'Machine-readable token (snake_case). Cannot be changed after creation.')
+		},
+		{
+			key: 'label',
+			label: t('guide_categories.label', 'Label'),
+			type: 'text',
+			placeholder: 'Visa Guide',
+			required: true,
+			help: t('guide_categories.label_hint', 'Human-readable name shown in the composer category dropdown.')
+		}
+	];
+
+	const config: EntityPageConfig = {
+		title: t('guide_categories.title', 'Guide Categories'),
+		description: t(
+			'guide_categories.description',
+			'Manage evergreen guide categories for the Guide content type. Each category has its own custom field group.'
+		),
+		createLabel: t('guide_categories.create', 'Create'),
+		createPermission: 'custom_fields.group.create',
+		deletePermission: 'custom_fields.group.delete',
+		pageSize: 25,
+		columns: [
+			{
+				key: 'Slug',
+				label: t('guide_categories.slug', 'Slug'),
+				sortable: true,
+				render: (v: string) => `<span class="font-mono text-xs" style="color: var(--color-muted)">${v}</span>`
+			},
+			{ key: 'Label', label: t('guide_categories.label', 'Label'), sortable: true }
+		],
+		// Custom actions: View + Delete only (no Edit — there is no update API).
+		actions: [
+			{ label: t('common.view', 'View'), icon: Eye, onclick: (_row, ctx) => ctx?.openView(_row) },
+			{
+				label: t('common.delete', 'Delete'),
+				icon: Trash2,
+				variant: 'destructive',
+				onclick: (_row, ctx) => ctx?.openDelete(_row),
+				show: (row) => !row.is_system
+			}
+		],
+		bulkActions: [
+			{
+				label: t('common.deleteSelected', 'Delete Selected'),
+				icon: Trash2,
+				variant: 'destructive',
+				onclick: bulkDelete
+			}
+		],
+		fields,
+		load: async () => {
 			const result = await guideCategoriesAdminApi.list();
 			if (result.ok) {
-				categories = (Array.isArray(result.data) ? result.data : []) as GuideCategory[];
-			} else {
-				errorMessage = result.error;
+				const data = (result.data as GuideCategory[]) ?? [];
+				const mapped = data.map(mapCategory);
+				return { data: mapped, total: mapped.length, totalPages: 1 };
 			}
-		} catch {
-			errorMessage = t('common.error');
-		} finally {
-			loading = false;
-		}
-	}
-
-	function openCreate() {
-		slug = '';
-		label = '';
-		modalOpen = true;
-	}
-
-	async function save() {
-		if (!slug.trim() || !label.trim()) return;
-		saving = true;
-		errorMessage = '';
-		try {
-			const result = await guideCategoriesAdminApi.create({
-				slug: slug.trim().toLowerCase().replace(/\s+/g, '_'),
-				label: label.trim()
+			throw new Error(result.error ?? t('common.error', 'Failed to load guide categories'));
+		},
+		create: async (body) => {
+			const res = await guideCategoriesAdminApi.create({
+				slug: String(body.slug ?? '').trim().toLowerCase().replace(/\s+/g, '_'),
+				label: String(body.label ?? '').trim()
 			});
-			if (!result.ok) {
-				errorMessage = result.error;
-				saving = false;
-				return;
-			}
-			modalOpen = false;
-			await load();
-		} catch {
-			errorMessage = t('common.error');
-		} finally {
-			saving = false;
-		}
-	}
-
-	function confirmDelete(cat: GuideCategory) {
-		deleteTarget = cat;
-		showDeleteConfirm = true;
-	}
-
-	async function executeDelete() {
-		if (!deleteTarget) return;
-		errorMessage = '';
-		try {
-			await guideCategoriesAdminApi.delete(deleteTarget.Slug);
-			showDeleteConfirm = false;
-			deleteTarget = null;
-			await load();
-		} catch {
-			errorMessage = t('common.error');
-		}
-	}
-
-	load();
+			return res.ok ? { ok: true } : { ok: false, error: res.error };
+		},
+		remove: async (id) => {
+			const res = await guideCategoriesAdminApi.delete(id);
+			return res.ok ? { ok: true } : { ok: false, error: res.error };
+		},
+		viewSnippet: CategoryView
+	};
 </script>
 
-<div class="space-y-6">
-	<div class="flex items-center justify-between">
-		<div>
-			<h1 class="text-2xl font-bold" style="color: var(--color-foreground)">Guide Categories</h1>
-			<p class="mt-1 text-sm" style="color: var(--color-muted)">
-				Manage evergreen guide categories for the Guide content type. Each category has its own
-				custom field group — click the fields icon to manage fields.
-			</p>
-		</div>
-		{#if canManage}
-			<button
-				onclick={openCreate}
-				class="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-white"
-				style="background-color: var(--color-primary)"
-			>
-				<Plus class="h-4 w-4" />
-				{t('common.create')}
-			</button>
-		{/if}
+<svelte:head>
+	<title>{t('guide_categories.title', 'Guide Categories')} — JapaConnect Admin</title>
+</svelte:head>
+
+{#if pageError}
+	<div
+		class="mb-4 rounded-lg p-3 text-sm"
+		style="background: color-mix(in srgb, var(--color-danger) 10%, transparent); color: var(--color-danger)"
+	>
+		{pageError}
 	</div>
+{/if}
 
-	{#if errorMessage}
-		<div class="rounded-lg p-3 text-sm" style="background-color: var(--color-destructive-muted); color: var(--color-destructive)">
-			{errorMessage}
-		</div>
-	{/if}
+<EntityPage {config} bind:controller={entityController} />
 
-	{#if loading}
-		<p class="text-sm" style="color: var(--color-muted)">{t('common.loading')}…</p>
-	{:else}
-		<div class="overflow-x-auto rounded-lg border" style="border-color: var(--color-border)">
-			<table class="w-full text-sm">
-				<thead style="background-color: var(--color-muted-muted)">
-					<tr>
-						<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted)">Slug</th>
-						<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted)">Label</th>
-						<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted)">System</th>
-						<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted)">Field Group</th>
-						<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted)">{t('common.actions')}</th>
-					</tr>
-				</thead>
-				<tbody>
-					{#each categories as cat (cat.Slug)}
-						<tr class="border-t" style="border-color: var(--color-border)">
-							<td class="px-4 py-3 font-mono text-xs" style="color: var(--color-foreground)">{cat.Slug}</td>
-							<td class="px-4 py-3" style="color: var(--color-foreground)">{cat.Label}</td>
-							<td class="px-4 py-3">
-								{#if cat.is_system}
-									<span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium" style="background-color: var(--color-primary-muted); color: var(--color-primary)">System</span>
-								{:else}
-									<span class="text-xs" style="color: var(--color-muted)">—</span>
-								{/if}
-							</td>
-							<td class="px-4 py-3">
-								{#if cat.group_id}
-									<a
-										href={`/custom-fields/${cat.group_id}`}
-										class="inline-flex items-center gap-1 text-xs font-medium hover:underline"
-										style="color: var(--color-primary)"
-									>
-										<List class="h-3.5 w-3.5" />
-										Manage Fields
-										<ExternalLink class="h-3 w-3" />
-									</a>
-								{:else}
-									<span class="text-xs" style="color: var(--color-muted)">No field group</span>
-								{/if}
-							</td>
-							<td class="px-4 py-3">
-								<div class="flex items-center gap-2">
-									{#if canDelete && !cat.is_system}
-										<button onclick={() => confirmDelete(cat)} class="p-1 rounded hover:opacity-70" title={t('common.delete')}>
-											<Trash2 class="h-4 w-4" style="color: var(--color-destructive)" />
-										</button>
-									{/if}
-								</div>
-							</td>
-						</tr>
-					{:else}
-						<tr class="border-t" style="border-color: var(--color-border)">
-							<td colspan="5" class="px-4 py-8 text-center" style="color: var(--color-muted)">
-								No guide categories found. Create one to get started.
-							</td>
-						</tr>
-					{/each}
-				</tbody>
-			</table>
-		</div>
-	{/if}
-</div>
-
-<Modal bind:open={modalOpen} title="New Guide Category" confirmLabel={t('common.create')} onConfirm={save}>
+<!-- View slide-over body -->
+{#snippet CategoryView({ row }: { row: GuideCategory & { id: string } })}
 	<div class="space-y-4">
 		<div>
-			<label for="gc-slug" class="mb-1 block text-sm font-medium">Slug</label>
-			<input
-				id="gc-slug"
-				type="text"
-				bind:value={slug}
-				placeholder="e.g. visa, scholarship, travel_routes"
-				required
-				class="w-full rounded-lg border px-3 py-2 text-sm"
-				style="border-color: var(--color-border); background-color: var(--color-background); color: var(--color-foreground)"
-			/>
-			<p class="mt-1 text-xs" style="color: var(--color-muted)">
-				Machine-readable token (snake_case). Cannot be changed after creation. A custom field group
-				named "guide_{slug}_fields" will be created automatically.
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">
+				{t('guide_categories.slug', 'Slug')}
 			</p>
+			<p class="mt-1 text-sm font-mono" style="color: var(--color-foreground)">{row.Slug}</p>
 		</div>
 		<div>
-			<label for="gc-label" class="mb-1 block text-sm font-medium">Label</label>
-			<input
-				id="gc-label"
-				type="text"
-				bind:value={label}
-				placeholder="e.g. Visa Guide, Scholarship Guide"
-				required
-				class="w-full rounded-lg border px-3 py-2 text-sm"
-				style="border-color: var(--color-border); background-color: var(--color-background); color: var(--color-foreground)"
-			/>
-			<p class="mt-1 text-xs" style="color: var(--color-muted)">
-				Human-readable name shown in the composer's category dropdown.
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">
+				{t('guide_categories.label', 'Label')}
 			</p>
+			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.Label}</p>
 		</div>
-		{#if errorMessage}
-			<p class="text-sm" style="color: var(--color-destructive)">{errorMessage}</p>
-		{/if}
-		{#if saving}
-			<p class="text-sm" style="color: var(--color-muted)">{t('common.saving')}…</p>
-		{/if}
 	</div>
-</Modal>
-
-<Modal bind:open={showDeleteConfirm} title="Delete Guide Category" confirmLabel={t('common.delete')} onConfirm={executeDelete}>
-	<p class="text-sm" style="color: var(--color-muted)">
-		Delete <strong>{deleteTarget?.Label}</strong>? This will remove the category, its custom field
-		group, and all fields within that group. This action cannot be undone.
-	</p>
-</Modal>
+{/snippet}

@@ -162,6 +162,15 @@ body {
 	text-rendering: optimizeLegibility;
 }
 
+/* Hide scrollbars globally while keeping scroll behavior intact.
+   Firefox: scrollbar-width: none; Chrome/Safari/Edge: ::-webkit-scrollbar { display: none } */
+* {
+	scrollbar-width: none;
+}
+*::-webkit-scrollbar {
+	display: none;
+}
+
 /* ===================== Prose (doc page body) =====================
  * Doc pages render TipTap JSON → HTML server-side; this styles the resulting
  * .prose block. Reading comfort 16–18px / 1.7 (ADR-060). Max-width ~760px is

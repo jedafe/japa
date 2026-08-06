@@ -4,7 +4,7 @@ import { DataTable } from './index';
 import { Eye, Pencil, Trash2 } from 'lucide-svelte';
 
 vi.mock('$app/state', () => ({ page: { params: {}, url: new URL('http://localhost/') } }));
-vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
+vi.mock('$app/navigation', () => ({ goto: vi.fn(), replaceState: vi.fn(), pushState: vi.fn() }));
 
 const rows = [{ id: '1', name: 'Alpha' }, { id: '2', name: 'Beta' }];
 

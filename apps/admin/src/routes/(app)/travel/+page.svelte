@@ -3,6 +3,8 @@
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import PageHeader from '$lib/components/layout/page-header.svelte';
 	import { DataTable } from '$lib/components/ui/data-table';
+	import type { ActionItem } from "$lib/components/ui/data-table";
+	import { SlideOver } from "$lib/components/ui/slide-over";
 	import { Button } from '$lib/components/ui/button';
 	import { Plane, Plus, RefreshCw, Pencil } from 'lucide-svelte';
 	import { api } from '$lib/api';
@@ -23,8 +25,8 @@
 	let providers = $state<TravelProvider[]>([]);
 	let loading = $state(true);
 	let error = $state('');
-	let createModalOpen = $state(false);
-	let editModalOpen = $state(false);
+	let createSlideOverOpen = $state(false);
+	let editSlideOverOpen = $state(false);
 	let editingProvider = $state<TravelProvider | null>(null);
 	let saving = $state(false);
 	let message = $state('');
@@ -64,7 +66,7 @@
 			if (result.ok) {
 				messageType = 'success';
 				message = t('travel.create_success', 'Travel provider created.');
-				createModalOpen = false;
+				createSlideOverOpen = false;
 				newProvider = { name: '', slug: '', provider_type: 'api', api_config: '{}', affiliate_config: '{}', is_active: true };
 				load();
 			} else {
@@ -95,7 +97,7 @@
 			if (result.ok) {
 				messageType = 'success';
 				message = t('travel.update_success', 'Travel provider updated.');
-				editModalOpen = false;
+				editSlideOverOpen = false;
 				editingProvider = null;
 				load();
 			} else {
@@ -112,7 +114,7 @@
 
 	function openEdit(provider: TravelProvider) {
 		editingProvider = { ...provider };
-		editModalOpen = true;
+		editSlideOverOpen = true;
 	}
 
 	const columns = $derived([
@@ -147,14 +149,17 @@
 			label: t('travel.created', 'Created'),
 			sortable: true,
 			render: (value: string) => `<span class="text-muted-foreground text-xs">${value ? new Date(value).toLocaleDateString() : '—'}</span>`
-		},
-		{
-			key: 'actions',
-			label: t('common.actions', 'Actions'),
-			class: 'w-20',
-			componentSnippet: TravelActionsCell
 		}
 	]);
+
+	const rowActions: ActionItem[] = [
+		{
+			label: t('common.edit', 'Edit'),
+			icon: Pencil,
+			onclick: (row: TravelProvider) => openEdit(row),
+			show: () => canManage
+		}
+	];
 
 	load();
 </script>
@@ -163,7 +168,7 @@
 	title={t('travel.title', 'Travel Search')}
 	description={t('travel.description', 'Manage travel search providers and configuration.')}
 	actions={canManage ? [
-		{ label: t('travel.create', 'Add Provider'), icon: Plus, onclick: () => (createModalOpen = true) }
+		{ label: t('travel.create', 'Add Provider'), icon: Plus, onclick: () => (createSlideOverOpen = true) }
 	] : []}
 />
 
@@ -191,94 +196,73 @@
 	<DataTable
 		data={providers}
 		{columns}
+		actions={rowActions}
 		emptyMessage={t('travel.empty', 'No travel providers configured. Add one to enable travel search.')}
 	/>
 {/if}
 
-{#if createModalOpen}
-	<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
-		role="dialog"
-		aria-modal="true"
-		tabindex="-1"
-		onclick={() => (createModalOpen = false)}
-		onkeydown={(e) => e.key === 'Escape' && (createModalOpen = false)}>
-		<div role="presentation" class="w-full max-w-lg rounded-lg border p-6" style="border-color: var(--color-border); background: var(--color-surface)" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()}>
-			<h2 class="mb-4 text-lg font-semibold" style="color: var(--color-foreground)">{t('travel.create_title', 'Add Travel Provider')}</h2>
-			<div class="space-y-3">
-				<div>
-					<label for="travel-name" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('travel.name', 'Name')}</label>
-					<input id="travel-name" type="text" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={newProvider.name} placeholder="Skyscanner" />
-				</div>
-				<div>
-					<label for="travel-slug" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('travel.slug', 'Slug')}</label>
-					<input id="travel-slug" type="text" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={newProvider.slug} placeholder="skyscanner" />
-				</div>
-				<div>
-					<label for="travel-type" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('travel.type', 'Provider Type')}</label>
-					<select id="travel-type" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={newProvider.provider_type}>
-						<option value="api">API</option>
-						<option value="affiliate">Affiliate</option>
-						<option value="scraper">Scraper</option>
-					</select>
-				</div>
-				<div>
-					<label for="travel-api-config" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('travel.api_config', 'API Config (JSON)')}</label>
-					<textarea id="travel-api-config" class="w-full rounded-md border px-3 py-2 text-sm font-mono" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" rows="3" bind:value={newProvider.api_config}></textarea>
-				</div>
-			</div>
-			<div class="mt-6 flex justify-end gap-2">
-				<Button variant="outline" onclick={() => (createModalOpen = false)}>{t('common.cancel', 'Cancel')}</Button>
-				<Button onclick={createProvider} disabled={saving || !newProvider.name || !newProvider.slug}>
-					{saving ? t('common.saving', 'Saving...') : t('common.create', 'Create')}
-				</Button>
-			</div>
+<!-- Create SlideOver -->
+<SlideOver bind:open={createSlideOverOpen} title={t('travel.create_title', 'Add Travel Provider')}>
+	<div class="space-y-3">
+		<div>
+			<label for="travel-name" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('travel.name', 'Name')}</label>
+			<input id="travel-name" type="text" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={newProvider.name} placeholder="Skyscanner" />
+		</div>
+		<div>
+			<label for="travel-slug" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('travel.slug', 'Slug')}</label>
+			<input id="travel-slug" type="text" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={newProvider.slug} placeholder="skyscanner" />
+		</div>
+		<div>
+			<label for="travel-type" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('travel.type', 'Provider Type')}</label>
+			<select id="travel-type" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={newProvider.provider_type}>
+				<option value="api">API</option>
+				<option value="affiliate">Affiliate</option>
+				<option value="scraper">Scraper</option>
+			</select>
+		</div>
+		<div>
+			<label for="travel-api-config" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('travel.api_config', 'API Config (JSON)')}</label>
+			<textarea id="travel-api-config" class="w-full rounded-md border px-3 py-2 text-sm font-mono" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" rows="3" bind:value={newProvider.api_config}></textarea>
 		</div>
 	</div>
-{/if}
-
-{#if editModalOpen && editingProvider}
-	<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
-		role="dialog"
-		aria-modal="true"
-		tabindex="-1"
-		onclick={() => (editModalOpen = false)}
-		onkeydown={(e) => e.key === 'Escape' && (editModalOpen = false)}>
-		<div role="presentation" class="w-full max-w-lg rounded-lg border p-6" style="border-color: var(--color-border); background: var(--color-surface)" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()}>
-			<h2 class="mb-4 text-lg font-semibold" style="color: var(--color-foreground)">{t('travel.edit_title', 'Edit Travel Provider')}</h2>
-			<div class="space-y-3">
-				<div>
-					<label for="travel-edit-name" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('travel.name', 'Name')}</label>
-					<input id="travel-edit-name" type="text" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={editingProvider.name} />
-				</div>
-				<div>
-					<label for="travel-edit-type" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('travel.type', 'Provider Type')}</label>
-					<select id="travel-edit-type" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={editingProvider.provider_type}>
-						<option value="api">API</option>
-						<option value="affiliate">Affiliate</option>
-						<option value="scraper">Scraper</option>
-					</select>
-				</div>
-				<div class="flex items-center gap-2">
-					<input type="checkbox" id="travel-active" bind:checked={editingProvider.is_active} />
-					<label for="travel-active" class="text-sm" style="color: var(--color-foreground)">{t('travel.active', 'Active')}</label>
-				</div>
-			</div>
-			<div class="mt-6 flex justify-end gap-2">
-				<Button variant="outline" onclick={() => (editModalOpen = false)}>{t('common.cancel', 'Cancel')}</Button>
-				<Button onclick={updateProvider} disabled={saving}>
-					{saving ? t('common.saving', 'Saving...') : t('common.save', 'Save')}
-				</Button>
-			</div>
-		</div>
-	</div>
-{/if}
-
-{#snippet TravelActionsCell({ value, row }: { value: any; row: TravelProvider })}
-	<div class="flex items-center gap-1">
-		{#if canManage}
-			<Button variant="ghost" size="sm" onclick={() => openEdit(row)} aria-label={t('common.edit', 'Edit')}>
-				<Pencil class="h-3.5 w-3.5" />
+	{#snippet footer()}
+		<div class="mt-6 flex justify-end gap-2">
+			<Button variant="outline" onclick={() => (createSlideOverOpen = false)}>{t('common.cancel', 'Cancel')}</Button>
+			<Button onclick={createProvider} disabled={saving || !newProvider.name || !newProvider.slug}>
+				{saving ? t('common.saving', 'Saving...') : t('common.create', 'Create')}
 			</Button>
-		{/if}
-	</div>
-{/snippet}
+		</div>
+	{/snippet}
+</SlideOver>
+
+<!-- Edit SlideOver -->
+<SlideOver bind:open={editSlideOverOpen} title={t('travel.edit_title', 'Edit Travel Provider')}>
+	{#if editingProvider}
+		<div class="space-y-3">
+			<div>
+				<label for="travel-edit-name" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('travel.name', 'Name')}</label>
+				<input id="travel-edit-name" type="text" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={editingProvider.name} />
+			</div>
+			<div>
+				<label for="travel-edit-type" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('travel.type', 'Provider Type')}</label>
+				<select id="travel-edit-type" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={editingProvider.provider_type}>
+					<option value="api">API</option>
+					<option value="affiliate">Affiliate</option>
+					<option value="scraper">Scraper</option>
+				</select>
+			</div>
+			<div class="flex items-center gap-2">
+				<input type="checkbox" id="travel-active" bind:checked={editingProvider.is_active} />
+				<label for="travel-active" class="text-sm" style="color: var(--color-foreground)">{t('travel.active', 'Active')}</label>
+			</div>
+		</div>
+	{/if}
+	{#snippet footer()}
+		<div class="mt-6 flex justify-end gap-2">
+			<Button variant="outline" onclick={() => (editSlideOverOpen = false)}>{t('common.cancel', 'Cancel')}</Button>
+			<Button onclick={updateProvider} disabled={saving}>
+				{saving ? t('common.saving', 'Saving...') : t('common.save', 'Save')}
+			</Button>
+		</div>
+	{/snippet}
+</SlideOver>

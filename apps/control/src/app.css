@@ -193,13 +193,21 @@
 	html {
 		-webkit-text-size-adjust: 100%;
 		font-variation-settings: normal;
-		scrollbar-color: var(--bg-muted);
 	}
 
 	body {
 		@apply bg-background text-foreground;
 		font-size: 15px;
 		font-feature-settings: "rlig" 1, "calt" 1;
+	}
+
+	/* Hide scrollbars globally while keeping scroll behavior intact.
+	   Firefox: scrollbar-width: none; Chrome/Safari/Edge: ::-webkit-scrollbar { display: none } */
+	* {
+		scrollbar-width: none;
+	}
+	*::-webkit-scrollbar {
+		display: none;
 	}
 
 	::selection {

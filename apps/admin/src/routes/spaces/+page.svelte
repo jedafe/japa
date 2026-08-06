@@ -1,13 +1,18 @@
 <script lang="ts">
+	// /spaces — migrated to shared components (ActionMenu, FilterPanel,
+	// SlideOver, bulkActionsList). Server-side paginated list; state actions
+	// (suspend/unsuspend) via ActionItem with show() predicates. Keeps
+	// page-local Modals for suspend (reason input) and delete confirmation.
+	// View/Edit open in SlideOvers.
 	import PageHeader from "$lib/components/layout/page-header.svelte";
-	import { Card, CardContent, CardHeader } from "$lib/components/ui/card";
+	import { Card, CardContent } from "$lib/components/ui/card";
 	import { DataTable } from "$lib/components/ui/data-table";
-	import { FilterBar } from "$lib/components/ui/filter-bar";
 	import { Button } from "$lib/components/ui/button";
 	import { Modal } from "$lib/components/ui/modal";
+	import { SlideOver } from "$lib/components/ui/slide-over";
 	import { Select } from "$lib/components/ui/select";
-	import Pagination from "$lib/components/ui/Pagination.svelte";
 	import { TableSkeleton } from "$lib/components/ui/skeleton";
+	import type { ActionItem, BulkAction } from "$lib/components/ui/data-table";
 	import { Plus, RefreshCw, Eye, Pencil, Trash2, SlidersHorizontal } from "lucide-svelte";
 	import { spacesAdminApi } from "$lib/api";
 	import { goto } from "$app/navigation";
@@ -35,18 +40,22 @@
 	let pageSize = $state(25);
 	let totalPages = $state(1);
 	let searchQuery = $state("");
-	let filterValues = $state<Record<string, string>>({});
+	let filterValue = $state<Record<string, string>>({});
 	let selectedIds = $state<Set<string>>(new Set());
 
-	// Modals
-	let showViewModal = $state(false);
+	// View/Edit SlideOvers
+	let showViewSlideOver = $state(false);
 	let viewTarget = $state<Space | null>(null);
-	let showEditModal = $state(false);
+	let showEditSlideOver = $state(false);
 	let editTarget = $state<Space | null>(null);
 	let editName = $state("");
-	let editType = $state("");
+	let editVisibility = $state("");
+
+	// Delete confirmation Modal
 	let showDeleteConfirm = $state(false);
 	let deleteTarget = $state<Space | null>(null);
+
+	// Suspend/Unsuspend Modal (page-local — reason input)
 	let showSuspendModal = $state(false);
 	let suspendTarget = $state<Space | null>(null);
 	let suspendReason = $state("");
@@ -54,6 +63,12 @@
 
 	const canModerateSpaces = $derived(hasPermission("spaces.moderate.any"));
 	const canManageSpaces = $derived(hasPermission("admin.settings"));
+
+	const visibilitySelectOptions = [
+		{ value: "public", label: t("spaces.public", "Public") },
+		{ value: "private", label: t("spaces.private", "Private") },
+		{ value: "restricted", label: t("spaces.restricted", "Restricted") }
+	];
 
 	const filterDefs = [
 		{
@@ -77,50 +92,53 @@
 	];
 
 	const columns = [
-		{
-			key: "name",
-			label: t("spaces.name", "Name"),
-			sortable: true
-		},
-		{
-			key: "owner",
-			label: t("spaces.owner", "Owner"),
-			sortable: true
-		},
-		{
-			key: "member_count",
-			label: t("spaces.members", "Members"),
-			sortable: true,
-			render: (v: number) => (v ?? 0).toLocaleString()
-		},
-		{
-			key: "visibility",
-			label: t("spaces.visibility", "Visibility"),
-			sortable: true,
-			render: (v: string) => v || "—"
-		},
+		{ key: "name", label: t("spaces.name", "Name"), sortable: true },
+		{ key: "owner", label: t("spaces.owner", "Owner"), sortable: true },
+		{ key: "member_count", label: t("spaces.members", "Members"), sortable: true, render: (v: number) => (v ?? 0).toLocaleString() },
+		{ key: "visibility", label: t("spaces.visibility", "Visibility"), sortable: true, render: (v: string) => v || "—" },
 		{
 			key: "status",
 			label: t("spaces.status", "Status"),
 			sortable: true,
 			render: (v: string) => {
-				const colors = v === "active" ? "bg-success/15 text-success dark:text-success" : v === "suspended" ? "bg-danger/15 text-danger dark:text-danger" : "bg-muted/15 text-muted dark:text-muted";
-				return `<span class="inline-block rounded-full px-2 py-0.5 text-xs ${colors}">${v}</span>`;
+				const cls = v === "active" ? "bg-success/15 text-success dark:text-success" : v === "suspended" ? "bg-danger/15 text-danger dark:text-danger" : "bg-muted/15 text-muted dark:text-muted";
+				return `<span class="inline-block rounded-full px-2 py-0.5 text-xs ${cls}">${v}</span>`;
 			}
 		},
+		{ key: "created_at", label: t("spaces.created", "Created"), sortable: true, render: (v: string) => new Date(v).toLocaleDateString() }
+	];
+
+	const rowActions: ActionItem[] = [
+		{ label: t("common.view", "View"), icon: Eye, onclick: (row) => openView(row) },
+		{ label: t("spaces.manage", "Manage"), onclick: (row: Space) => goto(`/spaces/${row.id}`) },
 		{
-			key: "created_at",
-			label: t("spaces.created", "Created"),
-			sortable: true,
-			render: (v: string) => new Date(v).toLocaleDateString()
+			label: t("common.edit", "Edit"),
+			icon: Pencil,
+			onclick: (row) => openEdit(row),
+			show: () => canManageSpaces
 		},
 		{
-			key: "actions",
-			label: t("common.actions", "Actions"),
-			class: "w-52",
-			componentSnippet: SpaceActionsCell
+			label: t("spaces.suspend", "Suspend"),
+			onclick: (row) => openSuspend(row),
+			show: (row: Space) => canModerateSpaces && row.status !== "suspended"
+		},
+		{
+			label: t("spaces.unsuspend", "Unsuspend"),
+			onclick: (row) => openSuspend(row),
+			show: (row: Space) => canModerateSpaces && row.status === "suspended"
+		},
+		{
+			label: t("common.delete", "Delete"),
+			icon: Trash2,
+			variant: "destructive",
+			onclick: (row) => confirmDelete(row),
+			show: () => canManageSpaces
 		}
 	];
+
+	const bulkActions: BulkAction[] = $derived(canManageSpaces
+		? [{ label: t("common.delete_selected", "Delete Selected"), icon: Trash2, variant: "destructive", onclick: bulkDelete }]
+		: []);
 
 	async function loadSpaces() {
 		loading = true;
@@ -131,8 +149,8 @@
 				page_offset: String(currentPage * pageSize)
 			});
 			if (searchQuery) params.set("q", searchQuery);
-			if (filterValues.status) params.set("status", filterValues.status);
-			if (filterValues.visibility) params.set("visibility", filterValues.visibility);
+			if (filterValue.status) params.set("status", filterValue.status);
+			if (filterValue.visibility) params.set("visibility", filterValue.visibility);
 
 			const result = await spacesAdminApi.list(params.toString());
 			if (result.ok) {
@@ -156,37 +174,25 @@
 		}
 	}
 
-	function handleSearch(values: Record<string, string>) {
-		searchQuery = values.search ?? "";
-		filterValues = values;
-		currentPage = 0;
-	}
-
-	function handleClear() {
-		searchQuery = "";
-		filterValues = {};
-		currentPage = 0;
-	}
-
 	function openView(space: Space) {
 		viewTarget = space;
-		showViewModal = true;
+		showViewSlideOver = true;
 	}
 
 	function openEdit(space: Space) {
 		editTarget = space;
 		editName = space.name;
-		editType = space.visibility;
-		showEditModal = true;
+		editVisibility = space.visibility;
+		showEditSlideOver = true;
 	}
 
 	async function saveEdit() {
 		if (!editTarget) return;
 		acting = true;
 		try {
-			const result = await spacesAdminApi.update(editTarget.id, { name: editName, visibility: editType });
+			const result = await spacesAdminApi.update(editTarget.id, { name: editName, visibility: editVisibility });
 			if (result.ok) {
-				showEditModal = false;
+				showEditSlideOver = false;
 				loadSpaces();
 			} else {
 				error = result.error;
@@ -249,14 +255,12 @@
 		}
 	}
 
-	async function bulkDelete() {
-		const ids = Array.from(selectedIds);
-		if (ids.length === 0) return;
+	async function bulkDelete(ids: Set<string>) {
+		const idArr = Array.from(ids);
+		if (idArr.length === 0 || acting) return;
 		acting = true;
 		try {
-			await Promise.all(ids.map((id) => spacesAdminApi.delete(id)));
-			selectedIds = new Set();
-			loadSpaces();
+			await Promise.all(idArr.map((id) => spacesAdminApi.delete(id)));
 		} catch {
 			error = t("common.error", "Failed to delete spaces");
 		} finally {
@@ -264,11 +268,20 @@
 		}
 	}
 
+	function handlePageChange(p: number) {
+		currentPage = p;
+	}
+
+	function handlePageSizeChange(s: number) {
+		pageSize = s;
+		currentPage = 0;
+	}
+
 	$effect(() => {
 		void currentPage;
 		void pageSize;
 		void searchQuery;
-		void filterValues;
+		void filterValue;
 		loadSpaces();
 	});
 </script>
@@ -293,25 +306,7 @@
 	</div>
 {/if}
 
-{#if selectedIds.size > 0}
-	<div class="mb-4 flex items-center gap-3 rounded-lg p-3" style="background: var(--color-primary); color: white">
-		<span class="text-sm font-medium">{t("common.selected", "{count} selected")} ({selectedIds.size})</span>
-		{#if canManageSpaces}
-			<Button variant="ghost" size="sm" onclick={bulkDelete} disabled={acting}>
-				<Trash2 class="mr-1 h-3.5 w-3.5" /> {t("common.delete_selected", "Delete Selected")}
-			</Button>
-		{/if}
-	</div>
-{/if}
-
 <Card>
-	<CardHeader>
-		<FilterBar
-			filters={filterDefs}
-			onsearch={handleSearch}
-			onclear={handleClear}
-		/>
-	</CardHeader>
 	<CardContent>
 		{#if loading}
 			<TableSkeleton rows={8} columns={columns.length} />
@@ -320,22 +315,30 @@
 				<DataTable
 					{columns}
 					data={spaces}
+					serverSide
+					page={currentPage}
+					{pageSize}
+					totalRows={totalItems}
+					{totalPages}
+					onpagechange={handlePageChange}
+					onpagesizechange={handlePageSizeChange}
+					searchable
+					onsearch={(q) => { searchQuery = q; currentPage = 0; }}
+					filters={filterDefs}
+					bind:filterValue
+					onfilterapply={() => { currentPage = 0; }}
 					selectable={canManageSpaces}
 					bind:selectedIds
+					actions={rowActions}
+					bulkActionsList={bulkActions}
 				/>
 			</div>
-			<Pagination
-				bind:page={currentPage}
-				{totalPages}
-				{totalItems}
-				bind:pageSize
-			/>
 		{/if}
 	</CardContent>
 </Card>
 
-<!-- View Modal -->
-<Modal bind:open={showViewModal} title={t("spaces.details", "Space Details")} size="default">
+<!-- View SlideOver -->
+<SlideOver bind:open={showViewSlideOver} title={t("spaces.details", "Space Details")}>
 	{#if viewTarget}
 		<div class="space-y-4">
 			<div class="grid grid-cols-2 gap-4">
@@ -366,47 +369,36 @@
 			</div>
 		</div>
 	{/if}
-	<div class="mt-6 flex justify-end">
-		<Button variant="outline" onclick={() => (showViewModal = false)}>{t('spaces.close')}</Button>
-	</div>
-</Modal>
+	{#snippet footer()}
+		<div class="flex justify-end">
+			<Button variant="outline" onclick={() => (showViewSlideOver = false)}>{t('spaces.close')}</Button>
+		</div>
+	{/snippet}
+</SlideOver>
 
-<!-- Edit Modal -->
-<Modal bind:open={showEditModal} title={t("spaces.edit", "Edit Space")} size="default">
+<!-- Edit SlideOver -->
+<SlideOver bind:open={showEditSlideOver} title={t("spaces.edit", "Edit Space")}>
 	{#if editTarget}
 		<div class="space-y-4">
 			<div>
 				<label for="edit-name" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('spaces.name')}</label>
-				<input
-					id="edit-name"
-					type="text"
-					class="w-full rounded-lg border px-3 py-2 text-sm"
-					style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
-					bind:value={editName}
-				/>
+				<input id="edit-name" type="text" class="w-full rounded-lg border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={editName} />
 			</div>
 			<div>
 				<label for="edit-type" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('spaces.visibility')}</label>
-				<select
-					id="edit-type"
-					class="w-full rounded-lg border px-3 py-2 text-sm"
-					style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
-					bind:value={editType}
-				>
-					<option value="public">{t('spaces.public')}</option>
-					<option value="private">{t('spaces.private')}</option>
-					<option value="restricted">{t('spaces.restricted')}</option>
-				</select>
+				<Select options={visibilitySelectOptions} bind:value={editVisibility} />
 			</div>
 		</div>
 	{/if}
-	<div class="mt-6 flex justify-end gap-2">
-		<Button variant="ghost" onclick={() => (showEditModal = false)}>{t('spaces.cancel')}</Button>
-		<Button onclick={saveEdit} disabled={acting}>{acting ? t("common.saving", "Saving...") : t("common.save", "Save")}</Button>
-	</div>
-</Modal>
+	{#snippet footer()}
+		<div class="flex justify-end gap-2">
+			<Button variant="outline" onclick={() => (showEditSlideOver = false)}>{t('spaces.cancel')}</Button>
+			<Button onclick={saveEdit} disabled={acting}>{acting ? t("common.saving", "Saving...") : t("common.save", "Save")}</Button>
+		</div>
+	{/snippet}
+</SlideOver>
 
-<!-- Delete Confirmation -->
+<!-- Delete Confirmation Modal -->
 <Modal bind:open={showDeleteConfirm} title={t("common.confirmDelete", "Confirm Delete")} size="sm">
 	{#if deleteTarget}
 		<p class="text-sm" style="color: var(--color-foreground)">
@@ -414,12 +406,12 @@
 		</p>
 	{/if}
 	<div class="mt-6 flex justify-end gap-2">
-		<Button variant="ghost" onclick={() => (showDeleteConfirm = false)}>{t('spaces.cancel')}</Button>
+		<Button variant="outline" onclick={() => (showDeleteConfirm = false)}>{t('spaces.cancel')}</Button>
 		<Button variant="destructive" onclick={executeDelete} disabled={acting}>{acting ? t("common.deleting", "Deleting...") : t("common.delete", "Delete")}</Button>
 	</div>
 </Modal>
 
-<!-- Suspend/Unsuspend Modal -->
+<!-- Suspend/Unsuspend Modal (page-local — reason input) -->
 <Modal bind:open={showSuspendModal} title={suspendTarget?.status === "suspended" ? t("spaces.unsuspend_space", "Unsuspend Space") : t("spaces.suspend_space", "Suspend Space")} size="sm">
 	{#if suspendTarget}
 		<p class="text-sm mb-3" style="color: var(--color-foreground)">
@@ -440,36 +432,9 @@
 		{/if}
 	{/if}
 	<div class="mt-6 flex justify-end gap-2">
-		<Button variant="ghost" onclick={() => (showSuspendModal = false)}>{t('spaces.cancel')}</Button>
+		<Button variant="outline" onclick={() => (showSuspendModal = false)}>{t('spaces.cancel')}</Button>
 		<Button variant={suspendTarget?.status === "suspended" ? "default" : "destructive"} onclick={executeSuspend} disabled={acting}>
 			{acting ? t("spaces.processing", "Processing...") : suspendTarget?.status === "suspended" ? t("spaces.unsuspend", "Unsuspend") : t("spaces.suspend", "Suspend")}
 		</Button>
 	</div>
 </Modal>
-
-<!-- SpaceActionsCell component -->
-{#snippet SpaceActionsCell({ value, row }: { value: any; row: Space })}
-	<div class="flex items-center gap-1">
-		<Button variant="ghost" size="sm" onclick={() => openView(row)}>
-			<Eye class="h-3.5 w-3.5" />
-		</Button>
-		<Button variant="ghost" size="sm" onclick={() => goto(`/spaces/${row.id}`)} style="color: var(--color-primary)">
-			{t("spaces.manage", "Manage")}
-		</Button>
-		{#if canManageSpaces}
-			<Button variant="ghost" size="sm" onclick={() => openEdit(row)}>
-				<Pencil class="h-3.5 w-3.5" />
-			</Button>
-		{/if}
-		{#if canModerateSpaces}
-			<Button variant="ghost" size="sm" onclick={() => openSuspend(row)} style="color: var(--color-warning)">
-				{row.status === "suspended" ? t("spaces.unsuspend", "Unsuspend") : t("spaces.suspend", "Suspend")}
-			</Button>
-		{/if}
-		{#if canManageSpaces}
-			<Button variant="ghost" size="sm" onclick={() => confirmDelete(row)} style="color: var(--color-danger)">
-				<Trash2 class="h-3.5 w-3.5" />
-			</Button>
-		{/if}
-	</div>
-{/snippet}

@@ -719,13 +719,91 @@ func (s *Service) ListFormSteps(ctx context.Context, formID pgtype.UUID) ([]gen.
 	return steps, nil
 }
 
-// CreateFormStep adds a new step to a multi-step form.
-func (s *Service) CreateFormStep(ctx context.Context, params gen.CreateFormStepParams) (gen.FormStep, error) {
-	step, err := s.write.CreateFormStep(ctx, params)
+// GetStepFields returns the custom fields attached to a form step via the
+// custom_field_group_assignments polymorphic link (entity_class = "form_step").
+func (s *Service) GetStepFields(ctx context.Context, stepID, tenantID pgtype.UUID) ([]gen.ListCustomFieldsByGroupRow, error) {
+	assignment, err := s.read.GetAssignmentByEntity(ctx, gen.GetAssignmentByEntityParams{
+		EntityClass: "form_step",
+		EntityID:    stepID,
+	})
 	if err != nil {
-		return gen.FormStep{}, fmt.Errorf("creating form step: %w", err)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil // step has no fields yet
+		}
+		return nil, fmt.Errorf("getting step field assignment: %w", err)
 	}
 
+	fields, err := s.read.ListCustomFieldsByGroup(ctx, gen.ListCustomFieldsByGroupParams{
+		GroupID:  assignment.GroupID,
+		TenantID: tenantID,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("listing step fields: %w", err)
+	}
+
+	return fields, nil
+}
+
+// GetStepFormGroupID returns the field group UUID assigned to the given step,
+// or nil if no group is assigned yet.
+func (s *Service) GetStepFormGroupID(ctx context.Context, stepID pgtype.UUID) *string {
+	assignment, err := s.read.GetAssignmentByEntity(ctx, gen.GetAssignmentByEntityParams{
+		EntityClass: "form_step",
+		EntityID:    stepID,
+	})
+	if err != nil {
+		return nil
+	}
+	if !assignment.GroupID.Valid {
+		return nil
+	}
+	gid := assignment.GroupID.String()
+	return &gid
+}
+
+// CreateFormStep adds a new step to a multi-step form and provisions a backing
+// custom field group + assignment (entity_class="form_step", entity_id=step_id)
+// in one transaction. This lets the admin UI add fields directly to a step via
+// the existing field-group field CRUD endpoints.
+func (s *Service) CreateFormStep(ctx context.Context, tenantID pgtype.UUID, formSlug string, params gen.CreateFormStepParams) (gen.FormStep, error) {
+	return db.WithTxResult(ctx, s.pool, func(q *gen.Queries) (gen.FormStep, error) {
+		step, err := q.CreateFormStep(ctx, params)
+		if err != nil {
+			return gen.FormStep{}, fmt.Errorf("creating form step: %w", err)
+		}
+
+		// Create a backing field group for this step.
+		group, err := q.CreateCustomFieldGroup(ctx, gen.CreateCustomFieldGroupParams{
+			TenantID: tenantID,
+			Name:     "Form step: " + params.Title,
+			Slug:     "form-" + formSlug + "-step-" + fmt.Sprintf("%d", params.Position),
+			IsSystem: false,
+		})
+		if err != nil {
+			return gen.FormStep{}, fmt.Errorf("creating step field group: %w", err)
+		}
+
+		// Assign the group to this step (entity_class="form_step").
+		_, err = q.CreateAssignment(ctx, gen.CreateAssignmentParams{
+			GroupID:     group.ID,
+			EntityClass: "form_step",
+			EntityID:    step.ID,
+			Position:    params.Position,
+		})
+		if err != nil {
+			return gen.FormStep{}, fmt.Errorf("assigning step field group: %w", err)
+		}
+
+		return step, nil
+	})
+}
+
+// UpdateFormStep updates a step's title and position, scoped to the form.
+func (s *Service) UpdateFormStep(ctx context.Context, params gen.UpdateFormStepParams) (gen.FormStep, error) {
+	step, err := s.write.UpdateFormStep(ctx, params)
+	if err != nil {
+		return gen.FormStep{}, fmt.Errorf("updating form step: %w", err)
+	}
 	return step, nil
 }
 
@@ -740,6 +818,40 @@ func (s *Service) DeleteFormStep(ctx context.Context, id, formID pgtype.UUID) er
 	}
 
 	return nil
+}
+
+// ReorderFormSteps updates the position of each step by ID. The step_ids array
+// is in the desired order; position is assigned by index. The form_steps table
+// has a UNIQUE(form_id, position) constraint, so a naive in-place update would
+// collide when two steps swap positions. The reorder runs inside a single
+// transaction in two phases: first bump every position by a large offset
+// (guaranteed not to collide with real indices), then assign the final index.
+func (s *Service) ReorderFormSteps(ctx context.Context, formID pgtype.UUID, stepIDs []pgtype.UUID) error {
+	offset := int32(len(stepIDs) + 1)
+	return db.WithTx(ctx, s.pool, func(q *gen.Queries) error {
+		// Phase 1: move every step to a temporary high position so the final
+		// positions are free to claim without colliding with the unique index.
+		for i, id := range stepIDs {
+			if err := q.UpdateFormStepPosition(ctx, gen.UpdateFormStepPositionParams{
+				ID:       id,
+				FormID:   formID,
+				Position: int32(i) + offset,
+			}); err != nil {
+				return fmt.Errorf("reordering form steps (temp) at index %d: %w", i, err)
+			}
+		}
+		// Phase 2: assign the final positions.
+		for i, id := range stepIDs {
+			if err := q.UpdateFormStepPosition(ctx, gen.UpdateFormStepPositionParams{
+				ID:       id,
+				FormID:   formID,
+				Position: int32(i),
+			}); err != nil {
+				return fmt.Errorf("reordering form steps (final) at index %d: %w", i, err)
+			}
+		}
+		return nil
+	})
 }
 
 // ---------------------------------------------------------------------------

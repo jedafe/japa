@@ -281,7 +281,7 @@
 		bulkActions: [
 			{
 				label: t("common.deleteSelected", "Delete Selected"),
-				icon: Trash2 as any,
+				icon: Trash2,
 				variant: "destructive",
 				onclick: bulkDelete,
 			},

@@ -83,7 +83,7 @@
 				<button
 					type="button"
 					onclick={copyLink}
-					class="flex shrink-0 items-center gap-1 rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-2 text-xs font-medium text-white transition-colors hover:opacity-90"
+					class="flex shrink-0 items-center gap-1 rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-2 text-xs font-medium text-[var(--color-primary-contrast)] transition-colors hover:opacity-90"
 				>
 					{#if copied}
 						<Check size={14} /> {t('common.copied', 'Copied!')}

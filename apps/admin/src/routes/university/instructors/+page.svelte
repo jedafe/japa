@@ -1,10 +1,11 @@
 <script lang="ts">
 	import PageHeader from "$lib/components/layout/page-header.svelte";
 	import { DataTable } from "$lib/components/ui/data-table";
-	import { FilterBar } from "$lib/components/ui/filter-bar";
 	import { Button } from "$lib/components/ui/button";
 	import { Modal } from "$lib/components/ui/modal";
+	import { SlideOver } from "$lib/components/ui/slide-over";
 	import { TableSkeleton } from "$lib/components/ui/skeleton";
+	import type { ActionItem } from "$lib/components/ui/data-table";
 	import { Check, X, Ban, RotateCcw, Eye, RefreshCw, Trash2, Pencil } from "lucide-svelte";
 	import { universityAdminApi } from "$lib/api";
 	import { t } from "$lib/stores/i18n.svelte";
@@ -37,13 +38,13 @@
 	let currentPage = $state(0);
 	let pageSize = $state(25);
 
-	let showApproveModal = $state(false);
+	let showApproveSlideOver = $state(false);
 	let showRejectModal = $state(false);
 	let showSuspendModal = $state(false);
 	let showReinstateModal = $state(false);
-	let showViewModal = $state(false);
+	let showViewSlideOver = $state(false);
 	let showDeleteModal = $state(false);
-	let showEditTierModal = $state(false);
+	let showEditTierSlideOver = $state(false);
 	let target = $state<InstructorProfile | null>(null);
 	let actionLoading = $state(false);
 
@@ -76,8 +77,50 @@
 		{ key: "tier", label: t("university.tier", "Tier"), sortable: true, render: (v: string) => `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium ${v === "partner" ? "bg-primary/15 text-primary" : v === "verified" ? "bg-info/15 text-info" : "bg-muted/15 text-muted"}">${v}</span>` },
 		{ key: "status", label: t("university.status", "Status"), sortable: true, componentSnippet: StatusBadge },
 		{ key: "kyc_status", label: t("university.kyc", "KYC"), render: (v: string) => `<span class="text-xs ${v === "verified" ? "text-success" : v === "pending" ? "text-warning" : "text-muted"}">${v}</span>` },
-		{ key: "created_at", label: t("common.created", "Created"), sortable: true, render: (v: string) => `<span class="text-xs" style="color: var(--color-muted)">${new Date(v).toLocaleDateString()}</span>` },
-		{ key: "actions", label: t("common.actions", "Actions"), class: "w-40", componentSnippet: InstructorActionsCell }
+		{ key: "created_at", label: t("common.created", "Created"), sortable: true, render: (v: string) => `<span class="text-xs" style="color: var(--color-muted)">${new Date(v).toLocaleDateString()}</span>` }
+	];
+
+	const rowActions: ActionItem[] = [
+		{ label: t("common.view", "View"), icon: Eye, onclick: (row) => openView(row) },
+		{
+			label: t("common.approve", "Approve"),
+			icon: Check,
+			onclick: (row) => openApprove(row),
+			show: (row: InstructorProfile) => canApprove && row.status === "pending"
+		},
+		{
+			label: t("common.reject", "Reject"),
+			icon: X,
+			variant: "destructive",
+			onclick: (row) => openReject(row),
+			show: (row: InstructorProfile) => canApprove && row.status === "pending"
+		},
+		{
+			label: t("university.edit_tier", "Edit Tier"),
+			icon: Pencil,
+			onclick: (row) => openEditTier(row),
+			show: (row: InstructorProfile) => canManage && row.status === "approved"
+		},
+		{
+			label: t("common.suspend", "Suspend"),
+			icon: Ban,
+			variant: "destructive",
+			onclick: (row) => openSuspend(row),
+			show: (row: InstructorProfile) => canManage && row.status === "approved"
+		},
+		{
+			label: t("common.reinstate", "Reinstate"),
+			icon: RotateCcw,
+			onclick: (row) => openReinstate(row),
+			show: (row: InstructorProfile) => canManage && row.status === "suspended"
+		},
+		{
+			label: t("common.delete", "Delete"),
+			icon: Trash2,
+			variant: "destructive",
+			onclick: (row) => openDelete(row),
+			show: () => canManage
+		}
 	];
 
 	const filtered = $derived(
@@ -121,13 +164,13 @@
 		target = i;
 		approveTier = i.tier === "pending" ? "standard" : i.tier;
 		approveCommission = i.commission_pct_override != null ? String(i.commission_pct_override) : "";
-		showApproveModal = true;
+		showApproveSlideOver = true;
 	}
 
 	function openReject(i: InstructorProfile) { target = i; showRejectModal = true; }
 	function openSuspend(i: InstructorProfile) { target = i; showSuspendModal = true; }
 	function openReinstate(i: InstructorProfile) { target = i; showReinstateModal = true; }
-	function openView(i: InstructorProfile) { target = i; showViewModal = true; }
+	function openView(i: InstructorProfile) { target = i; showViewSlideOver = true; }
 
 	async function doApprove() {
 		if (!target) return;
@@ -138,7 +181,7 @@
 		if (approveCommission.trim()) body.commission_pct_override = Number(approveCommission);
 		const result = await universityAdminApi.approveInstructor(target.id, body);
 		if (result.ok) {
-			showApproveModal = false;
+			showApproveSlideOver = false;
 			successMessage = t("university.approved_success", "Instructor approved");
 			load();
 		} else {
@@ -213,7 +256,7 @@
 		target = i;
 		editTier = i.tier;
 		editCommission = i.commission_pct_override != null ? String(i.commission_pct_override) : "";
-		showEditTierModal = true;
+		showEditTierSlideOver = true;
 	}
 
 	async function doEditTier() {
@@ -225,7 +268,7 @@
 		if (editCommission.trim()) body.commission_pct_override = Number(editCommission);
 		const result = await universityAdminApi.updateInstructor(target.id, body);
 		if (result.ok) {
-			showEditTierModal = false;
+			showEditTierSlideOver = false;
 			successMessage = t("university.instructor_updated", "Instructor updated");
 			load();
 		} else {
@@ -246,6 +289,9 @@
 <PageHeader
 	title={t("university.instructors_title", "University Instructors")}
 	description={t("university.instructors_desc", "Review and manage instructor applications for the Japa University creator economy")}
+	actions={[
+		{ label: t("common.refresh", "Refresh"), icon: RefreshCw, variant: "outline" as const, onclick: load }
+	]}
 />
 
 {#if errorMessage}
@@ -260,15 +306,6 @@
 	</div>
 {/if}
 
-<div class="mb-4 flex justify-end">
-	<Button variant="outline" size="sm" onclick={load}>
-		<RefreshCw class="h-3.5 w-3.5" />
-		{t("common.refresh", "Refresh")}
-	</Button>
-</div>
-
-<FilterBar filters={statusFilters} onsearch={handleSearch} onclear={() => { searchQuery = ""; filterValues = {}; currentPage = 0; load(); }} />
-
 <div class="mt-4">
 {#if loading}
 	<TableSkeleton rows={5} />
@@ -276,26 +313,25 @@
 	<DataTable
 		{columns}
 		data={filtered}
-		pageSize={pageSize}
+		page={currentPage}
+		{pageSize}
+		totalRows={meta.total}
+		{totalPages}
+		onpagechange={(p) => { currentPage = p; load(); }}
+		searchable
+		onsearch={(q) => { searchQuery = q; currentPage = 0; load(); }}
+		filters={statusFilters}
+		bind:filterValue={filterValues}
+		onfilterapply={() => { currentPage = 0; load(); }}
+		onfilterclear={() => { currentPage = 0; load(); }}
+		actions={rowActions}
 		emptyMessage={t("university.no_instructors", "No instructors found")}
 	/>
-	<div class="mt-4 flex items-center justify-between text-xs" style="color: var(--color-muted)">
-		<span>{meta.total} {t("common.total", "total")}</span>
-		<div class="flex items-center gap-2">
-			<Button variant="ghost" size="sm" disabled={currentPage === 0} onclick={() => { currentPage = Math.max(0, currentPage - 1); load(); }}>
-				{t("common.prev", "Prev")}
-			</Button>
-			<span>{currentPage + 1} / {totalPages}</span>
-			<Button variant="ghost" size="sm" disabled={currentPage >= totalPages - 1} onclick={() => { currentPage = Math.min(totalPages - 1, currentPage + 1); load(); }}>
-				{t("common.next", "Next")}
-			</Button>
-		</div>
-	</div>
 {/if}
 </div>
 
-<!-- View Modal -->
-<Modal open={showViewModal} onclose={() => { showViewModal = false; }} title={t("university.instructor_details", "Instructor Details")}>
+<!-- View SlideOver -->
+<SlideOver bind:open={showViewSlideOver} title={t("university.instructor_details", "Instructor Details")}>
 	{#if target}
 		<div class="space-y-3">
 			<div><p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("university.instructor", "Instructor")}</p><p class="mt-1 text-sm font-medium">{target.display_name}</p></div>
@@ -312,13 +348,15 @@
 			{/if}
 		</div>
 	{/if}
-	<div class="mt-6 flex justify-end">
-		<Button variant="outline" onclick={() => { showViewModal = false; }}>{t("common.close", "Close")}</Button>
-	</div>
-</Modal>
+	{#snippet footer()}
+		<div class="flex justify-end">
+			<Button variant="outline" onclick={() => { showViewSlideOver = false; }}>{t("common.close", "Close")}</Button>
+		</div>
+	{/snippet}
+</SlideOver>
 
-<!-- Approve Modal -->
-<Modal open={showApproveModal} onclose={() => { showApproveModal = false; }} title={t("university.approve_instructor", "Approve Instructor")}>
+<!-- Approve SlideOver -->
+<SlideOver bind:open={showApproveSlideOver} title={t("university.approve_instructor", "Approve Instructor")}>
 	{#if target}
 		<div class="space-y-4">
 			<p class="text-sm" style="color: var(--color-muted)">{t("university.approve_confirm", "Approve")} <strong>{target.display_name}</strong>?</p>
@@ -336,13 +374,15 @@
 			</div>
 		</div>
 	{/if}
-	<div class="mt-6 flex justify-end gap-2">
-		<Button variant="outline" onclick={() => { showApproveModal = false; }}>{t("common.cancel", "Cancel")}</Button>
-		<Button onclick={doApprove} disabled={actionLoading}>
-			{actionLoading ? t("common.processing", "Processing...") : t("common.approve", "Approve")}
-		</Button>
-	</div>
-</Modal>
+	{#snippet footer()}
+		<div class="flex justify-end gap-2">
+			<Button variant="outline" onclick={() => { showApproveSlideOver = false; }}>{t("common.cancel", "Cancel")}</Button>
+			<Button onclick={doApprove} disabled={actionLoading}>
+				{actionLoading ? t("common.processing", "Processing...") : t("common.approve", "Approve")}
+			</Button>
+		</div>
+	{/snippet}
+</SlideOver>
 
 <!-- Reject Modal -->
 <Modal open={showRejectModal} onclose={() => { showRejectModal = false; }} title={t("university.reject_instructor", "Reject Instructor")}>
@@ -394,8 +434,8 @@
 	</div>
 </Modal>
 
-<!-- Edit Tier Modal -->
-<Modal open={showEditTierModal} onclose={() => { showEditTierModal = false; }} title={t("university.edit_tier", "Edit Tier & Commission")}>
+<!-- Edit Tier SlideOver -->
+<SlideOver bind:open={showEditTierSlideOver} title={t("university.edit_tier", "Edit Tier & Commission")}>
 	{#if target}
 		<div class="space-y-4">
 			<p class="text-sm" style="color: var(--color-muted)">{t("university.update_tier_for", "Update tier for")} <strong>{target.display_name}</strong></p>
@@ -413,11 +453,13 @@
 			</div>
 		</div>
 	{/if}
-	<div class="mt-6 flex justify-end gap-2">
-		<Button variant="outline" onclick={() => { showEditTierModal = false; }}>{t("common.cancel", "Cancel")}</Button>
-		<Button onclick={doEditTier} disabled={actionLoading}>{actionLoading ? t("common.saving", "Saving...") : t("common.save", "Save")}</Button>
-	</div>
-</Modal>
+	{#snippet footer()}
+		<div class="flex justify-end gap-2">
+			<Button variant="outline" onclick={() => { showEditTierSlideOver = false; }}>{t("common.cancel", "Cancel")}</Button>
+			<Button onclick={doEditTier} disabled={actionLoading}>{actionLoading ? t("common.saving", "Saving...") : t("common.save", "Save")}</Button>
+		</div>
+	{/snippet}
+</SlideOver>
 
 {#snippet StatusBadge({ value }: { value: string; row: InstructorProfile })}
 	<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium
@@ -427,38 +469,4 @@
 		 'bg-muted/15 text-muted'}">
 		{value}
 	</span>
-{/snippet}
-
-{#snippet InstructorActionsCell({ row }: { value: any; row: InstructorProfile })}
-	<div class="flex items-center gap-1">
-		<Button variant="ghost" size="sm" onclick={() => openView(row)} aria-label={t("common.view", "View")}>
-			<Eye class="h-3.5 w-3.5" />
-		</Button>
-		{#if canApprove && row.status === "pending"}
-			<Button variant="ghost" size="sm" onclick={() => openApprove(row)} style="color: var(--color-success)" aria-label={t("common.approve", "Approve")}>
-				<Check class="h-3.5 w-3.5" />
-			</Button>
-			<Button variant="ghost" size="sm" onclick={() => openReject(row)} style="color: var(--color-danger)" aria-label={t("common.reject", "Reject")}>
-				<X class="h-3.5 w-3.5" />
-			</Button>
-		{/if}
-		{#if canManage && row.status === "approved"}
-			<Button variant="ghost" size="sm" onclick={() => openEditTier(row)} aria-label={t("university.edit_tier", "Edit Tier")}>
-				<Pencil class="h-3.5 w-3.5" />
-			</Button>
-			<Button variant="ghost" size="sm" onclick={() => openSuspend(row)} style="color: var(--color-danger)" aria-label={t("common.suspend", "Suspend")}>
-				<Ban class="h-3.5 w-3.5" />
-			</Button>
-		{/if}
-		{#if canManage && row.status === "suspended"}
-			<Button variant="ghost" size="sm" onclick={() => openReinstate(row)} style="color: var(--color-success)" aria-label={t("common.reinstate", "Reinstate")}>
-				<RotateCcw class="h-3.5 w-3.5" />
-			</Button>
-		{/if}
-		{#if canManage}
-			<Button variant="ghost" size="sm" onclick={() => openDelete(row)} style="color: var(--color-danger)" aria-label={t("common.delete", "Delete")}>
-				<Trash2 class="h-3.5 w-3.5" />
-			</Button>
-		{/if}
-	</div>
 {/snippet}

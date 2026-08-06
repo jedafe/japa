@@ -10,6 +10,7 @@
   import { Button } from "$lib/components/ui/button";
   import { Modal } from "$lib/components/ui/modal";
   import { DataTable } from "$lib/components/ui/data-table";
+  import type { ActionItem } from "$lib/components/ui/data-table";
   import Pagination from "$lib/components/ui/Pagination.svelte";
   import { UserPlus, Users, Shield, AlertTriangle, Trash2, Ban, Play, RotateCcw } from "lucide-svelte";
    import { userManagementApi, impersonationApi, usersWarningsAdminApi, type UserSession, type ModerationConfigOption } from "$lib/api";
@@ -173,8 +174,17 @@
   const aiColumns = [
     { key: 'entry_type', label: t('users.userId.type'), sortable: false, render: (v: string) => `<span class="inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium" style="background: color-mix(in srgb, var(--color-secondary) 15%, transparent); color: var(--color-foreground)">${v}</span>` },
     { key: 'content', label: t('users.userId.content'), sortable: false, class: 'text-xs', render: (v: string) => `<span style="color: var(--color-muted)">${v}</span>` },
-    { key: 'created_at', label: t('users.userId.created'), sortable: false, class: 'text-xs', render: (v: string) => `<span style="color: var(--color-muted)">${v}</span>` },
-    { key: 'actions', label: '', class: 'w-24', componentSnippet: AiActionsCell }
+    { key: 'created_at', label: t('users.userId.created'), sortable: false, class: 'text-xs', render: (v: string) => `<span style="color: var(--color-muted)">${v}</span>` }
+  ];
+
+  const aiActions: ActionItem[] = [
+    {
+      label: 'Delete',
+      icon: Trash2,
+      variant: 'destructive',
+      onclick: (row: AiContextEntry) => deleteAiEntry(row.id),
+      show: () => canDeleteAiContext
+    }
   ];
 
   const sessionColumns = [
@@ -539,14 +549,6 @@
   });
 </script>
 
-{#snippet AiActionsCell({ value, row }: { value: any; row: AiContextEntry })}
-	{#if canDeleteAiContext}
-		<Button variant="ghost" size="sm" onclick={() => deleteAiEntry(row.id)}>
-			Delete
-		</Button>
-	{/if}
-{/snippet}
-
 <svelte:head>
   <title>{user?.username ?? "User"} — JapaConnect Admin</title>
 </svelte:head>
@@ -760,7 +762,7 @@
         <Pagination bind:page={activityPage} totalPages={activityTotalPages} totalItems={filteredActivities.length} bind:pageSize={activityPageSize} />
 
       {:else if activeTab === "ai"}
-        <DataTable columns={aiColumns} data={pagedAiEntries} searchable={true} searchPlaceholder={t('common.search', 'Search')} onsearch={(q) => { aiSearch = q; aiPage = 0; }} emptyMessage={t('users.userId.no_ai_context_entries')} />
+        <DataTable columns={aiColumns} data={pagedAiEntries} searchable={true} searchPlaceholder={t('common.search', 'Search')} onsearch={(q) => { aiSearch = q; aiPage = 0; }} actions={aiActions} emptyMessage={t('users.userId.no_ai_context_entries')} />
         <Pagination bind:page={aiPage} totalPages={aiTotalPages} totalItems={filteredAiEntries.length} bind:pageSize={aiPageSize} />
 
       {:else if activeTab === "sessions"}

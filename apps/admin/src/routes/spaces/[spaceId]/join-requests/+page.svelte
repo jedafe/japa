@@ -5,7 +5,8 @@
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { RefreshCw, CheckCircle, XCircle } from 'lucide-svelte';
 	import { DataTable } from '$lib/components/ui/data-table';
-	import { Button } from '$lib/components/ui/button';
+	import type { ActionItem } from '$lib/components/ui/data-table';
+	import PageHeader from '$lib/components/layout/page-header.svelte';
 
 	// Ref: jc-admin-develop — RBAC gate for join request management
 	const canManage = $derived(hasPermission('space.join_requests.manage'));
@@ -34,8 +35,23 @@
 			render: (v: string, row: JoinRequest) => v || row.username || 'anonymous' },
 		{ key: 'message', label: t('joinRequests.message'), sortable: true, class: 'text-xs', render: (v: string) => `<span style="color: var(--color-muted)">${v || '—'}</span>` },
 		{ key: 'status', label: t('joinRequests.status'), sortable: true, render: (v: string) => `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium ${v === 'approved' ? 'bg-success/15 text-success dark:text-success' : v === 'rejected' ? 'bg-danger/15 text-danger dark:text-danger' : 'bg-warning/15 text-warning dark:text-warning'}">${v}</span>` },
-		{ key: 'requested_at', label: t('joinRequests.requested'), sortable: true, class: 'text-xs', render: (v: string) => `<span style="color: var(--color-muted)">${new Date(v).toLocaleDateString()}</span>` },
-		{ key: 'actions', label: t('common.actions'), class: 'w-32 text-right', componentSnippet: JoinRequestActionsCell }
+		{ key: 'requested_at', label: t('joinRequests.requested'), sortable: true, class: 'text-xs', render: (v: string) => `<span style="color: var(--color-muted)">${new Date(v).toLocaleDateString()}</span>` }
+	];
+
+	const rowActions: ActionItem[] = [
+		{
+			label: t('joinRequests.approve'),
+			icon: CheckCircle,
+			onclick: (row: JoinRequest) => updateRequest(row.id, 'approved'),
+			show: (row: JoinRequest) => canManage && row.status === 'pending'
+		},
+		{
+			label: t('joinRequests.reject'),
+			icon: XCircle,
+			variant: 'destructive',
+			onclick: (row: JoinRequest) => updateRequest(row.id, 'rejected'),
+			show: (row: JoinRequest) => canManage && row.status === 'pending'
+		}
 	];
 
 	function filteredRequests(): JoinRequest[] {
@@ -83,40 +99,21 @@
 	});
 </script>
 
-{#snippet JoinRequestActionsCell({ value, row }: { value: any; row: JoinRequest })}
-	{#if canManage && row.status === 'pending'}
-		<div class="flex items-center justify-end gap-1">
-			<Button variant="ghost" size="sm" onclick={() => updateRequest(row.id, 'approved')}>
-				<CheckCircle class="h-3 w-3 inline mr-1" style="color: var(--color-success)" />
-				{t('joinRequests.approve')}
-			</Button>
-			<Button variant="ghost" size="sm" onclick={() => updateRequest(row.id, 'rejected')}>
-				<XCircle class="h-3 w-3 inline mr-1" style="color: var(--color-danger)" />
-				{t('joinRequests.reject')}
-			</Button>
-		</div>
-	{/if}
-{/snippet}
-
 <svelte:head>
 	<title>{t('joinRequests.title')} — JapaConnect Admin</title>
 </svelte:head>
 
-<h1 class="mb-1 text-2xl font-bold tracking-tight">{t('joinRequests.title')}</h1>
-<p class="mb-4 text-sm" style="color: var(--color-muted)">{t('joinRequests.description')}</p>
+<PageHeader
+	title={t('joinRequests.title')}
+	description={t('joinRequests.description')}
+	actions={[{ label: t('common.refresh'), icon: RefreshCw, variant: 'outline' as const, onclick: load }]}
+/>
 
 {#if errorMessage}
 	<div class="mb-4 rounded-md border px-4 py-3 text-sm" style="border-color: var(--color-danger); background-color: color-mix(in srgb, var(--color-danger) 8%, transparent); color: var(--color-danger)">
 		{errorMessage}
 	</div>
 {/if}
-
-<div class="mb-4 flex justify-end">
-	<button class="btn btn-secondary flex items-center gap-1.5 text-xs" onclick={load}>
-		<RefreshCw class="h-3 w-3" />
-		{t('common.refresh')}
-	</button>
-</div>
 
 <DataTable
 	columns={columns}
@@ -127,4 +124,5 @@
 	searchable
 	searchPlaceholder={t('common.search')}
 	onsearch={(q) => { searchQuery = q; }}
+	actions={rowActions}
 />

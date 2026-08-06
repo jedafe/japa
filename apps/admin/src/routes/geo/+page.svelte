@@ -2,6 +2,7 @@
 	import PageHeader from "$lib/components/layout/page-header.svelte";
 	import { Button } from "$lib/components/ui/button";
 	import { DataTable } from "$lib/components/ui/data-table";
+	import type { ActionItem } from "$lib/components/ui/data-table";
 	import { TableSkeleton } from "$lib/components/ui/skeleton";
 	import { Search, Globe, MapPin, ChevronRight, Loader2 } from "lucide-svelte";
 	import { geoApi } from "$lib/api";
@@ -50,14 +51,20 @@
 	const countryColumns = [
 		{ key: 'name', label: t('geo.country', 'Country'), sortable: true, render: (v: string) => `<span class="font-medium">${v}</span>` },
 		{ key: 'geo_code', label: t('geo.code', 'ISO Code'), sortable: true, render: (v: string) => `<span class="font-mono text-xs">${v ?? '—'}</span>` },
-		{ key: 'member_count', label: t('geo.members', 'Members'), sortable: true, render: (v: number) => `<span class="text-xs">${(v ?? 0).toLocaleString()}</span>` },
-		{ key: 'actions', label: '', class: 'w-20', componentSnippet: ViewStatesCell }
+		{ key: 'member_count', label: t('geo.members', 'Members'), sortable: true, render: (v: number) => `<span class="text-xs">${(v ?? 0).toLocaleString()}</span>` }
+	];
+
+	const countryRowActions: ActionItem[] = [
+		{ label: t('geo.view_states', 'States'), icon: ChevronRight, onclick: (row: GeoSpace) => selectCountry(row) }
 	];
 
 	const stateColumns = [
 		{ key: 'name', label: t('geo.state', 'State/Province'), sortable: true, render: (v: string) => `<span class="font-medium">${v}</span>` },
-		{ key: 'geo_code', label: t('geo.code', 'ISO Code'), render: (v: string) => `<span class="font-mono text-xs">${v ?? '—'}</span>` },
-		{ key: 'actions', label: '', class: 'w-20', componentSnippet: ViewCitiesCell }
+		{ key: 'geo_code', label: t('geo.code', 'ISO Code'), render: (v: string) => `<span class="font-mono text-xs">${v ?? '—'}</span>` }
+	];
+
+	const stateRowActions: ActionItem[] = [
+		{ label: t('geo.view_cities', 'Cities'), icon: ChevronRight, onclick: (row: GeoSpace) => selectState(row) }
 	];
 
 	const cityColumns = [
@@ -275,6 +282,7 @@
 			<DataTable
 				columns={countryColumns}
 				data={countries}
+				actions={countryRowActions}
 				searchable={true}
 				searchPlaceholder={t('geo.search_countries', 'Search countries...')}
 				onsearch={(q: string) => { /* client-side filter via DataTable */ }}
@@ -285,6 +293,7 @@
 			<DataTable
 				columns={stateColumns}
 				data={states}
+				actions={stateRowActions}
 				searchable={true}
 				searchPlaceholder={t('geo.search_states', 'Search states...')}
 				onsearch={(q: string) => { /* client-side filter */ }}
@@ -304,17 +313,3 @@
 		{/if}
 	</div>
 {/if}
-
-{#snippet ViewStatesCell({ row }: { value: any; row: GeoSpace })}
-	<Button variant="ghost" size="sm" onclick={() => selectCountry(row)}>
-		{t('geo.view_states', 'States')}
-		<ChevronRight class="h-3 w-3" />
-	</Button>
-{/snippet}
-
-{#snippet ViewCitiesCell({ row }: { value: any; row: GeoSpace })}
-	<Button variant="ghost" size="sm" onclick={() => selectState(row)}>
-		{t('geo.view_cities', 'Cities')}
-		<ChevronRight class="h-3 w-3" />
-	</Button>
-{/snippet}

@@ -1,14 +1,15 @@
 <script lang="ts">
+	// /reviews — migrated to the EntityPage scaffold. Moderation entity (no create):
+	// View (slide-over), Moderate (page-local Modal → PATCH status), Delete (confirm → DELETE).
+	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
+	import { Modal } from '$lib/components/ui/modal';
+	import { Button } from '$lib/components/ui/button';
+	import { Select } from '$lib/components/ui/select';
 	import { api } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
-	import { RefreshCw, Shield, Trash2, CheckCircle, Clock, XCircle, Star } from 'lucide-svelte';
-	import { Select } from '$lib/components/ui/select';
-	import { DataTable } from '$lib/components/ui/data-table';
-	import { Button } from '$lib/components/ui/button';
-	import { Card, CardContent } from '$lib/components/ui/card';
-	import Pagination from '$lib/components/ui/Pagination.svelte';
-	import Modal from '$lib/components/Modal.svelte';
+	import { Eye, Shield, Trash2 } from 'lucide-svelte';
+	import type { ActionItem } from '$lib/components/ui/data-table';
 
 	type Review = {
 		id: string;
@@ -20,65 +21,22 @@
 		created_at: string;
 	};
 
-	let reviews = $state<Review[]>([]);
-	let loading = $state(true);
-	let errorMessage = $state('');
-	let searchQuery = $state('');
-	let statusFilter = $state('');
-	let entityTypeFilter = $state('');
-	let currentPage = $state(0);
-	let totalItems = $state(0);
-	let totalPages = $state(1);
-	let pageSize = $state(25);
-
-	let showViewModal = $state(false);
-	let viewTarget = $state<Review | null>(null);
-
-	let showModerateModal = $state(false);
-	let moderateTarget = $state<Review | null>(null);
-	let moderateStatus = $state('published');
-	let moderateSaving = $state(false);
-
-	let showDeleteConfirm = $state(false);
-	let deleteTarget = $state<Review | null>(null);
-	let deleteSaving = $state(false);
-
-	let showHardDeleteConfirm = $state(false);
-	let hardDeleteTarget = $state<Review | null>(null);
-	let hardDeleteSaving = $state(false);
-
 	const canModerate = $derived(hasPermission('reviews.moderate'));
 	const canDelete = $derived(hasPermission('reviews.delete_own'));
 
-	const statusTabs = [
-		{ value: '', label: t('reviews.all', 'All'), icon: Star },
-		{ value: 'published', label: t('reviews.status_published', 'Published'), icon: CheckCircle },
-		{ value: 'flagged', label: t('reviews.status_flagged', 'Flagged'), icon: Clock },
-		{ value: 'removed', label: t('reviews.status_removed', 'Removed'), icon: XCircle }
-	];
+	// ── Page-local state ────────────────────────────────────────────────────
+	let entityController = $state<EntityPageController | undefined>(undefined);
+	let pageError = $state('');
+	let acting = $state(false);
 
-	const columns = [
-		{ key: 'entity_type', label: t('reviews.entity_type'), sortable: true },
-		{ key: 'entity_name', label: t('reviews.entity_name', 'Entity'), sortable: true },
-		{ key: 'rating', label: t('reviews.rating'), sortable: true,
-			render: (v: number) => `${v}/5`
-		},
-		{ key: 'status', label: t('reviews.status'), sortable: true,
-			render: (v: string) => {
-				const cls = v === 'published' ? 'bg-success/15 text-success' : v === 'flagged' ? 'bg-warning/15 text-warning' : 'bg-danger/15 text-danger';
-				return `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium ${cls}">${v}</span>`;
-			}
-		},
-		{ key: 'created_at', label: t('reviews.created'), sortable: true,
-			render: (v: string) => new Date(v).toLocaleDateString()
-		},
-		{ key: 'actions', label: t('common.actions', 'Actions'), class: 'w-36', componentSnippet: ReviewActionsCell }
-	];
+	// Moderate state-action modal (PATCH status: published/flagged/removed)
+	let showModerateModal = $state(false);
+	let moderateTarget = $state<Review | null>(null);
+	let moderateStatus = $state('published');
 
-	function openView(review: Review) {
-		viewTarget = review;
-		showViewModal = true;
-	}
+	// Delete state-action confirm (DELETE — hard delete)
+	let showDeleteConfirm = $state(false);
+	let deleteTarget = $state<Review | null>(null);
 
 	function openModerate(review: Review) {
 		moderateTarget = review;
@@ -86,19 +44,15 @@
 		showModerateModal = true;
 	}
 
-	function confirmDelete(review: Review) {
+	function openDelete(review: Review) {
 		deleteTarget = review;
 		showDeleteConfirm = true;
 	}
 
-	function confirmHardDelete(review: Review) {
-		hardDeleteTarget = review;
-		showHardDeleteConfirm = true;
-	}
-
-	async function saveModeration() {
+	async function confirmModerate() {
 		if (!moderateTarget) return;
-		moderateSaving = true;
+		acting = true;
+		pageError = '';
 		try {
 			const result = await api(`/admin/reviews/${moderateTarget.id}`, {
 				method: 'PATCH',
@@ -106,243 +60,288 @@
 			});
 			if (result.ok) {
 				showModerateModal = false;
-				await load();
+				entityController?.reload();
 			} else {
-				errorMessage = result.error;
+				pageError = result.error;
 			}
 		} catch {
-			errorMessage = t('common.error');
+			pageError = t('common.error', 'An error occurred');
 		} finally {
-			moderateSaving = false;
+			acting = false;
 		}
 	}
 
-	async function deleteReview() {
+	async function confirmDelete() {
 		if (!deleteTarget) return;
-		deleteSaving = true;
+		acting = true;
+		pageError = '';
 		try {
-			const result = await api(`/admin/reviews/${deleteTarget.id}`, {
-				method: 'PATCH',
-				body: { status: 'removed' }
-			});
+			const result = await api(`/admin/reviews/${deleteTarget.id}`, { method: 'DELETE' });
 			if (result.ok) {
 				showDeleteConfirm = false;
-				await load();
+				entityController?.reload();
 			} else {
-				errorMessage = result.error;
+				pageError = result.error;
 			}
 		} catch {
-			errorMessage = t('common.error');
+			pageError = t('common.error', 'An error occurred');
 		} finally {
-			deleteSaving = false;
+			acting = false;
 		}
 	}
 
-	async function hardDeleteReview() {
-		if (!hardDeleteTarget) return;
-		hardDeleteSaving = true;
+	// ── Bulk moderate (set all selected to a status) ────────────────────────
+	let bulkModerating = $state(false);
+
+	async function bulkModerate(ids: Set<string>, status: string) {
+		const idArr = Array.from(ids);
+		if (idArr.length === 0) return;
+		if (bulkModerating) return; // in-flight guard
+		bulkModerating = true;
+		pageError = '';
 		try {
-			const result = await api(`/admin/reviews/${hardDeleteTarget.id}`, { method: 'DELETE' });
-			if (result.ok) {
-				showHardDeleteConfirm = false;
-				await load();
-			} else {
-				errorMessage = result.error;
-			}
-		} catch {
-			errorMessage = t('common.error');
+			await Promise.all(
+				idArr.map((id) =>
+					api(`/admin/reviews/${id}`, { method: 'PATCH', body: { status } })
+				)
+			);
+			// EntityPage auto-reloads + clears selection after this returns.
+		} catch (e) {
+			pageError = e instanceof Error ? e.message : t('common.error', 'Failed to moderate reviews');
 		} finally {
-			hardDeleteSaving = false;
+			bulkModerating = false;
 		}
 	}
 
-	function handleStatusTab(tab: string) {
-		statusFilter = tab;
-		currentPage = 0;
+	async function bulkModeratePublished(ids: Set<string>) {
+		await bulkModerate(ids, 'published');
+	}
+	async function bulkModerateFlagged(ids: Set<string>) {
+		await bulkModerate(ids, 'flagged');
+	}
+	async function bulkModerateRemoved(ids: Set<string>) {
+		await bulkModerate(ids, 'removed');
 	}
 
-	function handleEntityTypeFilter(val: string) {
-		entityTypeFilter = val;
-		currentPage = 0;
-	}
-
-	async function load() {
-		loading = true;
-		errorMessage = '';
-		try {
-			const params = new URLSearchParams({
-				page_size: String(pageSize),
-				page_offset: String(currentPage * pageSize)
+	// ── Row actions ─────────────────────────────────────────────────────────
+	// Custom actions replace defaults, so View/Moderate/Delete are included explicitly.
+	const rowActions = $derived.by<ActionItem[]>(() => {
+		const acts: ActionItem[] = [
+			{ label: t('common.view', 'View'), icon: Eye, onclick: (_row, ctx) => ctx?.openView(_row) }
+		];
+		if (canModerate) {
+			acts.push({
+				label: t('reviews.moderate', 'Moderate'),
+				icon: Shield,
+				onclick: (row: Review) => openModerate(row)
 			});
-			if (statusFilter) params.set('status', statusFilter);
-			if (entityTypeFilter) params.set('entity_type', entityTypeFilter);
-
-			const result = await api<{ reviews: Review[]; total: number }>(`/admin/reviews?${params.toString()}`);
-			if (result.ok) {
-				reviews = result.data?.reviews ?? [];
-				totalItems = result.data?.total ?? 0;
-				totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
-			} else {
-				errorMessage = result.error;
-			}
-		} catch {
-			errorMessage = t('common.error');
-		} finally {
-			loading = false;
 		}
-	}
-
-	$effect(() => {
-		load();
+		if (canDelete) {
+			acts.push({
+				label: t('common.delete', 'Delete'),
+				icon: Trash2,
+				variant: 'destructive',
+				onclick: (row: Review) => openDelete(row)
+			});
+		}
+		return acts;
 	});
-</script>
 
-<svelte:head>
-	<title>{t('reviews.title')} — JapaConnect Admin</title>
-</svelte:head>
+	// `fields` is required by EntityPage even on readonly pages (used for edit-form seeding).
+	const fields: FieldDef[] = [
+		{ key: 'status', label: t('reviews.status', 'Status'), type: 'select', options: [
+			{ value: 'published', label: t('reviews.status_published', 'Published') },
+			{ value: 'flagged', label: t('reviews.status_flagged', 'Flagged') },
+			{ value: 'removed', label: t('reviews.status_removed', 'Removed') }
+		] }
+	];
 
-<h1 class="mb-1 text-2xl font-bold tracking-tight">{t('reviews.title')}</h1>
-<p class="mb-4 text-sm" style="color: var(--color-muted)">{t('reviews.description')}</p>
-
-{#if errorMessage}
-	<div class="mb-4 rounded-md border px-4 py-3 text-sm" style="border-color: var(--color-danger); background-color: color-mix(in srgb, var(--color-danger) 8%, transparent); color: var(--color-danger)">
-		{errorMessage}
-	</div>
-{/if}
-
-<!-- Status filter tabs -->
-<div class="mb-4 flex gap-1 rounded-lg p-1" style="background: var(--color-surface)">
-	{#each statusTabs as tab}
-		{@const Icon = tab.icon}
-		<button
-			class="inline-flex items-center whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium transition-all"
-			style={statusFilter === tab.value
-				? "background: var(--color-background); color: var(--color-foreground); box-shadow: 0 1px 2px rgba(0,0,0,0.05)"
-				: "color: var(--color-muted)"}
-			onclick={() => handleStatusTab(tab.value)}
-		>
-			<Icon class="mr-2 h-4 w-4" />
-			{tab.label}
-		</button>
-	{/each}
-
-	<div class="ml-auto flex items-center gap-2">
-		<div class="w-44">
-			<Select
-				options={[
-					{ value: '', label: t('reviews.all_types', 'All types') },
+	// Config built as a $derived so rowActions/canModerate updates propagate (mirrors /users).
+	const config = $derived<EntityPageConfig>({
+		title: t('reviews.title', 'Reviews'),
+		description: t('reviews.description', 'Moderate user-submitted reviews across the platform.'),
+		readonly: true,
+		deletePermission: 'reviews.delete_own',
+		pageSize: 25,
+		columns: [
+			{ key: 'entity_name', label: t('reviews.entity_name', 'Entity'), sortable: true },
+			{ key: 'entity_type', label: t('reviews.entity_type', 'Entity Type'), sortable: true },
+			{
+				key: 'rating',
+				label: t('reviews.rating', 'Rating'),
+				sortable: true,
+				render: (v: number) => `${v}/5`
+			},
+			{
+				key: 'status',
+				label: t('reviews.status', 'Status'),
+				sortable: true,
+				render: (v: string) => {
+					const cls = v === 'published' ? 'bg-success/15 text-success' : v === 'flagged' ? 'bg-warning/15 text-warning' : 'bg-danger/15 text-danger';
+					return `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium ${cls}">${v}</span>`;
+				}
+			},
+			{
+				key: 'created_at',
+				label: t('reviews.created', 'Created'),
+				sortable: true,
+				render: (v: string) => new Date(v).toLocaleDateString()
+			}
+		],
+		filters: [
+			{
+				key: 'status',
+				label: t('reviews.status', 'Status'),
+				options: [
+					{ value: 'published', label: t('reviews.status_published', 'Published') },
+					{ value: 'flagged', label: t('reviews.status_flagged', 'Flagged') },
+					{ value: 'removed', label: t('reviews.status_removed', 'Removed') }
+				]
+			},
+			{
+				key: 'entity_type',
+				label: t('reviews.entity_type', 'Entity Type'),
+				options: [
 					{ value: 'organization', label: t('reviews.type_organization', 'Organization') },
 					{ value: 'university', label: t('reviews.type_university', 'University') },
 					{ value: 'service', label: t('reviews.type_service', 'Service') },
 					{ value: 'mentor', label: t('reviews.type_mentor', 'Mentor') }
-				]}
-				value={entityTypeFilter}
-				onchange={handleEntityTypeFilter}
-			/>
-		</div>
-		<button class="btn btn-secondary flex items-center gap-1.5 text-xs" onclick={load}>
-			<RefreshCw class="h-3 w-3" />
-			{t('common.refresh')}
-		</button>
+				]
+			}
+		],
+		actions: rowActions,
+		bulkActions: canModerate
+			? [
+					{ label: t('reviews.bulk_publish', 'Set Published'), onclick: bulkModeratePublished },
+					{ label: t('reviews.bulk_flag', 'Set Flagged'), onclick: bulkModerateFlagged },
+					{ label: t('reviews.bulk_remove', 'Set Removed'), variant: 'destructive', onclick: bulkModerateRemoved }
+				]
+			: undefined,
+		fields,
+		load: async ({ page, pageSize, q, filter }) => {
+			const params = new URLSearchParams({
+				page_size: String(pageSize),
+				page_offset: String(page * pageSize)
+			});
+			if (filter.status) params.set('status', filter.status);
+			if (filter.entity_type) params.set('entity_type', filter.entity_type);
+			if (q) params.set('q', q);
+			const result = await api<{ reviews: Review[]; total: number }>(`/admin/reviews?${params.toString()}`);
+			if (result.ok) {
+				const reviews = result.data?.reviews ?? [];
+				const total = result.data?.total ?? 0;
+				return {
+					data: reviews,
+					total,
+					totalPages: Math.max(1, Math.ceil(total / pageSize))
+				};
+			}
+			throw new Error(result.error);
+		},
+		viewSnippet: ReviewView
+	});
+</script>
+
+<svelte:head>
+	<title>{t('reviews.title', 'Reviews')} — JapaConnect Admin</title>
+</svelte:head>
+
+{#if pageError}
+	<div
+		class="mb-4 rounded-lg p-3 text-sm"
+		style="background: color-mix(in srgb, var(--color-danger) 10%, transparent); color: var(--color-danger)"
+	>
+		{pageError}
 	</div>
-</div>
+{/if}
 
-<Card>
-	<CardContent>
-		{#if loading}
-			<p class="py-8 text-center text-sm" style="color: var(--color-muted)">{t('common.loading')}</p>
-		{:else}
-			<DataTable
-				{columns}
-				data={reviews}
-				emptyMessage={t('reviews.empty')}
-			/>
-			<Pagination bind:page={currentPage} {totalPages} {totalItems} bind:pageSize />
-		{/if}
-	</CardContent>
-</Card>
+<EntityPage {config} bind:controller={entityController} />
 
-<Modal bind:open={showViewModal} title={t('reviews.details', 'Review Details')}>
-	{#if viewTarget}
-		<div class="space-y-4">
-			<div>
-				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('reviews.entity_type', 'Entity Type')}</p>
-				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.entity_type}</p>
-			</div>
-			<div>
-				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('reviews.entity_name', 'Entity')}</p>
-				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.entity_name}</p>
-			</div>
-			<div class="grid grid-cols-2 gap-4">
-				<div>
-					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('reviews.rating', 'Rating')}</p>
-					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.rating}/5</p>
-				</div>
-				<div>
-					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('reviews.status', 'Status')}</p>
-					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.status}</p>
-				</div>
-			</div>
-			<div>
-				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('reviews.created', 'Created')}</p>
-				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{new Date(viewTarget.created_at).toLocaleString()}</p>
-			</div>
-		</div>
-	{/if}
-</Modal>
-
-<Modal bind:open={showModerateModal} title={t('reviews.moderate', 'Moderate Review')} onConfirm={saveModeration} confirmLabel={moderateSaving ? t('common.saving', 'Saving…') : t('common.save', 'Save')}>
+<!-- ── Moderate state-action modal ───────────────────────────────────────── -->
+<Modal bind:open={showModerateModal} title={t('reviews.moderate', 'Moderate Review')}>
 	{#if moderateTarget}
 		<div class="space-y-4">
-			<p class="text-sm" style="color: var(--color-muted)">{t('reviews.moderate_help', 'Set the moderation status for this review.')}</p>
+			<p class="text-sm" style="color: var(--color-muted)">
+				{t('reviews.moderate_help', 'Set the moderation status for this review.')}
+			</p>
 			<div>
-				<label for="moderateStatus" class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('reviews.status', 'Status')}</label>
+				<label for="moderateStatus" class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">
+					{t('reviews.status', 'Status')}
+				</label>
 				<Select
 					options={[
-						{ value: "published", label: t('reviews.status_published', 'Published') },
-						{ value: "flagged", label: t('reviews.status_flagged', 'Flagged') },
-						{ value: "removed", label: t('reviews.status_removed', 'Removed') }
+						{ value: 'published', label: t('reviews.status_published', 'Published') },
+						{ value: 'flagged', label: t('reviews.status_flagged', 'Flagged') },
+						{ value: 'removed', label: t('reviews.status_removed', 'Removed') }
 					]}
 					bind:value={moderateStatus}
 				/>
 			</div>
 		</div>
 	{/if}
-</Modal>
-
-<Modal bind:open={showDeleteConfirm} title={t('reviews.delete_title', 'Delete Review')} onConfirm={deleteReview} confirmLabel={deleteSaving ? t('common.deleting', 'Deleting…') : t('common.delete', 'Delete')}>
-	{#if deleteTarget}
-		<p class="text-sm" style="color: var(--color-foreground)">{t('reviews.delete_confirm', 'Are you sure you want to delete this review? This action cannot be undone.')}</p>
-	{/if}
-</Modal>
-
-<Modal bind:open={showHardDeleteConfirm} title={t('reviews.hard_delete_title', 'Permanently Delete Review')} onConfirm={hardDeleteReview} confirmLabel={hardDeleteSaving ? t('common.deleting', 'Deleting…') : t('reviews.hard_delete', 'Hard Delete')}>
-	{#if hardDeleteTarget}
-		<p class="text-sm" style="color: var(--color-foreground)">{t('reviews.hard_delete_confirm', 'This will permanently remove the review from the database. This action cannot be undone.')}</p>
-	{/if}
-</Modal>
-
-{#snippet ReviewActionsCell({ value, row }: { value: any; row: Review })}
-	<div class="flex items-center gap-1">
-		<Button variant="ghost" size="sm" onclick={() => openView(row)}>
-			{t('common.view', 'View')}
+	<div class="mt-6 flex justify-end gap-2">
+		<Button variant="ghost" onclick={() => (showModerateModal = false)}>
+			{t('common.cancel', 'Cancel')}
 		</Button>
-		{#if canModerate}
-			<Button variant="ghost" size="sm" onclick={() => openModerate(row)} style="color: var(--color-primary)">
-				<Shield class="inline h-3 w-3" />
-				{t('reviews.moderate', 'Moderate')}
-			</Button>
-		{/if}
-		{#if canModerate && row.status === 'removed'}
-			<Button variant="ghost" size="sm" onclick={() => confirmHardDelete(row)} style="color: var(--color-danger)">
-				<Trash2 class="inline h-3 w-3" />
-				{t('reviews.hard_delete', 'Hard Delete')}
-			</Button>
-		{:else if canDelete}
-			<Button variant="ghost" size="sm" onclick={() => confirmDelete(row)} style="color: var(--color-danger)">
-				<Trash2 class="inline h-3 w-3" />
-				{t('common.delete', 'Delete')}
-			</Button>
-		{/if}
+		<Button onclick={confirmModerate} disabled={acting}>
+			{acting ? t('common.saving', 'Saving…') : t('common.save', 'Save')}
+		</Button>
+	</div>
+</Modal>
+
+<!-- ── Delete (hard delete) confirm modal ────────────────────────────────── -->
+<Modal bind:open={showDeleteConfirm} title={t('reviews.hard_delete_title', 'Permanently Delete Review')}>
+	{#if deleteTarget}
+		<p class="text-sm" style="color: var(--color-foreground)">
+			{t('reviews.hard_delete_confirm', 'This will permanently remove the review from the database. This action cannot be undone.')}
+		</p>
+	{/if}
+	<div class="mt-6 flex justify-end gap-2">
+		<Button variant="ghost" onclick={() => (showDeleteConfirm = false)}>
+			{t('common.cancel', 'Cancel')}
+		</Button>
+		<Button variant="destructive" onclick={confirmDelete} disabled={acting}>
+			{acting ? t('common.deleting', 'Deleting…') : t('reviews.hard_delete', 'Hard Delete')}
+		</Button>
+	</div>
+</Modal>
+
+<!-- ── View snippet (slide-over body) ────────────────────────────────────── -->
+{#snippet ReviewView({ row }: { row: Review })}
+	<div class="space-y-4">
+		<div>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">
+				{t('reviews.entity_type', 'Entity Type')}
+			</p>
+			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.entity_type}</p>
+		</div>
+		<div>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">
+				{t('reviews.entity_name', 'Entity')}
+			</p>
+			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.entity_name}</p>
+		</div>
+		<div class="grid grid-cols-2 gap-4">
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">
+					{t('reviews.rating', 'Rating')}
+				</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.rating}/5</p>
+			</div>
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">
+					{t('reviews.status', 'Status')}
+				</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.status}</p>
+			</div>
+		</div>
+		<div>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">
+				{t('reviews.created', 'Created')}
+			</p>
+			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">
+				{new Date(row.created_at).toLocaleString()}
+			</p>
+		</div>
 	</div>
 {/snippet}

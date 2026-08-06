@@ -1109,6 +1109,16 @@ export const formsAdminApi = {
 		api<{ deleted: boolean }>(`/forms/${formId}/triggers/${triggerId}`, { method: 'DELETE' }),
 	reorderTriggers: (formId: string, body: { trigger_ids: string[] }) =>
 		api<unknown>(`/forms/${formId}/triggers/reorder`, { method: 'POST', body }),
+	// Step CRUD (multi-step forms, Section 06)
+	listSteps: (formId: string) => api<unknown>(`/forms/${formId}/steps`),
+	createStep: (formId: string, body: { title: string; position: number }) =>
+		api<unknown>(`/forms/${formId}/steps`, { method: 'POST', body }),
+	updateStep: (formId: string, stepId: string, body: { title: string; position: number }) =>
+		api<unknown>(`/forms/${formId}/steps/${stepId}`, { method: 'PATCH', body }),
+	deleteStep: (formId: string, stepId: string) =>
+		api<{ deleted: boolean }>(`/forms/${formId}/steps/${stepId}`, { method: 'DELETE' }),
+	reorderSteps: (formId: string, body: { step_ids: string[] }) =>
+		api<unknown>(`/forms/${formId}/steps/reorder`, { method: 'POST', body }),
 };
 
 export const onboardingAdminApi = {

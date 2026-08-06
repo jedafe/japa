@@ -1,21 +1,15 @@
 <script lang="ts">
+	// /discount-codes — migrated to the EntityPage scaffold with computed-status filter
+	// and a page-local usage SlideOver (view-detail sub-flow).
+	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
 	import { api } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
-	import {
-		dateInputToStartOfDayISO,
-		dateInputToEndOfDayISO,
-		isoTimestampToDateInput
-	} from '$lib/utils/date';
-	import PageHeader from '$lib/components/layout/page-header.svelte';
-	import { Card, CardContent } from '$lib/components/ui/card';
-	import { Tabs } from '$lib/components/ui/tabs';
-	import { DataTable } from '$lib/components/ui/data-table';
+	import { dateInputToStartOfDayISO, dateInputToEndOfDayISO } from '$lib/utils/date';
+	import { SlideOver } from '$lib/components/ui/slide-over';
 	import { Button } from '$lib/components/ui/button';
-	import { Select } from '$lib/components/ui/select';
-	import { Modal } from '$lib/components/ui/modal';
-	import { page } from '$app/state';
-	import { Plus, Pencil, Trash2, Eye } from 'lucide-svelte';
+	import { Eye, Trash2 } from 'lucide-svelte';
+	import type { ActionItem } from '$lib/components/ui/data-table';
 
 	type DiscountCode = {
 		id: string;
@@ -30,36 +24,26 @@
 		valid_until?: string;
 		used_count?: number;
 		created_at: string;
+		// Computed client-side for filtering/display.
+		computed_status?: string;
 	};
 
-	let codes = $state<DiscountCode[]>([]);
-	let loading = $state(true);
-	let errorMessage = $state('');
+	type UsageData = {
+		users: Array<{ user_id: string; used_at: string }>;
+		total: number;
+	};
 
-	let showCreateModal = $state(false);
-	let showUsageModal = $state(false);
-	let editingCode = $state<DiscountCode | null>(null);
-	let usageData = $state<{ users: Array<{ user_id: string; used_at: string }>; total: number } | null>(null);
-	let saving = $state(false);
-
-	let showDeleteConfirm = $state(false);
-	let deleteTarget = $state<DiscountCode | null>(null);
-
-	let selectedIds = $state<Set<string>>(new Set());
+	let entityController = $state<EntityPageController | undefined>(undefined);
+	let pageError = $state('');
 	let bulkDeleting = $state(false);
 
+	// Usage slide-over (view-detail sub-flow)
+	let showUsageSlideOver = $state(false);
+	let usageCode = $state<DiscountCode | null>(null);
+	let usageData = $state<UsageData | null>(null);
+	let usageLoading = $state(false);
+
 	const canManageDiscounts = $derived(hasPermission('payments.discount_codes.manage'));
-
-	let code = $state('');
-	let description = $state('');
-	let discountType = $state('percent');
-	let discountValue = $state('');
-	let validFrom = $state('');
-	let validUntil = $state('');
-	let usageLimit = $state('');
-
-	let activeTab = $state('active');
-	let searchQuery = $state('');
 
 	function computeStatus(row: DiscountCode): string {
 		const now = new Date();
@@ -70,384 +54,262 @@
 		return 'active';
 	}
 
-	function isCodeActive(row: DiscountCode): boolean {
-		const status = computeStatus(row);
-		return status === 'active';
-	}
-
-	const tabs = $derived([
-		{ value: 'active', label: 'Active', count: codes.filter((c) => isCodeActive(c)).length },
-		{ value: 'inactive', label: 'Inactive', count: codes.filter((c) => !isCodeActive(c)).length },
-		{ value: 'all', label: 'All', count: codes.length }
-	]);
-
-	const columns = [
-		{
-			key: 'code',
-			label: 'Code',
-			sortable: true,
-			render: (_: any, row: any) => `
-				<div class="flex items-center gap-2">
-					<span class="font-mono text-sm font-medium text-foreground">${row.code}</span>
-					<button onclick="navigator.clipboard.writeText('${row.code}')" class="text-muted hover:text-foreground-alt" title="Copy code">
-						<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
-					</button>
-				</div>
-			`
-		},
-		{
-			key: 'discount_value',
-			label: 'Discount',
-			sortable: true,
-			render: (value: number, row: any) => `<span class="font-medium">${row.discount_type === 'percent' ? `${value}%` : `${value} credits`}</span>`
-		},
-		{
-			key: 'used_count',
-			label: 'Used',
-			sortable: true,
-			render: (value: number, row: any) => `<span class="text-sm text-foreground-alt">${value ?? 0}${row.max_uses ? ` / ${row.max_uses}` : ''}</span>`
-		},
-		{
-			key: 'valid_until',
-			label: 'Expires',
-			sortable: true,
-			render: (value: string) => value ? `<span class="text-sm">${new Date(value).toLocaleDateString()}</span>` : '<span class="text-sm text-muted">Never</span>'
-		},
-		{
-			key: 'status',
-			label: 'Status',
-			sortable: false,
-			render: (_: any, row: any) => {
-				const status = computeStatus(row);
-				const classes: Record<string, string> = {
-					active: 'bg-success/15 text-success border-success',
-					inactive: 'bg-surface text-foreground border',
-					expired: 'bg-surface text-foreground border',
-					used: 'bg-warning/15 text-warning border-warning'
-				};
-				return `<span class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${classes[status]}">${status}</span>`;
-			}
-		},
-		{
-			key: 'actions',
-			label: '',
-			class: 'w-24',
-			componentSnippet: DiscountActionsCell
-		}
-	];
-
-	let filteredCodes = $derived.by(() => {
-		let result = [...codes];
-
-		if (activeTab === 'active') result = result.filter((c) => isCodeActive(c));
-		else if (activeTab === 'inactive') result = result.filter((c) => !isCodeActive(c));
-
-		if (searchQuery) {
-			const q = searchQuery.toLowerCase();
-			result = result.filter((c) => c.code?.toLowerCase().includes(q) || c.description?.toLowerCase().includes(q));
-		}
-
-		return result;
-	});
-
-	async function load() {
-		loading = true;
-		errorMessage = '';
-		try {
-			const result = await api<DiscountCode[]>('/admin/discount-codes');
-			if (result.ok) {
-				codes = result.data ?? [];
-			} else {
-				errorMessage = result.error;
-			}
-		} catch {
-			errorMessage = t('common.error');
-		} finally {
-			loading = false;
-		}
-	}
-
-	function openCreate() {
-		code = '';
-		description = '';
-		discountType = 'percent';
-		discountValue = '';
-		validFrom = '';
-		validUntil = '';
-		usageLimit = '';
-		editingCode = null;
-		showCreateModal = true;
-	}
-
-	function openEdit(codeItem: DiscountCode) {
-		code = codeItem.code;
-		description = codeItem.description || '';
-		discountType = codeItem.discount_type || 'percent';
-		discountValue = String(codeItem.discount_value);
-		validFrom = isoTimestampToDateInput(codeItem.valid_from);
-		validUntil = isoTimestampToDateInput(codeItem.valid_until);
-		usageLimit = codeItem.max_uses != null ? String(codeItem.max_uses) : '';
-		editingCode = codeItem;
-		showCreateModal = true;
-	}
-
-	async function saveCode() {
-		if (!code.trim() || !discountValue) return;
-		saving = true;
-		errorMessage = '';
-		try {
-			const body: Record<string, unknown> = {
-				code: code.trim().toUpperCase(),
-				description: description.trim() || undefined,
-				discount_type: discountType,
-				discount_value: Number(discountValue),
-				applicable_to: 'all',
-				valid_from: validFrom ? dateInputToStartOfDayISO(validFrom) : null,
-				valid_until: validUntil ? dateInputToEndOfDayISO(validUntil) : null,
-				max_uses: usageLimit ? Number(usageLimit) : null
-			};
-
-			const url = editingCode ? `/admin/discount-codes/${editingCode.id}` : '/admin/discount-codes';
-			const method = editingCode ? 'PATCH' : 'POST';
-			const result = await api(url, { method, body });
-			if (result.ok) {
-				showCreateModal = false;
-				editingCode = null;
-				load();
-			} else {
-				errorMessage = result.error;
-			}
-		} catch {
-			errorMessage = t('common.error');
-		} finally {
-			saving = false;
-		}
-	}
-
-	async function deleteCode(id: string) {
-		errorMessage = '';
-		try {
-			const result = await api(`/admin/discount-codes/${id}`, { method: 'DELETE' });
-			if (result.ok) {
-				codes = codes.filter((c) => c.id !== id);
-			} else {
-				errorMessage = result.error;
-			}
-		} catch {
-			errorMessage = t('common.error');
-		}
-	}
-
-	async function viewUsage(codeItem: DiscountCode) {
-		errorMessage = '';
-		try {
-			const result = await api<{ users: Array<{ user_id: string; used_at: string }>; total: number }>(`/admin/discount-codes/${codeItem.id}/usage`);
-			if (result.ok) {
-				editingCode = codeItem;
-				usageData = result.data;
-				showUsageModal = true;
-			} else {
-				errorMessage = result.error;
-			}
-		} catch {
-			errorMessage = t('common.error');
-		}
-	}
-
-	function confirmDelete(codeItem: DiscountCode) {
-		deleteTarget = codeItem;
-		showDeleteConfirm = true;
-	}
-
-	async function executeDelete() {
-		if (!deleteTarget) return;
-		await deleteCode(deleteTarget.id);
-		showDeleteConfirm = false;
-		deleteTarget = null;
-	}
-
-	async function bulkDelete() {
-		if (selectedIds.size === 0) return;
+	async function bulkDelete(ids: Set<string>) {
+		const idArr = Array.from(ids);
+		if (idArr.length === 0) return;
+		if (bulkDeleting) return; // in-flight guard
 		bulkDeleting = true;
+		pageError = '';
 		try {
-			for (const id of selectedIds) {
-				await api(`/admin/discount-codes/${id}`, { method: 'DELETE' });
-			}
-			selectedIds = new Set();
-			load();
-		} catch {
-			errorMessage = t('common.error');
+			await Promise.all(idArr.map((id) => api(`/admin/discount-codes/${id}`, { method: 'DELETE' })));
+		} catch (e) {
+			pageError = e instanceof Error ? e.message : t('common.error', 'Failed to delete codes');
 		} finally {
 			bulkDeleting = false;
 		}
 	}
 
-	$effect(() => {
-		const q = page.url.searchParams.get('q') ?? '';
-		if (q) searchQuery = q;
-		load();
-	});
+	async function viewUsage(codeItem: DiscountCode) {
+		usageCode = codeItem;
+		usageData = null;
+		usageLoading = true;
+		showUsageSlideOver = true;
+		try {
+			const result = await api<UsageData>(`/admin/discount-codes/${codeItem.id}/usage`);
+			if (result.ok) {
+				usageData = result.data;
+			} else {
+				pageError = result.error;
+			}
+		} catch {
+			pageError = t('common.error', 'Failed to load usage');
+		} finally {
+			usageLoading = false;
+		}
+	}
+
+	const discountTypeOptions = [
+		{ value: 'percent', label: t('discounts.percentage', 'Percentage') },
+		{ value: 'fixed', label: t('discounts.fixed', 'Fixed') }
+	];
+
+	const fields: FieldDef[] = [
+		{ key: 'code', label: t('discounts.code', 'Code'), type: 'text', required: true },
+		{ key: 'description', label: t('discounts.description', 'Description'), type: 'text' },
+		{ key: 'discount_type', label: t('discounts.type', 'Type'), type: 'select', options: discountTypeOptions },
+		{ key: 'discount_value', label: t('discounts.value', 'Value'), type: 'number', required: true },
+		{ key: 'valid_from', label: t('discounts.valid_from', 'Valid From'), type: 'date' },
+		{ key: 'valid_until', label: t('discounts.valid_until', 'Valid Until'), type: 'date' },
+		{ key: 'max_uses', label: t('discounts.usage_limit', 'Usage Limit'), type: 'number', min: 0 }
+	];
+
+	// Custom actions: View Usage + default Edit/Delete (permission-gated).
+	// When `actions` is provided, defaults are replaced — include Edit/Delete explicitly.
+	const actions: ActionItem[] = [
+		{ label: t('discounts.usage', 'Usage'), icon: Eye, onclick: (row) => viewUsage(row) },
+		{
+			label: t('common.edit', 'Edit'),
+			onclick: (row, ctx) => ctx?.openEdit(row),
+			show: () => canManageDiscounts
+		},
+		{
+			label: t('common.delete', 'Delete'),
+			icon: Trash2,
+			variant: 'destructive',
+			onclick: (row, ctx) => ctx?.openDelete(row),
+			show: () => canManageDiscounts
+		}
+	];
+
+	const config: EntityPageConfig = {
+		title: t('discounts.title', 'Discount Codes'),
+		description: t('discounts.description', 'Manage discount codes'),
+		createLabel: t('discounts.create', 'Create Code'),
+		createPermission: 'payments.discount_codes.manage',
+		pageSize: 25,
+		columns: [
+			{ key: 'code', label: t('discounts.code', 'Code'), sortable: true, render: (v: string) => `<span class="font-mono text-sm font-medium text-foreground">${v}</span>` },
+			{
+				key: 'discount_value',
+				label: t('discounts.discount', 'Discount'),
+				sortable: true,
+				render: (v: number, row: DiscountCode) => `<span class="font-medium">${row.discount_type === 'percent' ? `${v}%` : `${v} credits`}</span>`
+			},
+			{
+				key: 'used_count',
+				label: t('discounts.used', 'Used'),
+				sortable: true,
+				render: (v: number, row: DiscountCode) => `<span class="text-sm text-foreground-alt">${v ?? 0}${row.max_uses ? ` / ${row.max_uses}` : ''}</span>`
+			},
+			{
+				key: 'valid_until',
+				label: t('discounts.expires', 'Expires'),
+				sortable: true,
+				render: (v: string) => (v ? `<span class="text-sm">${new Date(v).toLocaleDateString()}</span>` : '<span class="text-sm text-muted">Never</span>')
+			},
+			{
+				key: 'computed_status',
+				label: t('common.status', 'Status'),
+				render: (_: any, row: DiscountCode) => {
+					const status = computeStatus(row);
+					const classes: Record<string, string> = {
+						active: 'bg-success/15 text-success border-success',
+						expired: 'bg-surface text-foreground border',
+						used: 'bg-warning/15 text-warning border-warning'
+					};
+					return `<span class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${classes[status]}">${status}</span>`;
+				}
+			}
+		],
+		filters: [
+			{
+				key: 'computed_status',
+				label: t('common.status', 'Status'),
+				options: [
+					{ value: 'active', label: 'Active' },
+					{ value: 'expired', label: 'Expired' },
+					{ value: 'used', label: 'Used Up' }
+				]
+			}
+		],
+		bulkActions: [
+			{ label: t('common.deleteSelected', 'Delete Selected'), icon: Trash2, variant: 'destructive', onclick: bulkDelete }
+		],
+		actions,
+		fields,
+		load: async ({ q, filter }) => {
+			const result = await api<DiscountCode[]>('/admin/discount-codes');
+			if (result.ok) {
+				let data = (result.data ?? []) as DiscountCode[];
+				// Compute status for each row (used by column render + filter).
+				data = data.map((c) => ({ ...c, computed_status: computeStatus(c) }));
+				if (filter.computed_status) data = data.filter((c) => c.computed_status === filter.computed_status);
+				if (q) {
+					const lq = q.toLowerCase();
+					data = data.filter((c) => c.code?.toLowerCase().includes(lq) || (c.description ?? '').toLowerCase().includes(lq));
+				}
+				return { data, total: data.length, totalPages: 1 };
+			}
+			throw new Error(result.error ?? t('common.error', 'Failed to load discount codes'));
+		},
+		create: async (body) => {
+			const payload: Record<string, unknown> = {
+				code: String(body.code ?? '').trim().toUpperCase(),
+				description: String(body.description ?? '').trim() || undefined,
+				discount_type: body.discount_type ?? 'percent',
+				discount_value: Number(body.discount_value),
+				applicable_to: 'all',
+				valid_from: body.valid_from ? dateInputToStartOfDayISO(String(body.valid_from)) : null,
+				valid_until: body.valid_until ? dateInputToEndOfDayISO(String(body.valid_until)) : null,
+				max_uses: body.max_uses != null && body.max_uses !== '' ? Number(body.max_uses) : null
+			};
+			const res = await api('/admin/discount-codes', { method: 'POST', body: payload });
+			return res.ok ? { ok: true } : { ok: false, error: res.error };
+		},
+		update: async (id, body) => {
+			const payload: Record<string, unknown> = {
+				code: String(body.code ?? '').trim().toUpperCase(),
+				description: String(body.description ?? '').trim() || undefined,
+				discount_type: body.discount_type ?? 'percent',
+				discount_value: Number(body.discount_value),
+				valid_from: body.valid_from ? dateInputToStartOfDayISO(String(body.valid_from)) : null,
+				valid_until: body.valid_until ? dateInputToEndOfDayISO(String(body.valid_until)) : null,
+				max_uses: body.max_uses != null && body.max_uses !== '' ? Number(body.max_uses) : null
+			};
+			const res = await api(`/admin/discount-codes/${id}`, { method: 'PATCH', body: payload });
+			return res.ok ? { ok: true } : { ok: false, error: res.error };
+		},
+		remove: async (id) => {
+			const res = await api(`/admin/discount-codes/${id}`, { method: 'DELETE' });
+			return res.ok ? { ok: true } : { ok: false, error: res.error };
+		},
+		viewSnippet: CodeView
+	};
 </script>
 
 <svelte:head>
-	<title>{t('discounts.title')} — JapaConnect Admin</title>
+	<title>{t('discounts.title', 'Discount Codes')} — JapaConnect Admin</title>
 </svelte:head>
 
-<PageHeader
-	title={t('discounts.title')}
-	description={t('discounts.description')}
-	actions={[
-		{ label: t('discounts.create'), icon: Plus, onclick: openCreate }
-	]}
-/>
-
-<div class="space-y-6">
-	{#if errorMessage}
-		<div class="rounded-lg border border-danger bg-danger-50 px-4 py-3 text-sm text-danger-700">
-			{errorMessage}
-		</div>
-	{/if}
-
-	<Tabs {tabs} bind:value={activeTab} />
-
-	<Card>
-		<CardContent class="p-0">
-			{#if loading}
-				<p class="py-8 text-center text-sm text-muted">{t('common.loading')}</p>
-			{:else}
-		<DataTable
-			columns={filteredCodes.length > 0 ? columns : []}
-			data={filteredCodes}
-			pageSize={20}
-			selectable={true}
-			bind:selectedIds
-			searchable
-			onsearch={(q) => { searchQuery = q; }}
-			emptyMessage={t('discounts.empty')}
-		>
-			{#snippet bulkActions()}
-				{#if selectedIds.size > 0}
-					<Button variant="destructive" size="sm" onclick={bulkDelete} disabled={bulkDeleting}>
-						<Trash2 class="mr-1 h-3.5 w-3.5" />
-						Delete Selected ({selectedIds.size})
-					</Button>
-				{/if}
-			{/snippet}
-		</DataTable>
-			{/if}
-		</CardContent>
-	</Card>
-</div>
-
-<!-- Create/Edit Modal -->
-<Modal bind:open={showCreateModal} title={editingCode ? t('discounts.edit') : t('discounts.create')}>
-	<div class="space-y-4">
-		<div>
-			<label for="dc-code" class="mb-1 block text-sm font-medium text-foreground-alt">{t('discounts.code')}</label>
-			<input id="dc-code" type="text" bind:value={code} required class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm uppercase placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" />
-		</div>
-		<div>
-			<label for="dc-desc" class="mb-1 block text-sm font-medium text-foreground-alt">{t('discounts.description')}</label>
-			<input id="dc-desc" type="text" bind:value={description} class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" />
-		</div>
-		<div class="grid grid-cols-2 gap-4">
-			<div>
-			<label for="dc-type" class="mb-1 block text-sm font-medium text-foreground-alt">{t('discounts.type')}</label>
-			<Select
-				options={[
-					{ value: 'percent', label: t('discounts.percentage') },
-					{ value: 'fixed', label: t('discounts.fixed') }
-				]}
-				bind:value={discountType}
-			/>
-			</div>
-			<div>
-				<label for="dc-value" class="mb-1 block text-sm font-medium text-foreground-alt">{t('discounts.value')}</label>
-				<input id="dc-value" type="number" bind:value={discountValue} required class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" />
-			</div>
-		</div>
-		<div class="grid grid-cols-2 gap-4">
-			<div>
-				<label for="dc-from" class="mb-1 block text-sm font-medium text-foreground-alt">{t('discounts.valid_from')}</label>
-				<input id="dc-from" type="date" bind:value={validFrom} class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" />
-			</div>
-			<div>
-				<label for="dc-until" class="mb-1 block text-sm font-medium text-foreground-alt">{t('discounts.valid_until')}</label>
-				<input id="dc-until" type="date" bind:value={validUntil} class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" />
-			</div>
-		</div>
-		<div>
-			<label for="dc-limit" class="mb-1 block text-sm font-medium text-foreground-alt">{t('discounts.usage_limit')}</label>
-			<input id="dc-limit" type="number" bind:value={usageLimit} class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" />
-		</div>
-		<div class="flex justify-end gap-2 pt-2">
-			<Button variant="outline" onclick={() => { showCreateModal = false; editingCode = null; }}>{t('common.cancel')}</Button>
-			<Button onclick={saveCode} disabled={saving}>
-				{saving ? t('common.saving') : editingCode ? t('common.save') : t('common.create')}
-			</Button>
-		</div>
+{#if pageError}
+	<div class="mb-4 rounded-lg p-3 text-sm" style="background: color-mix(in srgb, var(--color-danger) 10%, transparent); color: var(--color-danger)">
+		{pageError}
 	</div>
-</Modal>
+{/if}
 
-<!-- Usage Modal -->
-<Modal bind:open={showUsageModal} title={t('discounts.usage')}>
-	{#if usageData}
-		<p class="mb-3 text-sm text-muted">{t('discounts.usage_total')}: {usageData.total}</p>
+<EntityPage {config} bind:controller={entityController} />
+
+<!-- Usage SlideOver (view-detail sub-flow) -->
+<SlideOver bind:open={showUsageSlideOver} title={usageCode ? `${t('discounts.usage', 'Usage')}: ${usageCode.code}` : t('discounts.usage', 'Usage')} size="lg">
+	{#if usageLoading}
+		<p class="py-8 text-center text-sm text-muted">{t('common.loading', 'Loading...')}</p>
+	{:else if usageData}
+		<p class="mb-3 text-sm text-muted">{t('discounts.usage_total', 'Total uses')}: {usageData.total}</p>
 		{#if usageData.users.length === 0}
-			<p class="text-sm text-muted">{t('discounts.usage_empty')}</p>
+			<p class="text-sm text-muted">{t('discounts.usage_empty', 'No usage recorded yet')}</p>
 		{:else}
-			<div class="max-h-64 overflow-y-auto rounded-lg border border">
+			<div class="max-h-96 overflow-y-auto rounded-lg border" style="border-color: var(--color-border)">
 				<table class="w-full text-sm">
 					<thead>
-						<tr class="border-b border bg-surface">
-							<th class="px-4 py-2 text-left text-xs font-medium text-muted">{t('app.discount-codes.user')}</th>
-							<th class="px-4 py-2 text-left text-xs font-medium text-muted">{t('discounts.used_at')}</th>
+						<tr class="border-b" style="border-color: var(--color-border); background: var(--color-surface)">
+							<th class="px-4 py-2 text-left text-xs font-medium" style="color: var(--color-muted)">{t('app.discount-codes.user', 'User')}</th>
+							<th class="px-4 py-2 text-left text-xs font-medium" style="color: var(--color-muted)">{t('discounts.used_at', 'Used At')}</th>
 						</tr>
 					</thead>
 					<tbody>
-						{#each usageData.users as u (u.user_id)}
-							<tr class="border-b border last:border-0">
+						{#each usageData.users as u (u.user_id + u.used_at)}
+							<tr class="border-b last:border-0" style="border-color: var(--color-border)">
 								<td class="px-4 py-2 font-mono text-xs">{u.user_id}</td>
-								<td class="px-4 py-2 text-xs text-muted">{new Date(u.used_at).toLocaleString()}</td>
+								<td class="px-4 py-2 text-xs" style="color: var(--color-muted)">{new Date(u.used_at).toLocaleString()}</td>
 							</tr>
 						{/each}
 					</tbody>
 				</table>
 			</div>
 		{/if}
+	{:else}
+		<p class="py-8 text-center text-sm text-muted">{t('common.no_data', 'No data available')}</p>
 	{/if}
-	<div class="flex justify-end pt-4">
-		<Button variant="outline" onclick={() => showUsageModal = false}>{t('common.close')}</Button>
-	</div>
-</Modal>
+	{#snippet footer()}
+		<div class="flex justify-end">
+			<Button variant="outline" onclick={() => (showUsageSlideOver = false)}>{t('common.close', 'Close')}</Button>
+		</div>
+	{/snippet}
+</SlideOver>
 
-<!-- Delete Confirmation -->
-<Modal bind:open={showDeleteConfirm} title={t('common.confirmDelete', 'Confirm Delete')}>
-	{#if deleteTarget}
-		<p class="text-sm" style="color: var(--color-foreground)">
-			{t('discounts.delete_confirm', 'Delete discount code')} <strong class="font-mono">{deleteTarget.code}</strong>?
-		</p>
-		<p class="mt-2 text-sm" style="color: var(--color-danger)">{t('common.cannotUndo', 'This action cannot be undone.')}</p>
-	{/if}
-	<div class="mt-4 flex justify-end gap-2">
-		<Button variant="ghost" onclick={() => showDeleteConfirm = false}>{t('common.cancel', 'Cancel')}</Button>
-		<Button variant="destructive" onclick={executeDelete}>{t('common.delete', 'Delete')}</Button>
-	</div>
-</Modal>
-
-<!-- DiscountActionsCell component -->
-{#snippet DiscountActionsCell({ value, row }: { value: any; row: DiscountCode })}
-	<div class="flex items-center gap-1">
-		<Button variant="ghost" size="sm" onclick={() => viewUsage(row)} title={t('discounts.usage')}>
-			<Eye class="h-3.5 w-3.5" />
-		</Button>
-		{#if canManageDiscounts}
-			<Button variant="ghost" size="sm" onclick={() => openEdit(row)}>
-				<Pencil class="h-3.5 w-3.5" />
-			</Button>
-			<Button variant="ghost" size="sm" onclick={() => confirmDelete(row)} style="color: var(--color-danger)" title={t('common.delete')}>
-				<Trash2 class="h-3.5 w-3.5" />
-			</Button>
-		{/if}
+{#snippet CodeView({ row }: { row: DiscountCode })}
+	<div class="space-y-4">
+		<div>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('discounts.code', 'Code')}</p>
+			<p class="mt-1 font-mono text-sm font-medium" style="color: var(--color-foreground)">{row.code}</p>
+		</div>
+		<div>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('discounts.description', 'Description')}</p>
+			<p class="mt-1 text-sm" style="color: var(--color-foreground)">{row.description ?? '—'}</p>
+		</div>
+		<div class="grid grid-cols-2 gap-4">
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('discounts.discount', 'Discount')}</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.discount_type === 'percent' ? `${row.discount_value}%` : `${row.discount_value} credits`}</p>
+			</div>
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('discounts.used', 'Used')}</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.used_count ?? 0}{row.max_uses ? ` / ${row.max_uses}` : ''}</p>
+			</div>
+		</div>
+		<div class="grid grid-cols-2 gap-4">
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('discounts.valid_from', 'Valid From')}</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.valid_from ? new Date(row.valid_from).toLocaleDateString() : '—'}</p>
+			</div>
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('discounts.valid_until', 'Valid Until')}</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.valid_until ? new Date(row.valid_until).toLocaleDateString() : 'Never'}</p>
+			</div>
+		</div>
+		<div>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('common.status', 'Status')}</p>
+			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{computeStatus(row)}</p>
+		</div>
 	</div>
 {/snippet}

@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { t } from '$lib/i18n';
-	import { ArrowLeft, Clock, Eye } from 'lucide-svelte';
+	import { ArrowLeft, Clock, Eye, Pencil } from 'lucide-svelte';
 	import { api } from '$lib/api/client';
 	import ReactionRail from '$lib/components/blog/ReactionRail.svelte';
 	import CreatorCard from '$lib/components/blog/CreatorCard.svelte';
@@ -73,9 +73,19 @@
 
 	<!-- Center: article -->
 	<article class="min-w-0 flex-1 max-w-3xl">
-		<a href="/explore" class="mb-8 inline-flex items-center gap-1.5 text-sm text-[var(--color-text-subtle)] transition-colors hover:text-[var(--color-text)]">
-			<ArrowLeft size={16} /> {t('content.back', 'Back to explore')}
-		</a>
+		<div class="mb-8 flex items-center justify-between gap-3">
+			<a href="/explore" class="inline-flex items-center gap-1.5 text-sm text-[var(--color-text-subtle)] transition-colors hover:text-[var(--color-text)]">
+				<ArrowLeft size={16} /> {t('content.back', 'Back to explore')}
+			</a>
+			{#if data.canEdit}
+				<a
+					href={`/create?draft=${article.id}`}
+					class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm font-medium text-[var(--color-text)] transition-colors hover:border-[var(--color-primary)]/40 hover:text-[var(--color-primary)]"
+				>
+					<Pencil size={14} /> {t('content.edit', 'Edit')}
+				</a>
+			{/if}
+		</div>
 
 		{#if article.featured_image_url}
 			<img src={article.featured_image_url} alt={article.title} class="mb-8 aspect-[16/9] w-full rounded-[var(--radius-card)] object-cover" />

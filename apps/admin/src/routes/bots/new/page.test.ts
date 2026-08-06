@@ -7,7 +7,8 @@ vi.mock('$lib/api', () => ({
 }));
 
 vi.mock('$app/navigation', () => ({
-	goto: vi.fn()
+	goto: vi.fn(),
+	replaceState: vi.fn(),
 }));
 
 describe('Create Bot +page.svelte', () => {

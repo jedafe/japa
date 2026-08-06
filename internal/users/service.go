@@ -724,6 +724,73 @@ func (s *Service) GetUserDraft(ctx context.Context, tenantID, userID, contentID 
 	}, nil
 }
 
+// GetUserContent returns the caller's own content by ID (any status) for the
+// /create composer to restore published, scheduled, or draft content for
+// editing. Returns pgx.ErrNoRows (→ 404) when the content is missing or owned
+// by another user/tenant. The response shape is identical to GetUserDraft so
+// the composer's ContentRecord consumes it without branching.
+func (s *Service) GetUserContent(ctx context.Context, tenantID, userID, contentID pgtype.UUID) (*DraftResponse, error) {
+	row, err := s.store.getUserContent(ctx, tenantID, userID, contentID)
+	if err != nil {
+		return nil, fmt.Errorf("getting user content: %w", err)
+	}
+	return draftResponseFromRow(row.ID, row.Slug, row.ContentType, row.Title, row.Body, row.BodyHtml, row.FieldValues, row.CanonicalUrl, row.HeaderImageID, row.FeaturedImageID, row.MetaTitle, row.MetaDescription, row.OgImageUrl, row.SeoIndexable, row.OrganizationID, row.Status, row.Visibility, row.SpaceID, row.GeoSpaceID, row.PublishAt, row.PublishedAt, row.CreatedAt, row.UpdatedAt), nil
+}
+
+// GetContentForEditor returns any content by ID within the tenant (no author
+// filter) for super-admins or users with the RBAC `content.edit` permission
+// who need to edit content they don't own. The handler is responsible for
+// checking permissions before calling this — it is NOT author-scoped.
+// Returns pgx.ErrNoRows (→ 404) when the content is missing or belongs to a
+// different tenant. The response shape is identical to GetUserContent.
+func (s *Service) GetContentForEditor(ctx context.Context, tenantID, contentID pgtype.UUID) (*DraftResponse, error) {
+	row, err := s.store.getContentByIDForEditor(ctx, tenantID, contentID)
+	if err != nil {
+		return nil, fmt.Errorf("getting content for editor: %w", err)
+	}
+	return draftResponseFromRow(row.ID, row.Slug, row.ContentType, row.Title, row.Body, row.BodyHtml, row.FieldValues, row.CanonicalUrl, row.HeaderImageID, row.FeaturedImageID, row.MetaTitle, row.MetaDescription, row.OgImageUrl, row.SeoIndexable, row.OrganizationID, row.Status, row.Visibility, row.SpaceID, row.GeoSpaceID, row.PublishAt, row.PublishedAt, row.CreatedAt, row.UpdatedAt), nil
+}
+
+// draftResponseFromRow maps the common column set shared by GetUserDraft,
+// GetUserContent, and GetContentByIDForEditor into a DraftResponse. All
+// three queries return the same columns, so this helper avoids duplicating
+// the mapping logic.
+func draftResponseFromRow(
+	id pgtype.UUID, slug, contentType, title, body, bodyHtml string, fieldValues []byte,
+	canonicalUrl *string, headerImageID, featuredImageID pgtype.UUID, metaTitle, metaDescription, ogImageUrl *string, seoIndexable bool, organizationID pgtype.UUID, status, visibility string, spaceID, geoSpaceID pgtype.UUID, publishAt, publishedAt, createdAt, updatedAt pgtype.Timestamptz,
+) *DraftResponse {
+	var fv json.RawMessage
+	if len(fieldValues) > 0 {
+		fv = json.RawMessage(fieldValues)
+	}
+	si := seoIndexable
+	return &DraftResponse{
+		ID:              id.String(),
+		Slug:            slug,
+		ContentType:     contentType,
+		Title:           title,
+		Body:            body,
+		BodyHTML:        bodyHtml,
+		FieldValues:     fv,
+		CanonicalURL:    canonicalUrl,
+		HeaderImageID:   uuidPtr(headerImageID),
+		FeaturedImageID: uuidPtr(featuredImageID),
+		MetaTitle:       metaTitle,
+		MetaDescription: metaDescription,
+		OgImageURL:      ogImageUrl,
+		SeoIndexable:    &si,
+		OrganizationID:  uuidPtr(organizationID),
+		Status:          status,
+		Visibility:      visibility,
+		SpaceID:         uuidPtr(spaceID),
+		GeoSpaceID:      uuidPtr(geoSpaceID),
+		PublishAt:       tsPtr(publishAt),
+		PublishedAt:     tsPtr(publishedAt),
+		CreatedAt:       createdAt.Time.Format(time.RFC3339),
+		UpdatedAt:       updatedAt.Time.Format(time.RFC3339),
+	}
+}
+
 // uuidPtr converts a nullable pgtype.UUID to a *string (nil when invalid).
 func uuidPtr(u pgtype.UUID) *string {
 	if !u.Valid {

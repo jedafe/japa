@@ -5,6 +5,8 @@
 	import { DataTable } from '$lib/components/ui/data-table';
 	import { Button } from '$lib/components/ui/button';
 	import { Modal } from '$lib/components/ui/modal';
+	import { SlideOver } from "$lib/components/ui/slide-over";
+	import type { ActionItem } from "$lib/components/ui/data-table";
 	import { TableSkeleton } from '$lib/components/ui/skeleton';
 	import { Tabs } from '$lib/components/ui/tabs';
 	import { Trophy, Plus, RefreshCw, Target, Pencil, Award, Trash2 } from 'lucide-svelte';
@@ -46,7 +48,7 @@
 	let challenges = $state<Challenge[]>([]);
 	let loading = $state(true);
 	let error = $state('');
-	let createModalOpen = $state(false);
+	let createSlideOverOpen = $state(false);
 	let createType = $state<'badge' | 'challenge'>('badge');
 	let saving = $state(false);
 	let message = $state('');
@@ -56,7 +58,7 @@
 	let awardUserId = $state('');
 
 	// Edit badge modal
-	let editBadgeModalOpen = $state(false);
+	let editBadgeSlideOverOpen = $state(false);
 	let editingBadge = $state<Badge | null>(null);
 	let editBadgeForm = $state({
 		name: '',
@@ -131,7 +133,7 @@
 			if (result.ok) {
 				messageType = 'success';
 				message = t('gamification.badge_created', 'Badge created.');
-				createModalOpen = false;
+				createSlideOverOpen = false;
 				newBadge = { slug: '', name: '', description: '', trigger_type: 'count', trigger_value: 0, trigger_activity_key: '', is_active: true, display_order: 0 };
 				load();
 			} else {
@@ -158,7 +160,7 @@
 			if (result.ok) {
 				messageType = 'success';
 				message = t('gamification.challenge_created', 'Challenge created.');
-				createModalOpen = false;
+				createSlideOverOpen = false;
 				newChallenge = { slug: '', name: '', description: '', activity_key: '', target_count: 10, reward_points: 100, starts_at: new Date().toISOString().slice(0, 10), ends_at: '', is_active: true };
 				load();
 			} else {
@@ -206,7 +208,7 @@
 			is_active: badge.is_active,
 			display_order: badge.display_order
 		};
-		editBadgeModalOpen = true;
+		editBadgeSlideOverOpen = true;
 	}
 
 	async function submitEditBadge() {
@@ -218,7 +220,7 @@
 			if (result.ok) {
 				messageType = 'success';
 				message = t('gamification.badge_updated', 'Badge updated.');
-				editBadgeModalOpen = false;
+				editBadgeSlideOverOpen = false;
 				editingBadge = null;
 				load();
 			} else {
@@ -310,14 +312,30 @@
 			label: t('gamification.system', 'System'),
 			sortable: true,
 			render: (value: boolean) => value ? `<span class="text-xs text-muted-foreground">System</span>` : `<span class="text-xs text-muted-foreground">Custom</span>`
-		},
-		{
-			key: 'actions',
-			label: t('common.actions', 'Actions'),
-			class: 'w-32',
-			componentSnippet: BadgeActionsCell
 		}
 	]);
+
+	const badgeRowActions: ActionItem[] = [
+		{
+			label: t('gamification.award', 'Award'),
+			icon: Award,
+			onclick: (row: Badge) => openAwardBadge(row),
+			show: () => canManage
+		},
+		{
+			label: t('common.edit', 'Edit'),
+			icon: Pencil,
+			onclick: (row: Badge) => openEditBadge(row),
+			show: (row: Badge) => canManage && !row.is_system
+		},
+		{
+			label: t('common.delete', 'Delete'),
+			icon: Trash2,
+			variant: 'destructive',
+			onclick: (row: Badge) => promptDeleteBadge(row),
+			show: (row: Badge) => canManage && !row.is_system
+		}
+	];
 
 	const challengeColumns = $derived([
 		{
@@ -357,14 +375,18 @@
 			label: t('gamification.ends', 'Ends'),
 			sortable: true,
 			render: (value: string | null) => `<span class="text-muted-foreground text-xs">${value ? new Date(value).toLocaleDateString() : '—'}</span>`
-		},
-		{
-			key: 'actions',
-			label: t('common.actions', 'Actions'),
-			class: 'w-24',
-			componentSnippet: ChallengeActionsCell
 		}
 	]);
+
+	const challengeRowActions: ActionItem[] = [
+		{
+			label: t('common.delete', 'Delete'),
+			icon: Trash2,
+			variant: 'destructive',
+			onclick: (row: Challenge) => promptDeleteChallenge(row),
+			show: () => canManage
+		}
+	];
 
 	// Ref: jc-admin-develop — reactive $effect so tab changes re-fetch
 	$effect(() => {
@@ -376,8 +398,8 @@
 	title={t('gamification.title', 'Gamification')}
 	description={t('gamification.description', 'Manage badges, challenges, and leaderboard settings.')}
 	actions={canManage ? [
-		{ label: t('gamification.create_badge', 'Create Badge'), icon: Trophy, onclick: () => { createType = 'badge'; createModalOpen = true; } },
-		{ label: t('gamification.create_challenge', 'Create Challenge'), icon: Target, onclick: () => { createType = 'challenge'; createModalOpen = true; } },
+		{ label: t('gamification.create_badge', 'Create Badge'), icon: Trophy, onclick: () => { createType = 'badge'; createSlideOverOpen = true; } },
+		{ label: t('gamification.create_challenge', 'Create Challenge'), icon: Target, onclick: () => { createType = 'challenge'; createSlideOverOpen = true; } },
 		{ label: t('common.refresh', 'Refresh'), icon: RefreshCw, variant: 'ghost', onclick: load }
 	] : [
 		{ label: t('common.refresh', 'Refresh'), icon: RefreshCw, variant: 'ghost', onclick: load }
@@ -408,6 +430,7 @@
 		<DataTable
 			data={badges}
 			columns={badgeColumns}
+			actions={badgeRowActions}
 			searchable={true}
 			searchPlaceholder={t('gamification.search_badges', 'Search badges...')}
 			pageSize={25}
@@ -417,6 +440,7 @@
 		<DataTable
 			data={challenges}
 			columns={challengeColumns}
+			actions={challengeRowActions}
 			searchable={true}
 			searchPlaceholder={t('gamification.search_challenges', 'Search challenges...')}
 			pageSize={25}
@@ -425,8 +449,8 @@
 	{/if}
 {/if}
 
-<!-- Create Modal (replaces inline div per jc-admin-develop: use Modal component) -->
-<Modal bind:open={createModalOpen} title={createType === 'badge' ? t('gamification.create_badge_title', 'Create Badge') : t('gamification.create_challenge_title', 'Create Challenge')}>
+<!-- Create SlideOver -->
+<SlideOver bind:open={createSlideOverOpen} title={createType === 'badge' ? t('gamification.create_badge_title', 'Create Badge') : t('gamification.create_challenge_title', 'Create Challenge')}>
 	{#if createType === 'badge'}
 		<div class="space-y-3">
 			<div>
@@ -496,13 +520,15 @@
 			</div>
 		</div>
 	{/if}
-	<div class="mt-6 flex justify-end gap-2">
-		<Button variant="outline" onclick={() => (createModalOpen = false)} disabled={saving}>{t('common.cancel', 'Cancel')}</Button>
-		<Button onclick={createType === 'badge' ? createBadge : createChallenge} disabled={saving}>
-			{saving ? t('common.saving', 'Saving...') : t('common.create', 'Create')}
-		</Button>
-	</div>
-</Modal>
+	{#snippet footer()}
+		<div class="mt-6 flex justify-end gap-2">
+			<Button variant="outline" onclick={() => (createSlideOverOpen = false)} disabled={saving}>{t('common.cancel', 'Cancel')}</Button>
+			<Button onclick={createType === 'badge' ? createBadge : createChallenge} disabled={saving}>
+				{saving ? t('common.saving', 'Saving...') : t('common.create', 'Create')}
+			</Button>
+		</div>
+	{/snippet}
+</SlideOver>
 
 <!-- Award Modal -->
 <Modal bind:open={awardModalOpen} title={t('gamification.award_title', 'Award Badge')} size="sm">
@@ -518,8 +544,8 @@
 	</div>
 </Modal>
 
-<!-- Edit Badge Modal -->
-<Modal bind:open={editBadgeModalOpen} title={t('gamification.edit_badge_title', 'Edit Badge')}>
+<!-- Edit Badge SlideOver -->
+<SlideOver bind:open={editBadgeSlideOverOpen} title={t('gamification.edit_badge_title', 'Edit Badge')}>
 	<div class="space-y-3">
 		<div>
 			<label for="edit-badge-name" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('gamification.name', 'Name')}</label>
@@ -552,13 +578,15 @@
 			<label for="edit-badge-active" class="text-sm" style="color: var(--color-foreground)">{t('gamification.active', 'Active')}</label>
 		</div>
 	</div>
-	<div class="mt-6 flex justify-end gap-2">
-		<Button variant="outline" onclick={() => (editBadgeModalOpen = false)} disabled={savingEditBadge}>{t('common.cancel', 'Cancel')}</Button>
-		<Button onclick={submitEditBadge} disabled={savingEditBadge}>
-			{savingEditBadge ? t('common.saving', 'Saving...') : t('common.save', 'Save')}
-		</Button>
-	</div>
-</Modal>
+	{#snippet footer()}
+		<div class="mt-6 flex justify-end gap-2">
+			<Button variant="outline" onclick={() => (editBadgeSlideOverOpen = false)} disabled={savingEditBadge}>{t('common.cancel', 'Cancel')}</Button>
+			<Button onclick={submitEditBadge} disabled={savingEditBadge}>
+				{savingEditBadge ? t('common.saving', 'Saving...') : t('common.save', 'Save')}
+			</Button>
+		</div>
+	{/snippet}
+</SlideOver>
 
 <!-- Delete confirmation (per jc-admin-develop: destructive actions behind Modal) -->
 <Modal bind:open={showDeleteConfirm} title={t('common.confirmDelete', 'Confirm Delete')} size="sm">
@@ -579,31 +607,3 @@
 		</Button>
 	</div>
 </Modal>
-
-{#snippet BadgeActionsCell({ value, row }: { value: any; row: Badge })}
-	<div class="flex items-center gap-1">
-		{#if canManage}
-			<Button variant="ghost" size="sm" onclick={() => openAwardBadge(row)} aria-label={t('gamification.award', 'Award')}>
-				<Award class="h-3.5 w-3.5" />
-			</Button>
-			{#if !row.is_system}
-				<Button variant="ghost" size="sm" onclick={() => openEditBadge(row)} aria-label={t('common.edit', 'Edit')}>
-					<Pencil class="h-3.5 w-3.5" />
-				</Button>
-				<Button variant="ghost" size="sm" onclick={() => promptDeleteBadge(row)} style="color: var(--color-danger)" aria-label={t('common.delete', 'Delete')}>
-					<Trash2 class="h-3.5 w-3.5" />
-				</Button>
-			{/if}
-		{/if}
-	</div>
-{/snippet}
-
-{#snippet ChallengeActionsCell({ value, row }: { value: any; row: Challenge })}
-	<div class="flex items-center gap-1">
-		{#if canManage}
-			<Button variant="ghost" size="sm" onclick={() => promptDeleteChallenge(row)} style="color: var(--color-danger)" aria-label={t('common.delete', 'Delete')}>
-				<Trash2 class="h-3.5 w-3.5" />
-			</Button>
-		{/if}
-	</div>
-{/snippet}

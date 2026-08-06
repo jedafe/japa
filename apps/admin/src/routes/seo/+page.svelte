@@ -1,6 +1,7 @@
 <script lang="ts">
 	import PageHeader from "$lib/components/layout/page-header.svelte";
 	import { Button } from "$lib/components/ui/button";
+	import { Card, CardContent } from "$lib/components/ui/card";
 	import { seoAdminApi, contentSearchApi, type SeoValidationResult, type ContentSearchItem } from "$lib/api";
 	import { t } from "$lib/stores/i18n.svelte";
 	import { hasPermission } from "$lib/stores/permissions.svelte";
@@ -249,66 +250,68 @@
 	</div>
 {:else}
 	<!-- Search / input card -->
-	<div class="mb-6 rounded-xl border p-5" style="border-color: var(--color-border); background-color: var(--color-surface)">
-		<label for="seo-content-id" class="mb-2 block text-sm font-medium" style="color: var(--color-foreground)">
-			{t("seo.content_id_label", "Content ID, URL, or search")}
-		</label>
-		<p class="mb-3 text-xs" style="color: var(--color-muted)">
-			{t("seo.input_hint", "Paste a content ID, a frontend URL (e.g. /content/my-post), or type a title to search.")}
-		</p>
-		<div class="flex flex-col gap-3 sm:flex-row">
-			<div class="relative flex-1">
-				<Search class="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2" style="color: var(--color-muted)" />
-				<input
-					id="seo-content-id"
-					type="text"
-					bind:value={query}
-					oninput={handleInput}
-					onkeydown={handleKeydown}
-					onfocus={() => { if (suggestions.length > 0) showDropdown = true; }}
-					onblur={() => { setTimeout(() => showDropdown = false, 200); }}
-					placeholder={t("seo.content_id_placeholder", "Content ID, URL, or search term...")}
-					class="h-10 w-full rounded-lg border pl-9 pr-3 text-sm"
-					style="border-color: var(--color-border); background: var(--color-background); color: var(--color-foreground)"
-				/>
-				{#if searching}
-					<RefreshCw class="absolute right-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 animate-spin" style="color: var(--color-muted)" />
-				{/if}
-				{#if showDropdown && suggestions.length > 0}
-					<ul class="absolute z-[60] mt-1 max-h-64 w-full overflow-auto rounded-lg border shadow-lg" style="border-color: var(--color-border); background: var(--color-surface)">
-						{#each suggestions as item}
-							<li>
-								<button
-									type="button"
-									class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-black/5 dark:hover:bg-white/10"
-									style="color: var(--color-foreground)"
-									onmousedown={() => selectSuggestion(item)}
-								>
-									<Link2 class="h-3.5 w-3.5 shrink-0" style="color: var(--color-muted)" />
-									<span class="min-w-0 flex-1 truncate">{item.title || item.slug}</span>
-									<span class="shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium" style="background: color-mix(in srgb, var(--color-muted) 15%, transparent); color: var(--color-muted)">{item.content_type}</span>
-								</button>
-							</li>
-						{/each}
-					</ul>
+	<Card class="mb-6">
+		<CardContent class="p-5">
+			<label for="seo-content-id" class="mb-2 block text-sm font-medium" style="color: var(--color-foreground)">
+				{t("seo.content_id_label", "Content ID, URL, or search")}
+			</label>
+			<p class="mb-3 text-xs" style="color: var(--color-muted)">
+				{t("seo.input_hint", "Paste a content ID, a frontend URL (e.g. /content/my-post), or type a title to search.")}
+			</p>
+			<div class="flex flex-col gap-3 sm:flex-row">
+				<div class="relative flex-1">
+					<Search class="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2" style="color: var(--color-muted)" />
+					<input
+						id="seo-content-id"
+						type="text"
+						bind:value={query}
+						oninput={handleInput}
+						onkeydown={handleKeydown}
+						onfocus={() => { if (suggestions.length > 0) showDropdown = true; }}
+						onblur={() => { setTimeout(() => showDropdown = false, 200); }}
+						placeholder={t("seo.content_id_placeholder", "Content ID, URL, or search term...")}
+						class="h-10 w-full rounded-lg border pl-9 pr-3 text-sm"
+						style="border-color: var(--color-border); background: var(--color-background); color: var(--color-foreground)"
+					/>
+					{#if searching}
+						<RefreshCw class="absolute right-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 animate-spin" style="color: var(--color-muted)" />
+					{/if}
+					{#if showDropdown && suggestions.length > 0}
+						<ul class="absolute z-[60] mt-1 max-h-64 w-full overflow-auto rounded-lg border shadow-lg" style="border-color: var(--color-border); background: var(--color-surface)">
+							{#each suggestions as item}
+								<li>
+									<button
+										type="button"
+										class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-black/5 dark:hover:bg-white/10"
+										style="color: var(--color-foreground)"
+										onmousedown={() => selectSuggestion(item)}
+									>
+										<Link2 class="h-3.5 w-3.5 shrink-0" style="color: var(--color-muted)" />
+										<span class="min-w-0 flex-1 truncate">{item.title || item.slug}</span>
+										<span class="shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium" style="background: color-mix(in srgb, var(--color-muted) 15%, transparent); color: var(--color-muted)">{item.content_type}</span>
+									</button>
+								</li>
+							{/each}
+						</ul>
+					{/if}
+				</div>
+				<Button onclick={() => validate()} disabled={loading || searching}>
+					{#if loading}
+						<RefreshCw class="h-3.5 w-3.5 animate-spin" />
+						{t("seo.validating", "Validating...")}
+					{:else}
+						<Search class="h-3.5 w-3.5" />
+						{t("seo.validate", "Validate")}
+					{/if}
+				</Button>
+				{#if hasValidated}
+					<Button variant="outline" onclick={clearResult}>
+						{t("common.clear", "Clear")}
+					</Button>
 				{/if}
 			</div>
-			<Button onclick={() => validate()} disabled={loading || searching}>
-				{#if loading}
-					<RefreshCw class="h-3.5 w-3.5 animate-spin" />
-					{t("seo.validating", "Validating...")}
-				{:else}
-					<Search class="h-3.5 w-3.5" />
-					{t("seo.validate", "Validate")}
-				{/if}
-			</Button>
-			{#if hasValidated}
-				<Button variant="outline" onclick={clearResult}>
-					{t("common.clear", "Clear")}
-				</Button>
-			{/if}
-		</div>
-	</div>
+		</CardContent>
+	</Card>
 
 	{#if errorMessage}
 		<div class="mb-4 flex items-center gap-2 rounded-md border px-4 py-3 text-sm" style="border-color: var(--color-danger); background-color: color-mix(in srgb, var(--color-danger) 8%, transparent); color: var(--color-danger)">
@@ -324,93 +327,99 @@
 		</div>
 	{:else if result}
 		<!-- Score indicator -->
-		<div class="mb-6 flex items-center gap-6 rounded-xl border p-6" style="border-color: var(--color-border); background-color: var(--color-surface)">
-			<div class="relative flex h-24 w-24 shrink-0 items-center justify-center">
-				<svg class="h-24 w-24 -rotate-90" viewBox="0 0 100 100">
-					<circle cx="50" cy="50" r="42" fill="none" stroke="var(--color-border)" stroke-width="8" />
-					<circle
-						cx="50" cy="50" r="42" fill="none" stroke={scoreColor(result.score)} stroke-width="8"
-						stroke-linecap="round"
-						stroke-dasharray={`${(result.score / 100) * 2 * Math.PI * 42} ${2 * Math.PI * 42}`}
-					/>
-				</svg>
-				<span class="absolute text-2xl font-bold" style="color: {scoreColor(result.score)}">{result.score}</span>
-			</div>
-			<div class="min-w-0 flex-1">
-				<h2 class="text-lg font-semibold" style="color: var(--color-foreground)">{t("seo.seo_score", "SEO Score")}</h2>
-				<p class="mt-1 text-sm" style="color: var(--color-muted)">
-					{#if result.issues.length === 0}
-						{t("seo.no_issues", "No issues detected — SEO metadata looks good")}
-					{:else}
-						{result.issues.length} {t("seo.issues_found", "issue(s) found")}
-					{/if}
-				</p>
-				<div class="mt-2 flex flex-wrap items-center gap-2 text-xs">
-					<span class="rounded-full px-2 py-0.5 font-medium" style="background: color-mix(in srgb, var(--color-muted) 15%, transparent); color: var(--color-foreground)">
-						{t("seo.type", "Type")}: {result.type}
-					</span>
-					<span class="rounded-full px-2 py-0.5 font-medium" style="background: color-mix(in srgb, var(--color-muted) 15%, transparent); color: var(--color-foreground)">
-						{t("seo.slug", "Slug")}: {result.slug || "—"}
-					</span>
+		<Card class="mb-6">
+			<CardContent class="flex items-center gap-6 p-6">
+				<div class="relative flex h-24 w-24 shrink-0 items-center justify-center">
+					<svg class="h-24 w-24 -rotate-90" viewBox="0 0 100 100">
+						<circle cx="50" cy="50" r="42" fill="none" stroke="var(--color-border)" stroke-width="8" />
+						<circle
+							cx="50" cy="50" r="42" fill="none" stroke={scoreColor(result.score)} stroke-width="8"
+							stroke-linecap="round"
+							stroke-dasharray={`${(result.score / 100) * 2 * Math.PI * 42} ${2 * Math.PI * 42}`}
+						/>
+					</svg>
+					<span class="absolute text-2xl font-bold" style="color: {scoreColor(result.score)}">{result.score}</span>
 				</div>
-			</div>
-		</div>
+				<div class="min-w-0 flex-1">
+					<h2 class="text-lg font-semibold" style="color: var(--color-foreground)">{t("seo.seo_score", "SEO Score")}</h2>
+					<p class="mt-1 text-sm" style="color: var(--color-muted)">
+						{#if result.issues.length === 0}
+							{t("seo.no_issues", "No issues detected — SEO metadata looks good")}
+						{:else}
+							{result.issues.length} {t("seo.issues_found", "issue(s) found")}
+						{/if}
+					</p>
+					<div class="mt-2 flex flex-wrap items-center gap-2 text-xs">
+						<span class="rounded-full px-2 py-0.5 font-medium" style="background: color-mix(in srgb, var(--color-muted) 15%, transparent); color: var(--color-foreground)">
+							{t("seo.type", "Type")}: {result.type}
+						</span>
+						<span class="rounded-full px-2 py-0.5 font-medium" style="background: color-mix(in srgb, var(--color-muted) 15%, transparent); color: var(--color-foreground)">
+							{t("seo.slug", "Slug")}: {result.slug || "—"}
+						</span>
+					</div>
+				</div>
+			</CardContent>
+		</Card>
 
 		<!-- Issues list -->
-		<div class="mb-6 rounded-xl border p-5" style="border-color: var(--color-border); background-color: var(--color-surface)">
-			<h3 class="mb-3 text-sm font-semibold uppercase tracking-wider" style="color: var(--color-muted)">
-				{t("seo.issues", "Issues")}
-			</h3>
-			{#if result.issues.length === 0}
-				<div class="flex items-center gap-2 text-sm" style="color: var(--color-success)">
-					<CheckCircle2 class="h-4 w-4" />
-					{t("seo.no_issues", "No issues detected — SEO metadata looks good")}
-				</div>
-			{:else}
-				<ul class="space-y-2">
-					{#each result.issues as issue}
-						<li class="flex items-start gap-2 text-sm" style="color: var(--color-foreground)">
-							<AlertTriangle class="mt-0.5 h-4 w-4 shrink-0" style="color: var(--color-warning)" />
-							<span class="font-mono text-xs">{issue}</span>
-						</li>
-					{/each}
-				</ul>
-			{/if}
-		</div>
+		<Card class="mb-6">
+			<CardContent class="p-5">
+				<h3 class="mb-3 text-sm font-semibold uppercase tracking-wider" style="color: var(--color-muted)">
+					{t("seo.issues", "Issues")}
+				</h3>
+				{#if result.issues.length === 0}
+					<div class="flex items-center gap-2 text-sm" style="color: var(--color-success)">
+						<CheckCircle2 class="h-4 w-4" />
+						{t("seo.no_issues", "No issues detected — SEO metadata looks good")}
+					</div>
+				{:else}
+					<ul class="space-y-2">
+						{#each result.issues as issue}
+							<li class="flex items-start gap-2 text-sm" style="color: var(--color-foreground)">
+								<AlertTriangle class="mt-0.5 h-4 w-4 shrink-0" style="color: var(--color-warning)" />
+								<span class="font-mono text-xs">{issue}</span>
+							</li>
+						{/each}
+					</ul>
+				{/if}
+			</CardContent>
+		</Card>
 
 		<!-- Metadata fields grid -->
-		<div class="rounded-xl border p-5" style="border-color: var(--color-border); background-color: var(--color-surface)">
-			<h3 class="mb-4 text-sm font-semibold uppercase tracking-wider" style="color: var(--color-muted)">
-				{t("seo.metadata_fields", "Metadata Fields")}
-			</h3>
-			<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
-				{#each META_FIELDS as field}
-					{@const value = getField((result as unknown as Record<string, string>)[field.key])}
-					{@const present = value.length > 0}
-					<div class="rounded-lg border p-3" style="border-color: var(--color-border); background: var(--color-background)">
-						<div class="mb-1 flex items-center justify-between">
-							<span class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{field.label}</span>
-							{#if present}
-								<CheckCircle2 class="h-3.5 w-3.5" style="color: var(--color-success)" />
-							{:else}
-								<AlertTriangle class="h-3.5 w-3.5" style="color: var(--color-danger)" />
-							{/if}
+		<Card>
+			<CardContent class="p-5">
+				<h3 class="mb-4 text-sm font-semibold uppercase tracking-wider" style="color: var(--color-muted)">
+					{t("seo.metadata_fields", "Metadata Fields")}
+				</h3>
+				<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+					{#each META_FIELDS as field}
+						{@const value = getField((result as unknown as Record<string, string>)[field.key])}
+						{@const present = value.length > 0}
+						<div class="rounded-lg border p-3" style="border-color: var(--color-border); background: var(--color-background)">
+							<div class="mb-1 flex items-center justify-between">
+								<span class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{field.label}</span>
+								{#if present}
+									<CheckCircle2 class="h-3.5 w-3.5" style="color: var(--color-success)" />
+								{:else}
+									<AlertTriangle class="h-3.5 w-3.5" style="color: var(--color-danger)" />
+								{/if}
+							</div>
+							<p class="break-words text-sm" style="color: {present ? 'var(--color-foreground)' : 'var(--color-muted)'}">
+								{present ? value : t("seo.missing", "Missing")}
+							</p>
+							<div class="mt-1 flex items-center gap-2 text-[10px]" style="color: var(--color-muted)">
+								<span>{present ? `${value.length} ${t("seo.chars", "chars")}` : t("seo.not_set", "not set")}</span>
+								{#if field.maxLength && present}
+									<span style="color: {value.length > field.maxLength ? 'var(--color-danger)' : 'var(--color-muted)'}">
+										/ {field.maxLength} {t("seo.max", "max")}
+									</span>
+								{/if}
+							</div>
 						</div>
-						<p class="break-words text-sm" style="color: {present ? 'var(--color-foreground)' : 'var(--color-muted)'}">
-							{present ? value : t("seo.missing", "Missing")}
-						</p>
-						<div class="mt-1 flex items-center gap-2 text-[10px]" style="color: var(--color-muted)">
-							<span>{present ? `${value.length} ${t("seo.chars", "chars")}` : t("seo.not_set", "not set")}</span>
-							{#if field.maxLength && present}
-								<span style="color: {value.length > field.maxLength ? 'var(--color-danger)' : 'var(--color-muted)'}">
-									/ {field.maxLength} {t("seo.max", "max")}
-								</span>
-							{/if}
-						</div>
-					</div>
-				{/each}
-			</div>
-		</div>
+					{/each}
+				</div>
+			</CardContent>
+		</Card>
 	{:else if !hasValidated}
 		<div class="flex flex-col items-center justify-center py-16 text-center">
 			<Globe class="h-10 w-10" style="color: var(--color-muted)" />
