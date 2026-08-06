@@ -9,6 +9,7 @@
 	 */
 	import MethodBadge from './MethodBadge.svelte';
 	import { t } from '$lib/i18n';
+	import { env } from '$env/dynamic/public';
 	import { Copy, ChevronDown } from 'lucide-svelte';
 
 	interface EndpointParam {
@@ -49,9 +50,17 @@
 		path.split(/(\{[^}]+\})/g).filter((s) => s.length > 0)
 	);
 
+	// API base URL from PUBLIC_JC_API_URL env var (Rule 3 — no hardcoded URLs).
+	// In dev this is a relative path (/api/v1); in production it's the full
+	// API gateway URL. For curl examples, ensure an absolute URL.
+	const apiBaseUrl = env.PUBLIC_JC_API_URL ?? '/api/v1';
+	const curlBaseUrl = apiBaseUrl.startsWith('http')
+		? apiBaseUrl
+		: `https://api.japaconnect.com${apiBaseUrl}`;
+
 	let curlExample = $derived(
 		example ||
-			`curl -X ${method} "https://api.japaconnect.com${path}" \\
+			`curl -X ${method} "${curlBaseUrl}${path}" \\
   -H "Authorization: Bearer $JC_API_KEY"${method !== 'GET' && method !== 'DELETE' ? ' \\\n  -H "Content-Type: application/json"' : ''}`
 	);
 
@@ -79,7 +88,7 @@
 			{/each}
 		</code>
 		<span class="auth-badge" class:required={authRequired}>
-			{authRequired ? 'API key required' : '[public]'}
+			{authRequired ? t('api.auth_required', 'API key required') : t('api.public', '[public]')}
 		</span>
 	</div>
 
@@ -110,7 +119,7 @@
 							<td><code>{p.name}</code></td>
 							<td>{p.in}</td>
 							<td>{p.type ?? 'string'}</td>
-							<td>{p.required ? 'yes' : 'no'}</td>
+							<td>{p.required ? t('common.yes', 'yes') : t('common.no', 'no')}</td>
 							<td>{p.description ?? ''}</td>
 						</tr>
 					{/each}
@@ -136,7 +145,7 @@
 				{t('api.example', 'Example')}
 			</button>
 			<button type="button" class="copy-curl-btn" onclick={copyCurl} aria-label={t('a11y.copy_code')}>
-				{#if copied}<span>Copied</span>{:else}<Copy size={12} /> Copy cURL{/if}
+				{#if copied}<span>{t('common.copied', 'Copied')}</span>{:else}<Copy size={12} /> {t('common.copy_curl', 'Copy cURL')}{/if}
 			</button>
 		</div>
 		{#if showExample}

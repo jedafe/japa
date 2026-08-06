@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { t } from '$lib/stores/i18n.svelte';
-	import { api } from "$lib/api";
+	import { api, apiRaw } from "$lib/api";
 	import { hasPermission } from "$lib/stores/permissions.svelte";
 	import PageHeader from "$lib/components/layout/page-header.svelte";
 	import { Card, CardContent } from "$lib/components/ui/card";
@@ -20,11 +20,13 @@
 		type: string;
 		format: string;
 		status: "pending" | "processing" | "completed" | "failed";
-		fileSize: number | null;
 		fileUrl: string | null;
+		fileSize: number | null;
+		includeMetadata: boolean;
+		errorMessage: string | null;
+		createdBy: string;
 		createdAt: string;
 		completedAt: string | null;
-		errorMessage: string | null;
 	};
 
 	let exports = $state<DataExport[]>([]);
@@ -41,7 +43,7 @@
 	let viewTarget = $state<DataExport | null>(null);
 	let selectedIds = $state<Set<string>>(new Set());
 
-	const canManageExports = $derived(hasPermission("data-exports.manage"));
+	const canManageExports = $derived(hasPermission("gdpr.data_exports.view"));
 
 	let form = $state({
 		name: "",
@@ -167,9 +169,11 @@
 
 	async function loadExports() {
 		loading = true;
-		const result = await api<DataExport[]>("/admin/data-exports");
+		const result = await apiRaw<{ data: DataExport[]; pagination: { total: number } }>(
+			"/admin/data-exports?page=1&limit=100"
+		);
 		if (result.ok) {
-			exports = Array.isArray(result.data) ? result.data : [];
+			exports = Array.isArray(result.data.data) ? result.data.data : [];
 		}
 		loading = false;
 	}

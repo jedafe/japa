@@ -128,7 +128,12 @@
 		createPermission: 'payments.discount_codes.manage',
 		pageSize: 25,
 		columns: [
-			{ key: 'code', label: t('discounts.code', 'Code'), sortable: true, render: (v: string) => `<span class="font-mono text-sm font-medium text-foreground">${v}</span>` },
+			{
+				key: 'code',
+				label: t('discounts.code', 'Code'),
+				sortable: true,
+				render: (v: string) => `<div class="flex items-center gap-2"><span class="font-mono text-sm font-medium text-foreground">${v}</span><button onclick="navigator.clipboard.writeText('${v}')" class="text-muted hover:text-foreground-alt" title="${t('discounts.copy_code', 'Copy code')}"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg></button></div>`
+			},
 			{
 				key: 'discount_value',
 				label: t('discounts.discount', 'Discount'),
@@ -167,6 +172,7 @@
 				label: t('common.status', 'Status'),
 				options: [
 					{ value: 'active', label: 'Active' },
+					{ value: 'inactive', label: 'Inactive' },
 					{ value: 'expired', label: 'Expired' },
 					{ value: 'used', label: 'Used Up' }
 				]
@@ -183,7 +189,8 @@
 				let data = (result.data ?? []) as DiscountCode[];
 				// Compute status for each row (used by column render + filter).
 				data = data.map((c) => ({ ...c, computed_status: computeStatus(c) }));
-				if (filter.computed_status) data = data.filter((c) => c.computed_status === filter.computed_status);
+				if (filter.computed_status === 'inactive') data = data.filter((c) => c.computed_status !== 'active');
+			else if (filter.computed_status) data = data.filter((c) => c.computed_status === filter.computed_status);
 				if (q) {
 					const lq = q.toLowerCase();
 					data = data.filter((c) => c.code?.toLowerCase().includes(lq) || (c.description ?? '').toLowerCase().includes(lq));

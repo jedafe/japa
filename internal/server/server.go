@@ -35,6 +35,8 @@ import (
 	"github.com/jedafe/japa/internal/control"
 	"github.com/jedafe/japa/internal/costofliving"
 	"github.com/jedafe/japa/internal/coupons"
+	"github.com/jedafe/japa/internal/dataexport"
+	"github.com/jedafe/japa/internal/dataimport"
 	"github.com/jedafe/japa/internal/csrf"
 	"github.com/jedafe/japa/internal/customfields"
 	"github.com/jedafe/japa/internal/db"
@@ -774,7 +776,28 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Ref: japaconnect-engineering/sections/65-content-import.md (ADR-083)
 	contentImportStore := contentimport.NewStore(database)
 	contentImportService := contentimport.NewService(contentImportStore, settingsService)
+	// Wire the content creator adapter so ProcessSource can create draft
+	// contents rows. Without this, importSingleItem returns "no content
+	// creator configured" and every import fails.
+	contentImportService.SetContentCreator(newContentCreatorAdapter(contentService))
+	// Wire the media fetcher adapter so import:fetch_media downloads
+	// external images and replaces their URLs with stored media URLs.
+	contentImportService.SetMediaFetcher(newMediaFetcherAdapter(contentService, mediaService))
 	contentImportHandlers := contentimport.NewHandlers(contentImportService, settingsService)
+
+	// Ref: japaconnect-engineering/sections/67-platform-data-portability.md
+	// Platform data export/import (admin-initiated, separate from GDPR
+	// per-user exports). Supports CSV/JSON/XLSX export and CSV/JSON import
+	// of users, posts, comments, orders, transactions, analytics, moderation.
+	platformDataExportService := dataexport.NewService(database)
+	platformDataExportService.SetEnqueuer(taskEnqueuer)
+	platformDataExportHandlers := dataexport.NewHandlers(platformDataExportService)
+	worker.RegisterPlatformDataExportProcessor(platformDataExportService)
+
+	platformDataImportService := dataimport.NewService(database)
+	platformDataImportService.SetEnqueuer(taskEnqueuer)
+	platformDataImportHandlers := dataimport.NewHandlers(platformDataImportService)
+	worker.RegisterPlatformDataImportProcessor(platformDataImportService)
 
 	// Ref: japaconnect-engineering/sections/66-advanced-analytics.md (ADR-084)
 	advancedAnalyticsStore := advancedanalytics.NewStore(database)
@@ -2499,7 +2522,28 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "gdpr.consents.delete")).
 				Delete("/admin/consents/{id}", gdprHandlers.DeleteConsent)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "gdpr.data_exports.view")).
-				Get("/admin/data-exports", gdprHandlers.ListPendingDataExports)
+				Get("/admin/gdpr/exports", gdprHandlers.ListPendingDataExports)
+			// Platform data exports (Section 67) — admin-initiated exports of
+			// platform data in CSV/JSON/XLSX. Separate from GDPR per-user
+			// exports at /admin/gdpr/exports.
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "gdpr.data_exports.view")).
+				Get("/admin/data-exports", platformDataExportHandlers.HandleListExports)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "gdpr.data_exports.view")).
+				Post("/admin/data-exports", platformDataExportHandlers.HandleCreateExport)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "gdpr.data_exports.view")).
+				Get("/admin/data-exports/{id}", platformDataExportHandlers.HandleGetExport)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "gdpr.data_exports.view")).
+				Delete("/admin/data-exports/{id}", platformDataExportHandlers.HandleDeleteExport)
+			// Platform data imports (Section 67) — admin-initiated imports of
+			// platform data from CSV/JSON files.
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "gdpr.data_exports.view")).
+				Get("/admin/data-imports", platformDataImportHandlers.HandleListImports)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "gdpr.data_exports.view")).
+				Post("/admin/data-imports", platformDataImportHandlers.HandleCreateImport)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "gdpr.data_exports.view")).
+				Get("/admin/data-imports/{id}", platformDataImportHandlers.HandleGetImport)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "gdpr.data_exports.view")).
+				Delete("/admin/data-imports/{id}", platformDataImportHandlers.HandleDeleteImport)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "gdpr.deletions.view")).
 				Get("/admin/deletions", gdprHandlers.ListPendingDeletions)
 
@@ -3835,6 +3879,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Get("/me/imports/{id}", contentImportHandlers.HandleGetImport)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "import.manage")).
 				Get("/admin/imports", contentImportHandlers.HandleAdminListImports)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "import.manage")).
+				Post("/admin/imports", contentImportHandlers.HandleAdminStartImport)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "import.manage")).
 				Post("/admin/imports/{id}/retry", contentImportHandlers.HandleAdminRetryImport)
 

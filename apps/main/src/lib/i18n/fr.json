@@ -1483,5 +1483,9 @@
 	"tags.sort_content": "Le plus de contenu",
 	"organizations.filter_all": "Tous",
 	"organizations.unverified": "Non vérifié",
-	"compare.new_dimension": "Nouvelle dimension"
+	"compare.new_dimension": "Nouvelle dimension",
+	"sidebar.metric": "Métrique",
+	"sidebar.get_started": "Commencer",
+	"sidebar.popular_tags": "Tags populaires",
+	"sidebar.email_placeholder": "votre@email.com"
 }

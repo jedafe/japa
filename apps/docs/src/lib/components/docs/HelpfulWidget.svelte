@@ -70,7 +70,6 @@
 				aria-pressed={vote === 'up'}
 			>
 				<ThumbsUp size={16} />
-				{#if vote === 'up'}<span class="vote-count">1</span>{/if}
 			</button>
 			<button
 				type="button"
@@ -81,7 +80,6 @@
 				aria-pressed={vote === 'down'}
 			>
 				<ThumbsDown size={16} />
-				{#if vote === 'down'}<span class="vote-count">1</span>{/if}
 			</button>
 		</div>
 	</div>
@@ -125,11 +123,6 @@
 		border-color: var(--color-primary);
 		color: var(--color-primary);
 		background: color-mix(in srgb, var(--color-primary) 8%, transparent);
-	}
-	.vote-count {
-		font-size: 0.6875rem;
-		font-weight: 600;
-		margin-left: 0.125rem;
 	}
 	.reviewed {
 		margin: 0.75rem 0 0;

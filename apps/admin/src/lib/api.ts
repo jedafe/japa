@@ -913,6 +913,8 @@ export const mediaAdminApi = {
 	approve: (id: string) => api<unknown>(`/admin/media/${id}/approve`, { method: 'POST', body: {} }),
 	reject: (id: string) => api<unknown>(`/admin/media/${id}/reject`, { method: 'POST', body: {} }),
 	updateStatus: (id: string, status: string) => api<unknown>(`/admin/media/${id}/status`, { method: 'POST', body: { status } }),
+	update: (id: string, body: { alt_text?: string; caption?: string; width?: number; height?: number; user_group_id?: string }) =>
+		api<unknown>(`/admin/media/${id}`, { method: 'PATCH', body }),
 	delete: (id: string) => api<{ deleted: boolean }>(`/admin/media/${id}`, { method: 'DELETE' }),
 };
 

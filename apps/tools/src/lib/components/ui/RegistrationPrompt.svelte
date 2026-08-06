@@ -27,13 +27,56 @@
 	} = $props();
 
 	let dialogEl: HTMLDivElement | null = $state(null);
+	let previouslyFocused: HTMLElement | null = null;
+
+	// Focus trap: when the dialog opens, move focus into it and trap Tab
+	// navigation within the dialog's focusable elements (WCAG 2.1 dialog
+	// pattern). Restore focus to the trigger on close.
+	function getFocusable(): HTMLElement[] {
+		if (!dialogEl) return [];
+		return Array.from(
+			dialogEl.querySelectorAll<HTMLElement>('a[href], button:not([disabled]), input, [tabindex]:not([tabindex="-1"])')
+		).filter((el) => el.offsetParent !== null);
+	}
 
 	function onKeydown(e: KeyboardEvent) {
 		if (e.key === 'Escape') {
 			e.stopPropagation();
 			onClose();
+			return;
+		}
+		if (e.key === 'Tab' && dialogEl) {
+			const focusable = getFocusable();
+			if (focusable.length === 0) return;
+			const first = focusable[0];
+			const last = focusable[focusable.length - 1];
+			if (e.shiftKey && document.activeElement === first) {
+				e.preventDefault();
+				last.focus();
+			} else if (!e.shiftKey && document.activeElement === last) {
+				e.preventDefault();
+				first.focus();
+			}
 		}
 	}
+
+	$effect(() => {
+		if (open) {
+			previouslyFocused = document.activeElement as HTMLElement;
+			// Move focus into the dialog on open.
+			queueMicrotask(() => {
+				const focusable = getFocusable();
+				if (focusable.length > 0) {
+					focusable[0].focus();
+				} else {
+					dialogEl?.focus();
+				}
+			});
+		} else if (previouslyFocused) {
+			previouslyFocused.focus();
+			previouslyFocused = null;
+		}
+	});
 </script>
 
 {#if open}

@@ -55,10 +55,10 @@
 
 	let showLanguageToggle = $derived(enabledLanguages.split(',').filter(Boolean).length > 1);
 
-	function currentPath(): string {
-		if (typeof window === 'undefined') return '';
-		return window.location.pathname.slice(1);
-	}
+	// SSR-safe current path for locale-switch links. Uses $app/state's page
+	// store (available during SSR) instead of window.location to avoid
+	// hydration mismatches (Guide §16).
+	const currentPath = $derived(page.url.pathname.replace(/^\//, ''));
 
 	// --- Client-side data fetching for data-driven widgets (Rule 16: API-only) ---
 	// Each fetchable widget type has its own $state + $effect. Widgets without a
@@ -260,7 +260,7 @@
 {:else if widget.widget_type === 'language_toggle'}
 	{#if showLanguageToggle}
 		<a
-			href={i18n.locale === 'fr' ? `/en/${currentPath()}` : `/fr/${currentPath()}`}
+			href={i18n.locale === 'fr' ? `/en/${currentPath}` : `/fr/${currentPath}`}
 			class="grid h-9 w-9 shrink-0 place-items-center rounded-full text-[var(--color-muted)] hover:bg-[var(--color-surface-subtle)]"
 			aria-label={i18n.locale === 'fr' ? t('locale.switch_to_en') : t('locale.switch_to_fr')}
 			title={i18n.locale === 'fr' ? 'English' : 'Français'}
@@ -374,7 +374,7 @@
 	<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 		<div class="flex items-center gap-2 text-[var(--color-text-subtle)]">
 			<BarChart3 size={16} />
-			<span class="text-xs font-medium">{typeof widgetProps.label === 'string' ? widgetProps.label : 'Metric'}</span>
+			<span class="text-xs font-medium">{typeof widgetProps.label === 'string' ? widgetProps.label : t('sidebar.metric')}</span>
 		</div>
 		<p class="mt-2 text-2xl font-bold text-[var(--color-text)]">{typeof widgetProps.value === 'string' ? widgetProps.value : '—'}</p>
 		{#if typeof widgetProps.delta === 'string' && widgetProps.delta}
@@ -391,7 +391,7 @@
 			<input
 				type="email"
 				bind:value={newsletterEmail}
-				placeholder={typeof widgetProps.placeholder === 'string' ? widgetProps.placeholder : 'your@email.com'}
+				placeholder={typeof widgetProps.placeholder === 'string' ? widgetProps.placeholder : t('sidebar.email_placeholder')}
 				disabled={newsletterSubmitting}
 				class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2 text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none disabled:opacity-60"
 			/>
@@ -441,13 +441,13 @@
 			class="flex w-full items-center justify-center gap-2 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2.5 text-sm font-semibold text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)]"
 		>
 			<MousePointerClick size={16} />
-			{typeof widgetProps.label === 'string' ? widgetProps.label : 'Get Started'}
+			{typeof widgetProps.label === 'string' ? widgetProps.label : t('sidebar.get_started')}
 		</a>
 	</section>
 {:else if widget.widget_type === 'tag_cloud'}
 	{#if trendingTags.length > 0}
 		<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-			<h2 class="mb-3 text-sm font-medium text-[var(--color-text)]">{title || 'Popular Tags'}</h2>
+			<h2 class="mb-3 text-sm font-medium text-[var(--color-text)]">{title || t('sidebar.popular_tags')}</h2>
 			<div class="flex flex-wrap gap-1.5">
 				{#each trendingTags.slice(0, limit) as tag, i (tag.id)}
 					<a
@@ -474,7 +474,7 @@
 						<a href={`/u/${entry.username}`} class="flex items-center gap-2 rounded-[var(--radius)] p-1.5 hover:bg-[var(--color-surface-subtle)]">
 							<span class="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-[var(--color-surface-subtle)] text-xs font-semibold text-[var(--color-text-subtle)]">{i + 1}</span>
 							{#if entry.avatar_url}
-								<img src={entry.avatar_url} alt="" class="h-8 w-8 shrink-0 rounded-full object-cover" />
+								<img src={entry.avatar_url} alt={entry.display_name ?? entry.username} class="h-8 w-8 shrink-0 rounded-full object-cover" />
 							{:else}
 								<span class="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[var(--color-surface-subtle)] text-xs font-medium text-[var(--color-text-subtle)]">{(entry.display_name ?? entry.username).charAt(0).toUpperCase()}</span>
 							{/if}
@@ -581,7 +581,7 @@
 		{#if userCardData}
 			<a href={`/u/${userCardData.username}`} class="flex items-center gap-3 rounded-[var(--radius)] p-1.5 hover:bg-[var(--color-surface-subtle)]">
 				{#if userCardData.avatar_url}
-					<img src={userCardData.avatar_url} alt="" class="h-10 w-10 rounded-full object-cover" />
+					<img src={userCardData.avatar_url} alt={userCardData.display_name ?? userCardData.username} class="h-10 w-10 rounded-full object-cover" />
 				{:else}
 					<span class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[var(--color-surface-subtle)] text-sm font-medium text-[var(--color-text-subtle)]">
 						{userCardData.display_name?.charAt(0)?.toUpperCase() ?? '?'}
