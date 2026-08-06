@@ -103,13 +103,22 @@ type ContentRow struct {
 	ID pgtype.UUID
 }
 
+// MediaFetcher downloads external images referenced in an imported content's
+// TipTap body, stores them via the media pipeline (Section 34), and replaces
+// the external URLs with stored media URLs. The concrete implementation
+// adapts media.Service + content.Service and is wired in server.go.
+type MediaFetcher interface {
+	FetchAndReplaceMedia(ctx context.Context, tenantID, userID, contentID pgtype.UUID) error
+}
+
 // Service holds the business logic for the content import pipeline.
 type Service struct {
-	store      *Store
-	settings   *config.Settings
-	enqueuer   TaskEnqueuer
-	creator    ContentCreator
-	httpClient *http.Client
+	store        *Store
+	settings     *config.Settings
+	enqueuer     TaskEnqueuer
+	creator      ContentCreator
+	mediaFetcher MediaFetcher
+	httpClient   *http.Client
 }
 
 // NewService creates a content-import service.
@@ -130,6 +139,10 @@ func (s *Service) SetEnqueuer(e TaskEnqueuer) { s.enqueuer = e }
 // SetContentCreator injects the content creation adapter for creating
 // draft contents rows from imported posts.
 func (s *Service) SetContentCreator(c ContentCreator) { s.creator = c }
+
+// SetMediaFetcher injects the media fetcher that downloads external images
+// from imported content and replaces their URLs with stored media URLs.
+func (s *Service) SetMediaFetcher(mf MediaFetcher) { s.mediaFetcher = mf }
 
 // SetHTTPClient injects the HTTP client used for fetching RSS feeds.
 // Primarily for testing; the default client has a 30-second timeout.
@@ -294,6 +307,12 @@ func (s *Service) ProcessSource(ctx context.Context, tenantID, importID pgtype.U
 		return fmt.Errorf("contentimport: process: mark processing: %w", err)
 	}
 
+	// Resolve the import's user_id so created content is attributed correctly.
+	imp, err := s.store.GetByID(ctx, tenantID, importID)
+	if err != nil {
+		return fmt.Errorf("contentimport: process: lookup import: %w", err)
+	}
+
 	maxItems := s.maxItemsPerRun(ctx, tenantID)
 
 	var items []RSSItem
@@ -330,7 +349,7 @@ func (s *Service) ProcessSource(ctx context.Context, tenantID, importID pgtype.U
 	var errors []ImportError
 
 	for _, item := range items {
-		if err := s.importSingleItem(ctx, tenantID, importID, item); err != nil {
+		if err := s.importSingleItem(ctx, tenantID, importID, imp.UserID, item); err != nil {
 			failedCount++
 			errors = append(errors, ImportError{
 				ItemTitle: item.Title,
@@ -353,7 +372,7 @@ func (s *Service) ProcessSource(ctx context.Context, tenantID, importID pgtype.U
 	}
 
 	now := nowTimestamptz()
-	_, err := s.store.UpdateStatus(ctx, tenantID, importID, finalStatus,
+	_, err = s.store.UpdateStatus(ctx, tenantID, importID, finalStatus,
 		&totalItems, &importedCount, &failedCount,
 		marshalErrorLog(errors), now)
 	if err != nil {
@@ -368,9 +387,30 @@ func (s *Service) ProcessSource(ctx context.Context, tenantID, importID pgtype.U
 	return nil
 }
 
+// FetchMedia is the import:fetch_media task handler. It downloads external
+// images referenced in an imported content's TipTap body, stores them via
+// the media pipeline (Section 34), and replaces the external URLs with
+// stored media URLs. The heavy lifting is delegated to the MediaFetcher
+// adapter (wired in server.go) to avoid a circular import on media/content.
+//
+// If no MediaFetcher is wired, the method logs a warning and returns nil —
+// the imported content is still usable, just with external image URLs.
+func (s *Service) FetchMedia(ctx context.Context, tenantID, userID, contentID pgtype.UUID) error {
+	if s.mediaFetcher == nil {
+		slog.Warn("contentimport: fetch_media: no media fetcher configured, skipping",
+			"content_id", contentID.String())
+		return nil
+	}
+	if err := s.mediaFetcher.FetchAndReplaceMedia(ctx, tenantID, userID, contentID); err != nil {
+		return fmt.Errorf("contentimport: fetch_media: %w", err)
+	}
+	slog.Info("contentimport: fetch_media: complete", "content_id", contentID.String())
+	return nil
+}
+
 // importSingleItem converts a single RSS item to a draft contents row and
 // enqueues import:fetch_media for the imported content.
-func (s *Service) importSingleItem(ctx context.Context, tenantID, importID pgtype.UUID, item RSSItem) error {
+func (s *Service) importSingleItem(ctx context.Context, tenantID, importID, userID pgtype.UUID, item RSSItem) error {
 	if s.creator == nil {
 		return fmt.Errorf("no content creator configured")
 	}
@@ -397,7 +437,7 @@ func (s *Service) importSingleItem(ctx context.Context, tenantID, importID pgtyp
 	}
 
 	row, err := s.creator.CreateContent(ctx, tenantID, CreateContentInput{
-		AuthorID:     pgtype.UUID{}, // set by the adapter from the import's user_id
+		AuthorID:     userID,
 		ContentType:  "blog_post",
 		Title:        item.Title,
 		Body:         bodyStr,
@@ -414,6 +454,7 @@ func (s *Service) importSingleItem(ctx context.Context, tenantID, importID pgtyp
 		payload, err := json.Marshal(map[string]string{
 			"content_id": row.ID.String(),
 			"tenant_id":  tenantID.String(),
+			"user_id":    userID.String(),
 			"import_id":  importID.String(),
 		})
 		if err != nil {

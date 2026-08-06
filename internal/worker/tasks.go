@@ -65,6 +65,8 @@ const (
 	TypeRSSRegenerate                   = "rss:regenerate"
 	TypeDataExport                      = "data:export_user_data"
 	TypeAccountDeletionCleanup          = "account:deletion_cleanup"
+	TypePlatformDataExport              = "platform:data_export"
+	TypePlatformDataImport              = "platform:data_import"
 	TypeAdEventIngest                   = "ad:ingest_event_batch"
 	TypeMaintenanceUpdateVelocityScores = "maintenance:update_velocity_scores"
 	TypeMaintenanceCheckSLABreaches     = "maintenance:check_sla_breaches"
@@ -156,6 +158,8 @@ func RegisterHandlers(mux *asynq.ServeMux) {
 	mux.HandleFunc(TypeRSSRegenerate, HandleRSSRegenerate)
 	mux.HandleFunc(TypeDataExport, HandleDataExport)
 	mux.HandleFunc(TypeAccountDeletionCleanup, HandleAccountDeletionCleanup)
+	mux.HandleFunc(TypePlatformDataExport, HandlePlatformDataExport)
+	mux.HandleFunc(TypePlatformDataImport, HandlePlatformDataImport)
 	mux.HandleFunc(TypeAdEventIngest, HandleAdEventIngest)
 	mux.HandleFunc(TypeMaintenanceUpdateVelocityScores, HandleMaintenanceUpdateVelocityScores)
 	mux.HandleFunc(TypeMaintenanceCheckSLABreaches, HandleMaintenanceCheckSLABreaches)

@@ -50,7 +50,7 @@ type GamificationProcessor interface {
 // ImportProcessor handles content-import background tasks (§65, ADR-083).
 type ImportProcessor interface {
 	ProcessSource(ctx context.Context, importID pgtype.UUID) error
-	FetchMedia(ctx context.Context, importID pgtype.UUID) error
+	FetchMedia(ctx context.Context, tenantID, userID, contentID pgtype.UUID) error
 }
 
 // AssessmentProcessor handles assessment background tasks (§71, ADR-071).
@@ -238,15 +238,25 @@ func HandleImportFetchMedia(ctx context.Context, t *asynq.Task) error {
 		slog.Warn("task:import:fetch_media: no processor registered, skipping")
 		return nil
 	}
-	var p struct{ ImportID string `json:"import_id"` }
+	var p struct {
+		ContentID string `json:"content_id"`
+		TenantID  string `json:"tenant_id"`
+		UserID    string `json:"user_id"`
+	}
 	if err := json.Unmarshal(t.Payload(), &p); err != nil {
 		return fmt.Errorf("task:import:fetch_media: invalid payload: %w", err)
 	}
-	var id pgtype.UUID
-	if err := id.Scan(p.ImportID); err != nil {
-		return fmt.Errorf("task:import:fetch_media: bad import_id: %w", err)
+	var contentID, tenantID, userID pgtype.UUID
+	if err := contentID.Scan(p.ContentID); err != nil {
+		return fmt.Errorf("task:import:fetch_media: bad content_id: %w", err)
 	}
-	if err := importProcessor.FetchMedia(ctx, id); err != nil {
+	if err := tenantID.Scan(p.TenantID); err != nil {
+		return fmt.Errorf("task:import:fetch_media: bad tenant_id: %w", err)
+	}
+	if err := userID.Scan(p.UserID); err != nil {
+		return fmt.Errorf("task:import:fetch_media: bad user_id: %w", err)
+	}
+	if err := importProcessor.FetchMedia(ctx, tenantID, userID, contentID); err != nil {
 		return fmt.Errorf("task:import:fetch_media: %w", err)
 	}
 	return nil

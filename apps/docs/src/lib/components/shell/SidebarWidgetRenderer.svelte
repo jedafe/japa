@@ -142,7 +142,7 @@
 		<form class="space-y-2" onsubmit={(e) => e.preventDefault()}>
 			<input
 				type="email"
-				placeholder={typeof widgetProps.placeholder === 'string' ? widgetProps.placeholder : 'your@email.com'}
+				placeholder={typeof widgetProps.placeholder === 'string' ? widgetProps.placeholder : t('sidebar.email_placeholder')}
 				class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2 text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none"
 			/>
 			<button type="submit" class="w-full rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-[var(--color-primary-contrast)] hover:bg-[var(--color-primary-hover)]">

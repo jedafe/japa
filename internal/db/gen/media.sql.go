@@ -16,7 +16,9 @@ UPDATE media
 SET confirmed = $1,
     quarantine_reason = $2::text,
     reviewed_by = $3,
-    reviewed_at = CASE WHEN $2 IS NULL AND $1 THEN now() ELSE reviewed_at END
+    reviewed_at = CASE WHEN $2 IS NULL AND $1 THEN now() ELSE reviewed_at END,
+    rejected_at = CASE WHEN $2 IS NULL AND NOT $1 THEN now() ELSE rejected_at END,
+    quarantined_at = CASE WHEN $2 IS NOT NULL AND $2 != '' THEN now() ELSE quarantined_at END
 WHERE id = $4 AND tenant_id = $5 AND deleted_at IS NULL
 `
 
@@ -160,9 +162,11 @@ WHERE tenant_id = $1
   AND (
     $5::text = '' OR
     ($5 = 'approved' AND confirmed = true) OR
-    ($5 = 'pending' AND confirmed = false AND (quarantine_reason IS NULL OR quarantine_reason = '')) OR
-    ($5 = 'quarantined' AND confirmed = false AND quarantine_reason IS NOT NULL AND quarantine_reason != '')
+    ($5 = 'pending' AND confirmed = false AND (quarantine_reason IS NULL OR quarantine_reason = '') AND rejected_at IS NULL) OR
+    ($5 = 'quarantined' AND confirmed = false AND quarantine_reason IS NOT NULL AND quarantine_reason != '') OR
+    ($5 = 'rejected' AND confirmed = false AND (quarantine_reason IS NULL OR quarantine_reason = '') AND rejected_at IS NOT NULL)
   )
+  AND ($6::text = '' OR flagged = ($6 = 'true'))
 `
 
 type CountMediaFilteredParams struct {
@@ -171,6 +175,7 @@ type CountMediaFilteredParams struct {
 	MimePattern    string      `json:"mime_pattern"`
 	Query          string      `json:"query"`
 	Status         string      `json:"status"`
+	Flagged        string      `json:"flagged"`
 }
 
 func (q *Queries) CountMediaFiltered(ctx context.Context, arg CountMediaFilteredParams) (int32, error) {
@@ -180,6 +185,7 @@ func (q *Queries) CountMediaFiltered(ctx context.Context, arg CountMediaFiltered
 		arg.MimePattern,
 		arg.Query,
 		arg.Status,
+		arg.Flagged,
 	)
 	var count int32
 	err := row.Scan(&count)
@@ -259,7 +265,7 @@ func (q *Queries) CountSearchMedia(ctx context.Context, arg CountSearchMediaPara
 
 const getMediaByID = `-- name: GetMediaByID :one
 
-SELECT id, tenant_id, uploader_user_id, original_filename, mime_type, file_size_bytes, width_px, height_px, duration_secs, storage_path, storage_bucket, alt_text, caption, confirmed, deleted_at, created_at, quarantine_reason, quarantined_at, reviewed_by, reviewed_at, user_group_id, source_platform, source_photographer, source_photographer_url, source_license, source_license_url, source_photo_id FROM media WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
+SELECT id, tenant_id, uploader_user_id, original_filename, mime_type, file_size_bytes, width_px, height_px, duration_secs, storage_path, storage_bucket, alt_text, caption, confirmed, deleted_at, created_at, quarantine_reason, quarantined_at, reviewed_by, reviewed_at, user_group_id, source_platform, source_photographer, source_photographer_url, source_license, source_license_url, source_photo_id, rejected_at, flagged FROM media WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
 `
 
 type GetMediaByIDParams struct {
@@ -301,12 +307,14 @@ func (q *Queries) GetMediaByID(ctx context.Context, arg GetMediaByIDParams) (Med
 		&i.SourceLicense,
 		&i.SourceLicenseUrl,
 		&i.SourcePhotoID,
+		&i.RejectedAt,
+		&i.Flagged,
 	)
 	return i, err
 }
 
 const getMediaByStoragePath = `-- name: GetMediaByStoragePath :one
-SELECT id, tenant_id, uploader_user_id, original_filename, mime_type, file_size_bytes, width_px, height_px, duration_secs, storage_path, storage_bucket, alt_text, caption, confirmed, deleted_at, created_at, quarantine_reason, quarantined_at, reviewed_by, reviewed_at, user_group_id, source_platform, source_photographer, source_photographer_url, source_license, source_license_url, source_photo_id FROM media WHERE storage_path = $1 AND tenant_id = $2
+SELECT id, tenant_id, uploader_user_id, original_filename, mime_type, file_size_bytes, width_px, height_px, duration_secs, storage_path, storage_bucket, alt_text, caption, confirmed, deleted_at, created_at, quarantine_reason, quarantined_at, reviewed_by, reviewed_at, user_group_id, source_platform, source_photographer, source_photographer_url, source_license, source_license_url, source_photo_id, rejected_at, flagged FROM media WHERE storage_path = $1 AND tenant_id = $2
 `
 
 type GetMediaByStoragePathParams struct {
@@ -345,6 +353,8 @@ func (q *Queries) GetMediaByStoragePath(ctx context.Context, arg GetMediaByStora
 		&i.SourceLicense,
 		&i.SourceLicenseUrl,
 		&i.SourcePhotoID,
+		&i.RejectedAt,
+		&i.Flagged,
 	)
 	return i, err
 }
@@ -364,7 +374,7 @@ VALUES (
     $8, $9, $10,
     $11, $12, $13
 )
-RETURNING id, tenant_id, uploader_user_id, original_filename, mime_type, file_size_bytes, width_px, height_px, duration_secs, storage_path, storage_bucket, alt_text, caption, confirmed, deleted_at, created_at, quarantine_reason, quarantined_at, reviewed_by, reviewed_at, user_group_id, source_platform, source_photographer, source_photographer_url, source_license, source_license_url, source_photo_id
+RETURNING id, tenant_id, uploader_user_id, original_filename, mime_type, file_size_bytes, width_px, height_px, duration_secs, storage_path, storage_bucket, alt_text, caption, confirmed, deleted_at, created_at, quarantine_reason, quarantined_at, reviewed_by, reviewed_at, user_group_id, source_platform, source_photographer, source_photographer_url, source_license, source_license_url, source_photo_id, rejected_at, flagged
 `
 
 type InsertMediaParams struct {
@@ -433,12 +443,14 @@ func (q *Queries) InsertMedia(ctx context.Context, arg InsertMediaParams) (Mediu
 		&i.SourceLicense,
 		&i.SourceLicenseUrl,
 		&i.SourcePhotoID,
+		&i.RejectedAt,
+		&i.Flagged,
 	)
 	return i, err
 }
 
 const listMediaByTenant = `-- name: ListMediaByTenant :many
-SELECT id, tenant_id, uploader_user_id, original_filename, mime_type, file_size_bytes, width_px, height_px, duration_secs, storage_path, storage_bucket, alt_text, caption, confirmed, deleted_at, created_at, quarantine_reason, quarantined_at, reviewed_by, reviewed_at, user_group_id, source_platform, source_photographer, source_photographer_url, source_license, source_license_url, source_photo_id FROM media
+SELECT id, tenant_id, uploader_user_id, original_filename, mime_type, file_size_bytes, width_px, height_px, duration_secs, storage_path, storage_bucket, alt_text, caption, confirmed, deleted_at, created_at, quarantine_reason, quarantined_at, reviewed_by, reviewed_at, user_group_id, source_platform, source_photographer, source_photographer_url, source_license, source_license_url, source_photo_id, rejected_at, flagged FROM media
 WHERE tenant_id = $1 AND deleted_at IS NULL
 ORDER BY created_at DESC
 LIMIT $3 OFFSET $2
@@ -487,6 +499,8 @@ func (q *Queries) ListMediaByTenant(ctx context.Context, arg ListMediaByTenantPa
 			&i.SourceLicense,
 			&i.SourceLicenseUrl,
 			&i.SourcePhotoID,
+			&i.RejectedAt,
+			&i.Flagged,
 		); err != nil {
 			return nil, err
 		}
@@ -499,7 +513,7 @@ func (q *Queries) ListMediaByTenant(ctx context.Context, arg ListMediaByTenantPa
 }
 
 const listMediaByType = `-- name: ListMediaByType :many
-SELECT id, tenant_id, uploader_user_id, original_filename, mime_type, file_size_bytes, width_px, height_px, duration_secs, storage_path, storage_bucket, alt_text, caption, confirmed, deleted_at, created_at, quarantine_reason, quarantined_at, reviewed_by, reviewed_at, user_group_id, source_platform, source_photographer, source_photographer_url, source_license, source_license_url, source_photo_id FROM media
+SELECT id, tenant_id, uploader_user_id, original_filename, mime_type, file_size_bytes, width_px, height_px, duration_secs, storage_path, storage_bucket, alt_text, caption, confirmed, deleted_at, created_at, quarantine_reason, quarantined_at, reviewed_by, reviewed_at, user_group_id, source_platform, source_photographer, source_photographer_url, source_license, source_license_url, source_photo_id, rejected_at, flagged FROM media
 WHERE tenant_id = $1 AND mime_type LIKE $2 || '%' AND deleted_at IS NULL
 ORDER BY created_at DESC
 LIMIT $4 OFFSET $3
@@ -554,6 +568,8 @@ func (q *Queries) ListMediaByType(ctx context.Context, arg ListMediaByTypeParams
 			&i.SourceLicense,
 			&i.SourceLicenseUrl,
 			&i.SourcePhotoID,
+			&i.RejectedAt,
+			&i.Flagged,
 		); err != nil {
 			return nil, err
 		}
@@ -567,7 +583,7 @@ func (q *Queries) ListMediaByType(ctx context.Context, arg ListMediaByTypeParams
 
 const listMediaByUploader = `-- name: ListMediaByUploader :many
 
-SELECT id, tenant_id, uploader_user_id, original_filename, mime_type, file_size_bytes, width_px, height_px, duration_secs, storage_path, storage_bucket, alt_text, caption, confirmed, deleted_at, created_at, quarantine_reason, quarantined_at, reviewed_by, reviewed_at, user_group_id, source_platform, source_photographer, source_photographer_url, source_license, source_license_url, source_photo_id FROM media
+SELECT id, tenant_id, uploader_user_id, original_filename, mime_type, file_size_bytes, width_px, height_px, duration_secs, storage_path, storage_bucket, alt_text, caption, confirmed, deleted_at, created_at, quarantine_reason, quarantined_at, reviewed_by, reviewed_at, user_group_id, source_platform, source_photographer, source_photographer_url, source_license, source_license_url, source_photo_id, rejected_at, flagged FROM media
 WHERE tenant_id = $1 AND uploader_user_id = $2 AND deleted_at IS NULL
 ORDER BY created_at DESC
 LIMIT $4 OFFSET $3
@@ -625,6 +641,8 @@ func (q *Queries) ListMediaByUploader(ctx context.Context, arg ListMediaByUpload
 			&i.SourceLicense,
 			&i.SourceLicenseUrl,
 			&i.SourcePhotoID,
+			&i.RejectedAt,
+			&i.Flagged,
 		); err != nil {
 			return nil, err
 		}
@@ -638,7 +656,7 @@ func (q *Queries) ListMediaByUploader(ctx context.Context, arg ListMediaByUpload
 
 const listMediaFiltered = `-- name: ListMediaFiltered :many
 
-SELECT id, tenant_id, uploader_user_id, original_filename, mime_type, file_size_bytes, width_px, height_px, duration_secs, storage_path, storage_bucket, alt_text, caption, confirmed, deleted_at, created_at, quarantine_reason, quarantined_at, reviewed_by, reviewed_at, user_group_id, source_platform, source_photographer, source_photographer_url, source_license, source_license_url, source_photo_id FROM media
+SELECT id, tenant_id, uploader_user_id, original_filename, mime_type, file_size_bytes, width_px, height_px, duration_secs, storage_path, storage_bucket, alt_text, caption, confirmed, deleted_at, created_at, quarantine_reason, quarantined_at, reviewed_by, reviewed_at, user_group_id, source_platform, source_photographer, source_photographer_url, source_license, source_license_url, source_photo_id, rejected_at, flagged FROM media
 WHERE tenant_id = $1
   AND deleted_at IS NULL
   AND ($2::uuid IS NULL OR uploader_user_id = $2)
@@ -650,11 +668,13 @@ WHERE tenant_id = $1
   AND (
     $5::text = '' OR
     ($5 = 'approved' AND confirmed = true) OR
-    ($5 = 'pending' AND confirmed = false AND (quarantine_reason IS NULL OR quarantine_reason = '')) OR
-    ($5 = 'quarantined' AND confirmed = false AND quarantine_reason IS NOT NULL AND quarantine_reason != '')
+    ($5 = 'pending' AND confirmed = false AND (quarantine_reason IS NULL OR quarantine_reason = '') AND rejected_at IS NULL) OR
+    ($5 = 'quarantined' AND confirmed = false AND quarantine_reason IS NOT NULL AND quarantine_reason != '') OR
+    ($5 = 'rejected' AND confirmed = false AND (quarantine_reason IS NULL OR quarantine_reason = '') AND rejected_at IS NOT NULL)
   )
+  AND ($6::text = '' OR flagged = ($6 = 'true'))
 ORDER BY created_at DESC
-LIMIT $7 OFFSET $6
+LIMIT $8 OFFSET $7
 `
 
 type ListMediaFilteredParams struct {
@@ -663,6 +683,7 @@ type ListMediaFilteredParams struct {
 	MimePattern    string      `json:"mime_pattern"`
 	Query          string      `json:"query"`
 	Status         string      `json:"status"`
+	Flagged        string      `json:"flagged"`
 	PageOffset     int32       `json:"page_offset"`
 	PageLimit      int32       `json:"page_limit"`
 }
@@ -679,6 +700,7 @@ func (q *Queries) ListMediaFiltered(ctx context.Context, arg ListMediaFilteredPa
 		arg.MimePattern,
 		arg.Query,
 		arg.Status,
+		arg.Flagged,
 		arg.PageOffset,
 		arg.PageLimit,
 	)
@@ -717,6 +739,8 @@ func (q *Queries) ListMediaFiltered(ctx context.Context, arg ListMediaFilteredPa
 			&i.SourceLicense,
 			&i.SourceLicenseUrl,
 			&i.SourcePhotoID,
+			&i.RejectedAt,
+			&i.Flagged,
 		); err != nil {
 			return nil, err
 		}
@@ -730,7 +754,7 @@ func (q *Queries) ListMediaFiltered(ctx context.Context, arg ListMediaFilteredPa
 
 const listMediaForScanning = `-- name: ListMediaForScanning :many
 SELECT id, storage_path FROM media
-WHERE tenant_id = $1 AND confirmed = false AND deleted_at IS NULL AND quarantined_at IS NULL
+WHERE tenant_id = $1 AND confirmed = false AND deleted_at IS NULL AND quarantined_at IS NULL AND rejected_at IS NULL
 ORDER BY created_at ASC
 LIMIT 50
 `
@@ -761,7 +785,7 @@ func (q *Queries) ListMediaForScanning(ctx context.Context, tenantID pgtype.UUID
 }
 
 const listMediaFromOrgPublicPosts = `-- name: ListMediaFromOrgPublicPosts :many
-SELECT m.id, m.tenant_id, m.uploader_user_id, m.original_filename, m.mime_type, m.file_size_bytes, m.width_px, m.height_px, m.duration_secs, m.storage_path, m.storage_bucket, m.alt_text, m.caption, m.confirmed, m.deleted_at, m.created_at, m.quarantine_reason, m.quarantined_at, m.reviewed_by, m.reviewed_at, m.user_group_id, m.source_platform, m.source_photographer, m.source_photographer_url, m.source_license, m.source_license_url, m.source_photo_id FROM media m
+SELECT m.id, m.tenant_id, m.uploader_user_id, m.original_filename, m.mime_type, m.file_size_bytes, m.width_px, m.height_px, m.duration_secs, m.storage_path, m.storage_bucket, m.alt_text, m.caption, m.confirmed, m.deleted_at, m.created_at, m.quarantine_reason, m.quarantined_at, m.reviewed_by, m.reviewed_at, m.user_group_id, m.source_platform, m.source_photographer, m.source_photographer_url, m.source_license, m.source_license_url, m.source_photo_id, m.rejected_at, m.flagged FROM media m
 WHERE m.tenant_id = $1
   AND m.deleted_at IS NULL
   AND m.confirmed = true
@@ -829,6 +853,8 @@ func (q *Queries) ListMediaFromOrgPublicPosts(ctx context.Context, arg ListMedia
 			&i.SourceLicense,
 			&i.SourceLicenseUrl,
 			&i.SourcePhotoID,
+			&i.RejectedAt,
+			&i.Flagged,
 		); err != nil {
 			return nil, err
 		}
@@ -841,7 +867,7 @@ func (q *Queries) ListMediaFromOrgPublicPosts(ctx context.Context, arg ListMedia
 }
 
 const listMediaFromPublicPostsByUser = `-- name: ListMediaFromPublicPostsByUser :many
-SELECT m.id, m.tenant_id, m.uploader_user_id, m.original_filename, m.mime_type, m.file_size_bytes, m.width_px, m.height_px, m.duration_secs, m.storage_path, m.storage_bucket, m.alt_text, m.caption, m.confirmed, m.deleted_at, m.created_at, m.quarantine_reason, m.quarantined_at, m.reviewed_by, m.reviewed_at, m.user_group_id, m.source_platform, m.source_photographer, m.source_photographer_url, m.source_license, m.source_license_url, m.source_photo_id FROM media m
+SELECT m.id, m.tenant_id, m.uploader_user_id, m.original_filename, m.mime_type, m.file_size_bytes, m.width_px, m.height_px, m.duration_secs, m.storage_path, m.storage_bucket, m.alt_text, m.caption, m.confirmed, m.deleted_at, m.created_at, m.quarantine_reason, m.quarantined_at, m.reviewed_by, m.reviewed_at, m.user_group_id, m.source_platform, m.source_photographer, m.source_photographer_url, m.source_license, m.source_license_url, m.source_photo_id, m.rejected_at, m.flagged FROM media m
 WHERE m.tenant_id = $1
   AND m.deleted_at IS NULL
   AND m.confirmed = true
@@ -905,6 +931,8 @@ func (q *Queries) ListMediaFromPublicPostsByUser(ctx context.Context, arg ListMe
 			&i.SourceLicense,
 			&i.SourceLicenseUrl,
 			&i.SourcePhotoID,
+			&i.RejectedAt,
+			&i.Flagged,
 		); err != nil {
 			return nil, err
 		}
@@ -1058,7 +1086,7 @@ func (q *Queries) RejectQuarantinedMedia(ctx context.Context, arg RejectQuaranti
 }
 
 const searchMedia = `-- name: SearchMedia :many
-SELECT id, tenant_id, uploader_user_id, original_filename, mime_type, file_size_bytes, width_px, height_px, duration_secs, storage_path, storage_bucket, alt_text, caption, confirmed, deleted_at, created_at, quarantine_reason, quarantined_at, reviewed_by, reviewed_at, user_group_id, source_platform, source_photographer, source_photographer_url, source_license, source_license_url, source_photo_id FROM media
+SELECT id, tenant_id, uploader_user_id, original_filename, mime_type, file_size_bytes, width_px, height_px, duration_secs, storage_path, storage_bucket, alt_text, caption, confirmed, deleted_at, created_at, quarantine_reason, quarantined_at, reviewed_by, reviewed_at, user_group_id, source_platform, source_photographer, source_photographer_url, source_license, source_license_url, source_photo_id, rejected_at, flagged FROM media
 WHERE tenant_id = $1
   AND deleted_at IS NULL
   AND (original_filename ILIKE '%' || $2 || '%'
@@ -1117,6 +1145,8 @@ func (q *Queries) SearchMedia(ctx context.Context, arg SearchMediaParams) ([]Med
 			&i.SourceLicense,
 			&i.SourceLicenseUrl,
 			&i.SourcePhotoID,
+			&i.RejectedAt,
+			&i.Flagged,
 		); err != nil {
 			return nil, err
 		}

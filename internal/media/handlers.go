@@ -31,7 +31,11 @@ type MediaResponse struct {
 	MimeType    string  `json:"mime_type"`
 	FileSize    int64   `json:"file_size"`
 	AltText     *string `json:"alt_text"`
+	Caption     *string `json:"caption"`
+	Width       *int32  `json:"width"`
+	Height      *int32  `json:"height"`
 	Status      string  `json:"status"`
+	Flagged     bool    `json:"flagged"`
 	CreatedAt   string  `json:"created_at"`
 	URL         string  `json:"url"`
 	UserGroupID *string `json:"user_group_id"`
@@ -50,6 +54,8 @@ func toMediaResponse(m *gen.Medium, url string) MediaResponse {
 		status = "approved"
 	} else if m.QuarantineReason != nil && *m.QuarantineReason != "" {
 		status = "quarantined"
+	} else if m.RejectedAt.Valid {
+		status = "rejected"
 	}
 
 	var userGroupID *string
@@ -64,7 +70,11 @@ func toMediaResponse(m *gen.Medium, url string) MediaResponse {
 		MimeType:             m.MimeType,
 		FileSize:             m.FileSizeBytes,
 		AltText:              m.AltText,
+		Caption:              m.Caption,
+		Width:                m.WidthPx,
+		Height:               m.HeightPx,
 		Status:               status,
+		Flagged:              m.Flagged,
 		CreatedAt:            m.CreatedAt.Time.Format("2006-01-02T15:04:05Z"),
 		URL:                  url,
 		UserGroupID:          userGroupID,
@@ -100,6 +110,9 @@ func toQuarantinedMediaResponse(m *QuarantinedMedia, url string) MediaResponse {
 		MimeType:  m.MimeType,
 		FileSize:  m.FileSizeBytes,
 		AltText:   m.AltText,
+		Caption:   m.Caption,
+		Width:     m.WidthPx,
+		Height:    m.HeightPx,
 		Status:    status,
 		CreatedAt: m.CreatedAt.Time.Format("2006-01-02T15:04:05Z"),
 		URL:       url,
@@ -608,7 +621,12 @@ func (h *Handlers) ListMedia(w http.ResponseWriter, r *http.Request) {
 		status = &st
 	}
 
-	items, total, err := h.service.ListMedia(r.Context(), tenantID, uploaderID, mimeType, query, status, limit, offset)
+	var flagged *string
+	if fl := r.URL.Query().Get("flagged"); fl != "" {
+		flagged = &fl
+	}
+
+	items, total, err := h.service.ListMedia(r.Context(), tenantID, uploaderID, mimeType, query, status, flagged, limit, offset)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "list_error", "Failed to load media")
 		return
@@ -660,7 +678,12 @@ func (h *Handlers) ListMyMedia(w http.ResponseWriter, r *http.Request) {
 		status = &st
 	}
 
-	items, total, err := h.service.ListMedia(r.Context(), tenantID, &user.UserID, mimeType, query, status, limit, offset)
+	var flagged *string
+	if fl := r.URL.Query().Get("flagged"); fl != "" {
+		flagged = &fl
+	}
+
+	items, total, err := h.service.ListMedia(r.Context(), tenantID, &user.UserID, mimeType, query, status, flagged, limit, offset)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "list_error", "Failed to load media")
 		return

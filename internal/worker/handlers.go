@@ -2603,6 +2603,70 @@ func HandleDataExport(ctx context.Context, t *asynq.Task) error {
 	return nil
 }
 
+// HandlePlatformDataExport generates a platform-wide data export file
+// (Section 67). The payload carries export_id + tenant_id.
+func HandlePlatformDataExport(ctx context.Context, t *asynq.Task) error {
+	slog.Info("task:platform:data_export")
+
+	if platformDataExportProcessor == nil {
+		slog.Warn("task:platform:data_export: no processor registered, skipping")
+		return nil
+	}
+
+	var payload struct {
+		ExportID string `json:"export_id"`
+		TenantID string `json:"tenant_id"`
+	}
+	if err := parsePayload(t, &payload); err != nil {
+		slog.Error("task:platform:data_export: invalid payload", "error", err)
+		return err
+	}
+
+	var exportID pgtype.UUID
+	if err := exportID.Scan(payload.ExportID); err != nil {
+		slog.Error("task:platform:data_export: invalid export_id", "error", err)
+		return err
+	}
+
+	if err := platformDataExportProcessor.ProcessExport(ctx, exportID); err != nil {
+		errpkg.CaptureException(fmt.Errorf("platform data export failed (export=%s): %w", payload.ExportID, err))
+		return err
+	}
+	return nil
+}
+
+// HandlePlatformDataImport processes a platform-wide data import file
+// (Section 67). The payload carries import_id + tenant_id.
+func HandlePlatformDataImport(ctx context.Context, t *asynq.Task) error {
+	slog.Info("task:platform:data_import")
+
+	if platformDataImportProcessor == nil {
+		slog.Warn("task:platform:data_import: no processor registered, skipping")
+		return nil
+	}
+
+	var payload struct {
+		ImportID string `json:"import_id"`
+		TenantID string `json:"tenant_id"`
+	}
+	if err := parsePayload(t, &payload); err != nil {
+		slog.Error("task:platform:data_import: invalid payload", "error", err)
+		return err
+	}
+
+	var importID pgtype.UUID
+	if err := importID.Scan(payload.ImportID); err != nil {
+		slog.Error("task:platform:data_import: invalid import_id", "error", err)
+		return err
+	}
+
+	if err := platformDataImportProcessor.ProcessImport(ctx, importID); err != nil {
+		errpkg.CaptureException(fmt.Errorf("platform data import failed (import=%s): %w", payload.ImportID, err))
+		return err
+	}
+	return nil
+}
+
 // HandleAccountDeletionCleanup performs the final cleanup after an account deletion request.
 func HandleAccountDeletionCleanup(ctx context.Context, t *asynq.Task) error {
 	slog.Info("task:account:deletion_cleanup")

@@ -175,5 +175,12 @@
 	"api.param_type": "Type",
 	"api.param_required": "Required",
 	"api.param_desc": "Description",
-	"api.response_schema": "Response Schema"
+	"api.response_schema": "Response Schema",
+	"api.auth_required": "API key required",
+	"api.public": "[public]",
+	"common.yes": "yes",
+	"common.no": "no",
+	"common.copied": "Copied",
+	"common.copy_curl": "Copy cURL",
+	"sidebar.email_placeholder": "your@email.com"
 }

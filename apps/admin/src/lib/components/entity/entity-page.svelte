@@ -263,10 +263,13 @@
 
 	// Honour a parent-supplied default page size, but only when the URL did not
 	// already restore one. After init, DataTable owns the value.
+	// untrack(pageSize) so this effect only fires when config.pageSize changes,
+	// not when the user (or Pagination) changes pageSize — otherwise it would
+	// reset the user's selection back to the config default on every change.
 	$effect(() => {
 		if (pageSizeSeededFromUrl) return;
 		const ps = config.pageSize;
-		if (ps && ps !== pageSize) pageSize = ps;
+		if (ps && ps !== untrack(() => pageSize)) pageSize = ps;
 	});
 
 	// ── Row actions: custom actions get an ActionContext; defaults open the slide-overs ──

@@ -49,7 +49,7 @@
 		{#if track.thumbnail_url}
 			<img
 				src={track.thumbnail_url}
-				alt=""
+				alt={track.title}
 				loading="lazy"
 				class="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
 			/>
