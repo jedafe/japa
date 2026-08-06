@@ -75,6 +75,8 @@ Prompts/* (Copy).md
 
 # Binaries
 api
+jc-api
+reindex
 meilisearch
 seed
 bin/japa-api
