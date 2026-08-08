@@ -7,6 +7,7 @@
 		value = $bindable({}),
 		errors = {},
 		disabled = false,
+		editing = false,
 		onsubmit,
 		class: className
 	}: {
@@ -14,6 +15,7 @@
 		value?: Record<string, any>;
 		errors?: Record<string, string>;
 		disabled?: boolean;
+		editing?: boolean;
 		onsubmit?: () => void;
 		class?: ClassValue;
 	} = $props();
@@ -42,8 +44,9 @@
 					aria-label={field.label}
 					placeholder={field.placeholder}
 					disabled={disabled}
+					readonly={field.readonlyInEdit && editing}
 					bind:value={value[field.key]}
-					class="rounded-lg border p-2 text-sm focus:outline-none focus:ring-2 disabled:cursor-not-allowed disabled:opacity-50"
+					class="rounded-lg border p-2 text-sm focus:outline-none focus:ring-2 disabled:cursor-not-allowed disabled:opacity-50 read-only:cursor-not-allowed read-only:opacity-70"
 					style="border-color: var(--color-border-input); background-color: var(--color-surface); color: var(--color-foreground)"
 				></textarea>
 			{:else if field.type === 'select'}
@@ -86,11 +89,12 @@
 					aria-label={field.label}
 					placeholder={field.placeholder}
 					disabled={disabled}
+					readonly={field.readonlyInEdit && editing}
 					min={field.min}
 					max={field.max}
 					step={field.step}
 					bind:value={value[field.key]}
-					class="rounded-lg border p-2 text-sm focus:outline-none focus:ring-2 disabled:cursor-not-allowed disabled:opacity-50"
+					class="rounded-lg border p-2 text-sm focus:outline-none focus:ring-2 disabled:cursor-not-allowed disabled:opacity-50 read-only:cursor-not-allowed read-only:opacity-70"
 					style="border-color: var(--color-border-input); background-color: var(--color-surface); color: var(--color-foreground)"
 				/>
 			{/if}

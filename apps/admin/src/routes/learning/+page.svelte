@@ -59,6 +59,8 @@
 	type Enrollment = {
 		id: string;
 		user_id: string;
+		username?: string;
+		display_name?: string;
 		access_type: string;
 		progress_pct: number;
 		enrolled_at: string;
@@ -1224,7 +1226,7 @@
 			<table class="w-full text-sm">
 				<thead>
 					<tr class="border-b">
-						<th class="px-3 py-2 text-left font-medium text-muted">{t('app.learning.col_user_id', 'User ID')}</th>
+						<th class="px-3 py-2 text-left font-medium text-muted">{t('app.learning.col_user', 'User')}</th>
 						<th class="px-3 py-2 text-left font-medium text-muted">{t('app.learning.col_access_type', 'Access Type')}</th>
 						<th class="px-3 py-2 text-left font-medium text-muted">{t('app.learning.col_progress', 'Progress')}</th>
 						<th class="px-3 py-2 text-left font-medium text-muted">{t('app.learning.col_enrolled_at', 'Enrolled')}</th>
@@ -1233,7 +1235,18 @@
 				<tbody>
 					{#each enrollments as enrollment}
 						<tr class="border-b last:border-0">
-							<td class="px-3 py-2 font-mono text-xs">{enrollment.user_id}</td>
+							<td class="px-3 py-2">
+							{#if enrollment.display_name}
+								<div>
+									<p class="font-medium text-foreground">{enrollment.display_name}</p>
+									<p class="text-xs text-muted">@{enrollment.username}</p>
+								</div>
+							{:else if enrollment.username}
+								<span class="font-medium text-foreground">@{enrollment.username}</span>
+							{:else}
+								<span class="font-mono text-xs text-muted">{enrollment.user_id}</span>
+							{/if}
+						</td>
 							<td class="px-3 py-2">{enrollment.access_type}</td>
 							<td class="px-3 py-2">
 								<div class="flex items-center gap-2">

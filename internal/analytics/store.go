@@ -255,3 +255,28 @@ func (s *Store) GetRevenueByPeriod(ctx context.Context, tenantID pgtype.UUID, st
 		Column3:  nullableTimestamptz(endDate),
 	})
 }
+
+// CountPendingReports returns the total number of pending content reports.
+func (s *Store) CountPendingReports(ctx context.Context, tenantID pgtype.UUID) (int32, error) {
+	return s.queries.CountPendingReports(ctx, tenantID)
+}
+
+// CountOpenTickets returns the number of tickets not yet resolved/closed/spam.
+func (s *Store) CountOpenTickets(ctx context.Context, tenantID pgtype.UUID) (int32, error) {
+	return s.queries.CountOpenTickets(ctx, tenantID)
+}
+
+// CountSpamQueue returns the total number of flagged media and auto-hidden content.
+func (s *Store) CountSpamQueue(ctx context.Context, tenantID pgtype.UUID) (int32, error) {
+	return s.queries.CountSpamQueue(ctx, tenantID)
+}
+
+// CountGenerationsToday returns the number of AI studio jobs created today.
+func (s *Store) CountGenerationsToday(ctx context.Context, tenantID pgtype.UUID) (int32, error) {
+	return s.queries.CountGenerationsToday(ctx, tenantID)
+}
+
+// CountPendingReviews returns the number of content reviews awaiting HITL review.
+func (s *Store) CountPendingReviews(ctx context.Context, tenantID pgtype.UUID) (int32, error) {
+	return s.queries.CountPendingReviews(ctx, tenantID)
+}

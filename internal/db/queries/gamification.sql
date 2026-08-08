@@ -58,6 +58,10 @@ SET
 WHERE tenant_id = @tenant_id AND id = @id
 RETURNING *;
 
+-- name: DeleteBadgeDefinition :execrows
+DELETE FROM badge_definitions
+WHERE tenant_id = @tenant_id AND id = @id AND is_system = false;
+
 -- =====================================================================
 -- User Badges
 -- =====================================================================
@@ -135,6 +139,26 @@ VALUES (
     @starts_at, sqlc.narg(ends_at), @is_active
 )
 RETURNING *;
+
+-- name: UpdateChallenge :one
+UPDATE challenge_definitions
+SET
+    name           = COALESCE(sqlc.narg(name), name),
+    description    = COALESCE(sqlc.narg(description), description),
+    image_media_id = COALESCE(sqlc.narg(image_media_id), image_media_id),
+    activity_key   = COALESCE(sqlc.narg(activity_key), activity_key),
+    target_count   = COALESCE(sqlc.narg(target_count), target_count),
+    reward_points  = COALESCE(sqlc.narg(reward_points), reward_points),
+    reward_badge_id = COALESCE(sqlc.narg(reward_badge_id), reward_badge_id),
+    starts_at      = COALESCE(sqlc.narg(starts_at), starts_at),
+    ends_at        = COALESCE(sqlc.narg(ends_at), ends_at),
+    is_active      = COALESCE(sqlc.narg(is_active), is_active)
+WHERE tenant_id = @tenant_id AND id = @id
+RETURNING *;
+
+-- name: DeleteChallenge :execrows
+DELETE FROM challenge_definitions
+WHERE tenant_id = @tenant_id AND id = @id;
 
 -- name: ExpireChallengesPastEndDate :execrows
 UPDATE challenge_definitions

@@ -204,16 +204,17 @@ func (s *Service) CreateTag(ctx context.Context, tenantID pgtype.UUID, input Cre
 // UpdateTagInput holds parameters for updating a tag (catalog: PATCH /admin/tags/:id).
 type UpdateTagInput struct {
 	Name         string
+	Slug         string
 	Description  *string
 	Rules        *string
 	CoverMediaID pgtype.UUID
 	Color        *string
 	LogoMediaID  pgtype.UUID
+	IsSystem     bool
 	FieldValues  []byte
 }
 
-// UpdateTag updates an existing tag's name/description/rules/cover/color/logo/fields.
-// Slug and is_system are immutable.
+// UpdateTag updates an existing tag's name/slug/description/rules/cover/color/logo/is_system/fields.
 func (s *Service) UpdateTag(ctx context.Context, id, tenantID pgtype.UUID, input UpdateTagInput) (gen.UpdateTagRow, error) {
 	fieldValues := input.FieldValues
 	if len(fieldValues) == 0 {
@@ -223,11 +224,13 @@ func (s *Service) UpdateTag(ctx context.Context, id, tenantID pgtype.UUID, input
 		ID:           id,
 		TenantID:     tenantID,
 		Name:         input.Name,
+		Slug:         input.Slug,
 		Description:  input.Description,
 		Rules:        input.Rules,
 		CoverMediaID: input.CoverMediaID,
 		Color:        input.Color,
 		LogoMediaID:  input.LogoMediaID,
+		IsSystem:     input.IsSystem,
 		FieldValues:  fieldValues,
 	})
 	if err != nil {

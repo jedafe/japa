@@ -227,6 +227,11 @@ type AdminDashboard struct {
 	TopContent         []gen.GetTopContentByViewsRow     `json:"top_content"`
 	ContentStats       []gen.GetDailyContentStatsRow     `json:"content_stats"`
 	SpaceStats         []gen.GetDailySpaceStatsRow       `json:"space_stats"`
+	PendingReports     int32                             `json:"pending_reports"`
+	PendingTickets     int32                             `json:"pending_tickets"`
+	SpamQueue          int32                             `json:"spam_queue"`
+	GenerationsToday   int32                             `json:"generations_today"`
+	HITLPending        int32                             `json:"hitl_pending"`
 }
 
 // UserAnalytics holds the admin user analytics response.
@@ -302,6 +307,27 @@ func (s *Service) GetAdminDashboardData(ctx context.Context, tenantID pgtype.UUI
 		return AdminDashboard{}, fmt.Errorf("fetching space stats: %w", err)
 	}
 
+	pendingReports, err := s.store.CountPendingReports(ctx, tenantID)
+	if err != nil {
+		slog.Error("fetching pending reports count", "error", err)
+	}
+	pendingTickets, err := s.store.CountOpenTickets(ctx, tenantID)
+	if err != nil {
+		slog.Error("fetching open tickets count", "error", err)
+	}
+	spamQueue, err := s.store.CountSpamQueue(ctx, tenantID)
+	if err != nil {
+		slog.Error("fetching spam queue count", "error", err)
+	}
+	generationsToday, err := s.store.CountGenerationsToday(ctx, tenantID)
+	if err != nil {
+		slog.Error("fetching generations today count", "error", err)
+	}
+	hitlPending, err := s.store.CountPendingReviews(ctx, tenantID)
+	if err != nil {
+		slog.Error("fetching pending reviews count", "error", err)
+	}
+
 	return AdminDashboard{
 		DailyActiveUsers:   dau,
 		MonthlyActiveUsers: mau,
@@ -312,6 +338,11 @@ func (s *Service) GetAdminDashboardData(ctx context.Context, tenantID pgtype.UUI
 		TopContent:         topContent,
 		ContentStats:       contentStats,
 		SpaceStats:         spaceStats,
+		PendingReports:     pendingReports,
+		PendingTickets:     pendingTickets,
+		SpamQueue:          spamQueue,
+		GenerationsToday:   generationsToday,
+		HITLPending:        hitlPending,
 	}, nil
 }
 

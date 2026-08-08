@@ -5,11 +5,13 @@
 	import { DataTable } from '$lib/components/ui/data-table';
 	import { Button } from '$lib/components/ui/button';
 	import { Modal } from '$lib/components/ui/modal';
-	import { SlideOver } from "$lib/components/ui/slide-over";
-	import type { ActionItem } from "$lib/components/ui/data-table";
+	import { SlideOver } from '$lib/components/ui/slide-over';
+	import type { ActionItem } from '$lib/components/ui/data-table';
 	import { TableSkeleton } from '$lib/components/ui/skeleton';
 	import { Tabs } from '$lib/components/ui/tabs';
-	import { Trophy, Plus, RefreshCw, Target, Pencil, Award, Trash2 } from 'lucide-svelte';
+	import ActivityKeyAutocomplete from '$lib/components/ui/ActivityKeyAutocomplete.svelte';
+	import UserAutocomplete from '$lib/components/ui/UserAutocomplete.svelte';
+	import { Trophy, Plus, RefreshCw, Target, Pencil, Award, Trash2, Eye } from 'lucide-svelte';
 	import { api } from '$lib/api';
 
 	type Badge = {
@@ -41,7 +43,10 @@
 		created_at: string;
 	};
 
-	const canManage = $derived(hasPermission('gamification.manage'));
+	// Permission nodes per JEOS §64 — gamification.manage does NOT exist.
+	const canManageBadges = $derived(hasPermission('gamification.manage_badges'));
+	const canManageChallenges = $derived(hasPermission('gamification.manage_challenges'));
+	const canAwardBadge = $derived(hasPermission('gamification.award_badge'));
 
 	let activeTab = $state('badges');
 	let badges = $state<Badge[]>([]);
@@ -55,21 +60,41 @@
 	let messageType = $state('');
 	let awardModalOpen = $state(false);
 	let awardBadgeId = $state('');
-	let awardUserId = $state('');
+	let awardUsername = $state('');
+	let awardTargetUserId = $state('');
 
-	// Edit badge modal
+	// View slide-over
+	let viewSlideOverOpen = $state(false);
+	let viewItem = $state<{ kind: 'badge' | 'challenge'; data: Badge | Challenge } | null>(null);
+
+	// Edit badge slide-over
 	let editBadgeSlideOverOpen = $state(false);
 	let editingBadge = $state<Badge | null>(null);
 	let editBadgeForm = $state({
 		name: '',
 		description: '',
-		trigger_type: 'count',
+		trigger_type: 'activity_count',
 		trigger_value: 0,
 		trigger_activity_key: '',
 		is_active: true,
 		display_order: 0
 	});
 	let savingEditBadge = $state(false);
+
+	// Edit challenge slide-over
+	let editChallengeSlideOverOpen = $state(false);
+	let editingChallenge = $state<Challenge | null>(null);
+	let editChallengeForm = $state({
+		name: '',
+		description: '',
+		activity_key: '',
+		target_count: 10,
+		reward_points: 100,
+		starts_at: new Date().toISOString().slice(0, 10),
+		ends_at: '',
+		is_active: true
+	});
+	let savingEditChallenge = $state(false);
 
 	// Delete confirmation
 	let showDeleteConfirm = $state(false);
@@ -80,7 +105,7 @@
 		slug: '',
 		name: '',
 		description: '',
-		trigger_type: 'count',
+		trigger_type: 'activity_count',
 		trigger_value: 0,
 		trigger_activity_key: '',
 		is_active: true,
@@ -103,6 +128,27 @@
 		{ value: 'badges', label: t('gamification.badges', 'Badges'), icon: Trophy },
 		{ value: 'challenges', label: t('gamification.challenges', 'Challenges'), icon: Target }
 	]);
+
+	// Trigger type options matching the backend CHECK constraint (§64 schema).
+	const triggerTypeOptions = [
+		{ value: 'lifetime_points', label: t('gamification.trigger_lifetime_points', 'Lifetime Points') },
+		{ value: 'activity_count', label: t('gamification.trigger_activity_count', 'Activity Count') },
+		{ value: 'manual', label: t('gamification.trigger_manual', 'Manual') }
+	];
+
+	// Aggregate all known activity keys from already-loaded badges and
+	// challenges so the autocomplete can suggest them without an extra API
+	// call. The ActivityKeyAutocomplete also fetches wallet rules internally.
+	const knownActivityKeys = $derived.by(() => {
+		const set = new Set<string>();
+		for (const b of badges) {
+			if (b.trigger_activity_key) set.add(b.trigger_activity_key);
+		}
+		for (const c of challenges) {
+			if (c.activity_key) set.add(c.activity_key);
+		}
+		return Array.from(set);
+	});
 
 	async function load() {
 		loading = true;
@@ -134,7 +180,7 @@
 				messageType = 'success';
 				message = t('gamification.badge_created', 'Badge created.');
 				createSlideOverOpen = false;
-				newBadge = { slug: '', name: '', description: '', trigger_type: 'count', trigger_value: 0, trigger_activity_key: '', is_active: true, display_order: 0 };
+				newBadge = { slug: '', name: '', description: '', trigger_type: 'activity_count', trigger_value: 0, trigger_activity_key: '', is_active: true, display_order: 0 };
 				load();
 			} else {
 				messageType = 'error';
@@ -176,15 +222,21 @@
 	}
 
 	async function awardBadge() {
+		if (!awardTargetUserId) {
+			messageType = 'error';
+			message = t('gamification.select_user', 'Please select a user from the search results.');
+			return;
+		}
 		saving = true;
 		message = '';
 		try {
-			const result = await api(`/admin/gamification/badges/${awardBadgeId}/award`, { method: 'POST', body: { user_id: awardUserId } });
+			const result = await api(`/admin/gamification/badges/${awardBadgeId}/award`, { method: 'POST', body: { user_id: awardTargetUserId } });
 			if (result.ok) {
 				messageType = 'success';
 				message = t('gamification.badge_awarded', 'Badge awarded successfully.');
 				awardModalOpen = false;
-				awardUserId = '';
+				awardUsername = '';
+				awardTargetUserId = '';
 			} else {
 				messageType = 'error';
 				message = result.error;
@@ -195,6 +247,16 @@
 		} finally {
 			saving = false;
 		}
+	}
+
+	function openViewBadge(badge: Badge) {
+		viewItem = { kind: 'badge', data: badge };
+		viewSlideOverOpen = true;
+	}
+
+	function openViewChallenge(challenge: Challenge) {
+		viewItem = { kind: 'challenge', data: challenge };
+		viewSlideOverOpen = true;
 	}
 
 	function openEditBadge(badge: Badge) {
@@ -209,6 +271,21 @@
 			display_order: badge.display_order
 		};
 		editBadgeSlideOverOpen = true;
+	}
+
+	function openEditChallenge(challenge: Challenge) {
+		editingChallenge = challenge;
+		editChallengeForm = {
+			name: challenge.name,
+			description: challenge.description,
+			activity_key: challenge.activity_key,
+			target_count: challenge.target_count,
+			reward_points: challenge.reward_points,
+			starts_at: challenge.starts_at ? new Date(challenge.starts_at).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10),
+			ends_at: challenge.ends_at ? new Date(challenge.ends_at).toISOString().slice(0, 10) : '',
+			is_active: challenge.is_active
+		};
+		editChallengeSlideOverOpen = true;
 	}
 
 	async function submitEditBadge() {
@@ -235,9 +312,38 @@
 		}
 	}
 
+	async function submitEditChallenge() {
+		if (!editingChallenge) return;
+		savingEditChallenge = true;
+		message = '';
+		try {
+			const body = {
+				...editChallengeForm,
+				ends_at: editChallengeForm.ends_at || undefined
+			};
+			const result = await api(`/admin/gamification/challenges/${editingChallenge.id}`, { method: 'PATCH', body });
+			if (result.ok) {
+				messageType = 'success';
+				message = t('gamification.challenge_updated', 'Challenge updated.');
+				editChallengeSlideOverOpen = false;
+				editingChallenge = null;
+				load();
+			} else {
+				messageType = 'error';
+				message = result.error;
+			}
+		} catch (e) {
+			messageType = 'error';
+			message = e instanceof Error ? e.message : t('gamification.update_error', 'Failed to update challenge');
+		} finally {
+			savingEditChallenge = false;
+		}
+	}
+
 	function openAwardBadge(badge: Badge) {
 		awardBadgeId = badge.id;
-		awardUserId = '';
+		awardUsername = '';
+		awardTargetUserId = '';
 		awardModalOpen = true;
 	}
 
@@ -317,23 +423,28 @@
 
 	const badgeRowActions: ActionItem[] = [
 		{
+			label: t('common.view', 'View'),
+			icon: Eye,
+			onclick: (row: Badge) => openViewBadge(row)
+		},
+		{
 			label: t('gamification.award', 'Award'),
 			icon: Award,
 			onclick: (row: Badge) => openAwardBadge(row),
-			show: () => canManage
+			show: () => canAwardBadge
 		},
 		{
 			label: t('common.edit', 'Edit'),
 			icon: Pencil,
 			onclick: (row: Badge) => openEditBadge(row),
-			show: (row: Badge) => canManage && !row.is_system
+			show: (row: Badge) => canManageBadges && !row.is_system
 		},
 		{
 			label: t('common.delete', 'Delete'),
 			icon: Trash2,
 			variant: 'destructive',
 			onclick: (row: Badge) => promptDeleteBadge(row),
-			show: (row: Badge) => canManage && !row.is_system
+			show: (row: Badge) => canManageBadges && !row.is_system
 		}
 	];
 
@@ -380,15 +491,26 @@
 
 	const challengeRowActions: ActionItem[] = [
 		{
+			label: t('common.view', 'View'),
+			icon: Eye,
+			onclick: (row: Challenge) => openViewChallenge(row)
+		},
+		{
+			label: t('common.edit', 'Edit'),
+			icon: Pencil,
+			onclick: (row: Challenge) => openEditChallenge(row),
+			show: () => canManageChallenges
+		},
+		{
 			label: t('common.delete', 'Delete'),
 			icon: Trash2,
 			variant: 'destructive',
 			onclick: (row: Challenge) => promptDeleteChallenge(row),
-			show: () => canManage
+			show: () => canManageChallenges
 		}
 	];
 
-	// Ref: jc-admin-develop — reactive $effect so tab changes re-fetch
+	// Load once on mount — both tabs' data is fetched together.
 	$effect(() => {
 		load();
 	});
@@ -397,7 +519,7 @@
 <PageHeader
 	title={t('gamification.title', 'Gamification')}
 	description={t('gamification.description', 'Manage badges, challenges, and leaderboard settings.')}
-	actions={canManage ? [
+	actions={(canManageBadges || canManageChallenges) ? [
 		{ label: t('gamification.create_badge', 'Create Badge'), icon: Trophy, onclick: () => { createType = 'badge'; createSlideOverOpen = true; } },
 		{ label: t('gamification.create_challenge', 'Create Challenge'), icon: Target, onclick: () => { createType = 'challenge'; createSlideOverOpen = true; } },
 		{ label: t('common.refresh', 'Refresh'), icon: RefreshCw, variant: 'ghost', onclick: load }
@@ -469,9 +591,9 @@
 				<div>
 					<label for="badge-trigger" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('gamification.trigger', 'Trigger Type')}</label>
 					<select id="badge-trigger" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={newBadge.trigger_type}>
-						<option value="count">count</option>
-						<option value="streak">streak</option>
-						<option value="manual">manual</option>
+						{#each triggerTypeOptions as opt}
+							<option value={opt.value}>{opt.label}</option>
+						{/each}
 					</select>
 				</div>
 				<div>
@@ -481,7 +603,17 @@
 			</div>
 			<div>
 				<label for="badge-activity" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('gamification.activity_key', 'Activity Key')}</label>
-				<input id="badge-activity" type="text" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={newBadge.trigger_activity_key} placeholder="post.create" />
+				<ActivityKeyAutocomplete id="badge-activity" bind:value={newBadge.trigger_activity_key} placeholder="post.create" extraKeys={knownActivityKeys} />
+			</div>
+			<div class="grid grid-cols-2 gap-3">
+				<div>
+					<label for="badge-order" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('gamification.display_order', 'Display Order')}</label>
+					<input id="badge-order" type="number" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={newBadge.display_order} />
+				</div>
+				<div class="flex items-center gap-2 pt-6">
+					<input type="checkbox" id="badge-active-create" bind:checked={newBadge.is_active} />
+					<label for="badge-active-create" class="text-sm" style="color: var(--color-foreground)">{t('gamification.active', 'Active')}</label>
+				</div>
 			</div>
 		</div>
 	{:else}
@@ -501,7 +633,7 @@
 			<div class="grid grid-cols-2 gap-3">
 				<div>
 					<label for="challenge-activity" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('gamification.activity', 'Activity Key')}</label>
-					<input id="challenge-activity" type="text" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={newChallenge.activity_key} placeholder="post.create" />
+					<ActivityKeyAutocomplete id="challenge-activity" bind:value={newChallenge.activity_key} placeholder="post.create" extraKeys={knownActivityKeys} />
 				</div>
 				<div>
 					<label for="challenge-target" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('gamification.target', 'Target Count')}</label>
@@ -518,6 +650,10 @@
 					<input id="challenge-ends" type="date" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={newChallenge.ends_at} />
 				</div>
 			</div>
+			<div class="flex items-center gap-2">
+				<input type="checkbox" id="challenge-active-create" bind:checked={newChallenge.is_active} />
+				<label for="challenge-active-create" class="text-sm" style="color: var(--color-foreground)">{t('gamification.active', 'Active')}</label>
+			</div>
 		</div>
 	{/if}
 	{#snippet footer()}
@@ -530,15 +666,105 @@
 	{/snippet}
 </SlideOver>
 
+<!-- View SlideOver -->
+<SlideOver bind:open={viewSlideOverOpen} title={viewItem?.kind === 'badge' ? t('gamification.badge_details', 'Badge Details') : t('gamification.challenge_details', 'Challenge Details')}>
+	{#if viewItem?.kind === 'badge' && viewItem.data}
+		{@const badge = viewItem.data as Badge}
+		<div class="space-y-3">
+			<div>
+				<span class="text-sm font-medium" style="color: var(--color-muted)">{t('gamification.name', 'Name')}</span>
+				<p class="text-sm" style="color: var(--color-foreground)">{badge.name}</p>
+			</div>
+			<div>
+				<span class="text-sm font-medium" style="color: var(--color-muted)">{t('gamification.slug', 'Slug')}</span>
+				<p class="font-mono text-xs" style="color: var(--color-foreground)">{badge.slug}</p>
+			</div>
+			<div>
+				<span class="text-sm font-medium" style="color: var(--color-muted)">{t('gamification.description', 'Description')}</span>
+				<p class="text-sm" style="color: var(--color-foreground)">{badge.description || '—'}</p>
+			</div>
+			<div>
+				<span class="text-sm font-medium" style="color: var(--color-muted)">{t('gamification.trigger', 'Trigger Type')}</span>
+				<p class="text-sm" style="color: var(--color-foreground)">{badge.trigger_type}</p>
+			</div>
+			<div>
+				<span class="text-sm font-medium" style="color: var(--color-muted)">{t('gamification.trigger_value', 'Trigger Value')}</span>
+				<p class="font-mono text-sm" style="color: var(--color-foreground)">{badge.trigger_value}</p>
+			</div>
+			<div>
+				<span class="text-sm font-medium" style="color: var(--color-muted)">{t('gamification.activity_key', 'Activity Key')}</span>
+				<p class="font-mono text-xs" style="color: var(--color-foreground)">{badge.trigger_activity_key || '—'}</p>
+			</div>
+			<div>
+				<span class="text-sm font-medium" style="color: var(--color-muted)">{t('gamification.system', 'System')}</span>
+				<p class="text-sm" style="color: var(--color-foreground)">{badge.is_system ? 'System' : 'Custom'}</p>
+			</div>
+			<div>
+				<span class="text-sm font-medium" style="color: var(--color-muted)">{t('gamification.active', 'Active')}</span>
+				<p class="text-sm" style="color: var(--color-foreground)">{badge.is_active ? 'Active' : 'Inactive'}</p>
+			</div>
+		</div>
+	{:else if viewItem?.kind === 'challenge' && viewItem.data}
+		{@const challenge = viewItem.data as Challenge}
+		<div class="space-y-3">
+			<div>
+				<span class="text-sm font-medium" style="color: var(--color-muted)">{t('gamification.name', 'Name')}</span>
+				<p class="text-sm" style="color: var(--color-foreground)">{challenge.name}</p>
+			</div>
+			<div>
+				<span class="text-sm font-medium" style="color: var(--color-muted)">{t('gamification.slug', 'Slug')}</span>
+				<p class="font-mono text-xs" style="color: var(--color-foreground)">{challenge.slug}</p>
+			</div>
+			<div>
+				<span class="text-sm font-medium" style="color: var(--color-muted)">{t('gamification.description', 'Description')}</span>
+				<p class="text-sm" style="color: var(--color-foreground)">{challenge.description || '—'}</p>
+			</div>
+			<div>
+				<span class="text-sm font-medium" style="color: var(--color-muted)">{t('gamification.activity', 'Activity Key')}</span>
+				<p class="font-mono text-xs" style="color: var(--color-foreground)">{challenge.activity_key}</p>
+			</div>
+			<div>
+				<span class="text-sm font-medium" style="color: var(--color-muted)">{t('gamification.target', 'Target Count')}</span>
+				<p class="font-mono text-sm" style="color: var(--color-foreground)">{challenge.target_count}</p>
+			</div>
+			<div>
+				<span class="text-sm font-medium" style="color: var(--color-muted)">{t('gamification.reward', 'Reward Points')}</span>
+				<p class="font-mono text-sm" style="color: var(--color-foreground)">{challenge.reward_points}</p>
+			</div>
+			<div>
+				<span class="text-sm font-medium" style="color: var(--color-muted)">{t('gamification.ends', 'Ends')}</span>
+				<p class="text-sm" style="color: var(--color-foreground)">{challenge.ends_at ? new Date(challenge.ends_at).toLocaleDateString() : '—'}</p>
+			</div>
+			<div>
+				<span class="text-sm font-medium" style="color: var(--color-muted)">{t('gamification.active', 'Active')}</span>
+				<p class="text-sm" style="color: var(--color-foreground)">{challenge.is_active ? 'Active' : 'Inactive'}</p>
+			</div>
+		</div>
+	{/if}
+	{#snippet footer()}
+		<div class="mt-6 flex justify-end">
+			<Button variant="outline" onclick={() => (viewSlideOverOpen = false)}>{t('common.close', 'Close')}</Button>
+		</div>
+	{/snippet}
+</SlideOver>
+
 <!-- Award Modal -->
 <Modal bind:open={awardModalOpen} title={t('gamification.award_title', 'Award Badge')} size="sm">
 	<div>
-		<label for="award-user-id" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('gamification.user_id', 'User ID')}</label>
-		<input id="award-user-id" type="text" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={awardUserId} placeholder="UUID" />
+		<label for="award-username" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('gamification.username', 'Username')}</label>
+		<UserAutocomplete
+			id="award-username"
+			bind:value={awardUsername}
+			placeholder={t('gamification.search_user', 'Search by username...')}
+			onSelectUser={(u) => (awardTargetUserId = u.id)}
+		/>
+		{#if awardTargetUserId}
+			<p class="mt-1 text-xs" style="color: var(--color-muted)">{t('gamification.selected_user', 'Selected')}: {awardUsername} ({awardTargetUserId.slice(0, 8)}...)</p>
+		{/if}
 	</div>
 	<div class="mt-6 flex justify-end gap-2">
 		<Button variant="outline" onclick={() => (awardModalOpen = false)} disabled={saving}>{t('common.cancel', 'Cancel')}</Button>
-		<Button onclick={awardBadge} disabled={saving || !awardUserId}>
+		<Button onclick={awardBadge} disabled={saving || !awardTargetUserId}>
 			{saving ? t('common.saving', 'Saving...') : t('gamification.award', 'Award Badge')}
 		</Button>
 	</div>
@@ -559,9 +785,9 @@
 			<div>
 				<label for="edit-badge-trigger" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('gamification.trigger', 'Trigger Type')}</label>
 				<select id="edit-badge-trigger" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={editBadgeForm.trigger_type}>
-					<option value="count">count</option>
-					<option value="streak">streak</option>
-					<option value="manual">manual</option>
+					{#each triggerTypeOptions as opt}
+						<option value={opt.value}>{opt.label}</option>
+					{/each}
 				</select>
 			</div>
 			<div>
@@ -571,11 +797,17 @@
 		</div>
 		<div>
 			<label for="edit-badge-activity" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('gamification.activity_key', 'Activity Key')}</label>
-			<input id="edit-badge-activity" type="text" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={editBadgeForm.trigger_activity_key} placeholder="post.create" />
+			<ActivityKeyAutocomplete id="edit-badge-activity" bind:value={editBadgeForm.trigger_activity_key} placeholder="post.create" extraKeys={knownActivityKeys} />
 		</div>
-		<div class="flex items-center gap-2">
-			<input type="checkbox" id="edit-badge-active" bind:checked={editBadgeForm.is_active} />
-			<label for="edit-badge-active" class="text-sm" style="color: var(--color-foreground)">{t('gamification.active', 'Active')}</label>
+		<div class="grid grid-cols-2 gap-3">
+			<div>
+				<label for="edit-badge-order" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('gamification.display_order', 'Display Order')}</label>
+				<input id="edit-badge-order" type="number" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={editBadgeForm.display_order} />
+			</div>
+			<div class="flex items-center gap-2 pt-6">
+				<input type="checkbox" id="edit-badge-active" bind:checked={editBadgeForm.is_active} />
+				<label for="edit-badge-active" class="text-sm" style="color: var(--color-foreground)">{t('gamification.active', 'Active')}</label>
+			</div>
 		</div>
 	</div>
 	{#snippet footer()}
@@ -583,6 +815,52 @@
 			<Button variant="outline" onclick={() => (editBadgeSlideOverOpen = false)} disabled={savingEditBadge}>{t('common.cancel', 'Cancel')}</Button>
 			<Button onclick={submitEditBadge} disabled={savingEditBadge}>
 				{savingEditBadge ? t('common.saving', 'Saving...') : t('common.save', 'Save')}
+			</Button>
+		</div>
+	{/snippet}
+</SlideOver>
+
+<!-- Edit Challenge SlideOver -->
+<SlideOver bind:open={editChallengeSlideOverOpen} title={t('gamification.edit_challenge_title', 'Edit Challenge')}>
+	<div class="space-y-3">
+		<div>
+			<label for="edit-challenge-name" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('gamification.name', 'Name')}</label>
+			<input id="edit-challenge-name" type="text" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={editChallengeForm.name} />
+		</div>
+		<div>
+			<label for="edit-challenge-desc" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('gamification.description', 'Description')}</label>
+			<textarea id="edit-challenge-desc" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" rows="2" bind:value={editChallengeForm.description}></textarea>
+		</div>
+		<div class="grid grid-cols-2 gap-3">
+			<div>
+				<label for="edit-challenge-activity" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('gamification.activity', 'Activity Key')}</label>
+				<ActivityKeyAutocomplete id="edit-challenge-activity" bind:value={editChallengeForm.activity_key} placeholder="post.create" extraKeys={knownActivityKeys} />
+			</div>
+			<div>
+				<label for="edit-challenge-target" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('gamification.target', 'Target Count')}</label>
+				<input id="edit-challenge-target" type="number" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={editChallengeForm.target_count} />
+			</div>
+		</div>
+		<div class="grid grid-cols-2 gap-3">
+			<div>
+				<label for="edit-challenge-reward" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('gamification.reward', 'Reward Points')}</label>
+				<input id="edit-challenge-reward" type="number" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={editChallengeForm.reward_points} />
+			</div>
+			<div>
+				<label for="edit-challenge-ends" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('gamification.ends', 'End Date')}</label>
+				<input id="edit-challenge-ends" type="date" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={editChallengeForm.ends_at} />
+			</div>
+		</div>
+		<div class="flex items-center gap-2">
+			<input type="checkbox" id="edit-challenge-active" bind:checked={editChallengeForm.is_active} />
+			<label for="edit-challenge-active" class="text-sm" style="color: var(--color-foreground)">{t('gamification.active', 'Active')}</label>
+		</div>
+	</div>
+	{#snippet footer()}
+		<div class="mt-6 flex justify-end gap-2">
+			<Button variant="outline" onclick={() => (editChallengeSlideOverOpen = false)} disabled={savingEditChallenge}>{t('common.cancel', 'Cancel')}</Button>
+			<Button onclick={submitEditChallenge} disabled={savingEditChallenge}>
+				{savingEditChallenge ? t('common.saving', 'Saving...') : t('common.save', 'Save')}
 			</Button>
 		</div>
 	{/snippet}

@@ -38,8 +38,10 @@
 		series: BlogSeries[];
 		organizations: ComposerOrganization[];
 		draft: ContentRecord | null;
-		/** Tag names restored from GET /content/{id}/tags so the tag chips
-		 *  reappear when editing existing content. Empty for new content. */
+		/** Tag slugs restored from GET /content/{id}/tags so the tag chips
+		 *  reappear when editing existing content. Empty for new content.
+		 *  Slugs (not names) are required because attachTag/detachTag send
+		 *  the value as a slug to the backend. */
 		draftTags?: string[];
 		/** Comparison items+dimensions when restoring a comparison draft
 		 *  (loaded from GET /comparisons/{id} in +page.server.ts). */
