@@ -2,20 +2,13 @@ package db
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/jedafe/japa/internal/db/gen"
 )
-
-// DBWithTx wraps the sqlc Queries with transaction support.
-// Use this to execute multiple queries within a single transaction.
-type DBWithTx struct {
-	*gen.Queries
-	tx pgx.Tx
-}
 
 // NewQueries creates a new sqlc Queries instance from a pgxpool.Pool.
 func NewQueries(pool *pgxpool.Pool) *gen.Queries {
@@ -35,7 +28,10 @@ func WithTx(ctx context.Context, pool *pgxpool.Pool, fn func(queries *gen.Querie
 
 	if err := fn(q); err != nil {
 		if rbErr := tx.Rollback(ctx); rbErr != nil {
-			return fmt.Errorf("rolling back transaction: %v (original error: %w)", rbErr, err)
+			return errors.Join(
+				fmt.Errorf("rolling back transaction: %w", rbErr),
+				err,
+			)
 		}
 		return err
 	}
@@ -62,7 +58,10 @@ func WithTxResult[T any](ctx context.Context, pool *pgxpool.Pool, fn func(querie
 	if err != nil {
 		if rbErr := tx.Rollback(ctx); rbErr != nil {
 			var zero T
-			return zero, fmt.Errorf("rolling back transaction: %v (original error: %w)", rbErr, err)
+			return zero, errors.Join(
+				fmt.Errorf("rolling back transaction: %w", rbErr),
+				err,
+			)
 		}
 		var zero T
 		return zero, err

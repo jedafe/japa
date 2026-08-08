@@ -22,20 +22,21 @@ type DB struct {
 	Reader *pgxpool.Pool
 }
 
-// poolConfig holds the tuning parameters applied to every pgxpool.
-// These values are chosen for a typical small-to-medium deployment and can
-// be adjusted via environment variables in a future iteration.
-type poolConfig struct {
+// PoolConfig holds the tuning parameters applied to every pgxpool.
+// Values are sourced from JC_* environment variables via internal/config;
+// zero values fall back to the defaults in defaultPoolConfig.
+type PoolConfig struct {
 	MaxConns        int32
 	MinConns        int32
 	MaxConnLifetime time.Duration
 	MaxConnIdleTime time.Duration
 }
 
-// defaultPoolConfig returns the connection pool tuning used for both writer
-// and reader pools.
-func defaultPoolConfig() poolConfig {
-	return poolConfig{
+// defaultPoolConfig returns the connection pool tuning used when the caller
+// does not supply explicit values (or supplies zeroes). These defaults are
+// chosen for a typical small-to-medium deployment.
+func defaultPoolConfig() PoolConfig {
+	return PoolConfig{
 		MaxConns:        25,
 		MinConns:        5,
 		MaxConnLifetime: 30 * time.Minute,
@@ -43,26 +44,55 @@ func defaultPoolConfig() poolConfig {
 	}
 }
 
-// New creates a DB with writer and reader pools pointing at the same DSN.
-// Until a read replica exists, both pools connect to the same database.
-// Callers must call Close when the DB is no longer needed to release
-// connections back to PostgreSQL.
+// resolvePoolConfig fills zero-valued fields with defaults so callers can
+// pass a partially-specified PoolConfig (e.g. from env vars where unset
+// means "use the default").
+func resolvePoolConfig(cfg PoolConfig) PoolConfig {
+	out := defaultPoolConfig()
+	if cfg.MaxConns > 0 {
+		out.MaxConns = cfg.MaxConns
+	}
+	if cfg.MinConns > 0 {
+		out.MinConns = cfg.MinConns
+	}
+	if cfg.MaxConnLifetime > 0 {
+		out.MaxConnLifetime = cfg.MaxConnLifetime
+	}
+	if cfg.MaxConnIdleTime > 0 {
+		out.MaxConnIdleTime = cfg.MaxConnIdleTime
+	}
+	return out
+}
+
+// New creates a DB with writer and reader pools pointing at the same DSN,
+// using default pool tuning. Until a read replica exists, both pools connect
+// to the same database. Callers must call Close when the DB is no longer
+// needed to release connections back to PostgreSQL.
 func New(ctx context.Context, dsn string) (*DB, error) {
-	return NewWithReplica(ctx, dsn, dsn)
+	return NewWithReplica(ctx, dsn, dsn, PoolConfig{})
+}
+
+// NewWithConfig creates a DB with writer and reader pools pointing at the
+// same DSN, using the supplied PoolConfig. Zero-valued fields in cfg fall
+// back to defaults. Use this when the caller has pool tuning from JC_*
+// environment variables.
+func NewWithConfig(ctx context.Context, dsn string, cfg PoolConfig) (*DB, error) {
+	return NewWithReplica(ctx, dsn, dsn, cfg)
 }
 
 // NewWithReplica creates a DB with separate DSNs for the writer and reader.
 // Use this when a read replica has been provisioned. The writer DSN must
-// point at the primary; the reader DSN should point at the replica.
-func NewWithReplica(ctx context.Context, writerDSN, readerDSN string) (*DB, error) {
-	cfg := defaultPoolConfig()
+// point at the primary; the reader DSN should point at the replica. Zero-
+// valued fields in cfg fall back to defaults.
+func NewWithReplica(ctx context.Context, writerDSN, readerDSN string, cfg PoolConfig) (*DB, error) {
+	resolved := resolvePoolConfig(cfg)
 
-	writer, err := createPool(ctx, writerDSN, cfg)
+	writer, err := createPool(ctx, writerDSN, resolved)
 	if err != nil {
 		return nil, fmt.Errorf("creating writer pool: %w", err)
 	}
 
-	reader, err := createPool(ctx, readerDSN, cfg)
+	reader, err := createPool(ctx, readerDSN, resolved)
 	if err != nil {
 		writer.Close()
 		return nil, fmt.Errorf("creating reader pool: %w", err)
@@ -74,7 +104,7 @@ func NewWithReplica(ctx context.Context, writerDSN, readerDSN string) (*DB, erro
 // createPool builds a single pgxpool.Pool with the given DSN and tuning.
 // The pool is created lazily — connections are opened on demand — but we
 // ping once to fail fast if the database is unreachable.
-func createPool(ctx context.Context, dsn string, cfg poolConfig) (*pgxpool.Pool, error) {
+func createPool(ctx context.Context, dsn string, cfg PoolConfig) (*pgxpool.Pool, error) {
 	poolCfg, err := pgxpool.ParseConfig(dsn)
 	if err != nil {
 		return nil, fmt.Errorf("parsing DSN: %w", err)
@@ -168,6 +198,26 @@ var allowedVacuumTables = map[string]struct{}{
 	"affiliate_link_events": {},
 	"user_affiliate_links":  {},
 	"affiliate_program_members": {},
+	// v2 tables (sections 60–78)
+	"ai_personas":              {},
+	"assessment_results":       {},
+	"badge_definitions":        {},
+	"challenge_definitions":    {},
+	"checklist_progress":       {},
+	"content_embeddings":       {},
+	"content_imports":          {},
+	"newsletter_subscribers":   {},
+	"referral_codes":           {},
+	"referral_programs":        {},
+	"referrals":                {},
+	"remittance_providers":     {},
+	"remittance_rate_alerts":   {},
+	"remittance_rates":         {},
+	"saved_scholarships":       {},
+	"studio_jobs":              {},
+	"travel_providers":         {},
+	"user_badges":              {},
+	"user_challenge_progress":  {},
 }
 
 // Vacuum runs a VACUUM (or VACUUM FULL if full is true) on the given table.

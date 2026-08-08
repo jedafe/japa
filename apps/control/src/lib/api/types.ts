@@ -200,7 +200,9 @@ export interface DbHealth {
 	table_count: number;
 	index_count: number;
 	avg_query_time_ms: number;
-	tables: { name: string; live_rows: number; dead_rows: number; dead_ratio: number; row_count: number; size_bytes: number; index_count: number; last_vacuum: string | null }[];
+	tables: { name: string; row_count: number; size_bytes: number; index_count: number; last_vacuum: string | null; dead_tuple_ratio: number }[];
+	table_bloat: { name: string; dead_tuple_ratio: number; size_bytes: number }[];
+	dead_tuple_ratio: { name: string; dead_tuple_ratio: number }[];
 	slow_queries: { pid: number; duration: number; duration_ms: number; state: string; query_preview: string; query: string; timestamp: string }[];
 	indexes_unused: { name: string; table_name: string; scans: number }[];
 	connection_pool?: { active: number; idle: number; max: number };

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"sync"
 	"time"
@@ -11,13 +12,24 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/tenant"
+	"github.com/valkey-io/valkey-go/valkeycompat"
 )
 
+// flagCacheTTL is the TTL for both the in-memory L1 cache and the Valkey L2
+// cache. Per Section 42, feature flag caches use a 5-minute TTL.
+const flagCacheTTL = 5 * time.Minute
+
+// flagCacheKeyPrefix namespaces all feature flag cache keys in Valkey.
+const flagCacheKeyPrefix = "jc:flags:"
+
 // Checker resolves whether a feature is enabled for a given tenant.
-// It caches results with automatic TTL-based eviction to prevent stale flags.
+// It uses a two-tier cache: L1 (in-memory, 60s TTL for fast eviction) and
+// L2 (Valkey, 5min TTL for cross-instance consistency). When Valkey is
+// unavailable, it gracefully degrades to L1-only operation.
 type Checker struct {
 	db    *db.DB
 	cache *flagCache
+	vk    valkeycompat.Cmdable // nil when Valkey is unavailable (graceful degradation)
 }
 
 // flagCacheEntry wraps a flag value with its creation time for TTL eviction.
@@ -32,14 +44,20 @@ type flagCache struct {
 	entries map[string]map[string]*flagCacheEntry // tenant_id -> key -> entry
 }
 
-// New creates a feature flag Checker backed by the given database.
-// A background goroutine evicts cache entries older than 60 seconds.
-func New(database *db.DB) *Checker {
+// New creates a feature flag Checker backed by the given database and
+// optional Valkey client. When vkClient is non-nil, a two-tier L1+L2 cache
+// is used: L1 (in-memory, 60s TTL) for hot-path lookups and L2 (Valkey,
+// 5min TTL) for cross-instance consistency. When vkClient is nil, only
+// the in-memory L1 cache is used (graceful degradation for single-server
+// or Valkey-unavailable deployments).
+// A background goroutine evicts L1 cache entries older than 60 seconds.
+func New(database *db.DB, vkClient valkeycompat.Cmdable) *Checker {
 	c := &Checker{
 		db: database,
 		cache: &flagCache{
 			entries: make(map[string]map[string]*flagCacheEntry),
 		},
+		vk: vkClient,
 	}
 	go c.cache.cleanupLoop(60 * time.Second)
 
@@ -48,15 +66,24 @@ func New(database *db.DB) *Checker {
 
 // IsEnabled checks if a feature is enabled for the tenant in context.
 // If the feature_flags table has no row for the key, the registry default
-// is used. The result is cached per-request.
+// is used. The result is cached in L1 (in-memory) and L2 (Valkey).
+// Lookup order: L1 → L2 → DB. Results are cached at both layers.
 func (c *Checker) IsEnabled(ctx context.Context, tenantID pgtype.UUID, key string) bool {
 	tenantKey := tenantID.String()
 	if cached := c.cacheGet(tenantKey, key); cached != nil {
 		return *cached
 	}
 
+	// L2 — Valkey (shared across server instances)
+	if cached := c.valkeyGet(ctx, tenantKey, key); cached != nil {
+		c.cacheSet(tenantKey, key, *cached)
+		return *cached
+	}
+
+	// DB — source of truth
 	enabled := c.queryEnabled(ctx, tenantID, key)
 	c.cacheSet(tenantKey, key, enabled)
+	c.valkeySet(ctx, tenantKey, key, enabled)
 
 	return enabled
 }
@@ -160,10 +187,79 @@ func (c *Checker) ClearCache() {
 
 // ClearCacheForTenant clears cached flag values for a single tenant only
 // (STD-003 — avoids clearing all tenants' caches on a per-tenant flag update).
+// Both L1 (in-memory) and L2 (Valkey) caches are invalidated.
 func (c *Checker) ClearCacheForTenant(tenantID string) {
+	// Evict from L1.
 	c.cache.mu.Lock()
-	defer c.cache.mu.Unlock()
 	delete(c.cache.entries, tenantID)
+	c.cache.mu.Unlock()
+
+	// Evict from L2 — SCAN and DELETE all jc:flags:{tenant_id}:* keys.
+	c.valkeyFlushTenant(context.Background(), tenantID)
+}
+
+// valkeyGet retrieves a cached flag value from Valkey (L2).
+// Returns nil on cache miss or when Valkey is unavailable.
+func (c *Checker) valkeyGet(ctx context.Context, tenantKey, flagKey string) *bool {
+	if c.vk == nil {
+		return nil
+	}
+
+	val, err := c.vk.Get(ctx, flagCacheKeyPrefix+tenantKey+":"+flagKey).Result()
+	if err != nil {
+		return nil
+	}
+
+	enabled := val == "1"
+	return &enabled
+}
+
+// valkeySet stores a flag value in Valkey with a 5-minute TTL.
+// Failures are logged but never propagated — the L1 cache + DB remain
+// authoritative.
+func (c *Checker) valkeySet(ctx context.Context, tenantKey, flagKey string, enabled bool) {
+	if c.vk == nil {
+		return
+	}
+
+	val := "0"
+	if enabled {
+		val = "1"
+	}
+
+	if err := c.vk.Set(ctx, flagCacheKeyPrefix+tenantKey+":"+flagKey, val, flagCacheTTL).Err(); err != nil {
+		slog.Warn("features: failed to write valkey cache", "key", flagKey, "error", err)
+	}
+}
+
+// valkeyFlushTenant scans and deletes all jc:flags:{tenant_id}:* keys from
+// Valkey for the given tenant. Failures are logged but not propagated.
+func (c *Checker) valkeyFlushTenant(ctx context.Context, tenantID string) {
+	if c.vk == nil {
+		return
+	}
+
+	pattern := flagCacheKeyPrefix + tenantID + ":*"
+	var cursor uint64
+
+	for {
+		keys, nextCursor, err := c.vk.Scan(ctx, cursor, pattern, 100).Result()
+		if err != nil {
+			slog.Warn("features: failed to scan valkey for cache flush", "tenant", tenantID, "error", err)
+			return
+		}
+
+		if len(keys) > 0 {
+			if err := c.vk.Del(ctx, keys...).Err(); err != nil {
+				slog.Warn("features: failed to delete valkey cache keys", "count", len(keys), "error", err)
+			}
+		}
+
+		cursor = nextCursor
+		if cursor == 0 {
+			break
+		}
+	}
 }
 
 // cleanupLoop periodically evicts cache entries older than maxAge.

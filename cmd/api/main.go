@@ -48,8 +48,14 @@ func run() error {
 	slog.Info("starting JapaConnect API", "config", cfg.String())
 
 	// Create the database pool. This pings the database on startup so
-	// we fail fast if PostgreSQL is unreachable.
-	database, err := db.New(context.Background(), cfg.DatabaseURL)
+	// we fail fast if PostgreSQL is unreachable. Pool tuning comes from
+	// JC_DB_* environment variables; zero values fall back to defaults.
+	database, err := db.NewWithConfig(context.Background(), cfg.DatabaseURL, db.PoolConfig{
+		MaxConns:        cfg.DBMaxConns,
+		MinConns:        cfg.DBMinConns,
+		MaxConnLifetime: time.Duration(cfg.DBMaxConnLifetimeMs) * time.Millisecond,
+		MaxConnIdleTime: time.Duration(cfg.DBMaxConnIdleTimeMs) * time.Millisecond,
+	})
 	if err != nil {
 		return fmt.Errorf("creating database pool: %w", err)
 	}

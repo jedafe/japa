@@ -544,7 +544,7 @@
 						<div class="grid gap-4 sm:grid-cols-2">
 							<div class="flex items-center justify-between">
 								<span class="text-sm text-muted-foreground">{t('db.replication_state')}</span>
-								<StatusBadge status={dbHealth.replication.state === 'streaming' ? 'healthy' : 'warning'}>
+								<StatusBadge status={dbHealth.replication.state === 'primary' || dbHealth.replication.state === 'standby' ? 'healthy' : 'warning'}>
 									{dbHealth.replication.state}
 								</StatusBadge>
 							</div>

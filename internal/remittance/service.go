@@ -20,6 +20,7 @@ import (
 	"github.com/valkey-io/valkey-go/valkeycompat"
 
 	"github.com/jedafe/japa/internal/config"
+	"github.com/jedafe/japa/internal/crypto"
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/worker"
 )
@@ -738,6 +739,13 @@ func providerToInfo(p gen.RemittanceProvider) ProviderInfo {
 		DisplayOrder: p.DisplayOrder,
 		CreatedAt:    rfc3339(p.CreatedAt),
 	}
+}
+
+// DecryptAPIConfig decrypts the encrypted api_config stored on a remittance
+// provider, returning the original raw JSON. Use this when the rate-fetch
+// logic needs the provider's API credentials (ADR-075).
+func DecryptAPIConfig(p gen.RemittanceProvider) ([]byte, error) {
+	return crypto.DecryptJSON(p.ApiConfig)
 }
 
 // ---------------------------------------------------------------------------
