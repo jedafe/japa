@@ -140,21 +140,24 @@ func (h *Handlers) CreateGroup(w http.ResponseWriter, r *http.Request) {
 	}})
 }
 
-// DeleteGroup handles DELETE /api/v1/admin/rbac/groups/{id}.
+// DeleteGroup handles DELETE /api/v1/admin/user-groups/{id}.
+// The {id} parameter is a UUID — consistent with all other group endpoints.
+// System groups are protected by the store layer (is_system = false in the
+// DELETE query) and by an explicit check here.
 func (h *Handlers) DeleteGroup(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(r)
+	_, ok := requireTenant(r)
 	if !ok {
 		writeError(w, http.StatusUnauthorized, "unauthenticated", "Authentication required")
 		return
 	}
 
-	groupSlug := chi.URLParam(r, "id")
-	if IsSystemGroup(groupSlug) {
-		writeError(w, http.StatusForbidden, "forbidden", "Cannot delete system groups")
+	groupID, err := parseUUID(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid group ID")
 		return
 	}
 
-	if err := h.store.DeleteGroup(r.Context(), tenantID, groupSlug); err != nil {
+	if err := h.store.DeleteGroupByID(r.Context(), groupID); err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to delete group")
 		return
 	}
@@ -182,7 +185,7 @@ func (h *Handlers) ListGroupMembers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"members": members})
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"members": members}})
 }
 
 // AddGroupMemberInput is the request body for adding a user to a group.
@@ -226,7 +229,7 @@ func (h *Handlers) AddGroupMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"user_id": input.UserID, "group_id": chi.URLParam(r, "id")})
+	writeJSON(w, http.StatusCreated, map[string]any{"data": map[string]any{"user_id": input.UserID, "group_id": chi.URLParam(r, "id")}})
 }
 
 // RemoveGroupMember handles DELETE /api/v1/admin/rbac/groups/{id}/members/{userId}.
@@ -331,12 +334,12 @@ func (h *Handlers) ListRoles(w http.ResponseWriter, r *http.Request) {
 		totalPages++
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
 		"roles":       roles,
 		"total":       total,
 		"page":        offset / limit,
 		"total_pages": totalPages,
-	})
+	}})
 }
 
 // CreateRoleInput is the request body for creating a role.
@@ -369,7 +372,7 @@ func (h *Handlers) CreateRole(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"id": id, "name": input.Name})
+	writeJSON(w, http.StatusCreated, map[string]any{"data": map[string]any{"id": id, "name": input.Name}})
 }
 
 // ListRolePermissions handles GET /api/v1/admin/rbac/roles/{id}/permissions.
@@ -386,7 +389,7 @@ func (h *Handlers) ListRolePermissions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"permissions": perms})
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"permissions": perms}})
 }
 
 // AssignPermissionInput is the request body for assigning a permission to a role.
@@ -418,7 +421,7 @@ func (h *Handlers) AssignPermissionToRole(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"permission_key": input.PermissionKey})
+	writeJSON(w, http.StatusCreated, map[string]any{"data": map[string]any{"permission_key": input.PermissionKey}})
 }
 
 // ListGroupRoles handles GET /api/v1/admin/rbac/groups/{id}/roles.
@@ -435,7 +438,7 @@ func (h *Handlers) ListGroupRoles(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"roles": roles})
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"roles": roles}})
 }
 
 // AssignRoleInput is the request body for assigning a role to a group.
@@ -473,7 +476,7 @@ func (h *Handlers) AssignRoleToGroup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"role_id": input.RoleID})
+	writeJSON(w, http.StatusCreated, map[string]any{"data": map[string]any{"role_id": input.RoleID}})
 }
 
 // parseUUID parses a UUID string into a pgtype.UUID.
@@ -497,7 +500,7 @@ func (h *Handlers) DeleteRole(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to delete role")
 		return
 	}
-	writeJSON(w, http.StatusNoContent, nil)
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // UpdateRole handles PATCH /admin/roles/:id (P5.6).
@@ -518,7 +521,7 @@ func (h *Handlers) UpdateRole(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to update role")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"id": roleID.String()})
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": roleID.String()}})
 }
 
 // SetRolePermissions handles PATCH /admin/roles/:id/permissions (P5.6).
@@ -539,10 +542,13 @@ func (h *Handlers) SetRolePermissions(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to set role permissions")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"role_id": roleID.String()})
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"role_id": roleID.String()}})
 }
 
 // UpdateGroup handles PATCH /admin/user-groups/:id (P5.6).
+// System groups cannot have their slug changed — the slug is the resolution
+// key for IsSuperAdmin and other system-group checks. Name and permission
+// updates on system groups are allowed.
 func (h *Handlers) UpdateGroup(w http.ResponseWriter, r *http.Request) {
 	groupID, err := parseUUID(chi.URLParam(r, "id"))
 	if err != nil {
@@ -565,7 +571,30 @@ func (h *Handlers) UpdateGroup(w http.ResponseWriter, r *http.Request) {
 		slug = slugify(input.Name)
 	}
 
-	if err := h.store.UpdateGroup(r.Context(), groupID, input.Name, slug); err != nil {
+	// Protect system groups from slug changes — the slug is the resolution
+	// key for IsSuperAdmin (rbac.go:178) and IsSystemGroup. Changing it
+	// would break the system.
+	existing, err := h.store.GetGroupByID(r.Context(), groupID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to look up group")
+		return
+	}
+	if existing.IsSystem && slug != "" && slug != existing.Slug {
+		writeError(w, http.StatusForbidden, "forbidden", "Cannot change the slug of a system group")
+		return
+	}
+
+	// For system groups, preserve the existing slug. For non-system groups,
+	// apply the new slug (or derive from name).
+	updateSlug := slug
+	if existing.IsSystem {
+		updateSlug = existing.Slug
+	}
+	if updateSlug == "" {
+		updateSlug = existing.Slug
+	}
+
+	if err := h.store.UpdateGroup(r.Context(), groupID, input.Name, updateSlug); err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to update group")
 		return
 	}

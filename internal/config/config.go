@@ -19,6 +19,10 @@ import (
 // from environment variables and easy to inspect in logs or debug output.
 type Config struct {
 	DatabaseURL              string // JC_DATABASE_URL — pgx connection string for PostgreSQL
+	DBMaxConns               int32  // JC_DB_MAX_CONNS — max connections per pgxpool (0 = default 25)
+	DBMinConns               int32  // JC_DB_MIN_CONNS — min connections per pgxpool (0 = default 5)
+	DBMaxConnLifetimeMs      int    // JC_DB_MAX_CONN_LIFETIME_MS — max connection lifetime (0 = default 30m)
+	DBMaxConnIdleTimeMs      int    // JC_DB_MAX_CONN_IDLE_TIME_MS — max idle connection lifetime (0 = default 5m)
 	RedisAddr                string // JC_REDIS_ADDR — Valkey/Redis address for cache and Asynq queues
 	RedisPassword            string // JC_REDIS_PASSWORD — optional auth password for Valkey/Redis
 	RedisDB                  int    // JC_REDIS_DB — Valkey/Redis database number (0 default)
@@ -55,7 +59,8 @@ type Config struct {
 	OAuthFacebookAppID       string // JC_OAUTH_FACEBOOK_APP_ID — Facebook App ID
 	OAuthFacebookAppSecret   string // JC_OAUTH_FACEBOOK_APP_SECRET — Facebook App Secret
 	OAuthRedirectBase        string // JC_OAUTH_REDIRECT_BASE — base URL for OAuth callbacks (e.g. https://api.example.com)
-	TOTPEncryptionKey        string // JC_TOTP_ENCRYPTION_KEY — AES-256 key for encrypting TOTP secrets at rest (32-byte hex or base64)
+	EncryptionKey            string // JC_ENCRYPTION_KEY — AES-256 key for encrypting secrets at rest (TOTP, API keys, api_config). JEOS canonical name.
+	TOTPEncryptionKey        string // JC_TOTP_ENCRYPTION_KEY — legacy alias for JC_ENCRYPTION_KEY (kept for backward compatibility)
 	StripeSecretKey          string // JC_STRIPE_SECRET_KEY — Stripe API secret key (sk_live_... / sk_test_...)
 	StripeWebhookSecret      string // JC_STRIPE_WEBHOOK_SECRET — Stripe webhook signing secret (whsec_...)
 	NOWPaymentsIPNSecret     string // JC_NOWPAYMENTS_IPN_SECRET — NOWPayments IPN HMAC secret (also used as API key)
@@ -93,6 +98,10 @@ func Load() (Config, error) {
 
 	cfg := Config{
 		DatabaseURL:              os.Getenv("JC_DATABASE_URL"),
+		DBMaxConns:               int32(getEnvInt("JC_DB_MAX_CONNS", 0)),
+		DBMinConns:               int32(getEnvInt("JC_DB_MIN_CONNS", 0)),
+		DBMaxConnLifetimeMs:      getEnvInt("JC_DB_MAX_CONN_LIFETIME_MS", 0),
+		DBMaxConnIdleTimeMs:      getEnvInt("JC_DB_MAX_CONN_IDLE_TIME_MS", 0),
 		RedisAddr:                os.Getenv("JC_REDIS_ADDR"),
 		RedisPassword:            os.Getenv("JC_REDIS_PASSWORD"),
 		RedisDB:                  getEnvInt("JC_REDIS_DB", 0),
@@ -129,6 +138,7 @@ func Load() (Config, error) {
 		OAuthFacebookAppID:       os.Getenv("JC_OAUTH_FACEBOOK_APP_ID"),
 		OAuthFacebookAppSecret:   os.Getenv("JC_OAUTH_FACEBOOK_APP_SECRET"),
 		OAuthRedirectBase:        os.Getenv("JC_OAUTH_REDIRECT_BASE"),
+		EncryptionKey:            os.Getenv("JC_ENCRYPTION_KEY"),
 		TOTPEncryptionKey:        os.Getenv("JC_TOTP_ENCRYPTION_KEY"),
 		StripeSecretKey:          os.Getenv("JC_STRIPE_SECRET_KEY"),
 		StripeWebhookSecret:      os.Getenv("JC_STRIPE_WEBHOOK_SECRET"),

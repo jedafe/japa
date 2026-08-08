@@ -85,9 +85,30 @@ func (s *Store) CreateGroup(ctx context.Context, tenantID pgtype.UUID, name, slu
 }
 
 // DeleteGroup deletes a user group. System groups cannot be deleted.
+// After deletion, it invalidates the permission cache for all former
+// members so they don't retain the group's capabilities for up to 5
+// minutes (Rule 6).
 func (s *Store) DeleteGroup(ctx context.Context, tenantID pgtype.UUID, slug string) error {
 	if IsSystemGroup(slug) {
 		return fmt.Errorf("cannot delete system group %s via API", slug)
+	}
+
+	// Collect member IDs before deletion so we can invalidate their caches
+	// after the group is removed.
+	memberRows, err := s.read.ListUserGroupsByTenant(ctx, tenantID)
+	if err != nil {
+		slog.Warn("rbac: failed to list groups for member lookup", "tenant_id", tenantID, "error", err)
+	}
+
+	var memberIDs []pgtype.UUID
+	for _, g := range memberRows {
+		if g.Slug == slug {
+			memberIDs, err = s.read.ListGroupMembersByGroupID(ctx, g.ID)
+			if err != nil {
+				slog.Warn("rbac: failed to list group members for cache invalidation", "group_id", g.ID, "error", err)
+			}
+			break
+		}
 	}
 
 	if err := s.write.DeleteUserGroup(ctx, gen.DeleteUserGroupParams{
@@ -95,6 +116,35 @@ func (s *Store) DeleteGroup(ctx context.Context, tenantID pgtype.UUID, slug stri
 		Slug:     slug,
 	}); err != nil {
 		return fmt.Errorf("deleting group: %w", err)
+	}
+
+	// Invalidate cache for all former members (Rule 6).
+	for _, userID := range memberIDs {
+		s.invalidateUserCache(ctx, userID)
+	}
+
+	return nil
+}
+
+// DeleteGroupByID deletes a user group by its UUID. System groups cannot be
+// deleted (the sqlc query enforces is_system = false). After deletion, it
+// invalidates the permission cache for all former members (Rule 6).
+func (s *Store) DeleteGroupByID(ctx context.Context, groupID pgtype.UUID) error {
+	// Collect member IDs before deletion so we can invalidate their caches
+	// after the group is removed.
+	memberIDs, err := s.read.ListGroupMembersByGroupID(ctx, groupID)
+	if err != nil {
+		slog.Warn("rbac: failed to list group members for cache invalidation", "group_id", groupID, "error", err)
+		memberIDs = nil // proceed — don't block the mutation
+	}
+
+	if err := s.write.DeleteUserGroupByID(ctx, groupID); err != nil {
+		return fmt.Errorf("deleting group by ID: %w", err)
+	}
+
+	// Invalidate cache for all former members (Rule 6).
+	for _, userID := range memberIDs {
+		s.invalidateUserCache(ctx, userID)
 	}
 
 	return nil
@@ -187,46 +237,55 @@ func (s *Store) AssignRoleToGroup(ctx context.Context, groupID, roleID pgtype.UU
 // ---------------------------------------------------------------------------
 
 // ListGroups returns all user groups for a tenant, ordered by name.
+// Uses three batch queries (groups, member counts, permissions) instead of
+// per-group N+1 lookups.
 func (s *Store) ListGroups(ctx context.Context, tenantID pgtype.UUID) ([]Group, error) {
 	rows, err := s.read.ListUserGroupsByTenant(ctx, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("listing groups: %w", err)
 	}
 
-	groups := make([]Group, 0, len(rows))
+	// Batch query 1: member counts for all groups in this tenant.
+	memberCountRows, err := s.read.CountGroupMembersByTenant(ctx, tenantID)
+	if err != nil {
+		slog.Warn("rbac: failed to batch count group members", "tenant_id", tenantID, "error", err)
+		memberCountRows = nil
+	}
+	memberCounts := make(map[pgtype.UUID]int32, len(memberCountRows))
+	for _, r := range memberCountRows {
+		memberCounts[r.GroupID] = r.MemberCount
+	}
 
+	// Batch query 2: all permissions for all groups in this tenant.
+	permRows, err := s.read.ListGroupPermissionsByTenant(ctx, tenantID)
+	if err != nil {
+		slog.Warn("rbac: failed to batch list group permissions", "tenant_id", tenantID, "error", err)
+		permRows = nil
+	}
+	groupPerms := make(map[pgtype.UUID]map[string]struct{})
+	for _, r := range permRows {
+		if groupPerms[r.GroupID] == nil {
+			groupPerms[r.GroupID] = make(map[string]struct{})
+		}
+		groupPerms[r.GroupID][r.Key] = struct{}{}
+	}
+
+	groups := make([]Group, 0, len(rows))
 	for _, r := range rows {
 		g := Group{
-			ID:       r.ID,
-			TenantID: r.TenantID,
-			Name:     r.Name,
-			Slug:     r.Slug,
-			IsSystem: r.IsSystem,
+			ID:          r.ID,
+			TenantID:    r.TenantID,
+			Name:        r.Name,
+			Slug:        r.Slug,
+			IsSystem:    r.IsSystem,
+			MemberCount: memberCounts[r.ID],
 		}
 
-		// Count members.
-		members, err := s.read.ListGroupMembersByGroupID(ctx, r.ID)
-		if err == nil {
-			g.MemberCount = int32(len(members))
-		}
-
-		// Get permissions via group → roles → permissions.
-		roleRows, err := s.read.ListGroupRolesByGroupID(ctx, r.ID)
-		if err == nil {
-			permSet := make(map[string]struct{})
-			for _, role := range roleRows {
-				permRows, err := s.read.ListRolePermissionsByKey(ctx, role.ID)
-				if err == nil {
-					for _, p := range permRows {
-						permSet[p.Key] = struct{}{}
-					}
-				}
+		if perms, ok := groupPerms[r.ID]; ok {
+			g.Permissions = make([]string, 0, len(perms))
+			for k := range perms {
+				g.Permissions = append(g.Permissions, k)
 			}
-			perms := make([]string, 0, len(permSet))
-			for k := range permSet {
-				perms = append(perms, k)
-			}
-			g.Permissions = perms
 		}
 
 		groups = append(groups, g)
@@ -468,10 +527,27 @@ func slugify(name string) string {
 }
 
 // DeleteRole removes a role and all its permission/group assignments (P5.6).
+// After deletion, it invalidates the permission cache for every group that
+// held this role so members don't retain the role's capabilities for up to
+// 5 minutes (Rule 6).
 func (s *Store) DeleteRole(ctx context.Context, roleID pgtype.UUID) error {
+	// Collect affected groups before deletion so we can invalidate their
+	// members' caches after the role is removed.
+	groupIDs, err := s.read.ListGroupsByRoleID(ctx, roleID)
+	if err != nil {
+		slog.Warn("rbac: failed to list groups for role cache invalidation", "role_id", roleID, "error", err)
+		groupIDs = nil // proceed — don't block the mutation
+	}
+
 	if err := s.write.DeleteUserRole(ctx, roleID); err != nil {
 		return fmt.Errorf("deleting role: %w", err)
 	}
+
+	// Invalidate cache for all groups that held this role (Rule 6).
+	for _, groupID := range groupIDs {
+		s.invalidateGroupCache(ctx, groupID)
+	}
+
 	return nil
 }
 
@@ -487,7 +563,18 @@ func (s *Store) UpdateRole(ctx context.Context, roleID pgtype.UUID, name string)
 }
 
 // SetRolePermissions replaces all permissions for a role (P5.6).
+// After the transaction commits, it invalidates the permission cache for
+// every group that holds this role so members don't retain stale capabilities
+// for up to 5 minutes (Rule 6).
 func (s *Store) SetRolePermissions(ctx context.Context, roleID pgtype.UUID, permKeys []string) error {
+	// Collect affected groups before the transaction so we can invalidate
+	// their members' caches after commit.
+	groupIDs, err := s.read.ListGroupsByRoleID(ctx, roleID)
+	if err != nil {
+		slog.Warn("rbac: failed to list groups for role cache invalidation", "role_id", roleID, "error", err)
+		groupIDs = nil // proceed — don't block the mutation
+	}
+
 	tx, err := s.db.Writer.Begin(ctx)
 	if err != nil {
 		return err
@@ -509,7 +596,16 @@ func (s *Store) SetRolePermissions(ctx context.Context, roleID pgtype.UUID, perm
 			return err
 		}
 	}
-	return tx.Commit(ctx)
+	if err := tx.Commit(ctx); err != nil {
+		return err
+	}
+
+	// Invalidate cache for all groups that hold this role (Rule 6).
+	for _, groupID := range groupIDs {
+		s.invalidateGroupCache(ctx, groupID)
+	}
+
+	return nil
 }
 
 // UpdateGroup updates a group's name and slug (P5.6).
@@ -522,4 +618,32 @@ func (s *Store) UpdateGroup(ctx context.Context, groupID pgtype.UUID, name, slug
 		return fmt.Errorf("updating group: %w", err)
 	}
 	return nil
+}
+
+// IsSystemGroupByID checks whether the group with the given ID is one of the
+// three system defaults (super_admin, members, guest). Used by handlers to
+// prevent dangerous slug changes on system groups.
+func (s *Store) IsSystemGroupByID(ctx context.Context, groupID pgtype.UUID) (bool, error) {
+	g, err := s.read.GetUserGroupByID(ctx, groupID)
+	if err != nil {
+		return false, fmt.Errorf("looking up group: %w", err)
+	}
+	return g.IsSystem, nil
+}
+
+// GetGroupByID returns the user group with the given ID, including its
+// current slug and is_system flag. Used by handlers that need to preserve
+// the slug of system groups during updates.
+func (s *Store) GetGroupByID(ctx context.Context, groupID pgtype.UUID) (Group, error) {
+	g, err := s.read.GetUserGroupByID(ctx, groupID)
+	if err != nil {
+		return Group{}, fmt.Errorf("looking up group: %w", err)
+	}
+	return Group{
+		ID:       g.ID,
+		TenantID: g.TenantID,
+		Name:     g.Name,
+		Slug:     g.Slug,
+		IsSystem: g.IsSystem,
+	}, nil
 }
