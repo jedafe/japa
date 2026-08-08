@@ -605,6 +605,73 @@ func (q *Queries) DeleteUserDMSettingsByUser(ctx context.Context, arg DeleteUser
 	return err
 }
 
+const deleteUserEmailVerifications = `-- name: DeleteUserEmailVerifications :exec
+DELETE FROM email_verifications WHERE user_id = $1 AND tenant_id = $2
+`
+
+type DeleteUserEmailVerificationsParams struct {
+	UserID   pgtype.UUID `json:"user_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+// email_verifications.email and token_hash are PII and security credentials.
+// Delete the rows during anonymization so the user's email and verification
+// tokens are not recoverable during the retention window.
+func (q *Queries) DeleteUserEmailVerifications(ctx context.Context, arg DeleteUserEmailVerificationsParams) error {
+	_, err := q.db.Exec(ctx, deleteUserEmailVerifications, arg.UserID, arg.TenantID)
+	return err
+}
+
+const deleteUserOAuthAccounts = `-- name: DeleteUserOAuthAccounts :exec
+DELETE FROM oauth_accounts WHERE user_id = $1 AND tenant_id = $2
+`
+
+type DeleteUserOAuthAccountsParams struct {
+	UserID   pgtype.UUID `json:"user_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+// oauth_accounts.provider_user_id is PII (the user's identity at the OAuth
+// provider). Delete the rows during anonymization so the user's social
+// identities are not recoverable during the retention window.
+func (q *Queries) DeleteUserOAuthAccounts(ctx context.Context, arg DeleteUserOAuthAccountsParams) error {
+	_, err := q.db.Exec(ctx, deleteUserOAuthAccounts, arg.UserID, arg.TenantID)
+	return err
+}
+
+const deleteUserPasswordHistory = `-- name: DeleteUserPasswordHistory :exec
+DELETE FROM password_history WHERE user_id = $1 AND tenant_id = $2
+`
+
+type DeleteUserPasswordHistoryParams struct {
+	UserID   pgtype.UUID `json:"user_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+// password_history.password_hash is PII (bcrypt hashes of previous
+// passwords). Delete the rows during anonymization so old password hashes
+// are not recoverable during the retention window.
+func (q *Queries) DeleteUserPasswordHistory(ctx context.Context, arg DeleteUserPasswordHistoryParams) error {
+	_, err := q.db.Exec(ctx, deleteUserPasswordHistory, arg.UserID, arg.TenantID)
+	return err
+}
+
+const deleteUserPasswordResetTokens = `-- name: DeleteUserPasswordResetTokens :exec
+DELETE FROM password_reset_tokens WHERE user_id = $1 AND tenant_id = $2
+`
+
+type DeleteUserPasswordResetTokensParams struct {
+	UserID   pgtype.UUID `json:"user_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+// password_reset_tokens.token_hash is a security credential. Delete the
+// rows during anonymization so no reset tokens remain usable.
+func (q *Queries) DeleteUserPasswordResetTokens(ctx context.Context, arg DeleteUserPasswordResetTokensParams) error {
+	_, err := q.db.Exec(ctx, deleteUserPasswordResetTokens, arg.UserID, arg.TenantID)
+	return err
+}
+
 const deleteUserPreferences = `-- name: DeleteUserPreferences :exec
 DELETE FROM user_preferences WHERE user_id = $1 AND tenant_id = $2
 `
@@ -617,6 +684,35 @@ type DeleteUserPreferencesParams struct {
 // user_preferences is user-owned config; remove it explicitly (CASCADE is redundant but explicit).
 func (q *Queries) DeleteUserPreferences(ctx context.Context, arg DeleteUserPreferencesParams) error {
 	_, err := q.db.Exec(ctx, deleteUserPreferences, arg.UserID, arg.TenantID)
+	return err
+}
+
+const deleteUserTOTPCredentials = `-- name: DeleteUserTOTPCredentials :exec
+
+DELETE FROM totp_credentials WHERE user_id = $1 AND tenant_id = $2
+`
+
+type DeleteUserTOTPCredentialsParams struct {
+	UserID   pgtype.UUID `json:"user_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+// =====================
+// Auth PII Scrub (AUDIT-AUTH-008)
+// These auth-related tables contain sensitive PII (encrypted TOTP secrets,
+// OAuth provider user IDs, email addresses, password hashes, reset tokens)
+// that must be scrubbed during the GDPR anonymization phase — not just at
+// hard delete. Without this, an admin querying these tables during the
+// retention window can see the deleted user's OAuth identities, TOTP
+// secrets, and email addresses. Ref: sections/02-authentication-sessions.md,
+// ADR-014.
+// =====================
+// totp_credentials.secret_encrypted and backup_codes are PII. Delete the
+// rows during anonymization so 2FA secrets are not recoverable during the
+// retention window. The table has ON DELETE CASCADE from users(id), so this
+// is redundant at hard-delete but necessary for the anonymization phase.
+func (q *Queries) DeleteUserTOTPCredentials(ctx context.Context, arg DeleteUserTOTPCredentialsParams) error {
+	_, err := q.db.Exec(ctx, deleteUserTOTPCredentials, arg.UserID, arg.TenantID)
 	return err
 }
 
@@ -807,6 +903,24 @@ FROM (
 // Ref: japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
 func (q *Queries) GdprExportUserBlocks(ctx context.Context, userID pgtype.UUID) (interface{}, error) {
 	row := q.db.QueryRow(ctx, gdprExportUserBlocks, userID)
+	var data interface{}
+	err := row.Scan(&data)
+	return data, err
+}
+
+const gdprExportUserBookmarkFolders = `-- name: GdprExportUserBookmarkFolders :one
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (SELECT id, tenant_id, user_id, name, created_at, updated_at, position FROM bookmark_folders WHERE user_id = $1 AND tenant_id = $2) t
+`
+
+type GdprExportUserBookmarkFoldersParams struct {
+	UserID   pgtype.UUID `json:"user_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+// Exports bookmark_folders for GDPR data export (BL-005).
+func (q *Queries) GdprExportUserBookmarkFolders(ctx context.Context, arg GdprExportUserBookmarkFoldersParams) (interface{}, error) {
+	row := q.db.QueryRow(ctx, gdprExportUserBookmarkFolders, arg.UserID, arg.TenantID)
 	var data interface{}
 	err := row.Scan(&data)
 	return data, err
@@ -1166,7 +1280,7 @@ func (q *Queries) GdprExportUserForumThreadTags(ctx context.Context, arg GdprExp
 
 const gdprExportUserForumThreads = `-- name: GdprExportUserForumThreads :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (SELECT id, tenant_id, content_id, space_id, author_user_id, title, slug, body, is_anonymous, solved, solved_at, solved_by_user_id, vote_score, reply_count, view_count, bookmark_count, edit_window_minutes, is_edited, created_at, updated_at, deleted_at, parent_reply_id FROM forum_threads WHERE author_user_id = $1 AND tenant_id = $2) t
+FROM (SELECT id, tenant_id, content_id, space_id, author_user_id, title, slug, body, is_anonymous, solved, solved_at, solved_by_user_id, vote_score, reply_count, view_count, bookmark_count, edit_window_minutes, is_edited, created_at, updated_at, deleted_at, parent_reply_id, ama_config FROM forum_threads WHERE author_user_id = $1 AND tenant_id = $2) t
 `
 
 type GdprExportUserForumThreadsParams struct {
@@ -1435,7 +1549,7 @@ func (q *Queries) GdprExportUserProfessionalProfiles(ctx context.Context, arg Gd
 const gdprExportUserProfiles = `-- name: GdprExportUserProfiles :one
 
 SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (SELECT id, tenant_id, user_id, display_name, avatar_url, bio, timezone, business_name, registration_number, operating_hours, created_at, updated_at, content_country_preference, cover_url, preferred_currency, avatar_media_id, header_media_id FROM user_profiles WHERE user_id = $1 AND tenant_id = $2) t
+FROM (SELECT id, tenant_id, user_id, display_name, avatar_url, bio, timezone, business_name, registration_number, operating_hours, created_at, updated_at, content_country_preference, cover_url, preferred_currency, avatar_media_id, header_media_id, japa_stage, japa_stage_dest_space_id, japa_stage_updated_at, japa_stage_is_public, japa_stage_history FROM user_profiles WHERE user_id = $1 AND tenant_id = $2) t
 `
 
 type GdprExportUserProfilesParams struct {

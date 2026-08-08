@@ -41,9 +41,21 @@ func (s *Service) CreateFolder(ctx context.Context, tenantID, userID pgtype.UUID
 	return folder, nil
 }
 
-// ListFolders returns every bookmark folder for the user, alphabetically.
-func (s *Service) ListFolders(ctx context.Context, tenantID, userID pgtype.UUID) ([]gen.BookmarkFolder, error) {
-	folders, err := s.read.ListBookmarkFoldersByUser(ctx, gen.ListBookmarkFoldersByUserParams{
+// FolderListItem is a bookmark folder with its bookmark count.
+type FolderListItem struct {
+	ID            pgtype.UUID        `json:"id"`
+	TenantID      pgtype.UUID        `json:"tenant_id"`
+	UserID        pgtype.UUID        `json:"user_id"`
+	Name          string             `json:"name"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
+	BookmarkCount int64              `json:"bookmark_count"`
+}
+
+// ListFolders returns every bookmark folder for the user, alphabetically,
+// with a bookmark_count per folder (BL-011).
+func (s *Service) ListFolders(ctx context.Context, tenantID, userID pgtype.UUID) ([]FolderListItem, error) {
+	rows, err := s.read.ListBookmarkFoldersByUser(ctx, gen.ListBookmarkFoldersByUserParams{
 		TenantID: tenantID,
 		UserID:   userID,
 	})
@@ -51,7 +63,35 @@ func (s *Service) ListFolders(ctx context.Context, tenantID, userID pgtype.UUID)
 		return nil, fmt.Errorf("listing bookmark folders: %w", err)
 	}
 
+	folders := make([]FolderListItem, len(rows))
+	for i, r := range rows {
+		folders[i] = FolderListItem{
+			ID:            r.ID,
+			TenantID:      r.TenantID,
+			UserID:        r.UserID,
+			Name:          r.Name,
+			CreatedAt:     r.CreatedAt,
+			UpdatedAt:     r.UpdatedAt,
+			BookmarkCount: r.BookmarkCount,
+		}
+	}
+
 	return folders, nil
+}
+
+// GetFolder retrieves a single folder, validating ownership (BL-013).
+// Returns ErrNotFound if the folder doesn't exist or belongs to another user.
+func (s *Service) GetFolder(ctx context.Context, id, tenantID, userID pgtype.UUID) (gen.BookmarkFolder, error) {
+	folder, err := s.read.GetBookmarkFolder(ctx, gen.GetBookmarkFolderParams{
+		ID:       id,
+		TenantID: tenantID,
+		UserID:   userID,
+	})
+	if err != nil {
+		return gen.BookmarkFolder{}, fmt.Errorf("%w: %w", errpkg.ErrNotFound, err)
+	}
+
+	return folder, nil
 }
 
 // UpdateFolder renames a bookmark folder. Returns ErrNotFound if it doesn't

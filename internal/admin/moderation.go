@@ -1030,6 +1030,34 @@ func (h *Handlers) RestoreContent(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"id": id, "status": "restored"})
 }
 
+// ListDeletedContents handles GET /admin/deletions.
+// Returns soft-deleted and removed content items for the admin deletions audit view.
+// Ref: sections/19-gdpr-ndpr-compliance.md, Rule 11 (soft deletes only for user content)
+func (h *Handlers) ListDeletedContents(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	limit := int32(100) //nolint:gosec // G115: admin listing, bounded
+	if v := r.URL.Query().Get("page_size"); v != "" {
+		if parsed, err := strconv.Atoi(v); err == nil && parsed > 0 && parsed <= 500 {
+			limit = int32(parsed) //nolint:gosec // G115: bounded by 500 check
+		}
+	}
+
+	rows, err := h.Queries.ListDeletedContents(r.Context(), gen.ListDeletedContentsParams{
+		TenantID: tenantID,
+		Limit:    limit,
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list deleted content")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": rows})
+}
+
 // ─── Broadcasts ───────────────────────────────────────────────────────────
 
 // ListBroadcasts handles GET /admin/broadcasts.

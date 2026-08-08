@@ -300,10 +300,17 @@ func (h *Handlers) GetTagFollowers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// The caller's user ID is needed to resolve is_following per item
+	// (Section 31). Best-effort: when absent, is_following defaults to false.
+	var callerID pgtype.UUID
+	if user := auth.FromContext(r.Context()); user != nil {
+		callerID = user.UserID
+	}
+
 	limit := parsePageSize(r)
 	offset := parsePageOffset(r)
 
-	followers, err := h.follows.GetFollowers(r.Context(), tenantID, follows.EntityTypeTag, tag.ID, limit, offset)
+	followers, err := h.follows.GetFollowers(r.Context(), tenantID, callerID, follows.EntityTypeTag, tag.ID, limit, offset)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to get tag followers")
 		return

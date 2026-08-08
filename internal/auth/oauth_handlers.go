@@ -352,12 +352,18 @@ func (h *OAuthHandlers) issueSessionAndRedirect(w http.ResponseWriter, r *http.R
 	}
 
 	// jc_token: access token, readable by the frontend hooks via cookie.
+	// The cookie MaxAge must match the actual JWT expiry, which is configurable
+	// via system_settings (auth.session.access_token_ttl_minutes). Using a
+	// hardcoded 15 minutes would cause the cookie to expire before or after
+	// the actual token if an admin changes the setting.
+	// Ref: sections/02-authentication-sessions.md (Token model)
+	accessTTL := getAccessTokenTTL(r.Context(), h.Settings, tenantID)
 	http.SetCookie(w, &http.Cookie{
 		Name:     "jc_token",
 		Value:    accessToken,
 		Path:     "/",
 		Domain:   h.CookieDomain,
-		MaxAge:   int((15 * time.Minute).Seconds()), // access token TTL
+		MaxAge:   int(accessTTL.Seconds()),
 		HttpOnly: true,
 		Secure:   h.SecureCookies,
 		SameSite: http.SameSiteLaxMode,

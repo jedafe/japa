@@ -247,8 +247,9 @@ func (s *DMStore) IsBlocked(ctx context.Context, tenantID, userA, userB pgtype.U
 // IsMutualFollow returns true if initiator follows recipient AND recipient
 // follows initiator. The sqlc IsMutualFollow query checks a single direction,
 // so we call it twice and AND the results.
-func (s *DMStore) IsMutualFollow(ctx context.Context, initiatorID, recipientID pgtype.UUID) (bool, error) {
+func (s *DMStore) IsMutualFollow(ctx context.Context, tenantID, initiatorID, recipientID pgtype.UUID) (bool, error) {
 	initiatorFollowsRecipient, err := s.read.IsMutualFollow(ctx, gen.IsMutualFollowParams{
+		TenantID:   tenantID,
 		EntityID:   recipientID,
 		FollowerID: initiatorID,
 	})
@@ -259,6 +260,7 @@ func (s *DMStore) IsMutualFollow(ctx context.Context, initiatorID, recipientID p
 		return false, nil
 	}
 	recipientFollowsInitiator, err := s.read.IsMutualFollow(ctx, gen.IsMutualFollowParams{
+		TenantID:   tenantID,
 		EntityID:   initiatorID,
 		FollowerID: recipientID,
 	})
@@ -404,7 +406,7 @@ func (s *DMService) GetOrCreateConversation(ctx context.Context, tenantID, sende
 	case "nobody":
 		return ConversationResult{}, ErrDMPrivacyNobody
 	case "followers_only":
-		mutualFollow, mErr := s.store.IsMutualFollow(ctx, senderID, recipientID)
+		mutualFollow, mErr := s.store.IsMutualFollow(ctx, tenantID, senderID, recipientID)
 		if mErr != nil {
 			return ConversationResult{}, fmt.Errorf("checking mutual follow: %w", mErr)
 		}
@@ -414,7 +416,7 @@ func (s *DMService) GetOrCreateConversation(ctx context.Context, tenantID, sende
 		isMutualFollow = true
 	case "everyone", "":
 		// Allowed; check mutual follow to decide direct vs request.
-		mutualFollow, mErr := s.store.IsMutualFollow(ctx, senderID, recipientID)
+		mutualFollow, mErr := s.store.IsMutualFollow(ctx, tenantID, senderID, recipientID)
 		if mErr != nil {
 			return ConversationResult{}, fmt.Errorf("checking mutual follow: %w", mErr)
 		}

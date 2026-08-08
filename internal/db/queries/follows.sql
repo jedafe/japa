@@ -12,7 +12,7 @@ ON CONFLICT (follower_id, entity_type, entity_id) DO NOTHING;
 
 -- name: DeleteFollowByFollowerEntity :exec
 DELETE FROM follows
-WHERE follower_id = @follower_id AND entity_type = @entity_type AND entity_id = @entity_id;
+WHERE tenant_id = @tenant_id AND follower_id = @follower_id AND entity_type = @entity_type AND entity_id = @entity_id;
 
 -- name: DeleteFollowByID :exec
 DELETE FROM follows WHERE id = @id;
@@ -20,7 +20,7 @@ DELETE FROM follows WHERE id = @id;
 -- name: GetFollow :one
 SELECT id, tenant_id, follower_id, entity_type, entity_id, created_at
 FROM follows
-WHERE follower_id = @follower_id AND entity_type = @entity_type AND entity_id = @entity_id;
+WHERE tenant_id = @tenant_id AND follower_id = @follower_id AND entity_type = @entity_type AND entity_id = @entity_id;
 
 -- =====================
 -- Status Checks
@@ -29,13 +29,13 @@ WHERE follower_id = @follower_id AND entity_type = @entity_type AND entity_id = 
 -- name: IsFollowing :one
 SELECT EXISTS (
     SELECT 1 FROM follows
-    WHERE follower_id = @follower_id AND entity_type = @entity_type AND entity_id = @entity_id
+    WHERE tenant_id = @tenant_id AND follower_id = @follower_id AND entity_type = @entity_type AND entity_id = @entity_id
 ) AS is_following;
 
 -- name: IsMutualFollow :one
 SELECT EXISTS (
     SELECT 1 FROM follows
-    WHERE follower_id = @entity_id AND entity_type = 'user' AND entity_id = @follower_id
+    WHERE tenant_id = @tenant_id AND follower_id = @entity_id AND entity_type = 'user' AND entity_id = @follower_id
 ) AS is_mutual;
 
 -- =====================

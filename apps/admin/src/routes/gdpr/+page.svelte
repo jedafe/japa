@@ -1,23 +1,29 @@
 <script lang="ts">
-	// /gdpr — migrated to the EntityPage scaffold; read-only deletion-request list with an "Execute" state action.
+	// /gdpr — read-only deletion-request list with an "Execute" state action.
+	// Backend: GET /admin/gdpr/deletion-requests → gdprHandlers.ListPendingDeletions (RBAC: gdpr.deletions.view)
+	//          POST /admin/gdpr/deletion-requests/{id}/execute → gdprHandlers.ExecuteDeletion
+	// Ref: sections/19-gdpr-ndpr-compliance.md, ADR-057
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
 	import { Modal } from '$lib/components/ui/modal';
 	import { Button } from '$lib/components/ui/button';
-	import { api, gdprAdminApiExtended } from '$lib/api';
+	import { gdprAdminApiExtended } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { Eye, Play } from 'lucide-svelte';
 	import type { ActionItem } from '$lib/components/ui/data-table';
 
+	// Matches gen.ListPendingDeletionRequestsRow JSON output.
 	type DeletionRequest = {
 		id: string;
+		tenant_id: string;
 		user_id: string;
+		status: string;
+		reason?: string;
+		completed_at?: string;
+		created_at: string;
+		progress_step: number;
 		username?: string;
 		display_name?: string;
-		status: string;
-		reason: string;
-		requested_at: string;
-		executed_at?: string;
 	};
 
 	const canManageDeletions = $derived(hasPermission('gdpr.deletions.view'));
@@ -41,7 +47,7 @@
 		executing = true;
 		pageError = '';
 		try {
-			const result = await api(`/admin/gdpr/deletion-requests/${executeTarget.id}/execute`, { method: 'POST', body: {} });
+			const result = await gdprAdminApiExtended.executeDeletion(executeTarget.id);
 			if (result.ok) {
 				showExecuteConfirm = false;
 				executeTarget = null;
@@ -103,8 +109,9 @@
 				}
 			},
 			{
-				key: 'requested_at',
+				key: 'created_at',
 				label: t('app.gdpr.erasure.requested_at', 'Requested At'),
+				sortable: true,
 				render: (v: string) => `<span class="text-xs" style="color: var(--color-muted)">${new Date(v).toLocaleString()}</span>`
 			}
 		],
@@ -112,7 +119,7 @@
 		fields,
 		load: async ({ q }) => {
 			// The endpoint returns a flat array; search is filtered client-side to preserve legacy behavior.
-			const result = await api<DeletionRequest[]>('/admin/gdpr/deletion-requests');
+			const result = await gdprAdminApiExtended.listDeletionRequests();
 			if (result.ok) {
 				let data = (result.data as DeletionRequest[]) ?? [];
 				if (q) {
@@ -120,7 +127,8 @@
 					data = data.filter(
 						(r) =>
 							(r.display_name || r.username || '').toLowerCase().includes(lower) ||
-							(r.reason || '').toLowerCase().includes(lower)
+							(r.reason || '').toLowerCase().includes(lower) ||
+							r.status.toLowerCase().includes(lower)
 					);
 				}
 				return { data, total: data.length, totalPages: 1 };
@@ -129,9 +137,6 @@
 		},
 		viewSnippet: DeletionRequestView
 	});
-
-	// Keep gdprAdminApiExtended referenced (re-exported API module) — do not delete imported API modules.
-	void gdprAdminApiExtended;
 </script>
 
 <svelte:head>
@@ -192,12 +197,12 @@
 		</div>
 		<div>
 			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.gdpr.erasure.requested_at', 'Requested At')}</p>
-			<p class="mt-1 text-sm" style="color: var(--color-foreground)">{new Date(row.requested_at).toLocaleString()}</p>
+			<p class="mt-1 text-sm" style="color: var(--color-foreground)">{new Date(row.created_at).toLocaleString()}</p>
 		</div>
-		{#if row.executed_at}
+		{#if row.completed_at}
 			<div>
-				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Executed At</p>
-				<p class="mt-1 text-sm" style="color: var(--color-foreground)">{new Date(row.executed_at).toLocaleString()}</p>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Completed At</p>
+				<p class="mt-1 text-sm" style="color: var(--color-foreground)">{new Date(row.completed_at).toLocaleString()}</p>
 			</div>
 		{/if}
 	</div>

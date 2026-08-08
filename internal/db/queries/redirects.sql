@@ -61,3 +61,9 @@ WHERE tenant_id = @tenant_id AND id = ANY(@ids::uuid[]);
 -- name: BulkDeleteRedirects :exec
 DELETE FROM redirects
 WHERE tenant_id = @tenant_id AND id = ANY(@ids::uuid[]);
+
+-- name: GetRedirectsByIDs :many
+SELECT id, tenant_id, source_path, target_url, http_status, is_active,
+       notes, hit_count, last_hit_at, created_at, updated_at
+FROM redirects
+WHERE tenant_id = @tenant_id AND id = ANY(@ids::uuid[]);

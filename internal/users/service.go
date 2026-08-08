@@ -833,8 +833,11 @@ func tsPtr(t pgtype.Timestamptz) *string {
 
 // ListUserBookmarks returns the user's bookmarks enriched with the
 // bookmarked entity's title + slug (joined server-side per entity_type).
-func (s *Service) ListUserBookmarks(ctx context.Context, userID pgtype.UUID, limit, offset int32) ([]BookmarkListItem, error) {
-	bookmarks, err := s.store.listUserBookmarks(ctx, userID, limit, offset)
+// When folderID is valid, results are filtered to that folder (BL-002).
+// When entityTypes is non-empty, results are filtered to those entity types
+// (e.g. the learn app requests only 'learning_track' bookmarks).
+func (s *Service) ListUserBookmarks(ctx context.Context, tenantID, userID pgtype.UUID, folderID pgtype.UUID, entityTypes []string, limit, offset int32) ([]BookmarkListItem, error) {
+	bookmarks, err := s.store.listUserBookmarks(ctx, tenantID, userID, folderID, entityTypes, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("listing user bookmarks: %w", err)
 	}
@@ -846,6 +849,7 @@ func (s *Service) ListUserBookmarks(ctx context.Context, userID pgtype.UUID, lim
 			EntityType: b.EntityType,
 			EntityID:   b.EntityID.String(),
 			Folder:     b.Folder,
+			FolderID:   nullableUUIDString(b.FolderID),
 			CreatedAt:  b.CreatedAt.Time.Format(time.RFC3339),
 			Title:      nullableString(b.Title),
 			Slug:       nullableString(b.Slug),
@@ -872,6 +876,16 @@ func nullableString(v interface{}) *string {
 	default:
 		return nil
 	}
+}
+
+// nullableUUIDString converts a pgtype.UUID to a *string. Returns nil when
+// the UUID is zero/invalid (no folder assigned).
+func nullableUUIDString(u pgtype.UUID) *string {
+	if !u.Valid || u.Bytes == [16]byte{} {
+		return nil
+	}
+	s := u.String()
+	return &s
 }
 
 // UserAnalytics represents aggregated user analytics.

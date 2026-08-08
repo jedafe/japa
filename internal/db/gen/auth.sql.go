@@ -928,7 +928,7 @@ func (q *Queries) UnlinkOAuthAccount(ctx context.Context, arg UnlinkOAuthAccount
 
 const updateUserPasswordByUserID = `-- name: UpdateUserPasswordByUserID :exec
 UPDATE users
-SET password_hash = $1, updated_at = now()
+SET password_hash = $1, password_changed_at = now(), updated_at = now()
 WHERE id = $2
 `
 
@@ -937,6 +937,8 @@ type UpdateUserPasswordByUserIDParams struct {
 	UserID       pgtype.UUID `json:"user_id"`
 }
 
+// Sets password_changed_at so max-password-age policies can be enforced
+// (Ref: sections/02-authentication-sessions.md).
 func (q *Queries) UpdateUserPasswordByUserID(ctx context.Context, arg UpdateUserPasswordByUserIDParams) error {
 	_, err := q.db.Exec(ctx, updateUserPasswordByUserID, arg.PasswordHash, arg.UserID)
 	return err

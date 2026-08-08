@@ -7,7 +7,7 @@
 	// are rendered by the app shell's hardcoded topbar and are skipped here.
 
 	import { t } from '$lib/i18n';
-	import { Sun, Moon, Languages, Bell, Mail, Share2, Calendar, Trophy, Hash, Star, Bookmark, BarChart3, MousePointerClick, UserCircle, FolderTree, MessageSquare, PlayCircle, GraduationCap, BookOpen, CircleDashed, ThumbsUp, List } from 'lucide-svelte';
+	import { Sun, Moon, Languages, Bell, Mail, Share2, Calendar, Trophy, Hash, Star, BarChart3, MousePointerClick, UserCircle, FolderTree, MessageSquare, PlayCircle, GraduationCap, BookOpen, CircleDashed, ThumbsUp, List } from 'lucide-svelte';
 	import { theme } from '$lib/stores/theme.svelte';
 	import { i18n } from '$lib/i18n';
 	import SearchLauncher from './SearchLauncher.svelte';
@@ -244,13 +244,7 @@
 		<p class="text-xs text-[var(--color-muted)]">{t('sidebar.loading')}</p>
 	</section>
 {:else if widget.widget_type === 'bookmark_folders'}
-	<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-		<div class="mb-3 flex items-center gap-2">
-			<Bookmark size={18} class="text-[var(--color-text-subtle)]" />
-			<h2 class="text-sm font-medium text-[var(--color-text)]">{title || t('sidebar.bookmarks')}</h2>
-		</div>
-		<p class="text-xs text-[var(--color-muted)]">{t('sidebar.loading')}</p>
-	</section>
+	<!-- Bookmark folders — rendered by the Main app; no-op in Docs app. -->
 {:else if widget.widget_type === 'continue_learning'}
 	<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 		<div class="mb-3 flex items-center gap-2">

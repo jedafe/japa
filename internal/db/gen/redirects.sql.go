@@ -181,6 +181,50 @@ func (q *Queries) GetRedirectByPath(ctx context.Context, arg GetRedirectByPathPa
 	return i, err
 }
 
+const getRedirectsByIDs = `-- name: GetRedirectsByIDs :many
+SELECT id, tenant_id, source_path, target_url, http_status, is_active,
+       notes, hit_count, last_hit_at, created_at, updated_at
+FROM redirects
+WHERE tenant_id = $1 AND id = ANY($2::uuid[])
+`
+
+type GetRedirectsByIDsParams struct {
+	TenantID pgtype.UUID   `json:"tenant_id"`
+	Ids      []pgtype.UUID `json:"ids"`
+}
+
+func (q *Queries) GetRedirectsByIDs(ctx context.Context, arg GetRedirectsByIDsParams) ([]Redirect, error) {
+	rows, err := q.db.Query(ctx, getRedirectsByIDs, arg.TenantID, arg.Ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Redirect
+	for rows.Next() {
+		var i Redirect
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.SourcePath,
+			&i.TargetUrl,
+			&i.HttpStatus,
+			&i.IsActive,
+			&i.Notes,
+			&i.HitCount,
+			&i.LastHitAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listRedirects = `-- name: ListRedirects :many
 
 SELECT id, tenant_id, source_path, target_url, http_status, is_active,

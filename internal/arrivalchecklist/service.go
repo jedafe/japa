@@ -1,0 +1,449 @@
+// Package arrivalchecklist — service.go orchestrates arrival checklist
+// guide creation, update, HITL approval, public selector browsing, and
+// guide item retrieval. It manages the arrival_checklist_guides and
+// arrival_checklist_items tables via the local Store. Feature-flagged via
+// the arrival_checklist.enabled system_setting (§92, ADR-100).
+//
+// Ref: japaconnect-engineering/sections/92-arrival-checklist.md
+//      japaconnect-engineering/adr/ADR-100-arrival-checklist.md
+package arrivalchecklist
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"time"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
+
+	"github.com/jedafe/japa/internal/config"
+)
+
+// GuideDTO is the API response shape for a single arrival checklist guide.
+type GuideDTO struct {
+	ID                 string `json:"id"`
+	DestinationSpaceID string `json:"destination_space_id"`
+	DestSpaceName      string `json:"destination_space_name,omitempty"`
+	DestSpaceCode      string `json:"destination_space_code,omitempty"`
+	VisaCategory       string `json:"visa_category,omitempty"`
+	ApplicantType      string `json:"applicant_type"`
+	Version            int32  `json:"version"`
+	Status             string `json:"status"`
+	IsActive           bool   `json:"is_active"`
+	AIGenerated        bool   `json:"ai_generated"`
+	AIModel            string `json:"ai_model,omitempty"`
+	AIPromptHash       string `json:"ai_prompt_hash,omitempty"`
+	HITLReviewedBy     string `json:"hitl_reviewed_by,omitempty"`
+	HITLReviewedByName string `json:"hitl_reviewed_by_name,omitempty"`
+	HITLReviewedAt     string `json:"hitl_reviewed_at,omitempty"`
+	HITLReviewNotes    string `json:"hitl_review_notes,omitempty"`
+	IsJapabotIndexed   bool   `json:"is_japabot_indexed"`
+	CreatedAt          string `json:"created_at"`
+	UpdatedAt          string `json:"updated_at"`
+}
+
+// ChecklistItemDTO is the API response shape for a single checklist item.
+type ChecklistItemDTO struct {
+	ID                    string `json:"id"`
+	GuideID               string `json:"guide_id"`
+	Phase                 string `json:"phase"`
+	Title                 string `json:"title"`
+	Description           string `json:"description,omitempty"`
+	OfficialLink          string `json:"official_link,omitempty"`
+	OriginCountryModifier any    `json:"origin_country_modifier,omitempty"`
+	SortOrder             int32  `json:"sort_order"`
+	IsFlagged             bool   `json:"is_flagged"`
+	CreatedAt             string `json:"created_at"`
+}
+
+// SelectorDTO is the API response shape for a selector entry (distinct
+// destination + visa category combination).
+type SelectorDTO struct {
+	DestinationSpaceID string `json:"destination_space_id"`
+	DestSpaceName      string `json:"destination_space_name,omitempty"`
+	DestSpaceCode      string `json:"destination_space_code,omitempty"`
+	VisaCategory       string `json:"visa_category,omitempty"`
+	GuideCount         int64  `json:"guide_count"`
+}
+
+// CreateGuideRequest is the request body for POST /admin/arrival-checklists.
+type CreateGuideRequest struct {
+	DestinationSpaceID string `json:"destination_space_id"`
+	VisaCategory       string `json:"visa_category"`
+	ApplicantType      string `json:"applicant_type"`
+	Version            int32  `json:"version"`
+	Status             string `json:"status"`
+	IsActive           *bool  `json:"is_active"`
+}
+
+// UpdateGuideRequest is the request body for PATCH /admin/arrival-checklists/:id.
+type UpdateGuideRequest struct {
+	DestinationSpaceID *string `json:"destination_space_id"`
+	VisaCategory       *string `json:"visa_category"`
+	ApplicantType      *string `json:"applicant_type"`
+	Version            *int32  `json:"version"`
+	Status             *string `json:"status"`
+	IsActive           *bool   `json:"is_active"`
+	IsJapabotIndexed   *bool   `json:"is_japabot_indexed"`
+	HITLReviewNotes    *string `json:"hitl_review_notes"`
+}
+
+// ApproveGuideRequest is the request body for PATCH
+// /admin/arrival-checklists/:id/approve.
+type ApproveGuideRequest struct {
+	Notes *string `json:"notes"`
+}
+
+// GenerateGuideRequest is the request body for POST
+// /admin/arrival-checklists/generate (Content Agent draft placeholder).
+type GenerateGuideRequest struct {
+	DestinationSpaceID string `json:"destination_space_id"`
+	VisaCategory       string `json:"visa_category"`
+	ApplicantType      string `json:"applicant_type"`
+}
+
+// GenerateGuideResponse is the placeholder response for the generate
+// endpoint. Actual AI generation is dispatched as a separate Asynq task.
+type GenerateGuideResponse struct {
+	Status            string `json:"status"`
+	Message           string `json:"message"`
+	DestinationSpaceID string `json:"destination_space_id,omitempty"`
+	VisaCategory      string `json:"visa_category,omitempty"`
+	ApplicantType     string `json:"applicant_type,omitempty"`
+}
+
+// Service holds the business logic for the Arrival Checklist Generator.
+type Service struct {
+	store    *Store
+	settings *config.Settings
+}
+
+// NewService creates an arrival checklist service.
+func NewService(store *Store, settings *config.Settings) *Service {
+	return &Service{
+		store:    store,
+		settings: settings,
+	}
+}
+
+// Enabled reads the arrival_checklist.enabled system_setting toggle
+// (§92 feature flag).
+func (s *Service) Enabled(ctx context.Context, tenantID pgtype.UUID) bool {
+	if s.settings == nil {
+		return false
+	}
+	return s.settings.GetBoolOr(ctx, tenantID, "arrival_checklist.enabled", false)
+}
+
+// ListSelectors returns the distinct destination + visa category
+// combinations available to the public selector endpoint.
+func (s *Service) ListSelectors(ctx context.Context, tenantID pgtype.UUID) ([]SelectorDTO, error) {
+	rows, err := s.store.ListSelectors(ctx, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("arrivalchecklist: list selectors: %w", err)
+	}
+	dtos := make([]SelectorDTO, 0, len(rows))
+	for _, r := range rows {
+		dtos = append(dtos, selectorRowToDTO(r))
+	}
+	return dtos, nil
+}
+
+// GetGuide returns a single published guide by id.
+func (s *Service) GetGuide(ctx context.Context, id, tenantID pgtype.UUID) (GuideDTO, error) {
+	row, err := s.store.GetGuideByID(ctx, id, tenantID)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return GuideDTO{}, pgx.ErrNoRows
+		}
+		return GuideDTO{}, fmt.Errorf("arrivalchecklist: get guide: %w", err)
+	}
+	return guideRowToDTO(row), nil
+}
+
+// GetGuideItems returns the ordered checklist items for a guide. The
+// guide must exist and belong to the tenant.
+func (s *Service) GetGuideItems(ctx context.Context, guideID, tenantID pgtype.UUID) ([]ChecklistItemDTO, error) {
+	if _, err := s.store.GetGuideByID(ctx, guideID, tenantID); err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, pgx.ErrNoRows
+		}
+		return nil, fmt.Errorf("arrivalchecklist: get guide items: lookup guide: %w", err)
+	}
+	rows, err := s.store.GetGuideItems(ctx, guideID, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("arrivalchecklist: get guide items: %w", err)
+	}
+	dtos := make([]ChecklistItemDTO, 0, len(rows))
+	for _, r := range rows {
+		dtos = append(dtos, itemRowToDTO(r))
+	}
+	return dtos, nil
+}
+
+// AdminList returns guides (any status) for the admin management view.
+func (s *Service) AdminList(ctx context.Context, tenantID, destSpaceID pgtype.UUID, visaCategory, applicantType, status, q string, page, limit int32) ([]GuideDTO, int64, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	if page <= 0 {
+		page = 1
+	}
+	offset := (page - 1) * limit
+
+	rows, total, err := s.store.ListGuides(ctx, ListGuidesFilter{
+		TenantID:           tenantID,
+		DestinationSpaceID: destSpaceID,
+		VisaCategory:       visaCategory,
+		ApplicantType:      applicantType,
+		Status:             status,
+		Q:                  q,
+		Limit:              limit,
+		Offset:             offset,
+	})
+	if err != nil {
+		return nil, 0, fmt.Errorf("arrivalchecklist: admin list: %w", err)
+	}
+
+	dtos := make([]GuideDTO, 0, len(rows))
+	for _, r := range rows {
+		dtos = append(dtos, guideRowToDTO(r))
+	}
+	return dtos, total, nil
+}
+
+// CreateGuide creates a new guide. Auth and permission checks are done
+// at the handler layer.
+func (s *Service) CreateGuide(ctx context.Context, tenantID pgtype.UUID, req CreateGuideRequest) (GuideDTO, error) {
+	if req.DestinationSpaceID == "" {
+		return GuideDTO{}, fmt.Errorf("destination_space_id is required")
+	}
+
+	var destSpaceID pgtype.UUID
+	if err := destSpaceID.Scan(req.DestinationSpaceID); err != nil {
+		return GuideDTO{}, fmt.Errorf("invalid destination_space_id: %w", err)
+	}
+
+	var visaCategory *string
+	if req.VisaCategory != "" {
+		v := req.VisaCategory
+		visaCategory = &v
+	}
+
+	isActive := true
+	if req.IsActive != nil {
+		isActive = *req.IsActive
+	}
+
+	row, err := s.store.CreateGuide(ctx, CreateGuideInput{
+		TenantID:           tenantID,
+		DestinationSpaceID: destSpaceID,
+		VisaCategory:       visaCategory,
+		ApplicantType:      req.ApplicantType,
+		Version:            req.Version,
+		Status:             req.Status,
+		IsActive:           isActive,
+	})
+	if err != nil {
+		return GuideDTO{}, fmt.Errorf("arrivalchecklist: create guide: %w", err)
+	}
+
+	dto, err := s.getGuideDTOByID(ctx, row.ID, tenantID)
+	if err != nil {
+		return GuideDTO{}, fmt.Errorf("arrivalchecklist: create guide: reload: %w", err)
+	}
+	return dto, nil
+}
+
+// UpdateGuide updates mutable fields on a guide. Only non-nil fields are
+// applied. Auth and permission checks are done at the handler layer.
+func (s *Service) UpdateGuide(ctx context.Context, id, tenantID pgtype.UUID, req UpdateGuideRequest) (GuideDTO, error) {
+	in := UpdateGuideInput{
+		IsActive:         req.IsActive,
+		IsJapabotIndexed: req.IsJapabotIndexed,
+		HITLReviewNotes:  req.HITLReviewNotes,
+		Status:           req.Status,
+		ApplicantType:    req.ApplicantType,
+		Version:          req.Version,
+		VisaCategory:     req.VisaCategory,
+	}
+	if req.DestinationSpaceID != nil && *req.DestinationSpaceID != "" {
+		var sid pgtype.UUID
+		if err := sid.Scan(*req.DestinationSpaceID); err != nil {
+			return GuideDTO{}, fmt.Errorf("invalid destination_space_id: %w", err)
+		}
+		in.DestinationSpaceID = &sid
+	}
+
+	if err := s.store.UpdateGuide(ctx, id, tenantID, in); err != nil {
+		if err == pgx.ErrNoRows {
+			return GuideDTO{}, pgx.ErrNoRows
+		}
+		return GuideDTO{}, fmt.Errorf("arrivalchecklist: update guide: %w", err)
+	}
+
+	dto, err := s.getGuideDTOByID(ctx, id, tenantID)
+	if err != nil {
+		return GuideDTO{}, fmt.Errorf("arrivalchecklist: update guide: reload: %w", err)
+	}
+	return dto, nil
+}
+
+// ApproveGuide performs the human-in-the-loop approval: sets
+// hitl_reviewed_by, hitl_reviewed_at = now(), and status = 'published'.
+func (s *Service) ApproveGuide(ctx context.Context, id, tenantID, reviewerID pgtype.UUID, req ApproveGuideRequest) (GuideDTO, error) {
+	if err := s.store.ApproveGuide(ctx, id, tenantID, reviewerID, req.Notes); err != nil {
+		if err == pgx.ErrNoRows {
+			return GuideDTO{}, pgx.ErrNoRows
+		}
+		return GuideDTO{}, fmt.Errorf("arrivalchecklist: approve guide: %w", err)
+	}
+
+	dto, err := s.getGuideDTOByID(ctx, id, tenantID)
+	if err != nil {
+		return GuideDTO{}, fmt.Errorf("arrivalchecklist: approve guide: reload: %w", err)
+	}
+	return dto, nil
+}
+
+// GenerateGuide is the Content Agent draft placeholder. Actual AI
+// generation is dispatched as a separate Asynq task; this method returns
+// a placeholder response indicating the generation has been accepted.
+func (s *Service) GenerateGuide(ctx context.Context, tenantID pgtype.UUID, req GenerateGuideRequest) (GenerateGuideResponse, error) {
+	if req.DestinationSpaceID == "" {
+		return GenerateGuideResponse{}, fmt.Errorf("destination_space_id is required")
+	}
+	var destSpaceID pgtype.UUID
+	if err := destSpaceID.Scan(req.DestinationSpaceID); err != nil {
+		return GenerateGuideResponse{}, fmt.Errorf("invalid destination_space_id: %w", err)
+	}
+
+	applicantType := req.ApplicantType
+	if applicantType == "" {
+		applicantType = ApplicantIndividual
+	}
+
+	return GenerateGuideResponse{
+		Status:             "accepted",
+		Message:            "Arrival checklist generation accepted; the Content Agent will produce a draft for human review.",
+		DestinationSpaceID: destSpaceID.String(),
+		VisaCategory:       req.VisaCategory,
+		ApplicantType:      applicantType,
+	}, nil
+}
+
+// getGuideDTOByID fetches a guide by id and converts to DTO.
+func (s *Service) getGuideDTOByID(ctx context.Context, id, tenantID pgtype.UUID) (GuideDTO, error) {
+	row, err := s.store.GetGuideByID(ctx, id, tenantID)
+	if err != nil {
+		return GuideDTO{}, err
+	}
+	return guideRowToDTO(row), nil
+}
+
+// guideRowToDTO converts a GuideRow to a GuideDTO.
+func guideRowToDTO(r GuideRow) GuideDTO {
+	dto := GuideDTO{
+		ID:            r.ID.String(),
+		ApplicantType: r.ApplicantType,
+		Version:       r.Version,
+		Status:        r.Status,
+		IsActive:      r.IsActive,
+		AIGenerated:   r.AIGenerated,
+		IsJapabotIndexed: r.IsJapabotIndexed,
+		CreatedAt:     formatTs(r.CreatedAt),
+		UpdatedAt:     formatTs(r.UpdatedAt),
+		HITLReviewedAt: formatTs(r.HITLReviewedAt),
+	}
+	if r.DestinationSpaceID.Valid {
+		dto.DestinationSpaceID = r.DestinationSpaceID.String()
+	}
+	if r.DestSpaceName != nil {
+		dto.DestSpaceName = *r.DestSpaceName
+	}
+	if r.DestSpaceCode != nil {
+		dto.DestSpaceCode = *r.DestSpaceCode
+	}
+	if r.VisaCategory != nil {
+		dto.VisaCategory = *r.VisaCategory
+	}
+	if r.AIModel != nil {
+		dto.AIModel = *r.AIModel
+	}
+	if r.AIPromptHash != nil {
+		dto.AIPromptHash = *r.AIPromptHash
+	}
+	if r.HITLReviewedBy.Valid {
+		dto.HITLReviewedBy = r.HITLReviewedBy.String()
+	}
+	if r.HITLReviewedByName != nil {
+		dto.HITLReviewedByName = *r.HITLReviewedByName
+	}
+	if r.HITLReviewNotes != nil {
+		dto.HITLReviewNotes = *r.HITLReviewNotes
+	}
+	return dto
+}
+
+// itemRowToDTO converts an ItemRow to a ChecklistItemDTO.
+func itemRowToDTO(r ItemRow) ChecklistItemDTO {
+	dto := ChecklistItemDTO{
+		ID:        r.ID.String(),
+		GuideID:   r.GuideID.String(),
+		Phase:     r.Phase,
+		Title:     r.Title,
+		SortOrder: r.SortOrder,
+		IsFlagged: r.IsFlagged,
+		CreatedAt: formatTs(r.CreatedAt),
+	}
+	if r.Description != nil {
+		dto.Description = *r.Description
+	}
+	if r.OfficialLink != nil {
+		dto.OfficialLink = *r.OfficialLink
+	}
+	dto.OriginCountryModifier = parseJSONB(r.OriginCountryModifier)
+	return dto
+}
+
+// selectorRowToDTO converts a SelectorRow to a SelectorDTO.
+func selectorRowToDTO(r SelectorRow) SelectorDTO {
+	dto := SelectorDTO{
+		GuideCount: r.GuideCount,
+	}
+	if r.DestinationSpaceID.Valid {
+		dto.DestinationSpaceID = r.DestinationSpaceID.String()
+	}
+	if r.DestSpaceName != nil {
+		dto.DestSpaceName = *r.DestSpaceName
+	}
+	if r.DestSpaceCode != nil {
+		dto.DestSpaceCode = *r.DestSpaceCode
+	}
+	if r.VisaCategory != nil {
+		dto.VisaCategory = *r.VisaCategory
+	}
+	return dto
+}
+
+// parseJSONB decodes a JSONB []byte into a generic value for the DTO.
+// Invalid/empty payloads yield nil.
+func parseJSONB(b []byte) any {
+	if len(b) == 0 {
+		return nil
+	}
+	var v any
+	if err := json.Unmarshal(b, &v); err != nil {
+		return nil
+	}
+	return v
+}
+
+// formatTs renders a pgtype.Timestamptz as RFC 3339 UTC, or "" if NULL.
+func formatTs(t pgtype.Timestamptz) string {
+	if !t.Valid {
+		return ""
+	}
+	return t.Time.UTC().Format(time.RFC3339)
+}

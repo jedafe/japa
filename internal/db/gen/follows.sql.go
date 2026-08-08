@@ -52,17 +52,23 @@ func (q *Queries) CountFollowingByUser(ctx context.Context, arg CountFollowingBy
 
 const deleteFollowByFollowerEntity = `-- name: DeleteFollowByFollowerEntity :exec
 DELETE FROM follows
-WHERE follower_id = $1 AND entity_type = $2 AND entity_id = $3
+WHERE tenant_id = $1 AND follower_id = $2 AND entity_type = $3 AND entity_id = $4
 `
 
 type DeleteFollowByFollowerEntityParams struct {
+	TenantID   pgtype.UUID `json:"tenant_id"`
 	FollowerID pgtype.UUID `json:"follower_id"`
 	EntityType string      `json:"entity_type"`
 	EntityID   pgtype.UUID `json:"entity_id"`
 }
 
 func (q *Queries) DeleteFollowByFollowerEntity(ctx context.Context, arg DeleteFollowByFollowerEntityParams) error {
-	_, err := q.db.Exec(ctx, deleteFollowByFollowerEntity, arg.FollowerID, arg.EntityType, arg.EntityID)
+	_, err := q.db.Exec(ctx, deleteFollowByFollowerEntity,
+		arg.TenantID,
+		arg.FollowerID,
+		arg.EntityType,
+		arg.EntityID,
+	)
 	return err
 }
 
@@ -162,17 +168,23 @@ func (q *Queries) GetBulkFollowingStatus(ctx context.Context, arg GetBulkFollowi
 const getFollow = `-- name: GetFollow :one
 SELECT id, tenant_id, follower_id, entity_type, entity_id, created_at
 FROM follows
-WHERE follower_id = $1 AND entity_type = $2 AND entity_id = $3
+WHERE tenant_id = $1 AND follower_id = $2 AND entity_type = $3 AND entity_id = $4
 `
 
 type GetFollowParams struct {
+	TenantID   pgtype.UUID `json:"tenant_id"`
 	FollowerID pgtype.UUID `json:"follower_id"`
 	EntityType string      `json:"entity_type"`
 	EntityID   pgtype.UUID `json:"entity_id"`
 }
 
 func (q *Queries) GetFollow(ctx context.Context, arg GetFollowParams) (Follow, error) {
-	row := q.db.QueryRow(ctx, getFollow, arg.FollowerID, arg.EntityType, arg.EntityID)
+	row := q.db.QueryRow(ctx, getFollow,
+		arg.TenantID,
+		arg.FollowerID,
+		arg.EntityType,
+		arg.EntityID,
+	)
 	var i Follow
 	err := row.Scan(
 		&i.ID,
@@ -444,11 +456,12 @@ const isFollowing = `-- name: IsFollowing :one
 
 SELECT EXISTS (
     SELECT 1 FROM follows
-    WHERE follower_id = $1 AND entity_type = $2 AND entity_id = $3
+    WHERE tenant_id = $1 AND follower_id = $2 AND entity_type = $3 AND entity_id = $4
 ) AS is_following
 `
 
 type IsFollowingParams struct {
+	TenantID   pgtype.UUID `json:"tenant_id"`
 	FollowerID pgtype.UUID `json:"follower_id"`
 	EntityType string      `json:"entity_type"`
 	EntityID   pgtype.UUID `json:"entity_id"`
@@ -458,7 +471,12 @@ type IsFollowingParams struct {
 // Status Checks
 // =====================
 func (q *Queries) IsFollowing(ctx context.Context, arg IsFollowingParams) (bool, error) {
-	row := q.db.QueryRow(ctx, isFollowing, arg.FollowerID, arg.EntityType, arg.EntityID)
+	row := q.db.QueryRow(ctx, isFollowing,
+		arg.TenantID,
+		arg.FollowerID,
+		arg.EntityType,
+		arg.EntityID,
+	)
 	var is_following bool
 	err := row.Scan(&is_following)
 	return is_following, err
@@ -467,17 +485,18 @@ func (q *Queries) IsFollowing(ctx context.Context, arg IsFollowingParams) (bool,
 const isMutualFollow = `-- name: IsMutualFollow :one
 SELECT EXISTS (
     SELECT 1 FROM follows
-    WHERE follower_id = $1 AND entity_type = 'user' AND entity_id = $2
+    WHERE tenant_id = $1 AND follower_id = $2 AND entity_type = 'user' AND entity_id = $3
 ) AS is_mutual
 `
 
 type IsMutualFollowParams struct {
+	TenantID   pgtype.UUID `json:"tenant_id"`
 	EntityID   pgtype.UUID `json:"entity_id"`
 	FollowerID pgtype.UUID `json:"follower_id"`
 }
 
 func (q *Queries) IsMutualFollow(ctx context.Context, arg IsMutualFollowParams) (bool, error) {
-	row := q.db.QueryRow(ctx, isMutualFollow, arg.EntityID, arg.FollowerID)
+	row := q.db.QueryRow(ctx, isMutualFollow, arg.TenantID, arg.EntityID, arg.FollowerID)
 	var is_mutual bool
 	err := row.Scan(&is_mutual)
 	return is_mutual, err

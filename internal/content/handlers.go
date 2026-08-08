@@ -1859,6 +1859,12 @@ func (h *Handlers) AddBookmark(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, "invalid_folder_id", "Invalid folder_id format")
 			return
 		}
+		// Validate folder ownership (BL-013): the folder must belong to the
+		// caller and tenant before associating a bookmark with it.
+		if err := h.Service.ValidateFolderOwnership(r.Context(), folderID, tenantID, user.UserID); err != nil {
+			writeError(w, http.StatusNotFound, "folder_not_found", "Bookmark folder not found")
+			return
+		}
 	}
 
 	bm, err := h.Service.CreateBookmark(r.Context(), tenantID, user.UserID, EntityContent, contentID, input.Folder, folderID)
@@ -1919,6 +1925,56 @@ func (h *Handlers) GetBookmarkStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"bookmarked": bookmarked}})
+}
+
+// MoveBookmark handles PATCH /api/v1/content/{id}/bookmark/folder.
+// Moves an existing bookmark into a different folder (BL-003).
+// Body: { "folder_id": "uuid" } — pass empty string or omit to unfile.
+func (h *Handlers) MoveBookmark(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	contentID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		return
+	}
+
+	var input struct {
+		FolderID string `json:"folder_id"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
+
+	var folderID pgtype.UUID
+	if input.FolderID != "" {
+		if err := folderID.Scan(input.FolderID); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_folder_id", "Invalid folder_id format")
+			return
+		}
+		// Validate folder ownership (BL-013).
+		if err := h.Service.ValidateFolderOwnership(r.Context(), folderID, tenantID, user.UserID); err != nil {
+			writeError(w, http.StatusNotFound, "folder_not_found", "Bookmark folder not found")
+			return
+		}
+	}
+
+	if err := h.Service.SetBookmarkFolder(r.Context(), user.UserID, EntityContent, contentID, folderID); err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"folder_id": input.FolderID}})
 }
 
 // ---------------------------------------------------------------------------

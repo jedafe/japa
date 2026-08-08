@@ -28,12 +28,12 @@ type ListTemplatesResponse struct {
 	TotalPages int32                       `json:"total_pages"`
 }
 
-func (s *Service) ListTemplates(ctx context.Context, tenantID pgtype.UUID, filterType string, limit, offset int32) (*ListTemplatesResponse, error) {
-	templates, err := s.store.listTemplates(ctx, tenantID, filterType, limit, offset)
+func (s *Service) ListTemplates(ctx context.Context, tenantID pgtype.UUID, filterType, filterIsActive string, limit, offset int32) (*ListTemplatesResponse, error) {
+	templates, err := s.store.listTemplates(ctx, tenantID, filterType, filterIsActive, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("listing templates: %w", err)
 	}
-	total, err := s.store.countTemplates(ctx, tenantID, filterType)
+	total, err := s.store.countTemplates(ctx, tenantID, filterType, filterIsActive)
 	if err != nil {
 		return nil, fmt.Errorf("counting templates: %w", err)
 	}
@@ -52,15 +52,19 @@ func (s *Service) GetTemplateByType(ctx context.Context, tenantID pgtype.UUID, t
 	return s.store.getTemplateByType(ctx, tenantID, templateType)
 }
 
-func (s *Service) UpdateTemplate(ctx context.Context, id, tenantID pgtype.UUID, name, subject, htmlBody, plainTextBody, status string) (gen.UpdateEmailTemplateRow, error) {
+func (s *Service) UpdateTemplate(ctx context.Context, id, tenantID pgtype.UUID, subject, htmlBody, plainTextBody string, isActive bool) (gen.UpdateEmailTemplateRow, error) {
+	status := "inactive"
+	if isActive {
+		status = "active"
+	}
 	return s.store.updateTemplate(ctx, gen.UpdateEmailTemplateParams{
-		ID:             id,
-		TenantID:       tenantID,
-		Name:           name,
-		Subject:        subject,
-		HtmlBody:       htmlBody,
-		PlainTextBody:  plainTextBody,
-		Status:         status,
+		ID:            id,
+		TenantID:      tenantID,
+		Subject:       subject,
+		HtmlBody:      htmlBody,
+		PlainTextBody: plainTextBody,
+		Status:        status,
+		IsActive:      isActive,
 	})
 }
 

@@ -52,16 +52,20 @@ func NewHandlers(service *Service) *Handlers {
 
 // enqueueRecordClick enqueues an async affiliate click recording task.
 // Fire-and-forget: errors are logged but never propagated.
-func (h *Handlers) enqueueRecordClick(tenantID, linkID pgtype.UUID, userID string, ipHash string) {
+//
+// The payload carries pre-hashed ip_hash and ua_hash (SHA-256 hex) so raw
+// PII never transits Asynq/Valkey (Section 56: "never store raw IP for
+// privacy"). The worker uses these directly — it does NOT re-hash.
+func (h *Handlers) enqueueRecordClick(linkID pgtype.UUID, ipHash, uaHash, referrerURL string) {
 	if h.AsynqClient == nil {
 		return
 	}
 
 	payload, err := json.Marshal(map[string]string{
-		"tenant_id": tenantID.String(),
-		"link_id":   linkID.String(),
-		"user_id":   userID,
-		"ip_hash":   ipHash,
+		"link_id":      linkID.String(),
+		"ip_hash":      ipHash,
+		"ua_hash":      uaHash,
+		"referrer_url": referrerURL,
 	})
 	if err != nil {
 		slog.Warn("affiliate: failed to marshal record click payload", "error", err)
@@ -358,8 +362,6 @@ func (h *Handlers) Redirect(w http.ResponseWriter, r *http.Request) {
 	// Uses Valkey SET NX (not GET-then-SET) per Section 56 / Rule 9 spirit.
 	ipHash := sha256Hex(clientip.FromRequest(r))
 
-	tenantID := link.TenantID
-
 	// jc:aff_dedup:{link_id}:{ip_hash}:{hour_bucket} — 1h TTL.
 	dedupKey := fmt.Sprintf("jc:aff_dedup:%s:%s:%s",
 		link.ID.String(), ipHash, time.Now().Format("2006-01-02-15"))
@@ -377,7 +379,9 @@ func (h *Handlers) Redirect(w http.ResponseWriter, r *http.Request) {
 	// worker persists the event and increments counters. Never record inline
 	// (BUG-001: previously both an inline goroutine and the Asynq task wrote,
 	// double-counting every click).
-	h.enqueueRecordClick(tenantID, link.ID, "", ipHash)
+	uaHash := sha256Hex(r.Header.Get("User-Agent"))
+	referrer := r.Referer()
+	h.enqueueRecordClick(link.ID, ipHash, uaHash, referrer)
 
 	// Store attribution cookie in Valkey so a future purchase by this viewer
 	// can be attributed to this affiliate link (Section 56 Attribution Model).

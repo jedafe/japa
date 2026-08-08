@@ -1,5 +1,5 @@
 -- Rollback: Remove i18n keys added for wallet admin page.
-DELETE FROM frontend_i18n WHERE key IN (
+DELETE FROM translations WHERE "key" IN (
     'common.inactive',
     'common.adjusting',
     'app.wallet.edit_rule',

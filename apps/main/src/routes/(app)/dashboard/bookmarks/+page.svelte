@@ -1,31 +1,42 @@
 <script lang="ts">
-	// Ref: japaconnect-engineering/sections/50-current-user.md (bookmarks)
+	// Ref: japaconnect-engineering/sections/50-user-dashboard-settings.md (bookmarks)
 	// Lists the user's bookmarks with folder management. The backend returns
 	// bookmark records enriched with the entity's title + slug (joined
 	// server-side per entity_type), so the page shows the bookmarked item's
 	// title and links to its canonical URL.
 	// Folders are managed client-side via POST/PATCH/DELETE /me/bookmark-folders.
+	// Filtering is done server-side via ?folder_id=uuid (BL-002/BL-007).
 	import { t } from '$lib/i18n';
 	import { api } from '$lib/api/client';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
-	import { Bookmark as BookmarkIcon, ExternalLink, FolderPlus, Trash2, Loader2, Folder } from 'lucide-svelte';
+	import { Bookmark as BookmarkIcon, ExternalLink, FolderPlus, Trash2, Loader2, Folder, Pencil, Check, X } from 'lucide-svelte';
 	import type { Bookmark, BookmarkFolder } from '$lib/types';
 	import { untrack } from 'svelte';
 
 	let { data } = $props();
 	const bookmarks = $derived(data.bookmarks);
 	let folders = $state<BookmarkFolder[]>(untrack(() => data.folders ?? []));
+	let activeFolder = $state<string | null>(data.activeFolderId ?? null);
 
-	let activeFolder = $state<string | null>(null);
 	let newFolderName = $state('');
 	let creatingFolder = $state(false);
 	let deletingFolderId = $state<string | null>(null);
 
-	const filteredBookmarks = $derived(
-		activeFolder
-			? bookmarks.filter((b) => b.folder === folders.find((f) => f.id === activeFolder)?.name)
-			: bookmarks
-	);
+	// Rename state
+	let editingFolderId = $state<string | null>(null);
+	let editFolderName = $state('');
+	let renamingFolder = $state(false);
+
+	function selectFolder(id: string | null) {
+		activeFolder = id;
+		const url = new URL(window.location.href);
+		if (id) {
+			url.searchParams.set('folder', id);
+		} else {
+			url.searchParams.delete('folder');
+		}
+		window.history.pushState({}, '', url);
+	}
 
 	function entityUrl(b: Bookmark): string {
 		// Prefer the slug for content/blog posts (canonical, SEO-friendly URL).
@@ -70,16 +81,38 @@
 		const res = await api.delete(`/me/bookmark-folders/${id}`);
 		if (!res.error) {
 			folders = folders.filter((f) => f.id !== id);
-			if (activeFolder === id) activeFolder = null;
+			if (activeFolder === id) selectFolder(null);
 		}
 		deletingFolderId = null;
+	}
+
+	function startRename(folder: BookmarkFolder) {
+		editingFolderId = folder.id;
+		editFolderName = folder.name;
+	}
+
+	function cancelRename() {
+		editingFolderId = null;
+		editFolderName = '';
+	}
+
+	async function confirmRename(id: string) {
+		if (!editFolderName.trim() || renamingFolder) return;
+		renamingFolder = true;
+		const res = await api.patch<BookmarkFolder>(`/me/bookmark-folders/${id}`, { name: editFolderName.trim() });
+		if (res.data) {
+			folders = folders.map((f) => (f.id === id ? res.data! : f));
+		}
+		renamingFolder = false;
+		editingFolderId = null;
+		editFolderName = '';
 	}
 </script>
 
 <section class="space-y-4">
 	<header>
 		<h1 class="text-lg font-medium text-[var(--color-text)]">{t('dashboard.nav.bookmarks')}</h1>
-		<p class="text-sm text-[var(--color-muted)]">{t('bookmarks.subtitle')}</p>
+		<p class="text-sm text-[var(--color-muted)]">{t('bookmarks.subtitle', 'Organize your saved items into folders')}</p>
 	</header>
 
 	<div class="grid gap-4 sm:grid-cols-[200px_1fr]">
@@ -87,7 +120,7 @@
 		<aside class="space-y-2">
 			<button
 				type="button"
-				onclick={() => (activeFolder = null)}
+				onclick={() => selectFolder(null)}
 				class="flex w-full items-center gap-2 rounded-[var(--radius)] px-3 py-2 text-sm transition-colors {activeFolder === null ? 'bg-[var(--color-surface-subtle)] font-medium text-[var(--color-text)]' : 'text-[var(--color-text-subtle)] hover:bg-[var(--color-surface-subtle)]'}"
 			>
 				<BookmarkIcon size={14} />
@@ -97,27 +130,68 @@
 
 			{#each folders as folder (folder.id)}
 				<div class="group flex items-center gap-1">
-					<button
-						type="button"
-						onclick={() => (activeFolder = folder.id)}
-						class="flex flex-1 items-center gap-2 rounded-[var(--radius)] px-3 py-2 text-sm transition-colors {activeFolder === folder.id ? 'bg-[var(--color-surface-subtle)] font-medium text-[var(--color-text)]' : 'text-[var(--color-text-subtle)] hover:bg-[var(--color-surface-subtle)]'}"
-					>
-						<Folder size={14} />
-						<span class="truncate">{folder.name}</span>
-					</button>
-					<button
-						type="button"
-						onclick={() => deleteFolder(folder.id)}
-						disabled={deletingFolderId === folder.id}
-						class="shrink-0 rounded p-1 text-[var(--color-muted)] opacity-0 transition-opacity hover:text-[var(--color-danger)] group-hover:opacity-100 disabled:opacity-50"
-						aria-label={t('bookmarks.delete_folder', 'Delete folder')}
-					>
-						{#if deletingFolderId === folder.id}
-							<Loader2 size={12} class="animate-spin" />
-						{:else}
-							<Trash2 size={12} />
-						{/if}
-					</button>
+					{#if editingFolderId === folder.id}
+						<input
+							type="text"
+							bind:value={editFolderName}
+							onkeydown={(e) => { if (e.key === 'Enter') confirmRename(folder.id); if (e.key === 'Escape') cancelRename(); }}
+							class="w-full rounded-[var(--radius)] border border-[var(--color-primary)] bg-[var(--color-surface)] px-2 py-1.5 text-xs text-[var(--color-text)] outline-none"
+						/>
+						<button
+							type="button"
+							onclick={() => confirmRename(folder.id)}
+							disabled={renamingFolder || !editFolderName.trim()}
+							class="shrink-0 rounded p-1 text-[var(--color-primary)] disabled:opacity-50"
+							aria-label={t('bookmarks.confirm_rename', 'Confirm rename')}
+						>
+							{#if renamingFolder}
+								<Loader2 size={12} class="animate-spin" />
+							{:else}
+								<Check size={12} />
+							{/if}
+						</button>
+						<button
+							type="button"
+							onclick={cancelRename}
+							class="shrink-0 rounded p-1 text-[var(--color-muted)]"
+							aria-label={t('bookmarks.cancel_rename', 'Cancel rename')}
+						>
+							<X size={12} />
+						</button>
+					{:else}
+						<button
+							type="button"
+							onclick={() => selectFolder(folder.id)}
+							class="flex flex-1 items-center gap-2 rounded-[var(--radius)] px-3 py-2 text-sm transition-colors {activeFolder === folder.id ? 'bg-[var(--color-surface-subtle)] font-medium text-[var(--color-text)]' : 'text-[var(--color-text-subtle)] hover:bg-[var(--color-surface-subtle)]'}"
+						>
+							<Folder size={14} />
+							<span class="truncate">{folder.name}</span>
+							{#if folder.bookmark_count != null}
+								<span class="ml-auto text-xs text-[var(--color-muted)]">{folder.bookmark_count}</span>
+							{/if}
+						</button>
+						<button
+							type="button"
+							onclick={() => startRename(folder)}
+							class="shrink-0 rounded p-1 text-[var(--color-muted)] opacity-0 transition-opacity hover:text-[var(--color-primary)] group-hover:opacity-100"
+							aria-label={t('bookmarks.rename_folder', 'Rename folder')}
+						>
+							<Pencil size={12} />
+						</button>
+						<button
+							type="button"
+							onclick={() => deleteFolder(folder.id)}
+							disabled={deletingFolderId === folder.id}
+							class="shrink-0 rounded p-1 text-[var(--color-muted)] opacity-0 transition-opacity hover:text-[var(--color-danger)] group-hover:opacity-100 disabled:opacity-50"
+							aria-label={t('bookmarks.delete_folder', 'Delete folder')}
+						>
+							{#if deletingFolderId === folder.id}
+								<Loader2 size={12} class="animate-spin" />
+							{:else}
+								<Trash2 size={12} />
+							{/if}
+						</button>
+					{/if}
 				</div>
 			{/each}
 
@@ -146,15 +220,15 @@
 
 		<!-- Bookmark list -->
 		<div>
-			{#if filteredBookmarks.length === 0}
+			{#if bookmarks.length === 0}
 				<EmptyState
 					icon={BookmarkIcon}
-					title={t('bookmarks.empty_title')}
-					body={t('bookmarks.empty_body')}
+					title={t('bookmarks.empty_title', 'No bookmarks yet')}
+					body={t('bookmarks.empty_body', 'Save items to find them here later.')}
 				/>
 			{:else}
 				<ul class="space-y-2">
-					{#each filteredBookmarks as b (b.id)}
+					{#each bookmarks as b (b.id)}
 						<li>
 							<a
 								href={entityUrl(b)}

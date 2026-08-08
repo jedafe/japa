@@ -5,6 +5,7 @@
 	// source_path, target_url, http_status, is_active, notes, hit_count, last_hit_at.
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
 	import { redirectsAdminApi } from '$lib/api';
+	import { apiRaw } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { Trash2 } from 'lucide-svelte';
 
@@ -74,7 +75,7 @@
 		{
 			key: 'notes',
 			label: t('redirects.notes', 'Notes'),
-			type: 'text',
+			type: 'textarea',
 			placeholder: t('redirects.notes_placeholder', 'Optional internal note')
 		}
 	];
@@ -132,12 +133,15 @@
 			if (q) params.set('q', q);
 			params.set('page_size', String(pageSize));
 			params.set('page_offset', String(page * pageSize));
-			const result = await redirectsAdminApi.list(params.toString() || undefined);
+			// Use apiRaw to access top-level total/total_pages alongside data (matches tags pattern).
+			const result = await apiRaw<{ data: Redirect[]; total: number; total_pages: number }>(
+				`/admin/redirects${params.toString() ? `?${params.toString()}` : ''}`
+			);
 			if (result.ok) {
-				const payload = result.data as { items: Redirect[]; total?: number } | Redirect[] | undefined;
-				const items = Array.isArray(payload) ? payload : (payload?.items ?? []);
-				const total = Array.isArray(payload) ? payload.length : (payload?.total ?? items.length);
-				const totalPages = Math.max(1, Math.ceil(total / pageSize));
+				const body = result.data;
+				const items = Array.isArray(body?.data) ? body.data : [];
+				const total = body?.total ?? items.length;
+				const totalPages = body?.total_pages ?? Math.max(1, Math.ceil(total / pageSize));
 				return { data: items, total, totalPages };
 			}
 			throw new Error(result.error ?? t('common.error', 'Failed to load redirects'));
