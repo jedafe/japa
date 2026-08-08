@@ -163,6 +163,7 @@ var taskTier = func() map[string]string {
 		TypeAdsNotifyCampaignStatus,
 		TypeJobsNotifyApplicationStatus,
 		TypeImportProcessSource,
+		TypeAffiliateRecordClick,
 	} {
 		m[t] = QueueDefault
 	}
@@ -182,7 +183,7 @@ var taskTier = func() map[string]string {
 		TypeMaintenancePrunePushTokens, TypeModerationAutoHide,
 		TypeDMCleanupDeclinedRequests, TypeCouponTrackEvents,
 		TypeTenantCleanupData,
-		TypeCouponExpireCheck, TypeAffiliateRecordClick,
+		TypeCouponExpireCheck,
 		TypeAffiliateExpireCheck,
 		TypeRedirectRecordHit,
 		TypeScheduledPublishSweep, TypeGdprRetentionSweep,
@@ -285,7 +286,7 @@ func TaskTypeCatalog() []map[string]string {
 		{TypeDMCleanupDeclinedRequests, "low", "Clean up declined DM requests"},
 		{TypeCouponTrackEvents, "low", "Track coupon usage events"},
 		{TypeCouponExpireCheck, "low", "Expire outdated coupons"},
-		{TypeAffiliateRecordClick, "low", "Record affiliate link click"},
+		{TypeAffiliateRecordClick, "default", "Record affiliate link click"},
 		{TypeAffiliateCreditCommission, "low", "Credit affiliate commission"},
 		{TypeAffiliateExpireCheck, "low", "Expire stale affiliate links"},
 		{TypeContentScanAffiliateLinks, "low", "Scan content for unregistered affiliate links and record results for moderation"},

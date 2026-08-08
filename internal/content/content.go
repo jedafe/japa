@@ -64,6 +64,10 @@ const (
 	TypeDiscussion = "discussion"
 	TypePage       = "page"
 	TypeComparison = "comparison"
+	// V2 community content types (§§79, 88, 98 — ADR-087/097/106).
+	TypeStory         = "story"
+	TypeAchievement   = "achievement"
+	TypeServiceListing = "service_listing"
 )
 
 // Visibility values stored in the contents.visibility column.

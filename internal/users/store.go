@@ -318,6 +318,36 @@ func (s *Store) updateUserPassword(ctx context.Context, tenantID, userID pgtype.
 	})
 }
 
+// insertPasswordHistory records a password hash in the password_history table
+// so it can be checked against future password changes (auth.password.history_count).
+func (s *Store) insertPasswordHistory(ctx context.Context, tenantID, userID pgtype.UUID, passwordHash string) error {
+	return s.write.InsertPasswordHistory(ctx, gen.InsertPasswordHistoryParams{
+		TenantID:     tenantID,
+		UserID:       userID,
+		PasswordHash: passwordHash,
+	})
+}
+
+// GetRecentPasswordHashes returns the most recent N password hashes for a user,
+// ordered by creation time descending. Used to prevent password reuse.
+// Implements auth.PasswordHistoryReader so ChangePassword can reuse the auth
+// package's CheckPasswordHistory helper.
+func (s *Store) GetRecentPasswordHashes(ctx context.Context, userID pgtype.UUID, limit int) ([]string, error) {
+	return s.read.GetRecentPasswordHashes(ctx, gen.GetRecentPasswordHashesParams{
+		UserID:    userID,
+		HashLimit: int32(limit),
+	})
+}
+
+// revokeAllRefreshTokens revokes all non-revoked refresh tokens for a user,
+// forcing re-authentication on all devices. Used after password change/reset.
+func (s *Store) revokeAllRefreshTokens(ctx context.Context, tenantID, userID pgtype.UUID) error {
+	return s.write.RevokeAllUserRefreshTokens(ctx, gen.RevokeAllUserRefreshTokensParams{
+		TenantID: tenantID,
+		UserID:   userID,
+	})
+}
+
 func (s *Store) getUserPrivacySettings(ctx context.Context, tenantID, userID pgtype.UUID) (gen.GetUserPrivacySettingsRow, error) {
 	return s.read.GetUserPrivacySettings(ctx, gen.GetUserPrivacySettingsParams{
 		TenantID: tenantID,
@@ -446,11 +476,14 @@ func (s *Store) getContentByIDForEditor(ctx context.Context, tenantID, contentID
 	})
 }
 
-func (s *Store) listUserBookmarks(ctx context.Context, userID pgtype.UUID, limit, offset int32) ([]gen.ListUserBookmarksRow, error) {
+func (s *Store) listUserBookmarks(ctx context.Context, tenantID, userID pgtype.UUID, folderID pgtype.UUID, entityTypes []string, limit, offset int32) ([]gen.ListUserBookmarksRow, error) {
 	return s.read.ListUserBookmarks(ctx, gen.ListUserBookmarksParams{
-		UserID: userID,
-		Limit:  limit,
-		Offset: offset,
+		UserID:      userID,
+		TenantID:    tenantID,
+		FolderID:    folderID,
+		EntityTypes: entityTypes,
+		Limit:       limit,
+		Offset:      offset,
 	})
 }
 

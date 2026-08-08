@@ -162,7 +162,11 @@ SELECT id, password_hash FROM users WHERE id = $1 AND tenant_id = $2;
 
 -- name: UpdateUserPassword :exec
 -- Tenant-scoped per Section 04 (BUG-009).
-UPDATE users SET password_hash = $3, updated_at = now() WHERE id = $1 AND tenant_id = $2;
+-- Sets password_changed_at so max-password-age policies can be enforced
+-- (Ref: sections/02-authentication-sessions.md).
+UPDATE users
+SET password_hash = $3, password_changed_at = now(), updated_at = now()
+WHERE id = $1 AND tenant_id = $2;
 
 -- name: ListUserSessions :many
 -- Tenant-scoped per Section 04 (BUG-009).
@@ -261,8 +265,10 @@ WHERE c.id = $1 AND c.tenant_id = $2
 -- entity_type drives which table is joined (content/blog_post→contents,
 -- forum_thread→forum_threads, space→spaces, tag→tags). Unknown types get
 -- NULL title/slug; the frontend falls back to the entity_id.
+-- Tenant-scoped (BL-006), optional folder_id filter (BL-002), and optional
+-- entity_type filter (so the learn app can request only learning entities).
 SELECT
-    b.id, b.entity_type, b.entity_id, b.folder, b.created_at,
+    b.id, b.entity_type, b.entity_id, b.folder, b.folder_id, b.created_at,
     CASE
         WHEN b.entity_type IN ('content', 'blog_post') THEN c.title
         WHEN b.entity_type = 'forum_thread'           THEN ft.title
@@ -284,9 +290,11 @@ LEFT JOIN spaces s
     ON b.entity_type = 'space' AND b.entity_id = s.id
 LEFT JOIN tags t
     ON b.entity_type = 'tag' AND b.entity_id = t.id
-WHERE b.user_id = $1
+WHERE b.user_id = $1 AND b.tenant_id = $2
+  AND (sqlc.narg(folder_id) IS NULL OR b.folder_id = sqlc.narg(folder_id))
+  AND (sqlc.narg(entity_types)::text[] IS NULL OR b.entity_type = ANY(sqlc.narg(entity_types)::text[]))
 ORDER BY b.created_at DESC
-LIMIT $2 OFFSET $3;
+LIMIT $3 OFFSET $4;
 
 -- name: DeactivateUser :exec
 UPDATE users SET status = 'suspended', updated_at = now() WHERE id = $1 AND tenant_id = $2;

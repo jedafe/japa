@@ -3,14 +3,17 @@ package users
 import (
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"golang.org/x/crypto/bcrypt"
 
+	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/tenant"
 )
@@ -22,6 +25,11 @@ type ChangePasswordRequest struct {
 }
 
 // ChangePassword handles POST /api/v1/me/change-password.
+// Validates the current password, enforces the tenant's password policy
+// (from system_settings), checks password history, hashes with bcrypt cost 12,
+// records the new hash in password_history, and invalidates all sessions
+// to force re-login on all devices.
+// Ref: japaconnect-engineering/sections/02-authentication-sessions.md
 func (h *Handlers) ChangePassword(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
 	if !ok {
@@ -44,8 +52,26 @@ func (h *Handlers) ChangePassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if len(req.NewPassword) < 8 {
-		writeError(w, http.StatusBadRequest, "password_too_short", "Password must be at least 8 characters")
+	// Build the password policy from system_settings (auth.password.* keys).
+	// Falls back to defaults when settings are unavailable.
+	policy := auth.DefaultPasswordPolicy()
+	if h.authSettings != nil {
+		policy = auth.PasswordPolicyFromSettings(r.Context(), h.authSettings, tenantID)
+	}
+
+	// Validate the new password against the full policy (length, complexity,
+	// breach check) — not just a hardcoded min length.
+	if err := auth.ValidatePassword(req.NewPassword, policy); err != nil {
+		var breached *auth.BreachedError
+		if errors.As(err, &breached) {
+			slog.Warn("change-password blocked: breached password",
+				"user_id", user.UserID.String(),
+				"breach_count", breached.Count)
+			writeError(w, http.StatusBadRequest, "password_breached",
+				"This password has appeared in a data breach and cannot be used. Please choose a different password.")
+			return
+		}
+		writeError(w, http.StatusBadRequest, "weak_password", err.Error())
 		return
 	}
 
@@ -66,19 +92,45 @@ func (h *Handlers) ChangePassword(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusUnauthorized, "invalid_password", "Current password is incorrect")
 			return
 		}
+	} else {
+		// OAuth-only accounts (password_hash IS NULL) cannot use password change.
+		writeError(w, http.StatusBadRequest, "no_password_set", "This account does not have a password set. Use password reset instead.")
+		return
 	}
 
-	// Hash new password.
-	newHash, err := bcrypt.GenerateFromPassword([]byte(req.NewPassword), bcrypt.DefaultCost)
+	// Check password history to prevent reuse of recent passwords.
+	if err := auth.CheckPasswordHistory(r.Context(), h.Service.store, user.UserID, req.NewPassword, policy); err != nil {
+		var reused *auth.PasswordReusedError
+		if errors.As(err, &reused) {
+			writeError(w, http.StatusBadRequest, "password_reused",
+				"New password cannot be the same as a recent password. Please choose a different password.")
+			return
+		}
+	}
+
+	// Hash new password with bcrypt cost 12 (auth.BcryptCost), not
+	// bcrypt.DefaultCost (10).
+	newHash, err := auth.HashPassword(req.NewPassword)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to hash password")
 		return
 	}
 
-	hashStr := string(newHash)
-	if err := h.Service.store.updateUserPassword(r.Context(), tenantID, user.UserID, &hashStr); err != nil {
+	if err := h.Service.store.updateUserPassword(r.Context(), tenantID, user.UserID, &newHash); err != nil {
 		handleServiceError(w, err)
 		return
+	}
+
+	// Record the new password in history so it cannot be reused later.
+	if err := h.Service.store.insertPasswordHistory(r.Context(), tenantID, user.UserID, newHash); err != nil {
+		slog.Warn("change-password: failed to record password history", "error", err)
+	}
+
+	// Invalidate all sessions for this user — force re-login on all devices.
+	// Ref: §02 "Session invalidation on password change"
+	if err := h.Service.store.revokeAllRefreshTokens(r.Context(), tenantID, user.UserID); err != nil {
+		slog.Error("change-password: failed to invalidate sessions",
+			"user_id", user.UserID.String(), "error", err)
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "updated"}})
@@ -491,14 +543,23 @@ type BookmarkListItem struct {
 	EntityType string  `json:"entity_type"`
 	EntityID   string  `json:"entity_id"`
 	Folder     string  `json:"folder"`
+	FolderID   *string `json:"folder_id"`
 	CreatedAt  string  `json:"created_at"`
 	Title      *string `json:"title"`
 	Slug       *string `json:"slug"`
 }
 
 // ListMyBookmarks handles GET /api/v1/me/bookmarks.
+// Supports optional ?folder_id=uuid filter (BL-002, §50) and
+// ?entity_type=<type> filter (so the learn app can request only learning
+// entities).
 func (h *Handlers) ListMyBookmarks(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -506,7 +567,27 @@ func (h *Handlers) ListMyBookmarks(w http.ResponseWriter, r *http.Request) {
 	limit := parsePageSize(r)
 	offset := parsePageOffset(r)
 
-	bookmarks, err := h.Service.ListUserBookmarks(r.Context(), user.UserID, limit, offset)
+	var folderID pgtype.UUID
+	if fid := r.URL.Query().Get("folder_id"); fid != "" {
+		if err := folderID.Scan(fid); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_folder_id", "Invalid folder_id format")
+			return
+		}
+	}
+
+	entityType := r.URL.Query().Get("entity_type")
+
+	// The entity_type filter accepts a comma-separated list (e.g.
+	// ?entity_type=learning_track,content) so the learn app can request
+	// multiple learning-related entity types in one call. When a single
+	// value is passed, it filters to that one type. When empty, all types
+	// are returned.
+	var entityTypes []string
+	if entityType != "" {
+		entityTypes = strings.Split(entityType, ",")
+	}
+
+	bookmarks, err := h.Service.ListUserBookmarks(r.Context(), tenantID, user.UserID, folderID, entityTypes, limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return

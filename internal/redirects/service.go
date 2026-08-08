@@ -96,6 +96,7 @@ func (n *noopEnqueuer) Enqueue(_ string, _ []byte, _ ...interface{}) error { ret
 
 type ListRedirectsResponse struct {
 	Items      []gen.Redirect `json:"items"`
+	Total      int32          `json:"total"`
 	Page       int32          `json:"page"`
 	TotalPages int32          `json:"total_pages"`
 }
@@ -113,7 +114,7 @@ func (s *Service) ListRedirects(ctx context.Context, tenantID pgtype.UUID, isAct
 	if total%limit > 0 {
 		totalPages++
 	}
-	return &ListRedirectsResponse{Items: redirects, Page: offset / limit, TotalPages: totalPages}, nil
+	return &ListRedirectsResponse{Items: redirects, Total: total, Page: offset / limit, TotalPages: totalPages}, nil
 }
 
 func (s *Service) GetRedirect(ctx context.Context, id, tenantID pgtype.UUID) (gen.Redirect, error) {
@@ -180,6 +181,16 @@ type BulkActionInput struct {
 }
 
 func (s *Service) BulkAction(ctx context.Context, tenantID pgtype.UUID, input BulkActionInput) error {
+	// Validate the action before any store access so bad input is rejected
+	// without requiring a database connection (matches test expectations).
+	switch input.Action {
+	case "activate", "deactivate", "delete":
+	default:
+		return fmt.Errorf("invalid action: %s", input.Action)
+	}
+	if len(input.Ids) == 0 {
+		return fmt.Errorf("ids are required")
+	}
 	var ids []pgtype.UUID
 	for _, idStr := range input.Ids {
 		var id pgtype.UUID
@@ -188,16 +199,32 @@ func (s *Service) BulkAction(ctx context.Context, tenantID pgtype.UUID, input Bu
 		}
 		ids = append(ids, id)
 	}
+	// Fetch source_paths before the mutation so we can invalidate the Valkey cache
+	// for each affected redirect (ADR-056 invalidation contract).
+	existing, err := s.store.getRedirectsByIDs(ctx, tenantID, ids)
+	if err != nil {
+		return fmt.Errorf("fetching redirects for bulk action: %w", err)
+	}
+	tenantIDStr := tenantID.String()
 	switch input.Action {
 	case "activate":
-		return s.store.bulkUpdateRedirectStatus(ctx, tenantID, true, ids)
+		if err := s.store.bulkUpdateRedirectStatus(ctx, tenantID, true, ids); err != nil {
+			return err
+		}
 	case "deactivate":
-		return s.store.bulkUpdateRedirectStatus(ctx, tenantID, false, ids)
+		if err := s.store.bulkUpdateRedirectStatus(ctx, tenantID, false, ids); err != nil {
+			return err
+		}
 	case "delete":
-		return s.store.bulkDeleteRedirects(ctx, tenantID, ids)
-	default:
-		return fmt.Errorf("invalid action: %s", input.Action)
+		if err := s.store.bulkDeleteRedirects(ctx, tenantID, ids); err != nil {
+			return err
+		}
 	}
+	// Invalidate the Valkey cache for every affected source path.
+	for _, r := range existing {
+		s.invalidateValkeyCache(ctx, tenantIDStr, r.SourcePath)
+	}
+	return nil
 }
 
 // ── Runtime Resolution ──────────────────────────────────────────────────

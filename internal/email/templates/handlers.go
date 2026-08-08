@@ -133,9 +133,10 @@ func (h *Handlers) ListTemplates(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	filterType := r.URL.Query().Get("type")
+	filterIsActive := r.URL.Query().Get("is_active")
 	limit := parsePageSize(r)
 	offset := parsePageOffset(r)
-	result, err := h.Service.ListTemplates(r.Context(), tenantID, filterType, limit, offset)
+	result, err := h.Service.ListTemplates(r.Context(), tenantID, filterType, filterIsActive, limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -172,17 +173,16 @@ func (h *Handlers) UpdateTemplate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var input struct {
-		Name          string `json:"name"`
 		Subject       string `json:"subject"`
 		HtmlBody      string `json:"html_body"`
 		PlainTextBody string `json:"plain_text_body"`
-		Status        string `json:"status"`
+		IsActive      bool   `json:"is_active"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
 		return
 	}
-	tmpl, err := h.Service.UpdateTemplate(r.Context(), id, tenantID, input.Name, input.Subject, input.HtmlBody, input.PlainTextBody, input.Status)
+	tmpl, err := h.Service.UpdateTemplate(r.Context(), id, tenantID, input.Subject, input.HtmlBody, input.PlainTextBody, input.IsActive)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -249,7 +249,7 @@ func (h *Handlers) TestTemplate(w http.ResponseWriter, r *http.Request) {
 	if h.AsynqClient != nil {
 		payload := map[string]interface{}{
 			"to":            input.Email,
-			"template_slug": tmpl.Type,
+			"template_slug": tmpl.Slug,
 			"tenant_id":     tenantID.String(),
 			"template_data": map[string]string{},
 		}

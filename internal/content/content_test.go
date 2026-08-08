@@ -113,10 +113,13 @@ func TestContentTypeConstants(t *testing.T) {
 	t.Parallel()
 
 	want := map[string]string{
-		TypeBlogPost:   "blog_post",
-		TypeDiscussion: "discussion",
-		TypePage:       "page",
-		TypeComparison: "comparison",
+		TypeBlogPost:      "blog_post",
+		TypeDiscussion:    "discussion",
+		TypePage:          "page",
+		TypeComparison:    "comparison",
+		TypeStory:         "story",
+		TypeAchievement:   "achievement",
+		TypeServiceListing: "service_listing",
 	}
 	for got, want := range want {
 		if got != want {

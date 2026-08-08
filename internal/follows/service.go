@@ -11,24 +11,36 @@ import (
 )
 
 // FollowerInfo extends a follow row with the follower's profile data.
+// IsFollowing indicates whether the authenticated caller follows this
+// follower back (Section 31: list endpoints expose is_following per item).
 type FollowerInfo struct {
 	gen.Follow
 	Username    string `json:"username"`
 	DisplayName string `json:"display_name"`
 	AvatarURL   string `json:"avatar_url"`
+	IsFollowing bool   `json:"is_following"`
 }
 
 // FollowingInfo extends a follow row with the entity's display name + slug.
+// IsFollowing indicates whether the authenticated caller follows this entity
+// (Section 31: list endpoints expose is_following per item).
 type FollowingInfo struct {
 	gen.Follow
-	EntityName string `json:"entity_name"`
-	EntitySlug string `json:"entity_slug"`
+	EntityName  string `json:"entity_name"`
+	EntitySlug  string `json:"entity_slug"`
+	IsFollowing bool   `json:"is_following"`
 }
 
 // joiningPermOpen is the joining_perm value that allows anyone to auto-join
 // a space on follow (BL-010 / Section 31). Kept as a local constant to avoid
 // importing the spaces package (which would couple follows → spaces).
 const joiningPermOpen = "open"
+
+// ErrEntityNotFound is returned by ToggleFollow when the target entity does
+// not exist (or does not belong to the caller's tenant). The polymorphic
+// follows.entity_id column has no FK constraint, so without this check a
+// follow row can be inserted for a non-existent entity (data integrity).
+var ErrEntityNotFound = errors.New("entity not found")
 
 // ToggleFollow handles follow/unfollow logic. Returns true if the user is now
 // following the entity, false if they unfollowed. When following a space with
@@ -47,6 +59,13 @@ func (s *Service) ToggleFollow(ctx context.Context, tenantID, followerID pgtype.
 
 	if entityType == EntityTypeUser && followerID == entityId {
 		return false, errors.New("cannot follow yourself")
+	}
+
+	// Validate the target entity exists in the caller's tenant before
+	// inserting a follow row. The polymorphic entity_id has no FK, so
+	// without this check a follow row can dangle for a non-existent entity.
+	if err := s.validateEntityExists(ctx, tenantID, entityType, entityId); err != nil {
+		return false, err
 	}
 
 	// H1: wrap toggle + count update in a transaction so a count-update
@@ -134,8 +153,8 @@ func (s *Service) ToggleFollow(ctx context.Context, tenantID, followerID pgtype.
 }
 
 // GetFollow returns the follow row for a specific follower-entity pair.
-func (s *Service) GetFollow(ctx context.Context, followerID pgtype.UUID, entityType string, entityID pgtype.UUID) (gen.Follow, error) {
-	return s.store.getFollow(ctx, followerID, entityType, entityID)
+func (s *Service) GetFollow(ctx context.Context, tenantID, followerID pgtype.UUID, entityType string, entityID pgtype.UUID) (gen.Follow, error) {
+	return s.store.getFollow(ctx, tenantID, followerID, entityType, entityID)
 }
 
 // IsFollowing returns true if the follower is following the entity.
@@ -144,7 +163,7 @@ func (s *Service) GetFollow(ctx context.Context, followerID pgtype.UUID, entityT
 // is not wired, falls back to the store query and populates the cache.
 // Ref: japaconnect-engineering/sections/31-follow-system.md
 //      conventions/valkey-keys-catalog.md (Follow System section)
-func (s *Service) IsFollowing(ctx context.Context, followerID pgtype.UUID, entityType string, entityID pgtype.UUID) (bool, error) {
+func (s *Service) IsFollowing(ctx context.Context, tenantID, followerID pgtype.UUID, entityType string, entityID pgtype.UUID) (bool, error) {
 	// L3: try Valkey cache first (best-effort — never block on cache).
 	if s.vk != nil {
 		key := isFollowingKey(followerID, entityType, entityID)
@@ -159,7 +178,7 @@ func (s *Service) IsFollowing(ctx context.Context, followerID pgtype.UUID, entit
 		}
 	}
 
-	result, err := s.store.isFollowing(ctx, followerID, entityType, entityID)
+	result, err := s.store.isFollowing(ctx, tenantID, followerID, entityType, entityID)
 	if err != nil {
 		return false, err
 	}
@@ -177,16 +196,55 @@ func (s *Service) IsFollowing(ctx context.Context, followerID pgtype.UUID, entit
 	return result, nil
 }
 
-// IsMutualFollow checks if two users mutually follow each other.
-func (s *Service) IsMutualFollow(ctx context.Context, followerID, entityID pgtype.UUID) (bool, error) {
-	return s.store.isMutualFollow(ctx, followerID, entityID)
+// IsMutualFollow checks if two users mutually follow each other. A
+// "connection" (Section 31) requires BOTH directions: followerID follows
+// entityID AND entityID follows followerID. The sqlc IsMutualFollow query
+// checks a single direction (does entityID follow followerID?), so we call
+// it twice and AND the results — mirroring the DM store pattern
+// (internal/websocket/dm.go IsMutualFollow).
+//
+// Ref: japaconnect-engineering/sections/31-follow-system.md (Mutual Follow)
+func (s *Service) IsMutualFollow(ctx context.Context, tenantID, followerID, entityID pgtype.UUID) (bool, error) {
+	// Direction 1: does entityID follow followerID?
+	dir1, err := s.store.isMutualFollow(ctx, tenantID, followerID, entityID)
+	if err != nil {
+		return false, fmt.Errorf("checking entity follows follower: %w", err)
+	}
+	if !dir1 {
+		return false, nil
+	}
+
+	// Direction 2: does followerID follow entityID?
+	dir2, err := s.store.isMutualFollow(ctx, tenantID, entityID, followerID)
+	if err != nil {
+		return false, fmt.Errorf("checking follower follows entity: %w", err)
+	}
+
+	return dir2, nil
 }
 
-// GetFollowers returns paginated followers with user profile data.
-func (s *Service) GetFollowers(ctx context.Context, tenantID pgtype.UUID, entityType string, entityID pgtype.UUID, limit, offset int32) ([]FollowerInfo, error) {
+// GetFollowers returns paginated followers with user profile data. When
+// callerID is valid, each item includes is_following indicating whether the
+// caller follows that follower back (Section 31: bulk is_following per item).
+func (s *Service) GetFollowers(ctx context.Context, tenantID, callerID pgtype.UUID, entityType string, entityID pgtype.UUID, limit, offset int32) ([]FollowerInfo, error) {
 	rows, err := s.store.getFollowers(ctx, tenantID, entityType, entityID, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("getting followers: %w", err)
+	}
+
+	// Section 31: resolve is_following per item in a single bulk query
+	// rather than N+1. Followers are always users, so the entity type is
+	// EntityTypeUser.
+	var bulkStatus map[pgtype.UUID]bool
+	if callerID.Valid && len(rows) > 0 {
+		ids := make([]pgtype.UUID, len(rows))
+		for i, r := range rows {
+			ids[i] = r.FollowerID
+		}
+		bulkStatus, err = s.store.getBulkFollowingStatus(ctx, tenantID, callerID, EntityTypeUser, ids)
+		if err != nil {
+			return nil, fmt.Errorf("bulk is_following for followers: %w", err)
+		}
 	}
 
 	result := make([]FollowerInfo, len(rows))
@@ -204,17 +262,24 @@ func (s *Service) GetFollowers(ctx context.Context, tenantID pgtype.UUID, entity
 			DisplayName: r.DisplayName,
 			AvatarURL:   r.AvatarUrl,
 		}
+		if bulkStatus != nil {
+			result[i].IsFollowing = bulkStatus[r.FollowerID]
+		}
 	}
 
 	return result, nil
 }
 
-// GetFollowing returns paginated entities that a user follows.
-func (s *Service) GetFollowing(ctx context.Context, tenantID, followerID pgtype.UUID, limit, offset int32) ([]FollowingInfo, error) {
+// GetFollowing returns paginated entities that a user follows. When callerID
+// is valid, each item includes is_following indicating whether the caller
+// also follows that entity (Section 31: bulk is_following per item).
+func (s *Service) GetFollowing(ctx context.Context, tenantID, callerID, followerID pgtype.UUID, limit, offset int32) ([]FollowingInfo, error) {
 	rows, err := s.store.getFollowing(ctx, tenantID, followerID, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("getting following: %w", err)
 	}
+
+	bulkStatus := s.resolveBulkFollowingByType(ctx, tenantID, callerID, rows)
 
 	result := make([]FollowingInfo, len(rows))
 	for i, r := range rows {
@@ -229,6 +294,9 @@ func (s *Service) GetFollowing(ctx context.Context, tenantID, followerID pgtype.
 			},
 			EntityName: r.EntityName,
 			EntitySlug: r.EntitySlug,
+		}
+		if bulkStatus != nil {
+			result[i].IsFollowing = bulkStatus[r.EntityType][r.EntityID]
 		}
 	}
 
@@ -237,10 +305,24 @@ func (s *Service) GetFollowing(ctx context.Context, tenantID, followerID pgtype.
 
 // GetFollowingByType returns paginated entities of one entity_type that a
 // user follows (catalog: GET /me/followed-tags passes entityType "tag").
-func (s *Service) GetFollowingByType(ctx context.Context, tenantID, followerID pgtype.UUID, entityType string, limit, offset int32) ([]FollowingInfo, error) {
+// When callerID is valid, each item includes is_following.
+func (s *Service) GetFollowingByType(ctx context.Context, tenantID, callerID, followerID pgtype.UUID, entityType string, limit, offset int32) ([]FollowingInfo, error) {
 	rows, err := s.store.getFollowingByType(ctx, tenantID, followerID, entityType, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("getting following by type: %w", err)
+	}
+
+	// All items share the same entity_type, so a single bulk query suffices.
+	var bulkStatus map[pgtype.UUID]bool
+	if callerID.Valid && len(rows) > 0 {
+		ids := make([]pgtype.UUID, len(rows))
+		for i, r := range rows {
+			ids[i] = r.EntityID
+		}
+		bulkStatus, err = s.store.getBulkFollowingStatus(ctx, tenantID, callerID, entityType, ids)
+		if err != nil {
+			return nil, fmt.Errorf("bulk is_following for following: %w", err)
+		}
 	}
 
 	result := make([]FollowingInfo, len(rows))
@@ -257,9 +339,39 @@ func (s *Service) GetFollowingByType(ctx context.Context, tenantID, followerID p
 			EntityName: r.EntityName,
 			EntitySlug: r.EntitySlug,
 		}
+		if bulkStatus != nil {
+			result[i].IsFollowing = bulkStatus[r.EntityID]
+		}
 	}
 
 	return result, nil
+}
+
+// resolveBulkFollowingByType resolves is_following for a mixed-type following
+// list. It groups entity_ids by entity_type and issues one bulk query per
+// type (at most 5 — one per entity type present in the page), avoiding N+1.
+// Returns nil when callerID is invalid (no authenticated caller).
+func (s *Service) resolveBulkFollowingByType(ctx context.Context, tenantID, callerID pgtype.UUID, rows []gen.GetFollowingByUserRow) map[string]map[pgtype.UUID]bool {
+	if !callerID.Valid || len(rows) == 0 {
+		return nil
+	}
+
+	byType := make(map[string][]pgtype.UUID)
+	for _, r := range rows {
+		byType[r.EntityType] = append(byType[r.EntityType], r.EntityID)
+	}
+
+	result := make(map[string]map[pgtype.UUID]bool, len(byType))
+	for et, ids := range byType {
+		status, err := s.store.getBulkFollowingStatus(ctx, tenantID, callerID, et, ids)
+		if err != nil {
+			slog.Warn("bulk is_following lookup failed", "entity_type", et, "error", err)
+			continue
+		}
+		result[et] = status
+	}
+
+	return result
 }
 
 // CountFollowers returns the follower count for an entity.
@@ -292,6 +404,42 @@ func (s *Service) DeleteFollowsByEntity(ctx context.Context, entityType string, 
 // tables share the same column name, and triggers may not exist yet.
 func (s *Service) updateFollowerCount(ctx context.Context, entityType string, entityID pgtype.UUID, delta int32) error {
 	return s.updateFollowerCountTx(ctx, s.db.Writer, entityType, entityID, delta)
+}
+
+// validateEntityExists checks that the target entity exists in the caller's
+// tenant before a follow row is inserted. The polymorphic follows.entity_id
+// column has no FK constraint, so without this check a follow row can dangle
+// for a non-existent entity. Returns ErrEntityNotFound when the entity does
+// not exist.
+func (s *Service) validateEntityExists(ctx context.Context, tenantID pgtype.UUID, entityType string, entityID pgtype.UUID) error {
+	var table string
+	switch entityType {
+	case EntityTypeUser:
+		table = "users"
+	case EntityTypeSpace:
+		table = "spaces"
+	case EntityTypeTag:
+		table = "tags"
+	case EntityTypeOrganization:
+		table = "organizations"
+	case EntityTypeProfessionalProfile:
+		table = "professional_profiles"
+	default:
+		return fmt.Errorf("invalid entity type: %s", entityType)
+	}
+
+	var exists bool
+	err := s.db.Reader.QueryRow(ctx,
+		fmt.Sprintf("SELECT EXISTS(SELECT 1 FROM %s WHERE id = $1 AND tenant_id = $2) AS exists", table),
+		entityID, tenantID,
+	).Scan(&exists)
+	if err != nil {
+		return fmt.Errorf("checking entity existence: %w", err)
+	}
+	if !exists {
+		return ErrEntityNotFound
+	}
+	return nil
 }
 
 // updateFollowerCountTx is the transaction-scoped version that executes the

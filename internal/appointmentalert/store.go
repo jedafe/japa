@@ -1,0 +1,588 @@
+// Package appointmentalert implements the Embassy Appointment Alerter
+// (§91, ADR-099).
+//
+// The package manages two tables created by migration 000327:
+// monitored_embassies (admin-configured embassy booking pages that the
+// Asynq worker polls for open appointment slots) and appointment_alerts
+// (per-user subscriptions that fire a notification when a matching slot
+// appears). This package provides the CRUD, listing, and admin config
+// endpoints; the actual scraping/polling is performed by an Asynq worker
+// outside this package.
+//
+// Ref: japaconnect-engineering/sections/91-embassy-appointment-alerter.md
+//      japaconnect-engineering/adr/ADR-099-embassy-appointment-alerter.md
+package appointmentalert
+
+import (
+	"context"
+	"fmt"
+	"strings"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
+
+	"github.com/jedafe/japa/internal/db"
+)
+
+// Alert statuses (§91).
+const (
+	StatusActive  = "active"
+	StatusPaused  = "paused"
+	StatusFired   = "fired"
+	StatusExpired = "expired"
+)
+
+// Default notification channels when none are specified.
+var defaultNotificationChannels = []string{"in_app", "email"}
+
+// Store is the data-access layer for monitored_embassies and
+// appointment_alerts. It uses direct pgx queries because these are new
+// tables without sqlc-generated queries yet. No business logic here.
+type Store struct {
+	pool *db.DB
+}
+
+// NewStore creates an appointment alerter store backed by the given database.
+func NewStore(database *db.DB) *Store {
+	return &Store{pool: database}
+}
+
+// EmbassyRow is a row from monitored_embassies, optionally joined to
+// spaces for the destination name.
+type EmbassyRow struct {
+	ID                 pgtype.UUID
+	TenantID           pgtype.UUID
+	DestinationSpaceID pgtype.UUID
+	DestSpaceName      *string
+	Slug               string
+	Name               string
+	BookingURL         string
+	PollIntervalSeconds int32
+	IsActive           bool
+	LastPolledAt       pgtype.Timestamptz
+	CreatedAt          pgtype.Timestamptz
+	UpdatedAt          pgtype.Timestamptz
+}
+
+// AlertRow is a row from appointment_alerts.
+type AlertRow struct {
+	ID                  pgtype.UUID
+	TenantID            pgtype.UUID
+	UserID              pgtype.UUID
+	DestinationSpaceID  pgtype.UUID
+	DestSpaceName       *string
+	EmbassySlug         string
+	VisaCategory        *string
+	DateRangeStart      pgtype.Date
+	DateRangeEnd        pgtype.Date
+	Status              string
+	LastCheckedAt       pgtype.Timestamptz
+	FiredAt             pgtype.Timestamptz
+	ExpiresAt           pgtype.Date
+	NotificationChannels []string
+	CreatedAt           pgtype.Timestamptz
+	UpdatedAt           pgtype.Timestamptz
+}
+
+// ListEmbassiesFilter holds the filter parameters for listing monitored
+// embassies.
+type ListEmbassiesFilter struct {
+	TenantID           pgtype.UUID
+	DestinationSpaceID pgtype.UUID // optional
+	ActiveOnly         bool
+	Limit              int32
+	Offset             int32
+}
+
+// ListEmbassies returns a paginated list of monitored embassies for a
+// tenant, optionally filtered by destination space. When ActiveOnly is
+// true only rows with is_active = true are returned.
+func (s *Store) ListEmbassies(ctx context.Context, f ListEmbassiesFilter) ([]EmbassyRow, int64, error) {
+	var (
+		conditions []string
+		args       []any
+		argIdx     = 1
+	)
+
+	conditions = append(conditions, fmt.Sprintf("e.tenant_id = $%d", argIdx))
+	args = append(args, f.TenantID)
+	argIdx++
+
+	if f.DestinationSpaceID.Valid {
+		conditions = append(conditions, fmt.Sprintf("e.destination_space_id = $%d", argIdx))
+		args = append(args, f.DestinationSpaceID)
+		argIdx++
+	}
+	if f.ActiveOnly {
+		conditions = append(conditions, "e.is_active = true")
+	}
+
+	whereClause := strings.Join(conditions, " AND ")
+
+	limit := f.Limit
+	if limit <= 0 {
+		limit = 50
+	}
+	if limit > 200 {
+		limit = 200
+	}
+	offset := f.Offset
+	if offset < 0 {
+		offset = 0
+	}
+
+	listQuery := fmt.Sprintf(`
+SELECT e.id, e.tenant_id, e.destination_space_id, sp.name AS dest_space_name,
+       e.slug, e.name, e.booking_url, e.poll_interval_seconds, e.is_active,
+       e.last_polled_at, e.created_at, e.updated_at
+FROM monitored_embassies e
+LEFT JOIN spaces sp ON sp.id = e.destination_space_id
+WHERE %s
+ORDER BY e.name ASC
+LIMIT $%d OFFSET $%d
+`, whereClause, argIdx, argIdx+1)
+	args = append(args, limit, offset)
+
+	rows, err := s.pool.Reader.Query(ctx, listQuery, args...)
+	if err != nil {
+		return nil, 0, fmt.Errorf("appointmentalert: list embassies: %w", err)
+	}
+	defer rows.Close()
+
+	var out []EmbassyRow
+	for rows.Next() {
+		var r EmbassyRow
+		if err := rows.Scan(
+			&r.ID, &r.TenantID, &r.DestinationSpaceID, &r.DestSpaceName,
+			&r.Slug, &r.Name, &r.BookingURL, &r.PollIntervalSeconds, &r.IsActive,
+			&r.LastPolledAt, &r.CreatedAt, &r.UpdatedAt,
+		); err != nil {
+			return nil, 0, fmt.Errorf("appointmentalert: scan embassy row: %w", err)
+		}
+		out = append(out, r)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("appointmentalert: iterate embassy rows: %w", err)
+	}
+
+	countQuery := fmt.Sprintf(`
+SELECT COUNT(*) FROM monitored_embassies e
+WHERE %s
+`, whereClause)
+	countArgs := args[:len(args)-2]
+	var total int64
+	if err := s.pool.Reader.QueryRow(ctx, countQuery, countArgs...).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("appointmentalert: count embassies: %w", err)
+	}
+
+	return out, total, nil
+}
+
+// GetEmbassyBySlug returns a single monitored embassy by its slug within
+// the tenant.
+func (s *Store) GetEmbassyBySlug(ctx context.Context, slug string, tenantID pgtype.UUID) (EmbassyRow, error) {
+	const q = `
+SELECT e.id, e.tenant_id, e.destination_space_id, sp.name AS dest_space_name,
+       e.slug, e.name, e.booking_url, e.poll_interval_seconds, e.is_active,
+       e.last_polled_at, e.created_at, e.updated_at
+FROM monitored_embassies e
+LEFT JOIN spaces sp ON sp.id = e.destination_space_id
+WHERE e.tenant_id = $1 AND e.slug = $2
+LIMIT 1
+`
+	var r EmbassyRow
+	err := s.pool.Reader.QueryRow(ctx, q, tenantID, slug).Scan(
+		&r.ID, &r.TenantID, &r.DestinationSpaceID, &r.DestSpaceName,
+		&r.Slug, &r.Name, &r.BookingURL, &r.PollIntervalSeconds, &r.IsActive,
+		&r.LastPolledAt, &r.CreatedAt, &r.UpdatedAt,
+	)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return EmbassyRow{}, pgx.ErrNoRows
+		}
+		return EmbassyRow{}, fmt.Errorf("appointmentalert: get embassy by slug: %w", err)
+	}
+	return r, nil
+}
+
+// CreateEmbassy inserts a new monitored_embassies row.
+func (s *Store) CreateEmbassy(ctx context.Context, r EmbassyRow) (EmbassyRow, error) {
+	const q = `
+INSERT INTO monitored_embassies (
+    tenant_id, destination_space_id, slug, name, booking_url,
+    poll_interval_seconds, is_active
+) VALUES ($1, $2, $3, $4, $5, $6, $7)
+RETURNING id, tenant_id, destination_space_id, slug, name, booking_url,
+          poll_interval_seconds, is_active, last_polled_at, created_at, updated_at
+`
+	var out EmbassyRow
+	err := s.pool.Writer.QueryRow(ctx, q,
+		r.TenantID, r.DestinationSpaceID, r.Slug, r.Name, r.BookingURL,
+		r.PollIntervalSeconds, r.IsActive,
+	).Scan(
+		&out.ID, &out.TenantID, &out.DestinationSpaceID, &out.Slug, &out.Name,
+		&out.BookingURL, &out.PollIntervalSeconds, &out.IsActive,
+		&out.LastPolledAt, &out.CreatedAt, &out.UpdatedAt,
+	)
+	if err != nil {
+		return EmbassyRow{}, fmt.Errorf("appointmentalert: create embassy: %w", err)
+	}
+	return out, nil
+}
+
+// UpdateEmbassy updates the mutable config fields on a monitored_embassies
+// row. Only non-nil/non-zero fields in the input are applied.
+func (s *Store) UpdateEmbassy(ctx context.Context, id, tenantID pgtype.UUID, name, bookingURL *string, pollInterval *int32, isActive *bool) (EmbassyRow, error) {
+	var (
+		sets  []string
+		args  []any
+		idx   = 1
+	)
+
+	args = append(args, id, tenantID)
+	idx = 3
+
+	if name != nil {
+		sets = append(sets, fmt.Sprintf("name = $%d", idx))
+		args = append(args, *name)
+		idx++
+	}
+	if bookingURL != nil {
+		sets = append(sets, fmt.Sprintf("booking_url = $%d", idx))
+		args = append(args, *bookingURL)
+		idx++
+	}
+	if pollInterval != nil {
+		sets = append(sets, fmt.Sprintf("poll_interval_seconds = $%d", idx))
+		args = append(args, *pollInterval)
+		idx++
+	}
+	if isActive != nil {
+		sets = append(sets, fmt.Sprintf("is_active = $%d", idx))
+		args = append(args, *isActive)
+		idx++
+	}
+
+	if len(sets) == 0 {
+		// Nothing to update; just return the current row.
+		return s.getEmbassyByID(ctx, id, tenantID)
+	}
+
+	sets = append(sets, "updated_at = now()")
+
+	q := fmt.Sprintf(`
+UPDATE monitored_embassies
+SET %s
+WHERE id = $1 AND tenant_id = $2
+RETURNING id, tenant_id, destination_space_id, slug, name, booking_url,
+          poll_interval_seconds, is_active, last_polled_at, created_at, updated_at
+`, strings.Join(sets, ", "))
+
+	var out EmbassyRow
+	err := s.pool.Writer.QueryRow(ctx, q, args...).Scan(
+		&out.ID, &out.TenantID, &out.DestinationSpaceID, &out.Slug, &out.Name,
+		&out.BookingURL, &out.PollIntervalSeconds, &out.IsActive,
+		&out.LastPolledAt, &out.CreatedAt, &out.UpdatedAt,
+	)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return EmbassyRow{}, pgx.ErrNoRows
+		}
+		return EmbassyRow{}, fmt.Errorf("appointmentalert: update embassy: %w", err)
+	}
+	return out, nil
+}
+
+// getEmbassyByID fetches a single monitored embassy by its PK.
+func (s *Store) getEmbassyByID(ctx context.Context, id, tenantID pgtype.UUID) (EmbassyRow, error) {
+	const q = `
+SELECT e.id, e.tenant_id, e.destination_space_id, sp.name AS dest_space_name,
+       e.slug, e.name, e.booking_url, e.poll_interval_seconds, e.is_active,
+       e.last_polled_at, e.created_at, e.updated_at
+FROM monitored_embassies e
+LEFT JOIN spaces sp ON sp.id = e.destination_space_id
+WHERE e.id = $1 AND e.tenant_id = $2
+LIMIT 1
+`
+	var r EmbassyRow
+	err := s.pool.Reader.QueryRow(ctx, q, id, tenantID).Scan(
+		&r.ID, &r.TenantID, &r.DestinationSpaceID, &r.DestSpaceName,
+		&r.Slug, &r.Name, &r.BookingURL, &r.PollIntervalSeconds, &r.IsActive,
+		&r.LastPolledAt, &r.CreatedAt, &r.UpdatedAt,
+	)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return EmbassyRow{}, pgx.ErrNoRows
+		}
+		return EmbassyRow{}, fmt.Errorf("appointmentalert: get embassy by id: %w", err)
+	}
+	return r, nil
+}
+
+// MarkEmbassyPolled sets last_polled_at = now() for the given embassy.
+// The actual scraping is performed by the Asynq worker; this just records
+// that a poll cycle has been triggered.
+func (s *Store) MarkEmbassyPolled(ctx context.Context, id, tenantID pgtype.UUID) error {
+	const q = `
+UPDATE monitored_embassies
+SET last_polled_at = now(), updated_at = now()
+WHERE id = $1 AND tenant_id = $2
+`
+	cmd, err := s.pool.Writer.Exec(ctx, q, id, tenantID)
+	if err != nil {
+		return fmt.Errorf("appointmentalert: mark embassy polled: %w", err)
+	}
+	if cmd.RowsAffected() == 0 {
+		return pgx.ErrNoRows
+	}
+	return nil
+}
+
+// ListUserAlertsFilter holds the filter parameters for a user's alerts.
+type ListUserAlertsFilter struct {
+	TenantID pgtype.UUID
+	UserID   pgtype.UUID
+	Status   string // optional: active|paused|fired|expired
+	Limit    int32
+	Offset   int32
+}
+
+// ListUserAlerts returns a paginated list of a user's appointment alerts.
+func (s *Store) ListUserAlerts(ctx context.Context, f ListUserAlertsFilter) ([]AlertRow, int64, error) {
+	var (
+		conditions []string
+		args       []any
+		argIdx     = 1
+	)
+
+	conditions = append(conditions, fmt.Sprintf("a.tenant_id = $%d", argIdx))
+	args = append(args, f.TenantID)
+	argIdx++
+
+	conditions = append(conditions, fmt.Sprintf("a.user_id = $%d", argIdx))
+	args = append(args, f.UserID)
+	argIdx++
+
+	if f.Status != "" {
+		conditions = append(conditions, fmt.Sprintf("a.status = $%d", argIdx))
+		args = append(args, f.Status)
+		argIdx++
+	}
+
+	whereClause := strings.Join(conditions, " AND ")
+
+	limit := f.Limit
+	if limit <= 0 {
+		limit = 50
+	}
+	if limit > 200 {
+		limit = 200
+	}
+	offset := f.Offset
+	if offset < 0 {
+		offset = 0
+	}
+
+	listQuery := fmt.Sprintf(`
+SELECT a.id, a.tenant_id, a.user_id, a.destination_space_id, sp.name AS dest_space_name,
+       a.embassy_slug, a.visa_category, a.date_range_start, a.date_range_end,
+       a.status, a.last_checked_at, a.fired_at, a.expires_at,
+       a.notification_channels, a.created_at, a.updated_at
+FROM appointment_alerts a
+LEFT JOIN spaces sp ON sp.id = a.destination_space_id
+WHERE %s
+ORDER BY a.created_at DESC
+LIMIT $%d OFFSET $%d
+`, whereClause, argIdx, argIdx+1)
+	args = append(args, limit, offset)
+
+	rows, err := s.pool.Reader.Query(ctx, listQuery, args...)
+	if err != nil {
+		return nil, 0, fmt.Errorf("appointmentalert: list user alerts: %w", err)
+	}
+	defer rows.Close()
+
+	var out []AlertRow
+	for rows.Next() {
+		var r AlertRow
+		if err := rows.Scan(
+			&r.ID, &r.TenantID, &r.UserID, &r.DestinationSpaceID, &r.DestSpaceName,
+			&r.EmbassySlug, &r.VisaCategory, &r.DateRangeStart, &r.DateRangeEnd,
+			&r.Status, &r.LastCheckedAt, &r.FiredAt, &r.ExpiresAt,
+			&r.NotificationChannels, &r.CreatedAt, &r.UpdatedAt,
+		); err != nil {
+			return nil, 0, fmt.Errorf("appointmentalert: scan alert row: %w", err)
+		}
+		out = append(out, r)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("appointmentalert: iterate alert rows: %w", err)
+	}
+
+	countQuery := fmt.Sprintf(`
+SELECT COUNT(*) FROM appointment_alerts a
+WHERE %s
+`, whereClause)
+	countArgs := args[:len(args)-2]
+	var total int64
+	if err := s.pool.Reader.QueryRow(ctx, countQuery, countArgs...).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("appointmentalert: count user alerts: %w", err)
+	}
+
+	return out, total, nil
+}
+
+// GetAlertByID returns a single appointment alert by its PK.
+func (s *Store) GetAlertByID(ctx context.Context, id, tenantID pgtype.UUID) (AlertRow, error) {
+	const q = `
+SELECT a.id, a.tenant_id, a.user_id, a.destination_space_id, sp.name AS dest_space_name,
+       a.embassy_slug, a.visa_category, a.date_range_start, a.date_range_end,
+       a.status, a.last_checked_at, a.fired_at, a.expires_at,
+       a.notification_channels, a.created_at, a.updated_at
+FROM appointment_alerts a
+LEFT JOIN spaces sp ON sp.id = a.destination_space_id
+WHERE a.id = $1 AND a.tenant_id = $2
+LIMIT 1
+`
+	var r AlertRow
+	err := s.pool.Reader.QueryRow(ctx, q, id, tenantID).Scan(
+		&r.ID, &r.TenantID, &r.UserID, &r.DestinationSpaceID, &r.DestSpaceName,
+		&r.EmbassySlug, &r.VisaCategory, &r.DateRangeStart, &r.DateRangeEnd,
+		&r.Status, &r.LastCheckedAt, &r.FiredAt, &r.ExpiresAt,
+		&r.NotificationChannels, &r.CreatedAt, &r.UpdatedAt,
+	)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return AlertRow{}, pgx.ErrNoRows
+		}
+		return AlertRow{}, fmt.Errorf("appointmentalert: get alert by id: %w", err)
+	}
+	return r, nil
+}
+
+// CreateAlert inserts a new appointment_alerts row and returns the full row.
+func (s *Store) CreateAlert(ctx context.Context, r AlertRow) (AlertRow, error) {
+	channels := r.NotificationChannels
+	if len(channels) == 0 {
+		channels = defaultNotificationChannels
+	}
+	status := r.Status
+	if status == "" {
+		status = StatusActive
+	}
+
+	const q = `
+INSERT INTO appointment_alerts (
+    tenant_id, user_id, destination_space_id, embassy_slug, visa_category,
+    date_range_start, date_range_end, status, expires_at, notification_channels
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+RETURNING id, tenant_id, user_id, destination_space_id, embassy_slug, visa_category,
+          date_range_start, date_range_end, status, last_checked_at, fired_at,
+          expires_at, notification_channels, created_at, updated_at
+`
+	var out AlertRow
+	err := s.pool.Writer.QueryRow(ctx, q,
+		r.TenantID, r.UserID, r.DestinationSpaceID, r.EmbassySlug, r.VisaCategory,
+		r.DateRangeStart, r.DateRangeEnd, status, r.ExpiresAt, channels,
+	).Scan(
+		&out.ID, &out.TenantID, &out.UserID, &out.DestinationSpaceID,
+		&out.EmbassySlug, &out.VisaCategory, &out.DateRangeStart, &out.DateRangeEnd,
+		&out.Status, &out.LastCheckedAt, &out.FiredAt, &out.ExpiresAt,
+		&out.NotificationChannels, &out.CreatedAt, &out.UpdatedAt,
+	)
+	if err != nil {
+		return AlertRow{}, fmt.Errorf("appointmentalert: create alert: %w", err)
+	}
+	return out, nil
+}
+
+// UpdateAlert updates the mutable fields on an appointment_alerts row.
+// Only non-nil fields in the input are applied. Returns the updated row.
+func (s *Store) UpdateAlert(ctx context.Context, id, tenantID pgtype.UUID, status *string, visaCategory *string, dateRangeStart, dateRangeEnd *pgtype.Date, expiresAt *pgtype.Date, channels []string) (AlertRow, error) {
+	var (
+		sets []string
+		args []any
+		idx  = 1
+	)
+
+	args = append(args, id, tenantID)
+	idx = 3
+
+	if status != nil {
+		sets = append(sets, fmt.Sprintf("status = $%d", idx))
+		args = append(args, *status)
+		idx++
+	}
+	if visaCategory != nil {
+		sets = append(sets, fmt.Sprintf("visa_category = $%d", idx))
+		args = append(args, *visaCategory)
+		idx++
+	}
+	if dateRangeStart != nil {
+		sets = append(sets, fmt.Sprintf("date_range_start = $%d", idx))
+		args = append(args, *dateRangeStart)
+		idx++
+	}
+	if dateRangeEnd != nil {
+		sets = append(sets, fmt.Sprintf("date_range_end = $%d", idx))
+		args = append(args, *dateRangeEnd)
+		idx++
+	}
+	if expiresAt != nil {
+		sets = append(sets, fmt.Sprintf("expires_at = $%d", idx))
+		args = append(args, *expiresAt)
+		idx++
+	}
+	if channels != nil {
+		sets = append(sets, fmt.Sprintf("notification_channels = $%d", idx))
+		args = append(args, channels)
+		idx++
+	}
+
+	if len(sets) == 0 {
+		return s.GetAlertByID(ctx, id, tenantID)
+	}
+
+	sets = append(sets, "updated_at = now()")
+
+	q := fmt.Sprintf(`
+UPDATE appointment_alerts
+SET %s
+WHERE id = $1 AND tenant_id = $2
+RETURNING id, tenant_id, user_id, destination_space_id, embassy_slug, visa_category,
+          date_range_start, date_range_end, status, last_checked_at, fired_at,
+          expires_at, notification_channels, created_at, updated_at
+`, strings.Join(sets, ", "))
+
+	var out AlertRow
+	err := s.pool.Writer.QueryRow(ctx, q, args...).Scan(
+		&out.ID, &out.TenantID, &out.UserID, &out.DestinationSpaceID,
+		&out.EmbassySlug, &out.VisaCategory, &out.DateRangeStart, &out.DateRangeEnd,
+		&out.Status, &out.LastCheckedAt, &out.FiredAt, &out.ExpiresAt,
+		&out.NotificationChannels, &out.CreatedAt, &out.UpdatedAt,
+	)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return AlertRow{}, pgx.ErrNoRows
+		}
+		return AlertRow{}, fmt.Errorf("appointmentalert: update alert: %w", err)
+	}
+	return out, nil
+}
+
+// DeleteAlert deletes an appointment_alerts row. Returns pgx.ErrNoRows if
+// the row does not exist (or belongs to a different tenant).
+func (s *Store) DeleteAlert(ctx context.Context, id, tenantID pgtype.UUID) error {
+	const q = `
+DELETE FROM appointment_alerts
+WHERE id = $1 AND tenant_id = $2
+`
+	cmd, err := s.pool.Writer.Exec(ctx, q, id, tenantID)
+	if err != nil {
+		return fmt.Errorf("appointmentalert: delete alert: %w", err)
+	}
+	if cmd.RowsAffected() == 0 {
+		return pgx.ErrNoRows
+	}
+	return nil
+}

@@ -12,7 +12,8 @@
 	}
 	import { setUser, setPermissions, clearUser } from '$lib/stores/auth.svelte';
 	import { t, translations, initLocale, loadTranslations } from '$lib/stores/i18n.svelte';
-	import { setToken } from '$lib/api';
+	import { setToken, getToken } from '$lib/api';
+	import { apiFetch } from '$lib/api/client';
 	import TopBar from '$lib/components/layout/TopBar.svelte';
 	import AccessDenied from '$lib/components/AccessDenied.svelte';
 	import { Tooltip } from 'bits-ui';
@@ -75,28 +76,34 @@
 			return;
 		}
 		if (authInflight) return;
-		// H4: read the persisted JWT back on app load. The backend does not issue
-		// an httpOnly session cookie, so localStorage is the only way to re-establish
-		// the session across reloads. (See login/+page.svelte for the residual XSS risk.)
-		const storedToken = typeof window !== 'undefined' ? localStorage.getItem('jc_token') : null;
-		if (storedToken) {
-			setToken(storedToken);
-			authChecked = false;
-			authInflight = true;
-			initAuth(storedToken);
-		} else {
-			redirectViaLogin();
-		}
+		// Re-establish the session on reload by calling /auth/refresh, which
+		// uses the httpOnly jc_refresh cookie (scoped to /api/v1/auth) set
+		// during login. The access token is stored in-memory only — never
+		// in localStorage — to prevent XSS token theft.
+		// Ref: sections/02-authentication-sessions.md (Token model)
+		authChecked = false;
+		authInflight = true;
+		initAuth();
 	});
 
-	async function initAuth(token: string) {
+	async function initAuth() {
 		try {
 			const { api } = await import('$lib/api');
+			// If we don't have an in-memory token, try to refresh using
+			// the httpOnly jc_refresh cookie.
+			if (!getToken()) {
+				const refreshRes = await apiFetch<{ access_token: string }>('/api/v1/auth/refresh', {
+					method: 'POST',
+					headers: { 'X-Skip-Refresh': '1' }
+				});
+				if (!refreshRes.error && refreshRes.data?.access_token) {
+					setToken(refreshRes.data.access_token);
+				}
+			}
 			const result = await api<{ id: string; email: string; username: string; display_name: string; user_group_name: string; avatar_url: string | null; user_group_id: string; theme_preference: string; timezone: string; is_verified: boolean; created_at: string }>('/api/v1/me');
 			if (result.ok) {
 				const userData = result.data;
 				if (userData.user_group_name !== 'super_admin') {
-					localStorage.removeItem('jc_token');
 					setToken(null);
 					clearUser();
 					if (!isAuthPage) redirectViaLogin();
@@ -115,7 +122,6 @@
 				}
 				const hasControlPanelAccess = perms.includes('*') || perms.includes('control_panel.access');
 				if (!hasControlPanelAccess) {
-					localStorage.removeItem('jc_token');
 					setToken(null);
 					clearUser();
 					if (!isAuthPage) redirectViaLogin();
@@ -139,13 +145,11 @@
 				setPermissions(perms);
 				userPermissions = perms;
 			} else {
-				localStorage.removeItem('jc_token');
 				setToken(null);
 				clearUser();
 				if (!isAuthPage) redirectViaLogin();
 			}
 		} catch {
-			localStorage.removeItem('jc_token');
 			setToken(null);
 			clearUser();
 			if (!isAuthPage) redirectViaLogin();

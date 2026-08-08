@@ -1,0 +1,395 @@
+// Package mutualaid — service.go orchestrates post creation, editing,
+// deletion, fulfillment, renewal, filtered listing, and admin moderation
+// for the Mutual Aid Board (§85, ADR-093). Feature-flagged via the
+// mutual_aid.enabled system_setting.
+//
+// Ref: japaconnect-engineering/sections/85-mutual-aid-board.md
+//      japaconnect-engineering/adr/ADR-093-mutual-aid-board.md
+package mutualaid
+
+import (
+	"context"
+	"fmt"
+	"log/slog"
+	"time"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
+
+	"github.com/jedafe/japa/internal/config"
+)
+
+// PostExpiry is the default lifetime of a mutual aid post before it must
+// be renewed (§85: 30-day expiry).
+const PostExpiry = 30 * 24 * time.Hour
+
+// PostDTO is the API response shape for a single mutual aid post.
+type PostDTO struct {
+	ID                 string `json:"id"`
+	PostType           string `json:"post_type"`
+	Category           string `json:"category,omitempty"`
+	Title              string `json:"title"`
+	Description        string `json:"description,omitempty"`
+	DestinationSpaceID string `json:"destination_space_id"`
+	DestSpaceName      string `json:"destination_space_name,omitempty"`
+	DestSpaceCode      string `json:"destination_space_code,omitempty"`
+	CitySpaceID        string `json:"city_space_id,omitempty"`
+	CitySpaceName      string `json:"city_space_name,omitempty"`
+	CitySpaceCode      string `json:"city_space_code,omitempty"`
+	IsFulfilled        bool   `json:"is_fulfilled"`
+	Status             string `json:"status"`
+	ExpiresAt          string `json:"expires_at"`
+	CreatedAt          string `json:"created_at"`
+	UpdatedAt          string `json:"updated_at"`
+	AuthorID           string `json:"author_id,omitempty"`
+	AuthorName         string `json:"author_name,omitempty"`
+	AuthorAvatar       string `json:"author_avatar,omitempty"`
+}
+
+// CreatePostRequest is the request body for POST /mutual-aid.
+type CreatePostRequest struct {
+	PostType           string `json:"post_type"`
+	Category           string `json:"category"`
+	Title              string `json:"title"`
+	Description        string `json:"description"`
+	DestinationSpaceID string `json:"destination_space_id"`
+	CitySpaceID        string `json:"city_space_id"`
+}
+
+// UpdatePostRequest is the request body for PATCH /mutual-aid/:id.
+// Only non-nil fields are applied.
+type UpdatePostRequest struct {
+	Category    *string `json:"category"`
+	Title       *string `json:"title"`
+	Description *string `json:"description"`
+}
+
+// RespondRequest is the request body for POST /mutual-aid/:id/respond.
+type RespondRequest struct {
+	Message string `json:"message"`
+}
+
+// Service holds the business logic for the Mutual Aid Board.
+type Service struct {
+	store    *Store
+	settings *config.Settings
+}
+
+// NewService creates a mutual aid service.
+func NewService(store *Store, settings *config.Settings) *Service {
+	return &Service{store: store, settings: settings}
+}
+
+// Enabled reads the mutual_aid.enabled system_setting toggle (§85 feature flag).
+func (s *Service) Enabled(ctx context.Context, tenantID pgtype.UUID) bool {
+	if s.settings == nil {
+		return false
+	}
+	return s.settings.GetBoolOr(ctx, tenantID, "mutual_aid.enabled", false)
+}
+
+// Create inserts a new mutual aid post. Auth required (permission checked at
+// route level based on post_type: create_offer, create_need, create_skill_swap).
+func (s *Service) Create(ctx context.Context, tenantID, userID pgtype.UUID, input CreatePostRequest) (PostDTO, error) {
+	if input.Title == "" {
+		return PostDTO{}, fmt.Errorf("title is required")
+	}
+	if input.DestinationSpaceID == "" {
+		return PostDTO{}, fmt.Errorf("destination_space_id is required")
+	}
+	if input.PostType != PostTypeNeed && input.PostType != PostTypeOffer && input.PostType != PostTypeSkillSwap {
+		return PostDTO{}, fmt.Errorf("invalid post_type: %s", input.PostType)
+	}
+
+	var destSpaceID pgtype.UUID
+	if err := destSpaceID.Scan(input.DestinationSpaceID); err != nil {
+		return PostDTO{}, fmt.Errorf("invalid destination_space_id: %w", err)
+	}
+
+	var citySpaceID pgtype.UUID
+	if input.CitySpaceID != "" {
+		if err := citySpaceID.Scan(input.CitySpaceID); err != nil {
+			return PostDTO{}, fmt.Errorf("invalid city_space_id: %w", err)
+		}
+	}
+
+	storeInput := CreatePostInput{
+		TenantID:           tenantID,
+		UserID:             userID,
+		PostType:           input.PostType,
+		Title:              input.Title,
+		DestinationSpaceID: destSpaceID,
+		CitySpaceID:        citySpaceID,
+		ExpiresAt:          pgtype.Timestamptz{Time: time.Now().UTC().Add(PostExpiry), Valid: true},
+	}
+	if input.Category != "" {
+		storeInput.Category = &input.Category
+	}
+	if input.Description != "" {
+		storeInput.Description = &input.Description
+	}
+
+	post, err := s.store.CreatePost(ctx, storeInput)
+	if err != nil {
+		return PostDTO{}, fmt.Errorf("mutualaid: create: %w", err)
+	}
+
+	// Re-fetch via GetPost to populate joined space/author fields.
+	row, err := s.store.GetPost(ctx, post.ID, tenantID)
+	if err != nil {
+		slog.Error("mutualaid: create re-fetch failed", "post_id", post.ID, "error", err)
+		return PostDTO{}, fmt.Errorf("mutualaid: create re-fetch: %w", err)
+	}
+	return rowToDTO(row), nil
+}
+
+// Get returns a single active post by id. Anonymous-accessible.
+func (s *Service) Get(ctx context.Context, id, tenantID pgtype.UUID) (PostDTO, error) {
+	row, err := s.store.GetPost(ctx, id, tenantID)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return PostDTO{}, pgx.ErrNoRows
+		}
+		return PostDTO{}, fmt.Errorf("mutualaid: get: %w", err)
+	}
+	return rowToDTO(row), nil
+}
+
+// List returns a paginated, filtered list of active posts.
+func (s *Service) List(ctx context.Context, tenantID pgtype.UUID, postType, category string, destSpaceID, citySpaceID pgtype.UUID, page, limit int32) ([]PostDTO, int64, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	if page <= 0 {
+		page = 1
+	}
+	offset := (page - 1) * limit
+
+	rows, total, err := s.store.ListPosts(ctx, ListPostsFilter{
+		TenantID:           tenantID,
+		PostType:           postType,
+		Category:           category,
+		DestinationSpaceID: destSpaceID,
+		CitySpaceID:        citySpaceID,
+		Limit:              limit,
+		Offset:             offset,
+	})
+	if err != nil {
+		return nil, 0, fmt.Errorf("mutualaid: list: %w", err)
+	}
+
+	dtos := make([]PostDTO, 0, len(rows))
+	for _, r := range rows {
+		dtos = append(dtos, rowToDTO(r))
+	}
+	return dtos, total, nil
+}
+
+// UpdateOwn updates the author's own post. The caller must verify ownership
+// (mutual_aid.* permission + user_id match). Only non-nil fields are applied.
+func (s *Service) UpdateOwn(ctx context.Context, id, tenantID, userID pgtype.UUID, input UpdatePostRequest) (PostDTO, error) {
+	existing, err := s.store.GetPost(ctx, id, tenantID)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return PostDTO{}, pgx.ErrNoRows
+		}
+		return PostDTO{}, fmt.Errorf("mutualaid: update: get: %w", err)
+	}
+	if existing.UserID != userID {
+		return PostDTO{}, ErrNotOwner
+	}
+
+	storeInput := UpdatePostInput{
+		Category:    existing.Category,
+		Title:       &existing.Title,
+		Description: existing.Description,
+	}
+	if input.Category != nil {
+		storeInput.Category = input.Category
+	}
+	if input.Title != nil {
+		storeInput.Title = input.Title
+	}
+	if input.Description != nil {
+		storeInput.Description = input.Description
+	}
+
+	if err := s.store.UpdatePost(ctx, id, tenantID, storeInput); err != nil {
+		return PostDTO{}, fmt.Errorf("mutualaid: update: %w", err)
+	}
+
+	row, err := s.store.GetPost(ctx, id, tenantID)
+	if err != nil {
+		return PostDTO{}, fmt.Errorf("mutualaid: update re-fetch: %w", err)
+	}
+	return rowToDTO(row), nil
+}
+
+// DeleteOwn soft-deletes the author's own post. The caller must verify
+// ownership (mutual_aid.* permission + user_id match).
+func (s *Service) DeleteOwn(ctx context.Context, id, tenantID, userID pgtype.UUID) error {
+	existing, err := s.store.GetPost(ctx, id, tenantID)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return pgx.ErrNoRows
+		}
+		return fmt.Errorf("mutualaid: delete: get: %w", err)
+	}
+	if existing.UserID != userID {
+		return ErrNotOwner
+	}
+
+	if err := s.store.DeletePost(ctx, id, tenantID); err != nil {
+		return fmt.Errorf("mutualaid: delete: %w", err)
+	}
+	return nil
+}
+
+// MarkFulfilled marks a post as fulfilled by its author.
+func (s *Service) MarkFulfilled(ctx context.Context, id, tenantID, userID pgtype.UUID) error {
+	existing, err := s.store.GetPost(ctx, id, tenantID)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return pgx.ErrNoRows
+		}
+		return fmt.Errorf("mutualaid: fulfill: get: %w", err)
+	}
+	if existing.UserID != userID {
+		return ErrNotOwner
+	}
+
+	if err := s.store.MarkFulfilled(ctx, id, tenantID); err != nil {
+		return fmt.Errorf("mutualaid: fulfill: %w", err)
+	}
+	return nil
+}
+
+// Renew extends a post's expiry by 30 days from now. Author-only.
+func (s *Service) Renew(ctx context.Context, id, tenantID, userID pgtype.UUID) (PostDTO, error) {
+	existing, err := s.store.GetPost(ctx, id, tenantID)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return PostDTO{}, pgx.ErrNoRows
+		}
+		return PostDTO{}, fmt.Errorf("mutualaid: renew: get: %w", err)
+	}
+	if existing.UserID != userID {
+		return PostDTO{}, ErrNotOwner
+	}
+
+	newExpiry := pgtype.Timestamptz{Time: time.Now().UTC().Add(PostExpiry), Valid: true}
+	if err := s.store.RenewPost(ctx, id, tenantID, newExpiry); err != nil {
+		return PostDTO{}, fmt.Errorf("mutualaid: renew: %w", err)
+	}
+
+	row, err := s.store.GetPost(ctx, id, tenantID)
+	if err != nil {
+		return PostDTO{}, fmt.Errorf("mutualaid: renew re-fetch: %w", err)
+	}
+	return rowToDTO(row), nil
+}
+
+// AdminList returns all posts (any status) for the moderation queue.
+func (s *Service) AdminList(ctx context.Context, tenantID pgtype.UUID, postType, status, q string, destSpaceID, citySpaceID pgtype.UUID, page, limit int32) ([]PostDTO, int64, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	if page <= 0 {
+		page = 1
+	}
+	offset := (page - 1) * limit
+
+	rows, total, err := s.store.AdminListPosts(ctx, AdminListPostsFilter{
+		TenantID:           tenantID,
+		PostType:           postType,
+		Status:             status,
+		DestinationSpaceID: destSpaceID,
+		CitySpaceID:        citySpaceID,
+		Q:                  q,
+		Limit:              limit,
+		Offset:             offset,
+	})
+	if err != nil {
+		return nil, 0, fmt.Errorf("mutualaid: admin list: %w", err)
+	}
+
+	dtos := make([]PostDTO, 0, len(rows))
+	for _, r := range rows {
+		dtos = append(dtos, rowToDTO(r))
+	}
+	return dtos, total, nil
+}
+
+// AdminModerate sets the status of a post (moderation action).
+func (s *Service) AdminModerate(ctx context.Context, id, tenantID pgtype.UUID, status string) error {
+	if status != StatusActive && status != StatusExpired && status != StatusModerated && status != StatusFulfilled {
+		return fmt.Errorf("invalid status: %s", status)
+	}
+	if err := s.store.AdminUpdateStatus(ctx, id, tenantID, status); err != nil {
+		if err == pgx.ErrNoRows {
+			return pgx.ErrNoRows
+		}
+		return fmt.Errorf("mutualaid: admin moderate: %w", err)
+	}
+	return nil
+}
+
+// ErrNotOwner is returned when a user tries to edit, delete, fulfill, or
+// renew a post they did not author.
+var ErrNotOwner = fmt.Errorf("not the post author")
+
+// rowToDTO converts a PostRow (joined query result) to a PostDTO.
+func rowToDTO(r PostRow) PostDTO {
+	dto := PostDTO{
+		ID:                 r.ID.String(),
+		PostType:           r.PostType,
+		Title:              r.Title,
+		IsFulfilled:        r.IsFulfilled,
+		Status:             r.Status,
+		ExpiresAt:          formatTs(r.ExpiresAt),
+		CreatedAt:          formatTs(r.CreatedAt),
+		UpdatedAt:          formatTs(r.UpdatedAt),
+	}
+	if r.Category != nil {
+		dto.Category = *r.Category
+	}
+	if r.Description != nil {
+		dto.Description = *r.Description
+	}
+	if r.DestinationSpaceID.Valid {
+		dto.DestinationSpaceID = r.DestinationSpaceID.String()
+	}
+	if r.DestSpaceName != nil {
+		dto.DestSpaceName = *r.DestSpaceName
+	}
+	if r.DestSpaceCode != nil {
+		dto.DestSpaceCode = *r.DestSpaceCode
+	}
+	if r.CitySpaceID.Valid {
+		dto.CitySpaceID = r.CitySpaceID.String()
+	}
+	if r.CitySpaceName != nil {
+		dto.CitySpaceName = *r.CitySpaceName
+	}
+	if r.CitySpaceCode != nil {
+		dto.CitySpaceCode = *r.CitySpaceCode
+	}
+	if r.UserID.Valid {
+		dto.AuthorID = r.UserID.String()
+	}
+	if r.AuthorName != nil {
+		dto.AuthorName = *r.AuthorName
+	}
+	if r.AuthorAvatar != nil {
+		dto.AuthorAvatar = *r.AuthorAvatar
+	}
+	return dto
+}
+
+// formatTs renders a pgtype.Timestamptz as RFC 3339 UTC, or "" if NULL.
+func formatTs(t pgtype.Timestamptz) string {
+	if !t.Valid {
+		return ""
+	}
+	return t.Time.UTC().Format(time.RFC3339)
+}

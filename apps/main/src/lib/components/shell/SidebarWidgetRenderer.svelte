@@ -560,7 +560,7 @@
 				<ul class="space-y-1.5">
 					{#each bookmarkFolders.slice(0, limit) as folder (folder.id)}
 						<li>
-							<a href={`/bookmarks?folder=${folder.id}`} class="flex items-center justify-between text-sm text-[var(--color-text)] hover:text-[var(--color-primary)]">
+							<a href={`/dashboard/bookmarks?folder=${folder.id}`} class="flex items-center justify-between text-sm text-[var(--color-text)] hover:text-[var(--color-primary)]">
 								<span class="truncate">{folder.name}</span>
 								{#if folder.bookmark_count != null}
 									<span class="text-xs text-[var(--color-muted)]">{folder.bookmark_count}</span>

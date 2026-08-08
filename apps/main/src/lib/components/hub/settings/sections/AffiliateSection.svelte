@@ -43,7 +43,7 @@
 	const productTypes = $derived([
 		{ value: 'pro_subscription', label: t('affiliate.product_type_pro_subscription', 'Pro Subscription') },
 		{ value: 'course', label: t('affiliate.product_type_course', 'Course') },
-		{ value: 'pro_annual', label: t('affiliate.product_type_pro_annual', 'Pro Annual') }
+		{ value: 'general', label: t('affiliate.product_type_general', 'General') }
 	]);
 
 	async function doCreate() {

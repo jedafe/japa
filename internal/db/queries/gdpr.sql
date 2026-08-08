@@ -229,6 +229,47 @@ UPDATE refresh_tokens
 SET revoked_at = now(), updated_at = now()
 WHERE user_id = @user_id AND tenant_id = @tenant_id AND revoked_at IS NULL;
 
+-- =====================
+-- Auth PII Scrub (AUDIT-AUTH-008)
+-- These auth-related tables contain sensitive PII (encrypted TOTP secrets,
+-- OAuth provider user IDs, email addresses, password hashes, reset tokens)
+-- that must be scrubbed during the GDPR anonymization phase — not just at
+-- hard delete. Without this, an admin querying these tables during the
+-- retention window can see the deleted user's OAuth identities, TOTP
+-- secrets, and email addresses. Ref: sections/02-authentication-sessions.md,
+-- ADR-014.
+-- =====================
+
+-- name: DeleteUserTOTPCredentials :exec
+-- totp_credentials.secret_encrypted and backup_codes are PII. Delete the
+-- rows during anonymization so 2FA secrets are not recoverable during the
+-- retention window. The table has ON DELETE CASCADE from users(id), so this
+-- is redundant at hard-delete but necessary for the anonymization phase.
+DELETE FROM totp_credentials WHERE user_id = @user_id AND tenant_id = @tenant_id;
+
+-- name: DeleteUserOAuthAccounts :exec
+-- oauth_accounts.provider_user_id is PII (the user's identity at the OAuth
+-- provider). Delete the rows during anonymization so the user's social
+-- identities are not recoverable during the retention window.
+DELETE FROM oauth_accounts WHERE user_id = @user_id AND tenant_id = @tenant_id;
+
+-- name: DeleteUserPasswordResetTokens :exec
+-- password_reset_tokens.token_hash is a security credential. Delete the
+-- rows during anonymization so no reset tokens remain usable.
+DELETE FROM password_reset_tokens WHERE user_id = @user_id AND tenant_id = @tenant_id;
+
+-- name: DeleteUserEmailVerifications :exec
+-- email_verifications.email and token_hash are PII and security credentials.
+-- Delete the rows during anonymization so the user's email and verification
+-- tokens are not recoverable during the retention window.
+DELETE FROM email_verifications WHERE user_id = @user_id AND tenant_id = @tenant_id;
+
+-- name: DeleteUserPasswordHistory :exec
+-- password_history.password_hash is PII (bcrypt hashes of previous
+-- passwords). Delete the rows during anonymization so old password hashes
+-- are not recoverable during the retention window.
+DELETE FROM password_history WHERE user_id = @user_id AND tenant_id = @tenant_id;
+
 -- name: HardDeleteUser :exec
 -- Physically deletes the anonymized user row. ON DELETE CASCADE handles most
 -- child tables; callers must SET NULL or reassign non-CASCADE FK references
@@ -453,6 +494,11 @@ FROM (SELECT * FROM reactions WHERE user_id = @user_id AND tenant_id = @tenant_i
 -- name: GdprExportUserBookmarks :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (SELECT * FROM bookmarks WHERE user_id = @user_id AND tenant_id = @tenant_id) t;
+
+-- name: GdprExportUserBookmarkFolders :one
+-- Exports bookmark_folders for GDPR data export (BL-005).
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (SELECT * FROM bookmark_folders WHERE user_id = @user_id AND tenant_id = @tenant_id) t;
 
 -- name: GdprExportUserContentShares :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data

@@ -165,6 +165,10 @@ func (s *Store) gdprExportUserBookmarks(ctx context.Context, userID, tenantID pg
 	return exportJSONSlice(ctx, s.read.GdprExportUserBookmarks, gen.GdprExportUserBookmarksParams{UserID: userID, TenantID: tenantID})
 }
 
+func (s *Store) gdprExportUserBookmarkFolders(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {
+	return exportJSONSlice(ctx, s.read.GdprExportUserBookmarkFolders, gen.GdprExportUserBookmarkFoldersParams{UserID: userID, TenantID: tenantID})
+}
+
 func (s *Store) gdprExportUserContentShares(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {
 	return exportJSONSlice(ctx, s.read.GdprExportUserContentShares, gen.GdprExportUserContentSharesParams{UserID: userID, TenantID: tenantID})
 }
@@ -600,6 +604,44 @@ func (s *Store) deleteUserTokens(ctx context.Context, p gen.DeleteUserTokensPara
 		return fmt.Errorf("deleting user tokens: %w", err)
 	}
 
+	return nil
+}
+
+// Auth PII scrub methods (AUDIT-AUTH-008). These delete auth-related PII
+// tables during the GDPR anonymization phase. Ref: sections/02-authentication-sessions.md.
+
+func (s *Store) deleteUserTOTPCredentials(ctx context.Context, p gen.DeleteUserTOTPCredentialsParams) error {
+	if err := s.write.DeleteUserTOTPCredentials(ctx, p); err != nil {
+		return fmt.Errorf("deleting user TOTP credentials: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) deleteUserOAuthAccounts(ctx context.Context, p gen.DeleteUserOAuthAccountsParams) error {
+	if err := s.write.DeleteUserOAuthAccounts(ctx, p); err != nil {
+		return fmt.Errorf("deleting user OAuth accounts: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) deleteUserPasswordResetTokens(ctx context.Context, p gen.DeleteUserPasswordResetTokensParams) error {
+	if err := s.write.DeleteUserPasswordResetTokens(ctx, p); err != nil {
+		return fmt.Errorf("deleting user password reset tokens: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) deleteUserEmailVerifications(ctx context.Context, p gen.DeleteUserEmailVerificationsParams) error {
+	if err := s.write.DeleteUserEmailVerifications(ctx, p); err != nil {
+		return fmt.Errorf("deleting user email verifications: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) deleteUserPasswordHistory(ctx context.Context, p gen.DeleteUserPasswordHistoryParams) error {
+	if err := s.write.DeleteUserPasswordHistory(ctx, p); err != nil {
+		return fmt.Errorf("deleting user password history: %w", err)
+	}
 	return nil
 }
 

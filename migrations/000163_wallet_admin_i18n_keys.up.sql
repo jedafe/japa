@@ -1,6 +1,6 @@
 -- Migration 000163: Add missing i18n keys for wallet admin page.
 -- Ref: Bug Hunt — admin wallet page i18n compliance (§7).
-INSERT INTO frontend_i18n (tenant_id, locale, key, value) VALUES
+INSERT INTO translations (tenant_id, locale, "key", value) VALUES
     -- common.inactive
     ('00000000-0000-0000-0000-000000000001', 'en', 'common.inactive', 'Inactive'),
     ('00000000-0000-0000-0000-000000000001', 'fr', 'common.inactive', 'Inactif'),

@@ -325,6 +325,7 @@ export interface Bookmark {
 	entity_type: string;
 	entity_id: string;
 	folder?: string | null;
+	folder_id?: string | null;
 	created_at: string;
 	title?: string | null;
 	slug?: string | null;
@@ -336,6 +337,7 @@ export interface BookmarkFolder {
 	name: string;
 	bookmark_count?: number;
 	created_at: string;
+	updated_at?: string;
 }
 
 /** One autocomplete result for @ / [[ / # triggers. */

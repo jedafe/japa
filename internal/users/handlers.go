@@ -52,6 +52,10 @@ type Handlers struct {
 	// settings is used for configurable Nominatim URL/timeout (ADR-064a,
 	// Rule 3). Optional — when nil, compiled-in defaults are used.
 	settings geoSettingsReader
+	// authSettings provides auth-specific system settings (password policy,
+	// token TTLs). Implements auth.SettingsReader. Wired via SetAuthSettings
+	// during server setup. When nil, ChangePassword falls back to defaults.
+	authSettings auth.SettingsReader
 }
 
 // NewHandlers creates Handlers with the given Service. A nil resolver is
@@ -71,6 +75,14 @@ func (h *Handlers) SetPermissionResolver(r PermissionResolver) {
 // URL/timeout (ADR-064a, Rule 3).
 func (h *Handlers) SetSettings(s geoSettingsReader) {
 	h.settings = s
+}
+
+// SetAuthSettings wires the auth-specific settings reader (implements
+// auth.SettingsReader). Used by ChangePassword to read the tenant's password
+// policy from system_settings (auth.password.* keys) instead of hardcoding
+// validation rules. Called once during server setup.
+func (h *Handlers) SetAuthSettings(s auth.SettingsReader) {
+	h.authSettings = s
 }
 
 // requireTenant resolves the tenant from the request context.

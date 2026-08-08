@@ -16,8 +16,10 @@ WHERE tenant_id = @tenant_id AND email = @email
 LIMIT 1;
 
 -- name: UpdateUserPasswordByUserID :exec
+-- Sets password_changed_at so max-password-age policies can be enforced
+-- (Ref: sections/02-authentication-sessions.md).
 UPDATE users
-SET password_hash = @password_hash, updated_at = now()
+SET password_hash = @password_hash, password_changed_at = now(), updated_at = now()
 WHERE id = @user_id;
 
 -- name: MarkEmailVerifiedByUserID :exec

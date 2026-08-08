@@ -1,0 +1,507 @@
+// Package visatimeline — handlers.go provides the HTTP handlers for the Visa
+// Timeline Tracker routes (§83, ADR-091).
+//
+// Routes:
+//
+//	GET    /api/v1/visa-timelines/stats                  — public aggregated stats
+//	GET    /api/v1/visa-timelines/stats/trend            — public monthly trend
+//	GET    /api/v1/me/visa-timelines                     — list own (auth, visa_timeline.create)
+//	POST   /api/v1/me/visa-timelines                     — create (auth, visa_timeline.create)
+//	PATCH  /api/v1/me/visa-timelines/:id                 — update own (auth, visa_timeline.manage_own)
+//	POST   /api/v1/me/visa-timelines/:id/milestones      — add milestone (auth, visa_timeline.manage_own)
+//	PATCH  /api/v1/me/visa-timelines/:id/milestones/:mid — edit milestone (auth, visa_timeline.manage_own)
+//	GET    /api/v1/admin/visa-timelines                  — admin list (auth, visa_timeline.manage_any)
+//	DELETE /api/v1/admin/visa-timelines/:id              — admin delete (auth, visa_timeline.manage_any)
+//
+// Ref: japaconnect-engineering/sections/83-visa-timeline-tracker.md
+//      japaconnect-engineering/adr/ADR-091-visa-timeline-tracker.md
+package visatimeline
+
+import (
+	"encoding/json"
+	"errors"
+	"log/slog"
+	"net/http"
+	"strconv"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
+
+	"github.com/jedafe/japa/internal/auth"
+	"github.com/jedafe/japa/internal/config"
+	"github.com/jedafe/japa/internal/tenant"
+)
+
+// Handlers exposes the visa-timeline endpoints.
+type Handlers struct {
+	service  *Service
+	settings *config.Settings
+}
+
+// NewHandlers creates visa-timeline handlers bound to the provided service.
+func NewHandlers(service *Service, settings *config.Settings) *Handlers {
+	return &Handlers{service: service, settings: settings}
+}
+
+// ---------------------------------------------------------------------------
+// Shared helpers (same pattern as story/handlers.go)
+// ---------------------------------------------------------------------------
+
+func writeJSON(w http.ResponseWriter, status int, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	if err := json.NewEncoder(w).Encode(v); err != nil {
+		slog.Error("visatimeline: encode response", "error", err)
+	}
+}
+
+func writeError(w http.ResponseWriter, status int, code, message string) {
+	writeJSON(w, status, map[string]any{
+		"error": map[string]string{"code": code, "message": message},
+	})
+}
+
+func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
+	t := tenant.FromContext(r.Context())
+	if t == nil {
+		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		return pgtype.UUID{}, false
+	}
+	return t.ID, true
+}
+
+func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
+	u := auth.FromContext(r.Context())
+	if u == nil {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		return nil, false
+	}
+	return u, true
+}
+
+func scanUUIDParam(w http.ResponseWriter, r *http.Request, name string) (pgtype.UUID, bool) {
+	var id pgtype.UUID
+	if err := id.Scan(chi.URLParam(r, name)); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid "+name)
+		return pgtype.UUID{}, false
+	}
+	return id, true
+}
+
+func parsePageParams(r *http.Request) (page, limit int32) {
+	page = 1
+	limit = 20
+	if v := r.URL.Query().Get("page"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			page = int32(n)
+		}
+	}
+	if v := r.URL.Query().Get("limit"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 100 {
+			limit = int32(n)
+		}
+	}
+	return page, limit
+}
+
+// ---------------------------------------------------------------------------
+// Public handlers (stats + trend — anonymous per §83)
+// ---------------------------------------------------------------------------
+
+// HandleStats handles GET /visa-timelines/stats — public aggregated
+// processing-time statistics. Query params: ?origin=&dest=&visa=
+func (h *Handlers) HandleStats(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+		writeError(w, http.StatusNotFound, "visa_timeline_disabled", "Visa Timeline Tracker is not available")
+		return
+	}
+
+	var originSpaceID pgtype.UUID
+	if v := r.URL.Query().Get("origin"); v != "" {
+		if err := originSpaceID.Scan(v); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_id", "Invalid origin space ID")
+			return
+		}
+	}
+	var destSpaceID pgtype.UUID
+	if v := r.URL.Query().Get("dest"); v != "" {
+		if err := destSpaceID.Scan(v); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_id", "Invalid destination space ID")
+			return
+		}
+	}
+
+	visaCategory := r.URL.Query().Get("visa")
+
+	stats, err := h.service.GetStats(r.Context(), tenantID, originSpaceID, destSpaceID, visaCategory)
+	if err != nil {
+		slog.Error("visatimeline: stats failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "stats_failed", "Failed to get stats")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": stats})
+}
+
+// HandleTrend handles GET /visa-timelines/stats/trend — public monthly trend.
+// Query params: ?dest=&visa=&months= (default 12)
+func (h *Handlers) HandleTrend(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+		writeError(w, http.StatusNotFound, "visa_timeline_disabled", "Visa Timeline Tracker is not available")
+		return
+	}
+
+	var destSpaceID pgtype.UUID
+	if v := r.URL.Query().Get("dest"); v != "" {
+		if err := destSpaceID.Scan(v); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_id", "Invalid destination space ID")
+			return
+		}
+	}
+
+	visaCategory := r.URL.Query().Get("visa")
+	months := 12
+	if v := r.URL.Query().Get("months"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 60 {
+			months = n
+		}
+	}
+
+	points, err := h.service.GetTrend(r.Context(), tenantID, destSpaceID, visaCategory, months)
+	if err != nil {
+		slog.Error("visatimeline: trend failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "trend_failed", "Failed to get trend")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": points})
+}
+
+// ---------------------------------------------------------------------------
+// Authenticated handlers (own timelines + milestones — auth required)
+// ---------------------------------------------------------------------------
+
+// HandleListOwn handles GET /me/visa-timelines — list the authenticated user's
+// own timelines. Auth required (visa_timeline.create permission checked at
+// route registration).
+func (h *Handlers) HandleListOwn(w http.ResponseWriter, r *http.Request) {
+	user, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+		writeError(w, http.StatusNotFound, "visa_timeline_disabled", "Visa Timeline Tracker is not available")
+		return
+	}
+
+	timelines, err := h.service.ListOwn(r.Context(), user.UserID, tenantID)
+	if err != nil {
+		slog.Error("visatimeline: list own failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "list_failed", "Failed to list timelines")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": timelines})
+}
+
+// HandleCreate handles POST /me/visa-timelines — create a new timeline. Auth
+// required (visa_timeline.create permission checked at route registration).
+func (h *Handlers) HandleCreate(w http.ResponseWriter, r *http.Request) {
+	user, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+		writeError(w, http.StatusNotFound, "visa_timeline_disabled", "Visa Timeline Tracker is not available")
+		return
+	}
+
+	var input CreateTimelineInput
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		return
+	}
+
+	if input.DestinationSpaceID == "" {
+		writeError(w, http.StatusBadRequest, "missing_destination", "Destination space ID is required")
+		return
+	}
+	if input.VisaCategory == "" {
+		writeError(w, http.StatusBadRequest, "missing_visa_category", "Visa category is required")
+		return
+	}
+
+	timeline, err := h.service.Create(r.Context(), tenantID, user.UserID, input)
+	if err != nil {
+		slog.Error("visatimeline: create failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "create_failed", "Failed to create timeline")
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, map[string]any{"data": timeline})
+}
+
+// HandleUpdate handles PATCH /me/visa-timelines/:id — update own timeline
+// (outcome / share toggle). Auth required (visa_timeline.manage_own permission
+// checked at route registration).
+func (h *Handlers) HandleUpdate(w http.ResponseWriter, r *http.Request) {
+	user, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+	id, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+		writeError(w, http.StatusNotFound, "visa_timeline_disabled", "Visa Timeline Tracker is not available")
+		return
+	}
+
+	var input UpdateTimelineInput
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		return
+	}
+
+	timeline, err := h.service.UpdateOwn(r.Context(), id, tenantID, user.UserID, input)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "timeline_not_found", "Timeline not found")
+			return
+		}
+		if errors.Is(err, ErrNotOwner) {
+			writeError(w, http.StatusForbidden, "not_owner", "You can only update your own timelines")
+			return
+		}
+		slog.Error("visatimeline: update failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "update_failed", "Failed to update timeline")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": timeline})
+}
+
+// HandleAddMilestone handles POST /me/visa-timelines/:id/milestones — add a
+// milestone to the authenticated user's own timeline. Auth required
+// (visa_timeline.manage_own permission checked at route registration).
+func (h *Handlers) HandleAddMilestone(w http.ResponseWriter, r *http.Request) {
+	user, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+	timelineID, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+		writeError(w, http.StatusNotFound, "visa_timeline_disabled", "Visa Timeline Tracker is not available")
+		return
+	}
+
+	var input AddMilestoneInput
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		return
+	}
+
+	if input.MilestoneType == "" {
+		writeError(w, http.StatusBadRequest, "missing_milestone_type", "Milestone type is required")
+		return
+	}
+
+	milestone, err := h.service.AddMilestone(r.Context(), timelineID, tenantID, user.UserID, input)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "timeline_not_found", "Timeline not found")
+			return
+		}
+		if errors.Is(err, ErrNotOwner) {
+			writeError(w, http.StatusForbidden, "not_owner", "You can only add milestones to your own timelines")
+			return
+		}
+		slog.Error("visatimeline: add milestone failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "add_milestone_failed", "Failed to add milestone")
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, map[string]any{"data": milestone})
+}
+
+// HandleUpdateMilestone handles PATCH /me/visa-timelines/:id/milestones/:mid —
+// edit a milestone on the authenticated user's own timeline. Auth required
+// (visa_timeline.manage_own permission checked at route registration).
+func (h *Handlers) HandleUpdateMilestone(w http.ResponseWriter, r *http.Request) {
+	user, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+	timelineID, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+	milestoneID, ok := scanUUIDParam(w, r, "mid")
+	if !ok {
+		return
+	}
+
+	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+		writeError(w, http.StatusNotFound, "visa_timeline_disabled", "Visa Timeline Tracker is not available")
+		return
+	}
+
+	var input UpdateMilestoneInput
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		return
+	}
+
+	if err := h.service.UpdateMilestone(r.Context(), milestoneID, timelineID, tenantID, user.UserID, input); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "not_found", "Timeline or milestone not found")
+			return
+		}
+		if errors.Is(err, ErrNotOwner) {
+			writeError(w, http.StatusForbidden, "not_owner", "You can only edit milestones on your own timelines")
+			return
+		}
+		slog.Error("visatimeline: update milestone failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "update_milestone_failed", "Failed to update milestone")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"updated": true}})
+}
+
+// ---------------------------------------------------------------------------
+// Admin handlers (moderation queue + admin delete — visa_timeline.manage_any)
+// ---------------------------------------------------------------------------
+
+// HandleAdminList handles GET /admin/visa-timelines — moderation queue listing
+// all timelines. Admin-only (visa_timeline.manage_any permission checked at
+// route registration). Supports ?user_id=&dest=&visa=&outcome=&q=&page=&limit=.
+func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
+	if _, ok := requireUser(w, r); !ok {
+		return
+	}
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	if h.service == nil {
+		writeError(w, http.StatusServiceUnavailable, "visa_timeline_unavailable", "Visa Timeline service not configured")
+		return
+	}
+
+	var filter AdminListFilter
+
+	if v := r.URL.Query().Get("user_id"); v != "" {
+		if err := filter.UserID.Scan(v); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_id", "Invalid user_id")
+			return
+		}
+	}
+	if v := r.URL.Query().Get("dest"); v != "" {
+		if err := filter.DestinationSpaceID.Scan(v); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_id", "Invalid destination space ID")
+			return
+		}
+	}
+
+	filter.VisaCategory = r.URL.Query().Get("visa")
+	filter.Outcome = r.URL.Query().Get("outcome")
+	filter.Q = r.URL.Query().Get("q")
+
+	page, limit := parsePageParams(r)
+	if limit > 200 {
+		limit = 200
+	}
+	filter.Limit = limit
+	filter.Offset = (page - 1) * limit
+
+	timelines, total, err := h.service.AdminList(r.Context(), tenantID, filter)
+	if err != nil {
+		slog.Error("visatimeline: admin list failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "admin_list_failed", "Failed to list timelines")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data": timelines,
+		"pagination": map[string]any{
+			"page":  page,
+			"limit": limit,
+			"total": total,
+		},
+	})
+}
+
+// HandleAdminDelete handles DELETE /admin/visa-timelines/:id — admin
+// soft-delete of any timeline. Admin-only (visa_timeline.manage_any permission
+// checked at route registration). Soft-delete per Rule 11.
+func (h *Handlers) HandleAdminDelete(w http.ResponseWriter, r *http.Request) {
+	if _, ok := requireUser(w, r); !ok {
+		return
+	}
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+	id, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	if h.service == nil {
+		writeError(w, http.StatusServiceUnavailable, "visa_timeline_unavailable", "Visa Timeline service not configured")
+		return
+	}
+
+	if err := h.service.AdminDelete(r.Context(), id, tenantID); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "timeline_not_found", "Timeline not found")
+			return
+		}
+		slog.Error("visatimeline: admin delete failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "admin_delete_failed", "Failed to delete timeline")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"deleted": true}})
+}

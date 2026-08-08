@@ -17,12 +17,12 @@ func NewStore(read, write *gen.Queries) *Store {
 	return &Store{read: read, write: write}
 }
 
-func (s *Store) listTemplates(ctx context.Context, tenantID pgtype.UUID, filterType string, limit, offset int32) ([]gen.ListEmailTemplatesRow, error) {
+func (s *Store) listTemplates(ctx context.Context, tenantID pgtype.UUID, filterType, filterIsActive string, limit, offset int32) ([]gen.ListEmailTemplatesRow, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
 	rows, err := s.read.ListEmailTemplates(ctx, gen.ListEmailTemplatesParams{
-		TenantID: tenantID, Type: filterType, PageOffset: offset, PageLimit: limit,
+		TenantID: tenantID, Type: filterType, IsActive: filterIsActive, PageOffset: offset, PageLimit: limit,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("listing email templates: %w", err)
@@ -30,9 +30,9 @@ func (s *Store) listTemplates(ctx context.Context, tenantID pgtype.UUID, filterT
 	return rows, nil
 }
 
-func (s *Store) countTemplates(ctx context.Context, tenantID pgtype.UUID, filterType string) (int32, error) {
+func (s *Store) countTemplates(ctx context.Context, tenantID pgtype.UUID, filterType, filterIsActive string) (int32, error) {
 	count, err := s.read.CountEmailTemplates(ctx, gen.CountEmailTemplatesParams{
-		TenantID: tenantID, Type: filterType,
+		TenantID: tenantID, Type: filterType, IsActive: filterIsActive,
 	})
 	if err != nil {
 		return 0, fmt.Errorf("counting email templates: %w", err)
