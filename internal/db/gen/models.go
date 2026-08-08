@@ -143,18 +143,18 @@ type AdEvent struct {
 }
 
 type AdNetwork struct {
-	ID          pgtype.UUID        `json:"id"`
-	TenantID    pgtype.UUID        `json:"tenant_id"`
-	Provider    string             `json:"provider"`
-	Name        string             `json:"name"`
-	ClientID    *string            `json:"client_id"`
-	ApiKey      *string            `json:"api_key"`
-	SlotMapping []byte             `json:"slot_mapping"`
-	Config      []byte             `json:"config"`
-	IsActive    bool               `json:"is_active"`
-	Priority    int32              `json:"priority"`
-	CreatedAt   pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
+	ID              pgtype.UUID        `json:"id"`
+	TenantID        pgtype.UUID        `json:"tenant_id"`
+	Provider        string             `json:"provider"`
+	Name            string             `json:"name"`
+	ClientID        *string            `json:"client_id"`
+	ApiKeyEncrypted *string            `json:"api_key_encrypted"`
+	SlotMapping     []byte             `json:"slot_mapping"`
+	Config          []byte             `json:"config"`
+	IsActive        bool               `json:"is_active"`
+	Priority        int32              `json:"priority"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
 }
 
 type AdSlotType struct {

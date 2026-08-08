@@ -102,6 +102,12 @@ func taskDefaults(taskType string) []asynq.Option {
 	// DB-only tasks: standard timeout.
 	case TypeScheduledPublish, TypeScheduledPublishSweep:
 		opts = append(opts, asynq.Timeout(1*time.Minute), asynq.MaxRetry(5))
+	// Assessment scoring: pure computation + DB writes. Generous timeout
+	// for DB contention headroom; 5 retries with exponential backoff
+	// ensures a submission is eventually scored even if the worker is
+	// temporarily unavailable (§71, ADR-071).
+	case TypeAssessmentScoreSubmission:
+		opts = append(opts, asynq.Timeout(2*time.Minute), asynq.MaxRetry(5))
 		// Default: no explicit timeout/retry — asynq defaults apply.
 	}
 

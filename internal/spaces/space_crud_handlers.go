@@ -1,0 +1,980 @@
+package spaces
+
+import (
+	"context"
+	"encoding/json"
+	"log/slog"
+	"net/http"
+	"strings"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/auth"
+	"github.com/jedafe/japa/internal/db/gen"
+)
+
+// ---------------------------------------------------------------------------
+// Space Handlers
+// ---------------------------------------------------------------------------
+
+// ListSpaces handles GET /api/v1/spaces. Optional query params filter the
+// result set: q (search by name/slug), level (by hierarchy level), type (by
+// space_type_id), parent (by parent_id). page_size/page_offset paginate the
+// result. With no filters, all visible spaces for the tenant are returned.
+func (h *Handlers) ListSpaces(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	// Resolve the optional viewer user so the visibility filter can include
+	// members/private spaces the caller belongs to (BUG-007, Section 05 line 272).
+	// On OptionalAuth routes the user may be nil → zero UUID → public spaces only.
+	var viewerUserID pgtype.UUID
+	if user := auth.FromContext(r.Context()); user != nil {
+		viewerUserID = user.UserID
+	}
+
+	q := r.URL.Query()
+	search := strings.TrimSpace(q.Get("q"))
+
+	// The different list branches return distinct sqlc-generated Row types
+	// (each structurally identical to gen.Space minus the Keywords column).
+	// Use any to hold the heterogeneous slice, then filter/paginate via the
+	// shared helpers below.
+	var spaces any
+	var err error
+
+	switch {
+	case q.Get("level") != "":
+		spaces, err = h.Service.ListSpacesByLevel(r.Context(), tenantID, q.Get("level"))
+	case q.Get("type") != "":
+		var spaceTypeID pgtype.UUID
+		if scanErr := spaceTypeID.Scan(q.Get("type")); scanErr != nil {
+			writeError(w, http.StatusBadRequest, "invalid_id", "Invalid type filter format")
+			return
+		}
+		spaces, err = h.Service.ListSpacesByType(r.Context(), tenantID, spaceTypeID)
+	case q.Get("parent") != "":
+		var parentID pgtype.UUID
+		if scanErr := parentID.Scan(q.Get("parent")); scanErr != nil {
+			writeError(w, http.StatusBadRequest, "invalid_id", "Invalid parent filter format")
+			return
+		}
+		spaces, err = h.Service.ListChildSpaces(r.Context(), tenantID, parentID)
+	default:
+		spaces, err = h.Service.ListSpaces(r.Context(), tenantID, viewerUserID)
+	}
+
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	// Apply search filter (by name or slug) if provided.
+	if search != "" {
+		spaces = filterSpacesByNameSlug(spaces, search)
+	}
+
+	total := spacesLen(spaces)
+
+	// Apply pagination.
+	limit := parsePageSize(r)
+	offset := parsePageSizeOffset(r)
+	spaces = paginateSpaces(spaces, offset, limit)
+
+	totalPages := total / limit
+	if total%limit > 0 {
+		totalPages++
+	}
+
+	// Resolve each space's logo_media_id to an imgproxy-signed logo_url so the
+	// /spaces index can render space logos. Mirrors GetSpace's logo resolution.
+	// Best-effort: spaces without a logo (or when the media resolver is not
+	// wired) get an empty logo_url and the frontend renders a fallback icon.
+	items := h.spacesWithLogoURL(r.Context(), tenantID, spaces)
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data": items,
+		"meta": map[string]any{
+			"total":       total,
+			"page":        offset / limit,
+			"total_pages": totalPages,
+		},
+	})
+}
+
+// filterSpacesByNameSlug filters a slice of space Row types by name/slug
+// (case-insensitive substring match). It handles the heterogeneous Row types
+// returned by the different ListSpaces branches via a type switch.
+func filterSpacesByNameSlug(spaces any, search string) any {
+	lower := strings.ToLower(search)
+	switch s := spaces.(type) {
+	case []gen.ListSpacesByTenantRow:
+		filtered := make([]gen.ListSpacesByTenantRow, 0, len(s))
+		for _, sp := range s {
+			if strings.Contains(strings.ToLower(sp.Name), lower) ||
+				strings.Contains(strings.ToLower(sp.Slug), lower) {
+				filtered = append(filtered, sp)
+			}
+		}
+		return filtered
+	case []gen.ListSpacesByLevelRow:
+		filtered := make([]gen.ListSpacesByLevelRow, 0, len(s))
+		for _, sp := range s {
+			if strings.Contains(strings.ToLower(sp.Name), lower) ||
+				strings.Contains(strings.ToLower(sp.Slug), lower) {
+				filtered = append(filtered, sp)
+			}
+		}
+		return filtered
+	case []gen.ListSpacesByTypeRow:
+		filtered := make([]gen.ListSpacesByTypeRow, 0, len(s))
+		for _, sp := range s {
+			if strings.Contains(strings.ToLower(sp.Name), lower) ||
+				strings.Contains(strings.ToLower(sp.Slug), lower) {
+				filtered = append(filtered, sp)
+			}
+		}
+		return filtered
+	case []gen.ListChildSpacesRow:
+		filtered := make([]gen.ListChildSpacesRow, 0, len(s))
+		for _, sp := range s {
+			if strings.Contains(strings.ToLower(sp.Name), lower) ||
+				strings.Contains(strings.ToLower(sp.Slug), lower) {
+				filtered = append(filtered, sp)
+			}
+		}
+		return filtered
+	default:
+		return spaces
+	}
+}
+
+// spacesLen returns the length of a slice of space Row types held in an any.
+func spacesLen(spaces any) int32 {
+	switch s := spaces.(type) {
+	case []gen.ListSpacesByTenantRow:
+		return int32(len(s))
+	case []gen.ListSpacesByLevelRow:
+		return int32(len(s))
+	case []gen.ListSpacesByTypeRow:
+		return int32(len(s))
+	case []gen.ListChildSpacesRow:
+		return int32(len(s))
+	default:
+		return 0
+	}
+}
+
+// paginateSpaces applies offset/limit pagination to a slice of space Row types
+// held in an any.
+func paginateSpaces(spaces any, offset, limit int32) any {
+	switch s := spaces.(type) {
+	case []gen.ListSpacesByTenantRow:
+		return paginateSpaceSlice(s, offset, limit)
+	case []gen.ListSpacesByLevelRow:
+		return paginateSpaceSlice(s, offset, limit)
+	case []gen.ListSpacesByTypeRow:
+		return paginateSpaceSlice(s, offset, limit)
+	case []gen.ListChildSpacesRow:
+		return paginateSpaceSlice(s, offset, limit)
+	default:
+		return spaces
+	}
+}
+
+// paginateSpaceSlice is a generic helper that applies offset/limit pagination
+// to any slice type.
+func paginateSpaceSlice[T any](s []T, offset, limit int32) []T {
+	total := int32(len(s))
+	if offset >= total {
+		return []T{}
+	}
+	end := offset + limit
+	if end > total {
+		end = total
+	}
+	return s[offset:end]
+}
+
+// spacesWithLogoURL resolves each space's logo_media_id to an imgproxy-signed
+// logo_url (via the media service) and returns the list as a slice of maps with
+// the resolved "logo_url" field added. This mirrors the GetSpace detail
+// handler's logo resolution so the /spaces index can render space logos instead
+// of a generic fallback icon. When the media resolver is not wired or a space
+// has no logo, logo_url is an empty string. The JSON field shape is preserved
+// (each row is round-tripped through encoding/json so []byte wiki_content stays
+// base64-encoded and pgtype.UUID stays a string/null, matching direct
+// serialization) with only "logo_url" appended.
+func (h *Handlers) spacesWithLogoURL(ctx context.Context, tenantID pgtype.UUID, spaces any) []map[string]any {
+	switch s := spaces.(type) {
+	case []gen.ListSpacesByTenantRow:
+		out := make([]map[string]any, 0, len(s))
+		for _, sp := range s {
+			m := rowToMap(sp)
+			m["logo_url"] = h.resolveLogoURL(ctx, tenantID, sp.LogoMediaID)
+			out = append(out, m)
+		}
+		return out
+	case []gen.ListSpacesByLevelRow:
+		out := make([]map[string]any, 0, len(s))
+		for _, sp := range s {
+			m := rowToMap(sp)
+			m["logo_url"] = h.resolveLogoURL(ctx, tenantID, sp.LogoMediaID)
+			out = append(out, m)
+		}
+		return out
+	case []gen.ListSpacesByTypeRow:
+		out := make([]map[string]any, 0, len(s))
+		for _, sp := range s {
+			m := rowToMap(sp)
+			m["logo_url"] = h.resolveLogoURL(ctx, tenantID, sp.LogoMediaID)
+			out = append(out, m)
+		}
+		return out
+	case []gen.ListChildSpacesRow:
+		out := make([]map[string]any, 0, len(s))
+		for _, sp := range s {
+			m := rowToMap(sp)
+			m["logo_url"] = h.resolveLogoURL(ctx, tenantID, sp.LogoMediaID)
+			out = append(out, m)
+		}
+		return out
+	default:
+		// Unknown shape (e.g. nil) — return nil so the response degrades to
+		// an empty list rather than panicking.
+		return nil
+	}
+}
+
+// rowToMap serializes a space row to a map[string]any via a JSON round-trip,
+// preserving the struct's json tags (so the output shape matches direct
+// serialization of the typed row).
+func rowToMap[T any](row T) map[string]any {
+	b, err := json.Marshal(row)
+	if err != nil {
+		return map[string]any{}
+	}
+	var m map[string]any
+	if err := json.Unmarshal(b, &m); err != nil {
+		return map[string]any{}
+	}
+	return m
+}
+
+// AdminListSpaces handles GET /api/v1/admin/spaces — paginated spaces for the
+// admin panel with owner and space_type name resolved via JOINs.
+func (h *Handlers) AdminListSpaces(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	limit := parsePageSize(r)
+	offset := parsePageSizeOffset(r)
+
+	spaces, err := h.Service.AdminListSpaces(r.Context(), tenantID, limit, offset)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	total, err := h.Service.AdminListSpacesCount(r.Context(), tenantID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	totalPages := int32(1)
+	if limit > 0 {
+		totalPages = int32((total + int64(limit) - 1) / int64(limit))
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data": map[string]any{
+			"items":       spaces,
+			"total":       total,
+			"total_pages": totalPages,
+		},
+	})
+}
+
+// ListMySpaces handles GET /api/v1/me/spaces — every space the caller belongs
+// to. Super admins see every active space in the tenant so they can post to
+// any space without joining it first (Section 03 — admin override).
+func (h *Handlers) ListMySpaces(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	user := auth.FromContext(r.Context())
+	if user == nil {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		return
+	}
+
+	// Optional q parameter for autocomplete search — filtered at the SQL
+	// level by name/slug (case-insensitive ILIKE). Used by the /create
+	// composer's space selector.
+	q := strings.TrimSpace(r.URL.Query().Get("q"))
+
+	// Super admins bypass the membership requirement — they can post to any
+	// space without joining it first (Section 03 — admin override).
+	isSuperAdmin, err := h.Service.IsSuperAdmin(r.Context(), tenantID, user.UserID)
+	if err != nil {
+		slog.Warn("check super admin group", "error", err, "user_id", user.UserID)
+	}
+	if isSuperAdmin {
+		spaces, lerr := h.Service.ListAllSpacesForAdmin(r.Context(), tenantID, q)
+		if lerr != nil {
+			handleServiceError(w, lerr)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"data": spaces})
+		return
+	}
+
+	spaces, err := h.Service.ListSpacesByMember(r.Context(), tenantID, user.UserID, q)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": spaces})
+}
+
+// ListByMemberUser handles GET /users/{id}/spaces — the public profile Spaces
+// tab. Public-safe: only public+active spaces of the {id} user. Non-active
+// users are already 404'd by the requireActiveProfileUser gate on the route.
+func (h *Handlers) ListByMemberUser(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	var userID pgtype.UUID
+	if err := userID.Scan(chi.URLParam(r, "id")); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_user_id", "Invalid user ID format")
+		return
+	}
+
+	limit := parsePageSize(r)
+	offset := parsePageSizeOffset(r)
+
+	spaces, err := h.Service.ListPublicByMemberUser(r.Context(), tenantID, userID, limit, offset)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": toSpaceCards(spaces)})
+}
+
+// SpaceCard is the lean public shape for the profile Spaces tab — only the
+// fields the profile card renders. It deliberately omits the internal columns
+// the raw gen.Space row carries (tenant_id, parent_id, space_type_id,
+// wiki_content, the *_perm governance fields, geo_code, level, status, and
+// counts the card doesn't show), so a public endpoint never echoes them.
+type SpaceCard struct {
+	ID            pgtype.UUID        `json:"id"`
+	Name          string             `json:"name"`
+	Slug          string             `json:"slug"`
+	Description   *string            `json:"description"`
+	LogoMediaID   pgtype.UUID        `json:"logo_media_id"`
+	HeaderImageID pgtype.UUID        `json:"header_image_id"`
+	MemberCount   int32              `json:"member_count"`
+	Visibility    string             `json:"visibility"`
+	Role          string             `json:"role"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+}
+
+func toSpaceCards(spaces []gen.ListPublicSpacesByMemberUserRow) []SpaceCard {
+	cards := make([]SpaceCard, len(spaces))
+	for i := range spaces {
+		s := &spaces[i]
+		cards[i] = SpaceCard{
+			ID:            s.ID,
+			Name:          s.Name,
+			Slug:          s.Slug,
+			Description:   s.Description,
+			LogoMediaID:   s.LogoMediaID,
+			HeaderImageID: s.HeaderImageID,
+			MemberCount:   s.MemberCount,
+			Visibility:    s.Visibility,
+			Role:          s.MemberRole,
+			CreatedAt:     s.CreatedAt,
+		}
+	}
+	return cards
+}
+
+// ListMyModeratedSpaces handles GET /api/v1/me/spaces/moderated — every space
+// the caller moderates.
+func (h *Handlers) ListMyModeratedSpaces(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	user := auth.FromContext(r.Context())
+	if user == nil {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		return
+	}
+
+	spaces, err := h.Service.ListSpacesByModerator(r.Context(), tenantID, user.UserID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": spaces})
+}
+
+// ListMyOwnedSpaces handles GET /api/v1/me/spaces/owned — every space the
+// caller owns (space_members.role = 'owner'). Distinct from /me/spaces which
+// returns every space the caller belongs to as a member.
+func (h *Handlers) ListMyOwnedSpaces(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	user := auth.FromContext(r.Context())
+	if user == nil {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		return
+	}
+
+	spaces, err := h.Service.ListSpacesByOwner(r.Context(), tenantID, user.UserID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": spaces})
+}
+
+// GetSpace handles GET /api/v1/spaces/{slug}. It returns the space together
+// with its rules so a single request can render a complete space view.
+func (h *Handlers) GetSpace(w http.ResponseWriter, r *http.Request) {
+	slug := chi.URLParam(r, "slug")
+	if slug == "" {
+		writeError(w, http.StatusBadRequest, "missing_slug", "Space slug is required")
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	space, err := h.Service.GetSpaceBySlug(r.Context(), slug, tenantID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	rules, err := h.Service.ListSpaceRules(r.Context(), space.ID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	if rules == nil {
+		rules = []gen.SpaceRule{}
+	}
+
+	// Include keywords in the space response for the settings page.
+	keywords, err := h.Service.GetSpaceKeywords(r.Context(), space.ID, tenantID)
+	if err != nil {
+		slog.Warn("spaces: failed to fetch keywords", "space_id", space.ID.String(), "error", err)
+		keywords = []string{}
+	}
+
+	// Resolve logo_media_id to an imgproxy-signed logo_url.
+	logoURL := h.resolveLogoURL(r.Context(), tenantID, space.LogoMediaID)
+	// Resolve header_image_id to an imgproxy-signed header_url.
+	headerURL := h.resolveHeaderURL(r.Context(), tenantID, space.HeaderImageID)
+
+	// Surface viewer-scoped management flags so the frontend can render the
+	// moderator assignment UI only for the space owner / an assigned
+	// moderator (Ref: japaconnect-engineering/sections/05-geo-first-space-system.md
+	// lines 198-224; sections/03-rbac.md spaces.moderator.assign). Guests and
+	// non-members get false; the mutating routes still enforce the permission
+	// server-side, so a stale/true client flag cannot grant access.
+	isOwner := false
+	isModerator := false
+	if user := auth.FromContext(r.Context()); user != nil && user.UserID.Valid {
+		isOwner, err = h.Service.IsOwner(r.Context(), space.ID, user.UserID, tenantID)
+		if err != nil {
+			slog.Warn("spaces: IsOwner check failed", "space_id", space.ID.String(), "error", err)
+			isOwner = false
+		}
+		isModerator, err = h.Service.IsModerator(r.Context(), space.ID, user.UserID)
+		if err != nil {
+			slog.Warn("spaces: IsModerator check failed", "space_id", space.ID.String(), "error", err)
+			isModerator = false
+		}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data": map[string]any{
+			"space":        space,
+			"rules":        rules,
+			"keywords":     keywords,
+			"logo_url":     logoURL,
+			"header_url":   headerURL,
+			"is_owner":     isOwner,
+			"is_moderator": isModerator,
+		},
+	})
+}
+
+// AdminGetSpace handles GET /api/v1/admin/spaces/{id} — returns a single space
+// by UUID (not slug) for the admin panel.
+func (h *Handlers) AdminGetSpace(w http.ResponseWriter, r *http.Request) {
+	id, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	space, err := h.Service.GetSpace(r.Context(), id, tenantID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	rules, err := h.Service.ListSpaceRules(r.Context(), space.ID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	if rules == nil {
+		rules = []gen.SpaceRule{}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data": map[string]any{"space": space, "rules": rules},
+	})
+}
+
+// CreateSpace handles POST /api/v1/spaces. When preset_name is provided the
+// five permission axes are loaded from the named preset; otherwise the
+// default axes are applied.
+func (h *Handlers) CreateSpace(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Name           string   `json:"name"`
+		Slug           string   `json:"slug"`
+		SpaceTypeID    string   `json:"space_type_id"`
+		Level          string   `json:"level"`
+		ParentID       string   `json:"parent_id"`
+		ParentSpaceIDs []string `json:"parent_space_ids"`
+		Description    *string  `json:"description"`
+		GeoCode        *string  `json:"geo_code"`
+		PresetName     string   `json:"preset_name"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
+		return
+	}
+
+	if strings.TrimSpace(req.Name) == "" || strings.TrimSpace(req.Slug) == "" ||
+		strings.TrimSpace(req.SpaceTypeID) == "" || strings.TrimSpace(req.Level) == "" {
+		writeError(w, http.StatusBadRequest, "missing_fields", "Name, slug, space_type_id, and level are required")
+		return
+	}
+
+	if !IsValidLevel(req.Level) {
+		writeError(w, http.StatusBadRequest, "invalid_level", "Level must be country, state, city, custom, or global")
+		return
+	}
+
+	// BUG-002: custom spaces must be linked to at least one primary space
+	// (country/state/city) via space_parent_spaces (Section 05 line 14, 190).
+	// Primary spaces (country/state/city) are themselves parents and need no
+	// parent linkage. Global spaces have no geo parent at all.
+	if req.Level == LevelCustom && len(req.ParentSpaceIDs) == 0 && req.ParentID == "" {
+		writeError(w, http.StatusBadRequest, "missing_parent",
+			"Custom spaces must belong to at least one primary space (country, state, or city)")
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	user := auth.FromContext(r.Context())
+	if user == nil {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		return
+	}
+
+	// §26 / Section 03: enforce max_spaces_creatable quota from the caller's
+	// user group. -1 = unlimited, 0 = none, N = capped at N spaces.
+	maxSpaces, err := h.Service.GetUserMaxSpacesCreatable(r.Context(), tenantID, user.UserID)
+	if err != nil {
+		slog.Warn("create space: failed to load max_spaces_creatable quota",
+			"user_id", user.UserID.String(), "error", err)
+		// Fail open — don't block creation on a quota lookup failure.
+	} else if maxSpaces == 0 {
+		writeError(w, http.StatusForbidden, "quota_exceeded",
+			"Your account is not allowed to create spaces")
+		return
+	} else if maxSpaces > 0 {
+		currentCount, err := h.Service.CountSpacesByOwner(r.Context(), tenantID, user.UserID)
+		if err != nil {
+			slog.Warn("create space: failed to count owned spaces",
+				"user_id", user.UserID.String(), "error", err)
+		} else if currentCount >= maxSpaces {
+			writeError(w, http.StatusForbidden, "quota_exceeded",
+				"You have reached the maximum number of spaces you can create")
+			return
+		}
+	}
+
+	var spaceTypeID pgtype.UUID
+	if err := spaceTypeID.Scan(req.SpaceTypeID); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid space_type_id format")
+		return
+	}
+
+	var parentID pgtype.UUID
+	if req.ParentID != "" {
+		if err := parentID.Scan(req.ParentID); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_id", "Invalid parent_id format")
+			return
+		}
+	}
+
+	// BUG-002: validate each parent_space_id is a primary space (level IN
+	// country/state/city) within the tenant. Collect the parsed UUIDs for
+	// linkage after the space is created.
+	parentSpaceUUIDs := make([]pgtype.UUID, 0, len(req.ParentSpaceIDs))
+	for _, psidStr := range req.ParentSpaceIDs {
+		var psid pgtype.UUID
+		if err := psid.Scan(psidStr); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_id", "Invalid parent_space_id format")
+			return
+		}
+		parent, err := h.Service.GetSpace(r.Context(), psid, tenantID)
+		if err != nil {
+			handleServiceError(w, err)
+			return
+		}
+		if parent.Level != LevelCountry && parent.Level != LevelState && parent.Level != LevelCity {
+			writeError(w, http.StatusBadRequest, "invalid_parent",
+				"Parent spaces must be primary (country, state, or city)")
+			return
+		}
+		parentSpaceUUIDs = append(parentSpaceUUIDs, psid)
+	}
+
+	// Resolve permission axes: from the named preset, or the defaults.
+	axes := DefaultPermAxes()
+
+	if req.PresetName != "" {
+		preset, err := h.Service.GetPermissionPreset(r.Context(), req.PresetName, tenantID)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_preset", "Preset not found")
+			return
+		}
+
+		axes = SpacePermAxes{
+			Visibility: preset.Visibility,
+			Posting:    preset.PostingPerm,
+			Replying:   preset.ReplyingPerm,
+			Commenting: preset.CommentingPerm,
+			Joining:    preset.JoiningPerm,
+		}
+	}
+
+	space, err := h.Service.CreateSpace(r.Context(), gen.CreateSpaceParams{
+		TenantID:       tenantID,
+		ParentID:       parentID,
+		SpaceTypeID:    spaceTypeID,
+		Name:           req.Name,
+		Slug:           req.Slug,
+		Description:    req.Description,
+		GeoCode:        req.GeoCode,
+		Level:          req.Level,
+		Visibility:     axes.Visibility,
+		PostingPerm:    axes.Posting,
+		ReplyingPerm:   axes.Replying,
+		CommentingPerm: axes.Commenting,
+		JoiningPerm:    axes.Joining,
+		Status:         StatusActive,
+	})
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	// BUG-001: add the creator as the space owner (role='owner') so they can
+	// exercise the space_owner moderator-assignment path (Section 05 lines
+	// 198-224). Without this the creator could never assign moderators.
+	if err := h.Service.AddOwner(r.Context(), space.ID, user.UserID, tenantID); err != nil {
+		slog.Warn("create space: failed to add creator as owner",
+			"space_id", space.ID.String(), "user_id", user.UserID.String(), "error", err)
+		// Non-fatal: the space exists; the owner row can be repaired later.
+	} else if err := h.Service.IncrementSpaceCount(r.Context(), space.ID, tenantID, 1); err != nil {
+		slog.Warn("create space: failed to increment member_count",
+			"space_id", space.ID.String(), "error", err)
+	}
+
+	// BUG-002: link the new custom space to its primary parent spaces via
+	// space_parent_spaces (Section 05 lines 46-53, 190). Best-effort —
+	// logs failures but does not fail the request since the space row is
+	// already committed; the parent links can be repaired via POST
+	// /spaces/{slug}/parents.
+	for _, psid := range parentSpaceUUIDs {
+		if err := h.Service.AddParentSpace(r.Context(), space.ID, psid); err != nil {
+			slog.Warn("create space: failed to link parent space",
+				"space_id", space.ID.String(), "parent_id", psid.String(), "error", err)
+		}
+	}
+
+	// Enqueue async auto-population (Wikipedia summary, flag image, etc.).
+	h.Service.EnqueueAutoPopulate(r.Context(), space.ID, tenantID)
+	// Enqueue Meilisearch index sync so the new space is searchable
+	// immediately (BL-004).
+	h.Service.EnqueueSearchIndex(r.Context(), space.ID, tenantID, "index")
+
+	writeJSON(w, http.StatusCreated, map[string]any{"data": space})
+}
+
+// UpdateSpace handles PATCH /api/v1/spaces/{id}. It loads the existing space
+// first so unspecified fields keep their current values (true PATCH
+// semantics), then validates any provided permission axes before saving.
+func (h *Handlers) UpdateSpace(w http.ResponseWriter, r *http.Request) {
+	id, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	existing, err := h.Service.GetSpace(r.Context(), id, tenantID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	var req struct {
+		Name           string   `json:"name"`
+		Description    *string  `json:"description"`
+		WikiContent    string   `json:"wiki_content"`
+		GeoCode        *string  `json:"geo_code"`
+		Visibility     string   `json:"visibility"`
+		PostingPerm    string   `json:"posting_perm"`
+		ReplyingPerm   string   `json:"replying_perm"`
+		CommentingPerm string   `json:"commenting_perm"`
+		JoiningPerm    string   `json:"joining_perm"`
+		Status         string   `json:"status"`
+		Keywords       []string `json:"keywords"`
+		LogoMediaID    string   `json:"logo_media_id"`
+		HeaderImageID  *string  `json:"header_image_id"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
+		return
+	}
+	// Validate each provided permission axis individually.
+	if req.Visibility != "" && !validVisibility[req.Visibility] {
+		writeError(w, http.StatusBadRequest, "invalid_permission_axes", "Invalid visibility value")
+		return
+	}
+
+	if req.PostingPerm != "" && !validPostingPerm[req.PostingPerm] {
+		writeError(w, http.StatusBadRequest, "invalid_permission_axes", "Invalid posting_perm value")
+		return
+	}
+
+	if req.ReplyingPerm != "" && !validPostingPerm[req.ReplyingPerm] {
+		writeError(w, http.StatusBadRequest, "invalid_permission_axes", "Invalid replying_perm value")
+		return
+	}
+
+	if req.CommentingPerm != "" && !validPostingPerm[req.CommentingPerm] {
+		writeError(w, http.StatusBadRequest, "invalid_permission_axes", "Invalid commenting_perm value")
+		return
+	}
+
+	if req.JoiningPerm != "" && !validJoiningPerm[req.JoiningPerm] {
+		writeError(w, http.StatusBadRequest, "invalid_permission_axes", "Invalid joining_perm value")
+		return
+	}
+
+	// Overlay provided fields onto the existing space, keeping current values
+	// for anything the request left blank.
+	name := existing.Name
+	if strings.TrimSpace(req.Name) != "" {
+		name = req.Name
+	}
+
+	description := existing.Description
+	if req.Description != nil {
+		description = req.Description
+	}
+
+	wikiContent := existing.WikiContent
+	if req.WikiContent != "" {
+		wikiContent = []byte(req.WikiContent)
+	}
+
+	geoCode := existing.GeoCode
+	if req.GeoCode != nil {
+		geoCode = req.GeoCode
+	}
+
+	visibility := existing.Visibility
+	if req.Visibility != "" {
+		visibility = req.Visibility
+	}
+
+	postingPerm := existing.PostingPerm
+	if req.PostingPerm != "" {
+		postingPerm = req.PostingPerm
+	}
+
+	replyingPerm := existing.ReplyingPerm
+	if req.ReplyingPerm != "" {
+		replyingPerm = req.ReplyingPerm
+	}
+
+	commentingPerm := existing.CommentingPerm
+	if req.CommentingPerm != "" {
+		commentingPerm = req.CommentingPerm
+	}
+
+	joiningPerm := existing.JoiningPerm
+	if req.JoiningPerm != "" {
+		joiningPerm = req.JoiningPerm
+	}
+
+	status := existing.Status
+	if req.Status != "" {
+		status = req.Status
+	}
+
+	space, err := h.Service.UpdateSpace(r.Context(), gen.UpdateSpaceParams{
+		Name:           name,
+		Description:    description,
+		WikiContent:    wikiContent,
+		GeoCode:        geoCode,
+		Visibility:     visibility,
+		PostingPerm:    postingPerm,
+		ReplyingPerm:   replyingPerm,
+		CommentingPerm: commentingPerm,
+		JoiningPerm:    joiningPerm,
+		Status:         status,
+		ID:             id,
+		TenantID:       tenantID,
+	})
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	// Track the latest space row for the response. Each update query returns
+	// a distinct sqlc-generated Row type (structurally identical to gen.Space
+	// minus Keywords), so hold the response in any and track the ID separately.
+	var result any = space
+	spaceID := space.ID
+
+	// Update keywords separately if provided (nil = no change, [] = clear,
+	// ["a","b"] = set). Uses a dedicated query to avoid NULL on NOT NULL column.
+	if req.Keywords != nil {
+		if err := h.Service.UpdateSpaceKeywords(r.Context(), id, tenantID, req.Keywords); err != nil {
+			writeError(w, http.StatusInternalServerError, "keywords_update_failed", "Failed to update keywords")
+			return
+		}
+	}
+
+	// Update logo if provided. The frontend uploads via /media/upload flow
+	// and passes the resulting media_id here.
+	if req.LogoMediaID != "" {
+		var logoUUID pgtype.UUID
+		if err := logoUUID.Scan(req.LogoMediaID); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_logo_media_id", "Invalid logo_media_id format")
+			return
+		}
+		logoSpace, lErr := h.Service.UpdateSpaceLogoMediaID(r.Context(), gen.UpdateSpaceLogoMediaIDParams{
+			LogoMediaID: logoUUID,
+			ID:          id,
+			TenantID:    tenantID,
+		})
+		if lErr != nil {
+			writeError(w, http.StatusInternalServerError, "logo_update_failed", "Failed to update logo")
+			return
+		}
+		result = logoSpace
+		spaceID = logoSpace.ID
+	}
+
+	// Update header image if provided. A nil pointer clears the field; a
+	// non-empty string sets it to the given media UUID.
+	if req.HeaderImageID != nil {
+		var headerUUID pgtype.UUID
+		if *req.HeaderImageID != "" {
+			if err := headerUUID.Scan(*req.HeaderImageID); err != nil {
+				writeError(w, http.StatusBadRequest, "invalid_header_image_id", "Invalid header_image_id format")
+				return
+			}
+		}
+		headerSpace, hErr := h.Service.UpdateSpaceHeaderImageID(r.Context(), gen.UpdateSpaceHeaderImageIDParams{
+			HeaderImageID: headerUUID,
+			ID:            id,
+			TenantID:      tenantID,
+		})
+		if hErr != nil {
+			writeError(w, http.StatusInternalServerError, "header_update_failed", "Failed to update header image")
+			return
+		}
+		result = headerSpace
+		spaceID = headerSpace.ID
+	}
+
+	// Re-sync the Meilisearch index so search reflects the update (BL-004).
+	h.Service.EnqueueSearchIndex(r.Context(), spaceID, tenantID, "index")
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": result})
+}
+
+// DeleteSpace handles DELETE /api/v1/spaces/{id}.
+func (h *Handlers) DeleteSpace(w http.ResponseWriter, r *http.Request) {
+	id, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	if err := h.Service.DeleteSpace(r.Context(), id, tenantID); err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	// Remove the space from the Meilisearch index (BL-004).
+	h.Service.EnqueueSearchIndex(r.Context(), id, tenantID, "delete")
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
+}

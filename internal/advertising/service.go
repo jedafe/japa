@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/crypto"
 	"github.com/jedafe/japa/internal/db/gen"
 )
 
@@ -457,6 +459,82 @@ var validProviders = map[string]bool{
 	"adsense": true, "ezoic": true, "media_net": true, "custom": true,
 }
 
+// maskAPIKey returns a masked representation of an API key for display:
+// shows the first 4 and last 4 characters with **** in between. Empty keys
+// return an empty string. Short keys (≤8 chars) return all-masked.
+func maskAPIKey(key string) string {
+	if key == "" {
+		return ""
+	}
+	if len(key) <= 8 {
+		return "****"
+	}
+	return key[:4] + "****" + key[len(key)-4:]
+}
+
+// AdNetworkDTO is the safe JSON representation of an ad network for API
+// responses. The encrypted API key is never serialized; instead a masked
+// version is derived for admin display.
+type AdNetworkDTO struct {
+	ID              pgtype.UUID        `json:"id"`
+	TenantID        pgtype.UUID        `json:"tenant_id"`
+	Provider        string             `json:"provider"`
+	Name            string             `json:"name"`
+	ClientID        *string            `json:"client_id"`
+	APIKeyMasked    string             `json:"api_key_masked"`
+	HasAPIKey       bool               `json:"has_api_key"`
+	SlotMapping     json.RawMessage    `json:"slot_mapping"`
+	Config          json.RawMessage    `json:"config"`
+	IsActive        bool               `json:"is_active"`
+	Priority        int32              `json:"priority"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+}
+
+// toAdNetworkDTO converts a raw AdNetwork (with encrypted api_key) to a safe
+// DTO with a masked key for display. Decryption is best-effort: if it fails
+// (e.g. legacy plaintext that isn't in v1:nonce:ciphertext format), the raw
+// value is masked directly.
+func toAdNetworkDTO(n AdNetwork) AdNetworkDTO {
+	dto := AdNetworkDTO{
+		ID:          n.ID,
+		TenantID:    n.TenantID,
+		Provider:    n.Provider,
+		Name:        n.Name,
+		ClientID:    n.ClientID,
+		SlotMapping: json.RawMessage(n.SlotMapping),
+		Config:      json.RawMessage(n.Config),
+		IsActive:    n.IsActive,
+		Priority:    n.Priority,
+		CreatedAt:   n.CreatedAt,
+		UpdatedAt:   n.UpdatedAt,
+	}
+	if n.ApiKeyEncrypted != nil && *n.ApiKeyEncrypted != "" {
+		dto.HasAPIKey = true
+		if plain, err := crypto.Decrypt(*n.ApiKeyEncrypted); err == nil {
+			dto.APIKeyMasked = maskAPIKey(plain)
+		} else {
+			// Legacy plaintext — mask directly.
+			dto.APIKeyMasked = maskAPIKey(*n.ApiKeyEncrypted)
+		}
+	}
+	return dto
+}
+
+// encryptAPIKey encrypts a plaintext API key using AES-256-GCM. Returns nil
+// when the input is empty (no key provided).
+func encryptAPIKey(plain *string) *string {
+	if plain == nil || *plain == "" {
+		return nil
+	}
+	enc, err := crypto.Encrypt(*plain)
+	if err != nil {
+		slog.Error("advertising: failed to encrypt api key", "error", err)
+		return nil
+	}
+	return &enc
+}
+
 func (s *Service) CreateAdNetwork(ctx context.Context, tenantID pgtype.UUID, input CreateAdNetworkInput) (AdNetwork, error) {
 	if input.Provider == "" {
 		return AdNetwork{}, errors.New("provider is required")
@@ -476,15 +554,15 @@ func (s *Service) CreateAdNetwork(ctx context.Context, tenantID pgtype.UUID, inp
 		config = json.RawMessage(`{}`)
 	}
 	return s.store.createAdNetwork(ctx, tenantID, gen.CreateAdNetworkParams{
-		TenantID:    tenantID,
-		Provider:    input.Provider,
-		Name:        input.Name,
-		ClientID:    input.ClientID,
-		ApiKey:      input.APIKey,
-		SlotMapping: slotMapping,
-		Config:      config,
-		IsActive:    input.IsActive,
-		Priority:    input.Priority,
+		TenantID:        tenantID,
+		Provider:        input.Provider,
+		Name:            input.Name,
+		ClientID:        input.ClientID,
+		ApiKeyEncrypted: encryptAPIKey(input.APIKey),
+		SlotMapping:     slotMapping,
+		Config:          config,
+		IsActive:        input.IsActive,
+		Priority:        input.Priority,
 	})
 }
 
@@ -520,9 +598,9 @@ func (s *Service) UpdateAdNetwork(ctx context.Context, tenantID, id pgtype.UUID,
 	if input.ClientID != nil {
 		clientID = input.ClientID
 	}
-	apiKey := existing.ApiKey
+	apiKey := existing.ApiKeyEncrypted
 	if input.APIKey != nil {
-		apiKey = input.APIKey
+		apiKey = encryptAPIKey(input.APIKey)
 	}
 	slotMapping := existing.SlotMapping
 	if input.SlotMapping != nil {
@@ -541,15 +619,15 @@ func (s *Service) UpdateAdNetwork(ctx context.Context, tenantID, id pgtype.UUID,
 		priority = *input.Priority
 	}
 	return s.store.updateAdNetwork(ctx, id, tenantID, gen.UpdateAdNetworkParams{
-		ID:          id,
-		TenantID:    tenantID,
-		Name:        name,
-		ClientID:    clientID,
-		ApiKey:      apiKey,
-		SlotMapping: slotMapping,
-		Config:      config,
-		IsActive:    isActive,
-		Priority:    priority,
+		ID:              id,
+		TenantID:        tenantID,
+		Name:            name,
+		ClientID:        clientID,
+		ApiKeyEncrypted: apiKey,
+		SlotMapping:     slotMapping,
+		Config:          config,
+		IsActive:        isActive,
+		Priority:        priority,
 	})
 }
 
@@ -559,4 +637,55 @@ func (s *Service) DeleteAdNetwork(ctx context.Context, tenantID, id pgtype.UUID)
 
 func (s *Service) CountAdNetworks(ctx context.Context, tenantID pgtype.UUID) (int32, error) {
 	return s.store.countAdNetworks(ctx, tenantID)
+}
+
+// GetAdNetworkDTO returns a single ad network as a safe DTO (masked key).
+func (s *Service) GetAdNetworkDTO(ctx context.Context, tenantID, id pgtype.UUID) (AdNetworkDTO, error) {
+	n, err := s.store.getAdNetworkByID(ctx, id, tenantID)
+	if err != nil {
+		return AdNetworkDTO{}, err
+	}
+	return toAdNetworkDTO(n), nil
+}
+
+// ListAdNetworkDTOs returns ad networks as safe DTOs (masked keys).
+func (s *Service) ListAdNetworkDTOs(ctx context.Context, tenantID pgtype.UUID, page, pageSize int32) ([]AdNetworkDTO, int32, error) {
+	if pageSize <= 0 {
+		pageSize = 20
+	}
+	offset := (page - 1) * pageSize
+	if offset < 0 {
+		offset = 0
+	}
+	networks, err := s.store.listAdNetworks(ctx, tenantID, pageSize, offset)
+	if err != nil {
+		return nil, 0, err
+	}
+	total, err := s.store.countAdNetworks(ctx, tenantID)
+	if err != nil {
+		return nil, 0, err
+	}
+	dtos := make([]AdNetworkDTO, 0, len(networks))
+	for _, n := range networks {
+		dtos = append(dtos, toAdNetworkDTO(n))
+	}
+	return dtos, total, nil
+}
+
+// CreateAdNetworkDTO creates an ad network and returns the safe DTO.
+func (s *Service) CreateAdNetworkDTO(ctx context.Context, tenantID pgtype.UUID, input CreateAdNetworkInput) (AdNetworkDTO, error) {
+	n, err := s.CreateAdNetwork(ctx, tenantID, input)
+	if err != nil {
+		return AdNetworkDTO{}, err
+	}
+	return toAdNetworkDTO(n), nil
+}
+
+// UpdateAdNetworkDTO updates an ad network and returns the safe DTO.
+func (s *Service) UpdateAdNetworkDTO(ctx context.Context, tenantID, id pgtype.UUID, input UpdateAdNetworkInput) (AdNetworkDTO, error) {
+	n, err := s.UpdateAdNetwork(ctx, tenantID, id, input)
+	if err != nil {
+		return AdNetworkDTO{}, err
+	}
+	return toAdNetworkDTO(n), nil
 }

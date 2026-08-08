@@ -1,11 +1,8 @@
 import type { PageServerLoad } from './$types';
-import { apiContext, apiList, apiGet } from '$lib/server/api';
+import { apiContext, apiList, apiGet, API_BASE } from '$lib/server/api';
 import { feedPath, resolveTab, resolveSort, PAGE_SIZE } from '$lib/feed/endpoint';
 import type { FeedItem } from '$lib/types';
-import type { ContentArticle } from '$lib/types/content';
-import type { ForumThread } from '$lib/types';
-import { resolveGeoCopy, getGeoTokens, landingPalettes, type Block, type LandingPage as LandingPageData } from '@japaconnect/landing-blocks';
-
+import { resolveGeoCopy, getGeoTokens, landingPalettes, fetchEntityCollection, type Block, type LandingPage as LandingPageData, type EntityType, type FetchContext } from '@japaconnect/landing-blocks';
 /**
  * Home route (/). Behavior splits by auth state per ADR-058 §5 Exception #3:
  *
@@ -18,7 +15,6 @@ import { resolveGeoCopy, getGeoTokens, landingPalettes, type Block, type Landing
 export const load: PageServerLoad = async (event) => {
 	const ctx = apiContext(event);
 	const authed = !!event.locals.user;
-
 	// Authenticated users get the timeline in the shell.
 	if (authed) {
 		const tab = resolveTab(event.url.searchParams.get('tab'), authed);
@@ -37,14 +33,12 @@ export const load: PageServerLoad = async (event) => {
 			return { items: [] as FeedItem[], tab, sort, authed, pageSize: PAGE_SIZE, loadError: true, landing: null, guestLanding: null };
 		}
 	}
-
 	// Guests: check for an assigned homepage Page Builder landing page.
 	// Convention: the landing page has slug "homepage" (ADR-058 §5).
 	const geoCountry =
 		event.url.searchParams.get('geo') ??
 		event.locals.user?.content_country_preference ??
 		'global';
-	const geoParam = geoCountry !== 'global' ? `&geo=${encodeURIComponent(geoCountry)}` : '';
 	try {
 		const landing = await apiGet<LandingPageData>(ctx, '/pages/homepage');
 		const tokens = getGeoTokens(geoCountry, 'en');
@@ -64,37 +58,52 @@ export const load: PageServerLoad = async (event) => {
 		// pre-fetch entity data server-side to inject into entity blocks.
 		const tokens = getGeoTokens(geoCountry, 'en');
 
-		// Pre-fetch entity data for the seed's entity_collection blocks.
-		// Each entity_type maps to its canonical source so the data matches the
-		// section heading: "Trending discussions" (thread) → /forum threads,
-		// NOT the mixed /explore feed (which returns stories/guides/posts).
-		// "Popular destinations" (space) → /spaces (the /trending/spaces endpoint
-		// is cataloged but currently returns null — a backend stub bug; /spaces
-		// returns real destination data so the heading is not left empty).
-		const [exploreItems, blogPosts, destinations, jobs, forumThreads] = await Promise.all([
-			apiList<FeedItem>(ctx, `/explore?page_size=5&page_offset=0${geoParam}`)
-				.then((r) => r.items).catch(() => [] as FeedItem[]),
-			apiList<ContentArticle>(ctx, '/blog?page_size=6&page_offset=0')
-				.then((r) => r.items).catch(() => [] as ContentArticle[]),
-			apiList<unknown>(ctx, `/spaces?page_size=6&page_offset=0${geoParam ? `&geo=${encodeURIComponent(geoCountry)}` : ''}`)
-				.then((r) => r.items).catch(() => [] as unknown[]),
-			apiList<unknown>(ctx, `/jobs?page_size=6&page_offset=0${geoParam}`)
-				.then((r) => r.items).catch(() => [] as unknown[]),
-			apiList<ForumThread>(ctx, '/forum?page_size=5')
-				.then((r) => r.items).catch(() => [] as ForumThread[]),
-		]);
-
 		const seed = landingPalettes['homepage']?.defaultSeed ?? [];
+
+		// Data-driven pre-fetch: scan the seed for entity_collection blocks,
+		// collect the unique entity_types, and fetch each via the shared
+		// fetchEntityCollection helper from @japaconnect/landing-blocks.
+		// This replaces the previous hardcoded 5-type Promise.all and
+		// automatically supports any entity type the seed declares.
+		const fetchCtx: FetchContext = {
+			fetch: ctx.fetch,
+			apiBase: API_BASE,
+			token: ctx.token,
+			host: ctx.host,
+		};
+
+		const entityTypes = new Set<EntityType>();
+		for (const entry of seed) {
+			if (entry.type === 'entity_collection') {
+				const et = (entry.props as Record<string, unknown>).entity_type as EntityType;
+				if (et) entityTypes.add(et);
+			}
+		}
+
+		// Fetch all unique entity types in parallel. Each fetch handles its
+		// own errors (logs + returns []) so one failing type doesn't break
+		// the others.
+		const entityData = new Map<EntityType, unknown[]>();
+		await Promise.all(
+			Array.from(entityTypes).map(async (et) => {
+				const items = await fetchEntityCollection(
+					et,
+					{ limit: 6, geo: true },
+					fetchCtx,
+					geoCountry !== 'global' ? geoCountry : undefined,
+				);
+				entityData.set(et, items);
+			}),
+		);
+
 		const seedBlocks = seed.map((entry, i) => {
 			const props = { ...entry.props } as Record<string, unknown>;
 			// Inject pre-fetched data into entity_collection blocks.
 			if (entry.type === 'entity_collection') {
-				const entityType = props.entity_type as string;
-				if (entityType === 'space') props._items = destinations;
-				else if (entityType === 'thread') props._items = forumThreads;
-				else if (entityType === 'post') props._items = exploreItems;
-				else if (entityType === 'blog') props._items = blogPosts;
-				else if (entityType === 'job') props._items = jobs;
+				const entityType = props.entity_type as EntityType;
+				if (entityType && entityData.has(entityType)) {
+					props._items = entityData.get(entityType);
+				}
 			}
 			return {
 				id: `seed-${i}`,

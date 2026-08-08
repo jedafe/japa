@@ -1054,7 +1054,7 @@ func (h *Handlers) CreateAdNetwork(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	network, err := h.Service.CreateAdNetwork(r.Context(), tenantID, input)
+	network, err := h.Service.CreateAdNetworkDTO(r.Context(), tenantID, input)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -1081,13 +1081,11 @@ func (h *Handlers) ListAdNetworks(w http.ResponseWriter, r *http.Request) {
 	}
 	pageSize := parsePageSize(r)
 
-	networks, err := h.Service.ListAdNetworks(r.Context(), tenantID, int32(page), pageSize)
+	networks, total, err := h.Service.ListAdNetworkDTOs(r.Context(), tenantID, int32(page), pageSize)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
-
-	total, _ := h.Service.CountAdNetworks(r.Context(), tenantID)
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"data": nonNilSlice(networks),
@@ -1113,7 +1111,7 @@ func (h *Handlers) GetAdNetwork(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	network, err := h.Service.GetAdNetwork(r.Context(), tenantID, id)
+	network, err := h.Service.GetAdNetworkDTO(r.Context(), tenantID, id)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -1146,7 +1144,7 @@ func (h *Handlers) UpdateAdNetwork(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	network, err := h.Service.UpdateAdNetwork(r.Context(), tenantID, id, input)
+	network, err := h.Service.UpdateAdNetworkDTO(r.Context(), tenantID, id, input)
 	if err != nil {
 		handleServiceError(w, err)
 		return
