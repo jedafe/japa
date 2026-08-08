@@ -72,6 +72,16 @@ SELECT id, group_id, tenant_id, label, key, field_type, options, embed_platforms
 FROM custom_fields
 WHERE id = @id AND tenant_id = @tenant_id;
 
+-- name: GetCustomFieldByKey :one
+-- ADR-064a: Looks up a system custom field by its key within a tenant.
+-- Used by the users service to resolve field IDs for origin_country and
+-- destination_country when saving geo profile fields.
+SELECT id, group_id, tenant_id, label, key, field_type, options, embed_platforms,
+       placeholder, default_value, is_required, is_system, show_in_frontend,
+       filterable, sortable, searchable, position, created_at
+FROM custom_fields
+WHERE key = @key AND tenant_id = @tenant_id;
+
 -- name: CreateCustomField :one
 INSERT INTO custom_fields (
     group_id, tenant_id, label, key, field_type, options, embed_platforms,

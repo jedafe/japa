@@ -9,14 +9,18 @@ import "encoding/json"
 // Supports both URL-based (avatar_url/cover_url) and media-system
 // (avatar_media_id/header_media_id) fields per Section 50 (BUG-004).
 // When media IDs are provided, the service resolves them to URLs.
+// ADR-064a: origin_country and destination_country are saved as custom
+// field values (entity_type='user_profile') after the profile upsert.
 type UpdateProfileRequest struct {
-	DisplayName    *string `json:"display_name"`
-	AvatarURL      *string `json:"avatar_url"`
-	AvatarMediaID  *string `json:"avatar_media_id"`
-	CoverURL       *string `json:"cover_url"`
-	HeaderMediaID  *string `json:"header_media_id"`
-	Bio            *string `json:"bio"`
-	Timezone       *string `json:"timezone"`
+	DisplayName        *string `json:"display_name"`
+	AvatarURL          *string `json:"avatar_url"`
+	AvatarMediaID      *string `json:"avatar_media_id"`
+	CoverURL           *string `json:"cover_url"`
+	HeaderMediaID      *string `json:"header_media_id"`
+	Bio                *string `json:"bio"`
+	Timezone           *string `json:"timezone"`
+	OriginCountry      *string `json:"origin_country"`
+	DestinationCountry *string `json:"destination_country"`
 }
 
 // UpdateAccountRequest is the JSON body for PATCH /api/v1/me/account.

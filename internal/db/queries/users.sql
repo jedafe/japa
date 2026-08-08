@@ -66,6 +66,14 @@ ON CONFLICT (tenant_id, user_id) DO UPDATE SET
     cover_url = EXCLUDED.cover_url,
     updated_at = now();
 
+-- name: GetUserProfileID :one
+-- ADR-064a: Returns the user_profiles.id for a given user. Used as the
+-- entity_id when upserting custom field values (entity_type='user_profile').
+-- Returns pgx.ErrNoRows when the profile doesn't exist yet.
+SELECT id
+FROM user_profiles
+WHERE tenant_id = @tenant_id AND user_id = @user_id;
+
 -- name: GetUserPreferences :one
 SELECT id, tenant_id, user_id, dark_mode, language, created_at, updated_at
 FROM user_preferences
@@ -421,6 +429,31 @@ ORDER BY 1 DESC;
 UPDATE users
 SET current_geo_space_id = $1, updated_at = now()
 WHERE id = $2 AND tenant_id = $3;
+
+-- name: GetUserCurrentGeoSpace :one
+-- ADR-064a: Fetches the user's current_geo_space_id and resolves the space
+-- hierarchy (city → state → country) to extract geo_code and names for
+-- VisitorContext city-level personalization. Returns the city-level space,
+-- its parent (state), and the country-level space's geo_code in one round-trip.
+SELECT
+    u.current_geo_space_id,
+    city.id AS city_id,
+    city.name AS city_name,
+    city.geo_code AS city_geo_code,
+    country.id AS country_id,
+    country.name AS country_name,
+    country.geo_code AS country_geo_code
+FROM users u
+LEFT JOIN spaces city ON city.id = u.current_geo_space_id AND city.tenant_id = u.tenant_id AND city.deleted_at IS NULL
+LEFT JOIN spaces country ON country.id = COALESCE(
+    -- If the current geo space is a country itself, use it.
+    CASE WHEN city.level = 'country' THEN city.id END,
+    -- If it's a state, find its parent country.
+    CASE WHEN city.level = 'state' AND city.parent_id IS NOT NULL THEN city.parent_id END,
+    -- If it's a city, find its grandparent country (city → state → country).
+    (SELECT s2.parent_id FROM spaces s2 WHERE s2.id = city.parent_id AND s2.level = 'state' LIMIT 1)
+) AND country.tenant_id = u.tenant_id AND country.deleted_at IS NULL
+WHERE u.id = @user_id AND u.tenant_id = @tenant_id;
 
 -- name: ListActiveUsersForDigest :many
 SELECT u.id, u.tenant_id, u.email

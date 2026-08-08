@@ -1186,12 +1186,13 @@ func (q *Queries) GetUserContentCountryPreference(ctx context.Context, arg GetUs
 const getUserGeoProfileFields = `-- name: GetUserGeoProfileFields :one
 SELECT
     COALESCE(MAX(CASE WHEN cf.key = 'japa_status' THEN cfv.value_text END), '')::text AS japa_status,
-    COALESCE(MAX(CASE WHEN cf.key = 'destination_country' THEN cfv.value_text END), '')::text AS destination_country
+    COALESCE(MAX(CASE WHEN cf.key = 'destination_country' THEN cfv.value_text END), '')::text AS destination_country,
+    COALESCE(MAX(CASE WHEN cf.key = 'origin_country' THEN cfv.value_text END), '')::text AS origin_country
 FROM user_profiles up
 LEFT JOIN custom_field_values cfv
     ON cfv.entity_type = 'user_profile' AND cfv.entity_id = up.id
 LEFT JOIN custom_fields cf
-    ON cf.id = cfv.field_id AND cf.key IN ('japa_status', 'destination_country')
+    ON cf.id = cfv.field_id AND cf.key IN ('japa_status', 'destination_country', 'origin_country')
 WHERE up.tenant_id = $1 AND up.user_id = $2
 `
 
@@ -1203,16 +1204,17 @@ type GetUserGeoProfileFieldsParams struct {
 type GetUserGeoProfileFieldsRow struct {
 	JapaStatus         string `json:"japa_status"`
 	DestinationCountry string `json:"destination_country"`
+	OriginCountry      string `json:"origin_country"`
 }
 
-// ADR-064: fetch the two custom-field signals the archetype resolver needs
-// (japa_status + destination_country) in a single round-trip. Both live in
-// custom_field_values (entity_type='user_profile', entity_id=profile id).
-// Returns NULLs when the user has not set either field.
+// ADR-064 + ADR-064a: fetch the custom-field signals the archetype resolver
+// needs (japa_status, destination_country, origin_country) in a single
+// round-trip. All live in custom_field_values (entity_type='user_profile',
+// entity_id=profile id). Returns empty strings when the user has not set a field.
 func (q *Queries) GetUserGeoProfileFields(ctx context.Context, arg GetUserGeoProfileFieldsParams) (GetUserGeoProfileFieldsRow, error) {
 	row := q.db.QueryRow(ctx, getUserGeoProfileFields, arg.TenantID, arg.UserID)
 	var i GetUserGeoProfileFieldsRow
-	err := row.Scan(&i.JapaStatus, &i.DestinationCountry)
+	err := row.Scan(&i.JapaStatus, &i.DestinationCountry, &i.OriginCountry)
 	return i, err
 }
 

@@ -80,7 +80,11 @@ If the bug involves data not loading: verify the endpoint actually exists (`curl
 
 ## Output Protocol
 1. **Root cause** — one sentence · 2. **Broken code** · 3. **Fixed code** (surgical, minimal) · 4. **Secondary findings**
-**V2 main app phases (33–36):** Identity Tools UI (Phase 33) → Jobs/Gamification/Referral (Phase 34) → Newsletter/Import/Travel (Phase 35) → QA (Phase 36). See `ROADMAP-MAIN.md` for task breakdown.
+**V2 main app phases (33–38):** Identity Tools UI (Phase 33) → Jobs/Gamification/Referral (Phase 34) → Newsletter/Import/Travel (Phase 35) → QA (Phase 36) → Community Features UI (Phase 37) → Mentorship Matching UI (Phase 38). See `ROADMAP-MAIN.md` for task breakdown.
+
+**V2 community features UI (Phase 37, §§79–89, §98):** Community Story Wall (§79 — filterable testimonials by origin/destination/visa/profession), Destination Wiki (§80 — collaborative versioned KB pages with reputation-gated editing), Scam Alert Board (§81 — moderated scam reporting with subscriptions), Japa Planning Groups (§82 — private peer groups with milestones and check-ins), Visa Timeline Tracker (§83 — personal milestone logging with anonymous sharing), Community Digest Widget (§84 — auto-generated digest), Mutual Aid Board (§85 — Needs/Offers/Skill Swaps), Community Calendar (§86 — institutional dates calendar), Japa Stage Profiles (§87 — seven-stage relocation journey on profiles), Ask-an-Expat AMA (§88 — specialized forum AMA threads), Achievement Feed (§89 — opt-in milestone feed), Service Directory (§98 — geo-indexed business directory). All community feature pages must follow the geo-aware tool pattern: destination country selector is the first input, no hardcoded nationality, ?dest= filter on list endpoints.
+
+**V2 mentorship UI (Phase 38, §102, ADR-110):** Mentor browsing/search, mentor profile pages, mentorship request flow, incoming/outgoing requests management, connection active/complete/cancel flows. Match scoring display (60% keyword overlap + 40% pgvector cosine similarity). DM auto-open on connection accept (§48).
 
 **V2 tool pages on main app (`/tools/*`):** Visa Checklist, Readiness Assessment, Cost of Living, Scholarship Finder, Remittance Rate Tracker, JapaBot (full-page). Each tool is also available at its own domain/subdomain via `apps/tools` (§78) — the main app renders these within the community layout; `apps/tools` renders them tool-first without community nav.
 
@@ -107,4 +111,38 @@ If the bug involves data not loading: verify the endpoint actually exists (`curl
 
 **API-Readiness Gate applies to all v2 features.** Verify against `api-routes-catalog.md` — all v2 routes are marked as "V2 planned" in the catalog. Once the corresponding backend phase lands, the planned routes become available.
 
-**New surface in v2:** `apps/tools` (§78, ADR-086) — a sixth SvelteKit SSR app at `tools.japaconnect.com` (port 3005). Generate `jc-tools-*` skills before implementing this surface. Skills live at `.ai/skills/frontend/06-tools/`.
+**New surface in v2:** `apps/tools` (§78, ADR-086) — a sixth SvelteKit SSR app at `tools.japaconnect.com` (port 3005). `jc-tools-*` skills are already generated and live at `.ai/skills/frontend/06-tools/`.
+
+## 7d. V2 Community Features — Debug Patterns (Phase 37, §§79–89, §98)
+
+### Geo-Aware Filter Missing on Community Feature Pages
+- **Symptom:** community feature list page (Story Wall, Scam Alert Board, Mutual Aid, Service Directory, etc.) shows all results regardless of destination, or the `?dest=` param is not sent to the API.
+- **Check:** the `load()` function in `+page.server.ts` — does it read `$page.url.searchParams.get('dest')` and pass it as `?dest=` to the API list endpoint? If the param is read but not forwarded, the API returns unfiltered results.
+- **Check:** the destination selector component — does it update the URL with `?dest=[value]` on change (via `goto` or `invalidateAll`)? If the selector updates local `$state` but doesn't update the URL, the `load()` won't re-run with the new filter.
+- **Fix:** ensure the selector writes `?dest=` to the URL and `load()` forwards it to the API call.
+
+### Hardcoded Nationality in Tool UI
+- **Symptom:** a community feature page filters or labels content by a hardcoded nationality (e.g. `"Nigerian"` or a hardcoded country code array) instead of using the destination country selector.
+- **Check:** grep for country name strings, ISO codes, or nationality constants in component files under `/community/*` routes. Any inline array like `const countries = ['NG', 'GB', 'US']` is a violation.
+- **Fix:** replace with `GET /api/v1/geo/countries` fetch in `load()`; pass the list as props to the selector component.
+
+### Destination Selector Not First Input
+- **Symptom:** the destination country selector appears after other filters (e.g. profession, visa type, sort) in the DOM order, or is buried in a "Filters" dropdown instead of being the primary top-level input.
+- **Check:** inspect the filter bar component — the destination `<Select.Root>` or `<Combobox.Root>` must be the first element. If it's inside a collapsible "Advanced Filters" panel, that's a violation.
+- **Fix:** move the destination selector to the first position in the filter bar, outside any collapsible panel.
+
+### Missing DM Auto-Open on Mentorship Accept
+- **Symptom:** user accepts a mentorship request (or their request is accepted), but the DM thread is not opened — the user stays on the requests page and must manually navigate to Messages.
+- **Check:** the accept handler in the requests management component — after the `PATCH /api/v1/mentorship/requests/:id` (status: accepted) succeeds, does the code navigate to `/messages?thread=[connection_id]` or open the DM modal? If the handler only updates local `$state` without triggering DM navigation, the auto-open is missing.
+- **Fix:** in the accept handler's success path, add `goto('/messages?thread=' + connectionId)` or open the DM modal with the connection thread ID. The connection ID / thread ID should come from the PATCH response.
+
+### Svelte 5 Runes Violations in New Community Feature Components
+- **Symptom:** community feature components (Story Wall cards, Wiki editor, Scam Alert form, Planning Group milestone tracker, etc.) use Svelte 4 patterns — `export let`, `$:` reactive statements, `on:click`, `createEventDispatcher`, or writable stores for local UI state.
+- **Check:** run the Svelte 5 Runes violation table (Section 2 above) against all files under `$lib/components/community/` and `/community/*` routes.
+- **Common violations in new components:**
+  - `export let story` in a StoryCard → should be `let { story } = $props()`
+  - `$: filtered = stories.filter(...)` → should be `let filtered = $derived(stories.filter(...))`
+  - `on:click={() => subscribe()}` → should be `onclick={() => subscribe()}`
+  - `createEventDispatcher()` for request actions → should be callback props (`onaccept`, `ondecline`)
+  - `writable(false)` for modal open state → should be `let open = $state(false)`
+- **Fix:** apply the migration table from Section 1 of this skill.

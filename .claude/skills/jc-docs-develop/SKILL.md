@@ -46,7 +46,13 @@ Identical base to `jc-main-develop`: Svelte 5 Runes, Bits UI dot-notation, Tailw
 
 ## Deliverables Per Task
 1. Gate output · 2. surface built INSIDE `AppShell` (or the playground full-width exception, explicitly) · 3. `+page.server.ts` (audience-gated fetch) · 4. `+page.svelte` (nav tree + content + TOC, skeletons) · 5. components (LeftNav tree, TOC, CodeBlock, SearchPalette, AudienceSwitcher) · 6. JSON-LD · 7. types
-**V2 docs app:** No new pages in v2. Docs app requires stable API surface (OpenAPI spec from §47). The `japaconnect_core` Flutter package will use the same OpenAPI spec — ensure spec remains current when v2 backend phases land.
+**V2 docs app:** No new pages in v2. Docs app requires stable API surface (OpenAPI spec from §47). The `japaconnect_core` Flutter package will use the same OpenAPI spec — ensure spec remains current when v2 backend phases land. **JEOS v1.22.0–v1.23.1 updates (§§79–102, ADRs 087–110):**
+- **OpenAPI spec must cover the new ~344 v2 routes** (§§60–102) — the spec from §47 must be extended to include all v2 community feature routes (§§79–89, §98), functional tool routes (§§90–97, §§99–101), and mentorship routes (§102). Total platform route count is now ~819 (~475 v1 + ~344 v2).
+- **New ADRs 087–110 need documentation pages** — each ADR should have a docs page in the architecture/ADRs section. Key ADRs: ADR-088 (universal AI content generation), ADR-042 (feature-flag 404 not 403), ADR-110 (mentorship matching).
+- **New sections §§79–102 need API reference documentation** — 24 new sections covering 11 v2 community features, 12 V2 functional tools, and mentorship matching. Each section's endpoints need three-column API-docs variant pages with method badges and Request/Response/Example tabs.
+- **Geo-aware tool pattern needs a docs page** — `.jeos/skills/geo-aware-tool-pattern.md` describes the destination-country-as-primary-axis pattern. This needs a public docs page explaining the `?dest=` filter, `destination_country_id` schema field, destination selector UX, and feature-flag 404 behavior.
+- **ADR-088 AI content generation columns** need documentation: `ai_generated`, `ai_model`, `hitl_reviewed_by`, `ai_generated_at`, `is_japabot_indexed` — document these as standard columns on all v2 tool content tables, with HITL review mandatory before publish.
+- 18 Golden Rules (R18: always use bun).
 
 ## V2 Feature Areas (Implement Only After Corresponding Backend Phase Is Complete)
 
@@ -71,4 +77,4 @@ Identical base to `jc-main-develop`: Svelte 5 Runes, Bits UI dot-notation, Tailw
 
 **API-Readiness Gate applies to all v2 features.** Verify against `api-routes-catalog.md` — all v2 routes are marked as "V2 planned" in the catalog. Once the corresponding backend phase lands, the planned routes become available.
 
-**New surface in v2:** `apps/tools` (§78, ADR-086) — a sixth SvelteKit SSR app at `tools.japaconnect.com` (port 3005). Generate `jc-tools-*` skills before implementing this surface. Skills live at `.ai/skills/frontend/06-tools/`.
+**New surface in v2:** `apps/tools` (§78, ADR-086) — a sixth SvelteKit SSR app at `tools.japaconnect.com` (port 3005). `jc-tools-*` skills are already generated and live at `.ai/skills/frontend/06-tools/`.

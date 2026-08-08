@@ -285,6 +285,21 @@ FROM spaces
 WHERE geo_code = $1 AND level = 'country' AND tenant_id = $2 AND deleted_at IS NULL
 LIMIT 1;
 
+-- name: FindCitySpaceByName :one
+-- ADR-064a: Finds a city-level space by name within a country-level space.
+-- Used by the reverse-geocoding flow (POST /me/location) to match a
+-- Nominatim-resolved city name to an existing seeded city Space.
+SELECT id, tenant_id, parent_id, space_type_id, name, slug, description, wiki_content,
+       logo_media_id, header_image_id, geo_code, level, member_count, post_count,
+       follower_count, visibility, posting_perm, replying_perm, commenting_perm,
+       joining_perm, status, created_at, updated_at, deleted_at, currency_code
+FROM spaces
+WHERE lower(name) = lower(@city_name)
+  AND level = 'city'
+  AND tenant_id = @tenant_id
+  AND deleted_at IS NULL
+LIMIT 1;
+
 -- name: GetSpaceBySlug :one
 SELECT id, tenant_id, parent_id, space_type_id, name, slug, description, wiki_content,
        logo_media_id, header_image_id, geo_code, level, member_count, post_count,

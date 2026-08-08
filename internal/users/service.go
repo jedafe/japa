@@ -249,6 +249,20 @@ func (s *Service) UpdateProfile(ctx context.Context, tenantID, userID pgtype.UUI
 		return fmt.Errorf("updating profile: %w", err)
 	}
 
+	// ADR-064a: Save geo custom fields (origin_country, destination_country)
+	// as custom_field_values on the user_profile entity. These are saved
+	// after the profile upsert to ensure the profile row exists.
+	if req.OriginCountry != nil {
+		if err := s.store.setGeoCustomField(ctx, tenantID, userID, "origin_country", strings.ToUpper(strings.TrimSpace(*req.OriginCountry))); err != nil {
+			return fmt.Errorf("saving origin_country: %w", err)
+		}
+	}
+	if req.DestinationCountry != nil {
+		if err := s.store.setGeoCustomField(ctx, tenantID, userID, "destination_country", strings.ToUpper(strings.TrimSpace(*req.DestinationCountry))); err != nil {
+			return fmt.Errorf("saving destination_country: %w", err)
+		}
+	}
+
 	return nil
 }
 
@@ -308,6 +322,13 @@ func (s *Service) SetContentCountry(ctx context.Context, tenantID, userID pgtype
 // GetContentCountry returns the user's content_country_preference.
 func (s *Service) GetContentCountry(ctx context.Context, tenantID, userID pgtype.UUID) (string, error) {
 	return s.store.GetContentCountryPreference(ctx, tenantID, userID)
+}
+
+// SetCurrentGeoSpace updates the user's current_geo_space_id (ADR-064a).
+// This is the user's declared current location (city/state/country Space).
+// The VisitorContext resolver reads this to override GeoIP-based CurrentCountry.
+func (s *Service) SetCurrentGeoSpace(ctx context.Context, tenantID, userID, spaceID pgtype.UUID) error {
+	return s.store.updateGeoSpace(ctx, tenantID, userID, spaceID)
 }
 
 // GetUserModerationConfig returns the platform's valid user statuses, profile
