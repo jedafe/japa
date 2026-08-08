@@ -2041,6 +2041,57 @@ func (q *Queries) ListSpaceTypesByTenant(ctx context.Context, tenantID pgtype.UU
 	return items, nil
 }
 
+const listSpaceTypesByTenantFiltered = `-- name: ListSpaceTypesByTenantFiltered :many
+SELECT id, tenant_id, name, slug, description, icon, field_group_id, is_system, created_at, updated_at, is_university
+FROM space_types
+WHERE tenant_id = $1
+  AND ($2::text = '' OR name ILIKE '%' || $2 || '%' OR slug ILIKE '%' || $2 || '%')
+  AND ($3::text = ''
+       OR ($3 = 'true' AND is_university = true)
+       OR ($3 = 'false' AND is_university = false))
+ORDER BY created_at ASC, id ASC
+`
+
+type ListSpaceTypesByTenantFilteredParams struct {
+	TenantID           pgtype.UUID `json:"tenant_id"`
+	Search             string      `json:"search"`
+	IsUniversityFilter string      `json:"is_university_filter"`
+}
+
+// Supports optional search (q) and is_university filter for the admin panel.
+// Pass empty strings to skip either filter.
+func (q *Queries) ListSpaceTypesByTenantFiltered(ctx context.Context, arg ListSpaceTypesByTenantFilteredParams) ([]SpaceType, error) {
+	rows, err := q.db.Query(ctx, listSpaceTypesByTenantFiltered, arg.TenantID, arg.Search, arg.IsUniversityFilter)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SpaceType
+	for rows.Next() {
+		var i SpaceType
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.Name,
+			&i.Slug,
+			&i.Description,
+			&i.Icon,
+			&i.FieldGroupID,
+			&i.IsSystem,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.IsUniversity,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listSpacesByLevel = `-- name: ListSpacesByLevel :many
 SELECT id, tenant_id, parent_id, space_type_id, name, slug, description, wiki_content,
        logo_media_id, header_image_id, geo_code, level, member_count, post_count,

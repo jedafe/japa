@@ -90,6 +90,15 @@ func (s *Store) UpdateBadgeDefinition(ctx context.Context, arg gen.UpdateBadgeDe
 	return s.queries.UpdateBadgeDefinition(ctx, arg)
 }
 
+// DeleteBadgeDefinition deletes a non-system badge definition. Returns the
+// number of rows affected (0 if the badge was not found or is a system badge).
+func (s *Store) DeleteBadgeDefinition(ctx context.Context, tenantID, id pgtype.UUID) (int64, error) {
+	return s.queries.DeleteBadgeDefinition(ctx, gen.DeleteBadgeDefinitionParams{
+		TenantID: tenantID,
+		ID:       id,
+	})
+}
+
 // =====================================================================
 // User Badges
 // =====================================================================
@@ -163,6 +172,20 @@ func (s *Store) GetChallengeByID(ctx context.Context, tenantID, id pgtype.UUID) 
 // CreateChallenge inserts a new challenge definition.
 func (s *Store) CreateChallenge(ctx context.Context, arg gen.CreateChallengeParams) (gen.ChallengeDefinition, error) {
 	return s.queries.CreateChallenge(ctx, arg)
+}
+
+// UpdateChallenge updates a challenge definition's mutable fields.
+func (s *Store) UpdateChallenge(ctx context.Context, arg gen.UpdateChallengeParams) (gen.ChallengeDefinition, error) {
+	return s.queries.UpdateChallenge(ctx, arg)
+}
+
+// DeleteChallenge deletes a challenge definition. Returns the number of rows
+// affected (0 if the challenge was not found).
+func (s *Store) DeleteChallenge(ctx context.Context, tenantID, id pgtype.UUID) (int64, error) {
+	return s.queries.DeleteChallenge(ctx, gen.DeleteChallengeParams{
+		TenantID: tenantID,
+		ID:       id,
+	})
 }
 
 // ExpireChallengesPastEndDate deactivates challenges whose ends_at is in the

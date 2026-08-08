@@ -700,7 +700,7 @@
 	{#if config.formSnippet}
 		{@render config.formSnippet({ value: formValue, editing })}
 	{:else}
-		<EntityForm fields={config.fields} bind:value={formValue} errors={formErrors} disabled={saving} onsubmit={submitForm} />
+		<EntityForm fields={config.fields} bind:value={formValue} errors={formErrors} disabled={saving} {editing} onsubmit={submitForm} />
 	{/if}
 
 	{#snippet footer()}

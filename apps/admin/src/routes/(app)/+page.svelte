@@ -36,7 +36,7 @@
 		comments: number;
 		unique_viewers: number;
 	};
-	type SpaceStatRow = { name?: string; title?: string; member_count?: number };
+	type SpaceStatRow = { space_name?: string; joins?: number; posts?: number; active_users?: number };
 
 	type OverviewData = {
 		daily_active_users: DailyActiveRow[] | null;
@@ -83,6 +83,18 @@
 	let to = $state(page.url.searchParams.get('to') ?? '');
 	let loadAbortController: AbortController | null = null;
 
+	// Pre-sort space stats by joins (desc) so the template stays pure.
+	// $state.snapshot() deep-clones to a plain array, avoiding Svelte 5
+	// state_unsafe_mutation when .sort() runs on the copy.
+	const topSpaces = $derived(
+		overview.space_stats
+			? $state
+					.snapshot(overview.space_stats)
+					.sort((a, b) => (b.joins ?? 0) - (a.joins ?? 0))
+					.slice(0, 5)
+			: []
+	);
+
 	const periods = [
 		{ value: '24h', label: t('dashboard.period_24h', '24 Hours') },
 		{ value: '7d', label: t('dashboard.period_7d', '7 Days') },
@@ -122,7 +134,8 @@
 	);
 
 	const trafficSources = $derived(
-		(overview.traffic_sources ?? [])
+		$state
+			.snapshot(overview.traffic_sources ?? [])
 			.sort((a, b) => b.visits - a.visits)
 			.slice(0, 10)
 	);
@@ -173,13 +186,22 @@
 		goto(url, { keepFocus: true, noScroll: true });
 	}
 
-	// Push the chosen date range to the URL (?from=&to=) so it drives the fetch
+	// Push the chosen date range to the URL (?from=&to=) so it drives the fetch.
+	// Clear the period param when a date range is active so the URL stays clean.
 	function applyRange() {
 		const url = new URL(page.url);
-		if (from) url.searchParams.set('from', from);
-		else url.searchParams.delete('from');
-		if (to) url.searchParams.set('to', to);
-		else url.searchParams.delete('to');
+		if (from) {
+			url.searchParams.set('from', from);
+			url.searchParams.delete('period');
+		} else {
+			url.searchParams.delete('from');
+		}
+		if (to) {
+			url.searchParams.set('to', to);
+			url.searchParams.delete('period');
+		} else {
+			url.searchParams.delete('to');
+		}
 		goto(url, { keepFocus: true, noScroll: true });
 	}
 
@@ -205,13 +227,13 @@
 
 <PageHeader
 	title={t('dashboard.title', 'Dashboard')}
-	description={t('dashboard.description', "Welcome back! Here's what's happening on your platform.")}
+	description={t('dashboard.description', 'Community health overview')}
 	actions={[
 		{
 			label: t('common.refresh', 'Refresh'),
 			icon: RefreshCw,
 			variant: 'outline',
-			onclick: load
+			onclick: () => load()
 		}
 	]}
 />
@@ -230,7 +252,7 @@
 <div class="mb-6 flex flex-wrap items-end gap-4">
 	<div class="flex items-center gap-2">
 		<span class="text-sm" style="color: var(--color-muted)">{t('common.period', 'Period')}:</span>
-		{#each periods as p}
+		{#each periods as p (p.value)}
 			<Button
 				variant={period === p.value ? 'default' : 'ghost'}
 				size="sm"
@@ -416,7 +438,7 @@
 					<CardContent>
 						{#if trafficSources.length > 0}
 							<div class="space-y-3">
-								{#each trafficSources as source}
+								{#each trafficSources as source, i (`${source.referrer ?? 'direct'}::${i}`)}
 									<div class="flex items-center justify-between rounded-lg px-3 py-2">
 										<span class="text-sm" style="color: var(--color-foreground)">
 											{source.referrer ?? t('dashboard.direct', 'Direct')}
@@ -451,7 +473,7 @@
 				<CardContent>
 					{#if topContent.length > 0}
 						<div class="space-y-3">
-							{#each topContent as item}
+							{#each topContent as item (item.content_id)}
 								<a href="/content/{item.content_id}" class="flex items-center justify-between rounded-lg px-3 py-2 hover:bg-[color-mix(in_srgb,var(--color-muted)_5%,transparent)]">
 									<div class="min-w-0 flex-1">
 										<p class="truncate text-sm font-medium" style="color: var(--color-foreground)">
@@ -529,13 +551,13 @@
 						</h3>
 					</CardHeader>
 					<CardContent>
-						{#if overview.space_stats && overview.space_stats.length > 0}
+						{#if topSpaces.length > 0}
 							<div class="space-y-3">
-							{#each overview.space_stats.slice(0, 5) as space}
+							{#each topSpaces as space, i (`${space.space_name ?? ''}::${i}`)}
 								<div class="flex items-center justify-between rounded-lg px-3 py-2">
-									<span class="text-sm" style="color: var(--color-foreground)">{space.name ?? space.title ?? t('dashboard.space', 'Space')}</span>
-									{#if space.member_count !== undefined}
-										<span class="text-xs" style="color: var(--color-muted)">{space.member_count} {t('dashboard.members', 'members')}</span>
+									<span class="text-sm" style="color: var(--color-foreground)">{space.space_name ?? t('dashboard.space', 'Space')}</span>
+									{#if space.joins !== undefined}
+										<span class="text-xs" style="color: var(--color-muted)">{space.joins} {t('dashboard.members', 'members')}</span>
 									{/if}
 								</div>
 							{/each}
@@ -580,11 +602,11 @@
 				value={(overview.generations_today ?? 0).toLocaleString()}
 			/>
 			<StatCard
-				label={t('dashboard.hitl_pending', 'HITL Pending Review')}
+				label={t('dashboard.hitl_pending', 'HITL Pending')}
 				value={(overview.hitl_pending ?? 0).toLocaleString()}
 			/>
 			<StatCard
-				label={t('dashboard.new_today', 'New Users Today')}
+				label={t('dashboard.new_users_today', 'New Users Today')}
 				value={(userStats.new_users_today ?? 0).toLocaleString()}
 			/>
 		</div>

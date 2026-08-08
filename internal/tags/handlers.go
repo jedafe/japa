@@ -2,6 +2,7 @@ package tags
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/content"
@@ -429,7 +431,9 @@ func (h *Handlers) CreateTag(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	slug := input.Slug
+	// Always slugify: use the provided slug if non-empty, else derive from name.
+	// Either way, the result is normalized to a URL-safe slug.
+	slug := content.Slugify(input.Slug)
 	if slug == "" {
 		slug = content.Slugify(input.Name)
 	}
@@ -480,6 +484,11 @@ func (h *Handlers) CreateTag(w http.ResponseWriter, r *http.Request) {
 		FieldValues:  input.FieldValues,
 	})
 	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			writeError(w, http.StatusConflict, "duplicate_slug", "A tag with this slug already exists")
+			return
+		}
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to create tag")
 		return
 	}
@@ -502,11 +511,13 @@ func (h *Handlers) UpdateTag(w http.ResponseWriter, r *http.Request) {
 
 	var input struct {
 		Name         string          `json:"name"`
+		Slug         string          `json:"slug"`
 		Description  *string         `json:"description"`
 		Rules        *string         `json:"rules"`
 		CoverMediaID *string         `json:"cover_media_id"`
 		Color        *string         `json:"color"`
 		LogoMediaID  *string         `json:"logo_media_id"`
+		IsSystem     *bool           `json:"is_system"`
 		FieldValues  json.RawMessage `json:"field_values"`
 	}
 
@@ -518,6 +529,13 @@ func (h *Handlers) UpdateTag(w http.ResponseWriter, r *http.Request) {
 	if input.Name == "" {
 		writeError(w, http.StatusBadRequest, "missing_name", "name is required")
 		return
+	}
+
+	// Always slugify: use the provided slug if non-empty, else derive from name.
+	// Either way, the result is normalized to a URL-safe slug.
+	slug := content.Slugify(input.Slug)
+	if slug == "" {
+		slug = content.Slugify(input.Name)
 	}
 
 	if input.Description != nil {
@@ -553,16 +571,36 @@ func (h *Handlers) UpdateTag(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Preserve the existing is_system value when the client omits the field.
+	var isSystem bool
+	if input.IsSystem != nil {
+		isSystem = *input.IsSystem
+	} else {
+		existing, err := h.service.GetTagByID(r.Context(), id, tenantID)
+		if err != nil {
+			writeError(w, http.StatusNotFound, "not_found", "Tag not found")
+			return
+		}
+		isSystem = existing.IsSystem
+	}
+
 	tag, err := h.service.UpdateTag(r.Context(), id, tenantID, UpdateTagInput{
 		Name:         content.SanitizeText(input.Name),
+		Slug:         slug,
 		Description:  input.Description,
 		Rules:        input.Rules,
 		CoverMediaID: coverMediaID,
 		Color:        input.Color,
 		LogoMediaID:  logoMediaID,
+		IsSystem:     isSystem,
 		FieldValues:  input.FieldValues,
 	})
 	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			writeError(w, http.StatusConflict, "duplicate_slug", "A tag with this slug already exists")
+			return
+		}
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to update tag")
 		return
 	}

@@ -95,13 +95,23 @@ REFRESH MATERIALIZED VIEW CONCURRENTLY mv_user_engagement_stats;
 -- =====================
 
 -- name: GetUserGrowthOverTime :many
-SELECT date_trunc('day', created_at)::date AS day, COUNT(*) AS new_users
-FROM users
-WHERE tenant_id = $1
-  AND ($2::date IS NULL OR created_at::date >= $2)
-  AND ($3::date IS NULL OR created_at::date <= $3)
-GROUP BY 1
-ORDER BY 1 DESC;
+-- Fills the full date range with 0-value days so the chart always shows
+-- a complete line instead of "No data available" on periods with no signups.
+SELECT gs.day::date AS day, COALESCE(u.new_users, 0)::bigint AS new_users
+FROM generate_series(
+  $2::date,
+  COALESCE($3::date, NOW()::date),
+  INTERVAL '1 day'
+) AS gs(day)
+LEFT JOIN (
+  SELECT date_trunc('day', created_at)::date AS day, COUNT(*)::bigint AS new_users
+  FROM users
+  WHERE tenant_id = $1
+    AND ($2::date IS NULL OR created_at::date >= $2)
+    AND ($3::date IS NULL OR created_at::date <= $3)
+  GROUP BY 1
+) u ON u.day = gs.day::date
+ORDER BY gs.day;
 
 -- =====================
 -- Space Analytics (single-query aggregate)
@@ -150,15 +160,17 @@ GROUP BY 1
 ORDER BY 1 DESC;
 
 -- name: GetTrafficSources :many
-SELECT field_values->>'referrer' AS referrer, COUNT(*) AS visits
-FROM contents
-WHERE tenant_id = $1
-  AND status != 'draft'
-  AND field_values->>'referrer' IS NOT NULL
-  AND field_values->>'referrer' != ''
-  AND ($2::timestamptz IS NULL OR created_at >= $2)
-  AND ($3::timestamptz IS NULL OR created_at <= $3)
-GROUP BY field_values->>'referrer'
+-- Traffic sources are derived from content view_count aggregated by the
+-- space that owns the content. Content without a space is labelled "Direct".
+SELECT COALESCE(s.name, 'Direct') AS referrer, COALESCE(SUM(c.view_count), 0)::bigint AS visits
+FROM contents c
+LEFT JOIN spaces s ON s.id = c.space_id AND s.tenant_id = c.tenant_id
+WHERE c.tenant_id = $1
+  AND c.status != 'draft'
+  AND c.view_count > 0
+  AND ($2::timestamptz IS NULL OR c.created_at >= $2)
+  AND ($3::timestamptz IS NULL OR c.created_at <= $3)
+GROUP BY 1
 ORDER BY visits DESC
 LIMIT $4;
 
@@ -227,6 +239,36 @@ WHERE p.tenant_id = $1
   AND ($3::timestamptz IS NULL OR p.created_at <= $3)
 GROUP BY 1
 ORDER BY 1 DESC;
+
+-- =====================
+-- Dashboard Moderation / AI Overview Counts
+-- =====================
+
+-- name: CountPendingReports :one
+SELECT COUNT(*)::int FROM content_reports
+WHERE tenant_id = $1 AND status = 'pending';
+
+-- name: CountOpenTickets :one
+SELECT COUNT(*)::int FROM tickets
+WHERE tenant_id = $1 AND status NOT IN ('resolved', 'closed', 'spam');
+
+-- name: CountSpamQueue :one
+SELECT
+  (SELECT COUNT(*)::int FROM media m
+   WHERE m.tenant_id = $1 AND m.deleted_at IS NULL
+     AND (m.flagged = true OR m.quarantine_reason IS NOT NULL))
+  +
+  (SELECT COUNT(*)::int FROM contents c
+   WHERE c.tenant_id = $1 AND c.deleted_at IS NULL
+     AND c.auto_hidden = true) AS count;
+
+-- name: CountGenerationsToday :one
+SELECT COUNT(*)::int FROM studio_jobs
+WHERE tenant_id = $1 AND created_at >= date_trunc('day', NOW());
+
+-- name: CountPendingReviews :one
+SELECT COUNT(*)::int FROM content_reviews
+WHERE tenant_id = $1 AND status = 'pending' AND deleted_at IS NULL;
 
 -- =====================
 -- Space Analytics (single-query aggregate)

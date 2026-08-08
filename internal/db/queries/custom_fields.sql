@@ -11,7 +11,7 @@ WHERE tenant_id = @tenant_id
 ORDER BY created_at DESC, id DESC;
 
 -- name: ListCustomFieldGroupsByTenantAndEntityClass :many
-SELECT cfg.id, cfg.tenant_id, cfg.name, cfg.slug, cfg.description,
+SELECT DISTINCT cfg.id, cfg.tenant_id, cfg.name, cfg.slug, cfg.description,
        cfg.is_system, cfg.created_at
 FROM custom_field_groups cfg
 JOIN custom_field_group_assignments cfga ON cfg.id = cfga.group_id

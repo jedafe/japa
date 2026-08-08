@@ -86,18 +86,24 @@ export const load: PageServerLoad = async (event) => {
 				}
 			}
 			// Restore the tag chips — GET /content/{id}/tags returns the tags
-			// joined via content_tags. The composer consumes tag names.
-			// Deduplicate by name — the join can return the same tag name
-			// multiple times if a tag was attached more than once (data bug
-			// in older content). Duplicate names also crash Svelte's keyed
-			// each block in TagInput.
+			// joined via content_tags. The composer consumes tag slugs (not
+			// names) because attachTag/detachTag send the value as a slug to
+			// POST /content/{id}/tags { tag_slugs: [slug] } and
+			// DELETE /content/{id}/tags/{slug}. Loading names here would
+			// break detach — the backend slug resolver cannot match a
+			// display name like "Driving License" to the stored slug
+			// "driving-license". Deduplicate by slug — the join can return
+			// the same tag multiple times if a tag was attached more than
+			// once (data bug in older content). Duplicate values also crash
+			// Svelte's keyed each block in TagInput.
 			try {
 				const tagsRes = await apiList<ContentTag>(ctx, `/content/${draft.id}/tags`);
 				const seen = new Set<string>();
 				draftTags = tagsRes.items
-					.map((t) => t.name)
-					.filter((name) => {
-						const key = name.toLowerCase();
+					.map((t) => t.slug)
+					.filter((slug): slug is string => {
+						if (!slug) return false;
+						const key = slug.toLowerCase();
 						if (seen.has(key)) return false;
 						seen.add(key);
 						return true;

@@ -227,6 +227,42 @@ func (q *Queries) CreateChallenge(ctx context.Context, arg CreateChallengeParams
 	return i, err
 }
 
+const deleteBadgeDefinition = `-- name: DeleteBadgeDefinition :execrows
+DELETE FROM badge_definitions
+WHERE tenant_id = $1 AND id = $2 AND is_system = false
+`
+
+type DeleteBadgeDefinitionParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	ID       pgtype.UUID `json:"id"`
+}
+
+func (q *Queries) DeleteBadgeDefinition(ctx context.Context, arg DeleteBadgeDefinitionParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteBadgeDefinition, arg.TenantID, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const deleteChallenge = `-- name: DeleteChallenge :execrows
+DELETE FROM challenge_definitions
+WHERE tenant_id = $1 AND id = $2
+`
+
+type DeleteChallengeParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	ID       pgtype.UUID `json:"id"`
+}
+
+func (q *Queries) DeleteChallenge(ctx context.Context, arg DeleteChallengeParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteChallenge, arg.TenantID, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const expireChallengesPastEndDate = `-- name: ExpireChallengesPastEndDate :execrows
 UPDATE challenge_definitions
 SET is_active = false
@@ -1084,6 +1120,73 @@ func (q *Queries) UpdateBadgeDefinition(ctx context.Context, arg UpdateBadgeDefi
 		&i.IsActive,
 		&i.IsSystem,
 		&i.DisplayOrder,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const updateChallenge = `-- name: UpdateChallenge :one
+UPDATE challenge_definitions
+SET
+    name           = COALESCE($1, name),
+    description    = COALESCE($2, description),
+    image_media_id = COALESCE($3, image_media_id),
+    activity_key   = COALESCE($4, activity_key),
+    target_count   = COALESCE($5, target_count),
+    reward_points  = COALESCE($6, reward_points),
+    reward_badge_id = COALESCE($7, reward_badge_id),
+    starts_at      = COALESCE($8, starts_at),
+    ends_at        = COALESCE($9, ends_at),
+    is_active      = COALESCE($10, is_active)
+WHERE tenant_id = $11 AND id = $12
+RETURNING id, tenant_id, slug, name, description, image_media_id, activity_key, target_count, reward_points, reward_badge_id, starts_at, ends_at, is_active, created_at
+`
+
+type UpdateChallengeParams struct {
+	Name          *string            `json:"name"`
+	Description   *string            `json:"description"`
+	ImageMediaID  pgtype.UUID        `json:"image_media_id"`
+	ActivityKey   *string            `json:"activity_key"`
+	TargetCount   *int32             `json:"target_count"`
+	RewardPoints  *int32             `json:"reward_points"`
+	RewardBadgeID pgtype.UUID        `json:"reward_badge_id"`
+	StartsAt      pgtype.Timestamptz `json:"starts_at"`
+	EndsAt        pgtype.Timestamptz `json:"ends_at"`
+	IsActive      *bool              `json:"is_active"`
+	TenantID      pgtype.UUID        `json:"tenant_id"`
+	ID            pgtype.UUID        `json:"id"`
+}
+
+func (q *Queries) UpdateChallenge(ctx context.Context, arg UpdateChallengeParams) (ChallengeDefinition, error) {
+	row := q.db.QueryRow(ctx, updateChallenge,
+		arg.Name,
+		arg.Description,
+		arg.ImageMediaID,
+		arg.ActivityKey,
+		arg.TargetCount,
+		arg.RewardPoints,
+		arg.RewardBadgeID,
+		arg.StartsAt,
+		arg.EndsAt,
+		arg.IsActive,
+		arg.TenantID,
+		arg.ID,
+	)
+	var i ChallengeDefinition
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.Slug,
+		&i.Name,
+		&i.Description,
+		&i.ImageMediaID,
+		&i.ActivityKey,
+		&i.TargetCount,
+		&i.RewardPoints,
+		&i.RewardBadgeID,
+		&i.StartsAt,
+		&i.EndsAt,
+		&i.IsActive,
 		&i.CreatedAt,
 	)
 	return i, err

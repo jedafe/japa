@@ -65,6 +65,22 @@ func (s *Service) ListSpaceTypes(ctx context.Context, tenantID pgtype.UUID) ([]g
 	return types, nil
 }
 
+// ListSpaceTypesFiltered returns space types for the given tenant, optionally
+// filtered by a search query (matched against name and slug) and/or the
+// is_university flag. Pass empty strings to skip either filter.
+func (s *Service) ListSpaceTypesFiltered(ctx context.Context, tenantID pgtype.UUID, search, isUniversityFilter string) ([]gen.SpaceType, error) {
+	types, err := s.read.ListSpaceTypesByTenantFiltered(ctx, gen.ListSpaceTypesByTenantFilteredParams{
+		TenantID:           tenantID,
+		Search:             search,
+		IsUniversityFilter: isUniversityFilter,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("listing space types (filtered): %w", err)
+	}
+
+	return types, nil
+}
+
 // GetSpaceType returns the space type with the given ID, scoped to the
 // tenant.
 func (s *Service) GetSpaceType(ctx context.Context, id, tenantID pgtype.UUID) (gen.SpaceType, error) {

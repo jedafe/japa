@@ -32,6 +32,18 @@ FROM space_types
 WHERE tenant_id = @tenant_id
 ORDER BY created_at ASC, id ASC;
 
+-- name: ListSpaceTypesByTenantFiltered :many
+-- Supports optional search (q) and is_university filter for the admin panel.
+-- Pass empty strings to skip either filter.
+SELECT id, tenant_id, name, slug, description, icon, field_group_id, is_system, created_at, updated_at, is_university
+FROM space_types
+WHERE tenant_id = @tenant_id
+  AND (@search::text = '' OR name ILIKE '%' || @search || '%' OR slug ILIKE '%' || @search || '%')
+  AND (@is_university_filter::text = ''
+       OR (@is_university_filter = 'true' AND is_university = true)
+       OR (@is_university_filter = 'false' AND is_university = false))
+ORDER BY created_at ASC, id ASC;
+
 -- name: GetSpaceTypeByID :one
 SELECT id, tenant_id, name, slug, description, icon, field_group_id, is_system, created_at, updated_at, is_university
 FROM space_types

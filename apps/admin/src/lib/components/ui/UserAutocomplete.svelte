@@ -5,11 +5,13 @@
 	let {
 		value = $bindable(""),
 		placeholder = "Username",
+		id = "user-autocomplete-input",
 		onSelect = (v: string) => {},
 		onSelectUser = (_u: { id: string; username: string }) => {}
 	}: {
 		value?: string;
 		placeholder?: string;
+		id?: string;
 		onSelect?: (v: string) => void;
 		onSelectUser?: (u: { id: string; username: string }) => void;
 	} = $props();
@@ -78,6 +80,7 @@
 
 <div class="relative">
 	<input
+		{id}
 		type="text"
 		{value}
 		{placeholder}
