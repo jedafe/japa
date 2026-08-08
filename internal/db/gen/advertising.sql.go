@@ -132,24 +132,24 @@ func (q *Queries) CreateAdCampaign(ctx context.Context, arg CreateAdCampaignPara
 const createAdNetwork = `-- name: CreateAdNetwork :one
 
 INSERT INTO ad_networks (
-    tenant_id, provider, name, client_id, api_key, slot_mapping, config, is_active, priority
+    tenant_id, provider, name, client_id, api_key_encrypted, slot_mapping, config, is_active, priority
 ) VALUES (
     $1, $2, $3, $4, $5,
     $6, $7, $8, $9
 )
-RETURNING id, tenant_id, provider, name, client_id, api_key, slot_mapping, config, is_active, priority, created_at, updated_at
+RETURNING id, tenant_id, provider, name, client_id, api_key_encrypted, slot_mapping, config, is_active, priority, created_at, updated_at
 `
 
 type CreateAdNetworkParams struct {
-	TenantID    pgtype.UUID `json:"tenant_id"`
-	Provider    string      `json:"provider"`
-	Name        string      `json:"name"`
-	ClientID    *string     `json:"client_id"`
-	ApiKey      *string     `json:"api_key"`
-	SlotMapping []byte      `json:"slot_mapping"`
-	Config      []byte      `json:"config"`
-	IsActive    bool        `json:"is_active"`
-	Priority    int32       `json:"priority"`
+	TenantID        pgtype.UUID `json:"tenant_id"`
+	Provider        string      `json:"provider"`
+	Name            string      `json:"name"`
+	ClientID        *string     `json:"client_id"`
+	ApiKeyEncrypted *string     `json:"api_key_encrypted"`
+	SlotMapping     []byte      `json:"slot_mapping"`
+	Config          []byte      `json:"config"`
+	IsActive        bool        `json:"is_active"`
+	Priority        int32       `json:"priority"`
 }
 
 // =====================
@@ -161,7 +161,7 @@ func (q *Queries) CreateAdNetwork(ctx context.Context, arg CreateAdNetworkParams
 		arg.Provider,
 		arg.Name,
 		arg.ClientID,
-		arg.ApiKey,
+		arg.ApiKeyEncrypted,
 		arg.SlotMapping,
 		arg.Config,
 		arg.IsActive,
@@ -174,7 +174,7 @@ func (q *Queries) CreateAdNetwork(ctx context.Context, arg CreateAdNetworkParams
 		&i.Provider,
 		&i.Name,
 		&i.ClientID,
-		&i.ApiKey,
+		&i.ApiKeyEncrypted,
 		&i.SlotMapping,
 		&i.Config,
 		&i.IsActive,
@@ -497,7 +497,7 @@ func (q *Queries) GetAdCampaignByID(ctx context.Context, arg GetAdCampaignByIDPa
 }
 
 const getAdNetworkByID = `-- name: GetAdNetworkByID :one
-SELECT id, tenant_id, provider, name, client_id, api_key, slot_mapping, config, is_active, priority, created_at, updated_at FROM ad_networks WHERE id = $1 AND tenant_id = $2
+SELECT id, tenant_id, provider, name, client_id, api_key_encrypted, slot_mapping, config, is_active, priority, created_at, updated_at FROM ad_networks WHERE id = $1 AND tenant_id = $2
 `
 
 type GetAdNetworkByIDParams struct {
@@ -514,7 +514,7 @@ func (q *Queries) GetAdNetworkByID(ctx context.Context, arg GetAdNetworkByIDPara
 		&i.Provider,
 		&i.Name,
 		&i.ClientID,
-		&i.ApiKey,
+		&i.ApiKeyEncrypted,
 		&i.SlotMapping,
 		&i.Config,
 		&i.IsActive,
@@ -526,7 +526,7 @@ func (q *Queries) GetAdNetworkByID(ctx context.Context, arg GetAdNetworkByIDPara
 }
 
 const getAdNetworkByProvider = `-- name: GetAdNetworkByProvider :one
-SELECT id, tenant_id, provider, name, client_id, api_key, slot_mapping, config, is_active, priority, created_at, updated_at FROM ad_networks WHERE tenant_id = $1 AND provider = $2
+SELECT id, tenant_id, provider, name, client_id, api_key_encrypted, slot_mapping, config, is_active, priority, created_at, updated_at FROM ad_networks WHERE tenant_id = $1 AND provider = $2
 `
 
 type GetAdNetworkByProviderParams struct {
@@ -543,7 +543,7 @@ func (q *Queries) GetAdNetworkByProvider(ctx context.Context, arg GetAdNetworkBy
 		&i.Provider,
 		&i.Name,
 		&i.ClientID,
-		&i.ApiKey,
+		&i.ApiKeyEncrypted,
 		&i.SlotMapping,
 		&i.Config,
 		&i.IsActive,
@@ -729,7 +729,7 @@ func (q *Queries) InsertAdEvent(ctx context.Context, arg InsertAdEventParams) (A
 }
 
 const listActiveAdNetworks = `-- name: ListActiveAdNetworks :many
-SELECT id, tenant_id, provider, name, client_id, api_key, slot_mapping, config, is_active, priority, created_at, updated_at FROM ad_networks WHERE tenant_id = $1 AND is_active = true
+SELECT id, tenant_id, provider, name, client_id, api_key_encrypted, slot_mapping, config, is_active, priority, created_at, updated_at FROM ad_networks WHERE tenant_id = $1 AND is_active = true
 ORDER BY priority DESC, name
 `
 
@@ -748,7 +748,7 @@ func (q *Queries) ListActiveAdNetworks(ctx context.Context, tenantID pgtype.UUID
 			&i.Provider,
 			&i.Name,
 			&i.ClientID,
-			&i.ApiKey,
+			&i.ApiKeyEncrypted,
 			&i.SlotMapping,
 			&i.Config,
 			&i.IsActive,
@@ -1019,7 +1019,7 @@ func (q *Queries) ListAdEventsByCampaign(ctx context.Context, arg ListAdEventsBy
 }
 
 const listAdNetworks = `-- name: ListAdNetworks :many
-SELECT id, tenant_id, provider, name, client_id, api_key, slot_mapping, config, is_active, priority, created_at, updated_at FROM ad_networks WHERE tenant_id = $1
+SELECT id, tenant_id, provider, name, client_id, api_key_encrypted, slot_mapping, config, is_active, priority, created_at, updated_at FROM ad_networks WHERE tenant_id = $1
 ORDER BY priority DESC, name LIMIT $3 OFFSET $2
 `
 
@@ -1044,7 +1044,7 @@ func (q *Queries) ListAdNetworks(ctx context.Context, arg ListAdNetworksParams) 
 			&i.Provider,
 			&i.Name,
 			&i.ClientID,
-			&i.ApiKey,
+			&i.ApiKeyEncrypted,
 			&i.SlotMapping,
 			&i.Config,
 			&i.IsActive,
@@ -1313,28 +1313,28 @@ func (q *Queries) UpdateAdCampaignStatus(ctx context.Context, arg UpdateAdCampai
 
 const updateAdNetwork = `-- name: UpdateAdNetwork :one
 UPDATE ad_networks
-SET name = $1, client_id = $2, api_key = $3,
+SET name = $1, client_id = $2, api_key_encrypted = $3,
     slot_mapping = $4, config = $5, is_active = $6, priority = $7
-WHERE id = $8 AND tenant_id = $9 RETURNING id, tenant_id, provider, name, client_id, api_key, slot_mapping, config, is_active, priority, created_at, updated_at
+WHERE id = $8 AND tenant_id = $9 RETURNING id, tenant_id, provider, name, client_id, api_key_encrypted, slot_mapping, config, is_active, priority, created_at, updated_at
 `
 
 type UpdateAdNetworkParams struct {
-	Name        string      `json:"name"`
-	ClientID    *string     `json:"client_id"`
-	ApiKey      *string     `json:"api_key"`
-	SlotMapping []byte      `json:"slot_mapping"`
-	Config      []byte      `json:"config"`
-	IsActive    bool        `json:"is_active"`
-	Priority    int32       `json:"priority"`
-	ID          pgtype.UUID `json:"id"`
-	TenantID    pgtype.UUID `json:"tenant_id"`
+	Name            string      `json:"name"`
+	ClientID        *string     `json:"client_id"`
+	ApiKeyEncrypted *string     `json:"api_key_encrypted"`
+	SlotMapping     []byte      `json:"slot_mapping"`
+	Config          []byte      `json:"config"`
+	IsActive        bool        `json:"is_active"`
+	Priority        int32       `json:"priority"`
+	ID              pgtype.UUID `json:"id"`
+	TenantID        pgtype.UUID `json:"tenant_id"`
 }
 
 func (q *Queries) UpdateAdNetwork(ctx context.Context, arg UpdateAdNetworkParams) (AdNetwork, error) {
 	row := q.db.QueryRow(ctx, updateAdNetwork,
 		arg.Name,
 		arg.ClientID,
-		arg.ApiKey,
+		arg.ApiKeyEncrypted,
 		arg.SlotMapping,
 		arg.Config,
 		arg.IsActive,
@@ -1349,7 +1349,7 @@ func (q *Queries) UpdateAdNetwork(ctx context.Context, arg UpdateAdNetworkParams
 		&i.Provider,
 		&i.Name,
 		&i.ClientID,
-		&i.ApiKey,
+		&i.ApiKeyEncrypted,
 		&i.SlotMapping,
 		&i.Config,
 		&i.IsActive,

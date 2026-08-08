@@ -43,9 +43,9 @@ export async function fetchEntityCollection(
     // thread → /forum (forum threads), NOT /explore (mixed feed). The forum
     // endpoint lists threads by created_at desc; sort/geo params are ignored.
     thread: `/forum${qs(query.filters, { page_size: limit })}`,
-    // space/organization → /spaces (the /trending/spaces endpoint is cataloged
-    // but currently returns null — a backend stub bug; /spaces returns real
-    // destination data so the "Popular destinations" heading is not empty).
+    // space/organization → /spaces (returns real destination data with
+    // geo-filtering support; /trending/spaces is also available but returns
+    // trending snapshots which may be empty before the first compute cycle).
     space: `/spaces${qs(query.filters, { page_size: limit, ...geoParam })}`,
     organization: `/spaces${qs(query.filters, { page_size: limit, ...geoParam })}`,
     university: `/universities${qs(query.filters, { page_size: limit, ...sortParam, ...geoParam })}`,
@@ -62,10 +62,14 @@ export async function fetchEntityCollection(
 
   try {
     const res = await ctx.fetch(`${ctx.apiBase}/api/v1${path}`, { headers });
-    if (!res.ok) return [];
+    if (!res.ok) {
+      console.error(`[entityFetchers] fetchEntityCollection(${type}) ${res.status} ${res.statusText} — ${path}`);
+      return [];
+    }
     const json = await res.json();
     return (json.data ?? json) as unknown[];
-  } catch {
+  } catch (err) {
+    console.error(`[entityFetchers] fetchEntityCollection(${type}) network error — ${path}`, err);
     return [];
   }
 }
@@ -96,10 +100,14 @@ export async function fetchEntityFeature(
 
   try {
     const res = await ctx.fetch(`${ctx.apiBase}/api/v1${path}`, { headers });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      console.error(`[entityFetchers] fetchEntityFeature(${type}) ${res.status} ${res.statusText} — ${path}`);
+      return null;
+    }
     const json = await res.json();
     return (json.data ?? json) as unknown;
-  } catch {
+  } catch (err) {
+    console.error(`[entityFetchers] fetchEntityFeature(${type}) network error — ${path}`, err);
     return null;
   }
 }
@@ -118,10 +126,14 @@ export async function fetchRemittanceRates(
   if (ctx.host) { headers.host = ctx.host; headers['x-forwarded-host'] = ctx.host; }
   try {
     const res = await ctx.fetch(`${ctx.apiBase}/api/v1/remittance/rates?${params}`, { headers });
-    if (!res.ok) return [];
+    if (!res.ok) {
+      console.error(`[entityFetchers] fetchRemittanceRates ${res.status} ${res.statusText}`);
+      return [];
+    }
     const json = await res.json();
     return (json.data ?? json) as RemittanceRate[];
-  } catch {
+  } catch (err) {
+    console.error('[entityFetchers] fetchRemittanceRates network error', err);
     return [];
   }
 }

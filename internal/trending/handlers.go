@@ -240,6 +240,11 @@ func (h *Handlers) GetTrendingContent(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
+		// Ensure non-nil so JSON encodes [] not null (BUG: trending/spaces
+		// returned null when no snapshots existed).
+		if rows == nil {
+			rows = []gen.GetTrendingContentRow{}
+		}
 		return rows, nil
 	})
 	if err != nil {
@@ -268,7 +273,14 @@ func (h *Handlers) GetTrendingTags(w http.ResponseWriter, r *http.Request) {
 	cacheKey := fmt.Sprintf("jc:trending:tags:%s:%s", tenantStr, geoCode)
 
 	data, err := vkcache.GetOrComputeNative(r.Context(), h.cache, cacheKey, trendingCacheTTL, func(ctx context.Context) ([]gen.GetTrendingTagsRow, error) {
-		return h.Store.GetTrendingTags(ctx, tenantID, window, geoCode, limit)
+		rows, err := h.Store.GetTrendingTags(ctx, tenantID, window, geoCode, limit)
+		if err != nil {
+			return nil, err
+		}
+		if rows == nil {
+			rows = []gen.GetTrendingTagsRow{}
+		}
+		return rows, nil
 	})
 	if err != nil {
 		handleServiceError(w, err)
@@ -335,6 +347,11 @@ func (h *Handlers) GetTrendingSpaces(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
+		// Ensure non-nil so JSON encodes [] not null (BUG: trending/spaces
+		// returned null when no space snapshots existed).
+		if rows == nil {
+			rows = []gen.GetTrendingSpacesRow{}
+		}
 		return rows, nil
 	})
 	if err != nil {
@@ -360,6 +377,9 @@ func (h *Handlers) GetTrendingUsers(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		handleServiceError(w, err)
 		return
+	}
+	if data == nil {
+		data = []gen.GetTrendingUsersRow{}
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": data})

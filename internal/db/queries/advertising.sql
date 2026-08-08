@@ -252,9 +252,9 @@ WHERE id = @id AND tenant_id = @tenant_id;
 
 -- name: CreateAdNetwork :one
 INSERT INTO ad_networks (
-    tenant_id, provider, name, client_id, api_key, slot_mapping, config, is_active, priority
+    tenant_id, provider, name, client_id, api_key_encrypted, slot_mapping, config, is_active, priority
 ) VALUES (
-    @tenant_id, @provider, @name, sqlc.narg(client_id), sqlc.narg(api_key),
+    @tenant_id, @provider, @name, sqlc.narg(client_id), sqlc.narg(api_key_encrypted),
     @slot_mapping, @config, @is_active, @priority
 )
 RETURNING *;
@@ -275,7 +275,7 @@ ORDER BY priority DESC, name;
 
 -- name: UpdateAdNetwork :one
 UPDATE ad_networks
-SET name = @name, client_id = sqlc.narg(client_id), api_key = sqlc.narg(api_key),
+SET name = @name, client_id = sqlc.narg(client_id), api_key_encrypted = sqlc.narg(api_key_encrypted),
     slot_mapping = @slot_mapping, config = @config, is_active = @is_active, priority = @priority
 WHERE id = @id AND tenant_id = @tenant_id RETURNING *;
 

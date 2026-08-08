@@ -3,7 +3,7 @@
 	import { t } from '$lib/i18n';
 	import { FileText } from 'lucide-svelte';
 	import { EmptyState } from '$lib/components/ui';
-	import LandingPage from '$lib/components/pagebuilder/LandingPage.svelte';
+	import { LandingRenderer, normalizeLegacyBlocks, type Block } from '@japaconnect/landing-blocks';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -31,6 +31,16 @@
 	);
 
 	const hasBlocks = $derived((pageData.blocks ?? []).length > 0);
+
+	// Normalize legacy Page Builder blocks into the new Block[] format for
+	// LandingRenderer. This consolidates rendering onto a single path
+	// (LandingRenderer) instead of maintaining a separate legacy
+	// BlockRenderer. The compat layer maps legacy type names (rich_text →
+	// content, dynamic_listing → entity_collection, etc.) and migrates
+	// prop shapes.
+	const normalizedBlocks = $derived(
+		hasBlocks ? normalizeLegacyBlocks(pageData.blocks ?? []) as Block[] : []
+	);
 </script>
 
 <svelte:head>
@@ -51,5 +61,5 @@
 		<EmptyState icon={FileText} title={pageData.title} />
 	</div>
 {:else}
-	<LandingPage page={pageData} />
+	<LandingRenderer blocks={normalizedBlocks} />
 {/if}
