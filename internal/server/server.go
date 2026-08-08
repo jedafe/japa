@@ -258,8 +258,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		SecureCookies:   cfg.IsProduction(),
 	}
 
-	// Feature flag checker
-	featureChecker := features.New(database)
+	// Feature flag checker — uses Valkey L2 cache for cross-instance
+	// consistency (Section 42: jc:flags:{tenant_id}:{flag_key}, TTL 5min).
+	featureChecker := features.New(database, vkClient.Redis())
 
 	// RBAC resolver and store for permission checks at the router level.
 	// The resolver uses Valkey as L2 cache (shared across server instances)
@@ -1296,7 +1297,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.Get("/feature-flags", featureHandlers.HandleGetFeatures)
 
 			// Feature flags admin toggle (requires auth + RBAC permission)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "features.manage")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.feature_flags.manage")).
 				Patch("/admin/feature-flags/{flag_name}", featureHandlers.HandleSetFeatureFlag)
 
 			// Admin Reviews list — all reviews for moderation (gated by reviews.moderate).
@@ -2409,9 +2410,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Public ad serving and event tracking (catalog: /ads/serve, /ads/events —
 			// §8: reachable by guests, OptionalAuth so a signed-in user's frequency
 			// cap still applies; usergroup targeting itself is deferred to P5).
-			r.With(auth.OptionalAuth(kr, vkClient.Redis())).
+			// Gated by feature.ads flag (default: false).
+			r.With(features.Gate(featureChecker, "feature.ads"), auth.OptionalAuth(kr, vkClient.Redis())).
 				Get("/ads/serve", adHandlers.RenderSlot)
-			r.With(auth.OptionalAuth(kr, vkClient.Redis())).
+			r.With(features.Gate(featureChecker, "feature.ads"), auth.OptionalAuth(kr, vkClient.Redis())).
 				Post("/ads/events", adHandlers.IngestEvents)
 			// Slot types (admin)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ad.slot.manage")).
@@ -2845,13 +2847,14 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Get("/admin/search/analytics", searchHandlers.SearchAdminAnalytics)
 
 			// AI Core routes (Section 20 — AI Core)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ai.generate")).
+			// AI content generation gated by feature.ai_content_gen flag (default: false).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.ai_content_gen"), rbac.RequirePermission(rbacResolver, "ai.generate")).
 				Post("/ai/generate", aiHandlers.HandleGenerate)
 
-			// JapaBot chat — gated by feature.ai_chat flag + ai.context.use RBAC
+			// JapaBot chat — gated by feature.japabot flag + ai.context.use RBAC
 			// (Section 20: "Auth required + ai.context.use permission"). Per §19,
 			// ai.context.* nodes default OFF including for super_admin.
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.ai_chat"), rbac.RequirePermission(rbacResolver, "ai.context.use"), mw.RateLimit(vkClient.Redis(), "moderate")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.japabot"), rbac.RequirePermission(rbacResolver, "ai.context.use"), mw.RateLimit(vkClient.Redis(), "moderate")).
 				Post("/ai/chat", aiHandlers.HandleChat)
 
 			// Content AI Assist endpoints (catalog: /ai/assist/*), gated by
@@ -3171,37 +3174,40 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Post("/admin/docs/ai-generate", aiHandlers.HandleGenerate)
 
 			// Learning Platform routes (Section 36)
-			// Public: view published tracks (catalog: /learn/*)
-			r.Get("/learn/tracks", learningHandlers.ListPublishedTracks)
-			r.Get("/learn/tracks/{slug}", learningHandlers.GetTrackDetail)
-			r.Get("/learn/tracks/{trackSlug}/modules/{moduleSlug}/lessons/{lessonSlug}", learningHandlers.GetLesson)
+			// Gated by feature.learning flag (default: false).
+			r.With(features.Gate(featureChecker, "feature.learning")).Group(func(r chi.Router) {
+				// Public: view published tracks (catalog: /learn/*)
+				r.Get("/learn/tracks", learningHandlers.ListPublishedTracks)
+				r.Get("/learn/tracks/{slug}", learningHandlers.GetTrackDetail)
+				r.Get("/learn/tracks/{trackSlug}/modules/{moduleSlug}/lessons/{lessonSlug}", learningHandlers.GetLesson)
 
-			// Authenticated: enrollment, progress and certificates
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/learn/tracks/{id}/enroll", learningHandlers.EnrollInTrack)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/learn/lessons/{id}", learningHandlers.GetLessonByID)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/learn/lessons/{id}/progress", learningHandlers.UpdateProgress)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/learn/lessons/{id}/complete", learningHandlers.CompleteLesson)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/learn/progress/{trackId}", learningHandlers.GetTrackProgress)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/certificates", learningHandlers.GetMyCertificates)
-			// /me/enrollments: any authenticated user can list their own
-			// enrollments — the handler filters by user.UserID, so no
-			// university-specific RBAC node is needed. The previous
-			// university.enrollment.view_own gate caused 403 for regular
-			// Learn users, breaking the track-detail enrollment state fetch.
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/enrollments", learningHandlers.ListMyEnrollments)
+				// Authenticated: enrollment, progress and certificates
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/learn/tracks/{id}/enroll", learningHandlers.EnrollInTrack)
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/learn/lessons/{id}", learningHandlers.GetLessonByID)
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/learn/lessons/{id}/progress", learningHandlers.UpdateProgress)
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/learn/lessons/{id}/complete", learningHandlers.CompleteLesson)
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/learn/progress/{trackId}", learningHandlers.GetTrackProgress)
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/certificates", learningHandlers.GetMyCertificates)
+				// /me/enrollments: any authenticated user can list their own
+				// enrollments — the handler filters by user.UserID, so no
+				// university-specific RBAC node is needed. The previous
+				// university.enrollment.view_own gate caused 403 for regular
+				// Learn users, breaking the track-detail enrollment state fetch.
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/enrollments", learningHandlers.ListMyEnrollments)
 
-			// Quizzes
-			r.Get("/learn/quizzes/{id}", learningHandlers.GetQuiz)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/learn/quizzes/{id}/submit", learningHandlers.SubmitQuiz)
+				// Quizzes
+				r.Get("/learn/quizzes/{id}", learningHandlers.GetQuiz)
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/learn/quizzes/{id}/submit", learningHandlers.SubmitQuiz)
 
-			// Certificates (public detail + download — catalog: /certificates/:id)
-			r.Get("/certificates/{id}", learningHandlers.GetCertificateDetail)
-			r.Get("/certificates/{id}/download", learningHandlers.DownloadCertificate)
+				// Certificates (public detail + download — catalog: /certificates/:id)
+				r.Get("/certificates/{id}", learningHandlers.GetCertificateDetail)
+				r.Get("/certificates/{id}/download", learningHandlers.DownloadCertificate)
 
-			// Track reviews (catalog: POST|GET /learn/tracks/{id}/reviews)
-			// AUDIT-FRESH-DEAD-NODES: wired university.review.create RBAC gate.
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "university.review.create")).Post("/learn/tracks/{id}/reviews", learningHandlers.CreateTrackReview)
-			r.Get("/learn/tracks/{id}/reviews", learningHandlers.ListTrackReviews)
+				// Track reviews (catalog: POST|GET /learn/tracks/{id}/reviews)
+				// AUDIT-FRESH-DEAD-NODES: wired university.review.create RBAC gate.
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "university.review.create")).Post("/learn/tracks/{id}/reviews", learningHandlers.CreateTrackReview)
+				r.Get("/learn/tracks/{id}/reviews", learningHandlers.ListTrackReviews)
+			})
 
 			// Japa University creator-economy routes (ADR-063 — upgrade to Learn).
 			// Instructor lifecycle
@@ -4192,8 +4198,13 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 			// Infrastructure Health
 			r.Get("/health", controlHandlers.HealthCheck)
-			r.Get("/health/db", controlHandlers.DBHealthCheck)
-			r.Post("/health/db/vacuum", controlHandlers.DBVacuum)
+			// Ref: japaconnect-engineering/sections/21-control-panel.md (Database Health Tooling)
+			// DB health and vacuum routes require dedicated permission nodes separate
+			// from control.panel.access so access can be delegated narrowly.
+			r.With(rbac.RequirePermission(rbacResolver, "platform.db.health_view")).
+				Get("/health/db", controlHandlers.DBHealthCheck)
+			r.With(rbac.RequirePermission(rbacResolver, "platform.db.vacuum_trigger")).
+				Post("/health/db/vacuum", controlHandlers.DBVacuum)
 
 			// Queue Monitor
 			r.Get("/queue/stats", controlHandlers.QueueStats)

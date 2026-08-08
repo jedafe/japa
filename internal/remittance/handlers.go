@@ -38,6 +38,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/config"
+	"github.com/jedafe/japa/internal/crypto"
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/tenant"
 )
@@ -515,7 +516,13 @@ func (h *Handlers) HandleAdminCreateProvider(w http.ResponseWriter, r *http.Requ
 
 	var apiConfig []byte
 	if len(body.APIConfig) > 0 {
-		apiConfig = body.APIConfig
+		enc, err := crypto.EncryptJSON(body.APIConfig)
+		if err != nil {
+			slog.Error("remittance: failed to encrypt api_config", "error", err)
+			writeError(w, http.StatusInternalServerError, "encryption_failed", "Failed to encrypt provider credentials")
+			return
+		}
+		apiConfig = enc
 	}
 
 	provider, err := h.service.CreateProvider(r.Context(), gen.CreateRemittanceProviderParams{
@@ -576,7 +583,13 @@ func (h *Handlers) HandleAdminUpdateProvider(w http.ResponseWriter, r *http.Requ
 
 	var apiConfig []byte
 	if len(body.APIConfig) > 0 {
-		apiConfig = body.APIConfig
+		enc, err := crypto.EncryptJSON(body.APIConfig)
+		if err != nil {
+			slog.Error("remittance: failed to encrypt api_config", "error", err)
+			writeError(w, http.StatusInternalServerError, "encryption_failed", "Failed to encrypt provider credentials")
+			return
+		}
+		apiConfig = enc
 	}
 
 	provider, err := h.service.UpdateProvider(r.Context(), gen.UpdateRemittanceProviderParams{

@@ -988,6 +988,18 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 			return fmt.Errorf("nullifying search_analytics user_id: %w", err)
 		}
 
+		// Nullify feature_flags.updated_by references. The feature_flags table
+		// has updated_by uuid REFERENCES users(id) with no ON DELETE clause
+		// (defaults to NO ACTION). Without this nullification, the final
+		// HardDeleteUser DELETE fails with a FK violation for any admin who
+		// has toggled a feature flag. Ref: ADR-057; Section 42.
+		if _, err := s.db.Writer.Exec(ctx, `
+			UPDATE feature_flags SET updated_by = NULL
+			WHERE updated_by = $1
+		`, userID); err != nil {
+			return fmt.Errorf("nullifying feature_flags updated_by: %w", err)
+		}
+
 		// BUG-011: trending_snapshots with entity_type='user' reference the
 		// user via entity_id (no FK — polymorphic). Delete them so the user's
 		// trending presence does not survive erasure.

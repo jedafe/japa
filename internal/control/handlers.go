@@ -763,7 +763,7 @@ func (h *Handlers) SetFeatureFlag(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to update feature flag")
 		return
 	}
-	h.FeatureChecker.ClearCache()
+	h.FeatureChecker.ClearCacheForTenant(tenantID.String())
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"key": flagName, "enabled": input.Enabled}})
 }
 
@@ -894,13 +894,15 @@ func (h *Handlers) DBHealthCheck(w http.ResponseWriter, r *http.Request) {
 			(SELECT count(*) FROM pg_indexes WHERE schemaname = 'public')::int
 	`).Scan(&tableCount, &indexCount)
 
-	// Table details.
+	// Table details — includes dead_tuple_ratio from pg_stat_user_tables
+	// (Ref: japaconnect-engineering/sections/21-control-panel.md — Database Health Tooling).
 	type tableInfo struct {
-		Name       string  `json:"name"`
-		RowCount   int64   `json:"row_count"`
-		SizeBytes  int64   `json:"size_bytes"`
-		IndexCount int     `json:"index_count"`
-		LastVacuum *string `json:"last_vacuum"`
+		Name            string  `json:"name"`
+		RowCount        int64   `json:"row_count"`
+		SizeBytes       int64   `json:"size_bytes"`
+		IndexCount      int     `json:"index_count"`
+		LastVacuum      *string `json:"last_vacuum"`
+		DeadTupleRatio  float64 `json:"dead_tuple_ratio"`
 	}
 	var tables []tableInfo
 	rows, err := h.DB.Reader.Query(ctx, `
@@ -909,7 +911,12 @@ func (h *Handlers) DBHealthCheck(w http.ResponseWriter, r *http.Request) {
 			COALESCE(c.reltuples::bigint, 0),
 			pg_table_size(c.oid),
 			(SELECT count(*) FROM pg_indexes WHERE tablename = t.tablename AND schemaname = 'public')::int,
-			(SELECT max(last_vacuum)::text FROM pg_stat_user_tables WHERE relname = t.tablename)
+			(SELECT max(last_vacuum)::text FROM pg_stat_user_tables WHERE relname = t.tablename),
+			COALESCE(
+				(SELECT n_dead_tup::float / NULLIF(n_live_tup + n_dead_tup, 0)
+				 FROM pg_stat_user_tables WHERE relname = t.tablename),
+				0
+			)
 		FROM pg_tables t
 		LEFT JOIN pg_class c ON c.relname = t.tablename
 		WHERE t.schemaname = 'public'
@@ -919,13 +926,64 @@ func (h *Handlers) DBHealthCheck(w http.ResponseWriter, r *http.Request) {
 		defer rows.Close()
 		for rows.Next() {
 			var ti tableInfo
-			if err := rows.Scan(&ti.Name, &ti.RowCount, &ti.SizeBytes, &ti.IndexCount, &ti.LastVacuum); err == nil {
+			if err := rows.Scan(&ti.Name, &ti.RowCount, &ti.SizeBytes, &ti.IndexCount, &ti.LastVacuum, &ti.DeadTupleRatio); err == nil {
 				tables = append(tables, ti)
 			}
 		}
 	}
 	if tables == nil {
 		tables = []tableInfo{}
+	}
+
+	// Table bloat — top 10 tables by dead tuple ratio (heuristic proxy for
+	// bloat without requiring the pgstattuple extension).
+	// Ref: japaconnect-engineering/sections/21-control-panel.md
+	type bloatInfo struct {
+		Name           string  `json:"name"`
+		DeadTupleRatio float64 `json:"dead_tuple_ratio"`
+		SizeBytes      int64   `json:"size_bytes"`
+	}
+	var tableBloat []bloatInfo
+	for _, t := range tables {
+		if t.DeadTupleRatio > 0 {
+			tableBloat = append(tableBloat, bloatInfo{
+				Name:           t.Name,
+				DeadTupleRatio: t.DeadTupleRatio,
+				SizeBytes:      t.SizeBytes,
+			})
+		}
+	}
+	// Sort by dead_tuple_ratio descending, take top 10.
+	for i := 0; i < len(tableBloat); i++ {
+		for j := i + 1; j < len(tableBloat); j++ {
+			if tableBloat[j].DeadTupleRatio > tableBloat[i].DeadTupleRatio {
+				tableBloat[i], tableBloat[j] = tableBloat[j], tableBloat[i]
+			}
+		}
+	}
+	if len(tableBloat) > 10 {
+		tableBloat = tableBloat[:10]
+	}
+	if tableBloat == nil {
+		tableBloat = []bloatInfo{}
+	}
+
+	// Dead tuple ratio — tables with dead_tuple_ratio > 5%.
+	type deadTupleRatioInfo struct {
+		Name           string  `json:"name"`
+		DeadTupleRatio float64 `json:"dead_tuple_ratio"`
+	}
+	var deadTupleRatios []deadTupleRatioInfo
+	for _, t := range tables {
+		if t.DeadTupleRatio > 0.05 {
+			deadTupleRatios = append(deadTupleRatios, deadTupleRatioInfo{
+				Name:           t.Name,
+				DeadTupleRatio: t.DeadTupleRatio,
+			})
+		}
+	}
+	if deadTupleRatios == nil {
+		deadTupleRatios = []deadTupleRatioInfo{}
 	}
 
 	// Unused indexes.
@@ -1024,22 +1082,33 @@ func (h *Handlers) DBHealthCheck(w http.ResponseWriter, r *http.Request) {
 		slowQueries = []slowQuery{}
 	}
 
+	// Average query time from pg_stat_statements (if the extension is enabled).
+	// Falls back to 0 when the extension is not installed.
+	var avgQueryTimeMs float64
+	_ = h.DB.Reader.QueryRow(ctx, `
+		SELECT COALESCE(avg(mean_exec_time), 0)
+		FROM pg_stat_statements
+		WHERE query NOT LIKE '%pg_stat_statements%'
+	`).Scan(&avgQueryTimeMs)
+
 	writeJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
-			"connected":        true,
-			"version":          version,
-			"latency_ms":       latency,
-			"size_bytes":       sizeBytes,
-			"table_count":      tableCount,
-			"index_count":      indexCount,
-			"avg_query_time_ms": 0,
-			"tables":           tables,
-			"slow_queries":     slowQueries,
-			"indexes_unused":   indexesUnused,
+			"connected":         true,
+			"version":           version,
+			"latency_ms":        latency,
+			"size_bytes":        sizeBytes,
+			"table_count":       tableCount,
+			"index_count":       indexCount,
+			"avg_query_time_ms": avgQueryTimeMs,
+			"tables":            tables,
+			"table_bloat":       tableBloat,
+			"dead_tuple_ratio":  deadTupleRatios,
+			"slow_queries":      slowQueries,
+			"indexes_unused":    indexesUnused,
 			"connection_pool": map[string]any{
-				"active":  activeConns,
-				"idle":    idleConns,
-				"max":     maxConns,
+				"active": activeConns,
+				"idle":   idleConns,
+				"max":    maxConns,
 			},
 			"replication": repl,
 		},
@@ -1047,9 +1116,24 @@ func (h *Handlers) DBHealthCheck(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handlers) DBVacuum(w http.ResponseWriter, r *http.Request) {
+	// Parse optional JSON body: { table_name?: string, full?: bool }
+	// When omitted, the entire database is vacuumed (table_name="").
+	var payload struct {
+		TableName string `json:"table_name"`
+		Full      bool   `json:"full"`
+	}
+	if r.Body != nil {
+		_ = json.NewDecoder(r.Body).Decode(&payload)
+	}
+
 	// Enqueue async vacuum task via Asynq for background processing.
 	if h.Client != nil {
-		task := asynq.NewTask(worker.TypeDBManualVacuum, nil)
+		payloadBytes, err := json.Marshal(payload)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "internal_error", "Failed to encode vacuum payload")
+			return
+		}
+		task := asynq.NewTask(worker.TypeDBManualVacuum, payloadBytes)
 		if _, err := h.Client.Enqueue(task, asynq.Queue(worker.QueueForTask(worker.TypeDBManualVacuum))); err != nil {
 			slog.Error("control: failed to enqueue db vacuum task", "error", err)
 			writeError(w, http.StatusInternalServerError, "internal_error", "Failed to enqueue vacuum task")
@@ -1060,8 +1144,7 @@ func (h *Handlers) DBVacuum(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Fallback: run inline if no Asynq client.
-	_, err := h.DB.Writer.Exec(r.Context(), `VACUUM`)
-	if err != nil {
+	if err := h.DB.Vacuum(r.Context(), payload.TableName, payload.Full); err != nil {
 		slog.Error("control: db vacuum", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to run VACUUM")
 		return

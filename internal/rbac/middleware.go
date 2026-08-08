@@ -55,9 +55,16 @@ func RequirePermission(resolver *RBAC, permKey string) func(http.Handler) http.H
 	}
 }
 
-// RequirePermissionWithInvalidation is middleware that checks permission and
-// invalidates the user's cache after the handler completes. Use this on
+// RequirePermissionWithInvalidation is middleware that checks permission for
 // routes that modify group/role assignments (grant, revoke, moderate).
+//
+// Note: This middleware does NOT invalidate the requesting user's cache —
+// the requesting user's permissions do not change when they assign a
+// moderator or modify a role/group. The handler that processes the mutation
+// is responsible for invalidating the TARGET user's cache (e.g., the spaces
+// handler calls invalidateTargetPermCache after a moderator assignment).
+// This middleware is kept as a semantic marker for mutation routes; its
+// permission-check behavior is identical to RequirePermission.
 func RequirePermissionWithInvalidation(resolver *RBAC, permKey string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -74,7 +81,6 @@ func RequirePermissionWithInvalidation(resolver *RBAC, permKey string) func(http
 			if resolver.IsSuperAdmin(r.Context(), user.UserID, user.TenantID) {
 				ctx := context.WithValue(r.Context(), ResolverKey, resolver)
 				next.ServeHTTP(w, r.WithContext(ctx))
-				resolver.InvalidateUserCache(r.Context(), user.UserID)
 
 				return
 			}
@@ -89,10 +95,6 @@ func RequirePermissionWithInvalidation(resolver *RBAC, permKey string) func(http
 
 			ctx := context.WithValue(r.Context(), ResolverKey, resolver)
 			next.ServeHTTP(w, r.WithContext(ctx))
-
-			// After the handler completes, invalidate the requesting user's
-			// cache so subsequent permission checks reflect the mutation.
-			resolver.InvalidateUserCache(r.Context(), user.UserID)
 		})
 	}
 }

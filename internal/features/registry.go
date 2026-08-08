@@ -38,6 +38,7 @@ var Registry = []Feature{
 	{Key: "feature.wallet", Label: "Wallet & Credits", Default: false},
 	{Key: "feature.ads", Label: "Advertising", Default: false},
 	{Key: "feature.referral", Label: "Referral Program", Default: false},
+	{Key: "feature.affiliate_program", Label: "Affiliate Program", Default: false},
 	// Tools
 	{Key: "feature.tickets", Label: "Ticket System", Default: true},
 	{Key: "feature.newsletter", Label: "Newsletter", Default: false},

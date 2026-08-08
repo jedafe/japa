@@ -28,6 +28,7 @@ import (
 	"github.com/valkey-io/valkey-go/valkeycompat"
 
 	"github.com/jedafe/japa/internal/config"
+	"github.com/jedafe/japa/internal/crypto"
 	"github.com/jedafe/japa/internal/db/gen"
 )
 
@@ -114,12 +115,13 @@ type SearchResponse struct {
 }
 
 // ProviderInfo is the JSON-serialisable representation of a travel provider.
+// APIConfig is intentionally excluded — encrypted credentials must not be
+// returned to the API caller (§5.4 Secrets & Config, ADR-085).
 type ProviderInfo struct {
 	ID              string          `json:"id"`
 	Name            string          `json:"name"`
 	Slug            string          `json:"slug"`
 	ProviderType    string          `json:"provider_type"`
-	APIConfig       json.RawMessage `json:"api_config,omitempty"`
 	AffiliateConfig json.RawMessage `json:"affiliate_config,omitempty"`
 	IsActive        bool            `json:"is_active"`
 	CreatedAt       string          `json:"created_at"`
@@ -518,8 +520,14 @@ func (s *Service) SearchFlights(ctx context.Context, tenantID pgtype.UUID, param
 		return nil, fmt.Errorf("travel: get active flight provider: %w", err)
 	}
 
-	// (3) Call the provider API.
-	results, err := s.api.SearchFlights(ctx, provider.ApiConfig, params)
+	// (3) Decrypt the provider's api_config (ADR-085 encryption at rest).
+	apiCfg, err := decryptAPIConfig(provider)
+	if err != nil {
+		return nil, fmt.Errorf("travel: flight search: %w", err)
+	}
+
+	// (4) Call the provider API.
+	results, err := s.api.SearchFlights(ctx, apiCfg, params)
 	if err != nil {
 		return nil, fmt.Errorf("travel: flight search: %w", err)
 	}
@@ -582,8 +590,14 @@ func (s *Service) SearchHotels(ctx context.Context, tenantID pgtype.UUID, params
 		return nil, fmt.Errorf("travel: get active hotel provider: %w", err)
 	}
 
-	// (3) Call the provider API.
-	results, err := s.api.SearchHotels(ctx, provider.ApiConfig, params)
+	// (3) Decrypt the provider's api_config (ADR-085 encryption at rest).
+	apiCfg, err := decryptAPIConfig(provider)
+	if err != nil {
+		return nil, fmt.Errorf("travel: hotel search: %w", err)
+	}
+
+	// (4) Call the provider API.
+	results, err := s.api.SearchHotels(ctx, apiCfg, params)
 	if err != nil {
 		return nil, fmt.Errorf("travel: hotel search: %w", err)
 	}
@@ -664,12 +678,10 @@ func (s *Service) ListProviders(ctx context.Context, tenantID pgtype.UUID, activ
 }
 
 // providerToInfo maps a gen.TravelProvider to the JSON-serialisable ProviderInfo
-// DTO. IDs are rendered as strings; timestamps as RFC 3339 UTC.
+// DTO. IDs are rendered as strings; timestamps as RFC 3339 UTC. APIConfig is
+// deliberately omitted — encrypted credentials are never returned to the API
+// caller (ADR-085, §5.4).
 func providerToInfo(p gen.TravelProvider) ProviderInfo {
-	var apiCfg json.RawMessage
-	if len(p.ApiConfig) > 0 {
-		apiCfg = json.RawMessage(p.ApiConfig)
-	}
 	var affCfg json.RawMessage
 	if len(p.AffiliateConfig) > 0 {
 		affCfg = json.RawMessage(p.AffiliateConfig)
@@ -683,11 +695,20 @@ func providerToInfo(p gen.TravelProvider) ProviderInfo {
 		Name:            p.Name,
 		Slug:            p.Slug,
 		ProviderType:    p.ProviderType,
-		APIConfig:       apiCfg,
 		AffiliateConfig: affCfg,
 		IsActive:        p.IsActive,
 		CreatedAt:       created,
 	}
+}
+
+// decryptAPIConfig decrypts the encrypted api_config stored on a travel
+// provider, returning the original raw JSON for use by the search API client.
+func decryptAPIConfig(p gen.TravelProvider) (json.RawMessage, error) {
+	decrypted, err := crypto.DecryptJSON(p.ApiConfig)
+	if err != nil {
+		return nil, fmt.Errorf("travel: decrypt api_config: %w", err)
+	}
+	return json.RawMessage(decrypted), nil
 }
 
 

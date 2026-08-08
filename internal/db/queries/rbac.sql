@@ -15,6 +15,14 @@ RETURNING id;
 -- name: DeleteUserGroup :exec
 DELETE FROM user_groups WHERE tenant_id = @tenant_id AND slug = @slug AND is_system = false;
 
+-- name: DeleteUserGroupByID :exec
+DELETE FROM user_groups WHERE id = @id AND is_system = false;
+
+-- name: GetUserGroupByID :one
+SELECT id, tenant_id, name, slug, is_system
+FROM user_groups
+WHERE id = @id;
+
 -- name: AddUserToGroup :exec
 INSERT INTO user_group_memberships (tenant_id, user_id, group_id)
 VALUES (@tenant_id, @user_id, @group_id)
@@ -29,6 +37,22 @@ SELECT id, tenant_id, name, slug, is_system
 FROM user_groups
 WHERE tenant_id = @tenant_id
 ORDER BY name;
+
+-- name: CountGroupMembersByTenant :many
+SELECT ug.id AS group_id, COUNT(ugm.user_id)::int AS member_count
+FROM user_groups ug
+LEFT JOIN user_group_memberships ugm ON ugm.group_id = ug.id
+WHERE ug.tenant_id = @tenant_id
+GROUP BY ug.id;
+
+-- name: ListGroupPermissionsByTenant :many
+SELECT DISTINCT ug.id AS group_id, p.key
+FROM user_groups ug
+JOIN group_roles gr ON gr.group_id = ug.id
+JOIN role_permissions rp ON rp.role_id = gr.role_id
+JOIN permissions p ON rp.permission_id = p.id
+WHERE ug.tenant_id = @tenant_id
+ORDER BY ug.id, p.key;
 
 -- name: ListGroupMembersWithUser :many
 SELECT u.id, u.username, COALESCE(up.display_name, '')
