@@ -62,12 +62,6 @@
 					{ value: 'warn', label: t('settings.log_level_warn', 'Warn') },
 					{ value: 'error', label: t('settings.log_level_error', 'Error') }
 				],
-				'feed.card_style': [
-					{ value: 'reddit', label: t('settings.card_style_reddit', 'Reddit') },
-					{ value: 'compact', label: t('settings.card_style_compact', 'Compact') },
-					{ value: 'grid', label: t('settings.card_style_grid', 'Grid') },
-					{ value: 'magazine', label: t('settings.card_style_magazine', 'Magazine') }
-				],
 				'i18n.default_language': [
 					{ value: 'en', label: t('settings.lang_en', 'English') },
 					{ value: 'fr', label: t('settings.lang_fr', 'Francais') }

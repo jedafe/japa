@@ -116,21 +116,23 @@ func (q *Queries) CreateIPBlock(ctx context.Context, arg CreateIPBlockParams) (I
 
 const createUserBlock = `-- name: CreateUserBlock :exec
 
-INSERT INTO user_blocks (blocker_id, blocked_id)
-VALUES ($1, $2)
+INSERT INTO user_blocks (tenant_id, blocker_id, blocked_id)
+VALUES ($3, $1, $2)
 ON CONFLICT (blocker_id, blocked_id) DO NOTHING
 `
 
 type CreateUserBlockParams struct {
 	BlockerID pgtype.UUID `json:"blocker_id"`
 	BlockedID pgtype.UUID `json:"blocked_id"`
+	TenantID  pgtype.UUID `json:"tenant_id"`
 }
 
 // =====================
 // User Blocks
 // =====================
+// Tenant-scoped per JEOS §9 (BUG-006).
 func (q *Queries) CreateUserBlock(ctx context.Context, arg CreateUserBlockParams) error {
-	_, err := q.db.Exec(ctx, createUserBlock, arg.BlockerID, arg.BlockedID)
+	_, err := q.db.Exec(ctx, createUserBlock, arg.BlockerID, arg.BlockedID, arg.TenantID)
 	return err
 }
 
@@ -166,16 +168,18 @@ func (q *Queries) DeleteIPBlock(ctx context.Context, arg DeleteIPBlockParams) er
 
 const deleteUserBlock = `-- name: DeleteUserBlock :exec
 DELETE FROM user_blocks
-WHERE blocker_id = $1 AND blocked_id = $2
+WHERE tenant_id = $3 AND blocker_id = $1 AND blocked_id = $2
 `
 
 type DeleteUserBlockParams struct {
 	BlockerID pgtype.UUID `json:"blocker_id"`
 	BlockedID pgtype.UUID `json:"blocked_id"`
+	TenantID  pgtype.UUID `json:"tenant_id"`
 }
 
+// Tenant-scoped per JEOS §9 (BUG-006).
 func (q *Queries) DeleteUserBlock(ctx context.Context, arg DeleteUserBlockParams) error {
-	_, err := q.db.Exec(ctx, deleteUserBlock, arg.BlockerID, arg.BlockedID)
+	_, err := q.db.Exec(ctx, deleteUserBlock, arg.BlockerID, arg.BlockedID, arg.TenantID)
 	return err
 }
 
@@ -336,15 +340,21 @@ WHERE blocker_id = $1
 ORDER BY created_at DESC
 `
 
-func (q *Queries) GetUserBlocks(ctx context.Context, blockerID pgtype.UUID) ([]UserBlock, error) {
+type GetUserBlocksRow struct {
+	BlockerID pgtype.UUID        `json:"blocker_id"`
+	BlockedID pgtype.UUID        `json:"blocked_id"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
+func (q *Queries) GetUserBlocks(ctx context.Context, blockerID pgtype.UUID) ([]GetUserBlocksRow, error) {
 	rows, err := q.db.Query(ctx, getUserBlocks, blockerID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []UserBlock
+	var items []GetUserBlocksRow
 	for rows.Next() {
-		var i UserBlock
+		var i GetUserBlocksRow
 		if err := rows.Scan(&i.BlockerID, &i.BlockedID, &i.CreatedAt); err != nil {
 			return nil, err
 		}
@@ -359,18 +369,21 @@ func (q *Queries) GetUserBlocks(ctx context.Context, blockerID pgtype.UUID) ([]U
 const isBlocked = `-- name: IsBlocked :one
 SELECT EXISTS(
     SELECT 1 FROM user_blocks
-    WHERE (blocker_id = $1 AND blocked_id = $2)
-       OR (blocker_id = $2 AND blocked_id = $1)
+    WHERE tenant_id = $3
+      AND ((blocker_id = $1 AND blocked_id = $2)
+           OR (blocker_id = $2 AND blocked_id = $1))
 ) AS blocked
 `
 
 type IsBlockedParams struct {
 	BlockerID pgtype.UUID `json:"blocker_id"`
 	BlockedID pgtype.UUID `json:"blocked_id"`
+	TenantID  pgtype.UUID `json:"tenant_id"`
 }
 
+// Tenant-scoped per JEOS §9 (BUG-006). Checks both directions in one query.
 func (q *Queries) IsBlocked(ctx context.Context, arg IsBlockedParams) (bool, error) {
-	row := q.db.QueryRow(ctx, isBlocked, arg.BlockerID, arg.BlockedID)
+	row := q.db.QueryRow(ctx, isBlocked, arg.BlockerID, arg.BlockedID, arg.TenantID)
 	var blocked bool
 	err := row.Scan(&blocked)
 	return blocked, err

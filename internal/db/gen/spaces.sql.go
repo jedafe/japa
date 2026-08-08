@@ -337,6 +337,33 @@ func (q *Queries) CountSpacesByOwnerUser(ctx context.Context, arg CountSpacesByO
 	return count, err
 }
 
+const countSpacesByType = `-- name: CountSpacesByType :one
+SELECT COUNT(*) AS total
+FROM spaces
+WHERE tenant_id = $1 AND space_type_id = $2 AND deleted_at IS NULL
+  AND ($3::text = '' OR name ILIKE '%' || $3 || '%' OR slug ILIKE '%' || $3 || '%')
+  AND ($4::text = '' OR geo_code = $4)
+`
+
+type CountSpacesByTypeParams struct {
+	TenantID    pgtype.UUID `json:"tenant_id"`
+	SpaceTypeID pgtype.UUID `json:"space_type_id"`
+	Search      string      `json:"search"`
+	GeoCode     string      `json:"geo_code"`
+}
+
+func (q *Queries) CountSpacesByType(ctx context.Context, arg CountSpacesByTypeParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countSpacesByType,
+		arg.TenantID,
+		arg.SpaceTypeID,
+		arg.Search,
+		arg.GeoCode,
+	)
+	var total int64
+	err := row.Scan(&total)
+	return total, err
+}
+
 const createSpace = `-- name: CreateSpace :one
 INSERT INTO spaces (
     tenant_id, parent_id, space_type_id, name, slug, description, wiki_content,
@@ -2579,6 +2606,109 @@ func (q *Queries) ListSpacesByType(ctx context.Context, arg ListSpacesByTypePara
 	return items, nil
 }
 
+const listSpacesByTypePaginated = `-- name: ListSpacesByTypePaginated :many
+SELECT id, tenant_id, parent_id, space_type_id, name, slug, description, wiki_content,
+       logo_media_id, header_image_id, geo_code, level, member_count, post_count,
+       follower_count, visibility, posting_perm, replying_perm, commenting_perm,
+       joining_perm, status, created_at, updated_at, deleted_at, currency_code
+FROM spaces
+WHERE tenant_id = $1 AND space_type_id = $2 AND deleted_at IS NULL
+  AND ($3::text = '' OR name ILIKE '%' || $3 || '%' OR slug ILIKE '%' || $3 || '%')
+  AND ($4::text = '' OR geo_code = $4)
+ORDER BY created_at DESC, id DESC
+LIMIT $6 OFFSET $5
+`
+
+type ListSpacesByTypePaginatedParams struct {
+	TenantID    pgtype.UUID `json:"tenant_id"`
+	SpaceTypeID pgtype.UUID `json:"space_type_id"`
+	Search      string      `json:"search"`
+	GeoCode     string      `json:"geo_code"`
+	OffsetVal   int32       `json:"offset_val"`
+	LimitVal    int32       `json:"limit_val"`
+}
+
+type ListSpacesByTypePaginatedRow struct {
+	ID             pgtype.UUID        `json:"id"`
+	TenantID       pgtype.UUID        `json:"tenant_id"`
+	ParentID       pgtype.UUID        `json:"parent_id"`
+	SpaceTypeID    pgtype.UUID        `json:"space_type_id"`
+	Name           string             `json:"name"`
+	Slug           string             `json:"slug"`
+	Description    *string            `json:"description"`
+	WikiContent    []byte             `json:"wiki_content"`
+	LogoMediaID    pgtype.UUID        `json:"logo_media_id"`
+	HeaderImageID  pgtype.UUID        `json:"header_image_id"`
+	GeoCode        *string            `json:"geo_code"`
+	Level          string             `json:"level"`
+	MemberCount    int32              `json:"member_count"`
+	PostCount      int32              `json:"post_count"`
+	FollowerCount  int32              `json:"follower_count"`
+	Visibility     string             `json:"visibility"`
+	PostingPerm    string             `json:"posting_perm"`
+	ReplyingPerm   string             `json:"replying_perm"`
+	CommentingPerm string             `json:"commenting_perm"`
+	JoiningPerm    string             `json:"joining_perm"`
+	Status         string             `json:"status"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
+	CurrencyCode   *string            `json:"currency_code"`
+}
+
+func (q *Queries) ListSpacesByTypePaginated(ctx context.Context, arg ListSpacesByTypePaginatedParams) ([]ListSpacesByTypePaginatedRow, error) {
+	rows, err := q.db.Query(ctx, listSpacesByTypePaginated,
+		arg.TenantID,
+		arg.SpaceTypeID,
+		arg.Search,
+		arg.GeoCode,
+		arg.OffsetVal,
+		arg.LimitVal,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListSpacesByTypePaginatedRow
+	for rows.Next() {
+		var i ListSpacesByTypePaginatedRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.ParentID,
+			&i.SpaceTypeID,
+			&i.Name,
+			&i.Slug,
+			&i.Description,
+			&i.WikiContent,
+			&i.LogoMediaID,
+			&i.HeaderImageID,
+			&i.GeoCode,
+			&i.Level,
+			&i.MemberCount,
+			&i.PostCount,
+			&i.FollowerCount,
+			&i.Visibility,
+			&i.PostingPerm,
+			&i.ReplyingPerm,
+			&i.CommentingPerm,
+			&i.JoiningPerm,
+			&i.Status,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.DeletedAt,
+			&i.CurrencyCode,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listStatesByCountryGeoCode = `-- name: ListStatesByCountryGeoCode :many
 SELECT s.id, s.tenant_id, s.parent_id, s.space_type_id, s.name, s.slug, s.description,
        s.wiki_content, s.logo_media_id, s.header_image_id, s.geo_code, s.level,
@@ -2827,7 +2957,7 @@ UPDATE spaces
 SET name = $1, description = $2, wiki_content = $3,
     geo_code = $4, visibility = $5, posting_perm = $6,
     replying_perm = $7, commenting_perm = $8, joining_perm = $9,
-    status = $10
+    status = $10, updated_at = now()
 WHERE id = $11 AND tenant_id = $12 AND deleted_at IS NULL
 RETURNING id, tenant_id, parent_id, space_type_id, name, slug, description, wiki_content,
           logo_media_id, header_image_id, geo_code, level, member_count, post_count,

@@ -648,18 +648,19 @@ func (s *Service) DisconnectAccount(ctx context.Context, tenantID, userID pgtype
 // ListUserContent returns the user's content, optionally filtered by status.
 // ListUserContent returns the user's content, optionally filtered by status
 // and content_type. An empty status/contentType string means "no filter".
-func (s *Service) ListUserContent(ctx context.Context, tenantID, userID pgtype.UUID, status string, limit, offset int32) ([]ContentListItem, error) {
-	return s.listUserContentInternal(ctx, tenantID, userID, status, "", limit, offset)
+func (s *Service) ListUserContent(ctx context.Context, tenantID, userID pgtype.UUID, status, q string, limit, offset int32) ([]ContentListItem, error) {
+	return s.listUserContentInternal(ctx, tenantID, userID, status, "", q, limit, offset)
 }
 
-// ListUserContentByStatus returns the user's content filtered by both status
-// and content_type. Used by /me/content (published) and /me/drafts (draft).
-func (s *Service) ListUserContentByStatus(ctx context.Context, tenantID, userID pgtype.UUID, status, contentType string, limit, offset int32) ([]ContentListItem, error) {
-	return s.listUserContentInternal(ctx, tenantID, userID, status, contentType, limit, offset)
+// ListUserContentByStatus returns the user's content filtered by status,
+// content_type, and an optional free-text search over title/slug. Used by
+// /me/content (published) and /me/drafts (draft).
+func (s *Service) ListUserContentByStatus(ctx context.Context, tenantID, userID pgtype.UUID, status, contentType, q string, limit, offset int32) ([]ContentListItem, error) {
+	return s.listUserContentInternal(ctx, tenantID, userID, status, contentType, q, limit, offset)
 }
 
-func (s *Service) listUserContentInternal(ctx context.Context, tenantID, userID pgtype.UUID, status, contentType string, limit, offset int32) ([]ContentListItem, error) {
-	content, err := s.store.listUserContent(ctx, tenantID, userID, status, contentType, limit, offset)
+func (s *Service) listUserContentInternal(ctx context.Context, tenantID, userID pgtype.UUID, status, contentType, q string, limit, offset int32) ([]ContentListItem, error) {
+	content, err := s.store.listUserContent(ctx, tenantID, userID, status, contentType, q, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("listing user content: %w", err)
 	}

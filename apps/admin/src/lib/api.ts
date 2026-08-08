@@ -155,6 +155,7 @@ export const pagesApi = {
 	delete: (id: string) => api(`/admin/pages/${id}`, { method: 'DELETE' }),
 	publish: (id: string) => api<AdminPage>(`/admin/pages/${id}/publish`, { method: 'POST', body: {} }),
 	archive: (id: string) => api<AdminPage>(`/admin/pages/${id}/archive`, { method: 'POST', body: {} }),
+	duplicate: (id: string) => api<AdminPage>(`/admin/pages/${id}/duplicate`, { method: 'POST', body: {} }),
 };
 
 export const walletApi = {
@@ -590,8 +591,13 @@ export interface GenerateResult {
 }
 
 export const aiApi = {
-	generate: (data: { prompt: string; category: string; model?: string }) =>
-		api<GenerateResult>('/ai/generate', { method: 'POST', body: data }),
+	generate: (data: {
+		prompt: string;
+		category: string;
+		model?: string;
+		humanize?: boolean;
+		humanize_level?: 'low' | 'medium' | 'high';
+	}) => api<GenerateResult>('/ai/generate', { method: 'POST', body: data }),
 
 	createHitlReview: (data: { content: string; content_type: string; source: string }) =>
 		api<{ id: string; status: string }>('/ai/hitl', { method: 'POST', body: data }),
@@ -726,7 +732,8 @@ export const reactionsAdminApi = {
 };
 
 export const universitiesAdminApi = {
-	list: (params?: string) => api<unknown>(`/universities${params ? `?${params}` : ''}`),
+	list: (params?: string) => apiRaw(`/admin/universities${params ? `?${params}` : ''}`),
+	listPublic: (params?: string) => api<unknown>(`/universities${params ? `?${params}` : ''}`),
 	getBySlug: (slug: string) => api<unknown>(`/universities/${encodeURIComponent(slug)}`),
 	create: (body: { name: string; slug: string; verified: boolean }) =>
 		api('/admin/universities', { method: 'POST', body }),
@@ -1270,6 +1277,8 @@ export const mentorshipAdminApiExtended = {
 		api<unknown>('/admin/mentorship/programs', { method: 'POST', body }),
 	updateProgram: (id: string, body: Record<string, unknown>) =>
 		api<unknown>(`/admin/mentorship/programs/${id}`, { method: 'PATCH', body }),
+	deleteProgram: (id: string) =>
+		api<unknown>(`/admin/mentorship/programs/${id}`, { method: 'DELETE' }),
 	updateMatch: (id: string, body: Record<string, unknown>) =>
 		api<unknown>(`/admin/mentorship/matches/${id}`, { method: 'PATCH', body }),
 };

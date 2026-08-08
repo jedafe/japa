@@ -425,8 +425,9 @@ func excerpt(body string, n int) string {
 		return ""
 	}
 	// Strip common markdown markers and collapse whitespace. A full
-	// strip_markdown lives in internal/renderer; this is a lightweight
-	// fallback for the validator only.
+	// strip_markdown lives in internal/content (SanitizeText /
+	// ComputeContentHash); this is a lightweight fallback for the
+	// validator only.
 	s := body
 	for _, m := range []string{"#", "*", "_", "`", ">", "- "} {
 		s = strings.ReplaceAll(s, m, "")

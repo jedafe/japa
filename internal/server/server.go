@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"crypto/rand"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -327,6 +328,20 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// university's logo_url via POST/PATCH /admin/universities.
 	universitiesHandlers.SetEnqueuer(taskEnqueuer)
 
+	// Wire the ProcessorAdapter for university enrichment (Section 39):
+	// - customfields service: upserts founded_year, student_population,
+	//   official_website_url from Wikidata data
+	// - enqueuer: triggers university:fetch_logo when Wikidata returns a logo URL
+	// - system user ID: attributes downloaded logos to the super admin
+	spaceAutoPopulateAdapter.SetCustomFieldsEnricher(cfService)
+	spaceAutoPopulateAdapter.SetUniversityLogoEnqueuer(taskEnqueuer)
+	if sysUID, err := lookupSystemUserID(context.Background(), database); err == nil {
+		spaceAutoPopulateAdapter.SetSystemUserID(sysUID)
+	} else {
+		slog.Warn("server: could not resolve system user for university logo attribution",
+			"error", err)
+	}
+
 	// Hot-reloadable system settings (AUDIT-BE-009). Previously config.NewSettings
 	// was never instantiated, so documented operational limits were dead and
 	// services used compiled-in constants. Instantiate once and inject where limits
@@ -357,7 +372,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// The script path is validated against the allowlist root
 	// (JC_RENDERER_SCRIPT_ROOT or ./scripts/tiptap-ssr) inside renderer.New.
 	// A misconfigured path is logged and the renderer is left nil; the
-	// handlers will return 503 on SSR requests instead of panicking.
+	// route below registers a 503 stub handler so SSR requests fail
+	// gracefully instead of nil-dereferencing (BUG-002).
 	rendererInstance, err := renderer.New("scripts/tiptap-ssr.ts", vkClient)
 	if err != nil {
 		slog.Error("renderer init failed, SSR disabled", "error", err)
@@ -470,17 +486,17 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	if defaultTenantPW, err := tenantStore.GetDefaultTenant(context.Background()); err == nil && defaultTenantPW != nil {
 		authHandlers.Policy = auth.PasswordPolicyFromSettings(context.Background(), settingsService, defaultTenantPW.ID)
 	}
-	// Wire link preview blacklist from system_settings (AUDIT-BE-010, BE-037).
-	// The blacklist is comma-separated domains stored under 'content.link_preview.blacklist'.
-	// Resolve the default tenant ID for settings lookup.
+	// Wire link preview blacklist fallback from system_settings (AUDIT-BE-010,
+	// BE-037, BUG-001). The blacklist is a JSON array of domains stored under
+	// 'content.link_preview.blacklist'. This startup load is a fallback for
+	// when the settings reader is not wired per-request; the Fetcher also
+	// resolves the blacklist per-request via resolveBlacklist (BUG-004).
 	if defaultTenant, err := tenantStore.GetDefaultTenant(context.Background()); err == nil && defaultTenant != nil {
 		if blacklistStr, err := settingsService.GetSetting(context.Background(), defaultTenant.ID, "content.link_preview.blacklist"); err == nil && blacklistStr != "" {
-			blacklist := strings.Split(blacklistStr, ",")
-			for i := range blacklist {
-				blacklist[i] = strings.TrimSpace(blacklist[i])
+			blacklist := linkpreview.ParseBlacklistJSON(blacklistStr)
+			if len(blacklist) > 0 {
+				linkPreviewFetcher.SetBlacklist(blacklist)
 			}
-
-			linkPreviewFetcher.SetBlacklist(blacklist)
 			slog.Info("link preview: blacklist loaded from system_settings", "count", len(blacklist))
 		}
 	} else {
@@ -508,6 +524,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Blog Extension subsystem (Section 24 — Blog Extension).
 	blogService := blog.NewService(database)
 	blogHandlers := blog.NewHandlers(blogService, contentService, cfg.SiteURL, cfg.SiteName)
+	// Wire erased-mention redaction for GDPR/ADR-029 compliance.
+	blogHandlers.SetMentionCheckers(mentionCheckers)
 	// NOTE: SetAsynqClient/SetRedis not yet implemented in blog.Handlers (pre-existing).
 	// blogHandlers.SetAsynqClient(asynqClient)
 	// blogHandlers.SetRedis(vkClient.Redis())
@@ -962,6 +980,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// instead of noops. Must come before RegisterNoopProcessors() so the noop
 	// guard (if nil → register noop) sees the real adapters.
 	aiProcessorAdapter := ai.NewWorkerAdapter(aiDispatcher)
+	aiProcessorAdapter.SetSettings(settingsService) // honor ai.humanize.* for background generation
 	worker.RegisterAIProcessor(aiProcessorAdapter)
 
 	moderationProcessorAdapter := spam.NewWorkerAdapter(spamPipeline)
@@ -1643,11 +1662,20 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// special permission required.
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/page-builder/block-types", contentHandlers.ListBlockTypes)
 
-			// Renderer routes (Section 15 — Block Editor SSR)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/content/render", rendererHandlers.Render)
+			// Renderer routes (Section 15 — Block Editor SSR).
+			// When the renderer failed to initialise (bad script path),
+			// register a 503 stub so the route is reachable but reports
+			// the service is unavailable instead of nil-dereferencing.
+			if rendererHandlers != nil {
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/content/render", rendererHandlers.Render)
+			} else {
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/content/render", func(w http.ResponseWriter, r *http.Request) {
+					writeError(w, http.StatusServiceUnavailable, "renderer_disabled", "Content rendering is temporarily unavailable")
+				})
+			}
 
-			// Link preview routes (Section 15 — Link Preview Fetch)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/link-preview", linkPreviewHandlers.Fetch)
+			// Link preview routes (Section 15 — Link Preview Fetch, BUG-008 RBAC gate)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "link_preview.fetch")).Get("/link-preview", linkPreviewHandlers.Fetch)
 
 			// Content Bookmarks (Section 14 — Content System API)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "bookmarks.create")).Post("/content/{id}/bookmark", contentHandlers.AddBookmark)
@@ -1770,6 +1798,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.Get("/universities/{slug}", universitiesHandlers.GetUniversity)
 
 			// University admin CRUD (P5.6 — Task 11, catalog paths)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.settings")).
+				Get("/admin/universities", universitiesHandlers.ListUniversitiesAdmin)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.settings")).
 				Post("/admin/universities", universitiesHandlers.CreateUniversity)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.settings")).
@@ -1896,9 +1926,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Post("/stock/import", stockHandlers.ImportPhoto)
 
 			// Stock photo admin routes — provider config management.
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "media.edit_any")).
+			// Gated by the dedicated media.stock.admin node (not media.edit_any)
+			// so that managing provider API keys is decoupled from media edit rights.
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "media.stock.admin")).
 				Get("/admin/stock/providers", stockHandlers.AdminListProviders)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "media.edit_any")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "media.stock.admin")).
 				Patch("/admin/stock/providers/{name}", stockHandlers.AdminPatchProvider)
 
 			// Forum Q&A / Solved routes — gated by feature.forum (Section 08)
@@ -1909,6 +1941,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			forumService.SetWebhookEmitter(&forumWebhookEmitter{svc: webhookService})
 			forumService.SetSpaceBroadcaster(&forumSpaceBroadcaster{hub: wsHub})
 			forumHandlers := forum.NewHandlers(forumService, contentService)
+			// Wire erased-mention redaction for GDPR/ADR-029 compliance.
+			forumHandlers.SetMentionCheckers(mentionCheckers)
 
 			r.With(features.Gate(featureChecker, "feature.forum")).Group(func(r chi.Router) {
 				// Thread routes
@@ -1958,6 +1992,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				r.Get("/forum/tags", forumHandlers.ListTags)
 				r.Get("/forum/tags/{slug}", forumHandlers.GetTagBySlug)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.tag.assign")).Post("/forum/{id}/tags", forumHandlers.AddThreadTagsBulk)
+				r.Get("/forum/{id}/tags", forumHandlers.ListThreadTags)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.tag.assign")).Post("/forum/{id}/tags/{tagId}", forumHandlers.AddThreadTag)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.tag.assign")).Delete("/forum/{id}/tags/{tagId}", forumHandlers.RemoveThreadTag)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.tag.edit")).Patch("/forum/tags/{id}", forumHandlers.UpdateTag)
@@ -3101,6 +3136,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "mentorship.admin")).
 				Patch("/admin/mentorship/programs/{id}", mentorshipHandlers.UpdateProgram)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "mentorship.admin")).
+				Delete("/admin/mentorship/programs/{id}", mentorshipHandlers.DeleteProgram)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "mentorship.admin")).
 				Get("/admin/mentorship/matches", mentorshipHandlers.ListMatches)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "mentorship.admin")).
 				Patch("/admin/mentorship/matches/{id}", mentorshipHandlers.UpdateMatch)
@@ -3744,6 +3781,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Task 27: Pagebuilder admin extra + public pages
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "pages.manage")).
 				Post("/admin/pages/{id}/save-as-template", pagebuilderHandlers.SaveAsTemplate)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "pages.manage")).
+				Post("/admin/pages/{id}/duplicate", pagebuilderHandlers.DuplicatePage)
 			r.Get("/pages", pagebuilderHandlers.ListPublishedPages)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "pages.manage")).
 				Post("/pages", pagebuilderHandlers.CreatePage)
@@ -4507,4 +4546,21 @@ func StartWorker(cfg *worker.Config) (shutdown func(), err error) {
 		slog.Info("asynq worker shutting down")
 		srv.Shutdown()
 	}, nil
+}
+
+// lookupSystemUserID resolves the super admin user ID (seeded in migration
+// 000124 by email jedafeglobal@gmail.com) for media attribution when
+// auto-populating university logos. Returns the user's UUID.
+func lookupSystemUserID(ctx context.Context, database *db.DB) (pgtype.UUID, error) {
+	var id pgtype.UUID
+	err := database.Reader.QueryRow(ctx, `
+		SELECT id FROM users
+		WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+		  AND email = 'jedafeglobal@gmail.com'
+		LIMIT 1
+	`).Scan(&id)
+	if err != nil {
+		return pgtype.UUID{}, fmt.Errorf("looking up super admin user: %w", err)
+	}
+	return id, nil
 }

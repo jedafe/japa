@@ -22,10 +22,12 @@ export const load: PageServerLoad = async (event) => {
 
 	let article: ContentArticle;
 	let jsonLd: unknown = null;
+	let deletedUserIds: string[] | null = null;
 	try {
 		const envelope = await apiGetEnvelope<ContentArticle>(ctx, `/blog/${slug}`);
 		article = envelope.data;
 		jsonLd = envelope.json_ld ?? null;
+		deletedUserIds = envelope.deleted_user_ids ?? null;
 	} catch (err) {
 		if (err instanceof ApiError && err.status === 404) {
 			throw error(404, { code: 'not_found', message: 'Post not found' });
@@ -119,6 +121,7 @@ export const load: PageServerLoad = async (event) => {
 		rightSidebarWidgets,
 		relatedContent,
 		jsonLd,
+		deletedUserIds,
 		initiallyFollowing: isFollowing
 	};
 };

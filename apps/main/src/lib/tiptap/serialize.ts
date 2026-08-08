@@ -187,7 +187,8 @@ function renderNode(node: PMNode, deleted?: Set<string>): string {
 			const alt = escapeAttr(String(node.attrs?.alt ?? ''));
 			return `<img src="${src}" alt="${alt}" loading="lazy" />`;
 		}
-		case 'mention': {
+		case 'mention':
+		case 'japaMention': {
 			// Section 15 / ADR-029: a mention of an erased user renders as
 			// `@[deleted user]` with no link.
 			const mentionId = String(node.attrs?.id ?? '');
@@ -195,7 +196,13 @@ function renderNode(node: PMNode, deleted?: Set<string>): string {
 				return '<span class="mention mention-deleted">@[deleted user]</span>';
 			}
 			const label = escapeHtml(String(node.attrs?.label ?? ''));
-			return `<span class="mention" data-user-id="${escapeAttr(mentionId)}">${label}</span>`;
+			const handle = escapeAttr(String(node.attrs?.handle ?? ''));
+			// Emit a <span> with data-handle. The hydrateMentions Svelte
+			// action (used on view pages) wraps these spans in <a> links
+			// to /u/{handle}. This keeps serialize.ts output consistent
+			// with editor.getHTML() and lets the link be added uniformly
+			// to both new and existing content.
+			return `<span class="mention" data-type="mention" data-id="${escapeAttr(mentionId)}" data-label="${label}"${handle ? ` data-handle="${handle}"` : ''}>@${label}</span>`;
 		}
 		case 'hashtag': {
 			const label = escapeHtml(String(node.attrs?.label ?? ''));
@@ -213,6 +220,20 @@ function renderNode(node: PMNode, deleted?: Set<string>): string {
 			return `<td>${inner}</td>`;
 		case 'tableHeader':
 			return `<th>${inner}</th>`;
+		case 'couponEmbed': {
+			// Section 55 P4: store coupon_id, resolve code/URL at render time.
+			// The SSR serializer emits a placeholder div; the Go backend's
+			// render-time resolver replaces it with the actual coupon widget.
+			const couponId = escapeAttr(String(node.attrs?.coupon_id ?? ''));
+			return `<div class="coupon-embed" data-coupon-id="${couponId}">${inner}</div>`;
+		}
+		case 'linkPreview': {
+			// Section 15 / ROADMAP-MAIN 07.09: store URL, hydrate into a
+			// LinkPreviewCard on the view page via the hydrateLinkPreviews
+			// Svelte action.
+			const url = escapeAttr(String(node.attrs?.url ?? ''));
+			return `<div class="link-preview-placeholder" data-type="link-preview" data-url="${url}"></div>`;
+		}
 		default:
 			// Unknown node — render its children inline if any, else skip.
 			return inner;

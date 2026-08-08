@@ -18,7 +18,7 @@
 		Briefcase, Eye, X, Menu, ArrowRightLeft, CreditCard,
 		Package, Receipt, PanelLeft,
 		Brain, Wand, Trophy, Plane, Banknote,
-		FileUp
+		FileUp, LayoutGrid
 	} from "lucide-svelte";
 	import { clsx } from "clsx";
 	import { sidebarCollapsed } from "$lib/stores/sidebar.svelte";
@@ -85,6 +85,7 @@
 			label: t("nav.section.content", "Content"),
 			items: [
 				{ path: "/content", label: t("nav.content", "All Content"), icon: FileText, permission: "admin.content.view" },
+				{ path: "/content-types", label: t("nav.content_types", "Content Types"), icon: LayoutGrid, permission: "admin.settings" },
 				{ path: "/blog/review-queue", label: t("nav.blog_review_queue", "Blog Posts"), icon: BookOpen, permission: "blog.review.manage" },
 			{ path: "/docs", label: t("nav.docs", "Documentation"), icon: FileCode, permission: "docs.manage" },
 			{ path: "/media", label: t("nav.media", "Media"), icon: Image, permission: "media.view_all" },

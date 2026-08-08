@@ -3,6 +3,7 @@
 	import { Menu as MenuIcon } from 'lucide-svelte';
 	import LeftNav from './LeftNav.svelte';
 	import RightSidebar from './RightSidebar.svelte';
+	import ComposeModal from './ComposeModal.svelte';
 	import { t } from '$lib/i18n';
 	import type { Menu, SessionUser, TagSuggestion, SpaceSuggestion, UserSpaceRef } from '$lib/types';
 
@@ -25,6 +26,8 @@
 		hideRightSidebar?: boolean;
 		/** Page Builder blocks for the right sidebar (sitewide). */
 		rightSidebarWidgets?: unknown[];
+		/** Whether the global Compose bottom-sheet is available on this route. */
+		composeEnabled?: boolean;
 	}
 
 	let {
@@ -40,7 +43,8 @@
 		children,
 		sidebar,
 		hideRightSidebar = false,
-		rightSidebarWidgets = []
+		rightSidebarWidgets = [],
+		composeEnabled = false
 	}: Props = $props();
 
 	let mobileNavOpen = $state(false);
@@ -77,6 +81,9 @@
 			</a>
 		</div>
 		{@render children()}
+		{#if composeEnabled && user}
+			<ComposeModal />
+		{/if}
 	</main>
 
 	{#if !hideRightSidebar}

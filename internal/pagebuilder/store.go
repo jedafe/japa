@@ -636,6 +636,19 @@ func (s *Store) GetPageBySlug(ctx context.Context, slug string, tenantID pgtype.
 	return p, nil
 }
 
+// SlugExists reports whether any page (any status) already uses slug for this
+// tenant. Used by DuplicatePage to derive a unique slug for the copy.
+func (s *Store) SlugExists(ctx context.Context, slug string, tenantID pgtype.UUID) (bool, error) {
+	var exists bool
+	err := s.reader.QueryRow(ctx, `
+		SELECT EXISTS(SELECT 1 FROM pages WHERE slug = $1 AND tenant_id = $2)
+	`, slug, tenantID).Scan(&exists)
+	if err != nil {
+		return false, fmt.Errorf("checking slug existence: %w", err)
+	}
+	return exists, nil
+}
+
 // CreatePage inserts a new page row.
 func (s *Store) CreatePage(ctx context.Context, tenantID, createdBy pgtype.UUID, input CreatePageInput) (Page, error) {
 	blocks := input.Blocks

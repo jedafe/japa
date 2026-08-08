@@ -1,7 +1,7 @@
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext, apiGet, apiGetEnvelope, apiList, ApiError } from '$lib/server/api';
-import type { ForumThread, ForumReply, PollWithResults } from '$lib/types';
+import type { ForumThread, ForumReply, ForumTag, PollWithResults } from '$lib/types';
 
 /**
  * Single forum discussion at /forum/[slug] — rendered inside the app shell
@@ -11,6 +11,7 @@ import type { ForumThread, ForumReply, PollWithResults } from '$lib/types';
  * Parallel fetches:
  *   - GET /forum/{slug}         → the thread
  *   - GET /forum/{id}/replies   → flat reply list (nested via parent_reply_id)
+ *   - GET /forum/{id}/tags      → tags attached to the thread (Section 08)
  *   - GET /forum/polls/{id}     → poll + results (if the thread has a poll)
  *   - GET /content/{id}/related → related posts sidebar (Phase 05.14)
  */
@@ -22,6 +23,10 @@ export const load: PageServerLoad = async (event) => {
 	let thread: ForumThread;
 	let jsonLd: unknown = null;
 	let backendCanSolve = false;
+	let canEdit = false;
+	let isBookmarked = false;
+	let bookmarkId = '';
+	let deletedUserIds: string[] | null = null;
 	try {
 		// BUG-013/BUG-014: use the full envelope to capture the backend-provided
 		// json_ld (QAPage structured data with acceptedAnswer text) and the
@@ -31,6 +36,10 @@ export const load: PageServerLoad = async (event) => {
 		thread = envelope.data;
 		jsonLd = envelope.json_ld ?? null;
 		backendCanSolve = envelope.can_solve ?? false;
+		canEdit = envelope.can_edit ?? false;
+		isBookmarked = envelope.is_bookmarked ?? false;
+		bookmarkId = envelope.bookmark_id ?? '';
+		deletedUserIds = envelope.deleted_user_ids ?? null;
 	} catch (err) {
 		if (err instanceof ApiError && err.status === 404) {
 			throw error(404, { code: 'not_found', message: 'Discussion not found' });
@@ -45,6 +54,17 @@ export const load: PageServerLoad = async (event) => {
 	} catch {
 		// A failed reply fetch must not blank the thread; render with no replies.
 		replies = [];
+	}
+
+	// Fetch the tags attached to the thread (GET /forum/{id}/tags).
+	// Best-effort — degrades to empty if the endpoint is unavailable.
+	// Ref: japaconnect-engineering/sections/08-forum-qa-solved.md (Tags)
+	let tags: ForumTag[] = [];
+	try {
+		const { items } = await apiList<ForumTag>(ctx, `/forum/${thread.id}/tags`);
+		tags = items;
+	} catch {
+		tags = [];
 	}
 
 	// Fetch the thread's poll if one exists (GET /forum/polls/{threadId}).
@@ -77,11 +97,16 @@ export const load: PageServerLoad = async (event) => {
 	return {
 		thread,
 		replies,
+		tags,
 		poll,
 		related,
 		authed,
 		canSolve,
+		canEdit,
+		isBookmarked,
+		bookmarkId,
 		jsonLd,
+		deletedUserIds,
 		acceptedReplyId: thread.solved ? null : null
 	};
 };

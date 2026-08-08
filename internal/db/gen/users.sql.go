@@ -1382,18 +1382,20 @@ SELECT c.id, c.title, c.slug, c.content_type, c.status, c.created_at, c.updated_
 FROM contents c
 WHERE c.tenant_id = $1 AND c.author_id = $2 AND c.deleted_at IS NULL
   AND ($3::text = '' OR c.status = $3)
-  AND ($6::text = '' OR c.content_type = $6)
+  AND ($4::text = '' OR c.content_type = $4)
+  AND ($5::text = '' OR c.title ILIKE '%' || $5 || '%' OR c.slug ILIKE '%' || $5 || '%')
 ORDER BY c.created_at DESC
-LIMIT $4 OFFSET $5
+LIMIT $7 OFFSET $6
 `
 
 type ListUserContentParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	AuthorID pgtype.UUID `json:"author_id"`
-	Column3  string      `json:"column_3"`
-	Limit    int32       `json:"limit"`
-	Offset   int32       `json:"offset"`
-	Column6  string      `json:"column_6"`
+	TenantID    pgtype.UUID `json:"tenant_id"`
+	AuthorID    pgtype.UUID `json:"author_id"`
+	Status      string      `json:"status"`
+	ContentType string      `json:"content_type"`
+	Q           string      `json:"q"`
+	PageOffset  int32       `json:"page_offset"`
+	PageLimit   int32       `json:"page_limit"`
 }
 
 type ListUserContentRow struct {
@@ -1406,14 +1408,19 @@ type ListUserContentRow struct {
 	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
 }
 
+// Returns the caller's own content, optionally filtered by status,
+// content_type, and a free-text search over title/slug. An empty status,
+// content_type, or q string means "no filter". Used by GET /me/content
+// (published), /me/drafts (draft), and /me/scheduled (scheduled).
 func (q *Queries) ListUserContent(ctx context.Context, arg ListUserContentParams) ([]ListUserContentRow, error) {
 	rows, err := q.db.Query(ctx, listUserContent,
 		arg.TenantID,
 		arg.AuthorID,
-		arg.Column3,
-		arg.Limit,
-		arg.Offset,
-		arg.Column6,
+		arg.Status,
+		arg.ContentType,
+		arg.Q,
+		arg.PageOffset,
+		arg.PageLimit,
 	)
 	if err != nil {
 		return nil, err

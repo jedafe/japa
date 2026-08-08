@@ -340,6 +340,38 @@ func (s *Service) ListSpacesByType(ctx context.Context, tenantID, spaceTypeID pg
 	return spaces, nil
 }
 
+// ListSpacesByTypePaginated returns a page of spaces of the given type,
+// filtered by optional search and geo_code, with server-side pagination.
+func (s *Service) ListSpacesByTypePaginated(ctx context.Context, tenantID, spaceTypeID pgtype.UUID, search, geoCode string, limit, offset int32) ([]gen.ListSpacesByTypePaginatedRow, error) {
+	spaces, err := s.read.ListSpacesByTypePaginated(ctx, gen.ListSpacesByTypePaginatedParams{
+		TenantID:    tenantID,
+		SpaceTypeID: spaceTypeID,
+		Search:      search,
+		GeoCode:     geoCode,
+		LimitVal:    limit,
+		OffsetVal:   offset,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("listing spaces by type (paginated): %w", err)
+	}
+	return spaces, nil
+}
+
+// CountSpacesByType returns the total count of spaces of the given type,
+// matching the same optional search and geo_code filters.
+func (s *Service) CountSpacesByType(ctx context.Context, tenantID, spaceTypeID pgtype.UUID, search, geoCode string) (int64, error) {
+	total, err := s.read.CountSpacesByType(ctx, gen.CountSpacesByTypeParams{
+		TenantID:    tenantID,
+		SpaceTypeID: spaceTypeID,
+		Search:      search,
+		GeoCode:     geoCode,
+	})
+	if err != nil {
+		return 0, fmt.Errorf("counting spaces by type: %w", err)
+	}
+	return total, nil
+}
+
 // ListChildSpaces returns every space whose parent is the given space,
 // scoped to the tenant, oldest first.
 func (s *Service) ListChildSpaces(ctx context.Context, tenantID, parentID pgtype.UUID) ([]gen.ListChildSpacesRow, error) {

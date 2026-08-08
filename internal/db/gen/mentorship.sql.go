@@ -13,7 +13,7 @@ import (
 
 const createMentorshipProgram = `-- name: CreateMentorshipProgram :one
 INSERT INTO mentorship_programs (tenant_id, name, description, is_active)
-VALUES ($1, $2, $3, true)
+VALUES ($1, $2, $3, $4)
 RETURNING id, tenant_id, name, description, is_active, created_at, updated_at
 `
 
@@ -21,10 +21,16 @@ type CreateMentorshipProgramParams struct {
 	TenantID    pgtype.UUID `json:"tenant_id"`
 	Name        string      `json:"name"`
 	Description string      `json:"description"`
+	IsActive    bool        `json:"is_active"`
 }
 
 func (q *Queries) CreateMentorshipProgram(ctx context.Context, arg CreateMentorshipProgramParams) (MentorshipProgram, error) {
-	row := q.db.QueryRow(ctx, createMentorshipProgram, arg.TenantID, arg.Name, arg.Description)
+	row := q.db.QueryRow(ctx, createMentorshipProgram,
+		arg.TenantID,
+		arg.Name,
+		arg.Description,
+		arg.IsActive,
+	)
 	var i MentorshipProgram
 	err := row.Scan(
 		&i.ID,
@@ -36,6 +42,24 @@ func (q *Queries) CreateMentorshipProgram(ctx context.Context, arg CreateMentors
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const deleteMentorshipProgram = `-- name: DeleteMentorshipProgram :execrows
+DELETE FROM mentorship_programs
+WHERE tenant_id = $1 AND id = $2
+`
+
+type DeleteMentorshipProgramParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	ID       pgtype.UUID `json:"id"`
+}
+
+func (q *Queries) DeleteMentorshipProgram(ctx context.Context, arg DeleteMentorshipProgramParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteMentorshipProgram, arg.TenantID, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const getMentorshipProgram = `-- name: GetMentorshipProgram :one
@@ -65,10 +89,16 @@ func (q *Queries) GetMentorshipProgram(ctx context.Context, arg GetMentorshipPro
 }
 
 const listMentorshipMatches = `-- name: ListMentorshipMatches :many
-SELECT id, tenant_id, program_id, mentor_id, mentee_id, status, created_at, updated_at
-FROM mentorship_matches
-WHERE tenant_id = $1
-ORDER BY created_at DESC
+SELECT m.id, m.tenant_id, m.program_id, m.mentor_id, m.mentee_id, m.status, m.created_at, m.updated_at,
+       p.name AS program_name,
+       mu.username AS mentor_username,
+       eu.username AS mentee_username
+FROM mentorship_matches m
+LEFT JOIN mentorship_programs p ON p.id = m.program_id
+LEFT JOIN users mu ON mu.id = m.mentor_id
+LEFT JOIN users eu ON eu.id = m.mentee_id
+WHERE m.tenant_id = $1
+ORDER BY m.created_at DESC
 LIMIT $3 OFFSET $2
 `
 
@@ -78,15 +108,29 @@ type ListMentorshipMatchesParams struct {
 	PageLimit  int32       `json:"page_limit"`
 }
 
-func (q *Queries) ListMentorshipMatches(ctx context.Context, arg ListMentorshipMatchesParams) ([]MentorshipMatch, error) {
+type ListMentorshipMatchesRow struct {
+	ID             pgtype.UUID        `json:"id"`
+	TenantID       pgtype.UUID        `json:"tenant_id"`
+	ProgramID      pgtype.UUID        `json:"program_id"`
+	MentorID       pgtype.UUID        `json:"mentor_id"`
+	MenteeID       pgtype.UUID        `json:"mentee_id"`
+	Status         string             `json:"status"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	ProgramName    *string            `json:"program_name"`
+	MentorUsername *string            `json:"mentor_username"`
+	MenteeUsername *string            `json:"mentee_username"`
+}
+
+func (q *Queries) ListMentorshipMatches(ctx context.Context, arg ListMentorshipMatchesParams) ([]ListMentorshipMatchesRow, error) {
 	rows, err := q.db.Query(ctx, listMentorshipMatches, arg.TenantID, arg.PageOffset, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []MentorshipMatch
+	var items []ListMentorshipMatchesRow
 	for rows.Next() {
-		var i MentorshipMatch
+		var i ListMentorshipMatchesRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.TenantID,
@@ -96,6 +140,9 @@ func (q *Queries) ListMentorshipMatches(ctx context.Context, arg ListMentorshipM
 			&i.Status,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.ProgramName,
+			&i.MentorUsername,
+			&i.MenteeUsername,
 		); err != nil {
 			return nil, err
 		}
@@ -140,6 +187,82 @@ func (q *Queries) ListMentorshipPrograms(ctx context.Context, arg ListMentorship
 			&i.IsActive,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listMentorshipProgramsWithCounts = `-- name: ListMentorshipProgramsWithCounts :many
+SELECT p.id, p.tenant_id, p.name, p.description, p.is_active, p.created_at, p.updated_at,
+       COALESCE(mentor_counts.cnt, 0)::int AS mentor_count,
+       COALESCE(mentee_counts.cnt, 0)::int AS mentee_count,
+       COALESCE(match_counts.cnt, 0)::int AS match_count
+FROM mentorship_programs p
+LEFT JOIN (
+    SELECT mm.program_id, COUNT(DISTINCT mm.mentor_id) AS cnt
+    FROM mentorship_matches mm WHERE mm.tenant_id = $1
+    GROUP BY mm.program_id
+) mentor_counts ON mentor_counts.program_id = p.id
+LEFT JOIN (
+    SELECT mm.program_id, COUNT(DISTINCT mm.mentee_id) AS cnt
+    FROM mentorship_matches mm WHERE mm.tenant_id = $1
+    GROUP BY mm.program_id
+) mentee_counts ON mentee_counts.program_id = p.id
+LEFT JOIN (
+    SELECT mm.program_id, COUNT(*) AS cnt
+    FROM mentorship_matches mm WHERE mm.tenant_id = $1
+    GROUP BY mm.program_id
+) match_counts ON match_counts.program_id = p.id
+WHERE p.tenant_id = $1
+ORDER BY p.created_at DESC
+LIMIT $3 OFFSET $2
+`
+
+type ListMentorshipProgramsWithCountsParams struct {
+	TenantID   pgtype.UUID `json:"tenant_id"`
+	PageOffset int32       `json:"page_offset"`
+	PageLimit  int32       `json:"page_limit"`
+}
+
+type ListMentorshipProgramsWithCountsRow struct {
+	ID          pgtype.UUID        `json:"id"`
+	TenantID    pgtype.UUID        `json:"tenant_id"`
+	Name        string             `json:"name"`
+	Description string             `json:"description"`
+	IsActive    bool               `json:"is_active"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
+	MentorCount int32              `json:"mentor_count"`
+	MenteeCount int32              `json:"mentee_count"`
+	MatchCount  int32              `json:"match_count"`
+}
+
+func (q *Queries) ListMentorshipProgramsWithCounts(ctx context.Context, arg ListMentorshipProgramsWithCountsParams) ([]ListMentorshipProgramsWithCountsRow, error) {
+	rows, err := q.db.Query(ctx, listMentorshipProgramsWithCounts, arg.TenantID, arg.PageOffset, arg.PageLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListMentorshipProgramsWithCountsRow
+	for rows.Next() {
+		var i ListMentorshipProgramsWithCountsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.Name,
+			&i.Description,
+			&i.IsActive,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.MentorCount,
+			&i.MenteeCount,
+			&i.MatchCount,
 		); err != nil {
 			return nil, err
 		}

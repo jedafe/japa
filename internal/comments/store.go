@@ -170,7 +170,10 @@ func (s *Service) DispatchCommentNotifications(ctx context.Context, tenantID pgt
 				s.mentionCheckers, s.mentionCheckers, s.mentionCheckers,
 			)
 			if err != nil {
-				slog.Warn("comments: FilterMentions failed, dispatching unfiltered",
+				// FilterMentions logs individual checker errors internally and
+				// never returns a fatal error. This branch is retained for
+				// forward-compatibility but is not expected to fire.
+				slog.Warn("comments: FilterMentions returned unexpected error",
 					"comment_id", comment.ID.String(), "error", err)
 			}
 		}

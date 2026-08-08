@@ -4,6 +4,7 @@
 	import { page } from '$app/state';
 	import { Users, FileText, ScrollText, LogIn } from 'lucide-svelte';
 	import { api } from '$lib/api/client';
+	import { decodeBase64Text } from '$lib/tiptap/serialize';
 	import type { Space, SpaceRule } from '$lib/types';
 
 	interface Props {
@@ -21,6 +22,27 @@
 		following?: boolean;
 	}
 	let { space, rules, authed, logoUrl = '', initialJoined = false, following = $bindable(false) }: Props = $props();
+
+	// Wiki content: the API stores it as base64-encoded JSON with
+	// {title, extract, description, thumbnail, content_url}. Decode and
+	// extract the text for the sidebar about widget.
+	const wikiExtract = $derived.by(() => {
+		if (!space.wiki_content) return null;
+		try {
+			const decoded = typeof space.wiki_content === 'string'
+				? decodeBase64Text(space.wiki_content)
+				: String(space.wiki_content);
+			try {
+				const json = JSON.parse(decoded);
+				return json?.extract ?? null;
+			} catch {
+				// Not JSON — treat as raw HTML, strip tags for sidebar preview.
+				return decoded.replace(/<[^>]*>/g, '').trim() || null;
+			}
+		} catch {
+			return null;
+		}
+	});
 
 	// Join state is hydrated from the server (initialJoined) so the button
 	// reflects the caller's actual membership on SSR load instead of always
@@ -174,11 +196,13 @@
 		</h2>
 		{#if space.description}
 			<p class="text-sm leading-relaxed text-[var(--color-text-subtle)]">{space.description}</p>
+		{:else if wikiExtract}
+			<p class="text-sm leading-relaxed text-[var(--color-text-subtle)] line-clamp-4">{wikiExtract}</p>
 		{:else}
 			<p class="text-sm text-[var(--color-muted)]">{t('space.no_description', 'No description yet.')}</p>
 		{/if}
-		{#if space.wiki_content}
-			<p class="mt-3 text-sm leading-relaxed text-[var(--color-text-subtle)]">{space.wiki_content}</p>
+		{#if wikiExtract && space.description}
+			<p class="mt-3 text-sm leading-relaxed text-[var(--color-text-subtle)] line-clamp-4">{wikiExtract}</p>
 		{/if}
 	</section>
 

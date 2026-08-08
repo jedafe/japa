@@ -7,6 +7,8 @@
 	import { EmptyState, SpaceJoinButton, SearchInput, type SearchSuggestion } from '$lib/components/ui';
 	import { api } from '$lib/api/client';
 	import SpaceCreationModal from '$lib/components/spaces/SpaceCreationModal.svelte';
+	import { decodeBase64Text } from '$lib/tiptap/serialize';
+	import type { Space } from '$lib/types';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -30,12 +32,22 @@
 
 	let query = $state(untrack(() => data.q));
 	let selectedType = $state(untrack(() => data.type));
+	let selectedLevel = $state(untrack(() => data.level));
 	const searchPlaceholder = $derived(t('spaces.search_placeholder', 'Search spaces…'));
+
+	const levelOptions = [
+		{ value: '', label: 'All levels' },
+		{ value: 'country', label: 'Countries' },
+		{ value: 'state', label: 'States' },
+		{ value: 'city', label: 'Cities' },
+		{ value: 'custom', label: 'Custom' }
+	];
 
 	function buildHref(pageNum: number): string {
 		const params = new URLSearchParams();
 		if (data.q) params.set('q', data.q);
 		if (data.type) params.set('type', data.type);
+		if (data.level) params.set('level', data.level);
 		if (pageNum > 0) params.set('page', String(pageNum));
 		const qs = params.toString();
 		return qs ? `/spaces?${qs}` : '/spaces';
@@ -45,6 +57,7 @@
 		const params = new URLSearchParams();
 		if (query.trim()) params.set('q', query.trim());
 		if (selectedType) params.set('type', selectedType);
+		if (selectedLevel) params.set('level', selectedLevel);
 		const qs = params.toString();
 		goto(qs ? `/spaces?${qs}` : '/spaces');
 	}
@@ -53,6 +66,21 @@
 	const spaceTypeMap = $derived(
 		data.spaceTypes.reduce((m, t) => { m[t.id] = t.name; return m; }, {} as Record<string, string>)
 	);
+
+	// Extract a short description for space cards: prefer space.description,
+	// fall back to the Wikipedia extract from wiki_content (base64-encoded JSON).
+	function cardExcerpt(space: Space): string {
+		if (space.description) return space.description;
+		if (!space.wiki_content) return '';
+		try {
+			const json = typeof space.wiki_content === 'string'
+				? JSON.parse(decodeBase64Text(space.wiki_content))
+				: space.wiki_content;
+			return json?.extract ?? '';
+		} catch {
+			return '';
+		}
+	}
 
 	async function spaceSearchFetcher(q: string): Promise<SearchSuggestion[]> {
 		const res = await api.get<{ data: { results: { type: string; id: string; title: string; excerpt?: string; url: string }[] } }>(
@@ -142,6 +170,21 @@
 				{/each}
 			</div>
 		{/if}
+
+		<!-- Level filter chips (country/state/city/custom) -->
+		<div class="mt-2 flex flex-wrap gap-2">
+			{#each levelOptions as opt (opt.value)}
+				<button
+					type="button"
+					onclick={() => { selectedLevel = opt.value; onFilterChange(); }}
+					class="rounded-full border px-3 py-1 text-xs transition-colors {selectedLevel === opt.value
+						? 'border-[var(--color-primary)] bg-[var(--color-primary)]/10 text-[var(--color-primary)]'
+						: 'border-[var(--color-border)] text-[var(--color-muted)] hover:border-[var(--color-primary)]/40'}"
+				>
+					{opt.label}
+				</button>
+			{/each}
+		</div>
 	</div>
 
 	<div class="p-4">
@@ -169,9 +212,19 @@
 					>
 						<a href="/spaces/{space.slug}" class="flex min-w-0 flex-1 items-start gap-3">
 							<span
-								class="grid h-11 w-11 shrink-0 place-items-center rounded-[var(--radius)] bg-[var(--color-surface-subtle)] text-[var(--color-primary)]"
+								class="grid h-11 w-11 shrink-0 place-items-center overflow-hidden rounded-[var(--radius)] bg-[var(--color-surface-subtle)] text-[var(--color-primary)]"
 							>
-								<Layers size={20} />
+								{#if space.logo_url}
+									<img
+										src={space.logo_url}
+										alt=""
+										loading="lazy"
+										decoding="async"
+										class="h-full w-full object-cover"
+									/>
+								{:else}
+									<Layers size={20} />
+								{/if}
 							</span>
 							<span class="min-w-0 flex-1">
 								<span
@@ -179,9 +232,9 @@
 								>
 									{space.name}
 								</span>
-								{#if space.description}
-									<span class="mt-1 line-clamp-2 block text-xs text-[var(--color-text-subtle)]">
-										{space.description}
+								{#if cardExcerpt(space)}
+									<span class="mt-1 line-clamp-1 block truncate text-xs text-[var(--color-text-subtle)]">
+										{cardExcerpt(space)}
 									</span>
 								{/if}
 								<span class="mt-2 flex items-center gap-3 text-xs text-[var(--color-muted)]">

@@ -4,8 +4,9 @@
 	import { DataTable } from "$lib/components/ui/data-table";
 	import type { ActionItem } from "$lib/components/ui/data-table";
 	import { TableSkeleton } from "$lib/components/ui/skeleton";
-	import { Search, Globe, MapPin, ChevronRight, Loader2 } from "lucide-svelte";
+	import { Search, Globe, MapPin, ChevronRight, Loader2, Plus } from "lucide-svelte";
 	import { geoApi } from "$lib/api";
+	import { goto } from "$app/navigation";
 	import { t } from "$lib/stores/i18n.svelte";
 	import { hasPermission } from "$lib/stores/permissions.svelte";
 
@@ -38,6 +39,13 @@
 	let lookupError = $state('');
 
 	const canLookup = $derived(hasPermission('geo.lookup'));
+	const canManageSpaces = $derived(hasPermission('spaces.admin') || hasPermission('*'));
+
+	function createGeoUrl(level: string, parentId?: string): string {
+		const params = new URLSearchParams({ level, from: '/geo' });
+		if (parentId) params.set('parent_id', parentId);
+		return `/spaces/new?${params.toString()}`;
+	}
 
 	// Hierarchy browser
 	let countries = $state<GeoSpace[]>([]);
@@ -47,6 +55,35 @@
 	let selectedState = $state<GeoSpace | null>(null);
 	let hierarchyLoading = $state(false);
 	let hierarchyError = $state('');
+
+	// Search queries — DataTable delegates filtering to the parent via onsearch.
+	let countrySearch = $state('');
+	let stateSearch = $state('');
+	let citySearch = $state('');
+
+	const filteredCountries = $derived(
+		countrySearch
+			? countries.filter(c =>
+				c.name.toLowerCase().includes(countrySearch.toLowerCase()) ||
+				(c.geo_code ?? '').toLowerCase().includes(countrySearch.toLowerCase())
+			)
+			: countries
+	);
+	const filteredStates = $derived(
+		stateSearch
+			? states.filter(s =>
+				s.name.toLowerCase().includes(stateSearch.toLowerCase()) ||
+				(s.geo_code ?? '').toLowerCase().includes(stateSearch.toLowerCase())
+			)
+			: states
+	);
+	const filteredCities = $derived(
+		citySearch
+			? cities.filter(c =>
+				c.name.toLowerCase().includes(citySearch.toLowerCase())
+			)
+			: cities
+	);
 
 	const countryColumns = [
 		{ key: 'name', label: t('geo.country', 'Country'), sortable: true, render: (v: string) => `<span class="font-medium">${v}</span>` },
@@ -112,6 +149,8 @@
 		selectedCountry = c;
 		selectedState = null;
 		cities = [];
+		stateSearch = '';
+		citySearch = '';
 		hierarchyLoading = true;
 		hierarchyError = '';
 		try {
@@ -130,6 +169,7 @@
 
 	async function selectState(s: GeoSpace) {
 		selectedState = s;
+		citySearch = '';
 		hierarchyLoading = true;
 		hierarchyError = '';
 		try {
@@ -259,20 +299,40 @@
 			</div>
 		{/if}
 
-		<!-- Breadcrumb -->
-		<div class="flex items-center gap-1 text-sm" style="color: var(--color-muted)">
-			<button class="hover:text-foreground" onclick={() => { selectedCountry = null; selectedState = null; cities = []; }}>
-				{t('geo.countries', 'Countries')}
-			</button>
-			{#if selectedCountry}
-				<ChevronRight class="h-3 w-3" />
-				<button class="hover:text-foreground" onclick={() => { selectedState = null; cities = []; }}>
-					{selectedCountry.name}
+		<!-- Breadcrumb + create actions -->
+		<div class="flex items-center justify-between gap-2">
+			<div class="flex items-center gap-1 text-sm" style="color: var(--color-muted)">
+				<button class="hover:text-foreground" onclick={() => { selectedCountry = null; selectedState = null; cities = []; stateSearch = ''; citySearch = ''; }}>
+					{t('geo.countries', 'Countries')}
 				</button>
-			{/if}
-			{#if selectedState}
-				<ChevronRight class="h-3 w-3" />
-				<span style="color: var(--color-foreground)">{selectedState.name}</span>
+				{#if selectedCountry}
+					<ChevronRight class="h-3 w-3" />
+					<button class="hover:text-foreground" onclick={() => { selectedState = null; cities = []; citySearch = ''; }}>
+						{selectedCountry.name}
+					</button>
+				{/if}
+				{#if selectedState}
+					<ChevronRight class="h-3 w-3" />
+					<span style="color: var(--color-foreground)">{selectedState.name}</span>
+				{/if}
+			</div>
+			{#if canManageSpaces}
+				{#if !selectedCountry}
+					<Button onclick={() => goto(createGeoUrl('country'))} size="sm">
+						<Plus class="mr-1 h-3.5 w-3.5" />
+						{t('geo.create_country', 'Create Country')}
+					</Button>
+				{:else if !selectedState}
+					<Button onclick={() => goto(createGeoUrl('state', selectedCountry?.id))} size="sm">
+						<Plus class="mr-1 h-3.5 w-3.5" />
+						{t('geo.create_state', 'Create State')}
+					</Button>
+				{:else}
+					<Button onclick={() => goto(createGeoUrl('city', selectedState?.id))} size="sm">
+						<Plus class="mr-1 h-3.5 w-3.5" />
+						{t('geo.create_city', 'Create City')}
+					</Button>
+				{/if}
 			{/if}
 		</div>
 
@@ -281,32 +341,32 @@
 		{:else if !selectedCountry}
 			<DataTable
 				columns={countryColumns}
-				data={countries}
+				data={filteredCountries}
 				actions={countryRowActions}
 				searchable={true}
 				searchPlaceholder={t('geo.search_countries', 'Search countries...')}
-				onsearch={(q: string) => { /* client-side filter via DataTable */ }}
+				onsearch={(q: string) => { countrySearch = q; }}
 				pageSize={25}
 				emptyMessage={t('geo.no_countries', 'No countries found')}
 			/>
 		{:else if !selectedState}
 			<DataTable
 				columns={stateColumns}
-				data={states}
+				data={filteredStates}
 				actions={stateRowActions}
 				searchable={true}
 				searchPlaceholder={t('geo.search_states', 'Search states...')}
-				onsearch={(q: string) => { /* client-side filter */ }}
+				onsearch={(q: string) => { stateSearch = q; }}
 				pageSize={25}
 				emptyMessage={t('geo.no_states', 'No states found for this country')}
 			/>
 		{:else}
 			<DataTable
 				columns={cityColumns}
-				data={cities}
+				data={filteredCities}
 				searchable={true}
 				searchPlaceholder={t('geo.search_cities', 'Search cities...')}
-				onsearch={(q: string) => { /* client-side filter */ }}
+				onsearch={(q: string) => { citySearch = q; }}
 				pageSize={25}
 				emptyMessage={t('geo.no_cities', 'No cities found for this state')}
 			/>

@@ -5,7 +5,7 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Modal } from '$lib/components/ui/modal';
 	import { Select } from '$lib/components/ui/select';
-	import { RefreshCw, Save, Check, Upload, RotateCcw, Undo2, AlertTriangle } from 'lucide-svelte';
+	import { RefreshCw, Save, Check, Upload, RotateCcw, Undo2, AlertTriangle, ArrowRight } from 'lucide-svelte';
 	import { Switch } from "bits-ui";
 	import { settingsAdminApi, api } from '$lib/api';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
@@ -606,6 +606,15 @@
 											disabled={!canManage}
 											onchange={(next) => updateSettingValue(category.key, setting.key, next)}
 										/>
+									{:else if setting.type === 'card-style'}
+										<a
+											href="/content-types"
+											class="inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm transition-colors hover:bg-muted/50"
+											style="border-color: var(--color-border); color: var(--color-primary)"
+										>
+											{t('content_types.title', 'Content Types')}
+											<ArrowRight class="h-3.5 w-3.5" />
+										</a>
 									{:else if setting.type === 'textarea'}
 										<textarea
 											id={toggleId}

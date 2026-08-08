@@ -18,7 +18,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
-	"sync"
+	"sync/atomic"
 )
 
 // defaultTrustedCIDRs are the ranges a reverse proxy normally lives in.
@@ -31,45 +31,65 @@ var defaultTrustedCIDRs = []string{
 	"fc00::/7",
 }
 
-var (
-	trustedOnce sync.Once
-	trustedNets []*net.IPNet
-)
+// trustedPtr holds the parsed trusted-proxy CIDRs. It is populated lazily on
+// the first call to trustedProxies() and stored atomically so that reads are
+// lock-free. Tests can call resetForTesting to force re-initialization with a
+// different JC_TRUSTED_PROXIES value.
+var trustedPtr atomic.Pointer[[]*net.IPNet]
 
 // trustedProxies parses JC_TRUSTED_PROXIES once and caches the result.
 func trustedProxies() []*net.IPNet {
-	trustedOnce.Do(func() {
-		entries := defaultTrustedCIDRs
-		if env := strings.TrimSpace(os.Getenv("JC_TRUSTED_PROXIES")); env != "" {
-			entries = strings.Split(env, ",")
+	if p := trustedPtr.Load(); p != nil {
+		return *p
+	}
+
+	nets := parseTrustedProxyList()
+	trustedPtr.Store(&nets)
+	return nets
+}
+
+// parseTrustedProxyList reads JC_TRUSTED_PROXIES from the environment and
+// returns the parsed CIDR list. When the env var is empty the default CIDRs
+// (loopback + RFC1918 + RFC4193) are used.
+func parseTrustedProxyList() []*net.IPNet {
+	entries := defaultTrustedCIDRs
+	if env := strings.TrimSpace(os.Getenv("JC_TRUSTED_PROXIES")); env != "" {
+		entries = strings.Split(env, ",")
+	}
+
+	var nets []*net.IPNet
+	for _, entry := range entries {
+		entry = strings.TrimSpace(entry)
+		if entry == "" {
+			continue
 		}
 
-		for _, entry := range entries {
-			entry = strings.TrimSpace(entry)
-			if entry == "" {
-				continue
-			}
-
-			if !strings.Contains(entry, "/") {
-				if ip := net.ParseIP(entry); ip != nil {
-					bits := 32
-					if ip.To4() == nil {
-						bits = 128
-					}
-
-					trustedNets = append(trustedNets, &net.IPNet{IP: ip, Mask: net.CIDRMask(bits, bits)})
+		if !strings.Contains(entry, "/") {
+			if ip := net.ParseIP(entry); ip != nil {
+				bits := 32
+				if ip.To4() == nil {
+					bits = 128
 				}
 
-				continue
+				nets = append(nets, &net.IPNet{IP: ip, Mask: net.CIDRMask(bits, bits)})
 			}
 
-			if _, network, err := net.ParseCIDR(entry); err == nil {
-				trustedNets = append(trustedNets, network)
-			}
+			continue
 		}
-	})
 
-	return trustedNets
+		if _, network, err := net.ParseCIDR(entry); err == nil {
+			nets = append(nets, network)
+		}
+	}
+
+	return nets
+}
+
+// resetForTesting clears the cached trusted-proxy set so that a subsequent
+// call to trustedProxies() re-reads JC_TRUSTED_PROXIES. It is intended for
+// test use only and must not be called while HTTP requests are being served.
+func resetForTesting() {
+	trustedPtr.Store(nil)
 }
 
 // IsTrustedProxy reports whether an IP belongs to the configured proxy set.
@@ -87,9 +107,13 @@ func IsTrustedProxy(ip net.IP) bool {
 	return false
 }
 
-// FromRequest returns the client IP for the request. Forwarding headers are
-// honoured only when the connecting peer is a trusted proxy; otherwise the
-// peer address itself is returned.
+// FromRequest returns the client IP for the request in canonical form.
+// Forwarding headers are honoured only when the connecting peer is a trusted
+// proxy; otherwise the peer address itself is returned. The returned string
+// is always the canonical representation produced by net.IP.String() so that
+// downstream consumers (rate-limit keys, hashes, cache keys, geoip lookups)
+// see a consistent value for the same address regardless of how the header
+// encoded it.
 func FromRequest(r *http.Request) string {
 	peer := peerIP(r)
 	if peer == "" || !IsTrustedProxy(net.ParseIP(peer)) {
@@ -110,25 +134,31 @@ func FromRequest(r *http.Request) string {
 			}
 
 			if !IsTrustedProxy(ip) {
-				return candidate
+				return ip.String()
 			}
 		}
 	}
 
 	if xri := strings.TrimSpace(r.Header.Get("X-Real-IP")); xri != "" {
-		if net.ParseIP(xri) != nil {
-			return xri
+		if ip := net.ParseIP(xri); ip != nil {
+			return ip.String()
 		}
 	}
 
 	return peer
 }
 
-// peerIP returns the address of the immediate TCP peer, without its port.
+// peerIP returns the address of the immediate TCP peer, without its port, in
+// canonical form. If the host portion is a valid IP it is normalized via
+// net.IP.String(); otherwise the raw string is returned as-is.
 func peerIP(r *http.Request) string {
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
-		return strings.TrimSpace(r.RemoteAddr)
+		host = strings.TrimSpace(r.RemoteAddr)
+	}
+
+	if ip := net.ParseIP(host); ip != nil {
+		return ip.String()
 	}
 
 	return host

@@ -15,9 +15,9 @@ import type { AssessmentForm } from '$lib/types';
 export interface AssessmentHistoryEntry {
 	id: string;
 	total_score: number;
-	max_score: number;
 	threshold_label?: string;
-	submitted_at: string;
+	submission_id?: string;
+	created_at: string;
 }
 
 export const load: PageServerLoad = async (event) => {

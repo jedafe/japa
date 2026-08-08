@@ -281,7 +281,7 @@ type mockBlockChecker struct {
 	blocked bool
 }
 
-func (m *mockBlockChecker) IsBlocked(_ context.Context, _, _ pgtype.UUID) (bool, error) {
+func (m *mockBlockChecker) IsBlocked(_ context.Context, _, _, _ pgtype.UUID) (bool, error) {
 	return m.blocked, nil
 }
 
@@ -291,4 +291,185 @@ type mockMemberChecker struct {
 
 func (m *mockMemberChecker) IsMember(_ context.Context, _, _, _ pgtype.UUID) (bool, error) {
 	return m.isMember, nil
+}
+
+type mockUserStatusChecker struct {
+	erasedIDs map[pgtype.UUID]bool
+}
+
+func (m *mockUserStatusChecker) IsErased(_ context.Context, _ pgtype.UUID, userID pgtype.UUID) (bool, error) {
+	return m.erasedIDs[userID], nil
+}
+
+// BUG-012: Test that FilterMentions skips erased users when a
+// UserStatusChecker is provided.
+func TestFilterMentions_SkipsErased(t *testing.T) {
+	t.Parallel()
+	tenantID := mustUUID(t, "110e8400-e29b-41d4-a716-446655440000")
+	authorID := mustUUID(t, "550e8400-e29b-41d4-a716-446655440000")
+	erasedUserID := mustUUID(t, "660e8400-e29b-41d4-a716-446655440000")
+	activeUserID := mustUUID(t, "770e8400-e29b-41d4-a716-446655440000")
+	spaceID := mustUUID(t, "880e8400-e29b-41d4-a716-446655440000")
+
+	mentions := []Mention{
+		{ID: erasedUserID, EntityType: "user", Label: "Erased"},
+		{ID: activeUserID, EntityType: "user", Label: "Active"},
+	}
+
+	userChecker := &mockUserStatusChecker{
+		erasedIDs: map[pgtype.UUID]bool{erasedUserID: true},
+	}
+
+	filtered, err := FilterMentions(
+		t.Context(),
+		mentions,
+		tenantID,
+		authorID,
+		spaceID,
+		false,
+		nil, nil, userChecker,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(filtered) != 1 {
+		t.Fatalf("expected 1 mention (erased skipped), got %d", len(filtered))
+	}
+
+	if filtered[0].Label != "Active" {
+		t.Errorf("expected Active user to remain, got %s", filtered[0].Label)
+	}
+}
+
+// BUG-013: Test that FilterMentions returns all non-self mentions when
+// all checkers are nil (the production fallback when checkers aren't wired).
+func TestFilterMentions_NilCheckers(t *testing.T) {
+	t.Parallel()
+	tenantID := mustUUID(t, "110e8400-e29b-41d4-a716-446655440000")
+	authorID := mustUUID(t, "550e8400-e29b-41d4-a716-446655440000")
+	user1 := mustUUID(t, "660e8400-e29b-41d4-a716-446655440000")
+	user2 := mustUUID(t, "770e8400-e29b-41d4-a716-446655440000")
+	spaceID := mustUUID(t, "880e8400-e29b-41d4-a716-446655440000")
+
+	mentions := []Mention{
+		{ID: authorID, EntityType: "user", Label: "Author"}, // self — skipped
+		{ID: user1, EntityType: "user", Label: "User1"},
+		{ID: user2, EntityType: "user", Label: "User2"},
+	}
+
+	filtered, err := FilterMentions(
+		t.Context(),
+		mentions,
+		tenantID,
+		authorID,
+		spaceID,
+		false,
+		nil, nil, nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(filtered) != 2 {
+		t.Fatalf("expected 2 mentions (self skipped, nil checkers), got %d", len(filtered))
+	}
+}
+
+// BUG-004: Test that FilterMentions deduplicates mentions of the same user.
+func TestFilterMentions_Deduplicates(t *testing.T) {
+	t.Parallel()
+	tenantID := mustUUID(t, "110e8400-e29b-41d4-a716-446655440000")
+	authorID := mustUUID(t, "550e8400-e29b-41d4-a716-446655440000")
+	user1 := mustUUID(t, "660e8400-e29b-41d4-a716-446655440000")
+	spaceID := mustUUID(t, "770e8400-e29b-41d4-a716-446655440000")
+
+	mentions := []Mention{
+		{ID: user1, EntityType: "user", Label: "User1"},
+		{ID: user1, EntityType: "user", Label: "User1"}, // duplicate
+		{ID: user1, EntityType: "user", Label: "User1"}, // duplicate
+	}
+
+	filtered, err := FilterMentions(
+		t.Context(),
+		mentions,
+		tenantID,
+		authorID,
+		spaceID,
+		false,
+		nil, nil, nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(filtered) != 1 {
+		t.Fatalf("expected 1 mention (duplicates removed), got %d", len(filtered))
+	}
+}
+
+// BUG-001: Test that japaMention nodes without entity_type default to "user".
+func TestExtractMentions_JapaMentionDefaultEntityType(t *testing.T) {
+	t.Parallel()
+
+	doc := `{
+		"type": "doc",
+		"content": [
+			{
+				"type": "paragraph",
+				"content": [
+					{"type": "japaMention", "attrs": {"id": "550e8400-e29b-41d4-a716-446655440000", "label": "Legacy"}}
+				]
+			}
+		]
+	}`
+
+	mentions, err := ExtractMentions([]byte(doc))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(mentions) != 1 {
+		t.Fatalf("expected 1 japaMention, got %d", len(mentions))
+	}
+
+	if mentions[0].EntityType != "user" {
+		t.Errorf("EntityType = %s, want user (default for japaMention)", mentions[0].EntityType)
+	}
+}
+
+// TestRedactErasedMentionsInHTML verifies that mention spans for erased users
+// are replaced with the @[deleted user] placeholder.
+func TestRedactErasedMentionsInHTML(t *testing.T) {
+	t.Parallel()
+
+	erasedID := "550e8400-e29b-41d4-a716-446655440000"
+	activeID := "660e8400-e29b-41d4-a716-446655440000"
+
+	// Test both the new format (data-id, matching TipTap extension) and
+	// the old format (data-user-id, for backward compatibility).
+	html := `<p>Hello <span class="mention" data-type="mention" data-id="` + erasedID + `" data-label="Alice">@Alice</span> and <span class="mention" data-user-id="` + activeID + `">Bob</span></p>`
+
+	redacted := RedactErasedMentionsInHTML(html, []string{erasedID})
+
+	if !contains(redacted, "@[deleted user]") {
+		t.Errorf("expected @[deleted user] in redacted HTML, got: %s", redacted)
+	}
+
+	if !contains(redacted, activeID) {
+		t.Errorf("active user mention should be preserved, got: %s", redacted)
+	}
+}
+
+func contains(s, substr string) bool {
+	return len(s) >= len(substr) && (s == substr || containsString(s, substr))
+}
+
+func containsString(s, substr string) bool {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
 }

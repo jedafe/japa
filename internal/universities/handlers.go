@@ -13,6 +13,7 @@ import (
 	"log/slog"
 	"net/http"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
@@ -36,6 +37,8 @@ const customFieldEntityTypeSpace = "space"
 type SpacesService interface {
 	GetSpaceTypeBySlug(ctx context.Context, slug string, tenantID pgtype.UUID) (gen.SpaceType, error)
 	ListSpacesByType(ctx context.Context, tenantID, spaceTypeID pgtype.UUID) ([]gen.ListSpacesByTypeRow, error)
+	ListSpacesByTypePaginated(ctx context.Context, tenantID, spaceTypeID pgtype.UUID, search, geoCode string, limit, offset int32) ([]gen.ListSpacesByTypePaginatedRow, error)
+	CountSpacesByType(ctx context.Context, tenantID, spaceTypeID pgtype.UUID, search, geoCode string) (int64, error)
 	GetSpaceBySlug(ctx context.Context, slug string, tenantID pgtype.UUID) (gen.GetSpaceBySlugRow, error)
 	GetSpace(ctx context.Context, id, tenantID pgtype.UUID) (gen.GetSpaceByIDRow, error)
 	CreateSpace(ctx context.Context, params gen.CreateSpaceParams) (gen.CreateSpaceRow, error)
@@ -184,6 +187,65 @@ func (h *Handlers) ListUniversities(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"data": universities})
 }
 
+// ListUniversitiesAdmin handles GET /api/v1/admin/universities — server-side
+// paginated list of university spaces with search and country filter.
+// Supports ?page=&limit=&q=&country= query params. Returns {data, meta} with
+// pagination metadata for the admin DataTable. [admin: admin.settings]
+func (h *Handlers) ListUniversitiesAdmin(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	spaceType, err := h.spaces.GetSpaceTypeBySlug(r.Context(), universitySpaceTypeSlug, tenantID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to resolve university space type")
+		return
+	}
+
+	// Parse pagination params.
+	page := parseIntDefault(r.URL.Query().Get("page"), 1)
+	limit := parseIntDefault(r.URL.Query().Get("limit"), 25)
+	if limit < 1 || limit > 200 {
+		limit = 25
+	}
+	if page < 1 {
+		page = 1
+	}
+	offset := int32((page - 1) * limit)
+	limit32 := int32(limit)
+
+	search := strings.TrimSpace(r.URL.Query().Get("q"))
+	country := strings.TrimSpace(r.URL.Query().Get("country"))
+
+	universities, err := h.spaces.ListSpacesByTypePaginated(r.Context(), tenantID, spaceType.ID, search, country, limit32, offset)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list universities")
+		return
+	}
+
+	total, err := h.spaces.CountSpacesByType(r.Context(), tenantID, spaceType.ID, search, country)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to count universities")
+		return
+	}
+
+	totalPages := int(total) / limit
+	if int(total)%limit != 0 {
+		totalPages++
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data": universities,
+		"meta": map[string]any{
+			"total":       total,
+			"page":        page,
+			"limit":       limit,
+			"total_pages": totalPages,
+		},
+	})
+}
+
 // GetUniversity handles GET /api/v1/universities/{slug} — a single university
 // space together with its custom field values. [public]
 func (h *Handlers) GetUniversity(w http.ResponseWriter, r *http.Request) {
@@ -237,6 +299,19 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	if err := json.NewEncoder(w).Encode(v); err != nil {
 		slog.Warn("json encode error", "error", err)
 	}
+}
+
+// parseIntDefault parses a string as an int, returning the default on error
+// or empty string.
+func parseIntDefault(s string, def int) int {
+	if s == "" {
+		return def
+	}
+	n, err := strconv.Atoi(s)
+	if err != nil {
+		return def
+	}
+	return n
 }
 
 // writeError writes a JSON error response following the JapaConnect API format.

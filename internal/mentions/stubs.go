@@ -20,8 +20,13 @@ func NewDBCheckers(database *db.DB) *DBCheckers {
 }
 
 // IsBlocked checks whether a user block exists between two users in either direction.
-func (c *DBCheckers) IsBlocked(ctx context.Context, blockerID, blockedID pgtype.UUID) (bool, error) {
-	blocked, err := c.read.IsBlocked(ctx, gen.IsBlockedParams{BlockerID: blockerID, BlockedID: blockedID})
+// Tenant-scoped per JEOS §9 (BUG-006).
+func (c *DBCheckers) IsBlocked(ctx context.Context, tenantID, blockerID, blockedID pgtype.UUID) (bool, error) {
+	blocked, err := c.read.IsBlocked(ctx, gen.IsBlockedParams{
+		BlockerID: blockerID,
+		BlockedID: blockedID,
+		TenantID:  tenantID,
+	})
 	return blocked, err
 }
 

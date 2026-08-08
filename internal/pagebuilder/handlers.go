@@ -750,6 +750,34 @@ func (h *Handlers) SaveAsTemplate(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, map[string]any{"data": template})
 }
 
+// DuplicatePage handles POST /admin/pages/:id/duplicate.
+// It clones the source page (blocks, meta, theme, page_type) into a new draft
+// with a unique slug and " (Copy)" title suffix, so an admin can redesign the
+// copy for another app's homepage without touching the original.
+func (h *Handlers) DuplicatePage(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+	pageID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid page ID")
+		return
+	}
+
+	page, err := h.Service.DuplicatePage(r.Context(), pageID, tenantID, user.UserID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, map[string]any{"data": page})
+}
+
 func slugify(s string) string {
 	result := make([]byte, len(s))
 	for i := 0; i < len(s); i++ {

@@ -7,6 +7,8 @@
 	import CreatorCard from '$lib/components/blog/CreatorCard.svelte';
 	import SidebarWidgetRenderer from '$lib/components/shell/SidebarWidgetRenderer.svelte';
 	import CommentThread from '$lib/components/comments/CommentThread.svelte';
+	import { hydrateLinkPreviews } from '$lib/tiptap/hydrateLinkPreviews';
+	import { hydrateMentions } from '$lib/tiptap/hydrateMentions';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -122,7 +124,7 @@
 		{/if}
 
 		<!-- Article body: prose TipTap HTML with serif reading font -->
-		<div class="prose mt-8">
+		<div class="prose mt-8" use:hydrateLinkPreviews use:hydrateMentions>
 			{@html article.body_html || article.body}
 		</div>
 

@@ -42,7 +42,7 @@
 {#snippet tags()}
 	{#if item.tags?.length}
 		<div class="flex flex-wrap gap-1.5">
-			{#each item.tags.slice(0, 3) as tag (tag)}
+			{#each item.tags.slice(0, 3) as tag, i (i)}
 				<span class="text-xs font-medium text-[var(--color-primary)]">#{tag}</span>
 			{/each}
 		</div>

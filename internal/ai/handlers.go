@@ -316,9 +316,11 @@ func (h *Handlers) HandleGenerate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var input struct {
-		Category string         `json:"category"`
-		Prompt   string         `json:"prompt"`
-		Context  map[string]any `json:"context,omitempty"`
+		Category      string         `json:"category"`
+		Prompt        string         `json:"prompt"`
+		Context       map[string]any `json:"context,omitempty"`
+		Humanize      *bool          `json:"humanize,omitempty"`
+		HumanizeLevel string         `json:"humanize_level,omitempty"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
@@ -384,6 +386,10 @@ func (h *Handlers) HandleGenerate(w http.ResponseWriter, r *http.Request) {
 		"user_id":   user.UserID.String(),
 		"tenant_id": tenantID.String(),
 	}
+
+	// Humanization: merge global ai.humanize.* setting with per-request override.
+	hEnabled, hLevel := h.resolveHandlerHumanize(r.Context(), tenantID, input.Humanize, input.HumanizeLevel)
+	writeHumanizePayload(payload, hEnabled, hLevel)
 
 	resp, err := h.Dispatcher.Dispatch(r.Context(), input.Category, Request{
 		Category: input.Category,
@@ -487,6 +493,8 @@ func (h *Handlers) HandleChat(w http.ResponseWriter, r *http.Request) {
 		Message        string         `json:"message"`
 		ConversationID string         `json:"conversation_id,omitempty"`
 		Context        map[string]any `json:"context,omitempty"`
+		Humanize       *bool          `json:"humanize,omitempty"`
+		HumanizeLevel  string         `json:"humanize_level,omitempty"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
@@ -545,6 +553,10 @@ func (h *Handlers) HandleChat(w http.ResponseWriter, r *http.Request) {
 		"task":             "chat",
 		"conversation_id":  input.ConversationID,
 	}
+
+	// Humanization: merge global ai.humanize.* setting with per-request override.
+	hEnabled, hLevel := h.resolveHandlerHumanize(r.Context(), tenantID, input.Humanize, input.HumanizeLevel)
+	writeHumanizePayload(payload, hEnabled, hLevel)
 
 	resp, err := h.Dispatcher.Dispatch(r.Context(), "chat", Request{
 		Category: "chat",
@@ -641,8 +653,10 @@ func (h *Handlers) HandleImprove(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var input struct {
-		Text string `json:"text"`
-		Tone string `json:"tone"`
+		Text          string `json:"text"`
+		Tone          string `json:"tone"`
+		Humanize      *bool  `json:"humanize,omitempty"`
+		HumanizeLevel string `json:"humanize_level,omitempty"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
@@ -669,6 +683,10 @@ func (h *Handlers) HandleImprove(w http.ResponseWriter, r *http.Request) {
 		"task":      "improve",
 		"tone":      tone,
 	}
+
+	// Humanization: merge global ai.humanize.* setting with per-request override.
+	hEnabled, hLevel := h.resolveHandlerHumanize(r.Context(), tenantID, input.Humanize, input.HumanizeLevel)
+	writeHumanizePayload(payload, hEnabled, hLevel)
 
 	resp, err := h.Dispatcher.Dispatch(r.Context(), "content_generation", Request{
 		Category: "content_generation",
@@ -698,8 +716,10 @@ func (h *Handlers) HandleSummarize(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var input struct {
-		Text     string `json:"text"`
-		MaxWords int    `json:"max_words"`
+		Text          string `json:"text"`
+		MaxWords      int    `json:"max_words"`
+		Humanize      *bool  `json:"humanize,omitempty"`
+		HumanizeLevel string `json:"humanize_level,omitempty"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
@@ -726,6 +746,10 @@ func (h *Handlers) HandleSummarize(w http.ResponseWriter, r *http.Request) {
 		"task":      "summarize",
 		"max_words": maxWords,
 	}
+
+	// Humanization: merge global ai.humanize.* setting with per-request override.
+	hEnabled, hLevel := h.resolveHandlerHumanize(r.Context(), tenantID, input.Humanize, input.HumanizeLevel)
+	writeHumanizePayload(payload, hEnabled, hLevel)
 
 	resp, err := h.Dispatcher.Dispatch(r.Context(), "content_generation", Request{
 		Category: "content_generation",
@@ -755,8 +779,10 @@ func (h *Handlers) HandleTranslate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var input struct {
-		Text         string `json:"text"`
-		TargetLocale string `json:"target_locale"`
+		Text          string `json:"text"`
+		TargetLocale  string `json:"target_locale"`
+		Humanize      *bool  `json:"humanize,omitempty"`
+		HumanizeLevel string `json:"humanize_level,omitempty"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
@@ -784,6 +810,10 @@ func (h *Handlers) HandleTranslate(w http.ResponseWriter, r *http.Request) {
 		"task":          "translate",
 		"target_locale": input.TargetLocale,
 	}
+
+	// Humanization: merge global ai.humanize.* setting with per-request override.
+	hEnabled, hLevel := h.resolveHandlerHumanize(r.Context(), tenantID, input.Humanize, input.HumanizeLevel)
+	writeHumanizePayload(payload, hEnabled, hLevel)
 
 	resp, err := h.Dispatcher.Dispatch(r.Context(), "content_generation", Request{
 		Category: "content_generation",

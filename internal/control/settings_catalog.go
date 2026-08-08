@@ -86,6 +86,12 @@ var settingsCatalog = map[string]settingMeta{
 	"ai.monthly_budget_usd":        {Type: "float", DefaultValue: "100", Description: "Alert threshold for AI spend (not hard cap).", Panel: "admin"},
 	"ai.japabot_enabled":           {Type: "bool", DefaultValue: "true", Description: "Global JapaBot toggle.", Panel: "admin"},
 	"ai.content_assist_enabled":    {Type: "bool", DefaultValue: "true", Description: "In-editor AI assist toggle.", Panel: "admin"},
+	// AI Humanization — injects natural-language style instructions into every
+	// AI generation surface (generate, chat, assist, persona/studio drafts).
+	// Gated by the ai.humanize.manage RBAC node for the admin toggle; users
+	// can also opt in/out per request via the humanize payload field.
+	"ai.humanize.enabled":          {Type: "bool", DefaultValue: "false", Description: "Global toggle for AI text humanization (natural-language style injection).", Panel: "admin"},
+	"ai.humanize.level":            {Type: "string", DefaultValue: "medium", Description: "Humanization intensity: low | medium | high.", Options: `[{"value":"low","label":"Low"},{"value":"medium","label":"Medium"},{"value":"high","label":"High"}]`, Panel: "admin"},
 	// Media — storage.* keys are env-only (read from JC_S3_* env vars in
 	// internal/media/s3.go). They are kept in the catalog for control-panel
 	// display but are NOT read from system_settings at runtime. Changing
@@ -173,7 +179,6 @@ var settingsCatalog = map[string]settingMeta{
 	// Appearance / branding — public so the main site can apply primary color
 	// and render the logo from the control panel settings.
 	"appearance.dark_mode_default":   {Type: "bool", DefaultValue: "false", Description: "Default theme for new visitors (false = light).", Public: true, Panel: "admin"},
-	"appearance.feed_card_style":     {Type: "string", DefaultValue: "reddit", Description: "Default feed card style: reddit | compact | grid | magazine.", Options: `[{"value":"reddit","label":"Reddit"},{"value":"compact","label":"Compact"},{"value":"grid","label":"Grid"},{"value":"magazine","label":"Magazine"}]`, Public: true, Panel: "admin"},
 	"appearance.default_editor":      {Type: "string", DefaultValue: "block", Description: "Default editor mode for the post composer: block | wysiwyg | markdown.", Options: `[{"value":"block","label":"Block"},{"value":"wysiwyg","label":"Rich text"},{"value":"markdown","label":"Markdown"}]`, Public: true, Panel: "admin"},
 	"appearance.logo_url":            {Type: "string", DefaultValue: "", Description: "URL to the platform logo image.", Public: true, Panel: "admin"},
 	"appearance.favicon_url":         {Type: "string", DefaultValue: "", Description: "URL to the platform favicon image; empty = use default favicon.svg.", Public: true, Panel: "admin"},

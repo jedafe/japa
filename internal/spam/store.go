@@ -192,23 +192,27 @@ func (s *Store) IsIPBlocked(ctx context.Context, tenantID pgtype.UUID, ip string
 // --- User Blocks ---
 
 // CreateUserBlock creates a block relationship.
-func (s *Store) CreateUserBlock(ctx context.Context, blockerID, blockedID pgtype.UUID) error {
+// Tenant-scoped per JEOS §9 (BUG-006).
+func (s *Store) CreateUserBlock(ctx context.Context, tenantID, blockerID, blockedID pgtype.UUID) error {
 	return s.queries.CreateUserBlock(ctx, gen.CreateUserBlockParams{
 		BlockerID: blockerID,
 		BlockedID: blockedID,
+		TenantID:  tenantID,
 	})
 }
 
 // DeleteUserBlock removes a block relationship.
-func (s *Store) DeleteUserBlock(ctx context.Context, blockerID, blockedID pgtype.UUID) error {
+// Tenant-scoped per JEOS §9 (BUG-006).
+func (s *Store) DeleteUserBlock(ctx context.Context, tenantID, blockerID, blockedID pgtype.UUID) error {
 	return s.queries.DeleteUserBlock(ctx, gen.DeleteUserBlockParams{
 		BlockerID: blockerID,
 		BlockedID: blockedID,
+		TenantID:  tenantID,
 	})
 }
 
 // GetUserBlocks returns all users blocked by the given user.
-func (s *Store) GetUserBlocks(ctx context.Context, blockerID pgtype.UUID) ([]gen.UserBlock, error) {
+func (s *Store) GetUserBlocks(ctx context.Context, blockerID pgtype.UUID) ([]gen.GetUserBlocksRow, error) {
 	return s.queries.GetUserBlocks(ctx, blockerID)
 }
 
@@ -218,10 +222,12 @@ func (s *Store) ListAllUserBlocks(ctx context.Context, limit int32) ([]gen.ListA
 }
 
 // IsBlocked checks whether user A has blocked user B or vice versa.
-func (s *Store) IsBlocked(ctx context.Context, userA, userB pgtype.UUID) (bool, error) {
+// Tenant-scoped per JEOS §9 (BUG-006).
+func (s *Store) IsBlocked(ctx context.Context, tenantID, userA, userB pgtype.UUID) (bool, error) {
 	result, err := s.queries.IsBlocked(ctx, gen.IsBlockedParams{
 		BlockerID: userA,
 		BlockedID: userB,
+		TenantID:  tenantID,
 	})
 	if err != nil {
 		return false, fmt.Errorf("checking block status: %w", err)

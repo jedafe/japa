@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { BlockStyle, MotionConfig, BackgroundConfig } from '../types';
-  import { styleToCss } from './styleToCss';
+  import { styleToCss, responsiveStyleToCss } from './styleToCss';
   import Reveal from './Reveal.svelte';
 
   interface Props {
@@ -21,10 +21,29 @@
   // Background rendering
   const hasBg = $derived(!!background && background.type !== 'none');
   const bgOverlay = $derived(background?.image?.overlay);
+
+  // Custom CSS + responsive overrides — both use a unique scoped selector.
+  // Each BlockShell instance gets its own data attribute so CSS doesn't
+  // leak to sibling blocks. The ID is generated once per instance.
+  const scopeId = `bs-${crypto.randomUUID()}`;
+  const scopeSelector = `[data-bs="${scopeId}"]`;
+  const scopedCss = $derived.by(() => {
+    const raw = style?.custom_css;
+    if (!raw?.trim()) return null;
+    // Replace `&` with the scoped selector `[data-bs="<id>"]`
+    return raw.replace(/&/g, scopeSelector);
+  });
+  // Responsive container-query CSS from style.responsive overrides.
+  const responsiveCss = $derived(responsiveStyleToCss(style, scopeSelector));
 </script>
 
+<svelte:head>
+  {@html scopedCss ? '<style>' + scopedCss + '<\/style>' : ''}
+  {@html responsiveCss ? '<style>' + responsiveCss + '<\/style>' : ''}
+</svelte:head>
+
 <Reveal {motion}>
-  <div class="relative {resolved.classes}" style={inlineStyle || undefined}>
+  <div class="relative {resolved.classes}" data-bs={scopeId} style={inlineStyle || undefined}>
     {#if hasBg && background?.type === 'image' && background.image}
       <img
         src={background.image.url}

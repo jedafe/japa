@@ -184,13 +184,18 @@ DELETE FROM oauth_accounts WHERE tenant_id = $1 AND user_id = $2 AND provider = 
 SELECT EXISTS(SELECT 1 FROM users WHERE id = $1 AND tenant_id = $2 AND password_hash IS NOT NULL AND password_hash != '') AS has_password;
 
 -- name: ListUserContent :many
+-- Returns the caller's own content, optionally filtered by status,
+-- content_type, and a free-text search over title/slug. An empty status,
+-- content_type, or q string means "no filter". Used by GET /me/content
+-- (published), /me/drafts (draft), and /me/scheduled (scheduled).
 SELECT c.id, c.title, c.slug, c.content_type, c.status, c.created_at, c.updated_at
 FROM contents c
-WHERE c.tenant_id = $1 AND c.author_id = $2 AND c.deleted_at IS NULL
-  AND ($3::text = '' OR c.status = $3)
-  AND ($6::text = '' OR c.content_type = $6)
+WHERE c.tenant_id = @tenant_id AND c.author_id = @author_id AND c.deleted_at IS NULL
+  AND (@status::text = '' OR c.status = @status)
+  AND (@content_type::text = '' OR c.content_type = @content_type)
+  AND (@q::text = '' OR c.title ILIKE '%' || @q || '%' OR c.slug ILIKE '%' || @q || '%')
 ORDER BY c.created_at DESC
-LIMIT $4 OFFSET $5;
+LIMIT @page_limit OFFSET @page_offset;
 
 -- name: GetUserDraft :one
 -- Returns the caller's own draft content by ID (tenant + author scoped,

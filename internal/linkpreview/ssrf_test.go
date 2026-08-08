@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 func TestIsPrivateIP(t *testing.T) {
@@ -136,7 +138,7 @@ func TestSSRFRedirectBlocking(t *testing.T) {
 
 		fetcher := NewFetcher(nil, nil)
 
-		_, err := fetcher.Fetch(t.Context(), redirectServer.URL)
+		_, err := fetcher.Fetch(t.Context(), redirectServer.URL, pgtype.UUID{})
 		if err == nil {
 			t.Error("expected error for redirect to private IP, got nil")
 		}
@@ -167,7 +169,7 @@ func TestMaxRedirectDepth(t *testing.T) {
 
 	fetcher := NewFetcher(nil, nil)
 
-	_, err := fetcher.Fetch(t.Context(), redirectChain[0].URL)
+	_, err := fetcher.Fetch(t.Context(), redirectChain[0].URL, pgtype.UUID{})
 	if err == nil {
 		t.Error("expected error for too many redirects, got nil")
 	}

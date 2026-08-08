@@ -153,6 +153,11 @@ func (p *AnthropicProvider) Send(ctx context.Context, req Request) (Response, er
 		systemPrompt = ctxStr
 	}
 
+	// Apply humanization (provider-layer injection covers every generation surface).
+	if level, requested := PayloadHumanize(req.Payload); requested {
+		systemPrompt = ApplyHumanization(systemPrompt, level)
+	}
+
 	messages := []anthropicMessage{
 		{Role: "user", Content: prompt},
 	}
