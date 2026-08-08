@@ -424,8 +424,14 @@ func (h *Handlers) ListSpaces(w http.ResponseWriter, r *http.Request) {
 		totalPages++
 	}
 
+	// Resolve each space's logo_media_id to an imgproxy-signed logo_url so the
+	// /spaces index can render space logos. Mirrors GetSpace's logo resolution.
+	// Best-effort: spaces without a logo (or when the media resolver is not
+	// wired) get an empty logo_url and the frontend renders a fallback icon.
+	items := h.spacesWithLogoURL(r.Context(), tenantID, spaces)
+
 	writeJSON(w, http.StatusOK, map[string]any{
-		"data": spaces,
+		"data": items,
 		"meta": map[string]any{
 			"total":       total,
 			"page":        offset / limit,
@@ -526,6 +532,71 @@ func paginateSpaceSlice[T any](s []T, offset, limit int32) []T {
 		end = total
 	}
 	return s[offset:end]
+}
+
+// spacesWithLogoURL resolves each space's logo_media_id to an imgproxy-signed
+// logo_url (via the media service) and returns the list as a slice of maps with
+// the resolved "logo_url" field added. This mirrors the GetSpace detail
+// handler's logo resolution so the /spaces index can render space logos instead
+// of a generic fallback icon. When the media resolver is not wired or a space
+// has no logo, logo_url is an empty string. The JSON field shape is preserved
+// (each row is round-tripped through encoding/json so []byte wiki_content stays
+// base64-encoded and pgtype.UUID stays a string/null, matching direct
+// serialization) with only "logo_url" appended.
+func (h *Handlers) spacesWithLogoURL(ctx context.Context, tenantID pgtype.UUID, spaces any) []map[string]any {
+	switch s := spaces.(type) {
+	case []gen.ListSpacesByTenantRow:
+		out := make([]map[string]any, 0, len(s))
+		for _, sp := range s {
+			m := rowToMap(sp)
+			m["logo_url"] = h.resolveLogoURL(ctx, tenantID, sp.LogoMediaID)
+			out = append(out, m)
+		}
+		return out
+	case []gen.ListSpacesByLevelRow:
+		out := make([]map[string]any, 0, len(s))
+		for _, sp := range s {
+			m := rowToMap(sp)
+			m["logo_url"] = h.resolveLogoURL(ctx, tenantID, sp.LogoMediaID)
+			out = append(out, m)
+		}
+		return out
+	case []gen.ListSpacesByTypeRow:
+		out := make([]map[string]any, 0, len(s))
+		for _, sp := range s {
+			m := rowToMap(sp)
+			m["logo_url"] = h.resolveLogoURL(ctx, tenantID, sp.LogoMediaID)
+			out = append(out, m)
+		}
+		return out
+	case []gen.ListChildSpacesRow:
+		out := make([]map[string]any, 0, len(s))
+		for _, sp := range s {
+			m := rowToMap(sp)
+			m["logo_url"] = h.resolveLogoURL(ctx, tenantID, sp.LogoMediaID)
+			out = append(out, m)
+		}
+		return out
+	default:
+		// Unknown shape (e.g. nil) — return nil so the response degrades to
+		// an empty list rather than panicking.
+		return nil
+	}
+}
+
+// rowToMap serializes a space row to a map[string]any via a JSON round-trip,
+// preserving the struct's json tags (so the output shape matches direct
+// serialization of the typed row).
+func rowToMap[T any](row T) map[string]any {
+	b, err := json.Marshal(row)
+	if err != nil {
+		return map[string]any{}
+	}
+	var m map[string]any
+	if err := json.Unmarshal(b, &m); err != nil {
+		return map[string]any{}
+	}
+	return m
 }
 
 // AdminListSpaces handles GET /api/v1/admin/spaces — paginated spaces for the

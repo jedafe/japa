@@ -203,7 +203,7 @@ INSERT INTO forum_tags (tenant_id, name, slug, description, rules, cover_image_i
 VALUES ($1, $2, $3, $4, $5,
         $6, $7)
 RETURNING id, tenant_id, name, slug, description, rules, cover_image_id,
-          follower_count, moderator_user_id, created_at
+          follower_count, moderator_user_id, created_at, deleted_at
 `
 
 type CreateForumTagParams struct {
@@ -241,6 +241,7 @@ func (q *Queries) CreateForumTag(ctx context.Context, arg CreateForumTagParams) 
 		&i.FollowerCount,
 		&i.ModeratorUserID,
 		&i.CreatedAt,
+		&i.DeletedAt,
 	)
 	return i, err
 }
@@ -396,6 +397,36 @@ type DeleteForumVoteByEntityParams struct {
 func (q *Queries) DeleteForumVoteByEntity(ctx context.Context, arg DeleteForumVoteByEntityParams) error {
 	_, err := q.db.Exec(ctx, deleteForumVoteByEntity, arg.UserID, arg.EntityType, arg.EntityID)
 	return err
+}
+
+const getForumBookmarkByEntity = `-- name: GetForumBookmarkByEntity :one
+SELECT id, tenant_id, user_id, entity_type, entity_id, folder, created_at
+FROM forum_bookmarks
+WHERE user_id = $1 AND entity_type = $2 AND entity_id = $3
+`
+
+type GetForumBookmarkByEntityParams struct {
+	UserID     pgtype.UUID `json:"user_id"`
+	EntityType string      `json:"entity_type"`
+	EntityID   pgtype.UUID `json:"entity_id"`
+}
+
+// Fetches a bookmark by (user_id, entity_type, entity_id) so the frontend
+// can call DELETE /forum/bookmarks/{id} without first listing all bookmarks.
+// Ref: japaconnect-engineering/sections/08-forum-qa-solved.md (Bookmarks)
+func (q *Queries) GetForumBookmarkByEntity(ctx context.Context, arg GetForumBookmarkByEntityParams) (ForumBookmark, error) {
+	row := q.db.QueryRow(ctx, getForumBookmarkByEntity, arg.UserID, arg.EntityType, arg.EntityID)
+	var i ForumBookmark
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.UserID,
+		&i.EntityType,
+		&i.EntityID,
+		&i.Folder,
+		&i.CreatedAt,
+	)
+	return i, err
 }
 
 const getForumBookmarkByID = `-- name: GetForumBookmarkByID :one
@@ -597,9 +628,9 @@ func (q *Queries) GetForumReplyByID(ctx context.Context, arg GetForumReplyByIDPa
 
 const getForumTagByID = `-- name: GetForumTagByID :one
 SELECT id, tenant_id, name, slug, description, rules, cover_image_id,
-       follower_count, moderator_user_id, created_at
+       follower_count, moderator_user_id, created_at, deleted_at
 FROM forum_tags
-WHERE id = $1 AND tenant_id = $2
+WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
 `
 
 type GetForumTagByIDParams struct {
@@ -621,15 +652,16 @@ func (q *Queries) GetForumTagByID(ctx context.Context, arg GetForumTagByIDParams
 		&i.FollowerCount,
 		&i.ModeratorUserID,
 		&i.CreatedAt,
+		&i.DeletedAt,
 	)
 	return i, err
 }
 
 const getForumTagBySlug = `-- name: GetForumTagBySlug :one
 SELECT id, tenant_id, name, slug, description, rules, cover_image_id,
-       follower_count, moderator_user_id, created_at
+       follower_count, moderator_user_id, created_at, deleted_at
 FROM forum_tags
-WHERE slug = $1 AND tenant_id = $2
+WHERE slug = $1 AND tenant_id = $2 AND deleted_at IS NULL
 `
 
 type GetForumTagBySlugParams struct {
@@ -651,6 +683,7 @@ func (q *Queries) GetForumTagBySlug(ctx context.Context, arg GetForumTagBySlugPa
 		&i.FollowerCount,
 		&i.ModeratorUserID,
 		&i.CreatedAt,
+		&i.DeletedAt,
 	)
 	return i, err
 }
@@ -1304,9 +1337,9 @@ func (q *Queries) ListForumRepliesByThreadWithAuthor(ctx context.Context, arg Li
 
 const listForumTags = `-- name: ListForumTags :many
 SELECT id, tenant_id, name, slug, description, rules, cover_image_id,
-       follower_count, moderator_user_id, created_at
+       follower_count, moderator_user_id, created_at, deleted_at
 FROM forum_tags
-WHERE tenant_id = $1
+WHERE tenant_id = $1 AND deleted_at IS NULL
 ORDER BY follower_count DESC, name ASC
 LIMIT $3 OFFSET $2
 `
@@ -1326,6 +1359,63 @@ func (q *Queries) ListForumTags(ctx context.Context, arg ListForumTagsParams) ([
 	var items []ForumTag
 	for rows.Next() {
 		var i ForumTag
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.Name,
+			&i.Slug,
+			&i.Description,
+			&i.Rules,
+			&i.CoverImageID,
+			&i.FollowerCount,
+			&i.ModeratorUserID,
+			&i.CreatedAt,
+			&i.DeletedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listForumThreadTags = `-- name: ListForumThreadTags :many
+SELECT ft.id, ft.tenant_id, ft.name, ft.slug, ft.description, ft.rules,
+       ft.cover_image_id, ft.follower_count, ft.moderator_user_id, ft.created_at
+FROM forum_thread_tags ftt
+JOIN forum_tags ft ON ft.id = ftt.tag_id
+WHERE ftt.thread_id = $1 AND ft.deleted_at IS NULL
+ORDER BY ft.name ASC
+`
+
+type ListForumThreadTagsRow struct {
+	ID              pgtype.UUID        `json:"id"`
+	TenantID        pgtype.UUID        `json:"tenant_id"`
+	Name            string             `json:"name"`
+	Slug            string             `json:"slug"`
+	Description     *string            `json:"description"`
+	Rules           *string            `json:"rules"`
+	CoverImageID    pgtype.UUID        `json:"cover_image_id"`
+	FollowerCount   int32              `json:"follower_count"`
+	ModeratorUserID pgtype.UUID        `json:"moderator_user_id"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+}
+
+// Lists the tags attached to a thread, joining forum_tags for details.
+// Excludes soft-deleted tags. Ref: Section 08 (tags are first-class on
+// discussions) — GET /forum/{id}/tags.
+func (q *Queries) ListForumThreadTags(ctx context.Context, threadID pgtype.UUID) ([]ListForumThreadTagsRow, error) {
+	rows, err := q.db.Query(ctx, listForumThreadTags, threadID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListForumThreadTagsRow
+	for rows.Next() {
+		var i ListForumThreadTagsRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.TenantID,
@@ -2355,7 +2445,7 @@ SET name = $1,
     moderator_user_id = $6
 WHERE id = $7 AND tenant_id = $8 AND deleted_at IS NULL
 RETURNING id, tenant_id, name, slug, description, rules, cover_image_id,
-          follower_count, moderator_user_id, created_at
+          follower_count, moderator_user_id, created_at, deleted_at
 `
 
 type UpdateForumTagParams struct {
@@ -2392,6 +2482,7 @@ func (q *Queries) UpdateForumTag(ctx context.Context, arg UpdateForumTagParams) 
 		&i.FollowerCount,
 		&i.ModeratorUserID,
 		&i.CreatedAt,
+		&i.DeletedAt,
 	)
 	return i, err
 }

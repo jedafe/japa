@@ -2,35 +2,59 @@ import type { SuggestionProps, SuggestionKeyDownProps } from '@tiptap/suggestion
 import type { SearchHit } from '$lib/types';
 
 interface RendererConfig {
-	onSearch: (query: string) => Promise<SearchHit[]>;
 	/** entity_type stored in the mention node attrs (Section 15: {id, entity_type, label}). */
 	entityType?: string;
+	/** Localized "No results" text (Section 7 i18n). Defaults to English. */
+	noResultsText?: string;
 }
 
 interface RenderReturn {
+	onBeforeStart?: (props: SuggestionProps) => void;
 	onStart?: (props: SuggestionProps) => void;
+	onBeforeUpdate?: (props: SuggestionProps) => void;
 	onUpdate?: (props: SuggestionProps) => void;
 	onExit?: (props: SuggestionProps) => void;
 	onKeyDown?: (props: SuggestionKeyDownProps) => boolean;
 }
 
 /**
- * Vanilla-DOM suggestion renderer for TipTap's Suggestion plugin.
- * Creates a floating popup, fetches results via onSearch, and calls
- * props.command when the user picks an item. Keyboard nav (Up/Down/Enter/Esc)
- * is handled inside the popup.
+ * Vanilla-DOM suggestion renderer for TipTap v3's Suggestion plugin.
+ *
+ * In v3, the plugin owns the async fetching flow — it calls the `items`
+ * function from the suggestion config, handles debouncing/aborting, and
+ * passes the results via `props.items`. The renderer only needs to render
+ * those items and handle keyboard navigation.
+ *
+ * TipTap v3 may call `onUpdate` on every ProseMirror state transaction
+ * (not just when the query text changes), which can be 60+ times per
+ * second. To keep the popup clickable, we only rebuild the DOM when the
+ * item set actually changes, and we update the `active` class in-place
+ * when only the highlighted index moves.
  */
 export function createSuggestionRenderer(cfg: RendererConfig): RenderReturn {
 	let popup: HTMLDivElement | null = null;
-	let items: SearchHit[] = [];
 	let index = 0;
 	let command: ((item: unknown) => void) | null = null;
+	/** Signature of the last rendered item set, used to skip no-op re-renders. */
+	let lastSignature = '';
+	/** The items currently rendered in the popup. */
+	let currentItems: SearchHit[] = [];
 
-	function renderList() {
+	function itemsSignature(items: SearchHit[]): string {
+		return items.map((i) => `${i.id}:${i.label}`).join('|');
+	}
+
+	/**
+	 * Full rebuild of the popup's child nodes. Only called when the item
+	 * set changes — not on every state transaction.
+	 */
+	function rebuildList(items: SearchHit[]) {
 		if (!popup) return;
+		currentItems = items;
+		lastSignature = itemsSignature(items);
 		popup.innerHTML = '';
 		if (items.length === 0) {
-			popup.textContent = 'No results';
+			popup.textContent = cfg.noResultsText ?? 'No results';
 			return;
 		}
 		items.forEach((hit, i) => {
@@ -40,45 +64,63 @@ export function createSuggestionRenderer(cfg: RendererConfig): RenderReturn {
 			btn.textContent = hit.label;
 			btn.addEventListener('mouseenter', () => {
 				index = i;
-				renderList();
+				updateActive();
 			});
 			btn.addEventListener('mousedown', (e) => {
 				e.preventDefault();
-				selectItem(i);
+				selectItem(items, i);
 			});
 			popup!.appendChild(btn);
 		});
 	}
 
-	async function updateItems(query: string) {
-		items = await cfg.onSearch(query);
-		index = 0;
-		renderList();
+	/**
+	 * Update only the `active` class on existing buttons — no DOM rebuild.
+	 * Called on mouseenter and arrow-key navigation.
+	 */
+	function updateActive() {
+		if (!popup) return;
+		const buttons = popup.querySelectorAll('.suggestion-item');
+		buttons.forEach((btn, i) => {
+			btn.classList.toggle('active', i === index);
+		});
 	}
 
-	function selectItem(i: number) {
+	function selectItem(items: SearchHit[], i: number) {
 		if (!items[i] || !command) return;
 		// Section 15: all reference nodes store { id, entity_type, label }.
-		// entity_type defaults to 'user' for @-mentions.
-		command({ id: items[i].id, entity_type: cfg.entityType ?? 'user', label: items[i].label });
+		// entity_type defaults to 'user' for @-mentions. For user mentions
+		// we also store the handle (username) so the view-page serializer
+		// can emit a link to /u/{handle}.
+		const item = items[i];
+		const attrs: Record<string, string> = {
+			id: item.id,
+			entity_type: cfg.entityType ?? 'user',
+			label: item.label
+		};
+		if (cfg.entityType === 'user' && item.handle) {
+			attrs.handle = item.handle;
+		}
+		command(attrs);
 		close();
 	}
 
 	function onKeyDown(e: SuggestionKeyDownProps): boolean {
 		if (!popup) return false;
+		const items = currentItems;
 		if (e.event.key === 'ArrowDown') {
 			index = (index + 1) % Math.max(items.length, 1);
-			renderList();
+			updateActive();
 			return true;
 		}
 		if (e.event.key === 'ArrowUp') {
 			index = (index - 1 + items.length) % Math.max(items.length, 1);
-			renderList();
+			updateActive();
 			return true;
 		}
 		if (e.event.key === 'Enter') {
 			e.event.preventDefault();
-			selectItem(index);
+			selectItem(items, index);
 			return true;
 		}
 		if (e.event.key === 'Escape') {
@@ -88,33 +130,80 @@ export function createSuggestionRenderer(cfg: RendererConfig): RenderReturn {
 		return false;
 	}
 
+	/**
+	 * Returns true if the TipTap editor's DOM is visible (has a layout
+	 * box). When the editor is hidden via CSS (e.g. markdown mode uses
+	 * display:none on .editor-surface), clientRect returns all zeros
+	 * and the popup would appear at the top-left of the viewport.
+	 */
+	function editorIsVisible(props: SuggestionProps): boolean {
+		const dom = props.editor?.view?.dom as HTMLElement | undefined;
+		if (!dom) return false;
+		const rect = dom.getBoundingClientRect();
+		return rect.width > 0 && rect.height > 0;
+	}
+
+	function positionPopup(props: SuggestionProps) {
+		if (!popup) return;
+		const rect = props.clientRect?.();
+		if (rect && rect.width > 0) {
+			popup.style.top = `${rect.bottom + 4}px`;
+			popup.style.left = `${rect.left}px`;
+		}
+	}
+
 	function close() {
 		popup?.remove();
 		popup = null;
 		command = null;
+		index = 0;
+		lastSignature = '';
+		currentItems = [];
 	}
 
 	return {
-		onStart: (props) => {
+		onBeforeStart: (props) => {
+			if (!editorIsVisible(props)) return;
 			command = props.command;
 			popup = document.createElement('div');
 			popup.className = 'suggestion-popup';
-			const rect = props.clientRect?.();
-			if (rect) {
-				popup.style.top = `${rect.bottom + 4}px`;
-				popup.style.left = `${rect.left}px`;
-			}
+			positionPopup(props);
 			document.body.appendChild(popup);
-			void updateItems(props.query || '');
+			index = 0;
+			const items = props.items as SearchHit[];
+			rebuildList(items);
+		},
+		onStart: (props) => {
+			if (!editorIsVisible(props)) return;
+			command = props.command;
+			positionPopup(props);
+			const items = props.items as SearchHit[];
+			rebuildList(items);
+		},
+		onBeforeUpdate: (props) => {
+			command = props.command;
+			positionPopup(props);
 		},
 		onUpdate: (props) => {
 			command = props.command;
-			const rect = props.clientRect?.();
-			if (popup && rect) {
-				popup.style.top = `${rect.bottom + 4}px`;
-				popup.style.left = `${rect.left}px`;
+			positionPopup(props);
+			// Safety net: if the editor becomes hidden (e.g. user
+			// switched to markdown mode while a popup was open), close
+			// the popup immediately rather than showing it at (0,0).
+			if (!editorIsVisible(props)) {
+				close();
+				return;
 			}
-			void updateItems(props.query || '');
+			const items = props.items as SearchHit[];
+			// Only rebuild the DOM if the item set actually changed.
+			// TipTap v3 calls onUpdate on every state transaction; without
+			// this guard the buttons are destroyed and recreated 60+ times
+			// per second, making the popup impossible to click.
+			const sig = itemsSignature(items);
+			if (sig !== lastSignature) {
+				index = 0;
+				rebuildList(items);
+			}
 		},
 		onKeyDown,
 		onExit: close

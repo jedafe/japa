@@ -6,7 +6,7 @@
 	// editor + BlockStylePanel + motion/visibility settings + geo preview.
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
-	import { untrack, type Component } from 'svelte';
+	import { onMount, untrack, type Component } from 'svelte';
 	import { api, pageBuilderAdminApiExtended } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
@@ -19,16 +19,22 @@
 		BlockStylePanel,
 		getGeoTokens,
 		resolveGeoCopy,
+		setCustomBlockDefs,
+		getCustomBlockMetas,
+		getCustomBlockDef,
 		type Block,
 		type BlockStyle,
 		type BlockMeta,
 		type GeoContext,
+		type ContainerProps,
+		type CustomBlockDef,
+		type RuntimeBlockMeta,
 	} from '@japaconnect/landing-blocks';
-	import { DraggableBlockType, SortableSection } from '$lib/components/landing-editor';
+	import { DraggableBlockType, SortableSection, ContainerChildren, ResizeHandle } from '$lib/components/landing-editor';
 	import { Button } from '$lib/components/ui/button';
 	import { Tabs, Dialog } from 'bits-ui';
 	import * as LucideIcons from 'lucide-svelte';
-	import { ArrowLeft, Save, Plus, Search, LayoutTemplate, Rocket, Archive } from 'lucide-svelte';
+	import { ArrowLeft, Save, Plus, Search, LayoutTemplate, Rocket, Archive, PanelLeft, PanelRight, PanelTop, Maximize2, Minimize2 } from 'lucide-svelte';
 	import MediaPickerModal from '$lib/components/ui/MediaPickerModal.svelte';
 
 	// Cast for DI — the editors expect Component<any>, MediaPickerModal has bindable props
@@ -58,6 +64,53 @@
 	let publishError = $state('');
 	let selectedBlockId = $state<string | null>(null);
 	let paletteSearch = $state('');
+	// Active header category: 'info' | 'preview' | 'actions'.
+	let activeHeaderPanel = $state<'info' | 'preview' | 'actions'>('info');
+	// Resizable pane widths (in px). Drag the handles between panes to adjust.
+	let leftPaneWidth = $state(256);
+	let rightPaneWidth = $state(384);
+	// Palette height within the left pane (px). Drag the horizontal handle
+	// between the palette and the sections list to adjust.
+	let paletteHeight = $state(300);
+
+	// Section visibility toggles.
+	let showHeader = $state(true);
+	let showLeftPane = $state(true);
+	let showRightPane = $state(true);
+	// Distraction-free mode hides everything except the center editor.
+	let distractionFree = $state(false);
+
+	function handlePaneResize(paneId: string, newSize: number): void {
+		if (paneId === 'left') leftPaneWidth = newSize;
+		else if (paneId === 'right') rightPaneWidth = newSize;
+		else if (paneId === 'palette') paletteHeight = newSize;
+	}
+
+	function toggleDistractionFree(): void {
+		distractionFree = !distractionFree;
+		if (distractionFree) {
+			showHeader = false;
+			showLeftPane = false;
+			showRightPane = false;
+		} else {
+			showHeader = true;
+			showLeftPane = true;
+			showRightPane = true;
+		}
+	}
+	// Track which containers are expanded in the sections sidebar.
+	let expandedContainers = $state<Set<string>>(new Set());
+	// DB-driven custom block definitions fetched from the API.
+	let customBlockDefs = $state<CustomBlockDef[]>([]);
+
+	// Auto-expand a container when it's selected so children are visible.
+	$effect(() => {
+		if (!selectedBlockId) return;
+		const block = blocks.find((b) => b.id === selectedBlockId);
+		if (block?.type === 'container' && !expandedContainers.has(block.id)) {
+			expandedContainers = new Set(expandedContainers).add(block.id);
+		}
+	});
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	let activeDragData = $state<{ blockType?: string; meta?: BlockMeta; id?: string } | null>(null);
 
@@ -74,7 +127,7 @@
 	let templateName = $state('');
 	let savingTemplate = $state(false);
 
-	const selectedBlock = $derived(blocks.find((b) => b.id === selectedBlockId) ?? null);
+	const selectedBlock = $derived(selectedBlockId ? findBlockInTree(blocks, selectedBlockId) : null);
 	const visibleBlocks = $derived(blocks.filter((b) => b.visible));
 
 	const previewCtx: GeoContext = $derived({
@@ -89,15 +142,25 @@
 	// 'global' is prepended as the no-geo-override default.
 	const geoCountries = $derived(['global', ...countries.map((c) => c.geo_code)]);
 
-	// Block palette — grouped by category from the canonical blockRegistry.
+	// Block palette — grouped by category from the canonical blockRegistry,
+	// merged with DB-driven custom block definitions.
+	// Custom blocks appear as `custom:{blockDefId}` entries in the palette so
+	// each one is draggable independently. `makeBlock` parses this prefix.
 	const filteredBlockTypes = $derived.by(() => {
 		const q = paletteSearch.toLowerCase().trim();
-		const entries = Object.entries(blockRegistry) as [Block['type'], BlockMeta][];
-		if (!q) return entries;
-		return entries.filter(([type, meta]) => meta.label.toLowerCase().includes(q) || type.toLowerCase().includes(q));
+		// Static blocks
+		const staticEntries = Object.entries(blockRegistry).filter(([type]) => type !== 'custom') as [string, BlockMeta][];
+		// Custom blocks from the DB — each gets a synthetic palette key.
+		const customEntries: [string, BlockMeta][] = customBlockDefs.map((def) => [
+			`custom:${def.id}`,
+			{ component: blockRegistry.custom.component, icon: 'Puzzle', label: def.name, category: def.category || 'custom' },
+		]);
+		const all = [...staticEntries, ...customEntries];
+		if (!q) return all;
+		return all.filter(([type, meta]) => meta.label.toLowerCase().includes(q) || type.toLowerCase().includes(q));
 	});
 	const groupedBlockTypes = $derived.by(() => {
-		const groups: Record<string, [Block['type'], BlockMeta][]> = {};
+		const groups: Record<string, [string, BlockMeta][]> = {};
 		for (const [type, meta] of filteredBlockTypes) (groups[meta.category] ??= []).push([type, meta]);
 		return groups;
 	});
@@ -125,10 +188,11 @@
 		errorMessage = '';
 		try {
 			const pageId = page.params.id;
-			const [pageRes, themesRes, countriesRes] = await Promise.all([
+			const [pageRes, themesRes, countriesRes, blocksRes] = await Promise.all([
 				api<PageData>(`/admin/pages/${pageId}`),
 				pageBuilderAdminApiExtended.listThemes(),
 				api<GeoCountry[]>('/geo/countries'),
+				pageBuilderAdminApiExtended.listBlocks(),
 			]);
 			if (!pageRes.ok) {
 				errorMessage = pageRes.error || t('common.error', 'Failed to load page');
@@ -143,6 +207,11 @@
 			}
 			if (themesRes.ok) themes = ((themesRes.data as any[]) ?? []).map((th) => ({ id: th.id, name: th.name, is_default: th.is_default }));
 			if (countriesRes.ok) countries = countriesRes.data ?? [];
+			// Load custom block definitions into the runtime registry.
+			if (blocksRes.ok && Array.isArray(blocksRes.data)) {
+				customBlockDefs = blocksRes.data as CustomBlockDef[];
+				setCustomBlockDefs(customBlockDefs);
+			}
 		} catch {
 			errorMessage = t('common.error', 'Failed to load page');
 		} finally {
@@ -156,30 +225,67 @@
 	}
 
 	// ─── Block CRUD ───────────────────────────────────────────────
-	function makeBlock(type: Block['type']): Block {
-		return { id: crypto.randomUUID(), type, visible: true, props: {} } as Block;
+	// `type` can be a real Block type or a `custom:{blockDefId}` palette key.
+	function makeBlock(type: string): Block {
+		// Custom block — parse the block def ID and seed props from defaults.
+		if (type.startsWith('custom:')) {
+			const blockDefId = type.slice('custom:'.length);
+			const def = getCustomBlockDef(blockDefId);
+			const defaultProps = def?.default_config ?? {};
+			// Also apply field-level defaults from the schema.
+			const schemaDefaults: Record<string, unknown> = {};
+			for (const field of def?.config_schema?.fields ?? []) {
+				if (field.default !== undefined) schemaDefaults[field.key] = field.default;
+			}
+			return {
+				id: crypto.randomUUID(),
+				type: 'custom',
+				visible: true,
+				props: { ...schemaDefaults, ...defaultProps },
+				block_def_id: blockDefId,
+			} as Block;
+		}
+		// Container blocks need sensible defaults so the editor and renderer
+		// don't crash on an empty children array.
+		if (type === 'container') {
+			return { id: crypto.randomUUID(), type: 'container', visible: true, props: { layout: 'grid', columns: 2, gap: 'md', children: [] } } as Block;
+		}
+		return { id: crypto.randomUUID(), type: type as Block['type'], visible: true, props: {} } as Block;
 	}
-	function addBlock(type: Block['type']): void {
+	function addBlock(type: string): void {
 		const nb = makeBlock(type);
 		blocks = [...blocks, nb];
 		selectedBlockId = nb.id;
 		unsavedChanges = true;
 	}
 	function removeBlock(id: string): void {
-		blocks = blocks.filter((b) => b.id !== id);
+		// Try top-level first, then search nested containers.
+		const topLevel = blocks.find((b) => b.id === id);
+		if (topLevel) {
+			blocks = blocks.filter((b) => b.id !== id);
+		} else {
+			const { tree } = removeBlockFromTree(blocks, id);
+			blocks = tree;
+		}
 		if (selectedBlockId === id) selectedBlockId = null;
 		unsavedChanges = true;
 	}
 	function duplicateBlock(id: string): void {
+		const block = findBlockInTree(blocks, id);
+		if (!block) return;
+		const copy = { ...block, id: crypto.randomUUID(), props: JSON.parse(JSON.stringify(block.props)) } as Block;
+		// If the block is top-level, insert after it. Otherwise append to top level.
 		const idx = blocks.findIndex((b) => b.id === id);
-		if (idx < 0) return;
-		const copy = { ...blocks[idx], id: crypto.randomUUID(), props: JSON.parse(JSON.stringify(blocks[idx].props)) } as Block;
-		blocks = [...blocks.slice(0, idx + 1), copy, ...blocks.slice(idx + 1)];
+		if (idx >= 0) {
+			blocks = [...blocks.slice(0, idx + 1), copy, ...blocks.slice(idx + 1)];
+		} else {
+			blocks = [...blocks, copy];
+		}
 		selectedBlockId = copy.id;
 		unsavedChanges = true;
 	}
 	function toggleBlockVisibility(id: string): void {
-		blocks = blocks.map((b) => (b.id === id ? { ...b, visible: !b.visible } : b));
+		blocks = updateBlockInTree(blocks, id, (b) => ({ ...b, visible: !b.visible }));
 		unsavedChanges = true;
 	}
 	function reorderBlocks(fromIdx: number, toIdx: number): void {
@@ -190,13 +296,190 @@
 		blocks = next;
 		unsavedChanges = true;
 	}
+
+	// ─── Container tree manipulation ──────────────────────────────
+	// These helpers walk the block tree (top-level array + nested
+	// container children) to find, remove, and insert blocks anywhere.
+
+	/** Find a block anywhere in the tree (top-level or nested in containers). */
+	function findBlockInTree(tree: Block[], id: string): Block | null {
+		for (const b of tree) {
+			if (b.id === id) return b;
+			if (b.type === 'container') {
+				const found = findBlockInTree((b.props as ContainerProps).children ?? [], id);
+				if (found) return found;
+			}
+		}
+		return null;
+	}
+
+	/** Apply a transform to a block anywhere in the tree (top-level or nested). */
+	function updateBlockInTree(tree: Block[], id: string, fn: (b: Block) => Block): Block[] {
+		return tree.map((b) => {
+			if (b.id === id) return fn(b);
+			if (b.type === 'container') {
+				const props = b.props as ContainerProps;
+				return { ...b, props: { ...props, children: updateBlockInTree(props.children ?? [], id, fn) } } as Block;
+			}
+			return b;
+		});
+	}
+
+	/** Remove a block from anywhere in the tree. Returns the new tree and the removed block. */
+	function removeBlockFromTree(tree: Block[], id: string): { tree: Block[]; removed: Block | null } {
+		for (let i = 0; i < tree.length; i++) {
+			if (tree[i].id === id) {
+				return { tree: [...tree.slice(0, i), ...tree.slice(i + 1)], removed: tree[i] };
+			}
+			if (tree[i].type === 'container') {
+				const props = tree[i].props as ContainerProps;
+				const result = removeBlockFromTree(props.children ?? [], id);
+				if (result.removed) {
+					const newTree = [...tree];
+					newTree[i] = { ...tree[i], props: { ...props, children: result.tree } } as Block;
+					return { tree: newTree, removed: result.removed };
+				}
+			}
+		}
+		return { tree, removed: null };
+	}
+
+	/** Insert a block into a container's children (found by ID, anywhere in the tree). */
+	function insertIntoContainer(tree: Block[], containerId: string, block: Block): Block[] {
+		return tree.map((b) => {
+			if (b.id === containerId && b.type === 'container') {
+				const props = b.props as ContainerProps;
+				return { ...b, props: { ...props, children: [...(props.children ?? []), block] } } as Block;
+			}
+			if (b.type === 'container') {
+				const props = b.props as ContainerProps;
+				return { ...b, props: { ...props, children: insertIntoContainer(props.children ?? [], containerId, block) } } as Block;
+			}
+			return b;
+		});
+	}
+
+	/** Toggle container expansion in the sections sidebar. */
+	function toggleContainerExpand(id: string): void {
+		const next = new Set(expandedContainers);
+		if (next.has(id)) next.delete(id);
+		else next.add(id);
+		expandedContainers = next;
+	}
+
+	/** Reorder a child within a container (by container ID + indices). */
+	function reorderContainerChild(containerId: string, fromIdx: number, toIdx: number): void {
+		if (fromIdx === toIdx) return;
+		blocks = blocks.map((b) => {
+			if (b.id === containerId && b.type === 'container') {
+				const props = b.props as ContainerProps;
+				const children = [...(props.children ?? [])];
+				if (toIdx < 0 || toIdx >= children.length) return b;
+				const [moved] = children.splice(fromIdx, 1);
+				children.splice(toIdx, 0, moved);
+				return { ...b, props: { ...props, children } } as Block;
+			}
+			return b;
+		});
+		unsavedChanges = true;
+	}
+
+	/** Reorder a child by ID within a container (by container ID + child IDs). */
+	function reorderContainerChildByIds(containerId: string, fromChildId: string, toChildId: string): void {
+		blocks = blocks.map((b) => {
+			if (b.id === containerId && b.type === 'container') {
+				const props = b.props as ContainerProps;
+				const children = [...(props.children ?? [])];
+				const fromIdx = children.findIndex((c) => c.id === fromChildId);
+				const toIdx = children.findIndex((c) => c.id === toChildId);
+				if (fromIdx < 0 || toIdx < 0 || fromIdx === toIdx) return b;
+				const [moved] = children.splice(fromIdx, 1);
+				children.splice(toIdx, 0, moved);
+				return { ...b, props: { ...props, children } } as Block;
+			}
+			return b;
+		});
+		unsavedChanges = true;
+	}
+
+	/** Insert a block into a container at a specific index (before the target child). */
+	function insertIntoContainerAtIndex(containerId: string, block: Block, beforeChildId: string | null): void {
+		blocks = blocks.map((b) => {
+			if (b.id === containerId && b.type === 'container') {
+				const props = b.props as ContainerProps;
+				const children = [...(props.children ?? [])];
+				if (beforeChildId) {
+					const idx = children.findIndex((c) => c.id === beforeChildId);
+					if (idx >= 0) children.splice(idx, 0, block);
+					else children.push(block);
+				} else {
+					children.push(block);
+				}
+				return { ...b, props: { ...props, children } } as Block;
+			}
+			return b;
+		});
+	}
+
+	/** Remove a child from a container. */
+	function removeContainerChild(containerId: string, childId: string): void {
+		blocks = blocks.map((b) => {
+			if (b.id === containerId && b.type === 'container') {
+				const props = b.props as ContainerProps;
+				return { ...b, props: { ...props, children: (props.children ?? []).filter((c) => c.id !== childId) } } as Block;
+			}
+			return b;
+		});
+		if (selectedBlockId === childId) selectedBlockId = null;
+		unsavedChanges = true;
+	}
+
+	/** Move a child out of a container to the top-level blocks array. */
+	function moveChildToTopLevel(containerId: string, childId: string): void {
+		const container = blocks.find((b) => b.id === containerId && b.type === 'container');
+		if (!container) return;
+		const childProps = container.props as ContainerProps;
+		const blockToMove = (childProps.children ?? []).find((c) => c.id === childId);
+		if (!blockToMove) return;
+		// Remove from container, append to top level.
+		blocks = blocks.map((b) => {
+			if (b.id === containerId && b.type === 'container') {
+				return { ...b, props: { ...childProps, children: (childProps.children ?? []).filter((c) => c.id !== childId) } } as Block;
+			}
+			return b;
+		});
+		blocks = [...blocks, blockToMove];
+		unsavedChanges = true;
+	}
+
+	/** Update a child's grid column span (1–12). */
+	function updateChildSpan(containerId: string, childId: string, span: number): void {
+		const clamped = Math.max(1, Math.min(12, span));
+		blocks = updateBlockInTree(blocks, childId, (b) => ({ ...b, span: clamped }));
+		unsavedChanges = true;
+	}
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	function updateBlockProps(id: string, props: any): void {
-		blocks = blocks.map((b) => (b.id === id ? ({ ...b, props } as Block) : b));
+		blocks = updateBlockInTree(blocks, id, (b) => ({ ...b, props } as Block));
 		unsavedChanges = true;
 	}
 	function updateBlockStyle(id: string, style: BlockStyle): void {
-		blocks = blocks.map((b) => (b.id === id ? ({ ...b, style } as Block) : b));
+		blocks = updateBlockInTree(blocks, id, (b) => ({ ...b, style } as Block));
+		unsavedChanges = true;
+	}
+	/** Toggle per-device visibility for a block (desktop/tablet/mobile). */
+	function updateResponsiveVisibility(id: string, device: 'desktop' | 'tablet' | 'mobile', visible: boolean): void {
+		blocks = updateBlockInTree(blocks, id, (b) => {
+			const rv = { ...(b.responsive_visibility ?? {}) };
+			if (visible) {
+				// Setting to visible = remove the override (fall back to default visible)
+				delete rv[device];
+			} else {
+				rv[device] = false;
+			}
+			const hasKeys = Object.keys(rv).length > 0;
+			return { ...b, responsive_visibility: hasKeys ? rv : undefined } as Block;
+		});
 		unsavedChanges = true;
 	}
 
@@ -212,10 +495,79 @@
 		const { source, target } = event.operation ?? {};
 		if (!source) return;
 		const sourceData = source.data;
+		const targetData = target?.data;
+
+		// Drop onto a container drop zone → insert into that container (append).
+		if (targetData?.source === 'container-dropzone') {
+			const containerId = targetData.containerId as string;
+			if (sourceData?.source === 'palette') {
+				const nb = makeBlock(sourceData.blockType as string);
+				blocks = insertIntoContainer(blocks, containerId, nb);
+				selectedBlockId = nb.id;
+				expandedContainers = new Set(expandedContainers).add(containerId);
+				unsavedChanges = true;
+				return;
+			}
+			if (sourceData?.source === 'canvas' || sourceData?.source === 'container-child') {
+				const { tree: newTree, removed } = removeBlockFromTree(blocks, source.id as string);
+				if (!removed) return;
+				blocks = insertIntoContainer(newTree, containerId, removed);
+				selectedBlockId = removed.id;
+				expandedContainers = new Set(expandedContainers).add(containerId);
+				unsavedChanges = true;
+				return;
+			}
+		}
+
+		// Drop onto a container child (sortable target) → reorder or insert.
+		if (targetData?.source === 'container-child' && target && isSortable(target)) {
+			const targetContainerId = targetData.containerId as string;
+			const targetChildId = target.id as string;
+
+			// Palette → insert before the target child.
+			if (sourceData?.source === 'palette') {
+				const nb = makeBlock(sourceData.blockType as string);
+				insertIntoContainerAtIndex(targetContainerId, nb, targetChildId);
+				selectedBlockId = nb.id;
+				expandedContainers = new Set(expandedContainers).add(targetContainerId);
+				unsavedChanges = true;
+				return;
+			}
+
+			// Container child → reorder within the same container.
+			if (sourceData?.source === 'container-child' && sourceData.containerId === targetContainerId) {
+				reorderContainerChildByIds(targetContainerId, source.id as string, targetChildId);
+				return;
+			}
+
+			// Canvas section → move into container before target child.
+			if (sourceData?.source === 'canvas') {
+				const { tree: newTree, removed } = removeBlockFromTree(blocks, source.id as string);
+				if (!removed) return;
+				blocks = newTree;
+				insertIntoContainerAtIndex(targetContainerId, removed, targetChildId);
+				selectedBlockId = removed.id;
+				expandedContainers = new Set(expandedContainers).add(targetContainerId);
+				unsavedChanges = true;
+				return;
+			}
+
+			// Container child from a different container → move between containers.
+			if (sourceData?.source === 'container-child' && sourceData.containerId !== targetContainerId) {
+				const { tree: newTree, removed } = removeBlockFromTree(blocks, source.id as string);
+				if (!removed) return;
+				blocks = newTree;
+				insertIntoContainerAtIndex(targetContainerId, removed, targetChildId);
+				selectedBlockId = removed.id;
+				expandedContainers = new Set(expandedContainers).add(targetContainerId);
+				unsavedChanges = true;
+				return;
+			}
+		}
 
 		// Drop from palette → add new block at target position (or append).
 		if (sourceData?.source === 'palette') {
-			const nb = makeBlock(sourceData.blockType as Block['type']);
+			const nb = makeBlock(sourceData.blockType as string);
 			if (target && isSortable(target)) {
 				const targetIdx = blocks.findIndex((b) => b.id === target.id);
 				if (targetIdx >= 0) blocks = [...blocks.slice(0, targetIdx), nb, ...blocks.slice(targetIdx)];
@@ -227,7 +579,7 @@
 			unsavedChanges = true;
 			return;
 		}
-		// Reorder within the sections list.
+		// Reorder within the top-level sections list.
 		if (sourceData?.source === 'canvas' && target && isSortable(target)) {
 			const fromIdx = blocks.findIndex((b) => b.id === source.id);
 			const toIdx = blocks.findIndex((b) => b.id === target.id);
@@ -245,7 +597,11 @@
 			title: pageTitle,
 			slug: pageData.slug,
 			status: pageData.status,
-			blocks: JSON.stringify(blocks),
+			// Send blocks as a parsed array — api() already JSON.stringifies
+			// the body. Double-encoding (JSON.stringify here) produced a JSON
+			// string that the backend's json.RawMessage + sanitizeBlocksJSON
+			// mishandled, silently emptying the page on save.
+			blocks,
 		};
 		if (selectedThemeId) body.theme_id = selectedThemeId;
 		const result = await api(`/admin/pages/${pageData.id}`, { method: 'PATCH', body });
@@ -334,63 +690,181 @@
 		<Button variant="ghost" onclick={() => goto('/page-builder/pages')}><ArrowLeft class="mr-2 h-4 w-4" />{t('common.back', 'Back')}</Button>
 	</div>
 {:else}
-<div class="flex h-screen flex-col overflow-hidden">
-	<!-- Top bar -->
-	<header class="flex items-center justify-between border-b px-4 py-2" style="border-color: var(--color-border); background: var(--color-background)">
-		<div class="flex items-center gap-3">
-			<Button variant="ghost" size="sm" onclick={() => goto('/page-builder/pages')}><ArrowLeft class="mr-1 h-4 w-4" />{t('common.back', 'Back')}</Button>
-			<input type="text" bind:value={pageTitle} class="rounded border px-2 py-1 text-sm font-medium" style="border-color: var(--color-border-input); background: var(--color-background); color: var(--color-foreground)" aria-label={t('page_builder.title', 'Title')} />
-			{#if pageData?.page_type}<span class="rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider" style="background: var(--color-surface); color: var(--color-muted)">{pageData.page_type}</span>{/if}
-			<span class="text-xs" style="color: var(--color-muted)">/{pageData?.slug} · {blocks.length} {t('page_builder.blocks', 'blocks')}</span>
-			{#if unsavedChanges}<span class="h-2 w-2 rounded-full" style="background: var(--color-warning)" title={t('pageBuilder.unsaved_changes', 'Unsaved changes')}></span>{/if}
+<div class="relative flex h-screen flex-col overflow-hidden">
+	<!-- Floating restore tab for hidden header -->
+	{#if !showHeader}
+		<button
+			type="button"
+			onclick={() => (showHeader = true)}
+			class="absolute left-1/2 top-0 z-50 -translate-x-1/2 rounded-b-md border border-t-0 px-3 py-0.5 text-[10px] font-medium transition-colors hover:bg-[var(--color-surface)]"
+			style="border-color: var(--color-border); background: var(--color-background); color: var(--color-muted)"
+			aria-label="Show top bar"
+		><PanelTop class="inline h-3 w-3" /> Show top bar</button>
+	{/if}
+	<!-- Top bar — single row with 3 zones:
+	     Left: back button.
+	     Center: active category controls (switched by the right-side toggle).
+	     Right: 3-button segmented switch + section toggles + distraction-free. -->
+	{#if showHeader}
+	<header class="flex items-center gap-3 border-b px-4 py-2" style="border-color: var(--color-border); background: var(--color-background)">
+		<!-- Left: back button -->
+		<Button variant="ghost" size="sm" onclick={() => goto('/page-builder/pages')} class="shrink-0"><ArrowLeft class="mr-1 h-4 w-4" />{t('common.back', 'Back')}</Button>
+
+		<!-- Center: active category controls -->
+		<div class="flex flex-1 items-center justify-center gap-2 overflow-hidden">
+			{#if activeHeaderPanel === 'info'}
+				<!-- Info: title + metadata + status -->
+				<input type="text" bind:value={pageTitle} class="w-48 rounded border px-2 py-1 text-sm font-medium" style="border-color: var(--color-border-input); background: var(--color-background); color: var(--color-foreground)" aria-label={t('page_builder.title', 'Title')} />
+				{#if pageData?.page_type}<span class="shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider" style="background: var(--color-surface); color: var(--color-muted)">{pageData.page_type}</span>{/if}
+				<span class="shrink-0 text-xs" style="color: var(--color-muted)">/{pageData?.slug} · {blocks.length} {t('page_builder.blocks', 'blocks')}</span>
+				{#if unsavedChanges}<span class="h-2 w-2 shrink-0 rounded-full" style="background: var(--color-warning)" title={t('pageBuilder.unsaved_changes', 'Unsaved changes')}></span>{/if}
+				{#if successMessage}<span class="truncate text-sm" style="color: var(--color-success)">{successMessage}</span>{/if}
+				{#if errorMessage}<span class="truncate text-sm" style="color: var(--color-danger)">{errorMessage}</span>{/if}
+			{:else if activeHeaderPanel === 'preview'}
+				<!-- Preview: geo country + device toggle + theme -->
+				<select bind:value={previewCountry} class="shrink-0 rounded border px-2 py-1 text-xs" style="border-color: var(--color-border-input); background: var(--color-background); color: var(--color-foreground)" aria-label={t('landing.preview_country', 'Preview country')}>
+					{#each geoCountries as c}<option value={c}>{c === 'global' ? t('landing.global', 'Global') : c}</option>{/each}
+				</select>
+				<div class="flex shrink-0 gap-1">
+					<button onclick={() => (deviceMode = 'desktop')} class="rounded px-2 py-1 text-xs {deviceMode === 'desktop' ? 'text-white' : 'border'}" style={deviceMode === 'desktop' ? 'background: var(--color-primary)' : 'border-color: var(--color-border)'}>{t('landing.device_desktop', 'Desktop')}</button>
+					<button onclick={() => (deviceMode = 'tablet')} class="rounded px-2 py-1 text-xs {deviceMode === 'tablet' ? 'text-white' : 'border'}" style={deviceMode === 'tablet' ? 'background: var(--color-primary)' : 'border-color: var(--color-border)'}>{t('landing.device_tablet', 'Tablet')}</button>
+					<button onclick={() => (deviceMode = 'mobile')} class="rounded px-2 py-1 text-xs {deviceMode === 'mobile' ? 'text-white' : 'border'}" style={deviceMode === 'mobile' ? 'background: var(--color-primary)' : 'border-color: var(--color-border)'}>{t('landing.device_mobile', 'Mobile')}</button>
+				</div>
+				<select value={selectedThemeId} onchange={(e) => changeTheme(e.currentTarget.value)} class="shrink-0 rounded-md border px-2 py-1.5 text-xs" style="border-color: var(--color-border); background: var(--color-background); color: var(--color-foreground)" aria-label={t('page_builder.theme', 'Theme')}>
+					<option value="">{t('page_builder.default_theme', 'Default Theme')}</option>
+					{#each themes as th}<option value={th.id} selected={selectedThemeId === th.id}>{th.name}{th.is_default ? ' (default)' : ''}</option>{/each}
+				</select>
+			{:else if activeHeaderPanel === 'actions'}
+				<!-- Actions: save template + save draft + publish/archive -->
+				{#if canManagePages}
+					<Button variant="outline" size="sm" class="shrink-0" onclick={() => { templateName = `${pageData?.title ?? 'Page'} Template`; showSaveAsTemplate = true; }}>
+						<LayoutTemplate class="mr-1 h-3 w-3" />{t('page_builder.save_as_template', 'Save as Template')}
+					</Button>
+				{/if}
+				<Button variant="outline" size="sm" class="shrink-0" onclick={saveDraft} disabled={saving || !unsavedChanges}>
+					<Save class="mr-1 h-3 w-3" />{saving ? t('common.saving', 'Saving...') : t('page_builder.save_draft', 'Save Draft')}
+				</Button>
+				{#if pageData?.status === 'published'}
+					<Button variant="outline" size="sm" class="shrink-0" onclick={archive} disabled={publishing}>
+						<Archive class="mr-1 h-3 w-3" />{t('page_builder.archive', 'Archive')}
+					</Button>
+				{:else if canPublishPages}
+					<Button size="sm" class="shrink-0" onclick={() => { publishError = ''; showPublishDialog = true; }} disabled={publishing}>
+						<Rocket class="mr-1 h-3 w-3" />{t('page_builder.publish', 'Publish')}
+					</Button>
+				{/if}
+			{/if}
 		</div>
-		<div class="flex items-center gap-2">
-			{#if successMessage}<span class="text-sm" style="color: var(--color-success)">{successMessage}</span>{/if}
-			{#if errorMessage}<span class="text-sm" style="color: var(--color-danger)">{errorMessage}</span>{/if}
-			<!-- Preview country (geo-copy preview) -->
-			<select bind:value={previewCountry} class="rounded border px-2 py-1 text-xs" style="border-color: var(--color-border-input); background: var(--color-background); color: var(--color-foreground)" aria-label={t('landing.preview_country', 'Preview country')}>
-				{#each geoCountries as c}<option value={c}>{c === 'global' ? t('landing.global', 'Global') : c}</option>{/each}
-			</select>
-			<!-- Device toggle -->
-			<div class="flex gap-1">
-				<button onclick={() => (deviceMode = 'desktop')} class="rounded px-2 py-1 text-xs {deviceMode === 'desktop' ? 'text-white' : 'border'}" style={deviceMode === 'desktop' ? 'background: var(--color-primary)' : 'border-color: var(--color-border)'}>{t('landing.device_desktop', 'Desktop')}</button>
-				<button onclick={() => (deviceMode = 'tablet')} class="rounded px-2 py-1 text-xs {deviceMode === 'tablet' ? 'text-white' : 'border'}" style={deviceMode === 'tablet' ? 'background: var(--color-primary)' : 'border-color: var(--color-border)'}>{t('landing.device_tablet', 'Tablet')}</button>
-				<button onclick={() => (deviceMode = 'mobile')} class="rounded px-2 py-1 text-xs {deviceMode === 'mobile' ? 'text-white' : 'border'}" style={deviceMode === 'mobile' ? 'background: var(--color-primary)' : 'border-color: var(--color-border)'}>{t('landing.device_mobile', 'Mobile')}</button>
+
+		<!-- Right: 3-button segmented switch + section toggles + distraction-free -->
+		<div class="flex shrink-0 items-center gap-2">
+			<div class="flex gap-0.5 rounded-md border p-0.5" style="border-color: var(--color-border)">
+				<button
+					type="button"
+					onclick={() => (activeHeaderPanel = 'info')}
+					class="rounded px-3 py-1 text-xs font-medium transition-colors"
+					style={activeHeaderPanel === 'info' ? 'background: var(--color-primary); color: white' : 'color: var(--color-muted)'}
+				>Info</button>
+				<button
+					type="button"
+					onclick={() => (activeHeaderPanel = 'preview')}
+					class="rounded px-3 py-1 text-xs font-medium transition-colors"
+					style={activeHeaderPanel === 'preview' ? 'background: var(--color-primary); color: white' : 'color: var(--color-muted)'}
+				>Preview</button>
+				<button
+					type="button"
+					onclick={() => (activeHeaderPanel = 'actions')}
+					class="rounded px-3 py-1 text-xs font-medium transition-colors"
+					style={activeHeaderPanel === 'actions' ? 'background: var(--color-primary); color: white' : 'color: var(--color-muted)'}
+				>Actions</button>
 			</div>
-			<!-- Theme -->
-			<select value={selectedThemeId} onchange={(e) => changeTheme(e.currentTarget.value)} class="rounded-md border px-2 py-1.5 text-xs" style="border-color: var(--color-border); background: var(--color-background); color: var(--color-foreground)" aria-label={t('page_builder.theme', 'Theme')}>
-				<option value="">{t('page_builder.default_theme', 'Default Theme')}</option>
-				{#each themes as th}<option value={th.id} selected={selectedThemeId === th.id}>{th.name}{th.is_default ? ' (default)' : ''}</option>{/each}
-			</select>
-			{#if canManagePages}
-				<Button variant="outline" size="sm" onclick={() => { templateName = `${pageData?.title ?? 'Page'} Template`; showSaveAsTemplate = true; }}>
-					<LayoutTemplate class="mr-1 h-3 w-3" />{t('page_builder.save_as_template', 'Save as Template')}
-				</Button>
-			{/if}
-			<Button variant="outline" size="sm" onclick={saveDraft} disabled={saving || !unsavedChanges}>
-				<Save class="mr-1 h-3 w-3" />{saving ? t('common.saving', 'Saving...') : t('page_builder.save_draft', 'Save Draft')}
-			</Button>
-			{#if pageData?.status === 'published'}
-				<Button variant="outline" size="sm" onclick={archive} disabled={publishing}>
-					<Archive class="mr-1 h-3 w-3" />{t('page_builder.archive', 'Archive')}
-				</Button>
-			{:else if canPublishPages}
-				<Button size="sm" onclick={() => { publishError = ''; showPublishDialog = true; }} disabled={publishing}>
-					<Rocket class="mr-1 h-3 w-3" />{t('page_builder.publish', 'Publish')}
-				</Button>
-			{/if}
+			<!-- Section visibility toggles -->
+			<div class="flex gap-0.5 rounded-md border p-0.5" style="border-color: var(--color-border)">
+				<button
+					type="button"
+					onclick={() => (showLeftPane = !showLeftPane)}
+					class="rounded p-1 transition-colors hover:bg-[var(--color-surface)]"
+					style={showLeftPane ? 'color: var(--color-foreground)' : 'color: var(--color-muted); opacity: 0.5'}
+					title={showLeftPane ? 'Hide left panel' : 'Show left panel'}
+					aria-label="Toggle left panel"
+				><PanelLeft class="h-4 w-4" /></button>
+				<button
+					type="button"
+					onclick={() => (showRightPane = !showRightPane)}
+					class="rounded p-1 transition-colors hover:bg-[var(--color-surface)]"
+					style={showRightPane ? 'color: var(--color-foreground)' : 'color: var(--color-muted); opacity: 0.5'}
+					title={showRightPane ? 'Hide right panel' : 'Show right panel'}
+					aria-label="Toggle right panel"
+				><PanelRight class="h-4 w-4" /></button>
+				<button
+					type="button"
+					onclick={() => (showHeader = !showHeader)}
+					class="rounded p-1 transition-colors hover:bg-[var(--color-surface)]"
+					style={showHeader ? 'color: var(--color-foreground)' : 'color: var(--color-muted); opacity: 0.5'}
+					title={showHeader ? 'Hide top bar' : 'Show top bar'}
+					aria-label="Toggle top bar"
+				><PanelTop class="h-4 w-4" /></button>
+			</div>
+			<!-- Distraction-free / full-width editor -->
+			<button
+				type="button"
+				onclick={toggleDistractionFree}
+				class="rounded-md border p-1.5 transition-colors hover:bg-[var(--color-surface)]"
+				style="border-color: var(--color-border); color: var(--color-foreground)"
+				title={distractionFree ? 'Exit full-width mode' : 'Full-width editor (hide all panels)'}
+				aria-label="Toggle full-width mode"
+			>
+				{#if distractionFree}
+					<Minimize2 class="h-4 w-4" />
+				{:else}
+					<Maximize2 class="h-4 w-4" />
+				{/if}
+			</button>
 		</div>
 	</header>
+	{/if}
 	{#if saveError}
 		<div class="px-4 py-2 text-sm" style="background: color-mix(in srgb, var(--color-danger) 10%, transparent); color: var(--color-danger)">{saveError}</div>
 	{/if}
 
 	<DragDropProvider onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
-		<div class="flex min-h-0 flex-1">
-			<!-- Left pane: palette + sections list -->
-			<aside class="flex w-64 shrink-0 flex-col border-r" style="border-color: var(--color-border); background: var(--color-background)">
-				<!-- Palette -->
-				<div class="overflow-y-auto border-b p-2" style="border-color: var(--color-border); max-height: 50%">
+		<div class="relative flex min-h-0 flex-1">
+			<!-- Floating restore tab for hidden left pane -->
+			{#if !showLeftPane}
+				<button
+					type="button"
+					onclick={() => (showLeftPane = true)}
+					class="absolute left-0 top-1/2 z-50 -translate-y-1/2 rounded-r-md border border-l-0 px-1 py-3 transition-colors hover:bg-[var(--color-surface)]"
+					style="border-color: var(--color-border); background: var(--color-background); color: var(--color-muted)"
+					aria-label="Show left panel"
+				><PanelLeft class="h-4 w-4" /></button>
+			{/if}
+			<!-- Floating restore tab for hidden right pane -->
+			{#if !showRightPane}
+				<button
+					type="button"
+					onclick={() => (showRightPane = true)}
+					class="absolute right-0 top-1/2 z-50 -translate-y-1/2 rounded-l-md border border-r-0 px-1 py-3 transition-colors hover:bg-[var(--color-surface)]"
+					style="border-color: var(--color-border); background: var(--color-background); color: var(--color-muted)"
+					aria-label="Show right panel"
+				><PanelRight class="h-4 w-4" /></button>
+			{/if}
+			<!-- Floating exit button for distraction-free mode -->
+			{#if distractionFree}
+				<button
+					type="button"
+					onclick={toggleDistractionFree}
+					class="absolute right-3 top-3 z-50 flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium shadow-lg transition-colors hover:bg-[var(--color-surface)]"
+					style="border-color: var(--color-border); background: var(--color-background); color: var(--color-foreground)"
+					aria-label="Exit full-width mode"
+				><Minimize2 class="h-3.5 w-3.5" /> Exit full-width</button>
+			{/if}
+
+			{#if showLeftPane}
+			<!-- Left pane: palette + sections list (resizable) -->
+			<aside class="flex shrink-0 flex-col" style="width: {leftPaneWidth}px; background: var(--color-background)">
+				<!-- Palette (resizable height) -->
+				<div class="shrink-0 overflow-y-auto p-2" style="height: {paletteHeight}px">
 					<h2 class="mb-2 text-xs font-semibold uppercase tracking-wider" style="color: var(--color-muted)">{t('pageBuilder.blockTypes', 'Block Types')}</h2>
 					<div class="relative mb-2">
 						<Search class="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2" style="color: var(--color-muted)" />
@@ -406,7 +880,10 @@
 					{/each}
 				</div>
 
-				<!-- Sections list (sortable) -->
+				<!-- Resize handle: palette ↔ sections (drag up/down) -->
+				<ResizeHandle paneId="palette" size={paletteHeight} orientation="vertical" direction="right" minSize={120} maxSize={700} onResize={handlePaneResize} />
+
+				<!-- Sections list (sortable) — fills remaining height -->
 				<div class="flex min-h-0 flex-1 flex-col overflow-y-auto p-2">
 					<h2 class="mb-2 text-xs font-semibold uppercase tracking-wider" style="color: var(--color-muted)">{t('landing.sections', 'Sections')}</h2>
 					{#if blocks.length === 0}
@@ -414,7 +891,33 @@
 					{:else}
 						{#each blocks as block, i (block.id)}
 							{@const meta = blockRegistry[block.type]}
-							<SortableSection {block} index={i} selected={selectedBlockId === block.id} {meta} {getIcon} onSelect={() => (selectedBlockId = block.id)} />
+							<SortableSection {block} index={i} selected={selectedBlockId === block.id} {meta} {getIcon} onSelect={() => (selectedBlockId = block.id)} onRemove={() => removeBlock(block.id)} />
+							{#if block.type === 'container'}
+								<div class="ml-2">
+									<button
+										type="button"
+										onclick={() => toggleContainerExpand(block.id)}
+										class="text-[10px] text-[var(--muted)] hover:text-[var(--foreground)] px-2 py-0.5"
+									>
+										{expandedContainers.has(block.id) ? '▼' : '▶'} {(block.props as ContainerProps).children?.length ?? 0} children
+									</button>
+								</div>
+								{#if expandedContainers.has(block.id)}
+									<ContainerChildren
+										containerId={block.id}
+										children={(block.props as ContainerProps).children ?? []}
+										layout={(block.props as ContainerProps).layout ?? 'grid'}
+										columns={(block.props as ContainerProps).columns ?? 2}
+										{selectedBlockId}
+										{getIcon}
+										onSelect={(id) => (selectedBlockId = id)}
+										onReorder={reorderContainerChild}
+										onRemove={removeContainerChild}
+										onMoveOut={moveChildToTopLevel}
+										onSpanChange={updateChildSpan}
+									/>
+								{/if}
+							{/if}
 						{/each}
 					{/if}
 					<button onclick={() => addBlock('hero')} class="mt-2 w-full rounded border border-dashed py-1.5 text-xs hover:bg-[var(--surface)]" style="border-color: var(--color-border); color: var(--color-muted)">
@@ -422,6 +925,10 @@
 					</button>
 				</div>
 			</aside>
+
+			<!-- Resize handle: left ↔ center -->
+			<ResizeHandle paneId="left" size={leftPaneWidth} minSize={180} maxSize={500} onResize={handlePaneResize} />
+			{/if}
 
 			<!-- Center pane: live preview -->
 			<main class="flex-1 overflow-y-auto p-4" style="background: var(--color-surface)">
@@ -437,8 +944,12 @@
 				</div>
 			</main>
 
-			<!-- Right pane: inspector -->
-			<aside class="w-96 shrink-0 overflow-y-auto border-l" style="border-color: var(--color-border); background: var(--color-background)">
+			{#if showRightPane}
+			<!-- Resize handle: center ↔ right (dragging left grows the right pane) -->
+			<ResizeHandle paneId="right" size={rightPaneWidth} direction="left" minSize={250} maxSize={700} onResize={handlePaneResize} />
+
+			<!-- Right pane: inspector (resizable) -->
+			<aside class="shrink-0 overflow-y-auto" style="width: {rightPaneWidth}px; border-left: 1px solid var(--color-border); background: var(--color-background)">
 				{#if selectedBlock}
 					{@const meta = blockRegistry[selectedBlock.type]}
 					<div class="border-b p-3" style="border-color: var(--color-border)">
@@ -447,19 +958,23 @@
 					<Tabs.Root bind:value={activeTab} class="flex h-full flex-col">
 						<Tabs.List class="flex border-b" style="border-color: var(--color-border)">
 							<Tabs.Trigger value="content" class="flex-1 px-3 py-2 text-xs font-medium {activeTab === 'content' ? 'border-b-2 text-[var(--primary)]' : 'text-[var(--muted)]'}" style="border-color: var(--color-primary)">{t('landing.tab_content', 'Content')}</Tabs.Trigger>
-							<Tabs.Trigger value="style" class="flex-1 px-3 py-2 text-xs font-medium {activeTab === 'style' ? 'border-b-2 text-[var(--primary)]' : 'text-[var(--muted)]'}" style="border-color: var(--color-primary)">{t('landing.tab_style', 'Style')}</Tabs.Trigger>
+							<Tabs.Trigger value="style" class="flex-1 px-3 py-2 text-xs font-medium {activeTab === 'style' ? 'border-b-2 text-[var(--primary)]' : 'text-[var(--muted)]'}" style="border-color: var(--color-primary)">{t('landing.tab_style', 'Style')}{#if deviceMode !== 'desktop'} <span class="text-[9px] uppercase opacity-70">({deviceMode})</span>{/if}</Tabs.Trigger>
 							<Tabs.Trigger value="settings" class="flex-1 px-3 py-2 text-xs font-medium {activeTab === 'settings' ? 'border-b-2 text-[var(--primary)]' : 'text-[var(--muted)]'}" style="border-color: var(--color-primary)">{t('landing.tab_settings', 'Settings')}</Tabs.Trigger>
 						</Tabs.List>
 						<Tabs.Content value="content" class="flex-1 overflow-y-auto p-3">
 							{#if ContentEditor}
 								{@const Editor = ContentEditor}
-								<Editor props={selectedBlock.props} onchange={(v: unknown) => updateBlockProps(selectedBlock.id, v)} mediaPickerComponent={MediaPicker} geoCtx={previewCtx} />
+								{#if selectedBlock.type === 'custom'}
+									<Editor props={selectedBlock.props} blockDefId={selectedBlock.block_def_id} onchange={(v: unknown) => updateBlockProps(selectedBlock.id, v)} mediaPickerComponent={MediaPicker} geoCtx={previewCtx} />
+								{:else}
+									<Editor props={selectedBlock.props} onchange={(v: unknown) => updateBlockProps(selectedBlock.id, v)} mediaPickerComponent={MediaPicker} geoCtx={previewCtx} />
+								{/if}
 							{:else}
 								<p class="text-xs" style="color: var(--color-muted)">{t('pageBuilder.no_config', 'No content editor for this block type')}</p>
 							{/if}
 						</Tabs.Content>
 						<Tabs.Content value="style" class="flex-1 overflow-y-auto p-3">
-							<BlockStylePanel value={selectedBlock.style} onchange={(v: BlockStyle) => updateBlockStyle(selectedBlock.id, v)} mediaPickerComponent={MediaPicker} />
+							<BlockStylePanel value={selectedBlock.style} onchange={(v: BlockStyle) => updateBlockStyle(selectedBlock.id, v)} mediaPickerComponent={MediaPicker} device={deviceMode} />
 						</Tabs.Content>
 						<Tabs.Content value="settings" class="flex-1 overflow-y-auto p-3">
 							<div class="space-y-4">
@@ -467,6 +982,38 @@
 									<span style="color: var(--color-foreground)">{t('landing.visible', 'Visible')}</span>
 									<input type="checkbox" checked={selectedBlock.visible} onchange={() => toggleBlockVisibility(selectedBlock.id)} />
 								</label>
+
+								<!-- Per-device visibility -->
+								<div class="space-y-2 rounded border p-3" style="border-color: var(--color-border)">
+									<h4 class="text-xs font-semibold uppercase" style="color: var(--color-muted)">Show on device</h4>
+									<div class="grid grid-cols-3 gap-2">
+										<label class="flex items-center justify-center gap-1.5 rounded border px-2 py-1.5 text-xs" style="border-color: var(--color-border); color: var(--color-foreground)">
+											<input
+												type="checkbox"
+												checked={selectedBlock.responsive_visibility?.desktop !== false}
+												onchange={(e) => updateResponsiveVisibility(selectedBlock.id, 'desktop', e.currentTarget.checked)}
+											/>
+											Desktop
+										</label>
+										<label class="flex items-center justify-center gap-1.5 rounded border px-2 py-1.5 text-xs" style="border-color: var(--color-border); color: var(--color-foreground)">
+											<input
+												type="checkbox"
+												checked={selectedBlock.responsive_visibility?.tablet !== false}
+												onchange={(e) => updateResponsiveVisibility(selectedBlock.id, 'tablet', e.currentTarget.checked)}
+											/>
+											Tablet
+										</label>
+										<label class="flex items-center justify-center gap-1.5 rounded border px-2 py-1.5 text-xs" style="border-color: var(--color-border); color: var(--color-foreground)">
+											<input
+												type="checkbox"
+												checked={selectedBlock.responsive_visibility?.mobile !== false}
+												onchange={(e) => updateResponsiveVisibility(selectedBlock.id, 'mobile', e.currentTarget.checked)}
+											/>
+											Mobile
+										</label>
+									</div>
+									<p class="text-[10px]" style="color: var(--color-muted)">Uncheck to hide this block on that device. The block stays in the DOM but is display:none.</p>
+								</div>
 
 								<!-- Motion / Animation -->
 								<div class="space-y-3 rounded border p-3" style="border-color: var(--color-border)">
@@ -556,12 +1103,13 @@
 					</div>
 				{/if}
 			</aside>
+			{/if}
 		</div>
 
 		<DragOverlay>
 			{#if activeDragData}
 				<div class="rounded-lg border px-4 py-3 text-sm font-medium shadow-lg" style="border-color: var(--color-primary); background: var(--color-background); color: var(--color-foreground)">
-					{activeDragData.meta?.label ?? activeDragData.blockType ?? 'Block'}
+					{activeDragData.meta?.label ?? (blockRegistry as Record<string, BlockMeta>)[activeDragData.blockType as string]?.label ?? activeDragData.blockType ?? 'Block'}
 				</div>
 			{/if}
 		</DragOverlay>

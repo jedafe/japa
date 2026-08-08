@@ -17,6 +17,11 @@ func TestCacheKey(t *testing.T) {
 		t.Fatalf("New returned error: %v", err)
 	}
 
+	var tenantID pgtype.UUID
+	if err := tenantID.Scan("11111111-1111-1111-1111-111111111111"); err != nil {
+		t.Fatal(err)
+	}
+
 	var contentID pgtype.UUID
 	if err := contentID.Scan("550e8400-e29b-41d4-a716-446655440000"); err != nil {
 		t.Fatal(err)
@@ -24,19 +29,19 @@ func TestCacheKey(t *testing.T) {
 
 	updatedAt := pgtype.Timestamptz{Time: time.Unix(1234567890, 0), Valid: true}
 
-	key := r.cacheKey(contentID, updatedAt)
+	key := r.cacheKey(tenantID, contentID, updatedAt)
 
-	// Key should start with the jc:render: prefix
+	// Key should start with the jc:render:{tenant_id}: prefix
 	if len(key) < 10 {
 		t.Fatalf("cache key too short: %s", key)
 	}
 
-	if key[:11] != "jc:render:5" {
+	if key[:11] != "jc:render:1" {
 		t.Fatalf("cache key prefix wrong: %s", key)
 	}
 
 	// Same inputs must produce the same key (deterministic)
-	key2 := r.cacheKey(contentID, updatedAt)
+	key2 := r.cacheKey(tenantID, contentID, updatedAt)
 	if key != key2 {
 		t.Fatalf("cache key not deterministic: %s != %s", key, key2)
 	}
@@ -44,9 +49,19 @@ func TestCacheKey(t *testing.T) {
 	// Different timestamp must produce a different key
 	updatedAt2 := pgtype.Timestamptz{Time: time.Unix(1234567891, 0), Valid: true}
 
-	key3 := r.cacheKey(contentID, updatedAt2)
+	key3 := r.cacheKey(tenantID, contentID, updatedAt2)
 	if key == key3 {
 		t.Fatalf("different timestamps produced same key: %s", key)
+	}
+
+	// Different tenant must produce a different key (§4.2 tenant scoping)
+	var tenantID2 pgtype.UUID
+	if err := tenantID2.Scan("22222222-2222-2222-2222-222222222222"); err != nil {
+		t.Fatal(err)
+	}
+	key4 := r.cacheKey(tenantID2, contentID, updatedAt)
+	if key == key4 {
+		t.Fatalf("different tenants produced same key: %s", key)
 	}
 }
 

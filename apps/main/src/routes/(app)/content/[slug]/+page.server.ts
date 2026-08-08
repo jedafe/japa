@@ -23,10 +23,12 @@ export const load: PageServerLoad = async (event) => {
 
 	let article: ContentArticle;
 	let jsonLd: unknown = null;
+	let deletedUserIds: string[] | null = null;
 	try {
 		const envelope = await apiGetEnvelope<ContentArticle>(ctx, `/content/${slug}`);
 		article = envelope.data;
 		jsonLd = envelope.json_ld ?? null;
+		deletedUserIds = envelope.deleted_user_ids ?? null;
 	} catch (err) {
 		if (err instanceof ApiError && err.status === 404) {
 			throw error(404, { code: 'not_found', message: 'Content not found' });
@@ -123,6 +125,7 @@ export const load: PageServerLoad = async (event) => {
 		rightSidebarWidgets,
 		relatedContent,
 		jsonLd,
+		deletedUserIds,
 		initiallyFollowing: isFollowing
 	};
 };

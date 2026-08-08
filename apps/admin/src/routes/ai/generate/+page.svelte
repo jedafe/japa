@@ -19,6 +19,17 @@
 	let sentToReview = $state(false);
 	let reviewMessage = $state('');
 
+	// ─── Humanization ─────────────────────────────────────────────
+	// Per-request override. The backend merges this with the global
+	// ai.humanize.* system setting (gated by the ai.humanize.manage RBAC node).
+	let humanize = $state(false);
+	let humanizeLevel = $state<'low' | 'medium' | 'high'>('medium');
+	const humanizeLevelOptions = [
+		{ value: 'low', labelKey: 'ai.humanize.level.low' },
+		{ value: 'medium', labelKey: 'ai.humanize.level.medium' },
+		{ value: 'high', labelKey: 'ai.humanize.level.high' }
+	];
+
 	// ─── History ──────────────────────────────────────────────────
 	type HistoryEntry = {
 		id: string;
@@ -85,7 +96,9 @@
 			const res = await aiApi.generate({
 				prompt: prompt.trim(),
 				category,
-				model: model || undefined
+				model: model || undefined,
+				humanize,
+				humanize_level: humanize ? humanizeLevel : undefined
 			});
 			if (res.ok) {
 				result = res.data;
@@ -220,7 +233,21 @@
 					</button>
 					{#if showAdvanced}
 						<div class="mt-3 rounded-md border p-3" style="border-color: var(--color-border); background-color: var(--color-background)">
-							<p class="text-xs" style="color: var(--color-muted)">{t('ai.generate.advanced_parameters_temperature_max_toke')}</p>
+							<!-- Humanization toggle (per-request override; merged with global ai.humanize.* setting) -->
+							<div class="flex items-center gap-2">
+								<input type="checkbox" id="gen-humanize" bind:checked={humanize} />
+								<label for="gen-humanize" class="text-sm font-medium">{t('ai.humanize.label')}</label>
+							</div>
+							<p class="ml-6 mt-1 text-xs" style="color: var(--color-muted)">{t('ai.humanize.description')}</p>
+							{#if humanize}
+								<div class="ml-6 mt-3">
+									<label for="gen-humanize-level" class="mb-1 block text-xs font-medium">{t('ai.humanize.level.label')}</label>
+									<Select
+										options={humanizeLevelOptions.map(o => ({ value: o.value, label: t(o.labelKey) }))}
+										bind:value={humanizeLevel}
+									/>
+								</div>
+							{/if}
 						</div>
 					{/if}
 				</div>

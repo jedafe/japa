@@ -1,7 +1,7 @@
 <script lang="ts">
 	// Ref: japaconnect-engineering/sections/16-page-builder.md (dnd-kit foundation)
 	import { createSortable } from '@dnd-kit/svelte/sortable';
-	import { GripVertical } from 'lucide-svelte';
+	import { GripVertical, Trash2 } from 'lucide-svelte';
 	import type { Component } from 'svelte';
 	import type { Block, BlockMeta } from '@japaconnect/landing-blocks';
 
@@ -12,6 +12,7 @@
 		meta,
 		getIcon,
 		onSelect,
+		onRemove,
 	}: {
 		block: Block;
 		index: number;
@@ -19,6 +20,7 @@
 		meta: BlockMeta | undefined;
 		getIcon: (name: string) => Component | null;
 		onSelect: () => void;
+		onRemove?: () => void;
 	} = $props();
 
 	const sortableInput = $state({
@@ -68,4 +70,19 @@
 	<span class="flex-1 truncate text-[var(--foreground)]">{label}</span>
 	{#if !block.visible}<span class="text-xs text-[var(--muted)]">hidden</span>{/if}
 	<span class="font-mono text-[10px] text-[var(--muted)]">#{index + 1}</span>
+	{#if onRemove}
+		<button
+			type="button"
+			class="ml-0.5 p-0.5 text-[var(--muted)] opacity-0 transition-opacity hover:text-[var(--color-danger)] group-hover:opacity-100"
+			aria-label="Remove section {label}"
+			title="Remove section"
+			onclick={(e) => {
+				e.stopPropagation();
+				onRemove();
+			}}
+			onkeydown={(e) => e.stopPropagation()}
+		>
+			<Trash2 class="h-3.5 w-3.5" />
+		</button>
+	{/if}
 </div>

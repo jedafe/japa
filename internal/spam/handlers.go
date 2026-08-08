@@ -477,6 +477,11 @@ func (h *Handlers) DeleteUserBlock(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+
 	blockerID, err := parseUUIDParam(r, "blockerId")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_blocker_id", "Invalid blocker ID")
@@ -489,7 +494,7 @@ func (h *Handlers) DeleteUserBlock(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Store.DeleteUserBlock(r.Context(), blockerID, blockedID); err != nil {
+	if err := h.Store.DeleteUserBlock(r.Context(), tenantID, blockerID, blockedID); err != nil {
 		slog.Error("deleting user block", "error", err)
 		handleServiceError(w, err)
 

@@ -28,11 +28,27 @@ export const DASHBOARD_LOADERS: Record<string, (ctx: ApiContext, params?: Dashbo
 		contentAnalytics: (await apiList<unknown>(ctx, '/me/analytics/content?page_size=10').catch(() => ({ items: [] }))).items,
 		followerGrowth: (await apiList<unknown>(ctx, '/me/analytics/followers?days=30').catch(() => ({ items: [] }))).items
 	}),
-	content: async (ctx, params) => ({
-		items: (await apiList<unknown>(ctx, buildContentQuery({ status: params?.status, type: params?.type }))).items,
-		// Rule 16 — content type options come from the API, not hardcoded.
-		contentTypes: (await apiList<unknown>(ctx, '/content-types').catch(() => ({ items: [] }))).items
-	}),
+	content: async (ctx, params) => {
+		// Fetch page_size+1 so the client can tell whether a "Load more"
+		// page exists without a separate count query (the API convention
+		// returns { data: [...] } with no total). Ref: §50, api-response-format.
+		const pageSize = 20;
+		const batch = (
+			await apiList<unknown>(
+				ctx,
+				buildContentQuery({ status: params?.status, type: params?.type, q: params?.q, pageSize: pageSize + 1 })
+			)
+		).items;
+		const hasMore = batch.length > pageSize;
+		const items = hasMore ? batch.slice(0, pageSize) : batch;
+		return {
+			items,
+			// Rule 16 — content type options come from the API, not hardcoded.
+			contentTypes: (await apiList<unknown>(ctx, '/content-types').catch(() => ({ items: [] }))).items,
+			pageSize,
+			hasMore
+		};
+	},
 	relationships: async (ctx) => ({
 		following: (await apiList<unknown>(ctx, '/me/following').catch(() => ({ items: [] }))).items,
 		spaces: (await apiList<unknown>(ctx, '/me/spaces').catch(() => ({ items: [] }))).items,

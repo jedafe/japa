@@ -1,21 +1,27 @@
 <script lang="ts">
-	import { onMount, onDestroy, untrack } from 'svelte';
+	import { untrack, mount, unmount } from 'svelte';
+	import { tick } from 'svelte';
 	import { Editor } from '@tiptap/core';
 	import { buildExtensions } from '$lib/tiptap/extensions';
 	import { SLASH_BLOCKS } from '$lib/tiptap/slashMenu';
+	import type { SlashBlockContext } from '$lib/tiptap/slashMenu';
 	import { t } from '$lib/i18n';
+	import type { MediaAsset } from '$lib/types';
+	import MediaLibraryModal from '$lib/components/media/MediaLibraryModal.svelte';
+	import InsertModal from './InsertModal.svelte';
+	import LinkPreviewCard from './LinkPreviewCard.svelte';
 	import {
-		Heading1,
 		Heading2,
 		Heading3,
 		List,
 		ListOrdered,
-		ListChecks,
 		Quote,
 		Code2,
 		ImagePlus,
+		Video,
 		Minus,
 		Table,
+		Ticket,
 		Type,
 		Bold,
 		Italic,
@@ -29,19 +35,20 @@
 		FileCode
 	} from 'lucide-svelte';
 
-	const ICONS: Record<string, typeof Heading1> = {
-		Heading1,
+	const ICONS: Record<string, typeof Heading2> = {
 		Heading2,
 		Heading3,
 		List,
 		ListOrdered,
-		ListChecks,
 		Quote,
 		Code2,
 		ImagePlus,
+		Youtube: Video,
 		Minus,
 		Table,
-		Type
+		Ticket,
+		Type,
+		Link: LinkIcon
 	};
 
 	export type EditorMode = 'block' | 'wysiwyg' | 'markdown';
@@ -50,6 +57,9 @@
 		html: string;
 		onedit: () => void;
 		onhtml?: (html: string) => void;
+		/** Fires with the editor's TipTap JSON document on every update.
+		 *  Used by the forum composer which stores body as base64 TipTap JSON. */
+		onjson?: (json: Record<string, unknown>) => void;
 		onfocus?: () => void;
 		defaultMode?: EditorMode;
 	}
@@ -58,11 +68,13 @@
 		html,
 		onedit,
 		onhtml,
+		onjson,
 		onfocus,
 		defaultMode = 'block'
 	}: Props = $props();
 
 	let element = $state<HTMLDivElement>(null!);
+	let postEditorEl = $state<HTMLDivElement>(null!);
 	let editor = $state<Editor | null>(null);
 	let slashOpen = $state(false);
 	let slashIndex = $state(0);
@@ -70,6 +82,11 @@
 	// Cursor coordinates (relative to .post-editor) for positioning the slash menu
 	let slashTop = $state(0);
 	let slashLeft = $state(0);
+
+	// Paste handler reference for cleanup
+	let pasteHandler: ((e: ClipboardEvent) => void) | null = null;
+	// Mounted LinkPreviewCard components inside the editor DOM
+	const lpMounts = new Map<HTMLElement, Record<string, unknown>>();
 
 	// Editor mode — initialised from the admin-configured default (passed via
 	// appearance.default_editor system setting). Ref: conventions/system-settings-catalog.md
@@ -81,73 +98,80 @@
 	// clobbering the textarea while the user is typing in markdown mode).
 	let markdownDirty = $state(false);
 
-	const MODES: { value: EditorMode; icon: typeof Heading1; labelKey: string; descKey: string }[] = [
+	const MODES: { value: EditorMode; icon: typeof Heading2; labelKey: string; descKey: string }[] = [
 		{ value: 'block', icon: LayoutTemplate, labelKey: 'create.editor.mode.block', descKey: 'create.editor.mode.block_desc' },
 		{ value: 'wysiwyg', icon: Type, labelKey: 'create.editor.mode.wysiwyg', descKey: 'create.editor.mode.wysiwyg_desc' },
 		{ value: 'markdown', icon: FileCode, labelKey: 'create.editor.mode.markdown', descKey: 'create.editor.mode.markdown_desc' }
 	];
 
-	onMount(() => {
-		// Determine whether the initial content is HTML or plain text/markdown.
-		// When body_html is empty in the database (some content was saved with
-		// only the markdown body), CreateShell falls back to draft.body — which
-		// is markdown, not HTML. The Tiptap Markdown extension can parse it via
-		// setContent(..., { contentType: 'markdown' }).
-		const isHTML = html.trim().startsWith('<');
-		// Initialize with empty content and set it in onCreate — the editor's
-		// view isn't always ready to render when setContent is called
-		// immediately after construction in Tiptap 3.x. Using onCreate ensures
-		// the ProseMirror view is fully mounted before we inject content.
+	// Hydrate link-preview placeholder divs inside the editor DOM into
+	// LinkPreviewCard Svelte components. Called after each editor update.
+	function hydrateEditorLinkPreviews() {
+		if (!element) return;
+		const placeholders = element.querySelectorAll<HTMLElement>(
+			'div[data-type="link-preview"]:not([data-hydrated])'
+		);
+		for (const el of placeholders) {
+			const url = el.dataset.url;
+			if (!url) continue;
+			el.setAttribute('data-hydrated', 'true');
+			const comp = mount(LinkPreviewCard, { target: el, props: { url } });
+			lpMounts.set(el, comp);
+		}
+	}
+
+	// Initialise the TipTap editor once the mount element is available.
+	// Uses $effect (Svelte 5 runes) instead of onMount. All reactive reads
+	// (html, mode, t, postEditorEl) are untracked so the effect only re-runs
+	// when `element` changes — not on every editor update that changes html.
+	$effect(() => {
+		if (!element) return;
+
+		// Capture initial values without tracking them as dependencies.
+		// The editor is created once; reading html/mode here would cause
+		// the effect to re-run on every keystroke (onhtml → html prop
+		// changes → effect re-runs → editor destroyed & recreated).
+		const initialHtml = untrack(() => html);
+		const initialMode = untrack(() => mode);
+		const placeholderText = untrack(() => t('create.editor.placeholder'));
+		const isHTML = initialHtml.trim().startsWith('<');
+
 		editor = new Editor({
 			element: element,
 			extensions: buildExtensions({
-				placeholder: t('create.editor.placeholder')
+				placeholder: placeholderText
 			}),
 			content: '',
+			editable: initialMode !== 'markdown',
 			onCreate: () => {
-				if (!html) return;
-				// Defer to the next animation frame so the view has finished
-				// its initial layout pass before we replace the document.
-				// Without this, ProseMirror can leave the DOM empty even
-				// though the editor state contains the content.
+				if (!initialHtml) return;
 				requestAnimationFrame(() => {
 					if (!editor || editor.isDestroyed) return;
 					if (isHTML) {
-						editor.commands.setContent(html, { emitUpdate: false });
+						editor.commands.setContent(initialHtml, { emitUpdate: false });
 					} else {
-						editor.commands.setContent(html, { contentType: 'markdown', emitUpdate: false });
+						editor.commands.setContent(initialHtml, { contentType: 'markdown', emitUpdate: false });
 					}
-					// When the editor starts in markdown mode, the Tiptap
-					// surface is hidden (display:none) and the markdown
-					// textarea is shown instead. The textarea reads from
-					// markdownSource, which is only populated on mode switch.
-					// Without this, the textarea is empty even though the
-					// ProseMirror document has the content. Serialize the
-					// editor's document to markdown for the textarea.
-					if (mode === 'markdown') {
+					if (untrack(() => mode) === 'markdown') {
 						markdownSource = editor.getMarkdown();
 						markdownDirty = false;
 					}
+					hydrateEditorLinkPreviews();
 				});
 			},
 			onUpdate: () => {
-				// Sync the editor's HTML back to the parent so the autosave
-				// snapshot includes the current body — without this the body
-				// is never persisted. (Fix: body HTML sync.)
 				onhtml?.(editor?.getHTML() ?? '');
+				onjson?.(editor?.getJSON() ?? { type: 'doc', content: [] });
 				onedit();
-				// If the user is editing in a Tiptap mode, the markdown mirror
-				// is stale until they switch back to markdown mode.
-				if (mode !== 'markdown') markdownDirty = false;
+				if (untrack(() => mode) !== 'markdown') markdownDirty = false;
+				requestAnimationFrame(hydrateEditorLinkPreviews);
 			},
 			onFocus: () => onfocus?.(),
 			onSelectionUpdate: ({ editor }) => {
-				// Slash menu only applies in block mode.
-				if (mode !== 'block') {
+				if (untrack(() => mode) !== 'block') {
 					slashOpen = false;
 					return;
 				}
-				// Slash menu: detect `/query` at the cursor position
 				const { from } = editor.state.selection;
 				const text = editor.state.doc.textBetween(1, from, '\n');
 				const match = /\/(\w*)$/.exec(text);
@@ -155,19 +179,59 @@
 					slashOpen = true;
 					slashQuery = match[1];
 					slashIndex = 0;
-					// Position the menu at the cursor, relative to .post-editor
-					const coords = editor.view.coordsAtPos(from);
-					const containerRect = element.getBoundingClientRect();
-					slashLeft = coords.left - containerRect.left;
-					slashTop = coords.bottom - containerRect.top + 6;
+					requestAnimationFrame(() => {
+						if (!editor || editor.isDestroyed) return;
+						const pel = untrack(() => postEditorEl);
+						if (!pel) return;
+						const coords = editor.view.coordsAtPos(from, -1);
+						const containerRect = pel.getBoundingClientRect();
+						slashLeft = coords.left - containerRect.left;
+						slashTop = coords.bottom - containerRect.top + 6;
+					});
 				} else {
 					slashOpen = false;
 				}
 			}
 		});
-	});
 
-	onDestroy(() => editor?.destroy());
+		// DOM-level paste listener for link preview (ROADMAP-MAIN 07.09).
+		// Uses capture phase to fire before ProseMirror's internal handling.
+		function handlePasteEvent(e: ClipboardEvent) {
+			const text = e.clipboardData?.getData('text/plain') ?? '';
+			const trimmed = text.trim();
+			if (!/^https?:\/\/\S+$/i.test(trimmed) || !editor || editor.isDestroyed) return;
+
+			const { from, to } = editor.state.selection;
+			if (from !== to) {
+				// Text is selected — apply the URL as a link mark to the
+				// selected text (inline link), don't insert a preview card.
+				e.preventDefault();
+				e.stopPropagation();
+				editor.chain().focus().setLink({ href: trimmed }).run();
+			} else {
+				// No selection (cursor only) — insert a linkPreview block
+				// node. The onUpdate handler hydrates it into a card.
+				e.preventDefault();
+				e.stopPropagation();
+				editor.chain().focus().insertLinkPreview(trimmed).run();
+			}
+		}
+		element.addEventListener('paste', handlePasteEvent, true);
+		pasteHandler = handlePasteEvent;
+
+		// Cleanup — Svelte 5 $effect cleanup function.
+		return () => {
+			if (pasteHandler && element) {
+				element.removeEventListener('paste', pasteHandler, true);
+			}
+			for (const [, comp] of lpMounts) {
+				unmount(comp);
+			}
+			lpMounts.clear();
+			editor?.destroy();
+			editor = null;
+		};
+	});
 
 	function runBlock(block: (typeof SLASH_BLOCKS)[0]) {
 		if (!editor) return;
@@ -178,7 +242,13 @@
 		if (match) {
 			editor.chain().focus().deleteRange({ from: from - match[0].length, to: from }).run();
 		}
-		block.run(editor);
+		const ctx: SlashBlockContext = {
+			onInsertImage: openMediaPicker,
+			onInsertYoutube: () => openInsertModal('youtube'),
+			onInsertLink: () => openInsertModal('link'),
+			onInsertCoupon: () => openInsertModal('coupon'),
+		};
+		block.run(editor, ctx);
 		slashOpen = false;
 	}
 
@@ -233,6 +303,14 @@
 
 		mode = next;
 
+		// Disable the TipTap editor in markdown mode so its suggestion
+		// plugins (mention, hashtag, interlink) don't activate when
+		// syncMarkdownToEditor calls setContent. The editor DOM is
+		// already hidden via CSS, but an editable editor still processes
+		// transactions that can trigger the suggestion popup — which
+		// would appear at (0,0) since the editor has no layout box.
+		editor.setEditable(next !== 'markdown');
+
 		// Refocus the appropriate surface.
 		if (next === 'markdown') {
 			queueMicrotask(() => markdownTextarea?.focus());
@@ -257,6 +335,10 @@
 		onhtml?.(editor.getHTML());
 		onedit();
 		markdownDirty = false;
+		// Hydrate link-preview nodes that were parsed from the markdown
+		// source (the placeholder divs become linkPreview nodes via
+		// parseHTML, but need hydration into LinkPreviewCard components).
+		requestAnimationFrame(hydrateEditorLinkPreviews);
 	}
 
 	function onMarkdownInput(e: Event) {
@@ -269,8 +351,11 @@
 		markdownSyncTimer = setTimeout(syncMarkdownToEditor, MARKDOWN_SYNC_DELAY);
 	}
 
-	onDestroy(() => {
-		if (markdownSyncTimer) clearTimeout(markdownSyncTimer);
+	// Clear the markdown sync timer on cleanup (Svelte 5 $effect cleanup).
+	$effect(() => {
+		return () => {
+			if (markdownSyncTimer) clearTimeout(markdownSyncTimer);
+		};
 	});
 
 	// ---- WYSIWYG toolbar helpers ----
@@ -287,28 +372,132 @@
 
 	function setLinkFromPrompt() {
 		if (!editor) return;
-		const prev = editor.getAttributes('link').href ?? '';
-		const url = window.prompt(t('create.editor.prompt.url'), prev);
-		if (url === null) return;
-		if (url === '') {
-			editor.chain().focus().extendMarkRange('link').unsetLink().run();
-		} else {
-			editor.chain().focus().extendMarkRange('link').setLink({ href: url }).run();
-		}
+		openInsertModal('link');
 	}
 
 	function setImageFromPrompt() {
 		if (!editor) return;
-		const url = window.prompt(t('create.editor.prompt.image_url'));
-		if (url) editor.chain().focus().setImage({ src: url }).run();
+		openMediaPicker();
+	}
+
+	// ---- Media picker (image upload via MediaLibraryModal) ----
+	let mediaPickerOpen = $state(false);
+
+	function openMediaPicker() {
+		mediaPickerOpen = true;
+	}
+
+	function handleMediaSelect(asset: MediaAsset) {
+		mediaPickerOpen = false;
+		if (editor && !editor.isDestroyed) {
+			editor.chain().focus().setImage({ src: asset.url, alt: asset.alt_text ?? asset.filename ?? '' }).run();
+		}
+	}
+
+	// ---- Insert modal (YouTube / Link / Coupon) ----
+	type InsertKind = 'youtube' | 'link' | 'coupon';
+	let insertModalKind = $state<InsertKind | null>(null);
+	let insertCurrentUrl = $state('');
+
+	function openInsertModal(kind: InsertKind) {
+		if (kind === 'link' && editor) {
+			insertCurrentUrl = editor.getAttributes('link').href ?? '';
+		} else {
+			insertCurrentUrl = '';
+		}
+		insertModalKind = kind;
+	}
+
+	function closeInsertModal() {
+		insertModalKind = null;
+		insertCurrentUrl = '';
+	}
+
+	function handleInsertConfirm(value: string) {
+		if (!editor || editor.isDestroyed) {
+			closeInsertModal();
+			return;
+		}
+		if (insertModalKind === 'youtube') {
+			editor.chain().focus().setYoutubeVideo({ src: value }).run();
+		} else if (insertModalKind === 'link') {
+			applyLinkUrl(value);
+		} else if (insertModalKind === 'coupon') {
+			const sep = value.indexOf('|');
+			const couponId = sep >= 0 ? value.slice(0, sep) : value;
+			const couponLabel = sep >= 0 ? value.slice(sep + 1) : '';
+			editor.chain().focus().insertContent({
+				type: 'couponEmbed',
+				attrs: { coupon_id: couponId, label: couponLabel },
+				content: [{ type: 'text', text: couponLabel }]
+			}).run();
+		}
+		closeInsertModal();
+	}
+
+	function applyLinkUrl(url: string) {
+		if (!editor) return;
+		const trimmed = url.trim();
+		if (trimmed === '') {
+			editor.chain().focus().extendMarkRange('link').unsetLink().run();
+			return;
+		}
+		if (/^https?:\/\//i.test(trimmed)) {
+			const { from, to } = editor.state.selection;
+			if (from === to) {
+				// eslint-disable-next-line @typescript-eslint/no-explicit-any
+				(editor.commands as any).insertLinkPreview?.(trimmed);
+			} else {
+				editor.chain().focus().extendMarkRange('link').setLink({ href: trimmed }).run();
+			}
+		} else {
+			const { from, to } = editor.state.selection;
+			if (from === to) {
+				editor.chain().focus().insertContent({
+					type: 'text',
+					text: trimmed,
+					marks: [{ type: 'link', attrs: { href: trimmed } }]
+				}).run();
+			} else {
+				editor.chain().focus().extendMarkRange('link').setLink({ href: trimmed }).run();
+			}
+		}
 	}
 
 	export function getHTML(): string {
 		return editor?.getHTML() ?? '';
 	}
+
+	// Markdown mode paste handler — inserts a link preview placeholder as
+	// raw HTML into the markdown source. When the user switches back to
+	// block/wysiwyg mode, TipTap's parseHTML rule picks up the div and
+	// creates a linkPreview node (ROADMAP-MAIN 07.09).
+	function handleMarkdownPaste(e: ClipboardEvent) {
+		const text = e.clipboardData?.getData('text/plain') ?? '';
+		const trimmed = text.trim();
+		if (!/^https?:\/\/\S+$/i.test(trimmed)) return;
+		// Insert the placeholder HTML at the cursor position in the textarea.
+		const ta = e.currentTarget as HTMLTextAreaElement;
+		const start = ta.selectionStart;
+		const end = ta.selectionEnd;
+		const placeholder = `\n\n<div data-type="link-preview" data-url="${trimmed}"></div>\n\n`;
+		e.preventDefault();
+		markdownSource = markdownSource.slice(0, start) + placeholder + markdownSource.slice(end);
+		markdownDirty = true;
+		onedit();
+		// Debounce the markdown→HTML conversion so the editor document updates.
+		if (markdownSyncTimer) clearTimeout(markdownSyncTimer);
+		markdownSyncTimer = setTimeout(syncMarkdownToEditor, MARKDOWN_SYNC_DELAY);
+		// Move cursor after the inserted placeholder.
+		tick().then(() => {
+			const pos = start + placeholder.length;
+			ta.focus();
+			ta.setSelectionRange(pos, pos);
+		});
+	}
 </script>
 
-<div class="post-editor">
+<div class="post-editor" bind:this={postEditorEl}>
 	{#if mode === 'markdown'}
 		<textarea
 			bind:this={markdownTextarea}
@@ -316,6 +505,7 @@
 			value={markdownSource}
 			oninput={onMarkdownInput}
 			onfocus={() => onfocus?.()}
+			onpaste={handleMarkdownPaste}
 			placeholder={t('create.editor.placeholder_markdown')}
 			spellcheck="true"
 		></textarea>
@@ -342,18 +532,18 @@
 				<button type="button" class="tb-btn" class:active={isActive('strike')} title={t('create.editor.toolbar.strike')} onclick={() => tb('toggleStrike')}><Strikethrough size={16} /></button>
 				<button type="button" class="tb-btn" class:active={isActive('code')} title={t('create.editor.toolbar.code')} onclick={() => tb('toggleCode')}><Code size={16} /></button>
 				<span class="tb-sep"></span>
-				<button type="button" class="tb-btn" class:active={isActive('heading', { level: 1 })} title={t('create.editor.toolbar.h1')} onclick={() => tb('toggleHeading', { level: 1 })}><Heading1 size={16} /></button>
 				<button type="button" class="tb-btn" class:active={isActive('heading', { level: 2 })} title={t('create.editor.toolbar.h2')} onclick={() => tb('toggleHeading', { level: 2 })}><Heading2 size={16} /></button>
 				<button type="button" class="tb-btn" class:active={isActive('heading', { level: 3 })} title={t('create.editor.toolbar.h3')} onclick={() => tb('toggleHeading', { level: 3 })}><Heading3 size={16} /></button>
 				<span class="tb-sep"></span>
 				<button type="button" class="tb-btn" class:active={isActive('bulletList')} title={t('create.editor.toolbar.bullet_list')} onclick={() => tb('toggleBulletList')}><List size={16} /></button>
 				<button type="button" class="tb-btn" class:active={isActive('orderedList')} title={t('create.editor.toolbar.ordered_list')} onclick={() => tb('toggleOrderedList')}><ListOrdered size={16} /></button>
-				<button type="button" class="tb-btn" class:active={isActive('taskList')} title={t('create.editor.toolbar.task_list')} onclick={() => tb('toggleTaskList')}><ListChecks size={16} /></button>
 				<button type="button" class="tb-btn" class:active={isActive('blockquote')} title={t('create.editor.toolbar.blockquote')} onclick={() => tb('toggleBlockquote')}><Quote size={16} /></button>
 				<button type="button" class="tb-btn" class:active={isActive('codeBlock')} title={t('create.editor.toolbar.code_block')} onclick={() => tb('toggleCodeBlock')}><Code2 size={16} /></button>
 				<span class="tb-sep"></span>
 				<button type="button" class="tb-btn" class:active={isActive('link')} title={t('create.editor.toolbar.link')} onclick={setLinkFromPrompt}><LinkIcon size={16} /></button>
 				<button type="button" class="tb-btn" title={t('create.editor.toolbar.image')} onclick={setImageFromPrompt}><ImagePlus size={16} /></button>
+				<button type="button" class="tb-btn" title={t("create.editor.toolbar.youtube")} onclick={() => openInsertModal("youtube")}><Video size={16} /></button>
+				<button type="button" class="tb-btn" title={t("create.editor.toolbar.coupon")} onclick={() => openInsertModal("coupon")}><Ticket size={16} /></button>
 				<button type="button" class="tb-btn" title={t('create.editor.toolbar.divider')} onclick={() => tb('setHorizontalRule')}><Minus size={16} /></button>
 				<span class="tb-sep"></span>
 				<button type="button" class="tb-btn" title={t('create.editor.toolbar.undo')} onclick={() => tb('undo')} disabled={!editor.can().undo()}><Undo2 size={16} /></button>
@@ -388,7 +578,7 @@
 					type="button"
 					class="slash-item"
 					class:active={i === slashIndex}
-					onclick={() => runBlock(block)}
+					onmousedown={(e) => { e.preventDefault(); runBlock(block); }}
 					onmouseenter={() => (slashIndex = i)}
 				>
 					<span class="slash-icon">
@@ -401,8 +591,21 @@
 				</button>
 			{/each}
 		</div>
-	{/if}
+		{/if}
 </div>
+
+{#if mediaPickerOpen}
+	<MediaLibraryModal onSelect={handleMediaSelect} onClose={() => (mediaPickerOpen = false)} />
+{/if}
+
+{#if insertModalKind}
+	<InsertModal
+		kind={insertModalKind}
+		currentUrl={insertCurrentUrl}
+		onConfirm={handleInsertConfirm}
+		onClose={closeInsertModal}
+	/>
+{/if}
 
 <style>
 	.post-editor {
@@ -546,6 +749,18 @@
 		min-height: 260px;
 	}
 
+	/* Link preview block node — styled container inside the editor. */
+	.prose-content :global(div[data-type="link-preview"]) {
+		margin: 1rem 0;
+		max-width: 100%;
+	}
+
+	.prose-content :global(div[data-type="link-preview"]:hover) {
+		outline: 2px solid var(--color-primary);
+		outline-offset: 2px;
+		border-radius: 0.625rem;
+	}
+
 	.prose-content :global(h1) {
 		font-size: 1.75rem;
 		font-weight: 700;
@@ -623,6 +838,23 @@
 		border-radius: var(--radius);
 		margin: 0.75rem 0;
 	}
+	.prose-content :global(.youtube-embed) {
+		position: relative;
+		overflow: hidden;
+		width: 100%;
+		height: 0;
+		padding-bottom: 56.25%;
+		margin: 0.75rem 0;
+		border-radius: var(--radius);
+	}
+	.prose-content :global(.youtube-embed iframe) {
+		position: absolute;
+		top: 0;
+		left: 0;
+		width: 100%;
+		height: 100%;
+		border: 0;
+	}
 	.prose-content :global(hr) {
 		border: none;
 		border-top: 1px solid var(--color-border);
@@ -693,7 +925,7 @@
 	 * styles work fine here. */
 	.slash-menu {
 		position: absolute;
-		z-index: 30;
+		z-index: 50;
 		display: flex;
 		flex-direction: column;
 		gap: 2px;

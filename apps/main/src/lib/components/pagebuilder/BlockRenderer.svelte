@@ -63,6 +63,54 @@
 			<BlockRenderer block={child} />
 		{/each}
 	</div>
+{:else if block.type === 'container'}
+	{@const c = block.props as any}
+	<div
+		class="w-full mx-auto"
+		style={`max-width: ${c.max_width === 'sm' ? '42rem' : c.max_width === 'md' ? '56rem' : c.max_width === 'lg' ? '64rem' : c.max_width === 'xl' ? '80rem' : '100%'}; ${c.min_height && c.min_height !== 'auto' ? `min-height: ${c.min_height}px;` : ''}`}
+	>
+		{#if c.layout === 'grid'}
+			<div class="grid grid-cols-12" style={`gap: ${c.gap === 'none' ? '0' : c.gap === 'xs' ? '0.25rem' : c.gap === 'sm' ? '0.5rem' : c.gap === 'lg' ? '1.5rem' : c.gap === 'xl' ? '2rem' : c.gap === '2xl' ? '3rem' : '1rem'}`}>
+				{#each c.children ?? [] as child (child.id ?? crypto.randomUUID())}
+					{#if child.visible !== false}
+						{@const span = child.span && child.span > 0 && child.span <= 12 ? child.span : Math.max(1, Math.floor(12 / (c.columns ?? 2)))}
+						<div class="container-cell-legacy" style="--span: {span};">
+							<BlockRenderer block={child} />
+						</div>
+					{/if}
+				{/each}
+			</div>
+		{:else if c.layout === 'flex'}
+			<div class="flex {c.wrap ? 'flex-wrap' : 'flex-nowrap'}" style={`gap: ${c.gap === 'none' ? '0' : c.gap === 'xs' ? '0.25rem' : c.gap === 'sm' ? '0.5rem' : c.gap === 'lg' ? '1.5rem' : c.gap === 'xl' ? '2rem' : c.gap === '2xl' ? '3rem' : '1rem'}`}>
+				{#each c.children ?? [] as child (child.id ?? crypto.randomUUID())}
+					{#if child.visible !== false}
+						<div class="flex-1 min-w-0">
+							<BlockRenderer block={child} />
+						</div>
+					{/if}
+				{/each}
+			</div>
+		{:else}
+			<div class="flex flex-col" style={`gap: ${c.gap === 'none' ? '0' : c.gap === 'xs' ? '0.25rem' : c.gap === 'sm' ? '0.5rem' : c.gap === 'lg' ? '1.5rem' : c.gap === 'xl' ? '2rem' : c.gap === '2xl' ? '3rem' : '1rem'}`}>
+				{#each c.children ?? [] as child (child.id ?? crypto.randomUUID())}
+					{#if child.visible !== false}
+						<BlockRenderer block={child} />
+					{/if}
+				{/each}
+			</div>
+		{/if}
+	</div>
 {:else}
 	<!-- Unknown block type — render nothing rather than crashing. -->
 {/if}
+
+<style>
+	.container-cell-legacy {
+		grid-column: span 12 / span 12;
+	}
+	@container (min-width: 768px) {
+		.container-cell-legacy {
+			grid-column: span var(--span) / span var(--span);
+		}
+	}
+</style>

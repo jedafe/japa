@@ -19,6 +19,7 @@ export const load: PageServerLoad = async (event) => {
 	const ctx = apiContext(event);
 	const q = (event.url.searchParams.get('q') ?? '').trim();
 	const typeSlug = (event.url.searchParams.get('type') ?? '').trim();
+	const levelFilter = (event.url.searchParams.get('level') ?? '').trim();
 	const pageParam = parseInt(event.url.searchParams.get('page') ?? '0', 10);
 	const page = isNaN(pageParam) || pageParam < 0 ? 0 : pageParam;
 	const offset = page * PAGE_SIZE;
@@ -52,6 +53,7 @@ export const load: PageServerLoad = async (event) => {
 		params.set('page_offset', String(offset));
 		if (q) params.set('q', q);
 		if (typeID) params.set('type', typeID);
+		if (levelFilter) params.set('level', levelFilter);
 
 		const result = await apiList<Space>(ctx, `/spaces?${params.toString()}`);
 		spaces = result.items;
@@ -70,6 +72,7 @@ export const load: PageServerLoad = async (event) => {
 		spaceTypes,
 		q,
 		type: typeSlug,
+		level: levelFilter,
 		page,
 		totalPages,
 		total,

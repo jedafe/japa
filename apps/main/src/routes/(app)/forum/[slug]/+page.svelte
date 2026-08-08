@@ -1,20 +1,27 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import { goto } from '$app/navigation';
+	import { goto, invalidateAll } from '$app/navigation';
 	import { t, i18n } from '$lib/i18n';
-	import { ArrowLeft, CheckCircle2, Eye, MessageSquare, Bookmark, Share2, Flag } from 'lucide-svelte';
+	import { ArrowLeft, CheckCircle2, Eye, MessageSquare, Bookmark, Share2, Flag, Pencil, Save, X } from 'lucide-svelte';
 	import { relativeTime } from '$lib/feed/time';
 	import { tiptapBodyToHtml, tiptapExcerpt } from '$lib/tiptap/serialize';
 	import { api } from '$lib/api/client';
 	import VoteRail from '$lib/components/forum/VoteRail.svelte';
 	import ReplyThread from '$lib/components/forum/ReplyThread.svelte';
 	import PollBlock from '$lib/components/forum/PollBlock.svelte';
+	import PostEditor from '$lib/components/create/editors/PostEditor.svelte';
+	import { hydrateLinkPreviews } from '$lib/tiptap/hydrateLinkPreviews';
+	import { hydrateMentions } from '$lib/tiptap/hydrateMentions';
+	import type { ForumThread } from '$lib/types';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
 
 	const thread = $derived(data.thread);
-	const bodyHtml = $derived(tiptapBodyToHtml(thread.body));
+	const deletedUserIds = $derived(
+		data.deletedUserIds ? new Set<string>(data.deletedUserIds as string[]) : undefined
+	);
+	const bodyHtml = $derived(tiptapBodyToHtml(thread.body, { deletedUserIds }));
 	const time = $derived(relativeTime(thread.created_at, new Date(), i18n.locale));
 	const authorLabel = $derived(
 		thread.is_anonymous
@@ -70,6 +77,49 @@
 		if (res.error) solved = wasSolved; // rollback
 	}
 
+	// Bookmark toggle — POST/DELETE /forum/bookmarks with entity_type=thread.
+	// The backend returns bookmark_id on GetThread so DELETE can target
+	// /forum/bookmarks/{id} directly. Ref: sections/08-forum-qa-solved.md (Bookmarks)
+	let bookmarked = $state(false);
+	let bookmarking = $state(false);
+	let bookmarkCount = $state(0);
+	let bookmarkId = $state('');
+
+	$effect(() => {
+		bookmarked = data.isBookmarked;
+		bookmarkCount = thread.bookmark_count;
+		bookmarkId = data.bookmarkId ?? '';
+	});
+
+	async function toggleBookmark() {
+		if (!data.authed || bookmarking) return;
+		bookmarking = true;
+		const wasBookmarked = bookmarked;
+		bookmarked = !wasBookmarked; // optimistic
+		bookmarkCount += wasBookmarked ? -1 : 1;
+		if (wasBookmarked && bookmarkId) {
+			const res = await api.delete(`/forum/bookmarks/${bookmarkId}`);
+			if (res.error) {
+				bookmarked = true;
+				bookmarkCount = thread.bookmark_count;
+			} else {
+				bookmarkId = '';
+			}
+		} else {
+			const res = await api.post<{ id: string }>(`/forum/bookmarks`, {
+				entity_type: 'thread',
+				entity_id: thread.id
+			});
+			if (res.error) {
+				bookmarked = false;
+				bookmarkCount = thread.bookmark_count;
+			} else if (res.data?.id) {
+				bookmarkId = res.data.id;
+			}
+		}
+		bookmarking = false;
+	}
+
 	// BUG-015: wire up the Share button with the Web Share API (fallback to
 	// clipboard copy) and the Report button with a navigation to the report
 	// flow. Ref: japaconnect-engineering/sections/08-forum-qa-solved.md
@@ -93,6 +143,54 @@
 
 	function reportThread() {
 		goto(`/report?entity_type=forum_thread&entity_id=${thread.id}`);
+	}
+
+	// Inline edit (author or moderator — backend enforces via can_edit).
+	// Uses the TipTap PostEditor so edits produce valid TipTap JSON for
+	// the forum_threads.body jsonb column.
+	// Ref: japaconnect-engineering/sections/08-forum-qa-solved.md (Editing)
+	let editing = $state(false);
+	let editTitle = $state('');
+	let editBodyHtml = $state('');
+	let editBodyJson = $state<Record<string, unknown>>({ type: 'doc', content: [] });
+	let editAnonymous = $state(false);
+	let savingEdit = $state(false);
+	let editError = $state<string | null>(null);
+
+	function startEdit() {
+		if (!data.canEdit) return;
+		editTitle = thread.title;
+		// The PostEditor initialises from HTML. Render the stored TipTap
+		// JSON to HTML so the editor starts with the current content.
+		editBodyHtml = bodyHtml;
+		editBodyJson = { type: 'doc', content: [] };
+		editAnonymous = thread.is_anonymous;
+		editError = null;
+		editing = true;
+	}
+
+	function cancelEdit() {
+		editing = false;
+		editError = null;
+	}
+
+	async function saveEdit() {
+		if (savingEdit || !editTitle.trim()) return;
+		savingEdit = true;
+		editError = null;
+		const res = await api.patch<ForumThread>(`/forum/${thread.id}`, {
+			title: editTitle.trim(),
+			body: btoa(JSON.stringify(editBodyJson)),
+			is_anonymous: editAnonymous
+		});
+		savingEdit = false;
+		if (res.error) {
+			editError = res.error.message || t('forum.edit_error', 'Failed to save edits.');
+			return;
+		}
+		editing = false;
+		// Reload to reflect the updated thread + is_edited flag.
+		await invalidateAll();
 	}
 </script>
 
@@ -140,11 +238,33 @@
 					<span class="rounded border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-1.5 py-0.5 text-[10.5px] font-semibold uppercase tracking-wide text-[var(--color-text-subtle)]">
 						{t('content_type.discussion', 'Discussion')}
 					</span>
+
+					<!-- Edit button (author or moderator — can_edit from backend) -->
+					{#if data.canEdit && !editing}
+						<button
+							type="button"
+							onclick={startEdit}
+							class="ml-auto inline-flex items-center gap-1 rounded-[var(--radius)] border border-[var(--color-border)] px-2 py-1 text-xs font-medium text-[var(--color-text-subtle)] transition-colors hover:bg-[var(--color-surface-subtle)]"
+						>
+							<Pencil size={12} /> {t('forum.edit', 'Edit')}
+						</button>
+					{/if}
 				</div>
 
-				<h1 class="mt-2 text-balance text-2xl font-bold leading-tight tracking-tight text-[var(--color-text)] sm:text-3xl">
-					{thread.title}
-				</h1>
+				{#if editing}
+					<!-- Inline edit mode -->
+					<input
+						type="text"
+						bind:value={editTitle}
+						maxlength="120"
+						class="mt-2 w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-xl font-bold text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none"
+						placeholder={t('forum.new.placeholder_title', 'Title')}
+					/>
+				{:else}
+					<h1 class="mt-2 text-balance text-2xl font-bold leading-tight tracking-tight text-[var(--color-text)] sm:text-3xl">
+						{thread.title}
+					</h1>
+				{/if}
 
 				<div class="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-[var(--color-muted)]">
 					<span class="font-medium text-[var(--color-text-subtle)]">{authorLabel}</span>
@@ -157,6 +277,20 @@
 					{#if time}<span>·</span><span>{time}</span>{/if}
 					{#if thread.is_edited}<span>·</span><span class="italic">{t('forum.edited', 'edited')}</span>{/if}
 				</div>
+
+				<!-- Tags (Section 08 — tags are first-class on discussions) -->
+				{#if data.tags && data.tags.length > 0}
+					<div class="mt-3 flex flex-wrap gap-1.5">
+						{#each data.tags as tag (tag.id)}
+							<a
+								href="/forum?tag={tag.slug}"
+								class="inline-flex items-center rounded-full border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-2.5 py-0.5 text-xs font-medium text-[var(--color-text-subtle)] transition-colors hover:border-[var(--color-primary)] hover:text-[var(--color-primary)]"
+							>
+								{tag.name}
+							</a>
+						{/each}
+					</div>
+				{/if}
 			</div>
 		</div>
 
@@ -175,10 +309,49 @@
 			</span>
 		</div>
 
-		<!-- Body -->
-		<div class="prose mt-5 max-w-none text-[var(--color-text)]">
-			{@html bodyHtml}
-		</div>
+		<!-- Body (view mode) / Edit form (edit mode) -->
+		{#if editing}
+			<div class="mt-5 space-y-3">
+				{#if editError}
+					<p class="rounded-[var(--radius)] border border-[var(--color-primary)]/30 bg-[color-mix(in_srgb,var(--color-primary)_8%,transparent)] px-3 py-2 text-sm text-[var(--color-primary)]">
+						{editError}
+					</p>
+				{/if}
+				<div class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] focus-within:border-[var(--color-primary)]">
+					<PostEditor
+						html={editBodyHtml}
+						onedit={() => {}}
+						onhtml={(v) => { editBodyHtml = v; }}
+						onjson={(v) => { editBodyJson = v; }}
+					/>
+				</div>
+				<label class="flex cursor-pointer items-center gap-2 text-sm text-[var(--color-text-subtle)]">
+					<input type="checkbox" bind:checked={editAnonymous} class="h-4 w-4 accent-[var(--color-primary)]" />
+					{t('forum.new.anonymous', 'Post anonymously')}
+				</label>
+				<div class="flex items-center justify-end gap-2 border-t border-[var(--color-border)] pt-3">
+					<button
+						type="button"
+						onclick={cancelEdit}
+						class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
+					>
+						<X size={14} /> {t('common.cancel', 'Cancel')}
+					</button>
+					<button
+						type="button"
+						onclick={saveEdit}
+						disabled={savingEdit || !editTitle.trim()}
+						class="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1.5 text-sm font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)] disabled:opacity-50"
+					>
+						<Save size={14} /> {savingEdit ? t('common.saving', 'Saving…') : t('common.save', 'Save')}
+					</button>
+				</div>
+			</div>
+		{:else}
+			<div class="prose mt-5 max-w-none text-[var(--color-text)]" use:hydrateLinkPreviews use:hydrateMentions>
+				{@html bodyHtml}
+			</div>
+		{/if}
 
 		<!-- Poll (if the thread has one) -->
 		{#if data.poll}
@@ -195,9 +368,16 @@
 			<span class="hidden items-center gap-1 sm:flex [font-variant-numeric:tabular-nums]">
 				<Eye size={14} /> {thread.view_count}
 			</span>
-			<span class="flex items-center gap-1 [font-variant-numeric:tabular-nums]">
-				<Bookmark size={14} /> {thread.bookmark_count}
-			</span>
+			<button
+				type="button"
+				onclick={toggleBookmark}
+				disabled={!data.authed || bookmarking}
+				class="flex items-center gap-1 transition-colors hover:text-[var(--color-text)] disabled:cursor-not-allowed disabled:opacity-50 [font-variant-numeric:tabular-nums]"
+				title={data.authed ? (bookmarked ? t('forum.remove_bookmark', 'Remove bookmark') : t('forum.add_bookmark', 'Bookmark this discussion')) : t('forum.login_to_bookmark', 'Log in to bookmark')}
+			>
+				<Bookmark size={14} fill={bookmarked ? 'currentColor' : 'none'} class={bookmarked ? 'text-[var(--color-primary)]' : ''} />
+				{bookmarkCount}
+			</button>
 			<button type="button" onclick={shareThread} class="flex items-center gap-1 transition-colors hover:text-[var(--color-text)]">
 				<Share2 size={14} /> {shared ? t('forum.shared', 'Copied!') : t('forum.share', 'Share')}
 			</button>
@@ -225,6 +405,7 @@
 		authed={data.authed}
 		canSolve={data.canSolve}
 		acceptedReplyId={null}
+		{deletedUserIds}
 	/>
 
 	<!-- Related posts sidebar (Phase 05.14) -->

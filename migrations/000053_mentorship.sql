@@ -1,5 +1,6 @@
--- Section 35 (Mentorship): Mentorship program and match tracking tables
+-- Mentorship: Mentorship program and match tracking tables
 -- Supports mentorship programs with mentor-mentee matching.
+-- Ref: domains.yaml (Mentorship — v3_deferred), feature.mentorship flag
 
 CREATE TABLE IF NOT EXISTS mentorship_programs (
     id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),

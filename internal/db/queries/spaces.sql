@@ -105,6 +105,25 @@ FROM spaces
 WHERE tenant_id = @tenant_id AND space_type_id = @space_type_id AND deleted_at IS NULL
 ORDER BY created_at DESC, id DESC;
 
+-- name: ListSpacesByTypePaginated :many
+SELECT id, tenant_id, parent_id, space_type_id, name, slug, description, wiki_content,
+       logo_media_id, header_image_id, geo_code, level, member_count, post_count,
+       follower_count, visibility, posting_perm, replying_perm, commenting_perm,
+       joining_perm, status, created_at, updated_at, deleted_at, currency_code
+FROM spaces
+WHERE tenant_id = @tenant_id AND space_type_id = @space_type_id AND deleted_at IS NULL
+  AND (@search::text = '' OR name ILIKE '%' || @search || '%' OR slug ILIKE '%' || @search || '%')
+  AND (@geo_code::text = '' OR geo_code = @geo_code)
+ORDER BY created_at DESC, id DESC
+LIMIT @limit_val OFFSET @offset_val;
+
+-- name: CountSpacesByType :one
+SELECT COUNT(*) AS total
+FROM spaces
+WHERE tenant_id = @tenant_id AND space_type_id = @space_type_id AND deleted_at IS NULL
+  AND (@search::text = '' OR name ILIKE '%' || @search || '%' OR slug ILIKE '%' || @search || '%')
+  AND (@geo_code::text = '' OR geo_code = @geo_code);
+
 -- name: ListChildSpaces :many
 SELECT id, tenant_id, parent_id, space_type_id, name, slug, description, wiki_content,
        logo_media_id, header_image_id, geo_code, level, member_count, post_count,
@@ -281,7 +300,7 @@ UPDATE spaces
 SET name = @name, description = sqlc.narg(description), wiki_content = sqlc.narg(wiki_content),
     geo_code = sqlc.narg(geo_code), visibility = @visibility, posting_perm = @posting_perm,
     replying_perm = @replying_perm, commenting_perm = @commenting_perm, joining_perm = @joining_perm,
-    status = @status
+    status = @status, updated_at = now()
 WHERE id = @id AND tenant_id = @tenant_id AND deleted_at IS NULL
 RETURNING id, tenant_id, parent_id, space_type_id, name, slug, description, wiki_content,
           logo_media_id, header_image_id, geo_code, level, member_count, post_count,

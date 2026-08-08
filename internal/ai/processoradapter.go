@@ -6,6 +6,10 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+
+	"github.com/jackc/pgx/v5/pgtype"
+
+	"github.com/jedafe/japa/internal/config"
 )
 
 // WorkerAdapter wraps a Dispatcher to satisfy the worker.AIProcessor interface.
@@ -13,11 +17,19 @@ import (
 // real AI providers instead of the noop fallback.
 type WorkerAdapter struct {
 	dispatcher *Dispatcher
+	settings   *config.Settings // optional: enables ai.humanize.* for background generation
 }
 
 // NewWorkerAdapter creates a WorkerAdapter backed by the given dispatcher.
 func NewWorkerAdapter(d *Dispatcher) *WorkerAdapter {
 	return &WorkerAdapter{dispatcher: d}
+}
+
+// SetSettings injects the hot-reloadable settings reader so background AI
+// tasks (studio drafts, persona generation) honor the global ai.humanize.*
+// toggle. Optional — when nil, humanization is off for background tasks.
+func (a *WorkerAdapter) SetSettings(s *config.Settings) {
+	a.settings = s
 }
 
 // ProcessAITask dispatches an AI task through the configured providers.
@@ -32,16 +44,29 @@ func (a *WorkerAdapter) ProcessAITask(ctx context.Context, taskType, prompt, mod
 		category = taskType
 	}
 
-	req := Request{
-		Category: category,
-		Payload: map[string]any{
-			"prompt":     prompt,
-			"model_id":   modelID,
-			"request_id": requestID,
-		},
+	payload := map[string]any{
+		"prompt":     prompt,
+		"model_id":   modelID,
+		"request_id": requestID,
 	}
 
-	resp, err := a.dispatcher.Dispatch(ctx, category, req)
+	// Apply the global humanization setting to background generation. There is
+	// no per-request override here (the task payload is a flat prompt string),
+	// so the global ai.humanize.* setting alone decides. The zero tenant UUID
+	// matches the global-setting read pattern used by participation.isEnabled.
+	if a.settings != nil {
+		enabled := a.settings.GetBoolOr(ctx, pgtype.UUID{}, "ai.humanize.enabled", false)
+		level := HumanizeMedium
+		if lvl := a.settings.GetStringOr(ctx, pgtype.UUID{}, "ai.humanize.level", "medium"); lvl != "" {
+			level = HumanizeLevel(lvl)
+		}
+		writeHumanizePayload(payload, enabled, level)
+	}
+
+	resp, err := a.dispatcher.Dispatch(ctx, category, Request{
+		Category: category,
+		Payload:  payload,
+	})
 	if err != nil {
 		return fmt.Errorf("ai: dispatch failed for request %s: %w", requestID, err)
 	}

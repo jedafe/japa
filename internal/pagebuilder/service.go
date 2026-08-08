@@ -231,6 +231,51 @@ func (s *Service) CreatePage(ctx context.Context, tenantID, createdBy pgtype.UUI
 	return s.store.CreatePage(ctx, tenantID, createdBy, input)
 }
 
+// DuplicatePage clones an existing page into a new draft. The copy inherits
+// the source's blocks, meta, theme, and page_type so an admin can redesign it
+// for another app's homepage (e.g. duplicate the default guest landing page
+// and reshape it for Learn/Docs). The new slug is derived from the source
+// slug with a "-copy" suffix (incremented until unique) and the title gets a
+// " (Copy)" suffix. The copy always starts as a draft so it is never
+// accidentally published over the source.
+func (s *Service) DuplicatePage(ctx context.Context, id, tenantID, createdBy pgtype.UUID) (Page, error) {
+	src, err := s.store.GetPage(ctx, id, tenantID)
+	if err != nil {
+		return Page{}, err
+	}
+
+	// Derive a tenant-unique slug: {src.Slug}-copy, -copy-2, -copy-3, ...
+	base := src.Slug
+	if base == "" {
+		base = "page"
+	}
+	slug := base + "-copy"
+	for n := 2; ; n++ {
+		exists, err := s.store.SlugExists(ctx, slug, tenantID)
+		if err != nil {
+			return Page{}, err
+		}
+		if !exists {
+			break
+		}
+		slug = fmt.Sprintf("%s-copy-%d", base, n)
+	}
+
+	input := CreatePageInput{
+		Title:    src.Title + " (Copy)",
+		Slug:     slug,
+		Blocks:   src.Blocks,
+		Meta:     src.Meta,
+		ThemeID:  src.ThemeID,
+		PageType: src.PageType,
+		Status:   PageStatusDraft,
+	}
+	// template_id is intentionally not copied: the duplicate is an
+	// independent page instance, not a template derivative.
+
+	return s.CreatePage(ctx, tenantID, createdBy, input)
+}
+
 // UpdatePage updates an existing page with input validation.
 func (s *Service) UpdatePage(ctx context.Context, id, tenantID pgtype.UUID, input UpdatePageInput) (Page, error) {
 	if input.Title == "" {

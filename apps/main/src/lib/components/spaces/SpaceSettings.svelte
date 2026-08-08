@@ -10,7 +10,7 @@
 	import MediaLibraryModal from '$lib/components/media/MediaLibraryModal.svelte';
 	import SpaceCombobox from '$lib/components/spaces/SpaceCombobox.svelte';
 	import PostEditor from '$lib/components/create/editors/PostEditor.svelte';
-	import { tiptapToHtml } from '$lib/tiptap/serialize';
+	import { decodeBase64Text } from '$lib/tiptap/serialize';
 	import type {
 		Space, SpaceModerator, SpaceRule, SpacePermissionPreset, MediaAsset
 	} from '$lib/types';
@@ -43,13 +43,31 @@
 
 	let name = $state(untrack(() => space.name));
 	let description = $state(untrack(() => space.description ?? ''));
-	// Wiki content: initialize as HTML from TipTap JSON (or raw HTML string).
+	// Wiki content: the API stores it as base64-encoded bytes. The
+	// auto-populate task stores JSON {title, extract, ...}; manual edits
+	// via this form store raw HTML. Handle both.
 	let wikiHtml = $state(
-		untrack(() =>
-			space.wiki_content
-				? tiptapToHtml(typeof space.wiki_content === 'string' ? JSON.parse(space.wiki_content) : space.wiki_content)
-				: ''
-		)
+		untrack(() => {
+			if (!space.wiki_content) return '';
+			try {
+				const decoded = typeof space.wiki_content === 'string'
+					? decodeBase64Text(space.wiki_content)
+					: String(space.wiki_content);
+				// Try parsing as JSON (auto-populate format).
+				try {
+					const json = JSON.parse(decoded);
+					const parts: string[] = [];
+					if (json?.description) parts.push(`<p><em>${json.description}</em></p>`);
+					if (json?.extract) parts.push(`<p>${json.extract}</p>`);
+					return parts.join('');
+				} catch {
+					// Not JSON — treat as raw HTML (manual edit format).
+					return decoded;
+				}
+			} catch {
+				return '';
+			}
+		})
 	);
 	let logoUrl = $state(untrack(() => initialLogoUrl));
 	let logoMediaId = $state(untrack(() => space.logo_media_id ?? ''));

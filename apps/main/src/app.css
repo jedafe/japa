@@ -197,6 +197,14 @@ body {
 .prose th { background: var(--color-surface-subtle); font-weight: 600; }
 .prose hr { border: none; border-top: 1px solid var(--color-border); margin-top: 2rem; margin-bottom: 2rem; }
 
+/* Link preview block node in view pages (ROADMAP-MAIN 07.09).
+ * The hydrateLinkPreviews action mounts a LinkPreviewCard Svelte
+ * component into each div[data-type="link-preview"]. */
+.prose div[data-type="link-preview"] {
+	margin: 1.5rem 0;
+	max-width: 100%;
+}
+
 /* ===================== Tiptap / ProseMirror editor =====================
  * Global styles for the content composer editor. These must be global
  * (not scoped in PostEditor.svelte) because:
@@ -247,7 +255,10 @@ body {
 }
 
 /* --- Mention / hashtag / interlink styling --- */
-.ProseMirror .mention {
+/* Editor (ProseMirror) + rendered content (.mention outside editor) */
+/* The @ prefix is included in the text content by the TipTap Mention
+ * extension's renderHTML, not via CSS ::before (Section 15). */
+.mention {
 	background: var(--color-surface-subtle);
 	color: var(--color-primary);
 	padding: 0.125rem 0.375rem;
@@ -256,8 +267,18 @@ body {
 	font-size: 0.9em;
 	text-decoration: none;
 }
-.ProseMirror .mention::before {
-	content: '@';
+.mention-deleted {
+	color: var(--color-text-subtle);
+	font-style: italic;
+	text-decoration: line-through;
+}
+.mention-link {
+	text-decoration: none;
+	color: inherit;
+}
+.mention-link:hover .mention {
+	background: var(--color-primary);
+	color: var(--color-primary-contrast);
 }
 .ProseMirror .hashtag {
 	background: var(--color-surface-subtle);
@@ -289,7 +310,7 @@ body {
 /* --- Suggestion popup (appended to document.body) --- */
 .suggestion-popup {
 	position: fixed;
-	z-index: 50;
+	z-index: 100;
 	display: flex;
 	flex-direction: column;
 	gap: 2px;
@@ -324,19 +345,6 @@ body {
 .suggestion-item.active {
 	background: var(--color-surface-subtle);
 	color: var(--color-primary);
-}
-
-*:focus-visible {
-	outline: 2px solid var(--color-primary);
-	outline-offset: 2px;
-	border-radius: 4px;
-}
-
-/* Search inputs are always wrapped in a bordered container that provides
- * its own focus state (focus-within:border-primary). Suppress the global
- * focus-visible outline to avoid a double border effect. */
-input[type="search"]:focus-visible {
-	outline: none;
 }
 
 @keyframes jc-skeleton {

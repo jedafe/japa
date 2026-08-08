@@ -73,6 +73,11 @@ Prompts/* (Copy).md
 .password.md
 
 # Binaries
+seed-geo-enqueue
+seed-geo-wiki
+fix-geo-logos
+seed-geo-enrich
+seed-universities
 api
 jc-api
 reindex

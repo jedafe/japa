@@ -101,6 +101,7 @@
 		hideRightSidebar={exception || !data.rightSidebarEnabled}
 		rightSidebarWidgets={data.rightSidebarWidgets}
 		sidebar={routeSidebar ?? undefined}
+		composeEnabled={!exception && !!data.user}
 	>
 		{@render children()}
 	</AppShell>

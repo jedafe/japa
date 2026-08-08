@@ -6,12 +6,14 @@
 //	GET    /admin/mentorship/programs/{id}     — get program
 //	POST   /admin/mentorship/programs          — create program
 //	PATCH  /admin/mentorship/programs/{id}     — update program
+//	DELETE /admin/mentorship/programs/{id}     — delete program
 //	GET    /admin/mentorship/matches           — list mentor-mentee matches
 //	PATCH  /admin/mentorship/matches/{id}      — update match status
 package mentorship
 
 import (
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"math"
 	"net/http"
@@ -88,10 +90,10 @@ func parseOffset(r *http.Request) int32 {
 	if v := r.URL.Query().Get("offset"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
 			if n > math.MaxInt32 {
-				return defaultPageSize
+				return math.MaxInt32
 			}
 
-			return int32(n) //nolint:gosec // G109: bounded by MaxPageSize check above
+			return int32(n) //nolint:gosec // G109: bounded by MaxInt32 check above
 		}
 	}
 
@@ -158,6 +160,7 @@ func (h *Handlers) CreateProgram(w http.ResponseWriter, r *http.Request) {
 	var input struct {
 		Name        string `json:"name"`
 		Description string `json:"description"`
+		IsActive    *bool  `json:"is_active,omitempty"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
@@ -170,7 +173,12 @@ func (h *Handlers) CreateProgram(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	program, err := h.Service.CreateProgram(r.Context(), tenantID, input.Name, input.Description)
+	isActive := true
+	if input.IsActive != nil {
+		isActive = *input.IsActive
+	}
+
+	program, err := h.Service.CreateProgram(r.Context(), tenantID, input.Name, input.Description, isActive)
 	if err != nil {
 		slog.Error("creating mentorship program", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to create program")
@@ -280,4 +288,33 @@ func (h *Handlers) UpdateMatch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": match})
+}
+
+// DeleteProgram deletes a mentorship program.
+// DELETE /admin/mentorship/programs/{id}.
+func (h *Handlers) DeleteProgram(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	var id pgtype.UUID
+	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid program ID")
+		return
+	}
+
+	if err := h.Service.DeleteProgram(r.Context(), tenantID, id); err != nil {
+		if errors.Is(err, ErrProgramNotFound) {
+			writeError(w, http.StatusNotFound, "not_found", "Program not found")
+			return
+		}
+
+		slog.Error("deleting mentorship program", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to delete program")
+
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"deleted": true}})
 }

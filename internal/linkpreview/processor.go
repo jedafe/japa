@@ -7,6 +7,8 @@ package linkpreview
 import (
 	"context"
 	"log/slog"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 // ProcessorAdapter wraps a Fetcher to implement the worker.LinkPreviewProcessor
@@ -26,7 +28,12 @@ func NewProcessorAdapter(fetcher *Fetcher) *ProcessorAdapter {
 // The blockID and tenantID parameters are reserved for future use when
 // content blocks store preview references in the database.
 func (a *ProcessorAdapter) FetchAndStore(ctx context.Context, url, blockID, tenantID string) error {
-	preview, err := a.fetcher.Fetch(ctx, url)
+	var tid pgtype.UUID
+	if err := tid.Scan(tenantID); err != nil {
+		slog.Warn("link_preview: invalid tenant_id in task payload, using zero", "tenant_id", tenantID, "error", err)
+	}
+
+	preview, err := a.fetcher.Fetch(ctx, url, tid)
 	if err != nil {
 		return err
 	}

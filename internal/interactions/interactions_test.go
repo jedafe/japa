@@ -183,7 +183,7 @@ func TestToggleBlock_SelfBlock(t *testing.T) {
 	ctx := t.Context()
 	userID := pgtype.UUID{Valid: true}
 
-	_, err := svc.ToggleBlock(ctx, userID, userID)
+	_, err := svc.ToggleBlock(ctx, pgtype.UUID{Valid: true}, userID, userID)
 	if err == nil {
 		t.Fatal("expected error for self-block")
 	}

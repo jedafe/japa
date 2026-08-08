@@ -1436,8 +1436,8 @@
 			{/if}
 		</div>
 		<div class="min-w-0">
-			<p class="truncate font-medium text-foreground">{row.filename}</p>
-			<p class="truncate text-xs text-muted">{row.alt_text || ''}</p>
+			<p class="truncate font-medium text-foreground">{row.caption || row.filename}</p>
+			<p class="truncate text-xs text-muted">{row.alt_text || row.filename}</p>
 		</div>
 	</div>
 {/snippet}
@@ -1498,7 +1498,10 @@
 			</div>
 		</div>
 		<CardContent class="p-3">
-			<p class="truncate text-sm font-medium text-foreground">{row.filename}</p>
+			<p class="truncate text-sm font-medium text-foreground">{row.caption || row.filename}</p>
+			{#if row.caption}
+				<p class="truncate text-xs text-muted">{row.filename}</p>
+			{/if}
 			<div class="mt-1 flex items-center justify-between">
 				<p class="text-xs text-muted">{formatFileSize(row.file_size)}</p>
 				<span class="inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium {row.status === 'approved' ? 'bg-success/15 text-success' : row.status === 'pending' ? 'bg-warning/15 text-warning' : row.status === 'quarantined' ? 'bg-danger/15 text-danger' : 'bg-surface text-foreground-alt'}">

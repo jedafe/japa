@@ -5,14 +5,17 @@
 	import { ArrowLeft, Save } from "lucide-svelte";
 	import { spacesAdminApi, spaceTypesApi, permissionPresetsApi, type PermissionPreset } from "$lib/api";
 	import { goto } from "$app/navigation";
+	import { page } from "$app/state";
 	import { t } from "$lib/stores/i18n.svelte";
 
+	// Read level and parent_id from URL query params so the /geo page can
+	// deep-link here with a pre-selected level (e.g. /spaces/new?level=state&parent_id=...).
 	let name = $state("");
 	let slug = $state("");
 	let description = $state("");
-	let level = $state("custom");
+	let level = $state(page.url.searchParams.get("level") ?? "custom");
 	let spaceTypeId = $state("");
-	let parentId = $state("");
+	let parentId = $state(page.url.searchParams.get("parent_id") ?? "");
 	let presetName = $state("");
 	let submitting = $state(false);
 	let error = $state("");
@@ -82,7 +85,7 @@
 				preset_name: presetName.trim() || undefined
 			});
 			if (result.ok) {
-				goto("/spaces");
+				goto(page.url.searchParams.get("from") ?? "/spaces");
 			} else {
 				error = result.error ?? t("common.error", "Failed to create space");
 			}
@@ -107,7 +110,7 @@
 	title={t("spaces.create", "Create Space")}
 	description={t("spaces.create_desc", "Create a new platform space")}
 	actions={[
-		{ label: t("common.back", "Back"), icon: ArrowLeft, variant: "ghost", onclick: () => goto("/spaces") }
+		{ label: t("common.back", "Back"), icon: ArrowLeft, variant: "ghost", onclick: () => goto(page.url.searchParams.get("from") ?? "/spaces") }
 	]}
 />
 
@@ -229,7 +232,7 @@
 				></textarea>
 			</div>
 			<div class="flex justify-end gap-2 pt-4">
-				<Button variant="ghost" type="button" onclick={() => goto("/spaces")}>{t("common.cancel", "Cancel")}</Button>
+				<Button variant="ghost" type="button" onclick={() => goto(page.url.searchParams.get("from") ?? "/spaces")}>{t("common.cancel", "Cancel")}</Button>
 				<Button type="submit" disabled={submitting}>
 					<Save class="mr-1 h-4 w-4" />
 					{submitting ? t("common.creating", "Creating...") : t("spaces.create", "Create Space")}

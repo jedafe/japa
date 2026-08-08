@@ -13,8 +13,9 @@
 		threads: ForumThread[];
 		pageSize: number;
 		loadError: boolean;
+		config?: CardStyleConfig;
 	}
-	let { threads: initial, pageSize, loadError }: Props = $props();
+	let { threads: initial, pageSize, loadError, config }: Props = $props();
 
 	let threads = $state<ForumThread[]>(untrack(() => initial));
 	let atEnd = $state(false);
@@ -95,11 +96,11 @@
 		};
 	}
 
-	// Card style config for forum threads — compact in lists, reddit default.
-	const forumConfig: CardStyleConfig = {
-		default: 'compact',
-		byType: { forum_thread: 'compact' }
-	};
+	// Card style config — use the global config from the layout, falling back
+	// to a sensible default (compact for forum threads) when not provided.
+	const resolvedConfig = $derived<CardStyleConfig>(
+		config ?? { default: 'reddit', byType: {} }
+	);
 </script>
 
 {#if loadError}
@@ -122,7 +123,7 @@
 		{#each threads as thread (thread.id)}
 			<FeedCard
 				item={toFeedItem(thread)}
-				style={cardStyleFor('forum_thread', forumConfig)}
+				style={cardStyleFor('forum_thread', resolvedConfig)}
 				layout="stream"
 			/>
 		{/each}

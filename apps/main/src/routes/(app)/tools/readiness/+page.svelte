@@ -17,9 +17,9 @@
 	interface AssessmentHistoryEntry {
 		id: string;
 		total_score: number;
-		max_score: number;
 		threshold_label?: string;
-		submitted_at: string;
+		submission_id?: string;
+		created_at: string;
 	}
 
 	let { data }: { data: PageData } = $props();
@@ -49,29 +49,76 @@
 	);
 
 	// Phase 33.02 — score history series for the LineChart. Each point is a
-	// past submission's percentage score over time.
+	// past submission's percentage score over time. The backend history
+	// endpoint returns created_at (not submitted_at) and omits max_score, so
+	// the percentage is derived from the form's scoring_config.max_score.
+	const maxScore = $derived(form?.scoring_config.max_score ?? 1);
 	const historySeries = $derived(
 		history
 			.slice()
 			.reverse()
-			.map((h, i) => ({
-				x: i,
-				y: h.max_score > 0 ? Math.round((h.total_score / h.max_score) * 100) : 0,
-				label: h.submitted_at
+			.map((h) => ({
+				date: new Date(h.created_at),
+				score: Math.round((h.total_score / Math.max(maxScore, 1)) * 100),
+				label: h.created_at
 			}))
 	);
 
+	// Submit is async (Ref: §71): POST returns 202 with {submission_id,
+	// status:"queued"}; the client polls GET /assessment/result/by-submission
+	// until the worker writes the result (200) or the retry budget is spent.
+	let polling = $state(false);
+
 	async function submit() {
-		if (!authed) return;
+		if (!form) return;
 		submitting = true;
 		submitError = null;
-		const res = await api.post<AssessmentResult>('/assessment/submit', { answers });
-		submitting = false;
+		result = null;
+		// Backend expects field_values (Ref: §71 handler), not answers.
+		const res = await api.post<{ submission_id: string; status: string }>('/assessment/submit', {
+			field_values: answers
+		});
 		if (res.error) {
+			submitting = false;
 			submitError = res.error.message;
 			return;
 		}
-		result = res.data;
+		const submissionId = res.data?.submission_id;
+		if (!submissionId) {
+			submitting = false;
+			submitError = t('assessment.submit_error', 'Submission failed: no submission id returned.');
+			return;
+		}
+		// Poll for the scored result.
+		submitting = false;
+		polling = true;
+		try {
+			result = await pollForResult(submissionId);
+		} catch (e) {
+			submitError = e instanceof Error ? e.message : t('assessment.scoring_timeout', 'Scoring is taking too long. Please try again.');
+		} finally {
+			polling = false;
+		}
+	}
+
+	async function pollForResult(submissionId: string): Promise<AssessmentResult> {
+		const maxAttempts = 20;
+		const delayMs = 1000;
+		for (let attempt = 0; attempt < maxAttempts; attempt++) {
+			await new Promise((r) => setTimeout(r, delayMs));
+			const res = await api.get<AssessmentResult | { status: string }>(
+				`/assessment/result/by-submission/${submissionId}`
+			);
+			if (res.error) {
+				throw new Error(res.error.message);
+			}
+			// 200 with a scored result has total_score; 202 pending has {status:"pending"}.
+			const payload = res.data as AssessmentResult | { status: string };
+			if (payload && typeof payload === 'object' && 'total_score' in payload) {
+				return payload as AssessmentResult;
+			}
+		}
+		throw new Error(t('assessment.scoring_timeout', 'Scoring is taking too long. Please try again.'));
 	}
 
 	function resetResult() {
@@ -211,7 +258,7 @@
 		<div class="p-4">
 			{#if !authed}
 				<div class="mb-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-3 py-2 text-xs text-[var(--color-muted)]">
-					{t('assessment.anon_hint', 'Sign in to submit your answers and save your score.')}
+					{t('assessment.anon_hint', 'Sign in to save your score to history. Anonymous results are not saved.')}
 				</div>
 			{/if}
 
@@ -271,11 +318,13 @@
 
 				<button
 					type="submit"
-					disabled={!authed || submitting || answeredCount < fields.length}
+					disabled={submitting || polling || answeredCount < fields.length}
 					class="flex w-full items-center justify-center gap-2 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2.5 text-sm font-medium text-white transition-colors hover:opacity-90 disabled:opacity-50"
 				>
 					{#if submitting}
 						{t('common.submitting', 'Submitting…')}
+					{:else if polling}
+						{t('assessment.scoring', 'Scoring…')}
 					{:else}
 						<CheckCircle2 size={16} /> {form.submit_label || t('assessment.submit', 'Submit')}
 					{/if}
@@ -294,8 +343,8 @@
 			<div class="h-48">
 				<LineChart
 					data={historySeries}
-					x="x"
-					y="y"
+					x="date"
+					y="score"
 					props={{
 						line: { class: 'stroke-[var(--color-primary)]' },
 						area: { class: 'fill-[var(--color-primary)]/10' }

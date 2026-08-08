@@ -27,6 +27,7 @@ import (
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/media"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/mentions"
 	"github.com/jedafe/japa/internal/tenant"
 	"github.com/jedafe/japa/internal/worker"
 	"github.com/valkey-io/valkey-go/valkeycompat"
@@ -86,12 +87,13 @@ type ContentService interface {
 
 // Handlers holds dependencies for blog HTTP handlers.
 type Handlers struct {
-	Service     *Service
-	content     ContentService
-	siteURL     string
-	siteName    string
-	AsynqClient TaskEnqueueClient // C6: enqueue rss:regenerate on publish
-	Redis       CacheReader       // C6: serve live feed from Valkey cache
+	Service         *Service
+	content         ContentService
+	siteURL         string
+	siteName        string
+	AsynqClient     TaskEnqueueClient // C6: enqueue rss:regenerate on publish
+	Redis           CacheReader       // C6: serve live feed from Valkey cache
+	mentionCheckers *mentions.DBCheckers // nil disables erased-mention redaction
 }
 
 // TaskEnqueueClient is the subset of asynq.Client used by blog handlers.
@@ -120,6 +122,11 @@ func (h *Handlers) SetAsynqClient(c TaskEnqueueClient) {
 func (h *Handlers) SetRedis(r CacheReader) {
 	h.Redis = r
 }
+
+// SetMentionCheckers wires the DB-backed erased-user checker used to
+// redact mentions of deleted users in blog post responses (Section 15 /
+// ADR-029). nil disables redaction (backward compat / tests).
+func (h *Handlers) SetMentionCheckers(c *mentions.DBCheckers) { h.mentionCheckers = c }
 
 // enqueueRSSRegenerate enqueues the rss:regenerate task for a tenant (C6).
 // Fire-and-forget: errors are logged but never propagated (Rule 8).
@@ -1311,6 +1318,28 @@ func (h *Handlers) GetPost(w http.ResponseWriter, r *http.Request) {
 		resp["json_ld"] = json.RawMessage(jsonLd)
 	} else if jErr != nil {
 		slog.Warn("blog: JSON-LD template resolution failed", "slug", slug, "error", jErr)
+	}
+
+	// GDPR / ADR-029: redact mentions of erased users in body_html and
+	// expose deleted_user_ids for frontend rendering (Section 15).
+	// Best-effort: a failure logs a warning but does not fail the request.
+	if h.mentionCheckers != nil {
+		redactedHTML, erasedIDs, redErr := mentions.RedactErasedMentionsInBody(
+			r.Context(),
+			[]byte(post.Body),
+			post.BodyHtml,
+			tenantID,
+			h.mentionCheckers,
+		)
+		if redErr != nil {
+			slog.Warn("blog: RedactErasedMentionsInBody failed",
+				"post_id", post.ID.String(), "error", redErr)
+		} else {
+			dto["body_html"] = redactedHTML
+			if len(erasedIDs) > 0 {
+				resp["deleted_user_ids"] = erasedIDs
+			}
+		}
 	}
 
 	writeJSON(w, http.StatusOK, resp)

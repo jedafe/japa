@@ -60,13 +60,15 @@ SELECT EXISTS(
 -- =====================
 
 -- name: CreateUserBlock :exec
-INSERT INTO user_blocks (blocker_id, blocked_id)
-VALUES ($1, $2)
+-- Tenant-scoped per JEOS §9 (BUG-006).
+INSERT INTO user_blocks (tenant_id, blocker_id, blocked_id)
+VALUES ($3, $1, $2)
 ON CONFLICT (blocker_id, blocked_id) DO NOTHING;
 
 -- name: DeleteUserBlock :exec
+-- Tenant-scoped per JEOS §9 (BUG-006).
 DELETE FROM user_blocks
-WHERE blocker_id = $1 AND blocked_id = $2;
+WHERE tenant_id = $3 AND blocker_id = $1 AND blocked_id = $2;
 
 -- name: GetUserBlocks :many
 SELECT blocker_id, blocked_id, created_at
@@ -87,10 +89,12 @@ ORDER BY ub.created_at DESC
 LIMIT $1;
 
 -- name: IsBlocked :one
+-- Tenant-scoped per JEOS §9 (BUG-006). Checks both directions in one query.
 SELECT EXISTS(
     SELECT 1 FROM user_blocks
-    WHERE (blocker_id = $1 AND blocked_id = $2)
-       OR (blocker_id = $2 AND blocked_id = $1)
+    WHERE tenant_id = $3
+      AND ((blocker_id = $1 AND blocked_id = $2)
+           OR (blocker_id = $2 AND blocked_id = $1))
 ) AS blocked;
 
 -- =====================

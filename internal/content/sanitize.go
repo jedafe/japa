@@ -41,6 +41,18 @@ var allowedAttributes = map[string]map[string]bool{
 	"img": {
 		"src": true, "alt": true, "title": true, "width": true, "height": true,
 	},
+	"div": {
+		"data-type": true, "data-url": true, "data-coupon-id": true,
+	},
+	"span": {
+		// Mention nodes (Section 15): data-type, data-id, data-label,
+		// data-handle (username for profile link), data-entity-type.
+		"data-type":        true,
+		"data-id":          true,
+		"data-label":       true,
+		"data-handle":      true,
+		"data-entity-type": true,
+	},
 }
 
 // approvedIframeHosts is the default allowlist of domains permitted in

@@ -2,25 +2,30 @@ package stock
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jedafe/japa/internal/db"
 )
 
+// ErrProviderNotFound is returned when a provider update affects no rows.
+var ErrProviderNotFound = errors.New("stock provider not found")
+
 // Store manages stock_providers database operations.
 type Store struct {
-	pool *pgxpool.Pool
+	pool *pgxpool.Pool // writer — used for INSERT/UPDATE
+	read *pgxpool.Pool // reader — used for SELECT (read-replica aware)
 }
 
 // NewStore creates a Store backed by the database pool.
 func NewStore(database *db.DB) *Store {
-	return &Store{pool: database.Writer}
+	return &Store{pool: database.Writer, read: database.Reader}
 }
 
 // ListProviders returns all configured stock providers.
 func (s *Store) ListProviders(ctx context.Context) ([]ProviderConfigRow, error) {
-	rows, err := s.pool.Query(ctx,
+	rows, err := s.read.Query(ctx,
 		`SELECT provider_name, enabled, COALESCE(api_key_encrypted, ''),
 		        created_at, updated_at
 		 FROM stock_providers
@@ -45,7 +50,7 @@ func (s *Store) ListProviders(ctx context.Context) ([]ProviderConfigRow, error) 
 // GetProvider returns a single provider by name.
 func (s *Store) GetProvider(ctx context.Context, name string) (*ProviderConfigRow, error) {
 	var r ProviderConfigRow
-	err := s.pool.QueryRow(ctx,
+	err := s.read.QueryRow(ctx,
 		`SELECT provider_name, enabled, COALESCE(api_key_encrypted, ''),
 		        created_at, updated_at
 		 FROM stock_providers
@@ -73,22 +78,28 @@ func (s *Store) UpsertProvider(ctx context.Context, row ProviderConfigRow) error
 
 // ToggleProvider enables or disables a provider.
 func (s *Store) ToggleProvider(ctx context.Context, name string, enabled bool) error {
-	_, err := s.pool.Exec(ctx,
+	tag, err := s.pool.Exec(ctx,
 		`UPDATE stock_providers SET enabled = $2, updated_at = now()
 		 WHERE provider_name = $1`, name, enabled)
 	if err != nil {
 		return fmt.Errorf("toggling provider %s: %w", name, err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("provider %s: %w", name, ErrProviderNotFound)
 	}
 	return nil
 }
 
 // SetAPIKey updates the encrypted API key for a provider.
 func (s *Store) SetAPIKey(ctx context.Context, name, encryptedKey string) error {
-	_, err := s.pool.Exec(ctx,
+	tag, err := s.pool.Exec(ctx,
 		`UPDATE stock_providers SET api_key_encrypted = $2, updated_at = now()
 		 WHERE provider_name = $1`, name, encryptedKey)
 	if err != nil {
 		return fmt.Errorf("setting API key for %s: %w", name, err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("provider %s: %w", name, ErrProviderNotFound)
 	}
 	return nil
 }

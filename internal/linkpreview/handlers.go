@@ -43,7 +43,7 @@ func (h *Handlers) Fetch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Fetch preview
-	preview, err := h.Fetcher.Fetch(r.Context(), rawURL)
+	preview, err := h.Fetcher.Fetch(r.Context(), rawURL, t.ID)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "fetch_failed", err.Error())
 		return

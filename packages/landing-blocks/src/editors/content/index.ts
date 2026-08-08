@@ -25,11 +25,15 @@ import TabsContentEditor from './TabsContentEditor.svelte';
 import MediaContentEditor from './MediaContentEditor.svelte';
 import HeadingContentEditor from './HeadingContentEditor.svelte';
 import CtaButtonContentEditor from './CtaButtonContentEditor.svelte';
+import ContainerContentEditor from './ContainerContentEditor.svelte';
+import CustomBlockEditor from './CustomBlockEditor.svelte';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const contentEditorRegistry: Record<Block['type'], Component<any>> = {
   heading: HeadingContentEditor,
   cta_button: CtaButtonContentEditor,
+  container: ContainerContentEditor,
+  custom: CustomBlockEditor,
   hero: HeroContentEditor,
   cta_banner: CtaBannerContentEditor,
   card_grid: CardGridContentEditor,

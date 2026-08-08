@@ -6,36 +6,55 @@
  * and writes the HTML to stdout.
  *
  * Usage: echo '{"type":"doc","content":[...]}' | bun run scripts/tiptap-ssr.ts
+ *
+ * Ref: Section 15 — Block Editor (TipTap), ADR-006.
+ *
+ * The HTML emitted here is subsequently passed through the Go-side
+ * allowlist sanitizer (internal/content.SanitizeHTML) before caching,
+ * so any unsafe markup is stripped. This script additionally avoids
+ * emitting raw embed HTML directly (§5.1 / §55 P4 — render-time
+ * resolution stores IDs, not pre-resolved markup).
  */
 
 import { generateHTML } from '@tiptap/html';
 import StarterKit from '@tiptap/starter-kit';
-import Underline from '@tiptap/extension-underline';
 import Link from '@tiptap/extension-link';
 import Image from '@tiptap/extension-image';
-import Mention from '@tiptap/extension-mention';
+import Placeholder from '@tiptap/extension-placeholder';
+import Table from '@tiptap/extension-table';
+import TableRow from '@tiptap/extension-table-row';
+import TableCell from '@tiptap/extension-table-cell';
+import TableHeader from '@tiptap/extension-table-header';
 
 // Custom extension for platform embeds (YouTube, Twitter, etc.)
+// Per §55 P4 (render-time over save-time), the node stores the platform
+// and url — NOT pre-resolved HTML. The SSR script emits only safe data
+// attributes; the actual iframe/embed markup is resolved at render time
+// by the Go backend's embed resolver. This prevents stored XSS from a
+// crafted `html` attribute (§5.1).
 const PlatformEmbed = {
   name: 'platformEmbed',
   addAttributes() {
     return {
       platform: { default: null },
       url: { default: null },
-      html: { default: null },
     };
   },
   parseHTML() {
     return [{ tag: 'div[data-type="platform-embed"]' }];
   },
   renderHTML(node) {
-    return ['div', { 'data-type': 'platform-embed', 'data-platform': node.attrs.platform, 'data-url': node.attrs.url }, node.attrs.html || ''];
+    // Emit only safe data attributes — never the raw `html` attr.
+    // The Go sanitizer would strip it anyway, but defense in depth.
+    return ['div', { 'data-type': 'platform-embed', 'data-platform': node.attrs.platform, 'data-url': node.attrs.url }, 0];
   },
 };
 
 // Custom extension for mentions (users, tags, content, spaces)
+// Section 15: all reference nodes store { id, entity_type, label }.
+// Node name 'mention' matches the editor's Mention.extend({name:'mention'}).
 const JapaMention = {
-  name: 'japaMention',
+  name: 'mention',
   addAttributes() {
     return {
       id: { default: null },
@@ -52,14 +71,82 @@ const JapaMention = {
   },
 };
 
+// Coupon embed node (Section 55 — render-time coupon/affiliate URL
+// resolution). Stores the coupon ID; the Go backend resolves the
+// current code and tracking URL at render time (P4).
+// Node name 'couponEmbed' matches the editor's custom node.
+const CouponEmbed = {
+  name: 'couponEmbed',
+  addAttributes() {
+    return {
+      coupon_id: { default: null },
+      label: { default: null },
+    };
+  },
+  parseHTML() {
+    return [{ tag: 'div[data-type="coupon-embed"]' }];
+  },
+  renderHTML(node) {
+    return ['div', { 'data-type': 'coupon-embed', 'data-coupon-id': node.attrs.coupon_id }, 0];
+  },
+};
+
+// Tag link node (Section 15 — #tag inline node). Stores the tag id/slug/label.
+// Node name 'hashtag' matches the editor's Mention.extend({name:'hashtag'}).
+const TagLink = {
+  name: 'hashtag',
+  addAttributes() {
+    return {
+      id: { default: null },
+      label: { default: null },
+      entity_type: { default: null },
+    };
+  },
+  parseHTML() {
+    return [{ tag: 'a[data-type="tag-link"]' }];
+  },
+  renderHTML(node) {
+    const label = node.attrs.label || 'tag';
+    return ['span', { 'data-type': 'hashtag', 'data-tag-id': node.attrs.id }, `#${label}`];
+  },
+};
+
+// Content/space interlink node (Section 15 — [[content/space interlinking).
+// Stores the target ID and entity_type; renders as a safe relative link
+// with a "deleted content" fallback if the label is missing.
+// Node name 'interlink' matches the editor's Mention.extend({name:'interlink'}).
+const ContentLink = {
+  name: 'interlink',
+  addAttributes() {
+    return {
+      id: { default: null },
+      entity_type: { default: null },
+      label: { default: null },
+    };
+  },
+  parseHTML() {
+    return [{ tag: 'a[data-type="content-link"]' }];
+  },
+  renderHTML(node) {
+    const label = node.attrs.label || '[deleted content]';
+    return ['span', { 'data-type': 'interlink', 'data-content-id': node.attrs.id, 'data-entity-type': node.attrs.entity_type }, label];
+  },
+};
+
 const extensions = [
   StarterKit,
-  Underline,
   Link.configure({ openOnClick: false }),
   Image,
-  Mention,
+  Placeholder,
+  Table,
+  TableRow,
+  TableCell,
+  TableHeader,
   PlatformEmbed,
   JapaMention,
+  CouponEmbed,
+  TagLink,
+  ContentLink,
 ];
 
 async function main() {

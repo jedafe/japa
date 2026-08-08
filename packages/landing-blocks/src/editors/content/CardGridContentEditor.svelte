@@ -69,17 +69,57 @@
     </select>
   </label>
 
-  <label class="block">
-    <span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Columns: {props.columns}</span>
-    <input
-      type="range"
-      min="1"
-      max="6"
-      value={props.columns}
-      oninput={(e) => update('columns', Number(e.currentTarget.value))}
-      class="w-full"
-    />
-  </label>
+  <div class="space-y-3">
+    <label class="block">
+      <span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Desktop columns: {props.columns}</span>
+      <input
+        type="range"
+        min="1"
+        max="6"
+        value={props.columns}
+        oninput={(e) => update('columns', Number(e.currentTarget.value))}
+        class="w-full"
+      />
+    </label>
+
+    <!-- Responsive column overrides -->
+    <div class="grid grid-cols-2 gap-3">
+      <div>
+        <span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">
+          Tablet columns
+          {#if props.responsive_columns?.tablet !== undefined}
+            <button type="button" class="ml-1 text-[10px] text-[var(--color-danger)] hover:underline" onclick={() => { const rc = { ...props.responsive_columns }; delete rc.tablet; update('responsive_columns', Object.keys(rc).length > 0 ? rc : undefined); }}>reset</button>
+          {/if}
+        </span>
+        <input
+          type="range"
+          min="1"
+          max="6"
+          value={props.responsive_columns?.tablet ?? props.columns}
+          oninput={(e) => update('responsive_columns', { ...props.responsive_columns, tablet: Number(e.currentTarget.value) })}
+          class="w-full"
+        />
+        <p class="mt-0.5 text-[10px] text-[var(--color-muted)]">{props.responsive_columns?.tablet ?? props.columns} cols ≤ 1024px</p>
+      </div>
+      <div>
+        <span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">
+          Mobile columns
+          {#if props.responsive_columns?.mobile !== undefined}
+            <button type="button" class="ml-1 text-[10px] text-[var(--color-danger)] hover:underline" onclick={() => { const rc = { ...props.responsive_columns }; delete rc.mobile; update('responsive_columns', Object.keys(rc).length > 0 ? rc : undefined); }}>reset</button>
+          {/if}
+        </span>
+        <input
+          type="range"
+          min="1"
+          max="6"
+          value={props.responsive_columns?.mobile ?? props.columns}
+          oninput={(e) => update('responsive_columns', { ...props.responsive_columns, mobile: Number(e.currentTarget.value) })}
+          class="w-full"
+        />
+        <p class="mt-0.5 text-[10px] text-[var(--color-muted)]">{props.responsive_columns?.mobile ?? props.columns} cols ≤ 768px</p>
+      </div>
+    </div>
+  </div>
 
   <div>
     <div class="mb-2 flex items-center justify-between">

@@ -163,16 +163,22 @@ func (p *PexelsProvider) Download(ctx context.Context, photoID string) (*Downloa
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("pexels download returned %d", resp.StatusCode)
+	}
+
 	data, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("reading photo data: %w", err)
 	}
 
 	return &DownloadedPhoto{
-		Data:            data,
-		Filename:        photoID + ".jpg",
+		Data:             data,
+		Filename:         photoID + ".jpg",
 		Photographer:     photo.Photographer,
 		PhotographerURL:  photo.PhotographerURL,
+		License:          "pexels",
+		LicenseURL:       "https://www.pexels.com/license/",
 		ProviderPhotoID:  photoID,
 	}, nil
 }

@@ -199,12 +199,25 @@ func (p *OpenAIProvider) Send(ctx context.Context, req Request) (Response, error
 	}, nil
 }
 
-// buildOpenAIMessages constructs the messages array from prompt and optional context.
+// buildOpenAIMessages constructs the messages array from prompt and optional
+// context. When the payload requests humanization (or the caller pre-merged
+// the global setting into the payload), the humanization instructions are
+// appended to the system context so the model steers toward natural output.
 func buildOpenAIMessages(prompt string, payload map[string]any) []openAIMessage {
 	var messages []openAIMessage
 
+	var sysCtx string
 	if ctx, ok := payload["context"].(string); ok && ctx != "" {
-		messages = append(messages, openAIMessage{Role: "system", Content: ctx})
+		sysCtx = ctx
+	}
+
+	// Apply humanization (provider-layer injection covers every generation surface).
+	if level, requested := PayloadHumanize(payload); requested {
+		sysCtx = ApplyHumanization(sysCtx, level)
+	}
+
+	if sysCtx != "" {
+		messages = append(messages, openAIMessage{Role: "system", Content: sysCtx})
 	}
 
 	messages = append(messages, openAIMessage{Role: "user", Content: prompt})

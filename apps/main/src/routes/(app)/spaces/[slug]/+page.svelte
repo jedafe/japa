@@ -16,7 +16,10 @@
 	import { EmptyState } from '$lib/components/ui';
 	import { api } from '$lib/api/client';
 	import { requireAuthOrRedirect } from '$lib/auth/guest';
-	import { tiptapToHtml } from '$lib/tiptap/serialize';
+	import { decodeBase64Text } from '$lib/tiptap/serialize';
+	import { cardStyleFor, type CardStyleConfig } from '$lib/feed/cardStyle';
+	import type { FeedItem } from '$lib/types';
+	import FeedCard from '$lib/components/feed/FeedCard.svelte';
 	import type {
 		Space, SpaceContentItem, SpaceMember, SpaceModerator, SpaceRule,
 		SpacePermissionPreset, SpaceJoinRequest
@@ -27,6 +30,38 @@
 
 	const space = $derived(data.space);
 	const authed = $derived(!!page.data.user);
+	const cardStyleConfig = $derived((page.data.cardStyleConfig as CardStyleConfig) ?? { default: 'reddit', byType: {} });
+
+	// Map SpaceContentItem → FeedItem so space feed renders through FeedCard.
+	function toFeedItem(item: SpaceContentItem): FeedItem {
+		return {
+			id: item.id,
+			title: item.title,
+			slug: item.slug,
+			content_type: item.content_type,
+			author_id: item.author_id,
+			created_at: item.published_at,
+			view_count: item.view_count,
+			comment_count: item.comment_count,
+			reading_time_minutes: item.read_time_minutes,
+			space_id: item.space_id,
+			space_name: space.name,
+			space_slug: space.slug
+		};
+	}
+
+	// Parse wiki_content JSON (stored base64-encoded in the API response).
+	// The auto-populate task stores {title, extract, description, thumbnail, content_url}.
+	const wikiData = $derived.by(() => {
+		const raw = space.wiki_content;
+		if (!raw) return null;
+		try {
+			const json = typeof raw === 'string' ? JSON.parse(decodeBase64Text(raw)) : raw;
+			return json;
+		} catch {
+			return null;
+		}
+	});
 	const activeTab = $derived(page.url.searchParams.get('tab') ?? 'feed');
 	const canManage = $derived(data.isOwner || data.isModerator);
 
@@ -428,29 +463,23 @@
 			{:else}
 				<div class="divide-y divide-[var(--color-border)] overflow-hidden rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)]">
 					{#each feedItems as item (item.id)}
-						<div class="group relative block transition-colors hover:bg-[var(--color-surface-subtle)]">
-							<a href="/content/{item.slug}" class="block p-4">
-								<div class="flex items-center gap-2 text-xs text-[var(--color-muted)]">
-									<span class="rounded-full bg-[var(--color-surface-subtle)] px-2 py-0.5 font-medium text-[var(--color-text-subtle)]">{item.content_type}</span>
-									{#if item.is_pinned}
-										<span class="flex items-center gap-0.5 font-medium text-[var(--color-primary)]">
-											<Pin size={10} /> {t('space.pinned', 'Pinned')}
-										</span>
-									{/if}
-									<span>· {item.read_time_minutes} {t('feed.min_read')}</span>
-								</div>
-								<h3 class="mt-1.5 text-sm font-medium text-[var(--color-text)]">{item.title}</h3>
-								<div class="mt-2 flex items-center gap-4 text-xs text-[var(--color-muted)]">
-									<span>{item.view_count} {t('profile.views', 'views')}</span>
-									<span>{item.comment_count} {t('profile.comments', 'comments')}</span>
-								</div>
-							</a>
+						<div class="group relative block">
+							<FeedCard
+								item={toFeedItem(item)}
+								style={cardStyleFor(item.content_type, cardStyleConfig)}
+								layout="stream"
+							/>
+							{#if item.is_pinned}
+								<span class="pointer-events-none absolute left-2 top-2 z-10 flex items-center gap-0.5 rounded-full bg-[var(--color-primary)]/10 px-2 py-0.5 text-[10px] font-medium text-[var(--color-primary)]">
+									<Pin size={10} /> {t('space.pinned', 'Pinned')}
+								</span>
+							{/if}
 							{#if canManage}
 								<button
 									type="button"
 									disabled={pinningId === item.id}
 									onclick={() => togglePin(item)}
-									class="absolute right-3 top-3 grid h-7 w-7 place-items-center rounded-full text-[var(--color-muted)] opacity-0 transition-opacity hover:bg-[var(--color-surface)] group-hover:opacity-100 disabled:opacity-50"
+									class="absolute right-3 top-3 z-10 grid h-7 w-7 place-items-center rounded-full text-[var(--color-muted)] opacity-0 transition-opacity hover:bg-[var(--color-surface)] group-hover:opacity-100 disabled:opacity-50"
 									title={item.is_pinned ? t('space.unpin', 'Unpin') : t('space.pin', 'Pin')}
 									aria-label={item.is_pinned ? t('space.unpin', 'Unpin') : t('space.pin', 'Pin')}
 								>
@@ -530,12 +559,25 @@
 				{:else}
 					<EmptyState icon={Info} title={t('space.no_about', 'No description yet')} />
 				{/if}
-				{#if space.wiki_content}
+				{#if wikiData}
 				<div class="mt-4 border-t border-[var(--color-border)] pt-4">
 					<h2 class="mb-2 text-sm font-medium text-[var(--color-text)]">{t('space.wiki', 'Wiki')}</h2>
-					<div class="prose dark:prose-invert max-w-none text-sm leading-relaxed text-[var(--color-text-subtle)]">
-						{@html tiptapToHtml(typeof space.wiki_content === 'string' ? JSON.parse(space.wiki_content) : space.wiki_content)}
-					</div>
+					{#if wikiData.thumbnail}
+						<img src={wikiData.thumbnail} alt={wikiData.title ?? space.name} class="float-right mb-3 ml-3 h-24 w-24 rounded-[var(--radius)] object-cover" />
+					{/if}
+					{#if wikiData.description}
+						<p class="mb-2 text-xs font-medium uppercase tracking-wide text-[var(--color-muted)]">{wikiData.description}</p>
+					{/if}
+					{#if wikiData.extract}
+						<p class="text-sm leading-relaxed text-[var(--color-text-subtle)]">{wikiData.extract}</p>
+					{/if}
+					{#if wikiData.content_url}
+						<p class="mt-3 text-xs">
+							<a href={wikiData.content_url} target="_blank" rel="noopener noreferrer" class="text-[var(--color-primary)] hover:underline">
+								{t('space.wiki_source', 'Read more on Wikipedia →')}
+							</a>
+						</p>
+					{/if}
 				</div>
 				{/if}
 			</section>

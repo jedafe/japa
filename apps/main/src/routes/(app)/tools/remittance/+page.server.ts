@@ -1,5 +1,5 @@
 import type { PageServerLoad } from './$types';
-import { apiContext, apiList } from '$lib/server/api';
+import { apiContext, apiList, ApiError } from '$lib/server/api';
 import type { RemittanceCorridor } from '$lib/types';
 
 /**
@@ -18,10 +18,8 @@ export const load: PageServerLoad = async (event) => {
 	let disabled = false;
 	try {
 		corridors = (await apiList<RemittanceCorridor>(ctx, '/remittance/corridors')).items;
-	} catch (e: unknown) {
-		const code = (e as { code?: string })?.code;
-		const status = (e as { status?: number })?.status;
-		if (code === 'remittance_disabled' || status === 404) {
+	} catch (e) {
+		if (e instanceof ApiError && (e.code === 'remittance_disabled' || e.status === 404)) {
 			disabled = true;
 		}
 	}

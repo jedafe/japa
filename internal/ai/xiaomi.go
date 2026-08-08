@@ -208,8 +208,18 @@ func buildMimoMessages(prompt string, payload map[string]any) []mimoMessage {
 	var messages []mimoMessage
 
 	// Inject system context if provided.
+	var sysCtx string
 	if ctx, ok := payload["context"].(string); ok && ctx != "" {
-		messages = append(messages, mimoMessage{Role: "system", Content: ctx})
+		sysCtx = ctx
+	}
+
+	// Apply humanization (provider-layer injection covers every generation surface).
+	if level, requested := PayloadHumanize(payload); requested {
+		sysCtx = ApplyHumanization(sysCtx, level)
+	}
+
+	if sysCtx != "" {
+		messages = append(messages, mimoMessage{Role: "system", Content: sysCtx})
 	}
 
 	messages = append(messages, mimoMessage{Role: "user", Content: prompt})
