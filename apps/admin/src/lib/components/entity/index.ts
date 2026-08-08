@@ -14,6 +14,7 @@ export type FieldDef =
 			step?: number;
 			help?: string;
 			class?: string;
+			readonlyInEdit?: boolean;
 	  }
 	| {
 			key: string;
@@ -24,4 +25,5 @@ export type FieldDef =
 			required?: boolean;
 			help?: string;
 			class?: string;
+			readonlyInEdit?: boolean;
 	  };

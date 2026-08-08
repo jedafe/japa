@@ -180,10 +180,25 @@ func spaceFromContext(w http.ResponseWriter, r *http.Request) (*gen.GetSpaceBySl
 // Space Type Handlers
 // ---------------------------------------------------------------------------
 
-// ListSpaceTypes handles GET /api/v1/space-types.
+// ListSpaceTypes handles GET /api/v1/space-types and GET /api/v1/admin/space-types.
+// Supports optional q (search by name/slug) and is_university query params for
+// the admin panel DataTable search and filter.
 func (h *Handlers) ListSpaceTypes(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
+		return
+	}
+
+	q := strings.TrimSpace(r.URL.Query().Get("q"))
+	isUniversityFilter := strings.TrimSpace(r.URL.Query().Get("is_university"))
+
+	if q != "" || isUniversityFilter != "" {
+		types, err := h.Service.ListSpaceTypesFiltered(r.Context(), tenantID, q, isUniversityFilter)
+		if err != nil {
+			handleServiceError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"data": types})
 		return
 	}
 

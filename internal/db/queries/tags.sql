@@ -110,8 +110,8 @@ RETURNING id, tenant_id, name, slug, description, rules, cover_media_id, logo_me
 
 -- name: UpdateTag :one
 UPDATE tags
-SET name = @name, description = @description, rules = @rules, cover_media_id = @cover_media_id,
-    color = @color, logo_media_id = @logo_media_id, field_values = @field_values, updated_at = now()
+SET name = @name, slug = @slug, description = @description, rules = @rules, cover_media_id = @cover_media_id,
+    color = @color, logo_media_id = @logo_media_id, is_system = @is_system, field_values = @field_values, updated_at = now()
 WHERE id = @id AND tenant_id = @tenant_id
 RETURNING id, tenant_id, name, slug, description, rules, cover_media_id, logo_media_id, color,
           follower_count, content_count, is_system, field_values, created_at, updated_at;

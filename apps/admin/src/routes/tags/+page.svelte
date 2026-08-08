@@ -113,6 +113,10 @@
 	let addingModerator = $state(false);
 	let moderatorMessage = $state("");
 	let removeModeratorTarget = $state<TagModerator | null>(null);
+
+	// ── Media picker open state (page-local so it's always a valid boolean) ──
+	let logoPickerOpen = $state(false);
+	let coverPickerOpen = $state(false);
 	let showRemoveModeratorConfirm = $state(false);
 
 	async function openModerators(tag: Tag) {
@@ -194,7 +198,7 @@
 	function normalizeBody(formValue: Record<string, any>, isUpdate: boolean): Record<string, unknown> {
 		const body: Record<string, unknown> = {
 			name: String(formValue.name ?? "").trim(),
-			slug: String(formValue.slug ?? "").trim() || slugify(String(formValue.name ?? "")),
+			slug: slugify(String(formValue.slug ?? "").trim() || String(formValue.name ?? "")),
 		};
 		const desc = String(formValue.description ?? "").trim();
 		if (desc) body.description = desc;
@@ -204,7 +208,7 @@
 		if (color) body.color = color;
 		if (formValue.logo_media_id) body.logo_media_id = formValue.logo_media_id;
 		if (formValue.cover_media_id) body.cover_media_id = formValue.cover_media_id;
-		if (!isUpdate) body.is_system = !!formValue.is_system;
+		body.is_system = !!formValue.is_system;
 		if (tagFieldDefs.length > 0) {
 			const fv: Record<string, string> = {};
 			const raw =
@@ -581,6 +585,9 @@
 				class="mt-1 w-full rounded-lg border p-2 text-sm font-mono"
 				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
 				placeholder="javascript"
+				onblur={() => {
+					value.slug = slugify(String(value.slug ?? "").trim() || String(value.name ?? ""));
+				}}
 				bind:value={value.slug}
 			/>
 		</div>
@@ -671,7 +678,7 @@
 						<ImageIcon class="h-5 w-5" style="color: var(--color-muted)" />
 					</div>
 				{/if}
-				<Button type="button" variant="outline" size="sm" onclick={() => (value._coverPickerOpen = true)}>
+				<Button type="button" variant="outline" size="sm" onclick={() => (coverPickerOpen = true)}>
 					<ImageIcon class="mr-1 h-4 w-4" />
 					{t("tags.choose_cover", "Choose Cover")}
 				</Button>
@@ -713,7 +720,7 @@
 						<ImageIcon class="h-5 w-5" style="color: var(--color-muted)" />
 					</div>
 				{/if}
-				<Button type="button" variant="outline" size="sm" onclick={() => (value._logoPickerOpen = true)}>
+				<Button type="button" variant="outline" size="sm" onclick={() => (logoPickerOpen = true)}>
 					<ImageIcon class="mr-1 h-4 w-4" />
 					{t("tags.choose_logo", "Choose Logo")}
 				</Button>
@@ -725,12 +732,12 @@
 			{@const fv =
 				value.field_values && typeof value.field_values === "object"
 					? value.field_values
-					: (value.field_values = {})}
+					: {}}
 			<div class="border-t pt-3" style="border-color: var(--color-border)">
 				<p class="mb-2 text-sm font-medium" style="color: var(--color-foreground)">
 					{t("tags.custom_fields", "Custom Fields")}
 				</p>
-				{#each tagFieldDefs as field (field.key)}
+				{#each tagFieldDefs as field, i (field.id + '::' + i)}
 					<div class="mb-3">
 						<label
 							for="tag-field-{field.key}"
@@ -746,7 +753,13 @@
 								class="mt-1 w-full rounded-lg border p-2 text-sm"
 								style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
 								placeholder={field.placeholder ?? ""}
-								bind:value={fv[field.key]}
+								value={fv[field.key] ?? ""}
+								oninput={(e) => {
+									if (!value.field_values || typeof value.field_values !== "object") {
+										value.field_values = {};
+									}
+									value.field_values[field.key] = e.currentTarget.value;
+								}}
 							></textarea>
 						{:else}
 							<input
@@ -755,7 +768,13 @@
 								class="mt-1 w-full rounded-lg border p-2 text-sm"
 								style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
 								placeholder={field.placeholder ?? ""}
-								bind:value={fv[field.key]}
+								value={fv[field.key] ?? ""}
+								oninput={(e) => {
+									if (!value.field_values || typeof value.field_values !== "object") {
+										value.field_values = {};
+									}
+									value.field_values[field.key] = e.currentTarget.value;
+								}}
 							/>
 						{/if}
 					</div>
@@ -763,27 +782,25 @@
 			</div>
 		{/if}
 
-		{#if !editing}
-			<div class="flex items-center gap-2">
-				<input id="tag-is-system" type="checkbox" class="h-4 w-4 rounded" bind:checked={value.is_system} />
-				<label for="tag-is-system" class="text-sm font-medium" style="color: var(--color-foreground)">
-					{t("tags.is_system", "System tag (cannot be deleted)")}
-				</label>
-			</div>
-		{/if}
+		<div class="flex items-center gap-2">
+			<input id="tag-is-system" type="checkbox" class="h-4 w-4 rounded" bind:checked={value.is_system} />
+			<label for="tag-is-system" class="text-sm font-medium" style="color: var(--color-foreground)">
+				{t("tags.is_system", "System tag (cannot be deleted)")}
+			</label>
+		</div>
 	</div>
 
-	<!-- Media pickers (portal to body; open state lives on the form value so it
-	     resets each time the form is reopened) -->
+	<!-- Media pickers (portal to body; open state is page-local $state so it
+	     is always a valid boolean, avoiding Svelte 5 props_invalid_value) -->
 	<MediaPickerModal
-		bind:open={value._logoPickerOpen}
+		bind:open={logoPickerOpen}
 		onselect={(media: { id: string; url: string }) => {
 			value.logo_media_id = media.id;
 			value.logo_url = media.url;
 		}}
 	/>
 	<MediaPickerModal
-		bind:open={value._coverPickerOpen}
+		bind:open={coverPickerOpen}
 		onselect={(media: { id: string; url: string }) => {
 			value.cover_media_id = media.id;
 			value.cover_url = media.url;

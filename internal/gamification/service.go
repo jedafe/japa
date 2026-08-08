@@ -809,6 +809,105 @@ func (s *Service) CreateChallenge(ctx context.Context, tenantID pgtype.UUID, in 
 	return challengeToInfo(challenge), nil
 }
 
+// UpdateChallengeInput is the admin request body for updating a challenge.
+type UpdateChallengeInput struct {
+	Name          *string `json:"name,omitempty"`
+	Description   *string `json:"description,omitempty"`
+	ImageMediaID  *string `json:"image_media_id,omitempty"`
+	ActivityKey   *string `json:"activity_key,omitempty"`
+	TargetCount   *int32  `json:"target_count,omitempty"`
+	RewardPoints  *int32  `json:"reward_points,omitempty"`
+	RewardBadgeID *string `json:"reward_badge_id,omitempty"`
+	StartsAt      *string `json:"starts_at,omitempty"`
+	EndsAt        *string `json:"ends_at,omitempty"`
+	IsActive      *bool   `json:"is_active,omitempty"`
+}
+
+// UpdateChallenge updates a challenge definition's mutable fields (admin).
+func (s *Service) UpdateChallenge(ctx context.Context, tenantID, challengeID pgtype.UUID, in UpdateChallengeInput) (ChallengeInfo, error) {
+	arg := gen.UpdateChallengeParams{
+		TenantID: tenantID,
+		ID:       challengeID,
+	}
+	if in.Name != nil {
+		arg.Name = in.Name
+	}
+	if in.Description != nil {
+		arg.Description = in.Description
+	}
+	if in.ImageMediaID != nil {
+		id, err := scanUUID(*in.ImageMediaID)
+		if err != nil {
+			return ChallengeInfo{}, fmt.Errorf("gamification: invalid image_media_id: %w", err)
+		}
+		arg.ImageMediaID = id
+	}
+	if in.ActivityKey != nil {
+		arg.ActivityKey = in.ActivityKey
+	}
+	if in.TargetCount != nil {
+		arg.TargetCount = in.TargetCount
+	}
+	if in.RewardPoints != nil {
+		arg.RewardPoints = in.RewardPoints
+	}
+	if in.RewardBadgeID != nil {
+		id, err := scanUUID(*in.RewardBadgeID)
+		if err != nil {
+			return ChallengeInfo{}, fmt.Errorf("gamification: invalid reward_badge_id: %w", err)
+		}
+		arg.RewardBadgeID = id
+	}
+	if in.StartsAt != nil {
+		startsAt, err := scanTimestamp(*in.StartsAt)
+		if err != nil {
+			return ChallengeInfo{}, err
+		}
+		arg.StartsAt = startsAt
+	}
+	if in.EndsAt != nil {
+		endsAt, err := scanTimestamp(*in.EndsAt)
+		if err != nil {
+			return ChallengeInfo{}, err
+		}
+		arg.EndsAt = endsAt
+	}
+	if in.IsActive != nil {
+		arg.IsActive = in.IsActive
+	}
+
+	challenge, err := s.store.UpdateChallenge(ctx, arg)
+	if err != nil {
+		return ChallengeInfo{}, fmt.Errorf("gamification: update challenge: %w", err)
+	}
+	return challengeToInfo(challenge), nil
+}
+
+// DeleteBadge deletes a non-system badge definition (admin). System badges
+// cannot be deleted — the query filters them out and returns 0 rows affected.
+func (s *Service) DeleteBadge(ctx context.Context, tenantID, badgeID pgtype.UUID) error {
+	count, err := s.store.DeleteBadgeDefinition(ctx, tenantID, badgeID)
+	if err != nil {
+		return fmt.Errorf("gamification: delete badge: %w", err)
+	}
+	if count == 0 {
+		return fmt.Errorf("gamification: badge not found or is a system badge")
+	}
+	return nil
+}
+
+// DeleteChallenge deletes a challenge definition (admin).
+func (s *Service) DeleteChallenge(ctx context.Context, tenantID, challengeID pgtype.UUID) error {
+	count, err := s.store.DeleteChallenge(ctx, tenantID, challengeID)
+	if err != nil {
+		return fmt.Errorf("gamification: delete challenge: %w", err)
+	}
+	if count == 0 {
+		return fmt.Errorf("gamification: challenge not found")
+	}
+	return nil
+}
+
 // ---------------------------------------------------------------------------
 // Badge evaluation — called by wallet:process_activity_event
 // ---------------------------------------------------------------------------

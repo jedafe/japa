@@ -209,7 +209,7 @@ func (h *Handlers) ListReports(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	total, err := h.service.CountReports(r.Context(), tenantID, status, q)
+	total, err := h.service.CountReports(r.Context(), tenantID, status, entityType, q)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to count reports")
 		return
@@ -223,6 +223,7 @@ func (h *Handlers) ListReports(w http.ResponseWriter, r *http.Request) {
 		"data": map[string]any{
 			"items":       allReports,
 			"page":        page,
+			"total":       total,
 			"total_pages": totalPages,
 		},
 	})

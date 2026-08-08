@@ -3906,12 +3906,18 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Post("/admin/gamification/badges", gamificationHandlers.HandleAdminCreateBadge)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "gamification.manage_badges")).
 				Patch("/admin/gamification/badges/{id}", gamificationHandlers.HandleAdminUpdateBadge)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "gamification.manage_badges")).
+				Delete("/admin/gamification/badges/{id}", gamificationHandlers.HandleAdminDeleteBadge)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "gamification.award_badge")).
 				Post("/admin/gamification/badges/{id}/award", gamificationHandlers.HandleAdminAwardBadge)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "gamification.manage_challenges")).
 				Get("/admin/gamification/challenges", gamificationHandlers.HandleAdminListChallenges)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "gamification.manage_challenges")).
 				Post("/admin/gamification/challenges", gamificationHandlers.HandleAdminCreateChallenge)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "gamification.manage_challenges")).
+				Patch("/admin/gamification/challenges/{id}", gamificationHandlers.HandleAdminUpdateChallenge)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "gamification.manage_challenges")).
+				Delete("/admin/gamification/challenges/{id}", gamificationHandlers.HandleAdminDeleteChallenge)
 
 			// Section 65 — Content Import & Migration (ADR-083)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "import.use")).

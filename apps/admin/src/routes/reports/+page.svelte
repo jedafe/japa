@@ -54,7 +54,7 @@
 		pageError = "";
 		try {
 			await Promise.all(
-				idArr.map((id) => reportsAdminApiExtended.update(id, { status: "dismissed" }))
+				idArr.map((id) => reportsAdminApiExtended.update(id, { action: "dismiss", reason: "" }))
 			);
 			// EntityPage auto-reloads + clears selection after this returns.
 		} catch (e) {
@@ -82,8 +82,8 @@
 		pageError = "";
 		try {
 			const result = await reportsAdminApiExtended.update(actionTarget.id, {
-				status: "actioned",
-				resolution_note: resolutionNote.trim() || undefined
+				action: "remove",
+				reason: resolutionNote.trim() || ""
 			});
 			if (result.ok) {
 				showActionModal = false;
@@ -103,7 +103,7 @@
 	async function dismissReport(report: Report) {
 		pageError = "";
 		try {
-			const result = await reportsAdminApiExtended.update(report.id, { status: "dismissed" });
+			const result = await reportsAdminApiExtended.update(report.id, { action: "dismiss", reason: "" });
 			if (result.ok) {
 				entityController?.reload();
 			} else {
@@ -222,22 +222,26 @@
 		],
 		fields,
 		load: async ({ page, pageSize, q, filter }) => {
+			// Backend ListReports reads `page` (0-indexed) and computes offset
+			// internally as page * page_size. EntityPage passes a 1-based page,
+			// so convert to 0-based.
 			const params = new URLSearchParams({
 				page_size: String(pageSize),
-				page_offset: String(page * pageSize)
+				page: String(Math.max(0, page - 1))
 			});
 			if (q) params.set("q", q);
 			if (filter.status) params.set("status", filter.status);
 			if (filter.entity_type) params.set("entity_type", filter.entity_type);
-			// Use apiRaw to access top-level total/total_pages alongside data.
-			const result = await apiRaw<{ data?: Report[]; items?: Report[]; total?: number; total_pages?: number }>(`/admin/reports?${params.toString()}`);
+			// Use apiRaw to access the full response body. The backend returns
+			// { data: { items: [...], total, total_pages } }.
+			const result = await apiRaw<{ data?: { items?: Report[]; total?: number; total_pages?: number } }>(`/admin/reports?${params.toString()}`);
 			if (result.ok) {
 				const d = result.data;
-				const items = d.data ?? d.items ?? [];
+				const items = d.data?.items ?? [];
 				return {
 					data: items,
-					total: d.total ?? items.length,
-					totalPages: d.total_pages ?? 1
+					total: d.data?.total ?? items.length,
+					totalPages: d.data?.total_pages ?? 1
 				};
 			}
 			throw new Error(result.error ?? t("reports.error", "Failed to load reports"));

@@ -702,20 +702,22 @@ func (q *Queries) RemoveTagModerator(ctx context.Context, arg RemoveTagModerator
 
 const updateTag = `-- name: UpdateTag :one
 UPDATE tags
-SET name = $1, description = $2, rules = $3, cover_media_id = $4,
-    color = $5, logo_media_id = $6, field_values = $7, updated_at = now()
-WHERE id = $8 AND tenant_id = $9
+SET name = $1, slug = $2, description = $3, rules = $4, cover_media_id = $5,
+    color = $6, logo_media_id = $7, is_system = $8, field_values = $9, updated_at = now()
+WHERE id = $10 AND tenant_id = $11
 RETURNING id, tenant_id, name, slug, description, rules, cover_media_id, logo_media_id, color,
           follower_count, content_count, is_system, field_values, created_at, updated_at
 `
 
 type UpdateTagParams struct {
 	Name         string      `json:"name"`
+	Slug         string      `json:"slug"`
 	Description  *string     `json:"description"`
 	Rules        *string     `json:"rules"`
 	CoverMediaID pgtype.UUID `json:"cover_media_id"`
 	Color        *string     `json:"color"`
 	LogoMediaID  pgtype.UUID `json:"logo_media_id"`
+	IsSystem     bool        `json:"is_system"`
 	FieldValues  []byte      `json:"field_values"`
 	ID           pgtype.UUID `json:"id"`
 	TenantID     pgtype.UUID `json:"tenant_id"`
@@ -742,11 +744,13 @@ type UpdateTagRow struct {
 func (q *Queries) UpdateTag(ctx context.Context, arg UpdateTagParams) (UpdateTagRow, error) {
 	row := q.db.QueryRow(ctx, updateTag,
 		arg.Name,
+		arg.Slug,
 		arg.Description,
 		arg.Rules,
 		arg.CoverMediaID,
 		arg.Color,
 		arg.LogoMediaID,
+		arg.IsSystem,
 		arg.FieldValues,
 		arg.ID,
 		arg.TenantID,

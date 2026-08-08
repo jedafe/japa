@@ -681,7 +681,7 @@ export const tagsAdminApi = {
 	list: (params?: string) => api<unknown>(`/admin/tags${params ? `?${params}` : ''}`),
 	create: (body: { name: string; slug: string; description?: string; rules?: string; cover_media_id?: string; color?: string; is_system?: boolean; logo_media_id?: string; field_values?: Record<string, unknown> }) =>
 		api('/admin/tags', { method: 'POST', body }),
-	update: (id: string, body: { name?: string; description?: string; rules?: string; cover_media_id?: string; color?: string; logo_media_id?: string; field_values?: Record<string, unknown> }) =>
+	update: (id: string, body: { name?: string; slug?: string; description?: string; rules?: string; cover_media_id?: string; color?: string; logo_media_id?: string; is_system?: boolean; field_values?: Record<string, unknown> }) =>
 		api(`/admin/tags/${id}`, { method: 'PATCH', body }),
 	delete: (id: string) =>
 		api(`/admin/tags/${id}`, { method: 'DELETE' }),

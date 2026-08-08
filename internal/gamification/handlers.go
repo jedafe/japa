@@ -466,6 +466,39 @@ func (h *Handlers) HandleAdminAwardBadge(w http.ResponseWriter, r *http.Request)
 	})
 }
 
+// HandleAdminDeleteBadge handles DELETE /api/v1/admin/gamification/badges/:id —
+// delete a non-system badge definition. Admin route (gamification.manage_badges).
+func (h *Handlers) HandleAdminDeleteBadge(w http.ResponseWriter, r *http.Request) {
+	if _, ok := requireUser(w, r); !ok {
+		return
+	}
+
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	badgeID, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	if h.service == nil {
+		writeError(w, http.StatusServiceUnavailable, "gamification_unavailable", "Gamification service not configured")
+		return
+	}
+
+	if err := h.service.DeleteBadge(r.Context(), tenantID, badgeID); err != nil {
+		slog.Error("gamification: admin delete badge failed", "error", err)
+		writeError(w, http.StatusBadRequest, "badge_delete_failed", err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data": map[string]any{"deleted": true},
+	})
+}
+
 // HandleAdminListChallenges handles GET /api/v1/admin/gamification/challenges —
 // all challenges (including inactive). Admin route
 // (gamification.manage_challenges).
@@ -535,5 +568,80 @@ func (h *Handlers) HandleAdminCreateChallenge(w http.ResponseWriter, r *http.Req
 
 	writeJSON(w, http.StatusCreated, map[string]any{
 		"data": challenge,
+	})
+}
+
+// HandleAdminUpdateChallenge handles PATCH
+// /api/v1/admin/gamification/challenges/:id — update a challenge definition's
+// mutable fields. Admin route (gamification.manage_challenges).
+func (h *Handlers) HandleAdminUpdateChallenge(w http.ResponseWriter, r *http.Request) {
+	if _, ok := requireUser(w, r); !ok {
+		return
+	}
+
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	challengeID, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	if h.service == nil {
+		writeError(w, http.StatusServiceUnavailable, "gamification_unavailable", "Gamification service not configured")
+		return
+	}
+
+	var in UpdateChallengeInput
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
+
+	challenge, err := h.service.UpdateChallenge(r.Context(), tenantID, challengeID, in)
+	if err != nil {
+		slog.Error("gamification: admin update challenge failed", "error", err)
+		writeError(w, http.StatusBadRequest, "challenge_update_failed", err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data": challenge,
+	})
+}
+
+// HandleAdminDeleteChallenge handles DELETE
+// /api/v1/admin/gamification/challenges/:id — delete a challenge definition.
+// Admin route (gamification.manage_challenges).
+func (h *Handlers) HandleAdminDeleteChallenge(w http.ResponseWriter, r *http.Request) {
+	if _, ok := requireUser(w, r); !ok {
+		return
+	}
+
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	challengeID, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	if h.service == nil {
+		writeError(w, http.StatusServiceUnavailable, "gamification_unavailable", "Gamification service not configured")
+		return
+	}
+
+	if err := h.service.DeleteChallenge(r.Context(), tenantID, challengeID); err != nil {
+		slog.Error("gamification: admin delete challenge failed", "error", err)
+		writeError(w, http.StatusBadRequest, "challenge_delete_failed", err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data": map[string]any{"deleted": true},
 	})
 }
