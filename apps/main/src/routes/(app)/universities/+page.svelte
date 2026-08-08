@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
@@ -97,7 +98,7 @@
 	// Form input state — kept in sync with URL params so back/forward navigation
 	// restores the visible field values.
 	let qInput = $state(page.url.searchParams.get('q') ?? '');
-	let countryInput = $state(page.url.searchParams.get('country') ?? data.countryDefault ?? '');
+	let countryInput = $state(page.url.searchParams.get('country') ?? untrack(() => data.countryDefault) ?? '');
 	let viewMode = $state<'grid' | 'list'>('grid');
 
 	// Sync local form state whenever the URL params change (back/forward, clear).

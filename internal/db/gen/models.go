@@ -1244,6 +1244,7 @@ type ForumTag struct {
 	FollowerCount   int32              `json:"follower_count"`
 	ModeratorUserID pgtype.UUID        `json:"moderator_user_id"`
 	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	DeletedAt       pgtype.Timestamptz `json:"deleted_at"`
 }
 
 type ForumThread struct {
@@ -2856,6 +2857,7 @@ type UserBlock struct {
 	BlockerID pgtype.UUID        `json:"blocker_id"`
 	BlockedID pgtype.UUID        `json:"blocked_id"`
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	TenantID  pgtype.UUID        `json:"tenant_id"`
 }
 
 type UserChallengeProgress struct {

@@ -2,6 +2,7 @@
 	import { ChevronDown, ChevronRight, CornerUpLeft, CheckCircle2 } from 'lucide-svelte';
 	import { relativeTime } from '$lib/feed/time';
 	import { tiptapBodyToHtml, encodeReplyBody } from '$lib/tiptap/serialize';
+	import { hydrateMentions } from '$lib/tiptap/hydrateMentions';
 	import { api } from '$lib/api/client';
 	import { t, i18n } from '$lib/i18n';
 	import type { ForumReply } from '$lib/types';
@@ -20,6 +21,9 @@
 		canSolve: boolean;
 		/** Whether this reply is the accepted answer. */
 		isAccepted: boolean;
+		/** Optional set of erased user UUIDs for GDPR/ADR-029 mention
+		 * redaction (Section 15). Passed down from the thread page. */
+		deletedUserIds?: Set<string>;
 	}
 	let {
 		reply,
@@ -28,11 +32,12 @@
 		threadId,
 		authed,
 		canSolve,
-		isAccepted
+		isAccepted,
+		deletedUserIds
 	}: Props = $props();
 
 	const MAX_DEPTH = 6;
-	const bodyHtml = $derived(tiptapBodyToHtml(reply.body));
+	const bodyHtml = $derived(tiptapBodyToHtml(reply.body, { deletedUserIds }));
 	const time = $derived(relativeTime(reply.created_at, new Date(), i18n.locale));
 	const authorLabel = $derived(
 		reply.is_anonymous
@@ -93,7 +98,7 @@
 
 		<!-- Body -->
 		{#if !collapsed}
-			<div class="prose prose-sm mt-1.5 max-w-none text-[14px] leading-relaxed text-[var(--color-text)]">
+			<div class="prose prose-sm mt-1.5 max-w-none text-[14px] leading-relaxed text-[var(--color-text)]" use:hydrateMentions>
 				{@html bodyHtml}
 			</div>
 
@@ -162,6 +167,7 @@
 							{authed}
 							{canSolve}
 							isAccepted={false}
+							{deletedUserIds}
 						/>
 					{/each}
 				</div>

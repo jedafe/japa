@@ -423,27 +423,38 @@ INSERT INTO forum_tags (tenant_id, name, slug, description, rules, cover_image_i
 VALUES (@tenant_id, @name, @slug, sqlc.narg(description), sqlc.narg(rules),
         sqlc.narg(cover_image_id), sqlc.narg(moderator_user_id))
 RETURNING id, tenant_id, name, slug, description, rules, cover_image_id,
-          follower_count, moderator_user_id, created_at;
+          follower_count, moderator_user_id, created_at, deleted_at;
 
 -- name: GetForumTagByID :one
 SELECT id, tenant_id, name, slug, description, rules, cover_image_id,
-       follower_count, moderator_user_id, created_at
+       follower_count, moderator_user_id, created_at, deleted_at
 FROM forum_tags
-WHERE id = @id AND tenant_id = @tenant_id;
+WHERE id = @id AND tenant_id = @tenant_id AND deleted_at IS NULL;
 
 -- name: GetForumTagBySlug :one
 SELECT id, tenant_id, name, slug, description, rules, cover_image_id,
-       follower_count, moderator_user_id, created_at
+       follower_count, moderator_user_id, created_at, deleted_at
 FROM forum_tags
-WHERE slug = @slug AND tenant_id = @tenant_id;
+WHERE slug = @slug AND tenant_id = @tenant_id AND deleted_at IS NULL;
 
 -- name: ListForumTags :many
 SELECT id, tenant_id, name, slug, description, rules, cover_image_id,
-       follower_count, moderator_user_id, created_at
+       follower_count, moderator_user_id, created_at, deleted_at
 FROM forum_tags
-WHERE tenant_id = @tenant_id
+WHERE tenant_id = @tenant_id AND deleted_at IS NULL
 ORDER BY follower_count DESC, name ASC
 LIMIT @page_limit OFFSET @page_offset;
+
+-- name: ListForumThreadTags :many
+-- Lists the tags attached to a thread, joining forum_tags for details.
+-- Excludes soft-deleted tags. Ref: Section 08 (tags are first-class on
+-- discussions) — GET /forum/{id}/tags.
+SELECT ft.id, ft.tenant_id, ft.name, ft.slug, ft.description, ft.rules,
+       ft.cover_image_id, ft.follower_count, ft.moderator_user_id, ft.created_at
+FROM forum_thread_tags ftt
+JOIN forum_tags ft ON ft.id = ftt.tag_id
+WHERE ftt.thread_id = @thread_id AND ft.deleted_at IS NULL
+ORDER BY ft.name ASC;
 
 -- name: AddForumThreadTag :exec
 INSERT INTO forum_thread_tags (thread_id, tag_id)
@@ -476,7 +487,7 @@ SET name = @name,
     moderator_user_id = @moderator_user_id
 WHERE id = @id AND tenant_id = @tenant_id AND deleted_at IS NULL
 RETURNING id, tenant_id, name, slug, description, rules, cover_image_id,
-          follower_count, moderator_user_id, created_at;
+          follower_count, moderator_user_id, created_at, deleted_at;
 
 -- name: SoftDeleteForumTag :exec
 UPDATE forum_tags SET deleted_at = now()
@@ -525,6 +536,14 @@ SELECT EXISTS(
     SELECT 1 FROM forum_bookmarks
     WHERE user_id = @user_id AND entity_type = @entity_type AND entity_id = @entity_id
 ) AS is_bookmarked;
+
+-- name: GetForumBookmarkByEntity :one
+-- Fetches a bookmark by (user_id, entity_type, entity_id) so the frontend
+-- can call DELETE /forum/bookmarks/{id} without first listing all bookmarks.
+-- Ref: japaconnect-engineering/sections/08-forum-qa-solved.md (Bookmarks)
+SELECT id, tenant_id, user_id, entity_type, entity_id, folder, created_at
+FROM forum_bookmarks
+WHERE user_id = @user_id AND entity_type = @entity_type AND entity_id = @entity_id;
 
 -- name: IncrementEntityBookmarkCount :exec
 UPDATE forum_threads

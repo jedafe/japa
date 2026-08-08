@@ -20,6 +20,14 @@ export interface ApiOk<T> {
 	json_ld?: unknown;
 	/** Optional capability flag emitted by some GET endpoints (e.g. forum can_solve). */
 	can_solve?: boolean;
+	/** Optional capability flag emitted by forum thread detail (can_edit). */
+	can_edit?: boolean;
+	/** Optional bookmark state emitted by forum thread detail (is_bookmarked + bookmark_id). */
+	is_bookmarked?: boolean;
+	bookmark_id?: string;
+	/** Optional list of erased user UUIDs emitted by content/forum detail
+	 * endpoints for GDPR/ADR-029 mention redaction (Section 15). */
+	deleted_user_ids?: string[];
 }
 
 /** Error envelope: `{ error: { code, message } }`. */
@@ -500,6 +508,21 @@ export interface ForumThread {
  * Forum Polls — Section 08 (GET /forum/polls/{id}, POST /forum/polls/{id}/vote)
  * ------------------------------------------------------------------ */
 
+/** A forum tag attached to a thread — GET /forum/{id}/tags.
+ * Ref: japaconnect-engineering/sections/08-forum-qa-solved.md (Tags) */
+export interface ForumTag {
+	id: string;
+	tenant_id: string;
+	name: string;
+	slug: string;
+	description?: string | null;
+	rules?: string | null;
+	cover_image_id?: string | null;
+	follower_count: number;
+	moderator_user_id?: string | null;
+	created_at: string;
+}
+
 /** A forum poll attached to a thread. */
 export interface ForumPoll {
 	id: string;
@@ -867,6 +890,8 @@ export interface Space {
 	created_at: string;
 	updated_at: string;
 	keywords?: string[];
+	/** Resolved imgproxy-signed logo URL (GET /spaces list & detail). Empty/null when no logo is set. */
+	logo_url?: string | null;
 }
 
 /** GET /spaces/{slug} response — `{ space, rules, keywords, logo_url }` bundle. */

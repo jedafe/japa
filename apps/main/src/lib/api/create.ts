@@ -1,6 +1,6 @@
 import { api } from '$lib/api/client';
 import type { ContentRecord, MediaAsset, MeSpace, SaveErrorClass, SearchHit, BlogSeries, SpaceType, Space } from '$lib/types';
-import { searchPath, mapUserHits, mapContentHits, mapTagHits } from '$lib/tiptap/search';
+import { searchPath, mapUserHits, mapContentHits, mapTagHits, mapCouponHits } from '$lib/tiptap/search';
 
 export interface CreateContentInput {
 	content_type: string;
@@ -138,16 +138,20 @@ export const listMyMedia = (params: ListMyMediaParams = {}) => {
 
 /* ---- trigger search ---- */
 export async function searchHits(
-	kind: 'users' | 'content' | 'tags',
+	kind: 'users' | 'content' | 'tags' | 'coupons',
 	query: string
 ): Promise<SearchHit[]> {
 	const path = searchPath(kind, query);
 	if (!path) return [];
 	const res = await api.get<unknown>(path);
 	if (res.error || res.data == null) return [];
-	if (kind === 'users') return mapUserHits(res.data);
-	if (kind === 'content') return mapContentHits(res.data);
-	return mapTagHits(res.data);
+	// /search endpoints return { results: [...] }; /tags and /coupons return [...] directly.
+	const payload = res.data as { results?: unknown[] } | unknown[];
+	const rows = Array.isArray(payload) ? payload : (payload.results ?? []);
+	if (kind === 'users') return mapUserHits(rows);
+	if (kind === 'content') return mapContentHits(rows);
+	if (kind === 'coupons') return mapCouponHits(rows);
+	return mapTagHits(rows);
 }
 
 /* ---- comparisons ---- */

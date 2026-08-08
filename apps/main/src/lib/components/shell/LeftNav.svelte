@@ -13,6 +13,7 @@
 	} from 'lucide-svelte';
 	import { resolveIcon } from '$lib/components/ui/icons';
 	import NotificationCentre from './NotificationCentre.svelte';
+	import { compose } from './compose.svelte';
 	import { t } from '$lib/i18n';
 	import { realtime } from '$lib/realtime/realtime.svelte';
 	import type { Menu, MenuItem, SessionUser, UserSpaceRef } from '$lib/types';
@@ -164,24 +165,47 @@
 	</ul>
 
 	<!-- Compose — guests are redirected to login with a returnTo so they land
-	     on the composer after authenticating instead of hitting a 403. -->
+	     on the composer after authenticating instead of hitting a 403.
+	     Authed users get the modal composer (ADR-058). -->
 	<div class="px-2 py-2">
 		{#if collapsed}
-			<a
-				href={user ? '/create' : '/login?redirect=/create'}
-				class="mx-auto grid h-11 w-11 place-items-center rounded-full bg-[var(--color-primary)] text-[var(--color-primary-contrast)] shadow-sm transition-colors hover:bg-[var(--color-primary-hover)]"
-				aria-label={t('nav.compose')}
-			>
-				<PenSquare size={20} />
-			</a>
+			{#if user}
+				<button
+					type="button"
+					onclick={() => compose.openMenu()}
+					class="mx-auto grid h-11 w-11 place-items-center rounded-full bg-[var(--color-primary)] text-[var(--color-primary-contrast)] shadow-sm transition-colors hover:bg-[var(--color-primary-hover)]"
+					aria-label={t('nav.compose')}
+				>
+					<PenSquare size={20} />
+				</button>
+			{:else}
+				<a
+					href="/login?redirect=/create"
+					class="mx-auto grid h-11 w-11 place-items-center rounded-full bg-[var(--color-primary)] text-[var(--color-primary-contrast)] shadow-sm transition-colors hover:bg-[var(--color-primary-hover)]"
+					aria-label={t('nav.compose')}
+				>
+					<PenSquare size={20} />
+				</a>
+			{/if}
 		{:else}
-			<a
-				href={user ? '/create' : '/login?redirect=/create'}
-				class="flex items-center justify-center gap-2 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2.5 text-sm font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)]"
-			>
-				<PenSquare size={18} />
-				<span>{t('nav.compose')}</span>
-			</a>
+			{#if user}
+				<button
+					type="button"
+					onclick={() => compose.openMenu()}
+					class="flex w-full items-center justify-center gap-2 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2.5 text-sm font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)]"
+				>
+					<PenSquare size={18} />
+					<span>{t('nav.compose')}</span>
+				</button>
+			{:else}
+				<a
+					href="/login?redirect=/create"
+					class="flex w-full items-center justify-center gap-2 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2.5 text-sm font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)]"
+				>
+					<PenSquare size={18} />
+					<span>{t('nav.compose')}</span>
+				</a>
+			{/if}
 		{/if}
 	</div>
 

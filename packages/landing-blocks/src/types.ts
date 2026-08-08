@@ -125,6 +125,19 @@ export interface BlockStyle {
     shape?: 'none' | 'circle' | 'square' | 'rounded';
     position?: 'left' | 'top' | 'right' | 'none';
   };
+  /** Custom CSS injected as a scoped style on the block's shell. Use `&` as a placeholder for the block's scoped selector (e.g. `& { color: red; }`). */
+  custom_css?: string;
+  /**
+   * Per-device responsive style overrides. Each key holds a partial BlockStyle
+   * whose values override the base style at that breakpoint.
+   * - `tablet` applies at `max-width: 1024px`
+   * - `mobile` applies at `max-width: 768px`
+   * Desktop uses the base style (no override needed).
+   */
+  responsive?: {
+    tablet?: Partial<BlockStyle>;
+    mobile?: Partial<BlockStyle>;
+  };
 }
 
 /** Geo copy tokens for a single country. */
@@ -164,6 +177,26 @@ export interface BaseBlock {
   style?: BlockStyle;
   motion?: MotionConfig;
   visibility_rules?: VisibilityRules;
+  /**
+   * Grid column span (1–12) when this block is a child of a `container`
+   * block in `grid` mode. Ignored for top-level blocks and non-grid
+   * containers. Falls back to the container's `columns` value when unset.
+   */
+  span?: number;
+  /**
+   * Per-device visibility overrides. When set to `false`, the block is
+   * hidden at that breakpoint via a CSS container query (the block still
+   * renders in the DOM but is `display: none`).
+   * - `desktop` applies at min-width > 1024px (hide on desktop, show on smaller)
+   * - `tablet` applies at max-width ≤ 1024px
+   * - `mobile` applies at max-width ≤ 768px
+   * When unset, the block is visible at that breakpoint (default).
+   */
+  responsive_visibility?: {
+    desktop?: boolean;
+    tablet?: boolean;
+    mobile?: boolean;
+  };
 }
 
 // ─── Block prop shapes (core set) ─────────────────────────────────────────
@@ -198,6 +231,16 @@ export interface CardGridProps {
   card_variant: 'feature' | 'testimonial' | 'stat' | 'custom';
   layout: 'grid' | 'alternating' | 'masonry' | 'carousel' | 'marquee';
   columns: number;
+  /**
+   * Per-device column overrides (grid layout only).
+   * - `tablet` applies at max-width ≤ 1024px
+   * - `mobile` applies at max-width ≤ 768px
+   * Desktop uses `columns`.
+   */
+  responsive_columns?: {
+    tablet?: number;
+    mobile?: number;
+  };
 }
 
 export interface MediaGridProps {
@@ -362,6 +405,51 @@ export interface MediaBlockProps {
   lightbox: boolean;
 }
 
+/**
+ * Props for the Container block — a flexible layout wrapper that groups
+ * child blocks with stack / grid / flex layouts and arbitrary nesting.
+ *
+ * In `grid` mode, each child's `span` (1–12) controls how many of the 12
+ * grid columns it occupies, enabling side-by-side sections (e.g. a hero
+ * with span 8 next to a CTA with span 4). When `span` is unset, children
+ * share the grid evenly based on `columns`.
+ *
+ * In `stack` mode, children render vertically (equivalent to the flat
+ * section model, but nestable).
+ *
+ * In `flex` mode, children flow horizontally with wrap, aligned by
+ * `align_items` / `justify_content`.
+ */
+export interface ContainerProps {
+  layout: 'stack' | 'grid' | 'flex';
+  /** Number of grid columns (1–12). Only used in `grid` mode. */
+  columns: number;
+  /** Gap between children. Maps to the spacing preset scale. */
+  gap: 'none' | 'xs' | 'sm' | 'md' | 'lg' | 'xl' | '2xl';
+  /** Child blocks — arbitrary nesting depth (containers inside containers). */
+  children: Block[];
+  /** Vertical alignment of children. */
+  align_items?: 'start' | 'center' | 'end' | 'stretch';
+  /** Horizontal distribution of children (flex mode). */
+  justify_content?: 'start' | 'center' | 'end' | 'between' | 'around' | 'evenly';
+  /** Allow children to wrap to new rows (flex mode). */
+  wrap?: boolean;
+  /** Minimum height in px (useful for hero-sized containers). */
+  min_height?: number | 'auto';
+  /** Constrain max width like other full-width sections. */
+  max_width?: 'sm' | 'md' | 'lg' | 'xl' | 'full';
+  /**
+   * Per-device column overrides (grid mode only).
+   * - `tablet` applies at max-width ≤ 1024px
+   * - `mobile` applies at max-width ≤ 768px
+   * Desktop uses `columns`.
+   */
+  responsive_columns?: {
+    tablet?: number;
+    mobile?: number;
+  };
+}
+
 /** Props for a standalone CTA Button block — a single prominent button link. */
 export interface CtaButtonProps {
   /** Button label (supports {{geo}} tokens). */
@@ -442,7 +530,9 @@ export type Block =
   | (BaseBlock & { type: 'advertisement'; props: AdvertisementProps })
   | (BaseBlock & { type: 'live_rate_ticker'; props: LiveRateTickerProps })
   | (BaseBlock & { type: 'tabs'; props: TabsProps })
-  | (BaseBlock & { type: 'media'; props: MediaBlockProps });
+  | (BaseBlock & { type: 'media'; props: MediaBlockProps })
+  | (BaseBlock & { type: 'container'; props: ContainerProps })
+  | (BaseBlock & { type: 'custom'; props: CustomBlockProps; block_def_id: string });
 
 /** A landing page as returned by GET /pages/{slug}. */
 export interface LandingPage {
@@ -452,4 +542,54 @@ export interface LandingPage {
   description?: string | null;
   blocks: Block[];
   meta?: Record<string, unknown>;
+}
+
+// ─── Runtime (DB-driven) custom block definitions ──────────────
+// These types describe the `pagebuilder_blocks` table rows and the
+// schema-driven rendering/editing of custom blocks. Custom blocks have
+// `type: 'custom'` and carry a `block_def_id` linking back to the DB row.
+
+/** A single field in a custom block's config schema. */
+export interface ConfigSchemaField {
+  /** Field key in the props object. */
+  key: string;
+  /** Human-readable label. */
+  label: string;
+  /** Input type for the editor + rendering hint. */
+  type: 'text' | 'textarea' | 'number' | 'color' | 'select' | 'checkbox' | 'media' | 'url' | 'richtext';
+  /** Options for `select` type. */
+  options?: Array<{ value: string; label: string }>;
+  /** Default value if not set in props. */
+  default?: unknown;
+  /** Help text shown in the editor. */
+  help?: string;
+  /** Whether this field is required. */
+  required?: boolean;
+  /** Placeholder for text/textarea/url inputs. */
+  placeholder?: string;
+}
+
+/** The config_schema JSON stored in the DB row. */
+export interface BlockConfigSchema {
+  fields: ConfigSchemaField[];
+}
+
+/** Props for a `custom` block instance — keyed by the schema field keys. */
+export type CustomBlockProps = Record<string, unknown>;
+
+/** A row from the `pagebuilder_blocks` table (as returned by the API). */
+export interface CustomBlockDef {
+  id: string;
+  tenant_id: string;
+  name: string;
+  slug: string;
+  category: string;
+  component: string;
+  default_config: CustomBlockProps;
+  config_schema: BlockConfigSchema;
+  preview_image: string | null;
+  is_system: boolean;
+  is_enabled: boolean;
+  created_at: string;
+  updated_at: string;
 }

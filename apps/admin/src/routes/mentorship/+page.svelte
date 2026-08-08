@@ -1,18 +1,13 @@
 <script lang="ts">
+	// /mentorship — migrated to the EntityPage scaffold.
+	// Two tabs: Programs (full CRUD) and Matches (view + status update).
+	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
+	import { mentorshipAdminApiExtended as mentorshipApi } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
-	import PageHeader from "$lib/components/layout/page-header.svelte";
-	import { Card, CardContent, CardHeader } from "$lib/components/ui/card";
-	import { Tabs } from "$lib/components/ui/tabs";
-	import { DataTable } from "$lib/components/ui/data-table";
-	import type { ActionItem } from "$lib/components/ui/data-table";
-	import { SlideOver } from "$lib/components/ui/slide-over";
-	import { Badge } from "$lib/components/ui/badge";
-	import { Button } from "$lib/components/ui/button";
-	import { Modal } from "$lib/components/ui/modal";
-	import { Users, Plus, Pencil, Trash2, UserCheck, Eye } from "lucide-svelte";
-	import { Switch } from "bits-ui";
-	import { api } from "$lib/api";
-	import { hasPermission } from "$lib/stores/permissions.svelte";
+	import { hasPermission } from '$lib/stores/permissions.svelte';
+	import { Tabs } from '$lib/components/ui/tabs';
+	import { Trash2, CheckCircle, XCircle, RotateCcw } from 'lucide-svelte';
+	import type { ActionItem } from '$lib/components/ui/data-table';
 
 	type Program = {
 		id: string;
@@ -21,409 +16,350 @@
 		is_active: boolean;
 		mentor_count: number;
 		mentee_count: number;
-		match_count?: number;
+		match_count: number;
 		created_at: string;
 	};
 
-	let { data } = $props();
+	type Match = {
+		id: string;
+		program_id: string;
+		program_name?: string;
+		mentor_id: string;
+		mentor_username?: string;
+		mentee_id: string;
+		mentee_username?: string;
+		status: string;
+		created_at: string;
+		updated_at: string;
+	};
 
-	let activeTab = $state("all");
-	let programs = $state<Program[]>([]);
-	let loading = $state(true);
-	let selectedIds = $state<Set<string>>(new Set());
+	const MATCH_STATUSES = ['active', 'completed', 'cancelled'] as const;
 
-	// Create/Edit modal
-	let showSlideOver = $state(false);
-	let editingProgram = $state<Program | null>(null);
-	let saving = $state(false);
-	let name = $state("");
-	let description = $state("");
-	let isActive = $state(true);
-
-	// Delete confirmation
-	let showDeleteModal = $state(false);
-	let deleteTarget = $state<Program | null>(null);
-	let deleting = $state(false);
-
-	// View modal
-	let showViewSlideOver = $state(false);
-	let viewTarget = $state<Program | null>(null);
-
-	// Backend gates mentorship mutations on mentorship.admin
-	const canManageMentorship = $derived(hasPermission("mentorship.admin"));
-
+	let activeTab = $state('programs');
 	const tabs = [
-		{ value: "all", label: t('app.mentorship.tabs.all_programs', 'All Programs'), icon: Users },
-		{ value: "active", label: t('app.mentorship.tabs.active', 'Active'), icon: UserCheck },
-		{ value: "inactive", label: t('app.mentorship.tabs.inactive', 'Inactive'), icon: Users }
+		{ value: 'programs', label: t('app.mentorship.tabs.programs', 'Programs') },
+		{ value: 'matches', label: t('app.mentorship.tabs.matches', 'Matches') }
 	];
 
-	const columns = [
-		{
-			key: "name",
-			label: t('app.mentorship.columns.program', 'Program'),
-			sortable: true,
-			render: (_: any, row: any) => `
-				<div>
-					<p class="font-medium text-foreground">${row.name}</p>
-					${row.description ? `<p class="text-sm text-muted line-clamp-1">${row.description}</p>` : ""}
-				</div>
-			`
-		},
-		{
-			key: "mentor_count",
-			label: t('app.mentorship.columns.mentors', 'Mentors'),
-			sortable: true,
-			render: (value: number) => `<span class="font-medium">${value ?? 0}</span>`
-		},
-		{
-			key: "mentee_count",
-			label: t('app.mentorship.columns.mentees', 'Mentees'),
-			sortable: true,
-			render: (value: number) => `<span class="font-medium">${value ?? 0}</span>`
-		},
-		{
-			key: "match_count",
-			label: t('app.mentorship.columns.matches', 'Matches'),
-			sortable: true,
-			render: (value: number) => `<span class="text-sm text-foreground-alt">${value ?? "—"}</span>`
-		},
-		{
-			key: "is_active",
-			label: t('app.mentorship.columns.status', 'Status'),
-			sortable: true,
-			render: (value: boolean) => {
-				const variant = value ? "success" : "secondary";
-				const classes = value ? "bg-success/15 text-success border-success" : "bg-surface text-foreground border";
-				return `<span class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${classes}">${value ? t('app.mentorship.status.active', 'Active') : t('app.mentorship.status.inactive', 'Inactive')}</span>`;
-			}
-		},
-		{
-			key: "created_at",
-			label: t('app.mentorship.columns.created', 'Created'),
-			sortable: true,
-			render: (value: string) => new Date(value).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" })
-		}
-	];
+	const canManageMentorship = hasPermission('mentorship.admin');
 
-	const rowActions: ActionItem[] = [
-		{ label: t('common.view', 'View'), icon: Eye, onclick: (row: Program) => openView(row) },
-		{
-			label: t('common.edit', 'Edit'),
-			icon: Pencil,
-			onclick: (row: Program) => openEdit(row),
-			show: () => canManageMentorship
-		},
-		{
-			label: t('common.delete', 'Delete'),
-			icon: Trash2,
-			variant: 'destructive',
-			onclick: (row: Program) => confirmDelete(row),
-			show: () => canManageMentorship
-		}
-	];
+	// ── Programs EntityPage ──────────────────────────────────────────────
 
-	let filteredPrograms = $derived.by(() => {
-		let result = [...programs];
-		if (activeTab === "active") result = result.filter((p) => p.is_active);
-		if (activeTab === "inactive") result = result.filter((p) => !p.is_active);
-		return result;
-	});
+	let programController = $state<EntityPageController | undefined>(undefined);
+	let programPageError = $state('');
+	let programBulkDeleting = $state(false);
 
-	async function loadPrograms() {
-		loading = true;
+	async function bulkDeletePrograms(ids: Set<string>) {
+		const idArr = Array.from(ids);
+		if (idArr.length === 0) return;
+		if (programBulkDeleting) return;
+		programBulkDeleting = true;
+		programPageError = '';
 		try {
-			const result = await api<Program[]>("/admin/mentorship/programs");
+			await Promise.all(idArr.map((id) => mentorshipApi.deleteProgram(id)));
+		} catch (e) {
+			programPageError = e instanceof Error ? e.message : t('app.mentorship.error.delete_failed', 'Failed to delete programs');
+		} finally {
+			programBulkDeleting = false;
+		}
+	}
+
+	const programFields: FieldDef[] = [
+		{ key: 'name', label: t('app.mentorship.label.program_name', 'Program Name'), type: 'text', placeholder: t('app.mentorship.placeholder.name', 'e.g. Career Growth Mentorship'), required: true },
+		{ key: 'description', label: t('app.mentorship.label.description', 'Description'), type: 'textarea', placeholder: t('app.mentorship.placeholder.description', 'What is this program about?') },
+		{ key: 'is_active', label: t('app.mentorship.status.active', 'Active'), type: 'checkbox' }
+	];
+
+	const programConfig: EntityPageConfig = {
+		title: t('app.mentorship.title', 'Mentorship'),
+		description: t('app.mentorship.description', 'Manage mentorship programs and matching'),
+		createLabel: t('app.mentorship.actions.new_program', 'New Program'),
+		createPermission: 'mentorship.admin',
+		pageSize: 15,
+		columns: [
+			{
+				key: 'name',
+				label: t('app.mentorship.columns.program', 'Program'),
+				sortable: true,
+				render: (_: any, row: Program) =>
+					`<div><p class="font-medium text-foreground">${row.name}</p>${row.description ? `<p class="text-sm text-muted line-clamp-1">${row.description}</p>` : ''}</div>`
+			},
+			{
+				key: 'mentor_count',
+				label: t('app.mentorship.columns.mentors', 'Mentors'),
+				sortable: true,
+				render: (v: number) => `<span class="font-medium">${v ?? 0}</span>`
+			},
+			{
+				key: 'mentee_count',
+				label: t('app.mentorship.columns.mentees', 'Mentees'),
+				sortable: true,
+				render: (v: number) => `<span class="font-medium">${v ?? 0}</span>`
+			},
+			{
+				key: 'match_count',
+				label: t('app.mentorship.columns.matches', 'Matches'),
+				sortable: true,
+				render: (v: number) => `<span class="text-sm text-foreground-alt">${v ?? '—'}</span>`
+			},
+			{
+				key: 'is_active',
+				label: t('app.mentorship.columns.status', 'Status'),
+				sortable: true,
+				render: (v: boolean) => {
+					const classes = v ? 'bg-success/15 text-success border-success' : 'bg-surface text-foreground border';
+					const label = v ? t('app.mentorship.status.active', 'Active') : t('app.mentorship.status.inactive', 'Inactive');
+					return `<span class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${classes}">${label}</span>`;
+				}
+			},
+			{
+				key: 'created_at',
+				label: t('app.mentorship.columns.created', 'Created'),
+				sortable: true,
+				render: (v: string) => new Date(v).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
+			}
+		],
+		filters: [
+			{
+				key: 'is_active',
+				label: t('app.mentorship.columns.status', 'Status'),
+				options: [
+					{ value: 'true', label: t('app.mentorship.status.active', 'Active') },
+					{ value: 'false', label: t('app.mentorship.status.inactive', 'Inactive') }
+				]
+			}
+		],
+		bulkActions: [
+			{
+				label: t('app.mentorship.actions.delete_selected', 'Delete Selected'),
+				icon: Trash2,
+				variant: 'destructive',
+				onclick: bulkDeletePrograms
+			}
+		],
+		fields: programFields,
+		load: async ({ q, filter }) => {
+			const params = new URLSearchParams();
+			if (q) params.set('q', q);
+			if (filter.is_active) params.set('is_active', filter.is_active);
+			const result = await mentorshipApi.listPrograms(params.toString() || undefined);
 			if (result.ok) {
-				programs = result.data ?? [];
+				const data = (result.data as Program[]) ?? [];
+				return { data, total: data.length, totalPages: 1 };
 			}
-		} catch {
-			// API not available
-		} finally {
-			loading = false;
-		}
-	}
+			throw new Error(result.error ?? t('app.mentorship.error.load_failed', 'Failed to load programs'));
+		},
+		create: async (body) => {
+			const res = await mentorshipApi.createProgram({
+				name: String(body.name ?? '').trim(),
+				description: String(body.description ?? '').trim() || undefined,
+				is_active: body.is_active === undefined ? true : !!body.is_active
+			});
+			return res.ok ? { ok: true } : { ok: false, error: res.error };
+		},
+		update: async (id, body) => {
+			const res = await mentorshipApi.updateProgram(id, {
+				name: String(body.name ?? '').trim(),
+				description: String(body.description ?? '').trim() || undefined,
+				is_active: !!body.is_active
+			});
+			return res.ok ? { ok: true } : { ok: false, error: res.error };
+		},
+		remove: async (id) => {
+			const res = await mentorshipApi.deleteProgram(id);
+			return res.ok ? { ok: true } : { ok: false, error: res.error };
+		},
+		viewSnippet: ProgramView
+	};
 
-	function openView(program: Program) {
-		viewTarget = program;
-		showViewSlideOver = true;
-	}
+	// ── Matches EntityPage ───────────────────────────────────────────────
 
-	function openCreate() {
-		editingProgram = null;
-		name = "";
-		description = "";
-		isActive = true;
-		showSlideOver = true;
-	}
+	let matchController = $state<EntityPageController | undefined>(undefined);
+	let matchPageError = $state('');
 
-	function openEdit(program: Program) {
-		editingProgram = program;
-		name = program.name;
-		description = program.description || "";
-		isActive = program.is_active;
-		showSlideOver = true;
-	}
-
-	async function saveProgram() {
-		if (!name.trim()) return;
-		saving = true;
+	async function updateMatchStatus(id: string, status: string) {
+		matchPageError = '';
 		try {
-			if (editingProgram) {
-				const result = await api(`/admin/mentorship/programs/${editingProgram.id}`, {
-					method: "PATCH",
-					body: { name: name.trim(), description: description.trim() || undefined, is_active: isActive }
-				});
-				if (result.ok) {
-					showSlideOver = false;
-					editingProgram = null;
-					loadPrograms();
-				}
-			} else {
-				const result = await api("/admin/mentorship/programs", {
-					method: "POST",
-					body: { name: name.trim(), description: description.trim() || undefined, is_active: isActive }
-				});
-				if (result.ok) {
-					showSlideOver = false;
-					loadPrograms();
-				}
+			const res = await mentorshipApi.updateMatch(id, { status });
+			if (!res.ok) {
+				matchPageError = res.error ?? t('app.mentorship.error.update_match_failed', 'Failed to update match');
 			}
-		} catch {
-			// API not available
-		} finally {
-			saving = false;
+		} catch (e) {
+			matchPageError = e instanceof Error ? e.message : t('app.mentorship.error.update_match_failed', 'Failed to update match');
 		}
+		matchController?.reload();
 	}
 
-	function confirmDelete(program: Program) {
-		deleteTarget = program;
-		showDeleteModal = true;
-	}
-
-	async function deleteProgram() {
-		if (!deleteTarget) return;
-		deleting = true;
-		try {
-			await api(`/admin/mentorship/programs/${deleteTarget.id}`, { method: "DELETE" });
-			programs = programs.filter((p) => p.id !== deleteTarget!.id);
-			showDeleteModal = false;
-			deleteTarget = null;
-		} catch {
-			// API not available
-		} finally {
-			deleting = false;
+	const matchActions: ActionItem[] = [
+		{
+			label: t('app.mentorship.match.status_active', 'Mark Active'),
+			icon: CheckCircle,
+			onclick: (row: Match) => updateMatchStatus(row.id, 'active'),
+			show: (row: Match) => row.status !== 'active'
+		},
+		{
+			label: t('app.mentorship.match.status_completed', 'Mark Completed'),
+			icon: CheckCircle,
+			onclick: (row: Match) => updateMatchStatus(row.id, 'completed'),
+			show: (row: Match) => row.status !== 'completed'
+		},
+		{
+			label: t('app.mentorship.match.status_cancelled', 'Cancel Match'),
+			icon: XCircle,
+			variant: 'destructive',
+			onclick: (row: Match) => updateMatchStatus(row.id, 'cancelled'),
+			show: (row: Match) => row.status !== 'cancelled'
 		}
-	}
+	];
 
-	let bulkDeleting = $state(false);
-	async function bulkDelete() {
-		const ids = Array.from(selectedIds);
-		if (ids.length === 0) return;
-		bulkDeleting = true;
-		try {
-			await Promise.all(ids.map((id) => api(`/admin/mentorship/programs/${id}`, { method: "DELETE" })));
-			selectedIds = new Set();
-			loadPrograms();
-		} catch {
-			// API not available
-		} finally {
-			bulkDeleting = false;
-		}
-	}
-
-	let initialized = false;
-	$effect(() => {
-		if (!initialized) {
-			initialized = true;
-			loadPrograms();
-		}
-	});
+	const matchConfig: EntityPageConfig = {
+		title: t('app.mentorship.tabs.matches', 'Matches'),
+		description: t('app.mentorship.matches_description', 'View and manage mentor-mentee matches'),
+		createPermission: 'mentorship.admin',
+		readonly: true,
+		pageSize: 15,
+		columns: [
+			{
+				key: 'program_name',
+				label: t('app.mentorship.columns.program', 'Program'),
+				sortable: true,
+				render: (v: string) => v ? `<span class="font-medium text-foreground">${v}</span>` : `<span class="text-muted">—</span>`
+			},
+			{
+				key: 'mentor_username',
+				label: t('app.mentorship.columns.mentor', 'Mentor'),
+				sortable: true,
+				render: (v: string) => v ? `<span class="font-medium text-foreground">@${v}</span>` : `<span class="text-muted">—</span>`
+			},
+			{
+				key: 'mentee_username',
+				label: t('app.mentorship.columns.mentee', 'Mentee'),
+				sortable: true,
+				render: (v: string) => v ? `<span class="font-medium text-foreground">@${v}</span>` : `<span class="text-muted">—</span>`
+			},
+			{
+				key: 'status',
+				label: t('app.mentorship.columns.status', 'Status'),
+				sortable: true,
+				render: (v: string) => {
+					const map: Record<string, string> = {
+						active: 'bg-success/15 text-success border-success',
+						completed: 'bg-primary/15 text-primary border-primary',
+						cancelled: 'bg-danger/15 text-danger border-danger'
+					};
+					const classes = map[v] ?? 'bg-surface text-foreground border';
+					return `<span class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${classes}">${v}</span>`;
+				}
+			},
+			{
+				key: 'created_at',
+				label: t('app.mentorship.columns.created', 'Created'),
+				sortable: true,
+				render: (v: string) => new Date(v).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
+			}
+		],
+		filters: [
+			{
+				key: 'status',
+				label: t('app.mentorship.columns.status', 'Status'),
+				options: MATCH_STATUSES.map((s) => ({ value: s, label: s.charAt(0).toUpperCase() + s.slice(1) }))
+			}
+		],
+		actions: matchActions,
+		fields: [],
+		load: async ({ q, filter }) => {
+			const params = new URLSearchParams();
+			if (q) params.set('q', q);
+			if (filter.status) params.set('status', filter.status);
+			const result = await mentorshipApi.listMatches(params.toString() || undefined);
+			if (result.ok) {
+				const data = (result.data as Match[]) ?? [];
+				return { data, total: data.length, totalPages: 1 };
+			}
+			throw new Error(result.error ?? t('app.mentorship.error.load_matches_failed', 'Failed to load matches'));
+		},
+		viewSnippet: MatchView
+	};
 </script>
 
 <svelte:head>
 	<title>{t('app.mentorship.page_title', 'Mentorship — JapaConnect Admin')}</title>
 </svelte:head>
 
-<PageHeader
-	title={t('app.mentorship.title', 'Mentorship')}
-	description={t('app.mentorship.description', 'Manage mentorship programs and matching')}
-	actions={[
-		...(canManageMentorship ? [{ label: t('app.mentorship.actions.new_program', 'New Program'), icon: Plus, onclick: openCreate }] : [])
-	]}
-/>
+<Tabs {tabs} bind:value={activeTab} />
 
-<div class="space-y-6">
-	<Tabs {tabs} bind:value={activeTab} />
+{#if activeTab === 'programs'}
+	{#if programPageError}
+		<div class="mb-4 rounded-lg border border-danger/30 bg-danger/10 p-3 text-sm text-danger">
+			{programPageError}
+		</div>
+	{/if}
+	<EntityPage config={programConfig} bind:controller={programController} />
+{:else if activeTab === 'matches'}
+	{#if matchPageError}
+		<div class="mb-4 rounded-lg border border-danger/30 bg-danger/10 p-3 text-sm text-danger">
+			{matchPageError}
+		</div>
+	{/if}
+	<EntityPage config={matchConfig} bind:controller={matchController} />
+{/if}
 
-	<Card>
-		<CardContent class="p-0">
-			{#if loading}
-				<p class="py-8 text-center text-sm text-muted">{t('app.mentorship.loading_programs', 'Loading programs...')}</p>
-			{:else}
-				<DataTable
-					columns={columns}
-					data={filteredPrograms}
-					actions={rowActions}
-					searchable
-					searchPlaceholder={t('app.mentorship.search_placeholder', 'Search programs...')}
-					selectable
-					bind:selectedIds
-					pageSize={15}
-					emptyMessage={t('app.mentorship.empty_message', 'No mentorship programs found')}
-				>
-					{#snippet bulkActions()}
-						<Button variant="destructive" size="sm" onclick={bulkDelete} disabled={bulkDeleting}>
-							<Trash2 class="mr-1 h-3.5 w-3.5" />
-							{bulkDeleting ? t('app.mentorship.actions.deleting', 'Deleting...') : `${t('app.mentorship.actions.delete_selected', 'Delete Selected')} (${selectedIds.size})`}
-						</Button>
-					{/snippet}
-				</DataTable>
-			{/if}
-		</CardContent>
-	</Card>
+<!-- ── Snippets ─────────────────────────────────────────────────────────── -->
 
-	<!-- Summary Stats -->
-	<div class="grid grid-cols-1 gap-4 sm:grid-cols-4">
-		<Card>
-			<CardContent class="p-4">
-				<p class="text-sm text-muted">{t('app.mentorship.stats.total_programs', 'Total Programs')}</p>
-				<p class="text-2xl font-bold text-foreground">{programs.length}</p>
-			</CardContent>
-		</Card>
-		<Card>
-			<CardContent class="p-4">
-				<p class="text-sm text-muted">{t('app.mentorship.stats.active_programs', 'Active Programs')}</p>
-				<p class="text-2xl font-bold text-foreground">{programs.filter((p) => p.is_active).length}</p>
-			</CardContent>
-		</Card>
-		<Card>
-			<CardContent class="p-4">
-				<p class="text-sm text-muted">{t('app.mentorship.stats.total_mentors', 'Total Mentors')}</p>
-				<p class="text-2xl font-bold text-foreground">{programs.reduce((sum, p) => sum + (p.mentor_count ?? 0), 0)}</p>
-			</CardContent>
-		</Card>
-		<Card>
-			<CardContent class="p-4">
-				<p class="text-sm text-muted">{t('app.mentorship.stats.total_mentees', 'Total Mentees')}</p>
-				<p class="text-2xl font-bold text-foreground">{programs.reduce((sum, p) => sum + (p.mentee_count ?? 0), 0)}</p>
-			</CardContent>
-		</Card>
-	</div>
-</div>
-
-<!-- Create/Edit SlideOver -->
-<SlideOver
-	bind:open={showSlideOver}
-	title={editingProgram ? t('app.mentorship.modal.edit_program', 'Edit Program') : t('app.mentorship.modal.new_program', 'New Program')}
->
+{#snippet ProgramView({ row }: { row: Program })}
 	<div class="space-y-4">
 		<div>
-			<label for="mp-name" class="mb-1 block text-sm font-medium text-foreground">{t('app.mentorship.label.program_name', 'Program Name')}</label>
-			<input
-				id="mp-name"
-				type="text"
-				class="h-10 w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
-				placeholder={t('app.mentorship.placeholder.name', 'e.g. Career Growth Mentorship')}
-				bind:value={name}
-			/>
+			<p class="text-xs font-medium uppercase tracking-wider text-muted">{t('app.mentorship.field.name', 'Name')}</p>
+			<p class="mt-1 text-sm font-medium text-foreground">{row.name}</p>
+		</div>
+		{#if row.description}
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider text-muted">{t('app.mentorship.field.description', 'Description')}</p>
+				<p class="mt-1 text-sm font-medium text-foreground">{row.description}</p>
+			</div>
+		{/if}
+		<div>
+			<p class="text-xs font-medium uppercase tracking-wider text-muted">{t('app.mentorship.field.status', 'Status')}</p>
+			<p class="mt-1 text-sm font-medium text-foreground">{row.is_active ? t('app.mentorship.status.active', 'Active') : t('app.mentorship.status.inactive', 'Inactive')}</p>
+		</div>
+		<div class="grid grid-cols-3 gap-4">
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider text-muted">{t('app.mentorship.field.mentors', 'Mentors')}</p>
+				<p class="mt-1 text-sm font-medium text-foreground">{row.mentor_count ?? 0}</p>
+			</div>
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider text-muted">{t('app.mentorship.field.mentees', 'Mentees')}</p>
+				<p class="mt-1 text-sm font-medium text-foreground">{row.mentee_count ?? 0}</p>
+			</div>
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider text-muted">{t('app.mentorship.columns.matches', 'Matches')}</p>
+				<p class="mt-1 text-sm font-medium text-foreground">{row.match_count ?? 0}</p>
+			</div>
+		</div>
+	</div>
+{/snippet}
+
+{#snippet MatchView({ row }: { row: Match })}
+	<div class="space-y-4">
+		<div>
+			<p class="text-xs font-medium uppercase tracking-wider text-muted">{t('app.mentorship.columns.program', 'Program')}</p>
+			<p class="mt-1 text-sm font-medium text-foreground">{row.program_name ?? '—'}</p>
 		</div>
 		<div>
-			<label for="mp-desc" class="mb-1 block text-sm font-medium text-foreground">{t('app.mentorship.label.description', 'Description')}</label>
-			<textarea
-				id="mp-desc"
-				class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
-				rows="3"
-				placeholder={t('app.mentorship.placeholder.description', 'What is this program about?')}
-				bind:value={description}
-			></textarea>
+			<p class="text-xs font-medium uppercase tracking-wider text-muted">{t('app.mentorship.columns.mentor', 'Mentor')}</p>
+			<p class="mt-1 text-sm font-medium text-foreground">{row.mentor_username ? `@${row.mentor_username}` : '—'}</p>
 		</div>
-		<div class="flex items-center gap-3">
-			<Switch.Root
-				checked={isActive}
-				onCheckedChange={(v: boolean) => (isActive = v)}
-				class="relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 {isActive ? "bg-primary" : "bg-surface"}"
-				style="--ring-color: var(--color-primary); --ring-offset-color: var(--color-surface)"
-				aria-label={t('app.mentorship.aria.active_status', 'Active status')}
-			>
-				<Switch.Thumb
-					class="inline-block h-4 w-4 transform rounded-full bg-surface shadow-sm transition-transform {isActive ? "translate-x-6" : "translate-x-1"}"
-				/>
-			</Switch.Root>
-			<span class="text-sm text-foreground-alt">{isActive ? t('app.mentorship.status.active', 'Active') : t('app.mentorship.status.inactive', 'Inactive')}</span>
+		<div>
+			<p class="text-xs font-medium uppercase tracking-wider text-muted">{t('app.mentorship.columns.mentee', 'Mentee')}</p>
+			<p class="mt-1 text-sm font-medium text-foreground">{row.mentee_username ? `@${row.mentee_username}` : '—'}</p>
+		</div>
+		<div>
+			<p class="text-xs font-medium uppercase tracking-wider text-muted">{t('app.mentorship.columns.status', 'Status')}</p>
+			<p class="mt-1 text-sm font-medium text-foreground">{row.status}</p>
+		</div>
+		<div>
+			<p class="text-xs font-medium uppercase tracking-wider text-muted">{t('app.mentorship.columns.created', 'Created')}</p>
+			<p class="mt-1 text-sm font-medium text-foreground">{new Date(row.created_at).toLocaleString()}</p>
 		</div>
 	</div>
-	{#snippet footer()}
-		<div class="flex justify-end gap-3 pt-4">
-			<Button variant="outline" onclick={() => (showSlideOver = false)}>{t('app.mentorship.actions.cancel', 'Cancel')}</Button>
-			<Button onclick={saveProgram} disabled={saving || !name.trim()}>
-			{#if saving}
-				{t('app.mentorship.actions.saving', 'Saving...')}
-			{:else}
-				{editingProgram ? t('app.mentorship.actions.save_changes', 'Save Changes') : t('app.mentorship.actions.create_program', 'Create Program')}
-				{/if}
-			</Button>
-		</div>
-	{/snippet}
-</SlideOver>
-
-<!-- Delete Confirmation Modal -->
-<Modal bind:open={showDeleteModal} title={t('app.mentorship.modal.delete_program', 'Delete Program')} description={t('app.mentorship.modal.delete_cannot_undo', 'This action cannot be undone.')} size="sm">
-	{#if deleteTarget}
-		<div class="rounded-lg bg-danger-50 p-4">
-			<p class="text-sm text-danger-700">
-				{t('app.mentorship.delete.confirm', 'Are you sure you want to delete')} <strong>{deleteTarget.name}</strong>?
-				{#if deleteTarget.mentor_count > 0 || deleteTarget.mentee_count > 0}
-					{t('app.mentorship.delete.has_members', 'This program has')} {deleteTarget.mentor_count} {t('app.mentorship.delete.mentors_and', 'mentors and')} {deleteTarget.mentee_count} {t('app.mentorship.delete.mentees', 'mentees')}.
-				{/if}
-			</p>
-		</div>
-	{/if}
-	<div class="flex justify-end gap-3 pt-4">
-		<Button variant="outline" onclick={() => (showDeleteModal = false)}>{t('app.mentorship.actions.cancel', 'Cancel')}</Button>
-		<Button variant="destructive" onclick={deleteProgram} disabled={deleting}>
-		{#if deleting}
-			{t('app.mentorship.actions.deleting', 'Deleting...')}
-		{:else}
-			{t('app.mentorship.actions.delete_program', 'Delete Program')}
-			{/if}
-		</Button>
-	</div>
-</Modal>
-
-<!-- View SlideOver -->
-<SlideOver bind:open={showViewSlideOver} title={t('app.mentorship.modal.program_details', 'Program Details')}>
-	{#if viewTarget}
-		<div class="space-y-4">
-			<div>
-				<p class="text-xs font-medium uppercase tracking-wider text-muted">{t('app.mentorship.field.name', 'Name')}</p>
-				<p class="mt-1 text-sm font-medium text-foreground">{viewTarget.name}</p>
-			</div>
-			{#if viewTarget.description}
-				<div>
-					<p class="text-xs font-medium uppercase tracking-wider text-muted">{t('app.mentorship.field.description', 'Description')}</p>
-					<p class="mt-1 text-sm font-medium text-foreground">{viewTarget.description}</p>
-				</div>
-			{/if}
-			<div>
-				<p class="text-xs font-medium uppercase tracking-wider text-muted">{t('app.mentorship.field.status', 'Status')}</p>
-				<p class="mt-1 text-sm font-medium text-foreground">{viewTarget.is_active ? t('app.mentorship.status.active', 'Active') : t('app.mentorship.status.inactive', 'Inactive')}</p>
-			</div>
-			<div class="grid grid-cols-2 gap-4">
-				<div>
-					<p class="text-xs font-medium uppercase tracking-wider text-muted">{t('app.mentorship.field.mentors', 'Mentors')}</p>
-					<p class="mt-1 text-sm font-medium text-foreground">{viewTarget.mentor_count ?? 0}</p>
-				</div>
-				<div>
-					<p class="text-xs font-medium uppercase tracking-wider text-muted">{t('app.mentorship.field.mentees', 'Mentees')}</p>
-					<p class="mt-1 text-sm font-medium text-foreground">{viewTarget.mentee_count ?? 0}</p>
-				</div>
-			</div>
-		</div>
-	{/if}
-	{#snippet footer()}
-		<div class="flex justify-end">
-			<Button variant="outline" onclick={() => (showViewSlideOver = false)}>{t('app.mentorship.actions.close', 'Close')}</Button>
-		</div>
-	{/snippet}
-</SlideOver>
+{/snippet}

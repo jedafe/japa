@@ -509,6 +509,19 @@ func (s *Service) IsBookmarked(ctx context.Context, userID pgtype.UUID, entityTy
 	return s.store.isBookmarked(ctx, userID, entityType, entityID)
 }
 
+// GetBookmarkByEntity fetches the bookmark row for a (user, entity) pair.
+// Returns the bookmark so the frontend can call DELETE /forum/bookmarks/{id}.
+// Ref: japaconnect-engineering/sections/08-forum-qa-solved.md (Bookmarks)
+func (s *Service) GetBookmarkByEntity(ctx context.Context, userID pgtype.UUID, entityType string, entityID pgtype.UUID) (gen.ForumBookmark, error) {
+	return s.store.getBookmarkByEntity(ctx, userID, entityType, entityID)
+}
+
+// ListThreadTags returns the tags attached to a thread.
+// Ref: Section 08 (tags are first-class on discussions) — GET /forum/{id}/tags.
+func (s *Service) ListThreadTags(ctx context.Context, threadID pgtype.UUID) ([]gen.ListForumThreadTagsRow, error) {
+	return s.store.listThreadTags(ctx, threadID)
+}
+
 // ---------------------------------------------------------------------------
 // Reply Views
 // ---------------------------------------------------------------------------

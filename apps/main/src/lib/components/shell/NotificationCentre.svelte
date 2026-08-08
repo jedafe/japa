@@ -13,7 +13,7 @@
 	import { onMount, onDestroy } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { DropdownMenu } from 'bits-ui';
-	import { Bell, CheckCheck, BellOff, Loader2 } from 'lucide-svelte';
+	import { Bell, CheckCheck, BellOff, Loader2, AtSign, Heart, UserPlus, MessageSquare, Megaphone } from 'lucide-svelte';
 	import { t } from '$lib/i18n';
 	import { api } from '$lib/api/client';
 	import { realtime } from '$lib/realtime/realtime.svelte';
@@ -38,6 +38,33 @@
 	let loading = $state(false);
 	let markingAll = $state(false);
 	let open = $state(false);
+	// Section 35 filter-by-type tabs.
+	type FilterTab = 'all' | 'mentions' | 'reactions' | 'follows' | 'replies' | 'system';
+	let activeFilter = $state<FilterTab>('all');
+
+	// Maps a notification_type to a filter tab.
+	function filterTabOf(type: string): FilterTab {
+		if (type.startsWith('mention')) return 'mentions';
+		if (type.startsWith('reaction') || type === 'content.reaction') return 'reactions';
+		if (type.startsWith('follow') || type === 'new_follower') return 'follows';
+		if (type.startsWith('comment') || type === 'content.comment' || type === 'post_reply') return 'replies';
+		return 'system';
+	}
+
+	const FILTER_TABS: { key: FilterTab; label: string; icon: typeof Bell }[] = [
+		{ key: 'all', label: 'notifications.filter_all', icon: Bell },
+		{ key: 'mentions', label: 'notifications.filter_mentions', icon: AtSign },
+		{ key: 'reactions', label: 'notifications.filter_reactions', icon: Heart },
+		{ key: 'follows', label: 'notifications.filter_follows', icon: UserPlus },
+		{ key: 'replies', label: 'notifications.filter_replies', icon: MessageSquare },
+		{ key: 'system', label: 'notifications.filter_system', icon: Megaphone }
+	];
+
+	const filteredNotifications = $derived(
+		activeFilter === 'all'
+			? notifications
+			: notifications.filter((n) => filterTabOf(n.notification_type) === activeFilter)
+	);
 
 	// Live-prepend handler — registered on mount, fires whenever a `notification`
 	// WS event arrives (regardless of whether the dropdown is open).
@@ -145,18 +172,33 @@
 				</button>
 			</div>
 
+			<!-- Filter tabs (Section 35 — Filter by type) -->
+			<div class="flex items-center gap-1 overflow-x-auto border-b border-[var(--color-border)] px-2 py-1.5">
+				{#each FILTER_TABS as tab (tab.key)}
+					<button
+						type="button"
+						onclick={() => (activeFilter = tab.key)}
+						class="inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-1 text-[11px] font-medium transition-colors {activeFilter === tab.key ? 'bg-[var(--color-primary)] text-[var(--color-primary-contrast)]' : 'text-[var(--color-text-subtle)] hover:bg-[var(--color-surface-subtle)]'}"
+						aria-label={t(tab.label, tab.key)}
+					>
+						<tab.icon size={11} />
+						{t(tab.label, tab.key)}
+					</button>
+				{/each}
+			</div>
+
 			<!-- List -->
 			<div class="divide-y divide-[var(--color-border)]">
 				{#if loading}
 					<div class="flex items-center justify-center px-3 py-8 text-[var(--color-muted)]">
 						<Loader2 size={16} class="animate-spin" />
 					</div>
-				{:else if notifications.length === 0}
+				{:else if filteredNotifications.length === 0}
 					<div class="px-3 py-8">
 						<EmptyState icon={BellOff} title={t('notifications.empty', 'No notifications yet')} />
 					</div>
 				{:else}
-					{#each notifications as n (n.id)}
+					{#each filteredNotifications as n (n.id)}
 						<button
 							type="button"
 							onclick={() => openNotification(n)}

@@ -22,6 +22,7 @@ import (
 	"github.com/jedafe/japa/internal/auth"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/mentions"
 	"github.com/jedafe/japa/internal/seo"
 	"github.com/jedafe/japa/internal/tenant"
 )
@@ -38,8 +39,9 @@ type JSONLDResolver interface {
 
 // Handlers holds dependencies for forum HTTP handlers.
 type Handlers struct {
-	Service        *Service
-	jsonldResolver JSONLDResolver
+	Service         *Service
+	jsonldResolver  JSONLDResolver
+	mentionCheckers *mentions.DBCheckers // nil disables erased-mention redaction
 }
 
 // NewHandlers creates Handlers with the given Service and optional JSON-LD
@@ -48,6 +50,11 @@ type Handlers struct {
 func NewHandlers(service *Service, resolver JSONLDResolver) *Handlers {
 	return &Handlers{Service: service, jsonldResolver: resolver}
 }
+
+// SetMentionCheckers wires the DB-backed erased-user checker used to
+// redact mentions of deleted users in thread/reply responses (Section 15 /
+// ADR-029). nil disables redaction (backward compat / tests).
+func (h *Handlers) SetMentionCheckers(c *mentions.DBCheckers) { h.mentionCheckers = c }
 
 // ---------------------------------------------------------------------------
 // Shared helpers
@@ -250,6 +257,7 @@ func (h *Handlers) ListThreads(w http.ResponseWriter, r *http.Request) {
 	spaceIDStr := r.URL.Query().Get("space_id")
 	authorIDStr := r.URL.Query().Get("author_id")
 	tagIDStr := r.URL.Query().Get("tag_id")
+	tagSlug := r.URL.Query().Get("tag")
 
 	switch {
 	case spaceIDStr != "":
@@ -290,6 +298,23 @@ func (h *Handlers) ListThreads(w http.ResponseWriter, r *http.Request) {
 		}
 
 		threads, err := h.Service.ListThreadsByTagWithDetails(r.Context(), tenantID, tagID, cursor, limit)
+		if err != nil {
+			handleServiceError(w, err)
+			return
+		}
+
+		writeJSON(w, http.StatusOK, map[string]any{"data": threads})
+
+	case tagSlug != "":
+		// Resolve the slug to a tag ID, then filter threads by that tag.
+		// Ref: japaconnect-engineering/sections/08-forum-qa-solved.md (?tag=slug)
+		tag, err := h.Service.GetTagBySlug(r.Context(), tagSlug, tenantID)
+		if err != nil {
+			writeError(w, http.StatusNotFound, "tag_not_found", "Tag not found")
+			return
+		}
+
+		threads, err := h.Service.ListThreadsByTagWithDetails(r.Context(), tenantID, tag.ID, cursor, limit)
 		if err != nil {
 			handleServiceError(w, err)
 			return
@@ -403,14 +428,51 @@ func (h *Handlers) GetThread(w http.ResponseWriter, r *http.Request) {
 	// affordance to the OP or moderators (BUG-014).
 	// Ref: japaconnect-engineering/sections/08-forum-qa-solved.md ("OP or moderator")
 	canSolve := false
+	canEdit := false
+	isBookmarked := false
+	bookmarkID := ""
 	if user := auth.FromContext(r.Context()); user != nil {
 		threadModel := gen.ForumThread{
 			AuthorUserID: thread.AuthorUserID,
 			SpaceID:      thread.SpaceID,
 		}
 		canSolve = h.Service.canSolveThread(r.Context(), threadModel, user.UserID, tenantID)
+		// The author, a space moderator, or a holder of forum.thread.edit_any
+		// may edit. Mirrors the check in UpdateThread so the frontend can show
+		// the edit affordance only when the PATCH would succeed.
+		// Ref: japaconnect-engineering/sections/08-forum-qa-solved.md (Editing)
+		canEdit = h.Service.canModerateThread(r.Context(), threadModel, user.UserID, tenantID, "forum.thread.edit_any")
+
+		// Expose whether the current user has bookmarked this thread so the
+		// frontend can render the correct bookmark toggle state, plus the
+		// bookmark's ID so DELETE /forum/bookmarks/{id} can be called
+		// without first listing all bookmarks.
+		// Ref: japaconnect-engineering/sections/08-forum-qa-solved.md (Bookmarks)
+		if bm, err := h.Service.GetBookmarkByEntity(r.Context(), user.UserID, EntityTypeThread, thread.ID); err == nil {
+			isBookmarked = true
+			bookmarkID = bm.ID.String()
+		}
 	}
 	response["can_solve"] = canSolve
+	response["can_edit"] = canEdit
+	response["is_bookmarked"] = isBookmarked
+	response["bookmark_id"] = bookmarkID
+
+	// GDPR / ADR-029: expose deleted_user_ids so the frontend can render
+	// @[deleted user] for mentions of erased users in the thread body
+	// (Section 15). Best-effort: a failure logs a warning but does not
+	// fail the request.
+	if h.mentionCheckers != nil && len(thread.Body) > 0 {
+		erasedIDs, err := mentions.ComputeErasedMentionIDs(
+			r.Context(), thread.Body, tenantID, h.mentionCheckers,
+		)
+		if err != nil {
+			slog.Warn("forum: ComputeErasedMentionIDs failed",
+				"thread_id", thread.ID.String(), "error", err)
+		} else if len(erasedIDs) > 0 {
+			response["deleted_user_ids"] = erasedIDs
+		}
+	}
 
 	writeJSON(w, http.StatusOK, response)
 }
@@ -1566,4 +1628,24 @@ func (h *Handlers) RemoveThreadTag(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusNoContent, nil)
+}
+
+// ListThreadTags handles GET /api/v1/forum/{id}/tags.
+// Returns the tags attached to a thread. Public — no auth required.
+// Ref: japaconnect-engineering/sections/08-forum-qa-solved.md (tags are
+// first-class on discussions).
+func (h *Handlers) ListThreadTags(w http.ResponseWriter, r *http.Request) {
+	threadID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_thread_id", "Invalid thread ID")
+		return
+	}
+
+	tags, err := h.Service.ListThreadTags(r.Context(), threadID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": tags})
 }

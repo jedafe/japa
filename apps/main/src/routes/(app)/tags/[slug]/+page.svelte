@@ -4,15 +4,44 @@
 	import { invalidate } from '$app/navigation';
 	import { t } from '$lib/i18n';
 	import { Dialog } from 'bits-ui';
-	import { Hash, ArrowLeft, Clock, Eye, UserPlus, UserCheck, ExternalLink, BookOpen, Pencil, X, Loader2, Image as ImageIcon } from 'lucide-svelte';
+	import { Hash, ArrowLeft, UserPlus, UserCheck, ExternalLink, BookOpen, Pencil, X, Loader2, Image as ImageIcon } from 'lucide-svelte';
 	import SetSidebar from '$lib/components/shell/SetSidebar.svelte';
 	import { EmptyState } from '$lib/components/ui';
 	import { api } from '$lib/api/client';
 	import MediaLibraryModal from '$lib/components/media/MediaLibraryModal.svelte';
-	import type { MediaAsset } from '$lib/types';
+	import { cardStyleFor, gridMode, type CardStyleConfig } from '$lib/feed/cardStyle';
+	import type { MediaAsset, FeedItem } from '$lib/types';
+	import FeedCard from '$lib/components/feed/FeedCard.svelte';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
+
+	const config = $derived((page.data.cardStyleConfig as CardStyleConfig) ?? { default: 'reddit', byType: {} });
+
+	// Map ContentArticle → FeedItem so tagged posts render through FeedCard.
+	function toFeedItem(post: typeof data.items[number]): FeedItem {
+		return {
+			id: post.id,
+			title: post.title,
+			slug: post.slug,
+			content_type: post.content_type,
+			author_id: post.author_id ?? '',
+			author_name: post.author_name,
+			author_avatar_url: post.author_avatar_url,
+			space_id: post.space_id,
+			space_name: post.space_name,
+			excerpt: post.excerpt,
+			created_at: post.created_at,
+			view_count: post.view_count,
+			comment_count: post.comment_count,
+			reading_time_minutes: post.read_time_minutes,
+			cover_image_url: post.featured_image_url,
+			tags: post.tags
+		};
+	}
+
+	const feedItems = $derived(data.items.map(toFeedItem));
+	const gridLayout = $derived(gridMode(feedItems.map((i) => i.content_type), config));
 
 	const tag = $derived(data.tag);
 	const authed = $derived(!!page.data.user);
@@ -307,56 +336,19 @@
 		{:else if data.items.length === 0}
 			<EmptyState icon={Hash} title={t('tag.empty', 'No content with this tag yet.')} />
 		{:else}
-			<!-- Magazine card grid (Ghost.org style, same as blog list) -->
-			<div class="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-				{#each data.items as post (post.id)}
-					<a
-						href={post.content_type === 'blog_post' ? `/blog/${post.slug}` : `/content/${post.slug}`}
-						class="group flex flex-col overflow-hidden rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] transition-all hover:border-[var(--color-primary)]/40 hover:shadow-lg"
-					>
-						{#if post.featured_image_url}
-							<div class="aspect-[16/9] overflow-hidden">
-								<img
-									src={post.featured_image_url}
-									alt={post.title}
-									loading="lazy"
-									class="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
-								/>
-							</div>
-						{:else}
-							<div
-								class="aspect-[16/9] bg-gradient-to-br from-[var(--color-primary)]/12 via-[var(--color-surface-subtle)] to-[var(--color-surface-subtle)]"
-							></div>
-						{/if}
-						<div class="flex flex-1 flex-col p-5">
-							<span
-								class="mb-2 text-xs font-medium uppercase tracking-wide text-[var(--color-primary)]"
-							>
-								{t('tag.card_label', 'Tagged post')}
-							</span>
-							<h2
-								class="text-xl font-semibold leading-snug text-[var(--color-text)] group-hover:text-[var(--color-primary)]"
-								style="font-family: var(--font-serif);"
-							>
-								{post.title}
-							</h2>
-							<p class="mt-2 line-clamp-3 flex-1 text-sm text-[var(--color-text-subtle)]">
-								{post.body.slice(0, 160)}
-							</p>
-							<div class="mt-4 flex items-center gap-3 text-xs text-[var(--color-muted)]">
-								{#if post.read_time_minutes > 0}
-									<span class="flex items-center gap-1">
-										<Clock size={12} /> {post.read_time_minutes} {t('tag.min_read', 'min read')}
-									</span>
-								{/if}
-								<span class="flex items-center gap-1">
-									<Eye size={12} /> {post.view_count}
-								</span>
-							</div>
-						</div>
-					</a>
-				{/each}
-			</div>
+			{#if gridLayout}
+				<div class="grid gap-3.5 sm:grid-cols-2">
+					{#each feedItems as item (item.id)}
+						<FeedCard {item} style={cardStyleFor(item.content_type, config)} layout="grid-cell" />
+					{/each}
+				</div>
+			{:else}
+				<div class="divide-y divide-[var(--color-border)] overflow-hidden rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)]">
+					{#each feedItems as item (item.id)}
+						<FeedCard {item} style={cardStyleFor(item.content_type, config)} layout="stream" />
+					{/each}
+				</div>
+			{/if}
 		{/if}
 	</div>
 </div>

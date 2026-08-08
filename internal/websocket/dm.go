@@ -235,10 +235,12 @@ func (s *DMStore) GetUserDMPrivacy(ctx context.Context, tenantID, userID pgtype.
 
 // IsBlocked returns true if either user has blocked the other (bidirectional
 // check per Section 48). Wraps the sqlc-generated IsBlocked query.
-func (s *DMStore) IsBlocked(ctx context.Context, userA, userB pgtype.UUID) (bool, error) {
+// Tenant-scoped per JEOS §9 (BUG-006).
+func (s *DMStore) IsBlocked(ctx context.Context, tenantID, userA, userB pgtype.UUID) (bool, error) {
 	return s.read.IsBlocked(ctx, gen.IsBlockedParams{
 		BlockerID: userA,
 		BlockedID: userB,
+		TenantID:  tenantID,
 	})
 }
 
@@ -368,7 +370,7 @@ func (s *DMService) GetOrCreateConversation(ctx context.Context, tenantID, sende
 	if existing, err := s.store.GetConversationByParticipants(ctx, tenantID, senderID, recipientID); err == nil {
 		// Block check (Section 48): either direction blocks → 403, even
 		// for existing conversations.
-		blocked, bErr := s.store.IsBlocked(ctx, senderID, recipientID)
+		blocked, bErr := s.store.IsBlocked(ctx, tenantID, senderID, recipientID)
 		if bErr != nil {
 			return ConversationResult{}, fmt.Errorf("checking block status: %w", bErr)
 		}
@@ -382,7 +384,7 @@ func (s *DMService) GetOrCreateConversation(ctx context.Context, tenantID, sende
 
 	// No existing conversation — apply privacy + block checks for new ones.
 	// Block check (Section 48): either direction blocks → 403.
-	blocked, err := s.store.IsBlocked(ctx, senderID, recipientID)
+	blocked, err := s.store.IsBlocked(ctx, tenantID, senderID, recipientID)
 	if err != nil {
 		return ConversationResult{}, fmt.Errorf("checking block status: %w", err)
 	}

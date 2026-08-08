@@ -14,11 +14,13 @@ export type {
   TabsProps, MediaBlockProps,
   HeadingProps,
   CtaButtonProps,
+  ContainerProps,
+  CustomBlockProps, CustomBlockDef, BlockConfigSchema, ConfigSchemaField,
 } from './types';
 
 export { geoCopy, GLOBAL_TOKENS, getGeoTokens } from './geo/copyRegistry';
 
-export { styleToCss, type ResolvedStyle } from './shell/styleToCss';
+export { styleToCss, responsiveStyleToCss, type ResolvedStyle } from './shell/styleToCss';
 
 export { resolveString, resolveGeoCopy } from './geo/resolveGeoCopy';
 
@@ -28,6 +30,11 @@ export type { FetchContext, JobSummary, ScholarshipSummary, UniversitySummary, S
 export { landingPalettes, type PaletteDefinition } from './palettes/landingPalettes';
 
 export { blockRegistry, type BlockMeta } from './render/blockRegistry';
+export {
+  setCustomBlockDefs, getCustomBlockDefs, getCustomBlockDef,
+  getCustomBlockDefBySlug, getCustomBlockMetas, resolveCustomBlockProps,
+  isRuntimeRegistryLoaded, resetRuntimeRegistry, type RuntimeBlockMeta,
+} from './render/runtimeBlockRegistry';
 export { default as LandingRenderer } from './render/LandingRenderer.svelte';
 export { default as BlockShell } from './shell/BlockShell.svelte';
 export { default as Reveal } from './shell/Reveal.svelte';

@@ -660,6 +660,22 @@ func (s *Store) isBookmarked(ctx context.Context, userID pgtype.UUID, entityType
 	return result, nil
 }
 
+// getBookmarkByEntity fetches a bookmark by (user_id, entity_type, entity_id).
+// Returns the bookmark row so the frontend can call DELETE /forum/bookmarks/{id}
+// without first listing all bookmarks.
+// Ref: japaconnect-engineering/sections/08-forum-qa-solved.md (Bookmarks)
+func (s *Store) getBookmarkByEntity(ctx context.Context, userID pgtype.UUID, entityType string, entityID pgtype.UUID) (gen.ForumBookmark, error) {
+	bm, err := s.read.GetForumBookmarkByEntity(ctx, gen.GetForumBookmarkByEntityParams{
+		UserID:     userID,
+		EntityType: entityType,
+		EntityID:   entityID,
+	})
+	if err != nil {
+		return gen.ForumBookmark{}, fmt.Errorf("getting forum bookmark by entity: %w", err)
+	}
+	return bm, nil
+}
+
 // incrementEntityBookmarkCount adjusts the bookmark_count on a thread.
 func (s *Store) incrementEntityBookmarkCount(ctx context.Context, entityID pgtype.UUID, delta int32) error {
 	if err := s.write.IncrementEntityBookmarkCount(ctx, gen.IncrementEntityBookmarkCountParams{
@@ -721,6 +737,17 @@ func (s *Store) listTags(ctx context.Context, tenantID pgtype.UUID, limit, offse
 		return nil, fmt.Errorf("listing forum tags: %w", err)
 	}
 
+	return rows, nil
+}
+
+// listThreadTags returns the tags attached to a thread, joining forum_tags
+// for details. Excludes soft-deleted tags.
+// Ref: Section 08 (tags are first-class on discussions) — GET /forum/{id}/tags.
+func (s *Store) listThreadTags(ctx context.Context, threadID pgtype.UUID) ([]gen.ListForumThreadTagsRow, error) {
+	rows, err := s.read.ListForumThreadTags(ctx, threadID)
+	if err != nil {
+		return nil, fmt.Errorf("listing forum thread tags: %w", err)
+	}
 	return rows, nil
 }
 

@@ -173,10 +173,25 @@ func (p *UnsplashProvider) Download(ctx context.Context, photoID string) (*Downl
 	}
 
 	// Unsplash requires a download tracking call per API guidelines.
+	// Fire-and-forget, but with a bounded timeout, the API key in the
+	// Authorization header (not the URL), and proper response-body cleanup.
 	go func() {
-		req, _ := http.NewRequest(http.MethodGet,
-			unsplashAPI+"/photos/"+photoID+"/download?client_id="+p.accessKey, nil)
-		p.client.Do(req) //nolint:errcheck // fire-and-forget tracking
+		trackCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+		defer cancel()
+
+		req, err := http.NewRequestWithContext(trackCtx, http.MethodGet,
+			unsplashAPI+"/photos/"+photoID+"/download", nil)
+		if err != nil {
+			return
+		}
+		req.Header.Set("Authorization", "Client-ID "+p.accessKey)
+
+		resp, err := p.client.Do(req)
+		if err != nil {
+			return
+		}
+		defer resp.Body.Close()
+		_, _ = io.Copy(io.Discard, resp.Body)
 	}()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, photo.FullURL, nil)
@@ -200,10 +215,12 @@ func (p *UnsplashProvider) Download(ctx context.Context, photoID string) (*Downl
 	}
 
 	return &DownloadedPhoto{
-		Data:            data,
-		Filename:        photoID + ".jpg",
+		Data:             data,
+		Filename:         photoID + ".jpg",
 		Photographer:     photo.Photographer,
 		PhotographerURL:  photo.PhotographerURL,
+		License:          "unsplash",
+		LicenseURL:       "https://unsplash.com/license",
 		ProviderPhotoID:  photoID,
 	}, nil
 }

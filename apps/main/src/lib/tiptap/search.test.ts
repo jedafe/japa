@@ -7,7 +7,7 @@ describe('searchPath', () => {
 		expect(searchPath('users', '')).toBeNull();
 	});
 	it('builds an encoded /search path for users and content', () => {
-		expect(searchPath('users', 'jane d')).toBe('/search?type=users&q=jane%20d');
+		expect(searchPath('users', 'jane d')).toBe('/search?type=user&q=jane%20d');
 		expect(searchPath('content', 'uk unis')).toBe('/search?type=content&q=uk%20unis');
 	});
 	it('builds a /tags path for tag search', () => {
@@ -16,14 +16,14 @@ describe('searchPath', () => {
 });
 
 describe('hit mappers', () => {
-	it('maps user hits to {id,label,handle,avatar}', () => {
-		const raw = [{ id: 'u1', display_name: 'Jane D', username: 'jane', avatar_url: 'x' }];
+	it('maps user hits preferring excerpt (display_name) over title (username)', () => {
+		const raw = [{ id: 'u1', title: 'jane', excerpt: 'Jane D', url: '/users/jane' }];
 		expect(mapUserHits(raw)).toEqual([
-			{ id: 'u1', label: 'Jane D', handle: 'jane', avatar_url: 'x' }
+			{ id: 'u1', label: 'Jane D', handle: 'jane', avatar_url: null }
 		]);
 	});
-	it('maps content hits to {id,label,slug}', () => {
-		const raw = [{ id: 'c1', title: 'UK Unis', slug: 'uk-unis' }];
+	it('maps content hits extracting slug from url', () => {
+		const raw = [{ id: 'c1', title: 'UK Unis', url: '/blog/uk-unis' }];
 		expect(mapContentHits(raw)).toEqual([{ id: 'c1', label: 'UK Unis', slug: 'uk-unis' }]);
 	});
 	it('maps tag hits to {id,label,slug}', () => {

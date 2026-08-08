@@ -10,7 +10,8 @@ import (
 )
 
 // ToggleBlock adds or removes a user block. Returns true if blocked, false if unblocked.
-func (s *Service) ToggleBlock(ctx context.Context, blockerID, blockedID pgtype.UUID) (bool, error) {
+// Tenant-scoped per JEOS §9 (BUG-006).
+func (s *Service) ToggleBlock(ctx context.Context, tenantID, blockerID, blockedID pgtype.UUID) (bool, error) {
 	if blockerID == blockedID {
 		return false, errors.New("cannot block yourself")
 	}
@@ -25,6 +26,7 @@ func (s *Service) ToggleBlock(ctx context.Context, blockerID, blockedID pgtype.U
 			if err := s.write.DeleteUserBlock(ctx, gen.DeleteUserBlockParams{
 				BlockerID: blockerID,
 				BlockedID: blockedID,
+				TenantID:  tenantID,
 			}); err != nil {
 				return false, fmt.Errorf("deleting user block: %w", err)
 			}
@@ -36,6 +38,7 @@ func (s *Service) ToggleBlock(ctx context.Context, blockerID, blockedID pgtype.U
 	if err := s.write.CreateUserBlock(ctx, gen.CreateUserBlockParams{
 		BlockerID: blockerID,
 		BlockedID: blockedID,
+		TenantID:  tenantID,
 	}); err != nil {
 		return false, fmt.Errorf("creating user block: %w", err)
 	}
@@ -68,10 +71,12 @@ func (s *Service) ListBlockedUsers(ctx context.Context, blockerID pgtype.UUID) (
 }
 
 // IsBlocked returns true if either user has blocked the other.
-func (s *Service) IsBlocked(ctx context.Context, userA, userB pgtype.UUID) (bool, error) {
+// Tenant-scoped per JEOS §9 (BUG-006).
+func (s *Service) IsBlocked(ctx context.Context, tenantID, userA, userB pgtype.UUID) (bool, error) {
 	return s.read.IsBlocked(ctx, gen.IsBlockedParams{
 		BlockerID: userA,
 		BlockedID: userB,
+		TenantID:  tenantID,
 	})
 }
 

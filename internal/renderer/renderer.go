@@ -14,6 +14,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -22,6 +23,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/content"
 	"github.com/jedafe/japa/internal/valkey"
 )
 
@@ -32,6 +34,14 @@ const MaxRenderInputSize = 512 * 1024 // 512 KiB
 // ScriptRootEnv is the env var that overrides the allowlist root directory
 // for the Bun SSR script. Defaults to the repo root ("./scripts/tiptap-ssr").
 const ScriptRootEnv = "JC_RENDERER_SCRIPT_ROOT"
+
+// CacheTTLEnv is the env var that overrides the render cache TTL (Go duration
+// string, e.g. "12h", "30m"). Defaults to 24h per Section 15 / valkey catalog.
+const CacheTTLEnv = "JC_RENDERER_CACHE_TTL"
+
+// defaultCacheTTL is the render cache TTL used when JC_RENDERER_CACHE_TTL is
+// unset. Matches the valkey-keys-catalog entry (24hr).
+const defaultCacheTTL = 24 * time.Hour
 
 // defaultScriptRoot is the allowlist root used when JC_RENDERER_SCRIPT_ROOT
 // is unset. Resolved against the process working directory.
@@ -61,10 +71,18 @@ func New(scriptPath string, cache *valkey.Client) (*Renderer, error) {
 	if err != nil {
 		return nil, err
 	}
+	ttl := defaultCacheTTL
+	if env := strings.TrimSpace(os.Getenv(CacheTTLEnv)); env != "" {
+		if parsed, err := time.ParseDuration(env); err == nil && parsed > 0 {
+			ttl = parsed
+		} else {
+			slog.Warn("invalid JC_RENDERER_CACHE_TTL, using default", "value", env, "default", defaultCacheTTL)
+		}
+	}
 	return &Renderer{
 		scriptPath: cleaned,
 		cache:      cache,
-		cacheTTL:   24 * time.Hour,
+		cacheTTL:   ttl,
 	}, nil
 }
 
@@ -108,10 +126,16 @@ func validateScriptPath(scriptPath string) (string, error) {
 
 // Render converts ProseMirror JSON to HTML. If the result is cached,
 // it returns the cached version. Otherwise, it shells out to Bun.
-func (r *Renderer) Render(ctx context.Context, contentID pgtype.UUID, updatedAt pgtype.Timestamptz, json []byte) (string, error) {
+//
+// The tenantID scopes the Valkey cache key so one tenant cannot read
+// another's rendered fragment (§4.2). The output is sanitized through
+// the shared content.SanitizeHTML allowlist before caching/returning to
+// prevent stored XSS from raw embed HTML or crafted node attributes
+// (§5.1, §14 — Renderer must allowlist tags).
+func (r *Renderer) Render(ctx context.Context, tenantID, contentID pgtype.UUID, updatedAt pgtype.Timestamptz, json []byte) (string, error) {
 	// Try cache first
 	if r.cache != nil {
-		cacheKey := r.cacheKey(contentID, updatedAt)
+		cacheKey := r.cacheKey(tenantID, contentID, updatedAt)
 		if cached, err := r.cache.Redis().Get(ctx, cacheKey).Result(); err == nil {
 			return cached, nil
 		}
@@ -123,9 +147,15 @@ func (r *Renderer) Render(ctx context.Context, contentID pgtype.UUID, updatedAt 
 		return "", fmt.Errorf("rendering via Bun: %w", err)
 	}
 
+	// Sanitize through the shared allowlist-based sanitizer (§5.1/§14).
+	// This strips <script>, event handlers, javascript: URIs, and any
+	// tags/attributes not in the content.SanitizeHTML allowlist — including
+	// raw html injected by the platformEmbed node.
+	html = content.SanitizeHTML(html)
+
 	// Cache the result (best-effort — failure does not break the response)
 	if r.cache != nil {
-		cacheKey := r.cacheKey(contentID, updatedAt)
+		cacheKey := r.cacheKey(tenantID, contentID, updatedAt)
 		_ = r.cache.Redis().Set(ctx, cacheKey, html, r.cacheTTL).Err()
 	}
 
@@ -184,12 +214,13 @@ func validateRenderInput(data []byte) error {
 }
 
 // cacheKey generates a Valkey cache key for rendered HTML.
-// Format: jc:render:{content_id}:{updated_at_hash}. Uses the full SHA-256
-// hash to avoid collision risk from truncation (STD-003).
-func (r *Renderer) cacheKey(contentID pgtype.UUID, updatedAt pgtype.Timestamptz) string {
+// Format: jc:render:{tenant_id}:{content_id}:{updated_at_hash}. The
+// tenant_id scope prevents cross-tenant cache bleed (§4.2). Uses the
+// full SHA-256 hash to avoid collision risk from truncation (STD-003).
+func (r *Renderer) cacheKey(tenantID, contentID pgtype.UUID, updatedAt pgtype.Timestamptz) string {
 	ts := updatedAt.Time.Unix()
 	hash := sha256.Sum256([]byte(strconv.FormatInt(ts, 10)))
 	tsHash := hex.EncodeToString(hash[:])
 
-	return fmt.Sprintf("jc:render:%s:%s", contentID.String(), tsHash)
+	return fmt.Sprintf("jc:render:%s:%s:%s", tenantID.String(), contentID.String(), tsHash)
 }

@@ -558,7 +558,7 @@
 		border-color: var(--color-primary);
 		box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 12%, transparent);
 	}
-	.select-arrow {
+	:global(.select-arrow) {
 		position: absolute;
 		right: 8px;
 		pointer-events: none;
@@ -662,7 +662,7 @@
 	.dim-type-select:focus {
 		border-color: var(--color-primary);
 	}
-	.dim-type-arrow {
+	:global(.dim-type-arrow) {
 		position: absolute;
 		right: 5px;
 		pointer-events: none;

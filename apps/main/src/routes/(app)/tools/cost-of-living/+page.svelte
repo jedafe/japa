@@ -88,6 +88,14 @@
 		return r.toFixed(2) + '×';
 	}
 
+	// Some seeded cities may have an empty title; fall back to the geo space
+	// name so chips and buttons always have an accessible label (§H). Accepts
+	// both ColCity (selector) and ColCityData (comparison matrix) since both
+	// share title + geo_space_name.
+	function cityLabel(c: { title?: string; geo_space_name?: string }): string {
+		return c.title || c.geo_space_name || t('col.untitled_city', 'Untitled city');
+	}
+
 	// JSON-LD for the shareable comparison result (Ref: Section 72, ROADMAP-MAIN 36.03).
 	// A cost-of-living comparison matrix maps most honestly to schema.org Dataset.
 	const jsonLd = $derived(
@@ -97,7 +105,7 @@
 					'@type': 'Dataset',
 					name: t('tools.cost_of_living', 'Cost of Living Comparison'),
 					description: `Cost of living comparison between ${selectedCities
-						.map((c) => c.title)
+						.map((c) => c.title || c.geo_space_name)
 						.join(', ')}`,
 					url: page.url.href,
 					variableMeasured: matrix.categories.map((cat) => ({
@@ -166,7 +174,7 @@
 						<span
 							class="inline-flex items-center gap-1.5 rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-2.5 py-1 text-xs text-[var(--color-text)]"
 						>
-							{city.title}
+							{cityLabel(city)}
 							{#if city.is_baseline}
 								<span class="text-[var(--color-muted)]">({t('col.baseline', 'baseline')})</span>
 							{:else}
@@ -194,7 +202,7 @@
 							disabled={selectedIds.length >= 3}
 							class="rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-2.5 py-1 text-xs text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)] disabled:opacity-40"
 						>
-							{city.title}
+							{cityLabel(city)}
 						</button>
 					{/if}
 				{/each}
@@ -222,7 +230,7 @@
 						{#each matrix.cities as city (city.id)}
 							<div class="flex items-center justify-between text-sm">
 								<span class="text-[var(--color-text)]">
-									{city.title}
+									{cityLabel(city)}
 									{#if city.is_baseline}
 										<span class="text-[var(--color-muted)]">({t('col.baseline', 'baseline')})</span>
 									{/if}
@@ -242,7 +250,7 @@
 							<tr class="border-b border-[var(--color-border)] text-left text-xs text-[var(--color-muted)]">
 								<th class="px-3 py-2 font-medium">{t('col.category', 'Category')}</th>
 								{#each matrix.cities as city (city.id)}
-									<th class="px-3 py-2 text-right font-medium">{city.title}</th>
+									<th class="px-3 py-2 text-right font-medium">{cityLabel(city)}</th>
 								{/each}
 							</tr>
 						</thead>

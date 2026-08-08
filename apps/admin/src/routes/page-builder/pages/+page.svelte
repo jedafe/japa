@@ -12,7 +12,7 @@
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
-	import { Eye, Pencil, Trash2, Send, Archive, Rocket } from 'lucide-svelte';
+	import { Eye, Pencil, Trash2, Send, Archive, Rocket, Copy } from 'lucide-svelte';
 	import { landingPalettes, type Block } from '@japaconnect/landing-blocks';
 	import type { ActionItem } from '$lib/components/ui/data-table';
 
@@ -103,13 +103,12 @@
 	// seeded from landingPalettes['homepage'].defaultSeed. Once it exists it
 	// shows up in this list and is editable at /page-builder/pages/[id].
 	// Ref: Section 16 (Landing consolidation) + ADR-058 §5 (guest homepage).
+	//
+	// `blocks` is sent as a parsed array (NOT JSON.stringify'd) because api()
+	// already stringifies the body — double-encoding produced a JSON string
+	// that the backend's json.RawMessage + sanitizeBlocksJSON mishandled,
+	// yielding an empty homepage.
 	async function seedHomepage() {
-		// If a homepage page already exists, jump straight to editing it.
-		const result = await pagesApi.list();
-		if (result.ok) {
-			const existing = (result.data as Page[])?.find((p) => p.slug === 'homepage');
-			if (existing) { goto(`/page-builder/pages/${existing.id}`); return; }
-		}
 		const seed = landingPalettes['homepage']?.defaultSeed ?? [];
 		const seedBlocks = seed.map((entry, i) => ({
 			id: `seed-${i}`,
@@ -119,6 +118,34 @@
 			props: entry.props,
 			motion: entry.motion,
 		})) as unknown as Block[];
+
+		// If a homepage page already exists, re-seed its blocks (self-heal:
+		// earlier versions created an empty/corrupted row) then open the
+		// editor. Otherwise create it.
+		const result = await pagesApi.list();
+		if (result.ok) {
+			const existing = (result.data as Page[])?.find((p) => p.slug === 'homepage');
+			if (existing) {
+				try {
+					const upd = await pagesApi.update(existing.id, {
+						title: 'Homepage',
+						page_type: 'landing',
+						status: 'published',
+						blocks: seedBlocks,
+					});
+					if (!upd.ok) {
+						pageError = upd.error ?? t('common.error', 'Failed to seed homepage');
+						return;
+					}
+				} catch {
+					pageError = t('common.error', 'Failed to seed homepage');
+					return;
+				}
+				goto(`/page-builder/pages/${existing.id}`);
+				return;
+			}
+		}
+
 		try {
 			const res = await api<{ id: string }>('/admin/pages', {
 				method: 'POST',
@@ -127,7 +154,7 @@
 					slug: 'homepage',
 					page_type: 'landing',
 					status: 'published',
-					blocks: JSON.stringify(seedBlocks),
+					blocks: seedBlocks,
 				},
 			});
 			if (!res.ok) {
@@ -137,6 +164,30 @@
 			goto(`/page-builder/pages/${res.data.id}`);
 		} catch {
 			pageError = t('common.error', 'Failed to seed homepage');
+		}
+	}
+
+	// duplicatePage clones a page (blocks/meta/theme/page_type) into a new draft
+	// via POST /admin/pages/{id}/duplicate. Used to take the default guest
+	// landing page (or any page) and redesign the copy for another app's
+	// homepage. On success it navigates straight to the new page's editor.
+	let duplicating = $state(false);
+	async function duplicatePage(row: Page) {
+		if (duplicating) return; // in-flight guard
+		duplicating = true;
+		pageError = '';
+		try {
+			const res = await pagesApi.duplicate(row.id);
+			if (res.ok) {
+				const newId = (res.data as any)?.id;
+				if (newId) goto(`/page-builder/pages/${newId}`);
+			} else {
+				pageError = res.error ?? t('common.error', 'Failed to duplicate page');
+			}
+		} catch {
+			pageError = t('common.error', 'Failed to duplicate page');
+		} finally {
+			duplicating = false;
 		}
 	}
 
@@ -213,6 +264,12 @@
 		const acts: ActionItem[] = [
 			{ label: t('common.view', 'View'), icon: Eye, onclick: (row: Page, ctx) => ctx?.openView(row) },
 			{ label: t('common.edit', 'Edit'), icon: Pencil, onclick: (row: Page) => goto(`/page-builder/pages/${row.id}`), show: () => canManagePages },
+		{
+			label: t('page_builder.duplicate', 'Duplicate'),
+			icon: Copy,
+			onclick: duplicatePage,
+			show: () => canManagePages
+		},
 			{
 				label: t('page_builder.publish', 'Publish'),
 				icon: Send,

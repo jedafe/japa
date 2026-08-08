@@ -120,6 +120,11 @@ func (h *Handlers) ToggleBlock(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
 	targetID, err := parseUUIDParam(r, "user_id")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_user_id", "Invalid user_id format")
@@ -133,7 +138,7 @@ func (h *Handlers) ToggleBlock(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	blocked, err := h.service.ToggleBlock(r.Context(), user.UserID, targetID)
+	blocked, err := h.service.ToggleBlock(r.Context(), tenantID, user.UserID, targetID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "An unexpected error occurred")
 		return

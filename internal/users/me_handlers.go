@@ -328,9 +328,11 @@ func (h *Handlers) ListMyContent(w http.ResponseWriter, r *http.Request) {
 	offset := parsePageOffset(r)
 
 	// §50: /me/content returns published content only. The ?type= query
-	// filters by content_type (blog_post, comparison, etc.).
+	// filters by content_type (blog_post, comparison, etc.) and ?q= is a
+	// free-text search over title/slug.
 	contentType := r.URL.Query().Get("type")
-	content, err := h.Service.ListUserContentByStatus(r.Context(), tenantID, user.UserID, "published", contentType, limit, offset)
+	q := r.URL.Query().Get("q")
+	content, err := h.Service.ListUserContentByStatus(r.Context(), tenantID, user.UserID, "published", contentType, q, limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -354,7 +356,8 @@ func (h *Handlers) ListMyDrafts(w http.ResponseWriter, r *http.Request) {
 	limit := parsePageSize(r)
 	offset := parsePageOffset(r)
 
-	content, err := h.Service.ListUserContent(r.Context(), tenantID, user.UserID, "draft", limit, offset)
+	q := r.URL.Query().Get("q")
+	content, err := h.Service.ListUserContent(r.Context(), tenantID, user.UserID, "draft", q, limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -472,7 +475,8 @@ func (h *Handlers) ListMyScheduled(w http.ResponseWriter, r *http.Request) {
 	limit := parsePageSize(r)
 	offset := parsePageOffset(r)
 
-	content, err := h.Service.ListUserContent(r.Context(), tenantID, user.UserID, "scheduled", limit, offset)
+	q := r.URL.Query().Get("q")
+	content, err := h.Service.ListUserContent(r.Context(), tenantID, user.UserID, "scheduled", q, limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return

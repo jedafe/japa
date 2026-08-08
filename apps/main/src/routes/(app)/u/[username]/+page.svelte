@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { t, i18n } from '$lib/i18n';
+	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
 	import { FileText, MessageSquare, Image, Heart, Users, Info, BarChart3, Award, Pin } from 'lucide-svelte';
 	import SetSidebar from '$lib/components/shell/SetSidebar.svelte';
@@ -8,10 +8,31 @@
 	import FollowButton from '$lib/components/ui/FollowButton.svelte';
 	import UserProfileSidebar from '$lib/components/profile/UserProfileSidebar.svelte';
 	import { EmptyState } from '$lib/components/ui';
-	import type { ProfileAnalytics } from '$lib/types';
+	import { cardStyleFor, type CardStyleConfig } from '$lib/feed/cardStyle';
+	import type { ProfileAnalytics, ProfilePost, FeedItem } from '$lib/types';
+	import FeedCard from '$lib/components/feed/FeedCard.svelte';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
+
+	const cardStyleConfig = $derived((page.data.cardStyleConfig as CardStyleConfig) ?? { default: 'reddit', byType: {} });
+
+	// Map ProfilePost → FeedItem so profile posts render through FeedCard.
+	function toFeedItem(post: ProfilePost): FeedItem {
+		return {
+			id: post.id,
+			title: post.title,
+			slug: post.slug,
+			content_type: post.content_type,
+			author_id: post.author_id,
+			created_at: post.published_at ?? post.created_at,
+			view_count: post.view_count,
+			comment_count: post.comment_count,
+			reading_time_minutes: post.read_time_minutes,
+			excerpt: post.excerpt,
+			space_id: post.space_id
+		};
+	}
 
 	const user = $derived(data.user);
 	const isOwnProfile = $derived(data.isOwnProfile);
@@ -104,32 +125,18 @@
 			{:else}
 				<div class="divide-y divide-[var(--color-border)] overflow-hidden rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)]">
 					{#each data.posts as post (post.id)}
-						<a href="/content/{post.slug}" class="block p-4 transition-colors hover:bg-[var(--color-surface-subtle)]">
-							<div class="flex items-center gap-2 text-xs text-[var(--color-muted)]">
-								<span class="rounded-full bg-[var(--color-surface-subtle)] px-2 py-0.5 font-medium text-[var(--color-text-subtle)]">{post.content_type}</span>
-								{#if post.is_pinned}
-									<span class="flex items-center gap-0.5 font-medium text-[var(--color-primary)]">
-										<Pin size={10} /> {t('profile.pinned', 'Pinned')}
-									</span>
-								{/if}
-								{#if post.organization}
-									<span class="text-[var(--color-primary)]">{post.organization.name}</span>
-								{/if}
-								{#if post.published_at}
-									<span>· {new Date(post.published_at).toLocaleDateString(i18n.locale, { year: 'numeric', month: 'short', day: 'numeric' })}</span>
-								{/if}
-								<span>· {post.read_time_minutes} {t('feed.min_read')}</span>
-							</div>
-							<h3 class="mt-1.5 text-sm font-medium text-[var(--color-text)]">{post.title}</h3>
-							{#if post.excerpt}
-								<p class="mt-1 line-clamp-2 text-xs text-[var(--color-muted)]">{post.excerpt}</p>
+						<div class="group relative block">
+							<FeedCard
+								item={toFeedItem(post)}
+								style={cardStyleFor(post.content_type, cardStyleConfig)}
+								layout="stream"
+							/>
+							{#if post.is_pinned}
+								<span class="pointer-events-none absolute left-2 top-2 z-10 flex items-center gap-0.5 rounded-full bg-[var(--color-primary)]/10 px-2 py-0.5 text-[10px] font-medium text-[var(--color-primary)]">
+									<Pin size={10} /> {t('profile.pinned', 'Pinned')}
+								</span>
 							{/if}
-							<div class="mt-2 flex items-center gap-4 text-xs text-[var(--color-muted)]">
-								<span>{post.view_count} {t('profile.views', 'views')}</span>
-								<span>{post.comment_count} {t('profile.comments', 'comments')}</span>
-								<span>{post.share_count} {t('profile.shares', 'shares')}</span>
-							</div>
-						</a>
+						</div>
 					{/each}
 				</div>
 			{/if}

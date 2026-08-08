@@ -15,8 +15,11 @@
 		canSolve: boolean;
 		/** ID of the accepted answer reply, if the thread is solved. */
 		acceptedReplyId: string | null;
+		/** Optional set of erased user UUIDs for GDPR/ADR-029 mention
+		 * redaction (Section 15). Passed down to ReplyItem. */
+		deletedUserIds?: Set<string>;
 	}
-	let { replies, threadId, authed, canSolve, acceptedReplyId }: Props = $props();
+	let { replies, threadId, authed, canSolve, acceptedReplyId, deletedUserIds }: Props = $props();
 
 	// Build a parent → children map from the flat reply list. Uses $derived so
 	// the tree is computed synchronously during SSR (not deferred to $effect,
@@ -104,6 +107,7 @@
 					{authed}
 					{canSolve}
 					isAccepted={acceptedReplyId === reply.id}
+					{deletedUserIds}
 				/>
 			{/each}
 		</div>

@@ -8,13 +8,34 @@
   }
   let { props }: Props = $props();
 
-  const colsClass = $derived(
-    props.columns === 1 ? 'grid-cols-1' :
-    props.columns === 2 ? 'grid-cols-1 sm:grid-cols-2' :
-    props.columns === 3 ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3' :
-    props.columns === 4 ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-4' :
-    'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3'
-  );
+  // Unique ID for this card-grid instance — used to scope responsive CSS.
+  const gridId = `cg-${crypto.randomUUID()}`;
+
+  // Base desktop column count (clamped 1–6).
+  const desktopCols = $derived(Math.max(1, Math.min(6, props.columns ?? 3)));
+
+  // Generate responsive CSS for per-device column overrides.
+  // Uses @container queries so they respond to the preview container width
+  // (not the browser viewport), making them work in the editor preview too.
+  // The desktop columns are set via inline style on the element. Inline styles
+  // override normal stylesheet rules, so we use !important in the @container
+  // rules to override the inline desktop value at tablet/mobile breakpoints.
+  const responsiveCss = $derived.by(() => {
+    const rc = props.responsive_columns;
+    const tabletCols = rc?.tablet !== undefined ? Math.max(1, Math.min(6, rc.tablet)) : null;
+    const mobileCols = rc?.mobile !== undefined ? Math.max(1, Math.min(6, rc.mobile)) : null;
+    if (tabletCols === null && mobileCols === null) return null;
+
+    const parts: string[] = [];
+    const scope = `[data-cg="${gridId}"]`;
+    if (tabletCols !== null) {
+      parts.push(`@container (max-width: 1024px) { ${scope} { grid-template-columns: repeat(${tabletCols}, minmax(0, 1fr)) !important; } }`);
+    }
+    if (mobileCols !== null) {
+      parts.push(`@container (max-width: 768px) { ${scope} { grid-template-columns: repeat(${mobileCols}, minmax(0, 1fr)) !important; } }`);
+    }
+    return parts.length > 0 ? parts.join('\n') : null;
+  });
 
   // Resolve Lucide icon by name.
   function getIcon(name?: string): Component | null {
@@ -24,9 +45,17 @@
   }
 </script>
 
+<svelte:head>
+  {@html responsiveCss ? '<style>' + responsiveCss + '<\/style>' : ''}
+</svelte:head>
+
 <section class="px-6 py-16">
   <div class="mx-auto max-w-6xl">
-    <div class="grid {colsClass} gap-6">
+    <div
+      class="grid gap-6"
+      data-cg={gridId}
+      style="grid-template-columns: repeat({desktopCols}, minmax(0, 1fr))"
+    >
       {#each props.cards as card}
         <div class="group rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-6 transition-all hover:shadow-lg hover:-translate-y-1">
           {#if card.media}

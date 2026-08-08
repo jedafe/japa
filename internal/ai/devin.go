@@ -115,7 +115,17 @@ func (p *DevinProvider) Send(ctx context.Context, req Request) (Response, error)
 	}
 
 	// Enrich the prompt with context if provided.
-	if ctxStr, ok := req.Payload["context"].(string); ok && ctxStr != "" {
+	var ctxStr string
+	if c, ok := req.Payload["context"].(string); ok && c != "" {
+		ctxStr = c
+	}
+
+	// Apply humanization (provider-layer injection covers every generation surface).
+	if level, requested := PayloadHumanize(req.Payload); requested {
+		ctxStr = ApplyHumanization(ctxStr, level)
+	}
+
+	if ctxStr != "" {
 		prompt = ctxStr + "\n\n" + prompt
 	}
 

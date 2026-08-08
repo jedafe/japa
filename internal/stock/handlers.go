@@ -2,6 +2,7 @@ package stock
 
 import (
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -228,7 +229,7 @@ func (h *StockHandlers) ImportPhoto(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	writeJSON(w, http.StatusCreated, map[string]any{
 		"data": map[string]string{"media_id": mediaID.String()},
 	})
 }
@@ -283,6 +284,10 @@ func (h *StockHandlers) AdminPatchProvider(w http.ResponseWriter, r *http.Reques
 
 	if body.Enabled != nil {
 		if err := h.svc.store.ToggleProvider(r.Context(), providerName, *body.Enabled); err != nil {
+			if errors.Is(err, ErrProviderNotFound) {
+				writeError(w, http.StatusNotFound, "provider_not_found", "Stock provider not found")
+				return
+			}
 			writeError(w, http.StatusInternalServerError, "toggle_error", "Failed to toggle provider")
 			return
 		}
@@ -296,6 +301,10 @@ func (h *StockHandlers) AdminPatchProvider(w http.ResponseWriter, r *http.Reques
 			return
 		}
 		if err := h.svc.store.SetAPIKey(r.Context(), providerName, encrypted); err != nil {
+			if errors.Is(err, ErrProviderNotFound) {
+				writeError(w, http.StatusNotFound, "provider_not_found", "Stock provider not found")
+				return
+			}
 			writeError(w, http.StatusInternalServerError, "update_error", "Failed to update provider")
 			return
 		}

@@ -5,12 +5,16 @@
   import BackgroundPicker from './BackgroundPicker.svelte';
   import IconPicker from './IconPicker.svelte';
 
+  type DeviceMode = 'desktop' | 'tablet' | 'mobile';
+
   interface Props {
     value?: BlockStyle;
     onchange: (v: BlockStyle) => void;
     mediaPickerComponent?: Component;
+    /** Which device's style to edit. 'desktop' edits the base style; 'tablet'/'mobile' edit responsive overrides. */
+    device?: DeviceMode;
   }
-  let { value, onchange, mediaPickerComponent }: Props = $props();
+  let { value, onchange, mediaPickerComponent, device = 'desktop' }: Props = $props();
 
   const inputClass = 'w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 text-sm text-[var(--color-text)]';
   const labelClass = 'mb-1 block text-xs text-[var(--color-muted)]';
@@ -21,16 +25,70 @@
 
   type Opt = { value: string; label: string };
 
+  // ── Per-device editing helpers ──────────────────────────────────────────
+  // When device !== 'desktop', edits go into value.responsive[device] instead
+  // of the base style. This lets the user configure tablet/mobile overrides
+  // without affecting the desktop layout.
+
+  /** The style object currently being edited (base or override). */
+  const editingStyle = $derived(
+    device === 'desktop'
+      ? value
+      : (value?.responsive?.[device] as BlockStyle | undefined)
+  );
+
   function updateGroup(group: keyof BlockStyle, patch: Record<string, unknown>) {
-    onchange({ ...value, [group]: { ...(value?.[group] as Record<string, unknown> ?? {}), ...patch } });
+    if (device === 'desktop') {
+      onchange({ ...value, [group]: { ...(value?.[group] as Record<string, unknown> ?? {}), ...patch } });
+    } else {
+      const override = (value?.responsive?.[device] ?? {}) as BlockStyle;
+      const updatedOverride = { ...override, [group]: { ...((override[group] as Record<string, unknown>) ?? {}), ...patch } };
+      onchange({ ...value, responsive: { ...value?.responsive, [device]: updatedOverride } });
+    }
   }
 
   function resetGroups(groups: (keyof BlockStyle)[]) {
-    onchange({ ...value, ...Object.fromEntries(groups.map((g) => [g, undefined])) });
+    if (device === 'desktop') {
+      onchange({ ...value, ...Object.fromEntries(groups.map((g) => [g, undefined])) });
+    } else {
+      const override = { ...((value?.responsive?.[device] ?? {}) as BlockStyle) };
+      for (const g of groups) delete override[g];
+      onchange({ ...value, responsive: { ...value?.responsive, [device]: override } });
+    }
   }
 
   function g(group: keyof BlockStyle): Record<string, unknown> {
-    return (value?.[group] as Record<string, unknown>) ?? {};
+    return ((editingStyle?.[group] as Record<string, unknown>) ?? {});
+  }
+
+  /** Update the background (device-aware). */
+  function updateBackground(bg: BlockStyle['background']) {
+    if (device === 'desktop') {
+      onchange({ ...value, background: bg });
+    } else {
+      const override = (value?.responsive?.[device] ?? {}) as BlockStyle;
+      onchange({ ...value, responsive: { ...value?.responsive, [device]: { ...override, background: bg } } });
+    }
+  }
+
+  /** Update custom CSS (device-aware). */
+  function updateCustomCss(css: string | undefined) {
+    if (device === 'desktop') {
+      if (css) onchange({ ...value, custom_css: css });
+      else { const { custom_css, ...rest } = value ?? {}; onchange(rest); }
+    } else {
+      const override = { ...((value?.responsive?.[device] ?? {}) as BlockStyle) };
+      if (css) override.custom_css = css;
+      else delete override.custom_css;
+      onchange({ ...value, responsive: { ...value?.responsive, [device]: override } });
+    }
+  }
+
+  /** Clear all overrides for the current device. */
+  function resetAllOverrides() {
+    if (device === 'desktop' || !value?.responsive) return;
+    const { [device]: _, ...rest } = value.responsive;
+    onchange({ ...value, responsive: Object.keys(rest).length > 0 ? rest : undefined });
   }
 
   // ── Option arrays ──
@@ -145,6 +203,13 @@
   <button type="button" class={resetClass} onclick={() => resetGroups(groups)}>Reset {label}</button>
 {/snippet}
 
+{#if device !== 'desktop'}
+  <div class="flex items-center justify-between rounded-[var(--radius)] px-3 py-1.5 text-xs" style="background: color-mix(in srgb, var(--color-primary) 10%, transparent); color: var(--color-primary)">
+    <span class="font-medium">Editing {device} overrides</span>
+    <button type="button" class="text-[10px] underline" onclick={() => resetAllOverrides()}>Clear all {device} overrides</button>
+  </div>
+{/if}
+
 <Accordion.Root type="multiple" class="w-full border-y border-[var(--color-border)]">
   <!-- 1. Layout -->
   <Accordion.Item value="layout" class={itemClass}>
@@ -190,7 +255,7 @@
       {@render col('Accent Color', 'color', 'accent', g('color')['accent'])}
       <label class="block">
         <span class={labelClass}>Background</span>
-        <BackgroundPicker value={value?.background} onchange={(v) => onchange({ ...value, background: v })} {mediaPickerComponent} />
+        <BackgroundPicker value={editingStyle?.background} onchange={(v) => updateBackground(v)} {mediaPickerComponent} />
       </label>
       {@render resetBtn('Colors', ['color', 'background'])}
     </Accordion.Content>
@@ -291,6 +356,36 @@
       {@render col('Icon Color', 'icon', 'color', g('icon')['color'])}
       {@render col('Icon Background', 'icon', 'background_color', g('icon')['background_color'])}
       {@render resetBtn('Icon', ['icon'])}
+    </Accordion.Content>
+  </Accordion.Item>
+
+  <!-- 10. Advanced (Custom CSS) -->
+  <Accordion.Item value="advanced" class={itemClass}>
+    <Accordion.Header>
+      <Accordion.Trigger class={triggerClass}>
+        Advanced
+        <svg class="size-4 transition-transform" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6" /></svg>
+      </Accordion.Trigger>
+    </Accordion.Header>
+    <Accordion.Content class={contentClass}>
+      <label class="block">
+        <span class={labelClass}>Custom CSS</span>
+        <p class="mb-1.5 text-[10px] text-[var(--color-muted)]">
+          Use <code class="rounded bg-[var(--color-surface-subtle)] px-1">&amp;</code> as a placeholder for this block's scoped selector.
+          Example: <code class="text-[10px]">&amp; {'>'} h2 {'{'} letter-spacing: 0.05em; {'}'}</code>
+        </p>
+        <textarea
+          value={editingStyle?.custom_css ?? ''}
+          oninput={(e) => updateCustomCss(e.currentTarget.value || undefined)}
+          placeholder={'& { border-radius: 12px; }\n& > p { line-height: 1.6; }'}
+          rows="6"
+          class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 font-mono text-xs text-[var(--color-text)]"
+          spellcheck="false"
+        ></textarea>
+      </label>
+      {#if editingStyle?.custom_css}
+        <button type="button" class={resetClass} onclick={() => updateCustomCss(undefined)}>Clear Custom CSS</button>
+      {/if}
     </Accordion.Content>
   </Accordion.Item>
 </Accordion.Root>

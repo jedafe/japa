@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -519,7 +520,10 @@ func (h *Handlers) dispatchMentionNotifications(ctx context.Context, tenantID, a
 			h.mentionCheckers, h.mentionCheckers, h.mentionCheckers,
 		)
 		if err != nil {
-			slog.Warn("content: FilterMentions failed, dispatching unfiltered",
+			// FilterMentions logs individual checker errors internally and
+			// never returns a fatal error. This branch is retained for
+			// forward-compatibility but is not expected to fire.
+			slog.Warn("content: FilterMentions returned unexpected error",
 				"content_id", contentID.String(), "error", err)
 		}
 	}
@@ -564,6 +568,32 @@ func (h *Handlers) enqueueLinkPreview(url, blockID string, tenantID pgtype.UUID)
 	); err != nil {
 		slog.Warn("content: failed to enqueue link preview task",
 			"url", url, "error", err)
+	}
+}
+
+// hrefURLRegex extracts http(s) URLs from href attributes in HTML.
+var hrefURLRegex = regexp.MustCompile(`(?i)href="(https?://[^"]+)"`)
+
+// enqueueLinkPreviewsForBody extracts external http(s) URLs from the HTML
+// body and enqueues a link preview fetch task for each. Fire-and-forget
+// (Section 15 — external links get async OG/oEmbed scrape). Called after
+// content create/update so previews are cached for editor display.
+func (h *Handlers) enqueueLinkPreviewsForBody(bodyHTML string, contentID, tenantID pgtype.UUID) {
+	if h.AsynqClient == nil || bodyHTML == "" {
+		return
+	}
+
+	matches := hrefURLRegex.FindAllStringSubmatch(bodyHTML, -1)
+	seen := make(map[string]bool, len(matches))
+	blockID := contentID.String()
+
+	for _, m := range matches {
+		url := m[1]
+		if seen[url] {
+			continue
+		}
+		seen[url] = true
+		h.enqueueLinkPreview(url, blockID, tenantID)
 	}
 }
 
@@ -821,6 +851,10 @@ func (h *Handlers) CreateContent(w http.ResponseWriter, r *http.Request) {
 		h.enqueueFeedFanOut(r.Context(), content.ID, tenantID, user.UserID, content.SpaceID, content.ContentType)
 	}
 
+	// Enqueue link preview fetches for external URLs in the body — fire-and-forget
+	// (Section 15 — external links get async OG/oEmbed scrape, BUG-003).
+	h.enqueueLinkPreviewsForBody(input.BodyHtml, content.ID, tenantID)
+
 	writeJSON(w, http.StatusCreated, map[string]any{"data": content})
 }
 
@@ -881,6 +915,29 @@ func (h *Handlers) GetContent(w http.ResponseWriter, r *http.Request) {
 		resp["json_ld"] = json.RawMessage(jsonLd)
 	} else if jErr != nil {
 		slog.Warn("content: JSON-LD template resolution failed", "slug", slug, "content_type", content.ContentType, "error", jErr)
+	}
+
+	// GDPR / ADR-029: redact mentions of erased users in body_html and
+	// expose deleted_user_ids so the frontend can render @[deleted user]
+	// when re-rendering from TipTap JSON (Section 15). Best-effort: a
+	// failure logs a warning but does not fail the request.
+	if h.mentionCheckers != nil {
+		redactedHTML, erasedIDs, redErr := mentions.RedactErasedMentionsInBody(
+			r.Context(),
+			[]byte(content.Body),
+			content.BodyHtml,
+			tenantID,
+			h.mentionCheckers,
+		)
+		if redErr != nil {
+			slog.Warn("content: RedactErasedMentionsInBody failed",
+				"content_id", content.ID.String(), "error", redErr)
+		} else {
+			content.BodyHtml = redactedHTML
+			if len(erasedIDs) > 0 {
+				resp["deleted_user_ids"] = erasedIDs
+			}
+		}
 	}
 
 	writeJSON(w, http.StatusOK, resp)
@@ -1142,6 +1199,10 @@ func (h *Handlers) UpdateContent(w http.ResponseWriter, r *http.Request) {
 	if prevErr == nil && prevContent.Status != StatusPublished && content.Status == StatusPublished {
 		h.enqueueFeedFanOut(r.Context(), id, tenantID, content.AuthorID, content.SpaceID, content.ContentType)
 	}
+
+	// Enqueue link preview fetches for external URLs in the body — fire-and-forget
+	// (Section 15 — external links get async OG/oEmbed scrape, BUG-003).
+	h.enqueueLinkPreviewsForBody(input.BodyHtml, id, tenantID)
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": content})
 }

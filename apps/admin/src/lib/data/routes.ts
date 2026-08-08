@@ -89,6 +89,7 @@ const adminRoutes: string[] = [
 	'/comparison-types',
 	'/comparisons',
 	'/content',
+	'/content-types',
 	'/coupons',
 	'/custom-fields',
 	'/custom-fields/new',

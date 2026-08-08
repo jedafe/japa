@@ -3,16 +3,14 @@
 	import { Home, Search, Plus, Bell, User } from 'lucide-svelte';
 	import { t } from '$lib/i18n';
 	import { realtime } from '$lib/realtime/realtime.svelte';
+	import { compose } from './compose.svelte';
 	import type { SessionUser } from '$lib/types';
-	import ComposeModal from './ComposeModal.svelte';
 
 	interface Props {
 		user: SessionUser | null;
 	}
 
 	let { user }: Props = $props();
-
-	let composeOpen = $state(false);
 
 	const profileHref = $derived(user ? `/u/${user.username}` : '/login');
 	const unread = $derived(realtime.unreadNotifications);
@@ -29,8 +27,6 @@
 		{ href: profileHref, icon: User, label: t('nav.profile', 'Profile'), active: page.url.pathname.startsWith('/u/') }
 	]);
 </script>
-
-<ComposeModal bind:open={composeOpen} />
 
 <nav
 	class="fixed inset-x-0 bottom-0 z-40 flex items-stretch border-t border-[var(--color-border)] bg-[var(--color-surface)]/95 backdrop-blur sm:hidden"
@@ -62,7 +58,7 @@
 	{#if user}
 		<button
 			type="button"
-			onclick={() => (composeOpen = true)}
+			onclick={() => compose.openMenu()}
 			class="flex flex-1 flex-col items-center justify-center gap-0.5 py-2 text-[10px] text-[var(--color-primary)]"
 			aria-label={t('nav.compose', 'Compose')}
 		>

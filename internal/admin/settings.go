@@ -117,7 +117,7 @@ var defaultSettings = map[string]SettingCategory{
 			{Key: "fanout_threshold", Label: "Fanout Threshold", Type: "number", Description: "Max space members for push fan-out"},
 			{Key: "velocity.gravity", Label: "Velocity Gravity", Type: "number", Description: "HN gravity constant for Rising sort"},
 			{Key: "max_followed_spaces_in_feed", Label: "Max Followed Spaces", Type: "number", Description: "Cap on spaces in feed"},
-			{Key: "card_style", Label: "Card Style", Type: "select", Options: []string{"reddit", "compact", "grid", "magazine"}},
+			{Key: "card_style", Label: "Card Style", Type: "card-style", Description: "Per-content-type listing card style. Managed on the Content Types page."},
 		},
 	},
 	// NOTE: The "email" category was removed. SMTP credentials are secrets that
@@ -160,7 +160,6 @@ var defaultSettings = map[string]SettingCategory{
 				},
 			},
 			{Key: "dark_mode_default", Label: "Dark Mode Default", Type: "toggle"},
-			{Key: "feed_card_style", Label: "Feed Card Style", Type: "select", Options: []string{"reddit", "compact", "grid", "magazine"}, Value: "reddit"},
 			{Key: "default_editor", Label: "Default Editor Mode", Type: "select", Options: []string{"block", "wysiwyg", "markdown"}, Value: "block", Description: "Default editor mode for the post composer"},
 		},
 	},
