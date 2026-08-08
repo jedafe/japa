@@ -2,6 +2,7 @@ package notifications
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -22,6 +23,8 @@ type PushDelivery struct {
 
 // NewPushDelivery creates a PushDelivery from environment variables.
 // If JC_VAPID_PRIVATE_KEY or JC_VAPID_PUBLIC_KEY are empty, push is disabled.
+// Keys are validated for correct VAPID format (base64url-encoded P-256
+// ECDSA keys); invalid keys disable push with a warning log.
 func NewPushDelivery() *PushDelivery {
 	privKey := os.Getenv("JC_VAPID_PRIVATE_KEY")
 	pubKey := os.Getenv("JC_VAPID_PUBLIC_KEY")
@@ -37,12 +40,55 @@ func NewPushDelivery() *PushDelivery {
 		return &PushDelivery{enabled: false}
 	}
 
+	// Validate VAPID key formats before enabling.
+	// Private key: base64url-encoded 32-byte P-256 scalar.
+	// Public key: base64url-encoded 65-byte uncompressed P-256 point
+	// (0x04 prefix + 32 bytes X + 32 bytes Y).
+	if err := validateVAPIDKeys(privKey, pubKey); err != nil {
+		slog.Error("push_delivery: invalid VAPID key format, push notifications disabled", "error", err)
+		return &PushDelivery{enabled: false}
+	}
+
 	return &PushDelivery{
 		privateKey: privKey,
 		publicKey:  pubKey,
 		subject:    subject,
 		enabled:    true,
 	}
+}
+
+// validateVAPIDKeys checks that the provided VAPID keys are correctly
+// formatted base64url-encoded P-256 ECDSA keys with the expected byte
+// lengths. This catches misconfiguration early instead of failing per-send.
+func validateVAPIDKeys(privKey, pubKey string) error {
+	privBytes, err := base64.RawURLEncoding.DecodeString(privKey)
+	if err != nil {
+		// Try standard base64 as fallback (some setups use padding).
+		privBytes, err = base64.URLEncoding.DecodeString(privKey)
+		if err != nil {
+			return fmt.Errorf("VAPID private key is not valid base64url: %w", err)
+		}
+	}
+	if len(privBytes) != 32 {
+		return fmt.Errorf("VAPID private key must be 32 bytes (got %d)", len(privBytes))
+	}
+
+	pubBytes, err := base64.RawURLEncoding.DecodeString(pubKey)
+	if err != nil {
+		pubBytes, err = base64.URLEncoding.DecodeString(pubKey)
+		if err != nil {
+			return fmt.Errorf("VAPID public key is not valid base64url: %w", err)
+		}
+	}
+	// Uncompressed P-256 public key: 0x04 + 32 (X) + 32 (Y) = 65 bytes.
+	if len(pubBytes) != 65 {
+		return fmt.Errorf("VAPID public key must be 65 bytes uncompressed (got %d)", len(pubBytes))
+	}
+	if pubBytes[0] != 0x04 {
+		return errors.New("VAPID public key must be uncompressed (prefix 0x04)")
+	}
+
+	return nil
 }
 
 // IsEnabled reports whether VAPID keys are configured.
