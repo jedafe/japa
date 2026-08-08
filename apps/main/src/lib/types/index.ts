@@ -386,6 +386,10 @@ export interface MeProfile {
 	cover_url?: string | null;
 	primary_space?: SpaceRef | null;
 	ui?: { nav_collapsed?: boolean; theme?: string } & Record<string, unknown>;
+	/** ADR-064a: ISO 3166-1 alpha-2 origin country code (custom field). */
+	origin_country?: string | null;
+	/** ADR-064a: ISO 3166-1 alpha-2 destination country code (custom field). */
+	destination_country?: string | null;
 }
 
 /** GET/PATCH /me/privacy — a map of privacy toggles (nested). */

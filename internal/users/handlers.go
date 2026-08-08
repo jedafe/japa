@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
@@ -48,6 +49,9 @@ type Handlers struct {
 	// content they don't own for editing. When nil, only the author can
 	// restore content via /me/content/{id}.
 	permResolver PermissionResolver
+	// settings is used for configurable Nominatim URL/timeout (ADR-064a,
+	// Rule 3). Optional — when nil, compiled-in defaults are used.
+	settings geoSettingsReader
 }
 
 // NewHandlers creates Handlers with the given Service. A nil resolver is
@@ -60,6 +64,13 @@ func NewHandlers(service *Service, resolver JSONLDResolver) *Handlers {
 // setup after the RBAC resolver is constructed.
 func (h *Handlers) SetPermissionResolver(r PermissionResolver) {
 	h.permResolver = r
+}
+
+// SetSettings wires the config settings reader. Called once during server
+// setup. Used by the reverse-geocoding flow for configurable Nominatim
+// URL/timeout (ADR-064a, Rule 3).
+func (h *Handlers) SetSettings(s geoSettingsReader) {
+	h.settings = s
 }
 
 // requireTenant resolves the tenant from the request context.
@@ -248,7 +259,28 @@ func (h *Handlers) UpdateMyProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// ADR-064a: Invalidate the VisitorContext cache when geo custom fields
+	// (origin_country, destination_country) are updated, so the next request
+	// picks up the new archetype/ContentCountry resolution.
+	if req.OriginCountry != nil || req.DestinationCountry != nil {
+		h.invalidateVisitorCache(r.Context(), user)
+	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "updated"}})
+}
+
+// invalidateVisitorCache deletes the VisitorContext and recommendations
+// cache entries for the given user (ADR-064a).
+func (h *Handlers) invalidateVisitorCache(ctx context.Context, user *auth.AuthenticatedUser) {
+	if h.Redis == nil {
+		return
+	}
+	if user.SessionID != "" {
+		_ = h.Redis.Del(ctx, "jc:visitor:ctx:"+user.SessionID).Err()
+		_ = h.Redis.Del(ctx, "jc:recommendations:"+user.SessionID).Err()
+	}
+	_ = h.Redis.Del(ctx, "jc:visitor:ctx:user:"+user.UserID.String()).Err()
+	_ = h.Redis.Del(ctx, "jc:recommendations:user:"+user.UserID.String()).Err()
 }
 
 // ListUsers handles GET /api/v1/users for admin user listing.
@@ -595,18 +627,9 @@ func (h *Handlers) UpdateMyContentCountry(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// Invalidate the VisitorContext cache for this user so the next request
-	// picks up the new preference immediately. Delete both the session-scoped
-	// key (jc:visitor:ctx:{jti}, the primary key for tokens with a JTI) and
-	// the user-id fallback key (jc:visitor:ctx:user:{id}, for legacy tokens
-	// without a JTI). Without the session-scoped deletion the resolver would
-	// return the stale cached context for up to 30 minutes.
-	if h.Redis != nil {
-		if user.SessionID != "" {
-			_ = h.Redis.Del(r.Context(), "jc:visitor:ctx:"+user.SessionID).Err()
-		}
-		_ = h.Redis.Del(r.Context(), "jc:visitor:ctx:user:"+user.UserID.String()).Err()
-	}
+	// Invalidate the VisitorContext and recommendations cache for this user
+	// so the next request picks up the new preference immediately (ADR-064a).
+	h.invalidateVisitorCache(r.Context(), user)
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]string{
@@ -614,6 +637,157 @@ func (h *Handlers) UpdateMyContentCountry(w http.ResponseWriter, r *http.Request
 			"content_country": country,
 		},
 	})
+}
+
+// UpdateMyLocation handles POST /api/v1/me/location (ADR-064a).
+// Accepts either { latitude, longitude } for browser-geolocation reverse-
+// geocoding or { space_id } for direct Space selection from the cascading
+// picker. Updates users.current_geo_space_id and invalidates the
+// VisitorContext cache so the next request picks up the new location.
+func (h *Handlers) UpdateMyLocation(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	var body struct {
+		Latitude  *float64 `json:"latitude"`
+		Longitude *float64 `json:"longitude"`
+		SpaceID   *string  `json:"space_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
+		return
+	}
+
+	var spaceID pgtype.UUID
+
+	switch {
+	// Direct space_id selection (cascading picker).
+	case body.SpaceID != nil && *body.SpaceID != "":
+		id, err := uuid.Parse(*body.SpaceID)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_space_id", "space_id must be a valid UUID")
+			return
+		}
+		spaceID = pgtype.UUID{Bytes: id, Valid: true}
+		// Validate that the space exists and is a geo space (country/state/city
+		// level) — prevents users from setting a non-geo space as their location.
+		if !h.Service.store.isValidGeoSpace(r.Context(), tenantID, spaceID) {
+			writeError(w, http.StatusBadRequest, "not_a_geo_space", "The selected space is not a geo space (country/state/city)")
+			return
+		}
+
+	// Browser geolocation — reverse-geocode to a city-level Space.
+	case body.Latitude != nil && body.Longitude != nil:
+		// Reverse-geocode via Nominatim (OpenStreetMap). Rate-limited to
+		// 1 req/s per Nominatim usage policy. The result is matched to an
+		// existing seeded city-level Space by name. URL and timeout are
+		// configurable via system_settings (Rule 3).
+		cityName, countryCode, err := reverseGeocode(r.Context(), h.settings, tenantID, *body.Latitude, *body.Longitude)
+		if err != nil {
+			slog.Warn("reverse geocode failed", "error", err, "lat", *body.Latitude, "lng", *body.Longitude)
+			writeError(w, http.StatusBadGateway, "geocode_failed", "Could not resolve coordinates to a location")
+			return
+		}
+		if countryCode != "" {
+			// Try to find a city-level Space matching the city name.
+			if cityName != "" {
+				space, err := h.Service.store.findCitySpace(r.Context(), tenantID, cityName)
+				if err == nil {
+					spaceID = space
+				}
+			}
+			// Fall back to the country-level space if no city match.
+			if !spaceID.Valid {
+				space, err := h.Service.store.findCountrySpace(r.Context(), tenantID, countryCode)
+				if err == nil {
+					spaceID = space
+				}
+			}
+		}
+		if !spaceID.Valid {
+			writeError(w, http.StatusNotFound, "no_matching_space", "No geo space found for this location")
+			return
+		}
+
+	default:
+		writeError(w, http.StatusBadRequest, "missing_location", "Provide either latitude/longitude or space_id")
+		return
+	}
+
+	if err := h.Service.SetCurrentGeoSpace(r.Context(), tenantID, user.UserID, spaceID); err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	// Invalidate the VisitorContext and recommendations cache (ADR-064a).
+	h.invalidateVisitorCache(r.Context(), user)
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data": map[string]any{
+			"status":   "updated",
+			"space_id": spaceID.String(),
+		},
+	})
+}
+
+// GetMyLocation handles GET /api/v1/me/location (ADR-064a).
+// Returns the user's current geo space ID and resolved location info.
+func (h *Handlers) GetMyLocation(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	geoSpace, err := h.Service.store.getCurrentGeoSpace(r.Context(), tenantID, user.UserID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			// No profile row yet — return empty location, not an error.
+			writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
+				"space_id":     nil,
+				"city":         nil,
+				"country":      nil,
+				"country_code": nil,
+			}})
+			return
+		}
+		// Real DB error — surface it.
+		slog.Warn("get current geo space failed", "error", err, "user_id", user.UserID.String())
+		writeError(w, http.StatusInternalServerError, "internal_error", "Could not retrieve location")
+		return
+	}
+
+	data := map[string]any{
+		"space_id":     nil,
+		"city":         nil,
+		"country":      nil,
+		"country_code": nil,
+	}
+	if geoSpace.CurrentGeoSpaceID.Valid {
+		data["space_id"] = geoSpace.CurrentGeoSpaceID.String()
+	}
+	if geoSpace.CityName != nil {
+		data["city"] = *geoSpace.CityName
+	}
+	if geoSpace.CountryName != nil {
+		data["country"] = *geoSpace.CountryName
+	}
+	if geoSpace.CountryGeoCode != nil {
+		data["country_code"] = *geoSpace.CountryGeoCode
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": data})
 }
 
 // GetUserAnalytics handles GET /users/{id}/analytics — the profile Analytics

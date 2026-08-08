@@ -32,13 +32,13 @@ Per entity: List / Get / Create / Update / Delete / state-transitions-both-direc
 - [ ] Config: JSON-encoded settings decode correctly (round-trip test exists)
 
 ## D. Migration Integrity
-Every `.up.sql` has a correct `.down.sql` twin · numbering contiguous · no edits to applied migrations (checksum/history check) · schema table count vs JEOS-stated ~158 v1 + ~20 v2 planned = ~178 — report actual, flag drift · circular FK (users↔spaces) still resolved via stub+ALTER pattern. **Japa University**: migration `000166` adds 3 tables (`instructor_profiles`, `revenue_splits`, `instructor_payouts`) + columns on `learning_tracks`/`enrollments`; migration `000167` adds `user_profiles.content_country_preference`. Verify `revenue_splits` has no UPDATE-enabling constructs (append-only, wallet-ledger philosophy).
+Every `.up.sql` has a correct `.down.sql` twin · numbering contiguous · no edits to applied migrations (checksum/history check) · schema table count vs JEOS-stated ~158 v1 + ~43 v2 planned = ~201 (20 v2 phases 41–47 + ~23 new v2 phases 48–50 §§79–102) — report actual, flag drift · circular FK (users↔spaces) still resolved via stub+ALTER pattern. **Japa University**: migration `000166` adds 3 tables (`instructor_profiles`, `revenue_splits`, `instructor_payouts`) + columns on `learning_tracks`/`enrollments`; migration `000167` adds `user_profiles.content_country_preference`. Verify `revenue_splits` has no UPDATE-enabling constructs (append-only, wallet-ledger philosophy).
 
 ## E. Asynq Reconciliation
 Enqueue call sites vs registered task types vs `asynq-tasks.md` (JEOS catalog: 95 total = 75 v1 shipped + 20 v2 planned; 4 v1 tasks extended for v2 — report actual vs catalog) · every task idempotent or justified · queue tiers sensible (payments/auth/university-payouts=critical, search sync/emails/university-notifications=default, digests/cleanup/payout-calc/university-logo=low) · retry+backoff configured · dead-letter monitoring wired. **Japa University tasks**: `university:process_enrollment` (idempotent on payment_id), `university:calculate_period_payouts` (scheduled), `university:send_instructor_payout` (idempotent, advisory-locked), `university:notify_instructor_approved`, `university:notify_course_approved`, `university:fetch_logo`. **Geo**: `maintenance:update_geoip_db` (weekly, atomic reader swap).
 
 ## F. Valkey & Settings Reconciliation
-Keys in code vs `valkey-keys.md` (35 patterns stated) · all `jc:` namespaced · TTLs on every cache key · invalidation paired with every cached read's write path · `system_settings` keys in code vs catalog (187 total = 125 v1 + 62 v2 planned — report actual shipped vs catalog). **Geo**: `jc:visitor:ctx:{session_id}` (30-min TTL) — verify cache invalidation on `content_country_preference` change. **Japa University**: `jc:uni:instructor:{user_id}`, `jc:uni:payout:period:{instructor_id}:{period}`, `jc:uni:enrollment:processed:{payment_id}` — verify idempotency guard TTLs. **Settings**: `geo_personalization.enabled` (killswitch), `university.*` (7 keys), `university.surface_domain`.
+Keys in code vs `valkey-keys.md` (69 patterns stated = 59 v1 + 10 v2) · all `jc:` namespaced · TTLs on every cache key · invalidation paired with every cached read's write path · `system_settings` keys in code vs catalog (187 total = 125 v1 + 62 v2 planned — report actual shipped vs catalog). **Geo**: `jc:visitor:ctx:{session_id}` (30-min TTL) — verify cache invalidation on `content_country_preference` change. **Japa University**: `jc:uni:instructor:{user_id}`, `jc:uni:payout:period:{instructor_id}:{period}`, `jc:uni:enrollment:processed:{payment_id}` — verify idempotency guard TTLs. **Settings**: `geo_personalization.enabled` (killswitch), `university.*` (7 keys), `university.surface_domain`.
 
 ## G. Security
 sqlc-only data access (grep for `Exec(`/`Query(` with concatenated strings) · input validation on every handler · MIME sniffing on uploads · rate limiting on auth + expensive routes · secrets absent from logs/responses · tenant_id filtering on every tenant-scoped store method (sample-test cross-tenant access) · webhook signature verification + idempotency.
@@ -62,8 +62,8 @@ List routes return pagination meta · error responses use code+message shape · 
 **Status:** PASS / NEEDS FIXES
 ### Critical (block deployment) / High / Medium / Low
 ### Reconciliation Counts (actual vs JEOS-stated)
-| Routes: [n] vs catalog ~454 | Permission nodes: seed [n] vs checked [n] vs stated 249+ |
-| Tables: [n] vs 148 | Asynq tasks: [n] vs 72 | Valkey patterns: [n] vs 35 | Settings keys: [n] vs 85 |
+| Routes: [n] vs catalog ~819 (~475 v1 + ~344 v2) | Permission nodes: seed [n] vs checked [n] vs stated 297 (249 v1 + 48 v2) |
+| Tables: [n] vs ~201 (~158 v1 + ~43 v2) | Asynq tasks: [n] vs 95 (75 v1 + 20 v2) | Valkey patterns: [n] vs 69 (59 v1 + 10 v2) | Settings keys: [n] vs 187 (125 v1 + 62 v2) |
 ### RBAC CRUD Matrix
 [entity × routes table — include Japa University: instructor_profiles, revenue_splits, instructor_payouts, universities (space type)]
 ### BE-Series Regression Results
@@ -80,7 +80,7 @@ List routes return pagination meta · error responses use code+message shape · 
 | Geo-aware personalization (ADR-064) | ✅/❌ |
 | Japa University revenue/payouts (ADR-063) | ✅/❌ |
 ```
-## K. V2 Audit Checklist (Run When Backend Phases 41–47 Are In Progress)
+## K. V2 Audit Checklist (Run When Backend Phases 41–50 Are In Progress)
 
 ### K1. Catalog Completeness (Gate pre-condition)
 Before any v2 phase is marked complete, verify the four catalogs reflect the new code:
@@ -116,3 +116,31 @@ Before any v2 phase is marked complete, verify the four catalogs reflect the new
 - [ ] All persona-dispatched actions (autonomous or approved-queued) write `platform_events.is_synthetic = true`
 - [ ] `mv_daily_content_stats` and other §40 materialized views filter `WHERE NOT is_synthetic`
 - [ ] Admin has a raw/combined toggle — verify this does NOT affect the default filtered view
+
+### K6. Geo-Aware Tool Pattern Compliance (§§79–101)
+- [ ] All list endpoints for §§79–101 functional tools accept `?dest=` filter (ISO 3166-1 alpha-2 country code) — both public and admin routes
+- [ ] No hardcoded nationality in any store query, service, or handler for §§79–101 — grep for country codes hardcoded in WHERE clauses
+- [ ] `destination_country_id` FK column present on every v2 functional tool table (visa_routes, appointment_alerts, arrival_checklist_guides, credential_professions, cv_standards, housing_guides, attestation_pathways, language_tests, tax_treaty_pairs, community_organisations) — not nullable where destination is required
+- [ ] Destination selector is the first UI input on v2 tool surfaces — verify the API accepts `destination_country_id` as the primary query parameter
+- [ ] Feature-flag middleware returns **404 (not 403)** when a v2 feature flag is disabled (ADR-042) — test by disabling each §§79–102 feature flag and hitting its routes
+- [ ] RBAC seed migrations follow naming convention `000NNN_seed_{feature_domain}_rbac_nodes.sql` — one migration per feature domain, not batched
+
+### K7. ADR-088 AI Content Generation Compliance (§§79–101)
+- [ ] `ai_generated` (boolean, default false), `ai_model` (text, nullable), `hitl_reviewed_by` (uuid, nullable FK → users), `ai_generated_at` (timestamptz, nullable) columns present on all admin-managed content tables for §§79–101 (story_meta, wiki_pages, scam_reports, digest_editions, visa_routes, housing_guides, attestation_pathways, service_listing_meta, etc.)
+- [ ] HITL review gate enforced: publish endpoint rejects when `ai_generated = true AND hitl_reviewed_by IS NULL` — test with an AI-drafted, unreviewed record
+- [ ] `is_japabot_indexed` column present on RAG-retrievable content tables (wiki_pages, story_meta, visa_routes, housing_guides) — gates `content:generate_embedding` task; unindexed content is never embedded
+- [ ] AI generation goes through existing §20 Gateway abstraction — no direct LLM provider calls in any service or task for §§79–101
+
+### K8. Community Feature Reuse Compliance (§§79–89, §98)
+- [ ] `contents.content_type` discriminator values include `story`, `achievement`, `service_listing` — no separate top-level tables created for these content types
+- [ ] Extension tables `story_meta`, `achievement_meta`, `service_listing_meta` exist and link to `contents.id` via FK
+- [ ] Content pipeline (search indexing, embedding, geo-tagging, media) works for community content types — verify `content:generate_embedding` handles `content_type` discriminators
+- [ ] No parallel content infrastructure for community features — they reuse the existing `contents` table and its associated tooling
+
+### K9. Mentorship Trigger & Scoring Compliance (§102, ADR-110)
+- [ ] `trg_mentee_count` trigger exists on `mentorship_connections` — fires on INSERT/UPDATE/DELETE where `status = 'active'`
+- [ ] `active_mentee_count` column on mentor profiles is read as a cached value — no `COUNT(*)` subquery in any read path (grep for count queries on mentorship_connections in store code)
+- [ ] Match scoring implements 60% keyword overlap + 40% pgvector cosine similarity — verify the scoring function applies these exact weights (not configurable)
+- [ ] `mentor:generate_embedding` task registered in worker mux and enqueued on profile change
+- [ ] `mentor:update_meilisearch` task registered in worker mux and enqueued on profile change
+- [ ] DM auto-open on accept: when `mentorship_connections.status` transitions to `accepted`, a DM conversation is auto-created via §48 DM system — verify the transition handler enqueues DM creation

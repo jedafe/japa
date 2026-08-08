@@ -7,7 +7,7 @@
 	interface Props {
 		titleKey: string;
 		descKey?: string;
-		form: DirtyForm<T>;
+		form?: DirtyForm<T>;
 		children?: Snippet;
 	}
 	let { titleKey, descKey, form, children }: Props = $props();
@@ -16,10 +16,11 @@
 	let saveTimer: ReturnType<typeof setTimeout> | undefined;
 
 	beforeNavigate((nav) => {
-		if (form.dirty && !confirm(t('settings.unsaved_warning'))) nav.cancel();
+		if (form?.dirty && !confirm(t('settings.unsaved_warning'))) nav.cancel();
 	});
 
 	async function handleSave() {
+		if (!form) return;
 		const ok = await form.save();
 		if (ok) {
 			saved = true;
@@ -35,7 +36,7 @@
 		{#if descKey}<p class="text-sm text-[var(--color-muted)]">{t(descKey)}</p>{/if}
 	</header>
 	{@render children?.()}
-	{#if form.dirty || saved}
+	{#if form && (form.dirty || saved)}
 		<div
 			class="sticky bottom-0 mt-6 flex items-center justify-end gap-2 border-t border-[var(--color-border)] bg-[var(--color-surface)] py-3"
 		>

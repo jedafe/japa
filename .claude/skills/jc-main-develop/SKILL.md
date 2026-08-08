@@ -196,7 +196,11 @@ Every user-facing string: `$t('key')`; add keys to `en.json` AND `fr.json`.
 
 # Deliverables Per Task
 1. API-Readiness Gate output · 2. surface built INSIDE `AppShell` (or one of the three exceptions, explicitly) · 3. typed `+page.server.ts` `load()` · 4. `+page.svelte` (Runes, Bits UI, skeletons, dark mode) · 5. sub-components in `$lib/components/` · 6. types in `$lib/types/index.ts`.
-**V2 main app phases (33–36):** Identity Tools UI (Phase 33) → Jobs/Gamification/Referral (Phase 34) → Newsletter/Import/Travel (Phase 35) → QA (Phase 36). See `ROADMAP-MAIN.md` for task breakdown.
+**V2 main app phases (33–38):** Identity Tools UI (Phase 33) → Jobs/Gamification/Referral (Phase 34) → Newsletter/Import/Travel (Phase 35) → QA (Phase 36) → Community Features UI (Phase 37) → Mentorship Matching UI (Phase 38). See `ROADMAP-MAIN.md` for task breakdown.
+
+**V2 community features UI (Phase 37, §§79–89, §98):** Community Story Wall (§79 — filterable testimonials by origin/destination/visa/profession), Destination Wiki (§80 — collaborative versioned KB pages with reputation-gated editing), Scam Alert Board (§81 — moderated scam reporting with subscriptions), Japa Planning Groups (§82 — private peer groups with milestones and check-ins), Visa Timeline Tracker (§83 — personal milestone logging with anonymous sharing), Community Digest Widget (§84 — auto-generated digest), Mutual Aid Board (§85 — Needs/Offers/Skill Swaps), Community Calendar (§86 — institutional dates calendar), Japa Stage Profiles (§87 — seven-stage relocation journey on profiles), Ask-an-Expat AMA (§88 — specialized forum AMA threads), Achievement Feed (§89 — opt-in milestone feed), Service Directory (§98 — geo-indexed business directory). All community feature pages must follow the geo-aware tool pattern: destination country selector is the first input, no hardcoded nationality, ?dest= filter on list endpoints.
+
+**V2 mentorship UI (Phase 38, §102, ADR-110):** Mentor browsing/search, mentor profile pages, mentorship request flow, incoming/outgoing requests management, connection active/complete/cancel flows. Match scoring display (60% keyword overlap + 40% pgvector cosine similarity). DM auto-open on connection accept (§48).
 
 **V2 tool pages on main app (`/tools/*`):** Visa Checklist, Readiness Assessment, Cost of Living, Scholarship Finder, Remittance Rate Tracker, JapaBot (full-page). Each tool is also available at its own domain/subdomain via `apps/tools` (§78) — the main app renders these within the community layout; `apps/tools` renders them tool-first without community nav.
 
@@ -223,4 +227,41 @@ Every user-facing string: `$t('key')`; add keys to `en.json` AND `fr.json`.
 
 **API-Readiness Gate applies to all v2 features.** Verify against `api-routes-catalog.md` — all v2 routes are marked as "V2 planned" in the catalog. Once the corresponding backend phase lands, the planned routes become available.
 
-**New surface in v2:** `apps/tools` (§78, ADR-086) — a sixth SvelteKit SSR app at `tools.japaconnect.com` (port 3005). Generate `jc-tools-*` skills before implementing this surface. Skills live at `.ai/skills/frontend/06-tools/`.
+**New surface in v2:** `apps/tools` (§78, ADR-086) — a sixth SvelteKit SSR app at `tools.japaconnect.com` (port 3005). `jc-tools-*` skills are already generated and live at `.ai/skills/frontend/06-tools/`.
+
+## V2 Community Feature Pages — Development Notes (Phase 37, §§79–89, §98)
+
+All 11 community feature pages render inside `AppShell` (center column + right sidebar widgets). They are NOT exceptions to the shell — they follow the same `+page.server.ts` `load()` → API → `+page.svelte` (Runes, Bits UI, skeletons) pattern as every other surface.
+
+**Geo-aware tool pattern (mandatory on all §§79–101 pages):**
+- The destination country selector is the **first input** on every community feature page — before any other filter or content. Use a Bits UI `<Select.Root>` or `<Combobox.Root>` populated from `GET /api/v1/geo/countries` (never hardcoded).
+- All list endpoints consume `?dest=` as the primary filter axis. The `?dest=` value drives the API query (e.g. `GET /api/v1/community/stories?dest=GB`).
+- **No hardcoded nationality** anywhere in the UI — the destination country is the axis, not the user's origin nationality. Origin is a secondary filter where applicable (e.g. Story Wall §79 supports origin filtering, but destination is primary).
+- When the user has a `content_country_preference` (ADR-064), pre-select the destination selector to that value; explicit selection always wins.
+
+**Per-feature development notes:**
+- **Story Wall (§79):** filterable testimonial cards (origin/destination/visa/profession filters). Use `FeedCard` variant for each story. `?dest=` is the primary filter; origin/visa/profession are secondary.
+- **Destination Wiki (§80):** collaborative versioned KB pages. Reputation-gated editing — check `can_edit` from the API response before showing the edit affordance. Render wiki content via TipTap HTML (`.prose`). Version history in a right-sidebar widget or tab.
+- **Scam Alert Board (§81):** moderated scam reports with subscription. Subscription toggle via `PATCH` on the report or board. Moderation status badge from API.
+- **Japa Planning Groups (§82):** private peer groups with milestones and check-ins. Group detail page inside the shell; milestone progress via LayerChart if charts are needed.
+- **Visa Timeline Tracker (§83):** personal milestone logging with optional anonymous sharing. Timeline visualization (LayerChart `LineChart` or custom). Anonymous-share toggle must be explicit and opt-in.
+- **Community Digest Widget (§84):** auto-generated digest — render as a right-sidebar widget or a dedicated `/community/digest` page. Content from API; no client-side aggregation.
+- **Mutual Aid Board (§85):** Needs/Offers/Skill Swaps — tabbed board (Bits UI `<Tabs.Root>`) with three tabs. Each listing is a `FeedCard` variant.
+- **Community Calendar (§86):** institutional dates calendar. Use a calendar component (not a chart); events from `GET /api/v1/community/calendar?dest=`.
+- **Japa Stage Profiles (§87):** seven-stage relocation journey rendered on user profiles (`/u/[username]`). Adds a "Japa Stage" tab or section to the existing profile page. Stage data from API.
+- **Ask-an-Expat AMA (§88):** specialized forum AMA threads. Extends the existing forum engine (Section 49) with AMA-specific UI (question voting, answered status, host highlight).
+- **Achievement Feed (§89):** opt-in milestone feed. `FeedCard` variants for achievement events. Opt-in toggle via `PATCH /api/v1/me/profile`.
+- **Service Directory (§98):** geo-indexed business directory. List view with `?dest=` primary filter; detail pages for each listing. JSON-LD `LocalBusiness` on detail pages.
+
+**ADR-088 HITL review gate:** Any AI-generated content on community feature pages (e.g. wiki summaries, digest text, scam alert summaries) must pass through a Human-In-The-Loop review before publish. The UI must show a "Pending Review" state for AI-generated content and a review/approve/reject flow for moderators. Never publish AI-generated content directly — the HITL gate is mandatory.
+
+## V2 Mentorship Pages — Development Notes (Phase 38, §102, ADR-110)
+
+Mentorship pages render inside `AppShell`. All data from `/api/v1/mentorship/*` endpoints.
+
+- **Mentor browsing/search (`/mentorship`):** list of mentors with filters (destination country first, then profession, visa type, availability). `?dest=` primary filter. Search via Meilisearch-backed endpoint. Match score display where applicable (60% keyword overlap + 40% pgvector cosine similarity) — render the score as a percentage badge on each mentor card.
+- **Mentor profile page (`/mentorship/[id]`):** mentor bio, expertise areas, destination country, availability, past connections count. "Request Mentorship" button (Bits UI `<Dialog.Root>` for the request flow).
+- **Mentorship request flow:** modal with message field, goals field, preferred schedule. Submits to `POST /api/v1/mentorship/requests`. CSRF token required.
+- **Requests management (`/mentorship/requests`):** two tabs (Incoming / Outgoing) via Bits UI `<Tabs.Root>`. Actions: Accept / Decline / Cancel / Complete — each a `PATCH` on the request resource.
+- **Connection active/complete/cancel flows:** once accepted, a connection is active. The UI must show connection status badges (Pending → Active → Completed / Cancelled). "Complete" and "Cancel" actions require confirmation (Bits UI `<Dialog.Root>`).
+- **DM auto-open on accept (§48):** when a mentorship request is accepted (either party), the UI must automatically open the DM thread between the two parties. This is wired via the existing DM system (§48) — on accept response, navigate to `/messages?thread=[connection_id]` or open the DM modal. Do not require the user to manually start a conversation.

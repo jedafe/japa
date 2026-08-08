@@ -14,6 +14,7 @@ import ApiKeysSection from './sections/ApiKeysSection.svelte';
 import DangerSection from './sections/DangerSection.svelte';
 import LanguageSection from './sections/LanguageSection.svelte';
 import DataPrivacySection from './sections/DataPrivacySection.svelte';
+import LocationSection from './sections/LocationSection.svelte';
 
 /**
  * Client meta for one settings section. `component` is null for sections
@@ -38,6 +39,7 @@ export const SETTINGS_SECTIONS: SectionMeta[] = [
 	{ slug: 'account', labelKey: 'settings.nav.account', icon: 'settings', group: 'account', backendReady: true, component: AccountSection },
 	{ slug: 'privacy', labelKey: 'settings.nav.privacy', icon: 'lock', group: 'account', backendReady: true, component: PrivacySection },
 	{ slug: 'language', labelKey: 'settings.nav.language', icon: 'globe', group: 'account', backendReady: true, component: LanguageSection },
+	{ slug: 'location', labelKey: 'settings.nav.location', icon: 'map-pin', group: 'account', backendReady: true, component: LocationSection },
 	{ slug: 'data-privacy', labelKey: 'settings.nav.data_privacy', icon: 'shield-check', group: 'account', backendReady: true, component: DataPrivacySection },
 	{ slug: 'security', labelKey: 'settings.nav.security', icon: 'shield', group: 'security', backendReady: true, component: SecuritySection },
 	{ slug: 'sessions', labelKey: 'settings.nav.sessions', icon: 'monitor', group: 'security', backendReady: true, component: SessionsSection },

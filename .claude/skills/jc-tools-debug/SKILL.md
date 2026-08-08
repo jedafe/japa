@@ -120,6 +120,80 @@ import { LineChart } from 'layerchart';
 2. Verify the Vite proxy passes the cookie to the API as a Bearer header
 3. For custom domains (not `.japaconnect.com`), cookie auth doesn't work — OAuth flow required (§78)
 
+### 11. V2 Functional Tool — Missing `?dest=` Filter (Geo-Aware Pattern)
+
+**Symptom:** V2 functional tool page shows global/unfiltered data instead of destination-specific content.
+
+**Debug path:**
+1. Check the API call in `+page.server.ts` or `+page.svelte` — does it include `?dest=` query param?
+2. Verify the destination selector is rendered and its value is bound to the API call
+3. Check that the destination selector is the first UI input (geo-aware pattern requires it before tool-specific content)
+4. Verify the API endpoint accepts and filters by `?dest=` param (check `api-routes-catalog.md`)
+
+**Common causes:**
+- Destination selector not yet implemented or not wired to API calls
+- API call hardcoded without `?dest=` param
+- Selector value not reactive (not using `$state` or `$derived`)
+
+### 12. V2 Functional Tool — Hardcoded Nationality
+
+**Symptom:** Tool page assumes a specific nationality (e.g. "Nigerian passport" hardcoded) instead of using destination country as primary axis.
+
+**Debug path:**
+1. Search the tool page source for hardcoded country names, ISO codes, or nationality references
+2. The geo-aware pattern requires destination country as primary data axis — nationality is a secondary filter, never hardcoded
+3. Replace hardcoded nationality with destination selector-driven API calls
+
+### 13. V2 Functional Tool — Missing Destination Selector
+
+**Symptom:** V2 tool page renders tool-specific content immediately without a country selector.
+
+**Debug path:**
+1. Every v2 functional tool page must render a destination country selector as the first UI input
+2. The selector drives all downstream API calls via reactive `?dest=` param
+3. If the selector is missing, add it before any tool-specific content section
+
+### 14. Feature-Flag Returning 403 Instead of 404 (ADR-042)
+
+**Symptom:** Disabled v2 functional tool endpoint returns HTTP 403 instead of 404.
+
+**Debug path:**
+1. Check the backend feature-flag middleware — ADR-042 requires 404 (not 403) for disabled features
+2. 403 leaks the existence of the endpoint; 404 does not
+3. The Tools app should handle 404 gracefully — hide the tool card from the hub grid, show "coming soon" state
+4. If the backend returns 403, file a backend bug (ADR-042 violation)
+
+### 15. Missing ADR-088 AI Generation Columns
+
+**Symptom:** V2 tool content API response missing `ai_generated`, `ai_model`, `hitl_reviewed_by`, or `ai_generated_at` fields.
+
+**Debug path:**
+1. Check the backend migration — v2 tool content tables must carry these standard columns (ADR-088)
+2. `is_japabot_indexed` computed column should also be present for RAG-retrievable content
+3. If columns are missing in the DB, file a backend bug (ADR-088 violation)
+4. If columns exist but API doesn't return them, check the API response struct
+
+### 16. HITL Review Bypassed — Unreviewed Content Visible
+
+**Symptom:** AI-generated tool content visible to end users without human review.
+
+**Debug path:**
+1. Check the API response — does it include content with `hitl_reviewed_by IS NULL`?
+2. The backend should filter to only `hitl_reviewed_by IS NOT NULL` for public endpoints
+3. If the backend returns unreviewed content, file a backend bug (ADR-088 HITL gate violation)
+4. The frontend should not attempt to display unreviewed content even if received
+
+### 17. Tool-Domain Host Detection Failure for New V2 Tools
+
+**Symptom:** New v2 functional tool domain (e.g. `visaroute.japaconnect.com`) shows hub shell instead of single-tool shell.
+
+**Debug path:**
+1. Check `system_settings` — are the `{slug}.subdomain` and `{slug}.custom_domain` keys seeded for the new tool?
+2. Verify `hooks.server.ts` recognizes the new tool slug in the host→surface map
+3. Check that `GET /site/settings/public` returns the new tool-domain keys
+4. Verify the tool slug in `src/lib/tools/registry.ts` matches the settings key prefix
+5. Check host comparison logic — normalize to lowercase, custom domains take precedence
+
 ## Debugging Tools
 
 - **`svelte-kit dev`** with `VITE_DEBUG=1` for verbose logging
@@ -129,4 +203,4 @@ import { LineChart } from 'layerchart';
 
 ## See Also
 
-ADR-086, §78, `ROADMAP-TOOLS.md`, `jc-tools-develop`, `jc-tools-audit`, `jc-tools-refactor`.
+ADR-086, §78, `ROADMAP-TOOLS.md`, ADR-088 (AI content generation), ADR-042 (feature-flag 404), `.jeos/skills/geo-aware-tool-pattern.md`, §§90–97 §§99–101 (V2 functional tools), `jc-tools-develop`, `jc-tools-audit`, `jc-tools-refactor`.

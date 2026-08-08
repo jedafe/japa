@@ -71,13 +71,14 @@ type VisitorContext struct {
 	// ContentCountry when the user has an override).
 	GeoIPCountry string
 
-	// OriginCountry is the visitor's origin country (ADR-064). No explicit
-	// origin_country profile field exists yet, so this falls back to the
-	// GeoIP country. When an origin_country custom field is added later,
-	// populate it here (profile origin > IP country).
+	// OriginCountry is the visitor's origin/home country (ADR-064 + ADR-064a).
+	// Populated from the origin_country custom field when set; falls back to
+	// GeoIP country when the field is empty (guests or users who haven't set it).
 	OriginCountry string
 
-	// CurrentCountry is where the visitor is now (GeoContext.CountryCode).
+	// CurrentCountry is where the visitor is now. When the user has set
+	// current_geo_space_id, this is resolved from the Space hierarchy
+	// (ADR-064a). Otherwise falls back to GeoContext.CountryCode.
 	CurrentCountry string
 
 	// DestinationCountry is the user's declared relocation destination
@@ -100,6 +101,24 @@ type VisitorContext struct {
 
 	// Confidence is the resolver's confidence in the archetype (0.0–1.0).
 	Confidence float32
+
+	// CurrentCity is the visitor's current city name (ADR-064a). Populated
+	// from the user's current_geo_space_id Space name when set, or from
+	// GeoIP city when available. Empty when neither is available.
+	CurrentCity string
+
+	// OriginCity is the visitor's origin city name (ADR-064a). Populated
+	// from profile data when available. Empty for guests or when not set.
+	OriginCity string
+
+	// DestCity is the visitor's destination city name (ADR-064a). Populated
+	// from profile data when available. Empty for guests or when not set.
+	DestCity string
+
+	// CurrentGeoSpaceID is the UUID of the user's current geo Space
+	// (ADR-064a). Used for city-level filtering (community locator, local
+	// events). Empty for guests or users who haven't set it.
+	CurrentGeoSpaceID string
 }
 
 // FromContext extracts the VisitorContext from the request context.
@@ -151,7 +170,8 @@ func (res *Resolver) resolve(r *http.Request) VisitorContext {
 	vc := VisitorContext{
 		GeoIPCountry:   geoCtx.CountryCode,
 		CurrentCountry: geoCtx.CountryCode,
-		OriginCountry:  geoCtx.CountryCode, // profile origin > IP; no origin field yet
+		OriginCountry:  geoCtx.CountryCode, // default: GeoIP; enriched from profile below
+		CurrentCity:    geoCtx.City,        // ADR-064a: GeoIP city as initial value
 		Language:       resolveLanguage(r),
 	}
 	if user != nil {
@@ -254,11 +274,36 @@ func (res *Resolver) enrichArchetype(ctx context.Context, vc *VisitorContext, us
 		if err == nil {
 			vc.JapaStage = strings.ToLower(strings.TrimSpace(fields.JapaStatus))
 			vc.DestinationCountry = normalizeCountry(fields.DestinationCountry)
+			// ADR-064a: Use origin_country from profile when set; falls back
+			// to GeoIP country (already set in vc.OriginCountry).
+			if oc := normalizeCountry(fields.OriginCountry); oc != "" {
+				vc.OriginCountry = oc
+			}
+		}
+
+		// ADR-064a: Resolve the user's current_geo_space_id to extract
+		// city-level data and override CurrentCountry from the Space hierarchy
+		// (more reliable than GeoIP for VPN/travel scenarios).
+		geoSpace, err := res.read.GetUserCurrentGeoSpace(ctx, gen.GetUserCurrentGeoSpaceParams{
+			UserID: user.UserID, TenantID: t.ID,
+		})
+		if err == nil && geoSpace.CurrentGeoSpaceID.Valid {
+			vc.CurrentGeoSpaceID = geoSpace.CurrentGeoSpaceID.String()
+			// Override CurrentCountry from the Space hierarchy when available.
+			if geoSpace.CountryGeoCode != nil && *geoSpace.CountryGeoCode != "" {
+				vc.CurrentCountry = strings.ToUpper(*geoSpace.CountryGeoCode)
+			}
+			// Set CurrentCity from the Space name when it's a city-level space.
+			if geoSpace.CityName != nil && *geoSpace.CityName != "" {
+				vc.CurrentCity = *geoSpace.CityName
+			}
 		}
 	}
 
-	// Resolve archetype (ADR-064). CurrentCountry (GeoIP) is the primary
-	// signal; japa_status and destination_country refine it.
+	// Resolve archetype (ADR-064). CurrentCountry is the primary signal
+	// (now from Space hierarchy when set, else GeoIP); japa_status and
+	// destination_country refine it. OriginCountry is now from the profile
+	// field when set, else GeoIP.
 	archetype, contentCountry, confidence := resolveArchetype(
 		vc.CurrentCountry, vc.JapaStage, vc.DestinationCountry,
 		originMarkets, destMarkets,

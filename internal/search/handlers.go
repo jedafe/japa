@@ -57,6 +57,20 @@ var indexTypeByUID = map[string]string{
 // keeping payloads small and the mapping logic simple.
 var searchAttributesToRetrieve = []string{"id", "title", "excerpt", "url"}
 
+// indexesWithRelevantCountries is the set of Meilisearch indexes that carry
+// a `relevant_countries` filterable attribute (ADR-064 + ADR-064a). The
+// geo-boost filter is applied to these indexes only.
+var indexesWithRelevantCountries = map[string]bool{
+	IndexPosts:          true,
+	IndexLearningTracks: true,
+}
+
+// hasRelevantCountries returns true when the given index UID has a
+// relevant_countries filterable attribute configured.
+func hasRelevantCountries(indexUID string) bool {
+	return indexesWithRelevantCountries[indexUID]
+}
+
 // searchSettingsReader is the subset of config.Settings the search handlers need.
 type searchSettingsReader interface {
 	GetIntOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback int) int
@@ -283,9 +297,10 @@ func (h *Handlers) runMultiSearchFiltered(ctx context.Context, query string, lim
 	queries := make([]*meilisearch.SearchRequest, len(indexes))
 	for i, idx := range indexes {
 		filter := tenantFilter
-		// ADR-064: for the learning_tracks index, boost results relevant to
-		// the visitor's country. We use an OR filter so globally-relevant
-		// courses (empty relevant_countries) still appear.
+		// ADR-064 + ADR-064a: for indexes that carry a relevant_countries
+		// filterable attribute (posts, learning_tracks), boost results
+		// relevant to the visitor's country. We use an OR filter so
+		// globally-relevant content (empty relevant_countries) still appears.
 		//
 		// `relevant_countries` is an array of ISO codes. Meilisearch
 		// array-membership filtering uses the `=` operator (or `IN [...]`).
@@ -293,7 +308,7 @@ func (h *Handlers) runMultiSearchFiltered(ctx context.Context, query string, lim
 		// requiring the experimental "contains filter" feature; using it
 		// makes Meilisearch reject the entire multi-search with a 400,
 		// breaking search for every user with a non-empty ContentCountry.
-		if idx == IndexLearningTracks && geoCountry != "" {
+		if geoCountry != "" && hasRelevantCountries(idx) {
 			filter = fmt.Sprintf(`%s AND (relevant_countries IS EMPTY OR relevant_countries = "%s")`,
 				tenantFilter, geoCountry)
 		}
