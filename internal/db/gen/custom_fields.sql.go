@@ -381,6 +381,69 @@ func (q *Queries) GetCustomFieldByID(ctx context.Context, arg GetCustomFieldByID
 	return i, err
 }
 
+const getCustomFieldByKey = `-- name: GetCustomFieldByKey :one
+SELECT id, group_id, tenant_id, label, key, field_type, options, embed_platforms,
+       placeholder, default_value, is_required, is_system, show_in_frontend,
+       filterable, sortable, searchable, position, created_at
+FROM custom_fields
+WHERE key = $1 AND tenant_id = $2
+`
+
+type GetCustomFieldByKeyParams struct {
+	Key      string      `json:"key"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+type GetCustomFieldByKeyRow struct {
+	ID             pgtype.UUID        `json:"id"`
+	GroupID        pgtype.UUID        `json:"group_id"`
+	TenantID       pgtype.UUID        `json:"tenant_id"`
+	Label          string             `json:"label"`
+	Key            string             `json:"key"`
+	FieldType      string             `json:"field_type"`
+	Options        []byte             `json:"options"`
+	EmbedPlatforms []string           `json:"embed_platforms"`
+	Placeholder    *string            `json:"placeholder"`
+	DefaultValue   *string            `json:"default_value"`
+	IsRequired     bool               `json:"is_required"`
+	IsSystem       bool               `json:"is_system"`
+	ShowInFrontend bool               `json:"show_in_frontend"`
+	Filterable     bool               `json:"filterable"`
+	Sortable       bool               `json:"sortable"`
+	Searchable     bool               `json:"searchable"`
+	Position       int32              `json:"position"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+}
+
+// ADR-064a: Looks up a system custom field by its key within a tenant.
+// Used by the users service to resolve field IDs for origin_country and
+// destination_country when saving geo profile fields.
+func (q *Queries) GetCustomFieldByKey(ctx context.Context, arg GetCustomFieldByKeyParams) (GetCustomFieldByKeyRow, error) {
+	row := q.db.QueryRow(ctx, getCustomFieldByKey, arg.Key, arg.TenantID)
+	var i GetCustomFieldByKeyRow
+	err := row.Scan(
+		&i.ID,
+		&i.GroupID,
+		&i.TenantID,
+		&i.Label,
+		&i.Key,
+		&i.FieldType,
+		&i.Options,
+		&i.EmbedPlatforms,
+		&i.Placeholder,
+		&i.DefaultValue,
+		&i.IsRequired,
+		&i.IsSystem,
+		&i.ShowInFrontend,
+		&i.Filterable,
+		&i.Sortable,
+		&i.Searchable,
+		&i.Position,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const getCustomFieldGroupByID = `-- name: GetCustomFieldGroupByID :one
 SELECT id, tenant_id, name, slug, description, is_system, created_at
 FROM custom_field_groups

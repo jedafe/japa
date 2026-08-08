@@ -1,6 +1,6 @@
 ---
 name: japa-bugs-hunters
-description: JapaConnect comprehensive bug hunter. On load it presents a menu — (1) a frontend URL or page name of any of the 6 SvelteKit apps (+ Flutter mobile), (2) a backend API route, (3-9) a whole surface (backend / main / control / admin / docs / learn / tools), (10) a feature name from ./internal (e.g. forum, like, bookmark, ai, affiliate, persona, rag, remittance, studio) for a full cross-stack audit against JEOS Specs with findings saved to ./.jeos/audit, or (11) apply fixes to a feature's audit findings in ./.jeos/audit/<feature_name>-audit.md. It hunts bugs from the JapaConnect Bug Hunter's Guide (.jeos/.ai/skills/japa-bugs-hunters.md) against the page/route/surface/feature, fixes frontend issues, and — when a bug needs backend work (missing route, unwired handler, incomplete CRUD, migration, RBAC, Valkey, Asynq, GDPR) — fixes the backend too until the target is 100% working. Covers v1 (sections 01–59) and v2 (sections 60–78, ADRs 061–086) features including AI personas, RAG, content studio, participation orchestration, remittance, identity tools, and the multi-surface tools/mobile architecture. Use when the user says "hunt bugs", "bug hunt", "audit and fix", "fix bugs on <page/route>", "audit feature <name>", "audit [feature_name]", "fix [feature_name]", "audit /api/v1/<route>", "fix /api/v1/<route>", "audit <url-or-path>", "fix <url-or-path>", "audit <surface>", "fix <surface>" (surface = backend/main/control/admin/docs/learn/tools), or triggers /japa-bugs-hunters.
+description: JapaConnect comprehensive bug hunter. On load it presents a menu — (1) a frontend URL or page name of any of the 6 SvelteKit apps (+ Flutter mobile), (2) a backend API route, (3-9) a whole surface (backend / main / control / admin / docs / learn / tools), (10) a feature name from ./internal (e.g. forum, like, bookmark, ai, affiliate, persona, rag, remittance, studio, story_wall, wiki, scam_alert, planning_group, mentorship) for a full cross-stack audit against JEOS Specs with findings saved to ./.jeos/audit, or (11) apply fixes to a feature's audit findings in ./.jeos/audit/<feature_name>-audit.md. It hunts bugs from the JapaConnect Bug Hunter's Guide (.jeos/.ai/skills/japa-bugs-hunters.md) against the page/route/surface/feature, fixes frontend issues, and — when a bug needs backend work (missing route, unwired handler, incomplete CRUD, migration, RBAC, Valkey, Asynq, GDPR) — fixes the backend too until the target is 100% working. Covers v1 (sections 01–59) and v2 (sections 60–102, ADRs 061–110) features including AI personas, RAG, content studio, participation orchestration, remittance, identity tools, the multi-surface tools/mobile architecture, 11 V2 community features (§§79–89, §98 — story wall, destination wiki, scam alert, planning groups, visa timeline, digest widget, mutual aid, community calendar, japa stage, ask-an-expat AMA, achievement feed, service directory), 12 V2 functional tools (§§90–97, §§99–101 — visa route comparison, embassy alerter, arrival checklist, processing time tracker, credential checker, CV formatter, housing guide, attestation guide, language test hub, tax calculator, community locator), mentorship matching (§102), and the geo-aware tool pattern (ADR-088 universal AI content generation). Use when the user says "hunt bugs", "bug hunt", "audit and fix", "fix bugs on <page/route>", "audit feature <name>", "audit [feature_name]", "fix [feature_name]", "audit /api/v1/<route>", "fix /api/v1/<route>", "audit <url-or-path>", "fix <url-or-path>", "audit <surface>", "fix <surface>" (surface = backend/main/control/admin/docs/learn/tools), or triggers /japa-bugs-hunters.
 ---
 
 # JapaConnect Bug Hunter
@@ -9,24 +9,41 @@ This skill turns the **JapaConnect Bug Hunter's Guide** (`.jeos/.ai/skills/japa-
 canonical bug taxonomy) into an actionable, self-fixing workflow. The Guide is the taxonomy of bugs;
 this skill is the engine that applies it.
 
-**Authoritative business truth:** the `.jeos/` repo (JEOS v1.21.0) — `JEOS.md`, `sections/*` (78
-numbered sections, 01–78, covering v1 features §§01–59 and v2 features §§60–78), `conventions/*`
+**Authoritative business truth:** the `.jeos/` repo (JEOS v1.23.1) — `JEOS.md`, `sections/*` (102
+numbered sections, 01–102, covering v1 features §§01–59 and v2 features §§60–102), `conventions/*`
 (api-routes-catalog, permission-key-naming, system-settings-catalog, valkey-keys-catalog,
 asynq-tasks, api-response-format, database-migration-naming, feature-flag-naming,
-svelte-component-patterns), the **86 ADRs** (ADR-001–086), the 8 roadmap files (incl.
-`ROADMAP-V2.md` planning index and `ROADMAP-TOOLS.md`), and `AGENTS.md` **17 Golden Rules**. Any
+svelte-component-patterns), the **110 ADRs** (ADR-001–110), the 8 roadmap files (incl.
+`ROADMAP-V2.md` planning index and `ROADMAP-TOOLS.md`), the geo-aware tool pattern
+(`.jeos/skills/geo-aware-tool-pattern.md`), and `AGENTS.md` **18 Golden Rules**. Any
 code that contradicts JEOS is a bug even if it compiles.
 
-**v2 scope (JEOS v1.14.0–v1.21.0):** sections 60–78 and ADRs 061–086 add AI Persona System (§68,
+**v2 scope (JEOS v1.14.0–v1.23.1):** sections 60–102 and ADRs 061–110 add AI Persona System (§68,
 ADR-068), JapaBot RAG Knowledge Layer (§69, ADR-069), Visa Checklist (§70), Readiness Assessment
 (§71), Cost of Living (§72), Scholarship Finder (§73), Remittance Tracker (§74, ADR-075), AI
 Content Studio (§75, ADR-076), Participation Orchestration (§76, ADR-077), Referral (§60,
 ADR-078), Self-Serve Ads (§61, ADR-079), Newsletter (§62, ADR-080), Jobs Board (§63, ADR-081),
 Gamification (§64, ADR-082), Content Import (§65, ADR-083), Advanced Analytics (§66, ADR-084),
-Travel Search (§67, ADR-085), Flutter Mobile (§77, ADR-067/074), and Tools Web Surface (§78,
-ADR-086). Three new architecture principles apply: **P9** (one backend, multiple client surfaces —
+Travel Search (§67, ADR-085), Flutter Mobile (§77, ADR-067/074), Tools Web Surface (§78,
+ADR-086), **11 V2 community features** (§§79–89, §98 — Community Story Wall §79/ADR-087,
+Destination Wiki §80/ADR-088, Scam Alert Board §81/ADR-089, Japa Planning Groups §82/ADR-090,
+Visa Timeline Tracker §83/ADR-091, Community Digest Widget §84/ADR-092, Mutual Aid Board
+§85/ADR-093, Community Calendar §86/ADR-094, Japa Stage Profiles §87/ADR-095, Ask-an-Expat AMA
+§88/ADR-096, Achievement Feed §89/ADR-097, Service Directory §98/ADR-106), **12 V2 functional
+tools** (§§90–97, §§99–101 — Visa Route Comparison §90/ADR-098, Embassy Appointment Alerter
+§91/ADR-099, Arrival Checklist §92/ADR-100, Visa Processing Time Tracker §93/ADR-101,
+Professional Credential Checker §94/ADR-102, CV/Resume Formatter §95/ADR-103, Housing Guide
+§96/ADR-104, Attestation Guide §97/ADR-105, Language Test Hub §99/ADR-107, Tax Calculator
+§100/ADR-108, Diaspora Community Locator §101/ADR-109), and **Mentorship Matching** (§102,
+ADR-110). Three new architecture principles apply: **P9** (one backend, multiple client surfaces —
 ADR-086), **P10** (synthetic activity always flagged internally via `is_bot`/`is_synthetic` —
-ADR-068/077), **P11** (reuse over new infrastructure — ADR-063).
+ADR-068/077), **P11** (reuse over new infrastructure — ADR-063). The **geo-aware tool pattern**
+(`.jeos/skills/geo-aware-tool-pattern.md`) governs all §§79–101 features: destination country is
+the primary data axis, no tool hardcodes any specific nationality, all list/lookup endpoints
+accept `?dest=` as primary filter, and the destination country selector is always the first UI
+input. **ADR-088 universal AI content generation** applies to all admin-managed content tables
+across §§79–101: standard columns (`ai_generated`, `ai_model`, `hitl_reviewed_by`), AI generation
+via the existing §20 AI Gateway, and mandatory HITL review before publish.
 
 ## Critical Environment Notes (Always Add these to context)
 
@@ -87,9 +104,13 @@ options:
       SvelteKit app with host-detection hub/single-tool shell modes (ADR-086, §78).
   - label: "Feature name (from ./internal)"  (option 10)
       A specific feature in the ./internal folder (e.g. forum, like, bookmark, ai, affiliate,
-      persona, rag, remittance, studio, newsletter, gamification). The agent asks the user to input
-      the feature name, then runs a full cross-stack audit (backend + frontend across all 6 apps +
-      mobile + JEOS spec) for that feature, categorizes bugs by class, and saves findings to
+      persona, rag, remittance, studio, newsletter, gamification, story_wall, wiki, scam_alert,
+      planning_group, visa_timeline, digest, mutual_aid, calendar, mentorship, visa_routes,
+      embassy, arrival_checklist, credential_checker, cv_formatter, housing_guide,
+      attestation_guide, service_directory, language_test_hub, tax_calculator,
+      community_locator). The agent asks the user to input the feature name, then runs a full
+      cross-stack audit (backend + frontend across all 6 apps + mobile + JEOS spec) for that
+      feature, categorizes bugs by class, and saves findings to
       ./.jeos/audit/<feature_name>-audit.md.
   - label: "Fix feature audit findings"      (option 11)
       Apply fixes to the bugs recorded in ./.jeos/audit/<feature_name>-audit.md (produced by Option
@@ -104,8 +125,9 @@ references you must cite in fixes and reports.
 
 **If the user picks Option 10:** immediately ask them to input the feature name (a folder under
 `./internal`, e.g. `forum`, `like`, `bookmark`, `ai`, `affiliate`, `persona`, `rag`, `remittance`,
-`studio`). Validate that `./internal/<feature_name>` exists before proceeding; if it does not, list
-the available `./internal/*` subdirectories and ask the user to pick one. Then execute the
+`studio`, `story_wall`, `wiki`, `scam_alert`, `planning_group`, `mentorship`). Validate that
+`./internal/<feature_name>` exists before proceeding; if it does not, list the available
+`./internal/*` subdirectories and ask the user to pick one. Then execute the
 **Option 10 — Feature Audit** workflow below.
 
 **If the user picks Option 11:** immediately ask them to input the feature name. Validate that
@@ -124,7 +146,8 @@ fix-only); for every other target both verbs trigger that target's combined audi
 
 1. **Feature audit/fix** — `/japa-bugs-hunters "audit [feature_name]"` or
    `/japa-bugs-hunters "fix [feature_name]"` where `[feature_name]` is a folder under `./internal`
-   (e.g. `forum`, `like`, `bookmark`, `ai`, `affiliate`, `persona`, `rag`, `remittance`, `studio`).
+   (e.g. `forum`, `like`, `bookmark`, `ai`, `affiliate`, `persona`, `rag`, `remittance`, `studio`,
+   `story_wall`, `wiki`, `scam_alert`, `planning_group`, `mentorship`).
    - `audit [feature_name]` → **Option 10 — Feature Audit** (read-only, writes
      `./.jeos/audit/<feature_name>-audit.md`). Validate `./internal/<feature_name>` exists; if not,
      list `./internal/*` subdirectories and ask the user to pick one.
@@ -186,12 +209,18 @@ the combined audit+fix for all other targets.
    §18 (i18n language packs), §21 (stub/missing UI), §23 (form data), §27 (Rule 16 hardcoded data),
    §36 (learning routes), §78 (tools host-detection shell). For v2 tool pages also check §70–§73
    (visa checklist / readiness / cost of living / scholarship finder UIs) and §74 (remittance UI).
+   For v2 community feature pages (§§79–89, §98) check the geo-aware tool pattern: destination
+   country selector is first input, no hardcoded nationality, `?dest=` filter on list endpoints.
+   For v2 functional tool pages (§§90–97, §§99–101) check ADR-088 universal AI content generation
+   columns (`ai_generated`, `ai_model`, `hitl_reviewed_by`) and HITL review gate before publish.
+   For mentorship pages (§102) check the 60/40 keyword+pgvector match scoring display and DM
+   auto-open on connection accept.
 4. **Fix frontend bugs** in place (Svelte 5 runes, Bits UI, LayerChart 2.0.1, `var(--chart-*)` theming,
    `$t()` i18n, no raw hex, no `export let`/`$:`/`on:`). For the tools app, respect the hub vs
    single-tool shell contract — a single-tool domain must NOT render cross-tool nav.
 5. **If a bug needs the backend, fix the backend too — do not stop at the frontend.** This includes:
    - A route the page calls that **does not exist** → add it (see Option 2 workflow): pick the owning
-     `sections/*` file (v1 §§01–59 or v2 §§60–78), add the route to `conventions/api-routes-catalog.md`,
+     `sections/*` file (v1 §§01–59 or v2 §§60–102), add the route to `conventions/api-routes-catalog.md`,
      implement handler→service→store with sqlc, add any migration, wire RBAC node + CSRF, return the
      standard error envelope.
    - An **unwired/incomplete handler** (stub, no-op, missing CRUD leg) → implement it fully.
@@ -202,7 +231,11 @@ the combined audit+fix for all other targets.
    - **v2-specific:** missing `is_synthetic` tagging on persona activity (P10), missing high-stakes
      HITL gate on immigration/financial content, missing RAG embedding on publish, persona backing
      account not `is_bot`, content studio job not idempotent on `studio_job_id` → fix per the v2
-     Mandatory Patterns (see Option 2 step 3).
+     Mandatory Patterns (see Option 2 step 3). For §§79–102 features: missing geo-aware `?dest=`
+     filter on list endpoints, missing ADR-088 AI generation columns on admin-managed content
+     tables, missing HITL review gate before publish, missing feature-flag 404 (not 403) when
+     disabled, hardcoded nationality in tool UI → fix per the v2 Community/Tool Mandatory Patterns
+     (see Option 2 step 4).
 6. Re-run Playwright on the page; iterate until **100% working** (no console errors, all network
    calls succeed, layout correct light+dark, i18n present, no hydration mismatch). For the tools app,
    verify both shell modes render correctly.
@@ -216,7 +249,7 @@ the combined audit+fix for all other targets.
   with a backend route or handler identifier (see routing rule 2).
 
 1. Locate the handler in `internal/` (match route → package → `server.go`/`handlers`). Confirm it is
-   registered in chi and matches `conventions/api-routes-catalog.md` (~615 routes: ~475 v1 + ~140 v2).
+   registered in chi and matches `conventions/api-routes-catalog.md` (~819 routes: ~475 v1 + ~344 v2).
 2. Review the **full vertical slice**: route → handler → service → store (sqlc) → migration.
 3. Apply the `[BE]` and `[BOTH]` sections: §1.3 (calc), §3 (API contract, error envelope, idempotency),
    §4 (queries, Valkey tenant-scoping, N+1, pgvector), §5 (SQLi, CSRF, RBAC, secrets), §6.2/6.3 (Go
@@ -224,10 +257,10 @@ the combined audit+fix for all other targets.
    catalog + idempotency + DLQ), §11 (WebSocket), §12 (Meilisearch tenant filter), §13 (payments/
    wallet ledger + `SET NX EX`), §14 (`content_hash`, soft-delete, Tiptap sanitize), §15 (GDPR erasure
    coverage), §19 (AI `ai.context.*` default-off, budget), §21 (stub/incomplete handler, missing CRUD
-   leg), §22 (the 17 Golden Rules), §24 (field/data types), §25 (custom fields), §26 (RBAC CRUD +
-   wiring). **v2 sections §§60–78** add feature-specific bug classes — apply the ones matching the
+   leg), §22 (the 18 Golden Rules), §24 (field/data types), §25 (custom fields), §26 (RBAC CRUD +
+   wiring). **v2 sections §§60–102** add feature-specific bug classes — apply the ones matching the
    route's feature (see the v2 Mandatory Patterns below).
-4. **v2 Mandatory Patterns (JEOS v1.16.0–v1.21.0)** — check these when the route belongs to a v2
+4. **v2 Mandatory Patterns (JEOS v1.16.0–v1.23.1)** — check these when the route belongs to a v2
    feature, treat a violation as a bug:
    - **AI Personas (§68/ADR-068):** persona provisioning is transactional (account + byline +
      `ai_personas` config in one txn); `users.is_bot` is permanent on the backing account; the
@@ -264,6 +297,90 @@ the combined audit+fix for all other targets.
      leaderboard; `gamification:expire_challenges` task; counter overflow guarded.
    - **Tools Web Surface (§78/ADR-086):** host detection reads per-tool `system_settings` domain keys;
      CORS `allowed_origins` extended per active domain; same binary serves hub + single-tool shells.
+   - **Geo-Aware Tool Pattern (§§79–101, `.jeos/skills/geo-aware-tool-pattern.md`):** destination
+     country is the primary data axis — no tool hardcodes any specific nationality; all list/lookup
+     endpoints accept `?dest=` as primary filter; destination country selector is always the first
+     UI input; schema includes `destination_country_id`; feature-flag middleware returns **404**
+     (not 403) when a feature is disabled (ADR-042); RBAC seed migration uses
+     `000NNN_seed_{feature_domain}_rbac_nodes.sql` naming; admin list endpoints must have
+     filter + sort + paginate (no infinite scroll).
+   - **ADR-088 Universal AI Content Generation (§§79–101):** all admin-managed content tables carry
+     standard columns (`ai_generated`, `ai_model`, `hitl_reviewed_by`, `ai_generated_at`); AI
+     generation goes through the existing §20 AI Gateway (no new AI infrastructure — P11); HITL
+     review is mandatory before publish; `is_japabot_indexed` computed column added for
+     RAG-retrievable content (§69 JapaBot Indexability Pattern).
+   - **Community Story Wall (§79/ADR-087):** reuses `contents` table with `content_type = 'story'`
+     + `story_meta` extension table; filterable by origin/destination/visa/profession; admin
+     verification via `story.verify` RBAC node.
+   - **Destination Wiki (§80/ADR-088):** `wiki_pages` + `wiki_revisions` tables; reputation-gated
+     editing (`wiki.min_reputation_to_edit` setting); revision approval workflow; `jc:wiki_edit_lock`
+     Valkey key prevents concurrent edits.
+   - **Scam Alert Board (§81/ADR-089):** `scam_reports` + `scam_alert_subscriptions` tables;
+     anonymous reports gated by `scam_alert.anonymous_reports` feature flag; admin pin/verify via
+     `scam_alert.review`/`scam_alert.pin` RBAC.
+   - **Japa Planning Groups (§82/ADR-090):** 4 new tables (`planning_groups`, `_members`,
+     `_milestones`, `_checkins`); group size 5–20; `planning_group:expire` and
+     `planning_group:checkin_reminder` Asynq tasks; reuses WebSocket/DM infrastructure (§10/§48).
+   - **Visa Timeline Tracker (§83/ADR-091):** `visa_timelines` + `_milestones` tables +
+     `visa_processing_stats` materialized view; `visa_timeline:refresh_stats` (nightly) and
+     `visa_timeline:prompt_update` (weekly) tasks; anonymous sharing for crowd-sourced stats;
+     feeds data to Visa Route Comparison (§90) and Processing Time Tracker (§93).
+   - **Community Digest Widget (§84/ADR-092):** `digest_editions` table; `digest:generate` (weekly)
+     and `digest:send_email` (on publish) tasks; reuses Newsletter infrastructure (§62);
+     `jc:digest_draft` Valkey key.
+   - **Mutual Aid Board (§85/ADR-093):** `mutual_aid_posts` table; Needs/Offers/Skill Swaps;
+     `mutual_aid:expire` (nightly) task; non-commercial only; reuses DM system (§48).
+   - **Community Calendar (§86/ADR-094):** `calendar_entries` + `_subscriptions` + `_saves` tables;
+     `calendar:staleness_check` (nightly) and `calendar:send_reminders` (daily) tasks;
+     moderator-verified entries.
+   - **Japa Stage Profiles (§87/ADR-095):** adds columns to `user_profiles` (no new table);
+     seven-stage state machine; `profile.japa_stage.edit` RBAC node; reuses JapaBot (§69) and
+     Readiness Assessment (§71).
+   - **Ask-an-Expat AMA (§88/ADR-096):** adds `ama_config` JSONB column to `forum_threads` (no new
+     table); reuses Forum Engine (§08) with `thread_type = 'ama'`; `jc:ama_active` Valkey key;
+     `ama_cooldown_days` setting.
+   - **Achievement Feed (§89/ADR-097):** reuses `contents` with `content_type = 'achievement'` +
+     `achievement_meta` extension; reuses Reactions (§29) and Japa Stage (§87).
+   - **Visa Route Comparison (§90/ADR-098):** `visa_routes` table; reuses Generic Comparison System
+     (§30); `visa_routes:check_links` (weekly) task; links to Visa Checklist (§70) and Timeline
+     Tracker (§83).
+   - **Embassy Appointment Alerter (§91/ADR-099):** `appointment_alerts` + `monitored_embassies`
+     tables; `embassy:poll_{slug}` (per embassy) and `embassy:dispatch_alerts` (critical queue)
+     tasks; `jc:embassy_avail` Valkey key; premium tier via §17 Payment.
+   - **Arrival Checklist (§92/ADR-100):** `arrival_checklist_guides` + `_items` tables; reuses
+     `checklist_progress` from §70; links to Community Locator (§101) and Scam Alert Board (§81).
+   - **Visa Processing Time Tracker (§93/ADR-101):** UI surface of §83 (no new tables); SEO pages
+     for aggregate stats; reuses all §83 infrastructure.
+   - **Professional Credential Checker (§94/ADR-102):** `credential_professions` + `_pathways` +
+     `_community_notes` tables; reuses AI Core/HITL (§20) and Tools Web Surface (§78);
+     `credentials:check_links` task.
+   - **CV/Resume Formatter (§95/ADR-103):** `cv_standards` + `cv_format_sessions` tables; reuses AI
+     Gateway (§20); `jc:cv_quota` Valkey key for monthly quota; `cv_formatter.use` (member+),
+     `cv_formatter.unlimited` (premium+) RBAC tiering; `cv_format:process` and
+     `cv_format_sessions:purge` tasks.
+   - **Housing Guide (§96/ADR-104):** `housing_guides` table; reuses Scam Alert Board (§81) and
+     Cost of Living (§72); AI-generated with HITL.
+   - **Attestation Guide (§97/ADR-105):** `attestation_pathways` + `_community_updates` tables;
+     PDF export; reuses AI Core/HITL (§20); community updates via `attestation_community_updates`.
+   - **Service Directory (§98/ADR-106):** reuses `contents` with `content_type = 'service_listing'`
+     + `service_listing_meta` extension; geo-indexed; reuses Ratings & Reviews (§29) and
+     Organizations (§07); `service.create`/`service.verify`/`service.claim` RBAC.
+   - **Language Test Hub (§99/ADR-107):** `language_tests` + `_requirements` + `_resources` +
+     `language_score_stories` tables; reuses Scholarship Finder (§73) and Community Story Wall (§79).
+   - **Tax Calculator (§100/ADR-108):** `tax_treaty_pairs` + `tax_obligation_guides` tables; HITL
+     mandatory for tax content (`tax_content.review` — qualified reviewer only); reuses AI Core
+     (§20) and Service Directory (§98).
+   - **Diaspora Community Locator (§101/ADR-109):** `community_organisations` table; reuses
+     Organization Profiles (§07) and Space system (§05); OpenStreetMap/Leaflet maps;
+     `community_locator.submit`/`review`/`claim`/`manage` RBAC.
+   - **Mentorship Matching (§102/ADR-110):** adds mentor opt-in columns to `user_profiles` +
+     `mentorship_connections` table; `active_mentee_count` maintained by PostgreSQL trigger
+     (`trg_mentee_count` — not computed at query time); hybrid match scoring: 60% keyword overlap
+     + 40% pgvector cosine similarity; `mentor:generate_embedding` and `mentor:update_meilisearch`
+     tasks (low queue); reuses Generic Comparison System (§30) for `/compare/mentors`; DM auto-open
+     on connection accept (§48); `mentorship.max_capacity` setting; `mentorship.become_mentor`
+     (professional/agent/moderator/admin), `mentorship.request` (member+), `mentorship.respond`,
+     `mentorship.manage` RBAC nodes.
 5. **Fix:** implement missing logic, complete unwired handlers, add the missing migration/sqlc query
    (edit `db/queries/`, run `make sqlc-gen` — never hand-edit `internal/db/`), add RBAC node + cache
    invalidation, add Valkey key to catalog, register Asynq task in catalog, enforce `system_settings`,
@@ -282,37 +399,59 @@ the combined audit+fix for all other targets.
 Map the surface to its bug sections, then audit file-by-file and fix:
 
 - **Option 3 — Backend (whole):** all `[BE]`/`[BOTH]` sections above; prioritize §21 (stub/missing
-  routes — every one of the ~615 catalogued routes must be reachable & non-stub), §22 (17 Golden
-  Rules), §26 (RBAC node reconciliation — 297 nodes total), §9 (tenant scoping), §10 (Asynq catalog —
-  95 tasks). Apply the **v2 catalog completeness gate**: all four catalogs (routes, settings, Valkey,
-  Asynq) must reflect v2 code before a v2 phase is marked complete; verify the 20 new v2 tables
-  (§§60–78); verify task idempotency per v2 task; verify the high-stakes gate cannot be bypassed via
-  config; verify synthetic activity (`is_synthetic`) is excluded from real-metric materialized views.
-  Use the `japa-backend-auditor` skill's route/node/catalog reconciliation approach (incl. its
+  routes — every one of the ~819 catalogued routes must be reachable & non-stub), §22 (18 Golden
+  Rules), §26 (RBAC node reconciliation — 297 nodes total: 249 v1 + 48 v2), §9 (tenant scoping),
+  §10 (Asynq catalog — 95 tasks). Apply the **v2 catalog completeness gate**: all four catalogs
+  (routes, settings, Valkey, Asynq) must reflect v2 code before a v2 phase is marked complete;
+  verify the 20 new v2 tables (§§60–78) and the ~23 new v2 tables (§§79–102 — story_meta,
+  wiki_pages, wiki_revisions, scam_reports, scam_alert_subscriptions, planning_groups ×4,
+  visa_timelines ×2 + materialized view, digest_editions, mutual_aid_posts, calendar_entries ×3,
+  achievement_meta, visa_routes, appointment_alerts ×2, arrival_checklist_guides ×2,
+  credential_professions ×3, cv_standards ×2, housing_guides, attestation_pathways ×2,
+  service_listing_meta, language_tests ×4, tax_treaty_pairs ×2, community_organisations,
+  mentorship_connections); verify task idempotency per v2 task; verify the high-stakes gate cannot
+  be bypassed via config; verify synthetic activity (`is_synthetic`) is excluded from real-metric
+  materialized views; verify the geo-aware tool pattern (`?dest=` filter, no hardcoded nationality)
+  on all §§79–101 endpoints; verify ADR-088 AI generation columns on all admin-managed content
+  tables; verify feature-flag middleware returns 404 (not 403) when disabled (ADR-042); verify
+  mentorship `trg_mentee_count` trigger exists and `active_mentee_count` is not computed at query
+  time. Use the `japa-backend-auditor` skill's route/node/catalog reconciliation approach (incl. its
   Section K — V2 Audit Checklist) as a sub-routine.
 - **Option 4 — Main (apps/main):** §1, §2, §3, §6, §7, §16 (SSR/hydration), §17 (where shared), §18,
   §21, §27 (Rule 16), §36 (learning routes). Enforce ADR-058 shell, LayerChart 2.0.1, Bits UI,
-  `$t()` i18n, no hardcoded data, JSON-LD/SEO. For v2 main phases (33–36: identity tools UI,
-  community+social, growth+import), also check §§70–73 tool UIs and §74 remittance UI. Use
-  `jc-main-audit` patterns.
+  `$t()` i18n, no hardcoded data, JSON-LD/SEO. For v2 main phases (33–38: identity tools UI,
+  community+social, growth+import, community features), also check §§70–73 tool UIs, §74 remittance
+  UI, §§79–89 community feature UIs (story wall, wiki, scam alert, planning groups, visa timeline,
+  digest, mutual aid, calendar, japa stage, AMA, achievement feed), §98 service directory UI, and
+  §102 mentorship UI. Verify geo-aware destination selector is first input on all §§79–101 pages.
+  Use `jc-main-audit` patterns.
 - **Option 5 — Control (apps/control):** §2, §3, §6, §7, §16 (SPA), §17 (SPA specifics: auth guard
   loop, polling leak, Bits UI key handling, LayerChart `xPadding` not `xNice`), §21, §27. For v2
-  control phases, verify settings forms for the 62 new v2 `system_settings` keys. Use
-  `jc-control-audit` patterns.
+  control phases, verify settings forms for the 62 new v2 `system_settings` keys (incl. 14
+  tool-domain keys for §§79–101 subdomain/custom_domain settings and `mentorship.max_capacity`).
+  Use `jc-control-audit` patterns.
 - **Option 6 — Admin (apps/admin):** §2, §3, §6, §7, §16 (SPA), §17, §21, §23 (forms), §25 (custom
-  fields), §26 (RBAC wiring vs sidebar nav map), §27. For v2 admin phases (20–23: persona management
-  + studio, newsletter + jobs, gamification + analytics + commerce), also check §§68/75/62/63/64/66
-  admin surfaces. Use `jc-admin-audit` patterns.
+  fields), §26 (RBAC wiring vs sidebar nav map), §27. For v2 admin phases (20–27: persona management
+  + studio, newsletter + jobs, gamification + analytics + commerce, community features + functional
+  tools + mentorship), also check §§68/75/62/63/64/66 admin surfaces and §§79–102 admin surfaces
+  (story verification, wiki revision approval, scam alert moderation, planning group management,
+  visa timeline admin, digest generation/publish, mutual aid moderation, calendar review, visa
+  route management, embassy polling, arrival checklist approval, credential checker management, CV
+  formatter standards, housing guide management, attestation approval, service verification/claim
+  review, language test requirements management, tax guide/treaty management, community locator
+  review, mentorship connection management). Verify ADR-088 HITL review gate on all AI-generated
+  content. Use `jc-admin-audit` patterns.
 - **Option 7 — Docs (apps/docs):** §1, §2, §3, §6, §7, §16 (SSR, ADR-060 nav-tree/TOC), §18, §21, §27.
-  Verify OpenAPI spec currency against the ~615-route catalog (§47).
+  Verify OpenAPI spec currency against the ~819-route catalog (§47).
 - **Option 8 — Learn (apps/learn):** §1, §2, §3, §6, §7, §16 (SSR, ADR-060 lesson-player exception),
   §18, §21, §27, §36 (learning routes). No new v2 learn pages per ADR-060.
 - **Option 9 — Tools (apps/tools):** §1, §2, §3, §6, §7, §16 (SSR), §18, §21, §27, §78 (host-detection
   hub/single-tool shell, ADR-086). Verify `hooks.server.ts` host detection reads per-tool
-  `system_settings` domain keys (14 tool-domain settings); verify hub shell renders all tools and
-  single-tool shell renders tool-specific branding with NO cross-tool nav; verify CORS
-  `allowed_origins` covers active domains; verify `japaconnect_core` import where used. Use
-  `jc-tools-audit` patterns.
+  `system_settings` domain keys (14 tool-domain settings for §§79–101 functional tools); verify hub
+  shell renders all tools and single-tool shell renders tool-specific branding with NO cross-tool
+  nav; verify CORS `allowed_origins` covers active domains; verify `japaconnect_core` import where
+  used; verify geo-aware tool pattern on all §§90–97, §§99–101 tool pages (destination selector
+  first, `?dest=` filter, no hardcoded nationality). Use `jc-tools-audit` patterns.
 
 For each surface, produce the structured report (see below) and apply fixes until clean. Re-run the
 dev server / `svelte-check` / `go build ./...` / `gosec` as appropriate to verify.
@@ -322,7 +461,11 @@ dev server / `svelte-check` / `go build ./...` / `gosec` as appropriate to verif
 This is a **read-only audit + findings report** workflow. Unlike Options 1–9, Option 10 does **not**
 auto-fix bugs — it produces a categorized findings file in `./.jeos/audit/` for the user to triage.
 The user supplies `[feature_name]` = any folder under `./internal` (e.g. `forum`, `like`, `bookmark`,
-`ai`, `affiliate`, `persona`, `rag`, `remittance`, `studio`, `newsletter`, `gamification`).
+`ai`, `affiliate`, `persona`, `rag`, `remittance`, `studio`, `newsletter`, `gamification`,
+`story_wall`, `wiki`, `scam_alert`, `planning_group`, `visa_timeline`, `digest`, `mutual_aid`,
+`calendar`, `mentorship`, `visa_routes`, `embassy`, `arrival_checklist`, `credential_checker`,
+`cv_formatter`, `housing_guide`, `attestation_guide`, `service_directory`, `language_test_hub`,
+`tax_calculator`, `community_locator`).
 
 ### Trigger
 
@@ -352,20 +495,24 @@ Run the following prompt against the supplied `[feature_name]`, then save the ou
 1. **Validate the feature name.** Confirm `./internal/<feature_name>` exists. If not, list
    `./internal/*` subdirectories and ask the user to pick a valid one.
 2. **Read the Guide** (`.jeos/.ai/skills/japa-bugs-hunters.md`) and the relevant `.jeos/sections/*`
-   files for the feature (search by feature name — v1 §§01–59 and v2 §§60–78). Also read
+   files for the feature (search by feature name — v1 §§01–59 and v2 §§60–102). Also read
    `conventions/api-routes-catalog.md`, `permission-key-naming.md`, `valkey-keys-catalog.md`,
-   `asynq-tasks.md`, `system-settings-catalog.md`.
+   `asynq-tasks.md`, `system-settings-catalog.md`. For §§79–101 features, also read
+   `.jeos/skills/geo-aware-tool-pattern.md`.
 3. **(a) Map backend** — list every handler, service, store, sqlc query, migration, RBAC node,
    Valkey key, Asynq task, and GDPR erasure entry that belongs to the feature. Use `grep`/`glob` over
    `./internal/<feature_name>`, `./internal/db/queries/`, `./db/migrations/`, `./internal/rbac/`,
    `./internal/valkey/`, `./internal/asynq/`, `./internal/gdpr/`. For v2 features, also check the v2
-   Mandatory Patterns (Option 2 step 4) and `is_synthetic`/high-stakes-gate conformance.
+   Mandatory Patterns (Option 2 step 4) and `is_synthetic`/high-stakes-gate conformance. For §§79–102
+   features, also check the geo-aware tool pattern conformance (`?dest=` filter, no hardcoded
+   nationality, destination_country_id in schema) and ADR-088 AI generation column conformance.
 4. **(b) Map frontend** — for each of the 6 SvelteKit apps (`apps/main`, `apps/admin`,
    `apps/control`, `apps/learn`, `apps/docs`, `apps/tools`) plus the Flutter `apps/mobile` where
    relevant, list components, pages/routes, API calls (`/api/v1/<feature>/*`), UI/UX flows, and i18n
    keys referencing the feature.
-5. **(c) Map JEOS spec** — list every section (v1 §§01–59 or v2 §§60–78), route catalog entry,
-   permission key, Valkey key, Asynq task, system setting, and ADR that governs the feature.
+5. **(c) Map JEOS spec** — list every section (v1 §§01–59 or v2 §§60–102), route catalog entry,
+   permission key, Valkey key, Asynq task, system setting, feature flag, and ADR that governs the
+   feature. For §§79–101 features, also map the geo-aware tool pattern requirements.
 6. **(d) Cross-check** — for each spec item, mark ✅ (implemented & conformant) / ⚠️ (implemented but
    non-conformant) / ❌ (missing). Record the conformance gap with file:line citations.
 7. **(e) Categorize bugs** by class: `business-logic`, `backend-comms`, `ui-ux`, `rbac`, `security`,
@@ -417,7 +564,9 @@ Run the following prompt against the supplied `[feature_name]`, then save the ou
 - Valkey keys: <list>
 - Asynq tasks: <list>
 - System settings: <list>
+- Feature flags: <list>
 - ADRs: <list>
+- Geo-aware tool pattern requirements (if §§79–101): <list>
 
 ## 4. Conformance Cross-Check
 | Spec item | Status | Implementation | Gap |
@@ -478,7 +627,8 @@ page/route scan.
 6. **For each bug**, apply the matching fix workflow from Options 1–9 based on its class:
    - `business-logic`, `backend-comms`, `rbac`, `security`, `performance`, `gdpr` → use the
      **Option 2 (Backend API / Route)** workflow against the bug's `file:line`. For v2-feature bugs,
-     also apply the v2 Mandatory Patterns (Option 2 step 4).
+     also apply the v2 Mandatory Patterns (Option 2 step 4). For §§79–102 feature bugs, also apply
+     the v2 community/tool patterns (Cross-Cutting Fix Rules, v2 community/tool patterns section).
    - `ui-ux` → use the **Option 1 (Frontend URL / Page)** workflow against the bug's `file:line`
      (resolve the app from the path: `apps/main`→main, `apps/admin`→admin, `apps/control`→control,
      `apps/learn`→learn, `apps/docs`→docs, `apps/tools`→tools, `apps/mobile`→mobile). Launch
@@ -534,15 +684,16 @@ workflow multiple times or resumes after an interruption.
   Asynq task name in catalog (R7); fan-out fire-and-forget (R8); `SET NX EX` idempotency on financial
   endpoints (R9); impersonation writes `audit_logs` (R10); soft-delete only for user content (R11);
   compute `content_hash` before every `contents` save (R12); circular-FK migration ordering (R13);
-  read all referenced sections (R14); all ~615 routes return non-404 under auth (R15); frontend
-  API-only, no hardcoded/mock data (R16); no AI authorship attribution (R17).
+  read all referenced sections (R14); all ~819 routes return non-404 under auth (R15); frontend
+  API-only, no hardcoded/mock data (R16); no AI authorship attribution (R17); always use `bun` for
+  JS/TS tooling — never `npm`/`npx`/`pnpm`/`yarn` (R18).
 - **RBAC:** every `hasPermission()` node must exist in the `permissions` seed using `_own`/`_any`
   scoping; `super_admin` holds all nodes (297 nodes total: 249 v1 + 48 v2); `members` holds exactly
   the 45 member-level nodes.
 - **Multi-tenancy:** every query, Valkey key, and Meilisearch filter carries `tenant_id`.
 - **Custom fields:** correct `field_type`, `options` jsonb shape, RBAC-per-field scoping, valid
   `entity_class` assignment.
-- **v2 patterns (JEOS v1.16.0–v1.21.0):** synthetic activity is always flagged internally via
+- **v2 patterns (JEOS v1.16.0–v1.23.1):** synthetic activity is always flagged internally via
   `is_bot`/`is_synthetic` and excluded from real-metric materialized views (P10); the high-stakes
   HITL gate (immigration/financial/grants/health) is unconditional and cannot be bypassed via config;
   persona backing accounts are permanently `is_bot`; RAG embeddings use upsert on publish/edit;
@@ -550,6 +701,19 @@ workflow multiple times or resumes after an interruption.
   rate history is append-only; newsletter unsubscribe tokens are single-use; one backend serves all
   client surfaces — no per-surface backend duplication (P9); reuse existing infrastructure over
   building new (P11).
+- **v2 community/tool patterns (JEOS v1.22.0–v1.23.1, §§79–102):** the geo-aware tool pattern
+  governs all §§79–101 features — destination country is the primary data axis, no hardcoded
+  nationality, `?dest=` filter on all list/lookup endpoints, `destination_country_id` in schema,
+  destination selector is first UI input; ADR-088 universal AI content generation applies to all
+  admin-managed content tables (`ai_generated`, `ai_model`, `hitl_reviewed_by`, `ai_generated_at`
+  columns, AI via existing §20 Gateway, HITL review mandatory before publish); feature-flag
+  middleware returns 404 (not 403) when disabled (ADR-042); RBAC seed migration uses
+  `000NNN_seed_{feature_domain}_rbac_nodes.sql` naming; admin list endpoints must filter + sort +
+  paginate (no infinite scroll); `is_japabot_indexed` computed column on RAG-retrievable content;
+  mentorship `active_mentee_count` maintained by PostgreSQL trigger (not query-time computation);
+  mentorship match scoring is 60% keyword overlap + 40% pgvector cosine similarity; community
+  features reusing `contents` table must use the correct `content_type` discriminator
+  (`story`, `achievement`, `service_listing`).
 
 ## Report Format
 
@@ -567,24 +731,33 @@ End every run with:
 - Checklist A (JEOS Conformance) and B (Feature-completeness) from the Guide: ✅/❌ per item
 - v2 conformance (if a v2 feature): synthetic-activity flagging ✅/❌, high-stakes gate ✅/❌,
   catalog completeness gate ✅/❌
+- v2 community/tool conformance (if §§79–102 feature): geo-aware tool pattern ✅/❌, ADR-088 AI
+  generation columns ✅/❌, HITL review gate ✅/❌, feature-flag 404 (not 403) ✅/❌
 ```
 
 ## Reference Files
 
 - `.jeos/.ai/skills/japa-bugs-hunters.md` — the full bug taxonomy (read first, every run).
-- `.jeos/JEOS.md` — index of all 78 sections, 86 ADRs, 10 conventions, 8 roadmaps.
-- `.jeos/AGENTS.md` — the 17 Golden Rules.
-- `.jeos/conventions/api-routes-catalog.md` — ~615 routes (~475 v1 + ~140 v2; existence/contract check).
-- `.jeos/conventions/permission-key-naming.md` (297 RBAC nodes), `system-settings-catalog.md`
-  (187 keys), `valkey-keys-catalog.md` (69 patterns), `asynq-tasks.md` (95 tasks),
-  `api-response-format.md`, `database-migration-naming.md`, `feature-flag-naming.md`,
-  `svelte-component-patterns.md`.
+- `.jeos/JEOS.md` — index of all 102 sections, 110 ADRs, 10 conventions, 8 roadmaps.
+- `.jeos/AGENTS.md` — the 18 Golden Rules.
+- `.jeos/conventions/api-routes-catalog.md` — ~819 routes (~475 v1 + ~344 v2; existence/contract check).
+- `.jeos/conventions/permission-key-naming.md` (297 RBAC nodes: 249 v1 + 48 v2),
+  `system-settings-catalog.md` (187 keys: 125 v1 + 62 v2), `valkey-keys-catalog.md` (69 patterns:
+  59 v1 + 10 v2), `asynq-tasks.md` (95 tasks: 75 v1 + 20 v2), `feature-flag-naming.md` (~24 flags),
+  `api-response-format.md`, `database-migration-naming.md`, `svelte-component-patterns.md`.
 - `.jeos/sections/03-rbac.md`, `sections/06-custom-field-builder-form-builder.md` (v1); v2 sections
-  `sections/60-referral-system.md` through `sections/78-tools-web-surface.md`.
+  `sections/60-referral-system.md` through `sections/78-tools-web-surface.md` (§§60–78, ADRs 061–086);
+  v2 community features `sections/79-community-story-wall.md` through `sections/89-achievement-feed.md`
+  (§§79–89, ADRs 087–097); v2 functional tools `sections/90-visa-route-comparison.md` through
+  `sections/97-attestation-guide.md` (§§90–97, ADRs 098–105); `sections/98-service-directory.md`
+  (§98, ADR-106); `sections/99-language-test-hub.md` through `sections/101-diaspora-community-locator.md`
+  (§§99–101, ADRs 107–109); `sections/102-mentorship-matching.md` (§102, ADR-110).
+- `.jeos/skills/geo-aware-tool-pattern.md` — the geo-aware tool pattern governing all §§79–101 features.
 - `.jeos/adr/ADR-058-main-app-shell.md`, `ADR-060-learn-docs-shell-profile-hub.md`,
   `ADR-068-ai-persona-system.md`, `ADR-069-japabot-rag-knowledge-layer.md`,
   `ADR-076-ai-content-studio.md`, `ADR-077-participation-orchestration-engine.md`,
-  `ADR-086-multi-surface-client-architecture.md`.
+  `ADR-086-multi-surface-client-architecture.md`, `ADR-088-destination-wiki.md` (universal AI content
+  generation pattern), `ADR-110-mentorship-matching.md` (trigger-maintained counts, 60/40 scoring).
 - `.jeos/roadmaps/ROADMAP-V2.md` (v2 planning index), `ROADMAP-TOOLS.md` (tools surface).
 - `.jeos/.ai/skills/backend/` and `.jeos/.ai/skills/frontend/` — the jc-* develop/audit/debug/refactor
   skills per surface (use as sub-routines per the surface options above).

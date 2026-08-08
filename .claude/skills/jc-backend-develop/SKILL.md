@@ -94,7 +94,7 @@ When building Japa University creator-economy features, the entity set is:
 
 ## Deliverables Per Task
 1. Gate 1 + Gate 2 output · 2. migration pair if schema changes (invoke `jc-backend-migrate`) · 3. sqlc queries + `sqlc generate` · 4. store/service/handler code · 5. routes registered + RBAC nodes seeded · 6. Asynq tasks (invoke `jc-backend-worker`) · 7. all catalogs updated · 8. tests · 9. `go build ./... && go vet ./...` clean (run locally via Claude Code — no Go toolchain in chat sessions).
-## V2 Mandatory Patterns (Phases 41–47)
+## V2 Mandatory Patterns (Phases 41–50)
 
 ### AI Personas (§68, ADR-068)
 - Persona provisioning is **transactional**: create `users` (is_bot=true) + `professional_profiles` + `ai_personas` in one tx. Partial provision is a data integrity failure.
@@ -126,3 +126,64 @@ When building Japa University creator-economy features, the entity set is:
 ### Newsletter (§62, ADR-080)
 - Unsubscribe is token-based (`newsletter_unsubscribe_tokens`) — no auth required. Token must be single-use (delete after use) and short-circuit on invalid/expired token (404, not error).
 - Bounce and complaint webhooks from the email provider MUST update `newsletter_subscribers.status` — undeliverable addresses that keep receiving email are a deliverability risk.
+
+### V2 Community Features & Functional Tools (Phases 48–50, §§79–102)
+
+#### Geo-Aware Tool Pattern (§§79–101, `.jeos/skills/geo-aware-tool-pattern.md`)
+- **Destination country is the primary data axis** — every v2 functional tool (§§90–101) filters by destination country. No hardcoded nationality anywhere in query/store/service code.
+- **`?dest=` filter** on all list endpoints for §§79–101 — public and admin. The filter accepts an ISO 3166-1 alpha-2 country code. Absent `?dest=` returns global/cross-destination results where sensible, but the filter must always be honored when present.
+- **`destination_country_id` in schema** — every v2 functional tool table includes a `destination_country_id` FK to `countries`. This is the join axis for geo-filtering, not a nullable attribute.
+- **Destination selector is the first UI input** — the frontend renders a destination country picker before any other filter on v2 tool surfaces. The backend must accept `destination_country_id` as the primary query parameter and return 400 if it's required but absent (tool-specific — some tools allow browsing without a destination, others require it).
+- **Feature-flag middleware returns 404 (not 403) when disabled** (ADR-042): when a v2 feature flag is off, the middleware returns 404 Not Found, not 403 Forbidden. This prevents leaking the existence of disabled features to unauthorized users. Verify the feature-flag middleware path returns 404 for all §§79–102 routes.
+- **RBAC seed migration naming**: `000NNN_seed_{feature_domain}_rbac_nodes.sql` — each v2 feature domain gets its own dedicated RBAC seed migration with this naming convention (e.g. `000180_seed_story_rbac_nodes.sql`, `000181_seed_wiki_rbac_nodes.sql`). Never batch multiple feature domains into one seed migration.
+- **Admin list endpoints** for all v2 entities support `?filter=&sort=&paginate=` (filter + sort + paginate) — same DataTable contract as v1 admin endpoints. No v2 admin list endpoint ships without all three.
+
+#### ADR-088 Universal AI Content Generation
+- **Standard columns on all admin-managed content tables** for §§79–101: `ai_generated` (boolean, default false), `ai_model` (text, nullable — model identifier when AI-generated), `hitl_reviewed_by` (uuid, nullable FK → users — the admin who reviewed), `ai_generated_at` (timestamptz, nullable). These four columns are mandatory on any table where content can be AI-drafted.
+- **AI generation via existing §20 Gateway** — no new AI client or provider wiring. All AI content generation (story drafts, wiki article drafts, scam alert summaries, digest text, etc.) goes through the existing AI Gateway abstraction. Never call an LLM provider directly from a service or task.
+- **HITL review is mandatory before publish** — AI-generated content cannot be published without a human reviewer. The `hitl_reviewed_by` column must be non-null and `hitl_reviewed_at` set before `is_published = true`. The publish endpoint must reject if `ai_generated = true AND hitl_reviewed_by IS NULL`.
+- **`is_japabot_indexed`** on RAG-retrievable content — content that should appear in Japabot search results (wiki pages, guides, stories) gets `is_japabot_indexed = true` after HITL approval. This flag gates the `content:generate_embedding` task — unindexed content is never embedded.
+
+#### Community Features Reusing `contents` Table (§§79–89, §98)
+- Community features (Community Story Wall §79, Achievement Feed §88, Service Directory §98) **reuse the existing `contents` table** with `content_type` discriminators (`story`, `achievement`, `service_listing`) — **do not create separate top-level tables** for these content types.
+- Extension tables (`story_meta`, `achievement_meta`, `service_listing_meta`) hold type-specific columns and link back to `contents.id`. The discriminator column on `contents` drives which extension table to join.
+- This pattern keeps the content pipeline (search indexing, embedding, geo-tagging, media) unified — no parallel infrastructure for community content.
+
+#### Mentorship Matching (§102, ADR-110)
+- **`active_mentee_count` is maintained by a PostgreSQL trigger** (`trg_mentee_count`), not computed at query time. The trigger fires on INSERT/UPDATE/DELETE of `mentorship_connections` where `status = 'active'` and adjusts the mentor's `active_mentee_count` accordingly. Never compute this count with a subquery or `COUNT(*)` in a read path — read the cached column.
+- **Match scoring: 60% keyword overlap + 40% pgvector cosine similarity**. The matching algorithm combines keyword overlap (on mentor/mentee profile tags and bio tokens) with pgvector cosine similarity (on profile embeddings). The weights are 60/40 — verify the scoring function applies these exact weights, not configurable ones.
+- **Asynq tasks**: `mentor:generate_embedding` (low queue — generates pgvector embedding from mentor/mentee profile text) and `mentor:update_meilisearch` (low queue — syncs mentor profiles to Meilisearch for search). Both must be registered and wired.
+- **DM auto-open on accept** (§48 integration): when a mentorship connection transitions to `status = 'accepted'`, a DM conversation is auto-created and auto-opened for both parties. This is the §48 DM system — no new messaging infrastructure.
+
+#### New Asynq Tasks for §§79–102
+| Task | Queue | Schedule | Notes |
+|---|---|---|---|
+| `visa_timeline:refresh_stats` | default | nightly | Recomputes visa timeline aggregate stats |
+| `visa_timeline:prompt_update` | default | weekly | Prompts users with stale timelines to update |
+| `digest:generate` | default | weekly | Generates community digest draft content |
+| `digest:send_email` | default | on publish | Sends published digest to subscribers |
+| `mutual_aid:expire` | default | nightly | Expires stale mutual aid posts |
+| `calendar:staleness_check` | default | nightly | Flags calendar entries not updated within threshold |
+| `calendar:send_reminders` | default | daily | Sends upcoming event reminders |
+| `planning_group:expire` | default | as needed | Expires inactive planning groups |
+| `planning_group:checkin_reminder` | default | as needed | Sends check-in reminders to group members |
+| `visa_routes:check_links` | default | weekly | Validates external links on visa route pages |
+| `embassy:poll_{slug}` | critical | per embassy | Polls a specific embassy's appointment availability |
+| `embassy:dispatch_alerts` | critical | as needed | Sends appointment availability alerts to subscribers |
+| `credentials:check_links` | default | weekly | Validates external links on credential checker pages |
+| `cv_format:process` | default | on demand | Processes a CV formatting job |
+| `cv_format_sessions:purge` | low | nightly | Purges expired CV format sessions |
+| `mentor:generate_embedding` | low | on profile change | Generates pgvector embedding from profile text |
+| `mentor:update_meilisearch` | low | on profile change | Syncs mentor profiles to Meilisearch |
+
+#### New Valkey Keys for §§79–102
+| Key | TTL | Purpose |
+|---|---|---|
+| `jc:cv_quota` | rolling window | CV formatting quota per user (rate limit) |
+| `jc:embassy_avail` | short (per poll cycle) | Cached embassy appointment availability |
+| `jc:digest_draft` | draft lifecycle | Community digest draft-in-progress lock |
+| `jc:wiki_edit_lock` | edit session timeout | Prevents concurrent edits on a wiki page |
+| `jc:ama_active` | AMA session lifetime | Marks an AMA session as active/live |
+
+#### New RBAC Nodes for §§79–102
+48 v2 RBAC nodes total across the following domains: `story.*`, `wiki.*`, `scam_alert.*`, `planning_group.*`, `visa_timeline.*`, `digest.manage`, `mutual_aid.*`, `calendar.*`, `profile.japa_stage.edit`, `forum.ama.*`, `achievement.*`, `visa_routes.manage`, `appointment_alert.*`, `embassy_monitor.manage`, `arrival_checklist.manage`, `credential_checker.manage`, `cv_formatter.*`, `housing_guide.manage`, `attestation_guide.manage`, `service.*`, `language_test_hub.manage`, `tax_calculator.manage`, `tax_content.review`, `community_locator.*`, `mentorship.*`. Total RBAC node count: 297 (249 v1 + 48 v2). Seed completely per feature domain (BE-005).

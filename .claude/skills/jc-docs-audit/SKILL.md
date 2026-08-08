@@ -56,7 +56,13 @@ Same structure as `jc-main-audit` with categories: Memory leaks · API routes/si
 - Audience gating is server-side only (403 → `/docs/access-denied`) — flag any client-side permission hiding.
 - ⌘K search + TOC observers must clean up in `$effect` return.
 - Any usage-stat charts use pinned `layerchart@2.0.1`, CSS-var colors, fixed height.
-**V2 docs app:** No new pages in v2. Docs app requires stable API surface (OpenAPI spec from §47). The `japaconnect_core` Flutter package will use the same OpenAPI spec — ensure spec remains current when v2 backend phases land.
+**V2 docs app:** No new pages in v2. Docs app requires stable API surface (OpenAPI spec from §47). The `japaconnect_core` Flutter package will use the same OpenAPI spec — ensure spec remains current when v2 backend phases land. **JEOS v1.22.0–v1.23.1 updates (§§79–102, ADRs 087–110):**
+- **OpenAPI spec must cover the new ~344 v2 routes** (§§60–102) — flag if the spec from §47 doesn't include v2 community feature routes (§§79–89, §98), functional tool routes (§§90–97, §§99–101), and mentorship routes (§102). Total platform route count is now ~819 (~475 v1 + ~344 v2).
+- **New ADRs 087–110 need documentation pages** — flag any missing ADR docs pages. Key ADRs: ADR-088 (universal AI content generation), ADR-042 (feature-flag 404 not 403), ADR-110 (mentorship matching).
+- **New sections §§79–102 need API reference documentation** — 24 new sections covering 11 v2 community features, 12 V2 functional tools, and mentorship matching. Flag any missing API reference pages.
+- **Geo-aware tool pattern needs a docs page** — `.jeos/skills/geo-aware-tool-pattern.md` needs a public docs page explaining the `?dest=` filter, `destination_country_id` schema field, destination selector UX, and feature-flag 404 behavior. Flag if missing.
+- **ADR-088 AI content generation columns** need documentation: `ai_generated`, `ai_model`, `hitl_reviewed_by`, `ai_generated_at`, `is_japabot_indexed` — flag if these standard columns are not documented for v2 tool content tables.
+- 18 Golden Rules (R18: always use bun).
 
 ## V2 Feature Areas (Implement Only After Corresponding Backend Phase Is Complete)
 
@@ -81,4 +87,4 @@ Same structure as `jc-main-audit` with categories: Memory leaks · API routes/si
 
 **API-Readiness Gate applies to all v2 features.** Verify against `api-routes-catalog.md` — all v2 routes are marked as "V2 planned" in the catalog. Once the corresponding backend phase lands, the planned routes become available.
 
-**New surface in v2:** `apps/tools` (§78, ADR-086) — a sixth SvelteKit SSR app at `tools.japaconnect.com` (port 3005). Generate `jc-tools-*` skills before implementing this surface. Skills live at `.ai/skills/frontend/06-tools/`.
+**New surface in v2:** `apps/tools` (§78, ADR-086) — a sixth SvelteKit SSR app at `tools.japaconnect.com` (port 3005). `jc-tools-*` skills are already generated and live at `.ai/skills/frontend/06-tools/`.

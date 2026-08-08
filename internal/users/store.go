@@ -63,6 +63,108 @@ func (s *Store) GetContentCountryPreference(ctx context.Context, tenantID, userI
 	return *pref, nil
 }
 
+// updateGeoSpace sets the user's current_geo_space_id (ADR-064a).
+func (s *Store) updateGeoSpace(ctx context.Context, tenantID, userID, spaceID pgtype.UUID) error {
+	return s.write.UpdateUserGeoSpace(ctx, gen.UpdateUserGeoSpaceParams{
+		CurrentGeoSpaceID: spaceID,
+		ID:                userID,
+		TenantID:          tenantID,
+	})
+}
+
+// getCurrentGeoSpace resolves the user's current geo space hierarchy
+// (city → country) for the GET /me/location endpoint (ADR-064a).
+func (s *Store) getCurrentGeoSpace(ctx context.Context, tenantID, userID pgtype.UUID) (gen.GetUserCurrentGeoSpaceRow, error) {
+	return s.read.GetUserCurrentGeoSpace(ctx, gen.GetUserCurrentGeoSpaceParams{
+		UserID:   userID,
+		TenantID: tenantID,
+	})
+}
+
+// findCitySpace finds a city-level Space by name (case-insensitive) for
+// the reverse-geocoding flow (ADR-064a).
+func (s *Store) findCitySpace(ctx context.Context, tenantID pgtype.UUID, cityName string) (pgtype.UUID, error) {
+	space, err := s.read.FindCitySpaceByName(ctx, gen.FindCitySpaceByNameParams{
+		CityName: cityName, TenantID: tenantID,
+	})
+	if err != nil {
+		return pgtype.UUID{}, err
+	}
+	return space.ID, nil
+}
+
+// findCountrySpace finds a country-level Space by geo_code (ISO 3166-1
+// alpha-2) for the reverse-geocoding fallback (ADR-064a).
+func (s *Store) findCountrySpace(ctx context.Context, tenantID pgtype.UUID, countryCode string) (pgtype.UUID, error) {
+	code := countryCode
+	space, err := s.read.GetSpaceByGeoCode(ctx, gen.GetSpaceByGeoCodeParams{
+		GeoCode:  &code,
+		TenantID: tenantID,
+	})
+	if err != nil {
+		return pgtype.UUID{}, err
+	}
+	return space.ID, nil
+}
+
+// isValidGeoSpace checks that a space exists, belongs to the tenant, and is
+// a geo space (level = country/state/city). Used by the POST /me/location
+// handler to validate direct space_id selections (ADR-064a security check).
+func (s *Store) isValidGeoSpace(ctx context.Context, tenantID, spaceID pgtype.UUID) bool {
+	space, err := s.read.GetSpaceByID(ctx, gen.GetSpaceByIDParams{
+		ID:       spaceID,
+		TenantID: tenantID,
+	})
+	if err != nil {
+		return false
+	}
+	switch space.Level {
+	case "country", "state", "city":
+		return true
+	default:
+		return false
+	}
+}
+
+// setGeoCustomField upserts a geo-related custom field value (origin_country
+// or destination_country) on the user's profile (ADR-064a). It resolves the
+// custom field ID by key, fetches the user_profiles.id, and upserts the value.
+// An empty value clears the field by setting value_text to NULL.
+func (s *Store) setGeoCustomField(ctx context.Context, tenantID, userID pgtype.UUID, fieldKey, value string) error {
+	field, err := s.read.GetCustomFieldByKey(ctx, gen.GetCustomFieldByKeyParams{
+		Key:      fieldKey,
+		TenantID: tenantID,
+	})
+	if err != nil {
+		return fmt.Errorf("looking up custom field %q: %w", fieldKey, err)
+	}
+
+	profileID, err := s.read.GetUserProfileID(ctx, gen.GetUserProfileIDParams{
+		TenantID: tenantID, UserID: userID,
+	})
+	if err != nil {
+		return fmt.Errorf("getting user profile id: %w", err)
+	}
+
+	var valueText *string
+	if value != "" {
+		v := value
+		valueText = &v
+	}
+
+	_, err = s.write.UpsertCustomFieldValue(ctx, gen.UpsertCustomFieldValueParams{
+		FieldID:    field.ID,
+		EntityType: "user_profile",
+		EntityID:   profileID,
+		ValueText:  valueText,
+	})
+	if err != nil {
+		return fmt.Errorf("upserting custom field value for %q: %w", fieldKey, err)
+	}
+
+	return nil
+}
+
 // getUserByUsername returns the user profile joined with users table data, looked up by username.
 func (s *Store) getUserByUsername(ctx context.Context, tenantID pgtype.UUID, username string) (gen.GetUserByUsernameRow, error) {
 	row, err := s.read.GetUserByUsername(ctx, gen.GetUserByUsernameParams{

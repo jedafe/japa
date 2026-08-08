@@ -55,7 +55,7 @@ Apply `jc-main-debug` §§1–3, 5–7 (SSR/hydration, Runes, Bits UI, Tailwind,
 - `TrackCard` is one variant-driven card — flag per-level/type card forks.
 - Charts: pinned `layerchart@2.0.1`, colors via CSS vars, fixed height, Gate-verified data, per-chart skeleton — flag unpinned/`@next` or hardcoded chart colors.
 - Enforce the SSR/CSR boundary: user progress/enrollment must be CSR, never in `+page.server.ts`.
-**V2 learn app:** No new pages in v2. Japa University (ADR-063) is already implemented. The learn app may receive minor amendments if Japa University course visibility is affected by v2 persona authorship or the AI Content Studio publishing courses.
+**V2 learn app:** No new pages in v2. Japa University (ADR-063) is already implemented. The learn app may receive minor amendments if Japa University course visibility is affected by v2 persona authorship or the AI Content Studio publishing courses. **Per ADR-060, v2 community features (§§79–89), functional tools (§§90–101), and mentorship (§102) are not part of the learn platform** — they live in the Main app (community) and Tools app (functional tools). However, learn content may be cross-referenced from these features (e.g. a functional tool may link to a relevant learn track). Total platform route count is now ~819 (~475 v1 + ~344 v2); 18 Golden Rules (R18: always use bun).
 
 ## V2 Feature Areas (Implement Only After Corresponding Backend Phase Is Complete)
 
@@ -80,4 +80,4 @@ Apply `jc-main-debug` §§1–3, 5–7 (SSR/hydration, Runes, Bits UI, Tailwind,
 
 **API-Readiness Gate applies to all v2 features.** Verify against `api-routes-catalog.md` — all v2 routes are marked as "V2 planned" in the catalog. Once the corresponding backend phase lands, the planned routes become available.
 
-**New surface in v2:** `apps/tools` (§78, ADR-086) — a sixth SvelteKit SSR app at `tools.japaconnect.com` (port 3005). Generate `jc-tools-*` skills before implementing this surface. Skills live at `.ai/skills/frontend/06-tools/`.
+**New surface in v2:** `apps/tools` (§78, ADR-086) — a sixth SvelteKit SSR app at `tools.japaconnect.com` (port 3005). `jc-tools-*` skills are already generated and live at `.ai/skills/frontend/06-tools/`.

@@ -49,11 +49,27 @@ Apply the full violation tables from `jc-main-debug` sections 2–3.
 ## 7. Accessibility
 `<th scope="col">` + `aria-sort` on sortable headers · bulk buttons `disabled` (not hidden) when nothing selected · focus returns to trigger on dialog close · `aria-live="polite"` on table container during load.
 
+## 8. V2 (JEOS v1.23.1) Debug Patterns
+Debug patterns for §§79–102 admin surfaces (Phases 24–27). ~819 routes total (~475 v1 + ~344 v2), 297 RBAC nodes, 18 Golden Rules.
+
+- **Missing ADR-088 columns on admin content tables:** An admin content table for §§79–101 (stories, wiki revisions, scam alerts, digests, AMAs, services, arrival checklists, housing guides, attestations, tax guides) is missing one or more of `ai_generated`, `ai_model`, `hitl_reviewed_by`, `ai_generated_at`. Symptom: admin form has no HITL review step, or AI-generated content can be published without review. Fix: add the missing columns via migration, update the admin form to require `hitl_reviewed_by` before publish.
+- **HITL review gate bypassed:** Content with `ai_generated = true` is in published/active state but `hitl_reviewed_by` is NULL. Symptom: AI-generated story/wiki revision/digest visible to users without human review. Root cause: the publish/approve endpoint doesn't check `hitl_reviewed_by` when `ai_generated = true`. Fix: enforce server-side check — reject publish if `ai_generated = true AND hitl_reviewed_by IS NULL`.
+- **Geo-aware filter missing (?dest= not implemented):** A §§90–97 or §§99–101 tool admin list endpoint doesn't accept `?dest=` parameter, or the DataTable filter panel lacks a destination country dropdown. Symptom: admin can't filter tool content by destination country, or nationality is hardcoded in the query. Fix: add `?dest=` filter param to the endpoint, add destination dropdown to the filter panel, remove any hardcoded nationality from queries.
+- **Feature-flag returning 403 instead of 404:** A disabled v2 feature endpoint returns HTTP 403 (Forbidden) instead of HTTP 404 (Not Found) per ADR-042. Symptom: admin UI shows a permission error instead of "feature disabled" for a v2 feature that hasn't been enabled yet. Fix: update the feature-flag middleware to return 404 when a feature is disabled (not 403). The admin frontend should handle 404 as "feature not available" rather than "permission denied."
+- **Admin list using infinite scroll instead of pagination:** A v2 admin list page uses infinite scroll or "load more" instead of the standard DataTable pagination with page-size selector. Symptom: no page-size selector (25/50/100), no pagination navigation, URL params don't include `?page=&limit=`. Fix: replace infinite scroll with standard DataTable pagination, ensure the API endpoint returns `meta` with total count + page info.
+- **Mentorship active_mentee_count computed at query time (trigger missing):** The mentor list endpoint computes `active_mentee_count` via a `COUNT(*)` subquery or join instead of reading the maintained column. Symptom: mentor list is slow, or `active_mentee_count` is inconsistent with actual mentee connections. Root cause: `trg_mentee_count` PostgreSQL trigger is missing or disabled. Fix: create/enable the trigger that maintains `active_mentee_count` on INSERT/UPDATE/DELETE of mentee connections, remove the query-time computation from the endpoint.
+
 ## Output Protocol
 1. Root cause (one sentence) · 2. Broken code · 3. Fixed code · 4. Secondary findings
-**V2 admin phases (20–23):** Persona Management + Content Studio (Phase 20) → Newsletter + Jobs (Phase 21) → Gamification/Analytics/Commerce (Phase 22) → QA (Phase 23). See `ROADMAP-ADMIN.md` for task breakdown.
+**V2 admin phases (20–27):** Persona Management + Content Studio (Phase 20) → Newsletter + Jobs (Phase 21) → Gamification/Analytics/Commerce (Phase 22) → QA (Phase 23) → Community Features Admin (Phase 24) → Tools Admin + HITL Queues (Phase 25) → QA Update (Phase 26) → Mentorship Admin (Phase 27). See `ROADMAP-ADMIN.md` for task breakdown.
 
 **New admin surfaces in v2:** AI Persona management (`/admin/personas`), Content Studio (`/admin/studio`), Participation queue (tab in moderation queue), RAG index status widget, Remittance provider management, Newsletter composer, Gamification badge/challenge CRUD, Advanced analytics dashboard.
+
+**V2 community features admin (Phase 24, §§79–89, §98):** Story verification (§79), wiki revision approval (§80), scam alert moderation (§81), planning group management (§82), visa timeline admin (§83), digest generation/publish (§84), mutual aid moderation (§85), calendar review (§86), japa stage profiles (§87), AMA moderation (§88), achievement management (§89), service directory verification/claim review (§98). All admin-managed content tables must carry ADR-088 AI generation columns (ai_generated, ai_model, hitl_reviewed_by, ai_generated_at) with mandatory HITL review before publish. Admin list endpoints must filter + sort + paginate (no infinite scroll).
+
+**V2 functional tools admin (Phase 25, §§90–97, §§99–101):** Visa route management (§90), embassy polling configuration (§91), arrival checklist approval (§92), processing time tracker (§93), credential checker management (§94), CV formatter standards (§95), housing guide management (§96), attestation approval (§97), language test requirements (§99), tax guide/treaty management (§100), community locator review (§101). All tools follow the geo-aware tool pattern — destination country is the primary data axis, no hardcoded nationality, ?dest= filter on list endpoints.
+
+**V2 mentorship admin (Phase 27, §102, ADR-110):** Mentorship connection management, mentor profile review. Verify active_mentee_count is maintained by PostgreSQL trigger (trg_mentee_count), not computed at query time. Match scoring is 60% keyword overlap + 40% pgvector cosine similarity.
 
 ## V2 Feature Areas (Implement Only After Corresponding Backend Phase Is Complete)
 
@@ -78,4 +94,4 @@ Apply the full violation tables from `jc-main-debug` sections 2–3.
 
 **API-Readiness Gate applies to all v2 features.** Verify against `api-routes-catalog.md` — all v2 routes are marked as "V2 planned" in the catalog. Once the corresponding backend phase lands, the planned routes become available.
 
-**New surface in v2:** `apps/tools` (§78, ADR-086) — a sixth SvelteKit SSR app at `tools.japaconnect.com` (port 3005). Generate `jc-tools-*` skills before implementing this surface. Skills live at `.ai/skills/frontend/06-tools/`.
+**New surface in v2:** `apps/tools` (§78, ADR-086) — a sixth SvelteKit SSR app at `tools.japaconnect.com` (port 3005). `jc-tools-*` skills are already generated and live at `.ai/skills/frontend/06-tools/`.

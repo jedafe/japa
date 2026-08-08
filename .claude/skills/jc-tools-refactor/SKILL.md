@@ -100,9 +100,46 @@ If types are scattered or duplicated, consolidate in `src/lib/types/index.ts`:
 - All tool-specific types (ChecklistSelector, AssessmentForm, ColCity, Scholarship, RemittanceRate, ChatConversation) live here
 - Keep types aligned with the Go backend structs (check `api-routes-catalog.md` for response shapes)
 
+### 9. Apply Geo-Aware Tool Pattern to Existing Tools (§§90–97, §§99–101)
+
+When refactoring v1 tools or building v2 functional tools, apply the geo-aware tool pattern (`.jeos/skills/geo-aware-tool-pattern.md`):
+
+- **Add `?dest=` filter** to all list/lookup API calls — destination country is the primary data axis
+- **Remove hardcoded nationality** — replace any hardcoded country/nationality references with destination selector-driven API calls
+- **Add destination selector as first UI input** — render a country selector before any tool-specific content; wire it to reactive `?dest=` param on all downstream API calls
+- **Add `destination_country_id` to types** — ensure `src/lib/types/index.ts` includes `destination_country_id` in v2 tool content types
+- **Handle feature-flag 404 (not 403)** — ADR-042: disabled features return 404; the Tools app should hide the tool card and show "coming soon" state on 404
+
+```typescript
+// ❌ Before — hardcoded nationality, no dest filter
+const visaTypes = ['student', 'work', 'tourist'];
+const res = await apiGet(ctx, '/visa-routes/compare');
+
+// ✅ After — geo-aware: dest selector drives API calls
+let selectedDest = $state<string | null>(null);
+const res = $derived(await apiGet(ctx, `/visa-routes/compare?dest=${selectedDest}`));
+```
+
+### 10. Add ADR-088 AI Generation Columns to Tool Content Tables
+
+When refactoring tool content types or API response handling, ensure ADR-088 compliance:
+
+- Add `ai_generated` (boolean), `ai_model` (string), `hitl_reviewed_by` (string | null), `ai_generated_at` (string | null) to tool content TypeScript types
+- Add `is_japabot_indexed` (boolean) computed column to types where applicable
+- Filter API responses to only show `hitl_reviewed_by IS NOT NULL` content (HITL review mandatory before publish)
+- AI content generation goes through the §20 AI Gateway — no direct LLM calls from the Tools app
+
+### 11. Migrate V2 Tool Pages to Svelte 5 Runes
+
+V2 functional tool pages should use Svelte 5 Runes patterns from the start. If any v2 tool page uses legacy patterns, apply the migration table from §1. Key patterns for v2 tools:
+
+- Destination selector state: `let selectedDest = $state<string | null>(null)`
+- Derived API response: `let toolData = $derived.by(async () => { ... })` or `$effect` for async fetch
+- Reactive `?dest=` param: `const apiUrl = $derived(`/api/v1/visa-routes/compare?dest=${selectedDest}`)`
+
 ## Refactor Order
 
-1. **Read the section file** (§70-§74, §78) — understand the spec before refactoring
+1. **Read the section file** (§70-§74, §78, §§90–97, §§99–101) — understand the spec before refactoring
 2. **Run the audit skill** (`jc-tools-audit`) — identify what needs refactoring
 3. **Make changes incrementally** — one tool page at a time
 4. **Build after each change** — `bun run build` catches type and template errors
@@ -111,4 +148,4 @@ If types are scattered or duplicated, consolidate in `src/lib/types/index.ts`:
 
 ## See Also
 
-ADR-086, §78, `ROADMAP-TOOLS.md`, `jc-tools-develop`, `jc-tools-audit`, `jc-tools-debug`, `jc-main-refactor` (Svelte 4→5 migration patterns).
+ADR-086, §78, `ROADMAP-TOOLS.md`, ADR-088 (AI content generation), ADR-042 (feature-flag 404), `.jeos/skills/geo-aware-tool-pattern.md`, §§90–97 §§99–101 (V2 functional tools), `jc-tools-develop`, `jc-tools-audit`, `jc-tools-debug`, `jc-main-refactor` (Svelte 4→5 migration patterns).

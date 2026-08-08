@@ -720,6 +720,62 @@ func (q *Queries) GetUserContentAnalytics(ctx context.Context, arg GetUserConten
 	return items, nil
 }
 
+const getUserCurrentGeoSpace = `-- name: GetUserCurrentGeoSpace :one
+SELECT
+    u.current_geo_space_id,
+    city.id AS city_id,
+    city.name AS city_name,
+    city.geo_code AS city_geo_code,
+    country.id AS country_id,
+    country.name AS country_name,
+    country.geo_code AS country_geo_code
+FROM users u
+LEFT JOIN spaces city ON city.id = u.current_geo_space_id AND city.tenant_id = u.tenant_id AND city.deleted_at IS NULL
+LEFT JOIN spaces country ON country.id = COALESCE(
+    -- If the current geo space is a country itself, use it.
+    CASE WHEN city.level = 'country' THEN city.id END,
+    -- If it's a state, find its parent country.
+    CASE WHEN city.level = 'state' AND city.parent_id IS NOT NULL THEN city.parent_id END,
+    -- If it's a city, find its grandparent country (city → state → country).
+    (SELECT s2.parent_id FROM spaces s2 WHERE s2.id = city.parent_id AND s2.level = 'state' LIMIT 1)
+) AND country.tenant_id = u.tenant_id AND country.deleted_at IS NULL
+WHERE u.id = $1 AND u.tenant_id = $2
+`
+
+type GetUserCurrentGeoSpaceParams struct {
+	UserID   pgtype.UUID `json:"user_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+type GetUserCurrentGeoSpaceRow struct {
+	CurrentGeoSpaceID pgtype.UUID `json:"current_geo_space_id"`
+	CityID            pgtype.UUID `json:"city_id"`
+	CityName          *string     `json:"city_name"`
+	CityGeoCode       *string     `json:"city_geo_code"`
+	CountryID         pgtype.UUID `json:"country_id"`
+	CountryName       *string     `json:"country_name"`
+	CountryGeoCode    *string     `json:"country_geo_code"`
+}
+
+// ADR-064a: Fetches the user's current_geo_space_id and resolves the space
+// hierarchy (city → state → country) to extract geo_code and names for
+// VisitorContext city-level personalization. Returns the city-level space,
+// its parent (state), and the country-level space's geo_code in one round-trip.
+func (q *Queries) GetUserCurrentGeoSpace(ctx context.Context, arg GetUserCurrentGeoSpaceParams) (GetUserCurrentGeoSpaceRow, error) {
+	row := q.db.QueryRow(ctx, getUserCurrentGeoSpace, arg.UserID, arg.TenantID)
+	var i GetUserCurrentGeoSpaceRow
+	err := row.Scan(
+		&i.CurrentGeoSpaceID,
+		&i.CityID,
+		&i.CityName,
+		&i.CityGeoCode,
+		&i.CountryID,
+		&i.CountryName,
+		&i.CountryGeoCode,
+	)
+	return i, err
+}
+
 const getUserDraft = `-- name: GetUserDraft :one
 SELECT c.id, c.tenant_id, c.author_id, c.organization_id, c.space_id,
        c.content_type, c.title, c.slug, c.body, c.body_html, c.field_values,
@@ -1056,6 +1112,27 @@ func (q *Queries) GetUserProfile(ctx context.Context, arg GetUserProfileParams) 
 		&i.UserGroupName,
 	)
 	return i, err
+}
+
+const getUserProfileID = `-- name: GetUserProfileID :one
+SELECT id
+FROM user_profiles
+WHERE tenant_id = $1 AND user_id = $2
+`
+
+type GetUserProfileIDParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	UserID   pgtype.UUID `json:"user_id"`
+}
+
+// ADR-064a: Returns the user_profiles.id for a given user. Used as the
+// entity_id when upserting custom field values (entity_type='user_profile').
+// Returns pgx.ErrNoRows when the profile doesn't exist yet.
+func (q *Queries) GetUserProfileID(ctx context.Context, arg GetUserProfileIDParams) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, getUserProfileID, arg.TenantID, arg.UserID)
+	var id pgtype.UUID
+	err := row.Scan(&id)
+	return id, err
 }
 
 const getUserStatus = `-- name: GetUserStatus :one

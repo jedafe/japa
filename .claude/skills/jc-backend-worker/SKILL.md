@@ -5,7 +5,7 @@ description: Use when creating or modifying Asynq background tasks/workers in th
 
 # JapaConnect Backend — Asynq Workers Skill
 
-Three-tier queues on Valkey: **critical** (payments, auth emails, webhooks out, university payouts) · **default** (search sync, notifications, media processing, general emails, university approval notifications) · **low** (digests, cleanup, analytics rollups, backfills, payout calculation, university logo fetch). ~72 registered tasks — keep `asynq-tasks.md` accurate.
+Three-tier queues on Valkey: **critical** (payments, auth emails, webhooks out, university payouts, embassy polling/alerts) · **default** (search sync, notifications, media processing, general emails, university approval notifications, v2 community/functional tool tasks) · **low** (digests, cleanup, analytics rollups, backfills, payout calculation, university logo fetch, CV session purge, mentor embedding/search sync). 95 registered tasks (75 v1 + 20 v2) — keep `asynq-tasks.md` accurate.
 
 ## Japa University Tasks (ADR-063)
 | Task | Queue | Idempotency | Notes |
@@ -23,6 +23,33 @@ Three-tier queues on Valkey: **critical** (payments, auth emails, webhooks out, 
 | Task | Queue | Notes |
 |---|---|---|
 | `maintenance:update_geoip_db` | low (scheduled, weekly Sun 02:00 UTC) | Downloads MaxMind GeoLite2, atomically swaps reader pointer. No restart needed. |
+
+## V2 Community & Functional Tool Tasks (§§79–102, Phases 48–50)
+20 new Asynq tasks across community features, functional tools, and mentorship matching. All must pass the WIRING GATE below.
+
+| Task | Queue | Schedule | Idempotency | Notes |
+|---|---|---|---|---|
+| `visa_timeline:refresh_stats` | default | nightly | Natural key (timeline_id) | Recomputes visa timeline aggregate stats from raw entries. |
+| `visa_timeline:prompt_update` | default | weekly | Send-state guard per (user_id, timeline_id) | Prompts users with stale timelines to update their status. |
+| `digest:generate` | default | weekly | Natural key (edition_id) | Generates community digest draft content via §20 AI Gateway. HITL review required before publish. |
+| `digest:send_email` | default | on publish | Send-state guard per (edition_id, subscriber_id) | Sends published digest to subscribers. |
+| `mutual_aid:expire` | default | nightly | Natural key (post_id) | Expires stale mutual aid posts past their deadline. |
+| `calendar:staleness_check` | default | nightly | Natural key (entry_id) | Flags calendar entries not updated within configured threshold. |
+| `calendar:send_reminders` | default | daily | Send-state guard per (entry_id, user_id) | Sends upcoming event reminders to attendees. |
+| `planning_group:expire` | default | as needed | Natural key (group_id) | Expires inactive planning groups past their inactivity threshold. |
+| `planning_group:checkin_reminder` | default | as needed | Send-state guard per (group_id, user_id) | Sends check-in reminders to planning group members. |
+| `visa_routes:check_links` | default | weekly | Natural key (route_id, url) | Validates external links on visa route pages; marks broken links. |
+| `embassy:poll_{slug}` | critical | per embassy (configurable per embassy) | Valkey lock `jc:embassy:poll:{slug}` | Polls a specific embassy's appointment availability page. Per-embassy schedule — each embassy has its own polling cadence. |
+| `embassy:dispatch_alerts` | critical | as needed (triggered by poll) | Send-state guard per (alert_id, subscriber_id) | Sends appointment availability alerts to subscribers when `embassy:poll_{slug}` detects open slots. |
+| `credentials:check_links` | default | weekly | Natural key (profession_id, url) | Validates external links on credential checker pages; marks broken links. |
+| `cv_format:process` | default | on demand | Natural key (session_id) | Processes a CV formatting job — converts uploaded CV to destination-country format. Rate-limited via `jc:cv_quota`. |
+| `cv_format_sessions:purge` | low | nightly | Natural key (session_id) | Purges expired CV format sessions and associated temporary files. |
+| `mentor:generate_embedding` | low | on profile change | Natural key (profile_id) | Generates pgvector embedding from mentor/mentee profile text for match scoring. |
+| `mentor:update_meilisearch` | low | on profile change | Natural key (profile_id) | Syncs mentor profiles to Meilisearch for mentorship search. |
+
+**Embassy polling** (`embassy:poll_{slug}`) is the only v2 task on the **critical** queue — appointment slots are time-sensitive and users may miss windows if polling is delayed. Each embassy gets its own task instance with a configurable per-embassy schedule (some embassies release slots daily, others weekly). The `embassy:dispatch_alerts` task is enqueued by the poll task when open slots are detected.
+
+**Mentorship tasks** (`mentor:generate_embedding`, `mentor:update_meilisearch`) are on **low** queue — they support the 60/40 keyword+pgvector matching algorithm but are not user-blocking. Profile changes enqueue both tasks; the embedding must complete before match scoring can use the new vector.
 
 ## ⛔ WIRING GATE (BE-001 Anchor)
 A task that is defined but not wired is worse than no task — it fails silently. Every new task PR must show all four:

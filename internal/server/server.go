@@ -95,6 +95,7 @@ import (
 	"github.com/jedafe/japa/internal/tickets"
 	"github.com/jedafe/japa/internal/travel"
 	"github.com/jedafe/japa/internal/trending"
+	"github.com/jedafe/japa/internal/recommendations"
 	"github.com/jedafe/japa/internal/universities"
 	"github.com/jedafe/japa/internal/rag"
 	"github.com/jedafe/japa/internal/university"
@@ -515,6 +516,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	trendingStore := trending.NewStore(database)
 	trendingHandlers := trending.NewHandlers(trendingStore)
 	trendingHandlers.SetCache(vkClient.Valkey())
+
+	// Recommendation engine (ADR-064a) — geo-aware tool/feature suggestions.
+	recommendationsHandlers := recommendations.NewHandlers(settingsService, vkClient.Redis())
 
 	// Register trending processor with worker for background tasks.
 	trendingProc := trending.NewProcessor(database, slog.Default())
@@ -1014,6 +1018,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// tenant-scoped (non-author-scoped) fetch for super-admins and users
 	// with the `content.edit` permission node.
 	usersHandlers.SetPermissionResolver(rbacResolver)
+	// ADR-064a: wire settings for configurable Nominatim URL/timeout
+	// (Rule 3: no hardcoded URLs or limits).
+	usersHandlers.SetSettings(settingsService)
 
 	// BUG-003: wire the "verified" axis checker for CanPostInSpace. The
 	// "verified" posting_perm requires email_verified_at IS NOT NULL.
@@ -1781,6 +1788,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/suggestions/users", trendingHandlers.GetSuggestedUsers)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/suggestions/spaces", trendingHandlers.GetSuggestedSpaces)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/suggestions/tags", trendingHandlers.GetSuggestedTags)
+
+			// Recommendation engine (ADR-064a) — public, works for guests and
+			// authenticated users. Uses VisitorContext for geo-aware ranking.
+			r.Get("/recommendations", recommendationsHandlers.GetRecommendations)
 
 			// Geo routes (Phase 30 — Geo IP; catalog: Sections 05, 37)
 			// Public: returns geo data for the current request IP (resolved by middleware)
@@ -2738,6 +2749,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/analytics/content", usersHandlers.GetMyContentAnalytics)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/analytics/followers", usersHandlers.GetMyFollowerGrowth)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/me/deactivate", usersHandlers.DeactivateAccount)
+			// Geo-aware location endpoints (ADR-064a): POST sets the user's
+			// current_geo_space_id from browser geolocation or Space picker;
+			// GET returns the resolved location. Both require auth.
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/me/location", usersHandlers.UpdateMyLocation)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/location", usersHandlers.GetMyLocation)
 			// GDPR deletion + data export — served by the REAL gdpr handlers
 			// (queue-backed export via data:export_user_data + Honcho hard erasure),
 			// not the users-package stubs. Consolidated here from /account/* (§6).

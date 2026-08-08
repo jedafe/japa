@@ -106,9 +106,56 @@ Same base stack as all JC apps (Svelte 5 Runes, Bits UI dot-notation, Tailwind v
 
 ## Deliverables Per Task
 1. Gate 1 + Gate 2 output (routes verified) · 2. `+page.svelte` with full-spec DataTable or LayerChart dashboard · 3. CRUD form dialogs · 4. types · 5. confirmation of every `/api/v1/admin/*` route used
-**V2 admin phases (20–23):** Persona Management + Content Studio (Phase 20) → Newsletter + Jobs (Phase 21) → Gamification/Analytics/Commerce (Phase 22) → QA (Phase 23). See `ROADMAP-ADMIN.md` for task breakdown.
+**V2 admin phases (20–27):** Persona Management + Content Studio (Phase 20) → Newsletter + Jobs (Phase 21) → Gamification/Analytics/Commerce (Phase 22) → QA (Phase 23) → Community Features Admin (Phase 24) → Tools Admin + HITL Queues (Phase 25) → QA Update (Phase 26) → Mentorship Admin (Phase 27). See `ROADMAP-ADMIN.md` for task breakdown.
 
 **New admin surfaces in v2:** AI Persona management (`/admin/personas`), Content Studio (`/admin/studio`), Participation queue (tab in moderation queue), RAG index status widget, Remittance provider management, Newsletter composer, Gamification badge/challenge CRUD, Advanced analytics dashboard.
+
+**V2 community features admin (Phase 24, §§79–89, §98):** Story verification (§79), wiki revision approval (§80), scam alert moderation (§81), planning group management (§82), visa timeline admin (§83), digest generation/publish (§84), mutual aid moderation (§85), calendar review (§86), japa stage profiles (§87), AMA moderation (§88), achievement management (§89), service directory verification/claim review (§98). All admin-managed content tables must carry ADR-088 AI generation columns (ai_generated, ai_model, hitl_reviewed_by, ai_generated_at) with mandatory HITL review before publish. Admin list endpoints must filter + sort + paginate (no infinite scroll).
+
+**V2 functional tools admin (Phase 25, §§90–97, §§99–101):** Visa route management (§90), embassy polling configuration (§91), arrival checklist approval (§92), processing time tracker (§93), credential checker management (§94), CV formatter standards (§95), housing guide management (§96), attestation approval (§97), language test requirements (§99), tax guide/treaty management (§100), community locator review (§101). All tools follow the geo-aware tool pattern — destination country is the primary data axis, no hardcoded nationality, ?dest= filter on list endpoints.
+
+**V2 mentorship admin (Phase 27, §102, ADR-110):** Mentorship connection management, mentor profile review. Verify active_mentee_count is maintained by PostgreSQL trigger (trg_mentee_count), not computed at query time. Match scoring is 60% keyword overlap + 40% pgvector cosine similarity.
+
+## V2 (JEOS v1.23.1) Development Notes — New Admin DataTable Pages
+New admin DataTable pages required for §§79–102 (Phases 24–27). Each page follows the mandatory DataTable spec + Gate 1 + Gate 2. ~819 routes total (~475 v1 + ~344 v2), 297 RBAC nodes, 18 Golden Rules — verify all v2 admin routes against `api-routes-catalog.md` before implementation.
+
+### Community Features Admin Pages (Phase 24, §§79–89, §98)
+Each page is a full-spec DataTable with CRUD + state actions per Gate 2:
+- **Story Wall verification** (`/admin/stories`): list pending stories, verify/reject, filter by `ai_generated` flag. ADR-088 columns required on stories table.
+- **Destination Wiki revision approval** (`/admin/wiki/revisions`): list pending revisions, approve/reject with diff view. ADR-088 columns required.
+- **Scam Alert Board moderation** (`/admin/scam-alerts`): list reported scams, verify/remove, filter by severity + destination. ADR-088 columns required.
+- **Planning Group management** (`/admin/planning-groups`): CRUD + member management, filter by destination country.
+- **Visa Timeline admin** (`/admin/visa-timelines`): CRUD + timeline entry moderation, filter by destination.
+- **Digest generation/publish** (`/admin/digests`): list generated digests, HITL review before publish, filter by status. ADR-088 columns required.
+- **Mutual Aid moderation** (`/admin/mutual-aid`): list aid requests/offers, approve/remove, filter by destination + status.
+- **Community Calendar review** (`/admin/calendar`): list events, approve/reject, filter by destination + date range.
+- **Japa Stage profiles** (`/admin/japa-stage`): CRUD + profile moderation, filter by stage + destination.
+- **AMA moderation** (`/admin/amas`): list AMAs, approve/reject, manage questions. ADR-088 columns required.
+- **Achievement management** (`/admin/achievements`): CRUD badges/achievements, filter by type.
+- **Service Directory verification/claim review** (`/admin/services`): list services, verify/unverify, review ownership claims, filter by destination + status. ADR-088 columns required.
+
+### Functional Tools Admin Pages (Phase 25, §§90–97, §§99–101)
+Each page follows the geo-aware tool pattern — `?dest=` filter on list endpoints, destination country as primary data axis:
+- **Visa Route management** (`/admin/visa-routes`): CRUD + comparison config, `?dest=` filter.
+- **Embassy polling configuration** (`/admin/embassy-alerts`): CRUD polling targets, filter by destination.
+- **Arrival Checklist approval** (`/admin/arrival-checklists`): list + approve/reject checklists, `?dest=` filter. ADR-088 columns required.
+- **Processing Time Tracker** (`/admin/processing-times`): CRUD processing time data, `?dest=` filter.
+- **Credential Checker management** (`/admin/credential-checker`): CRUD credential requirements, `?dest=` filter.
+- **CV Formatter standards** (`/admin/cv-formatter`): CRUD template standards, filter by destination.
+- **Housing Guide management** (`/admin/housing-guides`): CRUD guides, `?dest=` filter. ADR-088 columns required.
+- **Attestation approval** (`/admin/attestations`): list + approve/reject attestation guides, `?dest=` filter. ADR-088 columns required.
+- **Language Test requirements** (`/admin/language-tests`): CRUD test requirements, `?dest=` filter.
+- **Tax Guide/treaty management** (`/admin/tax-guides`): CRUD tax guides + treaty data, `?dest=` filter. ADR-088 columns required.
+- **Community Locator review** (`/admin/community-locator`): list + review/verify entries, `?dest=` filter.
+
+### Mentorship Admin Page (Phase 27, §102, ADR-110)
+- **Mentorship connection management** (`/admin/mentorship`): list connections, manage mentor profiles, filter by status + destination. Verify `active_mentee_count` is trigger-maintained (trg_mentee_count) — do NOT compute at query time in the admin list endpoint.
+
+### Cross-Cutting Development Notes
+- **ADR-088 AI generation columns:** Every admin content table for §§79–101 that can contain AI-generated content must have `ai_generated` (bool), `ai_model` (text), `hitl_reviewed_by` (text/uuid), `ai_generated_at` (timestamptz). The admin create/edit form must surface a HITL review step before publish — the publish/approve action must populate `hitl_reviewed_by` with the admin user's ID.
+- **Geo-aware tool pattern:** All §§90–97, §§99–101 admin list endpoints must accept `?dest=` as a filter param. No hardcoded nationality anywhere — the destination country is the primary data axis. The DataTable filter panel must include a destination country dropdown.
+- **Feature-flag middleware (ADR-042):** Disabled features return 404, not 403. Admin pages should handle 404 gracefully (feature disabled message, not a permission error).
+- **Admin list pagination:** All v2 admin list endpoints must support `?page=&limit=&sort=&filter=` and return `meta` with pagination data. No infinite scroll — use the standard DataTable pagination with page-size selector (25/50/100).
 
 ## V2 Feature Areas (Implement Only After Corresponding Backend Phase Is Complete)
 
@@ -133,4 +180,4 @@ Same base stack as all JC apps (Svelte 5 Runes, Bits UI dot-notation, Tailwind v
 
 **API-Readiness Gate applies to all v2 features.** Verify against `api-routes-catalog.md` — all v2 routes are marked as "V2 planned" in the catalog. Once the corresponding backend phase lands, the planned routes become available.
 
-**New surface in v2:** `apps/tools` (§78, ADR-086) — a sixth SvelteKit SSR app at `tools.japaconnect.com` (port 3005). Generate `jc-tools-*` skills before implementing this surface. Skills live at `.ai/skills/frontend/06-tools/`.
+**New surface in v2:** `apps/tools` (§78, ADR-086) — a sixth SvelteKit SSR app at `tools.japaconnect.com` (port 3005). `jc-tools-*` skills are already generated and live at `.ai/skills/frontend/06-tools/`.

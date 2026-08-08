@@ -30,6 +30,8 @@ The host→surface map is built from `GET /site/settings/public` on each request
 
 Custom domains take precedence over subdomains. The `JC_TOOLS_HUB_HOSTS` env var adds extra hub hosts.
 
+**V2 functional tool domains (Phase 05, §§90–97, §§99–101):** The 12 new functional tools each get their own `subdomain`/`custom_domain` pair via 14 tool-domain `system_settings` keys. The host-detection logic in `hooks.server.ts` must be extended to recognize these new tool slugs (e.g. `visa-route`, `embassy-alerter`, `arrival-checklist`, `processing-tracker`, `credential-checker`, `cv-formatter`, `housing-guide`, `attestation-guide`, `language-test`, `tax-calculator`, `community-locator`). Each new slug maps to a single-tool shell just like the v1 tools.
+
 ## Two Shell Modes
 
 - **Hub shell** (`tools.japaconnect.com`): `HubHeader` (simplified — no community nav, just logo + theme toggle + auth links), tool cards grid, `Footer` (full).
@@ -78,10 +80,53 @@ SvelteKit 2.57.x (SSR, adapter-node) · Bun 1.3.x · Tailwind CSS v4 · Bits UI 
 
 Cookie auth (`domain=.japaconnect.com`) works for subdomains — authenticated users stay logged in across `japaconnect.com` and `tools.japaconnect.com`. Custom domains use OAuth flow back to `api.japaconnect.com` (see §78). Auth links (login, signup, profile) cross over to the Main app via `PUBLIC_MAIN_ORIGIN`.
 
+## V2 Functional Tools (Phase 05, §§90–97, §§99–101)
+
+12 new functional tools extend the Tools surface. Each follows the same host-detection + shell pattern as v1 tools but introduces the **geo-aware tool pattern** (see below). Each tool gets its own `subdomain`/`custom_domain` pair via `system_settings` (14 tool-domain keys total for §§79–101).
+
+| Tool | Section | Slug | Key Routes |
+|---|---|---|---|
+| Visa Route Comparison | §90 | `visa-route` | `GET /visa-routes/compare?dest=&origin=`, `GET /visa-routes/:id` |
+| Embassy Alerter | §91 | `embassy-alerter` | `GET /embassy/alerts?dest=`, `POST /embassy/alerts/subscribe` |
+| Arrival Checklist | §92 | `arrival-checklist` | `GET /arrival/checklist?dest=`, `PATCH /arrival/checklist/:id/progress` |
+| Processing Time Tracker | §93 | `processing-tracker` | `GET /processing-times?dest=`, `GET /processing-times/history` |
+| Credential Checker | §94 | `credential-checker` | `GET /credentials/check?dest=`, `POST /credentials/verify` |
+| CV Formatter | §95 | `cv-formatter` | `GET /cv/templates`, `POST /cv/generate`, `GET /cv/quota` |
+| Housing Guide | §96 | `housing-guide` | `GET /housing/guides?dest=`, `GET /housing/listings?dest=` |
+| Attestation Guide | §97 | `attestation-guide` | `GET /attestation/steps?dest=`, `GET /attestation/providers?dest=` |
+| Language Test Hub | §99 | `language-test` | `GET /language-tests?dest=`, `GET /language-tests/:id` |
+| Tax Calculator | §100 | `tax-calculator` | `GET /tax/calculate?dest=&income=`, `GET /tax/brackets?dest=` |
+| Community Locator | §101 | `community-locator` | `GET /communities?dest=`, `GET /communities/:id` |
+
+Each tool page: `+page.server.ts` (public data SSR with `?dest=` param) · `+page.svelte` (SSR content + CSR mutations) · tool-specific types in `src/lib/types/index.ts` · registry entry in `src/lib/tools/registry.ts` with slug, route, icon, accent color.
+
+**Tool-domain system_settings (14 keys):** Each functional tool has `{slug}.subdomain` and `{slug}.custom_domain` settings, managed via the Control Panel. These feed into the host-detection map in `hooks.server.ts`.
+
+## Geo-Aware Tool Pattern (`.jeos/skills/geo-aware-tool-pattern.md`)
+
+All v2 functional tools follow the geo-aware tool pattern — the **destination country is the primary data axis**:
+
+- **`?dest=` filter on all list/lookup endpoints** — every API call passes the destination country as a query param (e.g. `GET /visa-routes/compare?dest=ng`). No endpoint returns unfiltered global data.
+- **No hardcoded nationality** — never assume the user's nationality in the UI. The destination selector is the first input; nationality (if needed) is a secondary filter.
+- **`destination_country_id` in schema** — all v2 tool content tables carry a `destination_country_id` foreign key. API responses include this field.
+- **Destination selector is the first UI input** — every tool page renders a country selector before any tool-specific content. The selector drives all downstream API calls via reactive `?dest=` param.
+- **Feature-flag middleware returns 404 (not 403) when disabled** (ADR-042) — disabled feature flags return HTTP 404, not 403, to avoid leaking the existence of unreleased endpoints. The Tools app must handle 404 gracefully (hide the tool card, show "coming soon" state).
+
+## ADR-088 — Universal AI Content Generation
+
+All admin-managed tool content tables for v2 functional tools carry standard AI generation columns:
+- `ai_generated` (boolean) — whether the content was AI-generated
+- `ai_model` (varchar) — which model generated it (e.g. `gpt-4o`, `claude-3.5-sonnet`)
+- `hitl_reviewed_by` (uuid, FK to users) — the human reviewer who approved it
+- `ai_generated_at` (timestamp) — when the AI generated the content
+- `is_japabot_indexed` (computed column) — whether the content is RAG-retrievable by JapaBot
+
+AI content generation goes through the existing §20 AI Gateway (no direct LLM calls from the Tools app). **HITL review is mandatory before publish** — content with `hitl_reviewed_by IS NULL` must not appear in public-facing tool pages. The Tools app should filter API responses to only show `hitl_reviewed_by IS NOT NULL` content (the backend enforces this, but the frontend should not attempt to display unreviewed content).
+
 ## Deliverables Per Task
 
 1. Gate output · 2. tool page built inside the appropriate shell (hub or single-tool) · 3. `+page.server.ts` (public data SSR, user data SSR when authed) · 4. `+page.svelte` (SSR content + CSR mutations, skeletons, registration prompts) · 5. components · 6. SEO metadata (title, description, OG, JSON-LD where applicable) · 7. types in `src/lib/types/index.ts`
 
 ## See Also
 
-ADR-086 (multi-surface architecture), §78 (Tools Web Surface section), `ROADMAP-TOOLS.md`, ADR-007 (subdomain principle), ADR-063 (Japa University — host-detection precedent), `jc-tools-audit`, `jc-tools-debug`, `jc-tools-refactor`.
+ADR-086 (multi-surface architecture), §78 (Tools Web Surface section), `ROADMAP-TOOLS.md`, ADR-007 (subdomain principle), ADR-063 (Japa University — host-detection precedent), ADR-088 (universal AI content generation), ADR-042 (feature-flag 404 not 403), `.jeos/skills/geo-aware-tool-pattern.md`, §§90–97 §§99–101 (V2 functional tools), `jc-tools-audit`, `jc-tools-debug`, `jc-tools-refactor`.

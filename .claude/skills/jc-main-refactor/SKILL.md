@@ -69,7 +69,11 @@ Replace static arrays (nav, countries, tags, groups, post types, chart datasets)
 - i18n sweep: hardcoded strings → `$t()`, keys in `en.json` + `fr.json`
 - A11y: `<div onclick>` → `<button>`, `aria-label` on icon buttons, `alt` on images, visible focus rings
 - Types: eliminate `any`, derive from API response types
-**V2 main app phases (33–36):** Identity Tools UI (Phase 33) → Jobs/Gamification/Referral (Phase 34) → Newsletter/Import/Travel (Phase 35) → QA (Phase 36). See `ROADMAP-MAIN.md` for task breakdown.
+**V2 main app phases (33–38):** Identity Tools UI (Phase 33) → Jobs/Gamification/Referral (Phase 34) → Newsletter/Import/Travel (Phase 35) → QA (Phase 36) → Community Features UI (Phase 37) → Mentorship Matching UI (Phase 38). See `ROADMAP-MAIN.md` for task breakdown.
+
+**V2 community features UI (Phase 37, §§79–89, §98):** Community Story Wall (§79 — filterable testimonials by origin/destination/visa/profession), Destination Wiki (§80 — collaborative versioned KB pages with reputation-gated editing), Scam Alert Board (§81 — moderated scam reporting with subscriptions), Japa Planning Groups (§82 — private peer groups with milestones and check-ins), Visa Timeline Tracker (§83 — personal milestone logging with anonymous sharing), Community Digest Widget (§84 — auto-generated digest), Mutual Aid Board (§85 — Needs/Offers/Skill Swaps), Community Calendar (§86 — institutional dates calendar), Japa Stage Profiles (§87 — seven-stage relocation journey on profiles), Ask-an-Expat AMA (§88 — specialized forum AMA threads), Achievement Feed (§89 — opt-in milestone feed), Service Directory (§98 — geo-indexed business directory). All community feature pages must follow the geo-aware tool pattern: destination country selector is the first input, no hardcoded nationality, ?dest= filter on list endpoints.
+
+**V2 mentorship UI (Phase 38, §102, ADR-110):** Mentor browsing/search, mentor profile pages, mentorship request flow, incoming/outgoing requests management, connection active/complete/cancel flows. Match scoring display (60% keyword overlap + 40% pgvector cosine similarity). DM auto-open on connection accept (§48).
 
 **V2 tool pages on main app (`/tools/*`):** Visa Checklist, Readiness Assessment, Cost of Living, Scholarship Finder, Remittance Rate Tracker, JapaBot (full-page). Each tool is also available at its own domain/subdomain via `apps/tools` (§78) — the main app renders these within the community layout; `apps/tools` renders them tool-first without community nav.
 
@@ -96,4 +100,33 @@ Replace static arrays (nav, countries, tags, groups, post types, chart datasets)
 
 **API-Readiness Gate applies to all v2 features.** Verify against `api-routes-catalog.md` — all v2 routes are marked as "V2 planned" in the catalog. Once the corresponding backend phase lands, the planned routes become available.
 
-**New surface in v2:** `apps/tools` (§78, ADR-086) — a sixth SvelteKit SSR app at `tools.japaconnect.com` (port 3005). Generate `jc-tools-*` skills before implementing this surface. Skills live at `.ai/skills/frontend/06-tools/`.
+**New surface in v2:** `apps/tools` (§78, ADR-086) — a sixth SvelteKit SSR app at `tools.japaconnect.com` (port 3005). `jc-tools-*` skills are already generated and live at `.ai/skills/frontend/06-tools/`.
+
+## 5d. V2 Community Features & Mentorship — Refactoring Notes (Phases 37–38, §§79–102)
+
+### Apply Geo-Aware Tool Pattern to Existing Pages That Hardcode Nationalities
+- **Identify:** grep for hardcoded nationality strings, country code arrays, or `?nationality=` params in existing pages (especially pre-v2 community surfaces, forum filters, profile filters, or any page that filters by origin country). Any inline `const countries = [...]` or hardcoded `"Nigerian"` / `"Ghanaian"` labels are candidates.
+- **Refactor:** replace hardcoded nationality arrays with `GET /api/v1/geo/countries` fetched in `load()`. Replace `?nationality=` params with `?dest=` as the primary filter axis. Add a destination country selector as the first input on the page (Bits UI `<Select.Root>` or `<Combobox.Root>`).
+- **Origin as secondary:** where origin filtering is still needed (e.g. Story Wall §79), keep it as a secondary filter — but destination country is always first and primary.
+- **Pre-select from preference:** if the user has `content_country_preference` (ADR-064), pre-select the destination selector to that value; explicit selection always wins.
+
+### Ensure New Community Feature Pages Use Svelte 5 Runes (Not Svelte 4 Patterns)
+- **Identify:** audit all files under `$lib/components/community/` and `/community/*` routes for Svelte 4 patterns: `export let`, `$:` reactive statements, `on:click`, `createEventDispatcher`, writable stores for local UI state.
+- **Refactor:** apply the Svelte 4 → 5 migration table (Section 1):
+  - `export let story` → `let { story } = $props()`
+  - `$: filtered = items.filter(...)` → `let filtered = $derived(items.filter(...))`
+  - `$: { sideEffect() }` → `$effect(() => { ... })`
+  - `on:click={...}` → `onclick={...}`
+  - `createEventDispatcher()` → callback props (`onaccept`, `ondecline`, `oncomplete`)
+  - `writable(false)` for modal/panel open state → `let open = $state(false)`
+- **Verify:** no writable stores for local UI state in new community components — use `$state()`. Shared cross-component state that genuinely needs a store is fine, but local UI state (modal open, selected tab, filter values) should be `$state`.
+
+### Migrate Community Feature Charts to LayerChart 2.0.1
+- **Identify:** any chart in community feature pages (Visa Timeline Tracker §83 milestone progress, Planning Groups §82 milestone charts, Achievement Feed §89 stats, Service Directory §98 analytics) built with Chart.js, raw D3, canvas, inline SVG, or any non-LayerChart library.
+- **Refactor:** rewrite in LayerChart (pinned `layerchart@2.0.1`, prefer high-level compound charts):
+  - Milestone progress over time → `LineChart` or `AreaChart`
+  - Achievement stats breakdown → horizontal `BarChart`
+  - Service Directory category distribution → horizontal `BarChart`
+  - Planning Group participation trends → `AreaChart`
+- **Rules:** colors via `var(--chart-*)`/`var(--color-*)` only (dark-mode safe) · data from API (Rule 16) · fixed-height container · per-chart skeleton · convert API date strings to `Date` objects · remove old chart library from `package.json` if unused after migration.
+- **Do not confuse** LayerChart's `<Tooltip.Root>` with Bits UI's `<Tooltip.Root>` — check the import source.

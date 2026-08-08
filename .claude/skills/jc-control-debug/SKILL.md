@@ -36,7 +36,18 @@ Apply `jc-admin-debug` §§2–3, 6–7.
 
 ## Output Protocol
 1. Root cause (one sentence) · 2. Broken code · 3. Fixed code · 4. Secondary findings
-**V2 control panel:** No new control panel pages for v2 features — v2 features are managed in the Admin panel. Control panel remains super-admin infrastructure (tenants, system settings, feature flags). Update system_settings pages to expose the 62 new v2 keys (settings are already stored; control panel just needs form fields for them).
+**V2 control panel:** No new control panel pages for v2 features — v2 features are managed in the Admin panel. Control panel remains super-admin infrastructure (tenants, system settings, feature flags). Update system_settings pages to expose the new v2 keys (settings are already stored; control panel just needs form fields for them).
+
+**V2 system settings (JEOS v1.22.0–v1.23.1, §§79–102):** The system_settings page must expose form fields for:
+- **14 tool-domain keys** for §§79–101 functional tools: `{slug}.subdomain` and `{slug}.custom_domain` per tool. These feed the Tools app host-detection map.
+- **`mentorship.max_capacity`** — maximum mentee capacity per mentor (§102, ADR-110).
+- Total system settings count is now ~187 (up from 85). A "V2 Tools" category tab should exist for the tool-domain keys.
+
+**V2 feature flags (§§79–102):** ~24 new feature flags for v2 features:
+- ~22 flags for §§79–101 community features and functional tools
+- 2 flags for mentorship (§102, ADR-110): `mentorship.enabled` and `mentorship.matching.enabled`
+- Feature-flag middleware returns **404 (not 403)** when disabled (ADR-042)
+- Total feature flags count is now ~24
 
 ## V2 Feature Areas (Implement Only After Corresponding Backend Phase Is Complete)
 
@@ -61,4 +72,4 @@ Apply `jc-admin-debug` §§2–3, 6–7.
 
 **API-Readiness Gate applies to all v2 features.** Verify against `api-routes-catalog.md` — all v2 routes are marked as "V2 planned" in the catalog. Once the corresponding backend phase lands, the planned routes become available.
 
-**New surface in v2:** `apps/tools` (§78, ADR-086) — a sixth SvelteKit SSR app at `tools.japaconnect.com` (port 3005). Generate `jc-tools-*` skills before implementing this surface. Skills live at `.ai/skills/frontend/06-tools/`.
+**New surface in v2:** `apps/tools` (§78, ADR-086) — a sixth SvelteKit SSR app at `tools.japaconnect.com` (port 3005). `jc-tools-*` skills are already generated and live at `.ai/skills/frontend/06-tools/`.
