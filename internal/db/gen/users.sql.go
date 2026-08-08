@@ -1379,7 +1379,7 @@ func (q *Queries) ListUserActivity(ctx context.Context, arg ListUserActivityPara
 
 const listUserBookmarks = `-- name: ListUserBookmarks :many
 SELECT
-    b.id, b.entity_type, b.entity_id, b.folder, b.created_at,
+    b.id, b.entity_type, b.entity_id, b.folder, b.folder_id, b.created_at,
     CASE
         WHEN b.entity_type IN ('content', 'blog_post') THEN c.title
         WHEN b.entity_type = 'forum_thread'           THEN ft.title
@@ -1401,15 +1401,20 @@ LEFT JOIN spaces s
     ON b.entity_type = 'space' AND b.entity_id = s.id
 LEFT JOIN tags t
     ON b.entity_type = 'tag' AND b.entity_id = t.id
-WHERE b.user_id = $1
+WHERE b.user_id = $1 AND b.tenant_id = $2
+  AND ($5 IS NULL OR b.folder_id = $5)
+  AND ($6::text[] IS NULL OR b.entity_type = ANY($6::text[]))
 ORDER BY b.created_at DESC
-LIMIT $2 OFFSET $3
+LIMIT $3 OFFSET $4
 `
 
 type ListUserBookmarksParams struct {
-	UserID pgtype.UUID `json:"user_id"`
-	Limit  int32       `json:"limit"`
-	Offset int32       `json:"offset"`
+	UserID      pgtype.UUID `json:"user_id"`
+	TenantID    pgtype.UUID `json:"tenant_id"`
+	Limit       int32       `json:"limit"`
+	Offset      int32       `json:"offset"`
+	FolderID    interface{} `json:"folder_id"`
+	EntityTypes []string    `json:"entity_types"`
 }
 
 type ListUserBookmarksRow struct {
@@ -1417,6 +1422,7 @@ type ListUserBookmarksRow struct {
 	EntityType string             `json:"entity_type"`
 	EntityID   pgtype.UUID        `json:"entity_id"`
 	Folder     string             `json:"folder"`
+	FolderID   pgtype.UUID        `json:"folder_id"`
 	CreatedAt  pgtype.Timestamptz `json:"created_at"`
 	Title      interface{}        `json:"title"`
 	Slug       interface{}        `json:"slug"`
@@ -1426,8 +1432,17 @@ type ListUserBookmarksRow struct {
 // entity_type drives which table is joined (content/blog_post→contents,
 // forum_thread→forum_threads, space→spaces, tag→tags). Unknown types get
 // NULL title/slug; the frontend falls back to the entity_id.
+// Tenant-scoped (BL-006), optional folder_id filter (BL-002), and optional
+// entity_type filter (so the learn app can request only learning entities).
 func (q *Queries) ListUserBookmarks(ctx context.Context, arg ListUserBookmarksParams) ([]ListUserBookmarksRow, error) {
-	rows, err := q.db.Query(ctx, listUserBookmarks, arg.UserID, arg.Limit, arg.Offset)
+	rows, err := q.db.Query(ctx, listUserBookmarks,
+		arg.UserID,
+		arg.TenantID,
+		arg.Limit,
+		arg.Offset,
+		arg.FolderID,
+		arg.EntityTypes,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -1440,6 +1455,7 @@ func (q *Queries) ListUserBookmarks(ctx context.Context, arg ListUserBookmarksPa
 			&i.EntityType,
 			&i.EntityID,
 			&i.Folder,
+			&i.FolderID,
 			&i.CreatedAt,
 			&i.Title,
 			&i.Slug,
@@ -1762,7 +1778,9 @@ func (q *Queries) UpdateUserGeoSpace(ctx context.Context, arg UpdateUserGeoSpace
 }
 
 const updateUserPassword = `-- name: UpdateUserPassword :exec
-UPDATE users SET password_hash = $3, updated_at = now() WHERE id = $1 AND tenant_id = $2
+UPDATE users
+SET password_hash = $3, password_changed_at = now(), updated_at = now()
+WHERE id = $1 AND tenant_id = $2
 `
 
 type UpdateUserPasswordParams struct {
@@ -1772,6 +1790,8 @@ type UpdateUserPasswordParams struct {
 }
 
 // Tenant-scoped per Section 04 (BUG-009).
+// Sets password_changed_at so max-password-age policies can be enforced
+// (Ref: sections/02-authentication-sessions.md).
 func (q *Queries) UpdateUserPassword(ctx context.Context, arg UpdateUserPasswordParams) error {
 	_, err := q.db.Exec(ctx, updateUserPassword, arg.ID, arg.TenantID, arg.PasswordHash)
 	return err

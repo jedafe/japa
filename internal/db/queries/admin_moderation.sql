@@ -152,6 +152,18 @@ WHERE id = $1 AND tenant_id = $2;
 UPDATE contents SET status = 'draft', updated_at = now()
 WHERE id = $1 AND tenant_id = $2 AND status = 'removed';
 
+-- name: ListDeletedContents :many
+SELECT c.id, c.tenant_id, c.author_id, c.title, c.content_type, c.status,
+       c.deleted_at, c.updated_at, c.created_at,
+       u.username, up.display_name
+FROM contents c
+LEFT JOIN users u ON u.id = c.author_id
+LEFT JOIN user_profiles up ON up.user_id = c.author_id
+WHERE c.tenant_id = $1
+  AND (c.deleted_at IS NOT NULL OR c.status = 'removed')
+ORDER BY c.deleted_at DESC NULLS LAST, c.updated_at DESC
+LIMIT $2;
+
 -- =====================
 -- Broadcasts
 -- =====================

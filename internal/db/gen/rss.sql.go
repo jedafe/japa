@@ -13,25 +13,39 @@ import (
 
 const listRSSFeedItems = `-- name: ListRSSFeedItems :many
 
-SELECT c.title, c.slug, LEFT(c.body, 200), c.created_at, u.username
+SELECT c.id, c.title, c.slug, c.body_html, c.body, c.published_at, c.created_at, u.username
 FROM contents c
 JOIN users u ON c.author_user_id = u.id
-WHERE c.tenant_id = $1 AND c.status = 'published'
-ORDER BY c.created_at DESC
-LIMIT 20
+WHERE c.tenant_id = $1
+  AND c.status = 'published'
+  AND c.deleted_at IS NULL
+  AND c.auto_hidden = false
+ORDER BY c.published_at DESC NULLS LAST
+LIMIT $2
 `
 
+type ListRSSFeedItemsParams struct {
+	TenantID  pgtype.UUID `json:"tenant_id"`
+	PageLimit int32       `json:"page_limit"`
+}
+
 type ListRSSFeedItemsRow struct {
-	Title     string             `json:"title"`
-	Slug      string             `json:"slug"`
-	Left      string             `json:"left"`
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
-	Username  string             `json:"username"`
+	ID          pgtype.UUID        `json:"id"`
+	Title       string             `json:"title"`
+	Slug        string             `json:"slug"`
+	BodyHtml    string             `json:"body_html"`
+	Body        string             `json:"body"`
+	PublishedAt pgtype.Timestamptz `json:"published_at"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	Username    string             `json:"username"`
 }
 
 // RSS feed queries: content for RSS/Atom feeds.
-func (q *Queries) ListRSSFeedItems(ctx context.Context, tenantID pgtype.UUID) ([]ListRSSFeedItemsRow, error) {
-	rows, err := q.db.Query(ctx, listRSSFeedItems, tenantID)
+// All queries filter deleted_at IS NULL (Rule 11 / GDPR) and auto_hidden = false
+// (spam prevention), and order by published_at DESC (falling back to created_at
+// in the Go layer for items where published_at is NULL).
+func (q *Queries) ListRSSFeedItems(ctx context.Context, arg ListRSSFeedItemsParams) ([]ListRSSFeedItemsRow, error) {
+	rows, err := q.db.Query(ctx, listRSSFeedItems, arg.TenantID, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -40,9 +54,12 @@ func (q *Queries) ListRSSFeedItems(ctx context.Context, tenantID pgtype.UUID) ([
 	for rows.Next() {
 		var i ListRSSFeedItemsRow
 		if err := rows.Scan(
+			&i.ID,
 			&i.Title,
 			&i.Slug,
-			&i.Left,
+			&i.BodyHtml,
+			&i.Body,
+			&i.PublishedAt,
 			&i.CreatedAt,
 			&i.Username,
 		); err != nil {
@@ -57,29 +74,37 @@ func (q *Queries) ListRSSFeedItems(ctx context.Context, tenantID pgtype.UUID) ([
 }
 
 const listRSSFeedItemsByContentType = `-- name: ListRSSFeedItemsByContentType :many
-SELECT c.title, c.slug, LEFT(c.body, 200), c.created_at, u.username
+SELECT c.id, c.title, c.slug, c.body_html, c.body, c.published_at, c.created_at, u.username
 FROM contents c
 JOIN users u ON c.author_user_id = u.id
-WHERE c.tenant_id = $1 AND c.status = 'published' AND c.content_type = $2
-ORDER BY c.created_at DESC
-LIMIT 20
+WHERE c.tenant_id = $1
+  AND c.status = 'published'
+  AND c.content_type = $2
+  AND c.deleted_at IS NULL
+  AND c.auto_hidden = false
+ORDER BY c.published_at DESC NULLS LAST
+LIMIT $3
 `
 
 type ListRSSFeedItemsByContentTypeParams struct {
 	TenantID    pgtype.UUID `json:"tenant_id"`
 	ContentType string      `json:"content_type"`
+	PageLimit   int32       `json:"page_limit"`
 }
 
 type ListRSSFeedItemsByContentTypeRow struct {
-	Title     string             `json:"title"`
-	Slug      string             `json:"slug"`
-	Left      string             `json:"left"`
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
-	Username  string             `json:"username"`
+	ID          pgtype.UUID        `json:"id"`
+	Title       string             `json:"title"`
+	Slug        string             `json:"slug"`
+	BodyHtml    string             `json:"body_html"`
+	Body        string             `json:"body"`
+	PublishedAt pgtype.Timestamptz `json:"published_at"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	Username    string             `json:"username"`
 }
 
 func (q *Queries) ListRSSFeedItemsByContentType(ctx context.Context, arg ListRSSFeedItemsByContentTypeParams) ([]ListRSSFeedItemsByContentTypeRow, error) {
-	rows, err := q.db.Query(ctx, listRSSFeedItemsByContentType, arg.TenantID, arg.ContentType)
+	rows, err := q.db.Query(ctx, listRSSFeedItemsByContentType, arg.TenantID, arg.ContentType, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -88,9 +113,12 @@ func (q *Queries) ListRSSFeedItemsByContentType(ctx context.Context, arg ListRSS
 	for rows.Next() {
 		var i ListRSSFeedItemsByContentTypeRow
 		if err := rows.Scan(
+			&i.ID,
 			&i.Title,
 			&i.Slug,
-			&i.Left,
+			&i.BodyHtml,
+			&i.Body,
+			&i.PublishedAt,
 			&i.CreatedAt,
 			&i.Username,
 		); err != nil {
@@ -105,30 +133,38 @@ func (q *Queries) ListRSSFeedItemsByContentType(ctx context.Context, arg ListRSS
 }
 
 const listRSSSpaceFeedItems = `-- name: ListRSSSpaceFeedItems :many
-SELECT c.title, c.slug, LEFT(c.body, 200), c.created_at, u.username
+SELECT c.id, c.title, c.slug, c.body_html, c.body, c.published_at, c.created_at, u.username
 FROM contents c
 JOIN users u ON c.author_user_id = u.id
 JOIN spaces s ON c.space_id = s.id
-WHERE c.tenant_id = $1 AND c.status = 'published' AND s.slug = $2
-ORDER BY c.created_at DESC
-LIMIT 20
+WHERE c.tenant_id = $1
+  AND c.status = 'published'
+  AND s.slug = $2
+  AND c.deleted_at IS NULL
+  AND c.auto_hidden = false
+ORDER BY c.published_at DESC NULLS LAST
+LIMIT $3
 `
 
 type ListRSSSpaceFeedItemsParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	Slug     string      `json:"slug"`
+	TenantID  pgtype.UUID `json:"tenant_id"`
+	Slug      string      `json:"slug"`
+	PageLimit int32       `json:"page_limit"`
 }
 
 type ListRSSSpaceFeedItemsRow struct {
-	Title     string             `json:"title"`
-	Slug      string             `json:"slug"`
-	Left      string             `json:"left"`
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
-	Username  string             `json:"username"`
+	ID          pgtype.UUID        `json:"id"`
+	Title       string             `json:"title"`
+	Slug        string             `json:"slug"`
+	BodyHtml    string             `json:"body_html"`
+	Body        string             `json:"body"`
+	PublishedAt pgtype.Timestamptz `json:"published_at"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	Username    string             `json:"username"`
 }
 
 func (q *Queries) ListRSSSpaceFeedItems(ctx context.Context, arg ListRSSSpaceFeedItemsParams) ([]ListRSSSpaceFeedItemsRow, error) {
-	rows, err := q.db.Query(ctx, listRSSSpaceFeedItems, arg.TenantID, arg.Slug)
+	rows, err := q.db.Query(ctx, listRSSSpaceFeedItems, arg.TenantID, arg.Slug, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -137,9 +173,12 @@ func (q *Queries) ListRSSSpaceFeedItems(ctx context.Context, arg ListRSSSpaceFee
 	for rows.Next() {
 		var i ListRSSSpaceFeedItemsRow
 		if err := rows.Scan(
+			&i.ID,
 			&i.Title,
 			&i.Slug,
-			&i.Left,
+			&i.BodyHtml,
+			&i.Body,
+			&i.PublishedAt,
 			&i.CreatedAt,
 			&i.Username,
 		); err != nil {
@@ -154,31 +193,39 @@ func (q *Queries) ListRSSSpaceFeedItems(ctx context.Context, arg ListRSSSpaceFee
 }
 
 const listRSSTagFeedItems = `-- name: ListRSSTagFeedItems :many
-SELECT c.title, c.slug, LEFT(c.body, 200), c.created_at, u.username
+SELECT c.id, c.title, c.slug, c.body_html, c.body, c.published_at, c.created_at, u.username
 FROM contents c
 JOIN users u ON c.author_user_id = u.id
 JOIN content_tags ct ON ct.content_id = c.id
 JOIN tags t ON ct.tag_id = t.id
-WHERE c.tenant_id = $1 AND c.status = 'published' AND t.slug = $2
-ORDER BY c.created_at DESC
-LIMIT 20
+WHERE c.tenant_id = $1
+  AND c.status = 'published'
+  AND t.slug = $2
+  AND c.deleted_at IS NULL
+  AND c.auto_hidden = false
+ORDER BY c.published_at DESC NULLS LAST
+LIMIT $3
 `
 
 type ListRSSTagFeedItemsParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	Slug     string      `json:"slug"`
+	TenantID  pgtype.UUID `json:"tenant_id"`
+	Slug      string      `json:"slug"`
+	PageLimit int32       `json:"page_limit"`
 }
 
 type ListRSSTagFeedItemsRow struct {
-	Title     string             `json:"title"`
-	Slug      string             `json:"slug"`
-	Left      string             `json:"left"`
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
-	Username  string             `json:"username"`
+	ID          pgtype.UUID        `json:"id"`
+	Title       string             `json:"title"`
+	Slug        string             `json:"slug"`
+	BodyHtml    string             `json:"body_html"`
+	Body        string             `json:"body"`
+	PublishedAt pgtype.Timestamptz `json:"published_at"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	Username    string             `json:"username"`
 }
 
 func (q *Queries) ListRSSTagFeedItems(ctx context.Context, arg ListRSSTagFeedItemsParams) ([]ListRSSTagFeedItemsRow, error) {
-	rows, err := q.db.Query(ctx, listRSSTagFeedItems, arg.TenantID, arg.Slug)
+	rows, err := q.db.Query(ctx, listRSSTagFeedItems, arg.TenantID, arg.Slug, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -187,9 +234,12 @@ func (q *Queries) ListRSSTagFeedItems(ctx context.Context, arg ListRSSTagFeedIte
 	for rows.Next() {
 		var i ListRSSTagFeedItemsRow
 		if err := rows.Scan(
+			&i.ID,
 			&i.Title,
 			&i.Slug,
-			&i.Left,
+			&i.BodyHtml,
+			&i.Body,
+			&i.PublishedAt,
 			&i.CreatedAt,
 			&i.Username,
 		); err != nil {
@@ -204,29 +254,37 @@ func (q *Queries) ListRSSTagFeedItems(ctx context.Context, arg ListRSSTagFeedIte
 }
 
 const listRSSUserFeedItems = `-- name: ListRSSUserFeedItems :many
-SELECT c.title, c.slug, LEFT(c.body, 200), c.created_at, u.username
+SELECT c.id, c.title, c.slug, c.body_html, c.body, c.published_at, c.created_at, u.username
 FROM contents c
 JOIN users u ON c.author_user_id = u.id
-WHERE c.tenant_id = $1 AND c.status = 'published' AND u.username = $2
-ORDER BY c.created_at DESC
-LIMIT 20
+WHERE c.tenant_id = $1
+  AND c.status = 'published'
+  AND u.username = $2
+  AND c.deleted_at IS NULL
+  AND c.auto_hidden = false
+ORDER BY c.published_at DESC NULLS LAST
+LIMIT $3
 `
 
 type ListRSSUserFeedItemsParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	Username string      `json:"username"`
+	TenantID  pgtype.UUID `json:"tenant_id"`
+	Username  string      `json:"username"`
+	PageLimit int32       `json:"page_limit"`
 }
 
 type ListRSSUserFeedItemsRow struct {
-	Title     string             `json:"title"`
-	Slug      string             `json:"slug"`
-	Left      string             `json:"left"`
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
-	Username  string             `json:"username"`
+	ID          pgtype.UUID        `json:"id"`
+	Title       string             `json:"title"`
+	Slug        string             `json:"slug"`
+	BodyHtml    string             `json:"body_html"`
+	Body        string             `json:"body"`
+	PublishedAt pgtype.Timestamptz `json:"published_at"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	Username    string             `json:"username"`
 }
 
 func (q *Queries) ListRSSUserFeedItems(ctx context.Context, arg ListRSSUserFeedItemsParams) ([]ListRSSUserFeedItemsRow, error) {
-	rows, err := q.db.Query(ctx, listRSSUserFeedItems, arg.TenantID, arg.Username)
+	rows, err := q.db.Query(ctx, listRSSUserFeedItems, arg.TenantID, arg.Username, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -235,9 +293,12 @@ func (q *Queries) ListRSSUserFeedItems(ctx context.Context, arg ListRSSUserFeedI
 	for rows.Next() {
 		var i ListRSSUserFeedItemsRow
 		if err := rows.Scan(
+			&i.ID,
 			&i.Title,
 			&i.Slug,
-			&i.Left,
+			&i.BodyHtml,
+			&i.Body,
+			&i.PublishedAt,
 			&i.CreatedAt,
 			&i.Username,
 		); err != nil {

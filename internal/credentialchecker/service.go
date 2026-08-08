@@ -1,0 +1,593 @@
+// Package credentialchecker — service.go orchestrates credential pathway
+// lookup, community note submission, and admin HITL review workflow for
+// the Professional Credential Recognition Checker (§94, ADR-102). It
+// manages credential_pathways and credential_community_notes via the
+// local Store. Feature-flagged via credential_checker.enabled
+// system_setting (§94).
+//
+// Ref: japaconnect-engineering/sections/94-professional-credential-checker.md
+//      japaconnect-engineering/adr/ADR-102-credential-checker.md
+package credentialchecker
+
+import (
+	"context"
+	"fmt"
+	"log/slog"
+	"time"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
+
+	"github.com/jedafe/japa/internal/config"
+)
+
+// ProfessionDTO is the API response shape for a single profession.
+type ProfessionDTO struct {
+	ID       string `json:"id"`
+	Slug     string `json:"slug"`
+	Name     string `json:"name"`
+	Category string `json:"category,omitempty"`
+}
+
+// PathwayDTO is the API response shape for a single credential pathway.
+type PathwayDTO struct {
+	ID                       string `json:"id"`
+	ProfessionID             pgtype.UUID `json:"profession_id"`
+	ProfessionSlug           string `json:"profession_slug"`
+	ProfessionName           string `json:"profession_name"`
+	ProfessionCategory       string `json:"profession_category,omitempty"`
+	IssuingSpaceID           string `json:"issuing_space_id"`
+	IssuingSpaceName         string `json:"issuing_space_name,omitempty"`
+	IssuingSpaceCode         string `json:"issuing_space_code,omitempty"`
+	DestinationSpaceID       string `json:"destination_space_id"`
+	DestinationSpaceName     string `json:"destination_space_name,omitempty"`
+	DestinationSpaceCode     string `json:"destination_space_code,omitempty"`
+	RegulatoryBody           string `json:"regulatory_body"`
+	RegulatoryBodyURL        string `json:"regulatory_body_url,omitempty"`
+	PathwayType              string `json:"pathway_type"`
+	TimelineEstimate         string `json:"timeline_estimate,omitempty"`
+	CostEstimateUSD          string `json:"cost_estimate_usd,omitempty"`
+	PathwayDescription       string `json:"pathway_description"`
+	OfficialApplicationURL   string `json:"official_application_url,omitempty"`
+	SourceURLLastChecked     string `json:"source_url_last_checked,omitempty"`
+	Status                   string `json:"status"`
+	IsActive                 bool   `json:"is_active"`
+	AIGenerated              bool   `json:"ai_generated"`
+	AIModel                  string `json:"ai_model,omitempty"`
+	AIPromptHash             string `json:"ai_prompt_hash,omitempty"`
+	HITLReviewedBy           string `json:"hitl_reviewed_by,omitempty"`
+	HITLReviewedAt           string `json:"hitl_reviewed_at,omitempty"`
+	HITLReviewNotes          string `json:"hitl_review_notes,omitempty"`
+	IsJapabotIndexed         bool   `json:"is_japabot_indexed"`
+	CreatedAt                string `json:"created_at"`
+	UpdatedAt                string `json:"updated_at"`
+}
+
+// CommunityNoteDTO is the API response shape for a single community note.
+type CommunityNoteDTO struct {
+	ID        string `json:"id"`
+	PathwayID string `json:"pathway_id"`
+	UserID    string `json:"user_id"`
+	UserName  string `json:"user_name,omitempty"`
+	Note      string `json:"note"`
+	Upvotes   int32  `json:"upvotes"`
+	Status    string `json:"status"`
+	CreatedAt string `json:"created_at"`
+}
+
+// PathwayDetailDTO is the response for GET /credentials/:id — a pathway
+// plus its published community notes.
+type PathwayDetailDTO struct {
+	Pathway PathwayDTO         `json:"pathway"`
+	Notes   []CommunityNoteDTO `json:"notes"`
+}
+
+// CreatePathwayRequest is the request body for POST /admin/credentials.
+type CreatePathwayRequest struct {
+	ProfessionID           pgtype.UUID `json:"profession_id"`
+	IssuingSpaceID         string `json:"issuing_space_id"`
+	DestinationSpaceID     string `json:"destination_space_id"`
+	RegulatoryBody         string `json:"regulatory_body"`
+	RegulatoryBodyURL      string `json:"regulatory_body_url"`
+	PathwayType            string `json:"pathway_type"`
+	TimelineEstimate       string `json:"timeline_estimate"`
+	CostEstimateUSD        string `json:"cost_estimate_usd"`
+	PathwayDescription     string `json:"pathway_description"`
+	OfficialApplicationURL string `json:"official_application_url"`
+	SourceURLLastChecked   string `json:"source_url_last_checked"`
+	Status                 string `json:"status"`
+	IsActive               *bool  `json:"is_active"`
+	AIGenerated            *bool  `json:"ai_generated"`
+	AIModel                string `json:"ai_model"`
+	AIPromptHash           string `json:"ai_prompt_hash"`
+}
+
+// UpdatePathwayRequest is the request body for PATCH /admin/credentials/:id.
+// All fields are optional (pointer); only provided fields are updated.
+type UpdatePathwayRequest struct {
+	ProfessionID           *pgtype.UUID `json:"profession_id"`
+	IssuingSpaceID         *string `json:"issuing_space_id"`
+	DestinationSpaceID     *string `json:"destination_space_id"`
+	RegulatoryBody         *string `json:"regulatory_body"`
+	RegulatoryBodyURL      *string `json:"regulatory_body_url"`
+	PathwayType            *string `json:"pathway_type"`
+	TimelineEstimate       *string `json:"timeline_estimate"`
+	CostEstimateUSD        *string `json:"cost_estimate_usd"`
+	PathwayDescription     *string `json:"pathway_description"`
+	OfficialApplicationURL *string `json:"official_application_url"`
+	SourceURLLastChecked   *string `json:"source_url_last_checked"`
+	Status                 *string `json:"status"`
+	IsActive               *bool   `json:"is_active"`
+	IsJapabotIndexed       *bool   `json:"is_japabot_indexed"`
+}
+
+// CreateNoteRequest is the request body for POST /credentials/:id/notes.
+type CreateNoteRequest struct {
+	Note string `json:"note"`
+}
+
+// ApprovePathwayRequest is the optional body for PATCH
+// /admin/credentials/:id/approve.
+type ApprovePathwayRequest struct {
+	ReviewNotes *string `json:"review_notes"`
+}
+
+// GeneratePathwayRequest is the request body for POST
+// /admin/credentials/generate — the Content Agent draft placeholder.
+type GeneratePathwayRequest struct {
+	ProfessionID       pgtype.UUID `json:"profession_id"`
+	IssuingSpaceID     string      `json:"issuing_space_id"`
+	DestinationSpaceID string      `json:"destination_space_id"`
+}
+
+// GeneratePathwayResponse is the placeholder response for the Content
+// Agent draft generation endpoint.
+type GeneratePathwayResponse struct {
+	Status             string       `json:"status"`
+	Message            string       `json:"message"`
+	ProfessionID       pgtype.UUID  `json:"profession_id,omitempty"`
+	IssuingSpaceID     string       `json:"issuing_space_id,omitempty"`
+	DestinationSpaceID string       `json:"destination_space_id,omitempty"`
+}
+
+// Service holds the business logic for the Credential Checker.
+type Service struct {
+	store    *Store
+	settings *config.Settings
+}
+
+// NewService creates a credential checker service.
+func NewService(store *Store, settings *config.Settings) *Service {
+	return &Service{
+		store:    store,
+		settings: settings,
+	}
+}
+
+// Enabled reads the credential_checker.enabled system_setting toggle
+// (§94 feature flag).
+func (s *Service) Enabled(ctx context.Context, tenantID pgtype.UUID) bool {
+	if s.settings == nil {
+		return false
+	}
+	return s.settings.GetBoolOr(ctx, tenantID, "credential_checker.enabled", false)
+}
+
+// ListProfessions returns all credential professions as DTOs.
+func (s *Service) ListProfessions(ctx context.Context) ([]ProfessionDTO, error) {
+	rows, err := s.store.ListProfessions(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("credentialchecker: list professions: %w", err)
+	}
+	dtos := make([]ProfessionDTO, 0, len(rows))
+	for _, r := range rows {
+		dtos = append(dtos, professionRowToDTO(r))
+	}
+	return dtos, nil
+}
+
+// ListPathways returns a paginated, filtered list of published credential
+// pathways. The destination/profession/issuing filters are optional.
+func (s *Service) ListPathways(ctx context.Context, tenantID, destSpaceID, issuingSpaceID pgtype.UUID, professionID pgtype.UUID, page, limit int32) ([]PathwayDTO, int64, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	if page <= 0 {
+		page = 1
+	}
+	offset := (page - 1) * limit
+
+	rows, total, err := s.store.ListPathways(ctx, ListPathwaysFilter{
+		TenantID:           tenantID,
+		DestinationSpaceID: destSpaceID,
+		ProfessionID:       professionID,
+		IssuingSpaceID:     issuingSpaceID,
+		Status:             StatusPublished,
+		Limit:              limit,
+		Offset:             offset,
+	})
+	if err != nil {
+		return nil, 0, fmt.Errorf("credentialchecker: list pathways: %w", err)
+	}
+
+	dtos := make([]PathwayDTO, 0, len(rows))
+	for _, r := range rows {
+		dtos = append(dtos, pathwayRowToDTO(r))
+	}
+	return dtos, total, nil
+}
+
+// GetPathway returns a single pathway by id plus its published community
+// notes. Only published pathways are returned to public callers.
+func (s *Service) GetPathway(ctx context.Context, id, tenantID pgtype.UUID) (PathwayDetailDTO, error) {
+	row, err := s.store.GetPathwayByID(ctx, id, tenantID)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return PathwayDetailDTO{}, pgx.ErrNoRows
+		}
+		return PathwayDetailDTO{}, fmt.Errorf("credentialchecker: get pathway: %w", err)
+	}
+
+	notes, err := s.store.GetPathwayNotes(ctx, id, tenantID)
+	if err != nil {
+		slog.Error("credentialchecker: get pathway notes failed", "pathway_id", id, "error", err)
+		notes = nil
+	}
+
+	noteDTOs := make([]CommunityNoteDTO, 0, len(notes))
+	for _, n := range notes {
+		noteDTOs = append(noteDTOs, noteRowToDTO(n))
+	}
+
+	return PathwayDetailDTO{
+		Pathway: pathwayRowToDTO(row),
+		Notes:   noteDTOs,
+	}, nil
+}
+
+// CreatePathway creates a new credential pathway. Admin-only
+// (credential_checker.manage permission checked at route level).
+func (s *Service) CreatePathway(ctx context.Context, tenantID pgtype.UUID, req CreatePathwayRequest) (PathwayDTO, error) {
+	if req.RegulatoryBody == "" {
+		return PathwayDTO{}, fmt.Errorf("regulatory_body is required")
+	}
+	if req.PathwayDescription == "" {
+		return PathwayDTO{}, fmt.Errorf("pathway_description is required")
+	}
+	if req.PathwayType == "" {
+		return PathwayDTO{}, fmt.Errorf("pathway_type is required")
+	}
+
+	var issuingSpaceID pgtype.UUID
+	if err := issuingSpaceID.Scan(req.IssuingSpaceID); err != nil {
+		return PathwayDTO{}, fmt.Errorf("invalid issuing_space_id: %w", err)
+	}
+
+	var destSpaceID pgtype.UUID
+	if err := destSpaceID.Scan(req.DestinationSpaceID); err != nil {
+		return PathwayDTO{}, fmt.Errorf("invalid destination_space_id: %w", err)
+	}
+
+	input := CreatePathwayInput{
+		TenantID:           tenantID,
+		ProfessionID:       req.ProfessionID,
+		IssuingSpaceID:     issuingSpaceID,
+		DestinationSpaceID: destSpaceID,
+		RegulatoryBody:     req.RegulatoryBody,
+		PathwayType:        req.PathwayType,
+		PathwayDescription: req.PathwayDescription,
+		Status:             req.Status,
+		IsActive:           true,
+	}
+	if req.IsActive != nil {
+		input.IsActive = *req.IsActive
+	}
+	if req.AIGenerated != nil {
+		input.AIGenerated = *req.AIGenerated
+	}
+	if req.RegulatoryBodyURL != "" {
+		input.RegulatoryBodyURL = &req.RegulatoryBodyURL
+	}
+	if req.TimelineEstimate != "" {
+		input.TimelineEstimate = &req.TimelineEstimate
+	}
+	if req.CostEstimateUSD != "" {
+		input.CostEstimateUSD = &req.CostEstimateUSD
+	}
+	if req.OfficialApplicationURL != "" {
+		input.OfficialApplicationURL = &req.OfficialApplicationURL
+	}
+	if req.SourceURLLastChecked != "" {
+		var d pgtype.Date
+		if err := d.Scan(req.SourceURLLastChecked); err == nil {
+			input.SourceURLLastChecked = d
+		}
+	}
+	if req.AIModel != "" {
+		input.AIModel = &req.AIModel
+	}
+	if req.AIPromptHash != "" {
+		input.AIPromptHash = &req.AIPromptHash
+	}
+
+	id, err := s.store.CreatePathway(ctx, input)
+	if err != nil {
+		return PathwayDTO{}, fmt.Errorf("credentialchecker: create pathway: %w", err)
+	}
+
+	row, err := s.store.GetPathwayByID(ctx, id, tenantID)
+	if err != nil {
+		return PathwayDTO{}, fmt.Errorf("credentialchecker: fetch created pathway: %w", err)
+	}
+	return pathwayRowToDTO(row), nil
+}
+
+// UpdatePathway updates the mutable fields on a credential pathway.
+// Admin-only (credential_checker.manage permission checked at route
+// level). Only provided (non-nil) fields are updated.
+func (s *Service) UpdatePathway(ctx context.Context, id, tenantID pgtype.UUID, req UpdatePathwayRequest) (PathwayDTO, error) {
+	input := UpdatePathwayInput{
+		ProfessionID:           req.ProfessionID,
+		RegulatoryBody:         req.RegulatoryBody,
+		RegulatoryBodyURL:      req.RegulatoryBodyURL,
+		PathwayType:            req.PathwayType,
+		TimelineEstimate:       req.TimelineEstimate,
+		CostEstimateUSD:        req.CostEstimateUSD,
+		PathwayDescription:     req.PathwayDescription,
+		OfficialApplicationURL: req.OfficialApplicationURL,
+		Status:                 req.Status,
+		IsActive:               req.IsActive,
+		IsJapabotIndexed:       req.IsJapabotIndexed,
+	}
+
+	if req.IssuingSpaceID != nil && *req.IssuingSpaceID != "" {
+		var sid pgtype.UUID
+		if err := sid.Scan(*req.IssuingSpaceID); err != nil {
+			return PathwayDTO{}, fmt.Errorf("invalid issuing_space_id: %w", err)
+		}
+		input.IssuingSpaceID = &sid
+	}
+	if req.DestinationSpaceID != nil && *req.DestinationSpaceID != "" {
+		var sid pgtype.UUID
+		if err := sid.Scan(*req.DestinationSpaceID); err != nil {
+			return PathwayDTO{}, fmt.Errorf("invalid destination_space_id: %w", err)
+		}
+		input.DestinationSpaceID = &sid
+	}
+	if req.SourceURLLastChecked != nil && *req.SourceURLLastChecked != "" {
+		var d pgtype.Date
+		if err := d.Scan(*req.SourceURLLastChecked); err == nil {
+			input.SourceURLLastChecked = &d
+		}
+	}
+
+	if err := s.store.UpdatePathway(ctx, id, tenantID, input); err != nil {
+		if err == pgx.ErrNoRows {
+			return PathwayDTO{}, pgx.ErrNoRows
+		}
+		return PathwayDTO{}, fmt.Errorf("credentialchecker: update pathway: %w", err)
+	}
+
+	row, err := s.store.GetPathwayByID(ctx, id, tenantID)
+	if err != nil {
+		return PathwayDTO{}, fmt.Errorf("credentialchecker: fetch updated pathway: %w", err)
+	}
+	return pathwayRowToDTO(row), nil
+}
+
+// ApprovePathway marks a pathway as HITL-approved by the given reviewer.
+// Admin-only (credential_checker.manage permission checked at route
+// level). Sets hitl_reviewed_by, hitl_reviewed_at = now(), status =
+// 'published'.
+func (s *Service) ApprovePathway(ctx context.Context, id, tenantID, reviewerID pgtype.UUID, notes *string) (PathwayDTO, error) {
+	if err := s.store.ApprovePathway(ctx, id, tenantID, reviewerID, notes); err != nil {
+		if err == pgx.ErrNoRows {
+			return PathwayDTO{}, pgx.ErrNoRows
+		}
+		return PathwayDTO{}, fmt.Errorf("credentialchecker: approve pathway: %w", err)
+	}
+
+	row, err := s.store.GetPathwayByID(ctx, id, tenantID)
+	if err != nil {
+		return PathwayDTO{}, fmt.Errorf("credentialchecker: fetch approved pathway: %w", err)
+	}
+	return pathwayRowToDTO(row), nil
+}
+
+// CreateNote submits a community note on a pathway. Auth required
+// (credential_checker.note permission checked at route level).
+func (s *Service) CreateNote(ctx context.Context, pathwayID, tenantID, userID pgtype.UUID, note string) (CommunityNoteDTO, error) {
+	if note == "" {
+		return CommunityNoteDTO{}, fmt.Errorf("note is required")
+	}
+
+	if _, err := s.store.GetPathwayByID(ctx, pathwayID, tenantID); err != nil {
+		if err == pgx.ErrNoRows {
+			return CommunityNoteDTO{}, pgx.ErrNoRows
+		}
+		return CommunityNoteDTO{}, fmt.Errorf("credentialchecker: note: get pathway: %w", err)
+	}
+
+	id, err := s.store.CreateNote(ctx, pathwayID, userID, note)
+	if err != nil {
+		return CommunityNoteDTO{}, fmt.Errorf("credentialchecker: create note: %w", err)
+	}
+
+	return CommunityNoteDTO{
+		ID:        id.String(),
+		PathwayID: pathwayID.String(),
+		UserID:    userID.String(),
+		Note:      note,
+		Upvotes:   0,
+		Status:    StatusPublished,
+	}, nil
+}
+
+// GeneratePathwayDraft is a placeholder for the Content Agent draft
+// generation endpoint. It returns 202 Accepted with a placeholder
+// response indicating that the AI generation pipeline is not yet wired.
+// Admin-only (credential_checker.manage permission checked at route
+// level).
+func (s *Service) GeneratePathwayDraft(ctx context.Context, tenantID pgtype.UUID, req GeneratePathwayRequest) (GeneratePathwayResponse, error) {
+	resp := GeneratePathwayResponse{
+		Status:             "accepted",
+		Message:            "Content Agent draft generation queued. Pathway will be created in 'ai_draft' status upon completion.",
+		ProfessionID:       req.ProfessionID,
+		IssuingSpaceID:     req.IssuingSpaceID,
+		DestinationSpaceID: req.DestinationSpaceID,
+	}
+	return resp, nil
+}
+
+// AdminListPathways returns all pathways (any status) for the admin
+// management view. Admin-only (credential_checker.manage permission
+// checked at route level).
+func (s *Service) AdminListPathways(ctx context.Context, tenantID, destSpaceID, issuingSpaceID pgtype.UUID, professionID pgtype.UUID, status string, page, limit int32) ([]PathwayDTO, int64, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	if page <= 0 {
+		page = 1
+	}
+	offset := (page - 1) * limit
+
+	rows, total, err := s.store.ListPathways(ctx, ListPathwaysFilter{
+		TenantID:           tenantID,
+		DestinationSpaceID: destSpaceID,
+		ProfessionID:       professionID,
+		IssuingSpaceID:     issuingSpaceID,
+		Status:             status,
+		Limit:              limit,
+		Offset:             offset,
+	})
+	if err != nil {
+		return nil, 0, fmt.Errorf("credentialchecker: admin list pathways: %w", err)
+	}
+
+	dtos := make([]PathwayDTO, 0, len(rows))
+	for _, r := range rows {
+		dtos = append(dtos, pathwayRowToDTO(r))
+	}
+	return dtos, total, nil
+}
+
+// ---------------------------------------------------------------------------
+// DTO conversion helpers
+// ---------------------------------------------------------------------------
+
+// professionRowToDTO converts a ProfessionRow to a ProfessionDTO.
+func professionRowToDTO(r ProfessionRow) ProfessionDTO {
+	dto := ProfessionDTO{
+		ID:   r.ID.String(),
+		Slug: r.Slug,
+		Name: r.Name,
+	}
+	if r.Category != nil {
+		dto.Category = *r.Category
+	}
+	return dto
+}
+
+// pathwayRowToDTO converts a PathwayRow to a PathwayDTO.
+func pathwayRowToDTO(r PathwayRow) PathwayDTO {
+	dto := PathwayDTO{
+		ID:                 r.ID.String(),
+		ProfessionID:       r.ProfessionID,
+		ProfessionSlug:     r.ProfessionSlug,
+		ProfessionName:     r.ProfessionName,
+		IssuingSpaceID:     r.IssuingSpaceID.String(),
+		DestinationSpaceID: r.DestinationSpaceID.String(),
+		RegulatoryBody:     r.RegulatoryBody,
+		PathwayType:        r.PathwayType,
+		PathwayDescription: r.PathwayDescription,
+		Status:             r.Status,
+		IsActive:           r.IsActive,
+		AIGenerated:        r.AIGenerated,
+		IsJapabotIndexed:   r.IsJapabotIndexed,
+		CreatedAt:          formatTs(r.CreatedAt),
+		UpdatedAt:          formatTs(r.UpdatedAt),
+		HITLReviewedAt:     formatTs(r.HITLReviewedAt),
+	}
+	if r.ProfessionCategory != nil {
+		dto.ProfessionCategory = *r.ProfessionCategory
+	}
+	if r.IssuingSpaceName != nil {
+		dto.IssuingSpaceName = *r.IssuingSpaceName
+	}
+	if r.IssuingSpaceCode != nil {
+		dto.IssuingSpaceCode = *r.IssuingSpaceCode
+	}
+	if r.DestinationSpaceName != nil {
+		dto.DestinationSpaceName = *r.DestinationSpaceName
+	}
+	if r.DestinationSpaceCode != nil {
+		dto.DestinationSpaceCode = *r.DestinationSpaceCode
+	}
+	if r.RegulatoryBodyURL != nil {
+		dto.RegulatoryBodyURL = *r.RegulatoryBodyURL
+	}
+	if r.TimelineEstimate != nil {
+		dto.TimelineEstimate = *r.TimelineEstimate
+	}
+	if r.CostEstimateUSD != nil {
+		dto.CostEstimateUSD = *r.CostEstimateUSD
+	}
+	if r.OfficialApplicationURL != nil {
+		dto.OfficialApplicationURL = *r.OfficialApplicationURL
+	}
+	if r.SourceURLLastChecked.Valid {
+		dto.SourceURLLastChecked = r.SourceURLLastChecked.Time.Format("2006-01-02")
+	}
+	if r.AIModel != nil {
+		dto.AIModel = *r.AIModel
+	}
+	if r.AIPromptHash != nil {
+		dto.AIPromptHash = *r.AIPromptHash
+	}
+	if r.HITLReviewedBy.Valid {
+		dto.HITLReviewedBy = r.HITLReviewedBy.String()
+	}
+	if r.HITLReviewNotes != nil {
+		dto.HITLReviewNotes = *r.HITLReviewNotes
+	}
+	return dto
+}
+
+// noteRowToDTO converts a CommunityNoteRow to a CommunityNoteDTO.
+func noteRowToDTO(r CommunityNoteRow) CommunityNoteDTO {
+	dto := CommunityNoteDTO{
+		ID:        r.ID.String(),
+		PathwayID: r.PathwayID.String(),
+		UserID:    r.UserID.String(),
+		Note:      r.Note,
+		Upvotes:   r.Upvotes,
+		Status:    r.Status,
+		CreatedAt: formatTs(r.CreatedAt),
+	}
+	if r.UserName != nil {
+		dto.UserName = *r.UserName
+	}
+	return dto
+}
+
+// formatTs renders a pgtype.Timestamptz as RFC 3339 UTC, or "" if NULL.
+func formatTs(t pgtype.Timestamptz) string {
+	if !t.Valid {
+		return ""
+	}
+	return t.Time.UTC().Format(time.RFC3339)
+}
+
+// parseProfessionID parses a profession_id query parameter string into
+// a pgtype.UUID. Returns an invalid pgtype.UUID (no filter) if the
+// string is empty or invalid.
+func parseProfessionID(v string) pgtype.UUID {
+	if v == "" {
+		return pgtype.UUID{}
+	}
+	var id pgtype.UUID
+	if err := id.Scan(v); err != nil {
+		return pgtype.UUID{}
+	}
+	return id
+}

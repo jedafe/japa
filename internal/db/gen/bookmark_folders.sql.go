@@ -15,7 +15,7 @@ const createBookmarkFolder = `-- name: CreateBookmarkFolder :one
 
 INSERT INTO bookmark_folders (tenant_id, user_id, name)
 VALUES ($1, $2, $3)
-RETURNING id, tenant_id, user_id, name, created_at, updated_at
+RETURNING id, tenant_id, user_id, name, created_at, updated_at, position
 `
 
 type CreateBookmarkFolderParams struct {
@@ -37,6 +37,7 @@ func (q *Queries) CreateBookmarkFolder(ctx context.Context, arg CreateBookmarkFo
 		&i.Name,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Position,
 	)
 	return i, err
 }
@@ -60,11 +61,46 @@ func (q *Queries) DeleteBookmarkFolder(ctx context.Context, arg DeleteBookmarkFo
 	return result.RowsAffected(), nil
 }
 
-const listBookmarkFoldersByUser = `-- name: ListBookmarkFoldersByUser :many
-SELECT id, tenant_id, user_id, name, created_at, updated_at
+const getBookmarkFolder = `-- name: GetBookmarkFolder :one
+SELECT id, tenant_id, user_id, name, created_at, updated_at, position
 FROM bookmark_folders
-WHERE tenant_id = $1 AND user_id = $2
-ORDER BY name
+WHERE id = $1 AND tenant_id = $2 AND user_id = $3
+`
+
+type GetBookmarkFolderParams struct {
+	ID       pgtype.UUID `json:"id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+	UserID   pgtype.UUID `json:"user_id"`
+}
+
+// Validates that a folder belongs to the given user and tenant (BL-013).
+func (q *Queries) GetBookmarkFolder(ctx context.Context, arg GetBookmarkFolderParams) (BookmarkFolder, error) {
+	row := q.db.QueryRow(ctx, getBookmarkFolder, arg.ID, arg.TenantID, arg.UserID)
+	var i BookmarkFolder
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.UserID,
+		&i.Name,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Position,
+	)
+	return i, err
+}
+
+const listBookmarkFoldersByUser = `-- name: ListBookmarkFoldersByUser :many
+SELECT bf.id, bf.tenant_id, bf.user_id, bf.name, bf.created_at, bf.updated_at,
+       COALESCE(bm.cnt, 0) AS bookmark_count
+FROM bookmark_folders bf
+LEFT JOIN (
+    SELECT folder_id, COUNT(*) AS cnt
+    FROM bookmarks
+    WHERE folder_id IS NOT NULL
+    GROUP BY folder_id
+) bm ON bm.folder_id = bf.id
+WHERE bf.tenant_id = $1 AND bf.user_id = $2
+ORDER BY bf.position, bf.name
 `
 
 type ListBookmarkFoldersByUserParams struct {
@@ -72,15 +108,25 @@ type ListBookmarkFoldersByUserParams struct {
 	UserID   pgtype.UUID `json:"user_id"`
 }
 
-func (q *Queries) ListBookmarkFoldersByUser(ctx context.Context, arg ListBookmarkFoldersByUserParams) ([]BookmarkFolder, error) {
+type ListBookmarkFoldersByUserRow struct {
+	ID            pgtype.UUID        `json:"id"`
+	TenantID      pgtype.UUID        `json:"tenant_id"`
+	UserID        pgtype.UUID        `json:"user_id"`
+	Name          string             `json:"name"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
+	BookmarkCount int64              `json:"bookmark_count"`
+}
+
+func (q *Queries) ListBookmarkFoldersByUser(ctx context.Context, arg ListBookmarkFoldersByUserParams) ([]ListBookmarkFoldersByUserRow, error) {
 	rows, err := q.db.Query(ctx, listBookmarkFoldersByUser, arg.TenantID, arg.UserID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []BookmarkFolder
+	var items []ListBookmarkFoldersByUserRow
 	for rows.Next() {
-		var i BookmarkFolder
+		var i ListBookmarkFoldersByUserRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.TenantID,
@@ -88,6 +134,7 @@ func (q *Queries) ListBookmarkFoldersByUser(ctx context.Context, arg ListBookmar
 			&i.Name,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.BookmarkCount,
 		); err != nil {
 			return nil, err
 		}
@@ -103,7 +150,7 @@ const updateBookmarkFolder = `-- name: UpdateBookmarkFolder :one
 UPDATE bookmark_folders
 SET name = $1, updated_at = now()
 WHERE id = $2 AND tenant_id = $3 AND user_id = $4
-RETURNING id, tenant_id, user_id, name, created_at, updated_at
+RETURNING id, tenant_id, user_id, name, created_at, updated_at, position
 `
 
 type UpdateBookmarkFolderParams struct {
@@ -128,6 +175,7 @@ func (q *Queries) UpdateBookmarkFolder(ctx context.Context, arg UpdateBookmarkFo
 		&i.Name,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Position,
 	)
 	return i, err
 }

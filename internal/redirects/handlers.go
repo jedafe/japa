@@ -117,7 +117,14 @@ func (h *Handlers) ListRedirects(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": result})
+	// Standard admin list envelope: items in `data`, pagination metadata at top level.
+	// Matches the tags handler pattern so the frontend can use apiRaw + read total/total_pages.
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data":        result.Items,
+		"total":       result.Total,
+		"page":        result.Page,
+		"total_pages": result.TotalPages,
+	})
 }
 
 func (h *Handlers) GetRedirect(w http.ResponseWriter, r *http.Request) {

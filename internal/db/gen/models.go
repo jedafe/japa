@@ -69,6 +69,17 @@ type AccountDeletionRequest struct {
 	ProgressStep int32              `json:"progress_step"`
 }
 
+type AchievementMetum struct {
+	ID                 pgtype.UUID        `json:"id"`
+	TenantID           pgtype.UUID        `json:"tenant_id"`
+	ContentID          pgtype.UUID        `json:"content_id"`
+	MilestoneType      string             `json:"milestone_type"`
+	DestinationSpaceID pgtype.UUID        `json:"destination_space_id"`
+	OriginSpaceID      pgtype.UUID        `json:"origin_space_id"`
+	IsAnonymous        bool               `json:"is_anonymous"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+}
+
 type ActivityEvent struct {
 	ID          pgtype.UUID        `json:"id"`
 	TenantID    pgtype.UUID        `json:"tenant_id"`
@@ -355,6 +366,57 @@ type ApiKeyIpAllowlist struct {
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 }
 
+type AppointmentAlert struct {
+	ID                   pgtype.UUID        `json:"id"`
+	TenantID             pgtype.UUID        `json:"tenant_id"`
+	UserID               pgtype.UUID        `json:"user_id"`
+	DestinationSpaceID   pgtype.UUID        `json:"destination_space_id"`
+	EmbassySlug          string             `json:"embassy_slug"`
+	VisaCategory         *string            `json:"visa_category"`
+	DateRangeStart       pgtype.Date        `json:"date_range_start"`
+	DateRangeEnd         pgtype.Date        `json:"date_range_end"`
+	Status               string             `json:"status"`
+	LastCheckedAt        pgtype.Timestamptz `json:"last_checked_at"`
+	FiredAt              pgtype.Timestamptz `json:"fired_at"`
+	ExpiresAt            pgtype.Date        `json:"expires_at"`
+	NotificationChannels []string           `json:"notification_channels"`
+	CreatedAt            pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
+}
+
+type ArrivalChecklistGuide struct {
+	ID                 pgtype.UUID        `json:"id"`
+	TenantID           pgtype.UUID        `json:"tenant_id"`
+	DestinationSpaceID pgtype.UUID        `json:"destination_space_id"`
+	VisaCategory       *string            `json:"visa_category"`
+	ApplicantType      string             `json:"applicant_type"`
+	Version            int32              `json:"version"`
+	Status             string             `json:"status"`
+	IsActive           bool               `json:"is_active"`
+	AiGenerated        bool               `json:"ai_generated"`
+	AiModel            *string            `json:"ai_model"`
+	AiPromptHash       *string            `json:"ai_prompt_hash"`
+	HitlReviewedBy     pgtype.UUID        `json:"hitl_reviewed_by"`
+	HitlReviewedAt     pgtype.Timestamptz `json:"hitl_reviewed_at"`
+	HitlReviewNotes    *string            `json:"hitl_review_notes"`
+	IsJapabotIndexed   bool               `json:"is_japabot_indexed"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+}
+
+type ArrivalChecklistItem struct {
+	ID                    pgtype.UUID        `json:"id"`
+	GuideID               pgtype.UUID        `json:"guide_id"`
+	Phase                 string             `json:"phase"`
+	Title                 string             `json:"title"`
+	Description           *string            `json:"description"`
+	OfficialLink          *string            `json:"official_link"`
+	OriginCountryModifier []byte             `json:"origin_country_modifier"`
+	SortOrder             int32              `json:"sort_order"`
+	IsFlagged             bool               `json:"is_flagged"`
+	CreatedAt             pgtype.Timestamptz `json:"created_at"`
+}
+
 type AssessmentResult struct {
 	ID              pgtype.UUID        `json:"id"`
 	TenantID        pgtype.UUID        `json:"tenant_id"`
@@ -365,6 +427,42 @@ type AssessmentResult struct {
 	ThresholdLabel  string             `json:"threshold_label"`
 	RoadmapContent  []byte             `json:"roadmap_content"`
 	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+}
+
+type AttestationCommunityUpdate struct {
+	ID             pgtype.UUID        `json:"id"`
+	PathwayID      pgtype.UUID        `json:"pathway_id"`
+	UserID         pgtype.UUID        `json:"user_id"`
+	StepIndex      *int32             `json:"step_index"`
+	FeeEstimate    *string            `json:"fee_estimate"`
+	TurnaroundDays *int32             `json:"turnaround_days"`
+	Note           *string            `json:"note"`
+	Status         string             `json:"status"`
+	ReviewedBy     pgtype.UUID        `json:"reviewed_by"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
+}
+
+type AttestationPathway struct {
+	ID                    pgtype.UUID        `json:"id"`
+	TenantID              pgtype.UUID        `json:"tenant_id"`
+	DocumentType          string             `json:"document_type"`
+	IssuingSpaceID        pgtype.UUID        `json:"issuing_space_id"`
+	DestinationSpaceID    pgtype.UUID        `json:"destination_space_id"`
+	ApostilleRequired     bool               `json:"apostille_required"`
+	PathwaySteps          []byte             `json:"pathway_steps"`
+	CommunityLastVerified pgtype.Date        `json:"community_last_verified"`
+	Status                string             `json:"status"`
+	IsActive              bool               `json:"is_active"`
+	AiGenerated           bool               `json:"ai_generated"`
+	AiModel               *string            `json:"ai_model"`
+	AiPromptHash          *string            `json:"ai_prompt_hash"`
+	HitlReviewedBy        pgtype.UUID        `json:"hitl_reviewed_by"`
+	HitlReviewedAt        pgtype.Timestamptz `json:"hitl_reviewed_at"`
+	HitlReviewNotes       *string            `json:"hitl_review_notes"`
+	IsJapabotIndexed      bool               `json:"is_japabot_indexed"`
+	CreatedAt             pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt             pgtype.Timestamptz `json:"updated_at"`
 }
 
 type AuditLog struct {
@@ -456,6 +554,45 @@ type BookmarkFolder struct {
 	Name      string             `json:"name"`
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+	Position  int32              `json:"position"`
+}
+
+type CalendarEntry struct {
+	ID                 pgtype.UUID        `json:"id"`
+	TenantID           pgtype.UUID        `json:"tenant_id"`
+	Title              string             `json:"title"`
+	Description        *string            `json:"description"`
+	Category           string             `json:"category"`
+	DestinationSpaceID pgtype.UUID        `json:"destination_space_id"`
+	OriginSpaceID      pgtype.UUID        `json:"origin_space_id"`
+	OccursAt           pgtype.Timestamptz `json:"occurs_at"`
+	EndsAt             pgtype.Timestamptz `json:"ends_at"`
+	IsRecurring        bool               `json:"is_recurring"`
+	RecurrencePattern  *string            `json:"recurrence_pattern"`
+	SourceUrl          *string            `json:"source_url"`
+	Status             string             `json:"status"`
+	SubmittedBy        pgtype.UUID        `json:"submitted_by"`
+	ReviewedBy         pgtype.UUID        `json:"reviewed_by"`
+	ReviewedAt         pgtype.Timestamptz `json:"reviewed_at"`
+	StalenessCheckDue  pgtype.Timestamptz `json:"staleness_check_due"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt          pgtype.Timestamptz `json:"deleted_at"`
+}
+
+type CalendarSafe struct {
+	UserID   pgtype.UUID        `json:"user_id"`
+	EntryID  pgtype.UUID        `json:"entry_id"`
+	TenantID pgtype.UUID        `json:"tenant_id"`
+	SavedAt  pgtype.Timestamptz `json:"saved_at"`
+}
+
+type CalendarSubscription struct {
+	UserID             pgtype.UUID        `json:"user_id"`
+	TenantID           pgtype.UUID        `json:"tenant_id"`
+	DestinationSpaceID pgtype.UUID        `json:"destination_space_id"`
+	Category           *string            `json:"category"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
 }
 
 type CensoredWord struct {
@@ -521,6 +658,37 @@ type CommentVote struct {
 	UserID    pgtype.UUID        `json:"user_id"`
 	Value     int16              `json:"value"`
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
+type CommunityOrganisation struct {
+	ID                   pgtype.UUID        `json:"id"`
+	TenantID             pgtype.UUID        `json:"tenant_id"`
+	Name                 string             `json:"name"`
+	Slug                 string             `json:"slug"`
+	OrgType              string             `json:"org_type"`
+	OriginCommunity      string             `json:"origin_community"`
+	DestinationSpaceID   pgtype.UUID        `json:"destination_space_id"`
+	CitySpaceID          pgtype.UUID        `json:"city_space_id"`
+	Address              *string            `json:"address"`
+	Latitude             pgtype.Numeric     `json:"latitude"`
+	Longitude            pgtype.Numeric     `json:"longitude"`
+	WebsiteUrl           *string            `json:"website_url"`
+	MeetingFrequency     *string            `json:"meeting_frequency"`
+	ContactInfo          *string            `json:"contact_info"`
+	JapaconnectSpaceID   pgtype.UUID        `json:"japaconnect_space_id"`
+	JapaconnectOrgID     pgtype.UUID        `json:"japaconnect_org_id"`
+	ClaimStatus          string             `json:"claim_status"`
+	IsVerified           bool               `json:"is_verified"`
+	IsActive             bool               `json:"is_active"`
+	IsCommunitySubmitted bool               `json:"is_community_submitted"`
+	Status               string             `json:"status"`
+	SubmittedBy          pgtype.UUID        `json:"submitted_by"`
+	ReviewedBy           pgtype.UUID        `json:"reviewed_by"`
+	ReviewedAt           pgtype.Timestamptz `json:"reviewed_at"`
+	IsJapabotIndexed     bool               `json:"is_japabot_indexed"`
+	CreatedAt            pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt            pgtype.Timestamptz `json:"deleted_at"`
 }
 
 type ComparisonDimension struct {
@@ -838,6 +1006,53 @@ type CourseAccessGrant struct {
 	RevokedAt pgtype.Timestamptz `json:"revoked_at"`
 }
 
+type CredentialCommunityNote struct {
+	ID        pgtype.UUID        `json:"id"`
+	PathwayID pgtype.UUID        `json:"pathway_id"`
+	UserID    pgtype.UUID        `json:"user_id"`
+	Note      string             `json:"note"`
+	Upvotes   int32              `json:"upvotes"`
+	Status    string             `json:"status"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	DeletedAt pgtype.Timestamptz `json:"deleted_at"`
+}
+
+type CredentialPathway struct {
+	ID                     pgtype.UUID        `json:"id"`
+	TenantID               pgtype.UUID        `json:"tenant_id"`
+	ProfessionID           pgtype.UUID        `json:"profession_id"`
+	IssuingSpaceID         pgtype.UUID        `json:"issuing_space_id"`
+	DestinationSpaceID     pgtype.UUID        `json:"destination_space_id"`
+	RegulatoryBody         string             `json:"regulatory_body"`
+	RegulatoryBodyUrl      *string            `json:"regulatory_body_url"`
+	PathwayType            string             `json:"pathway_type"`
+	TimelineEstimate       *string            `json:"timeline_estimate"`
+	CostEstimateUsd        *string            `json:"cost_estimate_usd"`
+	PathwayDescription     string             `json:"pathway_description"`
+	OfficialApplicationUrl *string            `json:"official_application_url"`
+	SourceUrlLastChecked   pgtype.Date        `json:"source_url_last_checked"`
+	Status                 string             `json:"status"`
+	IsActive               bool               `json:"is_active"`
+	AiGenerated            bool               `json:"ai_generated"`
+	AiModel                *string            `json:"ai_model"`
+	AiPromptHash           *string            `json:"ai_prompt_hash"`
+	HitlReviewedBy         pgtype.UUID        `json:"hitl_reviewed_by"`
+	HitlReviewedAt         pgtype.Timestamptz `json:"hitl_reviewed_at"`
+	HitlReviewNotes        *string            `json:"hitl_review_notes"`
+	IsJapabotIndexed       bool               `json:"is_japabot_indexed"`
+	CreatedAt              pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt              pgtype.Timestamptz `json:"updated_at"`
+}
+
+type CredentialProfession struct {
+	ID        pgtype.UUID        `json:"id"`
+	Slug      string             `json:"slug"`
+	Name      string             `json:"name"`
+	Category  *string            `json:"category"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
 type CreditPack struct {
 	ID           pgtype.UUID        `json:"id"`
 	TenantID     pgtype.UUID        `json:"tenant_id"`
@@ -947,6 +1162,35 @@ type CustomFieldValue struct {
 	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
 }
 
+type CvFormatSession struct {
+	ID                 pgtype.UUID        `json:"id"`
+	TenantID           pgtype.UUID        `json:"tenant_id"`
+	UserID             pgtype.UUID        `json:"user_id"`
+	OriginSpaceID      pgtype.UUID        `json:"origin_space_id"`
+	DestinationSpaceID pgtype.UUID        `json:"destination_space_id"`
+	InputText          string             `json:"input_text"`
+	OutputText         *string            `json:"output_text"`
+	OutputFormat       string             `json:"output_format"`
+	Status             string             `json:"status"`
+	AiModel            *string            `json:"ai_model"`
+	TokensUsed         *int32             `json:"tokens_used"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	ExpiresAt          pgtype.Timestamptz `json:"expires_at"`
+}
+
+type CvStandard struct {
+	ID                     pgtype.UUID        `json:"id"`
+	DestinationSpaceID     pgtype.UUID        `json:"destination_space_id"`
+	RecommendedLengthPages *string            `json:"recommended_length_pages"`
+	PhotoPolicy            *string            `json:"photo_policy"`
+	DateFormat             *string            `json:"date_format"`
+	RecommendedSections    []string           `json:"recommended_sections"`
+	ToneGuidance           *string            `json:"tone_guidance"`
+	CommonPitfalls         *string            `json:"common_pitfalls"`
+	CreatedAt              pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt              pgtype.Timestamptz `json:"updated_at"`
+}
+
 type DataExportRequest struct {
 	ID          pgtype.UUID        `json:"id"`
 	TenantID    pgtype.UUID        `json:"tenant_id"`
@@ -970,6 +1214,22 @@ type DeviceToken struct {
 	LastUsedAt pgtype.Timestamptz `json:"last_used_at"`
 	CreatedAt  pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt  pgtype.Timestamptz `json:"updated_at"`
+}
+
+type DigestEdition struct {
+	ID           pgtype.UUID        `json:"id"`
+	TenantID     pgtype.UUID        `json:"tenant_id"`
+	SpaceID      pgtype.UUID        `json:"space_id"`
+	Cadence      string             `json:"cadence"`
+	Status       string             `json:"status"`
+	ScheduledFor pgtype.Timestamptz `json:"scheduled_for"`
+	PublishedAt  pgtype.Timestamptz `json:"published_at"`
+	Content      []byte             `json:"content"`
+	EmailSent    bool               `json:"email_sent"`
+	EmailSentAt  pgtype.Timestamptz `json:"email_sent_at"`
+	GeneratedBy  *string            `json:"generated_by"`
+	ReviewedBy   pgtype.UUID        `json:"reviewed_by"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
 }
 
 type DiscountCode struct {
@@ -1270,6 +1530,7 @@ type ForumThread struct {
 	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
 	DeletedAt         pgtype.Timestamptz `json:"deleted_at"`
 	ParentReplyID     pgtype.UUID        `json:"parent_reply_id"`
+	AmaConfig         []byte             `json:"ama_config"`
 }
 
 type ForumThreadTag struct {
@@ -1291,6 +1552,31 @@ type GroupRole struct {
 	GroupID   pgtype.UUID        `json:"group_id"`
 	RoleID    pgtype.UUID        `json:"role_id"`
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
+type HousingGuide struct {
+	ID                   pgtype.UUID        `json:"id"`
+	TenantID             pgtype.UUID        `json:"tenant_id"`
+	DestinationSpaceID   pgtype.UUID        `json:"destination_space_id"`
+	CitySpaceID          pgtype.UUID        `json:"city_space_id"`
+	AccommodationType    *string            `json:"accommodation_type"`
+	SearchPlatforms      []byte             `json:"search_platforms"`
+	LandlordRequirements *string            `json:"landlord_requirements"`
+	RentRanges           []byte             `json:"rent_ranges"`
+	ScamCategories       []string           `json:"scam_categories"`
+	Tips                 *string            `json:"tips"`
+	Status               string             `json:"status"`
+	IsActive             bool               `json:"is_active"`
+	AiGenerated          bool               `json:"ai_generated"`
+	AiModel              *string            `json:"ai_model"`
+	AiPromptHash         *string            `json:"ai_prompt_hash"`
+	HitlReviewedBy       pgtype.UUID        `json:"hitl_reviewed_by"`
+	HitlReviewedAt       pgtype.Timestamptz `json:"hitl_reviewed_at"`
+	HitlReviewNotes      *string            `json:"hitl_review_notes"`
+	LastVerifiedAt       pgtype.Date        `json:"last_verified_at"`
+	IsJapabotIndexed     bool               `json:"is_japabot_indexed"`
+	CreatedAt            pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
 }
 
 // Aggregated periodic creator payout; rolls up revenue_splits (ADR-063).
@@ -1368,6 +1654,66 @@ type KnownBot struct {
 	CrawlDelay       int32              `json:"crawl_delay"`
 	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
 	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+}
+
+type LanguageScoreStory struct {
+	ID                 pgtype.UUID        `json:"id"`
+	TenantID           pgtype.UUID        `json:"tenant_id"`
+	UserID             pgtype.UUID        `json:"user_id"`
+	TestID             pgtype.UUID        `json:"test_id"`
+	StartingLevel      *string            `json:"starting_level"`
+	FinalScore         string             `json:"final_score"`
+	DestinationSpaceID pgtype.UUID        `json:"destination_space_id"`
+	PrepDurationWeeks  *int32             `json:"prep_duration_weeks"`
+	ResourcesUsed      []string           `json:"resources_used"`
+	Advice             *string            `json:"advice"`
+	Status             string             `json:"status"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	DeletedAt          pgtype.Timestamptz `json:"deleted_at"`
+}
+
+type LanguageTest struct {
+	ID             pgtype.UUID        `json:"id"`
+	Slug           string             `json:"slug"`
+	Name           string             `json:"name"`
+	OfficialUrl    *string            `json:"official_url"`
+	ValidityMonths *int32             `json:"validity_months"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+}
+
+type LanguageTestRequirement struct {
+	ID                 pgtype.UUID        `json:"id"`
+	TenantID           pgtype.UUID        `json:"tenant_id"`
+	DestinationSpaceID pgtype.UUID        `json:"destination_space_id"`
+	VisaCategory       *string            `json:"visa_category"`
+	TestID             pgtype.UUID        `json:"test_id"`
+	MinimumScore       string             `json:"minimum_score"`
+	ScoreBreakdown     []byte             `json:"score_breakdown"`
+	Notes              *string            `json:"notes"`
+	SourceUrl          *string            `json:"source_url"`
+	Status             string             `json:"status"`
+	IsActive           bool               `json:"is_active"`
+	AiGenerated        bool               `json:"ai_generated"`
+	AiModel            *string            `json:"ai_model"`
+	AiPromptHash       *string            `json:"ai_prompt_hash"`
+	HitlReviewedBy     pgtype.UUID        `json:"hitl_reviewed_by"`
+	HitlReviewedAt     pgtype.Timestamptz `json:"hitl_reviewed_at"`
+	HitlReviewNotes    *string            `json:"hitl_review_notes"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+}
+
+type LanguageTestResource struct {
+	ID              pgtype.UUID        `json:"id"`
+	TenantID        pgtype.UUID        `json:"tenant_id"`
+	TestID          pgtype.UUID        `json:"test_id"`
+	Title           string             `json:"title"`
+	ResourceUrl     string             `json:"resource_url"`
+	ResourceType    *string            `json:"resource_type"`
+	CommunityRating pgtype.Numeric     `json:"community_rating"`
+	RatingCount     int32              `json:"rating_count"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
 }
 
 type LearningCertificate struct {
@@ -1618,6 +1964,38 @@ type ModerationAppeal struct {
 	Status     string             `json:"status"`
 	CreatedAt  pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt  pgtype.Timestamptz `json:"updated_at"`
+}
+
+type MonitoredEmbassy struct {
+	ID                  pgtype.UUID        `json:"id"`
+	TenantID            pgtype.UUID        `json:"tenant_id"`
+	DestinationSpaceID  pgtype.UUID        `json:"destination_space_id"`
+	Slug                string             `json:"slug"`
+	Name                string             `json:"name"`
+	BookingUrl          string             `json:"booking_url"`
+	PollIntervalSeconds int32              `json:"poll_interval_seconds"`
+	IsActive            bool               `json:"is_active"`
+	LastPolledAt        pgtype.Timestamptz `json:"last_polled_at"`
+	CreatedAt           pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
+}
+
+type MutualAidPost struct {
+	ID                 pgtype.UUID        `json:"id"`
+	TenantID           pgtype.UUID        `json:"tenant_id"`
+	UserID             pgtype.UUID        `json:"user_id"`
+	PostType           string             `json:"post_type"`
+	Category           string             `json:"category"`
+	Title              string             `json:"title"`
+	Description        string             `json:"description"`
+	DestinationSpaceID pgtype.UUID        `json:"destination_space_id"`
+	CitySpaceID        pgtype.UUID        `json:"city_space_id"`
+	ExpiresAt          pgtype.Timestamptz `json:"expires_at"`
+	IsFulfilled        bool               `json:"is_fulfilled"`
+	Status             string             `json:"status"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt          pgtype.Timestamptz `json:"deleted_at"`
 }
 
 type MvDailyContentStat struct {
@@ -2023,6 +2401,52 @@ type Permission struct {
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 }
 
+type PlanningGroup struct {
+	ID                    pgtype.UUID        `json:"id"`
+	TenantID              pgtype.UUID        `json:"tenant_id"`
+	Name                  string             `json:"name"`
+	Description           *string            `json:"description"`
+	DestinationSpaceID    pgtype.UUID        `json:"destination_space_id"`
+	VisaCategory          *string            `json:"visa_category"`
+	TargetDepartureWindow *string            `json:"target_departure_window"`
+	TargetDepartureAt     pgtype.Date        `json:"target_departure_at"`
+	MaxMembers            int32              `json:"max_members"`
+	IsOpenJoin            bool               `json:"is_open_join"`
+	OwnerID               pgtype.UUID        `json:"owner_id"`
+	ExpiresAt             pgtype.Timestamptz `json:"expires_at"`
+	CreatedAt             pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt             pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt             pgtype.Timestamptz `json:"deleted_at"`
+}
+
+type PlanningGroupCheckin struct {
+	ID        pgtype.UUID        `json:"id"`
+	TenantID  pgtype.UUID        `json:"tenant_id"`
+	GroupID   pgtype.UUID        `json:"group_id"`
+	UserID    pgtype.UUID        `json:"user_id"`
+	Note      *string            `json:"note"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
+type PlanningGroupMember struct {
+	GroupID       pgtype.UUID        `json:"group_id"`
+	UserID        pgtype.UUID        `json:"user_id"`
+	TenantID      pgtype.UUID        `json:"tenant_id"`
+	DepartureDate pgtype.Date        `json:"departure_date"`
+	JoinedAt      pgtype.Timestamptz `json:"joined_at"`
+}
+
+type PlanningGroupMilestone struct {
+	ID          pgtype.UUID        `json:"id"`
+	TenantID    pgtype.UUID        `json:"tenant_id"`
+	GroupID     pgtype.UUID        `json:"group_id"`
+	UserID      pgtype.UUID        `json:"user_id"`
+	Title       string             `json:"title"`
+	Completed   bool               `json:"completed"`
+	CompletedAt pgtype.Timestamptz `json:"completed_at"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+}
+
 type PlatformDataExport struct {
 	ID              pgtype.UUID        `json:"id"`
 	TenantID        pgtype.UUID        `json:"tenant_id"`
@@ -2371,6 +2795,37 @@ type SavedScholarship struct {
 	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
 }
 
+type ScamAlertSubscription struct {
+	UserID             pgtype.UUID        `json:"user_id"`
+	TenantID           pgtype.UUID        `json:"tenant_id"`
+	DestinationSpaceID pgtype.UUID        `json:"destination_space_id"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+}
+
+type ScamReport struct {
+	ID                    pgtype.UUID        `json:"id"`
+	TenantID              pgtype.UUID        `json:"tenant_id"`
+	ReporterID            pgtype.UUID        `json:"reporter_id"`
+	ScamType              string             `json:"scam_type"`
+	DestinationSpaceID    pgtype.UUID        `json:"destination_space_id"`
+	OriginSpaceID         pgtype.UUID        `json:"origin_space_id"`
+	OriginCommunity       *string            `json:"origin_community"`
+	PlatformUsed          *string            `json:"platform_used"`
+	ApproximateDate       pgtype.Date        `json:"approximate_date"`
+	AmountRange           *string            `json:"amount_range"`
+	Description           string             `json:"description"`
+	ReportedToAuthorities bool               `json:"reported_to_authorities"`
+	Status                string             `json:"status"`
+	ModeratorNote         *string            `json:"moderator_note"`
+	IsPinned              bool               `json:"is_pinned"`
+	PinnedSpaceID         pgtype.UUID        `json:"pinned_space_id"`
+	ReviewedBy            pgtype.UUID        `json:"reviewed_by"`
+	ReviewedAt            pgtype.Timestamptz `json:"reviewed_at"`
+	CreatedAt             pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt             pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt             pgtype.Timestamptz `json:"deleted_at"`
+}
+
 type SearchAnalytic struct {
 	ID           int64              `json:"id"`
 	TenantID     pgtype.UUID        `json:"tenant_id"`
@@ -2390,6 +2845,27 @@ type SecurityScanResult struct {
 	Meta       []byte             `json:"meta"`
 	ResolvedAt pgtype.Timestamptz `json:"resolved_at"`
 	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+}
+
+type ServiceListingMetum struct {
+	ID                 pgtype.UUID        `json:"id"`
+	TenantID           pgtype.UUID        `json:"tenant_id"`
+	ContentID          pgtype.UUID        `json:"content_id"`
+	OrgID              pgtype.UUID        `json:"org_id"`
+	ServiceCategory    string             `json:"service_category"`
+	DestinationSpaceID pgtype.UUID        `json:"destination_space_id"`
+	CitySpaceID        pgtype.UUID        `json:"city_space_id"`
+	OriginCommunities  *string            `json:"origin_communities"`
+	IsRemote           bool               `json:"is_remote"`
+	WebsiteUrl         *string            `json:"website_url"`
+	BookingUrl         *string            `json:"booking_url"`
+	PriceRange         *string            `json:"price_range"`
+	IsVerified         bool               `json:"is_verified"`
+	VerificationType   *string            `json:"verification_type"`
+	ClaimStatus        string             `json:"claim_status"`
+	ClaimedByOrgID     pgtype.UUID        `json:"claimed_by_org_id"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
 }
 
 type SharePlatform struct {
@@ -2565,6 +3041,29 @@ type StockProvider struct {
 	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
 }
 
+type StoryMetum struct {
+	ID                 pgtype.UUID        `json:"id"`
+	TenantID           pgtype.UUID        `json:"tenant_id"`
+	ContentID          pgtype.UUID        `json:"content_id"`
+	OriginSpaceID      pgtype.UUID        `json:"origin_space_id"`
+	DestinationSpaceID pgtype.UUID        `json:"destination_space_id"`
+	RelocationYear     *int16             `json:"relocation_year"`
+	VisaCategory       *string            `json:"visa_category"`
+	Profession         *string            `json:"profession"`
+	BiggestChallenge   *string            `json:"biggest_challenge"`
+	MostUsefulResource *string            `json:"most_useful_resource"`
+	BestAdvice         *string            `json:"best_advice"`
+	Verified           bool               `json:"verified"`
+	AiGenerated        bool               `json:"ai_generated"`
+	AiModel            *string            `json:"ai_model"`
+	HitlReviewedBy     pgtype.UUID        `json:"hitl_reviewed_by"`
+	AiGeneratedAt      pgtype.Timestamptz `json:"ai_generated_at"`
+	HitlReviewedAt     pgtype.Timestamptz `json:"hitl_reviewed_at"`
+	IsJapabotIndexed   bool               `json:"is_japabot_indexed"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+}
+
 type StudioBatch struct {
 	ID          pgtype.UUID        `json:"id"`
 	TenantID    pgtype.UUID        `json:"tenant_id"`
@@ -2673,6 +3172,40 @@ type TagModerator struct {
 	AssignedBy       string             `json:"assigned_by"`
 	AssignedByUserID pgtype.UUID        `json:"assigned_by_user_id"`
 	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+}
+
+type TaxObligationGuide struct {
+	ID                   pgtype.UUID        `json:"id"`
+	TenantID             pgtype.UUID        `json:"tenant_id"`
+	OriginSpaceID        pgtype.UUID        `json:"origin_space_id"`
+	DestinationSpaceID   pgtype.UUID        `json:"destination_space_id"`
+	EmploymentStatus     string             `json:"employment_status"`
+	ResidencyTrigger     *string            `json:"residency_trigger"`
+	WorldwideIncomeTaxed *bool              `json:"worldwide_income_taxed"`
+	FirstYearObligations *string            `json:"first_year_obligations"`
+	ActionChecklist      []byte             `json:"action_checklist"`
+	Status               string             `json:"status"`
+	IsActive             bool               `json:"is_active"`
+	AiGenerated          bool               `json:"ai_generated"`
+	AiModel              *string            `json:"ai_model"`
+	AiPromptHash         *string            `json:"ai_prompt_hash"`
+	HitlReviewedBy       pgtype.UUID        `json:"hitl_reviewed_by"`
+	HitlReviewedAt       pgtype.Timestamptz `json:"hitl_reviewed_at"`
+	HitlReviewNotes      *string            `json:"hitl_review_notes"`
+	CreatedAt            pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
+}
+
+type TaxTreatyPair struct {
+	ID                 pgtype.UUID        `json:"id"`
+	TenantID           pgtype.UUID        `json:"tenant_id"`
+	OriginSpaceID      pgtype.UUID        `json:"origin_space_id"`
+	DestinationSpaceID pgtype.UUID        `json:"destination_space_id"`
+	TreatyExists       bool               `json:"treaty_exists"`
+	TreatySummary      *string            `json:"treaty_summary"`
+	TreatySourceUrl    *string            `json:"treaty_source_url"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
 }
 
 type Tenant struct {
@@ -2826,6 +3359,7 @@ type User struct {
 	CurrentGeoSpaceID   pgtype.UUID        `json:"current_geo_space_id"`
 	UsernameChangedAt   pgtype.Timestamptz `json:"username_changed_at"`
 	IsBot               bool               `json:"is_bot"`
+	PasswordChangedAt   pgtype.Timestamptz `json:"password_changed_at"`
 }
 
 type UserAffiliateLink struct {
@@ -2985,11 +3519,16 @@ type UserProfile struct {
 	CreatedAt          pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
 	// User override for geo content weighting (ISO country code). NULL = use resolved VisitorContext (ADR-064).
-	ContentCountryPreference *string     `json:"content_country_preference"`
-	CoverUrl                 *string     `json:"cover_url"`
-	PreferredCurrency        *string     `json:"preferred_currency"`
-	AvatarMediaID            pgtype.UUID `json:"avatar_media_id"`
-	HeaderMediaID            pgtype.UUID `json:"header_media_id"`
+	ContentCountryPreference *string            `json:"content_country_preference"`
+	CoverUrl                 *string            `json:"cover_url"`
+	PreferredCurrency        *string            `json:"preferred_currency"`
+	AvatarMediaID            pgtype.UUID        `json:"avatar_media_id"`
+	HeaderMediaID            pgtype.UUID        `json:"header_media_id"`
+	JapaStage                *string            `json:"japa_stage"`
+	JapaStageDestSpaceID     pgtype.UUID        `json:"japa_stage_dest_space_id"`
+	JapaStageUpdatedAt       pgtype.Timestamptz `json:"japa_stage_updated_at"`
+	JapaStageIsPublic        bool               `json:"japa_stage_is_public"`
+	JapaStageHistory         []byte             `json:"japa_stage_history"`
 }
 
 type UserRole struct {
@@ -2999,6 +3538,77 @@ type UserRole struct {
 	Slug      string             `json:"slug"`
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
+type VisaProcessingStat struct {
+	ID                 pgtype.UUID        `json:"id"`
+	TenantID           pgtype.UUID        `json:"tenant_id"`
+	OriginSpaceID      pgtype.UUID        `json:"origin_space_id"`
+	DestinationSpaceID pgtype.UUID        `json:"destination_space_id"`
+	VisaCategory       string             `json:"visa_category"`
+	Consulate          *string            `json:"consulate"`
+	PeriodStart        pgtype.Date        `json:"period_start"`
+	SampleCount        int32              `json:"sample_count"`
+	AvgDays            pgtype.Numeric     `json:"avg_days"`
+	MedianDays         pgtype.Numeric     `json:"median_days"`
+	P10Days            pgtype.Numeric     `json:"p10_days"`
+	P90Days            pgtype.Numeric     `json:"p90_days"`
+	RefreshedAt        pgtype.Timestamptz `json:"refreshed_at"`
+}
+
+type VisaRoute struct {
+	ID                   pgtype.UUID        `json:"id"`
+	TenantID             pgtype.UUID        `json:"tenant_id"`
+	DestinationSpaceID   pgtype.UUID        `json:"destination_space_id"`
+	VisaCategory         string             `json:"visa_category"`
+	Name                 string             `json:"name"`
+	Slug                 string             `json:"slug"`
+	EligibilitySummary   *string            `json:"eligibility_summary"`
+	RequirementsJson     []byte             `json:"requirements_json"`
+	TypicalFeeUsd        pgtype.Numeric     `json:"typical_fee_usd"`
+	PathToPr             *string            `json:"path_to_pr"`
+	RenewalTerms         *string            `json:"renewal_terms"`
+	Restrictions         *string            `json:"restrictions"`
+	GovSourceUrl         string             `json:"gov_source_url"`
+	SourceUrlLastChecked pgtype.Date        `json:"source_url_last_checked"`
+	Status               string             `json:"status"`
+	IsActive             bool               `json:"is_active"`
+	AiGenerated          bool               `json:"ai_generated"`
+	AiModel              *string            `json:"ai_model"`
+	AiPromptHash         *string            `json:"ai_prompt_hash"`
+	HitlReviewedBy       pgtype.UUID        `json:"hitl_reviewed_by"`
+	HitlReviewedAt       pgtype.Timestamptz `json:"hitl_reviewed_at"`
+	HitlReviewNotes      *string            `json:"hitl_review_notes"`
+	IsJapabotIndexed     bool               `json:"is_japabot_indexed"`
+	CreatedAt            pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
+}
+
+type VisaTimeline struct {
+	ID                 pgtype.UUID        `json:"id"`
+	TenantID           pgtype.UUID        `json:"tenant_id"`
+	UserID             pgtype.UUID        `json:"user_id"`
+	OriginSpaceID      pgtype.UUID        `json:"origin_space_id"`
+	DestinationSpaceID pgtype.UUID        `json:"destination_space_id"`
+	VisaCategory       string             `json:"visa_category"`
+	Consulate          *string            `json:"consulate"`
+	ApplicationMethod  *string            `json:"application_method"`
+	Outcome            *string            `json:"outcome"`
+	IsShared           bool               `json:"is_shared"`
+	AnonymisedAt       pgtype.Timestamptz `json:"anonymised_at"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt          pgtype.Timestamptz `json:"deleted_at"`
+}
+
+type VisaTimelineMilestone struct {
+	ID            pgtype.UUID        `json:"id"`
+	TenantID      pgtype.UUID        `json:"tenant_id"`
+	TimelineID    pgtype.UUID        `json:"timeline_id"`
+	MilestoneType string             `json:"milestone_type"`
+	OccurredAt    pgtype.Date        `json:"occurred_at"`
+	Notes         *string            `json:"notes"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
 }
 
 type WalletLedger struct {
@@ -3050,6 +3660,41 @@ type WebhookEndpoint struct {
 	Status     string             `json:"status"`
 	CreatedAt  pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt  pgtype.Timestamptz `json:"updated_at"`
+}
+
+type WikiPage struct {
+	ID               pgtype.UUID        `json:"id"`
+	TenantID         pgtype.UUID        `json:"tenant_id"`
+	SpaceID          pgtype.UUID        `json:"space_id"`
+	Slug             string             `json:"slug"`
+	Title            string             `json:"title"`
+	Category         string             `json:"category"`
+	IsActive         bool               `json:"is_active"`
+	IsFeatured       bool               `json:"is_featured"`
+	IsLocked         bool               `json:"is_locked"`
+	CreatedBy        pgtype.UUID        `json:"created_by"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+	IsJapabotIndexed *bool              `json:"is_japabot_indexed"`
+}
+
+type WikiRevision struct {
+	ID              pgtype.UUID        `json:"id"`
+	TenantID        pgtype.UUID        `json:"tenant_id"`
+	WikiPageID      pgtype.UUID        `json:"wiki_page_id"`
+	Content         []byte             `json:"content"`
+	Summary         *string            `json:"summary"`
+	Status          string             `json:"status"`
+	SubmittedBy     pgtype.UUID        `json:"submitted_by"`
+	ReviewedBy      pgtype.UUID        `json:"reviewed_by"`
+	ReviewedAt      pgtype.Timestamptz `json:"reviewed_at"`
+	AiGenerated     bool               `json:"ai_generated"`
+	AiModel         *string            `json:"ai_model"`
+	AiPromptHash    *string            `json:"ai_prompt_hash"`
+	HitlReviewedBy  pgtype.UUID        `json:"hitl_reviewed_by"`
+	HitlReviewedAt  pgtype.Timestamptz `json:"hitl_reviewed_at"`
+	HitlReviewNotes *string            `json:"hitl_review_notes"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
 }
 
 type WsTicket struct {

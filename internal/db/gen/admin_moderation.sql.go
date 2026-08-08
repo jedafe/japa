@@ -417,6 +417,70 @@ func (q *Queries) ListAdminBroadcasts(ctx context.Context) ([]AdminBroadcast, er
 	return items, nil
 }
 
+const listDeletedContents = `-- name: ListDeletedContents :many
+SELECT c.id, c.tenant_id, c.author_id, c.title, c.content_type, c.status,
+       c.deleted_at, c.updated_at, c.created_at,
+       u.username, up.display_name
+FROM contents c
+LEFT JOIN users u ON u.id = c.author_id
+LEFT JOIN user_profiles up ON up.user_id = c.author_id
+WHERE c.tenant_id = $1
+  AND (c.deleted_at IS NOT NULL OR c.status = 'removed')
+ORDER BY c.deleted_at DESC NULLS LAST, c.updated_at DESC
+LIMIT $2
+`
+
+type ListDeletedContentsParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	Limit    int32       `json:"limit"`
+}
+
+type ListDeletedContentsRow struct {
+	ID          pgtype.UUID        `json:"id"`
+	TenantID    pgtype.UUID        `json:"tenant_id"`
+	AuthorID    pgtype.UUID        `json:"author_id"`
+	Title       string             `json:"title"`
+	ContentType string             `json:"content_type"`
+	Status      string             `json:"status"`
+	DeletedAt   pgtype.Timestamptz `json:"deleted_at"`
+	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	Username    *string            `json:"username"`
+	DisplayName *string            `json:"display_name"`
+}
+
+func (q *Queries) ListDeletedContents(ctx context.Context, arg ListDeletedContentsParams) ([]ListDeletedContentsRow, error) {
+	rows, err := q.db.Query(ctx, listDeletedContents, arg.TenantID, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListDeletedContentsRow
+	for rows.Next() {
+		var i ListDeletedContentsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.AuthorID,
+			&i.Title,
+			&i.ContentType,
+			&i.Status,
+			&i.DeletedAt,
+			&i.UpdatedAt,
+			&i.CreatedAt,
+			&i.Username,
+			&i.DisplayName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listFlaggedReviews = `-- name: ListFlaggedReviews :many
 
 

@@ -1,6 +1,5 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
-	import { api, setToken } from '$lib/api';
+	import { setToken } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 
 	let email = $state('');
@@ -18,25 +17,46 @@
 		error = '';
 
 		try {
-			const result = await api<{ access_token: string }>('/api/v1/auth/login', {
+			// Call login endpoint directly with fetch to get the httpOnly
+			// jc_refresh cookie set by the backend. The access token is
+			// stored in-memory only (not localStorage) to prevent XSS
+			// token theft. On reload, the layout calls /auth/refresh to
+			// re-establish the session using the httpOnly cookie.
+			// Ref: sections/02-authentication-sessions.md (Token model)
+			const res = await fetch('/api/v1/auth/login', {
 				method: 'POST',
-				body: { email, password }
+				headers: { 'Content-Type': 'application/json' },
+				credentials: 'include',
+				body: JSON.stringify({ email, password })
 			});
 
-			if (result.ok) {
-				if (result.data?.access_token) {
-					const token = result.data.access_token;
-					localStorage.setItem('jc_token', token);
-					setToken(token);
-					goto('/');
-				} else {
-					error = t('login.invalid_credentials', 'Invalid credentials.');
+			const text = await res.text();
+			let body: { data?: { access_token?: string }; error?: { message?: string } } = {};
+			if (text) {
+				try {
+					body = JSON.parse(text);
+				} catch {
+					body = {};
 				}
-			} else {
-				error = result.error || t('login.invalid_credentials', 'Invalid credentials.');
 			}
-		} catch {
-			error = t('login.auth_service_unreachable', 'Could not reach authentication service.');
+
+			if (res.ok && body.data?.access_token) {
+				setToken(body.data.access_token);
+				// Hard reload so the root layout re-mounts and onMount
+				// re-runs with the fresh access token (fetches /me +
+				// /me/permissions). Client-side goto() would NOT re-run
+				// onMount since the layout is already mounted.
+				window.location.href = '/';
+			} else if (res.ok) {
+				error = body.error?.message || t('login.invalid_credentials', 'Invalid credentials.');
+			} else {
+				const status = res.status ? ` (${res.status})` : '';
+				error = body.error?.message || `Login failed${status}`;
+			}
+		} catch (e) {
+			error = e instanceof Error
+				? e.message
+				: t('login.auth_service_unreachable', 'Could not reach authentication service.');
 		} finally {
 			loading = false;
 		}

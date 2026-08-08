@@ -263,6 +263,52 @@ var settingsCatalog = map[string]settingMeta{
 	"scholarship_finder.subdomain":          {Type: "string", DefaultValue: "scholarships", Description: "Standalone subdomain (ADR-086).", Panel: "control"},
 	"scholarship_finder.custom_domain":      {Type: "string", DefaultValue: "", Description: "Optional custom domain (ADR-086).", Panel: "control"},
 
+	// Community Story Wall (§79, ADR-087)
+	"story.enabled":       {Type: "bool", DefaultValue: "false", Description: "Global story wall toggle.", Panel: "control"},
+	"story.subdomain":     {Type: "string", DefaultValue: "", Description: "Optional standalone subdomain (ADR-086).", Panel: "control"},
+	"story.custom_domain": {Type: "string", DefaultValue: "", Description: "Optional custom domain (ADR-086).", Panel: "control"},
+
+	// Destination Wiki (§80, ADR-088)
+	"wiki.enabled":                {Type: "bool", DefaultValue: "false", Description: "Global wiki toggle.", Panel: "control"},
+	"wiki.community_edits":        {Type: "bool", DefaultValue: "true", Description: "Allow community edits when wiki is enabled.", Panel: "control"},
+	"wiki.min_reputation_to_edit": {Type: "int", DefaultValue: "100", Description: "Reputation score required to submit a wiki edit.", Panel: "control"},
+
+	// Scam Alert Board (§81, ADR-089)
+	"scam_alert.enabled":            {Type: "bool", DefaultValue: "false", Description: "Global scam alert board toggle.", Panel: "control"},
+	"scam_alert.anonymous_reports":  {Type: "bool", DefaultValue: "true", Description: "Allow anonymous scam reports.", Panel: "control"},
+
+	// Japa Planning Groups (§82, ADR-090)
+	"planning_group.enabled":        {Type: "bool", DefaultValue: "false", Description: "Global planning groups toggle.", Panel: "control"},
+
+	// Visa Timeline Tracker (§83, ADR-091)
+	"visa_timeline.enabled":         {Type: "bool", DefaultValue: "false", Description: "Global visa timeline tracker toggle.", Panel: "control"},
+
+	// Community Digest Widget (§84, ADR-092)
+	"digest.enabled":                {Type: "bool", DefaultValue: "false", Description: "Global community digest toggle.", Panel: "control"},
+	"digest.email":                  {Type: "bool", DefaultValue: "true", Description: "Send digest via email when published.", Panel: "control"},
+
+	// Mutual Aid Board (§85, ADR-093)
+	"mutual_aid.enabled":            {Type: "bool", DefaultValue: "false", Description: "Global mutual aid board toggle.", Panel: "control"},
+
+	// Community Calendar (§86, ADR-094)
+	"calendar.enabled":              {Type: "bool", DefaultValue: "false", Description: "Global community calendar toggle.", Panel: "control"},
+
+	// Japa Stage Progress Profiles (§87, ADR-095)
+	"japa_stage.enabled":            {Type: "bool", DefaultValue: "false", Description: "Global japa stage profiles toggle.", Panel: "control"},
+
+	// Ask an Expat AMA (§88, ADR-096)
+	"forum.ama.enabled":             {Type: "bool", DefaultValue: "false", Description: "Global AMA thread format toggle.", Panel: "control"},
+	"ama_cooldown_days":             {Type: "int", DefaultValue: "30", Description: "Minimum days between AMA sessions per user.", Panel: "control"},
+
+	// Community Achievement Feed (§89, ADR-097)
+	"achievement.enabled":           {Type: "bool", DefaultValue: "false", Description: "Global achievement feed toggle.", Panel: "control"},
+	"achievement_reactions":         {Type: "json", DefaultValue: "[]", Description: "Curated reaction set for achievements (emoji + label pairs).", Panel: "control"},
+
+	// Service Directory (§98, ADR-098)
+	"service_directory.enabled":     {Type: "bool", DefaultValue: "false", Description: "Global service directory toggle.", Panel: "control"},
+	"service_directory.subdomain":   {Type: "string", DefaultValue: "", Description: "Optional standalone subdomain (ADR-086).", Panel: "control"},
+	"service_directory.custom_domain": {Type: "string", DefaultValue: "", Description: "Optional custom domain (ADR-086).", Panel: "control"},
+
 	// Remittance Rate Tracker (§74, ADR-075)
 	"remittance.enabled":              {Type: "bool", DefaultValue: "true", Description: "Global tracker toggle.", Panel: "control"},
 	"remittance.fetch_interval_minutes": {Type: "int", DefaultValue: "30", Description: "API rate-fetch schedule (minutes).", Panel: "control"},

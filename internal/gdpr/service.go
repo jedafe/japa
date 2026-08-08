@@ -468,6 +468,51 @@ func (s *Service) ProcessAccountDeletion(ctx context.Context, requestID pgtype.U
 			slog.Warn("failed to anonymize affiliate link events during deletion",
 				"user_id", request.UserID.String(), "error", err)
 		}
+		// Scrub auth-related PII tables during the anonymization phase so
+		// sensitive data (TOTP secrets, OAuth provider IDs, email addresses,
+		// password hashes, reset/verification tokens) is not recoverable
+		// during the retention window. These tables have ON DELETE CASCADE
+		// from users(id), so they would be cleaned at hard-delete, but the
+		// anonymization phase runs first and the data must be scrubbed now.
+		// Ref: sections/02-authentication-sessions.md, ADR-014.
+		// Best-effort: failures log warnings but do not abort.
+		authPIITables := []struct {
+			name string
+			fn   func() error
+		}{
+			{"totp_credentials", func() error {
+				return s.store.deleteUserTOTPCredentials(ctx, gen.DeleteUserTOTPCredentialsParams{
+					UserID: request.UserID, TenantID: request.TenantID,
+				})
+			}},
+			{"oauth_accounts", func() error {
+				return s.store.deleteUserOAuthAccounts(ctx, gen.DeleteUserOAuthAccountsParams{
+					UserID: request.UserID, TenantID: request.TenantID,
+				})
+			}},
+			{"password_reset_tokens", func() error {
+				return s.store.deleteUserPasswordResetTokens(ctx, gen.DeleteUserPasswordResetTokensParams{
+					UserID: request.UserID, TenantID: request.TenantID,
+				})
+			}},
+			{"email_verifications", func() error {
+				return s.store.deleteUserEmailVerifications(ctx, gen.DeleteUserEmailVerificationsParams{
+					UserID: request.UserID, TenantID: request.TenantID,
+				})
+			}},
+			{"password_history", func() error {
+				return s.store.deleteUserPasswordHistory(ctx, gen.DeleteUserPasswordHistoryParams{
+					UserID: request.UserID, TenantID: request.TenantID,
+				})
+			}},
+		}
+		for _, t := range authPIITables {
+			if err := t.fn(); err != nil {
+				slog.Warn("failed to scrub auth PII table during deletion",
+					"table", t.name,
+					"user_id", request.UserID.String(), "error", err)
+			}
+		}
 		if err := s.checkpoint(ctx, requestID, request.TenantID, deletionStepAnonymized); err != nil {
 			return err
 		}
@@ -1181,6 +1226,7 @@ type UserDataExport struct {
 	UserProfiles         []map[string]interface{} `json:"user_profiles"`
 	Reactions            []map[string]interface{} `json:"reactions"`
 	Bookmarks            []map[string]interface{} `json:"bookmarks"`
+	BookmarkFolders      []map[string]interface{} `json:"bookmark_folders"` // BL-005
 	ContentShares        []map[string]interface{} `json:"content_shares"`
 	ContentViews         []map[string]interface{} `json:"content_views"`
 	Follows              []map[string]interface{} `json:"follows"`
@@ -1356,6 +1402,13 @@ func (s *Service) collectUserData(ctx context.Context, userID, tenantID pgtype.U
 		export.Bookmarks = rows
 	} else {
 		slog.Warn("failed to collect bookmarks for export", "user_id", userID.String(), "error", err)
+	}
+
+	// Bookmark folders the user created (BL-005).
+	if rows, err := s.store.gdprExportUserBookmarkFolders(ctx, userID, tenantID); err == nil {
+		export.BookmarkFolders = rows
+	} else {
+		slog.Warn("failed to collect bookmark_folders for export", "user_id", userID.String(), "error", err)
 	}
 
 	// Content shares the user created.

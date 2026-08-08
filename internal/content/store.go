@@ -14,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
+	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/seo"
 	"github.com/pgvector/pgvector-go"
 )
@@ -1044,6 +1045,26 @@ func (s *Service) SetBookmarkFolder(ctx context.Context, userID pgtype.UUID, ent
 		EntityID:   entityID,
 	}); err != nil {
 		return fmt.Errorf("setting bookmark folder: %w", err)
+	}
+	return nil
+}
+
+// ValidateFolderOwnership checks that a bookmark folder belongs to the given
+// user and tenant. Returns nil if the folder exists and is owned by the user.
+// Returns ErrNotFound if the folder does not exist or is owned by another user.
+// A zero/invalid folderID is treated as "unfiled" and returns nil (BL-013).
+func (s *Service) ValidateFolderOwnership(ctx context.Context, folderID, tenantID, userID pgtype.UUID) error {
+	if !folderID.Valid || folderID.Bytes == [16]byte{} {
+		return nil
+	}
+
+	_, err := s.read.GetBookmarkFolder(ctx, gen.GetBookmarkFolderParams{
+		ID:       folderID,
+		TenantID: tenantID,
+		UserID:   userID,
+	})
+	if err != nil {
+		return fmt.Errorf("%w: folder not owned by user", errpkg.ErrNotFound)
 	}
 	return nil
 }

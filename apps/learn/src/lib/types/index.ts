@@ -455,3 +455,29 @@ export interface LearnerAnalytics {
 	/** Streak sparkline (last 14 days). */
 	streak_series: Array<{ date: string; active: boolean }>;
 }
+
+/* ------------------------------------------------------------------ *
+ * Bookmarks — GET /me/bookmarks, GET /me/bookmark-folders
+ * Ref: sections/50-user-dashboard-settings.md
+ * ------------------------------------------------------------------ */
+
+/** GET /me/bookmarks — a thin bookmark record with optional folder info. */
+export interface Bookmark {
+	id: string;
+	entity_type: string;
+	entity_id: string;
+	folder?: string | null;
+	folder_id?: string | null;
+	created_at: string;
+	title?: string | null;
+	slug?: string | null;
+}
+
+/** GET /me/bookmark-folders — a user's bookmark folder. */
+export interface BookmarkFolder {
+	id: string;
+	name: string;
+	bookmark_count?: number;
+	created_at: string;
+	updated_at?: string;
+}

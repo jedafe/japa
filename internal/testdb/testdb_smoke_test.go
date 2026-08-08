@@ -24,6 +24,7 @@ func TestHarness_ConnectAndIsolateByTenant(t *testing.T) {
 }
 
 func TestSeedOrganizationSmoke(t *testing.T) {
+	t.Parallel()
 	database := testdb.Connect(t)
 	tenantID := testdb.NewTenant(t, database)
 

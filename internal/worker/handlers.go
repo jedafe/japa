@@ -3,9 +3,7 @@ package worker
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
 	"crypto/tls"
-	"encoding/hex"
 	"encoding/json"
 	"encoding/xml"
 	"errors"
@@ -16,6 +14,7 @@ import (
 	"math/big"
 	"net/smtp"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 
@@ -396,10 +395,12 @@ func HandlePaymentWebhookProcess(ctx context.Context, t *asynq.Task) error {
 		}
 
 		commissionPayload, _ := json.Marshal(map[string]any{
-			"payment_id": p.ID.String(),
-			"user_id":    p.UserID.String(),
-			"amount":     p.Amount,
-			"link_code":  linkCode,
+			"payment_id":   p.ID.String(),
+			"user_id":      p.UserID.String(),
+			"amount":       p.Amount,
+			"link_code":    linkCode,
+			"purpose_type": p.PurposeType,
+			"product_id":   productID,
 		})
 		if err := taskEnqueuer.Enqueue(TypeAffiliateCreditCommission, commissionPayload); err != nil {
 			slog.Error("task:payment:process_webhook: failed to enqueue affiliate commission",
@@ -691,7 +692,7 @@ func HandleTicketSendConfirmation(ctx context.Context, t *asynq.Task) error {
 // Falls back to raw body/subject when no template is specified (backward compat).
 //
 // Ref: sections/20-email-notification-bugs.md
-func HandleEmailSend(_ context.Context, t *asynq.Task) error {
+func HandleEmailSend(ctx context.Context, t *asynq.Task) error {
 	slog.Info("task:email:send")
 
 	var payload struct {
@@ -725,7 +726,7 @@ func HandleEmailSend(_ context.Context, t *asynq.Task) error {
 		if err != nil {
 			slog.Error("task:email:send: invalid tenant_id for template", "error", err)
 		} else {
-			tmpl, err := gen.New(dbPool.Reader).GetEmailTemplateBySlug(context.Background(), gen.GetEmailTemplateBySlugParams{
+			tmpl, err := gen.New(dbPool.Reader).GetEmailTemplateBySlug(ctx, gen.GetEmailTemplateBySlugParams{
 				Slug:     payload.TemplateSlug,
 				TenantID: tid,
 			})
@@ -767,7 +768,7 @@ func HandleEmailSend(_ context.Context, t *asynq.Task) error {
 		return errors.New("task:email:send: to and subject are required")
 	}
 
-	if err := sendEmail(payload.To, subject, body, isHTML); err != nil {
+	if err := sendEmailWithContext(ctx, payload.To, subject, body, isHTML); err != nil {
 		slog.Error("task:email:send: failed", "to", payload.To, "error", err)
 		return err
 	}
@@ -777,40 +778,35 @@ func HandleEmailSend(_ context.Context, t *asynq.Task) error {
 	return nil
 }
 
-// templateData is the data passed to html/template for rendering email templates.
-type templateData struct {
-	SiteName   string
-	SiteURL    string
-	UserName   string
-	ActionURL  string
-	Expiry     string
-	SupportURL string
-	Items      []templateDataItem
-}
-
-// templateDataItem represents a single item in a digest or list template.
-type templateDataItem struct {
-	Title string
-	URL   string
-}
-
-// templateDataFromMap builds a templateData from the caller-supplied map,
-// filling in sensible defaults for site-wide values.
-func templateDataFromMap(siteName string, m map[string]string) templateData {
+// templateDataFromMap builds a map[string]any for html/template rendering,
+// converting snake_case map keys to PascalCase so all 22 template type
+// variables (SiteName, UserName, ActionURL, DeviceInfo, Amount, Currency,
+// TicketID, etc.) are resolved generically without a fixed struct.
+func templateDataFromMap(siteName string, m map[string]string) map[string]any {
 	if m == nil {
 		m = make(map[string]string)
 	}
 	if siteName == "" {
 		siteName = "JapaConnect"
 	}
-	return templateData{
-		SiteName:   siteName,
-		SiteURL:    m["site_url"],
-		UserName:   m["user_name"],
-		ActionURL:  m["action_url"],
-		Expiry:     m["expiry"],
-		SupportURL: m["support_url"],
+	data := make(map[string]any, len(m)+1)
+	data["SiteName"] = siteName
+	for k, v := range m {
+		data[snakeToPascal(k)] = v
 	}
+	return data
+}
+
+// snakeToPascal converts a snake_case key (e.g. "user_name") to PascalCase
+// (e.g. "UserName") so it matches Go template variable names ({{.UserName}}).
+func snakeToPascal(s string) string {
+	parts := strings.Split(s, "_")
+	for i, p := range parts {
+		if len(p) > 0 {
+			parts[i] = strings.ToUpper(p[:1]) + p[1:]
+		}
+	}
+	return strings.Join(parts, "")
 }
 
 // HandleSearchIndexSync synchronizes an entity to the Meilisearch index.
@@ -2483,12 +2479,44 @@ func HandleRSSRegenerate(ctx context.Context, t *asynq.Task) error {
 // generateRSSForTenant generates the RSS feed for a single tenant using the
 // shared sqlc query (ListRSSFeedItems — the same one internal/rss uses for
 // live requests) and caches the rendered XML in Valkey under
-// jc:rss:feed:{tenantID} with a 1-hour TTL (TASK-003). The live /feed.xml
-// route can read from this cache to avoid a DB hit on every request.
-// Writing to a local file is removed — it was not multi-tenant safe.
+// jc:cache:feed:rss:{tenant_id} with a 1-hour TTL (VALKEY-002 compliance).
+// The live /feed.xml route can read from this cache to avoid a DB hit on
+// every request. Writing to a local file is removed — it was not
+// multi-tenant safe.
+
+// rssHTMLTagPattern matches HTML/XML tags for stripping to plain text.
+var rssHTMLTagPattern = regexp.MustCompile(`<[^>]*>`)
+
+// rssHTMLToTextExcerpt strips HTML tags, collapses whitespace, and truncates
+// to maxRunes characters for an RSS <description> element.
+func rssHTMLToTextExcerpt(bodyHtml string, maxRunes int) string {
+	plain := rssHTMLTagPattern.ReplaceAllString(bodyHtml, "")
+	plain = strings.TrimSpace(plain)
+	plain = strings.Join(strings.Fields(plain), " ")
+	if len([]rune(plain)) <= maxRunes {
+		return plain
+	}
+	runes := []rune(plain)
+	return string(runes[:maxRunes]) + "…"
+}
+
+// rssExcerptFromBody extracts a plain-text excerpt from raw markdown body.
+func rssExcerptFromBody(body string) string {
+	plain := strings.TrimSpace(body)
+	plain = strings.Join(strings.Fields(plain), " ")
+	if len([]rune(plain)) <= 300 {
+		return plain
+	}
+	runes := []rune(plain)
+	return string(runes[:300]) + "…"
+}
+
 func generateRSSForTenant(ctx context.Context, tenantID pgtype.UUID, baseURL string) {
 	q := gen.New(dbPool.Reader)
-	rows, err := q.ListRSSFeedItems(ctx, tenantID)
+	rows, err := q.ListRSSFeedItems(ctx, gen.ListRSSFeedItemsParams{
+		TenantID:  tenantID,
+		PageLimit: 20,
+	})
 	if err != nil {
 		slog.Error("task:rss_regenerate: failed to list content", "tenant_id", tenantID.String(), "error", err)
 		return
@@ -2496,23 +2524,51 @@ func generateRSSForTenant(ctx context.Context, tenantID pgtype.UUID, baseURL str
 
 	items := make([]rssItem, 0, len(rows))
 	for _, row := range rows {
+		// PubDate: prefer published_at, fall back to created_at.
+		pubDate := formatRSSTime(row.PublishedAt)
+		if pubDate == "" {
+			pubDate = formatRSSTime(row.CreatedAt)
+		}
+
+		// Description: strip HTML from body_html, fall back to body excerpt.
+		desc := rssHTMLToTextExcerpt(row.BodyHtml, 300)
+		if desc == "" && row.Body != "" {
+			desc = rssExcerptFromBody(row.Body)
+		}
+
+		// GUID: use content UUID as a URN.
+		guid := ""
+		if row.ID.Valid {
+			guid = "urn:uuid:" + row.ID.String()
+		}
+
 		items = append(items, rssItem{
 			Title:       row.Title,
 			Link:        baseURL + "/content/" + row.Slug,
-			Description: row.Left,
-			PubDate:     formatRSSTime(row.CreatedAt),
+			GUID:        guid,
+			Description: desc,
+			PubDate:     pubDate,
 			Author:      row.Username,
 		})
+	}
+
+	// lastBuildDate: most recent item's pubDate, or now.
+	var lastBuild string
+	if len(items) > 0 && items[0].PubDate != "" {
+		lastBuild = items[0].PubDate
+	} else {
+		lastBuild = time.Now().UTC().Format(time.RFC1123Z)
 	}
 
 	feed := rssFeed{
 		Version: "2.0",
 		Channel: rssChannel{
-			Title:       siteName,
-			Link:        baseURL,
-			Description: "Nigerian diaspora community platform",
-			Language:    "en",
-			Items:       items,
+			Title:         siteName,
+			Link:          baseURL,
+			Description:   siteName + " — latest content",
+			Language:      "en",
+			LastBuildDate: lastBuild,
+			Items:         items,
 		},
 	}
 
@@ -2547,16 +2603,18 @@ type rssFeed struct {
 }
 
 type rssChannel struct {
-	Title       string    `xml:"title"`
-	Link        string    `xml:"link"`
-	Description string    `xml:"description"`
-	Language    string    `xml:"language,omitempty"`
-	Items       []rssItem `xml:"item"`
+	Title         string    `xml:"title"`
+	Link          string    `xml:"link"`
+	Description   string    `xml:"description"`
+	Language      string    `xml:"language,omitempty"`
+	LastBuildDate string    `xml:"lastBuildDate"`
+	Items         []rssItem `xml:"item"`
 }
 
 type rssItem struct {
 	Title       string `xml:"title"`
 	Link        string `xml:"link"`
+	GUID        string `xml:"guid"`
 	Description string `xml:"description"`
 	PubDate     string `xml:"pubDate"`
 	Author      string `xml:"author,omitempty"`
@@ -3637,9 +3695,15 @@ func readSMTPConfig() *smtpConfig {
 // sendEmail sends an email via the registered dispatcher if available,
 // otherwise falls back to direct SMTP.
 func sendEmail(to, subject, body string, isHTML bool) error {
+	return sendEmailWithContext(context.Background(), to, subject, body, isHTML)
+}
+
+// sendEmailWithContext sends an email using the provided context for the
+// gateway dispatch path. The legacy SMTP fallback does not support context
+// cancellation (net/smtp has no context API).
+func sendEmailWithContext(ctx context.Context, to, subject, body string, isHTML bool) error {
 	// If dispatcher is available, use it
 	if emailGateway != nil {
-		ctx := context.Background()
 		req := email.EmailRequest{
 			To:       to,
 			Subject:  subject,
@@ -3955,15 +4019,19 @@ func HandleCouponExpireCheck(ctx context.Context, _ *asynq.Task) error {
 	return nil
 }
 
-// HandleAffiliateRecordClick persists click event to affiliate_link_events.
+// HandleAffiliateRecordClick persists click event to affiliate_link_events
+// and increments denormalized click counters on the link and member rows.
+//
+// The payload carries pre-hashed ip_hash and ua_hash (SHA-256 hex) from the
+// redirect handler — raw PII never transits Asynq/Valkey (Section 56).
 func HandleAffiliateRecordClick(ctx context.Context, t *asynq.Task) error {
 	slog.Info("affiliate:record_click — persisting click event")
 
 	var payload struct {
-		LinkID   string `json:"link_id"`
-		UserID   string `json:"user_id"`
-		IPAddr   string `json:"ip_addr"`
-		UserAgent string `json:"user_agent"`
+		LinkID      string `json:"link_id"`
+		IPHash      string `json:"ip_hash"`
+		UAHash      string `json:"ua_hash"`
+		ReferrerURL string `json:"referrer_url"`
 	}
 
 	if err := parsePayload(t, &payload); err != nil {
@@ -3988,11 +4056,16 @@ func HandleAffiliateRecordClick(ctx context.Context, t *asynq.Task) error {
 		return err
 	}
 
-	// Hash the IP and user agent for privacy (sha256 hex).
-	ipHash := sha256.Sum256([]byte(payload.IPAddr))
-	ipHashStr := hex.EncodeToString(ipHash[:])
-	uaHash := sha256.Sum256([]byte(payload.UserAgent))
-	uaHashStr := hex.EncodeToString(uaHash[:])
+	// Use the pre-hashed values directly (already SHA-256 hex from the
+	// redirect handler). Re-hashing would hash the empty string since the
+	// old payload field names didn't match.
+	ipHashStr := payload.IPHash
+	uaHashStr := payload.UAHash
+
+	var referrerURL *string
+	if payload.ReferrerURL != "" {
+		referrerURL = &payload.ReferrerURL
+	}
 
 	if _, err := gen.New(dbPool.Writer).CreateAffiliateLinkEvent(ctx, gen.CreateAffiliateLinkEventParams{
 		TenantID:      link.TenantID,
@@ -4000,9 +4073,20 @@ func HandleAffiliateRecordClick(ctx context.Context, t *asynq.Task) error {
 		EventType:     "click",
 		IpHash:        &ipHashStr,
 		UserAgentHash: &uaHashStr,
+		ReferrerUrl:   referrerURL,
 	}); err != nil {
 		slog.Error("affiliate:record_click failed", "error", err)
 		return err
+	}
+
+	// Increment denormalized click counters (Section 56).
+	if err := gen.New(dbPool.Writer).IncrementAffiliateLinkClicks(ctx, linkID); err != nil {
+		slog.Error("affiliate:record_click: failed to increment link clicks",
+			"link_id", payload.LinkID, "error", err)
+	}
+	if err := gen.New(dbPool.Writer).IncrementAffiliateMemberClicks(ctx, link.UserID); err != nil {
+		slog.Error("affiliate:record_click: failed to increment member clicks",
+			"user_id", link.UserID, "error", err)
 	}
 
 	slog.Info("affiliate:record_click — recorded", "link_id", payload.LinkID)
@@ -4048,14 +4132,26 @@ func HandleRedirectRecordHit(ctx context.Context, t *asynq.Task) error {
 }
 
 // HandleAffiliateCreditCommission credits commission after payment succeeds.
+//
+// Per Section 56 Commission Crediting, this handler:
+//  1. Looks up the affiliate link by code and resolves the commission rate.
+//  2. Calculates commission using integer math (amount in kobo × rate in basis
+//     points / 10000) — never float (Bug Hunter's Guide §1.3).
+//  3. Credits the wallet via the immutable ledger inside a transaction holding
+//     pg_advisory_xact_lock to prevent double-spend (§13).
+//  4. Inserts a conversion event in affiliate_link_events.
+//  5. Increments denormalized counters on the link and member rows.
+//  6. Deletes the jc:aff_click attribution key to prevent double-crediting.
 func HandleAffiliateCreditCommission(ctx context.Context, t *asynq.Task) error {
 	slog.Info("affiliate:credit_commission — crediting commission")
 
 	var payload struct {
-		PaymentID string  `json:"payment_id"`
-		UserID    string  `json:"user_id"`
-		Amount    float64 `json:"amount"`
-		LinkCode  string  `json:"link_code"`
+		PaymentID   string `json:"payment_id"`
+		UserID      string `json:"user_id"`
+		Amount      int64  `json:"amount"`
+		LinkCode    string `json:"link_code"`
+		PurposeType string `json:"purpose_type"`
+		ProductID   string `json:"product_id"`
 	}
 
 	if err := parsePayloadOrSkip(t, &payload); err != nil {
@@ -4068,27 +4164,39 @@ func HandleAffiliateCreditCommission(ctx context.Context, t *asynq.Task) error {
 		return nil
 	}
 
-	queries, err := requireDB()
-	if err != nil {
+	if _, err := requireDB(); err != nil {
 		return err
 	}
 
-	// Look up the affiliate link and member to determine commission rate.
+	// Look up the affiliate link by code (needed for link_id, tenant_id,
+	// and user_id for counter increments and conversion event).
+	link, err := gen.New(dbPool.Reader).GetAffiliateLinkByCode(ctx, payload.LinkCode)
+	if err != nil {
+		slog.Warn("affiliate:credit_commission: link not found or inactive",
+			"link_code", payload.LinkCode, "error", err)
+		return nil
+	}
+
+	// Resolve the commission rate from system_settings via the join query.
 	commissionInfo, err := gen.New(dbPool.Reader).GetAffiliateCommissionInfo(ctx, payload.LinkCode)
 	if err != nil {
-		slog.Warn("affiliate:credit_commission: link not found or inactive", "link_code", payload.LinkCode, "error", err)
-		return nil // not an error — link may be invalid
+		slog.Warn("affiliate:credit_commission: commission info not found",
+			"link_code", payload.LinkCode, "error", err)
+		return nil
 	}
 	memberUserID := commissionInfo.UserID
-	commissionRate := int(commissionInfo.CommissionRate)
+	memberTenantID := commissionInfo.TenantID
 
-	if commissionRate <= 0 {
+	if commissionInfo.CommissionRate <= 0 {
 		slog.Info("affiliate:credit_commission: no commission rate configured")
 		return nil
 	}
 
-	// Calculate commission (percentage of payment amount).
-	commission := int64(float64(payload.Amount) * float64(commissionRate) / 100.0)
+	// Integer math: convert rate to basis points (1% = 100 bps) and compute
+	// commission = amount_kobo * rate_bps / 10000. This avoids float
+	// precision loss (Bug Hunter's Guide §1.3).
+	rateBps := int64(math.Round(commissionInfo.CommissionRate * 100))
+	commission := payload.Amount * rateBps / 10000
 	if commission <= 0 {
 		return nil
 	}
@@ -4098,21 +4206,23 @@ func HandleAffiliateCreditCommission(ctx context.Context, t *asynq.Task) error {
 		return fmt.Errorf("affiliate:credit_commission: %w", err)
 	}
 
-	// Resolve tenant_id from the affiliate member.
-	memberTenantID, err := gen.New(dbPool.Reader).GetAffiliateMemberTenant(ctx, memberUserID)
+	// Credit the wallet via the immutable ledger inside a transaction holding
+	// pg_advisory_xact_lock(user_id) to serialize concurrent balance
+	// mutations (Bug Hunter's Guide §13 — double-spend prevention).
+	tx, err := dbPool.Writer.Begin(ctx)
 	if err != nil {
-		slog.Warn("affiliate:credit_commission: member tenant not found", "error", err)
-		return nil
+		return fmt.Errorf("affiliate:credit_commission: beginning tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	qtx := gen.New(tx)
+
+	lockKey := "wallet:" + memberTenantID.String() + ":" + memberUserID.String()
+	if _, err = tx.Exec(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", lockKey); err != nil {
+		return fmt.Errorf("affiliate:credit_commission: acquiring wallet lock: %w", err)
 	}
 
-	// Credit via wallet ledger with idempotency key.
-	source := "affiliate_commission"
-	refStr := paymentID.String()
-	idempotencyKey := fmt.Sprintf("commission:%s", payload.PaymentID)
-	reason := "Affiliate commission"
-
-	// Get current balance.
-	currentBalance, err := queries.GetLatestBalance(ctx, gen.GetLatestBalanceParams{
+	currentBalance, err := qtx.GetLatestBalance(ctx, gen.GetLatestBalanceParams{
 		TenantID:   memberTenantID,
 		UserID:     memberUserID,
 		LedgerType: "credits",
@@ -4120,10 +4230,14 @@ func HandleAffiliateCreditCommission(ctx context.Context, t *asynq.Task) error {
 	if err != nil {
 		currentBalance = 0
 	}
-
 	newBalance := currentBalance + commission
 
-	if _, err := queries.InsertLedgerEntry(ctx, gen.InsertLedgerEntryParams{
+	source := "affiliate_commission"
+	refStr := paymentID.String()
+	idempotencyKey := fmt.Sprintf("commission:%s", payload.PaymentID)
+	reason := "Affiliate commission"
+
+	if _, err := qtx.InsertLedgerEntry(ctx, gen.InsertLedgerEntryParams{
 		TenantID:         memberTenantID,
 		UserID:           memberUserID,
 		LedgerType:       "credits",
@@ -4136,18 +4250,64 @@ func HandleAffiliateCreditCommission(ctx context.Context, t *asynq.Task) error {
 		IdempotencyKey:   &idempotencyKey,
 		Reason:           &reason,
 	}); err != nil {
-		// Unique violation (SQLSTATE 23505) means idempotency key already
-		// exists — treat as success.
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
-			slog.Info("affiliate:credit_commission: already credited (idempotent)", "payment_id", payload.PaymentID)
+			slog.Info("affiliate:credit_commission: already credited (idempotent)",
+				"payment_id", payload.PaymentID)
 			return nil
 		}
 		slog.Error("affiliate:credit_commission: failed to credit wallet", "error", err)
 		return err
 	}
 
-	slog.Info("affiliate:credit_commission — credited", "amount", commission, "link_code", payload.LinkCode)
+	// Insert the conversion event (Section 56 Commission Crediting).
+	commissionNumeric := pgtype.Numeric{}
+	if err := commissionNumeric.Scan(fmt.Sprintf("%d", commission)); err != nil {
+		slog.Warn("affiliate:credit_commission: failed to scan commission numeric", "error", err)
+	} else {
+		if _, err := qtx.CreateAffiliateLinkEvent(ctx, gen.CreateAffiliateLinkEventParams{
+			TenantID:           memberTenantID,
+			LinkID:             link.ID,
+			EventType:          "conversion",
+			ConvertedPaymentID: paymentID,
+			CommissionAmount:   commissionNumeric,
+		}); err != nil {
+			slog.Error("affiliate:credit_commission: failed to create conversion event",
+				"link_id", link.ID, "error", err)
+		}
+	}
+
+	// Increment denormalized counters (link + member).
+	if err := qtx.IncrementAffiliateLinkConversions(ctx, gen.IncrementAffiliateLinkConversionsParams{
+		Commission: commissionNumeric, LinkID: link.ID,
+	}); err != nil {
+		slog.Error("affiliate:credit_commission: failed to increment link conversions",
+			"link_id", link.ID, "error", err)
+	}
+	if err := qtx.IncrementAffiliateMemberConversions(ctx, gen.IncrementAffiliateMemberConversionsParams{
+		Commission: commissionNumeric, UserID: memberUserID,
+	}); err != nil {
+		slog.Error("affiliate:credit_commission: failed to increment member conversions",
+			"user_id", memberUserID, "error", err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("affiliate:credit_commission: committing tx: %w", err)
+	}
+
+	// Delete the attribution key so the same click can't be double-credited
+	// (Section 56 Commission Crediting).
+	if rdb != nil {
+		attrKey := fmt.Sprintf("jc:aff_click:%s:%s:%s",
+			payload.UserID, payload.PurposeType, payload.ProductID)
+		if err := rdb.Del(ctx, attrKey).Err(); err != nil {
+			slog.Warn("affiliate:credit_commission: failed to delete attribution key",
+				"key", attrKey, "error", err)
+		}
+	}
+
+	slog.Info("affiliate:credit_commission — credited",
+		"amount", commission, "link_code", payload.LinkCode)
 	return nil
 }
 

@@ -46,6 +46,19 @@ var Registry = []Feature{
 	// AI features
 	{Key: "feature.japabot", Label: "JapaBot AI Chat", Default: false},
 	{Key: "feature.ai_content_gen", Label: "AI Content Generation", Default: false},
+	// V2 Community Features (§79–§89, §98)
+	{Key: "feature.story", Label: "Community Story Wall", Default: false},
+	{Key: "feature.wiki", Label: "Destination Wiki", Default: false},
+	{Key: "feature.scam_alert", Label: "Scam Alert Board", Default: false},
+	{Key: "feature.planning_group", Label: "Japa Planning Groups", Default: false},
+	{Key: "feature.visa_timeline", Label: "Visa Timeline Tracker", Default: false},
+	{Key: "feature.digest", Label: "Community Digest Widget", Default: false},
+	{Key: "feature.mutual_aid", Label: "Mutual Aid Board", Default: false},
+	{Key: "feature.calendar", Label: "Community Calendar", Default: false},
+	{Key: "feature.japa_stage", Label: "Japa Stage Progress Profiles", Default: false},
+	{Key: "feature.ama", Label: "Ask an Expat AMA", Default: false},
+	{Key: "feature.achievement", Label: "Community Achievement Feed", Default: false},
+	{Key: "feature.service_directory", Label: "Service Directory", Default: false},
 }
 
 // DefaultFor returns the default enabled state for a feature key.

@@ -6,17 +6,16 @@
 	import { t } from '$lib/stores/i18n.svelte';
 
 	onMount(async () => {
-		const token = localStorage.getItem('jc_token');
-		if (token) {
-			try {
-				await api('/api/v1/auth/logout', {
-					method: 'POST'
-				});
-			} catch {
-				// Ignore — proceed to clear token regardless
-			}
+		// Call logout to revoke the refresh token server-side. The
+		// httpOnly jc_refresh cookie is cleared by the backend. We
+		// don't need to read from localStorage — the token is in-memory.
+		try {
+			await api('/api/v1/auth/logout', {
+				method: 'POST'
+			});
+		} catch {
+			// Ignore — proceed to clear token regardless
 		}
-		localStorage.removeItem('jc_token');
 		setToken(null);
 		clearUser();
 		goto('/login');

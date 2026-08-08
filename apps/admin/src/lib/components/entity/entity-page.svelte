@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { t } from '$lib/stores/i18n.svelte';
-	import { hasPermission } from '$lib/stores/permissions.svelte';
+	import { hasPermission, getPermissionState } from '$lib/stores/permissions.svelte';
 	import { page as sveltekitPage } from '$app/state';
 	import { replaceState } from '$app/navigation';
 	import PageHeader from '$lib/components/layout/page-header.svelte';
@@ -155,28 +155,45 @@
 	const isRowDeleted = $derived(config.isDeleted ?? defaultIsDeleted);
 
 	// ── Permission derivation: omitted keys default to allowed; edit/delete fall back to createPermission ──
-	const canCreate = $derived(
-		!config.readonly && (!config.createPermission || hasPermission(config.createPermission))
-	);
-	const canEdit = $derived(
-		!config.readonly &&
+	// Read getPermissionState() inside each derivation so Svelte 5 tracks the
+	// _permissions $state (in permissions.svelte.ts) as a dependency. Without
+	// this, hasPermission() calls don't register the cross-module $state and
+	// the derived value never re-evaluates when permissions load after mount.
+	const canCreate = $derived.by(() => {
+		void getPermissionState();
+		return !config.readonly && (!config.createPermission || hasPermission(config.createPermission));
+	});
+	const canEdit = $derived.by(() => {
+		void getPermissionState();
+		return (
+			!config.readonly &&
 			(!(config.editPermission ?? config.createPermission) ||
 				hasPermission(config.editPermission ?? config.createPermission!))
-	);
-	const canDelete = $derived(
-		!(config.deletePermission ?? config.createPermission) ||
+		);
+	});
+	const canDelete = $derived.by(() => {
+		void getPermissionState();
+		return (
+			!(config.deletePermission ?? config.createPermission) ||
 			hasPermission(config.deletePermission ?? config.createPermission!)
-	);
-	const canHardDelete = $derived(
-		!!config.hardRemove &&
+		);
+	});
+	const canHardDelete = $derived.by(() => {
+		void getPermissionState();
+		return (
+			!!config.hardRemove &&
 			(!(config.hardDeletePermission ?? config.deletePermission ?? config.createPermission) ||
 				hasPermission(config.hardDeletePermission ?? config.deletePermission ?? config.createPermission!))
-	);
-	const canRestore = $derived(
-		!!config.restore &&
+		);
+	});
+	const canRestore = $derived.by(() => {
+		void getPermissionState();
+		return (
+			!!config.restore &&
 			(!(config.restorePermission ?? config.deletePermission ?? config.createPermission) ||
 				hasPermission(config.restorePermission ?? config.deletePermission ?? config.createPermission!))
-	);
+		);
+	});
 
 	// ── Data loading ────────────────────────────────────────────────────────
 	async function reload() {

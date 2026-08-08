@@ -10,9 +10,10 @@ import (
 
 func (s *Service) ToggleFollowSpace(ctx context.Context, tenantID, userID, spaceID pgtype.UUID) (bool, error) {
 	isFollowing, err := s.read.IsFollowing(ctx, gen.IsFollowingParams{
-		FollowerID:  userID,
-		EntityType:  "space",
-		EntityID:    spaceID,
+		TenantID:   tenantID,
+		FollowerID: userID,
+		EntityType: "space",
+		EntityID:   spaceID,
 	})
 	if err != nil {
 		return false, fmt.Errorf("checking follow status: %w", err)
@@ -20,6 +21,7 @@ func (s *Service) ToggleFollowSpace(ctx context.Context, tenantID, userID, space
 
 	if isFollowing {
 		err = s.write.DeleteFollowByFollowerEntity(ctx, gen.DeleteFollowByFollowerEntityParams{
+			TenantID:   tenantID,
 			FollowerID: userID,
 			EntityType: "space",
 			EntityID:   spaceID,

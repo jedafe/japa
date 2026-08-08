@@ -6,6 +6,7 @@ SELECT id, tenant_id, type, name, slug, subject, html_body, plain_text_body,
 FROM email_templates
 WHERE tenant_id = @tenant_id
   AND (@type = '' OR type = @type)
+  AND (@is_active = '' OR is_active = (@is_active = 'true'))
 ORDER BY type ASC
 LIMIT @page_limit OFFSET @page_offset;
 
@@ -13,36 +14,38 @@ LIMIT @page_limit OFFSET @page_offset;
 SELECT COUNT(*)::int AS count
 FROM email_templates
 WHERE tenant_id = @tenant_id
-  AND (@type = '' OR type = @type);
+  AND (@type = '' OR type = @type)
+  AND (@is_active = '' OR is_active = (@is_active = 'true'));
 
 -- name: GetEmailTemplate :one
-SELECT id, tenant_id, type, name, subject, html_body, plain_text_body,
-       variables, status, created_at, updated_at
+SELECT id, tenant_id, type, name, slug, subject, html_body, plain_text_body,
+       is_active, variables, status, created_at, updated_at
 FROM email_templates
 WHERE id = @id AND tenant_id = @tenant_id;
 
 -- name: GetEmailTemplateByType :one
-SELECT id, tenant_id, type, name, subject, html_body, plain_text_body,
-       variables, status, created_at, updated_at
+SELECT id, tenant_id, type, name, slug, subject, html_body, plain_text_body,
+       is_active, variables, status, created_at, updated_at
 FROM email_templates
 WHERE tenant_id = @tenant_id AND type = @type;
 
 -- name: UpdateEmailTemplate :one
 UPDATE email_templates
-SET name = @name, subject = @subject, html_body = @html_body,
+SET subject = @subject, html_body = @html_body,
     plain_text_body = @plain_text_body, status = @status,
+    is_active = @is_active,
     updated_at = now()
 WHERE id = @id AND tenant_id = @tenant_id
-RETURNING id, tenant_id, type, name, subject, html_body, plain_text_body,
-    variables, status, created_at, updated_at;
+RETURNING id, tenant_id, type, name, slug, subject, html_body, plain_text_body,
+    is_active, variables, status, created_at, updated_at;
 
 -- name: ResetEmailTemplate :exec
 UPDATE email_templates
-SET html_body = '', plain_text_body = '', updated_at = now()
+SET html_body = '', updated_at = now()
 WHERE id = @id AND tenant_id = @tenant_id;
 
 -- name: GetEmailTemplateBySlug :one
 SELECT id, tenant_id, type, name, slug, subject, html_body, plain_text_body,
-       variables, status, created_at, updated_at
+       is_active, variables, status, created_at, updated_at
 FROM email_templates
 WHERE slug = @slug AND tenant_id = @tenant_id AND is_active = true;

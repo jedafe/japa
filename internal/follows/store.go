@@ -60,6 +60,7 @@ func (s *Store) toggleFollow(ctx context.Context, tenantID, followerID pgtype.UU
 func (s *Store) toggleFollowTx(ctx context.Context, q *gen.Queries, tenantID, followerID pgtype.UUID, entityType string, entityID pgtype.UUID) (bool, error) {
 	// First check if the follow already exists.
 	existing, err := q.GetFollow(ctx, gen.GetFollowParams{
+		TenantID:   tenantID,
 		FollowerID: followerID,
 		EntityType: entityType,
 		EntityID:   entityID,
@@ -67,6 +68,7 @@ func (s *Store) toggleFollowTx(ctx context.Context, q *gen.Queries, tenantID, fo
 	if err == nil && existing.ID.Valid {
 		// Already following — delete (unfollow).
 		if err := q.DeleteFollowByFollowerEntity(ctx, gen.DeleteFollowByFollowerEntityParams{
+			TenantID:   tenantID,
 			FollowerID: followerID,
 			EntityType: entityType,
 			EntityID:   entityID,
@@ -91,8 +93,9 @@ func (s *Store) toggleFollowTx(ctx context.Context, q *gen.Queries, tenantID, fo
 }
 
 // getFollow returns the follow row for a specific follower-entity pair.
-func (s *Store) getFollow(ctx context.Context, followerID pgtype.UUID, entityType string, entityID pgtype.UUID) (gen.Follow, error) {
+func (s *Store) getFollow(ctx context.Context, tenantID, followerID pgtype.UUID, entityType string, entityID pgtype.UUID) (gen.Follow, error) {
 	follow, err := s.read.GetFollow(ctx, gen.GetFollowParams{
+		TenantID:   tenantID,
 		FollowerID: followerID,
 		EntityType: entityType,
 		EntityID:   entityID,
@@ -105,8 +108,9 @@ func (s *Store) getFollow(ctx context.Context, followerID pgtype.UUID, entityTyp
 }
 
 // isFollowing returns true if the follower is following the entity.
-func (s *Store) isFollowing(ctx context.Context, followerID pgtype.UUID, entityType string, entityID pgtype.UUID) (bool, error) {
+func (s *Store) isFollowing(ctx context.Context, tenantID, followerID pgtype.UUID, entityType string, entityID pgtype.UUID) (bool, error) {
 	result, err := s.read.IsFollowing(ctx, gen.IsFollowingParams{
+		TenantID:   tenantID,
 		FollowerID: followerID,
 		EntityType: entityType,
 		EntityID:   entityID,
@@ -118,9 +122,12 @@ func (s *Store) isFollowing(ctx context.Context, followerID pgtype.UUID, entityT
 	return result, nil
 }
 
-// isMutualFollow returns true if two users mutually follow each other.
-func (s *Store) isMutualFollow(ctx context.Context, followerID, entityID pgtype.UUID) (bool, error) {
+// isMutualFollow returns true if the entityID follows the followerID (single
+// direction). The Service.IsMutualFollow wrapper calls this twice to check
+// both directions for a true mutual connection (Section 31).
+func (s *Store) isMutualFollow(ctx context.Context, tenantID, followerID, entityID pgtype.UUID) (bool, error) {
 	result, err := s.read.IsMutualFollow(ctx, gen.IsMutualFollowParams{
+		TenantID:   tenantID,
 		EntityID:   entityID,
 		FollowerID: followerID,
 	})

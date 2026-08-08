@@ -99,3 +99,13 @@ func (s *Store) bulkDeleteRedirects(ctx context.Context, tenantID pgtype.UUID, i
 	}
 	return nil
 }
+
+func (s *Store) getRedirectsByIDs(ctx context.Context, tenantID pgtype.UUID, ids []pgtype.UUID) ([]gen.Redirect, error) {
+	rows, err := s.read.GetRedirectsByIDs(ctx, gen.GetRedirectsByIDsParams{
+		TenantID: tenantID, Ids: ids,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("getting redirects by ids: %w", err)
+	}
+	return rows, nil
+}
