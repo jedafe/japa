@@ -1,8 +1,9 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
+	import { untrack } from 'svelte';
 	import { t } from '$lib/i18n';
-	import { Select, Tabs } from 'bits-ui';
+	import { Select } from 'bits-ui';
 	import {
 		Flame,
 		Hash,
@@ -12,7 +13,7 @@
 		ArrowUp,
 		Building2
 	} from 'lucide-svelte';
-	import { EmptyState } from '$lib/components/ui';
+	import { EmptyState, UrlTabs, type UrlTab } from '$lib/components/ui';
 	import type { PageData } from './$types';
 	import type { TrendingWindow } from '$lib/types';
 
@@ -43,6 +44,15 @@
 		{ id: 'users', label: t('trending.tab_users', 'People'), icon: Users }
 	]);
 
+	const urlTabs = $derived<UrlTab[]>(
+		tabs.map((tab) => ({ value: tab.id, label: tab.label }))
+	);
+
+	// Instant client-side tab switching — all tab data is loaded server-side
+	// regardless of ?tab=, so we switch without navigation (UrlTabs syncs the
+	// URL via history.replaceState, preserving other params like ?window=).
+	let activeTab = $state(untrack(() => data.tab));
+
 	const windows: { value: TrendingWindow; label: string }[] = [
 		{ value: '24h', label: t('trending.window_24h', '24 hours') },
 		{ value: '7d', label: t('trending.window_7d', '7 days') },
@@ -51,12 +61,6 @@
 
 	// Round the trending score for display (Rule: round every displayed number).
 	const score = (n: number) => Math.round(n);
-
-	function tabHref(tabId: string): string {
-		const params = new URLSearchParams(page.url.searchParams);
-		params.set('tab', tabId);
-		return `?${params.toString()}`;
-	}
 
 	function windowHref(w: TrendingWindow): string {
 		const params = new URLSearchParams(page.url.searchParams);
@@ -124,29 +128,13 @@
 		</Select.Root>
 	</div>
 
-	<!-- Tab bar — Bits UI Tabs (audit H6) -->
+	<!-- Tab bar — UrlTabs with instant client-side switching (audit H6) -->
 	<div class="border-b border-[var(--color-border)]">
-		<Tabs.Root value={data.tab} onValueChange={(v) => { if (v && v !== data.tab) goto(tabHref(v)); }}>
-			<Tabs.List class="flex gap-1 px-4">
-				{#each tabs as tab (tab.id)}
-					<Tabs.Trigger
-						value={tab.id}
-						class="flex items-center gap-1.5 border-b-2 px-4 py-3 text-sm font-medium transition-colors data-[state=active]:border-[var(--color-primary)] data-[state=active]:text-[var(--color-primary)] data-[state=inactive]:border-transparent data-[state=inactive]:text-[var(--color-text-subtle)] data-[state=inactive]:hover:text-[var(--color-text)]"
-					>
-						{#snippet child({ props })}
-							<div {...props}>
-								<tab.icon size={15} />
-								{tab.label}
-							</div>
-						{/snippet}
-					</Tabs.Trigger>
-				{/each}
-			</Tabs.List>
-		</Tabs.Root>
+		<UrlTabs tabs={urlTabs} bind:value={activeTab} class="px-4" />
 	</div>
 
 	<div class="p-4">
-		{#if data.tab === 'content'}
+		{#if activeTab === 'content'}
 			<!-- Content leaderboard -->
 			{#if data.content.length === 0}
 				<EmptyState
@@ -191,7 +179,7 @@
 					{/each}
 				</ol>
 			{/if}
-		{:else if data.tab === 'tags'}
+		{:else if activeTab === 'tags'}
 			<!-- Tags leaderboard -->
 			{#if data.tags.length === 0}
 				<EmptyState
@@ -232,7 +220,7 @@
 					{/each}
 				</ol>
 			{/if}
-		{:else if data.tab === 'spaces'}
+		{:else if activeTab === 'spaces'}
 			<!-- Spaces leaderboard -->
 			{#if data.spaces.length === 0}
 				<EmptyState
@@ -277,7 +265,7 @@
 					{/each}
 				</ol>
 			{/if}
-		{:else if data.tab === 'users'}
+		{:else if activeTab === 'users'}
 			<!-- People leaderboard -->
 			{#if data.users.length === 0}
 				<EmptyState

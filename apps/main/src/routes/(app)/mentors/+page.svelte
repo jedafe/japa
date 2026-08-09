@@ -1,5 +1,5 @@
-// Ref: japaconnect-engineering/sections/102-mentorship-matching.md
 <script lang="ts">
+	// Ref: japaconnect-engineering/sections/102-mentorship-matching.md
 	import { untrack } from 'svelte';
 	import { t } from '$lib/i18n';
 	import { goto } from '$app/navigation';

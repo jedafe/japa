@@ -191,10 +191,10 @@ SELECT p.id, p.tenant_id, p.document_type, p.issuing_space_id, p.destination_spa
        p.is_active, p.ai_generated, p.ai_model, p.ai_prompt_hash,
        p.hitl_reviewed_by, p.hitl_reviewed_at, p.hitl_review_notes,
        p.is_japabot_indexed, p.created_at, p.updated_at,
-       is.name AS issuing_space_name, is.geo_code AS issuing_space_code,
+       iss.name AS issuing_space_name, iss.geo_code AS issuing_space_code,
        ds.name AS dest_space_name, ds.geo_code AS dest_space_code
 FROM attestation_pathways p
-LEFT JOIN spaces is ON is.id = p.issuing_space_id
+LEFT JOIN spaces iss ON iss.id = p.issuing_space_id
 LEFT JOIN spaces ds ON ds.id = p.destination_space_id
 WHERE %s
 ORDER BY p.updated_at DESC
@@ -250,10 +250,10 @@ SELECT p.id, p.tenant_id, p.document_type, p.issuing_space_id, p.destination_spa
        p.is_active, p.ai_generated, p.ai_model, p.ai_prompt_hash,
        p.hitl_reviewed_by, p.hitl_reviewed_at, p.hitl_review_notes,
        p.is_japabot_indexed, p.created_at, p.updated_at,
-       is.name AS issuing_space_name, is.geo_code AS issuing_space_code,
+       iss.name AS issuing_space_name, iss.geo_code AS issuing_space_code,
        ds.name AS dest_space_name, ds.geo_code AS dest_space_code
 FROM attestation_pathways p
-LEFT JOIN spaces is ON is.id = p.issuing_space_id
+LEFT JOIN spaces iss ON iss.id = p.issuing_space_id
 LEFT JOIN spaces ds ON ds.id = p.destination_space_id
 WHERE p.id = $1 AND p.tenant_id = $2
 LIMIT 1
@@ -490,10 +490,10 @@ SELECT p.id, p.tenant_id, p.document_type, p.issuing_space_id, p.destination_spa
        p.is_active, p.ai_generated, p.ai_model, p.ai_prompt_hash,
        p.hitl_reviewed_by, p.hitl_reviewed_at, p.hitl_review_notes,
        p.is_japabot_indexed, p.created_at, p.updated_at,
-       is.name AS issuing_space_name, is.geo_code AS issuing_space_code,
+       iss.name AS issuing_space_name, iss.geo_code AS issuing_space_code,
        ds.name AS dest_space_name, ds.geo_code AS dest_space_code
 FROM attestation_pathways p
-LEFT JOIN spaces is ON is.id = p.issuing_space_id
+LEFT JOIN spaces iss ON iss.id = p.issuing_space_id
 LEFT JOIN spaces ds ON ds.id = p.destination_space_id
 WHERE %s
 ORDER BY p.created_at DESC

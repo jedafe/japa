@@ -1,12 +1,13 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
 	import { FileText, Users, Info, ShieldQuestion, Image as ImageIcon, GitCompare, ArrowRight } from 'lucide-svelte';
 	import SetSidebar from '$lib/components/shell/SetSidebar.svelte';
 	import OrgHeader from '$lib/components/profile/OrgHeader.svelte';
-	import ProfileTabs from '$lib/components/profile/ProfileTabs.svelte';
 	import OrgProfileSidebar from '$lib/components/profile/OrgProfileSidebar.svelte';
-	import { EmptyState, FollowButton } from '$lib/components/ui';
+	import { EmptyState, FollowButton, UrlTabs } from '$lib/components/ui';
+	import type { UrlTab } from '$lib/components/ui';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -14,20 +15,20 @@
 	const org = $derived(data.org);
 	const isOwner = $derived(data.isOwner);
 	const initiallyFollowing = $derived(data.initiallyFollowing ?? false);
-	const activeTab = $derived(page.url.searchParams.get('tab') ?? 'about');
+	let activeTab = $state(untrack(() => page.url.searchParams.get('tab') ?? 'about'));
 
 	// Section 39 — university-type orgs get a "Compare" tab that links to
 	// the Comparison System (Section 30) with this org pre-selected as
 	// item 1. Other org types omit the tab.
 	const isUniversity = $derived(org.org_type === 'university');
 
-	const tabs = $derived([
-		{ key: 'about', labelKey: 'profile.tab.about', href: `?tab=about` },
-		{ key: 'posts', labelKey: 'profile.tab.posts', href: `?tab=posts` },
-		{ key: 'media', labelKey: 'profile.tab.media', href: `?tab=media` },
-		{ key: 'members', labelKey: 'profile.tab.members', href: `?tab=members` },
+	const tabs = $derived<UrlTab[]>([
+		{ value: 'about', label: t('profile.tab.about', 'About') },
+		{ value: 'posts', label: t('profile.tab.posts', 'Posts') },
+		{ value: 'media', label: t('profile.tab.media', 'Media') },
+		{ value: 'members', label: t('profile.tab.members', 'Members') },
 		...(isUniversity
-			? [{ key: 'compare', labelKey: 'profile.tab.compare', href: `?tab=compare`, labelFallback: 'Compare' }]
+			? [{ value: 'compare', label: t('profile.tab.compare', 'Compare') }]
 			: [])
 	]);
 
@@ -87,7 +88,7 @@
 	{/snippet}
 </OrgHeader>
 
-<ProfileTabs {tabs} active={activeTab} />
+<UrlTabs {tabs} bind:value={activeTab} />
 
 <div class="mx-auto w-full max-w-full">
 	<div class="p-3">

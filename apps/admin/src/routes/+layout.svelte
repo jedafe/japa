@@ -139,7 +139,33 @@
 		'/moderation/appeals': 'reports.review',
 		'/gdpr/audit-logs': 'gdpr.audit_logs.view',
 		'/gdpr/consents': 'gdpr.consents.view',
-		'/blog/review-queue': 'blog.review.manage'
+		'/blog/review-queue': 'blog.review.manage',
+		// V2 community features (§§79–89, §98) — HITL review queues
+		'/community/story-wall': 'story.verify',
+		'/community/wiki': 'wiki.review',
+		'/community/scam-alerts': 'scam_alert.review',
+		'/community/planning-groups': 'planning_group.manage_any',
+		'/community/mutual-aid': 'mutual_aid.moderate',
+		'/community/calendar': 'calendar.review',
+		'/community/achievements': 'achievement.moderate',
+		'/community/services': 'service.verify',
+		'/community/digest': 'calendar.review',
+		// V2 functional tools (§§90–97, §§99–101) — HITL review queues
+		'/tools/appointment-alert': 'embassy_monitor.manage',
+		'/tools/cv-formatter': 'cv_formatter.manage',
+		'/tools/visa-checklist': 'checklist.manage',
+		'/tools/readiness': 'assessment.view_results',
+		'/tools/cost-of-living': 'col_calculator.manage',
+		'/tools/scholarships': 'scholarship.manage',
+		'/tools/processing-tracker': 'visa_timeline.manage_any',
+		'/tools/visa-routes': 'visa_routes.manage',
+		'/tools/arrival-checklist': 'arrival_checklist.manage',
+		'/tools/credential-checker': 'credential_checker.manage',
+		'/tools/housing-guide': 'housing_guide.manage',
+		'/tools/attestation-guide': 'attestation_guide.manage',
+		'/tools/language-test-hub': 'language_test_hub.manage',
+		'/tools/tax-calculator': 'tax_calculator.manage',
+		'/tools/community-locator': 'community_locator.manage'
 	};
 
 	let requiredPermission = $derived.by(() => {

@@ -1,14 +1,15 @@
 <script lang="ts">
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
+	import { untrack } from 'svelte';
 	import { FileText, MessageSquare, Image, Heart, Users, Info, BarChart3, Award, Pin } from 'lucide-svelte';
 	import { Chart, Svg, Bars, Axis, LineChart } from 'layerchart';
 	import SetSidebar from '$lib/components/shell/SetSidebar.svelte';
 	import ProfileHeader from '$lib/components/profile/ProfileHeader.svelte';
-	import ProfileTabs from '$lib/components/profile/ProfileTabs.svelte';
 	import FollowButton from '$lib/components/ui/FollowButton.svelte';
 	import UserProfileSidebar from '$lib/components/profile/UserProfileSidebar.svelte';
-	import { EmptyState, LoadingSkeleton } from '$lib/components/ui';
+	import { EmptyState, LoadingSkeleton, UrlTabs } from '$lib/components/ui';
+	import type { UrlTab } from '$lib/components/ui';
 	import { cardStyleFor, type CardStyleConfig } from '$lib/feed/cardStyle';
 	import type { ProfileAnalytics, ProfilePost, FeedItem, FollowerGrowthItem, TopContentItem } from '$lib/types';
 	import FeedCard from '$lib/components/feed/FeedCard.svelte';
@@ -38,7 +39,7 @@
 	const user = $derived(data.user);
 	const isOwnProfile = $derived(data.isOwnProfile);
 	const initiallyFollowing = $derived(data.initiallyFollowing);
-	const activeTab = $derived(page.url.searchParams.get('tab') ?? 'posts');
+	let activeTab = $state(untrack(() => page.url.searchParams.get('tab') ?? 'posts'));
 
 	// Phase 34.03 — earned + unearned badges. On the own profile we also have
 	// the full catalog (data.allBadges); unearned badges surface a "how to earn"
@@ -50,24 +51,24 @@
 			: []
 	);
 
-	const tabs = $derived([
-		{ key: 'posts', labelKey: 'profile.tab.posts', href: `?tab=posts` },
-		{ key: 'about', labelKey: 'profile.tab.about', href: `?tab=about` },
-		{ key: 'replies', labelKey: 'profile.tab.replies', href: `?tab=replies` },
-		{ key: 'media', labelKey: 'profile.tab.media', href: `?tab=media` },
-		{ key: 'likes', labelKey: 'profile.tab.likes', href: `?tab=likes` },
-		{ key: 'spaces', labelKey: 'profile.tab.spaces', href: `?tab=spaces` },
+	const tabs = $derived<UrlTab[]>([
+		{ value: 'posts', label: t('profile.tab.posts', 'Posts') },
+		{ value: 'about', label: t('profile.tab.about', 'About') },
+		{ value: 'replies', label: t('profile.tab.replies', 'Replies') },
+		{ value: 'media', label: t('profile.tab.media', 'Media') },
+		{ value: 'likes', label: t('profile.tab.likes', 'Likes') },
+		{ value: 'spaces', label: t('profile.tab.spaces', 'Spaces') },
 		// Phase 34.03 — Badges tab (Section 64, ADR-080). Shown when the user
 		// has earned badges (public) or when viewing own profile (unearned
 		// badges from the full catalog are also surfaced with "how to earn"
 		// hints).
 		...((data.badges && data.badges.length > 0) || unearnedBadges.length > 0
-			? [{ key: 'badges', labelKey: 'profile.tab.badges', href: `?tab=badges` }]
+			? [{ value: 'badges', label: t('profile.tab.badges', 'Badges') }]
 			: []),
 		// Analytics is a self-dashboard — owner-only per JEOS §342 [auth, self].
 		// Hidden from guests and from other authenticated users.
 		...(isOwnProfile
-			? [{ key: 'analytics', labelKey: 'profile.tab.analytics', href: `?tab=analytics` }]
+			? [{ value: 'analytics', label: t('profile.tab.analytics', 'Analytics') }]
 			: [])
 	]);
 
@@ -140,7 +141,7 @@
 	{/if}
 </ProfileHeader>
 
-<ProfileTabs {tabs} active={activeTab} />
+<UrlTabs {tabs} bind:value={activeTab} />
 
 <div class="mx-auto w-full max-w-full">
 	<div class="p-3">

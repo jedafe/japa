@@ -1,5 +1,5 @@
-// Ref: japaconnect-engineering/sections/85-mutual-aid-board.md
 <script lang="ts">
+	// Ref: japaconnect-engineering/sections/85-mutual-aid-board.md
 	import { t } from '$lib/i18n';
 	import { i18n } from '$lib/i18n';
 	import { goto, invalidateAll } from '$app/navigation';

@@ -1,5 +1,5 @@
-// Ref: japaconnect-engineering/sections/81-scam-alert-board.md
 <script lang="ts">
+	// Ref: japaconnect-engineering/sections/81-scam-alert-board.md
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { ArrowLeft, Send, TriangleAlert } from 'lucide-svelte';

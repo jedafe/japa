@@ -485,7 +485,7 @@ func (s *Store) ListSelectors(ctx context.Context, tenantID pgtype.UUID) ([]Sele
 SELECT g.destination_space_id, sp.name AS dest_space_name,
        sp.geo_code AS dest_space_code, g.visa_category,
        COUNT(*) AS guide_count,
-       MIN(g.id) AS guide_id
+       (MIN(g.id::text))::uuid AS guide_id
 FROM arrival_checklist_guides g
 LEFT JOIN spaces sp ON sp.id = g.destination_space_id
 WHERE g.tenant_id = $1 AND g.is_active = true AND g.status = 'published'

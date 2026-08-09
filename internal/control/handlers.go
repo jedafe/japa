@@ -2973,6 +2973,25 @@ var knownExtensions = []extensionEntry{
 	{Key: "travel", Name: "Travel Search", Description: "Travel search and booking integration for immigration journeys", Version: "2.0.0", SettingKey: "travel.enabled", SettingsCategory: "travel", Category: "Tools"},
 	{Key: "push", Name: "Mobile Push Notifications", Description: "FCM and APNs push notification delivery for mobile apps", Version: "2.0.0", SettingKey: "push.enabled", SettingsCategory: "push", Category: "Integrations"},
 	{Key: "geo_personalization", Name: "Geo Personalization", Description: "Geo-aware feed, search, and discovery ranking based on user location", Version: "2.0.0", SettingKey: "geo_personalization.enabled", SettingsCategory: "geo_personalization", Category: "Integrations"},
+
+	// V2 functional tools (§§90–97, §§99–101) — geo-aware tool pattern
+	// (ADR-088). Each tool lives on the Tools web surface (§78, ADR-086)
+	// and is toggled via its own catalogued system_settings key. These
+	// mirror the apps/tools registry (apps/tools/src/lib/tools/registry.ts)
+	// so the /extensions Tools tab is the canonical on/off switch for every
+	// tool on the surface.
+	{Key: "japabot", Name: "JapaBot", Description: "RAG-grounded AI japa guide chatbot on the Tools surface", Version: "2.0.0", SettingKey: "ai.japabot_enabled", SettingsCategory: "japabot", Category: "AI"},
+	{Key: "visa_routes", Name: "Visa Route Comparison", Description: "Compare visa routes side by side — eligibility, fees, path to PR, and renewal terms", Version: "2.0.0", SettingKey: "visa_routes.enabled", SettingsCategory: "visa_routes", Category: "Tools"},
+	{Key: "appointment_alert", Name: "Embassy Appointment Alerter", Description: "Subscribe to embassy appointment availability alerts and get notified when slots open", Version: "2.0.0", SettingKey: "appointment_alert.enabled", SettingsCategory: "appointment_alert", Category: "Tools"},
+	{Key: "arrival_checklist", Name: "Arrival Checklist", Description: "Phased post-arrival task checklist — registration, banking, and settling-in steps", Version: "2.0.0", SettingKey: "arrival_checklist.enabled", SettingsCategory: "arrival_checklist", Category: "Tools"},
+	{Key: "visa_timeline", Name: "Visa Processing Time Tracker", Description: "Visa processing time statistics and trends — average, median, and percentile wait times", Version: "2.0.0", SettingKey: "visa_timeline.enabled", SettingsCategory: "visa_timeline", Category: "Tools"},
+	{Key: "credential_checker", Name: "Professional Credential Checker", Description: "Credential recognition pathways — regulatory body, timeline, cost, and steps", Version: "2.0.0", SettingKey: "credential_checker.enabled", SettingsCategory: "credential_checker", Category: "Tools"},
+	{Key: "cv_formatter", Name: "CV Formatter", Description: "Destination-specific CV standards and AI-assisted formatting", Version: "2.0.0", SettingKey: "cv_formatter.enabled", SettingsCategory: "cv_formatter", Category: "Tools"},
+	{Key: "housing_guide", Name: "Housing Guide", Description: "Destination-specific housing guides — platforms, landlord requirements, rent ranges, and scam categories", Version: "2.0.0", SettingKey: "housing_guide.enabled", SettingsCategory: "housing_guide", Category: "Tools"},
+	{Key: "attestation_guide", Name: "Attestation Guide", Description: "Step-by-step document attestation pathways — apostille requirements, steps, and fees", Version: "2.0.0", SettingKey: "attestation_guide.enabled", SettingsCategory: "attestation_guide", Category: "Tools"},
+	{Key: "language_test_hub", Name: "Language Test Hub", Description: "Required language tests for your visa — minimum scores, prep resources, and community score stories", Version: "2.0.0", SettingKey: "language_test_hub.enabled", SettingsCategory: "language_test_hub", Category: "Tools"},
+	{Key: "tax_calculator", Name: "Tax Calculator", Description: "Destination-specific tax guides — residency triggers, worldwide income rules, and double taxation treaties", Version: "2.0.0", SettingKey: "tax_calculator.enabled", SettingsCategory: "tax_calculator", Category: "Tools"},
+	{Key: "community_locator", Name: "Diaspora Community Locator", Description: "Find diaspora organisations near your destination — cultural groups, religious communities, and social clubs", Version: "2.0.0", SettingKey: "community_locator.enabled", SettingsCategory: "community_locator", Category: "Tools"},
 }
 
 func (h *Handlers) ListExtensions(w http.ResponseWriter, r *http.Request) {
@@ -2986,9 +3005,14 @@ func (h *Handlers) ListExtensions(w http.ResponseWriter, r *http.Request) {
 		if settingKey == "" {
 			settingKey = "extensions." + ext.Key + ".enabled"
 		}
-		// V2 tools default to enabled (per the settings catalog); legacy
-		// extensions default to disabled.
+		// Resolve the default enabled state from the settings catalog's
+		// DefaultValue (the authoritative source, per Rule 3). Falls back to
+		// the Version-based heuristic for legacy entries not in the catalog:
+		// V2 tools default to enabled, legacy extensions default to disabled.
 		defaultEnabled := ext.Version == "2.0.0"
+		if meta, ok := settingsCatalog[settingKey]; ok && meta.Type == "bool" {
+			defaultEnabled = meta.DefaultValue == "true"
+		}
 		enabled := defaultEnabled
 		if h.Settings != nil {
 			enabled = h.Settings.GetBoolOr(r.Context(), tenantID, settingKey, defaultEnabled)
