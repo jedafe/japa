@@ -33,6 +33,7 @@
 		space_id?: string;
 		field_group_id?: string;
 		fields?: FieldDef[];
+		submission_fee_credits?: number;
 		created_at: string;
 	};
 
@@ -90,6 +91,7 @@
 	let editSubmitLabel = $state('');
 	let editSuccessMessage = $state('');
 	let editIsActive = $state(true);
+	let editSubmissionFeeCredits = $state(0);
 	let saving = $state(false);
 
 	// --- Fields Tab ---
@@ -235,6 +237,7 @@
 					editSubmitLabel = form.submit_label ?? '';
 					editSuccessMessage = form.success_message ?? '';
 					editIsActive = String(form.status ?? 'active').toLowerCase() === 'active';
+					editSubmissionFeeCredits = form.submission_fee_credits ?? 0;
 					// Extract field_group_id for field operations
 					if (form.field_group_id) {
 						fieldGroupId = form.field_group_id;
@@ -533,6 +536,7 @@
 				submit_label: editSubmitLabel.trim() || undefined,
 				success_message: editSuccessMessage.trim() || undefined,
 				status: editIsActive ? 'active' : 'draft',
+				submission_fee_credits: editSubmissionFeeCredits,
 			});
 			if (result.ok) {
 				saveMsg = t('common.saved', 'Saved');
@@ -836,6 +840,18 @@
 								bind:value={editSuccessMessage}
 							/>
 						</div>
+					</div>
+					<div>
+						<label for="form-fee-credits" class="mb-1 block text-sm font-medium text-foreground-alt">{t('forms.fee_credits', 'Submission Fee (credits)')}</label>
+						<input
+							id="form-fee-credits"
+							type="number"
+							min="0"
+							step="1"
+							class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
+							bind:value={editSubmissionFeeCredits}
+						/>
+						<p class="mt-1 text-xs text-muted">{t('forms.fee_credits_hint', '0 = free submission')}</p>
 					</div>
 					<div class="flex items-center gap-2">
 						<input id="form-active" type="checkbox" bind:checked={editIsActive} class="rounded" />

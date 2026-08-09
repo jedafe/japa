@@ -474,6 +474,58 @@ func HandlePaymentWebhookProcess(ctx context.Context, t *asynq.Task) error {
 	slog.Info("task:payment:process_webhook: payment updated",
 		"payment_id", p.ID, "status", payload.Status)
 
+	// Section 06 Paid Form Submissions: when a form_submission payment
+	// succeeds, update the linked form_submission status from
+	// 'pending_payment' to 'new' and enqueue form triggers so the
+	// submission is processed (emails, webhooks, tickets, etc.).
+	if payload.Status == "succeeded" && p.PurposeType == "form_submission" {
+		submission, sErr := queries.GetFormSubmissionByPaymentID(ctx, gen.GetFormSubmissionByPaymentIDParams{
+			PaymentID: p.ID,
+			TenantID:  tenantID,
+		})
+		if sErr != nil {
+			slog.Warn("task:payment:process_webhook: no form submission linked to payment",
+				"payment_id", p.ID, "error", sErr)
+		} else if submission.Status == "pending_payment" {
+			if err := queries.UpdateFormSubmissionStatus(ctx, gen.UpdateFormSubmissionStatusParams{
+				Status:   "new",
+				ID:       submission.ID,
+				TenantID: tenantID,
+			}); err != nil {
+				slog.Error("task:payment:process_webhook: failed to update form submission status",
+					"submission_id", submission.ID, "error", err)
+			} else if taskEnqueuer != nil {
+				// Enqueue form:fire_submission_triggers so the worker
+				// dispatches any triggers configured on this form.
+				formID := ""
+				if submission.FormID.Valid {
+					formID = submission.FormID.String()
+				}
+				userID := ""
+				if submission.UserID.Valid {
+					userID = submission.UserID.String()
+				}
+				triggerPayload, _ := json.Marshal(struct {
+					SubmissionID string `json:"submission_id"`
+					TenantID     string `json:"tenant_id"`
+					FormID       string `json:"form_id"`
+					UserID       string `json:"user_id,omitempty"`
+					FieldValues  []byte `json:"field_values"`
+				}{
+					SubmissionID: submission.ID.String(),
+					TenantID:     tenantID.String(),
+					FormID:       formID,
+					UserID:       userID,
+					FieldValues:  submission.FieldValues,
+				})
+				if err := taskEnqueuer.Enqueue(TypeFormFireSubmissionTriggers, triggerPayload); err != nil {
+					slog.Error("task:payment:process_webhook: failed to enqueue form triggers",
+						"submission_id", submission.ID, "error", err)
+				}
+			}
+		}
+	}
+
 	return nil
 }
 

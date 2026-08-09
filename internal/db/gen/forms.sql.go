@@ -33,39 +33,42 @@ func (q *Queries) CountFormSubmissionsByForm(ctx context.Context, arg CountFormS
 
 const createForm = `-- name: CreateForm :one
 INSERT INTO forms (tenant_id, space_id, name, slug, description, is_multi_step,
-                    submit_label, success_message, status, is_system)
+                    submit_label, success_message, status, is_system, submission_fee_credits)
 VALUES ($1, $2, $3, $4, $5,
-        $6, $7, $8, $9, $10)
+        $6, $7, $8, $9, $10,
+        $11)
 RETURNING id, tenant_id, space_id, name, slug, description, is_multi_step,
-          submit_label, success_message, status, is_system, created_at
+          submit_label, success_message, status, is_system, submission_fee_credits, created_at
 `
 
 type CreateFormParams struct {
-	TenantID       pgtype.UUID `json:"tenant_id"`
-	SpaceID        pgtype.UUID `json:"space_id"`
-	Name           string      `json:"name"`
-	Slug           string      `json:"slug"`
-	Description    *string     `json:"description"`
-	IsMultiStep    bool        `json:"is_multi_step"`
-	SubmitLabel    string      `json:"submit_label"`
-	SuccessMessage *string     `json:"success_message"`
-	Status         string      `json:"status"`
-	IsSystem       bool        `json:"is_system"`
+	TenantID             pgtype.UUID `json:"tenant_id"`
+	SpaceID              pgtype.UUID `json:"space_id"`
+	Name                 string      `json:"name"`
+	Slug                 string      `json:"slug"`
+	Description          *string     `json:"description"`
+	IsMultiStep          bool        `json:"is_multi_step"`
+	SubmitLabel          string      `json:"submit_label"`
+	SuccessMessage       *string     `json:"success_message"`
+	Status               string      `json:"status"`
+	IsSystem             bool        `json:"is_system"`
+	SubmissionFeeCredits int32       `json:"submission_fee_credits"`
 }
 
 type CreateFormRow struct {
-	ID             pgtype.UUID        `json:"id"`
-	TenantID       pgtype.UUID        `json:"tenant_id"`
-	SpaceID        pgtype.UUID        `json:"space_id"`
-	Name           string             `json:"name"`
-	Slug           string             `json:"slug"`
-	Description    *string            `json:"description"`
-	IsMultiStep    bool               `json:"is_multi_step"`
-	SubmitLabel    string             `json:"submit_label"`
-	SuccessMessage *string            `json:"success_message"`
-	Status         string             `json:"status"`
-	IsSystem       bool               `json:"is_system"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	ID                   pgtype.UUID        `json:"id"`
+	TenantID             pgtype.UUID        `json:"tenant_id"`
+	SpaceID              pgtype.UUID        `json:"space_id"`
+	Name                 string             `json:"name"`
+	Slug                 string             `json:"slug"`
+	Description          *string            `json:"description"`
+	IsMultiStep          bool               `json:"is_multi_step"`
+	SubmitLabel          string             `json:"submit_label"`
+	SuccessMessage       *string            `json:"success_message"`
+	Status               string             `json:"status"`
+	IsSystem             bool               `json:"is_system"`
+	SubmissionFeeCredits int32              `json:"submission_fee_credits"`
+	CreatedAt            pgtype.Timestamptz `json:"created_at"`
 }
 
 func (q *Queries) CreateForm(ctx context.Context, arg CreateFormParams) (CreateFormRow, error) {
@@ -80,6 +83,7 @@ func (q *Queries) CreateForm(ctx context.Context, arg CreateFormParams) (CreateF
 		arg.SuccessMessage,
 		arg.Status,
 		arg.IsSystem,
+		arg.SubmissionFeeCredits,
 	)
 	var i CreateFormRow
 	err := row.Scan(
@@ -94,6 +98,7 @@ func (q *Queries) CreateForm(ctx context.Context, arg CreateFormParams) (CreateF
 		&i.SuccessMessage,
 		&i.Status,
 		&i.IsSystem,
+		&i.SubmissionFeeCredits,
 		&i.CreatedAt,
 	)
 	return i, err
@@ -124,9 +129,9 @@ func (q *Queries) CreateFormStep(ctx context.Context, arg CreateFormStepParams) 
 }
 
 const createFormSubmission = `-- name: CreateFormSubmission :one
-INSERT INTO form_submissions (form_id, tenant_id, user_id, ip_address, field_values, status)
-VALUES ($1, $2, $3, $4, $5, $6)
-RETURNING id, form_id, tenant_id, user_id, ip_address, field_values, status, created_at
+INSERT INTO form_submissions (form_id, tenant_id, user_id, ip_address, field_values, status, payment_id)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
+RETURNING id, form_id, tenant_id, user_id, ip_address, field_values, status, payment_id, created_at
 `
 
 type CreateFormSubmissionParams struct {
@@ -136,9 +141,22 @@ type CreateFormSubmissionParams struct {
 	IpAddress   *netip.Addr `json:"ip_address"`
 	FieldValues []byte      `json:"field_values"`
 	Status      string      `json:"status"`
+	PaymentID   pgtype.UUID `json:"payment_id"`
 }
 
-func (q *Queries) CreateFormSubmission(ctx context.Context, arg CreateFormSubmissionParams) (FormSubmission, error) {
+type CreateFormSubmissionRow struct {
+	ID          pgtype.UUID        `json:"id"`
+	FormID      pgtype.UUID        `json:"form_id"`
+	TenantID    pgtype.UUID        `json:"tenant_id"`
+	UserID      pgtype.UUID        `json:"user_id"`
+	IpAddress   *netip.Addr        `json:"ip_address"`
+	FieldValues []byte             `json:"field_values"`
+	Status      string             `json:"status"`
+	PaymentID   pgtype.UUID        `json:"payment_id"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+}
+
+func (q *Queries) CreateFormSubmission(ctx context.Context, arg CreateFormSubmissionParams) (CreateFormSubmissionRow, error) {
 	row := q.db.QueryRow(ctx, createFormSubmission,
 		arg.FormID,
 		arg.TenantID,
@@ -146,8 +164,9 @@ func (q *Queries) CreateFormSubmission(ctx context.Context, arg CreateFormSubmis
 		arg.IpAddress,
 		arg.FieldValues,
 		arg.Status,
+		arg.PaymentID,
 	)
-	var i FormSubmission
+	var i CreateFormSubmissionRow
 	err := row.Scan(
 		&i.ID,
 		&i.FormID,
@@ -156,6 +175,7 @@ func (q *Queries) CreateFormSubmission(ctx context.Context, arg CreateFormSubmis
 		&i.IpAddress,
 		&i.FieldValues,
 		&i.Status,
+		&i.PaymentID,
 		&i.CreatedAt,
 	)
 	return i, err
@@ -254,7 +274,7 @@ func (q *Queries) DeleteFormSubmissionTrigger(ctx context.Context, arg DeleteFor
 
 const getFormByID = `-- name: GetFormByID :one
 SELECT id, tenant_id, space_id, name, slug, description, is_multi_step,
-       submit_label, success_message, status, is_system, created_at
+       submit_label, success_message, status, is_system, submission_fee_credits, created_at
 FROM forms
 WHERE id = $1 AND tenant_id = $2
 `
@@ -265,18 +285,19 @@ type GetFormByIDParams struct {
 }
 
 type GetFormByIDRow struct {
-	ID             pgtype.UUID        `json:"id"`
-	TenantID       pgtype.UUID        `json:"tenant_id"`
-	SpaceID        pgtype.UUID        `json:"space_id"`
-	Name           string             `json:"name"`
-	Slug           string             `json:"slug"`
-	Description    *string            `json:"description"`
-	IsMultiStep    bool               `json:"is_multi_step"`
-	SubmitLabel    string             `json:"submit_label"`
-	SuccessMessage *string            `json:"success_message"`
-	Status         string             `json:"status"`
-	IsSystem       bool               `json:"is_system"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	ID                   pgtype.UUID        `json:"id"`
+	TenantID             pgtype.UUID        `json:"tenant_id"`
+	SpaceID              pgtype.UUID        `json:"space_id"`
+	Name                 string             `json:"name"`
+	Slug                 string             `json:"slug"`
+	Description          *string            `json:"description"`
+	IsMultiStep          bool               `json:"is_multi_step"`
+	SubmitLabel          string             `json:"submit_label"`
+	SuccessMessage       *string            `json:"success_message"`
+	Status               string             `json:"status"`
+	IsSystem             bool               `json:"is_system"`
+	SubmissionFeeCredits int32              `json:"submission_fee_credits"`
+	CreatedAt            pgtype.Timestamptz `json:"created_at"`
 }
 
 func (q *Queries) GetFormByID(ctx context.Context, arg GetFormByIDParams) (GetFormByIDRow, error) {
@@ -294,6 +315,7 @@ func (q *Queries) GetFormByID(ctx context.Context, arg GetFormByIDParams) (GetFo
 		&i.SuccessMessage,
 		&i.Status,
 		&i.IsSystem,
+		&i.SubmissionFeeCredits,
 		&i.CreatedAt,
 	)
 	return i, err
@@ -301,7 +323,7 @@ func (q *Queries) GetFormByID(ctx context.Context, arg GetFormByIDParams) (GetFo
 
 const getFormBySlug = `-- name: GetFormBySlug :one
 SELECT id, tenant_id, space_id, name, slug, description, is_multi_step,
-       submit_label, success_message, status, is_system, created_at
+       submit_label, success_message, status, is_system, submission_fee_credits, created_at
 FROM forms
 WHERE slug = $1 AND tenant_id = $2
 `
@@ -312,18 +334,19 @@ type GetFormBySlugParams struct {
 }
 
 type GetFormBySlugRow struct {
-	ID             pgtype.UUID        `json:"id"`
-	TenantID       pgtype.UUID        `json:"tenant_id"`
-	SpaceID        pgtype.UUID        `json:"space_id"`
-	Name           string             `json:"name"`
-	Slug           string             `json:"slug"`
-	Description    *string            `json:"description"`
-	IsMultiStep    bool               `json:"is_multi_step"`
-	SubmitLabel    string             `json:"submit_label"`
-	SuccessMessage *string            `json:"success_message"`
-	Status         string             `json:"status"`
-	IsSystem       bool               `json:"is_system"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	ID                   pgtype.UUID        `json:"id"`
+	TenantID             pgtype.UUID        `json:"tenant_id"`
+	SpaceID              pgtype.UUID        `json:"space_id"`
+	Name                 string             `json:"name"`
+	Slug                 string             `json:"slug"`
+	Description          *string            `json:"description"`
+	IsMultiStep          bool               `json:"is_multi_step"`
+	SubmitLabel          string             `json:"submit_label"`
+	SuccessMessage       *string            `json:"success_message"`
+	Status               string             `json:"status"`
+	IsSystem             bool               `json:"is_system"`
+	SubmissionFeeCredits int32              `json:"submission_fee_credits"`
+	CreatedAt            pgtype.Timestamptz `json:"created_at"`
 }
 
 func (q *Queries) GetFormBySlug(ctx context.Context, arg GetFormBySlugParams) (GetFormBySlugRow, error) {
@@ -341,13 +364,14 @@ func (q *Queries) GetFormBySlug(ctx context.Context, arg GetFormBySlugParams) (G
 		&i.SuccessMessage,
 		&i.Status,
 		&i.IsSystem,
+		&i.SubmissionFeeCredits,
 		&i.CreatedAt,
 	)
 	return i, err
 }
 
 const getFormSubmissionByID = `-- name: GetFormSubmissionByID :one
-SELECT id, form_id, tenant_id, user_id, ip_address, field_values, status, created_at
+SELECT id, form_id, tenant_id, user_id, ip_address, field_values, status, payment_id, created_at
 FROM form_submissions
 WHERE id = $1 AND tenant_id = $2
 `
@@ -357,9 +381,21 @@ type GetFormSubmissionByIDParams struct {
 	TenantID pgtype.UUID `json:"tenant_id"`
 }
 
-func (q *Queries) GetFormSubmissionByID(ctx context.Context, arg GetFormSubmissionByIDParams) (FormSubmission, error) {
+type GetFormSubmissionByIDRow struct {
+	ID          pgtype.UUID        `json:"id"`
+	FormID      pgtype.UUID        `json:"form_id"`
+	TenantID    pgtype.UUID        `json:"tenant_id"`
+	UserID      pgtype.UUID        `json:"user_id"`
+	IpAddress   *netip.Addr        `json:"ip_address"`
+	FieldValues []byte             `json:"field_values"`
+	Status      string             `json:"status"`
+	PaymentID   pgtype.UUID        `json:"payment_id"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+}
+
+func (q *Queries) GetFormSubmissionByID(ctx context.Context, arg GetFormSubmissionByIDParams) (GetFormSubmissionByIDRow, error) {
 	row := q.db.QueryRow(ctx, getFormSubmissionByID, arg.ID, arg.TenantID)
-	var i FormSubmission
+	var i GetFormSubmissionByIDRow
 	err := row.Scan(
 		&i.ID,
 		&i.FormID,
@@ -368,6 +404,50 @@ func (q *Queries) GetFormSubmissionByID(ctx context.Context, arg GetFormSubmissi
 		&i.IpAddress,
 		&i.FieldValues,
 		&i.Status,
+		&i.PaymentID,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getFormSubmissionByPaymentID = `-- name: GetFormSubmissionByPaymentID :one
+SELECT id, form_id, tenant_id, user_id, ip_address, field_values, status, payment_id, created_at
+FROM form_submissions
+WHERE payment_id = $1 AND tenant_id = $2
+`
+
+type GetFormSubmissionByPaymentIDParams struct {
+	PaymentID pgtype.UUID `json:"payment_id"`
+	TenantID  pgtype.UUID `json:"tenant_id"`
+}
+
+type GetFormSubmissionByPaymentIDRow struct {
+	ID          pgtype.UUID        `json:"id"`
+	FormID      pgtype.UUID        `json:"form_id"`
+	TenantID    pgtype.UUID        `json:"tenant_id"`
+	UserID      pgtype.UUID        `json:"user_id"`
+	IpAddress   *netip.Addr        `json:"ip_address"`
+	FieldValues []byte             `json:"field_values"`
+	Status      string             `json:"status"`
+	PaymentID   pgtype.UUID        `json:"payment_id"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+}
+
+// Finds a form submission by its linked payment_id. Used by the payment webhook
+// worker to update the submission status when a gateway payment is confirmed.
+// Ref: Section 06 Paid Form Submissions.
+func (q *Queries) GetFormSubmissionByPaymentID(ctx context.Context, arg GetFormSubmissionByPaymentIDParams) (GetFormSubmissionByPaymentIDRow, error) {
+	row := q.db.QueryRow(ctx, getFormSubmissionByPaymentID, arg.PaymentID, arg.TenantID)
+	var i GetFormSubmissionByPaymentIDRow
+	err := row.Scan(
+		&i.ID,
+		&i.FormID,
+		&i.TenantID,
+		&i.UserID,
+		&i.IpAddress,
+		&i.FieldValues,
+		&i.Status,
+		&i.PaymentID,
 		&i.CreatedAt,
 	)
 	return i, err
@@ -448,7 +528,7 @@ func (q *Queries) ListFormSubmissionTriggersByForm(ctx context.Context, formID p
 
 const listFormSubmissionsByForm = `-- name: ListFormSubmissionsByForm :many
 
-SELECT id, form_id, tenant_id, user_id, ip_address, field_values, status, created_at
+SELECT id, form_id, tenant_id, user_id, ip_address, field_values, status, payment_id, created_at
 FROM form_submissions
 WHERE form_id = $1 AND tenant_id = $2
   AND ($3 IS NULL OR status = $3)
@@ -464,10 +544,22 @@ type ListFormSubmissionsByFormParams struct {
 	PageLimit    int32       `json:"page_limit"`
 }
 
+type ListFormSubmissionsByFormRow struct {
+	ID          pgtype.UUID        `json:"id"`
+	FormID      pgtype.UUID        `json:"form_id"`
+	TenantID    pgtype.UUID        `json:"tenant_id"`
+	UserID      pgtype.UUID        `json:"user_id"`
+	IpAddress   *netip.Addr        `json:"ip_address"`
+	FieldValues []byte             `json:"field_values"`
+	Status      string             `json:"status"`
+	PaymentID   pgtype.UUID        `json:"payment_id"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+}
+
 // =====================
 // Form Submissions
 // =====================
-func (q *Queries) ListFormSubmissionsByForm(ctx context.Context, arg ListFormSubmissionsByFormParams) ([]FormSubmission, error) {
+func (q *Queries) ListFormSubmissionsByForm(ctx context.Context, arg ListFormSubmissionsByFormParams) ([]ListFormSubmissionsByFormRow, error) {
 	rows, err := q.db.Query(ctx, listFormSubmissionsByForm,
 		arg.FormID,
 		arg.TenantID,
@@ -479,9 +571,9 @@ func (q *Queries) ListFormSubmissionsByForm(ctx context.Context, arg ListFormSub
 		return nil, err
 	}
 	defer rows.Close()
-	var items []FormSubmission
+	var items []ListFormSubmissionsByFormRow
 	for rows.Next() {
-		var i FormSubmission
+		var i ListFormSubmissionsByFormRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.FormID,
@@ -490,6 +582,7 @@ func (q *Queries) ListFormSubmissionsByForm(ctx context.Context, arg ListFormSub
 			&i.IpAddress,
 			&i.FieldValues,
 			&i.Status,
+			&i.PaymentID,
 			&i.CreatedAt,
 		); err != nil {
 			return nil, err
@@ -505,7 +598,7 @@ func (q *Queries) ListFormSubmissionsByForm(ctx context.Context, arg ListFormSub
 const listFormsBySpace = `-- name: ListFormsBySpace :many
 SELECT f.id, f.tenant_id, f.space_id, f.name, f.slug, f.description,
        f.is_multi_step, f.submit_label, f.success_message, f.status,
-       f.is_system, f.created_at,
+       f.is_system, f.submission_fee_credits, f.created_at,
        COALESCE(fc.cnt, 0)::bigint AS submission_count
 FROM forms f
 LEFT JOIN LATERAL (
@@ -523,19 +616,20 @@ type ListFormsBySpaceParams struct {
 }
 
 type ListFormsBySpaceRow struct {
-	ID              pgtype.UUID        `json:"id"`
-	TenantID        pgtype.UUID        `json:"tenant_id"`
-	SpaceID         pgtype.UUID        `json:"space_id"`
-	Name            string             `json:"name"`
-	Slug            string             `json:"slug"`
-	Description     *string            `json:"description"`
-	IsMultiStep     bool               `json:"is_multi_step"`
-	SubmitLabel     string             `json:"submit_label"`
-	SuccessMessage  *string            `json:"success_message"`
-	Status          string             `json:"status"`
-	IsSystem        bool               `json:"is_system"`
-	CreatedAt       pgtype.Timestamptz `json:"created_at"`
-	SubmissionCount int64              `json:"submission_count"`
+	ID                   pgtype.UUID        `json:"id"`
+	TenantID             pgtype.UUID        `json:"tenant_id"`
+	SpaceID              pgtype.UUID        `json:"space_id"`
+	Name                 string             `json:"name"`
+	Slug                 string             `json:"slug"`
+	Description          *string            `json:"description"`
+	IsMultiStep          bool               `json:"is_multi_step"`
+	SubmitLabel          string             `json:"submit_label"`
+	SuccessMessage       *string            `json:"success_message"`
+	Status               string             `json:"status"`
+	IsSystem             bool               `json:"is_system"`
+	SubmissionFeeCredits int32              `json:"submission_fee_credits"`
+	CreatedAt            pgtype.Timestamptz `json:"created_at"`
+	SubmissionCount      int64              `json:"submission_count"`
 }
 
 func (q *Queries) ListFormsBySpace(ctx context.Context, arg ListFormsBySpaceParams) ([]ListFormsBySpaceRow, error) {
@@ -559,6 +653,7 @@ func (q *Queries) ListFormsBySpace(ctx context.Context, arg ListFormsBySpacePara
 			&i.SuccessMessage,
 			&i.Status,
 			&i.IsSystem,
+			&i.SubmissionFeeCredits,
 			&i.CreatedAt,
 			&i.SubmissionCount,
 		); err != nil {
@@ -576,7 +671,7 @@ const listFormsByTenant = `-- name: ListFormsByTenant :many
 
 
 SELECT f.id, f.tenant_id, f.space_id, f.name, f.slug, f.description, f.is_multi_step,
-       f.submit_label, f.success_message, f.status, f.is_system, f.created_at,
+       f.submit_label, f.success_message, f.status, f.is_system, f.submission_fee_credits, f.created_at,
        s.name AS space_name
 FROM forms f
 LEFT JOIN spaces s ON s.id = f.space_id AND s.tenant_id = f.tenant_id
@@ -585,19 +680,20 @@ ORDER BY f.created_at DESC, f.id DESC
 `
 
 type ListFormsByTenantRow struct {
-	ID             pgtype.UUID        `json:"id"`
-	TenantID       pgtype.UUID        `json:"tenant_id"`
-	SpaceID        pgtype.UUID        `json:"space_id"`
-	Name           string             `json:"name"`
-	Slug           string             `json:"slug"`
-	Description    *string            `json:"description"`
-	IsMultiStep    bool               `json:"is_multi_step"`
-	SubmitLabel    string             `json:"submit_label"`
-	SuccessMessage *string            `json:"success_message"`
-	Status         string             `json:"status"`
-	IsSystem       bool               `json:"is_system"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	SpaceName      *string            `json:"space_name"`
+	ID                   pgtype.UUID        `json:"id"`
+	TenantID             pgtype.UUID        `json:"tenant_id"`
+	SpaceID              pgtype.UUID        `json:"space_id"`
+	Name                 string             `json:"name"`
+	Slug                 string             `json:"slug"`
+	Description          *string            `json:"description"`
+	IsMultiStep          bool               `json:"is_multi_step"`
+	SubmitLabel          string             `json:"submit_label"`
+	SuccessMessage       *string            `json:"success_message"`
+	Status               string             `json:"status"`
+	IsSystem             bool               `json:"is_system"`
+	SubmissionFeeCredits int32              `json:"submission_fee_credits"`
+	CreatedAt            pgtype.Timestamptz `json:"created_at"`
+	SpaceName            *string            `json:"space_name"`
 }
 
 // Form, form step, and form submission queries.
@@ -625,6 +721,7 @@ func (q *Queries) ListFormsByTenant(ctx context.Context, tenantID pgtype.UUID) (
 			&i.SuccessMessage,
 			&i.Status,
 			&i.IsSystem,
+			&i.SubmissionFeeCredits,
 			&i.CreatedAt,
 			&i.SpaceName,
 		); err != nil {
@@ -641,36 +738,39 @@ func (q *Queries) ListFormsByTenant(ctx context.Context, tenantID pgtype.UUID) (
 const updateForm = `-- name: UpdateForm :one
 UPDATE forms
 SET name = $1, description = $2, is_multi_step = $3,
-    submit_label = $4, success_message = $5, status = $6
-WHERE id = $7 AND tenant_id = $8 AND is_system = false
+    submit_label = $4, success_message = $5, status = $6,
+    submission_fee_credits = $7
+WHERE id = $8 AND tenant_id = $9 AND is_system = false
 RETURNING id, tenant_id, space_id, name, slug, description, is_multi_step,
-          submit_label, success_message, status, is_system, created_at
+          submit_label, success_message, status, is_system, submission_fee_credits, created_at
 `
 
 type UpdateFormParams struct {
-	Name           string      `json:"name"`
-	Description    *string     `json:"description"`
-	IsMultiStep    bool        `json:"is_multi_step"`
-	SubmitLabel    string      `json:"submit_label"`
-	SuccessMessage *string     `json:"success_message"`
-	Status         string      `json:"status"`
-	ID             pgtype.UUID `json:"id"`
-	TenantID       pgtype.UUID `json:"tenant_id"`
+	Name                 string      `json:"name"`
+	Description          *string     `json:"description"`
+	IsMultiStep          bool        `json:"is_multi_step"`
+	SubmitLabel          string      `json:"submit_label"`
+	SuccessMessage       *string     `json:"success_message"`
+	Status               string      `json:"status"`
+	SubmissionFeeCredits int32       `json:"submission_fee_credits"`
+	ID                   pgtype.UUID `json:"id"`
+	TenantID             pgtype.UUID `json:"tenant_id"`
 }
 
 type UpdateFormRow struct {
-	ID             pgtype.UUID        `json:"id"`
-	TenantID       pgtype.UUID        `json:"tenant_id"`
-	SpaceID        pgtype.UUID        `json:"space_id"`
-	Name           string             `json:"name"`
-	Slug           string             `json:"slug"`
-	Description    *string            `json:"description"`
-	IsMultiStep    bool               `json:"is_multi_step"`
-	SubmitLabel    string             `json:"submit_label"`
-	SuccessMessage *string            `json:"success_message"`
-	Status         string             `json:"status"`
-	IsSystem       bool               `json:"is_system"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	ID                   pgtype.UUID        `json:"id"`
+	TenantID             pgtype.UUID        `json:"tenant_id"`
+	SpaceID              pgtype.UUID        `json:"space_id"`
+	Name                 string             `json:"name"`
+	Slug                 string             `json:"slug"`
+	Description          *string            `json:"description"`
+	IsMultiStep          bool               `json:"is_multi_step"`
+	SubmitLabel          string             `json:"submit_label"`
+	SuccessMessage       *string            `json:"success_message"`
+	Status               string             `json:"status"`
+	IsSystem             bool               `json:"is_system"`
+	SubmissionFeeCredits int32              `json:"submission_fee_credits"`
+	CreatedAt            pgtype.Timestamptz `json:"created_at"`
 }
 
 func (q *Queries) UpdateForm(ctx context.Context, arg UpdateFormParams) (UpdateFormRow, error) {
@@ -681,6 +781,7 @@ func (q *Queries) UpdateForm(ctx context.Context, arg UpdateFormParams) (UpdateF
 		arg.SubmitLabel,
 		arg.SuccessMessage,
 		arg.Status,
+		arg.SubmissionFeeCredits,
 		arg.ID,
 		arg.TenantID,
 	)
@@ -697,6 +798,7 @@ func (q *Queries) UpdateForm(ctx context.Context, arg UpdateFormParams) (UpdateF
 		&i.SuccessMessage,
 		&i.Status,
 		&i.IsSystem,
+		&i.SubmissionFeeCredits,
 		&i.CreatedAt,
 	)
 	return i, err
@@ -747,6 +849,25 @@ type UpdateFormStepPositionParams struct {
 
 func (q *Queries) UpdateFormStepPosition(ctx context.Context, arg UpdateFormStepPositionParams) error {
 	_, err := q.db.Exec(ctx, updateFormStepPosition, arg.Position, arg.ID, arg.FormID)
+	return err
+}
+
+const updateFormSubmissionPaymentID = `-- name: UpdateFormSubmissionPaymentID :exec
+UPDATE form_submissions
+SET payment_id = $1
+WHERE id = $2 AND tenant_id = $3
+`
+
+type UpdateFormSubmissionPaymentIDParams struct {
+	PaymentID pgtype.UUID `json:"payment_id"`
+	ID        pgtype.UUID `json:"id"`
+	TenantID  pgtype.UUID `json:"tenant_id"`
+}
+
+// Links a payment record to a form submission (for paid submissions confirmed
+// via payment gateway webhook). Ref: Section 06 Paid Form Submissions.
+func (q *Queries) UpdateFormSubmissionPaymentID(ctx context.Context, arg UpdateFormSubmissionPaymentIDParams) error {
+	_, err := q.db.Exec(ctx, updateFormSubmissionPaymentID, arg.PaymentID, arg.ID, arg.TenantID)
 	return err
 }
 

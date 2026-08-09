@@ -1401,20 +1401,21 @@ type Follow struct {
 }
 
 type Form struct {
-	ID             pgtype.UUID        `json:"id"`
-	TenantID       pgtype.UUID        `json:"tenant_id"`
-	Name           string             `json:"name"`
-	Slug           string             `json:"slug"`
-	Description    *string            `json:"description"`
-	IsMultiStep    bool               `json:"is_multi_step"`
-	SubmitLabel    string             `json:"submit_label"`
-	SuccessMessage *string            `json:"success_message"`
-	Status         string             `json:"status"`
-	IsSystem       bool               `json:"is_system"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	SpaceID        pgtype.UUID        `json:"space_id"`
-	FormType       string             `json:"form_type"`
-	ScoringConfig  []byte             `json:"scoring_config"`
+	ID                   pgtype.UUID        `json:"id"`
+	TenantID             pgtype.UUID        `json:"tenant_id"`
+	Name                 string             `json:"name"`
+	Slug                 string             `json:"slug"`
+	Description          *string            `json:"description"`
+	IsMultiStep          bool               `json:"is_multi_step"`
+	SubmitLabel          string             `json:"submit_label"`
+	SuccessMessage       *string            `json:"success_message"`
+	Status               string             `json:"status"`
+	IsSystem             bool               `json:"is_system"`
+	CreatedAt            pgtype.Timestamptz `json:"created_at"`
+	SpaceID              pgtype.UUID        `json:"space_id"`
+	FormType             string             `json:"form_type"`
+	ScoringConfig        []byte             `json:"scoring_config"`
+	SubmissionFeeCredits int32              `json:"submission_fee_credits"`
 }
 
 type FormStep struct {
@@ -1433,6 +1434,7 @@ type FormSubmission struct {
 	FieldValues []byte             `json:"field_values"`
 	Status      string             `json:"status"`
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	PaymentID   pgtype.UUID        `json:"payment_id"`
 }
 
 type FormSubmissionTrigger struct {
@@ -1702,6 +1704,7 @@ type LanguageTestRequirement struct {
 	HitlReviewNotes    *string            `json:"hitl_review_notes"`
 	CreatedAt          pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+	IsJapabotIndexed   bool               `json:"is_japabot_indexed"`
 }
 
 type LanguageTestResource struct {
@@ -2264,17 +2267,18 @@ type OrganizationMember struct {
 }
 
 type OwnershipClaim struct {
-	ID             pgtype.UUID        `json:"id"`
-	TenantID       pgtype.UUID        `json:"tenant_id"`
-	ClaimantUserID pgtype.UUID        `json:"claimant_user_id"`
-	OrganizationID pgtype.UUID        `json:"organization_id"`
-	EvidenceUrl    *string            `json:"evidence_url"`
-	Notes          *string            `json:"notes"`
-	Status         string             `json:"status"`
-	ReviewedBy     pgtype.UUID        `json:"reviewed_by"`
-	ResolutionNote *string            `json:"resolution_note"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	ReviewedAt     pgtype.Timestamptz `json:"reviewed_at"`
+	ID               pgtype.UUID        `json:"id"`
+	TenantID         pgtype.UUID        `json:"tenant_id"`
+	ClaimantUserID   pgtype.UUID        `json:"claimant_user_id"`
+	OrganizationID   pgtype.UUID        `json:"organization_id"`
+	EvidenceUrl      *string            `json:"evidence_url"`
+	Notes            *string            `json:"notes"`
+	Status           string             `json:"status"`
+	ReviewedBy       pgtype.UUID        `json:"reviewed_by"`
+	ResolutionNote   *string            `json:"resolution_note"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	ReviewedAt       pgtype.Timestamptz `json:"reviewed_at"`
+	FormSubmissionID pgtype.UUID        `json:"form_submission_id"`
 }
 
 type Page struct {
@@ -3078,6 +3082,8 @@ type StoryMetum struct {
 	IsJapabotIndexed   bool               `json:"is_japabot_indexed"`
 	CreatedAt          pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+	AiPromptHash       *string            `json:"ai_prompt_hash"`
+	HitlReviewNotes    *string            `json:"hitl_review_notes"`
 }
 
 type StudioBatch struct {

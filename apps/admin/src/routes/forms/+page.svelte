@@ -29,6 +29,7 @@
 		submit_label?: string;
 		success_message?: string;
 		is_system?: boolean;
+		submission_fee_credits?: number;
 		created_at: string;
 	};
 
@@ -60,6 +61,7 @@
 	let editIsMultiStep = $state(false);
 	let editSubmitLabel = $state('');
 	let editSuccessMessage = $state('');
+	let editSubmissionFeeCredits = $state(0);
 	let savingEdit = $state(false);
 
 	// Create SlideOver
@@ -71,6 +73,7 @@
 	let createIsMultiStep = $state(false);
 	let createSubmitLabel = $state('');
 	let createSuccessMessage = $state('');
+	let createSubmissionFeeCredits = $state(0);
 	let savingCreate = $state(false);
 	let slugTouched = $state(false);
 
@@ -208,6 +211,7 @@
 		editIsMultiStep = form.is_multi_step ?? false;
 		editSubmitLabel = form.submit_label ?? '';
 		editSuccessMessage = form.success_message ?? '';
+		editSubmissionFeeCredits = form.submission_fee_credits ?? 0;
 		showEditSlideOver = true;
 	}
 
@@ -221,7 +225,8 @@
 				status: editIsActive ? 'active' : 'draft',
 				is_multi_step: editIsMultiStep,
 				submit_label: editSubmitLabel.trim() || undefined,
-				success_message: editSuccessMessage.trim() || undefined
+				success_message: editSuccessMessage.trim() || undefined,
+				submission_fee_credits: editSubmissionFeeCredits
 			});
 			if (result.ok) {
 				showEditSlideOver = false;
@@ -268,6 +273,7 @@
 		createIsMultiStep = false;
 		createSubmitLabel = '';
 		createSuccessMessage = '';
+		createSubmissionFeeCredits = 0;
 		slugTouched = false;
 		showCreateSlideOver = true;
 	}
@@ -287,7 +293,8 @@
 				status: createIsActive ? 'active' : 'draft',
 				is_multi_step: createIsMultiStep,
 				submit_label: createSubmitLabel.trim() || undefined,
-				success_message: createSuccessMessage.trim() || undefined
+				success_message: createSuccessMessage.trim() || undefined,
+				submission_fee_credits: createSubmissionFeeCredits
 			});
 			if (result.ok) {
 				showCreateSlideOver = false;
@@ -410,6 +417,11 @@
 			<label for="form-create-success-msg" class="mb-1 block text-sm font-medium text-foreground-alt">{t('forms.success_message', 'Success Message')}</label>
 			<textarea id="form-create-success-msg" rows="2" class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" placeholder={t('forms.success_message_placeholder', 'e.g., Thank you for your submission!')} bind:value={createSuccessMessage}></textarea>
 		</div>
+		<div>
+			<label for="form-create-fee-credits" class="mb-1 block text-sm font-medium text-foreground-alt">{t('forms.fee_credits', 'Submission Fee (credits)')}</label>
+			<input id="form-create-fee-credits" type="number" min="0" step="1" class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" bind:value={createSubmissionFeeCredits} />
+			<p class="mt-1 text-xs text-muted">{t('forms.fee_credits_hint', '0 = free submission')}</p>
+		</div>
 		<div class="flex items-center gap-2">
 			<input id="form-create-active" type="checkbox" bind:checked={createIsActive} class="rounded" />
 			<label for="form-create-active" class="text-sm text-foreground-alt">{t('forms.active_label', 'Active')}</label>
@@ -453,6 +465,11 @@
 			<div>
 				<label for="form-edit-success-msg" class="mb-1 block text-sm font-medium text-foreground-alt">{t('forms.success_message', 'Success Message')}</label>
 				<textarea id="form-edit-success-msg" rows="2" class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" bind:value={editSuccessMessage}></textarea>
+			</div>
+			<div>
+				<label for="form-edit-fee-credits" class="mb-1 block text-sm font-medium text-foreground-alt">{t('forms.fee_credits', 'Submission Fee (credits)')}</label>
+				<input id="form-edit-fee-credits" type="number" min="0" step="1" class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" bind:value={editSubmissionFeeCredits} />
+				<p class="mt-1 text-xs text-muted">{t('forms.fee_credits_hint', '0 = free submission')}</p>
 			</div>
 			<div class="flex items-center gap-2">
 				<input id="form-edit-active" type="checkbox" bind:checked={editIsActive} class="rounded" />

@@ -269,17 +269,18 @@ func (q *Queries) CreateOrganizationInvitation(ctx context.Context, arg CreateOr
 }
 
 const createOwnershipClaim = `-- name: CreateOwnershipClaim :one
-INSERT INTO ownership_claims (tenant_id, claimant_user_id, organization_id, evidence_url, notes)
-VALUES ($1, $2, $3, $4, $5)
-RETURNING id, tenant_id, claimant_user_id, organization_id, evidence_url, notes, status, reviewed_by, resolution_note, created_at, reviewed_at
+INSERT INTO ownership_claims (tenant_id, claimant_user_id, organization_id, evidence_url, notes, form_submission_id)
+VALUES ($1, $2, $3, $4, $5, $6)
+RETURNING id, tenant_id, claimant_user_id, organization_id, evidence_url, notes, status, reviewed_by, resolution_note, created_at, reviewed_at, form_submission_id
 `
 
 type CreateOwnershipClaimParams struct {
-	TenantID       pgtype.UUID `json:"tenant_id"`
-	ClaimantUserID pgtype.UUID `json:"claimant_user_id"`
-	OrganizationID pgtype.UUID `json:"organization_id"`
-	EvidenceUrl    *string     `json:"evidence_url"`
-	Notes          *string     `json:"notes"`
+	TenantID         pgtype.UUID `json:"tenant_id"`
+	ClaimantUserID   pgtype.UUID `json:"claimant_user_id"`
+	OrganizationID   pgtype.UUID `json:"organization_id"`
+	EvidenceUrl      *string     `json:"evidence_url"`
+	Notes            *string     `json:"notes"`
+	FormSubmissionID pgtype.UUID `json:"form_submission_id"`
 }
 
 func (q *Queries) CreateOwnershipClaim(ctx context.Context, arg CreateOwnershipClaimParams) (OwnershipClaim, error) {
@@ -289,6 +290,7 @@ func (q *Queries) CreateOwnershipClaim(ctx context.Context, arg CreateOwnershipC
 		arg.OrganizationID,
 		arg.EvidenceUrl,
 		arg.Notes,
+		arg.FormSubmissionID,
 	)
 	var i OwnershipClaim
 	err := row.Scan(
@@ -303,6 +305,7 @@ func (q *Queries) CreateOwnershipClaim(ctx context.Context, arg CreateOwnershipC
 		&i.ResolutionNote,
 		&i.CreatedAt,
 		&i.ReviewedAt,
+		&i.FormSubmissionID,
 	)
 	return i, err
 }
@@ -557,7 +560,7 @@ func (q *Queries) GetOrganizationMemberRole(ctx context.Context, arg GetOrganiza
 }
 
 const getOwnershipClaimByID = `-- name: GetOwnershipClaimByID :one
-SELECT oc.id, oc.tenant_id, oc.claimant_user_id, oc.organization_id, oc.evidence_url, oc.notes, oc.status, oc.reviewed_by, oc.resolution_note, oc.created_at, oc.reviewed_at, u.username AS claimant_username, o.name AS org_name
+SELECT oc.id, oc.tenant_id, oc.claimant_user_id, oc.organization_id, oc.evidence_url, oc.notes, oc.status, oc.reviewed_by, oc.resolution_note, oc.created_at, oc.reviewed_at, oc.form_submission_id, u.username AS claimant_username, o.name AS org_name
 FROM ownership_claims oc
 JOIN users u ON u.id = oc.claimant_user_id
 JOIN organizations o ON o.id = oc.organization_id
@@ -581,6 +584,7 @@ type GetOwnershipClaimByIDRow struct {
 	ResolutionNote   *string            `json:"resolution_note"`
 	CreatedAt        pgtype.Timestamptz `json:"created_at"`
 	ReviewedAt       pgtype.Timestamptz `json:"reviewed_at"`
+	FormSubmissionID pgtype.UUID        `json:"form_submission_id"`
 	ClaimantUsername string             `json:"claimant_username"`
 	OrgName          string             `json:"org_name"`
 }
@@ -602,6 +606,7 @@ func (q *Queries) GetOwnershipClaimByID(ctx context.Context, arg GetOwnershipCla
 		&i.ResolutionNote,
 		&i.CreatedAt,
 		&i.ReviewedAt,
+		&i.FormSubmissionID,
 		&i.ClaimantUsername,
 		&i.OrgName,
 	)
@@ -1043,7 +1048,7 @@ func (q *Queries) ListOrganizationsByMember(ctx context.Context, arg ListOrganiz
 }
 
 const listOwnershipClaims = `-- name: ListOwnershipClaims :many
-SELECT oc.id, oc.tenant_id, oc.claimant_user_id, oc.organization_id, oc.evidence_url, oc.notes, oc.status, oc.reviewed_by, oc.resolution_note, oc.created_at, oc.reviewed_at, u.username AS claimant_username, o.name AS org_name
+SELECT oc.id, oc.tenant_id, oc.claimant_user_id, oc.organization_id, oc.evidence_url, oc.notes, oc.status, oc.reviewed_by, oc.resolution_note, oc.created_at, oc.reviewed_at, oc.form_submission_id, u.username AS claimant_username, o.name AS org_name
 FROM ownership_claims oc
 JOIN users u ON u.id = oc.claimant_user_id
 JOIN organizations o ON o.id = oc.organization_id
@@ -1072,6 +1077,7 @@ type ListOwnershipClaimsRow struct {
 	ResolutionNote   *string            `json:"resolution_note"`
 	CreatedAt        pgtype.Timestamptz `json:"created_at"`
 	ReviewedAt       pgtype.Timestamptz `json:"reviewed_at"`
+	FormSubmissionID pgtype.UUID        `json:"form_submission_id"`
 	ClaimantUsername string             `json:"claimant_username"`
 	OrgName          string             `json:"org_name"`
 }
@@ -1102,8 +1108,77 @@ func (q *Queries) ListOwnershipClaims(ctx context.Context, arg ListOwnershipClai
 			&i.ResolutionNote,
 			&i.CreatedAt,
 			&i.ReviewedAt,
+			&i.FormSubmissionID,
 			&i.ClaimantUsername,
 			&i.OrgName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listOwnershipClaimsForAdmin = `-- name: ListOwnershipClaimsForAdmin :many
+SELECT oc.id, oc.organization_id, oc.claimant_user_id, oc.evidence_url, oc.notes, oc.created_at, oc.status,
+       u.username AS claimant_username, u.email AS claimant_email,
+       o.name AS org_name, o.slug AS org_slug
+FROM ownership_claims oc
+JOIN users u ON u.id = oc.claimant_user_id
+JOIN organizations o ON o.id = oc.organization_id
+WHERE oc.tenant_id = $1
+  AND ($2::text = '' OR $2::text = 'all' OR oc.status = $2)
+ORDER BY oc.created_at DESC
+`
+
+type ListOwnershipClaimsForAdminParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	Column2  string      `json:"column_2"`
+}
+
+type ListOwnershipClaimsForAdminRow struct {
+	ID               pgtype.UUID        `json:"id"`
+	OrganizationID   pgtype.UUID        `json:"organization_id"`
+	ClaimantUserID   pgtype.UUID        `json:"claimant_user_id"`
+	EvidenceUrl      *string            `json:"evidence_url"`
+	Notes            *string            `json:"notes"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	Status           string             `json:"status"`
+	ClaimantUsername string             `json:"claimant_username"`
+	ClaimantEmail    string             `json:"claimant_email"`
+	OrgName          string             `json:"org_name"`
+	OrgSlug          string             `json:"org_slug"`
+}
+
+// Ref: japaconnect-engineering/sections/07-organization-profiles-claim-ownership.md
+// Admin claims list with optional status filter. An empty status_filter or
+// 'all' returns every claim (history view); any other value filters by that
+// exact status (pending|approved|rejected|withdrawn). Used by
+// GET /admin/organizations/pending-claims?status=.
+func (q *Queries) ListOwnershipClaimsForAdmin(ctx context.Context, arg ListOwnershipClaimsForAdminParams) ([]ListOwnershipClaimsForAdminRow, error) {
+	rows, err := q.db.Query(ctx, listOwnershipClaimsForAdmin, arg.TenantID, arg.Column2)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListOwnershipClaimsForAdminRow
+	for rows.Next() {
+		var i ListOwnershipClaimsForAdminRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.OrganizationID,
+			&i.ClaimantUserID,
+			&i.EvidenceUrl,
+			&i.Notes,
+			&i.CreatedAt,
+			&i.Status,
+			&i.ClaimantUsername,
+			&i.ClaimantEmail,
+			&i.OrgName,
+			&i.OrgSlug,
 		); err != nil {
 			return nil, err
 		}

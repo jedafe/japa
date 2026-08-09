@@ -606,12 +606,14 @@ func (h *Handlers) AcceptInvitation(w http.ResponseWriter, r *http.Request) {
 }
 
 type claimOwnershipRequest struct {
-	OrganizationID pgtype.UUID `json:"organization_id"`
-	EvidenceURL    string      `json:"evidence_url"`
-	Notes          string      `json:"notes"`
+	OrganizationID   pgtype.UUID `json:"organization_id"`
+	EvidenceURL      string      `json:"evidence_url"`
+	Notes            string      `json:"notes"`
+	FormSubmissionID *pgtype.UUID `json:"form_submission_id"`
 }
 
 // ClaimOwnership handles POST /claim-ownership.
+// Ref: japaconnect-engineering/sections/07-organization-profiles-claim-ownership.md
 func (h *Handlers) ClaimOwnership(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireAuth(w, r)
 	if !ok {
@@ -630,8 +632,9 @@ func (h *Handlers) ClaimOwnership(w http.ResponseWriter, r *http.Request) {
 	}
 
 	input := ClaimOwnershipInput{
-		EvidenceURL: req.EvidenceURL,
-		Notes:       req.Notes,
+		EvidenceURL:      req.EvidenceURL,
+		Notes:            req.Notes,
+		FormSubmissionID: req.FormSubmissionID,
 	}
 
 	result, err := h.service.ClaimOwnership(r.Context(), tenantID, user.UserID, req.OrganizationID, input)

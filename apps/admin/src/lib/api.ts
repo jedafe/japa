@@ -709,7 +709,7 @@ export const organisationsAdminApi = {
 		api(`/admin/organizations/${id}/verify`, { method: 'DELETE' }),
 	claim: (id: string, body: { action: 'approve' | 'reject'; note?: string }) =>
 		api(`/admin/organizations/${id}/claim`, { method: 'POST', body }),
-	pendingClaims: () =>
+	pendingClaims: (params?: string) =>
 		api<{
 			id: string;
 			organization_id: string;
@@ -722,7 +722,7 @@ export const organisationsAdminApi = {
 			evidence_url?: string | null;
 			notes?: string | null;
 			created_at: string;
-		}[]>('/admin/organizations/pending-claims'),
+		}[]>(`/admin/organizations/pending-claims${params ? `?${params}` : ''}`),
 };
 
 export const reactionsAdminApi = {
@@ -1574,7 +1574,7 @@ export interface PermissionPreset {
 }
 
 export const permissionPresetsApi = {
-	list: () => api<{ data: PermissionPreset[] }>('/space-permission-presets'),
+	list: () => api<PermissionPreset[]>('/space-permission-presets'),
 	update: (name: string, body: { visibility: string; posting_perm: string; replying_perm: string; commenting_perm: string; joining_perm: string }) =>
 		api<PermissionPreset>(`/space-permission-presets/${encodeURIComponent(name)}`, { method: 'PUT', body }),
 };

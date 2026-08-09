@@ -254,7 +254,7 @@ const createAssessmentSubmission = `-- name: CreateAssessmentSubmission :one
 
 INSERT INTO form_submissions (form_id, tenant_id, user_id, field_values, status)
 VALUES ($1, $2, $3, $4, 'new')
-RETURNING id, form_id, tenant_id, user_id, ip_address, field_values, status, created_at
+RETURNING id, form_id, tenant_id, user_id, ip_address, field_values, status, created_at, payment_id
 `
 
 type CreateAssessmentSubmissionParams struct {
@@ -284,6 +284,7 @@ func (q *Queries) CreateAssessmentSubmission(ctx context.Context, arg CreateAsse
 		&i.FieldValues,
 		&i.Status,
 		&i.CreatedAt,
+		&i.PaymentID,
 	)
 	return i, err
 }
@@ -291,7 +292,7 @@ func (q *Queries) CreateAssessmentSubmission(ctx context.Context, arg CreateAsse
 const getActiveAssessmentForm = `-- name: GetActiveAssessmentForm :one
 
 
-SELECT id, tenant_id, name, slug, description, is_multi_step, submit_label, success_message, status, is_system, created_at, space_id, form_type, scoring_config FROM forms
+SELECT id, tenant_id, name, slug, description, is_multi_step, submit_label, success_message, status, is_system, created_at, space_id, form_type, scoring_config, submission_fee_credits FROM forms
 WHERE tenant_id = $1
   AND form_type = 'assessment'
   AND status = 'active'
@@ -326,13 +327,14 @@ func (q *Queries) GetActiveAssessmentForm(ctx context.Context, tenantID pgtype.U
 		&i.SpaceID,
 		&i.FormType,
 		&i.ScoringConfig,
+		&i.SubmissionFeeCredits,
 	)
 	return i, err
 }
 
 const getAssessmentFormByID = `-- name: GetAssessmentFormByID :one
 
-SELECT id, tenant_id, name, slug, description, is_multi_step, submit_label, success_message, status, is_system, created_at, space_id, form_type, scoring_config FROM forms
+SELECT id, tenant_id, name, slug, description, is_multi_step, submit_label, success_message, status, is_system, created_at, space_id, form_type, scoring_config, submission_fee_credits FROM forms
 WHERE tenant_id = $1 AND id = $2 AND form_type = 'assessment'
 `
 
@@ -362,6 +364,7 @@ func (q *Queries) GetAssessmentFormByID(ctx context.Context, arg GetAssessmentFo
 		&i.SpaceID,
 		&i.FormType,
 		&i.ScoringConfig,
+		&i.SubmissionFeeCredits,
 	)
 	return i, err
 }
@@ -548,7 +551,7 @@ const updateAssessmentFormScoring = `-- name: UpdateAssessmentFormScoring :one
 UPDATE forms
 SET scoring_config = $1
 WHERE tenant_id = $2 AND id = $3 AND form_type = 'assessment'
-RETURNING id, tenant_id, name, slug, description, is_multi_step, submit_label, success_message, status, is_system, created_at, space_id, form_type, scoring_config
+RETURNING id, tenant_id, name, slug, description, is_multi_step, submit_label, success_message, status, is_system, created_at, space_id, form_type, scoring_config, submission_fee_credits
 `
 
 type UpdateAssessmentFormScoringParams struct {
@@ -578,6 +581,7 @@ func (q *Queries) UpdateAssessmentFormScoring(ctx context.Context, arg UpdateAss
 		&i.SpaceID,
 		&i.FormType,
 		&i.ScoringConfig,
+		&i.SubmissionFeeCredits,
 	)
 	return i, err
 }

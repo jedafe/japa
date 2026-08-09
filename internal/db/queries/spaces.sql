@@ -159,13 +159,19 @@ LEFT JOIN space_members sm ON sm.space_id = s.id AND sm.tenant_id = s.tenant_id 
 LEFT JOIN users u ON u.id = sm.user_id AND u.tenant_id = s.tenant_id
 LEFT JOIN space_types st ON st.id = s.space_type_id AND st.tenant_id = s.tenant_id
 WHERE s.tenant_id = @tenant_id AND s.deleted_at IS NULL
+  AND (@search::text = '' OR s.name ILIKE '%' || @search || '%' OR s.slug ILIKE '%' || @search || '%')
+  AND (@status::text = '' OR s.status = @status)
+  AND (@visibility::text = '' OR s.visibility = @visibility)
 ORDER BY s.created_at DESC, s.id DESC
 LIMIT @limit_val OFFSET @offset_val;
 
 -- name: AdminListSpacesCount :one
 SELECT COUNT(*) AS total
 FROM spaces s
-WHERE s.tenant_id = @tenant_id AND s.deleted_at IS NULL;
+WHERE s.tenant_id = @tenant_id AND s.deleted_at IS NULL
+  AND (@search::text = '' OR s.name ILIKE '%' || @search || '%' OR s.slug ILIKE '%' || @search || '%')
+  AND (@status::text = '' OR s.status = @status)
+  AND (@visibility::text = '' OR s.visibility = @visibility);
 
 -- name: ListSpacesByMemberUser :many
 SELECT s.id, s.tenant_id, s.parent_id, s.space_type_id, s.name, s.slug, s.description,

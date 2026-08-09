@@ -860,7 +860,7 @@ func (s *Service) ReorderFormSteps(ctx context.Context, formID pgtype.UUID, step
 
 // ListFormSubmissions returns a page of submissions for a form, scoped to the
 // tenant, using offset pagination (Rule 5: newest first).
-func (s *Service) ListFormSubmissions(ctx context.Context, params gen.ListFormSubmissionsByFormParams) ([]gen.FormSubmission, error) {
+func (s *Service) ListFormSubmissions(ctx context.Context, params gen.ListFormSubmissionsByFormParams) ([]gen.ListFormSubmissionsByFormRow, error) {
 	submissions, err := s.read.ListFormSubmissionsByForm(ctx, params)
 	if err != nil {
 		return nil, fmt.Errorf("listing form submissions: %w", err)
@@ -881,10 +881,10 @@ func (s *Service) CountFormSubmissions(ctx context.Context, params gen.CountForm
 }
 
 // CreateFormSubmission records a new submission for a form.
-func (s *Service) CreateFormSubmission(ctx context.Context, params gen.CreateFormSubmissionParams) (gen.FormSubmission, error) {
+func (s *Service) CreateFormSubmission(ctx context.Context, params gen.CreateFormSubmissionParams) (gen.CreateFormSubmissionRow, error) {
 	submission, err := s.write.CreateFormSubmission(ctx, params)
 	if err != nil {
-		return gen.FormSubmission{}, fmt.Errorf("creating form submission: %w", err)
+		return gen.CreateFormSubmissionRow{}, fmt.Errorf("creating form submission: %w", err)
 	}
 
 	return submission, nil
@@ -892,13 +892,13 @@ func (s *Service) CreateFormSubmission(ctx context.Context, params gen.CreateFor
 
 // GetFormSubmission returns the submission with the given ID, scoped to the
 // tenant.
-func (s *Service) GetFormSubmission(ctx context.Context, id, tenantID pgtype.UUID) (gen.FormSubmission, error) {
+func (s *Service) GetFormSubmission(ctx context.Context, id, tenantID pgtype.UUID) (gen.GetFormSubmissionByIDRow, error) {
 	submission, err := s.read.GetFormSubmissionByID(ctx, gen.GetFormSubmissionByIDParams{
 		ID:       id,
 		TenantID: tenantID,
 	})
 	if err != nil {
-		return gen.FormSubmission{}, fmt.Errorf("getting form submission: %w", err)
+		return gen.GetFormSubmissionByIDRow{}, fmt.Errorf("getting form submission: %w", err)
 	}
 
 	return submission, nil

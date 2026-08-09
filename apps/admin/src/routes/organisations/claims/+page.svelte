@@ -9,6 +9,7 @@
 	import { organisationsAdminApi } from "$lib/api";
 	import { t } from "$lib/stores/i18n.svelte";
 	import { hasPermission } from "$lib/stores/permissions.svelte";
+	import type { BulkAction } from "$lib/components/ui/data-table";
 
 	type PendingClaim = {
 		id: string;
@@ -29,13 +30,23 @@
 	let errorMessage = $state("");
 	let successMessage = $state("");
 	let searchQuery = $state("");
-	let statusFilter = $state("");
+	// Default to "pending" — the actionable review queue. The status filter is
+	// server-side: selecting another value re-fetches from the API. "all" shows
+	// the full history (approved/rejected/withdrawn) for audit.
+	let statusFilter = $state("pending");
 
 	let showViewModal = $state(false);
 	let showApproveModal = $state(false);
 	let showRejectModal = $state(false);
 	let target = $state<PendingClaim | null>(null);
 	let actionLoading = $state(false);
+
+	// Bulk selection
+	let selectedIds = $state<Set<string>>(new Set());
+	let showBulkApproveModal = $state(false);
+	let showBulkRejectModal = $state(false);
+	let bulkActionLoading = $state(false);
+	let bulkTargets = $state<PendingClaim[]>([]);
 
 	const canReview = $derived(hasPermission("admin.moderation"));
 
@@ -44,9 +55,11 @@
 			key: "status",
 			label: t("organisations.status", "Status"),
 			options: [
+				{ value: "all", label: t("organisations.all", "All") },
 				{ value: "pending", label: t("organisations.pending", "Pending") },
 				{ value: "approved", label: t("organisations.approved", "Approved") },
-				{ value: "rejected", label: t("organisations.rejected", "Rejected") }
+				{ value: "rejected", label: t("organisations.rejected", "Rejected") },
+				{ value: "withdrawn", label: t("organisations.withdrawn", "Withdrawn") }
 			]
 		}
 	];
@@ -94,6 +107,7 @@
 		}
 	];
 
+	// Search is client-side; status is server-side (re-fetches on change).
 	const filtered = $derived.by(() => {
 		let out = claims;
 		const q = searchQuery.trim().toLowerCase();
@@ -105,17 +119,42 @@
 					c.claimant_email.toLowerCase().includes(q)
 			);
 		}
-		if (statusFilter) {
-			out = out.filter((c) => c.status === statusFilter);
-		}
 		return out;
 	});
+
+	const bulkActionsList = $derived<BulkAction[]>(
+		canReview
+			? [
+					{
+						label: t("organisations.approve_selected", "Approve Selected"),
+						icon: Check,
+						onclick: (ids: Set<string>) => openBulk(ids, "approve"),
+						disabled: (_ids: Set<string>, rows?: any[]) =>
+							!rows?.some((r: PendingClaim) => r.status === "pending")
+					},
+					{
+						label: t("organisations.reject_selected", "Reject Selected"),
+						icon: X,
+						variant: "destructive",
+						onclick: (ids: Set<string>) => openBulk(ids, "reject"),
+						disabled: (_ids: Set<string>, rows?: any[]) =>
+							!rows?.some((r: PendingClaim) => r.status === "pending")
+					}
+				]
+			: []
+	);
 
 	async function load() {
 		loading = true;
 		errorMessage = "";
+		selectedIds = new Set();
 		try {
-			const result = await organisationsAdminApi.pendingClaims();
+			// statusFilter is read here (before the first await) so the $effect
+			// below tracks it and re-fetches when the admin changes status.
+			// "all" is passed explicitly so the backend returns every claim
+			// (history view); an empty param would default to "pending".
+			const params = `status=${statusFilter || "pending"}`;
+			const result = await organisationsAdminApi.pendingClaims(params);
 			if (result.ok) {
 				claims = result.data as unknown as PendingClaim[];
 			} else {
@@ -130,7 +169,7 @@
 
 	function handleSearch(values: Record<string, string>) {
 		searchQuery = values.search ?? "";
-		statusFilter = values.status ?? "";
+		statusFilter = values.status ?? "pending";
 	}
 
 	function openView(c: PendingClaim) {
@@ -174,6 +213,55 @@
 			errorMessage = result.error;
 		}
 		actionLoading = false;
+	}
+
+	function openBulk(ids: Set<string>, action: "approve" | "reject") {
+		bulkTargets = claims.filter((c) => ids.has(c.id) && c.status === "pending");
+		if (bulkTargets.length === 0) return;
+		if (action === "approve") showBulkApproveModal = true;
+		else showBulkRejectModal = true;
+	}
+
+	async function doBulkApprove() {
+		if (bulkTargets.length === 0) return;
+		bulkActionLoading = true;
+		errorMessage = "";
+		let ok = 0;
+		let fail = 0;
+		for (const c of bulkTargets) {
+			const r = await organisationsAdminApi.claim(c.organization_id, { action: "approve" });
+			if (r.ok) ok++;
+			else fail++;
+		}
+		bulkActionLoading = false;
+		showBulkApproveModal = false;
+		if (fail === 0) {
+			successMessage = t("organisations.bulk_approve_success", "{n} claim(s) approved").replace("{n}", String(ok));
+		} else {
+			errorMessage = t("organisations.bulk_partial", "{ok} approved, {fail} failed").replace("{ok}", String(ok)).replace("{fail}", String(fail));
+		}
+		load();
+	}
+
+	async function doBulkReject() {
+		if (bulkTargets.length === 0) return;
+		bulkActionLoading = true;
+		errorMessage = "";
+		let ok = 0;
+		let fail = 0;
+		for (const c of bulkTargets) {
+			const r = await organisationsAdminApi.claim(c.organization_id, { action: "reject" });
+			if (r.ok) ok++;
+			else fail++;
+		}
+		bulkActionLoading = false;
+		showBulkRejectModal = false;
+		if (fail === 0) {
+			successMessage = t("organisations.bulk_reject_success", "{n} claim(s) rejected").replace("{n}", String(ok));
+		} else {
+			errorMessage = t("organisations.bulk_partial", "{ok} rejected, {fail} failed").replace("{ok}", String(ok)).replace("{fail}", String(fail));
+		}
+		load();
 	}
 
 	$effect(() => {
@@ -233,6 +321,9 @@
 		{columns}
 		data={filtered}
 		pageSize={25}
+		selectable={canReview}
+		bind:selectedIds
+		bulkActionsList={bulkActionsList}
 		emptyMessage={t("organisations.no_claims", "No claims found")}
 	/>
 {/if}
@@ -405,6 +496,58 @@
 	</div>
 </Modal>
 
+<!-- Bulk Approve Modal -->
+<Modal
+	open={showBulkApproveModal}
+	onclose={() => { showBulkApproveModal = false; }}
+	title={t("organisations.approve_claims", "Approve Selected Claims")}
+>
+	<p class="text-sm" style="color: var(--color-muted)">
+		{t("organisations.bulk_approve_confirm", "Approve {n} pending ownership claim(s)?").replace("{n}", String(bulkTargets.length))}
+	</p>
+	<div class="mt-4 max-h-48 overflow-y-auto rounded-lg border p-3 space-y-1" style="border-color: var(--color-border); background-color: var(--color-surface)">
+		{#each bulkTargets as c (c.id)}
+			<div class="flex justify-between text-sm">
+				<span class="font-medium">{c.org_name}</span>
+				<span style="color: var(--color-muted)">{c.claimant_username}</span>
+			</div>
+		{/each}
+	</div>
+	<div class="mt-6 flex justify-end gap-2">
+		<Button variant="outline" onclick={() => { showBulkApproveModal = false; }}>{t("common.cancel", "Cancel")}</Button>
+		<Button onclick={doBulkApprove} disabled={bulkActionLoading}>
+			<Check class="h-3.5 w-3.5" />
+			{bulkActionLoading ? t("common.processing", "Processing...") : t("organisations.approve", "Approve")}
+		</Button>
+	</div>
+</Modal>
+
+<!-- Bulk Reject Modal -->
+<Modal
+	open={showBulkRejectModal}
+	onclose={() => { showBulkRejectModal = false; }}
+	title={t("organisations.reject_claims", "Reject Selected Claims")}
+>
+	<p class="text-sm" style="color: var(--color-muted)">
+		{t("organisations.bulk_reject_confirm", "Reject {n} pending ownership claim(s)?").replace("{n}", String(bulkTargets.length))}
+	</p>
+	<div class="mt-4 max-h-48 overflow-y-auto rounded-lg border p-3 space-y-1" style="border-color: var(--color-border); background-color: var(--color-surface)">
+		{#each bulkTargets as c (c.id)}
+			<div class="flex justify-between text-sm">
+				<span class="font-medium">{c.org_name}</span>
+				<span style="color: var(--color-muted)">{c.claimant_username}</span>
+			</div>
+		{/each}
+	</div>
+	<div class="mt-6 flex justify-end gap-2">
+		<Button variant="outline" onclick={() => { showBulkRejectModal = false; }}>{t("common.cancel", "Cancel")}</Button>
+		<Button variant="destructive" onclick={doBulkReject} disabled={bulkActionLoading}>
+			<X class="h-3.5 w-3.5" />
+			{bulkActionLoading ? t("common.processing", "Processing...") : t("organisations.reject", "Reject")}
+		</Button>
+	</div>
+</Modal>
+
 {#snippet ClaimStatusBadge({ value }: { value: string; row: PendingClaim })}
 	<span
 		class="inline-block rounded-full px-2 py-0.5 text-xs font-medium"
@@ -412,7 +555,9 @@
 			? 'background-color: color-mix(in srgb, var(--color-success) 15%, transparent); color: var(--color-success)'
 			: value === 'rejected'
 				? 'background-color: color-mix(in srgb, var(--color-danger) 15%, transparent); color: var(--color-danger)'
-				: 'background-color: color-mix(in srgb, var(--color-warning) 15%, transparent); color: var(--color-warning)'}
+				: value === 'withdrawn'
+					? 'background-color: color-mix(in srgb, var(--color-muted) 15%, transparent); color: var(--color-muted)'
+					: 'background-color: color-mix(in srgb, var(--color-warning) 15%, transparent); color: var(--color-warning)'}
 	>
 		{value}
 	</span>

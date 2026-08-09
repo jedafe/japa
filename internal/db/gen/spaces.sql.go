@@ -102,14 +102,20 @@ LEFT JOIN space_members sm ON sm.space_id = s.id AND sm.tenant_id = s.tenant_id 
 LEFT JOIN users u ON u.id = sm.user_id AND u.tenant_id = s.tenant_id
 LEFT JOIN space_types st ON st.id = s.space_type_id AND st.tenant_id = s.tenant_id
 WHERE s.tenant_id = $1 AND s.deleted_at IS NULL
+  AND ($2::text = '' OR s.name ILIKE '%' || $2 || '%' OR s.slug ILIKE '%' || $2 || '%')
+  AND ($3::text = '' OR s.status = $3)
+  AND ($4::text = '' OR s.visibility = $4)
 ORDER BY s.created_at DESC, s.id DESC
-LIMIT $3 OFFSET $2
+LIMIT $6 OFFSET $5
 `
 
 type AdminListSpacesParams struct {
-	TenantID  pgtype.UUID `json:"tenant_id"`
-	OffsetVal int32       `json:"offset_val"`
-	LimitVal  int32       `json:"limit_val"`
+	TenantID   pgtype.UUID `json:"tenant_id"`
+	Search     string      `json:"search"`
+	Status     string      `json:"status"`
+	Visibility string      `json:"visibility"`
+	OffsetVal  int32       `json:"offset_val"`
+	LimitVal   int32       `json:"limit_val"`
 }
 
 type AdminListSpacesRow struct {
@@ -144,7 +150,14 @@ type AdminListSpacesRow struct {
 }
 
 func (q *Queries) AdminListSpaces(ctx context.Context, arg AdminListSpacesParams) ([]AdminListSpacesRow, error) {
-	rows, err := q.db.Query(ctx, adminListSpaces, arg.TenantID, arg.OffsetVal, arg.LimitVal)
+	rows, err := q.db.Query(ctx, adminListSpaces,
+		arg.TenantID,
+		arg.Search,
+		arg.Status,
+		arg.Visibility,
+		arg.OffsetVal,
+		arg.LimitVal,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -196,10 +209,25 @@ const adminListSpacesCount = `-- name: AdminListSpacesCount :one
 SELECT COUNT(*) AS total
 FROM spaces s
 WHERE s.tenant_id = $1 AND s.deleted_at IS NULL
+  AND ($2::text = '' OR s.name ILIKE '%' || $2 || '%' OR s.slug ILIKE '%' || $2 || '%')
+  AND ($3::text = '' OR s.status = $3)
+  AND ($4::text = '' OR s.visibility = $4)
 `
 
-func (q *Queries) AdminListSpacesCount(ctx context.Context, tenantID pgtype.UUID) (int64, error) {
-	row := q.db.QueryRow(ctx, adminListSpacesCount, tenantID)
+type AdminListSpacesCountParams struct {
+	TenantID   pgtype.UUID `json:"tenant_id"`
+	Search     string      `json:"search"`
+	Status     string      `json:"status"`
+	Visibility string      `json:"visibility"`
+}
+
+func (q *Queries) AdminListSpacesCount(ctx context.Context, arg AdminListSpacesCountParams) (int64, error) {
+	row := q.db.QueryRow(ctx, adminListSpacesCount,
+		arg.TenantID,
+		arg.Search,
+		arg.Status,
+		arg.Visibility,
+	)
 	var total int64
 	err := row.Scan(&total)
 	return total, err
