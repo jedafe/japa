@@ -182,7 +182,6 @@ const listTenants = `-- name: ListTenants :many
 
 SELECT id, name, slug, domain, status, created_at, updated_at, deleted_at
 FROM tenants
-WHERE deleted_at IS NULL
 ORDER BY created_at DESC
 `
 
@@ -198,6 +197,8 @@ type ListTenantsRow struct {
 }
 
 // Control Panel: tenant management (catalog: /control/tenants/*, super-admin only).
+// Control Panel shows all tenants including soft-deleted ones so
+// super-admins can see the full inventory; the UI filters by status.
 func (q *Queries) ListTenants(ctx context.Context) ([]ListTenantsRow, error) {
 	rows, err := q.db.Query(ctx, listTenants)
 	if err != nil {

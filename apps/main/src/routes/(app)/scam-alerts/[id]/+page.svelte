@@ -1,5 +1,5 @@
-// Ref: japaconnect-engineering/sections/81-scam-alert-board.md
 <script lang="ts">
+	// Ref: japaconnect-engineering/sections/81-scam-alert-board.md
 	import { page } from '$app/state';
 	import { ArrowLeft, Pin, Bell, BellOff, TriangleAlert, ShieldCheck } from 'lucide-svelte';
 	import { t } from '$lib/i18n';

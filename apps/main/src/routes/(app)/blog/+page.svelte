@@ -1,8 +1,9 @@
 <script lang="ts">
 	import { page } from '$app/state';
+	import { goto } from '$app/navigation';
 	import { t } from '$lib/i18n';
 	import { BookOpen, ArrowRight } from 'lucide-svelte';
-	import { EmptyState } from '$lib/components/ui';
+	import { EmptyState, UrlTabs, type UrlTab } from '$lib/components/ui';
 	import { cardStyleFor, gridMode, type CardStyleConfig } from '$lib/feed/cardStyle';
 	import type { FeedItem } from '$lib/types';
 	import FeedCard from '$lib/components/feed/FeedCard.svelte';
@@ -37,10 +38,12 @@
 	const feedItems = $derived(data.items.map(toFeedItem));
 	const gridLayout = $derived(gridMode(feedItems.map((i) => i.content_type), config));
 
-	const tabs = $derived([
-		{ id: 'latest', label: t('blog.tab_latest', 'Latest'), href: '?tab=latest' },
-		{ id: 'featured', label: t('blog.tab_featured', 'Featured'), href: '?tab=featured' },
-		{ id: 'series', label: t('blog.tab_series', 'Series'), href: '?tab=series' }
+	// Tab bar values — switching calls goto() so SvelteKit re-runs the load
+	// function for the new tab's per-tab data.
+	const tabs = $derived<UrlTab[]>([
+		{ value: 'latest', label: t('blog.tab_latest', 'Latest') },
+		{ value: 'featured', label: t('blog.tab_featured', 'Featured') },
+		{ value: 'series', label: t('blog.tab_series', 'Series') }
 	]);
 
 	const title = $derived(t('blog.list_title', 'Blog — JapaConnect'));
@@ -66,20 +69,7 @@
 
 <div class="mx-auto w-full max-w-full">
 	<!-- Blog tab bar (Latest / Featured / Series) -->
-	<div class="border-b border-[var(--color-border)]">
-		<div class="flex gap-1 px-4">
-			{#each tabs as tab (tab.id)}
-				<a
-					href={tab.href}
-					class="border-b-2 px-4 py-3 text-sm font-medium transition-colors {data.tab === tab.id
-						? 'border-[var(--color-primary)] text-[var(--color-primary)]'
-						: 'border-transparent text-[var(--color-text-subtle)] hover:text-[var(--color-text)]'}"
-				>
-					{tab.label}
-				</a>
-			{/each}
-		</div>
-	</div>
+	<UrlTabs {tabs} value={data.tab} onValueChange={(v) => goto(`?tab=${v}`)} />
 
 	<div class="p-4">
 		{#if data.tab === 'series'}

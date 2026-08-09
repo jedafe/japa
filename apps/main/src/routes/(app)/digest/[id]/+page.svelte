@@ -1,5 +1,5 @@
-// Ref: japaconnect-engineering/sections/84-community-digest-widget.md
 <script lang="ts">
+	// Ref: japaconnect-engineering/sections/84-community-digest-widget.md
 	import DigestView from '../DigestView.svelte';
 	import type { PageData } from './$types';
 

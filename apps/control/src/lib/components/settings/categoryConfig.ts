@@ -25,6 +25,17 @@ import {
     Bell,
     Wrench,
     Sparkles,
+    Route,
+    BellRing,
+    PlaneLanding,
+    Timer,
+    BadgeCheck,
+    FileText,
+    Home,
+    Stamp,
+    Languages,
+    Receipt,
+    MapPin,
 } from 'lucide-svelte';
 
 // Only categories that have Panel: "control" settings appear in the control
@@ -64,6 +75,18 @@ export const categoryIcons: Record<string, typeof Settings> = {
     push: Bell,
     tools: Wrench,
     japabot: Sparkles,
+    // V2 functional tools (§§90–97, §§99–101)
+    visa_routes: Route,
+    appointment_alert: BellRing,
+    arrival_checklist: PlaneLanding,
+    visa_timeline: Timer,
+    credential_checker: BadgeCheck,
+    cv_formatter: FileText,
+    housing_guide: Home,
+    attestation_guide: Stamp,
+    language_test_hub: Languages,
+    tax_calculator: Receipt,
+    community_locator: MapPin,
 };
 
 export const categoryNames: Record<string, string> = {
@@ -95,6 +118,18 @@ export const categoryNames: Record<string, string> = {
     push: 'Mobile Push',
     tools: 'Tools Web Surface',
     japabot: 'JapaBot',
+    // V2 functional tools (§§90–97, §§99–101)
+    visa_routes: 'Visa Route Comparison',
+    appointment_alert: 'Embassy Appointment Alerter',
+    arrival_checklist: 'Arrival Checklist',
+    visa_timeline: 'Visa Processing Time Tracker',
+    credential_checker: 'Professional Credential Checker',
+    cv_formatter: 'CV Formatter',
+    housing_guide: 'Housing Guide',
+    attestation_guide: 'Attestation Guide',
+    language_test_hub: 'Language Test Hub',
+    tax_calculator: 'Tax Calculator',
+    community_locator: 'Diaspora Community Locator',
 };
 
 // Sensitive keys that should be masked in the UI (control-panel settings only).

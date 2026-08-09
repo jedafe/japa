@@ -101,15 +101,15 @@ func (s *Store) List(ctx context.Context, f ListFilter) ([]RouteRow, int64, erro
 		argIdx     = 1
 	)
 
-	conditions = append(conditions, fmt.Sprintf("tenant_id = $%d", argIdx))
+	conditions = append(conditions, fmt.Sprintf("vr.tenant_id = $%d", argIdx))
 	args = append(args, f.TenantID)
 	argIdx++
 
-	conditions = append(conditions, "status = 'published'")
-	conditions = append(conditions, "is_active = true")
+	conditions = append(conditions, "vr.status = 'published'")
+	conditions = append(conditions, "vr.is_active = true")
 
 	if f.DestinationSpaceID.Valid {
-		conditions = append(conditions, fmt.Sprintf("destination_space_id = $%d", argIdx))
+		conditions = append(conditions, fmt.Sprintf("vr.destination_space_id = $%d", argIdx))
 		args = append(args, f.DestinationSpaceID)
 		argIdx++
 	}

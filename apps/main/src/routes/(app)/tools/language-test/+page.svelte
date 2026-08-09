@@ -1,0 +1,670 @@
+<script lang="ts">
+	import { untrack } from 'svelte';
+	import { t } from '$lib/i18n';
+	import { page } from '$app/state';
+	import {
+		Languages,
+		Lock,
+		ArrowLeft,
+		ExternalLink,
+		Star,
+		Plus,
+		Clock,
+		MapPin,
+		MessageSquare,
+		ChevronRight,
+		BookOpen
+	} from 'lucide-svelte';
+	import { EmptyState, LoadingSkeleton, SelectField } from '$lib/components/ui';
+	import { api } from '$lib/api/client';
+	import type {
+		LanguageTest,
+		LanguageTestRequirementWithAi,
+		LanguageTestResource,
+		LanguageTestScoreStory,
+		GeoSpaceOption
+	} from '$lib/types';
+	import type { PageData } from './$types';
+
+	/**
+	 * Language Test Hub tool — §99, ADR-088.
+	 * Two modes:
+	 * 1. Requirements mode (default): Destination selector → optional visa
+	 *    category → list of requirements. Each requirement links to test detail.
+	 * 2. Test detail mode (when a test is selected): test info, resources list,
+	 *    score stories, and a story submission form for authed users.
+	 */
+	let { data }: { data: PageData } = $props();
+
+	const title = $derived(t('language_test.title', 'Language Test Hub'));
+	const description = $derived(
+		t(
+			'language_test.subtitle',
+			'Find required language tests for your visa, minimum scores, prep resources, and community score stories.'
+		)
+	);
+
+	const disabled = $derived(data.disabled);
+	const authed = $derived(data.authed);
+
+	let destinations = $state<GeoSpaceOption[]>(untrack(() => data.destinations));
+	let tests = $state<LanguageTest[]>(untrack(() => data.tests));
+	let requirements = $state<LanguageTestRequirementWithAi[]>(untrack(() => data.requirements));
+
+	let selectedDestId = $state<string>(untrack(() => data.initialDestId ?? ''));
+	let visaCategory = $state<string>('');
+	let loadingRequirements = $state(false);
+
+	// Test detail mode
+	let selectedTestSlug = $state<string | null>(null);
+	let testDetail = $state<LanguageTest | null>(null);
+	let testResources = $state<LanguageTestResource[]>([]);
+	let testStories = $state<LanguageTestScoreStory[]>([]);
+	let loadingDetail = $state(false);
+
+	// Story submission form
+	let showRegisterPrompt = $state(false);
+	let storyFinalScore = $state<string>('');
+	let storyStartingLevel = $state<string>('');
+	let storyPrepWeeks = $state<string>('');
+	let storyResourcesUsed = $state<string>('');
+	let storyAdvice = $state<string>('');
+	let submittingStory = $state(false);
+	let storyError = $state<string | null>(null);
+
+	async function loadRequirements() {
+		if (!selectedDestId) {
+			requirements = [];
+			return;
+		}
+		loadingRequirements = true;
+		const params = new URLSearchParams();
+		params.set('dest', selectedDestId);
+		if (visaCategory) params.set('visa', visaCategory);
+		const res = await api.get<LanguageTestRequirementWithAi[]>(
+			`/language-tests/requirements?${params.toString()}`
+		);
+		loadingRequirements = false;
+		if (!res.error) requirements = res.data ?? [];
+		else requirements = [];
+	}
+
+	function onDestChange(id: string) {
+		selectedTestSlug = null;
+		loadRequirements();
+		const url = new URL(page.url);
+		if (id) url.searchParams.set('dest', id);
+		else url.searchParams.delete('dest');
+		history.replaceState({}, '', url);
+	}
+
+	function onVisaInput() {
+		loadRequirements();
+	}
+
+	/** Enter test detail mode — fetch test info, resources, and stories. */
+	async function selectTest(slug: string) {
+		selectedTestSlug = slug;
+		loadingDetail = true;
+		testDetail = null;
+		testResources = [];
+		testStories = [];
+
+		// Fetch test detail (nested data object: { test, resources_summary, stories_summary })
+		const detailRes = await api.get<{
+			test: LanguageTest;
+			resources_summary: LanguageTestResource[];
+			stories_summary: LanguageTestScoreStory[];
+		}>(`/language-tests/${slug}`);
+		if (!detailRes.error && detailRes.data) {
+			testDetail = detailRes.data.test;
+			testResources = detailRes.data.resources_summary ?? [];
+			testStories = detailRes.data.stories_summary ?? [];
+		}
+
+		// Fetch full resources list
+		const resRes = await api.get<LanguageTestResource[]>(
+			`/language-tests/${slug}/resources`
+		);
+		if (!resRes.error && resRes.data) {
+			testResources = resRes.data;
+		}
+
+		// Fetch stories (optionally filtered by destination)
+		const storyParams = new URLSearchParams();
+		if (selectedDestId) storyParams.set('dest', selectedDestId);
+		const storyRes = await api.get<LanguageTestScoreStory[]>(
+			`/language-tests/${slug}/stories?${storyParams.toString()}`
+		);
+		if (!storyRes.error && storyRes.data) {
+			testStories = storyRes.data;
+		}
+
+		loadingDetail = false;
+	}
+
+	function backToRequirements() {
+		selectedTestSlug = null;
+		testDetail = null;
+		testResources = [];
+		testStories = [];
+	}
+
+	function openStoryForm() {
+		if (!authed) {
+			showRegisterPrompt = true;
+			return;
+		}
+		storyFinalScore = '';
+		storyStartingLevel = '';
+		storyPrepWeeks = '';
+		storyResourcesUsed = '';
+		storyAdvice = '';
+		storyError = null;
+	}
+
+	async function submitStory() {
+		if (!selectedTestSlug) return;
+		submittingStory = true;
+		storyError = null;
+		const body: Record<string, unknown> = {
+			final_score: storyFinalScore
+		};
+		if (storyStartingLevel) body.starting_level = storyStartingLevel;
+		if (selectedDestId) body.destination_space_id = selectedDestId;
+		if (storyPrepWeeks) body.prep_duration_weeks = parseInt(storyPrepWeeks, 10);
+		if (storyResourcesUsed) {
+			body.resources_used = storyResourcesUsed
+				.split(',')
+				.map((s) => s.trim())
+				.filter(Boolean);
+		}
+		if (storyAdvice) body.advice = storyAdvice;
+		const res = await api.post<LanguageTestScoreStory>(
+			`/language-tests/${selectedTestSlug}/stories`,
+			body
+		);
+		submittingStory = false;
+		if (res.error) {
+			storyError = res.error.message;
+			return;
+		}
+		if (res.data) {
+			testStories = [res.data, ...testStories];
+		}
+		storyFinalScore = '';
+		storyStartingLevel = '';
+		storyPrepWeeks = '';
+		storyResourcesUsed = '';
+		storyAdvice = '';
+	}
+
+	/** Get score_breakdown entries from a JSON object field. */
+	function breakdownEntries(
+		val: Record<string, unknown> | null | undefined
+	): [string, unknown][] {
+		if (!val || typeof val !== 'object') return [];
+		return Object.entries(val);
+	}
+
+	/** Format an ISO date string as a readable date. */
+	function formatDate(iso?: string | null): string {
+		if (!iso) return '';
+		try {
+			return new Date(iso).toLocaleDateString(undefined, {
+				year: 'numeric',
+				month: 'short',
+				day: 'numeric'
+			});
+		} catch {
+			return iso;
+		}
+	}
+</script>
+
+<svelte:head>
+	<title>{title}</title>
+	<meta name="description" content={description} />
+	<link rel="canonical" href={page.url.href} />
+	<meta property="og:title" content={title} />
+	<meta property="og:description" content={description} />
+	<meta property="og:url" content={page.url.href} />
+	<meta property="og:type" content="website" />
+	<meta name="twitter:card" content="summary" />
+	<meta name="twitter:title" content={title} />
+	<meta name="twitter:description" content={description} />
+</svelte:head>
+
+<div class="mx-auto w-full max-w-3xl">
+	<div class="border-b border-[var(--color-border)] px-4 py-3">
+		<h1 class="flex items-center gap-2 text-lg font-semibold text-[var(--color-text)]">
+			<Languages size={20} /> {title}
+		</h1>
+		<p class="mt-1 text-sm text-[var(--color-muted)]">{description}</p>
+	</div>
+
+	{#if disabled}
+		<div class="p-4">
+			<EmptyState
+				icon={Lock}
+				title={t('tools.disabled_title', 'This tool is currently unavailable')}
+				body={t('tools.disabled_body', 'Check back soon or contact support.')}
+			/>
+		</div>
+	{:else if destinations.length === 0}
+		<div class="p-4">
+			<EmptyState
+				icon={Languages}
+				title={t('language_test.no_destinations', 'No destinations available')}
+				body={t(
+					'language_test.no_destinations_desc',
+					"Language test data hasn't been configured yet. Please check back later."
+				)}
+			/>
+		</div>
+	{:else if selectedTestSlug}
+		<!-- ===== Test detail mode ===== -->
+		<div class="p-4 space-y-6">
+			<button
+				type="button"
+				onclick={backToRequirements}
+				class="inline-flex items-center gap-1.5 text-sm text-[var(--color-muted)] hover:text-[var(--color-text)] transition-colors"
+			>
+				<ArrowLeft size={16} />
+				{t('language_test.back_to_requirements', 'Back to requirements')}
+			</button>
+
+			{#if loadingDetail}
+				<div class="space-y-3">
+					<LoadingSkeleton variant="card" count={1} />
+					<LoadingSkeleton variant="lines" count={4} />
+					<LoadingSkeleton variant="lines" count={4} />
+				</div>
+			{:else if testDetail}
+				<!-- Test info -->
+				<div class="p-4 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[var(--radius-card)]">
+					<div class="flex items-center gap-2 flex-wrap">
+						<h2 class="text-xl font-semibold text-[var(--color-text)]">{testDetail.name}</h2>
+						{#if testDetail.validity_months}
+							<span class="text-xs px-2 py-0.5 bg-[var(--color-surface-subtle)] text-[var(--color-primary)] rounded-full font-medium">
+								{t('language_test.valid_for', 'Valid for')} {testDetail.validity_months} {t('language_test.months', 'months')}
+							</span>
+						{/if}
+					</div>
+					{#if testDetail.official_url}
+						<a
+							href={testDetail.official_url}
+							target="_blank"
+							rel="noopener noreferrer"
+							class="mt-2 inline-flex items-center gap-1.5 text-sm text-[var(--color-primary)] hover:underline"
+						>
+							<ExternalLink size={14} />
+							{t('language_test.official_website', 'Official website')}
+						</a>
+					{/if}
+				</div>
+
+				<!-- Resources -->
+				<div>
+					<h3 class="text-sm font-semibold text-[var(--color-muted)] uppercase tracking-wide mb-3">
+						{t('language_test.resources', 'Prep resources')}
+					</h3>
+					{#if testResources.length === 0}
+						<EmptyState
+							icon={BookOpen}
+							title={t('language_test.no_resources', 'No resources')}
+							body={t(
+								'language_test.no_resources_desc',
+								'No prep resources have been added for this test yet.'
+							)}
+						/>
+					{:else}
+						<div class="space-y-2">
+							{#each testResources as resource (resource.id)}
+								<div class="p-3 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[var(--radius-card)] flex items-center justify-between gap-3">
+									<div class="min-w-0">
+										<a
+											href={resource.resource_url}
+											target="_blank"
+											rel="noopener noreferrer"
+											class="text-sm font-medium text-[var(--color-text)] hover:text-[var(--color-primary)] transition-colors"
+										>
+											{resource.title}
+										</a>
+										<div class="flex items-center gap-2 text-xs text-[var(--color-muted)] mt-0.5">
+											{#if resource.resource_type}
+												<span>{resource.resource_type}</span>
+											{/if}
+											{#if resource.community_rating}
+												<span class="flex items-center gap-0.5">
+													<Star size={12} class="text-yellow-500" />
+													{resource.community_rating}
+													{#if resource.rating_count > 0}
+														({resource.rating_count})
+													{/if}
+												</span>
+											{/if}
+										</div>
+									</div>
+									<a
+										href={resource.resource_url}
+										target="_blank"
+										rel="noopener noreferrer"
+										class="text-[var(--color-muted)] hover:text-[var(--color-text)] flex-shrink-0"
+										aria-label={t('language_test.open_resource', 'Open resource')}
+									>
+										<ExternalLink size={16} />
+									</a>
+								</div>
+							{/each}
+						</div>
+					{/if}
+				</div>
+
+				<!-- Score stories -->
+				<div>
+					<div class="flex items-center justify-between mb-3">
+						<h3 class="text-sm font-semibold text-[var(--color-muted)] uppercase tracking-wide">
+							{t('language_test.score_stories', 'Community score stories')}
+						</h3>
+						<button
+							type="button"
+							onclick={openStoryForm}
+							class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-white bg-[var(--color-primary)] rounded-[var(--radius)] hover:bg-[var(--color-primary-hover)] transition-colors"
+						>
+							<Plus size={16} />
+							{t('language_test.share_story', 'Share your story')}
+						</button>
+					</div>
+
+					<!-- Story submission form -->
+					{#if authed && !showRegisterPrompt}
+						<div class="mb-4 p-4 bg-[var(--color-surface-subtle)] border border-[var(--color-border)] rounded-[var(--radius-card)] space-y-3">
+							{#if storyError}
+								<p class="text-sm text-[var(--color-danger)]">{storyError}</p>
+							{/if}
+							<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+								<div>
+									<label for="story-score" class="block text-xs font-medium text-[var(--color-muted)] mb-1">
+										{t('language_test.final_score', 'Final score')} *
+									</label>
+									<input
+										id="story-score"
+										type="text"
+										bind:value={storyFinalScore}
+										placeholder="e.g. 7.5"
+										class="w-full px-3 py-2 text-sm bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[var(--radius)] focus:border-[var(--color-primary)] focus:outline-none"
+									/>
+								</div>
+								<div>
+									<label for="story-level" class="block text-xs font-medium text-[var(--color-muted)] mb-1">
+										{t('language_test.starting_level', 'Starting level')}
+									</label>
+									<input
+										id="story-level"
+										type="text"
+										bind:value={storyStartingLevel}
+										placeholder="e.g. B1"
+										class="w-full px-3 py-2 text-sm bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[var(--radius)] focus:border-[var(--color-primary)] focus:outline-none"
+									/>
+								</div>
+								<div>
+									<label for="story-weeks" class="block text-xs font-medium text-[var(--color-muted)] mb-1">
+										{t('language_test.prep_weeks', 'Prep duration (weeks)')}
+									</label>
+									<input
+										id="story-weeks"
+										type="number"
+										bind:value={storyPrepWeeks}
+										min="0"
+										class="w-full px-3 py-2 text-sm bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[var(--radius)] focus:border-[var(--color-primary)] focus:outline-none"
+									/>
+								</div>
+								<div>
+									<label for="story-resources" class="block text-xs font-medium text-[var(--color-muted)] mb-1">
+										{t('language_test.resources_used', 'Resources used (comma-separated)')}
+									</label>
+									<input
+										id="story-resources"
+										type="text"
+										bind:value={storyResourcesUsed}
+										placeholder="e.g. IELTS Liz, YouTube, Cambridge books"
+										class="w-full px-3 py-2 text-sm bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[var(--radius)] focus:border-[var(--color-primary)] focus:outline-none"
+									/>
+								</div>
+							</div>
+							<div>
+								<label for="story-advice" class="block text-xs font-medium text-[var(--color-muted)] mb-1">
+									{t('language_test.advice', 'Advice')}
+								</label>
+								<textarea
+									id="story-advice"
+									bind:value={storyAdvice}
+									rows="3"
+									placeholder={t('language_test.advice_placeholder', 'Share your prep advice for others...')}
+									class="w-full px-3 py-2 text-sm bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[var(--radius)] focus:border-[var(--color-primary)] focus:outline-none"
+								></textarea>
+							</div>
+							<button
+								type="button"
+								onclick={submitStory}
+								disabled={submittingStory || !storyFinalScore}
+								class="px-4 py-2 text-sm font-medium text-white bg-[var(--color-primary)] rounded-[var(--radius)] hover:bg-[var(--color-primary-hover)] transition-colors disabled:opacity-50"
+							>
+								{submittingStory
+									? t('common.submitting', 'Submitting...')
+									: t('common.submit', 'Submit')}
+							</button>
+						</div>
+					{/if}
+
+					{#if testStories.length === 0}
+						<EmptyState
+							icon={MessageSquare}
+							title={t('language_test.no_stories', 'No score stories')}
+							body={t(
+								'language_test.no_stories_desc',
+								'No community score stories have been shared for this test yet.'
+							)}
+						/>
+					{:else}
+						<div class="space-y-2">
+							{#each testStories as story (story.id)}
+								<div class="p-4 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[var(--radius-card)]">
+									<div class="flex items-center gap-2 flex-wrap mb-2">
+										{#if story.author_name}
+											<span class="text-sm font-medium text-[var(--color-text)]">{story.author_name}</span>
+										{/if}
+										<span class="text-xs px-2 py-0.5 bg-[var(--color-surface-subtle)] text-[var(--color-primary)] rounded-full font-semibold">
+											{t('language_test.score', 'Score:')} {story.final_score}
+										</span>
+										{#if story.starting_level}
+											<span class="text-xs text-[var(--color-muted)]">
+												{t('language_test.from', 'from')} {story.starting_level}
+											</span>
+										{/if}
+									</div>
+									<div class="flex items-center gap-3 text-xs text-[var(--color-muted)] mb-2">
+										{#if story.prep_duration_weeks}
+											<span class="flex items-center gap-1">
+												<Clock size={12} />
+												{story.prep_duration_weeks} {t('language_test.weeks', 'weeks')}
+											</span>
+										{/if}
+										{#if story.destination_space_name}
+											<span class="flex items-center gap-1">
+												<MapPin size={12} />
+												{story.destination_space_name}
+											</span>
+										{/if}
+										<span>{formatDate(story.created_at)}</span>
+									</div>
+									{#if story.resources_used && story.resources_used.length > 0}
+										<div class="flex items-center gap-1.5 flex-wrap mb-2">
+											<span class="text-xs text-[var(--color-muted)]">{t('language_test.resources', 'Resources:')}</span>
+											{#each story.resources_used as res (res)}
+												<span class="text-xs px-1.5 py-0.5 bg-[var(--color-surface-subtle)] rounded">{res}</span>
+											{/each}
+										</div>
+									{/if}
+									{#if story.advice}
+										<p class="text-sm text-[var(--color-text-subtle)]">{story.advice}</p>
+									{/if}
+								</div>
+							{/each}
+						</div>
+					{/if}
+				</div>
+			{/if}
+		</div>
+	{:else}
+		<!-- ===== Requirements mode (default) ===== -->
+		<!-- Destination selector (geo-aware pattern — first input) -->
+		<div class="border-b border-[var(--color-border)] px-4 py-3">
+			<label for="lt-dest" class="block text-xs font-medium uppercase tracking-wide text-[var(--color-muted)]">
+				{t('language_test.destination', 'Destination country')}
+			</label>
+			<div class="mt-2">
+				<SelectField
+					id="lt-dest"
+					value={selectedDestId}
+					options={destinations.map((d) => ({ value: d.id, label: d.name }))}
+					placeholder={t('language_test.select_destination', 'Select a destination country')}
+					onValueChange={onDestChange}
+				/>
+			</div>
+		</div>
+
+		{#if selectedDestId}
+			<!-- Optional visa category filter -->
+			<div class="border-b border-[var(--color-border)] px-4 py-3 flex items-center gap-3">
+				<label for="visa-cat" class="text-sm font-medium text-[var(--color-text)] whitespace-nowrap">
+					{t('language_test.visa_category', 'Visa category:')}
+				</label>
+				<input
+					id="visa-cat"
+					type="text"
+					bind:value={visaCategory}
+					oninput={onVisaInput}
+					placeholder={t('language_test.visa_placeholder', 'e.g. skilled worker (optional)')}
+					class="flex-1 px-4 py-2 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[var(--radius)] text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none"
+				/>
+			</div>
+		{/if}
+
+		{#if loadingRequirements}
+			<div class="p-4 space-y-3">
+				<LoadingSkeleton variant="card" count={3} />
+			</div>
+		{:else if !selectedDestId}
+			<div class="p-4">
+				<EmptyState
+					icon={MapPin}
+					title={t('language_test.select_destination', 'Select a destination')}
+					body={t(
+						'language_test.select_destination_desc',
+						'Choose a country to see language test requirements for that destination.'
+					)}
+				/>
+			</div>
+		{:else if requirements.length === 0}
+			<div class="p-4">
+				<EmptyState
+					icon={Languages}
+					title={t('language_test.no_requirements', 'No requirements')}
+					body={t(
+						'language_test.no_requirements_desc',
+						'No language test requirements have been published for this destination yet.'
+					)}
+				/>
+			</div>
+		{:else}
+			<div class="p-4 space-y-3">
+				{#each requirements as req (req.id)}
+					<div class="p-4 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[var(--radius-card)]">
+						<div class="flex items-center justify-between gap-3">
+							<div class="min-w-0">
+								<button
+									type="button"
+									onclick={() => selectTest(req.test_slug)}
+									class="text-sm font-semibold text-[var(--color-text)] hover:text-[var(--color-primary)] transition-colors text-left"
+								>
+									{req.test_name}
+								</button>
+								<div class="flex items-center gap-2 flex-wrap mt-1">
+									<span class="text-xs px-2 py-0.5 bg-[var(--color-surface-subtle)] text-[var(--color-primary)] rounded-full font-semibold">
+										{t('language_test.min_score', 'Min score:')} {req.minimum_score}
+									</span>
+									{#if req.visa_category}
+										<span class="text-xs text-[var(--color-muted)]">{req.visa_category}</span>
+									{/if}
+								</div>
+							</div>
+							<button
+								type="button"
+								onclick={() => selectTest(req.test_slug)}
+								class="text-[var(--color-muted)] hover:text-[var(--color-text)] flex-shrink-0"
+								aria-label={t('language_test.view_test', 'View test details')}
+							>
+								<ChevronRight size={20} />
+							</button>
+						</div>
+
+						{#if req.score_breakdown}
+							<dl class="mt-3 space-y-1">
+								{#each breakdownEntries(req.score_breakdown) as [key, val] (key)}
+									<div class="flex items-start gap-2 text-sm">
+										<dt class="font-medium text-[var(--color-text)] flex-shrink-0">{key}:</dt>
+										<dd class="text-[var(--color-text-subtle)]">{String(val)}</dd>
+									</div>
+								{/each}
+							</dl>
+						{/if}
+
+						{#if req.notes}
+							<p class="mt-2 text-sm text-[var(--color-text-subtle)]">{req.notes}</p>
+						{/if}
+
+						{#if req.source_url}
+							<a
+								href={req.source_url}
+								target="_blank"
+								rel="noopener noreferrer"
+								class="mt-2 inline-flex items-center gap-1 text-xs text-[var(--color-primary)] hover:underline"
+							>
+								<ExternalLink size={12} />
+								{t('language_test.source', 'Source')}
+							</a>
+						{/if}
+					</div>
+				{/each}
+			</div>
+		{/if}
+
+		<!-- All tests quick-access -->
+		{#if tests.length > 0 && !selectedDestId}
+			<div class="border-t border-[var(--color-border)] px-4 py-4">
+				<h3 class="text-sm font-semibold text-[var(--color-muted)] uppercase tracking-wide mb-3">
+					{t('language_test.all_tests', 'All language tests')}
+				</h3>
+				<div class="flex flex-wrap gap-2">
+					{#each tests as test (test.slug)}
+						<button
+							type="button"
+							onclick={() => selectTest(test.slug)}
+							class="px-3 py-1.5 text-sm font-medium text-[var(--color-text)] bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[var(--radius)] hover:border-[var(--color-primary)] hover:text-[var(--color-primary)] transition-colors"
+						>
+							{test.name}
+						</button>
+					{/each}
+				</div>
+			</div>
+		{/if}
+	{/if}
+
+	{#if showRegisterPrompt}
+		<div class="mb-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-3 py-2 text-xs text-[var(--color-muted)]">
+			{t('language_test.sign_in_to_save', 'Sign in to save your progress.')}
+		</div>
+	{/if}
+</div>

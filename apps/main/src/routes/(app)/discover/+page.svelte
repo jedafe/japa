@@ -1,20 +1,23 @@
 <script lang="ts">
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
+	import { goto } from '$app/navigation';
 	import { Compass, Users, Building2, Hash, GraduationCap } from 'lucide-svelte';
-	import { EmptyState } from '$lib/components/ui';
+	import { EmptyState, UrlTabs, type UrlTab } from '$lib/components/ui';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
 
 	const tab = $derived(data.tab);
 
-	const tabs = $derived([
-		{ key: 'spaces', labelKey: 'discover.tab.spaces', href: `?tab=spaces`, icon: Compass },
-		{ key: 'people', labelKey: 'discover.tab.people', href: `?tab=people`, icon: Users },
-		{ key: 'organizations', labelKey: 'discover.tab.organizations', href: `?tab=organizations`, icon: Building2 },
-		{ key: 'tags', labelKey: 'discover.tab.tags', href: `?tab=tags`, icon: Hash },
-		{ key: 'universities', labelKey: 'discover.tab.universities', href: `?tab=universities`, icon: GraduationCap }
+	// Tab bar values — switching calls goto() so SvelteKit re-runs the load
+	// function for the new tab's per-tab data.
+	const tabs = $derived<UrlTab[]>([
+		{ value: 'spaces', label: t('discover.tab.spaces', 'spaces') },
+		{ value: 'people', label: t('discover.tab.people', 'people') },
+		{ value: 'organizations', label: t('discover.tab.organizations', 'organizations') },
+		{ value: 'tags', label: t('discover.tab.tags', 'tags') },
+		{ value: 'universities', label: t('discover.tab.universities', 'universities') }
 	]);
 
 	const title = $derived(t('discover.title', 'Discover — JapaConnect'));
@@ -39,27 +42,10 @@
 
 	<!-- Tab bar -->
 	<nav
-		class="discover-tabs sticky top-0 z-10 flex gap-1 overflow-x-auto border-b border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-bg)_90%,transparent)] px-3 backdrop-blur"
-		style="min-height: var(--nav-height)"
+		class="discover-tabs sticky top-0 z-10"
 		aria-label={t('discover.tabs_label', 'Discover tabs')}
 	>
-		{#each tabs as tabItem (tabItem.key)}
-			{@const Icon = tabItem.icon}
-			<a
-				href={tabItem.href}
-				data-sveltekit-noscroll
-				aria-current={tab === tabItem.key ? 'page' : undefined}
-				class="relative flex shrink-0 items-center gap-1.5 px-4 text-sm font-medium transition-colors {tab === tabItem.key
-					? 'text-[var(--color-text)]'
-					: 'text-[var(--color-muted)] hover:text-[var(--color-text)]'}"
-			>
-				<Icon size={16} />
-				{t(tabItem.labelKey, tabItem.key)}
-				{#if tab === tabItem.key}
-					<span class="absolute inset-x-3 -bottom-px h-0.5 rounded-full bg-[var(--color-primary)]"></span>
-				{/if}
-			</a>
-		{/each}
+		<UrlTabs {tabs} value={data.tab} onValueChange={(v) => goto(`?tab=${v}`)} />
 	</nav>
 
 	<div class="p-3">

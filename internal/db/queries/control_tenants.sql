@@ -1,9 +1,10 @@
 -- Control Panel: tenant management (catalog: /control/tenants/*, super-admin only).
 
 -- name: ListTenants :many
+-- Control Panel shows all tenants including soft-deleted ones so
+-- super-admins can see the full inventory; the UI filters by status.
 SELECT id, name, slug, domain, status, created_at, updated_at, deleted_at
 FROM tenants
-WHERE deleted_at IS NULL
 ORDER BY created_at DESC;
 
 -- name: GetTenantByID :one

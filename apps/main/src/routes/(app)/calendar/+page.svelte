@@ -1,5 +1,5 @@
-// Ref: japaconnect-engineering/sections/86-community-calendar.md
 <script lang="ts">
+	// Ref: japaconnect-engineering/sections/86-community-calendar.md
 	import { untrack } from 'svelte';
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';

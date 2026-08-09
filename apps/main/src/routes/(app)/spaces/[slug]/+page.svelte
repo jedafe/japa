@@ -9,11 +9,11 @@
 	} from 'lucide-svelte';
 	import { Dialog } from 'bits-ui';
 	import SetSidebar from '$lib/components/shell/SetSidebar.svelte';
-	import ProfileTabs from '$lib/components/profile/ProfileTabs.svelte';
 	import SpaceSidebar from '$lib/components/spaces/SpaceSidebar.svelte';
 	import SpaceSettings from '$lib/components/spaces/SpaceSettings.svelte';
 	import ForumList from '$lib/components/forum/ForumList.svelte';
-	import { EmptyState } from '$lib/components/ui';
+	import { EmptyState, UrlTabs } from '$lib/components/ui';
+	import type { UrlTab } from '$lib/components/ui';
 	import { api } from '$lib/api/client';
 	import { requireAuthOrRedirect } from '$lib/auth/guest';
 	import { decodeBase64Text } from '$lib/tiptap/serialize';
@@ -62,7 +62,7 @@
 			return null;
 		}
 	});
-	const activeTab = $derived(page.url.searchParams.get('tab') ?? 'feed');
+	let activeTab = $state(untrack(() => page.url.searchParams.get('tab') ?? 'feed'));
 	const canManage = $derived(data.isOwner || data.isModerator);
 
 	// Hydrate the Join button's initial state: the caller is a member if the
@@ -162,28 +162,28 @@
 
 	const analyticsError = $derived(data.analyticsError as string | null);
 
-	const tabs = $derived([
-		{ key: 'feed', labelKey: 'space.tab.feed', href: `?tab=feed` },
-		{ key: 'forum', labelKey: 'space.tab.forum', href: `?tab=forum` },
-		{ key: 'search', labelKey: 'space.tab.search', href: `?tab=search` },
-		{ key: 'members', labelKey: 'space.tab.members', href: `?tab=members` },
-		{ key: 'about', labelKey: 'space.tab.about', href: `?tab=about` },
+	const tabs = $derived<UrlTab[]>([
+		{ value: 'feed', label: t('space.tab.feed', 'Feed') },
+		{ value: 'forum', label: t('space.tab.forum', 'Forum') },
+		{ value: 'search', label: t('space.tab.search', 'Search') },
+		{ value: 'members', label: t('space.tab.members', 'Members') },
+		{ value: 'about', label: t('space.tab.about', 'About') },
 		// Analytics dashboard — space-admin only per JEOS §215 [auth,
 		// space-admin]. The server only returns analytics data to the space
 		// owner/moderators (403 → null otherwise), so the tab is hidden for
 		// guests and non-admin members.
 		...(authed && analytics
-			? [{ key: 'analytics', labelKey: 'space.tab.analytics', href: `?tab=analytics` }]
+			? [{ value: 'analytics', label: t('space.tab.analytics', 'Analytics') }]
 			: []),
 		// Join requests — only shown for owner/moderator when joining_perm
 		// is 'request' (otherwise the tab is empty/irrelevant).
 		...(canManage && space.joining_perm === 'request'
-			? [{ key: 'requests', labelKey: 'space.tab.requests', href: `?tab=requests` }]
+			? [{ value: 'requests', label: t('space.tab.requests', 'Requests') }]
 			: []),
 		// Settings — authed users only. The PATCH endpoint enforces
 		// space-admin/moderator permissions server-side.
 		...(authed
-			? [{ key: 'settings', labelKey: 'space.tab.settings', href: `?tab=settings` }]
+			? [{ value: 'settings', label: t('space.tab.settings', 'Settings') }]
 			: [])
 	]);
 
@@ -453,7 +453,7 @@
 	</div>
 </header>
 
-<ProfileTabs {tabs} active={activeTab} />
+<UrlTabs {tabs} bind:value={activeTab} />
 
 <div class="mx-auto w-full max-w-full">
 	<div class="p-3">

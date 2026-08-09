@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
+	import { untrack } from 'svelte';
 	import {
 		Plane,
 		ClipboardCheck,
@@ -9,88 +10,88 @@
 		GraduationCap,
 		Banknote,
 		Compass,
-		Bot
+		Bot,
+		Route,
+		BellRing,
+		PlaneLanding,
+		Timer,
+		BadgeCheck,
+		FileText,
+		Home,
+		Stamp,
+		Languages,
+		Receipt,
+		MapPin
 	} from 'lucide-svelte';
-	import type { IconComponent } from '$lib/components/ui';
+	import type { IconComponent, UrlTab } from '$lib/components/ui';
+	import { UrlTabs } from '$lib/components/ui';
+	import { getEnabledToolsBySection, TOOL_SECTIONS, type MainToolMeta, type ToolSection } from '$lib/tools/registry';
 	import type { PageData } from './$types';
 
-	let { data: _data }: { data: PageData } = $props();
+	let { data }: { data: PageData } = $props();
 
 	const title = $derived(t('tools.title', 'Tools — JapaConnect'));
 	const description = $derived(
 		t('tools.description', 'Plan your move with calculators, checklists, and trackers built for the diaspora.')
 	);
 
-	interface ToolLink {
-		href: string;
-		icon: IconComponent;
-		labelKey: string;
-		labelFallback: string;
-		descKey: string;
-		descFallback: string;
-	}
+	// Lucide icon component per tool href. Kept here (not in the registry) because
+	// the registry stores plain serialisable metadata; icon components are runtime
+	// imports. Ref: §78 (Tools Web Surface).
+	const ICONS: Record<string, IconComponent> = {
+		'/tools/visa-checklist': ClipboardCheck,
+		'/tools/readiness': Gauge,
+		'/tools/cost-of-living': Calculator,
+		'/scholarships': GraduationCap,
+		'/tools/remittance': Banknote,
+		'/tools/travel': Plane,
+		'/ai/chat': Bot,
+		'/tools/visa-routes': Route,
+		'/tools/embassy-alerter': BellRing,
+		'/tools/arrival-checklist': PlaneLanding,
+		'/tools/processing-tracker': Timer,
+		'/tools/credential-checker': BadgeCheck,
+		'/tools/cv-formatter': FileText,
+		'/tools/housing-guide': Home,
+		'/tools/attestation-guide': Stamp,
+		'/tools/language-test': Languages,
+		'/tools/tax-calculator': Receipt,
+		'/tools/community-locator': MapPin
+	};
 
-	// Spec-defined tool set (§67, §69–74). Each tool's availability is gated
-	// by its own backend handler; the hub lists all spec tools and each
-	// destination surfaces a disabled state when its setting is off.
-	const tools: ToolLink[] = [
-		{
-			href: '/tools/visa-checklist',
-			icon: ClipboardCheck,
-			labelKey: 'tools.visa_checklist',
-			labelFallback: 'Visa Checklist',
-			descKey: 'tools.visa_checklist_desc',
-			descFallback: 'Build a document checklist for your visa route.'
-		},
-		{
-			href: '/tools/readiness',
-			icon: Gauge,
-			labelKey: 'tools.readiness',
-			labelFallback: 'Readiness Assessment',
-			descKey: 'tools.readiness_desc',
-			descFallback: 'Score your japa readiness across key dimensions.'
-		},
-		{
-			href: '/tools/cost-of-living',
-			icon: Calculator,
-			labelKey: 'tools.cost_of_living',
-			labelFallback: 'Cost of Living Calculator',
-			descKey: 'tools.cost_of_living_desc',
-			descFallback: 'Compare living costs between cities.'
-		},
-		{
-			href: '/scholarships',
-			icon: GraduationCap,
-			labelKey: 'tools.scholarships',
-			labelFallback: 'Scholarship Finder',
-			descKey: 'tools.scholarships_desc',
-			descFallback: 'Find and track scholarships by country and level.'
-		},
-		{
-			href: '/tools/remittance',
-			icon: Banknote,
-			labelKey: 'tools.remittance',
-			labelFallback: 'Remittance Rate Tracker',
-			descKey: 'tools.remittance_desc',
-			descFallback: 'Compare provider rates and set alerts.'
-		},
-		{
-			href: '/tools/travel',
-			icon: Plane,
-			labelKey: 'tools.travel',
-			labelFallback: 'Travel Search',
-			descKey: 'tools.travel_desc',
-			descFallback: 'Search flights and hotels for your move.'
-		},
-		{
-			href: '/ai/chat',
-			icon: Bot,
-			labelKey: 'tools.japabot',
-			labelFallback: 'JapaBot',
-			descKey: 'tools.japabot_desc',
-			descFallback: 'Ask JapaBot anything about relocating.'
+	// Data-driven: the tool list is filtered by each tool's {tool}.enabled
+	// system_setting toggle (read from the root layout's siteSettings). Disabled
+	// tools are hidden from the hub. Ref: conventions/system-settings-catalog.md.
+	const settings = $derived<Record<string, unknown>>(data.siteSettings ?? {});
+	const sections = $derived(
+		TOOL_SECTIONS.map((section) => ({
+			section,
+			tools: getEnabledToolsBySection(settings, section)
+		})).filter((s) => s.tools.length > 0)
+	);
+	const totalEnabled = $derived(sections.reduce((sum, s) => sum + s.tools.length, 0));
+
+	// URL-based tab value, synced via UrlTabs (instant client-side switching).
+	let activeTab = $state<ToolSection>(
+		untrack(() => {
+			const urlTab = page.url.searchParams.get('tab');
+			if (urlTab && TOOL_SECTIONS.includes(urlTab as ToolSection)) {
+				return urlTab as ToolSection;
+			}
+			return sections[0]?.section ?? 'planning';
+		})
+	);
+	$effect(() => {
+		if (sections.length > 0 && !sections.some((s) => s.section === activeTab)) {
+			activeTab = sections[0].section;
 		}
-	];
+	});
+
+	// Tabs + content for the active section.
+	const tabs = $derived<UrlTab[]>(
+		sections.map((s) => ({ value: s.section, label: t(`tools.section_${s.section}`, s.section) }))
+	);
+	const activeTools = $derived(sections.find((s) => s.section === activeTab)?.tools ?? []);
 </script>
 
 <svelte:head>
@@ -110,28 +111,41 @@
 		<p class="mt-1 text-sm text-[var(--color-muted)]">{description}</p>
 	</div>
 
-	<div class="p-3">
-		<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-			{#each tools as tool (tool.href)}
-				<a
-					href={tool.href}
-					class="flex items-start gap-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 transition-colors hover:bg-[var(--color-surface-subtle)]"
-				>
-					<span
-						class="grid h-11 w-11 shrink-0 place-items-center rounded-[var(--radius)] bg-[var(--color-surface-subtle)] text-[var(--color-primary)]"
-					>
-						<tool.icon size={22} />
-					</span>
-					<span class="min-w-0 flex-1">
-						<span class="block text-sm font-medium text-[var(--color-text)]">
-							{t(tool.labelKey, tool.labelFallback)}
-						</span>
-						<span class="mt-1 block text-xs text-[var(--color-muted)]">
-							{t(tool.descKey, tool.descFallback)}
-						</span>
-					</span>
-				</a>
-			{/each}
+	{#if totalEnabled === 0}
+		<p class="px-4 py-8 text-center text-sm text-[var(--color-muted)]">
+			{t('tools.disabled_body', 'Check back soon or contact support.')}
+		</p>
+	{:else}
+		<UrlTabs {tabs} bind:value={activeTab} />
+
+		<div class="p-3">
+			<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+				{#each activeTools as tool (tool.href)}
+					{@render toolCard(tool)}
+				{/each}
+			</div>
 		</div>
-	</div>
+	{/if}
 </div>
+
+{#snippet toolCard(tool: MainToolMeta)}
+	{@const Icon = ICONS[tool.href] ?? Compass}
+	<a
+		href={tool.href}
+		class="flex items-start gap-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 transition-colors hover:bg-[var(--color-surface-subtle)]"
+	>
+		<span
+			class="grid h-11 w-11 shrink-0 place-items-center rounded-[var(--radius)] bg-[var(--color-surface-subtle)] text-[var(--color-primary)]"
+		>
+			<Icon size={22} />
+		</span>
+		<span class="min-w-0 flex-1">
+			<span class="block text-sm font-medium text-[var(--color-text)]">
+				{t(tool.labelKey, tool.labelKey)}
+			</span>
+			<span class="mt-1 block text-xs text-[var(--color-muted)]">
+				{t(tool.descKey, tool.descKey)}
+			</span>
+		</span>
+	</a>
+{/snippet}
