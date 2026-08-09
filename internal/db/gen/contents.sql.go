@@ -2412,16 +2412,40 @@ func (q *Queries) ListPublishedContentForRSS(ctx context.Context, tenantID pgtyp
 }
 
 const listPublishedSlugsForSitemap = `-- name: ListPublishedSlugsForSitemap :many
-SELECT slug, updated_at
-FROM contents
-WHERE tenant_id = $1 AND status = 'published'
-ORDER BY updated_at DESC
+SELECT c.slug, c.updated_at, c.visibility, c.seo_indexable, c.content_type,
+       c.comment_count, c.share_count, c.reshare_count,
+       array_length(string_to_array(trim(c.body), ' '), 1) AS word_count,
+       COALESCE(ft.reply_count, 0) AS reply_count,
+       COALESCE(ft.solved, false) AS solved,
+       (ft.id IS NOT NULL AND ft.solved = false) AS is_question,
+       COALESCE(r.reaction_count, 0) AS reaction_count
+FROM contents c
+LEFT JOIN forum_threads ft ON ft.content_id = c.id
+LEFT JOIN (
+    SELECT entity_id, count(*) AS reaction_count
+    FROM reactions
+    WHERE entity_type IN ('content', 'blog_post', 'forum_thread', 'discussion', 'guide', 'comparison')
+    GROUP BY entity_id
+) r ON r.entity_id = c.id
+WHERE c.tenant_id = $1 AND c.status = 'published'
+ORDER BY c.updated_at DESC
 LIMIT 10000
 `
 
 type ListPublishedSlugsForSitemapRow struct {
-	Slug      string             `json:"slug"`
-	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+	Slug          string             `json:"slug"`
+	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
+	Visibility    string             `json:"visibility"`
+	SeoIndexable  bool               `json:"seo_indexable"`
+	ContentType   string             `json:"content_type"`
+	CommentCount  int32              `json:"comment_count"`
+	ShareCount    int32              `json:"share_count"`
+	ReshareCount  int32              `json:"reshare_count"`
+	WordCount     int32              `json:"word_count"`
+	ReplyCount    int32              `json:"reply_count"`
+	Solved        bool               `json:"solved"`
+	IsQuestion    *bool              `json:"is_question"`
+	ReactionCount int64              `json:"reaction_count"`
 }
 
 func (q *Queries) ListPublishedSlugsForSitemap(ctx context.Context, tenantID pgtype.UUID) ([]ListPublishedSlugsForSitemapRow, error) {
@@ -2433,7 +2457,21 @@ func (q *Queries) ListPublishedSlugsForSitemap(ctx context.Context, tenantID pgt
 	var items []ListPublishedSlugsForSitemapRow
 	for rows.Next() {
 		var i ListPublishedSlugsForSitemapRow
-		if err := rows.Scan(&i.Slug, &i.UpdatedAt); err != nil {
+		if err := rows.Scan(
+			&i.Slug,
+			&i.UpdatedAt,
+			&i.Visibility,
+			&i.SeoIndexable,
+			&i.ContentType,
+			&i.CommentCount,
+			&i.ShareCount,
+			&i.ReshareCount,
+			&i.WordCount,
+			&i.ReplyCount,
+			&i.Solved,
+			&i.IsQuestion,
+			&i.ReactionCount,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

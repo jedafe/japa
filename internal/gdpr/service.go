@@ -1045,6 +1045,18 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 			return fmt.Errorf("nullifying feature_flags updated_by: %w", err)
 		}
 
+		// Nullify doc_pages.last_reviewed_by references. The doc_pages table
+		// has last_reviewed_by uuid REFERENCES users(id) with no ON DELETE clause.
+		// Without this, the HardDeleteUser DELETE fails with a FK violation for
+		// any admin who has approved/published doc pages. The doc pages themselves
+		// are retained (they are tenant content, not user PII). Ref: §44; ADR-014.
+		if _, err := s.db.Writer.Exec(ctx, `
+			UPDATE doc_pages SET last_reviewed_by = NULL
+			WHERE last_reviewed_by = $1
+		`, userID); err != nil {
+			return fmt.Errorf("nullifying doc_pages last_reviewed_by: %w", err)
+		}
+
 		// BUG-011: trending_snapshots with entity_type='user' reference the
 		// user via entity_id (no FK — polymorphic). Delete them so the user's
 		// trending presence does not survive erasure.
@@ -1247,6 +1259,10 @@ type UserDataExport struct {
 	LessonProgress       []map[string]interface{} `json:"lesson_progress"`
 	LearningCertificates []map[string]interface{} `json:"learning_certificates"`
 	MentorshipMatches    []map[string]interface{} `json:"mentorship_matches"`
+	MentorshipConnections []map[string]interface{} `json:"mentorship_connections"` // §102 ADR-110
+	MentorProfiles       []map[string]interface{} `json:"mentor_profiles"`        // §102 ADR-110
+	MentorSessions       []map[string]interface{} `json:"mentor_sessions"`        // §102 ADR-110
+	MentorReviews        []map[string]interface{} `json:"mentor_reviews"`         // §102 ADR-110
 	ProfessionalProfiles []map[string]interface{} `json:"professional_profiles"`
 	Organizations        []map[string]interface{} `json:"organizations"`
 	ApiKeys              []map[string]interface{} `json:"api_keys"`
@@ -1549,6 +1565,34 @@ func (s *Service) collectUserData(ctx context.Context, userID, tenantID pgtype.U
 		export.MentorshipMatches = rows
 	} else {
 		slog.Warn("failed to collect mentorship_matches for export", "user_id", userID.String(), "error", err)
+	}
+
+	// §102 Mentorship connections where the user is mentor or mentee (ADR-110).
+	if rows, err := s.store.gdprExportUserMentorshipConnections(ctx, userID, tenantID); err == nil {
+		export.MentorshipConnections = rows
+	} else {
+		slog.Warn("failed to collect mentorship_connections for export", "user_id", userID.String(), "error", err)
+	}
+
+	// §102 Mentor profiles owned by the user (ADR-110).
+	if rows, err := s.store.gdprExportUserMentorProfiles(ctx, userID, tenantID); err == nil {
+		export.MentorProfiles = rows
+	} else {
+		slog.Warn("failed to collect mentor_profiles for export", "user_id", userID.String(), "error", err)
+	}
+
+	// §102 Mentor sessions where the user is the mentee (ADR-110).
+	if rows, err := s.store.gdprExportUserMentorSessions(ctx, userID, tenantID); err == nil {
+		export.MentorSessions = rows
+	} else {
+		slog.Warn("failed to collect mentor_sessions for export", "user_id", userID.String(), "error", err)
+	}
+
+	// §102 Mentor reviews written by the user (ADR-110).
+	if rows, err := s.store.gdprExportUserMentorReviews(ctx, userID); err == nil {
+		export.MentorReviews = rows
+	} else {
+		slog.Warn("failed to collect mentor_reviews for export", "user_id", userID.String(), "error", err)
 	}
 
 	// Professional profiles owned by the user.

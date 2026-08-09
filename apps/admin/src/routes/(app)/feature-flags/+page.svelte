@@ -39,6 +39,7 @@
 	let deleteConfirmOpen = $state(false);
 	let deletingId = $state<string | null>(null);
 	let saving = $state(false);
+	let toggling = $state(false);
 	let errorMessage = $state("");
 	let successMessage = $state("");
 
@@ -69,17 +70,13 @@
 		return result;
 	});
 
-	const flagFilters: FilterDef[] = [
+	const flagFilters: FilterDef[] = $derived([
 		{
 			key: "environment",
 			label: t('app.feature-flags.filter_environment', 'Environment'),
-			options: [
-				{ value: "production", label: t('app.feature-flags.option_production', 'Production') },
-				{ value: "staging", label: t('app.feature-flags.option_staging', 'Staging') },
-				{ value: "development", label: t('app.feature-flags.option_development', 'Development') }
-			]
+			options: environmentOptions
 		}
-	];
+	]);
 
 	const flagColumns = [
 		{
@@ -250,8 +247,11 @@
 	}
 
 	async function toggleFlag(id: string) {
+		if (toggling) return;
 		const flag = flags.find((f) => f.id === id);
 		if (!flag) return;
+		toggling = true;
+		errorMessage = "";
 		const result = await api(`/admin/feature-flags/${id}`, {
 			method: "PATCH",
 			body: { enabled: !flag.isEnabled }
@@ -262,6 +262,7 @@
 		} else {
 			errorMessage = result.error ?? t('app.feature-flags.toggle_failed', 'Failed to toggle flag');
 		}
+		toggling = false;
 	}
 
 	function openDeleteConfirm(id: string) {
@@ -311,14 +312,20 @@
 	});
 
 	$effect(() => {
+		let successTimer: ReturnType<typeof setTimeout> | undefined;
+		let errorTimer: ReturnType<typeof setTimeout> | undefined;
 		if (successMessage) {
 			const msg = successMessage;
-			setTimeout(() => { if (successMessage === msg) successMessage = ''; }, 4000);
+			successTimer = setTimeout(() => { if (successMessage === msg) successMessage = ''; }, 4000);
 		}
 		if (errorMessage) {
 			const msg = errorMessage;
-			setTimeout(() => { if (errorMessage === msg) errorMessage = ''; }, 6000);
+			errorTimer = setTimeout(() => { if (errorMessage === msg) errorMessage = ''; }, 6000);
 		}
+		return () => {
+			if (successTimer) clearTimeout(successTimer);
+			if (errorTimer) clearTimeout(errorTimer);
+		};
 	});
 </script>
 
@@ -429,7 +436,7 @@
 			<input
 				id="flag-name"
 				type="text"
-				class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
+				class="w-full rounded-lg border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
 				placeholder={t('app.feature-flags.placeholder_name', 'e.g., New Dashboard')}
 				bind:value={form.name}
 			/>
@@ -439,7 +446,7 @@
 			<input
 				id="flag-key"
 				type="text"
-				class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm font-mono placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
+				class="w-full rounded-lg border bg-surface px-3 py-2 text-sm font-mono placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
 				placeholder={t('app.feature-flags.placeholder_key', 'e.g., new_dashboard')}
 				bind:value={form.key}
 			/>
@@ -448,7 +455,7 @@
 			<label for="flag-desc" class="mb-1 block text-sm font-medium text-foreground-alt">{t('app.feature-flags.description', 'Description')}</label>
 			<textarea
 				id="flag-desc"
-				class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
+				class="w-full rounded-lg border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
 				placeholder={t('app.feature-flags.placeholder_description', 'What does this flag control?')}
 				rows="2"
 				bind:value={form.description}
@@ -459,11 +466,7 @@
 				<label for="flag-env" class="mb-1 block text-sm font-medium text-foreground-alt">{t('app.feature-flags.environment', 'Environment')}</label>
 				<Select
 					bind:value={form.environment}
-					options={[
-						{ value: "production", label: t('app.feature-flags.option_production', 'Production') },
-						{ value: "staging", label: t('app.feature-flags.option_staging', 'Staging') },
-						{ value: "development", label: t('app.feature-flags.option_development', 'Development') }
-					]}
+					options={environmentOptions}
 				/>
 			</div>
 			<div>
@@ -473,7 +476,7 @@
 					type="number"
 					min="0"
 					max="100"
-					class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
+					class="w-full rounded-lg border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
 					bind:value={form.rolloutPercentage}
 				/>
 			</div>
@@ -497,7 +500,7 @@
 			<input
 				id="edit-flag-key"
 				type="text"
-				class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm font-mono text-muted"
+				class="w-full rounded-lg border bg-surface px-3 py-2 text-sm font-mono text-muted"
 				value={editingFlag?.key}
 				disabled
 			/>
@@ -507,7 +510,7 @@
 			<input
 				id="edit-flag-name"
 				type="text"
-				class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
+				class="w-full rounded-lg border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
 				placeholder={t('app.feature-flags.placeholder_name', 'e.g., New Dashboard')}
 				bind:value={form.name}
 			/>
@@ -516,7 +519,7 @@
 			<label for="edit-flag-desc" class="mb-1 block text-sm font-medium text-foreground-alt">{t('app.feature-flags.description', 'Description')}</label>
 			<textarea
 				id="edit-flag-desc"
-				class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
+				class="w-full rounded-lg border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
 				placeholder={t('app.feature-flags.placeholder_description', 'What does this flag control?')}
 				rows="2"
 				bind:value={form.description}
@@ -527,11 +530,7 @@
 				<label for="edit-flag-env" class="mb-1 block text-sm font-medium text-foreground-alt">{t('app.feature-flags.environment', 'Environment')}</label>
 				<Select
 					bind:value={form.environment}
-					options={[
-						{ value: "production", label: t('app.feature-flags.option_production', 'Production') },
-						{ value: "staging", label: t('app.feature-flags.option_staging', 'Staging') },
-						{ value: "development", label: t('app.feature-flags.option_development', 'Development') }
-					]}
+					options={environmentOptions}
 				/>
 			</div>
 			<div>
@@ -541,7 +540,7 @@
 					type="number"
 					min="0"
 					max="100"
-					class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
+					class="w-full rounded-lg border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
 					bind:value={form.rolloutPercentage}
 				/>
 			</div>

@@ -218,4 +218,8 @@ func RegisterHandlers(mux *asynq.ServeMux) {
 	mux.HandleFunc(TypePersonaDispatchAction, HandlePersonaDispatchAction)
 	mux.HandleFunc(TypeStudioRunBatch, HandleStudioRunBatch)
 	mux.HandleFunc(TypeStudioRetryFailed, HandleStudioRetryFailed)
+
+	// §102 Mentorship Matching handlers (ADR-110).
+	mux.HandleFunc(TypeMentorGenerateEmbedding, HandleMentorGenerateEmbedding)
+	mux.HandleFunc(TypeMentorUpdateMeilisearch, HandleMentorUpdateMeilisearch)
 }

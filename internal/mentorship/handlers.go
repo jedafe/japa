@@ -1,6 +1,8 @@
-// Package mentorship — handlers.go provides HTTP handlers for mentorship admin CRUD.
+// Package mentorship — handlers.go provides HTTP handlers for mentorship
+// admin CRUD (legacy programs/matches) and §102 Mentorship Matching routes
+// (discovery, profile, connections, comparison, admin override).
 //
-// Routes:
+// Legacy admin routes:
 //
 //	GET    /admin/mentorship/programs          — list programs
 //	GET    /admin/mentorship/programs/{id}     — get program
@@ -9,6 +11,24 @@
 //	DELETE /admin/mentorship/programs/{id}     — delete program
 //	GET    /admin/mentorship/matches           — list mentor-mentee matches
 //	PATCH  /admin/mentorship/matches/{id}      — update match status
+//
+// §102 routes:
+//
+//	GET    /mentors                            — discover mentors
+//	GET    /mentors/{username}                 — mentor public profile
+//	GET    /compare/mentors                    — compare up to 4 mentors
+//	GET    /me/mentor-profile                  — get own mentor settings
+//	PATCH  /me/mentor-profile                  — toggle mentor / set capacity/areas/bio
+//	POST   /mentorship/request                 — send mentorship request
+//	GET    /me/mentorship/outgoing             — my sent requests
+//	DELETE /me/mentorship/outgoing/{id}        — cancel pending request
+//	GET    /me/mentorship/incoming             — incoming requests
+//	PATCH  /me/mentorship/incoming/{id}/accept — accept request
+//	PATCH  /me/mentorship/incoming/{id}/decline— decline request
+//	PATCH  /mentorship/{id}/complete           — complete connection
+//	PATCH  /mentorship/{id}/cancel             — cancel active connection
+//	GET    /admin/mentorship/connections       — all connections (admin)
+//	PATCH  /admin/mentorship/connections/{id}  — admin override
 package mentorship
 
 import (
@@ -18,9 +38,11 @@ import (
 	"math"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/tenant"
 )
 
@@ -317,4 +339,584 @@ func (h *Handlers) DeleteProgram(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"deleted": true}})
+}
+
+// =====================================================================
+// §102 Mentorship Matching handlers (ADR-110)
+// =====================================================================
+
+// requireAuthUser extracts the authenticated user ID from the request context.
+func (h *Handlers) requireAuthUser(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
+	u := auth.FromContext(r.Context())
+	if u == nil {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		return pgtype.UUID{}, false
+	}
+
+	return u.UserID, true
+}
+
+// parsePage parses page and page_size query params, returning limit and offset.
+func parsePage(r *http.Request) (int32, int32) {
+	limit := parsePageSize(r)
+
+	page := 1
+	if v := r.URL.Query().Get("page"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			page = n
+		}
+	}
+
+	offset := int32((page - 1) * int(limit)) //nolint:gosec // bounded by page*limit
+	if offset > math.MaxInt32 {
+		offset = math.MaxInt32
+	}
+
+	return limit, offset
+}
+
+// ListMentors discovers mentors with optional destination and area filters.
+// GET /api/v1/mentors?dest=&areas=&sort=match|newest|capacity&page=
+func (h *Handlers) ListMentors(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	limit, offset := parsePage(r)
+
+	var destSpaceID pgtype.UUID
+	if v := r.URL.Query().Get("dest"); v != "" {
+		if err := destSpaceID.Scan(v); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_dest", "Invalid destination space ID")
+			return
+		}
+	}
+
+	var areas []string
+	if v := r.URL.Query().Get("areas"); v != "" {
+		areas = strings.Split(v, ",")
+	}
+
+	sort := r.URL.Query().Get("sort")
+	if sort == "" {
+		sort = "newest"
+	}
+
+	mentors, err := h.Service.ListMentors(r.Context(), tenantID, destSpaceID, areas, sort, nil, limit, offset)
+	if err != nil {
+		slog.Error("listing mentors", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list mentors")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": mentors})
+}
+
+// GetMentorByUsername returns a mentor's public profile.
+// GET /api/v1/mentors/{username}
+func (h *Handlers) GetMentorByUsername(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	username := chi.URLParam(r, "username")
+	if username == "" {
+		writeError(w, http.StatusBadRequest, "missing_username", "Username is required")
+		return
+	}
+
+	mentor, err := h.Service.GetMentorByUsername(r.Context(), tenantID, username)
+	if err != nil {
+		if errors.Is(err, ErrMentorNotFound) {
+			writeError(w, http.StatusNotFound, "mentor_not_found", "Mentor not found")
+			return
+		}
+		slog.Error("getting mentor by username", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to get mentor")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": mentor})
+}
+
+// CompareMentors returns up to 4 mentors for the comparison endpoint.
+// GET /api/v1/compare/mentors?ids=a,b,c,d
+func (h *Handlers) CompareMentors(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	idsStr := r.URL.Query().Get("ids")
+	if idsStr == "" {
+		writeError(w, http.StatusBadRequest, "missing_ids", "ids parameter is required")
+		return
+	}
+
+	idStrs := strings.Split(idsStr, ",")
+	if len(idStrs) > 4 {
+		writeError(w, http.StatusBadRequest, "too_many_ids", "Maximum 4 mentors can be compared")
+		return
+	}
+
+	userIDs := make([]pgtype.UUID, 0, len(idStrs))
+	for _, s := range idStrs {
+		var id pgtype.UUID
+		if err := id.Scan(strings.TrimSpace(s)); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_id", "Invalid mentor ID: "+s)
+			return
+		}
+		userIDs = append(userIDs, id)
+	}
+
+	mentors, err := h.Service.GetMentorsByIDs(r.Context(), tenantID, userIDs)
+	if err != nil {
+		slog.Error("comparing mentors", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to compare mentors")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": mentors})
+}
+
+// GetMyMentorProfile returns the current user's mentor profile settings.
+// GET /api/v1/me/mentor-profile
+func (h *Handlers) GetMyMentorProfile(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	userID, ok := h.requireAuthUser(w, r)
+	if !ok {
+		return
+	}
+
+	profile, err := h.Service.GetMentorProfile(r.Context(), tenantID, userID)
+	if err != nil {
+		slog.Error("getting mentor profile", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to get mentor profile")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": profile})
+}
+
+// UpdateMyMentorProfile toggles is_mentor and sets capacity/areas/bio.
+// PATCH /api/v1/me/mentor-profile
+func (h *Handlers) UpdateMyMentorProfile(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	userID, ok := h.requireAuthUser(w, r)
+	if !ok {
+		return
+	}
+
+	var input struct {
+		IsMentor       *bool   `json:"is_mentor,omitempty"`
+		MentorCapacity *int16  `json:"mentor_capacity,omitempty"`
+		MentorAreas    []string `json:"mentor_areas,omitempty"`
+		MentorBio      *string `json:"mentor_bio,omitempty"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
+		return
+	}
+
+	profile, err := h.Service.UpdateMentorProfile(r.Context(), tenantID, userID,
+		input.IsMentor, input.MentorCapacity, input.MentorAreas, input.MentorBio)
+	if err != nil {
+		if errors.Is(err, ErrCapacityExceeded) {
+			writeError(w, http.StatusBadRequest, "capacity_exceeded",
+				"mentor_capacity exceeds the platform max_capacity setting")
+			return
+		}
+		slog.Error("updating mentor profile", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to update mentor profile")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": profile})
+}
+
+// RequestMentorship creates a new mentorship request.
+// POST /api/v1/mentorship/request
+func (h *Handlers) RequestMentorship(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	userID, ok := h.requireAuthUser(w, r)
+	if !ok {
+		return
+	}
+
+	var input struct {
+		MentorID           string  `json:"mentor_id"`
+		Goals              *string `json:"goals,omitempty"`
+		DestinationSpaceID *string `json:"destination_space_id,omitempty"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
+		return
+	}
+
+	if input.MentorID == "" {
+		writeError(w, http.StatusBadRequest, "validation_error", "mentor_id is required")
+		return
+	}
+
+	var mentorID pgtype.UUID
+	if err := mentorID.Scan(input.MentorID); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_mentor_id", "Invalid mentor ID")
+		return
+	}
+
+	var destSpaceID pgtype.UUID
+	if input.DestinationSpaceID != nil && *input.DestinationSpaceID != "" {
+		if err := destSpaceID.Scan(*input.DestinationSpaceID); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_dest", "Invalid destination space ID")
+			return
+		}
+	}
+
+	conn, err := h.Service.CreateConnection(r.Context(), tenantID, mentorID, userID, input.Goals, destSpaceID)
+	if err != nil {
+		switch {
+		case errors.Is(err, ErrCannotSelfMentor):
+			writeError(w, http.StatusBadRequest, "cannot_self_mentor", "Cannot request mentorship from yourself")
+		case errors.Is(err, ErrDuplicateRequest):
+			writeError(w, http.StatusConflict, "duplicate_request",
+				"A pending request to this mentor already exists")
+		default:
+			slog.Error("creating mentorship connection", "error", err)
+			writeError(w, http.StatusInternalServerError, "internal_error", "Failed to create mentorship request")
+		}
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, map[string]any{"data": conn})
+}
+
+// ListOutgoingConnections lists requests sent by the current user (as mentee).
+// GET /api/v1/me/mentorship/outgoing
+func (h *Handlers) ListOutgoingConnections(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	userID, ok := h.requireAuthUser(w, r)
+	if !ok {
+		return
+	}
+
+	limit, offset := parsePage(r)
+	status := r.URL.Query().Get("status")
+
+	conns, err := h.Service.ListOutgoingConnections(r.Context(), tenantID, userID, status, limit, offset)
+	if err != nil {
+		slog.Error("listing outgoing connections", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list outgoing connections")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": conns})
+}
+
+// CancelOutgoingConnection cancels a pending request by the mentee.
+// DELETE /api/v1/me/mentorship/outgoing/{id}
+func (h *Handlers) CancelOutgoingConnection(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	userID, ok := h.requireAuthUser(w, r)
+	if !ok {
+		return
+	}
+
+	var connID pgtype.UUID
+	if err := connID.Scan(chi.URLParam(r, "id")); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid connection ID")
+		return
+	}
+
+	if err := h.Service.CancelOutgoingConnection(r.Context(), tenantID, userID, connID); err != nil {
+		if errors.Is(err, ErrConnectionNotFound) {
+			writeError(w, http.StatusNotFound, "not_found", "Connection not found or not pending")
+			return
+		}
+		slog.Error("cancelling outgoing connection", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to cancel connection")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"cancelled": true}})
+}
+
+// ListIncomingConnections lists requests received by the current user (as mentor).
+// GET /api/v1/me/mentorship/incoming
+func (h *Handlers) ListIncomingConnections(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	userID, ok := h.requireAuthUser(w, r)
+	if !ok {
+		return
+	}
+
+	limit, offset := parsePage(r)
+	status := r.URL.Query().Get("status")
+
+	conns, err := h.Service.ListIncomingConnections(r.Context(), tenantID, userID, status, limit, offset)
+	if err != nil {
+		slog.Error("listing incoming connections", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list incoming connections")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": conns})
+}
+
+// AcceptConnection accepts a pending mentorship request.
+// Only the mentor of the connection can accept.
+// PATCH /api/v1/me/mentorship/incoming/{id}/accept
+func (h *Handlers) AcceptConnection(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	userID, ok := h.requireAuthUser(w, r)
+	if !ok {
+		return
+	}
+
+	var connID pgtype.UUID
+	if err := connID.Scan(chi.URLParam(r, "id")); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid connection ID")
+		return
+	}
+
+	conn, err := h.Service.AcceptConnection(r.Context(), tenantID, userID, connID)
+	if err != nil {
+		switch {
+		case errors.Is(err, ErrConnectionNotFound):
+			writeError(w, http.StatusNotFound, "not_found", "Connection not found or not pending")
+		case errors.Is(err, ErrNotAuthorized):
+			writeError(w, http.StatusForbidden, "forbidden", "Only the mentor can accept this request")
+		default:
+			slog.Error("accepting connection", "error", err)
+			writeError(w, http.StatusInternalServerError, "internal_error", "Failed to accept connection")
+		}
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": conn})
+}
+
+// DeclineConnection declines a pending mentorship request.
+// Only the mentor of the connection can decline.
+// PATCH /api/v1/me/mentorship/incoming/{id}/decline
+func (h *Handlers) DeclineConnection(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	userID, ok := h.requireAuthUser(w, r)
+	if !ok {
+		return
+	}
+
+	var connID pgtype.UUID
+	if err := connID.Scan(chi.URLParam(r, "id")); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid connection ID")
+		return
+	}
+
+	conn, err := h.Service.DeclineConnection(r.Context(), tenantID, userID, connID)
+	if err != nil {
+		switch {
+		case errors.Is(err, ErrConnectionNotFound):
+			writeError(w, http.StatusNotFound, "not_found", "Connection not found or not pending")
+		case errors.Is(err, ErrNotAuthorized):
+			writeError(w, http.StatusForbidden, "forbidden", "Only the mentor can decline this request")
+		default:
+			slog.Error("declining connection", "error", err)
+			writeError(w, http.StatusInternalServerError, "internal_error", "Failed to decline connection")
+		}
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": conn})
+}
+
+// CompleteConnection completes an active connection.
+// Either party (mentor or mentee) can complete.
+// PATCH /api/v1/mentorship/{id}/complete
+func (h *Handlers) CompleteConnection(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	userID, ok := h.requireAuthUser(w, r)
+	if !ok {
+		return
+	}
+
+	var connID pgtype.UUID
+	if err := connID.Scan(chi.URLParam(r, "id")); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid connection ID")
+		return
+	}
+
+	conn, err := h.Service.CompleteConnection(r.Context(), tenantID, userID, connID)
+	if err != nil {
+		switch {
+		case errors.Is(err, ErrConnectionNotFound):
+			writeError(w, http.StatusNotFound, "not_found", "Connection not found or not active")
+		case errors.Is(err, ErrNotAuthorized):
+			writeError(w, http.StatusForbidden, "forbidden", "Only a participant can complete this connection")
+		default:
+			slog.Error("completing connection", "error", err)
+			writeError(w, http.StatusInternalServerError, "internal_error", "Failed to complete connection")
+		}
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": conn})
+}
+
+// CancelConnection cancels an active connection.
+// Either party (mentor or mentee) can cancel.
+// PATCH /api/v1/mentorship/{id}/cancel
+func (h *Handlers) CancelConnection(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	userID, ok := h.requireAuthUser(w, r)
+	if !ok {
+		return
+	}
+
+	var connID pgtype.UUID
+	if err := connID.Scan(chi.URLParam(r, "id")); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid connection ID")
+		return
+	}
+
+	var input struct {
+		CancelReason *string `json:"cancel_reason,omitempty"`
+	}
+
+	// Body is optional for cancel.
+	if r.ContentLength > 0 {
+		if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
+			return
+		}
+	}
+
+	conn, err := h.Service.CancelConnection(r.Context(), tenantID, userID, connID, input.CancelReason)
+	if err != nil {
+		switch {
+		case errors.Is(err, ErrConnectionNotFound):
+			writeError(w, http.StatusNotFound, "not_found", "Connection not found or not active")
+		case errors.Is(err, ErrNotAuthorized):
+			writeError(w, http.StatusForbidden, "forbidden", "Only a participant can cancel this connection")
+		default:
+			slog.Error("cancelling connection", "error", err)
+			writeError(w, http.StatusInternalServerError, "internal_error", "Failed to cancel connection")
+		}
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": conn})
+}
+
+// ListAllConnections lists all connections for admin.
+// GET /api/v1/admin/mentorship/connections
+func (h *Handlers) ListAllConnections(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	limit, offset := parsePage(r)
+	status := r.URL.Query().Get("status")
+
+	var mentorID, menteeID pgtype.UUID
+	if v := r.URL.Query().Get("mentor_id"); v != "" {
+		_ = mentorID.Scan(v)
+	}
+	if v := r.URL.Query().Get("mentee_id"); v != "" {
+		_ = menteeID.Scan(v)
+	}
+
+	conns, err := h.Service.ListAllConnections(r.Context(), tenantID, status, mentorID, menteeID, limit, offset)
+	if err != nil {
+		slog.Error("listing all connections", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list connections")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": conns})
+}
+
+// AdminUpdateConnection allows an admin to override a connection's status.
+// PATCH /api/v1/admin/mentorship/connections/{id}
+func (h *Handlers) AdminUpdateConnection(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	var connID pgtype.UUID
+	if err := connID.Scan(chi.URLParam(r, "id")); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid connection ID")
+		return
+	}
+
+	var input struct {
+		Status *string `json:"status,omitempty"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
+		return
+	}
+
+	if input.Status == nil {
+		writeError(w, http.StatusBadRequest, "validation_error", "status is required")
+		return
+	}
+
+	conn, err := h.Service.AdminUpdateConnection(r.Context(), tenantID, connID, *input.Status)
+	if err != nil {
+		if errors.Is(err, ErrConnectionNotFound) {
+			writeError(w, http.StatusNotFound, "not_found", "Connection not found")
+			return
+		}
+		slog.Error("admin updating connection", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to update connection")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": conn})
 }

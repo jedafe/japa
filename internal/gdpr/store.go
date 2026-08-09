@@ -268,6 +268,31 @@ func (s *Store) gdprExportUserMentorshipMatches(ctx context.Context, userID, ten
 	return exportJSONSlice(ctx, s.read.GdprExportUserMentorshipMatches, gen.GdprExportUserMentorshipMatchesParams{UserID: userID, TenantID: tenantID})
 }
 
+// gdprExportUserMentorshipConnections exports §102 mentorship_connections
+// rows where the user is mentor or mentee (ADR-110).
+func (s *Store) gdprExportUserMentorshipConnections(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {
+	return exportJSONSlice(ctx, s.read.GdprExportUserMentorshipConnections, gen.GdprExportUserMentorshipConnectionsParams{UserID: userID, TenantID: tenantID})
+}
+
+// gdprExportUserMentorProfiles exports §102 mentor_profiles rows for the
+// user (ADR-110).
+func (s *Store) gdprExportUserMentorProfiles(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {
+	return exportJSONSlice(ctx, s.read.GdprExportUserMentorProfiles, gen.GdprExportUserMentorProfilesParams{UserID: userID, TenantID: tenantID})
+}
+
+// gdprExportUserMentorSessions exports §102 mentor_sessions rows where the
+// user is the mentee (ADR-110).
+func (s *Store) gdprExportUserMentorSessions(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {
+	return exportJSONSlice(ctx, s.read.GdprExportUserMentorSessions, gen.GdprExportUserMentorSessionsParams{UserID: userID, TenantID: tenantID})
+}
+
+// gdprExportUserMentorReviews exports §102 mentor_reviews rows written by
+// the user (ADR-110). mentor_reviews has no tenant_id column, so this uses
+// the no-tenant variant.
+func (s *Store) gdprExportUserMentorReviews(ctx context.Context, userID pgtype.UUID) ([]map[string]interface{}, error) {
+	return exportJSONSliceNoTenant(ctx, s.read.GdprExportUserMentorReviews, userID)
+}
+
 func (s *Store) gdprExportUserProfessionalProfiles(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {
 	return exportJSONSlice(ctx, s.read.GdprExportUserProfessionalProfiles, gen.GdprExportUserProfessionalProfilesParams{UserID: userID, TenantID: tenantID})
 }

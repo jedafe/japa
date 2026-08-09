@@ -11,9 +11,10 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const createDocPage = `-- name: CreateDocPage :exec
+const createDocPage = `-- name: CreateDocPage :one
 INSERT INTO doc_pages (tenant_id, title, slug, audience, content, ai_generated, review_status, parent_id, position)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+RETURNING id
 `
 
 type CreateDocPageParams struct {
@@ -28,8 +29,8 @@ type CreateDocPageParams struct {
 	Position     int32       `json:"position"`
 }
 
-func (q *Queries) CreateDocPage(ctx context.Context, arg CreateDocPageParams) error {
-	_, err := q.db.Exec(ctx, createDocPage,
+func (q *Queries) CreateDocPage(ctx context.Context, arg CreateDocPageParams) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, createDocPage,
 		arg.TenantID,
 		arg.Title,
 		arg.Slug,
@@ -40,7 +41,9 @@ func (q *Queries) CreateDocPage(ctx context.Context, arg CreateDocPageParams) er
 		arg.ParentID,
 		arg.Position,
 	)
-	return err
+	var id pgtype.UUID
+	err := row.Scan(&id)
+	return id, err
 }
 
 const deleteDocPage = `-- name: DeleteDocPage :exec
@@ -124,6 +127,22 @@ func (q *Queries) GetDocPageBySlug(ctx context.Context, arg GetDocPageBySlugPara
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const getDocPageStatus = `-- name: GetDocPageStatus :one
+SELECT review_status FROM doc_pages WHERE id = $1 AND tenant_id = $2
+`
+
+type GetDocPageStatusParams struct {
+	ID       pgtype.UUID `json:"id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+func (q *Queries) GetDocPageStatus(ctx context.Context, arg GetDocPageStatusParams) (string, error) {
+	row := q.db.QueryRow(ctx, getDocPageStatus, arg.ID, arg.TenantID)
+	var review_status string
+	err := row.Scan(&review_status)
+	return review_status, err
 }
 
 const listAllDocPages = `-- name: ListAllDocPages :many
@@ -472,6 +491,30 @@ func (q *Queries) UpdateDocPage(ctx context.Context, arg UpdateDocPageParams) er
 	_, err := q.db.Exec(ctx, updateDocPage,
 		arg.Title,
 		arg.Content,
+		arg.ReviewStatus,
+		arg.LastReviewedBy,
+		arg.ID,
+		arg.TenantID,
+	)
+	return err
+}
+
+const updateDocPageStatus = `-- name: UpdateDocPageStatus :exec
+UPDATE doc_pages
+SET review_status = $1, last_reviewed_by = $2,
+    last_reviewed_at = now(), updated_at = now()
+WHERE id = $3 AND tenant_id = $4
+`
+
+type UpdateDocPageStatusParams struct {
+	ReviewStatus   string      `json:"review_status"`
+	LastReviewedBy pgtype.UUID `json:"last_reviewed_by"`
+	ID             pgtype.UUID `json:"id"`
+	TenantID       pgtype.UUID `json:"tenant_id"`
+}
+
+func (q *Queries) UpdateDocPageStatus(ctx context.Context, arg UpdateDocPageStatusParams) error {
+	_, err := q.db.Exec(ctx, updateDocPageStatus,
 		arg.ReviewStatus,
 		arg.LastReviewedBy,
 		arg.ID,

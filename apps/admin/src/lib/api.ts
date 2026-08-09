@@ -213,10 +213,14 @@ export const impersonationApi = {
 
 export const docsApi = {
 	list: (params?: string) => api<unknown>(`/admin/docs/pages${params ? `?${params}` : ''}`),
-	create: (body: { title: string; slug: string; audience: string; content: string; review_status?: string }) =>
+	create: (body: { title: string; slug: string; audience: string; content: unknown; review_status?: string }) =>
 		api('/admin/docs/pages', { method: 'POST', body }),
-	update: (id: string, body: { title?: string; slug?: string; audience?: string; content?: string; review_status?: string }) =>
+	update: (id: string, body: { title?: string; slug?: string; audience?: string; content?: unknown; review_status?: string }) =>
 		api(`/admin/docs/pages/${id}`, { method: 'PATCH', body }),
+	approve: (id: string) =>
+		api(`/admin/docs/pages/${id}/approve`, { method: 'POST' }),
+	publish: (id: string) =>
+		api(`/admin/docs/pages/${id}/publish`, { method: 'POST' }),
 	delete: (id: string) =>
 		api(`/admin/docs/pages/${id}`, { method: 'DELETE' }),
 };

@@ -87,7 +87,7 @@
 				{ path: "/content", label: t("nav.content", "All Content"), icon: FileText, permission: "admin.content.view" },
 				{ path: "/content-types", label: t("nav.content_types", "Content Types"), icon: LayoutGrid, permission: "admin.settings" },
 				{ path: "/blog/review-queue", label: t("nav.blog_review_queue", "Blog Posts"), icon: BookOpen, permission: "blog.review.manage" },
-			{ path: "/docs", label: t("nav.docs", "Documentation"), icon: FileCode, permission: "docs.manage" },
+			{ path: "/docs", label: t("nav.docs", "Documentation"), icon: FileCode, permission: "docs.admin" },
 			{ path: "/media", label: t("nav.media", "Media"), icon: Image, permission: "media.view_all" },
 			{ path: "/spaces", label: t("nav.spaces", "Spaces"), icon: Globe, permission: "spaces.admin" },
 			{ path: "/geo", label: t("nav.geo", "Geo Tools"), icon: Globe, permission: "geo.lookup" },

@@ -42,10 +42,11 @@ func NewService(database *db.DB) *Service {
 }
 
 // GetDocPageBySlug returns a published page by audience and slug. Checks the
-// Valkey cache first (jc:cache:page:docs:{audience}:{slug}, TTL 5min) and falls back
-// to the DB on miss (VALKEY-003).
+// Valkey cache first (jc:cache:page:docs:{audience}:{slug}:{tenant_id}, TTL 5min)
+// and falls back to the DB on miss (VALKEY-003). Cache key is tenant-scoped
+// to prevent cross-tenant data bleed (Rule 4, §4.2).
 func (s *Service) GetDocPageBySlug(ctx context.Context, tenantID pgtype.UUID, audience, slug string) (*DocPage, error) {
-	cacheKey := valkey.MustKey("cache:page:docs:%s:%s", audience, slug)
+	cacheKey := valkey.MustKey("cache:page:docs:%s:%s:%s", audience, slug, tenantID.String())
 	if s.cache != nil {
 		if cached, err := s.cache.Get(ctx, cacheKey).Result(); err == nil {
 			var page DocPage
@@ -162,16 +163,17 @@ func (s *Service) ListAllDocPages(ctx context.Context, tenantID pgtype.UUID) ([]
 	return pages, nil
 }
 
-// GetDocNav returns the published-pages navigation tree grouped by audience.
-// Checks the Valkey cache first (jc:cache:page:docs:nav, TTL 10min) and falls back
-// to the DB on miss (VALKEY-003).
-func (s *Service) GetDocNav(ctx context.Context, tenantID pgtype.UUID) ([]DocNavTree, error) {
-	cacheKey := valkey.MustKey("cache:page:docs:nav")
+// GetDocNav returns the published-pages navigation tree grouped by audience,
+// filtered to only the specified audiences. Checks the Valkey cache first
+// (jc:cache:page:docs:nav:{tenant_id}, TTL 10min) and falls back to the DB
+// on miss (VALKEY-003). Cache key is tenant-scoped (Rule 4, §4.2).
+func (s *Service) GetDocNav(ctx context.Context, tenantID pgtype.UUID, allowedAudiences []string) ([]DocNavTree, error) {
+	cacheKey := valkey.MustKey("cache:page:docs:nav:%s", tenantID.String())
 	if s.cache != nil {
 		if cached, err := s.cache.Get(ctx, cacheKey).Result(); err == nil {
 			var trees []DocNavTree
 			if jsonErr := json.Unmarshal([]byte(cached), &trees); jsonErr == nil {
-				return trees, nil
+				return filterNavTrees(trees, allowedAudiences), nil
 			}
 		}
 	}
@@ -190,7 +192,25 @@ func (s *Service) GetDocNav(ctx context.Context, tenantID pgtype.UUID) ([]DocNav
 		}
 	}
 
-	return trees, nil
+	return filterNavTrees(trees, allowedAudiences), nil
+}
+
+// filterNavTrees returns only the trees whose audience is in the allowed set.
+func filterNavTrees(trees []DocNavTree, allowed []string) []DocNavTree {
+	if len(allowed) == 0 {
+		return nil
+	}
+	allowedSet := make(map[string]bool, len(allowed))
+	for _, a := range allowed {
+		allowedSet[a] = true
+	}
+	filtered := make([]DocNavTree, 0, len(trees))
+	for _, t := range trees {
+		if allowedSet[t.Audience] {
+			filtered = append(filtered, t)
+		}
+	}
+	return filtered
 }
 
 // SearchDocPages returns published pages matching the query, with a plain-text excerpt.
@@ -217,6 +237,40 @@ func (s *Service) SearchDocPages(ctx context.Context, tenantID pgtype.UUID, quer
 	}
 
 	return results, nil
+}
+
+// SearchDocPagesInAudiences returns published pages matching the query,
+// restricted to the given set of audiences (§44 — audience-filtered search).
+func (s *Service) SearchDocPagesInAudiences(ctx context.Context, tenantID pgtype.UUID, query string, audiences []string, limit int32) ([]DocSearchResult, error) {
+	if len(audiences) == 0 {
+		return []DocSearchResult{}, nil
+	}
+
+	allResults := make([]DocSearchResult, 0, limit)
+	for _, aud := range audiences {
+		audPtr := &aud
+		rows, err := s.store.search(ctx, tenantID, query, audPtr, limit)
+		if err != nil {
+			return nil, err
+		}
+		for _, r := range rows {
+			allResults = append(allResults, DocSearchResult{
+				ID:       r.ID.String(),
+				Title:    r.Title,
+				Slug:     r.Slug,
+				Audience: r.Audience,
+				Excerpt:  extractExcerpt(r.Content, excerptMaxLen),
+			})
+			if int32(len(allResults)) >= limit {
+				break
+			}
+		}
+		if int32(len(allResults)) >= limit {
+			break
+		}
+	}
+
+	return allResults, nil
 }
 
 // excerptMaxLen caps search excerpts at a sidebar-friendly length.
@@ -327,25 +381,59 @@ func collectText(node any, b *strings.Builder) {
 	}
 }
 
-// invalidateCache clears the docs nav cache and a specific page cache after
-// create/update/delete operations (VALKEY-003). Best-effort: errors are logged.
-func (s *Service) invalidateCache(ctx context.Context, audience, slug string) {
+// invalidateCache clears the docs nav cache and optionally a specific page
+// cache after create/update/delete operations (VALKEY-003). All keys are
+// tenant-scoped to prevent cross-tenant cache bleed (Rule 4, §4.2).
+// Best-effort: errors are logged.
+func (s *Service) invalidateCache(ctx context.Context, tenantID pgtype.UUID, audience, slug string) {
 	if s.cache == nil {
 		return
 	}
-	keys := []string{valkey.MustKey("cache:page:docs:nav")}
+	keys := []string{valkey.MustKey("cache:page:docs:nav:%s", tenantID.String())}
 	if audience != "" && slug != "" {
-		keys = append(keys, valkey.MustKey("cache:page:docs:%s:%s", audience, slug))
+		keys = append(keys, valkey.MustKey("cache:page:docs:%s:%s:%s", audience, slug, tenantID.String()))
 	}
 	if err := s.cache.Del(ctx, keys...).Err(); err != nil {
 		slog.Warn("docs: failed to invalidate cache", "keys", keys, "error", err)
 	}
 }
 
-// CreateDocPage inserts a new documentation page.
-func (s *Service) CreateDocPage(ctx context.Context, tenantID pgtype.UUID, req CreateDocPageRequest) error {
+// invalidateAllPageCaches flushes the nav cache and all page caches for a
+// tenant. Used after update/delete when we don't know the specific page's
+// audience+slug (BUG-016 fix — stale page content after update).
+func (s *Service) invalidateAllPageCaches(ctx context.Context, tenantID pgtype.UUID) {
+	if s.cache == nil {
+		return
+	}
+	// Delete the nav cache.
+	navKey := valkey.MustKey("cache:page:docs:nav:%s", tenantID.String())
+	if err := s.cache.Del(ctx, navKey).Err(); err != nil {
+		slog.Warn("docs: failed to invalidate nav cache", "key", navKey, "error", err)
+	}
+	// Best-effort: scan and delete all page caches for this tenant.
+	// Pattern: jc:cache:page:docs:*:*:{tenant_id}
+	pattern := valkey.MustKey("cache:page:docs:*:*:%s", tenantID.String())
+	var cursor uint64
+	for {
+		keys, nextCursor, err := s.cache.Scan(ctx, cursor, pattern, 100).Result()
+		if err != nil {
+			slog.Warn("docs: scan failed during cache invalidation", "pattern", pattern, "error", err)
+			return
+		}
+		if len(keys) > 0 {
+			s.cache.Del(ctx, keys...)
+		}
+		cursor = nextCursor
+		if cursor == 0 {
+			break
+		}
+	}
+}
+
+// CreateDocPage inserts a new documentation page and returns its ID.
+func (s *Service) CreateDocPage(ctx context.Context, tenantID pgtype.UUID, req CreateDocPageRequest) (pgtype.UUID, error) {
 	if !ValidAudiences[req.Audience] {
-		return fmt.Errorf("invalid audience: %s", req.Audience)
+		return pgtype.UUID{}, fmt.Errorf("invalid audience: %s", req.Audience)
 	}
 
 	status := req.ReviewStatus
@@ -354,7 +442,7 @@ func (s *Service) CreateDocPage(ctx context.Context, tenantID pgtype.UUID, req C
 	}
 
 	if !ValidReviewStatuses[status] {
-		return fmt.Errorf("invalid review_status: %s", status)
+		return pgtype.UUID{}, fmt.Errorf("invalid review_status: %s", status)
 	}
 
 	contentBytes := []byte(req.Content)
@@ -365,11 +453,11 @@ func (s *Service) CreateDocPage(ctx context.Context, tenantID pgtype.UUID, req C
 	var parentID pgtype.UUID
 	if req.ParentID != nil {
 		if err := parentID.Scan(*req.ParentID); err != nil {
-			return fmt.Errorf("invalid parent_id %q: %w", *req.ParentID, err)
+			return pgtype.UUID{}, fmt.Errorf("invalid parent_id %q: %w", *req.ParentID, err)
 		}
 	}
 
-	if err := s.store.create(ctx, gen.CreateDocPageParams{
+	id, err := s.store.create(ctx, gen.CreateDocPageParams{
 		TenantID:     tenantID,
 		Title:        req.Title,
 		Slug:         req.Slug,
@@ -379,12 +467,13 @@ func (s *Service) CreateDocPage(ctx context.Context, tenantID pgtype.UUID, req C
 		ReviewStatus: status,
 		ParentID:     parentID,
 		Position:     req.Position,
-	}); err != nil {
-		return err
+	})
+	if err != nil {
+		return pgtype.UUID{}, err
 	}
 
-	s.invalidateCache(ctx, req.Audience, req.Slug)
-	return nil
+	s.invalidateCache(ctx, tenantID, req.Audience, req.Slug)
+	return id, nil
 }
 
 // UpdateDocPage modifies an existing documentation page.
@@ -399,6 +488,8 @@ func (s *Service) UpdateDocPage(ctx context.Context, tenantID, id pgtype.UUID, r
 	}
 
 	// Preserve existing content when the request doesn't include it (e.g. status-only toggle).
+	// BUG-011 fix: use req.Content directly as []byte (same as CreateDocPage),
+	// do NOT double-encode with json.Marshal(string(...)).
 	contentBytes := req.Content
 	if contentBytes == nil {
 		existing, err := s.store.getByID(ctx, tenantID, id)
@@ -406,18 +497,23 @@ func (s *Service) UpdateDocPage(ctx context.Context, tenantID, id pgtype.UUID, r
 			return fmt.Errorf("fetching existing page for content merge: %w", err)
 		}
 		contentBytes = existing.Content
-	} else {
-		var err error
-		contentBytes, err = json.Marshal(string(req.Content))
-		if err != nil {
-			return fmt.Errorf("marshaling content: %w", err)
-		}
+	}
+
+	// Fetch existing page for title fallback and cache invalidation.
+	existing, err := s.store.getByID(ctx, tenantID, id)
+	if err != nil {
+		return fmt.Errorf("fetching existing page: %w", err)
+	}
+
+	title := req.Title
+	if title == "" {
+		title = existing.Title
 	}
 
 	if err := s.store.update(ctx, gen.UpdateDocPageParams{
 		ID:             id,
 		TenantID:       tenantID,
-		Title:          req.Title,
+		Title:          title,
 		Content:        contentBytes,
 		ReviewStatus:   status,
 		LastReviewedBy: pgtype.UUID{},
@@ -425,18 +521,79 @@ func (s *Service) UpdateDocPage(ctx context.Context, tenantID, id pgtype.UUID, r
 		return err
 	}
 
-	// Invalidate nav (title may have changed) and the page cache. We don't
-	// know the audience/slug here without an extra read, so just flush nav.
-	s.invalidateCache(ctx, "", "")
+	// Invalidate nav + the specific page cache (BUG-016 fix).
+	s.invalidateCache(ctx, tenantID, existing.Audience, existing.Slug)
+	return nil
+}
+
+// ApproveDocPage sets review_status to 'approved' and records the reviewer (§44).
+func (s *Service) ApproveDocPage(ctx context.Context, tenantID, id, reviewerID pgtype.UUID) error {
+	if err := s.store.updateStatus(ctx, gen.UpdateDocPageStatusParams{
+		ID:             id,
+		TenantID:       tenantID,
+		ReviewStatus:   "approved",
+		LastReviewedBy: reviewerID,
+	}); err != nil {
+		return err
+	}
+
+	// Invalidate caches for this page.
+	existing, err := s.store.getByID(ctx, tenantID, id)
+	if err == nil {
+		s.invalidateCache(ctx, tenantID, existing.Audience, existing.Slug)
+	} else {
+		s.invalidateAllPageCaches(ctx, tenantID)
+	}
+	return nil
+}
+
+// PublishDocPage sets review_status to 'published'. Requires current status = 'approved' (§44).
+func (s *Service) PublishDocPage(ctx context.Context, tenantID, id, reviewerID pgtype.UUID) error {
+	// Validate status transition: must be 'approved' before publishing.
+	currentStatus, err := s.store.getStatus(ctx, gen.GetDocPageStatusParams{
+		ID:       id,
+		TenantID: tenantID,
+	})
+	if err != nil {
+		return fmt.Errorf("fetching current status: %w", err)
+	}
+
+	if currentStatus != "approved" {
+		return fmt.Errorf("cannot publish: current status is %q, must be 'approved'", currentStatus)
+	}
+
+	if err := s.store.updateStatus(ctx, gen.UpdateDocPageStatusParams{
+		ID:             id,
+		TenantID:       tenantID,
+		ReviewStatus:   "published",
+		LastReviewedBy: reviewerID,
+	}); err != nil {
+		return err
+	}
+
+	// Invalidate caches for this page.
+	existing, err := s.store.getByID(ctx, tenantID, id)
+	if err == nil {
+		s.invalidateCache(ctx, tenantID, existing.Audience, existing.Slug)
+	} else {
+		s.invalidateAllPageCaches(ctx, tenantID)
+	}
 	return nil
 }
 
 // DeleteDocPage removes a documentation page.
 func (s *Service) DeleteDocPage(ctx context.Context, tenantID, id pgtype.UUID) error {
+	// Fetch the page before deleting so we can invalidate its cache.
+	existing, err := s.store.getByID(ctx, tenantID, id)
+	if err == nil {
+		s.invalidateCache(ctx, tenantID, existing.Audience, existing.Slug)
+	} else {
+		s.invalidateAllPageCaches(ctx, tenantID)
+	}
+
 	if err := s.store.delete(ctx, tenantID, id); err != nil {
 		return err
 	}
-	s.invalidateCache(ctx, "", "")
 	return nil
 }
 

@@ -1,6 +1,7 @@
 package docs
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -12,8 +13,10 @@ import (
 	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/auth"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/publicapi"
+	"github.com/jedafe/japa/internal/rbac"
 	"github.com/jedafe/japa/internal/tenant"
 	"github.com/jedafe/japa/internal/worker"
 )
@@ -23,17 +26,42 @@ type TaskEnqueueClient interface {
 	Enqueue(task *asynq.Task, opts ...asynq.Option) (*asynq.TaskInfo, error)
 }
 
+// PermissionChecker is the interface for RBAC permission checks.
+type PermissionChecker interface {
+	HasPermission(ctx context.Context, userID, tenantID pgtype.UUID, permKey string) bool
+}
+
+// audienceGates maps each audience to the RBAC permission node required to read
+// it. Audiences not in this map (users, api) are public — no auth required.
+// Ref: japaconnect-engineering/sections/44-documentation-system.md
+var audienceGates = map[string]string{
+	"premium":       "membership.pro",
+	"organizations": "organizations.member",
+	"moderators":    "moderation.queue.view",
+	"admin":         "admin.panel.access",
+	"superadmin":    "admin.panel.access", // super_admin group holds wildcard
+}
+
 // Handlers holds dependencies for documentation HTTP handlers.
 type Handlers struct {
 	Service     *Service
 	siteURL     string
 	siteName    string
 	AsynqClient TaskEnqueueClient
+	rbac        PermissionChecker
 }
 
 // NewHandlers creates Handlers with the given Service.
 func NewHandlers(service *Service, siteURL string, siteName string) *Handlers {
 	return &Handlers{Service: service, siteURL: siteURL, siteName: siteName}
+}
+
+// SetRBAC injects the RBAC resolver for audience-gating checks (§44).
+func (h *Handlers) SetRBAC(r *rbac.RBAC) {
+	if r == nil {
+		return
+	}
+	h.rbac = r
 }
 
 // enqueueSearchIndex enqueues an async task to sync a doc page to the
@@ -72,6 +100,60 @@ func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype
 	}
 
 	return t.ID, true
+}
+
+// checkAudienceGate verifies the requester may read the given audience.
+// Public audiences (users, api) always pass. Gated audiences require auth
+// and the RBAC permission node mapped in audienceGates (§44).
+// Returns true if access is allowed; false and writes a 403 if denied.
+func (h *Handlers) checkAudienceGate(w http.ResponseWriter, r *http.Request, tenantID pgtype.UUID, audience string) bool {
+	requiredPerm, gated := audienceGates[audience]
+	if !gated {
+		return true // public audience
+	}
+
+	user := auth.FromContext(r.Context())
+	if user == nil {
+		writeError(w, http.StatusForbidden, "audience_forbidden", "This documentation section requires authentication")
+		return false
+	}
+
+	if h.rbac == nil {
+		// Fallback: deny if no RBAC resolver configured (defensive).
+		writeError(w, http.StatusForbidden, "audience_forbidden", "Access denied")
+		return false
+	}
+
+	if !h.rbac.HasPermission(r.Context(), user.UserID, tenantID, requiredPerm) {
+		writeError(w, http.StatusForbidden, "audience_forbidden", "You do not have access to this documentation section")
+		return false
+	}
+
+	return true
+}
+
+// accessibleAudiences returns the list of audiences the requester may read,
+// in canonical display order. Used to filter nav tree and search results.
+func (h *Handlers) accessibleAudiences(r *http.Request, tenantID pgtype.UUID) []string {
+	user := auth.FromContext(r.Context())
+	if user == nil || h.rbac == nil {
+		// Guest or no RBAC: only public audiences.
+		return []string{"users", "api"}
+	}
+
+	allowed := make([]string, 0, len(AudienceOrder))
+	for _, aud := range AudienceOrder {
+		requiredPerm, gated := audienceGates[aud]
+		if !gated {
+			allowed = append(allowed, aud)
+			continue
+		}
+		if h.rbac.HasPermission(r.Context(), user.UserID, tenantID, requiredPerm) {
+			allowed = append(allowed, aud)
+		}
+	}
+
+	return allowed
 }
 
 // requireUser resolves the authenticated user from the request context.
@@ -125,6 +207,10 @@ func (h *Handlers) ListDocPages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if !h.checkAudienceGate(w, r, tenantID, audience) {
+		return
+	}
+
 	pages, err := h.Service.ListDocPagesByAudience(r.Context(), tenantID, audience)
 	if err != nil {
 		handleServiceError(w, err)
@@ -150,6 +236,10 @@ func (h *Handlers) GetDocPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if !h.checkAudienceGate(w, r, tenantID, audience) {
+		return
+	}
+
 	page, err := h.Service.GetDocPageBySlug(r.Context(), tenantID, audience, slug)
 	if err != nil {
 		handleServiceError(w, err)
@@ -160,14 +250,17 @@ func (h *Handlers) GetDocPage(w http.ResponseWriter, r *http.Request) {
 }
 
 // ListDocNav handles GET /api/v1/docs/nav.
-// Returns the published-pages navigation tree grouped by audience.
+// Returns the published-pages navigation tree grouped by audience, filtered
+// to only the audiences the requester may read (§44 — audience-gated nav).
 func (h *Handlers) ListDocNav(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	nav, err := h.Service.GetDocNav(r.Context(), tenantID)
+	allowed := h.accessibleAudiences(r, tenantID)
+
+	nav, err := h.Service.GetDocNav(r.Context(), tenantID, allowed)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -177,8 +270,9 @@ func (h *Handlers) ListDocNav(w http.ResponseWriter, r *http.Request) {
 }
 
 // SearchDocPages handles GET /api/v1/docs/search?q=&audience=&limit=.
-// Searches published pages by title or content. When audience is provided,
-// results are filtered to that audience section (ADR-060 — audience-filtered search).
+// Searches published pages by title or content. Results are filtered to
+// only the audiences the requester may read (§44 — audience-filtered search).
+// When audience is provided, results are further filtered to that section.
 func (h *Handlers) SearchDocPages(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -197,6 +291,21 @@ func (h *Handlers) SearchDocPages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Restrict to accessible audiences (§44 — only return pages the requester can see).
+	allowed := h.accessibleAudiences(r, tenantID)
+	if audience != "" {
+		// If the requester asked for a specific audience they can't access, deny.
+		allowedSet := make(map[string]bool, len(allowed))
+		for _, a := range allowed {
+			allowedSet[a] = true
+		}
+		if !allowedSet[audience] {
+			writeError(w, http.StatusForbidden, "audience_forbidden", "You do not have access to this documentation section")
+			return
+		}
+		allowed = []string{audience}
+	}
+
 	limit := int32(10)
 	if raw := r.URL.Query().Get("limit"); raw != "" {
 		if n, err := strconv.Atoi(raw); err == nil && n > 0 && n <= 50 {
@@ -204,7 +313,7 @@ func (h *Handlers) SearchDocPages(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	results, err := h.Service.SearchDocPages(r.Context(), tenantID, q, audience, limit)
+	results, err := h.Service.SearchDocPagesInAudiences(r.Context(), tenantID, q, allowed, limit)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -251,7 +360,7 @@ func (h *Handlers) ListAllDocPages(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"data": pages})
 }
 
-// CreateDocPage handles POST /api/v1/admin/docs.
+// CreateDocPage handles POST /api/v1/admin/docs/pages.
 func (h *Handlers) CreateDocPage(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -269,24 +378,51 @@ func (h *Handlers) CreateDocPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Service.CreateDocPage(r.Context(), tenantID, req); err != nil {
+	pageID, err := h.Service.CreateDocPage(r.Context(), tenantID, req)
+	if err != nil {
 		slog.Error("CreateDocPage failed", "err", err, "title", req.Title, "slug", req.Slug)
 		handleServiceError(w, err)
 		return
 	}
 
-	// SEARCH-001: enqueue Meilisearch index sync for the new doc page.
-	if page, err := h.Service.GetDocPageBySlug(r.Context(), tenantID, req.Audience, req.Slug); err == nil {
-		var pageID pgtype.UUID
-		if scanErr := pageID.Scan(page.ID); scanErr == nil {
-			h.enqueueSearchIndex(pageID, tenantID, "index")
-		}
+	// Enqueue Meilisearch index sync for the new doc page.
+	h.enqueueSearchIndex(pageID, tenantID, "index")
+
+	// Fetch the created page to return it (any status — use GetDocPageByID).
+	page, fetchErr := h.Service.GetDocPageByID(r.Context(), tenantID, pageID)
+	if fetchErr != nil {
+		// Page was created but we can't fetch it — return minimal success.
+		writeJSON(w, http.StatusCreated, map[string]any{"data": map[string]any{"id": pageID.String(), "status": "created", "slug": req.Slug, "audience": req.Audience}})
+		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]string{"status": "created"})
+	writeJSON(w, http.StatusCreated, map[string]any{"data": page})
 }
 
-// UpdateDocPage handles PATCH /api/v1/admin/docs/{id}.
+// GetAdminDocPage handles GET /api/v1/admin/docs/pages/{id}.
+// Returns a single page by ID (any status) for admin detail view.
+func (h *Handlers) GetAdminDocPage(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	var id pgtype.UUID
+	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid page ID")
+		return
+	}
+
+	page, err := h.Service.GetDocPageByID(r.Context(), tenantID, id)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": page})
+}
+
+// UpdateDocPage handles PATCH /api/v1/admin/docs/pages/{id}.
 func (h *Handlers) UpdateDocPage(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -305,8 +441,10 @@ func (h *Handlers) UpdateDocPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.Title == "" {
-		writeError(w, http.StatusBadRequest, "missing_fields", "title is required")
+	// Title is required only when content is being updated (not for status-only
+	// toggles like approve/publish which use dedicated handlers).
+	if req.Title == "" && req.Content != nil {
+		writeError(w, http.StatusBadRequest, "missing_fields", "title is required when updating content")
 		return
 	}
 
@@ -318,7 +456,65 @@ func (h *Handlers) UpdateDocPage(w http.ResponseWriter, r *http.Request) {
 	// SEARCH-001: enqueue Meilisearch index sync for the updated doc page.
 	h.enqueueSearchIndex(id, tenantID, "index")
 
-	writeJSON(w, http.StatusOK, map[string]string{"status": "updated"})
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "updated"}})
+}
+
+// ApproveDocPage handles POST /api/v1/admin/docs/pages/{id}/approve.
+// Sets review_status to 'approved' and records the reviewer (§44).
+func (h *Handlers) ApproveDocPage(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	var id pgtype.UUID
+	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid page ID")
+		return
+	}
+
+	user := auth.FromContext(r.Context())
+	if user == nil {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		return
+	}
+
+	if err := h.Service.ApproveDocPage(r.Context(), tenantID, id, user.UserID); err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	h.enqueueSearchIndex(id, tenantID, "index")
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "approved"}})
+}
+
+// PublishDocPage handles POST /api/v1/admin/docs/pages/{id}/publish.
+// Sets review_status to 'published'. Requires current status = 'approved' (§44).
+func (h *Handlers) PublishDocPage(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	var id pgtype.UUID
+	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid page ID")
+		return
+	}
+
+	user := auth.FromContext(r.Context())
+	if user == nil {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		return
+	}
+
+	if err := h.Service.PublishDocPage(r.Context(), tenantID, id, user.UserID); err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	h.enqueueSearchIndex(id, tenantID, "index")
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "published"}})
 }
 
 // DeleteDocPage handles DELETE /api/v1/admin/docs/{id}.
