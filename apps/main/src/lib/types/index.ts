@@ -2169,3 +2169,551 @@ export interface TravelSearchResponse {
 	cache_hit: boolean;
 	search_time_ms: number;
 }
+
+/* ================================================================== *
+ * V2 Community Features (§79–§89, §98) + §102 Mentorship Matching
+ *
+ * Shapes mirror the Go backend DTOs exactly (verified against the
+ * internal/{story,wiki,scamalert,planninggroups,visatimeline,digest,
+ * mutualaid,calendar,japastage,ama,achievement,servicedir,mentorship}
+ * service.go JSON tags). Optional backend fields use `omitempty` and
+ * are marked optional here; nullable pointer/pgtype fields are unioned
+ * with null.
+ * ================================================================== */
+
+// --- Section 79: Community Story Wall ---
+export interface Story {
+	id: string;
+	title: string;
+	slug: string;
+	body: string;
+	body_html: string;
+	status: string;
+	visibility: string;
+	view_count: number;
+	comment_count: number;
+	published_at: string;
+	created_at: string;
+	updated_at: string;
+	origin_space_id?: string;
+	origin_space_name?: string;
+	origin_space_code?: string;
+	destination_space_id: string;
+	destination_space_name: string;
+	destination_space_code?: string;
+	relocation_year?: number;
+	visa_category?: string;
+	profession?: string;
+	biggest_challenge?: string;
+	most_useful_resource?: string;
+	best_advice?: string;
+	verified: boolean;
+	author_name?: string;
+	author_avatar?: string;
+}
+
+/** Structured meta subset of a Story (origin/destination/year/visa/highlights). */
+export interface StoryMeta {
+	origin_space_name: string | null;
+	destination_space_name: string | null;
+	relocation_year: number | null;
+	visa_category: string | null;
+	profession: string | null;
+	biggest_challenge: string | null;
+	most_useful_resource: string | null;
+	best_advice: string | null;
+	verified: boolean;
+}
+
+// --- Section 80: Destination Wiki ---
+export type WikiCategory =
+	| 'overview'
+	| 'visa'
+	| 'cost_of_living'
+	| 'healthcare'
+	| 'banking'
+	| 'community'
+	| 'housing'
+	| 'other';
+
+export interface WikiPageIndex {
+	id: string;
+	space_id: string;
+	slug: string;
+	title: string;
+	category: string;
+	is_featured: boolean;
+	is_locked: boolean;
+	updated_at: string;
+	space_slug?: string;
+	space_name?: string;
+}
+
+export interface WikiPage extends WikiPageIndex {
+	space_slug: string;
+	space_name: string;
+	current_content: unknown;
+	revision_summary?: string;
+	submitted_by?: string;
+}
+
+export type WikiRevisionStatus = 'approved' | 'rejected' | 'pending';
+
+export interface WikiRevision {
+	id: string;
+	status: string;
+	content?: unknown;
+	summary?: string;
+	ai_generated: boolean;
+	submitted_by?: string;
+	reviewed_by?: string;
+	reviewed_at?: string;
+	created_at: string;
+}
+
+// --- Section 81: Scam Alert Board ---
+export type ScamType =
+	| 'fraudulent_agent'
+	| 'fake_job'
+	| 'housing_fraud'
+	| 'fake_scholarship'
+	| 'whatsapp_telegram'
+	| 'other';
+
+export type ScamStatus = 'new' | 'under_review' | 'confirmed' | 'rejected';
+
+export type ScamPlatform = string;
+
+export interface ScamReport {
+	id: string;
+	scam_type: string;
+	destination_space_id?: string;
+	destination_space_name?: string;
+	destination_space_code?: string;
+	origin_space_id?: string;
+	origin_space_name?: string;
+	origin_space_code?: string;
+	origin_community?: string;
+	platform_used?: string;
+	approximate_date?: string;
+	amount_range?: string;
+	description: string;
+	reported_to_authorities: boolean;
+	status: string;
+	moderator_note?: string;
+	is_pinned: boolean;
+	pinned_space_id?: string;
+	reviewed_by?: string;
+	reviewed_at?: string;
+	created_at: string;
+	updated_at?: string;
+	reporter_name?: string;
+}
+
+// --- Section 82: Japa Planning Groups ---
+export interface PlanningGroup {
+	id: string;
+	name: string;
+	description?: string;
+	destination_space_id: string;
+	visa_category?: string;
+	target_departure_window?: string;
+	target_departure_at?: string;
+	max_members?: number;
+	is_open_join: boolean;
+	owner_id: string;
+	expires_at?: string;
+	created_at: string;
+	updated_at?: string;
+}
+
+export interface PlanningMilestone {
+	id: string;
+	group_id: string;
+	user_id: string;
+	title: string;
+	completed: boolean;
+	completed_at?: string;
+	created_at: string;
+}
+
+/** GET /planning-groups/:id/members item — a planning group member. */
+export interface MemberDTO {
+	user_id: string;
+	departure_date?: string;
+	joined_at: string;
+	username?: string;
+	avatar_url?: string;
+}
+
+export interface PlanningCheckin {
+	id: string;
+	group_id: string;
+	user_id: string;
+	note: string;
+	created_at: string;
+	username?: string;
+}
+
+// --- Section 83: Visa Timeline Tracker ---
+export type VisaApplicationMethod = 'online' | 'in_person' | 'vfs';
+
+export type VisaMilestoneType =
+	| 'applied'
+	| 'biometrics'
+	| 'medical'
+	| 'docs_requested'
+	| 'decision'
+	| 'visa_issued';
+
+export type VisaTimelineOutcome = 'approved' | 'refused' | 'withdrawn' | 'pending';
+
+export interface VisaTimeline {
+	id: string;
+	user_id: string;
+	origin_space_id?: string;
+	destination_space_id: string;
+	visa_category: string;
+	consulate?: string;
+	application_method?: string;
+	outcome?: string;
+	is_shared: boolean;
+	anonymised_at?: string;
+	created_at: string;
+	updated_at: string;
+	milestones?: VisaTimelineMilestone[];
+}
+
+export interface VisaTimelineMilestone {
+	id: string;
+	timeline_id: string;
+	milestone_type: string;
+	occurred_at: string;
+	notes?: string;
+	created_at: string;
+}
+
+export interface VisaProcessingStats {
+	origin_space_id?: string;
+	destination_space_id: string;
+	visa_category: string;
+	consulate?: string;
+	period_start: string;
+	sample_count: number;
+	avg_days?: number;
+	median_days?: number;
+	p10_days?: number;
+	p90_days?: number;
+	refreshed_at: string;
+}
+
+export interface TrendPoint {
+	period_start: string;
+	sample_count: number;
+	avg_days?: number;
+	median_days?: number;
+}
+
+// --- Section 84: Community Digest Widget ---
+export interface DigestEdition {
+	id: string;
+	space_id?: string;
+	cadence: string;
+	status: string;
+	scheduled_for?: string;
+	published_at?: string;
+	email_sent: boolean;
+	generated_by?: string;
+	reviewed_by?: string;
+	created_at: string;
+	/** JSONB content blob (present on the detail/latest endpoint). */
+	content?: DigestContent | string | null;
+}
+
+export interface DigestContent {
+	top_threads?: DigestThread[];
+	new_members?: DigestMember[];
+	events?: DigestEvent[];
+	story?: DigestStory | null;
+	poll?: DigestPoll | null;
+	[key: string]: unknown;
+}
+
+export interface DigestThread {
+	id?: string;
+	title?: string;
+	slug?: string;
+	url?: string;
+}
+
+export interface DigestMember {
+	id?: string;
+	username?: string;
+	name?: string;
+	avatar_url?: string;
+}
+
+export interface DigestEvent {
+	id?: string;
+	title?: string;
+	url?: string;
+	starts_at?: string;
+}
+
+export interface DigestStory {
+	title?: string;
+	slug?: string;
+	url?: string;
+}
+
+export interface DigestPoll {
+	question?: string;
+	url?: string;
+}
+
+// --- Section 85: Mutual Aid Board ---
+export type MutualAidPostType = 'need' | 'offer' | 'skill_swap';
+
+export type MutualAidCategory =
+	| 'housing'
+	| 'transport'
+	| 'documents'
+	| 'job_search'
+	| 'language'
+	| 'social'
+	| 'other';
+
+export interface MutualAidPost {
+	id: string;
+	post_type: string;
+	category?: string;
+	title: string;
+	description?: string;
+	destination_space_id: string;
+	destination_space_name?: string;
+	destination_space_code?: string;
+	city_space_id?: string;
+	city_space_name?: string;
+	city_space_code?: string;
+	is_fulfilled: boolean;
+	status: string;
+	expires_at: string;
+	created_at: string;
+	updated_at: string;
+	author_id?: string;
+	author_name?: string;
+	author_avatar?: string;
+}
+
+// --- Section 86: Community Calendar ---
+export type CalendarCategory =
+	| 'visa_window'
+	| 'embassy_closure'
+	| 'application_deadline'
+	| 'exam_window'
+	| 'immigration_office'
+	| 'other';
+
+export interface CalendarEntry {
+	id: string;
+	title: string;
+	description?: string;
+	category: string;
+	destination_space_id?: string;
+	origin_space_id?: string;
+	occurs_at: string;
+	ends_at?: string;
+	is_recurring: boolean;
+	recurrence_pattern?: string;
+	source_url?: string;
+	status?: string;
+	submitted_by?: string;
+	reviewed_by?: string;
+	reviewed_at?: string;
+	created_at: string;
+	updated_at?: string;
+}
+
+// --- Section 87: Japa Stage Profiles ---
+export type JapaStage =
+	| 'considering'
+	| 'planning'
+	| 'preparing'
+	| 'applied'
+	| 'approved'
+	| 'relocated'
+	| 'settled';
+
+/** GET /me/japa-stage — the caller's own stage profile. */
+export interface MyJapaStage {
+	user_id: string;
+	username?: string;
+	display_name?: string;
+	avatar_url?: string;
+	stage: string;
+	destination_space_id?: string;
+	destination_space_name?: string;
+	destination_space_code?: string;
+	is_public: boolean;
+	history?: unknown;
+	updated_at?: string;
+}
+
+/** GET /members/by-stage item — a public member's stage card. */
+export interface MemberStage {
+	user_id: string;
+	username?: string;
+	display_name?: string;
+	avatar_url?: string;
+	stage: string;
+	destination_space_id?: string;
+	destination_space_name?: string;
+	destination_space_code?: string;
+	updated_at?: string;
+}
+
+// --- Section 88: Ask an Expat (AMA) ---
+export interface AMAThread {
+	id: string;
+	title: string;
+	slug: string;
+	body: string;
+	status: string;
+	author_name?: string;
+	author_avatar?: string;
+	ama_config: unknown;
+	created_at: string;
+	updated_at: string;
+}
+
+// --- Section 89: Achievement Feed ---
+export type AchievementMilestoneType =
+	| 'visa_approved'
+	| 'job_offer'
+	| 'university_accepted'
+	| 'arrived'
+	| 'one_year'
+	| 'citizenship'
+	| 'other';
+
+export interface Achievement {
+	id: string;
+	title: string;
+	slug: string;
+	body: string;
+	body_html: string;
+	status: string;
+	visibility: string;
+	view_count: number;
+	comment_count: number;
+	published_at: string;
+	created_at: string;
+	updated_at: string;
+	milestone_type?: string;
+	origin_space_id?: string;
+	origin_space_name?: string;
+	origin_space_code?: string;
+	destination_space_id: string;
+	destination_space_name: string;
+	destination_space_code?: string;
+	is_anonymous: boolean;
+	author_name?: string;
+	author_avatar?: string;
+}
+
+// --- Section 98: Service Directory ---
+export type ServiceCategory =
+	| 'immigration_legal'
+	| 'relocation'
+	| 'finance'
+	| 'education'
+	| 'health'
+	| 'community'
+	| 'other';
+
+export interface ServiceListing {
+	id: string;
+	title: string;
+	slug: string;
+	body: string;
+	body_html: string;
+	status: string;
+	visibility: string;
+	view_count: number;
+	comment_count: number;
+	published_at: string;
+	created_at: string;
+	updated_at: string;
+	org_id?: string;
+	org_name?: string;
+	org_slug?: string;
+	service_category?: string;
+	destination_space_id?: string;
+	destination_space_name?: string;
+	destination_space_code?: string;
+	city_space_id?: string;
+	city_space_name?: string;
+	city_space_code?: string;
+	origin_communities?: unknown;
+	is_remote: boolean;
+	website_url?: string;
+	booking_url?: string;
+	price_range?: string;
+	is_verified: boolean;
+	verification_type?: string;
+	claim_status?: string;
+	claimed_by_org_id?: string;
+	claimed_org_name?: string;
+	author_name?: string;
+	author_avatar?: string;
+}
+
+// --- Section 102: Mentorship Matching ---
+/** GET /mentors item — a mentor's public discovery card. */
+export interface Mentor {
+	user_id: string;
+	username: string;
+	display_name: string | null;
+	avatar_url: string | null;
+	mentor_areas: string[];
+	mentor_bio: string | null;
+	mentor_since: string | null;
+	mentor_capacity: number | null;
+	active_mentee_count: number | null;
+	available_slots: number;
+}
+
+/** GET /me/mentor-profile — the caller's own mentor settings. */
+export interface MentorProfile {
+	user_id: string;
+	tenant_id: string;
+	is_mentor: boolean | null;
+	mentor_capacity: number | null;
+	active_mentee_count: number | null;
+	mentor_areas: string[];
+	mentor_bio: string | null;
+	mentor_since: string | null;
+	display_name: string | null;
+	avatar_url: string | null;
+}
+
+/** Mentorship connection (outgoing/incoming/admin list item). */
+export interface MentorshipConnection {
+	id: string;
+	tenant_id: string;
+	mentor_id: string;
+	mentee_id: string;
+	status: string;
+	goals: string | null;
+	destination_space_id: string;
+	responded_at: string | null;
+	completed_at: string | null;
+	cancelled_at: string | null;
+	cancel_reason: string | null;
+	created_at: string;
+	updated_at: string;
+	mentor_username?: string;
+	mentee_username?: string;
+	mentor_display_name?: string;
+	mentee_display_name?: string;
+}

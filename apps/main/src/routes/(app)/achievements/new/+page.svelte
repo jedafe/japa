@@ -1,0 +1,229 @@
+<script lang="ts">
+	// Ref: japaconnect-engineering/sections/89-achievement-feed.md
+	// Create achievement form. Submits via the browser API client (POST /achievements,
+	// auth required). On success navigates to the new achievement's detail page.
+	// The milestone_type select options mirror the schema-defined enum (Rule 16).
+	import { t } from '$lib/i18n';
+	import { page } from '$app/state';
+	import { goto } from '$app/navigation';
+	import { api } from '$lib/api/client';
+	import { Trophy, Plus, Loader2 } from 'lucide-svelte';
+	import type { Achievement, AchievementMilestoneType } from '$lib/types';
+	import type { PageData } from './$types';
+
+	let { data }: { data: PageData } = $props();
+
+	let title = $state('');
+	let body = $state('');
+	let milestoneType = $state<AchievementMilestoneType>('visa_approved');
+	let destinationSpaceId = $state('');
+	let originSpaceId = $state('');
+	let isAnonymous = $state(false);
+	let loading = $state(false);
+	let errorKey = $state('');
+
+	const pageTitle = $derived(t('achievements.new_title', 'Share an Achievement — JapaConnect'));
+	const pageDescription = $derived(
+		t('achievements.new_description', 'Share a relocation milestone with the community.')
+	);
+
+	const milestoneOptions: { value: AchievementMilestoneType; label: string }[] = [
+		{ value: 'visa_approved', label: t('achievements.type_visa_approved', 'Visa approved') },
+		{ value: 'job_offer', label: t('achievements.type_job_offer', 'Job offer') },
+		{ value: 'university_accepted', label: t('achievements.type_university_accepted', 'University accepted') },
+		{ value: 'arrived', label: t('achievements.type_arrived', 'Arrived') },
+		{ value: 'one_year', label: t('achievements.type_one_year', 'One year') },
+		{ value: 'citizenship', label: t('achievements.type_citizenship', 'Citizenship') },
+		{ value: 'other', label: t('achievements.type_other', 'Other') }
+	];
+
+	const inputClass =
+		'w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20';
+
+	function validate(): boolean {
+		if (!title.trim()) {
+			errorKey = 'achievements.errors.title_required';
+			return false;
+		}
+		if (!body.trim()) {
+			errorKey = 'achievements.errors.body_required';
+			return false;
+		}
+		if (!destinationSpaceId) {
+			errorKey = 'achievements.errors.destination_required';
+			return false;
+		}
+		return true;
+	}
+
+	async function submit(e: SubmitEvent) {
+		e.preventDefault();
+		errorKey = '';
+		if (!validate()) return;
+		loading = true;
+		try {
+			const res = await api.post<Achievement>('/achievements', {
+				title: title.trim(),
+				body: body.trim(),
+				milestone_type: milestoneType,
+				destination_space_id: destinationSpaceId,
+				origin_space_id: originSpaceId || undefined,
+				is_anonymous: isAnonymous
+			});
+			if (res.data?.slug) {
+				await goto(`/achievements/${res.data.slug}`);
+			} else {
+				errorKey = 'achievements.errors.submit_failed';
+			}
+		} catch {
+			errorKey = 'achievements.errors.submit_failed';
+		} finally {
+			loading = false;
+		}
+	}
+</script>
+
+<svelte:head>
+	<title>{pageTitle}</title>
+	<meta name="description" content={pageDescription} />
+	<meta property="og:title" content={pageTitle} />
+	<meta property="og:description" content={pageDescription} />
+	<meta property="og:type" content="website" />
+	<meta property="og:url" content={page.url.href} />
+</svelte:head>
+
+<div class="mx-auto w-full max-w-2xl px-4 py-6">
+	<!-- Header -->
+	<div class="mb-5 flex items-center gap-2">
+		<Trophy size={20} class="text-[var(--color-primary)]" />
+		<h1 class="text-lg font-semibold text-[var(--color-text)]">
+			{t('achievements.new_heading', 'Share an Achievement')}
+		</h1>
+	</div>
+	<p class="mb-5 text-sm text-[var(--color-text-subtle)]">
+		{t('achievements.new_subtitle', 'Celebrate a relocation milestone with the community.')}
+	</p>
+
+	<form
+		onsubmit={submit}
+		class="space-y-4 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 sm:p-6"
+		novalidate
+	>
+		<div class="flex flex-col gap-1.5">
+			<label for="title" class="text-sm font-medium text-[var(--color-text)]">
+				{t('achievements.field_title', 'Title')}
+				<span class="text-red-500" aria-hidden="true">*</span>
+			</label>
+			<input
+				id="title"
+				type="text"
+				value={title}
+				oninput={(e) => (title = e.currentTarget.value)}
+				placeholder={t('achievements.title_placeholder', 'e.g. Visa approved!')}
+				class={inputClass}
+			/>
+		</div>
+
+		<div class="flex flex-col gap-1.5">
+			<label for="body" class="text-sm font-medium text-[var(--color-text)]">
+				{t('achievements.field_body', 'Story')}
+				<span class="text-red-500" aria-hidden="true">*</span>
+			</label>
+			<textarea
+				id="body"
+				rows="6"
+				value={body}
+				oninput={(e) => (body = e.currentTarget.value)}
+				placeholder={t('achievements.body_placeholder', 'Share your journey…')}
+				class={inputClass}
+			></textarea>
+		</div>
+
+		<div class="flex flex-col gap-1.5">
+			<label for="milestone_type" class="text-sm font-medium text-[var(--color-text)]">
+				{t('achievements.field_milestone_type', 'Milestone type')}
+				<span class="text-red-500" aria-hidden="true">*</span>
+			</label>
+			<select
+				id="milestone_type"
+				value={milestoneType}
+				onchange={(e) => (milestoneType = e.currentTarget.value as AchievementMilestoneType)}
+				class={inputClass}
+			>
+				{#each milestoneOptions as opt (opt.value)}
+					<option value={opt.value}>{opt.label}</option>
+				{/each}
+			</select>
+		</div>
+
+		<div class="grid gap-4 sm:grid-cols-2">
+			<div class="flex flex-col gap-1.5">
+				<label for="destination_country" class="text-sm font-medium text-[var(--color-text)]">
+					{t('achievements.field_destination', 'Destination country')}
+					<span class="text-red-500" aria-hidden="true">*</span>
+				</label>
+				<select
+					id="destination_country"
+					value={destinationSpaceId}
+					onchange={(e) => (destinationSpaceId = e.currentTarget.value)}
+					class={inputClass}
+				>
+					<option value="">{t('achievements.destination_placeholder', 'e.g. Canada')}</option>
+					{#each data.countries as c (c.id)}
+						<option value={c.id}>{c.name}</option>
+					{/each}
+				</select>
+			</div>
+			<div class="flex flex-col gap-1.5">
+				<label for="origin_country" class="text-sm font-medium text-[var(--color-text)]">
+					{t('achievements.field_origin', 'Origin country')}
+				</label>
+				<select
+					id="origin_country"
+					value={originSpaceId}
+					onchange={(e) => (originSpaceId = e.currentTarget.value)}
+					class={inputClass}
+				>
+					<option value="">{t('achievements.origin_placeholder', 'e.g. Nigeria')}</option>
+					{#each data.countries as c (c.id)}
+						<option value={c.id}>{c.name}</option>
+					{/each}
+				</select>
+			</div>
+		</div>
+
+		<label class="flex cursor-pointer items-center gap-2 text-sm text-[var(--color-text-subtle)]">
+			<input
+				type="checkbox"
+				checked={isAnonymous}
+				onchange={(e) => (isAnonymous = e.currentTarget.checked)}
+				class="h-4 w-4 accent-[var(--color-primary)]"
+			/>
+			{t('achievements.field_anonymous', 'Post anonymously')}
+		</label>
+		<p class="-mt-2 text-xs text-[var(--color-muted)]">
+			{t('achievements.anonymous_hint', 'Shows as "Anonymous member from [origin] → [destination]".')}
+		</p>
+
+		{#if errorKey}
+			<p class="rounded-[var(--radius)] bg-red-500/10 px-3 py-2 text-sm text-red-500" role="alert">
+				{t(errorKey)}
+			</p>
+		{/if}
+
+		<div class="flex justify-end pt-2">
+			<button
+				type="submit"
+				disabled={loading}
+				class="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)] disabled:opacity-50"
+			>
+				{#if loading}
+					<Loader2 size={16} class="animate-spin" />
+				{:else}
+					<Plus size={16} />
+				{/if}
+				{loading ? t('common.submitting', 'Submitting…') : t('achievements.submit', 'Share Achievement')}
+			</button>
+		</div>
+	</form>
+</div>
