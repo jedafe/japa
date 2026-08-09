@@ -165,12 +165,16 @@ func (s *Service) ListSpaces(ctx context.Context, tenantID, viewerUserID pgtype.
 }
 
 // AdminListSpaces returns paginated spaces for the admin view with owner and
-// space_type name resolved via JOINs.
-func (s *Service) AdminListSpaces(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]gen.AdminListSpacesRow, error) {
+// space_type name resolved via JOINs. Search, status, and visibility filters
+// are applied at the SQL level — pass "" for no filter.
+func (s *Service) AdminListSpaces(ctx context.Context, tenantID pgtype.UUID, search, status, visibility string, limit, offset int32) ([]gen.AdminListSpacesRow, error) {
 	rows, err := s.read.AdminListSpaces(ctx, gen.AdminListSpacesParams{
-		TenantID:  tenantID,
-		LimitVal:  limit,
-		OffsetVal: offset,
+		TenantID:   tenantID,
+		Search:     search,
+		Status:     status,
+		Visibility: visibility,
+		LimitVal:   limit,
+		OffsetVal:  offset,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("admin listing spaces: %w", err)
@@ -178,9 +182,15 @@ func (s *Service) AdminListSpaces(ctx context.Context, tenantID pgtype.UUID, lim
 	return rows, nil
 }
 
-// AdminListSpacesCount returns the total number of spaces for the tenant.
-func (s *Service) AdminListSpacesCount(ctx context.Context, tenantID pgtype.UUID) (int64, error) {
-	count, err := s.read.AdminListSpacesCount(ctx, tenantID)
+// AdminListSpacesCount returns the total number of spaces for the tenant,
+// respecting the same search/status/visibility filters as AdminListSpaces.
+func (s *Service) AdminListSpacesCount(ctx context.Context, tenantID pgtype.UUID, search, status, visibility string) (int64, error) {
+	count, err := s.read.AdminListSpacesCount(ctx, gen.AdminListSpacesCountParams{
+		TenantID:   tenantID,
+		Search:     search,
+		Status:     status,
+		Visibility: visibility,
+	})
 	if err != nil {
 		return 0, fmt.Errorf("admin counting spaces: %w", err)
 	}

@@ -621,6 +621,12 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	paymentHandlers.StripeWebhookSecret = cfg.StripeWebhookSecret
 	paymentHandlers.NOWPaymentsIPNKey = cfg.NOWPaymentsIPNSecret
 
+	// Wire wallet, payments, and settings into customfields so SubmitForm can
+	// handle paid form submissions (Section 06 Paid Form Submissions).
+	cfHandlers.SetWalletService(walletService)
+	cfHandlers.SetPaymentsService(paymentService)
+	cfHandlers.SetSettings(settingsService)
+
 	// Advertising subsystem (Section 25 — Ad Placement).
 	adService := advertising.NewService(database, settingsService)
 	adHandlers := advertising.NewHandlers(adService)
@@ -3733,7 +3739,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 			// Task 4: Notifications admin — notification type CRUD
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "notifications.manage")).
-				Get("/admin/notification-types", notificationHandlers.ListNotificationTypes)
+				Get("/admin/notification-types", notificationHandlers.AdminListNotificationTypes)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "notifications.manage")).
 				Post("/admin/notification-types", notificationHandlers.CreateNotificationType)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "notifications.manage")).

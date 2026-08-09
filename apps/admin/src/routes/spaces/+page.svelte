@@ -61,13 +61,13 @@
 	let suspendReason = $state("");
 	let acting = $state(false);
 
-	const canModerateSpaces = $derived(hasPermission("spaces.moderate.any"));
-	const canManageSpaces = $derived(hasPermission("admin.settings"));
+	const canModerateSpaces = $derived(hasPermission("spaces.moderate"));
+	const canManageSpaces = $derived(hasPermission("spaces.admin"));
 
 	const visibilitySelectOptions = [
 		{ value: "public", label: t("spaces.public", "Public") },
-		{ value: "private", label: t("spaces.private", "Private") },
-		{ value: "restricted", label: t("spaces.restricted", "Restricted") }
+		{ value: "members", label: t("spaces.perm.members", "Members") },
+		{ value: "private", label: t("spaces.private", "Private") }
 	];
 
 	const filterDefs = [
@@ -85,8 +85,8 @@
 			label: t("spaces.visibility", "Visibility"),
 			options: [
 				{ value: "public", label: t("spaces.public", "Public") },
-				{ value: "private", label: t("spaces.private", "Private") },
-				{ value: "restricted", label: t("spaces.restricted", "Restricted") }
+				{ value: "members", label: t("spaces.perm.members", "Members") },
+				{ value: "private", label: t("spaces.private", "Private") }
 			]
 		}
 	];
@@ -95,14 +95,15 @@
 		{ key: "name", label: t("spaces.name", "Name"), sortable: true },
 		{ key: "owner", label: t("spaces.owner", "Owner"), sortable: true },
 		{ key: "member_count", label: t("spaces.members", "Members"), sortable: true, render: (v: number) => (v ?? 0).toLocaleString() },
-		{ key: "visibility", label: t("spaces.visibility", "Visibility"), sortable: true, render: (v: string) => v || "—" },
+		{ key: "visibility", label: t("spaces.visibility", "Visibility"), sortable: true, render: (v: string) => v ? t(`spaces.perm.${v}`, v) : "—" },
 		{
 			key: "status",
 			label: t("spaces.status", "Status"),
 			sortable: true,
 			render: (v: string) => {
 				const cls = v === "active" ? "bg-success/15 text-success dark:text-success" : v === "suspended" ? "bg-danger/15 text-danger dark:text-danger" : "bg-muted/15 text-muted dark:text-muted";
-				return `<span class="inline-block rounded-full px-2 py-0.5 text-xs ${cls}">${v}</span>`;
+				const label = t(`spaces.${v}`, v);
+				return `<span class="inline-block rounded-full px-2 py-0.5 text-xs ${cls}">${label}</span>`;
 			}
 		},
 		{ key: "created_at", label: t("spaces.created", "Created"), sortable: true, render: (v: string) => new Date(v).toLocaleDateString() }
@@ -261,6 +262,8 @@
 		acting = true;
 		try {
 			await Promise.all(idArr.map((id) => spacesAdminApi.delete(id)));
+			selectedIds = new Set();
+			await loadSpaces();
 		} catch {
 			error = t("common.error", "Failed to delete spaces");
 		} finally {
@@ -356,11 +359,11 @@
 				</div>
 				<div>
 					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('spaces.visibility')}</p>
-					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.visibility || "—"}</p>
+					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.visibility ? t(`spaces.perm.${viewTarget.visibility}`, viewTarget.visibility) : "—"}</p>
 				</div>
 				<div>
 					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('spaces.status')}</p>
-					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.status}</p>
+					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{t(`spaces.${viewTarget.status}`, viewTarget.status)}</p>
 				</div>
 				<div>
 					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('spaces.created')}</p>

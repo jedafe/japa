@@ -1,7 +1,7 @@
 <script lang="ts">
 	// /notification-types — migrated to the EntityPage scaffold; simple CRUD entity using `fields` (EntityForm).
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
-	import { api } from '$lib/api';
+	import { api, apiRaw } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { Trash2 } from 'lucide-svelte';
 
@@ -45,7 +45,7 @@
 
 	// `fields` drives EntityForm rendering and edit-form seeding; `key` is immutable on edit.
 	const fields: FieldDef[] = [
-		{ key: 'key', label: t('notification_types.key', 'Key'), type: 'text', placeholder: 'new_comment', required: true },
+		{ key: 'key', label: t('notification_types.key', 'Key'), type: 'text', placeholder: 'new_comment', required: true, readonlyInEdit: true },
 		{ key: 'label', label: t('notification_types.label', 'Label'), type: 'text', placeholder: 'New Comment', required: true },
 		{ key: 'description', label: t('common.description', 'Description'), type: 'textarea' },
 		{ key: 'enabled', label: t('notification_types.enabled', 'Enabled'), type: 'checkbox' },
@@ -104,17 +104,31 @@
 			}
 		],
 		fields,
-		load: async ({ q, filter }) => {
-			const params = new URLSearchParams();
-			if (filter.enabled) params.set('enabled', filter.enabled);
+		load: async ({ page, pageSize, q, sort, filter }) => {
+			const params = new URLSearchParams({
+				page_size: String(pageSize),
+				page_offset: String(page * pageSize)
+			});
 			if (q) params.set('q', q);
-			const result = await api<NotificationType[]>(
-				`/admin/notification-types${params.toString() ? `?${params.toString()}` : ''}`
+			if (filter.enabled) params.set('enabled', filter.enabled);
+			// EntityPage emits sort as "key:dir"; split into bare key + dir for the API.
+			if (sort) {
+				const [sortKey, sortDir] = sort.split(':');
+				if (sortKey) params.set('sort', sortKey);
+				if (sortDir) params.set('dir', sortDir);
+			}
+			const result = await apiRaw<{ data: NotificationType[]; total: number; total_pages: number }>(
+				`/admin/notification-types?${params.toString()}`
 			);
 			if (result.ok) {
-				const data = (result.data as NotificationType[]) ?? [];
-				const mapped = data.map(mapType);
-				return { data: mapped, total: mapped.length, totalPages: 1 };
+				const d = result.data;
+				const items = (d.data as NotificationType[]) ?? [];
+				const mapped = items.map(mapType);
+				return {
+					data: mapped,
+					total: d.total ?? mapped.length,
+					totalPages: d.total_pages ?? 1
+				};
 			}
 			throw new Error(result.error ?? t('common.error', 'Failed to load notification types'));
 		},

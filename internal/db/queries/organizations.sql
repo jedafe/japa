@@ -114,8 +114,8 @@ DELETE FROM organization_invitations
 WHERE id = $1 AND organization_id = $2 AND accepted_at IS NULL;
 
 -- name: CreateOwnershipClaim :one
-INSERT INTO ownership_claims (tenant_id, claimant_user_id, organization_id, evidence_url, notes)
-VALUES ($1, $2, $3, $4, $5)
+INSERT INTO ownership_claims (tenant_id, claimant_user_id, organization_id, evidence_url, notes, form_submission_id)
+VALUES ($1, $2, $3, $4, $5, sqlc.narg(form_submission_id))
 RETURNING *;
 
 -- name: ListOwnershipClaims :many
@@ -156,6 +156,22 @@ FROM ownership_claims oc
 JOIN users u ON u.id = oc.claimant_user_id
 JOIN organizations o ON o.id = oc.organization_id
 WHERE oc.tenant_id = $1 AND oc.status = 'pending'
+ORDER BY oc.created_at DESC;
+
+-- name: ListOwnershipClaimsForAdmin :many
+-- Ref: japaconnect-engineering/sections/07-organization-profiles-claim-ownership.md
+-- Admin claims list with optional status filter. An empty status_filter or
+-- 'all' returns every claim (history view); any other value filters by that
+-- exact status (pending|approved|rejected|withdrawn). Used by
+-- GET /admin/organizations/pending-claims?status=.
+SELECT oc.id, oc.organization_id, oc.claimant_user_id, oc.evidence_url, oc.notes, oc.created_at, oc.status,
+       u.username AS claimant_username, u.email AS claimant_email,
+       o.name AS org_name, o.slug AS org_slug
+FROM ownership_claims oc
+JOIN users u ON u.id = oc.claimant_user_id
+JOIN organizations o ON o.id = oc.organization_id
+WHERE oc.tenant_id = $1
+  AND ($2::text = '' OR $2::text = 'all' OR oc.status = $2)
 ORDER BY oc.created_at DESC;
 
 -- name: ApproveOwnershipClaim :exec

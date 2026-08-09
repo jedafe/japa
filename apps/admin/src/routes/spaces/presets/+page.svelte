@@ -24,13 +24,18 @@
 	const postingOptions = ["open", "members", "verified", "moderators", "admins"];
 	const joiningOptions = ["open", "request", "invite"];
 
+	// permLabel resolves a permission axis value to a human-readable i18n label.
+	function permLabel(opt: string): string {
+		return t(`spaces.perm.${opt}`, opt.charAt(0).toUpperCase() + opt.slice(1));
+	}
+
 	async function loadPresets() {
 		loading = true;
 		error = "";
 		try {
 			const result = await permissionPresetsApi.list();
-			if (result.ok && result.data?.data) {
-				presets = result.data.data;
+			if (result.ok && Array.isArray(result.data)) {
+				presets = result.data;
 				drafts = {};
 				for (const p of presets) {
 					drafts[p.name] = { ...p };
@@ -145,80 +150,88 @@
 							<div>
 								<label class="mb-1 block text-xs font-medium" style="color: var(--color-muted-foreground)">
 									{t("spaces.visibility", "Visibility")}
-								
-							<select
-									class="w-full rounded-lg border px-2 py-1.5 text-sm"
-									style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
-									bind:value={draft.visibility}
-									disabled={!canManage}
-								>
-									{#each visibilityOptions as opt}
-										<option value={opt}>{opt}</option>
-									{/each}
-								</select></label>
+									<select
+										class="w-full rounded-lg border px-2 py-1.5 text-sm"
+										style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+										bind:value={draft.visibility}
+										disabled={!canManage}
+									>
+										{#each visibilityOptions as opt}
+											<option value={opt}>{permLabel(opt)}</option>
+										{/each}
+									</select>
+								</label>
 							</div>
 							<div>
 								<label class="mb-1 block text-xs font-medium" style="color: var(--color-muted-foreground)">
 									{t("spaces.posting", "Posting")}
-								
-							<select
-									class="w-full rounded-lg border px-2 py-1.5 text-sm"
-									style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
-									bind:value={draft.posting_perm}
-									disabled={!canManage}
-								>
-									{#each postingOptions as opt}
-										<option value={opt}>{opt}</option>
-									{/each}
-								</select></label>
+									<select
+										class="w-full rounded-lg border px-2 py-1.5 text-sm"
+										style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+										bind:value={draft.posting_perm}
+										disabled={!canManage}
+									>
+										{#each postingOptions as opt}
+											<option value={opt}>{permLabel(opt)}</option>
+										{/each}
+									</select>
+								</label>
 							</div>
 							<div>
 								<label class="mb-1 block text-xs font-medium" style="color: var(--color-muted-foreground)">
 									{t("spaces.replying", "Replying")}
-								
-							<select
-									class="w-full rounded-lg border px-2 py-1.5 text-sm"
-									style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
-									bind:value={draft.replying_perm}
-									disabled={!canManage}
-								>
-									{#each postingOptions as opt}
-										<option value={opt}>{opt}</option>
-									{/each}
-								</select></label>
+									<select
+										class="w-full rounded-lg border px-2 py-1.5 text-sm"
+										style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+										bind:value={draft.replying_perm}
+										disabled={!canManage}
+									>
+										{#each postingOptions as opt}
+											<option value={opt}>{permLabel(opt)}</option>
+										{/each}
+									</select>
+								</label>
 							</div>
 							<div>
 								<label class="mb-1 block text-xs font-medium" style="color: var(--color-muted-foreground)">
 									{t("spaces.commenting", "Commenting")}
-								
-							<select
-									class="w-full rounded-lg border px-2 py-1.5 text-sm"
-									style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
-									bind:value={draft.commenting_perm}
-									disabled={!canManage}
-								>
-									{#each postingOptions as opt}
-										<option value={opt}>{opt}</option>
-									{/each}
-								</select></label>
+									<select
+										class="w-full rounded-lg border px-2 py-1.5 text-sm"
+										style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+										bind:value={draft.commenting_perm}
+										disabled={!canManage}
+									>
+										{#each postingOptions as opt}
+											<option value={opt}>{permLabel(opt)}</option>
+										{/each}
+									</select>
+								</label>
 							</div>
 							<div>
 								<label class="mb-1 block text-xs font-medium" style="color: var(--color-muted-foreground)">
 									{t("spaces.joining", "Joining")}
-								
-							<select
-									class="w-full rounded-lg border px-2 py-1.5 text-sm"
-									style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
-									bind:value={draft.joining_perm}
-									disabled={!canManage}
-								>
-									{#each joiningOptions as opt}
-										<option value={opt}>{opt}</option>
-									{/each}
-								</select></label>
+									<select
+										class="w-full rounded-lg border px-2 py-1.5 text-sm"
+										style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+										bind:value={draft.joining_perm}
+										disabled={!canManage}
+									>
+										{#each joiningOptions as opt}
+											<option value={opt}>{permLabel(opt)}</option>
+										{/each}
+									</select>
+								</label>
 							</div>
 						</div>
 					{/if}
+				</CardContent>
+			</Card>
+		{:else}
+			<Card>
+				<CardContent>
+					<p class="py-8 text-center text-sm" style="color: var(--color-muted-foreground)">
+						{t("spaces.presets_empty", "No permission presets found.")}
+					</p>
 				</CardContent>
 			</Card>
 		{/each}

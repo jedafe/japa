@@ -4,6 +4,7 @@
 	import { i18n } from '$lib/i18n';
 	import { BadgeCheck, Calendar } from 'lucide-svelte';
 	import type { PublicUser } from '$lib/types';
+	import FollowListModal from '$lib/components/profile/FollowListModal.svelte';
 
 	interface Props {
 		user: PublicUser;
@@ -11,6 +12,9 @@
 		children?: Snippet;
 	}
 	let { user, isOwnProfile = false, children }: Props = $props();
+
+	let followersModalOpen = $state(false);
+	let followingModalOpen = $state(false);
 
 	const joinDate = $derived(
 		new Date(user.created_at).toLocaleDateString(i18n.locale, {
@@ -74,9 +78,24 @@
 		{/if}
 
 		<div class="mt-3 flex flex-wrap items-center gap-4 text-sm text-[var(--color-muted)]">
-			<span>{t('profile.followers', '{n} followers').replace('{n}', String(user.follower_count))}</span>
-			<span>{t('profile.following', '{n} following').replace('{n}', String(user.following_count))}</span>
+			<button
+				type="button"
+				class="transition-colors hover:text-[var(--color-text)]"
+				onclick={() => (followersModalOpen = true)}
+			>
+				{t('profile.followers', '{n} followers').replace('{n}', String(user.follower_count))}
+			</button>
+			<button
+				type="button"
+				class="transition-colors hover:text-[var(--color-text)]"
+				onclick={() => (followingModalOpen = true)}
+			>
+				{t('profile.following', '{n} following').replace('{n}', String(user.following_count))}
+			</button>
 			<span class="flex items-center gap-1"><Calendar size={14} /> {t('profile.joined', 'Joined')} {joinDate}</span>
 		</div>
 	</div>
 </header>
+
+<FollowListModal bind:open={followersModalOpen} userId={user.id} type="followers" count={user.follower_count} />
+<FollowListModal bind:open={followingModalOpen} userId={user.id} type="following" count={user.following_count} />

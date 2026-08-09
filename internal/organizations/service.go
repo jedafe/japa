@@ -66,8 +66,9 @@ type InviteMemberInput struct {
 
 // ClaimOwnershipInput is the input for claiming ownership.
 type ClaimOwnershipInput struct {
-	EvidenceURL string `json:"evidence_url,omitempty"`
-	Notes       string `json:"notes,omitempty"`
+	EvidenceURL       string         `json:"evidence_url,omitempty"`
+	Notes             string         `json:"notes,omitempty"`
+	FormSubmissionID  *pgtype.UUID   `json:"form_submission_id,omitempty"`
 }
 
 // ReviewClaimInput is the input for reviewing a claim.
@@ -417,12 +418,17 @@ func (s *Service) UpdateMemberRole(ctx context.Context, orgID, updatedBy, target
 
 // ClaimOwnership creates an ownership claim for an unclaimed organization.
 func (s *Service) ClaimOwnership(ctx context.Context, tenantID, userID, orgID pgtype.UUID, input ClaimOwnershipInput) (gen.OwnershipClaim, error) {
+	var formSubmissionID pgtype.UUID
+	if input.FormSubmissionID != nil {
+		formSubmissionID = *input.FormSubmissionID
+	}
 	return s.store.CreateOwnershipClaim(ctx, gen.CreateOwnershipClaimParams{
-		TenantID:       tenantID,
-		ClaimantUserID: userID,
-		OrganizationID: orgID,
-		EvidenceUrl:    strPtr(input.EvidenceURL),
-		Notes:          strPtr(input.Notes),
+		TenantID:         tenantID,
+		ClaimantUserID:   userID,
+		OrganizationID:   orgID,
+		EvidenceUrl:      strPtr(input.EvidenceURL),
+		Notes:            strPtr(input.Notes),
+		FormSubmissionID: formSubmissionID,
 	})
 }
 

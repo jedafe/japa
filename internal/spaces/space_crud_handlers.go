@@ -264,7 +264,8 @@ func rowToMap[T any](row T) map[string]any {
 }
 
 // AdminListSpaces handles GET /api/v1/admin/spaces — paginated spaces for the
-// admin panel with owner and space_type name resolved via JOINs.
+// admin panel with owner and space_type name resolved via JOINs. Supports
+// q (name/slug search), status, and visibility filter params.
 func (h *Handlers) AdminListSpaces(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -273,14 +274,17 @@ func (h *Handlers) AdminListSpaces(w http.ResponseWriter, r *http.Request) {
 
 	limit := parsePageSize(r)
 	offset := parsePageSizeOffset(r)
+	search := r.URL.Query().Get("q")
+	status := r.URL.Query().Get("status")
+	visibility := r.URL.Query().Get("visibility")
 
-	spaces, err := h.Service.AdminListSpaces(r.Context(), tenantID, limit, offset)
+	spaces, err := h.Service.AdminListSpaces(r.Context(), tenantID, search, status, visibility, limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
 
-	total, err := h.Service.AdminListSpacesCount(r.Context(), tenantID)
+	total, err := h.Service.AdminListSpacesCount(r.Context(), tenantID, search, status, visibility)
 	if err != nil {
 		handleServiceError(w, err)
 		return

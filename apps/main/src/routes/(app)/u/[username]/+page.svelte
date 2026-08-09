@@ -2,14 +2,15 @@
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
 	import { FileText, MessageSquare, Image, Heart, Users, Info, BarChart3, Award, Pin } from 'lucide-svelte';
+	import { Chart, Svg, Bars, Axis, LineChart } from 'layerchart';
 	import SetSidebar from '$lib/components/shell/SetSidebar.svelte';
 	import ProfileHeader from '$lib/components/profile/ProfileHeader.svelte';
 	import ProfileTabs from '$lib/components/profile/ProfileTabs.svelte';
 	import FollowButton from '$lib/components/ui/FollowButton.svelte';
 	import UserProfileSidebar from '$lib/components/profile/UserProfileSidebar.svelte';
-	import { EmptyState } from '$lib/components/ui';
+	import { EmptyState, LoadingSkeleton } from '$lib/components/ui';
 	import { cardStyleFor, type CardStyleConfig } from '$lib/feed/cardStyle';
-	import type { ProfileAnalytics, ProfilePost, FeedItem } from '$lib/types';
+	import type { ProfileAnalytics, ProfilePost, FeedItem, FollowerGrowthItem, TopContentItem } from '$lib/types';
 	import FeedCard from '$lib/components/feed/FeedCard.svelte';
 	import type { PageData } from './$types';
 
@@ -71,6 +72,30 @@
 	]);
 
 	const analytics = $derived(data.analytics as ProfileAnalytics | null);
+	const followerGrowth = $derived((data.followerGrowth ?? []) as FollowerGrowthItem[]);
+	const topContent = $derived((data.topContent ?? []) as TopContentItem[]);
+
+	// Follower growth series — LineChart of daily new followers over 30 days.
+	// Ref: ADR-059, sections/40-platform-analytics-reports.md
+	const followerSeries = $derived(
+		followerGrowth.map((item, i) => ({
+			x: i,
+			y: item.new_followers ?? 0,
+			label: item.day
+		}))
+	);
+
+	// Top posts series — vertical BarChart of view_count per content title.
+	// Ref: ADR-059
+	const topPostsSeries = $derived(
+		topContent
+			.slice(0, 10)
+			.map((item) => ({
+				x: item.title?.length > 20 ? item.title.slice(0, 20) + '…' : item.title ?? item.id,
+				y: item.view_count ?? 0,
+				label: item.title?.length > 30 ? item.title.slice(0, 30) + '…' : item.title ?? item.id
+			}))
+	);
 
 	const title = $derived(`${user.display_name} (@${user.username}) — ${t('app.name')}`);
 	const description = $derived(user.bio ?? `${user.display_name} on ${t('app.name')}`);
@@ -299,44 +324,111 @@
 				<EmptyState icon={Award} title={t('profile.badges', 'Badges')} />
 			{/if}
 		{:else if activeTab === 'analytics'}
-			<!-- Phase 11.07 — Analytics tab -->
+			<!-- Phase 11.07 — Analytics tab with LayerChart visualizations (ADR-059) -->
 			{#if analytics}
-				<div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
+				<div class="space-y-4">
+					<!-- Follower growth — LineChart (ADR-059) -->
 					<div class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-						<div class="flex items-center gap-2 text-xs text-[var(--color-muted)]">
-							<BarChart3 size={14} /> {t('profile.analytics.views', 'Total views')}
-						</div>
-						<p class="mt-1 text-lg font-semibold text-[var(--color-text)]">{analytics.total_views ?? 0}</p>
+						<h3 class="mb-3 flex items-center gap-1.5 text-sm font-medium text-[var(--color-text)]">
+							<BarChart3 size={14} /> {t('dashboard.analytics.follower_growth', 'Follower growth')}
+						</h3>
+						{#if followerSeries.length > 0}
+							<div class="h-56">
+								<LineChart
+									data={followerSeries}
+									x="x"
+									y="y"
+									props={{
+										line: { class: 'stroke-[var(--chart-2,var(--color-primary))]' },
+										area: { class: 'fill-[var(--chart-2,var(--color-primary))]/10' }
+									}}
+								/>
+							</div>
+							<p class="mt-2 text-xs text-[var(--color-muted)]">
+								{t('dashboard.analytics.last_30_days', 'Last 30 days')} ·
+								{followerSeries.reduce((sum, d) => sum + d.y, 0)}
+								{t('dashboard.analytics.new_followers', 'new followers')}
+							</p>
+						{:else}
+							<p class="py-8 text-center text-sm text-[var(--color-muted)]">
+								{t('dashboard.analytics.no_growth_data', 'No follower growth data yet.')}
+							</p>
+						{/if}
 					</div>
+
+					<!-- Top posts — vertical BarChart (ADR-059) -->
 					<div class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-						<div class="flex items-center gap-2 text-xs text-[var(--color-muted)]">
-							<Heart size={14} /> {t('profile.analytics.likes', 'Total likes')}
-						</div>
-						<p class="mt-1 text-lg font-semibold text-[var(--color-text)]">{analytics.total_likes ?? 0}</p>
+						<h3 class="mb-3 flex items-center gap-1.5 text-sm font-medium text-[var(--color-text)]">
+							<FileText size={14} /> {t('dashboard.analytics.top_posts', 'Top posts')}
+						</h3>
+						{#if topPostsSeries.length > 0}
+							<div class="h-64">
+								<Chart data={topPostsSeries} x="x" y="y" bandPadding={0.3} padding={{ left: 48, bottom: 60 }}>
+									<Svg>
+										<Axis placement="left" ticks={4} grid rule />
+										<Axis placement="bottom" format={(v: string) => v} />
+										<Bars
+											fill="var(--chart-1, var(--color-primary))"
+											stroke="var(--color-surface)"
+											strokeWidth={1}
+											radius={4}
+										/>
+									</Svg>
+								</Chart>
+							</div>
+							<div class="mt-2 space-y-1 text-xs text-[var(--color-muted)]">
+								{#each topPostsSeries as point (point.x)}
+									<div class="flex items-center justify-between">
+										<span class="truncate">{point.label}</span>
+										<span class="shrink-0 pl-2">{point.y} {t('profile.views', 'views')}</span>
+									</div>
+								{/each}
+							</div>
+						{:else}
+							<p class="py-8 text-center text-sm text-[var(--color-muted)]">
+								{t('dashboard.analytics.no_content', 'No published content yet.')}
+							</p>
+						{/if}
 					</div>
-					<div class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-						<div class="flex items-center gap-2 text-xs text-[var(--color-muted)]">
-							<FileText size={14} /> {t('profile.analytics.posts', 'Total posts')}
+
+					<!-- Stat cards — summary metrics -->
+					<div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
+						<div class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+							<div class="flex items-center gap-2 text-xs text-[var(--color-muted)]">
+								<BarChart3 size={14} /> {t('profile.analytics.views', 'Total views')}
+							</div>
+							<p class="mt-1 text-lg font-semibold text-[var(--color-text)]">{analytics.total_views ?? 0}</p>
 						</div>
-						<p class="mt-1 text-lg font-semibold text-[var(--color-text)]">{analytics.total_posts ?? 0}</p>
-					</div>
-					<div class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-						<div class="flex items-center gap-2 text-xs text-[var(--color-muted)]">
-							<Users size={14} /> {t('profile.analytics.followers', 'Followers')}
+						<div class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+							<div class="flex items-center gap-2 text-xs text-[var(--color-muted)]">
+								<Heart size={14} /> {t('profile.analytics.likes', 'Total likes')}
+							</div>
+							<p class="mt-1 text-lg font-semibold text-[var(--color-text)]">{analytics.total_likes ?? 0}</p>
 						</div>
-						<p class="mt-1 text-lg font-semibold text-[var(--color-text)]">{analytics.total_followers ?? 0}</p>
-					</div>
-					<div class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-						<div class="flex items-center gap-2 text-xs text-[var(--color-muted)]">
-							<Users size={14} /> {t('profile.analytics.following', 'Following')}
+						<div class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+							<div class="flex items-center gap-2 text-xs text-[var(--color-muted)]">
+								<FileText size={14} /> {t('profile.analytics.posts', 'Total posts')}
+							</div>
+							<p class="mt-1 text-lg font-semibold text-[var(--color-text)]">{analytics.total_posts ?? 0}</p>
 						</div>
-						<p class="mt-1 text-lg font-semibold text-[var(--color-text)]">{analytics.total_following ?? 0}</p>
-					</div>
-					<div class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-						<div class="flex items-center gap-2 text-xs text-[var(--color-muted)]">
-							<FileText size={14} /> {t('profile.analytics.shares', 'Total shares')}
+						<div class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+							<div class="flex items-center gap-2 text-xs text-[var(--color-muted)]">
+								<Users size={14} /> {t('profile.analytics.followers', 'Followers')}
+							</div>
+							<p class="mt-1 text-lg font-semibold text-[var(--color-text)]">{analytics.total_followers ?? 0}</p>
 						</div>
-						<p class="mt-1 text-lg font-semibold text-[var(--color-text)]">{analytics.total_shares ?? 0}</p>
+						<div class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+							<div class="flex items-center gap-2 text-xs text-[var(--color-muted)]">
+								<Users size={14} /> {t('profile.analytics.following', 'Following')}
+							</div>
+							<p class="mt-1 text-lg font-semibold text-[var(--color-text)]">{analytics.total_following ?? 0}</p>
+						</div>
+						<div class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+							<div class="flex items-center gap-2 text-xs text-[var(--color-muted)]">
+								<FileText size={14} /> {t('profile.analytics.shares', 'Total shares')}
+							</div>
+							<p class="mt-1 text-lg font-semibold text-[var(--color-text)]">{analytics.total_shares ?? 0}</p>
+						</div>
 					</div>
 				</div>
 			{:else}

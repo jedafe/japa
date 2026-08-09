@@ -719,6 +719,24 @@ export interface ProfileAnalytics {
 	total_following: number;
 }
 
+/** GET /me/analytics/followers — daily follower growth time-series (ADR-059). */
+export interface FollowerGrowthItem {
+	day: string;
+	new_followers: number;
+}
+
+/** GET /me/analytics/content — per-content analytics for the top-posts BarChart (ADR-059). */
+export interface TopContentItem {
+	id: string;
+	title: string;
+	content_type: string;
+	status: string;
+	view_count: number;
+	comment_count: number;
+	share_count: number;
+	created_at: string;
+}
+
 /** GET /users/{id}/media — profile Media tab. */
 export interface ProfileMedia {
 	id: string;
@@ -1624,6 +1642,7 @@ export interface FormEmbed {
 	is_multi_step: boolean;
 	submit_label: string;
 	success_message?: string | null;
+	submission_fee_credits: number;
 	fields: FormField[];
 }
 
@@ -1631,6 +1650,8 @@ export interface FormEmbed {
 export interface FormSubmissionResponse {
 	id: string;
 	status: string;
+	checkout_url?: string;
+	payment_id?: string;
 }
 
 /* ------------------------------------------------------------------ *
