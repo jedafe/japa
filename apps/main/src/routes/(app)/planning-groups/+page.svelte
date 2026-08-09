@@ -91,15 +91,18 @@
 						size={14}
 						class="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--color-muted)]"
 					/>
-					<input
+					<select
 						id="filter-dest"
-						type="text"
 						name="dest"
 						value={destFilter}
-						oninput={(e) => (destFilter = e.currentTarget.value)}
-						placeholder={t('planning_groups.filter_destination_placeholder', 'e.g. Canada')}
+						onchange={(e) => (destFilter = e.currentTarget.value)}
 						class="w-44 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] py-1.5 pl-8 pr-3 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]"
-					/>
+					>
+						<option value="">{t('planning_groups.filter_destination_all', 'All countries')}</option>
+						{#each data.countries as c (c.id)}
+							<option value={c.id}>{c.name}</option>
+						{/each}
+					</select>
 				</div>
 			</div>
 			<div class="flex flex-col gap-1">

@@ -2579,6 +2579,7 @@ export interface AMAThread {
 	slug: string;
 	body: string;
 	status: string;
+	author_user_id?: string;
 	author_name?: string;
 	author_avatar?: string;
 	ama_config: unknown;
@@ -2617,6 +2618,7 @@ export interface Achievement {
 	destination_space_name: string;
 	destination_space_code?: string;
 	is_anonymous: boolean;
+	author_id?: string;
 	author_name?: string;
 	author_avatar?: string;
 }
@@ -2664,6 +2666,7 @@ export interface ServiceListing {
 	claim_status?: string;
 	claimed_by_org_id?: string;
 	claimed_org_name?: string;
+	author_id?: string;
 	author_name?: string;
 	author_avatar?: string;
 }

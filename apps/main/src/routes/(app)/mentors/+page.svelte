@@ -138,13 +138,16 @@
 				<label for="filter-dest" class="text-xs font-medium text-[var(--color-text-subtle)]">
 					{t('mentors.filter_destination', 'Destination')}
 				</label>
-				<input
+				<select
 					id="filter-dest"
-					type="text"
 					bind:value={dest}
-					placeholder={t('mentors.filter_destination_placeholder', 'Country')}
-					class="w-40 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm text-[var(--color-text)] placeholder:text-[var(--color-muted)] focus:border-[var(--color-primary)] focus:outline-none"
-				/>
+					class="w-40 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none"
+				>
+					<option value="">{t('mentors.filter_destination_placeholder', 'All countries')}</option>
+					{#each data.countries as country (country.id)}
+						<option value={country.id}>{country.name}</option>
+					{/each}
+				</select>
 			</div>
 
 			<div class="flex flex-col gap-1">

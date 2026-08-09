@@ -54,6 +54,7 @@ type AchievementDTO struct {
 	DestSpaceName   string `json:"destination_space_name"`
 	DestSpaceCode   string `json:"destination_space_code,omitempty"`
 	IsAnonymous     bool   `json:"is_anonymous"`
+	AuthorID        string `json:"author_id,omitempty"`
 	AuthorName      string `json:"author_name,omitempty"`
 	AuthorAvatar    string `json:"author_avatar,omitempty"`
 }
@@ -388,6 +389,9 @@ func rowToDTO(r AchievementRow) AchievementDTO {
 			dto.AuthorAvatar = *r.AuthorAvatar
 		}
 	}
+	if r.AuthorID.Valid {
+		dto.AuthorID = r.AuthorID.String()
+	}
 	return dto
 }
 
@@ -416,6 +420,9 @@ func metaToDTO(c gen.GetContentByIDRow, m AchievementMeta) AchievementDTO {
 	}
 	if m.DestinationSpaceID.Valid {
 		dto.DestSpaceID = m.DestinationSpaceID.String()
+	}
+	if c.AuthorID.Valid {
+		dto.AuthorID = c.AuthorID.String()
 	}
 	return dto
 }
