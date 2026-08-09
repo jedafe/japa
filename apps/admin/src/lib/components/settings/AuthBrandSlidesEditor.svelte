@@ -3,23 +3,18 @@
 	// Lets the admin pick multiple images from the media library and edit a
 	// headline + subheading per slide. Serializes to the same JSON array shape
 	// consumed by the main app's AuthShell: [{image, headline, subheading}].
+	//
+	// Uses the full MediaPickerModal (Browse / Upload / Stock) so the admin can
+	// pick existing media, upload a new file, or import a stock photo — all
+	// without leaving the settings page.
 	import { t } from '$lib/stores/i18n.svelte';
-	import { mediaAdminApi } from '$lib/api';
-	import { Modal } from '$lib/components/ui/modal';
-	import { Plus, Trash2, GripVertical, Image as ImageIcon, RefreshCw, X } from 'lucide-svelte';
+	import MediaPickerModal from '$lib/components/ui/MediaPickerModal.svelte';
+	import { Plus, Trash2, GripVertical } from 'lucide-svelte';
 
 	interface Slide {
 		image: string;
 		headline: string;
 		subheading: string;
-	}
-
-	interface MediaItem {
-		id: string;
-		filename: string;
-		mime_type: string;
-		url?: string;
-		status: string;
 	}
 
 	let {
@@ -69,60 +64,48 @@
 		onchange(next);
 	}
 
-	// --- Media picker modal ---
+	// --- Media picker (full MediaPickerModal: Browse / Upload / Stock) ---
 	let pickerOpen = $state(false);
-	let mediaItems = $state<MediaItem[]>([]);
-	let mediaLoading = $state(false);
-	let mediaError = $state('');
-	let pickedIds = $state<Set<string>>(new Set());
 
-	async function openPicker() {
+	function openPicker() {
 		pickerOpen = true;
-		pickedIds = new Set();
-		await loadMedia();
 	}
 
-	async function loadMedia() {
-		mediaLoading = true;
-		mediaError = '';
-		try {
-			const result = await mediaAdminApi.list('?mime_type=image&limit=60');
-			if (result.ok) {
-				const data = result.data as MediaItem[] | { items?: MediaItem[] } | null;
-				mediaItems = Array.isArray(data) ? data : (data?.items ?? []);
-			} else {
-				mediaError = result.error;
-			}
-		} catch (e) {
-			mediaError = e instanceof Error ? e.message : 'Failed to load media';
-		} finally {
-			mediaLoading = false;
-		}
-	}
-
-	function togglePick(id: string) {
-		const next = new Set(pickedIds);
-		if (next.has(id)) next.delete(id);
-		else next.add(id);
-		pickedIds = next;
-	}
-
-	function confirmPicks() {
-		const picked = mediaItems.filter((m) => pickedIds.has(m.id) && m.url);
-		if (picked.length === 0) {
-			pickerOpen = false;
-			return;
-		}
+	// MediaPickerModal calls onselect with {id, url, filename} for a single
+	// image. Append it as a new slide with empty headline/subheading.
+	function handleMediaSelect(media: { id: string; url: string; filename: string }) {
 		const next: Slide[] = [
 			...slides,
-			...picked.map((m) => ({
-				image: m.url as string,
-				headline: '',
-				subheading: ''
-			}))
+			{ image: media.url, headline: '', subheading: '' }
 		];
 		emit(next);
-		pickerOpen = false;
+	}
+
+	// --- Replace a slide's image (opens picker for an existing slide) ---
+	let replaceIndex = $state(-1);
+
+	function openReplacePicker(index: number) {
+		replaceIndex = index;
+		pickerOpen = true;
+	}
+
+	function handleReplace(media: { id: string; url: string; filename: string }) {
+		if (replaceIndex >= 0 && replaceIndex < slides.length) {
+			const next = slides.map((s, i) =>
+				i === replaceIndex ? { ...s, image: media.url } : s
+			);
+			emit(next);
+		}
+		replaceIndex = -1;
+	}
+
+	// Route the MediaPickerModal onselect to add or replace depending on context.
+	function onMediaSelect(media: { id: string; url: string; filename: string }) {
+		if (replaceIndex >= 0) {
+			handleReplace(media);
+		} else {
+			handleMediaSelect(media);
+		}
 	}
 
 	// --- Slide editing ---
@@ -154,11 +137,19 @@
 	{#each slides as slide, i (slide.image + i)}
 		<div class="rounded-lg border p-3" style="border-color: var(--color-border); background: var(--color-surface)">
 			<div class="flex gap-3">
-				<!-- Thumbnail -->
+				<!-- Thumbnail (click to replace via media picker) -->
 				<div class="flex shrink-0 flex-col items-center gap-1">
-					<div class="h-20 w-28 overflow-hidden rounded-md border" style="border-color: var(--color-border)">
+					<button
+						type="button"
+						class="h-20 w-28 overflow-hidden rounded-md border transition-opacity hover:opacity-80 disabled:opacity-100"
+						style="border-color: var(--color-border)"
+						disabled={disabled}
+						onclick={() => openReplacePicker(i)}
+						title={t('settings.auth_slides_replace', 'Click to replace image')}
+						aria-label={t('settings.auth_slides_replace', 'Click to replace image')}
+					>
 						<img src={slide.image} alt={slide.headline || `Slide ${i + 1}`} class="h-full w-full object-cover" />
-					</div>
+					</button>
 					<div class="flex gap-0.5">
 						<button
 							type="button"
@@ -214,7 +205,7 @@
 						class="h-9 w-full rounded-md border px-2.5 py-1.5 text-sm"
 						style="border-color: var(--color-border); background: var(--color-bg); color: var(--color-foreground)"
 						disabled={disabled}
-						oninput={(e) => updateField(i, 'subheading', (e.target as HTMLInputElement).value)}
+						oninput={(e) => updateField(i, 'subheading', (e.target as HTMLTextAreaElement).value)}
 					/>
 				</div>
 			</div>
@@ -229,74 +220,9 @@
 		onclick={openPicker}
 	>
 		<Plus class="h-4 w-4" />
-		{t('settings.auth_slides_add', 'Add images from media library')}
+		{t('settings.auth_slides_add', 'Add image from media library')}
 	</button>
 </div>
 
-<!-- Media picker modal -->
-<Modal bind:open={pickerOpen} title={t('settings.auth_slides_picker_title', 'Select images')} size="xl">
-	<div class="space-y-3">
-		{#if mediaLoading}
-			<div class="flex items-center justify-center py-12" style="color: var(--color-muted)">
-				<RefreshCw class="h-5 w-5 animate-spin" />
-			</div>
-		{:else if mediaError}
-			<p class="text-sm" style="color: var(--color-danger, #ef4444)">{mediaError}</p>
-		{:else if mediaItems.length === 0}
-			<div class="flex flex-col items-center justify-center gap-2 py-12" style="color: var(--color-muted)">
-				<ImageIcon class="h-8 w-8" />
-				<p class="text-sm">{t('settings.auth_slides_no_media', 'No images found. Upload images in the Media section first.')}</p>
-			</div>
-		{:else}
-			<p class="text-xs" style="color: var(--color-muted)">
-				{t('settings.auth_slides_picker_hint', 'Click images to select. You can pick multiple.')}
-				{#if pickedIds.size > 0}
-					— {pickedIds.size} selected
-				{/if}
-			</p>
-			<div class="grid max-h-[60vh] grid-cols-3 gap-3 overflow-y-auto sm:grid-cols-4 md:grid-cols-5">
-				{#each mediaItems as item (item.id)}
-					{@const selected = pickedIds.has(item.id)}
-					<button
-						type="button"
-						class="relative aspect-square overflow-hidden rounded-md border-2 transition-all"
-						class:ring-2={selected}
-						style={selected
-							? 'border-color: var(--color-primary); --tw-ring-color: var(--color-primary)'
-							: 'border-color: var(--color-border)'}
-						onclick={() => togglePick(item.id)}
-						aria-pressed={selected}
-					>
-						<img src={item.url || ''} alt={item.filename} class="h-full w-full object-cover" />
-						{#if selected}
-							<div class="absolute inset-0 bg-primary/30"></div>
-							<div class="absolute right-1.5 top-1.5 grid h-6 w-6 place-items-center rounded-full bg-primary text-white">
-								<X class="h-3.5 w-3.5 rotate-45" />
-							</div>
-						{/if}
-					</button>
-				{/each}
-			</div>
-		{/if}
-
-		<div class="flex items-center justify-end gap-2 pt-2">
-			<button
-				type="button"
-				class="rounded-lg border px-4 py-2 text-sm font-medium transition-colors"
-				style="border-color: var(--color-border); color: var(--color-foreground)"
-				onclick={() => (pickerOpen = false)}
-			>
-				{t('common.cancel', 'Cancel')}
-			</button>
-			<button
-				type="button"
-				class="rounded-lg px-4 py-2 text-sm font-medium text-white transition-opacity disabled:opacity-50"
-				style="background: var(--color-primary)"
-				disabled={pickedIds.size === 0}
-				onclick={confirmPicks}
-			>
-				{t('settings.auth_slides_add_selected', 'Add selected')}
-			</button>
-		</div>
-	</div>
-</Modal>
+<!-- Full media picker: Browse Library / Upload New / Stock Photos -->
+<MediaPickerModal bind:open={pickerOpen} onselect={onMediaSelect} accept="image/*" />

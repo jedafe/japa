@@ -58,13 +58,16 @@ type ChecklistItemDTO struct {
 }
 
 // SelectorDTO is the API response shape for a selector entry (distinct
-// destination + visa category combination).
+// destination + visa category combination). Includes GuideID so the
+// frontend can fetch items via GET /arrival-checklist/:guide_id without
+// a separate list-guides call.
 type SelectorDTO struct {
 	DestinationSpaceID string `json:"destination_space_id"`
 	DestSpaceName      string `json:"destination_space_name,omitempty"`
 	DestSpaceCode      string `json:"destination_space_code,omitempty"`
 	VisaCategory       string `json:"visa_category,omitempty"`
 	GuideCount         int64  `json:"guide_count"`
+	GuideID            string `json:"guide_id"`
 }
 
 // CreateGuideRequest is the request body for POST /admin/arrival-checklists.
@@ -423,6 +426,9 @@ func selectorRowToDTO(r SelectorRow) SelectorDTO {
 	}
 	if r.VisaCategory != nil {
 		dto.VisaCategory = *r.VisaCategory
+	}
+	if r.GuideID.Valid {
+		dto.GuideID = r.GuideID.String()
 	}
 	return dto
 }

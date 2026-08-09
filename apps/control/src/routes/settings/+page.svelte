@@ -7,6 +7,7 @@
 	import type { SystemSetting } from '$lib/api/types';
 	import { t, translations } from '$lib/stores/i18n.svelte';
 	import { convertImageToModernFormat } from '$lib/utils/imageConvert';
+	import AchievementReactionsEditor from '$lib/components/settings/AchievementReactionsEditor.svelte';
 	import { categoryIcons, categoryNames, sensitiveKeys as categorySensitiveKeys, textareaKeys as categoryTextareaKeys, uploadKeys as categoryUploadKeys, colorKeys as categoryColorKeys } from '$lib/components/settings/categoryConfig';
 	import {
 		Settings,
@@ -584,6 +585,9 @@
 
 	function getSettingComponentType(setting: SystemSetting): string {
 		if (setting.type === 'bool' || isBoolValue(setting.value)) return 'switch';
+		// achievement_reactions stores a JSONB array of {emoji, label} pairs (§89).
+		// Render as a dedicated reaction editor instead of raw JSON text.
+		if (setting.key === 'achievement_reactions') return 'achievement-reactions';
 		// Onboarding promoted_* fields store JSON arrays of UUIDs — render as
 		// an entity multi-select that shows names instead of raw UUIDs.
 		if (setting.key in entityOptions) return 'entity-multi-select';
@@ -1001,6 +1005,15 @@
 										</Select.Root>
 									</div>
 
+							{:else if componentType === 'achievement-reactions'}
+								<div class="w-full max-w-md">
+									<AchievementReactionsEditor
+										value={setting.value ?? '[]'}
+										disabled={isSaving}
+										onchange={(next) => updateSetting(setting.key, next)}
+									/>
+								</div>
+
 							{:else if componentType === 'entity-multi-select'}
 								<div class="w-64">
 									<div class="mb-1 flex flex-wrap gap-1">
@@ -1409,6 +1422,15 @@ if (isHidden) {
 											}}
 											class="{inputClasses} w-64 resize-y font-mono text-xs"
 										></textarea>
+
+								{:else if componentType === 'achievement-reactions'}
+									<div class="w-full">
+										<AchievementReactionsEditor
+											value={setting.value ?? '[]'}
+											disabled={isSaving}
+											onchange={(next) => updateSetting(setting.key, next)}
+										/>
+									</div>
 
 								{:else if componentType === 'entity-multi-select'}
 									<div class="w-64">

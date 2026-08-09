@@ -110,7 +110,7 @@ func parsePageParams(r *http.Request) (page, limit int32) {
 // ---------------------------------------------------------------------------
 
 // HandleList handles GET /scam-alerts — list confirmed scam reports.
-// Query params: ?destination_space_id=&scam_type=&page=&limit=
+// Query params: ?dest=&scam_type=&page=&limit= (also accepts ?destination_space_id= as legacy alias)
 func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
@@ -123,9 +123,14 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var destSpaceID pgtype.UUID
-	if v := r.URL.Query().Get("destination_space_id"); v != "" {
-		if err := destSpaceID.Scan(v); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_id", "Invalid destination_space_id")
+	// Accept ?dest= (geo-aware standard) or ?destination_space_id= (legacy alias).
+	destParam := r.URL.Query().Get("dest")
+	if destParam == "" {
+		destParam = r.URL.Query().Get("destination_space_id")
+	}
+	if destParam != "" {
+		if err := destSpaceID.Scan(destParam); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_id", "Invalid destination space ID")
 			return
 		}
 	}
@@ -349,7 +354,7 @@ func (h *Handlers) HandleUnsubscribe(w http.ResponseWriter, r *http.Request) {
 
 // HandleAdminList handles GET /admin/scam-alerts — moderation queue listing
 // all reports (any status). Admin-only (scam_alert.review permission checked
-// at route registration). Supports ?status=&destination_space_id=&scam_type=&page=&limit=.
+// at route registration). Supports ?status=&dest=&scam_type=&page=&limit= (also accepts ?destination_space_id= as legacy alias).
 func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
@@ -368,9 +373,14 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	scamType := r.URL.Query().Get("scam_type")
 
 	var destSpaceID pgtype.UUID
-	if v := r.URL.Query().Get("destination_space_id"); v != "" {
-		if err := destSpaceID.Scan(v); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_id", "Invalid destination_space_id")
+	// Accept ?dest= (geo-aware standard) or ?destination_space_id= (legacy alias).
+	destParam := r.URL.Query().Get("dest")
+	if destParam == "" {
+		destParam = r.URL.Query().Get("destination_space_id")
+	}
+	if destParam != "" {
+		if err := destSpaceID.Scan(destParam); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_id", "Invalid destination space ID")
 			return
 		}
 	}

@@ -4517,164 +4517,185 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 			// Phase 49 — V2 Functional Tools (§90–§97, §99–§101)
 			// Ref: japaconnect-engineering/sections/90-97,99-101
-			// Feature flags checked internally via system_settings (no features.Gate).
+			// Feature-flagged via features.Gate (returns 404 when disabled, ADR-042).
+			// The internal service.Enabled() checks remain as a secondary defense.
 
 			// §90 — Visa Route Comparison (ADR-098)
-			r.Get("/visa-routes", visaRoutesHandlers.HandleList)
-			r.Get("/visa-routes/compare", visaRoutesHandlers.HandleCompare)
-			r.Get("/visa-routes/{id}", visaRoutesHandlers.HandleGet)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "visa_routes.manage")).
-				Get("/admin/visa-routes", visaRoutesHandlers.HandleAdminList)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "visa_routes.manage")).
-				Post("/admin/visa-routes", visaRoutesHandlers.HandleAdminCreate)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "visa_routes.manage")).
-				Patch("/admin/visa-routes/{id}", visaRoutesHandlers.HandleAdminUpdate)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "visa_routes.manage")).
-				Patch("/admin/visa-routes/{id}/approve", visaRoutesHandlers.HandleAdminApprove)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "visa_routes.manage")).
-				Delete("/admin/visa-routes/{id}", visaRoutesHandlers.HandleAdminDelete)
+			r.With(features.Gate(featureChecker, "feature.visa_routes")).Group(func(r chi.Router) {
+				r.Get("/visa-routes", visaRoutesHandlers.HandleList)
+				r.Get("/visa-routes/compare", visaRoutesHandlers.HandleCompare)
+				r.Get("/visa-routes/{id}", visaRoutesHandlers.HandleGet)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "visa_routes.manage")).
+					Get("/admin/visa-routes", visaRoutesHandlers.HandleAdminList)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "visa_routes.manage")).
+					Post("/admin/visa-routes", visaRoutesHandlers.HandleAdminCreate)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "visa_routes.manage")).
+					Patch("/admin/visa-routes/{id}", visaRoutesHandlers.HandleAdminUpdate)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "visa_routes.manage")).
+					Patch("/admin/visa-routes/{id}/approve", visaRoutesHandlers.HandleAdminApprove)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "visa_routes.manage")).
+					Delete("/admin/visa-routes/{id}", visaRoutesHandlers.HandleAdminDelete)
+			})
 
 			// §91 — Embassy Appointment Alerter (ADR-099)
-			r.Get("/embassies", appointmentAlertHandlers.HandleListEmbassies)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "appointment_alert.manage_own")).
-				Get("/me/appointment-alerts", appointmentAlertHandlers.HandleListMyAlerts)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "appointment_alert.manage_own")).
-				Post("/me/appointment-alerts", appointmentAlertHandlers.HandleCreateMyAlert)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "appointment_alert.manage_own")).
-				Patch("/me/appointment-alerts/{id}", appointmentAlertHandlers.HandleUpdateMyAlert)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "appointment_alert.manage_own")).
-				Delete("/me/appointment-alerts/{id}", appointmentAlertHandlers.HandleDeleteMyAlert)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "embassy_monitor.manage")).
-				Get("/admin/embassies", appointmentAlertHandlers.HandleAdminListEmbassies)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "embassy_monitor.manage")).
-				Post("/admin/embassies", appointmentAlertHandlers.HandleAdminCreateEmbassy)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "embassy_monitor.manage")).
-				Patch("/admin/embassies/{id}", appointmentAlertHandlers.HandleAdminUpdateEmbassy)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "embassy_monitor.manage")).
-				Post("/admin/embassies/{id}/poll", appointmentAlertHandlers.HandleAdminPollEmbassy)
+			r.With(features.Gate(featureChecker, "feature.appointment_alert")).Group(func(r chi.Router) {
+				r.Get("/embassies", appointmentAlertHandlers.HandleListEmbassies)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "appointment_alert.manage_own")).
+					Get("/me/appointment-alerts", appointmentAlertHandlers.HandleListMyAlerts)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "appointment_alert.manage_own")).
+					Post("/me/appointment-alerts", appointmentAlertHandlers.HandleCreateMyAlert)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "appointment_alert.manage_own")).
+					Patch("/me/appointment-alerts/{id}", appointmentAlertHandlers.HandleUpdateMyAlert)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "appointment_alert.manage_own")).
+					Delete("/me/appointment-alerts/{id}", appointmentAlertHandlers.HandleDeleteMyAlert)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "embassy_monitor.manage")).
+					Get("/admin/embassies", appointmentAlertHandlers.HandleAdminListEmbassies)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "embassy_monitor.manage")).
+					Post("/admin/embassies", appointmentAlertHandlers.HandleAdminCreateEmbassy)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "embassy_monitor.manage")).
+					Patch("/admin/embassies/{id}", appointmentAlertHandlers.HandleAdminUpdateEmbassy)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "embassy_monitor.manage")).
+					Post("/admin/embassies/{id}/poll", appointmentAlertHandlers.HandleAdminPollEmbassy)
+			})
 
 			// §92 — Arrival Checklist (ADR-100)
-			r.Get("/arrival-checklist/selector", arrivalChecklistHandlers.HandleSelector)
-			r.Get("/arrival-checklist/{guide_id}", arrivalChecklistHandlers.HandleGetGuide)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "arrival_checklist.manage")).
-				Get("/admin/arrival-checklists", arrivalChecklistHandlers.HandleAdminList)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "arrival_checklist.manage")).
-				Post("/admin/arrival-checklists", arrivalChecklistHandlers.HandleAdminCreate)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "arrival_checklist.manage")).
-				Post("/admin/arrival-checklists/generate", arrivalChecklistHandlers.HandleAdminGenerate)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "arrival_checklist.manage")).
-				Patch("/admin/arrival-checklists/{id}/approve", arrivalChecklistHandlers.HandleAdminApprove)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "arrival_checklist.manage")).
-				Patch("/admin/arrival-checklists/{id}", arrivalChecklistHandlers.HandleAdminUpdate)
+			r.With(features.Gate(featureChecker, "feature.arrival_checklist")).Group(func(r chi.Router) {
+				r.Get("/arrival-checklist/selector", arrivalChecklistHandlers.HandleSelector)
+				r.Get("/arrival-checklist/{guide_id}", arrivalChecklistHandlers.HandleGetGuide)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "arrival_checklist.manage")).
+					Get("/admin/arrival-checklists", arrivalChecklistHandlers.HandleAdminList)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "arrival_checklist.manage")).
+					Post("/admin/arrival-checklists", arrivalChecklistHandlers.HandleAdminCreate)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "arrival_checklist.manage")).
+					Post("/admin/arrival-checklists/generate", arrivalChecklistHandlers.HandleAdminGenerate)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "arrival_checklist.manage")).
+					Patch("/admin/arrival-checklists/{id}/approve", arrivalChecklistHandlers.HandleAdminApprove)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "arrival_checklist.manage")).
+					Patch("/admin/arrival-checklists/{id}", arrivalChecklistHandlers.HandleAdminUpdate)
+			})
 
 			// §94 — Professional Credential Checker (ADR-102)
-			r.Get("/credentials/professions", credentialCheckerHandlers.HandleListProfessions)
-			r.Get("/credentials", credentialCheckerHandlers.HandleListPathways)
-			r.Get("/credentials/{id}", credentialCheckerHandlers.HandleGetPathway)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "credential_checker.note")).
-				Post("/credentials/{id}/notes", credentialCheckerHandlers.HandleCreateNote)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "credential_checker.manage")).
-				Get("/admin/credentials", credentialCheckerHandlers.HandleAdminList)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "credential_checker.manage")).
-				Post("/admin/credentials", credentialCheckerHandlers.HandleAdminCreate)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "credential_checker.manage")).
-				Post("/admin/credentials/generate", credentialCheckerHandlers.HandleAdminGenerate)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "credential_checker.manage")).
-				Patch("/admin/credentials/{id}", credentialCheckerHandlers.HandleAdminUpdate)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "credential_checker.manage")).
-				Patch("/admin/credentials/{id}/approve", credentialCheckerHandlers.HandleAdminApprove)
+			r.With(features.Gate(featureChecker, "feature.credential_checker")).Group(func(r chi.Router) {
+				r.Get("/credentials/professions", credentialCheckerHandlers.HandleListProfessions)
+				r.Get("/credentials", credentialCheckerHandlers.HandleListPathways)
+				r.Get("/credentials/{id}", credentialCheckerHandlers.HandleGetPathway)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "credential_checker.note")).
+					Post("/credentials/{id}/notes", credentialCheckerHandlers.HandleCreateNote)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "credential_checker.manage")).
+					Get("/admin/credentials", credentialCheckerHandlers.HandleAdminList)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "credential_checker.manage")).
+					Post("/admin/credentials", credentialCheckerHandlers.HandleAdminCreate)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "credential_checker.manage")).
+					Post("/admin/credentials/generate", credentialCheckerHandlers.HandleAdminGenerate)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "credential_checker.manage")).
+					Patch("/admin/credentials/{id}", credentialCheckerHandlers.HandleAdminUpdate)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "credential_checker.manage")).
+					Patch("/admin/credentials/{id}/approve", credentialCheckerHandlers.HandleAdminApprove)
+			})
 
 			// §95 — CV Formatter (ADR-103)
-			r.Get("/cv-formatter/standards", cvFormatterHandlers.HandleListStandards)
-			r.Get("/cv-formatter/standards/{dest}", cvFormatterHandlers.HandleGetStandard)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "cv_formatter.use")).
-				Post("/cv-formatter/format", cvFormatterHandlers.HandleFormat)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "cv_formatter.use")).
-				Get("/cv-formatter/sessions/{id}", cvFormatterHandlers.HandleGetSession)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "cv_formatter.use")).
-				Get("/cv-formatter/sessions/{id}/download", cvFormatterHandlers.HandleDownload)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "cv_formatter.manage")).
-				Get("/admin/cv-formatter/standards", cvFormatterHandlers.HandleAdminListStandards)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "cv_formatter.manage")).
-				Post("/admin/cv-formatter/standards", cvFormatterHandlers.HandleAdminUpsertStandard)
+			r.With(features.Gate(featureChecker, "feature.cv_formatter")).Group(func(r chi.Router) {
+				r.Get("/cv-formatter/standards", cvFormatterHandlers.HandleListStandards)
+				r.Get("/cv-formatter/standards/{dest}", cvFormatterHandlers.HandleGetStandard)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "cv_formatter.use")).
+					Post("/cv-formatter/format", cvFormatterHandlers.HandleFormat)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "cv_formatter.use")).
+					Get("/cv-formatter/sessions/{id}", cvFormatterHandlers.HandleGetSession)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "cv_formatter.use")).
+					Get("/cv-formatter/sessions/{id}/download", cvFormatterHandlers.HandleDownload)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "cv_formatter.manage")).
+					Get("/admin/cv-formatter/standards", cvFormatterHandlers.HandleAdminListStandards)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "cv_formatter.manage")).
+					Post("/admin/cv-formatter/standards", cvFormatterHandlers.HandleAdminUpsertStandard)
+			})
 
 			// §96 — Housing Guide (ADR-104)
-			r.Get("/housing-guide", housingGuideHandlers.HandleList)
-			r.Get("/housing-guide/{id}", housingGuideHandlers.HandleGet)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "housing_guide.manage")).
-				Get("/admin/housing-guides", housingGuideHandlers.HandleAdminList)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "housing_guide.manage")).
-				Post("/admin/housing-guides", housingGuideHandlers.HandleAdminCreate)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "housing_guide.manage")).
-				Post("/admin/housing-guides/generate", housingGuideHandlers.HandleAdminGenerate)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "housing_guide.manage")).
-				Patch("/admin/housing-guides/{id}", housingGuideHandlers.HandleAdminUpdate)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "housing_guide.manage")).
-				Patch("/admin/housing-guides/{id}/approve", housingGuideHandlers.HandleAdminApprove)
+			r.With(features.Gate(featureChecker, "feature.housing_guide")).Group(func(r chi.Router) {
+				r.Get("/housing-guide", housingGuideHandlers.HandleList)
+				r.Get("/housing-guide/{id}", housingGuideHandlers.HandleGet)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "housing_guide.manage")).
+					Get("/admin/housing-guides", housingGuideHandlers.HandleAdminList)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "housing_guide.manage")).
+					Post("/admin/housing-guides", housingGuideHandlers.HandleAdminCreate)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "housing_guide.manage")).
+					Post("/admin/housing-guides/generate", housingGuideHandlers.HandleAdminGenerate)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "housing_guide.manage")).
+					Patch("/admin/housing-guides/{id}", housingGuideHandlers.HandleAdminUpdate)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "housing_guide.manage")).
+					Patch("/admin/housing-guides/{id}/approve", housingGuideHandlers.HandleAdminApprove)
+			})
 
 			// §97 — Attestation Guide (ADR-105)
-			r.Get("/attestation", attestationGuideHandlers.HandleList)
-			r.Get("/attestation/{id}", attestationGuideHandlers.HandleGet)
-			r.Get("/attestation/{id}/export/pdf", attestationGuideHandlers.HandleExportPDF)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "attestation_guide.update")).
-				Post("/attestation/{id}/updates", attestationGuideHandlers.HandleSubmitUpdate)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "attestation_guide.manage")).
-				Get("/admin/attestation", attestationGuideHandlers.HandleAdminList)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "attestation_guide.manage")).
-				Post("/admin/attestation", attestationGuideHandlers.HandleAdminCreate)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "attestation_guide.manage")).
-				Post("/admin/attestation/generate", attestationGuideHandlers.HandleAdminGenerate)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "attestation_guide.manage")).
-				Patch("/admin/attestation/{id}/approve", attestationGuideHandlers.HandleAdminApprove)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "attestation_guide.manage")).
-				Patch("/admin/attestation/updates/{id}", attestationGuideHandlers.HandleAdminReviewUpdate)
+			r.With(features.Gate(featureChecker, "feature.attestation_guide")).Group(func(r chi.Router) {
+				r.Get("/attestation", attestationGuideHandlers.HandleList)
+				r.Get("/attestation/{id}", attestationGuideHandlers.HandleGet)
+				r.Get("/attestation/{id}/export/pdf", attestationGuideHandlers.HandleExportPDF)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "attestation_guide.update")).
+					Post("/attestation/{id}/updates", attestationGuideHandlers.HandleSubmitUpdate)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "attestation_guide.manage")).
+					Get("/admin/attestation", attestationGuideHandlers.HandleAdminList)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "attestation_guide.manage")).
+					Post("/admin/attestation", attestationGuideHandlers.HandleAdminCreate)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "attestation_guide.manage")).
+					Post("/admin/attestation/generate", attestationGuideHandlers.HandleAdminGenerate)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "attestation_guide.manage")).
+					Patch("/admin/attestation/{id}/approve", attestationGuideHandlers.HandleAdminApprove)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "attestation_guide.manage")).
+					Patch("/admin/attestation/updates/{id}", attestationGuideHandlers.HandleAdminReviewUpdate)
+			})
 
 			// §99 — Language Test Hub (ADR-107)
-			r.Get("/language-tests", languageTestHubHandlers.HandleListTests)
-			r.Get("/language-tests/requirements", languageTestHubHandlers.HandleListRequirements)
-			r.Get("/language-tests/{test_slug}", languageTestHubHandlers.HandleGetTest)
-			r.Get("/language-tests/{test_slug}/resources", languageTestHubHandlers.HandleListResources)
-			r.Get("/language-tests/{test_slug}/stories", languageTestHubHandlers.HandleListStories)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "language_test_hub.story")).
-				Post("/language-tests/{test_slug}/stories", languageTestHubHandlers.HandleCreateStory)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "language_test_hub.manage")).
-				Get("/admin/language-tests/requirements", languageTestHubHandlers.HandleAdminListRequirements)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "language_test_hub.manage")).
-				Post("/admin/language-tests/requirements", languageTestHubHandlers.HandleAdminCreateRequirement)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "language_test_hub.manage")).
-				Post("/admin/language-tests/requirements/generate", languageTestHubHandlers.HandleAdminGenerateRequirement)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "language_test_hub.manage")).
-				Patch("/admin/language-tests/requirements/{id}/approve", languageTestHubHandlers.HandleAdminApproveRequirement)
+			r.With(features.Gate(featureChecker, "feature.language_test_hub")).Group(func(r chi.Router) {
+				r.Get("/language-tests", languageTestHubHandlers.HandleListTests)
+				r.Get("/language-tests/requirements", languageTestHubHandlers.HandleListRequirements)
+				r.Get("/language-tests/{test_slug}", languageTestHubHandlers.HandleGetTest)
+				r.Get("/language-tests/{test_slug}/resources", languageTestHubHandlers.HandleListResources)
+				r.Get("/language-tests/{test_slug}/stories", languageTestHubHandlers.HandleListStories)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "language_test_hub.story")).
+					Post("/language-tests/{test_slug}/stories", languageTestHubHandlers.HandleCreateStory)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "language_test_hub.manage")).
+					Get("/admin/language-tests/requirements", languageTestHubHandlers.HandleAdminListRequirements)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "language_test_hub.manage")).
+					Post("/admin/language-tests/requirements", languageTestHubHandlers.HandleAdminCreateRequirement)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "language_test_hub.manage")).
+					Post("/admin/language-tests/requirements/generate", languageTestHubHandlers.HandleAdminGenerateRequirement)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "language_test_hub.manage")).
+					Patch("/admin/language-tests/requirements/{id}/approve", languageTestHubHandlers.HandleAdminApproveRequirement)
+			})
 
 			// §100 — Tax Calculator (ADR-108)
-			r.Get("/tax-calculator", taxCalculatorHandlers.HandleList)
-			r.Get("/tax-calculator/treaty", taxCalculatorHandlers.HandleTreaty)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tax_calculator.manage")).
-				Get("/admin/tax-calculator", taxCalculatorHandlers.HandleAdminList)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tax_calculator.manage")).
-				Post("/admin/tax-calculator/guides", taxCalculatorHandlers.HandleCreateGuide)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tax_calculator.manage")).
-				Post("/admin/tax-calculator/guides/generate", taxCalculatorHandlers.HandleGenerateGuide)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tax_calculator.manage")).
-				Patch("/admin/tax-calculator/guides/{id}/approve", taxCalculatorHandlers.HandleApproveGuide)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tax_calculator.manage")).
-				Post("/admin/tax-calculator/treaties", taxCalculatorHandlers.HandleUpsertTreaty)
+			r.With(features.Gate(featureChecker, "feature.tax_calculator")).Group(func(r chi.Router) {
+				r.Get("/tax-calculator", taxCalculatorHandlers.HandleList)
+				r.Get("/tax-calculator/treaty", taxCalculatorHandlers.HandleTreaty)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tax_calculator.manage")).
+					Get("/admin/tax-calculator", taxCalculatorHandlers.HandleAdminList)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tax_calculator.manage")).
+					Post("/admin/tax-calculator/guides", taxCalculatorHandlers.HandleCreateGuide)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tax_calculator.manage")).
+					Post("/admin/tax-calculator/guides/generate", taxCalculatorHandlers.HandleGenerateGuide)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tax_calculator.manage")).
+					Patch("/admin/tax-calculator/guides/{id}/approve", taxCalculatorHandlers.HandleApproveGuide)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tax_calculator.manage")).
+					Post("/admin/tax-calculator/treaties", taxCalculatorHandlers.HandleUpsertTreaty)
+			})
 
 			// §101 — Diaspora Community Locator (ADR-109)
-			r.Get("/community-locator", communityLocatorHandlers.HandleList)
-			r.Get("/community-locator/{slug}", communityLocatorHandlers.HandleGet)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "community_locator.submit")).
-				Post("/community-locator", communityLocatorHandlers.HandleSubmit)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "community_locator.claim")).
-				Post("/community-locator/{id}/claim", communityLocatorHandlers.HandleClaim)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "community_locator.review")).
-				Get("/admin/community-locator", communityLocatorHandlers.HandleAdminList)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "community_locator.review")).
-				Patch("/admin/community-locator/{id}/approve", communityLocatorHandlers.HandleAdminApprove)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "community_locator.manage")).
-				Patch("/admin/community-locator/{id}/verify", communityLocatorHandlers.HandleAdminVerify)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "community_locator.manage")).
-				Patch("/admin/community-locator/{id}/claim/{claim_id}", communityLocatorHandlers.HandleAdminResolveClaim)
+			r.With(features.Gate(featureChecker, "feature.community_locator")).Group(func(r chi.Router) {
+				r.Get("/community-locator", communityLocatorHandlers.HandleList)
+				r.Get("/community-locator/{slug}", communityLocatorHandlers.HandleGet)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "community_locator.submit")).
+					Post("/community-locator", communityLocatorHandlers.HandleSubmit)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "community_locator.claim")).
+					Post("/community-locator/{id}/claim", communityLocatorHandlers.HandleClaim)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "community_locator.review")).
+					Get("/admin/community-locator", communityLocatorHandlers.HandleAdminList)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "community_locator.review")).
+					Patch("/admin/community-locator/{id}/approve", communityLocatorHandlers.HandleAdminApprove)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "community_locator.manage")).
+					Patch("/admin/community-locator/{id}/verify", communityLocatorHandlers.HandleAdminVerify)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "community_locator.manage")).
+					Patch("/admin/community-locator/{id}/claim/{claim_id}", communityLocatorHandlers.HandleAdminResolveClaim)
+			})
 
 			// Section 61 — Self-Serve Advertising (ADR-079)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ads.self_serve.create")).

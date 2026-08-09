@@ -28,7 +28,19 @@ const TOOL_SETTINGS_KEYS: Array<{ key: string; surface: ToolSurface }> = [
 	{ key: 'col_calculator', surface: 'cost-of-living' },
 	{ key: 'checklist', surface: 'visa-checklist' },
 	{ key: 'assessment', surface: 'readiness' },
-	{ key: 'japabot', surface: 'japabot' }
+	{ key: 'japabot', surface: 'japabot' },
+	// V2 functional tools (§§90–97, §§99–101) — geo-aware tool pattern.
+	{ key: 'visa_routes', surface: 'visa-routes' },
+	{ key: 'appointment_alert', surface: 'embassy-alerter' },
+	{ key: 'arrival_checklist', surface: 'arrival-checklist' },
+	{ key: 'visa_timeline', surface: 'processing-tracker' },
+	{ key: 'credential_checker', surface: 'credential-checker' },
+	{ key: 'cv_formatter', surface: 'cv-formatter' },
+	{ key: 'housing_guide', surface: 'housing-guide' },
+	{ key: 'attestation_guide', surface: 'attestation-guide' },
+	{ key: 'language_test_hub', surface: 'language-test' },
+	{ key: 'tax_calculator', surface: 'tax-calculator' },
+	{ key: 'community_locator', surface: 'community-locator' }
 ];
 
 /** Default subdomains per tool (from system-settings-catalog.md). */
@@ -38,7 +50,19 @@ const DEFAULT_SUBDOMAINS: Record<string, string> = {
 	col_calculator: 'cost-of-living',
 	checklist: 'visa-checklist',
 	assessment: 'readiness',
-	japabot: 'japabot'
+	japabot: 'japabot',
+	// V2 functional tools — default subdomains match the route slugs.
+	visa_routes: 'visa-routes',
+	appointment_alert: 'embassy-alerter',
+	arrival_checklist: 'arrival-checklist',
+	visa_timeline: 'processing-tracker',
+	credential_checker: 'credential-checker',
+	cv_formatter: 'cv-formatter',
+	housing_guide: 'housing-guide',
+	attestation_guide: 'attestation-guide',
+	language_test_hub: 'language-test',
+	tax_calculator: 'tax-calculator',
+	community_locator: 'community-locator'
 };
 
 /**

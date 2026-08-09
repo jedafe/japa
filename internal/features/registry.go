@@ -60,6 +60,17 @@ var Registry = []Feature{
 	{Key: "feature.ama", Label: "Ask an Expat AMA", Default: false},
 	{Key: "feature.achievement", Label: "Community Achievement Feed", Default: false},
 	{Key: "feature.service_directory", Label: "Service Directory", Default: false},
+	// V2 Functional Tools (§90–§97, §99–§101) — Phase 49
+	{Key: "feature.visa_routes", Label: "Visa Route Comparison", Default: false},
+	{Key: "feature.appointment_alert", Label: "Embassy Appointment Alerter", Default: false},
+	{Key: "feature.arrival_checklist", Label: "Arrival Checklist", Default: false},
+	{Key: "feature.credential_checker", Label: "Professional Credential Checker", Default: false},
+	{Key: "feature.cv_formatter", Label: "CV Formatter", Default: false},
+	{Key: "feature.housing_guide", Label: "Housing Guide", Default: false},
+	{Key: "feature.attestation_guide", Label: "Attestation Guide", Default: false},
+	{Key: "feature.language_test_hub", Label: "Language Test Hub", Default: false},
+	{Key: "feature.tax_calculator", Label: "Tax Calculator", Default: false},
+	{Key: "feature.community_locator", Label: "Diaspora Community Locator", Default: false},
 }
 
 // DefaultFor returns the default enabled state for a feature key.

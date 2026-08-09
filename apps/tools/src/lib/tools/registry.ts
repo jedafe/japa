@@ -147,6 +147,194 @@ export const TOOLS: ToolMeta[] = [
 		settingsKey: 'japabot',
 		enabledSetting: 'ai.japabot_enabled',
 		keywords: ['japabot', 'AI', 'chat', 'RAG', 'assistant', 'japa guide']
+	},
+	// --- V2 functional tools (§§90–97, §§99–101) — geo-aware tool pattern ---
+	{
+		slug: 'visa-routes',
+		route: '/visa-routes',
+		icon: 'route',
+		name: 'Visa Route Comparison',
+		nameKey: 'tool.visa_routes.name',
+		tagline: 'Compare visa routes side by side',
+		taglineKey: 'tool.visa_routes.tagline',
+		description:
+			'Compare visa routes for your destination — eligibility, fees, path to PR, and renewal terms — side by side.',
+		descriptionKey: 'tool.visa_routes.description',
+		accent: '#2563eb',
+		accentHover: '#1d4ed8',
+		settingsKey: 'visa_routes',
+		enabledSetting: 'visa_routes.enabled',
+		keywords: ['visa', 'routes', 'comparison', 'PR', 'renewal', 'immigration']
+	},
+	{
+		slug: 'embassy-alerter',
+		route: '/embassy-alerter',
+		icon: 'bell-ring',
+		name: 'Embassy Appointment Alerter',
+		nameKey: 'tool.embassy_alerter.name',
+		tagline: 'Get notified when slots open',
+		taglineKey: 'tool.embassy_alerter.tagline',
+		description:
+			'Subscribe to embassy appointment availability alerts. Get notified when a slot opens in your date range.',
+		descriptionKey: 'tool.embassy_alerter.description',
+		accent: '#dc2626',
+		accentHover: '#b91c1c',
+		settingsKey: 'appointment_alert',
+		enabledSetting: 'appointment_alert.enabled',
+		keywords: ['embassy', 'appointment', 'alert', 'visa slot', 'notification']
+	},
+	{
+		slug: 'arrival-checklist',
+		route: '/arrival-checklist',
+		icon: 'plane-landing',
+		name: 'Arrival Checklist',
+		nameKey: 'tool.arrival_checklist.name',
+		tagline: 'Everything to do after you land',
+		taglineKey: 'tool.arrival_checklist.tagline',
+		description:
+			'A phased checklist of tasks to complete after arriving in your destination country — registration, banking, and more.',
+		descriptionKey: 'tool.arrival_checklist.description',
+		accent: '#0891b2',
+		accentHover: '#0e7490',
+		settingsKey: 'arrival_checklist',
+		enabledSetting: 'arrival_checklist.enabled',
+		keywords: ['arrival', 'checklist', 'post-arrival', 'registration', 'settling in']
+	},
+	{
+		slug: 'processing-tracker',
+		route: '/processing-tracker',
+		icon: 'timer',
+		name: 'Visa Processing Time Tracker',
+		nameKey: 'tool.processing_tracker.name',
+		tagline: 'How long will your visa take?',
+		taglineKey: 'tool.processing_tracker.tagline',
+		description:
+			'View visa processing time statistics and trends — average, median, and percentile wait times for your corridor.',
+		descriptionKey: 'tool.processing_tracker.description',
+		accent: '#7c3aed',
+		accentHover: '#6d28d9',
+		settingsKey: 'visa_timeline',
+		enabledSetting: 'visa_timeline.enabled',
+		keywords: ['processing time', 'visa', 'wait time', 'timeline', 'statistics']
+	},
+	{
+		slug: 'credential-checker',
+		route: '/credential-checker',
+		icon: 'badge-check',
+		name: 'Professional Credential Checker',
+		nameKey: 'tool.credential_checker.name',
+		tagline: 'Will your qualification be recognised?',
+		taglineKey: 'tool.credential_checker.tagline',
+		description:
+			'Look up credential recognition pathways for your profession — regulatory body, timeline, cost, and steps.',
+		descriptionKey: 'tool.credential_checker.description',
+		accent: '#059669',
+		accentHover: '#047857',
+		settingsKey: 'credential_checker',
+		enabledSetting: 'credential_checker.enabled',
+		keywords: ['credentials', 'qualifications', 'professional', 'regulatory body', 'recognition']
+	},
+	{
+		slug: 'cv-formatter',
+		route: '/cv-formatter',
+		icon: 'file-text',
+		name: 'CV Formatter',
+		nameKey: 'tool.cv_formatter.name',
+		tagline: 'Format your CV for your destination',
+		taglineKey: 'tool.cv_formatter.tagline',
+		description:
+			'Get destination-specific CV standards and AI-assisted formatting — photo policy, sections, tone, and common pitfalls.',
+		descriptionKey: 'tool.cv_formatter.description',
+		accent: '#9333ea',
+		accentHover: '#7e22ce',
+		settingsKey: 'cv_formatter',
+		enabledSetting: 'cv_formatter.enabled',
+		keywords: ['CV', 'resume', 'format', 'standards', 'job application']
+	},
+	{
+		slug: 'housing-guide',
+		route: '/housing-guide',
+		icon: 'home',
+		name: 'Housing Guide',
+		nameKey: 'tool.housing_guide.name',
+		tagline: 'Find safe housing abroad',
+		taglineKey: 'tool.housing_guide.tagline',
+		description:
+			'Destination-specific housing guides — platforms, landlord requirements, rent ranges, scam categories, and tips.',
+		descriptionKey: 'tool.housing_guide.description',
+		accent: '#ca8a04',
+		accentHover: '#a16207',
+		settingsKey: 'housing_guide',
+		enabledSetting: 'housing_guide.enabled',
+		keywords: ['housing', 'rent', 'accommodation', 'landlord', 'scam', 'moving']
+	},
+	{
+		slug: 'attestation-guide',
+		route: '/attestation-guide',
+		icon: 'stamp',
+		name: 'Attestation Guide',
+		nameKey: 'tool.attestation_guide.name',
+		tagline: 'Document attestation made clear',
+		taglineKey: 'tool.attestation_guide.tagline',
+		description:
+			'Step-by-step document attestation pathways — apostille requirements, steps, fees, and community-verified updates.',
+		descriptionKey: 'tool.attestation_guide.description',
+		accent: '#b45309',
+		accentHover: '#92400e',
+		settingsKey: 'attestation_guide',
+		enabledSetting: 'attestation_guide.enabled',
+		keywords: ['attestation', 'apostille', 'document', 'legalisation', 'authentication']
+	},
+	{
+		slug: 'language-test',
+		route: '/language-test',
+		icon: 'languages',
+		name: 'Language Test Hub',
+		nameKey: 'tool.language_test.name',
+		tagline: 'Meet the language requirement',
+		taglineKey: 'tool.language_test.tagline',
+		description:
+			'Find required language tests for your visa, minimum scores, prep resources, and community score stories.',
+		descriptionKey: 'tool.language_test.description',
+		accent: '#0d9488',
+		accentHover: '#0f766e',
+		settingsKey: 'language_test_hub',
+		enabledSetting: 'language_test_hub.enabled',
+		keywords: ['language test', 'IELTS', 'TOEFL', 'requirements', 'score', 'prep']
+	},
+	{
+		slug: 'tax-calculator',
+		route: '/tax-calculator',
+		icon: 'receipt',
+		name: 'Tax Calculator',
+		nameKey: 'tool.tax_calculator.name',
+		tagline: 'Understand your tax obligations',
+		taglineKey: 'tool.tax_calculator.tagline',
+		description:
+			'Destination-specific tax guides — residency triggers, worldwide income rules, double taxation treaties, and checklists.',
+		descriptionKey: 'tool.tax_calculator.description',
+		accent: '#4f46e5',
+		accentHover: '#4338ca',
+		settingsKey: 'tax_calculator',
+		enabledSetting: 'tax_calculator.enabled',
+		keywords: ['tax', 'calculator', 'double taxation', 'treaty', 'residency', 'income']
+	},
+	{
+		slug: 'community-locator',
+		route: '/community-locator',
+		icon: 'map-pin',
+		name: 'Diaspora Community Locator',
+		nameKey: 'tool.community_locator.name',
+		tagline: 'Find your community abroad',
+		taglineKey: 'tool.community_locator.tagline',
+		description:
+			'Find diaspora organisations near your destination — cultural groups, religious communities, and social clubs.',
+		descriptionKey: 'tool.community_locator.description',
+		accent: '#e11d48',
+		accentHover: '#be123c',
+		settingsKey: 'community_locator',
+		enabledSetting: 'community_locator.enabled',
+		keywords: ['community', 'diaspora', 'organisations', 'cultural', 'social', 'locator']
 	}
 ];
 

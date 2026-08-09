@@ -1,15 +1,18 @@
 <script lang="ts">
-	import { beforeNavigate, goto } from '$app/navigation';
+	import { beforeNavigate, goto, replaceState } from '$app/navigation';
+	import { page } from '$app/state';
+	import { untrack } from 'svelte';
 	import { t } from '$lib/stores/i18n.svelte';
 	import PageHeader from '$lib/components/layout/page-header.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { Modal } from '$lib/components/ui/modal';
 	import { Select } from '$lib/components/ui/select';
-	import { RefreshCw, Save, Check, Upload, RotateCcw, Undo2, AlertTriangle, ArrowRight } from 'lucide-svelte';
+	import { RefreshCw, Save, Check, Upload, RotateCcw, Undo2, AlertTriangle, ArrowRight, Image as ImageIcon } from 'lucide-svelte';
 	import { Switch } from "bits-ui";
 	import { settingsAdminApi, api } from '$lib/api';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import AuthBrandSlidesEditor from '$lib/components/settings/AuthBrandSlidesEditor.svelte';
+	import MediaPickerModal from '$lib/components/ui/MediaPickerModal.svelte';
 	import { convertImageToModernFormat } from '$lib/utils/imageConvert';
 
 	const canManage = $derived(hasPermission('admin.settings'));
@@ -40,7 +43,7 @@
 
 	let categories = $state<SettingCategory[]>([]);
 	let originalCategories = $state<SettingCategory[]>([]);
-	let activeTab = $state('');
+	let activeTab = $state(page.url.searchParams.get('category') ?? '');
 
 	const CATEGORY_ICONS: Record<string, string> = {
 		general: '⚙️',
@@ -217,6 +220,29 @@
 		return null;
 	}
 
+	// Sync the active tab to the URL as ?category={tab_name} so the view is
+	// shareable/bookmarkable and a page reload restores the exact tab. Uses
+	// replaceState (not goto) so tab switches don't trigger the beforeNavigate
+	// unsaved-changes guard — the user is still on the settings page.
+	function syncTabToUrl(tab: string) {
+		if (typeof window === 'undefined') return;
+		const params = new URLSearchParams(page.url.searchParams.toString());
+		if (tab) params.set('category', tab);
+		else params.delete('category');
+		const qs = params.toString();
+		const url = `${page.url.pathname}${qs ? `?${qs}` : ''}`;
+		try {
+			replaceState(url, {});
+		} catch {
+			window.history.replaceState({}, '', url);
+		}
+	}
+
+	function selectTab(tab: string) {
+		activeTab = tab;
+		syncTabToUrl(tab);
+	}
+
 	async function loadSettings() {
 		loading = true;
 		error = '';
@@ -236,9 +262,18 @@
 					}
 				}
 				originalToggleStates = JSON.parse(JSON.stringify(toggleStates));
-			// Select the first category tab once categories are loaded.
-			if (categories.length > 0 && !activeTab) {
-				activeTab = categories[0].key;
+			// Select the active tab once categories are loaded. Prefer the
+			// ?category= URL param if it matches a loaded category, otherwise
+			// fall back to the first category and sync the URL.
+			if (categories.length > 0) {
+				const urlCat = page.url.searchParams.get('category') ?? '';
+				const matched = categories.find((c) => c.key === urlCat);
+				if (matched) {
+					activeTab = urlCat;
+				} else if (!activeTab || !categories.find((c) => c.key === activeTab)) {
+					activeTab = categories[0].key;
+					syncTabToUrl(activeTab);
+				}
 			}
 			} else {
 				error = result.error;
@@ -396,8 +431,37 @@
 		}
 	}
 
+	// --- Media picker (shared MediaPickerModal for logo/favicon/og_image) ---
+	let mediaPickerOpen = $state(false);
+	let mediaPickerTarget = $state<{ catKey: string; settingKey: string } | null>(null);
+
+	function openMediaPicker(catKey: string, settingKey: string) {
+		mediaPickerTarget = { catKey, settingKey };
+		mediaPickerOpen = true;
+	}
+
+	function handleMediaSelect(media: { id: string; url: string; filename: string }) {
+		if (mediaPickerTarget) {
+			updateSettingValue(mediaPickerTarget.catKey, mediaPickerTarget.settingKey, media.url);
+		}
+		mediaPickerTarget = null;
+	}
+
 	$effect(() => {
 		loadSettings();
+	});
+
+	// Sync activeTab from the URL when the user navigates back/forward or
+	// edits the URL directly. Uses untrack for activeTab so that setting
+	// activeTab in selectTab doesn't re-trigger this effect (which could
+	// revert the tab if page.url hasn't caught up to replaceState yet).
+	$effect(() => {
+		const urlCat = page.url.searchParams.get('category') ?? '';
+		if (urlCat && categories.find((c) => c.key === urlCat)) {
+			if (untrack(() => activeTab) !== urlCat) {
+				activeTab = urlCat;
+			}
+		}
 	});
 </script>
 
@@ -471,7 +535,7 @@
 								style={activeTab === tab.value
 									? 'background: color-mix(in srgb, var(--color-primary) 10%, transparent); color: var(--color-foreground)'
 									: 'color: var(--color-muted)'}
-								onclick={() => (activeTab = tab.value)}
+								onclick={() => selectTab(tab.value)}
 							>
 								<span class="flex-1 text-left">{tab.label}</span>
 								<span class="text-xs" style="color: var(--color-muted)">{tab.count}</span>
@@ -486,7 +550,7 @@
 				<Select
 					options={tabs.map((tab) => ({ value: tab.value, label: `${tab.label} (${tab.count})` }))}
 					value={activeTab}
-					onchange={(val: string) => (activeTab = val)}
+					onchange={(val: string) => selectTab(val)}
 				/>
 			</div>
 
@@ -681,6 +745,33 @@
 												oninput={(e) => updateSettingValue(category.key, setting.key, (e.target as HTMLInputElement).value)}
 											/>
 										</div>
+									{:else if setting.type === 'media'}
+										<div class="flex items-center gap-2">
+											<input
+												type="text"
+												id={toggleId}
+												value={String(setting.value ?? '')}
+												placeholder="https://..."
+												class="h-10 flex-1 rounded-lg border px-3 py-2 text-sm"
+												style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+												disabled={!canManage}
+												oninput={(e) => updateSettingValue(category.key, setting.key, (e.target as HTMLInputElement).value)}
+											/>
+											<button
+												type="button"
+												class="flex items-center gap-1 rounded-lg border px-2 py-1.5 text-xs transition-colors hover:bg-muted/50 disabled:opacity-50"
+												style="border-color: var(--color-border); color: var(--color-muted)"
+												disabled={!canManage}
+												onclick={() => openMediaPicker(category.key, setting.key)}
+												title={t('settings.pick_from_media_library', 'Pick from media library')}
+											>
+												<ImageIcon class="h-3.5 w-3.5" />
+												{t('settings.browse', 'Browse')}
+											</button>
+											{#if setting.value && typeof setting.value === 'string' && (setting.value.startsWith('/api/v1/media/') || setting.value.startsWith('http'))}
+												<img src={setting.value} alt={setting.label} class="h-10 w-10 rounded border object-cover" style="border-color: var(--color-border)" />
+											{/if}
+										</div>
 									{:else if setting.type === 'file'}
 										<div class="flex items-center gap-2">
 											<input
@@ -778,3 +869,6 @@
 		<Button variant="destructive" onclick={confirmLeaveWithUnsaved}>{t('common.leave', 'Leave')}</Button>
 	</div>
 </Modal>
+
+<!-- Shared media picker for logo/favicon/og_image settings -->
+<MediaPickerModal bind:open={mediaPickerOpen} onselect={handleMediaSelect} accept="image/*" />
