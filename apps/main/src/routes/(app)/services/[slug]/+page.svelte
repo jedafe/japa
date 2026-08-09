@@ -24,7 +24,7 @@
 	let { data }: { data: PageData } = $props();
 
 	const service = $derived<ServiceListing | null>(data.service);
-	const canEdit = $derived(!!data.authed);
+	const canEdit = $derived(!!data.authed && !!service?.author_id && service.author_id === data.currentUserId);
 
 	const title = $derived(
 		service

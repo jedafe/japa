@@ -51,14 +51,12 @@
 
 	// Local filter inputs seeded from URL params.
 	let destInput = $state(untrack(() => data.filters.dest));
-	let originInput = $state(untrack(() => data.filters.origin));
 	let categoryInput = $state(untrack(() => data.filters.category));
 	let fromInput = $state(untrack(() => data.filters.from));
 	let toInput = $state(untrack(() => data.filters.to));
 
 	$effect(() => {
 		destInput = data.filters.dest;
-		originInput = data.filters.origin;
 		categoryInput = data.filters.category;
 		fromInput = data.filters.from;
 		toInput = data.filters.to;
@@ -79,14 +77,12 @@
 		const params = new URLSearchParams();
 		const view = overrides.view ?? currentView;
 		const dest = overrides.dest ?? destInput;
-		const origin = overrides.origin ?? originInput;
 		const category = overrides.category ?? categoryInput;
 		const from = overrides.from ?? fromInput;
 		const to = overrides.to ?? toInput;
 		if (view && view !== 'list') params.set('view', view);
 		else if (view === 'list') params.set('view', 'list');
 		if (dest) params.set('dest', dest);
-		if (origin) params.set('origin', origin);
 		if (category) params.set('category', category);
 		if (from) params.set('from', from);
 		if (to) params.set('to', to);
@@ -108,7 +104,6 @@
 
 	function clearFilters() {
 		destInput = '';
-		originInput = '';
 		categoryInput = '';
 		fromInput = '';
 		toInput = '';
@@ -116,7 +111,7 @@
 	}
 
 	const hasActiveFilters = $derived(
-		!!data.filters.dest || !!data.filters.origin || !!data.filters.category || !!data.filters.from || !!data.filters.to
+		!!data.filters.dest || !!data.filters.category || !!data.filters.from || !!data.filters.to
 	);
 
 	async function toggleSave(entry: CalendarEntry) {
@@ -315,20 +310,17 @@
 	<!-- Filter bar -->
 	<div class="border-b border-[var(--color-border)] px-4 py-3">
 		<form onsubmit={applyFilters} class="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-			<input
-				type="text"
-				placeholder={t('calendar.filter_dest', 'Destination country')}
+			<select
 				value={destInput}
-				oninput={(e) => (destInput = e.currentTarget.value)}
+				onchange={(e) => (destInput = e.currentTarget.value)}
 				class={inputClass}
-			/>
-			<input
-				type="text"
-				placeholder={t('calendar.filter_origin', 'Origin country')}
-				value={originInput}
-				oninput={(e) => (originInput = e.currentTarget.value)}
-				class={inputClass}
-			/>
+				aria-label={t('calendar.filter_dest', 'Destination country')}
+			>
+				<option value="">{t('calendar.filter_dest_all', 'All countries')}</option>
+				{#each data.countries as c (c.id)}
+					<option value={c.id}>{c.name}</option>
+				{/each}
+			</select>
 			<select
 				value={categoryInput}
 				onchange={(e) => (categoryInput = e.currentTarget.value)}

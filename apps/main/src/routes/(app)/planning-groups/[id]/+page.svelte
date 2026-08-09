@@ -30,7 +30,7 @@
 	const group = $derived(data.group);
 	const members = $derived(data.members);
 	const isOwner = $derived(
-		!!group && !!data.currentUser && group.owner_id === data.currentUser
+		!!group && !!data.currentUserId && group.owner_id === data.currentUserId
 	);
 	// Resolve the owner's username from the members list (owner_id is a user UUID).
 	const ownerName = $derived(
@@ -46,12 +46,12 @@
 	let joinLoading = $state(false);
 	let joinError = $state('');
 	let isMember = $state(
-		untrack(() => !!members?.some((m) => m.username === data.currentUser))
+		untrack(() => !!members?.some((m) => m.user_id === data.currentUserId))
 	);
 	let memberCount = $state(untrack(() => members?.length ?? 0));
 
 	$effect(() => {
-		isMember = !!members?.some((m) => m.username === data.currentUser);
+		isMember = !!members?.some((m) => m.user_id === data.currentUserId);
 		memberCount = members?.length ?? 0;
 	});
 
@@ -156,7 +156,7 @@
 			note: checkinNote.trim()
 		});
 		if (res.data) {
-			checkins = [{ ...res.data, username: data.currentUser ?? undefined }, ...checkins];
+			checkins = [{ ...res.data, username: members?.find((m) => m.user_id === data.currentUserId)?.username ?? undefined }, ...checkins];
 			checkinNote = '';
 		} else {
 			checkinError = res.error?.message ?? t('planning_groups.errors.checkin_failed', 'Failed to submit check-in.');

@@ -7,7 +7,7 @@ import type { PlanningGroup, PlanningMilestone, PlanningCheckin, MemberDTO } fro
 export const load: PageServerLoad = async (event) => {
 	const ctx = apiContext(event);
 	const authed = !!event.locals.user;
-	const currentUser = event.locals.user?.username ?? null;
+	const currentUserId = event.locals.user?.id ?? null;
 	const id = event.params.id;
 
 	let group: PlanningGroup | null = null;
@@ -43,5 +43,5 @@ export const load: PageServerLoad = async (event) => {
 		}
 	}
 
-	return { group, members, milestones, checkins, authed, currentUser, loadError };
+	return { group, members, milestones, checkins, authed, currentUserId, loadError };
 };

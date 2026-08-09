@@ -25,9 +25,9 @@
 	const post = $derived(data.post);
 
 	// The backend enforces ownership on fulfill/renew/delete. We show the
-	// management buttons to authenticated users and let the backend reject
+	// management buttons only to the post author; the backend rejects
 	// non-owners (the error is surfaced via actionError).
-	const canManage = $derived(!!data.authed);
+	const canManage = $derived(!!data.authed && !!post?.author_id && post.author_id === data.currentUserId);
 
 	let responding = $state(false);
 	let fulfilling = $state(false);

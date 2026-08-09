@@ -11,14 +11,15 @@ export const load: PageServerLoad = async (event) => {
 	const ctx = apiContext(event);
 	const spaceSlug = event.params.space_slug;
 	const pageSlug = event.params.page_slug;
+	const authed = !!event.locals.user;
 
 	try {
 		const page = await apiGet<WikiPage>(
 			ctx,
 			`/wiki/${encodeURIComponent(spaceSlug)}/${encodeURIComponent(pageSlug)}`
 		);
-		return { spaceSlug, pageSlug, page, loadError: false };
+		return { spaceSlug, pageSlug, page, authed, loadError: false };
 	} catch {
-		return { spaceSlug, pageSlug, page: null, loadError: true };
+		return { spaceSlug, pageSlug, page: null, authed, loadError: true };
 	}
 };

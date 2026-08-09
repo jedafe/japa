@@ -169,22 +169,30 @@
 			</button>
 		</div>
 
-		<!-- Filters (text inputs — no hardcoded country/visa lists, Rule 16) -->
+		<!-- Filters (country selects for origin/dest; text inputs for visa/profession) -->
 		<form onsubmit={applyFilters} class="flex flex-col gap-2 lg:flex-row lg:items-center">
-			<input
-				type="text"
-				placeholder={t('stories.filter_origin', 'Origin country')}
+			<select
 				value={originInput}
-				oninput={(e) => (originInput = e.currentTarget.value)}
+				onchange={(e) => (originInput = e.currentTarget.value)}
 				class={inputClass}
-			/>
-			<input
-				type="text"
-				placeholder={t('stories.filter_dest', 'Destination country')}
+				aria-label={t('stories.filter_origin', 'Origin country')}
+			>
+				<option value="">{t('stories.filter_origin_all', 'All origins')}</option>
+				{#each data.countries as c (c.id)}
+					<option value={c.id}>{c.name}</option>
+				{/each}
+			</select>
+			<select
 				value={destInput}
-				oninput={(e) => (destInput = e.currentTarget.value)}
+				onchange={(e) => (destInput = e.currentTarget.value)}
 				class={inputClass}
-			/>
+				aria-label={t('stories.filter_dest', 'Destination country')}
+			>
+				<option value="">{t('stories.filter_dest_all', 'All destinations')}</option>
+				{#each data.countries as c (c.id)}
+					<option value={c.id}>{c.name}</option>
+				{/each}
+			</select>
 			<input
 				type="text"
 				placeholder={t('stories.filter_visa', 'Visa type')}

@@ -123,7 +123,7 @@
 		data.page ? `${data.page.title} — ${t('wiki.page_title_suffix')}` : t('wiki.page_title_suffix')
 	);
 	const description = $derived(t('wiki.page_description'));
-	const canEdit = $derived(!!data.page && !data.page.is_locked);
+	const canEdit = $derived(!!data.page && !data.page.is_locked && data.authed);
 </script>
 
 <svelte:head>

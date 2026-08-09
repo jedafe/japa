@@ -38,13 +38,13 @@
 	// Local filter state seeded from SSR props; navigating updates the URL so
 	// the load re-runs server-side.
 	let dest = $state(untrack(() => data.filters.dest));
-	let type = $state(untrack(() => data.filters.type));
+	let milestone = $state(untrack(() => data.filters.milestone));
 	let sort = $state(untrack(() => data.filters.sort));
 
 	// Keep local filter state in sync when navigating between filter states.
 	$effect(() => {
 		dest = data.filters.dest;
-		type = data.filters.type;
+		milestone = data.filters.milestone;
 		sort = data.filters.sort;
 	});
 
@@ -78,28 +78,28 @@
 
 	function applyFilters() {
 		const params = new URLSearchParams();
-		if (dest.trim()) params.set('dest', dest.trim());
-		if (type) params.set('type', type);
+		if (dest) params.set('dest', dest);
+		if (milestone) params.set('milestone', milestone);
 		params.set('sort', sort || 'latest');
 		goto(`/achievements?${params.toString()}`, { keepFocus: true, noScroll: true });
 	}
 
 	function clearFilters() {
 		dest = '';
-		type = '';
+		milestone = '';
 		sort = 'latest';
 		goto('/achievements', { keepFocus: true, noScroll: true });
 	}
 
-	const hasFilters = $derived(!!data.filters.dest || !!data.filters.type || data.filters.sort !== 'latest');
+	const hasFilters = $derived(!!data.filters.dest || !!data.filters.milestone || data.filters.sort !== 'latest');
 
 	const inputClass =
 		'w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20';
 
-	function buildPageUrl(filters: { dest: string; type: string; sort: string }, nextPage: number): string {
+	function buildPageUrl(filters: { dest: string; milestone: string; sort: string }, nextPage: number): string {
 		const params = new URLSearchParams();
 		if (filters.dest) params.set('dest', filters.dest);
-		if (filters.type) params.set('type', filters.type);
+		if (filters.milestone) params.set('milestone', filters.milestone);
 		params.set('sort', filters.sort || 'latest');
 		params.set('page', String(nextPage));
 		return params.toString();
@@ -151,20 +151,23 @@
 				<label for="filter-dest" class="text-xs font-medium text-[var(--color-text-subtle)]">
 					{t('achievements.filter_destination', 'Destination')}
 				</label>
-				<input
+				<select
 					id="filter-dest"
-					type="text"
 					value={dest}
-					oninput={(e) => (dest = e.currentTarget.value)}
-					placeholder={t('achievements.filter_destination_placeholder', 'e.g. Canada')}
+					onchange={(e) => (dest = e.currentTarget.value)}
 					class={inputClass}
-				/>
+				>
+					<option value="">{t('achievements.filter_all_countries', 'All countries')}</option>
+					{#each data.countries as c (c.id)}
+						<option value={c.id}>{c.name}</option>
+					{/each}
+				</select>
 			</div>
 			<div class="flex flex-col gap-1">
-				<label for="filter-type" class="text-xs font-medium text-[var(--color-text-subtle)]">
+				<label for="filter-milestone" class="text-xs font-medium text-[var(--color-text-subtle)]">
 					{t('achievements.filter_type', 'Milestone')}
 				</label>
-				<select id="filter-type" value={type} onchange={(e) => (type = e.currentTarget.value)} class={inputClass}>
+				<select id="filter-milestone" value={milestone} onchange={(e) => (milestone = e.currentTarget.value)} class={inputClass}>
 					<option value="">{t('achievements.filter_all_types', 'All milestones')}</option>
 					{#each milestoneOptions as opt (opt.value)}
 						<option value={opt.value}>{opt.label}</option>

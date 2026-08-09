@@ -14,14 +14,15 @@ export const load: PageServerLoad = async (event) => {
 	const ctx = apiContext(event);
 	const slug = event.params.slug;
 	const authed = !!event.locals.user;
+	const currentUserId = event.locals.user?.id ?? null;
 
 	try {
 		const service = await apiGet<ServiceListing>(ctx, `/services/${slug}`);
-		return { service, authed, loadError: false };
+		return { service, authed, currentUserId, loadError: false };
 	} catch (err) {
 		if (err instanceof ApiError && err.status === 404) {
 			throw error(404, { code: 'not_found', message: 'Service not found' });
 		}
-		return { service: null, authed, loadError: true };
+		return { service: null, authed, currentUserId, loadError: true };
 	}
 };

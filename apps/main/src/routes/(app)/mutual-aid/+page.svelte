@@ -20,7 +20,6 @@
 
 	// Filter bar state — seeded from the server-provided filter values.
 	let dest = $state(untrack(() => data.filters.dest));
-	let city = $state(untrack(() => data.filters.city));
 	let type = $state(untrack(() => data.filters.type));
 	let category = $state(untrack(() => data.filters.category));
 	let sort = $state(untrack(() => data.filters.sort));
@@ -28,7 +27,6 @@
 	// Re-seed when the server payload changes (e.g. browser back/forward).
 	$effect(() => {
 		dest = data.filters.dest;
-		city = data.filters.city;
 		type = data.filters.type;
 		category = data.filters.category;
 		sort = data.filters.sort;
@@ -69,7 +67,6 @@
 		e.preventDefault();
 		const params = new URLSearchParams();
 		if (dest.trim()) params.set('dest', dest.trim());
-		if (city.trim()) params.set('city', city.trim());
 		if (type) params.set('type', type);
 		if (category) params.set('category', category);
 		if (sort) params.set('sort', sort);
@@ -79,14 +76,13 @@
 
 	function clearFilters() {
 		dest = '';
-		city = '';
 		type = '';
 		category = '';
 		sort = 'latest';
 		goto('/mutual-aid');
 	}
 
-	const hasFilters = $derived(!!dest || !!city || !!type || !!category);
+	const hasFilters = $derived(!!dest || !!type || !!category);
 
 	function postTypeBadgeClass(pt: MutualAidPostType): string {
 		const base = 'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold';
@@ -163,7 +159,6 @@
 	function pageHref(p: number): string {
 		const params = new URLSearchParams();
 		if (dest.trim()) params.set('dest', dest.trim());
-		if (city.trim()) params.set('city', city.trim());
 		if (type) params.set('type', type);
 		if (category) params.set('category', category);
 		if (sort) params.set('sort', sort);
@@ -219,26 +214,16 @@
 				<label for="filter-dest" class="text-xs font-medium text-[var(--color-text-subtle)]">
 					{t('mutual_aid.filter_destination', 'Destination')}
 				</label>
-				<input
+				<select
 					id="filter-dest"
-					type="text"
 					bind:value={dest}
-					placeholder={t('mutual_aid.filter_destination_placeholder', 'Country')}
-					class="w-40 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm text-[var(--color-text)] placeholder:text-[var(--color-muted)] focus:border-[var(--color-primary)] focus:outline-none"
-				/>
-			</div>
-
-			<div class="flex flex-col gap-1">
-				<label for="filter-city" class="text-xs font-medium text-[var(--color-text-subtle)]">
-					{t('mutual_aid.filter_city', 'City')}
-				</label>
-				<input
-					id="filter-city"
-					type="text"
-					bind:value={city}
-					placeholder={t('mutual_aid.filter_city_placeholder', 'City')}
-					class="w-32 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm text-[var(--color-text)] placeholder:text-[var(--color-muted)] focus:border-[var(--color-primary)] focus:outline-none"
-				/>
+					class="w-40 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none"
+				>
+					<option value="">{t('mutual_aid.filter_destination_all', 'All countries')}</option>
+					{#each data.countries as c (c.id)}
+						<option value={c.id}>{c.name}</option>
+					{/each}
+				</select>
 			</div>
 
 			<div class="flex flex-col gap-1">

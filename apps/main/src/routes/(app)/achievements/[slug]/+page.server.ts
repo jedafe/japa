@@ -17,10 +17,10 @@ export const load: PageServerLoad = async (event) => {
 	let canEdit = false;
 	try {
 		achievement = await apiGet<Achievement>(ctx, `/achievements/${slug}`);
-		// The backend exposes author.username as null when is_anonymous; the
-		// viewer can only edit their own non-anonymous posts. The backend
-		// enforces ownership on PATCH/DELETE — this flag only gates the UI.
-		canEdit = authed && !achievement.is_anonymous && !!currentUserId;
+		// The backend exposes author_id on the DTO; the viewer can only edit
+		// their own non-anonymous posts. The backend enforces ownership on
+		// PATCH/DELETE — this flag only gates the UI.
+		canEdit = authed && !achievement.is_anonymous && !!achievement.author_id && achievement.author_id === currentUserId;
 	} catch (err) {
 		if (err instanceof ApiError && err.status === 404) {
 			throw error(404, { code: 'not_found', message: 'Achievement not found' });

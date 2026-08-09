@@ -1,7 +1,7 @@
 // Ref: japaconnect-engineering/sections/102-mentorship-matching.md
 import type { PageServerLoad } from './$types';
 import { apiContext, apiList } from '$lib/server/api';
-import type { Mentor } from '$lib/types';
+import type { Mentor, Space } from '$lib/types';
 
 /**
  * Mentor discovery at /mentors — lists mentors with optional destination and
@@ -27,9 +27,17 @@ export const load: PageServerLoad = async (event) => {
 	if (areas) params.set('areas', areas);
 	if (sort) params.set('sort', sort);
 
+	let countries: Space[] = [];
+	try {
+		const { items } = await apiList<Space>(ctx, '/spaces?level=country');
+		countries = items;
+	} catch {
+		countries = [];
+	}
+
 	try {
 		const { items, meta } = await apiList<Mentor>(ctx, `/mentors?${params.toString()}`);
-		return { mentors: items, meta, authed, pageSize: PAGE_SIZE, filters, loadError: false };
+		return { mentors: items, meta, authed, pageSize: PAGE_SIZE, filters, countries, loadError: false };
 	} catch {
 		return {
 			mentors: [] as Mentor[],
@@ -37,6 +45,7 @@ export const load: PageServerLoad = async (event) => {
 			authed,
 			pageSize: PAGE_SIZE,
 			filters,
+			countries,
 			loadError: true
 		};
 	}
