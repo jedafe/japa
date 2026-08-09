@@ -1,0 +1,27 @@
+// Ref: japaconnect-engineering/sections/102-mentorship-matching.md
+import type { PageServerLoad } from './$types';
+import { apiContext, apiGet, apiList } from '$lib/server/api';
+import type { Mentor, Space } from '$lib/types';
+
+/**
+ * Mentor profile at /mentors/{username} — SSR-fetches GET /mentors/{username}.
+ */
+export const load: PageServerLoad = async (event) => {
+	const ctx = apiContext(event);
+	const authed = !!event.locals.user;
+	const username = event.params.username;
+
+	let countries: Space[] = [];
+	try {
+		countries = (await apiList<Space>(ctx, '/spaces?level=country')).items;
+	} catch {
+		countries = [];
+	}
+
+	try {
+		const mentor = await apiGet<Mentor>(ctx, `/mentors/${encodeURIComponent(username)}`);
+		return { mentor, authed, countries, loadError: false };
+	} catch {
+		return { mentor: null, authed, countries, loadError: true };
+	}
+};

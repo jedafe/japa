@@ -1,0 +1,34 @@
+// Ref: japaconnect-engineering/sections/87-japa-stage-profiles.md
+import type { PageServerLoad } from './$types';
+import { apiContext, apiGet, apiList } from '$lib/server/api';
+import { redirect } from '@sveltejs/kit';
+import type { MyJapaStage, Space } from '$lib/types';
+
+/**
+ * My Japa Stage at /japa-stage/me. Auth-gated: redirects to login when not
+ * authed. Preloads the caller's own stage from GET /me/japa-stage so the form
+ * can render server-side; degrades to null when the backend is unavailable.
+ */
+export const load: PageServerLoad = async (event) => {
+	if (!event.locals.user) {
+		throw redirect(307, '/login?redirect=/japa-stage/me');
+	}
+
+	const ctx = apiContext(event);
+	let myStage: MyJapaStage | null = null;
+	try {
+		myStage = await apiGet<MyJapaStage>(ctx, '/me/japa-stage');
+	} catch {
+		myStage = null;
+	}
+
+	let countries: Space[] = [];
+	try {
+		const { items } = await apiList<Space>(ctx, '/spaces?level=country');
+		countries = items;
+	} catch {
+		countries = [];
+	}
+
+	return { myStage, countries };
+};
