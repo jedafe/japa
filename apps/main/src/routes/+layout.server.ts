@@ -97,6 +97,18 @@ export const load: LayoutServerLoad = async (event) => {
 		}
 	}
 
+	// Feature flags (public endpoint) — fetched SSR so the layout can gate
+	// client-only features like the WebSocket realtime connection on
+	// feature.dm without firing doomed requests when the flag is off.
+	// Ref: sections/42-feature-flags.md, sections/10-realtime-websockets.md
+	let features: Record<string, boolean> = {};
+	try {
+		const res = await apiGet<Record<string, boolean>>(ctx, '/feature-flags');
+		features = res ?? {};
+	} catch {
+		features = {};
+	}
+
 	return {
 		user,
 		// Dedicated auth flag — page-level load functions may return their own
@@ -117,6 +129,7 @@ export const load: LayoutServerLoad = async (event) => {
 		userSpaces,
 		navCollapsed: user?.ui?.nav_collapsed ?? false,
 		unreadNotifications,
+		features,
 		leftSidebarWidgets,
 		rightSidebarWidgets,
 		leftSidebarEnabled,

@@ -62,6 +62,9 @@ func (s *Service) GetState(ctx context.Context, tenantID, userID pgtype.UUID) (*
 }
 
 // UpdateStep saves step data and advances the current step number.
+// When req.Skip is true, the step minimum is auto-fulfilled using the ranked
+// recommendation algorithm per Section 09 skip semantics (the user always
+// ends up meeting the platform's baseline density target).
 func (s *Service) UpdateStep(ctx context.Context, tenantID, userID pgtype.UUID, req *UpdateStepRequest) error {
 	// Read current state to merge step_data.
 	current, err := s.store.getState(ctx, tenantID, userID)
@@ -81,9 +84,33 @@ func (s *Service) UpdateStep(ctx context.Context, tenantID, userID pgtype.UUID, 
 		tourDismissed = current.TourDismissed
 	}
 
+	// The step being submitted (defaults to the current step).
+	submitStep := req.Step
+	if submitStep <= 0 {
+		submitStep = int(currentStep)
+	}
+
+	// Section 09 skip semantics: if the user skips a step with a minimum
+	// greater than zero, auto-fulfill that minimum using the ranked
+	// algorithm rather than bypassing the requirement.
+	if req.Skip {
+		fulfilled := s.autoFulfillSkip(ctx, tenantID, userID, submitStep)
+		if fulfilled != nil {
+			// Merge the auto-fulfilled data with any explicit data the
+			// user also provided (explicit data wins).
+			merged := mergeJSON(fulfilled, req.StepData)
+			return s.persistStep(ctx, tenantID, userID, submitStep, currentStep, completed, existingData, merged, tourDismissed)
+		}
+	}
+
 	// Merge step_data: existing + new data (new keys overwrite old).
 	merged := mergeJSON(existingData, req.StepData)
 
+	return s.persistStep(ctx, tenantID, userID, submitStep, currentStep, completed, existingData, merged, tourDismissed)
+}
+
+// persistStep merges, auto-joins geo spaces, and upserts the onboarding state.
+func (s *Service) persistStep(ctx context.Context, tenantID, userID pgtype.UUID, submitStep int, currentStep int32, completed bool, existingData, merged json.RawMessage, tourDismissed bool) error {
 	// Auto-join primary geo spaces when location fields are present (Section 05, ADR-005).
 	fields := parseStepData(merged)
 	if fields.CountryCode != "" {
@@ -94,7 +121,7 @@ func (s *Service) UpdateStep(ctx context.Context, tenantID, userID pgtype.UUID, 
 	}
 
 	// Advance to the requested step or next if step is 0/omitted.
-	newStep := req.Step
+	newStep := submitStep
 	if newStep <= 0 {
 		newStep = int(currentStep) + 1
 	}
@@ -108,6 +135,110 @@ func (s *Service) UpdateStep(ctx context.Context, tenantID, userID pgtype.UUID, 
 	}
 
 	return nil
+}
+
+// autoFulfillSkip returns auto-populated step_data for a skipped step that has
+// a minimum requirement (step 3 = tags, step 4 = follows). Returns nil if the
+// step has no minimum (no auto-fulfill needed). Per Section 09, the user always
+// ends up meeting the baseline density target — they just choose between manual
+// curation or accepting defaults.
+func (s *Service) autoFulfillSkip(ctx context.Context, tenantID, userID pgtype.UUID, step int) json.RawMessage {
+	switch step {
+	case 3:
+		// Step 3: Interests/Tags — auto-pick min_tags_follow promoted tags.
+		minTags := s.getMinTagsFollow(ctx, tenantID)
+		if minTags <= 0 {
+			return nil
+		}
+		promotedTagsJSON, _ := s.settings.GetSetting(ctx, tenantID, keyPromotedTags)
+		var promotedTags []string
+		if promotedTagsJSON != "" {
+			_ = json.Unmarshal([]byte(promotedTagsJSON), &promotedTags)
+		}
+		if len(promotedTags) >= minTags {
+			promotedTags = promotedTags[:minTags]
+		}
+		if len(promotedTags) == 0 {
+			return nil // no promoted tags to auto-fulfill with
+		}
+		data, _ := json.Marshal(map[string]any{
+			"tags":      promotedTags,
+			"interests": promotedTags,
+			"skipped":   true,
+		})
+		return data
+
+	case 4:
+		// Step 4: Recommended Spaces & Connections — auto-follow min spaces
+		// and min users from the recommendation engine.
+		minSpaces := s.getMinSpacesJoin(ctx, tenantID)
+		minUsers := s.getMinUsersFollow(ctx, tenantID)
+		if minSpaces <= 0 && minUsers <= 0 {
+			return nil
+		}
+		recs, err := s.GetRecommendations(ctx, tenantID, userID)
+		if err != nil || len(recs) == 0 {
+			return nil
+		}
+		var follows []string
+		spaceCount := 0
+		userCount := 0
+		for _, r := range recs {
+			if r.Type == "space" && spaceCount < minSpaces {
+				follows = append(follows, r.ID)
+				spaceCount++
+			}
+			if r.Type == "user" && userCount < minUsers {
+				follows = append(follows, r.ID)
+				userCount++
+			}
+			if spaceCount >= minSpaces && userCount >= minUsers {
+				break
+			}
+		}
+		if len(follows) == 0 {
+			return nil
+		}
+		data, _ := json.Marshal(map[string]any{
+			"follows": follows,
+			"skipped": true,
+		})
+		return data
+
+	default:
+		// Steps 1, 2, 5 have no minimum — skip is a no-op pass-through.
+		return nil
+	}
+}
+
+// getMinTagsFollow reads the onboarding.min_tags_follow setting with the
+// Section 09 default of 3.
+func (s *Service) getMinTagsFollow(ctx context.Context, tenantID pgtype.UUID) int {
+	v, _ := s.settings.GetSettingInt(ctx, tenantID, keyMinTagsFollow)
+	if v == 0 {
+		return 3
+	}
+	return v
+}
+
+// getMinUsersFollow reads the onboarding.min_users_follow setting with the
+// Section 09 default of 2.
+func (s *Service) getMinUsersFollow(ctx context.Context, tenantID pgtype.UUID) int {
+	v, _ := s.settings.GetSettingInt(ctx, tenantID, keyMinUsersFollow)
+	if v == 0 {
+		return 2
+	}
+	return v
+}
+
+// getMinSpacesJoin reads the onboarding.min_spaces_join setting with the
+// Section 09 default of 2.
+func (s *Service) getMinSpacesJoin(ctx context.Context, tenantID pgtype.UUID) int {
+	v, _ := s.settings.GetSettingInt(ctx, tenantID, keyMinSpacesJoin)
+	if v == 0 {
+		return 2
+	}
+	return v
 }
 
 // Complete marks onboarding as completed for the given user.
@@ -128,14 +259,25 @@ func (s *Service) DismissTour(ctx context.Context, tenantID, userID pgtype.UUID)
 	return nil
 }
 
-// GetRecommendations returns recommended spaces and users based on geo match,
-// tag overlap, and reputation. Falls back to popular items when no personalized
-// signals are available.
+// GetRecommendations returns recommended spaces and users using the tiered
+// deterministic algorithm from Section 09:
+//  1. Admin-pinned promotions first (onboarding.promoted_spaces/users)
+//  2. Exact geo match (user's country/state/city spaces)
+//  3. Interest-tag overlap
+//  4. Reputation-based fallback fill (popular spaces)
+//
+// Results are deduplicated by (type, id) and ordered by tier. Falls back to
+// popular items only when no personalized signals are available.
 func (s *Service) GetRecommendations(ctx context.Context, tenantID, userID pgtype.UUID) ([]OnboardingRecommendation, error) {
 	// Parse step_data to extract interests/tags and location for matching.
 	state, err := s.store.getState(ctx, tenantID, userID)
 	if err != nil {
-		return s.getPopularItems(ctx, tenantID)
+		// BUG-008: only fall back to popular on "no state yet" (ErrNoRows);
+		// return real DB/infra errors instead of masking them.
+		if errors.Is(err, pgx.ErrNoRows) {
+			return s.getPopularItems(ctx, tenantID)
+		}
+		return nil, fmt.Errorf("getting onboarding state for recommendations: %w", err)
 	}
 
 	stepData := parseStepData(state.StepData)
@@ -145,25 +287,122 @@ func (s *Service) GetRecommendations(ctx context.Context, tenantID, userID pgtyp
 	if len(userTags) == 0 {
 		userTags = stepData.Interests
 	}
-	userLocation := stepData.CurrentLocation
 
-	recs := make([]OnboardingRecommendation, 0)
-
-	// Query spaces with tag overlap.
-	spaceRecs, err := s.recommendSpacesByTags(ctx, tenantID, userID, userTags)
-	if err == nil {
-		recs = append(recs, spaceRecs...)
+	// Tier 1: Admin-pinned promotions (Section 09).
+	promotedRecs, err := s.getPromotedRecommendations(ctx, tenantID)
+	if err != nil {
+		slog.Warn("onboarding: failed to load promoted entities", "error", err)
+		// Non-fatal — continue without promoted tier.
+		promotedRecs = nil
 	}
 
-	// Query spaces/users with geo match.
-	geoRecs, err := s.recommendByGeo(ctx, tenantID, userID, userLocation)
-	if err == nil {
-		recs = append(recs, geoRecs...)
+	// Tier 2: Exact geo match (user's country/state/city geo spaces).
+	geoRecs, err := s.recommendByGeo(ctx, tenantID, userID, stepData)
+	if err != nil {
+		slog.Warn("onboarding: geo recommendation failed", "error", err)
+		geoRecs = nil
 	}
 
-	// If no personalized recs, fall back to popular.
-	if len(recs) == 0 {
+	// Tier 3: Interest-tag overlap.
+	tagRecs, err := s.recommendSpacesByTags(ctx, tenantID, userID, userTags)
+	if err != nil {
+		slog.Warn("onboarding: tag recommendation failed", "error", err)
+		tagRecs = nil
+	}
+
+	// Merge tiers in order, deduplicating by (type, id).
+	merged := mergeRecommendations(promotedRecs, geoRecs, tagRecs)
+
+	// Tier 4: If no personalized recs at all, fall back to popular.
+	if len(merged) == 0 {
 		return s.getPopularItems(ctx, tenantID)
+	}
+
+	return merged, nil
+}
+
+// mergeRecommendations concatenates recommendation tiers in order, skipping
+// entries whose (type, id) pair was already added by an earlier tier.
+func mergeRecommendations(tiers ...[]OnboardingRecommendation) []OnboardingRecommendation {
+	seen := make(map[string]struct{}, 32)
+	recs := make([]OnboardingRecommendation, 0, 32)
+
+	for _, tier := range tiers {
+		for _, r := range tier {
+			key := r.Type + ":" + r.ID
+			if _, ok := seen[key]; ok {
+				continue
+			}
+			seen[key] = struct{}{}
+			recs = append(recs, r)
+		}
+	}
+
+	return recs
+}
+
+// getPromotedRecommendations resolves admin-pinned promoted spaces and users
+// from system_settings (onboarding.promoted_spaces / promoted_users) into
+// recommendation records with reason="promoted" and the highest score (1.0),
+// so they always appear first in the tiered ordering per Section 09.
+func (s *Service) getPromotedRecommendations(ctx context.Context, tenantID pgtype.UUID) ([]OnboardingRecommendation, error) {
+	promotedSpacesJSON, _ := s.settings.GetSetting(ctx, tenantID, keyPromotedSpaces)
+	promotedUsersJSON, _ := s.settings.GetSetting(ctx, tenantID, keyPromotedUsers)
+
+	var spaceIDs, userIDs []string
+	if promotedSpacesJSON != "" {
+		_ = json.Unmarshal([]byte(promotedSpacesJSON), &spaceIDs)
+	}
+	if promotedUsersJSON != "" {
+		_ = json.Unmarshal([]byte(promotedUsersJSON), &userIDs)
+	}
+
+	recs := make([]OnboardingRecommendation, 0, len(spaceIDs)+len(userIDs))
+
+	// Resolve promoted spaces by ID.
+	for _, idStr := range spaceIDs {
+		var id pgtype.UUID
+		if err := id.Scan(idStr); err != nil {
+			continue
+		}
+		space, err := s.store.read.GetSpaceByID(ctx, gen.GetSpaceByIDParams{
+			ID:       id,
+			TenantID: tenantID,
+		})
+		if err != nil {
+			continue
+		}
+		recs = append(recs, OnboardingRecommendation{
+			Type:      "space",
+			ID:        space.ID.String(),
+			Name:      space.Name,
+			Slug:      space.Slug,
+			Reason:    "promoted",
+			Score:     1.0,
+		})
+	}
+
+	// Resolve promoted users by ID.
+	for _, idStr := range userIDs {
+		var id pgtype.UUID
+		if err := id.Scan(idStr); err != nil {
+			continue
+		}
+		user, err := s.store.read.GetUserByID(ctx, gen.GetUserByIDParams{
+			TenantID: tenantID,
+			UserID:   id,
+		})
+		if err != nil {
+			continue
+		}
+		recs = append(recs, OnboardingRecommendation{
+			Type:      "user",
+			ID:        user.ID.String(),
+			Name:      user.Username,
+			Slug:      user.Username,
+			Reason:    "promoted",
+			Score:     1.0,
+		})
 	}
 
 	return recs, nil
@@ -288,43 +527,76 @@ func (s *Service) recommendSpacesByTags(ctx context.Context, tenantID, _ pgtype.
 	return recs, nil
 }
 
-// recommendByGeo finds spaces/users matching the user's location.
-func (s *Service) recommendByGeo(ctx context.Context, tenantID, _ pgtype.UUID, location string) ([]OnboardingRecommendation, error) {
-	if location == "" {
+// recommendByGeo finds the user's geo spaces (country, state, city) using the
+// geo hierarchy (Section 09 "exact geo match"), not a fuzzy name LIKE. The
+// country is resolved by geo_code, state/city by ID — the same approach as
+// autoJoinGeoSpaces. Sibling spaces at each level are not fuzzy-matched.
+func (s *Service) recommendByGeo(ctx context.Context, tenantID, _ pgtype.UUID, fields stepDataFields) ([]OnboardingRecommendation, error) {
+	if fields.CountryCode == "" && fields.StateID == "" && fields.CityID == "" {
 		return nil, nil
 	}
 
-	rows, err := s.db.Reader.Query(ctx, `
-		SELECT s.id, s.name, s.slug, s.avatar_url
-		FROM spaces s
-		WHERE s.tenant_id = $1
-		  AND s.status = 'active'
-		  AND LOWER(s.name) LIKE '%' || LOWER($2) || '%'
-		ORDER BY s.follower_count DESC
-		LIMIT 5
-	`, tenantID, location)
-	if err != nil {
-		return nil, fmt.Errorf("querying spaces for geo match: %w", err)
-	}
-	defer rows.Close()
+	queries := gen.New(s.db.Reader)
+	recs := make([]OnboardingRecommendation, 0, 3)
 
-	var recs []OnboardingRecommendation
-
-	for rows.Next() {
-		var id, name, slug, avatarURL pgtype.Text
-		if err := rows.Scan(&id, &name, &slug, &avatarURL); err != nil {
-			continue
-		}
-
-		recs = append(recs, OnboardingRecommendation{
-			Type:      "space",
-			ID:        id.String,
-			Name:      name.String,
-			Slug:      slug.String,
-			AvatarURL: avatarURL.String,
-			Reason:    "geo_match",
-			Score:     0.8,
+	// Country space (resolved by geo_code).
+	if fields.CountryCode != "" {
+		countrySpace, err := queries.GetSpaceByGeoCode(ctx, gen.GetSpaceByGeoCodeParams{
+			GeoCode:  &fields.CountryCode,
+			TenantID: tenantID,
 		})
+		if err == nil {
+			recs = append(recs, OnboardingRecommendation{
+				Type:   "space",
+				ID:     countrySpace.ID.String(),
+				Name:   countrySpace.Name,
+				Slug:   countrySpace.Slug,
+				Reason: "geo_match",
+				Score:  0.8,
+			})
+		}
+	}
+
+	// State space (resolved by ID).
+	if fields.StateID != "" {
+		var stateID pgtype.UUID
+		if err := stateID.Scan(fields.StateID); err == nil {
+			stateSpace, err := queries.GetSpaceByID(ctx, gen.GetSpaceByIDParams{
+				ID:       stateID,
+				TenantID: tenantID,
+			})
+			if err == nil {
+				recs = append(recs, OnboardingRecommendation{
+					Type:   "space",
+					ID:     stateSpace.ID.String(),
+					Name:   stateSpace.Name,
+					Slug:   stateSpace.Slug,
+					Reason: "geo_match",
+					Score:  0.85,
+				})
+			}
+		}
+	}
+
+	// City space (resolved by ID — deepest level, highest score).
+	if fields.CityID != "" {
+		var cityID pgtype.UUID
+		if err := cityID.Scan(fields.CityID); err == nil {
+			citySpace, err := queries.GetSpaceByID(ctx, gen.GetSpaceByIDParams{
+				ID:       cityID,
+				TenantID: tenantID,
+			})
+			if err == nil {
+				recs = append(recs, OnboardingRecommendation{
+					Type:   "space",
+					ID:     citySpace.ID.String(),
+					Name:   citySpace.Name,
+					Slug:   citySpace.Slug,
+					Reason: "geo_match",
+					Score:  0.9,
+				})
+			}
+		}
 	}
 
 	return recs, nil
@@ -529,38 +801,58 @@ func (s *Service) GetAdminSettings(ctx context.Context, tenantID pgtype.UUID) (*
 }
 
 // UpdateAdminSettings writes onboarding configuration to system_settings.
+// Returns the first SetSetting error so the admin sees a real failure rather
+// than a silent 200 OK (Rule 5, §6.2 error handling).
 func (s *Service) UpdateAdminSettings(ctx context.Context, tenantID pgtype.UUID, req *UpdateOnboardingSettingsRequest) error {
 	if req.MinTagsFollow != nil {
-		_ = s.settings.SetSetting(ctx, tenantID, keyMinTagsFollow, strconv.Itoa(*req.MinTagsFollow))
+		if err := s.settings.SetSetting(ctx, tenantID, keyMinTagsFollow, strconv.Itoa(*req.MinTagsFollow)); err != nil {
+			return fmt.Errorf("setting %s: %w", keyMinTagsFollow, err)
+		}
 	}
 
 	if req.MinUsersFollow != nil {
-		_ = s.settings.SetSetting(ctx, tenantID, keyMinUsersFollow, strconv.Itoa(*req.MinUsersFollow))
+		if err := s.settings.SetSetting(ctx, tenantID, keyMinUsersFollow, strconv.Itoa(*req.MinUsersFollow)); err != nil {
+			return fmt.Errorf("setting %s: %w", keyMinUsersFollow, err)
+		}
 	}
 
 	if req.MinSpacesJoin != nil {
-		_ = s.settings.SetSetting(ctx, tenantID, keyMinSpacesJoin, strconv.Itoa(*req.MinSpacesJoin))
+		if err := s.settings.SetSetting(ctx, tenantID, keyMinSpacesJoin, strconv.Itoa(*req.MinSpacesJoin)); err != nil {
+			return fmt.Errorf("setting %s: %w", keyMinSpacesJoin, err)
+		}
 	}
 
 	if req.PromotedSpaces != nil {
 		b, _ := json.Marshal(*req.PromotedSpaces)
-		_ = s.settings.SetSetting(ctx, tenantID, keyPromotedSpaces, string(b))
+		if err := s.settings.SetSetting(ctx, tenantID, keyPromotedSpaces, string(b)); err != nil {
+			return fmt.Errorf("setting %s: %w", keyPromotedSpaces, err)
+		}
 	}
 
 	if req.PromotedUsers != nil {
 		b, _ := json.Marshal(*req.PromotedUsers)
-		_ = s.settings.SetSetting(ctx, tenantID, keyPromotedUsers, string(b))
+		if err := s.settings.SetSetting(ctx, tenantID, keyPromotedUsers, string(b)); err != nil {
+			return fmt.Errorf("setting %s: %w", keyPromotedUsers, err)
+		}
 	}
 
 	if req.PromotedTags != nil {
 		b, _ := json.Marshal(*req.PromotedTags)
-		_ = s.settings.SetSetting(ctx, tenantID, keyPromotedTags, string(b))
+		if err := s.settings.SetSetting(ctx, tenantID, keyPromotedTags, string(b)); err != nil {
+			return fmt.Errorf("setting %s: %w", keyPromotedTags, err)
+		}
 	}
 
 	return nil
 }
 
 // ListTemplates returns all onboarding templates for the tenant.
+//
+// NOTE: Templates CRUD is wired (route catalog + admin API) but the wizard
+// flow does not yet consume the active template to drive step definitions —
+// the 5-step flow is hardcoded in GetState/the frontend. Template-driven
+// onboarding is a future enhancement (§21); the CRUD surface is preserved
+// so admins can pre-configure templates ahead of the consumer-side wiring.
 func (s *Service) ListTemplates(ctx context.Context, tenantID pgtype.UUID) ([]gen.OnboardingTemplate, error) {
 	return s.store.listTemplates(ctx, tenantID)
 }

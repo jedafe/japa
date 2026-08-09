@@ -405,6 +405,28 @@ func (q *Queries) GetPublicProfileByUsername(ctx context.Context, arg GetPublicP
 	return i, err
 }
 
+const getSessionIDByHash = `-- name: GetSessionIDByHash :one
+SELECT id
+FROM refresh_tokens
+WHERE tenant_id = $1 AND user_id = $2 AND token_hash = $3 AND revoked_at IS NULL
+`
+
+type GetSessionIDByHashParams struct {
+	TenantID  pgtype.UUID `json:"tenant_id"`
+	UserID    pgtype.UUID `json:"user_id"`
+	TokenHash string      `json:"token_hash"`
+}
+
+// Resolves the current session's id from the jc_refresh cookie hash so
+// /me/sessions can flag the current session and RevokeAllSessions can keep
+// it (JEOS §50: "revoke all other sessions (keep current one)").
+func (q *Queries) GetSessionIDByHash(ctx context.Context, arg GetSessionIDByHashParams) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, getSessionIDByHash, arg.TenantID, arg.UserID, arg.TokenHash)
+	var id pgtype.UUID
+	err := row.Scan(&id)
+	return id, err
+}
+
 const getUserAccountForUpdate = `-- name: GetUserAccountForUpdate :one
 
 SELECT id, username, email, email_verified_at, username_changed_at
@@ -1542,7 +1564,7 @@ func (q *Queries) ListUserContent(ctx context.Context, arg ListUserContentParams
 }
 
 const listUserSessions = `-- name: ListUserSessions :many
-SELECT id, token_hash, expires_at, created_at
+SELECT id, token_hash, expires_at, created_at, device_name, ip_address, last_used_at
 FROM refresh_tokens
 WHERE tenant_id = $1 AND user_id = $2 AND revoked_at IS NULL
 ORDER BY created_at DESC
@@ -1554,13 +1576,17 @@ type ListUserSessionsParams struct {
 }
 
 type ListUserSessionsRow struct {
-	ID        pgtype.UUID        `json:"id"`
-	TokenHash string             `json:"token_hash"`
-	ExpiresAt pgtype.Timestamptz `json:"expires_at"`
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	ID         pgtype.UUID        `json:"id"`
+	TokenHash  string             `json:"token_hash"`
+	ExpiresAt  pgtype.Timestamptz `json:"expires_at"`
+	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+	DeviceName *string            `json:"device_name"`
+	IpAddress  *string            `json:"ip_address"`
+	LastUsedAt pgtype.Timestamptz `json:"last_used_at"`
 }
 
-// Tenant-scoped per Section 04 (BUG-009).
+// Tenant-scoped per Section 04 (BUG-009). Returns device_name, ip_address,
+// last_used_at per JEOS §50 contract.
 func (q *Queries) ListUserSessions(ctx context.Context, arg ListUserSessionsParams) ([]ListUserSessionsRow, error) {
 	rows, err := q.db.Query(ctx, listUserSessions, arg.TenantID, arg.UserID)
 	if err != nil {
@@ -1575,6 +1601,9 @@ func (q *Queries) ListUserSessions(ctx context.Context, arg ListUserSessionsPara
 			&i.TokenHash,
 			&i.ExpiresAt,
 			&i.CreatedAt,
+			&i.DeviceName,
+			&i.IpAddress,
+			&i.LastUsedAt,
 		); err != nil {
 			return nil, err
 		}

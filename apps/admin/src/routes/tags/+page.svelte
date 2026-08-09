@@ -232,12 +232,12 @@
 		{ key: "description", label: t("tags.description", "Description"), type: "text" },
 		{ key: "rules", label: t("tags.rules", "Rules"), type: "text" },
 		{ key: "color", label: t("tags.color", "Color"), type: "text" },
-		{ key: "logo_media_id", label: "Logo Media ID", type: "text" },
-		{ key: "logo_url", label: "Logo URL", type: "text" },
-		{ key: "cover_media_id", label: "Cover Media ID", type: "text" },
-		{ key: "cover_url", label: "Cover URL", type: "text" },
+		{ key: "logo_media_id", label: t("tags.logo_media_id", "Logo Media ID"), type: "text" },
+		{ key: "logo_url", label: t("tags.logo_url", "Logo URL"), type: "text" },
+		{ key: "cover_media_id", label: t("tags.cover_media_id", "Cover Media ID"), type: "text" },
+		{ key: "cover_url", label: t("tags.cover_url", "Cover URL"), type: "text" },
 		{ key: "is_system", label: t("tags.is_system", "System tag"), type: "checkbox" },
-		{ key: "field_values", label: "Field Values", type: "text" },
+		{ key: "field_values", label: t("tags.field_values", "Field Values"), type: "text" },
 	];
 
 	const config: EntityPageConfig = {
@@ -275,7 +275,7 @@
 				key: "post_count",
 				label: t("tags.min_posts", "Min Posts"),
 				options: [
-					{ value: "0", label: "Any" },
+					{ value: "0", label: t("tags.filter.any", "Any") },
 					{ value: "10", label: "10+" },
 					{ value: "100", label: "100+" },
 					{ value: "1000", label: "1000+" },

@@ -97,7 +97,7 @@
 	{/if}
 
 	<!-- Nav items (from GET /menus/main_sidebar) -->
-	<ul class="flex-1 overflow-y-auto px-2 py-2">
+	<ul class="flex-1 overflow-y-auto px-2 py-2" data-tour="primary-nav">
 		{#each items as item (item.id)}
 			{@const Icon = resolveIcon(item.icon)}
 			{@const active = isActive(item.url)}
@@ -167,7 +167,7 @@
 	<!-- Compose — guests are redirected to login with a returnTo so they land
 	     on the composer after authenticating instead of hitting a 403.
 	     Authed users get the modal composer (ADR-058). -->
-	<div class="px-2 py-2">
+	<div class="px-2 py-2" data-tour="compose">
 		{#if collapsed}
 			{#if user}
 				<button
@@ -210,7 +210,7 @@
 	</div>
 
 	<!-- Account / Space switcher (bottom) -->
-	<div class="border-t border-[var(--color-border)] p-2">
+	<div class="border-t border-[var(--color-border)] p-2" data-tour="space-switcher">
 		{#if user && userSpaces.length > 0}
 			<!-- Space switcher — ADR-058: stays in the left nav, not the account menu -->
 			<DropdownMenu.Root>

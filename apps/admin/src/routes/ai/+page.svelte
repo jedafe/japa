@@ -25,16 +25,16 @@
 	let copied = $state(false);
 
 	let categories = $state<{ value: string; label: string; description: string }[]>([
-		{ value: 'blog_post', label: 'Blog Post', description: 'Generate blog post content' },
-		{ value: 'forum_reply', label: 'Forum Reply', description: 'Generate forum reply content' },
-		{ value: 'social_media', label: 'Social Media', description: 'Generate social media content' },
-		{ value: 'email', label: 'Email', description: 'Generate email content' },
-		{ value: 'summary', label: 'Summary', description: 'Generate summary content' },
-		{ value: 'translation', label: 'Translation', description: 'Generate translation content' }
+		{ value: 'blog_post', label: t('ai.category.blog_post', 'Blog Post'), description: t('ai.category.description.blog_post', 'Generate blog post content') },
+		{ value: 'forum_reply', label: t('ai.category.forum_reply', 'Forum Reply'), description: t('ai.category.description.forum_reply', 'Generate forum reply content') },
+		{ value: 'social_media', label: t('ai.category.social_media', 'Social Media'), description: t('ai.category.description.social_media', 'Generate social media content') },
+		{ value: 'email', label: t('ai.category.email', 'Email'), description: t('ai.category.description.email', 'Generate email content') },
+		{ value: 'summary', label: t('ai.category.summary', 'Summary'), description: t('ai.category.description.summary', 'Generate summary content') },
+		{ value: 'translation', label: t('ai.category.translation', 'Translation'), description: t('ai.category.description.translation', 'Generate translation content') }
 	]);
 
 	let models = $state<{ value: string; label: string }[]>([
-		{ value: '', label: 'Default' }
+		{ value: '', label: t('ai.model.default', 'Default') }
 	]);
 
 	// Tab navigation (usage is in-memory only, generate/tools follow URL)
@@ -568,7 +568,7 @@
 		<section class="mb-8 rounded-lg border p-6" style="border-color: var(--color-border); background-color: var(--color-surface)">
 			<div class="flex items-center gap-3 text-sm" style="color: var(--color-muted)">
 				<AlertTriangle class="h-5 w-5" />
-				You don't have permission to use AI generation.
+				{t('ai.no_permission', "You don't have permission to use AI generation.")}
 			</div>
 		</section>
 	{/if}

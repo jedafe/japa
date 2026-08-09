@@ -87,6 +87,8 @@ export const categoryIcons: Record<string, typeof Settings> = {
     language_test_hub: Languages,
     tax_calculator: Receipt,
     community_locator: MapPin,
+    service_directory: Briefcase,
+    mentorship: GraduationCap,
 };
 
 export const categoryNames: Record<string, string> = {
@@ -130,6 +132,8 @@ export const categoryNames: Record<string, string> = {
     language_test_hub: 'Language Test Hub',
     tax_calculator: 'Tax Calculator',
     community_locator: 'Diaspora Community Locator',
+    service_directory: 'Service Directory',
+    mentorship: 'Mentorship Matching',
 };
 
 // Sensitive keys that should be masked in the UI (control-panel settings only).

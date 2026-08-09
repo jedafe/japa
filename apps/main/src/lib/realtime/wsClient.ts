@@ -28,6 +28,7 @@ export type WSEventType =
 type EventHandler = (payload: unknown) => void;
 
 const MAX_RECONNECT_DELAY = 30_000;
+const MAX_RECONNECT_ATTEMPTS = 10;
 
 /** Mint a short-lived WS ticket via POST /api/v1/auth/ws-ticket. */
 async function mintTicket(): Promise<string | null> {
@@ -189,6 +190,13 @@ class WsClient {
 
 	private scheduleReconnect(): void {
 		if (!this.shouldReconnect) return;
+		// Cap reconnect attempts so a permanently-down backend doesn't spin
+		// forever. The caller (realtime store) can re-trigger connect() if
+		// conditions change (e.g. feature flag toggled, user re-authenticates).
+		if (this.reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+			this.shouldReconnect = false;
+			return;
+		}
 		this.clearReconnect();
 		const delay = Math.min(1000 * 2 ** this.reconnectAttempts, MAX_RECONNECT_DELAY);
 		this.reconnectAttempts++;

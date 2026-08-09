@@ -79,6 +79,12 @@ func (s *Service) GetProfile(ctx context.Context, tenantID, userID pgtype.UUID) 
 	// to the GeoIP-resolved country).
 	contentCountry, _ := s.GetContentCountry(ctx, tenantID, userID)
 
+	// ADR-064a: best-effort fetch of origin/destination country custom field
+	// values so the settings/location page can pre-populate. A failure
+	// degrades to empty strings (the dropdowns show "Not set").
+	originCountry, _ := s.store.getGeoCustomField(ctx, tenantID, userID, "origin_country")
+	destCountry, _ := s.store.getGeoCustomField(ctx, tenantID, userID, "destination_country")
+
 	// Map media IDs to strings for the response (BUG-004).
 	var avatarMediaID, headerMediaID *string
 	if p.AvatarMediaID.Valid {
@@ -110,6 +116,8 @@ func (s *Service) GetProfile(ctx context.Context, tenantID, userID pgtype.UUID) 
 		CreatedAt:                p.CreatedAt.Time.Format(time.RFC3339),
 		UpdatedAt:                p.UpdatedAt.Time.Format(time.RFC3339),
 		ContentCountryPreference: contentCountry,
+		OriginCountry:            originCountry,
+		DestinationCountry:       destCountry,
 	}, nil
 }
 
@@ -578,8 +586,12 @@ func (s *Service) UpdatePrivacySettings(ctx context.Context, tenantID, userID pg
 	return s.store.upsertUserPrivacySettings(ctx, tenantID, userID, dmPrivacy, profileVisibility, searchIndexable, showOnlineStatus, showActivity)
 }
 
-// ListSessions returns the user's active sessions.
-func (s *Service) ListSessions(ctx context.Context, tenantID, userID pgtype.UUID) ([]SessionInfo, error) {
+// ListSessions returns the user's active sessions. currentSessionID is the
+// refresh_tokens.id of the session making the request (resolved from the
+// jc_refresh cookie); it is used to flag the current session so the frontend
+// can show a "current" badge and omit the revoke button on it.
+// Ref: japaconnect-engineering/sections/50-user-dashboard-settings.md
+func (s *Service) ListSessions(ctx context.Context, tenantID, userID pgtype.UUID, currentSessionID pgtype.UUID) ([]SessionInfo, error) {
 	sessions, err := s.store.listUserSessions(ctx, tenantID, userID)
 	if err != nil {
 		return nil, fmt.Errorf("listing sessions: %w", err)
@@ -587,11 +599,22 @@ func (s *Service) ListSessions(ctx context.Context, tenantID, userID pgtype.UUID
 
 	result := make([]SessionInfo, len(sessions))
 	for i, sess := range sessions {
-		result[i] = SessionInfo{
+		si := SessionInfo{
 			ID:        sess.ID.String(),
 			CreatedAt: sess.CreatedAt.Time.Format(time.RFC3339),
 			ExpiresAt: sess.ExpiresAt.Time.Format(time.RFC3339),
+			Current:   sess.ID == currentSessionID,
 		}
+		if sess.DeviceName != nil {
+			si.DeviceName = *sess.DeviceName
+		}
+		if sess.IpAddress != nil {
+			si.IpAddress = *sess.IpAddress
+		}
+		if sess.LastUsedAt.Valid {
+			si.LastUsedAt = sess.LastUsedAt.Time.Format(time.RFC3339)
+		}
+		result[i] = si
 	}
 
 	return result, nil
@@ -627,20 +650,13 @@ func (s *Service) RevokeSession(ctx context.Context, tenantID, userID, sessionID
 	return s.store.revokeUserSession(ctx, tenantID, sessionID, userID)
 }
 
-// RevokeAllSessions revokes all sessions, optionally keeping the current one.
-func (s *Service) RevokeAllSessions(ctx context.Context, tenantID, userID pgtype.UUID, keepCurrent bool) error {
-	if keepCurrent {
-		// Find the most recently created session to keep.
-		sessions, err := s.store.listUserSessions(ctx, tenantID, userID)
-		if err != nil {
-			return fmt.Errorf("listing sessions: %w", err)
-		}
-		if len(sessions) > 0 {
-			return s.store.revokeAllUserSessions(ctx, tenantID, userID, sessions[0].ID)
-		}
-	}
-	// Revoke all by passing a zero UUID (won't match any real session).
-	return s.store.revokeAllUserSessions(ctx, tenantID, userID, pgtype.UUID{})
+// RevokeAllSessions revokes all sessions except the current one. The current
+// session's refresh_tokens.id is resolved from the jc_refresh cookie by the
+// handler and passed here — NOT inferred from created_at DESC, which would
+// keep the wrong session if the user has multiple concurrent sessions.
+// Ref: japaconnect-engineering/sections/50-user-dashboard-settings.md
+func (s *Service) RevokeAllSessions(ctx context.Context, tenantID, userID, currentSessionID pgtype.UUID) error {
+	return s.store.revokeAllUserSessions(ctx, tenantID, userID, currentSessionID)
 }
 
 // ListConnectedAccounts returns the user's linked OAuth accounts.

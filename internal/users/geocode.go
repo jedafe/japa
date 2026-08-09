@@ -42,13 +42,13 @@ type geoSettingsReader interface {
 // per Rule 3 — no hardcoded URLs or limits.
 //
 // Ref: japaconnect-engineering/adr/ADR-064a-geo-awareness-extension.md
-func reverseGeocode(ctx context.Context, settings geoSettingsReader, tenantID pgtype.UUID, lat, lng float64) (city, countryCode string, err error) {
+func reverseGeocode(ctx context.Context, settings geoSettingsReader, tenantID pgtype.UUID, lat, lng float64) (city, state, countryCode string, err error) {
 	// Validate coordinate ranges before making any external call.
 	if lat < -90 || lat > 90 {
-		return "", "", fmt.Errorf("latitude %.6f out of range [-90, 90]", lat)
+		return "", "", "", fmt.Errorf("latitude %.6f out of range [-90, 90]", lat)
 	}
 	if lng < -180 || lng > 180 {
-		return "", "", fmt.Errorf("longitude %.6f out of range [-180, 180]", lng)
+		return "", "", "", fmt.Errorf("longitude %.6f out of range [-180, 180]", lng)
 	}
 
 	url := nominatimDefaultURL
@@ -62,7 +62,7 @@ func reverseGeocode(ctx context.Context, settings geoSettingsReader, tenantID pg
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fullURL, nil)
 	if err != nil {
-		return "", "", fmt.Errorf("building nominatim request: %w", err)
+		return "", "", "", fmt.Errorf("building nominatim request: %w", err)
 	}
 	// Nominatim usage policy requires a descriptive User-Agent.
 	req.Header.Set("User-Agent", "JapaConnect/1.0 (geo-aware personalization)")
@@ -71,14 +71,14 @@ func reverseGeocode(ctx context.Context, settings geoSettingsReader, tenantID pg
 	client := &http.Client{Timeout: time.Duration(timeoutMs) * time.Millisecond}
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", "", fmt.Errorf("nominatim request: %w", err)
+		return "", "", "", fmt.Errorf("nominatim request: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		// Limit the error body read to prevent log flooding from large responses.
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return "", "", fmt.Errorf("nominatim returned %d: %s", resp.StatusCode, string(body))
+		return "", "", "", fmt.Errorf("nominatim returned %d: %s", resp.StatusCode, string(body))
 	}
 
 	var result struct {
@@ -86,6 +86,8 @@ func reverseGeocode(ctx context.Context, settings geoSettingsReader, tenantID pg
 			City        string `json:"city"`
 			Town        string `json:"town"`
 			Village     string `json:"village"`
+			State       string `json:"state"`
+			County      string `json:"county"`
 			Country     string `json:"country"`
 			CountryCode string `json:"country_code"`
 		} `json:"address"`
@@ -93,7 +95,7 @@ func reverseGeocode(ctx context.Context, settings geoSettingsReader, tenantID pg
 	// Limit the response body to prevent memory exhaustion from a
 	// misbehaving or malicious endpoint.
 	if err := json.NewDecoder(io.LimitReader(resp.Body, nominatimMaxResponseSize)).Decode(&result); err != nil {
-		return "", "", fmt.Errorf("decoding nominatim response: %w", err)
+		return "", "", "", fmt.Errorf("decoding nominatim response: %w", err)
 	}
 
 	// Nominatim uses city/town/village depending on population — take the first non-empty.
@@ -104,9 +106,14 @@ func reverseGeocode(ctx context.Context, settings geoSettingsReader, tenantID pg
 	if city == "" {
 		city = result.Address.Village
 	}
+	// Nominatim uses state or county depending on the region — take the first non-empty.
+	state = result.Address.State
+	if state == "" {
+		state = result.Address.County
+	}
 	countryCode = strings.ToUpper(result.Address.CountryCode)
 
-	return city, countryCode, nil
+	return city, state, countryCode, nil
 }
 
 // Ensure config.Settings satisfies geoSettingsReader at compile time.

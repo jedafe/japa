@@ -64,13 +64,13 @@
 </script>
 
 <svelte:head>
-	<title>{t('login.title', 'Sign In')} — JapaConnect Control</title>
+	<title>{t('control.login.title', 'Sign In')} — JapaConnect Control</title>
 </svelte:head>
 
 <div class="px-4">
 	<div class="border-border-card bg-background-alt w-full max-w-sm rounded-lg border p-6">
 		<h1 class="text-foreground mb-1 text-center text-xl font-bold tracking-tight">{t('control.brand', 'Control Panel')}</h1>
-		<p class="text-muted-foreground mb-6 text-center text-sm">{t('login.title', 'Sign in to your account')}</p>
+		<p class="text-muted-foreground mb-6 text-center text-sm">{t('control.login.title', 'Sign in to the control panel')}</p>
 
 		{#if error}
 			<div class="border-destructive bg-destructive/10 text-destructive mb-4 rounded-md border px-3 py-2 text-sm">

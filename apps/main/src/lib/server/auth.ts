@@ -9,8 +9,12 @@ import type { RequestEvent } from '@sveltejs/kit';
 
 /** Access token cookie name — read by hooks.server.ts to resolve the session. */
 export const SESSION_COOKIE = 'jc_token';
+/** Refresh token cookie name — set by the backend, forwarded by the SSR proxy. */
+export const REFRESH_COOKIE = 'jc_refresh';
 /** Access token TTL in seconds (15 minutes — matches the backend JWT expiry). */
 const ACCESS_TOKEN_TTL = 15 * 60;
+/** Refresh token TTL in seconds (30 days — matches the backend default). */
+const REFRESH_TOKEN_TTL = 30 * 24 * 60 * 60;
 
 /** Set the jc_token cookie on the response. */
 export function setSessionCookie(event: RequestEvent, accessToken: string): void {
@@ -23,13 +27,44 @@ export function setSessionCookie(event: RequestEvent, accessToken: string): void
 	});
 }
 
+/** Set the jc_refresh cookie on the response. The value comes from the
+ * backend's Set-Cookie header; we re-set it with path=/ so the SvelteKit
+ * SSR load functions can forward it to /me/sessions for current-session
+ * identification (JEOS §50). */
+export function setRefreshCookie(event: RequestEvent, refreshToken: string): void {
+	event.cookies.set(REFRESH_COOKIE, refreshToken, {
+		path: '/',
+		httpOnly: true,
+		secure: true,
+		sameSite: 'strict',
+		maxAge: REFRESH_TOKEN_TTL
+	});
+}
+
 /** Clear the jc_token cookie (logout). */
 export function clearSessionCookie(event: RequestEvent): void {
 	event.cookies.delete(SESSION_COOKIE, { path: '/' });
+	event.cookies.delete(REFRESH_COOKIE, { path: '/' });
 }
 
-/** POST /auth/login — returns { access_token, user } or, when the account has
- * TOTP enabled, { totp_required, challenge_token, user }. Throws ApiError. */
+/** Extract the jc_refresh token value from a backend response's Set-Cookie
+ * header. Returns null when the cookie is absent. */
+function extractRefreshToken(res: Response): string | null {
+	const cookies = res.headers.getSetCookie?.() ?? [];
+	for (const c of cookies) {
+		// Parse "jc_refresh=VALUE; Path=/api/v1; ..."
+		if (c.startsWith('jc_refresh=')) {
+			const value = c.split(';')[0].slice('jc_refresh='.length);
+			return value || null;
+		}
+	}
+	return null;
+}
+
+/** POST /auth/login — returns { access_token, user, refresh_token } or, when
+ * the account has TOTP enabled, { totp_required, challenge_token, user }.
+ * Throws ApiError. The refresh_token is extracted from the backend's
+ * Set-Cookie header so the SSR proxy can re-set it as a browser cookie. */
 export async function authenticateLogin(
 	ctx: ApiContext,
 	email: string,
@@ -45,10 +80,16 @@ export async function authenticateLogin(
 		const err = payload?.error;
 		throw new ApiError(res.status, err?.code ?? 'api_error', err?.message ?? res.statusText);
 	}
-	return payload.data as AuthSession | AuthTotpChallenge;
+	const data = payload.data as AuthSession | AuthTotpChallenge;
+	if (data.access_token) {
+		const rt = extractRefreshToken(res);
+		if (rt) (data as AuthSession).refresh_token = rt;
+	}
+	return data;
 }
 
-/** POST /auth/register — returns { access_token, user } or throws ApiError. */
+/** POST /auth/register — returns { access_token, user, refresh_token } or
+ * throws ApiError. */
 export async function authenticateSignup(
 	ctx: ApiContext,
 	email: string,
@@ -65,7 +106,10 @@ export async function authenticateSignup(
 		const err = payload?.error;
 		throw new ApiError(res.status, err?.code ?? 'api_error', err?.message ?? res.statusText);
 	}
-	return payload.data as AuthSession;
+	const data = payload.data as AuthSession;
+	const rt = extractRefreshToken(res);
+	if (rt) data.refresh_token = rt;
+	return data;
 }
 
 /** POST /auth/logout — best-effort; always clears the cookie locally. */
@@ -159,11 +203,18 @@ export async function resendVerification(ctx: ApiContext, email: string): Promis
 /** POST /auth/totp/verify-challenge — verifies a TOTP code with a challenge
  * token (issued by /auth/login when the user has 2FA enabled). Returns
  * { access_token } on success. Throws ApiError on failure. */
+/** Result of a TOTP verification or backup code consumption — the access
+ * token plus the optional refresh token extracted from Set-Cookie. */
+export interface TotpAuthResult {
+	access_token: string;
+	refresh_token?: string;
+}
+
 export async function verifyTotpChallenge(
 	ctx: ApiContext,
 	challengeToken: string,
 	code: string
-): Promise<string> {
+): Promise<TotpAuthResult> {
 	const res = await fetch(`${API_V1}/auth/totp/verify-challenge`, {
 		method: 'POST',
 		headers: { 'content-type': 'application/json', host: ctx.host, 'x-forwarded-host': ctx.host },
@@ -174,16 +225,20 @@ export async function verifyTotpChallenge(
 		const err = payload?.error;
 		throw new ApiError(res.status, err?.code ?? 'api_error', err?.message ?? res.statusText);
 	}
-	return payload.data.access_token as string;
+	const data = payload.data;
+	const result: TotpAuthResult = { access_token: data.access_token as string };
+	const rt = extractRefreshToken(res);
+	if (rt) result.refresh_token = rt;
+	return result;
 }
 
 /** POST /auth/totp/backup — consumes a one-time backup code with a challenge
- * token. Returns { access_token } on success. Throws ApiError on failure. */
+ * token. Returns { access_token, refresh_token } on success. Throws ApiError. */
 export async function consumeTotpBackup(
 	ctx: ApiContext,
 	challengeToken: string,
 	backupCode: string
-): Promise<string> {
+): Promise<TotpAuthResult> {
 	const res = await fetch(`${API_V1}/auth/totp/backup`, {
 		method: 'POST',
 		headers: { 'content-type': 'application/json', host: ctx.host, 'x-forwarded-host': ctx.host },
@@ -194,7 +249,11 @@ export async function consumeTotpBackup(
 		const err = payload?.error;
 		throw new ApiError(res.status, err?.code ?? 'api_error', err?.message ?? res.statusText);
 	}
-	return payload.data.access_token as string;
+	const data = payload.data;
+	const result: TotpAuthResult = { access_token: data.access_token as string };
+	const rt = extractRefreshToken(res);
+	if (rt) result.refresh_token = rt;
+	return result;
 }
 
 /** POST /auth/oauth/{provider}/initiate — returns { auth_url }. */

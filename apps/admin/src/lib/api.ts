@@ -204,11 +204,19 @@ export const spaceTypesApi = {
 
 export const impersonationApi = {
 	start: (userId: string) =>
-		api<{ token: string }>('/admin/impersonate', { method: 'POST', body: { user_id: userId } }),
+		api<{
+			session_key: string;
+			expires_at: string;
+			target: { id: string; username: string; email: string };
+		}>('/admin/impersonate', { method: 'POST', body: { user_id: userId } }),
 	end: () =>
-		api('/admin/impersonate', { method: 'DELETE' }),
+		api<{ status: string; target_id: string }>('/admin/impersonate', { method: 'DELETE' }),
 	status: () =>
-		api<{ impersonating: boolean; username?: string; user_id?: string }>('/admin/impersonate/status'),
+		api<{
+			active: boolean;
+			target_user_id: string | null;
+			expires_at: string | null;
+		}>('/admin/impersonate/status'),
 };
 
 export const docsApi = {

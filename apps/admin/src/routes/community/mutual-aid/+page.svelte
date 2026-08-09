@@ -21,10 +21,10 @@
 	const canManage = $derived(hasPermission('mutual_aid.moderate'));
 
 	const statusOptions = [
-		{ value: 'active', label: 'Active' },
-		{ value: 'fulfilled', label: 'Fulfilled' },
-		{ value: 'closed', label: 'Closed' },
-		{ value: 'expired', label: 'Expired' }
+		{ value: 'active', label: t('mutual_aid.status.active', 'Active') },
+		{ value: 'fulfilled', label: t('mutual_aid.status.fulfilled', 'Fulfilled') },
+		{ value: 'closed', label: t('mutual_aid.status.closed', 'Closed') },
+		{ value: 'expired', label: t('mutual_aid.status.expired', 'Expired') }
 	];
 
 	// ── State ───────────────────────────────────────────────────────────────

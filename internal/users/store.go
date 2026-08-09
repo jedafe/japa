@@ -2,8 +2,10 @@ package users
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
 )
@@ -95,6 +97,22 @@ func (s *Store) findCitySpace(ctx context.Context, tenantID pgtype.UUID, cityNam
 
 // findCountrySpace finds a country-level Space by geo_code (ISO 3166-1
 // alpha-2) for the reverse-geocoding fallback (ADR-064a).
+
+// findStateSpace finds a state-level Space by name (case-insensitive) for
+// the reverse-geocoding fallback (ADR-064a, BUG-006). Used when no city-
+// level Space matches but a state/county name is available from Nominatim.
+func (s *Store) findStateSpace(ctx context.Context, tenantID pgtype.UUID, stateName string) (pgtype.UUID, error) {
+	space, err := s.read.FindStateSpaceByName(ctx, gen.FindStateSpaceByNameParams{
+		StateName: stateName, TenantID: tenantID,
+	})
+	if err != nil {
+		return pgtype.UUID{}, err
+	}
+	return space.ID, nil
+}
+
+// findCountrySpace finds a country-level Space by geo_code (ISO 3166-1
+// alpha-2) for the reverse-geocoding fallback (ADR-064a).
 func (s *Store) findCountrySpace(ctx context.Context, tenantID pgtype.UUID, countryCode string) (pgtype.UUID, error) {
 	code := countryCode
 	space, err := s.read.GetSpaceByGeoCode(ctx, gen.GetSpaceByGeoCodeParams{
@@ -163,6 +181,43 @@ func (s *Store) setGeoCustomField(ctx context.Context, tenantID, userID pgtype.U
 	}
 
 	return nil
+}
+
+// getGeoCustomField reads a geo-related custom field value (origin_country
+// or destination_country) from the user's profile (ADR-064a). Returns an
+// empty string when the field has no value set (no row / NULL value_text).
+func (s *Store) getGeoCustomField(ctx context.Context, tenantID, userID pgtype.UUID, fieldKey string) (string, error) {
+	field, err := s.read.GetCustomFieldByKey(ctx, gen.GetCustomFieldByKeyParams{
+		Key:      fieldKey,
+		TenantID: tenantID,
+	})
+	if err != nil {
+		return "", fmt.Errorf("looking up custom field %q: %w", fieldKey, err)
+	}
+
+	profileID, err := s.read.GetUserProfileID(ctx, gen.GetUserProfileIDParams{
+		TenantID: tenantID, UserID: userID,
+	})
+	if err != nil {
+		return "", fmt.Errorf("getting user profile id: %w", err)
+	}
+
+	val, err := s.read.GetCustomFieldValue(ctx, gen.GetCustomFieldValueParams{
+		FieldID:    field.ID,
+		EntityType: "user_profile",
+		EntityID:   profileID,
+		TenantID:   tenantID,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", nil // no value set yet
+		}
+		return "", fmt.Errorf("getting custom field value for %q: %w", fieldKey, err)
+	}
+	if val.ValueText != nil {
+		return *val.ValueText, nil
+	}
+	return "", nil
 }
 
 // getUserByUsername returns the user profile joined with users table data, looked up by username.
@@ -371,6 +426,17 @@ func (s *Store) listUserSessions(ctx context.Context, tenantID, userID pgtype.UU
 	return s.read.ListUserSessions(ctx, gen.ListUserSessionsParams{
 		TenantID: tenantID,
 		UserID:   userID,
+	})
+}
+
+// getSessionIDByHash resolves the refresh_tokens.id for the current session
+// from the jc_refresh cookie hash. Returns pgtype.UUID{} (zero) when the
+// token is not found so the caller can degrade gracefully.
+func (s *Store) getSessionIDByHash(ctx context.Context, tenantID, userID pgtype.UUID, tokenHash string) (pgtype.UUID, error) {
+	return s.read.GetSessionIDByHash(ctx, gen.GetSessionIDByHashParams{
+		TenantID:  tenantID,
+		UserID:    userID,
+		TokenHash: tokenHash,
 	})
 }
 

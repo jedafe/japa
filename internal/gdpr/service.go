@@ -468,6 +468,18 @@ func (s *Service) ProcessAccountDeletion(ctx context.Context, requestID pgtype.U
 			slog.Warn("failed to anonymize affiliate link events during deletion",
 				"user_id", request.UserID.String(), "error", err)
 		}
+		// Scrub PII from onboarding_state.step_data (name, current_location,
+		// destination) during the anonymization phase (Section 09, ADR-014).
+		// The row has ON DELETE CASCADE from users(id) so it is removed at
+		// hard-delete, but step_data PII must be cleared now so it is not
+		// recoverable during the retention window. Best-effort.
+		if err := s.store.write.AnonymizeOnboardingState(ctx, gen.AnonymizeOnboardingStateParams{
+			UserID:   request.UserID,
+			TenantID: request.TenantID,
+		}); err != nil {
+			slog.Warn("failed to anonymize onboarding state during deletion",
+				"user_id", request.UserID.String(), "error", err)
+		}
 		// Scrub auth-related PII tables during the anonymization phase so
 		// sensitive data (TOTP secrets, OAuth provider IDs, email addresses,
 		// password hashes, reset/verification tokens) is not recoverable

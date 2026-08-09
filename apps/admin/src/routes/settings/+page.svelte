@@ -189,7 +189,7 @@
 		if (value === '[]' || value === '{}') return '';
 		if (Array.isArray(value)) {
 			if (value.length === 0) return '';
-			return value.length + ' items';
+			return value.length + ' ' + t('settings.items_count', 'items');
 		}
 		const str = String(value);
 		// Check if the string is a JSON-encoded array
@@ -197,7 +197,7 @@
 			try {
 				const parsed = JSON.parse(str);
 				if (Array.isArray(parsed)) {
-					return parsed.length + ' items';
+					return parsed.length + ' ' + t('settings.items_count', 'items');
 				}
 			} catch {
 				// Not valid JSON, fall through to display as-is

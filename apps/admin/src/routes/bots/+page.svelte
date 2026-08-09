@@ -49,18 +49,18 @@
 	};
 
 	const botTypeOptions = [
-		{ value: 'search_engine', label: 'Search Engine' },
-		{ value: 'ai_llm', label: 'AI / LLM' },
-		{ value: 'social', label: 'Social' },
-		{ value: 'monitoring', label: 'Monitoring' },
-		{ value: 'scraper', label: 'Scraper' },
-		{ value: 'unknown', label: 'Unknown' }
+		{ value: 'search_engine', label: t('bots.type_search_engine', 'Search Engine') },
+		{ value: 'ai_llm', label: t('bots.type_ai_llm', 'AI / LLM') },
+		{ value: 'social', label: t('bots.type_social', 'Social') },
+		{ value: 'monitoring', label: t('bots.type_monitoring', 'Monitoring') },
+		{ value: 'scraper', label: t('bots.type_scraper', 'Scraper') },
+		{ value: 'unknown', label: t('bots.type_unknown', 'Unknown') }
 	];
 
 	const policyOptions = [
-		{ value: 'allow', label: 'Allow' },
-		{ value: 'block', label: 'Block' },
-		{ value: 'limit', label: 'Limit' }
+		{ value: 'allow', label: t('bots.policy_allow', 'Allow') },
+		{ value: 'block', label: t('bots.policy_block', 'Block') },
+		{ value: 'limit', label: t('bots.policy_limit', 'Limit') }
 	];
 
 	async function bulkDelete(ids: Set<string>) {

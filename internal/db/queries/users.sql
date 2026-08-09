@@ -169,11 +169,20 @@ SET password_hash = $3, password_changed_at = now(), updated_at = now()
 WHERE id = $1 AND tenant_id = $2;
 
 -- name: ListUserSessions :many
--- Tenant-scoped per Section 04 (BUG-009).
-SELECT id, token_hash, expires_at, created_at
+-- Tenant-scoped per Section 04 (BUG-009). Returns device_name, ip_address,
+-- last_used_at per JEOS §50 contract.
+SELECT id, token_hash, expires_at, created_at, device_name, ip_address, last_used_at
 FROM refresh_tokens
 WHERE tenant_id = $1 AND user_id = $2 AND revoked_at IS NULL
 ORDER BY created_at DESC;
+
+-- name: GetSessionIDByHash :one
+-- Resolves the current session's id from the jc_refresh cookie hash so
+-- /me/sessions can flag the current session and RevokeAllSessions can keep
+-- it (JEOS §50: "revoke all other sessions (keep current one)").
+SELECT id
+FROM refresh_tokens
+WHERE tenant_id = $1 AND user_id = $2 AND token_hash = $3 AND revoked_at IS NULL;
 
 -- name: RevokeUserSession :exec
 -- Tenant-scoped per Section 04 (BUG-009).

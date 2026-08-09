@@ -4,11 +4,14 @@
 	import { revokeSession, revokeOtherSessions } from '$lib/api/hub';
 	import { optimisticAction } from '$lib/components/hub/optimisticAction';
 
+	// Matches the JEOS §50 contract: id, device_name, ip_address,
+	// last_used_at, created_at, expires_at, current.
 	interface Session {
 		id: string;
-		device?: string;
-		ip?: string;
-		last_active?: string;
+		device_name?: string;
+		ip_address?: string;
+		last_used_at?: string;
+		created_at?: string;
 		current?: boolean;
 	}
 
@@ -26,7 +29,7 @@
 		const removed = sessions[idx];
 		await optimisticAction({
 			apply: () => (sessions = sessions.filter((s) => s.id !== id)),
-			rollback: () => (sessions = [...sessions.slice(0, idx), removed, ...sessions.slice(idx)]),
+			rollback: () => (sessions = [...sessions.slice(0, idx), removed, ...sessions.slice(idx + 1)]),
 			call: () => revokeSession(id)
 		});
 	}
@@ -65,11 +68,11 @@
 				<li class="flex items-center justify-between rounded-[var(--radius)] bg-[var(--color-surface-subtle)] px-3 py-2">
 					<div>
 						<p class="text-sm text-[var(--color-text)]">
-							{s.device ?? s.ip ?? t('settings.security.session_unknown')}
+							{s.device_name ?? s.ip_address ?? t('settings.security.session_unknown')}
 							{#if s.current}<span class="ml-2 text-xs text-[var(--color-primary)]">{t('settings.security.session_current')}</span>{/if}
 						</p>
-						{#if s.last_active}
-							<p class="text-xs text-[var(--color-muted)]">{t('settings.security.session_last_active')}: {s.last_active}</p>
+						{#if s.last_used_at}
+							<p class="text-xs text-[var(--color-muted)]">{t('settings.security.session_last_active')}: {s.last_used_at}</p>
 						{/if}
 					</div>
 					{#if !s.current}

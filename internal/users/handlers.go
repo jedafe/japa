@@ -433,7 +433,8 @@ func (h *Handlers) ListUserSessions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sessions, err := h.Service.ListSessions(r.Context(), tenantID, userID)
+	// Admin views another user's sessions — no "current" session to flag.
+	sessions, err := h.Service.ListSessions(r.Context(), tenantID, userID, pgtype.UUID{})
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -699,23 +700,46 @@ func (h *Handlers) UpdateMyLocation(w http.ResponseWriter, r *http.Request) {
 	case body.Latitude != nil && body.Longitude != nil:
 		// Reverse-geocode via Nominatim (OpenStreetMap). Rate-limited to
 		// 1 req/s per Nominatim usage policy. The result is matched to an
-		// existing seeded city-level Space by name. URL and timeout are
-		// configurable via system_settings (Rule 3).
-		cityName, countryCode, err := reverseGeocode(r.Context(), h.settings, tenantID, *body.Latitude, *body.Longitude)
+		// existing seeded Space by name (city → state → country fallback).
+		// URL and timeout are configurable via system_settings (Rule 3).
+		cityName, stateName, countryCode, err := reverseGeocode(r.Context(), h.settings, tenantID, *body.Latitude, *body.Longitude)
 		if err != nil {
 			slog.Warn("reverse geocode failed", "error", err, "lat", *body.Latitude, "lng", *body.Longitude)
 			writeError(w, http.StatusBadGateway, "geocode_failed", "Could not resolve coordinates to a location")
 			return
 		}
 		if countryCode != "" {
-			// Try to find a city-level Space matching the city name.
+			// 1. Try to find a city-level Space matching the city name.
 			if cityName != "" {
 				space, err := h.Service.store.findCitySpace(r.Context(), tenantID, cityName)
 				if err == nil {
 					spaceID = space
 				}
 			}
-			// Fall back to the country-level space if no city match.
+			// 2. Fall back to state-level Space if no city match (BUG-006).
+			// Nominatim often appends administrative suffixes ("Montserrado
+			// County", "Lagos State", "Île-de-France Region") that don't
+			// match the seeded Space name. Try the exact name first, then
+			// retry with common suffixes stripped.
+			if !spaceID.Valid && stateName != "" {
+				space, err := h.Service.store.findStateSpace(r.Context(), tenantID, stateName)
+				if err == nil {
+					spaceID = space
+				} else {
+					// Try stripping common administrative suffixes.
+					for _, suffix := range []string{" County", " State", " Region", " Province", " Department", " District", " Prefecture", " Territory"} {
+						if strings.HasSuffix(stateName, suffix) {
+							trimmed := strings.TrimSuffix(stateName, suffix)
+							space, err = h.Service.store.findStateSpace(r.Context(), tenantID, trimmed)
+							if err == nil {
+								spaceID = space
+								break
+							}
+						}
+					}
+				}
+			}
+			// 3. Fall back to the country-level space if no state match.
 			if !spaceID.Valid {
 				space, err := h.Service.store.findCountrySpace(r.Context(), tenantID, countryCode)
 				if err == nil {
