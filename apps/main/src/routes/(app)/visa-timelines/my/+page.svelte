@@ -1,5 +1,6 @@
 // Ref: japaconnect-engineering/sections/83-visa-timeline-tracker.md
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { t } from '$lib/i18n';
 	import { api } from '$lib/api/client';
 	import { ArrowLeft, CalendarClock, Check, ChevronDown, ChevronRight, Pencil, Plus, X } from 'lucide-svelte';
@@ -15,7 +16,7 @@
 
 	let { data }: { data: PageData } = $props();
 
-	let timelines = $state<VisaTimeline[]>(data.timelines);
+	let timelines = $state<VisaTimeline[]>(untrack(() => data.timelines));
 	let loadError = $derived(data.loadError);
 
 	// Resolve a space UUID to its display name using the SSR-loaded country list.

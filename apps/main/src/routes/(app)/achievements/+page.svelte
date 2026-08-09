@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	// Ref: japaconnect-engineering/sections/89-achievement-feed.md
 	// Achievement Feed list page. Renders milestone cards from the SSR-loaded
 	// list (GET /achievements) with a destination/type/sort filter bar. The
@@ -36,9 +37,9 @@
 
 	// Local filter state seeded from SSR props; navigating updates the URL so
 	// the load re-runs server-side.
-	let dest = $state(data.filters.dest);
-	let type = $state(data.filters.type);
-	let sort = $state(data.filters.sort);
+	let dest = $state(untrack(() => data.filters.dest));
+	let type = $state(untrack(() => data.filters.type));
+	let sort = $state(untrack(() => data.filters.sort));
 
 	// Keep local filter state in sync when navigating between filter states.
 	$effect(() => {

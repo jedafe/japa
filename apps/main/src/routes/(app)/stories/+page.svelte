@@ -1,5 +1,6 @@
 // Ref: japaconnect-engineering/sections/79-community-story-wall.md
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
@@ -22,9 +23,9 @@
 	);
 
 	// Accumulated stories for offset-based "load more" pagination.
-	let stories = $state<Story[]>(data.stories);
+	let stories = $state<Story[]>(untrack(() => data.stories));
 	let loadingMore = $state(false);
-	let hasMore = $state(data.stories.length >= data.pageSize);
+	let hasMore = $state(untrack(() => data.stories.length >= data.pageSize));
 
 	// Sync from server data on navigation (sort/filter changes re-run load).
 	$effect(() => {
@@ -33,10 +34,10 @@
 	});
 
 	// Local filter input state, seeded from URL params.
-	let originInput = $state(data.filters.origin);
-	let destInput = $state(data.filters.dest);
-	let visaInput = $state(data.filters.visa);
-	let professionInput = $state(data.filters.profession);
+	let originInput = $state(untrack(() => data.filters.origin));
+	let destInput = $state(untrack(() => data.filters.dest));
+	let visaInput = $state(untrack(() => data.filters.visa));
+	let professionInput = $state(untrack(() => data.filters.profession));
 
 	$effect(() => {
 		originInput = data.filters.origin;

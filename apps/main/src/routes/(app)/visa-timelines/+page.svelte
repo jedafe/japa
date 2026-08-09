@@ -1,5 +1,6 @@
 // Ref: japaconnect-engineering/sections/83-visa-timeline-tracker.md
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { t } from '$lib/i18n';
 	import { Spline } from 'layerchart';
 	import { CalendarClock, Filter, X } from 'lucide-svelte';
@@ -23,11 +24,11 @@
 
 	// Local filter state — bound to inputs; the Apply button navigates with the
 	// query string so SSR re-runs with the new filters.
-	let fDest = $state(filters.dest);
-	let fOrigin = $state(filters.origin);
-	let fVisa = $state(filters.visa);
-	let fConsulate = $state(filters.consulate);
-	let fMonths = $state(filters.months);
+	let fDest = $state(untrack(() => filters.dest));
+	let fOrigin = $state(untrack(() => filters.origin));
+	let fVisa = $state(untrack(() => filters.visa));
+	let fConsulate = $state(untrack(() => filters.consulate));
+	let fMonths = $state(untrack(() => filters.months));
 
 	$effect(() => {
 		fDest = filters.dest;

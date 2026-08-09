@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	// Ref: japaconnect-engineering/sections/82-japa-planning-groups.md
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
@@ -45,9 +46,9 @@
 	let joinLoading = $state(false);
 	let joinError = $state('');
 	let isMember = $state(
-		!!members?.some((m) => m.username === data.currentUser)
+		untrack(() => !!members?.some((m) => m.username === data.currentUser))
 	);
-	let memberCount = $state(members?.length ?? 0);
+	let memberCount = $state(untrack(() => members?.length ?? 0));
 
 	$effect(() => {
 		isMember = !!members?.some((m) => m.username === data.currentUser);
@@ -98,7 +99,7 @@
 	}
 
 	// --- Milestones ---
-	let milestones = $state<PlanningMilestone[]>(data.milestones);
+	let milestones = $state<PlanningMilestone[]>(untrack(() => data.milestones));
 	let milestoneTitle = $state('');
 	let milestoneLoading = $state(false);
 	let milestoneError = $state('');
@@ -139,7 +140,7 @@
 	}
 
 	// --- Check-ins ---
-	let checkins = $state<PlanningCheckin[]>(data.checkins);
+	let checkins = $state<PlanningCheckin[]>(untrack(() => data.checkins));
 	let checkinNote = $state('');
 	let checkinLoading = $state(false);
 	let checkinError = $state('');
