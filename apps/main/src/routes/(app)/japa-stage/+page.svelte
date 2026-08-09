@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	// Ref: japaconnect-engineering/sections/87-japa-stage-profiles.md
 	// Japa Stage directory. SSR list of public member profiles from
 	// GET /members/by-stage with ?stage and ?dest filters and pagination.
@@ -42,8 +43,8 @@
 	}
 
 	// Local filter state, seeded from SSR-passed filters.
-	let stageFilter = $state(data.filters.stage);
-	let destFilter = $state(data.filters.dest);
+	let stageFilter = $state(untrack(() => data.filters.stage));
+	let destFilter = $state(untrack(() => data.filters.dest));
 
 	// Keep local filter state in sync when navigating between pages/filters.
 	$effect(() => {

@@ -1,5 +1,6 @@
 // Ref: japaconnect-engineering/sections/98-service-directory.md
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
@@ -32,12 +33,12 @@
 	const services = $derived<ServiceListing[]>(data.services);
 
 	// Local filter state seeded from URL params.
-	let destInput = $state(data.filters.dest);
-	let cityInput = $state(data.filters.city);
-	let categoryInput = $state(data.filters.category);
-	let originInput = $state(data.filters.origin);
-	let verifiedInput = $state(data.filters.verified === 'true');
-	let sortInput = $state(data.filters.sort);
+	let destInput = $state(untrack(() => data.filters.dest));
+	let cityInput = $state(untrack(() => data.filters.city));
+	let categoryInput = $state(untrack(() => data.filters.category));
+	let originInput = $state(untrack(() => data.filters.origin));
+	let verifiedInput = $state(untrack(() => data.filters.verified === 'true'));
+	let sortInput = $state(untrack(() => data.filters.sort));
 
 	$effect(() => {
 		destInput = data.filters.dest;

@@ -1,5 +1,6 @@
 // Ref: japaconnect-engineering/sections/80-destination-wiki.md
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { t } from '$lib/i18n';
 	import { api } from '$lib/api/client';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
@@ -27,7 +28,7 @@
 	// Resolve the space name from the first page's space_id-adjacent data, or
 	// fall back to the slug. The index endpoint may include a space name; we
 	// degrade gracefully to the slug when absent.
-	let spaceName = $state<string>(data.spaceSlug);
+	let spaceName = $state<string>(untrack(() => data.spaceSlug));
 
 	$effect(() => {
 		// Best-effort: fetch a lightweight space name. The index payload does not

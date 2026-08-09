@@ -16,7 +16,7 @@
 	let { data } = $props();
 	const bookmarks = $derived(data.bookmarks);
 	let folders = $state<BookmarkFolder[]>(untrack(() => data.folders ?? []));
-	let activeFolder = $state<string | null>(data.activeFolderId ?? null);
+	let activeFolder = $state<string | null>(untrack(() => data.activeFolderId ?? null));
 
 	let newFolderName = $state('');
 	let creatingFolder = $state(false);
