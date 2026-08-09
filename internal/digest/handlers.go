@@ -111,9 +111,14 @@ func (h *Handlers) HandleGetLatest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var spaceID pgtype.UUID
-	if v := r.URL.Query().Get("space_id"); v != "" {
-		if err := spaceID.Scan(v); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_id", "Invalid space_id")
+	// Accept ?dest= (geo-aware standard) or ?space_id= (legacy alias).
+	destParam := r.URL.Query().Get("dest")
+	if destParam == "" {
+		destParam = r.URL.Query().Get("space_id")
+	}
+	if destParam != "" {
+		if err := spaceID.Scan(destParam); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_id", "Invalid destination space ID")
 			return
 		}
 	}

@@ -106,15 +106,34 @@ func parsePageParams(r *http.Request) (page, limit int32) {
 // ---------------------------------------------------------------------------
 
 // HandleGetIndex handles GET /wiki/:space_slug — wiki index for a space.
+// Also accepts ?dest= (destination space ID) as a geo-aware alternative to
+// the URL path :space_slug parameter (ADR-086 geo-aware pattern).
 func (h *Handlers) HandleGetIndex(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
 
+	// ?dest= takes precedence over :space_slug when provided.
+	if destParam := r.URL.Query().Get("dest"); destParam != "" {
+		var destSpaceID pgtype.UUID
+		if err := destSpaceID.Scan(destParam); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_id", "Invalid destination space ID")
+			return
+		}
+		pages, err := h.service.GetWikiIndexByDestSpaceID(r.Context(), tenantID, destSpaceID)
+		if err != nil {
+			slog.Error("wiki: index by dest failed", "error", err)
+			writeError(w, http.StatusInternalServerError, "index_failed", "Failed to get wiki index")
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"data": pages})
+		return
+	}
+
 	spaceSlug := chi.URLParam(r, "space_slug")
 	if spaceSlug == "" {
-		writeError(w, http.StatusBadRequest, "missing_slug", "Space slug is required")
+		writeError(w, http.StatusBadRequest, "missing_slug", "Space slug or ?dest= is required")
 		return
 	}
 

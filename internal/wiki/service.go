@@ -124,6 +124,20 @@ func (s *Service) GetWikiIndex(ctx context.Context, tenantID pgtype.UUID, spaceS
 	return dtos, nil
 }
 
+// GetWikiIndexByDestSpaceID returns all active wiki pages for a space by its ID.
+// Used by the ?dest= geo-aware query parameter.
+func (s *Service) GetWikiIndexByDestSpaceID(ctx context.Context, tenantID, spaceID pgtype.UUID) ([]WikiPageDTO, error) {
+	pages, err := s.store.ListWikiPagesBySpaceID(ctx, tenantID, spaceID)
+	if err != nil {
+		return nil, fmt.Errorf("wiki: index by dest: %w", err)
+	}
+	dtos := make([]WikiPageDTO, 0, len(pages))
+	for _, p := range pages {
+		dtos = append(dtos, pageToDTO(p))
+	}
+	return dtos, nil
+}
+
 // GetWikiPage returns a single wiki page with its current approved revision.
 func (s *Service) GetWikiPage(ctx context.Context, tenantID pgtype.UUID, spaceSlug, pageSlug string) (WikiPageDetailDTO, error) {
 	page, err := s.store.GetWikiPageBySlug(ctx, tenantID, spaceSlug, pageSlug)

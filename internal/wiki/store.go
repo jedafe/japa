@@ -140,6 +140,40 @@ ORDER BY wp.category, wp.title
 	return out, nil
 }
 
+// ListWikiPagesBySpaceID returns all active wiki pages for a space by its ID.
+// Used by the ?dest= geo-aware query parameter (ADR-086 geo-aware pattern).
+func (s *Store) ListWikiPagesBySpaceID(ctx context.Context, tenantID, spaceID pgtype.UUID) ([]WikiPage, error) {
+	const q = `
+SELECT wp.id, wp.tenant_id, wp.space_id, wp.slug, wp.title, wp.category,
+       wp.is_active, wp.is_featured, wp.is_locked, wp.created_by,
+       wp.created_at, wp.updated_at, wp.is_japabot_indexed
+FROM wiki_pages wp
+WHERE wp.tenant_id = $1 AND wp.space_id = $2 AND wp.is_active = true
+ORDER BY wp.category, wp.title`
+	rows, err := s.pool.Reader.Query(ctx, q, tenantID, spaceID)
+	if err != nil {
+		return nil, fmt.Errorf("wiki: list pages by space ID: %w", err)
+	}
+	defer rows.Close()
+
+	var out []WikiPage
+	for rows.Next() {
+		var p WikiPage
+		if err := rows.Scan(
+			&p.ID, &p.TenantID, &p.SpaceID, &p.Slug, &p.Title, &p.Category,
+			&p.IsActive, &p.IsFeatured, &p.IsLocked, &p.CreatedBy,
+			&p.CreatedAt, &p.UpdatedAt, &p.IsJapabotIndexed,
+		); err != nil {
+			return nil, fmt.Errorf("wiki: scan page: %w", err)
+		}
+		out = append(out, p)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("wiki: iterate pages: %w", err)
+	}
+	return out, nil
+}
+
 // GetApprovedRevision returns the latest approved revision for a wiki page.
 func (s *Store) GetApprovedRevision(ctx context.Context, pageID, tenantID pgtype.UUID) (WikiRevision, error) {
 	const q = `

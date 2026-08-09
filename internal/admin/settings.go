@@ -28,7 +28,7 @@ import (
 type SettingDef struct {
 	Key         string   `json:"key"`
 	Label       string   `json:"label"`
-	Type        string   `json:"type"` // "text", "number", "toggle", "select", "multiselect", "color", "file", "textarea"
+	Type        string   `json:"type"` // "text", "number", "toggle", "select", "multiselect", "color", "file", "media", "textarea"
 	Value       any      `json:"value,omitempty"`
 	Options     []string `json:"options,omitempty"`
 	Accept      string   `json:"accept,omitempty"`      // file type filter for "file" type
@@ -144,8 +144,8 @@ var defaultSettings = map[string]SettingCategory{
 		Label: "Appearance",
 		Settings: []SettingDef{
 			{Key: "primary_color", Label: "Primary Color", Type: "color"},
-			{Key: "logo_url", Label: "Logo URL", Type: "file", Accept: "image/*"},
-			{Key: "favicon_url", Label: "Favicon URL", Type: "file", Accept: "image/*"},
+			{Key: "logo_url", Label: "Logo URL", Type: "media", Accept: "image/*"},
+			{Key: "favicon_url", Label: "Favicon URL", Type: "media", Accept: "image/*"},
 			{
 				Key:   "auth_brand_slides",
 				Label: "Auth Brand Slides",
@@ -210,7 +210,7 @@ var defaultSettings = map[string]SettingCategory{
 		Settings: []SettingDef{
 			{Key: "meta_title_template", Label: "Meta Title Template", Type: "text"},
 			{Key: "meta_description_template", Label: "Meta Description Template", Type: "textarea"},
-			{Key: "og_image", Label: "Default OG Image", Type: "file", Accept: "image/*"},
+			{Key: "og_image", Label: "Default OG Image", Type: "media", Accept: "image/*"},
 			{Key: "twitter_handle", Label: "Twitter/X Handle", Type: "text", Placeholder: "@username"},
 			{Key: "json_ld_type", Label: "Default JSON-LD Type", Type: "select", Options: []string{"Organization", "WebSite", "LocalBusiness"}},
 			{Key: "google_analytics_id", Label: "Google Analytics ID", Type: "text", Placeholder: "G-XXXXXXXXXX"},

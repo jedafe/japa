@@ -101,13 +101,16 @@ type ItemRow struct {
 }
 
 // SelectorRow is a distinct destination_space_id + visa_category
-// combination returned by ListSelectors.
+// combination returned by ListSelectors. Includes GuideID — the first
+// published guide for the combo — so the frontend can fetch items without
+// a separate list-guides call.
 type SelectorRow struct {
 	DestinationSpaceID pgtype.UUID
 	DestSpaceName      *string
 	DestSpaceCode      *string
 	VisaCategory       *string
 	GuideCount         int64
+	GuideID            pgtype.UUID
 }
 
 // ListGuidesFilter holds the filter parameters for listing guides.
@@ -481,7 +484,8 @@ func (s *Store) ListSelectors(ctx context.Context, tenantID pgtype.UUID) ([]Sele
 	const q = `
 SELECT g.destination_space_id, sp.name AS dest_space_name,
        sp.geo_code AS dest_space_code, g.visa_category,
-       COUNT(*) AS guide_count
+       COUNT(*) AS guide_count,
+       MIN(g.id) AS guide_id
 FROM arrival_checklist_guides g
 LEFT JOIN spaces sp ON sp.id = g.destination_space_id
 WHERE g.tenant_id = $1 AND g.is_active = true AND g.status = 'published'
@@ -499,7 +503,7 @@ ORDER BY sp.name ASC, g.visa_category ASC NULLS FIRST
 		var r SelectorRow
 		if err := rows.Scan(
 			&r.DestinationSpaceID, &r.DestSpaceName, &r.DestSpaceCode,
-			&r.VisaCategory, &r.GuideCount,
+			&r.VisaCategory, &r.GuideCount, &r.GuideID,
 		); err != nil {
 			return nil, fmt.Errorf("arrivalchecklist: scan selector row: %w", err)
 		}

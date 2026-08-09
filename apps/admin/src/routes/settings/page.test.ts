@@ -10,6 +10,9 @@ vi.mock('$lib/api', () => ({
 	}
 }));
 
+vi.mock('$app/state', () => ({
+	page: { params: {}, url: new URL('http://localhost/settings') },
+}));
 vi.mock('$app/navigation', () => ({
 	goto: vi.fn(),
 	replaceState: vi.fn(),
