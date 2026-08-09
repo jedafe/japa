@@ -354,14 +354,16 @@
 			}
 		});
 
-		if (result.ok && Array.isArray(result.data) && result.data.length > 0) {
+		if (!result.ok) {
+			fetchModelsError = result.error || t('ai_providers.fetch_models_empty', 'No models returned — you can still type the model name manually.');
+		} else if (Array.isArray(result.data) && result.data.length > 0) {
 			availableModels = result.data;
 			// Auto-select the first model if none is set yet.
 			if (!form.model && availableModels.length > 0) {
 				form.model = availableModels[0].id;
 			}
 		} else {
-			fetchModelsError = result.error || t('ai_providers.fetch_models_empty', 'No models returned — you can still type the model name manually.');
+			fetchModelsError = t('ai_providers.fetch_models_empty', 'No models returned — you can still type the model name manually.');
 		}
 		fetchingModels = false;
 	}
@@ -446,9 +448,9 @@
 
 				<!-- Provider Type -->
 				<div>
-					<label class="text-muted-foreground mb-1 block text-xs font-medium uppercase tracking-wider">{t('ai_providers.type', 'Type')}</label>
+					<label for="provider-type" class="text-muted-foreground mb-1 block text-xs font-medium uppercase tracking-wider">{t('ai_providers.type', 'Type')}</label>
 					<Select.Root type="single" bind:value={form.provider_type}>
-						<Select.Trigger class="border-border-input bg-background-alt text-foreground w-full rounded-9px border px-3 py-2 text-sm">
+						<Select.Trigger id="provider-type" class="border-border-input bg-background-alt text-foreground w-full rounded-9px border px-3 py-2 text-sm">
 							<Select.Value />
 						</Select.Trigger>
 						<Select.Portal>
@@ -537,7 +539,7 @@
 
 				<!-- Categories -->
 				<div>
-					<label class="text-muted-foreground mb-1 block text-xs font-medium uppercase tracking-wider">{t('ai_providers.categories', 'Categories')}</label>
+					<span class="text-muted-foreground mb-1 block text-xs font-medium uppercase tracking-wider">{t('ai_providers.categories', 'Categories')}</span>
 					<div class="flex flex-wrap gap-2">
 						{#each categoryOptions as cat}
 							<button
@@ -567,7 +569,7 @@
 						<p class="text-muted-foreground mt-1 text-[10px]">{t('ai_providers.priority_help', 'Lower number = tried first during dispatch.')}</p>
 					</div>
 					<div>
-						<label class="text-muted-foreground mb-1 block text-xs font-medium uppercase tracking-wider">{t('ai_providers.enabled', 'Enabled')}</label>
+						<span class="text-muted-foreground mb-1 block text-xs font-medium uppercase tracking-wider">{t('ai_providers.enabled', 'Enabled')}</span>
 						<button
 							type="button"
 							class="rounded-9px border px-3 py-2 text-sm font-medium transition-colors {form.enabled
@@ -629,9 +631,9 @@
 
 				<!-- Provider Type -->
 				<div>
-					<label class="text-muted-foreground mb-1 block text-xs font-medium uppercase tracking-wider">{t('ai_providers.type', 'Type')}</label>
+					<label for="provider-type" class="text-muted-foreground mb-1 block text-xs font-medium uppercase tracking-wider">{t('ai_providers.type', 'Type')}</label>
 					<Select.Root type="single" bind:value={form.provider_type}>
-						<Select.Trigger class="border-border-input bg-background-alt text-foreground w-full rounded-9px border px-3 py-2 text-sm">
+						<Select.Trigger id="provider-type" class="border-border-input bg-background-alt text-foreground w-full rounded-9px border px-3 py-2 text-sm">
 							<Select.Value />
 						</Select.Trigger>
 						<Select.Portal>
@@ -722,7 +724,7 @@
 
 				<!-- Categories -->
 				<div>
-					<label class="text-muted-foreground mb-1 block text-xs font-medium uppercase tracking-wider">{t('ai_providers.categories', 'Categories')}</label>
+					<span class="text-muted-foreground mb-1 block text-xs font-medium uppercase tracking-wider">{t('ai_providers.categories', 'Categories')}</span>
 					<div class="flex flex-wrap gap-2">
 						{#each categoryOptions as cat}
 							<button
@@ -752,7 +754,7 @@
 						<p class="text-muted-foreground mt-1 text-[10px]">{t('ai_providers.priority_help', 'Lower number = tried first during dispatch.')}</p>
 					</div>
 					<div>
-						<label class="text-muted-foreground mb-1 block text-xs font-medium uppercase tracking-wider">{t('ai_providers.enabled', 'Enabled')}</label>
+						<span class="text-muted-foreground mb-1 block text-xs font-medium uppercase tracking-wider">{t('ai_providers.enabled', 'Enabled')}</span>
 						<button
 							type="button"
 							class="rounded-9px border px-3 py-2 text-sm font-medium transition-colors {form.enabled

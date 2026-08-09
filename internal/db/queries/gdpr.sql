@@ -601,6 +601,22 @@ FROM (SELECT * FROM learning_certificates WHERE user_id = @user_id AND tenant_id
 SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (SELECT * FROM mentorship_matches WHERE (mentor_id = @user_id OR mentee_id = @user_id) AND tenant_id = @tenant_id) t;
 
+-- name: GdprExportUserMentorshipConnections :one
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (SELECT * FROM mentorship_connections WHERE (mentor_id = @user_id OR mentee_id = @user_id) AND tenant_id = @tenant_id) t;
+
+-- name: GdprExportUserMentorProfiles :one
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (SELECT * FROM mentorship_profiles WHERE user_id = @user_id AND tenant_id = @tenant_id) t;
+
+-- name: GdprExportUserMentorSessions :one
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (SELECT * FROM mentor_sessions WHERE mentee_id = @user_id AND tenant_id = @tenant_id) t;
+
+-- name: GdprExportUserMentorReviews :one
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (SELECT * FROM mentor_reviews WHERE reviewer_id = @user_id) t;
+
 -- name: GdprExportUserProfessionalProfiles :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (SELECT * FROM professional_profiles WHERE owner_user_id = @user_id AND tenant_id = @tenant_id) t;

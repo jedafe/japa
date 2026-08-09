@@ -84,7 +84,6 @@ const adminRoutes: string[] = [
 	'/blog/new',
 	'/blog/review-queue',
 	'/bots',
-	'/bots/new',
 	'/broadcasts',
 	'/comparison-types',
 	'/comparisons',

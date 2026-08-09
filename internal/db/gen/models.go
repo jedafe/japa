@@ -1871,6 +1871,22 @@ type MentorSession struct {
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 }
 
+type MentorshipConnection struct {
+	ID                 pgtype.UUID        `json:"id"`
+	TenantID           pgtype.UUID        `json:"tenant_id"`
+	MentorID           pgtype.UUID        `json:"mentor_id"`
+	MenteeID           pgtype.UUID        `json:"mentee_id"`
+	Status             string             `json:"status"`
+	Goals              *string            `json:"goals"`
+	DestinationSpaceID pgtype.UUID        `json:"destination_space_id"`
+	RespondedAt        pgtype.Timestamptz `json:"responded_at"`
+	CompletedAt        pgtype.Timestamptz `json:"completed_at"`
+	CancelledAt        pgtype.Timestamptz `json:"cancelled_at"`
+	CancelReason       *string            `json:"cancel_reason"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+}
+
 type MentorshipMatch struct {
 	ID        pgtype.UUID        `json:"id"`
 	TenantID  pgtype.UUID        `json:"tenant_id"`
@@ -3529,6 +3545,13 @@ type UserProfile struct {
 	JapaStageUpdatedAt       pgtype.Timestamptz `json:"japa_stage_updated_at"`
 	JapaStageIsPublic        bool               `json:"japa_stage_is_public"`
 	JapaStageHistory         []byte             `json:"japa_stage_history"`
+	IsMentor                 *bool              `json:"is_mentor"`
+	MentorCapacity           *int16             `json:"mentor_capacity"`
+	ActiveMenteeCount        *int16             `json:"active_mentee_count"`
+	MentorAreas              []string           `json:"mentor_areas"`
+	MentorBio                *string            `json:"mentor_bio"`
+	MentorSince              pgtype.Timestamptz `json:"mentor_since"`
+	MentorEmbedding          *pgvector.Vector   `json:"mentor_embedding"`
 }
 
 type UserRole struct {

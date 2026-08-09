@@ -1363,6 +1363,69 @@ func (q *Queries) GdprExportUserMedia(ctx context.Context, arg GdprExportUserMed
 	return data, err
 }
 
+const gdprExportUserMentorProfiles = `-- name: GdprExportUserMentorProfiles :one
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (SELECT id, tenant_id, user_id, bio, skills, goals, is_mentor, is_available, rating_avg, session_count, created_at, updated_at FROM mentorship_profiles WHERE user_id = $1 AND tenant_id = $2) t
+`
+
+type GdprExportUserMentorProfilesParams struct {
+	UserID   pgtype.UUID `json:"user_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+func (q *Queries) GdprExportUserMentorProfiles(ctx context.Context, arg GdprExportUserMentorProfilesParams) (interface{}, error) {
+	row := q.db.QueryRow(ctx, gdprExportUserMentorProfiles, arg.UserID, arg.TenantID)
+	var data interface{}
+	err := row.Scan(&data)
+	return data, err
+}
+
+const gdprExportUserMentorReviews = `-- name: GdprExportUserMentorReviews :one
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (SELECT id, session_id, reviewer_id, rating, comment, created_at FROM mentor_reviews WHERE reviewer_id = $1) t
+`
+
+func (q *Queries) GdprExportUserMentorReviews(ctx context.Context, userID pgtype.UUID) (interface{}, error) {
+	row := q.db.QueryRow(ctx, gdprExportUserMentorReviews, userID)
+	var data interface{}
+	err := row.Scan(&data)
+	return data, err
+}
+
+const gdprExportUserMentorSessions = `-- name: GdprExportUserMentorSessions :one
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (SELECT id, tenant_id, mentor_id, mentee_id, status, scheduled_at, started_at, completed_at, notes, created_at FROM mentor_sessions WHERE mentee_id = $1 AND tenant_id = $2) t
+`
+
+type GdprExportUserMentorSessionsParams struct {
+	UserID   pgtype.UUID `json:"user_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+func (q *Queries) GdprExportUserMentorSessions(ctx context.Context, arg GdprExportUserMentorSessionsParams) (interface{}, error) {
+	row := q.db.QueryRow(ctx, gdprExportUserMentorSessions, arg.UserID, arg.TenantID)
+	var data interface{}
+	err := row.Scan(&data)
+	return data, err
+}
+
+const gdprExportUserMentorshipConnections = `-- name: GdprExportUserMentorshipConnections :one
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (SELECT id, tenant_id, mentor_id, mentee_id, status, goals, destination_space_id, responded_at, completed_at, cancelled_at, cancel_reason, created_at, updated_at FROM mentorship_connections WHERE (mentor_id = $1 OR mentee_id = $1) AND tenant_id = $2) t
+`
+
+type GdprExportUserMentorshipConnectionsParams struct {
+	UserID   pgtype.UUID `json:"user_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+func (q *Queries) GdprExportUserMentorshipConnections(ctx context.Context, arg GdprExportUserMentorshipConnectionsParams) (interface{}, error) {
+	row := q.db.QueryRow(ctx, gdprExportUserMentorshipConnections, arg.UserID, arg.TenantID)
+	var data interface{}
+	err := row.Scan(&data)
+	return data, err
+}
+
 const gdprExportUserMentorshipMatches = `-- name: GdprExportUserMentorshipMatches :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (SELECT id, tenant_id, program_id, mentor_id, mentee_id, status, created_at, updated_at FROM mentorship_matches WHERE (mentor_id = $1 OR mentee_id = $1) AND tenant_id = $2) t
@@ -1549,7 +1612,7 @@ func (q *Queries) GdprExportUserProfessionalProfiles(ctx context.Context, arg Gd
 const gdprExportUserProfiles = `-- name: GdprExportUserProfiles :one
 
 SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (SELECT id, tenant_id, user_id, display_name, avatar_url, bio, timezone, business_name, registration_number, operating_hours, created_at, updated_at, content_country_preference, cover_url, preferred_currency, avatar_media_id, header_media_id, japa_stage, japa_stage_dest_space_id, japa_stage_updated_at, japa_stage_is_public, japa_stage_history FROM user_profiles WHERE user_id = $1 AND tenant_id = $2) t
+FROM (SELECT id, tenant_id, user_id, display_name, avatar_url, bio, timezone, business_name, registration_number, operating_hours, created_at, updated_at, content_country_preference, cover_url, preferred_currency, avatar_media_id, header_media_id, japa_stage, japa_stage_dest_space_id, japa_stage_updated_at, japa_stage_is_public, japa_stage_history, is_mentor, mentor_capacity, active_mentee_count, mentor_areas, mentor_bio, mentor_since, mentor_embedding FROM user_profiles WHERE user_id = $1 AND tenant_id = $2) t
 `
 
 type GdprExportUserProfilesParams struct {

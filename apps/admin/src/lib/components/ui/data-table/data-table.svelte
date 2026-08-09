@@ -286,12 +286,19 @@
     selectedIds = next;
   }
 
+  // IDs visible on the current page — used for page-scoped select-all.
+  const visibleIds = $derived(paginatedData.map(r => extractId(r)));
+  const allSelected = $derived(visibleIds.length > 0 && visibleIds.every((id) => selectedIds.has(id)));
+  const someSelected = $derived(visibleIds.some((id) => selectedIds.has(id)) && !allSelected);
+
   function toggleAll() {
-    if (selectedIds.size === sortedData.length && sortedData.length > 0) {
-      selectedIds = new Set();
+    const next = new Set(selectedIds);
+    if (allSelected) {
+      for (const id of visibleIds) next.delete(id);
     } else {
-      selectedIds = new Set(sortedData.map(r => extractId(r)));
+      for (const id of visibleIds) next.add(id);
     }
+    selectedIds = next;
   }
 
    function clearSelection() {
@@ -457,10 +464,11 @@
             <th class="h-12 w-12 px-4 text-left align-middle font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">
               <input
                 type="checkbox"
-                checked={selectedIds.size === sortedData.length && sortedData.length > 0}
+                checked={allSelected}
+                indeterminate={someSelected}
                 onchange={toggleAll}
                 class="h-4 w-4 rounded border-gray-300"
-                aria-label="Select all rows"
+                aria-label="Select all rows on this page"
               />
             </th>
           {/if}
