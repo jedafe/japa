@@ -1,5 +1,6 @@
 // Ref: japaconnect-engineering/sections/85-mutual-aid-board.md
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { t } from '$lib/i18n';
 	import { i18n } from '$lib/i18n';
 	import { goto } from '$app/navigation';
@@ -18,11 +19,11 @@
 	const currentPage = $derived(data.filters.page);
 
 	// Filter bar state — seeded from the server-provided filter values.
-	let dest = $state(data.filters.dest);
-	let city = $state(data.filters.city);
-	let type = $state(data.filters.type);
-	let category = $state(data.filters.category);
-	let sort = $state(data.filters.sort);
+	let dest = $state(untrack(() => data.filters.dest));
+	let city = $state(untrack(() => data.filters.city));
+	let type = $state(untrack(() => data.filters.type));
+	let category = $state(untrack(() => data.filters.category));
+	let sort = $state(untrack(() => data.filters.sort));
 
 	// Re-seed when the server payload changes (e.g. browser back/forward).
 	$effect(() => {

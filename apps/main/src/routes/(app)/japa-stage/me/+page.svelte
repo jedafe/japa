@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	// Ref: japaconnect-engineering/sections/87-japa-stage-profiles.md
 	// My Japa Stage. Server-preloaded via GET /me/japa-stage; updates go through
 	// the browser API client to PATCH /me/japa-stage (auth). Shows the current
@@ -42,9 +43,9 @@
 	}
 
 	// Form state, seeded from the SSR-loaded stage.
-	let stage = $state<JapaStage>((data.myStage?.stage as JapaStage) ?? 'considering');
-	let destCountry = $state<string>(data.myStage?.destination_space_id ?? '');
-	let isPublic = $state<boolean>(data.myStage?.is_public ?? false);
+	let stage = $state<JapaStage>(untrack(() => (data.myStage?.stage as JapaStage) ?? 'considering'));
+	let destCountry = $state<string>(untrack(() => data.myStage?.destination_space_id ?? ''));
+	let isPublic = $state<boolean>(untrack(() => data.myStage?.is_public ?? false));
 
 	let loading = $state(false);
 	let saved = $state(false);

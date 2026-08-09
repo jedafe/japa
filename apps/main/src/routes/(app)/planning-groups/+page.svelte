@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	// Ref: japaconnect-engineering/sections/82-japa-planning-groups.md
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
@@ -26,8 +27,8 @@
 		})
 	);
 
-	let destFilter = $state(data.filters.dest);
-	let visaFilter = $state(data.filters.visa);
+	let destFilter = $state(untrack(() => data.filters.dest));
+	let visaFilter = $state(untrack(() => data.filters.visa));
 
 	const filterHref = $derived(() => {
 		const params = new URLSearchParams();

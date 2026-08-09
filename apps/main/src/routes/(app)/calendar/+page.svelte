@@ -1,5 +1,6 @@
 // Ref: japaconnect-engineering/sections/86-community-calendar.md
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
@@ -49,11 +50,11 @@
 	];
 
 	// Local filter inputs seeded from URL params.
-	let destInput = $state(data.filters.dest);
-	let originInput = $state(data.filters.origin);
-	let categoryInput = $state(data.filters.category);
-	let fromInput = $state(data.filters.from);
-	let toInput = $state(data.filters.to);
+	let destInput = $state(untrack(() => data.filters.dest));
+	let originInput = $state(untrack(() => data.filters.origin));
+	let categoryInput = $state(untrack(() => data.filters.category));
+	let fromInput = $state(untrack(() => data.filters.from));
+	let toInput = $state(untrack(() => data.filters.to));
 
 	$effect(() => {
 		destInput = data.filters.dest;

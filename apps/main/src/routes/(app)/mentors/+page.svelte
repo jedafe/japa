@@ -1,5 +1,6 @@
 // Ref: japaconnect-engineering/sections/102-mentorship-matching.md
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { t } from '$lib/i18n';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
@@ -17,9 +18,9 @@
 	const currentPage = $derived(data.filters.page);
 
 	// Filter bar state — seeded from the server-provided filter values.
-	let dest = $state(data.filters.dest);
-	let areas = $state(data.filters.areas);
-	let sort = $state(data.filters.sort);
+	let dest = $state(untrack(() => data.filters.dest));
+	let areas = $state(untrack(() => data.filters.areas));
+	let sort = $state(untrack(() => data.filters.sort));
 
 	// Re-seed when the server payload changes (e.g. browser back/forward).
 	$effect(() => {
