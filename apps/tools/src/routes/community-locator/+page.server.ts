@@ -1,0 +1,72 @@
+import type { PageServerLoad } from './$types';
+import { apiContext, apiList } from '$lib/server/api';
+import { getTool, isToolEnabled } from '$lib/tools/registry';
+import type { CommunityOrgWithAi, GeoSpaceOption } from '$lib/types';
+
+/**
+ * Diaspora Community Locator — §101, ADR-088.
+ * SSR loads the destination country list from /spaces?level=country (the
+ * geo-aware pattern — destination is the primary data axis). When a ?dest=
+ * param is present, the community orgs for that destination are fetched
+ * server-side so the page renders with content immediately.
+ *
+ * API: GET /spaces?level=country — destination countries (geo selector).
+ *      GET /community-locator?dest={space_id} — community orgs for a dest.
+ *      GET /community-locator/{slug} — single org (client-side, on demand).
+ *      POST /community-locator — submit a new org (auth, client-side).
+ *      POST /community-locator/{id}/claim — claim an org (auth, client-side).
+ *
+ * Ref: §101 (Diaspora Community Locator), ROADMAP-TOOLS 02.06, ADR-088.
+ */
+export const load: PageServerLoad = async (event) => {
+	// Gate: skip all backend calls when community_locator.enabled is false.
+	// Ref: conventions/system-settings-catalog.md, Rule 3.
+	const tool = getTool('community-locator')!;
+	const settings = event.locals.siteSettings;
+	if (!isToolEnabled(tool, settings)) {
+		return {
+			enabled: false,
+			tool,
+			destinations: [],
+			orgs: [],
+			initialDestId: null,
+			user: event.locals.user
+		};
+	}
+
+	const ctx = apiContext(event);
+
+	// Destination list — the geo-aware selector source (Rule 16).
+	let destinations: GeoSpaceOption[] = [];
+	try {
+		destinations = (await apiList<GeoSpaceOption>(ctx, '/spaces?level=country')).items;
+	} catch {
+		destinations = [];
+	}
+
+	// If ?dest= is present, fetch community orgs for that destination so the
+	// page renders with content on first paint (SSR). Otherwise the user picks
+	// a destination client-side.
+	const destParam = event.url.searchParams.get('dest');
+	const initialDestId =
+		destParam && destinations.some((d) => d.id === destParam) ? destParam : null;
+
+	let orgs: CommunityOrgWithAi[] = [];
+	if (initialDestId) {
+		try {
+			orgs = (await apiList<CommunityOrgWithAi>(ctx, `/community-locator?dest=${initialDestId}`))
+				.items;
+		} catch {
+			orgs = [];
+		}
+	}
+
+	return {
+		enabled: true,
+		tool,
+		destinations,
+		orgs,
+		initialDestId,
+		user: event.locals.user
+	};
+};

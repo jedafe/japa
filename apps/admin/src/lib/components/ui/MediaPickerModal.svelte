@@ -7,11 +7,11 @@
 	// Ref: japaconnect-engineering/sections/25-ad-placement.md —
 	// ad campaign content supports an image_media_id + image_url pair.
 	// Ref: AGENTS.md Rule 16 — media comes from the API, never hardcoded.
-	import { apiFetch, mediaAdminApi, stockAdminApi, type StockPhoto } from '$lib/api';
+	import { apiFetch, apiRaw, mediaAdminApi, stockAdminApi, type StockPhoto } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { Modal } from '$lib/components/ui/modal';
 	import { Button } from '$lib/components/ui/button';
-	import { Upload, Search, Image as ImageIcon, X, Loader2, Download, Check } from 'lucide-svelte';
+	import { Upload, Search, Image as ImageIcon, X, Loader2, Download, Check, ChevronLeft, ChevronRight } from 'lucide-svelte';
 
 	type MediaItem = {
 		id: string;
@@ -42,10 +42,18 @@
 	let selectedId = $state<string | null>(null);
 	let activeTab = $state<'browse' | 'upload' | 'stock'>('browse');
 
+	// --- Browse pagination ---
+	const PAGE_SIZE = 24;
+	let currentPage = $state(0); // 0-based
+	let totalPages = $state(1);
+	let totalItems = $state(0);
+
 	// --- Upload tab state ---
 	let uploadFile = $state<File | null>(null);
 	let uploading = $state(false);
 	let uploadProgress = $state('');
+	let dragActive = $state(false);
+	let fileInput = $state<HTMLInputElement | null>(null);
 
 	// --- Stock tab state ---
 	let stockProviders = $state<{ name: string; display_name: string }[]>([]);
@@ -111,18 +119,25 @@
 		}
 	});
 
-	async function loadMedia(query?: string) {
+	async function loadMedia(query?: string, page = currentPage) {
 		loading = true;
 		errorMessage = '';
 		try {
 			const params = new URLSearchParams();
-			params.set('page_size', '40');
+			params.set('page_size', String(PAGE_SIZE));
+			params.set('page_offset', String(page * PAGE_SIZE));
 			params.set('type', 'image');
 			if (query) params.set('q', query);
-			const result = await mediaAdminApi.list(params.toString());
+			// Use apiRaw to access top-level total/total_pages alongside data.
+			const result = await apiRaw<{ data?: MediaItem[]; items?: MediaItem[]; total?: number; total_pages?: number }>(
+				`/admin/media?${params.toString()}`
+			);
 			if (result.ok) {
-				const data = result.data as { items?: MediaItem[]; data?: MediaItem[] } | MediaItem[];
-				items = Array.isArray(data) ? data : (data.items ?? data.data ?? []);
+				const d = result.data;
+				items = d.data ?? d.items ?? [];
+				totalItems = d.total ?? items.length;
+				totalPages = d.total_pages ?? 1;
+				currentPage = page;
 			} else {
 				errorMessage = result.error || t('common.load_error', 'Failed to load');
 			}
@@ -133,16 +148,28 @@
 		}
 	}
 
+	function goToPage(page: number) {
+		if (page < 0 || page >= totalPages || page === currentPage) return;
+		loadMedia(searchQuery, page);
+	}
+
 	function handleSearchInput(e: Event) {
 		const target = e.target as HTMLInputElement;
 		searchQuery = target.value;
 		if (debounceTimer) clearTimeout(debounceTimer);
-		debounceTimer = setTimeout(() => loadMedia(searchQuery), 300);
+		debounceTimer = setTimeout(() => loadMedia(searchQuery, 0), 300);
 	}
 
 	function handleFileSelect(e: Event) {
 		const target = e.target as HTMLInputElement;
 		uploadFile = target.files?.[0] ?? null;
+	}
+
+	function handleDrop(e: DragEvent) {
+		e.preventDefault();
+		dragActive = false;
+		const file = e.dataTransfer?.files?.[0];
+		if (file) uploadFile = file;
 	}
 
 	async function handleUpload() {
@@ -272,6 +299,9 @@
 		errorMessage = '';
 		stockQuery = '';
 		stockResults = [];
+		currentPage = 0;
+		totalPages = 1;
+		totalItems = 0;
 	}
 
 	// Cleanup timers on destroy.
@@ -333,7 +363,7 @@
 		</div>
 
 		{#if activeTab === 'browse'}
-			<!-- Search bar -->
+			<!-- Search bar — always visible so typing doesn't lose focus -->
 			<div class="relative">
 				<Search class="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2" style="color: var(--color-muted)" />
 				<input
@@ -346,7 +376,7 @@
 				/>
 			</div>
 
-			<!-- Media grid -->
+			<!-- Media grid — only this area shows the loading spinner -->
 			{#if loading}
 				<div class="flex items-center justify-center py-12">
 					<Loader2 class="h-6 w-6 animate-spin" style="color: var(--color-muted)" />
@@ -379,6 +409,36 @@
 						</button>
 					{/each}
 				</div>
+
+				<!-- Pagination -->
+				{#if totalPages > 1}
+					<div class="flex items-center justify-between border-t pt-3" style="border-color: var(--color-border)">
+						<span class="text-xs" style="color: var(--color-muted)">
+							{t('common.page', 'Page')} {currentPage + 1} / {totalPages}
+							{#if totalItems > 0}
+								· {totalItems} {t('common.items', 'items')}
+							{/if}
+						</span>
+						<div class="flex items-center gap-1">
+							<Button
+								variant="outline"
+								size="sm"
+								disabled={currentPage === 0 || loading}
+								onclick={() => goToPage(currentPage - 1)}
+							>
+								<ChevronLeft class="h-4 w-4" />
+							</Button>
+							<Button
+								variant="outline"
+								size="sm"
+								disabled={currentPage >= totalPages - 1 || loading}
+								onclick={() => goToPage(currentPage + 1)}
+							>
+								<ChevronRight class="h-4 w-4" />
+							</Button>
+						</div>
+					</div>
+				{/if}
 			{/if}
 
 			<!-- Confirm button -->
@@ -391,17 +451,37 @@
 		{:else if activeTab === 'upload'}
 			<!-- Upload tab -->
 			<div class="space-y-4">
-				<div>
-					<label for="media-file-input" class="mb-2 block text-sm font-medium" style="color: var(--color-foreground)">
-						{t('ads.media_choose_file', 'Choose an image file')}
-					</label>
+				<!-- Drag-and-drop upload zone -->
+				<div
+					class="flex flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed py-10 transition-colors"
+					style={dragActive
+						? 'border-color: var(--color-primary); background: color-mix(in srgb, var(--color-primary) 5%, transparent)'
+						: 'border-color: var(--color-border); background: var(--color-surface)'}
+					ondragover={(e) => { e.preventDefault(); dragActive = true; }}
+					ondragleave={() => { dragActive = false; }}
+					ondrop={handleDrop}
+					role="button"
+					tabindex="0"
+					onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') fileInput?.click(); }}
+					onclick={() => fileInput?.click()}
+				>
+					<div class="flex h-12 w-12 items-center justify-center rounded-full" style="background: color-mix(in srgb, var(--color-primary) 10%, transparent)">
+						<Upload class="h-6 w-6" style="color: var(--color-primary)" />
+					</div>
+					<div class="text-center">
+						<p class="text-sm font-medium" style="color: var(--color-foreground)">
+							{t('ads.media_drop_here', 'Drop image here or click to browse')}
+						</p>
+						<p class="text-xs mt-1" style="color: var(--color-muted)">
+							{t('ads.media_upload_formats', 'PNG, JPG, WebP, GIF, SVG')}
+						</p>
+					</div>
 					<input
-						id="media-file-input"
+						bind:this={fileInput}
 						type="file"
 						{accept}
 						onchange={handleFileSelect}
-						class="w-full text-sm"
-						style="color: var(--color-foreground)"
+						class="hidden"
 					/>
 				</div>
 

@@ -110,7 +110,7 @@ func parsePageParams(r *http.Request) (page, limit int32) {
 
 // HandleListStandards handles GET /cv-formatter/standards — list all
 // destination CV standards. Public; returns 404 with cv_formatter_disabled
-// when the feature flag is off.
+// when the feature flag is off. Accepts ?dest= to filter by destination.
 func (h *Handlers) HandleListStandards(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
@@ -119,6 +119,22 @@ func (h *Handlers) HandleListStandards(w http.ResponseWriter, r *http.Request) {
 
 	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
 		writeError(w, http.StatusNotFound, "cv_formatter_disabled", "CV formatter is not available")
+		return
+	}
+
+	// If ?dest= is provided, redirect to the single-standard endpoint logic.
+	if destParam := r.URL.Query().Get("dest"); destParam != "" {
+		var destSpaceID pgtype.UUID
+		if err := destSpaceID.Scan(destParam); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_id", "Invalid destination space ID")
+			return
+		}
+		standard, err := h.service.GetStandardByDest(r.Context(), destSpaceID)
+		if err != nil {
+			writeError(w, http.StatusNotFound, "standard_not_found", "CV standard not found for this destination")
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"data": standard})
 		return
 	}
 

@@ -106,7 +106,7 @@ func parsePageParams(r *http.Request) (page, limit int32) {
 // ---------------------------------------------------------------------------
 
 // HandleList handles GET /calendar — list approved calendar entries with
-// optional filters (destination_space_id, category, from, to).
+// optional filters (dest, category, from, to). Also accepts ?destination_space_id= as legacy alias.
 func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
@@ -114,9 +114,13 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var destSpaceID pgtype.UUID
-	if v := r.URL.Query().Get("destination_space_id"); v != "" {
-		if err := destSpaceID.Scan(v); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_id", "Invalid destination_space_id")
+	destParam := r.URL.Query().Get("dest")
+	if destParam == "" {
+		destParam = r.URL.Query().Get("destination_space_id")
+	}
+	if destParam != "" {
+		if err := destSpaceID.Scan(destParam); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_id", "Invalid destination space ID")
 			return
 		}
 	}
@@ -336,13 +340,17 @@ func (h *Handlers) HandleUnsubscribe(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var destSpaceID pgtype.UUID
-	if v := r.URL.Query().Get("destination_space_id"); v != "" {
-		if err := destSpaceID.Scan(v); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_id", "Invalid destination_space_id")
+	destParam := r.URL.Query().Get("dest")
+	if destParam == "" {
+		destParam = r.URL.Query().Get("destination_space_id")
+	}
+	if destParam != "" {
+		if err := destSpaceID.Scan(destParam); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_id", "Invalid destination space ID")
 			return
 		}
 	} else {
-		writeError(w, http.StatusBadRequest, "missing_destination", "destination_space_id is required")
+		writeError(w, http.StatusBadRequest, "missing_destination", "dest or destination_space_id is required")
 		return
 	}
 
@@ -373,9 +381,13 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var destSpaceID pgtype.UUID
-	if v := r.URL.Query().Get("destination_space_id"); v != "" {
-		if err := destSpaceID.Scan(v); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_id", "Invalid destination_space_id")
+	destParam := r.URL.Query().Get("dest")
+	if destParam == "" {
+		destParam = r.URL.Query().Get("destination_space_id")
+	}
+	if destParam != "" {
+		if err := destSpaceID.Scan(destParam); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_id", "Invalid destination space ID")
 			return
 		}
 	}
