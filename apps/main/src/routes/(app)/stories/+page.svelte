@@ -1,5 +1,5 @@
-// Ref: japaconnect-engineering/sections/79-community-story-wall.md
 <script lang="ts">
+	// Ref: japaconnect-engineering/sections/79-community-story-wall.md
 	import { untrack } from 'svelte';
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';

@@ -1,5 +1,5 @@
-// Ref: japaconnect-engineering/sections/98-service-directory.md
 <script lang="ts">
+	// Ref: japaconnect-engineering/sections/98-service-directory.md
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
 	import { api } from '$lib/api/client';

@@ -55,7 +55,7 @@ export const DASHBOARD_LOADERS: Record<string, (ctx: ApiContext, params?: Dashbo
 		tags: (await apiList<unknown>(ctx, '/me/followed-tags').catch(() => ({ items: [] }))).items,
 		blocked: (await apiList<unknown>(ctx, '/me/blocked-users').catch(() => ({ items: [] }))).items
 	}),
-	learning: async (ctx) => (await apiList<unknown>(ctx, '/me/enrollments')).items,
-	certificates: async (ctx) => (await apiList<unknown>(ctx, '/me/certificates')).items,
-	'knowledge-base': async (ctx) => (await apiList<unknown>(ctx, '/me/bookmarks')).items
+	learning: async (ctx) => (await apiList<unknown>(ctx, '/me/enrollments').catch(() => ({ items: [] }))).items,
+	certificates: async (ctx) => (await apiList<unknown>(ctx, '/me/certificates').catch(() => ({ items: [] }))).items,
+	'knowledge-base': async (ctx) => (await apiList<unknown>(ctx, '/me/bookmarks').catch(() => ({ items: [] }))).items
 };

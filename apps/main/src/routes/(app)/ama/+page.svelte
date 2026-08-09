@@ -1,5 +1,5 @@
-// Ref: japaconnect-engineering/sections/88-ask-an-expat.md
 <script lang="ts">
+	// Ref: japaconnect-engineering/sections/88-ask-an-expat.md
 	import { untrack } from 'svelte';
 	import { page } from '$app/state';
 	import { MessageSquare, Plus, Circle, CircleSlash, Loader2 } from 'lucide-svelte';

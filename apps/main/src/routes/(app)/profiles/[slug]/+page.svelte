@@ -1,8 +1,9 @@
 <script lang="ts">
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
+	import { untrack } from 'svelte';
 	import { BadgeCheck, Globe, Users, Briefcase, FileText } from 'lucide-svelte';
-	import { EmptyState, FollowButton } from '$lib/components/ui';
+	import { EmptyState, FollowButton, UrlTabs, type UrlTab } from '$lib/components/ui';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -10,7 +11,12 @@
 	const profile = $derived(data.profile);
 	const posts = $derived(data.posts ?? []);
 	const initiallyFollowing = $derived(data.initiallyFollowing ?? false);
-	const activeTab = $derived(page.url.searchParams.get('tab') ?? 'about');
+	let activeTab = $state(untrack(() => page.url.searchParams.get('tab') ?? 'about'));
+
+	const tabs: UrlTab[] = [
+		{ value: 'about', label: t('profiles.tab_about', 'About') },
+		{ value: 'posts', label: t('profiles.tab_posts', 'Posts') }
+	];
 
 	// field_values is a record of key → value; render as key-value pairs.
 	const fieldEntries = $derived(
@@ -77,20 +83,7 @@
 	</div>
 
 	<!-- Tabs -->
-	<div class="flex gap-1 border-b border-[var(--color-border)] px-4">
-		<a
-			href="?tab=about"
-			class="border-b-2 px-3 py-2 text-sm font-medium transition-colors {activeTab === 'about' ? 'border-[var(--color-primary)] text-[var(--color-primary)]' : 'border-transparent text-[var(--color-text-subtle)] hover:text-[var(--color-text)]'}"
-		>
-			{t('profiles.tab_about', 'About')}
-		</a>
-		<a
-			href="?tab=posts"
-			class="border-b-2 px-3 py-2 text-sm font-medium transition-colors {activeTab === 'posts' ? 'border-[var(--color-primary)] text-[var(--color-primary)]' : 'border-transparent text-[var(--color-text-subtle)] hover:text-[var(--color-text)]'}"
-		>
-			{t('profiles.tab_posts', 'Posts')}
-		</a>
-	</div>
+	<UrlTabs {tabs} bind:value={activeTab} class="px-4" />
 
 	<div class="p-3 space-y-3">
 		{#if activeTab === 'posts'}

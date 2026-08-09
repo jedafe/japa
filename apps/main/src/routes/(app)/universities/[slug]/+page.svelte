@@ -1,8 +1,9 @@
 <script lang="ts">
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
+	import { untrack } from 'svelte';
 	import { GraduationCap, Users, MessageSquare, Info, ArrowRight, FileText, Star, GitCompare, BookOpen, UsersRound, ExternalLink } from 'lucide-svelte';
-	import { EmptyState } from '$lib/components/ui';
+	import { EmptyState, UrlTabs, type UrlTab } from '$lib/components/ui';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -12,7 +13,7 @@
 	const reviews = $derived(data.reviews ?? []);
 	const members = $derived(data.members ?? []);
 	const forums = $derived(data.forums ?? []);
-	const activeTab = $derived(page.url.searchParams.get('tab') ?? 'about');
+	let activeTab = $state(untrack(() => page.url.searchParams.get('tab') ?? 'about'));
 
 	const title = $derived(
 		t('university.title', '{name} — JapaConnect').replace('{name}', university.name)
@@ -64,15 +65,15 @@
 		}
 	]);
 
-	const tabs = $derived([
-		{ key: 'about', label: t('university.tab_about', 'Overview') },
-		{ key: 'posts', label: t('university.tab_posts', 'Posts') },
-		{ key: 'forums', label: t('university.tab_forums', 'Forums') },
-		{ key: 'courses', label: t('university.tab_courses', 'Courses') },
-		{ key: 'members', label: t('university.tab_members', 'Members') },
-		{ key: 'reviews', label: t('university.tab_reviews', 'Reviews') },
-		{ key: 'compare', label: t('university.tab_compare', 'Compare') }
-	]);
+	const tabs: UrlTab[] = [
+		{ value: 'about', label: t('university.tab_about', 'Overview') },
+		{ value: 'posts', label: t('university.tab_posts', 'Posts') },
+		{ value: 'forums', label: t('university.tab_forums', 'Forums') },
+		{ value: 'courses', label: t('university.tab_courses', 'Courses') },
+		{ value: 'members', label: t('university.tab_members', 'Members') },
+		{ value: 'reviews', label: t('university.tab_reviews', 'Reviews') },
+		{ value: 'compare', label: t('university.tab_compare', 'Compare') }
+	];
 </script>
 
 <svelte:head>
@@ -142,16 +143,7 @@
 	</div>
 
 	<!-- Tabs — Section 39 / ADR-039: Overview / Posts / Forums / Courses / Members / Reviews / Compare -->
-	<div class="flex gap-1 overflow-x-auto border-b border-[var(--color-border)] px-4">
-		{#each tabs as tab (tab.key)}
-			<a
-				href="?tab={tab.key}"
-				class="whitespace-nowrap border-b-2 px-3 py-2 text-sm font-medium transition-colors {activeTab === tab.key ? 'border-[var(--color-primary)] text-[var(--color-primary)]' : 'border-transparent text-[var(--color-text-subtle)] hover:text-[var(--color-text)]'}"
-			>
-				{tab.label}
-			</a>
-		{/each}
-	</div>
+	<UrlTabs {tabs} bind:value={activeTab} class="px-4" />
 
 	<div class="p-3">
 		<!-- Stats row -->

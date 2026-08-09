@@ -20,7 +20,7 @@
 		created_at: string;
 	};
 
-	const canManage = $derived(hasPermission('travel.admin'));
+	const canManage = $derived(hasPermission('travel.manage'));
 
 	let providers = $state<TravelProvider[]>([]);
 	let loading = $state(true);
@@ -35,7 +35,7 @@
 	let newProvider = $state({
 		name: '',
 		slug: '',
-		provider_type: 'api',
+		provider_type: 'flight',
 		api_config: '{}',
 		affiliate_config: '{}',
 		is_active: true
@@ -62,12 +62,45 @@
 		saving = true;
 		message = '';
 		try {
-			const result = await api('/admin/travel/providers', { method: 'POST', body: newProvider });
+			// Parse JSON config fields before sending — the backend decodes
+			// these into json.RawMessage and later unmarshals into structs.
+			// Sending them as JSON strings (the textarea's natural type)
+			// would double-encode them, breaking decrypt→unmarshal at search
+			// time. Parse to objects here so they travel as JSON objects.
+			let apiConfigObj: unknown = {};
+			let affiliateConfigObj: unknown = {};
+			try {
+				apiConfigObj = JSON.parse(newProvider.api_config || '{}');
+			} catch {
+				messageType = 'error';
+				message = t('travel.api_config_invalid', 'API Config is not valid JSON.');
+				saving = false;
+				return;
+			}
+			try {
+				affiliateConfigObj = JSON.parse(newProvider.affiliate_config || '{}');
+			} catch {
+				messageType = 'error';
+				message = t('travel.affiliate_config_invalid', 'Affiliate Config is not valid JSON.');
+				saving = false;
+				return;
+			}
+			const result = await api('/admin/travel/providers', {
+				method: 'POST',
+				body: {
+					name: newProvider.name,
+					slug: newProvider.slug,
+					provider_type: newProvider.provider_type,
+					api_config: apiConfigObj,
+					affiliate_config: affiliateConfigObj,
+					is_active: newProvider.is_active
+				}
+			});
 			if (result.ok) {
 				messageType = 'success';
 				message = t('travel.create_success', 'Travel provider created.');
 				createSlideOverOpen = false;
-				newProvider = { name: '', slug: '', provider_type: 'api', api_config: '{}', affiliate_config: '{}', is_active: true };
+				newProvider = { name: '', slug: '', provider_type: 'flight', api_config: '{}', affiliate_config: '{}', is_active: true };
 				load();
 			} else {
 				messageType = 'error';
@@ -215,14 +248,18 @@
 		<div>
 			<label for="travel-type" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('travel.type', 'Provider Type')}</label>
 			<select id="travel-type" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={newProvider.provider_type}>
-				<option value="api">API</option>
-				<option value="affiliate">Affiliate</option>
-				<option value="scraper">Scraper</option>
+				<option value="flight">{t('travel.type_flight', 'Flights')}</option>
+				<option value="hotel">{t('travel.type_hotel', 'Hotels')}</option>
+				<option value="both">{t('travel.type_both', 'Flights & Hotels')}</option>
 			</select>
 		</div>
 		<div>
 			<label for="travel-api-config" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('travel.api_config', 'API Config (JSON)')}</label>
-			<textarea id="travel-api-config" class="w-full rounded-md border px-3 py-2 text-sm font-mono" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" rows="3" bind:value={newProvider.api_config}></textarea>
+			<textarea id="travel-api-config" class="w-full rounded-md border px-3 py-2 text-sm font-mono" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" rows="3" bind:value={newProvider.api_config} placeholder={'{"endpoint":"https://api.example.com/search","api_key":"..."}'}></textarea>
+		</div>
+		<div>
+			<label for="travel-affiliate-config" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('travel.affiliate_config', 'Affiliate Config (JSON)')}</label>
+			<textarea id="travel-affiliate-config" class="w-full rounded-md border px-3 py-2 text-sm font-mono" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" rows="3" bind:value={newProvider.affiliate_config} placeholder={'{"aff_id":"your-affiliate-id","aff_sub":"japaconnect"}'}></textarea>
 		</div>
 	</div>
 	{#snippet footer()}
@@ -246,9 +283,9 @@
 			<div>
 				<label for="travel-edit-type" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('travel.type', 'Provider Type')}</label>
 				<select id="travel-edit-type" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={editingProvider.provider_type}>
-					<option value="api">API</option>
-					<option value="affiliate">Affiliate</option>
-					<option value="scraper">Scraper</option>
+					<option value="flight">{t('travel.type_flight', 'Flights')}</option>
+					<option value="hotel">{t('travel.type_hotel', 'Hotels')}</option>
+					<option value="both">{t('travel.type_both', 'Flights & Hotels')}</option>
 				</select>
 			</div>
 			<div class="flex items-center gap-2">

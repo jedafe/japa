@@ -291,7 +291,7 @@ LEFT JOIN spaces s
 LEFT JOIN tags t
     ON b.entity_type = 'tag' AND b.entity_id = t.id
 WHERE b.user_id = $1 AND b.tenant_id = $2
-  AND (sqlc.narg(folder_id) IS NULL OR b.folder_id = sqlc.narg(folder_id))
+  AND (sqlc.narg(folder_id)::uuid IS NULL OR b.folder_id = sqlc.narg(folder_id)::uuid)
   AND (sqlc.narg(entity_types)::text[] IS NULL OR b.entity_type = ANY(sqlc.narg(entity_types)::text[]))
 ORDER BY b.created_at DESC
 LIMIT $3 OFFSET $4;

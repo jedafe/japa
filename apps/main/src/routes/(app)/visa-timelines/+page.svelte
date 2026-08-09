@@ -1,5 +1,5 @@
-// Ref: japaconnect-engineering/sections/83-visa-timeline-tracker.md
 <script lang="ts">
+	// Ref: japaconnect-engineering/sections/83-visa-timeline-tracker.md
 	import { untrack } from 'svelte';
 	import { t } from '$lib/i18n';
 	import { Spline } from 'layerchart';

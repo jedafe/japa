@@ -1,5 +1,5 @@
-// Ref: japaconnect-engineering/sections/80-destination-wiki.md
 <script lang="ts">
+	// Ref: japaconnect-engineering/sections/80-destination-wiki.md
 	import { untrack } from 'svelte';
 	import { t } from '$lib/i18n';
 	import { api } from '$lib/api/client';

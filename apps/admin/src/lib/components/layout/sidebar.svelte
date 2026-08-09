@@ -18,7 +18,12 @@
 		Briefcase, Eye, X, Menu, ArrowRightLeft, CreditCard,
 		Package, Receipt, PanelLeft,
 		Brain, Wand, Trophy, Plane, Banknote,
-		FileUp, LayoutGrid
+		FileUp, LayoutGrid,
+		BookOpenText, ShieldAlert, LifeBuoy, Target,
+		CalendarDays, Newspaper, Award, Building2,
+		Route, ListChecks, BadgeCheck, Home,
+		FileCheck, Globe2, Calculator, MapPin,
+		CalendarClock, ClipboardCheck, Gauge, PiggyBank, Timer
 	} from "lucide-svelte";
 	import { clsx } from "clsx";
 	import { sidebarCollapsed } from "$lib/stores/sidebar.svelte";
@@ -38,7 +43,7 @@
 	// Prefer bound collapsed prop, fall back to shared sidebar store.
 	let effectiveCollapsed = $derived(collapsed ?? sidebarCollapsed());
 
-	let expandedSections = $state(new Set(["dashboard", "users", "content", "moderation"]));
+	let expandedSections = $state(new Set(["dashboard", "users", "content", "moderation", "community", "v2-tools"]));
 	let searchQuery = $state("");
 	
 	// Use permissions prop for reactivity
@@ -142,6 +147,42 @@
 		]
 	},
 	{
+		id: "community",
+		label: t("nav.section.community", "Community (V2)"),
+		items: [
+			{ path: "/community/story-wall", label: t("nav.community_story_wall", "Story Wall"), icon: BookOpenText, permission: "story.verify" },
+			{ path: "/community/wiki", label: t("nav.community_wiki", "Wiki Revisions"), icon: BookOpen, permission: "wiki.review" },
+			{ path: "/community/scam-alerts", label: t("nav.community_scam_alerts", "Scam Alerts"), icon: ShieldAlert, permission: "scam_alert.review" },
+			{ path: "/community/planning-groups", label: t("nav.community_planning_groups", "Planning Groups"), icon: Target, permission: "planning_group.manage_any" },
+			{ path: "/community/mutual-aid", label: t("nav.community_mutual_aid", "Mutual Aid"), icon: LifeBuoy, permission: "mutual_aid.moderate" },
+			{ path: "/community/calendar", label: t("nav.community_calendar", "Calendar"), icon: CalendarDays, permission: "calendar.review" },
+			{ path: "/community/digest", label: t("nav.community_digest", "Digest"), icon: Newspaper, permission: "calendar.review" },
+			{ path: "/community/achievements", label: t("nav.community_achievements", "Achievements"), icon: Award, permission: "achievement.moderate" },
+			{ path: "/community/services", label: t("nav.community_services", "Service Directory"), icon: Building2, permission: "service.verify" }
+		]
+	},
+	{
+		id: "v2-tools",
+		label: t("nav.section.v2_tools", "Tools (V2)"),
+		items: [
+			{ path: "/tools/appointment-alert", label: t("nav.tools_appointment_alert", "Embassy Alerter"), icon: CalendarClock, permission: "embassy_monitor.manage" },
+			{ path: "/tools/cv-formatter", label: t("nav.tools_cv_formatter", "CV Formatter"), icon: FileText, permission: "cv_formatter.manage" },
+			{ path: "/tools/visa-checklist", label: t("nav.tools_visa_checklist", "Visa Checklist"), icon: ClipboardCheck, permission: "checklist.manage" },
+			{ path: "/tools/readiness", label: t("nav.tools_readiness", "Readiness Assessment"), icon: Gauge, permission: "assessment.view_results" },
+			{ path: "/tools/cost-of-living", label: t("nav.tools_cost_of_living", "Cost of Living"), icon: PiggyBank, permission: "col_calculator.manage" },
+			{ path: "/tools/scholarships", label: t("nav.tools_scholarships", "Scholarship Finder"), icon: GraduationCap, permission: "scholarship.manage" },
+			{ path: "/tools/processing-tracker", label: t("nav.tools_processing_tracker", "Processing Tracker"), icon: Timer, permission: "visa_timeline.manage_any" },
+			{ path: "/tools/visa-routes", label: t("nav.tools_visa_routes", "Visa Routes"), icon: Route, permission: "visa_routes.manage" },
+			{ path: "/tools/arrival-checklist", label: t("nav.tools_arrival_checklist", "Arrival Checklist"), icon: ListChecks, permission: "arrival_checklist.manage" },
+			{ path: "/tools/credential-checker", label: t("nav.tools_credential_checker", "Credential Checker"), icon: BadgeCheck, permission: "credential_checker.manage" },
+			{ path: "/tools/housing-guide", label: t("nav.tools_housing_guide", "Housing Guide"), icon: Home, permission: "housing_guide.manage" },
+			{ path: "/tools/attestation-guide", label: t("nav.tools_attestation_guide", "Attestation Guide"), icon: FileCheck, permission: "attestation_guide.manage" },
+			{ path: "/tools/language-test-hub", label: t("nav.tools_language_test_hub", "Language Test Hub"), icon: Globe2, permission: "language_test_hub.manage" },
+			{ path: "/tools/tax-calculator", label: t("nav.tools_tax_calculator", "Tax Calculator"), icon: Calculator, permission: "tax_calculator.manage" },
+			{ path: "/tools/community-locator", label: t("nav.tools_community_locator", "Community Locator"), icon: MapPin, permission: "community_locator.manage" }
+		]
+	},
+	{
 		id: "monetization",
 			label: t("nav.section.monetization", "Monetization"),
 			items: [
@@ -156,7 +197,7 @@
 			{ path: "/ads", label: t("nav.ads", "Advertisements"), icon: Zap, permission: "ad.campaign.manage" },
 			{ path: "/ads/slot-types", label: t("nav.slot_types", "Slot Types"), icon: ListOrdered, permission: "ad.campaign.manage" },
 			{ path: "/ads/networks", label: t("nav.ad_networks", "Ad Networks"), icon: Globe, permission: "ad.network.manage" },
-		{ path: "/travel", label: t("nav.travel", "Travel Providers"), icon: Plane, permission: "travel.admin" },
+		{ path: "/travel", label: t("nav.travel", "Travel Providers"), icon: Plane, permission: "travel.manage" },
 		{ path: "/remittance", label: t("nav.remittance", "Remittance Providers"), icon: Banknote, permission: "remittance.admin" }
 		]
 		},

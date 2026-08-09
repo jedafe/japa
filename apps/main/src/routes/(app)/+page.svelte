@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import FeedTabs from '$lib/components/feed/FeedTabs.svelte';
+	import { goto } from '$app/navigation';
+	import { UrlTabs, type UrlTab } from '$lib/components/ui';
+	import FeedGeoControl from '$lib/components/feed/FeedGeoControl.svelte';
 	import FeedSortBar from '$lib/components/feed/FeedSortBar.svelte';
 	import FeedList from '$lib/components/feed/FeedList.svelte';
 	import FeedUpdatePill from '$lib/components/feed/FeedUpdatePill.svelte';
@@ -10,6 +12,18 @@
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
+
+	// Tab bar values — labels match the old FeedTabs component. The active tab
+	// comes from the server load (data.tab); switching calls goto() so SvelteKit
+	// re-runs the load function for the new tab's per-tab feed data.
+	const tabs = $derived<UrlTab[]>(
+		data.authed
+			? [
+					{ value: 'for_you', label: t('feed.tab.for_you') },
+					{ value: 'following', label: t('feed.tab.following') }
+				]
+			: [{ value: 'explore', label: t('feed.tab.explore', 'Explore') }]
+	);
 
 	// cardStyleConfig comes from the (app) layout loader (shared shell data).
 	const config = $derived((page.data.cardStyleConfig as CardStyleConfig) ?? { default: 'reddit', byType: {} });
@@ -55,7 +69,22 @@
 {:else}
 	<!-- Authenticated home timeline in the app shell -->
 	<div class="mx-auto w-full max-w-full">
-		<FeedTabs tab={data.tab} sort={data.sort} authed={data.authed} />
+		<div
+			class="sticky top-0 z-10 flex items-center border-b border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-bg)_90%,transparent)] backdrop-blur"
+			style="min-height: var(--nav-height)"
+		>
+			<UrlTabs
+				{tabs}
+				value={data.tab}
+				onValueChange={(v) => goto(`?tab=${v}&sort=${data.sort}`)}
+				class="border-b-0"
+			/>
+			{#if data.authed}
+				<div class="ml-auto pr-1">
+					<FeedGeoControl />
+				</div>
+			{/if}
+		</div>
 		<FeedSortBar tab={data.tab} sort={data.sort} />
 		<!-- Phase 23 — live feed update pill (driven by WS feed_update events) -->
 		<FeedUpdatePill />

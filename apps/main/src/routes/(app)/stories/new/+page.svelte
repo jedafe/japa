@@ -1,5 +1,5 @@
-// Ref: japaconnect-engineering/sections/79-community-story-wall.md
 <script lang="ts">
+	// Ref: japaconnect-engineering/sections/79-community-story-wall.md
 	import { t } from '$lib/i18n';
 	import { goto } from '$app/navigation';
 	import { api } from '$lib/api/client';

@@ -11,5 +11,7 @@ export { default as EntityCard } from './EntityCard.svelte';
 export { default as SelectField } from './SelectField.svelte';
 export { default as SearchInput } from './SearchInput.svelte';
 export type { SearchSuggestion } from './SearchInput.svelte';
+export { default as UrlTabs } from './UrlTabs.svelte';
+export type { UrlTab } from './UrlTabs.svelte';
 export { resolveIcon } from './icons';
 export type { IconComponent } from './icons';

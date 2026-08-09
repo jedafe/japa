@@ -1588,3 +1588,200 @@ export const sharePlatformsAdminApi = {
 	delete: (key: string) =>
 		api(`/share-platforms/${key}`, { method: 'DELETE' }),
 };
+
+// ── V2 Community Features (§§79–89, §98) — admin HITL review queues ──────
+// Ref: ADR-088 (universal AI content generation + mandatory HITL review).
+
+export const storyAdminApi = {
+	list: (params?: string) => api<unknown>(`/admin/stories${params ? `?${params}` : ''}`),
+	verify: (id: string) => api<unknown>(`/admin/stories/${id}/verify`, { method: 'POST', body: {} }),
+	delete: (id: string) => api<unknown>(`/admin/stories/${id}`, { method: 'DELETE' }),
+};
+
+export const wikiAdminApi = {
+	list: (params?: string) => api<unknown>(`/admin/wiki${params ? `?${params}` : ''}`),
+	approveRevision: (pageId: string, revId: string) =>
+		api<unknown>(`/admin/wiki/${pageId}/revisions/${revId}/approve`, { method: 'POST', body: {} }),
+	rejectRevision: (pageId: string, revId: string, body?: { reason?: string }) =>
+		api<unknown>(`/admin/wiki/${pageId}/revisions/${revId}/reject`, { method: 'POST', body: body ?? {} }),
+	update: (pageId: string, body: Record<string, unknown>) =>
+		api<unknown>(`/admin/wiki/${pageId}`, { method: 'PATCH', body }),
+	generate: (body: Record<string, unknown>) =>
+		api<unknown>(`/admin/wiki/generate`, { method: 'POST', body }),
+};
+
+export const scamAlertAdminApi = {
+	list: (params?: string) => api<unknown>(`/admin/scam-alerts${params ? `?${params}` : ''}`),
+	update: (id: string, body: Record<string, unknown>) =>
+		api<unknown>(`/admin/scam-alerts/${id}`, { method: 'PATCH', body }),
+	pin: (id: string) => api<unknown>(`/admin/scam-alerts/${id}/pin`, { method: 'POST', body: {} }),
+	unpin: (id: string) => api<unknown>(`/admin/scam-alerts/${id}/pin`, { method: 'DELETE' }),
+};
+
+export const planningGroupAdminApi = {
+	list: (params?: string) => api<unknown>(`/admin/planning-groups${params ? `?${params}` : ''}`),
+	extend: (id: string, body: Record<string, unknown>) =>
+		api<unknown>(`/admin/planning-groups/${id}/extend`, { method: 'POST', body }),
+};
+
+export const mutualAidAdminApi = {
+	list: (params?: string) => api<unknown>(`/admin/mutual-aid${params ? `?${params}` : ''}`),
+	updateStatus: (id: string, body: { status: string }) =>
+		api<unknown>(`/admin/mutual-aid/${id}/status`, { method: 'PATCH', body }),
+};
+
+export const calendarAdminApi = {
+	list: (params?: string) => api<unknown>(`/admin/calendar${params ? `?${params}` : ''}`),
+	update: (id: string, body: Record<string, unknown>) =>
+		api<unknown>(`/admin/calendar/${id}`, { method: 'PATCH', body }),
+};
+
+export const achievementAdminApi = {
+	list: (params?: string) => api<unknown>(`/admin/achievements${params ? `?${params}` : ''}`),
+};
+
+export const serviceDirectoryAdminApi = {
+	list: (params?: string) => api<unknown>(`/admin/services${params ? `?${params}` : ''}`),
+	verify: (id: string) => api<unknown>(`/admin/services/${id}/verify`, { method: 'PATCH', body: {} }),
+	resolveClaim: (serviceId: string, claimId: string, body: Record<string, unknown>) =>
+		api<unknown>(`/admin/services/${serviceId}/claim/${claimId}`, { method: 'PATCH', body }),
+};
+
+// ── V2 Functional Tools (§§90–97, §§99–101) — admin HITL review queues ───
+
+export const appointmentAlertAdminApi = {
+	listEmbassies: (params?: string) => api<unknown>(`/admin/embassies${params ? `?${params}` : ''}`),
+	createEmbassy: (body: Record<string, unknown>) => api<unknown>(`/admin/embassies`, { method: 'POST', body }),
+	updateEmbassy: (id: string, body: Record<string, unknown>) =>
+		api<unknown>(`/admin/embassies/${id}`, { method: 'PATCH', body }),
+	pollEmbassy: (id: string) => api<unknown>(`/admin/embassies/${id}/poll`, { method: 'POST', body: {} }),
+};
+
+// ── Original tools (non-v2) — admin monitoring/management pages ──────────
+
+export const visaChecklistAdminApi = {
+	listProgress: (params?: string) => api<unknown>(`/admin/checklist/progress${params ? `?${params}` : ''}`),
+	completionStats: () => api<unknown>(`/admin/checklist/completion-stats`),
+};
+
+export const readinessAdminApi = {
+	getForm: () => api<unknown>(`/admin/assessment/form`),
+	updateForm: (body: Record<string, unknown>) => api<unknown>(`/admin/assessment/form`, { method: 'PATCH', body }),
+	listResults: (params?: string) => api<unknown>(`/admin/assessment/results${params ? `?${params}` : ''}`),
+	stats: () => api<unknown>(`/admin/assessment/stats`),
+};
+
+export const costOfLivingAdminApi = {
+	stats: () => api<unknown>(`/admin/calculator/cost-of-living/stats`),
+};
+
+export const scholarshipAdminApi = {
+	stats: () => api<unknown>(`/admin/scholarships/stats`),
+	deadlines: (params?: string) => api<unknown>(`/admin/scholarships/deadlines${params ? `?${params}` : ''}`),
+	reminderLog: (params?: string) => api<unknown>(`/admin/scholarships/reminder-log${params ? `?${params}` : ''}`),
+};
+
+export const processingTrackerAdminApi = {
+	list: (params?: string) => api<unknown>(`/admin/visa-timelines${params ? `?${params}` : ''}`),
+	delete: (id: string) => api<unknown>(`/admin/visa-timelines/${id}`, { method: 'DELETE' }),
+};
+
+export const cvFormatterAdminApi = {
+	listStandards: (params?: string) => api<unknown>(`/admin/cv-formatter/standards${params ? `?${params}` : ''}`),
+	upsertStandard: (body: Record<string, unknown>) =>
+		api<unknown>(`/admin/cv-formatter/standards`, { method: 'POST', body }),
+};
+
+export const visaRoutesAdminApi = {
+	list: (params?: string) => api<unknown>(`/admin/visa-routes${params ? `?${params}` : ''}`),
+	create: (body: Record<string, unknown>) => api<unknown>(`/admin/visa-routes`, { method: 'POST', body }),
+	update: (id: string, body: Record<string, unknown>) =>
+		api<unknown>(`/admin/visa-routes/${id}`, { method: 'PATCH', body }),
+	delete: (id: string) => api<unknown>(`/admin/visa-routes/${id}`, { method: 'DELETE' }),
+	approve: (id: string) => api<unknown>(`/admin/visa-routes/${id}/approve`, { method: 'PATCH', body: {} }),
+};
+
+export const arrivalChecklistAdminApi = {
+	list: (params?: string) => api<unknown>(`/admin/arrival-checklists${params ? `?${params}` : ''}`),
+	create: (body: Record<string, unknown>) =>
+		api<unknown>(`/admin/arrival-checklists`, { method: 'POST', body }),
+	update: (id: string, body: Record<string, unknown>) =>
+		api<unknown>(`/admin/arrival-checklists/${id}`, { method: 'PATCH', body }),
+	approve: (id: string) =>
+		api<unknown>(`/admin/arrival-checklists/${id}/approve`, { method: 'PATCH', body: {} }),
+	generate: (body: Record<string, unknown>) =>
+		api<unknown>(`/admin/arrival-checklists/generate`, { method: 'POST', body }),
+};
+
+export const credentialCheckerAdminApi = {
+	list: (params?: string) => api<unknown>(`/admin/credentials${params ? `?${params}` : ''}`),
+	create: (body: Record<string, unknown>) => api<unknown>(`/admin/credentials`, { method: 'POST', body }),
+	update: (id: string, body: Record<string, unknown>) =>
+		api<unknown>(`/admin/credentials/${id}`, { method: 'PATCH', body }),
+	approve: (id: string) =>
+		api<unknown>(`/admin/credentials/${id}/approve`, { method: 'PATCH', body: {} }),
+	generate: (body: Record<string, unknown>) =>
+		api<unknown>(`/admin/credentials/generate`, { method: 'POST', body }),
+};
+
+export const housingGuideAdminApi = {
+	list: (params?: string) => api<unknown>(`/admin/housing-guides${params ? `?${params}` : ''}`),
+	create: (body: Record<string, unknown>) =>
+		api<unknown>(`/admin/housing-guides`, { method: 'POST', body }),
+	update: (id: string, body: Record<string, unknown>) =>
+		api<unknown>(`/admin/housing-guides/${id}`, { method: 'PATCH', body }),
+	approve: (id: string) =>
+		api<unknown>(`/admin/housing-guides/${id}/approve`, { method: 'PATCH', body: {} }),
+	generate: (body: Record<string, unknown>) =>
+		api<unknown>(`/admin/housing-guides/generate`, { method: 'POST', body }),
+};
+
+export const attestationGuideAdminApi = {
+	list: (params?: string) => api<unknown>(`/admin/attestation${params ? `?${params}` : ''}`),
+	create: (body: Record<string, unknown>) => api<unknown>(`/admin/attestation`, { method: 'POST', body }),
+	update: (id: string, body: Record<string, unknown>) =>
+		api<unknown>(`/admin/attestation/${id}`, { method: 'PATCH', body }),
+	approve: (id: string) =>
+		api<unknown>(`/admin/attestation/${id}/approve`, { method: 'PATCH', body: {} }),
+	generate: (body: Record<string, unknown>) =>
+		api<unknown>(`/admin/attestation/generate`, { method: 'POST', body }),
+};
+
+export const languageTestHubAdminApi = {
+	list: (params?: string) => api<unknown>(`/admin/language-tests/requirements${params ? `?${params}` : ''}`),
+	create: (body: Record<string, unknown>) =>
+		api<unknown>(`/admin/language-tests/requirements`, { method: 'POST', body }),
+	approve: (id: string) =>
+		api<unknown>(`/admin/language-tests/requirements/${id}/approve`, { method: 'PATCH', body: {} }),
+	generate: (body: Record<string, unknown>) =>
+		api<unknown>(`/admin/language-tests/requirements/generate`, { method: 'POST', body }),
+};
+
+export const taxCalculatorAdminApi = {
+	list: (params?: string) => api<unknown>(`/admin/tax-calculator${params ? `?${params}` : ''}`),
+	createGuide: (body: Record<string, unknown>) =>
+		api<unknown>(`/admin/tax-calculator/guides`, { method: 'POST', body }),
+	approveGuide: (id: string) =>
+		api<unknown>(`/admin/tax-calculator/guides/${id}/approve`, { method: 'PATCH', body: {} }),
+	generateGuide: (body: Record<string, unknown>) =>
+		api<unknown>(`/admin/tax-calculator/guides/generate`, { method: 'POST', body }),
+};
+
+export const communityLocatorAdminApi = {
+	list: (params?: string) => api<unknown>(`/admin/community-locator${params ? `?${params}` : ''}`),
+	approve: (id: string) =>
+		api<unknown>(`/admin/community-locator/${id}/approve`, { method: 'PATCH', body: {} }),
+	verify: (id: string) =>
+		api<unknown>(`/admin/community-locator/${id}/verify`, { method: 'PATCH', body: {} }),
+	resolveClaim: (id: string, claimId: string, body: Record<string, unknown>) =>
+		api<unknown>(`/admin/community-locator/${id}/claim/${claimId}`, { method: 'PATCH', body }),
+};
+
+export const digestAdminApi = {
+	list: (params?: string) => api<unknown>(`/admin/digest${params ? `?${params}` : ''}`),
+	update: (id: string, body: Record<string, unknown>) =>
+		api<unknown>(`/admin/digest/${id}`, { method: 'PATCH', body }),
+	publish: (id: string) => api<unknown>(`/admin/digest/${id}/publish`, { method: 'POST', body: {} }),
+	generate: (body: Record<string, unknown>) =>
+		api<unknown>(`/admin/digest/generate`, { method: 'POST', body }),
+};

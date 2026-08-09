@@ -323,6 +323,22 @@ var settingsCatalog = map[string]settingMeta{
 	"service_directory.subdomain":   {Type: "string", DefaultValue: "", Description: "Optional standalone subdomain (ADR-086).", Panel: "control"},
 	"service_directory.custom_domain": {Type: "string", DefaultValue: "", Description: "Optional custom domain (ADR-086).", Panel: "control"},
 
+	// V2 functional tools (§§90–97, §§99–101) — geo-aware tool pattern
+	// (ADR-088). Each toggle gates a tool on the Tools web surface (§78).
+	// visa_timeline.enabled is catalogued above (§83/§93); the remaining
+	// ten are registered here so the control-panel settings page exposes
+	// form fields and the /extensions Tools tab resolves their defaults.
+	"visa_routes.enabled":        {Type: "bool", DefaultValue: "false", Description: "Global visa route comparison tool toggle.", Panel: "control"},
+	"appointment_alert.enabled":  {Type: "bool", DefaultValue: "false", Description: "Global embassy appointment alerter toggle.", Panel: "control"},
+	"arrival_checklist.enabled":  {Type: "bool", DefaultValue: "false", Description: "Global arrival checklist tool toggle.", Panel: "control"},
+	"credential_checker.enabled": {Type: "bool", DefaultValue: "false", Description: "Global professional credential checker toggle.", Panel: "control"},
+	"cv_formatter.enabled":       {Type: "bool", DefaultValue: "false", Description: "Global CV formatter tool toggle.", Panel: "control"},
+	"housing_guide.enabled":      {Type: "bool", DefaultValue: "false", Description: "Global housing guide tool toggle.", Panel: "control"},
+	"attestation_guide.enabled":  {Type: "bool", DefaultValue: "false", Description: "Global attestation guide tool toggle.", Panel: "control"},
+	"language_test_hub.enabled":  {Type: "bool", DefaultValue: "false", Description: "Global language test hub tool toggle.", Panel: "control"},
+	"tax_calculator.enabled":     {Type: "bool", DefaultValue: "false", Description: "Global tax calculator tool toggle.", Panel: "control"},
+	"community_locator.enabled":  {Type: "bool", DefaultValue: "false", Description: "Global diaspora community locator toggle.", Panel: "control"},
+
 	// Remittance Rate Tracker (§74, ADR-075)
 	"remittance.enabled":              {Type: "bool", DefaultValue: "true", Description: "Global tracker toggle.", Panel: "control"},
 	"remittance.fetch_interval_minutes": {Type: "int", DefaultValue: "30", Description: "API rate-fetch schedule (minutes).", Panel: "control"},

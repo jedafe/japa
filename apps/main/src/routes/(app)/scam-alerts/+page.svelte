@@ -1,5 +1,5 @@
-// Ref: japaconnect-engineering/sections/81-scam-alert-board.md
 <script lang="ts">
+	// Ref: japaconnect-engineering/sections/81-scam-alert-board.md
 	import { untrack } from 'svelte';
 	import { page } from '$app/state';
 	import { TriangleAlert, Plus, Pin, Search, X } from 'lucide-svelte';

@@ -1,5 +1,5 @@
-// Ref: japaconnect-engineering/sections/80-destination-wiki.md
 <script lang="ts">
+	// Ref: japaconnect-engineering/sections/80-destination-wiki.md
 	import { t } from '$lib/i18n';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import { History, ArrowLeft, Bot } from 'lucide-svelte';

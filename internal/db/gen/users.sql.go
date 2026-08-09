@@ -1402,7 +1402,7 @@ LEFT JOIN spaces s
 LEFT JOIN tags t
     ON b.entity_type = 'tag' AND b.entity_id = t.id
 WHERE b.user_id = $1 AND b.tenant_id = $2
-  AND ($5 IS NULL OR b.folder_id = $5)
+  AND ($5::uuid IS NULL OR b.folder_id = $5::uuid)
   AND ($6::text[] IS NULL OR b.entity_type = ANY($6::text[]))
 ORDER BY b.created_at DESC
 LIMIT $3 OFFSET $4
@@ -1413,7 +1413,7 @@ type ListUserBookmarksParams struct {
 	TenantID    pgtype.UUID `json:"tenant_id"`
 	Limit       int32       `json:"limit"`
 	Offset      int32       `json:"offset"`
-	FolderID    interface{} `json:"folder_id"`
+	FolderID    pgtype.UUID `json:"folder_id"`
 	EntityTypes []string    `json:"entity_types"`
 }
 
