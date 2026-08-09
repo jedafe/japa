@@ -455,7 +455,7 @@ func TestServiceGetImpersonationStatusNoActive(t *testing.T) {
 
 	adminID := pgtype.UUID{Bytes: [16]byte{1}, Valid: true}
 
-	targetID, active, err := svc.GetImpersonationStatus(t.Context(), adminID)
+	targetID, active, _, err := svc.GetImpersonationStatus(t.Context(), adminID)
 	if err != nil {
 		t.Fatalf("GetImpersonationStatus() error: %v", err)
 	}
@@ -480,7 +480,7 @@ func TestServiceGetImpersonationStatusWithStore(t *testing.T) {
 	// Directly set via store (service.StartImpersonation needs a DB pool for audit logs)
 	_ = store.SetImpersonation(t.Context(), adminID, targetID, DefaultImpersonationTTL)
 
-	gotTargetID, active, err := svc.GetImpersonationStatus(t.Context(), adminID)
+	gotTargetID, active, _, err := svc.GetImpersonationStatus(t.Context(), adminID)
 	if err != nil {
 		t.Fatalf("GetImpersonationStatus() error: %v", err)
 	}

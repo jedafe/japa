@@ -2020,6 +2020,12 @@ func (h *Handlers) ListAuditLogs(w http.ResponseWriter, r *http.Request) {
 		args = append(args, to)
 		argIdx++
 	}
+	// Impersonation-only filter (ADR-047: required at launch so the audit
+	// trail is operationally useful, not write-only). When ?impersonation_only=true,
+	// only rows where impersonated_user_id IS NOT NULL are returned.
+	if impOnly := r.URL.Query().Get("impersonation_only"); impOnly == "true" || impOnly == "1" {
+		where += " AND al.impersonated_user_id IS NOT NULL"
+	}
 
 	query := fmt.Sprintf(`SELECT al.id, al.created_at, al.actor_user_id, u.username,
 		al.action_type, al.target_type, al.target_id::text, al.tenant_id,

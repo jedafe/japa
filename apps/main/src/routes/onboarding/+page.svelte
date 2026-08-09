@@ -149,7 +149,10 @@
 					saving = false;
 					return;
 				}
-				await goto('/');
+				// Section 09 Product Tour: redirect to home with ?tour=1 so the
+				// app shell can trigger the contextual walkthrough after it
+				// renders the tour targets (primary nav, space switcher, compose).
+				await goto('/?tour=1');
 			}
 		} catch {
 			error = t('onboarding.error', 'Something went wrong. Please try again.');
@@ -162,7 +165,10 @@
 		error = null;
 		try {
 			if (currentStep < totalSteps) {
-				const res = await api.put('/onboarding/step', { step: currentStep, step_data: {} });
+				// Section 09 skip semantics: send skip:true so the backend
+				// auto-fulfills any step minimum using the ranked algorithm
+				// rather than bypassing the requirement.
+				const res = await api.put('/onboarding/step', { step: currentStep, step_data: {}, skip: true });
 				if (res.error) {
 					error = res.error.message;
 					saving = false;
@@ -214,14 +220,14 @@
 						<label class="mb-1 block text-sm font-medium text-[var(--color-text)]" for="ob-status">{t('onboarding.field_japa_status', 'Where are you in your japa journey?')}</label>
 						<select id="ob-status" bind:value={japaStatus} class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none">
 							<option value="">{t('onboarding.select_option', 'Select...')}</option>
-							<option value="newly_japa">{t('onboarding.status_newly_japa', 'Newly Japa (< 1 year)')}</option>
-							<option value="settled">{t('onboarding.status_settled', 'Settled Abroad')}</option>
-							<option value="about_to_japa">{t('onboarding.status_about_to_japa', 'About to Japa')}</option>
-							<option value="planning">{t('onboarding.status_planning', 'Planning to Relocate')}</option>
-							<option value="looking_jobs">{t('onboarding.status_looking_jobs', 'Looking for Jobs Abroad')}</option>
-							<option value="looking_study">{t('onboarding.status_looking_study', 'Looking to Study Abroad')}</option>
-							<option value="returning">{t('onboarding.status_returning', 'Considering Returning Home')}</option>
-							<option value="remote_worker">{t('onboarding.status_remote_worker', 'Remote Worker (Nigeria-based)')}</option>
+							<option value="newly_japa">{t('onboarding.status_newly_japa', 'Newly Japa')}</option>
+							<option value="settling_in">{t('onboarding.status_settling_in', 'Settling In')}</option>
+							<option value="settled">{t('onboarding.status_settled', 'Settled')}</option>
+							<option value="planning">{t('onboarding.status_planning', 'Planning')}</option>
+							<option value="considering">{t('onboarding.status_considering', 'Considering')}</option>
+							<option value="returned">{t('onboarding.status_returned', 'Returned')}</option>
+							<option value="never_left">{t('onboarding.status_never_left', 'Never Left')}</option>
+							<option value="not_say">{t('onboarding.status_not_say', 'Prefer Not to Say')}</option>
 						</select>
 					</div>
 					<div>
@@ -342,7 +348,7 @@
 							{/if}
 							<span class="min-w-0 flex-1">
 								<span class="block truncate text-sm font-medium text-[var(--color-text)]">{rec.name}</span>
-								<span class="block text-xs text-[var(--color-muted)]">{rec.type === 'space' ? t('onboarding.rec_space', 'Space') : t('onboarding.rec_user', 'User')} · {rec.reason.replace(/_/g, ' ')}</span>
+								<span class="block text-xs text-[var(--color-muted)]">{rec.type === 'space' ? t('onboarding.rec_space', 'Space') : t('onboarding.rec_user', 'User')} · {t('onboarding.reason_' + rec.reason, rec.reason.replace(/_/g, ' '))}</span>
 							</span>
 							{#if selectedRecs.includes(rec.id)}
 								<Check size={18} class="text-[var(--color-primary)]" />

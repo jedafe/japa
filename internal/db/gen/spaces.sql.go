@@ -778,6 +778,88 @@ func (q *Queries) FindSpacesByKeywords(ctx context.Context, arg FindSpacesByKeyw
 	return items, nil
 }
 
+const findStateSpaceByName = `-- name: FindStateSpaceByName :one
+SELECT id, tenant_id, parent_id, space_type_id, name, slug, description, wiki_content,
+       logo_media_id, header_image_id, geo_code, level, member_count, post_count,
+       follower_count, visibility, posting_perm, replying_perm, commenting_perm,
+       joining_perm, status, created_at, updated_at, deleted_at, currency_code
+FROM spaces
+WHERE lower(name) = lower($1)
+  AND level = 'state'
+  AND tenant_id = $2
+  AND deleted_at IS NULL
+LIMIT 1
+`
+
+type FindStateSpaceByNameParams struct {
+	StateName string      `json:"state_name"`
+	TenantID  pgtype.UUID `json:"tenant_id"`
+}
+
+type FindStateSpaceByNameRow struct {
+	ID             pgtype.UUID        `json:"id"`
+	TenantID       pgtype.UUID        `json:"tenant_id"`
+	ParentID       pgtype.UUID        `json:"parent_id"`
+	SpaceTypeID    pgtype.UUID        `json:"space_type_id"`
+	Name           string             `json:"name"`
+	Slug           string             `json:"slug"`
+	Description    *string            `json:"description"`
+	WikiContent    []byte             `json:"wiki_content"`
+	LogoMediaID    pgtype.UUID        `json:"logo_media_id"`
+	HeaderImageID  pgtype.UUID        `json:"header_image_id"`
+	GeoCode        *string            `json:"geo_code"`
+	Level          string             `json:"level"`
+	MemberCount    int32              `json:"member_count"`
+	PostCount      int32              `json:"post_count"`
+	FollowerCount  int32              `json:"follower_count"`
+	Visibility     string             `json:"visibility"`
+	PostingPerm    string             `json:"posting_perm"`
+	ReplyingPerm   string             `json:"replying_perm"`
+	CommentingPerm string             `json:"commenting_perm"`
+	JoiningPerm    string             `json:"joining_perm"`
+	Status         string             `json:"status"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
+	CurrencyCode   *string            `json:"currency_code"`
+}
+
+// ADR-064a: Finds a state-level space by name. Used by the reverse-geocoding
+// flow (POST /me/location) as a fallback when no city-level Space matches
+// but a state/county name is available from Nominatim (BUG-006).
+func (q *Queries) FindStateSpaceByName(ctx context.Context, arg FindStateSpaceByNameParams) (FindStateSpaceByNameRow, error) {
+	row := q.db.QueryRow(ctx, findStateSpaceByName, arg.StateName, arg.TenantID)
+	var i FindStateSpaceByNameRow
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.ParentID,
+		&i.SpaceTypeID,
+		&i.Name,
+		&i.Slug,
+		&i.Description,
+		&i.WikiContent,
+		&i.LogoMediaID,
+		&i.HeaderImageID,
+		&i.GeoCode,
+		&i.Level,
+		&i.MemberCount,
+		&i.PostCount,
+		&i.FollowerCount,
+		&i.Visibility,
+		&i.PostingPerm,
+		&i.ReplyingPerm,
+		&i.CommentingPerm,
+		&i.JoiningPerm,
+		&i.Status,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.DeletedAt,
+		&i.CurrencyCode,
+	)
+	return i, err
+}
+
 const getChildSpacesByParentID = `-- name: GetChildSpacesByParentID :many
 SELECT s.id, s.tenant_id, s.parent_id, s.space_type_id, s.name, s.slug, s.description,
        s.wiki_content, s.logo_media_id, s.header_image_id, s.geo_code, s.level,

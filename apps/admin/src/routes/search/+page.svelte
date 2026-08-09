@@ -339,6 +339,7 @@
 						data={topQueriesChartData}
 						x="query"
 						y="searches"
+						xPadding={[0.1, 0.1]}
 						cRange={['var(--chart-3)']}
 						props={{
 							bars: { fill: 'var(--chart-3)' }

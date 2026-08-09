@@ -23,6 +23,14 @@ UPDATE onboarding_state
 SET tour_dismissed = true, updated_at = now()
 WHERE tenant_id = @tenant_id AND user_id = @user_id;
 
+-- name: AnonymizeOnboardingState :exec
+-- GDPR erasure (ADR-014): clear step_data PII (name, current_location,
+-- destination) during the anonymization phase. The row is retained (with
+-- completed=true) until hard-delete cascade; only the PII jsonb is scrubbed.
+UPDATE onboarding_state
+SET step_data = '{}'::jsonb, completed = true, updated_at = now()
+WHERE tenant_id = @tenant_id AND user_id = @user_id;
+
 -- name: ListOnboardingTemplates :many
 SELECT id, tenant_id, name, description, steps, is_active, is_system, created_at, updated_at
 FROM onboarding_templates

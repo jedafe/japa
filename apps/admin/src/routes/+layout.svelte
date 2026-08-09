@@ -11,6 +11,7 @@
 	import Sidebar from '$lib/components/layout/sidebar.svelte';
 	import TopBar from '$lib/components/layout/TopBar.svelte';
 	import Breadcrumb from '$lib/components/layout/Breadcrumb.svelte';
+	import ImpersonationBanner from '$lib/components/layout/ImpersonationBanner.svelte';
 	import AccessDenied from '$lib/components/AccessDenied.svelte';
 	import { CardSkeleton } from '$lib/components/ui/skeleton';
 	import '../app.css';
@@ -24,9 +25,28 @@
 	let sidebarMobileOpen = $state(false);
 	let currentPermissions = $state<string[]>([]);
 
+	// Check if we're on the login or logout page — computed first so onMount
+	// can skip session restoration on auth pages (avoids noisy 401s when no
+	// session exists yet).
+	let isAuthPage = $derived(
+		page.url.pathname === '/login' ||
+		page.url.pathname.startsWith('/login/') ||
+		page.url.pathname === '/logout' ||
+		page.url.pathname.startsWith('/logout/')
+	);
+
 	onMount(async () => {
 		fetchCsrfToken().catch(() => {});
 		initSidebarFromStorage();
+
+		// Skip session restoration on auth pages — no session exists yet and
+		// the calls would generate console 401 noise. The login page sets the
+		// access token in-memory and hard-reloads to '/', which re-mounts the
+		// layout and runs this block with the refresh cookie present.
+		if (isAuthPage) {
+			loading = false;
+			return;
+		}
 
 		if (!getAccessToken()) {
 			const refreshRes = await apiFetch<{ access_token: string }>('/auth/refresh', {
@@ -42,7 +62,7 @@
 			const userResult = await api<{ user: any }>('/me');
 			if (userResult.ok) {
 				setUser(userResult.data.user);
-				
+
 				const permResult = await api<{ permissions: string[] }>('/me/permissions');
 				if (permResult.ok) {
 					setPermissions(permResult.data.permissions ?? []);
@@ -53,11 +73,11 @@
 				}
 			} else {
 				clearUser();
-				if (!isAuthPage) goto('/login');
+				goto('/login');
 			}
 		} catch {
 			clearUser();
-			if (!isAuthPage) goto('/login');
+			goto('/login');
 		} finally {
 			loading = false;
 		}
@@ -66,6 +86,7 @@
 	const PAGE_PERMISSIONS: Record<string, string> = {
 		'/users': 'admin.users.view',
 		'/content': 'admin.content.view',
+		'/content-types': 'admin.settings',
 		'/moderation': 'admin.moderation',
 		'/analytics': 'admin.analytics.view',
 		'/settings': 'admin.settings.view',
@@ -92,6 +113,8 @@
 		'/organisations/claims': 'admin.moderation',
 		'/profiles': 'professional.manage',
 		'/reactions': 'content.reaction_types.manage',
+		'/share-platforms': 'content.reaction_types.manage',
+		'/imports': 'import.manage',
 		'/media': 'media.view_all',
 		'/tickets': 'tickets.admin',
 		'/ticket-types': 'tickets.type.manage',
@@ -112,6 +135,7 @@
 		'/mentorship': 'mentorship.admin',
 		'/learning': 'learning.admin.manage',
 		'/reviews': 'reviews.moderate',
+		'/reports': 'reports.review',
 		'/notifications': 'notifications.manage',
 		'/notification-types': 'notifications.manage',
 		'/forms': 'forms.create',
@@ -121,18 +145,34 @@
 		'/widgets': 'pagebuilder.blocks.manage',
 		'/jsonld-templates': 'content.jsonld.manage',
 		'/page-builder': 'pagebuilder.blocks.manage',
+		'/page-builder/pages': 'pages.manage',
+		'/page-builder/themes': 'pagebuilder.themes.manage',
 		'/page-templates': 'pagebuilder.templates.manage',
 		'/translations': 'i18n.manage',
 		'/search': 'search.analytics.view',
 		'/professional-types': 'professional.manage',
 		'/space-types': 'space_types.create',
 		'/ads': 'ad.campaign.manage',
+		'/ads/slot-types': 'ad.campaign.manage',
+		'/ads/networks': 'ad.network.manage',
 		'/data-exports': 'gdpr.data_exports.view',
+		'/data-imports': 'gdpr.data_exports.view',
 		'/i18n': 'i18n.manage',
 		'/wallet': 'wallet.admin',
+		'/wallet/credit-packs': 'wallet.credit_pack.manage',
+		'/wallet/purchases': 'wallet.purchases.view_any',
 		'/affiliate': 'affiliate.admin.view',
 		'/docs': 'docs.admin',
 		'/deletions': 'gdpr.deletions.view',
+		'/sidebars': 'sidebars.manage',
+		'/plans': 'payments.plans.manage',
+		'/travel': 'travel.manage',
+		'/remittance': 'remittance.admin',
+		'/personas': 'persona.view',
+		'/studio': 'studio.view',
+		'/rag': 'ai.rag.manage',
+		'/gamification': 'gamification.view',
+		'/jobs': 'jobs.admin',
 		'/moderation-queue': 'admin.moderation',
 		'/moderation/content': 'moderation.content.review',
 		'/moderation/reports': 'reports.review',
@@ -218,13 +258,6 @@
 			};
 		}
 	});
-	// Check if we're on the login or logout page
-	let isAuthPage = $derived(
-		page.url.pathname === '/login' || 
-		page.url.pathname.startsWith('/login/') ||
-		page.url.pathname === '/logout' ||
-		page.url.pathname.startsWith('/logout/')
-	);
 </script>
 
 <svelte:head>
@@ -248,6 +281,7 @@
 
 		<div class="flex flex-1 flex-col overflow-hidden">
 			<TopBar onMenuClick={() => sidebarMobileOpen = !sidebarMobileOpen} onCollapseToggle={toggleSidebar} />
+			<ImpersonationBanner />
 			<main class="flex-1 overflow-y-auto" style="background-color: var(--color-background)">
 				<div class="mx-auto max-w-screen-2xl px-4 py-6 sm:px-6 md:px-8">
 					<Breadcrumb />

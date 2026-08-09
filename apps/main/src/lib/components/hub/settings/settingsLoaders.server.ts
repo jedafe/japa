@@ -16,6 +16,15 @@ export const SETTINGS_LOADERS: Record<string, (ctx: ApiContext) => Promise<unkno
 	account: (ctx) => apiGet<MeProfile>(ctx, '/me'),
 	privacy: (ctx) => apiGet<PrivacySettings>(ctx, '/me/privacy'),
 
+	// ADR-064a: location settings needs the user's profile (for
+	// origin_country/destination_country custom fields) and the full
+	// country list for the cascading picker. Both best-effort: a failure
+	// degrades to empty values so the section still renders.
+	location: async (ctx) => ({
+		profile: await apiGet<MeProfile>(ctx, '/me').catch(() => ({})),
+		countries: (await apiList<GeoCountry>(ctx, '/geo/countries').then((r) => r.items).catch(() => []))
+	}),
+
 	language: async (ctx) => ({
 		// GET /i18n/packs — Rule 16: language list from API, not hardcoded.
 		// Returns string[] of locale codes (e.g. ["en", "fr"]).

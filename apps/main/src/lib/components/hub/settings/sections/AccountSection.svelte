@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { Select } from 'bits-ui';
 	import { untrack } from 'svelte';
+	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { DirtyForm } from '$lib/components/hub/useDirtyForm.svelte';
 	import SettingsSection from '$lib/components/hub/SettingsSection.svelte';
@@ -82,5 +83,20 @@
 				</Select.Content>
 			</Select.Portal>
 		</Select.Root>
+	</div>
+
+	<!-- Section 09 Product Tour: "Replay tour" link for users who want to
+	     see the contextual walkthrough again. Navigates to home with ?tour=1. -->
+	<div class="mt-6 border-t border-[var(--color-border)] pt-4">
+		<button
+			type="button"
+			onclick={() => goto('/?tour=1')}
+			class="text-sm font-medium text-[var(--color-primary)] hover:underline"
+		>
+			{t('settings.account.replay_tour', 'Replay product tour')}
+		</button>
+		<p class="mt-1 text-xs text-[var(--color-muted)]">
+			{t('settings.account.replay_tour_desc', 'See the walkthrough highlighting key features of the platform.')}
+		</p>
 	</div>
 </SettingsSection>

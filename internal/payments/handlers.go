@@ -732,9 +732,12 @@ func (h *Handlers) ListPayments(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"data": toPaymentAPIResponses(payments)})
 }
 
-// GetPayment handles GET /api/v1/payments/{id}.
+// GetPayment handles GET /api/v1/me/payments/{id}.
+// The route is user-scoped (/me/) so the payment must belong to the
+// authenticated user — without this check any user in the tenant could
+// read another user's payment details by ID enumeration (BUG-P004).
 func (h *Handlers) GetPayment(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireUser(w, r)
+	user, ok := h.requireUser(w, r)
 	if !ok {
 		return
 	}
@@ -756,17 +759,27 @@ func (h *Handlers) GetPayment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Enforce user ownership — the /me/ prefix means only the payer may
+	// view their own payment. A mismatch indicates cross-user access.
+	if payment.UserID != user.UserID {
+		writeError(w, http.StatusForbidden, "payment_not_owned", "You do not have access to this payment")
+		return
+	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": toPaymentAPIResponse(payment, "")})
 }
 
 // RefundPayment handles POST /api/v1/payments/{id}/refund.
+// Gated by payments.refund (admin-only). Verifies the payment exists in
+// the tenant and is in a refundable state (succeeded) before creating
+// the refund record (BUG-P008, BUG-P009).
 func (h *Handlers) RefundPayment(w http.ResponseWriter, r *http.Request) {
 	_, ok := h.requireUser(w, r)
 	if !ok {
 		return
 	}
 
-	_, ok = h.requireTenant(w, r)
+	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -774,6 +787,22 @@ func (h *Handlers) RefundPayment(w http.ResponseWriter, r *http.Request) {
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid payment ID")
+		return
+	}
+
+	// Verify the payment exists in this tenant and is refundable.
+	// Without this check, a refund could be created for a payment in
+	// another tenant (BUG-P008) or for a payment that was never
+	// succeeded (BUG-P009).
+	payment, err := h.Service.GetPayment(r.Context(), id, tenantID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	if payment.Status != PaymentStatusSucceeded {
+		writeError(w, http.StatusConflict, "payment_not_refundable",
+			"Payment must be in 'succeeded' status to be refunded")
 		return
 	}
 
@@ -789,6 +818,11 @@ func (h *Handlers) RefundPayment(w http.ResponseWriter, r *http.Request) {
 
 	if input.Amount <= 0 {
 		writeError(w, http.StatusBadRequest, "invalid_amount", "Amount must be positive")
+		return
+	}
+
+	if input.Amount > payment.Amount {
+		writeError(w, http.StatusBadRequest, "invalid_amount", "Refund amount cannot exceed payment amount")
 		return
 	}
 
@@ -1221,6 +1255,34 @@ func (h *Handlers) UpdateDiscountCode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Validate discount_type if provided (BUG-P007): the DB CHECK allows
+	// 'percent', 'fixed', and 'percentage', but calculateDiscount only
+	// handled 'percent' and 'fixed' — a 'percentage' code would silently
+	// compute zero discount. Validate here to reject unsupported values
+	// early with a clear error instead of a silent zero-discount.
+	if input.DiscountType != "" {
+		switch input.DiscountType {
+		case DiscountTypePercent, DiscountTypeFixed, "percentage":
+			// valid
+		default:
+			writeError(w, http.StatusBadRequest, "invalid_discount_type",
+				"discount_type must be 'percent' or 'fixed'")
+			return
+		}
+	}
+
+	// Validate applicable_to if provided.
+	if input.ApplicableTo != "" {
+		switch input.ApplicableTo {
+		case ApplicableToCourseAccess, ApplicableToProMembership, ApplicableToAll:
+			// valid
+		default:
+			writeError(w, http.StatusBadRequest, "invalid_applicable_to",
+				"applicable_to must be 'course_access', 'pro_membership', or 'all'")
+			return
+		}
+	}
+
 	// Build nullable valid_until: explicit null clears the field, missing key keeps existing.
 	var validUntil pgtype.Timestamptz
 	if input.ValidUntil != nil {
@@ -1318,7 +1380,14 @@ func (h *Handlers) GetDiscountCodeUsage(w http.ResponseWriter, r *http.Request) 
 }
 
 // DeleteSubscription handles DELETE /subscriptions/:id.
+// Verifies the subscription belongs to the authenticated user before
+// soft-deleting — without this check any user in the tenant could delete
+// another user's subscription by ID enumeration (BUG-P003).
 func (h *Handlers) DeleteSubscription(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
@@ -1328,6 +1397,18 @@ func (h *Handlers) DeleteSubscription(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid subscription ID")
 		return
 	}
+
+	// Fetch the subscription and verify ownership before mutating.
+	sub, err := h.Service.GetSubscription(r.Context(), id, tenantID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	if sub.UserID != user.UserID {
+		writeError(w, http.StatusForbidden, "subscription_not_owned", "You do not have access to this subscription")
+		return
+	}
+
 	queries := gen.New(h.Service.db.Writer)
 	err = queries.SoftDeleteSubscription(r.Context(), gen.SoftDeleteSubscriptionParams{
 		ID:       id,

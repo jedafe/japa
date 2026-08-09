@@ -409,6 +409,10 @@ export interface PrivacySettings {
 export interface AuthSession {
 	totp_required?: undefined;
 	access_token: string;
+	/** Refresh token extracted from the backend Set-Cookie header; set as
+	 * the jc_refresh browser cookie by the SSR proxy so /me/sessions can
+	 * identify the current session (JEOS §50). */
+	refresh_token?: string;
 	user: AuthUser;
 }
 

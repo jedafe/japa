@@ -552,7 +552,7 @@
 					</label>
 					<input
 						id="webhook-secret"
-						type="text"
+						type="password"
 						bind:value={form.secret}
 						class="border-border-input bg-background text-foreground w-full rounded-9px border px-3 py-2 font-mono text-sm transition-colors hover:border-border-input-hover focus:border-border-input-hover focus:shadow-date-field-focus"
 						placeholder="whsec_..."

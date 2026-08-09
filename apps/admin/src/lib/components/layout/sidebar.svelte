@@ -78,7 +78,7 @@
 			label: t("nav.section.users", "User Management"),
 			items: [
 				{ path: "/users", label: t("nav.users", "Users"), icon: Users, permission: "admin.users.view" },
-				{ path: "/organisations", label: t("nav.organisations", "Organisations"), icon: Building, permission: "organizations.manage" },
+				{ path: "/organisations", label: t("nav.organisations", "Organisations"), icon: Building, permission: "admin.moderation" },
 			{ path: "/organisations/claims", label: t("nav.organisation_claims", "Ownership Claims"), icon: FileText, permission: "admin.moderation" },
 				{ path: "/universities", label: t("nav.universities", "Universities"), icon: GraduationCap, permission: "admin.settings" },
 				{ path: "/professional-types", label: t("nav.professional_types", "Professional Types"), icon: Briefcase, permission: "professional.manage" },
@@ -109,10 +109,10 @@
 			items: [
 				{ path: "/moderation", label: t("nav.moderation", "Queue"), icon: Shield, permission: "admin.moderation" },
 				{ path: "/moderation-queue", label: t("nav.moderation_queue", "Review Queue"), icon: AlertTriangle, permission: "admin.moderation" },
-				{ path: "/moderation/appeals", label: t("nav.moderation_appeals", "Appeals"), icon: MessageCircle, permission: "admin.moderation" },
-				{ path: "/moderation/reports", label: t("nav.moderation_reports", "Reports"), icon: FileText, permission: "admin.moderation" },
-				{ path: "/moderation/content", label: t("nav.moderation_content", "Content"), icon: FileText, permission: "admin.moderation" },
-				{ path: "/moderation/alerts", label: t("nav.moderation_alerts", "Alerts"), icon: AlertTriangle, permission: "admin.moderation" },
+				{ path: "/moderation/appeals", label: t("nav.moderation_appeals", "Appeals"), icon: MessageCircle, permission: "reports.review" },
+				{ path: "/moderation/reports", label: t("nav.moderation_reports", "Reports"), icon: FileText, permission: "reports.review" },
+				{ path: "/moderation/content", label: t("nav.moderation_content", "Content"), icon: FileText, permission: "moderation.content.review" },
+				{ path: "/moderation/alerts", label: t("nav.moderation_alerts", "Alerts"), icon: AlertTriangle, permission: "moderation.alerts.manage" },
 				{ path: "/spam", label: t("nav.spam", "Spam Management"), icon: AlertTriangle, permission: "spam.ip_block.manage" },
 			{ path: "/tickets", label: t("nav.tickets", "Support Tickets"), icon: Ticket, permission: "tickets.admin" },
 			{ path: "/reviews", label: t("nav.reviews", "Reviews"), icon: MessageCircle, permission: "reviews.moderate" }

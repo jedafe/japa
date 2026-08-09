@@ -19,11 +19,13 @@
 	 */
 	import { Select } from 'bits-ui';
 	import { untrack } from 'svelte';
+	import { invalidateAll } from '$app/navigation';
+	import { browser } from '$app/environment';
 	import { DirtyForm } from '$lib/components/hub/useDirtyForm.svelte';
 	import SettingsSection from '$lib/components/hub/SettingsSection.svelte';
 	import { patchAccount, putPreferences } from '$lib/api/hub';
 	import { setContentCountry } from '$lib/api/geo';
-	import { t } from '$lib/i18n';
+	import { t, i18n, type Locale } from '$lib/i18n';
 	import { Globe, Clock, MapPin } from 'lucide-svelte';
 	import type { GeoCountry } from '$lib/types';
 
@@ -88,6 +90,20 @@
 			]);
 			// Surface the first error if either call failed.
 			const err = langRes.error ?? tzRes.error;
+			// If the language preference persisted and differs from the active UI
+			// locale, set the jc_locale cookie (mirroring the /fr and /en
+			// locale-switch routes) and invalidate all loaders. The i18n store
+			// derives its locale from page.data.locale (request-scoped during SSR,
+			// reactive on the client), so after invalidateAll() refreshes the page
+			// data the whole UI re-renders in the chosen language automatically.
+			// Ref: japa-bugs-hunters.md §1 / §21 — without this the preference
+			// saved silently and the UI never switched language.
+			if (!langRes.error && browser && v.language && v.language !== i18n.locale) {
+				const locale = (v.language === 'fr' || v.language === 'en') ? (v.language as Locale) : 'en';
+				document.cookie = `jc_locale=${locale}; path=/; max-age=${60 * 60 * 24 * 365}; samesite=lax`;
+				// Fire-and-forget: re-run load functions so data.locale refreshes.
+				void invalidateAll();
+			}
 			return {
 				data: langRes.data ?? tzRes.data,
 				error: err ? { message: err.message, status: err.status } : null,
@@ -101,12 +117,23 @@
 	// and has its own cache-invalidation semantics.
 	let contentCountry = $state(untrack(() => profile.content_country_preference ?? ''));
 	let savingCountry = $state(false);
+	let countryError = $state<string | null>(null);
 
 	async function saveContentCountry(value: string) {
+		const prev = contentCountry;
 		contentCountry = value;
 		savingCountry = true;
-		await setContentCountry(value);
+		countryError = null;
+		// setContentCountry returns null on failure (api.patch yields null
+		// data on error). Roll back the optimistic update so the trigger
+		// reflects the server's actual state instead of a phantom selection.
+		// Ref: japa-bugs-hunters.md §1.1 — optimistic update without rollback.
+		const res = await setContentCountry(value);
 		savingCountry = false;
+		if (!res) {
+			contentCountry = prev;
+			countryError = t('settings.language.content_country_error', 'Could not save content country preference.');
+		}
 	}
 </script>
 
@@ -226,6 +253,7 @@
 			<p class="mt-1.5 text-xs text-[var(--color-muted)]">
 				{t('settings.language.content_country_hint', 'Personalizes your feed and search results. Leave on auto to use your detected location.')}
 			</p>
+			{#if countryError}<p class="mt-1 text-xs text-[var(--color-danger,#dc2626)]">{countryError}</p>{/if}
 		</label>
 	{/if}
 </SettingsSection>
