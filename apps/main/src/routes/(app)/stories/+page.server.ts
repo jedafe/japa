@@ -1,7 +1,7 @@
 // Ref: japaconnect-engineering/sections/79-community-story-wall.md
 import type { PageServerLoad } from './$types';
 import { apiContext, apiList } from '$lib/server/api';
-import type { Story } from '$lib/types';
+import type { Story, Space } from '$lib/types';
 
 /**
  * Community Story Wall at /stories — SSR list of relocation stories.
@@ -21,6 +21,14 @@ export const load: PageServerLoad = async (event) => {
 	const visa = event.url.searchParams.get('visa') ?? '';
 	const profession = event.url.searchParams.get('profession') ?? '';
 
+	let countries: Space[] = [];
+	try {
+		const { items } = await apiList<Space>(ctx, '/spaces?level=country');
+		countries = items;
+	} catch {
+		countries = [];
+	}
+
 	const params = new URLSearchParams();
 	params.set('sort', sort === 'latest' ? 'latest' : 'top');
 	params.set('page_size', String(PAGE_SIZE));
@@ -37,7 +45,8 @@ export const load: PageServerLoad = async (event) => {
 			pageSize: PAGE_SIZE,
 			loadError: false,
 			sort: sort === 'latest' ? 'latest' : 'top',
-			filters: { origin, dest, visa, profession }
+			filters: { origin, dest, visa, profession },
+			countries
 		};
 	} catch {
 		return {
@@ -46,7 +55,8 @@ export const load: PageServerLoad = async (event) => {
 			pageSize: PAGE_SIZE,
 			loadError: true,
 			sort: sort === 'latest' ? 'latest' : 'top',
-			filters: { origin, dest, visa, profession }
+			filters: { origin, dest, visa, profession },
+			countries
 		};
 	}
 };

@@ -29,7 +29,7 @@
 
 	// Filter form state — seeded from SSR query params.
 	let destFilter = $state(untrack(() => data.filters.dest));
-	let typeFilter = $state(untrack(() => data.filters.type));
+	let scamTypeFilter = $state(untrack(() => data.filters.scam_type));
 
 	// Re-seed on a new SSR payload (e.g. after filter navigation).
 	$effect(() => {
@@ -39,7 +39,7 @@
 			atEnd = seed.length < data.pageSize;
 			loading = false;
 			destFilter = data.filters.dest;
-			typeFilter = data.filters.type;
+			scamTypeFilter = data.filters.scam_type;
 		});
 	});
 
@@ -76,7 +76,7 @@
 		loading = true;
 		const params = new URLSearchParams({ page_size: String(data.pageSize), cursor_created_at: c });
 		if (data.filters.dest) params.set('dest', data.filters.dest);
-		if (data.filters.type) params.set('type', data.filters.type);
+		if (data.filters.scam_type) params.set('scam_type', data.filters.scam_type);
 		const res = await api.get<ScamReport[]>(`/scam-alerts?${params.toString()}`);
 		if (res.error) {
 			loading = false;
@@ -91,19 +91,19 @@
 	function applyFilters(e: SubmitEvent) {
 		e.preventDefault();
 		const params = new URLSearchParams();
-		if (destFilter.trim()) params.set('dest', destFilter.trim());
-		if (typeFilter) params.set('type', typeFilter);
+		if (destFilter) params.set('dest', destFilter);
+		if (scamTypeFilter) params.set('scam_type', scamTypeFilter);
 		const qs = params.toString();
 		window.location.href = qs ? `/scam-alerts?${qs}` : '/scam-alerts';
 	}
 
 	function clearFilters() {
 		destFilter = '';
-		typeFilter = '';
+		scamTypeFilter = '';
 		window.location.href = '/scam-alerts';
 	}
 
-	const hasFilters = $derived(!!data.filters.dest || !!data.filters.type);
+	const hasFilters = $derived(!!data.filters.dest || !!data.filters.scam_type);
 
 	function scamTypeLabel(type: ScamType): string {
 		return t(`scam_alerts.type.${type}`, type.replace(/_/g, ' '));
@@ -153,23 +153,26 @@
 			<label for="filter-dest" class="text-xs font-medium text-[var(--color-text-subtle)]">
 				{t('scam_alerts.filter_destination', 'Destination country')}
 			</label>
-			<input
+			<select
 				id="filter-dest"
-				type="text"
 				value={destFilter}
-				oninput={(e) => (destFilter = e.currentTarget.value)}
-				placeholder={t('scam_alerts.filter_destination_placeholder', 'e.g. UK')}
-				class="w-40 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm text-[var(--color-text)] placeholder:text-[var(--color-muted)] focus:border-[var(--color-primary)] focus:outline-none"
-			/>
+				onchange={(e) => (destFilter = e.currentTarget.value)}
+				class="w-44 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none"
+			>
+				<option value="">{t('scam_alerts.filter_all_countries', 'All countries')}</option>
+				{#each data.countries as c (c.id)}
+					<option value={c.id}>{c.name}</option>
+				{/each}
+			</select>
 		</div>
 		<div class="flex flex-col gap-1">
-			<label for="filter-type" class="text-xs font-medium text-[var(--color-text-subtle)]">
+			<label for="filter-scam-type" class="text-xs font-medium text-[var(--color-text-subtle)]">
 				{t('scam_alerts.filter_type', 'Scam type')}
 			</label>
 			<select
-				id="filter-type"
-				value={typeFilter}
-				onchange={(e) => (typeFilter = e.currentTarget.value)}
+				id="filter-scam-type"
+				value={scamTypeFilter}
+				onchange={(e) => (scamTypeFilter = e.currentTarget.value)}
 				class="w-44 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none"
 			>
 				<option value="">{t('scam_alerts.filter_all_types', 'All types')}</option>

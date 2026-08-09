@@ -2,7 +2,7 @@
 	import { untrack } from 'svelte';
 	// Ref: japaconnect-engineering/sections/87-japa-stage-profiles.md
 	// Japa Stage directory. SSR list of public member profiles from
-	// GET /members/by-stage with ?stage and ?dest filters and pagination.
+	// GET /members/by-stage with ?stage filter and pagination.
 	import { t } from '$lib/i18n';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
@@ -44,18 +44,15 @@
 
 	// Local filter state, seeded from SSR-passed filters.
 	let stageFilter = $state(untrack(() => data.filters.stage));
-	let destFilter = $state(untrack(() => data.filters.dest));
 
 	// Keep local filter state in sync when navigating between pages/filters.
 	$effect(() => {
 		stageFilter = data.filters.stage;
-		destFilter = data.filters.dest;
 	});
 
 	function applyFilters() {
 		const params = new URLSearchParams();
 		if (stageFilter) params.set('stage', stageFilter);
-		if (destFilter) params.set('dest', destFilter);
 		goto(`/japa-stage${params.toString() ? `?${params.toString()}` : ''}`);
 	}
 
@@ -66,7 +63,6 @@
 	function changePage(p: number) {
 		const params = new URLSearchParams();
 		if (data.filters.stage) params.set('stage', data.filters.stage);
-		if (data.filters.dest) params.set('dest', data.filters.dest);
 		params.set('page', String(p));
 		goto(`/japa-stage?${params.toString()}`);
 	}
@@ -79,7 +75,7 @@
 		)
 	);
 
-	const hasFilters = $derived(!!data.filters.stage || !!data.filters.dest);
+	const hasFilters = $derived(!!data.filters.stage);
 </script>
 
 <svelte:head>
@@ -161,18 +157,6 @@
 					{/each}
 				</select>
 			</div>
-			<div class="flex flex-col gap-1">
-				<label for="filter-dest" class="text-xs font-medium text-[var(--color-text-subtle)]">
-					{t('japa_stage.filter_dest', 'Destination')}
-				</label>
-				<input
-					id="filter-dest"
-					type="text"
-					bind:value={destFilter}
-					placeholder={t('japa_stage.dest_placeholder', 'e.g. Canada')}
-					class="w-44 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]"
-				/>
-			</div>
 			<button
 				type="button"
 				onclick={applyFilters}
@@ -252,8 +236,8 @@
 					{stageLabel(m.stage as JapaStage)}
 				</span>
 				<div class="mt-1.5 flex flex-col gap-0.5 text-xs text-[var(--color-text-subtle)]">
-					{#if m.destination_space_name ?? m.destination_space_id}
-						<span>{t('japa_stage.dest', 'Destination')}: {m.destination_space_name ?? m.destination_space_id}</span>
+					{#if m.destination_space_name}
+						<span>{t('japa_stage.dest', 'Destination')}: {m.destination_space_name}</span>
 					{/if}
 					{#if m.updated_at}
 						<span>{t('japa_stage.updated', 'Updated')} <RelativeTime iso={m.updated_at} /></span>

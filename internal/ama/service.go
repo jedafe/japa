@@ -23,6 +23,7 @@ type AMAThreadDTO struct {
 	Slug         string          `json:"slug"`
 	Body         string          `json:"body"`
 	Status       string          `json:"status"`
+	AuthorUserID string          `json:"author_user_id,omitempty"`
 	AuthorName   string          `json:"author_name,omitempty"`
 	AuthorAvatar string          `json:"author_avatar,omitempty"`
 	AmaConfig    json.RawMessage `json:"ama_config"`
@@ -102,14 +103,15 @@ func (s *Service) CloseAMA(ctx context.Context, threadID, tenantID pgtype.UUID) 
 // threadToDTO converts an AMAThread to an AMAThreadDTO.
 func threadToDTO(t AMAThread) AMAThreadDTO {
 	dto := AMAThreadDTO{
-		ID:        t.ID.String(),
-		Title:     t.Title,
-		Slug:      t.Slug,
-		Body:      t.Body,
-		Status:    t.Status,
-		AmaConfig: json.RawMessage(t.AmaConfig),
-		CreatedAt: formatTs(t.CreatedAt),
-		UpdatedAt: formatTs(t.UpdatedAt),
+		ID:           t.ID.String(),
+		Title:        t.Title,
+		Slug:         t.Slug,
+		Body:         t.Body,
+		Status:       t.Status,
+		AuthorUserID: t.AuthorID.String(),
+		AmaConfig:    json.RawMessage(t.AmaConfig),
+		CreatedAt:    formatTs(t.CreatedAt),
+		UpdatedAt:    formatTs(t.UpdatedAt),
 	}
 	if t.AuthorName != nil {
 		dto.AuthorName = *t.AuthorName

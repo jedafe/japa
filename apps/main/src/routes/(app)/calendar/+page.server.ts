@@ -1,11 +1,11 @@
 // Ref: japaconnect-engineering/sections/86-community-calendar.md
 import type { PageServerLoad } from './$types';
 import { apiContext, apiList } from '$lib/server/api';
-import type { CalendarEntry, CalendarCategory } from '$lib/types';
+import type { CalendarEntry, CalendarCategory, Space } from '$lib/types';
 
 /**
  * Community Calendar at /calendar — SSR list of calendar entries.
- * Fetches GET /calendar?dest=&origin=&category=&from=&to=&view=list,
+ * Fetches GET /calendar?dest=&category=&from=&to=&view=list,
  * passing through all query params. Default view=list (simplest).
  * On error, degrades to an empty list with loadError: true.
  */
@@ -28,7 +28,6 @@ export const load: PageServerLoad = async (event) => {
 	const authed = !!event.locals.user;
 
 	const dest = event.url.searchParams.get('dest') ?? '';
-	const origin = event.url.searchParams.get('origin') ?? '';
 	const categoryRaw = event.url.searchParams.get('category') ?? '';
 	const from = event.url.searchParams.get('from') ?? '';
 	const to = event.url.searchParams.get('to') ?? '';
@@ -41,23 +40,31 @@ export const load: PageServerLoad = async (event) => {
 		? (viewRaw as CalendarView)
 		: 'list';
 
+	let countries: Space[] = [];
+	try {
+		const { items } = await apiList<Space>(ctx, '/spaces?level=country');
+		countries = items;
+	} catch {
+		countries = [];
+	}
+
 	const params = new URLSearchParams({ view, page_size: String(PAGE_SIZE) });
 	if (dest) params.set('dest', dest);
-	if (origin) params.set('origin', origin);
 	if (category) params.set('category', category);
 	if (from) params.set('from', from);
 	if (to) params.set('to', to);
 
 	try {
 		const { items } = await apiList<CalendarEntry>(ctx, `/calendar?${params.toString()}`);
-		return { entries: items, authed, pageSize: PAGE_SIZE, loadError: false, filters: { dest, origin, category, from, to, view } };
+		return { entries: items, countries, authed, pageSize: PAGE_SIZE, loadError: false, filters: { dest, category, from, to, view } };
 	} catch {
 		return {
 			entries: [] as CalendarEntry[],
+			countries,
 			authed,
 			pageSize: PAGE_SIZE,
 			loadError: true,
-			filters: { dest, origin, category, from, to, view }
+			filters: { dest, category, from, to, view }
 		};
 	}
 };

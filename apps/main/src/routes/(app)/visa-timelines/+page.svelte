@@ -27,20 +27,14 @@
 	let fDest = $state(untrack(() => filters.dest));
 	let fOrigin = $state(untrack(() => filters.origin));
 	let fVisa = $state(untrack(() => filters.visa));
-	let fConsulate = $state(untrack(() => filters.consulate));
-	let fMonths = $state(untrack(() => filters.months));
 
 	$effect(() => {
 		fDest = filters.dest;
 		fOrigin = filters.origin;
 		fVisa = filters.visa;
-		fConsulate = filters.consulate;
-		fMonths = filters.months;
 	});
 
-	const hasFilters = $derived(
-		!!(filters.dest || filters.origin || filters.visa || filters.consulate || filters.months)
-	);
+	const hasFilters = $derived(!!(filters.dest || filters.origin || filters.visa));
 
 	const trendData = $derived(
 		trend
@@ -62,8 +56,6 @@
 		if (fDest.trim()) qs.set('dest', fDest.trim());
 		if (fOrigin.trim()) qs.set('origin', fOrigin.trim());
 		if (fVisa.trim()) qs.set('visa', fVisa.trim());
-		if (fConsulate.trim()) qs.set('consulate', fConsulate.trim());
-		if (fMonths.trim()) qs.set('months', fMonths.trim());
 		const q = qs.toString();
 		window.location.href = `/visa-timelines${q ? `?${q}` : ''}`;
 	}
@@ -71,6 +63,10 @@
 	function fmtDays(v: number | null | undefined): string {
 		if (v == null) return '—';
 		return `${Math.round(v)} ${t('visa_timelines.days', 'days')}`;
+	}
+
+	function countryName(id: string): string {
+		return data.countries.find((c) => c.id === id)?.name ?? id;
 	}
 
 	const inputClass =
@@ -121,31 +117,29 @@
 					<label for="f-dest" class="text-xs text-[var(--color-text-subtle)]">
 						{t('visa_timelines.destination', 'Destination')}
 					</label>
-					<input id="f-dest" type="text" bind:value={fDest} class={inputClass} placeholder="e.g. GB" />
+					<select id="f-dest" bind:value={fDest} class={inputClass}>
+						<option value="">{t('visa_timelines.destination_all', 'All countries')}</option>
+						{#each data.countries as c (c.id)}
+							<option value={c.id}>{c.name}</option>
+						{/each}
+					</select>
 				</div>
 				<div class="flex flex-col gap-1">
 					<label for="f-origin" class="text-xs text-[var(--color-text-subtle)]">
 						{t('visa_timelines.origin', 'Origin')}
 					</label>
-					<input id="f-origin" type="text" bind:value={fOrigin} class={inputClass} placeholder="e.g. NG" />
+					<select id="f-origin" bind:value={fOrigin} class={inputClass}>
+						<option value="">{t('visa_timelines.origin_all', 'All countries')}</option>
+						{#each data.countries as c (c.id)}
+							<option value={c.id}>{c.name}</option>
+						{/each}
+					</select>
 				</div>
 				<div class="flex flex-col gap-1">
 					<label for="f-visa" class="text-xs text-[var(--color-text-subtle)]">
 						{t('visa_timelines.visa_category', 'Visa category')}
 					</label>
 					<input id="f-visa" type="text" bind:value={fVisa} class={inputClass} placeholder="e.g. student" />
-				</div>
-				<div class="flex flex-col gap-1">
-					<label for="f-consulate" class="text-xs text-[var(--color-text-subtle)]">
-						{t('visa_timelines.consulate', 'Consulate')}
-					</label>
-					<input id="f-consulate" type="text" bind:value={fConsulate} class={inputClass} placeholder="e.g. Lagos" />
-				</div>
-				<div class="flex flex-col gap-1">
-					<label for="f-months" class="text-xs text-[var(--color-text-subtle)]">
-						{t('visa_timelines.months', 'Months')}
-					</label>
-					<input id="f-months" type="number" min="1" bind:value={fMonths} class={inputClass} placeholder="e.g. 12" />
 				</div>
 			</div>
 			<div class="mt-3 flex items-center justify-end gap-2">
@@ -197,11 +191,9 @@
 			{#if hasFilters}
 				<div class="flex flex-wrap items-center gap-2 text-xs text-[var(--color-text-subtle)]">
 					<span>{t('visa_timelines.showing_for', 'Showing data for')}:</span>
-					{#if filters.dest}<span class="rounded-full bg-[var(--color-surface-subtle)] px-2 py-0.5">{filters.dest}</span>{/if}
-					{#if filters.origin}<span class="rounded-full bg-[var(--color-surface-subtle)] px-2 py-0.5">{filters.origin}</span>{/if}
+					{#if filters.dest}<span class="rounded-full bg-[var(--color-surface-subtle)] px-2 py-0.5">{countryName(filters.dest)}</span>{/if}
+					{#if filters.origin}<span class="rounded-full bg-[var(--color-surface-subtle)] px-2 py-0.5">{countryName(filters.origin)}</span>{/if}
 					{#if filters.visa}<span class="rounded-full bg-[var(--color-surface-subtle)] px-2 py-0.5">{filters.visa}</span>{/if}
-					{#if filters.consulate}<span class="rounded-full bg-[var(--color-surface-subtle)] px-2 py-0.5">{filters.consulate}</span>{/if}
-					{#if filters.months}<span class="rounded-full bg-[var(--color-surface-subtle)] px-2 py-0.5">{filters.months} {t('visa_timelines.months_label', 'mo')}</span>{/if}
 				</div>
 			{/if}
 

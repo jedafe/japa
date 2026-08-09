@@ -8,6 +8,7 @@ export const load: PageServerLoad = async (event) => {
 	const ctx = apiContext(event);
 	const id = event.params.id;
 	const authed = !!event.locals.user;
+	const currentUserId = event.locals.user?.id ?? null;
 
 	let session: AMAThread;
 	try {
@@ -27,7 +28,7 @@ export const load: PageServerLoad = async (event) => {
 		replies = [];
 	}
 
-	const isHost = false;
+	const isHost = authed && !!session.author_user_id && session.author_user_id === currentUserId;
 
 	return { session, replies, authed, isHost, loadError: false };
 };

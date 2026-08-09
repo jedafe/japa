@@ -1,12 +1,12 @@
 // Ref: japaconnect-engineering/sections/83-visa-timeline-tracker.md
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGet } from '$lib/server/api';
-import type { VisaProcessingStats, TrendPoint } from '$lib/types';
+import { apiContext, apiGet, apiList } from '$lib/server/api';
+import type { VisaProcessingStats, TrendPoint, Space } from '$lib/types';
 
 /**
  * Visa Timeline aggregate stats at /visa-timelines (Section 83).
  * SSR-fetches GET /visa-timelines/stats and GET /visa-timelines/stats/trend,
- * passing through the dest/origin/visa/consulate/months query params so the
+ * passing through the dest/origin/visa query params so the
  * page renders with the active filters applied without a client round-trip.
  */
 export const load: PageServerLoad = async (event) => {
@@ -16,17 +16,21 @@ export const load: PageServerLoad = async (event) => {
 	const filters = {
 		dest: event.url.searchParams.get('dest') ?? '',
 		origin: event.url.searchParams.get('origin') ?? '',
-		visa: event.url.searchParams.get('visa') ?? '',
-		consulate: event.url.searchParams.get('consulate') ?? '',
-		months: event.url.searchParams.get('months') ?? ''
+		visa: event.url.searchParams.get('visa') ?? ''
 	};
+
+	let countries: Space[] = [];
+	try {
+		const { items } = await apiList<Space>(ctx, '/spaces?level=country');
+		countries = items;
+	} catch {
+		countries = [];
+	}
 
 	const qs = new URLSearchParams();
 	if (filters.dest) qs.set('dest', filters.dest);
 	if (filters.origin) qs.set('origin', filters.origin);
 	if (filters.visa) qs.set('visa', filters.visa);
-	if (filters.consulate) qs.set('consulate', filters.consulate);
-	if (filters.months) qs.set('months', filters.months);
 	const query = qs.toString();
 
 	let stats: VisaProcessingStats | null = null;
@@ -44,5 +48,5 @@ export const load: PageServerLoad = async (event) => {
 		trend = [];
 	}
 
-	return { stats, trend, loadError, filters, authed };
+	return { stats, trend, countries, loadError, filters, authed };
 };

@@ -2,7 +2,7 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
 	import { page } from '$app/state';
-	import { MessageSquare, Plus, Search, X, Circle, CircleSlash, Loader2 } from 'lucide-svelte';
+	import { MessageSquare, Plus, Circle, CircleSlash, Loader2 } from 'lucide-svelte';
 	import { api } from '$lib/api/client';
 	import { t } from '$lib/i18n';
 	import { i18n } from '$lib/i18n';
@@ -19,17 +19,12 @@
 	let loading = $state(false);
 	let sentinel = $state<HTMLElement | null>(null);
 
-	let destFilter = $state(untrack(() => data.filters.dest));
-	let professionFilter = $state(untrack(() => data.filters.profession));
-
 	$effect(() => {
 		const seed = data.sessions;
 		untrack(() => {
 			sessions = seed;
 			atEnd = seed.length < data.pageSize;
 			loading = false;
-			destFilter = data.filters.dest;
-			professionFilter = data.filters.profession;
 		});
 	});
 
@@ -81,8 +76,6 @@
 			page_size: String(data.pageSize),
 			cursor_created_at: c
 		});
-		if (data.filters.dest) params.set('dest', data.filters.dest);
-		if (data.filters.profession) params.set('profession', data.filters.profession);
 		const res = await api.get<AMAThread[]>(`/forum/ama?${params.toString()}`);
 		if (res.error) {
 			loading = false;
@@ -93,23 +86,6 @@
 		atEnd = batch.length < data.pageSize;
 		loading = false;
 	}
-
-	function applyFilters(e: SubmitEvent) {
-		e.preventDefault();
-		const params = new URLSearchParams();
-		if (destFilter.trim()) params.set('dest', destFilter.trim());
-		if (professionFilter.trim()) params.set('profession', professionFilter.trim());
-		const qs = params.toString();
-		window.location.href = qs ? `/ama?${qs}` : '/ama';
-	}
-
-	function clearFilters() {
-		destFilter = '';
-		professionFilter = '';
-		window.location.href = '/ama';
-	}
-
-	const hasFilters = $derived(!!data.filters.dest || !!data.filters.profession);
 
 	function amaConfig(thread: AMAThread): {
 		closes_at?: string;
@@ -172,51 +148,6 @@
 			</a>
 		{/if}
 	</div>
-
-	<!-- Filter bar -->
-	<form onsubmit={applyFilters} class="flex flex-wrap items-end gap-3 border-b border-[var(--color-border)] px-4 py-3">
-		<div class="flex flex-col gap-1">
-			<label for="filter-dest" class="text-xs font-medium text-[var(--color-text-subtle)]">
-				{t('ama.filter_destination', 'Destination')}
-			</label>
-			<input
-				id="filter-dest"
-				type="text"
-				value={destFilter}
-				oninput={(e) => (destFilter = e.currentTarget.value)}
-				placeholder={t('ama.filter_destination_placeholder', 'e.g. UK')}
-				class="w-40 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm text-[var(--color-text)] placeholder:text-[var(--color-muted)] focus:border-[var(--color-primary)] focus:outline-none"
-			/>
-		</div>
-		<div class="flex flex-col gap-1">
-			<label for="filter-profession" class="text-xs font-medium text-[var(--color-text-subtle)]">
-				{t('ama.filter_profession', 'Profession')}
-			</label>
-			<input
-				id="filter-profession"
-				type="text"
-				value={professionFilter}
-				oninput={(e) => (professionFilter = e.currentTarget.value)}
-				placeholder={t('ama.filter_profession_placeholder', 'e.g. Nurse')}
-				class="w-44 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm text-[var(--color-text)] placeholder:text-[var(--color-muted)] focus:border-[var(--color-primary)] focus:outline-none"
-			/>
-		</div>
-		<button
-			type="submit"
-			class="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1.5 text-sm font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)]"
-		>
-			<Search size={14} /> {t('common.filter', 'Filter')}
-		</button>
-		{#if hasFilters}
-			<button
-				type="button"
-				onclick={clearFilters}
-				class="inline-flex items-center gap-1 text-xs text-[var(--color-muted)] hover:text-[var(--color-text)]"
-			>
-				<X size={13} /> {t('common.clear_filters', 'Clear filters')}
-			</button>
-		{/if}
-	</form>
 
 	<!-- List -->
 	<div class="p-3">

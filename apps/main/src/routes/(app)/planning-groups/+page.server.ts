@@ -1,7 +1,7 @@
 // Ref: japaconnect-engineering/sections/82-japa-planning-groups.md
 import type { PageServerLoad } from './$types';
 import { apiContext, apiList } from '$lib/server/api';
-import type { PlanningGroup } from '$lib/types';
+import type { PlanningGroup, Space } from '$lib/types';
 
 const PAGE_SIZE = 20;
 
@@ -10,6 +10,14 @@ export const load: PageServerLoad = async (event) => {
 	const authed = !!event.locals.user;
 	const dest = event.url.searchParams.get('dest') ?? '';
 	const visa = event.url.searchParams.get('visa') ?? '';
+
+	let countries: Space[] = [];
+	try {
+		const { items } = await apiList<Space>(ctx, '/spaces?level=country');
+		countries = items;
+	} catch {
+		countries = [];
+	}
 
 	let groups: PlanningGroup[] = [];
 	let loadError = false;
@@ -24,6 +32,7 @@ export const load: PageServerLoad = async (event) => {
 
 	return {
 		groups,
+		countries,
 		authed,
 		pageSize: PAGE_SIZE,
 		loadError,

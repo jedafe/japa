@@ -34,17 +34,13 @@
 
 	// Local filter state seeded from URL params.
 	let destInput = $state(untrack(() => data.filters.dest));
-	let cityInput = $state(untrack(() => data.filters.city));
 	let categoryInput = $state(untrack(() => data.filters.category));
-	let originInput = $state(untrack(() => data.filters.origin));
 	let verifiedInput = $state(untrack(() => data.filters.verified === 'true'));
 	let sortInput = $state(untrack(() => data.filters.sort));
 
 	$effect(() => {
 		destInput = data.filters.dest;
-		cityInput = data.filters.city;
 		categoryInput = data.filters.category;
-		originInput = data.filters.origin;
 		verifiedInput = data.filters.verified === 'true';
 		sortInput = data.filters.sort;
 	});
@@ -73,9 +69,7 @@
 	function buildParams(): URLSearchParams {
 		const params = new URLSearchParams();
 		if (destInput) params.set('dest', destInput);
-		if (cityInput) params.set('city', cityInput);
 		if (categoryInput) params.set('category', categoryInput);
-		if (originInput) params.set('origin', originInput);
 		if (verifiedInput) params.set('verified', 'true');
 		if (sortInput && sortInput !== 'latest') params.set('sort', sortInput);
 		return params;
@@ -88,9 +82,7 @@
 
 	function clearFilters() {
 		destInput = '';
-		cityInput = '';
 		categoryInput = '';
-		originInput = '';
 		verifiedInput = false;
 		sortInput = 'latest';
 		goto('/services');
@@ -98,9 +90,7 @@
 
 	const hasActiveFilters = $derived(
 		!!data.filters.dest ||
-			!!data.filters.city ||
 			!!data.filters.category ||
-			!!data.filters.origin ||
 			!!data.filters.verified ||
 			(data.filters.sort && data.filters.sort !== 'latest')
 	);
@@ -152,20 +142,16 @@
 	<!-- Filter bar -->
 	<div class="border-b border-[var(--color-border)] px-4 py-3">
 		<form onsubmit={applyFilters} class="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-			<input
-				type="text"
-				placeholder={t('services.filter_dest', 'Destination country')}
+			<select
 				value={destInput}
-				oninput={(e) => (destInput = e.currentTarget.value)}
+				onchange={(e) => (destInput = e.currentTarget.value)}
 				class={inputClass}
-			/>
-			<input
-				type="text"
-				placeholder={t('services.filter_city', 'City')}
-				value={cityInput}
-				oninput={(e) => (cityInput = e.currentTarget.value)}
-				class={inputClass}
-			/>
+			>
+				<option value="">{t('services.filter_dest', 'All countries')}</option>
+				{#each data.countries as country (country.id)}
+					<option value={country.id}>{country.name}</option>
+				{/each}
+			</select>
 			<select
 				value={categoryInput}
 				onchange={(e) => (categoryInput = e.currentTarget.value)}
@@ -176,13 +162,6 @@
 					<option value={opt.value}>{opt.label}</option>
 				{/each}
 			</select>
-			<input
-				type="text"
-				placeholder={t('services.filter_origin', 'Origin community')}
-				value={originInput}
-				oninput={(e) => (originInput = e.currentTarget.value)}
-				class={inputClass}
-			/>
 			<div class="flex items-center gap-2">
 				<label class="flex items-center gap-1.5 text-sm text-[var(--color-text)]">
 					<input

@@ -67,6 +67,7 @@ type ServiceDTO struct {
 	ClaimStatus     string `json:"claim_status,omitempty"`
 	ClaimedByOrgID  string `json:"claimed_by_org_id,omitempty"`
 	ClaimedOrgName  string `json:"claimed_org_name,omitempty"`
+	AuthorID        string `json:"author_id,omitempty"`
 	AuthorName      string `json:"author_name,omitempty"`
 	AuthorAvatar    string `json:"author_avatar,omitempty"`
 }
@@ -506,6 +507,9 @@ func rowToDTO(r ServiceRow) ServiceDTO {
 	if r.AuthorAvatar != nil {
 		dto.AuthorAvatar = *r.AuthorAvatar
 	}
+	if r.AuthorID.Valid {
+		dto.AuthorID = r.AuthorID.String()
+	}
 	return dto
 }
 
@@ -557,6 +561,9 @@ func metaToDTO(c gen.GetContentByIDRow, m ServiceMeta) ServiceDTO {
 	}
 	if m.ClaimedByOrgID.Valid {
 		dto.ClaimedByOrgID = m.ClaimedByOrgID.String()
+	}
+	if c.AuthorID.Valid {
+		dto.AuthorID = c.AuthorID.String()
 	}
 	return dto
 }
