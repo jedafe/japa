@@ -1133,6 +1133,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Admin Impersonation subsystem (Section 46).
 	impersonationStore := impersonation.NewStore(vkClient.Redis())
 	impersonationService := impersonation.NewService(impersonationStore, database.Writer)
+	impersonationService.SetRBAC(rbacResolver) // SEC-009: no-admin-on-admin safety check (Section 46, ADR-047)
 	impersonationHandlers := impersonation.NewHandlers(impersonationService)
 
 	// Public API & Developer Portal subsystem (Section 47).

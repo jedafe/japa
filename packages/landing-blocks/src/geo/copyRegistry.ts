@@ -114,11 +114,31 @@ export const geoCopy: Record<string, GeoCopyTokens> = {
   },
 };
 
-/** Resolve tokens for a country code, returning localized names for the locale. */
-export function getGeoTokens(countryCode: string | undefined, locale: 'en' | 'fr' = 'en'): GeoCopyTokens {
+/**
+ * Resolve tokens for a country code, returning localized names for the locale.
+ * For countries not in the geoCopy registry, constructs dynamic tokens from
+ * the GeoIP country name so the page still shows the real country name
+ * instead of the generic "your country" fallback.
+ */
+export function getGeoTokens(
+  countryCode: string | undefined,
+  locale: 'en' | 'fr' = 'en',
+  countryName?: string
+): GeoCopyTokens {
   if (!countryCode || countryCode === 'global') return GLOBAL_TOKENS;
   const tokens = geoCopy[countryCode.toUpperCase()];
-  if (!tokens) return GLOBAL_TOKENS;
-  // Return tokens with the country name localized for the active locale.
-  return { ...tokens, country: tokens.names[locale] ?? tokens.names.en };
+  if (tokens) {
+    // Return tokens with the country name localized for the active locale.
+    return { ...tokens, country: tokens.names[locale] ?? tokens.names.en };
+  }
+  // Dynamic fallback for unregistered countries: use the GeoIP country
+  // name if provided, otherwise the country code itself.
+  const name = countryName ?? countryCode;
+  return {
+    ...GLOBAL_TOKENS,
+    country: name,
+    country_short: countryCode.toUpperCase(),
+    diaspora_phrase: `the ${name} diaspora`,
+    names: { en: name, fr: name },
+  };
 }

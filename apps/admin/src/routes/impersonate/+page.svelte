@@ -15,12 +15,12 @@
 	import { ShieldCheck, ShieldAlert, LogOut, RefreshCw, UserSearch } from 'lucide-svelte';
 
 	type ImpersonationStatus = {
-		impersonating: boolean;
-		username?: string;
-		user_id?: string;
+		active: boolean;
+		target_user_id: string | null;
+		expires_at: string | null;
 	};
 
-	let status = $state<ImpersonationStatus>({ impersonating: false });
+	let status = $state<ImpersonationStatus>({ active: false, target_user_id: null, expires_at: null });
 	let loading = $state(true);
 	let ending = $state(false);
 	let showEndConfirm = $state(false);
@@ -54,7 +54,7 @@
 			const result = await impersonationApi.end();
 			if (result.ok) {
 				success = t('impersonate.ended', 'Impersonation ended');
-				status = { impersonating: false };
+				status = { active: false, target_user_id: null, expires_at: null };
 				setTimeout(() => (success = ''), 3000);
 			} else {
 				error = t('impersonate.end_error', 'Failed to end impersonation');
@@ -115,7 +115,7 @@
 				</div>
 			</CardHeader>
 			<CardContent>
-				{#if status.impersonating}
+				{#if status.active}
 					<div class="flex items-center gap-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-4">
 						<ShieldAlert class="h-8 w-8 text-amber-600 dark:text-amber-400" />
 						<div class="flex-1">
@@ -123,10 +123,13 @@
 								{t('impersonate.active', 'Impersonating')}
 							</p>
 							<p class="text-sm text-muted-foreground">
-								{t('impersonate.impersonating_user', 'You are currently impersonating {username}').replace('{username}', status.username ?? '—')}
+								{t('impersonate.impersonating_user', 'You are currently impersonating {username}').replace('{username}', status.target_user_id ?? '—')}
 							</p>
-							{#if status.user_id}
-								<p class="mt-1 font-mono text-xs text-muted-foreground">{status.user_id}</p>
+							{#if status.target_user_id}
+								<p class="mt-1 font-mono text-xs text-muted-foreground">{status.target_user_id}</p>
+							{/if}
+							{#if status.expires_at}
+								<p class="mt-1 text-xs text-muted-foreground">{t("impersonate.expires_at", "Expires at")}: {status.expires_at}</p>
 							{/if}
 						</div>
 						<Badge variant="warning">{t('impersonate.active_badge', 'Active')}</Badge>

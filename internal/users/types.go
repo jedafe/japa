@@ -63,6 +63,11 @@ type UserProfileResponse struct {
 	// country (ADR-064). Surfaced on /me so the feed header can render the
 	// inline "Showing: [Country] · Change" control without an extra fetch.
 	ContentCountryPreference string `json:"content_country_preference"`
+	// ADR-064a: ISO 3166-1 alpha-2 origin/destination country codes (custom
+	// field values resolved from custom_field_values). Surfaced on /me so the
+	// settings/location page can pre-populate without an extra fetch.
+	OriginCountry      string `json:"origin_country"`
+	DestinationCountry string `json:"destination_country"`
 }
 
 // UserPreferencesResponse is the API response for user preferences.

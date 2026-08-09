@@ -9,12 +9,17 @@
 	import { sidebarStore } from '$lib/components/shell/sidebar.svelte';
 	import { api } from '$lib/api/client';
 	import { realtime } from '$lib/realtime/realtime.svelte';
+	import ProductTour from '$lib/components/onboarding/ProductTour.svelte';
 	import type { LayoutData } from './$types';
 
 	let { data, children }: { data: LayoutData; children: Snippet } = $props();
 
 	// ADR-058 Exception #2: /create collapses the nav and hides the right sidebar.
 	const exception = $derived(isExceptionRoute(page.route.id));
+
+	// Section 09 Product Tour: ?tour=1 triggers the contextual walkthrough
+	// after onboarding completion. The tour starts once the app shell renders.
+	const tourRequested = $derived(page.url.searchParams.get('tour') === '1');
 
 	// ADR-058 §5 Exception #3: guest landing page renders WITHOUT the app shell.
 	// This covers both the Page Builder landing and the default GuestLanding fallback.
@@ -57,16 +62,22 @@
 	}
 
 	// Phase 23 — Real-Time WebSocket: connect when an authenticated session is
-	// present, disconnect on unmount or when the session is lost. The store is
-	// a no-op during SSR; onMount guarantees a browser-only connect.
+	// present AND the feature.dm flag is enabled. The backend gates the
+	// /auth/ws-ticket route behind feature.dm, so without this guard the client
+	// would fire a doomed POST (404 when off, 502 when the backend is down) and
+	// enter an infinite reconnect loop. The store is a no-op during SSR;
+	// onMount guarantees a browser-only connect.
+	// Ref: sections/10-realtime-websockets.md, sections/42-feature-flags.md
+	const dmEnabled = $derived(data.features?.['feature.dm'] === true);
 	onMount(() => {
-		if (data.user) realtime.connect();
+		if (data.user && dmEnabled) realtime.connect();
 		return () => realtime.disconnect();
 	});
 
-	// Reconnect if the user logs in mid-session (e.g. after /login redirect).
+	// Reconnect if the user logs in mid-session (e.g. after /login redirect)
+	// or if the feature flag is toggled on while the page is open.
 	$effect(() => {
-		if (data.user) realtime.connect();
+		if (data.user && dmEnabled) realtime.connect();
 	});
 
 	// Seed the realtime unread-notification counter from the SSR value, and
@@ -107,6 +118,10 @@
 	</AppShell>
 	{#if !exception}
 		<MobileBottomTabBar user={data.user} />
+	{/if}
+	{#if tourRequested && data.user}
+		<!-- Section 09 Product Tour: triggered after onboarding completion -->
+		<ProductTour replay={true} />
 	{/if}
 {/if}
 

@@ -11,6 +11,25 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const anonymizeOnboardingState = `-- name: AnonymizeOnboardingState :exec
+UPDATE onboarding_state
+SET step_data = '{}'::jsonb, completed = true, updated_at = now()
+WHERE tenant_id = $1 AND user_id = $2
+`
+
+type AnonymizeOnboardingStateParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	UserID   pgtype.UUID `json:"user_id"`
+}
+
+// GDPR erasure (ADR-014): clear step_data PII (name, current_location,
+// destination) during the anonymization phase. The row is retained (with
+// completed=true) until hard-delete cascade; only the PII jsonb is scrubbed.
+func (q *Queries) AnonymizeOnboardingState(ctx context.Context, arg AnonymizeOnboardingStateParams) error {
+	_, err := q.db.Exec(ctx, anonymizeOnboardingState, arg.TenantID, arg.UserID)
+	return err
+}
+
 const completeOnboarding = `-- name: CompleteOnboarding :exec
 UPDATE onboarding_state
 SET completed = true, updated_at = now()

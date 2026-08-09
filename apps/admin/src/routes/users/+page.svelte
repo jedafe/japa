@@ -98,14 +98,13 @@
 
 	// ── Impersonation banner ────────────────────────────────────────────────
 	let impersonating = $state(false);
-	let impersonatingUsername = $state("");
+	let impersonatingTargetId = $state<string | null>(null);
 
 	async function checkImpersonation() {
 		const result = await impersonationApi.status();
 		if (result.ok) {
-			const d = result.data as unknown as { impersonating: boolean; username?: string; user_id?: string };
-			impersonating = d.impersonating;
-			impersonatingUsername = d.username ?? "";
+			impersonating = result.data.active;
+			impersonatingTargetId = result.data.target_user_id;
 		}
 	}
 
@@ -494,7 +493,7 @@
 		class="mb-4 flex items-center justify-between rounded-lg p-3 text-sm"
 		style="background: color-mix(in srgb, var(--color-warning) 10%, transparent); color: var(--color-warning)"
 	>
-		<span>{t("users.impersonating", "Impersonating")} <strong>{impersonatingUsername}</strong></span>
+		<span>{t("users.impersonating", "Impersonating")} <strong>{impersonatingTargetId ?? ''}</strong></span>
 		<button
 			class="rounded-md px-3 py-1 text-xs font-medium transition-colors"
 			style="background: var(--color-warning); color: white"

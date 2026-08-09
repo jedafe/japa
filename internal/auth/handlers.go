@@ -231,10 +231,12 @@ func (h *AuthHandlers) Register(w http.ResponseWriter, r *http.Request) {
 	expiresAt := time.Now().Add(refreshTTL)
 
 	if err := h.Queries.CreateRefreshToken(r.Context(), gen.CreateRefreshTokenParams{
-		TenantID:  tenant.ID,
-		UserID:    userID,
-		TokenHash: tokenHash,
-		ExpiresAt: pgtype.Timestamptz{Time: expiresAt, Valid: true},
+		TenantID:   tenant.ID,
+		UserID:     userID,
+		TokenHash:  tokenHash,
+		ExpiresAt:  pgtype.Timestamptz{Time: expiresAt, Valid: true},
+		DeviceName: deviceName(r),
+		IpAddress:  ipPtr(r),
 	}); err != nil {
 		writeError(w, http.StatusInternalServerError, "token_error", "Failed to create session")
 		return
@@ -243,11 +245,11 @@ func (h *AuthHandlers) Register(w http.ResponseWriter, r *http.Request) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     "jc_refresh",
 		Value:    refreshToken,
-		Path:     "/api/v1/auth",
+		Path:     "/api/v1",
 		Domain:   h.CookieDomain,
 		MaxAge:   int(refreshTTL.Seconds()),
 		HttpOnly: true,
-		Secure:   true,
+		Secure:   h.SecureCookies,
 		SameSite: http.SameSiteStrictMode,
 	})
 
@@ -421,10 +423,12 @@ func (h *AuthHandlers) Login(w http.ResponseWriter, r *http.Request) {
 	expiresAt := time.Now().Add(refreshTTL)
 
 	if err := h.Queries.CreateRefreshToken(r.Context(), gen.CreateRefreshTokenParams{
-		TenantID:  user.TenantID,
-		UserID:    user.ID,
-		TokenHash: tokenHash,
-		ExpiresAt: pgtype.Timestamptz{Time: expiresAt, Valid: true},
+		TenantID:   user.TenantID,
+		UserID:     user.ID,
+		TokenHash:  tokenHash,
+		ExpiresAt:  pgtype.Timestamptz{Time: expiresAt, Valid: true},
+		DeviceName: deviceName(r),
+		IpAddress:  ipPtr(r),
 	}); err != nil {
 		writeError(w, http.StatusInternalServerError, "token_error", "Failed to create session")
 		return
@@ -433,11 +437,11 @@ func (h *AuthHandlers) Login(w http.ResponseWriter, r *http.Request) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     "jc_refresh",
 		Value:    refreshToken,
-		Path:     "/api/v1/auth",
+		Path:     "/api/v1",
 		Domain:   h.CookieDomain,
 		MaxAge:   int(refreshTTL.Seconds()),
 		HttpOnly: true,
-		Secure:   true,
+		Secure:   h.SecureCookies,
 		SameSite: http.SameSiteStrictMode,
 	})
 
@@ -489,6 +493,14 @@ func (h *AuthHandlers) Refresh(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "token_error", "Failed to create session")
 		return
 	}
+
+	// Stamp last_used_at so /me/sessions can show last activity (JEOS §50).
+	// Best-effort: a failure here must not block the refresh — the user
+	// still gets a valid access token.
+	_ = h.Queries.TouchRefreshToken(r.Context(), gen.TouchRefreshTokenParams{
+		TenantID:  stored.TenantID,
+		TokenHash: tokenHash,
+	})
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"data": map[string]interface{}{
@@ -587,10 +599,12 @@ func (h *AuthHandlers) VerifyLoginChallenge(w http.ResponseWriter, r *http.Reque
 	expiresAt := time.Now().Add(refreshTTL)
 
 	if err := h.Queries.CreateRefreshToken(r.Context(), gen.CreateRefreshTokenParams{
-		TenantID:  tenantID,
-		UserID:    userID,
-		TokenHash: tokenHash,
-		ExpiresAt: pgtype.Timestamptz{Time: expiresAt, Valid: true},
+		TenantID:   tenantID,
+		UserID:     userID,
+		TokenHash:  tokenHash,
+		ExpiresAt:  pgtype.Timestamptz{Time: expiresAt, Valid: true},
+		DeviceName: deviceName(r),
+		IpAddress:  ipPtr(r),
 	}); err != nil {
 		writeError(w, http.StatusInternalServerError, "token_error", "Failed to create session")
 		return
@@ -599,11 +613,11 @@ func (h *AuthHandlers) VerifyLoginChallenge(w http.ResponseWriter, r *http.Reque
 	http.SetCookie(w, &http.Cookie{
 		Name:     "jc_refresh",
 		Value:    refreshToken,
-		Path:     "/api/v1/auth",
+		Path:     "/api/v1",
 		Domain:   h.CookieDomain,
 		MaxAge:   int(refreshTTL.Seconds()),
 		HttpOnly: true,
-		Secure:   true,
+		Secure:   h.SecureCookies,
 		SameSite: http.SameSiteStrictMode,
 	})
 
@@ -702,10 +716,12 @@ func (h *AuthHandlers) ConsumeBackupCode(w http.ResponseWriter, r *http.Request)
 	expiresAt := time.Now().Add(refreshTTL)
 
 	if err := h.Queries.CreateRefreshToken(r.Context(), gen.CreateRefreshTokenParams{
-		TenantID:  tenantID,
-		UserID:    userID,
-		TokenHash: tokenHash,
-		ExpiresAt: pgtype.Timestamptz{Time: expiresAt, Valid: true},
+		TenantID:   tenantID,
+		UserID:     userID,
+		TokenHash:  tokenHash,
+		ExpiresAt:  pgtype.Timestamptz{Time: expiresAt, Valid: true},
+		DeviceName: deviceName(r),
+		IpAddress:  ipPtr(r),
 	}); err != nil {
 		writeError(w, http.StatusInternalServerError, "token_error", "Failed to create session")
 		return
@@ -714,11 +730,11 @@ func (h *AuthHandlers) ConsumeBackupCode(w http.ResponseWriter, r *http.Request)
 	http.SetCookie(w, &http.Cookie{
 		Name:     "jc_refresh",
 		Value:    refreshToken,
-		Path:     "/api/v1/auth",
+		Path:     "/api/v1",
 		Domain:   h.CookieDomain,
 		MaxAge:   int(refreshTTL.Seconds()),
 		HttpOnly: true,
-		Secure:   true,
+		Secure:   h.SecureCookies,
 		SameSite: http.SameSiteStrictMode,
 	})
 
@@ -761,11 +777,11 @@ func (h *AuthHandlers) Logout(w http.ResponseWriter, r *http.Request) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     "jc_refresh",
 		Value:    "",
-		Path:     "/api/v1/auth",
+		Path:     "/api/v1",
 		Domain:   h.CookieDomain,
 		MaxAge:   -1,
 		HttpOnly: true,
-		Secure:   true,
+		Secure:   h.SecureCookies,
 		SameSite: http.SameSiteStrictMode,
 	})
 
@@ -779,6 +795,30 @@ func (h *AuthHandlers) Logout(w http.ResponseWriter, r *http.Request) {
 // keyed on this value, so a spoofable IP means unlimited password guesses.
 func clientIP(r *http.Request) string {
 	return clientip.FromRequest(r)
+}
+
+// deviceName extracts a human-readable device label from the User-Agent
+// header, truncated to 255 chars. Returns nil when no User-Agent is present
+// so the refresh_tokens.device_name column stays NULL for legacy callers.
+// Ref: japaconnect-engineering/sections/50-user-dashboard-settings.md
+func deviceName(r *http.Request) *string {
+	ua := r.Header.Get("User-Agent")
+	if ua == "" {
+		return nil
+	}
+	if len(ua) > 255 {
+		ua = ua[:255]
+	}
+	return &ua
+}
+
+// ipPtr returns a pointer to the client IP, or nil when empty.
+func ipPtr(r *http.Request) *string {
+	ip := clientIP(r)
+	if ip == "" {
+		return nil
+	}
+	return &ip
 }
 
 // rateLimitCheck performs a fixed-window rate limit check against Valkey using

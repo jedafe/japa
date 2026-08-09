@@ -442,6 +442,7 @@
 								data={(overview?.traffic_sources ?? []).map((d) => ({ source: d.referrer ?? t('analytics.direct', 'Direct'), visits: d.visits }))}
 								x="source"
 								y="visits"
+								xPadding={[0.1, 0.1]}
 								cRange={['var(--chart-2)']}
 								axis={chartAxisFormat}
 							/>

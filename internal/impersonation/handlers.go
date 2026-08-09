@@ -5,9 +5,11 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
+	"github.com/jedafe/japa/internal/clientip"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/tenant"
 )
@@ -49,6 +51,8 @@ func handleServiceError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, ErrTargetIsAdmin):
 		writeError(w, http.StatusForbidden, "cannot_impersonate_admin", "Cannot impersonate an admin-level user")
+	case errors.Is(err, ErrNoActiveSession):
+		writeError(w, http.StatusNotFound, "no_active_session", "No active impersonation session")
 	default:
 		errpkg.HandleServiceError(w, err)
 	}
@@ -77,6 +81,7 @@ func writeError(w http.ResponseWriter, status int, code, message string) {
 
 // StartImpersonation begins impersonating a target user.
 // POST /api/v1/admin/impersonate — body: {"user_id": "uuid"}.
+// Response per Section 46: {"session_key":"jc:impersonate:{admin_id}","expires_at":"ISO8601","target":{id,username,email}}.
 func (h *Handlers) StartImpersonation(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
 	if !ok {
@@ -108,15 +113,29 @@ func (h *Handlers) StartImpersonation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Service.StartImpersonation(r.Context(), tenantID, user.UserID, targetUserID); err != nil {
+	ipAddress := clientip.FromRequest(r)
+
+	if err := h.Service.StartImpersonation(r.Context(), tenantID, user.UserID, targetUserID, ipAddress); err != nil {
 		handleServiceError(w, err)
 		return
 	}
 
+	// Fetch target profile for the response (Section 46 contract).
+	target, err := h.Service.GetTargetProfile(r.Context(), tenantID, targetUserID)
+	if err != nil {
+		// Impersonation succeeded but profile fetch failed — return minimal response.
+		slog.Warn("impersonation: failed to fetch target profile for response", "error", err)
+		target = &TargetProfile{ID: input.UserID}
+	}
+
+	expiresAt := time.Now().Add(DefaultImpersonationTTL).UTC().Format(time.RFC3339)
+	sessionKey := "jc:impersonate:" + user.UserID.String()
+
 	writeJSON(w, http.StatusOK, map[string]any{
-		"data": map[string]string{
-			"status":    "impersonation_started",
-			"target_id": input.UserID,
+		"data": map[string]any{
+			"session_key": sessionKey,
+			"expires_at":  expiresAt,
+			"target":      target,
 		},
 	})
 }
@@ -134,27 +153,9 @@ func (h *Handlers) EndImpersonation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Service.EndImpersonation(r.Context(), tenantID, user.UserID); err != nil {
-		handleServiceError(w, err)
-		return
-	}
+	ipAddress := clientip.FromRequest(r)
 
-	writeJSON(w, http.StatusOK, map[string]any{
-		"data": map[string]string{
-			"status": "impersonation_ended",
-		},
-	})
-}
-
-// GetImpersonationStatus returns the current impersonation state.
-// GET /api/v1/admin/impersonate/status.
-func (h *Handlers) GetImpersonationStatus(w http.ResponseWriter, r *http.Request) {
-	user, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-
-	targetID, active, err := h.Service.GetImpersonationStatus(r.Context(), user.UserID)
+	targetID, err := h.Service.EndImpersonation(r.Context(), tenantID, user.UserID, ipAddress)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -162,8 +163,46 @@ func (h *Handlers) GetImpersonationStatus(w http.ResponseWriter, r *http.Request
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
-			"active":    active,
-			"target_id": targetID,
+			"status":     "impersonation_ended",
+			"target_id":  targetID,
+		},
+	})
+}
+
+// GetImpersonationStatus returns the current impersonation state.
+// GET /api/v1/admin/impersonate/status.
+// Response per Section 46: {"active":bool,"target_user_id":"uuid|null","expires_at":"ISO8601|null"}.
+func (h *Handlers) GetImpersonationStatus(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	targetID, active, ttlSeconds, err := h.Service.GetImpersonationStatus(r.Context(), user.UserID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	var expiresAt any
+	if active && ttlSeconds > 0 {
+		expiresAt = time.Now().Add(time.Duration(ttlSeconds) * time.Second).UTC().Format(time.RFC3339)
+	} else {
+		expiresAt = nil
+	}
+
+	var targetUserID any
+	if active {
+		targetUserID = targetID
+	} else {
+		targetUserID = nil
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data": map[string]any{
+			"active":         active,
+			"target_user_id": targetUserID,
+			"expires_at":     expiresAt,
 		},
 	})
 }

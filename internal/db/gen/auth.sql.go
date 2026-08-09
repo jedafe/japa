@@ -155,26 +155,31 @@ func (q *Queries) CreatePasswordResetToken(ctx context.Context, arg CreatePasswo
 
 const createRefreshToken = `-- name: CreateRefreshToken :exec
 
-INSERT INTO refresh_tokens (tenant_id, user_id, token_hash, expires_at)
-VALUES ($1, $2, $3, $4)
+INSERT INTO refresh_tokens (tenant_id, user_id, token_hash, expires_at, device_name, ip_address)
+VALUES ($1, $2, $3, $4, $5, $6)
 `
 
 type CreateRefreshTokenParams struct {
-	TenantID  pgtype.UUID        `json:"tenant_id"`
-	UserID    pgtype.UUID        `json:"user_id"`
-	TokenHash string             `json:"token_hash"`
-	ExpiresAt pgtype.Timestamptz `json:"expires_at"`
+	TenantID   pgtype.UUID        `json:"tenant_id"`
+	UserID     pgtype.UUID        `json:"user_id"`
+	TokenHash  string             `json:"token_hash"`
+	ExpiresAt  pgtype.Timestamptz `json:"expires_at"`
+	DeviceName *string            `json:"device_name"`
+	IpAddress  *string            `json:"ip_address"`
 }
 
 // =====================
 // Refresh Tokens
 // =====================
+// device_name/ip_address captured at issue time per JEOS §50.
 func (q *Queries) CreateRefreshToken(ctx context.Context, arg CreateRefreshTokenParams) error {
 	_, err := q.db.Exec(ctx, createRefreshToken,
 		arg.TenantID,
 		arg.UserID,
 		arg.TokenHash,
 		arg.ExpiresAt,
+		arg.DeviceName,
+		arg.IpAddress,
 	)
 	return err
 }
@@ -566,9 +571,20 @@ type GetRefreshTokenByHashParams struct {
 	TenantID  pgtype.UUID `json:"tenant_id"`
 }
 
-func (q *Queries) GetRefreshTokenByHash(ctx context.Context, arg GetRefreshTokenByHashParams) (RefreshToken, error) {
+type GetRefreshTokenByHashRow struct {
+	ID        pgtype.UUID        `json:"id"`
+	TenantID  pgtype.UUID        `json:"tenant_id"`
+	UserID    pgtype.UUID        `json:"user_id"`
+	TokenHash string             `json:"token_hash"`
+	ExpiresAt pgtype.Timestamptz `json:"expires_at"`
+	RevokedAt pgtype.Timestamptz `json:"revoked_at"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) GetRefreshTokenByHash(ctx context.Context, arg GetRefreshTokenByHashParams) (GetRefreshTokenByHashRow, error) {
 	row := q.db.QueryRow(ctx, getRefreshTokenByHash, arg.TokenHash, arg.TenantID)
-	var i RefreshToken
+	var i GetRefreshTokenByHashRow
 	err := row.Scan(
 		&i.ID,
 		&i.TenantID,
@@ -589,9 +605,20 @@ WHERE token_hash = $1
 LIMIT 1
 `
 
-func (q *Queries) GetRefreshTokenByHashGlobal(ctx context.Context, tokenHash string) (RefreshToken, error) {
+type GetRefreshTokenByHashGlobalRow struct {
+	ID        pgtype.UUID        `json:"id"`
+	TenantID  pgtype.UUID        `json:"tenant_id"`
+	UserID    pgtype.UUID        `json:"user_id"`
+	TokenHash string             `json:"token_hash"`
+	ExpiresAt pgtype.Timestamptz `json:"expires_at"`
+	RevokedAt pgtype.Timestamptz `json:"revoked_at"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) GetRefreshTokenByHashGlobal(ctx context.Context, tokenHash string) (GetRefreshTokenByHashGlobalRow, error) {
 	row := q.db.QueryRow(ctx, getRefreshTokenByHashGlobal, tokenHash)
-	var i RefreshToken
+	var i GetRefreshTokenByHashGlobalRow
 	err := row.Scan(
 		&i.ID,
 		&i.TenantID,
@@ -907,6 +934,24 @@ WHERE token_hash = $1 AND revoked_at IS NULL
 
 func (q *Queries) RevokeRefreshTokenByHash(ctx context.Context, tokenHash string) error {
 	_, err := q.db.Exec(ctx, revokeRefreshTokenByHash, tokenHash)
+	return err
+}
+
+const touchRefreshToken = `-- name: TouchRefreshToken :exec
+UPDATE refresh_tokens
+SET last_used_at = now(), updated_at = now()
+WHERE token_hash = $1 AND tenant_id = $2 AND revoked_at IS NULL
+`
+
+type TouchRefreshTokenParams struct {
+	TokenHash string      `json:"token_hash"`
+	TenantID  pgtype.UUID `json:"tenant_id"`
+}
+
+// Stamp last_used_at when a refresh token is exchanged for a new access
+// token (POST /auth/refresh) so /me/sessions can show last activity.
+func (q *Queries) TouchRefreshToken(ctx context.Context, arg TouchRefreshTokenParams) error {
+	_, err := q.db.Exec(ctx, touchRefreshToken, arg.TokenHash, arg.TenantID)
 	return err
 }
 

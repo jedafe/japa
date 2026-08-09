@@ -3,7 +3,6 @@
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
 	import { theme } from '$lib/stores/theme.svelte';
-	import { i18n } from '$lib/i18n/store.svelte';
 	import { t } from '$lib/i18n';
 	import { seedCsrfToken } from '$lib/api/csrf.svelte';
 	import type { Snippet } from 'svelte';
@@ -23,11 +22,11 @@
 		seedCsrfToken(data.csrfToken ?? null);
 	});
 
-	// Sync the i18n locale with the server-resolved cookie value. Updates
-	// reactively when the locale cookie changes (e.g. after visiting /fr).
-	$effect(() => {
-		i18n.setLocale(data.locale);
-	});
+	// The i18n locale is derived from `page.data.locale` (request-scoped during
+	// SSR, reactive on the client) inside the i18n store itself — no manual
+	// sync needed here. When the `jc_locale` cookie changes (e.g. after visiting
+	// /fr or saving a language preference + invalidateAll), `page.data.locale`
+	// updates and `i18n.locale` reactively follows.
 
 	// Apply the primary brand color from the control panel appearance settings.
 	// The value comes from GET /site/settings/public (appearance.primary_color).

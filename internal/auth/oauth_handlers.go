@@ -89,7 +89,7 @@ func (h *OAuthHandlers) HandleInitiate(w http.ResponseWriter, r *http.Request) {
 		Domain:   h.CookieDomain,
 		MaxAge:   600, // 10 minutes
 		HttpOnly: true,
-		Secure:   true,
+		Secure:   h.SecureCookies,
 		SameSite: http.SameSiteLaxMode,
 	})
 
@@ -117,7 +117,7 @@ func (h *OAuthHandlers) HandleInitiate(w http.ResponseWriter, r *http.Request) {
 		Domain:   h.CookieDomain,
 		MaxAge:   600, // 10 minutes
 		HttpOnly: true,
-		Secure:   true,
+		Secure:   h.SecureCookies,
 		SameSite: http.SameSiteLaxMode,
 	})
 
@@ -341,10 +341,12 @@ func (h *OAuthHandlers) issueSessionAndRedirect(w http.ResponseWriter, r *http.R
 	refreshTTL := getRefreshTokenTTL(r.Context(), h.Settings, tenantID)
 
 	if err := h.Queries.CreateRefreshToken(r.Context(), gen.CreateRefreshTokenParams{
-		TenantID:  tenantID,
-		UserID:    userID,
-		TokenHash: tokenHash,
-		ExpiresAt: pgtype.Timestamptz{Time: time.Now().Add(refreshTTL), Valid: true},
+		TenantID:   tenantID,
+		UserID:     userID,
+		TokenHash:  tokenHash,
+		ExpiresAt:  pgtype.Timestamptz{Time: time.Now().Add(refreshTTL), Valid: true},
+		DeviceName: deviceName(r),
+		IpAddress:  ipPtr(r),
 	}); err != nil {
 		slog.Error("create refresh token", "error", err)
 		h.redirectOAuthError(w, r, "token_error")
@@ -369,15 +371,16 @@ func (h *OAuthHandlers) issueSessionAndRedirect(w http.ResponseWriter, r *http.R
 		SameSite: http.SameSiteLaxMode,
 	})
 
-	// jc_refresh: refresh token, scoped to /api/v1/auth like the register handler.
+	// jc_refresh: refresh token, scoped to /api/v1 so /me/sessions can identify
+	// the current session. HttpOnly + Secure + SameSite=Strict mitigates CSRF/XSS.
 	http.SetCookie(w, &http.Cookie{
 		Name:     "jc_refresh",
 		Value:    refreshToken,
-		Path:     "/api/v1/auth",
+		Path:     "/api/v1",
 		Domain:   h.CookieDomain,
 		MaxAge:   int(refreshTTL.Seconds()),
 		HttpOnly: true,
-		Secure:   true,
+		Secure:   h.SecureCookies,
 		SameSite: http.SameSiteStrictMode,
 	})
 
@@ -414,7 +417,7 @@ func (h *OAuthHandlers) clearOAuthCookies(w http.ResponseWriter) {
 			Domain:   h.CookieDomain,
 			MaxAge:   -1,
 			HttpOnly: true,
-			Secure:   true,
+			Secure:   h.SecureCookies,
 			SameSite: http.SameSiteLaxMode,
 		})
 	}

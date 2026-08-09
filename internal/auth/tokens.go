@@ -18,10 +18,13 @@ func generateRefreshToken() (string, error) {
 	return hex.EncodeToString(bytes), nil
 }
 
-// hashRefreshToken creates a SHA-256 hash of the refresh token for storage.
+// HashRefreshToken creates a SHA-256 hash of the refresh token for storage.
 // We store the hash (not the raw token) so a database leak does not
 // give an attacker valid refresh tokens.
-func hashRefreshToken(token string) string {
+func HashRefreshToken(token string) string {
 	hash := sha256.Sum256([]byte(token))
 	return hex.EncodeToString(hash[:])
 }
+
+// hashRefreshToken is the internal alias kept for backward compatibility.
+func hashRefreshToken(token string) string { return HashRefreshToken(token) }

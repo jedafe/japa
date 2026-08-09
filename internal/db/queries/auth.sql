@@ -32,8 +32,16 @@ WHERE id = @user_id AND email_verified_at IS NULL;
 -- =====================
 
 -- name: CreateRefreshToken :exec
-INSERT INTO refresh_tokens (tenant_id, user_id, token_hash, expires_at)
-VALUES (@tenant_id, @user_id, @token_hash, @expires_at);
+-- device_name/ip_address captured at issue time per JEOS §50.
+INSERT INTO refresh_tokens (tenant_id, user_id, token_hash, expires_at, device_name, ip_address)
+VALUES (@tenant_id, @user_id, @token_hash, @expires_at, @device_name, @ip_address);
+
+-- name: TouchRefreshToken :exec
+-- Stamp last_used_at when a refresh token is exchanged for a new access
+-- token (POST /auth/refresh) so /me/sessions can show last activity.
+UPDATE refresh_tokens
+SET last_used_at = now(), updated_at = now()
+WHERE token_hash = @token_hash AND tenant_id = @tenant_id AND revoked_at IS NULL;
 
 -- name: GetRefreshTokenByHash :one
 SELECT id, tenant_id, user_id, token_hash, expires_at, revoked_at, created_at, updated_at

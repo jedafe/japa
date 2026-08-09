@@ -24,11 +24,23 @@ export interface ApiContext {
 	/** Hostname with the port stripped — resolves the tenant on the backend. */
 	host: string;
 	/**
+	 * The real client IP address (from event.getClientAddress()). Forwarded
+	 * as X-Forwarded-For so the backend's GeoIP middleware can resolve the
+	 * visitor's country for geo-aware personalization (ADR-064).
+	 */
+	clientIP: string | null;
+	/**
 	 * Double-submit CSRF token (Ref: §5.2). Attached as X-CSRF-Token on every
 	 * non-GET request so the backend's csrf.Middleware accepts the mutation.
 	 * Null for guests (no mutations) or when the token could not be fetched.
 	 */
 	csrfToken: string | null;
+	/**
+	 * Raw `jc_refresh` cookie value forwarded to the backend so endpoints like
+	 * GET /me/sessions can identify the current session (JEOS §50). Null when
+	 * the cookie is absent (guests, or sessions logged out elsewhere).
+	 */
+	refreshCookie: string | null;
 }
 
 /** Build an ApiContext from a SvelteKit request event. */
@@ -37,7 +49,9 @@ export function apiContext(event: RequestEvent): ApiContext {
 		fetch: event.fetch,
 		token: event.locals.token,
 		host: event.locals.tenantHost,
-		csrfToken: event.locals.csrfToken ?? null
+		clientIP: event.getClientAddress() ?? null,
+		csrfToken: event.locals.csrfToken ?? null,
+		refreshCookie: event.cookies.get('jc_refresh') ?? null
 	};
 }
 
@@ -54,10 +68,16 @@ async function request<T>(
 		host: ctx.host,
 		'x-forwarded-host': ctx.host
 	};
+	// Forward the real client IP so the backend's GeoIP middleware can
+	// resolve the visitor's country for geo-aware personalization (ADR-064).
+	if (ctx.clientIP) headers['x-forwarded-for'] = ctx.clientIP;
 	if (ctx.token) headers.authorization = `Bearer ${ctx.token}`;
 	// Attach the double-submit CSRF token on every mutating request so the
 	// backend's csrf.Middleware (Ref: §5.2) accepts it. GETs are exempt.
 	if (method !== 'GET' && ctx.csrfToken) headers['x-csrf-token'] = ctx.csrfToken;
+	// Forward the jc_refresh cookie so the backend can identify the current
+	// session (e.g. GET /me/sessions flags the current session per JEOS §50).
+	if (ctx.refreshCookie) headers.cookie = `jc_refresh=${ctx.refreshCookie}`;
 
 	const res = await ctx.fetch(`${API_V1}${path}`, {
 		method,

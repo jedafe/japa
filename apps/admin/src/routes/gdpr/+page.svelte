@@ -184,7 +184,7 @@
 			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.display_name || row.username || 'anonymous'}</p>
 		</div>
 		<div>
-			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">User ID</p>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.gdpr.erasure.user_id', 'User ID')}</p>
 			<p class="mt-1 text-sm font-mono" style="color: var(--color-foreground)">{row.user_id}</p>
 		</div>
 		<div>
@@ -201,7 +201,7 @@
 		</div>
 		{#if row.completed_at}
 			<div>
-				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Completed At</p>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.gdpr.erasure.completed_at', 'Completed At')}</p>
 				<p class="mt-1 text-sm" style="color: var(--color-foreground)">{new Date(row.completed_at).toLocaleString()}</p>
 			</div>
 		{/if}

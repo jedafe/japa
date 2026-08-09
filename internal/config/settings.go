@@ -184,11 +184,20 @@ func (s *Settings) GetIntOr(ctx context.Context, tenantID pgtype.UUID, key strin
 }
 
 // GetStringOr returns the string value for key, or fallback when the key is
-// unset or missing. It never returns an error.
+// unset or missing. It never returns an error. The value is unquoted if it
+// is a JSON-encoded string (e.g. "\"https://...\"" → "https://...").
 func (s *Settings) GetStringOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback string) string {
 	val, err := s.GetSetting(ctx, tenantID, key)
 	if err != nil || val == "" {
 		return fallback
+	}
+	// system_settings values are stored as JSON-encoded strings —
+	// unquote if the raw value is a JSON string (starts and ends with `"`).
+	if len(val) >= 2 && val[0] == '"' && val[len(val)-1] == '"' {
+		var unquoted string
+		if json.Unmarshal([]byte(val), &unquoted) == nil {
+			return unquoted
+		}
 	}
 	return val
 }

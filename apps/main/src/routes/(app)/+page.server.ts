@@ -1,7 +1,7 @@
 import type { PageServerLoad } from './$types';
 import { apiContext, apiList, apiGet, API_BASE } from '$lib/server/api';
 import { feedPath, resolveTab, resolveSort, PAGE_SIZE } from '$lib/feed/endpoint';
-import type { FeedItem } from '$lib/types';
+import type { FeedItem, GeoContext, GeoCountry } from '$lib/types';
 import { resolveGeoCopy, getGeoTokens, landingPalettes, fetchEntityCollection, type Block, type LandingPage as LandingPageData, type EntityType, type FetchContext } from '@japaconnect/landing-blocks';
 /**
  * Home route (/). Behavior splits by auth state per ADR-058 §5 Exception #3:
@@ -35,13 +35,44 @@ export const load: PageServerLoad = async (event) => {
 	}
 	// Guests: check for an assigned homepage Page Builder landing page.
 	// Convention: the landing page has slug "homepage" (ADR-058 §5).
-	const geoCountry =
+	// Geo resolution priority: ?geo= param → GeoIP detection → 'global'.
+	let geoCountry =
 		event.url.searchParams.get('geo') ??
 		event.locals.user?.content_country_preference ??
-		'global';
+		null;
+	let geoCountryName: string | undefined;
+	if (!geoCountry) {
+		// Use GeoIP to detect the visitor's country for geo-aware copy
+		// (ADR-064). The backend resolves the IP from X-Forwarded-For
+		// (forwarded by apiContext) via the MaxMind/DB-IP database.
+		try {
+			const geo = await apiGet<GeoContext>(ctx, '/geo/me');
+			if (geo?.country_code) {
+				geoCountry = geo.country_code;
+				geoCountryName = geo.country_name || undefined;
+			}
+		} catch {
+			// GeoIP not available (no database, localhost, etc.) — fall back.
+		}
+	}
+	// When geo was set via ?geo= param (not GeoIP), resolve the country
+	// name from the backend's /geo/countries endpoint so any of the 250
+	// seeded countries gets its real name in the copy tokens — not just
+	// the curated ones in the geoCopy registry (Rule 16: no hardcoded data).
+	if (geoCountry && geoCountry !== 'global' && !geoCountryName) {
+		try {
+			const countries = await apiGet<GeoCountry[]>(ctx, '/geo/countries');
+			const match = countries.find((c) => c.geo_code === geoCountry!.toUpperCase());
+			if (match) geoCountryName = match.name;
+		} catch {
+			// Countries endpoint unavailable — getGeoTokens will use the
+			// country code as a fallback name.
+		}
+	}
+	if (!geoCountry) geoCountry = 'global';
 	try {
 		const landing = await apiGet<LandingPageData>(ctx, '/pages/homepage');
-		const tokens = getGeoTokens(geoCountry, 'en');
+		const tokens = getGeoTokens(geoCountry, 'en', geoCountryName);
 		const resolvedBlocks = resolveGeoCopy(landing.blocks as Block[], {
 			contentCountry: geoCountry,
 			tokens,
@@ -56,7 +87,7 @@ export const load: PageServerLoad = async (event) => {
 	} catch (err) {
 		// No published "homepage" page — hydrate the default seed and
 		// pre-fetch entity data server-side to inject into entity blocks.
-		const tokens = getGeoTokens(geoCountry, 'en');
+		const tokens = getGeoTokens(geoCountry, 'en', geoCountryName);
 
 		const seed = landingPalettes['homepage']?.defaultSeed ?? [];
 

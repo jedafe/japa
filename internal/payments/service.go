@@ -329,6 +329,14 @@ func (s *Service) CreateSubscription(ctx context.Context, tenantID, userID pgtyp
 		return gen.Subscription{}, errors.New("provider is required")
 	}
 
+	// JEOS §17 / ADR-012: recurring billing (Pro membership) is restricted
+	// to Stripe and Paystack only — never NOWPayments or manual transfer,
+	// since neither has a reliable mechanism for automated recurring charges.
+	// Credit is also excluded (one-time-purchase-only restriction class).
+	if input.Provider != ProviderStripe && input.Provider != ProviderPaystack {
+		return gen.Subscription{}, fmt.Errorf("invalid provider for subscription: %s (only stripe and paystack support recurring billing)", input.Provider)
+	}
+
 	// Calculate period based on plan
 	now := time.Now()
 
@@ -553,15 +561,19 @@ func (s *Service) calculateDiscount(code gen.DiscountCode, amount int64) int64 {
 	}
 
 	switch code.DiscountType {
-	case DiscountTypePercent:
-		// Integer percentage: (amount * pct) / 100 with rounding.
-		// Using integer math avoids float precision loss that causes
-		// off-by-one kobo errors on large amounts.
-		pct := int64(discountValue.Float64)
-		discount := (amount * pct) / 100
-		// Handle fractional percent via remainder rounding.
-		remainder := (amount * pct) % 100
-		if remainder >= 50 {
+	case DiscountTypePercent, "percentage":
+		// Fractional percentage support (BUG-P006): the previous code
+		// truncated the percentage to int64 (12.5% → 12%), losing the
+		// fractional part. To preserve fractional percentages while
+		// keeping integer minor-unit math, we scale by 10000 (basis
+		// points): discount = (amount * pct_bps) / 10000, where
+		// pct_bps = round(pct * 100). E.g. 12.5% → 1250 bps →
+		// (amount * 1250) / 10000.
+		pctBps := int64(discountValue.Float64 * 100)
+		discount := (amount * pctBps) / 10000
+		// Round the remainder to nearest whole minor unit.
+		remainder := (amount * pctBps) % 10000
+		if remainder >= 5000 {
 			discount++
 		}
 		if discount > amount {

@@ -151,18 +151,18 @@
 	let triggerConfigNotifyMessage = $state('');
 
 	const TRIGGER_TYPES = [
-		{ value: 'assign_user_group', label: 'Assign User Group' },
-		{ value: 'send_email', label: 'Send Email' },
-		{ value: 'send_webhook', label: 'Send Webhook' },
-		{ value: 'create_ticket', label: 'Create Ticket' },
-		{ value: 'notify_admin', label: 'Notify Admin' },
+		{ value: 'assign_user_group', label: t('forms.trigger.assign_user_group', 'Assign User Group') },
+		{ value: 'send_email', label: t('forms.trigger.send_email', 'Send Email') },
+		{ value: 'send_webhook', label: t('forms.trigger.send_webhook', 'Send Webhook') },
+		{ value: 'create_ticket', label: t('forms.trigger.create_ticket', 'Create Ticket') },
+		{ value: 'notify_admin', label: t('forms.trigger.notify_admin', 'Notify Admin') },
 	];
 
 	const TICKET_PRIORITIES = [
-		{ value: 'low', label: 'Low' },
-		{ value: 'medium', label: 'Medium' },
-		{ value: 'high', label: 'High' },
-		{ value: 'urgent', label: 'Urgent' },
+		{ value: 'low', label: t('forms.priority.low', 'Low') },
+		{ value: 'medium', label: t('forms.priority.medium', 'Medium') },
+		{ value: 'high', label: t('forms.priority.high', 'High') },
+		{ value: 'urgent', label: t('forms.priority.urgent', 'Urgent') },
 	];
 
 	// --- Steps Tab (multi-step) ---
@@ -193,26 +193,26 @@
 	// --- Constants ---
 
 	const fieldTypes = [
-		{ value: 'text', label: 'Text' },
-		{ value: 'textarea', label: 'Textarea' },
-		{ value: 'rich_text', label: 'Rich Text' },
-		{ value: 'number', label: 'Number' },
-		{ value: 'email', label: 'Email' },
-		{ value: 'url', label: 'URL' },
-		{ value: 'phone', label: 'Phone' },
-		{ value: 'boolean', label: 'Boolean' },
-		{ value: 'select', label: 'Select' },
-		{ value: 'multiselect', label: 'Multi-Select' },
-		{ value: 'date', label: 'Date' },
-		{ value: 'datetime', label: 'Date & Time' },
-		{ value: 'time', label: 'Time' },
-		{ value: 'image_single', label: 'Image (Single)' },
-		{ value: 'image_multi', label: 'Image (Multi)' },
-		{ value: 'rating', label: 'Rating' },
-		{ value: 'color', label: 'Color' },
-		{ value: 'currency', label: 'Currency' },
-		{ value: 'percentage', label: 'Percentage' },
-		{ value: 'duration', label: 'Duration' },
+		{ value: 'text', label: t('forms.field_type.text', 'Text') },
+		{ value: 'textarea', label: t('forms.field_type.textarea', 'Textarea') },
+		{ value: 'rich_text', label: t('forms.field_type.rich_text', 'Rich Text') },
+		{ value: 'number', label: t('forms.field_type.number', 'Number') },
+		{ value: 'email', label: t('forms.field_type.email', 'Email') },
+		{ value: 'url', label: t('forms.field_type.url', 'URL') },
+		{ value: 'phone', label: t('forms.field_type.phone', 'Phone') },
+		{ value: 'boolean', label: t('forms.field_type.boolean', 'Boolean') },
+		{ value: 'select', label: t('forms.field_type.select', 'Select') },
+		{ value: 'multiselect', label: t('forms.field_type.multiselect', 'Multi-Select') },
+		{ value: 'date', label: t('forms.field_type.date', 'Date') },
+		{ value: 'datetime', label: t('forms.field_type.datetime', 'Date & Time') },
+		{ value: 'time', label: t('forms.field_type.time', 'Time') },
+		{ value: 'image_single', label: t('forms.field_type.image_single', 'Image (Single)') },
+		{ value: 'image_multi', label: t('forms.field_type.image_multi', 'Image (Multi)') },
+		{ value: 'rating', label: t('forms.field_type.rating', 'Rating') },
+		{ value: 'color', label: t('forms.field_type.color', 'Color') },
+		{ value: 'currency', label: t('forms.field_type.currency', 'Currency') },
+		{ value: 'percentage', label: t('forms.field_type.percentage', 'Percentage') },
+		{ value: 'duration', label: t('forms.field_type.duration', 'Duration') },
 	];
 
 	const tabs = [

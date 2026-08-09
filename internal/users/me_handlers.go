@@ -1,6 +1,7 @@
 package users
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -202,10 +203,15 @@ func (h *Handlers) UpdatePrivacy(w http.ResponseWriter, r *http.Request) {
 }
 
 // SessionInfo represents a user session.
+// Ref: japaconnect-engineering/sections/50-user-dashboard-settings.md
 type SessionInfo struct {
-	ID        string `json:"id"`
-	CreatedAt string `json:"created_at"`
-	ExpiresAt string `json:"expires_at"`
+	ID         string `json:"id"`
+	DeviceName string `json:"device_name"`
+	IpAddress  string `json:"ip_address"`
+	LastUsedAt string `json:"last_used_at"`
+	CreatedAt  string `json:"created_at"`
+	ExpiresAt  string `json:"expires_at"`
+	Current    bool   `json:"current"`
 }
 
 // ListSessions handles GET /api/v1/me/sessions.
@@ -220,7 +226,12 @@ func (h *Handlers) ListSessions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sessions, err := h.Service.ListSessions(r.Context(), tenantID, user.UserID)
+	// Resolve the current session from the jc_refresh cookie so the frontend
+	// can flag it. Best-effort: a missing/unmatched cookie yields a zero UUID,
+	// which means no session is marked current (graceful degradation).
+	currentID := h.resolveCurrentSessionID(r.Context(), tenantID, user.UserID, r)
+
+	sessions, err := h.Service.ListSessions(r.Context(), tenantID, user.UserID, currentID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -262,6 +273,8 @@ type RevokeAllSessionsRequest struct {
 }
 
 // RevokeAllSessions handles DELETE /api/v1/me/sessions.
+// Revokes all sessions except the current one (identified by the jc_refresh
+// cookie). Per JEOS §50: "revoke all other sessions (keep current one)".
 func (h *Handlers) RevokeAllSessions(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
 	if !ok {
@@ -273,17 +286,31 @@ func (h *Handlers) RevokeAllSessions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req RevokeAllSessionsRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		req.KeepCurrent = true
-	}
+	currentID := h.resolveCurrentSessionID(r.Context(), tenantID, user.UserID, r)
 
-	if err := h.Service.RevokeAllSessions(r.Context(), tenantID, user.UserID, req.KeepCurrent); err != nil {
+	if err := h.Service.RevokeAllSessions(r.Context(), tenantID, user.UserID, currentID); err != nil {
 		handleServiceError(w, err)
 		return
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "revoked"}})
+}
+
+// resolveCurrentSessionID reads the jc_refresh cookie, hashes it, and resolves
+// the corresponding refresh_tokens.id. Returns a zero UUID when the cookie is
+// missing or the token is not found — callers degrade gracefully (no session
+// marked current / all sessions revoked).
+func (h *Handlers) resolveCurrentSessionID(ctx context.Context, tenantID, userID pgtype.UUID, r *http.Request) pgtype.UUID {
+	cookie, err := r.Cookie("jc_refresh")
+	if err != nil || cookie.Value == "" {
+		return pgtype.UUID{}
+	}
+	tokenHash := auth.HashRefreshToken(cookie.Value)
+	id, err := h.Service.store.getSessionIDByHash(ctx, tenantID, userID, tokenHash)
+	if err != nil {
+		return pgtype.UUID{}
+	}
+	return id
 }
 
 // ConnectedAccountInfo represents a linked OAuth account.
