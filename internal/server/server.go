@@ -752,6 +752,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	docsService.SetCache(vkClient.Redis()) // VALKEY-003: cache doc pages + nav
 	docsHandlers := docs.NewHandlers(docsService, cfg.SiteURL, cfg.SiteName)
 	docsHandlers.AsynqClient = asynqClient // SEARCH-001: enqueue Meilisearch index sync
+	docsHandlers.SetRBAC(rbacResolver)      // §44: audience RBAC gating
 
 	// Admin Settings subsystem.
 	adminHandlers := admin.NewHandlers(database, gen.New(database.Writer))
@@ -1031,8 +1032,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	participationService.SetEnqueuer(taskEnqueuer)
 	worker.RegisterPersonaProcessor(participationService)
 
-	// Mentorship subsystem (Section 35).
+	// Mentorship subsystem (Section 35, §102 ADR-110).
 	mentorshipService := mentorship.NewService(database)
+	mentorshipService.SetEnqueuer(taskEnqueuer)
+	mentorshipService.SetSettingsProvider(settingsService)
 	mentorshipHandlers := mentorship.NewHandlers(mentorshipService)
 
 	// Page Builder subsystem (Section 16 — Page Builder admin CRUD).
@@ -1977,6 +1980,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			wsDMStore := websocket.NewDMStore(gen.New(database.Reader), gen.New(database.Writer))
 			wsDMService := websocket.NewDMService(wsDMStore, wsHub)
 			wsDMService.AsynqClient = asynqClient
+			// Wire DM store into mentorship service for auto-opening DM
+			// threads when a mentorship connection is accepted (§102, ADR-110).
+			mentorshipService.SetDMCreator(wsDMStore)
 			wsHandlers := websocket.NewHandlers(wsService, wsDMService, wsHub, vkClient, kr)
 			wsHandlers.SetSpamPipeline(spamPipeline)
 			wsHandlers.SetSessionChecker(func(userID string) bool {
@@ -3302,6 +3308,52 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "mentorship.admin")).
 				Patch("/admin/mentorship/matches/{id}", mentorshipHandlers.UpdateMatch)
 
+			// §102 Mentorship Matching routes (ADR-110).
+			// Feature-flagged via features.Gate (returns 404 when disabled, ADR-042).
+			r.With(features.Gate(featureChecker, "feature.mentorship")).Group(func(r chi.Router) {
+				// Public discovery: list mentors, view mentor profile, compare.
+				r.Get("/mentors", mentorshipHandlers.ListMentors)
+				r.Get("/mentors/{username}", mentorshipHandlers.GetMentorByUsername)
+				r.With(features.Gate(featureChecker, "feature.mentorship_comparison")).
+					Get("/compare/mentors", mentorshipHandlers.CompareMentors)
+
+				// Authenticated: manage own mentor profile.
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "mentorship.become_mentor")).
+					Get("/me/mentor-profile", mentorshipHandlers.GetMyMentorProfile)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "mentorship.become_mentor")).
+					Patch("/me/mentor-profile", mentorshipHandlers.UpdateMyMentorProfile)
+
+				// Authenticated: request mentorship (member+).
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "mentorship.request")).
+					Post("/mentorship/request", mentorshipHandlers.RequestMentorship)
+
+				// Authenticated: manage outgoing requests (as mentee).
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "mentorship.request")).
+					Get("/me/mentorship/outgoing", mentorshipHandlers.ListOutgoingConnections)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "mentorship.request")).
+					Delete("/me/mentorship/outgoing/{id}", mentorshipHandlers.CancelOutgoingConnection)
+
+				// Authenticated: manage incoming requests (as mentor, elevated role).
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "mentorship.respond")).
+					Get("/me/mentorship/incoming", mentorshipHandlers.ListIncomingConnections)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "mentorship.respond")).
+					Patch("/me/mentorship/incoming/{id}/accept", mentorshipHandlers.AcceptConnection)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "mentorship.respond")).
+					Patch("/me/mentorship/incoming/{id}/decline", mentorshipHandlers.DeclineConnection)
+
+				// Authenticated: complete or cancel an active connection (either party).
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "mentorship.request")).
+					Patch("/mentorship/{id}/complete", mentorshipHandlers.CompleteConnection)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "mentorship.request")).
+					Patch("/mentorship/{id}/cancel", mentorshipHandlers.CancelConnection)
+
+				// Admin: list all connections and override status.
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "mentorship.manage")).
+					Get("/admin/mentorship/connections", mentorshipHandlers.ListAllConnections)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "mentorship.manage")).
+					Patch("/admin/mentorship/connections/{id}", mentorshipHandlers.AdminUpdateConnection)
+			})
+
 			// Documentation System routes (Section 44)
 			// Public: read published pages for an audience
 			r.Get("/docs/{audience}", docsHandlers.ListDocPages)
@@ -3314,18 +3366,18 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "docs.admin")).
 				Get("/admin/docs/pages", docsHandlers.ListAllDocPages)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "docs.admin")).
-				Get("/admin/docs/pages/{id}", docsHandlers.GetDocPage)
+				Get("/admin/docs/pages/{id}", docsHandlers.GetAdminDocPage)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "docs.admin")).
 				Post("/admin/docs/pages", docsHandlers.CreateDocPage)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "docs.admin")).
 				Patch("/admin/docs/pages/{id}", docsHandlers.UpdateDocPage)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "docs.admin")).
 				Delete("/admin/docs/pages/{id}", docsHandlers.DeleteDocPage)
-			// Doc page approve/publish (P5.6 — Task 3 — status transitions via UpdateDocPage)
+			// Doc page approve/publish (§44 — dedicated handlers with reviewer tracking)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "docs.admin")).
-				Post("/admin/docs/pages/{id}/approve", docsHandlers.UpdateDocPage)
+				Post("/admin/docs/pages/{id}/approve", docsHandlers.ApproveDocPage)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "docs.admin")).
-				Post("/admin/docs/pages/{id}/publish", docsHandlers.UpdateDocPage)
+				Post("/admin/docs/pages/{id}/publish", docsHandlers.PublishDocPage)
 			// AI doc generation (P5.6 — Task 3 — stub, delegates to ai/generate)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "docs.admin")).
 				Post("/admin/docs/ai-generate", aiHandlers.HandleGenerate)
@@ -4730,11 +4782,6 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.Patch("/system-settings", controlHandlers.UpdateSystemSettings)
 			r.Patch("/system-settings/{key}", controlHandlers.UpdateSystemSetting)
 			r.Post("/system-settings/{key}/reset", controlHandlers.ResetSystemSetting)
-
-			// Feature Flags
-			r.Get("/feature-flags", controlHandlers.ListFeatureFlags)
-			r.Post("/feature-flags", featureHandlers.CreateFeatureFlag)
-			r.Patch("/feature-flags/{flag_name}", controlHandlers.SetFeatureFlag)
 
 			// Infrastructure Health
 			r.Get("/health", controlHandlers.HealthCheck)

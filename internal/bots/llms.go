@@ -1,7 +1,6 @@
 package bots
 
 import (
-	"context"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -176,27 +175,4 @@ func LLMsHandler(store *Store, rdb *valkey.Client, siteName, siteDescription str
 		w.Header().Set("Cache-Control", "public, max-age=3600")
 		_, _ = w.Write([]byte(txt))
 	}
-}
-
-// RegenerateLLMsTxt forces regeneration of the cached LLMS.txt for a tenant.
-// Called by the Asynq maintenance task. The tenantID is passed as a string
-// to avoid importing pgtype in this file.
-func RegenerateLLMsTxt(ctx context.Context, rdb *valkey.Client, tenantID string) error {
-	if rdb == nil {
-		return nil
-	}
-	// Delete both cache keys to force regeneration on next request
-	keys := []string{
-		llmsCacheKey + ":" + tenantID,
-		llmsFullCacheKey + ":" + tenantID,
-	}
-	for _, key := range keys {
-		if err := rdb.Redis().Del(ctx, key).Err(); err != nil {
-			slog.Warn("llms: failed to invalidate cache", "key", key, "error", err)
-		}
-	}
-
-	slog.Info("llms: regenerated cache", "tenant_id", tenantID)
-
-	return nil
 }

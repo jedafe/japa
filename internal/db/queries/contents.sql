@@ -556,10 +556,23 @@ FROM contents
 WHERE id = @id AND tenant_id = @tenant_id AND deleted_at IS NULL;
 
 -- name: ListPublishedSlugsForSitemap :many
-SELECT slug, updated_at
-FROM contents
-WHERE tenant_id = @tenant_id AND status = 'published'
-ORDER BY updated_at DESC
+SELECT c.slug, c.updated_at, c.visibility, c.seo_indexable, c.content_type,
+       c.comment_count, c.share_count, c.reshare_count,
+       array_length(string_to_array(trim(c.body), ' '), 1) AS word_count,
+       COALESCE(ft.reply_count, 0) AS reply_count,
+       COALESCE(ft.solved, false) AS solved,
+       (ft.id IS NOT NULL AND ft.solved = false) AS is_question,
+       COALESCE(r.reaction_count, 0) AS reaction_count
+FROM contents c
+LEFT JOIN forum_threads ft ON ft.content_id = c.id
+LEFT JOIN (
+    SELECT entity_id, count(*) AS reaction_count
+    FROM reactions
+    WHERE entity_type IN ('content', 'blog_post', 'forum_thread', 'discussion', 'guide', 'comparison')
+    GROUP BY entity_id
+) r ON r.entity_id = c.id
+WHERE c.tenant_id = @tenant_id AND c.status = 'published'
+ORDER BY c.updated_at DESC
 LIMIT 10000;
 
 -- name: ListPublishedContentForRSS :many

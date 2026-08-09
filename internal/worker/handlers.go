@@ -25,6 +25,7 @@ import (
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
 
+	"github.com/jedafe/japa/internal/bots"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
@@ -993,9 +994,11 @@ func HandleDocsGeneratePage(ctx context.Context, t *asynq.Task) error {
 	}
 
 	var payload struct {
-		Prompt   string `json:"prompt"`
-		UserID   string `json:"user_id"`
-		TenantID string `json:"tenant_id"`
+		Prompt          string   `json:"prompt"`
+		UserID          string   `json:"user_id"`
+		TenantID        string   `json:"tenant_id"`
+		Audience        string   `json:"audience"`
+		RelatedFeatures []string `json:"related_features"`
 	}
 
 	if err := parsePayload(t, &payload); err != nil {
@@ -1008,11 +1011,11 @@ func HandleDocsGeneratePage(ctx context.Context, t *asynq.Task) error {
 	}
 
 	if err := docsPageGenerator.GenerateDocsPage(ctx, payload.Prompt, payload.UserID, payload.TenantID); err != nil {
-		slog.Error("task:docs:generate_page: failed", "error", err)
+		slog.Error("task:docs:generate_page: failed", "error", err, "audience", payload.Audience)
 		return err
 	}
 
-	slog.Info("task:docs:generate_page: completed", "user_id", payload.UserID, "tenant_id", payload.TenantID)
+	slog.Info("task:docs:generate_page: completed", "user_id", payload.UserID, "tenant_id", payload.TenantID, "audience", payload.Audience)
 	return nil
 }
 
@@ -2386,11 +2389,31 @@ func HandleSitemapGenerate(ctx context.Context, t *asynq.Task) error {
 }
 
 // generateSitemapForTenant generates the sitemap XML for a single tenant.
+// Content is filtered through the Section 43 sitemap quality gates
+// (bots.IsContentIndexableByType) using per-content-type thresholds
+// from system_settings.
+// Ref: japaconnect-engineering/sections/43-bot-crawler-management.md
 func generateSitemapForTenant(ctx context.Context, tenantID pgtype.UUID, baseURL string) {
 	slugs, err := gen.New(dbPool.Reader).ListPublishedSlugsForSitemap(ctx, tenantID)
 	if err != nil {
 		slog.Error("task:sitemap:generate: failed to list content", "tenant_id", tenantID.String(), "error", err)
 		return
+	}
+
+	// Read all sitemap quality gate thresholds from system_settings.
+	// Falls back to spec defaults when unset or settings unavailable.
+	cfg := bots.DefaultSitemapQualityConfig()
+	if appSettings != nil {
+		cfg.MinWords = appSettings.GetIntOr(ctx, tenantID, "seo.sitemap.content_min_words", cfg.MinWords)
+		cfg.BlogMinWords = appSettings.GetIntOr(ctx, tenantID, "seo.sitemap.blog_min_words", cfg.BlogMinWords)
+		cfg.ForumMinWords = appSettings.GetIntOr(ctx, tenantID, "seo.sitemap.forum_min_words", cfg.ForumMinWords)
+		cfg.DiscussionMinWords = appSettings.GetIntOr(ctx, tenantID, "seo.sitemap.discussion_min_words", cfg.DiscussionMinWords)
+		cfg.GuideMinWords = appSettings.GetIntOr(ctx, tenantID, "seo.sitemap.guide_min_words", cfg.GuideMinWords)
+		cfg.ComparisonMinWords = appSettings.GetIntOr(ctx, tenantID, "seo.sitemap.comparison_min_words", cfg.ComparisonMinWords)
+		cfg.BlogMinEngagement = appSettings.GetIntOr(ctx, tenantID, "seo.sitemap.blog_min_engagement", cfg.BlogMinEngagement)
+		cfg.ForumMinReplies = appSettings.GetIntOr(ctx, tenantID, "seo.sitemap.forum_min_replies", cfg.ForumMinReplies)
+		cfg.QuestionMinAnswers = appSettings.GetIntOr(ctx, tenantID, "seo.sitemap.question_min_answers", cfg.QuestionMinAnswers)
+		cfg.DiscussionMinComments = appSettings.GetIntOr(ctx, tenantID, "seo.sitemap.discussion_min_comments", cfg.DiscussionMinComments)
 	}
 
 	var sitemap strings.Builder
@@ -2401,6 +2424,24 @@ func generateSitemapForTenant(ctx context.Context, tenantID pgtype.UUID, baseURL
 	urlCount := 0
 
 	for _, s := range slugs {
+		// Apply the Section 43 per-content-type quality gate.
+		isQuestion := s.IsQuestion != nil && *s.IsQuestion
+		if !bots.IsContentIndexableByType(bots.ContentIndexableInput{
+			ContentType:   s.ContentType,
+			Status:        "published",
+			Visibility:    s.Visibility,
+			WordCount:     int(s.WordCount),
+			CommentCount:  int(s.CommentCount),
+			ShareCount:    int(s.ShareCount),
+			ReactionCount: int(s.ReactionCount),
+			ReplyCount:    int(s.ReplyCount),
+			IsQuestion:    isQuestion,
+			Solved:        s.Solved,
+			SeoIndexable:  s.SeoIndexable,
+		}, cfg) {
+			continue
+		}
+
 		sitemap.WriteString(fmt.Sprintf("  <url>\n    <loc>%s/%s</loc>\n    <lastmod>%s</lastmod>\n  </url>\n",
 			baseURL, s.Slug,
 			s.UpdatedAt.Time.Format("2006-01-02")))

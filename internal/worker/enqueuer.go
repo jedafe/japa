@@ -197,6 +197,9 @@ var taskTier = func() map[string]string {
 		TypeJobsExpireListings,
 		TypeGamificationExpireChallenges,
 		TypeImportFetchMedia,
+		// §102 Mentorship Matching (ADR-110) — low queue per spec.
+		TypeMentorGenerateEmbedding,
+		TypeMentorUpdateMeilisearch,
 	} {
 		m[t] = QueueLow
 	}
@@ -296,6 +299,9 @@ func TaskTypeCatalog() []map[string]string {
 		{TypeGdprRetentionSweep, "low", "Process GDPR retention-wait deletions"},
 		{TypeUniversityCalculatePeriodPayouts, "low", "Roll open revenue splits into instructor payouts for a period"},
 		{TypeUniversityFetchLogo, "low", "Fetch and store a university logo from a remote URL during space auto-seeding"},
+		// §102 Mentorship Matching (ADR-110)
+		{TypeMentorGenerateEmbedding, "default", "Generate pgvector embedding for a mentor's bio"},
+		{TypeMentorUpdateMeilisearch, "default", "Sync a mentor's profile to the Meilisearch mentors index"},
 	}
 
 	result := make([]map[string]string, len(tasks))

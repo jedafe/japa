@@ -728,44 +728,14 @@ func (h *Handlers) ResetTenantSetting(w http.ResponseWriter, r *http.Request) {
 }
 
 // ---------------------------------------------------------------------------
-// Feature Flags Handlers
+// Feature Flags Handlers — removed.
+// Feature flags are now managed exclusively via the admin panel's
+// /admin/feature-flags routes (internal/features/handlers.go), which provide
+// full CRUD with metadata. Super-admins with control.panel.access also have
+// admin.feature_flags.manage, so they use the admin panel for flag management.
+// The control panel's /extensions page handles tool/extension toggles via
+// system_settings — a separate concern from feature flags.
 // ---------------------------------------------------------------------------
-
-func (h *Handlers) ListFeatureFlags(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
-	flags := h.FeatureChecker.GetAllEnabled(r.Context(), tenantID)
-	writeJSON(w, http.StatusOK, map[string]any{"data": flags})
-}
-
-func (h *Handlers) SetFeatureFlag(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
-	flagName := chi.URLParam(r, "flag_name")
-	if flagName == "" {
-		writeError(w, http.StatusBadRequest, "missing_flag_name", "flag_name is required")
-		return
-	}
-	var input struct {
-		Enabled bool `json:"enabled"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
-		return
-	}
-	user := authUserFromContext(r)
-	if err := h.FeatureChecker.SetEnabled(r.Context(), tenantID, flagName, input.Enabled, user); err != nil {
-		slog.Error("control: set feature flag", "flag", flagName, "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to update feature flag")
-		return
-	}
-	h.FeatureChecker.ClearCacheForTenant(tenantID.String())
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"key": flagName, "enabled": input.Enabled}})
-}
 
 // ---------------------------------------------------------------------------
 // Infrastructure Health Handlers
@@ -2967,6 +2937,8 @@ type extensionEntry struct {
 	Version          string `json:"version"`
 	SettingKey       string `json:"setting_key"`
 	SettingsCategory string `json:"settings_category"`
+	// Category is used for grouping in the UI (e.g. "Content", "Social", "AI").
+	Category string `json:"category"`
 }
 
 // knownExtensions is the unified catalog of all extensions and tools
@@ -2974,32 +2946,33 @@ type extensionEntry struct {
 // persisted in system_settings under the key specified by SettingKey.
 // SettingsCategory is the control-panel settings category the entry's title
 // links to (empty = no settings page). This catalog is the single source of
-// truth for all extension/tool on/off switches.
+// truth for all extension/tool on/off switches — the /extensions page is the
+// canonical place to toggle them.
 var knownExtensions = []extensionEntry{
 	// Legacy extensions (stored under extensions.<key>.enabled)
-	{Key: "blog", Name: "Blog", Description: "Blog series, content reviews, and featured posts", Version: "1.0.0", SettingKey: "extensions.blog.enabled", SettingsCategory: "content"},
-	{Key: "webhooks", Name: "Webhooks", Description: "Outgoing webhook delivery system", Version: "1.0.0", SettingKey: "extensions.webhooks.enabled", SettingsCategory: ""},
-	{Key: "ai", Name: "AI Assistant", Description: "AI-powered content assistance and moderation", Version: "1.0.0", SettingKey: "extensions.ai.enabled", SettingsCategory: "rag"},
-	{Key: "affiliate", Name: "Affiliate Program", Description: "Affiliate tracking and commission management", Version: "1.0.0", SettingKey: "extensions.affiliate.enabled", SettingsCategory: ""},
+	{Key: "blog", Name: "Blog", Description: "Blog series, content reviews, and featured posts", Version: "1.0.0", SettingKey: "extensions.blog.enabled", SettingsCategory: "content", Category: "Content"},
+	{Key: "webhooks", Name: "Webhooks", Description: "Outgoing webhook delivery system", Version: "1.0.0", SettingKey: "extensions.webhooks.enabled", SettingsCategory: "", Category: "Integrations"},
+	{Key: "ai", Name: "AI Assistant", Description: "AI-powered content assistance and moderation", Version: "1.0.0", SettingKey: "extensions.ai.enabled", SettingsCategory: "rag", Category: "AI"},
+	{Key: "affiliate", Name: "Affiliate Program", Description: "Affiliate tracking and commission management", Version: "1.0.0", SettingKey: "extensions.affiliate.enabled", SettingsCategory: "", Category: "Commerce"},
 
 	// V2 tools — each uses its own catalogued system_settings key
 	// (JEOS §§60–78, ADRs 061–086)
-	{Key: "rag", Name: "RAG / JapaBot Knowledge", Description: "Retrieval-augmented generation knowledge layer for JapaBot grounding", Version: "2.0.0", SettingKey: "rag.enabled", SettingsCategory: "rag"},
-	{Key: "studio", Name: "AI Content Studio", Description: "AI-powered content generation studio with persona-driven jobs", Version: "2.0.0", SettingKey: "studio.enabled", SettingsCategory: "studio"},
-	{Key: "participation", Name: "Participation Orchestration", Description: "Persona-driven participation orchestration engine", Version: "2.0.0", SettingKey: "participation.enabled", SettingsCategory: "participation"},
-	{Key: "checklist", Name: "Visa Document Checklist", Description: "Interactive visa document checklist tool for immigrants", Version: "2.0.0", SettingKey: "checklist.enabled", SettingsCategory: "checklist"},
-	{Key: "assessment", Name: "Japa Readiness Assessment", Description: "AI-assisted readiness assessment with personalized roadmap", Version: "2.0.0", SettingKey: "assessment.enabled", SettingsCategory: "assessment"},
-	{Key: "col_calculator", Name: "Cost of Living Calculator", Description: "Compare cost of living across destination cities", Version: "2.0.0", SettingKey: "col_calculator.enabled", SettingsCategory: "col_calculator"},
-	{Key: "scholarship_finder", Name: "Scholarship Finder", Description: "Search and track scholarships with deadline reminders", Version: "2.0.0", SettingKey: "scholarship_finder.enabled", SettingsCategory: "scholarship_finder"},
-	{Key: "remittance", Name: "Remittance Rate Tracker", Description: "Track and compare remittance exchange rates over time", Version: "2.0.0", SettingKey: "remittance.enabled", SettingsCategory: "remittance"},
-	{Key: "referral", Name: "Referral System", Description: "User referral program with credit rewards and attribution tracking", Version: "2.0.0", SettingKey: "referral.enabled", SettingsCategory: "referral"},
-	{Key: "ads", Name: "Self-Serve Advertising", Description: "Self-serve ad campaign creation and management platform", Version: "2.0.0", SettingKey: "ads.self_serve_enabled", SettingsCategory: "ads"},
-	{Key: "newsletter", Name: "Newsletter & Digest", Description: "Email newsletter subscriber management with weekly digests", Version: "2.0.0", SettingKey: "newsletter.enabled", SettingsCategory: "newsletter"},
-	{Key: "jobs", Name: "Jobs Board", Description: "Job listings board with featured placement and credit-based promotion", Version: "2.0.0", SettingKey: "jobs.enabled", SettingsCategory: "jobs"},
-	{Key: "gamification", Name: "Gamification", Description: "Badges, challenges, and leaderboards for user engagement", Version: "2.0.0", SettingKey: "gamification.badges_enabled", SettingsCategory: "gamification"},
-	{Key: "travel", Name: "Travel Search", Description: "Travel search and booking integration for immigration journeys", Version: "2.0.0", SettingKey: "travel.enabled", SettingsCategory: "travel"},
-	{Key: "push", Name: "Mobile Push Notifications", Description: "FCM and APNs push notification delivery for mobile apps", Version: "2.0.0", SettingKey: "push.enabled", SettingsCategory: "push"},
-	{Key: "geo_personalization", Name: "Geo Personalization", Description: "Geo-aware feed, search, and discovery ranking based on user location", Version: "2.0.0", SettingKey: "geo_personalization.enabled", SettingsCategory: "geo_personalization"},
+	{Key: "rag", Name: "RAG / JapaBot Knowledge", Description: "Retrieval-augmented generation knowledge layer for JapaBot grounding", Version: "2.0.0", SettingKey: "rag.enabled", SettingsCategory: "rag", Category: "AI"},
+	{Key: "studio", Name: "AI Content Studio", Description: "AI-powered content generation studio with persona-driven jobs", Version: "2.0.0", SettingKey: "studio.enabled", SettingsCategory: "studio", Category: "AI"},
+	{Key: "participation", Name: "Participation Orchestration", Description: "Persona-driven participation orchestration engine", Version: "2.0.0", SettingKey: "participation.enabled", SettingsCategory: "participation", Category: "AI"},
+	{Key: "checklist", Name: "Visa Document Checklist", Description: "Interactive visa document checklist tool for immigrants", Version: "2.0.0", SettingKey: "checklist.enabled", SettingsCategory: "checklist", Category: "Tools"},
+	{Key: "assessment", Name: "Japa Readiness Assessment", Description: "AI-assisted readiness assessment with personalized roadmap", Version: "2.0.0", SettingKey: "assessment.enabled", SettingsCategory: "assessment", Category: "Tools"},
+	{Key: "col_calculator", Name: "Cost of Living Calculator", Description: "Compare cost of living across destination cities", Version: "2.0.0", SettingKey: "col_calculator.enabled", SettingsCategory: "col_calculator", Category: "Tools"},
+	{Key: "scholarship_finder", Name: "Scholarship Finder", Description: "Search and track scholarships with deadline reminders", Version: "2.0.0", SettingKey: "scholarship_finder.enabled", SettingsCategory: "scholarship_finder", Category: "Tools"},
+	{Key: "remittance", Name: "Remittance Rate Tracker", Description: "Track and compare remittance exchange rates over time", Version: "2.0.0", SettingKey: "remittance.enabled", SettingsCategory: "remittance", Category: "Tools"},
+	{Key: "referral", Name: "Referral System", Description: "User referral program with credit rewards and attribution tracking", Version: "2.0.0", SettingKey: "referral.enabled", SettingsCategory: "referral", Category: "Commerce"},
+	{Key: "ads", Name: "Self-Serve Advertising", Description: "Self-serve ad campaign creation and management platform", Version: "2.0.0", SettingKey: "ads.self_serve_enabled", SettingsCategory: "ads", Category: "Commerce"},
+	{Key: "newsletter", Name: "Newsletter & Digest", Description: "Email newsletter subscriber management with weekly digests", Version: "2.0.0", SettingKey: "newsletter.enabled", SettingsCategory: "newsletter", Category: "Content"},
+	{Key: "jobs", Name: "Jobs Board", Description: "Job listings board with featured placement and credit-based promotion", Version: "2.0.0", SettingKey: "jobs.enabled", SettingsCategory: "jobs", Category: "Commerce"},
+	{Key: "gamification", Name: "Gamification", Description: "Badges, challenges, and leaderboards for user engagement", Version: "2.0.0", SettingKey: "gamification.badges_enabled", SettingsCategory: "gamification", Category: "Engagement"},
+	{Key: "travel", Name: "Travel Search", Description: "Travel search and booking integration for immigration journeys", Version: "2.0.0", SettingKey: "travel.enabled", SettingsCategory: "travel", Category: "Tools"},
+	{Key: "push", Name: "Mobile Push Notifications", Description: "FCM and APNs push notification delivery for mobile apps", Version: "2.0.0", SettingKey: "push.enabled", SettingsCategory: "push", Category: "Integrations"},
+	{Key: "geo_personalization", Name: "Geo Personalization", Description: "Geo-aware feed, search, and discovery ranking based on user location", Version: "2.0.0", SettingKey: "geo_personalization.enabled", SettingsCategory: "geo_personalization", Category: "Integrations"},
 }
 
 func (h *Handlers) ListExtensions(w http.ResponseWriter, r *http.Request) {

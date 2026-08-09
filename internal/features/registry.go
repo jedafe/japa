@@ -32,6 +32,7 @@ var Registry = []Feature{
 	{Key: "feature.bookmarks", Label: "Bookmarks", Default: true},
 	{Key: "feature.ratings_reviews", Label: "Ratings & Reviews", Default: true},
 	{Key: "feature.mentorship", Label: "Mentorship Matching", Default: false},
+	{Key: "feature.mentorship_comparison", Label: "Mentorship Comparison", Default: false},
 	// Professional features
 	{Key: "feature.professional", Label: "Professional Profiles", Default: true},
 	// Commerce features

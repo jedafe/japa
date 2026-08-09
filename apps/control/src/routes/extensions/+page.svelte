@@ -23,6 +23,7 @@
 		version: string;
 		setting_key: string;
 		settings_category: string;
+		category: string;
 	}
 
 	let extensions = $state<Extension[]>([]);
@@ -31,6 +32,7 @@
 	let toggling = $state<string | null>(null);
 	let message = $state('');
 	let messageType = $state<'success' | 'error' | ''>('');
+	let activeCategory = $state('all');
 
 	// Disabling an extension that may have active content (e.g. spaces,
 	// posts, or integrations that depend on it) is destructive — surface a
@@ -38,9 +40,17 @@
 	let confirmDisableOpen = $state(false);
 	let pendingDisable = $state<Extension | null>(null);
 
-	let enabledCount = $derived(
-		translations() || extensions.filter((e) => e.enabled).length
+	let categories = $derived.by(() => {
+		translations();
+		return [...new Set(extensions.map((e) => e.category))].sort();
+	});
+
+	let filteredExtensions = $derived(
+		activeCategory === 'all'
+			? extensions
+			: extensions.filter((e) => e.category === activeCategory)
 	);
+
 	let enabledTotal = $derived(extensions.filter((e) => e.enabled).length);
 	let disabledTotal = $derived(extensions.length - enabledTotal);
 
@@ -56,7 +66,8 @@
 				enabled: !!e.enabled,
 				version: e.version,
 				setting_key: e.setting_key ?? '',
-				settings_category: e.settings_category ?? ''
+				settings_category: e.settings_category ?? '',
+				category: e.category ?? 'Other'
 			}));
 		} else {
 			error = result.error || t('extensions.load_error', 'Failed to load extensions.');
@@ -182,6 +193,26 @@
 	</button>
 </div>
 
+<!-- Category filter tabs -->
+{#if categories.length > 1}
+	<div class="bg-muted mb-4 inline-flex flex-wrap gap-1 rounded-9px p-1">
+		<button
+			class="rounded-7px px-4 py-2 text-sm font-medium transition-all {activeCategory === 'all' ? 'bg-background text-foreground shadow-mini' : 'text-muted-foreground hover:text-foreground'}"
+			onclick={() => (activeCategory = 'all')}
+		>
+			{t('common.all', 'All')} ({extensions.length})
+		</button>
+		{#each categories as cat}
+			<button
+				class="rounded-7px px-4 py-2 text-sm font-medium transition-all {activeCategory === cat ? 'bg-background text-foreground shadow-mini' : 'text-muted-foreground hover:text-foreground'}"
+				onclick={() => (activeCategory = cat)}
+			>
+				{cat}
+			</button>
+		{/each}
+	</div>
+{/if}
+
 {#if message}
 	<div
 		class="mb-4 rounded-lg border px-4 py-3 text-sm transition-colors {messageType === 'success' ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-600' : 'bg-destructive/10 border-destructive/20 text-destructive'}"
@@ -231,7 +262,7 @@
 	</div>
 {:else}
 	<div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-		{#each extensions as ext (ext.key)}
+		{#each filteredExtensions as ext (ext.key)}
 			{@const isToggling = toggling === ext.key}
 			<div
 				class="border-border-card bg-background-alt rounded-9px flex flex-col border p-5 transition-colors {ext.enabled ? 'border-emerald-500/40' : ''}"

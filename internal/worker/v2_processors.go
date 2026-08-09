@@ -101,6 +101,12 @@ type StudioProcessor interface {
 	RetryFailed(ctx context.Context, jobID pgtype.UUID) error
 }
 
+// MentorProcessor handles mentorship matching background tasks (§102, ADR-110).
+type MentorProcessor interface {
+	GenerateEmbedding(ctx context.Context, tenantID, userID pgtype.UUID) error
+	UpdateMeilisearch(ctx context.Context, tenantID, userID pgtype.UUID) error
+}
+
 // ---------------------------------------------------------------------------
 // Global processor slots — nil-safe (graceful degradation when unregistered).
 // ---------------------------------------------------------------------------
@@ -117,6 +123,7 @@ var (
 	pushProcessor          PushProcessor
 	personaProcessor       PersonaProcessor
 	studioProcessor        StudioProcessor
+	mentorProcessor        MentorProcessor
 )
 
 // Register functions — call once at startup before the worker serves.
@@ -132,6 +139,7 @@ func RegisterAdsSelfServeProcessor(p AdsSelfServeProcessor) { adsSelfServeProces
 func RegisterPushProcessor(p PushProcessor)             { pushProcessor = p }
 func RegisterPersonaProcessor(p PersonaProcessor)       { personaProcessor = p }
 func RegisterStudioProcessor(p StudioProcessor)         { studioProcessor = p }
+func RegisterMentorProcessor(p MentorProcessor)         { mentorProcessor = p }
 
 // ---------------------------------------------------------------------------
 // Task type constants (V2 — Sections 60–77).
@@ -158,6 +166,10 @@ const (
 	TypePersonaDispatchAction       = "persona:dispatch_action"
 	TypeStudioRunBatch              = "studio:run_batch"
 	TypeStudioRetryFailed           = "studio:retry_failed"
+
+	// §102 Mentorship Matching (ADR-110).
+	TypeMentorGenerateEmbedding = "mentor:generate_embedding"
+	TypeMentorUpdateMeilisearch = "mentor:update_meilisearch"
 )
 
 // ---------------------------------------------------------------------------
@@ -567,6 +579,60 @@ func HandleStudioRetryFailed(ctx context.Context, t *asynq.Task) error {
 	}
 	if err := studioProcessor.RetryFailed(ctx, id); err != nil {
 		return fmt.Errorf("task:studio:retry_failed: %w", err)
+	}
+	return nil
+}
+
+// HandleMentorGenerateEmbedding generates a pgvector embedding for a
+// mentor's bio (§102, ADR-110). Called after a mentor updates their bio.
+func HandleMentorGenerateEmbedding(ctx context.Context, t *asynq.Task) error {
+	if mentorProcessor == nil {
+		slog.Warn("task:mentor:generate_embedding: no processor registered, skipping")
+		return nil
+	}
+	var p struct {
+		TenantID string `json:"tenant_id"`
+		UserID   string `json:"user_id"`
+	}
+	if err := json.Unmarshal(t.Payload(), &p); err != nil {
+		return fmt.Errorf("task:mentor:generate_embedding: invalid payload: %w", err)
+	}
+	var tenantID, userID pgtype.UUID
+	if err := tenantID.Scan(p.TenantID); err != nil {
+		return fmt.Errorf("task:mentor:generate_embedding: bad tenant_id: %w", err)
+	}
+	if err := userID.Scan(p.UserID); err != nil {
+		return fmt.Errorf("task:mentor:generate_embedding: bad user_id: %w", err)
+	}
+	if err := mentorProcessor.GenerateEmbedding(ctx, tenantID, userID); err != nil {
+		return fmt.Errorf("task:mentor:generate_embedding: %w", err)
+	}
+	return nil
+}
+
+// HandleMentorUpdateMeilisearch syncs a mentor's profile to the
+// Meilisearch mentors index (§102, ADR-110).
+func HandleMentorUpdateMeilisearch(ctx context.Context, t *asynq.Task) error {
+	if mentorProcessor == nil {
+		slog.Warn("task:mentor:update_meilisearch: no processor registered, skipping")
+		return nil
+	}
+	var p struct {
+		TenantID string `json:"tenant_id"`
+		UserID   string `json:"user_id"`
+	}
+	if err := json.Unmarshal(t.Payload(), &p); err != nil {
+		return fmt.Errorf("task:mentor:update_meilisearch: invalid payload: %w", err)
+	}
+	var tenantID, userID pgtype.UUID
+	if err := tenantID.Scan(p.TenantID); err != nil {
+		return fmt.Errorf("task:mentor:update_meilisearch: bad tenant_id: %w", err)
+	}
+	if err := userID.Scan(p.UserID); err != nil {
+		return fmt.Errorf("task:mentor:update_meilisearch: bad user_id: %w", err)
+	}
+	if err := mentorProcessor.UpdateMeilisearch(ctx, tenantID, userID); err != nil {
+		return fmt.Errorf("task:mentor:update_meilisearch: %w", err)
 	}
 	return nil
 }

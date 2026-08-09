@@ -345,10 +345,24 @@ func (h *Handlers) HandleGenerate(w http.ResponseWriter, r *http.Request) {
 	// task and return 202 Accepted with the task reference instead of blocking
 	// on the AI gateway call synchronously.
 	if input.Category == "docs" {
-		payload, err := json.Marshal(map[string]string{
-			"prompt":    input.Prompt,
-			"user_id":   user.UserID.String(),
-			"tenant_id": tenantID.String(),
+		// Extract audience and related_features from the context map (§44).
+		// The context is optional but audience is recommended for docs generation.
+		audience, _ := input.Context["audience"].(string)
+		relatedFeatures := []string{}
+		if rf, ok := input.Context["related_features"].([]any); ok {
+			for _, v := range rf {
+				if s, ok := v.(string); ok {
+					relatedFeatures = append(relatedFeatures, s)
+				}
+			}
+		}
+
+		payload, err := json.Marshal(map[string]any{
+			"prompt":            input.Prompt,
+			"user_id":           user.UserID.String(),
+			"tenant_id":         tenantID.String(),
+			"audience":          audience,
+			"related_features":  relatedFeatures,
 		})
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "marshal_error", "Failed to marshal task payload")

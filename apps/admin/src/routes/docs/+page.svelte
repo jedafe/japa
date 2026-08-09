@@ -14,9 +14,9 @@
 	import { docsApi } from '$lib/api';
 	import { Pencil, Trash2, Send, FileDown, Plus } from 'lucide-svelte';
 
-	const canEdit = $derived(hasPermission('docs.page.edit'));
-	const canDelete = $derived(hasPermission('docs.page.delete'));
-	const canPublish = $derived(hasPermission('docs.page.publish'));
+	const canEdit = $derived(hasPermission('docs.admin'));
+	const canDelete = $derived(hasPermission('docs.admin'));
+	const canPublish = $derived(hasPermission('docs.admin'));
 
 	type DocPage = {
 		id: string;
@@ -48,6 +48,8 @@
 
 	const statusOptions = $derived([
 		{ value: 'draft', label: 'Draft' },
+		{ value: 'in_review', label: 'In Review' },
+		{ value: 'approved', label: 'Approved' },
 		{ value: 'published', label: 'Published' }
 	]);
 
@@ -102,6 +104,20 @@
 		return text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 	}
 
+	// wrapAsTipTap converts a plain-text body into a minimal TipTap JSON document
+	// so the backend can store it as jsonb content (§44 — content is TipTap JSON).
+	// Each non-empty line becomes a paragraph node; empty lines become empty paragraphs.
+	function wrapAsTipTap(body: string): object {
+		const lines = body.split('\n');
+		const content = lines.map((line) => ({
+			type: 'paragraph',
+			content: line.trim()
+				? [{ type: 'text', text: line }]
+				: []
+		}));
+		return { type: 'doc', content };
+	}
+
 	async function loadDocs() {
 		loading = true;
 		errorMessage = '';
@@ -135,7 +151,11 @@
 		saving = true;
 		errorMessage = '';
 		const slug = form.slug.trim() || slugify(form.title);
-		const payload = { title: form.title.trim(), slug, audience: form.audience, review_status: form.status, content: form.body };
+		// Wrap the plain-text body in a minimal TipTap JSON document so the
+		// backend (which expects jsonb TipTap content) can store and render it.
+		// Ref: §44 "content jsonb NOT NULL DEFAULT '{}', -- TipTap JSON"
+		const tiptapContent = wrapAsTipTap(form.body);
+		const payload = { title: form.title.trim(), slug, audience: form.audience, review_status: form.status, content: tiptapContent };
 		const result = editingId ? await docsApi.update(editingId, payload) : await docsApi.create(payload);
 		if (result.ok) {
 			showFormSlideOver = false;
@@ -148,10 +168,17 @@
 
 	async function togglePublish(item: DocPage) {
 		errorMessage = '';
-		const newStatus = item.status === 'published' ? 'draft' : 'published';
-		const result = await docsApi.update(item.id, { title: item.title, review_status: newStatus });
-		if (result.ok) loadDocs();
-		else errorMessage = result.error;
+		if (item.status === 'published') {
+			// Unpublish: revert to draft via PATCH (no dedicated unpublish endpoint).
+			const result = await docsApi.update(item.id, { review_status: 'draft' });
+			if (result.ok) loadDocs();
+			else errorMessage = result.error;
+		} else {
+			// Publish: use the dedicated publish endpoint (§44 — validates approved status).
+			const result = await docsApi.publish(item.id);
+			if (result.ok) loadDocs();
+			else errorMessage = result.error;
+		}
 	}
 
 	function confirmDelete(id: string) {

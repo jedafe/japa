@@ -14,6 +14,7 @@
 	} from 'lucide-svelte';
 	import { DropdownMenu, Select } from 'bits-ui';
 	import type { DataTableColumn, DataTableRowAction, DataTableBulkAction } from '$lib/api/types';
+	import { sanitizeHtml } from '$lib/utils';
 
 	let {
 		columns = [],
@@ -55,7 +56,43 @@
 
 	let totalPages = $derived(totalRows > 0 ? Math.ceil(totalRows / pageSize) : 1);
 
-	let visibleIds = $derived(rows.map((r) => getRowId(r as Record<string, unknown>)));
+	// Client-side sort: when sortKey is set, sort a copy of the rows by that
+	// column. When unset, preserve the original order.
+	let sortedRows = $derived.by(() => {
+		if (!sortKey) return rows;
+		const key = sortKey;
+		const dir = sortDirection === 'desc' ? -1 : 1;
+		return [...rows].sort((a, b) => {
+			let aVal = getNestedValue(a, key);
+			let bVal = getNestedValue(b, key);
+			if (Array.isArray(aVal)) aVal = aVal.join(', ');
+			if (Array.isArray(bVal)) bVal = bVal.join(', ');
+			if (aVal == null) aVal = '';
+			if (bVal == null) bVal = '';
+			const compare = typeof aVal === 'string'
+				? String(aVal).localeCompare(String(bVal))
+				: (aVal as number) - (bVal as number);
+			return compare * dir;
+		});
+	});
+
+	// Client-side pagination: slice the sorted rows to the current page.
+	// When the parent passes fewer rows than totalRows, it's doing
+	// server-side pagination — render rows as-is (don't double-slice).
+	let paginatedRows = $derived(
+		totalRows > rows.length
+			? sortedRows
+			: sortedRows.slice(page * pageSize, (page + 1) * pageSize)
+	);
+
+	// Reset to first page when the page size changes or data shrinks.
+	$effect(() => {
+		void pageSize;
+		void totalRows;
+		if (page > 0 && page >= totalPages) page = 0;
+	});
+
+	let visibleIds = $derived(paginatedRows.map((r) => getRowId(r as Record<string, unknown>)));
 
 	let allSelected = $derived(
 		visibleIds.length > 0 && visibleIds.every((id) => selectedIds.has(id))
@@ -179,7 +216,7 @@
 		</thead>
 		<tbody>
 			{#if loading}
-				{#each Array(pageSize) as _}
+				{#each Array(pageSize) as _, i}
 					<tr class="border-border-card border-t">
 						{#if selectable}
 							<td class="px-3 py-2.5">
@@ -188,7 +225,7 @@
 						{/if}
 						{#each columns as col}
 							<td class="px-4 py-2.5">
-								<div class="bg-muted h-3.5 animate-pulse rounded" style="width: {40 + Math.random() * 40}%"></div>
+								<div class="bg-muted h-3.5 animate-pulse rounded" style="width: {40 + ((i * 37) % 40)}%"></div>
 							</td>
 						{/each}
 						{#if rowActions.length > 0}
@@ -219,7 +256,7 @@
 					</td>
 				</tr>
 			{:else}
-				{#each rows as row, i (getRowId(row))}
+				{#each paginatedRows as row, i (getRowId(row))}
 					<tr
 						class="border-border-card border-t transition-colors hover:bg-muted/30 {onRowClick ? 'cursor-pointer' : ''}"
 						onclick={onRowClick ? () => onRowClick!(row) : undefined}
@@ -250,7 +287,7 @@
 								class="px-4 py-2.5 {col.class ?? ''}"
 							>
 								{#if col.render}
-									{@html col.render(getNestedValue(row, col.key), row as Record<string, unknown>)}
+									{@html sanitizeHtml(col.render(getNestedValue(row, col.key), row as Record<string, unknown>))}
 								{:else}
 									{getNestedValue(row, col.key) ?? '—'}
 								{/if}

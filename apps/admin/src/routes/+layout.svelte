@@ -131,7 +131,7 @@
 		'/i18n': 'i18n.manage',
 		'/wallet': 'wallet.admin',
 		'/affiliate': 'affiliate.admin.view',
-		'/docs': 'docs.manage',
+		'/docs': 'docs.admin',
 		'/deletions': 'gdpr.deletions.view',
 		'/moderation-queue': 'admin.moderation',
 		'/moderation/content': 'moderation.content.review',

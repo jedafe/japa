@@ -108,13 +108,14 @@ func (s *Store) search(ctx context.Context, tenantID pgtype.UUID, query string, 
 	return rows, nil
 }
 
-// create inserts a new doc page.
-func (s *Store) create(ctx context.Context, params gen.CreateDocPageParams) error {
-	if err := s.write.CreateDocPage(ctx, params); err != nil {
-		return fmt.Errorf("creating doc page: %w", err)
+// create inserts a new doc page and returns its ID.
+func (s *Store) create(ctx context.Context, params gen.CreateDocPageParams) (pgtype.UUID, error) {
+	id, err := s.write.CreateDocPage(ctx, params)
+	if err != nil {
+		return pgtype.UUID{}, fmt.Errorf("creating doc page: %w", err)
 	}
 
-	return nil
+	return id, nil
 }
 
 // update modifies an existing doc page.
@@ -124,6 +125,25 @@ func (s *Store) update(ctx context.Context, params gen.UpdateDocPageParams) erro
 	}
 
 	return nil
+}
+
+// updateStatus updates only the review status and reviewer of a doc page.
+func (s *Store) updateStatus(ctx context.Context, params gen.UpdateDocPageStatusParams) error {
+	if err := s.write.UpdateDocPageStatus(ctx, params); err != nil {
+		return fmt.Errorf("updating doc page status: %w", err)
+	}
+
+	return nil
+}
+
+// getStatus returns the current review_status of a doc page.
+func (s *Store) getStatus(ctx context.Context, params gen.GetDocPageStatusParams) (string, error) {
+	status, err := s.read.GetDocPageStatus(ctx, params)
+	if err != nil {
+		return "", fmt.Errorf("getting doc page status: %w", err)
+	}
+
+	return status, nil
 }
 
 // delete removes a doc page.
