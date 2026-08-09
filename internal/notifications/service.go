@@ -372,6 +372,18 @@ func (s *Service) GetNotificationTypes(ctx context.Context) ([]gen.NotificationT
 	return s.store.getNotificationTypes(ctx)
 }
 
+// AdminListNotificationTypes returns a filtered, sorted, paginated slice of
+// notification types for the admin DataTable (Section 35).
+func (s *Service) AdminListNotificationTypes(ctx context.Context, p gen.AdminListNotificationTypesParams) ([]gen.NotificationType, error) {
+	return s.store.adminListNotificationTypes(ctx, p)
+}
+
+// AdminCountNotificationTypes returns the total count of notification types
+// matching the given filter (Section 35).
+func (s *Service) AdminCountNotificationTypes(ctx context.Context, p gen.AdminCountNotificationTypesParams) (int32, error) {
+	return s.store.adminCountNotificationTypes(ctx, p)
+}
+
 // BuildBatchTitle constructs an aggregated title from actor info.
 // Examples: "Alice reacted", "Alice and 2 others reacted", "Alice and 9 others reacted".
 func BuildBatchTitle(singleActorName string, actorCount int32, action string) string {

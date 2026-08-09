@@ -858,9 +858,12 @@ func (ix *Indexer) ReindexAll(ctx context.Context, tenantID pgtype.UUID) (*Reind
 	// Spaces — offset-paginated via the admin list query.
 	for offset := int32(0); ; offset += reindexBatchSize {
 		rows, err := ix.read.AdminListSpaces(ctx, gen.AdminListSpacesParams{
-			TenantID:  tenantID,
-			OffsetVal: offset,
-			LimitVal:  reindexBatchSize,
+			TenantID:   tenantID,
+			Search:     "",
+			Status:     "",
+			Visibility: "",
+			OffsetVal:  offset,
+			LimitVal:   reindexBatchSize,
 		})
 		if err != nil {
 			slog.Warn("search:reindex: listing spaces failed", "error", err)

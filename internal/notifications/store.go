@@ -172,6 +172,26 @@ func (s *Store) getNotificationTypes(ctx context.Context) ([]gen.NotificationTyp
 	return types, nil
 }
 
+// adminListNotificationTypes returns a filtered, sorted, paginated slice of
+// notification types for the admin DataTable (Section 35).
+func (s *Store) adminListNotificationTypes(ctx context.Context, p gen.AdminListNotificationTypesParams) ([]gen.NotificationType, error) {
+	rows, err := s.read.AdminListNotificationTypes(ctx, p)
+	if err != nil {
+		return nil, fmt.Errorf("listing notification types: %w", err)
+	}
+	return rows, nil
+}
+
+// adminCountNotificationTypes returns the total count of notification types
+// matching the given filter (Section 35).
+func (s *Store) adminCountNotificationTypes(ctx context.Context, p gen.AdminCountNotificationTypesParams) (int32, error) {
+	count, err := s.read.AdminCountNotificationTypes(ctx, p)
+	if err != nil {
+		return 0, fmt.Errorf("counting notification types: %w", err)
+	}
+	return count, nil
+}
+
 // upsertNotificationType inserts a notification type, updating label/description on conflict.
 func (s *Store) upsertNotificationType(ctx context.Context, p gen.UpsertNotificationTypeParams) error {
 	if err := s.write.UpsertNotificationType(ctx, p); err != nil {

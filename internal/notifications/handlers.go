@@ -9,6 +9,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
+	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/tenant"
 )
 
@@ -323,6 +324,80 @@ func (h *Handlers) ListNotificationTypes(w http.ResponseWriter, r *http.Request)
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": types})
+}
+
+// AdminListNotificationTypes handles GET /api/v1/admin/notification-types —
+// paginated, searchable, filterable, sortable list for the admin DataTable
+// (Section 35). Returns { data, total, page, total_pages }.
+func (h *Handlers) AdminListNotificationTypes(w http.ResponseWriter, r *http.Request) {
+	_, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	q := r.URL.Query().Get("q")
+
+	// enabled filter: "true" → 1, "false" → 2 (sentinel: != 1 so the SQL
+	// `enabled = (filter = 1)` resolves correctly), absent/empty → 0 (no filter).
+	enabledFilter := int32(0)
+	if ev := r.URL.Query().Get("enabled"); ev != "" {
+		switch ev {
+		case "true", "1":
+			enabledFilter = 1
+		case "false", "0":
+			enabledFilter = 2
+		}
+	}
+
+	sortParam := r.URL.Query().Get("sort")
+	// Allowlist sortable columns; default to key.
+	switch sortParam {
+	case "key", "label", "enabled":
+	default:
+		sortParam = "key"
+	}
+
+	dir := r.URL.Query().Get("dir")
+	if dir != "asc" && dir != "desc" {
+		dir = "asc"
+	}
+
+	limit := parsePageSize(r)
+	offset := parsePageOffset(r)
+
+	types, err := h.service.AdminListNotificationTypes(r.Context(), gen.AdminListNotificationTypesParams{
+		Q:             q,
+		EnabledFilter: enabledFilter,
+		Sort:          sortParam,
+		Dir:           dir,
+		PageOffset:    offset,
+		PageLimit:     limit,
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list notification types")
+		return
+	}
+
+	count, err := h.service.AdminCountNotificationTypes(r.Context(), gen.AdminCountNotificationTypesParams{
+		Q:             q,
+		EnabledFilter: enabledFilter,
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to count notification types")
+		return
+	}
+
+	totalPages := int32(1)
+	if limit > 0 {
+		totalPages = (count + limit - 1) / limit
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data":        types,
+		"total":       count,
+		"page":        offset / limit,
+		"total_pages": totalPages,
+	})
 }
 
 // ---------------------------------------------------------------------------

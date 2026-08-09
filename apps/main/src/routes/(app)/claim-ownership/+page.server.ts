@@ -1,15 +1,16 @@
-import { error, fail, redirect } from '@sveltejs/kit';
-import type { PageServerLoad, Actions } from './$types';
-import { apiContext, apiGet, apiPost, ApiError } from '$lib/server/api';
-import type { PublicOrganization } from '$lib/types';
+// Ref: japaconnect-engineering/sections/07-organization-profiles-claim-ownership.md
+// Claim-ownership form at /claim-ownership?org={slug} — auth-gated. Loads the
+// org by slug AND the claim-ownership form from the Form Builder (Section 06)
+// via GET /forms/claim-ownership/embed. The form fields are rendered
+// dynamically (Rule 16 — no hardcoded fields). The form submission is created
+// client-side via POST /forms/{id}/submissions (with payment_method for paid
+// forms), then the claim is created via POST /claim-ownership with the
+// form_submission_id linking the two.
+import { error, redirect } from '@sveltejs/kit';
+import type { PageServerLoad } from './$types';
+import { apiContext, apiGet } from '$lib/server/api';
+import type { PublicOrganization, FormEmbed } from '$lib/types';
 
-/**
- * Claim-ownership form at /claim-ownership?org={slug} — auth-gated. Resolves
- * the org by slug (so the user lands on a pre-filled form), then POSTs
- * {organization_id, evidence_url, notes} to /claim-ownership.
- *
- * Ref: japaconnect-engineering/sections/07-organization-profiles-claim-ownership.md
- */
 export const load: PageServerLoad = async (event) => {
 	if (!event.locals.user) {
 		throw redirect(307, `/login?redirect=${encodeURIComponent(event.url.pathname + event.url.search)}`);
@@ -21,6 +22,7 @@ export const load: PageServerLoad = async (event) => {
 	}
 
 	const ctx = apiContext(event);
+
 	let org: PublicOrganization;
 	try {
 		org = await apiGet<PublicOrganization>(ctx, `/organizations/${slug}`);
@@ -32,41 +34,15 @@ export const load: PageServerLoad = async (event) => {
 		});
 	}
 
-	return { org };
-};
-
-export const actions: Actions = {
-	default: async (event) => {
-		if (!event.locals.user) return fail(403, { message: 'Auth required' });
-
-		const ctx = apiContext(event);
-		const form = await event.request.formData();
-
-		const organizationId = String(form.get('organization_id') ?? '').trim();
-		const evidenceUrl = String(form.get('evidence_url') ?? '').trim();
-		const notes = String(form.get('notes') ?? '').trim();
-
-		if (!organizationId) {
-			return fail(400, { message: 'Organization ID is required' });
-		}
-
-		const payload: Record<string, unknown> = { organization_id: organizationId };
-		if (evidenceUrl) payload.evidence_url = evidenceUrl;
-		if (notes) payload.notes = notes;
-
-		try {
-			await apiPost(ctx, '/claim-ownership', payload);
-			throw redirect(303, `/org/${String(form.get('org_slug') ?? '')}`);
-		} catch (e) {
-			if (e instanceof ApiError) {
-				return fail(e.status >= 400 && e.status < 500 ? e.status : 500, {
-					message: e.message,
-					organization_id: organizationId,
-					evidence_url: evidenceUrl,
-					notes
-				});
-			}
-			throw e;
-		}
+	// Load the claim-ownership form from the Form Builder (Section 06).
+	// The form slug is configurable via system_settings
+	// 'claim_ownership.form_slug' (default: 'claim-ownership').
+	let form: FormEmbed | null = null;
+	try {
+		form = await apiGet<FormEmbed>(ctx, '/forms/claim-ownership/embed');
+	} catch {
+		form = null;
 	}
+
+	return { org, form };
 };

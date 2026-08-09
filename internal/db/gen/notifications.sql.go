@@ -11,6 +11,86 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const adminCountNotificationTypes = `-- name: AdminCountNotificationTypes :one
+SELECT COUNT(*)::int AS count
+FROM notification_types
+WHERE ($1::text = '' OR key ILIKE '%' || $1 || '%' OR label ILIKE '%' || $1 || '%' OR description ILIKE '%' || $1 || '%')
+  AND ($2::int = 0 OR enabled = ($2::int = 1))
+`
+
+type AdminCountNotificationTypesParams struct {
+	Q             string `json:"q"`
+	EnabledFilter int32  `json:"enabled_filter"`
+}
+
+func (q *Queries) AdminCountNotificationTypes(ctx context.Context, arg AdminCountNotificationTypesParams) (int32, error) {
+	row := q.db.QueryRow(ctx, adminCountNotificationTypes, arg.Q, arg.EnabledFilter)
+	var count int32
+	err := row.Scan(&count)
+	return count, err
+}
+
+const adminListNotificationTypes = `-- name: AdminListNotificationTypes :many
+SELECT key, label, description, enabled, default_in_app, default_email, default_push
+FROM notification_types
+WHERE ($1::text = '' OR key ILIKE '%' || $1 || '%' OR label ILIKE '%' || $1 || '%' OR description ILIKE '%' || $1 || '%')
+  AND ($2::int = 0 OR enabled = ($2::int = 1))
+ORDER BY
+  CASE WHEN $3::text = 'key' AND $4::text = 'asc' THEN key END ASC,
+  CASE WHEN $3::text = 'key' AND $4::text = 'desc' THEN key END DESC,
+  CASE WHEN $3::text = 'label' AND $4::text = 'asc' THEN label END ASC,
+  CASE WHEN $3::text = 'label' AND $4::text = 'desc' THEN label END DESC,
+  CASE WHEN $3::text = 'enabled' AND $4::text = 'asc' THEN enabled END ASC,
+  CASE WHEN $3::text = 'enabled' AND $4::text = 'desc' THEN enabled END DESC,
+  CASE WHEN $3::text NOT IN ('key', 'label', 'enabled') THEN key END ASC
+LIMIT $6 OFFSET $5
+`
+
+type AdminListNotificationTypesParams struct {
+	Q             string `json:"q"`
+	EnabledFilter int32  `json:"enabled_filter"`
+	Sort          string `json:"sort"`
+	Dir           string `json:"dir"`
+	PageOffset    int32  `json:"page_offset"`
+	PageLimit     int32  `json:"page_limit"`
+}
+
+// Admin list with offset pagination + search + enabled filter + sort (Section 35).
+func (q *Queries) AdminListNotificationTypes(ctx context.Context, arg AdminListNotificationTypesParams) ([]NotificationType, error) {
+	rows, err := q.db.Query(ctx, adminListNotificationTypes,
+		arg.Q,
+		arg.EnabledFilter,
+		arg.Sort,
+		arg.Dir,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []NotificationType
+	for rows.Next() {
+		var i NotificationType
+		if err := rows.Scan(
+			&i.Key,
+			&i.Label,
+			&i.Description,
+			&i.Enabled,
+			&i.DefaultInApp,
+			&i.DefaultEmail,
+			&i.DefaultPush,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const createBatchWindow = `-- name: CreateBatchWindow :exec
 INSERT INTO notification_batch_windows (recipient_id, notification_type, subject_type, subject_id, actor_ids, actor_count, last_actor_id, window_close_at)
 VALUES ($1, $2, $3, $4, ARRAY[$5::uuid], 1, $5, now() + make_interval(mins => $6))

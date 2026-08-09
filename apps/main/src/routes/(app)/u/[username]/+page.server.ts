@@ -11,7 +11,9 @@ import type {
 	ProfileLike,
 	ProfileAnalytics,
 	EarnedBadge,
-	Badge
+	Badge,
+	FollowerGrowthItem,
+	TopContentItem
 } from '$lib/types';
 
 /**
@@ -62,7 +64,9 @@ export const load: PageServerLoad = async (event) => {
 	// Tab data — each degrades to an empty list on failure (a missing tab must
 	// never blank the whole profile). Each tab fetches its dedicated
 	// /users/{id}/<tab> endpoint (JEOS api-routes-catalog §334–340).
-	const [posts, replies, media, spaces, certificates, likes, analytics, isFollowing, badges, allBadges] = await Promise.all([
+	// Phase 18.01a — analytics time-series (follower growth + top content) for
+	// the LayerChart visualizations on the owner-only analytics tab. Ref: ADR-059.
+	const [posts, replies, media, spaces, certificates, likes, analytics, isFollowing, badges, allBadges, followerGrowth, topContent] = await Promise.all([
 		apiList<ProfilePost>(ctx, `/users/${userId}/content`).then((r) => r.items).catch(() => []),
 		apiList<ProfileReply>(ctx, `/users/${userId}/replies`).then((r) => r.items).catch(() => []),
 		apiList<ProfileMedia>(ctx, `/users/${userId}/media`).then((r) => r.items).catch(() => []),
@@ -82,7 +86,15 @@ export const load: PageServerLoad = async (event) => {
 		// unearned badges with "how to earn" hints on the own profile.
 		isOwnProfile
 			? apiList<Badge>(ctx, '/gamification/badges').then((r) => r.items).catch(() => [])
-			: Promise.resolve([] as Badge[])
+			: Promise.resolve([] as Badge[]),
+		// Follower growth time-series for the analytics LineChart (owner-only).
+		isOwnProfile
+			? apiList<FollowerGrowthItem>(ctx, '/me/analytics/followers?days=30').then((r) => r.items).catch(() => [])
+			: Promise.resolve([] as FollowerGrowthItem[]),
+		// Top content by views for the analytics BarChart (owner-only).
+		isOwnProfile
+			? apiList<TopContentItem>(ctx, '/me/analytics/content?page_size=10').then((r) => r.items).catch(() => [])
+			: Promise.resolve([] as TopContentItem[])
 	]);
 
 	return {
@@ -98,6 +110,8 @@ export const load: PageServerLoad = async (event) => {
 		analytics,
 		badges,
 		allBadges,
+		followerGrowth,
+		topContent,
 		jsonLd
 	};
 };

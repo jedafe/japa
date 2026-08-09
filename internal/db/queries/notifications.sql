@@ -94,6 +94,28 @@ WHERE id = @id;
 SELECT key, label, description, enabled, default_in_app, default_email, default_push
 FROM notification_types ORDER BY key;
 
+-- name: AdminListNotificationTypes :many
+-- Admin list with offset pagination + search + enabled filter + sort (Section 35).
+SELECT key, label, description, enabled, default_in_app, default_email, default_push
+FROM notification_types
+WHERE (@q::text = '' OR key ILIKE '%' || @q || '%' OR label ILIKE '%' || @q || '%' OR description ILIKE '%' || @q || '%')
+  AND (@enabled_filter::int = 0 OR enabled = (@enabled_filter::int = 1))
+ORDER BY
+  CASE WHEN @sort::text = 'key' AND @dir::text = 'asc' THEN key END ASC,
+  CASE WHEN @sort::text = 'key' AND @dir::text = 'desc' THEN key END DESC,
+  CASE WHEN @sort::text = 'label' AND @dir::text = 'asc' THEN label END ASC,
+  CASE WHEN @sort::text = 'label' AND @dir::text = 'desc' THEN label END DESC,
+  CASE WHEN @sort::text = 'enabled' AND @dir::text = 'asc' THEN enabled END ASC,
+  CASE WHEN @sort::text = 'enabled' AND @dir::text = 'desc' THEN enabled END DESC,
+  CASE WHEN @sort::text NOT IN ('key', 'label', 'enabled') THEN key END ASC
+LIMIT @page_limit OFFSET @page_offset;
+
+-- name: AdminCountNotificationTypes :one
+SELECT COUNT(*)::int AS count
+FROM notification_types
+WHERE (@q::text = '' OR key ILIKE '%' || @q || '%' OR label ILIKE '%' || @q || '%' OR description ILIKE '%' || @q || '%')
+  AND (@enabled_filter::int = 0 OR enabled = (@enabled_filter::int = 1));
+
 -- name: UpsertNotificationType :exec
 INSERT INTO notification_types (key, label, description, enabled, default_in_app, default_email, default_push)
 VALUES (@key, @label, @description, @enabled, @default_in_app, @default_email, @default_push)

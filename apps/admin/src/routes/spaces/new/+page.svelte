@@ -59,8 +59,8 @@
 	async function loadPresets() {
 		try {
 			const result = await permissionPresetsApi.list();
-			if (result.ok && result.data?.data) {
-				presets = result.data.data;
+			if (result.ok && Array.isArray(result.data)) {
+				presets = result.data;
 			}
 		} catch {
 			// non-critical

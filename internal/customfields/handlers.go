@@ -28,7 +28,9 @@ import (
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/clientip"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/payments"
 	"github.com/jedafe/japa/internal/tenant"
+	"github.com/jedafe/japa/internal/wallet"
 	"github.com/jedafe/japa/internal/worker"
 )
 
@@ -52,6 +54,35 @@ type Handlers struct {
 	// form submission is created (Section 06). Nil in tests — SubmitForm
 	// gracefully skips trigger enqueuing when not wired.
 	AsynqClient *asynq.Client
+
+	// WalletService is used to deduct credits for paid form submissions
+	// (Section 06 Paid Form Submissions). Nil in tests — paid submissions
+	// are not testable without it.
+	wallet WalletSpender
+
+	// PaymentsService is used to create payment intents for gateway-paid
+	// form submissions (Section 06). Nil in tests.
+	payments PaymentCreator
+
+	// Settings is used to read system_settings for form fee overrides.
+	// Nil in tests — the form's submission_fee_credits column is used directly.
+	settings SettingsReader
+}
+
+// WalletSpender deducts credits from a user's wallet.
+type WalletSpender interface {
+	SpendCredits(ctx context.Context, tenantID, userID pgtype.UUID, input wallet.SpendCreditsInput) (int64, error)
+}
+
+// PaymentCreator creates payment intents for paid submissions.
+type PaymentCreator interface {
+	CreatePayment(ctx context.Context, tenantID, userID pgtype.UUID, input payments.CreatePaymentInput) (payments.CreatePaymentResult, error)
+}
+
+// SettingsReader reads system_settings values.
+type SettingsReader interface {
+	GetSetting(ctx context.Context, tenantID pgtype.UUID, key string) (string, error)
+	GetIntOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback int) int
 }
 
 // NewHandlers creates Handlers with the given Service and EmbedResolver.
@@ -67,6 +98,18 @@ func (h *Handlers) SetRBAC(rbac SuperAdminChecker) { h.rbac = rbac }
 // trigger tasks (Section 06). Required in production for trigger firing;
 // tests may omit it.
 func (h *Handlers) SetAsynqClient(c *asynq.Client) { h.AsynqClient = c }
+
+// SetWalletService wires the wallet service for paid form submissions
+// (Section 06 Paid Form Submissions).
+func (h *Handlers) SetWalletService(w WalletSpender) { h.wallet = w }
+
+// SetPaymentsService wires the payments service for gateway-paid form
+// submissions (Section 06 Paid Form Submissions).
+func (h *Handlers) SetPaymentsService(p PaymentCreator) { h.payments = p }
+
+// SetSettings wires the settings reader for system_settings lookups
+// (Section 06 Paid Form Submissions — fee overrides).
+func (h *Handlers) SetSettings(s SettingsReader) { h.settings = s }
 
 // errorResponse is the JSON body returned for error responses, following the
 // JapaConnect API error format: {"error": {"code": "...", "message": "..."}}.
@@ -1682,16 +1725,17 @@ func (h *Handlers) GetFormEmbed(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
-			"id":              form.ID,
-			"slug":            form.Slug,
-			"name":            form.Name,
-			"description":     form.Description,
-			"status":          form.Status,
-			"is_multi_step":   form.IsMultiStep,
-			"submit_label":    form.SubmitLabel,
-			"success_message": form.SuccessMessage,
-			"fields":          fieldList,
-			"steps":           stepList,
+			"id":                       form.ID,
+			"slug":                     form.Slug,
+			"name":                     form.Name,
+			"description":              form.Description,
+			"status":                   form.Status,
+			"is_multi_step":            form.IsMultiStep,
+			"submit_label":             form.SubmitLabel,
+			"success_message":          form.SuccessMessage,
+			"submission_fee_credits":   form.SubmissionFeeCredits,
+			"fields":                   fieldList,
+			"steps":                    stepList,
 		},
 	})
 }
@@ -1705,6 +1749,13 @@ func (h *Handlers) GetFormEmbed(w http.ResponseWriter, r *http.Request) {
 // SubmitForm handles POST /api/v1/forms/{id}/submissions. This endpoint is
 // public: authentication is optional, so an authenticated user is recorded
 // when present but anonymous submissions are accepted.
+//
+// For paid forms (submission_fee_credits > 0), the request must include a
+// payment_method field: "credit" (wallet credits) or "paystack"/"stripe"
+// (payment gateway). Credits are deducted synchronously; gateway payments
+// create a pending submission + payment intent and return a checkout_url.
+// Ref: japaconnect-engineering/sections/06-custom-field-builder-form-builder.md
+// (Paid Form Submissions)
 func (h *Handlers) SubmitForm(w http.ResponseWriter, r *http.Request) {
 	formID, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -1713,7 +1764,8 @@ func (h *Handlers) SubmitForm(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		FieldValues map[string]any `json:"field_values"`
+		FieldValues   map[string]any `json:"field_values"`
+		PaymentMethod string         `json:"payment_method"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -1735,8 +1787,10 @@ func (h *Handlers) SubmitForm(w http.ResponseWriter, r *http.Request) {
 
 	// Optional auth: record the submitter when a valid session exists.
 	var userID pgtype.UUID
+	hasUser := false
 	if user := auth.FromContext(r.Context()); user != nil {
 		userID = user.UserID
+		hasUser = true
 	}
 
 	// Parse the client IP for abuse tracking; an unparseable address is
@@ -1749,28 +1803,156 @@ func (h *Handlers) SubmitForm(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	submission, err := h.Service.CreateFormSubmission(r.Context(), gen.CreateFormSubmissionParams{
-		FormID:      formID,
-		TenantID:    tenantID,
-		UserID:      userID,
-		IpAddress:   ipAddr,
-		FieldValues: fieldValues,
-		Status:      "new",
-	})
+	// Look up the form to check submission_fee_credits.
+	form, err := h.Service.GetForm(r.Context(), formID, tenantID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
 
-	// Enqueue form:fire_submission_triggers so the worker dispatches any
-	// triggers configured on this form (Section 06). Fire-and-forget per
-	// Rule 8 — a failed enqueue is logged but does not fail the submission,
-	// which has already been persisted.
-	h.enqueueFormTriggers(formID, tenantID, submission.ID, userID, fieldValues)
+	// Determine the fee: use the form's submission_fee_credits, or override
+	// from system_settings 'claim_ownership.fee_credits' if the form is the
+	// claim-ownership form and the override is > 0.
+	feeCredits := int64(form.SubmissionFeeCredits)
+	if h.settings != nil && form.Slug == "claim-ownership" {
+		override := h.settings.GetIntOr(r.Context(), tenantID, "claim_ownership.fee_credits", 0)
+		if override > 0 {
+			feeCredits = int64(override)
+		}
+	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{
-		"data": map[string]any{"id": submission.ID, "status": "new"},
-	})
+	// Free submission — no payment needed.
+	if feeCredits <= 0 {
+		submission, sErr := h.Service.CreateFormSubmission(r.Context(), gen.CreateFormSubmissionParams{
+			FormID:      formID,
+			TenantID:    tenantID,
+			UserID:      userID,
+			IpAddress:   ipAddr,
+			FieldValues: fieldValues,
+			Status:      "new",
+		})
+		if sErr != nil {
+			handleServiceError(w, sErr)
+			return
+		}
+
+		h.enqueueFormTriggers(formID, tenantID, submission.ID, userID, fieldValues)
+
+		writeJSON(w, http.StatusCreated, map[string]any{
+			"data": map[string]any{"id": submission.ID, "status": "new"},
+		})
+		return
+	}
+
+	// Paid submission — payment_method is required.
+	if req.PaymentMethod == "" {
+		writeError(w, http.StatusBadRequest, "payment_required", "This form requires a payment method ('credit' or 'paystack' or 'stripe')")
+		return
+	}
+
+	if !hasUser {
+		writeError(w, http.StatusUnauthorized, "auth_required", "Authentication is required for paid form submissions")
+		return
+	}
+
+	switch req.PaymentMethod {
+	case payments.ProviderCredit:
+		// Deduct credits from the user's wallet synchronously.
+		if h.wallet == nil {
+			writeError(w, http.StatusInternalServerError, "wallet_unavailable", "Wallet service is not configured")
+			return
+		}
+
+		_, spendErr := h.wallet.SpendCredits(r.Context(), tenantID, userID, wallet.SpendCreditsInput{
+			Amount:      feeCredits,
+			Source:      "form_submission",
+			Reference:   fmt.Sprintf("form_submission:%s", formID.String()),
+			PurposeType: "form_submission",
+			PurposeID:   formID.String(),
+		})
+		if spendErr != nil {
+			writeError(w, http.StatusPaymentRequired, "insufficient_credits", "Insufficient credits to pay the submission fee")
+			return
+		}
+
+		// Create the submission with status='new' (payment confirmed).
+		submission, sErr := h.Service.CreateFormSubmission(r.Context(), gen.CreateFormSubmissionParams{
+			FormID:      formID,
+			TenantID:    tenantID,
+			UserID:      userID,
+			IpAddress:   ipAddr,
+			FieldValues: fieldValues,
+			Status:      "new",
+		})
+		if sErr != nil {
+			handleServiceError(w, sErr)
+			return
+		}
+
+		h.enqueueFormTriggers(formID, tenantID, submission.ID, userID, fieldValues)
+
+		writeJSON(w, http.StatusCreated, map[string]any{
+			"data": map[string]any{"id": submission.ID, "status": "new"},
+		})
+
+	case payments.ProviderPaystack, payments.ProviderStripe:
+		// Create a payment intent via the gateway.
+		if h.payments == nil {
+			writeError(w, http.StatusInternalServerError, "payments_unavailable", "Payments service is not configured")
+			return
+		}
+
+		result, pErr := h.payments.CreatePayment(r.Context(), tenantID, userID, payments.CreatePaymentInput{
+			Provider:    req.PaymentMethod,
+			PurposeType: "form_submission",
+			PurposeID:   formID.String(),
+			Amount:      feeCredits,
+			Metadata: map[string]interface{}{
+				"form_id":      formID.String(),
+				"tenant_id":    tenantID.String(),
+				"field_values": req.FieldValues,
+			},
+		})
+		if pErr != nil {
+			writeError(w, http.StatusInternalServerError, "payment_intent_failed", "Failed to create payment intent")
+			return
+		}
+
+		// Create the submission with status='pending_payment'.
+		var paymentID pgtype.UUID
+		if result.Payment.ID.Valid {
+			paymentID = result.Payment.ID
+		}
+
+		submission, sErr := h.Service.CreateFormSubmission(r.Context(), gen.CreateFormSubmissionParams{
+			FormID:      formID,
+			TenantID:    tenantID,
+			UserID:      userID,
+			IpAddress:   ipAddr,
+			FieldValues: fieldValues,
+			Status:      "pending_payment",
+			PaymentID:   paymentID,
+		})
+		if sErr != nil {
+			handleServiceError(w, sErr)
+			return
+		}
+
+		// Do NOT enqueue triggers yet — the webhook will confirm payment and
+		// update the submission to 'new', at which point triggers fire.
+
+		writeJSON(w, http.StatusCreated, map[string]any{
+			"data": map[string]any{
+				"id":           submission.ID,
+				"status":       "pending_payment",
+				"checkout_url": result.CheckoutURL,
+				"payment_id":   result.Payment.ID,
+			},
+		})
+
+	default:
+		writeError(w, http.StatusBadRequest, "invalid_payment_method", "payment_method must be 'credit', 'paystack', or 'stripe'")
+	}
 }
 
 // enqueueFormTriggers enqueues a form:fire_submission_triggers task for the

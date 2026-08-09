@@ -202,14 +202,27 @@ func (h *Handlers) ClaimOrganization(w http.ResponseWriter, r *http.Request) {
 }
 
 // ListPendingOwnershipClaims handles GET /api/v1/admin/organizations/pending-claims.
-// Returns all pending ownership claims with claimant and org details.
+// Returns ownership claims with claimant and org details. An optional ?status=
+// query param filters by status (pending|approved|rejected|withdrawn); omitted
+// or empty defaults to "pending" (the review queue view), and "all" returns
+// every claim for history/audit. Ref: sections/07-organization-profiles-claim-ownership.md.
 func (h *Handlers) ListPendingOwnershipClaims(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	claims, err := h.Queries.GetPendingOwnershipClaims(r.Context(), tenantID)
+	// Default to pending so existing callers (e.g. the /organisations page's
+	// "Approve Claim" action map) keep receiving only actionable claims.
+	status := r.URL.Query().Get("status")
+	if status == "" {
+		status = "pending"
+	}
+
+	claims, err := h.Queries.ListOwnershipClaimsForAdmin(r.Context(), gen.ListOwnershipClaimsForAdminParams{
+		TenantID: tenantID,
+		Column2:  status,
+	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "db_error", "Failed to fetch pending claims")
 		return
