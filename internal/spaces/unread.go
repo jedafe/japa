@@ -32,7 +32,7 @@ func NewUnreadCounter(vk *valkey.Client) *UnreadCounter {
 
 // unreadKey builds the Valkey key for a tenant/user/space unread counter pair.
 func unreadKey(tenantID, userID, spaceID pgtype.UUID) string {
-	return fmt.Sprintf("jc:space_unread:%s:%s:%s", tenantID.String(), userID.String(), spaceID.String())
+	return valkey.MustKey("space_unread:%s:%s:%s", tenantID.String(), userID.String(), spaceID.String())
 }
 
 // Increment increments the unread count for a user in a space.
@@ -66,13 +66,11 @@ func (c *UnreadCounter) Reset(ctx context.Context, tenantID, userID, spaceID pgt
 
 	key := unreadKey(tenantID, userID, spaceID)
 
-	if err := c.rdb.Set(ctx, key, 0, 0).Err(); err != nil {
+	// Set to 0 with the 24-hour TTL in a single command so the key is
+	// never observable without an expiry (avoids the Set+Expire race that
+	// could leave a persistent zero key if Expire failed).
+	if err := c.rdb.Set(ctx, key, 0, 24*time.Hour).Err(); err != nil {
 		return fmt.Errorf("resetting space unread count: %w", err)
-	}
-
-	// Attach a 24-hour TTL so the key expires even after a reset.
-	if err := c.rdb.Expire(ctx, key, 24*time.Hour).Err(); err != nil {
-		return fmt.Errorf("setting space unread TTL: %w", err)
 	}
 
 	return nil

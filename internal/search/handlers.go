@@ -113,7 +113,7 @@ func (h *Handlers) SetCache(c valkeycompat.Cmdable) {
 func searchCacheKey(tenantID pgtype.UUID, query, typeFilter string, limit int) string {
 	h := sha256.Sum256([]byte(query))
 	queryHash := hex.EncodeToString(h[:16]) // 32-char hex, enough for uniqueness
-	return fmt.Sprintf("jc:cache:search:%s:%s:%s:%d", tenantID.String(), queryHash, typeFilter, limit)
+	return vkcache.MustKey("cache:search:%s:%s:%s:%d", tenantID.String(), queryHash, typeFilter, limit)
 }
 
 // SearchResult represents a single search result.

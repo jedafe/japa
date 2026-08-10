@@ -12,8 +12,6 @@
 	const job = $derived<JobDetail | null>(data.job);
 	const authed = $derived(data.authed);
 
-	let coverLetter = $state('');
-	let resumeUrl = $state('');
 	let applyResult = $state<{ ok?: boolean; error?: string; status?: string } | null>(null);
 	let applying = $state(false);
 
@@ -22,6 +20,23 @@
 	function field(key: string): string {
 		return job?.field_values?.[key] ?? '';
 	}
+
+	// Build a human-readable location string from city + country custom fields.
+	const locationStr = $derived(() => {
+		const city = field('city');
+		const country = field('country');
+		return [city, country].filter(Boolean).join(', ');
+	});
+
+	// Build a salary range string from salary_min/salary_max/salary_currency.
+	const salaryStr = $derived(() => {
+		const min = field('salary_min');
+		const max = field('salary_max');
+		const currency = field('salary_currency');
+		if (!min && !max) return '';
+		const range = [min, max].filter(Boolean).join('–');
+		return currency ? `${currency} ${range}` : range;
+	});
 
 	// JSON-LD JobPosting for SEO (Ref: Section 63, ROADMAP-MAIN 36.03).
 	const jsonLd = $derived(
@@ -37,11 +52,11 @@
 						'@type': 'Organization',
 						name: field('company_name') || 'JapaConnect'
 					},
-					jobLocation: field('location')
-						? { '@type': 'Place', address: field('location') }
+					jobLocation: locationStr()
+						? { '@type': 'Place', address: locationStr() }
 						: undefined,
 					employmentType: field('job_type') || undefined,
-					estimatedSalary: field('salary_range') || undefined
+					estimatedSalary: salaryStr() || undefined
 				})
 			: ''
 	);
@@ -75,14 +90,17 @@
 				{#if field('company_name')}
 					<span class="flex items-center gap-1"><Briefcase size={12} /> {field('company_name')}</span>
 				{/if}
-				{#if field('location')}
-					<span class="flex items-center gap-1"><MapPin size={12} /> {field('location')}</span>
+				{#if locationStr()}
+					<span class="flex items-center gap-1"><MapPin size={12} /> {locationStr()}</span>
 				{/if}
 				{#if field('job_type')}
 					<span class="flex items-center gap-1"><Clock size={12} /> {field('job_type')}</span>
 				{/if}
-				{#if field('salary_range')}
-					<span>{field('salary_range')}</span>
+				{#if field('location_type')}
+					<span class="rounded-full bg-[var(--color-surface-subtle)] px-2 py-0.5">{field('location_type')}</span>
+				{/if}
+				{#if salaryStr()}
+					<span>{salaryStr()}</span>
 				{/if}
 			</div>
 		</div>
@@ -135,31 +153,7 @@
 								<AlertCircle size={16} /> {applyResult.error}
 							</div>
 						{/if}
-						<div>
-							<label for="resume_url" class="block text-xs font-medium text-[var(--color-muted)]">
-								{t('jobs.resume_url', 'Resume URL')}
-							</label>
-							<input
-								id="resume_url"
-								name="resume_url"
-								type="url"
-								bind:value={resumeUrl}
-								placeholder="https://…"
-								class="mt-1 w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
-							/>
-						</div>
-						<div>
-							<label for="cover_letter" class="block text-xs font-medium text-[var(--color-muted)]">
-								{t('jobs.cover_letter', 'Cover letter')}
-							</label>
-							<textarea
-								id="cover_letter"
-								name="cover_letter"
-								bind:value={coverLetter}
-								rows="4"
-								class="mt-1 w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
-							></textarea>
-						</div>
+						<input type="hidden" name="job_id" value={job.id} />
 						<button
 							type="submit"
 							disabled={applying}

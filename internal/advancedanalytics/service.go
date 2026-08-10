@@ -17,6 +17,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/db/gen"
 )
@@ -44,14 +45,26 @@ func (s *Service) GetTopContent(ctx context.Context, tenantID pgtype.UUID, perio
 	if limit <= 0 || limit > 100 {
 		limit = 20
 	}
-	// The mv_top_content_7d view is always 7d. For 30d/90d, we'd need
-	// additional views — for now, the 7d view is the only one materialized.
-	// The period parameter is accepted for forward compatibility.
+	days := periodToDays(period)
 	return s.store.TopContent(ctx, gen.AdvancedAnalyticsTopContentParams{
-		TenantID:     tenantID,
-		ContentType:  contentType,
-		TopN:         int32(limit),
+		TenantID:    tenantID,
+		Days:        int32(days),
+		ContentType: contentType,
+		TopN:        int32(limit),
 	})
+}
+
+// periodToDays converts a period string ("7d", "30d", "90d") to a day count.
+// Defaults to 7 days for unrecognized values.
+func periodToDays(period string) int {
+	switch period {
+	case Period30d:
+		return 30
+	case Period90d:
+		return 90
+	default:
+		return 7
+	}
 }
 
 // GetRevenueStreams returns monthly revenue breakdown by stream.
@@ -122,26 +135,29 @@ func (s *Service) ExportCSV(ctx context.Context, tenantID pgtype.UUID, metric, p
 			return "", nil, err
 		}
 		headers := []string{"content_id", "title", "slug", "content_type", "total_views", "total_reactions", "total_comments", "engagement_score"}
-		var sb strings.Builder
-		sb.WriteString(strings.Join(headers, ",") + "\n")
-		for _, r := range rows {
-			title := ""
-			if r.Title != nil {
-				title = *r.Title
+		return writeCSV(headers, func(w *csv.Writer) {
+			for _, r := range rows {
+				title := ""
+				if r.Title != nil {
+					title = *r.Title
+				}
+				slug := ""
+				if r.Slug != nil {
+					slug = *r.Slug
+				}
+				contentType := ""
+				if r.ContentType != nil {
+					contentType = *r.ContentType
+				}
+				w.Write([]string{
+					r.ContentID.String(), title, slug, contentType,
+					strconv.FormatInt(r.TotalViews, 10),
+					strconv.FormatInt(r.TotalReactions, 10),
+					strconv.FormatInt(r.TotalComments, 10),
+					strconv.FormatInt(int64(r.EngagementScore), 10),
+				})
 			}
-			slug := ""
-			if r.Slug != nil {
-				slug = *r.Slug
-			}
-			contentType := ""
-			if r.ContentType != nil {
-				contentType = *r.ContentType
-			}
-			sb.WriteString(fmt.Sprintf("%s,%s,%s,%s,%d,%d,%d,%d\n",
-				r.ContentID.String(), title, slug, contentType,
-				r.TotalViews, r.TotalReactions, r.TotalComments, r.EngagementScore))
-		}
-		return sb.String(), headers, nil
+		}), headers, nil
 
 	case "revenue_streams":
 		rows, err := s.GetRevenueStreams(ctx, tenantID, period)
@@ -149,17 +165,21 @@ func (s *Service) ExportCSV(ctx context.Context, tenantID pgtype.UUID, metric, p
 			return "", nil, err
 		}
 		headers := []string{"month", "subscription_revenue", "course_revenue", "ad_revenue", "credit_revenue"}
-		var sb strings.Builder
-		sb.WriteString(strings.Join(headers, ",") + "\n")
-		for _, r := range rows {
-			monthStr := ""
-			if r.Month.Valid {
-				monthStr = r.Month.Time.Format("2006-01-02")
+		return writeCSV(headers, func(w *csv.Writer) {
+			for _, r := range rows {
+				monthStr := ""
+				if r.Month.Valid {
+					monthStr = r.Month.Time.Format("2006-01-02")
+				}
+				w.Write([]string{
+					monthStr,
+					strconv.FormatInt(r.SubscriptionRevenue, 10),
+					strconv.FormatInt(r.CourseRevenue, 10),
+					strconv.FormatInt(r.AdRevenue, 10),
+					strconv.FormatInt(r.CreditRevenue, 10),
+				})
 			}
-			sb.WriteString(fmt.Sprintf("%s,%d,%d,%d,%d\n",
-				monthStr, r.SubscriptionRevenue, r.CourseRevenue, r.AdRevenue, r.CreditRevenue))
-		}
-		return sb.String(), headers, nil
+		}), headers, nil
 
 	case "ad_performance":
 		rows, err := s.GetAdPerformance(ctx, tenantID, "", 100)
@@ -167,18 +187,79 @@ func (s *Service) ExportCSV(ctx context.Context, tenantID pgtype.UUID, metric, p
 			return "", nil, err
 		}
 		headers := []string{"campaign_id", "campaign_name", "status", "impressions", "clicks", "ctr", "spent"}
-		var sb strings.Builder
-		sb.WriteString(strings.Join(headers, ",") + "\n")
-		for _, r := range rows {
-			sb.WriteString(fmt.Sprintf("%s,%s,%s,%d,%d,%d,%d\n",
-				r.CampaignID.String(), r.CampaignName, r.Status,
-				r.Impressions, r.Clicks, r.Ctr, r.Spent))
+		return writeCSV(headers, func(w *csv.Writer) {
+			for _, r := range rows {
+				w.Write([]string{
+					r.CampaignID.String(), r.CampaignName, r.Status,
+					strconv.FormatInt(r.Impressions, 10),
+					strconv.FormatInt(r.Clicks, 10),
+					strconv.FormatInt(int64(r.Ctr), 10),
+					strconv.FormatInt(r.Spent, 10),
+				})
+			}
+		}), headers, nil
+
+	case "newsletter":
+		campaigns, err := s.GetNewsletterEngagement(ctx, tenantID, 100)
+		if err != nil {
+			return "", nil, err
 		}
-		return sb.String(), headers, nil
+		headers := []string{"campaign_id", "campaign_name", "subject", "sent_at", "total_sent", "total_opened", "total_clicked", "open_rate", "click_rate"}
+		return writeCSV(headers, func(w *csv.Writer) {
+			for _, r := range campaigns {
+				sentAt := ""
+				if r.SentAt.Valid {
+					sentAt = r.SentAt.Time.Format(time.RFC3339)
+				}
+				w.Write([]string{
+					r.CampaignID.String(), r.CampaignName, r.Subject, sentAt,
+					strconv.FormatInt(r.TotalSent, 10),
+					strconv.FormatInt(r.TotalOpened, 10),
+					strconv.FormatInt(r.TotalClicked, 10),
+					strconv.FormatInt(int64(r.OpenRate), 10),
+					strconv.FormatInt(int64(r.ClickRate), 10),
+				})
+			}
+		}), headers, nil
+
+	case "retention":
+		cohorts, err := s.GetRetentionCohorts(ctx, tenantID, 100)
+		if err != nil {
+			return "", nil, err
+		}
+		headers := []string{"cohort_date", "cohort_size", "retained_d1", "retained_d7", "retained_d30", "d1_rate", "d7_rate", "d30_rate"}
+		return writeCSV(headers, func(w *csv.Writer) {
+			for _, r := range cohorts {
+				cohortDate := ""
+				if r.CohortDate.Valid {
+					cohortDate = r.CohortDate.Time.Format("2006-01-02")
+				}
+				w.Write([]string{
+					cohortDate,
+					strconv.FormatInt(r.CohortSize, 10),
+					strconv.FormatInt(r.RetainedD1, 10),
+					strconv.FormatInt(r.RetainedD7, 10),
+					strconv.FormatInt(r.RetainedD30, 10),
+					strconv.FormatInt(int64(r.D1Rate), 10),
+					strconv.FormatInt(int64(r.D7Rate), 10),
+					strconv.FormatInt(int64(r.D30Rate), 10),
+				})
+			}
+		}), headers, nil
 
 	default:
 		return "", nil, fmt.Errorf("advancedanalytics: unknown export metric: %s", metric)
 	}
+}
+
+// writeCSV builds a CSV string with proper escaping using encoding/csv.
+func writeCSV(headers []string, writeRows func(w *csv.Writer)) string {
+	var sb strings.Builder
+	w := csv.NewWriter(&sb)
+	_ = w.Write(headers)
+	writeRows(w)
+	w.Flush()
+	return sb.String()
 }
 
 // --- HTTP Handlers ---
@@ -194,11 +275,8 @@ func NewHandlers(svc *Service) *Handlers { return &Handlers{svc: svc} }
 // HandleTopContent returns top content by engagement.
 // GET /admin/analytics/top-content
 func (h *Handlers) HandleTopContent(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	user, ok := requireAuthUser(w, r)
 	if !ok {
-		return
-	}
-	if _, ok := requireUser(w, r); !ok {
 		return
 	}
 
@@ -209,7 +287,7 @@ func (h *Handlers) HandleTopContent(w http.ResponseWriter, r *http.Request) {
 	contentType := r.URL.Query().Get("type")
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 
-	rows, err := h.svc.GetTopContent(r.Context(), tenantID, period, contentType, limit)
+	rows, err := h.svc.GetTopContent(r.Context(), user.TenantID, period, contentType, limit)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "query_failed", err.Error())
 		return
@@ -220,11 +298,8 @@ func (h *Handlers) HandleTopContent(w http.ResponseWriter, r *http.Request) {
 // HandleRevenueStreams returns revenue breakdown.
 // GET /admin/analytics/revenue-streams
 func (h *Handlers) HandleRevenueStreams(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	user, ok := requireAuthUser(w, r)
 	if !ok {
-		return
-	}
-	if _, ok := requireUser(w, r); !ok {
 		return
 	}
 
@@ -233,7 +308,7 @@ func (h *Handlers) HandleRevenueStreams(w http.ResponseWriter, r *http.Request) 
 		period = "monthly"
 	}
 
-	rows, err := h.svc.GetRevenueStreams(r.Context(), tenantID, period)
+	rows, err := h.svc.GetRevenueStreams(r.Context(), user.TenantID, period)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "query_failed", err.Error())
 		return
@@ -244,18 +319,15 @@ func (h *Handlers) HandleRevenueStreams(w http.ResponseWriter, r *http.Request) 
 // HandleAdPerformance returns ad campaign aggregate stats.
 // GET /admin/analytics/ads
 func (h *Handlers) HandleAdPerformance(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	user, ok := requireAuthUser(w, r)
 	if !ok {
-		return
-	}
-	if _, ok := requireUser(w, r); !ok {
 		return
 	}
 
 	status := r.URL.Query().Get("status")
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 
-	rows, err := h.svc.GetAdPerformance(r.Context(), tenantID, status, limit)
+	rows, err := h.svc.GetAdPerformance(r.Context(), user.TenantID, status, limit)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "query_failed", err.Error())
 		return
@@ -266,23 +338,20 @@ func (h *Handlers) HandleAdPerformance(w http.ResponseWriter, r *http.Request) {
 // HandleNewsletterEngagement returns newsletter open/click rates.
 // GET /admin/analytics/newsletter
 func (h *Handlers) HandleNewsletterEngagement(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	user, ok := requireAuthUser(w, r)
 	if !ok {
-		return
-	}
-	if _, ok := requireUser(w, r); !ok {
 		return
 	}
 
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 
-	campaigns, err := h.svc.GetNewsletterEngagement(r.Context(), tenantID, limit)
+	campaigns, err := h.svc.GetNewsletterEngagement(r.Context(), user.TenantID, limit)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "query_failed", err.Error())
 		return
 	}
 
-	lists, err := h.svc.GetSubscriberGrowth(r.Context(), tenantID)
+	lists, err := h.svc.GetSubscriberGrowth(r.Context(), user.TenantID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "query_failed", err.Error())
 		return
@@ -297,17 +366,14 @@ func (h *Handlers) HandleNewsletterEngagement(w http.ResponseWriter, r *http.Req
 // HandleRetention returns retention cohorts.
 // GET /admin/analytics/retention
 func (h *Handlers) HandleRetention(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	user, ok := requireAuthUser(w, r)
 	if !ok {
-		return
-	}
-	if _, ok := requireUser(w, r); !ok {
 		return
 	}
 
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 
-	rows, err := h.svc.GetRetentionCohorts(r.Context(), tenantID, limit)
+	rows, err := h.svc.GetRetentionCohorts(r.Context(), user.TenantID, limit)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "query_failed", err.Error())
 		return
@@ -318,11 +384,8 @@ func (h *Handlers) HandleRetention(w http.ResponseWriter, r *http.Request) {
 // HandleExport exports analytics as CSV.
 // GET /admin/analytics/export
 func (h *Handlers) HandleExport(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	user, ok := requireAuthUser(w, r)
 	if !ok {
-		return
-	}
-	if _, ok := requireUser(w, r); !ok {
 		return
 	}
 
@@ -333,7 +396,7 @@ func (h *Handlers) HandleExport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	csvData, _, err := h.svc.ExportCSV(r.Context(), tenantID, metric, period)
+	csvData, _, err := h.svc.ExportCSV(r.Context(), user.TenantID, metric, period)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "export_failed", err.Error())
 		return
@@ -363,36 +426,14 @@ func writeError(w http.ResponseWriter, status int, code, message string) {
 	})
 }
 
-type tenantCtxKey struct{}
-type userCtxKey struct{}
-
-func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
-	v := r.Context().Value(tenantCtxKey{})
-	if v == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Tenant context required")
-		return pgtype.UUID{}, false
-	}
-	id, ok := v.(pgtype.UUID)
-	if !ok || !id.Valid {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Invalid tenant context")
-		return pgtype.UUID{}, false
-	}
-	return id, true
-}
-
-func requireUser(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
-	v := r.Context().Value(userCtxKey{})
-	if v == nil {
+// requireAuthUser extracts the authenticated user from the request context
+// using the auth middleware's context key. Returns the AuthenticatedUser and
+// writes a 401 error + false if no authenticated user is present.
+func requireAuthUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
+	u := auth.FromContext(r.Context())
+	if u == nil || !u.UserID.Valid || !u.TenantID.Valid {
 		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
-		return pgtype.UUID{}, false
+		return nil, false
 	}
-	id, ok := v.(pgtype.UUID)
-	if !ok || !id.Valid {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Invalid user context")
-		return pgtype.UUID{}, false
-	}
-	return id, true
+	return u, true
 }
-
-// keep csv import
-var _ = csv.NewWriter

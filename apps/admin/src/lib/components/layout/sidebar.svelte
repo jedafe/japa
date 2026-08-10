@@ -131,7 +131,7 @@
 			id: "engagement",
 			label: t("nav.section.engagement", "Engagement"),
 			items: [
-			{ path: "/newsletter", label: t("nav.newsletter", "Newsletter"), icon: Mail, permission: "newsletter.admin" },
+			{ path: "/newsletter", label: t("nav.newsletter", "Newsletter"), icon: Mail, permission: "newsletter.manage" },
 			{ path: "/broadcasts", label: t("nav.broadcasts", "Broadcasts"), icon: Bell, permission: "admin.broadcast" },
 			{ path: "/forms", label: t("nav.forms", "Forms"), icon: FileInput, permission: "forms.create" },
 			{ path: "/learning", label: t("nav.learning", "Learning"), icon: GraduationCap, permission: "learning.admin.manage" },
@@ -211,7 +211,7 @@
 				{ path: "/participation", label: t("nav.participation", "Participation Queue"), icon: Bot, permission: "participation.view" },
 				{ path: "/rag", label: t("nav.rag", "RAG Index"), icon: Brain, permission: "ai.rag.manage" },
 				{ path: "/bots", label: t("nav.bots", "Bots"), icon: Bot, permission: "bots.admin" },
-				{ path: "/webhooks", label: t("nav.webhooks", "Webhooks"), icon: Webhook, permission: "webhooks.manage" },
+				{ path: "/webhooks", label: t("nav.webhooks", "Webhooks"), icon: Webhook, permission: "integrations.webhooks.manage" },
 				{ path: "/feature-flags", label: t("nav.feature_flags", "Feature Flags"), icon: Zap, permission: "admin.feature_flags.view" }
 			]
 		},

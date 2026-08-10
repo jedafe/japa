@@ -189,7 +189,7 @@ func (h *Handlers) UpdateRedirect(w http.ResponseWriter, r *http.Request) {
 		SourcePath string  `json:"source_path"`
 		TargetURL  string  `json:"target_url"`
 		HTTPStatus int16   `json:"http_status"`
-		IsActive   bool    `json:"is_active"`
+		IsActive   *bool   `json:"is_active"`
 		Notes      *string `json:"notes"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {

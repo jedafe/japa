@@ -21,12 +21,13 @@ func NewStore(read, write *gen.Queries) *Store {
 
 // ── Menus ─────────────────────────────────────────────────────────────
 
-func (s *Store) listMenus(ctx context.Context, tenantID pgtype.UUID, q pgtype.Text, limit, offset int32) ([]gen.Menu, error) {
+func (s *Store) listMenus(ctx context.Context, tenantID pgtype.UUID, q, placement, status, sort, sortDir string, limit, offset int32) ([]gen.ListMenusRow, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
 	rows, err := s.read.ListMenus(ctx, gen.ListMenusParams{
-		TenantID: tenantID, Q: q.String, PageOffset: offset, PageLimit: limit,
+		TenantID: tenantID, Q: q, Placement: placement, Status: status, SortDir: sortDir, Sort: sort,
+		PageOffset: offset, PageLimit: limit,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("listing menus: %w", err)
@@ -34,8 +35,10 @@ func (s *Store) listMenus(ctx context.Context, tenantID pgtype.UUID, q pgtype.Te
 	return rows, nil
 }
 
-func (s *Store) countMenus(ctx context.Context, tenantID pgtype.UUID, q pgtype.Text) (int32, error) {
-	count, err := s.read.CountMenus(ctx, gen.CountMenusParams{TenantID: tenantID, Q: q.String})
+func (s *Store) countMenus(ctx context.Context, tenantID pgtype.UUID, q, placement, status string) (int32, error) {
+	count, err := s.read.CountMenus(ctx, gen.CountMenusParams{
+		TenantID: tenantID, Q: q, Placement: placement, Status: status,
+	})
 	if err != nil {
 		return 0, fmt.Errorf("counting menus: %w", err)
 	}

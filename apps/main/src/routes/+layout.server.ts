@@ -52,26 +52,23 @@ export const load: LayoutServerLoad = async (event) => {
 	}
 
 	// Sitewide sidebar widgets (Sidebar Management System, Section 59, ADR-066).
-	// Fetched SSR so the sidebars paint during initial render. Each call
-	// degrades gracefully. The resolve endpoint matches the current page
-	// path against sidebar page_pattern globs and filters widgets by the
-	// user's auth state and group membership.
-	let leftSidebarWidgets: unknown[] = [];
+	// Fetched SSR so the right sidebar paints during initial render. The resolve
+	// endpoint matches the current page path against sidebar page_pattern globs
+	// and filters widgets by the user's auth state, group membership, and
+	// permission_node. When no sidebar matches, `sidebar` is null and the right
+	// column is hidden (Section 59 §4).
+	//
+	// Note: the Main app's left column is the navigation menu (ADR-058), not
+	// admin-managed widgets, so we do not resolve a left sidebar here.
 	let rightSidebarWidgets: unknown[] = [];
-	let leftSidebarEnabled = true;
 	let rightSidebarEnabled = true;
 	const sidebarPath = event.url.pathname;
 	try {
-		const leftRes = await apiGet<{ widgets?: unknown[] }>(ctx, `/sidebars/resolve?app=main&position=left&path=${encodeURIComponent(sidebarPath)}`);
-		leftSidebarWidgets = leftRes.widgets ?? [];
-	} catch {
-		// sidebar endpoint not available — keep defaults
-	}
-	try {
-		const rightRes = await apiGet<{ widgets?: unknown[] }>(ctx, `/sidebars/resolve?app=main&position=right&path=${encodeURIComponent(sidebarPath)}`);
+		const rightRes = await apiGet<{ sidebar?: { id?: string } | null; widgets?: unknown[] }>(ctx, `/sidebars/resolve?app=main&position=right&path=${encodeURIComponent(sidebarPath)}`);
 		rightSidebarWidgets = rightRes.widgets ?? [];
+		rightSidebarEnabled = rightRes.sidebar != null;
 	} catch {
-		// sidebar endpoint not available — keep defaults
+		// sidebar endpoint not available — keep defaults (enabled, empty)
 	}
 
 	// Authed-only: the user's joined spaces for the LeftNav Space switcher.
@@ -130,9 +127,7 @@ export const load: LayoutServerLoad = async (event) => {
 		navCollapsed: user?.ui?.nav_collapsed ?? false,
 		unreadNotifications,
 		features,
-		leftSidebarWidgets,
 		rightSidebarWidgets,
-		leftSidebarEnabled,
 		rightSidebarEnabled
 	};
 };

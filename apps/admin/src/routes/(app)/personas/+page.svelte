@@ -2,14 +2,12 @@
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import PageHeader from '$lib/components/layout/page-header.svelte';
-	import { Card, CardContent } from '$lib/components/ui/card';
 	import { DataTable } from '$lib/components/ui/data-table';
 	import { Button } from '$lib/components/ui/button';
-	import { Badge } from '$lib/components/ui/badge';
 	import { SlideOver } from '$lib/components/ui/slide-over';
 	import type { ActionItem } from '$lib/components/ui/data-table';
 	import { Bot, Plus, Trash2, Activity, Pencil } from 'lucide-svelte';
-	import { api } from '$lib/api';
+	import { api, apiRaw } from '$lib/api';
 
 	// Persona type matches the backend PersonaDetail / PersonaListItem DTOs
 	// (internal/personas/service.go). Ref: §68, ADR-068.
@@ -71,9 +69,21 @@
 	let activitySlideOverOpen = $state(false);
 	let activityLog = $state<unknown[]>([]);
 	let activityLoading = $state(false);
+	let activityTotal = $state(0);
+	let activityPage = $state(0);
+	let activityPageSize = $state(10);
+	let activityPersonaId = $state('');
 	let saving = $state(false);
 	let message = $state('');
 	let messageType = $state('');
+
+	// Server-side pagination state (BUG-003: list was not paginated — only 20
+	// personas loaded with no way to see more).
+	let listPage = $state(0);
+	let listPageSize = $state(10);
+	let listTotal = $state(0);
+	let listTotalPages = $state(1);
+	let statusFilter = $state('');
 
 	function defaultPolicy(): ActivityPolicy {
 		return {
@@ -111,9 +121,19 @@
 		loading = true;
 		error = '';
 		try {
-			const result = await api<Persona[]>('/admin/personas');
+			// BUG-003: use apiRaw to access top-level meta.total alongside data,
+			// and send page/limit params for server-side pagination.
+			const params = new URLSearchParams();
+			params.set('limit', String(listPageSize));
+			params.set('page', String(listPage + 1));
+			if (statusFilter) params.set('status', statusFilter);
+			const result = await apiRaw<{ data: Persona[]; meta: { total: number; limit: number; offset: number } }>(
+				`/admin/personas?${params.toString()}`
+			);
 			if (result.ok) {
-				personas = result.data ?? [];
+				personas = result.data?.data ?? [];
+				listTotal = result.data?.meta?.total ?? personas.length;
+				listTotalPages = Math.max(1, Math.ceil(listTotal / listPageSize));
 			} else {
 				error = result.error;
 			}
@@ -125,18 +145,40 @@
 	}
 
 	async function viewActivity(id: string) {
+		activityPersonaId = id;
+		activityPage = 0;
 		activitySlideOverOpen = true;
+		await loadActivity();
+	}
+
+	// BUG-004: activity log was not paginated — only 20 entries loaded with no
+	// way to see more. Now fetches with page/limit and supports pagination.
+	async function loadActivity() {
 		activityLoading = true;
 		try {
-			const result = await api<unknown[]>(`/admin/personas/${id}/activity`);
+			const params = new URLSearchParams();
+			params.set('limit', String(activityPageSize));
+			params.set('page', String(activityPage + 1));
+			const result = await apiRaw<{ data: unknown[]; meta: { total: number } }>(
+				`/admin/personas/${activityPersonaId}/activity?${params.toString()}`
+			);
 			if (result.ok) {
-				activityLog = result.data ?? [];
+				activityLog = result.data?.data ?? [];
+				activityTotal = result.data?.meta?.total ?? activityLog.length;
+			} else {
+				activityLog = [];
+				activityTotal = 0;
 			}
 		} catch {
 			activityLog = [];
+			activityTotal = 0;
 		} finally {
 			activityLoading = false;
 		}
+	}
+
+	function activityTotalPages() {
+		return Math.max(1, Math.ceil(activityTotal / activityPageSize));
 	}
 
 	async function createPersonas() {
@@ -179,11 +221,15 @@
 
 	function openEdit(persona: Persona) {
 		editingPersona = persona;
+		// BUG-005: include activity_policy in the edit form so it is editable
+		// after creation (spec §68 PATCH updates activity_policy).
+		const policy = persona.activity_policy as ActivityPolicy | undefined;
 		editForm = {
 			disclosure_mode: persona.disclosure_mode,
 			autonomy_mode: persona.autonomy_mode,
 			voice_prompt: persona.voice_prompt ?? '',
-			status: persona.status
+			status: persona.status,
+			activity_policy: policy ?? defaultPolicy()
 		};
 		editSlideOverOpen = true;
 	}
@@ -299,10 +345,31 @@
 		{error}
 	</div>
 {:else}
+	<div class="mb-4 flex items-center gap-3">
+		<label for="status-filter" class="text-xs font-medium" style="color: var(--color-muted)">{t('personas.status', 'Status')}</label>
+		<select
+			id="status-filter"
+			class="rounded-md border px-3 py-1.5 text-sm"
+			style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+			value={statusFilter}
+			onchange={(e) => { statusFilter = (e.target as HTMLSelectElement).value; listPage = 0; load(); }}
+		>
+			<option value="">{t('personas.all_statuses', 'All statuses')}</option>
+			<option value="active">{t('personas.status_active', 'Active')}</option>
+			<option value="paused">{t('personas.status_paused', 'Paused')}</option>
+			<option value="retired">{t('personas.status_retired', 'Retired')}</option>
+		</select>
+	</div>
 	<DataTable
 		data={personas}
 		{columns}
 		actions={rowActions}
+		serverSide
+		page={listPage}
+		totalPages={listTotalPages}
+		pageSize={listPageSize}
+		onpagechange={(p) => { listPage = p; load(); }}
+		onpagesizechange={(s) => { listPageSize = s; listPage = 0; load(); }}
 		emptyMessage={t('personas.empty', 'No personas found. Create some to get started.')}
 	/>
 {/if}
@@ -464,6 +531,23 @@
 					</div>
 				{/each}
 			</div>
+			{#if activityTotalPages() > 1}
+				<div class="mt-3 flex items-center justify-between">
+					<span class="text-xs" style="color: var(--color-muted)">
+						{t('common.page', 'Page')} {activityPage + 1} / {activityTotalPages()} ({activityTotal} total)
+					</span>
+					<div class="flex gap-1">
+						<Button variant="outline" size="sm" disabled={activityPage === 0 || activityLoading}
+							onclick={() => { activityPage--; loadActivity(); }}>
+							{t('common.prev', 'Prev')}
+						</Button>
+						<Button variant="outline" size="sm" disabled={activityPage >= activityTotalPages() - 1 || activityLoading}
+							onclick={() => { activityPage++; loadActivity(); }}>
+							{t('common.next', 'Next')}
+						</Button>
+					</div>
+				</div>
+			{/if}
 		{/if}
 	</SlideOver>
 {/if}
@@ -528,6 +612,45 @@
 					placeholder={t('personas.voice_prompt_placeholder', "Describe the persona's voice and personality...")}
 				></textarea>
 			</div>
+			{#if editForm.activity_policy}
+				<details>
+					<summary class="cursor-pointer text-xs font-medium" style="color: var(--color-muted)">{t('personas.policy_details', 'Activity Policy')}</summary>
+					<div class="mt-2 grid gap-3 sm:grid-cols-2">
+						<div>
+							<label for="edit-persona-actions" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('personas.actions_per_day', 'Actions per day')}</label>
+							<input
+								id="edit-persona-actions"
+								type="number"
+								min="1"
+								max="100"
+								class="w-full rounded-md border px-3 py-1.5 text-sm"
+								style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+								bind:value={editForm.activity_policy.actions_per_day}
+							/>
+						</div>
+						<div>
+							<label for="edit-persona-min-age" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('personas.min_content_age', 'Min content age (hours)')}</label>
+							<input
+								id="edit-persona-min-age"
+								type="number"
+								min="0"
+								class="w-full rounded-md border px-3 py-1.5 text-sm"
+								style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+								bind:value={editForm.activity_policy.min_content_age_hours}
+							/>
+						</div>
+						<div class="flex items-center gap-2 sm:col-span-2">
+							<input
+								id="edit-persona-avoid-own"
+								type="checkbox"
+								class="rounded"
+								bind:checked={editForm.activity_policy.avoid_own_content}
+							/>
+							<label for="edit-persona-avoid-own" class="text-xs" style="color: var(--color-muted)">{t('personas.avoid_own_content', 'Avoid own content')}</label>
+						</div>
+					</div>
+				</details>
+			{/if}
 		</div>
 		{#snippet footer()}
 			<div class="flex justify-end gap-2">

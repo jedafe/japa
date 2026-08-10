@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 
+	"github.com/jedafe/japa/internal/valkey"
 	"github.com/valkey-io/valkey-go/valkeycompat"
 )
 
@@ -28,9 +29,9 @@ func (d *ValkeySessionDeleter) DeleteSessions(ctx context.Context, userID string
 
 	// Known per-user key patterns — delete directly.
 	patterns := []string{
-		"jc:perm:" + userID,
-		"jc:ban:" + userID,
-		"jc:impersonate:" + userID,
+		valkey.MustKey("perm:%s", userID),
+		valkey.MustKey("ban:%s", userID),
+		valkey.MustKey("impersonate:%s", userID),
 	}
 	for _, key := range patterns {
 		if err := d.rdb.Del(ctx, key).Err(); err != nil {
@@ -45,7 +46,7 @@ func (d *ValkeySessionDeleter) DeleteSessions(ctx context.Context, userID string
 
 	// Wildcard patterns requiring SCAN — space unread counters and rate limits.
 	wildcardPatterns := []string{
-		"jc:space_unread:" + userID + ":*",
+		valkey.MustKey("space_unread:%s:*", userID),
 	}
 	for _, pattern := range wildcardPatterns {
 		if err := d.scanAndDelete(ctx, pattern); err != nil {

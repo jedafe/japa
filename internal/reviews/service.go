@@ -2,6 +2,7 @@ package reviews
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -71,6 +72,13 @@ func (s *Service) CreateReview(ctx context.Context, tenantID, reviewerUserID pgt
 		slog.Error("upsert review aggregate", "entity_type", input.EntityType, "error", err)
 	}
 
+	s.emitWebhook(ctx, tenantID, "review.created", map[string]any{
+		"review_id":    review.ID,
+		"reviewee_id":  review.EntityID,
+		"reviewer_id":  review.ReviewerUserID,
+		"rating":       review.Rating,
+	})
+
 	return review, nil
 }
 
@@ -80,8 +88,9 @@ func (s *Service) GetReview(ctx context.Context, id, tenantID pgtype.UUID) (gen.
 }
 
 // ListReviewsByEntity returns published reviews for an entity.
-func (s *Service) ListReviewsByEntity(ctx context.Context, tenantID pgtype.UUID, entityType string, entityID pgtype.UUID, limit, offset int32) ([]gen.Review, error) {
-	return s.store.listReviewsByEntity(ctx, tenantID, entityType, entityID, limit, offset)
+// sort controls ordering: "newest" (default), "highest", or "lowest" (spec §29).
+func (s *Service) ListReviewsByEntity(ctx context.Context, tenantID pgtype.UUID, entityType string, entityID pgtype.UUID, limit, offset int32, sort string) ([]gen.Review, error) {
+	return s.store.listReviewsByEntity(ctx, tenantID, entityType, entityID, limit, offset, sort)
 }
 
 // ListReviewsByReviewer returns all reviews by a reviewer.
@@ -157,19 +166,22 @@ func (s *Service) UpdateReview(ctx context.Context, id, tenantID, reviewerUserID
 }
 
 // DeleteReview removes a review by setting status to 'removed' (soft delete).
-func (s *Service) DeleteReview(ctx context.Context, id, tenantID pgtype.UUID) error {
+// The reviewerUserID parameter enforces owner-only deletion (BUG-001): the
+// SQL query filters by reviewer_user_id so a user can only delete their own
+// review, even if they hold the reviews.delete_own permission.
+func (s *Service) DeleteReview(ctx context.Context, id, tenantID, reviewerUserID pgtype.UUID) error {
 	review, err := s.store.getReviewByID(ctx, id, tenantID)
 	if err != nil {
 		return fmt.Errorf("get review for delete: %w", err)
 	}
 
-	_, err = s.store.updateReviewStatus(ctx, gen.UpdateReviewStatusParams{
-		ID:       id,
-		TenantID: tenantID,
-		Status:   ReviewStatusRemoved,
+	_, err = s.store.softDeleteOwnReview(ctx, gen.SoftDeleteOwnReviewParams{
+		ID:             id,
+		TenantID:       tenantID,
+		ReviewerUserID: reviewerUserID,
 	})
 	if err != nil {
-		return fmt.Errorf("update review status: %w", err)
+		return fmt.Errorf("soft delete own review: %w", err)
 	}
 
 	// Best-effort aggregate update.
@@ -208,10 +220,16 @@ func (s *Service) HardDeleteReview(ctx context.Context, id, tenantID pgtype.UUID
 }
 
 // FlagReview sets a review's status to 'flagged' for moderation.
+// A removed review cannot be flagged (it would un-remove it and re-include
+// it in aggregate recalculation — spec §29 L33).
 func (s *Service) FlagReview(ctx context.Context, id, tenantID pgtype.UUID) error {
 	review, err := s.store.getReviewByID(ctx, id, tenantID)
 	if err != nil {
 		return fmt.Errorf("get review for flag: %w", err)
+	}
+
+	if review.Status == ReviewStatusRemoved {
+		return errors.New("cannot_flag_removed: review has been removed and cannot be flagged")
 	}
 
 	_, err = s.store.updateReviewStatus(ctx, gen.UpdateReviewStatusParams{
@@ -236,7 +254,9 @@ func (s *Service) FlagReview(ctx context.Context, id, tenantID pgtype.UUID) erro
 }
 
 // ModerateReview changes a review's status (admin operation).
-func (s *Service) ModerateReview(ctx context.Context, id, tenantID pgtype.UUID, status string) (gen.Review, error) {
+// The moderatorUserID and reason are recorded in audit_logs per spec §29
+// (moderation reuses the Reporting & Appeals system, Section 22).
+func (s *Service) ModerateReview(ctx context.Context, id, tenantID, moderatorUserID pgtype.UUID, status, reason string) (gen.Review, error) {
 	if status == "" {
 		return gen.Review{}, errors.New("status is required")
 	}
@@ -252,6 +272,27 @@ func (s *Service) ModerateReview(ctx context.Context, id, tenantID pgtype.UUID, 
 	})
 	if err != nil {
 		return gen.Review{}, fmt.Errorf("update review status: %w", err)
+	}
+
+	// Record the moderation action in audit_logs with the reason (spec §29/§22).
+	targetType := "review"
+	metadata, _ := json.Marshal(map[string]string{
+		"entity_type": review.EntityType,
+		"entity_id":   review.EntityID.String(),
+		"old_status":  review.Status,
+		"new_status":  status,
+		"reason":      reason,
+	})
+
+	if _, auditErr := s.store.createAuditLog(ctx, gen.CreateAuditLogParams{
+		TenantID:    tenantID,
+		ActorUserID: moderatorUserID,
+		ActionType:  "review.moderate",
+		TargetType:  &targetType,
+		TargetID:    id,
+		Metadata:    metadata,
+	}); auditErr != nil {
+		slog.Warn("reviews: failed to write moderation audit log", "review_id", id.String(), "error", auditErr)
 	}
 
 	// Best-effort aggregate update.

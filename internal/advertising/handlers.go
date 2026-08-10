@@ -409,6 +409,65 @@ func (h *Handlers) EndCampaign(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"data": campaign})
 }
 
+// RejectCampaign handles POST /api/v1/admin/ads/campaigns/{id}/reject.
+// Rejects a pending-review self-serve campaign and enqueues the credit
+// refund task (ads:refund_campaign_credits). The refund task honours the
+// ads.credit_refund_on_reject system setting.
+// Ref: japaconnect-engineering/sections/61-self-serve-ads.md (Review Gate)
+func (h *Handlers) RejectCampaign(w http.ResponseWriter, r *http.Request) {
+	_, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	id, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid campaign ID")
+		return
+	}
+
+	campaign, err := h.Service.RejectCampaign(r.Context(), id, tenantID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	// Enqueue credit refund task (fire-and-forget per Rule 8).
+	if h.AsynqClient != nil {
+		payload, _ := json.Marshal(map[string]string{
+			"tenant_id":   tenantID.String(),
+			"campaign_id": id.String(),
+		})
+		if _, err := h.AsynqClient.Enqueue(
+			asynq.NewTask(worker.TypeAdsRefundCampaignCredits, payload),
+			asynq.Queue(worker.QueueForTask(worker.TypeAdsRefundCampaignCredits)),
+		); err != nil {
+			slog.Warn("ads: failed to enqueue refund task on reject",
+				"campaign_id", id.String(), "error", err)
+		}
+
+		// Enqueue status notification (fire-and-forget).
+		notifyPayload, _ := json.Marshal(map[string]string{
+			"tenant_id":   tenantID.String(),
+			"campaign_id": id.String(),
+		})
+		if _, err := h.AsynqClient.Enqueue(
+			asynq.NewTask(worker.TypeAdsNotifyCampaignStatus, notifyPayload),
+			asynq.Queue(worker.QueueForTask(worker.TypeAdsNotifyCampaignStatus)),
+		); err != nil {
+			slog.Warn("ads: failed to enqueue notify task on reject",
+				"campaign_id", id.String(), "error", err)
+		}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": campaign})
+}
+
 // ---------------------------------------------------------------------------
 // Ad Rendering Handler
 // ---------------------------------------------------------------------------

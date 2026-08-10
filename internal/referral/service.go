@@ -26,6 +26,7 @@ import (
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/valkey"
 	"github.com/valkey-io/valkey-go/valkeycompat"
 )
 
@@ -331,7 +332,7 @@ func (s *Service) RecordClick(ctx context.Context, code, sessionID string) error
 			ttlDays = s.settings.GetIntOr(ctx, pgtype.UUID{}, "referral.attribution_window_days", 30)
 		}
 		ttl := time.Duration(ttlDays) * 24 * time.Hour
-		key := fmt.Sprintf("jc:referral_attr:%s", sessionID)
+		key := valkey.MustKey("referral_attr:%s", sessionID)
 		if err := s.valkey.Set(ctx, key, code, ttl).Err(); err != nil {
 			slog.Warn("referral: set attribution key failed", "error", err)
 		}
@@ -345,7 +346,7 @@ func (s *Service) GetAttribution(ctx context.Context, sessionID string) (string,
 	if s.valkey == nil {
 		return "", errors.New("referral: valkey not configured")
 	}
-	key := fmt.Sprintf("jc:referral_attr:%s", sessionID)
+	key := valkey.MustKey("referral_attr:%s", sessionID)
 	code, err := s.valkey.Get(ctx, key).Result()
 	if err != nil {
 		return "", fmt.Errorf("referral: get attribution: %w", err)

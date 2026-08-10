@@ -126,7 +126,7 @@
 		'/redirects': 'redirects.manage',
 		'/email-templates': 'email.templates.manage',
 		'/spam': 'spam.ip_block.manage',
-		'/newsletter': 'newsletter.admin',
+		'/newsletter': 'newsletter.manage',
 		'/comparisons': 'comparison.create',
 		'/comparison-types': 'comparison.type.create',
 		'/coupons': 'coupons.manage',

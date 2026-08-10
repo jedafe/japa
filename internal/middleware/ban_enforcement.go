@@ -9,6 +9,7 @@ import (
 	"github.com/valkey-io/valkey-go/valkeycompat"
 
 	"github.com/jedafe/japa/internal/auth"
+	"github.com/jedafe/japa/internal/valkey"
 )
 
 // BanEnforcement returns middleware that checks if the authenticated user
@@ -31,7 +32,7 @@ func BanEnforcement(rdb valkeycompat.Cmdable, isBanned func(ctx context.Context,
 			}
 
 			userID := user.UserID.String()
-			cacheKey := "jc:ban:" + userID
+			cacheKey := valkey.MustKey("ban:%s", userID)
 
 			// Check Valkey cache for ban status.
 			if rdb != nil {

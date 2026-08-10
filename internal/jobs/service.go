@@ -434,6 +434,167 @@ func (s *Service) GetJobDetail(ctx context.Context, tenantID pgtype.UUID, slug s
 	}, nil
 }
 
+// ListOrgJobs returns published job_listing contents for a specific org,
+// with pagination.
+func (s *Service) ListOrgJobs(ctx context.Context, tenantID, orgID pgtype.UUID, page, limit int) ([]JobResult, int64, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	if page <= 0 {
+		page = 1
+	}
+	offset := (page - 1) * limit
+
+	countSQL := `
+		SELECT COUNT(*) FROM contents c
+		WHERE c.tenant_id = $1 AND c.organization_id = $2
+		  AND c.content_type = 'job_listing' AND c.status = 'published'`
+
+	dataSQL := `
+		SELECT
+			c.id, c.title, c.slug, c.summary,
+			COALESCE(
+				(SELECT json_object_agg(cfv.field_key,
+					CASE
+						WHEN cfv.value_text IS NOT NULL THEN cfv.value_text
+						WHEN cfv.value_number IS NOT NULL THEN cfv.value_number::text
+						WHEN cfv.value_boolean IS NOT NULL THEN cfv.value_boolean::text
+						ELSE ''
+					END
+				) FROM custom_field_values cfv WHERE cfv.content_id = c.id),
+				'{}'::json
+			) AS field_values,
+			c.published_at
+		FROM contents c
+		WHERE c.tenant_id = $1 AND c.organization_id = $2
+		  AND c.content_type = 'job_listing' AND c.status = 'published'
+		ORDER BY c.published_at DESC NULLS LAST
+		LIMIT $3 OFFSET $4`
+
+	pool := s.store.pool.Reader
+
+	var total int64
+	if err := pool.QueryRow(ctx, countSQL, tenantID, orgID).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("jobs: list org jobs: count: %w", err)
+	}
+
+	if total == 0 {
+		return []JobResult{}, 0, nil
+	}
+
+	rows, err := pool.Query(ctx, dataSQL, tenantID, orgID, limit, offset)
+	if err != nil {
+		return nil, 0, fmt.Errorf("jobs: list org jobs: query: %w", err)
+	}
+	defer rows.Close()
+
+	results := make([]JobResult, 0)
+	for rows.Next() {
+		var (
+			id          pgtype.UUID
+			title       string
+			slug        string
+			summary     *string
+			fieldValues []byte
+			publishedAt pgtype.Timestamptz
+		)
+		if err := rows.Scan(&id, &title, &slug, &summary, &fieldValues, &publishedAt); err != nil {
+			return nil, 0, fmt.Errorf("jobs: list org jobs: scan: %w", err)
+		}
+
+		fvMap := make(map[string]string)
+		if len(fieldValues) > 0 {
+			_ = json.Unmarshal(fieldValues, &fvMap)
+		}
+
+		summaryStr := ""
+		if summary != nil {
+			summaryStr = *summary
+		}
+
+		publishedStr := ""
+		if publishedAt.Valid {
+			publishedStr = publishedAt.Time.UTC().Format("2006-01-02T15:04:05Z07:00")
+		}
+
+		results = append(results, JobResult{
+			ID:          id.String(),
+			Title:       title,
+			Slug:        slug,
+			Summary:     summaryStr,
+			FieldValues: fvMap,
+			PublishedAt: publishedStr,
+		})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("jobs: list org jobs: rows: %w", err)
+	}
+
+	return results, total, nil
+}
+
+// CreateJobListing creates a job_listing content row with the given field
+// values and returns the created listing detail.
+func (s *Service) CreateJobListing(ctx context.Context, tenantID, orgID, authorID pgtype.UUID, title, slug, summary, body string, fieldValues map[string]string) (JobDetail, error) {
+	if slug == "" {
+		slug = generateJobSlug(title)
+	}
+
+	// Insert the content row.
+	var contentID pgtype.UUID
+	err := s.store.pool.Writer.QueryRow(ctx, `
+		INSERT INTO contents (tenant_id, organization_id, author_id, content_type, title, slug, summary, body, status, published_at)
+		VALUES ($1, $2, $3, 'job_listing', $4, $5, NULLIF($6, ''), NULLIF($7, ''), 'published', now())
+		RETURNING id`,
+		tenantID, orgID, authorID, title, slug, summary, body).Scan(&contentID)
+	if err != nil {
+		return JobDetail{}, fmt.Errorf("jobs: create listing: insert content: %w", err)
+	}
+
+	// Insert custom field values.
+	for fieldKey, value := range fieldValues {
+		if value == "" {
+			continue
+		}
+		if _, err := s.store.pool.Writer.Exec(ctx, `
+			INSERT INTO custom_field_values (content_id, field_key, value_text)
+			VALUES ($1, $2, $3)
+			ON CONFLICT (content_id, field_key) DO UPDATE SET value_text = $3`,
+			contentID, fieldKey, value); err != nil {
+			slog.Warn("jobs: create listing: field value insert failed", "field_key", fieldKey, "error", err)
+		}
+	}
+
+	return JobDetail{
+		ID:          contentID.String(),
+		Title:       title,
+		Slug:        slug,
+		Summary:     summary,
+		Body:        body,
+		FieldValues: fieldValues,
+		PublishedAt: "",
+	}, nil
+}
+
+// generateJobSlug creates a URL-safe slug from a title.
+func generateJobSlug(title string) string {
+	slug := strings.ToLower(strings.TrimSpace(title))
+	slug = strings.ReplaceAll(slug, " ", "-")
+	slug = strings.ReplaceAll(slug, "/", "-")
+	// Remove non-alphanumeric characters except hyphens.
+	var b strings.Builder
+	for _, r := range slug {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-' {
+			b.WriteRune(r)
+		}
+	}
+	result := b.String()
+	if result == "" {
+		return "job-listing"
+	}
+	return result
+}
+
 // ApplyToJob creates a job_applications record. Checks for duplicate — a user
 // can only apply once per job. submissionID is optional (nil if applying with
 // form data submitted separately).
@@ -446,17 +607,17 @@ func (s *Service) ApplyToJob(ctx context.Context, tenantID, jobID, applicantID p
 
 	app, err := s.store.CreateJobApplication(ctx, tenantID, jobID, applicantID, subID)
 	if err != nil {
-		return gen.JobApplication{}, err
-	}
-	// ON CONFLICT DO NOTHING returns zero rows on duplicate; detect by checking
-	// if the ID is zero (sqlc returns an empty struct on no rows in some pgx
-	// versions). We re-query to confirm the duplicate.
-	if !app.ID.Valid {
-		existing, qerr := s.findExistingApplication(ctx, tenantID, jobID, applicantID)
-		if qerr != nil {
-			return gen.JobApplication{}, ErrDuplicateApplication
+		// ON CONFLICT DO NOTHING with sqlc :one returns pgx.ErrNoRows when
+		// the conflict triggers (no row returned). Detect that and re-query
+		// to return the existing application with ErrDuplicateApplication.
+		if errors.Is(err, pgx.ErrNoRows) {
+			existing, qerr := s.findExistingApplication(ctx, tenantID, jobID, applicantID)
+			if qerr != nil {
+				return gen.JobApplication{}, ErrDuplicateApplication
+			}
+			return existing, ErrDuplicateApplication
 		}
-		return existing, ErrDuplicateApplication
+		return gen.JobApplication{}, err
 	}
 	return app, nil
 }
@@ -616,31 +777,40 @@ func (s *Service) ExpireListingsPastDeadline(ctx context.Context, tenantID pgtyp
 }
 
 // ToggleFeature toggles the is_featured custom field value for a job listing.
-// Used by the admin feature route.
+// Used by the admin feature route. Tenant-scoped and content-type-checked for
+// security (prevents cross-tenant toggle and toggling non-job content).
 func (s *Service) ToggleFeature(ctx context.Context, tenantID, jobID pgtype.UUID) (bool, error) {
-	// Read the current value.
+	// Read the current value — verify tenant + content_type = job_listing.
 	var current bool
 	err := s.store.pool.Reader.QueryRow(ctx, `
 		SELECT COALESCE(
 			(SELECT cfv.value_boolean
 			 FROM custom_field_values cfv
-			 WHERE cfv.content_id = $1 AND cfv.field_key = 'is_featured'
+			 JOIN contents c ON c.id = cfv.content_id
+			 WHERE cfv.content_id = $1
+			   AND c.tenant_id = $2
+			   AND c.content_type = 'job_listing'
+			   AND cfv.field_key = 'is_featured'
 			 LIMIT 1),
 			false
-		)`, jobID).Scan(&current)
+		)`, jobID, tenantID).Scan(&current)
 	if err != nil {
 		return false, fmt.Errorf("jobs: toggle feature: read: %w", err)
 	}
 
 	newVal := !current
 
-	// Upsert the is_featured value.
+	// Upsert the is_featured value — verify tenant + content_type again.
 	_, err = s.store.pool.Writer.Exec(ctx, `
 		INSERT INTO custom_field_values (content_id, field_key, value_boolean)
-		VALUES ($1, 'is_featured', $2)
+		SELECT $1, 'is_featured', $2
+		WHERE EXISTS (
+			SELECT 1 FROM contents c
+			WHERE c.id = $1 AND c.tenant_id = $3 AND c.content_type = 'job_listing'
+		)
 		ON CONFLICT (content_id, field_key)
 		DO UPDATE SET value_boolean = $2`,
-		jobID, newVal)
+		jobID, newVal, tenantID)
 	if err != nil {
 		return false, fmt.Errorf("jobs: toggle feature: upsert: %w", err)
 	}

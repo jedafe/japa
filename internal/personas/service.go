@@ -19,6 +19,7 @@ import (
 
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/db/gen"
+	errpkg "github.com/jedafe/japa/internal/errors"
 )
 
 // Disclosure / autonomy / status constants — mirror the CHECK constraints on
@@ -361,8 +362,29 @@ type UpdatePersonaInput struct {
 }
 
 // UpdatePersona updates a persona's config (activity_policy, modes, status,
-// voice_prompt). Nil/empty fields are left unchanged.
+// voice_prompt). Nil/empty fields are left unchanged. Mode and status values
+// are validated up front so invalid input returns a clean 400 validation_error
+// instead of a raw CHECK-constraint 500 (BUG-001, Rule 5).
 func (s *Service) UpdatePersona(ctx context.Context, tenantID, id pgtype.UUID, in UpdatePersonaInput) (gen.AiPersona, error) {
+	if in.DisclosureMode != nil {
+		if err := validateMode(*in.DisclosureMode, "disclosure_mode",
+			DisclosureModeDisclosed, DisclosureModeUndisclosed); err != nil {
+			return gen.AiPersona{}, fmt.Errorf("personas: %w: %w", errpkg.ErrInvalid, err)
+		}
+	}
+	if in.AutonomyMode != nil {
+		if err := validateMode(*in.AutonomyMode, "autonomy_mode",
+			AutonomyModeAutonomous, AutonomyModeQueued); err != nil {
+			return gen.AiPersona{}, fmt.Errorf("personas: %w: %w", errpkg.ErrInvalid, err)
+		}
+	}
+	if in.Status != nil {
+		if err := validateMode(*in.Status, "status",
+			StatusActive, StatusPaused, StatusRetired); err != nil {
+			return gen.AiPersona{}, fmt.Errorf("personas: %w: %w", errpkg.ErrInvalid, err)
+		}
+	}
+
 	params := gen.UpdateAIPersonaParams{
 		DisclosureMode: in.DisclosureMode,
 		AutonomyMode:   in.AutonomyMode,

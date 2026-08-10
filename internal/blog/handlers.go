@@ -29,6 +29,7 @@ import (
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/mentions"
 	"github.com/jedafe/japa/internal/tenant"
+	"github.com/jedafe/japa/internal/valkey"
 	"github.com/jedafe/japa/internal/worker"
 	"github.com/valkey-io/valkey-go/valkeycompat"
 )
@@ -1180,7 +1181,7 @@ func (h *Handlers) GetRSSFeed(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// C6: try the Valkey cache first.
-	cacheKey := "jc:cache:feed:rss:" + tenantID.String()
+	cacheKey := valkey.MustKey("cache:feed:rss:%s", tenantID.String())
 	if h.Redis != nil {
 		if cached, err := h.Redis.Get(r.Context(), cacheKey).Result(); err == nil && cached != "" {
 			w.Header().Set("Content-Type", "application/rss+xml; charset=utf-8")

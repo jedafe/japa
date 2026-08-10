@@ -25,12 +25,22 @@ const sidebarResolveCacheTTL = 5 * time.Minute
 // jc: prefix and are tenant-scoped.
 const sidebarResolveCachePrefix = "jc:sidebar:resolve:"
 
+// PermissionResolver resolves a user's full permission set in one call.
+// rbac.RBAC satisfies this via UserPermissions (L1 in-memory → L2 Valkey → DB),
+// so the public sidebar resolver pays one cached lookup per request instead of
+// one HasPermission call per widget. Ref: Section 59 §4 step 5 (widget
+// permission_node filtering); mirrors internal/menus.PermissionResolver.
+type PermissionResolver interface {
+	UserPermissions(ctx context.Context, userID, tenantID pgtype.UUID) (map[string]bool, error)
+}
+
 // Service provides business logic for managing sidebars and resolving them
 // for the frontend apps.
 type Service struct {
 	store *Store
 	db    *db.DB
 	vk    valkeycompat.Cmdable
+	perms PermissionResolver
 }
 
 func NewService(database *db.DB, vkClient valkeycompat.Cmdable) *Service {
@@ -41,6 +51,16 @@ func NewService(database *db.DB, vkClient valkeycompat.Cmdable) *Service {
 	}
 }
 
+// NewServiceWithPerms wires the RBAC permission resolver so the public
+// GET /sidebars/resolve endpoint can prune widgets whose permission_node is
+// not held by the requesting user (Section 59 §4 step 5). Without this,
+// widget-level permission_node gating is disabled (fail-open).
+func NewServiceWithPerms(database *db.DB, vkClient valkeycompat.Cmdable, perms PermissionResolver) *Service {
+	s := NewService(database, vkClient)
+	s.perms = perms
+	return s
+}
+
 // ── Sidebar CRUD ──────────────────────────────────────────────────────
 
 // ListSidebarsResponse is the paginated list response for admin sidebars.
@@ -48,14 +68,15 @@ type ListSidebarsResponse struct {
 	Items      []SidebarJSON `json:"items"`
 	Page       int32         `json:"page"`
 	TotalPages int32         `json:"total_pages"`
+	Total      int32         `json:"total"`
 }
 
-func (s *Service) ListSidebars(ctx context.Context, tenantID pgtype.UUID, app, position, q string, limit, offset int32) (*ListSidebarsResponse, error) {
-	rows, err := s.store.listSidebars(ctx, tenantID, app, position, q, limit, offset)
+func (s *Service) ListSidebars(ctx context.Context, tenantID pgtype.UUID, app, position, status, q, sort string, limit, offset int32) (*ListSidebarsResponse, error) {
+	rows, err := s.store.listSidebars(ctx, tenantID, app, position, status, q, sort, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("listing sidebars: %w", err)
 	}
-	total, err := s.store.countSidebars(ctx, tenantID, app, position, q)
+	total, err := s.store.countSidebars(ctx, tenantID, app, position, status, q)
 	if err != nil {
 		return nil, fmt.Errorf("counting sidebars: %w", err)
 	}
@@ -65,9 +86,9 @@ func (s *Service) ListSidebars(ctx context.Context, tenantID pgtype.UUID, app, p
 	}
 	items := make([]SidebarJSON, len(rows))
 	for i, row := range rows {
-		items[i] = genSidebarToJSON(row)
+		items[i] = genListSidebarsRowToJSON(row)
 	}
-	return &ListSidebarsResponse{Items: items, Page: offset / limit, TotalPages: totalPages}, nil
+	return &ListSidebarsResponse{Items: items, Page: offset / limit, TotalPages: totalPages, Total: total}, nil
 }
 
 func (s *Service) GetSidebar(ctx context.Context, id, tenantID pgtype.UUID) (*SidebarJSON, error) {
@@ -346,7 +367,10 @@ type ResolveResponse struct {
 
 // Resolve finds the best-matching sidebar for (app, position, path) and returns
 // its widgets filtered by the user's auth state, group memberships, and permissions.
-func (s *Service) Resolve(ctx context.Context, tenantID pgtype.UUID, app, position, requestPath string, userGroupIDs map[string]bool, isAuthenticated bool) (*ResolveResponse, error) {
+// userID is the authenticated user's ID (zero UUID for guests); it is used to
+// resolve the user's permission set for widget-level permission_node pruning
+// (Section 59 §4 step 5). Guests skip permission pruning.
+func (s *Service) Resolve(ctx context.Context, tenantID pgtype.UUID, app, position, requestPath string, userGroupIDs map[string]bool, isAuthenticated bool, userID pgtype.UUID) (*ResolveResponse, error) {
 	if !ValidApp(app) {
 		return nil, ErrInvalidApp
 	}
@@ -354,8 +378,24 @@ func (s *Service) Resolve(ctx context.Context, tenantID pgtype.UUID, app, positi
 		return nil, ErrInvalidPosition
 	}
 
-	// Check Valkey cache first. Ref: Section 59 §5.
-	cacheKey := sidebarResolveCacheKey(tenantID, app, position, requestPath, isAuthenticated, userGroupIDs)
+	// Resolve the authenticated user's permission set once per request so
+	// filterWidgets can prune widgets whose permission_node is not held.
+	// ADR-066 / Section 59 §4 step 5. On resolution failure we fail open (no
+	// permission pruning) rather than 500'ing the whole sidebar render — a
+	// missing widget is preferable to a blank sidebar. The RBAC resolver is
+	// cached, so this path is cheap. Guests skip permission pruning.
+	var userPerms map[string]bool
+	if isAuthenticated && userID.Valid && s.perms != nil {
+		perms, err := s.perms.UserPermissions(ctx, userID, tenantID)
+		if err == nil {
+			userPerms = perms
+		}
+	}
+
+	// Check Valkey cache first. Ref: Section 59 §5. The cache key includes a
+	// perm_hash so two users with the same groups but different roles do not
+	// share a cache entry (permission-gated widgets must not leak across users).
+	cacheKey := sidebarResolveCacheKey(tenantID, app, position, requestPath, isAuthenticated, userGroupIDs, userPerms)
 	if s.vk != nil && cacheKey != "" {
 		if data, err := s.vk.Get(ctx, cacheKey).Bytes(); err == nil {
 			var cached ResolveResponse
@@ -430,7 +470,7 @@ func (s *Service) Resolve(ctx context.Context, tenantID pgtype.UUID, app, positi
 	}
 
 	// Filter widgets by visibility, required_group_ids, and permission_node.
-	filtered := filterWidgets(widgets, userGroupIDs, isAuthenticated)
+	filtered := filterWidgets(widgets, userGroupIDs, isAuthenticated, userPerms)
 
 	sidebarJSON := genSidebarToJSON(*bestSidebar)
 	result := &ResolveResponse{
@@ -458,9 +498,11 @@ func (s *Service) GetUserGroupIDs(ctx context.Context, tenantID pgtype.UUID, use
 }
 
 // sidebarResolveCacheKey builds the Valkey cache key for a resolve request.
-// Format: jc:sidebar:resolve:{tenant_id}:{app}:{position}:{path_hash}:{auth_state}:{group_hash}
-// Ref: Section 59 §5, valkey-keys-catalog.
-func sidebarResolveCacheKey(tenantID pgtype.UUID, app, position, requestPath string, isAuthenticated bool, userGroupIDs map[string]bool) string {
+// Format: jc:sidebar:resolve:{tenant_id}:{app}:{position}:{path_hash}:{auth_state}:{group_hash}:{perm_hash}
+// Ref: Section 59 §5, valkey-keys-catalog. The perm_hash ensures two users
+// with the same groups but different roles do not share a cache entry —
+// permission-gated widgets must not leak across users with different perms.
+func sidebarResolveCacheKey(tenantID pgtype.UUID, app, position, requestPath string, isAuthenticated bool, userGroupIDs map[string]bool, userPerms map[string]bool) string {
 	pathHash := fmt.Sprintf("%x", sha1.Sum([]byte(requestPath)))[:12]
 	authState := "guest"
 	if isAuthenticated {
@@ -472,7 +514,13 @@ func sidebarResolveCacheKey(tenantID pgtype.UUID, app, position, requestPath str
 	}
 	sort.Strings(groups)
 	groupHash := fmt.Sprintf("%x", sha1.Sum([]byte(strings.Join(groups, ","))))[:12]
-	return fmt.Sprintf("%s%s:%s:%s:%s:%s:%s", sidebarResolveCachePrefix, tenantID.String(), app, position, pathHash, authState, groupHash)
+	permKeys := make([]string, 0, len(userPerms))
+	for p := range userPerms {
+		permKeys = append(permKeys, p)
+	}
+	sort.Strings(permKeys)
+	permHash := fmt.Sprintf("%x", sha1.Sum([]byte(strings.Join(permKeys, ","))))[:12]
+	return fmt.Sprintf("%s%s:%s:%s:%s:%s:%s:%s", sidebarResolveCachePrefix, tenantID.String(), app, position, pathHash, authState, groupHash, permHash)
 }
 
 // invalidateResolveCache flushes all cached sidebar resolution results for a
@@ -545,7 +593,9 @@ func patternSpecificity(pattern string) int {
 
 // filterWidgets removes widgets the user should not see based on auth state,
 // required group membership, and permission node. Only active widgets are returned.
-func filterWidgets(widgets []gen.SidebarWidget, userGroupIDs map[string]bool, isAuthenticated bool) []SidebarWidgetJSON {
+// Authenticated users with a non-nil permission_node are pruned unless they hold
+// that node in userPerms; guests skip permission_node pruning (ADR-066).
+func filterWidgets(widgets []gen.SidebarWidget, userGroupIDs map[string]bool, isAuthenticated bool, userPerms map[string]bool) []SidebarWidgetJSON {
 	var filtered []SidebarWidgetJSON
 	for _, widget := range widgets {
 		if widget.Status != "active" {
@@ -575,6 +625,15 @@ func filterWidgets(widgets []gen.SidebarWidget, userGroupIDs map[string]bool, is
 				if !matched {
 					continue
 				}
+			}
+		}
+		// Permission-node gating (Section 59 §4 step 5). An authenticated user
+		// sees a widget with a non-empty permission_node only if they hold that
+		// node. Guests skip this (no permission check). A nil/empty
+		// permission_node means no permission restriction.
+		if isAuthenticated && widget.PermissionNode != nil && *widget.PermissionNode != "" {
+			if userPerms == nil || !userPerms[*widget.PermissionNode] {
+				continue
 			}
 		}
 		filtered = append(filtered, genSidebarWidgetToJSON(widget))

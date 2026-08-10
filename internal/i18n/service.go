@@ -26,6 +26,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/valkey"
 	valkeycompat "github.com/valkey-io/valkey-go/valkeycompat"
 )
 
@@ -76,7 +77,7 @@ func (s *Service) SetValkey(vk valkeycompat.Cmdable) { s.vk = vk }
 
 // l2Key returns the Valkey L2 cache key for a tenant+locale.
 func l2Key(tenantID pgtype.UUID, locale string) string {
-	return fmt.Sprintf("jc:cache:i18n:%s:%s", tenantID.String(), locale)
+	return valkey.MustKey("cache:i18n:%s:%s", tenantID.String(), locale)
 }
 
 // ---------------------------------------------------------------------------

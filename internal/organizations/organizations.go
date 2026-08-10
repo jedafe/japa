@@ -79,12 +79,19 @@ type SettingsReader interface {
 	GetSettingInt(ctx context.Context, tenantID pgtype.UUID, key string) (int, error)
 }
 
+// webhookEmitter fans an organization.* / claim.* event out to all subscribed
+// webhook endpoints for the tenant (fire-and-forget). Ref: Section 12 (webhooks).
+type webhookEmitter interface {
+	EmitEvent(ctx context.Context, tenantID pgtype.UUID, eventType string, payload any)
+}
+
 // Service provides organization business logic.
 type Service struct {
 	store    *Store
 	db       *db.DB
 	settings SettingsReader
 	vk       valkeycompat.Cmdable
+	webhooks webhookEmitter
 }
 
 // NewService creates a Service backed by the given database.
@@ -110,6 +117,20 @@ func NewServiceWithSettings(database *db.DB, settings SettingsReader) *Service {
 // valkey-keys-catalog.md). nil disables caching (degraded mode).
 func (s *Service) SetValkeyCache(vk valkeycompat.Cmdable) {
 	s.vk = vk
+}
+
+// SetWebhookEmitter injects the organization.* / claim.* event fan-out
+// (Section 12).
+func (s *Service) SetWebhookEmitter(w webhookEmitter) { s.webhooks = w }
+
+// emitWebhook fires an organization.* / claim.* event fire-and-forget
+// (Rule 8). Errors are logged but never returned to the caller — webhook
+// delivery is async.
+func (s *Service) emitWebhook(ctx context.Context, tenantID pgtype.UUID, eventType string, payload any) {
+	if s.webhooks == nil {
+		return
+	}
+	s.webhooks.EmitEvent(ctx, tenantID, eventType, payload)
 }
 
 // orgProfileCacheKey builds jc:org:profile:{tenant_id}:{slug}.

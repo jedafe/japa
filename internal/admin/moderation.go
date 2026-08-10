@@ -31,6 +31,8 @@ type ModerationItem struct {
 // ListModeration handles GET /api/v1/admin/moderation.
 // Queries flagged reviews and returns them with pagination.
 // Supports filters: status, content_type (entity_type), q (search).
+// When content_type=ad_campaign, queries ad_campaigns with pending_review
+// status instead of the reviews table (§61 Review Gate, ADR-079 §3).
 func (h *Handlers) ListModeration(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
@@ -71,6 +73,16 @@ func (h *Handlers) ListModeration(w http.ResponseWriter, r *http.Request) {
 	filterSearch := r.URL.Query().Get("q")
 
 	ctx := r.Context()
+
+	// §61: When content_type=ad_campaign, query ad_campaigns table for
+	// pending-review self-serve campaigns instead of the reviews table.
+	// The content_reviews table has a hard FK to contents(id) so ad
+	// campaigns cannot live there; the pending_review status IS the
+	// review-queue entry.
+	if filterContentType == "ad_campaign" {
+		h.listAdCampaignModeration(w, r, ctx, tenantID, limit, offset, filterStatus, filterSearch)
+		return
+	}
 
 	// Build dynamic WHERE clauses.
 	where := "r.tenant_id = $1"
@@ -174,6 +186,129 @@ func (h *Handlers) ListModeration(w http.ResponseWriter, r *http.Request) {
 			AuthorID:  authorID,
 			Created:   row.CreatedAt.Time.Format(time.RFC3339),
 			EntityRef: "review:" + row.ID.String(),
+		})
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data": map[string]any{
+			"items":       items,
+			"total":       total,
+			"page":        offset / limit,
+			"total_pages": totalPages,
+		},
+	})
+}
+
+// listAdCampaignModeration queries ad_campaigns for the moderation queue
+// when content_type=ad_campaign. Returns pending-review campaigns with
+// pagination. Ref: §61 Review Gate, ADR-079 §3.
+func (h *Handlers) listAdCampaignModeration(
+	w http.ResponseWriter, r *http.Request,
+	ctx context.Context, tenantID pgtype.UUID,
+	limit, offset int32, filterStatus, filterSearch string,
+) {
+	where := "ac.tenant_id = $1 AND ac.organization_id IS NOT NULL"
+	args := []interface{}{tenantID}
+	argIdx := 2
+
+	// Default to pending_review when no status filter is provided;
+	// for ad campaigns, pending_review is the "needs review" status.
+	statusFilter := filterStatus
+	if statusFilter == "" {
+		statusFilter = "pending_review"
+	}
+	where += fmt.Sprintf(" AND ac.status = $%d", argIdx)
+	args = append(args, statusFilter)
+	argIdx++
+
+	if filterSearch != "" {
+		where += fmt.Sprintf(" AND ac.name ILIKE $%d", argIdx)
+		args = append(args, "%"+filterSearch+"%")
+		argIdx++
+	}
+
+	query := fmt.Sprintf(
+		`SELECT ac.id, ac.name, ac.status, ac.content, ac.created_at,
+		        ac.created_by, COALESCE(u.username, 'unknown') AS creator_username,
+		        ac.organization_id
+		 FROM ad_campaigns ac
+		 LEFT JOIN users u ON u.id = ac.created_by
+		 WHERE %s
+		 ORDER BY ac.created_at DESC
+		 LIMIT $%d OFFSET $%d`,
+		where, argIdx, argIdx+1,
+	)
+	args = append(args, limit, offset)
+
+	rows, err := h.DB.Reader.Query(ctx, query, args...)
+	if err != nil {
+		slog.Error("moderation: querying ad_campaigns", "error", err)
+		writeError(w, http.StatusInternalServerError, "db_error", "Failed to load ad campaign moderation queue")
+		return
+	}
+	defer rows.Close()
+
+	type adCampaignRow struct {
+		ID             pgtype.UUID
+		Name           string
+		Status         string
+		Content        []byte
+		CreatedAt      pgtype.Timestamptz
+		CreatedBy      pgtype.UUID
+		CreatorUsername string
+		OrganizationID  pgtype.UUID
+	}
+
+	var rawRows []adCampaignRow
+	for rows.Next() {
+		var r adCampaignRow
+		if err := rows.Scan(&r.ID, &r.Name, &r.Status, &r.Content, &r.CreatedAt,
+			&r.CreatedBy, &r.CreatorUsername, &r.OrganizationID); err != nil {
+			slog.Error("moderation: scanning ad_campaign row", "error", err)
+			continue
+		}
+		rawRows = append(rawRows, r)
+	}
+
+	// Count total with same filters (without LIMIT/OFFSET).
+	countQuery := fmt.Sprintf(
+		`SELECT COUNT(*)::int FROM ad_campaigns ac WHERE %s`, where,
+	)
+	countArgs := args[:len(args)-2]
+
+	var total int32
+	if err := h.DB.Reader.QueryRow(ctx, countQuery, countArgs...).Scan(&total); err != nil {
+		slog.Warn("moderation: counting ad_campaigns", "error", err)
+	}
+
+	totalPages := int32(0)
+	if limit > 0 {
+		totalPages = (total + limit - 1) / limit
+	}
+
+	items := make([]ModerationItem, 0, len(rawRows))
+	for _, row := range rawRows {
+		content := row.Name
+		if len(row.Content) > 0 {
+			// Content is JSONB; append a truncated text preview.
+			content += " — " + string(row.Content)
+		}
+		if len(content) > 200 {
+			content = content[:200] + "…"
+		}
+		authorID := ""
+		if row.CreatedBy.Valid {
+			authorID = row.CreatedBy.String()
+		}
+		items = append(items, ModerationItem{
+			ID:        row.ID.String(),
+			Type:      "ad_campaign",
+			Status:    row.Status,
+			Content:   content,
+			Reporter:  row.CreatorUsername,
+			AuthorID:  authorID,
+			Created:   row.CreatedAt.Time.Format(time.RFC3339),
+			EntityRef: "ad_campaign:" + row.ID.String(),
 		})
 	}
 
@@ -756,13 +891,28 @@ func (h *Handlers) VerifyOrganization(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid organization ID")
 		return
 	}
-	err := h.Queries.VerifyOrganization(r.Context(), oid)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to verify organization")
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
 		return
 	}
-	// Invalidate org cache so the verified status is reflected immediately.
-	if tenantID, ok := requireTenant(w, r); ok {
+	user, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+	// Route through the organizations service so the organization.verified
+	// webhook event is emitted (Section 12) and the org cache is invalidated.
+	if h.Orgs != nil {
+		if err := h.Orgs.VerifyOrganization(r.Context(), oid, tenantID, user.UserID); err != nil {
+			writeError(w, http.StatusInternalServerError, "internal_error", "Failed to verify organization")
+			return
+		}
+	} else {
+		err := h.Queries.VerifyOrganization(r.Context(), oid)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "internal_error", "Failed to verify organization")
+			return
+		}
+		// Invalidate org cache so the verified status is reflected immediately.
 		organizations.InvalidateOrgCacheByCmdable(r.Context(), h.Valkey, tenantID)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": orgID, "verified": true}})

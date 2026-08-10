@@ -17,6 +17,7 @@ import (
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/tenant"
+	"github.com/jedafe/japa/internal/valkey"
 	"github.com/valkey-io/valkey-go/valkeycompat"
 )
 
@@ -288,11 +289,11 @@ func (h *Handlers) invalidateVisitorCache(ctx context.Context, user *auth.Authen
 		return
 	}
 	if user.SessionID != "" {
-		_ = h.Redis.Del(ctx, "jc:visitor:ctx:"+user.SessionID).Err()
-		_ = h.Redis.Del(ctx, "jc:recommendations:"+user.SessionID).Err()
+		_ = h.Redis.Del(ctx, valkey.MustKey("visitor:ctx:%s", user.SessionID)).Err()
+		_ = h.Redis.Del(ctx, valkey.MustKey("recommendations:%s", user.SessionID)).Err()
 	}
-	_ = h.Redis.Del(ctx, "jc:visitor:ctx:user:"+user.UserID.String()).Err()
-	_ = h.Redis.Del(ctx, "jc:recommendations:user:"+user.UserID.String()).Err()
+	_ = h.Redis.Del(ctx, valkey.MustKey("visitor:ctx:user:%s", user.UserID.String())).Err()
+	_ = h.Redis.Del(ctx, valkey.MustKey("recommendations:user:%s", user.UserID.String())).Err()
 }
 
 // ListUsers handles GET /api/v1/users for admin user listing.

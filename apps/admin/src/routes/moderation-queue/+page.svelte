@@ -4,11 +4,11 @@
 	// so it renders two separate `<EntityPage>` instances conditionally rather
 	// than a single scaffold.
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
-	import { moderationAdminApi } from '$lib/api';
+	import { moderationAdminApi, adsAdminApi } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { user } from '$lib/stores/auth.svelte';
-	import { Eye, UserPlus, CheckCircle, XCircle, MessageSquare, AlertTriangle } from 'lucide-svelte';
+	import { Eye, UserPlus, CheckCircle, XCircle, MessageSquare, AlertTriangle, Check, Ban } from 'lucide-svelte';
 	import type { ActionItem, FilterDef } from '$lib/components/ui/data-table';
 
 	type ModerationQueueItem = {
@@ -56,7 +56,8 @@
 			options: [
 				{ value: 'flagged', label: t('app.moderation.queue.flagged', 'Flagged') },
 				{ value: 'published', label: t('app.moderation.queue.published', 'Published') },
-				{ value: 'removed', label: t('app.moderation.queue.removed', 'Removed') }
+				{ value: 'removed', label: t('app.moderation.queue.removed', 'Removed') },
+				{ value: 'pending_review', label: t('app.moderation.queue.pending_review', 'Pending Review') }
 			]
 		},
 		{
@@ -66,7 +67,8 @@
 				{ value: 'organization', label: t('app.moderation.queue.organization', 'Organization') },
 				{ value: 'service', label: t('app.moderation.queue.service', 'Service') },
 				{ value: 'mentor', label: t('app.moderation.queue.mentor', 'Mentor') },
-				{ value: 'university', label: t('app.moderation.queue.university', 'University') }
+				{ value: 'university', label: t('app.moderation.queue.university', 'University') },
+				{ value: 'ad_campaign', label: t('app.moderation.queue.ad_campaign', 'Ad Campaign') }
 			]
 		}
 	];
@@ -128,12 +130,56 @@
 		}
 	}
 
+	// §61: Approve an ad campaign (sets status to active).
+	// Only shown for rows where type === 'ad_campaign' and status === 'pending_review'.
+	async function approveAdCampaign(row: ModerationQueueItem, ctx?: { reload?: () => void }) {
+		pageError = '';
+		try {
+			const res = await adsAdminApi.activateCampaign(row.id);
+			if (!res.ok) {
+				pageError = res.error ?? t('common.error', 'An error occurred');
+			} else {
+				ctx?.reload?.();
+			}
+		} catch (e) {
+			pageError = e instanceof Error ? e.message : t('common.error', 'An error occurred');
+		}
+	}
+
+	// §61: Reject an ad campaign (sets status to rejected + enqueues refund).
+	async function rejectAdCampaign(row: ModerationQueueItem, ctx?: { reload?: () => void }) {
+		pageError = '';
+		try {
+			const res = await adsAdminApi.rejectCampaign(row.id);
+			if (!res.ok) {
+				pageError = res.error ?? t('common.error', 'An error occurred');
+			} else {
+				ctx?.reload?.();
+			}
+		} catch (e) {
+			pageError = e instanceof Error ? e.message : t('common.error', 'An error occurred');
+		}
+	}
+
 	const queueActions: ActionItem[] = [
 		{ label: t('common.view', 'View'), icon: Eye, onclick: (row: any, ctx?: any) => ctx?.openView(row) },
 		{
 			label: t('moderationQueue.assign_to_me', 'Assign to Me'),
 			icon: UserPlus,
 			onclick: (row: ModerationQueueItem, ctx?: any) => assignToMe(row, ctx)
+		},
+		{
+			label: t('moderationQueue.approve', 'Approve'),
+			icon: Check,
+			onclick: (row: ModerationQueueItem, ctx?: any) => approveAdCampaign(row, ctx),
+			show: (row: ModerationQueueItem) => row.type === 'ad_campaign' && row.status === 'pending_review'
+		},
+		{
+			label: t('moderationQueue.reject', 'Reject'),
+			icon: Ban,
+			variant: 'destructive',
+			onclick: (row: ModerationQueueItem, ctx?: any) => rejectAdCampaign(row, ctx),
+			show: (row: ModerationQueueItem) => row.type === 'ad_campaign' && row.status === 'pending_review'
 		}
 	];
 

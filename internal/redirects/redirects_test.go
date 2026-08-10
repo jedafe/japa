@@ -186,12 +186,12 @@ func TestUpdateRedirectValidation(t *testing.T) {
 
 	svc := &Service{}
 
-	_, err := svc.UpdateRedirect(t.Context(), pgtype.UUID{}, pgtype.UUID{}, validSourcePath, "/new", 418, true, nil)
+	_, err := svc.UpdateRedirect(t.Context(), pgtype.UUID{}, pgtype.UUID{}, validSourcePath, "/new", 418, nil, nil)
 	if !stderrors.Is(err, ErrInvalidHTTPStatus) {
 		t.Errorf("UpdateRedirect() error = %v, want ErrInvalidHTTPStatus", err)
 	}
 
-	_, err = svc.UpdateRedirect(t.Context(), pgtype.UUID{}, pgtype.UUID{}, "old-path", "/new", 301, true, nil)
+	_, err = svc.UpdateRedirect(t.Context(), pgtype.UUID{}, pgtype.UUID{}, "old-path", "/new", 301, nil, nil)
 	if err == nil {
 		t.Error("UpdateRedirect() with relative source path error = nil, want error")
 	}

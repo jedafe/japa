@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"sync"
@@ -14,6 +15,16 @@ import (
 	"testing"
 	"time"
 )
+
+// TestMain swaps the production SSRF-blocking dialer for an unrestricted one
+// so that httptest.Server (which binds to 127.0.0.1) is reachable in tests.
+// The SSRF protection itself is exercised by TestSSRFBlocksPrivateIPs.
+func init() {
+	deliveryClient = newDeliveryClient(func(ctx context.Context, network, addr string) (net.Conn, error) {
+		d := &net.Dialer{Timeout: 10 * time.Second}
+		return d.DialContext(ctx, network, addr)
+	})
+}
 
 // ---------------------------------------------------------------------------
 // Schema Version
@@ -200,7 +211,7 @@ func TestDeliverSuccess(t *testing.T) {
 		Data:          map[string]any{"key": "value"},
 	}
 
-	err := Deliver(t.Context(), server.URL, "test-secret", env)
+	_, err := Deliver(t.Context(), server.URL, "test-secret", env)
 	if err != nil {
 		t.Fatalf("Deliver() error: %v", err)
 	}
@@ -239,7 +250,7 @@ func TestDeliverContentType(t *testing.T) {
 	defer server.Close()
 
 	env := WebhookEnvelope{EventID: "evt-1", EventType: "test", SchemaVersion: SchemaVersion}
-	_ = Deliver(t.Context(), server.URL, "secret", env)
+	_, _ = Deliver(t.Context(), server.URL, "secret", env)
 
 	if contentType != ContentType {
 		t.Errorf("Content-Type = %q, want %q", contentType, ContentType)
@@ -260,7 +271,7 @@ func TestDeliverNon2xxReturnsError(t *testing.T) {
 
 	env := WebhookEnvelope{EventID: "evt-1", EventType: "test", SchemaVersion: SchemaVersion}
 
-	err := Deliver(t.Context(), server.URL, "secret", env)
+	_, err := Deliver(t.Context(), server.URL, "secret", env)
 	if err == nil {
 		t.Error("Deliver() expected error for 500 status, got nil")
 	}
@@ -276,7 +287,7 @@ func TestDeliver4xxReturnsError(t *testing.T) {
 
 	env := WebhookEnvelope{EventID: "evt-1", EventType: "test", SchemaVersion: SchemaVersion}
 
-	err := Deliver(t.Context(), server.URL, "secret", env)
+	_, err := Deliver(t.Context(), server.URL, "secret", env)
 	if err == nil {
 		t.Error("Deliver() expected error for 400 status, got nil")
 	}
@@ -287,7 +298,7 @@ func TestDeliverInvalidEndpoint(t *testing.T) {
 
 	env := WebhookEnvelope{EventID: "evt-1", EventType: "test", SchemaVersion: SchemaVersion}
 
-	err := Deliver(t.Context(), "http://localhost:1", "secret", env)
+	_, err := Deliver(t.Context(), "http://localhost:1", "secret", env)
 	if err == nil {
 		t.Error("Deliver() expected error for unreachable endpoint, got nil")
 	}
@@ -310,7 +321,7 @@ func TestDeliverWithRetrySucceedsOnFirstAttempt(t *testing.T) {
 
 	env := WebhookEnvelope{EventID: "evt-1", EventType: "test", SchemaVersion: SchemaVersion}
 
-	err := DeliverWithRetry(t.Context(), server.URL, "secret", env, 5)
+	_, err := DeliverWithRetry(t.Context(), server.URL, "secret", env, 5)
 	if err != nil {
 		t.Fatalf("DeliverWithRetry() error: %v", err)
 	}
@@ -338,7 +349,7 @@ func TestDeliverWithRetryRetriesOnFailure(t *testing.T) {
 
 	env := WebhookEnvelope{EventID: "evt-1", EventType: "test", SchemaVersion: SchemaVersion}
 
-	err := DeliverWithRetry(t.Context(), server.URL, "secret", env, 5)
+	_, err := DeliverWithRetry(t.Context(), server.URL, "secret", env, 5)
 	if err != nil {
 		t.Fatalf("DeliverWithRetry() error: %v", err)
 	}
@@ -361,7 +372,7 @@ func TestDeliverWithRetryExhaustsAttempts(t *testing.T) {
 
 	env := WebhookEnvelope{EventID: "evt-1", EventType: "test", SchemaVersion: SchemaVersion}
 
-	err := DeliverWithRetry(t.Context(), server.URL, "secret", env, 3)
+	_, err := DeliverWithRetry(t.Context(), server.URL, "secret", env, 3)
 	if err == nil {
 		t.Error("DeliverWithRetry() expected error after exhausting retries, got nil")
 	}
@@ -384,7 +395,7 @@ func TestDeliverWithRetryMinOneAttempt(t *testing.T) {
 
 	env := WebhookEnvelope{EventID: "evt-1", EventType: "test", SchemaVersion: SchemaVersion}
 	// maxRetries=0 should be bumped to 1
-	err := DeliverWithRetry(t.Context(), server.URL, "secret", env, 0)
+	_, err := DeliverWithRetry(t.Context(), server.URL, "secret", env, 0)
 	if err != nil {
 		t.Fatalf("DeliverWithRetry() error: %v", err)
 	}
@@ -408,7 +419,7 @@ func TestDeliverWithRetryContextCancellation(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 500*time.Millisecond)
 	defer cancel()
 
-	err := DeliverWithRetry(ctx, server.URL, "secret", env, 5)
+	_, err := DeliverWithRetry(ctx, server.URL, "secret", env, 5)
 	// Context should cancel before all retries complete
 	if err == nil {
 		t.Error("expected error from context cancellation or retries exhausted")
@@ -435,7 +446,7 @@ func TestDeliverWithRetryBackoffSchedule(t *testing.T) {
 	defer server.Close()
 
 	env := WebhookEnvelope{EventID: "evt-1", EventType: "test", SchemaVersion: SchemaVersion}
-	_ = DeliverWithRetry(t.Context(), server.URL, "secret", env, 4)
+	_, _ = DeliverWithRetry(t.Context(), server.URL, "secret", env, 4)
 
 	if len(attemptTimes) != 4 {
 		t.Fatalf("expected 4 attempts, got %d", len(attemptTimes))
@@ -490,5 +501,90 @@ func TestWebhookEnvelopeRoundTrip(t *testing.T) {
 
 	if decoded.SchemaVersion != original.SchemaVersion {
 		t.Errorf("SchemaVersion = %q, want %q", decoded.SchemaVersion, original.SchemaVersion)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// SSRF Protection (BUG-014)
+// ---------------------------------------------------------------------------
+
+func TestSSRFBlocksPrivateIPs(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name string
+		ip   string
+		want bool // true = should be blocked
+	}{
+		{"loopback v4", "127.0.0.1", true},
+		{"loopback v6", "::1", true},
+		{"private 10.x", "10.0.0.1", true},
+		{"private 172.16.x", "172.16.0.1", true},
+		{"private 192.168.x", "192.168.1.1", true},
+		{"link-local", "169.254.1.1", true},
+		{"unspecified", "0.0.0.0", true},
+		{"CGNAT 100.64.x", "100.64.0.1", true},
+		{"public", "8.8.8.8", false},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			ip := net.ParseIP(tc.ip)
+			if ip == nil {
+				t.Fatalf("invalid IP: %s", tc.ip)
+			}
+			if got := isBlockedIP(ip); got != tc.want {
+				t.Errorf("isBlockedIP(%s) = %v, want %v", tc.ip, got, tc.want)
+			}
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Challenge/Response Verification (BUG-001)
+// ---------------------------------------------------------------------------
+
+func TestPerformChallengeSuccess(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		token := r.URL.Query().Get("challenge")
+		w.WriteHeader(http.StatusOK)
+		_, _ = io.WriteString(w, token) // echo the token back
+	}))
+	defer server.Close()
+
+	if err := PerformChallenge(t.Context(), server.URL, "test-token-123"); err != nil {
+		t.Errorf("PerformChallenge() unexpected error: %v", err)
+	}
+}
+
+func TestPerformChallengeMismatch(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = io.WriteString(w, "wrong-response")
+	}))
+	defer server.Close()
+
+	err := PerformChallenge(t.Context(), server.URL, "expected-token")
+	if err == nil {
+		t.Error("PerformChallenge() expected error for mismatched response, got nil")
+	}
+}
+
+func TestPerformChallengeNon2xx(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	err := PerformChallenge(t.Context(), server.URL, "token")
+	if err == nil {
+		t.Error("PerformChallenge() expected error for 500 status, got nil")
 	}
 }

@@ -732,6 +732,19 @@ func (q *Queries) DeleteUserTokens(ctx context.Context, arg DeleteUserTokensPara
 	return err
 }
 
+const gdprDeleteAdEventsByUser = `-- name: GdprDeleteAdEventsByUser :exec
+DELETE FROM ad_events WHERE user_id = $1
+`
+
+// Deletes ad_events (impression/click tracking) for the user being erased.
+// ad_events.user_id has ON DELETE CASCADE, but we delete explicitly to
+// document the erasure path and remove the user's ad-interaction PII
+// before the final HardDeleteUser. Ref: Section 25/61, GDPR erasure.
+func (q *Queries) GdprDeleteAdEventsByUser(ctx context.Context, userID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, gdprDeleteAdEventsByUser, userID)
+	return err
+}
+
 const gdprDeleteUserContentViews = `-- name: GdprDeleteUserContentViews :exec
 DELETE FROM user_content_views WHERE user_id = $1
 `
@@ -1882,6 +1895,19 @@ func (q *Queries) GdprExportUserWalletLedger(ctx context.Context, arg GdprExport
 	var data interface{}
 	err := row.Scan(&data)
 	return data, err
+}
+
+const gdprNullifyAdCampaignCreator = `-- name: GdprNullifyAdCampaignCreator :exec
+UPDATE ad_campaigns SET created_by = NULL WHERE created_by = $1
+`
+
+// Nullifies ad_campaigns.created_by for campaigns created by the erased
+// user. The FK has no CASCADE/SET NULL, so without this step the final
+// HardDeleteUser would block on the residual foreign key. The campaign
+// row is preserved (it may belong to an organization). Ref: Section 25/61.
+func (q *Queries) GdprNullifyAdCampaignCreator(ctx context.Context, userID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, gdprNullifyAdCampaignCreator, userID)
+	return err
 }
 
 const getAccountDeletionRequest = `-- name: GetAccountDeletionRequest :one

@@ -834,6 +834,7 @@ export const adsAdminApi = {
 	createCampaign: (body: Record<string, unknown>) => api<unknown>('/admin/ads/campaigns', { method: 'POST', body }),
 	updateCampaign: (id: string, body: Record<string, unknown>) => api<unknown>(`/admin/ads/campaigns/${id}`, { method: 'PATCH', body }),
 	activateCampaign: (id: string) => api<unknown>(`/admin/ads/campaigns/${id}/activate`, { method: 'POST', body: {} }),
+	rejectCampaign: (id: string) => api<unknown>(`/admin/ads/campaigns/${id}/reject`, { method: 'POST', body: {} }),
 	endCampaign: (id: string) => api<unknown>(`/admin/ads/campaigns/${id}/end`, { method: 'POST', body: {} }),
 	pauseCampaign: (id: string) => api<unknown>(`/admin/ads/campaigns/${id}/pause`, { method: 'POST', body: {} }),
 	endBoost: (id: string) => api<unknown>(`/admin/ads/boosts/${id}/end`, { method: 'POST', body: {} }),
@@ -892,6 +893,16 @@ export const analyticsAdminApi = {
 	runSecurityScan: (body: Record<string, unknown>) => api<unknown>('/admin/analytics/security/scan', { method: 'POST', body }),
 	resolveSecurityItem: (id: string, body: Record<string, unknown>) =>
 		api<unknown>(`/admin/analytics/security/${id}/resolve`, { method: 'POST', body }),
+	// Section 66 — Advanced Analytics Dashboard (ADR-084)
+	getTopContent: (params?: string) => api<unknown>(`/admin/analytics/top-content${params ? `?${params}` : ''}`),
+	getRevenueStreams: (params?: string) => api<unknown>(`/admin/analytics/revenue-streams${params ? `?${params}` : ''}`),
+	getAdPerformance: (params?: string) => api<unknown>(`/admin/analytics/ads${params ? `?${params}` : ''}`),
+	getNewsletterEngagement: (params?: string) => api<unknown>(`/admin/analytics/newsletter${params ? `?${params}` : ''}`),
+	getRetention: (params?: string) => api<unknown>(`/admin/analytics/retention${params ? `?${params}` : ''}`),
+	exportCsv: (metric: string, period?: string) => {
+		const params = [metric && `metric=${metric}`, period && `period=${period}`].filter(Boolean).join('&');
+		return api<unknown>(`/admin/analytics/export${params ? `?${params}` : ''}`);
+	},
 };
 
 export const blogAdminApi = {
@@ -1183,6 +1194,7 @@ export const webhooksAdminApiExtended = {
 	delete: (id: string) => api<{ deleted: boolean }>(`/admin/webhooks/${id}`, { method: 'DELETE' }),
 	test: (id: string) => api<unknown>(`/admin/webhooks/${id}/test`, { method: 'POST', body: {} }),
 	verify: (id: string) => api<unknown>(`/admin/webhooks/${id}/verify`, { method: 'POST', body: {} }),
+	listDeliveries: (id: string) => api<unknown>(`/admin/webhooks/${id}/deliveries`),
 	retryDelivery: (id: string, deliveryId: string) =>
 		api<unknown>(`/admin/webhooks/${id}/deliveries/${deliveryId}/retry`, { method: 'POST', body: {} }),
 };
@@ -1679,8 +1691,27 @@ export const readinessAdminApi = {
 	stats: () => api<unknown>(`/admin/assessment/stats`),
 };
 
+export interface ColAdminStatsItem {
+	city_id: string;
+	city_name: string;
+	is_baseline: boolean;
+	last_updated: string;
+	is_stale: boolean;
+	total_dimensions: number;
+	filled_dimensions: number;
+	completeness_pct: number;
+}
+
+export interface ColAdminStatsResponse {
+	cities: ColAdminStatsItem[];
+	total: number;
+	page: number;
+	limit: number;
+}
+
 export const costOfLivingAdminApi = {
-	stats: () => api<unknown>(`/admin/calculator/cost-of-living/stats`),
+	stats: (params?: string) =>
+		api<ColAdminStatsResponse>(`/admin/calculator/cost-of-living/stats${params ? `?${params}` : ''}`),
 };
 
 export const scholarshipAdminApi = {

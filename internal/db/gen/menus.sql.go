@@ -36,15 +36,24 @@ SELECT COUNT(*)::int AS count
 FROM menus
 WHERE tenant_id = $1
   AND ($2::text = '' OR name ILIKE '%' || $2 || '%' OR slug ILIKE '%' || $2 || '%')
+  AND ($3::text = '' OR placement = $3)
+  AND ($4::text = '' OR status = $4)
 `
 
 type CountMenusParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	Q        string      `json:"q"`
+	TenantID  pgtype.UUID `json:"tenant_id"`
+	Q         string      `json:"q"`
+	Placement string      `json:"placement"`
+	Status    string      `json:"status"`
 }
 
 func (q *Queries) CountMenus(ctx context.Context, arg CountMenusParams) (int32, error) {
-	row := q.db.QueryRow(ctx, countMenus, arg.TenantID, arg.Q)
+	row := q.db.QueryRow(ctx, countMenus,
+		arg.TenantID,
+		arg.Q,
+		arg.Placement,
+		arg.Status,
+	)
 	var count int32
 	err := row.Scan(&count)
 	return count, err
@@ -455,29 +464,69 @@ func (q *Queries) ListMenuItems(ctx context.Context, arg ListMenuItemsParams) ([
 const listMenus = `-- name: ListMenus :many
 
 
-SELECT id, tenant_id, slug, name, placement, status, created_at, updated_at
-FROM menus
-WHERE tenant_id = $1
-  AND ($2::text = '' OR name ILIKE '%' || $2 || '%' OR slug ILIKE '%' || $2 || '%')
-ORDER BY created_at ASC
-LIMIT $4 OFFSET $3
+SELECT m.id, m.tenant_id, m.slug, m.name, m.placement, m.status, m.created_at, m.updated_at,
+       (SELECT COUNT(*)::int FROM menu_items mi WHERE mi.menu_id = m.id AND mi.tenant_id = m.tenant_id) AS item_count
+FROM menus m
+WHERE m.tenant_id = $1
+  AND ($2::text = '' OR m.name ILIKE '%' || $2 || '%' OR m.slug ILIKE '%' || $2 || '%')
+  AND ($3::text = '' OR m.placement = $3)
+  AND ($4::text = '' OR m.status = $4)
+ORDER BY
+    CASE WHEN $5::text = 'asc' AND $6::text = 'name' THEN m.name END ASC,
+    CASE WHEN $5::text = 'asc' AND $6::text = 'slug' THEN m.slug END ASC,
+    CASE WHEN $5::text = 'asc' AND $6::text = 'placement' THEN m.placement END ASC,
+    CASE WHEN $5::text = 'asc' AND $6::text = 'status' THEN m.status END ASC,
+    CASE WHEN $5::text = 'asc' AND $6::text = 'updated_at' THEN m.updated_at END ASC,
+    CASE WHEN $5::text = 'desc' AND $6::text = 'name' THEN m.name END DESC,
+    CASE WHEN $5::text = 'desc' AND $6::text = 'slug' THEN m.slug END DESC,
+    CASE WHEN $5::text = 'desc' AND $6::text = 'placement' THEN m.placement END DESC,
+    CASE WHEN $5::text = 'desc' AND $6::text = 'status' THEN m.status END DESC,
+    CASE WHEN $5::text = 'desc' AND $6::text = 'updated_at' THEN m.updated_at END DESC,
+    m.created_at ASC
+LIMIT $8 OFFSET $7
 `
 
 type ListMenusParams struct {
 	TenantID   pgtype.UUID `json:"tenant_id"`
 	Q          string      `json:"q"`
+	Placement  string      `json:"placement"`
+	Status     string      `json:"status"`
+	SortDir    string      `json:"sort_dir"`
+	Sort       string      `json:"sort"`
 	PageOffset int32       `json:"page_offset"`
 	PageLimit  int32       `json:"page_limit"`
+}
+
+type ListMenusRow struct {
+	ID        pgtype.UUID        `json:"id"`
+	TenantID  pgtype.UUID        `json:"tenant_id"`
+	Slug      string             `json:"slug"`
+	Name      string             `json:"name"`
+	Placement string             `json:"placement"`
+	Status    string             `json:"status"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+	ItemCount int32              `json:"item_count"`
 }
 
 // Menus — Navigation menus with hierarchical RBAC-gated items (ADR-054)
 // =====================
 // Menus CRUD
 // =====================
-func (q *Queries) ListMenus(ctx context.Context, arg ListMenusParams) ([]Menu, error) {
+// Admin list with optional q (name/slug ILIKE), placement, status filters
+// and sort. Sort keys: name, slug, placement, status, updated_at (default
+// created_at ASC). Sort direction: asc/desc (default asc). Ref: ADR-054
+// admin list "must filter + sort + paginate". Includes item_count (correlated
+// subquery) so the admin list can show how many items each menu has without
+// an N+1 fetch.
+func (q *Queries) ListMenus(ctx context.Context, arg ListMenusParams) ([]ListMenusRow, error) {
 	rows, err := q.db.Query(ctx, listMenus,
 		arg.TenantID,
 		arg.Q,
+		arg.Placement,
+		arg.Status,
+		arg.SortDir,
+		arg.Sort,
 		arg.PageOffset,
 		arg.PageLimit,
 	)
@@ -485,9 +534,9 @@ func (q *Queries) ListMenus(ctx context.Context, arg ListMenusParams) ([]Menu, e
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Menu
+	var items []ListMenusRow
 	for rows.Next() {
-		var i Menu
+		var i ListMenusRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.TenantID,
@@ -497,6 +546,7 @@ func (q *Queries) ListMenus(ctx context.Context, arg ListMenusParams) ([]Menu, e
 			&i.Status,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.ItemCount,
 		); err != nil {
 			return nil, err
 		}

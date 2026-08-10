@@ -5,25 +5,30 @@
 --      japaconnect-engineering/adr/ADR-084-advanced-analytics.md
 
 -- =====================================================================
--- Top content by engagement score (from mv_top_content_7d).
+-- Top content by engagement score.
+-- Supports 7d/30d/90d periods via the @days parameter (int).
+-- Computed from mv_daily_content_stats with a day-range filter so a
+-- single query serves all three periods (§66 ?period=7d|30d|90d).
 -- =====================================================================
 
 -- name: AdvancedAnalyticsTopContent :many
 SELECT
-    tc.content_id,
-    tc.tenant_id,
-    tc.total_views,
-    tc.total_reactions,
-    tc.total_comments,
-    tc.engagement_score,
+    mdc.content_id,
+    mdc.tenant_id,
+    SUM(mdc.views) AS total_views,
+    SUM(mdc.reactions) AS total_reactions,
+    SUM(mdc.comments) AS total_comments,
+    SUM(mdc.views) + (SUM(mdc.reactions) * 3) + (SUM(mdc.comments) * 5) AS engagement_score,
     c.title,
     c.slug,
     c.content_type
-FROM mv_top_content_7d tc
-LEFT JOIN contents c ON c.id = tc.content_id
-WHERE tc.tenant_id = @tenant_id
+FROM mv_daily_content_stats mdc
+LEFT JOIN contents c ON c.id = mdc.content_id
+WHERE mdc.tenant_id = @tenant_id
+  AND mdc.day >= CURRENT_DATE - @days::int
   AND (@content_type::text = '' OR c.content_type = @content_type)
-ORDER BY tc.engagement_score DESC
+GROUP BY mdc.content_id, mdc.tenant_id, c.title, c.slug, c.content_type
+ORDER BY engagement_score DESC
 LIMIT @top_n;
 
 -- =====================================================================

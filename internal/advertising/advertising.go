@@ -21,11 +21,12 @@ const (
 
 // Campaign statuses.
 const (
-	CampaignStatusDraft    = "draft"
-	CampaignStatusActive   = "active"
-	CampaignStatusPaused   = "paused"
-	CampaignStatusEnded    = "ended"
-	CampaignStatusRejected = "rejected"
+	CampaignStatusDraft         = "draft"
+	CampaignStatusActive        = "active"
+	CampaignStatusPaused        = "paused"
+	CampaignStatusEnded         = "ended"
+	CampaignStatusRejected      = "rejected"
+	CampaignStatusPendingReview = "pending_review"
 )
 
 // Ad event types.

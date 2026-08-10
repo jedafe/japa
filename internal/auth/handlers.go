@@ -876,7 +876,7 @@ func (h *AuthHandlers) HandleForgotPassword(w http.ResponseWriter, r *http.Reque
 	// Per-email rate limit: 3 requests per 10 minutes. Prevents a single
 	// email address from being used to flood the reset-email queue.
 	if h.VKClient != nil {
-		emailKey := "jc:ratelimit:forgot_password:" + req.Email
+		emailKey := valkey.MustKey("ratelimit:forgot_password:%s", req.Email)
 
 		ok, err := rateLimitCheck(r.Context(), h.VKClient.Redis(), emailKey, 3, 10*time.Minute)
 		if err != nil {
@@ -1187,7 +1187,7 @@ func (h *AuthHandlers) HandleResendVerification(w http.ResponseWriter, r *http.R
 	// Per-email rate limit: 1 request per 5 minutes. Prevents a single
 	// email address from being used to flood the verification-email queue.
 	if h.VKClient != nil {
-		emailKey := "jc:ratelimit:resend_verification:" + req.Email
+		emailKey := valkey.MustKey("ratelimit:resend_verification:%s", req.Email)
 
 		ok, err := rateLimitCheck(r.Context(), h.VKClient.Redis(), emailKey, 1, 5*time.Minute)
 		if err != nil {

@@ -8,7 +8,7 @@
 	import { api } from '$lib/api/client';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import { UrlTabs, type UrlTab } from '$lib/components/ui';
-	import { Building2, Save, Trash2, Mail, Check, X, FileText, BarChart3, Send, UserPlus } from 'lucide-svelte';
+	import { Building2, Save, Trash2, Mail, Check, X, FileText, BarChart3, Send, UserPlus, Megaphone } from 'lucide-svelte';
 	import { untrack } from 'svelte';
 	import { page } from '$app/state';
 	import { invalidateAll, goto } from '$app/navigation';
@@ -174,10 +174,18 @@
 			<div class="flex h-10 w-10 items-center justify-center rounded-full bg-[var(--color-primary)]/10 text-[var(--color-primary)]">
 				<Building2 class="h-5 w-5" />
 			</div>
-			<div>
+			<div class="flex-1">
 				<h1 class="text-lg font-medium text-[var(--color-text)]">{org?.name}</h1>
 				<p class="text-xs text-[var(--color-muted)]">/{org?.slug} · {t(`org_admin.status.${org?.status ?? 'active'}`)}</p>
 			</div>
+			<!-- §61: Link to self-serve ads dashboard -->
+			<a
+				href="/dashboard/organizations/{org?.id}/ads"
+				class="inline-flex items-center gap-2 rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface)]"
+			>
+				<Megaphone class="h-4 w-4" />
+				{t('org_ads.title', 'Ad Campaigns')}
+			</a>
 		</div>
 	</header>
 

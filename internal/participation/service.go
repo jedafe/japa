@@ -33,6 +33,7 @@ import (
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/personas"
+	"github.com/jedafe/japa/internal/valkey"
 )
 
 // TaskEnqueuer is the subset of worker.Enqueuer that participation needs.
@@ -429,7 +430,7 @@ func (s *Service) findEligibleContent(ctx context.Context, persona personas.Pers
 
 	// Build a cache key hash from the query parameters.
 	cacheHash := buildEligibleCacheHash(persona.ID, minAge, policy.AvoidOwnContent, policy.EligibleContentTypes)
-	cacheKey := fmt.Sprintf("jc:persona:eligible:%s:%s", persona.ID, cacheHash)
+	cacheKey := valkey.MustKey("persona:eligible:%s:%s", persona.ID, cacheHash)
 
 	// Try cache first.
 	if s.vk != nil {
@@ -617,7 +618,7 @@ func (s *Service) acquireRunLock(ctx context.Context, personaID pgtype.UUID) boo
 	if s.vk == nil {
 		return true
 	}
-	key := "jc:persona:lock:" + personaID.String()
+	key := valkey.MustKey("persona:lock:%s", personaID.String())
 	ok, err := s.vk.SetNX(ctx, key, "1", 5*time.Minute).Result()
 	if err != nil {
 		slog.Warn("participation: acquire run-lock failed", "error", err)
@@ -630,14 +631,14 @@ func (s *Service) releaseRunLock(ctx context.Context, personaID pgtype.UUID) {
 	if s.vk == nil {
 		return
 	}
-	_ = s.vk.Del(ctx, "jc:persona:lock:"+personaID.String()).Err()
+	_ = s.vk.Del(ctx, valkey.MustKey("persona:lock:%s", personaID.String())).Err()
 }
 
 func (s *Service) getDailyCounter(ctx context.Context, personaID pgtype.UUID, date, actionType string) int {
 	if s.vk == nil {
 		return 0
 	}
-	key := fmt.Sprintf("jc:persona:daily:%s:%s:%s", personaID.String(), date, actionType)
+	key := valkey.MustKey("persona:daily:%s:%s:%s", personaID.String(), date, actionType)
 	val, err := s.vk.Get(ctx, key).Int()
 	if err != nil {
 		return 0
@@ -649,7 +650,7 @@ func (s *Service) incrementDailyCounter(ctx context.Context, personaID pgtype.UU
 	if s.vk == nil {
 		return
 	}
-	key := fmt.Sprintf("jc:persona:daily:%s:%s:%s", personaID.String(), date, actionType)
+	key := valkey.MustKey("persona:daily:%s:%s:%s", personaID.String(), date, actionType)
 	pipe := s.vk.Pipeline()
 	pipe.Incr(ctx, key)
 	pipe.ExpireAt(ctx, key, nextMidnightUTC())
@@ -660,7 +661,7 @@ func (s *Service) getGlobalDailyCounter(ctx context.Context, tenantID pgtype.UUI
 	if s.vk == nil {
 		return 0
 	}
-	key := fmt.Sprintf("jc:persona:global:%s:%s", tenantID.String(), date)
+	key := valkey.MustKey("persona:global:%s:%s", tenantID.String(), date)
 	val, err := s.vk.Get(ctx, key).Int()
 	if err != nil {
 		return 0
@@ -672,7 +673,7 @@ func (s *Service) incrementGlobalCounter(ctx context.Context, tenantID pgtype.UU
 	if s.vk == nil {
 		return
 	}
-	key := fmt.Sprintf("jc:persona:global:%s:%s", tenantID.String(), date)
+	key := valkey.MustKey("persona:global:%s:%s", tenantID.String(), date)
 	pipe := s.vk.Pipeline()
 	pipe.Incr(ctx, key)
 	pipe.ExpireAt(ctx, key, nextMidnightUTC())

@@ -33,16 +33,18 @@ export const actions: Actions = {
 		}
 
 		const ctx = apiContext(event);
-		const slug = event.params.slug;
 		const form = await event.request.formData();
-		const coverLetter = (form.get('cover_letter') as string | null)?.trim() ?? '';
-		const resumeUrl = (form.get('resume_url') as string | null)?.trim() ?? '';
+		const jobId = (form.get('job_id') as string | null)?.trim() ?? '';
+
+		if (!jobId) {
+			return { error: 'missing_job_id' };
+		}
 
 		try {
 			const result = await apiPost<{ id: string; status: string }>(
 				ctx,
-				`/jobs/${slug}/apply`,
-				{ cover_letter: coverLetter, resume_url: resumeUrl }
+				`/jobs/${jobId}/apply`,
+				{}
 			);
 			return { ok: true, applicationId: result.id, status: result.status };
 		} catch (err) {

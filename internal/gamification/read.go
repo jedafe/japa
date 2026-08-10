@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/valkey"
 )
 
 // ---------------------------------------------------------------------------
@@ -80,7 +81,7 @@ func ValidateLeaderboardPeriod(period string) bool {
 
 // leaderboardCacheKey builds the Valkey key for a cached leaderboard.
 func leaderboardCacheKey(tenantID pgtype.UUID, scope, period string) string {
-	return fmt.Sprintf("jc:leaderboard:%s:%s:%s", uuidStr(tenantID), scope, period)
+	return valkey.MustKey("leaderboard:%s:%s:%s", uuidStr(tenantID), scope, period)
 }
 
 // periodStartDate returns the UTC start-of-period time for weekly/monthly.

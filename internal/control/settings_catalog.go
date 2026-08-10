@@ -387,11 +387,12 @@ var settingsCatalog = map[string]settingMeta{
 
 	// Mobile Push (§77, ADR-074) — seeded for forward compatibility; not yet
 	// consumed by Go code. Web push is gated by JC_VAPID_* env vars instead.
-	"push.enabled":         {Type: "bool", DefaultValue: "false", Description: "Global push notification toggle (not-yet-wired; web push is gated by VAPID env vars).", Panel: "control"},
-	"push.fcm_server_key":  {Type: "string", DefaultValue: "", Description: "FCM server key (encrypted at rest; not-yet-implemented).", Sensitive: true, Panel: "control"},
-	"push.apns_key_id":     {Type: "string", DefaultValue: "", Description: "APNs key ID (not-yet-implemented).", Sensitive: true, Panel: "control"},
-	"push.apns_team_id":    {Type: "string", DefaultValue: "", Description: "Apple Team ID (not-yet-implemented).", Sensitive: true, Panel: "control"},
-	"push.apns_private_key": {Type: "string", DefaultValue: "", Description: "APNs private key PEM (encrypted at rest; not-yet-implemented).", Sensitive: true, Panel: "control"},
+	"push.enabled":          {Type: "bool", DefaultValue: "false", Description: "Global push notification toggle (FCM/APNs for mobile; web push is gated by VAPID env vars).", Panel: "control"},
+	"push.fcm_server_key":   {Type: "string", DefaultValue: "", Description: "FCM legacy server key (deprecated by Google June 2024; use push.fcm_service_account instead).", Sensitive: true, Panel: "control"},
+	"push.fcm_service_account": {Type: "string", DefaultValue: "", Description: "FCM service account JSON for the HTTP v1 API (JSON key file content).", Sensitive: true, Panel: "control"},
+	"push.apns_key_id":      {Type: "string", DefaultValue: "", Description: "APNs key ID (10-char hex).", Sensitive: true, Panel: "control"},
+	"push.apns_team_id":     {Type: "string", DefaultValue: "", Description: "Apple Team ID (10-char hex).", Sensitive: true, Panel: "control"},
+	"push.apns_private_key": {Type: "string", DefaultValue: "", Description: "APNs private key PEM (p8, ES256).", Sensitive: true, Panel: "control"},
 
 	// Tools Web Surface (§78, ADR-086)
 	"tools.subdomain":       {Type: "string", DefaultValue: "tools", Description: "Subdomain for the tools hub.", Panel: "control"},

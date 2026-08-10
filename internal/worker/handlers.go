@@ -29,6 +29,7 @@ import (
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/valkey"
 	"github.com/valkey-io/valkey-go/valkeycompat"
 
 	"github.com/jedafe/japa/internal/email"
@@ -387,7 +388,7 @@ func HandlePaymentWebhookProcess(ctx context.Context, t *asynq.Task) error {
 		if p.PurposeID.Valid {
 			productID = p.PurposeID.String()
 		}
-		attrKey := fmt.Sprintf("jc:aff_click:%s:%s:%s",
+		attrKey := valkey.MustKey("aff_click:%s:%s:%s",
 			p.UserID.String(), p.PurposeType, productID)
 		if rdb != nil {
 			if v, gErr := rdb.Get(ctx, attrKey).Result(); gErr == nil && v != "" {
@@ -2263,6 +2264,13 @@ func HandleNewsletterSend(ctx context.Context, t *asynq.Task) error {
 		sent++
 	}
 
+	// Mark the campaign as sent with the recipient count (Section 62).
+	_ = gen.New(dbPool.Writer).MarkCampaignSent(ctx, gen.MarkCampaignSentParams{
+		TenantID:       tenantID,
+		ID:             campaignID,
+		RecipientCount: int32(sent),
+	})
+
 	slog.Info("task:newsletter:send: batch complete",
 		"newsletter_id", payload.NewsletterID,
 		"sent", sent, "failed", failed, "total", len(pending))
@@ -2673,7 +2681,7 @@ func generateRSSForTenant(ctx context.Context, tenantID pgtype.UUID, baseURL str
 	xmlBytes = append([]byte(xml.Header+"\n"), xmlBytes...)
 
 	// Cache in Valkey under the jc:cache:feed:rss: prefix (VALKEY-002 compliance).
-	cacheKey := "jc:cache:feed:rss:" + tenantID.String()
+	cacheKey := valkey.MustKey("cache:feed:rss:%s", tenantID.String())
 	if rdb != nil {
 		if err := rdb.Set(ctx, cacheKey, string(xmlBytes), time.Hour).Err(); err != nil {
 			slog.Error("task:rss_regenerate: failed to cache feed", "tenant_id", tenantID.String(), "error", err)
@@ -3244,9 +3252,9 @@ func invalidateLLMsCacheForTenant(ctx context.Context, tenantID pgtype.UUID) {
 	}
 
 	keys := []string{
-		"jc:llms_txt:" + tenantID.String(),
-		"jc:llms_full_txt:" + tenantID.String(),
-		"jc:robots_txt:" + tenantID.String(),
+		valkey.MustKey("llms_txt:%s", tenantID.String()),
+		valkey.MustKey("llms_full_txt:%s", tenantID.String()),
+		valkey.MustKey("robots_txt:%s", tenantID.String()),
 	}
 
 	for _, key := range keys {
@@ -3359,9 +3367,9 @@ func HandleNewsletterDigest(ctx context.Context, t *asynq.Task) error {
 		return nil
 	}
 
-	// Fetch active newsletter subscribers for this tenant.
+	// Fetch newsletter subscribers with digest enabled for this tenant.
 	rows, err := dbPool.Reader.Query(ctx,
-		`SELECT email FROM newsletter_subscribers WHERE tenant_id = $1 AND status = 'active'`,
+		`SELECT email FROM newsletter_subscribers WHERE tenant_id = $1 AND status = 'subscribed' AND digest_enabled = true`,
 		tenantID)
 	if err != nil {
 		slog.Error("task:newsletter:digest: failed to list subscribers", "error", err)
@@ -3379,7 +3387,7 @@ func HandleNewsletterDigest(ctx context.Context, t *asynq.Task) error {
 	rows.Close()
 
 	if len(subscribers) == 0 {
-		slog.Info("task:newsletter:digest: no active subscribers, skipping", "tenant_id", payload.TenantID)
+		slog.Info("task:newsletter:digest: no digest subscribers, skipping", "tenant_id", payload.TenantID)
 		return nil
 	}
 
@@ -4391,7 +4399,7 @@ func HandleAffiliateCreditCommission(ctx context.Context, t *asynq.Task) error {
 	// Delete the attribution key so the same click can't be double-credited
 	// (Section 56 Commission Crediting).
 	if rdb != nil {
-		attrKey := fmt.Sprintf("jc:aff_click:%s:%s:%s",
+		attrKey := valkey.MustKey("aff_click:%s:%s:%s",
 			payload.UserID, payload.PurposeType, payload.ProductID)
 		if err := rdb.Del(ctx, attrKey).Err(); err != nil {
 			slog.Warn("affiliate:credit_commission: failed to delete attribution key",

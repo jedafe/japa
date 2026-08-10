@@ -10,6 +10,9 @@
 		label: string;
 		props: Record<string, unknown>;
 		sort_order: number;
+		/** Render slot from the widget type registry (BE-S3). Falls back to a
+		 *  hardcoded topbar set for backward compat with older cached payloads. */
+		slot?: string;
 	}
 
 	interface Props {
@@ -42,12 +45,18 @@
 	// ADR-060: Dashboard is private — no ad slots on /dashboard/* routes.
 	let isDashboard = $derived(page.url.pathname.startsWith('/dashboard'));
 
-	// Split widgets into topbar (sticky) and content (scrollable) slots.
-	// Topbar widgets: search, theme_toggle, language_toggle, user_dropdown.
-	// Content widgets: everything else (ad_slot, trending_tags, suggested_spaces, etc.).
+	// Split widgets into topbar (sticky) and content (scrollable) slots using
+	// the `slot` field from the widget type registry (Section 59 §6, BE-S3).
+	// Falls back to a hardcoded topbar type set for backward compat with older
+	// cached payloads that do not include `slot`.
 	const topbarWidgetTypes = new Set(['search', 'theme_toggle', 'language_toggle', 'user_dropdown']);
-	let topbarWidgets = $derived(widgets.filter((w) => topbarWidgetTypes.has(w.widget_type)));
-	let contentWidgets = $derived(widgets.filter((w) => !topbarWidgetTypes.has(w.widget_type)));
+	function isTopbar(w: SidebarWidget): boolean {
+		if (w.slot === 'topbar') return true;
+		if (w.slot === 'content') return false;
+		return topbarWidgetTypes.has(w.widget_type);
+	}
+	let topbarWidgets = $derived(widgets.filter((w) => isTopbar(w)));
+	let contentWidgets = $derived(widgets.filter((w) => !isTopbar(w)));
 </script>
 
 <aside class="flex h-full flex-col gap-4 overflow-y-auto px-4 py-3">

@@ -59,6 +59,10 @@ export interface SessionUser {
 	ui?: { nav_collapsed?: boolean } & Record<string, unknown>;
 	/** Geo-aware feed personalization country (ADR-064). Empty = use GeoIP default. */
 	content_country_preference?: string;
+	/** The user's current geo space ID (migration 000200). Used by sidebar
+	 *  widgets to fetch geo-relevant content (Option A, ADR-064). Null for
+	 *  guests or users who haven't set a geo space. */
+	current_geo_space_id?: string | null;
 }
 
 export interface SpaceRef {
@@ -1111,8 +1115,20 @@ export type University = Space;
 /** University detail response (GET /universities/{slug}) — Space + fields + resolved logo URL. */
 export interface UniversityDetail extends Space {
 	fields?: unknown[];
+	/** Display-ready custom field values (show_in_frontend-filtered, definition-
+	 * joined, with select/multiselect option values resolved to labels). Rendered
+	 * in the About facts grid (Section 39 sidebar: ranking, tuition, programs). */
+	display_fields?: UniversityDisplayField[];
 	/** imgproxy-signed logo URL resolved from logo_media_id (Section 34 / ADR-039). */
 	logo_url?: string | null;
+}
+
+/** A display-ready custom field value (GET /universities/{slug} display_fields[]). */
+export interface UniversityDisplayField {
+	label: string;
+	key: string;
+	value: string;
+	field_type: string;
 }
 
 /** GET /universities/{id}/compare response — `{ space, fields }`. */

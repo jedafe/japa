@@ -211,6 +211,26 @@ WHERE cfv.entity_type = @entity_type AND cfv.entity_id = @entity_id
   AND cf.tenant_id = @tenant_id
   AND cfv.field_id = ANY(@visible_field_ids::uuid[]);
 
+-- name: ListCustomFieldValuesWithDefsByEntity :many
+-- Display-ready field values: joins custom_field_values with their
+-- custom_fields definitions (label, key, field_type, options, position) so
+-- a single row carries both the stored value and the metadata needed to
+-- render it. Filtered to show_in_frontend = true so admin-only fields never
+-- leak to public surfaces (e.g. the /universities/{slug} About facts grid,
+-- Section 39). Tenant-scoped via the JOIN (BUG-014). Ordered by the field's
+-- group position for stable display ordering.
+SELECT cfv.id, cfv.field_id, cfv.entity_type, cfv.entity_id, cfv.value_text,
+       cfv.value_number, cfv.value_bool, cfv.value_date, cfv.value_json,
+       cfv.created_at, cfv.updated_at,
+       cf.label AS field_label, cf.key AS field_key, cf.field_type,
+       cf.options AS field_options, cf.position AS field_position
+FROM custom_field_values cfv
+JOIN custom_fields cf ON cfv.field_id = cf.id
+WHERE cfv.entity_type = @entity_type AND cfv.entity_id = @entity_id
+  AND cf.tenant_id = @tenant_id
+  AND cf.show_in_frontend = true
+ORDER BY cf.position ASC, cf.created_at ASC;
+
 -- name: UpsertCustomFieldValue :one
 -- Tenant scoping for upsert is enforced at the handler layer via a
 -- GetField(fieldID, tenantID) pre-check (the handler rejects 404 before

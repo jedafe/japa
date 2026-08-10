@@ -130,7 +130,7 @@ func (h *Handlers) GetWSTicket(w http.ResponseWriter, r *http.Request) {
 			"user_id":   user.UserID.String(),
 			"tenant_id": user.TenantID.String(),
 		}
-		if err := h.vkClient.Redis().HSet(vctx, "jc:ws_ticket:"+ticket.ID.String(),
+		if err := h.vkClient.Redis().HSet(vctx, valkey.MustKey("ws_ticket:%s", ticket.ID.String()),
 			ticketFields, 60*time.Second).Err(); err != nil {
 			slog.Error("caching ws ticket", "error", err, "user_id", user.UserID.String())
 			writeError(w, http.StatusInternalServerError, "internal_error", "Failed to create ticket")
@@ -170,7 +170,7 @@ func (h *Handlers) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 		vctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 		defer cancel()
 
-		fields, err := h.vkClient.Redis().HGetAll(vctx, "jc:ws_ticket:"+ticketStr).Result()
+		fields, err := h.vkClient.Redis().HGetAll(vctx, valkey.MustKey("ws_ticket:%s", ticketStr)).Result()
 
 		switch {
 		case errors.Is(err, valkeycompat.Nil), len(fields) == 0:
@@ -213,7 +213,7 @@ func (h *Handlers) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 	// Immediately delete the Valkey key so a replayed request cannot pass the cache lookup.
 	if h.vkClient != nil {
-		if err := h.vkClient.Redis().Del(ctx, "jc:ws_ticket:"+ticketStr).Err(); err != nil {
+		if err := h.vkClient.Redis().Del(ctx, valkey.MustKey("ws_ticket:%s", ticketStr)).Err(); err != nil {
 			slog.Error("deleting consumed ws ticket", "error", err, "ticket", ticketStr)
 		}
 	}

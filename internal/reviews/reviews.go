@@ -8,6 +8,9 @@
 package reviews
 
 import (
+	"context"
+
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
 )
@@ -31,10 +34,17 @@ const (
 	MaxPageSize     = 100
 )
 
+// webhookEmitter fans a review.* event out to all subscribed webhook
+// endpoints for the tenant (fire-and-forget). Ref: Section 12 (webhooks).
+type webhookEmitter interface {
+	EmitEvent(ctx context.Context, tenantID pgtype.UUID, eventType string, payload any)
+}
+
 // Service provides review operations with reader/writer pool separation.
 type Service struct {
-	store *Store
-	db    *db.DB
+	store    *Store
+	db       *db.DB
+	webhooks webhookEmitter
 }
 
 // NewService creates a Service backed by the given database pool.
@@ -46,4 +56,16 @@ func NewService(database *db.DB) *Service {
 		},
 		db: database,
 	}
+}
+
+// SetWebhookEmitter injects the review.* event fan-out (Section 12).
+func (s *Service) SetWebhookEmitter(w webhookEmitter) { s.webhooks = w }
+
+// emitWebhook fires a review.* event fire-and-forget (Rule 8). Errors are
+// logged but never returned to the caller — webhook delivery is async.
+func (s *Service) emitWebhook(ctx context.Context, tenantID pgtype.UUID, eventType string, payload any) {
+	if s.webhooks == nil {
+		return
+	}
+	s.webhooks.EmitEvent(ctx, tenantID, eventType, payload)
 }

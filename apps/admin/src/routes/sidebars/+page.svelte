@@ -13,10 +13,11 @@
 	import { Button } from "$lib/components/ui/button";
 	import { Select } from "$lib/components/ui/select";
 	import { TableSkeleton } from "$lib/components/ui/skeleton";
-	import { sidebarsAdminApi, userManagementApi, type UserGroup } from "$lib/api";
+	import { sidebarsAdminApi, userManagementApi, permissionsApi, type UserGroup } from "$lib/api";
 	import { t } from "$lib/stores/i18n.svelte";
 	import { hasPermission } from "$lib/stores/permissions.svelte";
-	import { Eye, Pencil, Trash2, Plus, ArrowUp, ArrowDown, LayoutGrid } from "lucide-svelte";
+	import Autocomplete, { type AutocompleteItem } from "$lib/components/ui/Autocomplete.svelte";
+	import { Eye, Pencil, Trash2, Plus, ArrowUp, ArrowDown, LayoutGrid, X } from "lucide-svelte";
 
 	type WidgetType = {
 		type: string;
@@ -64,6 +65,7 @@
 	// ── User groups + widget types (loaded on mount for the sub-flows) ──────
 	let userGroups = $state<UserGroup[]>([]);
 	let widgetTypes = $state<WidgetType[]>([]);
+	let permissionNodes = $state<string[]>([]);
 
 	async function loadUserGroups() {
 		try {
@@ -87,9 +89,21 @@
 		}
 	}
 
+	async function loadPermissionNodes() {
+		try {
+			const result = await permissionsApi.list();
+			if (result.ok) {
+				permissionNodes = (result.data as string[]) ?? [];
+			}
+		} catch {
+			permissionNodes = [];
+		}
+	}
+
 	$effect(() => {
 		void loadUserGroups();
 		void loadWidgetTypes();
+		void loadPermissionNodes();
 	});
 
 	// ── EntityPage controller + bulk delete ─────────────────────────────────
@@ -207,25 +221,71 @@
 	let widgetPermissionNode = $state("");
 	let widgetRequiredGroupIds = $state<Set<string>>(new Set());
 
-	// Widget group multi-select state
-	let groupSearch = $state("");
-	let groupDropdownOpen = $state(false);
-	let groupDebounce: ReturnType<typeof setTimeout> | null = null;
-
+	// Selected group objects for chip display
 	const selectedGroupObjs = $derived(
 		userGroups.filter((g) => widgetRequiredGroupIds.has(g.id))
 	);
 
-	const groupSuggestions = $derived(
-		groupSearch.trim()
-			? userGroups.filter(
-					(g) =>
-						!widgetRequiredGroupIds.has(g.id) &&
-						(g.name.toLowerCase().includes(groupSearch.toLowerCase()) ||
-							g.slug.toLowerCase().includes(groupSearch.toLowerCase()))
-				).slice(0, 10)
-			: userGroups.filter((g) => !widgetRequiredGroupIds.has(g.id)).slice(0, 10)
-	);
+	// ── Autocomplete fetchers (live debounced search) ──────────────────────
+	// Permission nodes: client-side filter over the cached full list (loaded
+	// once on mount via permissionsApi.list). The backend returns all nodes
+	// as a flat string[] with no server-side search param, so we filter
+	// locally — the Autocomplete component handles the debounce.
+	function filterPermissionNodes(q: string): AutocompleteItem[] {
+		const query = q.toLowerCase().trim();
+		return permissionNodes
+			.filter((node) => !query || node.toLowerCase().includes(query))
+			.slice(0, 20)
+			.map((node) => ({ id: node, label: node }));
+	}
+
+	async function fetchPermissionNodes(q: string): Promise<AutocompleteItem[]> {
+		return filterPermissionNodes(q);
+	}
+
+	async function initialPermissionNodes(): Promise<AutocompleteItem[]> {
+		return filterPermissionNodes("");
+	}
+
+	// User groups: client-side filter over the cached list, excluding already-
+	// selected groups so they can't be picked twice.
+	function filterGroups(q: string): AutocompleteItem[] {
+		const query = q.toLowerCase().trim();
+		return userGroups
+			.filter((g) => !widgetRequiredGroupIds.has(g.id))
+			.filter(
+				(g) =>
+					!query ||
+					g.name.toLowerCase().includes(query) ||
+					g.slug.toLowerCase().includes(query)
+			)
+			.slice(0, 10)
+			.map((g) => ({
+				id: g.id,
+				label: g.name,
+				sublabel: g.is_system ? "system" : undefined,
+			}));
+	}
+
+	async function fetchGroups(q: string): Promise<AutocompleteItem[]> {
+		return filterGroups(q);
+	}
+
+	async function initialGroups(): Promise<AutocompleteItem[]> {
+		return filterGroups("");
+	}
+
+	function addGroup(groupId: string) {
+		const next = new Set(widgetRequiredGroupIds);
+		next.add(groupId);
+		widgetRequiredGroupIds = next;
+	}
+
+	function removeGroup(groupId: string) {
+		const next = new Set(widgetRequiredGroupIds);
+		next.delete(groupId);
+		widgetRequiredGroupIds = next;
+	}
 
 	// Delete widget confirmation
 	let deleteWidgetTarget = $state<string | null>(null);
@@ -265,8 +325,6 @@
 		widgetStatus = "active";
 		widgetPermissionNode = "";
 		widgetRequiredGroupIds = new Set();
-		groupSearch = "";
-		groupDropdownOpen = false;
 		showWidgetModal = true;
 	}
 
@@ -279,8 +337,6 @@
 		widgetStatus = widget.status || "active";
 		widgetPermissionNode = widget.permission_node ?? "";
 		widgetRequiredGroupIds = new Set(widget.required_group_ids ?? []);
-		groupSearch = "";
-		groupDropdownOpen = false;
 		showWidgetModal = true;
 	}
 
@@ -372,29 +428,6 @@
 		}
 	}
 
-	// Widget group multi-select handlers
-	function handleGroupInput(e: Event) {
-		const target = e.target as HTMLInputElement;
-		groupSearch = target.value;
-		if (groupDebounce) clearTimeout(groupDebounce);
-		groupDebounce = setTimeout(() => {
-			groupDropdownOpen = true;
-		}, 200);
-	}
-
-	function addGroup(groupId: string) {
-		const next = new Set(widgetRequiredGroupIds);
-		next.add(groupId);
-		widgetRequiredGroupIds = next;
-		groupSearch = "";
-	}
-
-	function removeGroup(groupId: string) {
-		const next = new Set(widgetRequiredGroupIds);
-		next.delete(groupId);
-		widgetRequiredGroupIds = next;
-	}
-
 	const sortedWidgets = $derived(
 		[...(widgetsSidebar?.widgets ?? [])].sort((a, b) => a.sort_order - b.sort_order)
 	);
@@ -427,13 +460,13 @@
 				key: "widget_count",
 				label: t("sidebars.widgets", "Widgets"),
 				sortable: false,
-				render: (_v: any, row: any) => String(row?.widget_count ?? row?.widgets?.length ?? 0),
+				render: (v: any) => String(v ?? 0),
 			},
 			{
 				key: "updated_at",
 				label: t("common.updated", "Updated"),
 				sortable: true,
-				render: (v: string) => (v ? new Date(v).toLocaleDateString() : "—"),
+				render: (v: string) => (v ? new Date(v).toLocaleString() : "—"),
 			},
 		],
 		filters: [
@@ -478,16 +511,37 @@
 			},
 		],
 		fields,
-		load: async ({ q, filter }) => {
-			const params = new URLSearchParams();
+		load: async ({ page, pageSize, q, sort, filter }) => {
+			const params = new URLSearchParams({
+				page_size: String(pageSize),
+				page_offset: String(page * pageSize),
+			});
 			if (filter.app) params.set("app", filter.app);
 			if (filter.position) params.set("position", filter.position);
 			if (filter.status) params.set("status", filter.status);
 			if (q) params.set("q", q);
-			const result = await sidebarsAdminApi.list(params.toString() || undefined);
+			// EntityPage emits sort as "key:dir"; send both sort and dir so the
+			// backend can compose the "key:dir" CASE WHEN matcher.
+			if (sort) {
+				const [sortKey, sortDir] = sort.split(":");
+				if (sortKey) {
+					params.set("sort", sortKey);
+					if (sortDir) params.set("dir", sortDir);
+				}
+			}
+			const result = await sidebarsAdminApi.list(params.toString());
 			if (result.ok) {
-				const items = ((result.data as { items: Sidebar[] })?.items) ?? [];
-				return { data: items, total: items.length, totalPages: 1 };
+				const payload = result.data as {
+					items: Sidebar[];
+					total?: number;
+					total_pages?: number;
+				};
+				const items = payload?.items ?? [];
+				return {
+					data: items,
+					total: payload?.total ?? items.length,
+					totalPages: payload?.total_pages ?? 1,
+				};
 			}
 			throw new Error(result.error ?? t("common.error", "Failed to load sidebars"));
 		},
@@ -659,49 +713,49 @@
 		</div>
 		<div>
 			<label for="widget-permission" class="block text-sm font-medium" style="color: var(--color-foreground)">{t("sidebars.permission_node", "Permission Node (optional)")}</label>
-			<input id="widget-permission" type="text" bind:value={widgetPermissionNode} class="mt-1 w-full rounded-lg border p-2 text-sm font-mono" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" placeholder="e.g., moderation.tools" />
+			<p class="mt-0.5 text-xs" style="color: var(--color-muted)">{t("sidebars.permission_node_hint", "Type a permission node or search existing ones. Widget is shown only to users who hold this permission.")}</p>
+			<div class="mt-1">
+				<Autocomplete
+					id="widget-permission"
+					placeholder="e.g., moderation.tools"
+					emptyMessage={t("sidebars.no_permission_nodes", "No matching permission nodes")}
+					fetcher={fetchPermissionNodes}
+					initialFetcher={initialPermissionNodes}
+					selectedId={widgetPermissionNode || null}
+					selectedLabel={widgetPermissionNode}
+					onSelect={(item) => { widgetPermissionNode = item.id; }}
+					onClear={() => { widgetPermissionNode = ""; }}
+					onInput={(q) => { widgetPermissionNode = q; }}
+					freeText
+					inputClass="font-mono"
+				/>
+			</div>
 		</div>
 		<div>
 			<label for="widget-required-groups" class="block text-sm font-medium" style="color: var(--color-foreground)">{t("sidebars.required_groups", "Required User Groups")}</label>
 			<p class="mt-0.5 text-xs" style="color: var(--color-muted)">{t("sidebars.required_groups_hint", "Widget is visible only to users in at least one selected group. Leave empty for everyone.")}</p>
-			<div class="relative mt-1">
-				<div class="flex flex-wrap items-center gap-1 w-full rounded-lg border p-1.5 min-h-[2.5rem]" style="border-color: var(--color-border); background: var(--color-surface)">
+			{#if selectedGroupObjs.length > 0}
+				<div class="mt-1 flex flex-wrap gap-1">
 					{#each selectedGroupObjs as group (group.id)}
 						<span class="inline-flex items-center gap-1 rounded px-2 py-0.5 text-xs" style="background: color-mix(in srgb, var(--color-primary) 15%, transparent); color: var(--color-foreground)">
 							{group.name}
-							<button type="button" class="ml-0.5 opacity-60 hover:opacity-100" style="color: var(--color-foreground)" onclick={() => removeGroup(group.id)} aria-label={t("common.remove", "Remove")}>&times;</button>
+							<button type="button" class="ml-0.5 opacity-60 hover:opacity-100" style="color: var(--color-foreground)" onclick={() => removeGroup(group.id)} aria-label={t("common.remove", "Remove")}>
+								<X size={12} />
+							</button>
 						</span>
 					{/each}
-					<input
-						id="widget-required-groups"
-						type="text"
-						value={groupSearch}
-						oninput={handleGroupInput}
-						onfocus={() => { groupDropdownOpen = true; }}
-						onblur={() => setTimeout(() => (groupDropdownOpen = false), 200)}
-						onkeydown={(e) => {
-							if (e.key === "Escape") groupDropdownOpen = false;
-							else if (e.key === "Enter" && groupSuggestions.length > 0) { e.preventDefault(); addGroup(groupSuggestions[0].id); }
-							else if (e.key === "Backspace" && !groupSearch && selectedGroupObjs.length > 0) { removeGroup(selectedGroupObjs[selectedGroupObjs.length - 1].id); }
-						}}
-						class="flex-1 min-w-[8rem] bg-transparent border-0 outline-none text-sm py-1 px-1"
-						style="color: var(--color-foreground)"
-						placeholder={widgetRequiredGroupIds.size === 0 ? t("sidebars.search_groups", "Search groups...") : ""}
-					/>
 				</div>
-				{#if groupDropdownOpen && groupSuggestions.length > 0}
-					<ul class="absolute z-[60] mt-1 max-h-48 w-full overflow-auto rounded-lg border shadow-lg" style="border-color: var(--color-border); background: var(--color-surface)">
-						{#each groupSuggestions as group (group.id)}
-							<li>
-								<button type="button" class="w-full px-3 py-2 text-left text-sm hover:bg-black/5 dark:hover:bg-white/10 flex items-center gap-2" style="color: var(--color-foreground)" onmousedown={(e) => { e.preventDefault(); addGroup(group.id); }}>
-									<span>{group.name}</span>
-									{#if group.is_system ?? false}<span class="text-xs px-1.5 py-0.5 rounded" style="background: var(--color-muted); color: var(--color-surface)">system</span>{/if}
-									<span class="ml-auto text-xs" style="color: var(--color-muted)">{group.member_count ?? 0}</span>
-								</button>
-							</li>
-						{/each}
-					</ul>
-				{/if}
+			{/if}
+			<div class="mt-1">
+				<Autocomplete
+					id="widget-required-groups"
+					placeholder={t("sidebars.search_groups", "Search groups...")}
+					emptyMessage={t("sidebars.no_groups_found", "No matching groups")}
+					fetcher={fetchGroups}
+					initialFetcher={initialGroups}
+					selectedId={null}
+					onSelect={(item) => addGroup(item.id)}
+				/>
 			</div>
 		</div>
 	</div>

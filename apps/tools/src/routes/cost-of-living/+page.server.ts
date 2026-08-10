@@ -1,7 +1,7 @@
 import type { PageServerLoad } from './$types';
-import { apiContext, apiList, apiGet } from '$lib/server/api';
+import { apiContext, apiGet } from '$lib/server/api';
 import { getTool, isToolEnabled } from '$lib/tools/registry';
-import type { ColCity, ColComparison } from '$lib/types';
+import type { ColCity, ColCitiesListResponse, ColComparisonMatrix } from '$lib/types';
 
 /**
  * Cost of Living Calculator — §72, ADR-072.
@@ -19,30 +19,31 @@ export const load: PageServerLoad = async (event) => {
 	const tool = getTool('cost-of-living')!;
 	const settings = event.locals.siteSettings;
 	if (!isToolEnabled(tool, settings)) {
-		return { enabled: false, tool, cities: [], comparison: null, maxCities: 3, staleDays: 180 };
+		return { enabled: false, tool, cities: [], matrix: null, preselected: [], maxCities: 3, staleDays: 180 };
 	}
 
 	const ctx = apiContext(event);
 
 	let cities: ColCity[] = [];
 	try {
-		const res = await apiList<ColCity>(ctx, '/calculator/cost-of-living/cities');
-		cities = res.items;
+		const res = await apiGet<ColCitiesListResponse>(ctx, '/calculator/cost-of-living/cities?page=1&limit=200');
+		cities = res.cities ?? [];
 	} catch {
 		cities = [];
 	}
 
 	// If the URL has city_ids (shareable link), load the comparison directly.
 	const cityIdsParam = event.url.searchParams.get('city_ids');
-	let comparison: ColComparison | null = null;
+	const preselected = cityIdsParam ? cityIdsParam.split(',').filter(Boolean) : [];
+	let matrix: ColComparisonMatrix | null = null;
 	if (cityIdsParam) {
 		try {
-			comparison = await apiGet<ColComparison>(
+			matrix = await apiGet<ColComparisonMatrix>(
 				ctx,
 				`/calculator/cost-of-living/compare?city_ids=${encodeURIComponent(cityIdsParam)}`
 			);
 		} catch {
-			comparison = null;
+			matrix = null;
 		}
 	}
 
@@ -59,5 +60,5 @@ export const load: PageServerLoad = async (event) => {
 		staleDays = settings['col_calculator.stale_days'] as number;
 	}
 
-	return { enabled: true, tool, cities, comparison, maxCities, staleDays };
+	return { enabled: true, tool, cities, matrix, preselected, maxCities, staleDays };
 };

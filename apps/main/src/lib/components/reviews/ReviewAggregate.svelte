@@ -23,7 +23,7 @@
 	<div class="flex items-center gap-0.5" aria-label={`${t('reviews.average_aria')}: ${rounded}`}>
 		{#each Array(5) as _, i (i)}
 			<Star
-				class="h-4 w-4 {i < Math.round(avg) ? 'fill-amber-400 text-amber-400' : 'text-[var(--color-muted)]'}"
+				class="h-4 w-4 {i < Math.round(avg) ? 'fill-[var(--color-warning)] text-[var(--color-warning)]' : 'text-[var(--color-muted)]'}"
 				aria-hidden="true"
 			/>
 		{/each}

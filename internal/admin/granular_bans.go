@@ -12,6 +12,7 @@ import (
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/middleware"
 	"github.com/jedafe/japa/internal/rbac"
+	"github.com/jedafe/japa/internal/valkey"
 )
 
 // validOperations is the set of operations that can be restricted.
@@ -425,11 +426,11 @@ func (h *Handlers) WarnUserTyped(w http.ResponseWriter, r *http.Request) {
 func strPtr(s string) *string { return &s }
 
 // banCacheKey returns the Valkey key holding a user's cached ban state.
-func banCacheKey(uid pgtype.UUID) string { return "jc:ban:" + uid.String() }
+func banCacheKey(uid pgtype.UUID) string { return valkey.MustKey("ban:%s", uid.String()) }
 
 // restrictionsCacheKey returns the Valkey key holding a user's cached
 // per-operation restrictions.
-func restrictionsCacheKey(uid pgtype.UUID) string { return "jc:restrictions:" + uid.String() }
+func restrictionsCacheKey(uid pgtype.UUID) string { return valkey.MustKey("restrictions:%s", uid.String()) }
 
 // invalidateUserAccessCaches drops the cached RBAC permission set plus the
 // given Valkey keys for a user after a moderation action. Failures are logged

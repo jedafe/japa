@@ -1071,14 +1071,12 @@ func (h *Handlers) SetFieldValue(w http.ResponseWriter, r *http.Request) {
 
 // SetFieldPermission handles PUT /api/v1/custom-fields/{id}/permissions.
 //
-// BUG-015/BUG-016 note: field-permission checks (CheckFieldPermissionForUser,
+// BUG-015/BUG-016: field-permission checks (CheckFieldPermissionForUser,
 // ListVisibleFieldIDsForUser) are cached in Valkey under
 // jc:field_perm:{user_id} with a 5-minute TTL. This handler upserts a
-// permission for a user_group (not a specific user), so invalidating the
-// cache would require finding all users in the group — the 5-minute TTL
-// is the staleness bound. If a cache layer is added later that requires
-// immediate invalidation, query user_group_members here and call
-// Service.InvalidateFieldPermissionCache for each member.
+// permission for a user_group (not a specific user), so after the write we
+// invalidate the cache for every member of that group (Rule 6 /
+// valkey-keys-catalog: jc:field_perm:{user_id} invalidated by SetFieldPermission).
 // ListFieldPermissions handles GET /custom-fields/{id}/permissions — returns
 // all RBAC permission rows for the given field (one per user group).
 func (h *Handlers) ListFieldPermissions(w http.ResponseWriter, r *http.Request) {
@@ -1130,6 +1128,11 @@ func (h *Handlers) SetFieldPermission(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
+	// Rule 6: invalidate the field-permission cache for every member of the
+	// affected group so the change is visible immediately (not after the
+	// 5-minute TTL).
+	h.Service.InvalidateFieldPermissionCacheForGroup(r.Context(), groupID)
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "set"}})
 }

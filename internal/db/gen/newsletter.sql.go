@@ -97,7 +97,7 @@ const upsertNewsletterSendState = `-- name: UpsertNewsletterSendState :exec
 INSERT INTO newsletter_send_state (campaign_id, recipient, status)
 SELECT $1, ns.email, 'pending'
 FROM newsletter_subscribers ns
-WHERE ns.tenant_id = $2 AND ns.status = 'active'
+WHERE ns.tenant_id = $2 AND ns.status = 'subscribed' AND ns.campaign_enabled = true
 ON CONFLICT (campaign_id, recipient) DO NOTHING
 `
 

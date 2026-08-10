@@ -182,7 +182,7 @@ func (p *SpamPipeline) checkIPReputation(ctx context.Context, tenantID pgtype.UU
 
 // rateLimitKey builds the Valkey key for a user's content creation rate.
 func rateLimitKey(tenantID, userID pgtype.UUID) string {
-	return fmt.Sprintf("jc:spam:rate:%s:%s", tenantID.String(), userID.String())
+	return valkey.MustKey("spam:rate:%s:%s", tenantID.String(), userID.String())
 }
 
 // checkRateLimit counts recent content creations via a Valkey sorted set.

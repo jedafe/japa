@@ -13,7 +13,8 @@
 	import { Badge } from '$lib/components/ui/badge';
 	import { Select } from '$lib/components/ui/select';
 	import IconPicker from '$lib/components/ui/icon-picker.svelte';
-	import { menusAdminApi, userManagementApi, type UserGroup } from '$lib/api';
+	import Autocomplete, { type AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
+	import { menusAdminApi, userManagementApi, permissionsApi, type UserGroup } from '$lib/api';
 	import { suggestRoutes } from '$lib/data/routes';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
@@ -48,6 +49,7 @@
 		created_at: string;
 		updated_at: string;
 		items?: MenuItem[];
+		item_count?: number;
 	};
 
 	const canManageMenus = $derived(hasPermission('menus.manage'));
@@ -123,7 +125,7 @@
 				key: 'items',
 				label: t('menus.items', 'Items'),
 				sortable: false,
-				render: (_v: any, row: Menu) => String(row.items?.length ?? 0)
+				render: (_v: any, row: Menu) => String(row.item_count ?? row.items?.length ?? 0)
 			},
 			{
 				key: 'updated_at',
@@ -170,18 +172,34 @@
 			}
 		],
 		fields,
-		load: async ({ q, sort, filter }) => {
-			const params = new URLSearchParams();
+		load: async ({ page, pageSize, q, sort, filter }) => {
+			const params = new URLSearchParams({
+				page_size: String(pageSize),
+				page_offset: String(page * pageSize)
+			});
 			if (q) params.set('q', q);
 			if (filter.placement) params.set('placement', filter.placement);
 			if (filter.status) params.set('status', filter.status);
-			// EntityPage emits sort as "key:dir"; the legacy API expects the bare key.
-			const sortKey = sort ? sort.split(':')[0] : '';
-			if (sortKey) params.set('sort', sortKey);
-			const result = await menusAdminApi.list(params.toString() || undefined);
+			// EntityPage emits sort as "key:dir"; the API expects separate sort
+			// (bare key) and sort_dir (asc/desc) params.
+			if (sort) {
+				const [sortKey, sortDir] = sort.split(':');
+				params.set('sort', sortKey);
+				params.set('sort_dir', sortDir === 'desc' ? 'desc' : 'asc');
+			}
+			const result = await menusAdminApi.list(params.toString());
 			if (result.ok) {
-				const data = (result.data as { items: Menu[] })?.items ?? [];
-				return { data, total: data.length, totalPages: 1 };
+				const d = result.data as {
+					items: Menu[];
+					page: number;
+					total_pages: number;
+					total: number;
+				};
+				return {
+					data: d.items ?? [],
+					total: d.total ?? 0,
+					totalPages: d.total_pages ?? 1
+				};
 			}
 			throw new Error(result.error ?? t('common.error', 'Failed to load menus'));
 		},
@@ -236,11 +254,6 @@
 	// User groups for the required_group_ids multi-select
 	let userGroups = $state<UserGroup[]>([]);
 
-	// Group autocomplete state
-	let groupSearch = $state('');
-	let groupDropdownOpen = $state(false);
-	let groupDebounce: ReturnType<typeof setTimeout> | null = null;
-
 	// URL combobox state
 	let urlSearch = $state('');
 	let urlDropdownOpen = $state(false);
@@ -263,19 +276,91 @@
 	// Selected group objects for chip rendering
 	const selectedGroupObjs = $derived(userGroups.filter((g) => itemRequiredGroupIds.has(g.id)));
 
-	// Filtered suggestions for the autocomplete dropdown (excludes already-selected)
-	const groupSuggestions = $derived(
-		groupSearch.trim()
-			? userGroups
-					.filter(
-						(g) =>
-							!itemRequiredGroupIds.has(g.id) &&
-							(g.name.toLowerCase().includes(groupSearch.toLowerCase()) ||
-								g.slug.toLowerCase().includes(groupSearch.toLowerCase()))
-					)
-					.slice(0, 10)
-			: userGroups.filter((g) => !itemRequiredGroupIds.has(g.id)).slice(0, 10)
-	);
+	// ── Permission-node autocomplete data ────────────────────────────────
+	// Permission nodes are sourced from GET /admin/permissions (RBAC catalog).
+	// Loaded once on mount and cached client-side; the fetcher filters the
+	// cached list by the debounced query. Ref: ADR-054 permission_node field.
+	let permissionNodes = $state<string[]>([]);
+	let permissionNodesLoaded = $state(false);
+
+	async function loadPermissionNodes() {
+		if (permissionNodesLoaded) return;
+		try {
+			const result = await permissionsApi.list();
+			if (result.ok) {
+				permissionNodes = (result.data as string[]) ?? [];
+				permissionNodesLoaded = true;
+			}
+		} catch {
+			permissionNodes = [];
+		}
+	}
+
+	// Fetcher for the Permission Node Autocomplete. Filters the cached node
+	// list by the query (case-insensitive substring). The user may still type
+	// a custom node not in the catalog (free-text is preserved by binding).
+	function permissionNodeFetcher(q: string): Promise<AutocompleteItem[]> {
+		const needle = q.trim().toLowerCase();
+		const matched = needle
+			? permissionNodes.filter((n) => n.toLowerCase().includes(needle))
+			: permissionNodes;
+		return Promise.resolve(
+			matched.slice(0, 50).map((n) => ({ id: n, label: n }))
+		);
+	}
+
+	// Initial suggestions for the Permission Node Autocomplete when focused
+	// with an empty query — shows the first 50 catalog nodes.
+	function permissionNodeInitialFetcher(): Promise<AutocompleteItem[]> {
+		return Promise.resolve(
+			permissionNodes.slice(0, 50).map((n) => ({ id: n, label: n }))
+		);
+	}
+
+	// Fetcher for the Required User Groups Autocomplete. Filters the cached
+	// userGroups list by name/slug and excludes already-selected groups.
+	function groupFetcher(q: string): Promise<AutocompleteItem[]> {
+		const needle = q.trim().toLowerCase();
+		const matched = needle
+			? userGroups.filter(
+					(g) =>
+						!itemRequiredGroupIds.has(g.id) &&
+						(g.name.toLowerCase().includes(needle) ||
+							g.slug.toLowerCase().includes(needle))
+				)
+			: userGroups.filter((g) => !itemRequiredGroupIds.has(g.id));
+		return Promise.resolve(
+			matched.slice(0, 20).map((g) => ({
+				id: g.id,
+				label: g.name,
+				sublabel: g.is_system ? 'system' : `${g.member_count ?? 0} members`
+			}))
+		);
+	}
+
+	// Initial suggestions for the Required User Groups Autocomplete.
+	function groupInitialFetcher(): Promise<AutocompleteItem[]> {
+		return Promise.resolve(
+			userGroups
+				.filter((g) => !itemRequiredGroupIds.has(g.id))
+				.slice(0, 20)
+				.map((g) => ({
+					id: g.id,
+					label: g.name,
+					sublabel: g.is_system ? 'system' : `${g.member_count ?? 0} members`
+				}))
+		);
+	}
+
+	function selectGroup(item: AutocompleteItem) {
+		const next = new Set(itemRequiredGroupIds);
+		next.add(item.id);
+		itemRequiredGroupIds = next;
+	}
+
+	function clearGroupSelection() {
+		itemRequiredGroupIds = new Set();
+	}
 
 	// Collect all existing URLs from the managed menu's items (to merge with route list)
 	const existingUrlSet = $derived.by(() => {
@@ -299,22 +384,6 @@
 			)
 			.slice(0, 20)
 	);
-
-	function handleGroupInput(e: Event) {
-		const target = e.target as HTMLInputElement;
-		groupSearch = target.value;
-		if (groupDebounce) clearTimeout(groupDebounce);
-		groupDebounce = setTimeout(() => {
-			groupDropdownOpen = true;
-		}, 200);
-	}
-
-	function addGroup(groupId: string) {
-		const next = new Set(itemRequiredGroupIds);
-		next.add(groupId);
-		itemRequiredGroupIds = next;
-		groupSearch = '';
-	}
 
 	function removeGroup(groupId: string) {
 		const next = new Set(itemRequiredGroupIds);
@@ -367,8 +436,6 @@
 		itemIcon = '';
 		itemPermissionNode = '';
 		itemRequiredGroupIds = new Set();
-		groupSearch = '';
-		groupDropdownOpen = false;
 		showItemModal = true;
 	}
 
@@ -385,8 +452,6 @@
 		itemIcon = item.icon ?? '';
 		itemPermissionNode = item.permission_node ?? '';
 		itemRequiredGroupIds = new Set(item.required_group_ids ?? []);
-		groupSearch = '';
-		groupDropdownOpen = false;
 		showItemModal = true;
 	}
 
@@ -484,6 +549,7 @@
 	}
 
 	loadUserGroups();
+loadPermissionNodes();
 </script>
 
 <svelte:head>
@@ -641,7 +707,22 @@
 		</div>
 		<div class="col-span-2">
 			<label for="item-permission-node" class="block text-sm font-medium" style="color: var(--color-foreground)">{t('menus.permission_node', 'Permission Node')}</label>
-			<input id="item-permission-node" type="text" bind:value={itemPermissionNode} class="mt-1 w-full rounded-lg border p-2 text-sm font-mono" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" placeholder="content.view" />
+			<div class="mt-1">
+				<Autocomplete
+					id="item-permission-node"
+					placeholder="content.view"
+					emptyMessage={t('menus.permission_node_no_match', 'No matching permission nodes. Type a custom node.')}
+					fetcher={permissionNodeFetcher}
+					initialFetcher={permissionNodeInitialFetcher}
+					selectedId={itemPermissionNode ? itemPermissionNode : null}
+					selectedLabel={itemPermissionNode}
+					onSelect={(item) => (itemPermissionNode = item.id)}
+					onClear={() => (itemPermissionNode = '')}
+					onInput={(q) => (itemPermissionNode = q)}
+					freeText={true}
+					inputClass="font-mono"
+				/>
+			</div>
 			<p class="mt-0.5 text-xs" style="color: var(--color-muted)">{t('menus.permission_node_hint', 'Optional. Restrict this item to users with the given permission node.')}</p>
 		</div>
 		{#if menuItems.length > 0}
@@ -686,65 +767,43 @@
 		<label class="block col-span-2">
 			<span class="block text-sm font-medium" style="color: var(--color-foreground)">{t('menus.required_groups', 'Required User Groups')}</span>
 			<p class="mt-0.5 text-xs" style="color: var(--color-muted)">{t('menus.required_groups_hint', 'Item is visible only to users in at least one selected group. Leave empty for everyone.')}</p>
-			<div class="relative mt-1">
-				<div
-					class="flex flex-wrap items-center gap-1 w-full rounded-lg border p-1.5 min-h-[2.5rem]"
-					style="border-color: var(--color-border); background: var(--color-surface)"
-				>
-					{#each selectedGroupObjs as group (group.id)}
-						<span class="inline-flex items-center gap-1 rounded px-2 py-0.5 text-xs" style="background: color-mix(in srgb, var(--color-primary) 15%, transparent); color: var(--color-foreground)">
-							{group.name}
-							<button
-								type="button"
-								class="ml-0.5 opacity-60 hover:opacity-100"
-								style="color: var(--color-foreground)"
-								onclick={() => removeGroup(group.id)}
-								aria-label={t('common.remove', 'Remove')}
-							>
-								&times;
-							</button>
-						</span>
-					{/each}
-					<input
-						type="text"
-						value={groupSearch}
-						oninput={handleGroupInput}
-						onfocus={() => { groupDropdownOpen = true; }}
-						onblur={() => setTimeout(() => (groupDropdownOpen = false), 200)}
-						onkeydown={(e) => {
-							if (e.key === 'Escape') groupDropdownOpen = false;
-							else if (e.key === 'Enter' && groupSuggestions.length > 0) {
-								e.preventDefault();
-								addGroup(groupSuggestions[0].id);
-							} else if (e.key === 'Backspace' && !groupSearch && selectedGroupObjs.length > 0) {
-								removeGroup(selectedGroupObjs[selectedGroupObjs.length - 1].id);
-							}
-						}}
-						class="flex-1 min-w-[8rem] bg-transparent border-0 outline-none text-sm py-1 px-1"
-						style="color: var(--color-foreground)"
-						placeholder={itemRequiredGroupIds.size === 0 ? t('menus.search_groups', 'Search groups...') : ''}
-					/>
-				</div>
-				{#if groupDropdownOpen && groupSuggestions.length > 0}
-					<ul class="absolute z-[60] mt-1 max-h-48 w-full overflow-auto rounded-lg border shadow-lg" style="border-color: var(--color-border); background: var(--color-surface)">
-						{#each groupSuggestions as group (group.id)}
-							<li>
+			<div class="mt-1 space-y-2">
+				{#if selectedGroupObjs.length > 0}
+					<div class="flex flex-wrap items-center gap-1">
+						{#each selectedGroupObjs as group (group.id)}
+							<span class="inline-flex items-center gap-1 rounded px-2 py-0.5 text-xs" style="background: color-mix(in srgb, var(--color-primary) 15%, transparent); color: var(--color-foreground)">
+								{group.name}
 								<button
 									type="button"
-									class="w-full px-3 py-2 text-left text-sm hover:bg-black/5 dark:hover:bg-white/10 flex items-center gap-2"
+									class="ml-0.5 opacity-60 hover:opacity-100"
 									style="color: var(--color-foreground)"
-									onmousedown={(e) => { e.preventDefault(); addGroup(group.id); }}
+									onclick={() => removeGroup(group.id)}
+									aria-label={t('common.remove', 'Remove')}
 								>
-									<span>{group.name}</span>
-									{#if group.is_system ?? false}
-										<span class="text-xs px-1.5 py-0.5 rounded" style="background: var(--color-muted); color: var(--color-surface)">system</span>
-									{/if}
-									<span class="ml-auto text-xs" style="color: var(--color-muted)">{group.member_count ?? 0}</span>
+									&times;
 								</button>
-							</li>
+							</span>
 						{/each}
-					</ul>
+						{#if selectedGroupObjs.length > 0}
+							<button
+								type="button"
+								class="text-xs underline"
+								style="color: var(--color-muted)"
+								onclick={clearGroupSelection}
+							>
+								{t('common.clear_all', 'Clear all')}
+							</button>
+						{/if}
+					</div>
 				{/if}
+				<Autocomplete
+					placeholder={t('menus.search_groups', 'Search groups...')}
+					emptyMessage={t('menus.no_groups_match', 'No matching groups.')}
+					fetcher={groupFetcher}
+					initialFetcher={groupInitialFetcher}
+					selectedId={null}
+					onSelect={selectGroup}
+				/>
 			</div>
 		</label>
 	</div>
@@ -794,7 +853,7 @@
 			</div>
 			<div>
 				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('menus.items', 'Items')}</p>
-				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.items?.length ?? 0}</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.item_count ?? row.items?.length ?? 0}</p>
 			</div>
 			<div>
 				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('common.updated', 'Updated')}</p>
@@ -805,11 +864,17 @@
 		<div>
 			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('menus.items', 'Items')}</p>
 			<div class="mt-2">
-				{#if (row.items ?? []).length === 0}
-					<p class="text-sm" style="color: var(--color-muted)">{t('menus.no_items', 'No items in this menu')}</p>
-				{:else}
-					{@render ItemTree({ nodes: buildItemTree(row.items ?? []), depth: 0 })}
-				{/if}
+				{#await menusAdminApi.get(row.id).then((r) => (r.ok ? ((r.data as Menu).items ?? []) : []))}
+					<p class="text-sm" style="color: var(--color-muted)">{t('common.loading', 'Loading...')}</p>
+				{:then items}
+					{#if items.length === 0}
+						<p class="text-sm" style="color: var(--color-muted)">{t('menus.no_items', 'No items in this menu')}</p>
+					{:else}
+						{@render ItemTree({ nodes: buildItemTree(items), depth: 0 })}
+					{/if}
+				{:catch}
+					<p class="text-sm" style="color: var(--color-danger)">{t('common.error', 'Failed to load items')}</p>
+				{/await}
 			</div>
 		</div>
 	</div>

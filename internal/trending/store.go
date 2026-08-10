@@ -205,16 +205,20 @@ func (s *Store) GetSuggestedSpaces(
 }
 
 // GetSuggestedTags returns tags the authenticated user might want to follow.
+// ADR-064: when geoCode is provided, tags from content in the visitor's geo
+// region are preferred (re-weighted, not hidden).
 func (s *Store) GetSuggestedTags(
 	ctx context.Context,
 	userID pgtype.UUID,
 	tenantID pgtype.UUID,
 	limit int32,
+	geoCode *string,
 ) ([]gen.GetSuggestedTagsRow, error) {
 	return s.queries.GetSuggestedTags(ctx, gen.GetSuggestedTagsParams{
 		AuthorID: userID,
 		TenantID: tenantID,
 		Limit:    limit,
+		GeoCode:  geoCode,
 	})
 }
 

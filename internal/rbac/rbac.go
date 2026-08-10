@@ -275,6 +275,21 @@ func (r *RBAC) GetUserContext(ctx context.Context, userID, tenantID pgtype.UUID)
 	return uc, nil
 }
 
+// UserPermissions returns the caller's full resolved permission set (including
+// the "*" wildcard for super-admin) in a single cached call. It is the
+// PermissionResolver contract used by the menus package to prune
+// permission_node-gated menu items for authenticated users (ADR-054).
+func (r *RBAC) UserPermissions(ctx context.Context, userID, tenantID pgtype.UUID) (map[string]bool, error) {
+	uc, err := r.GetUserContext(ctx, userID, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	if uc == nil {
+		return map[string]bool{}, nil
+	}
+	return uc.Permissions, nil
+}
+
 // loadUserContext queries the database for the user's groups and permissions.
 func (r *RBAC) loadUserContext(ctx context.Context, userID, tenantID pgtype.UUID) (*UserContext, error) {
 	permRows, err := r.read.ResolveUserPermissions(ctx, gen.ResolveUserPermissionsParams{

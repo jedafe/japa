@@ -11,17 +11,27 @@ import (
 	"github.com/jedafe/japa/internal/db/gen"
 )
 
-// PermissionsChecker provides RBAC permission resolution for menu item filtering.
-type PermissionsChecker interface {
-	HasPermission(ctx context.Context, userID string, permissionNode string) bool
+// PermissionResolver resolves a user's full permission set in one call.
+// rbac.RBAC satisfies this via GetUserContext (L1 in-memory → L2 Valkey → DB),
+// so the public menu resolver pays one cached lookup per request instead of
+// one HasPermission call per menu item. Ref: ADR-054 (Menu item visibility
+// rules — "the public endpoint calls rbac.GetUserContext for authenticated
+// users. This is already cached").
+type PermissionResolver interface {
+	UserPermissions(ctx context.Context, userID, tenantID pgtype.UUID) (map[string]bool, error)
 }
 
 // Service provides business logic for navigating menus and managing items.
 type Service struct {
-	store *Store
-	db    *db.DB
+	store    *Store
+	db       *db.DB
+	perms    PermissionResolver
 }
 
+// NewService constructs a menus Service without RBAC permission resolution
+// (menu item permission_node filtering is disabled). Prefer NewServiceWithPerms
+// for the public resolver path so authenticated users are gated by
+// permission_node per ADR-054.
 func NewService(database *db.DB) *Service {
 	return &Service{
 		store: &Store{read: gen.New(database.Reader), write: gen.New(database.Writer)},
@@ -29,20 +39,30 @@ func NewService(database *db.DB) *Service {
 	}
 }
 
+// NewServiceWithPerms constructs a menus Service wired to the RBAC resolver so
+// the public GET /menus/{slug} endpoint can prune items whose
+// permission_node is not held by the requesting user (ADR-054).
+func NewServiceWithPerms(database *db.DB, perms PermissionResolver) *Service {
+	s := NewService(database)
+	s.perms = perms
+	return s
+}
+
 // ── Menu CRUD ─────────────────────────────────────────────────────────
 
 type ListMenusResponse struct {
-	Items      []gen.Menu `json:"items"`
-	Page       int32      `json:"page"`
-	TotalPages int32      `json:"total_pages"`
+	Items      []gen.ListMenusRow `json:"items"`
+	Page       int32              `json:"page"`
+	TotalPages int32              `json:"total_pages"`
+	Total      int32              `json:"total"`
 }
 
-func (s *Service) ListMenus(ctx context.Context, tenantID pgtype.UUID, q pgtype.Text, limit, offset int32) (*ListMenusResponse, error) {
-	menus, err := s.store.listMenus(ctx, tenantID, q, limit, offset)
+func (s *Service) ListMenus(ctx context.Context, tenantID pgtype.UUID, q, placement, status, sort, sortDir string, limit, offset int32) (*ListMenusResponse, error) {
+	menus, err := s.store.listMenus(ctx, tenantID, q, placement, status, sort, sortDir, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("listing menus: %w", err)
 	}
-	total, err := s.store.countMenus(ctx, tenantID, q)
+	total, err := s.store.countMenus(ctx, tenantID, q, placement, status)
 	if err != nil {
 		return nil, fmt.Errorf("counting menus: %w", err)
 	}
@@ -50,7 +70,7 @@ func (s *Service) ListMenus(ctx context.Context, tenantID pgtype.UUID, q pgtype.
 	if total%limit > 0 {
 		totalPages++
 	}
-	return &ListMenusResponse{Items: menus, Page: offset / limit, TotalPages: totalPages}, nil
+	return &ListMenusResponse{Items: menus, Page: offset / limit, TotalPages: totalPages, Total: total}, nil
 }
 
 func (s *Service) GetMenu(ctx context.Context, id, tenantID pgtype.UUID) (*MenuResponse, error) {
@@ -74,7 +94,7 @@ func (s *Service) GetMenu(ctx context.Context, id, tenantID pgtype.UUID) (*MenuR
 	}, nil
 }
 
-func (s *Service) GetMenuBySlug(ctx context.Context, tenantID pgtype.UUID, slug string, userGroupIDs map[string]bool, isAuthenticated bool) (*MenuResponse, error) {
+func (s *Service) GetMenuBySlug(ctx context.Context, tenantID pgtype.UUID, slug string, userGroupIDs map[string]bool, isAuthenticated bool, userID pgtype.UUID) (*MenuResponse, error) {
 	menu, err := s.store.getMenuBySlug(ctx, tenantID, slug)
 	if err != nil {
 		return nil, fmt.Errorf("getting menu by slug: %w", err)
@@ -84,7 +104,26 @@ func (s *Service) GetMenuBySlug(ctx context.Context, tenantID pgtype.UUID, slug 
 		return nil, fmt.Errorf("listing menu items: %w", err)
 	}
 	jsonItems := genMenuItemsToJSON(items)
-	filteredItems := filterMenuItems(jsonItems, userGroupIDs, isAuthenticated)
+
+	// Resolve the authenticated user's permission set once per request so
+	// filterMenuItems can prune items whose permission_node is not held.
+	// ADR-054: "Authenticated users: see items with visibility IN
+	// ('all','authenticated'), further filtered by permission_node — items
+	// whose permission_node is non-null and not in the user's resolved
+	// permissions are pruned." Guests skip this (no permission_node pruning).
+	var userPerms map[string]bool
+	if isAuthenticated && userID.Valid && s.perms != nil {
+		perms, err := s.perms.UserPermissions(ctx, userID, tenantID)
+		if err == nil {
+			userPerms = perms
+		}
+		// On resolution failure we fail open (no permission pruning) rather
+		// than 500'ing the whole menu render — a missing nav item is
+		// preferable to a blank shell. The RBAC resolver is cached, so this
+		// path is hit only on an actual infra failure.
+	}
+
+	filteredItems := filterMenuItems(jsonItems, userGroupIDs, isAuthenticated, userPerms)
 	treeItems := buildMenuTree(filteredItems)
 	return &MenuResponse{
 		ID:        menu.ID.String(),
@@ -109,6 +148,9 @@ func (s *Service) CreateMenu(ctx context.Context, tenantID pgtype.UUID, slug, na
 func (s *Service) UpdateMenu(ctx context.Context, id, tenantID pgtype.UUID, name, placement, status string) (gen.Menu, error) {
 	if !ValidPlacement(placement) {
 		return gen.Menu{}, ErrInvalidPlacement
+	}
+	if !ValidStatus(status) {
+		return gen.Menu{}, ErrInvalidStatus
 	}
 	return s.store.updateMenu(ctx, gen.UpdateMenuParams{
 		ID: id, TenantID: tenantID, Name: name, Placement: placement, Status: status,
@@ -294,12 +336,16 @@ func genMenuItemsToJSON(rows []gen.ListMenuItemsRow) []MenuItem {
 	return items
 }
 
-// filterMenuItems removes items the user should not see based on auth state
-// and required user group membership. An item with required_group_ids is
-// shown only if the user belongs to at least one of the listed groups.
-// Items with no required_group_ids are visible to everyone (subject to
-// visibility rules).
-func filterMenuItems(items []MenuItem, userGroupIDs map[string]bool, isAuthenticated bool) []MenuItem {
+// filterMenuItems removes items the user should not see based on auth state,
+// required user group membership, and RBAC permission_node. An item with
+// required_group_ids is shown only if the user belongs to at least one of the
+// listed groups. Items with no required_group_ids are visible to everyone
+// (subject to visibility rules). For authenticated users, an item with a
+// non-nil permission_node is shown only if the user holds that permission.
+// Guests skip permission_node pruning (ADR-054: guests need no permission
+// check). Items with no permission_node are visible to everyone per visibility
+// rules.
+func filterMenuItems(items []MenuItem, userGroupIDs map[string]bool, isAuthenticated bool, userPerms map[string]bool) []MenuItem {
 	var filtered []MenuItem
 	for _, item := range items {
 		if item.Status != "active" {
@@ -327,6 +373,17 @@ func filterMenuItems(items []MenuItem, userGroupIDs map[string]bool, isAuthentic
 				}
 			}
 			if !matched {
+				continue
+			}
+		}
+		// Permission-node gating (ADR-054): an authenticated user sees an
+		// item with a non-nil permission_node only if they hold that node.
+		// A nil permission_node means no permission restriction. The
+		// wildcard "*" (held by super_admin) is represented in userPerms by
+		// the rbac.SystemWildcardPermission key, so a direct map lookup
+		// covers both explicit grants and the wildcard.
+		if isAuthenticated && item.PermissionNode != nil && *item.PermissionNode != "" {
+			if userPerms == nil || !userPerms[*item.PermissionNode] {
 				continue
 			}
 		}
