@@ -88,6 +88,15 @@ WHERE type_id = @type_id AND tenant_id = @tenant_id
 ORDER BY created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 
+-- name: ListAllProfessionalProfiles :many
+SELECT id, tenant_id, owner_user_id, type_id, name, slug, tagline, description,
+    logo_media_id, header_media_id, website_url, verified, verification_type,
+    follower_count, status, field_values, created_at
+FROM professional_profiles
+WHERE tenant_id = @tenant_id
+ORDER BY created_at DESC
+LIMIT @page_limit OFFSET @page_offset;
+
 -- name: UpdateProfessionalProfile :one
 UPDATE professional_profiles
 SET name = @name, tagline = sqlc.narg(tagline), description = sqlc.narg(description),
@@ -108,6 +117,11 @@ UPDATE professional_profiles
 SET follower_count = follower_count + @delta
 WHERE id = @id AND tenant_id = @tenant_id;
 
+-- name: SetProfessionalProfileVerified :exec
+UPDATE professional_profiles
+SET verified = @verified, updated_at = now()
+WHERE id = @id AND tenant_id = @tenant_id;
+
 -- =====================
 -- Professional Profile Members
 -- =====================
@@ -126,8 +140,9 @@ WHERE profile_id = @profile_id AND user_id = @user_id;
 SELECT ppm.profile_id, ppm.user_id, ppm.role, ppm.invited_by, ppm.joined_at,
        u.username, u.email
 FROM professional_profile_members ppm
+JOIN professional_profiles pp ON pp.id = ppm.profile_id
 JOIN users u ON u.id = ppm.user_id
-WHERE ppm.profile_id = @profile_id
+WHERE ppm.profile_id = @profile_id AND pp.tenant_id = @tenant_id
 ORDER BY ppm.joined_at ASC;
 
 -- name: UpdateProfessionalProfileMemberRole :exec

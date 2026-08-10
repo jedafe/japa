@@ -84,9 +84,9 @@ func (q *Queries) CountSpamQueue(ctx context.Context, tenantID pgtype.UUID) (int
 const createPlatformEvent = `-- name: CreatePlatformEvent :one
 
 
-INSERT INTO platform_events (tenant_id, event_type, user_id, entity_type, entity_id, meta, country_code, session_id)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-RETURNING id, tenant_id, event_type, user_id, entity_type, entity_id, meta, country_code, session_id, created_at
+INSERT INTO platform_events (tenant_id, event_type, user_id, entity_type, entity_id, meta, country_code, session_id, is_synthetic)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+RETURNING id, tenant_id, event_type, user_id, entity_type, entity_id, meta, country_code, session_id, is_synthetic, created_at
 `
 
 type CreatePlatformEventParams struct {
@@ -98,6 +98,7 @@ type CreatePlatformEventParams struct {
 	Meta        []byte      `json:"meta"`
 	CountryCode *string     `json:"country_code"`
 	SessionID   *string     `json:"session_id"`
+	IsSynthetic bool        `json:"is_synthetic"`
 }
 
 type CreatePlatformEventRow struct {
@@ -110,6 +111,7 @@ type CreatePlatformEventRow struct {
 	Meta        []byte             `json:"meta"`
 	CountryCode *string            `json:"country_code"`
 	SessionID   *string            `json:"session_id"`
+	IsSynthetic bool               `json:"is_synthetic"`
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 }
 
@@ -130,6 +132,7 @@ func (q *Queries) CreatePlatformEvent(ctx context.Context, arg CreatePlatformEve
 		arg.Meta,
 		arg.CountryCode,
 		arg.SessionID,
+		arg.IsSynthetic,
 	)
 	var i CreatePlatformEventRow
 	err := row.Scan(
@@ -142,6 +145,7 @@ func (q *Queries) CreatePlatformEvent(ctx context.Context, arg CreatePlatformEve
 		&i.Meta,
 		&i.CountryCode,
 		&i.SessionID,
+		&i.IsSynthetic,
 		&i.CreatedAt,
 	)
 	return i, err

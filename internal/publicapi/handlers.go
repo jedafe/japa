@@ -125,10 +125,10 @@ func parseOffset(r *http.Request) int32 {
 	if v := r.URL.Query().Get("offset"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
 			if n > math.MaxInt32 {
-				return defaultPageSize
+				return math.MaxInt32
 			}
 
-			return int32(n) //nolint:gosec // G109: bounded by MaxPageSize check above
+			return int32(n) //nolint:gosec // G109: bounded by MaxInt32 check above
 		}
 	}
 
@@ -462,23 +462,7 @@ func (h *Handlers) ListAllowedIPs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Verify the key belongs to the user.
-	var ownerID pgtype.UUID
-
-	err = h.Service.store.dbPool.QueryRow(r.Context(), `
-		SELECT user_id FROM api_keys WHERE id = $1
-	`, keyID).Scan(&ownerID)
-	if err != nil {
-		handleServiceError(w, err)
-		return
-	}
-
-	if ownerID != user.UserID {
-		writeError(w, http.StatusForbidden, "forbidden", "API key does not belong to user")
-		return
-	}
-
-	entries, err := h.Service.ListAllowedIPs(r.Context(), keyID)
+	entries, err := h.Service.ListAllowedIPsForUser(r.Context(), user.UserID, keyID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -501,22 +485,6 @@ func (h *Handlers) AddAllowedIP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Verify the key belongs to the user.
-	var ownerID pgtype.UUID
-
-	err = h.Service.store.dbPool.QueryRow(r.Context(), `
-		SELECT user_id FROM api_keys WHERE id = $1
-	`, keyID).Scan(&ownerID)
-	if err != nil {
-		handleServiceError(w, err)
-		return
-	}
-
-	if ownerID != user.UserID {
-		writeError(w, http.StatusForbidden, "forbidden", "API key does not belong to user")
-		return
-	}
-
 	var input struct {
 		CIDR        string `json:"cidr"`
 		Description string `json:"description"`
@@ -532,7 +500,7 @@ func (h *Handlers) AddAllowedIP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Service.AddAllowedIP(r.Context(), keyID, input.CIDR, input.Description); err != nil {
+	if err := h.Service.AddAllowedIPForUser(r.Context(), user.UserID, keyID, input.CIDR, input.Description); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -562,23 +530,7 @@ func (h *Handlers) RemoveAllowedIP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Verify the key belongs to the user.
-	var ownerID pgtype.UUID
-
-	err = h.Service.store.dbPool.QueryRow(r.Context(), `
-		SELECT user_id FROM api_keys WHERE id = $1
-	`, keyID).Scan(&ownerID)
-	if err != nil {
-		handleServiceError(w, err)
-		return
-	}
-
-	if ownerID != user.UserID {
-		writeError(w, http.StatusForbidden, "forbidden", "API key does not belong to user")
-		return
-	}
-
-	if err := h.Service.RemoveAllowedIP(r.Context(), keyID, ipID); err != nil {
+	if err := h.Service.RemoveAllowedIPForUser(r.Context(), user.UserID, keyID, ipID); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -601,20 +553,21 @@ func (h *Handlers) GetAPIKey(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid key ID")
 		return
 	}
-	var key APIKey
-	err = h.Service.store.dbPool.QueryRow(r.Context(),
-		`SELECT id, name, key_prefix, scopes, status, created_at, last_used_at
-		 FROM api_keys WHERE id = $1 AND user_id = $2`,
-		keyID, user.UserID).
-		Scan(&key.ID, &key.Name, &key.KeyPrefix, &key.Scopes, &key.Status, &key.CreatedAt, &key.LastUsedAt)
+	key, err := h.Service.GetOwnAPIKey(r.Context(), user.UserID, keyID)
 	if err != nil {
-		writeError(w, http.StatusNotFound, "not_found", "API key not found")
+		handleServiceError(w, err) // pgx.ErrNoRows → 404, other → 500 (PUB-013)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"data": key})
 }
 
 // UpdateAPIKey handles PATCH /me/api-keys/:id — updates an API key (P5.6).
+//
+// Self-service update is restricted to the key's display name only.
+// Scope changes require admin approval (Section 47 line 182: "Write scopes
+// are approved by admin on a per-key basis") and are handled via the
+// control-panel PATCH /control/api-keys/{id} route, not this self-service
+// endpoint. This closes the scope self-escalation vector (PUB-001).
 func (h *Handlers) UpdateAPIKey(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
 	if !ok {
@@ -626,19 +579,23 @@ func (h *Handlers) UpdateAPIKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var input struct {
-		Name   string `json:"name"`
-		Scopes string `json:"scopes"`
+		Name string `json:"name"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
-	_, err = h.Service.store.dbPool.Exec(r.Context(),
-		`UPDATE api_keys SET name = COALESCE(NULLIF($3,''), name),
-		 scopes = COALESCE(NULLIF($4,''), scopes), updated_at = now()
-		 WHERE id = $1 AND user_id = $2`, keyID, user.UserID, input.Name, input.Scopes)
+	if input.Name == "" {
+		writeError(w, http.StatusBadRequest, "validation_error", "name is required")
+		return
+	}
+	rowsAffected, err := h.Service.UpdateOwnAPIKeyName(r.Context(), user.UserID, keyID, input.Name)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to update API key")
+		handleServiceError(w, err)
+		return
+	}
+	if rowsAffected == 0 {
+		writeError(w, http.StatusNotFound, "not_found", "API key not found")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"id": keyID.String()}})
@@ -813,40 +770,10 @@ func (h *Handlers) SearchContent(w http.ResponseWriter, r *http.Request) {
 	limit := parsePageSize(r, defaultPageSize, 100)
 	offset := parseOffset(r)
 
-	// Search content by title using PostgreSQL ILIKE (simple substring match).
-	rows, err := h.Service.store.dbPool.Query(r.Context(), `
-		SELECT id, title, slug, content_type, status, created_at
-		FROM contents
-		WHERE tenant_id = $1 AND status = 'published' AND title ILIKE '%' || $2 || '%'
-		ORDER BY created_at DESC
-		LIMIT $3 OFFSET $4
-	`, keyCtx.TenantID, q, limit, offset)
+	results, err := h.Service.SearchContent(r.Context(), keyCtx.TenantID, q, limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return
-	}
-	defer rows.Close()
-
-	var results []map[string]any
-	for rows.Next() {
-		var id pgtype.UUID
-		var title, slug, contentType, status string
-		var createdAt pgtype.Timestamptz
-		if err := rows.Scan(&id, &title, &slug, &contentType, &status, &createdAt); err != nil {
-			continue
-		}
-		results = append(results, map[string]any{
-			"id":           id.String(),
-			"title":        title,
-			"slug":         slug,
-			"content_type": contentType,
-			"status":       status,
-			"created_at":   createdAt,
-		})
-	}
-
-	if results == nil {
-		results = []map[string]any{}
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": results})

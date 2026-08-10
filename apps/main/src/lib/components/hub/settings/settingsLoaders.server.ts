@@ -1,4 +1,4 @@
-import { apiGet, apiList, type ApiContext } from '$lib/server/api';
+import { apiGet, apiList, ApiError, type ApiContext } from '$lib/server/api';
 import type { MeProfile, PrivacySettings, AffiliateEarnings, GeoCountry, NotificationPreference } from '$lib/types';
 
 /**
@@ -59,15 +59,32 @@ export const SETTINGS_LOADERS: Record<string, (ctx: ApiContext) => Promise<unkno
 	notifications: (ctx) =>
 		apiGet<NotificationPreference[]>(ctx, '/me/notification-preferences'),
 	'api-keys': async (ctx) => (await apiList<unknown>(ctx, '/me/api-keys')).items,
-	affiliate: async (ctx) => ({
+	affiliate: async (ctx) => {
+		// GET /affiliate-program — public program info (commission rates, T&Cs,
+		// eligibility). Always available so the enrollment CTA can render even
+		// before the user enrolls (Section 56).
+		const program = await apiGet<unknown>(ctx, '/affiliate-program').catch(() => null);
+
 		// GET /me/affiliate-links — the caller's affiliate links (CRUD list).
-		links: (await apiList<unknown>(ctx, '/me/affiliate-links')).items,
-		// GET /me/affiliate-earnings — aggregate earnings summary (clicks,
-		// conversions, total earned, by-product breakdown, recent events).
-		// Best-effort: degrades to null when the endpoint is unavailable so
-		// the links list still renders.
-		earnings: await apiGet<AffiliateEarnings>(ctx, '/me/affiliate-earnings').catch(() => null)
-	}),
+		// A 403 means the user has not enrolled yet (affiliate.links.manage is
+		// granted on enrollment) — we flag `enrolled: false` so the section can
+		// show an enrollment CTA instead of the create form.
+		let enrolled = true;
+		let links: unknown[] = [];
+		try {
+			links = (await apiList<unknown>(ctx, '/me/affiliate-links')).items;
+		} catch (e) {
+			if (e instanceof ApiError && e.status === 403) enrolled = false;
+		}
+
+		// GET /me/affiliate-earnings — aggregate earnings summary. Best-effort:
+		// degrades to null when unavailable or the user is not enrolled.
+		const earnings = enrolled
+			? await apiGet<AffiliateEarnings>(ctx, '/me/affiliate-earnings').catch(() => null)
+			: null;
+
+		return { program, links, earnings, enrolled };
+	},
 	wallet: async (ctx) => ({
 		wallet: await apiGet<unknown>(ctx, '/me/wallet'),
 		ledger: (await apiList<unknown>(ctx, '/me/wallet/ledger')).items,

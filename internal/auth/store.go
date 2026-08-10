@@ -52,6 +52,7 @@ func (s *DBStore) GetUserByEmail(ctx context.Context, tenantID pgtype.UUID, emai
 		ProfileType:     row.ProfileType,
 		Status:          row.Status,
 		EmailVerifiedAt: row.EmailVerifiedAt,
+		IsBot:           row.IsBot,
 	}, nil
 }
 

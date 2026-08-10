@@ -65,6 +65,7 @@ type TrackEventInput struct {
 	Meta        map[string]any
 	CountryCode string
 	SessionID   string
+	IsSynthetic bool // ADR-068 §4 / P10: true for persona-originated events
 }
 
 // TrackEvent records a platform event in the write-optimised append-only table.
@@ -113,7 +114,26 @@ func (s *Service) TrackEvent(ctx context.Context, tenantID pgtype.UUID, input Tr
 		Meta:        metaBytes,
 		CountryCode: countryCode,
 		SessionID:   sessionID,
+		IsSynthetic: input.IsSynthetic,
 	})
+}
+
+// TrackSyntheticEvent records a platform event with is_synthetic = true for
+// persona-originated activity. This is the participation engine's metrics-
+// integrity hook (ADR-068 §4, P10): every dispatched or queued persona action
+// is recorded here so the persona activity log (WHERE is_synthetic = true)
+// works and real-metric materialized views (WHERE NOT is_synthetic) exclude
+// synthetic activity.
+func (s *Service) TrackSyntheticEvent(ctx context.Context, tenantID, userID pgtype.UUID, eventType, entityType string, entityID pgtype.UUID, meta map[string]any) error {
+	_, err := s.TrackEvent(ctx, tenantID, TrackEventInput{
+		EventType:   EventType(eventType),
+		UserID:      userID,
+		EntityType:  entityType,
+		EntityID:    entityID,
+		Meta:        meta,
+		IsSynthetic: true,
+	})
+	return err
 }
 
 // ListEvents returns platform events matching the given filters.

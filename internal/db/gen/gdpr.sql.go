@@ -1592,6 +1592,25 @@ func (q *Queries) GdprExportUserPreferences(ctx context.Context, arg GdprExportU
 	return data, err
 }
 
+const gdprExportUserProfessionalDocuments = `-- name: GdprExportUserProfessionalDocuments :one
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (SELECT pd.id, pd.tenant_id, pd.profile_id, pd.title, pd.document_type, pd.description, pd.file_url, pd.verified, pd.created_at, pd.updated_at FROM professional_documents pd
+      JOIN professional_profiles pp ON pp.id = pd.profile_id
+      WHERE pp.owner_user_id = $1 AND pd.tenant_id = $2) t
+`
+
+type GdprExportUserProfessionalDocumentsParams struct {
+	UserID   pgtype.UUID `json:"user_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+func (q *Queries) GdprExportUserProfessionalDocuments(ctx context.Context, arg GdprExportUserProfessionalDocumentsParams) (interface{}, error) {
+	row := q.db.QueryRow(ctx, gdprExportUserProfessionalDocuments, arg.UserID, arg.TenantID)
+	var data interface{}
+	err := row.Scan(&data)
+	return data, err
+}
+
 const gdprExportUserProfessionalProfiles = `-- name: GdprExportUserProfessionalProfiles :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (SELECT id, tenant_id, owner_user_id, type_id, name, slug, tagline, description, logo_media_id, header_media_id, website_url, verified, verification_type, follower_count, status, field_values, created_at FROM professional_profiles WHERE owner_user_id = $1 AND tenant_id = $2) t
@@ -1604,6 +1623,44 @@ type GdprExportUserProfessionalProfilesParams struct {
 
 func (q *Queries) GdprExportUserProfessionalProfiles(ctx context.Context, arg GdprExportUserProfessionalProfilesParams) (interface{}, error) {
 	row := q.db.QueryRow(ctx, gdprExportUserProfessionalProfiles, arg.UserID, arg.TenantID)
+	var data interface{}
+	err := row.Scan(&data)
+	return data, err
+}
+
+const gdprExportUserProfessionalRelocations = `-- name: GdprExportUserProfessionalRelocations :one
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (SELECT pr.id, pr.tenant_id, pr.profile_id, pr.country, pr.city, pr.status, pr.year, pr.created_at, pr.updated_at FROM professional_relocations pr
+      JOIN professional_profiles pp ON pp.id = pr.profile_id
+      WHERE pp.owner_user_id = $1 AND pr.tenant_id = $2) t
+`
+
+type GdprExportUserProfessionalRelocationsParams struct {
+	UserID   pgtype.UUID `json:"user_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+func (q *Queries) GdprExportUserProfessionalRelocations(ctx context.Context, arg GdprExportUserProfessionalRelocationsParams) (interface{}, error) {
+	row := q.db.QueryRow(ctx, gdprExportUserProfessionalRelocations, arg.UserID, arg.TenantID)
+	var data interface{}
+	err := row.Scan(&data)
+	return data, err
+}
+
+const gdprExportUserProfessionalVerifiers = `-- name: GdprExportUserProfessionalVerifiers :one
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (SELECT pv.id, pv.tenant_id, pv.profile_id, pv.user_id, pv.role, pv.status, pv.created_at, pv.updated_at FROM professional_verifiers pv
+      JOIN professional_profiles pp ON pp.id = pv.profile_id
+      WHERE pp.owner_user_id = $1 AND pv.tenant_id = $2) t
+`
+
+type GdprExportUserProfessionalVerifiersParams struct {
+	UserID   pgtype.UUID `json:"user_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+func (q *Queries) GdprExportUserProfessionalVerifiers(ctx context.Context, arg GdprExportUserProfessionalVerifiersParams) (interface{}, error) {
+	row := q.db.QueryRow(ctx, gdprExportUserProfessionalVerifiers, arg.UserID, arg.TenantID)
 	var data interface{}
 	err := row.Scan(&data)
 	return data, err
@@ -2471,6 +2528,25 @@ WHERE a.tenant_id = cfg.tenant_id
 // (default 365 days). Tenants without the setting keep the catalog default.
 func (q *Queries) PruneAuditLogs(ctx context.Context) error {
 	_, err := q.db.Exec(ctx, pruneAuditLogs)
+	return err
+}
+
+const reassignAIPersonaCreatedBy = `-- name: ReassignAIPersonaCreatedBy :exec
+UPDATE ai_personas SET created_by = $1
+WHERE created_by = $2 AND tenant_id = $3
+`
+
+type ReassignAIPersonaCreatedByParams struct {
+	TargetUserID pgtype.UUID `json:"target_user_id"`
+	UserID       pgtype.UUID `json:"user_id"`
+	TenantID     pgtype.UUID `json:"tenant_id"`
+}
+
+// ai_personas.created_by is NOT NULL and references users(id). When an admin
+// who created personas is GDPR-erased, reassign created_by to the placeholder
+// so the persona config rows survive (BUG-016, ADR-068 compliance).
+func (q *Queries) ReassignAIPersonaCreatedBy(ctx context.Context, arg ReassignAIPersonaCreatedByParams) error {
+	_, err := q.db.Exec(ctx, reassignAIPersonaCreatedBy, arg.TargetUserID, arg.UserID, arg.TenantID)
 	return err
 }
 

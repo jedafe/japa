@@ -67,6 +67,15 @@ type PersonaInput struct {
 	TypeID         string         `json:"type_id"` // optional; defaults to "contributor"/"columnist" lookup
 }
 
+// personaEmail builds a deterministic, tenant-scoped internal email for a
+// persona backing account. These accounts never log in (is_bot = true), so
+// the email is an internal identifier, not a deliverable address. The
+// tenant_id is embedded to avoid UNIQUE(tenant_id, email) collisions when
+// two tenants create personas with the same slug (BUG-008).
+func personaEmail(slug string, tenantID pgtype.UUID) string {
+	return fmt.Sprintf("persona+%s+%s@bot.internal", slug, tenantID.String())
+}
+
 // PersonaDetail is the API-facing persona record with joined user + profile
 // names and the decoded activity_policy.
 type PersonaDetail struct {
@@ -297,13 +306,6 @@ func (s *Service) resolveDefaultTypeID(ctx context.Context, tenantID pgtype.UUID
 	return pgtype.UUID{}, errors.New("personas: no 'contributor' or 'columnist' profile type found — seed one or pass type_id")
 }
 
-// personaEmail builds a deterministic internal email for a persona backing
-// account. These accounts never log in (is_bot = true), so the email is an
-// internal identifier, not a deliverable address.
-func personaEmail(slug string, tenantID pgtype.UUID) string {
-	return fmt.Sprintf("persona+%s@bot.internal", slug)
-}
-
 // validateMode returns an error if mode is non-empty and not one of allowed.
 func validateMode(mode, field string, allowed ...string) error {
 	if mode == "" {
@@ -405,37 +407,48 @@ func (s *Service) GetPersonaActivity(ctx context.Context, tenantID, personaID pg
 // High-stakes content gate (ADR-068 §5 — hardcoded, NOT configurable)
 // ---------------------------------------------------------------------------
 
-// highStakesCategories are guide categories that trigger the high-stakes gate.
-// A persona may never autonomously act on content in these categories — a
-// human must review and approve first.
-var highStakesCategories = map[string]bool{
-	"visa":            true,
-	"banking":         true,
-	"grants":          true,
-	"health_insurance": true,
-}
-
-// highStakesTags are content tags that trigger the high-stakes gate.
-var highStakesTags = map[string]bool{
-	"immigration-advice": true,
-	"financial-advice":   true,
-}
-
 // IsHighStakesContent returns true if the content is in a high-stakes category
 // or carries a high-stakes tag. This gate is hardcoded — it is NOT
 // configurable via system_settings (ADR-068 §5). A persona acting on
 // high-stakes content must route through the human-approval queue regardless
 // of its autonomy_mode.
-func IsHighStakesContent(guideCategory string, tags []string) bool {
-	if highStakesCategories[guideCategory] {
+//
+// The canonical implementation lives in the participation package
+// (internal/participation/service.go) and lowercases inputs for case-
+// insensitive matching. This wrapper delegates to it so there is a single
+// source of truth for the high-stakes gate (BUG-015). We use a function
+// variable to avoid an import cycle (participation imports personas; personas
+// must not import participation).
+var highStakesGateFn = func(guideCategory string, tags []string) bool {
+	// Fallback: case-sensitive match. Replaced at server wiring time by
+	// personas.SetHighStakesGate so all three packages share one
+	// case-insensitive implementation.
+	cat := map[string]bool{
+		"visa": true, "banking": true, "grants": true, "health_insurance": true,
+	}
+	tagSet := map[string]bool{"immigration-advice": true, "financial-advice": true}
+	if cat[guideCategory] {
 		return true
 	}
 	for _, t := range tags {
-		if highStakesTags[t] {
+		if tagSet[t] {
 			return true
 		}
 	}
 	return false
+}
+
+// SetHighStakesGate injects the canonical high-stakes gate function from the
+// participation package. Called once at server wiring time to replace the
+// fallback case-sensitive implementation with the canonical case-insensitive
+// one (BUG-015).
+func SetHighStakesGate(fn func(string, []string) bool) {
+	highStakesGateFn = fn
+}
+
+// IsHighStakesContent delegates to the canonical high-stakes gate.
+func IsHighStakesContent(guideCategory string, tags []string) bool {
+	return highStakesGateFn(guideCategory, tags)
 }
 
 // ---------------------------------------------------------------------------

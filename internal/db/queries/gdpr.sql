@@ -470,6 +470,13 @@ WHERE user_id = @user_id AND tenant_id = @tenant_id;
 UPDATE account_deletion_requests SET user_id = @target_user_id
 WHERE user_id = @user_id AND tenant_id = @tenant_id;
 
+-- name: ReassignAIPersonaCreatedBy :exec
+-- ai_personas.created_by is NOT NULL and references users(id). When an admin
+-- who created personas is GDPR-erased, reassign created_by to the placeholder
+-- so the persona config rows survive (BUG-016, ADR-068 compliance).
+UPDATE ai_personas SET created_by = @target_user_id
+WHERE created_by = @user_id AND tenant_id = @tenant_id;
+
 -- name: AnonymizeAuditLogActor :exec
 -- audit_logs must be preserved for compliance; repoint actor/impersonated refs to the placeholder "Deleted User" label.
 UPDATE audit_logs
@@ -620,6 +627,24 @@ FROM (SELECT * FROM mentor_reviews WHERE reviewer_id = @user_id) t;
 -- name: GdprExportUserProfessionalProfiles :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (SELECT * FROM professional_profiles WHERE owner_user_id = @user_id AND tenant_id = @tenant_id) t;
+
+-- name: GdprExportUserProfessionalRelocations :one
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (SELECT pr.* FROM professional_relocations pr
+      JOIN professional_profiles pp ON pp.id = pr.profile_id
+      WHERE pp.owner_user_id = @user_id AND pr.tenant_id = @tenant_id) t;
+
+-- name: GdprExportUserProfessionalDocuments :one
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (SELECT pd.* FROM professional_documents pd
+      JOIN professional_profiles pp ON pp.id = pd.profile_id
+      WHERE pp.owner_user_id = @user_id AND pd.tenant_id = @tenant_id) t;
+
+-- name: GdprExportUserProfessionalVerifiers :one
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (SELECT pv.* FROM professional_verifiers pv
+      JOIN professional_profiles pp ON pp.id = pv.profile_id
+      WHERE pp.owner_user_id = @user_id AND pv.tenant_id = @tenant_id) t;
 
 -- name: GdprExportUserOrganizations :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
