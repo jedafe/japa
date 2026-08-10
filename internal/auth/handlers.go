@@ -75,6 +75,7 @@ type User struct {
 	ProfileType     string
 	Status          string
 	EmailVerifiedAt pgtype.Timestamptz
+	IsBot           bool // ADR-068: true for AI persona backing accounts — blocked from login
 }
 
 // RefreshToken represents a refresh token record.
@@ -314,6 +315,17 @@ func (h *AuthHandlers) Login(w http.ResponseWriter, r *http.Request) {
 
 		writeError(w, http.StatusUnauthorized, "invalid_credentials", "Invalid email or password")
 
+		return
+	}
+
+	// ADR-068 §1: AI persona backing accounts (is_bot = true) cannot log in
+	// via normal auth flows. They act only through the orchestration engine
+	// or the Content Studio as their backing account. This is an explicit
+	// security gate — do not rely on the null-password_hash incidental block.
+	if user.IsBot {
+		slog.Warn("login blocked: is_bot account attempted login",
+			"user_id", user.ID, "email", req.Email)
+		writeError(w, http.StatusUnauthorized, "invalid_credentials", "Invalid email or password")
 		return
 	}
 

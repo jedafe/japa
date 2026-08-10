@@ -297,6 +297,18 @@ func (s *Store) gdprExportUserProfessionalProfiles(ctx context.Context, userID, 
 	return exportJSONSlice(ctx, s.read.GdprExportUserProfessionalProfiles, gen.GdprExportUserProfessionalProfilesParams{UserID: userID, TenantID: tenantID})
 }
 
+func (s *Store) gdprExportUserProfessionalRelocations(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {
+	return exportJSONSlice(ctx, s.read.GdprExportUserProfessionalRelocations, gen.GdprExportUserProfessionalRelocationsParams{UserID: userID, TenantID: tenantID})
+}
+
+func (s *Store) gdprExportUserProfessionalDocuments(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {
+	return exportJSONSlice(ctx, s.read.GdprExportUserProfessionalDocuments, gen.GdprExportUserProfessionalDocumentsParams{UserID: userID, TenantID: tenantID})
+}
+
+func (s *Store) gdprExportUserProfessionalVerifiers(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {
+	return exportJSONSlice(ctx, s.read.GdprExportUserProfessionalVerifiers, gen.GdprExportUserProfessionalVerifiersParams{UserID: userID, TenantID: tenantID})
+}
+
 func (s *Store) gdprExportUserOrganizations(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {
 	return exportJSONSlice(ctx, s.read.GdprExportUserOrganizations, gen.GdprExportUserOrganizationsParams{UserID: userID, TenantID: tenantID})
 }

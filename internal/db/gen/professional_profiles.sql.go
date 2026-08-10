@@ -482,6 +482,60 @@ func (q *Queries) IsProfessionalProfileOwner(ctx context.Context, arg IsProfessi
 	return exists, err
 }
 
+const listAllProfessionalProfiles = `-- name: ListAllProfessionalProfiles :many
+SELECT id, tenant_id, owner_user_id, type_id, name, slug, tagline, description,
+    logo_media_id, header_media_id, website_url, verified, verification_type,
+    follower_count, status, field_values, created_at
+FROM professional_profiles
+WHERE tenant_id = $1
+ORDER BY created_at DESC
+LIMIT $3 OFFSET $2
+`
+
+type ListAllProfessionalProfilesParams struct {
+	TenantID   pgtype.UUID `json:"tenant_id"`
+	PageOffset int32       `json:"page_offset"`
+	PageLimit  int32       `json:"page_limit"`
+}
+
+func (q *Queries) ListAllProfessionalProfiles(ctx context.Context, arg ListAllProfessionalProfilesParams) ([]ProfessionalProfile, error) {
+	rows, err := q.db.Query(ctx, listAllProfessionalProfiles, arg.TenantID, arg.PageOffset, arg.PageLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ProfessionalProfile
+	for rows.Next() {
+		var i ProfessionalProfile
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.OwnerUserID,
+			&i.TypeID,
+			&i.Name,
+			&i.Slug,
+			&i.Tagline,
+			&i.Description,
+			&i.LogoMediaID,
+			&i.HeaderMediaID,
+			&i.WebsiteUrl,
+			&i.Verified,
+			&i.VerificationType,
+			&i.FollowerCount,
+			&i.Status,
+			&i.FieldValues,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listProfessionalProfileInvitations = `-- name: ListProfessionalProfileInvitations :many
 SELECT id, profile_id, email, role, invited_by, token, expires_at, accepted_at, created_at
 FROM professional_profile_invitations
@@ -523,10 +577,16 @@ const listProfessionalProfileMembers = `-- name: ListProfessionalProfileMembers 
 SELECT ppm.profile_id, ppm.user_id, ppm.role, ppm.invited_by, ppm.joined_at,
        u.username, u.email
 FROM professional_profile_members ppm
+JOIN professional_profiles pp ON pp.id = ppm.profile_id
 JOIN users u ON u.id = ppm.user_id
-WHERE ppm.profile_id = $1
+WHERE ppm.profile_id = $1 AND pp.tenant_id = $2
 ORDER BY ppm.joined_at ASC
 `
+
+type ListProfessionalProfileMembersParams struct {
+	ProfileID pgtype.UUID `json:"profile_id"`
+	TenantID  pgtype.UUID `json:"tenant_id"`
+}
 
 type ListProfessionalProfileMembersRow struct {
 	ProfileID pgtype.UUID        `json:"profile_id"`
@@ -538,8 +598,8 @@ type ListProfessionalProfileMembersRow struct {
 	Email     string             `json:"email"`
 }
 
-func (q *Queries) ListProfessionalProfileMembers(ctx context.Context, profileID pgtype.UUID) ([]ListProfessionalProfileMembersRow, error) {
-	rows, err := q.db.Query(ctx, listProfessionalProfileMembers, profileID)
+func (q *Queries) ListProfessionalProfileMembers(ctx context.Context, arg ListProfessionalProfileMembersParams) ([]ListProfessionalProfileMembersRow, error) {
+	rows, err := q.db.Query(ctx, listProfessionalProfileMembers, arg.ProfileID, arg.TenantID)
 	if err != nil {
 		return nil, err
 	}
@@ -741,6 +801,23 @@ type RemoveProfessionalProfileMemberParams struct {
 
 func (q *Queries) RemoveProfessionalProfileMember(ctx context.Context, arg RemoveProfessionalProfileMemberParams) error {
 	_, err := q.db.Exec(ctx, removeProfessionalProfileMember, arg.ProfileID, arg.UserID)
+	return err
+}
+
+const setProfessionalProfileVerified = `-- name: SetProfessionalProfileVerified :exec
+UPDATE professional_profiles
+SET verified = $1, updated_at = now()
+WHERE id = $2 AND tenant_id = $3
+`
+
+type SetProfessionalProfileVerifiedParams struct {
+	Verified bool        `json:"verified"`
+	ID       pgtype.UUID `json:"id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+func (q *Queries) SetProfessionalProfileVerified(ctx context.Context, arg SetProfessionalProfileVerifiedParams) error {
+	_, err := q.db.Exec(ctx, setProfessionalProfileVerified, arg.Verified, arg.ID, arg.TenantID)
 	return err
 }
 

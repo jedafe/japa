@@ -196,8 +196,8 @@ func (s *Service) ListMembers(ctx context.Context, tenantID pgtype.UUID, status 
 }
 
 type UpdateMemberStatusInput struct {
-	Status string
-	Notes  *string
+	Status string  `json:"status"`
+	Notes  *string `json:"notes,omitempty"`
 }
 
 func (s *Service) UpdateMemberStatus(ctx context.Context, userID, tenantID pgtype.UUID, input UpdateMemberStatusInput) (gen.AffiliateProgramMember, error) {
@@ -216,10 +216,10 @@ func (s *Service) UpdateMemberStatus(ctx context.Context, userID, tenantID pgtyp
 // ── Link Operations ─────────────────────────────────────────────────
 
 type CreateLinkInput struct {
-	ProductType    string
-	ProductID      *pgtype.UUID
-	Description    *string
-	DestinationURL string
+	ProductType    string        `json:"product_type"`
+	ProductID      *pgtype.UUID  `json:"product_id,omitempty"`
+	Description    *string       `json:"description,omitempty"`
+	DestinationURL string        `json:"destination_url"`
 }
 
 func (s *Service) CreateLink(ctx context.Context, tenantID, userID pgtype.UUID, input CreateLinkInput) (gen.UserAffiliateLink, error) {
@@ -300,8 +300,8 @@ func (s *Service) ListAllLinks(ctx context.Context, tenantID pgtype.UUID, page, 
 }
 
 type UpdateLinkInput struct {
-	Description *string
-	IsActive    bool
+	Description *string `json:"description,omitempty"`
+	IsActive    bool    `json:"is_active"`
 }
 
 func (s *Service) UpdateLink(ctx context.Context, id, userID, tenantID pgtype.UUID, input UpdateLinkInput) (gen.UserAffiliateLink, error) {

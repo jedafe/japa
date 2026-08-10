@@ -82,16 +82,20 @@
 		return map;
 	}
 
-	/** Normalize the raw export status response into UI states. */
+	/** Normalize the raw export status response into UI states.
+	 *  Backend statuses: pending, processing, completed, failed, cancelled.
+	 *  - cancelled: the user (or admin) aborted the export — treat as 'none'
+	 *    so the user can request a new one (otherwise the UI is stuck in
+	 *    'pending' forever with an infinite polling loop). */
 	function normalizeStatus(raw: ExportStatusResponse | null | undefined): { status: UiStatus; download_url: string | null } {
 		if (!raw || raw.status === 'no_pending_export' || !raw.status) {
 			return { status: 'none', download_url: null };
 		}
-		// Backend uses: pending, processing, completed, failed.
-		// Map to UI: pending (includes processing), ready (completed), failed.
 		if (raw.status === 'completed') return { status: 'ready', download_url: raw.download_url ?? null };
 		if (raw.status === 'failed') return { status: 'failed', download_url: null };
-		// pending, processing, or anything else → pending
+		// cancelled → user can re-request, so treat as 'none'
+		if (raw.status === 'cancelled') return { status: 'none', download_url: null };
+		// pending, processing → pending
 		return { status: 'pending', download_url: null };
 	}
 

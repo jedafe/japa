@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
 	import { t } from '$lib/i18n';
-	import { createAffiliate, deleteAffiliate } from '$lib/api/hub';
+	import { createAffiliate, deleteAffiliate, enrollAffiliate } from '$lib/api/hub';
 	import { optimisticAction } from '$lib/components/hub/optimisticAction';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import { Share2, MousePointerClick, TrendingUp, Wallet, MessageCircle, AtSign, Link as LinkIcon, Copy, Check } from 'lucide-svelte';
@@ -25,19 +25,32 @@
 		created_at?: string;
 	}
 
+	interface AffiliateProgramInfo {
+		commission_rates?: { pro_monthly: number; pro_annual: number; course: number };
+		terms_and_conditions?: string;
+		min_account_days?: number;
+		max_links_per_user?: number;
+	}
+
 	interface AffiliateSectionData {
 		links?: AffiliateLink[];
 		earnings?: AffiliateEarnings | null;
+		program?: AffiliateProgramInfo | null;
+		enrolled?: boolean;
 	}
 
 	let { data }: { data: unknown } = $props();
 	const sectionData = $derived((data as AffiliateSectionData | null) ?? {});
+	const enrolled = $derived(sectionData.enrolled ?? true);
+	const program = $derived(sectionData.program ?? null);
 	let links = $state<AffiliateLink[]>(untrack(() => sectionData.links ?? []));
 	const earnings = $derived(sectionData.earnings ?? null);
 	let newUrl = $state('');
 	let newDescription = $state('');
 	let newProductType = $state('pro_subscription');
 	let creating = $state(false);
+	let enrolling = $state(false);
+	let enrollError = $state<string | null>(null);
 	let error = $state<string | null>(null);
 
 	const productTypes = $derived([
@@ -65,6 +78,19 @@
 		newDescription = '';
 	}
 
+	async function doEnroll() {
+		enrolling = true;
+		enrollError = null;
+		const res = await enrollAffiliate();
+		enrolling = false;
+		if (res.error) {
+			enrollError = res.error.message;
+			return;
+		}
+		// Reload the page to re-run the server loader with the new permission.
+		window.location.reload();
+	}
+
 	async function doDelete(id: string) {
 		const idx = links.findIndex((l) => l.id === id);
 		if (idx < 0) return;
@@ -79,8 +105,11 @@
 	// Phase 34.06 — share buttons for referral links. Builds share URLs for
 	// WhatsApp, Twitter/X, and LinkedIn, plus a copy-to-clipboard fallback.
 	// Ref: sections/56-user-affiliate-program.md
+	// The share URL must point to the /r/:code redirect endpoint (Section 56)
+	// so clicks are tracked — NOT the raw destination_url with ?ref= appended
+	// (which bypasses click tracking entirely).
 	function shareUrl(link: AffiliateLink): string {
-		return `${link.destination_url}?ref=${link.code}`;
+		return `${window.location.origin}/r/${link.code}`;
 	}
 
 	function shareWhatsApp(link: AffiliateLink) {
@@ -119,6 +148,48 @@
 		<p class="text-sm text-[var(--color-muted)]">{t('settings.affiliate.desc')}</p>
 	</header>
 
+	{#if !enrolled}
+		<!-- Enrollment CTA — user has not enrolled in the affiliate program yet.
+		     Section 56: the program is opt-in; affiliate.links.manage is granted
+		     on enrollment. Show program info + enroll button. -->
+		<div class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5">
+			<h2 class="mb-2 text-sm font-medium text-[var(--color-text)]">{t('settings.affiliate.enroll_title', 'Join the affiliate program')}</h2>
+			<p class="mb-4 text-sm text-[var(--color-muted)]">{t('settings.affiliate.enroll_desc', 'Earn commission by referring others to JapaConnect paid products. Create trackable links and share them with your audience.')}</p>
+
+			{#if program?.commission_rates}
+				<div class="mb-4 grid grid-cols-3 gap-3">
+					<div class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-3 text-center">
+						<p class="text-xs text-[var(--color-muted)]">{t('settings.affiliate.product_type_pro_subscription', 'Pro Subscription')}</p>
+						<p class="mt-1 text-lg font-semibold text-[var(--color-text)]">{program.commission_rates.pro_monthly}%</p>
+						<p class="text-xs text-[var(--color-muted)]">{t('settings.affiliate.commission_monthly', 'monthly')}</p>
+					</div>
+					<div class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-3 text-center">
+						<p class="text-xs text-[var(--color-muted)]">{t('settings.affiliate.product_type_pro_subscription', 'Pro Subscription')}</p>
+						<p class="mt-1 text-lg font-semibold text-[var(--color-text)]">{program.commission_rates.pro_annual}%</p>
+						<p class="text-xs text-[var(--color-muted)]">{t('settings.affiliate.commission_annual', 'annual')}</p>
+					</div>
+					<div class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-3 text-center">
+						<p class="text-xs text-[var(--color-muted)]">{t('settings.affiliate.product_type_course', 'Course')}</p>
+						<p class="mt-1 text-lg font-semibold text-[var(--color-text)]">{program.commission_rates.course}%</p>
+					</div>
+				</div>
+			{/if}
+
+			{#if program?.terms_and_conditions}
+				<p class="mb-4 text-xs text-[var(--color-muted)]">{program.terms_and_conditions}</p>
+			{/if}
+
+			{#if enrollError}<p class="mb-3 text-xs text-[var(--color-danger,#dc2626)]">{enrollError}</p>{/if}
+			<button
+				type="button"
+				disabled={enrolling}
+				onclick={() => doEnroll()}
+				class="rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+			>
+				{enrolling ? t('settings.affiliate.enrolling', 'Enrolling…') : t('settings.affiliate.enroll', 'Enroll now')}
+			</button>
+		</div>
+	{:else}
 	{#if earnings}
 		<div class="mb-6 grid grid-cols-3 gap-3">
 			<div class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
@@ -232,7 +303,7 @@
 						<div class="min-w-0">
 							<p class="truncate text-sm font-medium text-[var(--color-text)]">{link.description ?? link.destination_url}</p>
 							<p class="truncate text-xs text-[var(--color-muted)]">{link.destination_url}</p>
-							<p class="mt-0.5 text-xs text-[var(--color-muted)]">/{link.code} · {link.product_type.replace(/_/g, ' ')}</p>
+							<p class="mt-0.5 text-xs text-[var(--color-muted)]">/r/{link.code} · {link.product_type.replace(/_/g, ' ')}</p>
 						</div>
 						<button
 							type="button"
@@ -289,5 +360,6 @@
 				</li>
 			{/each}
 		</ul>
+	{/if}
 	{/if}
 </section>

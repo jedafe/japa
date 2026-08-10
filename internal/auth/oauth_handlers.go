@@ -202,6 +202,14 @@ func (h *OAuthHandlers) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	if userInfo.Email != "" {
 		user, err := h.Store.GetUserByEmail(r.Context(), t.ID, userInfo.Email)
 		if err == nil && user != nil {
+			// ADR-068 §1: AI persona backing accounts cannot log in via any
+			// auth flow, including OAuth. Block is_bot accounts explicitly.
+			if user.IsBot {
+				slog.Warn("oauth login blocked: is_bot account",
+					"user_id", user.ID, "provider", providerName)
+				h.redirectOAuthError(w, r, "invalid_account")
+				return
+			}
 			if linkErr := h.Store.LinkOAuthAccount(r.Context(), t.ID, user.ID, providerName, userInfo.ProviderUserID); linkErr != nil {
 				slog.Error("link OAuth account", "error", linkErr)
 			}

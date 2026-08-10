@@ -46,6 +46,9 @@ const (
 	ExportCompleted ExportStatus = "completed"
 	// ExportFailed is the export failed.
 	ExportFailed ExportStatus = "failed"
+	// ExportCancelled is the export cancelled constant — set by
+	// CancelDataExportRequest when a user aborts a pending/processing export.
+	ExportCancelled ExportStatus = "cancelled"
 )
 
 // DeletionStatus represents the lifecycle state of an account deletion request.

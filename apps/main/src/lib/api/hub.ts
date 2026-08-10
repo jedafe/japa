@@ -60,6 +60,7 @@ export const createAffiliate = (v: {
 	description?: string;
 }) => api.post('/me/affiliate-links', v);
 export const deleteAffiliate = (id: string) => api.delete(`/me/affiliate-links/${id}`);
+export const enrollAffiliate = () => api.post('/affiliate-program/enroll');
 
 /* ---- wallet / subscription ---- */
 export const convertWallet = (points: number) =>

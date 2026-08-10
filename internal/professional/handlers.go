@@ -15,7 +15,6 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
-	"time"
 
 	errpkg "github.com/jedafe/japa/internal/errors"
 
@@ -575,10 +574,23 @@ func (h *Handlers) ListProfessionalProfiles(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	// Default: list by owner (the authenticated user).
+	// Default: list by owner (the authenticated user), unless scope=all is
+	// requested by an admin with the professional_profile.member.manage node.
 	user := auth.FromContext(r.Context())
 	if user == nil {
 		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		return
+	}
+
+	if r.URL.Query().Get("scope") == "all" && h.RBAC != nil &&
+		h.RBAC.HasPermission(r.Context(), user.UserID, tenantID, "professional_profile.member.manage") {
+		profiles, err := h.Service.ListAllProfessionalProfiles(r.Context(), tenantID, limit, offset)
+		if err != nil {
+			handleServiceError(w, err)
+			return
+		}
+
+		writeJSON(w, http.StatusOK, map[string]any{"data": profiles})
 		return
 	}
 
@@ -780,7 +792,12 @@ func (h *Handlers) AddMember(w http.ResponseWriter, r *http.Request) {
 
 // RemoveMember handles DELETE /api/v1/professional-profiles/{id}/members/{userId}.
 func (h *Handlers) RemoveMember(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireUser(w, r)
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -791,10 +808,18 @@ func (h *Handlers) RemoveMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// A member may remove themselves (leaving the team); otherwise require
+	// owner/admin authorization.
 	userID, err := parseUUIDParam(r, "userId")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_user_id", "Invalid user ID")
 		return
+	}
+
+	if userID != user.UserID {
+		if !h.checkProfileOwnerOrAdmin(w, r, profileID, user, tenantID) {
+			return
+		}
 	}
 
 	if err := h.Service.RemoveMember(r.Context(), profileID, userID); err != nil {
@@ -812,13 +837,18 @@ func (h *Handlers) ListMembers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
 	profileID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid profile ID")
 		return
 	}
 
-	members, err := h.Service.ListMembers(r.Context(), profileID)
+	members, err := h.Service.ListMembers(r.Context(), profileID, tenantID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -829,7 +859,12 @@ func (h *Handlers) ListMembers(w http.ResponseWriter, r *http.Request) {
 
 // UpdateMemberRole handles PATCH /api/v1/professional-profiles/{id}/members/{userId}.
 func (h *Handlers) UpdateMemberRole(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireUser(w, r)
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -837,6 +872,10 @@ func (h *Handlers) UpdateMemberRole(w http.ResponseWriter, r *http.Request) {
 	profileID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid profile ID")
+		return
+	}
+
+	if !h.checkProfileOwnerOrAdmin(w, r, profileID, user, tenantID) {
 		return
 	}
 
@@ -923,7 +962,12 @@ func (h *Handlers) CreateInvitation(w http.ResponseWriter, r *http.Request) {
 
 // ListInvitations handles GET /api/v1/professional-profiles/{id}/invitations.
 func (h *Handlers) ListInvitations(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireUser(w, r)
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -931,6 +975,10 @@ func (h *Handlers) ListInvitations(w http.ResponseWriter, r *http.Request) {
 	profileID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid profile ID")
+		return
+	}
+
+	if !h.checkProfileOwnerOrAdmin(w, r, profileID, user, tenantID) {
 		return
 	}
 
@@ -1052,7 +1100,7 @@ func (h *Handlers) ListVerifiers(w http.ResponseWriter, r *http.Request) {
 
 // CreateRelocation handles POST /api/v1/professional-profiles/{id}/relocations.
 func (h *Handlers) CreateRelocation(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireUser(w, r)
+	user, ok := h.requireUser(w, r)
 	if !ok {
 		return
 	}
@@ -1065,6 +1113,10 @@ func (h *Handlers) CreateRelocation(w http.ResponseWriter, r *http.Request) {
 	profileID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid profile ID")
+		return
+	}
+
+	if !h.checkProfileOwnerOrAdmin(w, r, profileID, user, tenantID) {
 		return
 	}
 
@@ -1195,7 +1247,7 @@ func (h *Handlers) DeleteRelocation(w http.ResponseWriter, r *http.Request) {
 
 // CreateDocument handles POST /api/v1/professional-profiles/{id}/documents.
 func (h *Handlers) CreateDocument(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireUser(w, r)
+	user, ok := h.requireUser(w, r)
 	if !ok {
 		return
 	}
@@ -1208,6 +1260,10 @@ func (h *Handlers) CreateDocument(w http.ResponseWriter, r *http.Request) {
 	profileID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid profile ID")
+		return
+	}
+
+	if !h.checkProfileOwnerOrAdmin(w, r, profileID, user, tenantID) {
 		return
 	}
 
@@ -1479,11 +1535,8 @@ func (h *Handlers) VerifyProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, err = h.Service.db.Writer.Exec(r.Context(),
-		`UPDATE professional_profiles SET verified = true, updated_at = now()
-		 WHERE id = $1 AND tenant_id = $2`, profileID, tenantID)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to verify profile")
+	if err := h.Service.SetProfileVerified(r.Context(), profileID, tenantID, true); err != nil {
+		handleServiceError(w, err)
 		return
 	}
 
@@ -1503,11 +1556,8 @@ func (h *Handlers) UnverifyProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, err = h.Service.db.Writer.Exec(r.Context(),
-		`UPDATE professional_profiles SET verified = false, updated_at = now()
-		 WHERE id = $1 AND tenant_id = $2`, profileID, tenantID)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to unverify profile")
+	if err := h.Service.SetProfileVerified(r.Context(), profileID, tenantID, false); err != nil {
+		handleServiceError(w, err)
 		return
 	}
 
@@ -1540,9 +1590,20 @@ func (h *Handlers) ListProfileContent(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"data": content})
 }
 
-// InviteMember handles POST /profiles/:id/members/invite (P5.6).
+// InviteMember is a deprecated alias for CreateInvitation. The P5.6
+// /profiles/:id/members/invite route is kept for backward compatibility but
+// delegates to the secure CreateInvitation service path (crypto-random token,
+// ownership check, proper invited_by). The raw-SQL implementation that used a
+// predictable token and skipped ownership was removed.
+//
+// Ref: sections/33-professional-profiles.md
 func (h *Handlers) InviteMember(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -1550,6 +1611,10 @@ func (h *Handlers) InviteMember(w http.ResponseWriter, r *http.Request) {
 	profileID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid profile ID")
+		return
+	}
+
+	if !h.checkProfileOwnerOrAdmin(w, r, profileID, user, tenantID) {
 		return
 	}
 
@@ -1568,26 +1633,27 @@ func (h *Handlers) InviteMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Create invitation via raw SQL
-	token := fmt.Sprintf("inv_%d", time.Now().UnixNano())
-
-	_, err = h.Service.db.Writer.Exec(r.Context(),
-		`INSERT INTO professional_profile_invitations (profile_id, email, role, invited_by, token, expires_at)
-		 VALUES ($1, $2, $3, $4, $5, now() + interval '7 days')`,
-		profileID, input.Email, input.Role, pgtype.UUID{}, token)
+	inv, err := h.Service.CreateInvitation(r.Context(), profileID, user.UserID, CreateInvitationInput{
+		Email: input.Email,
+		Role:  input.Role,
+	})
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to create invitation")
+		handleServiceError(w, err)
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": map[string]string{
-		"profile_id": profileID.String(), "email": input.Email, "token": token,
-	}})
+	writeJSON(w, http.StatusCreated, map[string]any{"data": inv})
 }
 
-// AcceptProfileInvitation handles POST /profiles/invitations/accept (P5.6).
+// AcceptProfileInvitation is a deprecated alias for AcceptInvitation. The P5.6
+// /profiles/invitations/accept route is kept for backward compatibility but
+// delegates to the secure AcceptInvitation service path (adds the user as a
+// member, validates expiry, tenant-scoped). The raw-SQL implementation that
+// skipped member creation and ignored tenant was removed.
+//
+// Ref: sections/33-professional-profiles.md
 func (h *Handlers) AcceptProfileInvitation(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	user, ok := h.requireUser(w, r)
 	if !ok {
 		return
 	}
@@ -1606,14 +1672,8 @@ func (h *Handlers) AcceptProfileInvitation(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	_ = tenantID
-
-	// Accept invitation via raw SQL
-	_, err := h.Service.db.Writer.Exec(r.Context(),
-		`UPDATE professional_profile_invitations SET accepted_at = now()
-		 WHERE token = $1 AND accepted_at IS NULL AND expires_at > now()`, input.Token)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to accept invitation")
+	if err := h.Service.AcceptInvitation(r.Context(), input.Token, user.UserID); err != nil {
+		handleServiceError(w, err)
 		return
 	}
 
