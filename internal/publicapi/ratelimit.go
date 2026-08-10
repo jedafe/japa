@@ -2,6 +2,8 @@ package publicapi
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -62,9 +64,13 @@ func SlidingWindowRateLimitWithSettings(rdb valkeycompat.Cmdable, sr rateLimitSe
 			now := time.Now()
 			windowStart := now.Add(-windowSize)
 
-			// Unique ID for this request: nanosecond timestamp + random suffix
-			// to avoid collisions within the sorted set.
-			uniqueID := fmt.Sprintf("%d.%d", now.UnixNano(), now.UnixNano()%1000000)
+			// Unique ID for this request: nanosecond timestamp + 8 random bytes
+			// to avoid collisions within the sorted set under high concurrency
+			// (PUB-017 — the previous timestamp-only suffix could collide if two
+			// requests arrived in the same nanosecond).
+			randBytes := make([]byte, 8)
+			_, _ = rand.Read(randBytes)
+			uniqueID := fmt.Sprintf("%d.%s", now.UnixNano(), hex.EncodeToString(randBytes))
 			setKey := fmt.Sprintf("jc:api_rate:%s:%d", key.KeyPrefix, now.Unix()/60)
 
 			ctx := r.Context()

@@ -8,9 +8,9 @@
 -- =====================
 
 -- name: CreatePlatformEvent :one
-INSERT INTO platform_events (tenant_id, event_type, user_id, entity_type, entity_id, meta, country_code, session_id)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-RETURNING id, tenant_id, event_type, user_id, entity_type, entity_id, meta, country_code, session_id, created_at;
+INSERT INTO platform_events (tenant_id, event_type, user_id, entity_type, entity_id, meta, country_code, session_id, is_synthetic)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+RETURNING id, tenant_id, event_type, user_id, entity_type, entity_id, meta, country_code, session_id, is_synthetic, created_at;
 
 -- name: ListPlatformEvents :many
 SELECT id, tenant_id, event_type, user_id, entity_type, entity_id, meta, country_code, session_id, created_at

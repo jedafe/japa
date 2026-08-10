@@ -40,12 +40,20 @@ type TaskEnqueuer interface {
 	Enqueue(taskType string, payload []byte, opts ...interface{}) error
 }
 
+// EventTracker is the subset of the analytics service that participation needs
+// to record persona-originated platform events with is_synthetic = true
+// (ADR-068 §4 / P10 — metrics integrity).
+type EventTracker interface {
+	TrackSyntheticEvent(ctx context.Context, tenantID, userID pgtype.UUID, eventType, entityType string, entityID pgtype.UUID, meta map[string]any) error
+}
+
 // Service holds the business logic for the Participation Orchestration Engine.
 type Service struct {
 	db       *db.DB
 	settings *config.Settings
 	vk       valkeycompat.Cmdable
 	enqueuer TaskEnqueuer
+	tracker  EventTracker
 }
 
 // NewService creates a Service backed by the given database, settings, and
@@ -56,6 +64,12 @@ func NewService(database *db.DB, settings *config.Settings, vk valkeycompat.Cmda
 
 // SetEnqueuer injects the task enqueuer (called at server wiring time).
 func (s *Service) SetEnqueuer(e TaskEnqueuer) { s.enqueuer = e }
+
+// SetEventTracker injects the analytics event tracker (called at server wiring
+// time). When set, every dispatched persona action is recorded as a
+// platform_event with is_synthetic = true so the activity log works and
+// real-metric materialized views exclude persona activity (ADR-068 §4).
+func (s *Service) SetEventTracker(t EventTracker) { s.tracker = t }
 
 // highStakesCategories are the guide categories that always require human
 // review, regardless of autonomy_mode. Hardcoded per §76 — not configurable.
@@ -91,14 +105,20 @@ func IsHighStakesContent(guideCategory string, tags []string) bool {
 
 // ActivityPolicy is the per-persona policy that governs autonomous actions.
 // Stored as jsonb in ai_personas.activity_policy.
+//
+// EligibleSpaces and AvoidRecentAuthors use []string (space slugs / user
+// slugs) to match the personas package's ActivityPolicy type (BUG-006).
+// The §68 spec defines eligible_spaces as a string array; using pgtype.UUID
+// here caused a JSON unmarshal mismatch when the participation engine read
+// a policy written by the personas service.
 type ActivityPolicy struct {
 	ActionsPerDay        int            `json:"actions_per_day"`
 	ActionBudget         map[string]int `json:"action_budget"`
 	EligibleContentTypes []string       `json:"eligible_content_types"`
-	EligibleSpaces       []pgtype.UUID  `json:"eligible_spaces"`
+	EligibleSpaces       []string       `json:"eligible_spaces"`
 	MinContentAgeHours   int            `json:"min_content_age_hours"`
 	AvoidOwnContent      bool           `json:"avoid_own_content"`
-	AvoidRecentAuthors   []pgtype.UUID  `json:"avoid_recent_authors"`
+	AvoidRecentAuthors   []string       `json:"avoid_recent_authors"`
 	ActiveHoursUTC       [2]int         `json:"active_hours_utc"`
 }
 
@@ -222,17 +242,22 @@ func (s *Service) DispatchAction(ctx context.Context, actionID pgtype.UUID) erro
 		return nil
 	}
 
-	// Load the queued action from content_reviews.
+	// Load the queued action from content_reviews + the content's author
+	// (the persona's backing user_id) so we can record a synthetic event.
 	var (
 		tenantID   pgtype.UUID
 		contentID  pgtype.UUID
 		reviewerID pgtype.UUID
 		status     string
+		authorID   pgtype.UUID
 	)
 	err := s.db.Reader.QueryRow(ctx,
-		`SELECT tenant_id, content_id, reviewer_user_id, status
-		 FROM content_reviews WHERE id = $1`, actionID,
-	).Scan(&tenantID, &contentID, &reviewerID, &status)
+		`SELECT cr.tenant_id, cr.content_id, cr.reviewer_user_id, cr.status,
+		        c.author_user_id
+		 FROM content_reviews cr
+		 JOIN contents c ON c.id = cr.content_id
+		 WHERE cr.id = $1`, actionID,
+	).Scan(&tenantID, &contentID, &reviewerID, &status, &authorID)
 	if err != nil {
 		return fmt.Errorf("participation: load action: %w", err)
 	}
@@ -256,6 +281,13 @@ func (s *Service) DispatchAction(ctx context.Context, actionID pgtype.UUID) erro
 		`UPDATE studio_jobs SET status = 'published', published_at = now()
 		 WHERE draft_content_id = $1 AND tenant_id = $2`,
 		contentID, tenantID)
+
+	// Record a synthetic platform_event so the persona activity log works
+	// and real-metric materialized views exclude this action (ADR-068 §4, P10).
+	s.trackPersonaEvent(ctx, tenantID, authorID, "persona.action_dispatched", "content", contentID, map[string]any{
+		"action_id":   actionID.String(),
+		"reviewer_id": reviewerID.String(),
+	})
 
 	slog.Info("participation: dispatch_action: published", "action_id", actionID, "content_id", contentID)
 	return nil
@@ -497,13 +529,15 @@ func (s *Service) routeToReviewQueue(ctx context.Context, persona personas.Perso
 	// Create a draft content for the persona action. The persona's backing
 	// user account has is_bot=true (added in migration 000246), so the
 	// content is attributed to the persona's user_id.
+	// Map the action type to a valid §14 content_type (BUG-007).
+	contentType := actionTypeToContentType(actionType)
 	var contentID pgtype.UUID
 	err := s.db.Writer.QueryRow(ctx,
 		`INSERT INTO contents (tenant_id, author_user_id, author_profile_id, content_type,
 		                       body, status, created_at)
 		 VALUES ($1, $2, $3, $4, $5, 'draft', now())
 		 RETURNING id`,
-		tenantID, userID, profileID, actionType,
+		tenantID, userID, profileID, contentType,
 		`{"type":"doc"}`,
 	).Scan(&contentID)
 	if err != nil {
@@ -518,7 +552,50 @@ func (s *Service) routeToReviewQueue(ctx context.Context, persona personas.Perso
 	if err != nil {
 		return fmt.Errorf("create review: %w", err)
 	}
+
+	// Record a synthetic platform_event for the queued action (ADR-068 §4, P10).
+	s.trackPersonaEvent(ctx, tenantID, userID, "persona.action_queued", "content", contentID, map[string]any{
+		"action_type":  actionType,
+		"content_type": contentType,
+		"target_content_id": content.ID.String(),
+	})
+
 	return nil
+}
+
+// actionTypeToContentType maps a participation action type to a valid §14
+// content_type. Action types (comment, forum_answer, follow, react, bookmark)
+// are orchestration verbs, not content types. Without this mapping, the draft
+// content row would carry an invalid content_type that breaks feed rendering,
+// RAG indexing, and content-type filters (BUG-007).
+func actionTypeToContentType(actionType string) string {
+	switch actionType {
+	case "comment":
+		return "comment"
+	case "forum_answer", "forum_question":
+		return "forum_post"
+	case "blog_post", "guide", "discussion", "forum_thread":
+		return actionType // already a valid content_type
+	default:
+		return "discussion" // safe fallback for react/follow/bookmark/form_submit
+	}
+}
+
+// trackPersonaEvent records a platform_event with is_synthetic = true for a
+// persona action. This is the core metrics-integrity mechanism (ADR-068 §4,
+// P10): persona-originated events are tagged so the activity log can find
+// them (WHERE is_synthetic = true) and real-metric materialized views can
+// exclude them (WHERE NOT is_synthetic). If no tracker is wired, the event
+// is silently skipped — the orchestration engine must not fail because of
+// analytics unavailability.
+func (s *Service) trackPersonaEvent(ctx context.Context, tenantID, userID pgtype.UUID, eventType, entityType string, entityID pgtype.UUID, meta map[string]any) {
+	if s.tracker == nil {
+		slog.Warn("participation: no event tracker configured, synthetic event not recorded", "event_type", eventType)
+		return
+	}
+	if err := s.tracker.TrackSyntheticEvent(ctx, tenantID, userID, eventType, entityType, entityID, meta); err != nil {
+		slog.Warn("participation: track synthetic event failed", "event_type", eventType, "error", err)
+	}
 }
 
 // enqueueDispatchAction enqueues a persona:dispatch_action task.

@@ -10,7 +10,6 @@ import (
 	"github.com/valkey-io/valkey-go/valkeycompat"
 
 	"github.com/jedafe/japa/internal/clientip"
-	"github.com/jedafe/japa/internal/tenant"
 )
 
 // APIKeyMiddleware extracts the X-API-Key header, validates it, and
@@ -57,11 +56,6 @@ func APIKeyMiddleware(service *Service) func(http.Handler) http.Handler {
 
 			ctx := context.WithValue(r.Context(), apiKeyContextKey, keyCtx)
 
-			// Also inject a synthetic tenant context if not already present.
-			if t := tenant.FromContext(ctx); t == nil {
-				_ = keyCtx.TenantID // tenant is available for downstream use
-			}
-
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
@@ -76,12 +70,14 @@ func extractClientIP(r *http.Request) string {
 
 // RequireScope checks that the validated API key includes the given scope.
 // Scopes follow the pattern "domain.action" (e.g., "content.create").
+// Fail-closed: if no API key is present, returns 401 instead of passing
+// through (PUB-015).
 func RequireScope(scope string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			keyCtx := APIKeyFromContext(r.Context())
 			if keyCtx == nil {
-				next.ServeHTTP(w, r)
+				writeError(w, http.StatusUnauthorized, "api_key_required", "X-API-Key header is required")
 				return
 			}
 

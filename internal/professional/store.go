@@ -172,6 +172,24 @@ func (s *Store) listProfessionalProfilesByType(ctx context.Context, typeID, tena
 	return rows, nil
 }
 
+// listAllProfessionalProfiles returns all profiles in a tenant (admin scope).
+func (s *Store) listAllProfessionalProfiles(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]gen.ProfessionalProfile, error) {
+	if limit <= 0 || limit > MaxPageSize {
+		limit = DefaultPageSize
+	}
+
+	rows, err := s.read.ListAllProfessionalProfiles(ctx, gen.ListAllProfessionalProfilesParams{
+		TenantID:   tenantID,
+		PageLimit:  limit,
+		PageOffset: offset,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("listing all professional profiles: %w", err)
+	}
+
+	return rows, nil
+}
+
 // Reserved for future features.
 func (s *Store) updateProfessionalProfile(ctx context.Context, p gen.UpdateProfessionalProfileParams) (gen.ProfessionalProfile, error) {
 	row, err := s.write.UpdateProfessionalProfile(ctx, p)
@@ -186,6 +204,17 @@ func (s *Store) updateProfessionalProfile(ctx context.Context, p gen.UpdateProfe
 func (s *Store) deleteProfessionalProfile(ctx context.Context, id, tenantID pgtype.UUID) error {
 	if err := s.write.DeleteProfessionalProfile(ctx, gen.DeleteProfessionalProfileParams{ID: id, TenantID: tenantID}); err != nil {
 		return fmt.Errorf("deleting professional profile: %w", err)
+	}
+
+	return nil
+}
+
+// setProfessionalProfileVerified sets the verified flag on a profile.
+func (s *Store) setProfessionalProfileVerified(ctx context.Context, id, tenantID pgtype.UUID, verified bool) error {
+	if err := s.write.SetProfessionalProfileVerified(ctx, gen.SetProfessionalProfileVerifiedParams{
+		ID: id, TenantID: tenantID, Verified: verified,
+	}); err != nil {
+		return fmt.Errorf("setting professional profile verified: %w", err)
 	}
 
 	return nil
@@ -223,8 +252,11 @@ func (s *Store) removeProfessionalProfileMember(ctx context.Context, profileID, 
 }
 
 // Reserved for future features.
-func (s *Store) listProfessionalProfileMembers(ctx context.Context, profileID pgtype.UUID) ([]gen.ListProfessionalProfileMembersRow, error) {
-	rows, err := s.read.ListProfessionalProfileMembers(ctx, profileID)
+func (s *Store) listProfessionalProfileMembers(ctx context.Context, profileID, tenantID pgtype.UUID) ([]gen.ListProfessionalProfileMembersRow, error) {
+	rows, err := s.read.ListProfessionalProfileMembers(ctx, gen.ListProfessionalProfileMembersParams{
+		ProfileID: profileID,
+		TenantID:  tenantID,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("listing professional profile members: %w", err)
 	}
@@ -475,6 +507,16 @@ func (s *Store) deleteProfessionalVerifier(ctx context.Context, id, tenantID pgt
 	}
 
 	return nil
+}
+
+// getProfessionalVerifierByID returns a verifier by ID, scoped to tenant.
+func (s *Store) getProfessionalVerifierByID(ctx context.Context, id, tenantID pgtype.UUID) (gen.ProfessionalVerifier, error) {
+	row, err := s.read.GetProfessionalVerifierByID(ctx, gen.GetProfessionalVerifierByIDParams{ID: id, TenantID: tenantID})
+	if err != nil {
+		return gen.ProfessionalVerifier{}, fmt.Errorf("getting professional verifier by ID: %w", err)
+	}
+
+	return row, nil
 }
 
 // ---------------------------------------------------------------------------

@@ -186,6 +186,13 @@ func (h *Handlers) GetUserConsents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// §6.2: a nil slice serializes as JSON null, but the API contract
+	// requires an array. Initialize to an empty slice so "no consents"
+	// returns [] not null.
+	if records == nil {
+		records = []gen.ConsentRecord{}
+	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": records})
 }
 
@@ -226,8 +233,12 @@ func (h *Handlers) RevokeConsent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Use current policy version — in production this would come from config.
+	// Read the current policy version from system_settings (Rule 3: no
+	// hardcoded config). Falls back to "1.0" when unset.
 	policyVersion := "1.0"
+	if h.Service != nil && h.Service.settings != nil {
+		policyVersion = h.Service.settings.GetStringOr(r.Context(), tenantID, "gdpr.policy_version", "1.0")
+	}
 
 	err := h.Service.RevokeConsent(r.Context(), tenantID, user.UserID, consentType, policyVersion)
 	if err != nil {

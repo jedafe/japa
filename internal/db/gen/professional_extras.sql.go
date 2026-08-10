@@ -258,6 +258,33 @@ func (q *Queries) GetProfessionalRelocationByID(ctx context.Context, arg GetProf
 	return i, err
 }
 
+const getProfessionalVerifierByID = `-- name: GetProfessionalVerifierByID :one
+SELECT id, tenant_id, profile_id, user_id, role, status, created_at, updated_at
+FROM professional_verifiers
+WHERE id = $1 AND tenant_id = $2
+`
+
+type GetProfessionalVerifierByIDParams struct {
+	ID       pgtype.UUID `json:"id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+func (q *Queries) GetProfessionalVerifierByID(ctx context.Context, arg GetProfessionalVerifierByIDParams) (ProfessionalVerifier, error) {
+	row := q.db.QueryRow(ctx, getProfessionalVerifierByID, arg.ID, arg.TenantID)
+	var i ProfessionalVerifier
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.ProfileID,
+		&i.UserID,
+		&i.Role,
+		&i.Status,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const listProfessionalDocumentsByProfile = `-- name: ListProfessionalDocumentsByProfile :many
 SELECT id, tenant_id, profile_id, title, document_type, description, file_url, verified, created_at, updated_at
 FROM professional_documents

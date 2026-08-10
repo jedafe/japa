@@ -52,6 +52,7 @@ type SettingsProvider interface {
 	GetSettingBool(ctx context.Context, tenantID pgtype.UUID, key string) (bool, error)
 	GetSettingInt(ctx context.Context, tenantID pgtype.UUID, key string) (int, error)
 	GetIntOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback int) int
+	GetStringOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback string) string
 }
 
 // NewService creates a Service backed by the given database pool.
@@ -173,9 +174,10 @@ var validConsentTypes = []string{
 func (s *Service) GetConsentConfig(ctx context.Context, tenantID pgtype.UUID) (*ConsentConfigResponse, error) {
 	policyVersion := "1.0"
 	if s.settings != nil {
-		if v, err := s.settings.GetSetting(ctx, tenantID, "gdpr.policy_version"); err == nil && v != "" {
-			policyVersion = v
-		}
+		// Use GetStringOr — system_settings values are stored as JSON-encoded
+		// strings (e.g. '"1.0"'), so GetSetting returns the raw quoted value.
+		// GetStringOr unquotes it to '1.0'. Ref: §6.2 nil/quote handling.
+		policyVersion = s.settings.GetStringOr(ctx, tenantID, "gdpr.policy_version", "1.0")
 	}
 
 	return &ConsentConfigResponse{
@@ -265,12 +267,12 @@ func (s *Service) CancelDataExportRequest(ctx context.Context, userID, tenantID 
 	if !found {
 		return gen.DataExportRequest{}, errors.New("no data export request to cancel")
 	}
-	if request.Status != "pending" && request.Status != "processing" {
+	if request.Status != string(ExportPending) && request.Status != string(ExportProcessing) {
 		return gen.DataExportRequest{}, fmt.Errorf("cannot cancel export with status: %s", request.Status)
 	}
 
 	updated, err := s.store.updateDataExportRequestStatus(ctx, gen.UpdateDataExportRequestStatusParams{
-		Status:      "cancelled",
+		Status:      string(ExportCancelled),
 		DownloadUrl: nil,
 		ExpiresAt:   pgtype.Timestamptz{},
 		CompletedAt: pgtype.Timestamptz{},
@@ -988,6 +990,15 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 			return fmt.Errorf("reassigning account deletion request user: %w", err)
 		}
 
+		// ai_personas.created_by is NOT NULL; reassign to placeholder so persona
+		// config rows survive when the admin who created them is erased (BUG-016,
+		// ADR-068 compliance).
+		if err := q.ReassignAIPersonaCreatedBy(ctx, gen.ReassignAIPersonaCreatedByParams{
+			UserID: userID, TenantID: tenantID, TargetUserID: deletedUserPlaceholder,
+		}); err != nil {
+			return fmt.Errorf("reassigning ai_personas created_by: %w", err)
+		}
+
 		// audit_logs must be preserved for compliance; repoint actor/impersonated refs to the placeholder "Deleted User".
 		if err := q.AnonymizeAuditLogActor(ctx, gen.AnonymizeAuditLogActorParams{
 			UserID: userID, TenantID: tenantID, TargetUserID: deletedUserPlaceholder,
@@ -1276,6 +1287,9 @@ type UserDataExport struct {
 	MentorSessions       []map[string]interface{} `json:"mentor_sessions"`        // §102 ADR-110
 	MentorReviews        []map[string]interface{} `json:"mentor_reviews"`         // §102 ADR-110
 	ProfessionalProfiles []map[string]interface{} `json:"professional_profiles"`
+	ProfessionalRelocations []map[string]interface{} `json:"professional_relocations"` // §33 child table
+	ProfessionalDocuments   []map[string]interface{} `json:"professional_documents"`   // §33 child table
+	ProfessionalVerifiers   []map[string]interface{} `json:"professional_verifiers"`   // §33 child table
 	Organizations        []map[string]interface{} `json:"organizations"`
 	ApiKeys              []map[string]interface{} `json:"api_keys"`
 	UserPreferences      []map[string]interface{} `json:"user_preferences"`
@@ -1612,6 +1626,25 @@ func (s *Service) collectUserData(ctx context.Context, userID, tenantID pgtype.U
 		export.ProfessionalProfiles = rows
 	} else {
 		slog.Warn("failed to collect professional_profiles for export", "user_id", userID.String(), "error", err)
+	}
+
+	// Professional profile child tables (relocations, documents, verifiers).
+	if rows, err := s.store.gdprExportUserProfessionalRelocations(ctx, userID, tenantID); err == nil {
+		export.ProfessionalRelocations = rows
+	} else {
+		slog.Warn("failed to collect professional_relocations for export", "user_id", userID.String(), "error", err)
+	}
+
+	if rows, err := s.store.gdprExportUserProfessionalDocuments(ctx, userID, tenantID); err == nil {
+		export.ProfessionalDocuments = rows
+	} else {
+		slog.Warn("failed to collect professional_documents for export", "user_id", userID.String(), "error", err)
+	}
+
+	if rows, err := s.store.gdprExportUserProfessionalVerifiers(ctx, userID, tenantID); err == nil {
+		export.ProfessionalVerifiers = rows
+	} else {
+		slog.Warn("failed to collect professional_verifiers for export", "user_id", userID.String(), "error", err)
 	}
 
 	// Organizations owned by the user.

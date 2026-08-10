@@ -208,6 +208,7 @@
 				{ path: "/ai", label: t("nav.ai", "AI Tools"), icon: Bot, permission: "admin.ai.view" },
 				{ path: "/personas", label: t("nav.personas", "AI Personas"), icon: Bot, permission: "persona.view" },
 				{ path: "/studio", label: t("nav.studio", "Content Studio"), icon: Wand, permission: "studio.view" },
+				{ path: "/participation", label: t("nav.participation", "Participation Queue"), icon: Bot, permission: "participation.view" },
 				{ path: "/rag", label: t("nav.rag", "RAG Index"), icon: Brain, permission: "ai.rag.manage" },
 				{ path: "/bots", label: t("nav.bots", "Bots"), icon: Bot, permission: "bots.admin" },
 				{ path: "/webhooks", label: t("nav.webhooks", "Webhooks"), icon: Webhook, permission: "webhooks.manage" },

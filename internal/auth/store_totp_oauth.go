@@ -220,7 +220,7 @@ func (s *OAuthStoreImpl) LinkOAuthAccount(ctx context.Context, tenantID, userID 
 // Delegates to the auth DBStore query pattern.
 func (s *OAuthStoreImpl) GetUserByEmail(ctx context.Context, tenantID pgtype.UUID, email string) (*User, error) {
 	query := `
-		SELECT id, tenant_id, email, password_hash, username, profile_type, status, email_verified_at
+		SELECT id, tenant_id, email, password_hash, username, profile_type, status, email_verified_at, is_bot
 		FROM users
 		WHERE tenant_id = $1 AND email = $2
 		LIMIT 1
@@ -229,7 +229,7 @@ func (s *OAuthStoreImpl) GetUserByEmail(ctx context.Context, tenantID pgtype.UUI
 	var u User
 
 	err := s.db.Reader.QueryRow(ctx, query, tenantID, email).Scan(
-		&u.ID, &u.TenantID, &u.Email, &u.PasswordHash, &u.Username, &u.ProfileType, &u.Status, &u.EmailVerifiedAt,
+		&u.ID, &u.TenantID, &u.Email, &u.PasswordHash, &u.Username, &u.ProfileType, &u.Status, &u.EmailVerifiedAt, &u.IsBot,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("querying user by email: %w", err)

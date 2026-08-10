@@ -218,6 +218,11 @@ func (s *Service) ListProfessionalProfilesByType(ctx context.Context, typeID, te
 	return s.store.listProfessionalProfilesByType(ctx, typeID, tenantID, limit, offset)
 }
 
+// ListAllProfessionalProfiles returns all profiles in a tenant (admin scope).
+func (s *Service) ListAllProfessionalProfiles(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]gen.ProfessionalProfile, error) {
+	return s.store.listAllProfessionalProfiles(ctx, tenantID, limit, offset)
+}
+
 // UpdateProfessionalProfileInput holds parameters for updating a profile.
 type UpdateProfessionalProfileInput struct {
 	Name             string
@@ -329,9 +334,9 @@ func (s *Service) RemoveMember(ctx context.Context, profileID, userID pgtype.UUI
 	return s.store.removeProfessionalProfileMember(ctx, profileID, userID)
 }
 
-// ListMembers returns all members of the profile.
-func (s *Service) ListMembers(ctx context.Context, profileID pgtype.UUID) ([]gen.ListProfessionalProfileMembersRow, error) {
-	return s.store.listProfessionalProfileMembers(ctx, profileID)
+// ListMembers returns all members of the profile, scoped to the given tenant.
+func (s *Service) ListMembers(ctx context.Context, profileID, tenantID pgtype.UUID) ([]gen.ListProfessionalProfileMembersRow, error) {
+	return s.store.listProfessionalProfileMembers(ctx, profileID, tenantID)
 }
 
 // UpdateMemberRoleInput holds parameters for updating a member role.
@@ -773,17 +778,18 @@ func (s *Service) GetDocumentProfileID(ctx context.Context, documentID, tenantID
 }
 
 // GetVerifierProfileID returns the profile_id that owns the given verifier.
-// Uses raw SQL because verifiers have no dedicated GetByID sqlc query.
 func (s *Service) GetVerifierProfileID(ctx context.Context, verifierID, tenantID pgtype.UUID) (pgtype.UUID, error) {
-	query := `SELECT profile_id FROM professional_verifiers WHERE id = $1 AND tenant_id = $2`
-
-	var profileID pgtype.UUID
-
-	if err := s.db.Reader.QueryRow(ctx, query, verifierID, tenantID).Scan(&profileID); err != nil {
+	verifier, err := s.store.getProfessionalVerifierByID(ctx, verifierID, tenantID)
+	if err != nil {
 		return pgtype.UUID{}, fmt.Errorf("getting verifier profile ID: %w", err)
 	}
 
-	return profileID, nil
+	return verifier.ProfileID, nil
+}
+
+// SetProfileVerified sets the verified flag on a professional profile.
+func (s *Service) SetProfileVerified(ctx context.Context, id, tenantID pgtype.UUID, verified bool) error {
+	return s.store.setProfessionalProfileVerified(ctx, id, tenantID, verified)
 }
 
 // IsAdminMember returns true if the user has an admin role in the profile.

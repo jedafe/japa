@@ -1036,6 +1036,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Participation Orchestration Engine (Section 76, ADR-077).
 	participationService := participation.NewService(database, settingsService, vkClient.Redis())
 	participationService.SetEnqueuer(taskEnqueuer)
+	participationService.SetEventTracker(analyticsService) // ADR-068 §4: synthetic event tracking
+	personas.SetHighStakesGate(participation.IsHighStakesContent) // BUG-015: single canonical gate
 	worker.RegisterPersonaProcessor(participationService)
 
 	// Mentorship subsystem (Section 35, §102 ADR-110).
@@ -1140,6 +1142,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	publicapi.SetSiteURL(cfg.SiteURL)
 	publicAPIStore := publicapi.NewStore(database.Writer)
 	publicAPIService := publicapi.NewService(publicAPIStore)
+	publicAPIService.SetKeyCountReader(settingsService) // api.keys.max_per_user (Rule 3)
 	publicAPIHandlers := publicapi.NewHandlers(publicAPIService)
 	publicAPIHandlers.SetQueries(gen.New(database.Reader))
 
@@ -4853,16 +4856,30 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.Post("/security/{id}/resolve", analyticsHandlers.ResolveSecurityScanResult)
 
 			// API Keys (moved from /admin/api-keys)
-			r.Get("/api-keys", publicAPIHandlers.ListAllKeys)
-			r.Post("/api-keys", controlHandlers.CreateAPIKey)
-			r.Post("/api-keys/batch-delete", controlHandlers.DeleteAPIKeysBatch)
-			r.Get("/api-keys/{id}", controlHandlers.GetAPIKey)
-			r.Patch("/api-keys/{id}", controlHandlers.UpdateAPIKey)
-			r.Post("/api-keys/{id}/revoke", publicAPIHandlers.RevokeKey)
-			r.Delete("/api-keys/{id}", controlHandlers.DeleteAPIKey)
-			r.Post("/api-keys/{id}/suspend", publicAPIHandlers.SuspendKey)
-			r.Delete("/api-keys/{id}/suspend", publicAPIHandlers.UnsuspendKey)
-			r.Get("/api-keys/analytics", controlHandlers.GetAPIKeyAnalytics)
+			// Granular RBAC per Section 47 lines 233–238 (PUB-007):
+			//   api.keys.view.all     — list/get any key
+			//   api.keys.manage       — create/suspend/revoke/delete/update tier
+			//   api.keys.analytics.view — usage analytics
+			r.With(rbac.RequirePermission(rbacResolver, "api.keys.view.all")).
+				Get("/api-keys", publicAPIHandlers.ListAllKeys)
+			r.With(rbac.RequirePermission(rbacResolver, "api.keys.manage")).
+				Post("/api-keys", controlHandlers.CreateAPIKey)
+			r.With(rbac.RequirePermission(rbacResolver, "api.keys.manage")).
+				Post("/api-keys/batch-delete", controlHandlers.DeleteAPIKeysBatch)
+			r.With(rbac.RequirePermission(rbacResolver, "api.keys.view.all")).
+				Get("/api-keys/{id}", controlHandlers.GetAPIKey)
+			r.With(rbac.RequirePermission(rbacResolver, "api.keys.manage")).
+				Patch("/api-keys/{id}", controlHandlers.UpdateAPIKey)
+			r.With(rbac.RequirePermission(rbacResolver, "api.keys.manage")).
+				Post("/api-keys/{id}/revoke", publicAPIHandlers.RevokeKey)
+			r.With(rbac.RequirePermission(rbacResolver, "api.keys.manage")).
+				Delete("/api-keys/{id}", controlHandlers.DeleteAPIKey)
+			r.With(rbac.RequirePermission(rbacResolver, "api.keys.manage")).
+				Post("/api-keys/{id}/suspend", publicAPIHandlers.SuspendKey)
+			r.With(rbac.RequirePermission(rbacResolver, "api.keys.manage")).
+				Delete("/api-keys/{id}/suspend", publicAPIHandlers.UnsuspendKey)
+			r.With(rbac.RequirePermission(rbacResolver, "api.keys.analytics.view")).
+				Get("/api-keys/analytics", controlHandlers.GetAPIKeyAnalytics)
 
 			// AI Budget
 			r.Get("/ai-budget", controlHandlers.GetAIBudget)

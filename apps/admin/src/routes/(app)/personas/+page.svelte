@@ -11,22 +11,54 @@
 	import { Bot, Plus, Trash2, Activity, Pencil } from 'lucide-svelte';
 	import { api } from '$lib/api';
 
+	// Persona type matches the backend PersonaDetail / PersonaListItem DTOs
+	// (internal/personas/service.go). Ref: §68, ADR-068.
 	type Persona = {
 		id: string;
 		user_id: string;
 		profile_id: string;
-		disclosure_mode: string;
-		autonomy_mode: string;
+		disclosure_mode: string; // 'disclosed' | 'undisclosed' (§68 schema CHECK)
+		autonomy_mode: string;   // 'queued' | 'autonomous' (§68 schema CHECK)
 		voice_prompt: string | null;
-		status: string;
+		activity_policy: Record<string, unknown>;
+		status: string;          // 'active' | 'paused' | 'retired' (§68 schema CHECK)
 		created_at: string;
 		updated_at: string;
+		backing_username?: string;
+		profile_name?: string;
 	};
 
+	// PersonaInput matches the backend PersonaInput struct. The backend
+	// requires name and slug (service.go validates both). Ref: §68.
 	type PersonaInput = {
+		name: string;
+		slug: string;
+		tagline?: string;
+		voice_prompt?: string;
 		disclosure_mode: string;
 		autonomy_mode: string;
+		activity_policy?: ActivityPolicy;
+	};
+
+	// ActivityPolicy matches the backend ActivityPolicy struct (§68).
+	type ActivityPolicy = {
+		actions_per_day: number;
+		action_budget: Record<string, number>;
+		eligible_content_types: string[];
+		eligible_spaces: string[];
+		min_content_age_hours: number;
+		avoid_own_content: boolean;
+		active_hours_utc: [number, number];
+	};
+
+	// UpdateInput matches the backend UpdatePersonaInput. Status is included
+	// so admins can pause/retire personas from the UI.
+	type UpdateInput = {
+		disclosure_mode?: string;
+		autonomy_mode?: string;
 		voice_prompt?: string;
+		status?: string;
+		activity_policy?: ActivityPolicy;
 	};
 
 	const canManage = $derived(hasPermission('persona.manage'));
@@ -42,12 +74,37 @@
 	let saving = $state(false);
 	let message = $state('');
 	let messageType = $state('');
-	let newPersonas = $state<PersonaInput[]>([{ disclosure_mode: 'always', autonomy_mode: 'supervised', voice_prompt: '' }]);
+
+	function defaultPolicy(): ActivityPolicy {
+		return {
+			actions_per_day: 10,
+			action_budget: { comment: 4, forum_answer: 2, forum_question: 1, follow: 5, react: 20, bookmark: 10 },
+			eligible_content_types: ['blog_post', 'guide', 'discussion', 'forum_thread'],
+			eligible_spaces: [],
+			min_content_age_hours: 1,
+			avoid_own_content: true,
+			active_hours_utc: [8, 22]
+		};
+	}
+
+	function newPersonaInput(): PersonaInput {
+		return {
+			name: '',
+			slug: '',
+			tagline: '',
+			voice_prompt: '',
+			disclosure_mode: 'disclosed',
+			autonomy_mode: 'queued',
+			activity_policy: defaultPolicy()
+		};
+	}
+
+	let newPersonas = $state<PersonaInput[]>([newPersonaInput()]);
 
 	// Edit SlideOver
 	let editSlideOverOpen = $state(false);
 	let editingPersona = $state<Persona | null>(null);
-	let editForm = $state<PersonaInput>({ disclosure_mode: 'always', autonomy_mode: 'supervised', voice_prompt: '' });
+	let editForm = $state<UpdateInput>({});
 	let savingEdit = $state(false);
 
 	async function load() {
@@ -86,10 +143,10 @@
 		saving = true;
 		message = '';
 		try {
-			const inputs = newPersonas.filter(p => p.disclosure_mode && p.autonomy_mode);
+			const inputs = newPersonas.filter(p => p.name && p.slug);
 			if (inputs.length === 0) {
 				messageType = 'error';
-				message = t('personas.empty_batch', 'At least one persona is required');
+				message = t('personas.empty_batch', 'At least one persona with name and slug is required');
 				saving = false;
 				return;
 			}
@@ -98,7 +155,7 @@
 				messageType = 'success';
 				message = t('personas.create_success', '{count} persona(s) provisioned.').replace('{count}', String(inputs.length));
 				createSlideOverOpen = false;
-				newPersonas = [{ disclosure_mode: 'always', autonomy_mode: 'supervised', voice_prompt: '' }];
+				newPersonas = [newPersonaInput()];
 				load();
 			} else {
 				messageType = 'error';
@@ -113,7 +170,7 @@
 	}
 
 	function addPersonaRow() {
-		newPersonas = [...newPersonas, { disclosure_mode: 'always', autonomy_mode: 'supervised', voice_prompt: '' }];
+		newPersonas = [...newPersonas, newPersonaInput()];
 	}
 
 	function removePersonaRow(idx: number) {
@@ -125,7 +182,8 @@
 		editForm = {
 			disclosure_mode: persona.disclosure_mode,
 			autonomy_mode: persona.autonomy_mode,
-			voice_prompt: persona.voice_prompt ?? ''
+			voice_prompt: persona.voice_prompt ?? '',
+			status: persona.status
 		};
 		editSlideOverOpen = true;
 	}
@@ -135,7 +193,10 @@
 		savingEdit = true;
 		message = '';
 		try {
-			const result = await api(`/admin/personas/${editingPersona.id}`, { method: 'PATCH', body: editForm });
+			const body: UpdateInput = { ...editForm };
+			// Don't send empty voice_prompt as an update
+			if (body.voice_prompt === '') delete body.voice_prompt;
+			const result = await api(`/admin/personas/${editingPersona.id}`, { method: 'PATCH', body });
 			if (result.ok) {
 				messageType = 'success';
 				message = t('personas.update_success', 'Persona updated.');
@@ -156,10 +217,16 @@
 
 	const columns = $derived([
 		{
-			key: 'id',
-			label: t('personas.id', 'ID'),
+			key: 'profile_name',
+			label: t('personas.name', 'Name'),
 			sortable: true,
-			render: (value: string) => `<span class="font-mono text-xs text-foreground">${value?.slice(0, 8) ?? '—'}…</span>`
+			render: (value: string) => `<span class="text-foreground font-medium">${value ?? '—'}</span>`
+		},
+		{
+			key: 'backing_username',
+			label: t('personas.username', 'Username'),
+			sortable: true,
+			render: (value: string) => `<span class="font-mono text-xs text-muted-foreground">${value ?? '—'}</span>`
 		},
 		{
 			key: 'disclosure_mode',
@@ -261,6 +328,41 @@
 					</div>
 					<div class="grid gap-3 sm:grid-cols-2">
 						<div>
+							<label for={`persona-name-${idx}`} class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('personas.name_label', 'Name')} *</label>
+							<input
+								id={`persona-name-${idx}`}
+								type="text"
+								class="w-full rounded-md border px-3 py-1.5 text-sm"
+								style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+								bind:value={persona.name}
+								placeholder={t('personas.name_placeholder', 'e.g. Adaora Okafor')}
+							/>
+						</div>
+						<div>
+							<label for={`persona-slug-${idx}`} class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('personas.slug_label', 'Slug')} *</label>
+							<input
+								id={`persona-slug-${idx}`}
+								type="text"
+								class="w-full rounded-md border px-3 py-1.5 text-sm"
+								style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+								bind:value={persona.slug}
+								placeholder={t('personas.slug_placeholder', 'e.g. adaora-okafor')}
+							/>
+						</div>
+					</div>
+					<div class="mt-2">
+						<label for={`persona-tagline-${idx}`} class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('personas.tagline', 'Tagline')}</label>
+						<input
+							id={`persona-tagline-${idx}`}
+							type="text"
+							class="w-full rounded-md border px-3 py-1.5 text-sm"
+							style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+							bind:value={persona.tagline}
+							placeholder={t('personas.tagline_placeholder', 'Short bio / expertise summary')}
+						/>
+					</div>
+					<div class="mt-2 grid gap-3 sm:grid-cols-2">
+						<div>
 							<label for={`persona-disclosure-${idx}`} class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('personas.disclosure', 'Disclosure Mode')}</label>
 							<select
 								id={`persona-disclosure-${idx}`}
@@ -268,9 +370,8 @@
 								style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
 								bind:value={persona.disclosure_mode}
 							>
-								<option value="always">{t('personas.disclosure_always', 'Always disclose')}</option>
-								<option value="never">{t('personas.disclosure_never', 'Never disclose')}</option>
-								<option value="on_ask">{t('personas.disclosure_on_ask', 'Disclose on ask')}</option>
+								<option value="disclosed">{t('personas.disclosure_disclosed', 'Disclosed')}</option>
+								<option value="undisclosed">{t('personas.disclosure_undisclosed', 'Undisclosed')}</option>
 							</select>
 						</div>
 						<div>
@@ -281,7 +382,7 @@
 								style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
 								bind:value={persona.autonomy_mode}
 							>
-								<option value="supervised">{t('personas.autonomy_supervised', 'Supervised')}</option>
+								<option value="queued">{t('personas.autonomy_queued', 'Queued (admin review)')}</option>
 								<option value="autonomous">{t('personas.autonomy_autonomous', 'Autonomous')}</option>
 							</select>
 						</div>
@@ -297,6 +398,34 @@
 							placeholder={t('personas.voice_prompt_placeholder', 'Describe the persona\'s voice and personality...')}
 						></textarea>
 					</div>
+					<details class="mt-2">
+						<summary class="cursor-pointer text-xs font-medium" style="color: var(--color-muted)">{t('personas.policy_details', 'Activity Policy')}</summary>
+						<div class="mt-2 grid gap-3 sm:grid-cols-2">
+							<div>
+								<label for={`persona-actions-${idx}`} class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('personas.actions_per_day', 'Actions per day')}</label>
+								<input
+									id={`persona-actions-${idx}`}
+									type="number"
+									min="1"
+									max="100"
+									class="w-full rounded-md border px-3 py-1.5 text-sm"
+									style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+									bind:value={persona.activity_policy!.actions_per_day}
+								/>
+							</div>
+							<div>
+								<label for={`persona-min-age-${idx}`} class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('personas.min_content_age', 'Min content age (hours)')}</label>
+								<input
+									id={`persona-min-age-${idx}`}
+									type="number"
+									min="0"
+									class="w-full rounded-md border px-3 py-1.5 text-sm"
+									style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+									bind:value={persona.activity_policy!.min_content_age_hours}
+								/>
+							</div>
+						</div>
+					</details>
 				</div>
 			{/each}
 			<Button variant="outline" onclick={addPersonaRow}>
@@ -358,9 +487,8 @@
 						style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
 						bind:value={editForm.disclosure_mode}
 					>
-						<option value="always">{t('personas.disclosure_always', 'Always disclose')}</option>
-						<option value="never">{t('personas.disclosure_never', 'Never disclose')}</option>
-						<option value="on_ask">{t('personas.disclosure_on_ask', 'Disclose on ask')}</option>
+						<option value="disclosed">{t('personas.disclosure_disclosed', 'Disclosed')}</option>
+						<option value="undisclosed">{t('personas.disclosure_undisclosed', 'Undisclosed')}</option>
 					</select>
 				</div>
 				<div>
@@ -371,10 +499,23 @@
 						style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
 						bind:value={editForm.autonomy_mode}
 					>
-						<option value="supervised">{t('personas.autonomy_supervised', 'Supervised')}</option>
+						<option value="queued">{t('personas.autonomy_queued', 'Queued (admin review)')}</option>
 						<option value="autonomous">{t('personas.autonomy_autonomous', 'Autonomous')}</option>
 					</select>
 				</div>
+			</div>
+			<div>
+				<label for="edit-persona-status" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('personas.status', 'Status')}</label>
+				<select
+					id="edit-persona-status"
+					class="w-full rounded-md border px-3 py-1.5 text-sm"
+					style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+					bind:value={editForm.status}
+				>
+					<option value="active">{t('personas.status_active', 'Active')}</option>
+					<option value="paused">{t('personas.status_paused', 'Paused')}</option>
+					<option value="retired">{t('personas.status_retired', 'Retired')}</option>
+				</select>
 			</div>
 			<div>
 				<label for="edit-persona-voice" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('personas.voice_prompt', 'Voice Prompt (optional)')}</label>

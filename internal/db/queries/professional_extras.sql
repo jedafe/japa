@@ -109,3 +109,8 @@ LIMIT @page_limit OFFSET @page_offset;
 -- name: DeleteProfessionalVerifier :exec
 DELETE FROM professional_verifiers
 WHERE id = @id AND tenant_id = @tenant_id;
+
+-- name: GetProfessionalVerifierByID :one
+SELECT id, tenant_id, profile_id, user_id, role, status, created_at, updated_at
+FROM professional_verifiers
+WHERE id = @id AND tenant_id = @tenant_id;
