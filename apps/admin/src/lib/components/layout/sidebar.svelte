@@ -115,6 +115,7 @@
 				{ path: "/moderation/alerts", label: t("nav.moderation_alerts", "Alerts"), icon: AlertTriangle, permission: "moderation.alerts.manage" },
 				{ path: "/spam", label: t("nav.spam", "Spam Management"), icon: AlertTriangle, permission: "spam.ip_block.manage" },
 			{ path: "/tickets", label: t("nav.tickets", "Support Tickets"), icon: Ticket, permission: "tickets.admin" },
+		{ path: "/ticket-types", label: t("nav.ticket_types", "Ticket Types"), icon: Tag, permission: "tickets.type.manage" },
 			{ path: "/reviews", label: t("nav.reviews", "Reviews"), icon: MessageCircle, permission: "reviews.moderate" }
 			]
 		},

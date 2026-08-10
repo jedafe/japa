@@ -357,11 +357,13 @@ SELECT DISTINCT ON (u.id)
        up.bio,
        up.cover_url,
        COALESCE(up.created_at, u.created_at) AS created_at,
+       COALESCE(ups.show_points_publicly, false) AS show_points_publicly,
        (SELECT COUNT(*)::int
           FROM follows f
          WHERE f.tenant_id = u.tenant_id AND f.follower_id = u.id) AS following_count
 FROM users u
 LEFT JOIN user_profiles up ON up.user_id = u.id AND up.tenant_id = u.tenant_id
+LEFT JOIN user_privacy_settings ups ON ups.user_id = u.id AND ups.tenant_id = u.tenant_id
 WHERE u.tenant_id = $1
   AND u.username = $2
   AND u.status = 'active'
@@ -374,19 +376,22 @@ type GetPublicProfileByUsernameParams struct {
 }
 
 type GetPublicProfileByUsernameRow struct {
-	UserID         pgtype.UUID        `json:"user_id"`
-	Username       string             `json:"username"`
-	ProfileType    string             `json:"profile_type"`
-	FollowerCount  int32              `json:"follower_count"`
-	DisplayName    *string            `json:"display_name"`
-	AvatarUrl      *string            `json:"avatar_url"`
-	Bio            *string            `json:"bio"`
-	CoverUrl       *string            `json:"cover_url"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	FollowingCount int32              `json:"following_count"`
+	UserID             pgtype.UUID        `json:"user_id"`
+	Username           string             `json:"username"`
+	ProfileType        string             `json:"profile_type"`
+	FollowerCount      int32              `json:"follower_count"`
+	DisplayName        *string            `json:"display_name"`
+	AvatarUrl          *string            `json:"avatar_url"`
+	Bio                *string            `json:"bio"`
+	CoverUrl           *string            `json:"cover_url"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	ShowPointsPublicly bool               `json:"show_points_publicly"`
+	FollowingCount     int32              `json:"following_count"`
 }
 
 // Public profile header for /u/[username]. NO PII (no email/status/last_login/groups).
+// Joins user_privacy_settings to surface show_points_publicly so the service
+// layer can conditionally include the user's Points balance (Section 28).
 func (q *Queries) GetPublicProfileByUsername(ctx context.Context, arg GetPublicProfileByUsernameParams) (GetPublicProfileByUsernameRow, error) {
 	row := q.db.QueryRow(ctx, getPublicProfileByUsername, arg.TenantID, arg.Username)
 	var i GetPublicProfileByUsernameRow
@@ -400,6 +405,7 @@ func (q *Queries) GetPublicProfileByUsername(ctx context.Context, arg GetPublicP
 		&i.Bio,
 		&i.CoverUrl,
 		&i.CreatedAt,
+		&i.ShowPointsPublicly,
 		&i.FollowingCount,
 	)
 	return i, err
@@ -1018,7 +1024,7 @@ func (q *Queries) GetUserPreferences(ctx context.Context, arg GetUserPreferences
 
 const getUserPrivacySettings = `-- name: GetUserPrivacySettings :one
 SELECT user_id, tenant_id, dm_privacy, profile_visibility, search_indexable,
-       show_online_status, show_activity, created_at, updated_at
+       show_online_status, show_activity, show_points_publicly, created_at, updated_at
 FROM user_privacy_settings
 WHERE tenant_id = $1 AND user_id = $2
 `
@@ -1029,15 +1035,16 @@ type GetUserPrivacySettingsParams struct {
 }
 
 type GetUserPrivacySettingsRow struct {
-	UserID            pgtype.UUID        `json:"user_id"`
-	TenantID          pgtype.UUID        `json:"tenant_id"`
-	DmPrivacy         string             `json:"dm_privacy"`
-	ProfileVisibility string             `json:"profile_visibility"`
-	SearchIndexable   bool               `json:"search_indexable"`
-	ShowOnlineStatus  bool               `json:"show_online_status"`
-	ShowActivity      bool               `json:"show_activity"`
-	CreatedAt         pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+	UserID             pgtype.UUID        `json:"user_id"`
+	TenantID           pgtype.UUID        `json:"tenant_id"`
+	DmPrivacy          string             `json:"dm_privacy"`
+	ProfileVisibility  string             `json:"profile_visibility"`
+	SearchIndexable    bool               `json:"search_indexable"`
+	ShowOnlineStatus   bool               `json:"show_online_status"`
+	ShowActivity       bool               `json:"show_activity"`
+	ShowPointsPublicly bool               `json:"show_points_publicly"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
 }
 
 // Tenant-scoped per Section 04 (BUG-009).
@@ -1052,6 +1059,7 @@ func (q *Queries) GetUserPrivacySettings(ctx context.Context, arg GetUserPrivacy
 		&i.SearchIndexable,
 		&i.ShowOnlineStatus,
 		&i.ShowActivity,
+		&i.ShowPointsPublicly,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -1887,25 +1895,27 @@ func (q *Queries) UpsertUserPreferences(ctx context.Context, arg UpsertUserPrefe
 }
 
 const upsertUserPrivacySettings = `-- name: UpsertUserPrivacySettings :exec
-INSERT INTO user_privacy_settings (tenant_id, user_id, dm_privacy, profile_visibility, search_indexable, show_online_status, show_activity)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
+INSERT INTO user_privacy_settings (tenant_id, user_id, dm_privacy, profile_visibility, search_indexable, show_online_status, show_activity, show_points_publicly)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 ON CONFLICT (tenant_id, user_id) DO UPDATE SET
     dm_privacy = EXCLUDED.dm_privacy,
     profile_visibility = EXCLUDED.profile_visibility,
     search_indexable = EXCLUDED.search_indexable,
     show_online_status = EXCLUDED.show_online_status,
     show_activity = EXCLUDED.show_activity,
+    show_points_publicly = EXCLUDED.show_points_publicly,
     updated_at = now()
 `
 
 type UpsertUserPrivacySettingsParams struct {
-	TenantID          pgtype.UUID `json:"tenant_id"`
-	UserID            pgtype.UUID `json:"user_id"`
-	DmPrivacy         string      `json:"dm_privacy"`
-	ProfileVisibility string      `json:"profile_visibility"`
-	SearchIndexable   bool        `json:"search_indexable"`
-	ShowOnlineStatus  bool        `json:"show_online_status"`
-	ShowActivity      bool        `json:"show_activity"`
+	TenantID           pgtype.UUID `json:"tenant_id"`
+	UserID             pgtype.UUID `json:"user_id"`
+	DmPrivacy          string      `json:"dm_privacy"`
+	ProfileVisibility  string      `json:"profile_visibility"`
+	SearchIndexable    bool        `json:"search_indexable"`
+	ShowOnlineStatus   bool        `json:"show_online_status"`
+	ShowActivity       bool        `json:"show_activity"`
+	ShowPointsPublicly bool        `json:"show_points_publicly"`
 }
 
 // Tenant-scoped per Section 04 (BUG-009).
@@ -1918,6 +1928,7 @@ func (q *Queries) UpsertUserPrivacySettings(ctx context.Context, arg UpsertUserP
 		arg.SearchIndexable,
 		arg.ShowOnlineStatus,
 		arg.ShowActivity,
+		arg.ShowPointsPublicly,
 	)
 	return err
 }

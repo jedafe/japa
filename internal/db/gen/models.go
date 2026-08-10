@@ -3538,15 +3538,16 @@ type UserPreference struct {
 }
 
 type UserPrivacySetting struct {
-	UserID            pgtype.UUID        `json:"user_id"`
-	DmPrivacy         string             `json:"dm_privacy"`
-	ProfileVisibility string             `json:"profile_visibility"`
-	SearchIndexable   bool               `json:"search_indexable"`
-	ShowOnlineStatus  bool               `json:"show_online_status"`
-	ShowActivity      bool               `json:"show_activity"`
-	CreatedAt         pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
-	TenantID          pgtype.UUID        `json:"tenant_id"`
+	UserID             pgtype.UUID        `json:"user_id"`
+	DmPrivacy          string             `json:"dm_privacy"`
+	ProfileVisibility  string             `json:"profile_visibility"`
+	SearchIndexable    bool               `json:"search_indexable"`
+	ShowOnlineStatus   bool               `json:"show_online_status"`
+	ShowActivity       bool               `json:"show_activity"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+	TenantID           pgtype.UUID        `json:"tenant_id"`
+	ShowPointsPublicly bool               `json:"show_points_publicly"`
 }
 
 type UserProfile struct {

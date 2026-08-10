@@ -168,6 +168,9 @@ func (h *Handlers) GetBalance(w http.ResponseWriter, r *http.Request) {
 }
 
 // GetPointsBalance handles GET /api/v1/me/wallet/points.
+// Returns the paginated points ledger per Section 28 (BUG-010 — previously
+// returned only the balance number). The balance is included as a top-level
+// field so clients that only need the number can avoid a second call.
 func (h *Handlers) GetPointsBalance(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
 	if !ok {
@@ -185,10 +188,28 @@ func (h *Handlers) GetPointsBalance(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]int64{"points": points}})
+	lt := LedgerTypePoints
+	limit := parsePageSize(r)
+	offset := parsePageSizeOffset(r)
+
+	entries, err := h.Service.ListLedgerEntries(r.Context(), tenantID, user.UserID, &lt, limit, offset)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data": map[string]any{
+			"balance": points,
+			"entries": entries,
+		},
+	})
 }
 
 // GetCreditsBalance handles GET /api/v1/me/wallet/credits.
+// Returns the paginated credits ledger per Section 28 (BUG-010 — previously
+// returned only the balance number). The balance is included as a top-level
+// field so clients that only need the number can avoid a second call.
 func (h *Handlers) GetCreditsBalance(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
 	if !ok {
@@ -206,7 +227,22 @@ func (h *Handlers) GetCreditsBalance(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]int64{"credits": credits}})
+	lt := LedgerTypeCredits
+	limit := parsePageSize(r)
+	offset := parsePageSizeOffset(r)
+
+	entries, err := h.Service.ListLedgerEntries(r.Context(), tenantID, user.UserID, &lt, limit, offset)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data": map[string]any{
+			"balance": credits,
+			"entries": entries,
+		},
+	})
 }
 
 // GetLedger handles GET /api/v1/wallet/ledger.
@@ -337,10 +373,19 @@ func (h *Handlers) GetMemberSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// min_purchase_credits from system_settings (default 100, Section 58).
+	// Exposed here so the frontend purchase page can use it instead of
+	// hardcoding the minimum (BUG-011, Rule 16).
+	minPurchaseCredits := 100
+	if h.Service.settings != nil {
+		minPurchaseCredits = h.Service.settings.GetIntOr(r.Context(), tenantID, "wallet.min_purchase_credits", 100)
+	}
+
 	writeJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
-			"settings":           settings,
-			"min_convert_points": minConvert,
+			"settings":             settings,
+			"min_convert_points":   minConvert,
+			"min_purchase_credits": minPurchaseCredits,
 		},
 	})
 }
@@ -455,6 +500,57 @@ func (h *Handlers) CreateOrUpdateRule(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusCreated, map[string]any{"data": rule})
+}
+
+// UpdateRule handles PATCH /api/v1/admin/wallet/rules/{id}.
+// Updates the rule identified by the {id} URL parameter (BUG-005 — previously
+// this route called CreateOrUpdateRule which ignored {id} and upserted by
+// activity_key, potentially updating the wrong rule).
+func (h *Handlers) UpdateRule(w http.ResponseWriter, r *http.Request) {
+	_, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	id, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid rule ID")
+		return
+	}
+
+	var input struct {
+		ActivityKey string  `json:"activity_key"`
+		PointValue  int32   `json:"point_value"`
+		IsEnabled   bool    `json:"is_enabled"`
+		CapPerDay   *int32  `json:"cap_per_day"`
+		CapPerWeek  *int32  `json:"cap_per_week"`
+		Description *string `json:"description"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
+
+	rule, err := h.Service.UpdateActivityRuleByID(r.Context(), id, tenantID, CreateOrUpdateActivityRuleInput{
+		ActivityKey: input.ActivityKey,
+		PointValue:  input.PointValue,
+		IsEnabled:   input.IsEnabled,
+		CapPerDay:   input.CapPerDay,
+		CapPerWeek:  input.CapPerWeek,
+		Description: input.Description,
+	})
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": rule})
 }
 
 // ToggleRule handles PATCH /api/v1/wallet/rules/{id}/toggle.

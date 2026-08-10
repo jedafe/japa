@@ -1,6 +1,6 @@
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGet, apiList } from '$lib/server/api';
-import type { Scholarship } from '$lib/types';
+import { apiContext, apiList } from '$lib/server/api';
+import type { Scholarship, SavedScholarship } from '$lib/types';
 
 /**
  * Scholarship Finder at /scholarships (Section 73, ADR-073).
@@ -13,7 +13,8 @@ import type { Scholarship } from '$lib/types';
  */
 const PAGE_SIZE = 20;
 
-export interface SavedScholarship {
+export interface SavedScholarshipView {
+	id: string;
 	guide_id: string;
 	title: string;
 	slug: string;
@@ -41,7 +42,7 @@ export const load: PageServerLoad = async (event) => {
 	if (level) params.set('level', level);
 	if (sort) params.set('sort', sort);
 	if (renewable) params.set('renewable', renewable);
-	params.set('limit', String(PAGE_SIZE));
+	params.set('page_size', String(PAGE_SIZE));
 	params.set('page_offset', String(page * PAGE_SIZE));
 
 	let scholarships: Scholarship[] = [];
@@ -60,17 +61,26 @@ export const load: PageServerLoad = async (event) => {
 	}
 
 	// Phase 33.04 — fetch the authenticated user's saved scholarships with
-	// their application status so the page can render the tracker. Best-effort:
+	// their application status so the page can render the tracker. The
+	// backend returns SavedScholarship rows with a nested `scholarship`
+	// object; we project a flat view for the tracker list. Best-effort:
 	// guests and any backend error degrade to an empty list.
-	let savedScholarships: SavedScholarship[] = [];
+	let savedScholarships: SavedScholarshipView[] = [];
 	let savedIds: string[] = [];
 	if (authed) {
 		try {
-			const res = await apiGet<{ scholarships: SavedScholarship[]; total: number }>(
-				ctx,
-				'/scholarships/saved?limit=100'
-			);
-			savedScholarships = res?.scholarships ?? [];
+			const res = await apiList<SavedScholarship>(ctx, '/scholarships/saved?page_size=100');
+			savedScholarships = (res.items ?? []).map((s) => ({
+				id: s.id,
+				guide_id: s.scholarship?.guide_id ?? '',
+				title: s.scholarship?.title ?? '',
+				slug: s.scholarship?.slug ?? '',
+				summary: s.scholarship?.summary,
+				status: s.status,
+				notes: s.notes,
+				remind_before_days: s.remind_before_days,
+				updated_at: s.updated_at
+			}));
 			savedIds = savedScholarships.map((s) => s.guide_id);
 		} catch {
 			savedScholarships = [];

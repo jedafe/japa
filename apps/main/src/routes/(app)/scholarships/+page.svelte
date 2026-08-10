@@ -3,17 +3,20 @@
 	import { untrack } from 'svelte';
 	import { page } from '$app/state';
 	import { GraduationCap, Lock, Bookmark, BookmarkCheck, Search, ClipboardList } from 'lucide-svelte';
-	import { EmptyState, LoadingSkeleton, PaginationControls, SearchInput, type SearchSuggestion } from '$lib/components/ui';
+	import { EmptyState, PaginationControls, SearchInput, type SearchSuggestion } from '$lib/components/ui';
 	import { api } from '$lib/api/client';
 	import { goto } from '$app/navigation';
 	import type { Scholarship } from '$lib/types';
 	import type { PageData } from './$types';
 
-	// SavedScholarship is exported from +page.server.ts and inferred by $types
-	// via PageData, but we redeclare the interface here for direct use in
-	// component state typing (SvelteKit's $types does not re-export
-	// non-inferred types).
+	// SavedScholarship is exported from +page.server.ts as
+	// SavedScholarshipView and inferred by $types via PageData, but we
+	// redeclare the interface here for direct use in component state
+	// typing (SvelteKit's $types does not re-export non-inferred types).
+	// This is the flat projection of the backend's nested SavedScholarship
+	// response (id + guide_id + title + status + notes).
 	interface SavedScholarship {
+		id: string;
 		guide_id: string;
 		title: string;
 		slug: string;
@@ -41,24 +44,25 @@
 	let country = $state(page.url.searchParams.get('country') ?? '');
 	let level = $state(page.url.searchParams.get('level') ?? '');
 	let renewable = $state(page.url.searchParams.get('renewable') ?? '');
-	let loading = $state(false);
 	let savedIds = $state<Set<string>>(untrack(() => new Set(data.savedIds ?? [])));
 
 	// Application status options — driven by the backend's saved-scholarship
-	// PATCH endpoint (Phase 33.04 application tracker).
+	// PATCH endpoint (Phase 33.04 application tracker). The values must
+	// match the backend CHECK constraint + IsValidStatus exactly:
+	// saved/researching/applied/accepted/rejected/withdrawn.
 	const statusOptions = $derived([
 		{ value: 'saved', label: t('scholarships.status_saved', 'Saved') },
-		{ value: 'preparing', label: t('scholarships.status_preparing', 'Preparing') },
-		{ value: 'submitted', label: t('scholarships.status_submitted', 'Submitted') },
-		{ value: 'interview', label: t('scholarships.status_interview', 'Interview') },
-		{ value: 'awarded', label: t('scholarships.status_awarded', 'Awarded') },
-		{ value: 'rejected', label: t('scholarships.status_rejected', 'Rejected') }
+		{ value: 'researching', label: t('scholarships.status_researching', 'Researching') },
+		{ value: 'applied', label: t('scholarships.status_applied', 'Applied') },
+		{ value: 'accepted', label: t('scholarships.status_accepted', 'Accepted') },
+		{ value: 'rejected', label: t('scholarships.status_rejected', 'Rejected') },
+		{ value: 'withdrawn', label: t('scholarships.status_withdrawn', 'Withdrawn') }
 	]);
 
 	const statusBadgeColor = (status: string): string => {
-		if (status === 'awarded') return 'bg-[var(--color-success)] text-white';
-		if (status === 'rejected') return 'bg-[var(--color-danger)] text-white';
-		if (status === 'submitted' || status === 'interview') return 'bg-[var(--color-info)] text-white';
+		if (status === 'accepted') return 'bg-[var(--color-success)] text-white';
+		if (status === 'rejected' || status === 'withdrawn') return 'bg-[var(--color-danger)] text-white';
+		if (status === 'applied' || status === 'researching') return 'bg-[var(--color-info)] text-white';
 		return 'bg-[var(--color-surface-subtle)] text-[var(--color-text-subtle)]';
 	};
 
@@ -86,23 +90,30 @@
 	async function toggleSave(s: Scholarship) {
 		if (!authed) return;
 		if (savedIds.has(s.guide_id)) {
-			await api.delete(`/scholarships/${s.guide_id}/save`);
+			const res = await api.delete(`/scholarships/${s.guide_id}/save`);
+			if (res.error) return;
 			savedIds.delete(s.guide_id);
 			savedIds = new Set(savedIds);
 		} else {
-			await api.post(`/scholarships/${s.guide_id}/save`);
+			const res = await api.post(`/scholarships/${s.guide_id}/save`);
+			if (res.error) return;
 			savedIds.add(s.guide_id);
 			savedIds = new Set(savedIds);
 		}
 	}
 
 	// Phase 33.04 — update the application status of a saved scholarship.
+	// Only mutates local state after the server confirms success; on error
+	// the select reverts to the previous value via Svelte's reactivity.
 	async function updateStatus(saved: SavedScholarship, status: string) {
+		const prev = saved.status;
 		const res = await api.patch(`/scholarships/${saved.guide_id}/save`, { status });
-		if (!res.error) {
-			saved.status = status;
-			savedScholarships.splice(savedScholarships.indexOf(saved), 1, { ...saved, status });
+		if (res.error) {
+			// Revert: re-assign the object so Svelte re-renders the select.
+			savedScholarships.splice(savedScholarships.indexOf(saved), 1, { ...saved, status: prev });
+			return;
 		}
+		savedScholarships.splice(savedScholarships.indexOf(saved), 1, { ...saved, status });
 	}
 
 	function field(s: Scholarship, key: string): string {
@@ -254,9 +265,7 @@
 
 		<!-- Results -->
 		<div class="p-4">
-			{#if loading}
-				<LoadingSkeleton variant="lines" />
-			{:else if scholarships.length === 0}
+			{#if scholarships.length === 0}
 				<EmptyState
 					icon={GraduationCap}
 					title={t('scholarships.empty', 'No scholarships found')}

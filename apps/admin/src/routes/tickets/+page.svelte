@@ -81,7 +81,7 @@
 			label: t("tickets.priority", "Priority"),
 			options: [
 				{ value: "low", label: "Low" },
-				{ value: "medium", label: "Medium" },
+				{ value: "normal", label: "Normal" },
 				{ value: "high", label: "High" },
 				{ value: "urgent", label: "Urgent" }
 			]
@@ -140,7 +140,10 @@
 				ticketsAdminApi.get(ticket.id),
 				ticketsAdminApi.getEvents(ticket.id),
 			]);
-			if (ticketRes.ok) viewTarget = (ticketRes.data as TicketItem) ?? ticket;
+			if (ticketRes.ok) {
+				const detail = ticketRes.data as { ticket: TicketItem; comments: any[]; attachments: any[]; events: any[] };
+				if (detail?.ticket) viewTarget = detail.ticket;
+			}
 			if (eventsRes.ok) {
 				const ed = eventsRes.data as any;
 				ticketEvents = ed?.events ?? ed?.data ?? (Array.isArray(ed) ? ed : []) ?? [];
@@ -156,7 +159,7 @@
 		if (!viewTarget || !newComment.trim()) return;
 		addingComment = true;
 		try {
-			const result = await ticketsAdminApi.addComment(viewTarget.id, { body: newComment.trim() });
+			const result = await ticketsAdminApi.addComment(viewTarget.id, { body: newComment.trim(), is_internal: false });
 			if (result.ok) {
 				newComment = "";
 				const eventsResult = await ticketsAdminApi.getEvents(viewTarget.id);
@@ -293,21 +296,18 @@
 	function handleStatusTab(tab: string) {
 		statusFilter = tab;
 		currentPage = 0;
-		loadTickets();
 	}
 
 	function handleSearch(values: Record<string, string>) {
 		searchQuery = values.search ?? "";
 		filterValues = values;
 		currentPage = 0;
-		loadTickets();
 	}
 
 	function handleClear() {
 		searchQuery = "";
 		filterValues = {};
 		currentPage = 0;
-		loadTickets();
 	}
 
 	$effect(() => { loadTickets(); });
@@ -417,16 +417,18 @@
 					<div class="max-h-48 space-y-2 overflow-y-auto rounded-lg border p-3" style="border-color: var(--color-border); background: var(--color-surface)">
 						{#each ticketEvents as ev}
 							<div class="flex gap-2 text-xs">
-								{#if ev.event_type === 'comment'}
+								{#if ev.event_type === 'comment_added'}
 									<MessageSquare class="h-3.5 w-3.5 shrink-0 mt-0.5" style="color: var(--color-primary)" />
-								{:else if ev.event_type === 'note'}
-									<StickyNote class="h-3.5 w-3.5 shrink-0 mt-0.5" style="color: var(--color-warning)" />
+								{:else if ev.event_type === 'sla_breached'}
+									<AlertCircle class="h-3.5 w-3.5 shrink-0 mt-0.5" style="color: var(--color-danger)" />
+								{:else if ev.event_type === 'status_changed'}
+									<Clock class="h-3.5 w-3.5 shrink-0 mt-0.5" style="color: var(--color-warning)" />
 								{:else}
-									<Clock class="h-3.5 w-3.5 shrink-0 mt-0.5" style="color: var(--color-muted)" />
+									<StickyNote class="h-3.5 w-3.5 shrink-0 mt-0.5" style="color: var(--color-muted)" />
 								{/if}
 								<div class="flex-1">
 									<span class="font-medium" style="color: var(--color-foreground)">{ev.event_type}</span>
-									{#if ev.body}<span style="color: var(--color-muted)"> — {ev.body}</span>{/if}
+									{#if ev.old_value || ev.new_value}<span style="color: var(--color-muted)"> — {ev.old_value ?? ''} → {ev.new_value ?? ''}</span>{/if}
 									<span class="block" style="color: var(--color-muted)">{ev.created_at ? new Date(ev.created_at).toLocaleString() : ''}</span>
 								</div>
 							</div>
@@ -475,8 +477,10 @@
 					options={[
 						{ value: "open", label: t("tickets.open", "Open") },
 						{ value: "in_progress", label: t("tickets.in_progress", "In Progress") },
+						{ value: "waiting_on_user", label: t("tickets.waiting_on_user", "Waiting on User") },
 						{ value: "resolved", label: t("tickets.resolved", "Resolved") },
-						{ value: "closed", label: t("tickets.closed", "Closed") }
+						{ value: "closed", label: t("tickets.closed", "Closed") },
+						{ value: "spam", label: t("tickets.spam", "Spam") }
 					]}
 					value={editForm.status}
 					onchange={(val) => (editForm.status = val)}
@@ -487,7 +491,7 @@
 				<Select
 					options={[
 						{ value: "low", label: t("tickets.low", "Low") },
-						{ value: "medium", label: t("tickets.medium", "Medium") },
+						{ value: "normal", label: t("tickets.normal", "Normal") },
 						{ value: "high", label: t("tickets.high", "High") },
 						{ value: "urgent", label: t("tickets.urgent", "Urgent") }
 					]}

@@ -70,13 +70,32 @@ func (s *Service) ProcessActivityEvent(ctx context.Context, eventID, tenantID pg
 	// Get the activity rule
 	rule, err := s.store.getActivityRuleByKey(ctx, tenantID, event.ActivityKey)
 	if err != nil {
-		// If rule not found, skip processing (rule may have been deleted)
-		return nil //nolint:nilerr // intentional: missing rule = skip
+		// If rule not found, skip processing (rule may have been deleted).
+		// Distinguish "not found" from real DB errors (BUG-007).
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil //nolint:nilerr // intentional: missing rule = skip
+		}
+		return fmt.Errorf("getting activity rule: %w", err)
 	}
 
 	// Check if rule is enabled
 	if rule.IsEnabled != nil && !*rule.IsEnabled {
 		return nil
+	}
+
+	// Check the global earning killswitch and daily earning cap (BUG-003).
+	// EnableEarning is read from wallet_settings; when false, no points are
+	// awarded. The daily cap (DailyEarningCap from wallet_settings or
+	// wallet.max_daily_earn_points from system_settings) limits total points
+	// earned per user per day across all activity types.
+	if s.settings != nil {
+		ws, werr := s.store.getWalletSettings(ctx, tenantID)
+		if werr == nil {
+			// EnableEarning killswitch
+			if !ws.EnableEarning {
+				return nil //nolint:nilerr // earning disabled by admin
+			}
+		}
 	}
 
 	// Check frequency caps (read-only queries outside tx — safe, caps are advisory)
@@ -126,7 +145,40 @@ func (s *Service) ProcessActivityEvent(ctx context.Context, eventID, tenantID pg
 		LedgerType: LedgerTypePoints,
 	})
 	if err != nil {
+		if !errors.Is(err, pgx.ErrNoRows) {
+			return fmt.Errorf("getting current balance: %w", err)
+		}
 		currentBalance = 0
+	}
+
+	// Enforce the global daily earning cap (BUG-003). Sum all earn ledger
+	// entries for this user today; if adding this rule's points would exceed
+	// the cap, skip the award. The cap is read from wallet_settings
+	// (DailyEarningCap) or system_settings (wallet.max_daily_earn_points).
+	dailyCap := int64(0)
+	if s.settings != nil {
+		dailyCap = int64(s.settings.GetIntOr(ctx, tenantID, "wallet.max_daily_earn_points", 0))
+	}
+	if dailyCap == 0 {
+		// Fall back to wallet_settings DailyEarningCap.
+		ws, werr := s.store.getWalletSettings(ctx, tenantID)
+		if werr == nil && ws.DailyEarningCap > 0 {
+			dailyCap = int64(ws.DailyEarningCap)
+		}
+	}
+	if dailyCap > 0 {
+		var earnedToday int64
+		row := tx.QueryRow(ctx, `
+			SELECT COALESCE(SUM(amount), 0) FROM wallet_ledger
+			WHERE tenant_id = $1 AND user_id = $2 AND ledger_type = 'points'
+			  AND operation = 'earn' AND created_at >= CURRENT_DATE`,
+			tenantID, event.UserID)
+		if qerr := row.Scan(&earnedToday); qerr != nil {
+			return fmt.Errorf("checking daily earning cap: %w", qerr)
+		}
+		if earnedToday+int64(rule.PointValue) > dailyCap {
+			return nil //nolint:nilerr // daily earning cap reached, skip
+		}
 	}
 
 	// Calculate new balance
@@ -171,17 +223,31 @@ func (s *Service) ProcessActivityEvent(ctx context.Context, eventID, tenantID pg
 func (s *Service) GetBalance(ctx context.Context, tenantID, userID pgtype.UUID) (points, credits int64, err error) {
 	points, err = s.store.getLatestBalance(ctx, tenantID, userID, LedgerTypePoints)
 	if err != nil {
-		// If no balance yet, return 0
+		// Only treat "no rows" as zero balance; propagate real DB errors
+		// (BUG-004 — previously swallowed all errors as "no balance yet").
+		if !errors.Is(err, pgx.ErrNoRows) {
+			return 0, 0, fmt.Errorf("getting points balance: %w", err)
+		}
 		points = 0
 	}
 
 	credits, err = s.store.getLatestBalance(ctx, tenantID, userID, LedgerTypeCredits)
 	if err != nil {
-		// If no balance yet, return 0
+		if !errors.Is(err, pgx.ErrNoRows) {
+			return 0, 0, fmt.Errorf("getting credits balance: %w", err)
+		}
 		credits = 0
 	}
 
 	return points, credits, nil
+}
+
+// GetPointsBalance returns only the Points balance for a user. Used by the
+// users service to surface points on a public profile when the user has
+// consented via show_points_publicly (Section 28). Credits are never exposed.
+func (s *Service) GetPointsBalance(ctx context.Context, tenantID, userID pgtype.UUID) (int64, error) {
+	points, _, err := s.GetBalance(ctx, tenantID, userID)
+	return points, err
 }
 
 // ConvertPointsToCreditsInput holds parameters for converting points to credits.
@@ -263,14 +329,19 @@ func (s *Service) ConvertPointsToCredits(ctx context.Context, tenantID, userID p
 		return 0, 0, fmt.Errorf("%w: insufficient points balance", errpkg.ErrInsufficientBalance)
 	}
 
-	// Calculate credits to add (integer division)
+	// Calculate credits to add (integer division). Only the whole-credit
+	// portion is converted; the remainder points stay in the user's balance
+	// so no value is destroyed (BUG-001, ADR-024 one-way conversion).
 	creditsToAdd := input.PointsToConvert / int64(*settings.PointsToCreditsRate)
 	if creditsToAdd <= 0 {
 		return 0, 0, fmt.Errorf("%w: conversion rate too high for amount", errpkg.ErrInvalid)
 	}
 
-	// New points balance
-	newPointsBalance := currentPoints - input.PointsToConvert
+	// Only debit the points that were actually converted to whole credits.
+	pointsToDebit := creditsToAdd * int64(*settings.PointsToCreditsRate)
+
+	// New points balance — remainder stays with the user.
+	newPointsBalance := currentPoints - pointsToDebit
 
 	// Get current credits balance within the transaction.
 	currentCredits, err := qtx.GetLatestBalance(ctx, gen.GetLatestBalanceParams{
@@ -305,16 +376,16 @@ func (s *Service) ConvertPointsToCredits(ctx context.Context, tenantID, userID p
 		creditsKey = "convert_credits:" + creditsKey + ":credits"
 	}
 
-	// Insert points debit entry
+	// Insert points debit entry — only the points actually converted.
 	_, err = qtx.InsertLedgerEntry(ctx, gen.InsertLedgerEntryParams{
 		TenantID:         tenantID,
 		UserID:           userID,
 		LedgerType:       LedgerTypePoints,
 		Operation:        OperationConvert,
-		Amount:           -input.PointsToConvert,
+		Amount:           -pointsToDebit,
 		ResultingBalance: newPointsBalance,
 		Source:           strPtr("wallet_conversion"),
-		Reference:        strPtr(fmt.Sprintf("Converted %d points to %d credits", input.PointsToConvert, creditsToAdd)),
+		Reference:        strPtr(fmt.Sprintf("Converted %d points to %d credits", pointsToDebit, creditsToAdd)),
 		IdempotencyKey:   &pointsKey,
 		Reason:           nil,
 	})
@@ -331,7 +402,7 @@ func (s *Service) ConvertPointsToCredits(ctx context.Context, tenantID, userID p
 		Amount:           creditsToAdd,
 		ResultingBalance: newCreditsBalance,
 		Source:           strPtr("wallet_conversion"),
-		Reference:        strPtr(fmt.Sprintf("Converted %d points to %d credits", input.PointsToConvert, creditsToAdd)),
+		Reference:        strPtr(fmt.Sprintf("Converted %d points to %d credits", pointsToDebit, creditsToAdd)),
 		IdempotencyKey:   &creditsKey,
 		Reason:           nil,
 	})
@@ -389,7 +460,7 @@ func (s *Service) SpendCredits(ctx context.Context, tenantID, userID pgtype.UUID
 
 	// Check sufficient balance
 	if currentCredits < input.Amount {
-		return 0, errors.New("insufficient credits balance")
+		return 0, fmt.Errorf("%w: insufficient credits balance", errpkg.ErrInsufficientBalance)
 	}
 
 	// New balance
@@ -485,8 +556,11 @@ func (s *Service) AdminAdjustBalance(ctx context.Context, tenantID, actorUserID 
 		return 0, fmt.Errorf("%w: current=%d, adjustment=%d", errpkg.ErrInsufficientBalance, currentBalance, input.Amount)
 	}
 
-	// Create idempotency key
-	idempotencyKey := fmt.Sprintf("admin_adjust:%x:%s:%d", targetUserID.Bytes, input.Reason, input.Amount)
+	// Create idempotency key — include a UUID so multiple adjustments with
+	// the same reason and amount to the same user don't collide (BUG-006).
+	// The admin adjust route lacks client-supplied idempotency middleware, so
+	// a server-generated unique key is the correct approach.
+	idempotencyKey := fmt.Sprintf("admin_adjust:%s:%x:%s:%d", uuid.NewString(), targetUserID.Bytes, input.Reason, input.Amount)
 
 	// Insert ledger entry
 	_, err = qtx.InsertLedgerEntry(ctx, gen.InsertLedgerEntryParams{
@@ -613,6 +687,22 @@ func (s *Service) CreateOrUpdateActivityRule(ctx context.Context, tenantID pgtyp
 // ToggleActivityRule toggles an activity rule's enabled state.
 func (s *Service) ToggleActivityRule(ctx context.Context, id, tenantID pgtype.UUID) (gen.ActivityPointRule, error) {
 	return s.store.toggleActivityRule(ctx, id, tenantID)
+}
+
+// UpdateActivityRuleByID updates an activity rule by its primary key (BUG-005).
+// Unlike CreateOrUpdateActivityRule (which upserts by activity_key), this
+// method updates the rule identified by {id} — the {id} from the URL route
+// parameter — so PATCH /admin/wallet/rules/{id} updates the correct rule.
+func (s *Service) UpdateActivityRuleByID(ctx context.Context, id, tenantID pgtype.UUID, input CreateOrUpdateActivityRuleInput) (gen.ActivityPointRule, error) {
+	return s.store.updateActivityRuleByID(ctx, gen.UpdateActivityRuleByIDParams{
+		ID:          id,
+		TenantID:    tenantID,
+		PointValue:  input.PointValue,
+		IsEnabled:   &input.IsEnabled,
+		CapPerDay:   input.CapPerDay,
+		CapPerWeek:  input.CapPerWeek,
+		Description: input.Description,
+	})
 }
 
 // DeleteActivityRule deletes an activity rule.

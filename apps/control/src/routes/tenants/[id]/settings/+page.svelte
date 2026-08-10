@@ -43,6 +43,7 @@
 	let activeCategory = $state('all');
 	let message = $state('');
 	let messageType = $state<'success' | 'error' | ''>('');
+	let currencies = $state<{ code: string; name?: string; symbol: string }[]>([]);
 	let confirmResetSetting = $state<SystemSetting | null>(null);
 	let resetModalOpen = $state(false);
 	let confirmResetAllOpen = $state(false);
@@ -72,12 +73,14 @@
 					{ value: 'r2', label: t('settings.storage_r2', 'Cloudflare R2') },
 					{ value: 'b2', label: t('settings.storage_b2', 'Backblaze B2') }
 				],
-				'payment.currency': [
-					{ value: 'NGN', label: t('settings.currency_ngn', 'Nigerian Naira (NGN)') },
-					{ value: 'USD', label: t('settings.currency_usd', 'US Dollar (USD)') },
-					{ value: 'GBP', label: t('settings.currency_gbp', 'British Pound (GBP)') },
-					{ value: 'EUR', label: t('settings.currency_eur', 'Euro (EUR)') }
-				]
+				'payment.currency': currencies.length > 0
+					? currencies.map((c) => ({ value: c.code, label: `${c.name || c.code} (${c.code})` }))
+					: [
+						{ value: 'NGN', label: t('settings.currency_ngn', 'Nigerian Naira (NGN)') },
+						{ value: 'USD', label: t('settings.currency_usd', 'US Dollar (USD)') },
+						{ value: 'GBP', label: t('settings.currency_gbp', 'British Pound (GBP)') },
+						{ value: 'EUR', label: t('settings.currency_eur', 'Euro (EUR)') }
+					]
 			};
 			return opts;
 		})()
@@ -329,13 +332,19 @@
 	async function load() {
 		isLoading = true;
 		message = '';
-		// Load tenant info and settings in parallel
-		const [tenantRes, settingsRes] = await Promise.all([
+		// Load tenant info, settings, and currencies in parallel (BUG-012 —
+		// payment.currency options must come from /control/wallet/currencies,
+		// not a hardcoded list, per Rule 16).
+		const [tenantRes, settingsRes, currenciesRes] = await Promise.all([
 			api<{ name: string }>(`/control/tenants/${tenantId}`),
-			api<SystemSetting[]>(`/control/tenants/${tenantId}/settings`)
+			api<SystemSetting[]>(`/control/tenants/${tenantId}/settings`),
+			api<{ code: string; name?: string; symbol: string }[]>('/control/wallet/currencies').catch(() => ({ ok: false, data: [] } as any))
 		]);
 		if (tenantRes.ok) {
 			tenantName = tenantRes.data.name;
+		}
+		if (currenciesRes.ok) {
+			currencies = currenciesRes.data;
 		}
 		if (settingsRes.ok) {
 			// Filter to control-panel settings only (Panel === 'control').

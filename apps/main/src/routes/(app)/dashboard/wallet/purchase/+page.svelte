@@ -41,6 +41,7 @@
 	// would capture the initial snapshot and never update. Access via deriveds.
 	const currencies = $derived(page.data.currencies as Currency[]);
 	const creditPacks = $derived(page.data.creditPacks as CreditPack[]);
+	const minPurchaseCredits = $derived(page.data.minPurchaseCredits as number);
 
 	let selectedCurrency = $state<string>('');
 	let customAmount = $state<number>(0);
@@ -231,8 +232,8 @@
 					<input
 						id="custom-credits"
 						type="number"
-						min="100"
-						step="100"
+						min={minPurchaseCredits}
+						step={minPurchaseCredits}
 						bind:value={customAmount}
 						oninput={() => (selectedPackId = '')}
 						class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
@@ -250,7 +251,7 @@
 					</p>
 				</div>
 			</div>
-			<p class="mt-2 text-xs text-[var(--color-muted)]">{t('wallet.purchase.minimum', 'Minimum 100 credits')}</p>
+			<p class="mt-2 text-xs text-[var(--color-muted)]">{t('wallet.purchase.minimum', 'Minimum {n} credits').replace('{n}', minPurchaseCredits.toLocaleString())}</p>
 		</div>
 
 		<!-- Purchase Button -->
@@ -259,7 +260,7 @@
 				type="button"
 				class="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-6 py-3 text-sm font-semibold text-[var(--color-primary-contrast)] transition-colors hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
 				onclick={purchase}
-				disabled={purchasing || (selectedPackId === '' && customAmount < 100)}
+				disabled={purchasing || (selectedPackId === '' && customAmount < minPurchaseCredits)}
 			>
 				<Wallet size={16} />
 				{#if purchasing}

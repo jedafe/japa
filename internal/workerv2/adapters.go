@@ -24,14 +24,25 @@ import (
 	"github.com/jedafe/japa/internal/assessment"
 	"github.com/jedafe/japa/internal/contentimport"
 	"github.com/jedafe/japa/internal/db"
+	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/devices"
 	"github.com/jedafe/japa/internal/gamification"
 	"github.com/jedafe/japa/internal/jobs"
+	"github.com/jedafe/japa/internal/notifications"
 	"github.com/jedafe/japa/internal/referral"
 	"github.com/jedafe/japa/internal/remittance"
 	"github.com/jedafe/japa/internal/scholarships"
 	"github.com/jedafe/japa/internal/worker"
 )
+
+// pgtypeUUIDString returns the canonical string form of a pgtype.UUID,
+// or "" when invalid. Used for building notification action URLs.
+func pgtypeUUIDString(id pgtype.UUID) string {
+	if !id.Valid {
+		return ""
+	}
+	return id.String()
+}
 
 // tenantRow is a minimal tenant row for cross-tenant iteration.
 type tenantRow struct {
@@ -248,16 +259,22 @@ func (a *AssessmentAdapter) ScoreSubmission(ctx context.Context, submissionID, t
 // ScholarshipAdapter adapts the tenant-scoped scholarships.Service to the
 // cross-tenant ScholarshipProcessor interface.
 type ScholarshipAdapter struct {
-	svc *scholarships.Service
-	db  *db.DB
+	svc  *scholarships.Service
+	db   *db.DB
+	notif *notifications.Service
 }
 
-// NewScholarshipAdapter creates a ScholarshipAdapter.
-func NewScholarshipAdapter(svc *scholarships.Service, database *db.DB) *ScholarshipAdapter {
-	return &ScholarshipAdapter{svc: svc, db: database}
+// NewScholarshipAdapter creates a ScholarshipAdapter. The notifications
+// service is used to dispatch deadline-reminder notifications per
+// ADR-073 §3 step 3.
+func NewScholarshipAdapter(svc *scholarships.Service, database *db.DB, notif *notifications.Service) *ScholarshipAdapter {
+	return &ScholarshipAdapter{svc: svc, db: database, notif: notif}
 }
 
-// CheckDeadlines iterates every tenant and sends deadline reminders.
+// CheckDeadlines iterates every tenant, finds saved scholarships whose
+// application deadline is within the user's remind_before_days window,
+// dispatches a notification per match (ADR-073 §3 step 3), and marks
+// the reminder as sent.
 func (a *ScholarshipAdapter) CheckDeadlines(ctx context.Context) (int, error) {
 	tenantIDs, err := listTenantIDs(ctx, a.db)
 	if err != nil {
@@ -271,6 +288,10 @@ func (a *ScholarshipAdapter) CheckDeadlines(ctx context.Context) (int, error) {
 			continue
 		}
 		for _, r := range reminders {
+			if err := a.dispatchReminder(ctx, tid, r); err != nil {
+				slog.Warn("task:scholarship:check_deadlines: dispatch reminder failed", "reminder_id", r.ID, "error", err)
+				continue
+			}
 			if err := a.svc.MarkReminderSent(ctx, r.ID); err != nil {
 				slog.Warn("task:scholarship:check_deadlines: mark reminder sent failed", "reminder_id", r.ID, "error", err)
 				continue
@@ -279,6 +300,37 @@ func (a *ScholarshipAdapter) CheckDeadlines(ctx context.Context) (int, error) {
 		}
 	}
 	return total, nil
+}
+
+// dispatchReminder creates an in-app notification for the saved-scholarship
+// owner announcing the approaching application deadline. The notification
+// type `scholarship.deadline_reminder` is created via the notifications
+// service's non-batch path (§35, ADR-073 §3).
+func (a *ScholarshipAdapter) dispatchReminder(ctx context.Context, tenantID pgtype.UUID, r gen.FindScholarshipsNeedingRemindersRow) error {
+	if a.notif == nil {
+		slog.Warn("task:scholarship:check_deadlines: notifications service not configured, skipping dispatch")
+		return nil
+	}
+	deadline := ""
+	if r.DeadlineValue != nil {
+		deadline = *r.DeadlineValue
+	}
+	title := "Scholarship deadline approaching"
+	body := fmt.Sprintf("Your saved scholarship has an application deadline on %s. Apply soon.", deadline)
+	actionURL := fmt.Sprintf("/scholarships/%s", pgtypeUUIDString(r.GuideID))
+	return a.notif.CreateNotification(
+		ctx,
+		tenantID,
+		r.UserID,
+		"scholarship.deadline_reminder",
+		"system",
+		pgtype.UUID{},
+		"scholarship",
+		r.GuideID,
+		title,
+		body,
+		actionURL,
+	)
 }
 
 // ---------------------------------------------------------------------------
@@ -519,12 +571,13 @@ func RegisterV2Processors(
 	refSvc *referral.Service,
 	adsSvc *adsselfserve.Service,
 	devSvc *devices.Service,
+	notifSvc *notifications.Service,
 ) {
 	worker.RegisterJobsProcessor(NewJobsAdapter(jobsSvc, database))
 	worker.RegisterGamificationProcessor(NewGamificationAdapter(gamSvc, database))
 	worker.RegisterImportProcessor(NewImportAdapter(impSvc, database))
 	worker.RegisterAssessmentProcessor(NewAssessmentAdapter(assSvc, database))
-	worker.RegisterScholarshipProcessor(NewScholarshipAdapter(schSvc, database))
+	worker.RegisterScholarshipProcessor(NewScholarshipAdapter(schSvc, database, notifSvc))
 	worker.RegisterRemittanceProcessor(NewRemittanceAdapter(remSvc, database))
 	worker.RegisterReferralProcessor(NewReferralAdapter(refSvc, database))
 	worker.RegisterAdsSelfServeProcessor(NewAdsSelfServeAdapter(adsSvc, database))
