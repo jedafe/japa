@@ -108,6 +108,10 @@ func (s *Service) ListCampaigns(ctx context.Context, tenantID pgtype.UUID, limit
 }
 
 // ActivateCampaign sets a campaign to active status.
+// For self-serve campaigns (status = pending_review), this is the admin
+// "approve" action — it transitions the campaign to active so it starts
+// serving impressions.
+// Ref: japaconnect-engineering/sections/61-self-serve-ads.md (Review Gate)
 func (s *Service) ActivateCampaign(ctx context.Context, id, tenantID pgtype.UUID) (AdCampaign, error) {
 	campaign, err := s.store.Queries().GetAdCampaignByID(ctx, gen.GetAdCampaignByIDParams{
 		ID:       id,
@@ -117,12 +121,38 @@ func (s *Service) ActivateCampaign(ctx context.Context, id, tenantID pgtype.UUID
 		return AdCampaign{}, err
 	}
 
-	if campaign.Status != CampaignStatusDraft && campaign.Status != CampaignStatusPaused {
+	if campaign.Status != CampaignStatusDraft &&
+		campaign.Status != CampaignStatusPaused &&
+		campaign.Status != CampaignStatusPendingReview {
 		return AdCampaign{}, fmt.Errorf("campaign cannot be activated from status: %s", campaign.Status)
 	}
 
 	return s.store.Queries().UpdateAdCampaignStatus(ctx, gen.UpdateAdCampaignStatusParams{
 		Status:   CampaignStatusActive,
+		ID:       id,
+		TenantID: tenantID,
+	})
+}
+
+// RejectCampaign rejects a pending-review campaign (admin moderation action).
+// Sets status to 'rejected'. The credit refund is handled by the
+// ads:refund_campaign_credits Asynq task enqueued by the handler.
+// Ref: japaconnect-engineering/sections/61-self-serve-ads.md (Review Gate)
+func (s *Service) RejectCampaign(ctx context.Context, id, tenantID pgtype.UUID) (AdCampaign, error) {
+	campaign, err := s.store.Queries().GetAdCampaignByID(ctx, gen.GetAdCampaignByIDParams{
+		ID:       id,
+		TenantID: tenantID,
+	})
+	if err != nil {
+		return AdCampaign{}, err
+	}
+
+	if campaign.Status != CampaignStatusPendingReview {
+		return AdCampaign{}, fmt.Errorf("campaign cannot be rejected from status: %s", campaign.Status)
+	}
+
+	return s.store.Queries().UpdateAdCampaignStatus(ctx, gen.UpdateAdCampaignStatusParams{
+		Status:   CampaignStatusRejected,
 		ID:       id,
 		TenantID: tenantID,
 	})

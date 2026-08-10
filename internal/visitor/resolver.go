@@ -38,6 +38,7 @@ import (
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/geoip"
 	"github.com/jedafe/japa/internal/tenant"
+	"github.com/jedafe/japa/internal/valkey"
 	"github.com/valkey-io/valkey-go/valkeycompat"
 )
 
@@ -210,13 +211,13 @@ func (res *Resolver) resolve(r *http.Request) VisitorContext {
 	var cacheKey string
 	if user != nil {
 		if user.SessionID != "" {
-			cacheKey = "jc:visitor:ctx:" + user.SessionID
+			cacheKey = valkey.MustKey("visitor:ctx:%s", user.SessionID)
 		} else {
 			// Fallback for tokens without JTI (legacy/compat).
-			cacheKey = "jc:visitor:ctx:user:" + user.UserID.String()
+			cacheKey = valkey.MustKey("visitor:ctx:user:%s", user.UserID.String())
 		}
 	} else {
-		cacheKey = "jc:visitor:ctx:ip:" + clientip.FromRequest(r)
+		cacheKey = valkey.MustKey("visitor:ctx:ip:%s", clientip.FromRequest(r))
 	}
 
 	// Try cache first.
@@ -466,7 +467,7 @@ func SetUserPreference(ctx context.Context, q *gen.Queries, rdb valkeycompat.Cmd
 	// rely on the 30-min TTL for session-scoped keys. Preference changes are
 	// infrequent and 30-min staleness is acceptable per ADR-064.
 	if rdb != nil {
-		_ = rdb.Del(ctx, "jc:visitor:ctx:user:"+userID.String()).Err()
+		_ = rdb.Del(ctx, valkey.MustKey("visitor:ctx:user:%s", userID.String())).Err()
 	}
 	return nil
 }

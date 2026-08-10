@@ -102,11 +102,11 @@ ORDER BY count DESC;
 
 -- name: CreateCampaign :one
 INSERT INTO newsletter_campaigns (
-    tenant_id, name, subject, preview_text, body, segment, segment_id,
+    tenant_id, name, subject, html, preview_text, body, segment, segment_id,
     status, scheduled_at, created_by
 )
 VALUES (
-    @tenant_id, @name, @subject, sqlc.narg(preview_text), @body,
+    @tenant_id, @name, @subject, @html, sqlc.narg(preview_text), @body,
     @segment, sqlc.narg(segment_id), @status, sqlc.narg(scheduled_at), @created_by
 )
 RETURNING *;
@@ -176,3 +176,14 @@ FROM newsletter_subscribers
 WHERE tenant_id = @tenant_id
   AND status = 'subscribed'
   AND digest_enabled = true;
+
+-- =====================================================================
+-- Admin: update subscriber status (for the PATCH subscriber endpoint)
+-- =====================================================================
+
+-- name: UpdateSubscriberStatus :one
+UPDATE newsletter_subscribers
+SET status = @status,
+    unsubscribed_at = CASE WHEN @status = 'unsubscribed' THEN now() ELSE unsubscribed_at END
+WHERE tenant_id = @tenant_id AND id = @id
+RETURNING *;

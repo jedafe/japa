@@ -3,8 +3,11 @@ package sidebars
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"time"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
 )
@@ -21,12 +24,12 @@ func NewStore(read, write *gen.Queries) *Store {
 
 // ── Sidebars ──────────────────────────────────────────────────────────
 
-func (s *Store) listSidebars(ctx context.Context, tenantID pgtype.UUID, app, position, q string, limit, offset int32) ([]gen.Sidebar, error) {
+func (s *Store) listSidebars(ctx context.Context, tenantID pgtype.UUID, app, position, status, q, sort string, limit, offset int32) ([]gen.ListSidebarsRow, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
 	rows, err := s.read.ListSidebars(ctx, gen.ListSidebarsParams{
-		TenantID: tenantID, App: app, Position: position, Q: q,
+		TenantID: tenantID, App: app, Position: position, Status: status, Q: q, Sort: sort,
 		PageOffset: offset, PageLimit: limit,
 	})
 	if err != nil {
@@ -35,9 +38,9 @@ func (s *Store) listSidebars(ctx context.Context, tenantID pgtype.UUID, app, pos
 	return rows, nil
 }
 
-func (s *Store) countSidebars(ctx context.Context, tenantID pgtype.UUID, app, position, q string) (int32, error) {
+func (s *Store) countSidebars(ctx context.Context, tenantID pgtype.UUID, app, position, status, q string) (int32, error) {
 	count, err := s.read.CountSidebars(ctx, gen.CountSidebarsParams{
-		TenantID: tenantID, App: app, Position: position, Q: q,
+		TenantID: tenantID, App: app, Position: position, Status: status, Q: q,
 	})
 	if err != nil {
 		return 0, fmt.Errorf("counting sidebars: %w", err)
@@ -56,6 +59,14 @@ func (s *Store) getSidebarByID(ctx context.Context, id, tenantID pgtype.UUID) (g
 func (s *Store) createSidebar(ctx context.Context, p gen.CreateSidebarParams) (gen.Sidebar, error) {
 	row, err := s.write.CreateSidebar(ctx, p)
 	if err != nil {
+		// Map the unique violation on (tenant_id, app, position, slug) to
+		// ErrDuplicateSlug so the handler returns 409 already_exists instead
+		// of a generic 500. Ref: Section 59 §4; matches the pattern in
+		// internal/tags, internal/content, internal/wallet, etc.
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return gen.Sidebar{}, ErrDuplicateSlug
+		}
 		return gen.Sidebar{}, fmt.Errorf("creating sidebar: %w", err)
 	}
 	return row, nil
@@ -177,21 +188,30 @@ type SidebarWidgetJSON struct {
 	RequiredGroupIDs []string       `json:"required_group_ids"`
 	PermissionNode   *string        `json:"permission_node,omitempty"`
 	Status           string         `json:"status"`
+	// Slot is the render slot ("topbar" or "content") from the widget type
+	// registry. Populated so the frontend can split topbar/content widgets
+	// without a hardcoded type set. Ref: Section 59 §6.
+	Slot string `json:"slot"`
 }
 
 // SidebarJSON is the JSON-safe representation of a sidebar.
 type SidebarJSON struct {
-	ID               string                `json:"id"`
-	TenantID         string                `json:"tenant_id"`
-	App              string                `json:"app"`
-	Position         string                `json:"position"`
-	Slug             string                `json:"slug"`
-	Name             string                `json:"name"`
-	PagePattern      string                `json:"page_pattern"`
-	Visibility       string                `json:"visibility"`
-	RequiredGroupIDs []string              `json:"required_group_ids"`
-	Status           string                `json:"status"`
-	Widgets          []SidebarWidgetJSON   `json:"widgets"`
+	ID               string              `json:"id"`
+	TenantID         string              `json:"tenant_id"`
+	App              string              `json:"app"`
+	Position         string              `json:"position"`
+	Slug             string              `json:"slug"`
+	Name             string              `json:"name"`
+	PagePattern      string              `json:"page_pattern"`
+	Visibility       string              `json:"visibility"`
+	RequiredGroupIDs []string            `json:"required_group_ids"`
+	Status           string              `json:"status"`
+	Widgets          []SidebarWidgetJSON `json:"widgets"`
+	CreatedAt        string              `json:"created_at"`
+	UpdatedAt        string              `json:"updated_at"`
+	// WidgetCount is populated only by the list endpoint (via a subquery).
+	// The single-sidebar endpoint populates Widgets instead.
+	WidgetCount int `json:"widget_count"`
 }
 
 // genSidebarToJSON converts a sqlc-generated Sidebar row into a JSON-safe SidebarJSON.
@@ -202,12 +222,14 @@ func genSidebarToJSON(row gen.Sidebar) SidebarJSON {
 		App:              row.App,
 		Position:         row.Position,
 		Slug:             row.Slug,
-		Name:             row.Name,
-		PagePattern:      row.PagePattern,
-		Visibility:       row.Visibility,
-		RequiredGroupIDs: []string{},
-		Status:           row.Status,
-		Widgets:          []SidebarWidgetJSON{},
+		Name:              row.Name,
+		PagePattern:       row.PagePattern,
+		Visibility:        row.Visibility,
+		RequiredGroupIDs:  []string{},
+		Status:            row.Status,
+		Widgets:           []SidebarWidgetJSON{},
+		CreatedAt:         timestampToISO(row.CreatedAt),
+		UpdatedAt:         timestampToISO(row.UpdatedAt),
 	}
 	if len(row.RequiredGroupIds) > 0 && string(row.RequiredGroupIds) != "null" {
 		var ids []string
@@ -216,6 +238,35 @@ func genSidebarToJSON(row gen.Sidebar) SidebarJSON {
 		}
 	}
 	return s
+}
+
+// genListSidebarsRowToJSON converts a ListSidebarsRow (which includes
+// widget_count via a subquery) into a JSON-safe SidebarJSON.
+func genListSidebarsRowToJSON(row gen.ListSidebarsRow) SidebarJSON {
+	s := genSidebarToJSON(gen.Sidebar{
+		ID:               row.ID,
+		TenantID:         row.TenantID,
+		App:              row.App,
+		Position:         row.Position,
+		Slug:             row.Slug,
+		Name:             row.Name,
+		PagePattern:      row.PagePattern,
+		Visibility:       row.Visibility,
+		RequiredGroupIds: row.RequiredGroupIds,
+		Status:           row.Status,
+		CreatedAt:        row.CreatedAt,
+		UpdatedAt:        row.UpdatedAt,
+	})
+	s.WidgetCount = int(row.WidgetCount)
+	return s
+}
+
+// timestampToISO converts a pgtype.Timestamptz to an ISO 8601 string, or "" if invalid/null.
+func timestampToISO(ts pgtype.Timestamptz) string {
+	if !ts.Valid {
+		return ""
+	}
+	return ts.Time.UTC().Format(time.RFC3339)
 }
 
 // genSidebarWidgetToJSON converts a sqlc-generated SidebarWidget row into a JSON-safe SidebarWidgetJSON.
@@ -232,6 +283,10 @@ func genSidebarWidgetToJSON(row gen.SidebarWidget) SidebarWidgetJSON {
 		RequiredGroupIDs: []string{},
 		PermissionNode:   row.PermissionNode,
 		Status:           row.Status,
+		Slot:             WidgetSlotContent,
+	}
+	if wt := LookupWidgetType(row.WidgetType); wt != nil {
+		w.Slot = wt.Slot
 	}
 	if len(row.Props) > 0 && string(row.Props) != "null" {
 		var props map[string]any

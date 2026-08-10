@@ -8,14 +8,39 @@
 -- =====================
 
 -- name: ListSidebars :many
-SELECT id, tenant_id, app, position, slug, name, page_pattern, visibility,
-       required_group_ids, status, created_at, updated_at
-FROM sidebars
-WHERE tenant_id = @tenant_id
-  AND (@app::text = '' OR app = @app)
-  AND (@position::text = '' OR position = @position)
-  AND (@q::text = '' OR name ILIKE '%' || @q || '%' OR slug ILIKE '%' || @q || '%')
-ORDER BY app ASC, position ASC, created_at ASC
+SELECT s.id, s.tenant_id, s.app, s.position, s.slug, s.name, s.page_pattern, s.visibility,
+       s.required_group_ids, s.status, s.created_at, s.updated_at,
+       COALESCE(sw.cnt, 0)::int AS widget_count
+FROM sidebars s
+LEFT JOIN (
+    SELECT sidebar_id, COUNT(*)::int AS cnt
+    FROM sidebar_widgets
+    GROUP BY sidebar_id
+) sw ON sw.sidebar_id = s.id
+WHERE s.tenant_id = @tenant_id
+  AND (@app::text = '' OR s.app = @app)
+  AND (@position::text = '' OR s.position = @position)
+  AND (@status::text = '' OR s.status = @status)
+  AND (@q::text = '' OR s.name ILIKE '%' || @q || '%' OR s.slug ILIKE '%' || @q || '%')
+ORDER BY
+  CASE WHEN @sort::text = 'name:asc'      THEN s.name END ASC,
+  CASE WHEN @sort::text = 'name:desc'     THEN s.name END DESC,
+  CASE WHEN @sort::text = 'app:asc'       THEN s.app END ASC,
+  CASE WHEN @sort::text = 'app:desc'      THEN s.app END DESC,
+  CASE WHEN @sort::text = 'position:asc'  THEN s.position END ASC,
+  CASE WHEN @sort::text = 'position:desc' THEN s.position END DESC,
+  CASE WHEN @sort::text = 'slug:asc'      THEN s.slug END ASC,
+  CASE WHEN @sort::text = 'slug:desc'     THEN s.slug END DESC,
+  CASE WHEN @sort::text = 'page_pattern:asc'  THEN s.page_pattern END ASC,
+  CASE WHEN @sort::text = 'page_pattern:desc' THEN s.page_pattern END DESC,
+  CASE WHEN @sort::text = 'status:asc'    THEN s.status END ASC,
+  CASE WHEN @sort::text = 'status:desc'   THEN s.status END DESC,
+  CASE WHEN @sort::text = 'updated_at:asc'  THEN s.updated_at END ASC,
+  CASE WHEN @sort::text = 'updated_at:desc' THEN s.updated_at END DESC,
+  CASE WHEN @sort::text = 'created_at:asc'  THEN s.created_at END ASC,
+  CASE WHEN @sort::text = 'created_at:desc' THEN s.created_at END DESC,
+  -- Default sort when @sort is empty or unrecognized
+  s.app ASC, s.position ASC, s.created_at ASC
 LIMIT @page_limit OFFSET @page_offset;
 
 -- name: CountSidebars :one
@@ -24,6 +49,7 @@ FROM sidebars
 WHERE tenant_id = @tenant_id
   AND (@app::text = '' OR app = @app)
   AND (@position::text = '' OR position = @position)
+  AND (@status::text = '' OR status = @status)
   AND (@q::text = '' OR name ILIKE '%' || @q || '%' OR slug ILIKE '%' || @q || '%');
 
 -- name: GetSidebarByID :one

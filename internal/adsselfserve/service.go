@@ -39,9 +39,35 @@ const (
 	TaskDeductCredits         = "wallet:deduct_credits"
 )
 
+// Sentinel errors for typed failure modes. These are compared with errors.Is
+// in the handler layer to produce the correct HTTP status and error code.
+//
+// Ref: japaconnect-engineering/sections/61-self-serve-ads.md
+var (
+	ErrFeatureDisabled      = errors.New("adsselfserve: feature disabled")
+	ErrOrganizationNotVerified = errors.New("adsselfserve: organization_not_verified")
+	ErrNotOrgMember         = errors.New("adsselfserve: not_org_member")
+	ErrSlotTypeNotFound     = errors.New("adsselfserve: slot_type_not_found")
+	ErrDurationTooShort     = errors.New("adsselfserve: duration_too_short")
+)
+
 // TaskEnqueuer enqueues Asynq tasks fire-and-forget (Rule 8).
 type TaskEnqueuer interface {
 	Enqueue(taskType string, payload []byte, opts ...interface{}) error
+}
+
+// Notifier dispatches user notifications (§35). Injected from server.go to
+// avoid an import cycle with the notifications package.
+type Notifier interface {
+	DispatchNotification(
+		ctx context.Context,
+		tenantID, recipientID pgtype.UUID,
+		nType, subjectTitle string,
+		actorID pgtype.UUID,
+		subjectType string,
+		subjectID pgtype.UUID,
+		subjectURL, actorName, actorAvatar string,
+	) error
 }
 
 // CreateCampaignInput is the request body for creating a self-serve campaign.
@@ -81,6 +107,7 @@ type Service struct {
 	store    *Store
 	settings *config.Settings
 	enqueuer TaskEnqueuer
+	notifier Notifier
 }
 
 // NewService creates a self-serve ads service.
@@ -90,6 +117,9 @@ func NewService(store *Store, settings *config.Settings) *Service {
 
 // SetEnqueuer injects the Asynq task enqueuer.
 func (s *Service) SetEnqueuer(e TaskEnqueuer) { s.enqueuer = e }
+
+// SetNotifier injects the notification dispatcher for campaign status alerts.
+func (s *Service) SetNotifier(n Notifier) { s.notifier = n }
 
 // CalculateCost computes the total cost in credits for a campaign.
 // cost = flat_rate × duration_days.
@@ -122,16 +152,19 @@ func (s *Service) ListSlots(ctx context.Context, tenantID pgtype.UUID) ([]SlotIn
 
 // CreateCampaign creates a self-serve ad campaign with upfront payment.
 // Steps: verify org, verify member, check min days, calculate cost,
-// create campaign, deduct credits, enqueue notification.
+// create campaign, deduct credits, enqueue notification, enter review queue.
+//
+// Ref: japaconnect-engineering/sections/61-self-serve-ads.md (Review Gate)
+//      japaconnect-engineering/adr/ADR-079-self-serve-ads.md §3
 func (s *Service) CreateCampaign(ctx context.Context, tenantID, orgID, userID pgtype.UUID, input CreateCampaignInput) (gen.AdCampaign, error) {
 	enabled, err := s.settings.GetSettingBool(ctx, tenantID, "ads.self_serve_enabled")
 	if err == nil && !enabled {
-		return gen.AdCampaign{}, errors.New("adsselfserve: self-serve ads are disabled")
+		return gen.AdCampaign{}, ErrFeatureDisabled
 	}
 
 	minDays := s.settings.GetIntOr(ctx, tenantID, "ads.min_campaign_days", 3)
 	if input.DurationDays < minDays {
-		return gen.AdCampaign{}, fmt.Errorf("adsselfserve: campaign duration must be at least %d days", minDays)
+		return gen.AdCampaign{}, fmt.Errorf("%w: must be at least %d days", ErrDurationTooShort, minDays)
 	}
 
 	verified, err := s.store.IsOrgVerified(ctx, tenantID, orgID)
@@ -139,7 +172,7 @@ func (s *Service) CreateCampaign(ctx context.Context, tenantID, orgID, userID pg
 		return gen.AdCampaign{}, fmt.Errorf("adsselfserve: check org verification: %w", err)
 	}
 	if !verified {
-		return gen.AdCampaign{}, errors.New("adsselfserve: organization_not_verified")
+		return gen.AdCampaign{}, ErrOrganizationNotVerified
 	}
 
 	isMember, err := s.store.IsOrgMember(ctx, orgID, userID)
@@ -147,7 +180,7 @@ func (s *Service) CreateCampaign(ctx context.Context, tenantID, orgID, userID pg
 		return gen.AdCampaign{}, fmt.Errorf("adsselfserve: check org membership: %w", err)
 	}
 	if !isMember {
-		return gen.AdCampaign{}, errors.New("adsselfserve: user is not a member of this organization")
+		return gen.AdCampaign{}, ErrNotOrgMember
 	}
 
 	slotTypeID := pgtype.UUID{}
@@ -168,7 +201,7 @@ func (s *Service) CreateCampaign(ctx context.Context, tenantID, orgID, userID pg
 		}
 	}
 	if flatRate == 0 {
-		return gen.AdCampaign{}, errors.New("adsselfserve: slot type not found or has zero rate")
+		return gen.AdCampaign{}, ErrSlotTypeNotFound
 	}
 
 	cost := CalculateCost(flatRate, input.DurationDays)
@@ -219,6 +252,15 @@ func (s *Service) CreateCampaign(ctx context.Context, tenantID, orgID, userID pg
 	if err != nil {
 		return gen.AdCampaign{}, fmt.Errorf("adsselfserve: create campaign: %w", err)
 	}
+
+	// The campaign is created with status = 'pending_review' (set explicitly
+	// in the CreateSelfServeAdCampaign SQL). This status IS the review-queue
+	// entry — the admin moderation queue surfaces it via
+	// GET /api/v1/admin/moderation-queue?source=ad_campaign. The
+	// content_reviews table (§22) cannot hold ad campaigns because it has a
+	// hard FK to contents(id); ad campaigns live in ad_campaigns and are
+	// reviewed through the status workflow instead.
+	// Ref: japaconnect-engineering/sections/61-self-serve-ads.md (Review Gate)
 
 	// Deduct credits from org wallet (fire-and-forget per Rule 8).
 	if s.enqueuer != nil {
@@ -318,14 +360,22 @@ func (s *Service) GetCampaignStats(ctx context.Context, tenantID, orgID, campaig
 
 // RefundCampaignCredits refunds unused credits on rejection or early end.
 // Called by the ads:refund_campaign_credits worker task.
+// Honours the ads.credit_refund_on_reject system setting (§61, default true).
 func (s *Service) RefundCampaignCredits(ctx context.Context, tenantID, campaignID pgtype.UUID) error {
 	campaign, err := s.store.GetCampaignForRefund(ctx, tenantID, campaignID)
 	if err != nil {
 		return fmt.Errorf("adsselfserve: get campaign for refund: %w", err)
 	}
 
-	// Refund remaining budget_credits to org wallet (fire-and-forget).
-	if s.enqueuer != nil && campaign.BudgetCredits > 0 {
+	// Check the ads.credit_refund_on_reject setting before refunding.
+	// When false, the campaign is still marked as refunded (budget zeroed,
+	// status = rejected) but credits are NOT returned to the org wallet.
+	refundEnabled := true
+	if v, err := s.settings.GetSettingBool(ctx, tenantID, "ads.credit_refund_on_reject"); err == nil {
+		refundEnabled = v
+	}
+
+	if refundEnabled && s.enqueuer != nil && campaign.BudgetCredits > 0 {
 		payload, _ := json.Marshal(map[string]interface{}{
 			"tenant_id":       tenantID.String(),
 			"organization_id": campaign.OrganizationID.String(),
@@ -336,7 +386,64 @@ func (s *Service) RefundCampaignCredits(ctx context.Context, tenantID, campaignI
 		if err := s.enqueuer.Enqueue(TaskDeductCredits, payload); err != nil {
 			slog.Warn("adsselfserve: enqueue refund failed", "error", err)
 		}
+	} else if !refundEnabled {
+		slog.Info("adsselfserve: credit refund skipped (ads.credit_refund_on_reject=false)",
+			"campaign_id", campaignID.String())
 	}
 
 	return s.store.MarkCampaignRefunded(ctx, tenantID, campaignID)
+}
+
+// NotifyCampaignStatus sends a notification to the campaign creator when the
+// review decision is made (approved or rejected). Called by the
+// ads:notify_campaign_status worker task.
+//
+// Ref: japaconnect-engineering/sections/61-self-serve-ads.md (Asynq Tasks)
+//      japaconnect-engineering/adr/ADR-079-self-serve-ads.md §7
+func (s *Service) NotifyCampaignStatus(ctx context.Context, tenantID, campaignID pgtype.UUID) error {
+	campaign, err := s.store.GetCampaignForRefund(ctx, tenantID, campaignID)
+	if err != nil {
+		return fmt.Errorf("adsselfserve: load campaign for notify: %w", err)
+	}
+
+	if s.notifier == nil {
+		slog.Warn("adsselfserve: notifier not wired, skipping campaign status notification",
+			"campaign_id", campaignID.String())
+		return nil
+	}
+
+	if !campaign.CreatedBy.Valid {
+		slog.Warn("adsselfserve: campaign has no created_by, cannot notify",
+			"campaign_id", campaignID.String())
+		return nil
+	}
+
+	var title, actionURL, nType string
+	switch campaign.Status {
+	case StatusActive:
+		nType = "ad_campaign_approved"
+		title = "Your ad campaign \"" + campaign.Name + "\" has been approved and is now active"
+		actionURL = "/org/" + campaign.OrganizationID.String() + "/ads/" + campaign.ID.String()
+	case StatusRejected:
+		nType = "ad_campaign_rejected"
+		title = "Your ad campaign \"" + campaign.Name + "\" was rejected. Credits have been refunded."
+		actionURL = "/org/" + campaign.OrganizationID.String() + "/ads/" + campaign.ID.String()
+	default:
+		// Status hasn't changed to a review decision yet — nothing to notify.
+		slog.Debug("adsselfserve: campaign status is not a review decision, skipping notify",
+			"campaign_id", campaignID.String(), "status", campaign.Status)
+		return nil
+	}
+
+	// System-sourced notification (no human actor).
+	if err := s.notifier.DispatchNotification(
+		ctx, tenantID, campaign.CreatedBy,
+		nType, title,
+		pgtype.UUID{}, // no actor — system notification
+		"ad_campaign", campaign.ID,
+		actionURL, "", "",
+	); err != nil {
+		return fmt.Errorf("adsselfserve: dispatch notification: %w", err)
+	}
+	return nil
 }

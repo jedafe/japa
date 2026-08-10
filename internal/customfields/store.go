@@ -5,12 +5,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/valkey"
 )
 
 // ---------------------------------------------------------------------------
@@ -358,6 +360,26 @@ func (s *Service) ListFieldValuesByEntityForUser(ctx context.Context, tenantID p
 	return values, nil
 }
 
+// ListFieldValuesWithDefsByEntity returns the stored field values for a given
+// entity joined with their custom_fields definitions (label, key, field_type,
+// options, position), filtered to show_in_frontend = true. This is the
+// display-ready shape consumed by public surfaces like the
+// /universities/{slug} About facts grid (Section 39) — it carries both the
+// stored value and the metadata needed to render it in one row, so the caller
+// never has to do a second lookup to resolve a field_id to a label.
+// Tenant-scoped via the JOIN (BUG-014).
+func (s *Service) ListFieldValuesWithDefsByEntity(ctx context.Context, tenantID pgtype.UUID, entityType string, entityID pgtype.UUID) ([]gen.ListCustomFieldValuesWithDefsByEntityRow, error) {
+	rows, err := s.read.ListCustomFieldValuesWithDefsByEntity(ctx, gen.ListCustomFieldValuesWithDefsByEntityParams{
+		EntityType: entityType,
+		EntityID:   entityID,
+		TenantID:   tenantID,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("listing custom field values with defs by entity: %w", err)
+	}
+	return rows, nil
+}
+
 // CheckFieldPermissionForUser returns the can_view / can_edit flags for the
 // given user on the given field (Section 06 field-level RBAC). When no
 // permission rows exist for the field, both default to false (fail-closed).
@@ -386,7 +408,7 @@ func (s *Service) CheckFieldPermissionForUser(ctx context.Context, fieldID, user
 func (s *Service) ListVisibleFieldIDsForUser(ctx context.Context, userID pgtype.UUID) ([]pgtype.UUID, error) {
 	// BUG-016: try Valkey cache first.
 	if s.cache != nil {
-		key := fmt.Sprintf("jc:field_perm:%s", userID.String())
+		key := valkey.MustKey("field_perm:%s", userID.String())
 		if cached, err := s.cache.Get(ctx, key).Bytes(); err == nil && len(cached) > 0 {
 			var ids []string
 			if json.Unmarshal(cached, &ids) == nil && len(ids) > 0 {
@@ -411,7 +433,7 @@ func (s *Service) ListVisibleFieldIDsForUser(ctx context.Context, userID pgtype.
 
 	// BUG-016: cache the result for 5 minutes.
 	if s.cache != nil && len(ids) > 0 {
-		key := fmt.Sprintf("jc:field_perm:%s", userID.String())
+		key := valkey.MustKey("field_perm:%s", userID.String())
 		idStrs := make([]string, 0, len(ids))
 		for _, id := range ids {
 			idStrs = append(idStrs, id.String())
@@ -431,8 +453,31 @@ func (s *Service) InvalidateFieldPermissionCache(ctx context.Context, userID pgt
 	if s.cache == nil {
 		return
 	}
-	key := fmt.Sprintf("jc:field_perm:%s", userID.String())
+	key := valkey.MustKey("field_perm:%s", userID.String())
 	s.cache.Del(ctx, key)
+}
+
+// InvalidateFieldPermissionCacheForGroup clears the cached visible field IDs
+// for every member of the given user group. Must be called after
+// SetFieldPermission (which upserts a permission for a user_group, not a
+// specific user) so all affected users see the change immediately instead of
+// waiting for the 5-minute TTL (Rule 6 / valkey-keys-catalog:
+// jc:field_perm:{user_id} invalidated by SetFieldPermission).
+func (s *Service) InvalidateFieldPermissionCacheForGroup(ctx context.Context, groupID pgtype.UUID) {
+	if s.cache == nil {
+		return
+	}
+
+	memberIDs, err := s.read.ListGroupMembersByGroupID(ctx, groupID)
+	if err != nil {
+		slog.Warn("customfields: failed to list group members for field-perm cache invalidation",
+			"group_id", groupID.String(), "error", err)
+		return
+	}
+
+	for _, userID := range memberIDs {
+		s.InvalidateFieldPermissionCache(ctx, userID)
+	}
 }
 
 // UpsertFieldValue inserts or updates the stored value for a field on a given

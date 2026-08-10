@@ -38,20 +38,24 @@ func TestNewHandlers(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Search — missing auth
+// Search — no auth context (guests are allowed, but tenant is required)
 // ---------------------------------------------------------------------------
 
-func TestSearch_Unauthorized(t *testing.T) {
+func TestSearch_NoAuthContext(t *testing.T) {
 	t.Parallel()
 
+	// Search uses OptionalAuth so guests can search published content
+	// (Phase 10.01). Without any context set, the handler falls through
+	// to the tenant check and returns 503 tenant_unavailable — it does
+	// NOT return 401 because auth is optional.
 	h := NewHandlers(nil)
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/search?q=test", nil)
 	rr := httptest.NewRecorder()
 
 	h.Search(rr, req)
 
-	if rr.Code != http.StatusUnauthorized {
-		t.Errorf("status = %d, want %d", rr.Code, http.StatusUnauthorized)
+	if rr.Code != http.StatusServiceUnavailable {
+		t.Errorf("status = %d, want %d", rr.Code, http.StatusServiceUnavailable)
 	}
 
 	var body map[string]any
@@ -59,8 +63,8 @@ func TestSearch_Unauthorized(t *testing.T) {
 	json.Unmarshal(rr.Body.Bytes(), &body)
 
 	errObj, _ := body["error"].(map[string]any)
-	if errObj["code"] != "unauthorized" {
-		t.Errorf("error.code = %v, want unauthorized", errObj["code"])
+	if errObj["code"] != "tenant_unavailable" {
+		t.Errorf("error.code = %v, want tenant_unavailable", errObj["code"])
 	}
 }
 

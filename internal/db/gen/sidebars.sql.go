@@ -37,13 +37,15 @@ FROM sidebars
 WHERE tenant_id = $1
   AND ($2::text = '' OR app = $2)
   AND ($3::text = '' OR position = $3)
-  AND ($4::text = '' OR name ILIKE '%' || $4 || '%' OR slug ILIKE '%' || $4 || '%')
+  AND ($4::text = '' OR status = $4)
+  AND ($5::text = '' OR name ILIKE '%' || $5 || '%' OR slug ILIKE '%' || $5 || '%')
 `
 
 type CountSidebarsParams struct {
 	TenantID pgtype.UUID `json:"tenant_id"`
 	App      string      `json:"app"`
 	Position string      `json:"position"`
+	Status   string      `json:"status"`
 	Q        string      `json:"q"`
 }
 
@@ -52,6 +54,7 @@ func (q *Queries) CountSidebars(ctx context.Context, arg CountSidebarsParams) (i
 		arg.TenantID,
 		arg.App,
 		arg.Position,
+		arg.Status,
 		arg.Q,
 	)
 	var count int32
@@ -420,24 +423,67 @@ func (q *Queries) ListSidebarWidgets(ctx context.Context, arg ListSidebarWidgets
 const listSidebars = `-- name: ListSidebars :many
 
 
-SELECT id, tenant_id, app, position, slug, name, page_pattern, visibility,
-       required_group_ids, status, created_at, updated_at
-FROM sidebars
-WHERE tenant_id = $1
-  AND ($2::text = '' OR app = $2)
-  AND ($3::text = '' OR position = $3)
-  AND ($4::text = '' OR name ILIKE '%' || $4 || '%' OR slug ILIKE '%' || $4 || '%')
-ORDER BY app ASC, position ASC, created_at ASC
-LIMIT $6 OFFSET $5
+SELECT s.id, s.tenant_id, s.app, s.position, s.slug, s.name, s.page_pattern, s.visibility,
+       s.required_group_ids, s.status, s.created_at, s.updated_at,
+       COALESCE(sw.cnt, 0)::int AS widget_count
+FROM sidebars s
+LEFT JOIN (
+    SELECT sidebar_id, COUNT(*)::int AS cnt
+    FROM sidebar_widgets
+    GROUP BY sidebar_id
+) sw ON sw.sidebar_id = s.id
+WHERE s.tenant_id = $1
+  AND ($2::text = '' OR s.app = $2)
+  AND ($3::text = '' OR s.position = $3)
+  AND ($4::text = '' OR s.status = $4)
+  AND ($5::text = '' OR s.name ILIKE '%' || $5 || '%' OR s.slug ILIKE '%' || $5 || '%')
+ORDER BY
+  CASE WHEN $6::text = 'name:asc'      THEN s.name END ASC,
+  CASE WHEN $6::text = 'name:desc'     THEN s.name END DESC,
+  CASE WHEN $6::text = 'app:asc'       THEN s.app END ASC,
+  CASE WHEN $6::text = 'app:desc'      THEN s.app END DESC,
+  CASE WHEN $6::text = 'position:asc'  THEN s.position END ASC,
+  CASE WHEN $6::text = 'position:desc' THEN s.position END DESC,
+  CASE WHEN $6::text = 'slug:asc'      THEN s.slug END ASC,
+  CASE WHEN $6::text = 'slug:desc'     THEN s.slug END DESC,
+  CASE WHEN $6::text = 'page_pattern:asc'  THEN s.page_pattern END ASC,
+  CASE WHEN $6::text = 'page_pattern:desc' THEN s.page_pattern END DESC,
+  CASE WHEN $6::text = 'status:asc'    THEN s.status END ASC,
+  CASE WHEN $6::text = 'status:desc'   THEN s.status END DESC,
+  CASE WHEN $6::text = 'updated_at:asc'  THEN s.updated_at END ASC,
+  CASE WHEN $6::text = 'updated_at:desc' THEN s.updated_at END DESC,
+  CASE WHEN $6::text = 'created_at:asc'  THEN s.created_at END ASC,
+  CASE WHEN $6::text = 'created_at:desc' THEN s.created_at END DESC,
+  -- Default sort when @sort is empty or unrecognized
+  s.app ASC, s.position ASC, s.created_at ASC
+LIMIT $8 OFFSET $7
 `
 
 type ListSidebarsParams struct {
 	TenantID   pgtype.UUID `json:"tenant_id"`
 	App        string      `json:"app"`
 	Position   string      `json:"position"`
+	Status     string      `json:"status"`
 	Q          string      `json:"q"`
+	Sort       string      `json:"sort"`
 	PageOffset int32       `json:"page_offset"`
 	PageLimit  int32       `json:"page_limit"`
+}
+
+type ListSidebarsRow struct {
+	ID               pgtype.UUID        `json:"id"`
+	TenantID         pgtype.UUID        `json:"tenant_id"`
+	App              string             `json:"app"`
+	Position         string             `json:"position"`
+	Slug             string             `json:"slug"`
+	Name             string             `json:"name"`
+	PagePattern      string             `json:"page_pattern"`
+	Visibility       string             `json:"visibility"`
+	RequiredGroupIds []byte             `json:"required_group_ids"`
+	Status           string             `json:"status"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+	WidgetCount      int32              `json:"widget_count"`
 }
 
 // Sidebars — Sidebar Management System (Section 59, ADR-066)
@@ -447,12 +493,14 @@ type ListSidebarsParams struct {
 // =====================
 // Sidebars CRUD
 // =====================
-func (q *Queries) ListSidebars(ctx context.Context, arg ListSidebarsParams) ([]Sidebar, error) {
+func (q *Queries) ListSidebars(ctx context.Context, arg ListSidebarsParams) ([]ListSidebarsRow, error) {
 	rows, err := q.db.Query(ctx, listSidebars,
 		arg.TenantID,
 		arg.App,
 		arg.Position,
+		arg.Status,
 		arg.Q,
+		arg.Sort,
 		arg.PageOffset,
 		arg.PageLimit,
 	)
@@ -460,9 +508,9 @@ func (q *Queries) ListSidebars(ctx context.Context, arg ListSidebarsParams) ([]S
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Sidebar
+	var items []ListSidebarsRow
 	for rows.Next() {
-		var i Sidebar
+		var i ListSidebarsRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.TenantID,
@@ -476,6 +524,7 @@ func (q *Queries) ListSidebars(ctx context.Context, arg ListSidebarsParams) ([]S
 			&i.Status,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.WidgetCount,
 		); err != nil {
 			return nil, err
 		}

@@ -217,12 +217,13 @@ JOIN contents c ON c.tenant_id = t.tenant_id AND c.id IN (
     SELECT ct.content_id FROM content_tags ct
     JOIN contents c2 ON c2.id = ct.content_id AND c2.author_id = $1 AND c2.tenant_id = $2
 )
+LEFT JOIN spaces sp ON sp.id = c.geo_space_id
 WHERE t.tenant_id = $2
 AND NOT EXISTS (
     SELECT 1 FROM follows f
     WHERE f.follower_id = $1 AND f.entity_type = 'tag' AND f.entity_id = t.id AND f.tenant_id = $2
 )
-ORDER BY t.follower_count DESC
+ORDER BY (CASE WHEN sp.geo_code = $4 THEN 0 ELSE 1 END), t.follower_count DESC
 LIMIT $3
 `
 
@@ -230,6 +231,7 @@ type GetSuggestedTagsParams struct {
 	AuthorID pgtype.UUID `json:"author_id"`
 	TenantID pgtype.UUID `json:"tenant_id"`
 	Limit    int32       `json:"limit"`
+	GeoCode  *string     `json:"geo_code"`
 }
 
 type GetSuggestedTagsRow struct {
@@ -239,8 +241,16 @@ type GetSuggestedTagsRow struct {
 	FollowerCount int32       `json:"follower_count"`
 }
 
+// ADR-064: when geoCode is provided, tags from content in the visitor's
+// geo region are preferred (re-weighted, not hidden). Empty geoCode =
+// global ranking (original behavior).
 func (q *Queries) GetSuggestedTags(ctx context.Context, arg GetSuggestedTagsParams) ([]GetSuggestedTagsRow, error) {
-	rows, err := q.db.Query(ctx, getSuggestedTags, arg.AuthorID, arg.TenantID, arg.Limit)
+	rows, err := q.db.Query(ctx, getSuggestedTags,
+		arg.AuthorID,
+		arg.TenantID,
+		arg.Limit,
+		arg.GeoCode,
+	)
 	if err != nil {
 		return nil, err
 	}

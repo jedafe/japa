@@ -9,6 +9,8 @@ import (
 
 	"github.com/valkey-io/valkey-go"
 	"github.com/valkey-io/valkey-go/valkeycompat"
+
+	valkeypkg "github.com/jedafe/japa/internal/valkey"
 )
 
 // mockRedisClient creates a real Redis client for integration tests.
@@ -100,7 +102,7 @@ func TestSlidingWindowRateLimit_ResponseHeaders(t *testing.T) {
 	ctx := t.Context()
 	prefix := "test_headers_" + time.Now().Format("150405")
 
-	keys, _ := rdb.Keys(ctx, "jc:api_rate:"+prefix+"*").Result()
+	keys, _ := rdb.Keys(ctx, valkeypkg.MustKey("api_rate:%s:*", prefix)).Result()
 	if len(keys) > 0 {
 		rdb.Del(ctx, keys...)
 	}

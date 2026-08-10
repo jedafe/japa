@@ -412,6 +412,13 @@ func (s *Service) UpdateContent(ctx context.Context, id, tenantID, editedBy pgty
 		return gen.UpdateContentRow{}, fmt.Errorf("creating revision: %w", err)
 	}
 
+	s.emitWebhook(ctx, tenantID, "content.updated", map[string]any{
+		"content_id": content.ID,
+		"slug":        content.Slug,
+		"title":       content.Title,
+		"actor_id":    editedBy,
+	})
+
 	return content, nil
 }
 
@@ -440,6 +447,12 @@ func (s *Service) UpdateContentStatus(ctx context.Context, id, tenantID pgtype.U
 			slog.Warn("content: failed to ensure content_scores row on publish",
 				"content_id", content.ID.String(), "error", err)
 		}
+		s.emitWebhook(ctx, tenantID, "content.published", map[string]any{
+			"content_id": content.ID,
+			"slug":        content.Slug,
+			"title":       content.Title,
+			"actor_id":    content.AuthorID,
+		})
 	}
 
 	return content, nil
@@ -544,12 +557,31 @@ func (s *Service) EnsureContentScore(ctx context.Context, contentID pgtype.UUID)
 
 // DeleteContent soft-deletes a content row, scoped to the tenant.
 func (s *Service) DeleteContent(ctx context.Context, id, tenantID pgtype.UUID) error {
+	// Fetch the row before soft-deleting so the webhook payload can carry
+	// the slug/title/author (the deleted_at filter would hide it after).
+	existing, err := s.read.GetContentByID(ctx, gen.GetContentByIDParams{
+		ID:       id,
+		TenantID: tenantID,
+	})
+	if err != nil {
+		// Non-fatal: proceed with the delete even if the pre-read fails
+		// (the row may already be gone); the webhook is best-effort.
+		slog.Warn("content: pre-delete fetch for webhook payload", "content_id", id.String(), "error", err)
+	}
+
 	if err := s.write.DeleteContent(ctx, gen.DeleteContentParams{
 		ID:       id,
 		TenantID: tenantID,
 	}); err != nil {
 		return fmt.Errorf("deleting content: %w", err)
 	}
+
+	s.emitWebhook(ctx, tenantID, "content.deleted", map[string]any{
+		"content_id": id,
+		"slug":        existing.Slug,
+		"title":       existing.Title,
+		"actor_id":    existing.AuthorID,
+	})
 
 	return nil
 }

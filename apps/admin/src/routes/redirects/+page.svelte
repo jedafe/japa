@@ -35,7 +35,12 @@
 		bulkDeleting = true;
 		pageError = '';
 		try {
-			await Promise.all(idArr.map((id) => redirectsAdminApi.delete(id)));
+			// Use the spec'd bulk endpoint (ADR-056) — single POST with
+			// {action: "delete", ids: [...]} instead of N individual DELETEs.
+			const res = await redirectsAdminApi.bulkDelete({ action: 'delete', ids: idArr });
+			if (!res.ok) {
+				pageError = res.error ?? t('common.error', 'Failed to delete redirects');
+			}
 		} catch (e) {
 			pageError = e instanceof Error ? e.message : t('common.error', 'Failed to delete redirects');
 		} finally {

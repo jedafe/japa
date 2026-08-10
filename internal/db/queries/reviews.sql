@@ -32,6 +32,30 @@ WHERE tenant_id = @tenant_id
 ORDER BY created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 
+-- name: ListReviewsByEntityHighestRating :many
+-- Sort by highest rating first (spec §29: ?sort=highest).
+SELECT id, tenant_id, entity_type, entity_id, reviewer_user_id,
+       rating, title, body, status, created_at, updated_at
+FROM reviews
+WHERE tenant_id = @tenant_id
+  AND entity_type = @entity_type
+  AND entity_id = @entity_id
+  AND status = 'published'
+ORDER BY rating DESC, created_at DESC
+LIMIT @page_limit OFFSET @page_offset;
+
+-- name: ListReviewsByEntityLowestRating :many
+-- Sort by lowest rating first (spec §29: ?sort=lowest).
+SELECT id, tenant_id, entity_type, entity_id, reviewer_user_id,
+       rating, title, body, status, created_at, updated_at
+FROM reviews
+WHERE tenant_id = @tenant_id
+  AND entity_type = @entity_type
+  AND entity_id = @entity_id
+  AND status = 'published'
+ORDER BY rating ASC, created_at DESC
+LIMIT @page_limit OFFSET @page_offset;
+
 -- name: ListReviewsByEntityWithAuthor :many
 -- Reviews joined to users + user_profiles so the learning track reviews list
 -- (GET /learn/tracks/{id}/reviews) can render author username, display name,
@@ -131,6 +155,17 @@ RETURNING id, tenant_id, entity_type, entity_id, reviewer_user_id,
 UPDATE reviews
 SET status = @status, updated_at = now()
 WHERE id = @id AND tenant_id = @tenant_id
+RETURNING id, tenant_id, entity_type, entity_id, reviewer_user_id,
+          rating, title, body, status, created_at, updated_at;
+
+-- name: SoftDeleteOwnReview :one
+-- Owner-scoped soft delete: sets status to 'removed' only if the requesting
+-- user is the review's author. Prevents any user with reviews.delete_own
+-- from deleting other users' reviews (BUG-001).
+UPDATE reviews
+SET status = 'removed', updated_at = now()
+WHERE id = @id AND tenant_id = @tenant_id
+  AND reviewer_user_id = @reviewer_user_id
 RETURNING id, tenant_id, entity_type, entity_id, reviewer_user_id,
           rating, title, body, status, created_at, updated_at;
 

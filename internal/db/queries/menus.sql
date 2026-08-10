@@ -5,18 +5,40 @@
 -- =====================
 
 -- name: ListMenus :many
-SELECT id, tenant_id, slug, name, placement, status, created_at, updated_at
-FROM menus
-WHERE tenant_id = @tenant_id
-  AND (@q::text = '' OR name ILIKE '%' || @q || '%' OR slug ILIKE '%' || @q || '%')
-ORDER BY created_at ASC
+-- Admin list with optional q (name/slug ILIKE), placement, status filters
+-- and sort. Sort keys: name, slug, placement, status, updated_at (default
+-- created_at ASC). Sort direction: asc/desc (default asc). Ref: ADR-054
+-- admin list "must filter + sort + paginate". Includes item_count (correlated
+-- subquery) so the admin list can show how many items each menu has without
+-- an N+1 fetch.
+SELECT m.id, m.tenant_id, m.slug, m.name, m.placement, m.status, m.created_at, m.updated_at,
+       (SELECT COUNT(*)::int FROM menu_items mi WHERE mi.menu_id = m.id AND mi.tenant_id = m.tenant_id) AS item_count
+FROM menus m
+WHERE m.tenant_id = @tenant_id
+  AND (@q::text = '' OR m.name ILIKE '%' || @q || '%' OR m.slug ILIKE '%' || @q || '%')
+  AND (@placement::text = '' OR m.placement = @placement)
+  AND (@status::text = '' OR m.status = @status)
+ORDER BY
+    CASE WHEN @sort_dir::text = 'asc' AND @sort::text = 'name' THEN m.name END ASC,
+    CASE WHEN @sort_dir::text = 'asc' AND @sort::text = 'slug' THEN m.slug END ASC,
+    CASE WHEN @sort_dir::text = 'asc' AND @sort::text = 'placement' THEN m.placement END ASC,
+    CASE WHEN @sort_dir::text = 'asc' AND @sort::text = 'status' THEN m.status END ASC,
+    CASE WHEN @sort_dir::text = 'asc' AND @sort::text = 'updated_at' THEN m.updated_at END ASC,
+    CASE WHEN @sort_dir::text = 'desc' AND @sort::text = 'name' THEN m.name END DESC,
+    CASE WHEN @sort_dir::text = 'desc' AND @sort::text = 'slug' THEN m.slug END DESC,
+    CASE WHEN @sort_dir::text = 'desc' AND @sort::text = 'placement' THEN m.placement END DESC,
+    CASE WHEN @sort_dir::text = 'desc' AND @sort::text = 'status' THEN m.status END DESC,
+    CASE WHEN @sort_dir::text = 'desc' AND @sort::text = 'updated_at' THEN m.updated_at END DESC,
+    m.created_at ASC
 LIMIT @page_limit OFFSET @page_offset;
 
 -- name: CountMenus :one
 SELECT COUNT(*)::int AS count
 FROM menus
 WHERE tenant_id = @tenant_id
-  AND (@q::text = '' OR name ILIKE '%' || @q || '%' OR slug ILIKE '%' || @q || '%');
+  AND (@q::text = '' OR name ILIKE '%' || @q || '%' OR slug ILIKE '%' || @q || '%')
+  AND (@placement::text = '' OR placement = @placement)
+  AND (@status::text = '' OR status = @status);
 
 -- name: GetMenuByID :one
 SELECT id, tenant_id, slug, name, placement, status, created_at, updated_at

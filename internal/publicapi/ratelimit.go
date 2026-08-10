@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/valkey"
 	"github.com/valkey-io/valkey-go/valkeycompat"
 )
 
@@ -71,7 +72,7 @@ func SlidingWindowRateLimitWithSettings(rdb valkeycompat.Cmdable, sr rateLimitSe
 			randBytes := make([]byte, 8)
 			_, _ = rand.Read(randBytes)
 			uniqueID := fmt.Sprintf("%d.%s", now.UnixNano(), hex.EncodeToString(randBytes))
-			setKey := fmt.Sprintf("jc:api_rate:%s:%d", key.KeyPrefix, now.Unix()/60)
+			setKey := valkey.MustKey("api_rate:%s:%d", key.KeyPrefix, now.Unix()/60)
 
 			ctx := r.Context()
 

@@ -1,7 +1,6 @@
 package feed
 
 import (
-	"fmt"
 	"math"
 	"sort"
 	"strings"
@@ -9,6 +8,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/valkey"
 )
 
 // For-You ranking weights (v1 constants; later tunable via system_settings).
@@ -124,7 +124,7 @@ func rankCandidates(cands []Candidate, sortMode string, now time.Time, contentCo
 // ranking for up to forYouCacheTTL. Uses the jc:cache:feed:foryou: prefix
 // per Rule 4 (VALKEY-001/005).
 func forYouCacheKey(tenantID, userID pgtype.UUID, sortMode, contentCountry string) string {
-	return fmt.Sprintf("jc:cache:feed:foryou:%s:%s:%s:%s",
+	return valkey.MustKey("cache:feed:foryou:%s:%s:%s:%s",
 		uuidToString(tenantID), uuidToString(userID), sortMode, strings.ToUpper(contentCountry))
 }
 

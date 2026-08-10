@@ -4,6 +4,7 @@
 	import { untrack } from 'svelte';
 	import { GraduationCap, Users, MessageSquare, Info, ArrowRight, FileText, Star, GitCompare, BookOpen, UsersRound, ExternalLink } from 'lucide-svelte';
 	import { EmptyState, UrlTabs, type UrlTab } from '$lib/components/ui';
+	import { decodeBase64Text } from '$lib/tiptap/serialize';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -14,6 +15,69 @@
 	const members = $derived(data.members ?? []);
 	const forums = $derived(data.forums ?? []);
 	let activeTab = $state(untrack(() => page.url.searchParams.get('tab') ?? 'about'));
+
+	// Wiki content: the API stores it as base64-encoded JSON. The
+	// space:auto_populate task (Section 39 / Wikidata enrichment) stores one of
+	// two shapes — rich: {title, extract, description, thumbnail, content_url},
+	// or basic: {name, country, founded, website, description, wikipedia_url}.
+	// Decode and surface the text/image for the Overview tab. Mirrors the
+	// /spaces/[slug] page (the established convention) so the university page
+	// never renders the raw base64 blob to the user.
+	interface WikiData {
+		title?: string;
+		extract?: string;
+		description?: string;
+		thumbnail?: string;
+		content_url?: string;
+		name?: string;
+		country?: string;
+		founded?: string;
+		website?: string;
+		wikipedia_url?: string;
+	}
+	const wikiData = $derived.by(() => {
+		const raw = university.wiki_content;
+		if (!raw) return null;
+		try {
+			const json = typeof raw === 'string' ? JSON.parse(decodeBase64Text(raw)) : raw;
+			return json as WikiData;
+		} catch {
+			return null;
+		}
+	});
+
+	// Founded year — Wikidata dates arrive as "+1889-00-00T00:00:00Z"; strip
+	// the leading + and the placeholder month/day to leave just the year.
+	const foundedYear = $derived(
+		wikiData?.founded ? wikiData.founded.replace(/^\+/, '').replace(/-00-00T.*$/, '') : null
+	);
+
+	// Display-ready custom field values from the backend (Section 39 sidebar:
+	// "key custom field values (ranking, tuition, programs, etc.)"). The
+	// handler joins custom_field_values with their definitions, filters to
+	// show_in_frontend = true, and resolves select/multiselect option values
+	// to labels — so each entry is ready to render as {label, value}.
+	const displayFields = $derived(university.display_fields ?? []);
+
+	// Whether the wiki payload contributes any key facts (Website/Founded) so
+	// we only render that grid when it adds something beyond display_fields.
+	// Avoids a duplicate "Website" row when the custom field already covers it.
+	const wikiFacts = $derived.by(() => {
+		const facts: { label: string; value: string; href?: string }[] = [];
+		const keys = new Set(displayFields.map((f) => f.key));
+		// Only surface wiki Website when no official_website_url field exists.
+		if (wikiData?.website && !keys.has('official_website_url')) {
+			facts.push({
+				label: t('university.website', 'Website'),
+				value: wikiData.website.replace(/^https?:\/\//, '').replace(/\/$/, ''),
+				href: wikiData.website
+			});
+		}
+		if (foundedYear && !keys.has('founded_year')) {
+			facts.push({ label: t('university.founded', 'Founded'), value: foundedYear });
+		}
+		return facts;
+	});
 
 	const title = $derived(
 		t('university.title', '{name} — JapaConnect').replace('{name}', university.name)
@@ -160,18 +224,100 @@
 		</div>
 
 		{#if activeTab === 'about'}
-			<!-- Overview / wiki -->
+			<!-- Overview / wiki — Section 39: "rich wiki content (TipTap editor for
+			     admins/moderators)". The space:auto_populate task stores the
+			     Wikidata extract as base64-encoded JSON in wiki_content; decode
+			     and render it (mirroring /spaces/[slug]) instead of dumping the
+			     raw base64 blob. Falls back to the Space description, then an
+			     empty state. -->
 			<section
 				class="mt-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4"
 			>
 				<h2 class="flex items-center gap-2 text-sm font-medium text-[var(--color-text)]">
 					<Info size={16} /> {t('university.about', 'About')}
 				</h2>
-				{#if university.wiki_content}
-					<div class="mt-3 text-sm leading-relaxed text-[var(--color-text-subtle)]">
-						{university.wiki_content}
-					</div>
-				{:else if university.description}
+				{#if wikiData}
+					{#if wikiData.thumbnail}
+						<img
+							src={wikiData.thumbnail}
+							alt={wikiData.title ?? university.name}
+							class="float-right mb-3 ml-3 h-24 w-24 rounded-[var(--radius)] object-cover"
+						/>
+					{/if}
+					{#if wikiData.description}
+						<p class="mb-2 mt-3 text-xs font-medium uppercase tracking-wide text-[var(--color-muted)]">
+							{wikiData.description}
+						</p>
+					{/if}
+					{#if wikiData.extract}
+						<p class="mt-3 text-sm leading-relaxed text-[var(--color-text-subtle)]">
+							{wikiData.extract}
+						</p>
+					{:else if university.description}
+						<p class="mt-3 text-sm leading-relaxed text-[var(--color-text-subtle)]">
+							{university.description}
+						</p>
+					{/if}
+					{#if wikiData.content_url ?? wikiData.wikipedia_url}
+						<p class="mt-3 text-xs">
+							<a
+								href={wikiData.content_url ?? wikiData.wikipedia_url}
+								target="_blank"
+								rel="noopener noreferrer"
+								class="text-[var(--color-primary)] hover:underline"
+							>
+								{t('university.wiki_source', 'Read more on Wikipedia →')}
+							</a>
+						</p>
+					{/if}
+					<!-- Key facts (Section 39 sidebar: "key custom field values
+				     (ranking, tuition, programs, etc.)"). Renders the
+				     display-ready custom field values from the backend first,
+				     then falls back to any facts the Wikidata wiki payload
+				     contributes that aren't already covered by a custom field
+				     (deduped by field key). URL-typed fields render as links. -->
+				{#if displayFields.length > 0 || wikiFacts.length > 0}
+					<dl class="mt-4 grid grid-cols-2 gap-3 border-t border-[var(--color-border)] pt-4 text-sm">
+						{#each displayFields as field (field.key)}
+							<div class="min-w-0">
+								<dt class="text-xs text-[var(--color-muted)]">{field.label}</dt>
+								<dd class="truncate text-[var(--color-text)]">
+									{#if field.field_type === 'url' || field.field_type === 'email'}
+										<a
+											href={field.field_type === 'email' ? `mailto:${field.value}` : field.value}
+											{...field.field_type === 'email' ? {} : { target: '_blank', rel: 'noopener noreferrer' }}
+											class="text-[var(--color-primary)] hover:underline"
+										>
+											{field.value.replace(/^https?:\/\//, '').replace(/\/$/, '')}
+										</a>
+									{:else}
+										{field.value}
+									{/if}
+								</dd>
+							</div>
+						{/each}
+						{#each wikiFacts as fact (fact.label)}
+							<div class="min-w-0">
+								<dt class="text-xs text-[var(--color-muted)]">{fact.label}</dt>
+								<dd class="truncate text-[var(--color-text)]">
+									{#if fact.href}
+										<a
+											href={fact.href}
+											target="_blank"
+											rel="noopener noreferrer"
+											class="text-[var(--color-primary)] hover:underline"
+										>
+											{fact.value}
+										</a>
+									{:else}
+										{fact.value}
+									{/if}
+								</dd>
+							</div>
+						{/each}
+					</dl>
+				{/if}
+			{:else if university.description}
 					<p class="mt-3 text-sm leading-relaxed text-[var(--color-text-subtle)]">
 						{university.description}
 					</p>

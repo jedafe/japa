@@ -1,16 +1,17 @@
 <script lang="ts">
-	// /tools/cost-of-living — stats/monitoring page for cost of living calculator usage.
-	// The API only returns a stats object (not a list), so we use a custom card layout instead of EntityPage.
+	// /tools/cost-of-living — data completeness + staleness report for the Cost
+	// of Living Calculator (Section 72, ADR-072). The backend returns a paginated
+	// per-city report (AdminStatsResponse), not usage analytics.
 	import { t } from '$lib/stores/i18n.svelte';
-	import { hasPermission } from '$lib/stores/permissions.svelte';
-	import { costOfLivingAdminApi } from '$lib/api';
-
-	const canManage = $derived(hasPermission('col_calculator.manage'));
+	import { costOfLivingAdminApi, type ColAdminStatsItem } from '$lib/api';
 
 	// ── State ───────────────────────────────────────────────────────────────
 	let pageError = $state('');
 	let loading = $state(true);
-	let stats = $state<Record<string, any>>({});
+	let cities = $state<ColAdminStatsItem[]>([]);
+	let total = $state(0);
+	let page = $state(1);
+	let limit = $state(25);
 
 	// Load stats on mount.
 	$effect(() => {
@@ -21,9 +22,10 @@
 		loading = true;
 		pageError = '';
 		try {
-			const result = await costOfLivingAdminApi.stats();
+			const result = await costOfLivingAdminApi.stats(`page=${page}&limit=${limit}`);
 			if (result.ok) {
-				stats = (result.data as Record<string, any>) ?? {};
+				cities = result.data.cities ?? [];
+				total = result.data.total ?? 0;
 			} else {
 				pageError = result.error ?? t('common.error', 'An error occurred');
 			}
@@ -34,34 +36,27 @@
 		}
 	}
 
-	// Stat card entries derived from the stats object.
-	const statCards = $derived.by<Array<{ key: string; label: string; value: string }>>(() => {
-		const entries: Array<{ key: string; label: string; value: string }> = [];
-		const labels: Record<string, string> = {
-			total_calculations: t('app.tools.col_total_calculations', 'Total Calculations'),
-			unique_users: t('app.tools.col_unique_users', 'Unique Users'),
-			most_compared_cities: t('app.tools.col_most_compared_cities', 'Most Compared Cities'),
-			avg_calculations_per_user: t('app.tools.col_avg_per_user', 'Avg / User'),
-			last_calculation_at: t('app.tools.col_last_calculation', 'Last Calculation')
-		};
-		for (const [key, value] of Object.entries(stats)) {
-			entries.push({
-				key,
-				label: labels[key] ?? key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()),
-				value: formatStatValue(key, value)
-			});
-		}
-		return entries;
-	});
+	const totalPages = $derived(Math.max(1, Math.ceil(total / limit)));
 
-	function formatStatValue(key: string, value: any): string {
-		if (value == null) return '—';
-		if (key === 'last_calculation_at' && typeof value === 'string') {
-			return new Date(value).toLocaleString();
+	function goTo(p: number) {
+		if (p < 1 || p > totalPages || p === page) return;
+		page = p;
+		void loadStats();
+	}
+
+	function formatDate(s: string): string {
+		if (!s) return '—';
+		try {
+			return new Date(s).toLocaleDateString();
+		} catch {
+			return s;
 		}
-		if (typeof value === 'number') return value.toLocaleString();
-		if (Array.isArray(value)) return value.join(', ');
-		return String(value);
+	}
+
+	function completenessColor(pct: number): string {
+		if (pct >= 80) return 'var(--color-success, #16a34a)';
+		if (pct >= 50) return 'var(--color-warning, #d97706)';
+		return 'var(--color-danger, #dc2626)';
 	}
 </script>
 
@@ -75,7 +70,7 @@
 			{t('app.tools.cost_of_living_heading', 'Cost of Living Calculator')}
 		</h1>
 		<p class="mt-1 text-sm" style="color: var(--color-muted)">
-			{t('app.tools.cost_of_living_desc', 'Usage statistics for the cost of living comparison calculator')}
+			{t('app.tools.cost_of_living_desc', 'Data completeness and staleness report per city')}
 		</p>
 	</div>
 
@@ -92,25 +87,89 @@
 		<div class="rounded-lg border p-8 text-center text-sm" style="border-color: var(--color-border); color: var(--color-muted)">
 			{t('common.loading', 'Loading...')}
 		</div>
-	{:else if statCards.length === 0}
+	{:else if cities.length === 0}
 		<div class="rounded-lg border p-8 text-center text-sm" style="border-color: var(--color-border); color: var(--color-muted)">
 			{t('common.no_data', 'No data available')}
 		</div>
 	{:else}
-		<div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-			{#each statCards as card (card.key)}
-				<div
-					class="rounded-lg border p-5"
-					style="border-color: var(--color-border); background: var(--color-surface)"
-				>
-					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">
-						{card.label}
-					</p>
-					<p class="mt-2 text-2xl font-bold" style="color: var(--color-foreground)">
-						{card.value}
-					</p>
-				</div>
-			{/each}
+		<div class="overflow-x-auto rounded-lg border" style="border-color: var(--color-border)">
+			<table class="w-full text-sm">
+				<thead>
+					<tr class="border-b text-left text-xs uppercase tracking-wider" style="border-color: var(--color-border); color: var(--color-muted)">
+						<th class="px-4 py-3 font-medium">{t('app.tools.col_city', 'City')}</th>
+						<th class="px-4 py-3 font-medium">{t('app.tools.col_completeness', 'Completeness')}</th>
+						<th class="px-4 py-3 font-medium">{t('app.tools.col_filled', 'Filled / Total')}</th>
+						<th class="px-4 py-3 font-medium">{t('app.tools.col_last_updated', 'Last Updated')}</th>
+						<th class="px-4 py-3 font-medium">{t('app.tools.col_status', 'Status')}</th>
+					</tr>
+				</thead>
+				<tbody>
+					{#each cities as city (city.city_id)}
+						<tr class="border-b last:border-0" style="border-color: var(--color-border)">
+							<td class="px-4 py-3" style="color: var(--color-foreground)">
+								{city.city_name}
+								{#if city.is_baseline}
+									<span class="ml-2 text-xs px-1.5 py-0.5 rounded" style="background: var(--color-surface-subtle, #f1f5f9); color: var(--color-muted)">{t('col.baseline_label', 'Baseline')}</span>
+								{/if}
+							</td>
+							<td class="px-4 py-3">
+								<div class="flex items-center gap-2">
+									<div class="flex-1 max-w-[120px] h-2 rounded-full overflow-hidden" style="background: var(--color-surface-subtle, #e2e8f0)">
+										<div class="h-full rounded-full" style="width: {city.completeness_pct}%; background: {completenessColor(city.completeness_pct)}"></div>
+									</div>
+									<span class="text-xs font-medium" style="color: var(--color-foreground)">{city.completeness_pct.toFixed(0)}%</span>
+								</div>
+							</td>
+							<td class="px-4 py-3" style="color: var(--color-foreground)">
+								{city.filled_dimensions} / {city.total_dimensions}
+							</td>
+							<td class="px-4 py-3" style="color: var(--color-muted)">
+								{formatDate(city.last_updated)}
+							</td>
+							<td class="px-4 py-3">
+								{#if city.is_stale}
+									<span class="text-xs px-2 py-1 rounded-full" style="background: color-mix(in srgb, var(--color-warning, #d97706) 15%, transparent); color: var(--color-warning, #d97706)">
+										{t('app.tools.col_stale', 'Stale')}
+									</span>
+								{:else}
+									<span class="text-xs px-2 py-1 rounded-full" style="background: color-mix(in srgb, var(--color-success, #16a34a) 15%, transparent); color: var(--color-success, #16a34a)">
+										{t('app.tools.col_fresh', 'Fresh')}
+									</span>
+								{/if}
+							</td>
+						</tr>
+					{/each}
+				</tbody>
+			</table>
 		</div>
+
+		<!-- Pagination -->
+		{#if totalPages > 1}
+			<div class="flex items-center justify-between">
+				<span class="text-sm" style="color: var(--color-muted)">
+					{t('common.page', 'Page')} {page} / {totalPages} · {total} {t('common.total', 'total')}
+				</span>
+				<div class="flex gap-2">
+					<button
+						type="button"
+						onclick={() => goTo(page - 1)}
+						disabled={page <= 1}
+						class="px-3 py-1.5 text-sm rounded border disabled:opacity-40"
+						style="border-color: var(--color-border); color: var(--color-foreground)"
+					>
+						{t('common.prev', 'Previous')}
+					</button>
+					<button
+						type="button"
+						onclick={() => goTo(page + 1)}
+						disabled={page >= totalPages}
+						class="px-3 py-1.5 text-sm rounded border disabled:opacity-40"
+						style="border-color: var(--color-border); color: var(--color-foreground)"
+					>
+						{t('common.next', 'Next')}
+					</button>
+				</div>
+			</div>
+		{/if}
 	{/if}
 </div>

@@ -101,6 +101,19 @@ func (s *Store) GetCityByID(ctx context.Context, tenantID, id pgtype.UUID) (gen.
 	return row, nil
 }
 
+// GetCitiesByIDs batch-fetches multiple cities by ID. Used by CompareCities
+// to avoid an N+1 (one GetCityByID call per requested city).
+func (s *Store) GetCitiesByIDs(ctx context.Context, tenantID pgtype.UUID, ids []pgtype.UUID) ([]gen.GetCOLCitiesByIDsRow, error) {
+	rows, err := s.queries.GetCOLCitiesByIDs(ctx, gen.GetCOLCitiesByIDsParams{
+		TenantID: tenantID,
+		Ids:      ids,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("costofliving: get cities by ids: %w", err)
+	}
+	return rows, nil
+}
+
 // GetValuesForCities returns the comparison values (cost data matrix) for a
 // set of city item IDs. The service layer pivots these into a matrix.
 func (s *Store) GetValuesForCities(ctx context.Context, tenantID pgtype.UUID, itemIDs []pgtype.UUID) ([]gen.GetCOLValuesForCitiesRow, error) {

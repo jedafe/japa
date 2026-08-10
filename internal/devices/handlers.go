@@ -9,8 +9,9 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/go-chi/chi/v5"
+
+	"github.com/jedafe/japa/internal/auth"
 )
 
 // Handlers exposes the device token HTTP routes.
@@ -22,13 +23,9 @@ type Handlers struct {
 func NewHandlers(svc *Service) *Handlers { return &Handlers{svc: svc} }
 
 // HandleRegisterDevice registers or updates a device token.
-// POST /me/devices
+// POST /api/v1/me/devices
 func (h *Handlers) HandleRegisterDevice(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
-	userID, ok := requireUser(w, r)
+	user, ok := requireAuth(w, r)
 	if !ok {
 		return
 	}
@@ -39,31 +36,18 @@ func (h *Handlers) HandleRegisterDevice(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	token, err := h.svc.RegisterDevice(r.Context(), tenantID, userID, input)
+	info, err := h.svc.RegisterDevice(r.Context(), user.TenantID, user.UserID, input)
 	if err != nil {
-		if errors.Is(err, errors.New("devices: device_id and token are required")) {
-			writeError(w, http.StatusBadRequest, "missing_fields", "device_id and token are required")
-			return
-		}
-		writeError(w, http.StatusBadRequest, "register_failed", err.Error())
+		writeDeviceError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, map[string]interface{}{
-		"id":         token.ID.String(),
-		"device_id":  token.DeviceID,
-		"platform":   token.Platform,
-		"is_active":  token.IsActive,
-	})
+	writeJSON(w, http.StatusCreated, map[string]interface{}{"data": info})
 }
 
 // HandleDeregisterDevice removes a device token.
-// DELETE /me/devices/{device_id}
+// DELETE /api/v1/me/devices/{device_id}
 func (h *Handlers) HandleDeregisterDevice(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
-	userID, ok := requireUser(w, r)
+	user, ok := requireAuth(w, r)
 	if !ok {
 		return
 	}
@@ -74,41 +58,38 @@ func (h *Handlers) HandleDeregisterDevice(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	if err := h.svc.DeregisterDevice(r.Context(), tenantID, userID, deviceID); err != nil {
-		writeError(w, http.StatusBadRequest, "deregister_failed", err.Error())
+	if err := h.svc.DeregisterDevice(r.Context(), user.TenantID, user.UserID, deviceID); err != nil {
+		writeDeviceError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]interface{}{"deregistered": true})
+	writeJSON(w, http.StatusOK, map[string]interface{}{"data": map[string]bool{"deregistered": true}})
 }
 
 // HandleListDevices returns the user's registered devices.
-// GET /me/devices
+// GET /api/v1/me/devices
 func (h *Handlers) HandleListDevices(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
-	userID, ok := requireUser(w, r)
+	user, ok := requireAuth(w, r)
 	if !ok {
 		return
 	}
 
-	tokens, err := h.svc.ListDevices(r.Context(), tenantID, userID)
+	devices, err := h.svc.ListDevices(r.Context(), user.TenantID, user.UserID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "list_failed", err.Error())
+		writeDeviceError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]interface{}{"devices": tokens})
+	// Always emit a JSON array, never null, for an empty list (§6.2).
+	if devices == nil {
+		devices = []DeviceInfo{}
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{"data": devices})
 }
 
 // HandleAdminTestPush sends a test push to a device.
-// POST /admin/push/test
+// POST /api/v1/admin/push/test
 func (h *Handlers) HandleAdminTestPush(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	user, ok := requireAuth(w, r)
 	if !ok {
-		return
-	}
-	if _, ok := requireUser(w, r); !ok {
 		return
 	}
 
@@ -124,14 +105,27 @@ func (h *Handlers) HandleAdminTestPush(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.svc.SendTestPush(r.Context(), tenantID, body.DeviceID); err != nil {
-		writeError(w, http.StatusBadRequest, "test_push_failed", err.Error())
+	if err := h.svc.SendTestPush(r.Context(), user.TenantID, body.DeviceID); err != nil {
+		writeDeviceError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]interface{}{"sent": true})
+	writeJSON(w, http.StatusOK, map[string]interface{}{"data": map[string]bool{"sent": true}})
 }
 
 // --- shared helpers ---
+
+// requireAuth resolves the authenticated user from the request context using
+// the auth middleware's UserContextKey (BE-001: the previous private
+// tenantCtxKey/userCtxKey types were never populated by any middleware, so
+// every endpoint always returned 401).
+func requireAuth(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
+	user := auth.FromContext(r.Context())
+	if user == nil || !user.UserID.Valid || !user.TenantID.Valid {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		return nil, false
+	}
+	return user, true
+}
 
 func writeJSON(w http.ResponseWriter, status int, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
@@ -149,33 +143,25 @@ func writeError(w http.ResponseWriter, status int, code, message string) {
 	})
 }
 
-type tenantCtxKey struct{}
-type userCtxKey struct{}
-
-func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
-	v := r.Context().Value(tenantCtxKey{})
-	if v == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Tenant context required")
-		return pgtype.UUID{}, false
+// writeDeviceError maps a devices service error to the standard error envelope
+// (Rule 5). Sentinel errors get stable snake_case codes; unknown errors get a
+// generic 400 with the wrapped message (BE-004: the previous errors.Is against
+// errors.New(...) was dead code).
+func writeDeviceError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, ErrMissingFields):
+		writeError(w, http.StatusBadRequest, "missing_fields", "device_id and token are required")
+	case errors.Is(err, ErrInvalidPlatform):
+		writeError(w, http.StatusBadRequest, "invalid_platform", err.Error())
+	case errors.Is(err, ErrDeviceNotFound):
+		writeError(w, http.StatusNotFound, "device_not_found", "Device not found")
+	case errors.Is(err, ErrPushDisabled):
+		writeError(w, http.StatusForbidden, "push_disabled", "Push notifications are disabled")
+	case errors.Is(err, ErrNoDispatcher):
+		writeError(w, http.StatusServiceUnavailable, "push_unavailable", "Push delivery is not configured")
+	case errors.Is(err, ErrNoActiveTokens):
+		writeError(w, http.StatusNotFound, "no_active_tokens", "No active device tokens for user")
+	default:
+		writeError(w, http.StatusBadRequest, "device_error", err.Error())
 	}
-	id, ok := v.(pgtype.UUID)
-	if !ok || !id.Valid {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Invalid tenant context")
-		return pgtype.UUID{}, false
-	}
-	return id, true
-}
-
-func requireUser(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
-	v := r.Context().Value(userCtxKey{})
-	if v == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
-		return pgtype.UUID{}, false
-	}
-	id, ok := v.(pgtype.UUID)
-	if !ok || !id.Valid {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Invalid user context")
-		return pgtype.UUID{}, false
-	}
-	return id, true
 }

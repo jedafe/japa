@@ -67,25 +67,39 @@ const (
 
 // Subscriber represents a newsletter subscriber.
 type Subscriber struct {
-	ID        pgtype.UUID        `json:"id"`
-	TenantID  pgtype.UUID        `json:"tenant_id"`
-	Email     string             `json:"email"`
-	UserID    *pgtype.UUID       `json:"user_id,omitempty"`
-	Status    string             `json:"status"`
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	ID              pgtype.UUID        `json:"id"`
+	TenantID        pgtype.UUID        `json:"tenant_id"`
+	Email           string             `json:"email"`
+	UserID          *pgtype.UUID       `json:"user_id,omitempty"`
+	Status          string             `json:"status"`
+	DigestEnabled   bool               `json:"digest_enabled"`
+	CampaignEnabled bool               `json:"campaign_enabled"`
+	SubscribedAt    pgtype.Timestamptz `json:"subscribed_at"`
+	UnsubscribedAt  pgtype.Timestamptz `json:"unsubscribed_at,omitempty"`
+	Source          string             `json:"source"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
 }
 
 // Campaign represents a newsletter campaign.
 type Campaign struct {
-	ID        pgtype.UUID         `json:"id"`
-	TenantID  pgtype.UUID         `json:"tenant_id"`
-	Name      string              `json:"name"`
-	Subject   string              `json:"subject"`
-	HTML      string              `json:"html"`
-	Status    string              `json:"status"`
-	SentAt    *pgtype.Timestamptz `json:"sent_at,omitempty"`
-	CreatedAt pgtype.Timestamptz  `json:"created_at"`
-	UpdatedAt pgtype.Timestamptz  `json:"updated_at"`
+	ID             pgtype.UUID         `json:"id"`
+	TenantID       pgtype.UUID         `json:"tenant_id"`
+	Name           string              `json:"name"`
+	Subject        string              `json:"subject"`
+	HTML           string              `json:"html"`
+	PreviewText    *string             `json:"preview_text,omitempty"`
+	Body           json.RawMessage     `json:"body"`
+	Segment        string              `json:"segment"`
+	SegmentID      pgtype.UUID         `json:"segment_id,omitempty"`
+	Status         string              `json:"status"`
+	ScheduledAt    pgtype.Timestamptz  `json:"scheduled_at,omitempty"`
+	SentAt         *pgtype.Timestamptz `json:"sent_at,omitempty"`
+	RecipientCount int32               `json:"recipient_count"`
+	OpenCount      int32               `json:"open_count"`
+	ClickCount     int32               `json:"click_count"`
+	CreatedBy      pgtype.UUID         `json:"created_by,omitempty"`
+	CreatedAt      pgtype.Timestamptz  `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz  `json:"updated_at"`
 }
 
 // Service coordinates newsletter subscriber and campaign management,
@@ -122,11 +136,12 @@ func (s *Service) Enabled(ctx context.Context, tenantID pgtype.UUID) bool {
 	return s.settings.GetBoolOr(ctx, tenantID, "newsletter.enabled", true)
 }
 
-// GetAllSubscriberEmails returns all active subscriber emails for a tenant.
+// GetAllSubscriberEmails returns all subscriber emails opted into campaigns
+// for a tenant (status = 'subscribed' AND campaign_enabled = true).
 func (s *Service) GetAllSubscriberEmails(ctx context.Context, tenantID pgtype.UUID) ([]string, error) {
 	rows, err := s.db.Reader.Query(ctx, `
 		SELECT email FROM newsletter_subscribers
-		WHERE tenant_id = $1 AND status = 'active'
+		WHERE tenant_id = $1 AND status = 'subscribed' AND campaign_enabled = true
 	`, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("listing subscriber emails: %w", err)
@@ -183,10 +198,11 @@ func (s *Service) EnqueueNewsletterSend(_ context.Context, campaignID, tenantID 
 // ListSubscribers returns all newsletter subscribers for the tenant.
 func (s *Service) ListSubscribers(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]Subscriber, error) {
 	rows, err := s.db.Reader.Query(ctx, `
-		SELECT id, tenant_id, email, user_id, status, created_at
+		SELECT id, tenant_id, email, user_id, status, digest_enabled, campaign_enabled,
+		       subscribed_at, unsubscribed_at, source, created_at
 		FROM newsletter_subscribers
 		WHERE tenant_id = $1
-		ORDER BY created_at DESC
+		ORDER BY subscribed_at DESC
 		LIMIT $2 OFFSET $3
 	`, tenantID, limit, offset)
 	if err != nil {
@@ -198,7 +214,9 @@ func (s *Service) ListSubscribers(ctx context.Context, tenantID pgtype.UUID, lim
 
 	for rows.Next() {
 		var sub Subscriber
-		if err := rows.Scan(&sub.ID, &sub.TenantID, &sub.Email, &sub.UserID, &sub.Status, &sub.CreatedAt); err != nil {
+		if err := rows.Scan(&sub.ID, &sub.TenantID, &sub.Email, &sub.UserID, &sub.Status,
+			&sub.DigestEnabled, &sub.CampaignEnabled, &sub.SubscribedAt, &sub.UnsubscribedAt,
+			&sub.Source, &sub.CreatedAt); err != nil {
 			return nil, fmt.Errorf("scanning newsletter subscriber: %w", err)
 		}
 
@@ -213,10 +231,13 @@ func (s *Service) GetSubscriber(ctx context.Context, tenantID, id pgtype.UUID) (
 	var sub Subscriber
 
 	err := s.db.Reader.QueryRow(ctx, `
-		SELECT id, tenant_id, email, user_id, status, created_at
+		SELECT id, tenant_id, email, user_id, status, digest_enabled, campaign_enabled,
+		       subscribed_at, unsubscribed_at, source, created_at
 		FROM newsletter_subscribers
 		WHERE tenant_id = $1 AND id = $2
-	`, tenantID, id).Scan(&sub.ID, &sub.TenantID, &sub.Email, &sub.UserID, &sub.Status, &sub.CreatedAt)
+	`, tenantID, id).Scan(&sub.ID, &sub.TenantID, &sub.Email, &sub.UserID, &sub.Status,
+		&sub.DigestEnabled, &sub.CampaignEnabled, &sub.SubscribedAt, &sub.UnsubscribedAt,
+		&sub.Source, &sub.CreatedAt)
 	if err != nil {
 		return Subscriber{}, fmt.Errorf("fetching newsletter subscriber %s: %w", id, err)
 	}
@@ -239,6 +260,15 @@ func (s *Service) DeleteSubscriber(ctx context.Context, tenantID, id pgtype.UUID
 	}
 
 	return nil
+}
+
+// UpdateSubscriberStatus updates a subscriber's status (admin PATCH endpoint).
+func (s *Service) UpdateSubscriberStatus(ctx context.Context, tenantID, id pgtype.UUID, status string) (gen.NewsletterSubscriber, error) {
+	return s.queries.UpdateSubscriberStatus(ctx, gen.UpdateSubscriberStatusParams{
+		TenantID: tenantID,
+		ID:       id,
+		Status:   status,
+	})
 }
 
 // CreateSubscriber adds a new newsletter subscriber (or re-subscribes a
@@ -276,7 +306,9 @@ func (s *Service) CreateSubscriber(ctx context.Context, tenantID pgtype.UUID, em
 // ListCampaigns returns all newsletter campaigns for the tenant.
 func (s *Service) ListCampaigns(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]Campaign, error) {
 	rows, err := s.db.Reader.Query(ctx, `
-		SELECT id, tenant_id, name, subject, html, status, sent_at, created_at, updated_at
+		SELECT id, tenant_id, name, subject, html, preview_text, body, segment, segment_id,
+		       status, scheduled_at, sent_at, recipient_count, open_count, click_count,
+		       created_by, created_at, updated_at
 		FROM newsletter_campaigns
 		WHERE tenant_id = $1
 		ORDER BY created_at DESC
@@ -291,7 +323,10 @@ func (s *Service) ListCampaigns(ctx context.Context, tenantID pgtype.UUID, limit
 
 	for rows.Next() {
 		var c Campaign
-		if err := rows.Scan(&c.ID, &c.TenantID, &c.Name, &c.Subject, &c.HTML, &c.Status, &c.SentAt, &c.CreatedAt, &c.UpdatedAt); err != nil {
+		if err := rows.Scan(&c.ID, &c.TenantID, &c.Name, &c.Subject, &c.HTML, &c.PreviewText,
+			&c.Body, &c.Segment, &c.SegmentID, &c.Status, &c.ScheduledAt, &c.SentAt,
+			&c.RecipientCount, &c.OpenCount, &c.ClickCount, &c.CreatedBy, &c.CreatedAt,
+			&c.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scanning newsletter campaign: %w", err)
 		}
 
@@ -306,10 +341,15 @@ func (s *Service) GetCampaign(ctx context.Context, tenantID, id pgtype.UUID) (Ca
 	var c Campaign
 
 	err := s.db.Reader.QueryRow(ctx, `
-		SELECT id, tenant_id, name, subject, html, status, sent_at, created_at, updated_at
+		SELECT id, tenant_id, name, subject, html, preview_text, body, segment, segment_id,
+		       status, scheduled_at, sent_at, recipient_count, open_count, click_count,
+		       created_by, created_at, updated_at
 		FROM newsletter_campaigns
 		WHERE tenant_id = $1 AND id = $2
-	`, tenantID, id).Scan(&c.ID, &c.TenantID, &c.Name, &c.Subject, &c.HTML, &c.Status, &c.SentAt, &c.CreatedAt, &c.UpdatedAt)
+	`, tenantID, id).Scan(&c.ID, &c.TenantID, &c.Name, &c.Subject, &c.HTML, &c.PreviewText,
+		&c.Body, &c.Segment, &c.SegmentID, &c.Status, &c.ScheduledAt, &c.SentAt,
+		&c.RecipientCount, &c.OpenCount, &c.ClickCount, &c.CreatedBy, &c.CreatedAt,
+		&c.UpdatedAt)
 	if err != nil {
 		return Campaign{}, fmt.Errorf("fetching newsletter campaign %s: %w", id, err)
 	}
@@ -343,6 +383,7 @@ func (s *Service) CreateCampaign(ctx context.Context, tenantID, createdBy pgtype
 		TenantID:    tenantID,
 		Name:        params.Name,
 		Subject:     params.Subject,
+		Html:        params.HTML,
 		PreviewText: &params.PreviewText,
 		Body:        params.Body,
 		Segment:     params.Segment,
@@ -374,47 +415,66 @@ func (s *Service) DeleteCampaign(ctx context.Context, tenantID, id pgtype.UUID) 
 	return nil
 }
 
-// UpdateCampaign updates an existing newsletter campaign.
-func (s *Service) UpdateCampaign(ctx context.Context, tenantID, id pgtype.UUID, name, subject, html, status *string) (Campaign, error) {
-	// Fetch current values for merge.
-	current, err := s.GetCampaign(ctx, tenantID, id)
+// UpdateCampaignInput carries optional fields for updating a campaign.
+type UpdateCampaignInput struct {
+	Name        *string
+	Subject     *string
+	HTML        *string
+	PreviewText *string
+	Body        json.RawMessage
+	Segment     *string
+	SegmentID   *string
+	Status      *string
+	ScheduledAt *time.Time
+}
+
+// UpdateCampaign updates an existing newsletter campaign with V2 fields.
+func (s *Service) UpdateCampaign(ctx context.Context, tenantID, id pgtype.UUID, input UpdateCampaignInput) (gen.NewsletterCampaign, error) {
+	var segmentID pgtype.UUID
+	if input.SegmentID != nil && *input.SegmentID != "" {
+		if err := segmentID.Scan(*input.SegmentID); err != nil {
+			return gen.NewsletterCampaign{}, fmt.Errorf("newsletter: invalid segment_id: %w", err)
+		}
+	}
+
+	var scheduledAt pgtype.Timestamptz
+	if input.ScheduledAt != nil {
+		scheduledAt = pgtype.Timestamptz{Time: *input.ScheduledAt, Valid: true}
+	}
+
+	var body []byte
+	if input.Body != nil {
+		body = input.Body
+	}
+
+	campaign, err := s.queries.UpdateCampaign(ctx, gen.UpdateCampaignParams{
+		TenantID:    tenantID,
+		ID:          id,
+		Name:        input.Name,
+		Subject:     input.Subject,
+		PreviewText: input.PreviewText,
+		Body:        body,
+		Segment:     input.Segment,
+		SegmentID:   segmentID,
+		Status:      input.Status,
+		ScheduledAt: scheduledAt,
+	})
 	if err != nil {
-		return Campaign{}, err
+		return gen.NewsletterCampaign{}, fmt.Errorf("updating newsletter campaign %s: %w", id, err)
 	}
 
-	n := current.Name
-	if name != nil {
-		n = *name
+	// If html is provided, update it via raw SQL (the V2 sqlc query doesn't
+	// include the legacy html column).
+	if input.HTML != nil {
+		if _, err := s.db.Writer.Exec(ctx, `
+			UPDATE newsletter_campaigns SET html = $3, updated_at = now()
+			WHERE tenant_id = $1 AND id = $2
+		`, tenantID, id, *input.HTML); err != nil {
+			return gen.NewsletterCampaign{}, fmt.Errorf("updating newsletter campaign html %s: %w", id, err)
+		}
 	}
 
-	su := current.Subject
-	if subject != nil {
-		su = *subject
-	}
-
-	h := current.HTML
-	if html != nil {
-		h = *html
-	}
-
-	st := current.Status
-	if status != nil {
-		st = *status
-	}
-
-	var updated Campaign
-
-	err = s.db.Writer.QueryRow(ctx, `
-		UPDATE newsletter_campaigns
-		SET name = $3, subject = $4, html = $5, status = $6, updated_at = now()
-		WHERE tenant_id = $1 AND id = $2
-		RETURNING id, tenant_id, name, subject, html, status, sent_at, created_at, updated_at
-	`, tenantID, id, n, su, h, st).Scan(&updated.ID, &updated.TenantID, &updated.Name, &updated.Subject, &updated.HTML, &updated.Status, &updated.SentAt, &updated.CreatedAt, &updated.UpdatedAt)
-	if err != nil {
-		return Campaign{}, fmt.Errorf("updating newsletter campaign %s: %w", id, err)
-	}
-
-	return updated, nil
+	return campaign, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -503,6 +563,7 @@ func (s *Service) CreateUnsubscribeToken(ctx context.Context, subscriberID pgtyp
 type CreateCampaignInput struct {
 	Name        string          `json:"name"`
 	Subject     string          `json:"subject"`
+	HTML        string          `json:"html"`
 	PreviewText string          `json:"preview_text"`
 	Body        json.RawMessage `json:"body"`
 	Segment     string          `json:"segment"`

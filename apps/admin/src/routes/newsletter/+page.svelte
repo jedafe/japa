@@ -49,7 +49,7 @@
 		avgClickRate: number;
 	};
 
-	const canManageNewsletter = $derived(hasPermission('newsletter.admin'));
+	const canManageNewsletter = $derived(hasPermission('newsletter.manage'));
 
 	let activeTab = $state('subscribers');
 	let subscribers = $state<Subscriber[]>([]);
@@ -96,9 +96,10 @@
 	];
 
 	const subscriberStatusOptions = [
-		{ value: 'active', label: t('app.newsletter.status_active', 'Active') },
+		{ value: 'subscribed', label: t('app.newsletter.status_subscribed', 'Subscribed') },
 		{ value: 'unsubscribed', label: t('app.newsletter.status_unsubscribed', 'Unsubscribed') },
-		{ value: 'bounced', label: t('app.newsletter.status_bounced', 'Bounced') }
+		{ value: 'bounced', label: t('app.newsletter.status_bounced', 'Bounced') },
+		{ value: 'complained', label: t('app.newsletter.status_complained', 'Complained') }
 	];
 
 	const subscriberColumns = [
@@ -123,8 +124,8 @@
 			label: t('app.newsletter.col_status', 'Status'),
 			sortable: true,
 			render: (v: string) => {
-				const cls = v === 'active' ? 'bg-success/15 text-success border-success' : v === 'bounced' ? 'bg-danger/15 text-danger border-danger' : 'bg-surface text-foreground border';
-				return `<span class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${cls}">${v || 'active'}</span>`;
+				const cls = v === 'subscribed' ? 'bg-success/15 text-success border-success' : v === 'bounced' ? 'bg-danger/15 text-danger border-danger' : v === 'complained' ? 'bg-warning/15 text-warning border-warning' : 'bg-surface text-foreground border';
+				return `<span class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${cls}">${v || 'subscribed'}</span>`;
 			}
 		},
 		{
@@ -152,7 +153,7 @@
 			label: t('app.newsletter.col_status', 'Status'),
 			sortable: true,
 			render: (v: string) => {
-				const cls = v === 'sent' ? 'bg-success/15 text-success border-success' : v === 'scheduled' ? 'bg-info-100 text-info-800 border-info-200' : v === 'failed' ? 'bg-danger/15 text-danger border-danger' : 'bg-surface text-foreground border';
+				const cls = v === 'sent' ? 'bg-success/15 text-success border-success' : v === 'scheduled' ? 'bg-info-100 text-info-800 border-info-200' : v === 'sending' ? 'bg-warning/15 text-warning border-warning' : v === 'cancelled' ? 'bg-danger/15 text-danger border-danger' : 'bg-surface text-foreground border';
 				return `<span class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${cls}">${v || 'draft'}</span>`;
 			}
 		},
@@ -199,7 +200,7 @@
 			label: t('common.send', 'Send'),
 			icon: Send,
 			onclick: (row) => sendCampaign(row.id),
-			show: (row: Campaign) => row.status === 'draft' && canManageNewsletter
+			show: (row: Campaign) => (row.status === 'draft' || row.status === 'scheduled') && canManageNewsletter
 		}
 	];
 
@@ -236,6 +237,25 @@
 		} catch { /* API not available */ } finally {
 			loading = false;
 		}
+	}
+
+	async function loadStats() {
+		try {
+			const result = await api<Array<{ status: string; count: number }>>('/admin/newsletter/stats');
+			if (result.ok && result.data) {
+				const totalSubscribers = result.data.reduce((sum, s) => sum + s.count, 0);
+				stats.subscribers = totalSubscribers;
+				// Calculate average open/click rates from campaigns
+				const sentCampaigns = campaigns.filter((c) => c.status === 'sent');
+				if (sentCampaigns.length > 0) {
+					const totalRecipients = sentCampaigns.reduce((sum, c) => sum + (c.recipient_count ?? 0), 0);
+					// open_count and click_count would come from the campaign objects
+					// For now, derive from campaign data if available
+					stats.avgOpenRate = totalRecipients > 0 ? (sentCampaigns.reduce((sum, c) => sum + (c.open_rate ?? 0), 0) / sentCampaigns.length) : 0;
+					stats.avgClickRate = totalRecipients > 0 ? (sentCampaigns.reduce((sum, c) => sum + (c.click_rate ?? 0), 0) / sentCampaigns.length) : 0;
+				}
+			}
+		} catch { /* API not available */ }
 	}
 
 	async function createCampaign() {
@@ -331,6 +351,7 @@
 		if (initialized) {
 			if (activeTab === 'subscribers') loadSubscribers();
 			else if (activeTab === 'campaigns') loadCampaigns();
+			else if (activeTab === 'analytics') { loadCampaigns(); loadStats(); }
 		}
 	});
 
@@ -541,7 +562,7 @@
 	{/if}
 	{#snippet footer()}
 		<div class="flex justify-end gap-2">
-			{#if campaignTarget?.status === 'draft' && canManageNewsletter}
+			{#if (campaignTarget?.status === 'draft' || campaignTarget?.status === 'scheduled') && canManageNewsletter}
 				{@const ct = campaignTarget}
 				<Button onclick={() => { showCampaignSlideOver = false; sendCampaign(ct.id); }}>
 					<Send class="mr-1 h-3.5 w-3.5" /> {t('common.send', 'Send')}

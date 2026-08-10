@@ -663,10 +663,10 @@ func TestDefaultSettingsCategories(t *testing.T) {
 	t.Parallel()
 
 	// Categories intentionally removed (dead/duplicate/env-secret): features,
-	// email, integrations, advanced. See NOTE comments in settings.go.
+	// email, integrations, advanced, payment. See NOTE comments in settings.go.
 	expected := []string{
 		"general", "auth", "feed", "security",
-		"appearance", "users", "content", "payment",
+		"appearance", "users", "content",
 		"media", "seo", "ai",
 		"spaces", "moderation", "wallet", "api", "ads",
 		"notifications", "tickets", "audit", "i18n", "gdpr",

@@ -58,11 +58,20 @@ type Handlers struct {
 	Valkey   valkeycompat.Cmdable
 	Settings *config.Settings
 	GDPR     GDPRService
+	Orgs     OrgVerifier
 }
 
 // GDPRService is the interface the admin hard-delete handler needs from the GDPR service.
 type GDPRService interface {
 	HardDeleteUser(ctx context.Context, userID, tenantID pgtype.UUID) error
+}
+
+// OrgVerifier is the subset of the organizations service the admin verify
+// handler needs to mark an org verified and emit the organization.verified
+// webhook event (Section 12). Local interface so admin does not import
+// organizations (which would create a cycle via server wiring).
+type OrgVerifier interface {
+	VerifyOrganization(ctx context.Context, id, tenantID, adminID pgtype.UUID) error
 }
 
 // NewHandlers creates Handlers with the given database pool.
@@ -88,6 +97,12 @@ func (h *Handlers) SetSettings(s *config.Settings) {
 // SetGDPR injects the GDPR service for admin hard-delete operations.
 func (h *Handlers) SetGDPR(g GDPRService) {
 	h.GDPR = g
+}
+
+// SetOrgVerifier injects the organizations service for the admin org-verify
+// flow (which emits the organization.verified webhook event, Section 12).
+func (h *Handlers) SetOrgVerifier(o OrgVerifier) {
+	h.Orgs = o
 }
 
 // defaultSettings defines every available setting with its metadata.

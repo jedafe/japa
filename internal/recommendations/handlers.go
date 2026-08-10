@@ -27,6 +27,7 @@ import (
 	"github.com/jedafe/japa/internal/clientip"
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/tenant"
+	"github.com/jedafe/japa/internal/valkey"
 	"github.com/jedafe/japa/internal/visitor"
 	"github.com/valkey-io/valkey-go/valkeycompat"
 )
@@ -175,14 +176,13 @@ func (h *Handlers) GetRecommendations(w http.ResponseWriter, r *http.Request) {
 	var cacheKey string
 	if user := auth.FromContext(r.Context()); user != nil {
 		if user.SessionID != "" {
-			cacheKey = "jc:recommendations:" + user.SessionID
+			cacheKey = valkey.MustKey("recommendations:%s:%d", user.SessionID, limit)
 		} else {
-			cacheKey = "jc:recommendations:user:" + user.UserID.String()
+			cacheKey = valkey.MustKey("recommendations:user:%s:%d", user.UserID.String(), limit)
 		}
 	} else {
-		cacheKey = "jc:recommendations:ip:" + clientip.FromRequest(r)
+		cacheKey = valkey.MustKey("recommendations:ip:%s:%d", clientip.FromRequest(r), limit)
 	}
-	cacheKey = fmt.Sprintf("%s:%d", cacheKey, limit)
 
 	// Try cache.
 	if h.cache != nil {

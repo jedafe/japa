@@ -6,8 +6,13 @@
 //	GET    /admin/webhooks/{id}         — get webhook by ID
 //	POST   /admin/webhooks              — register a new webhook endpoint
 //	PUT    /admin/webhooks/{id}         — update an existing webhook endpoint
+//	PATCH  /admin/webhooks/{id}         — partial update
 //	DELETE /admin/webhooks/{id}         — delete a webhook endpoint
 //	POST   /admin/webhooks/{id}/test    — send a test event
+//	POST   /admin/webhooks/{id}/verify  — challenge/response verification (§12)
+//	GET    /admin/webhooks/{id}/deliveries — delivery log, paginated
+//	POST   /admin/webhooks/{id}/deliveries/{delivery_id}/retry — retry failed delivery
+//	GET    /webhook-events              — available event types
 package webhooks
 
 import (
@@ -18,6 +23,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/auth"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/tenant"
 )
@@ -57,6 +63,8 @@ func handleServiceError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusNotFound, "not_found", "Resource not found")
 	case contains(err.Error(), "already"):
 		writeError(w, http.StatusConflict, "already_exists", "Resource already exists")
+	case contains(err.Error(), "challenge/response") || contains(err.Error(), "challenge"):
+		writeError(w, http.StatusUnprocessableEntity, "verification_failed", err.Error())
 	default:
 		errpkg.HandleServiceError(w, err)
 	}
@@ -84,6 +92,17 @@ func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype
 	}
 
 	return t.ID, true
+}
+
+// requireUser extracts the authenticated user ID from the request context.
+// Returns false (and writes a 401) if no authenticated user is present.
+func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
+	user := auth.FromContext(r.Context())
+	if user == nil || !user.UserID.Valid {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		return pgtype.UUID{}, false
+	}
+	return user.UserID, true
 }
 
 func parseUUIDParam(r *http.Request, param string) (pgtype.UUID, error) {
@@ -142,10 +161,16 @@ func (h *Handlers) GetWebhook(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"data": endpoint})
 }
 
-// CreateWebhook registers a new webhook endpoint.
+// CreateWebhook registers a new webhook endpoint. The signing secret is
+// server-generated and returned exactly once in the response (§12).
 // POST /admin/webhooks.
 func (h *Handlers) CreateWebhook(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	userID, ok := h.requireUser(w, r)
 	if !ok {
 		return
 	}
@@ -156,13 +181,13 @@ func (h *Handlers) CreateWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if input.URL == "" {
-		writeError(w, http.StatusBadRequest, "validation_error", "url is required")
+	if input.Name == "" {
+		writeError(w, http.StatusBadRequest, "validation_error", "name is required")
 		return
 	}
 
-	if input.Secret == "" {
-		writeError(w, http.StatusBadRequest, "validation_error", "secret is required")
+	if input.URL == "" {
+		writeError(w, http.StatusBadRequest, "validation_error", "url is required")
 		return
 	}
 
@@ -171,17 +196,18 @@ func (h *Handlers) CreateWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	endpoint, err := h.Service.CreateEndpoint(r.Context(), tenantID, input)
+	endpoint, err := h.Service.CreateEndpoint(r.Context(), tenantID, userID, input)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": endpoint})
+	// §12: return the secret exactly once on create.
+	writeJSON(w, http.StatusCreated, map[string]any{"data": endpoint.ToCreateResponse()})
 }
 
 // UpdateWebhook updates an existing webhook endpoint.
-// PUT /admin/webhooks/{id}.
+// PUT/PATCH /admin/webhooks/{id}.
 func (h *Handlers) UpdateWebhook(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -269,6 +295,32 @@ func (h *Handlers) TestWebhook(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// VerifyWebhook performs the §12 challenge/response verification. Sends a
+// GET to {url}?challenge={token} and verifies the endpoint echoes the token
+// back. On success, marks the endpoint as verified and active.
+// POST /admin/webhooks/{id}/verify.
+func (h *Handlers) VerifyWebhook(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	id, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid webhook ID")
+		return
+	}
+
+	if err := h.Service.VerifyEndpoint(r.Context(), tenantID, id); err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data": map[string]any{"status": "verified"},
+	})
+}
+
 // ListDeliveries handles GET /admin/webhooks/{id}/deliveries.
 func (h *Handlers) ListDeliveries(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
@@ -294,7 +346,7 @@ func (h *Handlers) ListDeliveries(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"data": deliveries})
 }
 
-// RetryDelivery handles POST /admin/webhooks/{id}/retry/{delivery_id}.
+// RetryDelivery handles POST /admin/webhooks/{id}/deliveries/{delivery_id}/retry.
 func (h *Handlers) RetryDelivery(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -317,95 +369,84 @@ func (h *Handlers) RetryDelivery(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// ListWebhookEvents handles GET /webhook-events — returns available webhook event types.
+// webhookEventCatalog is the §12 default event catalog scoped to non-PII
+// business events. The spec lists 9 core events; this catalog includes those
+// plus a reviewed set of additional non-PII business events. User/DM/moderation
+// events that carry PII are intentionally excluded (BUG-008).
+//
+// Tenants can override this via the `webhooks.event_catalog` system setting
+// (BUG-009), which is a JSON array of {key,label,description} objects.
+//
+// Ref: japaconnect-engineering/sections/12-webhooks.md
+var defaultWebhookEventCatalog = []map[string]string{
+	// Content (§14)
+	{ "key": "content.published", "label": "Content Published", "description": "When content is published" },
+	{ "key": "content.updated", "label": "Content Updated", "description": "When content is updated" },
+	{ "key": "content.deleted", "label": "Content Deleted", "description": "When content is soft-deleted" },
+	// Claims (§07)
+	{ "key": "claim.approved", "label": "Claim Approved", "description": "When an ownership claim is approved" },
+	{ "key": "claim.rejected", "label": "Claim Rejected", "description": "When an ownership claim is rejected" },
+	// Reviews (§29)
+	{ "key": "review.created", "label": "Review Created", "description": "When a new review is created" },
+	// Organizations (§07)
+	{ "key": "organization.verified", "label": "Organization Verified", "description": "When an organization is verified" },
+	// Payments (§17)
+	{ "key": "payment.succeeded", "label": "Payment Succeeded", "description": "When a payment succeeds" },
+	{ "key": "payment.failed", "label": "Payment Failed", "description": "When a payment fails" },
+	// Forum (§08) — non-PII
+	{ "key": "forum.thread.created", "label": "Forum Thread Created", "description": "When a new forum thread is created" },
+	{ "key": "forum.thread.solved", "label": "Forum Thread Solved", "description": "When a forum thread is marked as solved" },
+	{ "key": "forum.reply.created", "label": "Forum Reply Created", "description": "When a new reply is posted in a forum thread" },
+}
+
+// eventCatalogEntry is a single entry in the webhook event catalog.
+type eventCatalogEntry struct {
+	Key         string `json:"key"`
+	Label       string `json:"label"`
+	Description string `json:"description"`
+}
+
+// ListWebhookEvents handles GET /webhook-events — returns available webhook
+// event types. Scoped to non-PII business events per §12 (BUG-008). The
+// catalog can be overridden per-tenant via the `webhooks.event_catalog`
+// system setting (BUG-009).
 func (h *Handlers) ListWebhookEvents(w http.ResponseWriter, r *http.Request) {
-	events := []map[string]string{
-		// Content
-		{ "key": "content.published", "label": "Content Published", "description": "When content is published" },
-		{ "key": "content.updated", "label": "Content Updated", "description": "When content is updated" },
-		{ "key": "content.deleted", "label": "Content Deleted", "description": "When content is soft-deleted" },
-		{ "key": "content.liked", "label": "Content Liked", "description": "When a user likes content" },
-		{ "key": "content.bookmarked", "label": "Content Bookmarked", "description": "When a user bookmarks content" },
-		{ "key": "content.reviewed", "label": "Content Reviewed", "description": "When content receives a review" },
-		// Claims
-		{ "key": "claim.approved", "label": "Claim Approved", "description": "When an ownership claim is approved" },
-		{ "key": "claim.rejected", "label": "Claim Rejected", "description": "When an ownership claim is rejected" },
-		{ "key": "claim.submitted", "label": "Claim Submitted", "description": "When an ownership claim is submitted" },
-		// Reviews
-		{ "key": "review.created", "label": "Review Created", "description": "When a new review is created" },
-		{ "key": "review.updated", "label": "Review Updated", "description": "When a review is updated" },
-		{ "key": "review.deleted", "label": "Review Deleted", "description": "When a review is deleted" },
-		// Organizations
-		{ "key": "organization.verified", "label": "Organization Verified", "description": "When an organization is verified" },
-		{ "key": "organization.created", "label": "Organization Created", "description": "When a new organization is created" },
-		{ "key": "organization.updated", "label": "Organization Updated", "description": "When an organization profile is updated" },
-		// Payments
-		{ "key": "payment.succeeded", "label": "Payment Succeeded", "description": "When a payment succeeds" },
-		{ "key": "payment.failed", "label": "Payment Failed", "description": "When a payment fails" },
-		{ "key": "payment.refunded", "label": "Payment Refunded", "description": "When a payment is refunded" },
-		{ "key": "payment.disputed", "label": "Payment Disputed", "description": "When a payment dispute is opened" },
-		// Users
-		{ "key": "user.registered", "label": "User Registered", "description": "When a new user account is created" },
-		{ "key": "user.verified", "label": "User Verified", "description": "When a user account is verified" },
-		{ "key": "user.deleted", "label": "User Deleted", "description": "When a user account is deleted (GDPR erasure)" },
-		{ "key": "user.banned", "label": "User Banned", "description": "When a user is banned" },
-		{ "key": "user.unbanned", "label": "User Unbanned", "description": "When a user ban is lifted" },
-		{ "key": "user.profile_updated", "label": "User Profile Updated", "description": "When a user updates their profile" },
-		// Comments
-		{ "key": "comment.created", "label": "Comment Created", "description": "When a new comment is posted" },
-		{ "key": "comment.updated", "label": "Comment Updated", "description": "When a comment is edited" },
-		{ "key": "comment.deleted", "label": "Comment Deleted", "description": "When a comment is deleted" },
-		{ "key": "comment.liked", "label": "Comment Liked", "description": "When a comment receives a like" },
-		// Forum
-		{ "key": "forum.thread.created", "label": "Forum Thread Created", "description": "When a new forum thread is created" },
-		{ "key": "forum.thread.updated", "label": "Forum Thread Updated", "description": "When a forum thread is edited" },
-		{ "key": "forum.thread.deleted", "label": "Forum Thread Deleted", "description": "When a forum thread is deleted" },
-		{ "key": "forum.thread.solved", "label": "Forum Thread Solved", "description": "When a forum thread is marked as solved" },
-		{ "key": "forum.reply.created", "label": "Forum Reply Created", "description": "When a new reply is posted in a forum thread" },
-		{ "key": "forum.reply.updated", "label": "Forum Reply Updated", "description": "When a forum reply is edited" },
-		{ "key": "forum.reply.deleted", "label": "Forum Reply Deleted", "description": "When a forum reply is deleted" },
-		{ "key": "forum.vote.cast", "label": "Forum Vote Cast", "description": "When a user votes on a forum thread or reply" },
-		// Spaces
-		{ "key": "space.created", "label": "Space Created", "description": "When a new space is created" },
-		{ "key": "space.updated", "label": "Space Updated", "description": "When a space profile is updated" },
-		{ "key": "space.deleted", "label": "Space Deleted", "description": "When a space is deleted" },
-		{ "key": "space.joined", "label": "Space Joined", "description": "When a user joins a space" },
-		{ "key": "space.left", "label": "Space Left", "description": "When a user leaves a space" },
-		// Wallet
-		{ "key": "wallet.points.earned", "label": "Points Earned", "description": "When a user earns wallet points" },
-		{ "key": "wallet.points.spent", "label": "Points Spent", "description": "When a user spends wallet points" },
-		{ "key": "wallet.points.adjusted", "label": "Points Adjusted", "description": "When an admin adjusts a user's wallet points" },
-		{ "key": "wallet.converted", "label": "Wallet Converted", "description": "When a user converts between wallet currencies" },
-		// Moderation
-		{ "key": "moderation.report.created", "label": "Report Created", "description": "When a moderation report is filed" },
-		{ "key": "moderation.report.resolved", "label": "Report Resolved", "description": "When a moderation report is resolved" },
-		{ "key": "moderation.content.removed", "label": "Content Removed", "description": "When content is removed by moderation" },
-		{ "key": "moderation.user.suspended", "label": "User Suspended", "description": "When a user is suspended by moderation" },
-		// Subscriptions
-		{ "key": "subscription.created", "label": "Subscription Created", "description": "When a new subscription is created" },
-		{ "key": "subscription.cancelled", "label": "Subscription Cancelled", "description": "When a subscription is cancelled" },
-		{ "key": "subscription.renewed", "label": "Subscription Renewed", "description": "When a subscription is renewed" },
-		{ "key": "subscription.expired", "label": "Subscription Expired", "description": "When a subscription expires" },
-		// Newsletter
-		{ "key": "newsletter.subscribed", "label": "Newsletter Subscribed", "description": "When a user subscribes to the newsletter" },
-		{ "key": "newsletter.unsubscribed", "label": "Newsletter Unsubscribed", "description": "When a user unsubscribes from the newsletter" },
-		// Affiliate
-		{ "key": "affiliate.referral.created", "label": "Referral Created", "description": "When a new affiliate referral is created" },
-		{ "key": "affiliate.commission.earned", "label": "Commission Earned", "description": "When an affiliate commission is earned" },
-		{ "key": "affiliate.payout.requested", "label": "Payout Requested", "description": "When an affiliate payout is requested" },
-		// AI
-		{ "key": "ai.content.generated", "label": "AI Content Generated", "description": "When AI generates content" },
-		{ "key": "ai.moderation.flagged", "label": "AI Moderation Flagged", "description": "When AI flags content for moderation" },
-		// DM
-		{ "key": "dm.message.sent", "label": "DM Sent", "description": "When a direct message is sent" },
-		{ "key": "dm.conversation.created", "label": "DM Conversation Created", "description": "When a new DM conversation is created" },
-		// Ads
-		{ "key": "ad.campaign.created", "label": "Ad Campaign Created", "description": "When a new ad campaign is created" },
-		{ "key": "ad.campaign.started", "label": "Ad Campaign Started", "description": "When an ad campaign goes live" },
-		{ "key": "ad.campaign.ended", "label": "Ad Campaign Ended", "description": "When an ad campaign ends" },
+	entries := defaultWebhookEventEntries()
+
+	// Check for a tenant-specific override via the webhooks.event_catalog
+	// system setting (BUG-009). If the setting is empty or invalid, fall
+	// back to the built-in default catalog.
+	if h.Service != nil && h.Service.settings != nil {
+		t := tenant.FromContext(r.Context())
+		if t != nil {
+			raw := h.Service.settings.GetStringOr(r.Context(), t.ID, "webhooks.event_catalog", "")
+			if raw != "" {
+				var custom []eventCatalogEntry
+				if err := json.Unmarshal([]byte(raw), &custom); err == nil && len(custom) > 0 {
+					data := make([]map[string]string, 0, len(custom))
+					for _, e := range custom {
+						data = append(data, map[string]string{
+							"key":         e.Key,
+							"label":       e.Label,
+							"description": e.Description,
+						})
+					}
+					writeJSON(w, http.StatusOK, map[string]any{"data": data})
+					return
+				}
+			}
+		}
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": events})
+	writeJSON(w, http.StatusOK, map[string]any{"data": entries})
+}
+
+// defaultWebhookEventEntries returns the built-in default catalog as a slice
+// of maps for JSON serialization.
+func defaultWebhookEventEntries() []map[string]string {
+	out := make([]map[string]string, len(defaultWebhookEventCatalog))
+	copy(out, defaultWebhookEventCatalog)
+	return out
 }
 
 // ---------------------------------------------------------------------------

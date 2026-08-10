@@ -48,7 +48,7 @@ func (s *Service) invalidateCaches(ctx context.Context, tenantID pgtype.UUID) {
 	InvalidateLLMsCache(ctx, s.rdb, tenantID)
 
 	// Also invalidate the bot detection middleware's cached bot list.
-	botListKey := "jc:bot_list:" + tenantID.String()
+	botListKey := valkey.MustKey("bot_list:%s", tenantID.String())
 	if err := s.rdb.Redis().Del(ctx, botListKey).Err(); err != nil {
 		slog.Warn("bots: failed to invalidate bot_list cache", "tenant_id", tenantID.String(), "error", err)
 	}

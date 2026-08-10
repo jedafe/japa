@@ -464,6 +464,124 @@ func (q *Queries) ListReviewsByEntity(ctx context.Context, arg ListReviewsByEnti
 	return items, nil
 }
 
+const listReviewsByEntityHighestRating = `-- name: ListReviewsByEntityHighestRating :many
+SELECT id, tenant_id, entity_type, entity_id, reviewer_user_id,
+       rating, title, body, status, created_at, updated_at
+FROM reviews
+WHERE tenant_id = $1
+  AND entity_type = $2
+  AND entity_id = $3
+  AND status = 'published'
+ORDER BY rating DESC, created_at DESC
+LIMIT $5 OFFSET $4
+`
+
+type ListReviewsByEntityHighestRatingParams struct {
+	TenantID   pgtype.UUID `json:"tenant_id"`
+	EntityType string      `json:"entity_type"`
+	EntityID   pgtype.UUID `json:"entity_id"`
+	PageOffset int32       `json:"page_offset"`
+	PageLimit  int32       `json:"page_limit"`
+}
+
+// Sort by highest rating first (spec §29: ?sort=highest).
+func (q *Queries) ListReviewsByEntityHighestRating(ctx context.Context, arg ListReviewsByEntityHighestRatingParams) ([]Review, error) {
+	rows, err := q.db.Query(ctx, listReviewsByEntityHighestRating,
+		arg.TenantID,
+		arg.EntityType,
+		arg.EntityID,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Review
+	for rows.Next() {
+		var i Review
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.EntityType,
+			&i.EntityID,
+			&i.ReviewerUserID,
+			&i.Rating,
+			&i.Title,
+			&i.Body,
+			&i.Status,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listReviewsByEntityLowestRating = `-- name: ListReviewsByEntityLowestRating :many
+SELECT id, tenant_id, entity_type, entity_id, reviewer_user_id,
+       rating, title, body, status, created_at, updated_at
+FROM reviews
+WHERE tenant_id = $1
+  AND entity_type = $2
+  AND entity_id = $3
+  AND status = 'published'
+ORDER BY rating ASC, created_at DESC
+LIMIT $5 OFFSET $4
+`
+
+type ListReviewsByEntityLowestRatingParams struct {
+	TenantID   pgtype.UUID `json:"tenant_id"`
+	EntityType string      `json:"entity_type"`
+	EntityID   pgtype.UUID `json:"entity_id"`
+	PageOffset int32       `json:"page_offset"`
+	PageLimit  int32       `json:"page_limit"`
+}
+
+// Sort by lowest rating first (spec §29: ?sort=lowest).
+func (q *Queries) ListReviewsByEntityLowestRating(ctx context.Context, arg ListReviewsByEntityLowestRatingParams) ([]Review, error) {
+	rows, err := q.db.Query(ctx, listReviewsByEntityLowestRating,
+		arg.TenantID,
+		arg.EntityType,
+		arg.EntityID,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Review
+	for rows.Next() {
+		var i Review
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.EntityType,
+			&i.EntityID,
+			&i.ReviewerUserID,
+			&i.Rating,
+			&i.Title,
+			&i.Body,
+			&i.Status,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listReviewsByEntityWithAuthor = `-- name: ListReviewsByEntityWithAuthor :many
 SELECT r.id, r.tenant_id, r.entity_type, r.entity_id, r.reviewer_user_id,
        r.rating, r.title, r.body, r.status, r.created_at, r.updated_at,
@@ -622,6 +740,43 @@ type RecalculateReviewAggregateParams struct {
 func (q *Queries) RecalculateReviewAggregate(ctx context.Context, arg RecalculateReviewAggregateParams) error {
 	_, err := q.db.Exec(ctx, recalculateReviewAggregate, arg.TenantID, arg.EntityType, arg.EntityID)
 	return err
+}
+
+const softDeleteOwnReview = `-- name: SoftDeleteOwnReview :one
+UPDATE reviews
+SET status = 'removed', updated_at = now()
+WHERE id = $1 AND tenant_id = $2
+  AND reviewer_user_id = $3
+RETURNING id, tenant_id, entity_type, entity_id, reviewer_user_id,
+          rating, title, body, status, created_at, updated_at
+`
+
+type SoftDeleteOwnReviewParams struct {
+	ID             pgtype.UUID `json:"id"`
+	TenantID       pgtype.UUID `json:"tenant_id"`
+	ReviewerUserID pgtype.UUID `json:"reviewer_user_id"`
+}
+
+// Owner-scoped soft delete: sets status to 'removed' only if the requesting
+// user is the review's author. Prevents any user with reviews.delete_own
+// from deleting other users' reviews (BUG-001).
+func (q *Queries) SoftDeleteOwnReview(ctx context.Context, arg SoftDeleteOwnReviewParams) (Review, error) {
+	row := q.db.QueryRow(ctx, softDeleteOwnReview, arg.ID, arg.TenantID, arg.ReviewerUserID)
+	var i Review
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.EntityType,
+		&i.EntityID,
+		&i.ReviewerUserID,
+		&i.Rating,
+		&i.Title,
+		&i.Body,
+		&i.Status,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }
 
 const updateReview = `-- name: UpdateReview :one

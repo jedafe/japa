@@ -75,7 +75,7 @@
 				aria-label={`${t('reviews.set_rating')}: ${n}`}
 			>
 				<Star
-					class="h-5 w-5 transition {(hoverRating || rating) >= n ? 'fill-amber-400 text-amber-400' : 'text-[var(--color-muted)] hover:text-amber-400'}"
+					class="h-5 w-5 transition {(hoverRating || rating) >= n ? 'fill-[var(--color-warning)] text-[var(--color-warning)]' : 'text-[var(--color-muted)] hover:text-[var(--color-warning)]'}"
 					aria-hidden="true"
 				/>
 			</button>

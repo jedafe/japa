@@ -241,7 +241,7 @@ func TestIdempotency_CorruptedCacheEntryRecomputes(t *testing.T) {
 
 	// Store a corrupted (non-JSON) value at a known key.
 	hash := idempotencyHash(http.MethodPost, "/api/v1/posts", "corrupt", "anon")
-	cacheKey := "jc:idempotency:" + hash
+	cacheKey := valkeypkg.MustKey("idempotency:%s", hash)
 	rdb.Set(t.Context(), cacheKey, "NOT-JSON", time.Duration(idempotencyTTLDefault)*time.Hour)
 
 	// The request should not panic and should fall through to the

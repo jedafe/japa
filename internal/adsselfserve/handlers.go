@@ -6,15 +6,16 @@
 package adsselfserve
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
 	"strconv"
-	"time"
 
-	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5/pgtype"
+
+	"github.com/jedafe/japa/internal/auth"
+	"github.com/jedafe/japa/internal/tenant"
 )
 
 // Handlers exposes the self-serve ads HTTP routes.
@@ -41,7 +42,7 @@ func (h *Handlers) HandleListSlots(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]interface{}{"slots": slots})
+	writeJSON(w, http.StatusOK, map[string]interface{}{"data": slots})
 }
 
 // HandleCreateCampaign creates a self-serve ad campaign.
@@ -72,19 +73,31 @@ func (h *Handlers) HandleCreateCampaign(w http.ResponseWriter, r *http.Request) 
 
 	campaign, err := h.svc.CreateCampaign(r.Context(), tenantID, orgID, userID, input)
 	if err != nil {
-		if errors.Is(err, errors.New("adsselfserve: organization_not_verified")) {
+		switch {
+		case errors.Is(err, ErrFeatureDisabled):
+			// ADR-042: disabled features return 404, not 403.
+			writeError(w, http.StatusNotFound, "ads_self_serve_disabled", "Self-serve advertising is currently disabled")
+		case errors.Is(err, ErrOrganizationNotVerified):
 			writeError(w, http.StatusForbidden, "organization_not_verified", "Organization must be verified to create ads")
-			return
+		case errors.Is(err, ErrNotOrgMember):
+			writeError(w, http.StatusForbidden, "not_org_member", "You are not a member of this organization")
+		case errors.Is(err, ErrSlotTypeNotFound):
+			writeError(w, http.StatusBadRequest, "slot_type_not_found", "The selected ad slot type was not found or has no rate")
+		case errors.Is(err, ErrDurationTooShort):
+			writeError(w, http.StatusBadRequest, "duration_too_short", err.Error())
+		default:
+			writeError(w, http.StatusBadRequest, "create_failed", err.Error())
 		}
-		writeError(w, http.StatusBadRequest, "create_failed", err.Error())
 		return
 	}
 	writeJSON(w, http.StatusCreated, map[string]interface{}{
-		"id":             campaign.ID.String(),
-		"name":           campaign.Name,
-		"status":         campaign.Status,
-		"budget_credits": campaign.BudgetCredits,
-		"flat_rate":      campaign.FlatRate,
+		"data": map[string]interface{}{
+			"id":             campaign.ID.String(),
+			"name":           campaign.Name,
+			"status":         campaign.Status,
+			"budget_credits": campaign.BudgetCredits,
+			"flat_rate":      campaign.FlatRate,
+		},
 	})
 }
 
@@ -112,10 +125,10 @@ func (h *Handlers) HandleListCampaigns(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"campaigns": campaigns,
-		"total":     total,
-		"page":      page,
-		"limit":     limit,
+		"data":  campaigns,
+		"total": total,
+		"page":  page,
+		"limit": limit,
 	})
 }
 
@@ -143,7 +156,7 @@ func (h *Handlers) HandleGetCampaign(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "not_found", "Campaign not found")
 		return
 	}
-	writeJSON(w, http.StatusOK, campaign)
+	writeJSON(w, http.StatusOK, map[string]interface{}{"data": campaign})
 }
 
 // HandleUpdateCampaign updates a campaign's creative (pending/paused only).
@@ -179,7 +192,7 @@ func (h *Handlers) HandleUpdateCampaign(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusBadRequest, "update_failed", err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, campaign)
+	writeJSON(w, http.StatusOK, map[string]interface{}{"data": campaign})
 }
 
 // HandlePauseCampaign pauses an active campaign.
@@ -207,8 +220,10 @@ func (h *Handlers) HandlePauseCampaign(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"id":     campaign.ID.String(),
-		"status": campaign.Status,
+		"data": map[string]interface{}{
+			"id":     campaign.ID.String(),
+			"status": campaign.Status,
+		},
 	})
 }
 
@@ -237,8 +252,10 @@ func (h *Handlers) HandleResumeCampaign(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"id":     campaign.ID.String(),
-		"status": campaign.Status,
+		"data": map[string]interface{}{
+			"id":     campaign.ID.String(),
+			"status": campaign.Status,
+		},
 	})
 }
 
@@ -266,10 +283,10 @@ func (h *Handlers) HandleGetStats(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "not_found", "Campaign not found")
 		return
 	}
-	writeJSON(w, http.StatusOK, stats)
+	writeJSON(w, http.StatusOK, map[string]interface{}{"data": stats})
 }
 
-// --- shared helpers (same pattern as internal/rag/handlers.go) ---
+// --- shared helpers (same pattern as internal/story/handlers.go) ---
 
 func writeJSON(w http.ResponseWriter, status int, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
@@ -287,35 +304,26 @@ func writeError(w http.ResponseWriter, status int, code, message string) {
 	})
 }
 
-type tenantCtxKey struct{}
-type userCtxKey struct{}
-
+// requireTenant extracts the tenant ID from the request context. The tenant
+// is set by tenant.Middleware which wraps all /api/v1 routes.
 func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
-	v := r.Context().Value(tenantCtxKey{})
-	if v == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Tenant context required")
+	t := tenant.FromContext(r.Context())
+	if t == nil {
+		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
-	id, ok := v.(pgtype.UUID)
-	if !ok || !id.Valid {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Invalid tenant context")
-		return pgtype.UUID{}, false
-	}
-	return id, true
+	return t.ID, true
 }
 
+// requireUser extracts the authenticated user from the request context. The
+// user is set by auth.RequireAuth middleware which wraps all ads routes.
 func requireUser(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
-	v := r.Context().Value(userCtxKey{})
-	if v == nil {
+	u := auth.FromContext(r.Context())
+	if u == nil {
 		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return pgtype.UUID{}, false
 	}
-	id, ok := v.(pgtype.UUID)
-	if !ok || !id.Valid {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Invalid user context")
-		return pgtype.UUID{}, false
-	}
-	return id, true
+	return u.UserID, true
 }
 
 func scanUUIDParam(w http.ResponseWriter, r *http.Request, param string) (pgtype.UUID, bool) {
@@ -343,6 +351,3 @@ func parsePagination(r *http.Request) (int, int) {
 	}
 	return page, limit
 }
-
-var _ = time.Now // keep time import for future use
-var _ = context.Background

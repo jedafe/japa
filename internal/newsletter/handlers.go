@@ -32,7 +32,6 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
-	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/tenant"
 )
 
@@ -407,6 +406,11 @@ func (h *Handlers) CreateCampaign(w http.ResponseWriter, r *http.Request) {
 		input.Segment = SegmentAll
 	}
 
+	// If body is not provided but html is, wrap html in a jsonb body.
+	if len(input.Body) == 0 && input.HTML != "" {
+		input.Body = json.RawMessage(`{"html":` + jsonString(input.HTML) + `}`)
+	}
+
 	campaign, err := h.Service.CreateCampaign(r.Context(), tenantID, u.UserID, input)
 	if err != nil {
 		slog.Error("creating newsletter campaign", "error", err)
@@ -416,6 +420,12 @@ func (h *Handlers) CreateCampaign(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusCreated, map[string]any{"data": campaign})
+}
+
+// jsonString encodes s as a JSON string (including quotes).
+func jsonString(s string) string {
+	b, _ := json.Marshal(s)
+	return string(b)
 }
 
 // UpdateCampaign updates an existing newsletter campaign.
@@ -432,19 +442,34 @@ func (h *Handlers) UpdateCampaign(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var input struct {
-		Name    *string `json:"name,omitempty"`
-		Subject *string `json:"subject,omitempty"`
-		HTML    *string `json:"html,omitempty"`
-		Status  *string `json:"status,omitempty"`
+	var body struct {
+		Name        *string          `json:"name,omitempty"`
+		Subject     *string          `json:"subject,omitempty"`
+		HTML        *string          `json:"html,omitempty"`
+		PreviewText *string          `json:"preview_text,omitempty"`
+		Body        json.RawMessage  `json:"body,omitempty"`
+		Segment     *string          `json:"segment,omitempty"`
+		SegmentID   *string          `json:"segment_id,omitempty"`
+		Status      *string          `json:"status,omitempty"`
+		ScheduledAt *time.Time       `json:"scheduled_at,omitempty"`
 	}
 
-	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
 		return
 	}
 
-	campaign, err := h.Service.UpdateCampaign(r.Context(), tenantID, id, input.Name, input.Subject, input.HTML, input.Status)
+	campaign, err := h.Service.UpdateCampaign(r.Context(), tenantID, id, UpdateCampaignInput{
+		Name:        body.Name,
+		Subject:     body.Subject,
+		HTML:        body.HTML,
+		PreviewText: body.PreviewText,
+		Body:        body.Body,
+		Segment:     body.Segment,
+		SegmentID:   body.SegmentID,
+		Status:      body.Status,
+		ScheduledAt: body.ScheduledAt,
+	})
 	if err != nil {
 		slog.Error("updating newsletter campaign", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to update campaign")
@@ -453,6 +478,42 @@ func (h *Handlers) UpdateCampaign(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": campaign})
+}
+
+// UpdateSubscriber updates a subscriber's status.
+// PATCH /admin/newsletter/subscribers/{id}.
+func (h *Handlers) UpdateSubscriber(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	id, ok := requireID(w, r, "id", "subscriber")
+	if !ok {
+		return
+	}
+
+	var body struct {
+		Status string `json:"status"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
+		return
+	}
+
+	if body.Status == "" {
+		writeError(w, http.StatusBadRequest, "validation_error", "status is required")
+		return
+	}
+
+	subscriber, err := h.Service.UpdateSubscriberStatus(r.Context(), tenantID, id, body.Status)
+	if err != nil {
+		slog.Error("updating newsletter subscriber", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to update subscriber")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": subscriber})
 }
 
 // DeleteCampaign removes a newsletter campaign.
@@ -484,21 +545,23 @@ func (h *Handlers) HandleSendCampaign(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if campaign.Status != "draft" && campaign.Status != "ready" {
-		writeError(w, http.StatusBadRequest, "invalid_status", "Campaign must be in draft or ready status to send")
+	if campaign.Status != CampaignDraft && campaign.Status != CampaignScheduled {
+		writeError(w, http.StatusBadRequest, "invalid_status", "Campaign must be in draft or scheduled status to send")
 		return
 	}
 
 	// Update campaign status to 'sending'.
-	sendingStatus := "sending"
-	if _, err := h.Service.UpdateCampaign(r.Context(), tenantID, id, nil, nil, nil, &sendingStatus); err != nil {
+	sendingStatus := CampaignSending
+	if _, err := h.Service.UpdateCampaign(r.Context(), tenantID, id, UpdateCampaignInput{
+		Status: &sendingStatus,
+	}); err != nil {
 		slog.Error("updating campaign status to sending", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to update campaign status")
 
 		return
 	}
 
-	// Get all active subscriber emails.
+	// Get all subscriber emails opted into campaigns.
 	emails, err := h.Service.GetAllSubscriberEmails(r.Context(), tenantID)
 	if err != nil {
 		slog.Error("getting subscriber emails", "error", err)
@@ -637,108 +700,5 @@ func (h *Handlers) HandleAdminStats(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "stats_failed", err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"stats": stats}})
-}
-
-// HandleAdminSendCampaign sends a campaign immediately.
-// POST /admin/newsletter/campaigns/{id}/send-v2
-func (h *Handlers) HandleAdminSendCampaign(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
-	if auth.FromContext(r.Context()) == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
-		return
-	}
-
-	var id pgtype.UUID
-	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid campaign ID")
-		return
-	}
-
-	if err := h.Service.SendCampaign(r.Context(), tenantID, id); err != nil {
-		writeError(w, http.StatusBadRequest, "send_failed", err.Error())
-		return
-	}
-	writeJSON(w, http.StatusAccepted, map[string]any{"data": map[string]bool{"sent": true}})
-}
-
-// HandleAdminUpdateCampaign updates a campaign.
-// PATCH /admin/newsletter/campaigns/{id}/v2
-func (h *Handlers) HandleAdminUpdateCampaign(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
-	if auth.FromContext(r.Context()) == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
-		return
-	}
-
-	campaignID, ok := requireID(w, r, "id", "campaign")
-	if !ok {
-		return
-	}
-
-	var body struct {
-		Name        string          `json:"name"`
-		Subject     string          `json:"subject"`
-		PreviewText string          `json:"preview_text"`
-		Body        json.RawMessage `json:"body"`
-		Segment     string          `json:"segment"`
-		SegmentID   string          `json:"segment_id"`
-		Status      string          `json:"status"`
-		ScheduledAt *time.Time      `json:"scheduled_at"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
-		return
-	}
-
-	var name, subject, previewText, segment, status *string
-	if body.Name != "" {
-		name = &body.Name
-	}
-	if body.Subject != "" {
-		subject = &body.Subject
-	}
-	if body.PreviewText != "" {
-		previewText = &body.PreviewText
-	}
-	if body.Segment != "" {
-		segment = &body.Segment
-	}
-	if body.Status != "" {
-		status = &body.Status
-	}
-
-	var segmentID pgtype.UUID
-	if body.SegmentID != "" {
-		_ = segmentID.Scan(body.SegmentID)
-	}
-
-	var scheduledAt pgtype.Timestamptz
-	if body.ScheduledAt != nil {
-		scheduledAt = pgtype.Timestamptz{Time: *body.ScheduledAt, Valid: true}
-	}
-
-	campaign, err := h.Service.queries.UpdateCampaign(r.Context(), gen.UpdateCampaignParams{
-		TenantID:    tenantID,
-		ID:          campaignID,
-		Name:        name,
-		Subject:     subject,
-		PreviewText: previewText,
-		Body:        body.Body,
-		Segment:     segment,
-		SegmentID:   segmentID,
-		Status:      status,
-		ScheduledAt: scheduledAt,
-	})
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "update_failed", err.Error())
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": campaign})
+	writeJSON(w, http.StatusOK, map[string]any{"data": stats})
 }

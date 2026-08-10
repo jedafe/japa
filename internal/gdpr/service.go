@@ -829,6 +829,22 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 			return fmt.Errorf("deleting user content views: %w", err)
 		}
 
+		// GDPR: delete ad_events (impression/click tracking) for the user.
+		// ad_events.user_id has ON DELETE CASCADE but we delete explicitly to
+		// document the erasure path and remove the user's ad-interaction PII
+		// before the final HardDeleteUser. Ref: Section 25/61, GDPR erasure.
+		if err := q.GdprDeleteAdEventsByUser(ctx, userID); err != nil {
+			return fmt.Errorf("deleting user ad events: %w", err)
+		}
+
+		// GDPR: nullify ad_campaigns.created_by for campaigns created by the
+		// user. The FK has no CASCADE/SET NULL, so without this step the final
+		// HardDeleteUser would block on the residual foreign key. The campaign
+		// row is preserved (it may belong to an organization). Ref: Section 25/61.
+		if err := q.GdprNullifyAdCampaignCreator(ctx, userID); err != nil {
+			return fmt.Errorf("nullifying ad campaign creator: %w", err)
+		}
+
 		// space_pinned_posts.pinned_by has no CASCADE; remove pins made by the user.
 		if err := q.DeleteSpacePinnedPostsByUser(ctx, userID); err != nil {
 			return fmt.Errorf("deleting space pinned posts: %w", err)
@@ -1089,6 +1105,21 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 			WHERE entity_type = 'user' AND entity_id = $1
 		`, userID); err != nil {
 			return fmt.Errorf("deleting trending_snapshots for user: %w", err)
+		}
+
+		// BUG-018: webhook_endpoints.created_by references users(id) with ON
+		// DELETE SET NULL (migration 000361), so the FK is handled automatically.
+		// However, webhook_deliveries.payload may contain user PII (e.g. event
+		// payloads referencing the user). Delete deliveries whose payload
+		// contains the user's UUID so PII does not survive erasure. The
+		// webhook_endpoints themselves are tenant config and survive with
+		// created_by nullified. Ref: §12; §15 GDPR erasure.
+		if _, err := s.db.Writer.Exec(ctx, `
+			DELETE FROM webhook_deliveries
+			WHERE tenant_id = $2
+			  AND payload::text LIKE '%' || $1::text || '%'
+		`, userID, tenantID); err != nil {
+			return fmt.Errorf("deleting webhook_deliveries with user PII: %w", err)
 		}
 
 		// 5. Physical deletion — ON DELETE CASCADE handles all child tables.

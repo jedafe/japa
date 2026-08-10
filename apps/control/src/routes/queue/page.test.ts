@@ -14,7 +14,7 @@ describe('Queue +page.svelte', () => {
 
 	it('shows the auto-refresh indicator', () => {
 		render(Page);
-		expect(screen.getByText('Auto-refresh every 30s')).toBeTruthy();
+		expect(screen.getByText('Auto-refresh every 15s')).toBeTruthy();
 	});
 
 	it('shows the refresh button', () => {

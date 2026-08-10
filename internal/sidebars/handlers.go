@@ -129,8 +129,20 @@ func (h *Handlers) ListSidebars(w http.ResponseWriter, r *http.Request) {
 	offset := parsePageOffset(r)
 	app := r.URL.Query().Get("app")
 	position := r.URL.Query().Get("position")
+	status := r.URL.Query().Get("status")
 	q := r.URL.Query().Get("q")
-	result, err := h.Service.ListSidebars(r.Context(), tenantID, app, position, q, limit, offset)
+	sortParam := r.URL.Query().Get("sort")
+	dir := r.URL.Query().Get("dir")
+	// Compose sort into "key:dir" format for the SQL CASE WHEN matcher.
+	// Only forward the dir suffix when both sort and dir are present and valid.
+	sortKey := ""
+	if sortParam != "" {
+		sortKey = sortParam
+		if dir == "asc" || dir == "desc" {
+			sortKey = sortParam + ":" + dir
+		}
+	}
+	result, err := h.Service.ListSidebars(r.Context(), tenantID, app, position, status, q, sortKey, limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -349,10 +361,12 @@ func (h *Handlers) Resolve(w http.ResponseWriter, r *http.Request) {
 
 	isAuthenticated := false
 	userGroupIDs := map[string]bool{}
+	var userID pgtype.UUID
 
 	user := auth.FromContext(r.Context())
 	if user != nil {
 		isAuthenticated = true
+		userID = user.UserID
 		groupIDs, err := h.Service.GetUserGroupIDs(r.Context(), tenantID, user.UserID.String())
 		if err == nil {
 			for _, gid := range groupIDs {
@@ -361,7 +375,7 @@ func (h *Handlers) Resolve(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	result, err := h.Service.Resolve(r.Context(), tenantID, app, position, requestPath, userGroupIDs, isAuthenticated)
+	result, err := h.Service.Resolve(r.Context(), tenantID, app, position, requestPath, userGroupIDs, isAuthenticated, userID)
 	if err != nil {
 		handleServiceError(w, err)
 		return

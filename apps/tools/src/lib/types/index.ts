@@ -259,36 +259,43 @@ export interface AssessmentHistoryItem {
 
 export interface ColCity {
 	id: string;
-	name: string;
-	country: string;
-	/** True if this is the baseline city (Lagos by default). */
+	title: string;
+	description: string;
+	geo_space_name: string;
+	geo_space_slug: string;
 	is_baseline: boolean;
-	currency_code: string;
-	/** ISO timestamp of last data update. */
-	last_updated_at?: string | null;
+	last_updated: string;
+	position: number;
 }
 
-export interface ColComparison {
-	/** The baseline city the ratios are computed against. */
-	baseline: ColComparisonCity;
-	cities: ColComparisonCity[];
-	/** Attribute definitions (labels, units). */
-	attributes: ColAttributeDef[];
+export interface ColCitiesListResponse {
+	cities: ColCity[];
+	total: number;
+	page: number;
+	limit: number;
 }
 
-export interface ColComparisonCity extends ColCity {
-	/** Attribute values keyed by attribute slug. Values in USD. */
-	attributes: Record<string, number | null>;
-	/** Ratios vs baseline, keyed by attribute slug (1.0 = same as baseline). */
-	ratios?: Record<string, number | null>;
+export interface ColCityData {
+	id: string;
+	title: string;
+	geo_space_name: string;
+	is_baseline: boolean;
+	last_updated: string;
+	values: Record<string, string>;
 }
 
-export interface ColAttributeDef {
-	slug: string;
+export interface ColCategoryData {
+	key: string;
 	label: string;
-	unit: string;
-	/** Category for grouping. */
-	category?: string | null;
+	values: Record<string, number>;
+	ratios: Record<string, number>;
+}
+
+export interface ColComparisonMatrix {
+	cities: ColCityData[];
+	categories: ColCategoryData[];
+	baseline_city_id: string;
+	overall_index: Record<string, number>;
 }
 
 /* ------------------------------------------------------------------ *

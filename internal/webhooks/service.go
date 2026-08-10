@@ -2,9 +2,12 @@ package webhooks
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db"
@@ -15,9 +18,18 @@ import (
 // MaxDeliveryAttempts is the roadmap-mandated retry count for webhook delivery.
 const MaxDeliveryAttempts = 5
 
+// secretByteLength is the number of random bytes used to generate a
+// per-subscription HMAC-SHA256 signing secret. 32 bytes = 256 bits.
+const secretByteLength = 32
+
+// challengeTokenByteLength is the number of random bytes used for the
+// challenge/response verification token (§12). 16 bytes = 128 bits.
+const challengeTokenByteLength = 16
+
 // webhooksSettingsReader is the subset of config.Settings webhooks needs.
 type webhooksSettingsReader interface {
 	GetIntOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback int) int
+	GetStringOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback string) string
 }
 
 // Service coordinates webhook endpoint lookup, signed delivery, and delivery
@@ -43,6 +55,26 @@ func (s *Service) SetEnqueuer(e webhookEnqueuer) { s.enqueuer = e }
 // NewService creates a Service backed by the given database pool.
 func NewService(database *db.DB, siteName string) *Service {
 	return &Service{store: NewStore(database), siteName: siteName}
+}
+
+// generateSecret generates a cryptographically random hex-encoded signing
+// secret for a new webhook endpoint (§12: server-generated, shown once).
+func generateSecret() (string, error) {
+	b := make([]byte, secretByteLength)
+	if _, err := rand.Read(b); err != nil {
+		return "", fmt.Errorf("generating webhook secret: %w", err)
+	}
+	return hex.EncodeToString(b), nil
+}
+
+// generateChallengeToken generates a cryptographically random hex-encoded
+// challenge token for the §12 challenge/response verification.
+func generateChallengeToken() (string, error) {
+	b := make([]byte, challengeTokenByteLength)
+	if _, err := rand.Read(b); err != nil {
+		return "", fmt.Errorf("generating challenge token: %w", err)
+	}
+	return hex.EncodeToString(b), nil
 }
 
 // ---------------------------------------------------------------------------
@@ -73,19 +105,23 @@ func (s *Service) GetEndpoint(ctx context.Context, tenantID, id pgtype.UUID) (We
 	return ep.ToResponse(), nil
 }
 
-// CreateEndpoint registers a new webhook endpoint.
-func (s *Service) CreateEndpoint(ctx context.Context, tenantID pgtype.UUID, input CreateWebhookRequest) (WebhookEndpointResponse, error) {
-	status := input.Status
-	if status == "" {
-		status = "active"
-	}
-
-	ep, err := s.store.CreateEndpoint(ctx, tenantID, input.URL, input.Secret, input.EventTypes, status)
+// CreateEndpoint registers a new webhook endpoint. The secret is
+// server-generated and returned in the WebhookEndpointWithSecret so the
+// handler can include it in the create response exactly once (§12). New
+// endpoints default to is_active=false until challenge/response verification
+// (BUG-002). createdBy is the admin user creating the endpoint.
+func (s *Service) CreateEndpoint(ctx context.Context, tenantID, createdBy pgtype.UUID, input CreateWebhookRequest) (WebhookEndpointWithSecret, error) {
+	secret, err := generateSecret()
 	if err != nil {
-		return WebhookEndpointResponse{}, err
+		return WebhookEndpointWithSecret{}, err
 	}
 
-	return ep.ToResponse(), nil
+	ep, err := s.store.CreateEndpoint(ctx, tenantID, input.Name, input.URL, secret, input.EventTypes, createdBy)
+	if err != nil {
+		return WebhookEndpointWithSecret{}, err
+	}
+
+	return ep, nil
 }
 
 // UpdateEndpoint updates an existing webhook endpoint.
@@ -94,6 +130,11 @@ func (s *Service) UpdateEndpoint(ctx context.Context, tenantID, id pgtype.UUID, 
 	current, err := s.store.GetEndpoint(ctx, tenantID, id)
 	if err != nil {
 		return WebhookEndpointResponse{}, err
+	}
+
+	name := current.Name
+	if input.Name != nil {
+		name = *input.Name
 	}
 
 	url := current.URL
@@ -112,11 +153,17 @@ func (s *Service) UpdateEndpoint(ctx context.Context, tenantID, id pgtype.UUID, 
 	}
 
 	status := current.Status
-	if input.Status != nil {
-		status = *input.Status
+	isActive := current.IsActive
+	if input.IsActive != nil {
+		isActive = *input.IsActive
+		if isActive {
+			status = "active"
+		} else {
+			status = "disabled"
+		}
 	}
 
-	updated, err := s.store.UpdateEndpoint(ctx, tenantID, id, url, secret, eventTypes, status)
+	updated, err := s.store.UpdateEndpoint(ctx, tenantID, id, name, url, secret, eventTypes, status, isActive)
 	if err != nil {
 		return WebhookEndpointResponse{}, err
 	}
@@ -127,6 +174,40 @@ func (s *Service) UpdateEndpoint(ctx context.Context, tenantID, id pgtype.UUID, 
 // DeleteEndpoint removes a webhook endpoint by ID.
 func (s *Service) DeleteEndpoint(ctx context.Context, tenantID, id pgtype.UUID) error {
 	return s.store.DeleteEndpoint(ctx, tenantID, id)
+}
+
+// VerifyEndpoint performs the §12 challenge/response verification: generates a
+// random token, sends a GET to {url}?challenge={token}, and verifies the
+// endpoint echoes the token back. On success, marks the endpoint as verified
+// and active (BUG-001). Returns an error if the challenge fails.
+func (s *Service) VerifyEndpoint(ctx context.Context, tenantID, id pgtype.UUID) error {
+	endpoint, err := s.store.GetEndpoint(ctx, tenantID, id)
+	if err != nil {
+		return fmt.Errorf("fetching endpoint for verification: %w", err)
+	}
+
+	token, err := generateChallengeToken()
+	if err != nil {
+		return err
+	}
+
+	challengeCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+
+	if err := PerformChallenge(challengeCtx, endpoint.URL, token); err != nil {
+		slog.Warn("webhook challenge/response failed",
+			"endpoint_id", id, "url", endpoint.URL, "error", err)
+		return fmt.Errorf("challenge/response verification failed: %w", err)
+	}
+
+	if err := s.store.VerifyEndpoint(ctx, tenantID, id); err != nil {
+		return err
+	}
+
+	slog.Info("webhook endpoint verified",
+		"endpoint_id", id, "url", endpoint.URL)
+
+	return nil
 }
 
 // TestEndpoint sends a test event to a webhook endpoint and records the delivery.
@@ -174,9 +255,10 @@ func (s *Service) TestEndpoint(ctx context.Context, tenantID, endpointID pgtype.
 }
 
 // DeliverWebhook fetches the delivery and endpoint rows, builds a signed
-// envelope, calls DeliverWithRetry, and updates the delivery status in the
-// database. Returns an error only if the delivery cannot be attempted (e.g.
-// the row is missing). A failed delivery after all retries is recorded as
+// envelope, attempts a single delivery, and updates the delivery status.
+// If the delivery fails and retries remain, it records the 'retrying' state
+// with next_attempt_at and returns an error so Asynq re-enqueues the task
+// with native retry (BUG-017). If all retries are exhausted, it records
 // 'failed' and returns nil so Asynq does not re-enqueue indefinitely.
 func (s *Service) DeliverWebhook(ctx context.Context, deliveryID [16]byte) error {
 	id := pgtype.UUID{Bytes: deliveryID, Valid: true}
@@ -191,10 +273,12 @@ func (s *Service) DeliverWebhook(ctx context.Context, deliveryID [16]byte) error
 		return fmt.Errorf("fetching webhook endpoint: %w", err)
 	}
 
-	if endpoint.Status != "active" {
+	// §12: only active (verified) endpoints receive deliveries. An inactive
+	// endpoint is marked failed so the delivery log reflects the skip reason.
+	if !endpoint.IsActive {
 		slog.Info("webhook endpoint inactive, skipping delivery",
 			"delivery_id", delivery.ID, "endpoint_id", endpoint.ID)
-		return s.store.MarkWebhookFailed(ctx, id, delivery.Attempts, "endpoint inactive")
+		return s.store.MarkWebhookFailed(ctx, id, delivery.Attempts, "endpoint inactive or not verified")
 	}
 
 	var data any
@@ -214,31 +298,71 @@ func (s *Service) DeliverWebhook(ctx context.Context, deliveryID [16]byte) error
 	if s.settings != nil {
 		maxAttempts = s.settings.GetIntOr(ctx, endpoint.TenantID, "notifications.max_delivery_attempts", MaxDeliveryAttempts)
 	}
-	deliverErr := DeliverWithRetry(ctx, endpoint.URL, endpoint.Secret, envelope, maxAttempts)
-	attempts := int32(maxAttempts)
 
-	if deliverErr != nil {
-		errMsg := deliverErr.Error()
-		if markErr := s.store.MarkWebhookFailed(ctx, id, attempts, errMsg); markErr != nil {
-			slog.Error("failed to mark webhook delivery as failed",
-				"delivery_id", id, "error", markErr)
+	// Single attempt per task invocation (BUG-017: async retry via Asynq
+	// native retry instead of blocking the worker with synchronous sleeps).
+	result, deliverErr := Deliver(ctx, endpoint.URL, endpoint.Secret, envelope)
+	attempt := delivery.Attempts + 1
+
+	// Capture the response code and body for the delivery log (§12).
+	var respCode *int32
+	var respBody *string
+	if result.StatusCode > 0 {
+		c := int32(result.StatusCode) //nolint:gosec // G115: HTTP status codes fit in int32
+		respCode = &c
+	}
+	if result.ResponseBody != "" {
+		b := result.ResponseBody
+		respBody = &b
+	}
+
+	if deliverErr == nil {
+		if err := s.store.MarkWebhookDelivered(ctx, id, attempt, respCode, respBody); err != nil {
+			slog.Error("failed to mark webhook delivery as delivered",
+				"delivery_id", id, "error", err)
 		}
-
-		slog.Error("webhook delivery failed after all retries",
-			"delivery_id", id, "endpoint", endpoint.URL, "error", deliverErr)
-
+		slog.Info("webhook delivered successfully",
+			"delivery_id", id, "endpoint", endpoint.URL, "event_type", delivery.EventType, "attempt", attempt)
 		return nil
 	}
 
-	if err := s.store.MarkWebhookDelivered(ctx, id, attempts); err != nil {
-		slog.Error("failed to mark webhook delivery as delivered",
-			"delivery_id", id, "error", err)
+	// Delivery failed. If retries remain, record 'retrying' with next_attempt_at
+	// and return an error so Asynq re-enqueues (BUG-017).
+	if attempt < int32(maxAttempts) {
+		nextAttempt := time.Now().Add(backoffDuration(int(attempt)))
+		errMsg := deliverErr.Error()
+		if markErr := s.store.MarkWebhookRetrying(ctx, id, attempt, errMsg, nextAttempt, respCode, respBody); markErr != nil {
+			slog.Error("failed to mark webhook delivery as retrying",
+				"delivery_id", id, "error", markErr)
+		}
+		slog.Warn("webhook delivery failed, will retry",
+			"delivery_id", id, "endpoint", endpoint.URL,
+			"attempt", attempt, "max_attempts", maxAttempts,
+			"next_attempt_at", nextAttempt, "error", deliverErr)
+		return fmt.Errorf("webhook delivery attempt %d failed: %w", attempt, deliverErr)
 	}
 
-	slog.Info("webhook delivered successfully",
-		"delivery_id", id, "endpoint", endpoint.URL, "event_type", delivery.EventType)
-
+	// All retries exhausted — mark as failed and return nil so Asynq stops.
+	errMsg := deliverErr.Error()
+	if markErr := s.store.MarkWebhookFailed(ctx, id, attempt, errMsg); markErr != nil {
+		slog.Error("failed to mark webhook delivery as failed",
+			"delivery_id", id, "error", markErr)
+	}
+	slog.Error("webhook delivery failed after all retries",
+		"delivery_id", id, "endpoint", endpoint.URL, "attempts", attempt, "error", deliverErr)
 	return nil
+}
+
+// backoffDuration returns the delay before the next retry attempt. The schedule
+// is exponential: 1s, 2s, 4s, 8s, 16s, ... for attempts 1, 2, 3, 4, 5, ...
+func backoffDuration(attempt int) time.Duration {
+	if attempt < 1 {
+		attempt = 1
+	}
+	if attempt > 30 {
+		attempt = 30
+	}
+	return time.Duration(1<<uint(attempt-1)) * time.Second //nolint:gosec // G115: attempt bounded to 30
 }
 
 // ---------------------------------------------------------------------------
@@ -322,19 +446,13 @@ func (s *Service) EmitEvent(ctx context.Context, tenantID pgtype.UUID, eventType
 	}
 
 	for _, ep := range endpoints {
-		if ep.Status != "active" {
+		// §12: only verified, active endpoints receive deliveries.
+		if !ep.IsActive {
 			continue
 		}
 
 		// Check if the endpoint subscribes to this event type.
-		matched := false
-		for _, et := range ep.EventTypes {
-			if et == eventType || et == "*" {
-				matched = true
-				break
-			}
-		}
-		if !matched {
+		if !endpointMatches(ep.EventTypes, eventType) {
 			continue
 		}
 

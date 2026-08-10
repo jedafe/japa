@@ -2,11 +2,10 @@
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import MetricCard from '$lib/components/MetricCard.svelte';
 	import StatusBadge from '$lib/components/StatusBadge.svelte';
-	import { Tabs, Tooltip } from 'bits-ui';
+	import { Tabs } from 'bits-ui';
 	import { api } from '$lib/api';
 	import type { QueueInfo, QueueStats, QueueTask, QueueTasksResponse } from '$lib/api/types';
 	import { t } from '$lib/stores/i18n.svelte';
-	import { escapeHtml } from '$lib/utils';
 	import { ListTodo, Clock, RefreshCw, X, AlertTriangle, CheckCircle, Timer, RotateCw, RotateCcw } from 'lucide-svelte';
 	import { Dialog } from 'bits-ui';
 
@@ -53,7 +52,10 @@
 			} else {
 				apiAvailable = false;
 			}
-		} catch {
+		} catch (err) {
+			// Don't mark the API as unavailable when the request was
+			// aborted (e.g. initial timeout or page backgrounding).
+			if (err instanceof DOMException && err.name === 'AbortError') return;
 			apiAvailable = false;
 		} finally {
 			loading = false;
@@ -125,11 +127,6 @@
 		} catch {
 			return ts;
 		}
-	}
-
-	function truncatePayload(payload: string, max = 80): string {
-		if (!payload || payload === '{}') return '—';
-		return payload.length > max ? payload.slice(0, max) + '…' : payload;
 	}
 
 	$effect(() => {
@@ -408,7 +405,7 @@
 											<td class="px-3 py-2 font-mono">{task.type}</td>
 											<td class="text-muted-foreground max-w-[120px] truncate px-3 py-2 font-mono">{task.id}</td>
 											{#if taskTab === 'retry' || taskTab === 'archived'}
-												<td class="max-w-[200px] truncate px-3 py-2 text-destructive">{escapeHtml(task.last_err) || '—'}</td>
+												<td class="max-w-[200px] truncate px-3 py-2 text-destructive">{task.last_err || '—'}</td>
 											{/if}
 											{#if taskTab === 'scheduled'}
 												<td class="text-muted-foreground px-3 py-2">{formatTaskTime(task.next_process_at)}</td>

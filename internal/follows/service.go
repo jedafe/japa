@@ -8,6 +8,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/valkey"
 )
 
 // FollowerInfo extends a follow row with the follower's profile data.
@@ -108,7 +109,7 @@ func (s *Service) ToggleFollow(ctx context.Context, tenantID, followerID pgtype.
 		// The cache key pattern is
 		// jc:cache:feed:foryou:{tenant_id}:{user_id}:{sort_mode}:{content_country}
 		// — we SCAN + DEL all variants for this user. Ref: Section 32.
-		pattern := fmt.Sprintf("jc:cache:feed:foryou:%s:%s:*", tenantID, followerID)
+		pattern := valkey.MustKey("cache:feed:foryou:%s:%s:*", tenantID, followerID)
 		var cursor uint64
 		var keys []string
 		for {

@@ -30,6 +30,16 @@ import (
 	"github.com/jedafe/japa/internal/tenant"
 )
 
+// createJobListingRequest is the JSON body for POST /org/{org_id}/jobs.
+type createJobListingRequest struct {
+	Title           string            `json:"title"`
+	Slug            string            `json:"slug"`
+	Summary         string            `json:"summary"`
+	Body            string            `json:"body"`
+	FieldValues     map[string]string `json:"field_values"`
+	PublishedAt     *string           `json:"published_at,omitempty"`
+}
+
 // Handlers exposes the Jobs Board HTTP endpoints.
 type Handlers struct {
 	service  *Service
@@ -271,6 +281,84 @@ func (h *Handlers) HandleMyApplications(w http.ResponseWriter, r *http.Request) 
 			"limit": limit,
 			"total": total,
 		},
+	})
+}
+
+// HandleListOrgJobs handles GET /api/v1/org/:org_id/jobs — lists the org's
+// published job listings. Auth required (org admin / jobs.post).
+func (h *Handlers) HandleListOrgJobs(w http.ResponseWriter, r *http.Request) {
+	if _, ok := requireUser(w, r); !ok {
+		return
+	}
+
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	orgID, ok := scanUUIDParam(w, r, "org_id")
+	if !ok {
+		return
+	}
+
+	page, limit := parsePagination(r)
+
+	results, total, err := h.service.ListOrgJobs(r.Context(), tenantID, orgID, page, limit)
+	if err != nil {
+		slog.Error("jobs: list org jobs failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "org_jobs_list_failed", "Failed to list org jobs")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data": results,
+		"meta": map[string]any{
+			"page":  page,
+			"limit": limit,
+			"total": total,
+		},
+	})
+}
+
+// HandleCreateJobListing handles POST /api/v1/org/:org_id/jobs — creates a
+// job_listing content with custom field values. Auth required (org admin /
+// jobs.post).
+func (h *Handlers) HandleCreateJobListing(w http.ResponseWriter, r *http.Request) {
+	user, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	orgID, ok := scanUUIDParam(w, r, "org_id")
+	if !ok {
+		return
+	}
+
+	var req createJobListingRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		return
+	}
+
+	if req.Title == "" {
+		writeError(w, http.StatusBadRequest, "missing_title", "Job title is required")
+		return
+	}
+
+	listing, err := h.service.CreateJobListing(r.Context(), tenantID, orgID, user.UserID, req.Title, req.Slug, req.Summary, req.Body, req.FieldValues)
+	if err != nil {
+		slog.Error("jobs: create listing failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "create_listing_failed", "Failed to create job listing")
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, map[string]any{
+		"data": listing,
 	})
 }
 

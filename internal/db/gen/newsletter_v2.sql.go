@@ -215,12 +215,12 @@ func (q *Queries) CountDigestSubscribers(ctx context.Context, tenantID pgtype.UU
 const createCampaign = `-- name: CreateCampaign :one
 
 INSERT INTO newsletter_campaigns (
-    tenant_id, name, subject, preview_text, body, segment, segment_id,
+    tenant_id, name, subject, html, preview_text, body, segment, segment_id,
     status, scheduled_at, created_by
 )
 VALUES (
-    $1, $2, $3, $4, $5,
-    $6, $7, $8, $9, $10
+    $1, $2, $3, $4, $5, $6,
+    $7, $8, $9, $10, $11
 )
 RETURNING id, tenant_id, name, subject, html, status, sent_at, created_at, updated_at, preview_text, body, segment, segment_id, scheduled_at, recipient_count, open_count, click_count, created_by
 `
@@ -229,6 +229,7 @@ type CreateCampaignParams struct {
 	TenantID    pgtype.UUID        `json:"tenant_id"`
 	Name        string             `json:"name"`
 	Subject     string             `json:"subject"`
+	Html        string             `json:"html"`
 	PreviewText *string            `json:"preview_text"`
 	Body        []byte             `json:"body"`
 	Segment     string             `json:"segment"`
@@ -246,6 +247,7 @@ func (q *Queries) CreateCampaign(ctx context.Context, arg CreateCampaignParams) 
 		arg.TenantID,
 		arg.Name,
 		arg.Subject,
+		arg.Html,
 		arg.PreviewText,
 		arg.Body,
 		arg.Segment,
@@ -728,6 +730,43 @@ func (q *Queries) UpdatePreferences(ctx context.Context, arg UpdatePreferencesPa
 		arg.TenantID,
 		arg.ID,
 	)
+	var i NewsletterSubscriber
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.Email,
+		&i.UserID,
+		&i.Status,
+		&i.CreatedAt,
+		&i.DigestEnabled,
+		&i.CampaignEnabled,
+		&i.SubscribedAt,
+		&i.UnsubscribedAt,
+		&i.Source,
+	)
+	return i, err
+}
+
+const updateSubscriberStatus = `-- name: UpdateSubscriberStatus :one
+
+UPDATE newsletter_subscribers
+SET status = $1,
+    unsubscribed_at = CASE WHEN $1 = 'unsubscribed' THEN now() ELSE unsubscribed_at END
+WHERE tenant_id = $2 AND id = $3
+RETURNING id, tenant_id, email, user_id, status, created_at, digest_enabled, campaign_enabled, subscribed_at, unsubscribed_at, source
+`
+
+type UpdateSubscriberStatusParams struct {
+	Status   string      `json:"status"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+	ID       pgtype.UUID `json:"id"`
+}
+
+// =====================================================================
+// Admin: update subscriber status (for the PATCH subscriber endpoint)
+// =====================================================================
+func (q *Queries) UpdateSubscriberStatus(ctx context.Context, arg UpdateSubscriberStatusParams) (NewsletterSubscriber, error) {
+	row := q.db.QueryRow(ctx, updateSubscriberStatus, arg.Status, arg.TenantID, arg.ID)
 	var i NewsletterSubscriber
 	err := row.Scan(
 		&i.ID,

@@ -12,6 +12,7 @@ import (
 	"github.com/jedafe/japa/internal/clientip"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/tenant"
+	"github.com/jedafe/japa/internal/valkey"
 )
 
 // Handlers holds dependencies for impersonation HTTP handlers.
@@ -129,7 +130,7 @@ func (h *Handlers) StartImpersonation(w http.ResponseWriter, r *http.Request) {
 	}
 
 	expiresAt := time.Now().Add(DefaultImpersonationTTL).UTC().Format(time.RFC3339)
-	sessionKey := "jc:impersonate:" + user.UserID.String()
+	sessionKey := valkey.MustKey("impersonate:%s", user.UserID.String())
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{

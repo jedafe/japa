@@ -68,6 +68,10 @@ type UserProfileResponse struct {
 	// settings/location page can pre-populate without an extra fetch.
 	OriginCountry      string `json:"origin_country"`
 	DestinationCountry string `json:"destination_country"`
+	// The user's current geo space ID (migration 000200, ADR-064a). Surfaced
+	// on /me so sidebar widgets can fetch geo-relevant content (Option A,
+	// ADR-064) without an extra round-trip. Empty string = not set.
+	CurrentGeoSpaceID string `json:"current_geo_space_id"`
 }
 
 // UserPreferencesResponse is the API response for user preferences.

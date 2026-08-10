@@ -247,6 +247,7 @@ func (h *Handlers) ListReviews(w http.ResponseWriter, r *http.Request) {
 	entityType := chi.URLParam(r, "entity_type")
 	entityIDStr := chi.URLParam(r, "entity_id")
 	reviewerIDStr := r.URL.Query().Get("reviewer_id")
+	sortParam := r.URL.Query().Get("sort") // spec §29: newest|highest|lowest
 
 	// List by entity.
 	if entityType != "" && entityIDStr != "" {
@@ -256,7 +257,7 @@ func (h *Handlers) ListReviews(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		reviews, err := h.Service.ListReviewsByEntity(r.Context(), tenantID, entityType, entityID, limit, offset)
+		reviews, err := h.Service.ListReviewsByEntity(r.Context(), tenantID, entityType, entityID, limit, offset, sortParam)
 		if err != nil {
 			handleServiceError(w, err)
 			return
@@ -416,7 +417,7 @@ func (h *Handlers) UpdateReview(w http.ResponseWriter, r *http.Request) {
 
 // DeleteReview handles DELETE /api/v1/reviews/{id}.
 func (h *Handlers) DeleteReview(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireUser(w, r)
+	user, ok := h.requireUser(w, r)
 	if !ok {
 		return
 	}
@@ -439,7 +440,7 @@ func (h *Handlers) DeleteReview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Service.DeleteReview(r.Context(), id, tenantID); err != nil {
+	if err := h.Service.DeleteReview(r.Context(), id, tenantID, user.UserID); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -469,10 +470,20 @@ func (h *Handlers) HardDeleteReview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Fetch review before deleting to get entity info for aggregate recalc.
+	review, err := h.Service.GetReview(r.Context(), id, tenantID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
 	if err := h.Service.HardDeleteReview(r.Context(), id, tenantID); err != nil {
 		handleServiceError(w, err)
 		return
 	}
+
+	// Enqueue async review aggregate recalculation — fire-and-forget.
+	h.enqueueReviewAggregateRecalc(tenantID, review.EntityType, review.EntityID)
 
 	writeJSON(w, http.StatusNoContent, nil)
 }
@@ -536,9 +547,10 @@ func (h *Handlers) GetAggregate(w http.ResponseWriter, r *http.Request) {
 }
 
 // ModerateReview handles PATCH /api/v1/admin/reviews/:id.
-// Changes a review's status (admin moderation).
+// Changes a review's status (admin moderation). The reason is recorded in
+// audit_logs per spec §29 (moderation reuses Section 22 Reporting & Appeals).
 func (h *Handlers) ModerateReview(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireUser(w, r)
+	user, ok := h.requireUser(w, r)
 	if !ok {
 		return
 	}
@@ -569,7 +581,7 @@ func (h *Handlers) ModerateReview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	review, err := h.Service.ModerateReview(r.Context(), id, tenantID, input.Status)
+	review, err := h.Service.ModerateReview(r.Context(), id, tenantID, user.UserID, input.Status, input.Reason)
 	if err != nil {
 		handleServiceError(w, err)
 		return

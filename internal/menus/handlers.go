@@ -19,8 +19,20 @@ type Handlers struct {
 	RBACService *rbac.RBAC
 }
 
+// NewHandlers constructs menus Handlers without RBAC permission resolution.
+// Prefer NewHandlersWithPerms for the public resolver path so authenticated
+// users are gated by permission_node per ADR-054.
 func NewHandlers(service *Service) *Handlers {
 	return &Handlers{Service: service}
+}
+
+// NewHandlersWithPerms constructs menus Handlers wired to the RBAC resolver.
+// The public GET /menus/{slug} endpoint uses this to prune items whose
+// permission_node is not held by the requesting user (ADR-054).
+func NewHandlersWithPerms(service *Service, rbacSvc *rbac.RBAC) *Handlers {
+	h := NewHandlers(service)
+	h.RBACService = rbacSvc
+	return h
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────
@@ -117,8 +129,15 @@ func (h *Handlers) ListMenus(w http.ResponseWriter, r *http.Request) {
 	}
 	limit := parsePageSize(r)
 	offset := parsePageOffset(r)
-	q := pgtype.Text{String: r.URL.Query().Get("q"), Valid: true}
-	result, err := h.Service.ListMenus(r.Context(), tenantID, q, limit, offset)
+	q := r.URL.Query().Get("q")
+	placement := r.URL.Query().Get("placement")
+	status := r.URL.Query().Get("status")
+	sort := r.URL.Query().Get("sort")
+	sortDir := r.URL.Query().Get("sort_dir")
+	if sortDir != "desc" {
+		sortDir = "asc"
+	}
+	result, err := h.Service.ListMenus(r.Context(), tenantID, q, placement, status, sort, sortDir, limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -187,6 +206,10 @@ func (h *Handlers) UpdateMenu(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
+		return
+	}
+	if input.Name == "" {
+		writeError(w, http.StatusBadRequest, "validation_error", "name is required")
 		return
 	}
 	menu, err := h.Service.UpdateMenu(r.Context(), id, tenantID, input.Name, input.Placement, input.Status)
@@ -321,10 +344,12 @@ func (h *Handlers) GetMenuBySlug(w http.ResponseWriter, r *http.Request) {
 
 	isAuthenticated := false
 	userGroupIDs := map[string]bool{}
+	var userID pgtype.UUID
 
 	user := auth.FromContext(r.Context())
 	if user != nil {
 		isAuthenticated = true
+		userID = user.UserID
 		// Resolve the user's group memberships for group-based menu item gating.
 		groupIDs, err := h.Service.GetUserGroupIDs(r.Context(), tenantID, user.UserID.String())
 		if err == nil {
@@ -334,7 +359,7 @@ func (h *Handlers) GetMenuBySlug(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	menu, err := h.Service.GetMenuBySlug(r.Context(), tenantID, slug, userGroupIDs, isAuthenticated)
+	menu, err := h.Service.GetMenuBySlug(r.Context(), tenantID, slug, userGroupIDs, isAuthenticated, userID)
 	if err != nil {
 		handleServiceError(w, err)
 		return

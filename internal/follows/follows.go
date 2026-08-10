@@ -6,12 +6,12 @@ package follows
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/valkey"
 	valkeycompat "github.com/valkey-io/valkey-go/valkeycompat"
 )
 
@@ -77,5 +77,5 @@ func (s *Service) SetValkey(vk valkeycompat.Cmdable) { s.vk = vk }
 // isFollowingKey returns the Valkey cache key for a follow-status lookup.
 // Ref: conventions/valkey-keys-catalog.md (Follow System section)
 func isFollowingKey(followerID pgtype.UUID, entityType string, entityID pgtype.UUID) string {
-	return fmt.Sprintf("jc:is_following:%s:%s:%s", followerID.String(), entityType, entityID.String())
+	return valkey.MustKey("is_following:%s:%s:%s", followerID.String(), entityType, entityID.String())
 }

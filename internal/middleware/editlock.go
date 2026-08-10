@@ -21,6 +21,7 @@ import (
 	"github.com/valkey-io/valkey-go/valkeycompat"
 
 	"github.com/jedafe/japa/internal/auth"
+	"github.com/jedafe/japa/internal/valkey"
 )
 
 // editLockTTLDefault is the fallback TTL when the system setting is unavailable.
@@ -92,7 +93,7 @@ func EditLockMiddleware(rdb valkeycompat.Cmdable, settings editLockSettingsReade
 			}
 
 			userID := user.UserID.String()
-			key := "jc:editor_lock:" + contentType + ":" + contentID
+			key := valkey.MustKey("editor_lock:%s:%s", contentType, contentID)
 			ctx := r.Context()
 
 			// Read TTL from system settings with fallback to the default.

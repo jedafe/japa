@@ -4,12 +4,12 @@ package interactions
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/valkey"
 	valkeycompat "github.com/valkey-io/valkey-go/valkeycompat"
 )
 
@@ -39,12 +39,12 @@ func (s *Service) SetValkey(vk valkeycompat.Cmdable) { s.vk = vk }
 
 // mutedUsersKey returns the Valkey key for a user's muted-users SET.
 func mutedUsersKey(userID pgtype.UUID) string {
-	return fmt.Sprintf("jc:muted_users:%s", userID.String())
+	return valkey.MustKey("muted_users:%s", userID.String())
 }
 
 // mutedSpacesKey returns the Valkey key for a user's muted-spaces SET.
 func mutedSpacesKey(userID pgtype.UUID) string {
-	return fmt.Sprintf("jc:muted_spaces:%s", userID.String())
+	return valkey.MustKey("muted_spaces:%s", userID.String())
 }
 
 // invalidateMutedUsersCache deletes the muted-users SET cache for the user.

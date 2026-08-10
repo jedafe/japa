@@ -23,6 +23,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/tenant"
+	"github.com/jedafe/japa/internal/valkey"
 	"github.com/valkey-io/valkey-go/valkeycompat"
 )
 
@@ -112,7 +113,7 @@ func (h *Handlers) HandleFeed(w http.ResponseWriter, r *http.Request) {
 	siteURL := resolveSiteURL(r, h.siteURL)
 
 	// Try the Valkey cache first (jc:cache:feed:rss:{tenant_id}).
-	cacheKey := "jc:cache:feed:rss:" + tenantID.String()
+	cacheKey := valkey.MustKey("cache:feed:rss:%s", tenantID.String())
 	if h.redis != nil {
 		if cached, err := h.redis.Get(r.Context(), cacheKey).Result(); err == nil && cached != "" {
 			w.Header().Set("Content-Type", "application/rss+xml; charset=utf-8")

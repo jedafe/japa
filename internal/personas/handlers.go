@@ -175,13 +175,10 @@ func (h *Handlers) HandleCreate(w http.ResponseWriter, r *http.Request) {
 	results, err := h.service.ProvisionPersonas(r.Context(), tenantID, user.UserID, inputs)
 	if err != nil {
 		slog.Error("personas: provisioning failed", "error", err, "admin_user_id", user.UserID.String())
-		writeJSON(w, http.StatusUnprocessableEntity, map[string]any{
-			"error": map[string]string{
-				"code":    "provisioning_failed",
-				"message": "Mass provisioning failed — no personas were committed (transaction rolled back)",
-			},
-			"results": results,
-		})
+		// Standard error envelope per api-response-format.md (BUG-002).
+		// The transaction is all-or-nothing, so no personas were committed.
+		writeError(w, http.StatusUnprocessableEntity, "provisioning_failed",
+			"Mass provisioning failed — no personas were committed (transaction rolled back)")
 		return
 	}
 
