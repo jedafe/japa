@@ -105,6 +105,34 @@ func (q *Queries) GetActivityEventByID(ctx context.Context, arg GetActivityEvent
 	return i, err
 }
 
+const getActivityRuleByID = `-- name: GetActivityRuleByID :one
+SELECT id, tenant_id, activity_key, point_value, is_enabled, cap_per_day, cap_per_week, description, created_at, updated_at FROM activity_point_rules
+WHERE id = $1 AND tenant_id = $2
+`
+
+type GetActivityRuleByIDParams struct {
+	ID       pgtype.UUID `json:"id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+func (q *Queries) GetActivityRuleByID(ctx context.Context, arg GetActivityRuleByIDParams) (ActivityPointRule, error) {
+	row := q.db.QueryRow(ctx, getActivityRuleByID, arg.ID, arg.TenantID)
+	var i ActivityPointRule
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.ActivityKey,
+		&i.PointValue,
+		&i.IsEnabled,
+		&i.CapPerDay,
+		&i.CapPerWeek,
+		&i.Description,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const getActivityRuleByKey = `-- name: GetActivityRuleByKey :one
 SELECT id, tenant_id, activity_key, point_value, is_enabled, cap_per_day, cap_per_week, description, created_at, updated_at FROM activity_point_rules
 WHERE tenant_id = $1 AND activity_key = $2
@@ -486,6 +514,54 @@ type ToggleActivityRuleParams struct {
 
 func (q *Queries) ToggleActivityRule(ctx context.Context, arg ToggleActivityRuleParams) (ActivityPointRule, error) {
 	row := q.db.QueryRow(ctx, toggleActivityRule, arg.ID, arg.TenantID)
+	var i ActivityPointRule
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.ActivityKey,
+		&i.PointValue,
+		&i.IsEnabled,
+		&i.CapPerDay,
+		&i.CapPerWeek,
+		&i.Description,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const updateActivityRuleByID = `-- name: UpdateActivityRuleByID :one
+UPDATE activity_point_rules
+SET point_value = $1,
+    is_enabled = $2,
+    cap_per_day = $3,
+    cap_per_week = $4,
+    description = $5,
+    updated_at = now()
+WHERE id = $6 AND tenant_id = $7
+RETURNING id, tenant_id, activity_key, point_value, is_enabled, cap_per_day, cap_per_week, description, created_at, updated_at
+`
+
+type UpdateActivityRuleByIDParams struct {
+	PointValue  int32       `json:"point_value"`
+	IsEnabled   *bool       `json:"is_enabled"`
+	CapPerDay   *int32      `json:"cap_per_day"`
+	CapPerWeek  *int32      `json:"cap_per_week"`
+	Description *string     `json:"description"`
+	ID          pgtype.UUID `json:"id"`
+	TenantID    pgtype.UUID `json:"tenant_id"`
+}
+
+func (q *Queries) UpdateActivityRuleByID(ctx context.Context, arg UpdateActivityRuleByIDParams) (ActivityPointRule, error) {
+	row := q.db.QueryRow(ctx, updateActivityRuleByID,
+		arg.PointValue,
+		arg.IsEnabled,
+		arg.CapPerDay,
+		arg.CapPerWeek,
+		arg.Description,
+		arg.ID,
+		arg.TenantID,
+	)
 	var i ActivityPointRule
 	err := row.Scan(
 		&i.ID,

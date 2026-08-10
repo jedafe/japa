@@ -63,6 +63,21 @@ RETURNING *;
 SELECT * FROM activity_point_rules
 WHERE tenant_id = @tenant_id AND activity_key = @activity_key;
 
+-- name: GetActivityRuleByID :one
+SELECT * FROM activity_point_rules
+WHERE id = @id AND tenant_id = @tenant_id;
+
+-- name: UpdateActivityRuleByID :one
+UPDATE activity_point_rules
+SET point_value = @point_value,
+    is_enabled = @is_enabled,
+    cap_per_day = sqlc.narg(cap_per_day),
+    cap_per_week = sqlc.narg(cap_per_week),
+    description = sqlc.narg(description),
+    updated_at = now()
+WHERE id = @id AND tenant_id = @tenant_id
+RETURNING *;
+
 -- name: ListActivityRulesByTenant :many
 SELECT * FROM activity_point_rules
 WHERE tenant_id = @tenant_id

@@ -139,11 +139,12 @@ func (h *Handlers) ChangePassword(w http.ResponseWriter, r *http.Request) {
 
 // PrivacySettings represents user privacy settings.
 type PrivacySettings struct {
-	DmPrivacy         string `json:"dm_privacy"`
-	ProfileVisibility string `json:"profile_visibility"`
-	SearchIndexable   bool   `json:"search_indexable"`
-	ShowOnlineStatus  bool   `json:"show_online_status"`
-	ShowActivity      bool   `json:"show_activity"`
+	DmPrivacy          string `json:"dm_privacy"`
+	ProfileVisibility  string `json:"profile_visibility"`
+	SearchIndexable    bool   `json:"search_indexable"`
+	ShowOnlineStatus   bool   `json:"show_online_status"`
+	ShowActivity       bool   `json:"show_activity"`
+	ShowPointsPublicly bool   `json:"show_points_publicly"`
 }
 
 // GetPrivacy handles GET /api/v1/me/privacy.
@@ -169,11 +170,12 @@ func (h *Handlers) GetPrivacy(w http.ResponseWriter, r *http.Request) {
 
 // UpdatePrivacyRequest is the input for updating privacy settings.
 type UpdatePrivacyRequest struct {
-	DmPrivacy         *string `json:"dm_privacy,omitempty"`
-	ProfileVisibility *string `json:"profile_visibility,omitempty"`
-	SearchIndexable   *bool   `json:"search_indexable,omitempty"`
-	ShowOnlineStatus  *bool   `json:"show_online_status,omitempty"`
-	ShowActivity      *bool   `json:"show_activity,omitempty"`
+	DmPrivacy          *string `json:"dm_privacy,omitempty"`
+	ProfileVisibility  *string `json:"profile_visibility,omitempty"`
+	SearchIndexable    *bool   `json:"search_indexable,omitempty"`
+	ShowOnlineStatus   *bool   `json:"show_online_status,omitempty"`
+	ShowActivity       *bool   `json:"show_activity,omitempty"`
+	ShowPointsPublicly *bool   `json:"show_points_publicly,omitempty"`
 }
 
 // UpdatePrivacy handles PATCH /api/v1/me/privacy.

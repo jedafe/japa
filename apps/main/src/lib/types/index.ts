@@ -402,7 +402,9 @@ export interface MeProfile {
 export interface PrivacySettings {
 	profile_visibility?: 'public' | 'members' | 'followers';
 	show_activity?: boolean;
-	searchable?: boolean;
+	search_indexable?: boolean;
+	/** Section 28 — opt in to show Points balance on public profile. Credits are never exposed. */
+	show_points_publicly?: boolean;
 	[key: string]: unknown;
 }
 
@@ -647,6 +649,8 @@ export interface PublicUser {
 	follower_count: number;
 	following_count: number;
 	created_at: string;
+	/** Section 28 — Points balance, only present when the user has opted in via show_points_publicly. Credits are never exposed. */
+	points?: number;
 }
 
 /** GET /users/{id}/content — PostCard row (profile Posts tab). */
@@ -1962,20 +1966,33 @@ export interface ColComparisonMatrix {
 // --- Section 73: Scholarship Finder ---
 export interface Scholarship {
 	guide_id: string;
+	id: string;
 	title: string;
 	slug: string;
 	summary: string;
+	description: string;
+	institution: string;
+	country: string;
+	level_of_study: string;
+	award_amount_usd: number | null;
+	is_renewable: boolean | null;
+	application_deadline: string;
+	application_url: string;
+	eligibility: string;
+	how_to_apply: string;
+	contact_email: string;
 	field_values: Record<string, string>;
 }
 
 export interface SavedScholarship {
 	id: string;
-	guide_id: string;
+	scholarship: Scholarship;
 	status: string;
 	notes: string;
 	remind_before_days: number;
-	last_reminded_at: string | null;
+	last_reminded_at: string;
 	created_at: string;
+	updated_at: string;
 }
 
 // --- Section 74: Remittance Tracker ---

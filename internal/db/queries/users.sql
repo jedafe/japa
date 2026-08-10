@@ -141,20 +141,21 @@ WHERE u.tenant_id = @tenant_id
 -- name: GetUserPrivacySettings :one
 -- Tenant-scoped per Section 04 (BUG-009).
 SELECT user_id, tenant_id, dm_privacy, profile_visibility, search_indexable,
-       show_online_status, show_activity, created_at, updated_at
+       show_online_status, show_activity, show_points_publicly, created_at, updated_at
 FROM user_privacy_settings
 WHERE tenant_id = $1 AND user_id = $2;
 
 -- name: UpsertUserPrivacySettings :exec
 -- Tenant-scoped per Section 04 (BUG-009).
-INSERT INTO user_privacy_settings (tenant_id, user_id, dm_privacy, profile_visibility, search_indexable, show_online_status, show_activity)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
+INSERT INTO user_privacy_settings (tenant_id, user_id, dm_privacy, profile_visibility, search_indexable, show_online_status, show_activity, show_points_publicly)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 ON CONFLICT (tenant_id, user_id) DO UPDATE SET
     dm_privacy = EXCLUDED.dm_privacy,
     profile_visibility = EXCLUDED.profile_visibility,
     search_indexable = EXCLUDED.search_indexable,
     show_online_status = EXCLUDED.show_online_status,
     show_activity = EXCLUDED.show_activity,
+    show_points_publicly = EXCLUDED.show_points_publicly,
     updated_at = now();
 
 -- name: GetUserPasswordHash :one
@@ -348,6 +349,8 @@ UPDATE users SET profile_type = $3, updated_at = now() WHERE tenant_id = $1 AND 
 
 -- name: GetPublicProfileByUsername :one
 -- Public profile header for /u/[username]. NO PII (no email/status/last_login/groups).
+-- Joins user_privacy_settings to surface show_points_publicly so the service
+-- layer can conditionally include the user's Points balance (Section 28).
 SELECT DISTINCT ON (u.id)
        u.id AS user_id,
        u.username,
@@ -358,11 +361,13 @@ SELECT DISTINCT ON (u.id)
        up.bio,
        up.cover_url,
        COALESCE(up.created_at, u.created_at) AS created_at,
+       COALESCE(ups.show_points_publicly, false) AS show_points_publicly,
        (SELECT COUNT(*)::int
           FROM follows f
          WHERE f.tenant_id = u.tenant_id AND f.follower_id = u.id) AS following_count
 FROM users u
 LEFT JOIN user_profiles up ON up.user_id = u.id AND up.tenant_id = u.tenant_id
+LEFT JOIN user_privacy_settings ups ON ups.user_id = u.id AND ups.tenant_id = u.tenant_id
 WHERE u.tenant_id = @tenant_id
   AND u.username = @username
   AND u.status = 'active'

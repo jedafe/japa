@@ -1037,6 +1037,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		referralService,
 		adsSelfServeService,
 		devicesService,
+		notificationService,
 	)
 
 	// AI Content Studio (Section 75, ADR-076).
@@ -1165,6 +1166,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Wire the media resolver so PATCH /me/profile can accept
 	// avatar_media_id/header_media_id and resolve them to URLs (BUG-004).
 	usersService.MediaResolver = &mediaURLResolver{media: mediaService}
+	// Wire the wallet service as the PointsProvider for the users service so
+	// public profiles can conditionally display a user's Points balance when
+	// they have opted in via show_points_publicly (Section 28). Credits are
+	// never exposed publicly.
+	usersService.PointsProvider = walletService
 	usersHandlers := users.NewHandlers(usersService, contentService)
 	// Wire the RBAC resolver so GetMyContent can fall back to a
 	// tenant-scoped (non-author-scoped) fetch for super-admins and users
@@ -1954,7 +1960,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 			// Geo routes (Phase 30 — Geo IP; catalog: Sections 05, 37)
 			// Public: returns geo data for the current request IP (resolved by middleware)
-			r.Get("/geo/me", geoHandlers.HandleGeoMe)
+			// /geo/me is rate-limited to 10/min per IP per Section 37.
+			r.With(mw.RateLimit(vkClient.Redis(), "tight")).Get("/geo/me", geoHandlers.HandleGeoMe)
 			r.Get("/geo/detect", geoHandlers.HandleGeoDetect)
 			// Admin: resolve an arbitrary IP address
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "geo.lookup")).
@@ -2667,25 +2674,25 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).
 				Get("/me/tickets/{id}/attachments", ticketHandlers.ListAttachments)
 
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tickets.admin")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tickets.view_all")).
 				Get("/admin/tickets", ticketHandlers.ListTickets)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tickets.admin")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tickets.view_all")).
 				Get("/admin/tickets/{id}", ticketHandlers.GetTicket)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tickets.admin")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tickets.manage")).
 				Patch("/admin/tickets/{id}", ticketHandlers.UpdateTicket)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tickets.admin")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tickets.comment.internal")).
 				Post("/admin/tickets/{id}/notes", ticketHandlers.AddInternalNote)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tickets.admin")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tickets.view_all")).
 				Get("/admin/tickets/{id}/events", ticketHandlers.GetTicketEvents)
-			// Catalog alias: /admin/tickets/:id/comments → same handler as /notes (P5.6 — Task 5)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tickets.admin")).
+			// Catalog: /admin/tickets/:id/comments accepts { body, is_internal }
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tickets.comment.internal")).
 				Post("/admin/tickets/{id}/comments", ticketHandlers.AddInternalNote)
-			// Delete ticket (P5.6 — Task 5 — soft-delete via UpdateTicket status)
+			// Delete ticket (admin, spam/test only)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tickets.admin")).
-				Delete("/admin/tickets/{id}", ticketHandlers.UpdateTicket)
-			// Resolve ticket (P5.6 — Task 5 — status transition via UpdateTicket)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tickets.admin")).
-				Post("/admin/tickets/{id}/resolve", ticketHandlers.UpdateTicket)
+				Delete("/admin/tickets/{id}", ticketHandlers.DeleteTicket)
+			// Resolve ticket
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tickets.manage")).
+				Post("/admin/tickets/{id}/resolve", ticketHandlers.ResolveTicket)
 
 			// Ticket type management
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tickets.type.manage")).
@@ -3899,11 +3906,13 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ad.slot.manage")).
 				Get("/admin/ads/slot-types/{id}", adHandlers.GetSlotType)
 
-			// Task 17: Wallet admin
+			// Task 17: Wallet admin — PATCH /admin/wallet/rules/{id} updates by
+			// ID (BUG-005/BUG-009 — previously called CreateOrUpdateRule which
+			// ignored {id} and upserted by activity_key). The duplicate
+			// /admin/wallet/award route is removed (BUG-009) — use
+			// /admin/wallet/adjust instead, which is the catalog entry.
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wallet.admin.rules.manage")).
-				Patch("/admin/wallet/rules/{id}", walletHandlers.CreateOrUpdateRule)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wallet.admin.adjust")).
-				Post("/admin/wallet/award", walletHandlers.AdminAdjust)
+				Patch("/admin/wallet/rules/{id}", walletHandlers.UpdateRule)
 
 			// Task 18: Blog review queue
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "blog.review.manage")).
@@ -4515,8 +4524,14 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Get("/admin/calculator/cost-of-living/stats", costOfLivingHandlers.HandleAdminStats)
 
 			// Section 73 — Scholarship Finder (ADR-073)
-			r.Get("/scholarships", scholarshipsHandlers.HandleFindScholarships)
-			r.Get("/scholarships/{id}", scholarshipsHandlers.HandleScholarshipDetail)
+			// Browse routes use OptionalAuth + OptionalPermission so anonymous
+			// users can browse (ADR-073 §7) while authed users whose roles have
+			// had scholarship.browse revoked are denied (403). This makes the
+			// seeded scholarship.browse node a real killswitch instead of dead.
+			r.With(auth.OptionalAuth(kr, vkClient.Redis()), rbac.OptionalPermission(rbacResolver, "scholarship.browse")).
+				Get("/scholarships", scholarshipsHandlers.HandleFindScholarships)
+			r.With(auth.OptionalAuth(kr, vkClient.Redis()), rbac.OptionalPermission(rbacResolver, "scholarship.browse")).
+				Get("/scholarships/{id}", scholarshipsHandlers.HandleScholarshipDetail)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "scholarship.save")).
 				Get("/scholarships/saved", scholarshipsHandlers.HandleListSavedScholarships)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "scholarship.save")).

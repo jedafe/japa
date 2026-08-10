@@ -509,6 +509,40 @@ func (s *Service) CloseTicket(ctx context.Context, id, tenantID, userID pgtype.U
 	return ticket, nil
 }
 
+// UpdateTicketSubjectInput holds parameters for updating a ticket subject.
+type UpdateTicketSubjectInput struct {
+	Subject string
+	UserID  pgtype.UUID
+}
+
+// UpdateTicketSubject changes the ticket subject.
+func (s *Service) UpdateTicketSubject(ctx context.Context, id, tenantID pgtype.UUID, input UpdateTicketSubjectInput) (gen.Ticket, error) {
+	if input.Subject == "" {
+		return gen.Ticket{}, errors.New("subject is required")
+	}
+
+	ticket, err := s.store.updateTicketSubject(ctx, gen.UpdateTicketSubjectParams{
+		ID:        id,
+		TenantID:  tenantID,
+		Subject:   input.Subject,
+	})
+	if err != nil {
+		return gen.Ticket{}, fmt.Errorf("updating ticket subject: %w", err)
+	}
+
+	return ticket, nil
+}
+
+// DeleteTicket permanently removes a ticket (admin action, spam/test only).
+// Ref: japaconnect-engineering/sections/38-ticket-system.md
+func (s *Service) DeleteTicket(ctx context.Context, id, tenantID pgtype.UUID) error {
+	if err := s.store.deleteTicket(ctx, id, tenantID); err != nil {
+		return fmt.Errorf("deleting ticket: %w", err)
+	}
+
+	return nil
+}
+
 // ---------------------------------------------------------------------------
 // Ticket Comments
 // ---------------------------------------------------------------------------

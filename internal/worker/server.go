@@ -132,8 +132,15 @@ func NewScheduler(cfg *Config) *asynq.Scheduler {
 	// Daily jobs listing expiry — 01:00 UTC (§63, ADR-081).
 	schedule("0 1 * * *", TypeJobsExpireListings, 24*time.Hour)
 
-	// Weekly GeoIP database update — Sunday 03:00 UTC.
-	schedule("0 3 * * 0", TypeMaintenanceUpdateGeoIPDB, 7*24*time.Hour)
+	// Daily scholarship deadline-reminder sweep — 05:00 UTC (§73, ADR-073).
+	// Offset from other daily tasks to spread Redis load. The handler
+	// iterates tenants, finds saved scholarships whose application_deadline
+	// is within remind_before_days, dispatches a notification per match,
+	// and marks the reminder as sent.
+	schedule("0 5 * * *", TypeScholarshipCheckDeadlines, 24*time.Hour)
+
+	// Weekly GeoIP database update — Sunday 02:00 UTC (Section 37 / ADR-037).
+	schedule("0 2 * * 0", TypeMaintenanceUpdateGeoIPDB, 7*24*time.Hour)
 
 	// Persona orchestration sweep — every 60 min (default).
 	// The actual interval is hot-reloadable via participation.run_interval_minutes

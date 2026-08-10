@@ -442,6 +442,7 @@ func (h *Handlers) UpdateTicket(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var input struct {
+		Subject        string `json:"subject"`
 		Status         string `json:"status"`
 		Priority       string `json:"priority"`
 		AssignedTo     string `json:"assigned_to"`
@@ -450,6 +451,22 @@ func (h *Handlers) UpdateTicket(w http.ResponseWriter, r *http.Request) {
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
+
+	// Handle subject update.
+	if input.Subject != "" {
+		ticket, err := h.Service.UpdateTicketSubject(r.Context(), id, tenantID, UpdateTicketSubjectInput{
+			Subject: input.Subject,
+			UserID:  user.UserID,
+		})
+		if err != nil {
+			handleServiceError(w, err)
+			return
+		}
+
+		writeJSON(w, http.StatusOK, map[string]any{"data": ticket})
+
 		return
 	}
 
@@ -525,7 +542,8 @@ func (h *Handlers) AddInternalNote(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var input struct {
-		Body string `json:"body"`
+		Body       string `json:"body"`
+		IsInternal *bool  `json:"is_internal"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
@@ -538,9 +556,15 @@ func (h *Handlers) AddInternalNote(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// /notes always creates internal notes; /comments respects is_internal.
+	isInternal := true
+	if input.IsInternal != nil {
+		isInternal = *input.IsInternal
+	}
+
 	comment, err := h.Service.AddComment(r.Context(), id, AddCommentInput{
 		Body:       input.Body,
-		IsInternal: true,
+		IsInternal: isInternal,
 		UserID:     user.UserID,
 	})
 	if err != nil {
@@ -571,6 +595,71 @@ func (h *Handlers) GetTicketEvents(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": events})
+}
+
+// ResolveTicket handles POST /api/v1/admin/tickets/:id/resolve.
+func (h *Handlers) ResolveTicket(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	id, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ticket ID")
+		return
+	}
+
+	var input struct {
+		ResolutionNote string `json:"resolution_note"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
+
+	if input.ResolutionNote == "" {
+		writeError(w, http.StatusBadRequest, "missing_resolution_note", "resolution_note is required")
+		return
+	}
+
+	ticket, err := h.Service.ResolveTicket(r.Context(), id, tenantID, ResolveTicketInput{
+		ResolutionNote: input.ResolutionNote,
+		UserID:         user.UserID,
+	})
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": ticket})
+}
+
+// DeleteTicket handles DELETE /api/v1/admin/tickets/:id.
+func (h *Handlers) DeleteTicket(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	id, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ticket ID")
+		return
+	}
+
+	if err := h.Service.DeleteTicket(r.Context(), id, tenantID); err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusNoContent, nil)
 }
 
 // ---------------------------------------------------------------------------

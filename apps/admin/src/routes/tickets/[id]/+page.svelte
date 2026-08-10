@@ -205,7 +205,7 @@
 	async function submitResolve() {
 		resolving = true;
 		try {
-			const result = await ticketsAdminApi.resolve(ticketId, { resolution: resolutionNote.trim() });
+			const result = await ticketsAdminApi.resolve(ticketId, { resolution_note: resolutionNote.trim() });
 			if (result.ok) {
 				showResolveModal = false;
 				resolutionNote = '';

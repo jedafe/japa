@@ -145,6 +145,19 @@ RETURNING id, tenant_id, type_id, subject, description, status, priority,
     resolution_note, field_values, sla_breach_at, resolved_at, closed_at,
     created_at, updated_at;
 
+-- name: UpdateTicketSubject :one
+UPDATE tickets
+SET subject = @subject, updated_at = now()
+WHERE id = @id AND tenant_id = @tenant_id
+RETURNING id, tenant_id, type_id, subject, description, status, priority,
+    submitter_user_id, submitter_email, assigned_to, assigned_group_id,
+    resolution_note, field_values, sla_breach_at, resolved_at, closed_at,
+    created_at, updated_at;
+
+-- name: DeleteTicket :exec
+DELETE FROM tickets
+WHERE id = @id AND tenant_id = @tenant_id;
+
 -- name: ResolveTicket :one
 UPDATE tickets
 SET status = 'resolved', resolution_note = sqlc.narg(resolution_note),

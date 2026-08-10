@@ -438,6 +438,21 @@ func (q *Queries) CreateTicketType(ctx context.Context, arg CreateTicketTypePara
 	return i, err
 }
 
+const deleteTicket = `-- name: DeleteTicket :exec
+DELETE FROM tickets
+WHERE id = $1 AND tenant_id = $2
+`
+
+type DeleteTicketParams struct {
+	ID       pgtype.UUID `json:"id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+func (q *Queries) DeleteTicket(ctx context.Context, arg DeleteTicketParams) error {
+	_, err := q.db.Exec(ctx, deleteTicket, arg.ID, arg.TenantID)
+	return err
+}
+
 const deleteTicketComment = `-- name: DeleteTicketComment :exec
 DELETE FROM ticket_comments
 WHERE id = $1 AND ticket_id = $2
@@ -1169,6 +1184,48 @@ type UpdateTicketStatusParams struct {
 
 func (q *Queries) UpdateTicketStatus(ctx context.Context, arg UpdateTicketStatusParams) (Ticket, error) {
 	row := q.db.QueryRow(ctx, updateTicketStatus, arg.Status, arg.ID, arg.TenantID)
+	var i Ticket
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.TypeID,
+		&i.Subject,
+		&i.Description,
+		&i.Status,
+		&i.Priority,
+		&i.SubmitterUserID,
+		&i.SubmitterEmail,
+		&i.AssignedTo,
+		&i.AssignedGroupID,
+		&i.ResolutionNote,
+		&i.FieldValues,
+		&i.SlaBreachAt,
+		&i.ResolvedAt,
+		&i.ClosedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const updateTicketSubject = `-- name: UpdateTicketSubject :one
+UPDATE tickets
+SET subject = $1, updated_at = now()
+WHERE id = $2 AND tenant_id = $3
+RETURNING id, tenant_id, type_id, subject, description, status, priority,
+    submitter_user_id, submitter_email, assigned_to, assigned_group_id,
+    resolution_note, field_values, sla_breach_at, resolved_at, closed_at,
+    created_at, updated_at
+`
+
+type UpdateTicketSubjectParams struct {
+	Subject  string      `json:"subject"`
+	ID       pgtype.UUID `json:"id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+func (q *Queries) UpdateTicketSubject(ctx context.Context, arg UpdateTicketSubjectParams) (Ticket, error) {
+	row := q.db.QueryRow(ctx, updateTicketSubject, arg.Subject, arg.ID, arg.TenantID)
 	var i Ticket
 	err := row.Scan(
 		&i.ID,
