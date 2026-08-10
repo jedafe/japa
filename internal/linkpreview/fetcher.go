@@ -372,7 +372,7 @@ func parseOGTags(r io.Reader, rawURL string) (*Preview, error) {
 // avoid collision risk from truncation (STD-004).
 func (f *Fetcher) cacheKey(rawURL string) string {
 	hash := sha256.Sum256([]byte(rawURL))
-	return "jc:link_preview:" + hex.EncodeToString(hash[:])
+	return valkey.MustKey("link_preview:%s", hex.EncodeToString(hash[:]))
 }
 
 // getHost extracts the hostname from a URL.

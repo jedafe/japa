@@ -3,12 +3,14 @@ package redirects
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/url"
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
@@ -102,6 +104,9 @@ type ListRedirectsResponse struct {
 }
 
 func (s *Service) ListRedirects(ctx context.Context, tenantID pgtype.UUID, isActive *bool, search string, limit, offset int32) (*ListRedirectsResponse, error) {
+	if limit <= 0 {
+		limit = DefaultPageSize
+	}
 	redirects, err := s.store.listRedirects(ctx, tenantID, isActive, search, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("listing redirects: %w", err)
@@ -142,7 +147,7 @@ func (s *Service) CreateRedirect(ctx context.Context, tenantID pgtype.UUID, sour
 	return r, nil
 }
 
-func (s *Service) UpdateRedirect(ctx context.Context, id, tenantID pgtype.UUID, sourcePath, targetURL string, httpStatus int16, isActive bool, notes *string) (gen.Redirect, error) {
+func (s *Service) UpdateRedirect(ctx context.Context, id, tenantID pgtype.UUID, sourcePath, targetURL string, httpStatus int16, isActive *bool, notes *string) (gen.Redirect, error) {
 	if httpStatus != 301 && httpStatus != 302 && httpStatus != 307 {
 		return gen.Redirect{}, ErrInvalidHTTPStatus
 	}
@@ -152,14 +157,32 @@ func (s *Service) UpdateRedirect(ctx context.Context, id, tenantID pgtype.UUID, 
 	if err := validateTargetURL(targetURL); err != nil {
 		return gen.Redirect{}, err
 	}
+	// Fetch the existing redirect so we can invalidate the old source_path's
+	// Valkey cache entry if the source_path changed (ADR-056 invalidation).
+	existing, err := s.store.getRedirect(ctx, id, tenantID)
+	if err != nil {
+		return gen.Redirect{}, err
+	}
+	// Resolve the is_active field: if the caller omitted it (nil), preserve
+	// the existing value rather than defaulting to false.
+	resolvedIsActive := existing.IsActive
+	if isActive != nil {
+		resolvedIsActive = *isActive
+	}
 	r, err := s.store.updateRedirect(ctx, gen.UpdateRedirectParams{
 		ID: id, TenantID: tenantID, SourcePath: sourcePath, TargetUrl: targetURL,
-		HttpStatus: httpStatus, IsActive: isActive, Notes: notes,
+		HttpStatus: httpStatus, IsActive: resolvedIsActive, Notes: notes,
 	})
 	if err != nil {
 		return gen.Redirect{}, err
 	}
-	s.invalidateValkeyCache(ctx, tenantID.String(), sourcePath)
+	tenantIDStr := tenantID.String()
+	// Invalidate the new source_path.
+	s.invalidateValkeyCache(ctx, tenantIDStr, sourcePath)
+	// Invalidate the old source_path if it changed.
+	if existing.SourcePath != sourcePath {
+		s.invalidateValkeyCache(ctx, tenantIDStr, existing.SourcePath)
+	}
 	return r, nil
 }
 
@@ -231,7 +254,12 @@ func (s *Service) BulkAction(ctx context.Context, tenantID pgtype.UUID, input Bu
 
 // ResolveRedirect checks Valkey cache then DB for a matching redirect rule.
 // Returns the target URL and HTTP status code, or empty string and 0 if no match.
+// Per ADR-056, paths longer than maxPathLength (2048 chars) are skipped to
+// prevent cache key flooding.
 func (s *Service) ResolveRedirect(ctx context.Context, tenantID pgtype.UUID, path string) (string, int) {
+	if len(path) > maxPathLength {
+		return "", 0
+	}
 	if s.vk == nil {
 		return s.resolveFromDB(ctx, tenantID, path)
 	}
@@ -254,6 +282,12 @@ func (s *Service) ResolveRedirect(ctx context.Context, tenantID pgtype.UUID, pat
 func (s *Service) resolveFromDB(ctx context.Context, tenantID pgtype.UUID, path string) (string, int) {
 	r, err := s.store.getRedirectByPath(ctx, tenantID, path)
 	if err != nil {
+		// "no rows" is expected — no redirect for this path. Real DB errors
+		// (connection failures, query errors) are logged so ops has visibility;
+		// the redirect itself must never fail the request.
+		if !errors.Is(err, pgx.ErrNoRows) {
+			slog.Warn("redirect: DB lookup error", "path", path, "error", err)
+		}
 		return "", 0
 	}
 	entry, _ := json.Marshal(map[string]interface{}{

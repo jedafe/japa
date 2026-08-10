@@ -248,3 +248,130 @@ func containsStr(s, substr string) bool {
 	}
 	return false
 }
+
+// TestParsePageLimit verifies the page/limit parsing including the max cap.
+func TestParsePageLimit(t *testing.T) {
+	tests := []struct {
+		name      string
+		query     string
+		wantPage  int
+		wantLimit int
+	}{
+		{"defaults", "", 1, 20},
+		{"custom page and limit", "?page=3&limit=50", 3, 50},
+		{"limit exceeds cap", "?limit=999999", 1, 200},
+		{"invalid page falls back", "?page=-1&limit=10", 1, 10},
+		{"invalid limit falls back", "?page=2&limit=abc", 2, 20},
+		{"zero page falls back", "?page=0", 1, 20},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "/test"+tt.query, nil)
+			page, limit := parsePageLimit(req)
+			if page != tt.wantPage {
+				t.Errorf("page = %d, want %d", page, tt.wantPage)
+			}
+			if limit != tt.wantLimit {
+				t.Errorf("limit = %d, want %d", limit, tt.wantLimit)
+			}
+		})
+	}
+}
+
+// TestParseCityIDs verifies the city_ids query parameter parsing.
+func TestParseCityIDs(t *testing.T) {
+	t.Run("missing city_ids returns error", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/compare", nil)
+		rr := httptest.NewRecorder()
+		_, ok := parseCityIDs(rr, req)
+		if ok {
+			t.Error("parseCityIDs with no param should return ok=false")
+		}
+		if rr.Code != http.StatusBadRequest {
+			t.Errorf("status = %d, want %d", rr.Code, http.StatusBadRequest)
+		}
+	})
+
+	t.Run("invalid UUID returns error", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/compare?city_ids=not-a-uuid", nil)
+		rr := httptest.NewRecorder()
+		_, ok := parseCityIDs(rr, req)
+		if ok {
+			t.Error("parseCityIDs with invalid UUID should return ok=false")
+		}
+	})
+
+	t.Run("valid UUIDs parse correctly", func(t *testing.T) {
+		u1 := uuid.New()
+		u2 := uuid.New()
+		req := httptest.NewRequest(http.MethodGet, "/compare?city_ids="+u1.String()+","+u2.String(), nil)
+		rr := httptest.NewRecorder()
+		ids, ok := parseCityIDs(rr, req)
+		if !ok {
+			t.Fatalf("parseCityIDs with valid UUIDs should return ok=true, got error: %s", rr.Body.String())
+		}
+		if len(ids) != 2 {
+			t.Errorf("len(ids) = %d, want 2", len(ids))
+		}
+	})
+
+	t.Run("empty parts are skipped", func(t *testing.T) {
+		u1 := uuid.New()
+		req := httptest.NewRequest(http.MethodGet, "/compare?city_ids="+u1.String()+",,", nil)
+		rr := httptest.NewRecorder()
+		ids, ok := parseCityIDs(rr, req)
+		if !ok {
+			t.Fatalf("parseCityIDs should succeed with trailing commas, got: %s", rr.Body.String())
+		}
+		if len(ids) != 1 {
+			t.Errorf("len(ids) = %d, want 1 (empty parts skipped)", len(ids))
+		}
+	})
+}
+
+// TestCompareCities_Dedup verifies that duplicate city IDs are deduplicated
+// before the max_cities check, so that e.g. 3 copies of the same ID + 1 other
+// doesn't trigger "too many cities" (only 2 unique).
+func TestCompareCities_Dedup(t *testing.T) {
+	svc := &Service{store: nil, settings: nil}
+
+	// 4 IDs but only 2 unique — should pass the max_cities check (max=3).
+	id := toPgUUID(uuid.New())
+	other := toPgUUID(uuid.New())
+	ids := []pgtype.UUID{id, id, id, other}
+
+	var err error
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				// Nil store dereference — expected; the dedup + max check passed.
+				err = errNotNilStore
+			}
+		}()
+		_, err = svc.CompareCities(context.Background(), toPgUUID(uuid.New()), ids)
+	}()
+
+	if err != nil && containsStr(err.Error(), "too many cities") {
+		t.Errorf("CompareCities with 2 unique IDs (4 raw with dups) should not be rejected as too many cities, got: %v", err)
+	}
+}
+
+// TestCompareCities_TooManyUnique verifies that unique IDs exceeding max_cities
+// are still rejected after dedup.
+func TestCompareCities_TooManyUnique(t *testing.T) {
+	svc := &Service{store: nil, settings: nil}
+
+	// 4 unique IDs — exceeds max_cities of 3.
+	ids := make([]pgtype.UUID, 4)
+	for i := range ids {
+		ids[i] = toPgUUID(uuid.New())
+	}
+
+	_, err := svc.CompareCities(context.Background(), toPgUUID(uuid.New()), ids)
+	if err == nil {
+		t.Fatal("CompareCities with 4 unique cities (> max 3) did not return an error")
+	}
+	if !containsStr(err.Error(), "too many cities") {
+		t.Errorf("error = %q, want it to contain \"too many cities\"", err.Error())
+	}
+}

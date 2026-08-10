@@ -21,9 +21,9 @@ SELECT
     COUNT(DISTINCT cd.id) AS total_dimensions,
     COUNT(DISTINCT CASE WHEN cv.value IS NOT NULL AND cv.value != '' THEN cd.id END) AS filled_dimensions
 FROM comparison_items ci
-LEFT JOIN comparison_dimensions cd ON cd.content_id = ci.content_id
+LEFT JOIN comparison_dimensions cd ON cd.content_id = ci.content_id AND cd.deleted_at IS NULL
 LEFT JOIN comparison_values cv ON cv.dimension_id = cd.id AND cv.item_id = ci.id
-WHERE ci.tenant_id = $1 AND ci.type_id = $2
+WHERE ci.tenant_id = $1 AND ci.type_id = $2 AND ci.deleted_at IS NULL
 GROUP BY ci.id, ci.title, ci.is_baseline, ci.last_updated_at
 ORDER BY ci.is_baseline DESC, ci.title ASC
 LIMIT $4 OFFSET $3
@@ -87,6 +87,7 @@ SELECT COUNT(*) AS count
 FROM comparison_items
 WHERE tenant_id = $1
   AND type_id = $2
+  AND deleted_at IS NULL
   AND ($3::text = '' OR title ILIKE '%' || $3 || '%')
 `
 
@@ -114,6 +115,7 @@ LEFT JOIN spaces s ON s.id = ci.geo_space_id
 WHERE ci.tenant_id = $1
   AND ci.type_id = $2
   AND ci.is_baseline = true
+  AND ci.deleted_at IS NULL
 LIMIT 1
 `
 
@@ -166,6 +168,76 @@ func (q *Queries) GetCOLBaselineCity(ctx context.Context, arg GetCOLBaselineCity
 	return i, err
 }
 
+const getCOLCitiesByIDs = `-- name: GetCOLCitiesByIDs :many
+
+SELECT
+    ci.id,
+    ci.title,
+    ci.description,
+    ci.geo_space_id,
+    ci.is_baseline,
+    ci.last_updated_at,
+    ci.position,
+    s.name AS geo_space_name,
+    s.slug AS geo_space_slug
+FROM comparison_items ci
+LEFT JOIN spaces s ON s.id = ci.geo_space_id
+WHERE ci.tenant_id = $1
+  AND ci.id = ANY($2::uuid[])
+  AND ci.deleted_at IS NULL
+`
+
+type GetCOLCitiesByIDsParams struct {
+	TenantID pgtype.UUID   `json:"tenant_id"`
+	Ids      []pgtype.UUID `json:"ids"`
+}
+
+type GetCOLCitiesByIDsRow struct {
+	ID            pgtype.UUID        `json:"id"`
+	Title         string             `json:"title"`
+	Description   *string            `json:"description"`
+	GeoSpaceID    pgtype.UUID        `json:"geo_space_id"`
+	IsBaseline    bool               `json:"is_baseline"`
+	LastUpdatedAt pgtype.Timestamptz `json:"last_updated_at"`
+	Position      int32              `json:"position"`
+	GeoSpaceName  *string            `json:"geo_space_name"`
+	GeoSpaceSlug  *string            `json:"geo_space_slug"`
+}
+
+// =====================================================================
+// Batch-fetch multiple cities by ID (removes N+1 in CompareCities).
+// Returns the same columns as GetCOLCityByID for a set of item IDs.
+// =====================================================================
+func (q *Queries) GetCOLCitiesByIDs(ctx context.Context, arg GetCOLCitiesByIDsParams) ([]GetCOLCitiesByIDsRow, error) {
+	rows, err := q.db.Query(ctx, getCOLCitiesByIDs, arg.TenantID, arg.Ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetCOLCitiesByIDsRow
+	for rows.Next() {
+		var i GetCOLCitiesByIDsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Title,
+			&i.Description,
+			&i.GeoSpaceID,
+			&i.IsBaseline,
+			&i.LastUpdatedAt,
+			&i.Position,
+			&i.GeoSpaceName,
+			&i.GeoSpaceSlug,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getCOLCityByID = `-- name: GetCOLCityByID :one
 
 SELECT
@@ -174,7 +246,7 @@ SELECT
     s.slug AS geo_space_slug
 FROM comparison_items ci
 LEFT JOIN spaces s ON s.id = ci.geo_space_id
-WHERE ci.tenant_id = $1 AND ci.id = $2
+WHERE ci.tenant_id = $1 AND ci.id = $2 AND ci.deleted_at IS NULL
 `
 
 type GetCOLCityByIDParams struct {
@@ -235,9 +307,10 @@ SELECT
     cv.value_rating,
     cv.value_boolean,
     cd.label AS dimension_label,
+    cd.slug AS dimension_slug,
     cd.dimension_type
 FROM comparison_values cv
-JOIN comparison_dimensions cd ON cd.id = cv.dimension_id
+JOIN comparison_dimensions cd ON cd.id = cv.dimension_id AND cd.deleted_at IS NULL
 WHERE cv.tenant_id = $1
   AND cv.item_id = ANY($2::uuid[])
 ORDER BY cd.position, cv.item_id
@@ -255,6 +328,7 @@ type GetCOLValuesForCitiesRow struct {
 	ValueRating    pgtype.Numeric `json:"value_rating"`
 	ValueBoolean   *bool          `json:"value_boolean"`
 	DimensionLabel string         `json:"dimension_label"`
+	DimensionSlug  *string        `json:"dimension_slug"`
 	DimensionType  string         `json:"dimension_type"`
 }
 
@@ -279,6 +353,7 @@ func (q *Queries) GetCOLValuesForCities(ctx context.Context, arg GetCOLValuesFor
 			&i.ValueRating,
 			&i.ValueBoolean,
 			&i.DimensionLabel,
+			&i.DimensionSlug,
 			&i.DimensionType,
 		); err != nil {
 			return nil, err
@@ -343,6 +418,7 @@ FROM comparison_items ci
 LEFT JOIN spaces s ON s.id = ci.geo_space_id
 WHERE ci.tenant_id = $1
   AND ci.type_id = $2
+  AND ci.deleted_at IS NULL
   AND ($3::text = '' OR ci.title ILIKE '%' || $3 || '%')
 ORDER BY ci.is_baseline DESC, ci.title ASC
 LIMIT $5 OFFSET $4

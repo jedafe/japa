@@ -4,7 +4,7 @@
 	import { Modal } from '$lib/components/ui/modal';
 	import { Button } from '$lib/components/ui/button';
 	import { Card, CardContent, CardHeader } from '$lib/components/ui/card';
-	import { api } from '$lib/api';
+	import { api, apiRaw } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { Star, Eye } from 'lucide-svelte';
@@ -27,7 +27,7 @@
 
 	type StatusDist = Record<string, number>;
 
-	const canManage = $derived(hasPermission('jobs.admin'));
+	const canManage = $derived(hasPermission('jobs.manage'));
 
 	// Status distribution cards are a dashboard element rendered above EntityPage; captured from the load response as a side effect.
 	let statusDist = $state<StatusDist>({});
@@ -87,10 +87,12 @@
 			key: 'status',
 			label: t('jobs.status', 'Status'),
 			options: [
-				{ value: 'pending', label: t('jobs.status_pending', 'Pending') },
-				{ value: 'accepted', label: t('jobs.status_accepted', 'Accepted') },
+				{ value: 'applied', label: t('jobs.status_applied', 'Applied') },
+				{ value: 'reviewing', label: t('jobs.status_reviewing', 'Reviewing') },
+				{ value: 'shortlisted', label: t('jobs.status_shortlisted', 'Shortlisted') },
 				{ value: 'rejected', label: t('jobs.status_rejected', 'Rejected') },
-				{ value: 'interviewing', label: t('jobs.status_interviewing', 'Interviewing') }
+				{ value: 'offered', label: t('jobs.status_offered', 'Offered') },
+				{ value: 'withdrawn', label: t('jobs.status_withdrawn', 'Withdrawn') }
 			]
 		}
 	];
@@ -124,10 +126,12 @@
 				sortable: true,
 				render: (v: string) => {
 					const clsMap: Record<string, string> = {
-						pending: 'bg-warning/15 text-warning border-warning',
-						accepted: 'bg-success/15 text-success border-success',
+						applied: 'bg-primary/15 text-primary border-primary',
+						reviewing: 'bg-warning/15 text-warning border-warning',
+						shortlisted: 'bg-success/15 text-success border-success',
 						rejected: 'bg-danger/15 text-danger border-danger',
-						interviewing: 'bg-primary/15 text-primary border-primary'
+						offered: 'bg-success/15 text-success border-success',
+						withdrawn: 'bg-muted text-muted-foreground border-border'
 					};
 					const cls = clsMap[v] ?? 'bg-muted text-muted-foreground border-border';
 					return `<span class="inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium ${cls}">${v}</span>`;
@@ -143,22 +147,22 @@
 		filters,
 		actions: rowActions,
 		fields: [],
-		load: async ({ q, filter }) => {
+		load: async ({ q, filter, page, pageSize }) => {
 			const params = new URLSearchParams();
 			if (q) params.set('q', q);
 			if (filter.status) params.set('status', filter.status);
-			const result = await api<{ data: JobApplication[]; status_distribution: StatusDist } | JobApplication[]>(
+			if (page) params.set('page', String(page));
+			if (pageSize) params.set('limit', String(pageSize));
+			const result = await apiRaw<{ data: JobApplication[]; meta?: { total?: number }; status_distribution?: StatusDist }>(
 				`/admin/jobs${params.toString() ? `?${params.toString()}` : ''}`
 			);
 			if (result.ok) {
-				const raw = result.data as { data?: JobApplication[]; status_distribution?: StatusDist } | JobApplication[];
-				if (Array.isArray(raw)) {
-					statusDist = {};
-					return { data: raw, total: raw.length, totalPages: 1 };
-				}
-				const data = raw.data ?? [];
-				statusDist = raw.status_distribution ?? {};
-				return { data, total: data.length, totalPages: 1 };
+				const body = result.data;
+				const data = body?.data ?? [];
+				statusDist = body?.status_distribution ?? {};
+				const total = body?.meta?.total ?? data.length;
+				const totalPages = total > 0 && pageSize ? Math.ceil(total / pageSize) : 1;
+				return { data, total, totalPages };
 			}
 			throw new Error(result.error ?? t('jobs.load_error', 'Failed to load job applications'));
 		},

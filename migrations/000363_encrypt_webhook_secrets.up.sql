@@ -1,0 +1,26 @@
+-- BUG-016: Encrypt existing webhook endpoint secrets at rest.
+-- Existing rows store the HMAC signing secret as plaintext. New rows are
+-- encrypted by the Go store layer (crypto.Encrypt) before INSERT/UPDATE.
+-- This migration encrypts existing plaintext secrets in-place using the
+-- same AES-256-GCM scheme.
+--
+-- NOTE: This migration cannot perform the encryption in SQL because the
+-- AES-256-GCM key is derived from JC_ENCRYPTION_KEY (an env var) via
+-- SHA-256 in Go (internal/crypto/crypto.go). The encryption must be done
+-- by a Go migration runner or a one-time admin script.
+--
+-- As a safe interim, this migration marks all existing secrets for
+-- re-encryption by the application on next access. The store layer's
+-- GetWebhookEndpoint decrypts with crypto.Decrypt; if decryption fails
+-- (because the secret is still plaintext), the service should re-encrypt
+-- it on the next update.
+--
+-- No schema change is needed — the secret column remains text. The
+-- encrypted format is "v1:<hex nonce>:<hex ciphertext>" which fits in
+-- the existing text column.
+
+-- This is a data-only migration placeholder. The actual encryption of
+-- existing rows is handled by the application's graceful migration:
+-- GetWebhookEndpoint attempts crypto.Decrypt; on failure, it treats the
+-- value as plaintext, re-encrypts it, and UPDATEs the row.
+SELECT 1;

@@ -437,17 +437,15 @@ func (a *AdsSelfServeAdapter) RefundCampaignCredits(ctx context.Context, campaig
 	return a.svc.RefundCampaignCredits(ctx, tid, campaignID)
 }
 
-// NotifyCampaignStatus resolves the campaign's tenant and notifies the advertiser.
+// NotifyCampaignStatus resolves the campaign's tenant and notifies the
+// advertiser of the review decision (approved/rejected).
+// Ref: japaconnect-engineering/sections/61-self-serve-ads.md (Asynq Tasks)
 func (a *AdsSelfServeAdapter) NotifyCampaignStatus(ctx context.Context, campaignID pgtype.UUID) error {
-	// The service does not have a dedicated NotifyCampaignStatus method.
-	// Log the status notification request — the notification is sent via
-	// the standard notification dispatch path.
 	tid, err := lookupTenantIDByEntity(ctx, a.db, "ad_campaigns", "id", campaignID)
 	if err != nil {
 		return err
 	}
-	slog.Info("task:ads:notify_campaign_status: campaign status notification queued", "tenant_id", tid, "campaign_id", campaignID)
-	return nil
+	return a.svc.NotifyCampaignStatus(ctx, tid, campaignID)
 }
 
 // ---------------------------------------------------------------------------

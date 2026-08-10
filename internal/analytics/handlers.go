@@ -55,7 +55,7 @@ func (h *Handlers) SetCache(c valkeycompat.Cmdable) {
 
 // analyticsCacheKey builds jc:cache:analytics:{tenant_id}:{endpoint}:{period}.
 func analyticsCacheKey(tenantID pgtype.UUID, endpoint, period string) string {
-	return fmt.Sprintf("jc:cache:analytics:%s:%s:%s", tenantID.String(), endpoint, period)
+	return vkcache.MustKey("cache:analytics:%s:%s:%s", tenantID.String(), endpoint, period)
 }
 
 // ---------------------------------------------------------------------------

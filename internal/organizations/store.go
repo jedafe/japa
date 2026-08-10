@@ -292,3 +292,8 @@ func (s *Store) GetOrganizationAnalytics(ctx context.Context, orgID, tenantID pg
 		PeriodDays: periodDays,
 	})
 }
+
+// VerifyOrganization marks an organization as verified (admin action).
+func (s *Store) VerifyOrganization(ctx context.Context, id pgtype.UUID) error {
+	return s.write.VerifyOrganization(ctx, id)
+}

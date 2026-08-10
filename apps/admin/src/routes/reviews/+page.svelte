@@ -22,7 +22,7 @@
 	};
 
 	const canModerate = $derived(hasPermission('reviews.moderate'));
-	const canDelete = $derived(hasPermission('reviews.delete_own'));
+	const canDelete = $derived(hasPermission('reviews.moderate'));
 
 	// ── Page-local state ────────────────────────────────────────────────────
 	let entityController = $state<EntityPageController | undefined>(undefined);
@@ -161,7 +161,7 @@
 		title: t('reviews.title', 'Reviews'),
 		description: t('reviews.description', 'Moderate user-submitted reviews across the platform.'),
 		readonly: true,
-		deletePermission: 'reviews.delete_own',
+		deletePermission: 'reviews.moderate',
 		pageSize: 25,
 		columns: [
 			{ key: 'entity_name', label: t('reviews.entity_name', 'Entity'), sortable: true },

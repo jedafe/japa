@@ -457,13 +457,65 @@ func (s *Service) WithdrawOwnershipClaim(ctx context.Context, claimID, tenantID,
 
 // ReviewOwnershipClaim approves or rejects a claim (admin).
 func (s *Service) ReviewOwnershipClaim(ctx context.Context, claimID, tenantID, reviewedBy pgtype.UUID, input ReviewClaimInput) error {
-	return s.store.ReviewOwnershipClaim(ctx, gen.ReviewOwnershipClaimParams{
+	// Fetch the claim before reviewing so the webhook payload can carry the
+	// organization_id (entity_id). The row is read tenant-scoped.
+	claim, err := s.store.GetOwnershipClaimByID(ctx, claimID, tenantID)
+	if err != nil {
+		slog.Warn("organizations: fetch claim for webhook payload", "claim_id", claimID.String(), "error", err)
+	}
+
+	if err := s.store.ReviewOwnershipClaim(ctx, gen.ReviewOwnershipClaimParams{
 		ID:             claimID,
 		TenantID:       tenantID,
 		Status:         input.Status,
 		ReviewedBy:     reviewedBy,
 		ResolutionNote: strPtr(input.ResolutionNote),
+	}); err != nil {
+		return err
+	}
+
+	var eventType string
+	switch input.Status {
+	case ClaimStatusApproved:
+		eventType = "claim.approved"
+	case ClaimStatusRejected:
+		eventType = "claim.rejected"
+	}
+	if eventType != "" {
+		s.emitWebhook(ctx, tenantID, eventType, map[string]any{
+			"claim_id":     claimID,
+			"entity_type":  "organization",
+			"entity_id":    claim.OrganizationID,
+			"status":       input.Status,
+		})
+	}
+
+	return nil
+}
+
+// VerifyOrganization marks an organization as verified and emits the
+// organization.verified webhook event (Section 12). adminID is the
+// administrator who performed the verification (for the webhook payload).
+func (s *Service) VerifyOrganization(ctx context.Context, id, tenantID, adminID pgtype.UUID) error {
+	// Fetch the org name for the webhook payload (best-effort).
+	org, err := s.store.GetOrganizationByID(ctx, id, tenantID)
+	if err != nil {
+		slog.Warn("organizations: fetch org for verify webhook payload", "org_id", id.String(), "error", err)
+	}
+
+	if err := s.store.VerifyOrganization(ctx, id); err != nil {
+		return fmt.Errorf("verifying organization: %w", err)
+	}
+
+	s.InvalidateOrgCache(ctx, tenantID)
+
+	s.emitWebhook(ctx, tenantID, "organization.verified", map[string]any{
+		"organization_id": id,
+		"name":            org.Name,
+		"verified_by":     adminID,
 	})
+
+	return nil
 }
 
 // ActiveOrgExists reports whether an ACTIVE, non-deleted org with this id

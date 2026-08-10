@@ -30,6 +30,7 @@ import (
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/crypto"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/valkey"
 )
 
 // Provider type constants — match the CHECK constraint on
@@ -356,7 +357,7 @@ func (s *Service) cacheTTL(ctx context.Context, tenantID pgtype.UUID) time.Durat
 // is over the canonical JSON of the search params plus the tenant ID, so
 // identical queries hit the cache (ADR-085 §3, jc:travel:search:{hash}).
 func searchCacheKey(tenantID pgtype.UUID, params interface{}) string {
-	return "jc:travel:search:" + HashSearchQuery(params)
+	return valkey.MustKey("travel:search:%s", HashSearchQuery(params))
 }
 
 // HashSearchQuery generates a SHA-256 hash of the canonical JSON encoding of

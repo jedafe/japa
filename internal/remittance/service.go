@@ -22,6 +22,7 @@ import (
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/crypto"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/valkey"
 	"github.com/jedafe/japa/internal/worker"
 )
 
@@ -255,12 +256,12 @@ func (s *Service) IsManualRateStale(fetchedAt time.Time) bool {
 
 // ratesCacheKey builds the Valkey key for cached latest rates of a corridor.
 func ratesCacheKey(sendCurrency, receiveCurrency string) string {
-	return fmt.Sprintf("jc:remit:rates:%s:%s", sendCurrency, receiveCurrency)
+	return valkey.MustKey("remit:rates:%s:%s", sendCurrency, receiveCurrency)
 }
 
 // bestCacheKey builds the Valkey key for the cached best rate of a corridor.
 func bestCacheKey(sendCurrency, receiveCurrency string) string {
-	return fmt.Sprintf("jc:remit:best:%s:%s", sendCurrency, receiveCurrency)
+	return valkey.MustKey("remit:best:%s:%s", sendCurrency, receiveCurrency)
 }
 
 // ---------------------------------------------------------------------------

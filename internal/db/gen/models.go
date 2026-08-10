@@ -701,6 +701,7 @@ type ComparisonDimension struct {
 	CreatedAt     pgtype.Timestamptz `json:"created_at"`
 	TypeID        pgtype.UUID        `json:"type_id"`
 	DeletedAt     pgtype.Timestamptz `json:"deleted_at"`
+	Slug          *string            `json:"slug"`
 }
 
 type ComparisonItem struct {
@@ -2045,7 +2046,25 @@ type MvRevenueStream struct {
 	CreditRevenue       int64       `json:"credit_revenue"`
 }
 
+type MvTopContent30d struct {
+	ContentID       pgtype.UUID `json:"content_id"`
+	TenantID        pgtype.UUID `json:"tenant_id"`
+	TotalViews      int64       `json:"total_views"`
+	TotalReactions  int64       `json:"total_reactions"`
+	TotalComments   int64       `json:"total_comments"`
+	EngagementScore int32       `json:"engagement_score"`
+}
+
 type MvTopContent7d struct {
+	ContentID       pgtype.UUID `json:"content_id"`
+	TenantID        pgtype.UUID `json:"tenant_id"`
+	TotalViews      int64       `json:"total_views"`
+	TotalReactions  int64       `json:"total_reactions"`
+	TotalComments   int64       `json:"total_comments"`
+	EngagementScore int32       `json:"engagement_score"`
+}
+
+type MvTopContent90d struct {
 	ContentID       pgtype.UUID `json:"content_id"`
 	TenantID        pgtype.UUID `json:"tenant_id"`
 	TotalViews      int64       `json:"total_views"`
@@ -3670,17 +3689,20 @@ type WalletSetting struct {
 }
 
 type WebhookDelivery struct {
-	ID          pgtype.UUID        `json:"id"`
-	TenantID    pgtype.UUID        `json:"tenant_id"`
-	EndpointID  pgtype.UUID        `json:"endpoint_id"`
-	EventID     pgtype.UUID        `json:"event_id"`
-	EventType   string             `json:"event_type"`
-	Payload     []byte             `json:"payload"`
-	Status      string             `json:"status"`
-	Attempts    int32              `json:"attempts"`
-	LastError   *string            `json:"last_error"`
-	DeliveredAt pgtype.Timestamptz `json:"delivered_at"`
-	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	ID               pgtype.UUID        `json:"id"`
+	TenantID         pgtype.UUID        `json:"tenant_id"`
+	EndpointID       pgtype.UUID        `json:"endpoint_id"`
+	EventID          pgtype.UUID        `json:"event_id"`
+	EventType        string             `json:"event_type"`
+	Payload          []byte             `json:"payload"`
+	Status           string             `json:"status"`
+	Attempts         int32              `json:"attempts"`
+	LastError        *string            `json:"last_error"`
+	DeliveredAt      pgtype.Timestamptz `json:"delivered_at"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	NextAttemptAt    pgtype.Timestamptz `json:"next_attempt_at"`
+	LastResponseCode *int32             `json:"last_response_code"`
+	LastResponseBody *string            `json:"last_response_body"`
 }
 
 type WebhookEndpoint struct {
@@ -3692,6 +3714,10 @@ type WebhookEndpoint struct {
 	Status     string             `json:"status"`
 	CreatedAt  pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt  pgtype.Timestamptz `json:"updated_at"`
+	Name       string             `json:"name"`
+	IsActive   bool               `json:"is_active"`
+	VerifiedAt pgtype.Timestamptz `json:"verified_at"`
+	CreatedBy  pgtype.UUID        `json:"created_by"`
 }
 
 type WikiPage struct {

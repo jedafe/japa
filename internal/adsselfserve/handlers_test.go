@@ -5,17 +5,49 @@
 package adsselfserve
 
 import (
+	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5/pgtype"
+
+	"github.com/jedafe/japa/internal/tenant"
 )
 
-// TestHandleListSlots_NoAuth_401 verifies that the slots endpoint requires auth.
-func TestHandleListSlots_NoAuth_401(t *testing.T) {
+// testTenantID is a fixed UUID used in tests.
+var testTenantID = func() pgtype.UUID {
+	var id pgtype.UUID
+	_ = id.Scan("00000000-0000-0000-0000-000000000001")
+	return id
+}()
+
+// withTenant injects a tenant into the request context, simulating the
+// tenant.Middleware that wraps all /api/v1 routes in production.
+func withTenant(r *http.Request) *http.Request {
+	return r.WithContext(context.WithValue(r.Context(),
+		tenant.TenantContextKey, &tenant.Tenant{ID: testTenantID}))
+}
+
+// TestHandleListSlots_NoTenant_503 verifies that the slots endpoint requires
+// a resolved tenant (returns 503 when tenant middleware has not run).
+func TestHandleListSlots_NoTenant_503(t *testing.T) {
 	h := NewHandlers(&Service{})
 	req := httptest.NewRequest(http.MethodGet, "/org/00000000-0000-0000-0000-000000000001/ads/slots", nil)
+	rr := httptest.NewRecorder()
+	h.HandleListSlots(rr, req)
+	if rr.Code != http.StatusServiceUnavailable {
+		t.Errorf("expected 503, got %d", rr.Code)
+	}
+}
+
+// TestHandleListSlots_NoAuth_401 verifies that the slots endpoint requires
+// auth when a tenant is present but no user is authenticated.
+func TestHandleListSlots_NoAuth_401(t *testing.T) {
+	h := NewHandlers(&Service{})
+	req := withTenant(httptest.NewRequest(http.MethodGet, "/org/00000000-0000-0000-0000-000000000001/ads/slots", nil))
 	rr := httptest.NewRecorder()
 	h.HandleListSlots(rr, req)
 	if rr.Code != http.StatusUnauthorized {
@@ -26,7 +58,7 @@ func TestHandleListSlots_NoAuth_401(t *testing.T) {
 // TestHandleCreateCampaign_NoAuth_401 verifies that campaign creation requires auth.
 func TestHandleCreateCampaign_NoAuth_401(t *testing.T) {
 	h := NewHandlers(&Service{})
-	req := httptest.NewRequest(http.MethodPost, "/org/00000000-0000-0000-0000-000000000001/ads/campaigns", nil)
+	req := withTenant(httptest.NewRequest(http.MethodPost, "/org/00000000-0000-0000-0000-000000000001/ads/campaigns", nil))
 	rr := httptest.NewRecorder()
 	h.HandleCreateCampaign(rr, req)
 	if rr.Code != http.StatusUnauthorized {
@@ -39,7 +71,7 @@ func TestHandleListCampaigns_NoAuth_401(t *testing.T) {
 	h := NewHandlers(&Service{})
 	r := chi.NewRouter()
 	r.Get("/org/{org_id}/ads/campaigns", h.HandleListCampaigns)
-	req := httptest.NewRequest(http.MethodGet, "/org/00000000-0000-0000-0000-000000000001/ads/campaigns", nil)
+	req := withTenant(httptest.NewRequest(http.MethodGet, "/org/00000000-0000-0000-0000-000000000001/ads/campaigns", nil))
 	rr := httptest.NewRecorder()
 	r.ServeHTTP(rr, req)
 	if rr.Code != http.StatusUnauthorized {
@@ -52,7 +84,7 @@ func TestHandleGetCampaign_NoAuth_401(t *testing.T) {
 	h := NewHandlers(&Service{})
 	r := chi.NewRouter()
 	r.Get("/org/{org_id}/ads/campaigns/{id}", h.HandleGetCampaign)
-	req := httptest.NewRequest(http.MethodGet, "/org/00000000-0000-0000-0000-000000000001/ads/campaigns/00000000-0000-0000-0000-000000000002", nil)
+	req := withTenant(httptest.NewRequest(http.MethodGet, "/org/00000000-0000-0000-0000-000000000001/ads/campaigns/00000000-0000-0000-0000-000000000002", nil))
 	rr := httptest.NewRecorder()
 	r.ServeHTTP(rr, req)
 	if rr.Code != http.StatusUnauthorized {
@@ -65,7 +97,7 @@ func TestHandlePauseCampaign_NoAuth_401(t *testing.T) {
 	h := NewHandlers(&Service{})
 	r := chi.NewRouter()
 	r.Post("/org/{org_id}/ads/campaigns/{id}/pause", h.HandlePauseCampaign)
-	req := httptest.NewRequest(http.MethodPost, "/org/00000000-0000-0000-0000-000000000001/ads/campaigns/00000000-0000-0000-0000-000000000002/pause", nil)
+	req := withTenant(httptest.NewRequest(http.MethodPost, "/org/00000000-0000-0000-0000-000000000001/ads/campaigns/00000000-0000-0000-0000-000000000002/pause", nil))
 	rr := httptest.NewRecorder()
 	r.ServeHTTP(rr, req)
 	if rr.Code != http.StatusUnauthorized {
@@ -78,7 +110,7 @@ func TestHandleGetStats_NoAuth_401(t *testing.T) {
 	h := NewHandlers(&Service{})
 	r := chi.NewRouter()
 	r.Get("/org/{org_id}/ads/campaigns/{id}/stats", h.HandleGetStats)
-	req := httptest.NewRequest(http.MethodGet, "/org/00000000-0000-0000-0000-000000000001/ads/campaigns/00000000-0000-0000-0000-000000000002/stats", nil)
+	req := withTenant(httptest.NewRequest(http.MethodGet, "/org/00000000-0000-0000-0000-000000000001/ads/campaigns/00000000-0000-0000-0000-000000000002/stats", nil))
 	rr := httptest.NewRecorder()
 	r.ServeHTTP(rr, req)
 	if rr.Code != http.StatusUnauthorized {
@@ -136,5 +168,37 @@ func TestMinCampaignDaysValidation(t *testing.T) {
 				t.Errorf("duration %d: passes=%v, want %v", tt.duration, passes, tt.shouldPass)
 			}
 		})
+	}
+}
+
+// TestSentinelErrors verifies that the sentinel errors are distinct and
+// comparable with errors.Is, which is critical for correct HTTP status
+// mapping in the handler layer (BUG-002 fix).
+func TestSentinelErrors(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+	}{
+		{"feature_disabled", ErrFeatureDisabled},
+		{"org_not_verified", ErrOrganizationNotVerified},
+		{"not_org_member", ErrNotOrgMember},
+		{"slot_type_not_found", ErrSlotTypeNotFound},
+		{"duration_too_short", ErrDurationTooShort},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Each sentinel must match itself via errors.Is.
+			if !errors.Is(tt.err, tt.err) {
+				t.Errorf("errors.Is(%v, %v) = false, want true", tt.err, tt.err)
+			}
+		})
+	}
+	// All sentinels must be distinct.
+	seen := make(map[error]bool)
+	for _, tt := range tests {
+		if seen[tt.err] {
+			t.Errorf("duplicate sentinel error: %v", tt.err)
+		}
+		seen[tt.err] = true
 	}
 }

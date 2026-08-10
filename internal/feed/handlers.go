@@ -3,7 +3,6 @@ package feed
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -164,7 +163,7 @@ func (h *Handlers) GetExploreFeed(w http.ResponseWriter, r *http.Request) {
 		geoCode = vc.ContentCountry
 	}
 	page := int(offset) / int(limit)
-	cacheKey := fmt.Sprintf("jc:explore:%s:%s:%s:%d", tenantID.String(), geoCode, sort, page)
+	cacheKey := vkcache.MustKey("explore:%s:%s:%s:%d", tenantID.String(), geoCode, sort, page)
 
 	items, err := vkcache.GetOrComputeNative(r.Context(), h.cache, cacheKey, exploreCacheTTL, func(ctx context.Context) ([]FeedItem, error) {
 		return h.service.GetFeed(ctx, tenantID, "explore", nil, nil, nil, sort, limit, offset)

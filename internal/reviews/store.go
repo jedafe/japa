@@ -45,23 +45,54 @@ func (s *Store) getReviewByID(ctx context.Context, id, tenantID pgtype.UUID) (ge
 }
 
 //nolint:unused // reserved for future features
-func (s *Store) listReviewsByEntity(ctx context.Context, tenantID pgtype.UUID, entityType string, entityID pgtype.UUID, limit, offset int32) ([]gen.Review, error) {
+func (s *Store) listReviewsByEntity(ctx context.Context, tenantID pgtype.UUID, entityType string, entityID pgtype.UUID, limit, offset int32, sort string) ([]gen.Review, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
 
-	rows, err := s.read.ListReviewsByEntity(ctx, gen.ListReviewsByEntityParams{
+	params := gen.ListReviewsByEntityParams{
 		TenantID:   tenantID,
 		EntityType: entityType,
 		EntityID:   entityID,
 		PageLimit:  limit,
 		PageOffset: offset,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("listing reviews by entity: %w", err)
 	}
 
-	return rows, nil
+	switch sort {
+	case "highest":
+		rows, err := s.read.ListReviewsByEntityHighestRating(ctx, gen.ListReviewsByEntityHighestRatingParams{
+			TenantID:   tenantID,
+			EntityType: entityType,
+			EntityID:   entityID,
+			PageLimit:  limit,
+			PageOffset: offset,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("listing reviews by entity (highest): %w", err)
+		}
+
+		return rows, nil
+	case "lowest":
+		rows, err := s.read.ListReviewsByEntityLowestRating(ctx, gen.ListReviewsByEntityLowestRatingParams{
+			TenantID:   tenantID,
+			EntityType: entityType,
+			EntityID:   entityID,
+			PageLimit:  limit,
+			PageOffset: offset,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("listing reviews by entity (lowest): %w", err)
+		}
+
+		return rows, nil
+	default: // "newest" or unspecified
+		rows, err := s.read.ListReviewsByEntity(ctx, params)
+		if err != nil {
+			return nil, fmt.Errorf("listing reviews by entity: %w", err)
+		}
+
+		return rows, nil
+	}
 }
 
 //nolint:unused // reserved for future features
@@ -178,6 +209,16 @@ func (s *Store) updateReviewStatus(ctx context.Context, p gen.UpdateReviewStatus
 }
 
 //nolint:unused // reserved for future features
+func (s *Store) softDeleteOwnReview(ctx context.Context, p gen.SoftDeleteOwnReviewParams) (gen.Review, error) {
+	row, err := s.write.SoftDeleteOwnReview(ctx, p)
+	if err != nil {
+		return gen.Review{}, fmt.Errorf("soft deleting own review: %w", err)
+	}
+
+	return row, nil
+}
+
+//nolint:unused // reserved for future features
 func (s *Store) deleteReview(ctx context.Context, id, tenantID pgtype.UUID) error {
 	if err := s.write.DeleteReview(ctx, gen.DeleteReviewParams{ID: id, TenantID: tenantID}); err != nil {
 		return fmt.Errorf("deleting review: %w", err)
@@ -240,4 +281,14 @@ func (s *Store) recalculateReviewAggregate(ctx context.Context, tenantID pgtype.
 	}
 
 	return nil
+}
+
+// createAuditLog writes a moderation audit log entry (spec §29/§22).
+func (s *Store) createAuditLog(ctx context.Context, p gen.CreateAuditLogParams) (gen.AuditLog, error) {
+	row, err := s.write.CreateAuditLog(ctx, p)
+	if err != nil {
+		return gen.AuditLog{}, fmt.Errorf("creating audit log: %w", err)
+	}
+
+	return row, nil
 }

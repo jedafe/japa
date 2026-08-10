@@ -85,6 +85,15 @@ func (s *Service) GetProfile(ctx context.Context, tenantID, userID pgtype.UUID) 
 	originCountry, _ := s.store.getGeoCustomField(ctx, tenantID, userID, "origin_country")
 	destCountry, _ := s.store.getGeoCustomField(ctx, tenantID, userID, "destination_country")
 
+	// ADR-064 Option A: best-effort fetch of the user's current_geo_space_id
+	// so sidebar widgets can pass it to geo-aware content endpoints without
+	// an extra round-trip. A failure degrades to an empty string (widgets
+	// fetch global content).
+	currentGeoSpaceID := ""
+	if geoSpace, gErr := s.store.getCurrentGeoSpace(ctx, tenantID, userID); gErr == nil && geoSpace.CurrentGeoSpaceID.Valid {
+		currentGeoSpaceID = geoSpace.CurrentGeoSpaceID.String()
+	}
+
 	// Map media IDs to strings for the response (BUG-004).
 	var avatarMediaID, headerMediaID *string
 	if p.AvatarMediaID.Valid {
@@ -118,6 +127,7 @@ func (s *Service) GetProfile(ctx context.Context, tenantID, userID pgtype.UUID) 
 		ContentCountryPreference: contentCountry,
 		OriginCountry:            originCountry,
 		DestinationCountry:       destCountry,
+		CurrentGeoSpaceID:        currentGeoSpaceID,
 	}, nil
 }
 

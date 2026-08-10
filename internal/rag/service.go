@@ -21,6 +21,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/jedafe/japa/internal/config"
+	"github.com/jedafe/japa/internal/valkey"
 	"github.com/jedafe/japa/internal/worker"
 )
 
@@ -82,7 +83,7 @@ func ragQueryCacheKey(tenantID pgtype.UUID, queryEmbedding []float32, language s
 	}
 	h.Write([]byte(language))
 	h.Write([]byte{byte(topK), byte(topK >> 8), byte(topK >> 16), byte(topK >> 24)})
-	return "jc:rag:query:" + hex.EncodeToString(h.Sum(nil))
+	return valkey.MustKey("rag:query:%s", hex.EncodeToString(h.Sum(nil)))
 }
 
 // IndexEntity chunks the source text, generates embeddings via the AI

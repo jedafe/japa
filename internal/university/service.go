@@ -14,6 +14,7 @@ import (
 
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/valkey"
 	"github.com/jedafe/japa/internal/worker"
 )
 
@@ -692,18 +693,18 @@ func (s *Service) NotifyCourseApprovedDispatch(ctx context.Context, tenantID, tr
 // instructorProfileCacheKey builds jc:university:{tenant_id}:instructor:{user_id}:profile.
 // Tenant-scoped to prevent cross-tenant data leakage in multi-tenant deployments (BUG-016).
 func instructorProfileCacheKey(tenantID, userID pgtype.UUID) string {
-	return "jc:university:" + tenantID.String() + ":instructor:" + userID.String() + ":profile"
+	return valkey.MustKey("university:%s:instructor:%s:profile", tenantID.String(), userID.String())
 }
 
 // trackEnrolledCacheKey builds jc:university:{tenant_id}:track:{track_id}:enrolled.
 // Tenant-scoped to prevent cross-tenant data leakage (BUG-016).
 func trackEnrolledCacheKey(tenantID, trackID pgtype.UUID) string {
-	return "jc:university:" + tenantID.String() + ":track:" + trackID.String() + ":enrolled"
+	return valkey.MustKey("university:%s:track:%s:enrolled", tenantID.String(), trackID.String())
 }
 
 // payoutAccumulatorCacheKey builds jc:university:payout:{tenant_id}:{period}:{instructor_id}.
 func payoutAccumulatorCacheKey(tenantID, instructorID pgtype.UUID, period string) string {
-	return "jc:university:payout:" + tenantID.String() + ":" + period + ":" + instructorID.String()
+	return valkey.MustKey("university:payout:%s:%s:%s", tenantID.String(), period, instructorID.String())
 }
 
 // cachedInstructorProfile returns the instructor profile from Valkey cache,

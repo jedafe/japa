@@ -51,9 +51,9 @@
 	const showingEnd = $derived(Math.min(data.currentPage * data.pageSize, data.total));
 
 	async function jobSearchFetcher(query: string): Promise<SearchSuggestion[]> {
-		const res = await api.get<{ data: JobListing[] }>(`/jobs?q=${encodeURIComponent(query)}&limit=8`);
+		const res = await api.get<JobListing[]>(`/jobs?q=${encodeURIComponent(query)}&limit=8`);
 		if (res.error || !res.data) return [];
-		return (res.data.data ?? []).map((j) => ({
+		return (res.data ?? []).map((j) => ({
 			id: j.id,
 			title: j.title,
 			url: `/jobs/${j.slug}`,
@@ -160,14 +160,19 @@
 										{#if field(job, 'company_name')}
 											<span class="flex items-center gap-1"><Briefcase size={12} /> {field(job, 'company_name')}</span>
 										{/if}
-										{#if field(job, 'location')}
-											<span class="flex items-center gap-1"><MapPin size={12} /> {field(job, 'location')}</span>
+										{#if field(job, 'city') || field(job, 'country')}
+											<span class="flex items-center gap-1">
+												<MapPin size={12} />
+												{[field(job, 'city'), field(job, 'country')].filter(Boolean).join(', ')}
+											</span>
 										{/if}
 										{#if field(job, 'job_type')}
 											<span class="flex items-center gap-1"><Clock size={12} /> {field(job, 'job_type')}</span>
 										{/if}
-										{#if field(job, 'is_remote') === 'true'}
+										{#if field(job, 'location_type') === 'remote'}
 											<span class="rounded-full bg-[var(--color-surface-subtle)] px-2 py-0.5">{t('jobs.remote', 'Remote')}</span>
+										{:else if field(job, 'location_type') === 'hybrid'}
+											<span class="rounded-full bg-[var(--color-surface-subtle)] px-2 py-0.5">{t('jobs.hybrid', 'Hybrid')}</span>
 										{/if}
 									</div>
 								</div>

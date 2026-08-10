@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"strings"
 
 	"github.com/jedafe/japa/internal/valkey"
 )
@@ -95,9 +94,7 @@ func (f *CacheFlusher) FlushCacheByPrefix(ctx context.Context, prefix string) (i
 		return 0, nil
 	}
 
-	if !strings.HasPrefix(prefix, "jc:") {
-		prefix = "jc:" + prefix
-	}
+	prefix = valkey.MustKey("%s", prefix)
 
 	return f.flushByPattern(ctx, prefix+"*")
 }

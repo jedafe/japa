@@ -204,14 +204,23 @@ func (s *Service) payWithCreditInternal(ctx context.Context, tenantID, userID pg
 	}
 	if _, err := s.wallet.SpendCredits(ctx, tenantID, userID, creditInput); err != nil {
 		// Debit failed — mark the payment as failed.
-		_, _ = s.store.updatePaymentStatus(ctx, payment.ID, tenantID, PaymentStatusFailed)
+		failed, fErr := s.store.updatePaymentStatus(ctx, payment.ID, tenantID, PaymentStatusFailed)
+		if fErr != nil {
+			slog.Error("payments: failed to mark credit payment as failed",
+				"payment_id", payment.ID, "error", fErr)
+		} else {
+			s.emitPaymentStatusWebhook(ctx, tenantID, failed)
+		}
 		return gen.Payment{}, fmt.Errorf("%w: %w", ErrInsufficientCredit, err)
 	}
 
 	// Step 3: Mark the payment as succeeded.
-	if _, err := s.store.updatePaymentStatus(ctx, payment.ID, tenantID, PaymentStatusSucceeded); err != nil {
+	succeeded, err := s.store.updatePaymentStatus(ctx, payment.ID, tenantID, PaymentStatusSucceeded)
+	if err != nil {
 		slog.Error("payments: failed to mark credit payment as succeeded",
 			"payment_id", payment.ID, "error", err)
+	} else {
+		s.emitPaymentStatusWebhook(ctx, tenantID, succeeded)
 	}
 
 	return payment, nil
@@ -234,7 +243,33 @@ func (s *Service) ListPaymentsByStatus(ctx context.Context, tenantID pgtype.UUID
 
 // UpdatePaymentStatus updates a payment's status.
 func (s *Service) UpdatePaymentStatus(ctx context.Context, id, tenantID pgtype.UUID, status string) (gen.Payment, error) {
-	return s.store.updatePaymentStatus(ctx, id, tenantID, status)
+	payment, err := s.store.updatePaymentStatus(ctx, id, tenantID, status)
+	if err != nil {
+		return gen.Payment{}, err
+	}
+	s.emitPaymentStatusWebhook(ctx, tenantID, payment)
+	return payment, nil
+}
+
+// emitPaymentStatusWebhook fires payment.succeeded/payment.failed when a
+// payment transitions to those terminal statuses (Section 12). No-op for
+// other statuses. Fire-and-forget per Rule 8.
+func (s *Service) emitPaymentStatusWebhook(ctx context.Context, tenantID pgtype.UUID, payment gen.Payment) {
+	var eventType string
+	switch payment.Status {
+	case PaymentStatusSucceeded:
+		eventType = "payment.succeeded"
+	case PaymentStatusFailed:
+		eventType = "payment.failed"
+	default:
+		return
+	}
+	s.emitWebhook(ctx, tenantID, eventType, map[string]any{
+		"payment_id": payment.ID,
+		"amount":     payment.Amount,
+		"currency":   payment.Currency,
+		"user_id":    payment.UserID,
+	})
 }
 
 // ListAdminPayments lists payments with admin filters (JEOS §17).

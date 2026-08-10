@@ -13,6 +13,7 @@ package costofliving
 
 import (
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -111,9 +112,11 @@ func parseCityIDs(w http.ResponseWriter, r *http.Request) ([]pgtype.UUID, bool) 
 }
 
 // parsePageLimit extracts page and limit query params with safe defaults.
+// Limit is capped at 200 to prevent excessive result sets.
 func parsePageLimit(r *http.Request) (int, int) {
 	page := 1
 	limit := 20
+	const maxLimit = 200
 	if v := r.URL.Query().Get("page"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
 			page = n
@@ -122,6 +125,9 @@ func parsePageLimit(r *http.Request) (int, int) {
 	if v := r.URL.Query().Get("limit"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
 			limit = n
+			if limit > maxLimit {
+				limit = maxLimit
+			}
 		}
 	}
 	return page, limit
@@ -150,6 +156,10 @@ func (h *Handlers) HandleListCities(w http.ResponseWriter, r *http.Request) {
 
 	resp, err := h.service.ListCities(r.Context(), tenantID, search, page, limit)
 	if err != nil {
+		if errors.Is(err, ErrCalculatorDisabled) {
+			writeError(w, http.StatusNotFound, "col_calculator_disabled", "Cost of Living Calculator is not available")
+			return
+		}
 		slog.Error("costofliving: list cities failed", "error", err)
 		writeError(w, http.StatusInternalServerError, "list_cities_failed", "Failed to list cities")
 		return
@@ -179,6 +189,10 @@ func (h *Handlers) HandleCompare(w http.ResponseWriter, r *http.Request) {
 
 	matrix, err := h.service.CompareCities(r.Context(), tenantID, cityIDs)
 	if err != nil {
+		if errors.Is(err, ErrCalculatorDisabled) {
+			writeError(w, http.StatusNotFound, "col_calculator_disabled", "Cost of Living Calculator is not available")
+			return
+		}
 		slog.Error("costofliving: compare failed", "error", err)
 		// Distinguish the max_cities violation for a clearer client error.
 		if strings.Contains(err.Error(), "too many cities") {

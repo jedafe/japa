@@ -50,6 +50,11 @@ type SpacesService interface {
 // handlers need to attach university-specific field values.
 type CustomFieldsService interface {
 	ListFieldValuesByEntity(ctx context.Context, entityType string, entityID pgtype.UUID) ([]gen.CustomFieldValue, error)
+	// ListFieldValuesWithDefsByEntity returns field values joined with their
+	// definitions (label, key, field_type, options), filtered to
+	// show_in_frontend = true — the display-ready shape used by the public
+	// /universities/{slug} About facts grid (Section 39).
+	ListFieldValuesWithDefsByEntity(ctx context.Context, tenantID pgtype.UUID, entityType string, entityID pgtype.UUID) ([]gen.ListCustomFieldValuesWithDefsByEntityRow, error)
 }
 
 // MediaResolver resolves a media ID to an imgproxy-signed URL for the
@@ -140,14 +145,31 @@ func (h *Handlers) resolveLogoURL(ctx context.Context, tenantID pgtype.UUID, log
 	return h.media.GetMediaURL(&m, media.ImageProxyOpts{Width: 128, Height: 128, Format: "webp"})
 }
 
+// universityField is a display-ready custom field value: the human-readable
+// label, the machine key, the resolved display value (typed value rendered to
+// a string, with select/multiselect option values mapped to their labels),
+// and the field_type so the frontend can render booleans/dates/URLs specially.
+// Used by the /universities/{slug} About facts grid (Section 39 sidebar:
+// "key custom field values (ranking, tuition, programs, etc.)").
+type universityField struct {
+	Label     string `json:"label"`
+	Key       string `json:"key"`
+	Value     string `json:"value"`
+	FieldType string `json:"field_type"`
+}
+
 // universityDetail pairs a space with its resolved university-specific field
 // values so a single response carries both. LogoURL is the imgproxy-signed URL
 // for the university logo (resolved from logo_media_id); empty when no logo
-// is set or the media service is unavailable.
+// is set or the media service is unavailable. DisplayFields is the
+// show_in_frontend-filtered, definition-joined set rendered on the public
+// About tab; Fields is the raw value set retained for the compare page and
+// admin tooling.
 type universityDetail struct {
 	gen.GetSpaceBySlugRow
-	Fields  []gen.CustomFieldValue `json:"fields"`
-	LogoURL string                 `json:"logo_url"`
+	Fields        []gen.CustomFieldValue `json:"fields"`
+	DisplayFields []universityField      `json:"display_fields"`
+	LogoURL       string                 `json:"logo_url"`
 }
 
 // ListUniversities handles GET /api/v1/universities — every space of the
@@ -283,12 +305,153 @@ func (h *Handlers) GetUniversity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Display-ready fields (Section 39 About facts grid): values joined with
+	// their definitions and filtered to show_in_frontend = true, with
+	// select/multiselect option values resolved to labels. Best-effort — a
+	// failure degrades to an empty slice (the About tab still renders the
+	// wiki extract). Fire-and-forget resolution keeps the public endpoint fast.
+	displayFields := make([]universityField, 0)
+	if rows, derr := h.customFields.ListFieldValuesWithDefsByEntity(r.Context(), tenantID, customFieldEntityTypeSpace, space.ID); derr == nil {
+		for _, row := range rows {
+			if dv, ok := resolveDisplayValue(row); ok {
+				displayFields = append(displayFields, universityField{
+					Label:     row.FieldLabel,
+					Key:       row.FieldKey,
+					Value:     dv,
+					FieldType: row.FieldType,
+				})
+			}
+		}
+	} else {
+		slog.Warn("universities: load display fields", "space_id", space.ID.String(), "error", derr)
+	}
+
 	// Resolve the logo media ID to an imgproxy-signed URL (Section 34 / ADR-039).
 	// Best-effort: a missing or unreachable media service degrades to an empty
 	// logo_url, and the frontend falls back to the GraduationCap icon.
 	logoURL := h.resolveLogoURL(r.Context(), tenantID, space.LogoMediaID)
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": universityDetail{GetSpaceBySlugRow: space, Fields: fields, LogoURL: logoURL}})
+	writeJSON(w, http.StatusOK, map[string]any{"data": universityDetail{
+		GetSpaceBySlugRow: space,
+		Fields:            fields,
+		DisplayFields:     displayFields,
+		LogoURL:           logoURL,
+	}})
+}
+
+// resolveDisplayValue picks the populated typed-value column from a
+// custom_field_values row and renders it to a display string. For select and
+// multiselect fields, the stored value_text is an option key (or a JSON array
+// of keys) that is mapped to its human-readable label via the field's options
+// JSONB column ([{value, label}, ...]). Returns ok=false when no value column
+// is populated (the field is skipped — never rendered as an empty row).
+func resolveDisplayValue(row gen.ListCustomFieldValuesWithDefsByEntityRow) (string, bool) {
+	switch row.FieldType {
+	case "boolean":
+		if row.ValueBool != nil {
+			if *row.ValueBool {
+				return "Yes", true
+			}
+			return "No", true
+		}
+		return "", false
+	case "number", "currency", "percentage", "rating":
+		// pgtype.Numeric holds the value in a big.Int + exponent; render via
+		// the Float64 accessor. Integer-valued numerics (rankings, years,
+		// student population) print without a trailing decimal part.
+		if row.ValueNumber.Valid {
+			if f, err := row.ValueNumber.Float64Value(); err == nil && f.Valid {
+				return strconv.FormatFloat(f.Float64, 'f', -1, 64), true
+			}
+		}
+		return "", false
+	case "date", "datetime":
+		if row.ValueDate.Valid {
+			return row.ValueDate.Time.Format("2006-01-02"), true
+		}
+		return "", false
+	case "select":
+		if row.ValueText == nil || *row.ValueText == "" {
+			return "", false
+		}
+		if label, ok := lookupOptionLabel(row.FieldOptions, *row.ValueText); ok {
+			return label, true
+		}
+		return *row.ValueText, true
+	case "multiselect":
+		// value_json holds a JSON array of selected option keys; fall back to
+		// value_text if the legacy single-string form was stored.
+		keys := decodeMultiselectKeys(row.ValueJson, row.ValueText)
+		if len(keys) == 0 {
+			return "", false
+		}
+		labels := make([]string, 0, len(keys))
+		for _, k := range keys {
+			if label, ok := lookupOptionLabel(row.FieldOptions, k); ok {
+				labels = append(labels, label)
+			} else {
+				labels = append(labels, k)
+			}
+		}
+		return strings.Join(labels, ", "), true
+	default:
+		// text, textarea, url, email, phone, color, etc. — render value_text.
+		if row.ValueText != nil && *row.ValueText != "" {
+			return *row.ValueText, true
+		}
+		return "", false
+	}
+}
+
+// fieldOption mirrors the {value, label} shape stored in custom_fields.options
+// for select/multiselect fields (see internal/customfields.FieldOption).
+type fieldOption struct {
+	Value string `json:"value"`
+	Label string `json:"label"`
+}
+
+// lookupOptionLabel finds the human-readable label for a given option value
+// in the field's JSONB options column. Returns the value itself if the
+// options blob is missing or the value is not found (graceful degradation).
+func lookupOptionLabel(optionsJSON []byte, value string) (string, bool) {
+	if len(optionsJSON) == 0 {
+		return value, false
+	}
+	var opts []fieldOption
+	if err := json.Unmarshal(optionsJSON, &opts); err != nil {
+		return value, false
+	}
+	for _, o := range opts {
+		if o.Value == value {
+			return o.Label, true
+		}
+	}
+	return value, false
+}
+
+// decodeMultiselectKeys extracts the selected option keys from a multiselect
+// value. Modern storage uses value_json (a JSON array of strings); the legacy
+// form stored a comma-separated string in value_text. Returns nil when no
+// keys are present.
+func decodeMultiselectKeys(valueJSON []byte, valueText *string) []string {
+	if len(valueJSON) > 0 {
+		var keys []string
+		if err := json.Unmarshal(valueJSON, &keys); err == nil && len(keys) > 0 {
+			return keys
+		}
+	}
+	if valueText != nil && *valueText != "" {
+		// Legacy comma-separated form.
+		parts := strings.Split(*valueText, ",")
+		out := make([]string, 0, len(parts))
+		for _, p := range parts {
+			if t := strings.TrimSpace(p); t != "" {
+				out = append(out, t)
+			}
+		}
+		return out
+	}
+	return nil
 }
 
 // writeJSON serializes the given value as JSON and writes it to the response.

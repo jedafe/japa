@@ -32,6 +32,7 @@ FROM comparison_items ci
 LEFT JOIN spaces s ON s.id = ci.geo_space_id
 WHERE ci.tenant_id = @tenant_id
   AND ci.type_id = @type_id
+  AND ci.deleted_at IS NULL
   AND (@search::text = '' OR ci.title ILIKE '%' || @search || '%')
 ORDER BY ci.is_baseline DESC, ci.title ASC
 LIMIT @page_limit OFFSET @page_offset;
@@ -41,6 +42,7 @@ SELECT COUNT(*) AS count
 FROM comparison_items
 WHERE tenant_id = @tenant_id
   AND type_id = @type_id
+  AND deleted_at IS NULL
   AND (@search::text = '' OR title ILIKE '%' || @search || '%');
 
 -- =====================================================================
@@ -54,7 +56,29 @@ SELECT
     s.slug AS geo_space_slug
 FROM comparison_items ci
 LEFT JOIN spaces s ON s.id = ci.geo_space_id
-WHERE ci.tenant_id = @tenant_id AND ci.id = @id;
+WHERE ci.tenant_id = @tenant_id AND ci.id = @id AND ci.deleted_at IS NULL;
+
+-- =====================================================================
+-- Batch-fetch multiple cities by ID (removes N+1 in CompareCities).
+-- Returns the same columns as GetCOLCityByID for a set of item IDs.
+-- =====================================================================
+
+-- name: GetCOLCitiesByIDs :many
+SELECT
+    ci.id,
+    ci.title,
+    ci.description,
+    ci.geo_space_id,
+    ci.is_baseline,
+    ci.last_updated_at,
+    ci.position,
+    s.name AS geo_space_name,
+    s.slug AS geo_space_slug
+FROM comparison_items ci
+LEFT JOIN spaces s ON s.id = ci.geo_space_id
+WHERE ci.tenant_id = @tenant_id
+  AND ci.id = ANY(@ids::uuid[])
+  AND ci.deleted_at IS NULL;
 
 -- =====================================================================
 -- Get the baseline city for the cost_of_living type.
@@ -70,6 +94,7 @@ LEFT JOIN spaces s ON s.id = ci.geo_space_id
 WHERE ci.tenant_id = @tenant_id
   AND ci.type_id = @type_id
   AND ci.is_baseline = true
+  AND ci.deleted_at IS NULL
 LIMIT 1;
 
 -- =====================================================================
@@ -86,9 +111,10 @@ SELECT
     cv.value_rating,
     cv.value_boolean,
     cd.label AS dimension_label,
+    cd.slug AS dimension_slug,
     cd.dimension_type
 FROM comparison_values cv
-JOIN comparison_dimensions cd ON cd.id = cv.dimension_id
+JOIN comparison_dimensions cd ON cd.id = cv.dimension_id AND cd.deleted_at IS NULL
 WHERE cv.tenant_id = @tenant_id
   AND cv.item_id = ANY(@item_ids::uuid[])
 ORDER BY cd.position, cv.item_id;
@@ -108,9 +134,9 @@ SELECT
     COUNT(DISTINCT cd.id) AS total_dimensions,
     COUNT(DISTINCT CASE WHEN cv.value IS NOT NULL AND cv.value != '' THEN cd.id END) AS filled_dimensions
 FROM comparison_items ci
-LEFT JOIN comparison_dimensions cd ON cd.content_id = ci.content_id
+LEFT JOIN comparison_dimensions cd ON cd.content_id = ci.content_id AND cd.deleted_at IS NULL
 LEFT JOIN comparison_values cv ON cv.dimension_id = cd.id AND cv.item_id = ci.id
-WHERE ci.tenant_id = @tenant_id AND ci.type_id = @type_id
+WHERE ci.tenant_id = @tenant_id AND ci.type_id = @type_id AND ci.deleted_at IS NULL
 GROUP BY ci.id, ci.title, ci.is_baseline, ci.last_updated_at
 ORDER BY ci.is_baseline DESC, ci.title ASC
 LIMIT @page_limit OFFSET @page_offset;

@@ -153,18 +153,22 @@ ORDER BY (CASE WHEN s.geo_code = sqlc.narg(geo_code) THEN 0 ELSE 1 END), shared_
 LIMIT $3;
 
 -- name: GetSuggestedTags :many
+-- ADR-064: when geoCode is provided, tags from content in the visitor's
+-- geo region are preferred (re-weighted, not hidden). Empty geoCode =
+-- global ranking (original behavior).
 SELECT DISTINCT t.id, t.name, t.slug, t.follower_count
 FROM tags t
 JOIN contents c ON c.tenant_id = t.tenant_id AND c.id IN (
     SELECT ct.content_id FROM content_tags ct
     JOIN contents c2 ON c2.id = ct.content_id AND c2.author_id = $1 AND c2.tenant_id = $2
 )
+LEFT JOIN spaces sp ON sp.id = c.geo_space_id
 WHERE t.tenant_id = $2
 AND NOT EXISTS (
     SELECT 1 FROM follows f
     WHERE f.follower_id = $1 AND f.entity_type = 'tag' AND f.entity_id = t.id AND f.tenant_id = $2
 )
-ORDER BY t.follower_count DESC
+ORDER BY (CASE WHEN sp.geo_code = sqlc.narg(geo_code) THEN 0 ELSE 1 END), t.follower_count DESC
 LIMIT $3;
 
 -- name: GetSuggestedContent :many

@@ -4,7 +4,7 @@ import Page from './+page.svelte';
 
 vi.mock('$lib/api', () => ({
 	menusAdminApi: {
-		list: vi.fn().mockResolvedValue({ ok: true, data: { items: [] } }),
+		list: vi.fn().mockResolvedValue({ ok: true, data: { items: [], total: 0, total_pages: 1, page: 0 } }),
 		get: vi.fn().mockResolvedValue({ ok: true, data: { items: [] } }),
 		create: vi.fn().mockResolvedValue({ ok: true }),
 		update: vi.fn().mockResolvedValue({ ok: true }),

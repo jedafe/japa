@@ -9,7 +9,6 @@ package trending
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -209,7 +208,7 @@ func (h *Handlers) GetTrendingContent(w http.ResponseWriter, r *http.Request) {
 	// Include content_type in the cache key when filtering.
 	// Uses distributed lock stampede protection (BUG-008).
 	tenantStr := tenantID.String()
-	cacheKey := fmt.Sprintf("jc:trending:content:%s:%s:%s", tenantStr, geoCode, window)
+	cacheKey := vkcache.MustKey("trending:content:%s:%s:%s", tenantStr, geoCode, window)
 	if contentType != nil {
 		cacheKey += ":" + *contentType
 	}
@@ -270,7 +269,7 @@ func (h *Handlers) GetTrendingTags(w http.ResponseWriter, r *http.Request) {
 
 	// Valkey cache (jc:trending:tags:{tenant}:{geo}, Section 53, TTL 30min).
 	tenantStr := tenantID.String()
-	cacheKey := fmt.Sprintf("jc:trending:tags:%s:%s", tenantStr, geoCode)
+	cacheKey := vkcache.MustKey("trending:tags:%s:%s", tenantStr, geoCode)
 
 	data, err := vkcache.GetOrComputeNative(r.Context(), h.cache, cacheKey, trendingCacheTTL, func(ctx context.Context) ([]gen.GetTrendingTagsRow, error) {
 		rows, err := h.Store.GetTrendingTags(ctx, tenantID, window, geoCode, limit)
@@ -307,7 +306,7 @@ func (h *Handlers) GetTrendingSpaces(w http.ResponseWriter, r *http.Request) {
 	// Include level in the cache key when filtering.
 	// Uses distributed lock stampede protection (BUG-008).
 	tenantStr := tenantID.String()
-	cacheKey := fmt.Sprintf("jc:trending:spaces:%s:%s", tenantStr, geoCode)
+	cacheKey := vkcache.MustKey("trending:spaces:%s:%s", tenantStr, geoCode)
 	if level != nil {
 		cacheKey += ":" + *level
 	}
@@ -409,7 +408,7 @@ func (h *Handlers) GetSuggestedUsers(w http.ResponseWriter, r *http.Request) {
 	// Valkey cache (jc:suggestions:users:{user_id}, Section 53, TTL 1hr).
 	// Uses distributed lock stampede protection (BUG-008).
 	userStr := user.UserID.String()
-	cacheKey := fmt.Sprintf("jc:suggestions:users:%s", userStr)
+	cacheKey := vkcache.MustKey("suggestions:users:%s", userStr)
 
 	data, err := vkcache.GetOrComputeNative(r.Context(), h.cache, cacheKey, suggestionsCacheTTL, func(ctx context.Context) ([]gen.GetSuggestedUsersRow, error) {
 		return h.Store.GetSuggestedUsers(ctx, user.UserID, tenantID, limit, geoCode)
@@ -442,7 +441,7 @@ func (h *Handlers) GetSuggestedSpaces(w http.ResponseWriter, r *http.Request) {
 	// Valkey cache (jc:suggestions:spaces:{user_id}, Section 53, TTL 1hr).
 	// Uses distributed lock stampede protection (BUG-008).
 	userStr := user.UserID.String()
-	cacheKey := fmt.Sprintf("jc:suggestions:spaces:%s", userStr)
+	cacheKey := vkcache.MustKey("suggestions:spaces:%s", userStr)
 
 	data, err := vkcache.GetOrComputeNative(r.Context(), h.cache, cacheKey, suggestionsCacheTTL, func(ctx context.Context) ([]gen.GetSuggestedSpacesRow, error) {
 		return h.Store.GetSuggestedSpaces(ctx, user.UserID, tenantID, limit, geoCode)
@@ -456,6 +455,7 @@ func (h *Handlers) GetSuggestedSpaces(w http.ResponseWriter, r *http.Request) {
 }
 
 // GetSuggestedTags handles GET /api/v1/suggestions/tags.
+// ADR-064: accepts ?geo= to re-weight tags from the visitor's geo region.
 func (h *Handlers) GetSuggestedTags(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -468,8 +468,9 @@ func (h *Handlers) GetSuggestedTags(w http.ResponseWriter, r *http.Request) {
 	}
 
 	limit := parseLimit(r)
+	geoCode := parseGeoCodePtr(r)
 
-	data, err := h.Store.GetSuggestedTags(r.Context(), user.UserID, tenantID, limit)
+	data, err := h.Store.GetSuggestedTags(r.Context(), user.UserID, tenantID, limit, geoCode)
 	if err != nil {
 		handleServiceError(w, err)
 		return

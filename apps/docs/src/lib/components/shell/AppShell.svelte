@@ -57,10 +57,25 @@
 
 	// Normalize incoming widgets to the SidebarWidget shape.
 	const sidebarWidgets = $derived(
-		(rightSidebarWidgets as { id: string; widget_type: string; label: string; props: Record<string, unknown>; sort_order: number }[]).filter(
+		(rightSidebarWidgets as { id: string; widget_type: string; label: string; props: Record<string, unknown>; sort_order: number; slot?: string }[]).filter(
 			(w) => w && typeof w.widget_type === 'string'
 		)
 	);
+
+	// Split widgets into topbar (sticky) and content (scrollable) slots using
+	// the `slot` field from the widget type registry (Section 59 §6, BE-S3).
+	// Falls back to a hardcoded topbar type set for backward compat with older
+	// cached payloads that do not include `slot`. This replaces the previously
+	// hardcoded sidebar-topbar (SearchLauncher + UserDropdown), which
+	// duplicated the admin-managed topbar widgets seeded by migration 000223.
+	const topbarWidgetTypes = new Set(['search', 'search_launcher', 'theme_toggle', 'language_toggle', 'user_dropdown']);
+	function isTopbar(w: { slot?: string; widget_type: string }): boolean {
+		if (w.slot === 'topbar') return true;
+		if (w.slot === 'content') return false;
+		return topbarWidgetTypes.has(w.widget_type);
+	}
+	let topbarWidgets = $derived(sidebarWidgets.filter((w) => isTopbar(w)));
+	let contentWidgets = $derived(sidebarWidgets.filter((w) => !isTopbar(w)));
 
 	let mobileNavOpen = $state(false);
 	const navWidth = $derived(
@@ -133,8 +148,9 @@
 
 		<div class="shell-sidebar">
 			<div class="sidebar-topbar">
-				<SearchLauncher />
-				<UserDropdown {user} />
+				{#each topbarWidgets as widget (widget.id)}
+					<SidebarWidgetRenderer {widget} />
+				{/each}
 			</div>
 			<div class="sidebar-body">
 				{#if variant === 'api' && apiPane}
@@ -145,7 +161,7 @@
 					<div class="sidebar-empty"></div>
 				{/if}
 
-				{#each sidebarWidgets as widget (widget.id)}
+				{#each contentWidgets as widget (widget.id)}
 					<div class="mt-4">
 						<SidebarWidgetRenderer {widget} />
 					</div>
@@ -214,8 +230,9 @@
 
 		<div class="shell-sidebar">
 			<div class="sidebar-topbar">
-				<SearchLauncher />
-				<UserDropdown {user} />
+				{#each topbarWidgets as widget (widget.id)}
+					<SidebarWidgetRenderer {widget} />
+				{/each}
 			</div>
 			<div class="sidebar-body">
 				{#if variant === 'api' && apiPane}
@@ -228,9 +245,9 @@
 					<div class="sidebar-empty"></div>
 				{/if}
 
-				<!-- Admin-managed sidebar widgets (Section 59, ADR-066).
-				     Rendered below the route-specific snippet (TOC). -->
-				{#each sidebarWidgets as widget (widget.id)}
+				<!-- Admin-managed content-slot sidebar widgets (Section 59,
+				     ADR-066). Rendered below the route-specific snippet (TOC). -->
+				{#each contentWidgets as widget (widget.id)}
 					<div class="mt-4">
 						<SidebarWidgetRenderer {widget} />
 					</div>

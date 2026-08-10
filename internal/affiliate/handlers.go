@@ -21,6 +21,7 @@ import (
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/tenant"
+	"github.com/jedafe/japa/internal/valkey"
 	"github.com/jedafe/japa/internal/worker"
 	"github.com/valkey-io/valkey-go/valkeycompat"
 )
@@ -363,7 +364,7 @@ func (h *Handlers) Redirect(w http.ResponseWriter, r *http.Request) {
 	ipHash := sha256Hex(clientip.FromRequest(r))
 
 	// jc:aff_dedup:{link_id}:{ip_hash}:{hour_bucket} — 1h TTL.
-	dedupKey := fmt.Sprintf("jc:aff_dedup:%s:%s:%s",
+	dedupKey := valkey.MustKey("aff_dedup:%s:%s:%s",
 		link.ID.String(), ipHash, time.Now().Format("2006-01-02-15"))
 	if h.Cache != nil {
 		if set, derr := h.Cache.SetNX(r.Context(), dedupKey, "1", time.Hour).Result(); derr == nil && !set {
@@ -392,7 +393,7 @@ func (h *Handlers) Redirect(w http.ResponseWriter, r *http.Request) {
 		if link.ProductID.Valid {
 			productID = link.ProductID.String()
 		}
-		attrKey := fmt.Sprintf("jc:aff_click:%s:%s:%s",
+		attrKey := valkey.MustKey("aff_click:%s:%s:%s",
 			viewer.UserID.String(), link.ProductType, productID)
 		ttl := time.Duration(h.Service.AttributionWindowDays(r.Context())) * 24 * time.Hour
 		if ttl <= 0 {

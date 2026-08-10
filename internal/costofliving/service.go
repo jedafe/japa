@@ -19,6 +19,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/jedafe/japa/internal/config"
+	"github.com/jedafe/japa/internal/db/gen"
 )
 
 // Default system_settings values (Section 72). These are used when a setting
@@ -28,6 +29,12 @@ const (
 	defaultStaleDays = 180
 	defaultMaxCities = 3
 )
+
+// ErrCalculatorDisabled is returned by service methods when the
+// col_calculator.enabled system_settings toggle is false. Handlers translate
+// it into a 404 `col_calculator_disabled` response per ADR-042 (feature-flag
+// middleware returns 404, not 403/500, when a feature is disabled).
+var ErrCalculatorDisabled = fmt.Errorf("costofliving: calculator disabled")
 
 // CityData is a single city row in the comparison matrix. Values maps
 // dimension key (dimension_id string) → raw value as stored (text).
@@ -141,7 +148,7 @@ func (s *Service) maxCities(ctx context.Context, tenantID pgtype.UUID) int {
 func (s *Service) ListCities(ctx context.Context, tenantID pgtype.UUID, search string, page, limit int) (CitiesListResponse, error) {
 	if s.settings != nil {
 		if enabled := s.settings.GetBoolOr(ctx, tenantID, "col_calculator.enabled", defaultEnabled); !enabled {
-			return CitiesListResponse{}, fmt.Errorf("costofliving: calculator disabled")
+			return CitiesListResponse{}, ErrCalculatorDisabled
 		}
 	}
 
@@ -219,14 +226,27 @@ func (s *Service) ListCities(ctx context.Context, tenantID pgtype.UUID, search s
 func (s *Service) CompareCities(ctx context.Context, tenantID pgtype.UUID, cityIDs []pgtype.UUID) (ComparisonMatrix, error) {
 	if s.settings != nil {
 		if enabled := s.settings.GetBoolOr(ctx, tenantID, "col_calculator.enabled", defaultEnabled); !enabled {
-			return ComparisonMatrix{}, fmt.Errorf("costofliving: calculator disabled")
+			return ComparisonMatrix{}, ErrCalculatorDisabled
 		}
 	}
 
 	maxCities := s.maxCities(ctx, tenantID)
-	if len(cityIDs) > maxCities {
-		return ComparisonMatrix{}, fmt.Errorf("costofliving: too many cities: %d > max %d", len(cityIDs), maxCities)
+
+	// Deduplicate city IDs before the max_cities check so that duplicate
+	// IDs in the query string don't trigger a false rejection or produce
+	// duplicate entries in the result.
+	seen := make(map[pgtype.UUID]bool, len(cityIDs))
+	uniqueIDs := make([]pgtype.UUID, 0, len(cityIDs))
+	for _, id := range cityIDs {
+		if id.Valid && !seen[id] {
+			seen[id] = true
+			uniqueIDs = append(uniqueIDs, id)
+		}
 	}
+	if len(uniqueIDs) > maxCities {
+		return ComparisonMatrix{}, fmt.Errorf("costofliving: too many cities: %d > max %d", len(uniqueIDs), maxCities)
+	}
+	cityIDs = uniqueIDs
 
 	// Step 1: get the cost_of_living type definition (config holds weights).
 	typeDef, err := s.store.GetCostOfLivingType(ctx, tenantID)
@@ -263,10 +283,11 @@ func (s *Service) CompareCities(ctx context.Context, tenantID pgtype.UUID, cityI
 
 	// Step 4: pivot values into a matrix.
 	// dimValues[dimensionID][cityID] = float64 value (parsed from text).
-	// dimMeta[dimensionID] = {label, key}.
+	// dimMeta[dimensionID] = {label, key, slug}.
 	type dimMeta struct {
 		Label string
 		Key   string
+		Slug  string
 	}
 	dimValues := make(map[string]map[string]float64)
 	dimOrder := make([]string, 0)
@@ -278,7 +299,11 @@ func (s *Service) CompareCities(ctx context.Context, tenantID pgtype.UUID, cityI
 		cityKey := v.ItemID.String()
 
 		if _, ok := dimMetaMap[dimKey]; !ok {
-			dimMetaMap[dimKey] = dimMeta{Label: v.DimensionLabel, Key: dimKey}
+			slug := ""
+			if v.DimensionSlug != nil {
+				slug = *v.DimensionSlug
+			}
+			dimMetaMap[dimKey] = dimMeta{Label: v.DimensionLabel, Key: dimKey, Slug: slug}
 			dimOrder = append(dimOrder, dimKey)
 		}
 		if dimValues[dimKey] == nil {
@@ -308,6 +333,25 @@ func (s *Service) CompareCities(ctx context.Context, tenantID pgtype.UUID, cityI
 		}
 	}
 
+	// Batch-fetch all non-baseline cities in one query (avoids N+1).
+	nonBaselineIDs := make([]pgtype.UUID, 0, len(cityOrder))
+	for _, id := range cityOrder {
+		if id != baselineID {
+			nonBaselineIDs = append(nonBaselineIDs, id)
+		}
+	}
+	cityRows := make(map[pgtype.UUID]gen.GetCOLCitiesByIDsRow, len(nonBaselineIDs))
+	if len(nonBaselineIDs) > 0 {
+		rows, err := s.store.GetCitiesByIDs(ctx, tenantID, nonBaselineIDs)
+		if err != nil {
+			slog.Warn("costofliving: compare: batch get cities", "error", err)
+		} else {
+			for _, r := range rows {
+				cityRows[r.ID] = r
+			}
+		}
+	}
+
 	cities := make([]CityData, 0, len(cityOrder))
 	for _, id := range cityOrder {
 		var title, geoName string
@@ -323,9 +367,9 @@ func (s *Service) CompareCities(ctx context.Context, tenantID pgtype.UUID, cityI
 				lastUpdated = baseline.LastUpdatedAt.Time
 			}
 		} else {
-			c, err := s.store.GetCityByID(ctx, tenantID, id)
-			if err != nil {
-				slog.Warn("costofliving: compare: get city", "id", id.String(), "error", err)
+			c, ok := cityRows[id]
+			if !ok {
+				slog.Warn("costofliving: compare: city not found", "id", id.String())
 				continue
 			}
 			title = c.Title
@@ -341,13 +385,18 @@ func (s *Service) CompareCities(ctx context.Context, tenantID pgtype.UUID, cityI
 		if !lastUpdated.IsZero() {
 			lastUpdatedStr = lastUpdated.UTC().Format(time.RFC3339)
 		}
+		// Ensure Values is never nil so JSON serializes as {} not null.
+		rawVals := cityRawValues[id.String()]
+		if rawVals == nil {
+			rawVals = map[string]string{}
+		}
 		cities = append(cities, CityData{
 			ID:           id.String(),
 			Title:        title,
 			GeoSpaceName: geoName,
 			IsBaseline:   isBaseline,
 			LastUpdated:  lastUpdatedStr,
-			Values:       cityRawValues[id.String()],
+			Values:       rawVals,
 		})
 	}
 
@@ -381,8 +430,9 @@ func (s *Service) CompareCities(ctx context.Context, tenantID pgtype.UUID, cityI
 		categories = append(categories, cat)
 
 		// Step 6: accumulate weighted Overall Cost Index.
-		// Weight is looked up by dimension_id string in the config weights.
-		weight, hasWeight := weights[dimKey]
+		// Weight is looked up by dimension slug in the config weights
+		// (config JSONB weights are keyed by slug, e.g. "rent_1br_city_centre").
+		weight, hasWeight := weights[meta.Slug]
 		if !hasWeight || weight <= 0 {
 			continue
 		}
@@ -465,9 +515,11 @@ func (s *Service) AdminStats(ctx context.Context, tenantID pgtype.UUID, page, li
 // parseWeights extracts the per-category weights from the comparison type
 // definition's config JSONB. The config shape is:
 //
-//	{"weights": {"<dimension_id>": 0.25, ...}}
+//	{"weights": {"<dimension_slug>": 0.25, ...}}
 //
-// Returns an empty map if config is nil or malformed.
+// Weight keys are dimension slugs (e.g. "rent_1br_city_centre"), matching
+// the slug column on comparison_dimensions. Returns an empty map if config
+// is nil or malformed.
 func parseWeights(config []byte) map[string]float64 {
 	if len(config) == 0 {
 		return map[string]float64{}

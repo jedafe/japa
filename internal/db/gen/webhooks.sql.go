@@ -39,35 +39,60 @@ func (q *Queries) CreateWebhookDelivery(ctx context.Context, arg CreateWebhookDe
 }
 
 const createWebhookEndpoint = `-- name: CreateWebhookEndpoint :one
-INSERT INTO webhook_endpoints (tenant_id, url, secret, event_types, status)
-VALUES ($1, $2, $3, $4, $5)
-RETURNING id, tenant_id, url, secret, event_types, status, created_at, updated_at
+INSERT INTO webhook_endpoints (tenant_id, name, url, secret, event_types, status, is_active, created_by)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+RETURNING id, tenant_id, name, url, secret, event_types, status, is_active, verified_at, created_by, created_at, updated_at
 `
 
 type CreateWebhookEndpointParams struct {
 	TenantID   pgtype.UUID `json:"tenant_id"`
+	Name       string      `json:"name"`
 	Url        string      `json:"url"`
 	Secret     string      `json:"secret"`
 	EventTypes []string    `json:"event_types"`
 	Status     string      `json:"status"`
+	IsActive   bool        `json:"is_active"`
+	CreatedBy  pgtype.UUID `json:"created_by"`
 }
 
-func (q *Queries) CreateWebhookEndpoint(ctx context.Context, arg CreateWebhookEndpointParams) (WebhookEndpoint, error) {
+type CreateWebhookEndpointRow struct {
+	ID         pgtype.UUID        `json:"id"`
+	TenantID   pgtype.UUID        `json:"tenant_id"`
+	Name       string             `json:"name"`
+	Url        string             `json:"url"`
+	Secret     string             `json:"secret"`
+	EventTypes []string           `json:"event_types"`
+	Status     string             `json:"status"`
+	IsActive   bool               `json:"is_active"`
+	VerifiedAt pgtype.Timestamptz `json:"verified_at"`
+	CreatedBy  pgtype.UUID        `json:"created_by"`
+	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt  pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) CreateWebhookEndpoint(ctx context.Context, arg CreateWebhookEndpointParams) (CreateWebhookEndpointRow, error) {
 	row := q.db.QueryRow(ctx, createWebhookEndpoint,
 		arg.TenantID,
+		arg.Name,
 		arg.Url,
 		arg.Secret,
 		arg.EventTypes,
 		arg.Status,
+		arg.IsActive,
+		arg.CreatedBy,
 	)
-	var i WebhookEndpoint
+	var i CreateWebhookEndpointRow
 	err := row.Scan(
 		&i.ID,
 		&i.TenantID,
+		&i.Name,
 		&i.Url,
 		&i.Secret,
 		&i.EventTypes,
 		&i.Status,
+		&i.IsActive,
+		&i.VerifiedAt,
+		&i.CreatedBy,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -94,14 +119,32 @@ func (q *Queries) DeleteWebhookEndpoint(ctx context.Context, arg DeleteWebhookEn
 
 const getWebhookDelivery = `-- name: GetWebhookDelivery :one
 SELECT id, tenant_id, endpoint_id, event_id, event_type, payload,
-       status, attempts, last_error, delivered_at, created_at
+       status, attempts, last_error, next_attempt_at, last_response_code, last_response_body,
+       delivered_at, created_at
 FROM webhook_deliveries
 WHERE id = $1
 `
 
-func (q *Queries) GetWebhookDelivery(ctx context.Context, id pgtype.UUID) (WebhookDelivery, error) {
+type GetWebhookDeliveryRow struct {
+	ID               pgtype.UUID        `json:"id"`
+	TenantID         pgtype.UUID        `json:"tenant_id"`
+	EndpointID       pgtype.UUID        `json:"endpoint_id"`
+	EventID          pgtype.UUID        `json:"event_id"`
+	EventType        string             `json:"event_type"`
+	Payload          []byte             `json:"payload"`
+	Status           string             `json:"status"`
+	Attempts         int32              `json:"attempts"`
+	LastError        *string            `json:"last_error"`
+	NextAttemptAt    pgtype.Timestamptz `json:"next_attempt_at"`
+	LastResponseCode *int32             `json:"last_response_code"`
+	LastResponseBody *string            `json:"last_response_body"`
+	DeliveredAt      pgtype.Timestamptz `json:"delivered_at"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+}
+
+func (q *Queries) GetWebhookDelivery(ctx context.Context, id pgtype.UUID) (GetWebhookDeliveryRow, error) {
 	row := q.db.QueryRow(ctx, getWebhookDelivery, id)
-	var i WebhookDelivery
+	var i GetWebhookDeliveryRow
 	err := row.Scan(
 		&i.ID,
 		&i.TenantID,
@@ -112,6 +155,9 @@ func (q *Queries) GetWebhookDelivery(ctx context.Context, id pgtype.UUID) (Webho
 		&i.Status,
 		&i.Attempts,
 		&i.LastError,
+		&i.NextAttemptAt,
+		&i.LastResponseCode,
+		&i.LastResponseBody,
 		&i.DeliveredAt,
 		&i.CreatedAt,
 	)
@@ -120,7 +166,8 @@ func (q *Queries) GetWebhookDelivery(ctx context.Context, id pgtype.UUID) (Webho
 
 const getWebhookDeliveryForTenant = `-- name: GetWebhookDeliveryForTenant :one
 SELECT id, tenant_id, endpoint_id, event_id, event_type, payload,
-       status, attempts, last_error, delivered_at, created_at
+       status, attempts, last_error, next_attempt_at, last_response_code, last_response_body,
+       delivered_at, created_at
 FROM webhook_deliveries
 WHERE tenant_id = $1 AND id = $2
 `
@@ -130,9 +177,26 @@ type GetWebhookDeliveryForTenantParams struct {
 	ID       pgtype.UUID `json:"id"`
 }
 
-func (q *Queries) GetWebhookDeliveryForTenant(ctx context.Context, arg GetWebhookDeliveryForTenantParams) (WebhookDelivery, error) {
+type GetWebhookDeliveryForTenantRow struct {
+	ID               pgtype.UUID        `json:"id"`
+	TenantID         pgtype.UUID        `json:"tenant_id"`
+	EndpointID       pgtype.UUID        `json:"endpoint_id"`
+	EventID          pgtype.UUID        `json:"event_id"`
+	EventType        string             `json:"event_type"`
+	Payload          []byte             `json:"payload"`
+	Status           string             `json:"status"`
+	Attempts         int32              `json:"attempts"`
+	LastError        *string            `json:"last_error"`
+	NextAttemptAt    pgtype.Timestamptz `json:"next_attempt_at"`
+	LastResponseCode *int32             `json:"last_response_code"`
+	LastResponseBody *string            `json:"last_response_body"`
+	DeliveredAt      pgtype.Timestamptz `json:"delivered_at"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+}
+
+func (q *Queries) GetWebhookDeliveryForTenant(ctx context.Context, arg GetWebhookDeliveryForTenantParams) (GetWebhookDeliveryForTenantRow, error) {
 	row := q.db.QueryRow(ctx, getWebhookDeliveryForTenant, arg.TenantID, arg.ID)
-	var i WebhookDelivery
+	var i GetWebhookDeliveryForTenantRow
 	err := row.Scan(
 		&i.ID,
 		&i.TenantID,
@@ -143,6 +207,9 @@ func (q *Queries) GetWebhookDeliveryForTenant(ctx context.Context, arg GetWebhoo
 		&i.Status,
 		&i.Attempts,
 		&i.LastError,
+		&i.NextAttemptAt,
+		&i.LastResponseCode,
+		&i.LastResponseBody,
 		&i.DeliveredAt,
 		&i.CreatedAt,
 	)
@@ -150,7 +217,7 @@ func (q *Queries) GetWebhookDeliveryForTenant(ctx context.Context, arg GetWebhoo
 }
 
 const getWebhookEndpoint = `-- name: GetWebhookEndpoint :one
-SELECT id, tenant_id, url, secret, event_types, status, created_at, updated_at
+SELECT id, tenant_id, name, url, secret, event_types, status, is_active, verified_at, created_by, created_at, updated_at
 FROM webhook_endpoints
 WHERE tenant_id = $1 AND id = $2
 `
@@ -160,16 +227,35 @@ type GetWebhookEndpointParams struct {
 	ID       pgtype.UUID `json:"id"`
 }
 
-func (q *Queries) GetWebhookEndpoint(ctx context.Context, arg GetWebhookEndpointParams) (WebhookEndpoint, error) {
+type GetWebhookEndpointRow struct {
+	ID         pgtype.UUID        `json:"id"`
+	TenantID   pgtype.UUID        `json:"tenant_id"`
+	Name       string             `json:"name"`
+	Url        string             `json:"url"`
+	Secret     string             `json:"secret"`
+	EventTypes []string           `json:"event_types"`
+	Status     string             `json:"status"`
+	IsActive   bool               `json:"is_active"`
+	VerifiedAt pgtype.Timestamptz `json:"verified_at"`
+	CreatedBy  pgtype.UUID        `json:"created_by"`
+	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt  pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) GetWebhookEndpoint(ctx context.Context, arg GetWebhookEndpointParams) (GetWebhookEndpointRow, error) {
 	row := q.db.QueryRow(ctx, getWebhookEndpoint, arg.TenantID, arg.ID)
-	var i WebhookEndpoint
+	var i GetWebhookEndpointRow
 	err := row.Scan(
 		&i.ID,
 		&i.TenantID,
+		&i.Name,
 		&i.Url,
 		&i.Secret,
 		&i.EventTypes,
 		&i.Status,
+		&i.IsActive,
+		&i.VerifiedAt,
+		&i.CreatedBy,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -177,7 +263,7 @@ func (q *Queries) GetWebhookEndpoint(ctx context.Context, arg GetWebhookEndpoint
 }
 
 const getWebhookEndpointByID = `-- name: GetWebhookEndpointByID :one
-SELECT id, tenant_id, url, secret, event_types, status
+SELECT id, tenant_id, name, url, secret, event_types, status, is_active
 FROM webhook_endpoints
 WHERE id = $1
 `
@@ -185,10 +271,12 @@ WHERE id = $1
 type GetWebhookEndpointByIDRow struct {
 	ID         pgtype.UUID `json:"id"`
 	TenantID   pgtype.UUID `json:"tenant_id"`
+	Name       string      `json:"name"`
 	Url        string      `json:"url"`
 	Secret     string      `json:"secret"`
 	EventTypes []string    `json:"event_types"`
 	Status     string      `json:"status"`
+	IsActive   bool        `json:"is_active"`
 }
 
 func (q *Queries) GetWebhookEndpointByID(ctx context.Context, id pgtype.UUID) (GetWebhookEndpointByIDRow, error) {
@@ -197,17 +285,20 @@ func (q *Queries) GetWebhookEndpointByID(ctx context.Context, id pgtype.UUID) (G
 	err := row.Scan(
 		&i.ID,
 		&i.TenantID,
+		&i.Name,
 		&i.Url,
 		&i.Secret,
 		&i.EventTypes,
 		&i.Status,
+		&i.IsActive,
 	)
 	return i, err
 }
 
 const listWebhookDeliveries = `-- name: ListWebhookDeliveries :many
 SELECT id, tenant_id, endpoint_id, event_id, event_type, payload,
-       status, attempts, last_error, delivered_at, created_at
+       status, attempts, last_error, next_attempt_at, last_response_code, last_response_body,
+       delivered_at, created_at
 FROM webhook_deliveries
 WHERE tenant_id = $1 AND endpoint_id = $2
 ORDER BY created_at DESC
@@ -221,7 +312,24 @@ type ListWebhookDeliveriesParams struct {
 	PageLimit  int32       `json:"page_limit"`
 }
 
-func (q *Queries) ListWebhookDeliveries(ctx context.Context, arg ListWebhookDeliveriesParams) ([]WebhookDelivery, error) {
+type ListWebhookDeliveriesRow struct {
+	ID               pgtype.UUID        `json:"id"`
+	TenantID         pgtype.UUID        `json:"tenant_id"`
+	EndpointID       pgtype.UUID        `json:"endpoint_id"`
+	EventID          pgtype.UUID        `json:"event_id"`
+	EventType        string             `json:"event_type"`
+	Payload          []byte             `json:"payload"`
+	Status           string             `json:"status"`
+	Attempts         int32              `json:"attempts"`
+	LastError        *string            `json:"last_error"`
+	NextAttemptAt    pgtype.Timestamptz `json:"next_attempt_at"`
+	LastResponseCode *int32             `json:"last_response_code"`
+	LastResponseBody *string            `json:"last_response_body"`
+	DeliveredAt      pgtype.Timestamptz `json:"delivered_at"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+}
+
+func (q *Queries) ListWebhookDeliveries(ctx context.Context, arg ListWebhookDeliveriesParams) ([]ListWebhookDeliveriesRow, error) {
 	rows, err := q.db.Query(ctx, listWebhookDeliveries,
 		arg.TenantID,
 		arg.EndpointID,
@@ -232,9 +340,9 @@ func (q *Queries) ListWebhookDeliveries(ctx context.Context, arg ListWebhookDeli
 		return nil, err
 	}
 	defer rows.Close()
-	var items []WebhookDelivery
+	var items []ListWebhookDeliveriesRow
 	for rows.Next() {
-		var i WebhookDelivery
+		var i ListWebhookDeliveriesRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.TenantID,
@@ -245,6 +353,9 @@ func (q *Queries) ListWebhookDeliveries(ctx context.Context, arg ListWebhookDeli
 			&i.Status,
 			&i.Attempts,
 			&i.LastError,
+			&i.NextAttemptAt,
+			&i.LastResponseCode,
+			&i.LastResponseBody,
 			&i.DeliveredAt,
 			&i.CreatedAt,
 		); err != nil {
@@ -260,29 +371,48 @@ func (q *Queries) ListWebhookDeliveries(ctx context.Context, arg ListWebhookDeli
 
 const listWebhookEndpoints = `-- name: ListWebhookEndpoints :many
 
-SELECT id, tenant_id, url, secret, event_types, status, created_at, updated_at
+SELECT id, tenant_id, name, url, secret, event_types, status, is_active, verified_at, created_by, created_at, updated_at
 FROM webhook_endpoints
 WHERE tenant_id = $1
 ORDER BY created_at DESC
 `
 
-// Outgoing Webhooks — endpoint CRUD + delivery audit rows (Section 11 job-queue extension)
-func (q *Queries) ListWebhookEndpoints(ctx context.Context, tenantID pgtype.UUID) ([]WebhookEndpoint, error) {
+type ListWebhookEndpointsRow struct {
+	ID         pgtype.UUID        `json:"id"`
+	TenantID   pgtype.UUID        `json:"tenant_id"`
+	Name       string             `json:"name"`
+	Url        string             `json:"url"`
+	Secret     string             `json:"secret"`
+	EventTypes []string           `json:"event_types"`
+	Status     string             `json:"status"`
+	IsActive   bool               `json:"is_active"`
+	VerifiedAt pgtype.Timestamptz `json:"verified_at"`
+	CreatedBy  pgtype.UUID        `json:"created_by"`
+	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt  pgtype.Timestamptz `json:"updated_at"`
+}
+
+// Outgoing Webhooks — endpoint CRUD + delivery audit rows (Section 12)
+func (q *Queries) ListWebhookEndpoints(ctx context.Context, tenantID pgtype.UUID) ([]ListWebhookEndpointsRow, error) {
 	rows, err := q.db.Query(ctx, listWebhookEndpoints, tenantID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []WebhookEndpoint
+	var items []ListWebhookEndpointsRow
 	for rows.Next() {
-		var i WebhookEndpoint
+		var i ListWebhookEndpointsRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.TenantID,
+			&i.Name,
 			&i.Url,
 			&i.Secret,
 			&i.EventTypes,
 			&i.Status,
+			&i.IsActive,
+			&i.VerifiedAt,
+			&i.CreatedBy,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -298,24 +428,35 @@ func (q *Queries) ListWebhookEndpoints(ctx context.Context, tenantID pgtype.UUID
 
 const markWebhookDelivered = `-- name: MarkWebhookDelivered :exec
 UPDATE webhook_deliveries
-SET status = 'delivered', attempts = $1, delivered_at = $2, last_error = NULL
-WHERE id = $3
+SET status = 'delivered', attempts = $1, delivered_at = $2,
+    last_error = NULL, next_attempt_at = NULL,
+    last_response_code = $3, last_response_body = $4
+WHERE id = $5
 `
 
 type MarkWebhookDeliveredParams struct {
-	Attempts    int32              `json:"attempts"`
-	DeliveredAt pgtype.Timestamptz `json:"delivered_at"`
-	ID          pgtype.UUID        `json:"id"`
+	Attempts         int32              `json:"attempts"`
+	DeliveredAt      pgtype.Timestamptz `json:"delivered_at"`
+	LastResponseCode *int32             `json:"last_response_code"`
+	LastResponseBody *string            `json:"last_response_body"`
+	ID               pgtype.UUID        `json:"id"`
 }
 
 func (q *Queries) MarkWebhookDelivered(ctx context.Context, arg MarkWebhookDeliveredParams) error {
-	_, err := q.db.Exec(ctx, markWebhookDelivered, arg.Attempts, arg.DeliveredAt, arg.ID)
+	_, err := q.db.Exec(ctx, markWebhookDelivered,
+		arg.Attempts,
+		arg.DeliveredAt,
+		arg.LastResponseCode,
+		arg.LastResponseBody,
+		arg.ID,
+	)
 	return err
 }
 
 const markWebhookFailed = `-- name: MarkWebhookFailed :exec
 UPDATE webhook_deliveries
-SET status = 'failed', attempts = $1, last_error = $2
+SET status = 'failed', attempts = $1, last_error = $2,
+    next_attempt_at = NULL
 WHERE id = $3
 `
 
@@ -330,9 +471,38 @@ func (q *Queries) MarkWebhookFailed(ctx context.Context, arg MarkWebhookFailedPa
 	return err
 }
 
+const markWebhookRetrying = `-- name: MarkWebhookRetrying :exec
+UPDATE webhook_deliveries
+SET status = 'retrying', attempts = $1, last_error = $2,
+    next_attempt_at = $3,
+    last_response_code = $4, last_response_body = $5
+WHERE id = $6
+`
+
+type MarkWebhookRetryingParams struct {
+	Attempts         int32              `json:"attempts"`
+	LastError        *string            `json:"last_error"`
+	NextAttemptAt    pgtype.Timestamptz `json:"next_attempt_at"`
+	LastResponseCode *int32             `json:"last_response_code"`
+	LastResponseBody *string            `json:"last_response_body"`
+	ID               pgtype.UUID        `json:"id"`
+}
+
+func (q *Queries) MarkWebhookRetrying(ctx context.Context, arg MarkWebhookRetryingParams) error {
+	_, err := q.db.Exec(ctx, markWebhookRetrying,
+		arg.Attempts,
+		arg.LastError,
+		arg.NextAttemptAt,
+		arg.LastResponseCode,
+		arg.LastResponseBody,
+		arg.ID,
+	)
+	return err
+}
+
 const retryWebhookDelivery = `-- name: RetryWebhookDelivery :execrows
 UPDATE webhook_deliveries
-SET status = 'pending', attempts = 0, last_error = NULL
+SET status = 'pending', attempts = 0, last_error = NULL, next_attempt_at = NULL
 WHERE tenant_id = $1 AND id = $2 AND status = 'failed'
 `
 
@@ -351,40 +521,79 @@ func (q *Queries) RetryWebhookDelivery(ctx context.Context, arg RetryWebhookDeli
 
 const updateWebhookEndpoint = `-- name: UpdateWebhookEndpoint :one
 UPDATE webhook_endpoints
-SET url = $1, secret = $2, event_types = $3,
-    status = $4, updated_at = now()
-WHERE tenant_id = $5 AND id = $6
-RETURNING id, tenant_id, url, secret, event_types, status, created_at, updated_at
+SET name = $1, url = $2, secret = $3, event_types = $4,
+    status = $5, is_active = $6, updated_at = now()
+WHERE tenant_id = $7 AND id = $8
+RETURNING id, tenant_id, name, url, secret, event_types, status, is_active, verified_at, created_by, created_at, updated_at
 `
 
 type UpdateWebhookEndpointParams struct {
+	Name       string      `json:"name"`
 	Url        string      `json:"url"`
 	Secret     string      `json:"secret"`
 	EventTypes []string    `json:"event_types"`
 	Status     string      `json:"status"`
+	IsActive   bool        `json:"is_active"`
 	TenantID   pgtype.UUID `json:"tenant_id"`
 	ID         pgtype.UUID `json:"id"`
 }
 
-func (q *Queries) UpdateWebhookEndpoint(ctx context.Context, arg UpdateWebhookEndpointParams) (WebhookEndpoint, error) {
+type UpdateWebhookEndpointRow struct {
+	ID         pgtype.UUID        `json:"id"`
+	TenantID   pgtype.UUID        `json:"tenant_id"`
+	Name       string             `json:"name"`
+	Url        string             `json:"url"`
+	Secret     string             `json:"secret"`
+	EventTypes []string           `json:"event_types"`
+	Status     string             `json:"status"`
+	IsActive   bool               `json:"is_active"`
+	VerifiedAt pgtype.Timestamptz `json:"verified_at"`
+	CreatedBy  pgtype.UUID        `json:"created_by"`
+	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt  pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) UpdateWebhookEndpoint(ctx context.Context, arg UpdateWebhookEndpointParams) (UpdateWebhookEndpointRow, error) {
 	row := q.db.QueryRow(ctx, updateWebhookEndpoint,
+		arg.Name,
 		arg.Url,
 		arg.Secret,
 		arg.EventTypes,
 		arg.Status,
+		arg.IsActive,
 		arg.TenantID,
 		arg.ID,
 	)
-	var i WebhookEndpoint
+	var i UpdateWebhookEndpointRow
 	err := row.Scan(
 		&i.ID,
 		&i.TenantID,
+		&i.Name,
 		&i.Url,
 		&i.Secret,
 		&i.EventTypes,
 		&i.Status,
+		&i.IsActive,
+		&i.VerifiedAt,
+		&i.CreatedBy,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const verifyWebhookEndpoint = `-- name: VerifyWebhookEndpoint :exec
+UPDATE webhook_endpoints
+SET is_active = true, verified_at = now(), status = 'active', updated_at = now()
+WHERE tenant_id = $1 AND id = $2
+`
+
+type VerifyWebhookEndpointParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	ID       pgtype.UUID `json:"id"`
+}
+
+func (q *Queries) VerifyWebhookEndpoint(ctx context.Context, arg VerifyWebhookEndpointParams) error {
+	_, err := q.db.Exec(ctx, verifyWebhookEndpoint, arg.TenantID, arg.ID)
+	return err
 }

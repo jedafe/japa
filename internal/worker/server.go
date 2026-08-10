@@ -129,6 +129,9 @@ func NewScheduler(cfg *Config) *asynq.Scheduler {
 	// Daily sitemap generation — 02:00 UTC.
 	schedule("0 2 * * *", TypeSitemapGenerate, 24*time.Hour)
 
+	// Daily jobs listing expiry — 01:00 UTC (§63, ADR-081).
+	schedule("0 1 * * *", TypeJobsExpireListings, 24*time.Hour)
+
 	// Weekly GeoIP database update — Sunday 03:00 UTC.
 	schedule("0 3 * * 0", TypeMaintenanceUpdateGeoIPDB, 7*24*time.Hour)
 

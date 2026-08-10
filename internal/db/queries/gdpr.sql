@@ -525,6 +525,20 @@ FROM (SELECT content_id, session_id, country_code, viewed_at
 -- only, which is safe because user_ids are globally unique.
 DELETE FROM user_content_views WHERE user_id = @user_id;
 
+-- name: GdprDeleteAdEventsByUser :exec
+-- Deletes ad_events (impression/click tracking) for the user being erased.
+-- ad_events.user_id has ON DELETE CASCADE, but we delete explicitly to
+-- document the erasure path and remove the user's ad-interaction PII
+-- before the final HardDeleteUser. Ref: Section 25/61, GDPR erasure.
+DELETE FROM ad_events WHERE user_id = @user_id;
+
+-- name: GdprNullifyAdCampaignCreator :exec
+-- Nullifies ad_campaigns.created_by for campaigns created by the erased
+-- user. The FK has no CASCADE/SET NULL, so without this step the final
+-- HardDeleteUser would block on the residual foreign key. The campaign
+-- row is preserved (it may belong to an organization). Ref: Section 25/61.
+UPDATE ad_campaigns SET created_by = NULL WHERE created_by = @user_id;
+
 -- name: GdprExportUserFollows :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (SELECT * FROM follows WHERE follower_id = @user_id AND tenant_id = @tenant_id) t;

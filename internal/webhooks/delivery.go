@@ -4,9 +4,12 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 )
 
@@ -16,28 +19,86 @@ const SignatureHeader = "X-Webhook-Signature"
 // ContentType is the media type sent with every webhook delivery.
 const ContentType = "application/json"
 
+// maxResponseCaptureBytes limits how much of the webhook response body is
+// stored in last_response_body for debugging (§12). 4 KiB is enough to capture
+// a meaningful error message without unbounded storage.
+const maxResponseCaptureBytes = 4096
+
+// ssrfDialContext is the production dial function that rejects private/
+// loopback/link-local IP ranges to prevent SSRF (BUG-014). Tests replace
+// this with an unrestricted dialer so httptest.Server (which binds to
+// 127.0.0.1) can be reached.
+var ssrfDialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return nil, fmt.Errorf("invalid address %s: %w", addr, err)
+	}
+
+	ips, err := net.DefaultResolver.LookupIPAddr(ctx, host)
+	if err != nil {
+		return nil, fmt.Errorf("resolving %s: %w", host, err)
+	}
+
+	for _, ip := range ips {
+		if isBlockedIP(ip.IP) {
+			return nil, fmt.Errorf("SSRF blocked: %s resolves to private/reserved IP %s", host, ip.IP)
+		}
+	}
+
+	d := &net.Dialer{Timeout: 10 * time.Second}
+	return d.DialContext(ctx, network, net.JoinHostPort(host, port))
+}
+
 // deliveryClient is a hardened HTTP client for outbound webhook delivery
-// (SEC-009). It enforces a 30s timeout and caps redirects at 5 to prevent
-// SSRF via redirect chains to internal IPs. http.DefaultClient has no
-// timeout and unlimited redirects — users could register internal-IP
-// webhook URLs and exfiltrate data or scan the internal network.
-var deliveryClient = &http.Client{
-	Timeout: 30 * time.Second,
-	CheckRedirect: func(req *http.Request, via []*http.Request) error {
-		if len(via) >= 5 {
-			return fmt.Errorf("stopped after 5 redirects")
+// (SEC-009). It enforces a 30s timeout, caps redirects at 5, blocks redirects
+// to non-http(s) schemes, and uses a dialer that rejects private/loopback/
+// link-local IP ranges to prevent SSRF (BUG-014). http.DefaultClient has no
+// timeout, unlimited redirects, and no IP filtering — users could register
+// internal-IP webhook URLs and exfiltrate data or scan the internal network.
+var deliveryClient = newDeliveryClient(ssrfDialContext)
+
+// newDeliveryClient builds an HTTP client with the given dial function.
+func newDeliveryClient(dial func(ctx context.Context, network, addr string) (net.Conn, error)) *http.Client {
+	return &http.Client{
+		Timeout: 30 * time.Second,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if len(via) >= 5 {
+				return fmt.Errorf("stopped after 5 redirects")
+			}
+			// Block redirects to non-http(s) schemes (defense-in-depth).
+			if req.URL.Scheme != "http" && req.URL.Scheme != "https" {
+				return fmt.Errorf("redirect to non-http scheme blocked: %s", req.URL.Scheme)
+			}
+			return nil
+		},
+		Transport: &http.Transport{DialContext: dial},
+	}
+}
+
+// isBlockedIP reports whether the IP is in a private, loopback, link-local, or
+// reserved range that must not be contacted for outbound webhook delivery
+// (SSRF defense, BUG-014).
+func isBlockedIP(ip net.IP) bool {
+	if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
+		return true
+	}
+	if ip.IsUnspecified() {
+		return true
+	}
+	// IPv4-mapped IPv6 — check the underlying IPv4.
+	if v4 := ip.To4(); v4 != nil {
+		// 169.254.0.0/16 (link-local) is covered by IsLinkLocalUnicast for IPv4.
+		// 100.64.0.0/10 (CGNAT / shared address space) — not covered by stdlib.
+		if v4[0] == 100 && v4[1] >= 64 && v4[1] <= 127 {
+			return true
 		}
-		// Block redirects to non-http(s) schemes (defense-in-depth).
-		if req.URL.Scheme != "http" && req.URL.Scheme != "https" {
-			return fmt.Errorf("redirect to non-http scheme blocked: %s", req.URL.Scheme)
-		}
-		return nil
-	},
+	}
+	return false
 }
 
 // validateEndpoint checks that the webhook endpoint URL is safe to call
-// (SEC-009). Rejects non-http(s) schemes which would allow javascript:/data:
-// or file: URLs to be registered as webhook targets.
+// (SEC-009, BUG-014). Rejects non-http(s) schemes which would allow
+// javascript:/data:/file: URLs, and empty hosts.
 func validateEndpoint(endpoint string) error {
 	u, err := url.Parse(endpoint)
 	if err != nil {
@@ -52,22 +113,32 @@ func validateEndpoint(endpoint string) error {
 	return nil
 }
 
+// DeliveryResult captures the outcome of a single delivery attempt for the
+// delivery log (§12 last_response_code / last_response_body).
+type DeliveryResult struct {
+	StatusCode   int
+	ResponseBody string
+}
+
 // Deliver sends a single HTTP POST to the endpoint with the signed envelope.
 // Returns an error if the request fails or the endpoint returns a non-2xx
-// status code.
-func Deliver(ctx context.Context, endpoint, secret string, envelope WebhookEnvelope) error {
+// status code. On a non-2xx response, the status code and a truncated response
+// body are still captured in the DeliveryResult for the delivery log.
+func Deliver(ctx context.Context, endpoint, secret string, envelope WebhookEnvelope) (DeliveryResult, error) {
+	result := DeliveryResult{}
+
 	if err := validateEndpoint(endpoint); err != nil {
-		return err
+		return result, err
 	}
 
 	payload, err := envelope.Marshal()
 	if err != nil {
-		return fmt.Errorf("marshaling webhook envelope: %w", err)
+		return result, fmt.Errorf("marshaling webhook envelope: %w", err)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload))
 	if err != nil {
-		return fmt.Errorf("creating webhook request: %w", err)
+		return result, fmt.Errorf("creating webhook request: %w", err)
 	}
 
 	req.Header.Set("Content-Type", ContentType)
@@ -75,23 +146,30 @@ func Deliver(ctx context.Context, endpoint, secret string, envelope WebhookEnvel
 
 	resp, err := deliveryClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("sending webhook to %s: %w", endpoint, err)
+		return result, fmt.Errorf("sending webhook to %s: %w", endpoint, err)
 	}
 
 	defer func() { _ = resp.Body.Close() }()
 
+	result.StatusCode = resp.StatusCode
+
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, maxResponseCaptureBytes))
+	result.ResponseBody = string(body)
+
 	if resp.StatusCode >= 400 {
-		return fmt.Errorf("webhook to %s returned status %d", endpoint, resp.StatusCode)
+		return result, fmt.Errorf("webhook to %s returned status %d", endpoint, resp.StatusCode)
 	}
 
-	return nil
+	return result, nil
 }
 
 // DeliverWithRetry calls Deliver up to maxRetries times with exponential
 // backoff. The delay before retry attempt N (0-indexed) is 2^N seconds,
 // producing the schedule: 1s, 2s, 4s, 8s, 16s, ...  Returns nil on the first
-// successful delivery, or the last error if all attempts fail.
-func DeliverWithRetry(ctx context.Context, endpoint, secret string, envelope WebhookEnvelope, maxRetries int) error {
+// successful delivery, or the last error if all attempts fail. The final
+// DeliveryResult (from the last attempt) is returned alongside the error so
+// the caller can record last_response_code / last_response_body.
+func DeliverWithRetry(ctx context.Context, endpoint, secret string, envelope WebhookEnvelope, maxRetries int) (DeliveryResult, error) {
 	if maxRetries < 1 {
 		maxRetries = 1
 	}
@@ -103,28 +181,78 @@ func DeliverWithRetry(ctx context.Context, endpoint, secret string, envelope Web
 	}
 
 	var lastErr error
+	var lastResult DeliveryResult
 
 	for attempt := range maxRetries {
 		if attempt > 0 {
 			delay := time.Duration(1<<uint(attempt-1)) * time.Second //nolint:gosec // G115: attempt bounded by maxRetries cap (30)
 			select {
 			case <-ctx.Done():
-				return ctx.Err()
+				return lastResult, ctx.Err()
 			case <-time.After(delay):
 			}
 		}
 
-		lastErr = Deliver(ctx, endpoint, secret, envelope)
+		lastResult, lastErr = Deliver(ctx, endpoint, secret, envelope)
 		if lastErr == nil {
-			return nil
+			return lastResult, nil
 		}
 
 		slog.Warn("webhook delivery attempt failed",
 			"endpoint", endpoint,
 			"attempt", attempt+1,
 			"max_retries", maxRetries,
+			"status_code", lastResult.StatusCode,
 			"error", lastErr)
 	}
 
-	return fmt.Errorf("webhook delivery failed after %d attempts: %w", maxRetries, lastErr)
+	return lastResult, fmt.Errorf("webhook delivery failed after %d attempts: %w", maxRetries, lastErr)
+}
+
+// PerformChallenge sends a GET request to {endpoint}?challenge={token} and
+// verifies that the response body contains the token. This is the §12
+// challenge/response endpoint verification that must succeed before a webhook
+// subscription is activated (BUG-001).
+func PerformChallenge(ctx context.Context, endpoint, token string) error {
+	if err := validateEndpoint(endpoint); err != nil {
+		return err
+	}
+
+	u, err := url.Parse(endpoint)
+	if err != nil {
+		return fmt.Errorf("parsing endpoint for challenge: %w", err)
+	}
+
+	q := u.Query()
+	q.Set("challenge", token)
+	u.RawQuery = q.Encode()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+	if err != nil {
+		return fmt.Errorf("creating challenge request: %w", err)
+	}
+
+	resp, err := deliveryClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("sending challenge to %s: %w", endpoint, err)
+	}
+
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode >= 400 {
+		return fmt.Errorf("challenge to %s returned status %d", endpoint, resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseCaptureBytes))
+	if err != nil {
+		return fmt.Errorf("reading challenge response: %w", err)
+	}
+
+	// The webhook must echo the token back in the response body. Trim
+	// whitespace to allow trailing newlines.
+	if strings.TrimSpace(string(body)) != token {
+		return fmt.Errorf("challenge response mismatch: endpoint did not echo the challenge token")
+	}
+
+	return nil
 }

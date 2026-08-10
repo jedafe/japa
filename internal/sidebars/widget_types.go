@@ -430,3 +430,16 @@ func IsValidWidgetType(widgetType string) bool {
 	}
 	return false
 }
+
+// LookupWidgetType returns the registered WidgetType for the given type string,
+// or nil if the type is not registered. Used to populate the `slot` field on
+// resolved widgets so the frontend can split topbar/content slots without
+// re-deriving it from a hardcoded type set. Ref: Section 59 §6.
+func LookupWidgetType(widgetType string) *WidgetType {
+	for i := range widgetRegistry {
+		if widgetRegistry[i].Type == widgetType {
+			return &widgetRegistry[i]
+		}
+	}
+	return nil
+}

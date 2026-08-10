@@ -670,12 +670,15 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	worker.RegisterGDPRProcessor(gdprAdapter)
 
 	// Menus — Navigation menus with RBAC-gated items (ADR-054).
-	menusService := menus.NewService(database)
-	menusHandlers := menus.NewHandlers(menusService)
+	// Wired with the RBAC resolver so the public GET /menus/{slug} endpoint
+	// prunes items whose permission_node is not held by the authenticated
+	// user (ADR-054 "Menu item visibility rules").
+	menusService := menus.NewServiceWithPerms(database, rbacResolver)
+	menusHandlers := menus.NewHandlersWithPerms(menusService, rbacResolver)
 
 	// Sidebars — Sidebar Management System (Section 59, ADR-066).
 	// Replaces the deprecated pagebuilder sidebar approach.
-	sidebarService := sidebars.NewService(database, vkClient.Redis())
+	sidebarService := sidebars.NewServiceWithPerms(database, vkClient.Redis(), rbacResolver)
 	sidebarHandlers := sidebars.NewHandlers(sidebarService)
 
 	// Email Templates — Tenant-customizable transactional emails (ADR-055).
@@ -686,6 +689,12 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	redirectsService := redirects.NewService(database, vkClient.Redis())
 	redirectsService.SetEnqueuer(taskEnqueuer)
 	redirectsHandlers := redirects.NewHandlers(redirectsService)
+
+	// Redirect middleware (ADR-056) — resolves admin-managed URL redirects
+	// before the request reaches route handlers. Runs on the root router
+	// (after standard middleware + IP block) but before Tenant/Auth groups.
+	// Skips /api/, /health, /ready, and /seaweedfs/ paths.
+	r.Use(redirects.Middleware(redirectsService, tenantStore))
 
 	// Media subsystem (Section 34 — Media System).
 	mediaService := media.NewService(database)
@@ -766,6 +775,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	adminHandlers.SetValkey(vkClient.Redis())
 	adminHandlers.SetSettings(settingsService)
 	adminHandlers.SetGDPR(gdprService)
+	adminHandlers.SetOrgVerifier(orgService)
 
 	// Bot & Crawler Management subsystem (Section 43).
 	botStore := bots.NewStoreWithDB(database)
@@ -1000,13 +1010,17 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	adsSelfServeStore := adsselfserve.NewStore(database)
 	adsSelfServeService := adsselfserve.NewService(adsSelfServeStore, settingsService)
 	adsSelfServeService.SetEnqueuer(taskEnqueuer)
+	adsSelfServeService.SetNotifier(adsNotificationAdapter{svc: notificationService})
 	adsSelfServeHandlers := adsselfserve.NewHandlers(adsSelfServeService)
 
 	// Ref: japaconnect-engineering/sections/77-flutter-mobile-app.md (ADR-074)
 	// Mobile push device registration + admin push test.
 	devicesStore := devices.NewStore(database)
 	devicesService := devices.NewService(devicesStore, settingsService)
-	devicesService.SetEnqueuer(taskEnqueuer)
+	// Wire the FCM/APNs CompositeDispatcher. It reads credentials per-tenant
+	// from system_settings (hot-reloadable per Rule 3). When credentials are
+	// not configured, Dispatch returns a clear error per-token (§77).
+	devicesService.SetDispatcher(devices.NewCompositeDispatcher(settingsService))
 	devicesHandlers := devices.NewHandlers(devicesService)
 
 	// Register all v2 background-task processors with the worker. Without
@@ -1818,13 +1832,13 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// When the renderer failed to initialise (bad script path),
 			// register a 503 stub so the route is reachable but reports
 			// the service is unavailable instead of nil-dereferencing.
+			renderHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				writeError(w, http.StatusServiceUnavailable, "renderer_disabled", "Content rendering is temporarily unavailable")
+			})
 			if rendererHandlers != nil {
-				r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/content/render", rendererHandlers.Render)
-			} else {
-				r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/content/render", func(w http.ResponseWriter, r *http.Request) {
-					writeError(w, http.StatusServiceUnavailable, "renderer_disabled", "Content rendering is temporarily unavailable")
-				})
+				renderHandler = rendererHandlers.Render
 			}
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/content/render", renderHandler)
 
 			// Link preview routes (Section 15 — Link Preview Fetch, BUG-008 RBAC gate)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "link_preview.fetch")).Get("/link-preview", linkPreviewHandlers.Fetch)
@@ -2099,6 +2113,12 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			forumService.SetRBAC(rbacResolver)
 			forumService.SetPermCacheInvalidator(&forumPermCacheInvalidator{vk: vkClient.Redis()})
 			forumService.SetWebhookEmitter(&forumWebhookEmitter{svc: webhookService})
+			// Wire webhook event fan-out into the remaining spec-mandated services
+			// (Section 12). Each emitter is nil-safe (no-op when unset).
+			contentService.SetWebhookEmitter(webhookService)
+			reviewService.SetWebhookEmitter(webhookService)
+			paymentService.SetWebhookEmitter(webhookService)
+			orgService.SetWebhookEmitter(webhookService)
 			forumService.SetSpaceBroadcaster(&forumSpaceBroadcaster{hub: wsHub})
 			forumHandlers := forum.NewHandlers(forumService, contentService)
 			// Wire erased-mention redaction for GDPR/ADR-029 compliance.
@@ -2239,9 +2259,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Universal Ratings & Reviews routes — gated by feature.ratings_reviews (Section 29)
 			r.With(features.Gate(featureChecker, "feature.ratings_reviews")).Group(func(r chi.Router) {
 				// catalog: /reviews/:entity_type/:entity_id[/aggregate]; bare /reviews
-				// (reviewer-scoped list) kept as a documented extra.
+				// (reviewer-scoped list) kept as a documented extra. The bare
+				// /reviews route is NOT marked [public] in the catalog (it
+				// allows reviewer-scoped enumeration), so it requires auth.
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "reviews.create")).Post("/reviews/{entity_type}/{entity_id}", reviewHandlers.CreateReview)
-				r.Get("/reviews", reviewHandlers.ListReviews)
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/reviews", reviewHandlers.ListReviews)
 				r.Get("/reviews/{entity_type}/{entity_id}", reviewHandlers.ListReviews)
 				r.Get("/reviews/{entity_type}/{entity_id}/aggregate", reviewHandlers.GetAggregate)
 				r.Get("/reviews/{id}", reviewHandlers.GetReview)
@@ -2575,6 +2597,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Post("/admin/ads/campaigns/{id}/pause", adHandlers.PauseCampaign)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ad.campaign.manage")).
 				Post("/admin/ads/campaigns/{id}/end", adHandlers.EndCampaign)
+			// §61: Reject a pending-review self-serve campaign (admin moderation).
+			// Enqueues ads:refund_campaign_credits + ads:notify_campaign_status.
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ad.campaign.manage")).
+				Post("/admin/ads/campaigns/{id}/reject", adHandlers.RejectCampaign)
 			// Public ad serving and event tracking (catalog: /ads/serve, /ads/events —
 			// §8: reachable by guests, OptionalAuth so a signed-in user's frequency
 			// cap still applies; usergroup targeting itself is deferred to P5).
@@ -3120,9 +3146,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Catalog: PATCH /admin/webhooks/:id (P5.6 — Task 8)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "integrations.webhooks.manage")).
 				Patch("/admin/webhooks/{id}", webhookHandlers.UpdateWebhook)
-			// Catalog: POST /admin/webhooks/:id/verify (P5.6 — Task 8 — reuses TestWebhook)
+			// Catalog: POST /admin/webhooks/:id/verify (§12 challenge/response — BUG-001)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "integrations.webhooks.manage")).
-				Post("/admin/webhooks/{id}/verify", webhookHandlers.TestWebhook)
+				Post("/admin/webhooks/{id}/verify", webhookHandlers.VerifyWebhook)
 			// Catalog: POST /admin/webhooks/:id/deliveries/:delivery_id/retry (P5.6 — Task 8)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "integrations.webhooks.manage")).
 				Post("/admin/webhooks/{id}/deliveries/{delivery_id}/retry", webhookHandlers.RetryDelivery)
@@ -3136,25 +3162,27 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// to prevent form-spam. Ref: conventions/api-routes-catalog.md
 			r.With(features.Gate(featureChecker, "feature.newsletter"), mw.RateLimit(vkClient.Redis(), "form_submission")).
 				Post("/newsletter/subscribe", newsletterHandlers.Subscribe)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "newsletter.admin")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "newsletter.manage")).
 				Get("/admin/newsletter/subscribers", newsletterHandlers.ListSubscribers)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "newsletter.admin")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "newsletter.manage")).
 				Get("/admin/newsletter/subscribers/{id}", newsletterHandlers.GetSubscriber)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "newsletter.admin")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "newsletter.manage")).
 				Post("/admin/newsletter/subscribers", newsletterHandlers.CreateSubscriber)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "newsletter.admin")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "newsletter.manage")).
 				Delete("/admin/newsletter/subscribers/{id}", newsletterHandlers.DeleteSubscriber)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "newsletter.admin")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "newsletter.manage")).
+				Patch("/admin/newsletter/subscribers/{id}", newsletterHandlers.UpdateSubscriber)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "newsletter.manage")).
 				Get("/admin/newsletter/campaigns", newsletterHandlers.ListCampaigns)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "newsletter.admin")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "newsletter.manage")).
 				Get("/admin/newsletter/campaigns/{id}", newsletterHandlers.GetCampaign)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "newsletter.admin")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "newsletter.manage")).
 				Post("/admin/newsletter/campaigns", newsletterHandlers.CreateCampaign)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "newsletter.admin")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "newsletter.manage")).
 				Patch("/admin/newsletter/campaigns/{id}", newsletterHandlers.UpdateCampaign)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "newsletter.admin")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "newsletter.manage")).
 				Delete("/admin/newsletter/campaigns/{id}", newsletterHandlers.DeleteCampaign)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "newsletter.admin")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "newsletter.manage")).
 				Post("/admin/newsletter/campaigns/{id}/send", newsletterHandlers.HandleSendCampaign)
 
 			// ── Menus — Navigation (ADR-054) ───────────────────────────
@@ -3911,8 +3939,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Get("/admin/gdpr/deletion-requests", gdprHandlers.ListPendingDeletions)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "gdpr.deletions.view")).
 				Post("/admin/gdpr/deletion-requests/{id}/execute", gdprHandlers.ExecuteDeletion)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "gdpr.data_exports.view")).
-				Get("/admin/gdpr/exports", gdprHandlers.ListPendingDataExports)
+			// NOTE: GET /admin/gdpr/exports is registered earlier in the GDPR
+			// routes block (gdpr.data_exports.view). Do not re-register here.
 
 			// Task 21: Users admin moderation
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.moderation")).
@@ -4033,10 +4061,14 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).
 				Delete("/me/push-tokens/{id}", notificationHandlers.HandlePushUnsubscribe)
 
-			// Task 29: AI conversations
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).
+			// Task 29: AI conversations — gated by feature.japabot +
+			// ai.context.use RBAC, matching /ai/chat (Section 20: JapaBot
+			// conversational AI is gated by ai.context.* RBAC). Without
+			// these gates a user whose JapaBot access was revoked could
+			// still list/read their Honcho conversation history.
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.japabot"), rbac.RequirePermission(rbacResolver, "ai.context.use")).
 				Get("/ai/conversations", aiHandlers.HandleListConversations)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.japabot"), rbac.RequirePermission(rbacResolver, "ai.context.use")).
 				Get("/ai/conversations/{id}", aiHandlers.HandleGetConversation)
 
 
@@ -4090,19 +4122,19 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Section 63 — Jobs Board (ADR-081)
 			// Public browse + auth apply + org admin CRUD + admin moderation.
 			r.Get("/jobs", jobsHandlers.HandleFindJobs)
-			r.Get("/jobs/{id}", jobsHandlers.HandleJobDetail)
+			r.Get("/jobs/{slug}", jobsHandlers.HandleJobDetail)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "jobs.apply")).
 				Post("/jobs/{id}/apply", jobsHandlers.HandleApply)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "jobs.apply")).
 				Get("/me/jobs/applications", jobsHandlers.HandleMyApplications)
 			// Org-scoped employer routes (Section 63).
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "jobs.post")).
-				Get("/org/{org_id}/jobs", jobsHandlers.HandleListJobApplications)
+				Get("/org/{org_id}/jobs", jobsHandlers.HandleListOrgJobs)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "jobs.post")).
-				Post("/org/{org_id}/jobs", jobsHandlers.HandleListJobApplications)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "jobs.manage")).
+				Post("/org/{org_id}/jobs", jobsHandlers.HandleCreateJobListing)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "jobs.post")).
 				Get("/org/{org_id}/jobs/{id}/applications", jobsHandlers.HandleListJobApplications)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "jobs.manage")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "jobs.post")).
 				Patch("/org/{org_id}/jobs/{id}/applications/{app_id}", jobsHandlers.HandleUpdateApplicationStatus)
 			// Admin moderation (Section 63).
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "jobs.manage")).
@@ -4727,24 +4759,25 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 			// Section 77 — Mobile Push Devices (ADR-074)
 			// Device token registration for FCM/APNs push delivery.
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "devices.manage")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "push.receive")).
 				Post("/me/devices", devicesHandlers.HandleRegisterDevice)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "devices.manage")).
-				Delete("/me/devices/{id}", devicesHandlers.HandleDeregisterDevice)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "devices.manage")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "push.receive")).
+				Delete("/me/devices/{device_id}", devicesHandlers.HandleDeregisterDevice)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "push.receive")).
 				Get("/me/devices", devicesHandlers.HandleListDevices)
 			// Admin push test (ADR-074).
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "devices.admin")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "push.manage")).
 				Post("/admin/push/test", devicesHandlers.HandleAdminTestPush)
 
 			// Newsletter public routes (Section 62 — ADR-080).
 			// Unsubscribe via token (no auth) + subscriber preferences.
-			r.Get("/newsletter/unsubscribe", newsletterHandlers.HandleUnsubscribe)
-			r.Get("/newsletter/preferences", newsletterHandlers.HandleGetPreferences)
+			r.Delete("/newsletter/unsubscribe", newsletterHandlers.HandleUnsubscribe)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).
+				Get("/newsletter/preferences", newsletterHandlers.HandleGetPreferences)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).
 				Patch("/newsletter/preferences", newsletterHandlers.HandleUpdatePreferences)
 			// Admin newsletter stats (Section 62).
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "newsletter.admin")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "newsletter.manage")).
 				Get("/admin/newsletter/stats", newsletterHandlers.HandleAdminStats)
 
 			// Section 60 — Referral System (ADR-078) public + me routes.
@@ -4915,13 +4948,18 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Permission Nodes — list all registered permission nodes
 			r.Get("/permission-nodes", controlHandlers.ListPermissionNodes)
 
-			// Webhook Endpoints — super-admin view (wires existing webhook handlers)
+			// Webhook Endpoints — super-admin view (wires existing webhook handlers).
+			// The /control group is gated by control.panel.access (super-admin
+			// only); integrations.webhooks.manage is implicitly satisfied for
+			// super-admins and is not re-checked here (BUG-013: documented as
+			// intentional — control panel access supersedes per-feature RBAC).
 			r.Get("/webhooks", webhookHandlers.ListWebhooks)
 			r.Get("/webhooks/{id}", webhookHandlers.GetWebhook)
 			r.Post("/webhooks", webhookHandlers.CreateWebhook)
 			r.Patch("/webhooks/{id}", webhookHandlers.UpdateWebhook)
 			r.Delete("/webhooks/{id}", webhookHandlers.DeleteWebhook)
 			r.Post("/webhooks/{id}/test", webhookHandlers.TestWebhook)
+			r.Post("/webhooks/{id}/verify", webhookHandlers.VerifyWebhook)
 			r.Get("/webhooks/{id}/deliveries", webhookHandlers.ListDeliveries)
 			r.Post("/webhooks/{id}/deliveries/{delivery_id}/retry", webhookHandlers.RetryDelivery)
 			r.Get("/webhook-events", webhookHandlers.ListWebhookEvents)
@@ -5034,6 +5072,28 @@ func (a *walletPaymentAdapter) CreatePayment(
 // fire-and-forget per Rule 8.
 type commentNotificationAdapter struct {
 	svc *notifications.Service
+}
+
+// adsNotificationAdapter adapts notifications.Service.DispatchNotification to
+// the adsselfserve.Notifier interface. Campaign status notifications
+// (approved/rejected) are fire-and-forget per Rule 8.
+// Ref: japaconnect-engineering/sections/61-self-serve-ads.md (Asynq Tasks)
+type adsNotificationAdapter struct {
+	svc *notifications.Service
+}
+
+func (a adsNotificationAdapter) DispatchNotification(
+	ctx context.Context,
+	tenantID, recipientID pgtype.UUID,
+	nType, subjectTitle string,
+	actorID pgtype.UUID,
+	subjectType string,
+	subjectID pgtype.UUID,
+	subjectURL, actorName, actorAvatar string,
+) error {
+	_, err := a.svc.DispatchNotification(ctx, tenantID, recipientID, nType, subjectTitle,
+		actorID, subjectType, subjectID, subjectURL, actorName, actorAvatar)
+	return err
 }
 
 // tagSlugResolverAdapter adapts tags.Service.ResolveTagSlugMap to the
@@ -5165,7 +5225,7 @@ type walletCacheInvalidator struct {
 }
 
 func (w *walletCacheInvalidator) InvalidateCurrenciesCache(ctx context.Context, tenantID pgtype.UUID) error {
-	key := "jc:wallet:currencies:" + tenantID.String()
+	key := valkey.MustKey("wallet:currencies:%s", tenantID.String())
 	return w.vk.Del(ctx, key).Err()
 }
 

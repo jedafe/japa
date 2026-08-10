@@ -9,6 +9,7 @@ import (
 	"github.com/valkey-io/valkey-go/valkeycompat"
 
 	"github.com/jedafe/japa/internal/auth"
+	"github.com/jedafe/japa/internal/valkey"
 )
 
 // OperationType represents a restrictable user operation.
@@ -67,7 +68,7 @@ func OperationBanEnforcement(rdb valkeycompat.Cmdable,
 			}
 
 			userID := user.UserID.String()
-			cacheKey := "jc:restrictions:" + userID
+			cacheKey := valkey.MustKey("restrictions:%s", userID)
 
 			// Check Valkey cache for operation-specific restrictions.
 			if rdb != nil {

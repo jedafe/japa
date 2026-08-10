@@ -28,6 +28,7 @@ import (
 	"github.com/jedafe/japa/internal/rbac"
 	"github.com/jedafe/japa/internal/spam"
 	"github.com/jedafe/japa/internal/tenant"
+	"github.com/jedafe/japa/internal/valkey"
 	"github.com/jedafe/japa/internal/websocket"
 	"github.com/jedafe/japa/internal/worker"
 )
@@ -1164,17 +1165,25 @@ func (h *Handlers) QueueStats(w http.ResponseWriter, r *http.Request) {
 			})
 			continue
 		}
+		// Asynq's Processed counter resets daily and includes both
+		// succeeded and failed tasks. Completed (stored) is the number
+		// of tasks still in the completed state within retention — not
+		// a daily count. Use Processed-Failed for the daily success count.
+		completed24h := qi.Processed - qi.Failed
+		if completed24h < 0 {
+			completed24h = 0
+		}
 		queues = append(queues, queueInfo{
 			Name:         queueName,
 			Pending:      qi.Pending,
 			Active:       qi.Active,
-			Completed24H: qi.Completed,
+			Completed24H: completed24h,
 			Failed24H:    qi.Failed,
 			LatencyMs:    qi.Latency.Seconds() * 1000,
 		})
 		totalPending += qi.Pending
 		totalActive += qi.Active
-		totalCompleted += qi.Completed
+		totalCompleted += completed24h
 		totalFailed += qi.Failed
 		dlqDepth += qi.Archived
 	}
@@ -2221,12 +2230,12 @@ func (h *Handlers) GetAPIKeyAnalytics(w http.ResponseWriter, r *http.Request) {
 // Tenant-scoping (Rule 4 / §4.2 / §9) prevents one tenant's control panel from
 // seeing or mutating another tenant's custom scheduler entries.
 func cronCustomKey(ctx context.Context) string {
-	return "jc:cron:custom:" + tenant.IDFromContext(ctx).String()
+	return valkey.MustKey("cron:custom:%s", tenant.IDFromContext(ctx).String())
 }
 
 // cronPausedKey returns the tenant-scoped Valkey key for paused scheduler entries.
 func cronPausedKey(ctx context.Context) string {
-	return "jc:cron:paused:" + tenant.IDFromContext(ctx).String()
+	return valkey.MustKey("cron:paused:%s", tenant.IDFromContext(ctx).String())
 }
 
 // cronCustomEntry is the JSON shape stored per custom cron job in Valkey.
@@ -2730,7 +2739,7 @@ var supportedOAuthProviders = []map[string]string{
 }
 
 func oauthClientsKey(ctx context.Context) string {
-	return "jc:oauth_clients:" + tenant.IDFromContext(ctx).String()
+	return valkey.MustKey("oauth_clients:%s", tenant.IDFromContext(ctx).String())
 }
 
 func (h *Handlers) ListOAuthClients(w http.ResponseWriter, r *http.Request) {
@@ -3175,7 +3184,7 @@ var supportedBackupTargets = []map[string]string{
 }
 
 func backupConfigsKey(ctx context.Context) string {
-	return "jc:backup_configs:" + tenant.IDFromContext(ctx).String()
+	return valkey.MustKey("backup_configs:%s", tenant.IDFromContext(ctx).String())
 }
 
 func (h *Handlers) ListBackupConfigs(w http.ResponseWriter, r *http.Request) {

@@ -222,5 +222,5 @@ func (r *Renderer) cacheKey(tenantID, contentID pgtype.UUID, updatedAt pgtype.Ti
 	hash := sha256.Sum256([]byte(strconv.FormatInt(ts, 10)))
 	tsHash := hex.EncodeToString(hash[:])
 
-	return fmt.Sprintf("jc:render:%s:%s:%s", tenantID.String(), contentID.String(), tsHash)
+	return valkey.MustKey("render:%s:%s:%s", tenantID.String(), contentID.String(), tsHash)
 }

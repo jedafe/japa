@@ -17,6 +17,7 @@ import (
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/rbac"
+	"github.com/jedafe/japa/internal/valkey"
 	valkeycompat "github.com/valkey-io/valkey-go/valkeycompat"
 )
 
@@ -332,7 +333,7 @@ func (s *Service) BanUser(ctx context.Context, userID pgtype.UUID, reason string
 			slog.Error("ban user: failed to invalidate permission cache", "error", err, "user_id", userID.String())
 		}
 
-		if err := s.valkey.Del(ctx, "jc:ban:"+userID.String()).Err(); err != nil {
+		if err := s.valkey.Del(ctx, valkey.MustKey("ban:%s", userID.String())).Err(); err != nil {
 			slog.Error("ban user: failed to invalidate ban cache", "error", err, "user_id", userID.String())
 		}
 	}
