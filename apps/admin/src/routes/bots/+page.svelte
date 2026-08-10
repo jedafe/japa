@@ -25,12 +25,12 @@
 	const canManageBots = $derived(hasPermission('bots.admin'));
 
 	const botTypeLabels: Record<string, string> = {
-		search_engine: 'Search Engine',
-		ai_llm: 'AI / LLM',
-		social: 'Social',
-		monitoring: 'Monitoring',
-		scraper: 'Scraper',
-		unknown: 'Unknown'
+		search_engine: t('bots.type_search_engine', 'Search Engine'),
+		ai_llm: t('bots.type_ai_llm', 'AI / LLM'),
+		social: t('bots.type_social', 'Social'),
+		monitoring: t('bots.type_monitoring', 'Monitoring'),
+		scraper: t('bots.type_scraper', 'Scraper'),
+		unknown: t('bots.type_unknown', 'Unknown')
 	};
 
 	const policyClasses: Record<string, string> = {

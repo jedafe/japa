@@ -11,6 +11,7 @@
 	import { t } from "$lib/stores/i18n.svelte";
 	import { hasPermission } from "$lib/stores/permissions.svelte";
 	import { onMount } from "svelte";
+	import { pageFromUrl, pageSizeFromUrl, searchFromUrl, filterFromUrl, syncListStateToUrl } from "$lib/utils/url-sync.svelte";
 
 	type InstructorProfile = {
 		id: string;
@@ -32,11 +33,16 @@
 	let loading = $state(true);
 	let errorMessage = $state("");
 	let successMessage = $state("");
-	let searchQuery = $state("");
-	let filterValues = $state<Record<string, string>>({});
+	let searchQuery = $state(searchFromUrl());
+	const _initFilterValues: Record<string, string> = {};
+	{
+		const status = filterFromUrl("status");
+		if (status) _initFilterValues.status = status;
+	}
+	let filterValues = $state<Record<string, string>>(_initFilterValues);
 	let meta = $state<{ total: number; limit: number; offset: number }>({ total: 0, limit: 25, offset: 0 });
-	let currentPage = $state(0);
-	let pageSize = $state(25);
+	let currentPage = $state(pageFromUrl());
+	let pageSize = $state(pageSizeFromUrl(25));
 
 	let showApproveSlideOver = $state(false);
 	let showRejectModal = $state(false);
@@ -279,6 +285,21 @@
 
 	const totalPages = $derived(Math.max(1, Math.ceil(meta.total / pageSize)));
 
+	// Sync list state (page, search, filters) to URL for back/forward survival.
+	$effect(() => {
+		void currentPage;
+		void pageSize;
+		void searchQuery;
+		void filterValues;
+		syncListStateToUrl({
+			page: currentPage,
+			pageSize,
+			defaultPageSize: 25,
+			search: searchQuery,
+			filters: filterValues
+		});
+	});
+
 	onMount(load);
 </script>
 
@@ -363,7 +384,7 @@
 			<div>
 				<label for="approve-tier" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t("university.tier", "Tier")}</label>
 				<select id="approve-tier" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-surface)" bind:value={approveTier}>
-					{#each tierOptions as opt}
+					{#each tierOptions as opt (opt)}
 						<option value={opt.value}>{opt.label}</option>
 					{/each}
 				</select>
@@ -442,7 +463,7 @@
 			<div>
 				<label for="edit-tier" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t("university.tier", "Tier")}</label>
 				<select id="edit-tier" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-surface)" bind:value={editTier}>
-					{#each tierOptions as opt}
+					{#each tierOptions as opt (opt)}
 						<option value={opt.value}>{opt.label}</option>
 					{/each}
 				</select>

@@ -61,7 +61,7 @@
 				type="text"
 				bind:value={displayName}
 				required
-				placeholder="Your public instructor name"
+				placeholder={t('university.display_name_placeholder', 'Your public instructor name')}
 				class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-3 text-sm text-[var(--color-text)] placeholder:text-[var(--color-muted)] focus:border-[var(--color-primary)] focus:outline-none"
 			/>
 		</div>
@@ -75,7 +75,7 @@
 				id="headline"
 				type="text"
 				bind:value={headline}
-				placeholder="e.g. Senior Go Engineer & Course Creator"
+				placeholder={t('university.headline_placeholder', 'e.g. Senior Go Engineer & Course Creator')}
 				class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-3 text-sm text-[var(--color-text)] placeholder:text-[var(--color-muted)] focus:border-[var(--color-primary)] focus:outline-none"
 			/>
 		</div>
@@ -89,7 +89,7 @@
 				id="bio"
 				bind:value={bio}
 				rows="4"
-				placeholder="Tell us about your teaching experience and expertise…"
+				placeholder={t('university.bio_apply_placeholder', 'Tell us about your teaching experience and expertise…')}
 				class="w-full resize-none rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-3 text-sm text-[var(--color-text)] placeholder:text-[var(--color-muted)] focus:border-[var(--color-primary)] focus:outline-none"
 			></textarea>
 		</div>
@@ -103,7 +103,7 @@
 				id="application_note"
 				bind:value={applicationNote}
 				rows="3"
-				placeholder="Portfolio URL, areas of expertise, sample content links…"
+				placeholder={t('university.application_note_placeholder', 'Portfolio URL, areas of expertise, sample content links…')}
 				class="w-full resize-none rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-3 text-sm text-[var(--color-text)] placeholder:text-[var(--color-muted)] focus:border-[var(--color-primary)] focus:outline-none"
 			></textarea>
 		</div>

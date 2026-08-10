@@ -244,6 +244,217 @@ func (p *XiaomiProvider) Models() []ModelInfo {
 	}
 }
 
+// ---------------------------------------------------------------------------
+// Function Calling (Section 103 — AI Agent Executor)
+// ---------------------------------------------------------------------------
+
+// mimoToolDef is the OpenAI-compatible tools-array entry for MiMo.
+type mimoToolDef struct {
+	Type     string           `json:"type"` // "function"
+	Function mimoToolFunction `json:"function"`
+}
+
+// mimoToolFunction is the inner function definition.
+type mimoToolFunction struct {
+	Name        string         `json:"name"`
+	Description string         `json:"description"`
+	Parameters  map[string]any `json:"parameters"`
+}
+
+// mimoToolCall is a tool call in the assistant message response.
+type mimoToolCall struct {
+	ID       string           `json:"id"`
+	Type     string           `json:"type"`
+	Function mimoToolCallFunc `json:"function"`
+}
+
+// mimoToolCallFunc is the inner function payload of a tool call.
+type mimoToolCallFunc struct {
+	Name      string `json:"name"`
+	Arguments string `json:"arguments"`
+}
+
+// mimoToolsChatRequest is the chat completions request with tools support.
+type mimoToolsChatRequest struct {
+	Model       string         `json:"model"`
+	Messages    []mimoToolsMsg `json:"messages"`
+	Tools       []mimoToolDef  `json:"tools,omitempty"`
+	MaxTokens   int            `json:"max_tokens,omitempty"`
+	Temperature float64        `json:"temperature,omitempty"`
+	TopP        float64        `json:"top_p,omitempty"`
+	Stream      bool           `json:"stream"`
+}
+
+// mimoToolsMsg is a chat message supporting function-calling fields.
+type mimoToolsMsg struct {
+	Role       string         `json:"role"`
+	Content    string         `json:"content,omitempty"`
+	ToolCalls  []mimoToolCall `json:"tool_calls,omitempty"`
+	ToolCallID string         `json:"tool_call_id,omitempty"`
+	Name       string         `json:"name,omitempty"`
+}
+
+// mimoToolsChatResponse is the chat completions response with tool calls.
+type mimoToolsChatResponse struct {
+	ID      string            `json:"id"`
+	Choices []mimoToolsChoice `json:"choices"`
+	Model   string            `json:"model"`
+	Usage   mimoUsage         `json:"usage"`
+}
+
+// mimoToolsChoice is a single completion choice with tool-call support.
+type mimoToolsChoice struct {
+	FinishReason string       `json:"finish_reason"`
+	Index        int          `json:"index"`
+	Message      mimoToolsMsg `json:"message"`
+}
+
+// ChatWithTools dispatches a function-calling chat completion to the MiMo
+// API. MiMo is OpenAI-compatible, so the tools array and tool_calls response
+// follow the same wire format as openai.go. The only difference is auth
+// (api-key header instead of Bearer token).
+//
+// Ref: japaconnect-engineering/sections/103-ai-agent-executor.md
+func (p *XiaomiProvider) ChatWithTools(ctx context.Context, req ChatWithToolsRequest) (ChatWithToolsResponse, error) {
+	if p.apiKey == "" {
+		return ChatWithToolsResponse{}, errors.New("xiaomi: API key not configured")
+	}
+	if len(req.Messages) == 0 {
+		return ChatWithToolsResponse{}, errors.New("xiaomi: at least one message is required")
+	}
+
+	model := req.Model
+	if model == "" {
+		model = p.model
+	}
+
+	chatReq := mimoToolsChatRequest{
+		Model:       model,
+		Messages:    toMimoToolsMessages(req.Messages),
+		Tools:       toMimoToolDefs(req.Tools),
+		Temperature: req.Temperature,
+		MaxTokens:   req.MaxTokens,
+		Stream:      false,
+	}
+
+	body, err := json.Marshal(chatReq)
+	if err != nil {
+		return ChatWithToolsResponse{}, fmt.Errorf("xiaomi: marshaling tools request: %w", err)
+	}
+
+	endpoint := p.baseURL + "/chat/completions"
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
+	if err != nil {
+		return ChatWithToolsResponse{}, fmt.Errorf("xiaomi: creating tools request: %w", err)
+	}
+
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("api-key", p.apiKey)
+
+	httpResp, err := p.httpClient.Do(httpReq)
+	if err != nil {
+		return ChatWithToolsResponse{}, fmt.Errorf("xiaomi: tools request failed: %w", err)
+	}
+	defer func() { _ = httpResp.Body.Close() }()
+
+	respBody, err := io.ReadAll(httpResp.Body)
+	if err != nil {
+		return ChatWithToolsResponse{}, fmt.Errorf("xiaomi: reading tools response: %w", err)
+	}
+
+	if httpResp.StatusCode != http.StatusOK {
+		return ChatWithToolsResponse{}, fmt.Errorf("xiaomi: tools API error (status %d): %s", httpResp.StatusCode, truncate(string(respBody), 500))
+	}
+
+	var chatResp mimoToolsChatResponse
+	if err := json.Unmarshal(respBody, &chatResp); err != nil {
+		return ChatWithToolsResponse{}, fmt.Errorf("xiaomi: parsing tools response: %w", err)
+	}
+
+	result := ChatWithToolsResponse{
+		Model:       chatResp.Model,
+		ProviderRef: chatResp.ID,
+		Usage: TokenUsage{
+			PromptTokens:     chatResp.Usage.PromptTokens,
+			CompletionTokens: chatResp.Usage.CompletionTokens,
+			TotalTokens:      chatResp.Usage.TotalTokens,
+		},
+	}
+
+	if len(chatResp.Choices) > 0 {
+		choice := chatResp.Choices[0]
+		result.FinishReason = choice.FinishReason
+		result.Content = choice.Message.Content
+
+		for _, tc := range choice.Message.ToolCalls {
+			args := json.RawMessage(tc.Function.Arguments)
+			if len(args) == 0 || string(args) == "null" {
+				args = json.RawMessage("{}")
+			}
+			result.ToolCalls = append(result.ToolCalls, ToolCall{
+				ID:        tc.ID,
+				Name:      tc.Function.Name,
+				Arguments: args,
+			})
+		}
+	}
+
+	slog.Info(
+		"xiaomi: tools request completed",
+		"model", chatResp.Model,
+		"finish_reason", result.FinishReason,
+		"tool_calls", len(result.ToolCalls),
+		"prompt_tokens", result.Usage.PromptTokens,
+		"completion_tokens", result.Usage.CompletionTokens,
+	)
+
+	return result, nil
+}
+
+// toMimoToolsMessages converts unified ChatMessages to the MiMo wire format.
+func toMimoToolsMessages(msgs []ChatMessage) []mimoToolsMsg {
+	out := make([]mimoToolsMsg, 0, len(msgs))
+	for _, m := range msgs {
+		mm := mimoToolsMsg{
+			Role:       m.Role,
+			Content:    m.Content,
+			ToolCallID: m.ToolCallID,
+			Name:       m.Name,
+		}
+		for _, tc := range m.ToolCalls {
+			mm.ToolCalls = append(mm.ToolCalls, mimoToolCall{
+				ID:   tc.ID,
+				Type: "function",
+				Function: mimoToolCallFunc{
+					Name:      tc.Name,
+					Arguments: string(tc.Arguments),
+				},
+			})
+		}
+		out = append(out, mm)
+	}
+	return out
+}
+
+// toMimoToolDefs converts unified ToolDefinitions to the MiMo tools array.
+func toMimoToolDefs(tools []LLMToolDefinition) []mimoToolDef {
+	if len(tools) == 0 {
+		return nil
+	}
+	out := make([]mimoToolDef, 0, len(tools))
+	for _, t := range tools {
+		out = append(out, mimoToolDef{
+			Type: "function",
+			Function: mimoToolFunction{
+				Name:        t.Name,
+				Description: t.Description,
+				Parameters:  t.Parameters,
+			},
+		})
+	}
+	return out
+}
+
 // FetchModels queries the Xiaomi MiMo /v1/models endpoint to discover
 // available models at runtime. Xiaomi exposes an OpenAI-compatible models
 // endpoint, so this reuses the same parsing format.

@@ -670,7 +670,7 @@ loadPermissionNodes();
 	<div class="grid grid-cols-2 gap-4">
 		<div>
 			<label for="item-label" class="block text-sm font-medium" style="color: var(--color-foreground)">{t('menus.item_label', 'Label')}</label>
-			<input id="item-label" type="text" bind:value={itemLabel} class="mt-1 w-full rounded-lg border p-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" placeholder="Home" />
+			<input id="item-label" type="text" bind:value={itemLabel} class="mt-1 w-full rounded-lg border p-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" placeholder={t('menus.ph_home', 'Home')} />
 		</div>
 		<label class="block">
 			<span class="block text-sm font-medium" style="color: var(--color-foreground)">{t('menus.icon', 'Icon')}</span>
@@ -691,7 +691,7 @@ loadPermissionNodes();
 					class="w-full rounded-lg border p-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" placeholder="/" />
 				{#if urlDropdownOpen && urlSuggestions.length > 0}
 					<div class="absolute z-50 mt-1 max-h-48 w-full overflow-auto rounded-lg border shadow-lg" style="border-color: var(--color-border); background: var(--color-surface)">
-						{#each urlSuggestions.slice(0, 10) as suggestedUrl}
+						{#each urlSuggestions.slice(0, 10) as suggestedUrl (suggestedUrl)}
 							<button
 								type="button"
 								class="block w-full px-3 py-1.5 text-left text-sm hover:opacity-80"

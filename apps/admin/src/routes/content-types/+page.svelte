@@ -5,7 +5,7 @@
 	import { Select } from '$lib/components/ui/select';
 	import { contentAdminApi, settingsAdminApi } from '$lib/api';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
-	import { parseCardStyleValue, buildCardStyleValue, CARD_STYLE_OPTIONS, type ParsedCardStyle } from '$lib/feed/cardStyleValue';
+	import { parseCardStyleValue, buildCardStyleValue, CARD_STYLE_VALUES, type ParsedCardStyle } from '$lib/feed/cardStyleValue';
 	import { RefreshCw, Save, Undo2, Check, LayoutGrid } from 'lucide-svelte';
 
 	const canManage = $derived(hasPermission('admin.settings'));
@@ -27,8 +27,8 @@
 	);
 
 	const useDefaultOption = { value: '', label: t('content_types.use_default', 'Use default') };
-	const styleOptions = $derived(CARD_STYLE_OPTIONS);
-	const defaultStyleOptions = $derived(CARD_STYLE_OPTIONS);
+	const styleOptions = $derived(CARD_STYLE_VALUES.map((v) => ({ value: v, label: t(`content_types.style_${v}`, v) })));
+	const defaultStyleOptions = $derived(CARD_STYLE_VALUES.map((v) => ({ value: v, label: t(`content_types.style_${v}`, v) })));
 
 	async function load() {
 		loading = true;

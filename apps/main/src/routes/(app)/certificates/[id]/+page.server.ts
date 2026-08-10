@@ -27,13 +27,17 @@ export const load: PageServerLoad = async (event) => {
 	}
 
 	// Best-effort: resolve the recipient's public profile for the header.
+	// The cert API response includes recipient_username (from the joined
+	// users table) — use it to fetch /users/{username}, which is the
+	// canonical public profile route. The /users/{id} route does not exist.
 	let recipient: PublicUser | null = null;
-	try {
-		recipient = await apiGet<PublicUser>(ctx, `/users/${cert.user_id}`);
-	} catch {
-		// The /users/{id} endpoint may not exist; /users/{username} is the
-		// canonical one. Leave recipient null — the page renders without it.
-		recipient = null;
+	if (cert.recipient_username) {
+		try {
+			recipient = await apiGet<PublicUser>(ctx, `/users/${cert.recipient_username}`);
+		} catch {
+			// Profile may be deactivated or deleted — render without it.
+			recipient = null;
+		}
 	}
 
 	return { cert, recipient };

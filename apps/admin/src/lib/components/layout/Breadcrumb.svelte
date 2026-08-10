@@ -186,7 +186,7 @@
 
 {#if items.length > 1}
 	<nav class="mb-4 flex items-center gap-1 text-sm" aria-label="Breadcrumb">
-		{#each items as item, i}
+		{#each items as item, i (i)}
 			{#if i > 0}
 				<ChevronRight class="h-3 w-3" style="color: var(--color-muted)" />
 			{/if}

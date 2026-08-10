@@ -527,7 +527,7 @@
 			<nav class="hidden w-56 shrink-0 md:block">
 				<div class="sticky top-4">
 					<div class="space-y-0.5">
-						{#each tabs as tab}
+						{#each tabs as tab (tab)}
 							<button
 								class="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors {activeTab === tab.value
 									? 'font-medium'
@@ -693,7 +693,7 @@
 									{:else if setting.type === 'multiselect'}
 										{@const selectedValues = Array.isArray(setting.value) ? setting.value : (typeof setting.value === 'string' && setting.value ? setting.value.split(',').map((v: string) => v.trim()) : [])}
 										<div class="flex flex-wrap gap-2">
-											{#each (setting.options ?? []) as option}
+											{#each (setting.options ?? []) as option (option)}
 												<button
 													type="button"
 													class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium transition-colors"

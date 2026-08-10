@@ -93,7 +93,7 @@
 	/>
 	{#if showDropdown && suggestions.length > 0}
 		<ul class="absolute z-[60] mt-1 max-h-48 w-full overflow-auto rounded-lg border shadow-lg" style="border-color: var(--color-border); background: var(--color-surface)">
-			{#each suggestions as user}
+			{#each suggestions as user (user)}
 				<li>
 					<button
 						type="button"

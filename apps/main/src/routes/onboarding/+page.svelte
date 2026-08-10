@@ -3,9 +3,9 @@
 	import { goto } from '$app/navigation';
 	import { api } from '$lib/api/client';
 	import { t } from '$lib/i18n';
-	import { Check, ChevronRight, Sparkles, MapPin } from 'lucide-svelte';
+	import { Check, ChevronRight, Sparkles, MapPin, Trophy, Heart } from 'lucide-svelte';
 	import type { PageData } from './$types';
-	import type { GeoCity, GeoState, OnboardingRecommendation, TagSuggestion } from '$lib/types';
+	import type { GeoCity, GeoState, OnboardingRecommendation, TagSuggestion, AchievementMilestoneType } from '$lib/types';
 
 	let { data }: { data: PageData } = $props();
 
@@ -182,6 +182,12 @@
 			error = t('onboarding.error', 'Something went wrong. Please try again.');
 		}
 		saving = false;
+	}
+
+	// §89 Achievement Feed preview — milestone label helper for Step 5.
+	function milestoneLabel(m?: string) {
+		if (!m) return '';
+		return t(`achievements.type_${m}`, m.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()));
 	}
 </script>
 
@@ -368,6 +374,55 @@
 					<h1 class="mb-2 text-2xl font-bold text-[var(--color-text)]">{t('onboarding.step5_title', "You're all set!")}</h1>
 					<p class="mb-6 text-sm text-[var(--color-text-subtle)]">{t('onboarding.step5_body', 'Your feed is ready. Explore stories, join discussions, and connect with the diaspora community.')}</p>
 				</div>
+
+				<!-- §89 Community Achievement Feed — social proof preview.
+				     Shows the latest 4 achievements from the community so new
+				     registrants see real wins before they land on the main app.
+				     Hidden when the feature is disabled or no achievements exist. -->
+				{#if data.achievements.length > 0}
+					<div class="mt-8 border-t border-[var(--color-border)] pt-6">
+						<h2 class="mb-4 flex items-center justify-center gap-2 text-sm font-semibold text-[var(--color-text)]">
+							<Trophy size={16} class="text-[var(--color-primary)]" />
+							{t('onboarding.achievements_preview_heading', 'Recent wins from the community')}
+						</h2>
+						<div class="grid gap-3 sm:grid-cols-2">
+							{#each data.achievements as a (a.id)}
+								<a
+									href={`/achievements/${a.slug}`}
+									class="group rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3 transition-colors hover:border-[var(--color-primary)] hover:bg-[var(--color-surface-subtle)]"
+								>
+									<p class="line-clamp-1 text-sm font-medium text-[var(--color-text)]">{a.title}</p>
+									<div class="mt-1.5 flex items-center gap-2 text-xs text-[var(--color-text-subtle)]">
+										{#if a.milestone_type}
+											<span class="inline-flex items-center gap-0.5">
+												<Trophy size={11} class="text-[var(--color-primary)]" />
+												{milestoneLabel(a.milestone_type)}
+											</span>
+										{/if}
+										{#if a.destination_space_name}
+											<span class="inline-flex items-center gap-0.5">
+												<MapPin size={11} />
+												{a.destination_space_name}
+											</span>
+										{/if}
+										{#if a.reaction_count > 0}
+											<span class="inline-flex items-center gap-0.5">
+												<Heart size={11} class="text-[var(--color-primary)]" fill="currentColor" />
+												{a.reaction_count}
+											</span>
+										{/if}
+									</div>
+								</a>
+							{/each}
+						</div>
+						<a
+							href="/achievements"
+							class="mt-4 block text-center text-xs font-medium text-[var(--color-primary)] hover:underline"
+						>
+							{t('onboarding.achievements_preview_view_all', 'See more achievements →')}
+						</a>
+					</div>
+				{/if}
 			{/if}
 
 			<!-- Error -->

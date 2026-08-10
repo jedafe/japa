@@ -167,7 +167,7 @@
 						required
 					>
 						<option value="">{t("spaces.select_type", "Select a type")}</option>
-						{#each spaceTypes as st}
+						{#each spaceTypes as st (st)}
 							<option value={st.id}>{st.name}</option>
 						{/each}
 					</select>
@@ -183,7 +183,7 @@
 						bind:value={level}
 						required
 					>
-						{#each levels as l}
+						{#each levels as l (l)}
 							<option value={l.value}>{l.label}</option>
 						{/each}
 					</select>

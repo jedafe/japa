@@ -159,7 +159,20 @@ func (s *Service) RejectCampaign(ctx context.Context, id, tenantID pgtype.UUID) 
 }
 
 // PauseCampaign pauses an active campaign.
+// Only campaigns in 'active' status can be paused.
 func (s *Service) PauseCampaign(ctx context.Context, id, tenantID pgtype.UUID) (AdCampaign, error) {
+	campaign, err := s.store.Queries().GetAdCampaignByID(ctx, gen.GetAdCampaignByIDParams{
+		ID:       id,
+		TenantID: tenantID,
+	})
+	if err != nil {
+		return AdCampaign{}, err
+	}
+
+	if campaign.Status != CampaignStatusActive {
+		return AdCampaign{}, fmt.Errorf("campaign cannot be paused from status: %s", campaign.Status)
+	}
+
 	return s.store.Queries().UpdateAdCampaignStatus(ctx, gen.UpdateAdCampaignStatusParams{
 		Status:   CampaignStatusPaused,
 		ID:       id,
@@ -168,7 +181,20 @@ func (s *Service) PauseCampaign(ctx context.Context, id, tenantID pgtype.UUID) (
 }
 
 // EndCampaign permanently ends a campaign.
+// Only campaigns in 'active' or 'paused' status can be ended.
 func (s *Service) EndCampaign(ctx context.Context, id, tenantID pgtype.UUID) (AdCampaign, error) {
+	campaign, err := s.store.Queries().GetAdCampaignByID(ctx, gen.GetAdCampaignByIDParams{
+		ID:       id,
+		TenantID: tenantID,
+	})
+	if err != nil {
+		return AdCampaign{}, err
+	}
+
+	if campaign.Status != CampaignStatusActive && campaign.Status != CampaignStatusPaused {
+		return AdCampaign{}, fmt.Errorf("campaign cannot be ended from status: %s", campaign.Status)
+	}
+
 	return s.store.Queries().UpdateAdCampaignStatus(ctx, gen.UpdateAdCampaignStatusParams{
 		Status:   CampaignStatusEnded,
 		ID:       id,
@@ -269,9 +295,9 @@ type IngestAdEventInput struct {
 	OccurredAt time.Time
 }
 
-// IngestAdEvents records a batch of ad events asynchronously.
-// This should be called from a background worker, not synchronously on every
-// page view.
+// IngestAdEvents records a batch of ad events. This should be called from a
+// background worker, not synchronously on every page view. Guest events
+// (empty UserID) are supported — user_id is nullable in ad_events.
 func (s *Service) IngestAdEvents(ctx context.Context, tenantID pgtype.UUID, events []IngestAdEventInput) (int, error) {
 	if len(events) == 0 {
 		return 0, nil
@@ -289,9 +315,12 @@ func (s *Service) IngestAdEvents(ctx context.Context, tenantID pgtype.UUID, even
 			continue
 		}
 
+		// user_id is nullable — skip scan for empty strings (guest events).
 		var userID pgtype.UUID
-		if err := userID.Scan(event.UserID); err != nil {
-			continue
+		if event.UserID != "" {
+			if err := userID.Scan(event.UserID); err != nil {
+				continue
+			}
 		}
 
 		occurredAt := pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true}
@@ -326,13 +355,11 @@ func (s *Service) ListSlotTypes(ctx context.Context, tenantID pgtype.UUID, limit
 }
 
 // AdSlotTypeInput holds parameters for creating/updating a slot type.
+// Only slot_name and description are writable — ad_slot_types has no
+// slug/max_width/max_height/format columns (migration 000024).
 type AdSlotTypeInput struct {
 	Name        string `json:"name"`
-	Slug        string `json:"slug"`
 	Description string `json:"description"`
-	MaxWidth    int    `json:"max_width"`
-	MaxHeight   int    `json:"max_height"`
-	Format      string `json:"format"`
 }
 
 // CreateSlotType creates a new ad slot type.
@@ -345,9 +372,9 @@ func (s *Service) CreateSlotType(ctx context.Context, tenantID pgtype.UUID, inpu
 	})
 }
 
-// UpdateSlotType updates an existing ad slot type.
+// UpdateSlotType updates an existing ad slot type's name and description.
 func (s *Service) UpdateSlotType(ctx context.Context, id, tenantID pgtype.UUID, input AdSlotTypeInput) (AdSlotType, error) {
-	return s.store.updateAdSlotType(ctx, id, tenantID, input.Name, input.Slug, input.Description, input.MaxWidth, input.MaxHeight, input.Format)
+	return s.store.updateAdSlotType(ctx, id, tenantID, input.Name, input.Description)
 }
 
 // DeleteSlotType deletes an ad slot type.
@@ -600,11 +627,10 @@ func (s *Service) GetAdNetwork(ctx context.Context, tenantID, id pgtype.UUID) (A
 	return s.store.getAdNetworkByID(ctx, id, tenantID)
 }
 
-func (s *Service) ListAdNetworks(ctx context.Context, tenantID pgtype.UUID, page, pageSize int32) ([]AdNetwork, error) {
+func (s *Service) ListAdNetworks(ctx context.Context, tenantID pgtype.UUID, pageSize, offset int32) ([]AdNetwork, error) {
 	if pageSize <= 0 {
 		pageSize = 20
 	}
-	offset := (page - 1) * pageSize
 	if offset < 0 {
 		offset = 0
 	}
@@ -679,11 +705,11 @@ func (s *Service) GetAdNetworkDTO(ctx context.Context, tenantID, id pgtype.UUID)
 }
 
 // ListAdNetworkDTOs returns ad networks as safe DTOs (masked keys).
-func (s *Service) ListAdNetworkDTOs(ctx context.Context, tenantID pgtype.UUID, page, pageSize int32) ([]AdNetworkDTO, int32, error) {
+// pageSize and offset are the pagination parameters (offset-based).
+func (s *Service) ListAdNetworkDTOs(ctx context.Context, tenantID pgtype.UUID, pageSize, offset int32) ([]AdNetworkDTO, int32, error) {
 	if pageSize <= 0 {
 		pageSize = 20
 	}
-	offset := (page - 1) * pageSize
 	if offset < 0 {
 		offset = 0
 	}

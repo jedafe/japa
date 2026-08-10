@@ -244,14 +244,14 @@
 
 			<div>
 				<label for="ad-name" class="mb-1 block text-sm font-medium">{t('ads.campaign_name', 'Campaign Name')} *</label>
-				<input id="ad-name" type="text" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-background)" bind:value={name} placeholder="Summer Travel Promo" />
+				<input id="ad-name" type="text" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-background)" bind:value={name} placeholder={t('app.ads.new.ph_summer_travel_promo', 'Summer Travel Promo')} />
 			</div>
 
 			<div>
 				<label for="ad-slot" class="mb-1 block text-sm font-medium">{t('ads.slot_type', 'Slot Type')} *</label>
 				<select id="ad-slot" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-background)" bind:value={slotTypeName}>
 					<option value="">{t('ads.select_slot', 'Select a slot type...')}</option>
-					{#each slotTypes as slot}
+					{#each slotTypes as slot (slot)}
 						<option value={slot.slot_name}>{slot.slot_name}{#if slot.max_display_per_page} ({slot.max_display_per_page}/page){/if}</option>
 					{/each}
 				</select>
@@ -269,7 +269,7 @@
 
 			<div>
 				<label for="ad-headline" class="mb-1 block text-sm font-medium">{t('ads.headline', 'Headline')} *</label>
-				<input id="ad-headline" type="text" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-background)" bind:value={contentHeadline} placeholder="Discover Nigeria" />
+				<input id="ad-headline" type="text" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-background)" bind:value={contentHeadline} placeholder={t('app.ads.new.ph_discover_nigeria', 'Discover Nigeria')} />
 			</div>
 
 			<!-- Body with mode tabs: Text / HTML / Image -->
@@ -320,12 +320,12 @@
 					</div>
 				</div>
 				{#if contentMode === 'text'}
-					<textarea id="ad-body" rows="3" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-background)" bind:value={contentBody} placeholder="Explore the vibrant culture and landscapes..."></textarea>
+					<textarea id="ad-body" rows="3" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-background)" bind:value={contentBody} placeholder={t('app.ads.new.ph_explore_the_vibrant_culture_and', 'Explore the vibrant culture and landscapes...')}></textarea>
 				{:else if contentMode === 'html'}
 					<textarea id="ad-body-html" rows="5" class="w-full rounded-md border px-3 py-2 font-mono text-sm" style="border-color: var(--color-border); background-color: var(--color-background)" bind:value={contentHtml} placeholder="<p>Write <strong>HTML</strong> content here...</p>"></textarea>
 					<p class="mt-1 text-xs" style="color: var(--color-muted)">{t('ads.html_helper', 'Raw HTML — will be sanitized on render')}</p>
 				{:else if contentMode === 'markdown'}
-					<textarea id="ad-body-md" rows="5" class="w-full rounded-md border px-3 py-2 font-mono text-sm" style="border-color: var(--color-border); background-color: var(--color-background)" bind:value={contentMarkdown} placeholder="**Bold** and *italic* markdown content..."></textarea>
+					<textarea id="ad-body-md" rows="5" class="w-full rounded-md border px-3 py-2 font-mono text-sm" style="border-color: var(--color-border); background-color: var(--color-background)" bind:value={contentMarkdown} placeholder={t('app.ads.new.ph_bold_and_italic_markdown_content', '**Bold** and *italic* markdown content...')}></textarea>
 					<p class="mt-1 text-xs" style="color: var(--color-muted)">{t('ads.markdown_helper', 'Markdown — rendered to HTML on display')}</p>
 				{:else if contentMode === 'image'}
 					<!-- Image mode: pick an image from the media library -->
@@ -385,7 +385,7 @@
 
 			<div>
 				<label for="ad-cta" class="mb-1 block text-sm font-medium">{t('ads.cta', 'Call to Action')}</label>
-				<input id="ad-cta" type="text" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-background)" bind:value={contentCta} placeholder="Learn More" />
+				<input id="ad-cta" type="text" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-background)" bind:value={contentCta} placeholder={t('app.ads.new.ph_learn_more', 'Learn More')} />
 			</div>
 		</div>
 		<!-- Budget & Schedule -->
@@ -427,12 +427,12 @@
 			<div>
 				<label for="ad-geo-input" class="mb-1 block text-sm font-medium">{t('ads.target_countries', 'Target Countries (ISO codes)')}</label>
 				<div class="flex gap-2">
-					<input id="ad-geo-input" type="text" class="flex-1 rounded-md border px-3 py-2 text-sm font-mono uppercase" style="border-color: var(--color-border); background-color: var(--color-background)" placeholder="NG" bind:value={geoInput} onkeydown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addGeoCode(); } }} />
+					<input id="ad-geo-input" type="text" class="flex-1 rounded-md border px-3 py-2 text-sm font-mono uppercase" style="border-color: var(--color-border); background-color: var(--color-background)" placeholder={t('app.ads.new.ph_ng', 'NG')} bind:value={geoInput} onkeydown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addGeoCode(); } }} />
 					<Button variant="outline" size="sm" onclick={addGeoCode}>{t('common.add', 'Add')}</Button>
 				</div>
 				{#if targetGeo.length > 0}
 					<div class="mt-2 flex flex-wrap gap-2">
-						{#each targetGeo as code}
+						{#each targetGeo as code (code)}
 							<span class="inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-medium" style="background-color: var(--color-primary); color: white">
 								{code}
 								<button onclick={() => removeGeoCode(code)} class="hover:opacity-70" aria-label={t('common.remove', 'Remove')}>×</button>
@@ -442,7 +442,7 @@
 				{/if}
 				{#if countries.length > 0}
 					<div class="mt-2 flex flex-wrap gap-1">
-						{#each countries.slice(0, 20) as c}
+						{#each countries.slice(0, 20) as c (c)}
 								{#if c.geo_code}
 							<button class="rounded px-2 py-0.5 text-xs hover:opacity-70" style="background-color: var(--color-muted); color: var(--color-background)" onclick={() => { const code = c.geo_code!.toUpperCase(); if (!targetGeo.includes(code)) targetGeo = [...targetGeo, code]; }}>
 								{c.name} ({c.geo_code})

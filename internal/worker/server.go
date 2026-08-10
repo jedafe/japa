@@ -148,6 +148,12 @@ func NewScheduler(cfg *Config) *asynq.Scheduler {
 	// Ref: japaconnect-engineering/sections/76-participation-orchestration.md
 	schedule("0 * * * *", TypePersonaRunActivity, 1*time.Hour)
 
+	// Hourly anonymous assessment result cleanup (§71, ADR-071 §5).
+	// Deletes assessment_results where user_id IS NULL and created_at is
+	// older than 24 hours. Anonymous results are persisted temporarily for
+	// the async polling architecture and cleaned up periodically.
+	schedule("30 * * * *", TypeAssessmentCleanupAnonymous, 1*time.Hour)
+
 	return scheduler
 }
 

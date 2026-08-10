@@ -152,6 +152,7 @@ var taskTier = func() map[string]string {
 		TypeUniversityNotifyInstructorApproved, TypeUniversityNotifyCourseApproved,
 		// V2 default-tier tasks (§§60-76)
 		TypeAssessmentScoreSubmission,
+		TypeAssessmentCleanupAnonymous,
 		TypeStudioRunBatch,
 		TypePersonaRunActivity,
 		TypePersonaDispatchAction,

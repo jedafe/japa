@@ -7,6 +7,8 @@
 	import { onMount, onDestroy } from 'svelte';
 	import { impersonationApi } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
+	import { restoreSession } from '$lib/stores/session.svelte';
+	import { goto } from '$app/navigation';
 	import { LogOut, ShieldAlert } from 'lucide-svelte';
 
 	type Status = {
@@ -38,11 +40,16 @@
 		try {
 			await impersonationApi.end();
 			status = { active: false, target_user_id: null, expires_at: null };
-			// Reload to admin root so the admin returns to their own context
-			window.location.href = '/';
+			// Restore the admin's own session in-place (re-fetches /me +
+			// /me/permissions) then navigate to admin root. invalidateAll
+			// triggers the layout's reactive dependencies so the permission-
+			// gated UI re-evaluates without a full page reload.
+			await restoreSession();
+			await goto('/', { invalidateAll: true });
 		} catch {
-			// If end fails, reload anyway to reset state
-			window.location.href = '/';
+			// If end fails, restore session and navigate anyway to reset state
+			await restoreSession();
+			await goto('/', { invalidateAll: true });
 		} finally {
 			ending = false;
 		}

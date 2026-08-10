@@ -321,7 +321,7 @@
 	{#if statusTarget}
 		<p class="mb-3 text-sm" style="color: var(--color-foreground)">{t("universities.statusFor", "Status for")} <strong>{statusTarget.name}</strong></p>
 		<div class="space-y-2">
-			{#each ["draft", "published", "archived"] as s}
+			{#each ["draft", "published", "archived"] as s (s)}
 				<label class="flex items-center gap-2 text-sm" style="color: var(--color-foreground)">
 					<input type="radio" name="status" value={s} bind:group={formStatus} />
 					{s}

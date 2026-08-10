@@ -405,12 +405,12 @@
 	
 	{#if loading}
 		<div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-			{#each Array(6) as _}
+			{#each Array(6) as _, i (i)}
 				<CardSkeleton />
 			{/each}
 		</div>
 		<div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
-			{#each Array(2) as _}
+			{#each Array(2) as _, i (i)}
 				<Card>
 					<CardHeader>
 						<div class="h-4 w-32 animate-pulse rounded" style="background: var(--color-surface)"></div>
@@ -424,7 +424,7 @@
 	{:else if activeTab === "overview"}
 		<!-- Stats Grid -->
 		<div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-			{#each overviewCards as card}
+			{#each overviewCards as card (card)}
 				<StatCard label={card.label} value={card.value} delta={card.change} />
 			{/each}
 		</div>
@@ -699,7 +699,7 @@
 
 		{#if advancedLoading}
 			<div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
-				{#each Array(4) as _}
+				{#each Array(4) as _, i (i)}
 					<CardSkeleton />
 				{/each}
 			</div>

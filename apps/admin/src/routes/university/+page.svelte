@@ -175,7 +175,7 @@
 {/if}
 
 <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-	{#each cards as card}
+	{#each cards as card (card)}
 		{#if canSee(card.permission)}
 			<a
 				href={card.href}

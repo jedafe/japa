@@ -278,7 +278,7 @@
 					{/if}
 					{#if showDropdown && suggestions.length > 0}
 						<ul class="absolute z-[60] mt-1 max-h-64 w-full overflow-auto rounded-lg border shadow-lg" style="border-color: var(--color-border); background: var(--color-surface)">
-							{#each suggestions as item}
+							{#each suggestions as item (item)}
 								<li>
 									<button
 										type="button"
@@ -374,7 +374,7 @@
 					</div>
 				{:else}
 					<ul class="space-y-2">
-						{#each result.issues as issue}
+						{#each result.issues as issue (issue)}
 							<li class="flex items-start gap-2 text-sm" style="color: var(--color-foreground)">
 								<AlertTriangle class="mt-0.5 h-4 w-4 shrink-0" style="color: var(--color-warning)" />
 								<span class="font-mono text-xs">{issue}</span>
@@ -392,7 +392,7 @@
 					{t("seo.metadata_fields", "Metadata Fields")}
 				</h3>
 				<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
-					{#each META_FIELDS as field}
+					{#each META_FIELDS as field (field)}
 						{@const value = getField((result as unknown as Record<string, string>)[field.key])}
 						{@const present = value.length > 0}
 						<div class="rounded-lg border p-3" style="border-color: var(--color-border); background: var(--color-background)">

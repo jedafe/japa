@@ -232,7 +232,7 @@
 						<TagInput
 							options={availableSpaces}
 							bind:value={selectedSpaces}
-							placeholder="Search spaces to promote..."
+							placeholder={t('onboarding.ph_search_spaces_to_promote', 'Search spaces to promote...')}
 							disabled={!canManage}
 							id="promoted-spaces"
 						/>
@@ -247,7 +247,7 @@
 						<TagInput
 							options={availableUsers}
 							bind:value={selectedUsers}
-							placeholder="Search users to promote..."
+							placeholder={t('onboarding.ph_search_users_to_promote', 'Search users to promote...')}
 							disabled={!canManage}
 							id="promoted-users"
 						/>
@@ -262,7 +262,7 @@
 						<TagInput
 							options={availableTags}
 							bind:value={selectedTags}
-							placeholder="Search tags to promote..."
+							placeholder={t('onboarding.ph_search_tags_to_promote', 'Search tags to promote...')}
 							disabled={!canManage}
 							id="promoted-tags"
 						/>

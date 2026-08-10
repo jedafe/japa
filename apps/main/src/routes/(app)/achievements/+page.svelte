@@ -19,7 +19,8 @@
 		MapPin,
 		Cake,
 		BadgeCheck,
-		Sparkles
+		Sparkles,
+		Heart
 	} from 'lucide-svelte';
 	import type { Achievement, AchievementMilestoneType } from '$lib/types';
 	import type { PageData } from './$types';
@@ -264,6 +265,13 @@
 							{/if}
 							<span>·</span>
 							<span>{relativeTime(item.created_at, new Date(), i18n.locale)}</span>
+							{#if item.reaction_count > 0}
+								<span>·</span>
+								<span class="inline-flex items-center gap-0.5" title={t('achievements.reactions', 'Reactions')}>
+									<Heart size={12} class="text-[var(--color-primary)]" fill="currentColor" />
+									{item.reaction_count}
+								</span>
+							{/if}
 						</div>
 					</a>
 				{/each}

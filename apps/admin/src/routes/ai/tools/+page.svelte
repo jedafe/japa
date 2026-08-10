@@ -238,7 +238,7 @@
 				<input
 					id="tool-perm"
 					type="text"
-					placeholder="e.g. ai.generate"
+					placeholder={t('ai.tools.ph_eg_aigenerate', 'e.g. ai.generate')}
 					class="w-full rounded-md border px-3 py-2 text-sm"
 					style="border-color: var(--color-border); background-color: var(--color-background)"
 					bind:value={editingTool.required_permission}

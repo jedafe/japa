@@ -29,6 +29,14 @@ type Provider interface {
 	Name() string
 	// Send dispatches a request to the AI backend and returns the response.
 	Send(ctx context.Context, req Request) (Response, error)
+	// ChatWithTools dispatches a function-calling chat completion. It accepts
+	// tool definitions and the full conversation history (including prior tool
+	// results) and returns either a final text answer or one or more tool
+	// invocations. Providers that do not support function calling (e.g.
+	// agent-based providers) return ErrFunctionCallingUnsupported.
+	//
+	// Ref: japaconnect-engineering/sections/103-ai-agent-executor.md
+	ChatWithTools(ctx context.Context, req ChatWithToolsRequest) (ChatWithToolsResponse, error)
 	// VerifyWebhookSignature validates an incoming webhook callback.
 	VerifyWebhookSignature(payload []byte, sig string) error
 	// Models returns the model ids this provider serves, for the admin

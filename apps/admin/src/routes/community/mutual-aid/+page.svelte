@@ -152,7 +152,7 @@
 				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
 				bind:value={newStatus}
 			>
-				{#each statusOptions as opt}
+				{#each statusOptions as opt (opt)}
 					<option value={opt.value}>{opt.label}</option>
 				{/each}
 			</select>

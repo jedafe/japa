@@ -238,7 +238,7 @@
 	<div class="space-y-3">
 		<div>
 			<label for="remittance-name" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('remittance.name', 'Name')}</label>
-			<input id="remittance-name" type="text" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={newProvider.name} placeholder="Wise" />
+			<input id="remittance-name" type="text" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={newProvider.name} placeholder={t('app.remittance.ph_wise', 'Wise')} />
 		</div>
 		<div>
 			<label for="remittance-slug" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('remittance.slug', 'Slug')}</label>

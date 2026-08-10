@@ -929,7 +929,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Ref: japaconnect-engineering/sections/88-ask-an-expat.md (ADR-096)
 	amaStore := ama.NewStore(database)
 	amaService := ama.NewService(amaStore, settingsService)
-	amaHandlers := ama.NewHandlers(amaService, settingsService)
+	amaService.SetRBAC(rbacResolver)
+	amaService.SetWebhookEmitter(&forumWebhookEmitter{svc: webhookService})
+	amaService.SetValkey(vkClient.Redis())
+	amaHandlers := ama.NewHandlers(amaService)
 
 	// Ref: japaconnect-engineering/sections/89-achievement-feed.md (ADR-097)
 	achievementStore := achievement.NewStore(database)
@@ -1122,6 +1125,12 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Inject the RAG service into the AI handlers so HandleChat can run the
 	// retrieval step before the LLM call when rag.enabled is true.
 	aiHandlers.SetRAGService(ragService)
+
+	// Inject the AI dispatcher + RAG retriever into the assessment service
+	// for AI-assisted roadmap generation (ADR-071 §3). Gated by
+	// assessment.ai_roadmap_enabled at runtime; falls back to curated-only.
+	assessmentService.SetAIDispatcher(&assessmentAIDispatcher{dispatcher: aiDispatcher})
+	assessmentService.SetRAGRetriever(&assessmentRAGRetriever{svc: ragService})
 	// Register the RAG indexer with the worker so content:generate_embedding
 	// also chunks and upserts into content_embeddings (Section 69, ADR-069).
 	worker.RegisterRAGIndexer(ragService)
@@ -2141,7 +2150,12 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				r.With(features.Gate(featureChecker, "feature.ama")).Group(func(r chi.Router) {
 					r.Get("/forum/ama", amaHandlers.HandleList)
 					r.Get("/forum/ama/{id}", amaHandlers.HandleGet)
-					r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.ama.moderate")).
+					r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.ama.create")).
+						Post("/forum/ama", amaHandlers.HandleCreate)
+					// Close: host (author) OR forum.ama.moderate. The service
+					// resolves authorship so the host can close without holding
+					// the moderator grant (§88 "host or moderator").
+					r.With(auth.RequireAuth(kr, vkClient.Redis())).
 						Patch("/forum/ama/{id}", amaHandlers.HandleClose)
 				})
 				r.Get("/forum/{slug}", forumHandlers.GetThread)
@@ -4475,6 +4489,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				r.Get("/spaces/{slug}/achievements", achievementHandlers.HandleListBySpace)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "achievement.moderate")).
 					Get("/admin/achievements", achievementHandlers.HandleAdminList)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "achievement.moderate")).
+					Patch("/admin/achievements/{id}/status", achievementHandlers.HandleAdminSetStatus)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "achievement.moderate")).
+					Delete("/admin/achievements/{id}", achievementHandlers.HandleAdminDelete)
 			})
 
 			// Section 98 — Service Directory (ADR-098)
@@ -4502,8 +4520,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// do optional auth + ownership checks internally. Anonymous results
 			// (user_id null) are publicly viewable; user results require the
 			// owner (enforced in the handler).
+			// Submit is rate-limited to 10 per user (or IP for anonymous) per hour,
+			// matching the §06 form_submission limiter (§23 — form-spam prevention).
 			r.Get("/assessment", assessmentHandlers.HandleGetAssessment)
-			r.Post("/assessment/submit", assessmentHandlers.HandleSubmit)
+			r.With(auth.OptionalAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "form_submission")).
+				Post("/assessment/submit", assessmentHandlers.HandleSubmit)
 			r.Get("/assessment/result/by-submission/{submission_id}", assessmentHandlers.HandleGetResultBySubmission)
 			r.Get("/assessment/result/{id}", assessmentHandlers.HandleGetResult)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "assessment.take")).
@@ -4619,6 +4640,13 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(features.Gate(featureChecker, "feature.arrival_checklist")).Group(func(r chi.Router) {
 				r.Get("/arrival-checklist/selector", arrivalChecklistHandlers.HandleSelector)
 				r.Get("/arrival-checklist/{guide_id}", arrivalChecklistHandlers.HandleGetGuide)
+				// User-facing progress routes (§92 catalog lines 2023-2025)
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).
+					Get("/me/arrival-checklists", arrivalChecklistHandlers.HandleListMyChecklists)
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).
+					Post("/me/arrival-checklists", arrivalChecklistHandlers.HandleStartChecklist)
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).
+					Patch("/me/arrival-checklists/{id}/items/{item_id}", arrivalChecklistHandlers.HandleTickItem)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "arrival_checklist.manage")).
 					Get("/admin/arrival-checklists", arrivalChecklistHandlers.HandleAdminList)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "arrival_checklist.manage")).
@@ -5281,4 +5309,70 @@ func lookupSystemUserID(ctx context.Context, database *db.DB) (pgtype.UUID, erro
 		return pgtype.UUID{}, fmt.Errorf("looking up super admin user: %w", err)
 	}
 	return id, nil
+}
+
+// ── Assessment AI/RAG adapters ───────────────────────────────────────────
+// These adapters bridge the concrete ai.Dispatcher and rag.Service to the
+// assessment service's minimal AIDispatcher and RAGRetriever interfaces.
+// Defined here (not in internal/assessment) to avoid an import cycle and
+// keep the assessment package decoupled from concrete ai/rag types.
+// Ref: ADR-071 §3 — AI-assisted roadmap generation.
+
+// assessmentAIDispatcher adapts *ai.Dispatcher to assessment.AIDispatcher.
+type assessmentAIDispatcher struct {
+	dispatcher *ai.Dispatcher
+}
+
+func (a *assessmentAIDispatcher) Dispatch(ctx context.Context, category string, req assessment.AIRequest) (assessment.AIResponse, error) {
+	resp, err := a.dispatcher.Dispatch(ctx, category, ai.Request{
+		Category: category,
+		Payload:  req.Payload,
+	})
+	if err != nil {
+		return assessment.AIResponse{}, err
+	}
+	return assessment.AIResponse{
+		ProviderRef: resp.ProviderRef,
+		Status:      resp.Status,
+		Raw:         resp.Raw,
+	}, nil
+}
+
+func (a *assessmentAIDispatcher) HasCategory(category string) bool {
+	return a.dispatcher.HasCategory(category)
+}
+
+// assessmentRAGRetriever adapts *rag.Service to assessment.RAGRetriever.
+type assessmentRAGRetriever struct {
+	svc *rag.Service
+}
+
+func (r *assessmentRAGRetriever) Retrieve(ctx context.Context, tenantID pgtype.UUID, query, language string) ([]assessment.RAGChunk, error) {
+	chunks, err := r.svc.Retrieve(ctx, tenantID, query, language)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]assessment.RAGChunk, 0, len(chunks))
+	for _, c := range chunks {
+		result = append(result, assessment.RAGChunk{
+			Content:   c.ChunkText,
+			Score:     c.Similarity,
+			Source:    c.EntityType,
+			ChunkType: c.Tier,
+		})
+	}
+	return result, nil
+}
+
+func (r *assessmentRAGRetriever) FormatContext(chunks []assessment.RAGChunk) string {
+	ragChunks := make([]rag.RetrievedChunk, 0, len(chunks))
+	for _, c := range chunks {
+		ragChunks = append(ragChunks, rag.RetrievedChunk{
+			EntityType: c.Source,
+			ChunkText:  c.Content,
+			Similarity: c.Score,
+			Tier:       c.ChunkType,
+		})
+	}
+	return r.svc.FormatContext(ragChunks)
 }

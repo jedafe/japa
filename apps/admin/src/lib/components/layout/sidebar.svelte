@@ -331,7 +331,7 @@
 
 	<!-- Navigation -->
 	<nav class="flex-1 overflow-y-auto p-2 scrollbar-thin">
-		{#each filterSections(searchQuery) as section}
+		{#each filterSections(searchQuery) as section (section.id)}
 			{#if !effectiveCollapsed}
 				<div class="mb-1">
 					<button
@@ -350,7 +350,7 @@
 
 					{#if expandedSections.has(section.id)}
 						<div class="mt-1 space-y-1">
-							{#each section.items as item}
+							{#each section.items as item (item.path)}
 								{#if canSeeItem(item.permission)}
 									<a
 										href={item.path}
@@ -373,7 +373,7 @@
 				</div>
 			{:else}
 				<!-- Collapsed view - just icons -->
-				{#each section.items as item}
+				{#each section.items as item (item.path)}
 					{#if canSeeItem(item.permission)}
 						<Tooltip content={item.label} side="right">
 							<a

@@ -101,7 +101,7 @@
 }}>
 	<div class="flex flex-wrap items-center gap-1.5 rounded-lg border px-2 py-1.5 min-h-10"
 		style="border-color: var(--color-border-input); background-color: var(--color-surface); color: var(--color-foreground)">
-		{#each selected as val}
+		{#each selected as val (val)}
 			{@const label = getLabel(val)}
 			<span class="inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-medium"
 				style="background: var(--color-primary); color: var(--color-primary-foreground)">
@@ -138,7 +138,7 @@
 			tabindex="-1"
 			onmousedown={(e) => e.preventDefault()}
 		>
-			{#each filteredOptions as option, i}
+			{#each filteredOptions as option, i (i)}
 				<button
 					type="button"
 					class="w-full cursor-pointer select-none rounded-md px-3 py-2 text-left text-sm transition-colors hover:bg-[var(--color-accent)] hover:text-[var(--color-accent-foreground)] outline-none first:rounded-t-md last:rounded-b-md"

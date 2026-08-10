@@ -458,7 +458,7 @@
 						{/if}
 						{#if showSuggestions && userSuggestions.length > 0}
 							<div class="absolute left-0 right-0 top-full z-50 mt-1 rounded-lg border bg-surface shadow-lg">
-								{#each userSuggestions as user}
+								{#each userSuggestions as user (user)}
 									<button type="button" class="flex w-full items-center gap-3 px-3 py-2 text-left text-sm hover:bg-accent" onmousedown={() => selectSuggestion(user)}>
 										<span class="font-medium text-foreground">{user.username}</span>
 										<span class="text-xs text-muted">{user.email}</span>
@@ -508,7 +508,7 @@
 		<div>
 			<label for="rule-key" class="mb-1 block text-sm font-medium">{t('app.wallet.activity_key', 'Activity Key')}</label>
 			{#if activityKeyMode === 'select'}
-				<Select options={activityKeyOptions} value={ruleForm.activity_key} onchange={handleActivityKeySelect} placeholder="Select an activity key..." />
+				<Select options={activityKeyOptions} value={ruleForm.activity_key} onchange={handleActivityKeySelect} placeholder={t('app.wallet.ph_select_an_activity_key', 'Select an activity key...')} />
 			{:else}
 				<div class="flex gap-2">
 					<input id="rule-key" type="text" class="flex-1 rounded-lg border bg-surface px-3 py-2 text-sm font-mono" placeholder="custom_activity_key" bind:value={ruleForm.activity_key} />

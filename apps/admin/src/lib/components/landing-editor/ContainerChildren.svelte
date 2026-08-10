@@ -149,7 +149,7 @@
 				/>
 				<!-- Visual 12-col bar -->
 				<div class="flex gap-px" style="width: 48px">
-					{#each Array(12) as _, j}
+					{#each Array(12) as _, j (j)}
 						<div
 							class="h-2 flex-1 rounded-sm"
 							style={j < effectiveSpan(child) ? 'background: var(--color-primary)' : 'background: var(--color-border)'}

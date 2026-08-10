@@ -1033,7 +1033,7 @@
 			</div>
 			{#if uploadFiles.length > 0}
 				<div class="max-h-40 space-y-1 overflow-y-auto">
-					{#each uploadFiles as file, i}
+					{#each uploadFiles as file, i (i)}
 						<div class="flex items-center justify-between rounded-lg bg-surface px-3 py-1.5 text-sm">
 							<span class="truncate text-foreground">{file.name}</span>
 							<span class="ml-2 shrink-0 text-xs text-muted">{formatFileSize(file.size)}</span>
@@ -1056,7 +1056,7 @@
 					class="w-full rounded-lg border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
 				>
 					<option value="">{t('app.media.upload_universal', 'Universal (all users)')}</option>
-					{#each userGroups as group}
+					{#each userGroups as group (group)}
 						<option value={group.id}>{group.name}</option>
 					{/each}
 				</select>
@@ -1104,7 +1104,7 @@
 					<Search class="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2" style="color: var(--color-muted)" />
 					<input
 						type="text"
-						placeholder="Search stock photos..."
+						placeholder={t('media.ph_search_stock_photos', 'Search stock photos...')}
 						class="w-full rounded-lg border py-2 pl-9 pr-3 text-sm"
 						style="border-color: var(--color-border); background-color: var(--color-surface); color: var(--color-foreground)"
 						value={stockModalQuery}

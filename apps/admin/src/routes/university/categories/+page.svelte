@@ -241,7 +241,7 @@
 				type="text"
 				class="w-full rounded-lg border px-3 py-2 text-sm"
 				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
-				placeholder="e.g. Software Engineering"
+				placeholder={t('university.categories.ph_eg_software_engineering', 'e.g. Software Engineering')}
 				bind:value={form.name}
 				oninput={() => { if (!editingId) form.slug = slugify(form.name); }}
 			/>

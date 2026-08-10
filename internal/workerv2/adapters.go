@@ -221,19 +221,23 @@ func (a *ImportAdapter) FetchMedia(ctx context.Context, tenantID, userID, conten
 // AssessmentAdapter adapts the tenant-scoped assessment.Service to the
 // AssessmentProcessor interface.
 type AssessmentAdapter struct {
-	svc *assessment.Service
-	db  *db.DB
+	svc   *assessment.Service
+	db    *db.DB
+	notif *notifications.Service
 }
 
-// NewAssessmentAdapter creates an AssessmentAdapter.
-func NewAssessmentAdapter(svc *assessment.Service, database *db.DB) *AssessmentAdapter {
-	return &AssessmentAdapter{svc: svc, db: database}
+// NewAssessmentAdapter creates an AssessmentAdapter. The notifications
+// service is used to dispatch the assessment_complete notification after
+// scoring (ADR-071 §2 step 7).
+func NewAssessmentAdapter(svc *assessment.Service, database *db.DB, notifSvc *notifications.Service) *AssessmentAdapter {
+	return &AssessmentAdapter{svc: svc, db: database, notif: notifSvc}
 }
 
 // ScoreSubmission resolves the submission's tenant, user, and field_values
 // from form_submissions, then runs the scoring engine which writes the
 // assessment_results row. The result does not exist yet at enqueue time —
-// scoring creates it (§71).
+// scoring creates it (§71). After scoring, an assessment_complete
+// notification is dispatched to the authenticated user (ADR-071 §2 step 7).
 func (a *AssessmentAdapter) ScoreSubmission(ctx context.Context, submissionID, tenantID pgtype.UUID) error {
 	var userID pgtype.UUID
 	var fieldValues []byte
@@ -244,12 +248,45 @@ func (a *AssessmentAdapter) ScoreSubmission(ctx context.Context, submissionID, t
 	if err != nil {
 		return fmt.Errorf("looking up form_submission: %w", err)
 	}
-	_, err = a.svc.ScoreSubmission(ctx, tenantID, assessment.ScoreSubmissionInput{
+	resultID, err := a.svc.ScoreSubmission(ctx, tenantID, assessment.ScoreSubmissionInput{
 		SubmissionID: submissionID,
 		UserID:       userID,
 		FieldValues:  fieldValues,
 	})
-	return err
+	if err != nil {
+		return err
+	}
+
+	// ADR-071 §2 step 7: notify the user that their assessment result is
+	// ready. Anonymous users (userID invalid) are skipped — they see the
+	// result in-session via polling.
+	if userID.Valid && a.notif != nil {
+		actionURL := fmt.Sprintf("/tools/readiness?result=%s", resultID.String())
+		if err := a.notif.CreateNotification(
+			ctx,
+			tenantID,
+			userID,
+			"assessment_complete",
+			"system",
+			pgtype.UUID{},
+			"assessment_result",
+			resultID,
+			"Your readiness assessment is complete",
+			"Your Japa Readiness Assessment has been scored. View your results and personalized roadmap.",
+			actionURL,
+		); err != nil {
+			slog.Warn("task:assessment:score_submission: notification dispatch failed", "error", err)
+		}
+	}
+
+	return nil
+}
+
+// CleanupAnonymousResults deletes anonymous assessment_results older than the
+// given retention window. Called by the assessment:cleanup_anonymous Asynq
+// task (ADR-071 §5).
+func (a *AssessmentAdapter) CleanupAnonymousResults(ctx context.Context, retentionHours int32) (int64, error) {
+	return a.svc.CleanupAnonymousResults(ctx, retentionHours)
 }
 
 // ---------------------------------------------------------------------------
@@ -576,7 +613,7 @@ func RegisterV2Processors(
 	worker.RegisterJobsProcessor(NewJobsAdapter(jobsSvc, database))
 	worker.RegisterGamificationProcessor(NewGamificationAdapter(gamSvc, database))
 	worker.RegisterImportProcessor(NewImportAdapter(impSvc, database))
-	worker.RegisterAssessmentProcessor(NewAssessmentAdapter(assSvc, database))
+	worker.RegisterAssessmentProcessor(NewAssessmentAdapter(assSvc, database, notifSvc))
 	worker.RegisterScholarshipProcessor(NewScholarshipAdapter(schSvc, database, notifSvc))
 	worker.RegisterRemittanceProcessor(NewRemittanceAdapter(remSvc, database))
 	worker.RegisterReferralProcessor(NewReferralAdapter(refSvc, database))

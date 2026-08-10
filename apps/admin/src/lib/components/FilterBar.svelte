@@ -31,7 +31,7 @@
 </script>
 
 <div class="mb-4 flex flex-wrap items-end gap-3">
-	{#each filters as filter}
+	{#each filters as filter (filter)}
 		<div>
 			<label for="filter-{filter.key}" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{filter.label}</label>
 			{#if filter.type === 'select'}

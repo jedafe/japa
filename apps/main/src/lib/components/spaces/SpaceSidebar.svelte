@@ -5,6 +5,7 @@
 	import { Users, FileText, ScrollText, LogIn } from 'lucide-svelte';
 	import { api } from '$lib/api/client';
 	import { decodeBase64Text } from '$lib/tiptap/serialize';
+	import AchievementWidget from '$lib/components/spaces/AchievementWidget.svelte';
 	import type { Space, SpaceRule } from '$lib/types';
 
 	interface Props {
@@ -205,6 +206,11 @@
 			<p class="mt-3 text-sm leading-relaxed text-[var(--color-text-subtle)] line-clamp-4">{wikiExtract}</p>
 		{/if}
 	</section>
+
+	<!-- §89 Community Achievement Feed — sidebar widget showing latest
+	     achievements filed against this Space (country). Auto-hides when
+	     the feature is disabled or the space has no achievements. -->
+	<AchievementWidget spaceSlug={space.slug} />
 
 	<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 		<h2 class="mb-2 flex items-center gap-2 text-sm font-medium text-[var(--color-text)]">

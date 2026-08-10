@@ -1153,6 +1153,10 @@ export interface Certificate {
 	certificate_number: string;
 	media_id?: string | null;
 	issued_at: string;
+	title?: string | null;
+	track_slug?: string | null;
+	recipient_name?: string;
+	recipient_username?: string;
 }
 
 /* ------------------------------------------------------------------ *
@@ -1883,6 +1887,11 @@ export interface AssessmentFieldScoringConfig {
 	option_scores: Record<string, number>;
 }
 
+export interface AssessmentFieldOption {
+	value: string;
+	label: string;
+}
+
 export interface AssessmentField {
 	id: string;
 	label: string;
@@ -1890,6 +1899,8 @@ export interface AssessmentField {
 	field_type: string;
 	is_required: boolean;
 	position: number;
+	placeholder: string;
+	options: AssessmentFieldOption[];
 	config: AssessmentFieldScoringConfig;
 }
 
@@ -1915,10 +1926,14 @@ export interface AssessmentRoadmapStep {
 }
 
 export interface AssessmentResult {
+	id: string;
 	total_score: number;
 	dimension_scores: Record<string, number>;
 	threshold_label: string;
 	roadmap: AssessmentRoadmapStep[];
+	user_id: string;
+	submission_id: string;
+	created_at: string;
 }
 
 // --- Section 72: Cost of Living Calculator ---
@@ -2636,7 +2651,6 @@ export interface AMAThread {
 	title: string;
 	slug: string;
 	body: string;
-	status: string;
 	author_user_id?: string;
 	author_name?: string;
 	author_avatar?: string;
@@ -2665,6 +2679,7 @@ export interface Achievement {
 	visibility: string;
 	view_count: number;
 	comment_count: number;
+	reaction_count: number;
 	published_at: string;
 	created_at: string;
 	updated_at: string;

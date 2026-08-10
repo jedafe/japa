@@ -56,6 +56,7 @@ type ImportProcessor interface {
 // AssessmentProcessor handles assessment background tasks (§71, ADR-071).
 type AssessmentProcessor interface {
 	ScoreSubmission(ctx context.Context, submissionID, tenantID pgtype.UUID) error
+	CleanupAnonymousResults(ctx context.Context, retentionHours int32) (int64, error)
 }
 
 // ScholarshipProcessor handles scholarship background tasks (§73, ADR-073).
@@ -152,6 +153,7 @@ const (
 	TypeImportProcessSource         = "import:process_source"
 	TypeImportFetchMedia            = "import:fetch_media"
 	TypeAssessmentScoreSubmission   = "assessment:score_submission"
+	TypeAssessmentCleanupAnonymous  = "assessment:cleanup_anonymous"
 	TypeScholarshipCheckDeadlines   = "scholarship:check_deadlines"
 	TypeRemittanceFetchRates        = "remittance:fetch_rates"
 	TypeRemittanceCheckAlerts       = "remittance:check_alerts"
@@ -300,6 +302,33 @@ func HandleAssessmentScoreSubmission(ctx context.Context, t *asynq.Task) error {
 	if err := assessmentProcessor.ScoreSubmission(ctx, submissionID, tenantID); err != nil {
 		return fmt.Errorf("task:assessment:score_submission: %w", err)
 	}
+	return nil
+}
+
+// HandleAssessmentCleanupAnonymous deletes anonymous assessment_results
+// older than the retention window (§71, ADR-071 §5). Scheduled hourly.
+func HandleAssessmentCleanupAnonymous(ctx context.Context, t *asynq.Task) error {
+	if assessmentProcessor == nil {
+		slog.Warn("task:assessment:cleanup_anonymous: no processor registered, skipping")
+		return nil
+	}
+	retentionHours := int32(24)
+	if len(t.Payload()) > 0 {
+		var p struct {
+			RetentionHours int32 `json:"retention_hours"`
+		}
+		if err := json.Unmarshal(t.Payload(), &p); err != nil {
+			return fmt.Errorf("task:assessment:cleanup_anonymous: invalid payload: %w", err)
+		}
+		if p.RetentionHours > 0 {
+			retentionHours = p.RetentionHours
+		}
+	}
+	n, err := assessmentProcessor.CleanupAnonymousResults(ctx, retentionHours)
+	if err != nil {
+		return fmt.Errorf("task:assessment:cleanup_anonymous: %w", err)
+	}
+	slog.Info("task:assessment:cleanup_anonymous: rows deleted", "count", n, "retention_hours", retentionHours)
 	return nil
 }
 

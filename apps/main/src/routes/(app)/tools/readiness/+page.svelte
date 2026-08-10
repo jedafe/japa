@@ -34,14 +34,20 @@
 	const authed = $derived(data.authed);
 	const history = $derived<AssessmentHistoryEntry[]>(data.history ?? []);
 
-	// Form state.
-	let answers = $state<Record<string, string>>({});
+	// Form state — answers keyed by field.key (matches field_values contract).
+	let answers = $state<Record<string, string | string[] | number>>({});
 	let submitting = $state(false);
 	let submitError = $state<string | null>(null);
 	let result = $state<AssessmentResult | null>(null);
 
 	const fields = $derived(form?.fields ?? []);
-	const answeredCount = $derived(Object.keys(answers).filter((k) => answers[k]).length);
+	const answeredCount = $derived(
+		Object.keys(answers).filter((k) => {
+			const v = answers[k];
+			if (Array.isArray(v)) return v.length > 0;
+			return v !== undefined && v !== null && v !== '';
+		}).length
+	);
 	const progressPct = $derived(fields.length > 0 ? Math.round((answeredCount / fields.length) * 100) : 0);
 
 	const scorePct = $derived(
@@ -242,7 +248,7 @@
 										<span class="mt-0.5 block text-xs text-[var(--color-muted)]">{step.description}</span>
 									{/if}
 									{#if step.content_slug}
-										<a href="/blog/{step.content_slug}" class="mt-1 inline-flex items-center gap-1 text-xs text-[var(--color-primary)] hover:underline">
+										<a href="/{step.content_slug}" class="mt-1 inline-flex items-center gap-1 text-xs text-[var(--color-primary)] hover:underline">
 											{t('assessment.read_more', 'Read more')} <ArrowRight size={12} />
 										</a>
 									{/if}
@@ -278,34 +284,70 @@
 			</div>
 
 			<form onsubmit={(e) => { e.preventDefault(); submit(); }} class="space-y-4">
-				{#each fields as field (field.id)}
+				{#each fields as field (field.key)}
 					<div class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
-						<label class="block text-sm font-medium text-[var(--color-text)]" for={field.id}>
+						<label class="block text-sm font-medium text-[var(--color-text)]" for={field.key}>
 							{field.label}
 							{#if field.is_required}<span class="text-[var(--color-primary)]">*</span>{/if}
 						</label>
-						{#if field.field_type === 'select' || field.field_type === 'radio'}
+						{#if (field.field_type === 'select' || field.field_type === 'radio') && field.options.length > 0}
 							<div class="mt-2 space-y-1">
-								{#each Object.keys(field.config.option_scores) as opt (opt)}
+								{#each field.options as opt (opt.value)}
 									<label class="flex items-center gap-2 text-sm text-[var(--color-text)]">
 										<input
 											type="radio"
-											name={field.id}
-											value={opt}
-											checked={answers[field.id] === opt}
-											onchange={() => (answers = { ...answers, [field.id]: opt })}
+											name={field.key}
+											value={opt.value}
+											checked={answers[field.key] === opt.value}
+											onchange={() => (answers = { ...answers, [field.key]: opt.value })}
 											class="accent-[var(--color-primary)]"
 										/>
-										{opt}
+										{opt.label}
 									</label>
 								{/each}
 							</div>
+						{:else if field.field_type === 'multiselect' && field.options.length > 0}
+							<div class="mt-2 space-y-1">
+								{#each field.options as opt (opt.value)}
+									<label class="flex items-center gap-2 text-sm text-[var(--color-text)]">
+										<input
+											type="checkbox"
+											value={opt.value}
+											checked={Array.isArray(answers[field.key]) && (answers[field.key] as string[]).includes(opt.value)}
+											onchange={(e) => {
+												const current = Array.isArray(answers[field.key]) ? answers[field.key] as string[] : [];
+												const next = e.currentTarget.checked
+													? [...current, opt.value]
+													: current.filter((v) => v !== opt.value);
+												answers = { ...answers, [field.key]: next };
+											}}
+											class="accent-[var(--color-primary)]"
+										/>
+										{opt.label}
+									</label>
+								{/each}
+							</div>
+						{:else if field.field_type === 'number' || field.field_type === 'rating'}
+							<div class="mt-2 flex items-center gap-3">
+								<input
+									type="range"
+									min="0"
+									max="100"
+									value={(answers[field.key] as number) ?? 0}
+									oninput={(e) => (answers = { ...answers, [field.key]: parseInt(e.currentTarget.value) })}
+									class="flex-1 accent-[var(--color-primary)]"
+								/>
+								<span class="w-8 text-center text-sm font-medium text-[var(--color-text)]">
+									{(answers[field.key] as number) ?? 0}
+								</span>
+							</div>
 						{:else}
 							<input
-								id={field.id}
+								id={field.key}
 								type="text"
-								value={answers[field.id] ?? ''}
-								oninput={(e) => (answers = { ...answers, [field.id]: (e.target as HTMLInputElement).value })}
+								placeholder={field.placeholder || ''}
+								value={answers[field.key] ?? ''}
+								oninput={(e) => (answers = { ...answers, [field.key]: (e.target as HTMLInputElement).value })}
 								class="mt-2 w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
 							/>
 						{/if}

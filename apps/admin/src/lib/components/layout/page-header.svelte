@@ -30,7 +30,7 @@
 
 	{#if actions.length > 0}
 		<div class="flex items-center gap-3">
-			{#each actions as action}
+			{#each actions as action (action)}
 				{#if action.href}
 					<a
 						href={action.href}

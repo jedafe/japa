@@ -261,7 +261,7 @@
 			</div>
 			{#if form?.fields && form.fields.length > 0}
 				<div class="space-y-3">
-					{#each form.fields as field}
+					{#each form.fields as field (field)}
 						<div class="flex items-center justify-between rounded-md border px-4 py-3" style="border-color: var(--color-border); background-color: var(--color-background)">
 							<div>
 								<span class="text-sm font-medium">{field.label}</span>

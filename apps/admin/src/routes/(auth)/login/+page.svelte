@@ -1,6 +1,9 @@
 <script lang="ts">
 	import { t } from '$lib/stores/i18n.svelte';
 	import { setAccessToken } from '$lib/api/token';
+	import { restoreSession } from '$lib/stores/session.svelte';
+	import { goto } from '$app/navigation';
+	import { getPermissions } from '$lib/stores/permissions.svelte';
 
 	let email = $state('');
 	let password = $state('');
@@ -9,10 +12,10 @@
 
 	async function handleLogin() {
 		if (!email || !password || loading) return;
-		
+
 		loading = true;
 		error = '';
-		
+
 		try {
 			// Call login endpoint directly with fetch to get cookies set
 			const res = await fetch('/api/v1/auth/login', {
@@ -37,11 +40,15 @@
 
 			if (res.ok && body.data?.access_token) {
 				setAccessToken(body.data.access_token);
-				// Hard reload so the root layout re-mounts and onMount re-runs
-				// with the fresh access token (fetches /me + /me/permissions).
-				// Client-side goto() would NOT re-run onMount since the layout
-				// is already mounted from the initial page load.
-				window.location.href = '/';
+				// Restore the session in-place (fetches /me + /me/permissions
+				// and populates the auth stores) then navigate to the admin
+				// root. invalidateAll triggers the layout's $effect/reactive
+				// dependencies so the permission-gated UI re-evaluates.
+				await restoreSession();
+				// Touch getPermissions so the layout's currentPermissions
+				// reactivity picks up the new state.
+				void getPermissions();
+				await goto('/', { invalidateAll: true });
 			} else if (res.ok) {
 				// Authenticated but no access token (e.g. TOTP challenge) — surface it.
 				error = body.error?.message || 'Login succeeded but no session was issued';

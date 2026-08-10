@@ -317,7 +317,7 @@
 						<p class="text-xs text-muted">{t('ads.fields.countries', 'Target Countries')}</p>
 						{#if campaign.target_geo && campaign.target_geo.length > 0}
 							<div class="flex flex-wrap gap-1.5">
-								{#each campaign.target_geo as code}
+								{#each campaign.target_geo as code (code)}
 									<span class="inline-flex items-center rounded-full border border-border bg-surface px-2.5 py-0.5 text-xs font-medium text-foreground">{code}</span>
 								{/each}
 							</div>
@@ -426,7 +426,7 @@
 								</tr>
 							</thead>
 							<tbody>
-								{#each stats.daily_stats as day}
+								{#each stats.daily_stats as day (day)}
 									<tr class="border-b border-border last:border-0">
 										<td class="px-3 py-2">{day.date}</td>
 										<td class="px-3 py-2 text-right">{(day.impressions ?? 0).toLocaleString()}</td>

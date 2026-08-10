@@ -779,7 +779,7 @@
 					class="h-10 w-full rounded-lg border border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
 					bind:value={newTrack.difficulty}
 				>
-					{#each difficultyOptions as opt}
+					{#each difficultyOptions as opt (opt)}
 						<option value={opt.value}>{opt.label}</option>
 					{/each}
 				</select>
@@ -813,7 +813,7 @@
 					bind:value={newModule.track_id}
 				>
 					<option value="">{t('app.learning.select_track', 'Select a track...')}</option>
-					{#each tracks as track}
+					{#each tracks as track (track)}
 						<option value={track.id}>{track.title}</option>
 					{/each}
 				</select>
@@ -860,7 +860,7 @@
 					bind:value={newLesson.selectedTrackId}
 				>
 					<option value="">{t('app.learning.select_track', 'Select a track...')}</option>
-					{#each tracks as track}
+					{#each tracks as track (track)}
 						<option value={track.id}>{track.title}</option>
 					{/each}
 				</select>
@@ -874,7 +874,7 @@
 					disabled={!newLesson.selectedTrackId}
 				>
 					<option value="">{t('app.learning.select_module', 'Select a module...')}</option>
-					{#each modulesForLesson as mod}
+					{#each modulesForLesson as mod (mod)}
 						<option value={mod.id}>{mod.title}</option>
 					{/each}
 				</select>
@@ -907,7 +907,7 @@
 					class="h-10 w-full rounded-lg border border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
 					bind:value={newLesson.lesson_type}
 				>
-					{#each lessonTypeOptions as opt}
+					{#each lessonTypeOptions as opt (opt)}
 						<option value={opt.value}>{opt.label}</option>
 					{/each}
 				</select>
@@ -1006,7 +1006,7 @@
 						class="h-10 w-full rounded-lg border border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
 						bind:value={editForm.difficulty}
 					>
-						{#each difficultyOptions as opt}
+						{#each difficultyOptions as opt (opt)}
 							<option value={opt.value}>{opt.label}</option>
 						{/each}
 					</select>
@@ -1097,7 +1097,7 @@
 						class="h-10 w-full rounded-lg border border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
 						bind:value={editForm.lesson_type}
 					>
-						{#each lessonTypeOptions as opt}
+						{#each lessonTypeOptions as opt (opt)}
 							<option value={opt.value}>{opt.label}</option>
 						{/each}
 					</select>
@@ -1213,7 +1213,7 @@
 >
 	{#if loadingEnrollments}
 		<div class="space-y-3">
-			{#each Array(3) as _}
+			{#each Array(3) as _, i (i)}
 				<div class="h-10 animate-pulse rounded-lg bg-surface"></div>
 			{/each}
 		</div>
@@ -1233,7 +1233,7 @@
 					</tr>
 				</thead>
 				<tbody>
-					{#each enrollments as enrollment}
+					{#each enrollments as enrollment (enrollment)}
 						<tr class="border-b last:border-0">
 							<td class="px-3 py-2">
 							{#if enrollment.display_name}
