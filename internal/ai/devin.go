@@ -33,10 +33,10 @@ import (
 
 // Devin API constants.
 const (
-	DevinProviderName       = "devin"
-	DevinDefaultBase        = "https://api.devin.ai/v3/organizations"
-	DevinPollInterval       = 5 * time.Second
-	DevinPollTimeout        = 5 * time.Minute // max time to wait for session completion
+	DevinProviderName = "devin"
+	DevinDefaultBase  = "https://api.devin.ai/v3/organizations"
+	DevinPollInterval = 5 * time.Second
+	DevinPollTimeout  = 5 * time.Minute // max time to wait for session completion
 )
 
 // DevinProvider implements the Provider interface for the Devin agent API.
@@ -94,11 +94,11 @@ type devinCreateSessionRequest struct {
 
 // devinSessionResponse is the response from session create/get endpoints.
 type devinSessionResponse struct {
-	DevinID     string                 `json:"devin_id"`
-	Status      string                 `json:"status"` // "created", "running", "blocked", "completed", "failed"
-	Message     string                 `json:"message,omitempty"`
-	Output      string                 `json:"output,omitempty"`
-	Metadata    map[string]any         `json:"metadata,omitempty"`
+	DevinID  string         `json:"devin_id"`
+	Status   string         `json:"status"` // "created", "running", "blocked", "completed", "failed"
+	Message  string         `json:"message,omitempty"`
+	Output   string         `json:"output,omitempty"`
+	Metadata map[string]any `json:"metadata,omitempty"`
 }
 
 // Send creates a Devin session with the prompt, then polls until the session
@@ -282,6 +282,16 @@ func (p *DevinProvider) getSession(ctx context.Context, devinID string) (devinSe
 	}
 
 	return session, nil
+}
+
+// ChatWithTools is not supported by the Devin provider. Devin is an
+// agent-based platform (async sessions, not synchronous chat completions)
+// and does not expose a function-calling API. The gateway will fall back to
+// the next provider in the agent category.
+//
+// Ref: japaconnect-engineering/sections/103-ai-agent-executor.md
+func (p *DevinProvider) ChatWithTools(_ context.Context, _ ChatWithToolsRequest) (ChatWithToolsResponse, error) {
+	return ChatWithToolsResponse{}, ErrFunctionCallingUnsupported
 }
 
 // VerifyWebhookSignature is a no-op for Devin.

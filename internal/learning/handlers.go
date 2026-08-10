@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -13,6 +14,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/hibiken/asynq"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/tenant"
@@ -705,10 +708,19 @@ func (h *Handlers) EnrollInTrack(w http.ResponseWriter, r *http.Request) {
 			// fire-and-forget per Rule 8). The university:process_enrollment
 			// task handles the revenue split with source='pro_stream'.
 			if h.AsynqClient != nil {
-				payload := fmt.Sprintf(`{"tenant_id":"%s","user_id":"%s","track_id":"%s","source":"pro_stream"}`, t.ID.String(), user.UserID.String(), trackIDStr)
-				task := asynq.NewTask("university:process_enrollment", []byte(payload))
-				if _, err := h.AsynqClient.Enqueue(task); err != nil {
-					slog.Warn("learning: enqueue pro_stream enrollment task", "track_id", trackIDStr, "error", err)
+				payload, err := json.Marshal(map[string]string{
+					"tenant_id": t.ID.String(),
+					"user_id":   user.UserID.String(),
+					"track_id":  trackIDStr,
+					"source":    "pro_stream",
+				})
+				if err != nil {
+					slog.Warn("learning: marshal pro_stream enrollment payload", "error", err)
+				} else {
+					task := asynq.NewTask("university:process_enrollment", payload)
+					if _, err := h.AsynqClient.Enqueue(task); err != nil {
+						slog.Warn("learning: enqueue pro_stream enrollment task", "track_id", trackIDStr, "error", err)
+					}
 				}
 			}
 			_ = planSlug // planSlug reserved for future logging/metrics
@@ -1341,6 +1353,25 @@ func (h *Handlers) ListTrackReviews(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// handleReviewError maps a CreateTrackReview store error to the correct HTTP
+// status code. Constraint violations become 409 (duplicate) or 403 (FK = not
+// enrolled / track doesn't exist); everything else is a 500.
 func handleReviewError(w http.ResponseWriter, err error) {
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) {
+		switch pgErr.Code {
+		case "23505": // unique_violation — user already reviewed this track
+			writeError(w, http.StatusConflict, "duplicate_review", "You have already reviewed this track")
+			return
+		case "23503": // foreign_key_violation — track or user doesn't exist
+			writeError(w, http.StatusForbidden, "not_enrolled", "You must be enrolled to review this track")
+			return
+		}
+	}
+	if errors.Is(err, pgx.ErrNoRows) {
+		writeError(w, http.StatusNotFound, "track_not_found", "Track not found")
+		return
+	}
+	slog.Error("learning: create track review", "error", err)
 	writeError(w, http.StatusInternalServerError, "review_error", "An unexpected error occurred")
 }

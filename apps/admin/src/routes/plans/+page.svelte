@@ -430,7 +430,7 @@
 				type="text"
 				class="w-full rounded-md border px-3 py-2 text-sm"
 				style="border-color: var(--color-border); background-color: var(--color-surface)"
-				placeholder="Pro"
+				placeholder={t('plans.ph_pro', 'Pro')}
 				bind:value={value.name}
 				oninput={() => {
 					if (!editing) value.slug = slugify(String(value.name ?? ''));

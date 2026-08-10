@@ -44,17 +44,23 @@ func NewHandlers(service *Service) *Handlers {
 
 // enqueueAdEventIngest enqueues an async ad event ingestion task.
 // Fire-and-forget: errors are logged but never propagated.
+// userID may be invalid (zero UUID) for guest events — user_id is nullable.
 func (h *Handlers) enqueueAdEventIngest(tenantID, campaignID, userID pgtype.UUID, eventType string) {
 	if h.AsynqClient == nil {
 		return
 	}
 
-	payload, err := json.Marshal(map[string]string{
+	// Build payload — omit user_id when invalid (guest/anonymous event).
+	payloadMap := map[string]string{
 		"tenant_id":   tenantID.String(),
 		"campaign_id": campaignID.String(),
-		"user_id":     userID.String(),
 		"event_type":  eventType,
-	})
+	}
+	if userID.Valid {
+		payloadMap["user_id"] = userID.String()
+	}
+
+	payload, err := json.Marshal(payloadMap)
 	if err != nil {
 		slog.Warn("ads: failed to marshal event ingest payload", "error", err)
 		return
@@ -538,48 +544,31 @@ func (h *Handlers) IngestEvents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	events := make([]IngestAdEventInput, 0, len(input.Events))
+	// Ref: japaconnect-engineering/sections/25-ad-placement.md
+	// Batched ingestion: enqueue each valid event as a fire-and-forget
+	// ad:ingest_event_batch task (low tier). Never write synchronously on
+	// every view — the worker handles the DB insert asynchronously.
+	// Guest events (empty user_id) are supported: user_id is nullable.
+	ingested := 0
 
 	for _, e := range input.Events {
 		if e.EventType != EventTypeImpression && e.EventType != EventTypeClick {
 			continue
 		}
 
-		var occurredAt time.Time
-
-		if e.OccurredAt != "" {
-			var err error
-
-			occurredAt, err = time.Parse(time.RFC3339, e.OccurredAt)
-			if err != nil {
-				continue
-			}
-		}
-
-		events = append(events, IngestAdEventInput{
-			CampaignID: e.CampaignID,
-			UserID:     e.UserID,
-			EventType:  e.EventType,
-			OccurredAt: occurredAt,
-		})
-	}
-
-	ingested, err := h.Service.IngestAdEvents(r.Context(), tenantID, events)
-	if err != nil {
-		handleServiceError(w, err)
-		return
-	}
-
-	// Enqueue async ad event batch ingestion for background processing — fire-and-forget.
-	for _, e := range events {
-		var campaignID, userID pgtype.UUID
+		var campaignID pgtype.UUID
 		if err := campaignID.Scan(e.CampaignID); err != nil {
 			continue
 		}
+
+		// user_id is optional — guests submit events without it.
+		var userID pgtype.UUID
 		if e.UserID != "" {
 			_ = userID.Scan(e.UserID)
 		}
+
 		h.enqueueAdEventIngest(tenantID, campaignID, userID, e.EventType)
+		ingested++
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
@@ -632,11 +621,7 @@ func (h *Handlers) CreateSlotType(w http.ResponseWriter, r *http.Request) {
 
 	var input struct {
 		Name        string `json:"name"`
-		Slug        string `json:"slug"`
 		Description string `json:"description"`
-		MaxWidth    int    `json:"max_width"`
-		MaxHeight   int    `json:"max_height"`
-		Format      string `json:"format"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
@@ -651,11 +636,7 @@ func (h *Handlers) CreateSlotType(w http.ResponseWriter, r *http.Request) {
 
 	slotType, err := h.Service.CreateSlotType(r.Context(), tenantID, AdSlotTypeInput{
 		Name:        input.Name,
-		Slug:        input.Slug,
 		Description: input.Description,
-		MaxWidth:    input.MaxWidth,
-		MaxHeight:   input.MaxHeight,
-		Format:      input.Format,
 	})
 	if err != nil {
 		handleServiceError(w, err)
@@ -685,11 +666,7 @@ func (h *Handlers) UpdateSlotType(w http.ResponseWriter, r *http.Request) {
 
 	var input struct {
 		Name        string `json:"name"`
-		Slug        string `json:"slug"`
 		Description string `json:"description"`
-		MaxWidth    int    `json:"max_width"`
-		MaxHeight   int    `json:"max_height"`
-		Format      string `json:"format"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
@@ -699,11 +676,7 @@ func (h *Handlers) UpdateSlotType(w http.ResponseWriter, r *http.Request) {
 
 	slotType, err := h.Service.UpdateSlotType(r.Context(), id, tenantID, AdSlotTypeInput{
 		Name:        input.Name,
-		Slug:        input.Slug,
 		Description: input.Description,
-		MaxWidth:    input.MaxWidth,
-		MaxHeight:   input.MaxHeight,
-		Format:      input.Format,
 	})
 	if err != nil {
 		handleServiceError(w, err)
@@ -982,8 +955,8 @@ func (h *Handlers) UpdateBoost(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var input struct {
-		Status   *string `json:"status"`
-		EndDate  *string `json:"end_date"`
+		Status  *string `json:"status"`
+		EndDate *string `json:"end_date"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
@@ -1032,7 +1005,7 @@ func (h *Handlers) DeleteBoost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusNoContent, nil)
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // ─── P5.6 Advertising Extras ─────────────────────────────────────────────
@@ -1134,13 +1107,10 @@ func (h *Handlers) ListAdNetworks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
-	if page < 1 {
-		page = 1
-	}
 	pageSize := parsePageSize(r)
+	offset := parsePageSizeOffset(r)
 
-	networks, total, err := h.Service.ListAdNetworkDTOs(r.Context(), tenantID, int32(page), pageSize)
+	networks, total, err := h.Service.ListAdNetworkDTOs(r.Context(), tenantID, pageSize, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -1148,7 +1118,7 @@ func (h *Handlers) ListAdNetworks(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"data": nonNilSlice(networks),
-		"meta": map[string]any{"total": total, "page": page, "page_size": pageSize},
+		"meta": map[string]any{"total": total, "page_offset": offset, "page_size": pageSize},
 	})
 }
 

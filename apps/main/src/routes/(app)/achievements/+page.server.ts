@@ -28,7 +28,7 @@ export const load: PageServerLoad = async (event) => {
 
 	try {
 		const params = new URLSearchParams();
-		params.set('page_size', String(PAGE_SIZE));
+		params.set('limit', String(PAGE_SIZE));
 		if (dest) params.set('dest', dest);
 		if (milestone) params.set('milestone', milestone);
 		params.set('sort', sort);

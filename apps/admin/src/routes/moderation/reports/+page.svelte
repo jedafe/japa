@@ -291,7 +291,7 @@
 			<div class="border-t pt-4" style="border-color: var(--color-border)">
 				<p class="mb-2 text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('moderation.evidence', 'Evidence')}</p>
 				<ul class="space-y-1">
-					{#each row.evidence_urls as url}
+					{#each row.evidence_urls as url (url)}
 						<li><a href={url} target="_blank" rel="noopener" class="text-sm underline-offset-4 hover:underline" style="color: var(--color-primary)">{url}</a></li>
 					{/each}
 				</ul>

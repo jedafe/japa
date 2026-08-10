@@ -2,7 +2,9 @@ package learning
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -1300,6 +1302,16 @@ func (s *Store) IssueCertificate(ctx context.Context, tenantID, userID, trackID 
 		CertificateNumber: certificateNumber,
 	})
 	if err != nil {
+		// ON CONFLICT DO NOTHING returns ErrNoRows when a certificate already
+		// exists for this (user_id, track_id) pair — fetch and return it so
+		// the caller sees a successful idempotent issuance (audit BUG-BE-7).
+		if errors.Is(err, pgx.ErrNoRows) {
+			existing, getErr := s.GetCertificate(ctx, userID, trackID)
+			if getErr != nil {
+				return nil, fmt.Errorf("issue certificate: conflict but existing lookup failed: %w", getErr)
+			}
+			return existing, nil
+		}
 		return nil, fmt.Errorf("issue certificate: %w", err)
 	}
 
@@ -1459,17 +1471,13 @@ func (s *Store) ListEnrollmentsByUser(ctx context.Context, tenantID, userID pgty
 			LastActivityAt:   lastActivityAt,
 		}
 
-		// Fetch the next incomplete lesson for the Continue Learning card.
-		// pgx.ErrNoRows means all lessons are completed — leave NextLesson nil.
-		nextRow, err := s.read.GetNextIncompleteLessonByTrack(ctx, gen.GetNextIncompleteLessonByTrackParams{
-			UserID:  userID,
-			TrackID: r.TrackID,
-		})
-		if err == nil {
+		// Next incomplete lesson comes from the LATERAL join — no N+1.
+		// Empty slug means all lessons are completed → leave NextLesson nil.
+		if r.NextLessonSlug != "" {
 			e.NextLesson = &LessonNavRef{
-				Slug:       nextRow.Slug,
-				Title:      nextRow.Title,
-				ModuleSlug: nextRow.ModuleSlug,
+				Slug:       r.NextLessonSlug,
+				Title:      r.NextLessonTitle,
+				ModuleSlug: r.NextLessonModuleSlug,
 			}
 		}
 
@@ -1589,7 +1597,9 @@ type QuizQuestion struct {
 	Position    int32       `json:"position"`
 }
 
-// GetQuizQuestions retrieves quiz questions for a lesson (without answers).
+// GetQuizQuestions retrieves quiz questions for a lesson WITHOUT answers or
+// explanations. Used by the public GET /learn/quizzes/:id endpoint so users
+// cannot read the correct answers before submitting (§36: "no answers revealed").
 func (s *Store) GetQuizQuestions(ctx context.Context, tenantID, lessonID pgtype.UUID) ([]QuizQuestion, error) {
 	rows, err := s.read.GetQuizQuestionsByLesson(ctx, gen.GetQuizQuestionsByLessonParams{
 		TenantID: tenantID,
@@ -1607,6 +1617,35 @@ func (s *Store) GetQuizQuestions(ctx context.Context, tenantID, lessonID pgtype.
 			LessonID:    r.LessonID,
 			Question:    r.Question,
 			Options:     r.Options,
+			// Answer and Explanation intentionally omitted — the public
+			// quiz endpoint must not reveal correct answers.
+			Position: r.Position,
+		})
+	}
+
+	return questions, nil
+}
+
+// GetQuizQuestionsWithAnswers retrieves quiz questions with correct answers and
+// explanations for grading (POST /learn/quizzes/:id/submit). This is the only
+// path that includes the Answer field.
+func (s *Store) GetQuizQuestionsWithAnswers(ctx context.Context, tenantID, lessonID pgtype.UUID) ([]QuizQuestion, error) {
+	rows, err := s.read.GetQuizQuestionsByLesson(ctx, gen.GetQuizQuestionsByLessonParams{
+		TenantID: tenantID,
+		LessonID: lessonID,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("get quiz questions with answers: %w", err)
+	}
+
+	questions := make([]QuizQuestion, 0, len(rows))
+
+	for _, r := range rows {
+		questions = append(questions, QuizQuestion{
+			ID:          r.ID,
+			LessonID:    r.LessonID,
+			Question:    r.Question,
+			Options:     r.Options,
 			Answer:      r.Answer,
 			Explanation: r.Explanation,
 			Position:    r.Position,
@@ -1614,11 +1653,6 @@ func (s *Store) GetQuizQuestions(ctx context.Context, tenantID, lessonID pgtype.
 	}
 
 	return questions, nil
-}
-
-// GetQuizQuestionsWithAnswers retrieves quiz questions with correct answers (for grading).
-func (s *Store) GetQuizQuestionsWithAnswers(ctx context.Context, tenantID, lessonID pgtype.UUID) ([]QuizQuestion, error) {
-	return s.GetQuizQuestions(ctx, tenantID, lessonID)
 }
 
 // ---------------------------------------------------------------------------
@@ -1654,8 +1688,8 @@ type TrackReviewAggregate struct {
 	Avg   float64 `json:"avg"`
 }
 
-// CreateTrackReview inserts a review for a learning track.
-// AUDIT-BE-ROUTE-040: entity_type=learning_track.
+// CreateTrackReview inserts a review for a learning track and updates the
+// review_aggregates rollup (Section 29). AUDIT-BE-ROUTE-040: entity_type=learning_track.
 func (s *Store) CreateTrackReview(ctx context.Context, tenantID, trackID, reviewerID pgtype.UUID, rating int16, title, body *string) (TrackReview, error) {
 	row, err := s.write.CreateReview(ctx, gen.CreateReviewParams{
 		TenantID:       tenantID,
@@ -1669,6 +1703,19 @@ func (s *Store) CreateTrackReview(ctx context.Context, tenantID, trackID, review
 	if err != nil {
 		return TrackReview{}, err
 	}
+
+	// Maintain the review_aggregates rollup so GetTrackReviewAggregate can
+	// read the precomputed count/avg instead of scanning all review rows.
+	if _, aggErr := s.write.UpsertReviewAggregate(ctx, gen.UpsertReviewAggregateParams{
+		TenantID:   tenantID,
+		EntityType: "learning_track",
+		EntityID:   trackID,
+	}); aggErr != nil {
+		// Non-fatal — the review was inserted; the aggregate will be
+		// recomputed on the next review or by a maintenance task.
+		slog.Warn("learning: upsert review aggregate for track", "track_id", trackID, "error", aggErr)
+	}
+
 	return trackReviewFromRow(row), nil
 }
 
@@ -1694,28 +1741,22 @@ func (s *Store) ListTrackReviews(ctx context.Context, tenantID, trackID pgtype.U
 }
 
 // GetTrackReviewAggregate returns the total review count and average rating
-// for a learning track.
+// for a learning track from the review_aggregates rollup table (Section 29).
+// Falls back to zeros when no aggregate row exists yet (no reviews posted).
 func (s *Store) GetTrackReviewAggregate(ctx context.Context, tenantID, trackID pgtype.UUID) (TrackReviewAggregate, error) {
-	rows, err := s.read.ListReviewsByEntity(ctx, gen.ListReviewsByEntityParams{
+	agg, err := s.read.GetReviewAggregate(ctx, gen.GetReviewAggregateParams{
 		TenantID:   tenantID,
 		EntityType: "learning_track",
 		EntityID:   trackID,
-		PageLimit:  10000,
-		PageOffset: 0,
 	})
 	if err != nil {
-		return TrackReviewAggregate{}, err
-	}
-	if len(rows) == 0 {
+		// No aggregate row = no reviews yet. Return zeros.
 		return TrackReviewAggregate{}, nil
 	}
-	var sum float64
-	for _, r := range rows {
-		sum += float64(r.Rating)
-	}
+	avg, _ := agg.AverageRating.Float64Value()
 	return TrackReviewAggregate{
-		Count: int32(len(rows)),
-		Avg:   sum / float64(len(rows)),
+		Count: agg.ReviewCount,
+		Avg:   avg.Float64,
 	}, nil
 }
 

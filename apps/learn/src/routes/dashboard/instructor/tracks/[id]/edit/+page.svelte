@@ -10,6 +10,7 @@
 	import { onMount } from 'svelte';
 	import { LoadingSkeleton, EmptyState } from '$lib/components/ui';
 	import { Save, ArrowLeft } from 'lucide-svelte';
+	import { DIFFICULTY_LEVELS } from '$lib/constants/learning';
 	import type { InstructorTrack, TrackLevel } from '$lib/types';
 
 	const trackId = page.params.id;
@@ -166,9 +167,9 @@
 					bind:value={difficulty}
 					class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-3 text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none"
 				>
-					<option value="beginner">{t('learn.level_beginner', 'Beginner')}</option>
-					<option value="intermediate">{t('learn.level_intermediate', 'Intermediate')}</option>
-					<option value="advanced">{t('learn.level_advanced', 'Advanced')}</option>
+					{#each DIFFICULTY_LEVELS as level}
+						<option value={level}>{t(`level.${level}`)}</option>
+					{/each}
 				</select>
 			</div>
 

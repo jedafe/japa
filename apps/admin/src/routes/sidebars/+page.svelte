@@ -667,7 +667,7 @@
 	<div class="space-y-4">
 		<div>
 			<label for="widget-label" class="block text-sm font-medium" style="color: var(--color-foreground)">{t("sidebars.widget_label", "Label")}</label>
-			<input id="widget-label" type="text" bind:value={widgetLabel} class="mt-1 w-full rounded-lg border p-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" placeholder="e.g., Trending Tags" />
+			<input id="widget-label" type="text" bind:value={widgetLabel} class="mt-1 w-full rounded-lg border p-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" placeholder={t('sidebars.ph_eg_trending_tags', 'e.g., Trending Tags')} />
 		</div>
 		<div>
 			<label for="widget-type" class="block text-sm font-medium" style="color: var(--color-foreground)">{t("sidebars.widget_type", "Widget Type")}</label>
@@ -717,7 +717,7 @@
 			<div class="mt-1">
 				<Autocomplete
 					id="widget-permission"
-					placeholder="e.g., moderation.tools"
+					placeholder={t('sidebars.ph_eg_moderationtools', 'e.g., moderation.tools')}
 					emptyMessage={t("sidebars.no_permission_nodes", "No matching permission nodes")}
 					fetcher={fetchPermissionNodes}
 					initialFetcher={initialPermissionNodes}
@@ -881,7 +881,7 @@
 	<div class="space-y-4">
 		<div>
 			<label for="sidebar-name" class="block text-sm font-medium" style="color: var(--color-foreground)">{t("sidebars.name", "Name")}</label>
-			<input id="sidebar-name" type="text" bind:value={value.name} class="mt-1 w-full rounded-lg border p-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" placeholder="e.g., Dashboard Right" />
+			<input id="sidebar-name" type="text" bind:value={value.name} class="mt-1 w-full rounded-lg border p-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" placeholder={t('sidebars.ph_eg_dashboard_right', 'e.g., Dashboard Right')} />
 		</div>
 		<div>
 			<label for="sidebar-slug" class="block text-sm font-medium" style="color: var(--color-foreground)">{t("sidebars.slug", "Slug")}</label>

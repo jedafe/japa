@@ -185,7 +185,7 @@
 
 {#if Object.keys(statusDist).length > 0}
 	<div class="mb-6 grid gap-3 sm:grid-cols-4">
-		{#each Object.entries(statusDist) as [status, count]}
+		{#each Object.entries(statusDist) as [status, count] (status)}
 			<Card>
 				<CardHeader>
 					<span class="text-xs font-medium" style="color: var(--color-muted)">{status}</span>

@@ -85,7 +85,7 @@ func (q *Queries) AdminCountChecklistProgress(ctx context.Context, arg AdminCoun
 const adminListChecklistProgress = `-- name: AdminListChecklistProgress :many
 
 SELECT
-    cp.id, cp.tenant_id, cp.user_id, cp.guide_id, cp.item_key, cp.completed, cp.completed_at, cp.notes, cp.created_at, cp.updated_at,
+    cp.id, cp.tenant_id, cp.user_id, cp.guide_id, cp.item_key, cp.completed, cp.completed_at, cp.notes, cp.created_at, cp.updated_at, cp.list_type,
     u.username AS username
 FROM checklist_progress cp
 JOIN users u ON u.id = cp.user_id
@@ -115,6 +115,7 @@ type AdminListChecklistProgressRow struct {
 	Notes       *string            `json:"notes"`
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
+	ListType    string             `json:"list_type"`
 	Username    string             `json:"username"`
 }
 
@@ -147,6 +148,7 @@ func (q *Queries) AdminListChecklistProgress(ctx context.Context, arg AdminListC
 			&i.Notes,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.ListType,
 			&i.Username,
 		); err != nil {
 			return nil, err
@@ -205,7 +207,7 @@ func (q *Queries) DeleteChecklistProgressByUserGuide(ctx context.Context, arg De
 
 const listChecklistProgressByUserGuide = `-- name: ListChecklistProgressByUserGuide :many
 
-SELECT id, tenant_id, user_id, guide_id, item_key, completed, completed_at, notes, created_at, updated_at FROM checklist_progress
+SELECT id, tenant_id, user_id, guide_id, item_key, completed, completed_at, notes, created_at, updated_at, list_type FROM checklist_progress
 WHERE tenant_id = $1 AND user_id = $2 AND guide_id = $3
 ORDER BY item_key
 `
@@ -239,6 +241,7 @@ func (q *Queries) ListChecklistProgressByUserGuide(ctx context.Context, arg List
 			&i.Notes,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.ListType,
 		); err != nil {
 			return nil, err
 		}
@@ -263,7 +266,7 @@ DO UPDATE SET
     completed_at = COALESCE(EXCLUDED.completed_at, checklist_progress.completed_at),
     notes        = COALESCE(EXCLUDED.notes, checklist_progress.notes),
     updated_at   = now()
-RETURNING id, tenant_id, user_id, guide_id, item_key, completed, completed_at, notes, created_at, updated_at
+RETURNING id, tenant_id, user_id, guide_id, item_key, completed, completed_at, notes, created_at, updated_at, list_type
 `
 
 type UpsertChecklistProgressParams struct {
@@ -314,6 +317,7 @@ func (q *Queries) UpsertChecklistProgress(ctx context.Context, arg UpsertCheckli
 		&i.Notes,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ListType,
 	)
 	return i, err
 }

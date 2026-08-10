@@ -172,7 +172,7 @@
 						</tr>
 					</thead>
 					<tbody>
-						{#each stats.by_type as et}
+						{#each stats.by_type as et (et)}
 							<tr class="border-t" style="border-color: var(--color-border)">
 								<td class="px-4 py-2" style="color: var(--color-foreground)">
 									<Badge variant="outline">{et.entity_type}</Badge>

@@ -29,6 +29,7 @@ type ContentService interface {
 	CreateContent(ctx context.Context, tenantID pgtype.UUID, input content.CreateContentInput) (gen.CreateContentRow, error)
 	GetContent(ctx context.Context, id, tenantID pgtype.UUID) (gen.GetContentByIDRow, error)
 	UpdateContent(ctx context.Context, id, tenantID, editedBy pgtype.UUID, input content.UpdateContentInput, bypassEditWindow bool) (gen.UpdateContentRow, error)
+	UpdateContentStatus(ctx context.Context, id, tenantID pgtype.UUID, status string) (gen.UpdateContentStatusRow, error)
 	DeleteContent(ctx context.Context, id, tenantID pgtype.UUID) error
 }
 
@@ -43,6 +44,7 @@ type AchievementDTO struct {
 	Visibility      string `json:"visibility"`
 	ViewCount       int32  `json:"view_count"`
 	CommentCount    int32  `json:"comment_count"`
+	ReactionCount   int32  `json:"reaction_count"`
 	PublishedAt     string `json:"published_at"`
 	CreatedAt       string `json:"created_at"`
 	UpdatedAt       string `json:"updated_at"`
@@ -104,14 +106,19 @@ func (s *Service) Enabled(ctx context.Context, tenantID pgtype.UUID) bool {
 	return s.settings.GetBoolOr(ctx, tenantID, "achievement.enabled", false)
 }
 
+// ErrMissingMilestone is returned when a submission omits milestone_type.
+var ErrMissingMilestone = fmt.Errorf("milestone_type is required")
+
 // Submit creates a new achievement — a contents row with
 // content_type='achievement' plus an achievement_meta row. The achievement is
-// created in 'draft' status; the author can submit for review (set status to
-// 'pending') via the content update flow. Auth required (achievement.create
-// permission checked at route level).
+// published immediately (member+ is gated by the achievement.create
+// permission at the route level). Auth required.
 func (s *Service) Submit(ctx context.Context, tenantID, authorID pgtype.UUID, input SubmitInput) (AchievementDTO, error) {
 	if input.Title == "" || input.DestinationSpaceID == "" {
 		return AchievementDTO{}, fmt.Errorf("title and destination_space_id are required")
+	}
+	if input.MilestoneType == "" {
+		return AchievementDTO{}, ErrMissingMilestone
 	}
 
 	var destSpaceID pgtype.UUID
@@ -126,14 +133,16 @@ func (s *Service) Submit(ctx context.Context, tenantID, authorID pgtype.UUID, in
 		}
 	}
 
+	now := pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true}
 	contentRow, err := s.content.CreateContent(ctx, tenantID, content.CreateContentInput{
 		AuthorID:    authorID,
 		ContentType: content.TypeAchievement,
 		Title:       input.Title,
 		Body:        input.Body,
-		Status:      content.StatusDraft,
+		Status:      content.StatusPublished,
 		Visibility:  content.VisibilityPublic,
 		GeoSpaceID:  destSpaceID, // file achievement in destination country space
+		PublishAt:   now,
 	})
 	if err != nil {
 		return AchievementDTO{}, fmt.Errorf("achievement: create content: %w", err)
@@ -249,16 +258,36 @@ func (s *Service) EditOwn(ctx context.Context, contentID, tenantID, userID pgtyp
 		return AchievementDTO{}, fmt.Errorf("achievement: edit: update content: %w", err)
 	}
 
-	// Update achievement_meta fields.
-	meta := AchievementMeta{}
+	// Update achievement_meta fields. Fetch the existing meta row first and
+	// apply only the non-nil input fields onto it, so a partial edit (e.g.
+	// title-only) does not zero out milestone_type / destination_space_id /
+	// origin_space_id / is_anonymous (ACH-002).
+	existingMeta, err := s.store.GetMeta(ctx, contentID, tenantID)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return AchievementDTO{}, fmt.Errorf("achievement: edit: achievement_meta not found: %w", err)
+		}
+		return AchievementDTO{}, fmt.Errorf("achievement: edit: get achievement_meta: %w", err)
+	}
+
+	meta := existingMeta // start from existing values
 	if input.DestinationSpaceID != nil && *input.DestinationSpaceID != "" {
-		if err := meta.DestinationSpaceID.Scan(*input.DestinationSpaceID); err != nil {
+		var dest pgtype.UUID
+		if err := dest.Scan(*input.DestinationSpaceID); err != nil {
 			return AchievementDTO{}, fmt.Errorf("achievement: edit: invalid destination_space_id: %w", err)
 		}
+		meta.DestinationSpaceID = dest
 	}
-	if input.OriginSpaceID != nil && *input.OriginSpaceID != "" {
-		if err := meta.OriginSpaceID.Scan(*input.OriginSpaceID); err != nil {
-			return AchievementDTO{}, fmt.Errorf("achievement: edit: invalid origin_space_id: %w", err)
+	if input.OriginSpaceID != nil {
+		if *input.OriginSpaceID == "" {
+			// Explicitly clear origin.
+			meta.OriginSpaceID = pgtype.UUID{}
+		} else {
+			var origin pgtype.UUID
+			if err := origin.Scan(*input.OriginSpaceID); err != nil {
+				return AchievementDTO{}, fmt.Errorf("achievement: edit: invalid origin_space_id: %w", err)
+			}
+			meta.OriginSpaceID = origin
 		}
 	}
 	if input.MilestoneType != nil {
@@ -324,6 +353,28 @@ func (s *Service) AdminList(ctx context.Context, tenantID pgtype.UUID, status, m
 	return dtos, total, nil
 }
 
+// AdminSetStatus changes the publication status of an achievement (e.g.
+// publish / unpublish). Used by the moderation queue. Caller must hold the
+// achievement.moderate permission (enforced at route level).
+func (s *Service) AdminSetStatus(ctx context.Context, contentID, tenantID pgtype.UUID, status string) (AchievementDTO, error) {
+	if status != content.StatusPublished && status != content.StatusDraft && status != content.StatusPending {
+		return AchievementDTO{}, fmt.Errorf("invalid status: %s", status)
+	}
+	if _, err := s.content.UpdateContentStatus(ctx, contentID, tenantID, status); err != nil {
+		return AchievementDTO{}, fmt.Errorf("achievement: admin set status: %w", err)
+	}
+	return s.getAchievementDTOByID(ctx, contentID, tenantID)
+}
+
+// AdminDelete soft-deletes an achievement from the moderation queue. Caller
+// must hold the achievement.moderate permission (enforced at route level).
+func (s *Service) AdminDelete(ctx context.Context, contentID, tenantID pgtype.UUID) error {
+	if err := s.content.DeleteContent(ctx, contentID, tenantID); err != nil {
+		return fmt.Errorf("achievement: admin delete: %w", err)
+	}
+	return nil
+}
+
 // getAchievementDTOByID fetches an achievement by content_id and converts to
 // DTO.
 func (s *Service) getAchievementDTOByID(ctx context.Context, contentID, tenantID pgtype.UUID) (AchievementDTO, error) {
@@ -355,6 +406,7 @@ func rowToDTO(r AchievementRow) AchievementDTO {
 		Visibility:   r.Visibility,
 		ViewCount:    r.ViewCount,
 		CommentCount: r.CommentCount,
+		ReactionCount: r.ReactionCount,
 		PublishedAt:  formatTs(r.PublishedAt),
 		CreatedAt:    formatTs(r.CreatedAt),
 		UpdatedAt:    formatTs(r.UpdatedAt),

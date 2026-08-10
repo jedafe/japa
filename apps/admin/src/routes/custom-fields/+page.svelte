@@ -624,7 +624,7 @@
 				class="w-full rounded-lg border px-3 py-2 text-sm disabled:opacity-50"
 				style="border-color: var(--color-border); background-color: var(--color-background); color: var(--color-foreground)"
 			>
-				{#each fieldTypes as ft}
+				{#each fieldTypes as ft (ft)}
 					<option value={ft.value}>{ft.label}</option>
 				{/each}
 			</select>
@@ -663,7 +663,7 @@
 				</div>
 				{#if options.length > 0}
 					<div class="mt-2 flex flex-wrap gap-2">
-						{#each options as opt}
+						{#each options as opt (opt)}
 							<span class="inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs" style="background: var(--color-surface)">
 								<span style="color: var(--color-muted)">{opt.value}</span>: {opt.label}
 								<button type="button" class="ml-0.5 opacity-50 hover:opacity-100" onclick={() => removeOption(opt)}>&times;</button>

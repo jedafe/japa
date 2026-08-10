@@ -132,3 +132,43 @@ func (d *Dispatcher) Dispatch(ctx context.Context, category string, req Request)
 
 	return Response{}, fmt.Errorf("ai: all providers for category %q failed: %w", category, lastErr)
 }
+
+// ChatWithTools dispatches a function-calling chat completion to the first
+// available provider for the given category, with circuit-breaker fallback
+// identical to Dispatch. On failure it logs the error and tries the next
+// provider, returning on the first success. If all providers fail, the last
+// error is returned.
+//
+// Providers that do not support function calling return
+// ErrFunctionCallingUnsupported, which is treated as a failure so the
+// dispatcher falls through to the next provider.
+//
+// Ref: japaconnect-engineering/sections/103-ai-agent-executor.md
+func (d *Dispatcher) ChatWithTools(ctx context.Context, category string, req ChatWithToolsRequest) (ChatWithToolsResponse, error) {
+	d.mu.RLock()
+	providers := d.providersByCategory[category]
+	d.mu.RUnlock()
+
+	if len(providers) == 0 {
+		return ChatWithToolsResponse{}, fmt.Errorf("ai: no providers registered for category %q", category)
+	}
+
+	var lastErr error
+
+	for _, p := range providers {
+		resp, err := p.ChatWithTools(ctx, req)
+		if err == nil {
+			return resp, nil
+		}
+
+		lastErr = err
+		slog.Error(
+			"ai provider ChatWithTools failed, trying next",
+			"provider", p.Name(),
+			"category", category,
+			"error", err,
+		)
+	}
+
+	return ChatWithToolsResponse{}, fmt.Errorf("ai: all providers for category %q failed: %w", category, lastErr)
+}

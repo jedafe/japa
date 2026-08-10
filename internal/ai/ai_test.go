@@ -16,11 +16,13 @@ import (
 
 // mockProvider implements Provider for testing without external dependencies.
 type mockProvider struct {
-	name            string
-	sendFn          func(ctx context.Context, req Request) (Response, error)
-	verifySigFn     func(payload []byte, sig string) error
-	sendCallCount   int
-	verifyCallCount int
+	name               string
+	sendFn             func(ctx context.Context, req Request) (Response, error)
+	chatWithToolsFn    func(ctx context.Context, req ChatWithToolsRequest) (ChatWithToolsResponse, error)
+	verifySigFn        func(payload []byte, sig string) error
+	sendCallCount      int
+	chatWithToolsCount int
+	verifyCallCount    int
 }
 
 func (m *mockProvider) Name() string { return m.name }
@@ -38,6 +40,19 @@ func (m *mockProvider) Send(ctx context.Context, req Request) (Response, error) 
 	}, nil
 }
 
+func (m *mockProvider) ChatWithTools(ctx context.Context, req ChatWithToolsRequest) (ChatWithToolsResponse, error) {
+	m.chatWithToolsCount++
+	if m.chatWithToolsFn != nil {
+		return m.chatWithToolsFn(ctx, req)
+	}
+
+	return ChatWithToolsResponse{
+		ProviderRef:  m.name + "-tools-ref",
+		Content:      "mock response from " + m.name,
+		FinishReason: "stop",
+	}, nil
+}
+
 func (m *mockProvider) VerifyWebhookSignature(payload []byte, sig string) error {
 	m.verifyCallCount++
 	if m.verifySigFn != nil {
@@ -47,7 +62,7 @@ func (m *mockProvider) VerifyWebhookSignature(payload []byte, sig string) error 
 	return nil
 }
 
-func (m *mockProvider) Models() []ModelInfo { return nil }
+func (m *mockProvider) Models() []ModelInfo                                { return nil }
 func (m *mockProvider) FetchModels(_ context.Context) ([]ModelInfo, error) { return nil, nil }
 
 // ---------------------------------------------------------------------------

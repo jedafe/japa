@@ -20,7 +20,10 @@
 		Sparkles,
 		Pencil,
 		Trash2,
-		Loader2
+		Loader2,
+		Heart,
+		MessageCircle,
+		Eye
 	} from 'lucide-svelte';
 	import type { AchievementMilestoneType } from '$lib/types';
 	import type { IconComponent } from '$lib/components/ui/icons';
@@ -146,6 +149,22 @@
 			{/if}
 			<span>·</span>
 			<span>{createdDate}</span>
+		</div>
+
+		<!-- Engagement stats (reactions / comments / views) -->
+		<div class="mt-3 flex flex-wrap items-center gap-4 text-xs text-[var(--color-text-subtle)]">
+			<span class="inline-flex items-center gap-1" title={t('achievements.reactions', 'Reactions')}>
+				<Heart size={14} class="text-[var(--color-primary)]" fill={achievement.reaction_count > 0 ? 'currentColor' : 'none'} />
+				{achievement.reaction_count}
+			</span>
+			<span class="inline-flex items-center gap-1" title={t('achievements.comments', 'Comments')}>
+				<MessageCircle size={14} />
+				{achievement.comment_count}
+			</span>
+			<span class="inline-flex items-center gap-1" title={t('achievements.views', 'Views')}>
+				<Eye size={14} />
+				{achievement.view_count}
+			</span>
 		</div>
 
 		<!-- Body -->

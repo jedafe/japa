@@ -2872,7 +2872,7 @@ func HandleAdEventIngest(ctx context.Context, t *asynq.Task) error {
 	var payload struct {
 		TenantID   string `json:"tenant_id"`
 		CampaignID string `json:"campaign_id"`
-		UserID     string `json:"user_id"`
+		UserID     string `json:"user_id"` // may be empty for guest events
 		EventType  string `json:"event_type"` // "impression", "click"
 	}
 
@@ -2891,9 +2891,13 @@ func HandleAdEventIngest(ctx context.Context, t *asynq.Task) error {
 		return fmt.Errorf("task:ad:ingest_event_batch: %w", err)
 	}
 
-	userID, err := scanUUID(payload.UserID)
-	if err != nil {
-		return fmt.Errorf("task:ad:ingest_event_batch: %w", err)
+	// user_id is nullable — guest events have no user_id in the payload.
+	var userID pgtype.UUID
+	if payload.UserID != "" {
+		userID, err = scanUUID(payload.UserID)
+		if err != nil {
+			return fmt.Errorf("task:ad:ingest_event_batch: %w", err)
+		}
 	}
 
 	if _, err := queries.InsertAdEvent(ctx, gen.InsertAdEventParams{

@@ -164,6 +164,126 @@ func (h *Handlers) HandleGetGuide(w http.ResponseWriter, r *http.Request) {
 }
 
 // ---------------------------------------------------------------------------
+// Authenticated user handlers (progress — /me/arrival-checklists)
+// ---------------------------------------------------------------------------
+
+// HandleListMyChecklists handles GET /me/arrival-checklists — the
+// authenticated user's saved arrival checklists with progress summaries.
+func (h *Handlers) HandleListMyChecklists(w http.ResponseWriter, r *http.Request) {
+	user, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+		writeError(w, http.StatusNotFound, "arrival_checklist_disabled", "Arrival checklist is not available")
+		return
+	}
+
+	checklists, err := h.service.ListUserChecklists(r.Context(), tenantID, user.UserID)
+	if err != nil {
+		slog.Error("arrivalchecklist: list my checklists failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "list_failed", "Failed to list checklists")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": checklists})
+}
+
+// HandleStartChecklist handles POST /me/arrival-checklists — start a
+// checklist (save initial progress). Auth required.
+func (h *Handlers) HandleStartChecklist(w http.ResponseWriter, r *http.Request) {
+	user, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+		writeError(w, http.StatusNotFound, "arrival_checklist_disabled", "Arrival checklist is not available")
+		return
+	}
+
+	var input StartChecklistRequest
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		return
+	}
+
+	if input.GuideID == "" {
+		writeError(w, http.StatusBadRequest, "missing_guide_id", "guide_id is required")
+		return
+	}
+
+	guide, err := h.service.StartChecklist(r.Context(), tenantID, user.UserID, input)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "guide_not_found", "Arrival checklist guide not found")
+			return
+		}
+		slog.Error("arrivalchecklist: start checklist failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "start_failed", "Failed to start checklist")
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, map[string]any{"data": guide})
+}
+
+// HandleTickItem handles PATCH /me/arrival-checklists/:id/items/:item_id —
+// tick/untick an item + add note. Auth required.
+func (h *Handlers) HandleTickItem(w http.ResponseWriter, r *http.Request) {
+	user, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	guideID, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	itemID := chi.URLParam(r, "item_id")
+	if itemID == "" {
+		writeError(w, http.StatusBadRequest, "missing_item_id", "item_id is required")
+		return
+	}
+
+	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+		writeError(w, http.StatusNotFound, "arrival_checklist_disabled", "Arrival checklist is not available")
+		return
+	}
+
+	var input TickItemRequest
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil && err.Error() != "EOF" {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		return
+	}
+
+	if err := h.service.TickItem(r.Context(), tenantID, user.UserID, guideID, itemID, input); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "guide_not_found", "Arrival checklist guide not found")
+			return
+		}
+		slog.Error("arrivalchecklist: tick item failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "tick_failed", "Failed to update item")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"updated": true}})
+}
+
+// ---------------------------------------------------------------------------
 // Admin handlers (manage guides — arrival_checklist.manage permission)
 // ---------------------------------------------------------------------------
 

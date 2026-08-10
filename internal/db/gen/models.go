@@ -144,9 +144,10 @@ type AdCampaign struct {
 }
 
 type AdEvent struct {
-	ID         pgtype.UUID        `json:"id"`
-	TenantID   pgtype.UUID        `json:"tenant_id"`
-	CampaignID pgtype.UUID        `json:"campaign_id"`
+	ID         pgtype.UUID `json:"id"`
+	TenantID   pgtype.UUID `json:"tenant_id"`
+	CampaignID pgtype.UUID `json:"campaign_id"`
+	// The user who triggered the event. NULL for anonymous/guest events (public /ads/events endpoint).
 	UserID     pgtype.UUID        `json:"user_id"`
 	EventType  string             `json:"event_type"`
 	OccurredAt pgtype.Timestamptz `json:"occurred_at"`
@@ -632,6 +633,7 @@ type ChecklistProgress struct {
 	Notes       *string            `json:"notes"`
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
+	ListType    string             `json:"list_type"`
 }
 
 type Comment struct {

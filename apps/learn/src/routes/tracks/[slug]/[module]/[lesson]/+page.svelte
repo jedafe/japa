@@ -24,6 +24,12 @@
 	// My Progress, My Learning) stay in sync after mark-complete.
 	let completedLessonIds = $state<Set<string>>(new Set());
 	let marking = $state(false);
+	// Certificate polling — when the track reaches 100% completion, poll
+	// /me/certificates until the async learning:issue_certificate task
+	// generates the certificate (ROADMAP-LEARN 07.05).
+	let trackCompleted = $state(false);
+	let certPolling = $state(false);
+	let issuedCert = $state<{ id: string; certificate_number: string } | null>(null);
 
 	$effect(() => {
 		if (!data.user) {
@@ -78,15 +84,49 @@
 		// Re-fetch the completed lesson IDs so the curriculum rail stays in
 		// sync (the optimistic set already has this lesson, but the re-fetch
 		// catches any other changes from other tabs/devices).
-		api.get<{ completed_lesson_ids?: string[] }>(`/learn/university/progress/${track.id}`).then((pr) => {
-			if (pr.data?.completed_lesson_ids) {
-				completedLessonIds = new Set(pr.data.completed_lesson_ids);
-			}
-		});
+		const pr = await api.get<{ completed_lesson_ids?: string[] }>(
+			`/learn/university/progress/${track.id}`
+		);
+		if (pr.data?.completed_lesson_ids) {
+			completedLessonIds = new Set(pr.data.completed_lesson_ids);
+		}
+		// Check if the track is now 100% complete → poll for the certificate.
+		// The backend issues the certificate asynchronously (learning:issue_certificate
+		// or the synchronous maybeIssueCertificate path). Poll /me/certificates
+		// for up to 15s (ROADMAP-LEARN 07.05).
+		if (completedLessonIds.size >= totalLessons && totalLessons > 0) {
+			trackCompleted = true;
+			pollForCertificate();
+		}
 		// Auto-next: navigate to the next lesson if one exists.
 		if (lesson.next_lesson) {
 			goto(`/tracks/${track.slug}/${lesson.next_lesson.module_slug}/${lesson.next_lesson.slug}`);
 		}
+	}
+
+	// Poll /me/certificates until a certificate for this track appears or
+	// the 15s timeout expires (ROADMAP-LEARN 07.05). The backend issues the
+	// certificate asynchronously on 100% completion.
+	async function pollForCertificate() {
+		if (certPolling) return;
+		certPolling = true;
+		const maxAttempts = 8; // 8 × 2s = 16s max
+		const interval = 2000;
+		for (let i = 0; i < maxAttempts; i++) {
+			await new Promise((r) => setTimeout(r, interval));
+			const r = await api.get<{ id: string; certificate_number: string; track_id: string }[]>(
+				'/me/certificates'
+			);
+			if (r.data) {
+				const cert = r.data.find((c) => c.track_id === track.id);
+				if (cert) {
+					issuedCert = cert;
+					certPolling = false;
+					return;
+				}
+			}
+		}
+		certPolling = false;
 	}
 
 	// Video progress tracking (browser-guarded init).
@@ -224,7 +264,7 @@
 			<NotebookPen size={14} /> {t('learn.notes')}
 		</h2>
 		<textarea
-			placeholder="Write your notes…"
+			placeholder={t('learn.notes_placeholder', 'Write your notes…')}
 			class="h-24 w-full resize-none rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-2 text-sm text-[var(--color-text)] placeholder:text-[var(--color-muted)] focus:border-[var(--color-primary)] focus:outline-none"
 		></textarea>
 	</section>
@@ -505,6 +545,27 @@
 				<span></span>
 			{/if}
 		</div>
+
+		<!-- Track completion celebration + certificate link (ROADMAP-LEARN 07.05) -->
+		{#if trackCompleted}
+			<div class="mt-6 max-w-3xl rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-primary)_6%,transparent)] p-6 text-center">
+				{#if issuedCert}
+					<p class="text-lg font-semibold text-[var(--color-text)]">{t('learn.track_complete', 'Track Complete!')}</p>
+					<p class="mt-1 text-sm text-[var(--color-text-subtle)]">{t('learn.certificate_issued', 'Your certificate is ready.')}</p>
+					<a
+						href="/certificates/{issuedCert.id}"
+						class="mt-3 inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-[var(--color-primary-contrast)] hover:bg-[var(--color-primary-hover)]"
+					>
+						{t('learn.view_certificate', 'View certificate')}
+					</a>
+				{:else if certPolling}
+					<p class="text-sm text-[var(--color-text-subtle)]">{t('learn.generating_certificate', 'Generating your certificate…')}</p>
+				{:else}
+					<p class="text-lg font-semibold text-[var(--color-text)]">{t('learn.track_complete', 'Track Complete!')}</p>
+					<p class="mt-1 text-sm text-[var(--color-text-subtle)]">{t('learn.certificate_pending', 'Your certificate will appear in My Certificates shortly.')}</p>
+				{/if}
+			</div>
+		{/if}
 	</article>
 </div>
 

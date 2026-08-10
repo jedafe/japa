@@ -209,7 +209,7 @@
 <div class="mb-6 flex flex-wrap items-end gap-4">
 	<div class="flex items-center gap-2">
 		<span class="text-sm" style="color: var(--color-muted)">{t('common.period', 'Period')}:</span>
-		{#each timePeriods as opt}
+		{#each timePeriods as opt (opt)}
 			<Button
 				variant={period === opt.value ? 'default' : 'ghost'}
 				size="sm"
@@ -251,7 +251,7 @@
 {#if loading}
 	<div class="space-y-4">
 		<div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
-			{#each Array(3) as _}
+			{#each Array(3) as _, i (i)}
 				<CardSkeleton />
 			{/each}
 		</div>
@@ -352,7 +352,7 @@
 
 	<!-- Tabs -->
 	<div class="mb-4 flex gap-1 border-b" style="border-color: var(--color-border)">
-		{#each tabs as tab}
+		{#each tabs as tab (tab)}
 			<button
 				class="relative px-4 py-2 text-sm font-medium transition-colors"
 				style={activeTab === tab.key

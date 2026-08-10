@@ -103,7 +103,7 @@
 						{#if getNotifications().length === 0}
 							<p class="px-3 py-4 text-center text-sm" style="color: var(--color-muted)">{t('lib.components.layout.TopBar.svelte.no_notifications')}</p>
 						{:else}
-							{#each getNotifications() as notif}
+							{#each getNotifications() as notif (notif)}
 								<button
 									type="button"
 									class="w-full px-3 py-2 text-left hover:bg-black/[0.02] dark:hover:bg-white/[0.05] {notif.read ? 'opacity-60' : ''}"

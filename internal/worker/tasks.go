@@ -204,6 +204,7 @@ func RegisterHandlers(mux *asynq.ServeMux) {
 	mux.HandleFunc(TypeImportProcessSource, HandleImportProcessSource)
 	mux.HandleFunc(TypeImportFetchMedia, HandleImportFetchMedia)
 	mux.HandleFunc(TypeAssessmentScoreSubmission, HandleAssessmentScoreSubmission)
+	mux.HandleFunc(TypeAssessmentCleanupAnonymous, HandleAssessmentCleanupAnonymous)
 	mux.HandleFunc(TypeScholarshipCheckDeadlines, HandleScholarshipCheckDeadlines)
 	mux.HandleFunc(TypeRemittanceFetchRates, HandleRemittanceFetchRates)
 	mux.HandleFunc(TypeRemittanceCheckAlerts, HandleRemittanceCheckAlerts)

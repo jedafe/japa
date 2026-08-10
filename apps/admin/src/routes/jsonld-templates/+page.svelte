@@ -335,7 +335,7 @@
 					style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
 					bind:value={value.content_type}
 					disabled={!!editing}
-					placeholder="e.g., Article"
+					placeholder={t('jsonld-templates.ph_eg_article', 'e.g., Article')}
 				/>
 			</div>
 			<div>

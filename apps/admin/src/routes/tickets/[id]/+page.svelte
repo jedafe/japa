@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import PageHeader from '$lib/components/layout/page-header.svelte';
@@ -246,7 +245,7 @@
 		return TicketIcon;
 	}
 
-	onMount(() => {
+	$effect(() => {
 		if (ticketId) loadTicket();
 	});
 </script>
@@ -359,7 +358,7 @@
 						<p class="text-muted-foreground py-6 text-center text-sm">{t('tickets.detail.no_events', 'No events yet.')}</p>
 					{:else}
 						<ol class="relative space-y-4 border-l border-border pl-6">
-							{#each events as ev}
+							{#each events as ev (ev)}
 								{@const EvIcon = eventIcon(ev.event_type)}
 								<li class="relative">
 									<span class="absolute -left-[31px] flex h-6 w-6 items-center justify-center rounded-full border border-border bg-background">

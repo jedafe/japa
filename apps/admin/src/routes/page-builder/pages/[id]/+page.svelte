@@ -723,7 +723,7 @@
 			{:else if activeHeaderPanel === 'preview'}
 				<!-- Preview: geo country + device toggle + theme -->
 				<select bind:value={previewCountry} class="shrink-0 rounded border px-2 py-1 text-xs" style="border-color: var(--color-border-input); background: var(--color-background); color: var(--color-foreground)" aria-label={t('landing.preview_country', 'Preview country')}>
-					{#each geoCountries as c}<option value={c}>{c === 'global' ? t('landing.global', 'Global') : c}</option>{/each}
+					{#each geoCountries as c (c)}<option value={c}>{c === 'global' ? t('landing.global', 'Global') : c}</option>{/each}
 				</select>
 				<div class="flex shrink-0 gap-1">
 					<button onclick={() => (deviceMode = 'desktop')} class="rounded px-2 py-1 text-xs {deviceMode === 'desktop' ? 'text-white' : 'border'}" style={deviceMode === 'desktop' ? 'background: var(--color-primary)' : 'border-color: var(--color-border)'}>{t('landing.device_desktop', 'Desktop')}</button>
@@ -732,7 +732,7 @@
 				</div>
 				<select value={selectedThemeId} onchange={(e) => changeTheme(e.currentTarget.value)} class="shrink-0 rounded-md border px-2 py-1.5 text-xs" style="border-color: var(--color-border); background: var(--color-background); color: var(--color-foreground)" aria-label={t('page_builder.theme', 'Theme')}>
 					<option value="">{t('page_builder.default_theme', 'Default Theme')}</option>
-					{#each themes as th}<option value={th.id} selected={selectedThemeId === th.id}>{th.name}{th.is_default ? ' (default)' : ''}</option>{/each}
+					{#each themes as th (th)}<option value={th.id} selected={selectedThemeId === th.id}>{th.name}{th.is_default ? ' (default)' : ''}</option>{/each}
 				</select>
 			{:else if activeHeaderPanel === 'actions'}
 				<!-- Actions: save template + save draft + publish/archive -->

@@ -47,7 +47,7 @@
 		>
 			<div class="flex flex-wrap gap-1 flex-1 min-w-0 items-center">
 				{#if value && value.length > 0}
-					{#each value as val}
+					{#each value as val (val)}
 						{@const label = options.find(o => o.value === val)?.label ?? val}
 						<span class="inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-medium" style="background: var(--color-primary); color: var(--color-primary-foreground)">
 							{label}
@@ -83,7 +83,7 @@
 				sideOffset={4}
 			>
 				<Select.Viewport class="p-1">
-					{#each filteredOptions as option}
+					{#each filteredOptions as option (option)}
 						<Select.Item
 							value={option.value}
 							label={option.label}

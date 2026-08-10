@@ -577,7 +577,7 @@
 		<div class="space-y-3">
 			<div>
 				<label for="badge-name" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('gamification.name', 'Name')}</label>
-				<input id="badge-name" type="text" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={newBadge.name} placeholder="Top Contributor" />
+				<input id="badge-name" type="text" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={newBadge.name} placeholder={t('app.gamification.ph_top_contributor', 'Top Contributor')} />
 			</div>
 			<div>
 				<label for="badge-slug" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('gamification.slug', 'Slug')}</label>
@@ -591,7 +591,7 @@
 				<div>
 					<label for="badge-trigger" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('gamification.trigger', 'Trigger Type')}</label>
 					<select id="badge-trigger" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={newBadge.trigger_type}>
-						{#each triggerTypeOptions as opt}
+						{#each triggerTypeOptions as opt (opt)}
 							<option value={opt.value}>{opt.label}</option>
 						{/each}
 					</select>
@@ -620,7 +620,7 @@
 		<div class="space-y-3">
 			<div>
 				<label for="challenge-name" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('gamification.name', 'Name')}</label>
-				<input id="challenge-name" type="text" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={newChallenge.name} placeholder="30-Day Posting Streak" />
+				<input id="challenge-name" type="text" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={newChallenge.name} placeholder={t('app.gamification.ph_30day_posting_streak', '30-Day Posting Streak')} />
 			</div>
 			<div>
 				<label for="challenge-slug" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('gamification.slug', 'Slug')}</label>
@@ -785,7 +785,7 @@
 			<div>
 				<label for="edit-badge-trigger" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('gamification.trigger', 'Trigger Type')}</label>
 				<select id="edit-badge-trigger" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={editBadgeForm.trigger_type}>
-					{#each triggerTypeOptions as opt}
+					{#each triggerTypeOptions as opt (opt)}
 						<option value={opt.value}>{opt.label}</option>
 					{/each}
 				</select>

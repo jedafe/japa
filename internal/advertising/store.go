@@ -49,7 +49,7 @@ func (s *Store) listAdSlotTypes(ctx context.Context, tenantID pgtype.UUID, limit
 	})
 }
 
-func (s *Store) updateAdSlotType(ctx context.Context, id, tenantID pgtype.UUID, name, slug, description string, maxWidth, maxHeight int, format string) (AdSlotType, error) {
+func (s *Store) updateAdSlotType(ctx context.Context, id, tenantID pgtype.UUID, name, description string) (AdSlotType, error) {
 	return s.queries.UpdateAdSlotTypeDetails(ctx, gen.UpdateAdSlotTypeDetailsParams{
 		ID:          id,
 		TenantID:    tenantID,
@@ -85,14 +85,14 @@ func (s *Store) getCampaignStats(ctx context.Context, campaignID, tenantID pgtyp
 	// Stats contract consumed by apps/admin ads page: campaign_id, impressions,
 	// clicks, conversions, spend, ctr, cpc, daily_stats. Missing fields render
 	// as `undefined` in the modal, so always include every key with a zero
-	// default. Spend aggregation from ad_campaigns.spent_credits is not yet
-	// wired into the ad_events rollup; default to 0 until that lands.
+	// default. Spend is read from ad_campaigns.spent via the GetCampaignStats
+	// query (LEFT JOIN).
 	ctr := 0.0
 	if row.Impressions > 0 {
 		ctr = float64(row.Clicks) / float64(row.Impressions) * 100
 	}
 
-	const spend = 0.0
+	spend := float64(row.Spent)
 	cpc := 0.0
 	if row.Clicks > 0 {
 		cpc = spend / float64(row.Clicks)

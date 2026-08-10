@@ -454,7 +454,7 @@
 	<div class="space-y-4">
 		<div>
 			<label for="wh-name" class="block text-sm font-medium" style="color: var(--color-foreground)">{t("webhooks.name", "Name")}</label>
-			<input id="wh-name" type="text" bind:value={formName} class="mt-1 w-full rounded-lg border p-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" placeholder="e.g., Slack Notifications" />
+			<input id="wh-name" type="text" bind:value={formName} class="mt-1 w-full rounded-lg border p-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" placeholder={t('app.webhooks.ph_eg_slack_notifications', 'e.g., Slack Notifications')} />
 		</div>
 		<div>
 			<label for="wh-url" class="block text-sm font-medium" style="color: var(--color-foreground)">{t("webhooks.url", "URL")}</label>

@@ -251,7 +251,7 @@
 	<div class="space-y-4">
 		<div class="h-8 w-64 animate-pulse rounded" style="background: var(--color-muted)"></div>
 		<div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
-			{#each Array(3) as _}
+			{#each Array(3) as _, i (i)}
 				<div class="h-24 animate-pulse rounded-lg border" style="border-color: var(--color-border); background: var(--color-surface)"></div>
 			{/each}
 		</div>

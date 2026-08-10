@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"log/slog"
 	"sort"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -24,14 +25,52 @@ import (
 
 // Task type constants — must match the Section 11 Asynq task catalog.
 const (
-	TaskScoreSubmission = "assessment:score_submission"
-	TaskAwardPoints     = "wallet:award_points"
+	TaskScoreSubmission   = "assessment:score_submission"
+	TaskCleanupAnonymous  = "assessment:cleanup_anonymous"
+	TaskAwardPoints       = "wallet:award_points"
 )
 
 // TaskEnqueuer is the minimal interface for enqueueing Asynq tasks.
 // The concrete enqueuer satisfies this.
 type TaskEnqueuer interface {
 	Enqueue(taskType string, payload []byte, opts ...interface{}) error
+}
+
+// AIDispatcher is the minimal interface for calling the AI gateway (§20).
+// The assessment service uses it to generate AI-assisted supplementary
+// roadmap steps when assessment.ai_roadmap_enabled is true (ADR-071 §3).
+type AIDispatcher interface {
+	Dispatch(ctx context.Context, category string, req AIRequest) (AIResponse, error)
+	HasCategory(category string) bool
+}
+
+// AIRequest is the standard envelope sent to the AI gateway.
+type AIRequest struct {
+	Category string
+	Payload  map[string]any
+}
+
+// AIResponse is the standard envelope returned by the AI gateway.
+type AIResponse struct {
+	ProviderRef string
+	Status      string
+	Raw         map[string]any
+}
+
+// RAGRetriever is the minimal interface for RAG grounding (§69, ADR-069).
+// The assessment service uses it to ground AI-assisted roadmap steps in
+// platform content.
+type RAGRetriever interface {
+	Retrieve(ctx context.Context, tenantID pgtype.UUID, query, language string) ([]RAGChunk, error)
+	FormatContext(chunks []RAGChunk) string
+}
+
+// RAGChunk is a single retrieved passage from the RAG layer.
+type RAGChunk struct {
+	Content   string
+	Score     float64
+	Source    string
+	ChunkType string
 }
 
 // ScoringConfig is the JSONB shape stored in forms.scoring_config.
@@ -116,6 +155,8 @@ type Service struct {
 	store    *Store
 	settings *config.Settings
 	enqueuer TaskEnqueuer
+	ai       AIDispatcher
+	rag      RAGRetriever
 }
 
 // NewService creates an assessment service.
@@ -128,6 +169,16 @@ func NewService(store *Store, settings *config.Settings) *Service {
 
 // SetEnqueuer injects the Asynq task enqueuer for scoring and points tasks.
 func (s *Service) SetEnqueuer(e TaskEnqueuer) { s.enqueuer = e }
+
+// SetAIDispatcher injects the AI gateway dispatcher for AI-assisted roadmap
+// generation (ADR-071 §3). Optional — if not set, only curated roadmap steps
+// are generated.
+func (s *Service) SetAIDispatcher(d AIDispatcher) { s.ai = d }
+
+// SetRAGRetriever injects the RAG retriever for grounding AI-assisted roadmap
+// steps in platform content (ADR-069). Optional — if not set, AI steps are
+// generated without RAG grounding.
+func (s *Service) SetRAGRetriever(r RAGRetriever) { s.rag = r }
 
 // GetActiveAssessment returns the active assessment form with its scoring_config
 // and fields. Returns an error if no active assessment form exists for the
@@ -214,6 +265,27 @@ func (s *Service) ScoreSubmission(ctx context.Context, tenantID pgtype.UUID, inp
 	}
 
 	result := computeScore(input.FieldValues, fields, scoringConfig)
+
+	// AI-assisted supplementary roadmap steps (ADR-071 §3).
+	// Gated by assessment.ai_roadmap_enabled. Falls back gracefully to
+	// curated-only if AI is unavailable or the setting is off.
+	if s.ai != nil && s.ai.HasCategory("content_generation") {
+		aiEnabled := true
+		if s.settings != nil {
+			aiEnabled = s.settings.GetBoolOr(ctx, tenantID, "assessment.ai_roadmap_enabled", true)
+		}
+		if aiEnabled {
+			aiSteps := s.generateAIRoadmapSteps(ctx, tenantID, result.DimensionScores, result.ThresholdLabel)
+			if len(aiSteps) > 0 {
+				// Append AI steps after curated steps, continuing the priority sequence.
+				basePriority := len(result.Roadmap)
+				for i, step := range aiSteps {
+					step.Priority = basePriority + i + 1
+					result.Roadmap = append(result.Roadmap, step)
+				}
+			}
+		}
+	}
 
 	dimensionScoresJSON, err := json.Marshal(result.DimensionScores)
 	if err != nil {
@@ -510,6 +582,134 @@ func GenerateRoadmap(dimensionScores map[string]int, scoringConfig ScoringConfig
 	}
 
 	return roadmap
+}
+
+// generateAIRoadmapSteps calls the AI gateway (§20) to generate 2–3
+// personalized supplementary roadmap steps as prose, grounded via the RAG
+// layer (§69, ADR-069). Falls back gracefully to no AI steps if the AI
+// gateway or RAG retrieval fails — curated steps are always present.
+//
+// The prompt includes the user's dimension scores and threshold label so
+// the AI can target its recommendations to the user's weakest areas.
+// RAG grounding (when available) injects relevant platform content passages
+// so the AI's recommendations reference real JapaConnect resources.
+func (s *Service) generateAIRoadmapSteps(ctx context.Context, tenantID pgtype.UUID, dimensionScores map[string]int, thresholdLabel string) []RoadmapStep {
+	// Build a summary of the user's weakest dimensions for the prompt.
+	weakestDims := make([]string, 0, len(dimensionScores))
+	type dimScore struct {
+		dim   string
+		score int
+	}
+	sorted := make([]dimScore, 0, len(dimensionScores))
+	for dim, score := range dimensionScores {
+		sorted = append(sorted, dimScore{dim, score})
+	}
+	sort.Slice(sorted, func(i, j int) bool { return sorted[i].score < sorted[j].score })
+	for _, ds := range sorted {
+		weakestDims = append(weakestDims, fmt.Sprintf("%s: %d/100", ds.dim, ds.score))
+	}
+
+	prompt := fmt.Sprintf(
+		"You are a relocation advisor for Nigerians planning to move abroad (japa). "+
+			"The user completed a readiness assessment and scored '%s' overall. "+
+			"Their dimension scores (weakest first): %s. "+
+			"Generate 2-3 personalized next steps as JSON array. Each step must have: "+
+			"\"title\" (short, actionable), \"description\" (1-2 sentences), "+
+			"\"content_slug\" (empty string if no specific platform content), "+
+			"\"dimension\" (the dimension this step addresses). "+
+			"Focus on the weakest dimensions. Be specific and practical. "+
+			"Do not repeat steps that are already in the curated roadmap.",
+		thresholdLabel,
+		strings.Join(weakestDims, ", "),
+	)
+
+	// RAG grounding: retrieve relevant platform content passages (ADR-069).
+	ragContext := ""
+	if s.rag != nil {
+		query := fmt.Sprintf("relocation readiness advice for weak areas: %s", strings.Join(weakestDims[:min(3, len(weakestDims))], ", "))
+		chunks, err := s.rag.Retrieve(ctx, tenantID, query, "en")
+		if err != nil {
+			slog.Warn("assessment: ai roadmap: RAG retrieve failed", "error", err)
+		} else if len(chunks) > 0 {
+			ragContext = s.rag.FormatContext(chunks)
+		}
+	}
+
+	payload := map[string]any{
+		"prompt":      prompt,
+		"max_tokens":  500,
+		"temperature": 0.7,
+	}
+	if ragContext != "" {
+		payload["context"] = ragContext
+	}
+
+	resp, err := s.ai.Dispatch(ctx, "content_generation", AIRequest{
+		Category: "content_generation",
+		Payload:  payload,
+	})
+	if err != nil {
+		slog.Warn("assessment: ai roadmap: dispatch failed", "error", err)
+		return nil
+	}
+	if resp.Status != "success" {
+		slog.Warn("assessment: ai roadmap: non-success status", "status", resp.Status)
+		return nil
+	}
+
+	// The AI gateway returns provider-specific response data in Raw.
+	// We expect a "text" or "content" field containing the generated text.
+	rawText, ok := extractAIText(resp.Raw)
+	if !ok || rawText == "" {
+		slog.Warn("assessment: ai roadmap: no text in response")
+		return nil
+	}
+
+	// The AI is instructed to return a JSON array. Parse it.
+	// If parsing fails, log and fall back to curated-only.
+	var steps []RoadmapStep
+	if err := json.Unmarshal([]byte(rawText), &steps); err != nil {
+		// Try extracting JSON array from prose response.
+		jsonStart := strings.Index(rawText, "[")
+		jsonEnd := strings.LastIndex(rawText, "]")
+		if jsonStart >= 0 && jsonEnd > jsonStart {
+			if err := json.Unmarshal([]byte(rawText[jsonStart:jsonEnd+1]), &steps); err != nil {
+				slog.Warn("assessment: ai roadmap: parse steps failed", "error", err)
+				return nil
+			}
+		} else {
+			slog.Warn("assessment: ai roadmap: no JSON array in response")
+			return nil
+		}
+	}
+
+	// Cap at 3 AI steps.
+	if len(steps) > 3 {
+		steps = steps[:3]
+	}
+
+	return steps
+}
+
+// extractAIText extracts the generated text from the AI gateway's
+// provider-specific response data. Different providers use different field
+// names ("text", "content", "output", "generated_text").
+func extractAIText(raw map[string]any) (string, bool) {
+	for _, key := range []string{"text", "content", "output", "generated_text", "response"} {
+		if v, ok := raw[key]; ok {
+			if s, ok := v.(string); ok && s != "" {
+				return s, true
+			}
+		}
+	}
+	return "", false
+}
+
+// CleanupAnonymousResults deletes anonymous assessment_results older than the
+// given retention window. Called by the assessment:cleanup_anonymous Asynq
+// task (ADR-071 §5). Returns the number of rows deleted.
+func (s *Service) CleanupAnonymousResults(ctx context.Context, retentionHours int32) (int64, error) {
+	return s.store.CleanupAnonymousResults(ctx, retentionHours)
 }
 
 // curatedRoadmapLibrary returns the deterministic mapping of dimension names

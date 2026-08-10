@@ -829,6 +829,14 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 			return fmt.Errorf("anonymizing form submissions: %w", err)
 		}
 
+		// GDPR: delete assessment_results for the user. The FK has ON DELETE
+		// CASCADE but we delete explicitly to document the erasure path and
+		// ensure PII-adjacent data (dimension scores, roadmap content) is
+		// removed before the final HardDeleteUser. Ref: Section 71, ADR-071.
+		if err := q.GdprDeleteAssessmentResultsByUser(ctx, userID); err != nil {
+			return fmt.Errorf("deleting assessment results: %w", err)
+		}
+
 		// 4. AUDIT-FRESH-GDPR-001: explicit cleanup for tables whose FK to
 		//    users(id) has no ON DELETE CASCADE/SET NULL. Without these the
 		//    final HardDeleteUser would block on a residual foreign key.

@@ -35,11 +35,11 @@ import (
 
 // Cursor API constants.
 const (
-	CursorProviderName    = "cursor"
-	CursorDefaultBase     = "https://api.cursor.com/v1"
-	CursorPollInterval    = 5 * time.Second
-	CursorPollTimeout     = 10 * time.Minute // Cursor agents can take longer
-	CursorDefaultModel    = "composer-2.5"
+	CursorProviderName = "cursor"
+	CursorDefaultBase  = "https://api.cursor.com/v1"
+	CursorPollInterval = 5 * time.Second
+	CursorPollTimeout  = 10 * time.Minute // Cursor agents can take longer
+	CursorDefaultModel = "composer-2.5"
 )
 
 // CursorProvider implements the Provider interface for the Cursor Cloud Agents API.
@@ -333,6 +333,16 @@ func (p *CursorProvider) getRun(ctx context.Context, agentID, runID string) (cur
 	}
 
 	return run, nil
+}
+
+// ChatWithTools is not supported by the Cursor provider. Cursor is an
+// agent-based platform (async agent runs, not synchronous chat completions)
+// and does not expose a function-calling API. The gateway will fall back to
+// the next provider in the agent category.
+//
+// Ref: japaconnect-engineering/sections/103-ai-agent-executor.md
+func (p *CursorProvider) ChatWithTools(_ context.Context, _ ChatWithToolsRequest) (ChatWithToolsResponse, error) {
+	return ChatWithToolsResponse{}, ErrFunctionCallingUnsupported
 }
 
 // VerifyWebhookSignature is a no-op for Cursor.

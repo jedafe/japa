@@ -427,7 +427,7 @@
 				id="lang-flag"
 				type="text"
 				class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
-				placeholder="e.g., 🇪🇸"
+				placeholder={t('app.i18n.ph_eg', 'e.g., 🇪🇸')}
 				bind:value={form.flag}
 			/>
 		</div>

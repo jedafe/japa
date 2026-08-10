@@ -119,7 +119,7 @@
 					bind:value={permCategory}
 				>
 					<option value="">All categories</option>
-					{#each permissionCategories() as cat}
+					{#each permissionCategories() as cat (cat)}
 						<option value={cat}>{cat}</option>
 					{/each}
 					<option value="other">Other</option>
@@ -133,7 +133,7 @@
 				/>
 			</div>
 			<div class="grid max-h-60 grid-cols-2 gap-2 overflow-y-auto">
-				{#each filteredPermissions as perm}
+				{#each filteredPermissions as perm (perm)}
 					<label class="flex items-center gap-2 text-xs">
 						<input type="checkbox" value={perm} bind:group={editPermissions} class="rounded" />
 						{perm}

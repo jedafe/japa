@@ -277,3 +277,14 @@ func (s *Store) AdminCompletionStats(ctx context.Context, tenantID pgtype.UUID) 
 		AvgScore:         row.AvgScore,
 	}, nil
 }
+
+// CleanupAnonymousResults deletes anonymous assessment_results (user_id IS
+// NULL) older than the given retention window in hours. Called by the
+// assessment:cleanup_anonymous Asynq task (ADR-071 §5).
+func (s *Store) CleanupAnonymousResults(ctx context.Context, retentionHours int32) (int64, error) {
+	n, err := s.queries.CleanupAnonymousAssessmentResults(ctx, retentionHours)
+	if err != nil {
+		return 0, fmt.Errorf("assessment: cleanup anonymous results: %w", err)
+	}
+	return n, nil
+}

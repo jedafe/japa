@@ -347,7 +347,7 @@
 			<div class="pt-4 border-t" style="border-color: var(--color-border)">
 				<p class="text-xs font-medium uppercase tracking-wider mb-2" style="color: var(--color-muted)">{t("reports.evidence", "Evidence")}</p>
 				<ul class="space-y-1">
-					{#each row.evidence_urls as url}
+					{#each row.evidence_urls as url (url)}
 						<li><a href={url} target="_blank" rel="noopener" class="text-sm text-primary underline-offset-4 hover:underline">{url}</a></li>
 					{/each}
 				</ul>

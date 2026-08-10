@@ -6,6 +6,7 @@
 	import TrackCard from '$lib/components/learn/TrackCard.svelte';
 	import { LoadingSkeleton, EmptyState } from '$lib/components/ui';
 	import { Compass, GraduationCap, ArrowRight } from 'lucide-svelte';
+	import { DIFFICULTY_LEVELS } from '$lib/constants/learning';
 	import type { PageData } from './$types';
 	import type { Enrollment } from '$lib/types';
 
@@ -84,7 +85,7 @@
 		>
 			{t('learn.overview')}
 		</a>
-		{#each ['beginner', 'intermediate', 'advanced'] as level}
+		{#each DIFFICULTY_LEVELS as level}
 			<a
 				href="/?level={level}"
 				class="rounded-full px-3 py-1 text-sm {data.levelFilter === level ? 'bg-[var(--color-primary)] text-[var(--color-primary-contrast)]' : 'border border-[var(--color-border)] text-[var(--color-text-subtle)] hover:bg-[var(--color-surface-subtle)]'}"
@@ -98,7 +99,7 @@
 	{#if data.tracks.length === 0}
 		<EmptyState
 			title={t('common.empty')}
-			description={data.query ? `No courses match "${data.query}".` : 'No courses published yet.'}
+			description={data.query ? t('learn.no_match_for_query', `No courses match "${data.query}".`) : t('learn.no_courses_yet', 'No courses published yet.')}
 		>
 			{#snippet action()}
 				{#if data.query || data.levelFilter}

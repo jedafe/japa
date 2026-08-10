@@ -1657,7 +1657,10 @@ export const calendarAdminApi = {
 };
 
 export const achievementAdminApi = {
-	list: (params?: string) => api<unknown>(`/admin/achievements${params ? `?${params}` : ''}`),
+	list: (params?: string) => apiRaw<{ data: unknown[]; pagination: { page: number; limit: number; total: number } }>(`/admin/achievements${params ? `?${params}` : ''}`),
+	setStatus: (id: string, status: string) =>
+		api<unknown>(`/admin/achievements/${id}/status`, { method: 'PATCH', body: { status } }),
+	delete: (id: string) => api<unknown>(`/admin/achievements/${id}`, { method: 'DELETE' }),
 };
 
 export const serviceDirectoryAdminApi = {

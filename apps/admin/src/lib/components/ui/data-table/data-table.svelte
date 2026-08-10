@@ -472,7 +472,7 @@
               />
             </th>
           {/if}
-          {#each visibleColumns as column}
+          {#each visibleColumns as column (column.key)}
             <th
               class={clsx(
                 "relative h-12 px-4 text-left align-middle font-medium",
@@ -540,7 +540,7 @@
                 />
               </td>
             {/if}
-            {#each visibleColumns as column}
+            {#each visibleColumns as column (column.key)}
               <td class="p-4 align-middle" style="border-color: var(--color-border)">
                 {#if column.componentSnippet}
                   {@render column.componentSnippet({ value: row[column.key], row, ...column.componentProps })}

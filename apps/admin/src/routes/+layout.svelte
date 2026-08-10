@@ -1,9 +1,9 @@
 <script lang="ts">
 	import { t } from '$lib/stores/i18n.svelte';
 	import { onMount } from 'svelte';
-	import { setUser, setPermissions, clearUser } from '$lib/stores/auth.svelte';
+	import { clearUser } from '$lib/stores/auth.svelte';
 	import { getPermissions } from '$lib/stores/permissions.svelte';
-	import { getAccessToken, setAccessToken } from '$lib/api/token';
+	import { restoreSession } from '$lib/stores/session.svelte';
 
 	import { initNotifications, addNotification } from '$lib/stores/notifications.svelte';
 	import { wsClient } from '$lib/websocket';
@@ -17,13 +17,15 @@
 	import '../app.css';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
-	import { api, apiFetch } from '$lib/api';
 	import { fetchCsrfToken } from '$lib/api/csrf';
 
 	let { children } = $props();
 	let loading = $state(true);
 	let sidebarMobileOpen = $state(false);
-	let currentPermissions = $state<string[]>([]);
+
+	// Reactive — picks up permission changes after login/impersonation-end
+	// without requiring a layout remount.
+	let currentPermissions = $derived(getPermissions());
 
 	// Check if we're on the login or logout page — computed first so onMount
 	// can skip session restoration on auth pages (avoids noisy 401s when no
@@ -41,46 +43,19 @@
 
 		// Skip session restoration on auth pages — no session exists yet and
 		// the calls would generate console 401 noise. The login page sets the
-		// access token in-memory and hard-reloads to '/', which re-mounts the
-		// layout and runs this block with the refresh cookie present.
+		// access token in-memory and calls restoreSession() + goto('/'), which
+		// re-runs this onMount via invalidateAll.
 		if (isAuthPage) {
 			loading = false;
 			return;
 		}
 
-		if (!getAccessToken()) {
-			const refreshRes = await apiFetch<{ access_token: string }>('/auth/refresh', {
-				method: 'POST',
-				headers: { 'X-Skip-Refresh': '1' }
-			});
-			if (!refreshRes.error && refreshRes.data?.access_token) {
-				setAccessToken(refreshRes.data.access_token);
-			}
-		}
-
-		try {
-			const userResult = await api<{ user: any }>('/me');
-			if (userResult.ok) {
-				setUser(userResult.data.user);
-
-				const permResult = await api<{ permissions: string[] }>('/me/permissions');
-				if (permResult.ok) {
-					setPermissions(permResult.data.permissions ?? []);
-					currentPermissions = permResult.data.permissions ?? [];
-				} else {
-					setPermissions([]);
-					currentPermissions = [];
-				}
-			} else {
-				clearUser();
-				goto('/login');
-			}
-		} catch {
+		const ok = await restoreSession({ tryRefresh: true });
+		if (!ok) {
 			clearUser();
 			goto('/login');
-		} finally {
-			loading = false;
 		}
+		loading = false;
 	});
 
 	const PAGE_PERMISSIONS: Record<string, string> = {
@@ -287,7 +262,7 @@
 					<Breadcrumb />
 					{#if loading}
 						<div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 pt-6">
-							{#each Array(4) as _}
+							{#each Array(4) as _, i (i)}
 								<CardSkeleton />
 							{/each}
 						</div>

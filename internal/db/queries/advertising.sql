@@ -129,13 +129,16 @@ WHERE id = @id AND tenant_id = @tenant_id AND status IN ('draft', 'ended');
 -- Ref: japaconnect-engineering/sections/25-ad-placement.md
 -- ad_events stores one row per impression/click (event_type discriminator),
 -- NOT aggregate counters. Aggregate by counting rows per event_type.
+-- Join ad_campaigns to read the spent column for spend/CPC computation.
 SELECT
-    COUNT(*) FILTER (WHERE event_type = 'impression')::bigint AS impressions,
-    COUNT(*) FILTER (WHERE event_type = 'click')::bigint AS clicks,
-    COUNT(DISTINCT user_id)::bigint AS unique_users,
-    0::bigint AS conversions
-FROM ad_events
-WHERE campaign_id = @campaign_id AND tenant_id = @tenant_id;
+    COUNT(*) FILTER (WHERE e.event_type = 'impression')::bigint AS impressions,
+    COUNT(*) FILTER (WHERE e.event_type = 'click')::bigint AS clicks,
+    COUNT(DISTINCT e.user_id)::bigint AS unique_users,
+    0::bigint AS conversions,
+    COALESCE(c.spent, 0)::bigint AS spent
+FROM ad_events e
+LEFT JOIN ad_campaigns c ON c.id = e.campaign_id AND c.tenant_id = e.tenant_id
+WHERE e.campaign_id = @campaign_id AND e.tenant_id = @tenant_id;
 
 -- =====================
 -- Ad Events (batched ingestion)

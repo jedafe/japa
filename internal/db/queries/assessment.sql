@@ -157,3 +157,23 @@ FROM custom_field_group_assignments a
 JOIN custom_fields cf ON cf.group_id = a.group_id AND cf.tenant_id = @tenant_id
 WHERE a.entity_class = 'form' AND a.entity_id = @form_id
 ORDER BY cf.position;
+
+-- =====================================================================
+-- GDPR erasure: delete assessment_results by user_id. The FK has ON DELETE
+-- CASCADE but we delete explicitly to document the erasure path and ensure
+-- PII-adjacent data (dimension scores, roadmap) is removed before the final
+-- HardDeleteUser (Section 15, ADR-014). Ref: §71, ADR-071.
+-- =====================================================================
+
+-- name: GdprDeleteAssessmentResultsByUser :exec
+DELETE FROM assessment_results WHERE user_id = @user_id;
+
+-- =====================================================================
+-- Cleanup anonymous assessment results older than the retention window.
+-- Anonymous results (user_id IS NULL) are persisted temporarily for the
+-- async polling architecture (ADR-071 §5) and cleaned up periodically.
+-- =====================================================================
+
+-- name: CleanupAnonymousAssessmentResults :execrows
+DELETE FROM assessment_results
+WHERE user_id IS NULL AND created_at < now() - ($1::int || ' hours')::interval;

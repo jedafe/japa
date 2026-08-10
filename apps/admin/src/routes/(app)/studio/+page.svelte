@@ -398,7 +398,7 @@
 				<label for="studio-persona" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('studio.persona', 'Persona')}</label>
 				<select id="studio-persona" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={newJob.persona_id}>
 					<option value="">{t('studio.select_persona', 'Select a persona...')}</option>
-					{#each personas as p}
+					{#each personas as p (p)}
 						<option value={p.id}>{p.label}</option>
 					{/each}
 				</select>
@@ -406,7 +406,7 @@
 			<div>
 				<label for="studio-content-type" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('studio.content_type', 'Content Type')}</label>
 				<select id="studio-content-type" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={newJob.content_type}>
-					{#each contentTypes as ct}
+					{#each contentTypes as ct (ct)}
 						<option value={ct.type}>{ct.label}</option>
 					{/each}
 					{#if contentTypes.length === 0}
@@ -421,7 +421,7 @@
 			</div>
 			<div>
 				<label for="studio-tags" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('studio.target_tags', 'Target Tags (comma-separated)')}</label>
-				<input id="studio-tags" type="text" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={newJob.target_tags} placeholder="tech, ai, tutorial" />
+				<input id="studio-tags" type="text" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={newJob.target_tags} placeholder={t('app.studio.ph_tech_ai_tutorial', 'tech, ai, tutorial')} />
 			</div>
 		</div>
 		{#snippet footer()}

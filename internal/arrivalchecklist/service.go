@@ -336,6 +336,128 @@ func (s *Service) GenerateGuide(ctx context.Context, tenantID pgtype.UUID, req G
 	}, nil
 }
 
+// UserChecklistDTO is the API response for a user's saved arrival checklist
+// (GET /me/arrival-checklists). Includes progress summary counts.
+type UserChecklistDTO struct {
+	GuideID         string `json:"guide_id"`
+	DestSpaceName   string `json:"destination_space_name,omitempty"`
+	DestSpaceCode   string `json:"destination_space_code,omitempty"`
+	VisaCategory    string `json:"visa_category,omitempty"`
+	ApplicantType   string `json:"applicant_type"`
+	TotalItems      int64  `json:"total_items"`
+	CompletedItems  int64  `json:"completed_items"`
+	FirstProgressAt string `json:"first_progress_at,omitempty"`
+	LastProgressAt  string `json:"last_progress_at,omitempty"`
+}
+
+// UserChecklistItemDTO is a single item in a user's saved arrival checklist
+// with progress state.
+type UserChecklistItemDTO struct {
+	ID           string `json:"id"`
+	GuideID      string `json:"guide_id"`
+	Phase        string `json:"phase"`
+	Title        string `json:"title"`
+	Description  string `json:"description,omitempty"`
+	OfficialLink string `json:"official_link,omitempty"`
+	SortOrder    int32  `json:"sort_order"`
+	IsFlagged    bool   `json:"is_flagged"`
+	Completed    bool   `json:"completed"`
+	CompletedAt  string `json:"completed_at,omitempty"`
+	Notes        string `json:"notes,omitempty"`
+}
+
+// StartChecklistRequest is the body for POST /me/arrival-checklists.
+type StartChecklistRequest struct {
+	GuideID string `json:"guide_id"`
+}
+
+// TickItemRequest is the body for PATCH /me/arrival-checklists/:id/items/:item_id.
+type TickItemRequest struct {
+	Completed *bool   `json:"completed"`
+	Notes     *string `json:"notes"`
+}
+
+// ListUserChecklists returns the user's saved arrival checklists with progress
+// summaries. For GET /me/arrival-checklists.
+func (s *Service) ListUserChecklists(ctx context.Context, tenantID, userID pgtype.UUID) ([]UserChecklistDTO, error) {
+	rows, err := s.store.ListUserChecklists(ctx, tenantID, userID)
+	if err != nil {
+		return nil, fmt.Errorf("arrivalchecklist: list user checklists: %w", err)
+	}
+	dtos := make([]UserChecklistDTO, 0, len(rows))
+	for _, r := range rows {
+		dto := UserChecklistDTO{
+			GuideID:        r.GuideID.String(),
+			ApplicantType:  r.ApplicantType,
+			TotalItems:     r.TotalItems,
+			CompletedItems: r.CompletedItems,
+		}
+		if r.DestSpaceName != nil {
+			dto.DestSpaceName = *r.DestSpaceName
+		}
+		if r.DestSpaceCode != nil {
+			dto.DestSpaceCode = *r.DestSpaceCode
+		}
+		if r.VisaCategory != nil {
+			dto.VisaCategory = *r.VisaCategory
+		}
+		dto.FirstProgressAt = formatTs(r.FirstProgressAt)
+		dto.LastProgressAt = formatTs(r.LastProgressAt)
+		dtos = append(dtos, dto)
+	}
+	return dtos, nil
+}
+
+// StartChecklist starts a checklist for the user (creates an initial progress
+// row). For POST /me/arrival-checklists. Returns the guide DTO so the frontend
+// can render items immediately.
+func (s *Service) StartChecklist(ctx context.Context, tenantID, userID pgtype.UUID, req StartChecklistRequest) (GuideDTO, error) {
+	if req.GuideID == "" {
+		return GuideDTO{}, fmt.Errorf("guide_id is required")
+	}
+	var guideID pgtype.UUID
+	if err := guideID.Scan(req.GuideID); err != nil {
+		return GuideDTO{}, fmt.Errorf("invalid guide_id: %w", err)
+	}
+
+	// Verify the guide exists and is published.
+	guide, err := s.store.GetGuideByID(ctx, guideID, tenantID)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return GuideDTO{}, pgx.ErrNoRows
+		}
+		return GuideDTO{}, fmt.Errorf("arrivalchecklist: start checklist: lookup guide: %w", err)
+	}
+
+	if err := s.store.StartChecklist(ctx, tenantID, userID, guideID); err != nil {
+		return GuideDTO{}, fmt.Errorf("arrivalchecklist: start checklist: %w", err)
+	}
+
+	return guideRowToDTO(guide), nil
+}
+
+// TickItem marks a single arrival checklist item complete/incomplete with an
+// optional note. For PATCH /me/arrival-checklists/:id/items/:item_id.
+func (s *Service) TickItem(ctx context.Context, tenantID, userID, guideID pgtype.UUID, itemID string, req TickItemRequest) error {
+	// Verify the guide exists and is published.
+	if _, err := s.store.GetGuideByID(ctx, guideID, tenantID); err != nil {
+		if err == pgx.ErrNoRows {
+			return pgx.ErrNoRows
+		}
+		return fmt.Errorf("arrivalchecklist: tick item: lookup guide: %w", err)
+	}
+
+	completed := false
+	if req.Completed != nil {
+		completed = *req.Completed
+	}
+
+	if err := s.store.TickItem(ctx, tenantID, userID, guideID, itemID, completed, req.Notes); err != nil {
+		return fmt.Errorf("arrivalchecklist: tick item: %w", err)
+	}
+	return nil
+}
+
 // getGuideDTOByID fetches a guide by id and converts to DTO.
 func (s *Service) getGuideDTOByID(ctx context.Context, id, tenantID pgtype.UUID) (GuideDTO, error) {
 	row, err := s.store.GetGuideByID(ctx, id, tenantID)
