@@ -73,7 +73,7 @@
 	{:else if block.block_type === 'spacer'}
 		<div class="flex items-center justify-center rounded border-2 border-dashed" style="height: {typeof block.props.height === 'number' ? block.props.height : 32}px; border-color: var(--color-border)"><span class="text-[10px]" style="color: var(--color-muted)">{block.props.height || 32}px</span></div>
 	{:else if block.block_type === 'table'}
-		<div class="overflow-x-auto rounded border text-xs" style="border-color: var(--color-border)"><table class="w-full">{#if Array.isArray(block.props.headers)}<thead><tr style="background: var(--color-surface)">{#each block.props.headers as h}<th class="px-2 py-1.5 text-left font-medium" style="color: var(--color-muted)">{h}</th>{/each}</tr></thead>{/if}<tbody>{#each (Array.isArray(block.props.rows) ? block.props.rows : []).slice(0, 3) as row, i (i)}<tr>{#each row as cell}<td class="px-2 py-1.5" style="border-color: var(--color-border)">{cell}</td>{/each}</tr>{:else}<tr><td class="px-2 py-3 text-center" style="color: var(--color-muted)">No rows</td></tr>{/each}</tbody></table></div>
+		<div class="overflow-x-auto rounded border text-xs" style="border-color: var(--color-border)"><table class="w-full">{#if Array.isArray(block.props.headers)}<thead><tr style="background: var(--color-surface)">{#each block.props.headers as h (h)}<th class="px-2 py-1.5 text-left font-medium" style="color: var(--color-muted)">{h}</th>{/each}</tr></thead>{/if}<tbody>{#each (Array.isArray(block.props.rows) ? block.props.rows : []).slice(0, 3) as row, i (i)}<tr>{#each row as cell (cell)}<td class="px-2 py-1.5" style="border-color: var(--color-border)">{cell}</td>{/each}</tr>{:else}<tr><td class="px-2 py-3 text-center" style="color: var(--color-muted)">No rows</td></tr>{/each}</tbody></table></div>
 	{:else if block.block_type === 'countdown'}
 		<div class="rounded-lg p-4 text-center" style="background: var(--color-surface)">{#if block.props.title}<p class="text-sm font-semibold">{block.props.title}</p>{/if}<p class="mt-1 font-mono text-xs" style="color: var(--color-muted)">⏱ {block.props.target_datetime || 'not set'}</p></div>
 	{:else if block.block_type === 'slider'}
@@ -83,11 +83,11 @@
 			<p class="mb-2 text-xs font-semibold" style="color: var(--color-muted)">Grid / Row — {typeof block.props.columns === 'number' ? block.props.columns : 2} columns</p>
 			<div class="flex gap-2">
 				{#if block.props.children && Array.isArray(block.props.children)}
-					{#each block.props.children as col, ci}
+					{#each block.props.children as col, ci (ci)}
 						<div class="min-h-[40px] flex-1 rounded border p-2 text-center" style="border-color: var(--color-border); background: var(--color-surface)">
 							<p class="text-[10px] font-medium" style="color: var(--color-muted)">Col {ci + 1}</p>
 							{#if Array.isArray(col)}
-								{#each col as child}
+								{#each col as child (child)}
 									<div class="mt-1 rounded px-2 py-1 text-[10px]" style="background: var(--color-background); color: var(--color-foreground); border: 1px solid var(--color-border)">
 										{child.block_type?.replace(/_/g, ' ') ?? 'Block'}
 									</div>

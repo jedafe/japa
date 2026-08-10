@@ -9,9 +9,10 @@
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
 	import { Plus, Save, ArrowLeft } from 'lucide-svelte';
+	import { DIFFICULTY_LEVELS } from '$lib/constants/learning';
 
 	// Difficulty options are a fixed enum from the backend, not configurable data (Rule 16).
-	const DIFFICULTIES = ['beginner', 'intermediate', 'advanced'] as const;
+	const DIFFICULTIES = DIFFICULTY_LEVELS;
 	type Difficulty = (typeof DIFFICULTIES)[number];
 
 	type Category = { id: string; slug: string; name: string; sort_order: number };
@@ -111,7 +112,7 @@
 				type="text"
 				bind:value={title}
 				required
-				placeholder="e.g. Mastering Go for Backend Engineers"
+				placeholder={t('university.title_placeholder', 'e.g. Mastering Go for Backend Engineers')}
 				class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-3 text-sm text-[var(--color-text)] placeholder:text-[var(--color-muted)] focus:border-[var(--color-primary)] focus:outline-none"
 			/>
 		</div>
@@ -127,7 +128,7 @@
 				bind:value={slug}
 				oninput={() => (slugTouched = true)}
 				required
-				placeholder="mastering-go-for-backend-engineers"
+				placeholder={t('university.slug_placeholder', 'mastering-go-for-backend-engineers')}
 				class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-3 text-sm text-[var(--color-text)] placeholder:text-[var(--color-muted)] focus:border-[var(--color-primary)] focus:outline-none"
 			/>
 			<p class="mt-1 text-xs text-[var(--color-text-subtle)]">
@@ -144,7 +145,7 @@
 				id="description"
 				bind:value={description}
 				rows="4"
-				placeholder="A short summary of what learners will gain from this track…"
+				placeholder={t('university.description_placeholder', 'A short summary of what learners will gain from this track…')}
 				class="w-full resize-none rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-3 text-sm text-[var(--color-text)] placeholder:text-[var(--color-muted)] focus:border-[var(--color-primary)] focus:outline-none"
 			></textarea>
 		</div>

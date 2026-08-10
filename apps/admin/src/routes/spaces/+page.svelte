@@ -18,6 +18,7 @@
 	import { goto } from "$app/navigation";
 	import { t } from "$lib/stores/i18n.svelte";
 	import { hasPermission } from "$lib/stores/permissions.svelte";
+	import { pageFromUrl, pageSizeFromUrl, searchFromUrl, filterFromUrl, syncListStateToUrl } from "$lib/utils/url-sync.svelte";
 
 	type Space = {
 		id: string;
@@ -35,12 +36,19 @@
 	let spaces = $state<Space[]>([]);
 	let loading = $state(true);
 	let error = $state("");
-	let currentPage = $state(0);
+	let currentPage = $state(pageFromUrl());
 	let totalItems = $state(0);
-	let pageSize = $state(25);
+	let pageSize = $state(pageSizeFromUrl(25));
 	let totalPages = $state(1);
-	let searchQuery = $state("");
-	let filterValue = $state<Record<string, string>>({});
+	let searchQuery = $state(searchFromUrl());
+	const _initFilterValue: Record<string, string> = {};
+	{
+		const status = filterFromUrl("status");
+		if (status) _initFilterValue.status = status;
+		const visibility = filterFromUrl("visibility");
+		if (visibility) _initFilterValue.visibility = visibility;
+	}
+	let filterValue = $state<Record<string, string>>(_initFilterValue);
 	let selectedIds = $state<Set<string>>(new Set());
 
 	// View/Edit SlideOvers
@@ -279,6 +287,21 @@
 		pageSize = s;
 		currentPage = 0;
 	}
+
+	// Sync list state (page, search, filters) to URL for back/forward survival.
+	$effect(() => {
+		void currentPage;
+		void pageSize;
+		void searchQuery;
+		void filterValue;
+		syncListStateToUrl({
+			page: currentPage,
+			pageSize,
+			defaultPageSize: 25,
+			search: searchQuery,
+			filters: filterValue
+		});
+	});
 
 	$effect(() => {
 		void currentPage;

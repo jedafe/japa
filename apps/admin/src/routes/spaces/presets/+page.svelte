@@ -156,7 +156,7 @@
 										bind:value={draft.visibility}
 										disabled={!canManage}
 									>
-										{#each visibilityOptions as opt}
+										{#each visibilityOptions as opt (opt)}
 											<option value={opt}>{permLabel(opt)}</option>
 										{/each}
 									</select>
@@ -171,7 +171,7 @@
 										bind:value={draft.posting_perm}
 										disabled={!canManage}
 									>
-										{#each postingOptions as opt}
+										{#each postingOptions as opt (opt)}
 											<option value={opt}>{permLabel(opt)}</option>
 										{/each}
 									</select>
@@ -186,7 +186,7 @@
 										bind:value={draft.replying_perm}
 										disabled={!canManage}
 									>
-										{#each postingOptions as opt}
+										{#each postingOptions as opt (opt)}
 											<option value={opt}>{permLabel(opt)}</option>
 										{/each}
 									</select>
@@ -201,7 +201,7 @@
 										bind:value={draft.commenting_perm}
 										disabled={!canManage}
 									>
-										{#each postingOptions as opt}
+										{#each postingOptions as opt (opt)}
 											<option value={opt}>{permLabel(opt)}</option>
 										{/each}
 									</select>
@@ -216,7 +216,7 @@
 										bind:value={draft.joining_perm}
 										disabled={!canManage}
 									>
-										{#each joiningOptions as opt}
+										{#each joiningOptions as opt (opt)}
 											<option value={opt}>{permLabel(opt)}</option>
 										{/each}
 									</select>

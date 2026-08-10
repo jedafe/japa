@@ -14,6 +14,7 @@
 	import { ticketsAdminApi } from "$lib/api";
 	import { t } from "$lib/stores/i18n.svelte";
 	import { hasPermission } from "$lib/stores/permissions.svelte";
+	import { pageFromUrl, pageSizeFromUrl, searchFromUrl, filterFromUrl, syncListStateToUrl } from "$lib/utils/url-sync.svelte";
 
 	type TicketItem = {
 		id: string;
@@ -34,15 +35,20 @@
 	};
 
 	let tickets = $state<TicketItem[]>([]);
-	let currentPage = $state(0);
+	let currentPage = $state(pageFromUrl());
 	let totalItems = $state(0);
 	let totalPages = $state(1);
-	let pageSize = $state(25);
+	let pageSize = $state(pageSizeFromUrl(25));
 	let loading = $state(true);
 	let error = $state("");
-	let searchQuery = $state("");
-	let filterValues = $state<Record<string, string>>({});
-	let statusFilter = $state("");
+	let searchQuery = $state(searchFromUrl());
+	const _initFilterValues: Record<string, string> = {};
+	{
+		const priority = filterFromUrl("priority");
+		if (priority) _initFilterValues.priority = priority;
+	}
+	let filterValues = $state<Record<string, string>>(_initFilterValues);
+	let statusFilter = $state(filterFromUrl("status"));
 	let selectedIds = $state<Set<string>>(new Set());
 
 	// View SlideOver
@@ -310,6 +316,23 @@
 		currentPage = 0;
 	}
 
+	// Sync list state (page, search, filters) to URL for back/forward survival.
+	$effect(() => {
+		void currentPage;
+		void pageSize;
+		void searchQuery;
+		void statusFilter;
+		void filterValues;
+		syncListStateToUrl({
+			page: currentPage,
+			pageSize,
+			defaultPageSize: 25,
+			search: searchQuery,
+			searchParam: "search",
+			filters: { ...filterValues, status: statusFilter }
+		});
+	});
+
 	$effect(() => { loadTickets(); });
 </script>
 
@@ -333,7 +356,7 @@
 
 <!-- Status tabs (manual, not using broken Tabs component for content panels) -->
 <div class="mb-4 flex gap-1 rounded-lg p-1" style="background: var(--color-surface)">
-	{#each statusTabs as tab}
+	{#each statusTabs as tab (tab)}
 		{@const Icon = tab.icon}
 		<button
 			class="inline-flex items-center whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium transition-all"
@@ -415,7 +438,7 @@
 				<div>
 					<p class="mb-2 text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("tickets.activity", "Activity")}</p>
 					<div class="max-h-48 space-y-2 overflow-y-auto rounded-lg border p-3" style="border-color: var(--color-border); background: var(--color-surface)">
-						{#each ticketEvents as ev}
+						{#each ticketEvents as ev (ev)}
 							<div class="flex gap-2 text-xs">
 								{#if ev.event_type === 'comment_added'}
 									<MessageSquare class="h-3.5 w-3.5 shrink-0 mt-0.5" style="color: var(--color-primary)" />

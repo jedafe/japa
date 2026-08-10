@@ -44,6 +44,10 @@
 	let editingNote = $state<string | null>(null);
 	let noteDraft = $state<string>('');
 
+	// In-flight guards (prevent double-submit)
+	let savingKey = $state<string | null>(null);
+	let resetting = $state(false);
+
 	// Registration prompt
 	let showRegisterPrompt = $state(false);
 
@@ -106,6 +110,8 @@
 			return;
 		}
 		const itemKey = item.item_key;
+		if (savingKey === itemKey) return; // prevent double-submit
+		savingKey = itemKey;
 		const currentlyCompleted = isCompleted(itemKey);
 		// Optimistic update
 		if (progress) {
@@ -126,6 +132,7 @@
 			`/checklist/${guide.guide_id}/progress/${itemKey}`,
 			{ completed: !currentlyCompleted }
 		);
+		savingKey = null;
 		if (res.error) {
 			// Rollback
 			if (progress) {
@@ -146,11 +153,14 @@
 
 	async function saveNote(itemKey: string) {
 		if (!guide || !user) return;
+		if (savingKey === itemKey) return; // prevent double-submit
+		savingKey = itemKey;
 		editingNote = null;
 		const res = await api.patch(
 			`/checklist/${guide.guide_id}/progress/${itemKey}`,
 			{ notes: noteDraft }
 		);
+		savingKey = null;
 		if (res.error) return;
 		if (progress) {
 			const existing = progress.items.find((i) => i.item_key === itemKey);
@@ -166,8 +176,11 @@
 	/** Reset all progress for the current guide (§70: DELETE /checklist/:guide_id/progress). */
 	async function resetProgress() {
 		if (!guide || !user) return;
+		if (resetting) return; // prevent double-submit
 		if (!confirm(t('checklist.reset_confirm', 'Reset all progress for this checklist? This cannot be undone.'))) return;
+		resetting = true;
 		const res = await api.delete(`/checklist/${guide.guide_id}/progress`);
+		resetting = false;
 		if (res.error) {
 			error = res.error.message;
 			return;
@@ -304,6 +317,7 @@
 					{#if user && progress && completedCount > 0}
 						<button
 							onclick={resetProgress}
+							disabled={resetting}
 							class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm text-muted hover:text-red-500 transition-colors"
 						>
 							<Icon name="rotate-ccw" size={16} />
@@ -355,6 +369,7 @@
 									>
 										<button
 											onclick={() => toggleItem(item)}
+											disabled={savingKey === item.item_key}
 											class="flex-shrink-0 mt-0.5 w-5 h-5 rounded border-2 flex items-center justify-center transition-colors {isCompleted(item.item_key) ? 'bg-[var(--tool-accent)] border-[var(--tool-accent)]' : 'border-border hover:border-[var(--tool-accent)]'}"
 											aria-label={isCompleted(item.item_key) ? t('checklist.mark_incomplete', 'Mark incomplete') : t('checklist.mark_complete', 'Mark complete')}
 										>
@@ -391,9 +406,10 @@
 													/>
 													<button
 														onclick={() => saveNote(item.item_key)}
-														class="px-3 py-1.5 text-sm bg-primary text-primary-contrast rounded hover:bg-primary-hover"
+														disabled={savingKey === item.item_key}
+														class="px-3 py-1.5 text-sm bg-primary text-primary-contrast rounded hover:bg-primary-hover disabled:opacity-50 disabled:cursor-not-allowed"
 													>
-														Save
+														{t('common.save', 'Save')}
 													</button>
 												</div>
 											{:else if user}

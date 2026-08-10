@@ -53,7 +53,7 @@
       sideOffset={4}
     >
       <Select.Viewport class="p-1">
-        {#each options as option}
+        {#each options as option (option)}
           <Select.Item
             value={option.value}
             disabled={option.disabled}

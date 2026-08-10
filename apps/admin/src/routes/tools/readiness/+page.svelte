@@ -1,25 +1,59 @@
 <script lang="ts">
-	// /tools/readiness — read-only monitoring page for japa readiness assessment results.
+	// /tools/readiness — admin monitoring + management page for the Japa
+	// Readiness Assessment (Section 71, ADR-071).
+	// Shows score distribution stats, result list with server-side pagination,
+	// and a form config editor for scoring_config (weights + thresholds).
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
-	import { Eye } from 'lucide-svelte';
+	import { Eye, Settings, BarChart3 } from 'lucide-svelte';
 	import type { ActionItem } from '$lib/components/ui/data-table';
 	import { readinessAdminApi } from '$lib/api';
 
 	type ReadinessItem = {
 		id: string;
-		user_email: string;
-		score: number;
-		readiness_level: string;
-		completed_at?: string;
+		user_id: string;
+		username: string;
+		total_score: number;
+		threshold_label: string;
+		submission_id: string;
+		created_at: string;
+	};
+
+	type ScoreDistributionItem = {
+		threshold_label: string;
+		count: number;
+		avg_score: number;
+	};
+
+	type CompletionStats = {
+		total_submissions: number;
+		total_scored: number;
+		avg_score: number;
+		completion_rate: number;
+	};
+
+	type ScoringConfig = {
+		max_score: number;
+		thresholds: { min: number; max: number; label: string; color: string }[];
+		dimension_weights: Record<string, number>;
 	};
 
 	const canManage = $derived(hasPermission('assessment.view_results'));
+	const canEditForm = $derived(hasPermission('assessment.manage'));
 
 	// ── State ───────────────────────────────────────────────────────────────
 	let entityController = $state<EntityPageController | undefined>(undefined);
 	let pageError = $state('');
+	let statsError = $state('');
+	let configError = $state('');
+	let configSaving = $state(false);
+	let showConfig = $state(false);
+	let scoringConfig = $state<ScoringConfig | null>(null);
+	let stats = $state<{ distribution: ScoreDistributionItem[]; completion: CompletionStats | null }>({
+		distribution: [],
+		completion: null
+	});
 
 	// ── Row actions ─────────────────────────────────────────────────────────
 	const rowActions = $derived.by<ActionItem[]>(() => {
@@ -29,11 +63,10 @@
 		return acts;
 	});
 
-	// `fields` is required by EntityPageConfig; readonly page so the form is never shown, but kept for shape completeness.
 	const fields: FieldDef[] = [
-		{ key: 'user_email', label: t('app.tools.col_user_email', 'User Email'), type: 'email' },
-		{ key: 'score', label: t('app.tools.col_score', 'Score'), type: 'number' },
-		{ key: 'readiness_level', label: t('app.tools.col_readiness_level', 'Readiness Level'), type: 'text' }
+		{ key: 'username', label: t('app.tools.col_username', 'Username'), type: 'text' },
+		{ key: 'total_score', label: t('app.tools.col_score', 'Score'), type: 'number' },
+		{ key: 'threshold_label', label: t('app.tools.col_readiness_level', 'Readiness Level'), type: 'text' }
 	];
 
 	const config = $derived<EntityPageConfig>({
@@ -42,21 +75,21 @@
 		readonly: true,
 		pageSize: 25,
 		columns: [
-			{ key: 'user_email', label: t('app.tools.col_user_email', 'User Email'), sortable: true },
+			{ key: 'username', label: t('app.tools.col_username', 'Username'), sortable: true },
 			{
-				key: 'score',
+				key: 'total_score',
 				label: t('app.tools.col_score', 'Score'),
 				sortable: true,
 				render: (value: number) => (value != null ? String(value) : '—')
 			},
 			{
-				key: 'readiness_level',
+				key: 'threshold_label',
 				label: t('app.tools.col_readiness_level', 'Readiness Level'),
 				sortable: true,
 				render: (value: string) => value || '—'
 			},
 			{
-				key: 'completed_at',
+				key: 'created_at',
 				label: t('app.tools.col_completed_at', 'Completed'),
 				sortable: true,
 				render: (value: string) => (value ? new Date(value).toLocaleDateString() : '—')
@@ -64,15 +97,73 @@
 		],
 		actions: rowActions,
 		fields,
-		load: async () => {
-			const result = await readinessAdminApi.listResults();
+		load: async (params) => {
+			const queryParts: string[] = [];
+			if (params.page) queryParts.push(`page=${params.page}`);
+			if (params.pageSize) queryParts.push(`limit=${params.pageSize}`);
+			if (params.sort) {
+				queryParts.push(`sort=${params.sort}`);
+			}
+			const queryString = queryParts.length > 0 ? queryParts.join('&') : '';
+			const result = await readinessAdminApi.listResults(queryString);
 			if (result.ok) {
-				const data = (result.data as ReadinessItem[]) ?? [];
-				return { data, total: data.length, totalPages: 1 };
+				const resp = result.data as { data: ReadinessItem[]; pagination: { page: number; limit: number; total: number } };
+				const data = resp.data ?? [];
+				const total = resp.pagination?.total ?? data.length;
+				const totalPages = Math.ceil(total / (params.pageSize || 25));
+				return { data, total, totalPages };
 			}
 			throw new Error(result.error ?? t('common.error', 'An error occurred'));
 		},
 		viewSnippet: ReadinessView
+	});
+
+	// ── Stats + form config ─────────────────────────────────────────────────
+	async function loadStats() {
+		statsError = '';
+		const result = await readinessAdminApi.stats();
+		if (result.ok) {
+			const resp = result.data as {
+				score_distribution: ScoreDistributionItem[];
+				completion: CompletionStats;
+			};
+			stats = {
+				distribution: resp.score_distribution ?? [],
+				completion: resp.completion ?? null
+			};
+		} else {
+			statsError = result.error ?? t('common.error', 'Failed to load stats');
+		}
+	}
+
+	async function loadFormConfig() {
+		configError = '';
+		const result = await readinessAdminApi.getForm();
+		if (result.ok) {
+			const form = result.data as { scoring_config?: ScoringConfig };
+			scoringConfig = form.scoring_config ?? null;
+		} else {
+			configError = result.error ?? t('common.error', 'Failed to load form config');
+		}
+	}
+
+	async function saveFormConfig() {
+		if (!scoringConfig) return;
+		configSaving = true;
+		configError = '';
+		const result = await readinessAdminApi.updateForm({ scoring_config: scoringConfig });
+		configSaving = false;
+		if (!result.ok) {
+			configError = result.error ?? t('common.error', 'Failed to save form config');
+		} else {
+			showConfig = false;
+		}
+	}
+
+	$effect(() => {
+		if (canManage) {
+			loadStats();
+		}
 	});
 </script>
 
@@ -89,26 +180,247 @@
 	</div>
 {/if}
 
+<!-- Stats dashboard -->
+{#if canManage}
+	<div class="mb-6 space-y-4">
+		<div class="flex items-center justify-between">
+			<h2 class="flex items-center gap-2 text-sm font-semibold" style="color: var(--color-muted)">
+				<BarChart3 size={16} />
+				{t('app.tools.readiness_stats', 'Score Distribution & Completion')}
+			</h2>
+			{#if canEditForm}
+				<button
+					type="button"
+					onclick={async () => {
+						if (!scoringConfig) await loadFormConfig();
+						showConfig = true;
+					}}
+					class="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors hover:opacity-80"
+					style="background: var(--color-primary); color: var(--color-primary-contrast, white)"
+				>
+					<Settings size={14} />
+					{t('app.tools.readiness_form_config', 'Form Config')}
+				</button>
+			{/if}
+		</div>
+
+		{#if statsError}
+			<p class="text-sm" style="color: var(--color-danger)">{statsError}</p>
+		{:else if stats.completion}
+			<div class="grid grid-cols-2 gap-4 sm:grid-cols-4">
+				<div class="rounded-lg border p-3" style="border-color: var(--color-border)">
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">
+						{t('app.tools.total_submissions', 'Submissions')}
+					</p>
+					<p class="mt-1 text-xl font-semibold" style="color: var(--color-foreground)">
+						{stats.completion.total_submissions}
+					</p>
+				</div>
+				<div class="rounded-lg border p-3" style="border-color: var(--color-border)">
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">
+						{t('app.tools.total_scored', 'Scored')}
+					</p>
+					<p class="mt-1 text-xl font-semibold" style="color: var(--color-foreground)">
+						{stats.completion.total_scored}
+					</p>
+				</div>
+				<div class="rounded-lg border p-3" style="border-color: var(--color-border)">
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">
+						{t('app.tools.avg_score', 'Avg Score')}
+					</p>
+					<p class="mt-1 text-xl font-semibold" style="color: var(--color-foreground)">
+						{stats.completion.avg_score}
+					</p>
+				</div>
+				<div class="rounded-lg border p-3" style="border-color: var(--color-border)">
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">
+						{t('app.tools.completion_rate', 'Completion')}
+					</p>
+					<p class="mt-1 text-xl font-semibold" style="color: var(--color-foreground)">
+						{Math.round(stats.completion.completion_rate)}%
+					</p>
+				</div>
+			</div>
+
+			{#if stats.distribution.length > 0}
+				<div class="rounded-lg border p-3" style="border-color: var(--color-border)">
+					<p class="mb-2 text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">
+						{t('app.tools.score_distribution', 'Score Distribution by Threshold')}
+					</p>
+					<div class="space-y-2">
+						{#each stats.distribution as d (d.threshold_label)}
+							<div class="flex items-center gap-3">
+								<span class="w-32 shrink-0 text-sm font-medium" style="color: var(--color-foreground)">
+									{d.threshold_label}
+								</span>
+								<div class="h-2 flex-1 overflow-hidden rounded-full" style="background: var(--color-surface-subtle)">
+									<div
+										class="h-full transition-all"
+										style="width: {Math.min(100, (d.count / Math.max(stats.completion?.total_scored || 1, 1)) * 100)}%; background: var(--color-primary)"
+									></div>
+								</div>
+								<span class="w-16 shrink-0 text-right text-sm" style="color: var(--color-muted)">
+									{d.count} ({d.avg_score})
+								</span>
+							</div>
+						{/each}
+					</div>
+				</div>
+			{/if}
+		{/if}
+	</div>
+{/if}
+
 <EntityPage {config} bind:controller={entityController} />
 
 <!-- ── View slide-over body ──────────────────────────────────────────────── -->
 {#snippet ReadinessView({ row }: { row: ReadinessItem })}
 	<div class="space-y-4">
 		<div>
-			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.tools.col_user_email', 'User Email')}</p>
-			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.user_email || '—'}</p>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.tools.col_username', 'Username')}</p>
+			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.username || '—'}</p>
 		</div>
 		<div>
 			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.tools.col_score', 'Score')}</p>
-			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.score != null ? String(row.score) : '—'}</p>
+			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.total_score != null ? String(row.total_score) : '—'}</p>
 		</div>
 		<div>
 			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.tools.col_readiness_level', 'Readiness Level')}</p>
-			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.readiness_level || '—'}</p>
+			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.threshold_label || '—'}</p>
 		</div>
 		<div>
 			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.tools.col_completed_at', 'Completed')}</p>
-			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.completed_at ? new Date(row.completed_at).toLocaleString() : '—'}</p>
+			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.created_at ? new Date(row.created_at).toLocaleString() : '—'}</p>
 		</div>
 	</div>
 {/snippet}
+
+<!-- ── Form config slide-over ────────────────────────────────────────────── -->
+{#if showConfig && scoringConfig}
+	<div class="fixed inset-0 z-50 flex justify-end">
+		<div class="absolute inset-0 bg-black/40" onclick={() => (showConfig = false)}></div>
+		<div class="relative h-full w-full max-w-lg overflow-y-auto border-l p-6" style="border-color: var(--color-border); background: var(--color-surface)">
+			<div class="mb-4 flex items-center justify-between">
+				<h2 class="text-base font-semibold" style="color: var(--color-foreground)">
+					{t('app.tools.readiness_form_config', 'Assessment Form Config')}
+				</h2>
+				<button type="button" onclick={() => (showConfig = false)} class="text-sm" style="color: var(--color-muted)">✕</button>
+			</div>
+
+			{#if configError}
+				<p class="mb-3 text-sm" style="color: var(--color-danger)">{configError}</p>
+			{/if}
+
+			<div class="space-y-4">
+				<div>
+					<label class="block text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)" for="max-score">
+						{t('app.tools.max_score', 'Max Score')}
+					</label>
+					<input
+						id="max-score"
+						type="number"
+						value={scoringConfig!.max_score}
+						oninput={(e) => (scoringConfig = { ...scoringConfig!, max_score: parseInt(e.currentTarget.value) || 0 })}
+						class="mt-1 w-full rounded-lg border px-3 py-2 text-sm"
+						style="border-color: var(--color-border); background: var(--color-background); color: var(--color-foreground)"
+					/>
+				</div>
+
+				<div>
+					<p class="mb-2 text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">
+						{t('app.tools.thresholds', 'Thresholds')}
+					</p>
+					<div class="space-y-2">
+						{#each scoringConfig!.thresholds as t, i (i)}
+							<div class="flex items-center gap-2">
+								<input
+									type="number"
+									value={t.min}
+									placeholder="min"
+									oninput={(e) => {
+										const thresholds = [...scoringConfig!.thresholds];
+										thresholds[i] = { ...thresholds[i], min: parseInt(e.currentTarget.value) || 0 };
+										scoringConfig = { ...scoringConfig!, thresholds };
+									}}
+									class="w-16 rounded border px-2 py-1 text-xs"
+									style="border-color: var(--color-border); background: var(--color-background); color: var(--color-foreground)"
+								/>
+								<input
+									type="number"
+									value={t.max}
+									placeholder="max"
+									oninput={(e) => {
+										const thresholds = [...scoringConfig!.thresholds];
+										thresholds[i] = { ...thresholds[i], max: parseInt(e.currentTarget.value) || 0 };
+										scoringConfig = { ...scoringConfig!, thresholds };
+									}}
+									class="w-16 rounded border px-2 py-1 text-xs"
+									style="border-color: var(--color-border); background: var(--color-background); color: var(--color-foreground)"
+								/>
+								<input
+									type="text"
+									value={t.label}
+									placeholder="label"
+									oninput={(e) => {
+										const thresholds = [...scoringConfig!.thresholds];
+										thresholds[i] = { ...thresholds[i], label: e.currentTarget.value };
+										scoringConfig = { ...scoringConfig!, thresholds };
+									}}
+									class="flex-1 rounded border px-2 py-1 text-xs"
+									style="border-color: var(--color-border); background: var(--color-background); color: var(--color-foreground)"
+								/>
+								<input
+									type="text"
+									value={t.color}
+									placeholder="color"
+									oninput={(e) => {
+										const thresholds = [...scoringConfig!.thresholds];
+										thresholds[i] = { ...thresholds[i], color: e.currentTarget.value };
+										scoringConfig = { ...scoringConfig!, thresholds };
+									}}
+									class="w-20 rounded border px-2 py-1 text-xs"
+									style="border-color: var(--color-border); background: var(--color-background); color: var(--color-foreground)"
+								/>
+							</div>
+						{/each}
+					</div>
+				</div>
+
+				<div>
+					<p class="mb-2 text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">
+						{t('app.tools.dimension_weights', 'Dimension Weights')}
+					</p>
+					<div class="space-y-2">
+						{#each Object.entries(scoringConfig!.dimension_weights) as [dim, weight] (dim)}
+							<div class="flex items-center gap-2">
+								<span class="flex-1 text-sm" style="color: var(--color-foreground)">{dim}</span>
+								<input
+									type="number"
+									step="0.05"
+									value={weight}
+									oninput={(e) => {
+										const dw = { ...scoringConfig!.dimension_weights };
+										dw[dim] = parseFloat(e.currentTarget.value) || 0;
+										scoringConfig = { ...scoringConfig!, dimension_weights: dw };
+									}}
+									class="w-20 rounded border px-2 py-1 text-xs"
+									style="border-color: var(--color-border); background: var(--color-background); color: var(--color-foreground)"
+								/>
+							</div>
+						{/each}
+					</div>
+				</div>
+
+				<button
+					type="button"
+					onclick={saveFormConfig}
+					disabled={configSaving}
+					class="w-full rounded-lg px-4 py-2 text-sm font-medium transition-colors disabled:opacity-50"
+					style="background: var(--color-primary); color: var(--color-primary-contrast, white)"
+				>
+					{configSaving ? t('common.saving', 'Saving…') : t('common.save', 'Save')}
+				</button>
+			</div>
+		</div>
+	</div>
+{/if}

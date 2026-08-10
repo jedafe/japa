@@ -30,7 +30,7 @@
 
 <Tabs.Root bind:value class={clsx("w-full", className)}>
   <Tabs.List class="inline-flex h-11 items-center justify-center rounded-lg p-1" style="background-color: var(--color-surface); color: var(--color-muted)">
-    {#each tabs as tab}
+    {#each tabs as tab (tab)}
       <Tabs.Trigger
         value={tab.value}
         class="inline-flex items-center justify-center whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 data-[state=active]:shadow-sm"

@@ -78,13 +78,13 @@ func (p *OpenAIProvider) SetName(name string) {
 
 // openAIChatRequest is the standard OpenAI chat completions request body.
 type openAIChatRequest struct {
-	Model       string            `json:"model"`
-	Messages    []openAIMessage   `json:"messages"`
-	MaxTokens   int               `json:"max_tokens,omitempty"`
-	Temperature float64           `json:"temperature,omitempty"`
-	TopP        float64           `json:"top_p,omitempty"`
-	Stream      bool              `json:"stream"`
-	Extra       map[string]any    `json:"-"`
+	Model       string          `json:"model"`
+	Messages    []openAIMessage `json:"messages"`
+	MaxTokens   int             `json:"max_tokens,omitempty"`
+	Temperature float64         `json:"temperature,omitempty"`
+	TopP        float64         `json:"top_p,omitempty"`
+	Stream      bool            `json:"stream"`
+	Extra       map[string]any  `json:"-"`
 }
 
 // openAIMessage is a single chat message in the OpenAI format.
@@ -95,10 +95,10 @@ type openAIMessage struct {
 
 // openAIChatResponse is the standard OpenAI chat completions response.
 type openAIChatResponse struct {
-	ID      string           `json:"id"`
-	Choices []openAIChoice   `json:"choices"`
-	Model   string           `json:"model"`
-	Usage   openAIUsage      `json:"usage"`
+	ID      string         `json:"id"`
+	Choices []openAIChoice `json:"choices"`
+	Model   string         `json:"model"`
+	Usage   openAIUsage    `json:"usage"`
 }
 
 // openAIChoice is a single completion choice.
@@ -252,6 +252,222 @@ type openAIModelsResponse struct {
 type openAIModelEntry struct {
 	ID      string `json:"id"`
 	OwnedBy string `json:"owned_by,omitempty"`
+}
+
+// ---------------------------------------------------------------------------
+// Function Calling (Section 103 — AI Agent Executor)
+// ---------------------------------------------------------------------------
+
+// openAIToolDef is the OpenAI tools-array entry: { type: "function", function: {...} }.
+type openAIToolDef struct {
+	Type     string             `json:"type"` // always "function"
+	Function openAIToolFunction `json:"function"`
+}
+
+// openAIToolFunction is the inner function definition.
+type openAIToolFunction struct {
+	Name        string         `json:"name"`
+	Description string         `json:"description"`
+	Parameters  map[string]any `json:"parameters"`
+}
+
+// openAIToolCall is a tool call in the assistant message response.
+type openAIToolCall struct {
+	ID       string             `json:"id"`
+	Type     string             `json:"type"` // "function"
+	Function openAIToolCallFunc `json:"function"`
+}
+
+// openAIToolCallFunc is the inner function payload of a tool call.
+type openAIToolCallFunc struct {
+	Name      string `json:"name"`
+	Arguments string `json:"arguments"` // raw JSON string
+}
+
+// openAIToolsChatRequest is the chat completions request with tools support.
+// Messages use a richer shape than openAIMessage because assistant messages
+// can carry tool_calls and tool-result messages need tool_call_id + name.
+type openAIToolsChatRequest struct {
+	Model       string           `json:"model"`
+	Messages    []openAIToolsMsg `json:"messages"`
+	Tools       []openAIToolDef  `json:"tools,omitempty"`
+	MaxTokens   int              `json:"max_tokens,omitempty"`
+	Temperature float64          `json:"temperature,omitempty"`
+	TopP        float64          `json:"top_p,omitempty"`
+	Stream      bool             `json:"stream"`
+}
+
+// openAIToolsMsg is a chat message supporting function-calling fields.
+type openAIToolsMsg struct {
+	Role       string           `json:"role"`
+	Content    string           `json:"content,omitempty"`
+	ToolCalls  []openAIToolCall `json:"tool_calls,omitempty"`
+	ToolCallID string           `json:"tool_call_id,omitempty"`
+	Name       string           `json:"name,omitempty"`
+}
+
+// openAIToolsChatResponse is the chat completions response with tool calls.
+type openAIToolsChatResponse struct {
+	ID      string              `json:"id"`
+	Choices []openAIToolsChoice `json:"choices"`
+	Model   string              `json:"model"`
+	Usage   openAIUsage         `json:"usage"`
+}
+
+// openAIToolsChoice is a single completion choice with tool-call support.
+type openAIToolsChoice struct {
+	FinishReason string         `json:"finish_reason"`
+	Index        int            `json:"index"`
+	Message      openAIToolsMsg `json:"message"`
+}
+
+// ChatWithTools dispatches a function-calling chat completion to the
+// OpenAI-compatible API. It translates the unified ChatWithToolsRequest into
+// the OpenAI wire format (tools array, multi-turn messages with tool_calls
+// and tool-result roles) and parses tool_calls from the response.
+//
+// Ref: japaconnect-engineering/sections/103-ai-agent-executor.md
+func (p *OpenAIProvider) ChatWithTools(ctx context.Context, req ChatWithToolsRequest) (ChatWithToolsResponse, error) {
+	if p.apiKey == "" {
+		return ChatWithToolsResponse{}, errors.New("openai: API key not configured")
+	}
+	if len(req.Messages) == 0 {
+		return ChatWithToolsResponse{}, errors.New("openai: at least one message is required")
+	}
+
+	model := req.Model
+	if model == "" {
+		model = p.model
+	}
+
+	chatReq := openAIToolsChatRequest{
+		Model:       model,
+		Messages:    toOpenAIToolsMessages(req.Messages),
+		Tools:       toOpenAIToolDefs(req.Tools),
+		Temperature: req.Temperature,
+		MaxTokens:   req.MaxTokens,
+		Stream:      false,
+	}
+
+	body, err := json.Marshal(chatReq)
+	if err != nil {
+		return ChatWithToolsResponse{}, fmt.Errorf("openai: marshaling tools request: %w", err)
+	}
+
+	endpoint := p.baseURL + "/chat/completions"
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
+	if err != nil {
+		return ChatWithToolsResponse{}, fmt.Errorf("openai: creating tools request: %w", err)
+	}
+
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Authorization", "Bearer "+p.apiKey)
+	httpReq.Header.Set("HTTP-Referer", "https://japaconnect.com")
+	httpReq.Header.Set("X-Title", "JapaConnect")
+
+	httpResp, err := p.httpClient.Do(httpReq)
+	if err != nil {
+		return ChatWithToolsResponse{}, fmt.Errorf("openai: tools request failed: %w", err)
+	}
+	defer func() { _ = httpResp.Body.Close() }()
+
+	respBody, err := io.ReadAll(httpResp.Body)
+	if err != nil {
+		return ChatWithToolsResponse{}, fmt.Errorf("openai: reading tools response: %w", err)
+	}
+
+	if httpResp.StatusCode != http.StatusOK {
+		return ChatWithToolsResponse{}, fmt.Errorf("openai: tools API error (status %d): %s", httpResp.StatusCode, truncate(string(respBody), 500))
+	}
+
+	var chatResp openAIToolsChatResponse
+	if err := json.Unmarshal(respBody, &chatResp); err != nil {
+		return ChatWithToolsResponse{}, fmt.Errorf("openai: parsing tools response: %w", err)
+	}
+
+	result := ChatWithToolsResponse{
+		Model:       chatResp.Model,
+		ProviderRef: chatResp.ID,
+		Usage: TokenUsage{
+			PromptTokens:     chatResp.Usage.PromptTokens,
+			CompletionTokens: chatResp.Usage.CompletionTokens,
+			TotalTokens:      chatResp.Usage.TotalTokens,
+		},
+	}
+
+	if len(chatResp.Choices) > 0 {
+		choice := chatResp.Choices[0]
+		result.FinishReason = choice.FinishReason
+		result.Content = choice.Message.Content
+
+		for _, tc := range choice.Message.ToolCalls {
+			args := json.RawMessage(tc.Function.Arguments)
+			if len(args) == 0 || string(args) == "null" {
+				args = json.RawMessage("{}")
+			}
+			result.ToolCalls = append(result.ToolCalls, ToolCall{
+				ID:        tc.ID,
+				Name:      tc.Function.Name,
+				Arguments: args,
+			})
+		}
+	}
+
+	slog.Info(
+		"openai: tools request completed",
+		"provider", p.name,
+		"model", chatResp.Model,
+		"finish_reason", result.FinishReason,
+		"tool_calls", len(result.ToolCalls),
+		"prompt_tokens", result.Usage.PromptTokens,
+		"completion_tokens", result.Usage.CompletionTokens,
+	)
+
+	return result, nil
+}
+
+// toOpenAIToolsMessages converts unified ChatMessages to the OpenAI wire format.
+func toOpenAIToolsMessages(msgs []ChatMessage) []openAIToolsMsg {
+	out := make([]openAIToolsMsg, 0, len(msgs))
+	for _, m := range msgs {
+		om := openAIToolsMsg{
+			Role:       m.Role,
+			Content:    m.Content,
+			ToolCallID: m.ToolCallID,
+			Name:       m.Name,
+		}
+		for _, tc := range m.ToolCalls {
+			om.ToolCalls = append(om.ToolCalls, openAIToolCall{
+				ID:   tc.ID,
+				Type: "function",
+				Function: openAIToolCallFunc{
+					Name:      tc.Name,
+					Arguments: string(tc.Arguments),
+				},
+			})
+		}
+		out = append(out, om)
+	}
+	return out
+}
+
+// toOpenAIToolDefs converts unified ToolDefinitions to the OpenAI tools array.
+func toOpenAIToolDefs(tools []LLMToolDefinition) []openAIToolDef {
+	if len(tools) == 0 {
+		return nil
+	}
+	out := make([]openAIToolDef, 0, len(tools))
+	for _, t := range tools {
+		out = append(out, openAIToolDef{
+			Type: "function",
+			Function: openAIToolFunction{
+				Name:        t.Name,
+				Description: t.Description,
+				Parameters:  t.Parameters,
+			},
+		})
+	}
+	return out
 }
 
 // FetchModels queries the provider's GET /v1/models endpoint to discover

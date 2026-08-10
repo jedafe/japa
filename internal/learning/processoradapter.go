@@ -5,6 +5,7 @@ package learning
 
 import (
 	"context"
+	"encoding/hex"
 	"fmt"
 	"log/slog"
 	"time"
@@ -87,7 +88,9 @@ func (a *ProcessorAdapter) IssueCertificate(ctx context.Context, userID, trackID
 		return nil
 	}
 
-	certNumber := fmt.Sprintf("JC-%d-%s", time.Now().Unix(), uid.Bytes[:8])
+	// Use hex-encoded UUID bytes (not raw) — raw bytes contain invalid UTF-8
+	// sequences that PostgreSQL's text column rejects (SQLSTATE 22021).
+	certNumber := fmt.Sprintf("JC-%d-%s", time.Now().Unix(), hex.EncodeToString(uid.Bytes[:8]))
 
 	if _, err := a.store.IssueCertificate(ctx, tid, uid, tkid, certNumber); err != nil {
 		return fmt.Errorf("issue certificate: %w", err)

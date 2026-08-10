@@ -605,7 +605,7 @@
               <Badge variant={user.status === "active" ? "success" : user.status === "banned" ? "destructive" : user.status === "deleted" ? "destructive" : "warning"}>
                 {user.status}
               </Badge>
-              {#each user.groups as g}
+              {#each user.groups as g (g)}
                 <Badge variant="secondary">{g}</Badge>
               {/each}
             </div>
@@ -628,7 +628,7 @@
             <div>
               <p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('users.userId.groups', 'Groups')}</p>
               <div class="mt-0.5 flex flex-wrap gap-1">
-                {#each user.groups as g}
+                {#each user.groups as g (g)}
                   <Badge variant="secondary" class="text-xs">{g}</Badge>
                 {:else}
                   <span class="text-sm" style="color: var(--color-muted)">—</span>
@@ -736,7 +736,7 @@
                     </tr>
                   </thead>
                   <tbody>
-                    {#each restrictions as r}
+                    {#each restrictions as r (r)}
                       <tr style="border-color: var(--color-border)">
                         <td class="px-4 py-2">
                           <span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium bg-warning/15 text-warning dark:text-warning">{r.operation}</span>
@@ -784,7 +784,7 @@
       <div class="rounded-md border p-3" style="border-color: var(--color-warning); background-color: color-mix(in srgb, var(--color-warning) 8%, transparent)">
         <p class="text-xs font-medium mb-2" style="color: var(--color-warning)">Currently restricted operations:</p>
         <div class="flex flex-wrap gap-2">
-          {#each restrictions as r}
+          {#each restrictions as r (r)}
             <span class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium bg-warning/15 text-warning dark:text-warning">
               {r.operation} — {r.expires_at ? new Date(r.expires_at).toLocaleDateString() : 'Permanent'}
               <button type="button" class="ml-1 hover:opacity-70" onclick={() => liftRestriction(r.operation)}>&times;</button>
@@ -796,7 +796,7 @@
     <div>
       <p class="mb-2 text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Operations to restrict</p>
       <div class="grid grid-cols-2 gap-2">
-        {#each restrictionOps as op}
+        {#each restrictionOps as op (op)}
           {@const alreadyRestricted = restrictions.some(r => r.operation === op.value)}
           <label class="flex items-center gap-2 text-sm" class:opacity-50={alreadyRestricted}>
             <input type="checkbox" value={op.value} bind:group={restrictOperations} class="rounded" disabled={alreadyRestricted} />
@@ -811,7 +811,7 @@
     <div>
       <p class="mb-1 text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Duration</p>
       <div class="grid grid-cols-4 gap-2">
-        {#each restrictionDurations as d}
+        {#each restrictionDurations as d (d)}
           <label class="flex items-center gap-2 text-sm">
             <input type="radio" name="restrict_duration" value={d.value} bind:group={restrictDuration} class="rounded" />
             {d.label}
@@ -821,7 +821,7 @@
     </div>
     <div>
       <label for="restrict-reason" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">Reason</label>
-      <textarea id="restrict-reason" rows="2" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-surface)" placeholder="Reason for restriction..." bind:value={restrictReason}></textarea>
+      <textarea id="restrict-reason" rows="2" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-surface)" placeholder={t('users.ph_reason_for_restriction', 'Reason for restriction...')} bind:value={restrictReason}></textarea>
     </div>
   </div>
   <div class="mt-6 flex justify-end gap-3">
@@ -840,7 +840,7 @@
   </p>
   <div class="mt-3">
     <label for="suspend-reason" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">Reason</label>
-    <textarea id="suspend-reason" rows="2" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-surface)" placeholder="Reason for suspension..." bind:value={suspendReason}></textarea>
+    <textarea id="suspend-reason" rows="2" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-surface)" placeholder={t('users.ph_reason_for_suspension', 'Reason for suspension...')} bind:value={suspendReason}></textarea>
   </div>
   <div class="mt-6 flex justify-end gap-3">
     <Button variant="outline" onclick={() => (showSuspendModal = false)}>Cancel</Button>
@@ -863,14 +863,14 @@
     <div>
       <label for="warning-violation" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">Violation Type</label>
       <select id="warning-violation" bind:value={warningViolationType} class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-surface)">
-        {#each violationTypes as vt}
+        {#each violationTypes as vt (vt)}
           <option value={vt.value}>{vt.label}</option>
         {/each}
       </select>
     </div>
     <div>
       <label for="warning-reason" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('users.userId.reason_for_warning')}</label>
-      <textarea id="warning-reason" rows="3" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-surface)" placeholder="Enter the reason for this warning..." bind:value={warningReason}></textarea>
+      <textarea id="warning-reason" rows="3" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-surface)" placeholder={t('users.ph_enter_the_reason_for_this', 'Enter the reason for this warning...')} bind:value={warningReason}></textarea>
     </div>
     <p class="text-xs" style="color: var(--color-muted)">After 3 warnings of the same type, the user will be auto-restricted from related operations for 7 days.</p>
   </div>
@@ -882,7 +882,7 @@
 
 <Modal bind:open={showGroupModal} title={t('users.detail.change_group', 'Change Group')} size="sm">
   <div class="space-y-2">
-    {#each groupOptions as group}
+    {#each groupOptions as group (group)}
       <label class="flex items-center gap-2 text-sm">
         <input type="checkbox" value={group} bind:group={selectedGroups} class="rounded" />
         {group}
@@ -897,7 +897,7 @@
 
 <Modal bind:open={showProfileTypeModal} title={t('users.detail.change_profile_type', 'Change Profile Type')} size="sm">
   <div class="space-y-2">
-    {#each profileTypeOptions as pt}
+    {#each profileTypeOptions as pt (pt)}
       <label class="flex items-center gap-2 text-sm">
         <input type="radio" name="profile_type" value={pt} bind:group={selectedProfileType} class="rounded" />
         {pt}

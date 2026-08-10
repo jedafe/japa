@@ -1388,7 +1388,10 @@ SELECT e.id, e.tenant_id, e.user_id, e.track_id, e.access_type, e.progress_pct,
        m.storage_path AS thumbnail_url,
        COALESCE(lp_stats.lessons_completed, 0) AS lessons_completed,
        COALESCE(lp_stats.lessons_total, 0) AS lessons_total,
-       lp_stats.last_activity_at
+       lp_stats.last_activity_at,
+       nl.next_lesson_slug,
+       nl.next_lesson_title,
+       nl.next_lesson_module_slug
 FROM enrollments e
 JOIN learning_tracks lt ON lt.id = e.track_id
 LEFT JOIN media m ON m.id = lt.cover_media_id
@@ -1402,6 +1405,16 @@ LEFT JOIN LATERAL (
     LEFT JOIN lesson_progress lp ON lp.lesson_id = ll.id AND lp.user_id = e.user_id
     WHERE lm.track_id = e.track_id AND ll.is_published = true
 ) lp_stats ON true
+LEFT JOIN LATERAL (
+    SELECT ll.slug AS next_lesson_slug, ll.title AS next_lesson_title, lm.slug AS next_lesson_module_slug
+    FROM learning_lessons ll
+    JOIN learning_modules lm ON lm.id = ll.module_id
+    LEFT JOIN lesson_progress lp ON lp.lesson_id = ll.id AND lp.user_id = e.user_id
+    WHERE lm.track_id = e.track_id AND ll.is_published = true
+      AND (lp.status IS NULL OR lp.status != 'completed')
+    ORDER BY lm.sort_order ASC, ll.sort_order ASC
+    LIMIT 1
+) nl ON true
 WHERE e.user_id = $1 AND e.tenant_id = $2
 ORDER BY e.enrolled_at DESC
 `
@@ -1412,28 +1425,32 @@ type ListEnrollmentsByUserIDWithDetailsParams struct {
 }
 
 type ListEnrollmentsByUserIDWithDetailsRow struct {
-	ID               pgtype.UUID        `json:"id"`
-	TenantID         pgtype.UUID        `json:"tenant_id"`
-	UserID           pgtype.UUID        `json:"user_id"`
-	TrackID          pgtype.UUID        `json:"track_id"`
-	AccessType       string             `json:"access_type"`
-	ProgressPct      pgtype.Numeric     `json:"progress_pct"`
-	EnrolledAt       pgtype.Timestamptz `json:"enrolled_at"`
-	CompletedAt      pgtype.Timestamptz `json:"completed_at"`
-	TrackSlug        string             `json:"track_slug"`
-	TrackTitle       string             `json:"track_title"`
-	Level            string             `json:"level"`
-	ThumbnailUrl     *string            `json:"thumbnail_url"`
-	LessonsCompleted int64              `json:"lessons_completed"`
-	LessonsTotal     int64              `json:"lessons_total"`
-	LastActivityAt   interface{}        `json:"last_activity_at"`
+	ID                   pgtype.UUID        `json:"id"`
+	TenantID             pgtype.UUID        `json:"tenant_id"`
+	UserID               pgtype.UUID        `json:"user_id"`
+	TrackID              pgtype.UUID        `json:"track_id"`
+	AccessType           string             `json:"access_type"`
+	ProgressPct          pgtype.Numeric     `json:"progress_pct"`
+	EnrolledAt           pgtype.Timestamptz `json:"enrolled_at"`
+	CompletedAt          pgtype.Timestamptz `json:"completed_at"`
+	TrackSlug            string             `json:"track_slug"`
+	TrackTitle           string             `json:"track_title"`
+	Level                string             `json:"level"`
+	ThumbnailUrl         *string            `json:"thumbnail_url"`
+	LessonsCompleted     int64              `json:"lessons_completed"`
+	LessonsTotal         int64              `json:"lessons_total"`
+	LastActivityAt       interface{}        `json:"last_activity_at"`
+	NextLessonSlug       string             `json:"next_lesson_slug"`
+	NextLessonTitle      string             `json:"next_lesson_title"`
+	NextLessonModuleSlug string             `json:"next_lesson_module_slug"`
 }
 
 // Enriched enrollment list for GET /me/enrollments — joins learning_tracks
 // for slug/title/thumbnail/level and computes lessons_completed/lessons_total
-// + last_activity_at via a LATERAL subquery on lesson_progress. The frontend
-// Enrollment type (apps/learn/src/lib/types) expects all these fields so the
-// Continue Learning card and lesson player progress ring render correctly.
+// + last_activity_at via a LATERAL subquery on lesson_progress. Also fetches
+// the next incomplete lesson via a second LATERAL join so the Continue
+// Learning card can render without an N+1 per enrollment. The frontend
+// Enrollment type (apps/learn/src/lib/types) expects all these fields.
 func (q *Queries) ListEnrollmentsByUserIDWithDetails(ctx context.Context, arg ListEnrollmentsByUserIDWithDetailsParams) ([]ListEnrollmentsByUserIDWithDetailsRow, error) {
 	rows, err := q.db.Query(ctx, listEnrollmentsByUserIDWithDetails, arg.UserID, arg.TenantID)
 	if err != nil {
@@ -1459,6 +1476,9 @@ func (q *Queries) ListEnrollmentsByUserIDWithDetails(ctx context.Context, arg Li
 			&i.LessonsCompleted,
 			&i.LessonsTotal,
 			&i.LastActivityAt,
+			&i.NextLessonSlug,
+			&i.NextLessonTitle,
+			&i.NextLessonModuleSlug,
 		); err != nil {
 			return nil, err
 		}

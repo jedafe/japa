@@ -884,7 +884,7 @@
 						<p class="py-4 text-center text-sm text-muted">{t('forms.noSteps', 'No steps configured')}</p>
 					{:else}
 						<div class="space-y-2">
-							{#each steps as step, idx}
+							{#each steps as step, idx (idx)}
 								<div class="flex items-center justify-between rounded-md border border-border bg-surface px-4 py-3">
 									<div class="flex items-center gap-3">
 										<span class="flex h-6 w-6 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">{idx + 1}</span>
@@ -999,7 +999,7 @@
 					</CardContent>
 				</Card>
 			{:else}
-				{#each steps as step, stepIdx}
+				{#each steps as step, stepIdx (stepIdx)}
 					<Card class="mt-4">
 						<CardContent class="p-4">
 							<div class="mb-4 flex items-center justify-between">
@@ -1017,7 +1017,7 @@
 								<p class="py-4 text-center text-sm text-muted">{t('forms.noFieldsInStep', 'No fields in this step yet')}</p>
 							{:else}
 								<div class="space-y-2">
-									{#each step.fields as field, idx}
+									{#each step.fields as field, idx (idx)}
 										<div class="flex items-center justify-between rounded-md border border-border bg-surface px-4 py-3">
 											<div class="flex items-center gap-3">
 												<span class="text-sm font-medium">{field.label}</span>
@@ -1063,7 +1063,7 @@
 						<p class="py-8 text-center text-sm text-muted">{t('forms.noFields', 'No fields yet')}</p>
 					{:else}
 						<div class="space-y-2">
-							{#each fields as field, idx}
+							{#each fields as field, idx (idx)}
 								<div class="flex items-center justify-between rounded-md border border-border bg-surface px-4 py-3">
 									<div class="flex items-center gap-3">
 										<span class="text-sm font-medium">{field.label}</span>
@@ -1193,7 +1193,7 @@
 						<div>
 							<p class="mb-2 text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('forms.responseData', 'Response Data')}</p>
 							<div class="rounded-md border border-border bg-surface p-4">
-								{#each Object.entries(selectedSubmission.data) as [key, value]}
+								{#each Object.entries(selectedSubmission.data) as [key, value] (key)}
 									<div class="mb-2 last:mb-0">
 										<p class="text-xs font-medium" style="color: var(--color-muted)">{key}</p>
 										<p class="text-sm">{typeof value === 'object' ? JSON.stringify(value) : String(value ?? '—')}</p>
@@ -1245,7 +1245,7 @@
 						</div>
 					{:else}
 						<div class="space-y-2">
-							{#each triggers as trigger, idx}
+							{#each triggers as trigger, idx (idx)}
 								<div class="flex items-center justify-between rounded-md border border-border bg-surface px-4 py-3">
 									<div class="flex items-center gap-3 min-w-0 flex-1">
 										<Badge variant="secondary">{trigger.trigger_type}</Badge>
@@ -1285,7 +1285,7 @@
 					{#if newTriggerType === 'assign_user_group'}
 						<div>
 							<label for="trigger-group-id" class="mb-1 block text-sm font-medium text-foreground-alt">Group ID *</label>
-							<input id="trigger-group-id" type="text" class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" bind:value={triggerConfigGroupId} placeholder="Enter user group ID" />
+							<input id="trigger-group-id" type="text" class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" bind:value={triggerConfigGroupId} placeholder={t('forms.ph_enter_user_group_id', 'Enter user group ID')} />
 						</div>
 					{:else if newTriggerType === 'send_email'}
 						<div>
@@ -1294,11 +1294,11 @@
 						</div>
 						<div>
 							<label for="trigger-email-subject" class="mb-1 block text-sm font-medium text-foreground-alt">Subject *</label>
-							<input id="trigger-email-subject" type="text" class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" bind:value={triggerConfigEmailSubject} placeholder="New form submission" />
+							<input id="trigger-email-subject" type="text" class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" bind:value={triggerConfigEmailSubject} placeholder={t('forms.ph_new_form_submission', 'New form submission')} />
 						</div>
 						<div>
 							<label for="trigger-email-template" class="mb-1 block text-sm font-medium text-foreground-alt">Template</label>
-							<input id="trigger-email-template" type="text" class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" bind:value={triggerConfigEmailTemplate} placeholder="Optional template name" />
+							<input id="trigger-email-template" type="text" class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" bind:value={triggerConfigEmailTemplate} placeholder={t('forms.ph_optional_template_name', 'Optional template name')} />
 						</div>
 					{:else if newTriggerType === 'send_webhook'}
 						<div>
@@ -1307,7 +1307,7 @@
 						</div>
 						<div>
 							<label for="trigger-webhook-secret" class="mb-1 block text-sm font-medium text-foreground-alt">Secret (optional)</label>
-							<input id="trigger-webhook-secret" type="text" class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" bind:value={triggerConfigWebhookSecret} placeholder="HMAC signing secret" />
+							<input id="trigger-webhook-secret" type="text" class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" bind:value={triggerConfigWebhookSecret} placeholder={t('forms.ph_hmac_signing_secret', 'HMAC signing secret')} />
 						</div>
 					{:else if newTriggerType === 'create_ticket'}
 						<div>
@@ -1316,12 +1316,12 @@
 						</div>
 						<div>
 							<label for="trigger-ticket-category" class="mb-1 block text-sm font-medium text-foreground-alt">Category</label>
-							<input id="trigger-ticket-category" type="text" class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" bind:value={triggerConfigTicketCategory} placeholder="e.g., Feedback" />
+							<input id="trigger-ticket-category" type="text" class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" bind:value={triggerConfigTicketCategory} placeholder={t('forms.ph_eg_feedback', 'e.g., Feedback')} />
 						</div>
 					{:else if newTriggerType === 'notify_admin'}
 						<div>
 							<label for="trigger-notify-message" class="mb-1 block text-sm font-medium text-foreground-alt">Message *</label>
-							<textarea id="trigger-notify-message" rows="3" class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" bind:value={triggerConfigNotifyMessage} placeholder="Notification message text"></textarea>
+							<textarea id="trigger-notify-message" rows="3" class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" bind:value={triggerConfigNotifyMessage} placeholder={t('forms.ph_notification_message_text', 'Notification message text')}></textarea>
 						</div>
 					{/if}
 				</div>

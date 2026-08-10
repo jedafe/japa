@@ -64,7 +64,7 @@
       <button {...props}>
         <DatePicker.Input class="flex h-full w-full items-center justify-between">
           {#snippet children({ segments })}
-            {#each segments as segment}
+            {#each segments as segment (segment)}
               <DatePicker.Segment part={segment.part} class="px-0.5" />
             {/each}
           {/snippet}
@@ -89,7 +89,7 @@
           <DatePicker.Grid class="mt-2">
             <DatePicker.GridHead>
               <DatePicker.GridRow class="flex">
-                {#each weekdays as day}
+                {#each weekdays as day (day)}
                   <DatePicker.HeadCell class="w-9 rounded-md text-xs font-medium text-muted">
                     {day}
                   </DatePicker.HeadCell>
@@ -97,10 +97,10 @@
               </DatePicker.GridRow>
             </DatePicker.GridHead>
             <DatePicker.GridBody>
-              {#each months as month}
-                {#each month.weeks as week}
+              {#each months as month (month)}
+                {#each month.weeks as week (week)}
                   <DatePicker.GridRow class="flex w-full">
-                    {#each week as day}
+                    {#each week as day (day)}
                       <DatePicker.Cell
                         date={day}
                         month={month.value}

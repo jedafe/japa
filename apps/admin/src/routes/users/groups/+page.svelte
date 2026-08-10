@@ -11,13 +11,14 @@
 	import { userManagementApi, permissionsApi } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
+	import { pageFromUrl, pageSizeFromUrl, searchFromUrl, syncListStateToUrl } from '$lib/utils/url-sync.svelte';
 	import type { UserGroup } from '$lib/api';
 
 	let groups = $state<UserGroup[]>([]);
 	let loading = $state(true);
-	let currentPage = $state(0);
+	let currentPage = $state(pageFromUrl());
 	let totalItems = $state(0);
-	let pageSize = $state(25);
+	let pageSize = $state(pageSizeFromUrl(25));
 	let totalPages = $state(1);
 
 	let showSlideOver = $state(false);
@@ -37,7 +38,7 @@
 	let allPermissions = $state<string[]>([]);
 	let permSearch = $state('');
 	let permCategory = $state('');
-	let searchQuery = $state('');
+	let searchQuery = $state(searchFromUrl());
 
 	const canManageGroups = $derived(hasPermission('admin.rbac.manage'));
 
@@ -191,6 +192,19 @@
 		? [{ label: t('users.groups.delete_selected', 'Delete Selected'), icon: Trash2, variant: 'destructive', onclick: bulkDelete }]
 		: []);
 
+	// Sync list state (page, search) to URL for back/forward survival.
+	$effect(() => {
+		void currentPage;
+		void pageSize;
+		void searchQuery;
+		syncListStateToUrl({
+			page: currentPage,
+			pageSize,
+			defaultPageSize: 25,
+			search: searchQuery
+		});
+	});
+
 	$effect(() => {
 		void currentPage;
 		void pageSize;
@@ -275,7 +289,7 @@
 					bind:value={permCategory}
 				>
 					<option value="">All categories</option>
-					{#each permissionCategories() as cat}
+					{#each permissionCategories() as cat (cat)}
 						<option value={cat}>{cat}</option>
 					{/each}
 					<option value="other">Other</option>
@@ -289,7 +303,7 @@
 				/>
 			</div>
 			<div class="grid max-h-60 grid-cols-2 gap-2 overflow-y-auto">
-				{#each filteredPermissions as perm}
+				{#each filteredPermissions as perm (perm)}
 					<label class="flex items-center gap-2 text-xs">
 						<input type="checkbox" value={perm} bind:group={formPermissions} class="rounded" />
 						{perm}

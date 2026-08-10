@@ -239,7 +239,7 @@
 	<div class="space-y-3">
 		<div>
 			<label for="travel-name" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('travel.name', 'Name')}</label>
-			<input id="travel-name" type="text" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={newProvider.name} placeholder="Skyscanner" />
+			<input id="travel-name" type="text" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={newProvider.name} placeholder={t('app.travel.ph_skyscanner', 'Skyscanner')} />
 		</div>
 		<div>
 			<label for="travel-slug" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('travel.slug', 'Slug')}</label>

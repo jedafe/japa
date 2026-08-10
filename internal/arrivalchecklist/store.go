@@ -18,6 +18,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -473,6 +474,190 @@ WHERE id = $1 AND tenant_id = $2
 	}
 	if cmd.RowsAffected() == 0 {
 		return pgx.ErrNoRows
+	}
+	return nil
+}
+
+// UserChecklistRow is a user's saved arrival checklist with progress summary.
+// Returned by ListUserChecklists for GET /me/arrival-checklists.
+type UserChecklistRow struct {
+	GuideID         pgtype.UUID
+	DestSpaceName   *string
+	DestSpaceCode   *string
+	VisaCategory    *string
+	ApplicantType   string
+	TotalItems      int64
+	CompletedItems  int64
+	FirstProgressAt pgtype.Timestamptz
+	LastProgressAt  pgtype.Timestamptz
+}
+
+// ListUserChecklists returns the distinct arrival checklist guides a user has
+// progress on, with item counts and completion counts. Uses checklist_progress
+// with list_type = 'arrival' (migration 000369).
+func (s *Store) ListUserChecklists(ctx context.Context, tenantID, userID pgtype.UUID) ([]UserChecklistRow, error) {
+	const q = `
+SELECT g.id,
+       sp.name AS dest_space_name,
+       sp.geo_code AS dest_space_code,
+       g.visa_category,
+       g.applicant_type,
+       COUNT(i.id) AS total_items,
+       COUNT(cp.id) FILTER (WHERE cp.completed = true) AS completed_items,
+       MIN(cp.created_at) AS first_progress_at,
+       MAX(cp.updated_at) AS last_progress_at
+FROM arrival_checklist_guides g
+JOIN arrival_checklist_items i ON i.guide_id = g.id
+LEFT JOIN checklist_progress cp
+  ON cp.guide_id = g.id
+ AND cp.user_id = $2
+ AND cp.tenant_id = $1
+ AND cp.list_type = 'arrival'
+WHERE g.tenant_id = $1
+  AND g.is_active = true
+  AND g.status = 'published'
+  AND cp.id IS NOT NULL
+GROUP BY g.id, sp.name, sp.geo_code, g.visa_category, g.applicant_type
+ORDER BY MAX(cp.updated_at) DESC
+`
+	rows, err := s.pool.Reader.Query(ctx, q, tenantID, userID)
+	if err != nil {
+		return nil, fmt.Errorf("arrivalchecklist: list user checklists: %w", err)
+	}
+	defer rows.Close()
+
+	var out []UserChecklistRow
+	for rows.Next() {
+		var r UserChecklistRow
+		if err := rows.Scan(
+			&r.GuideID, &r.DestSpaceName, &r.DestSpaceCode,
+			&r.VisaCategory, &r.ApplicantType,
+			&r.TotalItems, &r.CompletedItems,
+			&r.FirstProgressAt, &r.LastProgressAt,
+		); err != nil {
+			return nil, fmt.Errorf("arrivalchecklist: scan user checklist row: %w", err)
+		}
+		out = append(out, r)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("arrivalchecklist: iterate user checklist rows: %w", err)
+	}
+	return out, nil
+}
+
+// UserChecklistDetailRow is a single item in a user's saved arrival checklist,
+// with the user's progress state merged in.
+type UserChecklistDetailRow struct {
+	ID           pgtype.UUID
+	GuideID      pgtype.UUID
+	Phase        string
+	Title        string
+	Description  *string
+	OfficialLink *string
+	SortOrder    int32
+	IsFlagged    bool
+	Completed    bool
+	CompletedAt  pgtype.Timestamptz
+	Notes        *string
+}
+
+// GetUserChecklistItems returns all items for a guide with the user's progress
+// merged in (left join on checklist_progress with list_type = 'arrival').
+func (s *Store) GetUserChecklistItems(ctx context.Context, tenantID, userID, guideID pgtype.UUID) ([]UserChecklistDetailRow, error) {
+	const q = `
+SELECT i.id, i.guide_id, i.phase, i.title, i.description, i.official_link,
+       i.sort_order, i.is_flagged,
+       COALESCE(cp.completed, false) AS completed,
+       cp.completed_at, cp.notes
+FROM arrival_checklist_items i
+JOIN arrival_checklist_guides g ON g.id = i.guide_id
+LEFT JOIN checklist_progress cp
+  ON cp.guide_id = i.guide_id
+ AND cp.item_key = i.id::text
+ AND cp.user_id = $2
+ AND cp.tenant_id = $1
+ AND cp.list_type = 'arrival'
+WHERE i.guide_id = $3
+  AND g.tenant_id = $1
+  AND g.is_active = true
+  AND g.status = 'published'
+ORDER BY i.sort_order ASC, i.created_at ASC
+`
+	rows, err := s.pool.Reader.Query(ctx, q, tenantID, userID, guideID)
+	if err != nil {
+		return nil, fmt.Errorf("arrivalchecklist: get user checklist items: %w", err)
+	}
+	defer rows.Close()
+
+	var out []UserChecklistDetailRow
+	for rows.Next() {
+		var r UserChecklistDetailRow
+		if err := rows.Scan(
+			&r.ID, &r.GuideID, &r.Phase, &r.Title, &r.Description,
+			&r.OfficialLink, &r.SortOrder, &r.IsFlagged,
+			&r.Completed, &r.CompletedAt, &r.Notes,
+		); err != nil {
+			return nil, fmt.Errorf("arrivalchecklist: scan user checklist item: %w", err)
+		}
+		out = append(out, r)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("arrivalchecklist: iterate user checklist items: %w", err)
+	}
+	return out, nil
+}
+
+// StartChecklist creates an initial progress row for a guide, marking the
+// user as having "started" the checklist. Idempotent — if a progress row
+// already exists for this user+guide (any item), it does nothing.
+// Returns the guide DTO so the frontend can render items immediately.
+func (s *Store) StartChecklist(ctx context.Context, tenantID, userID, guideID pgtype.UUID) error {
+	// Insert a progress row for the first item of the guide (if any items
+	// exist), so the user's checklist appears in ListUserChecklists. Uses
+	// ON CONFLICT DO NOTHING for idempotency.
+	const q = `
+INSERT INTO checklist_progress (tenant_id, user_id, guide_id, item_key, completed, list_type)
+SELECT $1, $2, $3, i.id::text, false, 'arrival'
+FROM arrival_checklist_items i
+JOIN arrival_checklist_guides g ON g.id = i.guide_id
+WHERE i.guide_id = $3
+  AND g.tenant_id = $1
+  AND g.is_active = true
+  AND g.status = 'published'
+ORDER BY i.sort_order ASC
+LIMIT 1
+ON CONFLICT (tenant_id, user_id, guide_id, item_key, list_type) DO NOTHING
+`
+	cmd, err := s.pool.Writer.Exec(ctx, q, tenantID, userID, guideID)
+	if err != nil {
+		return fmt.Errorf("arrivalchecklist: start checklist: %w", err)
+	}
+	_ = cmd
+	return nil
+}
+
+// TickItem marks a single arrival checklist item complete/incomplete with an
+// optional note. Uses checklist_progress with list_type = 'arrival'. The
+// item_key is the arrival_checklist_items.id (UUID as text).
+func (s *Store) TickItem(ctx context.Context, tenantID, userID, guideID pgtype.UUID, itemID string, completed bool, notes *string) error {
+	var completedAt pgtype.Timestamptz
+	if completed {
+		completedAt = pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true}
+	}
+
+	const q = `
+INSERT INTO checklist_progress (tenant_id, user_id, guide_id, item_key, completed, completed_at, notes, list_type)
+VALUES ($1, $2, $3, $4, $5, $6, $7, 'arrival')
+ON CONFLICT (tenant_id, user_id, guide_id, item_key, list_type)
+DO UPDATE SET
+    completed = EXCLUDED.completed,
+    completed_at = EXCLUDED.completed_at,
+    notes = COALESCE(EXCLUDED.notes, checklist_progress.notes),
+    updated_at = now()
+`
+	_, err := s.pool.Writer.Exec(ctx, q, tenantID, userID, guideID, itemID, completed, completedAt, notes)
+	if err != nil {
+		return fmt.Errorf("arrivalchecklist: tick item: %w", err)
 	}
 	return nil
 }

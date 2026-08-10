@@ -175,7 +175,7 @@
 				<p class="mt-1 text-sm" style="color: var(--color-muted)">—</p>
 			{:else}
 				<div class="mt-1 flex flex-wrap gap-1">
-					{#each row.permissions as perm}
+					{#each row.permissions as perm (perm)}
 						<span class="inline-block rounded-full px-2 py-0.5 text-xs" style="background-color: color-mix(in srgb, var(--color-secondary) 15%, transparent); color: var(--color-foreground)">{perm}</span>
 					{/each}
 				</div>
@@ -208,7 +208,7 @@
 				bind:value={permSearch}
 			/>
 			<div class="grid max-h-60 grid-cols-2 gap-2 overflow-y-auto">
-				{#each filteredPermissions as perm}
+				{#each filteredPermissions as perm (perm)}
 					<label class="flex items-center gap-2 text-xs">
 						<input
 							type="checkbox"

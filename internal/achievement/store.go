@@ -210,7 +210,10 @@ func (s *Store) ListAchievements(ctx context.Context, f ListAchievementsFilter) 
 
 	listQuery := fmt.Sprintf(`
 SELECT c.id, c.tenant_id, c.author_id, c.title, c.slug, c.body, c.body_html,
-       c.status, c.visibility, c.view_count, c.comment_count, 0 AS reaction_count,
+       c.status, c.visibility, c.view_count, c.comment_count,
+       (SELECT COUNT(*) FROM reactions r
+        WHERE r.entity_id = c.id AND r.tenant_id = c.tenant_id
+          AND r.entity_type = 'content') AS reaction_count,
        c.published_at, c.created_at, c.updated_at,
        am.milestone_type,
        am.origin_space_id, os.name AS origin_space_name, os.geo_code AS origin_space_code,
@@ -276,7 +279,10 @@ WHERE %s
 func (s *Store) GetBySlug(ctx context.Context, slug string, tenantID pgtype.UUID) (AchievementRow, error) {
 	const q = `
 SELECT c.id, c.tenant_id, c.author_id, c.title, c.slug, c.body, c.body_html,
-       c.status, c.visibility, c.view_count, c.comment_count, 0 AS reaction_count,
+       c.status, c.visibility, c.view_count, c.comment_count,
+       (SELECT COUNT(*) FROM reactions r
+        WHERE r.entity_id = c.id AND r.tenant_id = c.tenant_id
+          AND r.entity_type = 'content') AS reaction_count,
        c.published_at, c.created_at, c.updated_at,
        am.milestone_type,
        am.origin_space_id, os.name AS origin_space_name, os.geo_code AS origin_space_code,
@@ -325,7 +331,10 @@ func (s *Store) ListBySpace(ctx context.Context, spaceSlug string, tenantID pgty
 
 	const q = `
 SELECT c.id, c.tenant_id, c.author_id, c.title, c.slug, c.body, c.body_html,
-       c.status, c.visibility, c.view_count, c.comment_count, 0 AS reaction_count,
+       c.status, c.visibility, c.view_count, c.comment_count,
+       (SELECT COUNT(*) FROM reactions r
+        WHERE r.entity_id = c.id AND r.tenant_id = c.tenant_id
+          AND r.entity_type = 'content') AS reaction_count,
        c.published_at, c.created_at, c.updated_at,
        am.milestone_type,
        am.origin_space_id, os.name AS origin_space_name, os.geo_code AS origin_space_code,
@@ -433,7 +442,10 @@ func (s *Store) AdminList(ctx context.Context, f AdminListFilter) ([]Achievement
 
 	listQuery := fmt.Sprintf(`
 SELECT c.id, c.tenant_id, c.author_id, c.title, c.slug, c.body, c.body_html,
-       c.status, c.visibility, c.view_count, c.comment_count, 0 AS reaction_count,
+       c.status, c.visibility, c.view_count, c.comment_count,
+       (SELECT COUNT(*) FROM reactions r
+        WHERE r.entity_id = c.id AND r.tenant_id = c.tenant_id
+          AND r.entity_type = 'content') AS reaction_count,
        c.published_at, c.created_at, c.updated_at,
        am.milestone_type,
        am.origin_space_id, os.name AS origin_space_name, os.geo_code AS origin_space_code,

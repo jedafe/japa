@@ -56,7 +56,7 @@
     />
   </div>
   
-  {#each filters as filter}
+  {#each filters as filter (filter)}
     <div class="w-40 shrink-0">
       <Select
         bind:value={value[filter.key]}

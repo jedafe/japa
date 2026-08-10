@@ -131,7 +131,7 @@
 					id="display_name"
 					type="text"
 					bind:value={displayName}
-					placeholder="Your public instructor name"
+					placeholder={t('university.display_name_placeholder', 'Your public instructor name')}
 					class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-3 text-sm text-[var(--color-text)] placeholder:text-[var(--color-muted)] focus:border-[var(--color-primary)] focus:outline-none"
 				/>
 			</div>
@@ -145,7 +145,7 @@
 					id="headline"
 					type="text"
 					bind:value={headline}
-					placeholder="e.g. Senior Go Engineer & Course Creator"
+					placeholder={t('university.headline_placeholder', 'e.g. Senior Go Engineer & Course Creator')}
 					class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-3 text-sm text-[var(--color-text)] placeholder:text-[var(--color-muted)] focus:border-[var(--color-primary)] focus:outline-none"
 				/>
 			</div>
@@ -159,7 +159,7 @@
 					id="bio"
 					bind:value={bio}
 					rows="5"
-					placeholder="Tell learners about your teaching experience and expertise…"
+					placeholder={t('university.bio_placeholder', 'Tell learners about your teaching experience and expertise…')}
 					class="w-full resize-none rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-3 text-sm text-[var(--color-text)] placeholder:text-[var(--color-muted)] focus:border-[var(--color-primary)] focus:outline-none"
 				></textarea>
 			</div>
@@ -187,7 +187,7 @@
 								else if (field.key === 'website') socialWebsite = v;
 								else if (field.key === 'youtube') socialYoutube = v;
 							}}
-							placeholder="https://"
+							placeholder={t('university.social_url_placeholder', 'https://')}
 							class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-3 text-sm text-[var(--color-text)] placeholder:text-[var(--color-muted)] focus:border-[var(--color-primary)] focus:outline-none"
 						/>
 					</div>

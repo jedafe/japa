@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { untrack, onMount } from 'svelte';
+	import { untrack } from 'svelte';
+	import { replaceState } from '$app/navigation';
 	import { api } from '$lib/api/client';
 	import { buildSeoMeta } from '$lib/seo';
 	import { t } from '$lib/i18n';
@@ -104,7 +105,7 @@
 		const url = new URL(page.url);
 		if (id) url.searchParams.set('dest', id);
 		else url.searchParams.delete('dest');
-		history.replaceState({}, '', url);
+		replaceState(url, {});
 		loadItems();
 	}
 
@@ -112,12 +113,6 @@
 		selectedVisaCategory = (e.currentTarget as HTMLSelectElement).value;
 		loadItems();
 	}
-
-	onMount(() => {
-		// Items are already populated from SSR when initialDestId was set.
-		// If a destination was selected but we need to pick the right visa
-		// category, the SSR load already handled the first entry.
-	});
 </script>
 
 <svelte:head>

@@ -216,9 +216,17 @@ func (h *Handlers) HandleSubmit(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "missing_destination", "Destination space ID is required")
 		return
 	}
+	if input.MilestoneType == "" {
+		writeError(w, http.StatusBadRequest, "missing_milestone_type", "Milestone type is required")
+		return
+	}
 
 	achievement, err := h.service.Submit(r.Context(), tenantID, user.UserID, input)
 	if err != nil {
+		if errors.Is(err, ErrMissingMilestone) {
+			writeError(w, http.StatusBadRequest, "missing_milestone_type", "Milestone type is required")
+			return
+		}
 		slog.Error("achievement: submit failed", "error", err)
 		writeError(w, http.StatusInternalServerError, "submit_failed", "Failed to submit achievement")
 		return
@@ -396,4 +404,75 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 			"total": total,
 		},
 	})
+}
+
+// HandleAdminSetStatus handles PATCH /admin/achievements/:id/status —
+// publish or unpublish an achievement. Admin-only (achievement.moderate
+// permission checked at route registration).
+func (h *Handlers) HandleAdminSetStatus(w http.ResponseWriter, r *http.Request) {
+	if _, ok := requireUser(w, r); !ok {
+		return
+	}
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+	contentID, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	var input struct {
+		Status string `json:"status"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		return
+	}
+	if input.Status == "" {
+		writeError(w, http.StatusBadRequest, "missing_status", "Status is required")
+		return
+	}
+
+	achievement, err := h.service.AdminSetStatus(r.Context(), contentID, tenantID, input.Status)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "achievement_not_found", "Achievement not found")
+			return
+		}
+		slog.Error("achievement: admin set status failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "admin_set_status_failed", "Failed to update achievement status")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": achievement})
+}
+
+// HandleAdminDelete handles DELETE /admin/achievements/:id — soft-delete
+// an achievement from the moderation queue. Admin-only (achievement.moderate
+// permission checked at route registration). Soft-delete per Rule 11.
+func (h *Handlers) HandleAdminDelete(w http.ResponseWriter, r *http.Request) {
+	if _, ok := requireUser(w, r); !ok {
+		return
+	}
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+	contentID, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	if err := h.service.AdminDelete(r.Context(), contentID, tenantID); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "achievement_not_found", "Achievement not found")
+			return
+		}
+		slog.Error("achievement: admin delete failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "admin_delete_failed", "Failed to delete achievement")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"deleted": true}})
 }

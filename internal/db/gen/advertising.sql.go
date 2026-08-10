@@ -608,12 +608,14 @@ func (q *Queries) GetAdSlotTypeByName(ctx context.Context, arg GetAdSlotTypeByNa
 
 const getCampaignStats = `-- name: GetCampaignStats :one
 SELECT
-    COUNT(*) FILTER (WHERE event_type = 'impression')::bigint AS impressions,
-    COUNT(*) FILTER (WHERE event_type = 'click')::bigint AS clicks,
-    COUNT(DISTINCT user_id)::bigint AS unique_users,
-    0::bigint AS conversions
-FROM ad_events
-WHERE campaign_id = $1 AND tenant_id = $2
+    COUNT(*) FILTER (WHERE e.event_type = 'impression')::bigint AS impressions,
+    COUNT(*) FILTER (WHERE e.event_type = 'click')::bigint AS clicks,
+    COUNT(DISTINCT e.user_id)::bigint AS unique_users,
+    0::bigint AS conversions,
+    COALESCE(c.spent, 0)::bigint AS spent
+FROM ad_events e
+LEFT JOIN ad_campaigns c ON c.id = e.campaign_id AND c.tenant_id = e.tenant_id
+WHERE e.campaign_id = $1 AND e.tenant_id = $2
 `
 
 type GetCampaignStatsParams struct {
@@ -626,11 +628,13 @@ type GetCampaignStatsRow struct {
 	Clicks      int64 `json:"clicks"`
 	UniqueUsers int64 `json:"unique_users"`
 	Conversions int64 `json:"conversions"`
+	Spent       int64 `json:"spent"`
 }
 
 // Ref: japaconnect-engineering/sections/25-ad-placement.md
 // ad_events stores one row per impression/click (event_type discriminator),
 // NOT aggregate counters. Aggregate by counting rows per event_type.
+// Join ad_campaigns to read the spent column for spend/CPC computation.
 func (q *Queries) GetCampaignStats(ctx context.Context, arg GetCampaignStatsParams) (GetCampaignStatsRow, error) {
 	row := q.db.QueryRow(ctx, getCampaignStats, arg.CampaignID, arg.TenantID)
 	var i GetCampaignStatsRow
@@ -639,6 +643,7 @@ func (q *Queries) GetCampaignStats(ctx context.Context, arg GetCampaignStatsPara
 		&i.Clicks,
 		&i.UniqueUsers,
 		&i.Conversions,
+		&i.Spent,
 	)
 	return i, err
 }

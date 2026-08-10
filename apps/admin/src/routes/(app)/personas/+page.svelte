@@ -383,7 +383,7 @@
 			<p class="text-sm" style="color: var(--color-muted)">
 				{t('personas.create_hint', 'Provision one or more AI personas. All personas in a batch are created in a single transaction.')}
 			</p>
-			{#each newPersonas as persona, idx}
+			{#each newPersonas as persona, idx (idx)}
 				<div class="rounded-lg border p-3" style="border-color: var(--color-border)">
 					<div class="mb-2 flex items-center justify-between">
 						<span class="text-sm font-medium" style="color: var(--color-foreground)">{t('personas.persona_n', 'Persona #{n}').replace('{n}', String(idx + 1))}</span>
@@ -525,7 +525,7 @@
 			<p class="p-4 text-center text-sm" style="color: var(--color-muted)">{t('personas.no_activity', 'No activity recorded.')}</p>
 		{:else}
 			<div class="max-h-96 space-y-2 overflow-y-auto">
-				{#each activityLog as entry}
+				{#each activityLog as entry (entry)}
 					<div class="rounded-md border p-2 text-xs" style="border-color: var(--color-border); color: var(--color-foreground)">
 						{JSON.stringify(entry, null, 2)}
 					</div>

@@ -71,7 +71,7 @@
 	{:else if enrollments.length === 0}
 		<EmptyState
 			title={t('learn.no_enrollments')}
-			description="Browse the catalog to start learning."
+			description={t('learn.browse_catalog_prompt', 'Browse the catalog to start learning.')}
 		>
 			{#snippet action()}
 				<a
@@ -107,7 +107,7 @@
 					{t('learn.streak')}
 				</div>
 				<p class="mt-2 text-3xl font-bold text-[var(--color-text)]">—</p>
-				<p class="text-xs text-[var(--color-muted)]">Requires analytics endpoint</p>
+				<p class="text-xs text-[var(--color-muted)]">{t('learn.analytics_pending', 'Requires analytics endpoint')}</p>
 			</div>
 		</div>
 
@@ -126,9 +126,9 @@
 
 		<!-- Progress over time (LineChart) — requires backend analytics endpoint -->
 		<section class="mt-4 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-			<h2 class="mb-3 text-sm font-medium text-[var(--color-text)]">{t('learn.progress')} over time</h2>
+			<h2 class="mb-3 text-sm font-medium text-[var(--color-text)]">{t('learn.progress_over_time', 'Progress over time')}</h2>
 			<div class="flex h-64 w-full items-center justify-center text-sm text-[var(--color-muted)]">
-				Requires a backend analytics endpoint (e.g. GET /me/learning-analytics).
+				{t('learn.analytics_endpoint_pending', 'Requires a backend analytics endpoint (e.g. GET /me/learning-analytics).')}
 			</div>
 		</section>
 

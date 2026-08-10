@@ -145,7 +145,7 @@
 		</div>
 
 		<div class="space-y-4">
-			{#each fields as field, i}
+			{#each fields as field, i (i)}
 				<div class="rounded-md border p-4" style="border-color: var(--color-border); background-color: var(--color-background)">
 					<div class="mb-3 flex items-center justify-between">
 						<span class="text-xs font-medium" style="color: var(--color-muted)">{t('space_forms.field_counter').replace('{i}', String(i + 1))}</span>
@@ -201,7 +201,7 @@
 								</button>
 							</div>
 							<div class="space-y-2">
-								{#each field.options as opt, oi}
+								{#each field.options as opt, oi (oi)}
 									<div class="flex items-center gap-2">
 										<input
 											type="text"

@@ -56,6 +56,7 @@
 	let campaigns = $state<Campaign[]>([]);
 	let stats = $state<NewsletterStats>({ subscribers: 0, campaigns: 0, avgOpenRate: 0, avgClickRate: 0 });
 	let loading = $state(true);
+	let pageError = $state('');
 	let filterValue = $state<Record<string, string>>({});
 	let searchQuery = $state('');
 
@@ -221,7 +222,7 @@
 				subscribers = result.data ?? [];
 				stats.subscribers = subscribers.length;
 			}
-		} catch { /* API not available */ } finally {
+		} catch (e) { pageError = e instanceof Error ? e.message : t('app.newsletter.error_load_subscribers', 'Failed to load subscribers'); } finally {
 			loading = false;
 		}
 	}
@@ -234,7 +235,7 @@
 				campaigns = result.data ?? [];
 				stats.campaigns = campaigns.length;
 			}
-		} catch { /* API not available */ } finally {
+		} catch (e) { pageError = e instanceof Error ? e.message : t('app.newsletter.error_load_campaigns', 'Failed to load campaigns'); } finally {
 			loading = false;
 		}
 	}
@@ -255,12 +256,13 @@
 					stats.avgClickRate = totalRecipients > 0 ? (sentCampaigns.reduce((sum, c) => sum + (c.click_rate ?? 0), 0) / sentCampaigns.length) : 0;
 				}
 			}
-		} catch { /* API not available */ }
+		} catch (e) { pageError = e instanceof Error ? e.message : t('app.newsletter.error_load_stats', 'Failed to load stats'); }
 	}
 
 	async function createCampaign() {
 		if (!newCampaign.name || !newCampaign.subject) return;
 		creating = true;
+		pageError = '';
 		const sanitizedHtml = newCampaign.html
 			.replace(/<script[\s\S]*?<\/script>/gi, '')
 			.replace(/<iframe[\s\S]*?<\/iframe>/gi, '')
@@ -273,7 +275,7 @@
 				newCampaign = { name: '', subject: '', html: '' };
 				loadCampaigns();
 			}
-		} catch { /* API not available */ } finally {
+		} catch (e) { pageError = e instanceof Error ? e.message : t('app.newsletter.error_create_campaign', 'Failed to create campaign'); } finally {
 			creating = false;
 		}
 	}
@@ -282,7 +284,7 @@
 		try {
 			await api(`/admin/newsletter/campaigns/${id}/send`, { method: 'POST' });
 			loadCampaigns();
-		} catch { /* API not available */ }
+		} catch (e) { pageError = e instanceof Error ? e.message : t('app.newsletter.error_send_campaign', 'Failed to send campaign'); }
 	}
 
 	function openEditSubscriber(sub: Subscriber) {
@@ -394,6 +396,10 @@
 		{ label: t('app.newsletter.btn_import_subscribers', 'Import Subscribers'), icon: Upload, variant: 'outline', onclick: openImportModal }
 	] : []}
 />
+
+{#if pageError}
+	<div class="mb-4 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-600 dark:text-red-400">{pageError}</div>
+{/if}
 
 <div class="space-y-6">
 	<Tabs {tabs} bind:value={activeTab} />
@@ -586,7 +592,7 @@
 				{#if importResult.failed > 0}
 					<p style="color: var(--color-danger)">{t('app.newsletter.import_failed', 'Failed')}: {importResult.failed}</p>
 					<div class="mt-2 max-h-32 overflow-y-auto">
-						{#each importResult.errors as err}
+						{#each importResult.errors as err (err)}
 							<p class="text-xs" style="color: var(--color-muted)">{err}</p>
 						{/each}
 					</div>

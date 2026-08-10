@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
+	import { replaceState } from '$app/navigation';
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
 	import {
@@ -107,7 +108,7 @@
 		const url = new URL(page.url);
 		if (id) url.searchParams.set('dest', id);
 		else url.searchParams.delete('dest');
-		history.replaceState({}, '', url);
+		replaceState(url, {});
 		loadItems();
 	}
 

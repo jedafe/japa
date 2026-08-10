@@ -114,7 +114,7 @@
 				</div>
 				<div>
 					<label class="mb-1 block text-sm font-medium" for="filter-currency">{t('app.wallet.filter_currency', 'Currency')}</label>
-					<input id="filter-currency" type="text" bind:value={filters.currency} class="w-24 rounded-md border border-input bg-surface px-3 py-2 text-sm" placeholder="USD" />
+					<input id="filter-currency" type="text" bind:value={filters.currency} class="w-24 rounded-md border border-input bg-surface px-3 py-2 text-sm" placeholder={t('app.wallet.purchases.ph_usd', 'USD')} />
 				</div>
 				<div>
 					<label class="mb-1 block text-sm font-medium" for="filter-from">{t('app.wallet.filter_date_from', 'From Date')}</label>

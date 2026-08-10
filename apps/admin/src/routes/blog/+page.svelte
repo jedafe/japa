@@ -448,7 +448,7 @@
 				<div>
 					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.blog.detail_tags', 'Tags')}</p>
 					<div class="mt-1 flex flex-wrap gap-1">
-						{#each viewTarget.tags as tag}
+						{#each viewTarget.tags as tag (tag)}
 							<span class="inline-block rounded-full px-2 py-0.5 text-xs" style="background: var(--color-surface); color: var(--color-muted)">{tag}</span>
 						{/each}
 					</div>

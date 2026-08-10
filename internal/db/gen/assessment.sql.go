@@ -181,6 +181,25 @@ func (q *Queries) AdminListAssessmentResults(ctx context.Context, arg AdminListA
 	return items, nil
 }
 
+const cleanupAnonymousAssessmentResults = `-- name: CleanupAnonymousAssessmentResults :execrows
+
+DELETE FROM assessment_results
+WHERE user_id IS NULL AND created_at < now() - ($1::int || ' hours')::interval
+`
+
+// =====================================================================
+// Cleanup anonymous assessment results older than the retention window.
+// Anonymous results (user_id IS NULL) are persisted temporarily for the
+// async polling architecture (ADR-071 §5) and cleaned up periodically.
+// =====================================================================
+func (q *Queries) CleanupAnonymousAssessmentResults(ctx context.Context, dollar_1 int32) (int64, error) {
+	result, err := q.db.Exec(ctx, cleanupAnonymousAssessmentResults, dollar_1)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const countUserAssessmentResults = `-- name: CountUserAssessmentResults :one
 SELECT COUNT(*) AS count
 FROM assessment_results
@@ -287,6 +306,22 @@ func (q *Queries) CreateAssessmentSubmission(ctx context.Context, arg CreateAsse
 		&i.PaymentID,
 	)
 	return i, err
+}
+
+const gdprDeleteAssessmentResultsByUser = `-- name: GdprDeleteAssessmentResultsByUser :exec
+
+DELETE FROM assessment_results WHERE user_id = $1
+`
+
+// =====================================================================
+// GDPR erasure: delete assessment_results by user_id. The FK has ON DELETE
+// CASCADE but we delete explicitly to document the erasure path and ensure
+// PII-adjacent data (dimension scores, roadmap) is removed before the final
+// HardDeleteUser (Section 15, ADR-014). Ref: §71, ADR-071.
+// =====================================================================
+func (q *Queries) GdprDeleteAssessmentResultsByUser(ctx context.Context, userID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, gdprDeleteAssessmentResultsByUser, userID)
+	return err
 }
 
 const getActiveAssessmentForm = `-- name: GetActiveAssessmentForm :one

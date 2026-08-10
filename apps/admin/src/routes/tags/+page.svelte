@@ -568,7 +568,7 @@
 				type="text"
 				class="mt-1 w-full rounded-lg border p-2 text-sm"
 				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
-				placeholder="e.g. javascript"
+				placeholder={t('tags.ph_eg_javascript', 'e.g. javascript')}
 				bind:value={value.name}
 				oninput={() => {
 					if (!editing) value.slug = slugify(String(value.name ?? ""));
@@ -604,7 +604,7 @@
 				rows="2"
 				class="mt-1 w-full rounded-lg border p-2 text-sm"
 				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
-				placeholder="Optional description..."
+				placeholder={t('tags.ph_optional_description', 'Optional description...')}
 				bind:value={value.description}
 			></textarea>
 		</div>
@@ -617,7 +617,7 @@
 				rows="3"
 				class="mt-1 w-full rounded-lg border p-2 text-sm"
 				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
-				placeholder="Optional community rules/guidelines for this tag..."
+				placeholder={t('tags.ph_optional_community_rulesguidelines_for_this', 'Optional community rules/guidelines for this tag...')}
 				bind:value={value.rules}
 			></textarea>
 		</div>

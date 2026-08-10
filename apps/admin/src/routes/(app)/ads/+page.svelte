@@ -438,7 +438,7 @@
 								</tr>
 							</thead>
 							<tbody>
-								{#each stats.daily_stats as day}
+								{#each stats.daily_stats as day (day)}
 									<tr class="border-b border-border last:border-0">
 										<td class="px-3 py-2">{day.date}</td>
 										<td class="px-3 py-2 text-right">{(day.impressions ?? 0).toLocaleString()}</td>

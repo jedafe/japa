@@ -528,7 +528,7 @@
 							onchange={() => { if (stockQuery.trim()) runStockSearch(); }}
 						>
 							<option value="">{t('ads.media_all_providers', 'All providers')}</option>
-							{#each stockProviders as p}
+							{#each stockProviders as p (p)}
 								<option value={p.name}>{p.display_name}</option>
 							{/each}
 						</select>

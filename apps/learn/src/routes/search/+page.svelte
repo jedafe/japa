@@ -7,6 +7,7 @@
 	import TrackCard from '$lib/components/learn/TrackCard.svelte';
 	import { LoadingSkeleton, EmptyState } from '$lib/components/ui';
 	import { Search } from 'lucide-svelte';
+	import { DIFFICULTY_LEVELS } from '$lib/constants/learning';
 	import type { PageData } from './$types';
 	import type { Enrollment } from '$lib/types';
 
@@ -59,7 +60,7 @@
 		>
 			{t('learn.overview')}
 		</a>
-		{#each ['beginner', 'intermediate', 'advanced'] as level}
+		{#each DIFFICULTY_LEVELS as level}
 			<a
 				href="/search?q={encodeURIComponent(data.query)}&level={level}"
 				class="rounded-full px-3 py-1 text-sm {data.levelFilter === level ? 'bg-[var(--color-primary)] text-[var(--color-primary-contrast)]' : 'border border-[var(--color-border)] text-[var(--color-text-subtle)] hover:bg-[var(--color-surface-subtle)]'}"
