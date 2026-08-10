@@ -66,27 +66,32 @@ func (u *Updater) DownloadAndUpdate() error {
 		return fmt.Errorf("download returned status %d", resp.StatusCode)
 	}
 
-	// The download is a .tar.gz archive containing the .mmdb file
-	// Extract to a temporary file, then swap
+	// The download is a .tar.gz archive containing the .mmdb file.
+	// Extract to a temporary file, then move it into place before swapping
+	// the reader. Renaming first keeps dbPath as the on-disk source of
+	// truth: if the rename fails the previous database is still intact and
+	// no swap occurs, so the live reader never points at a tmp file that a
+	// later update could overwrite.
 	tmpPath := u.dbPath + ".tmp"
 	if err := extractMMDB(resp.Body, tmpPath); err != nil {
+		_ = os.Remove(tmpPath)
 		return fmt.Errorf("extracting mmdb: %w", err)
 	}
 
-	// Open the new database
-	newReader, err := geoip2.Open(tmpPath)
-	if err != nil {
+	// Move the temp file to the final location before opening it, so the
+	// reader always owns dbPath (not tmpPath).
+	if err := os.Rename(tmpPath, u.dbPath); err != nil {
 		_ = os.Remove(tmpPath)
+		return fmt.Errorf("moving database file: %w", err)
+	}
+
+	// Open the newly installed database and atomically swap it in.
+	newReader, err := geoip2.Open(u.dbPath)
+	if err != nil {
 		return fmt.Errorf("opening new database: %w", err)
 	}
 
-	// Atomic swap
 	u.reader.Swap(newReader)
-
-	// Move temp file to final location
-	if err := os.Rename(tmpPath, u.dbPath); err != nil {
-		return fmt.Errorf("moving database file: %w", err)
-	}
 
 	return nil
 }

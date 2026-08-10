@@ -884,6 +884,23 @@ func (q *Queries) GdprExportRevenueSplits(ctx context.Context, arg GdprExportRev
 	return data, err
 }
 
+const gdprExportUserActivityEvents = `-- name: GdprExportUserActivityEvents :one
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (SELECT id, tenant_id, user_id, activity_key, reference, payload, processed, processed_at, created_at FROM activity_events WHERE user_id = $1 AND tenant_id = $2) t
+`
+
+type GdprExportUserActivityEventsParams struct {
+	UserID   pgtype.UUID `json:"user_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+func (q *Queries) GdprExportUserActivityEvents(ctx context.Context, arg GdprExportUserActivityEventsParams) (interface{}, error) {
+	row := q.db.QueryRow(ctx, gdprExportUserActivityEvents, arg.UserID, arg.TenantID)
+	var data interface{}
+	err := row.Scan(&data)
+	return data, err
+}
+
 const gdprExportUserApiKeys = `-- name: GdprExportUserApiKeys :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (SELECT id, tenant_id, user_id, name, key_prefix, key_hash, scopes, rate_limit_tier, status, last_used_at, request_count, expires_at, created_at, updated_at, environment, revoked_at, revoked_by, notes FROM api_keys WHERE user_id = $1 AND tenant_id = $2) t

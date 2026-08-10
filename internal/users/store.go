@@ -410,15 +410,16 @@ func (s *Store) getUserPrivacySettings(ctx context.Context, tenantID, userID pgt
 	})
 }
 
-func (s *Store) upsertUserPrivacySettings(ctx context.Context, tenantID, userID pgtype.UUID, dmPrivacy, profileVisibility string, searchIndexable, showOnlineStatus, showActivity bool) error {
+func (s *Store) upsertUserPrivacySettings(ctx context.Context, tenantID, userID pgtype.UUID, dmPrivacy, profileVisibility string, searchIndexable, showOnlineStatus, showActivity, showPointsPublicly bool) error {
 	return s.write.UpsertUserPrivacySettings(ctx, gen.UpsertUserPrivacySettingsParams{
-		TenantID:          tenantID,
-		UserID:            userID,
-		DmPrivacy:         dmPrivacy,
-		ProfileVisibility: profileVisibility,
-		SearchIndexable:   searchIndexable,
-		ShowOnlineStatus:  showOnlineStatus,
-		ShowActivity:      showActivity,
+		TenantID:           tenantID,
+		UserID:             userID,
+		DmPrivacy:          dmPrivacy,
+		ProfileVisibility:  profileVisibility,
+		SearchIndexable:    searchIndexable,
+		ShowOnlineStatus:   showOnlineStatus,
+		ShowActivity:       showActivity,
+		ShowPointsPublicly: showPointsPublicly,
 	})
 }
 

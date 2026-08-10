@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/go-chi/chi/v5"
 	"github.com/jedafe/japa/internal/auth"
+	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/tenant"
 )
 
@@ -60,21 +61,41 @@ func (h *Handlers) HandleFindScholarships(w http.ResponseWriter, r *http.Request
 		b, _ := strconv.ParseBool(v)
 		filters.Renewable = &b
 	}
-	page, _ := strconv.Atoi(q.Get("page"))
-	limit, _ := strconv.Atoi(q.Get("limit"))
-	filters.Page = page
-	filters.Limit = limit
+	// Offset pagination per conventions/api-response-format.md
+	// (?page_size=N&page_offset=N). Back-compat: also accept `page` + `limit`.
+	pageSize, _ := strconv.Atoi(q.Get("page_size"))
+	if pageSize <= 0 {
+		pageSize, _ = strconv.Atoi(q.Get("limit"))
+	}
+	if pageSize <= 0 || pageSize > 100 {
+		pageSize = 20
+	}
+	pageOffset, _ := strconv.Atoi(q.Get("page_offset"))
+	if pageOffset < 0 {
+		pageOffset, _ = strconv.Atoi(q.Get("page"))
+		pageOffset = (pageOffset - 1) * pageSize
+		if pageOffset < 0 {
+			pageOffset = 0
+		}
+	}
+	filters.Page = (pageOffset / pageSize) + 1
+	filters.Limit = pageSize
 
 	results, total, err := h.svc.FindScholarships(r.Context(), tenantID, filters)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "search_failed", err.Error())
 		return
 	}
+	if results == nil {
+		results = []ScholarshipResult{}
+	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"scholarships": results,
-		"total":        total,
-		"page":         filters.Page,
-		"limit":        filters.Limit,
+		"data": results,
+		"meta": map[string]interface{}{
+			"total":       total,
+			"page_size":   pageSize,
+			"page_offset": pageOffset,
+		},
 	})
 }
 
@@ -102,17 +123,18 @@ func (h *Handlers) HandleScholarshipDetail(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusNotFound, "not_found", "Scholarship not found")
 		return
 	}
-	writeJSON(w, http.StatusOK, result)
+	writeJSON(w, http.StatusOK, map[string]interface{}{"data": result})
 }
 
 // HandleSaveScholarship saves a scholarship to the user's tracker.
 // POST /me/scholarships/{id}/save
 func (h *Handlers) HandleSaveScholarship(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	// Auth before tenant: an unauthenticated request must get 401, not 503.
+	userID, ok := requireUser(w, r)
 	if !ok {
 		return
 	}
-	userID, ok := requireUser(w, r)
+	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -134,21 +156,24 @@ func (h *Handlers) HandleSaveScholarship(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	writeJSON(w, http.StatusCreated, map[string]interface{}{
-		"id":                 saved.ID.String(),
-		"guide_id":           saved.GuideID.String(),
-		"status":             saved.Status,
-		"remind_before_days": saved.RemindBeforeDays,
+		"data": map[string]interface{}{
+			"id":                 pgtypeUUIDString(saved.ID),
+			"guide_id":           pgtypeUUIDString(saved.GuideID),
+			"status":             saved.Status,
+			"remind_before_days": saved.RemindBeforeDays,
+		},
 	})
 }
 
 // HandleUpdateSavedScholarship updates a saved scholarship's status/notes.
 // PATCH /me/scholarships/{id}
 func (h *Handlers) HandleUpdateSavedScholarship(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	// Auth before tenant: an unauthenticated request must get 401, not 503.
+	userID, ok := requireUser(w, r)
 	if !ok {
 		return
 	}
-	userID, ok := requireUser(w, r)
+	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -172,17 +197,18 @@ func (h *Handlers) HandleUpdateSavedScholarship(w http.ResponseWriter, r *http.R
 		writeError(w, http.StatusBadRequest, "update_failed", err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, saved)
+	writeJSON(w, http.StatusOK, map[string]interface{}{"data": saved})
 }
 
 // HandleDeleteSavedScholarship removes a scholarship from the tracker.
 // DELETE /me/scholarships/{id}
 func (h *Handlers) HandleDeleteSavedScholarship(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	// Auth before tenant: an unauthenticated request must get 401, not 503.
+	userID, ok := requireUser(w, r)
 	if !ok {
 		return
 	}
-	userID, ok := requireUser(w, r)
+	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -195,17 +221,18 @@ func (h *Handlers) HandleDeleteSavedScholarship(w http.ResponseWriter, r *http.R
 		writeError(w, http.StatusBadRequest, "delete_failed", err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]interface{}{"deleted": true})
+	writeJSON(w, http.StatusOK, map[string]interface{}{"data": map[string]interface{}{"deleted": true}})
 }
 
 // HandleListSavedScholarships lists the user's saved scholarships.
 // GET /me/scholarships
 func (h *Handlers) HandleListSavedScholarships(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	// Auth before tenant: an unauthenticated request must get 401, not 503.
+	userID, ok := requireUser(w, r)
 	if !ok {
 		return
 	}
-	userID, ok := requireUser(w, r)
+	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -218,41 +245,50 @@ func (h *Handlers) HandleListSavedScholarships(w http.ResponseWriter, r *http.Re
 		writeError(w, http.StatusInternalServerError, "list_failed", err.Error())
 		return
 	}
+	if rows == nil {
+		rows = []SavedScholarshipResponse{}
+	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"scholarships": rows,
-		"total":        total,
-		"page":         page,
-		"limit":        limit,
+		"data": rows,
+		"meta": map[string]interface{}{
+			"total":   total,
+			"page":    page,
+			"limit":   limit,
+		},
 	})
 }
 
-// HandleAdminStatusDistribution returns admin status distribution.
+// HandleAdminStatusDistribution returns admin aggregate stats
+// (total_scholarships, upcoming_deadlines, reminders_sent, unique_users,
+// and the per-status distribution).
 // GET /admin/scholarships/stats
 func (h *Handlers) HandleAdminStatusDistribution(w http.ResponseWriter, r *http.Request) {
+	// Auth before tenant: an unauthenticated request must get 401, not 503.
+	if _, ok := requireUser(w, r); !ok {
+		return
+	}
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
-	if _, ok := requireUser(w, r); !ok {
-		return
-	}
 
-	rows, err := h.svc.AdminStatusDistribution(r.Context(), tenantID)
+	stats, err := h.svc.AdminStats(r.Context(), tenantID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "stats_failed", err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]interface{}{"distribution": rows})
+	writeJSON(w, http.StatusOK, map[string]interface{}{"data": stats})
 }
 
 // HandleAdminTopSaved returns admin top-saved report.
 // GET /admin/scholarships/top-saved
 func (h *Handlers) HandleAdminTopSaved(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
-	if !ok {
+	// Auth before tenant: an unauthenticated request must get 401, not 503.
+	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-	if _, ok := requireUser(w, r); !ok {
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
 		return
 	}
 
@@ -262,37 +298,47 @@ func (h *Handlers) HandleAdminTopSaved(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "report_failed", err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]interface{}{"scholarships": rows})
+	if rows == nil {
+		rows = []gen.AdminScholarshipTopSavedRow{}
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{"data": rows})
 }
 
-// HandleAdminUpcomingDeadlines returns admin upcoming deadlines report.
-// GET /admin/scholarships/upcoming-deadlines
+// HandleAdminUpcomingDeadlines returns admin upcoming deadlines report
+// mapped to the AdminDeadlineItem shape (id, title, deadline, days_until,
+// status) that the admin panel's DeadlineItem contract expects.
+// GET /admin/scholarships/deadlines
 func (h *Handlers) HandleAdminUpcomingDeadlines(w http.ResponseWriter, r *http.Request) {
+	// Auth before tenant: an unauthenticated request must get 401, not 503.
+	if _, ok := requireUser(w, r); !ok {
+		return
+	}
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
-	if _, ok := requireUser(w, r); !ok {
-		return
-	}
 
 	page, limit := parsePagination(r)
-	rows, err := h.svc.AdminUpcomingDeadlines(r.Context(), tenantID, page, limit)
+	rows, err := h.svc.AdminDeadlines(r.Context(), tenantID, page, limit)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "report_failed", err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]interface{}{"scholarships": rows})
+	if rows == nil {
+		rows = []AdminDeadlineItem{}
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{"data": rows})
 }
 
 // HandleAdminReminderLog returns admin reminder delivery history.
 // GET /admin/scholarships/reminder-log
 func (h *Handlers) HandleAdminReminderLog(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
-	if !ok {
+	// Auth before tenant: an unauthenticated request must get 401, not 503.
+	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-	if _, ok := requireUser(w, r); !ok {
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
 		return
 	}
 
@@ -302,7 +348,10 @@ func (h *Handlers) HandleAdminReminderLog(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusInternalServerError, "report_failed", err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]interface{}{"reminders": rows})
+	if rows == nil {
+		rows = []gen.AdminScholarshipReminderLogRow{}
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{"data": rows})
 }
 
 // --- shared helpers ---

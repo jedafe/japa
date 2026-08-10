@@ -533,6 +533,22 @@ func (s *Service) ProcessAccountDeletion(ctx context.Context, requestID pgtype.U
 		step = deletionStepAnonymized
 	}
 
+	// 1b. Scrub PII from saved_scholarships.notes during the anonymization
+	// phase (Section 73, ADR-073, ADR-014). The table has ON DELETE CASCADE
+	// from users(id) so rows are removed at hard-delete, but the user's
+	// free-text application notes must be cleared now so they are not
+	// recoverable during the retention window. Best-effort.
+	if step == deletionStepAnonymized {
+		if _, err := s.db.Writer.Exec(ctx, `
+			UPDATE saved_scholarships
+			SET notes = NULL
+			WHERE user_id = $1 AND tenant_id = $2 AND notes IS NOT NULL
+		`, request.UserID, request.TenantID); err != nil {
+			slog.Warn("failed to scrub saved_scholarships notes during deletion",
+				"user_id", request.UserID.String(), "error", err)
+		}
+	}
+
 	// 2. Revoke all refresh tokens (best-effort).
 	if step < deletionStepTokensRevoked {
 		if err := s.store.deleteUserTokens(ctx, gen.DeleteUserTokensParams{
@@ -1310,6 +1326,7 @@ type UserDataExport struct {
 	TagModerators        []map[string]interface{} `json:"tag_moderators"`
 	ConsentRecords       []map[string]interface{} `json:"consent_records"`
 	WalletLedger         []map[string]interface{} `json:"wallet_ledger"`
+	ActivityEvents       []map[string]interface{} `json:"activity_events"`
 	LessonProgress       []map[string]interface{} `json:"lesson_progress"`
 	LearningCertificates []map[string]interface{} `json:"learning_certificates"`
 	MentorshipMatches    []map[string]interface{} `json:"mentorship_matches"`
@@ -1601,6 +1618,13 @@ func (s *Service) collectUserData(ctx context.Context, userID, tenantID pgtype.U
 		export.WalletLedger = rows
 	} else {
 		slog.Warn("failed to collect wallet_ledger for export", "user_id", userID.String(), "error", err)
+	}
+
+	// Activity events for the user (BUG-008 — previously missing from export).
+	if rows, err := s.store.gdprExportUserActivityEvents(ctx, userID, tenantID); err == nil {
+		export.ActivityEvents = rows
+	} else {
+		slog.Warn("failed to collect activity_events for export", "user_id", userID.String(), "error", err)
 	}
 
 	// Learning lesson progress.

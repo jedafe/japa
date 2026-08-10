@@ -19,6 +19,22 @@ type SpacesService interface {
 	ListSpacesByLevel(ctx context.Context, tenantID pgtype.UUID, level string) ([]gen.ListSpacesByLevelRow, error)
 	ListStatesByCountryCode(ctx context.Context, tenantID pgtype.UUID, countryCode string) ([]gen.ListStatesByCountryGeoCodeRow, error)
 	ListCitiesByState(ctx context.Context, tenantID, stateID pgtype.UUID) ([]gen.ListCitiesByStateIDRow, error)
+	GetSpaceByGeoCode(ctx context.Context, tenantID pgtype.UUID, countryCode string) (gen.GetSpaceByGeoCodeRow, error)
+	FindCitySpaceByName(ctx context.Context, tenantID pgtype.UUID, cityName string) (gen.FindCitySpaceByNameRow, error)
+}
+
+// SuggestedSpace is the public projection of a seeded geo Space returned in
+// the /geo/me `suggested_spaces` array. It is a stable contract type,
+// independent of sqlc-generated row structs, so regenerating internal/db
+// never changes the API shape.
+type SuggestedSpace struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Slug        string `json:"slug"`
+	Level       string `json:"level"`
+	GeoCode     string `json:"geo_code,omitempty"`
+	MemberCount int32  `json:"member_count"`
+	PostCount   int32  `json:"post_count"`
 }
 
 // Handlers provides HTTP endpoints for geolocation.
@@ -34,7 +50,8 @@ func NewHandlers(reader *Reader, spacesService SpacesService) *Handlers {
 
 // HandleGeoMe returns geo data for the current request IP.
 // The geoip middleware populates the context on every request,
-// so this endpoint simply reads it back.
+// so this endpoint simply reads it back and enriches it with
+// suggested_spaces (deterministic country/city Space matches) and is_vpn.
 //
 // GET /api/v1/geo/me
 func (h *Handlers) HandleGeoMe(w http.ResponseWriter, r *http.Request) {
@@ -44,7 +61,22 @@ func (h *Handlers) HandleGeoMe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": geo})
+	resp := map[string]any{
+		"country_code":     geo.CountryCode,
+		"country_name":     geo.CountryName,
+		"state":            geo.Subdivision,
+		"city":             geo.City,
+		"time_zone":        geo.TimeZone,
+		"latitude":         geo.Latitude,
+		"longitude":        geo.Longitude,
+		"suggested_spaces": h.suggestedSpaces(r, geo),
+		// GeoLite2-City carries no anonymous-IP data; is_vpn is always false
+		// until a GeoLite2-Anonymous-IP integration is enabled via the
+		// geoip.anonymous_ip_enabled system setting (Section 37).
+		"is_vpn": false,
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": resp})
 }
 
 // HandleGeoLookup resolves an arbitrary IP address (admin only).
@@ -69,7 +101,19 @@ func (h *Handlers) HandleGeoLookup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": geo})
+	resp := map[string]any{
+		"country_code": geo.CountryCode,
+		"country_name": geo.CountryName,
+		"state":        geo.Subdivision,
+		"city":         geo.City,
+		"time_zone":    geo.TimeZone,
+		"latitude":     geo.Latitude,
+		"longitude":    geo.Longitude,
+		// See HandleGeoMe: GeoLite2-City has no anonymous-IP data.
+		"is_vpn": false,
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": resp})
 }
 
 // HandleGeoDetect resolves the current request IP to a locale (catalog: GET
@@ -163,6 +207,74 @@ func (h *Handlers) HandleListCities(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": cities})
+}
+
+// suggestedSpaces runs the deterministic /geo/me suggested_spaces algorithm
+// (Section 37): country Space by geo_code, then city Space by name. Returns
+// an empty (never nil) slice on any miss; errors are logged and treated as
+// "no match" so a lookup failure never breaks /geo/me.
+func (h *Handlers) suggestedSpaces(r *http.Request, geo GeoContext) []SuggestedSpace {
+	out := make([]SuggestedSpace, 0, 2)
+
+	if h.spaces == nil {
+		return out
+	}
+
+	t := tenant.FromContext(r.Context())
+	if t == nil {
+		return out
+	}
+
+	ctx := r.Context()
+
+	// 1. Country space by geo_code.
+	if geo.CountryCode != "" {
+		country, err := h.spaces.GetSpaceByGeoCode(ctx, t.ID, geo.CountryCode)
+		if err == nil {
+			out = append(out, SuggestedSpace{
+				ID:          country.ID.String(),
+				Name:        country.Name,
+				Slug:        country.Slug,
+				Level:       country.Level,
+				GeoCode:     derefStr(country.GeoCode),
+				MemberCount: country.MemberCount,
+				PostCount:   country.PostCount,
+			})
+		} else {
+			slog.Debug("geoip: suggested_spaces country miss",
+				"country_code", geo.CountryCode, "error", err)
+		}
+	}
+
+	// 2. City space by name (case-insensitive, tenant-scoped).
+	if geo.City != "" {
+		city, err := h.spaces.FindCitySpaceByName(ctx, t.ID, geo.City)
+		if err == nil {
+			out = append(out, SuggestedSpace{
+				ID:          city.ID.String(),
+				Name:        city.Name,
+				Slug:        city.Slug,
+				Level:       city.Level,
+				GeoCode:     derefStr(city.GeoCode),
+				MemberCount: city.MemberCount,
+				PostCount:   city.PostCount,
+			})
+		} else {
+			slog.Debug("geoip: suggested_spaces city miss",
+				"city", geo.City, "error", err)
+		}
+	}
+
+	return out
+}
+
+// derefStr returns the string value of a *string, or "" when nil.
+func derefStr(p *string) string {
+	if p == nil {
+		return ""
+	}
+
+	return *p
 }
 
 // ---------------------------------------------------------------------------

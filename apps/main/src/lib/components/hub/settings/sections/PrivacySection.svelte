@@ -16,14 +16,16 @@
 			profile_visibility: privacy.profile_visibility ?? 'public',
 			prefs: {
 				show_activity: privacy.show_activity ?? false,
-				searchable: privacy.searchable ?? true
+				search_indexable: privacy.search_indexable ?? true,
+				show_points_publicly: privacy.show_points_publicly ?? false
 			}
 		})),
 		(v) =>
 			patchPrivacy({
 				profile_visibility: v.profile_visibility,
 				show_activity: v.prefs.show_activity,
-				searchable: v.prefs.searchable
+				search_indexable: v.prefs.search_indexable,
+				show_points_publicly: v.prefs.show_points_publicly
 			})
 	);
 
@@ -35,7 +37,7 @@
 		{ value: 'followers', labelKey: 'settings.privacy.visibility_followers' }
 	];
 
-	function togglePref(key: 'show_activity' | 'searchable', next: boolean) {
+	function togglePref(key: 'show_activity' | 'search_indexable' | 'show_points_publicly', next: boolean) {
 		form.set({ prefs: { ...form.values.prefs, [key]: next } });
 	}
 </script>
@@ -72,8 +74,17 @@
 		<input
 			type="checkbox"
 			class="h-4 w-4 rounded border-[var(--color-border)]"
-			checked={form.values.prefs.searchable}
-			onchange={(e) => togglePref('searchable', e.currentTarget.checked)}
+			checked={form.values.prefs.search_indexable}
+			onchange={(e) => togglePref('search_indexable', e.currentTarget.checked)}
+		/>
+	</label>
+	<label class="flex items-center justify-between gap-3">
+		<span class="text-sm text-[var(--color-text)]">{t('settings.privacy.show_points_publicly')}</span>
+		<input
+			type="checkbox"
+			class="h-4 w-4 rounded border-[var(--color-border)]"
+			checked={form.values.prefs.show_points_publicly}
+			onchange={(e) => togglePref('show_points_publicly', e.currentTarget.checked)}
 		/>
 	</label>
 </SettingsSection>

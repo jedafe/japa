@@ -121,6 +121,27 @@ func (s *Store) getActivityRuleByKey(ctx context.Context, tenantID pgtype.UUID, 
 	return row, nil
 }
 
+// getActivityRuleByID returns a single activity rule by its primary key.
+func (s *Store) getActivityRuleByID(ctx context.Context, id, tenantID pgtype.UUID) (gen.ActivityPointRule, error) {
+	row, err := s.read.GetActivityRuleByID(ctx, gen.GetActivityRuleByIDParams{
+		ID:       id,
+		TenantID: tenantID,
+	})
+	if err != nil {
+		return gen.ActivityPointRule{}, fmt.Errorf("getting activity rule by ID: %w", err)
+	}
+	return row, nil
+}
+
+// updateActivityRuleByID updates an activity rule by its primary key.
+func (s *Store) updateActivityRuleByID(ctx context.Context, p gen.UpdateActivityRuleByIDParams) (gen.ActivityPointRule, error) {
+	row, err := s.write.UpdateActivityRuleByID(ctx, p)
+	if err != nil {
+		return gen.ActivityPointRule{}, fmt.Errorf("updating activity rule by ID: %w", err)
+	}
+	return row, nil
+}
+
 //nolint:unused // reserved for future features
 func (s *Store) listActivityRulesByTenant(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]gen.ActivityPointRule, error) {
 	if limit <= 0 || limit > MaxPageSize {

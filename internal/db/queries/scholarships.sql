@@ -111,8 +111,10 @@ SELECT
 FROM saved_scholarships ss
 JOIN contents c ON c.id = ss.guide_id
 JOIN users u ON u.id = ss.user_id
-LEFT JOIN custom_field_values cfv ON cfv.content_id = ss.guide_id
-    AND cfv.field_key = 'application_deadline'
+JOIN custom_field_values cfv ON cfv.entity_id = ss.guide_id
+    AND cfv.entity_type = 'content'
+JOIN custom_fields cf ON cf.id = cfv.field_id
+    AND cf.key = 'application_deadline'
 WHERE ss.tenant_id = @tenant_id
   AND cfv.value_text IS NOT NULL
 ORDER BY cfv.value_text ASC
@@ -134,8 +136,10 @@ SELECT
     ss.last_reminded_at,
     cfv.value_text AS deadline_value
 FROM saved_scholarships ss
-JOIN custom_field_values cfv ON cfv.content_id = ss.guide_id
-    AND cfv.field_key = 'application_deadline'
+JOIN custom_field_values cfv ON cfv.entity_id = ss.guide_id
+    AND cfv.entity_type = 'content'
+JOIN custom_fields cf ON cf.id = cfv.field_id
+    AND cf.key = 'application_deadline'
 WHERE ss.tenant_id = @tenant_id
   AND cfv.value_text IS NOT NULL
   AND (ss.last_reminded_at IS NULL OR ss.last_reminded_at < now() - interval '1 day')

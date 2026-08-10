@@ -26,15 +26,19 @@ type contextKey struct{ name string }
 var GeoContextKey = contextKey{"geo"}
 
 // GeoContext holds the geolocation data extracted from an IP address.
+//
+// JSON tags align to the Section 37 response shape (snake_case, "state" for
+// the subdivision). IsValid is an internal sentinel and is never serialized —
+// handlers project it into the standard error envelope instead.
 type GeoContext struct {
-	CountryCode string
-	CountryName string
-	City        string
-	Subdivision string
-	TimeZone    string
-	Latitude    float64
-	Longitude   float64
-	IsValid     bool
+	CountryCode string  `json:"country_code"`
+	CountryName string  `json:"country_name"`
+	City        string  `json:"city"`
+	Subdivision string  `json:"state"`
+	TimeZone    string  `json:"time_zone"`
+	Latitude    float64 `json:"latitude"`
+	Longitude   float64 `json:"longitude"`
+	IsValid     bool    `json:"-"`
 }
 
 // FromContext extracts the GeoContext from the request context.
@@ -92,7 +96,11 @@ func (r *Reader) Lookup(ipStr string) GeoContext {
 		return GeoContext{IsValid: false}
 	}
 
-	gc := GeoContext{IsValid: true}
+	// Per Section 37, IsValid is true only when the lookup produced a usable
+	// country. Reserved IP ranges and lookup misses return a record with no
+	// country; those must surface as IsValid=false so handlers return
+	// 404 geo_not_available instead of a 200 with an all-empty payload.
+	gc := GeoContext{}
 	if record.Country.IsoCode != "" {
 		gc.CountryCode = record.Country.IsoCode
 	}
@@ -119,6 +127,8 @@ func (r *Reader) Lookup(ipStr string) GeoContext {
 		gc.Latitude = record.Location.Latitude
 		gc.Longitude = record.Location.Longitude
 	}
+
+	gc.IsValid = gc.CountryCode != ""
 
 	return gc
 }

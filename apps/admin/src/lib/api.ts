@@ -1046,11 +1046,11 @@ export const ticketsAdminApi = {
 	getEvents: (id: string) => api<unknown>(`/admin/tickets/${id}/events`),
 	update: (id: string, body: Record<string, unknown>) =>
 		api<unknown>(`/admin/tickets/${id}`, { method: 'PATCH', body }),
-	addComment: (id: string, body: { body: string }) =>
+	addComment: (id: string, body: { body: string; is_internal?: boolean }) =>
 		api<unknown>(`/admin/tickets/${id}/comments`, { method: 'POST', body }),
 	addNote: (id: string, body: { body: string }) =>
 		api<unknown>(`/admin/tickets/${id}/notes`, { method: 'POST', body }),
-	resolve: (id: string, body: { resolution: string }) =>
+	resolve: (id: string, body: { resolution_note: string }) =>
 		api<unknown>(`/admin/tickets/${id}/resolve`, { method: 'POST', body }),
 	delete: (id: string) => api<{ deleted: boolean }>(`/admin/tickets/${id}`, { method: 'DELETE' }),
 };

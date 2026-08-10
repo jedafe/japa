@@ -20,7 +20,7 @@
 		updated_at: string;
 	};
 
-	const priorities = ['low', 'medium', 'high', 'urgent'];
+	const priorities = ['low', 'normal', 'high', 'urgent'];
 
 	function slugify(text: string): string {
 		return text
@@ -67,7 +67,7 @@
 		title: t('app.ticket_types.page_title', 'Ticket Types'),
 		description: t('ticket-types.manage_ticket_type_categories_and_their_', 'Manage ticket type categories and their defaults.'),
 		createLabel: t('app.ticket_types.add_ticket_type', 'Add Ticket Type'),
-		createPermission: 'tickets.review',
+		createPermission: 'tickets.type.manage',
 		pageSize: 25,
 		columns: [
 			{ key: 'name', label: t('ticket-types.name', 'Name'), sortable: true },
@@ -136,7 +136,7 @@
 				name: String(body.name ?? '').trim(),
 				slug,
 				description: String(body.description ?? '').trim(),
-				default_priority: String(body.default_priority ?? 'medium'),
+				default_priority: String(body.default_priority ?? 'normal'),
 				is_public: body.is_public === undefined ? true : !!body.is_public
 			});
 			return res.ok ? { ok: true } : { ok: false, error: res.error };
@@ -147,7 +147,7 @@
 				name: String(body.name ?? '').trim(),
 				slug,
 				description: String(body.description ?? '').trim(),
-				default_priority: String(body.default_priority ?? 'medium'),
+				default_priority: String(body.default_priority ?? 'normal'),
 				is_public: body.is_public === undefined ? true : !!body.is_public
 			});
 			return res.ok ? { ok: true } : { ok: false, error: res.error };

@@ -352,6 +352,38 @@ func (s *Service) ListSpacesByLevel(ctx context.Context, tenantID pgtype.UUID, l
 	return spaces, nil
 }
 
+// GetSpaceByGeoCode returns the country-level Space whose geo_code matches the
+// given ISO-3166-1 alpha-2 country code, scoped to the tenant. Used by the
+// /geo/me suggested_spaces algorithm (Section 37) and the onboarding primary
+// space auto-join (Section 05, ADR-005).
+func (s *Service) GetSpaceByGeoCode(ctx context.Context, tenantID pgtype.UUID, countryCode string) (gen.GetSpaceByGeoCodeRow, error) {
+	space, err := s.read.GetSpaceByGeoCode(ctx, gen.GetSpaceByGeoCodeParams{
+		GeoCode:  &countryCode,
+		TenantID: tenantID,
+	})
+	if err != nil {
+		return gen.GetSpaceByGeoCodeRow{}, fmt.Errorf("getting space by geo code: %w", err)
+	}
+
+	return space, nil
+}
+
+// FindCitySpaceByName returns the city-level Space whose name matches the
+// given city name (case-insensitive), scoped to the tenant. Used by the
+// /geo/me suggested_spaces algorithm (Section 37) and the reverse-geocoding
+// flow (ADR-064a).
+func (s *Service) FindCitySpaceByName(ctx context.Context, tenantID pgtype.UUID, cityName string) (gen.FindCitySpaceByNameRow, error) {
+	space, err := s.read.FindCitySpaceByName(ctx, gen.FindCitySpaceByNameParams{
+		CityName: cityName,
+		TenantID: tenantID,
+	})
+	if err != nil {
+		return gen.FindCitySpaceByNameRow{}, fmt.Errorf("finding city space by name: %w", err)
+	}
+
+	return space, nil
+}
+
 // ListSpacesByType returns every space of the given type for the tenant,
 // newest first.
 func (s *Service) ListSpacesByType(ctx context.Context, tenantID, spaceTypeID pgtype.UUID) ([]gen.ListSpacesByTypeRow, error) {

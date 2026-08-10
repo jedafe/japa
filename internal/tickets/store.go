@@ -245,6 +245,25 @@ func (s *Store) closeTicket(ctx context.Context, id, tenantID pgtype.UUID) (gen.
 }
 
 //nolint:unused // reserved for future features
+func (s *Store) updateTicketSubject(ctx context.Context, p gen.UpdateTicketSubjectParams) (gen.Ticket, error) {
+	row, err := s.write.UpdateTicketSubject(ctx, p)
+	if err != nil {
+		return gen.Ticket{}, fmt.Errorf("updating ticket subject: %w", err)
+	}
+
+	return row, nil
+}
+
+//nolint:unused // reserved for future features
+func (s *Store) deleteTicket(ctx context.Context, id, tenantID pgtype.UUID) error {
+	if err := s.write.DeleteTicket(ctx, gen.DeleteTicketParams{ID: id, TenantID: tenantID}); err != nil {
+		return fmt.Errorf("deleting ticket: %w", err)
+	}
+
+	return nil
+}
+
+//nolint:unused // reserved for future features
 func (s *Store) getLeastLoadedStaffInGroup(ctx context.Context, groupID, tenantID pgtype.UUID) (pgtype.UUID, error) {
 	userID, err := s.read.GetLeastLoadedStaffInGroup(ctx, gen.GetLeastLoadedStaffInGroupParams{
 		GroupID:  groupID,

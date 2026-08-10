@@ -256,6 +256,10 @@ func (s *Store) gdprExportUserWalletLedger(ctx context.Context, userID, tenantID
 	return exportJSONSlice(ctx, s.read.GdprExportUserWalletLedger, gen.GdprExportUserWalletLedgerParams{UserID: userID, TenantID: tenantID})
 }
 
+func (s *Store) gdprExportUserActivityEvents(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {
+	return exportJSONSlice(ctx, s.read.GdprExportUserActivityEvents, gen.GdprExportUserActivityEventsParams{UserID: userID, TenantID: tenantID})
+}
+
 func (s *Store) gdprExportUserLessonProgress(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {
 	return exportJSONSlice(ctx, s.read.GdprExportUserLessonProgress, gen.GdprExportUserLessonProgressParams{UserID: userID, TenantID: tenantID})
 }

@@ -610,6 +610,10 @@ FROM (SELECT * FROM consent_records WHERE user_id = @user_id AND tenant_id = @te
 SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (SELECT * FROM wallet_ledger WHERE user_id = @user_id AND tenant_id = @tenant_id) t;
 
+-- name: GdprExportUserActivityEvents :one
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (SELECT * FROM activity_events WHERE user_id = @user_id AND tenant_id = @tenant_id) t;
+
 -- name: GdprExportUserLessonProgress :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (SELECT * FROM lesson_progress WHERE user_id = @user_id AND tenant_id = @tenant_id) t;

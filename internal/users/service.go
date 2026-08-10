@@ -24,12 +24,23 @@ type Service struct {
 	// when nil, avatar_media_id/header_media_id fields are stored as-is
 	// without URL resolution (BUG-004).
 	MediaResolver MediaResolver
+	// PointsProvider returns a user's Points balance for public display.
+	// Optional — when nil, the public profile omits the points field even
+	// if the user has consented (Section 28). Implemented by wallet.Service.
+	PointsProvider PointsProvider
 }
 
 // MediaResolver resolves a media UUID to a presigned URL.
 // Implemented by the media package; injected at server wiring time.
 type MediaResolver interface {
 	ResolveMediaURL(ctx context.Context, tenantID, mediaID pgtype.UUID) (string, error)
+}
+
+// PointsProvider returns a user's Points balance. Implemented by wallet.Service.
+// Used by GetPublicProfileByUsername to surface points on a public profile when
+// the user has opted in via show_points_publicly (Section 28).
+type PointsProvider interface {
+	GetPointsBalance(ctx context.Context, tenantID, userID pgtype.UUID) (int64, error)
 }
 
 // NewService creates a Service backed by the given database pool.
@@ -164,13 +175,17 @@ func (s *Service) GetProfileByUsername(ctx context.Context, tenantID pgtype.UUID
 // GetPublicProfileByUsername returns the lean, PII-safe public profile for
 // the given username within a tenant, restricted to active users. It never
 // exposes email, status, last_login_at, or groups (Section 19 / ADR-014).
+//
+// When the user has opted in via show_points_publicly (Section 28) and a
+// PointsProvider is wired, the response includes the user's Points balance.
+// Credits are never included.
 func (s *Service) GetPublicProfileByUsername(ctx context.Context, tenantID pgtype.UUID, username string) (*PublicProfileResponse, error) {
 	p, err := s.store.getPublicProfileByUsername(ctx, tenantID, username)
 	if err != nil {
 		return nil, fmt.Errorf("getting public profile by username: %w", err)
 	}
 
-	return &PublicProfileResponse{
+	resp := &PublicProfileResponse{
 		ID:             p.UserID.String(),
 		Username:       p.Username,
 		DisplayName:    p.DisplayName,
@@ -181,7 +196,20 @@ func (s *Service) GetPublicProfileByUsername(ctx context.Context, tenantID pgtyp
 		FollowerCount:  p.FollowerCount,
 		FollowingCount: p.FollowingCount,
 		CreatedAt:      p.CreatedAt.Time.Format(time.RFC3339),
-	}, nil
+	}
+
+	// Conditionally include Points if the user has consented (Section 28).
+	// Credits are never exposed publicly.
+	if p.ShowPointsPublicly && s.PointsProvider != nil {
+		points, perr := s.PointsProvider.GetPointsBalance(ctx, tenantID, p.UserID)
+		if perr == nil {
+			resp.Points = &points
+		}
+		// If the balance lookup fails, omit the field rather than failing
+		// the entire profile response — points display is non-critical.
+	}
+
+	return resp, nil
 }
 
 // UpdateProfile updates the user profile fields. Only non-nil fields are
@@ -547,6 +575,7 @@ func (s *Service) GetPrivacySettings(ctx context.Context, tenantID, userID pgtyp
 				SearchIndexable:   true,
 				ShowOnlineStatus:  true,
 				ShowActivity:      true,
+				ShowPointsPublicly: false, // default false — user must opt in (Section 28)
 			}, nil
 		}
 		return nil, fmt.Errorf("getting privacy settings: %w", err)
@@ -558,6 +587,7 @@ func (s *Service) GetPrivacySettings(ctx context.Context, tenantID, userID pgtyp
 		SearchIndexable:   settings.SearchIndexable,
 		ShowOnlineStatus:  settings.ShowOnlineStatus,
 		ShowActivity:      settings.ShowActivity,
+		ShowPointsPublicly: settings.ShowPointsPublicly,
 	}, nil
 }
 
@@ -593,7 +623,12 @@ func (s *Service) UpdatePrivacySettings(ctx context.Context, tenantID, userID pg
 		showActivity = *req.ShowActivity
 	}
 
-	return s.store.upsertUserPrivacySettings(ctx, tenantID, userID, dmPrivacy, profileVisibility, searchIndexable, showOnlineStatus, showActivity)
+	showPointsPublicly := current.ShowPointsPublicly
+	if req.ShowPointsPublicly != nil {
+		showPointsPublicly = *req.ShowPointsPublicly
+	}
+
+	return s.store.upsertUserPrivacySettings(ctx, tenantID, userID, dmPrivacy, profileVisibility, searchIndexable, showOnlineStatus, showActivity, showPointsPublicly)
 }
 
 // ListSessions returns the user's active sessions. currentSessionID is the

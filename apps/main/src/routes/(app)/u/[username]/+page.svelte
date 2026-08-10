@@ -192,6 +192,13 @@
 						<dt class="text-sm text-[var(--color-muted)]">{t('profile.following_label', 'Following')}</dt>
 						<dd class="text-sm text-[var(--color-text)]">{user.following_count}</dd>
 					</div>
+					{#if user.points != null}
+						<!-- Section 28 — Points shown only when the user has opted in via show_points_publicly. Credits are never exposed. -->
+						<div class="flex justify-between gap-4">
+							<dt class="text-sm text-[var(--color-muted)]">{t('profile.points_label', 'Points')}</dt>
+							<dd class="text-sm text-[var(--color-text)]">{user.points.toLocaleString()}</dd>
+						</div>
+					{/if}
 				</dl>
 			</section>
 		{:else if activeTab === 'replies'}

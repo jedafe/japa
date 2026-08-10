@@ -129,6 +129,10 @@ type UserListItem struct {
 // It deliberately omits email, status, last_login_at, and groups (Section 19
 // / ADR-014) and adds following_count alongside the existing follower_count
 // (Section 31 / ADR-031).
+//
+// Points is included only when the user has opted in via
+// show_points_publicly (Section 28). Credits are never included.
+// When absent, the field is nil and omitempty drops it from the JSON.
 type PublicProfileResponse struct {
 	ID             string  `json:"id"`
 	Username       string  `json:"username"`
@@ -140,6 +144,7 @@ type PublicProfileResponse struct {
 	FollowerCount  int32   `json:"follower_count"`
 	FollowingCount int32   `json:"following_count"`
 	CreatedAt      string  `json:"created_at"`
+	Points         *int64  `json:"points,omitempty"`
 }
 
 // DraftResponse is the API response for GET /api/v1/me/drafts/{id}, used by
