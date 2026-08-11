@@ -223,4 +223,9 @@ func RegisterHandlers(mux *asynq.ServeMux) {
 	// §102 Mentorship Matching handlers (ADR-110).
 	mux.HandleFunc(TypeMentorGenerateEmbedding, HandleMentorGenerateEmbedding)
 	mux.HandleFunc(TypeMentorUpdateMeilisearch, HandleMentorUpdateMeilisearch)
+
+	// §91 Embassy Appointment Alerter handlers (ADR-099).
+	mux.HandleFunc(TypeEmbassyPoll, HandleEmbassyPoll)
+	mux.HandleFunc(TypeEmbassyDispatchAlerts, HandleEmbassyDispatchAlerts)
+	mux.HandleFunc(TypeEmbassyExpireChecks, HandleEmbassyExpireChecks)
 }

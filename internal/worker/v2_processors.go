@@ -108,6 +108,18 @@ type MentorProcessor interface {
 	UpdateMeilisearch(ctx context.Context, tenantID, userID pgtype.UUID) error
 }
 
+// EmbassyAlerterProcessor handles Embassy Appointment Alerter background
+// tasks (§91, ADR-099). PollEmbassy scrapes a monitored embassy's booking
+// page for open slots and, if availability is detected, enqueues
+// embassy:dispatch_alerts. DispatchAlerts notifies all users with a
+// matching active alert.
+// Ref: japaconnect-engineering/sections/91-embassy-appointment-alerter.md
+type EmbassyAlerterProcessor interface {
+	PollEmbassy(ctx context.Context, embassyID, tenantID pgtype.UUID) error
+	DispatchAlerts(ctx context.Context, embassySlug string, tenantID pgtype.UUID) error
+	ExpireAlerts(ctx context.Context) (int, error)
+}
+
 // ---------------------------------------------------------------------------
 // Global processor slots — nil-safe (graceful degradation when unregistered).
 // ---------------------------------------------------------------------------
@@ -125,6 +137,7 @@ var (
 	personaProcessor       PersonaProcessor
 	studioProcessor        StudioProcessor
 	mentorProcessor        MentorProcessor
+	embassyAlerterProcessor EmbassyAlerterProcessor
 )
 
 // Register functions — call once at startup before the worker serves.
@@ -141,6 +154,7 @@ func RegisterPushProcessor(p PushProcessor)             { pushProcessor = p }
 func RegisterPersonaProcessor(p PersonaProcessor)       { personaProcessor = p }
 func RegisterStudioProcessor(p StudioProcessor)         { studioProcessor = p }
 func RegisterMentorProcessor(p MentorProcessor)         { mentorProcessor = p }
+func RegisterEmbassyAlerterProcessor(p EmbassyAlerterProcessor) { embassyAlerterProcessor = p }
 
 // ---------------------------------------------------------------------------
 // Task type constants (V2 — Sections 60–77).
@@ -172,6 +186,17 @@ const (
 	// §102 Mentorship Matching (ADR-110).
 	TypeMentorGenerateEmbedding = "mentor:generate_embedding"
 	TypeMentorUpdateMeilisearch = "mentor:update_meilisearch"
+
+	// §91 Embassy Appointment Alerter (ADR-099).
+	// The asynq-tasks catalog lists `embassy:poll_{slug}` as the logical
+	// per-embassy task; the registered handler type is `embassy:poll` with
+	// the embassy slug carried in the JSON payload (asynq HandleFunc
+	// matches exact task-type strings, so the slug is not embedded in the
+	// type name). `embassy:dispatch_alerts` fires notifications when
+	// availability is detected.
+	TypeEmbassyPoll          = "embassy:poll"
+	TypeEmbassyDispatchAlerts = "embassy:dispatch_alerts"
+	TypeEmbassyExpireChecks   = "embassy:expire_checks"
 )
 
 // ---------------------------------------------------------------------------
@@ -663,5 +688,72 @@ func HandleMentorUpdateMeilisearch(ctx context.Context, t *asynq.Task) error {
 	if err := mentorProcessor.UpdateMeilisearch(ctx, tenantID, userID); err != nil {
 		return fmt.Errorf("task:mentor:update_meilisearch: %w", err)
 	}
+	return nil
+}
+
+// HandleEmbassyPoll polls a monitored embassy's booking page for open
+// appointment slots (§91, ADR-099). When availability is detected the
+// processor enqueues embassy:dispatch_alerts for the matching slug.
+func HandleEmbassyPoll(ctx context.Context, t *asynq.Task) error {
+	if embassyAlerterProcessor == nil {
+		slog.Warn("task:embassy:poll: no processor registered, skipping")
+		return nil
+	}
+	var p struct {
+		EmbassyID string `json:"embassy_id"`
+		TenantID  string `json:"tenant_id"`
+	}
+	if err := json.Unmarshal(t.Payload(), &p); err != nil {
+		return fmt.Errorf("task:embassy:poll: invalid payload: %w", err)
+	}
+	var embassyID, tenantID pgtype.UUID
+	if err := embassyID.Scan(p.EmbassyID); err != nil {
+		return fmt.Errorf("task:embassy:poll: bad embassy_id: %w", err)
+	}
+	if err := tenantID.Scan(p.TenantID); err != nil {
+		return fmt.Errorf("task:embassy:poll: bad tenant_id: %w", err)
+	}
+	if err := embassyAlerterProcessor.PollEmbassy(ctx, embassyID, tenantID); err != nil {
+		return fmt.Errorf("task:embassy:poll: %w", err)
+	}
+	return nil
+}
+
+// HandleEmbassyDispatchAlerts dispatches notifications to all users with an
+// active alert matching the embassy whose availability was detected (§91).
+func HandleEmbassyDispatchAlerts(ctx context.Context, t *asynq.Task) error {
+	if embassyAlerterProcessor == nil {
+		slog.Warn("task:embassy:dispatch_alerts: no processor registered, skipping")
+		return nil
+	}
+	var p struct {
+		EmbassySlug string `json:"embassy_slug"`
+		TenantID    string `json:"tenant_id"`
+	}
+	if err := json.Unmarshal(t.Payload(), &p); err != nil {
+		return fmt.Errorf("task:embassy:dispatch_alerts: invalid payload: %w", err)
+	}
+	var tenantID pgtype.UUID
+	if err := tenantID.Scan(p.TenantID); err != nil {
+		return fmt.Errorf("task:embassy:dispatch_alerts: bad tenant_id: %w", err)
+	}
+	if err := embassyAlerterProcessor.DispatchAlerts(ctx, p.EmbassySlug, tenantID); err != nil {
+		return fmt.Errorf("task:embassy:dispatch_alerts: %w", err)
+	}
+	return nil
+}
+
+// HandleEmbassyExpireChecks transitions appointment_alerts past their
+// expires_at from 'active' to 'expired' (§91, ADR-099). Nightly sweep.
+func HandleEmbassyExpireChecks(ctx context.Context, _ *asynq.Task) error {
+	if embassyAlerterProcessor == nil {
+		slog.Warn("task:embassy:expire_checks: no processor registered, skipping")
+		return nil
+	}
+	n, err := embassyAlerterProcessor.ExpireAlerts(ctx)
+	if err != nil {
+		return fmt.Errorf("task:embassy:expire_checks: %w", err)
+	}
+	slog.Info("task:embassy:expire_checks: expired alerts", "count", n)
 	return nil
 }

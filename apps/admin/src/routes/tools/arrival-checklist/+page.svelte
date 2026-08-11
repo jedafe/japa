@@ -1,5 +1,6 @@
 <script lang="ts">
 	// /tools/arrival-checklist — admin HITL review queue for AI-generated arrival checklists.
+	// Ref: §92 (Arrival Checklist Generator), ADR-100, ADR-088 (Universal AI content generation).
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
 	import { Modal } from '$lib/components/ui/modal';
 	import { Button } from '$lib/components/ui/button';
@@ -7,17 +8,36 @@
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { Eye, CheckCircle, Sparkles } from 'lucide-svelte';
 	import type { ActionItem } from '$lib/components/ui/data-table';
-	import { arrivalChecklistAdminApi } from '$lib/api';
+	import { arrivalChecklistAdminApi, api } from '$lib/api';
 
-	type ArrivalChecklistItem = {
+	// GuideDTO — matches the backend response shape (internal/arrivalchecklist/service.go).
+	type ArrivalChecklistGuide = {
 		id: string;
-		title: string;
-		dest_country: string;
+		destination_space_id: string;
+		destination_space_name?: string;
+		destination_space_code?: string;
+		visa_category?: string;
+		applicant_type: string;
+		version: number;
 		status: string;
+		is_active: boolean;
 		ai_generated: boolean;
-		updated_at?: string;
-		summary?: string;
-		items?: string;
+		ai_model?: string;
+		hitl_reviewed_by?: string;
+		hitl_reviewed_by_name?: string;
+		hitl_reviewed_at?: string;
+		hitl_review_notes?: string;
+		is_japabot_indexed: boolean;
+		created_at: string;
+		updated_at: string;
+	};
+
+	// Selector entry — for the generate modal's destination dropdown.
+	type SelectorEntry = {
+		destination_space_id: string;
+		destination_space_name?: string;
+		visa_category?: string;
+		guide_id: string;
 	};
 
 	const canManage = $derived(hasPermission('arrival_checklist.manage'));
@@ -29,22 +49,45 @@
 
 	// ── Generate modal state ────────────────────────────────────────────────
 	let showGenerateModal = $state(false);
-	let generateDestCountry = $state('');
-	let generateTopic = $state('');
+	let generateDestSpaceId = $state('');
+	let generateVisaCategory = $state('');
+	let generateApplicantType = $state('individual');
+	let selectorEntries = $state<SelectorEntry[]>([]);
+	let loadingSelectors = $state(false);
 
-	function openGenerate() {
-		generateDestCountry = '';
-		generateTopic = '';
+	async function openGenerate() {
+		generateDestSpaceId = '';
+		generateVisaCategory = '';
+		generateApplicantType = 'individual';
 		showGenerateModal = true;
+		// Fetch selector data for the destination dropdown (Rule 16 — no hardcoded data).
+		if (selectorEntries.length === 0) {
+			loadingSelectors = true;
+			try {
+				const result = await api<SelectorEntry[]>('/arrival-checklist/selector');
+				if (result.ok) {
+					selectorEntries = result.data ?? [];
+				}
+			} catch {
+				// Best-effort — modal still works with manual UUID entry.
+			} finally {
+				loadingSelectors = false;
+			}
+		}
 	}
 
 	async function confirmGenerate() {
+		if (!generateDestSpaceId) {
+			pageError = t('app.tools.dest_required', 'Destination is required');
+			return;
+		}
 		acting = true;
 		pageError = '';
 		try {
 			const result = await arrivalChecklistAdminApi.generate({
-				dest_country: generateDestCountry,
-				topic: generateTopic
+				destination_space_id: generateDestSpaceId,
+				visa_category: generateVisaCategory || undefined,
+				applicant_type: generateApplicantType
 			});
 			if (result.ok) {
 				showGenerateModal = false;
@@ -59,7 +102,7 @@
 		}
 	}
 
-	async function approveItem(item: ArrivalChecklistItem) {
+	async function approveItem(item: ArrivalChecklistGuide) {
 		acting = true;
 		pageError = '';
 		try {
@@ -79,14 +122,14 @@
 	// ── Row actions ─────────────────────────────────────────────────────────
 	const rowActions = $derived.by<ActionItem[]>(() => {
 		const acts: ActionItem[] = [
-			{ label: t('common.view', 'View'), icon: Eye, onclick: (_row: ArrivalChecklistItem, ctx) => ctx?.openView(_row) }
+			{ label: t('common.view', 'View'), icon: Eye, onclick: (_row: ArrivalChecklistGuide, ctx) => ctx?.openView(_row) }
 		];
 		if (canManage) {
 			acts.push({
 				label: t('common.approve', 'Approve'),
 				icon: CheckCircle,
 				onclick: approveItem,
-				show: () => true
+				show: (row: ArrivalChecklistGuide) => row.status !== 'published'
 			});
 		}
 		return acts;
@@ -94,9 +137,9 @@
 
 	// `fields` is required by EntityPageConfig; readonly page so the form is never shown, but kept for shape completeness.
 	const fields: FieldDef[] = [
-		{ key: 'title', label: t('app.tools.col_title', 'Title'), type: 'text' },
-		{ key: 'dest_country', label: t('app.tools.col_dest_country', 'Destination Country'), type: 'text' },
-		{ key: 'summary', label: t('app.tools.col_summary', 'Summary'), type: 'textarea' }
+		{ key: 'destination_space_name', label: t('app.tools.col_dest_country', 'Destination'), type: 'text' },
+		{ key: 'visa_category', label: t('app.tools.col_visa_category', 'Visa Category'), type: 'text' },
+		{ key: 'applicant_type', label: t('app.tools.col_applicant_type', 'Applicant Type'), type: 'text' }
 	];
 
 	const config = $derived<EntityPageConfig>({
@@ -105,8 +148,24 @@
 		readonly: true,
 		pageSize: 25,
 		columns: [
-			{ key: 'title', label: t('app.tools.col_title', 'Title'), sortable: true },
-			{ key: 'dest_country', label: t('app.tools.col_dest_country', 'Destination'), sortable: true },
+			{
+				key: 'destination_space_name',
+				label: t('app.tools.col_dest_country', 'Destination'),
+				sortable: true,
+				render: (value: string) => value || '—'
+			},
+			{
+				key: 'visa_category',
+				label: t('app.tools.col_visa_category', 'Visa Category'),
+				sortable: true,
+				render: (value: string) => value || t('common.all', 'All')
+			},
+			{
+				key: 'applicant_type',
+				label: t('app.tools.col_applicant_type', 'Applicant Type'),
+				sortable: true,
+				render: (value: string) => value || '—'
+			},
 			{
 				key: 'status',
 				label: t('app.tools.col_status', 'Status'),
@@ -127,11 +186,24 @@
 		],
 		actions: rowActions,
 		fields,
-		load: async () => {
-			const result = await arrivalChecklistAdminApi.list();
+		load: async (params) => {
+			// Server-side pagination — pass page/limit/q to the backend.
+			// Ref: geo-aware-tool-pattern.md (admin list must filter+sort+paginate).
+			const queryParts: string[] = [];
+			queryParts.push(`page=${params.page ?? 1}`);
+			queryParts.push(`limit=${params.pageSize ?? 25}`);
+			if (params.q) queryParts.push(`q=${encodeURIComponent(params.q)}`);
+			if (params.sort) {
+				queryParts.push(`sort=${encodeURIComponent(params.sort)}`);
+			}
+			const queryString = queryParts.join('&');
+
+			const result = await arrivalChecklistAdminApi.listRaw(queryString);
 			if (result.ok) {
-				const data = (result.data as ArrivalChecklistItem[]) ?? [];
-				return { data, total: data.length, totalPages: 1 };
+				const data = (result.data.data as ArrivalChecklistGuide[]) ?? [];
+				const total = result.data.pagination?.total ?? data.length;
+				const totalPages = Math.max(1, Math.ceil(total / (params.pageSize ?? 25)));
+				return { data, total, totalPages };
 			}
 			throw new Error(result.error ?? t('common.error', 'An error occurred'));
 		},
@@ -167,61 +239,115 @@
 <Modal bind:open={showGenerateModal} title={t('app.tools.generate_arrival_checklist', 'Generate Arrival Checklist')}>
 	<div class="space-y-4">
 		<div>
-			<label for="gen-dest-country" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('app.tools.col_dest_country', 'Destination Country')}</label>
+			<label for="gen-dest" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('app.tools.col_dest_country', 'Destination Country')}</label>
+			{#if loadingSelectors}
+				<p class="text-sm" style="color: var(--color-muted)">{t('common.loading', 'Loading...')}</p>
+			{:else if selectorEntries.length > 0}
+				<select
+					id="gen-dest"
+					class="w-full rounded-lg border p-3 text-sm"
+					style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+					bind:value={generateDestSpaceId}
+				>
+					<option value="">{t('common.select', 'Select...')}</option>
+					{#each selectorEntries as entry (entry.destination_space_id)}
+						<option value={entry.destination_space_id}>{entry.destination_space_name ?? entry.destination_space_id}</option>
+					{/each}
+				</select>
+			{:else}
+				<input
+					id="gen-dest"
+					class="w-full rounded-lg border p-3 text-sm"
+					style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+					bind:value={generateDestSpaceId}
+					placeholder={t('app.tools.dest_space_id_placeholder', 'Destination space UUID')}
+				/>
+			{/if}
+		</div>
+		<div>
+			<label for="gen-visa-cat" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('app.tools.col_visa_category', 'Visa Category (optional)')}</label>
 			<input
-				id="gen-dest-country"
+				id="gen-visa-cat"
 				class="w-full rounded-lg border p-3 text-sm"
 				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
-				bind:value={generateDestCountry}
-				placeholder={t('app.tools.dest_country_placeholder', 'e.g. Japan')}
+				bind:value={generateVisaCategory}
+				placeholder={t('app.tools.visa_category_placeholder', 'e.g. work, student, family')}
 			/>
 		</div>
 		<div>
-			<label for="gen-topic" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('app.tools.topic_prompt', 'Topic / Prompt')}</label>
-			<textarea
-				id="gen-topic"
+			<label for="gen-app-type" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('app.tools.col_applicant_type', 'Applicant Type')}</label>
+			<select
+				id="gen-app-type"
 				class="w-full rounded-lg border p-3 text-sm"
 				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
-				rows="4"
-				bind:value={generateTopic}
-				placeholder={t('app.tools.topic_placeholder', 'Describe what the checklist should cover...')}
-			></textarea>
+				bind:value={generateApplicantType}
+			>
+				<option value="individual">{t('app.tools.applicant_individual', 'Individual')}</option>
+				<option value="couple">{t('app.tools.applicant_couple', 'Couple')}</option>
+				<option value="family">{t('app.tools.applicant_family', 'Family')}</option>
+			</select>
 		</div>
 	</div>
 	<div class="mt-4 flex justify-end gap-2">
 		<Button variant="ghost" onclick={() => (showGenerateModal = false)}>{t('common.cancel', 'Cancel')}</Button>
-		<Button onclick={confirmGenerate} disabled={acting}>
+		<Button onclick={confirmGenerate} disabled={acting || !generateDestSpaceId}>
 			{acting ? t('app.tools.generating', 'Generating...') : t('app.tools.generate', 'Generate')}
 		</Button>
 	</div>
 </Modal>
 
 <!-- ── View slide-over body ──────────────────────────────────────────────── -->
-{#snippet ArrivalChecklistView({ row }: { row: ArrivalChecklistItem })}
+{#snippet ArrivalChecklistView({ row }: { row: ArrivalChecklistGuide })}
 	<div class="space-y-4">
 		<div>
-			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.tools.col_title', 'Title')}</p>
-			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.title}</p>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.tools.col_dest_country', 'Destination')}</p>
+			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.destination_space_name || row.destination_space_id}</p>
 		</div>
 		<div>
-			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.tools.col_dest_country', 'Destination Country')}</p>
-			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.dest_country || '—'}</p>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.tools.col_visa_category', 'Visa Category')}</p>
+			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.visa_category || t('common.all', 'All')}</p>
+		</div>
+		<div>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.tools.col_applicant_type', 'Applicant Type')}</p>
+			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.applicant_type || '—'}</p>
 		</div>
 		<div>
 			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.tools.col_status', 'Status')}</p>
 			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.status || '—'}</p>
 		</div>
 		<div>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.tools.col_version', 'Version')}</p>
+			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.version}</p>
+		</div>
+		<div>
 			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.tools.col_ai_generated', 'AI Generated')}</p>
 			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.ai_generated ? t('common.yes', 'Yes') : t('common.no', 'No')}</p>
 		</div>
+		{#if row.ai_model}
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.tools.col_ai_model', 'AI Model')}</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.ai_model}</p>
+			</div>
+		{/if}
+		<div>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.tools.col_hitl_reviewed_by', 'HITL Reviewed By')}</p>
+			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.hitl_reviewed_by_name || '—'}</p>
+		</div>
+		{#if row.hitl_reviewed_at}
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.tools.col_hitl_reviewed_at', 'Reviewed At')}</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{new Date(row.hitl_reviewed_at).toLocaleString()}</p>
+			</div>
+		{/if}
+		{#if row.hitl_review_notes}
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.tools.col_hitl_review_notes', 'Review Notes')}</p>
+				<p class="mt-1 text-sm" style="color: var(--color-foreground)">{row.hitl_review_notes}</p>
+			</div>
+		{/if}
 		<div>
 			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.tools.col_updated_at', 'Updated')}</p>
 			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.updated_at ? new Date(row.updated_at).toLocaleString() : '—'}</p>
-		</div>
-		<div>
-			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.tools.col_summary', 'Summary')}</p>
-			<p class="mt-1 text-sm" style="color: var(--color-foreground)">{row.summary || '—'}</p>
 		</div>
 	</div>
 {/snippet}

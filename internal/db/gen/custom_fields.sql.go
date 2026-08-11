@@ -500,7 +500,7 @@ const getCustomFieldValue = `-- name: GetCustomFieldValue :one
 
 SELECT cfv.id, cfv.field_id, cfv.entity_type, cfv.entity_id, cfv.value_text,
        cfv.value_number, cfv.value_bool, cfv.value_date, cfv.value_json,
-       cfv.created_at, cfv.updated_at
+       cfv.created_at, cfv.updated_at, cfv.ai_exempt
 FROM custom_field_values cfv
 JOIN custom_fields cf ON cfv.field_id = cf.id
 WHERE cfv.field_id = $1 AND cfv.entity_type = $2 AND cfv.entity_id = $3
@@ -540,6 +540,7 @@ func (q *Queries) GetCustomFieldValue(ctx context.Context, arg GetCustomFieldVal
 		&i.ValueJson,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.AiExempt,
 	)
 	return i, err
 }
@@ -776,7 +777,7 @@ func (q *Queries) ListCustomFieldGroupsByTenantAndEntityClass(ctx context.Contex
 const listCustomFieldValuesByEntity = `-- name: ListCustomFieldValuesByEntity :many
 SELECT cfv.id, cfv.field_id, cfv.entity_type, cfv.entity_id, cfv.value_text,
        cfv.value_number, cfv.value_bool, cfv.value_date, cfv.value_json,
-       cfv.created_at, cfv.updated_at
+       cfv.created_at, cfv.updated_at, cfv.ai_exempt
 FROM custom_field_values cfv
 JOIN custom_fields cf ON cfv.field_id = cf.id
 WHERE cfv.entity_type = $1 AND cfv.entity_id = $2
@@ -811,6 +812,7 @@ func (q *Queries) ListCustomFieldValuesByEntity(ctx context.Context, arg ListCus
 			&i.ValueJson,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.AiExempt,
 		); err != nil {
 			return nil, err
 		}
@@ -825,7 +827,7 @@ func (q *Queries) ListCustomFieldValuesByEntity(ctx context.Context, arg ListCus
 const listCustomFieldValuesByEntityForUser = `-- name: ListCustomFieldValuesByEntityForUser :many
 SELECT cfv.id, cfv.field_id, cfv.entity_type, cfv.entity_id, cfv.value_text,
        cfv.value_number, cfv.value_bool, cfv.value_date, cfv.value_json,
-       cfv.created_at, cfv.updated_at
+       cfv.created_at, cfv.updated_at, cfv.ai_exempt
 FROM custom_field_values cfv
 JOIN custom_fields cf ON cfv.field_id = cf.id
 WHERE cfv.entity_type = $1 AND cfv.entity_id = $2
@@ -870,6 +872,7 @@ func (q *Queries) ListCustomFieldValuesByEntityForUser(ctx context.Context, arg 
 			&i.ValueJson,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.AiExempt,
 		); err != nil {
 			return nil, err
 		}
@@ -1268,7 +1271,7 @@ SET value_text = EXCLUDED.value_text,
     value_json = EXCLUDED.value_json,
     updated_at = now()
 RETURNING id, field_id, entity_type, entity_id, value_text, value_number,
-          value_bool, value_date, value_json, created_at, updated_at
+          value_bool, value_date, value_json, created_at, updated_at, ai_exempt
 `
 
 type UpsertCustomFieldValueParams struct {
@@ -1310,6 +1313,7 @@ func (q *Queries) UpsertCustomFieldValue(ctx context.Context, arg UpsertCustomFi
 		&i.ValueJson,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.AiExempt,
 	)
 	return i, err
 }

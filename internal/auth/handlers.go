@@ -312,6 +312,7 @@ func (h *AuthHandlers) Login(w http.ResponseWriter, r *http.Request) {
 		if err := RecordFailedLogin(r.Context(), h.BruteForce, bruteKey); err != nil {
 			slog.Warn("record failed login", "error", err)
 		}
+		h.logFailedLoginAudit(r.Context(), tenant.ID, req.Email, ip)
 
 		writeError(w, http.StatusUnauthorized, "invalid_credentials", "Invalid email or password")
 
@@ -333,6 +334,7 @@ func (h *AuthHandlers) Login(w http.ResponseWriter, r *http.Request) {
 		if err := RecordFailedLogin(r.Context(), h.BruteForce, bruteKey); err != nil {
 			slog.Warn("record failed login", "error", err)
 		}
+		h.logFailedLoginAudit(r.Context(), tenant.ID, req.Email, ip)
 
 		writeError(w, http.StatusUnauthorized, "invalid_credentials", "Invalid email or password")
 
@@ -343,6 +345,7 @@ func (h *AuthHandlers) Login(w http.ResponseWriter, r *http.Request) {
 		if err := RecordFailedLogin(r.Context(), h.BruteForce, bruteKey); err != nil {
 			slog.Warn("record failed login", "error", err)
 		}
+		h.logFailedLoginAudit(r.Context(), tenant.ID, req.Email, ip)
 
 		writeError(w, http.StatusUnauthorized, "invalid_credentials", "Invalid email or password")
 
@@ -807,6 +810,25 @@ func (h *AuthHandlers) Logout(w http.ResponseWriter, r *http.Request) {
 // keyed on this value, so a spoofable IP means unlimited password guesses.
 func clientIP(r *http.Request) string {
 	return clientip.FromRequest(r)
+}
+
+// logFailedLoginAudit writes an audit_logs entry for a failed login attempt.
+// This is consumed by the analytics security scanner (scanFailedLoginSpike)
+// to detect brute-force attacks. Ref: sections/40-platform-analytics-reports.md
+func (h *AuthHandlers) logFailedLoginAudit(ctx context.Context, tenantID pgtype.UUID, email, ip string) {
+	if h.Database == nil {
+		return
+	}
+
+	meta, _ := json.Marshal(map[string]string{"email": email, "ip": ip})
+
+	_, err := h.Database.Writer.Exec(ctx, `
+		INSERT INTO audit_logs (tenant_id, action_type, target_type, metadata, ip_address)
+		VALUES ($1, 'auth.login_failed', 'user', $2::jsonb, $3::inet)
+	`, tenantID, meta, ip)
+	if err != nil {
+		slog.Warn("failed to write login_failed audit log", "error", err)
+	}
 }
 
 // deviceName extracts a human-readable device label from the User-Agent

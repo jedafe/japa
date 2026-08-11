@@ -44,14 +44,17 @@ const (
 )
 
 // FlushCache removes cached keys matching the given scope.
-// FlushAll deletes every jc: prefixed key — use with caution.
-func (f *CacheFlusher) FlushCache(ctx context.Context, scope FlushScope) (int64, error) {
+// BUG-ANALYTICS-11 fix: when tenantID is provided, non-FlushAll scopes are
+// restricted to the tenant's keys (jc:cache:analytics:{tenant_id}:*) to
+// prevent cross-tenant cache invalidation. FlushAll remains global (it is
+// a super-admin-only operation wired at the router level).
+func (f *CacheFlusher) FlushCache(ctx context.Context, scope FlushScope, tenantID string) (int64, error) {
 	if f.vk == nil {
 		slog.Warn("cache flush: valkey client unavailable")
 		return 0, nil
 	}
 
-	pattern := cachePatternForScope(scope)
+	pattern := cachePatternForScope(scope, tenantID)
 	if pattern == "" {
 		return 0, fmt.Errorf("unknown cache scope: %s", scope)
 	}
@@ -131,19 +134,37 @@ func (f *CacheFlusher) flushByPattern(ctx context.Context, pattern string) (int6
 }
 
 // cachePatternForScope maps a flush scope to the Valkey key pattern.
-func cachePatternForScope(scope FlushScope) string {
+// When tenantID is non-empty, analytics/page/feed/i18n/search scopes are
+// restricted to the tenant's keys to prevent cross-tenant cache flush.
+// FlushAll is always global (super-admin only).
+func cachePatternForScope(scope FlushScope, tenantID string) string {
 	switch scope {
 	case FlushAll:
 		return "jc:*"
 	case FlushPage:
+		if tenantID != "" {
+			return "jc:cache:page:" + tenantID + ":*"
+		}
 		return "jc:cache:page:*"
 	case FlushFeed:
+		if tenantID != "" {
+			return "jc:cache:feed:" + tenantID + ":*"
+		}
 		return "jc:cache:feed:*"
 	case FlushI18n:
+		if tenantID != "" {
+			return "jc:cache:i18n:" + tenantID + ":*"
+		}
 		return "jc:cache:i18n:*"
 	case FlushSearch:
+		if tenantID != "" {
+			return "jc:cache:search:" + tenantID + ":*"
+		}
 		return "jc:cache:search:*"
 	case FlushAnalytics:
+		if tenantID != "" {
+			return "jc:cache:analytics:" + tenantID + ":*"
+		}
 		return "jc:cache:analytics:*"
 	default:
 		return ""

@@ -1,23 +1,27 @@
 <script lang="ts">
-	// /tools/appointment-alert — admin management for embassy appointment alerter (§91).
+	// /tools/appointment-alert — admin management for embassy appointment alerter (§91, ADR-099).
+	// Full CRUD for monitored embassies + immediate poll trigger.
+	// Ref: japaconnect-engineering/sections/91-embassy-appointment-alerter.md
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
-	import { Modal } from '$lib/components/ui/modal';
-	import { Button } from '$lib/components/ui/button';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
-	import { Eye, RefreshCw, Building } from 'lucide-svelte';
+	import { Eye, RefreshCw, Pencil } from 'lucide-svelte';
 	import type { ActionItem } from '$lib/components/ui/data-table';
 	import { appointmentAlertAdminApi } from '$lib/api';
 
+	// EmbassyDTO — matches the backend EmbassyDTO shape (§91).
+	// Ref: internal/appointmentalert/service.go EmbassyDTO
 	type EmbassyItem = {
 		id: string;
+		destination_space_id: string;
+		destination_space_name?: string | null;
+		slug: string;
 		name: string;
-		country: string;
-		city: string;
-		website?: string;
-		booking_url?: string;
-		polling_enabled?: boolean;
-		last_polled_at?: string;
+		booking_url: string;
+		poll_interval_seconds: number;
+		is_active: boolean;
+		last_polled_at?: string | null;
+		created_at?: string;
 		updated_at?: string;
 	};
 
@@ -53,6 +57,11 @@
 		];
 		if (canManage) {
 			acts.push({
+				label: t('common.edit', 'Edit'),
+				icon: Pencil,
+				onclick: (_row: EmbassyItem, ctx) => ctx?.openEdit(_row)
+			});
+			acts.push({
 				label: t('app.tools.poll_now', 'Poll Now'),
 				icon: RefreshCw,
 				onclick: pollEmbassy,
@@ -62,27 +71,40 @@
 		return acts;
 	});
 
-	// `fields` is required by EntityPageConfig; readonly page so the form is never shown.
+	// ── Form fields (drives EntityForm for create/edit) ─────────────────────
 	const fields: FieldDef[] = [
+		{ key: 'slug', label: t('app.tools.col_slug', 'Slug'), type: 'text' },
 		{ key: 'name', label: t('app.tools.col_name', 'Name'), type: 'text' },
-		{ key: 'country', label: t('app.tools.col_country', 'Country'), type: 'text' },
-		{ key: 'city', label: t('app.tools.col_city', 'City'), type: 'text' },
-		{ key: 'website', label: t('app.tools.col_website', 'Website'), type: 'url' },
-		{ key: 'booking_url', label: t('app.tools.col_booking_url', 'Booking URL'), type: 'url' }
+		{ key: 'destination_space_id', label: t('app.tools.col_destination', 'Destination Space ID'), type: 'text' },
+		{ key: 'booking_url', label: t('app.tools.col_booking_url', 'Booking URL'), type: 'url' },
+		{ key: 'poll_interval_seconds', label: t('app.tools.col_poll_interval', 'Poll Interval (s)'), type: 'number' },
+		{ key: 'is_active', label: t('app.tools.col_is_active', 'Active'), type: 'checkbox' }
 	];
 
 	const config = $derived<EntityPageConfig>({
 		title: t('app.tools.appointment_alert_heading', 'Embassy Appointment Alerter'),
-		description: t('app.tools.appointment_alert_desc', 'Manage embassies and trigger availability polling'),
-		readonly: true,
+		description: t('app.tools.appointment_alert_desc', 'Manage monitored embassies and trigger availability polling'),
+		createLabel: t('app.tools.add_embassy', 'Add Embassy'),
+		createPermission: 'embassy_monitor.manage',
+		editPermission: 'embassy_monitor.manage',
 		pageSize: 25,
 		columns: [
 			{ key: 'name', label: t('app.tools.col_name', 'Name'), sortable: true },
-			{ key: 'country', label: t('app.tools.col_country', 'Country'), sortable: true },
-			{ key: 'city', label: t('app.tools.col_city', 'City'), sortable: true },
+			{ key: 'slug', label: t('app.tools.col_slug', 'Slug'), sortable: true },
 			{
-				key: 'polling_enabled',
-				label: t('app.tools.col_polling', 'Polling'),
+				key: 'destination_space_name',
+				label: t('app.tools.col_destination', 'Destination'),
+				sortable: true,
+				render: (value: string) => value || '—'
+			},
+			{
+				key: 'poll_interval_seconds',
+				label: t('app.tools.col_poll_interval', 'Poll Interval'),
+				render: (value: number) => `${value}s`
+			},
+			{
+				key: 'is_active',
+				label: t('app.tools.col_is_active', 'Active'),
 				render: (value: boolean) => (value ? t('common.enabled', 'Enabled') : t('common.disabled', 'Disabled'))
 			},
 			{
@@ -94,13 +116,36 @@
 		],
 		actions: rowActions,
 		fields,
-		load: async () => {
-			const result = await appointmentAlertAdminApi.listEmbassies();
+		load: async (params) => {
+			// Build server-side pagination query params from EntityPage params.
+			// The backend accepts ?page=&limit=&dest=&active= (§91).
+			const qp = new URLSearchParams();
+			qp.set('page', String(params.page ?? 1));
+			qp.set('limit', String(params.pageSize ?? 25));
+			if (params.q) qp.set('q', params.q);
+			// Filter: pass through any filter keys (e.g. ?dest=, ?active=).
+			if (params.filter) {
+				for (const [k, v] of Object.entries(params.filter)) {
+					if (v != null && v !== '') qp.set(k, String(v));
+				}
+			}
+			const result = await appointmentAlertAdminApi.listEmbassies(qp.toString());
 			if (result.ok) {
-				const data = (result.data as EmbassyItem[]) ?? [];
-				return { data, total: data.length, totalPages: 1 };
+				const data = (result.data.data as EmbassyItem[]) ?? [];
+				const total = result.data.pagination?.total ?? data.length;
+				const limit = result.data.pagination?.limit ?? params.pageSize ?? 25;
+				const totalPages = limit > 0 ? Math.max(1, Math.ceil(total / limit)) : 1;
+				return { data, total, totalPages };
 			}
 			throw new Error(result.error ?? t('common.error', 'An error occurred'));
+		},
+		create: async (body) => {
+			const result = await appointmentAlertAdminApi.createEmbassy(body as Record<string, unknown>);
+			return result.ok ? { ok: true } : { ok: false, error: result.error };
+		},
+		update: async (id, body) => {
+			const result = await appointmentAlertAdminApi.updateEmbassy(id, body as Record<string, unknown>);
+			return result.ok ? { ok: true } : { ok: false, error: result.error };
 		},
 		viewSnippet: EmbassyView
 	});
@@ -129,24 +174,24 @@
 			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.name}</p>
 		</div>
 		<div>
-			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.tools.col_country', 'Country')}</p>
-			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.country || '—'}</p>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.tools.col_slug', 'Slug')}</p>
+			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.slug}</p>
 		</div>
 		<div>
-			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.tools.col_city', 'City')}</p>
-			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.city || '—'}</p>
-		</div>
-		<div>
-			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.tools.col_website', 'Website')}</p>
-			<p class="mt-1 break-all text-sm" style="color: var(--color-foreground)">{row.website || '—'}</p>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.tools.col_destination', 'Destination')}</p>
+			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.destination_space_name || '—'}</p>
 		</div>
 		<div>
 			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.tools.col_booking_url', 'Booking URL')}</p>
 			<p class="mt-1 break-all text-sm" style="color: var(--color-foreground)">{row.booking_url || '—'}</p>
 		</div>
 		<div>
-			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.tools.col_polling', 'Polling')}</p>
-			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.polling_enabled ? t('common.enabled', 'Enabled') : t('common.disabled', 'Disabled')}</p>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.tools.col_poll_interval', 'Poll Interval')}</p>
+			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.poll_interval_seconds}s</p>
+		</div>
+		<div>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.tools.col_is_active', 'Active')}</p>
+			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.is_active ? t('common.enabled', 'Enabled') : t('common.disabled', 'Disabled')}</p>
 		</div>
 		<div>
 			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.tools.col_last_polled', 'Last Polled')}</p>

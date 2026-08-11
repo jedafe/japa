@@ -202,6 +202,29 @@ func (q *Queries) GetActiveUsers(ctx context.Context, tenantID pgtype.UUID) (int
 	return column_1, err
 }
 
+const getContentAuthorID = `-- name: GetContentAuthorID :one
+
+SELECT author_id FROM contents
+WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
+`
+
+type GetContentAuthorIDParams struct {
+	ID       pgtype.UUID `json:"id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+// =====================
+// Content Ownership (for analytics access control)
+// =====================
+// Ref: api-routes-catalog.md — GET /content/{id}/analytics is owner+admin only.
+// Returns the author_id so the handler can verify the caller is the owner.
+func (q *Queries) GetContentAuthorID(ctx context.Context, arg GetContentAuthorIDParams) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, getContentAuthorID, arg.ID, arg.TenantID)
+	var author_id pgtype.UUID
+	err := row.Scan(&author_id)
+	return author_id, err
+}
+
 const getContentVolumeOverTime = `-- name: GetContentVolumeOverTime :many
 SELECT date_trunc('day', created_at)::date AS day, COUNT(*) AS content_count
 FROM contents
@@ -289,7 +312,11 @@ func (q *Queries) GetDailyActiveUsers(ctx context.Context, arg GetDailyActiveUse
 const getDailyContentStats = `-- name: GetDailyContentStats :many
 
 SELECT date_trunc('day', c.created_at)::date AS day, c.tenant_id, c.id AS content_id, c.title AS content_title,
-       c.view_count AS views, c.comment_count AS reactions, c.share_count AS comments, c.view_count AS unique_viewers
+       c.view_count AS views,
+       (SELECT COUNT(*)::int FROM reactions r WHERE r.tenant_id = c.tenant_id AND r.entity_type = 'content' AND r.entity_id = c.id) AS reactions,
+       c.comment_count AS comments,
+       (c.share_count + c.reshare_count) AS shares,
+       (SELECT COUNT(DISTINCT user_id)::int FROM user_content_views ucv WHERE ucv.content_id = c.id AND ucv.user_id IS NOT NULL) AS unique_viewers
 FROM contents c
 WHERE c.tenant_id = $1
   AND c.status != 'draft'
@@ -314,12 +341,17 @@ type GetDailyContentStatsRow struct {
 	Views         int32       `json:"views"`
 	Reactions     int32       `json:"reactions"`
 	Comments      int32       `json:"comments"`
+	Shares        int32       `json:"shares"`
 	UniqueViewers int32       `json:"unique_viewers"`
 }
 
 // =====================
 // Materialized Views (refreshed by analytics:refresh_views Asynq task)
 // =====================
+// Ref: sections/40-platform-analytics-reports.md
+// BUG-ANALYTICS-01 fix: corrected column mapping (reactions from reactions
+// table, comments from comment_count, shares from share_count+reshare_count,
+// unique_viewers from user_content_views distinct count).
 func (q *Queries) GetDailyContentStats(ctx context.Context, arg GetDailyContentStatsParams) ([]GetDailyContentStatsRow, error) {
 	rows, err := q.db.Query(ctx, getDailyContentStats,
 		arg.TenantID,
@@ -342,6 +374,7 @@ func (q *Queries) GetDailyContentStats(ctx context.Context, arg GetDailyContentS
 			&i.Views,
 			&i.Reactions,
 			&i.Comments,
+			&i.Shares,
 			&i.UniqueViewers,
 		); err != nil {
 			return nil, err
@@ -422,6 +455,7 @@ const getEventCountsByType = `-- name: GetEventCountsByType :many
 SELECT event_type, COUNT(*) AS count
 FROM platform_events
 WHERE tenant_id = $1
+  AND is_synthetic = false
   AND ($2::timestamptz IS NULL OR created_at >= $2)
   AND ($3::timestamptz IS NULL OR created_at <= $3)
 GROUP BY event_type
@@ -439,6 +473,8 @@ type GetEventCountsByTypeRow struct {
 	Count     int64  `json:"count"`
 }
 
+// Ref: ADR-068 §4 (P10) — real-metric reporting excludes synthetic events
+// (persona-originated activity) so admin dashboards reflect real user engagement.
 func (q *Queries) GetEventCountsByType(ctx context.Context, arg GetEventCountsByTypeParams) ([]GetEventCountsByTypeRow, error) {
 	rows, err := q.db.Query(ctx, getEventCountsByType, arg.TenantID, arg.Column2, arg.Column3)
 	if err != nil {
@@ -621,13 +657,16 @@ func (q *Queries) GetSpaceAnalyticsSummary(ctx context.Context, arg GetSpaceAnal
 }
 
 const getTopContentByViews = `-- name: GetTopContentByViews :many
-SELECT id AS content_id, title AS content_title, view_count AS total_views, comment_count AS total_comments, share_count AS total_reactions, view_count AS total_unique_viewers
-FROM contents
-WHERE tenant_id = $1
-  AND status != 'draft'
-  AND view_count > 0
-  AND ($2::date IS NULL OR created_at::date >= $2)
-  AND ($3::date IS NULL OR created_at::date <= $3)
+SELECT c.id AS content_id, c.title AS content_title, c.view_count AS total_views, c.comment_count AS total_comments,
+       (SELECT COUNT(*)::int FROM reactions r WHERE r.tenant_id = c.tenant_id AND r.entity_type = 'content' AND r.entity_id = c.id) AS total_reactions,
+       (c.share_count + c.reshare_count) AS total_shares,
+       (SELECT COUNT(DISTINCT user_id)::int FROM user_content_views ucv WHERE ucv.content_id = c.id AND ucv.user_id IS NOT NULL) AS total_unique_viewers
+FROM contents c
+WHERE c.tenant_id = $1
+  AND c.status != 'draft'
+  AND c.view_count > 0
+  AND ($2::date IS NULL OR c.created_at::date >= $2)
+  AND ($3::date IS NULL OR c.created_at::date <= $3)
 ORDER BY total_views DESC
 LIMIT $4
 `
@@ -645,9 +684,13 @@ type GetTopContentByViewsRow struct {
 	TotalViews         int32       `json:"total_views"`
 	TotalComments      int32       `json:"total_comments"`
 	TotalReactions     int32       `json:"total_reactions"`
+	TotalShares        int32       `json:"total_shares"`
 	TotalUniqueViewers int32       `json:"total_unique_viewers"`
 }
 
+// BUG-ANALYTICS-02 fix: corrected column mapping (total_reactions from
+// reactions table, total_shares from share_count+reshare_count,
+// total_unique_viewers from user_content_views distinct count).
 func (q *Queries) GetTopContentByViews(ctx context.Context, arg GetTopContentByViewsParams) ([]GetTopContentByViewsRow, error) {
 	rows, err := q.db.Query(ctx, getTopContentByViews,
 		arg.TenantID,
@@ -668,6 +711,7 @@ func (q *Queries) GetTopContentByViews(ctx context.Context, arg GetTopContentByV
 			&i.TotalViews,
 			&i.TotalComments,
 			&i.TotalReactions,
+			&i.TotalShares,
 			&i.TotalUniqueViewers,
 		); err != nil {
 			return nil, err
@@ -897,7 +941,7 @@ func (q *Queries) GetUserGrowthOverTime(ctx context.Context, arg GetUserGrowthOv
 }
 
 const listPlatformEvents = `-- name: ListPlatformEvents :many
-SELECT id, tenant_id, event_type, user_id, entity_type, entity_id, meta, country_code, session_id, created_at
+SELECT id, tenant_id, event_type, user_id, entity_type, entity_id, meta, country_code, session_id, is_synthetic, created_at
 FROM platform_events
 WHERE tenant_id = $1
   AND ($2::text = '' OR event_type = $2)
@@ -930,9 +974,13 @@ type ListPlatformEventsRow struct {
 	Meta        []byte             `json:"meta"`
 	CountryCode *string            `json:"country_code"`
 	SessionID   *string            `json:"session_id"`
+	IsSynthetic bool               `json:"is_synthetic"`
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 }
 
+// Ref: sections/40-platform-analytics-reports.md, ADR-068 §4 (P10)
+// Includes is_synthetic so the admin event list can distinguish
+// persona-originated events from real user activity.
 func (q *Queries) ListPlatformEvents(ctx context.Context, arg ListPlatformEventsParams) ([]ListPlatformEventsRow, error) {
 	rows, err := q.db.Query(ctx, listPlatformEvents,
 		arg.TenantID,
@@ -961,6 +1009,7 @@ func (q *Queries) ListPlatformEvents(ctx context.Context, arg ListPlatformEvents
 			&i.Meta,
 			&i.CountryCode,
 			&i.SessionID,
+			&i.IsSynthetic,
 			&i.CreatedAt,
 		); err != nil {
 			return nil, err

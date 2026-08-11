@@ -481,7 +481,7 @@ func (q *Queries) GetComparisonTypeBySlug(ctx context.Context, arg GetComparison
 }
 
 const getComparisonValue = `-- name: GetComparisonValue :one
-SELECT dimension_id, item_id, tenant_id, value, value_rating, value_boolean, created_at
+SELECT dimension_id, item_id, tenant_id, value, value_rating, value_boolean, created_at, metadata
 FROM comparison_values
 WHERE dimension_id = $1 AND item_id = $2 AND tenant_id = $3
 `
@@ -503,13 +503,14 @@ func (q *Queries) GetComparisonValue(ctx context.Context, arg GetComparisonValue
 		&i.ValueRating,
 		&i.ValueBoolean,
 		&i.CreatedAt,
+		&i.Metadata,
 	)
 	return i, err
 }
 
 const getComparisonValuesByContent = `-- name: GetComparisonValuesByContent :many
 SELECT cv.dimension_id, cv.item_id, cv.tenant_id, cv.value, cv.value_rating,
-       cv.value_boolean, cv.created_at
+       cv.value_boolean, cv.created_at, cv.metadata
 FROM comparison_values cv
 JOIN comparison_items ci ON ci.id = cv.item_id
 JOIN comparison_dimensions cd ON cd.id = cv.dimension_id
@@ -538,6 +539,7 @@ func (q *Queries) GetComparisonValuesByContent(ctx context.Context, arg GetCompa
 			&i.ValueRating,
 			&i.ValueBoolean,
 			&i.CreatedAt,
+			&i.Metadata,
 		); err != nil {
 			return nil, err
 		}
@@ -765,7 +767,7 @@ func (q *Queries) ListComparisonTypesByTenant(ctx context.Context, arg ListCompa
 
 const listComparisonValuesByDimension = `-- name: ListComparisonValuesByDimension :many
 SELECT cv.dimension_id, cv.item_id, cv.tenant_id, cv.value, cv.value_rating,
-       cv.value_boolean, cv.created_at,
+       cv.value_boolean, cv.created_at, cv.metadata,
        ci.title AS item_title
 FROM comparison_values cv
 JOIN comparison_items ci ON ci.id = cv.item_id
@@ -785,6 +787,7 @@ type ListComparisonValuesByDimensionRow struct {
 	ValueRating  pgtype.Numeric     `json:"value_rating"`
 	ValueBoolean *bool              `json:"value_boolean"`
 	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	Metadata     []byte             `json:"metadata"`
 	ItemTitle    string             `json:"item_title"`
 }
 
@@ -805,6 +808,7 @@ func (q *Queries) ListComparisonValuesByDimension(ctx context.Context, arg ListC
 			&i.ValueRating,
 			&i.ValueBoolean,
 			&i.CreatedAt,
+			&i.Metadata,
 			&i.ItemTitle,
 		); err != nil {
 			return nil, err
@@ -1204,7 +1208,7 @@ SET value = EXCLUDED.value,
     value_rating = EXCLUDED.value_rating,
     value_boolean = EXCLUDED.value_boolean,
     created_at = now()
-RETURNING dimension_id, item_id, tenant_id, value, value_rating, value_boolean, created_at
+RETURNING dimension_id, item_id, tenant_id, value, value_rating, value_boolean, created_at, metadata
 `
 
 type UpsertComparisonValueParams struct {
@@ -1237,6 +1241,7 @@ func (q *Queries) UpsertComparisonValue(ctx context.Context, arg UpsertCompariso
 		&i.ValueRating,
 		&i.ValueBoolean,
 		&i.CreatedAt,
+		&i.Metadata,
 	)
 	return i, err
 }

@@ -10,6 +10,7 @@ package appointmentalert
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -18,6 +19,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/jedafe/japa/internal/config"
+	"github.com/jedafe/japa/internal/worker"
 )
 
 // EmbassyDTO is the API response shape for a monitored embassy.
@@ -92,16 +94,27 @@ type UpdateAlertInput struct {
 	NotificationChannels []string `json:"notification_channels"`
 }
 
+// TaskEnqueuer is the minimal interface for enqueueing Asynq tasks.
+// Implemented by *worker.Enqueuer; a nil enqueuer makes TriggerPoll a
+// graceful no-op (development/tests).
+type TaskEnqueuer interface {
+	Enqueue(taskType string, payload []byte, opts ...interface{}) error
+}
+
 // Service holds the business logic for the Embassy Appointment Alerter.
 type Service struct {
 	store    *Store
 	settings *config.Settings
+	enqueuer TaskEnqueuer
 }
 
 // NewService creates an appointment alerter service.
 func NewService(store *Store, settings *config.Settings) *Service {
 	return &Service{store: store, settings: settings}
 }
+
+// SetEnqueuer injects the Asynq task enqueuer for embassy poll/dispatch tasks.
+func (s *Service) SetEnqueuer(e TaskEnqueuer) { s.enqueuer = e }
 
 // Enabled reads the appointment_alert.enabled system_setting toggle
 // (§91 feature flag).
@@ -200,8 +213,10 @@ func (s *Service) UpdateEmbassy(ctx context.Context, id, tenantID pgtype.UUID, i
 	return embassyToDTO(row), nil
 }
 
-// TriggerPoll marks a monitored embassy as polled (last_polled_at = now()).
-// The actual scraping is performed asynchronously by the Asynq worker.
+// TriggerPoll marks a monitored embassy as polled (last_polled_at = now())
+// and enqueues the embassy:poll Asynq task so the worker scrapes the booking
+// page for open slots. The actual scraping is performed asynchronously by
+// the Asynq worker (§91, ADR-099).
 func (s *Service) TriggerPoll(ctx context.Context, id, tenantID pgtype.UUID) error {
 	if err := s.store.MarkEmbassyPolled(ctx, id, tenantID); err != nil {
 		if err == pgx.ErrNoRows {
@@ -209,6 +224,53 @@ func (s *Service) TriggerPoll(ctx context.Context, id, tenantID pgtype.UUID) err
 		}
 		return fmt.Errorf("appointmentalert: trigger poll: %w", err)
 	}
+
+	// Enqueue the poll task (fire-and-forget, Rule 8). A nil enqueuer
+	// (development/tests) makes this a graceful no-op.
+	if s.enqueuer != nil {
+		payload, err := json.Marshal(map[string]string{
+			"embassy_id": id.String(),
+			"tenant_id":  tenantID.String(),
+		})
+		if err != nil {
+			return fmt.Errorf("appointmentalert: trigger poll: marshal payload: %w", err)
+		}
+		if err := s.enqueuer.Enqueue(worker.TypeEmbassyPoll, payload); err != nil {
+			return fmt.Errorf("appointmentalert: trigger poll: enqueue: %w", err)
+		}
+	}
+	return nil
+}
+
+// ExpireAlerts transitions all active appointment_alerts past their
+// expires_at (or date_range_end when expires_at is NULL) to 'expired'.
+// Called by the embassy:expire_checks Asynq nightly sweep (§91, ADR-099).
+func (s *Service) ExpireAlerts(ctx context.Context) (int, error) {
+	n, err := s.store.ExpireAlerts(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("appointmentalert: expire alerts: %w", err)
+	}
+	return int(n), nil
+}
+
+// PollEmbassy scrapes a monitored embassy's booking page for open slots.
+// Stub: the HTTP scraper that respects robots.txt and writes availability
+// state to Valkey (jc:embassy_avail:{slug}) is not yet implemented. Returns
+// nil so the Asynq task succeeds gracefully without retrying (§91, ADR-099).
+func (s *Service) PollEmbassy(ctx context.Context, embassyID, tenantID pgtype.UUID) error {
+	// TODO(§91): implement robots.txt-aware scraper → Valkey availability
+	// state → enqueue embassy:dispatch_alerts when slots are detected.
+	return nil
+}
+
+// DispatchAlerts notifies all users with an active alert matching the
+// embassy whose availability was detected. Stub: notification fan-out is
+// not yet implemented. Returns nil so the Asynq task succeeds gracefully
+// (§91, ADR-099).
+func (s *Service) DispatchAlerts(ctx context.Context, embassySlug string, tenantID pgtype.UUID) error {
+	// TODO(§91): query active alerts matching embassy_slug + tenant_id,
+	// dispatch notifications via notification:dispatch_batch, set
+	// fired_at = now(), and apply the 24-hour pause before re-firing.
 	return nil
 }
 

@@ -180,6 +180,39 @@ func (s *Store) Search(ctx context.Context, tenantID pgtype.UUID, queryVector []
 	return results, nil
 }
 
+// SearchGeoFiltered performs HNSW cosine retrieval restricted to content
+// chunks whose source contents row is geo-scoped to the given space or its
+// direct children (§103 Geo-Filtered RAG amendment to §69). Only
+// entity_type = 'content' chunks are geo-filterable; other entity types
+// are excluded when a geo scope is supplied. geoSpaceID must be non-nil
+// and valid — callers dispatch to Search (unfiltered) when no geo scope
+// is resolved. language may be empty to skip the language filter.
+func (s *Store) SearchGeoFiltered(ctx context.Context, tenantID pgtype.UUID, queryVector []float32, language string, topK int32, geoSpaceID pgtype.UUID) ([]RetrievedChunk, error) {
+	vec := pgvector.NewVector(queryVector)
+	rows, err := s.queries.SearchContentEmbeddingsGeoFiltered(ctx, gen.SearchContentEmbeddingsGeoFilteredParams{
+		QueryEmbedding: &vec,
+		TenantID:       tenantID,
+		Language:       language,
+		TopK:           topK,
+		GeoSpaceID:     geoSpaceID,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("rag: search geo-filtered: %w", err)
+	}
+
+	results := make([]RetrievedChunk, 0, len(rows))
+	for _, row := range rows {
+		results = append(results, RetrievedChunk{
+			EntityID:   row.EntityID.String(),
+			EntityType: row.EntityType,
+			ChunkText:  row.ChunkText,
+			Similarity: row.Similarity,
+			Tier:       SourceTier(row.EntityType),
+		})
+	}
+	return results, nil
+}
+
 // IndexStats holds aggregate statistics about the embedding index.
 type IndexStats struct {
 	TotalChunks   int64  `json:"total_chunks"`

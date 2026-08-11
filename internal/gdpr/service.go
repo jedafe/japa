@@ -549,6 +549,22 @@ func (s *Service) ProcessAccountDeletion(ctx context.Context, requestID pgtype.U
 		}
 	}
 
+	// 1c. Scrub PII from checklist_progress.notes during the anonymization
+	// phase (Section 70/§92, ADR-014). The table has ON DELETE CASCADE from
+	// users(id) so rows are removed at hard-delete, but the user's free-text
+	// checklist notes (visa + arrival) must be cleared now so they are not
+	// recoverable during the retention window. Best-effort.
+	if step == deletionStepAnonymized {
+		if _, err := s.db.Writer.Exec(ctx, `
+			UPDATE checklist_progress
+			SET notes = NULL
+			WHERE user_id = $1 AND tenant_id = $2 AND notes IS NOT NULL
+		`, request.UserID, request.TenantID); err != nil {
+			slog.Warn("failed to scrub checklist_progress notes during deletion",
+				"user_id", request.UserID.String(), "error", err)
+		}
+	}
+
 	// 2. Revoke all refresh tokens (best-effort).
 	if step < deletionStepTokensRevoked {
 		if err := s.store.deleteUserTokens(ctx, gen.DeleteUserTokensParams{

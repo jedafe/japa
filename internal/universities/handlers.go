@@ -49,7 +49,7 @@ type SpacesService interface {
 // CustomFieldsService is the subset of customfields.Service the university
 // handlers need to attach university-specific field values.
 type CustomFieldsService interface {
-	ListFieldValuesByEntity(ctx context.Context, entityType string, entityID pgtype.UUID) ([]gen.CustomFieldValue, error)
+	ListFieldValuesByEntity(ctx context.Context, tenantID pgtype.UUID, entityType string, entityID pgtype.UUID) ([]gen.CustomFieldValue, error)
 	// ListFieldValuesWithDefsByEntity returns field values joined with their
 	// definitions (label, key, field_type, options), filtered to
 	// show_in_frontend = true — the display-ready shape used by the public
@@ -299,7 +299,7 @@ func (h *Handlers) GetUniversity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fields, err := h.customFields.ListFieldValuesByEntity(r.Context(), customFieldEntityTypeSpace, space.ID)
+	fields, err := h.customFields.ListFieldValuesByEntity(r.Context(), tenantID, customFieldEntityTypeSpace, space.ID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to load university fields")
 		return
@@ -714,6 +714,6 @@ func (h *Handlers) CompareUniversities(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "not_found", "University not found")
 		return
 	}
-	fields, _ := h.customFields.ListFieldValuesByEntity(r.Context(), customFieldEntityTypeSpace, space.ID)
+	fields, _ := h.customFields.ListFieldValuesByEntity(r.Context(), tenantID, customFieldEntityTypeSpace, space.ID)
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"space": space, "fields": fields}})
 }

@@ -181,7 +181,7 @@ WHERE field_id = @field_id AND user_group_id = @user_group_id;
 -- tenancy is enforced transitively via field_id → custom_fields.tenant_id.
 SELECT cfv.id, cfv.field_id, cfv.entity_type, cfv.entity_id, cfv.value_text,
        cfv.value_number, cfv.value_bool, cfv.value_date, cfv.value_json,
-       cfv.created_at, cfv.updated_at
+       cfv.created_at, cfv.updated_at, cfv.ai_exempt
 FROM custom_field_values cfv
 JOIN custom_fields cf ON cfv.field_id = cf.id
 WHERE cfv.field_id = @field_id AND cfv.entity_type = @entity_type AND cfv.entity_id = @entity_id
@@ -191,7 +191,7 @@ WHERE cfv.field_id = @field_id AND cfv.entity_type = @entity_type AND cfv.entity
 -- BUG-014: JOIN custom_fields to enforce tenant scoping at the SQL layer.
 SELECT cfv.id, cfv.field_id, cfv.entity_type, cfv.entity_id, cfv.value_text,
        cfv.value_number, cfv.value_bool, cfv.value_date, cfv.value_json,
-       cfv.created_at, cfv.updated_at
+       cfv.created_at, cfv.updated_at, cfv.ai_exempt
 FROM custom_field_values cfv
 JOIN custom_fields cf ON cfv.field_id = cf.id
 WHERE cfv.entity_type = @entity_type AND cfv.entity_id = @entity_id
@@ -204,7 +204,7 @@ WHERE cfv.entity_type = @entity_type AND cfv.entity_id = @entity_id
 -- Also BUG-014: tenant-scoped via JOIN to custom_fields.
 SELECT cfv.id, cfv.field_id, cfv.entity_type, cfv.entity_id, cfv.value_text,
        cfv.value_number, cfv.value_bool, cfv.value_date, cfv.value_json,
-       cfv.created_at, cfv.updated_at
+       cfv.created_at, cfv.updated_at, cfv.ai_exempt
 FROM custom_field_values cfv
 JOIN custom_fields cf ON cfv.field_id = cf.id
 WHERE cfv.entity_type = @entity_type AND cfv.entity_id = @entity_id
@@ -246,7 +246,7 @@ SET value_text = EXCLUDED.value_text,
     value_json = EXCLUDED.value_json,
     updated_at = now()
 RETURNING id, field_id, entity_type, entity_id, value_text, value_number,
-          value_bool, value_date, value_json, created_at, updated_at;
+          value_bool, value_date, value_json, created_at, updated_at, ai_exempt;
 
 -- name: DeleteCustomFieldValue :exec
 -- BUG-014: tenant scoping via a subquery check on custom_fields.tenant_id.
