@@ -465,6 +465,7 @@ SET hitl_reviewed_by = $3,
     hitl_reviewed_at = now(),
     status = 'published',
     hitl_review_notes = $4,
+    is_japabot_indexed = true,
     updated_at = now()
 WHERE id = $1 AND tenant_id = $2
 `
@@ -510,6 +511,7 @@ FROM arrival_checklist_guides g
 JOIN arrival_checklist_items i ON i.guide_id = g.id
 LEFT JOIN checklist_progress cp
   ON cp.guide_id = g.id
+ AND cp.item_key = i.id::text
  AND cp.user_id = $2
  AND cp.tenant_id = $1
  AND cp.list_type = 'arrival'

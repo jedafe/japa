@@ -256,6 +256,40 @@ type AffiliateProvider struct {
 	AuthorCommissionPct pgtype.Numeric `json:"author_commission_pct"`
 }
 
+type AiAgentSession struct {
+	ID             pgtype.UUID        `json:"id"`
+	TenantID       pgtype.UUID        `json:"tenant_id"`
+	UserID         pgtype.UUID        `json:"user_id"`
+	Prompt         string             `json:"prompt"`
+	GeoSpaceID     pgtype.UUID        `json:"geo_space_id"`
+	PresearchLevel string             `json:"presearch_level"`
+	Status         string             `json:"status"`
+	ToolCallCount  int32              `json:"tool_call_count"`
+	ResultSummary  *string            `json:"result_summary"`
+	ErrorMessage   *string            `json:"error_message"`
+	TotalTokens    int32              `json:"total_tokens"`
+	EstimatedCost  pgtype.Numeric     `json:"estimated_cost"`
+	StartedAt      pgtype.Timestamptz `json:"started_at"`
+	CompletedAt    pgtype.Timestamptz `json:"completed_at"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+}
+
+type AiAgentToolCall struct {
+	ID             pgtype.UUID        `json:"id"`
+	TenantID       pgtype.UUID        `json:"tenant_id"`
+	SessionID      pgtype.UUID        `json:"session_id"`
+	ToolName       string             `json:"tool_name"`
+	Arguments      []byte             `json:"arguments"`
+	Result         []byte             `json:"result"`
+	Status         string             `json:"status"`
+	ErrorMessage   *string            `json:"error_message"`
+	LatencyMs      *int32             `json:"latency_ms"`
+	RbacChecked    bool               `json:"rbac_checked"`
+	PrivacyChecked bool               `json:"privacy_checked"`
+	HitlReviewID   pgtype.UUID        `json:"hitl_review_id"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+}
+
 type AiHitlReview struct {
 	ID            pgtype.UUID        `json:"id"`
 	TenantID      pgtype.UUID        `json:"tenant_id"`
@@ -383,6 +417,7 @@ type AppointmentAlert struct {
 	NotificationChannels []string           `json:"notification_channels"`
 	CreatedAt            pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt            pgtype.Timestamptz `json:"deleted_at"`
 }
 
 type ArrivalChecklistGuide struct {
@@ -753,6 +788,7 @@ type ComparisonValue struct {
 	ValueRating  pgtype.Numeric     `json:"value_rating"`
 	ValueBoolean *bool              `json:"value_boolean"`
 	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	Metadata     []byte             `json:"metadata"`
 }
 
 type ConsentRecord struct {
@@ -806,6 +842,7 @@ type Content struct {
 	OgImageUrl      *string            `json:"og_image_url"`
 	SeoIndexable    bool               `json:"seo_indexable"`
 	GuideCategory   *string            `json:"guide_category"`
+	AiExempt        bool               `json:"ai_exempt"`
 }
 
 // Tracks affiliate links found in content that are not registered in affiliate_providers. Used for moderation and revenue tracking.
@@ -1163,6 +1200,7 @@ type CustomFieldValue struct {
 	ValueJson   []byte             `json:"value_json"`
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
+	AiExempt    bool               `json:"ai_exempt"`
 }
 
 type CvFormatSession struct {
@@ -3406,6 +3444,7 @@ type User struct {
 	UsernameChangedAt   pgtype.Timestamptz `json:"username_changed_at"`
 	IsBot               bool               `json:"is_bot"`
 	PasswordChangedAt   pgtype.Timestamptz `json:"password_changed_at"`
+	AiExempt            bool               `json:"ai_exempt"`
 }
 
 type UserAffiliateLink struct {

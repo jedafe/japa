@@ -13,7 +13,10 @@ VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 RETURNING id, tenant_id, event_type, user_id, entity_type, entity_id, meta, country_code, session_id, is_synthetic, created_at;
 
 -- name: ListPlatformEvents :many
-SELECT id, tenant_id, event_type, user_id, entity_type, entity_id, meta, country_code, session_id, created_at
+-- Ref: sections/40-platform-analytics-reports.md, ADR-068 §4 (P10)
+-- Includes is_synthetic so the admin event list can distinguish
+-- persona-originated events from real user activity.
+SELECT id, tenant_id, event_type, user_id, entity_type, entity_id, meta, country_code, session_id, is_synthetic, created_at
 FROM platform_events
 WHERE tenant_id = $1
   AND ($2::text = '' OR event_type = $2)
@@ -25,9 +28,12 @@ ORDER BY created_at DESC, id DESC
 LIMIT $7 OFFSET $8;
 
 -- name: GetEventCountsByType :many
+-- Ref: ADR-068 §4 (P10) — real-metric reporting excludes synthetic events
+-- (persona-originated activity) so admin dashboards reflect real user engagement.
 SELECT event_type, COUNT(*) AS count
 FROM platform_events
 WHERE tenant_id = $1
+  AND is_synthetic = false
   AND ($2::timestamptz IS NULL OR created_at >= $2)
   AND ($3::timestamptz IS NULL OR created_at <= $3)
 GROUP BY event_type
@@ -38,8 +44,16 @@ ORDER BY count DESC;
 -- =====================
 
 -- name: GetDailyContentStats :many
+-- Ref: sections/40-platform-analytics-reports.md
+-- BUG-ANALYTICS-01 fix: corrected column mapping (reactions from reactions
+-- table, comments from comment_count, shares from share_count+reshare_count,
+-- unique_viewers from user_content_views distinct count).
 SELECT date_trunc('day', c.created_at)::date AS day, c.tenant_id, c.id AS content_id, c.title AS content_title,
-       c.view_count AS views, c.comment_count AS reactions, c.share_count AS comments, c.view_count AS unique_viewers
+       c.view_count AS views,
+       (SELECT COUNT(*)::int FROM reactions r WHERE r.tenant_id = c.tenant_id AND r.entity_type = 'content' AND r.entity_id = c.id) AS reactions,
+       c.comment_count AS comments,
+       (c.share_count + c.reshare_count) AS shares,
+       (SELECT COUNT(DISTINCT user_id)::int FROM user_content_views ucv WHERE ucv.content_id = c.id AND ucv.user_id IS NOT NULL) AS unique_viewers
 FROM contents c
 WHERE c.tenant_id = $1
   AND c.status != 'draft'
@@ -49,13 +63,19 @@ WHERE c.tenant_id = $1
 ORDER BY day DESC, views DESC;
 
 -- name: GetTopContentByViews :many
-SELECT id AS content_id, title AS content_title, view_count AS total_views, comment_count AS total_comments, share_count AS total_reactions, view_count AS total_unique_viewers
-FROM contents
-WHERE tenant_id = $1
-  AND status != 'draft'
-  AND view_count > 0
-  AND ($2::date IS NULL OR created_at::date >= $2)
-  AND ($3::date IS NULL OR created_at::date <= $3)
+-- BUG-ANALYTICS-02 fix: corrected column mapping (total_reactions from
+-- reactions table, total_shares from share_count+reshare_count,
+-- total_unique_viewers from user_content_views distinct count).
+SELECT c.id AS content_id, c.title AS content_title, c.view_count AS total_views, c.comment_count AS total_comments,
+       (SELECT COUNT(*)::int FROM reactions r WHERE r.tenant_id = c.tenant_id AND r.entity_type = 'content' AND r.entity_id = c.id) AS total_reactions,
+       (c.share_count + c.reshare_count) AS total_shares,
+       (SELECT COUNT(DISTINCT user_id)::int FROM user_content_views ucv WHERE ucv.content_id = c.id AND ucv.user_id IS NOT NULL) AS total_unique_viewers
+FROM contents c
+WHERE c.tenant_id = $1
+  AND c.status != 'draft'
+  AND c.view_count > 0
+  AND ($2::date IS NULL OR c.created_at::date >= $2)
+  AND ($3::date IS NULL OR c.created_at::date <= $3)
 ORDER BY total_views DESC
 LIMIT $4;
 
@@ -269,6 +289,16 @@ WHERE tenant_id = $1 AND created_at >= date_trunc('day', NOW());
 -- name: CountPendingReviews :one
 SELECT COUNT(*)::int FROM content_reviews
 WHERE tenant_id = $1 AND status = 'pending' AND deleted_at IS NULL;
+
+-- =====================
+-- Content Ownership (for analytics access control)
+-- =====================
+
+-- name: GetContentAuthorID :one
+-- Ref: api-routes-catalog.md — GET /content/{id}/analytics is owner+admin only.
+-- Returns the author_id so the handler can verify the caller is the owner.
+SELECT author_id FROM contents
+WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL;
 
 -- =====================
 -- Space Analytics (single-query aggregate)

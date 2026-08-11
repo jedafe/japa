@@ -114,7 +114,7 @@ const createPersonaUser = `-- name: CreatePersonaUser :one
 
 INSERT INTO users (tenant_id, email, username, profile_type, status, is_bot)
 VALUES ($1, $2, $3, 'professional', 'active', true)
-RETURNING id, tenant_id, email, email_verified_at, password_hash, username, profile_type, status, last_login_at, created_at, updated_at, follower_count, force_password_change, current_geo_space_id, username_changed_at, is_bot, password_changed_at
+RETURNING id, tenant_id, email, email_verified_at, password_hash, username, profile_type, status, last_login_at, created_at, updated_at, follower_count, force_password_change, current_geo_space_id, username_changed_at, is_bot, password_changed_at, ai_exempt
 `
 
 type CreatePersonaUserParams struct {
@@ -156,6 +156,7 @@ func (q *Queries) CreatePersonaUser(ctx context.Context, arg CreatePersonaUserPa
 		&i.UsernameChangedAt,
 		&i.IsBot,
 		&i.PasswordChangedAt,
+		&i.AiExempt,
 	)
 	return i, err
 }

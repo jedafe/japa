@@ -128,6 +128,7 @@ var taskTier = func() map[string]string {
 		TypeUniversityProcessEnrollment, TypeUniversitySendInstructorPayout,
 		TypeAffiliateCreditCommission, // BUG-012: financial side effect → critical (§56)
 		TypeNotificationSendPush,       // §77 V2 — push delivery is user-facing-critical
+		TypeEmbassyDispatchAlerts,      // §91 — time-sensitive slot availability (ADR-099)
 	} {
 		m[t] = QueueCritical
 	}
@@ -165,6 +166,8 @@ var taskTier = func() map[string]string {
 		TypeJobsNotifyApplicationStatus,
 		TypeImportProcessSource,
 		TypeAffiliateRecordClick,
+		// §91 Embassy Appointment Alerter (ADR-099) — default tier per spec.
+		TypeEmbassyPoll,
 	} {
 		m[t] = QueueDefault
 	}
@@ -201,6 +204,8 @@ var taskTier = func() map[string]string {
 		// §102 Mentorship Matching (ADR-110) — low queue per spec.
 		TypeMentorGenerateEmbedding,
 		TypeMentorUpdateMeilisearch,
+		// §91 Embassy Appointment Alerter (ADR-099) — nightly sweep, low tier.
+		TypeEmbassyExpireChecks,
 	} {
 		m[t] = QueueLow
 	}
@@ -303,6 +308,10 @@ func TaskTypeCatalog() []map[string]string {
 		// §102 Mentorship Matching (ADR-110)
 		{TypeMentorGenerateEmbedding, "default", "Generate pgvector embedding for a mentor's bio"},
 		{TypeMentorUpdateMeilisearch, "default", "Sync a mentor's profile to the Meilisearch mentors index"},
+		// §91 Embassy Appointment Alerter (ADR-099)
+		{TypeEmbassyPoll, "default", "Poll a monitored embassy booking page for open appointment slots"},
+		{TypeEmbassyDispatchAlerts, "critical", "Dispatch notifications to users with a matching active appointment alert"},
+		{TypeEmbassyExpireChecks, "low", "Expire appointment alerts past their expires_at date"},
 	}
 
 	result := make([]map[string]string, len(tasks))

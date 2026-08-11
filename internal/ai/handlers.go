@@ -69,7 +69,7 @@ type Handlers struct {
 // ADR-069). The rag.Service satisfies this. When nil, HandleChat falls back
 // to a non-RAG LLM call.
 type RAGRetriever interface {
-	Retrieve(ctx context.Context, tenantID pgtype.UUID, query, language string) ([]rag.RetrievedChunk, error)
+	Retrieve(ctx context.Context, tenantID pgtype.UUID, query, language string, geoSpaceID *pgtype.UUID) ([]rag.RetrievedChunk, error)
 	FormatContext(chunks []rag.RetrievedChunk) string
 }
 
@@ -537,7 +537,7 @@ func (h *Handlers) HandleChat(w http.ResponseWriter, r *http.Request) {
 	// chat falls back to a non-RAG LLM call.
 	var ragSources []map[string]any
 	if h.ragService != nil {
-		chunks, err := h.ragService.Retrieve(r.Context(), tenantID, input.Message, "")
+		chunks, err := h.ragService.Retrieve(r.Context(), tenantID, input.Message, "", nil)
 		if err != nil {
 			slog.Warn("ai chat: RAG retrieval failed, falling back to non-RAG",
 				"error", err)

@@ -4,7 +4,7 @@ import { getTool, isToolEnabled } from '$lib/tools/registry';
 import type { Embassy, GeoSpaceOption } from '$lib/types';
 
 /**
- * Embassy Appointment Alerter — §91, ADR-088.
+ * Embassy Appointment Alerter — §91, ADR-099.
  * SSR loads the destination country list from /spaces?level=country (the
  * geo-aware pattern). When ?dest= is present, embassies for that destination
  * are fetched server-side. User-specific alerts are fetched client-side on

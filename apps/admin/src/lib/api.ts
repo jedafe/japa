@@ -1673,7 +1673,10 @@ export const serviceDirectoryAdminApi = {
 // ── V2 Functional Tools (§§90–97, §§99–101) — admin HITL review queues ───
 
 export const appointmentAlertAdminApi = {
-	listEmbassies: (params?: string) => api<unknown>(`/admin/embassies${params ? `?${params}` : ''}`),
+	listEmbassies: (params?: string) =>
+		apiRaw<{ data: unknown[]; pagination: { page: number; limit: number; total: number } }>(
+			`/admin/embassies${params ? `?${params}` : ''}`
+		),
 	createEmbassy: (body: Record<string, unknown>) => api<unknown>(`/admin/embassies`, { method: 'POST', body }),
 	updateEmbassy: (id: string, body: Record<string, unknown>) =>
 		api<unknown>(`/admin/embassies/${id}`, { method: 'PATCH', body }),
@@ -1745,6 +1748,10 @@ export const visaRoutesAdminApi = {
 
 export const arrivalChecklistAdminApi = {
 	list: (params?: string) => api<unknown>(`/admin/arrival-checklists${params ? `?${params}` : ''}`),
+	listRaw: (params?: string) =>
+		apiRaw<{ data: unknown[]; pagination: { page: number; limit: number; total: number } }>(
+			`/admin/arrival-checklists${params ? `?${params}` : ''}`
+		),
 	create: (body: Record<string, unknown>) =>
 		api<unknown>(`/admin/arrival-checklists`, { method: 'POST', body }),
 	update: (id: string, body: Record<string, unknown>) =>

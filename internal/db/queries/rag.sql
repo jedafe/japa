@@ -71,6 +71,40 @@ ORDER BY embedding <=> @query_embedding
 LIMIT @top_k;
 
 -- =====================================================================
+-- Geo-filtered HNSW cosine retrieval (§103 Geo-Filtered RAG amendment to §69).
+-- Same shape as SearchContentEmbeddings but JOINs to contents and restricts
+-- to chunks whose source content is geo-scoped to the given space or its
+-- direct children. When geo_space_id is NULL the geo filter is a no-op
+-- (backward-compatible with §69 unfiltered retrieval). Only entity_type =
+-- 'content' chunks are geo-filterable (other entity types have no
+-- geo_space_id); non-content chunks are excluded when a geo scope is set.
+-- Used by the AI agent's rag.search tool and the agent pre-search step.
+-- =====================================================================
+
+-- name: SearchContentEmbeddingsGeoFiltered :many
+SELECT
+    ce.id,
+    ce.tenant_id,
+    ce.entity_type,
+    ce.entity_id,
+    ce.chunk_index,
+    ce.chunk_text,
+    ce.language,
+    ce.created_at,
+    (1.0 - (ce.embedding <=> @query_embedding))::float8 AS similarity
+FROM content_embeddings ce
+JOIN contents c ON c.id = ce.entity_id AND ce.entity_type = 'content'
+WHERE ce.tenant_id = @tenant_id
+  AND (@language::text = '' OR ce.language = @language)
+  AND (
+      sqlc.narg(geo_space_id)::uuid IS NULL
+      OR c.geo_space_id = sqlc.narg(geo_space_id)
+      OR c.geo_space_id IN (SELECT id FROM spaces WHERE parent_id = sqlc.narg(geo_space_id))
+  )
+ORDER BY ce.embedding <=> @query_embedding
+LIMIT @top_k;
+
+-- =====================================================================
 -- Index stats for GET /admin/rag/status.
 -- =====================================================================
 

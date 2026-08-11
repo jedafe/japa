@@ -67,9 +67,11 @@ func (s *Service) SetCache(c ValkeyCache) { s.cache = c }
 const ragQueryCacheTTL = 10 * time.Minute
 
 // ragQueryCacheKey builds the Valkey key for a cached retrieval result.
-// The hash is over (tenant_id, query_embedding, language, top_k) so identical
-// queries hit the cache.
-func ragQueryCacheKey(tenantID pgtype.UUID, queryEmbedding []float32, language string, topK int32) string {
+// The hash is over (tenant_id, query_embedding, language, top_k, geo_space_id)
+// so identical queries hit the cache. geo_space_id is included so a
+// geo-filtered retrieval and an unfiltered retrieval never share a cache
+// entry (§103 Geo-Filtered RAG amendment to §69).
+func ragQueryCacheKey(tenantID pgtype.UUID, queryEmbedding []float32, language string, topK int32, geoSpaceID *pgtype.UUID) string {
 	h := sha256.New()
 	h.Write(tenantID.Bytes[:])
 	for _, f := range queryEmbedding {
@@ -83,6 +85,11 @@ func ragQueryCacheKey(tenantID pgtype.UUID, queryEmbedding []float32, language s
 	}
 	h.Write([]byte(language))
 	h.Write([]byte{byte(topK), byte(topK >> 8), byte(topK >> 16), byte(topK >> 24)})
+	if geoSpaceID != nil && geoSpaceID.Valid {
+		h.Write(geoSpaceID.Bytes[:])
+	} else {
+		h.Write([]byte{0})
+	}
 	return valkey.MustKey("rag:query:%s", hex.EncodeToString(h.Sum(nil)))
 }
 
@@ -151,9 +158,14 @@ func (s *Service) PurgeEntity(ctx context.Context, tenantID pgtype.UUID, entityT
 // and return formatted context passages. Results are cached in Valkey
 // (jc:rag:query:{hash}, 10-min TTL) for identical query embeddings.
 //
+// geoSpaceID optionally restricts retrieval to content chunks whose source
+// contents row is geo-scoped to the given space or its direct children
+// (§103 Geo-Filtered RAG amendment to §69). When geoSpaceID is nil or
+// invalid, retrieval is unfiltered (backward-compatible with §69).
+//
 // If rag.enabled is false, returns nil (the chat handler falls back to
 // non-RAG LLM call).
-func (s *Service) Retrieve(ctx context.Context, tenantID pgtype.UUID, query, language string) ([]RetrievedChunk, error) {
+func (s *Service) Retrieve(ctx context.Context, tenantID pgtype.UUID, query, language string, geoSpaceID *pgtype.UUID) ([]RetrievedChunk, error) {
 	if s.settings != nil {
 		if enabled := s.settings.GetBoolOr(ctx, tenantID, "rag.enabled", true); !enabled {
 			return nil, nil
@@ -180,8 +192,10 @@ func (s *Service) Retrieve(ctx context.Context, tenantID pgtype.UUID, query, lan
 		return nil, fmt.Errorf("rag: retrieve: empty query embedding")
 	}
 
+	geoActive := geoSpaceID != nil && geoSpaceID.Valid
+
 	// Check cache.
-	cacheKey := ragQueryCacheKey(tenantID, queryVec, language, topK)
+	cacheKey := ragQueryCacheKey(tenantID, queryVec, language, topK, geoSpaceID)
 	if s.cache != nil {
 		if cached, err := s.cache.Get(ctx, cacheKey).Result(); err == nil && cached != "" {
 			var results []RetrievedChunk
@@ -191,7 +205,12 @@ func (s *Service) Retrieve(ctx context.Context, tenantID pgtype.UUID, query, lan
 		}
 	}
 
-	results, err := s.store.Search(ctx, tenantID, queryVec, language, topK)
+	var results []RetrievedChunk
+	if geoActive {
+		results, err = s.store.SearchGeoFiltered(ctx, tenantID, queryVec, language, topK, *geoSpaceID)
+	} else {
+		results, err = s.store.Search(ctx, tenantID, queryVec, language, topK)
+	}
 	if err != nil {
 		return nil, err
 	}

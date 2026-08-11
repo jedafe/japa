@@ -82,6 +82,7 @@ type AlertRow struct {
 	NotificationChannels []string
 	CreatedAt           pgtype.Timestamptz
 	UpdatedAt           pgtype.Timestamptz
+	DeletedAt           pgtype.Timestamptz
 }
 
 // ListEmbassiesFilter holds the filter parameters for listing monitored
@@ -369,6 +370,9 @@ func (s *Store) ListUserAlerts(ctx context.Context, f ListUserAlertsFilter) ([]A
 		argIdx++
 	}
 
+	// Rule 11: never return soft-deleted rows.
+	conditions = append(conditions, "a.deleted_at IS NULL")
+
 	whereClause := strings.Join(conditions, " AND ")
 
 	limit := f.Limit
@@ -387,7 +391,7 @@ func (s *Store) ListUserAlerts(ctx context.Context, f ListUserAlertsFilter) ([]A
 SELECT a.id, a.tenant_id, a.user_id, a.destination_space_id, sp.name AS dest_space_name,
        a.embassy_slug, a.visa_category, a.date_range_start, a.date_range_end,
        a.status, a.last_checked_at, a.fired_at, a.expires_at,
-       a.notification_channels, a.created_at, a.updated_at
+       a.notification_channels, a.created_at, a.updated_at, a.deleted_at
 FROM appointment_alerts a
 LEFT JOIN spaces sp ON sp.id = a.destination_space_id
 WHERE %s
@@ -409,7 +413,7 @@ LIMIT $%d OFFSET $%d
 			&r.ID, &r.TenantID, &r.UserID, &r.DestinationSpaceID, &r.DestSpaceName,
 			&r.EmbassySlug, &r.VisaCategory, &r.DateRangeStart, &r.DateRangeEnd,
 			&r.Status, &r.LastCheckedAt, &r.FiredAt, &r.ExpiresAt,
-			&r.NotificationChannels, &r.CreatedAt, &r.UpdatedAt,
+			&r.NotificationChannels, &r.CreatedAt, &r.UpdatedAt, &r.DeletedAt,
 		); err != nil {
 			return nil, 0, fmt.Errorf("appointmentalert: scan alert row: %w", err)
 		}
@@ -438,10 +442,10 @@ func (s *Store) GetAlertByID(ctx context.Context, id, tenantID pgtype.UUID) (Ale
 SELECT a.id, a.tenant_id, a.user_id, a.destination_space_id, sp.name AS dest_space_name,
        a.embassy_slug, a.visa_category, a.date_range_start, a.date_range_end,
        a.status, a.last_checked_at, a.fired_at, a.expires_at,
-       a.notification_channels, a.created_at, a.updated_at
+       a.notification_channels, a.created_at, a.updated_at, a.deleted_at
 FROM appointment_alerts a
 LEFT JOIN spaces sp ON sp.id = a.destination_space_id
-WHERE a.id = $1 AND a.tenant_id = $2
+WHERE a.id = $1 AND a.tenant_id = $2 AND a.deleted_at IS NULL
 LIMIT 1
 `
 	var r AlertRow
@@ -449,7 +453,7 @@ LIMIT 1
 		&r.ID, &r.TenantID, &r.UserID, &r.DestinationSpaceID, &r.DestSpaceName,
 		&r.EmbassySlug, &r.VisaCategory, &r.DateRangeStart, &r.DateRangeEnd,
 		&r.Status, &r.LastCheckedAt, &r.FiredAt, &r.ExpiresAt,
-		&r.NotificationChannels, &r.CreatedAt, &r.UpdatedAt,
+		&r.NotificationChannels, &r.CreatedAt, &r.UpdatedAt, &r.DeletedAt,
 	)
 	if err != nil {
 		if err == pgx.ErrNoRows {
@@ -478,7 +482,7 @@ INSERT INTO appointment_alerts (
 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 RETURNING id, tenant_id, user_id, destination_space_id, embassy_slug, visa_category,
           date_range_start, date_range_end, status, last_checked_at, fired_at,
-          expires_at, notification_channels, created_at, updated_at
+          expires_at, notification_channels, created_at, updated_at, deleted_at
 `
 	var out AlertRow
 	err := s.pool.Writer.QueryRow(ctx, q,
@@ -488,7 +492,7 @@ RETURNING id, tenant_id, user_id, destination_space_id, embassy_slug, visa_categ
 		&out.ID, &out.TenantID, &out.UserID, &out.DestinationSpaceID,
 		&out.EmbassySlug, &out.VisaCategory, &out.DateRangeStart, &out.DateRangeEnd,
 		&out.Status, &out.LastCheckedAt, &out.FiredAt, &out.ExpiresAt,
-		&out.NotificationChannels, &out.CreatedAt, &out.UpdatedAt,
+		&out.NotificationChannels, &out.CreatedAt, &out.UpdatedAt, &out.DeletedAt,
 	)
 	if err != nil {
 		return AlertRow{}, fmt.Errorf("appointmentalert: create alert: %w", err)
@@ -548,10 +552,10 @@ func (s *Store) UpdateAlert(ctx context.Context, id, tenantID pgtype.UUID, statu
 	q := fmt.Sprintf(`
 UPDATE appointment_alerts
 SET %s
-WHERE id = $1 AND tenant_id = $2
+WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
 RETURNING id, tenant_id, user_id, destination_space_id, embassy_slug, visa_category,
           date_range_start, date_range_end, status, last_checked_at, fired_at,
-          expires_at, notification_channels, created_at, updated_at
+          expires_at, notification_channels, created_at, updated_at, deleted_at
 `, strings.Join(sets, ", "))
 
 	var out AlertRow
@@ -559,7 +563,7 @@ RETURNING id, tenant_id, user_id, destination_space_id, embassy_slug, visa_categ
 		&out.ID, &out.TenantID, &out.UserID, &out.DestinationSpaceID,
 		&out.EmbassySlug, &out.VisaCategory, &out.DateRangeStart, &out.DateRangeEnd,
 		&out.Status, &out.LastCheckedAt, &out.FiredAt, &out.ExpiresAt,
-		&out.NotificationChannels, &out.CreatedAt, &out.UpdatedAt,
+		&out.NotificationChannels, &out.CreatedAt, &out.UpdatedAt, &out.DeletedAt,
 	)
 	if err != nil {
 		if err == pgx.ErrNoRows {
@@ -570,12 +574,15 @@ RETURNING id, tenant_id, user_id, destination_space_id, embassy_slug, visa_categ
 	return out, nil
 }
 
-// DeleteAlert deletes an appointment_alerts row. Returns pgx.ErrNoRows if
-// the row does not exist (or belongs to a different tenant).
+// DeleteAlert soft-deletes an appointment_alerts row (Rule 11 — no hard
+// delete of user content in V1 app code; only account:deletion_cleanup may
+// hard-delete). Returns pgx.ErrNoRows if the row does not exist, is already
+// soft-deleted, or belongs to a different tenant.
 func (s *Store) DeleteAlert(ctx context.Context, id, tenantID pgtype.UUID) error {
 	const q = `
-DELETE FROM appointment_alerts
-WHERE id = $1 AND tenant_id = $2
+UPDATE appointment_alerts
+SET deleted_at = now(), updated_at = now(), status = 'expired'
+WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
 `
 	cmd, err := s.pool.Writer.Exec(ctx, q, id, tenantID)
 	if err != nil {
@@ -585,4 +592,27 @@ WHERE id = $1 AND tenant_id = $2
 		return pgx.ErrNoRows
 	}
 	return nil
+}
+
+// ExpireAlerts transitions all active appointment_alerts whose expires_at is
+// in the past (or whose date_range_end is in the past when expires_at is
+// NULL) from 'active' to 'expired'. Returns the number of rows transitioned.
+// Called by the embassy:expire_checks Asynq nightly sweep (§91, ADR-099).
+func (s *Store) ExpireAlerts(ctx context.Context) (int64, error) {
+	const q = `
+UPDATE appointment_alerts
+SET status = 'expired', updated_at = now()
+WHERE deleted_at IS NULL
+  AND status = 'active'
+  AND (
+      (expires_at IS NOT NULL AND expires_at < CURRENT_DATE)
+      OR
+      (expires_at IS NULL AND date_range_end IS NOT NULL AND date_range_end < CURRENT_DATE)
+  )
+`
+	cmd, err := s.pool.Writer.Exec(ctx, q)
+	if err != nil {
+		return 0, fmt.Errorf("appointmentalert: expire alerts: %w", err)
+	}
+	return cmd.RowsAffected(), nil
 }

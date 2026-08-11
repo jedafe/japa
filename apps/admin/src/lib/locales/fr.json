@@ -3049,5 +3049,19 @@
 	"forms.ph_hmac_signing_secret": "HMAC signing secret",
 	"forms.ph_eg_feedback": "ex., Feedback",
 	"forms.ph_notification_message_text": "Notification message text",
-	"ai.tools.ph_eg_aigenerate": "ex. ai.generate"
+	"ai.tools.ph_eg_aigenerate": "ex. ai.generate",
+
+	"nav.tools_appointment_alert": "Alertes Ambassade",
+	"app.tools.appointment_alert_heading": "Alertes de rendez-vous à l'ambassade",
+	"app.tools.appointment_alert_desc": "Gérer les ambassades surveillées et déclencher la vérification de disponibilité",
+	"app.tools.appointment_alert_page_title": "Alertes de rendez-vous à l'ambassade — Admin JapaConnect",
+	"app.tools.add_embassy": "Ajouter une ambassade",
+	"app.tools.poll_now": "Vérifier maintenant",
+	"app.tools.col_slug": "Slug",
+	"app.tools.col_name": "Nom",
+	"app.tools.col_destination": "Destination",
+	"app.tools.col_booking_url": "URL de réservation",
+	"app.tools.col_poll_interval": "Intervalle de vérification",
+	"app.tools.col_is_active": "Actif",
+	"app.tools.col_last_polled": "Dernière vérification"
 }
