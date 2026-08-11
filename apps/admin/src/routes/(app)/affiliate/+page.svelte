@@ -120,6 +120,10 @@
 	let showMemberStatusConfirm = $state(false);
 	let memberStatusTarget = $state<{ member: AffiliateMember; status: string } | null>(null);
 
+	// Record Commission SlideOver (POST /admin/affiliate/commissions — BUG-014)
+	let showRecordCommissionSlideOver = $state(false);
+	let newCommission = $state({ provider_id: '', content_id: '', external_commission: 0, event_description: '' });
+
 	const tabs = $derived([
 		{ value: 'providers', label: t('affiliate.providers'), icon: Link2 },
 		{ value: 'members', label: t('affiliate.members'), icon: Users },
@@ -369,6 +373,30 @@
 		}
 	}
 
+	async function recordCommission() {
+		if (!newCommission.provider_id || !newCommission.content_id || newCommission.external_commission <= 0) return;
+		saving = true;
+		try {
+			const result = await affiliateEnhancementsAdminApi.recordCommission({
+				provider_id: newCommission.provider_id,
+				content_id: newCommission.content_id,
+				external_commission: Number(newCommission.external_commission),
+				event_description: newCommission.event_description || undefined
+			});
+			if (result.ok) {
+				showRecordCommissionSlideOver = false;
+				newCommission = { provider_id: '', content_id: '', external_commission: 0, event_description: '' };
+				load();
+			} else {
+				error = result.error ?? t('common.error');
+			}
+		} catch {
+			error = t('common.error');
+		} finally {
+			saving = false;
+		}
+	}
+
 	async function updateMemberStatus(userId: string, status: string) {
 		try {
 			const result = await affiliateProgramAdminApi.updateMemberStatus(userId, { status });
@@ -585,6 +613,14 @@
 	{:else if activeTab === 'author_commissions'}
 		<Card>
 			<CardContent class="p-0">
+				{#if canManageProgram}
+					<div class="flex justify-end p-3 border-b border-border">
+						<Button onclick={() => (showRecordCommissionSlideOver = true)}>
+							<Plus size={16} />
+							{t('affiliate.record_commission', 'Record Commission')}
+						</Button>
+					</div>
+				{/if}
 				<DataTable
 					columns={commissionColumns}
 					data={filteredCommissions}
@@ -655,3 +691,38 @@
 		<Button onclick={executeMemberStatus}>{t('common.confirm', 'Confirm')}</Button>
 	</div>
 </Modal>
+
+<!-- Record Commission SlideOver (POST /admin/affiliate/commissions — BUG-014) -->
+<SlideOver bind:open={showRecordCommissionSlideOver} title={t('affiliate.record_commission', 'Record Commission')}>
+	<div class="space-y-4">
+		<div>
+			<label for="comm-provider" class="mb-1 block text-sm font-medium text-foreground-alt">{t('affiliate.provider', 'Provider')}</label>
+			<select id="comm-provider" class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" bind:value={newCommission.provider_id}>
+				<option value="">{t('affiliate.select_provider', 'Select provider…')}</option>
+				{#each providers as p}
+					<option value={p.id}>{p.name}</option>
+				{/each}
+			</select>
+		</div>
+		<div>
+			<label for="comm-content" class="mb-1 block text-sm font-medium text-foreground-alt">{t('affiliate.content_id', 'Content ID')}</label>
+			<input id="comm-content" type="text" class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm font-mono placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" placeholder="UUID" bind:value={newCommission.content_id} />
+		</div>
+		<div>
+			<label for="comm-amount" class="mb-1 block text-sm font-medium text-foreground-alt">{t('affiliate.external_commission', 'External Commission (NGN)')}</label>
+			<input id="comm-amount" type="number" min="0" step="0.01" class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" bind:value={newCommission.external_commission} />
+		</div>
+		<div>
+			<label for="comm-desc" class="mb-1 block text-sm font-medium text-foreground-alt">{t('affiliate.event_description', 'Event Description')}</label>
+			<textarea id="comm-desc" class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" rows="3" bind:value={newCommission.event_description}></textarea>
+		</div>
+	</div>
+	{#snippet footer()}
+		<div class="flex justify-end gap-2">
+			<Button variant="outline" onclick={() => (showRecordCommissionSlideOver = false)}>{t('common.cancel')}</Button>
+			<Button onclick={recordCommission} disabled={saving || !newCommission.provider_id || !newCommission.content_id || newCommission.external_commission <= 0}>
+				{saving ? t('common.saving') : t('common.record', 'Record')}
+			</Button>
+		</div>
+	{/snippet}
+</SlideOver>

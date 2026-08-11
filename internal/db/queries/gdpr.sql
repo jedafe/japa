@@ -224,6 +224,15 @@ WHERE link_id IN (
     WHERE ual.user_id = @user_id AND ual.tenant_id = @tenant_id
 );
 
+-- name: AnonymizeCouponEvents :exec
+-- Scrubs user_id PII from coupon_events recorded by the deleted user during
+-- the GDPR retention window (Section 55, ADR-014). The events themselves are
+-- retained for aggregate click/copy analytics; only the user association is
+-- cleared. Best-effort: a failure logs a warning but does not abort the erasure.
+UPDATE coupon_events
+SET user_id = NULL
+WHERE user_id = @user_id;
+
 -- name: DeleteUserTokens :exec
 UPDATE refresh_tokens
 SET revoked_at = now(), updated_at = now()
@@ -689,6 +698,45 @@ SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (SELECT * FROM ticket_comments WHERE user_id = @user_id) t;
 
 -- =====================================================================
+-- Comparison GDPR export (BUG-004)
+-- comparison_items/dimensions/values are linked to content authored by the
+-- user. The parent content rows are exported by GdprExportUserContent; these
+-- queries export the linked comparison data so the user receives the full
+-- data set they authored, per GDPR right to data portability.
+-- =====================================================================
+
+-- name: GdprExportUserComparisonItems :one
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (
+    SELECT ci.id, ci.content_id, ci.title, ci.description, ci.position, ci.created_at
+    FROM comparison_items ci
+    JOIN contents c ON c.id = ci.content_id
+    WHERE c.author_id = @user_id AND ci.tenant_id = @tenant_id
+    ORDER BY ci.created_at DESC
+) t;
+
+-- name: GdprExportUserComparisonDimensions :one
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (
+    SELECT cd.id, cd.content_id, cd.label, cd.dimension_type, cd.position, cd.created_at
+    FROM comparison_dimensions cd
+    JOIN contents c ON c.id = cd.content_id
+    WHERE c.author_id = @user_id AND cd.tenant_id = @tenant_id
+    ORDER BY cd.created_at DESC
+) t;
+
+-- name: GdprExportUserComparisonValues :one
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (
+    SELECT cv.dimension_id, cv.item_id, cv.value, cv.value_rating, cv.value_boolean, cv.created_at
+    FROM comparison_values cv
+    JOIN comparison_items ci ON ci.id = cv.item_id
+    JOIN contents c ON c.id = ci.content_id
+    WHERE c.author_id = @user_id AND cv.tenant_id = @tenant_id
+    ORDER BY cv.created_at DESC
+) t;
+
+-- =====================================================================
 -- Japa University GDPR cascade (ADR-063 / audit C2)
 -- revenue_splits and instructor_payouts are financial audit records:
 -- anonymize the instructor reference (SET NULL), never delete the row.
@@ -779,6 +827,33 @@ WHERE ci.content_id = c.id
   AND c.tenant_id = @tenant_id
   AND c.author_id = @user_id
   AND ci.deleted_at IS NULL;
+
+-- name: AnonymizeComparisonDimensionsByAuthor :execrows
+-- BUG-003: anonymize comparison_dimensions.label for content authored by the
+-- deleted user. The label is user-authored free text and can re-identify a
+-- deleted user via their comparison content. Runs before HardDeleteUser.
+UPDATE comparison_dimensions cd
+SET label = '[anonymized]'
+FROM contents c
+WHERE cd.content_id = c.id
+  AND c.tenant_id = @tenant_id
+  AND c.author_id = @user_id
+  AND cd.deleted_at IS NULL;
+
+-- name: AnonymizeComparisonValuesByAuthor :execrows
+-- BUG-003: anonymize comparison_values.value for content authored by the
+-- deleted user. The value column is user-authored free text and can
+-- re-identify a deleted user via their comparison content. Runs before
+-- HardDeleteUser.
+UPDATE comparison_values cv
+SET value = '[anonymized]',
+    value_rating = NULL,
+    value_boolean = NULL
+FROM contents c
+JOIN comparison_items ci ON ci.id = cv.item_id
+WHERE ci.content_id = c.id
+  AND cv.tenant_id = @tenant_id
+  AND c.author_id = @user_id;
 
 -- name: DeleteCustomFieldValuesByEntity :execrows
 -- BUG-018: delete custom_field_values for the user's profile entity so PII

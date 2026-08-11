@@ -12,7 +12,7 @@ import (
 )
 
 const countComparisonItemsByType = `-- name: CountComparisonItemsByType :one
-SELECT count(*)::int FROM comparison_items WHERE type_id = $1 AND tenant_id = $2
+SELECT count(*)::int FROM comparison_items WHERE type_id = $1 AND tenant_id = $2 AND deleted_at IS NULL
 `
 
 type CountComparisonItemsByTypeParams struct {
@@ -266,16 +266,21 @@ func (q *Queries) DeleteComparisonType(ctx context.Context, arg DeleteComparison
 
 const deleteComparisonTypeAccess = `-- name: DeleteComparisonTypeAccess :exec
 DELETE FROM comparison_type_access
-WHERE type_id = $1 AND user_group_id = $2
+WHERE type_id = $1
+  AND user_group_id = $2
+  AND type_id IN (
+      SELECT id FROM comparison_type_definitions WHERE id = $1 AND tenant_id = $3
+  )
 `
 
 type DeleteComparisonTypeAccessParams struct {
 	TypeID      pgtype.UUID `json:"type_id"`
 	UserGroupID pgtype.UUID `json:"user_group_id"`
+	TenantID    pgtype.UUID `json:"tenant_id"`
 }
 
 func (q *Queries) DeleteComparisonTypeAccess(ctx context.Context, arg DeleteComparisonTypeAccessParams) error {
-	_, err := q.db.Exec(ctx, deleteComparisonTypeAccess, arg.TypeID, arg.UserGroupID)
+	_, err := q.db.Exec(ctx, deleteComparisonTypeAccess, arg.TypeID, arg.UserGroupID, arg.TenantID)
 	return err
 }
 
@@ -515,6 +520,7 @@ FROM comparison_values cv
 JOIN comparison_items ci ON ci.id = cv.item_id
 JOIN comparison_dimensions cd ON cd.id = cv.dimension_id
 WHERE ci.content_id = $1 AND cv.tenant_id = $2
+  AND ci.deleted_at IS NULL AND cd.deleted_at IS NULL
 `
 
 type GetComparisonValuesByContentParams struct {
@@ -772,6 +778,7 @@ SELECT cv.dimension_id, cv.item_id, cv.tenant_id, cv.value, cv.value_rating,
 FROM comparison_values cv
 JOIN comparison_items ci ON ci.id = cv.item_id
 WHERE cv.dimension_id = $1 AND cv.tenant_id = $2
+  AND ci.deleted_at IS NULL
 `
 
 type ListComparisonValuesByDimensionParams struct {
@@ -954,7 +961,7 @@ func (q *Queries) ListComparisonsFiltered(ctx context.Context, arg ListCompariso
 
 const reorderComparisonDimensions = `-- name: ReorderComparisonDimensions :exec
 UPDATE comparison_dimensions SET position = $1
-WHERE id = $2 AND content_id = $3 AND tenant_id = $4
+WHERE id = $2 AND content_id = $3 AND tenant_id = $4 AND deleted_at IS NULL
 `
 
 type ReorderComparisonDimensionsParams struct {
@@ -976,7 +983,7 @@ func (q *Queries) ReorderComparisonDimensions(ctx context.Context, arg ReorderCo
 
 const reorderComparisonItems = `-- name: ReorderComparisonItems :exec
 UPDATE comparison_items SET position = $1
-WHERE id = $2 AND content_id = $3 AND tenant_id = $4
+WHERE id = $2 AND content_id = $3 AND tenant_id = $4 AND deleted_at IS NULL
 `
 
 type ReorderComparisonItemsParams struct {
@@ -1231,6 +1238,61 @@ func (q *Queries) UpsertComparisonValue(ctx context.Context, arg UpsertCompariso
 		arg.Value,
 		arg.ValueRating,
 		arg.ValueBoolean,
+	)
+	var i ComparisonValue
+	err := row.Scan(
+		&i.DimensionID,
+		&i.ItemID,
+		&i.TenantID,
+		&i.Value,
+		&i.ValueRating,
+		&i.ValueBoolean,
+		&i.CreatedAt,
+		&i.Metadata,
+	)
+	return i, err
+}
+
+const upsertComparisonValueWithMetadata = `-- name: UpsertComparisonValueWithMetadata :one
+INSERT INTO comparison_values (
+    dimension_id, item_id, tenant_id, value, value_rating, value_boolean, metadata
+) VALUES (
+    $1, $2, $3, $4,
+    $5, $6, $7
+)
+ON CONFLICT (dimension_id, item_id) DO UPDATE
+SET value = EXCLUDED.value,
+    value_rating = EXCLUDED.value_rating,
+    value_boolean = EXCLUDED.value_boolean,
+    metadata = COALESCE(EXCLUDED.metadata, comparison_values.metadata),
+    created_at = now()
+RETURNING dimension_id, item_id, tenant_id, value, value_rating, value_boolean, created_at, metadata
+`
+
+type UpsertComparisonValueWithMetadataParams struct {
+	DimensionID  pgtype.UUID    `json:"dimension_id"`
+	ItemID       pgtype.UUID    `json:"item_id"`
+	TenantID     pgtype.UUID    `json:"tenant_id"`
+	Value        *string        `json:"value"`
+	ValueRating  pgtype.Numeric `json:"value_rating"`
+	ValueBoolean *bool          `json:"value_boolean"`
+	Metadata     []byte         `json:"metadata"`
+}
+
+// Upserts a comparison value together with its provenance metadata JSONB
+// (Section 103 — Comparison Engine Provenance). Used by the AI Comparison
+// Engine to record the source (custom_field|rag|external|llm_knowledge),
+// source_ref, confidence, and retrieved_at timestamp for each value it
+// fills. The metadata column was added by migration 000373.
+func (q *Queries) UpsertComparisonValueWithMetadata(ctx context.Context, arg UpsertComparisonValueWithMetadataParams) (ComparisonValue, error) {
+	row := q.db.QueryRow(ctx, upsertComparisonValueWithMetadata,
+		arg.DimensionID,
+		arg.ItemID,
+		arg.TenantID,
+		arg.Value,
+		arg.ValueRating,
+		arg.ValueBoolean,
+		arg.Metadata,
 	)
 	var i ComparisonValue
 	err := row.Scan(

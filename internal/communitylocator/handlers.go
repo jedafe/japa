@@ -247,6 +247,10 @@ func (h *Handlers) HandleSubmit(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "missing_org_type", "org_type is required")
 		return
 	}
+	if !validOrgTypes[input.OrgType] {
+		writeError(w, http.StatusBadRequest, "invalid_org_type", "org_type must be one of: cultural_association, church, mosque, professional_network, student_union, informal_group, other")
+		return
+	}
 	if input.OriginCommunity == "" {
 		writeError(w, http.StatusBadRequest, "missing_origin_community", "origin_community is required")
 		return
@@ -262,6 +266,10 @@ func (h *Handlers) HandleSubmit(w http.ResponseWriter, r *http.Request) {
 
 	org, err := h.service.Submit(r.Context(), tenantID, user.UserID, input)
 	if err != nil {
+		if errors.Is(err, ErrDuplicateSlug) {
+			writeError(w, http.StatusConflict, "duplicate_slug", "An organisation with this slug already exists")
+			return
+		}
 		slog.Error("communitylocator: submit failed", "error", err)
 		writeError(w, http.StatusInternalServerError, "submit_failed", "Failed to submit community organisation")
 		return
@@ -312,7 +320,7 @@ func (h *Handlers) HandleClaim(w http.ResponseWriter, r *http.Request) {
 // HandleAdminList handles GET /admin/community-locator — moderation queue
 // listing all community organisations (any status). Admin-only
 // (community_locator.review permission checked at route registration).
-// Supports ?status=&q=&page=&limit=.
+// Supports ?status=&q=&sort=&dir=&page=&limit=.
 func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
@@ -329,13 +337,15 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 
 	status := r.URL.Query().Get("status")
 	q := r.URL.Query().Get("q")
+	sort := r.URL.Query().Get("sort")
+	dir := r.URL.Query().Get("dir")
 
 	page, limit := parsePageParams(r)
 	if limit > 200 {
 		limit = 200
 	}
 
-	orgs, total, err := h.service.AdminList(r.Context(), tenantID, status, q, page, limit)
+	orgs, total, err := h.service.AdminList(r.Context(), tenantID, status, q, sort, dir, page, limit)
 	if err != nil {
 		slog.Error("communitylocator: admin list failed", "error", err)
 		writeError(w, http.StatusInternalServerError, "admin_list_failed", "Failed to list community organisations")

@@ -55,6 +55,53 @@ func RequirePermission(resolver *RBAC, permKey string) func(http.Handler) http.H
 	}
 }
 
+// RequireAnyPermission is middleware that checks if the authenticated user
+// has at least one of the given permissions. This is used for routes that
+// accept either an "own" scope (e.g. comparison.edit_own) or an "any" scope
+// (e.g. comparison.edit_any). The handler is responsible for enforcing
+// ownership when the user only has the "own" scope. Must be used after
+// RequireAuth middleware.
+//
+// Usage:
+//
+//	r.With(rbac.RequireAnyPermission(rbacResolver, "comparison.edit_own", "comparison.edit_any")).
+//		Patch("/comparisons/{id}", handler)
+func RequireAnyPermission(resolver *RBAC, permKeys ...string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			user := auth.FromContext(r.Context())
+			if user == nil {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusUnauthorized)
+				_, _ = w.Write([]byte(`{"error":{"code":"unauthenticated","message":"Authentication required"}}`))
+
+				return
+			}
+
+			// Super admins bypass all permission checks.
+			if resolver.IsSuperAdmin(r.Context(), user.UserID, user.TenantID) {
+				ctx := context.WithValue(r.Context(), ResolverKey, resolver)
+				next.ServeHTTP(w, r.WithContext(ctx))
+
+				return
+			}
+
+			for _, key := range permKeys {
+				if resolver.HasPermission(r.Context(), user.UserID, user.TenantID, key) {
+					ctx := context.WithValue(r.Context(), ResolverKey, resolver)
+					next.ServeHTTP(w, r.WithContext(ctx))
+
+					return
+				}
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusForbidden)
+			_, _ = w.Write([]byte(`{"error":{"code":"forbidden","message":"You do not have permission to perform this action"}}`))
+		})
+	}
+}
+
 // RequirePermissionWithInvalidation is middleware that checks permission for
 // routes that modify group/role assignments (grant, revoke, moderate).
 //

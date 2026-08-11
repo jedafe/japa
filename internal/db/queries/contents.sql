@@ -172,6 +172,24 @@ RETURNING id, tenant_id, author_id, space_id, content_type, title, slug, body, b
           view_count, comment_count, share_count, reshare_count, publish_at, published_at,
           created_at, updated_at, guide_category;
 
+-- name: ReassignSingleContentAuthor :one
+-- Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Authorship Assignment)
+-- Updates a single content row's author_id and field_values in one
+-- statement. The caller (agent handler) reads the current field_values,
+-- merges the _ai_provenance.author_assigned_by / author_assignment_reason
+-- metadata in Go, and passes the full updated JSONB here. Tenant-scoped
+-- for defense-in-depth (BUG-014). Distinct from gdpr.sql's
+-- ReassignContentAuthor (:exec bulk reassign on user deletion).
+UPDATE contents
+SET author_id = @author_id, field_values = @field_values, updated_at = now()
+WHERE id = @id AND tenant_id = @tenant_id AND deleted_at IS NULL
+RETURNING id, tenant_id, author_id, space_id, content_type, title, slug, body, body_html,
+          field_values, content_hash, geo_space_id, header_image_id, featured_image_id,
+          canonical_url, meta_title, meta_description, og_image_url, seo_indexable,
+          status, visibility, is_locked, is_pinned, read_time_minutes,
+          view_count, comment_count, share_count, reshare_count, publish_at, published_at,
+          created_at, updated_at, guide_category;
+
 -- name: ScheduleContent :one
 -- Sets status='scheduled' and publish_at without touching title/body/other
 -- fields (catalog: POST /content/:id/schedule). The scheduled_publish Asynq

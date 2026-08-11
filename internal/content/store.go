@@ -55,12 +55,29 @@ type CreateContentInput struct {
 // the tenant. If the provided slug is empty, one is derived from the title.
 // The content hash and read time are computed automatically from the body.
 func (s *Service) CreateContent(ctx context.Context, tenantID pgtype.UUID, input CreateContentInput) (gen.CreateContentRow, error) {
+	return s.createContent(ctx, s.read, s.write, tenantID, input)
+}
+
+// CreateContentWithQueries creates a content row using the provided *gen.Queries
+// instance for both reads and writes. This is used by callers that need to
+// include content creation inside a larger transaction (e.g. the comparison
+// service's CreateComparison method, which must atomically create the content
+// row plus its items and dimensions). Ref: §6.2 transaction boundary, BUG-001.
+func (s *Service) CreateContentWithQueries(ctx context.Context, q *gen.Queries, tenantID pgtype.UUID, input CreateContentInput) (gen.CreateContentRow, error) {
+	return s.createContent(ctx, q, q, tenantID, input)
+}
+
+// createContent is the shared implementation behind CreateContent and
+// CreateContentWithQueries. It accepts separate read/write queries so the
+// non-transactional path can use the reader/writer split while the
+// transactional path uses a single queries instance for both.
+func (s *Service) createContent(ctx context.Context, readQ, writeQ *gen.Queries, tenantID pgtype.UUID, input CreateContentInput) (gen.CreateContentRow, error) {
 	slug := input.Slug
 	if slug == "" {
 		slug = Slugify(input.Title)
 	}
 
-	uniqueSlug, err := s.EnsureUniqueSlug(ctx, slug, tenantID)
+	uniqueSlug, err := s.ensureUniqueSlugWithQueries(ctx, readQ, slug, tenantID)
 	if err != nil {
 		return gen.CreateContentRow{}, fmt.Errorf("ensuring unique slug: %w", err)
 	}
@@ -85,7 +102,7 @@ func (s *Service) CreateContent(ctx context.Context, tenantID pgtype.UUID, input
 	// Post-as-org (ADR-062): attributing to an org requires the author be an
 	// owner/admin/editor of it. author_id remains the human, always.
 	if input.OrganizationID.Valid {
-		role, err := s.read.GetOrganizationMemberRole(ctx, gen.GetOrganizationMemberRoleParams{
+		role, err := readQ.GetOrganizationMemberRole(ctx, gen.GetOrganizationMemberRoleParams{
 			OrganizationID: input.OrganizationID,
 			UserID:         input.AuthorID,
 		})
@@ -100,7 +117,7 @@ func (s *Service) CreateContent(ctx context.Context, tenantID pgtype.UUID, input
 		}
 	}
 
-	content, err := s.write.CreateContent(ctx, gen.CreateContentParams{
+	content, err := writeQ.CreateContent(ctx, gen.CreateContentParams{
 		TenantID:        tenantID,
 		AuthorID:        input.AuthorID,
 		OrganizationID:  input.OrganizationID,
@@ -135,7 +152,7 @@ func (s *Service) CreateContent(ctx context.Context, tenantID pgtype.UUID, input
 	}
 
 	// Create the initial revision.
-	if _, err := s.write.CreateContentRevision(ctx, gen.CreateContentRevisionParams{
+	if _, err := writeQ.CreateContentRevision(ctx, gen.CreateContentRevisionParams{
 		ContentID:   content.ID,
 		FieldValues: fieldValues,
 		Title:       input.Title,
@@ -145,6 +162,13 @@ func (s *Service) CreateContent(ctx context.Context, tenantID pgtype.UUID, input
 	}); err != nil {
 		return gen.CreateContentRow{}, fmt.Errorf("creating initial revision: %w", err)
 	}
+
+	s.emitWebhook(ctx, tenantID, "content.created", map[string]any{
+		"content_id": content.ID,
+		"slug":        content.Slug,
+		"title":       content.Title,
+		"author_id":   content.AuthorID,
+	})
 
 	return content, nil
 }

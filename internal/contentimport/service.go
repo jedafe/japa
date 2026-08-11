@@ -16,7 +16,10 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math"
+	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -26,6 +29,14 @@ import (
 	"github.com/jedafe/japa/internal/db/gen"
 	"golang.org/x/net/html"
 )
+
+// maxFeedURLLength is the maximum allowed length for an import source_url.
+// Prevents DoS via extremely long URLs.
+const maxFeedURLLength = 2048
+
+// importUserAgent is the User-Agent string used when fetching RSS feeds.
+// Some providers (e.g. Medium) reject requests without a User-Agent.
+const importUserAgent = "JapaConnect-Import-Bot/1.0 (+https://japaconnect.com)"
 
 // Source type constants — the set of supported import sources (Section 65).
 const (
@@ -158,6 +169,20 @@ func (s *Service) maxItemsPerRun(ctx context.Context, tenantID pgtype.UUID) int 
 	return s.settings.GetIntOr(ctx, tenantID, "import.max_items_per_run", DefaultMaxItemsPerRun)
 }
 
+// safeInt32 converts an int to int32 clamped to [0, math.MaxInt32]. The
+// pagination inputs (page, limit) are already bounded (limit ≤ 100,
+// page ≥ 1) so this is a defensive guard against integer overflow on
+// platforms where int is 64-bit and the product could exceed MaxInt32.
+func safeInt32(n int) int32 {
+	if n < 0 {
+		return 0
+	}
+	if n > math.MaxInt32 {
+		return math.MaxInt32
+	}
+	return int32(n)
+}
+
 // StartImport creates a content_imports record with status='pending' and
 // enqueues the import:process_source task fire-and-forget (Rule 8). The
 // handler returns the import record immediately — the task runs
@@ -214,9 +239,9 @@ func (s *Service) ListUserImports(ctx context.Context, tenantID, userID pgtype.U
 	if limit > 100 {
 		limit = 100
 	}
-	offset := int32((page - 1) * limit)
+	offset := safeInt32((page - 1) * limit)
 
-	rows, err := s.store.ListUserImports(ctx, tenantID, userID, offset, int32(limit))
+	rows, err := s.store.ListUserImports(ctx, tenantID, userID, offset, safeInt32(limit))
 	if err != nil {
 		return nil, 0, err
 	}
@@ -241,9 +266,9 @@ func (s *Service) AdminListImports(ctx context.Context, tenantID pgtype.UUID, st
 	if limit > 100 {
 		limit = 100
 	}
-	offset := int32((page - 1) * limit)
+	offset := safeInt32((page - 1) * limit)
 
-	rows, err := s.store.AdminListImports(ctx, tenantID, status, offset, int32(limit))
+	rows, err := s.store.AdminListImports(ctx, tenantID, status, offset, safeInt32(limit))
 	if err != nil {
 		return nil, 0, err
 	}
@@ -302,16 +327,32 @@ func (s *Service) UpdateImportStatus(ctx context.Context, tenantID, importID pgt
 // the original URL, enqueues import:fetch_media for each imported item,
 // and updates the content_imports record with counts.
 func (s *Service) ProcessSource(ctx context.Context, tenantID, importID pgtype.UUID, sourceType, sourceURL string) error {
+	// Idempotency guard: read the current import state before marking as
+	// processing. If the import is already 'processing' (concurrent task or
+	// retry overlap) or 'completed' (already finished), skip — the catalog
+	// declares import:process_source idempotent on import ID.
+	existing, err := s.store.GetByID(ctx, tenantID, importID)
+	if err != nil {
+		return fmt.Errorf("contentimport: process: lookup import: %w", err)
+	}
+	if existing.Status == StatusProcessing {
+		slog.Info("contentimport: process: already processing, skipping (idempotent)",
+			"import_id", importID.String())
+		return nil
+	}
+	if existing.Status == StatusCompleted {
+		slog.Info("contentimport: process: already completed, skipping (idempotent)",
+			"import_id", importID.String())
+		return nil
+	}
+
 	// Mark as processing.
 	if _, err := s.store.UpdateStatus(ctx, tenantID, importID, StatusProcessing, nil, nil, nil, []byte("[]"), pgtype.Timestamptz{}); err != nil {
 		return fmt.Errorf("contentimport: process: mark processing: %w", err)
 	}
 
-	// Resolve the import's user_id so created content is attributed correctly.
-	imp, err := s.store.GetByID(ctx, tenantID, importID)
-	if err != nil {
-		return fmt.Errorf("contentimport: process: lookup import: %w", err)
-	}
+	// Use the user_id from the pre-check lookup (avoids a second read).
+	imp := existing
 
 	maxItems := s.maxItemsPerRun(ctx, tenantID)
 
@@ -320,7 +361,7 @@ func (s *Service) ProcessSource(ctx context.Context, tenantID, importID pgtype.U
 
 	switch sourceType {
 	case SourceTypeMedium, SourceTypeSubstack, SourceTypeRSS:
-		items, parseErr = s.ParseRSSFeed(sourceURL)
+		items, parseErr = s.ParseRSSFeed(ctx, sourceURL)
 	case SourceTypeZIP:
 		// ZIP export processing is deferred to v2.1 per ADR-083.
 		parseErr = fmt.Errorf("zip import not yet implemented")
@@ -344,7 +385,7 @@ func (s *Service) ProcessSource(ctx context.Context, tenantID, importID pgtype.U
 		items = items[:maxItems]
 	}
 
-	totalItems := int32(len(items))
+	totalItems := safeInt32(len(items))
 	var importedCount, failedCount int32
 	var errors []ImportError
 
@@ -468,12 +509,67 @@ func (s *Service) importSingleItem(ctx context.Context, tenantID, importID, user
 	return nil
 }
 
+// validateFeedURL checks that a feed URL is safe to fetch: it must be
+// http/https, not exceed maxFeedURLLength, and not resolve to a loopback,
+// private, or link-local address (SSRF protection). The DNS resolution is
+// done at validation time; the actual fetch may re-resolve, but this blocks
+// the common SSRF vectors (literal internal IPs, localhost hostnames).
+func validateFeedURL(rawURL string) error {
+	if rawURL == "" {
+		return fmt.Errorf("empty feed URL")
+	}
+	if len(rawURL) > maxFeedURLLength {
+		return fmt.Errorf("feed URL too long (max %d chars)", maxFeedURLLength)
+	}
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return fmt.Errorf("invalid URL: %w", err)
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return fmt.Errorf("feed URL must be http or https, got %q", parsed.Scheme)
+	}
+	host := parsed.Hostname()
+	if host == "" {
+		return fmt.Errorf("feed URL has no host")
+	}
+	// Reject literal IP addresses that are loopback/private/link-local.
+	if ip := net.ParseIP(host); ip != nil {
+		if isBlockedIP(ip) {
+			return fmt.Errorf("feed URL host is a blocked IP address")
+		}
+		return nil
+	}
+	// Resolve hostname and check all A/AAAA records.
+	ips, err := net.DefaultResolver.LookupIPAddr(context.Background(), host)
+	if err != nil {
+		return fmt.Errorf("failed to resolve feed URL host: %w", err)
+	}
+	for _, ipAddr := range ips {
+		if isBlockedIP(ipAddr.IP) {
+			return fmt.Errorf("feed URL host resolves to a blocked IP address")
+		}
+	}
+	return nil
+}
+
+// isBlockedIP returns true for loopback, private, and link-local IPs.
+func isBlockedIP(ip net.IP) bool {
+	if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
+		return true
+	}
+	// Also block unspecified (0.0.0.0).
+	if ip.IsUnspecified() {
+		return true
+	}
+	return false
+}
+
 // ParseRSSFeed fetches and parses an RSS feed, returning items with title,
 // link, content, and published date. Works with Medium, Substack, and
 // generic RSS feeds — all use the standard RSS 2.0 format.
-func (s *Service) ParseRSSFeed(url string) ([]RSSItem, error) {
-	if url == "" {
-		return nil, fmt.Errorf("empty feed URL")
+func (s *Service) ParseRSSFeed(ctx context.Context, feedURL string) ([]RSSItem, error) {
+	if err := validateFeedURL(feedURL); err != nil {
+		return nil, err
 	}
 
 	client := s.httpClient
@@ -481,7 +577,14 @@ func (s *Service) ParseRSSFeed(url string) ([]RSSItem, error) {
 		client = http.DefaultClient
 	}
 
-	resp, err := client.Get(url)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, feedURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("build feed request: %w", err)
+	}
+	req.Header.Set("User-Agent", importUserAgent)
+	req.Header.Set("Accept", "application/rss+xml, application/xml, text/xml, */*")
+
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("fetch feed: %w", err)
 	}

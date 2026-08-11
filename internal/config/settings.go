@@ -3,6 +3,7 @@ package config
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strconv"
@@ -10,9 +11,12 @@ import (
 	"sync"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db"
+	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/valkey-io/valkey-go/valkeycompat"
+	"golang.org/x/sync/singleflight"
 )
 
 const settingsCacheTTL = 5 * time.Minute
@@ -20,10 +24,14 @@ const settingsCacheTTL = 5 * time.Minute
 const settingsCachePrefix = "jc:settings:"
 
 type Settings struct {
-	db    *db.DB
-	vk    valkeycompat.Cmdable
-	mu    sync.RWMutex
-	cache map[string]cachedSetting
+	db      *db.DB
+	q       *gen.Queries
+	qWriter *gen.Queries
+	vk      valkeycompat.Cmdable
+	mu      sync.RWMutex
+	cache   map[string]cachedSetting
+	stopCh  chan struct{}
+	sf      singleflight.Group
 }
 
 type cachedSetting struct {
@@ -33,12 +41,31 @@ type cachedSetting struct {
 
 func NewSettings(database *db.DB, vkClient valkeycompat.Cmdable) *Settings {
 	s := &Settings{
-		db:    database,
-		vk:    vkClient,
-		cache: make(map[string]cachedSetting),
+		db:      database,
+		q:       db.NewQueries(database.Reader),
+		qWriter: db.NewQueries(database.Writer),
+		vk:      vkClient,
+		cache:   make(map[string]cachedSetting),
+		stopCh:  make(chan struct{}),
 	}
 	go s.cleanupLoop(60 * time.Second)
 	return s
+}
+
+// Close stops the background cleanup goroutine. Callers should call this
+// during application shutdown to avoid leaking the cleanup goroutine. It is
+// safe to call multiple times — subsequent calls are no-ops. It is also safe
+// to call on a Settings instance created without NewSettings (stopCh == nil).
+func (s *Settings) Close() {
+	if s.stopCh == nil {
+		return
+	}
+	select {
+	case <-s.stopCh:
+		// already closed
+	default:
+		close(s.stopCh)
+	}
 }
 
 func (s *Settings) GetSetting(ctx context.Context, tenantID pgtype.UUID, key string) (string, error) {
@@ -64,27 +91,48 @@ func (s *Settings) GetSetting(ctx context.Context, tenantID pgtype.UUID, key str
 		}
 	}
 
-	var value string
-	err := s.db.Reader.QueryRow(ctx,
-		`SELECT value FROM system_settings WHERE tenant_id = $1 AND key = $2`,
-		tenantID, key,
-	).Scan(&value)
+	// Coalesce concurrent misses for the same cache key so only one goroutine
+	// hits the database (BUG-006 — cache stampede prevention).
+	v, err, _ := s.sf.Do(cacheKey, func() (any, error) {
+		// Re-check L1 under singleflight — a concurrent call may have already
+		// populated the cache while we were waiting.
+		s.mu.RLock()
+		if cached, ok := s.cache[cacheKey]; ok && time.Since(cached.CreatedAt) < settingsCacheTTL {
+			s.mu.RUnlock()
+			return cached.Value, nil
+		}
+		s.mu.RUnlock()
+
+		valueBytes, err := s.q.GetSettingValue(ctx, gen.GetSettingValueParams{
+			TenantID: tenantID,
+			Key:      key,
+		})
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				slog.Debug("settings: setting not stored, using default", "key", key)
+			} else {
+				slog.Warn("settings: DB read failed", "key", key, "error", err)
+			}
+			return "", fmt.Errorf("setting %q not found: %w", key, err)
+		}
+
+		value := string(valueBytes)
+		entry := cachedSetting{Value: value, CreatedAt: time.Now()}
+		s.mu.Lock()
+		s.cache[cacheKey] = entry
+		s.mu.Unlock()
+
+		if s.vk != nil {
+			data, _ := json.Marshal(entry)
+			_ = s.vk.Set(ctx, settingsCachePrefix+cacheKey, data, settingsCacheTTL).Err()
+		}
+
+		return value, nil
+	})
 	if err != nil {
-		slog.Warn("settings: cache miss + DB miss", "key", key, "error", err)
-		return "", fmt.Errorf("setting %q not found: %w", key, err)
+		return "", err
 	}
-
-	entry := cachedSetting{Value: value, CreatedAt: time.Now()}
-	s.mu.Lock()
-	s.cache[cacheKey] = entry
-	s.mu.Unlock()
-
-	if s.vk != nil {
-		data, _ := json.Marshal(entry)
-		_ = s.vk.Set(ctx, settingsCachePrefix+cacheKey, data, settingsCacheTTL).Err()
-	}
-
-	return value, nil
+	return v.(string), nil
 }
 
 func (s *Settings) GetSettingBool(ctx context.Context, tenantID pgtype.UUID, key string) (bool, error) {
@@ -247,14 +295,13 @@ func (s *Settings) GetBoolOr(ctx context.Context, tenantID pgtype.UUID, key stri
 }
 
 // SetSetting upserts a setting value for the given tenant and key.
+// The is_public flag is preserved on conflict (not reset to false).
 func (s *Settings) SetSetting(ctx context.Context, tenantID pgtype.UUID, key, value string) error {
-	_, err := s.db.Writer.Exec(ctx,
-		`INSERT INTO system_settings (tenant_id, key, value, is_public, updated_at)
-		VALUES ($1, $2, $3, false, now())
-		ON CONFLICT (tenant_id, key) DO UPDATE SET value = $3, updated_at = now()`,
-		tenantID, key, value,
-	)
-	if err != nil {
+	if err := s.qWriter.UpsertSystemSettingPreservePublic(ctx, gen.UpsertSystemSettingPreservePublicParams{
+		TenantID: tenantID,
+		Key:      key,
+		Value:    []byte(value),
+	}); err != nil {
 		return fmt.Errorf("upserting setting %q: %w", key, err)
 	}
 
@@ -268,25 +315,20 @@ func (s *Settings) SetSetting(ctx context.Context, tenantID pgtype.UUID, key, va
 // invalidated once after commit so callers do not need to invalidate per key.
 // is_public is preserved on conflict (not overwritten).
 func (s *Settings) UpdateSettingsBatch(ctx context.Context, tenantID pgtype.UUID, settings map[string][]byte) error {
-	tx, err := s.db.Writer.Begin(ctx)
-	if err != nil {
-		return fmt.Errorf("beginning settings tx: %w", err)
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-
-	for key, valueJSON := range settings {
-		if _, err := tx.Exec(ctx, `
-			INSERT INTO system_settings (tenant_id, key, value, created_at, updated_at)
-			VALUES ($1, $2, $3::jsonb, now(), now())
-			ON CONFLICT (tenant_id, key)
-			DO UPDATE SET value = EXCLUDED.value, updated_at = now()
-		`, tenantID, key, string(valueJSON)); err != nil {
-			return fmt.Errorf("upserting setting %q: %w", key, err)
+	err := db.WithTx(ctx, s.db.Writer, func(q *gen.Queries) error {
+		for key, valueJSON := range settings {
+			if err := q.UpsertSystemSettingPreservePublic(ctx, gen.UpsertSystemSettingPreservePublicParams{
+				TenantID: tenantID,
+				Key:      key,
+				Value:    valueJSON,
+			}); err != nil {
+				return fmt.Errorf("upserting setting %q: %w", key, err)
+			}
 		}
-	}
-
-	if err := tx.Commit(ctx); err != nil {
-		return fmt.Errorf("committing settings tx: %w", err)
+		return nil
+	})
+	if err != nil {
+		return err
 	}
 
 	s.InvalidateSettings(ctx, tenantID)
@@ -298,26 +340,22 @@ func (s *Settings) UpdateSettingsBatch(ctx context.Context, tenantID pgtype.UUID
 // settings are exposed via GET /site/settings/public). On conflict, is_public
 // is updated to the new value so toggling publicity takes effect immediately.
 func (s *Settings) UpdateSettingsBatchWithPublic(ctx context.Context, tenantID pgtype.UUID, settings map[string][]byte, isPublic map[string]bool) error {
-	tx, err := s.db.Writer.Begin(ctx)
-	if err != nil {
-		return fmt.Errorf("beginning settings tx: %w", err)
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-
-	for key, valueJSON := range settings {
-		pub := isPublic[key]
-		if _, err := tx.Exec(ctx, `
-			INSERT INTO system_settings (tenant_id, key, value, is_public, created_at, updated_at)
-			VALUES ($1, $2, $3::jsonb, $4, now(), now())
-			ON CONFLICT (tenant_id, key)
-			DO UPDATE SET value = EXCLUDED.value, is_public = EXCLUDED.is_public, updated_at = now()
-		`, tenantID, key, string(valueJSON), pub); err != nil {
-			return fmt.Errorf("upserting setting %q: %w", key, err)
+	err := db.WithTx(ctx, s.db.Writer, func(q *gen.Queries) error {
+		for key, valueJSON := range settings {
+			pub := isPublic[key]
+			if err := q.UpsertSystemSetting(ctx, gen.UpsertSystemSettingParams{
+				TenantID: tenantID,
+				Key:      key,
+				Value:    valueJSON,
+				IsPublic: pub,
+			}); err != nil {
+				return fmt.Errorf("upserting setting %q: %w", key, err)
+			}
 		}
-	}
-
-	if err := tx.Commit(ctx); err != nil {
-		return fmt.Errorf("committing settings tx: %w", err)
+		return nil
+	})
+	if err != nil {
+		return err
 	}
 
 	s.InvalidateSettings(ctx, tenantID)
@@ -326,45 +364,43 @@ func (s *Settings) UpdateSettingsBatchWithPublic(ctx context.Context, tenantID p
 
 // GetPublicSettings returns all settings marked as public for the given tenant.
 func (s *Settings) GetPublicSettings(ctx context.Context, tenantID pgtype.UUID) (map[string]any, error) {
-	rows, err := s.db.Reader.Query(ctx,
-		`SELECT key, value FROM system_settings WHERE tenant_id = $1 AND is_public = true`,
-		tenantID,
-	)
+	rows, err := s.q.GetPublicSettings(ctx, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("querying public settings: %w", err)
 	}
-	defer rows.Close()
 
-	settings := make(map[string]any)
-	for rows.Next() {
-		var key, value string
-		if err := rows.Scan(&key, &value); err != nil {
-			return nil, fmt.Errorf("scanning public setting: %w", err)
-		}
+	settings := make(map[string]any, len(rows))
+	for _, row := range rows {
 		var parsed any
-		if json.Unmarshal([]byte(value), &parsed) == nil {
-			settings[key] = parsed
+		if json.Unmarshal(row.Value, &parsed) == nil {
+			settings[row.Key] = parsed
 		} else {
-			settings[key] = value
+			settings[row.Key] = string(row.Value)
 		}
 	}
 
-	return settings, rows.Err()
+	return settings, nil
 }
 
 // cleanupLoop periodically evicts expired L1 cache entries to prevent memory leaks.
+// It exits when Close() is called so the goroutine does not leak.
 func (s *Settings) cleanupLoop(maxAge time.Duration) {
 	ticker := time.NewTicker(maxAge)
 	defer ticker.Stop()
 
-	for range ticker.C {
-		now := time.Now()
-		s.mu.Lock()
-		for key, entry := range s.cache {
-			if now.Sub(entry.CreatedAt) > settingsCacheTTL {
-				delete(s.cache, key)
+	for {
+		select {
+		case <-s.stopCh:
+			return
+		case <-ticker.C:
+			now := time.Now()
+			s.mu.Lock()
+			for key, entry := range s.cache {
+				if now.Sub(entry.CreatedAt) > settingsCacheTTL {
+					delete(s.cache, key)
+				}
 			}
+			s.mu.Unlock()
 		}
-		s.mu.Unlock()
 	}
 }

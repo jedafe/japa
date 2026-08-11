@@ -95,9 +95,16 @@ type OrgRow struct {
 	SubmitterName        *string
 	ReviewedBy           pgtype.UUID
 	ReviewedAt           pgtype.Timestamptz
-	IsJapabotIndexed     bool
-	CreatedAt            pgtype.Timestamptz
-	UpdatedAt            pgtype.Timestamptz
+	// ADR-088 universal AI content generation columns.
+	AiGenerated     bool
+	AiModel         *string
+	AiPromptHash    *string
+	HitlReviewedBy  pgtype.UUID
+	HitlReviewedAt  pgtype.Timestamptz
+	HitlReviewNotes *string
+	IsJapabotIndexed bool
+	CreatedAt        pgtype.Timestamptz
+	UpdatedAt        pgtype.Timestamptz
 }
 
 // CreateOrgInput holds the fields for inserting a new community
@@ -120,6 +127,10 @@ type CreateOrgInput struct {
 	JapaconnectOrgID     pgtype.UUID
 	IsCommunitySubmitted bool
 	SubmittedBy          pgtype.UUID
+	// ADR-088 AI generation metadata (defaults to ai_generated=false for
+	// community-submitted orgs).
+	AiGenerated bool
+	AiModel     *string
 }
 
 // CreateOrg inserts a new community_organisations row. The row is created
@@ -131,10 +142,12 @@ INSERT INTO community_organisations (
     destination_space_id, city_space_id, address, latitude, longitude,
     website_url, meeting_frequency, contact_info,
     japaconnect_space_id, japaconnect_org_id,
-    is_community_submitted, submitted_by, status, claim_status
+    is_community_submitted, submitted_by, status, claim_status,
+    ai_generated, ai_model
 ) VALUES (
     $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
-    $11, $12, $13, $14, $15, $16, $17, 'pending', 'unclaimed'
+    $11, $12, $13, $14, $15, $16, $17, 'pending', 'unclaimed',
+    $18, $19
 )
 RETURNING id
 `
@@ -145,6 +158,7 @@ RETURNING id
 		in.WebsiteURL, in.MeetingFrequency, in.ContactInfo,
 		in.JapaconnectSpaceID, in.JapaconnectOrgID,
 		in.IsCommunitySubmitted, in.SubmittedBy,
+		in.AiGenerated, in.AiModel,
 	).Scan(&id)
 	if err != nil {
 		return pgtype.UUID{}, fmt.Errorf("communitylocator: create org: %w", err)
@@ -248,7 +262,10 @@ SELECT co.id, co.tenant_id, co.name, co.slug, co.org_type, co.origin_community,
        co.contact_info, co.japaconnect_space_id, co.japaconnect_org_id,
        co.claim_status, co.is_verified, co.is_active, co.is_community_submitted,
        co.status, co.submitted_by, u.username AS submitter_name,
-       co.reviewed_by, co.reviewed_at, co.is_japabot_indexed,
+       co.reviewed_by, co.reviewed_at,
+       co.ai_generated, co.ai_model, co.ai_prompt_hash,
+       co.hitl_reviewed_by, co.hitl_reviewed_at, co.hitl_review_notes,
+       co.is_japabot_indexed,
        co.created_at, co.updated_at
 FROM community_organisations co
 LEFT JOIN spaces ds ON ds.id = co.destination_space_id
@@ -277,7 +294,10 @@ LIMIT $%d OFFSET $%d
 			&r.ContactInfo, &r.JapaconnectSpaceID, &r.JapaconnectOrgID,
 			&r.ClaimStatus, &r.IsVerified, &r.IsActive, &r.IsCommunitySubmitted,
 			&r.Status, &r.SubmittedBy, &r.SubmitterName,
-			&r.ReviewedBy, &r.ReviewedAt, &r.IsJapabotIndexed,
+			&r.ReviewedBy, &r.ReviewedAt,
+			&r.AiGenerated, &r.AiModel, &r.AiPromptHash,
+			&r.HitlReviewedBy, &r.HitlReviewedAt, &r.HitlReviewNotes,
+			&r.IsJapabotIndexed,
 			&r.CreatedAt, &r.UpdatedAt,
 		); err != nil {
 			return nil, 0, fmt.Errorf("communitylocator: scan org row: %w", err)
@@ -311,7 +331,10 @@ SELECT co.id, co.tenant_id, co.name, co.slug, co.org_type, co.origin_community,
        co.contact_info, co.japaconnect_space_id, co.japaconnect_org_id,
        co.claim_status, co.is_verified, co.is_active, co.is_community_submitted,
        co.status, co.submitted_by, u.username AS submitter_name,
-       co.reviewed_by, co.reviewed_at, co.is_japabot_indexed,
+       co.reviewed_by, co.reviewed_at,
+       co.ai_generated, co.ai_model, co.ai_prompt_hash,
+       co.hitl_reviewed_by, co.hitl_reviewed_at, co.hitl_review_notes,
+       co.is_japabot_indexed,
        co.created_at, co.updated_at
 FROM community_organisations co
 LEFT JOIN spaces ds ON ds.id = co.destination_space_id
@@ -329,7 +352,10 @@ LIMIT 1
 		&r.ContactInfo, &r.JapaconnectSpaceID, &r.JapaconnectOrgID,
 		&r.ClaimStatus, &r.IsVerified, &r.IsActive, &r.IsCommunitySubmitted,
 		&r.Status, &r.SubmittedBy, &r.SubmitterName,
-		&r.ReviewedBy, &r.ReviewedAt, &r.IsJapabotIndexed,
+		&r.ReviewedBy, &r.ReviewedAt,
+		&r.AiGenerated, &r.AiModel, &r.AiPromptHash,
+		&r.HitlReviewedBy, &r.HitlReviewedAt, &r.HitlReviewNotes,
+		&r.IsJapabotIndexed,
 		&r.CreatedAt, &r.UpdatedAt,
 	)
 	if err != nil {
@@ -351,7 +377,10 @@ SELECT co.id, co.tenant_id, co.name, co.slug, co.org_type, co.origin_community,
        co.contact_info, co.japaconnect_space_id, co.japaconnect_org_id,
        co.claim_status, co.is_verified, co.is_active, co.is_community_submitted,
        co.status, co.submitted_by, u.username AS submitter_name,
-       co.reviewed_by, co.reviewed_at, co.is_japabot_indexed,
+       co.reviewed_by, co.reviewed_at,
+       co.ai_generated, co.ai_model, co.ai_prompt_hash,
+       co.hitl_reviewed_by, co.hitl_reviewed_at, co.hitl_review_notes,
+       co.is_japabot_indexed,
        co.created_at, co.updated_at
 FROM community_organisations co
 LEFT JOIN spaces ds ON ds.id = co.destination_space_id
@@ -369,7 +398,10 @@ LIMIT 1
 		&r.ContactInfo, &r.JapaconnectSpaceID, &r.JapaconnectOrgID,
 		&r.ClaimStatus, &r.IsVerified, &r.IsActive, &r.IsCommunitySubmitted,
 		&r.Status, &r.SubmittedBy, &r.SubmitterName,
-		&r.ReviewedBy, &r.ReviewedAt, &r.IsJapabotIndexed,
+		&r.ReviewedBy, &r.ReviewedAt,
+		&r.AiGenerated, &r.AiModel, &r.AiPromptHash,
+		&r.HitlReviewedBy, &r.HitlReviewedAt, &r.HitlReviewNotes,
+		&r.IsJapabotIndexed,
 		&r.CreatedAt, &r.UpdatedAt,
 	)
 	if err != nil {
@@ -382,12 +414,13 @@ LIMIT 1
 }
 
 // InitiateClaim sets claim_status to 'pending' on a community organisation,
-// beginning the claim flow.
+// beginning the claim flow. Only published, unclaimed orgs can be claimed.
 func (s *Store) InitiateClaim(ctx context.Context, id, tenantID pgtype.UUID) error {
 	const q = `
 UPDATE community_organisations
 SET claim_status = 'pending', updated_at = now()
 WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
+  AND status = 'published' AND claim_status = 'unclaimed'
 `
 	cmd, err := s.pool.Writer.Exec(ctx, q, id, tenantID)
 	if err != nil {
@@ -404,8 +437,34 @@ type AdminListFilter struct {
 	TenantID pgtype.UUID
 	Status   string // optional
 	Q        string // optional: search name
+	Sort     string // optional: column name (allow-listed)
+	Dir      string // optional: "asc" or "desc" (default "desc")
 	Limit    int32
 	Offset   int32
+}
+
+// adminSortColumns is the allow-list of sortable column names for the admin
+// list. Values map to the qualified SQL column expression. This prevents SQL
+// injection through the sort parameter.
+var adminSortColumns = map[string]string{
+	"name":        "co.name",
+	"created_at":  "co.created_at",
+	"updated_at":  "co.updated_at",
+	"status":      "co.status",
+	"org_type":    "co.org_type",
+	"origin_community": "co.origin_community",
+	"destination_space_name": "ds.name",
+	"claim_status": "co.claim_status",
+	"is_verified":  "co.is_verified",
+}
+
+// adminSortDir returns "ASC" or "DESC" for the given direction string.
+// Defaults to "DESC" for any non-"asc" value.
+func adminSortDir(dir string) string {
+	if strings.EqualFold(dir, "asc") {
+		return "ASC"
+	}
+	return "DESC"
 }
 
 // AdminList returns all community organisations (any status) for the
@@ -448,6 +507,12 @@ func (s *Store) AdminList(ctx context.Context, f AdminListFilter) ([]OrgRow, int
 		offset = 0
 	}
 
+	// Build ORDER BY from allow-listed sort column + direction.
+	orderExpr := "co.created_at DESC" // default
+	if col, ok := adminSortColumns[f.Sort]; ok {
+		orderExpr = col + " " + adminSortDir(f.Dir)
+	}
+
 	listQuery := fmt.Sprintf(`
 SELECT co.id, co.tenant_id, co.name, co.slug, co.org_type, co.origin_community,
        co.destination_space_id, ds.name AS dest_space_name, ds.geo_code AS dest_space_code,
@@ -456,16 +521,19 @@ SELECT co.id, co.tenant_id, co.name, co.slug, co.org_type, co.origin_community,
        co.contact_info, co.japaconnect_space_id, co.japaconnect_org_id,
        co.claim_status, co.is_verified, co.is_active, co.is_community_submitted,
        co.status, co.submitted_by, u.username AS submitter_name,
-       co.reviewed_by, co.reviewed_at, co.is_japabot_indexed,
+       co.reviewed_by, co.reviewed_at,
+       co.ai_generated, co.ai_model, co.ai_prompt_hash,
+       co.hitl_reviewed_by, co.hitl_reviewed_at, co.hitl_review_notes,
+       co.is_japabot_indexed,
        co.created_at, co.updated_at
 FROM community_organisations co
 LEFT JOIN spaces ds ON ds.id = co.destination_space_id
 LEFT JOIN spaces cs ON cs.id = co.city_space_id
 LEFT JOIN users u ON u.id = co.submitted_by
 WHERE %s
-ORDER BY co.created_at DESC
+ORDER BY %s
 LIMIT $%d OFFSET $%d
-`, whereClause, argIdx, argIdx+1)
+`, whereClause, orderExpr, argIdx, argIdx+1)
 	args = append(args, limit, offset)
 
 	rows, err := s.pool.Reader.Query(ctx, listQuery, args...)
@@ -485,7 +553,10 @@ LIMIT $%d OFFSET $%d
 			&r.ContactInfo, &r.JapaconnectSpaceID, &r.JapaconnectOrgID,
 			&r.ClaimStatus, &r.IsVerified, &r.IsActive, &r.IsCommunitySubmitted,
 			&r.Status, &r.SubmittedBy, &r.SubmitterName,
-			&r.ReviewedBy, &r.ReviewedAt, &r.IsJapabotIndexed,
+			&r.ReviewedBy, &r.ReviewedAt,
+			&r.AiGenerated, &r.AiModel, &r.AiPromptHash,
+			&r.HitlReviewedBy, &r.HitlReviewedAt, &r.HitlReviewNotes,
+			&r.IsJapabotIndexed,
 			&r.CreatedAt, &r.UpdatedAt,
 		); err != nil {
 			return nil, 0, fmt.Errorf("communitylocator: admin scan org row: %w", err)
@@ -510,12 +581,13 @@ WHERE %s
 }
 
 // ApproveOrg publishes a community organisation: sets status='published',
-// records the reviewer and review timestamp.
+// records the reviewer and review timestamp. Only pending orgs can be
+// approved (prevents re-approving already-published or archived orgs).
 func (s *Store) ApproveOrg(ctx context.Context, id, tenantID, reviewedBy pgtype.UUID) error {
 	const q = `
 UPDATE community_organisations
 SET status = 'published', reviewed_by = $3, reviewed_at = now(), updated_at = now()
-WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
+WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL AND status = 'pending'
 `
 	cmd, err := s.pool.Writer.Exec(ctx, q, id, tenantID, reviewedBy)
 	if err != nil {
@@ -527,12 +599,13 @@ WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
 	return nil
 }
 
-// VerifyOrg marks a community organisation as verified by an admin.
+// VerifyOrg marks a community organisation as verified by an admin. Only
+// published orgs can be verified (prevents verifying pending/archived orgs).
 func (s *Store) VerifyOrg(ctx context.Context, id, tenantID pgtype.UUID) error {
 	const q = `
 UPDATE community_organisations
 SET is_verified = true, updated_at = now()
-WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
+WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL AND status = 'published'
 `
 	cmd, err := s.pool.Writer.Exec(ctx, q, id, tenantID)
 	if err != nil {
@@ -546,7 +619,7 @@ WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
 
 // ResolveClaim resolves a pending claim on a community organisation.
 // Approving sets claim_status to 'claimed'; rejecting resets it to
-// 'unclaimed'.
+// 'unclaimed'. Only orgs with claim_status='pending' can be resolved.
 func (s *Store) ResolveClaim(ctx context.Context, id, tenantID pgtype.UUID, approve bool) error {
 	status := ClaimStatusUnclaimed
 	if approve {
@@ -555,7 +628,7 @@ func (s *Store) ResolveClaim(ctx context.Context, id, tenantID pgtype.UUID, appr
 	const q = `
 UPDATE community_organisations
 SET claim_status = $3, updated_at = now()
-WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
+WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL AND claim_status = 'pending'
 `
 	cmd, err := s.pool.Writer.Exec(ctx, q, id, tenantID, status)
 	if err != nil {

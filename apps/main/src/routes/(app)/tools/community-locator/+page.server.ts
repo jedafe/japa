@@ -9,6 +9,10 @@ import type { CommunityOrgWithAi, GeoSpaceOption } from '$lib/types';
  * param is present, the community orgs for that destination are fetched
  * server-side so the page renders with content immediately.
  *
+ * The feature flag (community_locator.enabled) is checked via the root
+ * layout's siteSettings so the page can show a "tool unavailable" state
+ * without making API calls to a disabled endpoint (BUG-014).
+ *
  * API: GET /spaces?level=country — destination countries (geo selector).
  *      GET /community-locator?dest={space_id} — community orgs for a dest.
  *      GET /community-locator/{slug} — single org (client-side, on demand).
@@ -21,6 +25,15 @@ import type { CommunityOrgWithAi, GeoSpaceOption } from '$lib/types';
 export const load: PageServerLoad = async (event) => {
 	const ctx = apiContext(event);
 	const authed = !!event.locals.user;
+
+	// Check the feature flag via the root layout's siteSettings (BUG-014).
+	// The /spaces endpoint is not gated by community_locator, so checking
+	// its 404 would never set disabled=true. Read the flag directly instead.
+	const { siteSettings } = await event.parent();
+	const enabled = siteSettings?.['community_locator.enabled'] === true;
+	if (!enabled) {
+		return { destinations: [], orgs: [], initialDestId: null, disabled: true, authed };
+	}
 
 	// Destination list — the geo-aware selector source (Rule 16).
 	let destinations: GeoSpaceOption[] = [];

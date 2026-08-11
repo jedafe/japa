@@ -232,27 +232,27 @@ const (
 // EventError events on the channel, not returned here.
 func (h *AgentHandler) HandleAgentRequest(ctx context.Context, userID, tenantID pgtype.UUID, prompt string) (<-chan AgentEvent, error) {
 	if h == nil {
-		return nil, fmt.Errorf("ai: agent handler not configured")
+		return nil, errAgentNotConfigured
 	}
 	if prompt == "" {
-		return nil, fmt.Errorf("ai: prompt is required")
+		return nil, errAgentEmptyPrompt
 	}
 
 	// --- Task 5.10: agent.enabled toggle ---
 	if !h.getBoolSetting(ctx, tenantID, "agent.enabled", true) {
-		return nil, fmt.Errorf("ai: agent is disabled")
+		return nil, errAgentDisabled
 	}
 
 	// --- Task 5.05: agent.use RBAC permission ---
 	if h.perms != nil {
 		if !h.perms.HasPermission(ctx, userID, tenantID, "agent.use") {
-			return nil, fmt.Errorf("ai: user lacks agent.use permission")
+			return nil, errAgentNoPermission
 		}
 	}
 
 	// --- Task 5.11: rate limiting (jc:agent:rate:{user_id}:{date}) ---
 	if err := h.checkRateLimit(ctx, userID, tenantID); err != nil {
-		return nil, err
+		return nil, errAgentRateLimited
 	}
 
 	// --- Task 5.05: resolve geo context from users.current_geo_space_id ---

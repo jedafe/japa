@@ -10,11 +10,14 @@ package communitylocator
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/jedafe/japa/internal/config"
@@ -50,9 +53,16 @@ type OrgDTO struct {
 	SubmitterName        string  `json:"submitter_name,omitempty"`
 	ReviewedBy           string  `json:"reviewed_by,omitempty"`
 	ReviewedAt           string  `json:"reviewed_at,omitempty"`
-	IsJapabotIndexed     bool    `json:"is_japabot_indexed"`
-	CreatedAt            string  `json:"created_at"`
-	UpdatedAt            string  `json:"updated_at"`
+	// ADR-088 universal AI content generation metadata.
+	AiGenerated      bool   `json:"ai_generated"`
+	AiModel          string `json:"ai_model,omitempty"`
+	AiPromptHash     string `json:"ai_prompt_hash,omitempty"`
+	HitlReviewedBy   string `json:"hitl_reviewed_by,omitempty"`
+	HitlReviewedAt   string `json:"hitl_reviewed_at,omitempty"`
+	HitlReviewNotes  string `json:"hitl_review_notes,omitempty"`
+	IsJapabotIndexed bool   `json:"is_japabot_indexed"`
+	CreatedAt        string `json:"created_at"`
+	UpdatedAt        string `json:"updated_at"`
 }
 
 // SubmitInput is the request body for POST /community-locator.
@@ -96,6 +106,21 @@ func (s *Service) Enabled(ctx context.Context, tenantID pgtype.UUID) bool {
 	return s.settings.GetBoolOr(ctx, tenantID, "community_locator.enabled", false)
 }
 
+// ErrDuplicateSlug is returned when a submission's slug already exists for
+// the tenant. The handler maps this to 409 duplicate_slug.
+var ErrDuplicateSlug = errors.New("duplicate slug")
+
+// validOrgTypes is the allow-list of organisation types per §101.
+var validOrgTypes = map[string]bool{
+	"cultural_association":  true,
+	"church":                true,
+	"mosque":                true,
+	"professional_network":  true,
+	"student_union":         true,
+	"informal_group":        true,
+	"other":                 true,
+}
+
 // Submit creates a new community organisation submission. The row is
 // created with status='pending' (awaiting admin review). Auth required
 // (community_locator.submit permission checked at route level).
@@ -108,6 +133,9 @@ func (s *Service) Submit(ctx context.Context, tenantID, userID pgtype.UUID, inpu
 	}
 	if input.OrgType == "" {
 		return OrgDTO{}, fmt.Errorf("org_type is required")
+	}
+	if !validOrgTypes[input.OrgType] {
+		return OrgDTO{}, fmt.Errorf("invalid org_type: %s", input.OrgType)
 	}
 	if input.OriginCommunity == "" {
 		return OrgDTO{}, fmt.Errorf("origin_community is required")
@@ -178,6 +206,12 @@ func (s *Service) Submit(ctx context.Context, tenantID, userID pgtype.UUID, inpu
 
 	id, err := s.store.CreateOrg(ctx, in)
 	if err != nil {
+		// Detect unique constraint violation on (tenant_id, slug) and return
+		// a typed error so the handler can map it to 409 duplicate_slug.
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return OrgDTO{}, ErrDuplicateSlug
+		}
 		return OrgDTO{}, fmt.Errorf("communitylocator: submit: %w", err)
 	}
 
@@ -256,7 +290,7 @@ func (s *Service) InitiateClaim(ctx context.Context, id, tenantID pgtype.UUID) e
 
 // AdminList returns all community organisations (any status) for the
 // moderation queue.
-func (s *Service) AdminList(ctx context.Context, tenantID pgtype.UUID, status, q string, page, limit int32) ([]OrgDTO, int64, error) {
+func (s *Service) AdminList(ctx context.Context, tenantID pgtype.UUID, status, q, sort, dir string, page, limit int32) ([]OrgDTO, int64, error) {
 	if limit <= 0 {
 		limit = 20
 	}
@@ -269,6 +303,8 @@ func (s *Service) AdminList(ctx context.Context, tenantID pgtype.UUID, status, q
 		TenantID: tenantID,
 		Status:   status,
 		Q:        q,
+		Sort:     sort,
+		Dir:      dir,
 		Limit:    limit,
 		Offset:   offset,
 	})
@@ -346,10 +382,12 @@ func rowToDTO(r OrgRow) OrgDTO {
 		IsActive:             r.IsActive,
 		IsCommunitySubmitted: r.IsCommunitySubmitted,
 		Status:               r.Status,
+		AiGenerated:          r.AiGenerated,
 		IsJapabotIndexed:     r.IsJapabotIndexed,
 		CreatedAt:            formatTs(r.CreatedAt),
 		UpdatedAt:            formatTs(r.UpdatedAt),
 		ReviewedAt:           formatTs(r.ReviewedAt),
+		HitlReviewedAt:       formatTs(r.HitlReviewedAt),
 	}
 	if r.DestinationSpaceID.Valid {
 		dto.DestinationSpaceID = r.DestinationSpaceID.String()
@@ -402,6 +440,19 @@ func rowToDTO(r OrgRow) OrgDTO {
 	if r.ReviewedBy.Valid {
 		dto.ReviewedBy = r.ReviewedBy.String()
 	}
+	// ADR-088 AI generation metadata.
+	if r.AiModel != nil {
+		dto.AiModel = *r.AiModel
+	}
+	if r.AiPromptHash != nil {
+		dto.AiPromptHash = *r.AiPromptHash
+	}
+	if r.HitlReviewedBy.Valid {
+		dto.HitlReviewedBy = r.HitlReviewedBy.String()
+	}
+	if r.HitlReviewNotes != nil {
+		dto.HitlReviewNotes = *r.HitlReviewNotes
+	}
 	return dto
 }
 
@@ -413,11 +464,26 @@ func formatTs(t pgtype.Timestamptz) string {
 	return t.Time.UTC().Format(time.RFC3339)
 }
 
-// slugify produces a URL-safe slug from a name. Used as a fallback when
-// the submitter does not provide an explicit slug.
+// slugInvalidChars matches any character that is not a lowercase letter,
+// digit, or hyphen. These are stripped during slug normalization.
+var slugInvalidChars = regexp.MustCompile(`[^a-z0-9-]+`)
+
+// slugMultipleHyphens matches consecutive hyphens, replaced with a single one.
+var slugMultipleHyphens = regexp.MustCompile(`-{2,}`)
+
+// slugLeadingTrailingHyphens matches hyphens at the start or end of a string.
+var slugLeadingTrailingHyphens = regexp.MustCompile(`^-+|-+$`)
+
+// slugify produces a URL-safe slug from a name: lowercase, hyphenated,
+// alphanumeric only. Used as a fallback when the submitter does not provide
+// an explicit slug. Matches the content.Slugify pattern.
 func slugify(s string) string {
 	s = strings.ToLower(strings.TrimSpace(s))
-	s = strings.ReplaceAll(s, " ", "-")
-	s = strings.ReplaceAll(s, "/", "-")
+	s = slugInvalidChars.ReplaceAllString(s, "-")
+	s = slugMultipleHyphens.ReplaceAllString(s, "-")
+	s = slugLeadingTrailingHyphens.ReplaceAllString(s, "")
+	if s == "" {
+		return "untitled"
+	}
 	return s
 }

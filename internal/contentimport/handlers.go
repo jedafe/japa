@@ -21,7 +21,9 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -86,6 +88,30 @@ func scanUUIDParam(w http.ResponseWriter, r *http.Request, name string) (pgtype.
 		return pgtype.UUID{}, false
 	}
 	return id, true
+}
+
+// validateSourceURL checks that a source_url is a valid http/https URL
+// within the maxFeedURLLength limit. Returns an error string (empty when
+// valid). This is the handler-level guard; the service layer also calls
+// validateFeedURL before fetching (SSRF protection with DNS resolution).
+func validateSourceURL(raw string) string {
+	if raw == "" {
+		return ""
+	}
+	if len(raw) > maxFeedURLLength {
+		return "source_url is too long"
+	}
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		return "source_url is not a valid URL"
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return "source_url must use http or https"
+	}
+	if strings.TrimSpace(parsed.Hostname()) == "" {
+		return "source_url must have a hostname"
+	}
+	return ""
 }
 
 // parsePagination extracts page and limit from query parameters with sane
@@ -164,6 +190,11 @@ func (h *Handlers) HandleStartImport(w http.ResponseWriter, r *http.Request) {
 	if req.SourceType != SourceTypeZIP && req.SourceURL == "" {
 		writeError(w, http.StatusBadRequest, "missing_source_url",
 			"source_url is required for RSS-based imports")
+		return
+	}
+
+	if msg := validateSourceURL(req.SourceURL); msg != "" {
+		writeError(w, http.StatusBadRequest, "invalid_source_url", msg)
 		return
 	}
 
@@ -335,6 +366,11 @@ func (h *Handlers) HandleAdminStartImport(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	if msg := validateSourceURL(req.SourceURL); msg != "" {
+		writeError(w, http.StatusBadRequest, "invalid_source_url", msg)
+		return
+	}
+
 	imp, err := h.service.StartImport(r.Context(), tenantID, targetUserID, req.SourceType, req.SourceURL)
 	if err != nil {
 		slog.Error("contentimport: admin start failed", "error", err)
@@ -427,18 +463,18 @@ func (h *Handlers) HandleAdminRetryImport(w http.ResponseWriter, r *http.Request
 
 // importResponse is the JSON representation of a content_imports row.
 type importResponse struct {
-	ID            string   `json:"id"`
-	TenantID      string   `json:"tenant_id"`
-	UserID        string   `json:"user_id"`
-	SourceType    string   `json:"source_type"`
-	SourceURL     *string  `json:"source_url"`
-	Status        string   `json:"status"`
-	TotalItems    int32    `json:"total_items"`
-	ImportedCount int32    `json:"imported_count"`
-	FailedCount   int32    `json:"failed_count"`
-	ErrorLog      []byte   `json:"error_log"`
-	CreatedAt     string   `json:"created_at"`
-	CompletedAt   *string  `json:"completed_at"`
+	ID            string          `json:"id"`
+	TenantID      string          `json:"tenant_id"`
+	UserID        string          `json:"user_id"`
+	SourceType    string          `json:"source_type"`
+	SourceURL     *string         `json:"source_url"`
+	Status        string          `json:"status"`
+	TotalItems    int32           `json:"total_items"`
+	ImportedCount int32           `json:"imported_count"`
+	FailedCount   int32           `json:"failed_count"`
+	ErrorLog      json.RawMessage `json:"error_log"`
+	CreatedAt     string          `json:"created_at"`
+	CompletedAt   *string         `json:"completed_at"`
 }
 
 // adminImportResponse extends importResponse with the username of the
@@ -460,7 +496,7 @@ func serializeImport(imp gen.ContentImport) importResponse {
 		TotalItems:    imp.TotalItems,
 		ImportedCount: imp.ImportedCount,
 		FailedCount:   imp.FailedCount,
-		ErrorLog:      imp.ErrorLog,
+		ErrorLog:      normalizeErrorLog(imp.ErrorLog),
 		CreatedAt:     formatTimestamptz(imp.CreatedAt),
 	}
 	if imp.CompletedAt.Valid {
@@ -495,7 +531,7 @@ func serializeAdminImports(rows []gen.AdminListContentImportsRow) []adminImportR
 				TotalItems:    row.TotalItems,
 				ImportedCount: row.ImportedCount,
 				FailedCount:   row.FailedCount,
-				ErrorLog:      row.ErrorLog,
+				ErrorLog:      normalizeErrorLog(row.ErrorLog),
 				CreatedAt:     formatTimestamptz(row.CreatedAt),
 			},
 			Username: row.Username,
@@ -507,6 +543,20 @@ func serializeAdminImports(rows []gen.AdminListContentImportsRow) []adminImportR
 		result = append(result, resp)
 	}
 	return result
+}
+
+// normalizeErrorLog converts a sqlc-generated []byte error_log (JSONB)
+// into a json.RawMessage so it serializes as raw JSON in the HTTP response,
+// not as a base64-encoded string. Falls back to "[]" when the input is
+// nil or invalid JSON.
+func normalizeErrorLog(raw []byte) json.RawMessage {
+	if len(raw) == 0 {
+		return json.RawMessage("[]")
+	}
+	if json.Valid(raw) {
+		return json.RawMessage(raw)
+	}
+	return json.RawMessage("[]")
 }
 
 // formatTimestamptz formats a pgtype.Timestamptz as RFC 3339 UTC.

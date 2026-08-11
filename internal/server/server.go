@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -133,6 +134,24 @@ import (
 	"github.com/jedafe/japa/internal/workerv2"
 	"github.com/valkey-io/valkey-go/valkeycompat"
 )
+
+// closers holds cleanup functions registered during NewServer that must be
+// invoked during application shutdown to release background goroutines
+// (e.g. the settings cache cleanup loop). Shutdown() drains them once.
+var closers []func()
+
+// Shutdown invokes all registered cleanup functions. Call this during
+// application shutdown after the HTTP server has stopped accepting requests.
+// It is safe to call multiple times.
+var shutdownOnce sync.Once
+
+func Shutdown() {
+	shutdownOnce.Do(func() {
+		for _, fn := range closers {
+			fn()
+		}
+	})
+}
 
 // NewServer creates a fully configured Chi router with middleware and routes.
 func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
@@ -388,6 +407,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// services used compiled-in constants. Instantiate once and inject where limits
 	// are read.
 	settingsService := config.NewSettings(database, vkClient.Redis())
+	closers = append(closers, settingsService.Close)
 	contentService.SetSettings(settingsService)
 
 	// BL-014: apply the configurable iframe embed allowlist from system_settings
@@ -663,7 +683,14 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 	// Coupons & External Affiliate Providers subsystem (Section 55).
 	couponService := coupons.NewServiceWithEnqueuer(database, taskEnqueuer)
+	couponService.SetCache(vkClient.Redis()) // VALKEY-005: jc:coupon:{id} + jc:coupon_list:{tenant} caching (§55)
 	couponHandlers := coupons.NewHandlers(couponService)
+
+	// Wire the coupon service into the renderer for render-time coupon_embed
+	// resolution and affiliate link href rewriting (Section 55 P4, BUG-004/005).
+	if rendererInstance != nil {
+		rendererInstance.SetCouponResolver(&couponRenderAdapter{svc: couponService})
+	}
 
 	// User Affiliate Program subsystem (Section 56).
 	affiliateService := affiliate.NewServiceWithEnqueuer(database, taskEnqueuer)
@@ -862,6 +889,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Ref: japaconnect-engineering/sections/65-content-import.md (ADR-083)
 	contentImportStore := contentimport.NewStore(database)
 	contentImportService := contentimport.NewService(contentImportStore, settingsService)
+	// Wire the Asynq task enqueuer so StartImport and RetryImport can
+	// enqueue the import:process_source and import:fetch_media tasks
+	// fire-and-forget (Rule 8). Without this, imports are created with
+	// status='pending' but never processed — the worker never picks them up.
+	contentImportService.SetEnqueuer(taskEnqueuer)
 	// Wire the content creator adapter so ProcessSource can create draft
 	// contents rows. Without this, importSingleItem returns "no content
 	// creator configured" and every import fails.
@@ -1160,6 +1192,64 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Inject the RAG service into the AI handlers so HandleChat can run the
 	// retrieval step before the LLM call when rag.enabled is true.
 	aiHandlers.SetRAGService(ragService)
+
+	// AI Agent Executor (Section 103, ADR-111) — Phase 6 wiring.
+	// The agent handler ties together the gateway function-calling extension
+	// (Phase 1), the tool executor (Phase 3), the core tool catalog
+	// (Phase 4), and the pre-search + agent loop (Phase 5). The HTTP
+	// handlers (Phase 6) expose it via SSE streaming + REST routes.
+	agentRAG := &agentRAGAdapter{svc: ragService}
+	agentCache := &agentCacheAdapter{rdb: vkClient.Redis()}
+	agentRateLimiter := &agentRateLimiterAdapter{rdb: vkClient.Redis()}
+	contentCreatorBridge := &agentContentCreatorBridge{svc: contentService}
+	contentUpdaterBridge := &agentContentUpdaterBridge{svc: contentService}
+
+	agentDeps := ai.NewToolDeps().
+		WithContent(contentService).
+		WithCustomFields(cfService).
+		WithRAG(agentRAG).
+		WithComparison(&agentComparisonAdapter{svc: comparisonService}).
+		WithPrivacy(ai.NewPrivacyChecker(gen.New(database.Reader))).
+		WithSettings(settingsService).
+		WithCache(agentCache)
+	agentDeps.ContentCreator = contentCreatorBridge.create
+	agentDeps.ContentUpdater = contentUpdaterBridge.update
+
+	agentRegistry := ai.NewToolHandlerRegistry()
+	ai.RegisterPhase4Tools(agentRegistry, agentDeps)
+	// Load tool configs from the ai_tools table (migration 000388 seed).
+	// Errors are non-fatal — the agent degrades to no tools if the table
+	// is empty or the configs are unparseable.
+	if err := agentRegistry.LoadFromDB(context.Background(), aiToolRegistry, defaultTenantID); err != nil {
+		slog.Warn("server: loading agent tool configs from DB", "error", err)
+	}
+
+	agentExecutor := ai.NewExecutor(agentRegistry,
+		ai.WithPrivacyChecker(ai.NewPrivacyChecker(gen.New(database.Reader))),
+		ai.WithPermissionChecker(rbacResolver),
+		ai.WithStore(aiStore),
+		ai.WithWriteQueries(gen.New(database.Writer)),
+	)
+
+	agentPreSearcher := ai.NewPreSearcher(agentDeps)
+
+	agentHandler := ai.NewAgentHandler(aiDispatcher, agentExecutor, agentRegistry, agentPreSearcher,
+		ai.WithAgentPerms(rbacResolver),
+		ai.WithAgentSettings(settingsService),
+		ai.WithAgentSessions(gen.New(database.Writer)),
+		ai.WithAgentGeoResolver(gen.New(database.Reader)),
+		ai.WithAgentRateLimiter(agentRateLimiter),
+		ai.WithAgentCache(agentCache),
+	)
+
+	agentHTTPHandlers := ai.NewAgentHTTPHandlers(agentHandler, gen.New(database.Reader),
+		ai.WithAgentRegistry(agentRegistry),
+		ai.WithAgentHTTPPerms(rbacResolver),
+		ai.WithAgentContentStore(gen.New(database.Writer)),
+		ai.WithAgentHTTPCache(agentCache),
+		ai.WithAgentComparisonEngine(ai.NewComparisonEngine(agentDeps)),
+		ai.WithAgentPreSearcher(agentPreSearcher),
+	)
 
 	// Inject the AI dispatcher + RAG retriever into the assessment service
 	// for AI-assisted roadmap generation (ADR-071 §3). Gated by
@@ -1916,6 +2006,21 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Related Content (Section 14 — Content System API, pgvector cosine similarity)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/content/{id}/related", contentHandlers.GetRelatedContent)
 
+			// Singular reaction action routes (catalog lines 259-260). The
+			// plural /content/{id}/reactions collection routes are registered
+			// above; these singular aliases are required by the route catalog
+			// for non-admin callers. POST reads reaction_key from the body;
+			// DELETE reads key from the query string (no {key} path param).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.reactions.add")).
+				Post("/content/{id}/react", contentHandlers.AddReaction)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.reactions.remove")).
+				Delete("/content/{id}/react", contentHandlers.RemoveReaction)
+
+			// Content space assignment (catalog line 261). Multi-space update
+			// with primary_space_id + additional_space_ids.
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.edit")).
+				Patch("/content/{id}/spaces", contentHandlers.UpdateContentSpaces)
+
 			// Comments (Section 49 — Unified Comment System)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/comments/{id}", commentsHandlers.GetComment)
 			r.Get("/content/{id}/comments", commentsHandlers.ListComments)
@@ -2382,9 +2487,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				// Public comparison list (Section 30): SQL filters to published+public.
 				r.Get("/comparisons", comparisonHandlers.ListComparisons)
 				// Comparison update/delete at top level (P5.6 — Task 2, catalog paths)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "comparison.edit_own")).
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequireAnyPermission(rbacResolver, "comparison.edit_own", "comparison.edit_any")).
 					Patch("/comparisons/{id}", comparisonHandlers.UpdateComparison)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "comparison.delete_own")).
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequireAnyPermission(rbacResolver, "comparison.delete_own", "comparison.delete_any")).
 					Delete("/comparisons/{id}", comparisonHandlers.DeleteComparison)
 
 				// Item routes — catalog uses /comparisons/:id for items
@@ -3196,6 +3301,54 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Delete("/admin/rag/entity/{type}/{id}", ragHandlers.HandlePurgeEntity)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ai.rag.manage")).
 				Get("/admin/settings/rag", ragHandlers.HandleGetSettings)
+
+			// AI Agent Executor routes (Section 103, ADR-111) — Phase 6.
+			// The agent SSE endpoint, capabilities, session history, and
+			// session management. All gated by the agent.use RBAC permission
+			// (seeded by migration 000387) + RequireAuth.
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "agent.use")).
+				Post("/ai/agent", agentHTTPHandlers.HandleAgent)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "agent.use")).
+				Get("/ai/agent/capabilities", agentHTTPHandlers.HandleGetCapabilities)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "agent.use")).
+				Get("/ai/agent/sessions", agentHTTPHandlers.HandleListSessions)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "agent.use")).
+				Get("/ai/agent/sessions/{id}", agentHTTPHandlers.HandleGetSession)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "agent.use")).
+				Post("/ai/agent/sessions/{id}/cancel", agentHTTPHandlers.HandleCancelSession)
+
+			// Direct comparison endpoint (Section 103 — Comparison Engine,
+			// Phase 7). Agent-accessible + directly callable. Orchestrates
+			// the ComparisonEngine: classifies the tier, gathers knowledge
+			// via pre-search, and optionally creates a comparison content
+			// row for Tier 3.
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "agent.use")).
+				Post("/ai/compare-entities", agentHTTPHandlers.HandleCompareEntities)
+
+			// Authorship reassignment (Section 103 — Authorship Assignment).
+			// Gated by the content.assign_author permission node.
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.assign_author")).
+				Post("/content/{id}/reassign-author", agentHTTPHandlers.HandleReassignAuthor)
+
+			// AI Privacy exemption management (Section 103 — Privacy Exemption
+			// Columns). User-facing; NOT exposed as an agent tool. Users can
+			// only set the flag on their own data (enforced in the handler).
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).
+				Get("/me/ai-privacy", agentHTTPHandlers.HandleGetAIPrivacy)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).
+				Put("/me/ai-privacy", agentHTTPHandlers.HandleSetAIPrivacy)
+
+			// AI Agent admin routes (Section 103 — Admin Observability).
+			// Session audit trail, tool usage statistics, and cost reporting.
+			// Gated by the agent.admin permission node.
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "agent.admin")).
+				Get("/admin/agent/sessions", agentHTTPHandlers.HandleAdminListSessions)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "agent.admin")).
+				Get("/admin/agent/sessions/{id}", agentHTTPHandlers.HandleAdminGetSession)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "agent.admin")).
+				Get("/admin/agent/tool-stats", agentHTTPHandlers.HandleAdminToolStats)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "agent.admin")).
+				Get("/admin/agent/cost-report", agentHTTPHandlers.HandleAdminCostReport)
 
 			// Webhook admin CRUD routes (Section 23 — Integrations)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "integrations.webhooks.manage")).
@@ -5432,4 +5585,32 @@ func (r *assessmentRAGRetriever) FormatContext(chunks []assessment.RAGChunk) str
 		})
 	}
 	return r.svc.FormatContext(ragChunks)
+}
+
+// couponRenderAdapter adapts coupons.Service to implement the
+// renderer.CouponResolver interface for render-time coupon_embed resolution
+// (Section 55 P4, BUG-004). This avoids an import cycle: the renderer package
+// cannot import coupons (coupons imports worker which imports renderer
+// indirectly), so the adapter is wired here in the server package.
+type couponRenderAdapter struct {
+	svc *coupons.Service
+}
+
+func (a *couponRenderAdapter) ResolveCouponForRender(ctx context.Context, id pgtype.UUID) (*renderer.CouponRenderResult, error) {
+	c, err := a.svc.ResolveCouponForRender(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	return &renderer.CouponRenderResult{
+		ID:            c.ID,
+		Title:         c.Title,
+		Code:          c.Code,
+		DiscountType:  c.DiscountType,
+		DiscountValue: c.DiscountValue,
+		ProviderName:  c.ProviderName,
+		ExpiresAt:     c.ExpiresAt,
+		IsExpired:     c.IsExpired,
+		ReferralURL:   c.ReferralURL,
+		Status:        c.Status,
+	}, nil
 }

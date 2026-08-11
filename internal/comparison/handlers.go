@@ -9,6 +9,7 @@ package comparison
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -19,6 +20,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/rbac"
 	"github.com/jedafe/japa/internal/tenant"
 )
 
@@ -68,6 +70,18 @@ func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.Au
 	}
 
 	return user, true
+}
+
+// hasAnyPermission checks if the authenticated user has the given permission
+// via the RBAC resolver stored in the request context by the middleware.
+// Returns false if the resolver is not in the context (e.g. the route was
+// not wrapped in RequirePermission/RequireAnyPermission middleware).
+func hasAnyPermission(r *http.Request, user *auth.AuthenticatedUser, permKey string) bool {
+	resolver, ok := r.Context().Value(rbac.ResolverKey).(*rbac.RBAC)
+	if !ok || resolver == nil {
+		return false
+	}
+	return resolver.HasPermission(r.Context(), user.UserID, user.TenantID, permKey)
 }
 
 // handleServiceError translates a Service-layer error into the appropriate HTTP response.
@@ -618,8 +632,12 @@ func (h *Handlers) UpdateComparison(w http.ResponseWriter, r *http.Request) {
 		Body:       input.Body,
 		Visibility: input.Visibility,
 		EditedBy:   user.UserID,
-	})
+	}, hasAnyPermission(r, user, "comparison.edit_any"))
 	if err != nil {
+		if errors.Is(err, ErrNotOwner) {
+			writeError(w, http.StatusForbidden, "not_owner", "You can only update your own comparisons")
+			return
+		}
 		handleServiceError(w, err)
 		return
 	}
@@ -633,7 +651,7 @@ func (h *Handlers) UpdateComparison(w http.ResponseWriter, r *http.Request) {
 //
 // Ref: japaconnect-engineering/sections/30-generic-comparison-system.md
 func (h *Handlers) DeleteComparison(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireUser(w, r)
+	user, ok := h.requireUser(w, r)
 	if !ok {
 		return
 	}
@@ -649,7 +667,11 @@ func (h *Handlers) DeleteComparison(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Service.DeleteComparison(r.Context(), id, tenantID); err != nil {
+	if err := h.Service.DeleteComparison(r.Context(), id, tenantID, user.UserID, hasAnyPermission(r, user, "comparison.delete_any")); err != nil {
+		if errors.Is(err, ErrNotOwner) {
+			writeError(w, http.StatusForbidden, "not_owner", "You can only delete your own comparisons")
+			return
+		}
 		handleServiceError(w, err)
 		return
 	}

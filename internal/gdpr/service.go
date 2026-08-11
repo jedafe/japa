@@ -470,6 +470,14 @@ func (s *Service) ProcessAccountDeletion(ctx context.Context, requestID pgtype.U
 			slog.Warn("failed to anonymize affiliate link events during deletion",
 				"user_id", request.UserID.String(), "error", err)
 		}
+		// Scrub user_id from coupon_events recorded by the deleted user
+		// (Section 55, ADR-014). The events are retained for aggregate
+		// click/copy analytics; only the user association is cleared.
+		// Best-effort: a failure logs a warning but does not abort.
+		if err := s.store.anonymizeCouponEvents(ctx, request.UserID); err != nil {
+			slog.Warn("failed to anonymize coupon events during deletion",
+				"user_id", request.UserID.String(), "error", err)
+		}
 		// Scrub PII from onboarding_state.step_data (name, current_location,
 		// destination) during the anonymization phase (Section 09, ADR-014).
 		// The row has ON DELETE CASCADE from users(id) so it is removed at
@@ -549,7 +557,24 @@ func (s *Service) ProcessAccountDeletion(ctx context.Context, requestID pgtype.U
 		}
 	}
 
-	// 1c. Scrub PII from checklist_progress.notes during the anonymization
+	// 1c. Scrub PII from content_imports.source_url during the anonymization
+	// phase (Section 65, ADR-083, ADR-014). The table has ON DELETE CASCADE
+	// from users(id) so rows are removed at hard-delete, but source_url may
+	// contain the user's external identity (e.g. medium.com/@username) and
+	// must be cleared now so it is not recoverable during the retention
+	// window. Best-effort.
+	if step == deletionStepAnonymized {
+		if _, err := s.db.Writer.Exec(ctx, `
+			UPDATE content_imports
+			SET source_url = NULL
+			WHERE user_id = $1 AND tenant_id = $2 AND source_url IS NOT NULL
+		`, request.UserID, request.TenantID); err != nil {
+			slog.Warn("failed to scrub content_imports source_url during deletion",
+				"user_id", request.UserID.String(), "error", err)
+		}
+	}
+
+	// 1d. Scrub PII from checklist_progress.notes during the anonymization
 	// phase (Section 70/§92, ADR-014). The table has ON DELETE CASCADE from
 	// users(id) so rows are removed at hard-delete, but the user's free-text
 	// checklist notes (visa + arrival) must be cleared now so they are not
@@ -825,6 +850,21 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 			UserID: userID, TenantID: tenantID,
 		}); err != nil {
 			return fmt.Errorf("anonymizing comparison items: %w", err)
+		}
+
+		// BUG-003: anonymize comparison_dimensions and comparison_values
+		// authored by the user. The label and value columns are user-authored
+		// free text that can re-identify a deleted user via their comparison
+		// content, just like comparison_items.title.
+		if _, err := q.AnonymizeComparisonDimensionsByAuthor(ctx, gen.AnonymizeComparisonDimensionsByAuthorParams{
+			UserID: userID, TenantID: tenantID,
+		}); err != nil {
+			return fmt.Errorf("anonymizing comparison dimensions: %w", err)
+		}
+		if _, err := q.AnonymizeComparisonValuesByAuthor(ctx, gen.AnonymizeComparisonValuesByAuthorParams{
+			UserID: userID, TenantID: tenantID,
+		}); err != nil {
+			return fmt.Errorf("anonymizing comparison values: %w", err)
 		}
 
 		// BUG-018: delete custom_field_values for the user's profile entity
@@ -1198,6 +1238,36 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 			return fmt.Errorf("deleting calendar_subscriptions: %w", err)
 		}
 
+		// BUG-016: Community Locator GDPR erasure (§101, ADR-109).
+		// community_organisations.submitted_by and reviewed_by reference
+		// users(id) with ON DELETE SET NULL. Reassign to the placeholder so
+		// the entries survive (they are community content, not user PII) and
+		// attribution is preserved rather than silently lost.
+		// Ref: japaconnect-engineering/sections/101-diaspora-community-locator.md
+		//      japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
+		if _, err := s.db.Writer.Exec(ctx, `
+			UPDATE community_organisations
+			SET submitted_by = $3
+			WHERE tenant_id = $2 AND submitted_by = $1
+		`, userID, tenantID, deletedUserPlaceholder); err != nil {
+			return fmt.Errorf("reassigning community_organisations submitted_by: %w", err)
+		}
+		if _, err := s.db.Writer.Exec(ctx, `
+			UPDATE community_organisations
+			SET reviewed_by = $3
+			WHERE tenant_id = $2 AND reviewed_by = $1
+		`, userID, tenantID, deletedUserPlaceholder); err != nil {
+			return fmt.Errorf("reassigning community_organisations reviewed_by: %w", err)
+		}
+		// Also reassign hitl_reviewed_by (ADR-088 AI generation column).
+		if _, err := s.db.Writer.Exec(ctx, `
+			UPDATE community_organisations
+			SET hitl_reviewed_by = $3
+			WHERE tenant_id = $2 AND hitl_reviewed_by = $1
+		`, userID, tenantID, deletedUserPlaceholder); err != nil {
+			return fmt.Errorf("reassigning community_organisations hitl_reviewed_by: %w", err)
+		}
+
 		// 5. Physical deletion — ON DELETE CASCADE handles all child tables.
 		// The following feed-related tables are cascade-purged here (no
 		// explicit step needed, documented for GDPR traceability — BUG-014):
@@ -1418,6 +1488,10 @@ type UserDataExport struct {
 	CalendarEntries      []map[string]interface{} `json:"calendar_entries"`       // §86 BUG-025
 	CalendarSaves        []map[string]interface{} `json:"calendar_saves"`         // §86 BUG-025
 	CalendarSubscriptions []map[string]interface{} `json:"calendar_subscriptions"` // §86 BUG-025
+	CommunityOrganisations []map[string]interface{} `json:"community_organisations"` // §101 BUG-016
+	ComparisonItems      []map[string]interface{} `json:"comparison_items"`       // BUG-004
+	ComparisonDimensions []map[string]interface{} `json:"comparison_dimensions"`  // BUG-004
+	ComparisonValues     []map[string]interface{} `json:"comparison_values"`      // BUG-004
 	ExportMetadata       map[string]interface{}   `json:"export_metadata"`
 }
 
@@ -1808,6 +1882,25 @@ func (s *Service) collectUserData(ctx context.Context, userID, tenantID pgtype.U
 		slog.Warn("failed to collect ticket_comments for export", "user_id", userID.String(), "error", err)
 	}
 
+	// Comparison data authored by the user (BUG-004). The parent content rows
+	// are exported above via GdprExportUserContent; these export the linked
+	// comparison_items/dimensions/values so the user receives the full set.
+	if rows, err := s.store.gdprExportUserComparisonItems(ctx, userID, tenantID); err == nil {
+		export.ComparisonItems = rows
+	} else {
+		slog.Warn("failed to collect comparison_items for export", "user_id", userID.String(), "error", err)
+	}
+	if rows, err := s.store.gdprExportUserComparisonDimensions(ctx, userID, tenantID); err == nil {
+		export.ComparisonDimensions = rows
+	} else {
+		slog.Warn("failed to collect comparison_dimensions for export", "user_id", userID.String(), "error", err)
+	}
+	if rows, err := s.store.gdprExportUserComparisonValues(ctx, userID, tenantID); err == nil {
+		export.ComparisonValues = rows
+	} else {
+		slog.Warn("failed to collect comparison_values for export", "user_id", userID.String(), "error", err)
+	}
+
 	// Japa University creator-economy data (ADR-063 / audit C2).
 	if rows, err := s.store.gdprExportInstructorProfiles(ctx, userID, tenantID); err == nil {
 		export.InstructorProfiles = rows
@@ -1900,6 +1993,48 @@ func (s *Service) collectUserData(ctx context.Context, userID, tenantID pgtype.U
 		export.CalendarSubscriptions = rows
 	} else {
 		slog.Warn("failed to collect calendar_subscriptions for export", "user_id", userID.String(), "error", err)
+	}
+
+	// BUG-016: export community_organisations submitted by the user so the
+	// GDPR data export includes community-submitted org entries. Ref: §101.
+	if rows, err := s.db.Reader.Query(ctx, `
+		SELECT id, tenant_id, name, slug, org_type, origin_community,
+		       destination_space_id, status, claim_status, is_verified,
+		       is_community_submitted, submitted_by, created_at, updated_at
+		FROM community_organisations
+		WHERE tenant_id = $2 AND submitted_by = $1 AND deleted_at IS NULL
+	`, userID, tenantID); err == nil {
+		collected := []map[string]interface{}{}
+		for rows.Next() {
+			var m = map[string]interface{}{}
+			var id, tenantID2, destSpaceID, submittedBy pgtype.UUID
+			var name, slug, orgType, originCommunity, status, claimStatus string
+			var isVerified, isCommunitySubmitted bool
+			var createdAt, updatedAt pgtype.Timestamptz
+			if scanErr := rows.Scan(&id, &tenantID2, &name, &slug, &orgType, &originCommunity,
+				&destSpaceID, &status, &claimStatus, &isVerified, &isCommunitySubmitted,
+				&submittedBy, &createdAt, &updatedAt); scanErr == nil {
+				m["id"] = id
+				m["tenant_id"] = tenantID2
+				m["name"] = name
+				m["slug"] = slug
+				m["org_type"] = orgType
+				m["origin_community"] = originCommunity
+				m["destination_space_id"] = destSpaceID
+				m["status"] = status
+				m["claim_status"] = claimStatus
+				m["is_verified"] = isVerified
+				m["is_community_submitted"] = isCommunitySubmitted
+				m["submitted_by"] = submittedBy
+				m["created_at"] = createdAt
+				m["updated_at"] = updatedAt
+				collected = append(collected, m)
+			}
+		}
+		rows.Close()
+		export.CommunityOrganisations = collected
+	} else {
+		slog.Warn("failed to collect community_organisations for export", "user_id", userID.String(), "error", err)
 	}
 
 	return export, nil

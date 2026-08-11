@@ -169,7 +169,8 @@
 	}
 
 	function mapsUrl(lat: number, lng: number): string {
-		return `https://maps.google.com/?q=${lat},${lng}`;
+		// ADR-109: No Google Maps dependency at any layer — use OpenStreetMap.
+		return `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lng}#map=16/${lat}/${lng}`;
 	}
 
 	// On mount: if an initial dest was loaded server-side, no client fetch is

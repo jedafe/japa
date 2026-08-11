@@ -296,6 +296,8 @@ var settingsCatalog = map[string]settingMeta{
 
 	// Visa Timeline Tracker (§83, ADR-091)
 	"visa_timeline.enabled":         {Type: "bool", DefaultValue: "false", Description: "Global visa timeline tracker toggle.", Panel: "control"},
+	"visa_timeline.subdomain":       {Type: "string", DefaultValue: "", Description: "Optional standalone subdomain (ADR-086, §93).", Panel: "control"},
+	"visa_timeline.custom_domain":   {Type: "string", DefaultValue: "", Description: "Optional custom domain (ADR-086, §93).", Panel: "control"},
 
 	// Community Digest Widget (§84, ADR-092)
 	"digest.enabled":                {Type: "bool", DefaultValue: "false", Description: "Global community digest toggle.", Panel: "control"},
@@ -329,15 +331,35 @@ var settingsCatalog = map[string]settingMeta{
 	// ten are registered here so the control-panel settings page exposes
 	// form fields and the /extensions Tools tab resolves their defaults.
 	"visa_routes.enabled":        {Type: "bool", DefaultValue: "false", Description: "Global visa route comparison tool toggle.", Panel: "control"},
+	"visa_routes.subdomain":      {Type: "string", DefaultValue: "", Description: "Optional standalone subdomain (ADR-086).", Panel: "control"},
+	"visa_routes.custom_domain":  {Type: "string", DefaultValue: "", Description: "Optional custom domain (ADR-086).", Panel: "control"},
 	"appointment_alert.enabled":  {Type: "bool", DefaultValue: "false", Description: "Global embassy appointment alerter toggle.", Panel: "control"},
+	"appointment_alert.subdomain":  {Type: "string", DefaultValue: "", Description: "Optional standalone subdomain (ADR-086).", Panel: "control"},
+	"appointment_alert.custom_domain": {Type: "string", DefaultValue: "", Description: "Optional custom domain (ADR-086).", Panel: "control"},
 	"arrival_checklist.enabled":  {Type: "bool", DefaultValue: "false", Description: "Global arrival checklist tool toggle.", Panel: "control"},
+	"arrival_checklist.subdomain":  {Type: "string", DefaultValue: "", Description: "Optional standalone subdomain (ADR-086).", Panel: "control"},
+	"arrival_checklist.custom_domain": {Type: "string", DefaultValue: "", Description: "Optional custom domain (ADR-086).", Panel: "control"},
 	"credential_checker.enabled": {Type: "bool", DefaultValue: "false", Description: "Global professional credential checker toggle.", Panel: "control"},
+	"credential_checker.subdomain": {Type: "string", DefaultValue: "", Description: "Optional standalone subdomain (ADR-086).", Panel: "control"},
+	"credential_checker.custom_domain": {Type: "string", DefaultValue: "", Description: "Optional custom domain (ADR-086).", Panel: "control"},
 	"cv_formatter.enabled":       {Type: "bool", DefaultValue: "false", Description: "Global CV formatter tool toggle.", Panel: "control"},
+	"cv_formatter.subdomain":     {Type: "string", DefaultValue: "", Description: "Optional standalone subdomain (ADR-086).", Panel: "control"},
+	"cv_formatter.custom_domain": {Type: "string", DefaultValue: "", Description: "Optional custom domain (ADR-086).", Panel: "control"},
 	"housing_guide.enabled":      {Type: "bool", DefaultValue: "false", Description: "Global housing guide tool toggle.", Panel: "control"},
+	"housing_guide.subdomain":    {Type: "string", DefaultValue: "", Description: "Optional standalone subdomain (ADR-086).", Panel: "control"},
+	"housing_guide.custom_domain": {Type: "string", DefaultValue: "", Description: "Optional custom domain (ADR-086).", Panel: "control"},
 	"attestation_guide.enabled":  {Type: "bool", DefaultValue: "false", Description: "Global attestation guide tool toggle.", Panel: "control"},
+	"attestation_guide.subdomain": {Type: "string", DefaultValue: "", Description: "Optional standalone subdomain (ADR-086).", Panel: "control"},
+	"attestation_guide.custom_domain": {Type: "string", DefaultValue: "", Description: "Optional custom domain (ADR-086).", Panel: "control"},
 	"language_test_hub.enabled":  {Type: "bool", DefaultValue: "false", Description: "Global language test hub tool toggle.", Panel: "control"},
+	"language_test_hub.subdomain":  {Type: "string", DefaultValue: "", Description: "Optional standalone subdomain (ADR-086).", Panel: "control"},
+	"language_test_hub.custom_domain": {Type: "string", DefaultValue: "", Description: "Optional custom domain (ADR-086).", Panel: "control"},
 	"tax_calculator.enabled":     {Type: "bool", DefaultValue: "false", Description: "Global tax calculator tool toggle.", Panel: "control"},
+	"tax_calculator.subdomain":   {Type: "string", DefaultValue: "", Description: "Optional standalone subdomain (ADR-086).", Panel: "control"},
+	"tax_calculator.custom_domain": {Type: "string", DefaultValue: "", Description: "Optional custom domain (ADR-086).", Panel: "control"},
 	"community_locator.enabled":  {Type: "bool", DefaultValue: "false", Description: "Global diaspora community locator toggle.", Panel: "control"},
+	"community_locator.subdomain":  {Type: "string", DefaultValue: "", Description: "Optional standalone subdomain (ADR-086).", Panel: "control"},
+	"community_locator.custom_domain": {Type: "string", DefaultValue: "", Description: "Optional custom domain (ADR-086).", Panel: "control"},
 
 	// Remittance Rate Tracker (§74, ADR-075)
 	"remittance.enabled":              {Type: "bool", DefaultValue: "true", Description: "Global tracker toggle.", Panel: "control"},
@@ -399,6 +421,9 @@ var settingsCatalog = map[string]settingMeta{
 	"tools.custom_domain":   {Type: "string", DefaultValue: "", Description: "Custom domain for the tools hub.", Panel: "control"},
 	"japabot.subdomain":     {Type: "string", DefaultValue: "japabot", Description: "JapaBot standalone subdomain.", Panel: "control"},
 	"japabot.custom_domain": {Type: "string", DefaultValue: "", Description: "JapaBot custom domain.", Panel: "control"},
+
+	// Mentorship Matching (§102, ADR-110)
+	"mentorship.max_capacity": {Type: "int", DefaultValue: "10", Min: 1, Description: "Maximum mentee capacity per mentor (platform-wide cap).", Panel: "control"},
 }
 
 // IsPublicSetting reports whether the given dot-notation key is marked Public

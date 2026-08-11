@@ -103,3 +103,36 @@ func TestSettingsCacheInvalidation(t *testing.T) {
 		t.Error("invalidate should have removed the cached entry")
 	}
 }
+
+// TestSettingsCloseStopsCleanupGoroutine verifies that Close stops the
+// background cleanup goroutine started by NewSettings. Without Close, the
+// goroutine leaks on every NewSettings call (BUG-001).
+func TestSettingsCloseStopsCleanupGoroutine(t *testing.T) {
+	s := &Settings{
+		cache:  make(map[string]cachedSetting),
+		stopCh: make(chan struct{}),
+	}
+	// Simulate the cleanup loop exiting when stopCh is closed.
+	go func() {
+		<-s.stopCh
+	}()
+	s.Close()
+
+	// Calling Close again should be a no-op (not panic).
+	s.Close()
+
+	// Verify stopCh is closed (non-blocking read succeeds).
+	select {
+	case <-s.stopCh:
+		// expected — channel is closed
+	default:
+		t.Error("Close should have closed stopCh")
+	}
+}
+
+// TestSettingsCloseNilStopCh verifies Close is safe on a Settings created
+// without NewSettings (stopCh == nil), as done in unit tests.
+func TestSettingsCloseNilStopCh(t *testing.T) {
+	s := &Settings{cache: make(map[string]cachedSetting)}
+	s.Close() // must not panic
+}
