@@ -109,11 +109,23 @@
 			}
 		],
 		fields,
-		load: async () => {
-			const result = await entityTypesAdminApi.list();
+		load: async ({ q, page, pageSize, sort }) => {
+			const params = new URLSearchParams();
+			if (q) params.set('q', q);
+			// page is 0-based from EntityPage; backend expects 1-based.
+			params.set('page', String(page + 1));
+			params.set('page_size', String(pageSize));
+			if (sort) params.set('sort', sort);
+			const result = await entityTypesAdminApi.list(params.toString() || undefined);
 			if (result.ok) {
-				const data = (result.data as CustomFieldEntityType[]) ?? [];
-				return { data, total: data.length, totalPages: 1 };
+				const body = result.data;
+				const data = (Array.isArray(body?.data) ? body.data : []) as CustomFieldEntityType[];
+				const meta = body?.meta;
+				return {
+					data,
+					total: meta?.total ?? data.length,
+					totalPages: meta?.total_pages ?? 1
+				};
 			}
 			throw new Error(result.error ?? t('common.error', 'Failed to load entity types'));
 		},

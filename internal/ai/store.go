@@ -29,32 +29,53 @@ func NewStore(read, write *pgxpool.Pool) *Store {
 
 // HITLReview represents a human-in-the-loop review record.
 type HITLReview struct {
-	ID            pgtype.UUID  `json:"id"`
-	TenantID      pgtype.UUID  `json:"tenant_id"`
-	ContentID     pgtype.UUID  `json:"content_id"`
-	ContentType   string       `json:"content_type"`
-	AIOutput      []byte       `json:"ai_output"`        // JSONB
-	HumanFeedback []byte       `json:"human_feedback"`   // JSONB, nullable
-	Status        string       `json:"status"`
-	ReviewerID    pgtype.UUID  `json:"reviewer_id"`      // nullable
-	Reason        string       `json:"reason,omitempty"` // nullable
-	CreatedAt     time.Time    `json:"created_at"`
-	ReviewedAt    *time.Time   `json:"reviewed_at,omitempty"`
+	ID            pgtype.UUID `json:"id"`
+	TenantID      pgtype.UUID `json:"tenant_id"`
+	ContentID     pgtype.UUID `json:"content_id"`
+	ContentType   string      `json:"content_type"`
+	AIOutput      []byte      `json:"ai_output"`      // JSONB
+	HumanFeedback []byte      `json:"human_feedback"` // JSONB, nullable
+	Status        string      `json:"status"`
+	ReviewerID    pgtype.UUID `json:"reviewer_id"`      // nullable
+	Reason        string      `json:"reason,omitempty"` // nullable
+	// Source identifies the origin of the review. Defaults to 'manual'
+	// (migration 000395). 'agent_draft_request' marks drafts created by the
+	// AI agent via the content.create_draft tool or the
+	// agent:create_draft_request Asynq task; 'agent_tool' marks reviews
+	// created by the executor for tools with requires_hitl=true.
+	Source     string     `json:"source,omitempty"`
+	CreatedAt  time.Time  `json:"created_at"`
+	ReviewedAt *time.Time `json:"reviewed_at,omitempty"`
 }
 
+// HITL source constants (migration 000395 CHECK constraint).
+const (
+	HITLSourceManual            = "manual"
+	HITLSourceAgentDraftRequest = "agent_draft_request"
+	HITLSourceAgentTool         = "agent_tool"
+)
+
 // CreateHITLReview inserts a new HITL review record and returns it.
+// The Source field defaults to 'manual' when empty (the column's NOT NULL
+// DEFAULT 'manual' handles this at the DB layer, but we set it explicitly
+// so the returned struct is consistent).
 func (s *Store) CreateHITLReview(ctx context.Context, review HITLReview) (HITLReview, error) {
+	source := review.Source
+	if source == "" {
+		source = HITLSourceManual
+	}
+
 	var result HITLReview
 
 	err := s.write.QueryRow(
 		ctx, `
 		INSERT INTO ai_hitl_reviews
-			(tenant_id, content_id, content_type, ai_output, status)
-		VALUES ($1, $2, $3, $4, $5)
-		RETURNING id, tenant_id, content_id, content_type, ai_output, status, created_at
-	`, review.TenantID, review.ContentID, review.ContentType, review.AIOutput, review.Status,
+			(tenant_id, content_id, content_type, ai_output, status, source)
+		VALUES ($1, $2, $3, $4, $5, $6)
+		RETURNING id, tenant_id, content_id, content_type, ai_output, status, source, created_at
+	`, review.TenantID, review.ContentID, review.ContentType, review.AIOutput, review.Status, source,
 	).Scan(&result.ID, &result.TenantID, &result.ContentID, &result.ContentType,
-		&result.AIOutput, &result.Status, &result.CreatedAt)
+		&result.AIOutput, &result.Status, &result.Source, &result.CreatedAt)
 	if err != nil {
 		return HITLReview{}, fmt.Errorf("creating HITL review: %w", err)
 	}
@@ -158,18 +179,18 @@ func (s *Store) CountPendingHITLReviews(ctx context.Context, tenantID pgtype.UUI
 // ---------------------------------------------------------------------------
 // Matches the Section 20 contract: { total_cost_usd, tokens_used, by_task_type }.
 type AIUsageSummary struct {
-	TotalCostUSD float64                  `json:"total_cost_usd"`
-	TokensUsed   int64                    `json:"tokens_used"`
-	ByTaskType   []AIUsageByTaskType      `json:"by_task_type"`
-	ByProvider   []AIUsageByProvider      `json:"by_provider,omitempty"`
+	TotalCostUSD float64             `json:"total_cost_usd"`
+	TokensUsed   int64               `json:"tokens_used"`
+	ByTaskType   []AIUsageByTaskType `json:"by_task_type"`
+	ByProvider   []AIUsageByProvider `json:"by_provider,omitempty"`
 }
 
 // AIUsageByTaskType is the per-task-type cost/token breakdown.
 type AIUsageByTaskType struct {
-	TaskType      string  `json:"task_type"`
-	TokensUsed    int64   `json:"tokens_used"`
-	TotalCostUSD  float64 `json:"total_cost_usd"`
-	Calls         int64   `json:"calls"`
+	TaskType     string  `json:"task_type"`
+	TokensUsed   int64   `json:"tokens_used"`
+	TotalCostUSD float64 `json:"total_cost_usd"`
+	Calls        int64   `json:"calls"`
 }
 
 // AIUsageByProvider is the per-provider cost/token breakdown.

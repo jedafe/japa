@@ -41,10 +41,10 @@ import (
 // ---------------------------------------------------------------------------
 
 var (
-	dbPool  *db.DB
+	dbPool   *db.DB
 	siteName string
 	//nolint:unused // set by RegisterRedis
-	rdb redisCache
+	rdb          redisCache
 	taskEnqueuer *Enqueuer
 )
 
@@ -272,7 +272,6 @@ func HandleNotificationDispatchBatch(ctx context.Context, t *asynq.Task) error {
 	return notificationBatchDispatcher.DispatchBatch(ctx, windowID)
 }
 
-
 // HandleWebhookDelivery delivers a queued webhook to the registered endpoint.
 func HandleWebhookDelivery(ctx context.Context, t *asynq.Task) error {
 	slog.Info("task:webhook:deliver")
@@ -459,11 +458,11 @@ func HandlePaymentWebhookProcess(ctx context.Context, t *asynq.Task) error {
 		creditsToGrant, currencyCode := parseCreditPurchaseMetadata(p.Metadata)
 		if creditsToGrant > 0 {
 			creditPayload, _ := json.Marshal(map[string]any{
-				"payment_id":      p.ID.String(),
-				"tenant_id":       tenantID.String(),
-				"user_id":         p.UserID.String(),
+				"payment_id":       p.ID.String(),
+				"tenant_id":        tenantID.String(),
+				"user_id":          p.UserID.String(),
 				"credits_to_grant": creditsToGrant,
-				"currency_code":   currencyCode,
+				"currency_code":    currencyCode,
 			})
 			if err := taskEnqueuer.Enqueue(TypeWalletProcessCreditPurchase, creditPayload); err != nil {
 				slog.Error("task:payment:process_webhook: failed to enqueue credit purchase grant",
@@ -544,11 +543,11 @@ func reversePaymentSideEffects(ctx context.Context, tenantID pgtype.UUID, p gen.
 			creditsToGrant, currencyCode := parseCreditPurchaseMetadata(p.Metadata)
 			if creditsToGrant > 0 {
 				reversalPayload, _ := json.Marshal(map[string]any{
-					"payment_id":      p.ID.String(),
-					"tenant_id":       tenantID.String(),
-					"user_id":         p.UserID.String(),
+					"payment_id":       p.ID.String(),
+					"tenant_id":        tenantID.String(),
+					"user_id":          p.UserID.String(),
 					"credits_to_grant": -creditsToGrant, // negative = debit
-					"currency_code":   currencyCode,
+					"currency_code":    currencyCode,
 				})
 				if err := taskEnqueuer.Enqueue(TypeWalletProcessCreditPurchase, reversalPayload); err != nil {
 					return fmt.Errorf("enqueue credit reversal: %w", err)
@@ -1786,7 +1785,9 @@ func HandleContentGenerateDraft(ctx context.Context, t *asynq.Task) error {
 	// If a studio processor is registered, delegate to it — it has the full
 	// pipeline (persona voice, field schema, review routing).
 	if studioProcessor != nil {
-		var p struct{ JobID string `json:"job_id"` }
+		var p struct {
+			JobID string `json:"job_id"`
+		}
 		if err := parsePayloadOrSkip(t, &p); err != nil {
 			return fmt.Errorf("task:content:generate_draft: invalid payload: %w", err)
 		}
@@ -1833,6 +1834,83 @@ func HandleContentGenerateDraft(ctx context.Context, t *asynq.Task) error {
 
 	slog.Info("task:content:generate_draft: draft generation dispatched",
 		"job_id", payload.JobID, "content_type", payload.ContentType)
+
+	return nil
+}
+
+// agentDraftRequestPayload is the payload for the agent:create_draft_request
+// task (Section 103, Phase 8). It extends content:generate_draft with an
+// agent_session_id reference so the worker can persist provenance linking
+// the draft back to the agent session that triggered it.
+//
+// The canonical type is worker.AgentDraftPayload (v2_processors.go); this
+// alias keeps the handler readable while delegating to the exported type.
+//
+// Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Content Request Flow, Asynq path)
+// Ref: japaconnect-engineering/sections/11-job-queue-asynq.md (agent:create_draft_request)
+// Ref: japaconnect-engineering/roadmaps/ROADMAP-AI-AGENT.md (Phase 8, task 8.03)
+type agentDraftRequestPayload = AgentDraftPayload
+
+// HandleAgentCreateDraftRequest is the worker handler for the
+// agent:create_draft_request task (Section 103, Phase 8). It generates a
+// draft content row from external search results + the topic prompt, with
+// the AI persona as the author, and creates a HITL review with source=
+// 'agent_draft_request' so the draft enters the admin review queue.
+//
+// The handler extends the content:generate_draft pipeline (§75) with the
+// agent_session_id reference. When a StudioProcessor is registered, it is
+// reused for the generation step; otherwise the generic AIProcessor is
+// used. The contents row + HITL review are created via the registered
+// AgentDraftProcessor (wired in internal/server), which encapsulates the
+// content.Service.CreateContent + ai.Store.CreateHITLReview calls so the
+// worker package does not import internal/content or internal/ai (avoiding
+// a cycle).
+//
+// Until an AgentDraftProcessor is registered (RegisterAgentDraftProcessor),
+// this handler logs a warning and returns nil — the task is a no-op. This
+// matches the graceful-degradation pattern of HandleContentGenerateDraft.
+func HandleAgentCreateDraftRequest(ctx context.Context, t *asynq.Task) error {
+	slog.Info("task:agent:create_draft_request")
+
+	var payload agentDraftRequestPayload
+	if err := parsePayloadOrSkip(t, &payload); err != nil {
+		return fmt.Errorf("task:agent:create_draft_request: invalid payload: %w", err)
+	}
+	if payload.TopicPrompt == "" {
+		slog.Warn("task:agent:create_draft_request: empty topic_prompt, skipping",
+			"agent_session_id", payload.AgentSessionID)
+		return nil
+	}
+	if payload.PersonaID == "" {
+		slog.Warn("task:agent:create_draft_request: empty persona_id, skipping",
+			"agent_session_id", payload.AgentSessionID)
+		return nil
+	}
+	if payload.TenantID == "" {
+		slog.Warn("task:agent:create_draft_request: empty tenant_id, skipping",
+			"agent_session_id", payload.AgentSessionID)
+		return nil
+	}
+	if payload.ContentType == "" {
+		slog.Warn("task:agent:create_draft_request: empty content_type, skipping",
+			"agent_session_id", payload.AgentSessionID)
+		return nil
+	}
+
+	if agentDraftProcessor == nil {
+		slog.Warn("task:agent:create_draft_request: no agent draft processor registered, skipping",
+			"agent_session_id", payload.AgentSessionID)
+		return nil
+	}
+
+	if err := agentDraftProcessor.CreateAgentDraft(ctx, payload); err != nil {
+		return fmt.Errorf("task:agent:create_draft_request: %w", err)
+	}
+
+	slog.Info("task:agent:create_draft_request: draft created for admin review",
+		"agent_session_id", payload.AgentSessionID,
+		"persona_id", payload.PersonaID,
+		"content_type", payload.ContentType)
 
 	return nil
 }
@@ -2872,7 +2950,7 @@ func HandleAdEventIngest(ctx context.Context, t *asynq.Task) error {
 	var payload struct {
 		TenantID   string `json:"tenant_id"`
 		CampaignID string `json:"campaign_id"`
-		UserID     string `json:"user_id"` // may be empty for guest events
+		UserID     string `json:"user_id"`    // may be empty for guest events
 		EventType  string `json:"event_type"` // "impression", "click"
 	}
 
@@ -3900,7 +3978,6 @@ func sendEmailWithContext(ctx context.Context, to, subject, body string, isHTML 
 	return nil
 }
 
-
 // ── Missing Phase 31 Task Handlers (stub implementations) ───────────
 
 // HandleMaintenanceCheckExpiredBans lifts expired user_moderation_actions with action='ban'.
@@ -4439,7 +4516,7 @@ func HandleTenantCleanupData(ctx context.Context, t *asynq.Task) error {
 	}
 
 	var payload struct {
-		TenantID   string `json:"tenant_id"`
+		TenantID    string `json:"tenant_id"`
 		InitiatedBy string `json:"initiated_by"`
 	}
 	if err := json.Unmarshal(t.Payload(), &payload); err != nil {

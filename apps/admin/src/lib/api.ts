@@ -1081,7 +1081,7 @@ export const spacesAdminApiExtended = {
 };
 
 export const fieldGroupsAdminApiExtended = {
-	list: (params?: string) => api<unknown>(`/admin/field-groups${params ? `?${params}` : ''}`),
+	list: (params?: string) => apiRaw<{ data: unknown[]; meta?: { page: number; page_size: number; total: number; total_pages: number } }>(`/admin/field-groups${params ? `?${params}` : ''}`),
 	create: (body: Record<string, unknown>) => api<unknown>('/admin/field-groups', { method: 'POST', body }),
 	update: (id: string, body: Record<string, unknown>) =>
 		api<unknown>(`/admin/field-groups/${id}`, { method: 'PATCH', body }),
@@ -1105,7 +1105,7 @@ export interface CustomFieldEntityType {
 }
 
 export const entityTypesAdminApi = {
-	list: () => api<CustomFieldEntityType[]>('/admin/custom-field-entity-types'),
+	list: (params?: string) => apiRaw<{ data: CustomFieldEntityType[]; meta?: { page: number; page_size: number; total: number; total_pages: number } }>(`/admin/custom-field-entity-types${params ? `?${params}` : ''}`),
 	create: (body: { value: string; label: string; sort_order?: number }) =>
 		api<CustomFieldEntityType>('/admin/custom-field-entity-types', { method: 'POST', body }),
 	update: (id: string, body: { label: string; sort_order?: number }) =>
@@ -1737,6 +1737,7 @@ export const cvFormatterAdminApi = {
 	listStandards: (params?: string) => api<unknown>(`/admin/cv-formatter/standards${params ? `?${params}` : ''}`),
 	upsertStandard: (body: Record<string, unknown>) =>
 		api<unknown>(`/admin/cv-formatter/standards`, { method: 'POST', body }),
+	listDestinations: () => api<unknown>(`/spaces?level=country`),
 };
 
 export const visaRoutesAdminApi = {

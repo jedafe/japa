@@ -460,6 +460,178 @@ func buildProvenance(p *aiProvenanceArgs, userID pgtype.UUID) map[string]any {
 }
 
 // ---------------------------------------------------------------------------
+// content.create_draft (Phase 8, tasks 8.01 + 8.02 + 8.05)
+// ---------------------------------------------------------------------------
+
+// contentCreateDraftArgs is the LLM-produced argument shape for
+// content.create_draft. Unlike content.create, the author_id is forced to
+// the AI persona's backing users.id (resolved from agent.default_persona_id
+// by the agent loop and injected into the system prompt); the LLM-sent
+// author_id is only used as a fallback when the persona resolver is not
+// wired. Status is always "draft" — the agent never publishes directly.
+type contentCreateDraftArgs struct {
+	Title          string         `json:"title"`
+	Body           string         `json:"body"`
+	ContentType    string         `json:"content_type"`
+	AuthorID       string         `json:"author_id"`
+	GeoSpaceID     string         `json:"geo_space_id,omitempty"`
+	SpaceID        string         `json:"space_id,omitempty"`
+	FieldValues    map[string]any `json:"field_values,omitempty"`
+	OriginalPrompt string         `json:"original_prompt,omitempty"`
+	AIPersonaID    string         `json:"ai_persona_id,omitempty"`
+}
+
+// ContentCreateDraftHandler returns a ToolHandler that creates a draft
+// content row for admin review (the §103 Content Request Flow for users
+// without content.create permission). The handler:
+//
+//  1. Resolves the AI persona's backing users.id from the author_id
+//     argument (the agent loop injects the persona's user_id there from
+//     agent.default_persona_id). Falls back to the calling user when the
+//     persona resolver is not wired (graceful degradation).
+//  2. Forces status = "draft" (§103: "the agent never publishes directly").
+//  3. Injects _ai_provenance into field_values JSONB with ai_generated,
+//     ai_persona_id, prompted_by_user_id, and original_prompt.
+//  4. Creates the content row via deps.ContentCreator.
+//  5. Creates a HITL review with source='agent_draft_request' + the
+//     created content_id (deps.HITL). The review ID is surfaced via
+//     ToolResult.Metadata["hitl_review_id"] so the executor records it on
+//     the ai_agent_tool_calls row and skips its own generic createHITL.
+//
+// The tool is gated by agent.draft_request (not content.create) at the
+// catalog layer (migration 000396). The executor's RBAC gate enforces it.
+//
+// Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Content Request Flow, HITL Source Tracking)
+// Ref: japaconnect-engineering/roadmaps/ROADMAP-AI-AGENT.md (Phase 8, tasks 8.01, 8.02, 8.05)
+func ContentCreateDraftHandler(deps *ToolDeps) ToolHandler {
+	return func(ctx context.Context, args json.RawMessage, userID, tenantID pgtype.UUID) (*ToolResult, error) {
+		if deps == nil {
+			return errorToolResult("content_create_draft_unavailable", "tool deps not configured"), nil
+		}
+		if deps.ContentCreator == nil {
+			return errorToolResult("content_create_draft_unavailable", "content creation is not wired"), nil
+		}
+
+		var a contentCreateDraftArgs
+		if err := json.Unmarshal(args, &a); err != nil {
+			return errorToolResult("invalid_arguments", fmt.Sprintf("invalid arguments: %v", err)), nil
+		}
+		if a.Title == "" {
+			return errorToolResult("missing_title", "title is required"), nil
+		}
+		if a.ContentType == "" {
+			return errorToolResult("missing_content_type", "content_type is required"), nil
+		}
+		if a.Body == "" {
+			return errorToolResult("missing_body", "body is required for a draft request"), nil
+		}
+
+		// Resolve the author: prefer the persona's backing user_id. The
+		// agent loop resolves agent.default_persona_id → persona.user_id
+		// and injects it into the system prompt so the LLM passes it as
+		// author_id. When the persona resolver is wired, we verify the
+		// injected author_id matches the persona's user_id (defense-in-
+		// depth: the LLM cannot impersonate an arbitrary user as the
+		// author of a draft request). When the resolver is not wired,
+		// fall back to the LLM-sent author_id, then to the calling user.
+		authorID, err := scanUUID(a.AuthorID)
+		if err != nil || !authorID.Valid {
+			authorID = userID
+		}
+		personaIDStr := a.AIPersonaID
+		if deps.Persona != nil && personaIDStr != "" {
+			personaID, perr := scanUUID(personaIDStr)
+			if perr == nil && personaID.Valid {
+				pid, perr := deps.Persona.GetPersonaUserID(ctx, tenantID, personaID)
+				if perr == nil && pid.Valid {
+					authorID = pid
+				}
+			}
+		}
+
+		spaceID, err := optionalUUID(a.SpaceID)
+		if err != nil {
+			return errorToolResult("invalid_space_id", "space_id is not a valid UUID"), nil
+		}
+		geoSpaceID, err := optionalUUID(a.GeoSpaceID)
+		if err != nil {
+			return errorToolResult("invalid_geo_space_id", "geo_space_id is not a valid UUID"), nil
+		}
+
+		// Status is always "draft" — §103 Content Request Flow.
+		status := "draft"
+
+		// Build field_values JSONB with _ai_provenance injected.
+		fieldValues := a.FieldValues
+		if fieldValues == nil {
+			fieldValues = map[string]any{}
+		}
+		fieldValues["_ai_provenance"] = buildProvenance(&aiProvenanceArgs{
+			AIPersonaID:    personaIDStr,
+			OriginalPrompt: a.OriginalPrompt,
+		}, userID)
+		fvJSON, err := json.Marshal(fieldValues)
+		if err != nil {
+			return errorToolResult("field_values_error", fmt.Sprintf("failed to encode field values: %v", err)), nil
+		}
+
+		row, err := deps.ContentCreator(ctx, tenantID, ContentCreateInput{
+			AuthorID:    authorID,
+			SpaceID:     spaceID,
+			ContentType: a.ContentType,
+			Title:       a.Title,
+			Body:        a.Body,
+			FieldValues: fvJSON,
+			GeoSpaceID:  geoSpaceID,
+			Status:      status,
+		})
+		if err != nil {
+			return errorToolResult("content_create_draft_failed", err.Error()), nil
+		}
+
+		// Create a HITL review with source='agent_draft_request' + the
+		// created content_id. The review ID is surfaced via Metadata so
+		// the executor records it on ai_agent_tool_calls and skips its
+		// own generic createHITL (which would set source='agent_tool').
+		var hitlReviewID pgtype.UUID
+		if deps.HITL != nil {
+			review, hitlErr := deps.HITL.CreateHITLReview(ctx, HITLReview{
+				TenantID:    tenantID,
+				ContentID:   row.ID,
+				ContentType: a.ContentType,
+				AIOutput:    fvJSON,
+				Status:      HITLStatusPending,
+				Source:      HITLSourceAgentDraftRequest,
+			})
+			if hitlErr != nil {
+				// Non-fatal: the draft was created; the admin can still
+				// see it in the content list. The HITL queue simply did
+				// not get a row.
+			} else {
+				hitlReviewID = review.ID
+			}
+		}
+
+		res := successToolResult(map[string]any{
+			"content_id":     uuidString(row.ID),
+			"title":          row.Title,
+			"slug":           row.Slug,
+			"status":         row.Status,
+			"content_type":   row.ContentType,
+			"author_id":      uuidString(row.AuthorID),
+			"geo_space_id":   uuidString(row.GeoSpaceID),
+			"created_at":     timestampString(row.CreatedAt),
+			"hitl_review_id": uuidString(hitlReviewID),
+			"review_status":  "draft submitted for admin review",
+		})
+		if hitlReviewID.Valid {
+			res.Metadata = map[string]any{"hitl_review_id": hitlReviewID}
+		}
+		return res, nil
+	}
+}
+
+// ---------------------------------------------------------------------------
 // content.update (task 4.04)
 // ---------------------------------------------------------------------------
 

@@ -146,7 +146,8 @@ type CreatePathwayInput struct {
 }
 
 // UpdatePathwayInput holds the mutable fields for a pathway update. Only
-// non-nil pointers are applied.
+// non-nil pointers are applied. is_japabot_indexed is intentionally absent
+// — it is a GENERATED ALWAYS AS column computed from status + is_active.
 type UpdatePathwayInput struct {
 	ProfessionID           *pgtype.UUID
 	IssuingSpaceID         *pgtype.UUID
@@ -161,7 +162,6 @@ type UpdatePathwayInput struct {
 	SourceURLLastChecked   *pgtype.Date
 	Status                 *string
 	IsActive               *bool
-	IsJapabotIndexed       *bool
 }
 
 // ListProfessions returns all credential_professions rows ordered by name.
@@ -490,9 +490,6 @@ func (s *Store) UpdatePathway(ctx context.Context, id, tenantID pgtype.UUID, inp
 	}
 	if input.IsActive != nil {
 		addSet("is_active", *input.IsActive)
-	}
-	if input.IsJapabotIndexed != nil {
-		addSet("is_japabot_indexed", *input.IsJapabotIndexed)
 	}
 
 	if len(sets) == 0 {

@@ -196,6 +196,29 @@ type CacheClient interface {
 	Set(ctx context.Context, key, value string, ttlSeconds int) error
 }
 
+// PersonaResolver looks up an AI persona's backing users.id by persona ID.
+// The content.create_draft tool (Phase 8) uses this to force author_id to
+// the persona's backing user rather than the calling user. *personas.Store
+// satisfies this via GetAIPersonaByID. nil disables the draft-request path.
+//
+// Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Content Request Flow)
+// Ref: japaconnect-engineering/sections/68-ai-personas.md (ai_personas.user_id)
+type PersonaResolver interface {
+	// GetPersonaUserID returns the backing users.id for the given persona
+	// ID, scoped to the tenant. Returns pgx.ErrNoRows when the persona
+	// does not exist in this tenant.
+	GetPersonaUserID(ctx context.Context, tenantID, personaID pgtype.UUID) (pgtype.UUID, error)
+}
+
+// HITLStore is the subset of *Store the content.create_draft tool uses to
+// create a HITL review with source='agent_draft_request' + the created
+// content_id. *Store satisfies this. nil disables HITL review creation
+// (the executor's generic createHITL still runs, but with source=
+// 'agent_tool' and no content_id).
+type HITLStore interface {
+	CreateHITLReview(ctx context.Context, review HITLReview) (HITLReview, error)
+}
+
 // ---------------------------------------------------------------------------
 // ToolDeps — shared dependency container
 // ---------------------------------------------------------------------------
@@ -218,8 +241,10 @@ type ToolDeps struct {
 	Comparison     ComparisonService
 	Privacy        PrivacyExemptionChecker
 	Settings       SettingsReader
-	Cache          CacheClient  // nil disables external-search caching
-	HTTPClient     *http.Client // nil → http.DefaultClient is used
+	Cache          CacheClient     // nil disables external-search caching
+	HTTPClient     *http.Client    // nil → http.DefaultClient is used
+	Persona        PersonaResolver // nil disables content.create_draft (Phase 8)
+	HITL           HITLStore       // nil → executor's generic createHITL is used
 }
 
 // NewToolDeps creates an empty ToolDeps. Fields are set directly or via the
@@ -251,6 +276,13 @@ func (d *ToolDeps) WithCache(c CacheClient) *ToolDeps { d.Cache = c; return d }
 
 // WithHTTPClient injects the HTTP client used for external search API calls.
 func (d *ToolDeps) WithHTTPClient(c *http.Client) *ToolDeps { d.HTTPClient = c; return d }
+
+// WithPersona injects the AI persona resolver (Phase 8 content.create_draft).
+func (d *ToolDeps) WithPersona(p PersonaResolver) *ToolDeps { d.Persona = p; return d }
+
+// WithHITL injects the HITL store (Phase 8 content.create_draft creates a
+// review with source='agent_draft_request' + the created content_id).
+func (d *ToolDeps) WithHITL(s HITLStore) *ToolDeps { d.HITL = s; return d }
 
 // httpClient returns the configured HTTP client or http.DefaultClient.
 func (d *ToolDeps) httpClient() *http.Client {

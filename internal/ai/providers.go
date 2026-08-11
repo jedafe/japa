@@ -280,7 +280,11 @@ func (s *ProviderStore) GetDecryptedAPIKey(ctx context.Context, tenantID, id pgt
 	if encrypted == "" {
 		return "", nil
 	}
-	return crypto.Decrypt(encrypted)
+	plaintext, err := crypto.Decrypt(encrypted)
+	if err != nil {
+		return "", fmt.Errorf("ai: decrypt api key: %w", err)
+	}
+	return plaintext, nil
 }
 
 // NewProviderFromConfig constructs a Provider from a ProviderConfig. The

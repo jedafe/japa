@@ -26,7 +26,7 @@
 </script>
 
 <div class={clsx("flex items-center gap-1", className)}>
-  {#each actions as action (action)}
+  {#each actions as action (action.label)}
     <button
       type="button"
       class={clsx(

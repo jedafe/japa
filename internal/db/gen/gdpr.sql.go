@@ -3147,6 +3147,20 @@ func (q *Queries) SoftDeleteAttestationCommunityUpdatesByUser(ctx context.Contex
 	return err
 }
 
+const softDeleteCredentialCommunityNotesByUser = `-- name: SoftDeleteCredentialCommunityNotesByUser :exec
+UPDATE credential_community_notes
+SET deleted_at = now()
+WHERE user_id = $1 AND deleted_at IS NULL
+`
+
+// §94: soft-delete credential_community_notes authored by the user
+// during GDPR erasure. Sets deleted_at = now() to preserve the note
+// text while removing the user's PII association.
+func (q *Queries) SoftDeleteCredentialCommunityNotesByUser(ctx context.Context, userID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, softDeleteCredentialCommunityNotesByUser, userID)
+	return err
+}
+
 const updateAccountDeletionRequestProgress = `-- name: UpdateAccountDeletionRequestProgress :exec
 UPDATE account_deletion_requests
 SET progress_step = $1

@@ -27,6 +27,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"net/http"
+	"time"
 
 	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -102,6 +104,34 @@ type StudioProcessor interface {
 	RetryFailed(ctx context.Context, jobID pgtype.UUID) error
 }
 
+// AgentDraftProcessor handles the agent:create_draft_request task
+// (Section 103, Phase 8). It creates a draft content row with the AI
+// persona as author + a HITL review with source='agent_draft_request'.
+// The interface is defined here (in the worker package) so the handler in
+// handlers.go can call it without importing internal/ai or internal/content
+// (which would create a cycle). The wiring layer (internal/server) provides
+// a concrete implementation that closes over the content.Service + ai.Store.
+//
+// Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Content Request Flow, Asynq path)
+// Ref: japaconnect-engineering/roadmaps/ROADMAP-AI-AGENT.md (Phase 8, task 8.03)
+type AgentDraftProcessor interface {
+	CreateAgentDraft(ctx context.Context, payload AgentDraftPayload) error
+}
+
+// AgentDraftPayload is the worker-package mirror of agentDraftRequestPayload
+// (handlers.go). It is exported so the AgentDraftProcessor implementation
+// in internal/server can receive it without re-decoding the JSON.
+type AgentDraftPayload struct {
+	AgentSessionID  string `json:"agent_session_id"`
+	TenantID        string `json:"tenant_id"`
+	UserID          string `json:"user_id"`
+	PersonaID       string `json:"persona_id"`
+	ContentType     string `json:"content_type"`
+	TopicPrompt     string `json:"topic_prompt"`
+	ExternalResults string `json:"external_results,omitempty"`
+	GeoSpaceID      string `json:"geo_space_id,omitempty"`
+}
+
 // MentorProcessor handles mentorship matching background tasks (§102, ADR-110).
 type MentorProcessor interface {
 	GenerateEmbedding(ctx context.Context, tenantID, userID pgtype.UUID) error
@@ -130,70 +160,85 @@ type CalendarProcessor interface {
 	SendReminders(ctx context.Context) (int, error)
 }
 
+// CvFormatterProcessor handles CV Formatter background tasks (§95, ADR-103).
+// ProcessSession calls the AI Gateway with the destination's cv_standards
+// system prompt + the user's input_text, stores the output, and marks the
+// session complete. PurgeExpiredSessions deletes cv_format_sessions rows
+// past their expires_at (nightly, low queue).
+// Ref: japaconnect-engineering/sections/95-cv-formatter.md
+type CvFormatterProcessor interface {
+	ProcessSession(ctx context.Context, sessionID pgtype.UUID) error
+	PurgeExpiredSessions(ctx context.Context) (int64, error)
+}
+
 // ---------------------------------------------------------------------------
 // Global processor slots — nil-safe (graceful degradation when unregistered).
 // ---------------------------------------------------------------------------
 
 var (
-	jobsProcessor          JobsProcessor
-	gamificationProcessor  GamificationProcessor
-	importProcessor        ImportProcessor
-	assessmentProcessor    AssessmentProcessor
-	scholarshipProcessor   ScholarshipProcessor
-	remittanceProcessor    RemittanceProcessor
-	referralProcessor      ReferralProcessor
-	adsSelfServeProcessor  AdsSelfServeProcessor
-	pushProcessor          PushProcessor
-	personaProcessor       PersonaProcessor
-	studioProcessor        StudioProcessor
-	mentorProcessor        MentorProcessor
+	jobsProcessor           JobsProcessor
+	gamificationProcessor   GamificationProcessor
+	importProcessor         ImportProcessor
+	assessmentProcessor     AssessmentProcessor
+	scholarshipProcessor    ScholarshipProcessor
+	remittanceProcessor     RemittanceProcessor
+	referralProcessor       ReferralProcessor
+	adsSelfServeProcessor   AdsSelfServeProcessor
+	pushProcessor           PushProcessor
+	personaProcessor        PersonaProcessor
+	studioProcessor         StudioProcessor
+	mentorProcessor         MentorProcessor
 	embassyAlerterProcessor EmbassyAlerterProcessor
 	calendarProcessor       CalendarProcessor
+	cvFormatterProcessor    CvFormatterProcessor
+	agentDraftProcessor     AgentDraftProcessor
 )
 
 // Register functions — call once at startup before the worker serves.
 
-func RegisterJobsProcessor(p JobsProcessor)             { jobsProcessor = p }
-func RegisterGamificationProcessor(p GamificationProcessor) { gamificationProcessor = p }
-func RegisterImportProcessor(p ImportProcessor)         { importProcessor = p }
-func RegisterAssessmentProcessor(p AssessmentProcessor) { assessmentProcessor = p }
-func RegisterScholarshipProcessor(p ScholarshipProcessor) { scholarshipProcessor = p }
-func RegisterRemittanceProcessor(p RemittanceProcessor) { remittanceProcessor = p }
-func RegisterReferralProcessor(p ReferralProcessor)     { referralProcessor = p }
-func RegisterAdsSelfServeProcessor(p AdsSelfServeProcessor) { adsSelfServeProcessor = p }
-func RegisterPushProcessor(p PushProcessor)             { pushProcessor = p }
-func RegisterPersonaProcessor(p PersonaProcessor)       { personaProcessor = p }
-func RegisterStudioProcessor(p StudioProcessor)         { studioProcessor = p }
-func RegisterMentorProcessor(p MentorProcessor)         { mentorProcessor = p }
+func RegisterJobsProcessor(p JobsProcessor)                     { jobsProcessor = p }
+func RegisterGamificationProcessor(p GamificationProcessor)     { gamificationProcessor = p }
+func RegisterImportProcessor(p ImportProcessor)                 { importProcessor = p }
+func RegisterAssessmentProcessor(p AssessmentProcessor)         { assessmentProcessor = p }
+func RegisterScholarshipProcessor(p ScholarshipProcessor)       { scholarshipProcessor = p }
+func RegisterRemittanceProcessor(p RemittanceProcessor)         { remittanceProcessor = p }
+func RegisterReferralProcessor(p ReferralProcessor)             { referralProcessor = p }
+func RegisterAdsSelfServeProcessor(p AdsSelfServeProcessor)     { adsSelfServeProcessor = p }
+func RegisterPushProcessor(p PushProcessor)                     { pushProcessor = p }
+func RegisterPersonaProcessor(p PersonaProcessor)               { personaProcessor = p }
+func RegisterStudioProcessor(p StudioProcessor)                 { studioProcessor = p }
+func RegisterMentorProcessor(p MentorProcessor)                 { mentorProcessor = p }
 func RegisterEmbassyAlerterProcessor(p EmbassyAlerterProcessor) { embassyAlerterProcessor = p }
 func RegisterCalendarProcessor(p CalendarProcessor)             { calendarProcessor = p }
+func RegisterCvFormatterProcessor(p CvFormatterProcessor)       { cvFormatterProcessor = p }
+func RegisterAgentDraftProcessor(p AgentDraftProcessor)         { agentDraftProcessor = p }
 
 // ---------------------------------------------------------------------------
 // Task type constants (V2 — Sections 60–77).
 // ---------------------------------------------------------------------------
 
 const (
-	TypeJobsExpireListings          = "jobs:expire_listings"
-	TypeJobsNotifyApplicationStatus = "jobs:notify_application_status"
+	TypeJobsExpireListings           = "jobs:expire_listings"
+	TypeJobsNotifyApplicationStatus  = "jobs:notify_application_status"
 	TypeGamificationExpireChallenges = "gamification:expire_challenges"
-	TypeImportProcessSource         = "import:process_source"
-	TypeImportFetchMedia            = "import:fetch_media"
-	TypeAssessmentScoreSubmission   = "assessment:score_submission"
-	TypeAssessmentCleanupAnonymous  = "assessment:cleanup_anonymous"
-	TypeScholarshipCheckDeadlines   = "scholarship:check_deadlines"
-	TypeRemittanceFetchRates        = "remittance:fetch_rates"
-	TypeRemittanceCheckAlerts       = "remittance:check_alerts"
-	TypeRemittancePruneOldRates     = "remittance:prune_old_rates"
-	TypeReferralRecordClick         = "referral:record_click"
-	TypeReferralCheckConversion     = "referral:check_conversion"
-	TypeReferralReviewFlagged       = "referral:review_flagged"
-	TypeAdsRefundCampaignCredits    = "ads:refund_campaign_credits"
-	TypeAdsNotifyCampaignStatus     = "ads:notify_campaign_status"
-	TypeNotificationSendPush        = "notification:send_push"
-	TypePersonaRunActivity          = "persona:run_activity"
-	TypePersonaDispatchAction       = "persona:dispatch_action"
-	TypeStudioRunBatch              = "studio:run_batch"
-	TypeStudioRetryFailed           = "studio:retry_failed"
+	TypeImportProcessSource          = "import:process_source"
+	TypeImportFetchMedia             = "import:fetch_media"
+	TypeAssessmentScoreSubmission    = "assessment:score_submission"
+	TypeAssessmentCleanupAnonymous   = "assessment:cleanup_anonymous"
+	TypeScholarshipCheckDeadlines    = "scholarship:check_deadlines"
+	TypeRemittanceFetchRates         = "remittance:fetch_rates"
+	TypeRemittanceCheckAlerts        = "remittance:check_alerts"
+	TypeRemittancePruneOldRates      = "remittance:prune_old_rates"
+	TypeReferralRecordClick          = "referral:record_click"
+	TypeReferralCheckConversion      = "referral:check_conversion"
+	TypeReferralReviewFlagged        = "referral:review_flagged"
+	TypeAdsRefundCampaignCredits     = "ads:refund_campaign_credits"
+	TypeAdsNotifyCampaignStatus      = "ads:notify_campaign_status"
+	TypeNotificationSendPush         = "notification:send_push"
+	TypePersonaRunActivity           = "persona:run_activity"
+	TypePersonaDispatchAction        = "persona:dispatch_action"
+	TypeStudioRunBatch               = "studio:run_batch"
+	TypeStudioRetryFailed            = "studio:retry_failed"
 
 	// §102 Mentorship Matching (ADR-110).
 	TypeMentorGenerateEmbedding = "mentor:generate_embedding"
@@ -206,7 +251,7 @@ const (
 	// matches exact task-type strings, so the slug is not embedded in the
 	// type name). `embassy:dispatch_alerts` fires notifications when
 	// availability is detected.
-	TypeEmbassyPoll          = "embassy:poll"
+	TypeEmbassyPoll           = "embassy:poll"
 	TypeEmbassyDispatchAlerts = "embassy:dispatch_alerts"
 	TypeEmbassyExpireChecks   = "embassy:expire_checks"
 
@@ -217,6 +262,19 @@ const (
 	// dispatching notifications to subscribers at 90/30/7-day marks.
 	TypeCalendarStalenessCheck = "calendar:staleness_check"
 	TypeCalendarSendReminders  = "calendar:send_reminders"
+
+	// §94 Professional Credential Checker (ADR-102).
+	// credentials:check_links runs weekly on the low queue, HEAD-checking
+	// regulatory_body_url on active pathways and logging pathways whose
+	// URLs return 404 so admins can review and update them.
+	TypeCredentialsCheckLinks = "credentials:check_links"
+
+	// §95 CV Formatter (ADR-103).
+	// cv_format:process runs on the default queue, processing a single
+	// pending session via the AI Gateway. cv_format_sessions:purge runs
+	// nightly on the low queue, deleting sessions past their expires_at.
+	TypeCvFormatProcess       = "cv_format:process"
+	TypeCvFormatSessionsPurge = "cv_format_sessions:purge"
 )
 
 // ---------------------------------------------------------------------------
@@ -243,7 +301,9 @@ func HandleJobsNotifyApplicationStatus(ctx context.Context, t *asynq.Task) error
 		slog.Warn("task:jobs:notify_application_status: no processor registered, skipping")
 		return nil
 	}
-	var p struct{ ApplicationID string `json:"application_id"` }
+	var p struct {
+		ApplicationID string `json:"application_id"`
+	}
 	if err := json.Unmarshal(t.Payload(), &p); err != nil {
 		return fmt.Errorf("task:jobs:notify_application_status: invalid payload: %w", err)
 	}
@@ -277,7 +337,9 @@ func HandleImportProcessSource(ctx context.Context, t *asynq.Task) error {
 		slog.Warn("task:import:process_source: no processor registered, skipping")
 		return nil
 	}
-	var p struct{ ImportID string `json:"import_id"` }
+	var p struct {
+		ImportID string `json:"import_id"`
+	}
 	if err := json.Unmarshal(t.Payload(), &p); err != nil {
 		return fmt.Errorf("task:import:process_source: invalid payload: %w", err)
 	}
@@ -397,7 +459,9 @@ func HandleRemittanceFetchRates(ctx context.Context, t *asynq.Task) error {
 		slog.Warn("task:remittance:fetch_rates: no processor registered, skipping")
 		return nil
 	}
-	var p struct{ ProviderID string `json:"provider_id"` }
+	var p struct {
+		ProviderID string `json:"provider_id"`
+	}
 	if err := json.Unmarshal(t.Payload(), &p); err != nil {
 		return fmt.Errorf("task:remittance:fetch_rates: invalid payload: %w", err)
 	}
@@ -465,7 +529,9 @@ func HandleReferralCheckConversion(ctx context.Context, t *asynq.Task) error {
 		slog.Warn("task:referral:check_conversion: no processor registered, skipping")
 		return nil
 	}
-	var p struct{ ReferralID string `json:"referral_id"` }
+	var p struct {
+		ReferralID string `json:"referral_id"`
+	}
 	if err := json.Unmarshal(t.Payload(), &p); err != nil {
 		return fmt.Errorf("task:referral:check_conversion: invalid payload: %w", err)
 	}
@@ -485,7 +551,9 @@ func HandleReferralReviewFlagged(ctx context.Context, t *asynq.Task) error {
 		slog.Warn("task:referral:review_flagged: no processor registered, skipping")
 		return nil
 	}
-	var p struct{ ReferralID string `json:"referral_id"` }
+	var p struct {
+		ReferralID string `json:"referral_id"`
+	}
 	if err := json.Unmarshal(t.Payload(), &p); err != nil {
 		return fmt.Errorf("task:referral:review_flagged: invalid payload: %w", err)
 	}
@@ -505,7 +573,9 @@ func HandleAdsRefundCampaignCredits(ctx context.Context, t *asynq.Task) error {
 		slog.Warn("task:ads:refund_campaign_credits: no processor registered, skipping")
 		return nil
 	}
-	var p struct{ CampaignID string `json:"campaign_id"` }
+	var p struct {
+		CampaignID string `json:"campaign_id"`
+	}
 	if err := json.Unmarshal(t.Payload(), &p); err != nil {
 		return fmt.Errorf("task:ads:refund_campaign_credits: invalid payload: %w", err)
 	}
@@ -525,7 +595,9 @@ func HandleAdsNotifyCampaignStatus(ctx context.Context, t *asynq.Task) error {
 		slog.Warn("task:ads:notify_campaign_status: no processor registered, skipping")
 		return nil
 	}
-	var p struct{ CampaignID string `json:"campaign_id"` }
+	var p struct {
+		CampaignID string `json:"campaign_id"`
+	}
 	if err := json.Unmarshal(t.Payload(), &p); err != nil {
 		return fmt.Errorf("task:ads:notify_campaign_status: invalid payload: %w", err)
 	}
@@ -574,7 +646,9 @@ func HandlePersonaRunActivity(ctx context.Context, t *asynq.Task) error {
 		slog.Warn("task:persona:run_activity: no processor registered, skipping")
 		return nil
 	}
-	var p struct{ PersonaID string `json:"persona_id"` }
+	var p struct {
+		PersonaID string `json:"persona_id"`
+	}
 	if err := json.Unmarshal(t.Payload(), &p); err != nil {
 		return fmt.Errorf("task:persona:run_activity: invalid payload: %w", err)
 	}
@@ -603,7 +677,9 @@ func HandlePersonaDispatchAction(ctx context.Context, t *asynq.Task) error {
 		slog.Warn("task:persona:dispatch_action: no processor registered, skipping")
 		return nil
 	}
-	var p struct{ ActionID string `json:"action_id"` }
+	var p struct {
+		ActionID string `json:"action_id"`
+	}
 	if err := json.Unmarshal(t.Payload(), &p); err != nil {
 		return fmt.Errorf("task:persona:dispatch_action: invalid payload: %w", err)
 	}
@@ -623,7 +699,9 @@ func HandleStudioRunBatch(ctx context.Context, t *asynq.Task) error {
 		slog.Warn("task:studio:run_batch: no processor registered, skipping")
 		return nil
 	}
-	var p struct{ BatchID string `json:"batch_id"` }
+	var p struct {
+		BatchID string `json:"batch_id"`
+	}
 	if err := json.Unmarshal(t.Payload(), &p); err != nil {
 		return fmt.Errorf("task:studio:run_batch: invalid payload: %w", err)
 	}
@@ -643,7 +721,9 @@ func HandleStudioRetryFailed(ctx context.Context, t *asynq.Task) error {
 		slog.Warn("task:studio:retry_failed: no processor registered, skipping")
 		return nil
 	}
-	var p struct{ JobID string `json:"job_id"` }
+	var p struct {
+		JobID string `json:"job_id"`
+	}
 	if err := json.Unmarshal(t.Payload(), &p); err != nil {
 		return fmt.Errorf("task:studio:retry_failed: invalid payload: %w", err)
 	}
@@ -807,5 +887,132 @@ func HandleCalendarSendReminders(ctx context.Context, _ *asynq.Task) error {
 		return fmt.Errorf("task:calendar:send_reminders: %w", err)
 	}
 	slog.Info("task:calendar:send_reminders: dispatched reminders", "count", n)
+	return nil
+}
+
+// HandleCredentialsCheckLinks HEAD-checks regulatory_body_url on active
+// credential pathways and logs pathways whose URLs return 404 so admins
+// can review and update them (§94, ADR-102). Weekly sweep on the low
+// queue. Also updates source_url_last_checked to today for each checked
+// pathway.
+func HandleCredentialsCheckLinks(ctx context.Context, _ *asynq.Task) error {
+	if dbPool == nil {
+		slog.Warn("task:credentials:check_links: no db pool registered, skipping")
+		return nil
+	}
+
+	const q = `
+SELECT id, regulatory_body_url
+FROM credential_pathways
+WHERE is_active = true
+  AND regulatory_body_url IS NOT NULL
+  AND regulatory_body_url != ''
+`
+	rows, err := dbPool.Reader.Query(ctx, q)
+	if err != nil {
+		return fmt.Errorf("task:credentials:check_links: query pathways: %w", err)
+	}
+	defer rows.Close()
+
+	type pathway struct {
+		id  pgtype.UUID
+		url string
+	}
+	var pathways []pathway
+	for rows.Next() {
+		var p pathway
+		var urlPtr *string
+		if err := rows.Scan(&p.id, &urlPtr); err != nil {
+			return fmt.Errorf("task:credentials:check_links: scan row: %w", err)
+		}
+		if urlPtr != nil {
+			p.url = *urlPtr
+			pathways = append(pathways, p)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("task:credentials:check_links: iterate rows: %w", err)
+	}
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	broken := 0
+	for _, p := range pathways {
+		req, err := http.NewRequestWithContext(ctx, http.MethodHead, p.url, nil)
+		if err != nil {
+			slog.Warn("task:credentials:check_links: invalid URL",
+				"pathway_id", p.id.String(), "url", p.url, "error", err)
+			continue
+		}
+		resp, err := client.Do(req)
+		if err != nil {
+			slog.Warn("task:credentials:check_links: request failed",
+				"pathway_id", p.id.String(), "url", p.url, "error", err)
+			continue
+		}
+		resp.Body.Close()
+
+		if resp.StatusCode == http.StatusNotFound {
+			broken++
+			slog.Warn("task:credentials:check_links: regulatory_body_url returns 404",
+				"pathway_id", p.id.String(), "url", p.url)
+		}
+	}
+
+	// Update source_url_last_checked for all checked pathways.
+	if len(pathways) > 0 {
+		const updateQ = `
+UPDATE credential_pathways
+SET source_url_last_checked = now()::date, updated_at = now()
+WHERE is_active = true
+  AND regulatory_body_url IS NOT NULL
+  AND regulatory_body_url != ''
+`
+		if _, err := dbPool.Writer.Exec(ctx, updateQ); err != nil {
+			slog.Error("task:credentials:check_links: update last_checked failed", "error", err)
+		}
+	}
+
+	slog.Info("task:credentials:check_links: checked pathways",
+		"total", len(pathways), "broken", broken)
+	return nil
+}
+
+// HandleCvFormatProcess processes a single CV format session via the AI
+// Gateway (§95, ADR-103). The session_id is carried in the JSON payload.
+// Default queue. Idempotent on session_id — re-processing a completed
+// session is a no-op.
+func HandleCvFormatProcess(ctx context.Context, t *asynq.Task) error {
+	if cvFormatterProcessor == nil {
+		slog.Warn("task:cv_format:process: no processor registered, skipping")
+		return nil
+	}
+	var p struct {
+		SessionID string `json:"session_id"`
+	}
+	if err := json.Unmarshal(t.Payload(), &p); err != nil {
+		return fmt.Errorf("task:cv_format:process: invalid payload: %w", err)
+	}
+	var id pgtype.UUID
+	if err := id.Scan(p.SessionID); err != nil {
+		return fmt.Errorf("task:cv_format:process: bad session_id: %w", err)
+	}
+	if err := cvFormatterProcessor.ProcessSession(ctx, id); err != nil {
+		return fmt.Errorf("task:cv_format:process: %w", err)
+	}
+	return nil
+}
+
+// HandleCvFormatSessionsPurge deletes cv_format_sessions rows past their
+// expires_at (§95, ADR-103). Nightly sweep on the low queue.
+func HandleCvFormatSessionsPurge(ctx context.Context, _ *asynq.Task) error {
+	if cvFormatterProcessor == nil {
+		slog.Warn("task:cv_format_sessions:purge: no processor registered, skipping")
+		return nil
+	}
+	n, err := cvFormatterProcessor.PurgeExpiredSessions(ctx)
+	if err != nil {
+		return fmt.Errorf("task:cv_format_sessions:purge: %w", err)
+	}
+	slog.Info("task:cv_format_sessions:purge: purged expired sessions", "count", n)
 	return nil
 }

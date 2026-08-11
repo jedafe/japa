@@ -1036,6 +1036,14 @@ UPDATE attestation_community_updates
 SET deleted_at = now()
 WHERE user_id = @user_id AND deleted_at IS NULL;
 
+-- name: SoftDeleteCredentialCommunityNotesByUser :exec
+-- §94: soft-delete credential_community_notes authored by the user
+-- during GDPR erasure. Sets deleted_at = now() to preserve the note
+-- text while removing the user's PII association.
+UPDATE credential_community_notes
+SET deleted_at = now()
+WHERE user_id = @user_id AND deleted_at IS NULL;
+
 -- name: GdprExportUserCalendarEntries :one
 -- §86: export calendar_entries submitted by the user (BUG-025).
 SELECT coalesce(json_agg(t), '[]'::json) AS data
