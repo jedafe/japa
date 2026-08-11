@@ -1,4 +1,4 @@
--- 000238_seed_system_field_group_assignments.down.sql
+-- 000389_seed_system_field_group_assignments.down.sql
 --
 -- Removes the system field group assignments added by the up migration.
 -- Only deletes the rows for the specific group_id + entity_class pairs

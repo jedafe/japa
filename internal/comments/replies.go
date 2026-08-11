@@ -81,7 +81,7 @@ type ReplyCard struct {
 	ID           pgtype.UUID        `json:"id"`
 	ContentID    pgtype.UUID        `json:"content_id"`
 	ParentID     pgtype.UUID        `json:"parent_id"`
-	Body         string             `json:"body"`
+	Body         []byte             `json:"body"` // TipTap JSON (base64 in JSON transport)
 	VoteScore    int32              `json:"vote_score"`
 	CreatedAt    pgtype.Timestamptz `json:"created_at"`
 	ContentTitle string             `json:"content_title"`

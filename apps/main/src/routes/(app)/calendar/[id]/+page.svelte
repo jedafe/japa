@@ -39,14 +39,14 @@
 
 	const statusLabels: Record<string, string> = {
 		pending: t('calendar.status_pending', 'Pending'),
-		verified: t('calendar.status_verified', 'Verified'),
-		rejected: t('calendar.status_rejected', 'Rejected'),
+		published: t('calendar.status_published', 'Published'),
+		unverified: t('calendar.status_unverified', 'Unverified'),
 		archived: t('calendar.status_archived', 'Archived')
 	};
 
 	function statusColor(status: string): string {
-		if (status === 'verified') return 'bg-[var(--color-success)]/10 text-[var(--color-success)]';
-		if (status === 'rejected') return 'bg-[var(--color-danger)]/10 text-[var(--color-danger)]';
+		if (status === 'published') return 'bg-[var(--color-success)]/10 text-[var(--color-success)]';
+		if (status === 'unverified') return 'bg-amber-500/10 text-amber-600';
 		if (status === 'archived') return 'bg-[var(--color-surface-subtle)] text-[var(--color-text-subtle)]';
 		return 'bg-amber-500/10 text-amber-600';
 	}
@@ -65,8 +65,9 @@
 		}
 	}
 
+	// BUG-007: check staleness via status === 'unverified' (§86).
 	function isStale(e: CalendarEntry): boolean {
-		return false;
+		return e.status === 'unverified';
 	}
 
 	let saved = $state(false);
@@ -139,7 +140,7 @@
 			<!-- Title + badges -->
 			<div class="flex items-start gap-2">
 				<h1 class="text-2xl font-bold text-[var(--color-text)]">{entry.title}</h1>
-				{#if entry.status === 'verified'}
+				{#if entry.status === 'published'}
 					<BadgeCheck size={22} class="mt-1 shrink-0 text-[var(--color-primary)]" />
 				{/if}
 			</div>

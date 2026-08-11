@@ -40,6 +40,7 @@ const countCommentsByContent = `-- name: CountCommentsByContent :one
 SELECT COUNT(*)::int AS count
 FROM comments
 WHERE content_id = $1 AND tenant_id = $2 AND deleted_at IS NULL
+  AND status = 'published'
 `
 
 type CountCommentsByContentParams struct {
@@ -57,10 +58,29 @@ func (q *Queries) CountCommentsByContent(ctx context.Context, arg CountCommentsB
 	return count, err
 }
 
+const countContentThreadLinks = `-- name: CountContentThreadLinks :one
+SELECT COUNT(*)::int AS count
+FROM content_thread_links
+WHERE content_id = $1 AND tenant_id = $2
+`
+
+type CountContentThreadLinksParams struct {
+	ContentID pgtype.UUID `json:"content_id"`
+	TenantID  pgtype.UUID `json:"tenant_id"`
+}
+
+func (q *Queries) CountContentThreadLinks(ctx context.Context, arg CountContentThreadLinksParams) (int32, error) {
+	row := q.db.QueryRow(ctx, countContentThreadLinks, arg.ContentID, arg.TenantID)
+	var count int32
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countRepliesByParent = `-- name: CountRepliesByParent :one
 SELECT COUNT(*)::int AS count
 FROM comments
 WHERE parent_id = $1 AND tenant_id = $2 AND deleted_at IS NULL
+  AND status = 'published'
 `
 
 type CountRepliesByParentParams struct {
@@ -78,10 +98,9 @@ func (q *Queries) CountRepliesByParent(ctx context.Context, arg CountRepliesByPa
 const createComment = `-- name: CreateComment :one
 
 
-INSERT INTO comments (tenant_id, content_id, author_user_id, parent_id, body, depth)
-VALUES ($1, $2, $3, $4, $5, $6)
-RETURNING id, tenant_id, content_id, author_user_id, parent_id, body, depth,
-          vote_score, is_pinned, is_edited, edited_at, created_at, updated_at, deleted_at
+INSERT INTO comments (tenant_id, content_id, author_user_id, parent_id, body, depth, is_anonymous)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
+RETURNING id, tenant_id, content_id, author_user_id, parent_id, body, depth, vote_score, is_pinned, is_edited, edited_at, created_at, updated_at, deleted_at, is_anonymous, reply_count, author_profile_id, status, removed_by, removed_reason
 `
 
 type CreateCommentParams struct {
@@ -89,8 +108,9 @@ type CreateCommentParams struct {
 	ContentID    pgtype.UUID `json:"content_id"`
 	AuthorUserID pgtype.UUID `json:"author_user_id"`
 	ParentID     pgtype.UUID `json:"parent_id"`
-	Body         string      `json:"body"`
+	Body         []byte      `json:"body"`
 	Depth        int32       `json:"depth"`
+	IsAnonymous  bool        `json:"is_anonymous"`
 }
 
 // Comments system queries (Section 49 — Unified Comments).
@@ -105,6 +125,7 @@ func (q *Queries) CreateComment(ctx context.Context, arg CreateCommentParams) (C
 		arg.ParentID,
 		arg.Body,
 		arg.Depth,
+		arg.IsAnonymous,
 	)
 	var i Comment
 	err := row.Scan(
@@ -122,6 +143,47 @@ func (q *Queries) CreateComment(ctx context.Context, arg CreateCommentParams) (C
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DeletedAt,
+		&i.IsAnonymous,
+		&i.ReplyCount,
+		&i.AuthorProfileID,
+		&i.Status,
+		&i.RemovedBy,
+		&i.RemovedReason,
+	)
+	return i, err
+}
+
+const createContentThreadLink = `-- name: CreateContentThreadLink :one
+
+INSERT INTO content_thread_links (tenant_id, content_id, thread_id)
+VALUES ($1, $2, $3)
+ON CONFLICT (content_id, thread_id) DO UPDATE
+    SET link_count = content_thread_links.link_count + 1,
+        created_at = now()
+RETURNING id, tenant_id, content_id, thread_id, link_count, created_at
+`
+
+type CreateContentThreadLinkParams struct {
+	TenantID  pgtype.UUID `json:"tenant_id"`
+	ContentID pgtype.UUID `json:"content_id"`
+	ThreadID  pgtype.UUID `json:"thread_id"`
+}
+
+// =====================
+// Content Thread Links (Section 49 — blog/non-forum ↔ discussion cross-links)
+// =====================
+// Upsert a cross-link; bump link_count when the pair already exists so
+// repeated "Start A Conversation" shares are reflected.
+func (q *Queries) CreateContentThreadLink(ctx context.Context, arg CreateContentThreadLinkParams) (ContentThreadLink, error) {
+	row := q.db.QueryRow(ctx, createContentThreadLink, arg.TenantID, arg.ContentID, arg.ThreadID)
+	var i ContentThreadLink
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.ContentID,
+		&i.ThreadID,
+		&i.LinkCount,
+		&i.CreatedAt,
 	)
 	return i, err
 }
@@ -164,7 +226,7 @@ type GetCommentRow struct {
 	ContentID    pgtype.UUID        `json:"content_id"`
 	AuthorUserID pgtype.UUID        `json:"author_user_id"`
 	ParentID     pgtype.UUID        `json:"parent_id"`
-	Body         string             `json:"body"`
+	Body         []byte             `json:"body"`
 	Depth        int32              `json:"depth"`
 	VoteScore    int32              `json:"vote_score"`
 	IsPinned     bool               `json:"is_pinned"`
@@ -343,6 +405,24 @@ func (q *Queries) GetRelatedContent(ctx context.Context, arg GetRelatedContentPa
 	return items, nil
 }
 
+const incrementCommentReplyCount = `-- name: IncrementCommentReplyCount :exec
+UPDATE comments
+SET reply_count = reply_count + 1, updated_at = now()
+WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
+`
+
+type IncrementCommentReplyCountParams struct {
+	ParentID pgtype.UUID `json:"parent_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+// Section 49 — keep the denormalized parent reply_count in sync when a reply
+// is created (BUG-008).
+func (q *Queries) IncrementCommentReplyCount(ctx context.Context, arg IncrementCommentReplyCountParams) error {
+	_, err := q.db.Exec(ctx, incrementCommentReplyCount, arg.ParentID, arg.TenantID)
+	return err
+}
+
 const listCommentsByAuthor = `-- name: ListCommentsByAuthor :many
 SELECT c.id, c.tenant_id, c.content_id, c.parent_id, c.body, c.vote_score,
        c.created_at,
@@ -352,6 +432,7 @@ JOIN contents ct ON ct.id = c.content_id AND ct.tenant_id = c.tenant_id
 WHERE c.tenant_id = $1
   AND c.author_user_id = $2
   AND c.deleted_at IS NULL
+  AND c.status = 'published'
   AND ct.status = 'published'
   AND ct.visibility = 'public'
 ORDER BY c.created_at DESC
@@ -370,7 +451,7 @@ type ListCommentsByAuthorRow struct {
 	TenantID     pgtype.UUID        `json:"tenant_id"`
 	ContentID    pgtype.UUID        `json:"content_id"`
 	ParentID     pgtype.UUID        `json:"parent_id"`
-	Body         string             `json:"body"`
+	Body         []byte             `json:"body"`
 	VoteScore    int32              `json:"vote_score"`
 	CreatedAt    pgtype.Timestamptz `json:"created_at"`
 	ContentTitle string             `json:"content_title"`
@@ -425,6 +506,7 @@ FROM comments c
 JOIN users u ON u.id = c.author_user_id
 LEFT JOIN user_profiles up ON up.user_id = u.id AND up.tenant_id = c.tenant_id
 WHERE c.content_id = $1 AND c.tenant_id = $2 AND c.deleted_at IS NULL
+  AND c.status = 'published'
   AND (c.parent_id IS NULL)
 ORDER BY c.is_pinned DESC, c.vote_score DESC, c.created_at DESC
 LIMIT $4 OFFSET $3
@@ -443,7 +525,7 @@ type ListCommentsByContentRow struct {
 	ContentID    pgtype.UUID        `json:"content_id"`
 	AuthorUserID pgtype.UUID        `json:"author_user_id"`
 	ParentID     pgtype.UUID        `json:"parent_id"`
-	Body         string             `json:"body"`
+	Body         []byte             `json:"body"`
 	Depth        int32              `json:"depth"`
 	VoteScore    int32              `json:"vote_score"`
 	IsPinned     bool               `json:"is_pinned"`
@@ -500,6 +582,250 @@ func (q *Queries) ListCommentsByContent(ctx context.Context, arg ListCommentsByC
 	return items, nil
 }
 
+const listCommentsByContentNew = `-- name: ListCommentsByContentNew :many
+SELECT c.id, c.tenant_id, c.content_id, c.author_user_id, c.parent_id, c.body, c.depth,
+       c.vote_score, c.is_pinned, c.is_edited, c.edited_at, c.created_at, c.updated_at, c.deleted_at,
+       u.username,
+       COALESCE(up.display_name, '') AS display_name,
+       COALESCE(up.avatar_url, '') AS avatar_url
+FROM comments c
+JOIN users u ON u.id = c.author_user_id
+LEFT JOIN user_profiles up ON up.user_id = u.id AND up.tenant_id = c.tenant_id
+WHERE c.content_id = $1 AND c.tenant_id = $2 AND c.deleted_at IS NULL
+  AND c.status = 'published'
+  AND (c.parent_id IS NULL)
+ORDER BY c.is_pinned DESC, c.created_at DESC
+LIMIT $4 OFFSET $3
+`
+
+type ListCommentsByContentNewParams struct {
+	ContentID  pgtype.UUID `json:"content_id"`
+	TenantID   pgtype.UUID `json:"tenant_id"`
+	PageOffset int32       `json:"page_offset"`
+	PageLimit  int32       `json:"page_limit"`
+}
+
+type ListCommentsByContentNewRow struct {
+	ID           pgtype.UUID        `json:"id"`
+	TenantID     pgtype.UUID        `json:"tenant_id"`
+	ContentID    pgtype.UUID        `json:"content_id"`
+	AuthorUserID pgtype.UUID        `json:"author_user_id"`
+	ParentID     pgtype.UUID        `json:"parent_id"`
+	Body         []byte             `json:"body"`
+	Depth        int32              `json:"depth"`
+	VoteScore    int32              `json:"vote_score"`
+	IsPinned     bool               `json:"is_pinned"`
+	IsEdited     bool               `json:"is_edited"`
+	EditedAt     pgtype.Timestamptz `json:"edited_at"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt    pgtype.Timestamptz `json:"deleted_at"`
+	Username     string             `json:"username"`
+	DisplayName  string             `json:"display_name"`
+	AvatarUrl    string             `json:"avatar_url"`
+}
+
+// Section 49 ?sort=new — newest first (pinned still surface on top).
+func (q *Queries) ListCommentsByContentNew(ctx context.Context, arg ListCommentsByContentNewParams) ([]ListCommentsByContentNewRow, error) {
+	rows, err := q.db.Query(ctx, listCommentsByContentNew,
+		arg.ContentID,
+		arg.TenantID,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListCommentsByContentNewRow
+	for rows.Next() {
+		var i ListCommentsByContentNewRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.ContentID,
+			&i.AuthorUserID,
+			&i.ParentID,
+			&i.Body,
+			&i.Depth,
+			&i.VoteScore,
+			&i.IsPinned,
+			&i.IsEdited,
+			&i.EditedAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.DeletedAt,
+			&i.Username,
+			&i.DisplayName,
+			&i.AvatarUrl,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listCommentsByContentOldest = `-- name: ListCommentsByContentOldest :many
+SELECT c.id, c.tenant_id, c.content_id, c.author_user_id, c.parent_id, c.body, c.depth,
+       c.vote_score, c.is_pinned, c.is_edited, c.edited_at, c.created_at, c.updated_at, c.deleted_at,
+       u.username,
+       COALESCE(up.display_name, '') AS display_name,
+       COALESCE(up.avatar_url, '') AS avatar_url
+FROM comments c
+JOIN users u ON u.id = c.author_user_id
+LEFT JOIN user_profiles up ON up.user_id = u.id AND up.tenant_id = c.tenant_id
+WHERE c.content_id = $1 AND c.tenant_id = $2 AND c.deleted_at IS NULL
+  AND c.status = 'published'
+  AND (c.parent_id IS NULL)
+ORDER BY c.is_pinned DESC, c.created_at ASC
+LIMIT $4 OFFSET $3
+`
+
+type ListCommentsByContentOldestParams struct {
+	ContentID  pgtype.UUID `json:"content_id"`
+	TenantID   pgtype.UUID `json:"tenant_id"`
+	PageOffset int32       `json:"page_offset"`
+	PageLimit  int32       `json:"page_limit"`
+}
+
+type ListCommentsByContentOldestRow struct {
+	ID           pgtype.UUID        `json:"id"`
+	TenantID     pgtype.UUID        `json:"tenant_id"`
+	ContentID    pgtype.UUID        `json:"content_id"`
+	AuthorUserID pgtype.UUID        `json:"author_user_id"`
+	ParentID     pgtype.UUID        `json:"parent_id"`
+	Body         []byte             `json:"body"`
+	Depth        int32              `json:"depth"`
+	VoteScore    int32              `json:"vote_score"`
+	IsPinned     bool               `json:"is_pinned"`
+	IsEdited     bool               `json:"is_edited"`
+	EditedAt     pgtype.Timestamptz `json:"edited_at"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt    pgtype.Timestamptz `json:"deleted_at"`
+	Username     string             `json:"username"`
+	DisplayName  string             `json:"display_name"`
+	AvatarUrl    string             `json:"avatar_url"`
+}
+
+// Section 49 ?sort=oldest — oldest first (pinned still surface on top).
+func (q *Queries) ListCommentsByContentOldest(ctx context.Context, arg ListCommentsByContentOldestParams) ([]ListCommentsByContentOldestRow, error) {
+	rows, err := q.db.Query(ctx, listCommentsByContentOldest,
+		arg.ContentID,
+		arg.TenantID,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListCommentsByContentOldestRow
+	for rows.Next() {
+		var i ListCommentsByContentOldestRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.ContentID,
+			&i.AuthorUserID,
+			&i.ParentID,
+			&i.Body,
+			&i.Depth,
+			&i.VoteScore,
+			&i.IsPinned,
+			&i.IsEdited,
+			&i.EditedAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.DeletedAt,
+			&i.Username,
+			&i.DisplayName,
+			&i.AvatarUrl,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listContentThreadLinks = `-- name: ListContentThreadLinks :many
+SELECT l.id, l.tenant_id, l.content_id, l.thread_id, l.link_count, l.created_at,
+       ct.title AS thread_title, ct.slug AS thread_slug,
+       ct.comment_count AS thread_comment_count,
+       ct.author_id AS thread_author_id
+FROM content_thread_links l
+JOIN contents ct ON ct.id = l.thread_id AND ct.tenant_id = l.tenant_id
+WHERE l.content_id = $1 AND l.tenant_id = $2
+  AND ct.deleted_at IS NULL
+ORDER BY l.created_at DESC
+LIMIT $4 OFFSET $3
+`
+
+type ListContentThreadLinksParams struct {
+	ContentID  pgtype.UUID `json:"content_id"`
+	TenantID   pgtype.UUID `json:"tenant_id"`
+	PageOffset int32       `json:"page_offset"`
+	PageLimit  int32       `json:"page_limit"`
+}
+
+type ListContentThreadLinksRow struct {
+	ID                 pgtype.UUID        `json:"id"`
+	TenantID           pgtype.UUID        `json:"tenant_id"`
+	ContentID          pgtype.UUID        `json:"content_id"`
+	ThreadID           pgtype.UUID        `json:"thread_id"`
+	LinkCount          int32              `json:"link_count"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	ThreadTitle        string             `json:"thread_title"`
+	ThreadSlug         string             `json:"thread_slug"`
+	ThreadCommentCount int32              `json:"thread_comment_count"`
+	ThreadAuthorID     pgtype.UUID        `json:"thread_author_id"`
+}
+
+// Linked discussion threads for a blog/content, most recently linked first.
+func (q *Queries) ListContentThreadLinks(ctx context.Context, arg ListContentThreadLinksParams) ([]ListContentThreadLinksRow, error) {
+	rows, err := q.db.Query(ctx, listContentThreadLinks,
+		arg.ContentID,
+		arg.TenantID,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListContentThreadLinksRow
+	for rows.Next() {
+		var i ListContentThreadLinksRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.ContentID,
+			&i.ThreadID,
+			&i.LinkCount,
+			&i.CreatedAt,
+			&i.ThreadTitle,
+			&i.ThreadSlug,
+			&i.ThreadCommentCount,
+			&i.ThreadAuthorID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listRepliesByParent = `-- name: ListRepliesByParent :many
 SELECT c.id, c.tenant_id, c.content_id, c.author_user_id, c.parent_id, c.body, c.depth,
        c.vote_score, c.is_pinned, c.is_edited, c.edited_at, c.created_at, c.updated_at, c.deleted_at,
@@ -510,6 +836,7 @@ FROM comments c
 JOIN users u ON u.id = c.author_user_id
 LEFT JOIN user_profiles up ON up.user_id = u.id AND up.tenant_id = c.tenant_id
 WHERE c.parent_id = $1 AND c.tenant_id = $2 AND c.deleted_at IS NULL
+  AND c.status = 'published'
 ORDER BY c.vote_score DESC, c.created_at ASC
 LIMIT $4 OFFSET $3
 `
@@ -527,7 +854,7 @@ type ListRepliesByParentRow struct {
 	ContentID    pgtype.UUID        `json:"content_id"`
 	AuthorUserID pgtype.UUID        `json:"author_user_id"`
 	ParentID     pgtype.UUID        `json:"parent_id"`
-	Body         string             `json:"body"`
+	Body         []byte             `json:"body"`
 	Depth        int32              `json:"depth"`
 	VoteScore    int32              `json:"vote_score"`
 	IsPinned     bool               `json:"is_pinned"`
@@ -615,6 +942,36 @@ func (q *Queries) RecalculateCommentVoteScore(ctx context.Context, commentID pgt
 	return err
 }
 
+const removeComment = `-- name: RemoveComment :exec
+UPDATE comments
+SET status = 'removed',
+    removed_by = $1,
+    removed_reason = $2,
+    updated_at = now()
+WHERE id = $3 AND tenant_id = $4 AND deleted_at IS NULL
+`
+
+type RemoveCommentParams struct {
+	RemovedBy     pgtype.UUID `json:"removed_by"`
+	RemovedReason *string     `json:"removed_reason"`
+	ID            pgtype.UUID `json:"id"`
+	TenantID      pgtype.UUID `json:"tenant_id"`
+}
+
+// Section 49 — moderator removal-by-status. Sets status='removed' and
+// records the acting moderator + reason, leaving the row visible for audit
+// (unlike a soft-delete which hides it from all queries). Used by the admin
+// moderation surface (BUG-010).
+func (q *Queries) RemoveComment(ctx context.Context, arg RemoveCommentParams) error {
+	_, err := q.db.Exec(ctx, removeComment,
+		arg.RemovedBy,
+		arg.RemovedReason,
+		arg.ID,
+		arg.TenantID,
+	)
+	return err
+}
+
 const softDeleteComment = `-- name: SoftDeleteComment :exec
 UPDATE comments
 SET deleted_at = now(), updated_at = now()
@@ -628,6 +985,27 @@ type SoftDeleteCommentParams struct {
 
 func (q *Queries) SoftDeleteComment(ctx context.Context, arg SoftDeleteCommentParams) error {
 	_, err := q.db.Exec(ctx, softDeleteComment, arg.ID, arg.TenantID)
+	return err
+}
+
+const softDeleteCommentByAuthor = `-- name: SoftDeleteCommentByAuthor :exec
+UPDATE comments
+SET deleted_at = now(), updated_at = now()
+WHERE id = $1 AND tenant_id = $2 AND author_user_id = $3
+  AND deleted_at IS NULL
+`
+
+type SoftDeleteCommentByAuthorParams struct {
+	ID           pgtype.UUID `json:"id"`
+	TenantID     pgtype.UUID `json:"tenant_id"`
+	AuthorUserID pgtype.UUID `json:"author_user_id"`
+}
+
+// Section 49 — soft-delete own comment. The author_user_id clause makes the
+// ownership check atomic so a comments.delete_own holder cannot delete
+// another author's comment (BUG-003).
+func (q *Queries) SoftDeleteCommentByAuthor(ctx context.Context, arg SoftDeleteCommentByAuthorParams) error {
+	_, err := q.db.Exec(ctx, softDeleteCommentByAuthor, arg.ID, arg.TenantID, arg.AuthorUserID)
 	return err
 }
 
@@ -660,12 +1038,11 @@ const updateComment = `-- name: UpdateComment :one
 UPDATE comments
 SET body = $1, is_edited = true, edited_at = now(), updated_at = now()
 WHERE id = $2 AND tenant_id = $3 AND author_user_id = $4 AND deleted_at IS NULL
-RETURNING id, tenant_id, content_id, author_user_id, parent_id, body, depth,
-          vote_score, is_pinned, is_edited, edited_at, created_at, updated_at, deleted_at
+RETURNING id, tenant_id, content_id, author_user_id, parent_id, body, depth, vote_score, is_pinned, is_edited, edited_at, created_at, updated_at, deleted_at, is_anonymous, reply_count, author_profile_id, status, removed_by, removed_reason
 `
 
 type UpdateCommentParams struct {
-	Body         string      `json:"body"`
+	Body         []byte      `json:"body"`
 	ID           pgtype.UUID `json:"id"`
 	TenantID     pgtype.UUID `json:"tenant_id"`
 	AuthorUserID pgtype.UUID `json:"author_user_id"`
@@ -694,6 +1071,12 @@ func (q *Queries) UpdateComment(ctx context.Context, arg UpdateCommentParams) (C
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DeletedAt,
+		&i.IsAnonymous,
+		&i.ReplyCount,
+		&i.AuthorProfileID,
+		&i.Status,
+		&i.RemovedBy,
+		&i.RemovedReason,
 	)
 	return i, err
 }

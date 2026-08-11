@@ -4,6 +4,7 @@ package testdb
 
 import (
 	"fmt"
+	"strconv"
 	"testing"
 
 	"github.com/google/uuid"
@@ -184,9 +185,14 @@ func SeedComment(t *testing.T, d *db.DB, tenantID, authorID, contentID pgtype.UU
 		body = "Seeded test comment " + uuid.New().String()
 	}
 
+	// Wrap the plain-text body in a minimal TipTap JSON document envelope
+	// (Section 49 — comments.body is jsonb TipTap JSON).
+	doc := fmt.Sprintf(`{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":%s}]}]}`,
+		strconv.Quote(body))
+
 	_, err := d.Writer.Exec(ctx,
 		`INSERT INTO comments (id, tenant_id, content_id, author_user_id, body) VALUES ($1, $2, $3, $4, $5)`,
-		commentID, tenantID, contentID, authorID, body)
+		commentID, tenantID, contentID, authorID, doc)
 	if err != nil {
 		t.Fatalf("testdb: SeedComment: %v", err)
 	}
@@ -391,4 +397,89 @@ func SeedOrgMembership(t *testing.T, d *db.DB, orgID, userID pgtype.UUID, role s
 	if err != nil {
 		t.Fatalf("testdb: SeedOrgMembership: %v", err)
 	}
+}
+
+// CalendarEntryOpts customizes SeedCalendarEntry. Zero-value fields fall
+// back to sensible defaults: Status to "published", Category to "other",
+// OccursAt to 30 days from now, SourceURL to a placeholder.
+// Ref: japaconnect-engineering/sections/86-community-calendar.md
+type CalendarEntryOpts struct {
+	Title              string
+	Category           string
+	Status             string
+	SourceURL          string
+	IsRecurring        bool
+	RecurrencePattern  string
+	OccursAt           string // RFC 3339; defaults to now+30d
+	DestinationSpaceID pgtype.UUID
+}
+
+// SeedCalendarEntry inserts a calendar_entries row under tenantID with
+// submittedBy set to userID, returning the new entry id. The destination
+// space must already exist (use SeedSpaceMembership first).
+func SeedCalendarEntry(t *testing.T, d *db.DB, tenantID, userID pgtype.UUID, o CalendarEntryOpts) pgtype.UUID {
+	t.Helper()
+
+	title := o.Title
+	if title == "" {
+		title = "Test Calendar Entry"
+	}
+	category := o.Category
+	if category == "" {
+		category = "other"
+	}
+	status := o.Status
+	if status == "" {
+		status = "published"
+	}
+	sourceURL := o.SourceURL
+	if sourceURL == "" {
+		sourceURL = "https://example.com/source"
+	}
+
+	entryID := mustUUID()
+
+	// When OccursAt is a literal timestamp, use a parameterized query;
+	// otherwise use the SQL expression (now() + interval).
+	if o.OccursAt != "" {
+		_, err := d.Writer.Exec(t.Context(), `
+			INSERT INTO calendar_entries (
+				id, tenant_id, title, category, status, source_url,
+				destination_space_id, submitted_by, occurs_at, is_recurring,
+				recurrence_pattern, created_at, updated_at
+			) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, now(), now())
+		`, entryID, tenantID, title, category, status, sourceURL,
+			o.DestinationSpaceID, userID, o.OccursAt, o.IsRecurring,
+			nilIfEmpty(o.RecurrencePattern))
+		if err != nil {
+			t.Fatalf("testdb: SeedCalendarEntry: %v", err)
+		}
+	} else {
+		var recPattern interface{}
+		if o.RecurrencePattern != "" {
+			recPattern = o.RecurrencePattern
+		}
+		_, err := d.Writer.Exec(t.Context(), `
+			INSERT INTO calendar_entries (
+				id, tenant_id, title, category, status, source_url,
+				destination_space_id, submitted_by, occurs_at, is_recurring,
+				recurrence_pattern, created_at, updated_at
+			) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now() + interval '30 days', $9, $10, now(), now())
+		`, entryID, tenantID, title, category, status, sourceURL,
+			o.DestinationSpaceID, userID, o.IsRecurring, recPattern)
+		if err != nil {
+			t.Fatalf("testdb: SeedCalendarEntry: %v", err)
+		}
+	}
+
+	return entryID
+}
+
+// nilIfEmpty returns a nil interface{} for empty strings, suitable for
+// nullable columns.
+func nilIfEmpty(s string) interface{} {
+	if s == "" {
+		return nil
+	}
+	return s
 }

@@ -960,3 +960,57 @@ FROM (
 UPDATE attestation_community_updates
 SET deleted_at = now()
 WHERE user_id = @user_id AND deleted_at IS NULL;
+
+-- name: GdprExportUserCalendarEntries :one
+-- §86: export calendar_entries submitted by the user (BUG-025).
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (
+    SELECT e.id, e.title, e.description, e.category,
+           e.destination_space_id, e.origin_space_id,
+           e.occurs_at, e.ends_at, e.is_recurring, e.recurrence_pattern,
+           e.source_url, e.status, e.created_at
+    FROM calendar_entries e
+    WHERE e.submitted_by = @user_id AND e.tenant_id = @tenant_id AND e.deleted_at IS NULL
+) t;
+
+-- name: GdprExportUserCalendarSaves :one
+-- §86: export calendar_saves for the user (BUG-025).
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (
+    SELECT s.entry_id, s.saved_at
+    FROM calendar_saves s
+    WHERE s.user_id = @user_id AND s.tenant_id = @tenant_id
+) t;
+
+-- name: GdprExportUserCalendarSubscriptions :one
+-- §86: export calendar_subscriptions for the user (BUG-025).
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (
+    SELECT sub.destination_space_id, sub.category, sub.created_at
+    FROM calendar_subscriptions sub
+    WHERE sub.user_id = @user_id AND sub.tenant_id = @tenant_id
+) t;
+
+-- name: GdprReassignCalendarEntriesSubmittedBy :exec
+-- §86: reassign calendar_entries.submitted_by to placeholder during GDPR
+-- erasure (BUG-025). The entries are community content, not user PII.
+UPDATE calendar_entries
+SET submitted_by = @target_user_id
+WHERE submitted_by = @user_id AND tenant_id = @tenant_id;
+
+-- name: GdprReassignCalendarEntriesReviewedBy :exec
+-- §86: reassign calendar_entries.reviewed_by to placeholder during GDPR
+-- erasure (BUG-025).
+UPDATE calendar_entries
+SET reviewed_by = @target_user_id
+WHERE reviewed_by = @user_id AND tenant_id = @tenant_id;
+
+-- name: GdprDeleteCalendarSavesByUser :exec
+-- §86: delete calendar_saves for the user during GDPR erasure (BUG-025).
+DELETE FROM calendar_saves
+WHERE user_id = @user_id AND tenant_id = @tenant_id;
+
+-- name: GdprDeleteCalendarSubscriptionsByUser :exec
+-- §86: delete calendar_subscriptions for the user during GDPR erasure (BUG-025).
+DELETE FROM calendar_subscriptions
+WHERE user_id = @user_id AND tenant_id = @tenant_id;

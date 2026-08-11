@@ -47,7 +47,9 @@ var Tiers = map[string]RateLimitTier{
 
 // RateLimit returns middleware that enforces a fixed-window rate limit
 // for the given tier. The identifier is the authenticated user's ID when
-// available, otherwise the client IP resolved by chi's RealIP middleware.
+// available, otherwise the client IP resolved by clientip.FromRequest,
+// which honours X-Forwarded-For / X-Real-IP only when the immediate peer
+// is a trusted proxy (JC_TRUSTED_PROXIES).
 //
 // When Valkey is unreachable, the middleware allows the request through
 // (graceful degradation). When the tier name is unknown, a warning is

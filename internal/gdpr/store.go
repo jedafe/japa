@@ -323,6 +323,23 @@ func (s *Store) gdprExportAttestationCommunityUpdates(ctx context.Context, userI
 	return exportJSONSlice(ctx, s.read.GdprExportAttestationCommunityUpdates, gen.GdprExportAttestationCommunityUpdatesParams{UserID: userID, TenantID: tenantID})
 }
 
+// gdprExportUserCalendarEntries exports §86 calendar_entries submitted by
+// the user (BUG-025).
+func (s *Store) gdprExportUserCalendarEntries(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {
+	return exportJSONSlice(ctx, s.read.GdprExportUserCalendarEntries, gen.GdprExportUserCalendarEntriesParams{UserID: userID, TenantID: tenantID})
+}
+
+// gdprExportUserCalendarSaves exports §86 calendar_saves for the user (BUG-025).
+func (s *Store) gdprExportUserCalendarSaves(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {
+	return exportJSONSlice(ctx, s.read.GdprExportUserCalendarSaves, gen.GdprExportUserCalendarSavesParams{UserID: userID, TenantID: tenantID})
+}
+
+// gdprExportUserCalendarSubscriptions exports §86 calendar_subscriptions for
+// the user (BUG-025).
+func (s *Store) gdprExportUserCalendarSubscriptions(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {
+	return exportJSONSlice(ctx, s.read.GdprExportUserCalendarSubscriptions, gen.GdprExportUserCalendarSubscriptionsParams{UserID: userID, TenantID: tenantID})
+}
+
 // softDeleteAttestationCommunityUpdatesByUser soft-deletes §97
 // attestation_community_updates authored by the user during GDPR erasure
 // (BUG-015).

@@ -153,7 +153,7 @@
 		actions,
 		fields,
 		load: async ({ q, filter }) => {
-			const result = await botsAdminApiExtended.list();
+			const result = await botsAdminApiExtended.list('page_size=100');
 			if (result.ok) {
 				let data = (Array.isArray(result.data) ? result.data : []) as Bot[];
 				if (filter.bot_type) data = data.filter((b) => b.bot_type === filter.bot_type);

@@ -1,4 +1,4 @@
--- 000350_claim_form_paid_submissions.up.sql
+-- 000385_claim_form_paid_submissions.up.sql
 -- Adds paid form submission support (Section 06) and links the claim-ownership
 -- flow to the Form Builder (Section 07). Three schema changes:
 --   1. forms.submission_fee_credits — 0 = free, >0 = fee in wallet credits

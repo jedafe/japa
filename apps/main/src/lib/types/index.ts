@@ -624,7 +624,7 @@ export interface Comment {
 	content_id: string;
 	author_user_id: string;
 	parent_id: string | null;
-	/** Plain-text comment body (not TipTap JSON). */
+	/** Base64-encoded TipTap JSON document (Section 49 — jsonb body). */
 	body: string;
 	/** Nesting depth (0 = top-level, max 3). */
 	depth: number;

@@ -8,13 +8,21 @@ package bookmarkfolders
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
 )
+
+// MaxFolderNameLength is the upper bound on a bookmark folder name. §08 does
+// not define a max length, so this sane default prevents unbounded text input
+// from reaching the DB (BE-04).
+const MaxFolderNameLength = 100
 
 // Service provides bookmark folder CRUD.
 type Service struct {
@@ -28,6 +36,8 @@ func NewService(database *db.DB) *Service {
 }
 
 // CreateFolder creates a new named bookmark folder for the user.
+// Returns ErrDuplicate when a folder with the same name already exists for
+// this user (UNIQUE(user_id, name) violation — BE-01).
 func (s *Service) CreateFolder(ctx context.Context, tenantID, userID pgtype.UUID, name string) (gen.BookmarkFolder, error) {
 	folder, err := s.write.CreateBookmarkFolder(ctx, gen.CreateBookmarkFolderParams{
 		TenantID: tenantID,
@@ -35,6 +45,10 @@ func (s *Service) CreateFolder(ctx context.Context, tenantID, userID pgtype.UUID
 		Name:     name,
 	})
 	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return gen.BookmarkFolder{}, fmt.Errorf("%w: bookmark folder name already exists: %w", errpkg.ErrDuplicate, err)
+		}
 		return gen.BookmarkFolder{}, fmt.Errorf("creating bookmark folder: %w", err)
 	}
 
@@ -88,14 +102,18 @@ func (s *Service) GetFolder(ctx context.Context, id, tenantID, userID pgtype.UUI
 		UserID:   userID,
 	})
 	if err != nil {
-		return gen.BookmarkFolder{}, fmt.Errorf("%w: %w", errpkg.ErrNotFound, err)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return gen.BookmarkFolder{}, fmt.Errorf("%w: bookmark folder: %w", errpkg.ErrNotFound, err)
+		}
+		return gen.BookmarkFolder{}, fmt.Errorf("getting bookmark folder: %w", err)
 	}
 
 	return folder, nil
 }
 
 // UpdateFolder renames a bookmark folder. Returns ErrNotFound if it doesn't
-// exist or doesn't belong to the caller.
+// exist or doesn't belong to the caller; ErrDuplicate if the new name is
+// already used by another folder owned by this user (BE-02).
 func (s *Service) UpdateFolder(ctx context.Context, id, tenantID, userID pgtype.UUID, name string) (gen.BookmarkFolder, error) {
 	folder, err := s.write.UpdateBookmarkFolder(ctx, gen.UpdateBookmarkFolderParams{
 		Name:     name,
@@ -104,7 +122,14 @@ func (s *Service) UpdateFolder(ctx context.Context, id, tenantID, userID pgtype.
 		UserID:   userID,
 	})
 	if err != nil {
-		return gen.BookmarkFolder{}, fmt.Errorf("%w: %w", errpkg.ErrNotFound, err)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return gen.BookmarkFolder{}, fmt.Errorf("%w: bookmark folder: %w", errpkg.ErrNotFound, err)
+		}
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return gen.BookmarkFolder{}, fmt.Errorf("%w: bookmark folder name already exists: %w", errpkg.ErrDuplicate, err)
+		}
+		return gen.BookmarkFolder{}, fmt.Errorf("updating bookmark folder: %w", err)
 	}
 
 	return folder, nil

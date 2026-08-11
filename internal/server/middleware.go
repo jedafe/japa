@@ -3,14 +3,20 @@
 // Middleware is applied in the order registered. The order matters:
 //  1. RequestID — generate a unique ID so every log line for a request
 //     can be correlated.
-//  2. RealIP — extract the real client IP from X-Forwarded-For so logs
-//     and rate limiters see the original caller, not the proxy.
-//  3. Recovery — catch panics and return a 500 instead of crashing the
+//  2. Recovery — catch panics and return a 500 instead of crashing the
 //     process. Uses slog for structured logging so panics appear in the
 //     same log stream as other application logs.
-//  4. Logger — log every request with method, path, status, and duration.
-//  5. SecurityHeaders — set nosniff, frame, referrer and CSP headers.
-//  6. CORS — allow cross-origin requests from the SvelteKit frontends.
+//  3. Logger — log every request with method, path, status, and duration.
+//  4. SecurityHeaders — set nosniff, frame, referrer and CSP headers.
+//  5. CORS — allow cross-origin requests from the SvelteKit frontends.
+//
+// Client IP resolution is NOT a global middleware. chi's RealIP middleware
+// was removed due to IP spoofing vulnerabilities (GHSA-3fxj-6jh8-hvhx) — it
+// trusted X-Forwarded-For unconditionally. Every consumer that needs the
+// real client IP (rate limiters, geoip, spam blocklist, audit logs, etc.)
+// resolves it per-request via clientip.FromRequest, which honours
+// forwarding headers only when the immediate peer is a trusted proxy
+// (JC_TRUSTED_PROXIES). See internal/clientip and JEOS Section 37.
 package server
 
 import (

@@ -6,11 +6,12 @@
 	import { Select } from 'bits-ui';
 	import { untrack } from 'svelte';
 	import type { PageData, ActionData } from './$types';
+	import CommentEditor from '$lib/components/comments/CommentEditor.svelte';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 
 	let title = $state('');
-	let body = $state('');
+	let body = $state<string>(''); // base64 TipTap JSON from CommentEditor
 	let spaceId = $state<string>(untrack(() => data.preselected?.id ?? ''));
 	let isAnonymous = $state(false);
 	let submitting = $state(false);
@@ -41,7 +42,7 @@
 			.slice(0, 80)
 	);
 
-	const canSubmit = $derived(title.trim().length > 0 && !!spaceId && !submitting);
+	const canSubmit = $derived(title.trim().length > 0 && !!spaceId && !!body && !submitting);
 
 	const errorMsg = $derived(
 		form?.error
@@ -150,14 +151,8 @@
 		<!-- Body -->
 		<div>
 			<label for="body" class="mb-1.5 block text-sm font-medium text-[var(--color-text)]">{t('forum.new.label_body', 'Body')}</label>
-			<textarea
-				id="body"
-				name="body"
-				bind:value={body}
-				rows="10"
-				placeholder={t('forum.new.placeholder_body', 'Write your discussion…')}
-				class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] placeholder:text-[var(--color-muted)] focus:border-[var(--color-primary)] focus:outline-none"
-			></textarea>
+			<input type="hidden" name="body" value={body} />
+			<CommentEditor placeholder={t('forum.new.placeholder_body', 'Write your discussion…')} oninput={(b) => (body = b)} />
 		</div>
 
 		<!-- Anonymous toggle -->

@@ -88,12 +88,21 @@ func scanUUIDParam(w http.ResponseWriter, r *http.Request, name string) (pgtype.
 func parsePageParams(r *http.Request) (page, limit int32) {
 	page = 1
 	limit = 20
-	if v := r.URL.Query().Get("page"); v != "" {
+	// Rule 5: use page_size/page_offset. Keep page/limit as legacy aliases.
+	if v := r.URL.Query().Get("page_offset"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			page = int32(n)
+		}
+	} else if v := r.URL.Query().Get("page"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
 			page = int32(n)
 		}
 	}
-	if v := r.URL.Query().Get("limit"); v != "" {
+	if v := r.URL.Query().Get("page_size"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 100 {
+			limit = int32(n)
+		}
+	} else if v := r.URL.Query().Get("limit"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 100 {
 			limit = int32(n)
 		}
@@ -105,8 +114,9 @@ func parsePageParams(r *http.Request) (page, limit int32) {
 // Public handlers (browse — anonymous)
 // ---------------------------------------------------------------------------
 
-// HandleList handles GET /calendar — list approved calendar entries with
-// optional filters (dest, category, from, to). Also accepts ?destination_space_id= as legacy alias.
+// HandleList handles GET /calendar — list published calendar entries with
+// optional filters (dest, origin, category, from, to, view). Also accepts
+// ?destination_space_id= as legacy alias.
 func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
@@ -121,6 +131,18 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 	if destParam != "" {
 		if err := destSpaceID.Scan(destParam); err != nil {
 			writeError(w, http.StatusBadRequest, "invalid_id", "Invalid destination space ID")
+			return
+		}
+	}
+
+	var originSpaceID pgtype.UUID
+	originParam := r.URL.Query().Get("origin")
+	if originParam == "" {
+		originParam = r.URL.Query().Get("origin_space_id")
+	}
+	if originParam != "" {
+		if err := originSpaceID.Scan(originParam); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_id", "Invalid origin space ID")
 			return
 		}
 	}
@@ -147,7 +169,7 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 
 	page, limit := parsePageParams(r)
 
-	entries, total, err := h.service.List(r.Context(), tenantID, destSpaceID, category, from, to, page, limit)
+	entries, total, err := h.service.List(r.Context(), tenantID, destSpaceID, originSpaceID, category, from, to, page, limit)
 	if err != nil {
 		slog.Error("calendar: list failed", "error", err)
 		writeError(w, http.StatusInternalServerError, "list_failed", "Failed to list calendar entries")
@@ -157,9 +179,10 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"data": entries,
 		"pagination": map[string]any{
-			"page":  page,
-			"limit": limit,
-			"total": total,
+			"page":        page,
+			"page_size":   limit,
+			"page_offset": page,
+			"total":       total,
 		},
 	})
 }
@@ -225,6 +248,11 @@ func (h *Handlers) HandleSubmit(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "missing_occurs_at", "occurs_at is required")
 		return
 	}
+	// §86: source_url is required ("verifiable official source link").
+	if input.SourceURL == "" {
+		writeError(w, http.StatusBadRequest, "missing_source_url", "source_url is required")
+		return
+	}
 
 	entryID, err := h.service.Submit(r.Context(), tenantID, user.UserID, input)
 	if err != nil {
@@ -235,8 +263,8 @@ func (h *Handlers) HandleSubmit(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusCreated, map[string]any{
 		"data": map[string]any{
-			"entry_id": entryID,
-			"status":   "pending",
+			"id":     entryID,
+			"status": "pending",
 		},
 	})
 }
@@ -307,13 +335,19 @@ func (h *Handlers) HandleSubscribe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if input.DestinationSpaceID == "" {
+	// Accept both destination_space_id (canonical) and destination_country
+	// (frontend alias).
+	destStr := input.DestinationSpaceID
+	if destStr == "" {
+		destStr = input.DestinationCountry
+	}
+	if destStr == "" {
 		writeError(w, http.StatusBadRequest, "missing_destination", "destination_space_id is required")
 		return
 	}
 
 	var destSpaceID pgtype.UUID
-	if err := destSpaceID.Scan(input.DestinationSpaceID); err != nil {
+	if err := destSpaceID.Scan(destStr); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid destination_space_id")
 		return
 	}
@@ -328,7 +362,8 @@ func (h *Handlers) HandleSubscribe(w http.ResponseWriter, r *http.Request) {
 }
 
 // HandleUnsubscribe handles DELETE /calendar/subscribe — remove a
-// category/destination subscription.
+// category/destination subscription. Accepts dest/destination_space_id from
+// either query params or JSON body (frontend sends a body).
 func (h *Handlers) HandleUnsubscribe(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
 	if !ok {
@@ -339,11 +374,32 @@ func (h *Handlers) HandleUnsubscribe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var destSpaceID pgtype.UUID
 	destParam := r.URL.Query().Get("dest")
 	if destParam == "" {
 		destParam = r.URL.Query().Get("destination_space_id")
 	}
+	category := r.URL.Query().Get("category")
+
+	// If not in query params, try JSON body (frontend sends a body).
+	if destParam == "" {
+		var body struct {
+			DestinationSpaceID string `json:"destination_space_id"`
+			DestinationCountry string `json:"destination_country"`
+			Category           string `json:"category"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err == nil {
+			if body.DestinationSpaceID != "" {
+				destParam = body.DestinationSpaceID
+			} else if body.DestinationCountry != "" {
+				destParam = body.DestinationCountry
+			}
+			if body.Category != "" {
+				category = body.Category
+			}
+		}
+	}
+
+	var destSpaceID pgtype.UUID
 	if destParam != "" {
 		if err := destSpaceID.Scan(destParam); err != nil {
 			writeError(w, http.StatusBadRequest, "invalid_id", "Invalid destination space ID")
@@ -353,8 +409,6 @@ func (h *Handlers) HandleUnsubscribe(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "missing_destination", "dest or destination_space_id is required")
 		return
 	}
-
-	category := r.URL.Query().Get("category")
 
 	if err := h.service.Unsubscribe(r.Context(), user.UserID, tenantID, destSpaceID, category); err != nil {
 		slog.Error("calendar: unsubscribe failed", "error", err)
@@ -370,7 +424,8 @@ func (h *Handlers) HandleUnsubscribe(w http.ResponseWriter, r *http.Request) {
 // ---------------------------------------------------------------------------
 
 // HandleAdminList handles GET /admin/calendar — admin list of all calendar
-// entries (any status).
+// entries (any status). Supports dest, origin, category, status, q, from, to,
+// sort, order, page, page_size params per geo-aware tool pattern.
 func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
@@ -392,9 +447,26 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	var originSpaceID pgtype.UUID
+	originParam := r.URL.Query().Get("origin")
+	if originParam == "" {
+		originParam = r.URL.Query().Get("origin_space_id")
+	}
+	if originParam != "" {
+		if err := originSpaceID.Scan(originParam); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_id", "Invalid origin space ID")
+			return
+		}
+	}
+
 	category := r.URL.Query().Get("category")
 	status := r.URL.Query().Get("status")
 	q := r.URL.Query().Get("q")
+	sort := r.URL.Query().Get("sort")
+	order := r.URL.Query().Get("order")
+	if order == "" {
+		order = r.URL.Query().Get("dir")
+	}
 
 	var from, to pgtype.Timestamptz
 	if v := r.URL.Query().Get("from"); v != "" {
@@ -419,25 +491,32 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 		limit = 200
 	}
 
-	entries, total, err := h.service.AdminList(r.Context(), tenantID, destSpaceID, category, status, q, from, to, page, limit)
+	entries, total, err := h.service.AdminList(r.Context(), tenantID, destSpaceID, originSpaceID, category, status, q, from, to, sort, order, page, limit)
 	if err != nil {
 		slog.Error("calendar: admin list failed", "error", err)
 		writeError(w, http.StatusInternalServerError, "admin_list_failed", "Failed to list calendar entries")
 		return
 	}
 
+	totalPages := int64(0)
+	if limit > 0 {
+		totalPages = (total + int64(limit) - 1) / int64(limit)
+	}
+
+	// Geo-aware tool pattern response envelope: { data, meta: { page, per_page, total, total_pages } }
 	writeJSON(w, http.StatusOK, map[string]any{
 		"data": entries,
-		"pagination": map[string]any{
-			"page":  page,
-			"limit": limit,
-			"total": total,
+		"meta": map[string]any{
+			"page":        page,
+			"per_page":    limit,
+			"total":       total,
+			"total_pages": totalPages,
 		},
 	})
 }
 
-// HandleAdminUpdate handles PATCH /admin/calendar/:id — approve, archive,
-// or flag a calendar entry.
+// HandleAdminUpdate handles PATCH /admin/calendar/:id — publish, archive,
+// or mark unverified a calendar entry.
 func (h *Handlers) HandleAdminUpdate(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
 	if !ok {

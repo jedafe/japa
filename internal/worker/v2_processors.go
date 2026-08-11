@@ -120,6 +120,16 @@ type EmbassyAlerterProcessor interface {
 	ExpireAlerts(ctx context.Context) (int, error)
 }
 
+// CalendarProcessor handles Community Calendar background tasks (§86, ADR-094).
+// FlagStaleEntries marks recurring entries as 'unverified' when their
+// staleness_check_due date has passed (nightly). SendReminders dispatches
+// notifications to subscribers at 90/30/7-day marks before each entry (daily).
+// Ref: japaconnect-engineering/sections/86-community-calendar.md
+type CalendarProcessor interface {
+	FlagStaleEntries(ctx context.Context) (int64, error)
+	SendReminders(ctx context.Context) (int, error)
+}
+
 // ---------------------------------------------------------------------------
 // Global processor slots — nil-safe (graceful degradation when unregistered).
 // ---------------------------------------------------------------------------
@@ -138,6 +148,7 @@ var (
 	studioProcessor        StudioProcessor
 	mentorProcessor        MentorProcessor
 	embassyAlerterProcessor EmbassyAlerterProcessor
+	calendarProcessor       CalendarProcessor
 )
 
 // Register functions — call once at startup before the worker serves.
@@ -155,6 +166,7 @@ func RegisterPersonaProcessor(p PersonaProcessor)       { personaProcessor = p }
 func RegisterStudioProcessor(p StudioProcessor)         { studioProcessor = p }
 func RegisterMentorProcessor(p MentorProcessor)         { mentorProcessor = p }
 func RegisterEmbassyAlerterProcessor(p EmbassyAlerterProcessor) { embassyAlerterProcessor = p }
+func RegisterCalendarProcessor(p CalendarProcessor)             { calendarProcessor = p }
 
 // ---------------------------------------------------------------------------
 // Task type constants (V2 — Sections 60–77).
@@ -197,6 +209,14 @@ const (
 	TypeEmbassyPoll          = "embassy:poll"
 	TypeEmbassyDispatchAlerts = "embassy:dispatch_alerts"
 	TypeEmbassyExpireChecks   = "embassy:expire_checks"
+
+	// §86 Community Calendar (ADR-094).
+	// calendar:staleness_check runs nightly on the low queue, marking
+	// recurring entries as 'unverified' when their staleness_check_due date
+	// has passed. calendar:send_reminders runs daily on the default queue,
+	// dispatching notifications to subscribers at 90/30/7-day marks.
+	TypeCalendarStalenessCheck = "calendar:staleness_check"
+	TypeCalendarSendReminders  = "calendar:send_reminders"
 )
 
 // ---------------------------------------------------------------------------
@@ -755,5 +775,37 @@ func HandleEmbassyExpireChecks(ctx context.Context, _ *asynq.Task) error {
 		return fmt.Errorf("task:embassy:expire_checks: %w", err)
 	}
 	slog.Info("task:embassy:expire_checks: expired alerts", "count", n)
+	return nil
+}
+
+// HandleCalendarStalenessCheck marks recurring calendar entries as
+// 'unverified' when their staleness_check_due date has passed (§86, ADR-094).
+// Nightly sweep on the low queue.
+func HandleCalendarStalenessCheck(ctx context.Context, _ *asynq.Task) error {
+	if calendarProcessor == nil {
+		slog.Warn("task:calendar:staleness_check: no processor registered, skipping")
+		return nil
+	}
+	n, err := calendarProcessor.FlagStaleEntries(ctx)
+	if err != nil {
+		return fmt.Errorf("task:calendar:staleness_check: %w", err)
+	}
+	slog.Info("task:calendar:staleness_check: flagged stale entries", "count", n)
+	return nil
+}
+
+// HandleCalendarSendReminders dispatches notifications to subscribers at
+// 90/30/7-day marks before each published calendar entry (§86, ADR-094).
+// Daily sweep on the default queue.
+func HandleCalendarSendReminders(ctx context.Context, _ *asynq.Task) error {
+	if calendarProcessor == nil {
+		slog.Warn("task:calendar:send_reminders: no processor registered, skipping")
+		return nil
+	}
+	n, err := calendarProcessor.SendReminders(ctx)
+	if err != nil {
+		return fmt.Errorf("task:calendar:send_reminders: %w", err)
+	}
+	slog.Info("task:calendar:send_reminders: dispatched reminders", "count", n)
 	return nil
 }

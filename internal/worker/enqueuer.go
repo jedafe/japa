@@ -168,6 +168,8 @@ var taskTier = func() map[string]string {
 		TypeAffiliateRecordClick,
 		// §91 Embassy Appointment Alerter (ADR-099) — default tier per spec.
 		TypeEmbassyPoll,
+		// §86 Community Calendar (ADR-094) — daily reminders on default tier.
+		TypeCalendarSendReminders,
 	} {
 		m[t] = QueueDefault
 	}
@@ -206,6 +208,8 @@ var taskTier = func() map[string]string {
 		TypeMentorUpdateMeilisearch,
 		// §91 Embassy Appointment Alerter (ADR-099) — nightly sweep, low tier.
 		TypeEmbassyExpireChecks,
+		// §86 Community Calendar (ADR-094) — nightly staleness check, low tier.
+		TypeCalendarStalenessCheck,
 	} {
 		m[t] = QueueLow
 	}

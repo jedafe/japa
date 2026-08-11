@@ -1887,13 +1887,18 @@ func (h *Handlers) RemoveBookmark(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
 	contentID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
-	if err := h.Service.RemoveBookmark(r.Context(), user.UserID, EntityContent, contentID); err != nil {
+	if err := h.Service.RemoveBookmark(r.Context(), tenantID, user.UserID, EntityContent, contentID); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -1969,7 +1974,7 @@ func (h *Handlers) MoveBookmark(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if err := h.Service.SetBookmarkFolder(r.Context(), user.UserID, EntityContent, contentID, folderID); err != nil {
+	if err := h.Service.SetBookmarkFolder(r.Context(), tenantID, user.UserID, EntityContent, contentID, folderID); err != nil {
 		handleServiceError(w, err)
 		return
 	}

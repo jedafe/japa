@@ -605,7 +605,7 @@ type CalendarEntry struct {
 	EndsAt             pgtype.Timestamptz `json:"ends_at"`
 	IsRecurring        bool               `json:"is_recurring"`
 	RecurrencePattern  *string            `json:"recurrence_pattern"`
-	SourceUrl          *string            `json:"source_url"`
+	SourceUrl          string             `json:"source_url"`
 	Status             string             `json:"status"`
 	SubmittedBy        pgtype.UUID        `json:"submitted_by"`
 	ReviewedBy         pgtype.UUID        `json:"reviewed_by"`
@@ -672,20 +672,26 @@ type ChecklistProgress struct {
 }
 
 type Comment struct {
-	ID           pgtype.UUID        `json:"id"`
-	TenantID     pgtype.UUID        `json:"tenant_id"`
-	ContentID    pgtype.UUID        `json:"content_id"`
-	AuthorUserID pgtype.UUID        `json:"author_user_id"`
-	ParentID     pgtype.UUID        `json:"parent_id"`
-	Body         string             `json:"body"`
-	Depth        int32              `json:"depth"`
-	VoteScore    int32              `json:"vote_score"`
-	IsPinned     bool               `json:"is_pinned"`
-	IsEdited     bool               `json:"is_edited"`
-	EditedAt     pgtype.Timestamptz `json:"edited_at"`
-	CreatedAt    pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
-	DeletedAt    pgtype.Timestamptz `json:"deleted_at"`
+	ID              pgtype.UUID        `json:"id"`
+	TenantID        pgtype.UUID        `json:"tenant_id"`
+	ContentID       pgtype.UUID        `json:"content_id"`
+	AuthorUserID    pgtype.UUID        `json:"author_user_id"`
+	ParentID        pgtype.UUID        `json:"parent_id"`
+	Body            []byte             `json:"body"`
+	Depth           int32              `json:"depth"`
+	VoteScore       int32              `json:"vote_score"`
+	IsPinned        bool               `json:"is_pinned"`
+	IsEdited        bool               `json:"is_edited"`
+	EditedAt        pgtype.Timestamptz `json:"edited_at"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt       pgtype.Timestamptz `json:"deleted_at"`
+	IsAnonymous     bool               `json:"is_anonymous"`
+	ReplyCount      int32              `json:"reply_count"`
+	AuthorProfileID pgtype.UUID        `json:"author_profile_id"`
+	Status          string             `json:"status"`
+	RemovedBy       pgtype.UUID        `json:"removed_by"`
+	RemovedReason   *string            `json:"removed_reason"`
 }
 
 type CommentVote struct {
@@ -980,6 +986,15 @@ type ContentSpace struct {
 type ContentTag struct {
 	ContentID pgtype.UUID        `json:"content_id"`
 	TagID     pgtype.UUID        `json:"tag_id"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
+type ContentThreadLink struct {
+	ID        pgtype.UUID        `json:"id"`
+	TenantID  pgtype.UUID        `json:"tenant_id"`
+	ContentID pgtype.UUID        `json:"content_id"`
+	ThreadID  pgtype.UUID        `json:"thread_id"`
+	LinkCount int32              `json:"link_count"`
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 }
 
@@ -3448,11 +3463,11 @@ type User struct {
 	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
 	FollowerCount       int32              `json:"follower_count"`
 	ForcePasswordChange bool               `json:"force_password_change"`
-	CurrentGeoSpaceID   pgtype.UUID        `json:"current_geo_space_id"`
 	UsernameChangedAt   pgtype.Timestamptz `json:"username_changed_at"`
 	IsBot               bool               `json:"is_bot"`
 	PasswordChangedAt   pgtype.Timestamptz `json:"password_changed_at"`
 	AiExempt            bool               `json:"ai_exempt"`
+	CurrentGeoSpaceID   pgtype.UUID        `json:"current_geo_space_id"`
 }
 
 type UserAffiliateLink struct {

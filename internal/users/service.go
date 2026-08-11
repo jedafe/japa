@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
+	errpkg "github.com/jedafe/japa/internal/errors"
 )
 
 // Service provides user profile and preference operations with reader/writer
@@ -918,6 +919,24 @@ func (s *Service) ListUserBookmarks(ctx context.Context, tenantID, userID pgtype
 	}
 
 	return result, nil
+}
+
+// DeleteBookmarkByID removes a single bookmark by its row ID. Tenant + owner
+// scoped — returns ErrNotFound when the bookmark doesn't exist or belongs to
+// another user/tenant. Works polymorphically across all entity types.
+func (s *Service) DeleteBookmarkByID(ctx context.Context, id, tenantID, userID pgtype.UUID) error {
+	affected, err := s.store.write.DeleteBookmarkByID(ctx, gen.DeleteBookmarkByIDParams{
+		ID:       id,
+		TenantID: tenantID,
+		UserID:   userID,
+	})
+	if err != nil {
+		return fmt.Errorf("deleting bookmark by id: %w", err)
+	}
+	if affected == 0 {
+		return errpkg.ErrNotFound
+	}
+	return nil
 }
 
 // nullableString coerces a sqlc interface{} column (from a LEFT JOIN CASE)

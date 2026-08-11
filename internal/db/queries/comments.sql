@@ -5,10 +5,9 @@
 -- =====================
 
 -- name: CreateComment :one
-INSERT INTO comments (tenant_id, content_id, author_user_id, parent_id, body, depth)
-VALUES (@tenant_id, @content_id, @author_user_id, sqlc.narg(parent_id), @body, @depth)
-RETURNING id, tenant_id, content_id, author_user_id, parent_id, body, depth,
-          vote_score, is_pinned, is_edited, edited_at, created_at, updated_at, deleted_at;
+INSERT INTO comments (tenant_id, content_id, author_user_id, parent_id, body, depth, is_anonymous)
+VALUES (@tenant_id, @content_id, @author_user_id, sqlc.narg(parent_id), @body, @depth, @is_anonymous)
+RETURNING *;
 
 -- name: GetComment :one
 SELECT c.id, c.tenant_id, c.content_id, c.author_user_id, c.parent_id, c.body, c.depth,
@@ -31,8 +30,41 @@ FROM comments c
 JOIN users u ON u.id = c.author_user_id
 LEFT JOIN user_profiles up ON up.user_id = u.id AND up.tenant_id = c.tenant_id
 WHERE c.content_id = @content_id AND c.tenant_id = @tenant_id AND c.deleted_at IS NULL
+  AND c.status = 'published'
   AND (c.parent_id IS NULL)
 ORDER BY c.is_pinned DESC, c.vote_score DESC, c.created_at DESC
+LIMIT @page_limit OFFSET @page_offset;
+
+-- name: ListCommentsByContentNew :many
+-- Section 49 ?sort=new — newest first (pinned still surface on top).
+SELECT c.id, c.tenant_id, c.content_id, c.author_user_id, c.parent_id, c.body, c.depth,
+       c.vote_score, c.is_pinned, c.is_edited, c.edited_at, c.created_at, c.updated_at, c.deleted_at,
+       u.username,
+       COALESCE(up.display_name, '') AS display_name,
+       COALESCE(up.avatar_url, '') AS avatar_url
+FROM comments c
+JOIN users u ON u.id = c.author_user_id
+LEFT JOIN user_profiles up ON up.user_id = u.id AND up.tenant_id = c.tenant_id
+WHERE c.content_id = @content_id AND c.tenant_id = @tenant_id AND c.deleted_at IS NULL
+  AND c.status = 'published'
+  AND (c.parent_id IS NULL)
+ORDER BY c.is_pinned DESC, c.created_at DESC
+LIMIT @page_limit OFFSET @page_offset;
+
+-- name: ListCommentsByContentOldest :many
+-- Section 49 ?sort=oldest — oldest first (pinned still surface on top).
+SELECT c.id, c.tenant_id, c.content_id, c.author_user_id, c.parent_id, c.body, c.depth,
+       c.vote_score, c.is_pinned, c.is_edited, c.edited_at, c.created_at, c.updated_at, c.deleted_at,
+       u.username,
+       COALESCE(up.display_name, '') AS display_name,
+       COALESCE(up.avatar_url, '') AS avatar_url
+FROM comments c
+JOIN users u ON u.id = c.author_user_id
+LEFT JOIN user_profiles up ON up.user_id = u.id AND up.tenant_id = c.tenant_id
+WHERE c.content_id = @content_id AND c.tenant_id = @tenant_id AND c.deleted_at IS NULL
+  AND c.status = 'published'
+  AND (c.parent_id IS NULL)
+ORDER BY c.is_pinned DESC, c.created_at ASC
 LIMIT @page_limit OFFSET @page_offset;
 
 -- name: ListRepliesByParent :many
@@ -45,6 +77,7 @@ FROM comments c
 JOIN users u ON u.id = c.author_user_id
 LEFT JOIN user_profiles up ON up.user_id = u.id AND up.tenant_id = c.tenant_id
 WHERE c.parent_id = @parent_id AND c.tenant_id = @tenant_id AND c.deleted_at IS NULL
+  AND c.status = 'published'
 ORDER BY c.vote_score DESC, c.created_at ASC
 LIMIT @page_limit OFFSET @page_offset;
 
@@ -52,8 +85,7 @@ LIMIT @page_limit OFFSET @page_offset;
 UPDATE comments
 SET body = @body, is_edited = true, edited_at = now(), updated_at = now()
 WHERE id = @id AND tenant_id = @tenant_id AND author_user_id = @author_user_id AND deleted_at IS NULL
-RETURNING id, tenant_id, content_id, author_user_id, parent_id, body, depth,
-          vote_score, is_pinned, is_edited, edited_at, created_at, updated_at, deleted_at;
+RETURNING *;
 
 -- name: SoftDeleteComment :exec
 UPDATE comments
@@ -63,6 +95,34 @@ WHERE id = @id AND tenant_id = @tenant_id AND deleted_at IS NULL;
 -- name: SoftDeleteCommentByID :exec
 UPDATE comments SET deleted_at = now(), updated_at = now()
 WHERE id = @id AND deleted_at IS NULL;
+
+-- name: SoftDeleteCommentByAuthor :exec
+-- Section 49 — soft-delete own comment. The author_user_id clause makes the
+-- ownership check atomic so a comments.delete_own holder cannot delete
+-- another author's comment (BUG-003).
+UPDATE comments
+SET deleted_at = now(), updated_at = now()
+WHERE id = @id AND tenant_id = @tenant_id AND author_user_id = @author_user_id
+  AND deleted_at IS NULL;
+
+-- name: RemoveComment :exec
+-- Section 49 — moderator removal-by-status. Sets status='removed' and
+-- records the acting moderator + reason, leaving the row visible for audit
+-- (unlike a soft-delete which hides it from all queries). Used by the admin
+-- moderation surface (BUG-010).
+UPDATE comments
+SET status = 'removed',
+    removed_by = @removed_by,
+    removed_reason = @removed_reason,
+    updated_at = now()
+WHERE id = @id AND tenant_id = @tenant_id AND deleted_at IS NULL;
+
+-- name: IncrementCommentReplyCount :exec
+-- Section 49 — keep the denormalized parent reply_count in sync when a reply
+-- is created (BUG-008).
+UPDATE comments
+SET reply_count = reply_count + 1, updated_at = now()
+WHERE id = @parent_id AND tenant_id = @tenant_id AND deleted_at IS NULL;
 
 -- name: PinComment :exec
 UPDATE comments SET is_pinned = true, updated_at = now()
@@ -108,12 +168,14 @@ WHERE comment_id = @comment_id AND user_id = @user_id;
 -- name: CountCommentsByContent :one
 SELECT COUNT(*)::int AS count
 FROM comments
-WHERE content_id = @content_id AND tenant_id = @tenant_id AND deleted_at IS NULL;
+WHERE content_id = @content_id AND tenant_id = @tenant_id AND deleted_at IS NULL
+  AND status = 'published';
 
 -- name: CountRepliesByParent :one
 SELECT COUNT(*)::int AS count
 FROM comments
-WHERE parent_id = @parent_id AND tenant_id = @tenant_id AND deleted_at IS NULL;
+WHERE parent_id = @parent_id AND tenant_id = @tenant_id AND deleted_at IS NULL
+  AND status = 'published';
 
 -- =====================
 -- Related Content (pgvector cosine similarity)
@@ -147,6 +209,7 @@ JOIN contents ct ON ct.id = c.content_id AND ct.tenant_id = c.tenant_id
 WHERE c.tenant_id = @tenant_id
   AND c.author_user_id = @author_user_id
   AND c.deleted_at IS NULL
+  AND c.status = 'published'
   AND ct.status = 'published'
   AND ct.visibility = 'public'
 ORDER BY c.created_at DESC
@@ -161,3 +224,35 @@ WHERE c.tenant_id = @tenant_id
   AND c.deleted_at IS NULL
   AND ct.status = 'published'
   AND ct.visibility = 'public';
+
+-- =====================
+-- Content Thread Links (Section 49 — blog/non-forum ↔ discussion cross-links)
+-- =====================
+
+-- name: CreateContentThreadLink :one
+-- Upsert a cross-link; bump link_count when the pair already exists so
+-- repeated "Start A Conversation" shares are reflected.
+INSERT INTO content_thread_links (tenant_id, content_id, thread_id)
+VALUES (@tenant_id, @content_id, @thread_id)
+ON CONFLICT (content_id, thread_id) DO UPDATE
+    SET link_count = content_thread_links.link_count + 1,
+        created_at = now()
+RETURNING id, tenant_id, content_id, thread_id, link_count, created_at;
+
+-- name: ListContentThreadLinks :many
+-- Linked discussion threads for a blog/content, most recently linked first.
+SELECT l.id, l.tenant_id, l.content_id, l.thread_id, l.link_count, l.created_at,
+       ct.title AS thread_title, ct.slug AS thread_slug,
+       ct.comment_count AS thread_comment_count,
+       ct.author_id AS thread_author_id
+FROM content_thread_links l
+JOIN contents ct ON ct.id = l.thread_id AND ct.tenant_id = l.tenant_id
+WHERE l.content_id = @content_id AND l.tenant_id = @tenant_id
+  AND ct.deleted_at IS NULL
+ORDER BY l.created_at DESC
+LIMIT @page_limit OFFSET @page_offset;
+
+-- name: CountContentThreadLinks :one
+SELECT COUNT(*)::int AS count
+FROM content_thread_links
+WHERE content_id = @content_id AND tenant_id = @tenant_id;

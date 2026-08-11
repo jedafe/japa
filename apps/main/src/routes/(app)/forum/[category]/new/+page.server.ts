@@ -73,7 +73,7 @@ export const actions: Actions = {
 			const thread = await apiPost<ForumThread>(ctx, '/forum', {
 				title,
 				slug,
-				body: btoa(body),
+				body,
 				space_id: spaceId,
 				is_anonymous: isAnonymous
 			});

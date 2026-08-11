@@ -15,22 +15,27 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/achievement"
 	"github.com/jedafe/japa/internal/admin"
 	"github.com/jedafe/japa/internal/adsselfserve"
 	"github.com/jedafe/japa/internal/advancedanalytics"
 	"github.com/jedafe/japa/internal/advertising"
 	"github.com/jedafe/japa/internal/affiliate"
 	"github.com/jedafe/japa/internal/ai"
-	"github.com/jedafe/japa/internal/analytics"
-	"github.com/jedafe/japa/internal/assessment"
-	"github.com/jedafe/japa/internal/auth"
-	"github.com/jedafe/japa/internal/achievement"
 	"github.com/jedafe/japa/internal/ama"
+	"github.com/jedafe/japa/internal/analytics"
+	"github.com/jedafe/japa/internal/appointmentalert"
+	"github.com/jedafe/japa/internal/arrivalchecklist"
+	"github.com/jedafe/japa/internal/assessment"
+	"github.com/jedafe/japa/internal/attestationguide"
+	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/blog"
 	"github.com/jedafe/japa/internal/bookmarkfolders"
 	"github.com/jedafe/japa/internal/bots"
+	"github.com/jedafe/japa/internal/calendar"
 	"github.com/jedafe/japa/internal/checklist"
 	"github.com/jedafe/japa/internal/comments"
+	"github.com/jedafe/japa/internal/communitylocator"
 	"github.com/jedafe/japa/internal/comparison"
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/content"
@@ -38,16 +43,17 @@ import (
 	"github.com/jedafe/japa/internal/control"
 	"github.com/jedafe/japa/internal/costofliving"
 	"github.com/jedafe/japa/internal/coupons"
-	"github.com/jedafe/japa/internal/calendar"
+	"github.com/jedafe/japa/internal/credentialchecker"
 	"github.com/jedafe/japa/internal/csrf"
+	"github.com/jedafe/japa/internal/customfields"
+	"github.com/jedafe/japa/internal/cvformatter"
 	"github.com/jedafe/japa/internal/dataexport"
 	"github.com/jedafe/japa/internal/dataimport"
-	"github.com/jedafe/japa/internal/customfields"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/devices"
-	"github.com/jedafe/japa/internal/docs"
 	"github.com/jedafe/japa/internal/digest"
+	"github.com/jedafe/japa/internal/docs"
 	"github.com/jedafe/japa/internal/email"
 	emailtemplates "github.com/jedafe/japa/internal/email/templates"
 	errtracking "github.com/jedafe/japa/internal/errors"
@@ -59,76 +65,70 @@ import (
 	"github.com/jedafe/japa/internal/gdpr"
 	"github.com/jedafe/japa/internal/geoip"
 	"github.com/jedafe/japa/internal/honcho"
+	"github.com/jedafe/japa/internal/housingguide"
 	"github.com/jedafe/japa/internal/i18n"
 	"github.com/jedafe/japa/internal/impersonation"
 	"github.com/jedafe/japa/internal/interactions"
-	"github.com/jedafe/japa/internal/jobs"
 	"github.com/jedafe/japa/internal/japastage"
+	"github.com/jedafe/japa/internal/jobs"
+	"github.com/jedafe/japa/internal/languagetesthub"
 	"github.com/jedafe/japa/internal/learning"
 	"github.com/jedafe/japa/internal/linkpreview"
 	"github.com/jedafe/japa/internal/media"
+	"github.com/jedafe/japa/internal/mentions"
 	"github.com/jedafe/japa/internal/mentorship"
 	"github.com/jedafe/japa/internal/menus"
-	"github.com/jedafe/japa/internal/mentions"
-	"github.com/jedafe/japa/internal/mutualaid"
-	"github.com/jedafe/japa/internal/sidebars"
 	mw "github.com/jedafe/japa/internal/middleware"
+	"github.com/jedafe/japa/internal/mutualaid"
 	"github.com/jedafe/japa/internal/newsletter"
 	"github.com/jedafe/japa/internal/notifications"
 	"github.com/jedafe/japa/internal/onboarding"
 	"github.com/jedafe/japa/internal/organizations"
 	"github.com/jedafe/japa/internal/pagebuilder"
+	"github.com/jedafe/japa/internal/participation"
 	"github.com/jedafe/japa/internal/payments"
 	"github.com/jedafe/japa/internal/personas"
 	"github.com/jedafe/japa/internal/planninggroups"
 	"github.com/jedafe/japa/internal/professional"
 	"github.com/jedafe/japa/internal/publicapi"
+	"github.com/jedafe/japa/internal/rag"
 	"github.com/jedafe/japa/internal/rbac"
+	"github.com/jedafe/japa/internal/recommendations"
 	"github.com/jedafe/japa/internal/redirects"
-	"github.com/jedafe/japa/internal/appointmentalert"
-	"github.com/jedafe/japa/internal/arrivalchecklist"
-	"github.com/jedafe/japa/internal/attestationguide"
-	"github.com/jedafe/japa/internal/communitylocator"
-	"github.com/jedafe/japa/internal/credentialchecker"
-	"github.com/jedafe/japa/internal/cvformatter"
-	"github.com/jedafe/japa/internal/housingguide"
-	"github.com/jedafe/japa/internal/languagetesthub"
-	"github.com/jedafe/japa/internal/servicedir"
-	"github.com/jedafe/japa/internal/scamalert"
-	"github.com/jedafe/japa/internal/taxcalculator"
-	"github.com/jedafe/japa/internal/visaroutes"
 	"github.com/jedafe/japa/internal/referral"
 	"github.com/jedafe/japa/internal/remittance"
 	"github.com/jedafe/japa/internal/renderer"
 	"github.com/jedafe/japa/internal/reports"
 	"github.com/jedafe/japa/internal/reviews"
 	rsspkg "github.com/jedafe/japa/internal/rss"
-	"github.com/jedafe/japa/internal/search"
+	"github.com/jedafe/japa/internal/scamalert"
 	"github.com/jedafe/japa/internal/scholarships"
+	"github.com/jedafe/japa/internal/search"
 	"github.com/jedafe/japa/internal/seo"
+	"github.com/jedafe/japa/internal/servicedir"
+	"github.com/jedafe/japa/internal/sidebars"
 	"github.com/jedafe/japa/internal/spaces"
 	"github.com/jedafe/japa/internal/spam"
 	"github.com/jedafe/japa/internal/stock"
 	"github.com/jedafe/japa/internal/story"
+	"github.com/jedafe/japa/internal/studio"
 	"github.com/jedafe/japa/internal/tags"
+	"github.com/jedafe/japa/internal/taxcalculator"
 	"github.com/jedafe/japa/internal/tenant"
 	"github.com/jedafe/japa/internal/tickets"
 	"github.com/jedafe/japa/internal/travel"
 	"github.com/jedafe/japa/internal/trending"
-	"github.com/jedafe/japa/internal/recommendations"
 	"github.com/jedafe/japa/internal/universities"
-	"github.com/jedafe/japa/internal/rag"
 	"github.com/jedafe/japa/internal/university"
 	"github.com/jedafe/japa/internal/users"
 	"github.com/jedafe/japa/internal/valkey"
-	"github.com/jedafe/japa/internal/visitor"
+	"github.com/jedafe/japa/internal/visaroutes"
 	"github.com/jedafe/japa/internal/visatimeline"
+	"github.com/jedafe/japa/internal/visitor"
 	"github.com/jedafe/japa/internal/wallet"
 	"github.com/jedafe/japa/internal/webhooks"
 	"github.com/jedafe/japa/internal/websocket"
 	"github.com/jedafe/japa/internal/wiki"
-	"github.com/jedafe/japa/internal/participation"
-	"github.com/jedafe/japa/internal/studio"
 	"github.com/jedafe/japa/internal/worker"
 	"github.com/jedafe/japa/internal/workerv2"
 	"github.com/valkey-io/valkey-go/valkeycompat"
@@ -491,6 +491,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	commentsHandlers.SetAsynqClient(asynqClient)
 	// BUG-004: wire DB-backed privacy checkers for comment mention filtering.
 	commentsService.SetMentionCheckers(mentionCheckers)
+	// BUG-003: wire the RBAC resolver so DeleteComment can distinguish
+	// comments.delete_own (author) from comments.delete_any (moderator).
+	commentsHandlers.SetPermissionChecker(rbacResolver)
 
 	// Interactions subsystem (Sections 41, 52 — Blocks & Mutes).
 	interactionsService := interactions.NewService(database)
@@ -570,9 +573,13 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	blogHandlers := blog.NewHandlers(blogService, contentService, cfg.SiteURL, cfg.SiteName)
 	// Wire erased-mention redaction for GDPR/ADR-029 compliance.
 	blogHandlers.SetMentionCheckers(mentionCheckers)
-	// NOTE: SetAsynqClient/SetRedis not yet implemented in blog.Handlers (pre-existing).
-	// blogHandlers.SetAsynqClient(asynqClient)
-	// blogHandlers.SetRedis(vkClient.Redis())
+	// Wire RSS cache + on-publish regeneration (Section 24 — rss:regenerate
+	// task is enqueued on publish and the live /feed.xml route reads the
+	// cached XML from jc:cache:feed:rss:{tenant_id}). Without these the
+	// handler's AsynqClient/Redis are nil, so enqueue is a no-op and every
+	// feed request hits the database.
+	blogHandlers.SetAsynqClient(asynqClient)
+	blogHandlers.SetRedis(vkClient.Redis())
 
 	// Reviews subsystem (Section 29 — Universal Ratings & Reviews).
 	reviewService := reviews.NewService(database)
@@ -784,7 +791,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	docsService.SetCache(vkClient.Redis()) // VALKEY-003: cache doc pages + nav
 	docsHandlers := docs.NewHandlers(docsService, cfg.SiteURL, cfg.SiteName)
 	docsHandlers.AsynqClient = asynqClient // SEARCH-001: enqueue Meilisearch index sync
-	docsHandlers.SetRBAC(rbacResolver)      // §44: audience RBAC gating
+	docsHandlers.SetRBAC(rbacResolver)     // §44: audience RBAC gating
 
 	// Admin Settings subsystem.
 	adminHandlers := admin.NewHandlers(database, gen.New(database.Writer))
@@ -936,7 +943,12 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Ref: japaconnect-engineering/sections/86-community-calendar.md (ADR-094)
 	calendarStore := calendar.NewStore(database)
 	calendarService := calendar.NewService(calendarStore, settingsService)
+	calendarService.SetNotifier(notificationService)
 	calendarHandlers := calendar.NewHandlers(calendarService, settingsService)
+	// Register the service as the calendar processor so the
+	// calendar:staleness_check / calendar:send_reminders Asynq tasks are
+	// handled (§86, ADR-094).
+	worker.RegisterCalendarProcessor(calendarService)
 
 	// Ref: japaconnect-engineering/sections/87-japa-stage-profiles.md (ADR-095)
 	japaStageStore := japastage.NewStore(database)
@@ -1077,7 +1089,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Participation Orchestration Engine (Section 76, ADR-077).
 	participationService := participation.NewService(database, settingsService, vkClient.Redis())
 	participationService.SetEnqueuer(taskEnqueuer)
-	participationService.SetEventTracker(analyticsService) // ADR-068 §4: synthetic event tracking
+	participationService.SetEventTracker(analyticsService)        // ADR-068 §4: synthetic event tracking
 	personas.SetHighStakesGate(participation.IsHighStakesContent) // BUG-015: single canonical gate
 	worker.RegisterPersonaProcessor(participationService)
 
@@ -1288,7 +1300,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	controlHandlers.SetValkey(vkClient.Redis())
 	controlHandlers.SetMeiliSearch(meiliClient)
 	controlHandlers.SetHoncho(honcho.NewClient(cfg.HonchoURL)) // ADR-027: infra health
-	controlHandlers.SetAIStore(aiStore) // AI budget dashboard aggregation
+	controlHandlers.SetAIStore(aiStore)                        // AI budget dashboard aggregation
 
 	// AI Provider management — DB-backed provider configs with hot-reload.
 	// The ProviderStore reads/writes the ai_providers table (migration 000269);
@@ -1909,13 +1921,17 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.Get("/content/{id}/comments", commentsHandlers.ListComments)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "comments.create")).Post("/content/{id}/comments", commentsHandlers.CreateComment)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "comments.edit_own")).Patch("/comments/{id}", commentsHandlers.UpdateComment)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "comments.delete_own")).Delete("/comments/{id}", commentsHandlers.DeleteComment)
+			// BUG-003: own-vs-any resolved in the handler (RequireAuth only) so a
+			// moderator with comments.delete_any is not blocked by a delete_own
+			// middleware gate, and a plain member cannot delete another's comment.
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Delete("/comments/{id}", commentsHandlers.DeleteComment)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "comments.vote")).Post("/comments/{id}/vote", commentsHandlers.VoteComment)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "comments.vote")).Delete("/comments/{id}/vote", commentsHandlers.RemoveVote)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "moderation.report")).Post("/comments/{id}/report", reportsHandlers.ReportComment)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.pin")).
+			// BUG-002: pin node is comments.pin (Section 49), not content.pin.
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "comments.pin")).
 				Post("/comments/{id}/pin", commentsHandlers.PinComment)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.pin")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "comments.pin")).
 				Delete("/comments/{id}/pin", commentsHandlers.UnpinComment)
 
 			// Follow System routes (Section 31 — Follow System)
@@ -2285,7 +2301,12 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				// Review routes (admin workflow — keep auth-required)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "blog.review.create")).
 					Post("/blog/reviews", blogHandlers.CreateReview)
-				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/blog/reviews", blogHandlers.ListReviews)
+					// BUG-006: GET /blog/reviews returns ListPendingReviewSummaries
+				// (post title/slug/author/excerpt for in-review posts). Without
+				// blog.review.manage any authenticated user could read draft
+				// metadata of other users' submissions.
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "blog.review.manage")).
+					Get("/blog/reviews", blogHandlers.ListReviews)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "blog.review.manage")).
 					Patch("/blog/reviews/{id}", blogHandlers.UpdateReview)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "blog.review.manage")).
@@ -2971,6 +2992,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/drafts/{id}", usersHandlers.GetMyDraft)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/scheduled", usersHandlers.ListMyScheduled)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/bookmarks", usersHandlers.ListMyBookmarks)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Delete("/me/bookmarks/{id}", usersHandlers.DeleteMyBookmark)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/organizations", orgHandlers.ListMyOrganizations)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/bookmark-folders", bookmarkFoldersHandlers.ListFolders)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/me/bookmark-folders", bookmarkFoldersHandlers.CreateFolder)
@@ -3809,6 +3831,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Post("/admin/moderation/alerts/{id}/acknowledge", adminHandlers.AcknowledgeModerationAlert)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "moderation.alerts.manage")).
 				Post("/admin/moderation/alerts/{id}/resolve", adminHandlers.ResolveModerationAlert)
+			// BUG-010: moderator removal-by-status for comments (Section 49).
+			// Sets status='removed' + removed_by + removed_reason; the row stays
+			// visible for audit, unlike a soft-delete.
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "comments.delete_any")).
+				Post("/admin/comments/{id}/remove", commentsHandlers.RemoveComment)
 
 			// Admin Broadcast route
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.broadcast")).
@@ -4122,14 +4149,16 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.japabot"), rbac.RequirePermission(rbacResolver, "ai.context.use")).
 				Get("/ai/conversations/{id}", aiHandlers.HandleGetConversation)
 
-
 			// Task 33: Content public extras
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).
 				Get("/content/{id}/analytics", analyticsHandlers.GetContentAnalytics)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).
-				Get("/content/{id}/discussions", commentsHandlers.ListComments)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).
-				Post("/content/{id}/discussions", commentsHandlers.CreateComment)
+			// BUG-001: /content/{id}/discussions is the thread-link feature
+			// (Section 49 - list linked discussions / start a conversation), not
+			// the plain comment list/create handlers.
+			r.With(auth.OptionalAuth(kr, vkClient.Redis())).
+				Get("/content/{id}/discussions", commentsHandlers.ListDiscussions)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "comments.create")).
+				Post("/content/{id}/discussions", commentsHandlers.StartConversation)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.reactions.add")).
 				Post("/content/{id}/react", contentHandlers.AddReaction)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.reactions.remove")).
