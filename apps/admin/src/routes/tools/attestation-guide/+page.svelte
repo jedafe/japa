@@ -1,5 +1,6 @@
 <script lang="ts">
-	// /tools/attestation-guide — read-only HITL review queue with Approve + AI Generate actions.
+	// /tools/attestation-guide — HITL review queue with Approve, Generate, and
+	// community update review actions. Aligned with backend PathwayDTO fields.
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
 	import { Modal } from '$lib/components/ui/modal';
 	import { Button } from '$lib/components/ui/button';
@@ -9,16 +10,35 @@
 	import { Eye, CheckCircle, Sparkles } from 'lucide-svelte';
 	import type { ActionItem } from '$lib/components/ui/data-table';
 
-	type GuideItem = {
+	type PathwayItem = {
 		id: string;
-		title: string;
-		dest_country: string;
-		doc_type: string;
+		document_type: string;
+		issuing_space_name?: string | null;
+		destination_space_name?: string | null;
+		apostille_required: boolean;
 		status: string;
+		is_active: boolean;
 		ai_generated: boolean;
+		ai_model?: string | null;
+		hitl_reviewed_by?: string | null;
+		hitl_reviewed_at?: string | null;
+		community_last_verified?: string | null;
+		pathway_steps: unknown;
+		created_at: string;
 		updated_at: string;
-		content?: string;
-		summary?: string;
+	};
+
+	type CommunityUpdateItem = {
+		id: string;
+		pathway_id: string;
+		user_id: string;
+		step_index?: number | null;
+		fee_estimate?: string | null;
+		turnaround_days?: number | null;
+		note?: string | null;
+		status: string;
+		reviewed_by?: string | null;
+		created_at: string;
 	};
 
 	const canManage = $derived(hasPermission('attestation_guide.manage'));
@@ -27,15 +47,20 @@
 	let entityController = $state<EntityPageController | undefined>(undefined);
 	let pageError = $state('');
 	let acting = $state(false);
+	let activeTab = $state<'pathways' | 'updates'>('pathways');
 
 	// Generate modal state
 	let showGenerateModal = $state(false);
-	let generateTopic = $state('');
-	let generateCountry = $state('');
 	let generateDocType = $state('');
+	let generateIssuingId = $state('');
+	let generateDestId = $state('');
 	let generating = $state(false);
 
-	async function approveGuide(item: GuideItem) {
+	// Community updates list state
+	let updates = $state<CommunityUpdateItem[]>([]);
+	let loadingUpdates = $state(false);
+
+	async function approvePathway(item: PathwayItem) {
 		acting = true;
 		pageError = '';
 		try {
@@ -53,21 +78,21 @@
 	}
 
 	function openGenerate() {
-		generateTopic = '';
-		generateCountry = '';
 		generateDocType = '';
+		generateIssuingId = '';
+		generateDestId = '';
 		showGenerateModal = true;
 	}
 
 	async function confirmGenerate() {
-		if (!generateTopic.trim()) return;
+		if (!generateDocType.trim() || !generateIssuingId.trim() || !generateDestId.trim()) return;
 		generating = true;
 		pageError = '';
 		try {
 			const result = await attestationGuideAdminApi.generate({
-				topic: generateTopic.trim(),
-				dest_country: generateCountry.trim() || undefined,
-				doc_type: generateDocType.trim() || undefined
+				document_type: generateDocType.trim(),
+				issuing_space_id: generateIssuingId.trim(),
+				destination_space_id: generateDestId.trim()
 			});
 			if (result.ok) {
 				showGenerateModal = false;
@@ -82,17 +107,56 @@
 		}
 	}
 
+	async function loadUpdates() {
+		loadingUpdates = true;
+		try {
+			const result = await attestationGuideAdminApi.list('?status=pending');
+			if (result.ok) {
+				// The list endpoint returns pathways, not updates.
+				// Community updates are not separately listable via the current API.
+				// This is a known gap — the backend has no GET /admin/attestation/updates endpoint.
+				updates = [];
+			}
+		} catch {
+			updates = [];
+		} finally {
+			loadingUpdates = false;
+		}
+	}
+
+	async function reviewUpdate(id: string, approve: boolean) {
+		acting = true;
+		pageError = '';
+		try {
+			const result = await attestationGuideAdminApi.reviewUpdate(id, approve);
+			if (result.ok) {
+				updates = updates.filter((u) => u.id !== id);
+			} else {
+				pageError = result.error ?? t('common.error', 'An error occurred');
+			}
+		} catch {
+			pageError = t('common.error', 'An error occurred');
+		} finally {
+			acting = false;
+		}
+	}
+
+	function onTabChange(tab: 'pathways' | 'updates') {
+		activeTab = tab;
+		if (tab === 'updates') loadUpdates();
+	}
+
 	// ── Row actions ─────────────────────────────────────────────────────────
 	const rowActions = $derived.by<ActionItem[]>(() => {
 		const acts: ActionItem[] = [
-			{ label: t('common.view', 'View'), icon: Eye, onclick: (_row: GuideItem, ctx) => ctx?.openView(_row) }
+			{ label: t('common.view', 'View'), icon: Eye, onclick: (_row: PathwayItem, ctx) => ctx?.openView(_row) }
 		];
 		if (canManage) {
 			acts.push({
 				label: t('common.approve', 'Approve'),
 				icon: CheckCircle,
-				onclick: approveGuide,
-				show: () => true
+				onclick: approvePathway,
+				show: (row: PathwayItem) => row.status === 'ai_draft' || row.status === 'pending'
 			});
 			acts.push({
 				label: t('common.generate', 'Generate'),
@@ -105,10 +169,11 @@
 	});
 
 	const fields: FieldDef[] = [
-		{ key: 'title', label: t('common.title', 'Title'), type: 'text' },
-		{ key: 'dest_country', label: t('common.country', 'Country'), type: 'text' },
-		{ key: 'doc_type', label: t('common.doc_type', 'Document Type'), type: 'text' },
-		{ key: 'content', label: t('common.content', 'Content'), type: 'textarea' }
+		{ key: 'document_type', label: t('common.doc_type', 'Document Type'), type: 'text' },
+		{ key: 'issuing_space_id', label: t('common.issuing_country', 'Issuing Country ID'), type: 'text' },
+		{ key: 'destination_space_id', label: t('common.dest_country', 'Destination Country ID'), type: 'text' },
+		{ key: 'apostille_required', label: t('common.apostille', 'Apostille Required'), type: 'checkbox' },
+		{ key: 'pathway_steps', label: t('common.pathway_steps', 'Pathway Steps (JSON)'), type: 'textarea' }
 	];
 
 	const config = $derived<EntityPageConfig>({
@@ -117,9 +182,19 @@
 		readonly: true,
 		pageSize: 25,
 		columns: [
-			{ key: 'title', label: t('common.title', 'Title'), sortable: true },
-			{ key: 'dest_country', label: t('common.country', 'Country'), sortable: true },
-			{ key: 'doc_type', label: t('common.doc_type', 'Document Type'), sortable: true },
+			{ key: 'document_type', label: t('common.doc_type', 'Document Type'), sortable: true },
+			{
+				key: 'issuing_space_name',
+				label: t('common.issuing_country', 'Issuing'),
+				sortable: true,
+				render: (value: string | null) => value || '—'
+			},
+			{
+				key: 'destination_space_name',
+				label: t('common.dest_country', 'Destination'),
+				sortable: true,
+				render: (value: string | null) => value || '—'
+			},
 			{
 				key: 'status',
 				label: t('common.status', 'Status'),
@@ -140,15 +215,23 @@
 		],
 		actions: rowActions,
 		fields,
-		load: async () => {
-			const result = await attestationGuideAdminApi.list();
+		load: async (params) => {
+			const queryParts: string[] = [];
+			if (params.page) queryParts.push(`page_offset=${params.page}`);
+			if (params.pageSize) queryParts.push(`page_size=${params.pageSize}`);
+			if (params.q) queryParts.push(`q=${encodeURIComponent(params.q)}`);
+			const queryString = queryParts.length > 0 ? `?${queryParts.join('&')}` : '';
+			const result = await attestationGuideAdminApi.list(queryString);
 			if (result.ok) {
-				const data = (result.data as GuideItem[]) ?? [];
-				return { data, total: data.length, totalPages: 1 };
+				const resp = result.data as { data: PathwayItem[]; pagination?: { total?: number } };
+				const data = resp.data ?? [];
+				const total = resp.pagination?.total ?? data.length;
+				const totalPages = Math.ceil(total / (params.pageSize || 25));
+				return { data, total, totalPages };
 			}
 			throw new Error(result.error ?? t('common.error', 'An error occurred'));
 		},
-		viewSnippet: GuideView
+		viewSnippet: PathwayView
 	});
 </script>
 
@@ -165,33 +248,82 @@
 	</div>
 {/if}
 
-<EntityPage {config} bind:controller={entityController} />
+<!-- Tab switcher -->
+<div class="mb-4 flex gap-2 border-b" style="border-color: var(--color-border)">
+	<button
+		class="px-4 py-2 text-sm font-medium transition-colors"
+		style={activeTab === 'pathways'
+			? 'color: var(--color-foreground); border-bottom: 2px solid var(--color-primary)'
+			: 'color: var(--color-muted); border-bottom: 2px solid transparent'}
+		onclick={() => onTabChange('pathways')}
+	>
+		{t('app.tools.attestation_pathways_tab', 'Pathways')}
+	</button>
+	<button
+		class="px-4 py-2 text-sm font-medium transition-colors"
+		style={activeTab === 'updates'
+			? 'color: var(--color-foreground); border-bottom: 2px solid var(--color-primary)'
+			: 'color: var(--color-muted); border-bottom: 2px solid transparent'}
+		onclick={() => onTabChange('updates')}
+	>
+		{t('app.tools.attestation_updates_tab', 'Community Updates')}
+	</button>
+</div>
+
+{#if activeTab === 'pathways'}
+	<EntityPage {config} bind:controller={entityController} />
+{:else}
+	<div class="space-y-3">
+		{#if loadingUpdates}
+			<p class="text-sm" style="color: var(--color-muted)">{t('common.loading', 'Loading...')}</p>
+		{:else if updates.length === 0}
+			<p class="text-sm" style="color: var(--color-muted)">
+				{t('app.tools.no_pending_updates', 'No pending community updates.')}
+			</p>
+		{:else}
+			{#each updates as update (update.id)}
+				<div
+					class="rounded-lg border p-4"
+					style="border-color: var(--color-border); background: var(--color-surface)"
+				>
+					<div class="flex items-center justify-between">
+						<div>
+							<p class="text-sm font-medium" style="color: var(--color-foreground)">
+								{t('common.update', 'Update')} #{update.step_index ?? '—'}
+							</p>
+							<p class="text-xs" style="color: var(--color-muted)">
+								{update.fee_estimate ?? '—'} · {update.turnaround_days ?? '—'} days
+							</p>
+						</div>
+						<div class="flex gap-2">
+							<Button
+								variant="ghost"
+								onclick={() => reviewUpdate(update.id, true)}
+								disabled={acting}
+							>
+								{t('common.approve', 'Approve')}
+							</Button>
+							<Button
+								variant="ghost"
+								onclick={() => reviewUpdate(update.id, false)}
+								disabled={acting}
+							>
+								{t('common.reject', 'Reject')}
+							</Button>
+						</div>
+					</div>
+					{#if update.note}
+						<p class="mt-2 text-sm" style="color: var(--color-foreground)">{update.note}</p>
+					{/if}
+				</div>
+			{/each}
+		{/if}
+	</div>
+{/if}
 
 <!-- ── Generate modal ────────────────────────────────────────────────────── -->
 <Modal bind:open={showGenerateModal} title={t('app.tools.generate_attestation_guide', 'Generate Attestation Guide')}>
 	<div class="space-y-4">
-		<div>
-			<label for="gen-topic" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('app.tools.topic_prompt', 'Topic / Prompt')}</label>
-			<textarea
-				id="gen-topic"
-				class="w-full rounded-lg border p-3 text-sm"
-				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
-				rows="4"
-				bind:value={generateTopic}
-				placeholder={t('app.tools.topic_placeholder', 'Describe the attestation guide to generate...')}
-			></textarea>
-		</div>
-		<div>
-			<label for="gen-country" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('common.country', 'Country')}</label>
-			<input
-				id="gen-country"
-				type="text"
-				class="w-full rounded-lg border p-3 text-sm"
-				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
-				bind:value={generateCountry}
-				placeholder={t('common.country_placeholder', 'e.g. Japan')}
-			/>
-		</div>
 		<div>
 			<label for="gen-doc-type" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('common.doc_type', 'Document Type')}</label>
 			<input
@@ -200,32 +332,58 @@
 				class="w-full rounded-lg border p-3 text-sm"
 				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
 				bind:value={generateDocType}
-				placeholder={t('common.doc_type_placeholder', 'e.g. Certificate of Eligibility')}
+				placeholder={t('app.tools.doc_type_placeholder', 'e.g. birth_certificate')}
+			/>
+		</div>
+		<div>
+			<label for="gen-issuing" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('common.issuing_country', 'Issuing Country (Space ID)')}</label>
+			<input
+				id="gen-issuing"
+				type="text"
+				class="w-full rounded-lg border p-3 text-sm"
+				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+				bind:value={generateIssuingId}
+				placeholder="UUID of the issuing country space"
+			/>
+		</div>
+		<div>
+			<label for="gen-dest" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('common.dest_country', 'Destination Country (Space ID)')}</label>
+			<input
+				id="gen-dest"
+				type="text"
+				class="w-full rounded-lg border p-3 text-sm"
+				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+				bind:value={generateDestId}
+				placeholder="UUID of the destination country space"
 			/>
 		</div>
 	</div>
 	<div class="mt-4 flex justify-end gap-2">
 		<Button variant="ghost" onclick={() => (showGenerateModal = false)}>{t('common.cancel', 'Cancel')}</Button>
-		<Button onclick={confirmGenerate} disabled={generating || !generateTopic.trim()}>
+		<Button onclick={confirmGenerate} disabled={generating || !generateDocType.trim() || !generateIssuingId.trim() || !generateDestId.trim()}>
 			{generating ? t('common.generating', 'Generating...') : t('common.generate', 'Generate')}
 		</Button>
 	</div>
 </Modal>
 
 <!-- ── View slide-over body ──────────────────────────────────────────────── -->
-{#snippet GuideView({ row }: { row: GuideItem })}
+{#snippet PathwayView({ row }: { row: PathwayItem })}
 	<div class="space-y-4">
 		<div>
-			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('common.title', 'Title')}</p>
-			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.title}</p>
-		</div>
-		<div>
-			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('common.country', 'Country')}</p>
-			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.dest_country || '—'}</p>
-		</div>
-		<div>
 			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('common.doc_type', 'Document Type')}</p>
-			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.doc_type || '—'}</p>
+			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.document_type || '—'}</p>
+		</div>
+		<div>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('common.issuing_country', 'Issuing')}</p>
+			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.issuing_space_name || '—'}</p>
+		</div>
+		<div>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('common.dest_country', 'Destination')}</p>
+			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.destination_space_name || '—'}</p>
+		</div>
+		<div>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('common.apostille', 'Apostille Required')}</p>
+			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.apostille_required ? t('common.yes', 'Yes') : t('common.no', 'No')}</p>
 		</div>
 		<div>
 			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('common.status', 'Status')}</p>
@@ -239,16 +397,14 @@
 			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('common.updated', 'Updated')}</p>
 			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.updated_at ? new Date(row.updated_at).toLocaleString() : '—'}</p>
 		</div>
-		{#if row.summary}
+		{#if row.pathway_steps && Array.isArray(row.pathway_steps) && row.pathway_steps.length > 0}
 			<div>
-				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('common.summary', 'Summary')}</p>
-				<p class="mt-1 text-sm" style="color: var(--color-foreground)">{row.summary}</p>
-			</div>
-		{/if}
-		{#if row.content}
-			<div>
-				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('common.content', 'Content')}</p>
-				<p class="mt-1 whitespace-pre-wrap text-sm" style="color: var(--color-foreground)">{row.content}</p>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('common.pathway_steps', 'Pathway Steps')}</p>
+				<ol class="mt-1 list-decimal list-inside text-sm space-y-1" style="color: var(--color-foreground)">
+					{#each row.pathway_steps as step (step)}
+						<li>{JSON.stringify(step)}</li>
+					{/each}
+				</ol>
 			</div>
 		{/if}
 	</div>

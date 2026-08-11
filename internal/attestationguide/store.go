@@ -278,14 +278,15 @@ LIMIT 1
 }
 
 // CreatePathway inserts a new attestation_pathways row.
+// is_japabot_indexed is a GENERATED column and is NOT inserted.
 func (s *Store) CreatePathway(ctx context.Context, p Pathway) (Pathway, error) {
 	const q = `
 INSERT INTO attestation_pathways (
     tenant_id, document_type, issuing_space_id, destination_space_id,
     apostille_required, pathway_steps, community_last_verified, status,
     is_active, ai_generated, ai_model, ai_prompt_hash,
-    hitl_reviewed_by, hitl_reviewed_at, hitl_review_notes, is_japabot_indexed
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+    hitl_reviewed_by, hitl_reviewed_at, hitl_review_notes
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
 RETURNING id, tenant_id, document_type, issuing_space_id, destination_space_id,
           apostille_required, pathway_steps, community_last_verified, status,
           is_active, ai_generated, ai_model, ai_prompt_hash,
@@ -305,7 +306,7 @@ RETURNING id, tenant_id, document_type, issuing_space_id, destination_space_id,
 		p.TenantID, p.DocumentType, p.IssuingSpaceID, p.DestinationSpaceID,
 		p.ApostilleRequired, steps, p.CommunityLastVerified, status,
 		p.IsActive, p.AIGenerated, p.AIModel, p.AIPromptHash,
-		p.HITLReviewedBy, p.HITLReviewedAt, p.HITLReviewNotes, p.IsJapabotIndexed,
+		p.HITLReviewedBy, p.HITLReviewedAt, p.HITLReviewNotes,
 	).Scan(
 		&out.ID, &out.TenantID, &out.DocumentType, &out.IssuingSpaceID, &out.DestinationSpaceID,
 		&out.ApostilleRequired, &out.PathwaySteps, &out.CommunityLastVerified, &out.Status,
@@ -321,6 +322,7 @@ RETURNING id, tenant_id, document_type, issuing_space_id, destination_space_id,
 
 // UpdatePathway updates the mutable fields on an attestation_pathways
 // row. Only the provided (non-nil) fields are applied.
+// is_japabot_indexed is a GENERATED column and is NOT updated.
 func (s *Store) UpdatePathway(ctx context.Context, id, tenantID pgtype.UUID, p Pathway) error {
 	steps := p.PathwaySteps
 	if steps == nil {
@@ -340,7 +342,6 @@ SET document_type        = $3,
     ai_model             = $12,
     ai_prompt_hash       = $13,
     hitl_review_notes    = $14,
-    is_japabot_indexed   = $15,
     updated_at           = now()
 WHERE id = $1 AND tenant_id = $2
 `
@@ -349,7 +350,7 @@ WHERE id = $1 AND tenant_id = $2
 		p.DocumentType, p.IssuingSpaceID, p.DestinationSpaceID,
 		p.ApostilleRequired, steps, p.CommunityLastVerified, p.Status,
 		p.IsActive, p.AIGenerated, p.AIModel, p.AIPromptHash,
-		p.HITLReviewNotes, p.IsJapabotIndexed,
+		p.HITLReviewNotes,
 	)
 	if err != nil {
 		return fmt.Errorf("attestationguide: update pathway: %w", err)
@@ -407,15 +408,20 @@ RETURNING id, pathway_id, user_id, step_index, fee_estimate, turnaround_days,
 }
 
 // ReviewCommunityUpdate sets the status of a community update to
-// approved or rejected and records the reviewer.
-func (s *Store) ReviewCommunityUpdate(ctx context.Context, id, reviewerID pgtype.UUID, status string) error {
+// approved or rejected and records the reviewer. The tenantID scopes
+// the update through its parent pathway to prevent cross-tenant access.
+func (s *Store) ReviewCommunityUpdate(ctx context.Context, id, tenantID, reviewerID pgtype.UUID, status string) error {
 	const q = `
-UPDATE attestation_community_updates
+UPDATE attestation_community_updates u
 SET status      = $3,
     reviewed_by = $4
-WHERE id = $1 AND deleted_at IS NULL
+FROM attestation_pathways p
+WHERE u.id = $1
+  AND u.pathway_id = p.id
+  AND p.tenant_id = $2
+  AND u.deleted_at IS NULL
 `
-	cmd, err := s.pool.Writer.Exec(ctx, q, id, status, reviewerID)
+	cmd, err := s.pool.Writer.Exec(ctx, q, id, tenantID, status, reviewerID)
 	if err != nil {
 		return fmt.Errorf("attestationguide: review community update: %w", err)
 	}
@@ -423,6 +429,31 @@ WHERE id = $1 AND deleted_at IS NULL
 		return pgx.ErrNoRows
 	}
 	return nil
+}
+
+// GetCommunityUpdateByID returns a single attestation_community_updates
+// row by its id, scoped through the parent pathway's tenant.
+func (s *Store) GetCommunityUpdateByID(ctx context.Context, id, tenantID pgtype.UUID) (CommunityUpdate, error) {
+	const q = `
+SELECT u.id, u.pathway_id, u.user_id, u.step_index, u.fee_estimate,
+       u.turnaround_days, u.note, u.status, u.reviewed_by, u.created_at
+FROM attestation_community_updates u
+JOIN attestation_pathways p ON p.id = u.pathway_id
+WHERE u.id = $1 AND p.tenant_id = $2 AND u.deleted_at IS NULL
+LIMIT 1
+`
+	var u CommunityUpdate
+	err := s.pool.Reader.QueryRow(ctx, q, id, tenantID).Scan(
+		&u.ID, &u.PathwayID, &u.UserID, &u.StepIndex, &u.FeeEstimate,
+		&u.TurnaroundDays, &u.Note, &u.Status, &u.ReviewedBy, &u.CreatedAt,
+	)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return CommunityUpdate{}, pgx.ErrNoRows
+		}
+		return CommunityUpdate{}, fmt.Errorf("attestationguide: get community update by id: %w", err)
+	}
+	return u, nil
 }
 
 // AdminListFilter holds filter parameters for the admin pathway list.

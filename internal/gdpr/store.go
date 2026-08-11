@@ -317,6 +317,19 @@ func (s *Store) gdprExportUserOrganizations(ctx context.Context, userID, tenantI
 	return exportJSONSlice(ctx, s.read.GdprExportUserOrganizations, gen.GdprExportUserOrganizationsParams{UserID: userID, TenantID: tenantID})
 }
 
+// gdprExportAttestationCommunityUpdates exports §97 attestation_community_updates
+// rows authored by the user (BUG-015).
+func (s *Store) gdprExportAttestationCommunityUpdates(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {
+	return exportJSONSlice(ctx, s.read.GdprExportAttestationCommunityUpdates, gen.GdprExportAttestationCommunityUpdatesParams{UserID: userID, TenantID: tenantID})
+}
+
+// softDeleteAttestationCommunityUpdatesByUser soft-deletes §97
+// attestation_community_updates authored by the user during GDPR erasure
+// (BUG-015).
+func (s *Store) softDeleteAttestationCommunityUpdatesByUser(ctx context.Context, userID pgtype.UUID) error {
+	return s.write.SoftDeleteAttestationCommunityUpdatesByUser(ctx, userID)
+}
+
 func (s *Store) gdprExportUserApiKeys(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {
 	return exportJSONSlice(ctx, s.read.GdprExportUserApiKeys, gen.GdprExportUserApiKeysParams{UserID: userID, TenantID: tenantID})
 }

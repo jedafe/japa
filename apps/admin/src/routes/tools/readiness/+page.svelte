@@ -298,7 +298,12 @@
 <!-- ── Form config slide-over ────────────────────────────────────────────── -->
 {#if showConfig && scoringConfig}
 	<div class="fixed inset-0 z-50 flex justify-end">
-		<div class="absolute inset-0 bg-black/40" onclick={() => (showConfig = false)}></div>
+		<button
+			type="button"
+			class="absolute inset-0 bg-black/40"
+			aria-label={t('common.close', 'Close')}
+			onclick={() => (showConfig = false)}
+		></button>
 		<div class="relative h-full w-full max-w-lg overflow-y-auto border-l p-6" style="border-color: var(--color-border); background: var(--color-surface)">
 			<div class="mb-4 flex items-center justify-between">
 				<h2 class="text-base font-semibold" style="color: var(--color-foreground)">

@@ -496,9 +496,9 @@ type AttestationPathway struct {
 	HitlReviewedBy        pgtype.UUID        `json:"hitl_reviewed_by"`
 	HitlReviewedAt        pgtype.Timestamptz `json:"hitl_reviewed_at"`
 	HitlReviewNotes       *string            `json:"hitl_review_notes"`
-	IsJapabotIndexed      bool               `json:"is_japabot_indexed"`
 	CreatedAt             pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt             pgtype.Timestamptz `json:"updated_at"`
+	IsJapabotIndexed      *bool              `json:"is_japabot_indexed"`
 }
 
 type AuditLog struct {
@@ -1684,6 +1684,14 @@ type JobApplication struct {
 	EmployerNotes   *string            `json:"employer_notes"`
 	AppliedAt       pgtype.Timestamptz `json:"applied_at"`
 	StatusUpdatedAt pgtype.Timestamptz `json:"status_updated_at"`
+}
+
+type JwtSigningKey struct {
+	Kid       string             `json:"kid"`
+	Secret    string             `json:"secret"`
+	Active    bool               `json:"active"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	RetiredAt pgtype.Timestamptz `json:"retired_at"`
 }
 
 type KnownBot struct {

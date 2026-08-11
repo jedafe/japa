@@ -757,6 +757,32 @@ func (q *Queries) GdprDeleteUserContentViews(ctx context.Context, userID pgtype.
 	return err
 }
 
+const gdprExportAttestationCommunityUpdates = `-- name: GdprExportAttestationCommunityUpdates :one
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (
+    SELECT u.id, u.pathway_id, u.step_index, u.fee_estimate,
+           u.turnaround_days, u.note, u.status, u.reviewed_by, u.created_at
+    FROM attestation_community_updates u
+    JOIN attestation_pathways p ON p.id = u.pathway_id
+    WHERE u.user_id = $1 AND p.tenant_id = $2 AND u.deleted_at IS NULL
+) t
+`
+
+type GdprExportAttestationCommunityUpdatesParams struct {
+	UserID   pgtype.UUID `json:"user_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+// §97: export attestation_community_updates authored by the user.
+// The table has no tenant_id column; tenant scoping is via the parent
+// pathway's tenant_id.
+func (q *Queries) GdprExportAttestationCommunityUpdates(ctx context.Context, arg GdprExportAttestationCommunityUpdatesParams) (interface{}, error) {
+	row := q.db.QueryRow(ctx, gdprExportAttestationCommunityUpdates, arg.UserID, arg.TenantID)
+	var data interface{}
+	err := row.Scan(&data)
+	return data, err
+}
+
 const gdprExportCustomFieldValues = `-- name: GdprExportCustomFieldValues :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (
@@ -2817,6 +2843,20 @@ func (q *Queries) RevokeConsent(ctx context.Context, arg RevokeConsentParams) er
 		arg.IpAddress,
 		arg.UserAgent,
 	)
+	return err
+}
+
+const softDeleteAttestationCommunityUpdatesByUser = `-- name: SoftDeleteAttestationCommunityUpdatesByUser :exec
+UPDATE attestation_community_updates
+SET deleted_at = now()
+WHERE user_id = $1 AND deleted_at IS NULL
+`
+
+// §97: soft-delete attestation_community_updates authored by the user
+// during GDPR erasure. Sets deleted_at = now() to preserve audit trail
+// while removing the user's PII association.
+func (q *Queries) SoftDeleteAttestationCommunityUpdatesByUser(ctx context.Context, userID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, softDeleteAttestationCommunityUpdatesByUser, userID)
 	return err
 }
 

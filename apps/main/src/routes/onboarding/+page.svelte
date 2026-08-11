@@ -226,14 +226,11 @@
 						<label class="mb-1 block text-sm font-medium text-[var(--color-text)]" for="ob-status">{t('onboarding.field_japa_status', 'Where are you in your japa journey?')}</label>
 						<select id="ob-status" bind:value={japaStatus} class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none">
 							<option value="">{t('onboarding.select_option', 'Select...')}</option>
-							<option value="newly_japa">{t('onboarding.status_newly_japa', 'Newly Japa')}</option>
-							<option value="settling_in">{t('onboarding.status_settling_in', 'Settling In')}</option>
-							<option value="settled">{t('onboarding.status_settled', 'Settled')}</option>
-							<option value="planning">{t('onboarding.status_planning', 'Planning')}</option>
-							<option value="considering">{t('onboarding.status_considering', 'Considering')}</option>
-							<option value="returned">{t('onboarding.status_returned', 'Returned')}</option>
-							<option value="never_left">{t('onboarding.status_never_left', 'Never Left')}</option>
-							<option value="not_say">{t('onboarding.status_not_say', 'Prefer Not to Say')}</option>
+							{#if data.onboardingOptions}
+								{#each data.onboardingOptions.japa_statuses as opt (opt.value)}
+									<option value={opt.value}>{t(opt.label_key, opt.value)}</option>
+								{/each}
+							{/if}
 						</select>
 					</div>
 					<div>
@@ -303,12 +300,11 @@
 						<label class="mb-1 block text-sm font-medium text-[var(--color-text)]" for="ob-goal">{t('onboarding.field_goal', 'Primary goal')}</label>
 						<select id="ob-goal" bind:value={primaryGoal} class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none">
 							<option value="">{t('onboarding.select_option', 'Select...')}</option>
-							<option value="work">{t('onboarding.goal_work', 'Work / Career')}</option>
-							<option value="study">{t('onboarding.goal_study', 'Study / Education')}</option>
-							<option value="business">{t('onboarding.goal_business', 'Business / Entrepreneurship')}</option>
-							<option value="family">{t('onboarding.goal_family', 'Family / Reunion')}</option>
-							<option value="lifestyle">{t('onboarding.goal_lifestyle', 'Lifestyle / Quality of life')}</option>
-							<option value="unsure">{t('onboarding.goal_unsure', "I'm not sure yet")}</option>
+							{#if data.onboardingOptions}
+								{#each data.onboardingOptions.primary_goals as opt (opt.value)}
+									<option value={opt.value}>{t(opt.label_key, opt.value)}</option>
+								{/each}
+							{/if}
 						</select>
 					</div>
 				</div>
