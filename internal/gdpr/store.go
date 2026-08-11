@@ -592,12 +592,15 @@ func (s *Store) updateDataExportRequestStatus(ctx context.Context, p gen.UpdateD
 	return row, nil
 }
 
-func (s *Store) listPendingDataExportRequests(ctx context.Context, limit int32) ([]gen.DataExportRequest, error) {
+func (s *Store) listPendingDataExportRequests(ctx context.Context, tenantID pgtype.UUID, limit int32) ([]gen.DataExportRequest, error) {
 	if limit <= 0 {
 		limit = DefaultPageSize
 	}
 
-	rows, err := s.read.ListPendingDataExportRequests(ctx, limit)
+	rows, err := s.read.ListPendingDataExportRequests(ctx, gen.ListPendingDataExportRequestsParams{
+		TenantID:  tenantID,
+		PageLimit: limit,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("listing pending data export requests: %w", err)
 	}
@@ -647,12 +650,15 @@ func (s *Store) updateAccountDeletionRequestProgress(ctx context.Context, id, te
 	return nil
 }
 
-func (s *Store) listPendingDeletionRequests(ctx context.Context, limit int32) ([]gen.ListPendingDeletionRequestsRow, error) {
+func (s *Store) listPendingDeletionRequests(ctx context.Context, tenantID pgtype.UUID, limit int32) ([]gen.ListPendingDeletionRequestsRow, error) {
 	if limit <= 0 {
 		limit = DefaultPageSize
 	}
 
-	rows, err := s.read.ListPendingDeletionRequests(ctx, limit)
+	rows, err := s.read.ListPendingDeletionRequests(ctx, gen.ListPendingDeletionRequestsParams{
+		TenantID:  tenantID,
+		PageLimit: limit,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("listing pending deletion requests: %w", err)
 	}

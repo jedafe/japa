@@ -1800,7 +1800,10 @@ export const attestationGuideAdminApi = {
 };
 
 export const languageTestHubAdminApi = {
-	list: (params?: string) => api<unknown>(`/admin/language-tests/requirements${params ? `?${params}` : ''}`),
+	list: (params?: string) =>
+		apiRaw<{ data: unknown[]; pagination: { page: number; limit: number; total: number } }>(
+			`/admin/language-tests/requirements${params ? `?${params}` : ''}`
+		),
 	create: (body: Record<string, unknown>) =>
 		api<unknown>(`/admin/language-tests/requirements`, { method: 'POST', body }),
 	approve: (id: string) =>

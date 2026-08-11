@@ -7,6 +7,7 @@
 	import { t } from '$lib/i18n';
 	import { api } from '$lib/api/client';
 	import { goto } from '$app/navigation';
+	import { page } from '$app/state';
 	import SetSidebar from '$lib/components/shell/SetSidebar.svelte';
 	import CurriculumRail from '$lib/components/learn/CurriculumRail.svelte';
 	import ProgressRing from '$lib/components/learn/ProgressRing.svelte';
@@ -221,7 +222,7 @@
 <svelte:head>
 	<title>{lesson.title} · {track.title} · {t('app.name')}</title>
 	<meta name="description" content={lesson.title} />
-	<link rel="canonical" href={`https://learn.japaconnect.com/tracks/${track.slug}/${lesson.module_title ?? ''}/${lesson.slug}`} />
+	<link rel="canonical" href={`https://university.japaconnect.com/tracks/${track.slug}/${page.params.module}/${lesson.slug}`} />
 	<script type="application/ld+json">
 		{JSON.stringify({
 			'@context': 'https://schema.org',
@@ -472,7 +473,7 @@
 									{#if quizSubmitting}
 										{t('learn.submitting', 'Submitting…')}
 									{:else}
-										{t('learn.submit_quiz', 'Submit quiz')}
+										{t('lesson.submit_quiz', 'Submit quiz')}
 									{/if}
 								</button>
 							{:else}

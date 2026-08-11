@@ -177,7 +177,7 @@
 				{/if}
 				{#if track.enrolled_count}
 					<span class="inline-flex items-center gap-1">
-						<Users size={14} /> {t('learn.enrolled_count', '{n} enrolled').replace('{n}', formatCount(track.enrolled_count))}
+						<Users size={14} /> {t('learn.enrolled_count', '{count} enrolled').replace('{count}', formatCount(track.enrolled_count))}
 					</span>
 				{/if}
 			</div>

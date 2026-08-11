@@ -132,10 +132,12 @@ RETURNING id, tenant_id, user_id, status, download_url, expires_at,
     completed_at, created_at;
 
 -- name: ListPendingDataExportRequests :many
+-- BUG-GDPR-002: scoped to the caller's tenant so an admin in tenant A
+-- cannot see tenant B's pending export requests (§5.3 cross-tenant bleed).
 SELECT id, tenant_id, user_id, status, download_url, expires_at,
     completed_at, created_at
 FROM data_export_requests
-WHERE status = 'pending'
+WHERE status = 'pending' AND tenant_id = @tenant_id
 ORDER BY created_at ASC
 LIMIT @page_limit;
 
@@ -171,12 +173,14 @@ SET progress_step = @progress_step
 WHERE id = @id AND tenant_id = @tenant_id;
 
 -- name: ListPendingDeletionRequests :many
+-- BUG-GDPR-001: scoped to the caller's tenant so an admin in tenant A
+-- cannot see tenant B's pending deletion requests (§5.3 cross-tenant bleed).
 SELECT adr.id, adr.tenant_id, adr.user_id, adr.status, adr.reason, adr.completed_at, adr.created_at, adr.progress_step,
        u.username, up.display_name
 FROM account_deletion_requests adr
 LEFT JOIN users u ON u.id = adr.user_id
 LEFT JOIN user_profiles up ON up.user_id = adr.user_id
-WHERE adr.status = 'pending'
+WHERE adr.status = 'pending' AND adr.tenant_id = @tenant_id
 ORDER BY adr.created_at ASC
 LIMIT @page_limit;
 
@@ -197,6 +201,11 @@ WHERE id = @user_id AND tenant_id = @tenant_id;
 -- (which reveals country origin/preference), preferred_currency, avatar/cover
 -- URLs — is scrubbed before the hard-delete phase. The row itself is preserved
 -- (FK integrity) until HardDeleteUser cascades.
+--
+-- Also clears the japa_stage* columns (§87, ADR-095): japa_stage,
+-- japa_stage_dest_space_id, japa_stage_history (an append-only log of the
+-- member's relocation stage + destination over time — PII), and
+-- japa_stage_is_public (revoked so no public directory leak survives).
 UPDATE user_profiles
 SET display_name = 'Deleted User',
     avatar_url = NULL,
@@ -208,6 +217,11 @@ SET display_name = 'Deleted User',
     operating_hours = NULL,
     content_country_preference = NULL,
     preferred_currency = NULL,
+    japa_stage = NULL,
+    japa_stage_dest_space_id = NULL,
+    japa_stage_history = '[]'::jsonb,
+    japa_stage_is_public = false,
+    japa_stage_updated_at = NULL,
     updated_at = now()
 WHERE user_id = @user_id AND tenant_id = @tenant_id;
 
@@ -367,6 +381,18 @@ LIMIT @page_limit OFFSET @page_offset;
 -- name: ListStalePendingDeletionRequests :many
 SELECT id, tenant_id, user_id
 FROM account_deletion_requests
+WHERE status = 'pending'
+  AND created_at < now() - interval '30 minutes'
+ORDER BY created_at ASC
+LIMIT 50;
+
+-- name: ListStalePendingDataExportRequests :many
+-- GAP-GDPR-B: re-enqueue stale pending data export requests whose original
+-- enqueue may have been lost (e.g. RequestDataExport's enqueuer.Enqueue
+-- failed and only logged). Mirrors ListStalePendingDeletionRequests.
+-- Tenant-scoped at the call site; the sweep iterates all tenants.
+SELECT id, tenant_id, user_id
+FROM data_export_requests
 WHERE status = 'pending'
   AND created_at < now() - interval '30 minutes'
 ORDER BY created_at ASC
@@ -686,8 +712,10 @@ SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (SELECT * FROM user_preferences WHERE user_id = @user_id AND tenant_id = @tenant_id) t;
 
 -- name: GdprExportUserMutes :one
+-- BUG-008: export both muter and muted directions for GDPR portability.
+-- Ref: japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
 SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (SELECT * FROM user_mutes WHERE user_id = @user_id AND tenant_id = @tenant_id) t;
+FROM (SELECT * FROM user_mutes WHERE (user_id = @user_id OR muted_user_id = @user_id) AND tenant_id = @tenant_id) t;
 
 -- name: GdprExportUserSpaceMutes :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data

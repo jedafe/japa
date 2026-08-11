@@ -65,7 +65,7 @@
 	const currentIndex = $derived(stageIndex(currentStage));
 
 	const historyEntries = $derived(
-		(data.myStage?.history as Array<{ stage: JapaStage; dest_country_id?: string; set_at: string }> | undefined) ?? []
+		(data.myStage?.history as Array<{ stage: JapaStage; dest_space_id?: string; set_at: string }> | undefined) ?? []
 	);
 
 	async function submit(e: SubmitEvent) {
@@ -233,8 +233,8 @@
 							style={`background-color: ${STAGE_COLORS[entry.stage] ?? 'var(--color-muted)'};`}
 						></span>
 						<span class="font-medium text-[var(--color-text)]">{stageLabel(entry.stage)}</span>
-						{#if entry.dest_country_id}
-							<span class="text-[var(--color-text-subtle)]">→ {entry.dest_country_id}</span>
+						{#if entry.dest_space_id}
+							<span class="text-[var(--color-text-subtle)]">→ {entry.dest_space_id}</span>
 						{/if}
 						<span class="ml-auto text-xs text-[var(--color-text-subtle)]">
 							<RelativeTime iso={entry.set_at} />

@@ -3,7 +3,7 @@ import { apiContext, apiList } from '$lib/server/api';
 import type { JobListing } from '$lib/types';
 
 /**
- * Jobs Board finder at /jobs (Section 63, ADR-079).
+ * Jobs Board finder at /jobs (Section 63, ADR-081).
  * SSR-fetches the job listings with query filters so the page is
  * indexable and renders without a client round-trip.
  *

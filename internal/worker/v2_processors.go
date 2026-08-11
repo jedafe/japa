@@ -183,6 +183,15 @@ type DigestProcessor interface {
 	SendEditionEmail(ctx context.Context, editionID, tenantID pgtype.UUID) error
 }
 
+// JapaStageProcessor handles the japa_stage:recommend fan-out (§87, ADR-095).
+// On a successful PATCH /me/japa-stage the handler enqueues the task; the
+// processor dispatches tool recommendations, updates the JapaBot peer card
+// via Honcho, and prompts a Readiness Assessment when stage=planning and the
+// member has no completed assessment.
+type JapaStageProcessor interface {
+	RecommendForStage(ctx context.Context, userID, tenantID pgtype.UUID, stage, destSpaceID string) error
+}
+
 // ---------------------------------------------------------------------------
 // Global processor slots — nil-safe (graceful degradation when unregistered).
 // ---------------------------------------------------------------------------
@@ -205,6 +214,7 @@ var (
 	cvFormatterProcessor    CvFormatterProcessor
 	digestProcessor         DigestProcessor
 	agentDraftProcessor     AgentDraftProcessor
+	japaStageProcessor      JapaStageProcessor
 )
 
 // Register functions — call once at startup before the worker serves.
@@ -226,6 +236,7 @@ func RegisterCalendarProcessor(p CalendarProcessor)             { calendarProces
 func RegisterCvFormatterProcessor(p CvFormatterProcessor)       { cvFormatterProcessor = p }
 func RegisterDigestProcessor(p DigestProcessor)                 { digestProcessor = p }
 func RegisterAgentDraftProcessor(p AgentDraftProcessor)         { agentDraftProcessor = p }
+func RegisterJapaStageProcessor(p JapaStageProcessor)           { japaStageProcessor = p }
 
 // ---------------------------------------------------------------------------
 // Task type constants (V2 — Sections 60–77).
@@ -299,6 +310,15 @@ const (
 	// §62 Newsletter infrastructure).
 	TypeDigestGenerate  = "digest:generate"
 	TypeDigestSendEmail = "digest:send_email"
+
+	// §87 Japa Stage Progress Profiles (ADR-095).
+	// japa_stage:recommend runs on the default queue after a successful
+	// PATCH /me/japa-stage, dispatching tool recommendations for the new
+	// stage, updating the JapaBot peer card via Honcho, and prompting a
+	// Readiness Assessment when stage=planning and the member has none.
+	// Idempotent on (user_id, stage, set_at) — enqueued with a 1-minute
+	// Unique window so a duplicate PATCH does not double-dispatch.
+	TypeJapaStageRecommend = "japa_stage:recommend"
 )
 
 // ---------------------------------------------------------------------------
@@ -1111,5 +1131,39 @@ func HandleDigestSendEmail(ctx context.Context, t *asynq.Task) error {
 	}
 	slog.Info("task:digest:send_email: sent",
 		"edition_id", p.EditionID, "tenant_id", p.TenantID)
+	return nil
+}
+
+// HandleJapaStageRecommend dispatches the §87 stage-change fan-out: tool
+// recommendation notification, JapaBot peer card update via Honcho, and a
+// Readiness Assessment prompt when stage=planning and the member has no
+// completed assessment. Enqueued fire-and-forget by PATCH /me/japa-stage.
+func HandleJapaStageRecommend(ctx context.Context, t *asynq.Task) error {
+	if japaStageProcessor == nil {
+		slog.Warn("task:japa_stage:recommend: no processor registered, skipping")
+		return nil
+	}
+	var p struct {
+		UserID             string `json:"user_id"`
+		TenantID           string `json:"tenant_id"`
+		Stage              string `json:"stage"`
+		DestinationSpaceID string `json:"destination_space_id"`
+	}
+	if err := json.Unmarshal(t.Payload(), &p); err != nil {
+		return fmt.Errorf("task:japa_stage:recommend: invalid payload: %w", err)
+	}
+	var userID pgtype.UUID
+	if err := userID.Scan(p.UserID); err != nil {
+		return fmt.Errorf("task:japa_stage:recommend: bad user_id: %w", err)
+	}
+	var tenantID pgtype.UUID
+	if err := tenantID.Scan(p.TenantID); err != nil {
+		return fmt.Errorf("task:japa_stage:recommend: bad tenant_id: %w", err)
+	}
+	if err := japaStageProcessor.RecommendForStage(ctx, userID, tenantID, p.Stage, p.DestinationSpaceID); err != nil {
+		return fmt.Errorf("task:japa_stage:recommend: %w", err)
+	}
+	slog.Info("task:japa_stage:recommend: dispatched",
+		"user_id", p.UserID, "stage", p.Stage)
 	return nil
 }
