@@ -76,8 +76,29 @@ type BulkSoftDeleteMediaParams struct {
 // =====================
 // Bulk Operations
 // =====================
+// Admin bulk delete — no ownership filter (gated by media.delete_any).
 func (q *Queries) BulkSoftDeleteMedia(ctx context.Context, arg BulkSoftDeleteMediaParams) error {
 	_, err := q.db.Exec(ctx, bulkSoftDeleteMedia, arg.MediaIds, arg.TenantID)
+	return err
+}
+
+const bulkSoftDeleteMediaOwn = `-- name: BulkSoftDeleteMediaOwn :exec
+UPDATE media SET deleted_at = now()
+WHERE id = ANY($1::uuid[])
+  AND tenant_id = $2
+  AND uploader_user_id = $3
+  AND deleted_at IS NULL
+`
+
+type BulkSoftDeleteMediaOwnParams struct {
+	MediaIds       []pgtype.UUID `json:"media_ids"`
+	TenantID       pgtype.UUID   `json:"tenant_id"`
+	UploaderUserID pgtype.UUID   `json:"uploader_user_id"`
+}
+
+// User-facing bulk delete — scoped to the uploader (gated by media.delete_own).
+func (q *Queries) BulkSoftDeleteMediaOwn(ctx context.Context, arg BulkSoftDeleteMediaOwnParams) error {
+	_, err := q.db.Exec(ctx, bulkSoftDeleteMediaOwn, arg.MediaIds, arg.TenantID, arg.UploaderUserID)
 	return err
 }
 
@@ -1167,8 +1188,30 @@ type SoftDeleteMediaParams struct {
 	TenantID pgtype.UUID `json:"tenant_id"`
 }
 
+// Admin delete — no ownership filter (gated by media.delete_any).
 func (q *Queries) SoftDeleteMedia(ctx context.Context, arg SoftDeleteMediaParams) error {
 	_, err := q.db.Exec(ctx, softDeleteMedia, arg.ID, arg.TenantID)
+	return err
+}
+
+const softDeleteMediaOwn = `-- name: SoftDeleteMediaOwn :exec
+UPDATE media SET deleted_at = now()
+WHERE id = $1 AND tenant_id = $2
+  AND uploader_user_id = $3
+  AND deleted_at IS NULL
+`
+
+type SoftDeleteMediaOwnParams struct {
+	ID             pgtype.UUID `json:"id"`
+	TenantID       pgtype.UUID `json:"tenant_id"`
+	UploaderUserID pgtype.UUID `json:"uploader_user_id"`
+}
+
+// User-facing delete — scoped to the uploader (gated by media.delete_own).
+// Returns no rows if the media belongs to a different user, which the caller
+// treats as a 404/403 to avoid leaking existence information.
+func (q *Queries) SoftDeleteMediaOwn(ctx context.Context, arg SoftDeleteMediaOwnParams) error {
+	_, err := q.db.Exec(ctx, softDeleteMediaOwn, arg.ID, arg.TenantID, arg.UploaderUserID)
 	return err
 }
 
@@ -1194,6 +1237,7 @@ type UpdateMediaMetadataParams struct {
 	TenantID     pgtype.UUID    `json:"tenant_id"`
 }
 
+// Admin metadata update — no ownership filter (gated by media.edit_any).
 func (q *Queries) UpdateMediaMetadata(ctx context.Context, arg UpdateMediaMetadataParams) error {
 	_, err := q.db.Exec(ctx, updateMediaMetadata,
 		arg.AltText,
@@ -1204,6 +1248,47 @@ func (q *Queries) UpdateMediaMetadata(ctx context.Context, arg UpdateMediaMetada
 		arg.UserGroupID,
 		arg.ID,
 		arg.TenantID,
+	)
+	return err
+}
+
+const updateMediaMetadataOwn = `-- name: UpdateMediaMetadataOwn :exec
+UPDATE media
+SET alt_text = COALESCE($1, alt_text),
+    caption = COALESCE($2, caption),
+    width_px = COALESCE($3, width_px),
+    height_px = COALESCE($4, height_px),
+    duration_secs = COALESCE($5, duration_secs),
+    user_group_id = $6
+WHERE id = $7 AND tenant_id = $8
+  AND uploader_user_id = $9
+  AND deleted_at IS NULL
+`
+
+type UpdateMediaMetadataOwnParams struct {
+	AltText        *string        `json:"alt_text"`
+	Caption        *string        `json:"caption"`
+	WidthPx        *int32         `json:"width_px"`
+	HeightPx       *int32         `json:"height_px"`
+	DurationSecs   pgtype.Numeric `json:"duration_secs"`
+	UserGroupID    pgtype.UUID    `json:"user_group_id"`
+	ID             pgtype.UUID    `json:"id"`
+	TenantID       pgtype.UUID    `json:"tenant_id"`
+	UploaderUserID pgtype.UUID    `json:"uploader_user_id"`
+}
+
+// User-facing metadata update — scoped to the uploader (gated by media.edit_own).
+func (q *Queries) UpdateMediaMetadataOwn(ctx context.Context, arg UpdateMediaMetadataOwnParams) error {
+	_, err := q.db.Exec(ctx, updateMediaMetadataOwn,
+		arg.AltText,
+		arg.Caption,
+		arg.WidthPx,
+		arg.HeightPx,
+		arg.DurationSecs,
+		arg.UserGroupID,
+		arg.ID,
+		arg.TenantID,
+		arg.UploaderUserID,
 	)
 	return err
 }

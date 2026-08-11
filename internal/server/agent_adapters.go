@@ -782,6 +782,7 @@ func (a *agentMenusAdapter) CreateMenuItem(ctx context.Context, tenantID pgtype.
 		Target:           input.Target,
 		IsAdSlot:         input.IsAdSlot,
 		AdSlotConfig:     input.AdSlotConfig,
+		Status:           input.Status,
 	})
 }
 

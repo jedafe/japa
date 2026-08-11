@@ -172,6 +172,7 @@ func (h *Handlers) CreateMenu(w http.ResponseWriter, r *http.Request) {
 		Slug      string `json:"slug"`
 		Name      string `json:"name"`
 		Placement string `json:"placement"`
+		Status    string `json:"status"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
@@ -181,7 +182,7 @@ func (h *Handlers) CreateMenu(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "validation_error", "slug and name are required")
 		return
 	}
-	menu, err := h.Service.CreateMenu(r.Context(), tenantID, input.Slug, input.Name, input.Placement)
+	menu, err := h.Service.CreateMenu(r.Context(), tenantID, input.Slug, input.Name, input.Placement, input.Status)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -281,6 +282,10 @@ func (h *Handlers) UpdateMenuItem(w http.ResponseWriter, r *http.Request) {
 	var input UpdateMenuItemInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
+		return
+	}
+	if input.Label == "" || input.URL == "" {
+		writeError(w, http.StatusBadRequest, "validation_error", "label and url are required")
 		return
 	}
 	item, err := h.Service.UpdateMenuItem(r.Context(), id, tenantID, input)

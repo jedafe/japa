@@ -300,6 +300,31 @@ func (q *Queries) DeleteMentorshipProgram(ctx context.Context, arg DeleteMentors
 	return result.RowsAffected(), nil
 }
 
+const getActiveOrPendingConnection = `-- name: GetActiveOrPendingConnection :one
+SELECT id FROM mentorship_connections
+WHERE tenant_id = $1
+  AND mentor_id = $2
+  AND mentee_id = $3
+  AND status IN ('pending', 'active')
+LIMIT 1
+`
+
+type GetActiveOrPendingConnectionParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	MentorID pgtype.UUID `json:"mentor_id"`
+	MenteeID pgtype.UUID `json:"mentee_id"`
+}
+
+// Check whether an active or pending connection already exists between a
+// mentor and mentee (§102: a new request can only be sent after the previous
+// one has been resolved). Returns at most one row.
+func (q *Queries) GetActiveOrPendingConnection(ctx context.Context, arg GetActiveOrPendingConnectionParams) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, getActiveOrPendingConnection, arg.TenantID, arg.MentorID, arg.MenteeID)
+	var id pgtype.UUID
+	err := row.Scan(&id)
+	return id, err
+}
+
 const getMentorByUsername = `-- name: GetMentorByUsername :one
 SELECT up.user_id, up.tenant_id, up.is_mentor, up.mentor_capacity,
        up.active_mentee_count, up.mentor_areas, up.mentor_bio, up.mentor_since,
@@ -814,8 +839,8 @@ SELECT up.user_id, up.tenant_id, up.is_mentor, up.mentor_capacity,
        up.display_name, up.avatar_url, u.username,
        (up.mentor_capacity - up.active_mentee_count)::int AS available_slots,
        CASE WHEN up.mentor_embedding IS NOT NULL
-            THEN 1 - (up.mentor_embedding <=> $1)
-            ELSE 0
+            THEN (1 - (up.mentor_embedding <=> $1))::double precision
+            ELSE 0::double precision
        END AS bio_similarity
 FROM user_profiles up
 JOIN users u ON u.id = up.user_id AND u.tenant_id = up.tenant_id
@@ -856,7 +881,7 @@ type ListMentorsByMatchRow struct {
 	AvatarUrl         *string            `json:"avatar_url"`
 	Username          string             `json:"username"`
 	AvailableSlots    int32              `json:"available_slots"`
-	BioSimilarity     int32              `json:"bio_similarity"`
+	BioSimilarity     float64            `json:"bio_similarity"`
 }
 
 // Discover mentors ordered by pgvector cosine similarity to the mentee's

@@ -110,29 +110,6 @@ func TestImageProxyOptsDefaults(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// hexDecode
-// ---------------------------------------------------------------------------
-
-func TestHexDecode(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		input string
-		want  string
-	}{
-		{"48656c6c6f", "Hello"},
-		{"", ""},
-		{"invalid", ""},
-	}
-	for _, tt := range tests {
-		got := string(hexDecode(tt.input))
-		if got != tt.want {
-			t.Errorf("hexDecode(%q) = %q, want %q", tt.input, got, tt.want)
-		}
-	}
-}
-
-// ---------------------------------------------------------------------------
 // IsAllowedMIMEType
 // ---------------------------------------------------------------------------
 

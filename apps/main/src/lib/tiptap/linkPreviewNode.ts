@@ -46,7 +46,8 @@ export const LinkPreviewNode = Node.create({
 	 */
 	renderMarkdown(node: { attrs?: { url?: string } }) {
 		const url = node.attrs?.url ?? '';
-		return `<div data-type="link-preview" data-url="${url}"></div>`;
+		const escaped = url.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+		return `<div data-type="link-preview" data-url="${escaped}"></div>`;
 	},
 
 	addCommands() {

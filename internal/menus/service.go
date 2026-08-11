@@ -117,10 +117,13 @@ func (s *Service) GetMenuBySlug(ctx context.Context, tenantID pgtype.UUID, slug 
 		if err == nil {
 			userPerms = perms
 		}
-		// On resolution failure we fail open (no permission pruning) rather
-		// than 500'ing the whole menu render — a missing nav item is
-		// preferable to a blank shell. The RBAC resolver is cached, so this
-		// path is hit only on an actual infra failure.
+		// On resolution failure we fail CLOSED: userPerms stays nil, and
+		// filterMenuItems prunes every permission_node-gated item for the
+		// authenticated user. Hiding a nav item on an infra failure is
+		// preferable to leaking an admin-only item to a member. The RBAC
+		// resolver is cached, so this path is hit only on an actual infra
+		// failure. (ADR-054: items whose permission_node is non-null and
+		// not in the user's resolved permissions are pruned.)
 	}
 
 	filteredItems := filterMenuItems(jsonItems, userGroupIDs, isAuthenticated, userPerms)
@@ -136,12 +139,18 @@ func (s *Service) GetMenuBySlug(ctx context.Context, tenantID pgtype.UUID, slug 
 	}, nil
 }
 
-func (s *Service) CreateMenu(ctx context.Context, tenantID pgtype.UUID, slug, name, placement string) (gen.Menu, error) {
+func (s *Service) CreateMenu(ctx context.Context, tenantID pgtype.UUID, slug, name, placement, status string) (gen.Menu, error) {
 	if !ValidPlacement(placement) {
 		return gen.Menu{}, ErrInvalidPlacement
 	}
+	if status == "" {
+		status = string(StatusActive)
+	}
+	if !ValidStatus(status) {
+		return gen.Menu{}, ErrInvalidStatus
+	}
 	return s.store.createMenu(ctx, gen.CreateMenuParams{
-		TenantID: tenantID, Slug: slug, Name: name, Placement: placement,
+		TenantID: tenantID, Slug: slug, Name: name, Placement: placement, Status: status,
 	})
 }
 
@@ -176,6 +185,7 @@ type CreateMenuItemInput struct {
 	Target           string         `json:"target"`
 	IsAdSlot         bool           `json:"is_ad_slot"`
 	AdSlotConfig     json.RawMessage `json:"ad_slot_config"`
+	Status           string         `json:"status"`
 }
 
 type UpdateMenuItemInput struct {
@@ -199,6 +209,13 @@ func (s *Service) CreateMenuItem(ctx context.Context, tenantID pgtype.UUID, inpu
 	}
 	if !ValidTarget(input.Target) {
 		return gen.CreateMenuItemRow{}, ErrInvalidTarget
+	}
+	status := input.Status
+	if status == "" {
+		status = string(StatusActive)
+	}
+	if !ValidStatus(status) {
+		return gen.CreateMenuItemRow{}, ErrInvalidStatus
 	}
 	var menuID pgtype.UUID
 	if err := menuID.Scan(input.MenuID); err != nil {
@@ -235,6 +252,7 @@ func (s *Service) CreateMenuItem(ctx context.Context, tenantID pgtype.UUID, inpu
 		IsAdSlot:         input.IsAdSlot,
 		AdSlotConfig:     adConfig,
 		RequiredGroupIds: groupIDsJSON,
+		Status:           status,
 	})
 }
 

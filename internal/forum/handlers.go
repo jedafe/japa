@@ -37,10 +37,26 @@ type JSONLDResolver interface {
 	ResolveJSONLD(ctx context.Context, tenantID pgtype.UUID, contentType string, fields map[string]string) (json.RawMessage, error)
 }
 
+// MentionNotifier dispatches mention notifications via the batch system
+// (Section 35 — mention.content/mention.comment consolidated into
+// notification:dispatch_batch per Section 11). Fire-and-forget per Rule 8.
+type MentionNotifier interface {
+	DispatchNotification(
+		ctx context.Context,
+		tenantID, recipientID pgtype.UUID,
+		nType, subjectTitle string,
+		actorID pgtype.UUID,
+		subjectType string,
+		subjectID pgtype.UUID,
+		subjectURL, actorName, actorAvatar string,
+	) error
+}
+
 // Handlers holds dependencies for forum HTTP handlers.
 type Handlers struct {
 	Service         *Service
 	jsonldResolver  JSONLDResolver
+	notifier        MentionNotifier      // nil disables mention notifications (test-only)
 	mentionCheckers *mentions.DBCheckers // nil disables erased-mention redaction
 }
 
@@ -50,6 +66,11 @@ type Handlers struct {
 func NewHandlers(service *Service, resolver JSONLDResolver) *Handlers {
 	return &Handlers{Service: service, jsonldResolver: resolver}
 }
+
+// SetMentionNotifier wires the notification dispatcher for @mention
+// notifications in forum threads and replies (Section 15 / ADR-029).
+// nil disables mention notifications (backward compat / tests).
+func (h *Handlers) SetMentionNotifier(n MentionNotifier) { h.notifier = n }
 
 // SetMentionCheckers wires the DB-backed erased-user checker used to
 // redact mentions of deleted users in thread/reply responses (Section 15 /
@@ -238,6 +259,9 @@ func (h *Handlers) CreateThread(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
+	// Dispatch @mention notifications — fire-and-forget (BL-002, Section 15).
+	h.dispatchMentionNotifications(r.Context(), tenantID, user.UserID, thread.ID, spaceID, input.Body, "mention.content")
 
 	writeJSON(w, http.StatusCreated, map[string]any{"data": thread})
 }
@@ -477,6 +501,70 @@ func (h *Handlers) GetThread(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, response)
 }
 
+// dispatchMentionNotifications extracts @mentioned users from a forum thread
+// or reply body (TipTap JSON) and fires a mention.content notification to
+// each via the batch system (Section 35 — BL-002). Fire-and-forget per
+// Rule 8: errors are logged but never propagated to the caller.
+//
+// Self-mentions (mentioning the author) are skipped.
+// Privacy filtering (blocks, erased users, private-space membership) is
+// applied via mentions.FilterMentions when checkers are wired (Section 15).
+// The notificationType parameter distinguishes thread mentions
+// (mention.content) from reply mentions (mention.comment).
+func (h *Handlers) dispatchMentionNotifications(
+	ctx context.Context,
+	tenantID, authorID, subjectID, spaceID pgtype.UUID,
+	body []byte,
+	notificationType string,
+) {
+	if h.notifier == nil {
+		return
+	}
+
+	mentioned, err := mentions.ExtractMentions(body)
+	if err != nil {
+		// Body may not be valid TipTap JSON (e.g., plain text); skip mentions.
+		return
+	}
+
+	// Apply privacy filtering when DB checkers are wired (BUG-004):
+	// skip erased users (GDPR), blocked users (privacy), and non-members
+	// of private spaces (visibility leak). Section 15 mention edge cases.
+	if h.mentionCheckers != nil {
+		isPrivateSpace, err := h.mentionCheckers.IsPrivateSpace(ctx, tenantID, spaceID)
+		if err != nil {
+			slog.Warn("forum: IsPrivateSpace check failed",
+				"space_id", spaceID.String(), "error", err)
+			isPrivateSpace = false
+		}
+
+		mentioned, err = mentions.FilterMentions(
+			ctx, mentioned, tenantID, authorID, spaceID, isPrivateSpace,
+			h.mentionCheckers, h.mentionCheckers, h.mentionCheckers,
+		)
+		if err != nil {
+			slog.Warn("forum: FilterMentions returned unexpected error",
+				"subject_id", subjectID.String(), "error", err)
+		}
+	}
+
+	for _, m := range mentioned {
+		if m.EntityType != "user" || !m.ID.Valid || m.ID == authorID {
+			continue
+		}
+		if err := h.notifier.DispatchNotification(
+			ctx, tenantID, m.ID,
+			notificationType, "",
+			authorID,
+			"forum", subjectID,
+			"", "", "",
+		); err != nil {
+			slog.Warn("forum: failed to dispatch mention notification",
+				"user_id", m.ID.String(), "type", notificationType, "error", err)
+		}
+	}
+}
+
 // resolveQAPageJSONLD resolves the QAPage structured data for a forum thread.
 // It prefers the admin-managed JSON-LD template (Section 14 / Section 26),
 // interpolating the thread and accepted-answer field values into the
@@ -703,6 +791,14 @@ func (h *Handlers) CreateReply(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
+	// Dispatch @mention notifications — fire-and-forget (BL-002, Section 15).
+	// Fetch the thread to get its spaceID for private-space membership filtering.
+	var replySpaceID pgtype.UUID
+	if thread, tErr := h.Service.GetThread(r.Context(), threadID, tenantID); tErr == nil {
+		replySpaceID = thread.SpaceID
+	}
+	h.dispatchMentionNotifications(r.Context(), tenantID, user.UserID, reply.ID, replySpaceID, input.Body, "mention.comment")
 
 	writeJSON(w, http.StatusCreated, map[string]any{"data": reply})
 }

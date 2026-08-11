@@ -14,6 +14,9 @@
 	let { data }: { data: PageData } = $props();
 
 	const article = $derived(data.article);
+	const deletedUserIds = $derived(
+		data.deletedUserIds ? new Set<string>(data.deletedUserIds as string[]) : undefined
+	);
 
 	// Normalize sidebar widgets to the typed shape expected by SidebarWidgetRenderer.
 	const sidebarWidgets = $derived(
@@ -180,6 +183,7 @@
 			currentUserId={data.currentUserId}
 			canModerate={data.canModerate}
 			loadError={data.commentsLoadError}
+			deletedUserIds={deletedUserIds}
 		/>
 
 		<!-- Related content (Section 14 — GET /content/{id}/related). -->

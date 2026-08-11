@@ -51,8 +51,8 @@ FROM menus
 WHERE tenant_id = @tenant_id AND slug = @slug;
 
 -- name: CreateMenu :one
-INSERT INTO menus (tenant_id, slug, name, placement)
-VALUES (@tenant_id, @slug, @name, @placement)
+INSERT INTO menus (tenant_id, slug, name, placement, status)
+VALUES (@tenant_id, @slug, @name, @placement, @status)
 RETURNING id, tenant_id, slug, name, placement, status, created_at, updated_at;
 
 -- name: UpdateMenu :one
@@ -88,10 +88,10 @@ WHERE id = @id AND tenant_id = @tenant_id;
 -- name: CreateMenuItem :one
 INSERT INTO menu_items (tenant_id, menu_id, parent_id, label, url, icon,
     sort_order, permission_node, visibility, target, is_ad_slot, ad_slot_config,
-    required_group_ids)
+    required_group_ids, status)
 VALUES (@tenant_id, @menu_id, sqlc.narg(parent_id), @label, @url, sqlc.narg(icon),
     @sort_order, sqlc.narg(permission_node), @visibility, @target, @is_ad_slot,
-    sqlc.narg(ad_slot_config), @required_group_ids)
+    sqlc.narg(ad_slot_config), @required_group_ids, @status)
 RETURNING id, tenant_id, menu_id, parent_id, label, url, icon, sort_order,
     permission_node, visibility, target, is_ad_slot, ad_slot_config,
     status, required_group_ids, created_at, updated_at;
