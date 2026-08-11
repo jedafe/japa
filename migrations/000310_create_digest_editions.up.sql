@@ -8,14 +8,14 @@ CREATE TABLE IF NOT EXISTS digest_editions (
     id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id     uuid NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
     space_id      uuid REFERENCES spaces(id) ON DELETE SET NULL, -- nullable for tenant-wide digest
-    cadence       text NOT NULL DEFAULT 'weekly', -- weekly|monthly|manual
-    status        text NOT NULL DEFAULT 'draft', -- draft|scheduled|published
+    cadence       text NOT NULL DEFAULT 'weekly', -- weekly|monthly
+    status        text NOT NULL DEFAULT 'draft', -- draft|review|published|cancelled (§84)
     scheduled_for timestamptz,
     published_at  timestamptz,
     content       jsonb NOT NULL DEFAULT '{}', -- sections JSON (top_stories, events, etc.)
     email_sent    boolean NOT NULL DEFAULT false,
     email_sent_at timestamptz,
-    generated_by  text, -- 'ai'|'manual'|'system'
+    generated_by  text NOT NULL DEFAULT 'system', -- 'system'|'manual'
     reviewed_by   uuid REFERENCES users(id) ON DELETE SET NULL,
     created_at    timestamptz NOT NULL DEFAULT now()
 );

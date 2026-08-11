@@ -2,11 +2,14 @@ package dataexport
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/db/gen"
@@ -68,22 +71,42 @@ func scanUUIDParam(w http.ResponseWriter, r *http.Request, name string) (pgtype.
 	return id, true
 }
 
+// parsePagination extracts page_size and page_offset from the query string,
+// following the project's standard pagination convention (Rule 5 /
+// conventions/api-response-format.md). For backwards compatibility, the
+// legacy `page` and `limit` params are still accepted as aliases.
+//
+// Returns (page, limit) where page is 1-based.
 func parsePagination(r *http.Request) (int, int) {
-	page := 1
+	q := r.URL.Query()
+
+	// page_size is the standard; limit is the legacy alias.
 	limit := 20
-	if q := r.URL.Query().Get("page"); q != "" {
-		if v, err := strconv.Atoi(q); err == nil && v > 0 {
-			page = v
+	if v := q.Get("page_size"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			limit = n
 		}
-	}
-	if q := r.URL.Query().Get("limit"); q != "" {
-		if v, err := strconv.Atoi(q); err == nil && v > 0 {
-			limit = v
+	} else if v := q.Get("limit"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			limit = n
 		}
 	}
 	if limit > 100 {
 		limit = 100
 	}
+
+	// page_offset is the standard (1-based); page is the legacy alias.
+	page := 1
+	if v := q.Get("page_offset"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			page = n
+		}
+	} else if v := q.Get("page"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			page = n
+		}
+	}
+
 	return page, limit
 }
 
@@ -126,8 +149,15 @@ func (h *Handlers) HandleCreateExport(w http.ResponseWriter, r *http.Request) {
 			"type must be one of: users, posts, comments, orders, transactions, analytics, moderation")
 		return
 	}
-	if !ValidFormat(req.Format) {
-		req.Format = FormatCSV // default to CSV
+	// Default empty format to CSV. Reject xlsx explicitly: the schema lists
+	// it (Section 67) but no XLSX generator is implemented, and silently
+	// producing a CSV file labelled xlsx misled users (BUG-002).
+	if req.Format == "" {
+		req.Format = FormatCSV
+	} else if !ImplementedFormat(req.Format) {
+		writeError(w, http.StatusBadRequest, "unsupported_format",
+			"format must be one of: csv, json (xlsx is not yet implemented)")
+		return
 	}
 
 	exp, err := h.service.CreateExport(r.Context(), tenantID, user.UserID, req.Name, req.Type, req.Format, req.IncludeMetadata)
@@ -164,10 +194,10 @@ func (h *Handlers) HandleListExports(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"data": serializeExports(exports),
 		"pagination": map[string]any{
-			"page":   page,
-			"limit":  limit,
-			"total":  total,
-			"status": status,
+			"page_size":   limit,
+			"page_offset": page,
+			"total":       total,
+			"status":      status,
 		},
 	})
 }
@@ -190,7 +220,14 @@ func (h *Handlers) HandleGetExport(w http.ResponseWriter, r *http.Request) {
 
 	exp, err := h.service.GetExport(r.Context(), id, tenantID)
 	if err != nil {
-		writeError(w, http.StatusNotFound, "export_not_found", "Export not found")
+		// Distinguish "not found" from a real DB failure so 5xx errors are
+		// not masked as 404s (BUG-009).
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "export_not_found", "Export not found")
+		} else {
+			slog.Error("dataexport: get failed", "error", err)
+			writeError(w, http.StatusInternalServerError, "export_get_failed", "Failed to fetch export")
+		}
 		return
 	}
 
@@ -220,6 +257,56 @@ func (h *Handlers) HandleDeleteExport(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
+}
+
+// HandleDownloadExport handles GET /api/v1/admin/data-exports/:id/download —
+// serves the generated export file. The export must be completed and the
+// caller's tenant must match the export's tenant. Gated by gdpr.data_exports.view.
+func (h *Handlers) HandleDownloadExport(w http.ResponseWriter, r *http.Request) {
+	_, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	id, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	filePath, err := h.service.GetFilePath(r.Context(), id, tenantID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "export_not_found", "Export not found")
+		} else {
+			slog.Error("dataexport: download path failed", "error", err)
+			writeError(w, http.StatusNotFound, "file_not_available", "Export file not available")
+		}
+		return
+	}
+
+	// Determine content type from the export format.
+	exp, err := h.service.GetExport(r.Context(), id, tenantID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "export_get_failed", "Failed to fetch export")
+		return
+	}
+	contentType := "application/octet-stream"
+	switch exp.Format {
+	case FormatJSON:
+		contentType = "application/json"
+	case FormatCSV:
+		contentType = "text/csv"
+	}
+	baseName := sanitizeFilename(exp.Name)
+	filename := fmt.Sprintf("export_%s_%s.%s", baseName, exp.ID.String()[:8], exp.Format)
+
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
+	http.ServeFile(w, r, filePath)
 }
 
 // ---------------------------------------------------------------------------

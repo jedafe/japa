@@ -167,6 +167,8 @@ func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
 // ---------------------------------------------------------------------------
 
 // HandleAdminList handles GET /admin/digest — admin list of all editions.
+// Supports ?status=, ?space_id=, ?sort=, ?order=, ?page=, ?limit= query params
+// (§84 admin pattern: filter + sort + paginate, no infinite scroll).
 func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
@@ -181,7 +183,21 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 		limit = 200
 	}
 
-	editions, total, err := h.service.AdminList(r.Context(), tenantID, page, limit)
+	// Parse filter/sort params.
+	f := AdminListFilter{
+		TenantID: tenantID,
+		Status:   r.URL.Query().Get("status"),
+		Sort:     r.URL.Query().Get("sort"),
+		Order:    r.URL.Query().Get("order"),
+	}
+	if spaceParam := r.URL.Query().Get("space_id"); spaceParam != "" {
+		if err := f.SpaceID.Scan(spaceParam); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_id", "Invalid space_id")
+			return
+		}
+	}
+
+	editions, total, err := h.service.AdminList(r.Context(), f, page, limit)
 	if err != nil {
 		slog.Error("digest: admin list failed", "error", err)
 		writeError(w, http.StatusInternalServerError, "admin_list_failed", "Failed to list digest editions")
@@ -293,8 +309,9 @@ func (h *Handlers) HandleAdminPublish(w http.ResponseWriter, r *http.Request) {
 }
 
 // HandleAdminGenerate handles POST /admin/digest/generate — trigger digest
-// generation. Enqueues an AI generation task that produces a draft edition
-// entering the HITL review queue on completion (ADR-092).
+// generation. Enqueues the digest:generate Asynq task that assembles a draft
+// edition from platform analytics (no AI generation — purely metrics-driven,
+// ADR-092). The edition enters the 1-hour admin review window on completion.
 func (h *Handlers) HandleAdminGenerate(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return

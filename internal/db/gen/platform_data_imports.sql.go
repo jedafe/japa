@@ -258,6 +258,26 @@ func (q *Queries) ListPlatformDataImports(ctx context.Context, arg ListPlatformD
 	return items, nil
 }
 
+const reassignPlatformDataImportCreatedBy = `-- name: ReassignPlatformDataImportCreatedBy :exec
+UPDATE platform_data_imports
+SET created_by = $1
+WHERE created_by = $2 AND tenant_id = $3
+`
+
+type ReassignPlatformDataImportCreatedByParams struct {
+	TargetUserID pgtype.UUID `json:"target_user_id"`
+	UserID       pgtype.UUID `json:"user_id"`
+	TenantID     pgtype.UUID `json:"tenant_id"`
+}
+
+// Reassign created_by to a placeholder user during GDPR erasure so the
+// import audit trail survives when the admin who created the import is
+// erased (BUG-013, Section 67 / Section 15 compliance).
+func (q *Queries) ReassignPlatformDataImportCreatedBy(ctx context.Context, arg ReassignPlatformDataImportCreatedByParams) error {
+	_, err := q.db.Exec(ctx, reassignPlatformDataImportCreatedBy, arg.TargetUserID, arg.UserID, arg.TenantID)
+	return err
+}
+
 const updatePlatformDataImportStatus = `-- name: UpdatePlatformDataImportStatus :one
 UPDATE platform_data_imports
 SET status = $1,

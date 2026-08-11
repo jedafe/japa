@@ -164,7 +164,7 @@
 		'/community/calendar': 'calendar.review',
 		'/community/achievements': 'achievement.moderate',
 		'/community/services': 'service.verify',
-		'/community/digest': 'calendar.review',
+		'/community/digest': 'digest.manage',
 		// V2 functional tools (§§90–97, §§99–101) — HITL review queues
 		'/tools/appointment-alert': 'embassy_monitor.manage',
 		'/tools/cv-formatter': 'cv_formatter.manage',
