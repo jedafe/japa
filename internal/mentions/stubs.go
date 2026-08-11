@@ -53,3 +53,21 @@ func (c *DBCheckers) IsErased(ctx context.Context, tenantID, userID pgtype.UUID)
 	}
 	return status == "deleted", nil
 }
+
+// IsPrivateSpace checks whether a space has non-public visibility.
+// Returns false when the space is public, not found, or on error (fail-open
+// for visibility — a missing space is treated as public so mentions are not
+// accidentally suppressed). Tenant-scoped per Section 04.
+func (c *DBCheckers) IsPrivateSpace(ctx context.Context, tenantID, spaceID pgtype.UUID) (bool, error) {
+	if !spaceID.Valid {
+		return false, nil
+	}
+	space, err := c.read.GetSpaceByID(ctx, gen.GetSpaceByIDParams{
+		ID:       spaceID,
+		TenantID: tenantID,
+	})
+	if err != nil {
+		return false, err
+	}
+	return space.Visibility != "public", nil
+}

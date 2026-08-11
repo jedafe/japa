@@ -38,6 +38,7 @@ SELECT * FROM media WHERE storage_path = @storage_path AND tenant_id = @tenant_i
 UPDATE media SET confirmed = true WHERE id = @id AND tenant_id = @tenant_id;
 
 -- name: UpdateMediaMetadata :exec
+-- Admin metadata update — no ownership filter (gated by media.edit_any).
 UPDATE media
 SET alt_text = COALESCE(@alt_text, alt_text),
     caption = COALESCE(@caption, caption),
@@ -47,11 +48,34 @@ SET alt_text = COALESCE(@alt_text, alt_text),
     user_group_id = @user_group_id
 WHERE id = @id AND tenant_id = @tenant_id;
 
+-- name: UpdateMediaMetadataOwn :exec
+-- User-facing metadata update — scoped to the uploader (gated by media.edit_own).
+UPDATE media
+SET alt_text = COALESCE(@alt_text, alt_text),
+    caption = COALESCE(@caption, caption),
+    width_px = COALESCE(@width_px, width_px),
+    height_px = COALESCE(@height_px, height_px),
+    duration_secs = COALESCE(@duration_secs, duration_secs),
+    user_group_id = @user_group_id
+WHERE id = @id AND tenant_id = @tenant_id
+  AND uploader_user_id = @uploader_user_id
+  AND deleted_at IS NULL;
+
 -- name: UpdateMediaStoragePath :exec
 UPDATE media SET storage_path = @storage_path WHERE id = @id AND tenant_id = @tenant_id;
 
 -- name: SoftDeleteMedia :exec
+-- Admin delete — no ownership filter (gated by media.delete_any).
 UPDATE media SET deleted_at = now() WHERE id = @id AND tenant_id = @tenant_id;
+
+-- name: SoftDeleteMediaOwn :exec
+-- User-facing delete — scoped to the uploader (gated by media.delete_own).
+-- Returns no rows if the media belongs to a different user, which the caller
+-- treats as a 404/403 to avoid leaking existence information.
+UPDATE media SET deleted_at = now()
+WHERE id = @id AND tenant_id = @tenant_id
+  AND uploader_user_id = @uploader_user_id
+  AND deleted_at IS NULL;
 
 -- name: RejectMediaByIDAndVirus :exec
 UPDATE media
@@ -259,8 +283,17 @@ WHERE m.tenant_id = @tenant_id
 -- =====================
 
 -- name: BulkSoftDeleteMedia :exec
+-- Admin bulk delete — no ownership filter (gated by media.delete_any).
 UPDATE media SET deleted_at = now()
 WHERE id = ANY(@media_ids::uuid[]) AND tenant_id = @tenant_id;
+
+-- name: BulkSoftDeleteMediaOwn :exec
+-- User-facing bulk delete — scoped to the uploader (gated by media.delete_own).
+UPDATE media SET deleted_at = now()
+WHERE id = ANY(@media_ids::uuid[])
+  AND tenant_id = @tenant_id
+  AND uploader_user_id = @uploader_user_id
+  AND deleted_at IS NULL;
 
 -- name: AdminUpdateMediaStatus :exec
 UPDATE media

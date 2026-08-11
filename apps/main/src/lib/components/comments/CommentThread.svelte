@@ -29,8 +29,10 @@
 		canModerate: boolean;
 		/** SSR load failure flag — renders an error state instead of an empty list. */
 		loadError?: boolean;
+		/** Erased-user IDs for GDPR/ADR-029 mention redaction (Section 15). */
+		deletedUserIds?: Set<string>;
 	}
-	let { comments: initial, contentId, authed, currentUserId, canModerate, loadError = false }: Props = $props();
+	let { comments: initial, contentId, authed, currentUserId, canModerate, loadError = false, deletedUserIds }: Props = $props();
 
 	let comments = $state<Comment[]>(untrack(() => initial));
 
@@ -115,6 +117,7 @@
 						{authed}
 						{currentUserId}
 						{canModerate}
+						{deletedUserIds}
 					/>
 				</div>
 			{/each}

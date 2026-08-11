@@ -26,25 +26,26 @@ import (
 
 // MediaResponse is the API response shape for media items, matching frontend expectations.
 type MediaResponse struct {
-	ID          string  `json:"id"`
-	Filename    string  `json:"filename"`
-	MimeType    string  `json:"mime_type"`
-	FileSize    int64   `json:"file_size"`
-	AltText     *string `json:"alt_text"`
-	Caption     *string `json:"caption"`
-	Width       *int32  `json:"width"`
-	Height      *int32  `json:"height"`
-	Status      string  `json:"status"`
-	Flagged     bool    `json:"flagged"`
-	CreatedAt   string  `json:"created_at"`
-	URL         string  `json:"url"`
-	UserGroupID *string `json:"user_group_id"`
+	ID           string   `json:"id"`
+	Filename     string   `json:"filename"`
+	MimeType     string   `json:"mime_type"`
+	FileSize     int64    `json:"file_size"`
+	AltText      *string  `json:"alt_text"`
+	Caption      *string  `json:"caption"`
+	Width        *int32   `json:"width"`
+	Height       *int32   `json:"height"`
+	DurationSecs *float64 `json:"duration_secs,omitempty"`
+	Status       string   `json:"status"`
+	Flagged      bool     `json:"flagged"`
+	CreatedAt    string   `json:"created_at"`
+	URL          string   `json:"url"`
+	UserGroupID  *string  `json:"user_group_id"`
 	// Stock attribution (present when media was imported from a stock provider).
-	SourcePlatform       *string `json:"source_platform,omitempty"`
-	SourcePhotographer   *string `json:"source_photographer,omitempty"`
+	SourcePlatform        *string `json:"source_platform,omitempty"`
+	SourcePhotographer    *string `json:"source_photographer,omitempty"`
 	SourcePhotographerURL *string `json:"source_photographer_url,omitempty"`
-	SourceLicense        *string `json:"source_license,omitempty"`
-	SourceLicenseURL     *string `json:"source_license_url,omitempty"`
+	SourceLicense         *string `json:"source_license,omitempty"`
+	SourceLicenseURL      *string `json:"source_license_url,omitempty"`
 }
 
 // toMediaResponse transforms a gen.Medium into the API response format.
@@ -64,25 +65,35 @@ func toMediaResponse(m *gen.Medium, url string) MediaResponse {
 		userGroupID = &s
 	}
 
+	// DurationSecs is a pgtype.Numeric — extract the float64 value when valid.
+	var duration *float64
+	if m.DurationSecs.Valid {
+		if f, err := m.DurationSecs.Float64Value(); err == nil && f.Valid {
+			v := f.Float64
+			duration = &v
+		}
+	}
+
 	return MediaResponse{
-		ID:                   m.ID.String(),
-		Filename:             m.OriginalFilename,
-		MimeType:             m.MimeType,
-		FileSize:             m.FileSizeBytes,
-		AltText:              m.AltText,
-		Caption:              m.Caption,
-		Width:                m.WidthPx,
-		Height:               m.HeightPx,
-		Status:               status,
-		Flagged:              m.Flagged,
-		CreatedAt:            m.CreatedAt.Time.Format("2006-01-02T15:04:05Z"),
-		URL:                  url,
-		UserGroupID:          userGroupID,
-		SourcePlatform:       m.SourcePlatform,
-		SourcePhotographer:   m.SourcePhotographer,
+		ID:                    m.ID.String(),
+		Filename:              m.OriginalFilename,
+		MimeType:              m.MimeType,
+		FileSize:              m.FileSizeBytes,
+		AltText:               m.AltText,
+		Caption:               m.Caption,
+		Width:                 m.WidthPx,
+		Height:                m.HeightPx,
+		DurationSecs:          duration,
+		Status:                status,
+		Flagged:               m.Flagged,
+		CreatedAt:             m.CreatedAt.Time.Format("2006-01-02T15:04:05Z"),
+		URL:                   url,
+		UserGroupID:           userGroupID,
+		SourcePlatform:        m.SourcePlatform,
+		SourcePhotographer:    m.SourcePhotographer,
 		SourcePhotographerURL: m.SourcePhotographerUrl,
-		SourceLicense:        m.SourceLicense,
-		SourceLicenseURL:     m.SourceLicenseUrl,
+		SourceLicense:         m.SourceLicense,
+		SourceLicenseURL:      m.SourceLicenseUrl,
 	}
 }
 
@@ -174,15 +185,32 @@ const (
 	MaxStandardBody int64 = 10 << 20
 )
 
+// permissionChecker is the minimal RBAC interface media handlers need to
+// check additional permission nodes inside handler bodies (e.g.
+// media.video.upload for video MIME types). This avoids importing the full
+// rbac package and keeps the handler testable with a stub.
+type permissionChecker interface {
+	HasPermission(ctx context.Context, userID, tenantID pgtype.UUID, permKey string) bool
+}
+
 // Handlers holds dependencies for media HTTP handlers.
 type Handlers struct {
 	service    *Service
 	AsynqClient *asynq.Client
+	// perms is optional — when set, InitiateUpload checks media.video.upload
+	// for video MIME types per Section 34.
+	perms permissionChecker
 }
 
 // NewHandlers creates Handlers with the given Service.
 func NewHandlers(service *Service) *Handlers {
 	return &Handlers{service: service}
+}
+
+// SetPermissionChecker injects the RBAC resolver for in-handler permission
+// checks (media.video.upload). Called once during server wiring.
+func (h *Handlers) SetPermissionChecker(pc permissionChecker) {
+	h.perms = pc
 }
 
 // requireTenant resolves the tenant from the request context.
@@ -330,6 +358,18 @@ func (h *Handlers) InitiateUpload(w http.ResponseWriter, r *http.Request) {
 		if CanonicalMIMEType(extMIME) != CanonicalMIMEType(input.MimeType) {
 			writeError(w, http.StatusBadRequest, "mime_extension_mismatch",
 				"Declared MIME type '"+input.MimeType+"' does not match file extension '"+filepath.Ext(input.Filename)+"'")
+			return
+		}
+	}
+
+	// Video uploads require the additional media.video.upload permission
+	// node (Section 34 — "MP4 and GIF uploads gated by media.video.upload").
+	// The route middleware already checks media.upload; this is a secondary
+	// gate for video content specifically (MEDIA-007).
+	if isVideoMIME(CanonicalMIMEType(input.MimeType)) && h.perms != nil {
+		if !h.perms.HasPermission(r.Context(), user.UserID, tenantID, "media.video.upload") {
+			writeError(w, http.StatusForbidden, "video_upload_forbidden",
+				"You do not have permission to upload video files")
 			return
 		}
 	}
@@ -496,11 +536,12 @@ type metadataInput struct {
 }
 
 // updateMetadataHandler is a shared helper for PATCH /api/v1/media/{id} and
-// PATCH /admin/media/{id}. Both parse the same input and call UpdateMetadata.
-func (h *Handlers) updateMetadataHandler(w http.ResponseWriter, r *http.Request) {
+// PATCH /admin/media/{id}. Both parse the same input. The ownOnly flag
+// selects between the ownership-scoped and admin-unscoped service methods.
+func (h *Handlers) updateMetadataHandler(w http.ResponseWriter, r *http.Request, ownOnly bool) {
 	r.Body = http.MaxBytesReader(w, r.Body, MaxStandardBody)
 
-	_, ok := h.requireUser(w, r)
+	user, ok := h.requireUser(w, r)
 	if !ok {
 		return
 	}
@@ -536,24 +577,65 @@ func (h *Handlers) updateMetadataHandler(w http.ResponseWriter, r *http.Request)
 		}
 	}
 
-	if err := h.service.UpdateMetadata(r.Context(), tenantID, mediaID, input.AltText, input.Caption, input.Width, input.Height, input.Duration, userGroupID); err != nil {
-		writeError(w, http.StatusInternalServerError, "update_error", "Failed to update media")
-		return
+	if ownOnly {
+		// User-facing update — scoped to the uploader (MEDIA-003).
+		if err := h.service.UpdateMetadataOwn(r.Context(), tenantID, user.UserID, mediaID, input.AltText, input.Caption, input.Width, input.Height, input.Duration, userGroupID); err != nil {
+			writeError(w, http.StatusNotFound, "media_not_found", "Media not found")
+			return
+		}
+	} else {
+		// Admin update — no ownership filter (gated by media.edit_any).
+		if err := h.service.UpdateMetadata(r.Context(), tenantID, mediaID, input.AltText, input.Caption, input.Width, input.Height, input.Duration, userGroupID); err != nil {
+			writeError(w, http.StatusInternalServerError, "update_error", "Failed to update media")
+			return
+		}
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"updated": true}})
 }
 
 // UpdateMetadata handles PATCH /api/v1/media/{id}.
+// User-facing update — scoped to the uploader via media.edit_own.
 // Request body: { "alt_text": "...", "caption": "...", "width": 100, "height": 200 }
 // Response: { "data": { "updated": true } }.
 func (h *Handlers) UpdateMetadata(w http.ResponseWriter, r *http.Request) {
-	h.updateMetadataHandler(w, r)
+	h.updateMetadataHandler(w, r, true)
 }
 
 // DeleteMedia handles DELETE /api/v1/media/{id}.
+// User-facing delete — scoped to the uploader via media.delete_own.
+// The admin route (DELETE /admin/media/{id}) uses the unscoped DeleteMedia
+// service method, gated by media.delete_any.
 // Response: { "data": { "deleted": true } }.
 func (h *Handlers) DeleteMedia(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	mediaID, ok := parseMediaID(w, r)
+	if !ok {
+		return
+	}
+
+	// Use the ownership-scoped delete so a user with media.delete_own can
+	// only delete their own uploads (MEDIA-001).
+	if err := h.service.DeleteMediaOwn(r.Context(), tenantID, user.UserID, mediaID); err != nil {
+		writeError(w, http.StatusNotFound, "media_not_found", "Media not found")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"deleted": true}})
+}
+
+// AdminDeleteMedia handles DELETE /admin/media/{id}.
+// Admin delete — no ownership filter, gated by media.delete_any.
+func (h *Handlers) AdminDeleteMedia(w http.ResponseWriter, r *http.Request) {
 	_, ok := h.requireUser(w, r)
 	if !ok {
 		return
@@ -825,7 +907,7 @@ func (h *Handlers) RejectQuarantined(w http.ResponseWriter, r *http.Request) {
 // AdminUpdateMetadata handles PATCH /admin/media/{id}.
 // Admin-level metadata update that does not enforce ownership.
 func (h *Handlers) AdminUpdateMetadata(w http.ResponseWriter, r *http.Request) {
-	h.updateMetadataHandler(w, r)
+	h.updateMetadataHandler(w, r, false)
 }
 
 // AdminUpdateMediaStatus handles POST /admin/media/{id}/status.
@@ -982,7 +1064,7 @@ func (h *Handlers) BulkDelete(w http.ResponseWriter, r *http.Request) {
 	// Enforce 10MB body limit on standard POST endpoints.
 	r.Body = http.MaxBytesReader(w, r.Body, MaxStandardBody)
 
-	_, ok := h.requireUser(w, r)
+	user, ok := h.requireUser(w, r)
 	if !ok {
 		return
 	}
@@ -1025,7 +1107,9 @@ func (h *Handlers) BulkDelete(w http.ResponseWriter, r *http.Request) {
 		ids = append(ids, id)
 	}
 
-	if err := h.service.BulkDelete(r.Context(), tenantID, ids); err != nil {
+	// Use the ownership-scoped bulk delete so a user with media.delete_own
+	// can only delete their own uploads (MEDIA-002).
+	if err := h.service.BulkDeleteOwn(r.Context(), tenantID, user.UserID, ids); err != nil {
 		writeError(w, http.StatusInternalServerError, "bulk_delete_error", "Failed to delete media")
 		return
 	}

@@ -1011,6 +1011,16 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 			return fmt.Errorf("deleting user blocks: %w", err)
 		}
 
+		// BUG-M006: delete notifications addressed to the erased user.
+		// Notification rows are user-owned data (the recipient's inbox) and
+		// must be removed during GDPR erasure (Section 19).
+		if err := q.DeleteNotificationsByUser(ctx, gen.DeleteNotificationsByUserParams{
+			UserID:   userID,
+			TenantID: tenantID,
+		}); err != nil {
+			return fmt.Errorf("deleting user notifications: %w", err)
+		}
+
 		// BUG-015: soft-delete attestation_community_updates authored by the
 		// user so their PII is removed while the pathway audit trail survives.
 		// Ref: §97, ADR-105.

@@ -38,17 +38,17 @@
 		t('mentors.me_description', 'Manage your mentor profile and mentorship connections.')
 	);
 
-	// Per-connection action state: track which id is currently being mutated so
-	// we can disable just that one button. Seeded from data so a re-run after
-	// invalidateAll resets cleanly.
-	let pendingActionId = $state<string | null>(untrack(() => null));
+	// Per-connection action state: track which connection id is currently being
+	// mutated so we can disable just that one button. Seeded from data so a
+	// re-run after invalidateAll resets cleanly.
+	let pendingConnId = $state<string | null>(untrack(() => null));
 	let actionError = $state<string | null>(untrack(() => null));
 
 	// Reset transient action state whenever the server payload changes.
 	$effect(() => {
 		void data.outgoing;
 		void data.incoming;
-		pendingActionId = null;
+		pendingConnId = null;
 		actionError = null;
 	});
 
@@ -76,7 +76,7 @@
 				return `${base} bg-[var(--color-primary)]/10 text-[var(--color-primary)]`;
 			case 'cancelled':
 				return `${base} bg-[var(--color-surface-subtle)] text-[var(--color-muted)]`;
-			case 'rejected':
+			case 'declined':
 				return `${base} bg-red-500/10 text-red-600`;
 			default:
 				return `${base} bg-[var(--color-surface-subtle)] text-[var(--color-text-subtle)]`;
@@ -93,8 +93,8 @@
 				return t('mentors.status_completed', 'Completed');
 			case 'cancelled':
 				return t('mentors.status_cancelled', 'Cancelled');
-			case 'rejected':
-				return t('mentors.status_rejected', 'Rejected');
+			case 'declined':
+				return t('mentors.status_declined', 'Declined');
 			default:
 				return status;
 		}
@@ -129,12 +129,12 @@
 		return relativeTime(raw, new Date(), i18n.locale);
 	}
 
-	async function patchConnection(id: string, status: 'cancelled' | 'active' | 'completed') {
-		if (pendingActionId) return;
-		pendingActionId = id;
+	async function patchConnection(connId: string, endpoint: string, body?: Record<string, unknown>) {
+		if (pendingConnId) return;
+		pendingConnId = connId;
 		actionError = null;
-		const res = await api.patch<MentorshipConnection>(`/me/mentorship/${id}`, { status });
-		pendingActionId = null;
+		const res = await api.patch<MentorshipConnection>(endpoint, body ?? {});
+		pendingConnId = null;
 		if (res.error) {
 			actionError =
 				res.error.message || t('mentors.action_error', 'Action failed. Please try again.');
@@ -144,20 +144,20 @@
 	}
 
 	async function acceptConnection(id: string) {
-		await patchConnection(id, 'active');
+		await patchConnection(id, `/me/mentorship/incoming/${id}/accept`);
 	}
 
 	async function rejectConnection(id: string) {
-		// Rejecting a pending request cancels it.
-		await patchConnection(id, 'cancelled');
+		// Mentor declines a pending request (pending → declined).
+		await patchConnection(id, `/me/mentorship/incoming/${id}/decline`);
 	}
 
 	async function cancelConnection(id: string) {
-		await patchConnection(id, 'cancelled');
+		await patchConnection(id, `/mentorship/${id}/cancel`);
 	}
 
 	async function completeConnection(id: string) {
-		await patchConnection(id, 'completed');
+		await patchConnection(id, `/mentorship/${id}/complete`);
 	}
 </script>
 
@@ -379,7 +379,7 @@
 										{#if conn.status === 'pending' || conn.status === 'active'}
 											<button
 												type="button"
-												disabled={pendingActionId === conn.id}
+												disabled={pendingConnId === conn.id}
 												onclick={() => cancelConnection(conn.id)}
 												class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-xs font-medium text-[var(--color-text-subtle)] transition-colors hover:bg-[var(--color-surface-subtle)] disabled:opacity-50"
 											>
@@ -390,7 +390,7 @@
 										{#if conn.status === 'active'}
 											<button
 												type="button"
-												disabled={pendingActionId === conn.id}
+												disabled={pendingConnId === conn.id}
 												onclick={() => completeConnection(conn.id)}
 												class="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1.5 text-xs font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)] disabled:opacity-50"
 											>
@@ -466,7 +466,7 @@
 											{#if conn.status === 'pending'}
 												<button
 													type="button"
-													disabled={pendingActionId === conn.id}
+													disabled={pendingConnId === conn.id}
 													onclick={() => acceptConnection(conn.id)}
 													class="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1.5 text-xs font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)] disabled:opacity-50"
 												>
@@ -475,7 +475,7 @@
 												</button>
 												<button
 													type="button"
-													disabled={pendingActionId === conn.id}
+													disabled={pendingConnId === conn.id}
 													onclick={() => rejectConnection(conn.id)}
 													class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-xs font-medium text-[var(--color-text-subtle)] transition-colors hover:bg-[var(--color-surface-subtle)] disabled:opacity-50"
 												>
@@ -485,7 +485,7 @@
 											{:else if conn.status === 'active'}
 												<button
 													type="button"
-													disabled={pendingActionId === conn.id}
+													disabled={pendingConnId === conn.id}
 													onclick={() => completeConnection(conn.id)}
 													class="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1.5 text-xs font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)] disabled:opacity-50"
 												>
@@ -494,7 +494,7 @@
 												</button>
 												<button
 													type="button"
-													disabled={pendingActionId === conn.id}
+													disabled={pendingConnId === conn.id}
 													onclick={() => cancelConnection(conn.id)}
 													class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-xs font-medium text-[var(--color-text-subtle)] transition-colors hover:bg-[var(--color-surface-subtle)] disabled:opacity-50"
 												>

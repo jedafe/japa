@@ -86,6 +86,21 @@ type ContentService interface {
 	ResolveJSONLD(ctx context.Context, tenantID pgtype.UUID, contentType string, fields map[string]string) (json.RawMessage, error)
 }
 
+// MentionNotifier dispatches mention notifications via the batch system
+// (Section 35 — mention.content consolidated into notification:dispatch_batch
+// per Section 11). Fire-and-forget per Rule 8.
+type MentionNotifier interface {
+	DispatchNotification(
+		ctx context.Context,
+		tenantID, recipientID pgtype.UUID,
+		nType, subjectTitle string,
+		actorID pgtype.UUID,
+		subjectType string,
+		subjectID pgtype.UUID,
+		subjectURL, actorName, actorAvatar string,
+	) error
+}
+
 // Handlers holds dependencies for blog HTTP handlers.
 type Handlers struct {
 	Service         *Service
@@ -94,6 +109,7 @@ type Handlers struct {
 	siteName        string
 	AsynqClient     TaskEnqueueClient // C6: enqueue rss:regenerate on publish
 	Redis           CacheReader       // C6: serve live feed from Valkey cache
+	notifier        MentionNotifier      // nil disables mention notifications (test-only)
 	mentionCheckers *mentions.DBCheckers // nil disables erased-mention redaction
 }
 
@@ -128,6 +144,69 @@ func (h *Handlers) SetRedis(r CacheReader) {
 // redact mentions of deleted users in blog post responses (Section 15 /
 // ADR-029). nil disables redaction (backward compat / tests).
 func (h *Handlers) SetMentionCheckers(c *mentions.DBCheckers) { h.mentionCheckers = c }
+
+// SetMentionNotifier wires the notification dispatcher for @mention
+// notifications in blog posts (Section 15 / ADR-029). nil disables
+// mention notifications (backward compat / tests).
+func (h *Handlers) SetMentionNotifier(n MentionNotifier) { h.notifier = n }
+
+// dispatchMentionNotifications extracts @mentioned users from a blog post
+// body (TipTap JSON) and fires a mention.content notification to each via
+// the batch system (Section 35 — BL-002). Fire-and-forget per Rule 8:
+// errors are logged but never propagated to the caller.
+//
+// Self-mentions (mentioning the author) are skipped.
+// Privacy filtering (blocks, erased users, private-space membership) is
+// applied via mentions.FilterMentions when checkers are wired (Section 15).
+func (h *Handlers) dispatchMentionNotifications(
+	ctx context.Context,
+	tenantID, authorID, contentID, spaceID pgtype.UUID,
+	body string,
+) {
+	if h.notifier == nil {
+		return
+	}
+
+	mentioned, err := mentions.ExtractMentions([]byte(body))
+	if err != nil {
+		// Body may not be valid TipTap JSON (e.g., plain text); skip mentions.
+		return
+	}
+
+	if h.mentionCheckers != nil {
+		isPrivateSpace, err := h.mentionCheckers.IsPrivateSpace(ctx, tenantID, spaceID)
+		if err != nil {
+			slog.Warn("blog: IsPrivateSpace check failed",
+				"space_id", spaceID.String(), "error", err)
+			isPrivateSpace = false
+		}
+
+		mentioned, err = mentions.FilterMentions(
+			ctx, mentioned, tenantID, authorID, spaceID, isPrivateSpace,
+			h.mentionCheckers, h.mentionCheckers, h.mentionCheckers,
+		)
+		if err != nil {
+			slog.Warn("blog: FilterMentions returned unexpected error",
+				"content_id", contentID.String(), "error", err)
+		}
+	}
+
+	for _, m := range mentioned {
+		if m.EntityType != "user" || !m.ID.Valid || m.ID == authorID {
+			continue
+		}
+		if err := h.notifier.DispatchNotification(
+			ctx, tenantID, m.ID,
+			"mention.content", "",
+			authorID,
+			"content", contentID,
+			"", "", "",
+		); err != nil {
+			slog.Warn("blog: failed to dispatch mention.content notification",
+				"user_id", m.ID.String(), "error", err)
+		}
+	}
+}
 
 // enqueueRSSRegenerate enqueues the rss:regenerate task for a tenant (C6).
 // Fire-and-forget: errors are logged but never propagated (Rule 8).
@@ -1641,6 +1720,9 @@ func (h *Handlers) CreatePost(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to create blog post")
 		return
 	}
+
+	// Dispatch @mention notifications — fire-and-forget (BL-002, Section 15).
+	h.dispatchMentionNotifications(r.Context(), tenantID, user.UserID, post.ID, post.SpaceID, input.Body)
 
 	writeJSON(w, http.StatusCreated, map[string]any{"data": post})
 }

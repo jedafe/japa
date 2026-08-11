@@ -9,6 +9,8 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sort"
+	"strings"
 
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -62,11 +64,13 @@ type Match struct {
 
 // Service coordinates mentorship program and match management.
 type Service struct {
-	read      *gen.Queries
-	write     *gen.Queries
-	enqueuer  TaskEnqueuer
-	dmCreator DMCreator
-	settings  SettingsProvider
+	read              *gen.Queries
+	write             *gen.Queries
+	enqueuer          TaskEnqueuer
+	dmCreator         DMCreator
+	settings          SettingsProvider
+	embedder          Embedder
+	meilisearchIndexer MeilisearchIndexer
 }
 
 // NewService creates a Service backed by the given database pool.
@@ -245,6 +249,18 @@ type DMCreator interface {
 	GetOrCreateConversation(ctx context.Context, tenantID, participant1ID, participant2ID pgtype.UUID) (gen.DmConversation, error)
 }
 
+// Embedder generates pgvector embeddings for mentor bios via the AI gateway
+// (§102, ADR-110). The ai.RAGEmbedder satisfies this.
+type Embedder interface {
+	GenerateEmbedding(ctx context.Context, text, model string) ([]float32, error)
+}
+
+// MeilisearchIndexer syncs a mentor's user document to the Meilisearch users
+// index (§102). The search.Indexer satisfies this.
+type MeilisearchIndexer interface {
+	IndexUser(ctx context.Context, userID, tenantID [16]byte) error
+}
+
 // MentorProfile is the current user's mentor settings.
 type MentorProfile struct {
 	UserID            pgtype.UUID        `json:"user_id"`
@@ -313,6 +329,12 @@ func (s *Service) SetDMCreator(d DMCreator) { s.dmCreator = d }
 
 // SetSettingsProvider wires the system_settings reader for capacity validation.
 func (s *Service) SetSettingsProvider(sp SettingsProvider) { s.settings = sp }
+
+// SetEmbedder wires the AI embedder for mentor:generate_embedding tasks.
+func (s *Service) SetEmbedder(e Embedder) { s.embedder = e }
+
+// SetMeilisearchIndexer wires the Meilisearch indexer for mentor:update_meilisearch tasks.
+func (s *Service) SetMeilisearchIndexer(mi MeilisearchIndexer) { s.meilisearchIndexer = mi }
 
 // GetMentorProfile returns the current user's mentor profile settings.
 // GET /api/v1/me/mentor-profile
@@ -459,6 +481,36 @@ func (s *Service) ListMentors(ctx context.Context, tenantID pgtype.UUID, destSpa
 		return mentors, nil
 	}
 
+	// sort=match without an embedding: fall back to keyword-only scoring
+	// (§102: weight=1.0 on area_overlap_score when no bio embedding is
+	// available). Fetch all mentors with the same filters, compute the
+	// keyword overlap score in Go, sort by score desc, then apply
+	// pagination.
+	if sort == "match" {
+		rows, err := s.read.ListMentors(ctx, gen.ListMentorsParams{
+			TenantID:    tenantID,
+			DestSpaceID: destSpaceID,
+			Areas:       areas,
+			Sort:        "newest",
+			PageLimit:   limit,
+			PageOffset:  offset,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("listing mentors for match scoring: %w", err)
+		}
+
+		mentors := make([]MentorSummary, len(rows))
+		for i, r := range rows {
+			mentors[i] = mentorSummaryFromRow(r.UserID, r.TenantID, r.IsMentor, r.MentorCapacity,
+				r.ActiveMenteeCount, r.MentorAreas, r.MentorBio, r.MentorSince,
+				r.DisplayName, r.AvatarUrl, r.Username, r.AvailableSlots)
+		}
+
+		// Compute keyword overlap score and sort by it.
+		sortMentorsByKeywordMatch(mentors, areas)
+		return mentors, nil
+	}
+
 	// Default: newest or capacity sort (no pgvector needed).
 	rows, err := s.read.ListMentors(ctx, gen.ListMentorsParams{
 		TenantID:    tenantID,
@@ -480,6 +532,39 @@ func (s *Service) ListMentors(ctx context.Context, tenantID pgtype.UUID, destSpa
 	}
 
 	return mentors, nil
+}
+
+// sortMentorsByKeywordMatch sorts mentors in-place by the §102 keyword
+// overlap score: the fraction of the mentee's requested areas that appear
+// in the mentor's mentor_areas. Mentors with no overlap keep their original
+// relative order (stable sort).
+func sortMentorsByKeywordMatch(mentors []MentorSummary, menteeAreas []string) {
+	if len(menteeAreas) == 0 {
+		return
+	}
+
+	// Build a lowercase set of mentee areas for case-insensitive matching.
+	want := make(map[string]bool, len(menteeAreas))
+	for _, a := range menteeAreas {
+		want[strings.ToLower(strings.TrimSpace(a))] = true
+	}
+
+	score := func(m MentorSummary) float64 {
+		if len(m.MentorAreas) == 0 {
+			return 0
+		}
+		hits := 0
+		for _, a := range m.MentorAreas {
+			if want[strings.ToLower(strings.TrimSpace(a))] {
+				hits++
+			}
+		}
+		return float64(hits) / float64(len(want))
+	}
+
+	sort.SliceStable(mentors, func(i, j int) bool {
+		return score(mentors[i]) > score(mentors[j])
+	})
 }
 
 // GetMentorsByIDs returns up to 4 mentors for the comparison endpoint.
@@ -508,6 +593,19 @@ func (s *Service) GetMentorsByIDs(ctx context.Context, tenantID pgtype.UUID, use
 func (s *Service) CreateConnection(ctx context.Context, tenantID, mentorID, menteeID pgtype.UUID, goals *string, destSpaceID pgtype.UUID) (Connection, error) {
 	if mentorID == menteeID {
 		return Connection{}, ErrCannotSelfMentor
+	}
+
+	// §102: a new request can only be sent after the previous one has been
+	// resolved. Check for an existing pending or active connection before
+	// inserting. The UNIQUE(mentor_id, mentee_id, status) constraint only
+	// prevents duplicate same-status rows — it does not prevent a new
+	// pending request when an active connection already exists.
+	if _, err := s.read.GetActiveOrPendingConnection(ctx, gen.GetActiveOrPendingConnectionParams{
+		TenantID: tenantID,
+		MentorID: mentorID,
+		MenteeID: menteeID,
+	}); err == nil {
+		return Connection{}, ErrDuplicateRequest
 	}
 
 	conn, err := s.write.CreateMentorshipConnection(ctx, gen.CreateMentorshipConnectionParams{
@@ -660,6 +758,9 @@ func (s *Service) AcceptConnection(ctx context.Context, tenantID, mentorID, conn
 		}
 	}
 
+	// active_mentee_count changed (pending → active) → sync Meilisearch (§102).
+	s.enqueueUpdateMeilisearch(ctx, tenantID, conn.MentorID)
+
 	return connectionFromModel(conn), nil
 }
 
@@ -714,6 +815,9 @@ func (s *Service) CompleteConnection(ctx context.Context, tenantID, userID, conn
 		return Connection{}, ErrConnectionNotFound
 	}
 
+	// active_mentee_count changed (active → completed) → sync Meilisearch (§102).
+	s.enqueueUpdateMeilisearch(ctx, tenantID, conn.MentorID)
+
 	return connectionFromModel(conn), nil
 }
 
@@ -741,6 +845,9 @@ func (s *Service) CancelConnection(ctx context.Context, tenantID, userID, connID
 	if err != nil {
 		return Connection{}, ErrConnectionNotFound
 	}
+
+	// active_mentee_count changed (active → cancelled) → sync Meilisearch (§102).
+	s.enqueueUpdateMeilisearch(ctx, tenantID, conn.MentorID)
 
 	return connectionFromModel(conn), nil
 }
@@ -810,6 +917,54 @@ func (s *Service) UpdateMentorEmbedding(ctx context.Context, tenantID, userID pg
 	})
 }
 
+// GenerateEmbedding generates a pgvector embedding for a mentor's bio and
+// stores it in user_profiles.mentor_embedding. Implements the
+// worker.MentorProcessor interface — called by the mentor:generate_embedding
+// Asynq task handler (§102, ADR-110).
+func (s *Service) GenerateEmbedding(ctx context.Context, tenantID, userID pgtype.UUID) error {
+	if s.embedder == nil {
+		slog.Warn("mentorship: GenerateEmbedding called with no embedder wired")
+		return nil
+	}
+
+	// Fetch the mentor's bio text.
+	profile, err := s.read.GetMentorProfile(ctx, gen.GetMentorProfileParams{
+		TenantID: tenantID,
+		UserID:   userID,
+	})
+	if err != nil {
+		return fmt.Errorf("fetching mentor profile for embedding: %w", err)
+	}
+
+	if profile.MentorBio == nil || *profile.MentorBio == "" {
+		// No bio — nothing to embed. Clear any stale embedding.
+		return s.write.UpdateMentorEmbedding(ctx, gen.UpdateMentorEmbeddingParams{
+			TenantID:  tenantID,
+			UserID:    userID,
+			Embedding: nil,
+		})
+	}
+
+	embedding, err := s.embedder.GenerateEmbedding(ctx, *profile.MentorBio, "text-embedding-3-small")
+	if err != nil {
+		return fmt.Errorf("generating mentor bio embedding: %w", err)
+	}
+
+	return s.UpdateMentorEmbedding(ctx, tenantID, userID, embedding)
+}
+
+// UpdateMeilisearch syncs a mentor's user document to the Meilisearch users
+// index. Implements the worker.MentorProcessor interface — called by the
+// mentor:update_meilisearch Asynq task handler (§102, ADR-110).
+func (s *Service) UpdateMeilisearch(ctx context.Context, tenantID, userID pgtype.UUID) error {
+	if s.meilisearchIndexer == nil {
+		slog.Warn("mentorship: UpdateMeilisearch called with no indexer wired")
+		return nil
+	}
+
+	return s.meilisearchIndexer.IndexUser(ctx, userID.Bytes, tenantID.Bytes)
+}
+
 // enqueueGenerateEmbedding fires the mentor:generate_embedding Asynq task.
 func (s *Service) enqueueGenerateEmbedding(ctx context.Context, tenantID, userID pgtype.UUID) {
 	if s.enqueuer == nil {
@@ -827,6 +982,29 @@ func (s *Service) enqueueGenerateEmbedding(ctx context.Context, tenantID, userID
 
 	if err := s.enqueuer.Enqueue("mentor:generate_embedding", payload); err != nil {
 		slog.Warn("mentorship: enqueue generate_embedding task", "error", err)
+	}
+}
+
+// enqueueUpdateMeilisearch fires the mentor:update_meilisearch Asynq task
+// after a connection status change that affects the mentor's
+// active_mentee_count (§102 spec: Meilisearch document updated whenever
+// active_mentee_count changes).
+func (s *Service) enqueueUpdateMeilisearch(ctx context.Context, tenantID, mentorID pgtype.UUID) {
+	if s.enqueuer == nil {
+		return
+	}
+
+	payload, err := json.Marshal(map[string]string{
+		"tenant_id": tenantID.String(),
+		"user_id":   mentorID.String(),
+	})
+	if err != nil {
+		slog.Warn("mentorship: marshal meilisearch task payload", "error", err)
+		return
+	}
+
+	if err := s.enqueuer.Enqueue("mentor:update_meilisearch", payload); err != nil {
+		slog.Warn("mentorship: enqueue update_meilisearch task", "error", err)
 	}
 }
 

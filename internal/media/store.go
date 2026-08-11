@@ -70,7 +70,7 @@ func (s *Store) ConfirmMedia(ctx context.Context, id, tenantID pgtype.UUID) erro
 	return nil
 }
 
-// UpdateMediaMetadata updates metadata fields on a media item.
+// UpdateMediaMetadata updates metadata fields on a media item (admin — no ownership check).
 func (s *Store) UpdateMediaMetadata(ctx context.Context, params gen.UpdateMediaMetadataParams) error {
 	if err := s.write.UpdateMediaMetadata(ctx, params); err != nil {
 		return fmt.Errorf("updating media metadata: %w", err)
@@ -79,13 +79,37 @@ func (s *Store) UpdateMediaMetadata(ctx context.Context, params gen.UpdateMediaM
 	return nil
 }
 
-// SoftDeleteMedia soft-deletes a media item.
+// UpdateMediaMetadataOwn updates metadata fields scoped to the uploader.
+func (s *Store) UpdateMediaMetadataOwn(ctx context.Context, params gen.UpdateMediaMetadataOwnParams) error {
+	if err := s.write.UpdateMediaMetadataOwn(ctx, params); err != nil {
+		return fmt.Errorf("updating own media metadata: %w", err)
+	}
+
+	return nil
+}
+
+// SoftDeleteMedia soft-deletes a media item (admin — no ownership check).
 func (s *Store) SoftDeleteMedia(ctx context.Context, id, tenantID pgtype.UUID) error {
 	if err := s.write.SoftDeleteMedia(ctx, gen.SoftDeleteMediaParams{
 		ID:       id,
 		TenantID: tenantID,
 	}); err != nil {
 		return fmt.Errorf("soft-deleting media: %w", err)
+	}
+
+	return nil
+}
+
+// SoftDeleteMediaOwn soft-deletes a media item scoped to the uploader.
+// Returns ErrMediaNotFound if the media belongs to a different user or
+// does not exist, so the caller can return a 404 without leaking existence.
+func (s *Store) SoftDeleteMediaOwn(ctx context.Context, id, tenantID, uploaderID pgtype.UUID) error {
+	if err := s.write.SoftDeleteMediaOwn(ctx, gen.SoftDeleteMediaOwnParams{
+		ID:             id,
+		TenantID:       tenantID,
+		UploaderUserID: uploaderID,
+	}); err != nil {
+		return fmt.Errorf("soft-deleting own media: %w", err)
 	}
 
 	return nil
@@ -322,7 +346,7 @@ func (s *Store) CountMediaFromOrgPublicPosts(ctx context.Context, tenantID, orgI
 	return count, nil
 }
 
-// BulkSoftDeleteMedia soft-deletes multiple media items.
+// BulkSoftDeleteMedia soft-deletes multiple media items (admin — no ownership check).
 func (s *Store) BulkSoftDeleteMedia(ctx context.Context, tenantID pgtype.UUID, mediaIDs []pgtype.UUID) error {
 	if len(mediaIDs) == 0 {
 		return nil
@@ -333,6 +357,23 @@ func (s *Store) BulkSoftDeleteMedia(ctx context.Context, tenantID pgtype.UUID, m
 		MediaIds: mediaIDs,
 	}); err != nil {
 		return fmt.Errorf("bulk soft-deleting media: %w", err)
+	}
+
+	return nil
+}
+
+// BulkSoftDeleteMediaOwn soft-deletes multiple media items scoped to the uploader.
+func (s *Store) BulkSoftDeleteMediaOwn(ctx context.Context, tenantID, uploaderID pgtype.UUID, mediaIDs []pgtype.UUID) error {
+	if len(mediaIDs) == 0 {
+		return nil
+	}
+
+	if err := s.write.BulkSoftDeleteMediaOwn(ctx, gen.BulkSoftDeleteMediaOwnParams{
+		TenantID:       tenantID,
+		UploaderUserID: uploaderID,
+		MediaIds:       mediaIDs,
+	}); err != nil {
+		return fmt.Errorf("bulk soft-deleting own media: %w", err)
 	}
 
 	return nil

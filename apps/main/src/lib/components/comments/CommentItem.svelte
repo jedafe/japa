@@ -21,15 +21,17 @@
 		currentUserId: string | null;
 		/** Content author or moderator — gates the pin affordance. */
 		canModerate: boolean;
+		/** Erased-user IDs for GDPR/ADR-029 mention redaction (Section 15). */
+		deletedUserIds?: Set<string>;
 	}
-	let { comment, contentId, depth, authed, currentUserId, canModerate }: Props = $props();
+	let { comment, contentId, depth, authed, currentUserId, canModerate, deletedUserIds }: Props = $props();
 
 	const MAX_DEPTH = 3;
 	const time = $derived(relativeTime(comment.created_at, new Date(), i18n.locale));
 	const authorLabel = $derived(comment.display_name || comment.username || t('forum.member', 'Member'));
 	const isAuthor = $derived(!!currentUserId && currentUserId === comment.author_user_id);
 	const beyondMaxDepth = $derived(depth >= MAX_DEPTH);
-	const bodyHtml = $derived(tiptapBodyToHtml(comment.body));
+	const bodyHtml = $derived(tiptapBodyToHtml(comment.body, { deletedUserIds }));
 
 	// Vote state (optimistic + rollback). The backend uses upsert semantics;
 	// DELETE /comments/{id}/vote retracts. We track the user's current vote
@@ -321,6 +323,7 @@
 								{authed}
 								{currentUserId}
 								{canModerate}
+								{deletedUserIds}
 							/>
 						{/each}
 					</div>

@@ -307,6 +307,16 @@ SET display_name = 'Deleted User',
     japa_stage_history = '[]'::jsonb,
     japa_stage_is_public = false,
     japa_stage_updated_at = NULL,
+    -- §102 Mentorship Matching (ADR-110): clear mentor PII — mentor_bio is
+    -- personal text, mentor_embedding is derived PII, mentor_areas reveals
+    -- expertise/destination knowledge, is_mentor reveals opt-in status.
+    is_mentor = false,
+    mentor_capacity = NULL,
+    active_mentee_count = NULL,
+    mentor_areas = NULL,
+    mentor_bio = NULL,
+    mentor_since = NULL,
+    mentor_embedding = NULL,
     updated_at = now()
 WHERE user_id = $1 AND tenant_id = $2
 `
@@ -575,6 +585,26 @@ type DeleteForumThreadTagsByAuthorParams struct {
 // GDPR erasure, so the final hard-delete doesn't leave orphaned rows.
 func (q *Queries) DeleteForumThreadTagsByAuthor(ctx context.Context, arg DeleteForumThreadTagsByAuthorParams) error {
 	_, err := q.db.Exec(ctx, deleteForumThreadTagsByAuthor, arg.UserID, arg.TenantID)
+	return err
+}
+
+const deleteNotificationsByUser = `-- name: DeleteNotificationsByUser :exec
+DELETE FROM notifications
+WHERE recipient_id = $1 AND tenant_id = $2
+`
+
+type DeleteNotificationsByUserParams struct {
+	UserID   pgtype.UUID `json:"user_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+// BUG-M006: delete notifications addressed to the erased user during GDPR
+// erasure (Section 19). Notification rows contain recipient_id and may
+// reference actor_user_id; the recipient's notifications are user-owned
+// data and must be removed. Actor references in other users' notifications
+// are anonymized separately if needed.
+func (q *Queries) DeleteNotificationsByUser(ctx context.Context, arg DeleteNotificationsByUserParams) error {
+	_, err := q.db.Exec(ctx, deleteNotificationsByUser, arg.UserID, arg.TenantID)
 	return err
 }
 

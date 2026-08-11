@@ -456,9 +456,51 @@ func (h *Handlers) Autocomplete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Section 41 — filter out blocked users from @mention autocomplete
+	// suggestions. A user should not see (and therefore @mention) someone
+	// who has blocked them or whom they have blocked. Best-effort: a
+	// database error degrades to unfiltered results.
+	if user := auth.FromContext(r.Context()); user != nil && h.queries != nil {
+		suggestions = h.filterBlockedUsers(r.Context(), t.ID, user.UserID, suggestions)
+	}
+
 	writeJSON(w, http.StatusOK, map[string]any{
 		"data": AutocompleteResponse{Suggestions: suggestions},
 	})
+}
+
+// filterBlockedUsers removes user-type suggestions where a block relationship
+// exists between the current user and the suggested user (either direction).
+// Non-user suggestions are passed through unchanged. Best-effort: on database
+// error the suggestion is kept (fail-open for visibility).
+func (h *Handlers) filterBlockedUsers(ctx context.Context, tenantID, currentUserID pgtype.UUID, suggestions []AutocompleteSuggestion) []AutocompleteSuggestion {
+	filtered := suggestions[:0]
+	for _, s := range suggestions {
+		if s.Type != "user" {
+			filtered = append(filtered, s)
+			continue
+		}
+		var uid pgtype.UUID
+		if err := uid.Scan(s.ID); err != nil {
+			filtered = append(filtered, s)
+			continue
+		}
+		blocked, err := h.queries.IsBlocked(ctx, gen.IsBlockedParams{
+			BlockerID: currentUserID,
+			BlockedID: uid,
+			TenantID:  tenantID,
+		})
+		if err != nil {
+			slog.Warn("autocomplete: IsBlocked check failed",
+				"user_id", uid.String(), "error", err)
+			filtered = append(filtered, s)
+			continue
+		}
+		if !blocked {
+			filtered = append(filtered, s)
+		}
+	}
+	return filtered
 }
 
 // runAutocomplete queries the users, spaces, tags, and posts indexes with

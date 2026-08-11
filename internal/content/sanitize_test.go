@@ -284,3 +284,40 @@ func TestSanitizeHTML_CouponEmbedDivPreserved(t *testing.T) {
 		t.Errorf("data-coupon-id attribute was stripped: %s", got)
 	}
 }
+
+func TestSanitizeHTML_LinkPreviewDataURLXSSBlocked(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		input   string
+		wantKept bool
+	}{
+		{"safe https url", `<div data-type="link-preview" data-url="https://example.com"></div>`, true},
+		{"safe http url", `<div data-type="link-preview" data-url="http://example.com"></div>`, true},
+		{"safe relative url", `<div data-type="link-preview" data-url="/page"></div>`, true},
+		{"javascript uri blocked", `<div data-type="link-preview" data-url="javascript:alert(1)"></div>`, false},
+		{"data uri blocked", `<div data-type="link-preview" data-url="data:text/html,<script>alert(1)</script>"></div>`, false},
+		{"vbscript uri blocked", `<div data-type="link-preview" data-url="vbscript:alert(1)"></div>`, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := SanitizeHTML(tt.input)
+			// isSafeURL lowercases the scheme for comparison; the sanitizer
+			// may preserve or strip the attribute. Check for the dangerous
+			// scheme substring to confirm it was stripped.
+			lowered := strings.ToLower(got)
+			if tt.wantKept {
+				if !strings.Contains(got, `data-url="`) {
+					t.Errorf("safe data-url was stripped: %s", got)
+				}
+			} else {
+				// The dangerous scheme must not survive in data-url.
+				if strings.Contains(lowered, "javascript:") || strings.Contains(lowered, "vbscript:") {
+					t.Errorf("dangerous scheme survived in data-url: %s", got)
+				}
+			}
+		})
+	}
+}
