@@ -183,8 +183,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		defaultTenantID = dt.ID
 	}
 
-	// JWT key rotation — use persistent secret from config when set,
-	// otherwise generate a random key for development (sessions won't survive restart).
+	// JWT key rotation — keys are persisted in the jwt_signing_keys table
+	// (§02) so they survive server restarts. On first boot (empty table),
+	// the key is seeded from JC_JWT_SECRET (or a random dev key) and
+	// persisted. On subsequent boots, keys are loaded from the DB.
 	var signingKey []byte
 	if cfg.JWTSecret != "" {
 		signingKey = []byte(cfg.JWTSecret)
@@ -198,6 +200,21 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	}
 
 	kr := auth.NewKeyRotation(cfg.JWTKeyID, signingKey)
+
+	// Load persisted signing keys from the database. If the table has
+	// active keys, they replace the env-derived key. If the table is empty
+	// (first boot), the env-derived key is persisted for future restarts.
+	jwtKeyStore := auth.NewJWTKeyStore(database)
+	if err := kr.LoadFromDB(context.Background(), jwtKeyStore); err != nil {
+		slog.Error("loading JWT signing keys from DB, using env key", "error", err)
+	} else if len(kr.Keys) > 0 {
+		slog.Info("loaded JWT signing keys from DB", "count", len(kr.Keys), "current_kid", kr.CurrentKeyID)
+	} else {
+		slog.Info("no JWT signing keys in DB, persisting env key", "kid", cfg.JWTKeyID)
+		if err := kr.PersistKey(context.Background(), jwtKeyStore, cfg.JWTKeyID, signingKey); err != nil {
+			slog.Error("persisting JWT signing key to DB", "error", err)
+		}
+	}
 
 	// Valkey client for cache, rate limiting, edit locks, brute-force
 	// tracking, and space unread counters. Created with graceful fallback
@@ -1198,6 +1215,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// policy (auth.password.* keys) from system_settings instead of
 	// hardcoding validation rules (Rule 3).
 	usersHandlers.SetAuthSettings(settingsService)
+
+	// Wire the JWT key rotation so ChangePassword can revoke the caller's
+	// current access token JTI after a successful password change.
+	usersHandlers.SetKeyRotation(kr)
 
 	// BUG-003: wire the "verified" axis checker for CanPostInSpace. The
 	// "verified" posting_perm requires email_verified_at IS NOT NULL.
@@ -3017,6 +3038,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Put("/onboarding/step", onboardingHandlers.UpdateStep)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/onboarding/complete", onboardingHandlers.Complete)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/onboarding/recommendations", onboardingHandlers.GetRecommendations)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/onboarding/options", onboardingHandlers.GetOptions)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/onboarding/tour/dismiss", onboardingHandlers.DismissTour)
 
 			// Admin onboarding settings

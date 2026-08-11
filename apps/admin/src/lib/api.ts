@@ -1788,12 +1788,12 @@ export const housingGuideAdminApi = {
 export const attestationGuideAdminApi = {
 	list: (params?: string) => api<unknown>(`/admin/attestation${params ? `?${params}` : ''}`),
 	create: (body: Record<string, unknown>) => api<unknown>(`/admin/attestation`, { method: 'POST', body }),
-	update: (id: string, body: Record<string, unknown>) =>
-		api<unknown>(`/admin/attestation/${id}`, { method: 'PATCH', body }),
 	approve: (id: string) =>
 		api<unknown>(`/admin/attestation/${id}/approve`, { method: 'PATCH', body: {} }),
 	generate: (body: Record<string, unknown>) =>
 		api<unknown>(`/admin/attestation/generate`, { method: 'POST', body }),
+	reviewUpdate: (id: string, approve: boolean) =>
+		api<unknown>(`/admin/attestation/updates/${id}`, { method: 'PATCH', body: { approve } }),
 };
 
 export const languageTestHubAdminApi = {

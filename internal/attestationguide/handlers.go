@@ -59,7 +59,7 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 
 func writeError(w http.ResponseWriter, status int, code, message string) {
 	writeJSON(w, status, map[string]any{
-		"error": map[string]string{"code": code, "message": message},
+		"error": map[string]any{"code": code, "message": message, "status": status},
 	})
 }
 
@@ -93,12 +93,22 @@ func scanUUIDParam(w http.ResponseWriter, r *http.Request, name string) (pgtype.
 func parsePageParams(r *http.Request) (page, limit int32) {
 	page = 1
 	limit = 20
-	if v := r.URL.Query().Get("page"); v != "" {
+	// Convention: page_size + page_offset (api-response-format.md).
+	// Backward compat: also accept page + limit.
+	if v := r.URL.Query().Get("page_offset"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			page = int32(n)
+		}
+	} else if v := r.URL.Query().Get("page"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
 			page = int32(n)
 		}
 	}
-	if v := r.URL.Query().Get("limit"); v != "" {
+	if v := r.URL.Query().Get("page_size"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 100 {
+			limit = int32(n)
+		}
+	} else if v := r.URL.Query().Get("limit"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 100 {
 			limit = int32(n)
 		}
@@ -193,8 +203,9 @@ func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
 }
 
 // HandleExportPDF handles GET /attestation/:id/export/pdf — returns the
-// pathway data as JSON with a note that PDF generation is a client-side
-// concern for now. Public.
+// pathway data as a downloadable JSON file (Content-Disposition: attachment)
+// so the client can render it to PDF. The response includes the full pathway
+// with steps, fees, and turnaround data. Public.
 func (h *Handlers) HandleExportPDF(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
@@ -222,10 +233,15 @@ func (h *Handlers) HandleExportPDF(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
-		"data": pathway,
-		"note": "PDF generation is a client-side concern for now. Render the pathway data with a client-side PDF library.",
-	})
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Disposition", `attachment; filename="attestation-pathway-`+pathway.ID+`.json"`)
+	w.WriteHeader(http.StatusOK)
+	if err := json.NewEncoder(w).Encode(map[string]any{
+		"data":   pathway,
+		"format": "attestation_pathway_v1",
+	}); err != nil {
+		slog.Error("attestationguide: encode export response", "error", err)
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -384,10 +400,11 @@ func (h *Handlers) HandleAdminCreate(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, map[string]any{"data": pathway})
 }
 
-// HandleAdminGenerate handles POST /admin/attestation/generate — Content
-// Agent draft placeholder. Returns 202 Accepted with a placeholder
-// response. Admin-only (attestation_guide.manage permission checked at
-// route registration).
+// HandleAdminGenerate handles POST /admin/attestation/generate — creates
+// an AI-drafted pathway in 'ai_draft' status. The pathway is created with
+// empty pathway_steps and requires HITL approval before publication.
+// Admin-only (attestation_guide.manage permission checked at route
+// registration).
 func (h *Handlers) HandleAdminGenerate(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
@@ -413,12 +430,17 @@ func (h *Handlers) HandleAdminGenerate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	pathway, err := h.service.GenerateDraft(r.Context(), tenantID, input)
+	if err != nil {
+		slog.Error("attestationguide: admin generate failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "generate_failed", "Failed to generate attestation pathway draft")
+		return
+	}
+
 	writeJSON(w, http.StatusAccepted, map[string]any{
-		"status":      "accepted",
-		"message":     "Content Agent draft generation queued. The pathway will be created in 'ai_draft' status and require HITL approval before publication.",
-		"document_type": input.DocumentType,
-		"issuing_space_id": input.IssuingSpaceID,
-		"destination_space_id": input.DestinationSpaceID,
+		"data":    pathway,
+		"status":  "accepted",
+		"message": "AI draft pathway created in 'ai_draft' status. Review and approve via PATCH /admin/attestation/:id/approve before publication.",
 	})
 }
 
@@ -481,7 +503,7 @@ func (h *Handlers) HandleAdminReviewUpdate(w http.ResponseWriter, r *http.Reques
 	if !ok {
 		return
 	}
-	_, ok = requireTenant(w, r)
+	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -490,8 +512,8 @@ func (h *Handlers) HandleAdminReviewUpdate(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	if h.service == nil {
-		writeError(w, http.StatusServiceUnavailable, "attestation_guide_unavailable", "Attestation guide not configured")
+	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+		writeError(w, http.StatusNotFound, "attestation_guide_disabled", "Attestation guide is not available")
 		return
 	}
 
@@ -507,7 +529,7 @@ func (h *Handlers) HandleAdminReviewUpdate(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	update, err := h.service.ReviewCommunityUpdate(r.Context(), updateID, user.UserID, *body.Approve)
+	update, err := h.service.ReviewCommunityUpdate(r.Context(), updateID, tenantID, user.UserID, *body.Approve)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeError(w, http.StatusNotFound, "update_not_found", "Community update not found")

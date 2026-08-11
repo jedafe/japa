@@ -474,6 +474,18 @@ export interface OnboardingRecommendation {
 	score: number;
 }
 
+/** GET /onboarding/options — option lists for Step 1 & Step 2 (Rule 16). */
+export interface OnboardingOption {
+	value: string;
+	label_key: string;
+}
+
+/** GET /onboarding/options response. */
+export interface OnboardingOptions {
+	japa_statuses: OnboardingOption[];
+	primary_goals: OnboardingOption[];
+}
+
 /* ------------------------------------------------------------------ *
  * Forum — Section 08 (forum Q&A / solved)
  * Ref: japaconnect-engineering/sections/08-forum-qa-solved.md

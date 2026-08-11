@@ -24,13 +24,13 @@ export const load: PageServerLoad = async (event) => {
 	const authed = !!event.locals.user;
 
 	// Destination list — the geo-aware selector source (Rule 16).
-	// A 404 or attestation_disabled code means the tool is turned off.
+	// A 404 or attestation_guide_disabled code means the tool is turned off.
 	let destinations: GeoSpaceOption[] = [];
 	let disabled = false;
 	try {
 		destinations = (await apiList<GeoSpaceOption>(ctx, '/spaces?level=country')).items;
 	} catch (e) {
-		if (e instanceof ApiError && (e.status === 404 || e.code === 'attestation_disabled')) {
+		if (e instanceof ApiError && (e.status === 404 || e.code === 'attestation_guide_disabled')) {
 			disabled = true;
 		}
 		destinations = [];
