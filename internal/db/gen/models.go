@@ -1640,9 +1640,9 @@ type HousingGuide struct {
 	HitlReviewedAt       pgtype.Timestamptz `json:"hitl_reviewed_at"`
 	HitlReviewNotes      *string            `json:"hitl_review_notes"`
 	LastVerifiedAt       pgtype.Date        `json:"last_verified_at"`
-	IsJapabotIndexed     bool               `json:"is_japabot_indexed"`
 	CreatedAt            pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
+	IsJapabotIndexed     *bool              `json:"is_japabot_indexed"`
 }
 
 // Aggregated periodic creator payout; rolls up revenue_splits (ADR-063).

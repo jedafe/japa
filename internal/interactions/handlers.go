@@ -113,8 +113,9 @@ func parsePageOffset(r *http.Request) int32 {
 // User Blocks (Section 41 — user-facing, non-admin)
 // ---------------------------------------------------------------------------
 
-// ToggleBlock handles POST /api/v1/users/{user_id}/block.
-func (h *Handlers) ToggleBlock(w http.ResponseWriter, r *http.Request) {
+// BlockUser handles POST /api/v1/users/{user_id}/block.
+// Idempotent: blocking an already-blocked user is a no-op (200).
+func (h *Handlers) BlockUser(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
 	if !ok {
 		return
@@ -138,25 +139,68 @@ func (h *Handlers) ToggleBlock(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	blocked, err := h.service.ToggleBlock(r.Context(), tenantID, user.UserID, targetID)
-	if err != nil {
+	if err := h.service.BlockUser(r.Context(), tenantID, user.UserID, targetID); err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "An unexpected error occurred")
 		return
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"data": map[string]any{"blocked": blocked},
+		"data": map[string]any{"blocked": true},
 	})
 }
 
-// ListBlocked handles GET /api/v1/users/blocked.
+// UnblockUser handles DELETE /api/v1/users/{user_id}/block.
+// Idempotent: unblocking a non-blocked user is a no-op (200).
+func (h *Handlers) UnblockUser(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	targetID, err := parseUUIDParam(r, "user_id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_user_id", "Invalid user_id format")
+
+		return
+	}
+
+	if user.UserID == targetID {
+		writeError(w, http.StatusBadRequest, "self_block", "Cannot block yourself")
+
+		return
+	}
+
+	if err := h.service.UnblockUser(r.Context(), tenantID, user.UserID, targetID); err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "An unexpected error occurred")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data": map[string]any{"blocked": false},
+	})
+}
+
+// ListBlocked handles GET /api/v1/me/blocked-users.
 func (h *Handlers) ListBlocked(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
 	if !ok {
 		return
 	}
 
-	blocked, err := h.service.ListBlockedUsers(r.Context(), user.UserID)
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	limit := parsePageSize(r)
+	offset := parsePageOffset(r)
+
+	blocked, err := h.service.ListBlockedUsers(r.Context(), tenantID, user.UserID, limit, offset)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list blocked users")
 
@@ -187,6 +231,12 @@ func (h *Handlers) MuteUser(w http.ResponseWriter, r *http.Request) {
 	targetID, err := parseUUIDParam(r, "user_id")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_user_id", "Invalid user_id format")
+
+		return
+	}
+
+	if user.UserID == targetID {
+		writeError(w, http.StatusBadRequest, "self_mute", "Cannot mute yourself")
 
 		return
 	}
@@ -235,6 +285,7 @@ func (h *Handlers) UnmuteUser(w http.ResponseWriter, r *http.Request) {
 }
 
 // GetUserMuteStatus handles GET /api/v1/users/{user_id}/mute-status.
+// Returns whether the caller has muted the given user.
 func (h *Handlers) GetUserMuteStatus(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
 	if !ok {
@@ -265,7 +316,7 @@ func (h *Handlers) GetUserMuteStatus(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// ListMutedUsers handles GET /api/v1/users/muted.
+// ListMutedUsers handles GET /api/v1/me/muted-users.
 func (h *Handlers) ListMutedUsers(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
 	if !ok {
@@ -358,7 +409,7 @@ func (h *Handlers) UnmuteSpace(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// ListMutedSpaces handles GET /api/v1/users/spaces/muted.
+// ListMutedSpaces handles GET /api/v1/me/muted-spaces.
 func (h *Handlers) ListMutedSpaces(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
 	if !ok {

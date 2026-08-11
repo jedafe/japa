@@ -96,6 +96,23 @@ type JobDetail struct {
 	PublishedAt string            `json:"published_at"`
 }
 
+// AdminJobListing is a job listing row in the admin list view. It extends
+// JobResult with the content status, featured flag, org/author IDs, and
+// created_at — the fields an admin needs to moderate listings.
+type AdminJobListing struct {
+	ID             string            `json:"id"`
+	Title          string            `json:"title"`
+	Slug           string            `json:"slug"`
+	Summary        string            `json:"summary"`
+	Status         string            `json:"status"`
+	IsFeatured     bool              `json:"is_featured"`
+	OrganizationID string            `json:"organization_id,omitempty"`
+	AuthorID       string            `json:"author_id,omitempty"`
+	FieldValues    map[string]string `json:"field_values"`
+	PublishedAt    string            `json:"published_at"`
+	CreatedAt      string            `json:"created_at"`
+}
+
 // ApplicationResult is a single application record in API responses.
 type ApplicationResult struct {
 	ID              string  `json:"id"`
@@ -753,6 +770,168 @@ func (s *Service) AdminListApplications(ctx context.Context, tenantID pgtype.UUI
 		results = append(results, applicationResultFromAdminRow(row))
 	}
 	return results, total, nil
+}
+
+// AdminListJobs returns all job_listing contents for a tenant, with
+// pagination and optional status filter. This is the admin "all listings"
+// view per Section 63: GET /admin/jobs — all listings (admin).
+func (s *Service) AdminListJobs(ctx context.Context, tenantID pgtype.UUID, status string, page, limit int) ([]AdminJobListing, int64, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	if page <= 0 {
+		page = 1
+	}
+	offset := (page - 1) * limit
+
+	// Build the WHERE clause — always tenant + content_type, optionally status.
+	whereClause := "c.tenant_id = $1 AND c.content_type = 'job_listing'"
+	args := []any{tenantID}
+	argIdx := 2
+	if status != "" {
+		whereClause += fmt.Sprintf(" AND c.status = $%d", argIdx)
+		args = append(args, status)
+		argIdx++
+	}
+
+	// Count query.
+	countSQL := fmt.Sprintf(`SELECT COUNT(*) FROM contents c WHERE %s`, whereClause)
+	var total int64
+	if err := s.store.pool.Reader.QueryRow(ctx, countSQL, args...).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("jobs: admin list jobs: count: %w", err)
+	}
+	if total == 0 {
+		return []AdminJobListing{}, 0, nil
+	}
+
+	// Data query — extract field values via JSON aggregation, and read
+	// is_featured from custom_field_values via a lateral join.
+	dataSQL := fmt.Sprintf(`
+		SELECT
+			c.id, c.title, c.slug, c.summary, c.status,
+			COALESCE(
+				(SELECT cfv.value_boolean
+				 FROM custom_field_values cfv
+				 WHERE cfv.content_id = c.id AND cfv.field_key = 'is_featured'
+				 LIMIT 1),
+				false
+			) AS is_featured,
+			c.organization_id, c.author_id,
+			COALESCE(
+				(SELECT json_object_agg(cfv.field_key,
+					CASE
+						WHEN cfv.value_text IS NOT NULL THEN cfv.value_text
+						WHEN cfv.value_number IS NOT NULL THEN cfv.value_number::text
+						WHEN cfv.value_boolean IS NOT NULL THEN cfv.value_boolean::text
+						ELSE ''
+					END
+				) FROM custom_field_values cfv WHERE cfv.content_id = c.id),
+				'{}'::json
+			) AS field_values,
+			c.published_at, c.created_at
+		FROM contents c
+		WHERE %s
+		ORDER BY c.created_at DESC
+		LIMIT $%d OFFSET $%d`,
+		whereClause, argIdx, argIdx+1)
+	args = append(args, limit, offset)
+
+	rows, err := s.store.pool.Reader.Query(ctx, dataSQL, args...)
+	if err != nil {
+		return nil, 0, fmt.Errorf("jobs: admin list jobs: query: %w", err)
+	}
+	defer rows.Close()
+
+	results := make([]AdminJobListing, 0)
+	for rows.Next() {
+		var (
+			id             pgtype.UUID
+			title          string
+			slug           string
+			summary        *string
+			contentStatus  string
+			isFeatured     bool
+			orgID          pgtype.UUID
+			authorID       pgtype.UUID
+			fieldValues    []byte
+			publishedAt    pgtype.Timestamptz
+			createdAt      pgtype.Timestamptz
+		)
+		if err := rows.Scan(&id, &title, &slug, &summary, &contentStatus,
+			&isFeatured, &orgID, &authorID, &fieldValues,
+			&publishedAt, &createdAt); err != nil {
+			return nil, 0, fmt.Errorf("jobs: admin list jobs: scan: %w", err)
+		}
+
+		fvMap := make(map[string]string)
+		if len(fieldValues) > 0 {
+			_ = json.Unmarshal(fieldValues, &fvMap)
+		}
+
+		summaryStr := ""
+		if summary != nil {
+			summaryStr = *summary
+		}
+		publishedStr := ""
+		if publishedAt.Valid {
+			publishedStr = publishedAt.Time.UTC().Format("2006-01-02T15:04:05Z07:00")
+		}
+		createdStr := ""
+		if createdAt.Valid {
+			createdStr = createdAt.Time.UTC().Format("2006-01-02T15:04:05Z07:00")
+		}
+
+		listing := AdminJobListing{
+			ID:          id.String(),
+			Title:       title,
+			Slug:        slug,
+			Summary:     summaryStr,
+			Status:      contentStatus,
+			IsFeatured:  isFeatured,
+			FieldValues: fvMap,
+			PublishedAt: publishedStr,
+			CreatedAt:   createdStr,
+		}
+		if orgID.Valid {
+			listing.OrganizationID = orgID.String()
+		}
+		if authorID.Valid {
+			listing.AuthorID = authorID.String()
+		}
+		results = append(results, listing)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("jobs: admin list jobs: rows: %w", err)
+	}
+
+	return results, total, nil
+}
+
+// AdminJobStatusDistribution returns the count of job_listing contents grouped
+// by content status (published, archived, draft) for a tenant.
+func (s *Service) AdminJobStatusDistribution(ctx context.Context, tenantID pgtype.UUID) (map[string]int64, error) {
+	query := `
+		SELECT status, COUNT(*) AS count
+		FROM contents
+		WHERE tenant_id = $1 AND content_type = 'job_listing'
+		GROUP BY status
+		ORDER BY count DESC`
+	rows, err := s.store.pool.Reader.Query(ctx, query, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("jobs: admin job status distribution: %w", err)
+	}
+	defer rows.Close()
+
+	dist := make(map[string]int64)
+	for rows.Next() {
+		var status string
+		var count int64
+		if err := rows.Scan(&status, &count); err != nil {
+			return nil, fmt.Errorf("jobs: admin job status distribution: scan: %w", err)
+		}
+		dist[status] = count
+	}
+	return dist, rows.Err()
 }
 
 // AdminApplicationStatusDistribution returns the count of applications grouped

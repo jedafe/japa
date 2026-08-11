@@ -218,7 +218,7 @@
 										{#if tr.enrolled_count}
 											<span class="inline-flex items-center gap-1">
 												<Users size={12} />
-												{t('learn.enrolled_count', '{n} enrolled').replace('{n}', formatCount(tr.enrolled_count))}
+												{t('learn.enrolled_count', '{count} enrolled').replace('{count}', formatCount(tr.enrolled_count))}
 											</span>
 										{/if}
 										{#if tr.price_kobo !== undefined && tr.price_kobo !== null}

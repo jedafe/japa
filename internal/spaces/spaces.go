@@ -19,7 +19,9 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/valkey"
 	"github.com/jedafe/japa/internal/worker"
+	valkeycompat "github.com/valkey-io/valkey-go/valkeycompat"
 )
 
 // Space hierarchy levels. Country is the root, state and city nest under
@@ -136,6 +138,23 @@ type Service struct {
 	write    *gen.Queries
 	db       *db.DB
 	enqueuer spaceEnqueuer
+	vk       valkeycompat.Cmdable // nil disables caching (tests/development)
+}
+
+// SetValkey wires the Valkey client for mute SET cache invalidation
+// (Section 52 / VALKEY-001). Key: jc:muted_spaces:{user_id}.
+func (s *Service) SetValkey(vk valkeycompat.Cmdable) { s.vk = vk }
+
+// invalidateMutedSpacesCache deletes the muted-spaces SET cache for the user.
+// Called after mute/unmute so the next read refetches from the DB.
+func (s *Service) invalidateMutedSpacesCache(ctx context.Context, userID pgtype.UUID) {
+	if s.vk == nil {
+		return
+	}
+	key := valkey.MustKey("muted_spaces:%s", userID.String())
+	if err := s.vk.Del(ctx, key).Err(); err != nil {
+		slog.Warn("invalidate muted_spaces cache", "error", err)
+	}
 }
 
 // spaceEnqueuer is the subset of worker.Enqueuer that spaces needs.

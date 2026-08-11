@@ -356,9 +356,11 @@ func (s *Service) ProcessDataExport(ctx context.Context, requestID pgtype.UUID) 
 	return nil
 }
 
-// ListPendingDataExportRequests returns pending export requests for the worker.
-func (s *Service) ListPendingDataExportRequests(ctx context.Context, limit int32) ([]gen.DataExportRequest, error) {
-	return s.store.listPendingDataExportRequests(ctx, limit)
+// ListPendingDataExportRequests returns pending export requests for the
+// caller's tenant (BUG-GDPR-002: tenant-scoped so an admin in tenant A
+// cannot see tenant B's pending export requests, §5.3 cross-tenant bleed).
+func (s *Service) ListPendingDataExportRequests(ctx context.Context, tenantID pgtype.UUID, limit int32) ([]gen.DataExportRequest, error) {
+	return s.store.listPendingDataExportRequests(ctx, tenantID, limit)
 }
 
 // ---------------------------------------------------------------------------
@@ -1359,9 +1361,11 @@ func (s *Service) HardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 	return s.hardDeleteUser(ctx, userID, tenantID)
 }
 
-// ListPendingDeletionRequests returns pending deletion requests for the worker.
-func (s *Service) ListPendingDeletionRequests(ctx context.Context, limit int32) ([]gen.ListPendingDeletionRequestsRow, error) {
-	return s.store.listPendingDeletionRequests(ctx, limit)
+// ListPendingDeletionRequests returns pending deletion requests for the
+// caller's tenant (BUG-GDPR-001: tenant-scoped so an admin in tenant A
+// cannot see tenant B's pending deletion requests, §5.3 cross-tenant bleed).
+func (s *Service) ListPendingDeletionRequests(ctx context.Context, tenantID pgtype.UUID, limit int32) ([]gen.ListPendingDeletionRequestsRow, error) {
+	return s.store.listPendingDeletionRequests(ctx, tenantID, limit)
 }
 
 // ---------------------------------------------------------------------------

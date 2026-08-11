@@ -191,7 +191,7 @@
 									</a>
 									<div class="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-[var(--color-muted)]">
 										<span class="inline-flex items-center gap-1">
-											<Users size={12} /> {formatCount(tr.total_enrolled)} {t('learn.enrolled_count', '{n} enrolled').replace('{n}', '')}
+											<Users size={12} /> {t('learn.enrolled_count', '{count} enrolled').replace('{count}', formatCount(tr.total_enrolled))}
 										</span>
 										<span>{formatPriceKobo(tr.total_revenue_kobo)}</span>
 									</div>

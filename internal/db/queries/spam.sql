@@ -76,6 +76,20 @@ FROM user_blocks
 WHERE blocker_id = $1
 ORDER BY created_at DESC;
 
+-- name: ListBlockedUsers :many
+-- Tenant-scoped blocked-users list with profile enrichment (BUG-003, BUG-004).
+-- Ref: japaconnect-engineering/sections/41-spam-content-safety.md
+SELECT ub.blocked_id, ub.created_at,
+       u.username,
+       COALESCE(up.display_name, '') AS display_name,
+       COALESCE(up.avatar_url, '') AS avatar_url
+FROM user_blocks ub
+JOIN users u ON u.id = ub.blocked_id
+LEFT JOIN user_profiles up ON up.user_id = u.id AND up.tenant_id = ub.tenant_id
+WHERE ub.blocker_id = $1 AND ub.tenant_id = $2
+ORDER BY ub.created_at DESC
+LIMIT $3 OFFSET $4;
+
 -- name: ListAllUserBlocks :many
 SELECT ub.blocker_id, ub.blocked_id, ub.created_at,
        bu.username AS blocker_username, bp.display_name AS blocker_display_name,

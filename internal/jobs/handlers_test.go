@@ -64,16 +64,16 @@ func TestHandleUpdateApplicationStatus_Unauthorized(t *testing.T) {
 	}
 }
 
-// TestHandleAdminListApplications_Unauthorized verifies that the admin
-// applications list endpoint requires authentication.
-func TestHandleAdminListApplications_Unauthorized(t *testing.T) {
+// TestHandleAdminListJobs_Unauthorized verifies that the admin listings
+// endpoint requires authentication.
+func TestHandleAdminListJobs_Unauthorized(t *testing.T) {
 	h := NewHandlers(nil, nil)
 	req := httptest.NewRequest(http.MethodGet, "/admin/jobs", nil)
 	rr := httptest.NewRecorder()
-	h.HandleAdminListApplications(rr, req)
+	h.HandleAdminListJobs(rr, req)
 
 	if rr.Code != http.StatusUnauthorized {
-		t.Errorf("HandleAdminListApplications without auth = %d, want %d", rr.Code, http.StatusUnauthorized)
+		t.Errorf("HandleAdminListJobs without auth = %d, want %d", rr.Code, http.StatusUnauthorized)
 	}
 }
 

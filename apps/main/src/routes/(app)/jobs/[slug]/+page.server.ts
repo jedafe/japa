@@ -4,7 +4,7 @@ import { error } from '@sveltejs/kit';
 import type { JobDetail } from '$lib/types';
 
 /**
- * Job detail at /jobs/[slug] (Section 63, ADR-079).
+ * Job detail at /jobs/[slug] (Section 63, ADR-081).
  * SSR-fetches the job detail and renders the apply form for authed users.
  *
  * Ref: japaconnect-engineering/sections/63-jobs-board.md
